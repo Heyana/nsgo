@@ -65,7 +65,8 @@ window: { width: 420, height: 560 }
 dev:
   target: native        # native, web or ios_simulator
 build:
-  output: dist          # packages go to dist/<name>-<version>-<target>
+  output: dist          # 构建产物位于 dist/<name>-<version>-<target>
+  open: true            # 构建后打开输出目录
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, ios, ios_simulator, web]
 ```
 
@@ -75,7 +76,7 @@ build:
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` 运行应用，并在源文件变化时重新编译。`go tool nsgo build` 为每个目标输出一个去除符号的发布包。
+`go tool nsgo dev` 运行应用，并在源文件变化时重新编译。`go tool nsgo build` 为每个目标输出一个去除符号的发布包，并打开输出目录，除非 `build.open` 为 `false`。
 
 ## 开发
 

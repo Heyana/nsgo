@@ -64,6 +64,7 @@ Android runs the app as a second process because Go builds Android shared librar
 
 - Targets name an OS and an architecture (`macos_arm64`, `windows_x64`), so each package holds one binary.
 - `nsgo build` is a release build: `-s -w`, `-trimpath`, no VCS stamp. `nsgo dev` keeps symbols.
+- `nsgo build` shows the output directory when it finishes, unless `nsgo.yaml` sets `build.open` to false.
 - `nsgo dev` watches the directories `go list -deps` reports, NSGo's own included, and keeps the last good build running when a build fails.
 - The web dev server reloads open pages over server-sent events after each build.
 

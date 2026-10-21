@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"text/template"
@@ -34,7 +35,26 @@ func buildAll(ctx context.Context, p *project) error {
 		}
 		step("  -> %s", rel(dir))
 	}
+	if p.openOutput() {
+		openDir(p.Build.Output)
+	}
 	return nil
+}
+
+// openDir shows dir in the host's file manager. A build is complete
+// without it, so failing to open is only a warning.
+func openDir(dir string) {
+	step("open %s", rel(dir))
+	opener := "xdg-open"
+	switch runtime.GOOS {
+	case "darwin":
+		opener = "open"
+	case "windows":
+		opener = "explorer"
+	}
+	if err := exec.Command(opener, dir).Start(); err != nil {
+		step("could not open %s: %v", rel(dir), err)
+	}
 }
 
 // targets are the names nsgo.yaml and -target accept, each one package.

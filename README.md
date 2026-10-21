@@ -66,6 +66,7 @@ dev:
   target: native        # native, web or ios_simulator
 build:
   output: dist          # packages go to dist/<name>-<version>-<target>
+  open: true            # open the output directory after building
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, ios, ios_simulator, web]
 ```
 
@@ -75,7 +76,7 @@ Add the tool to your module once; `go tool nsgo` then runs it without installing
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` runs the app and rebuilds it when a source file changes. `go tool nsgo build` writes a stripped release package per target.
+`go tool nsgo dev` runs the app and rebuilds it when a source file changes. `go tool nsgo build` writes a stripped release package per target and opens the output directory, unless `build.open` is `false`.
 
 ## Development
 

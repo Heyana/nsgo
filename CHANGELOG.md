@@ -7,4 +7,5 @@
 - Add native backends for macOS, iOS and the web.
 - Add `nsgotest` for headless app tests.
 - Add the `nsgo` tool with `dev` and `build`, configured by `nsgo.yaml`.
+- Add `nsgo build` opening its output directory, unless `build.open` is false.
 - Add a layered app icon.

@@ -31,7 +31,15 @@ type project struct {
 	Build struct {
 		Output  string   `yaml:"output"`
 		Targets []string `yaml:"targets"`
+		// Open shows the output directory once the build finishes; it
+		// defaults to true.
+		Open *bool `yaml:"open"`
 	} `yaml:"build"`
+}
+
+// openOutput reports whether nsgo build opens its output directory.
+func (p *project) openOutput() bool {
+	return p.Build.Open == nil || *p.Build.Open
 }
 
 func load(dir string) (*project, error) {
