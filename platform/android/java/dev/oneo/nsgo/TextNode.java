@@ -3,42 +3,30 @@ package dev.oneo.nsgo;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.text.StaticLayout;
-import android.text.TextPaint;
-import android.widget.FrameLayout;
+import android.view.View;
 
-/** A node that draws its text with the same StaticLayout the engine measured with. */
-final class TextNode extends FrameLayout {
-    private String text = "";
-    private TextPaint paint;
-    private int padLeft, padTop, padRight;
+/** A text node: it draws the StaticLayout the engine laid out, where the engine placed it. */
+final class TextNode extends View {
     private StaticLayout layout;
+    private int x, y;
 
     TextNode(Context context) {
         super(context);
-        setWillNotDraw(false);
     }
 
-    void setText(String text, TextPaint paint, int padLeft, int padTop, int padRight) {
-        this.text = text;
-        this.paint = paint;
-        this.padLeft = padLeft;
-        this.padTop = padTop;
-        this.padRight = padRight;
-        layout = null;
-        setContentDescription(text);
+    /** Draws layout at (x, y) from now on and drops the layout it replaces. */
+    void setLayout(StaticLayout layout, int x, int y) {
+        this.layout = layout;
+        this.x = x;
+        this.y = y;
         invalidate();
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (paint == null) return;
-        // Wrap at the width the engine laid the node out at.
-        int width = getWidth() - padLeft - padRight;
-        if (layout == null || layout.getWidth() != width) {
-            layout = Text.layout(text, paint, width);
-        }
+        if (layout == null) return;
         canvas.save();
-        canvas.translate(padLeft, padTop);
+        canvas.translate(x, y);
         layout.draw(canvas);
         canvas.restore();
     }

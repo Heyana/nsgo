@@ -1,12 +1,15 @@
 //go:build ios
 
-// Package ios is NSGo's UIKit backend: one UIView per node, CoreText text
-// measured on the engine goroutine and drawn on the main thread. It calls
-// UIKit through purego; Go itself needs cgo to link for iOS.
+// Package ios is NSGo's UIKit backend: one UIView per node, styled through
+// its CALayer, with text the engine laid out with CoreText drawn on the
+// main thread. It calls UIKit through purego; Go itself needs cgo to link
+// for iOS.
 package ios
 
 import (
 	"runtime"
+	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -23,15 +26,27 @@ func init() {
 	runtime.LockOSThread()
 }
 
+// longPressDelay is how long a touch is held before it is a long press.
+const longPressDelay = 500 * time.Millisecond
+
 // view is the Go side of one native view.
 type view struct {
-	surface   *surface
-	id        core.NodeID
-	pressable bool
-	pressing  bool
-	padding   core.Edges
-	text      *apple.Text
-	field     objc.ID // an input's UITextField
+	surface *surface
+	id      core.NodeID
+	kind    core.ViewKind
+	native  objc.ID
+	events  core.EventMask
+
+	pressing  atomic.Bool
+	longFired atomic.Bool
+
+	layout *apple.Layout // a text view's
+	box    core.Bounds
+
+	field    objc.ID // an input's UITextField
+	inset    core.Bounds
+	readonly bool
+	edits    uint32
 }
 
 type surface struct {
@@ -39,7 +54,7 @@ type surface struct {
 	native  objc.ID
 	engine  *engine.Engine
 	batches queue.Batches
-	views   []objc.ID // index is NodeID
+	views   []*view // index is NodeID
 }
 
 // views maps native objects to their Go side. Only the main thread uses it.
@@ -53,12 +68,13 @@ var (
 	sel = objc.RegisterName
 
 	selAlloc, selNew              = sel("alloc"), sel("new")
+	selRelease                    = sel("release")
 	selLayer                      = sel("layer")
-	selSetBackgroundColor         = sel("setBackgroundColor:")
-	selSetCornerRadius            = sel("setCornerRadius:")
 	selSetFrame, selBounds        = sel("setFrame:"), sel("bounds")
 	selAddSubview, selSuperview   = sel("addSubview:"), sel("superview")
-	selInsertSubview              = sel("insertSubview:atIndex:")
+	selInsertBelow                = sel("insertSubview:belowSubview:")
+	selRemoveFromSuperview        = sel("removeFromSuperview")
+	selSetHidden                  = sel("setHidden:")
 	selSetNeedsDisplay            = sel("setNeedsDisplay")
 	selSetNeedsLayout             = sel("setNeedsLayout")
 	selLocationInView             = sel("locationInView:")
@@ -66,22 +82,31 @@ var (
 	selText, selSetText           = sel("text"), sel("setText:")
 	selSetFont, selSetTextColor   = sel("setFont:"), sel("setTextColor:")
 	selSetPlaceholder             = sel("setPlaceholder:")
+	selSetTextAlignment           = sel("setTextAlignment:")
+	selSetSecure                  = sel("setSecureTextEntry:")
+	selSetKeyboardType            = sel("setKeyboardType:")
+	selSetEnabled                 = sel("setEnabled:")
+	selBecomeFirst, selResign     = sel("becomeFirstResponder"), sel("resignFirstResponder")
 	selApply                      = sel("nsgoApply:")
 	selChanged                    = sel("nsgoChanged:")
 	selPerformOnMain              = sel("performSelectorOnMainThread:withObject:waitUntilDone:")
 	selSetIsAccessibilityElement  = sel("setIsAccessibilityElement:")
 	selSetAccessibilityTraits     = sel("setAccessibilityTraits:")
 	selSetAccessibilityLabel      = sel("setAccessibilityLabel:")
+	selSetAccessibilityValue      = sel("setAccessibilityValue:")
+	selSetAccessibilityIdentifier = sel("setAccessibilityIdentifier:")
 	selIsEqualToString            = sel("isEqualToString:")
 	selSetContentMode             = sel("setContentMode:")
-	selSetClearBackground         = sel("setOpaque:")
+	selSetOpaque                  = sel("setOpaque:")
 	selInitWithFrame, selSetDeleg = sel("initWithFrame:"), sel("setDelegate:")
+	selContentOffset              = sel("contentOffset")
+	selSetContentSize             = sel("setContentSize:")
 
-	classView, classSurface, classInput objc.Class
+	classView, classSurface, classInput, classScroll objc.Class
 
 	uiGraphicsGetCurrentContext func() uintptr
 	uiApplicationMain           func(argc int, argv unsafe.Pointer, principal, delegate uintptr) int
-	accessibilityButton         uint64
+	traits                      = map[string]uint64{}
 )
 
 func loadUIKit() {
@@ -91,11 +116,13 @@ func loadUIKit() {
 	}
 	purego.RegisterLibFunc(&uiGraphicsGetCurrentContext, uikit, "UIGraphicsGetCurrentContext")
 	purego.RegisterLibFunc(&uiApplicationMain, uikit, "UIApplicationMain")
-	addr, err := purego.Dlsym(uikit, "UIAccessibilityTraitButton")
-	if err != nil {
-		panic(err)
+	for _, name := range []string{"Button", "Link", "Header", "Image", "StaticText", "Selected", "NotEnabled"} {
+		addr, err := purego.Dlsym(uikit, "UIAccessibilityTrait"+name)
+		if err != nil {
+			panic(err)
+		}
+		traits[name] = **(**uint64)(unsafe.Pointer(&addr))
 	}
-	accessibilityButton = **(**uint64)(unsafe.Pointer(&addr))
 
 	uiView := objc.GetClass("UIView")
 	common := []objc.MethodDef{
@@ -114,7 +141,13 @@ func loadUIKit() {
 		objc.MethodDef{Cmd: sel("layoutSubviews"), Fn: inputLayout},
 		objc.MethodDef{Cmd: selChanged, Fn: inputChanged},
 		objc.MethodDef{Cmd: sel("textFieldShouldReturn:"), Fn: inputReturn},
+		objc.MethodDef{Cmd: sel("textFieldShouldBeginEditing:"), Fn: inputShouldBegin},
+		objc.MethodDef{Cmd: sel("textFieldDidBeginEditing:"), Fn: inputBegan},
+		objc.MethodDef{Cmd: sel("textFieldDidEndEditing:"), Fn: inputEnded},
 	))
+	classScroll = register("NsgoScrollView", objc.GetClass("UIScrollView"),
+		[]*objc.Protocol{objc.GetProtocol("UIScrollViewDelegate")},
+		[]objc.MethodDef{{Cmd: sel("scrollViewDidScroll:"), Fn: scrolled}})
 	register("NsgoAppDelegate", objc.GetClass("UIResponder"),
 		[]*objc.Protocol{objc.GetProtocol("UIApplicationDelegate")},
 		[]objc.MethodDef{{Cmd: sel("application:didFinishLaunchingWithOptions:"),
@@ -158,12 +191,14 @@ func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID)
 	controller.Send(sel("setView:"), s.native)
 	window.Send(sel("setRootViewController:"), controller)
 	window.Send(sel("makeKeyAndVisible"))
-	s.engine = engine.Start(s, s.app, core.Size{Width: core.Points(bounds.Size.Width), Height: core.Points(bounds.Size.Height)})
+	s.engine = engine.Start(s, s.app, engine.Options{
+		Size: core.Size{Width: core.Points(bounds.Size.Width), Height: core.Points(bounds.Size.Height)},
+	})
 }
 
-// Measure implements core.TextEngine with CoreText.
-func (s *surface) Measure(text string, font core.Font, maxWidth core.Points) core.Size {
-	return apple.Measure(text, font, maxWidth)
+// Prepare implements core.TextEngine with CoreText.
+func (s *surface) Prepare(t *core.AttributedText) core.PreparedText {
+	return apple.TextEngine{}.Prepare(t)
 }
 
 // Mount implements engine.Platform.
@@ -176,136 +211,259 @@ func (s *surface) Mount(b *core.MountBatch) {
 func (s *surface) apply(b *core.MountBatch) {
 	for i := range b.Items {
 		it := &b.Items[i]
-		switch it.Kind {
-		case core.ItemCreate:
+		if it.Kind == core.ItemCreate {
 			for len(s.views) <= int(it.ID) {
-				s.views = append(s.views, 0)
+				s.views = append(s.views, nil)
 			}
-			s.views[it.ID] = s.create(it.Tag, it.ID)
-		case core.ItemProps:
-			s.props(s.views[it.ID], &it.Props)
+			s.views[it.ID] = s.create(it.View, it.ID)
+			continue
+		}
+		v := s.views[it.ID]
+		switch it.Kind {
+		case core.ItemDelete:
+			s.delete(v)
+		case core.ItemRemove:
+			v.native.Send(selRemoveFromSuperview)
 		case core.ItemInsert:
-			s.views[it.Parent].Send(selInsertSubview, s.views[it.ID], it.Index)
+			parent := s.views[it.Parent].native
+			if it.Before == 0 {
+				parent.Send(selAddSubview, v.native)
+			} else {
+				parent.Send(selInsertBelow, v.native, s.views[it.Before].native)
+			}
 		case core.ItemFrame:
 			f := it.Frame
-			s.views[it.ID].Send(selSetFrame, apple.Rect(float64(f.Origin.X), float64(f.Origin.Y),
+			v.native.Send(selSetFrame, apple.Rect(float64(f.Origin.X), float64(f.Origin.Y),
 				float64(f.Size.Width), float64(f.Size.Height)))
+		case core.ItemViewStyle:
+			apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, false)
+			v.native.Send(selSetHidden, it.ViewStyle.Hidden)
+		case core.ItemViewProps:
+			setAccessibility(v.native, it.ViewProps)
+		case core.ItemEvents:
+			v.events = it.Events
+		case core.ItemText:
+			v.layout.Release()
+			v.layout, _ = it.Text.Layout.(*apple.Layout)
+			v.box = it.Text.Content
+			v.native.Send(selSetAccessibilityLabel, apple.NSString(it.Text.Text))
+			v.native.Send(selSetNeedsDisplay)
+		case core.ItemInput:
+			v.configure(it.Input)
+		case core.ItemInputValue:
+			if v.edits <= it.Count {
+				value := apple.NSString(it.Value)
+				// Setting the text the field shows would move the caret.
+				if !objc.Send[bool](v.field.Send(selText), selIsEqualToString, value) {
+					v.field.Send(selSetText, value)
+				}
+			}
+		case core.ItemScrollConfig:
+			c := it.Scroll
+			v.native.Send(sel("setShowsVerticalScrollIndicator:"), !c.Horizontal && !c.HideIndicator)
+			v.native.Send(sel("setShowsHorizontalScrollIndicator:"), c.Horizontal && !c.HideIndicator)
+			v.native.Send(sel("setAlwaysBounceVertical:"), !c.Horizontal)
+			v.native.Send(sel("setAlwaysBounceHorizontal:"), c.Horizontal)
+		case core.ItemScrollContent:
+			v.native.Send(selSetContentSize, apple.CGSize{Width: float64(it.Size.Width), Height: float64(it.Size.Height)})
+		case core.ItemFocus:
+			if v.field != 0 {
+				v.field.Send(selBecomeFirst)
+			}
+		case core.ItemBlur:
+			if v.field != 0 {
+				v.field.Send(selResign)
+			}
 		}
 	}
-	if root := s.views[b.Root]; root.Send(selSuperview) != s.native {
-		s.native.Send(selAddSubview, root)
+	if root := s.views[b.Root]; root.native.Send(selSuperview) != s.native {
+		s.native.Send(selAddSubview, root.native)
 	}
 }
 
-func (s *surface) create(tag core.Tag, id core.NodeID) objc.ID {
-	v := &view{surface: s, id: id}
-	class := classView
-	if tag == core.TagInput {
-		class = classInput
-	}
-	native := objc.ID(class).Send(selNew)
-	native.Send(selSetClearBackground, false)
-	if tag == core.TagText {
-		const redraw = 3
-		native.Send(selSetContentMode, redraw)
-	}
-	if tag == core.TagInput {
+func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
+	v := &view{surface: s, id: id, kind: kind}
+	switch kind {
+	case core.KindScroll:
+		v.native = objc.ID(classScroll).Send(selNew)
+		v.native.Send(selSetDeleg, v.native)
+	case core.KindInput:
+		v.native = objc.ID(classInput).Send(selNew)
 		field := objc.ID(objc.GetClass("UITextField")).Send(selNew)
-		field.Send(selSetDeleg, native)
+		field.Send(selSetDeleg, v.native)
 		const editingChanged = 1 << 17
-		field.Send(sel("addTarget:action:forControlEvents:"), native, selChanged, uint(editingChanged))
-		native.Send(selAddSubview, field)
+		field.Send(sel("addTarget:action:forControlEvents:"), v.native, selChanged, uint(editingChanged))
+		v.native.Send(selAddSubview, field)
+		field.Send(selRelease)
 		v.field = field
+	default:
+		v.native = objc.ID(classView).Send(selNew)
+		if kind == core.KindText {
+			const redraw = 3
+			v.native.Send(selSetContentMode, redraw)
+		}
 	}
-	views[native] = v
-	return native
+	v.native.Send(selSetOpaque, false)
+	views[v.native] = v
+	return v
 }
 
-func (s *surface) props(native objc.ID, p *core.Props) {
-	v := views[native]
-	color := apple.CGColor(p.Background)
-	layer := native.Send(selLayer)
-	layer.Send(selSetBackgroundColor, color)
-	apple.Release(color)
-	layer.Send(selSetCornerRadius, float64(p.CornerRadius))
-	v.pressable = p.Pressable
-	v.padding = p.Padding
-	if p.Role == core.RoleButton {
-		native.Send(selSetIsAccessibilityElement, true)
-		native.Send(selSetAccessibilityTraits, accessibilityButton)
+func (s *surface) delete(v *view) {
+	v.native.Send(selRemoveFromSuperview)
+	v.layout.Release()
+	delete(views, v.native)
+	v.native.Send(selRelease)
+	s.views[v.id] = nil
+}
+
+// UIKit's text alignments.
+const uiAlignLeft, uiAlignCenter, uiAlignRight = 0, 1, 2
+
+// UIKeyboardType of each core keyboard type.
+var keyboards = map[core.KeyboardType]int{
+	core.KeyboardDefault: 0, core.KeyboardURL: 3, core.KeyboardNumber: 4,
+	core.KeyboardPhone: 5, core.KeyboardEmail: 7, core.KeyboardDecimal: 8,
+}
+
+func (v *view) configure(c *core.InputConfig) {
+	f := v.field
+	font := apple.Font(c.Style.Font)
+	f.Send(selSetFont, objc.ID(font))
+	apple.Release(font)
+	r, g, b, a := c.Style.Color.Components()
+	f.Send(selSetTextColor, objc.ID(objc.GetClass("UIColor")).Send(sel("colorWithRed:green:blue:alpha:"), r, g, b, a))
+	align := uiAlignLeft
+	switch c.Style.Align {
+	case core.TextAlignCenter:
+		align = uiAlignCenter
+	case core.TextAlignEnd:
+		align = uiAlignRight
 	}
-	switch {
-	case v.field != 0:
-		value := apple.NSString(p.Text)
-		// Setting the text the user just typed would move the caret.
-		if !objc.Send[bool](v.field.Send(selText), selIsEqualToString, value) {
-			v.field.Send(selSetText, value)
+	f.Send(selSetTextAlignment, align)
+	f.Send(selSetPlaceholder, apple.NSString(c.Placeholder))
+	f.Send(selSetSecure, c.Masked)
+	f.Send(selSetKeyboardType, keyboards[c.KeyboardType])
+	f.Send(selSetEnabled, !c.Disabled)
+	v.readonly = c.Readonly
+	v.inset = c.Content
+	v.native.Send(selSetNeedsLayout)
+}
+
+func setAccessibility(native objc.ID, p *core.ViewProps) {
+	if p.TestID != "" {
+		native.Send(selSetAccessibilityIdentifier, apple.NSString(p.TestID))
+	}
+	var t uint64
+	switch p.Role {
+	case core.RoleNone:
+		native.Send(selSetIsAccessibilityElement, false)
+		return
+	case core.RoleButton, core.RoleCheckbox, core.RoleSwitch, core.RoleRadio, core.RoleTab:
+		t = traits["Button"]
+	case core.RoleLink:
+		t = traits["Link"]
+	case core.RoleHeader:
+		t = traits["Header"]
+	case core.RoleImage:
+		t = traits["Image"]
+	case core.RoleText:
+		t = traits["StaticText"]
+	}
+	if p.Selected {
+		t |= traits["Selected"]
+	}
+	if p.Disabled {
+		t |= traits["NotEnabled"]
+	}
+	native.Send(selSetIsAccessibilityElement, true)
+	native.Send(selSetAccessibilityTraits, t)
+	if p.Label != "" {
+		native.Send(selSetAccessibilityLabel, apple.NSString(p.Label))
+	}
+	if p.Role == core.RoleCheckbox || p.Role == core.RoleSwitch || p.Role == core.RoleRadio {
+		value := "0"
+		if p.Checked || p.Selected {
+			value = "1"
 		}
-		font := apple.Font(p.Font)
-		v.field.Send(selSetFont, objc.ID(font))
-		apple.Release(font)
-		r, g, b, a := p.Color.Components()
-		v.field.Send(selSetTextColor, objc.ID(objc.GetClass("UIColor")).Send(sel("colorWithRed:green:blue:alpha:"), r, g, b, a))
-		v.field.Send(selSetPlaceholder, apple.NSString(p.Placeholder))
-		native.Send(selSetNeedsLayout)
-	case p.Font.Size > 0:
-		v.text.Free()
-		v.text = apple.NewText(p.Text, p.Font, p.Color)
-		native.Send(selSetIsAccessibilityElement, true)
-		native.Send(selSetAccessibilityLabel, apple.NSString(p.Text))
-		native.Send(selSetNeedsDisplay)
+		native.Send(selSetAccessibilityValue, apple.NSString(value))
 	}
+}
+
+func (v *view) dispatch(kind core.EventKind) {
+	if v.events.Has(kind) {
+		v.surface.engine.Dispatch(core.Event{Kind: kind, ID: v.id})
+	}
+}
+
+func (v *view) pressable() bool {
+	return v.events.Has(core.EventPress) || v.events.Has(core.EventLongPress) ||
+		v.events.Has(core.EventPressDown) || v.events.Has(core.EventPressUp)
 }
 
 func drawRect(self objc.ID, _ objc.SEL, dirty apple.CGRect) {
 	v := views[self]
-	if v == nil || v.text == nil {
+	if v == nil || v.layout == nil {
 		return
 	}
 	b := objc.Send[apple.CGRect](self, selBounds)
-	p := v.padding
-	v.text.Draw(uiGraphicsGetCurrentContext(), b.Size.Height, apple.Rect(float64(p.Left), float64(p.Top),
-		b.Size.Width-float64(p.Left+p.Right), b.Size.Height-float64(p.Top+p.Bottom)))
+	box := v.box
+	v.layout.Draw(uiGraphicsGetCurrentContext(), b.Size.Height, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y),
+		float64(box.Size.Width), float64(box.Size.Height)))
 }
 
 // Touches a view does not handle go up the responder chain to a pressable
 // ancestor.
 func touchesBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
-	if v := views[self]; v != nil && v.pressable {
-		v.pressing = true
+	v := views[self]
+	if v == nil || !v.pressable() {
+		self.SendSuper(cmd, touches, event)
 		return
 	}
-	self.SendSuper(cmd, touches, event)
+	v.pressing.Store(true)
+	v.longFired.Store(false)
+	v.dispatch(core.EventPressDown)
+	if v.events.Has(core.EventLongPress) {
+		e := v.surface.engine
+		time.AfterFunc(longPressDelay, func() {
+			if v.pressing.Load() && v.longFired.CompareAndSwap(false, true) {
+				e.Dispatch(core.Event{Kind: core.EventLongPress, ID: v.id})
+			}
+		})
+	}
 }
 
 func touchesCancelled(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
-	if v := views[self]; v != nil && v.pressable {
-		v.pressing = false
+	v := views[self]
+	if v == nil || !v.pressable() {
+		self.SendSuper(cmd, touches, event)
 		return
 	}
-	self.SendSuper(cmd, touches, event)
+	if v.pressing.Swap(false) {
+		v.dispatch(core.EventPressUp)
+	}
 }
 
 func touchesEnded(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	v := views[self]
-	if v == nil || !v.pressable {
+	if v == nil || !v.pressable() {
 		self.SendSuper(cmd, touches, event)
 		return
 	}
 	p := objc.Send[apple.CGPoint](touches.Send(selAnyObject), selLocationInView, self)
 	b := objc.Send[apple.CGRect](self, selBounds)
-	if v.pressing && p.X >= 0 && p.Y >= 0 && p.X < b.Size.Width && p.Y < b.Size.Height {
-		v.surface.engine.Press(v.id)
+	pressed := v.pressing.Swap(false)
+	v.dispatch(core.EventPressUp)
+	if pressed && !v.longFired.Load() && p.X >= 0 && p.Y >= 0 && p.X < b.Size.Width && p.Y < b.Size.Height {
+		v.dispatch(core.EventPress)
 	}
-	v.pressing = false
 }
 
 func accessibilityActivate(self objc.ID, _ objc.SEL) bool {
 	v := views[self]
-	if v == nil || !v.pressable {
+	if v == nil || !v.events.Has(core.EventPress) {
 		return false
 	}
-	v.surface.engine.Press(v.id)
+	v.dispatch(core.EventPress)
 	return true
 }
 
@@ -327,21 +485,48 @@ func surfaceApply(self objc.ID, _ objc.SEL, _ objc.ID) {
 func inputLayout(self objc.ID, cmd objc.SEL) {
 	self.SendSuper(cmd)
 	v := views[self]
-	b := objc.Send[apple.CGRect](self, selBounds)
-	p := v.padding
-	v.field.Send(selSetFrame, apple.Rect(float64(p.Left), float64(p.Top),
-		max(b.Size.Width-float64(p.Left+p.Right), 0), max(b.Size.Height-float64(p.Top+p.Bottom), 0)))
+	in := v.inset
+	v.field.Send(selSetFrame, apple.Rect(float64(in.Origin.X), float64(in.Origin.Y),
+		float64(in.Size.Width), float64(in.Size.Height)))
 }
 
 func inputChanged(self objc.ID, _ objc.SEL, field objc.ID) {
 	if v := views[self]; v != nil {
-		v.surface.engine.Change(v.id, apple.GoString(field.Send(selText)))
+		v.edits++
+		v.surface.engine.Dispatch(core.Event{Kind: core.EventChangeText, ID: v.id,
+			Text: apple.GoString(field.Send(selText)), Count: v.edits})
 	}
 }
 
 func inputReturn(self objc.ID, _ objc.SEL, field objc.ID) bool {
 	if v := views[self]; v != nil {
-		v.surface.engine.Submit(v.id, apple.GoString(field.Send(selText)))
+		v.surface.engine.Dispatch(core.Event{Kind: core.EventSubmitEditing, ID: v.id,
+			Text: apple.GoString(field.Send(selText))})
 	}
 	return true
+}
+
+func inputShouldBegin(self objc.ID, _ objc.SEL, _ objc.ID) bool {
+	v := views[self]
+	return v == nil || !v.readonly
+}
+
+func inputBegan(self objc.ID, _ objc.SEL, _ objc.ID) {
+	if v := views[self]; v != nil {
+		v.dispatch(core.EventFocus)
+	}
+}
+
+func inputEnded(self objc.ID, _ objc.SEL, _ objc.ID) {
+	if v := views[self]; v != nil {
+		v.dispatch(core.EventBlur)
+	}
+}
+
+func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
+	if v := views[self]; v != nil && v.events.Has(core.EventScroll) {
+		o := objc.Send[apple.CGPoint](self, selContentOffset)
+		v.surface.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id,
+			Point: core.Point{X: core.Points(o.X), Y: core.Points(o.Y)}})
+	}
 }

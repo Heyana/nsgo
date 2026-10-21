@@ -1,6 +1,6 @@
 # NSGo architecture
 
-NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles and layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views. A minimal version renders text, inputs and buttons; sections below say what exists and what is planned.
+NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles, layout and text layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views. Views, text, text fields, scroll views and keyed lists exist today; sections below say what exists and what is planned.
 
 ## Reference implementation
 
@@ -21,14 +21,15 @@ Packages mirror NSH's crates:
 
 | Package | NSH counterpart | Responsibility |
 | --- | --- | --- |
-| `core` | `nsh-core` | Geometry, styles, reactive graph, elements, shadow tree, flex layout, mount items |
+| `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, flexbox, text, mount items |
 | `base` | `nsh-base` | Unstyled base components; `Button` today |
-| `engine` | `nsh-engine` | Engine goroutine: runs the app, commits, hands each batch to the platform |
+| `engine` | `nsh-engine` | Engine goroutine: an unbounded mailbox, commits, one batch per commit to the platform |
+| `nsgotest` | `nsh-testing` | Headless app tests: approximate text, a manual clock, selectors over a model of the views |
 | `platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
-| `platform/internal/apple` | Shared Apple code | CoreFoundation, CoreGraphics and CoreText through purego |
+| `platform/internal/apple` | Shared Apple code | CoreFoundation, CALayer styling and the CoreText text engine through purego |
 | `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags; the tool sets name and window size |
 | `cmd/nsgo` | `nsh-cli` | `nsgo dev` and `nsgo build`, driven by an app's `nsgo.yaml` |
-| `examples/hello` | `examples/counter` | Text, input and button in one main package |
+| `examples/hello` | `examples/counter` | A todo list: text, input, button, scroll view and keyed list, with a headless test |
 
 ## Platforms
 
@@ -51,9 +52,11 @@ Android runs the app as a second process because Go builds Android shared librar
 - `base` depends on `core` only. Styled component libraries are never part of NSGo; apps build their own on `base`.
 - Backends call system APIs through purego or `syscall`, never hand-written C.
 - The platform main thread never waits for the engine. The engine never touches main-thread-only UI objects.
+- The reactive graph belongs to the engine goroutine and never locks; other goroutines reach it through `Scope.Post`.
 - Text is prepared and laid out on the engine side through a platform `TextEngine`; the main thread only draws the result.
 - One engine is one app instance with no global state, so a host app can embed several.
 - Keep NSH's public names and semantics unless Go requires otherwise, so NSH's documentation stays a usable reference.
+- Apps are written in Go. The shadow tree's operations are the reserved entry for a TSX runtime, which does not exist yet.
 
 ## Tool
 
@@ -66,20 +69,19 @@ Android runs the app as a second process because Go builds Android shared librar
 
 ## Core flows
 
-**Render.** App components run once and bind signals to element props. A change marks the shadow tree, `commit` recomputes layout and diffs frames, and the result is one `MountBatch`.
+**Render.** Components run once and bind signals to element parts; regions (`Show`, `Each`, `Dynamic`, `Catch`) rebuild only their span. A commit resolves styles, prepares text, lays out and sends what changed as one `MountBatch` ([core](docs/architecture/core.md)).
 
 **Mount.** The platform receives the batch with a single hop to its main thread and applies the items in order to native views.
 
-**Input.** Native gestures become engine events, run the handlers on the engine side and lead to the next commit.
+**Input.** Native gestures become engine events, queued without blocking, run the handlers on the engine side and lead to the next commit.
 
 ## Open questions
 
-- Whether NSGo keeps NSH's TSX and dynamically delivered modules, or supports Go apps only.
-- Whether `core`'s small flexbox grows into a full one or gives way to a Go port of Taffy.
+- How `core` gets grid layout: an implementation beside its flexbox, or a Go port of Taffy replacing both.
 
 ## Verification
 
-`core` has headless Go tests for signals, layout and commits. Backends need a run on their target: screenshots of the window, simulator or headless browser, and input where it can be simulated.
+`core` and `engine` have headless Go tests for the graph, layout, regions, commits and the mailbox; apps test themselves with `nsgotest`, as `examples/hello` does. Backends need a run on their target: screenshots of the window, simulator or headless browser, and input where it can be simulated.
 
 ## Subjects
 
@@ -87,3 +89,4 @@ Subjects go in `docs/architecture/` once a subsystem has a lasting design.
 
 | Document | When to read |
 | --- | --- |
+| [Core](docs/architecture/core.md) | Changing the reactive graph, elements, regions, commit, text or the mount protocol |

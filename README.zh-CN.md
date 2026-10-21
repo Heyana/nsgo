@@ -8,7 +8,7 @@ NSGo 参考 [Native Shell（NSH）](https://nsh.dev) 的设计，NSH 用 Rust �
 
 ## 状态
 
-NSGo 处于早期阶段。最小引擎已能在 macOS、iOS 和 Web 上渲染文本、输入框和按钮；Windows 可以编译但未测试，Android 正在开发，Linux 尚未开始。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
+NSGo 处于早期阶段。引擎已能在 macOS、iOS 和 Web 上以 flexbox 布局渲染视图、文本、输入框、滚动视图和带 key 的列表；Windows 可以编译但未测试，Android 正在开发，Linux 尚未开始。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
 
 ## 目标
 
@@ -19,7 +19,43 @@ NSGo 处于早期阶段。最小引擎已能在 macOS、iOS 和 Web 上渲染文
 
 ## 用法
 
-一个应用是调用 `nsgo.Run` 的 Go main 包，旁边放一个 `nsgo.yaml`：
+一个应用是调用 `nsgo.Run` 的 Go main 包。组件是返回元素的函数或类型；signal 变化时，读取它的地方随之更新：
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"github.com/oneo-me/nsgo"
+	"github.com/oneo-me/nsgo/base"
+	"github.com/oneo-me/nsgo/core"
+)
+
+func Root(cx *core.Scope) core.Node {
+	count := core.NewSignal(cx, 0)
+	return core.View{Style: core.Style{Padding: core.All(24), Gap: 12}, Children: []core.Node{
+		core.Text{ContentFunc: func() string { return fmt.Sprintf("Pressed %d times", count.Get()) }},
+		base.Button{OnPress: func() { count.Update(func(n int) int { return n + 1 }) }, Children: []core.Node{
+			core.Text{Content: "Press me"},
+		}},
+	}}
+}
+
+func main() { nsgo.Run(Root) }
+```
+
+用 `nsgotest` 无窗口地测试它：
+
+```go
+func TestPress(t *testing.T) {
+	app := nsgotest.Start(t, Root)
+	app.Press("text:Press me")
+	app.Find("text:Pressed 1 times")
+}
+```
+
+在包旁边放一个 `nsgo.yaml`，写明应用名称和目标平台：
 
 ```yaml
 name: Hello

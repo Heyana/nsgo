@@ -1,41 +1,167 @@
 package dev.oneo.nsgo;
 
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.text.Layout;
+import android.text.SpannableString;
+import android.text.Spanned;
 import android.text.StaticLayout;
 import android.text.TextPaint;
+import android.text.TextUtils;
+import android.text.style.LineHeightSpan;
+import android.view.Gravity;
+import java.io.DataInputStream;
+import java.io.IOException;
 
-/** Text measured on the reader thread and drawn on the UI thread, both with StaticLayout. */
+/**
+ * Text the engine prepares, measures and lays out on the reader thread, all
+ * with StaticLayout; the UI thread only draws the final layouts. Lengths
+ * here are pixels.
+ */
 final class Text {
     private Text() {}
 
-    static TextPaint paint(float sizePx, int weight, int argb) {
-        TextPaint paint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
-        paint.setTextSize(sizePx);
-        paint.setTypeface(Typeface.create(Typeface.DEFAULT, weight, false));
-        paint.setColor(argb);
-        return paint;
-    }
+    /** A resolved text style, as android.go's writeStyle writes it. */
+    static final class Style {
+        final String family;
+        final float size;
+        final int weight;
+        final int color;
+        final float lineHeight;
+        final float letterSpacing;
+        final int align;
+        final boolean italic, underline, lineThrough;
 
-    /** Lays text out at maxWidthPx, or on one line per paragraph when it is negative. */
-    static StaticLayout layout(String text, TextPaint paint, float maxWidthPx) {
-        int width = maxWidthPx < 0
-                ? (int) Math.ceil(Layout.getDesiredWidth(text, paint))
-                : (int) Math.ceil(maxWidthPx);
-        return StaticLayout.Builder.obtain(text, 0, text.length(), paint, Math.max(width, 1))
-                .setIncludePad(false)
-                .build();
-    }
-
-    /** The size of text in pixels, the widest line and the full height. */
-    static float[] measure(String text, float sizePx, int weight, float maxWidthPx) {
-        StaticLayout layout = layout(text, paint(sizePx, weight, 0), maxWidthPx);
-        float width = 0;
-        for (int i = 0; i < layout.getLineCount(); i++) {
-            width = Math.max(width, layout.getLineWidth(i));
+        Style(DataInputStream in, float density) throws IOException {
+            family = Protocol.readString(in);
+            size = in.readFloat() * density;
+            weight = in.readUnsignedShort();
+            color = argb(in.readInt());
+            lineHeight = in.readFloat() * density;
+            letterSpacing = in.readFloat() * density;
+            align = in.readUnsignedByte();
+            int flags = in.readUnsignedByte();
+            italic = Protocol.flag(flags, 0);
+            underline = Protocol.flag(flags, 1);
+            lineThrough = Protocol.flag(flags, 2);
         }
-        if (text.isEmpty()) width = 0;
-        return new float[] {(float) Math.ceil(width), layout.getHeight()};
+
+        Typeface typeface() {
+            Typeface base = family.isEmpty() ? Typeface.DEFAULT : Typeface.create(family, Typeface.NORMAL);
+            return Typeface.create(base, Math.max(1, Math.min(weight, 1000)), italic);
+        }
+
+        /** The letter spacing in ems, as Paint takes it. */
+        float letterSpacingEm() {
+            return size > 0 ? letterSpacing / size : 0;
+        }
+
+        /** The paint flags of the decoration, over the other bits of flags. */
+        int paintFlags(int flags) {
+            flags &= ~(Paint.UNDERLINE_TEXT_FLAG | Paint.STRIKE_THRU_TEXT_FLAG);
+            if (underline) flags |= Paint.UNDERLINE_TEXT_FLAG;
+            if (lineThrough) flags |= Paint.STRIKE_THRU_TEXT_FLAG;
+            return flags;
+        }
+
+        TextPaint paint() {
+            TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+            paint.setTextSize(size);
+            paint.setTypeface(typeface());
+            paint.setColor(color);
+            paint.setLetterSpacing(letterSpacingEm());
+            paint.setFlags(paintFlags(paint.getFlags()));
+            return paint;
+        }
+
+        Layout.Alignment alignment() {
+            switch (align) {
+                case Protocol.ALIGN_CENTER: return Layout.Alignment.ALIGN_CENTER;
+                case Protocol.ALIGN_END: return Layout.Alignment.ALIGN_OPPOSITE;
+                default: return Layout.Alignment.ALIGN_NORMAL;
+            }
+        }
+
+        /** The horizontal gravity of a text field. */
+        int gravity() {
+            switch (align) {
+                case Protocol.ALIGN_CENTER: return Gravity.CENTER_HORIZONTAL;
+                case Protocol.ALIGN_END: return Gravity.END;
+                default: return Gravity.START;
+            }
+        }
+    }
+
+    /** Text prepared once, then measured at any width and laid out at its final size. */
+    static final class Prepared {
+        private final CharSequence text;
+        private final TextPaint paint;
+        private final Layout.Alignment align;
+        private final int maxLines;
+
+        Prepared(String text, Style style, int maxLines) {
+            if (style.lineHeight > 0) {
+                SpannableString spanned = new SpannableString(text);
+                spanned.setSpan(new LineHeight(Math.round(style.lineHeight)), 0, text.length(),
+                        Spanned.SPAN_INCLUSIVE_INCLUSIVE);
+                this.text = spanned;
+            } else {
+                this.text = text;
+            }
+            this.paint = style.paint();
+            this.align = style.alignment();
+            this.maxLines = maxLines;
+        }
+
+        /** The size of the text wrapped at maxWidth, or unwrapped when it is NaN. */
+        float[] measure(float maxWidth) {
+            StaticLayout layout = build(maxWidth, paint);
+            int lines = layout.getLineCount();
+            if (maxLines > 0) lines = Math.min(lines, maxLines);
+            float width = 0;
+            for (int i = 0; i < lines; i++) {
+                width = Math.max(width, layout.getLineWidth(i));
+            }
+            if (text.length() == 0) width = 0;
+            return new float[] {(float) Math.ceil(width), layout.getLineTop(lines)};
+        }
+
+        /** The final layout at width, with a paint of its own for the UI thread. */
+        StaticLayout layout(float width) {
+            return build(width, new TextPaint(paint));
+        }
+
+        private StaticLayout build(float width, TextPaint paint) {
+            // The width came back from points, so allow for rounding below
+            // a measured width before wrapping at it.
+            int px = Float.isNaN(width)
+                    ? (int) Math.ceil(Layout.getDesiredWidth(text, paint))
+                    : (int) Math.ceil(width - 0.01f);
+            StaticLayout.Builder b = StaticLayout.Builder.obtain(text, 0, text.length(), paint, Math.max(px, 1))
+                    .setAlignment(align)
+                    .setIncludePad(false);
+            if (maxLines > 0) b.setMaxLines(maxLines).setEllipsize(TextUtils.TruncateAt.END);
+            return b.build();
+        }
+    }
+
+    /** Gives every line the same height, the glyphs centered in it as in CSS. */
+    private static final class LineHeight implements LineHeightSpan {
+        private final int height;
+
+        LineHeight(int height) {
+            this.height = height;
+        }
+
+        @Override
+        public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
+                Paint.FontMetricsInt fm) {
+            int extra = height - (fm.descent - fm.ascent);
+            fm.ascent -= extra / 2;
+            fm.descent += extra - extra / 2;
+            fm.top = fm.ascent;
+            fm.bottom = fm.descent;
+        }
     }
 
     static int argb(int rgba) {

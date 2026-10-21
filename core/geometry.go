@@ -1,5 +1,5 @@
 // Package core is NSGo's platform-independent core: geometry, styles, the
-// reactive graph, elements, the shadow tree, layout and mount items.
+// reactive graph, elements, the shadow tree, layout, text and mount items.
 //
 // It never imports a platform package or cgo, so it builds and tests
 // headless on every OS.
@@ -11,7 +11,8 @@ import "math"
 // CSS pixels at a zoom of 1).
 type Points float32
 
-// Auto marks a dimension the layout computes.
+// Auto marks a length the layout computes, such as a text engine's
+// unbounded width. Styles use [Length] instead.
 var Auto = Points(float32(math.NaN()))
 
 // IsAuto reports whether p is Auto.
@@ -46,11 +47,64 @@ func Symmetric(vertical, horizontal Points) Edges {
 	return Edges{vertical, horizontal, vertical, horizontal}
 }
 
-// Color is an sRGB color packed as 0xRRGGBBAA, the wire form of mount items.
+func (e Edges) horizontal() Points { return e.Left + e.Right }
+func (e Edges) vertical() Points   { return e.Top + e.Bottom }
+
+func (e Edges) add(o Edges) Edges {
+	return Edges{e.Top + o.Top, e.Right + o.Right, e.Bottom + o.Bottom, e.Left + o.Left}
+}
+
+// Length is a style's length. Its zero value is auto: the layout decides.
+type Length struct {
+	value float32
+	unit  unit
+}
+
+type unit uint8
+
+const (
+	unitAuto unit = iota
+	unitPoints
+	unitPercent
+)
+
+// Pt returns a length in points.
+func Pt(p Points) Length { return Length{float32(p), unitPoints} }
+
+// Pct returns a length in percent of the containing block's size.
+func Pct(percent float32) Length { return Length{percent, unitPercent} }
+
+// IsAuto reports whether l is auto.
+func (l Length) IsAuto() bool { return l.unit == unitAuto }
+
+// resolve returns l in points against base, or Auto. A percentage of an
+// unknown base is Auto.
+func (l Length) resolve(base Points) Points {
+	switch l.unit {
+	case unitPoints:
+		return Points(l.value)
+	case unitPercent:
+		if base.IsAuto() {
+			return Auto
+		}
+		return base * Points(l.value) / 100
+	}
+	return Auto
+}
+
+// Color is an sRGB color packed as 0xRRGGBBAA, the wire form of mount
+// items. Its zero value is unset: no background, or text color inherited
+// from the parent.
 type Color uint32
 
 // RGB returns an opaque color from 0xRRGGBB.
 func RGB(hex uint32) Color { return Color(hex<<8 | 0xff) }
+
+// RGBA returns a color from 0xRRGGBB and an alpha from 0 to 1.
+func RGBA(hex uint32, alpha float32) Color {
+	a := uint32(min(max(alpha, 0), 1)*255 + 0.5)
+	return Color(hex<<8 | a)
+}
 
 // Components returns the red, green, blue and alpha channels from 0 to 1.
 func (c Color) Components() (r, g, b, a float64) {

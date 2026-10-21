@@ -8,7 +8,7 @@ NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the
 
 ## Status
 
-NSGo is early. A minimal engine renders text, text inputs and buttons on macOS, iOS and the web; Windows builds but is untested, Android is in progress and Linux is planned. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
+NSGo is early. The engine renders views, text, text fields, scroll views and keyed lists with flexbox layout on macOS, iOS and the web; Windows builds but is untested, Android is in progress and Linux is planned. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
 
 ## Goals
 
@@ -19,7 +19,43 @@ NSGo is early. A minimal engine renders text, text inputs and buttons on macOS, 
 
 ## Usage
 
-An app is a Go main package that calls `nsgo.Run` and an `nsgo.yaml` beside it:
+An app is a Go main package that calls `nsgo.Run`. Components are functions or types that return elements; signals update what reads them:
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"github.com/oneo-me/nsgo"
+	"github.com/oneo-me/nsgo/base"
+	"github.com/oneo-me/nsgo/core"
+)
+
+func Root(cx *core.Scope) core.Node {
+	count := core.NewSignal(cx, 0)
+	return core.View{Style: core.Style{Padding: core.All(24), Gap: 12}, Children: []core.Node{
+		core.Text{ContentFunc: func() string { return fmt.Sprintf("Pressed %d times", count.Get()) }},
+		base.Button{OnPress: func() { count.Update(func(n int) int { return n + 1 }) }, Children: []core.Node{
+			core.Text{Content: "Press me"},
+		}},
+	}}
+}
+
+func main() { nsgo.Run(Root) }
+```
+
+Test it headless with `nsgotest`, no window needed:
+
+```go
+func TestPress(t *testing.T) {
+	app := nsgotest.Start(t, Root)
+	app.Press("text:Press me")
+	app.Find("text:Pressed 1 times")
+}
+```
+
+Beside the package, `nsgo.yaml` names the app and its targets:
 
 ```yaml
 name: Hello
