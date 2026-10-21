@@ -1,0 +1,9 @@
+tasks:
+  - label: Run
+    group: run
+    command: go
+    args: [tool, nsgo, dev, examples/hello]
+  - label: Build
+    group: build
+    command: go
+    args: [tool, nsgo, build, examples/hello]
