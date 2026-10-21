@@ -1,0 +1,3 @@
+# Reference checkout of Native Shell (Rust); read locally, never committed
+/nsh/
+.DS_Store
