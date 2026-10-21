@@ -8,7 +8,7 @@ NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the
 
 ## Status
 
-NSGo is in the design stage. There is no code, release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md) describes the target design.
+NSGo is early. A minimal engine renders text, text inputs and buttons on macOS, iOS and the web; Windows builds but is untested, Android is in progress and Linux is planned. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
 
 ## Goals
 
@@ -19,7 +19,17 @@ NSGo is in the design stage. There is no code, release or stable API yet. [ARCHI
 
 ## Development
 
-Requirements: Go 1.25 or later.
+Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed for any target.
+
+Run the example from the repository root:
+
+```sh
+go run ./examples/hello/macos                                        # macOS window
+scripts/ios-sim.sh ./examples/hello/ios dev.oneo.nsgo.hello Hello    # iOS simulator
+scripts/web.sh ./examples/hello/web                                  # static site in .nsgo/web
+GOOS=windows go build ./examples/hello/windows                       # Windows executable
+go test ./...
+```
 
 NSGo uses NSH as its reference implementation. Clone it into `nsh/` at the repository root; Git ignores that directory:
 

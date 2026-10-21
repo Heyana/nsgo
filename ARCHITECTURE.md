@@ -1,6 +1,6 @@
 # NSGo architecture
 
-NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles and layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views. This document describes the target design; nothing here is implemented yet.
+NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles and layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views. A minimal version renders text, inputs and buttons; sections below say what exists and what is planned.
 
 ## Reference implementation
 
@@ -17,20 +17,38 @@ Port the design, not the code line by line. Where Go idioms differ from Rust, fo
 
 ## Code map
 
-Planned packages, mirroring NSH's crates:
+Packages mirror NSH's crates:
 
 | Package | NSH counterpart | Responsibility |
 | --- | --- | --- |
-| `core` | `nsh-core` | Geometry, styles, shadow tree, layout, text merging, reactive graph, mount items |
-| `base` | `nsh-base` | Unstyled base components: navigation, dialogs, controls, safe areas |
-| `engine` | `nsh-engine` | Engine goroutine: runs the app, commits, hands one batch per frame to the platform |
-| `platform/<os>` | `nsh-platform-*` | Native view mounting, text engine, input and the app view for one platform |
-| `cmd/nsgo` | `nsh-cli` | Build, run and package apps |
+| `core` | `nsh-core` | Geometry, styles, reactive graph, elements, shadow tree, flex layout, mount items |
+| `base` | `nsh-base` | Unstyled base components; `Button` today |
+| `engine` | `nsh-engine` | Engine goroutine: runs the app, commits, hands each batch to the platform |
+| `platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
+| `platform/internal/apple` | Shared Apple code | CoreFoundation, CoreGraphics and CoreText through purego |
+| `examples/hello` | `examples/counter` | Text, input and button; one `main` package per target |
+| `scripts` | `nsh run`, `nsh package` | Build and run helpers until `cmd/nsgo` exists |
+
+## Platforms
+
+Every target builds on macOS with Go, and iOS also with Xcode. No backend contains hand-written C.
+
+| Target | Package | Reaches the system through | Status |
+| --- | --- | --- | --- |
+| macOS | `platform/macos` | purego and the Objective-C runtime; `CGO_ENABLED=0` | Runs |
+| iOS | `platform/ios` | The same; cgo only because Go links iOS with Xcode's linker | Runs in the simulator |
+| Web | `platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
+| Windows | `platform/windows` | `syscall`: Win32 window drawn with GDI, native EDIT inputs | Builds, never run |
+| Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Builds; runtime `classes.dex` and APK packaging pending |
+| Linux | — | Planned: GTK 4 through purego | Not started |
+
+Android runs the app as a second process because Go builds Android shared libraries only with cgo and the NDK. Without cgo, Go builds Android executables for arm64 only, so 32-bit devices and x86_64 emulators are out of reach. iOS forbids child processes, so it links in-process with Xcode instead.
 
 ## Boundaries
 
 - `core` never imports `engine`, `platform` or any cgo package. It stays pure Go and testable headless.
 - `base` depends on `core` only. Styled component libraries are never part of NSGo; apps build their own on `base`.
+- Backends call system APIs through purego or `syscall`, never hand-written C.
 - The platform main thread never waits for the engine. The engine never touches main-thread-only UI objects.
 - Text is prepared and laid out on the engine side through a platform `TextEngine`; the main thread only draws the result.
 - One engine is one app instance with no global state, so a host app can embed several.
@@ -46,14 +64,12 @@ Planned packages, mirroring NSH's crates:
 
 ## Open questions
 
-- How Go reaches each platform: cgo with a C ABI, gomobile for iOS and Android, or a per-platform mix.
-- Which layout engine to use: a Go port of Taffy or an existing Go flexbox implementation.
 - Whether NSGo keeps NSH's TSX and dynamically delivered modules, or supports Go apps only.
-- The web target: Go compiled to WebAssembly, and its binary size.
+- Whether `core`'s small flexbox grows into a full one or gives way to a Go port of Taffy.
 
 ## Verification
 
-There are no tests yet. `core` must be covered by headless Go tests; platform backends need manual review on each OS.
+`core` has headless Go tests for signals, layout and commits. Backends need a run on their target: screenshots of the window, simulator or headless browser, and input where it can be simulated.
 
 ## Subjects
 

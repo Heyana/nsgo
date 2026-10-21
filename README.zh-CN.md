@@ -8,7 +8,7 @@ NSGo 参考 [Native Shell（NSH）](https://nsh.dev) 的设计，NSH 用 Rust �
 
 ## 状态
 
-NSGo 处于设计阶段，还没有代码、发布版本或稳定的 API。[ARCHITECTURE.md](ARCHITECTURE.md) 描述目标设计。
+NSGo 处于早期阶段。最小引擎已能在 macOS、iOS 和 Web 上渲染文本、输入框和按钮；Windows 可以编译但未测试，Android 正在开发，Linux 尚未开始。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
 
 ## 目标
 
@@ -19,7 +19,17 @@ NSGo 处于设计阶段，还没有代码、发布版本或稳定的 API。[ARCH
 
 ## 开发
 
-要求：Go 1.25 或更高版本。
+要求：装有 Xcode 的 macOS，以及 Go 1.25 或更高版本。任何目标平台都不需要其他工具。
+
+在仓库根目录运行示例：
+
+```sh
+go run ./examples/hello/macos                                        # macOS window
+scripts/ios-sim.sh ./examples/hello/ios dev.oneo.nsgo.hello Hello    # iOS simulator
+scripts/web.sh ./examples/hello/web                                  # static site in .nsgo/web
+GOOS=windows go build ./examples/hello/windows                       # Windows executable
+go test ./...
+```
 
 NSGo 以 NSH 作为参考实现。将它克隆到仓库根目录的 `nsh/`，Git 会忽略该目录：
 
