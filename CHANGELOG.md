@@ -8,4 +8,5 @@
 - Add `nsgotest` for headless app tests.
 - Add the `nsgo` tool with `dev` and `build`, configured by `nsgo.yaml`.
 - Add `nsgo build` opening its output directory, unless `build.open` is false.
+- Add `dev.hot_reload` to rebuild on save, since `nsgo dev` now runs the app once and exits with it.
 - Add a layered app icon.

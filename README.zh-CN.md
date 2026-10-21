@@ -63,7 +63,8 @@ id: dev.oneo.nsgo.hello
 version: 0.1.0
 window: { width: 420, height: 560 }
 dev:
-  target: native        # native, web or ios_simulator
+  target: native        # native, web 或 ios_simulator
+  hot_reload: false     # 只运行一次，应用退出后 dev 也随之退出；true 则在保存后重新编译并重启
 build:
   output: dist          # 构建产物位于 dist/<name>-<version>-<target>
   open: true            # 构建后打开输出目录
@@ -76,7 +77,7 @@ build:
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` 运行应用，并在源文件变化时重新编译。`go tool nsgo build` 为每个目标输出一个去除符号的发布包，并打开输出目录，除非 `build.open` 为 `false`。
+`go tool nsgo dev` 运行一次应用，应用退出后随之退出。将 `dev.hot_reload` 设为 `true`，源文件变化时会重新编译并重启。`go tool nsgo build` 为每个目标输出一个去除符号的发布包，并打开输出目录，除非 `build.open` 为 `false`。
 
 ## 开发
 
@@ -85,8 +86,8 @@ go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 在仓库根目录运行示例：
 
 ```sh
-go tool nsgo dev examples/hello                     # nsgo.yaml's dev target, rebuilt on save
-go tool nsgo dev -target web examples/hello         # in the browser, reloaded on save
+go tool nsgo dev examples/hello                     # nsgo.yaml's dev target, exiting with the app
+go tool nsgo dev -target web examples/hello         # in the browser, serving until interrupted
 go tool nsgo dev -target ios_simulator examples/hello
 go tool nsgo build examples/hello                   # release packages in examples/hello/dist
 go test ./...

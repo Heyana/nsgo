@@ -64,6 +64,7 @@ version: 0.1.0
 window: { width: 420, height: 560 }
 dev:
   target: native        # native, web or ios_simulator
+  hot_reload: false     # run once and exit with the app; true rebuilds and restarts on save
 build:
   output: dist          # packages go to dist/<name>-<version>-<target>
   open: true            # open the output directory after building
@@ -76,7 +77,7 @@ Add the tool to your module once; `go tool nsgo` then runs it without installing
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` runs the app and rebuilds it when a source file changes. `go tool nsgo build` writes a stripped release package per target and opens the output directory, unless `build.open` is `false`.
+`go tool nsgo dev` runs the app once and exits when the app does. Set `dev.hot_reload` to `true` to rebuild and restart it when a source file changes. `go tool nsgo build` writes a stripped release package per target and opens the output directory, unless `build.open` is `false`.
 
 ## Development
 
@@ -85,8 +86,8 @@ Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed for 
 Run the example from the repository root:
 
 ```sh
-go tool nsgo dev examples/hello                     # nsgo.yaml's dev target, rebuilt on save
-go tool nsgo dev -target web examples/hello         # in the browser, reloaded on save
+go tool nsgo dev examples/hello                     # nsgo.yaml's dev target, exiting with the app
+go tool nsgo dev -target web examples/hello         # in the browser, serving until interrupted
 go tool nsgo dev -target ios_simulator examples/hello
 go tool nsgo build examples/hello                   # release packages in examples/hello/dist
 go test ./...

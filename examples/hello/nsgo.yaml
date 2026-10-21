@@ -9,6 +9,8 @@ window:
 dev:
   # native: this machine's backend; web: the browser; ios_simulator.
   target: native
+  # false, the default, runs once and exits with the app; true rebuilds on save.
+  hot_reload: false
 
 build:
   output: dist

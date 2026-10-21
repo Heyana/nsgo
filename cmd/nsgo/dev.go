@@ -16,42 +16,58 @@ import (
 )
 
 // session is how dev builds and shows one target. start runs after each
-// successful build and returns what stops the running app.
+// successful build and returns the running app.
 type session struct {
 	build func(ctx context.Context, p *project) error
-	start func(ctx context.Context, p *project) (stop func(), err error)
+	start func(ctx context.Context, p *project) (app, error)
 }
 
-// dev builds and runs the app, then rebuilds and restarts it whenever a
-// Go file it compiles from, go.mod or nsgo.yaml changes. A failed build
-// keeps the running app.
+// app is one started dev app. stop ends it, and wait returns once it has
+// exited, reporting a failure. The web target only serves, so its wait is
+// nil.
+type app struct {
+	stop func()
+	wait func(context.Context) error
+}
+
+// devOptions are nsgo dev's flags; the rest comes from nsgo.yaml.
 type devOptions struct {
 	target string // overrides nsgo.yaml's dev.target
 	port   int    // the web target's
 	open   bool   // whether to open the web target in the browser
 }
 
+// dev builds and runs the app. By default it runs the app once and exits
+// when the app exits. With nsgo.yaml's hot reload it rebuilds and restarts
+// the app whenever a Go file it compiles from, go.mod or nsgo.yaml changes,
+// and keeps the running app when a build fails.
 func dev(ctx context.Context, p *project, opts devOptions) error {
 	if opts.target != "" {
 		p.Dev.Target = opts.target
 	}
-	var s session
-	switch p.Dev.Target {
-	case "native":
-		if runtime.GOOS != "darwin" {
-			return fmt.Errorf("native development runs on macOS; use -target web")
-		}
-		s = macSession()
-	case "web":
-		s = webSession(opts)
-	case "ios_simulator":
-		s = iosSession()
-	default:
-		return fmt.Errorf("unknown dev target %q; use native, web or ios_simulator", p.Dev.Target)
+	s, err := sessionFor(p, opts)
+	if err != nil {
+		return err
 	}
 
 	stop := func() {}
 	defer func() { stop() }()
+	if !p.hotReload() {
+		if err := s.build(ctx, p); err != nil {
+			return err
+		}
+		running, err := s.start(ctx, p)
+		if err != nil {
+			return err
+		}
+		stop = running.stop
+		if running.wait == nil {
+			<-ctx.Done()
+			return nil
+		}
+		return running.wait(ctx)
+	}
+
 	fingerprint := ""
 	for {
 		dirs, err := sourceDirs(ctx, p.Dir)
@@ -73,7 +89,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 			if next, err := s.start(ctx, p); err != nil {
 				step("run failed: %v", err)
 			} else {
-				stop = next
+				stop = next.stop
 			}
 		}
 		// Wait for a change, then for the editor to finish writing.
@@ -95,6 +111,23 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		} else {
 			step("%v", err)
 		}
+	}
+}
+
+// sessionFor picks how dev builds and shows nsgo.yaml's target.
+func sessionFor(p *project, opts devOptions) (session, error) {
+	switch p.Dev.Target {
+	case "native":
+		if runtime.GOOS != "darwin" {
+			return session{}, fmt.Errorf("native development runs on macOS; use -target web")
+		}
+		return macSession(), nil
+	case "web":
+		return webSession(opts), nil
+	case "ios_simulator":
+		return iosSession(), nil
+	default:
+		return session{}, fmt.Errorf("unknown dev target %q; use native, web or ios_simulator", p.Dev.Target)
 	}
 }
 
@@ -143,9 +176,13 @@ func macSession() session {
 			_, err := buildMacApp(ctx, p, dir, runtime.GOARCH)
 			return err
 		},
-		start: func(ctx context.Context, p *project) (func(), error) {
+		start: func(ctx context.Context, p *project) (app, error) {
 			bin := filepath.Join(p.cache("dev", "macos"), p.Name+".app", "Contents", "MacOS", p.Name)
-			return startProcess(bin)
+			stop, wait, err := startProcess(bin)
+			if err != nil {
+				return app{}, err
+			}
+			return app{stop: stop, wait: wait}, nil
 		},
 	}
 }
@@ -160,21 +197,24 @@ func iosSession() session {
 			_, err := buildIOSApp(ctx, p, dir, true)
 			return err
 		},
-		start: func(ctx context.Context, p *project) (func(), error) {
+		start: func(ctx context.Context, p *project) (app, error) {
 			if err := bootSimulator(ctx); err != nil {
-				return nil, err
+				return app{}, err
 			}
-			app := filepath.Join(p.cache("dev", "ios_simulator"), p.Name+".app")
-			if err := run(ctx, "xcrun", "simctl", "install", "booted", app); err != nil {
-				return nil, err
+			bundle := filepath.Join(p.cache("dev", "ios_simulator"), p.Name+".app")
+			if err := run(ctx, "xcrun", "simctl", "install", "booted", bundle); err != nil {
+				return app{}, err
 			}
-			stop, err := startProcess("xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process", "booted", p.ID)
+			stop, wait, err := startProcess("xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process", "booted", p.ID)
 			if err != nil {
-				return nil, err
+				return app{}, err
 			}
-			return func() {
-				stop()
-				exec.Command("xcrun", "simctl", "terminate", "booted", p.ID).Run()
+			return app{
+				stop: func() {
+					stop()
+					exec.Command("xcrun", "simctl", "terminate", "booted", p.ID).Run()
+				},
+				wait: wait,
 			}, nil
 		},
 	}
@@ -226,7 +266,7 @@ func webSession(opts devOptions) session {
 		build: func(ctx context.Context, p *project) error {
 			return buildWeb(ctx, p, p.cache("dev", "web"), true)
 		},
-		start: func(ctx context.Context, p *project) (func(), error) {
+		start: func(ctx context.Context, p *project) (app, error) {
 			var err error
 			once.Do(func() {
 				mux := http.NewServeMux()
@@ -263,7 +303,7 @@ func webSession(opts devOptions) session {
 				}
 			})
 			if err != nil {
-				return nil, err
+				return app{}, err
 			}
 			mu.Lock()
 			for ch := range clients {
@@ -273,36 +313,51 @@ func webSession(opts devOptions) session {
 				}
 			}
 			mu.Unlock()
-			return func() {}, nil
+			return app{stop: func() {}}, nil
 		},
 	}
 }
 
-// startProcess runs a command with this terminal's output and returns
-// what stops it.
-func startProcess(name string, args ...string) (func(), error) {
+// startProcess runs a command with this terminal's output. stop ends the
+// process; wait returns its error once it exits, or nil when stop or ctx
+// ended it.
+func startProcess(name string, args ...string) (stop func(), wait func(context.Context) error, err error) {
 	cmd := exec.Command(name, args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	done := make(chan struct{})
+	var waitErr error
 	go func() {
-		cmd.Wait()
+		waitErr = cmd.Wait()
 		close(done)
 	}()
-	return func() {
+	var once sync.Once
+	stop = func() {
+		once.Do(func() {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			cmd.Process.Signal(os.Interrupt)
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				cmd.Process.Kill()
+				<-done
+			}
+		})
+	}
+	wait = func(ctx context.Context) error {
 		select {
 		case <-done:
-			return
-		default:
+			return waitErr
+		case <-ctx.Done():
+			stop()
+			return nil
 		}
-		cmd.Process.Signal(os.Interrupt)
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			cmd.Process.Kill()
-			<-done
-		}
-	}, nil
+	}
+	return stop, wait, nil
 }

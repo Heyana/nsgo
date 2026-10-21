@@ -27,6 +27,9 @@ type project struct {
 	} `yaml:"window"`
 	Dev struct {
 		Target string `yaml:"target"`
+		// HotReload rebuilds and restarts the app when a watched file
+		// changes; it defaults to false.
+		HotReload *bool `yaml:"hot_reload"`
 	} `yaml:"dev"`
 	Build struct {
 		Output  string   `yaml:"output"`
@@ -40,6 +43,12 @@ type project struct {
 // openOutput reports whether nsgo build opens its output directory.
 func (p *project) openOutput() bool {
 	return p.Build.Open == nil || *p.Build.Open
+}
+
+// hotReload reports whether nsgo dev rebuilds the app on changes; without
+// it, dev runs the app once and exits when the app does.
+func (p *project) hotReload() bool {
+	return p.Dev.HotReload != nil && *p.Dev.HotReload
 }
 
 func load(dir string) (*project, error) {
