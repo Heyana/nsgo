@@ -68,6 +68,7 @@ Android runs the app as a second process because Go builds Android shared librar
 - `nsgo dev` runs the app once and exits when the app does, unless `nsgo.yaml` sets `dev.hot_reload` to true; the web target serves until interrupted.
 - With hot reload, `nsgo dev` watches the directories `go list -deps` reports, NSGo's own included, and keeps the last good build running when a build fails.
 - With hot reload, the web dev server reloads open pages over server-sent events after each build.
+- A command's flags replace the `nsgo.yaml` values they name: `dev.target` and `dev.hot_reload` for `nsgo dev`; `build.targets`, `build.output` and `build.open` for `nsgo build`; `name`, `id`, `version` and `window` for both.
 
 ## Core flows
 

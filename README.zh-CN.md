@@ -79,6 +79,8 @@ go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 
 `go tool nsgo dev` 运行一次应用，应用退出后随之退出。将 `dev.hot_reload` 设为 `true`，源文件变化时会重新编译并重启。`go tool nsgo build` 为每个目标输出一个去除符号的发布包，并打开输出目录，除非 `build.open` 为 `false`。
 
+dev 和 build 命令的参数会覆盖它们所对应的 `nsgo.yaml` 值：两者都接受 `-name`、`-id`、`-version`、`-width` 和 `-height`；dev 另有 `-target` 和 `-hot-reload`，build 另有 `-target`、`-output` 和 `-open`。`-h` 会列出全部参数。
+
 ## 开发
 
 要求：装有 Xcode 的 macOS，以及 Go 1.25 或更高版本。任何目标平台都不需要其他工具。

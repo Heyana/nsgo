@@ -30,11 +30,13 @@ type app struct {
 	wait func(context.Context) error
 }
 
-// devOptions are nsgo dev's flags; the rest comes from nsgo.yaml.
+// devOptions are nsgo dev's flags that do not name a value in the project.
+// The rest of the flags have replaced nsgo.yaml's values already, and apply
+// replaces them again after each reload.
 type devOptions struct {
-	target string // overrides nsgo.yaml's dev.target
-	port   int    // the web target's
-	open   bool   // whether to open the web target in the browser
+	apply func(*project)
+	port  int  // the web target's
+	open  bool // whether to open the web target in the browser
 }
 
 // dev builds and runs the app. By default it runs the app once and exits
@@ -42,9 +44,6 @@ type devOptions struct {
 // the app whenever a Go file it compiles from, go.mod or nsgo.yaml changes,
 // and keeps the running app when a build fails.
 func dev(ctx context.Context, p *project, opts devOptions) error {
-	if opts.target != "" {
-		p.Dev.Target = opts.target
-	}
 	s, err := sessionFor(p, opts)
 	if err != nil {
 		return err
@@ -104,9 +103,9 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 				break
 			}
 		}
-		// The target stays; the rest of nsgo.yaml may change.
+		// The flags and the rest of nsgo.yaml may have changed too.
 		if next, err := load(p.Dir); err == nil {
-			next.Dev.Target = p.Dev.Target
+			opts.apply(next)
 			*p = *next
 		} else {
 			step("%v", err)

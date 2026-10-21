@@ -17,6 +17,8 @@ type project struct {
 	// Release strips symbols and debug information for the smallest
 	// binaries; nsgo build sets it, nsgo dev does not.
 	Release bool `yaml:"-"`
+	// idDefault records that nsgo.yaml gave no id, so it follows the name.
+	idDefault bool
 
 	Name    string `yaml:"name"`
 	ID      string `yaml:"id"`
@@ -71,7 +73,8 @@ func load(dir string) (*project, error) {
 		return nil, fmt.Errorf("nsgo.yaml: name is required")
 	}
 	if p.ID == "" {
-		p.ID = "dev.nsgo." + p.Name
+		p.ID = generatedID(p.Name)
+		p.idDefault = true
 	}
 	if p.Version == "" {
 		p.Version = "0.0.0"
@@ -85,9 +88,7 @@ func load(dir string) (*project, error) {
 	if p.Build.Output == "" {
 		p.Build.Output = "dist"
 	}
-	if !filepath.IsAbs(p.Build.Output) {
-		p.Build.Output = filepath.Join(abs, p.Build.Output)
-	}
+	p.Build.Output = p.resolve(p.Build.Output)
 	if len(p.Build.Targets) == 0 {
 		p.Build.Targets = []string{"macos_" + goArchName(runtime.GOARCH)}
 	}
@@ -97,6 +98,20 @@ func load(dir string) (*project, error) {
 		}
 	}
 	return p, nil
+}
+
+// generatedID is the bundle ID of a project whose nsgo.yaml gives none.
+func generatedID(name string) string {
+	return "dev.nsgo." + name
+}
+
+// resolve makes a path from nsgo.yaml or a flag absolute against the app's
+// directory.
+func (p *project) resolve(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(p.Dir, path)
 }
 
 // cache is the project's directory for development builds.
