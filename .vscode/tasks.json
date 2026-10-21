@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "run",
+      "type": "process",
+      "command": "go",
+      "args": [
+        "tool",
+        "nsgo",
+        "dev",
+        "examples/hello"
+      ],
+      "runOptions": {
+        "instanceLimit": 1,
+        "instancePolicy": "terminateOldest"
+      },
+      "problemMatcher": "$go"
+    },
+    {
+      "label": "build",
+      "type": "process",
+      "command": "go",
+      "args": [
+        "tool",
+        "nsgo",
+        "build",
+        "examples/hello"
+      ],
+      "runOptions": {
+        "instanceLimit": 1,
+        "instancePolicy": "terminateOldest"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$go"
+    }
+  ]
+}
