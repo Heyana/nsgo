@@ -26,8 +26,9 @@ Packages mirror NSH's crates:
 | `engine` | `nsh-engine` | Engine goroutine: runs the app, commits, hands each batch to the platform |
 | `platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
 | `platform/internal/apple` | Shared Apple code | CoreFoundation, CoreGraphics and CoreText through purego |
-| `examples/hello` | `examples/counter` | Text, input and button; one `main` package per target |
-| `scripts` | `nsh run`, `nsh package` | Build and run helpers until `cmd/nsgo` exists |
+| `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags; the tool sets name and window size |
+| `cmd/nsgo` | `nsh-cli` | `nsgo dev` and `nsgo build`, driven by an app's `nsgo.yaml` |
+| `examples/hello` | `examples/counter` | Text, input and button in one main package |
 
 ## Platforms
 
@@ -53,6 +54,15 @@ Android runs the app as a second process because Go builds Android shared librar
 - Text is prepared and laid out on the engine side through a platform `TextEngine`; the main thread only draws the result.
 - One engine is one app instance with no global state, so a host app can embed several.
 - Keep NSH's public names and semantics unless Go requires otherwise, so NSH's documentation stays a usable reference.
+
+## Tool
+
+`nsgo` is the only build entry point; it shells out to `go build`, and to Xcode's `xcrun`, `codesign` and `simctl` for Apple targets.
+
+- Targets name an OS and an architecture (`macos_arm64`, `windows_x64`), so each package holds one binary.
+- `nsgo build` is a release build: `-s -w`, `-trimpath`, no VCS stamp. `nsgo dev` keeps symbols.
+- `nsgo dev` watches the directories `go list -deps` reports, NSGo's own included, and keeps the last good build running when a build fails.
+- The web dev server reloads open pages over server-sent events after each build.
 
 ## Core flows
 

@@ -1,9 +1,10 @@
-// Package app is the hello example's UI, shared by every platform's main.
-package app
+// Command hello shows a text, an input and a button on every target.
+package main
 
 import (
 	"fmt"
 
+	"github.com/oneo-me/nsgo"
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
 )
@@ -37,3 +38,5 @@ func Root(cx *core.Scope) *core.Element {
 	).Style(core.Style{FlexGrow: 1, Padding: core.Edges{Top: 64, Right: 24, Bottom: 24, Left: 24}, Gap: 16,
 		Background: core.RGB(0xf4f5f7)})
 }
+
+func main() { nsgo.Run(Root) }

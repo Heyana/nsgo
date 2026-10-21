@@ -1,0 +1,17 @@
+name: Hello
+id: dev.oneo.nsgo.hello
+version: 0.1.0
+
+window:
+  width: 420
+  height: 560
+
+dev:
+  # native: this machine's backend; web: the browser; ios_simulator.
+  target: native
+
+build:
+  output: dist
+  # macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64,
+  # linux_x64, ios, ios_simulator, android_arm64, web
+  targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, ios_simulator, web]

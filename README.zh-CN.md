@@ -17,6 +17,24 @@ NSGo 处于早期阶段。最小引擎已能在 macOS、iOS 和 Web 上渲染文
 - 与 NSH 一样支持 iOS、Android、macOS、Windows、Linux 和 Web。
 - 可嵌入现有原生应用，也可打包为独立应用。
 
+## 用法
+
+一个应用是调用 `nsgo.Run` 的 Go main 包，旁边放一个 `nsgo.yaml`：
+
+```yaml
+name: Hello
+id: dev.oneo.nsgo.hello
+version: 0.1.0
+window: { width: 420, height: 560 }
+dev:
+  target: native        # native, web or ios_simulator
+build:
+  output: dist          # packages go to dist/<name>-<version>-<target>
+  targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, ios, ios_simulator, web]
+```
+
+`nsgo dev` 运行应用，并在源文件变化时重新编译。`nsgo build` 为每个目标输出一个去除符号的发布包。
+
 ## 开发
 
 要求：装有 Xcode 的 macOS，以及 Go 1.25 或更高版本。任何目标平台都不需要其他工具。
@@ -24,10 +42,11 @@ NSGo 处于早期阶段。最小引擎已能在 macOS、iOS 和 Web 上渲染文
 在仓库根目录运行示例：
 
 ```sh
-go run ./examples/hello/macos                                        # macOS window
-scripts/ios-sim.sh ./examples/hello/ios dev.oneo.nsgo.hello Hello    # iOS simulator
-scripts/web.sh ./examples/hello/web                                  # static site in .nsgo/web
-GOOS=windows go build ./examples/hello/windows                       # Windows executable
+go install ./cmd/nsgo                       # or: go run ./cmd/nsgo <command>
+nsgo dev examples/hello                     # nsgo.yaml's dev target, rebuilt on save
+nsgo dev -target web examples/hello         # in the browser, reloaded on save
+nsgo dev -target ios_simulator examples/hello
+nsgo build examples/hello                   # release packages in examples/hello/dist
 go test ./...
 ```
 

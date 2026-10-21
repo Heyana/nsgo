@@ -17,6 +17,24 @@ NSGo is early. A minimal engine renders text, text inputs and buttons on macOS, 
 - Target iOS, Android, macOS, Windows, Linux and the web, as NSH does.
 - Embed NSGo in existing native apps, or package it as a standalone app.
 
+## Usage
+
+An app is a Go main package that calls `nsgo.Run` and an `nsgo.yaml` beside it:
+
+```yaml
+name: Hello
+id: dev.oneo.nsgo.hello
+version: 0.1.0
+window: { width: 420, height: 560 }
+dev:
+  target: native        # native, web or ios_simulator
+build:
+  output: dist          # packages go to dist/<name>-<version>-<target>
+  targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, ios, ios_simulator, web]
+```
+
+`nsgo dev` runs the app and rebuilds it when a source file changes. `nsgo build` writes a stripped release package per target.
+
 ## Development
 
 Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed for any target.
@@ -24,10 +42,11 @@ Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed for 
 Run the example from the repository root:
 
 ```sh
-go run ./examples/hello/macos                                        # macOS window
-scripts/ios-sim.sh ./examples/hello/ios dev.oneo.nsgo.hello Hello    # iOS simulator
-scripts/web.sh ./examples/hello/web                                  # static site in .nsgo/web
-GOOS=windows go build ./examples/hello/windows                       # Windows executable
+go install ./cmd/nsgo                       # or: go run ./cmd/nsgo <command>
+nsgo dev examples/hello                     # nsgo.yaml's dev target, rebuilt on save
+nsgo dev -target web examples/hello         # in the browser, reloaded on save
+nsgo dev -target ios_simulator examples/hello
+nsgo build examples/hello                   # release packages in examples/hello/dist
 go test ./...
 ```
 
