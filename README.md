@@ -33,7 +33,13 @@ build:
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, ios, ios_simulator, web]
 ```
 
-`nsgo dev` runs the app and rebuilds it when a source file changes. `nsgo build` writes a stripped release package per target.
+Add the tool to your module once; `go tool nsgo` then runs it without installing:
+
+```sh
+go get -tool github.com/oneo-me/nsgo/cmd/nsgo
+```
+
+`go tool nsgo dev` runs the app and rebuilds it when a source file changes. `go tool nsgo build` writes a stripped release package per target.
 
 ## Development
 
@@ -42,11 +48,10 @@ Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed for 
 Run the example from the repository root:
 
 ```sh
-go install ./cmd/nsgo                       # or: go run ./cmd/nsgo <command>
-nsgo dev examples/hello                     # nsgo.yaml's dev target, rebuilt on save
-nsgo dev -target web examples/hello         # in the browser, reloaded on save
-nsgo dev -target ios_simulator examples/hello
-nsgo build examples/hello                   # release packages in examples/hello/dist
+go tool nsgo dev examples/hello                     # nsgo.yaml's dev target, rebuilt on save
+go tool nsgo dev -target web examples/hello         # in the browser, reloaded on save
+go tool nsgo dev -target ios_simulator examples/hello
+go tool nsgo build examples/hello                   # release packages in examples/hello/dist
 go test ./...
 ```
 

@@ -33,7 +33,13 @@ build:
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, ios, ios_simulator, web]
 ```
 
-`nsgo dev` 运行应用，并在源文件变化时重新编译。`nsgo build` 为每个目标输出一个去除符号的发布包。
+在你的模块中添加一次该工具，之后用 `go tool nsgo` 运行，无需安装：
+
+```sh
+go get -tool github.com/oneo-me/nsgo/cmd/nsgo
+```
+
+`go tool nsgo dev` 运行应用，并在源文件变化时重新编译。`go tool nsgo build` 为每个目标输出一个去除符号的发布包。
 
 ## 开发
 
@@ -42,11 +48,10 @@ build:
 在仓库根目录运行示例：
 
 ```sh
-go install ./cmd/nsgo                       # or: go run ./cmd/nsgo <command>
-nsgo dev examples/hello                     # nsgo.yaml's dev target, rebuilt on save
-nsgo dev -target web examples/hello         # in the browser, reloaded on save
-nsgo dev -target ios_simulator examples/hello
-nsgo build examples/hello                   # release packages in examples/hello/dist
+go tool nsgo dev examples/hello                     # nsgo.yaml's dev target, rebuilt on save
+go tool nsgo dev -target web examples/hello         # in the browser, reloaded on save
+go tool nsgo dev -target ios_simulator examples/hello
+go tool nsgo build examples/hello                   # release packages in examples/hello/dist
 go test ./...
 ```
 
