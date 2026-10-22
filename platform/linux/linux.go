@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && !android
 
 // Package linux is NSGo's GTK 4 backend. One GtkWindow shows a
 // GtkDrawingArea that draws the whole tree with Cairo, text the engine

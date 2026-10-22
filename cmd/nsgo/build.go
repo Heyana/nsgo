@@ -74,7 +74,7 @@ var targets = []string{
 	"windows_arm64", "windows_x64",
 	"linux_arm64", "linux_x64",
 	"ios", "ios_simulator",
-	"android_arm64",
+	"android_arm64", "android_x64",
 	"web",
 }
 
@@ -104,8 +104,8 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 			return err
 		}
 		return copyAssets(p, dir)
-	case "android_arm64":
-		_, err := buildAndroidAPK(ctx, p, dir)
+	case "android_arm64", "android_x64":
+		_, err := buildAndroidAPK(ctx, p, dir, goArch(arch))
 		return err
 	}
 	return fmt.Errorf("unknown target; use one of %s", strings.Join(targets, ", "))

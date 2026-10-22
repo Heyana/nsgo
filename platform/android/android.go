@@ -1,9 +1,9 @@
 //go:build android
 
 // Package android is NSGo's Android backend. The app is a plain Go
-// executable, built with CGO_ENABLED=0, that the prebuilt Java runtime in
-// java/ starts as a child process; nsgo packages it as libnsgo.so in an
-// APK. The two talk over the process's pipes:
+// executable that the prebuilt Java runtime in java/ starts as a child
+// process; nsgo packages it as libnsgo.so in an APK. The two talk over
+// the process's pipes:
 // one message per commit, per event and per step of text. Java keeps the
 // text the engine prepares, measures it and lays it out with StaticLayout,
 // and mounts one Android view per node; measuring is the only round trip.
@@ -12,7 +12,9 @@
 // presses outside overlays and answers to alerts and clipboard reads.
 //
 // Go builds Android shared libraries only with cgo and the NDK; a second
-// process keeps every build down to Go alone.
+// process keeps every build an executable, so arm64 needs only Go. An
+// x86_64 emulator needs cgo and the NDK's clang, as Go links android/amd64
+// no other way.
 package android
 
 import (

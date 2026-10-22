@@ -49,3 +49,63 @@ func TestFindAdbWithoutTheSDK(t *testing.T) {
 		t.Fatal("findAdb found adb in an empty machine")
 	}
 }
+
+// TestAndroidArchitectures checks the two packages and the ABIs they run on.
+func TestAndroidArchitectures(t *testing.T) {
+	for goarch, abi := range map[string]string{"arm64": "arm64-v8a", "amd64": "x86_64"} {
+		got, err := androidABI(goarch)
+		if err != nil || got != abi {
+			t.Errorf("androidABI(%q) = %q, %v; want %q", goarch, got, err, abi)
+		}
+		want, err := goarchForABI(abi)
+		if err != nil || want != goarch {
+			t.Errorf("goarchForABI(%q) = %q, %v; want %q", abi, want, err, goarch)
+		}
+	}
+	if _, err := androidABI("386"); err == nil {
+		t.Error("androidABI(386) succeeded")
+	}
+	if _, err := goarchForABI("armeabi-v7a"); err == nil {
+		t.Error("goarchForABI(armeabi-v7a) succeeded")
+	}
+}
+
+// TestFindNDKInTheSDK checks that the emulator build finds the newest NDK
+// in the SDK and the clang that targets the manifest's API.
+func TestFindNDKInTheSDK(t *testing.T) {
+	sdk := t.TempDir()
+	name := "x86_64-linux-android28-clang"
+	if runtime.GOOS == "windows" {
+		name += ".cmd"
+	}
+	for _, version := range []string{"26.1.10909125", "27.2.12479018"} {
+		bin := filepath.Join(sdk, "ndk", version, "toolchains", "llvm", "prebuilt", "linux-x86_64", "bin")
+		if err := os.MkdirAll(bin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("ANDROID_HOME", sdk)
+	t.Setenv("ANDROID_SDK_ROOT", "")
+	t.Setenv("ANDROID_NDK_HOME", "")
+	t.Setenv("ANDROID_NDK_ROOT", "")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+
+	got, err := findNDK()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(sdk, "ndk", "27.2.12479018"); got != want {
+		t.Fatalf("findNDK = %q, want %q", got, want)
+	}
+	clang, err := androidClang("amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(got, "toolchains", "llvm", "prebuilt", "linux-x86_64", "bin", name); clang != want {
+		t.Fatalf("androidClang = %q, want %q", clang, want)
+	}
+}

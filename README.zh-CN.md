@@ -12,7 +12,7 @@ NSGo 参考 [Native Shell（NSH）](https://nsh.dev) 的设计，NSH 用 Rust �
 
 ## 状态
 
-NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、图片、画布、Markdown 和 HTML 文本视图、浮层、对话框、导航、无样式基础组件和带主题的 `ui` 组件，可在 macOS、iOS、Windows、Linux、Web 和 Android 设备上运行。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
+NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、图片、画布、Markdown 和 HTML 文本视图、浮层、对话框、导航、无样式基础组件和带主题的 `ui` 组件，可在 macOS、iOS、Windows、Linux、Web 和 Android 设备及 x86_64 模拟器上运行。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
 
 ## 目标
 
@@ -65,12 +65,12 @@ id: dev.oneo.nsgo.hello
 version: 0.1.0
 window: { width: 420, height: 560 }
 dev:
-  target: native        # native、web、ios（连接的 iPhone）、ios_simulator 或 android
+  target: native        # native、web、ios（连接的 iPhone）、ios_simulator 或 android（真机或模拟器）
   hot_reload: false     # 只运行一次，应用退出后 dev 也随之退出；true 则在保存后重新编译并重启
 build:
   output: dist          # 构建产物位于 dist/<name>-<version>-<target>
   open: true            # 构建后打开输出目录
-  targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, android_arm64, web]
+  targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, android_arm64, android_x64, web]
 ```
 
 在你的模块中添加一次该工具，之后用 `go tool nsgo` 运行，无需安装：
@@ -85,7 +85,7 @@ dev 和 build 命令的参数会覆盖它们所对应的 `nsgo.yaml` 值：两�
 
 ## 开发
 
-要求：装有 Xcode 的 macOS，以及 Go 1.25 或更高版本。构建任何目标平台（包括 Android 的 APK）都不需要其他工具。Android 真机开发还需要 Android SDK platform-tools 中的 `adb`；iOS 真机开发需要在 Xcode 的 Accounts 中登录 Apple ID，并连接一台已信任、已开启开发者模式的 iPhone。在 Windows 上，只需 Go 1.25 或更高版本即可运行原生应用，并构建 Windows 和 Web 包。在 Linux 上，安装 GTK 4.14 或更高版本、Pango 和 Cairo 后即可用 Go 运行原生应用。
+要求：装有 Xcode 的 macOS，以及 Go 1.25 或更高版本。构建 arm64 的所有目标（包括 Android 的 APK）都不需要其他工具。Android 真机和模拟器开发还需要 Android SDK platform-tools 中的 `adb`；iOS 真机开发需要在 Xcode 的 Accounts 中登录 Apple ID，并连接一台已信任、已开启开发者模式的 iPhone。x86_64 模拟器目标 `android_x64` 还需要 Android NDK：Go 只能通过 cgo 链接 android/amd64。在 Windows 上，只需 Go 1.25 或更高版本即可运行原生应用，并构建 Windows 和 Web 包。在 Linux 上，安装 GTK 4.14 或更高版本、Pango 和 Cairo 后即可用 Go 运行原生应用。
 
 在仓库根目录运行示例：
 
@@ -94,7 +94,7 @@ go tool nsgo dev examples/hello                     # nsgo.yaml 的 dev 目标�
 go tool nsgo dev -target web examples/hello         # 在浏览器中运行，直到中断
 go tool nsgo dev -target ios_simulator examples/hello
 go tool nsgo dev -target ios examples/hello         # 在已连接的 iPhone 上运行，由 Xcode 签名
-go tool nsgo dev -target android examples/hello     # 在已连接的设备上运行，通过 adb
+go tool nsgo dev -target android examples/hello     # 在已连接的设备或模拟器上运行，通过 adb
 go tool nsgo build examples/hello                   # 在 examples/hello/dist 中生成发布包
 go test ./...
 ```

@@ -40,7 +40,7 @@ Packages mirror NSH's crates:
 
 ## Platforms
 
-Every target builds on macOS with Go, and iOS also with Xcode. No backend contains hand-written C.
+Every target builds on macOS with Go; iOS also needs Xcode, and x86_64 Android needs an NDK's clang. No backend contains hand-written C.
 
 | Target | Package | Reaches the system through | Status |
 | --- | --- | --- | --- |
@@ -49,13 +49,13 @@ Every target builds on macOS with Go, and iOS also with Xcode. No backend contai
 | Web | `platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
 | Windows | `platform/windows` | `syscall`: a Win32 window drawn with GDI, and GDI+ for antialiased edges, into a 32-bit buffer; native EDIT inputs | Runs; native tests check its window, input and pixels |
 | Linux | `platform/linux` | GTK 4, Pango and Cairo loaded with purego: a GtkDrawingArea drawn with Cairo, Pango text, native GtkEntry inputs | Runs; native tests check its window, input and pixels |
-| Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Runs on arm64 devices; `nsgo` builds, signs and installs the APK with Go alone |
+| Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Runs on arm64 devices and x86_64 emulators; `nsgo` builds, signs and installs the APK |
 
-Android runs the app as a second process because Go builds Android shared libraries only with cgo and the NDK. Without cgo, Go builds Android executables for arm64 only, so 32-bit devices and x86_64 emulators are out of reach. iOS forbids child processes, so it links in-process with Xcode instead.
+Android runs the app as a second process because Go builds Android shared libraries only with cgo and the NDK. Without cgo, Go builds Android executables for arm64 only, so 32-bit devices stay out of reach. iOS forbids child processes, so it links in-process with Xcode instead.
 
 `nsgo dev -target ios` builds the app and Xcode signs it with automatic signing from the developer account in Xcode. It installs the app with `devicectl` and streams its output; `nsgo build -target ios` leaves the app to sign.
 
-Neither an NDK nor the Android SDK is needed: `platform/android/runtime` holds the Java runtime's prebuilt `classes.dex` (its `build.sh` rebuilds it), and `cmd/nsgo/apk` writes the binary manifest, the ZIP and the v2 signature in Go. `nsgo build -target android_arm64` writes an APK signed with the project's debug key. `nsgo dev -target android` installs it on the connected device, starts it and streams its log, so device development needs `adb` from the SDK's platform-tools.
+Neither an NDK nor the Android SDK is needed for arm64: `platform/android/runtime` holds the Java runtime's prebuilt `classes.dex` (its `build.sh` rebuilds it), and `cmd/nsgo/apk` writes the binary manifest, the ZIP and the v2 signature in Go. `nsgo build -target android_arm64` writes an APK signed with the project's debug key. `nsgo dev -target android` builds for the connected device's ABI, installs the APK, starts it and streams its log, so device and emulator development needs `adb` from the SDK's platform-tools. An x86_64 emulator needs the `android_x64` package, which needs an NDK's clang: Go links android/amd64 only with cgo. An arm64 device or emulator still builds with Go alone.
 
 The Linux backend loads GTK 4 at run time, so building its package needs only Go, while running it needs GTK 4.14 or newer, Pango and Cairo installed as any GTK app does. The application menu is a GTK menu bar above the surface, but the backend draws no window controls of its own, so a hidden title bar reports the app's bar height only.
 
