@@ -65,7 +65,7 @@ id: dev.oneo.nsgo.hello
 version: 0.1.0
 window: { width: 420, height: 560 }
 dev:
-  target: native        # native, web, ios_simulator or android
+  target: native        # native, web, ios (a connected iPhone), ios_simulator or android
   hot_reload: false     # run once and exit with the app; true rebuilds and restarts on save
 build:
   output: dist          # packages go to dist/<name>-<version>-<target>
@@ -81,11 +81,11 @@ go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 
 `go tool nsgo dev` runs the app once and exits when the app does. Set `dev.hot_reload` to `true` to rebuild and restart it when a source file changes. `go tool nsgo build` writes a stripped release package per target and opens the output directory, unless `build.open` is `false`.
 
-Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `-version`, `-width` and `-height` on both, `-target` and `-hot-reload` on `dev`, and `-target`, `-output` and `-open` on `build`. `-h` lists every flag.
+Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `-version`, `-width` and `-height` on both, `-target` and `-hot-reload` on `dev`, and `-target`, `-output` and `-open` on `build`. `dev` also takes `-device` to choose an iPhone and `-team` to choose the Apple developer team. `-h` lists every flag.
 
 ## Development
 
-Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed to build any target, Android's APK included. Android device development additionally needs `adb` from the Android SDK's platform-tools. On Windows, Go 1.25 or later runs the native app and builds the Windows and web packages. On Linux, Go runs the native app once GTK 4.14 or newer, Pango and Cairo are installed.
+Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed to build any target, Android's APK included. Android device development additionally needs `adb` from the Android SDK's platform-tools, and iOS device development needs an Apple ID in Xcode's Accounts, a trusted iPhone and Developer Mode on it. On Windows, Go 1.25 or later runs the native app and builds the Windows and web packages. On Linux, Go runs the native app once GTK 4.14 or newer, Pango and Cairo are installed.
 
 Run the example from the repository root:
 
@@ -93,6 +93,7 @@ Run the example from the repository root:
 go tool nsgo dev examples/hello                     # nsgo.yaml's dev target, exiting with the app
 go tool nsgo dev -target web examples/hello         # in the browser, serving until interrupted
 go tool nsgo dev -target ios_simulator examples/hello
+go tool nsgo dev -target ios examples/hello         # on the connected iPhone, signed by Xcode
 go tool nsgo dev -target android examples/hello     # on the connected device, over adb
 go tool nsgo build examples/hello                   # release packages in examples/hello/dist
 go test ./...

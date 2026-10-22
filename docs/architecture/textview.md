@@ -18,9 +18,14 @@ Highlighting is its own package because chroma's lexers add about 4.5 MB to a bi
 
 - Alerts are blockquotes whose first line is `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]`.
 - Heading anchors are GitHub's slugs, made unique per document.
-- HTML inside reads as `ParseHTML` reads it. An HTML block that opens an element a later block closes (`<details>`, Markdown, `</details>`) holds the Markdown between them; so does a formatting tag in a paragraph (`<b>x *y*</b>`), as gpui-kit pairs them. Other paired tags read as one HTML fragment from the source between them.
-- `RepairStreaming`, which `Streaming` applies before parsing, ports NSH's streaming repair. It closes what the last block leaves open (emphasis, strikethrough, inline code), shows unfinished links as their text, drops unfinished images, footnote references and HTML tags, and completes a table's delimiter row. It leaves out NSH's `$` and `\(` formula repair until formulas parse.
-- An `Extension` makes `Custom` nodes from a regular expression in text (`Pattern`), a fenced code language (`Language`), a `:::name` container (`Container`) or an HTML element (`Tag`). Containers are a goldmark block parser, so their content parses as the document does. A container inside another closes with fewer colons.
+- HTML inside reads as `ParseHTML` reads it.
+- An HTML block that opens an element a later block closes (`<details>`, Markdown, `</details>`) holds the Markdown between them. So does a formatting tag in a paragraph (`<b>x *y*</b>`), as gpui-kit pairs them.
+- Other paired tags read as one HTML fragment from the source between them.
+- `RepairStreaming`, which `Streaming` applies before parsing, ports NSH's streaming repair.
+- It closes what the last block leaves open (emphasis, strikethrough, inline code) and shows unfinished links as their text.
+- It drops unfinished images, footnote references and HTML tags, and completes a table's delimiter row. It omits NSH's `$` and `\(` formula repair until formulas parse.
+- An `Extension` makes `Custom` nodes from a regular expression in text (`Pattern`), a fenced code language (`Language`), a `:::name` container (`Container`) or an HTML element (`Tag`).
+- Containers are a goldmark block parser, so their content parses as the document does. A container inside another closes with fewer colons.
 
 ## HTML
 

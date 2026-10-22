@@ -164,43 +164,6 @@ func buildMacApp(ctx context.Context, p *project, dir, arch string) (string, err
 	return app, run(ctx, "codesign", "--force", "--sign", "-", app)
 }
 
-// buildIOSApp writes <dir>/<name>.app for the simulator or for devices.
-// Device builds are left unsigned for the developer's own identity.
-func buildIOSApp(ctx context.Context, p *project, dir string, simulator bool) (string, error) {
-	sdkName, triple := "iphoneos", "arm64-apple-ios15.0"
-	if simulator {
-		sdkName, triple = "iphonesimulator", "arm64-apple-ios15.0-simulator"
-	}
-	sdk, err := output(ctx, "xcrun", "--sdk", sdkName, "--show-sdk-path")
-	if err != nil {
-		return "", fmt.Errorf("the iOS SDK needs Xcode: %w", err)
-	}
-	clang, err := output(ctx, "xcrun", "--sdk", sdkName, "-f", "clang")
-	if err != nil {
-		return "", err
-	}
-	// Go links iOS only through Xcode's linker; NSGo itself has no C.
-	flags := "-isysroot " + sdk + " -target " + triple
-	app := filepath.Join(dir, p.Name+".app")
-	env := []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1",
-		"CC=" + clang + " " + flags, "CGO_CFLAGS=" + flags, "CGO_LDFLAGS=" + flags}
-	// Go's runtime objects target a newer iOS than 15.0; the linker's
-	// warning about it is noise.
-	if err := goBuild(ctx, p, filepath.Join(app, p.Name), env, "-extldflags=-Wl,-w"); err != nil {
-		return "", err
-	}
-	if err := writePlist(filepath.Join(app, "Info.plist"), p, iosPlist); err != nil {
-		return "", err
-	}
-	if err := copyAssets(p, app); err != nil {
-		return "", err
-	}
-	if simulator {
-		return app, run(ctx, "codesign", "--force", "--sign", "-", app)
-	}
-	return app, nil
-}
-
 // buildWeb writes index.html, wasm_exec.js and app.wasm to dir.
 func buildWeb(ctx context.Context, p *project, dir string, reload bool) error {
 	if err := goBuild(ctx, p, filepath.Join(dir, "app.wasm"), []string{"GOOS=js", "GOARCH=wasm"}); err != nil {
@@ -272,28 +235,6 @@ const plistHead = `<?xml version="1.0" encoding="UTF-8"?>
 
 var macPlist = template.Must(template.New("mac").Parse(plistHead + `	<key>LSMinimumSystemVersion</key><string>11.0</string>
 	<key>NSHighResolutionCapable</key><true/>
-</dict>
-</plist>
-`))
-
-// The SDK requires the scene life cycle; platform/ios registers
-// NsgoSceneDelegate.
-var iosPlist = template.Must(template.New("ios").Parse(plistHead + `	<key>MinimumOSVersion</key><string>15.0</string>
-	<key>UILaunchScreen</key><dict/>
-	<key>UIRequiresFullScreen</key><true/>
-	<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
-	<key>UIApplicationSceneManifest</key>
-	<dict>
-		<key>UIApplicationSupportsMultipleScenes</key><false/>
-		<key>UISceneConfigurations</key>
-		<dict>
-			<key>UIWindowSceneSessionRoleApplication</key>
-			<array><dict>
-				<key>UISceneConfigurationName</key><string>Default</string>
-				<key>UISceneDelegateClassName</key><string>NsgoSceneDelegate</string>
-			</dict></array>
-		</dict>
-	</dict>
 </dict>
 </plist>
 `))

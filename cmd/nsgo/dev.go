@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -35,9 +34,11 @@ type app struct {
 // The rest of the flags have replaced nsgo.yaml's values already, and apply
 // replaces them again after each reload.
 type devOptions struct {
-	apply func(*project)
-	port  int  // the web target's
-	open  bool // whether to open the web target in the browser
+	apply  func(*project)
+	port   int    // the web target's
+	open   bool   // whether to open the web target in the browser
+	device string // the iPhone the iOS target runs on, by name, UDID, serial or ECID
+	team   string // the Apple developer team the iOS target signs with
 }
 
 // dev builds and runs the app. By default it runs the app once and exits
@@ -129,12 +130,14 @@ func sessionFor(p *project, opts devOptions) (session, error) {
 		return session{}, fmt.Errorf("native development runs on macOS, Windows and Linux; use -target web")
 	case "web":
 		return webSession(opts), nil
+	case "ios":
+		return iosDeviceSession(opts), nil
 	case "ios_simulator":
 		return iosSession(), nil
 	case "android":
 		return androidSession(), nil
 	default:
-		return session{}, fmt.Errorf("unknown dev target %q; use native, web, ios_simulator or android", p.Dev.Target)
+		return session{}, fmt.Errorf("unknown dev target %q; use native, web, ios, ios_simulator or android", p.Dev.Target)
 	}
 }
 
@@ -246,73 +249,6 @@ func linuxSession() session {
 			return app{stop: stop, wait: wait}, nil
 		},
 	}
-}
-
-// iosSession installs the app on the booted simulator, booting one when
-// none is, and streams its output here.
-func iosSession() session {
-	return session{
-		build: func(ctx context.Context, p *project) error {
-			dir := p.cache("dev", "ios_simulator")
-			os.RemoveAll(dir)
-			_, err := buildIOSApp(ctx, p, dir, true)
-			return err
-		},
-		start: func(ctx context.Context, p *project) (app, error) {
-			if err := bootSimulator(ctx); err != nil {
-				return app{}, err
-			}
-			bundle := filepath.Join(p.cache("dev", "ios_simulator"), p.Name+".app")
-			if err := run(ctx, "xcrun", "simctl", "install", "booted", bundle); err != nil {
-				return app{}, err
-			}
-			stop, wait, err := startProcess("xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process", "booted", p.ID)
-			if err != nil {
-				return app{}, err
-			}
-			return app{
-				stop: func() {
-					stop()
-					exec.Command("xcrun", "simctl", "terminate", "booted", p.ID).Run()
-				},
-				wait: wait,
-			}, nil
-		},
-	}
-}
-
-var deviceID = regexp.MustCompile(`\(([0-9A-F-]{36})\)`)
-
-func bootSimulator(ctx context.Context) error {
-	booted, err := output(ctx, "xcrun", "simctl", "list", "devices", "booted")
-	if err != nil {
-		return fmt.Errorf("the iOS simulator needs Xcode: %w", err)
-	}
-	if !strings.Contains(booted, "Booted") {
-		available, err := output(ctx, "xcrun", "simctl", "list", "devices", "available")
-		if err != nil {
-			return err
-		}
-		var device string
-		for _, line := range strings.Split(available, "\n") {
-			if m := deviceID.FindStringSubmatch(line); m != nil && strings.Contains(line, "iPhone") {
-				device = m[1]
-				break
-			}
-		}
-		if device == "" {
-			return fmt.Errorf("no iPhone simulator is installed; add one in Xcode")
-		}
-		step("boot simulator %s", device)
-		if err := run(ctx, "xcrun", "simctl", "boot", device); err != nil {
-			return err
-		}
-	}
-	// Show the simulator's window; the app runs without it.
-	if xcode, err := output(ctx, "xcode-select", "-p"); err == nil {
-		exec.CommandContext(ctx, "open", filepath.Join(xcode, "Applications", "Simulator.app")).Run()
-	}
-	return nil
 }
 
 // webSession serves the build on localhost and reloads open pages after

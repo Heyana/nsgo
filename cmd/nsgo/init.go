@@ -59,7 +59,7 @@ window:
   height: 640
 
 dev:
-  # native: this machine's backend; web: the browser; ios_simulator; android: a connected device.
+  # native: this machine's backend; web: the browser; ios: a connected iPhone; ios_simulator; android: a connected device.
   target: native
   # false, the default, runs once and exits with the app; true rebuilds on save.
   hot_reload: false

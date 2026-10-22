@@ -98,14 +98,18 @@ type devFlags struct {
 	hotReload *boolOverride
 	port      int
 	open      bool
+	device    string
+	team      string
 }
 
 func bindDevFlags(fs *flag.FlagSet) *devFlags {
 	f := &devFlags{overrides: bindOverrides(fs)}
-	f.target = stringFlag(fs, "target", "`target` to use: native, web, ios_simulator or android (default: nsgo.yaml's dev.target)")
+	f.target = stringFlag(fs, "target", "`target` to use: native, web, ios, ios_simulator or android (default: nsgo.yaml's dev.target)")
 	f.hotReload = boolFlag(fs, "hot-reload", "rebuild and restart on changes (default: nsgo.yaml's dev.hot_reload)")
 	fs.IntVar(&f.port, "port", 8080, "the web target's port")
 	fs.BoolVar(&f.open, "open", true, "open the web target in the browser")
+	fs.StringVar(&f.device, "device", "", "the `device` the iOS target runs on: a connected iPhone's name, UDID, serial or ECID (default: the only one connected)")
+	fs.StringVar(&f.team, "team", "", "the Apple developer `team` the iOS target signs with (default: the team Xcode last used)")
 	return f
 }
 

@@ -5,9 +5,9 @@
 - Add a reactive Go engine with owners, memos, effects and regions (`Show`, `Each`, `Dynamic`, `Catch`).
 - Add block, flexbox and grid layout matching Taffy, with styles, per-side borders, state styles, transforms and transitions.
 - Add images, rich text with links, text selection across texts, canvas, virtualized lists, overlays, modals and navigation stacks.
-- Add `TextView` for Markdown and HTML with tables, alerts, footnotes, disclosures, app extensions and highlighted code, rebuilding only the blocks that change and closing a streamed reply's open syntax.
+- Add `TextView` for Markdown and HTML, including tables, alerts, footnotes, disclosures, extensions, highlighted code and streaming.
 - Add unstyled base controls, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
-- Add the `ui` package: base controls and popups styled with a light and dark theme drawn from the icon.
+- Add the `ui` package with themed controls and popups in light and dark.
 - Add pan, pinch and rotation gestures.
 - Add custom desktop title bars, window drag regions, window controls and an application menu.
 - Add `core.FontMonospace` for the platform's fixed-pitch font.
@@ -18,6 +18,7 @@
 - Add the `nsgo` tool with `init`, `dev` and `build`, configured by `nsgo.yaml`.
 - Add `nsgo dev` and `nsgo build` flags that override `nsgo.yaml`'s values.
 - Add `nsgo dev`'s native target on Windows and Linux and its Android target on connected devices.
+- Add `nsgo dev`'s iOS target on connected iPhones, signed with Xcode's automatic signing.
 - Add `nsgo build` opening its output directory, unless `build.open` is false.
 - Add `dev.hot_reload` to rebuild on save, since `nsgo dev` now runs the app once and exits with it.
 - Add a layered app icon.

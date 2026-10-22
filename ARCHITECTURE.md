@@ -45,13 +45,15 @@ Every target builds on macOS with Go, and iOS also with Xcode. No backend contai
 | Target | Package | Reaches the system through | Status |
 | --- | --- | --- | --- |
 | macOS | `platform/macos` | purego and the Objective-C runtime; `CGO_ENABLED=0` | Runs |
-| iOS | `platform/ios` | The same; cgo only because Go links iOS with Xcode's linker | Runs in the simulator |
+| iOS | `platform/ios` | The same; cgo only because Go links iOS with Xcode's linker | Runs in the simulator and on devices |
 | Web | `platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
 | Windows | `platform/windows` | `syscall`: a Win32 window drawn with GDI, and GDI+ for antialiased edges, into a 32-bit buffer; native EDIT inputs | Runs; native tests check its window, input and pixels |
 | Linux | `platform/linux` | GTK 4, Pango and Cairo loaded with purego: a GtkDrawingArea drawn with Cairo, Pango text, native GtkEntry inputs | Runs; native tests check its window, input and pixels |
 | Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Runs on arm64 devices; `nsgo` builds, signs and installs the APK with Go alone |
 
 Android runs the app as a second process because Go builds Android shared libraries only with cgo and the NDK. Without cgo, Go builds Android executables for arm64 only, so 32-bit devices and x86_64 emulators are out of reach. iOS forbids child processes, so it links in-process with Xcode instead.
+
+`nsgo dev -target ios` builds the app and Xcode signs it with automatic signing from the developer account in Xcode. It installs the app with `devicectl` and streams its output; `nsgo build -target ios` leaves the app to sign.
 
 Neither an NDK nor the Android SDK is needed: `platform/android/runtime` holds the Java runtime's prebuilt `classes.dex` (its `build.sh` rebuilds it), and `cmd/nsgo/apk` writes the binary manifest, the ZIP and the v2 signature in Go. `nsgo build -target android_arm64` writes an APK signed with the project's debug key. `nsgo dev -target android` installs it on the connected device, starts it and streams its log, so device development needs `adb` from the SDK's platform-tools.
 
@@ -73,7 +75,7 @@ The Linux backend loads GTK 4 at run time, so building its package needs only Go
 
 ## Tool
 
-`nsgo` is the only build entry point; it shells out to `go build`, and to Xcode's `xcrun`, `codesign` and `simctl` for Apple targets.
+`nsgo` is the only build entry point; it shells out to `go build`, and to Xcode's `xcrun`, `xcodebuild`, `codesign` and `simctl` for Apple targets.
 
 - Targets name an OS and an architecture (`macos_arm64`, `windows_x64`), so each package holds one binary.
 - `nsgo build` is a release build: `-s -w`, `-trimpath`, no VCS stamp. `nsgo dev` keeps symbols.
