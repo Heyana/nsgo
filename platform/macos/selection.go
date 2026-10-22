@@ -120,7 +120,7 @@ func (s *surface) areaAt(event objc.ID) *view {
 			continue
 		}
 		switch {
-		case v.field == n || v.kind == core.KindInput:
+		case v.field == n || v.kind == core.KindInput || v.kind == core.KindWeb:
 			taken = true
 		case area == nil && (v.pressable() || v.events.Has(core.EventPan)):
 			taken = true

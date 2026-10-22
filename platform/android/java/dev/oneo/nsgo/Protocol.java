@@ -63,6 +63,8 @@ final class Protocol {
     static final int ITEM_BACK_UNHANDLED = 28;
     static final int ITEM_WINDOW = 29;
     static final int ITEM_MENU = 30;
+    static final int ITEM_WEB = 31;
+    static final int ITEM_WEB_COMMAND = 32;
 
     // View kinds, as in core/mount.go.
     static final int KIND_VIEW = 1;
@@ -72,6 +74,7 @@ final class Protocol {
     static final int KIND_IMAGE = 5;
     static final int KIND_MODAL = 6;
     static final int KIND_CANVAS = 7;
+    static final int KIND_WEB = 8;
 
     // Event kinds, as in core/events.go. An event mask holds 1 << kind.
     static final int EVENT_PRESS = 1;
@@ -99,6 +102,17 @@ final class Protocol {
     static final int EVENT_PAN = 23;
     static final int EVENT_PINCH = 24;
     static final int EVENT_ROTATION = 25;
+    static final int EVENT_MENU = 26;
+    static final int EVENT_MESSAGE = 27;
+    static final int EVENT_NAVIGATION_STATE_CHANGE = 28;
+
+    // Web view commands, as in core/webview.go.
+    static final int WEB_RELOAD = 1;
+    static final int WEB_GO_BACK = 2;
+    static final int WEB_GO_FORWARD = 3;
+    static final int WEB_STOP_LOADING = 4;
+    static final int WEB_POST_MESSAGE = 5;
+    static final int WEB_INJECT_JAVASCRIPT = 6;
 
     // Gesture phases, as in core/gesture.go.
     static final int GESTURE_BEGAN = 1;

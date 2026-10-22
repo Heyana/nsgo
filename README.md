@@ -12,7 +12,7 @@ NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the
 
 ## Status
 
-NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, images, canvas, Markdown and HTML text views, overlays, dialogs, navigation, unstyled base components and themed `ui` components, running on macOS, iOS, Windows, Linux, the web and Android devices and x86_64 emulators. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
+NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, images, canvas, web views, Markdown and HTML text views, overlays, dialogs, navigation, unstyled base components and themed `ui` components, running on macOS, iOS, Windows, Linux, the web and Android devices and x86_64 emulators. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
 
 ## Goals
 
@@ -94,7 +94,7 @@ Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed to b
 
 Android device and emulator development additionally needs `adb` from the Android SDK's platform-tools, and iOS device development needs an Apple ID in Xcode's Accounts, a trusted iPhone and Developer Mode on it.
 
-The x86_64 emulator target, `android_x64`, also needs an Android NDK: Go links android/amd64 only with cgo. On Windows, Go 1.25 or later runs the native app and builds the Windows and web packages. On Linux, Go runs the native app once GTK 4.14 or newer, Pango and Cairo are installed.
+The x86_64 emulator target, `android_x64`, also needs an Android NDK: Go links android/amd64 only with cgo. On Windows, Go 1.25 or later runs the native app and builds the Windows and web packages. On Linux, Go runs the native app once GTK 4.14 or newer, Pango and Cairo are installed, and WebKitGTK 6.0 for web views.
 
 Run the example from the repository root:
 

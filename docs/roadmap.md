@@ -12,7 +12,6 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
-| WebView | `docs/dev/elements.md` | An element hosts the platform's web view on every target |
 | Video | `docs/dev/elements.md` | Playback with progress, resize modes and media info |
 | Animated and vector images | `docs/dev/images.md`, `docs/dev/elements.md` | GIF, animated WebP and SVG load on every target |
 | File drop | `docs/dev/file-drop.md` | Desktop and web views receive dropped files |
@@ -25,7 +24,6 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | `nsgo test` | `crates/nsh-cli/src/test*.rs` | Runs an app's `nsgotest` tests, and on simulators and browsers |
-| Icons | `docs/dev/embedding.md` | `nsgo build` turns the app icon into each target's format |
 | Store signing | `docs/dev/embedding.md` | `nsgo build` writes an IPA with a provisioning profile and an APK with a keystore |
 | Embedding SDKs | `docs/dev/embedding.md` | iOS, Android and desktop host apps can show an NSGo view |
 
@@ -36,6 +34,7 @@ These items wait for community contributions; the items above do not depend on t
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | iOS touch | `crates/nsh-platform-ios` | Gestures, text input and text selection are checked in the simulator; selections have touch handles |
+| Linux web views | `crates/nsh-platform-linux/src/native/web.rs` | Web views are checked on a machine with WebKitGTK 6.0 |
 
 ## Not ported
 

@@ -54,6 +54,7 @@ type view struct {
 	animation core.ModalAnimation // a modal's
 	presented bool                // whether a modal was inserted yet
 	drawing   *core.Drawing       // a canvas's
+	web       *apple.Web          // a web view's
 
 	activation           core.PanActivation
 	pan, pinch, rotation objc.ID // the recognizers of the gestures it follows
@@ -549,6 +550,10 @@ func (s *surface) apply(b *core.MountBatch) {
 			s.images = append(s.images, v)
 		case core.ItemModal:
 			v.animation = it.Modal.Animation
+		case core.ItemWeb:
+			v.web.Configure(it.Web)
+		case core.ItemWebCommand:
+			v.web.Command(it.WebCommand, it.Value)
 		case core.ItemCanvas:
 			v.drawing = it.Drawing
 			v.native.Send(selSetNeedsDisplay)
@@ -656,9 +661,13 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 		}
 	}
 	v.native.Send(selSetOpaque, false)
-	if kind == core.KindImage {
+	switch kind {
+	case core.KindImage:
 		v.image = apple.NewImageView(v.native.Send(selLayer))
 		v.image.Dispatch = v.report
+	case core.KindWeb:
+		v.web = apple.NewWeb(v.native)
+		v.web.Dispatch = v.report
 	}
 	views[v.native] = v
 	return v
@@ -671,6 +680,9 @@ func (s *surface) delete(v *view) {
 	v.layout.Release()
 	if v.image != nil {
 		v.image.Close()
+	}
+	if v.web != nil {
+		v.web.Close()
 	}
 	delete(views, v.native)
 	v.native.Send(selRelease)

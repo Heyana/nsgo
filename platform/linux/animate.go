@@ -149,7 +149,7 @@ func (w *window) tick() {
 		}
 	}
 	if scrolled {
-		w.placeEntries()
+		w.placeWidgets()
 	}
 	gtkWidgetQueueDraw(w.area)
 }

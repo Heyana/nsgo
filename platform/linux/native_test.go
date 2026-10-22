@@ -265,3 +265,53 @@ func TestTextDrawsBackgroundsAndAttachments(t *testing.T) {
 	w.onLoop(t, func() { w.press(core.Point{X: button.Origin.X + 20, Y: button.Origin.Y + 15}) })
 	waitForTitle(t, w, title+"|1")
 }
+
+// TestWebViewTalksToThePage opens a window with a web view showing
+// inline HTML, receives the message the page posts and posts one back,
+// which the page answers. It skips where WebKitGTK 6.0 is missing.
+func TestWebViewTalksToThePage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	if err := openWebKit(); err != nil {
+		t.Skip(err)
+	}
+	const page = `<!doctype html><html><body><script>
+		addEventListener('message', (e) => window.nsgo.postMessage('echo:' + e.data));
+		window.nsgo.postMessage('ready');
+	</script></body></html>`
+	title := "nsgo-native-" + t.Name()
+	app := func(cx *core.Scope) core.Node {
+		var ref core.Ref
+		last := core.NewSignal(cx, "")
+		loaded := core.NewSignal(cx, 0)
+		cx.Effect(func() { cx.SetTitle(fmt.Sprintf("%s|%d|%s", title, loaded.Get(), last.Get())) })
+		return core.View{Style: core.Style{Width: core.Pt(360), Height: core.Pt(240), Padding: core.All(10)},
+			Children: []core.Node{core.WebView{Source: core.WebHTML(page, ""), Ref: &ref,
+				Style:   core.Style{Width: core.Pt(300), Height: core.Pt(200)},
+				OnLoad:  func(core.WebNavigation) { loaded.Update(func(n int) int { return n + 1 }) },
+				OnError: func(err error) { last.Set("error:" + err.Error()) },
+				OnMessage: func(data string) {
+					last.Set(data)
+					if data == "ready" {
+						ref.PostMessage("ping")
+					}
+				}}}}
+	}
+	w := startTestWindow(t, app, Options{Title: title, Width: 360, Height: 240})
+	waitForTitle(t, w, title+"|1|echo:ping")
+
+	// The page fills the web view's frame, placed over the surface.
+	var visible core.Bounds
+	var shown bool
+	w.onLoop(t, func() {
+		for p, v := range w.webs {
+			if p == v.web.widget {
+				visible, shown = v.web.visible, v.web.shown
+			}
+		}
+	})
+	if want := (core.Bounds{Origin: core.Point{X: 10, Y: 10}, Size: core.Size{Width: 300, Height: 200}}); !shown || visible != want {
+		t.Fatalf("page shown %t at %v, want %v", shown, visible, want)
+	}
+}

@@ -112,6 +112,7 @@ var (
 	gtkWindowSetDefaultSize                func(uintptr, int32, int32)
 	gtkWindowSetChild                      func(uintptr, uintptr)
 	gtkWindowSetFocus                      func(uintptr, uintptr)
+	gtkWindowGetFocus                      func(uintptr) uintptr
 	gtkWindowPresent                       func(uintptr)
 	gtkWindowDestroy                       func(uintptr)
 	gtkWindowClose                         func(uintptr)
@@ -126,6 +127,8 @@ var (
 	gtkWidgetSetVisible                    func(uintptr, int32)
 	gtkWidgetAddController                 func(uintptr, uintptr)
 	gtkWidgetQueueDraw                     func(uintptr)
+	gtkWidgetQueueAllocate                 func(uintptr)
+	gtkWidgetGetMapped                     func(uintptr) int32
 	gtkWidgetGrabFocus                     func(uintptr)
 	gtkWidgetGetWidth                      func(uintptr) int32
 	gtkWidgetGetHeight                     func(uintptr) int32
@@ -411,6 +414,7 @@ func bind() {
 	purego.RegisterLibFunc(&gtkWindowGetDefaultSize, gtkLib, "gtk_window_get_default_size")
 	purego.RegisterLibFunc(&gtkWindowSetChild, gtkLib, "gtk_window_set_child")
 	purego.RegisterLibFunc(&gtkWindowSetFocus, gtkLib, "gtk_window_set_focus")
+	purego.RegisterLibFunc(&gtkWindowGetFocus, gtkLib, "gtk_window_get_focus")
 	purego.RegisterLibFunc(&gtkWindowPresent, gtkLib, "gtk_window_present")
 	purego.RegisterLibFunc(&gtkWindowDestroy, gtkLib, "gtk_window_destroy")
 	purego.RegisterLibFunc(&gtkWindowClose, gtkLib, "gtk_window_close")
@@ -425,6 +429,8 @@ func bind() {
 	purego.RegisterLibFunc(&gtkWidgetSetVisible, gtkLib, "gtk_widget_set_visible")
 	purego.RegisterLibFunc(&gtkWidgetAddController, gtkLib, "gtk_widget_add_controller")
 	purego.RegisterLibFunc(&gtkWidgetQueueDraw, gtkLib, "gtk_widget_queue_draw")
+	purego.RegisterLibFunc(&gtkWidgetQueueAllocate, gtkLib, "gtk_widget_queue_allocate")
+	purego.RegisterLibFunc(&gtkWidgetGetMapped, gtkLib, "gtk_widget_get_mapped")
 	purego.RegisterLibFunc(&gtkWidgetGrabFocus, gtkLib, "gtk_widget_grab_focus")
 	purego.RegisterLibFunc(&gtkWidgetGetWidth, gtkLib, "gtk_widget_get_width")
 	purego.RegisterLibFunc(&gtkWidgetGetHeight, gtkLib, "gtk_widget_get_height")

@@ -33,6 +33,12 @@ var (
 	cbClipboardText uintptr
 	cbAlertChosen   uintptr
 
+	cbWebLoadChanged   uintptr
+	cbWebLoadFailed    uintptr
+	cbWebMessage       uintptr
+	cbWebMap           uintptr
+	cbWebChildPosition uintptr
+
 	cbSettingsChanged uintptr
 	cbMenuActivate    uintptr
 	cbTick            uintptr
@@ -63,6 +69,12 @@ func init() {
 	cbEntryFocus = newCallback(entryFocusCallback)
 	cbClipboardText = newCallback(clipboardTextCallback)
 	cbAlertChosen = newCallback(alertChosenCallback)
+
+	cbWebLoadChanged = newCallback(webLoadChangedCallback)
+	cbWebLoadFailed = newCallback(webLoadFailedCallback)
+	cbWebMessage = newCallback(webMessageCallback)
+	cbWebMap = newCallback(webMapCallback)
+	cbWebChildPosition = newCallback(webChildPositionCallback)
 
 	cbSettingsChanged = newCallback(settingsChangedCallback)
 	cbMenuActivate = newCallback(menuActivateCallback)

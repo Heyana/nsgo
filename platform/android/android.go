@@ -8,9 +8,10 @@
 // text the engine prepares, measures it and lays it out with StaticLayout,
 // and mounts one Android view per node; measuring, and laying out text
 // with attachments, are the only round trips.
-// Go fetches images and Java decodes them; Java plays canvas drawings,
-// runs style transitions and reports the environment, back, keys,
-// presses outside overlays and answers to alerts and clipboard reads.
+// Go fetches images and Java decodes them; Java hosts web views, plays
+// canvas drawings, runs style transitions and reports the environment,
+// back, keys, presses outside overlays and answers to alerts and
+// clipboard reads.
 //
 // Go builds Android shared libraries only with cgo and the NDK; a second
 // process keeps every build an executable, so arm64 needs only Go. An
@@ -121,7 +122,7 @@ func Run(app engine.App) {
 		case msgResize:
 			s.engine.Resize(core.Size{Width: r.points(), Height: r.points()})
 		case msgEvent:
-			s.engine.Dispatch(core.Event{
+			ev := core.Event{
 				Kind:  core.EventKind(r.byte()),
 				ID:    core.NodeID(r.u32()),
 				Count: r.u32(),
@@ -133,7 +134,9 @@ func Run(app engine.App) {
 				Phase:    core.GesturePhase(r.byte()),
 				Velocity: core.Point{X: r.points(), Y: r.points()},
 				Value:    r.float(),
-			})
+			}
+			ev.Navigation = readNavigation(&r)
+			s.engine.Dispatch(ev)
 		case msgMeasured:
 			s.measured <- core.Size{Width: r.points(), Height: r.points()}
 		case msgLaidOut:
@@ -160,6 +163,22 @@ func Run(app engine.App) {
 			}
 			dnsServers.Store(&servers)
 		}
+	}
+}
+
+// readNavigation reads the web view's navigation NsgoView.event writes
+// last, nil for events without one.
+func readNavigation(r *reader) *core.WebNavigation {
+	flags := r.byte()
+	if flags&1 == 0 {
+		return nil
+	}
+	return &core.WebNavigation{
+		Loading:      flags&2 != 0,
+		CanGoBack:    flags&4 != 0,
+		CanGoForward: flags&8 != 0,
+		URL:          r.str(),
+		Title:        r.str(),
 	}
 }
 
@@ -483,6 +502,12 @@ func readMessage(r *bufio.Reader) (byte, []byte, error) {
 	return head[0], payload, nil
 }
 
+// webInterface is the JavaScript interface WebNode adds for pages to post
+// through, as WebNode.INTERFACE.
+const webInterface = "nsgoAndroid"
+
+var webBridge = core.WebBridge("function (d) { " + webInterface + ".postMessage(d); }")
+
 // encode writes a batch in the format NsgoView.mount reads: each item is
 // its kind, its ID and the fields of that kind; requests numbers its
 // ItemImage items in order. Kinds it does not know, ItemBackUnhandled and
@@ -621,6 +646,23 @@ func encode(w *writer, b *core.MountBatch, requests []uint32) {
 		case core.ItemStatusBar:
 			w.byte(byte(it.Count)) // a StatusBarStyle
 			w.flags(it.Animated)   // hidden
+		case core.ItemWeb:
+			c := it.Web
+			w.str(c.Source.Src)
+			w.str(c.Source.HTML)
+			w.str(c.Source.BaseURL)
+			w.str(c.InjectedJavaScript)
+			// The bridge comes first, so the app's script can post.
+			w.str(webBridge + "\n" + c.InjectedJavaScriptBeforeContent)
+			w.str(c.UserAgent)
+			w.flags(c.NoScroll, c.NoJavaScript) // Android has no back and forward swipes
+		case core.ItemWebCommand:
+			w.byte(byte(it.WebCommand))
+			if it.WebCommand == core.WebPostMessage {
+				w.str(core.WebMessageScript(it.Value))
+			} else {
+				w.str(it.Value)
+			}
 		}
 	}
 }

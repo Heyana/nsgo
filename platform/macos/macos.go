@@ -67,6 +67,7 @@ type view struct {
 	presented bool                // whether a modal was inserted yet
 	transform core.Transform      // AppKit drops it when the frame changes
 	drawing   *core.Drawing       // a canvas's
+	web       *apple.Web          // a web view's
 
 	windowDrag core.WindowDrag
 	activation core.PanActivation
@@ -469,12 +470,26 @@ func (s *surface) isBack(event objc.ID) bool {
 	const shift, control, option, command = 1 << 17, 1 << 18, 1 << 19, 1 << 20
 	const escape, leftArrow = 53, 123
 	mods := objc.Send[uint](event, sel("modifierFlags")) & (shift | control | option | command)
-	editing := objc.Send[bool](s.window.Send(sel("firstResponder")), sel("isKindOfClass:"), objc.GetClass("NSText"))
+	editing := s.editing()
 	switch code := objc.Send[uint16](event, sel("keyCode")); {
 	case code == escape && mods == 0, code == leftArrow && mods == option:
 		return !editing
 	case mods == command:
 		return apple.GoString(event.Send(sel("charactersIgnoringModifiers"))) == "["
+	}
+	return false
+}
+
+// editing reports whether keys go to a text field or a web page.
+func (s *surface) editing() bool {
+	first := s.window.Send(sel("firstResponder"))
+	if objc.Send[bool](first, sel("isKindOfClass:"), objc.GetClass("NSText")) {
+		return true
+	}
+	for n := first; n != 0 && objc.Send[bool](n, sel("isKindOfClass:"), objc.GetClass("NSView")); n = n.Send(selSuperview) {
+		if v := views[n]; v != nil && v.kind == core.KindWeb {
+			return true
+		}
 	}
 	return false
 }
@@ -681,6 +696,12 @@ func (s *surface) apply(b *core.MountBatch) {
 			s.images = append(s.images, v)
 		case core.ItemModal:
 			v.animation = it.Modal.Animation
+		case core.ItemWeb:
+			delete(views, v.web.View())
+			v.web.Configure(it.Web)
+			views[v.web.View()] = v
+		case core.ItemWebCommand:
+			v.web.Command(it.WebCommand, it.Value)
 		case core.ItemCanvas:
 			v.drawing = it.Drawing
 			v.native.Send(selSetNeedsDisplay, true)
@@ -783,9 +804,13 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 	if v.content == 0 {
 		v.content = v.native
 	}
-	if kind == core.KindImage {
+	switch kind {
+	case core.KindImage:
 		v.image = apple.NewImageView(v.native.Send(selLayer))
 		v.image.Dispatch = v.report
+	case core.KindWeb:
+		v.web = apple.NewWeb(v.native)
+		v.web.Dispatch = v.report
 	}
 	views[v.native] = v
 	return v
@@ -798,6 +823,10 @@ func (s *surface) delete(v *view) {
 	v.layout.Release()
 	if v.image != nil {
 		v.image.Close()
+	}
+	if v.web != nil {
+		delete(views, v.web.View())
+		v.web.Close()
 	}
 	if v.hover != 0 {
 		v.hover.Send(selRelease)
@@ -977,7 +1006,7 @@ func hitTest(self objc.ID, cmd objc.SEL, p apple.CGPoint) objc.ID {
 	stop := self.Send(selSuperview)
 	for n := hit; n != 0 && n != stop; n = n.Send(selSuperview) {
 		if v := views[n]; v != nil {
-			if v.field == n || v.kind == core.KindScroll {
+			if v.field == n || v.kind == core.KindScroll || v.kind == core.KindWeb {
 				return hit
 			}
 			if (v.pressable() || v.events.Has(core.EventPan)) && v.native == n {

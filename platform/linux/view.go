@@ -44,6 +44,9 @@ type view struct {
 	// A canvas's drawing.
 	drawing *core.Drawing
 
+	// A web view's page.
+	web *web
+
 	// What animates: the style after the first, and the scroll offset.
 	styled     bool
 	transition *transition
@@ -165,8 +168,11 @@ func scrollsAt(v *view, p core.Point, out []*view) []*view {
 func (w *window) press(at core.Point) {
 	if root := w.view(w.root); root != nil {
 		v := hit(root, at, func(v *view) bool {
-			return v.events.Has(core.EventPress) || v.kind == core.KindInput
+			return v.events.Has(core.EventPress) || v.kind == core.KindInput || v.kind == core.KindWeb
 		})
+		if v != nil && v.kind == core.KindWeb {
+			return // the page's, even where it has not shown yet
+		}
 		if v != nil && v.kind == core.KindText {
 			if l, ok := v.text.(*textLayout); ok {
 				b, _ := w.surfaceBounds(v)

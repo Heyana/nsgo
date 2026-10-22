@@ -7,6 +7,7 @@
 - Add images, rich text with links, text selection across texts, canvas, virtualized lists, overlays, modals and navigation stacks.
 - Add `TextView` for Markdown and HTML, including tables, alerts, footnotes, disclosures, formulas the app renders, inline images, extensions, highlighted code and streaming.
 - Add span backgrounds and views inside text that flow with its lines.
+- Add `WebView` with inline HTML, injected scripts, history and messages between page and app.
 - Add unstyled base controls, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
 - Add the `ui` package with themed controls and popups in light and dark.
 - Add pan, pinch and rotation gestures.

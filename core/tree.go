@@ -77,6 +77,7 @@ type node struct {
 	screen  *screenNode
 	list    *listNode
 	canvas  *canvasNode
+	web     *webNode
 	isStack bool
 	ref     *Ref
 
@@ -373,6 +374,10 @@ func (t *Tree) mount(cx *Scope, parent *node, el Node) {
 		t.mountCanvas(cx, parent, el)
 	case *Canvas:
 		t.mountCanvas(cx, parent, *el)
+	case WebView:
+		t.mountWebView(cx, parent, el)
+	case *WebView:
+		t.mountWebView(cx, parent, *el)
 	case List:
 		t.mountList(cx, parent, el)
 	case *List:
@@ -655,6 +660,10 @@ func (t *Tree) Dispatch(ev Event) {
 	if n == nil {
 		return
 	}
+	if n.web != nil {
+		t.dispatchWeb(n, ev)
+		return
+	}
 	h := &n.h
 	call := func(fn func()) {
 		if fn != nil {
@@ -895,5 +904,8 @@ func (n *node) events() EventMask {
 	bit(EventPan, h.pan != nil)
 	bit(EventPinch, h.pinch != nil)
 	bit(EventRotation, h.rotation != nil)
+	if n.web != nil {
+		m |= n.web.events()
+	}
 	return m
 }

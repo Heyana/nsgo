@@ -471,15 +471,17 @@ public class NsgoView extends FrameLayout {
 
     private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
             int index) {
-        event(kind, id, count, x, y, text, width, height, index, 0, 0, 0, 0);
+        event(kind, id, count, x, y, text, width, height, index, 0, 0, 0, 0, null);
     }
 
     /**
      * Sends an event to the engine: its kind, node, count, point, text,
-     * size and index, then a gesture's phase, velocity and value.
+     * size and index, then a gesture's phase, velocity and value, then a
+     * web view's navigation: flags of whether there is one, loading,
+     * canGoBack and canGoForward, and if there is, its URL and title.
      */
     private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
-            int index, int phase, float vx, float vy, float value) {
+            int index, int phase, float vx, float vy, float value, WebNode.Navigation nav) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream d = new DataOutputStream(bytes);
         try {
@@ -496,6 +498,13 @@ public class NsgoView extends FrameLayout {
             d.writeFloat(vx);
             d.writeFloat(vy);
             d.writeFloat(value);
+            if (nav == null) {
+                d.writeByte(0);
+            } else {
+                d.writeByte(1 | (nav.loading ? 2 : 0) | (nav.canGoBack ? 4 : 0) | (nav.canGoForward ? 8 : 0));
+                Protocol.writeString(d, nav.url);
+                Protocol.writeString(d, nav.title);
+            }
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -646,6 +655,7 @@ public class NsgoView extends FrameLayout {
                 nodes.remove(n.id);
                 outside.remove(n);
                 if (n.animator != null) n.animator.cancel();
+                if (n.web != null) n.web.destroy();
                 break;
             case Protocol.ITEM_FRAME:
                 n.view.setLayoutParams(frame(in));
@@ -780,6 +790,14 @@ public class NsgoView extends FrameLayout {
                 String title = Protocol.readString(in);
                 Activity activity = activity();
                 if (activity != null) activity.setTitle(title);
+                break;
+            }
+            case Protocol.ITEM_WEB:
+                n.web.configure(in);
+                break;
+            case Protocol.ITEM_WEB_COMMAND: {
+                int command = in.readUnsignedByte();
+                n.web.command(command, Protocol.readString(in));
                 break;
             }
             case Protocol.ITEM_WINDOW:
@@ -1048,6 +1066,14 @@ public class NsgoView extends FrameLayout {
             case Protocol.KIND_INPUT:
                 n.field = field(n);
                 ((ViewGroup) view).addView(n.field);
+                break;
+            case Protocol.KIND_WEB:
+                // The WebView fills the node's view, which draws its style.
+                n.web = new WebNode(context, (k, text, nav) -> {
+                    if (n.has(k)) event(k, n.id, 0, 0, 0, text, 0, 0, 0, 0, 0, 0, 0, nav);
+                });
+                n.children = (ViewGroup) view;
+                n.children.addView(n.web.view, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
                 break;
             case Protocol.KIND_SCROLL:
                 n.children = new Content(context);
@@ -1674,7 +1700,7 @@ public class NsgoView extends FrameLayout {
         }
 
         private void gesture(Node n, int kind, int phase, float x, float y, float vx, float vy, float value) {
-            if (n.has(kind)) event(kind, n.id, 0, x, y, "", 0, 0, 0, phase, vx, vy, value);
+            if (n.has(kind)) event(kind, n.id, 0, x, y, "", 0, 0, 0, phase, vx, vy, value, null);
         }
     }
 
@@ -1734,6 +1760,7 @@ public class NsgoView extends FrameLayout {
         EditText field;
         ImageNode image;
         CanvasNode canvas;
+        WebNode web;
         /** The view's background, the look it shows and the transition moving it. */
         Box background;
         Look shown;

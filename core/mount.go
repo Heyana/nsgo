@@ -25,6 +25,8 @@ const (
 	KindModal
 	// KindCanvas plays a Drawing (ItemCanvas).
 	KindCanvas
+	// KindWeb hosts the platform's web view, filling it (ItemWeb).
+	KindWeb
 )
 
 // ItemKind is what a mount item does.
@@ -104,6 +106,11 @@ const (
 	// ItemMenu replaces the application menu (Menu; nil restores the
 	// platform's); a chosen item is reported with EventMenu.
 	ItemMenu
+	// ItemWeb configures a web view (Web).
+	ItemWeb
+	// ItemWebCommand has a web view do WebCommand, with Value for the
+	// message or script.
+	ItemWebCommand
 )
 
 // MountItem is one change to the native views. Kind says which fields
@@ -136,6 +143,9 @@ type MountItem struct {
 	Keys   []string
 	Window *WindowCommand
 	Menu   []MenuEntry
+	Web    *WebConfig
+	// WebCommand is ItemWebCommand's.
+	WebCommand WebCommand
 }
 
 // MountBatch is one commit's changes, applied in order on the main thread.

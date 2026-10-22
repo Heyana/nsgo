@@ -1,6 +1,7 @@
 package dev.oneo.nsgo;
 
 import android.app.Activity;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,6 +19,10 @@ public class NsgoActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle state) {
+        // The manifest's theme is dark; web views take prefers-color-scheme
+        // from the theme, so it follows the system's mode at launch.
+        int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        if (night != Configuration.UI_MODE_NIGHT_YES) setTheme(android.R.style.Theme_DeviceDefault_Light_NoActionBar);
         super.onCreate(state);
         Window window = getWindow();
         WindowManager.LayoutParams lp = window.getAttributes();

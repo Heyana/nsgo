@@ -214,3 +214,17 @@ func TestTextViewStreams(t *testing.T) {
 	app.Find("id:streamed >> text:Done.")
 	app.Find("id:streamed >> text:Never")
 }
+
+func TestWebViewMessages(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Web View")
+	app.PostMessage("id:bridge", "clicked 1")
+	app.Find("text:The page said: clicked 1")
+	app.Press("role:button Post to the page")
+	cmds := app.Find("id:bridge").WebCommands
+	if len(cmds) != 1 || cmds[0] != (nsgotest.WebCommand{Command: core.WebPostMessage, Value: "hello #1"}) {
+		t.Fatalf("commands = %v", cmds)
+	}
+	app.Navigate("id:site", core.WebNavigation{URL: "https://example.com/", Title: "Example", CanGoBack: true})
+	app.Find("text:Example — https://example.com/ (loaded, back true, forward false)")
+}

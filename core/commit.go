@@ -312,6 +312,12 @@ func (t *Tree) emit(n *node) {
 			cn.fresh = false
 			add(MountItem{Kind: ItemCanvas, ID: n.id, Drawing: cn.drawing})
 		}
+	case n.web != nil:
+		if wn := n.web; first || wn.config != wn.sent {
+			c := wn.config
+			wn.sent = c
+			add(MountItem{Kind: ItemWeb, ID: n.id, Web: &c})
+		}
 	case n.scroll != nil:
 		sc := n.scroll
 		if first || sc.config != n.sent.scroll {

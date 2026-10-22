@@ -569,3 +569,128 @@ func TestFallbackGlyphsPaintAsTheirFallback(t *testing.T) {
 		}
 	}
 }
+
+func TestWebViewPostsMessagesBothWays(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	if _, err := findWebView2(); err != nil {
+		t.Skip(err)
+	}
+	title := "nsgo-web"
+	const page = `<!doctype html><html><body><script>
+addEventListener('message', function (e) { window.nsgo.postMessage('echo:' + e.data); });
+window.nsgo.postMessage('ready');
+</script></body></html>`
+	app := func(cx *core.Scope) core.Node {
+		var ref core.Ref
+		loaded := core.NewSignal(cx, "waiting")
+		echo := core.NewSignal(cx, "")
+		cx.Effect(func() { cx.SetTitle(title + "|" + loaded.Get() + "|" + echo.Get()) })
+		// The web view starts 20pt into a scroll view 150pt tall, which
+		// cuts off its bottom.
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(240), Padding: core.All(10),
+			Background: core.RGB(0xffffff)}, Children: []core.Node{
+			core.Scroll{Style: core.Style{Width: core.Pt(300), Height: core.Pt(150)}, Children: []core.Node{
+				core.View{Style: core.Style{Height: core.Pt(20)}},
+				core.WebView{Source: core.WebHTML(page, ""), Ref: &ref, UserAgent: "nsgo-test",
+					InjectedJavaScriptBeforeContent: "window.before = 'b';",
+					InjectedJavaScript:              "window.nsgo.postMessage('loaded:' + window.before + ':' + navigator.userAgent);",
+					Style:                           core.Style{Width: core.Pt(280), Height: core.Pt(200)},
+					OnMessage: func(data string) {
+						switch {
+						case data == "ready":
+							ref.PostMessage("hello")
+						case strings.HasPrefix(data, "loaded:"):
+							loaded.Set(data)
+						default:
+							echo.Set(data)
+						}
+					},
+					OnError: func(err error) { loaded.Set("error " + err.Error()) }},
+				core.View{Style: core.Style{Height: core.Pt(200)}},
+			}},
+		}}
+	}
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(app, Options{Title: title + "|waiting|", Width: 320, Height: 240})
+	}()
+	hwnd := waitForWindow(t, title+"|waiting|", done)
+	if hwnd == 0 {
+		return
+	}
+	t.Cleanup(func() {
+		postMessageW.Call(hwnd, wmClose, 0, 0)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("the window did not close")
+		}
+	})
+	// The first start of the browser process can take a while.
+	want := title + "|loaded:b:nsgo-test|echo:hello"
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		got := editText(hwnd)
+		if got == want {
+			break
+		}
+		if strings.HasPrefix(got, title+"|error") {
+			t.Fatalf("the web view failed: %q", got)
+		}
+		select {
+		case <-done:
+			t.Fatalf("the window closed with title %q", got)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("window title = %q, want %q", got, want)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	host := waitForChild(t, hwnd, webHostClass)
+	if host == 0 {
+		t.Fatal("the web view has no host window")
+	}
+	scale := 1.0
+	if dpi, _, _ := getDpiForSystem.Call(); dpi != 0 {
+		scale = float64(dpi) / 96
+	}
+	px := func(p float64) int32 { return int32(math.Round(p * scale)) }
+	// placed returns the host window's top in the client area and the
+	// top and bottom of its visible region.
+	placed := func() (top, from, to int32) {
+		var r rect
+		getWindowRect.Call(host, uintptr(unsafe.Pointer(&r)))
+		at := point{r.Left, r.Top}
+		screenToClient.Call(hwnd, uintptr(unsafe.Pointer(&at)))
+		var box rect
+		if kind, _, _ := getWindowRgnBox.Call(host, uintptr(unsafe.Pointer(&box))); kind == 0 {
+			box = rect{0, 0, r.Right - r.Left, r.Bottom - r.Top}
+		}
+		return at.Y, box.Top, box.Bottom
+	}
+	near := func(a, b int32) bool { return a-b <= 1 && b-a <= 1 }
+	if top, from, to := placed(); !near(top, px(30)) || from != 0 || !near(to, px(130)) {
+		t.Fatalf("the host is at %d showing %d to %d, want %d showing 0 to %d", top, from, to, px(30), px(130))
+	}
+	// One notch scrolls 48pt: the top goes under the scroll view's edge.
+	at := point{px(15), px(15)}
+	clientToScreen.Call(hwnd, uintptr(unsafe.Pointer(&at)))
+	postMessageW.Call(hwnd, wmMouseWheel, uintptr(uint32(uint16(0xff88))<<16), uintptr(uint32(at.Y)<<16|uint32(at.X)&0xffff))
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		top, from, to := placed()
+		if near(top, px(-18)) && near(from, px(28)) && near(to, px(178)) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("after scrolling the host is at %d showing %d to %d, want %d showing %d to %d",
+				top, from, to, px(-18), px(28), px(178))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}

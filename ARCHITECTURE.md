@@ -30,7 +30,7 @@ Packages mirror NSH's crates:
 | `core/internal/layout` | Taffy | Block, flexbox and grid layout, checked against Taffy's fixtures |
 | `nsgotest` | `nsh-testing` | Headless app tests: approximate text, a manual clock, selectors over a model of the views |
 | `platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
-| `platform/internal/apple` | Shared Apple code | CoreFoundation, CALayer styling, images, canvas and the CoreText text engine through purego |
+| `platform/internal/apple` | Shared Apple code | CoreFoundation, CALayer styling, images, canvas, `WKWebView` web views and the CoreText text engine through purego |
 | `platform/internal/imageload` | Platforms' image loaders | Fetching and caching image bytes once, in Go, for the backends that decode images themselves |
 | `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags; the tool sets name and window size |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `nsgo dev` and `nsgo build`, driven by an app's `nsgo.yaml` |
@@ -47,8 +47,8 @@ Every target builds on macOS with Go; iOS also needs Xcode, and x86_64 Android n
 | macOS | `platform/macos` | purego and the Objective-C runtime; `CGO_ENABLED=0` | Runs |
 | iOS | `platform/ios` | The same; cgo only because Go links iOS with Xcode's linker | Runs in the simulator and on devices |
 | Web | `platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
-| Windows | `platform/windows` | `syscall`: a Win32 window drawn with GDI, and GDI+ for antialiased edges, into a 32-bit buffer; native EDIT inputs | Runs; native tests check its window, input and pixels |
-| Linux | `platform/linux` | GTK 4, Pango and Cairo loaded with purego: a GtkDrawingArea drawn with Cairo, Pango text, native GtkEntry inputs | Runs; native tests check its window, input and pixels |
+| Windows | `platform/windows` | `syscall`: a Win32 window drawn with GDI, and GDI+ for antialiased edges, into a 32-bit buffer; native EDIT inputs; WebView2 web views through COM | Runs; native tests check its window, input and pixels |
+| Linux | `platform/linux` | GTK 4, Pango and Cairo loaded with purego: a GtkDrawingArea drawn with Cairo, Pango text, native GtkEntry inputs and WebKitGTK web views | Runs; native tests check its window, input and pixels |
 | Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Runs on arm64 devices and x86_64 emulators; `nsgo` builds, signs and installs the APK |
 
 Android runs the app as a second process because Go builds Android shared libraries only with cgo and the NDK. Without cgo, Go builds Android executables for arm64 only, so 32-bit devices stay out of reach. iOS forbids child processes, so it links in-process with Xcode instead.
@@ -59,7 +59,7 @@ Neither an NDK nor the Android SDK is needed for arm64: `platform/android/runtim
 
 An x86_64 emulator needs the `android_x64` package, which needs an NDK's clang: Go links android/amd64 only with cgo. An arm64 device or emulator still builds with Go alone.
 
-The Linux backend loads GTK 4 at run time, so building its package needs only Go, while running it needs GTK 4.14 or newer, Pango and Cairo installed as any GTK app does. The application menu is a GTK menu bar above the surface, but the backend draws no window controls of its own, so a hidden title bar reports the app's bar height only.
+The Linux backend loads GTK 4 at run time, so building its package needs only Go, while running it needs GTK 4.14 or newer, Pango and Cairo installed as any GTK app does. Web views also need WebKitGTK 6.0, loaded on the first one; without it a web view stays empty and reports an error. The application menu is a GTK menu bar above the surface, but the backend draws no window controls of its own, so a hidden title bar reports the app's bar height only.
 
 ## Boundaries
 
@@ -103,7 +103,7 @@ The Linux backend loads GTK 4 at run time, so building its package needs only Go
 
 Record a design question here, and confirm the answer with the user before choosing it.
 
-- **Windows web view and video.** Reach WebView2 and Media Foundation through COM over `syscall`, or ship WebView2's loader?
+- **Windows video.** Reach Media Foundation through COM over `syscall`, as web views reach WebView2, or another way?
 - **Signed packages and capabilities.** Port NSH's package signing and capability sandbox, or drop them because Go apps are native code?
 
 ## Verification

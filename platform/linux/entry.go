@@ -88,6 +88,12 @@ func (w *window) setValue(v *view, value string, count uint32) {
 	v.setting = false
 }
 
+// placeWidgets places the native widgets over the surface.
+func (w *window) placeWidgets() {
+	w.placeEntries()
+	w.placeWebs()
+}
+
 // placeEntries moves each entry to its input's content and hides the ones
 // of inputs that are hidden, detached or clipped away.
 func (w *window) placeEntries() {

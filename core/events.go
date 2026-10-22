@@ -26,7 +26,8 @@ const (
 	EventScroll
 	// EventLoadStart, EventProgress (Loaded, Total), EventLoad (Size, the
 	// source's pixels), EventError (Text) and EventLoadEnd follow an image
-	// view's loading.
+	// view's loading. A web view reports EventLoadStart and EventLoad with
+	// its Navigation, and EventError.
 	EventLoadStart
 	EventProgress
 	EventLoad
@@ -57,6 +58,11 @@ const (
 	EventRotation
 	// EventMenu is an application menu item chosen (Count, its ID).
 	EventMenu
+	// EventMessage carries what a web view's page posted (Text).
+	EventMessage
+	// EventNavigationStateChange is a web view's page or history changing
+	// (Navigation).
+	EventNavigationStateChange
 )
 
 // EventMask is a set of event kinds.
@@ -88,6 +94,8 @@ type Event struct {
 	Phase    GesturePhase
 	Velocity Point
 	Value    float32
+	// Navigation is a web view's state.
+	Navigation *WebNavigation
 }
 
 // Mergeable reports whether a later event of the same kind and view

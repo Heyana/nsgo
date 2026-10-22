@@ -12,7 +12,7 @@ NSGo 参考 [Native Shell（NSH）](https://nsh.dev) 的设计，NSH 用 Rust �
 
 ## 状态
 
-NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、图片、画布、Markdown 和 HTML 文本视图、浮层、对话框、导航、无样式基础组件和带主题的 `ui` 组件，可在 macOS、iOS、Windows、Linux、Web 和 Android 设备及 x86_64 模拟器上运行。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
+NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、图片、画布、网页视图、Markdown 和 HTML 文本视图、浮层、对话框、导航、无样式基础组件和带主题的 `ui` 组件，可在 macOS、iOS、Windows、Linux、Web 和 Android 设备及 x86_64 模拟器上运行。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
 
 ## 目标
 
@@ -94,7 +94,7 @@ dev 和 build 命令的参数会覆盖它们所对应的 `nsgo.yaml` 值：两�
 
 Android 真机和模拟器开发还需要 Android SDK platform-tools 中的 `adb`；iOS 真机开发需要在 Xcode 的 Accounts 中登录 Apple ID，并连接一台已信任、已开启开发者模式的 iPhone。
 
-x86_64 模拟器目标 `android_x64` 还需要 Android NDK：Go 只能通过 cgo 链接 android/amd64。在 Windows 上，只需 Go 1.25 或更高版本即可运行原生应用，并构建 Windows 和 Web 包。在 Linux 上，安装 GTK 4.14 或更高版本、Pango 和 Cairo 后即可用 Go 运行原生应用。
+x86_64 模拟器目标 `android_x64` 还需要 Android NDK：Go 只能通过 cgo 链接 android/amd64。在 Windows 上，只需 Go 1.25 或更高版本即可运行原生应用，并构建 Windows 和 Web 包。在 Linux 上，安装 GTK 4.14 或更高版本、Pango 和 Cairo 后即可用 Go 运行原生应用；网页视图还需要 WebKitGTK 6.0。
 
 在仓库根目录运行示例：
 

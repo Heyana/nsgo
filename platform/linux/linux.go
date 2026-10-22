@@ -2,19 +2,23 @@
 
 // Package linux is NSGo's GTK 4 backend. One GtkWindow shows a
 // GtkDrawingArea that draws the whole tree with Cairo, text the engine
-// measured and laid out with Pango, and inputs as native GtkEntry
-// widgets above it. GTK delivers the pointer, wheel and keyboard events;
+// measured and laid out with Pango, and inputs and web views as native
+// GtkEntry and WebKitWebView widgets above it. GTK delivers the pointer, wheel and keyboard events;
 // the engine hit tests presses and keeps the interaction state.
 //
 // The backend is the one the roadmap asks for: GTK 4 through purego, no
 // cgo and no hand-written C. It loads its libraries at run time, so an
 // app built on macOS needs only Go and Xcode, and an app built for Linux
-// needs GTK 4.14 or newer, Pango and Cairo where it runs.
+// needs GTK 4.14 or newer, Pango and Cairo where it runs. Web views also
+// need WebKitGTK 6.0, which loads on the first one; without it a web view
+// stays empty and reports an error.
 //
 // The application menu is a GTK menu bar above the surface. The backend
 // does not select text, expose accessibility, draw window controls of its
 // own or animate modals. A partly clipped input is hidden, because GTK
-// has no per-widget clip rectangle.
+// has no per-widget clip rectangle; a web view is clipped to a rectangle,
+// without its ancestors' rounded corners. Inputs and web views stay above
+// everything the surface draws, including views drawn over them.
 package linux
 
 import (
@@ -62,6 +66,7 @@ type window struct {
 	views     []*view
 	root      core.NodeID
 	entries   map[uintptr]*view
+	webs      map[uintptr]*view // by page, holder and content manager
 	keys      map[string]bool
 	animating []*view
 	ticking   bool
@@ -117,6 +122,7 @@ func start(app engine.App, opts Options) (*window, error) {
 	}
 	w := &window{
 		entries:    map[uintptr]*view{},
+		webs:       map[uintptr]*view{},
 		keys:       map[string]bool{},
 		actionRefs: map[uintptr]menuRef{},
 		env:        core.Environment{OS: core.OSLinux, Idiom: core.IdiomDesktop},
@@ -412,6 +418,10 @@ func (w *window) apply(b *core.MountBatch) {
 			// A modal is a view: it shows without a separate window.
 		case core.ItemCanvas:
 			v.drawing = it.Drawing
+		case core.ItemWeb:
+			w.configureWeb(v, it.Web)
+		case core.ItemWebCommand:
+			w.webCommand(v, it.WebCommand, it.Value)
 		case core.ItemScrollTo:
 			v.scrolling = nil
 			if it.Animated {
@@ -433,7 +443,7 @@ func (w *window) apply(b *core.MountBatch) {
 			w.load(v, &v.source, true)
 		}
 	}
-	w.placeEntries()
+	w.placeWidgets()
 	for _, f := range focus {
 		switch {
 		case f.v == nil:
@@ -486,6 +496,9 @@ func (w *window) delete(v *view) {
 			gtkFixedRemove(w.fixed, v.entry)
 		}
 		v.entry = 0
+	}
+	if v.web != nil {
+		w.closeWeb(v)
 	}
 	v.source.reset(core.ImageSource{})
 	v.placeholder.reset(core.ImageSource{})
@@ -571,7 +584,7 @@ func (w *window) wheel(at core.Point, dx, dy float64) {
 		}
 		v.scrolling = nil
 		if w.scrollTo(v, offset) {
-			w.placeEntries()
+			w.placeWidgets()
 			gtkWidgetQueueDraw(w.area)
 			return
 		}

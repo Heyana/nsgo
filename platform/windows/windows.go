@@ -3,9 +3,10 @@
 // Package windows is NSGo's Win32 backend: one window that draws a
 // retained tree of views with GDI into a 32-bit bitmap, text the engine
 // measured and laid out with GDI fonts, presses hit tested by the engine,
-// inputs as native EDIT controls, images decoded by Go, canvases drawn
-// antialiased by GDI+, and alerts as task dialogs. It uses only the
-// syscall package, so it builds without cgo.
+// inputs as native EDIT controls, web views as WebView2 controllers in
+// child windows, images decoded by Go, canvases drawn antialiased by
+// GDI+, and alerts as task dialogs. It uses only the syscall package, so
+// it builds without cgo.
 //
 // GDI has no alpha and cannot blend a fractional edge. Translucent colors
 // fill their clipped shape with AlphaBlend, translucent views draw into a
@@ -117,6 +118,7 @@ var (
 
 const (
 	wmDestroy        = 0x0002
+	wmMove           = 0x0003
 	wmSize           = 0x0005
 	wmPaint          = 0x000F
 	wmEraseBkgnd     = 0x0014
@@ -296,6 +298,9 @@ type view struct {
 	// A canvas's drawing.
 	drawing *core.Drawing
 
+	// A web view's WebView2 controller and host window.
+	web *webView
+
 	// What animates: the style, after the first, and the scroll offset.
 	styled     bool
 	transition *transition
@@ -336,6 +341,9 @@ type window struct {
 	animating []*view
 	ticking   bool
 	chrome    chrome
+	webs      map[uintptr]*view // web views by host window
+	webEnv    *webEnvironment
+	cacheDir  string // where web views keep their profile
 
 	// The gestures in progress.
 	pan                            *pan
@@ -373,7 +381,7 @@ func Run(app engine.App, opts Options) {
 	}
 	const perMonitorAwareV2 = ^uintptr(3) // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 (-4)
 	setDpiAwareness.Call(perMonitorAwareV2)
-	w := &window{title: opts.Title, scale: 1, edits: map[uintptr]*view{}}
+	w := &window{title: opts.Title, scale: 1, edits: map[uintptr]*view{}, webs: map[uintptr]*view{}}
 	if dpi, _, _ := getDpiForSystem.Call(); dpi != 0 {
 		w.scale = float64(dpi) / 96
 	}
@@ -415,7 +423,9 @@ func Run(app engine.App, opts Options) {
 		Size:        core.Size{Width: opts.Width, Height: opts.Height},
 		Environment: w.env,
 	}
-	eopts.SetDirs(engine.AppDirs(opts.ID))
+	data, cache := engine.AppDirs(opts.ID)
+	eopts.SetDirs(data, cache)
+	w.cacheDir = cache
 	w.engine = engine.Start(w, app, eopts)
 	showWindow.Call(hwnd, swShow)
 
@@ -640,6 +650,9 @@ func (w *window) apply(b *core.MountBatch) {
 			if v.edit != 0 {
 				invalidateRect.Call(v.edit, 0, 1) // its background may have changed
 			}
+			if v.web != nil {
+				v.web.restyle()
+			}
 		case core.ItemText:
 			if v.text != nil {
 				v.text.Release()
@@ -671,6 +684,17 @@ func (w *window) apply(b *core.MountBatch) {
 			// A modal is a view; it appears without animation.
 		case core.ItemCanvas:
 			v.drawing = it.Drawing
+		case core.ItemWeb:
+			if v.kind == core.KindWeb && it.Web != nil {
+				if v.web == nil {
+					v.web = w.newWeb(v)
+				}
+				v.web.configure(it.Web)
+			}
+		case core.ItemWebCommand:
+			if v.web != nil {
+				v.web.command(it.WebCommand, it.Value)
+			}
 		case core.ItemScrollTo:
 			v.scrolling = nil
 			if it.Animated {
@@ -745,6 +769,10 @@ func (w *window) delete(v *view) {
 	if v.brush != 0 {
 		deleteObject.Call(v.brush)
 		v.brush = 0
+	}
+	if v.web != nil {
+		v.web.close()
+		v.web = nil
 	}
 	v.source.reset(core.ImageSource{})
 	v.placeholder.reset(core.ImageSource{})
@@ -827,9 +855,10 @@ func boolArg(b bool) uintptr {
 
 // placeEdits moves each EDIT to its input's content, centered on a line
 // and clipped by scroll views and clipping ancestors, and hides the ones
-// of inputs that are hidden, detached or clipped away.
+// of inputs that are hidden, detached or clipped away. Web views' host
+// windows go over their views the same way.
 func (w *window) placeEdits() {
-	if len(w.edits) == 0 {
+	if len(w.edits) == 0 && len(w.webs) == 0 {
 		return
 	}
 	w.pass++
@@ -840,6 +869,11 @@ func (w *window) placeEdits() {
 		if v.placed != w.pass && v.shown {
 			showWindow.Call(edit, swHide)
 			v.shown = false
+		}
+	}
+	for _, v := range w.webs {
+		if v.web.placed != w.pass {
+			v.web.hide()
 		}
 	}
 }
@@ -855,6 +889,9 @@ func (w *window) placeIn(v *view, x, y core.Points, clip rect) {
 	if v.edit != 0 {
 		w.placeEdit(v, x, y, clip)
 	}
+	if v.web != nil {
+		v.web.place(w.rect(x, y, v.frame.Size), clip, w.pass)
+	}
 	if v.style.Clip || v.kind == core.KindScroll {
 		clip = clip.intersect(w.rect(x, y, v.frame.Size))
 	}
@@ -863,9 +900,14 @@ func (w *window) placeIn(v *view, x, y core.Points, clip rect) {
 	}
 }
 
-// cover hides the EDITs placed so far in this pass that a modal drawn
-// over them covers, in r, and takes the focus from them.
+// cover hides the EDITs and web views placed so far in this pass that a
+// modal drawn over them covers, in r, and takes the focus from the EDITs.
 func (w *window) cover(r rect) {
+	for _, v := range w.webs {
+		if v.web.placed == w.pass && !v.web.rect.intersect(r).empty() {
+			v.web.placed = w.pass - 1
+		}
+	}
 	for edit, v := range w.edits {
 		if v.placed == w.pass && !v.editRect.intersect(r).empty() {
 			v.placed = w.pass - 1
@@ -1161,8 +1203,15 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return v.brush
 		}
 	case wmDestroy:
+		for _, v := range w.webs {
+			v.web.close()
+		}
 		postQuitMessage.Call(0)
 		return 0
+	case wmMove:
+		for _, v := range w.webs {
+			v.web.moved()
+		}
 	}
 	r, _, _ := defWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
 	return r

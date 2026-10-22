@@ -92,7 +92,16 @@ type View struct {
 	Content  core.Size  // a scroll view's content
 	Offset   core.Point // and its offset
 	Image    core.ImageConfig
-	Focused  bool
+	Web      core.WebConfig
+	// WebCommands are what the app asked a web view to do, oldest first.
+	WebCommands []WebCommand
+	Focused     bool
+}
+
+// WebCommand is a command a web view received, with its message or script.
+type WebCommand struct {
+	Command core.WebCommand
+	Value   string
 }
 
 // Start runs app and settles it; the test's cleanup disposes it.
@@ -542,6 +551,36 @@ func (a *App) Load(selector string, pixels core.Size) {
 	}
 }
 
+// Navigate reports that the web view selector matches loaded the page
+// nav describes, as a platform does: it starts loading, then loads.
+func (a *App) Navigate(selector string, nav core.WebNavigation) {
+	a.t.Helper()
+	v := a.Find(selector)
+	for _, loading := range []bool{true, false} {
+		nav.Loading = loading
+		kind := core.EventLoad
+		if loading {
+			kind = core.EventLoadStart
+		}
+		for _, k := range []core.EventKind{kind, core.EventNavigationStateChange} {
+			if v.Events.Has(k) {
+				n := nav
+				a.dispatch(core.Event{Kind: k, ID: v.ID, Navigation: &n})
+			}
+		}
+	}
+}
+
+// PostMessage reports that the page in the web view selector matches
+// posted data.
+func (a *App) PostMessage(selector, data string) {
+	a.t.Helper()
+	v := a.Find(selector)
+	if v.Events.Has(core.EventMessage) {
+		a.dispatch(core.Event{Kind: core.EventMessage, ID: v.ID, Text: data})
+	}
+}
+
 // Scroll scrolls the view selector matches to offset.
 func (a *App) Scroll(selector string, offset core.Point) {
 	a.t.Helper()
@@ -601,6 +640,10 @@ func (a *App) apply(b *core.MountBatch) {
 			v.Content = it.Size
 		case core.ItemImage:
 			v.Image = *it.Image
+		case core.ItemWeb:
+			v.Web = *it.Web
+		case core.ItemWebCommand:
+			v.WebCommands = append(v.WebCommands, WebCommand{it.WebCommand, it.Value})
 		case core.ItemFocus:
 			for _, o := range a.views {
 				o.Focused = false
@@ -703,6 +746,10 @@ func kindName(k core.ViewKind) string {
 		return "image"
 	case core.KindModal:
 		return "modal"
+	case core.KindCanvas:
+		return "canvas"
+	case core.KindWeb:
+		return "web"
 	}
 	return "?"
 }

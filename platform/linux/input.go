@@ -80,9 +80,9 @@ func clickPressedCallback(gesture uintptr, n int32, x, y float64, data uintptr) 
 	}
 	at := core.Point{X: core.Points(x), Y: core.Points(y)}
 	w.lastPointer, w.pressConsumed = at, false
-	// A press on the surface leaves the focused field; a press on the
-	// field itself never reaches this controller.
-	if w.focus != nil {
+	// A press on the surface leaves the focused field or page; a press
+	// on either never reaches this controller.
+	if w.focus != nil || w.focusedWeb() != nil {
 		w.focusEntry(nil)
 	}
 	w.pressOutside(at)
@@ -251,6 +251,11 @@ func keyPressedCallback(controller uintptr, keyval, keycode, state uint32, data 
 	if w.focus != nil {
 		// The field takes plain keys and its own editing shortcuts.
 		if keyval != gdkEscape && state&(gdkControl|gdkAlt|gdkSuper|gdkMeta) == 0 {
+			return 0
+		}
+	} else if w.focusedWeb() != nil {
+		// The page takes plain keys, Escape among them.
+		if state&(gdkControl|gdkAlt|gdkSuper|gdkMeta) == 0 {
 			return 0
 		}
 	}
@@ -442,7 +447,7 @@ func (w *window) beginWindowDrag(gesture uintptr, at core.Point) bool {
 		return false
 	}
 	if control := hit(root, at, func(v *view) bool {
-		return v.events.Has(core.EventPress) || v.events.Has(core.EventPan) || v.kind == core.KindInput
+		return v.events.Has(core.EventPress) || v.events.Has(core.EventPan) || v.kind == core.KindInput || v.kind == core.KindWeb
 	}); control != nil && descendant(control, drag) {
 		return false
 	}
@@ -621,6 +626,7 @@ func (w *window) menuChosen(ref menuRef) bool {
 			gtkWidgetActivateAction(w.focus.entry, cstr(action), 0)
 			return true
 		}
+		w.webEdit(ref.role)
 	default:
 		return false
 	}

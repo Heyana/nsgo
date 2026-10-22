@@ -145,7 +145,7 @@ func outermost(v *view) *view {
 func selectReceives(_ objc.ID, _ objc.SEL, r, touch objc.ID) bool {
 	stop := r.Send(selView)
 	for n := touch.Send(selView); n != 0 && n != stop; n = n.Send(selSuperview) {
-		if v := views[n]; v != nil && v.native == n && (v.kind == core.KindInput || v.pressable() || v.pan != 0) {
+		if v := views[n]; v != nil && v.native == n && (v.kind == core.KindInput || v.kind == core.KindWeb || v.pressable() || v.pan != 0) {
 			return false
 		}
 	}

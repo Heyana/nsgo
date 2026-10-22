@@ -214,7 +214,7 @@ func dragsWindow(hit, stop objc.ID) bool {
 
 // takesPointer reports whether presses on v are the app's.
 func (v *view) takesPointer() bool {
-	return v.kind == core.KindInput || v.kind == core.KindScroll || v.pressable() ||
+	return v.kind == core.KindInput || v.kind == core.KindScroll || v.kind == core.KindWeb || v.pressable() ||
 		v.events.Has(core.EventPan) || v.events.Has(core.EventPinch) || v.events.Has(core.EventRotation) ||
 		v.events.Has(core.EventContextMenu)
 }

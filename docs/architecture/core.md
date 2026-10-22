@@ -14,7 +14,7 @@ The graph follows NSH's (Solid 1.9's scheduling): signals, memos, render effects
 
 ## Elements and components
 
-Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Canvas`, `Overlay`, `Modal`, `Stack`, `Screen`) are structs with exported fields: zero values are defaults, as in `http.Server`.
+Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Canvas`, `WebView`, `Overlay`, `Modal`, `Stack`, `Screen`) are structs with exported fields: zero values are defaults, as in `http.Server`.
 
 - A field that can change takes a function (`StyleFunc`, `ContentFunc`, `Value`, `Disabled`), bound by one render effect per part.
 - Styles compose with `Style.Merge`, and text fields inherit down the tree as in CSS.
@@ -72,6 +72,17 @@ The family `FontMonospace` is each platform's fixed-pitch font: CoreText's user 
 - Every engine places an attachment by NSH's rule, `TextAttachment.Ascent` and `Extent` against the placeholder font's `FontExtent`, so a line grows where an attachment reaches past its font. After layout the core asks the `AttachmentLayout` where each went and sends the attachment's view as a native child of the text view at that frame. Those cut off by the line limit are hidden.
 
 A `Canvas` records its drawing on the engine into an immutable `Drawing`, again when a signal it read or its size changes, and the platform plays the operations on the main thread.
+
+## Web views
+
+A `WebView` follows NSH's: the platform's web view fills a `KindWeb` view, which keeps the decoration, frame and accessibility, and takes its own pointer, wheel and keyboard input.
+
+- `ItemWeb` carries the whole `WebConfig`; the platform loads the source again when it or the scripts change. `ItemWebCommand` carries `Ref`'s reload, history, stop, `PostMessage` and `InjectJavaScript`.
+- Every page starts with `WebBridge`, defining `window.nsgo.postMessage(data)`, which reaches `OnMessage` as a string. `PostMessage` dispatches a `MessageEvent` on the page's window.
+- Load start, load and navigation events carry `WebNavigation`: URL, title, loading and history.
+- Apple platforms share one `WKWebView` host in `platform/internal/apple`, made on the first `ItemWeb` and again when `NoJavaScript` changes, since WebKit fixes its preferences then.
+- Windows hosts WebView2 in a child window placed as its inputs are. It finds the installed Evergreen runtime in the registry and calls the runtime's DLL as WebView2's loader would, so nothing ships with the app; the page's background is the view's, opaque. Linux places WebKitGTK 6.0 over the surface, clipped to the visible part of its frame. Android's Java runtime hosts `android.webkit.WebView` and runs scripts meant for the document's start when the page starts, as android.webkit has no earlier hook.
+- The web uses an `<iframe>` as NSH does. HTML loads as `srcdoc` in a sandbox with an origin of its own and gets the bridge over a `MessageChannel`. A URL loads as it is: the browser hides what the page does, so it gets `PostMessage` and load events, but not scripts or history.
 
 ## Text selection
 
