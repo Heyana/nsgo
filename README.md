@@ -1,3 +1,7 @@
+<p align="center">
+  <img width="128" height="128" alt="NSGo" src="docs/images/logo.png">
+</p>
+
 # NSGo
 
 **English** | [简体中文](README.zh-CN.md)
