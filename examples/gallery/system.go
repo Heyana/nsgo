@@ -76,10 +76,12 @@ func menuPage(cx *core.Scope, t *theme) core.Node {
 		),
 		t.demo("Checkable items", "View › Show Descriptions is checkable: it and this switch share one value.",
 			base.Switch{Checked: g.descriptions.Get, OnChange: g.descriptions.Set, Label: "Show descriptions", Style: row,
-				TrackStyle: core.Style{Width: core.Pt(44), Height: core.Pt(26), CornerRadius: 13, Background: t.line, Padding: core.All(3),
-					Checked: &core.Style{Background: t.accent, AlignItems: core.AlignEnd}},
-				ThumbStyle: core.Style{Width: core.Pt(20), Height: core.Pt(20), CornerRadius: 10, Background: core.RGB(0xffffff)},
-				Children:   []core.Node{core.Text{Content: "Show section descriptions"}}},
+				TrackStyle: core.Style{Width: core.Pt(40), Height: core.Pt(20), CornerRadius: 10, Background: t.switchOff, Padding: core.All(2),
+					Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyStart,
+					Checked: &core.Style{Background: t.accent, JustifyContent: core.JustifyEnd}},
+				ThumbStyle: core.Style{Width: core.Pt(20), Height: core.Pt(16), CornerRadius: 8, Background: t.knob,
+					ShadowColor: core.RGBA(0, 0.18), ShadowRadius: 2, ShadowOffset: core.Point{Y: 1}},
+				Children: []core.Node{core.Text{Content: "Show section descriptions"}}},
 		),
 	}}
 }

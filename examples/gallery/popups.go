@@ -28,7 +28,7 @@ func popupsPage(cx *core.Scope, t *theme) core.Node {
 		}}
 	panel := func(title, body string, close func()) []core.Node {
 		return []core.Node{
-			core.Text{Content: title, Role: core.RoleHeader, Style: core.Style{FontSize: 18, FontWeight: core.FontWeightBold}},
+			core.Text{Content: title, Role: core.RoleHeader, Style: core.Style{FontSize: 17, FontWeight: core.FontWeightSemibold}},
 			core.Text{Content: body, Style: core.Style{Color: t.muted}},
 			t.primary("Close", close),
 		}
@@ -77,16 +77,19 @@ func popupsPage(cx *core.Scope, t *theme) core.Node {
 			),
 		),
 		base.Dialog{Open: dialog.Get, OnOpenChange: func(open bool, _ base.Reason) { dialog.Set(open) }, BackdropStyle: t.backdrop(),
-			PopupStyle: core.Style{Background: t.surface, Color: t.ink, CornerRadius: 14, Padding: core.All(20), Gap: 12,
-				Width: core.Pct(80), MaxWidth: core.Pt(420)},
+			PopupStyle: core.Style{Background: t.surface, Color: t.ink, CornerRadius: dialogRadius, Padding: core.All(20), Gap: 12,
+				BorderWidth: 1, BorderColor: t.borderStrong, Width: core.Pct(80), MaxWidth: core.Pt(420),
+				ShadowColor: core.RGBA(0, 0.12), ShadowRadius: 24, ShadowOffset: core.Point{Y: 8}},
 			Label: "Dialog", Children: panel("A dialog", "Escape, back or the backdrop closes it.", func() { dialog.Set(false) })},
 		base.Sheet{Open: sheet.Get, OnOpenChange: func(open bool, _ base.Reason) { sheet.Set(open) }, BackdropStyle: t.backdrop(),
-			PopupStyle: core.Style{Background: t.surface, Color: t.ink, Padding: core.All(20), Gap: 12, CornerRadius: 16, Height: core.Pct(40)},
-			Label:      "Sheet", Children: []core.Node{base.SafeAreaView{Edges: base.Bottom, Style: core.Style{Gap: 12},
+			PopupStyle: core.Style{Background: t.surface, Color: t.ink, Padding: core.All(20), Gap: 12, CornerRadius: dialogRadius, Height: core.Pct(40),
+				BorderWidth: 1, BorderColor: t.line, ShadowColor: core.RGBA(0, 0.12), ShadowRadius: 24, ShadowOffset: core.Point{Y: 8}},
+			Label: "Sheet", Children: []core.Node{base.SafeAreaView{Edges: base.Bottom, Style: core.Style{Gap: 12},
 				Children: panel("A sheet from the bottom", "Sheets slide in from an edge of the app.", func() { sheet.Set(false) })}}},
 		base.Sheet{Open: side.Get, OnOpenChange: func(open bool, _ base.Reason) { side.Set(open) }, BackdropStyle: t.backdrop(),
 			Side: core.PlaceRight, Label: "Side sheet",
-			PopupStyle: core.Style{Background: t.surface, Color: t.ink, Padding: core.All(20), Gap: 12, Width: core.Pt(300)},
+			PopupStyle: core.Style{Background: t.surface, Color: t.ink, Padding: core.All(20), Gap: 12, Width: core.Pt(300),
+				BorderWidth: 1, BorderColor: t.line, ShadowColor: core.RGBA(0, 0.12), ShadowRadius: 24, ShadowOffset: core.Point{Y: 8}},
 			Children: []core.Node{base.SafeAreaView{Edges: base.Top | base.Bottom, Style: core.Style{Gap: 12},
 				Children: panel("A side sheet", "Side picks the edge: this one sits on the right.", func() { side.Set(false) })}}},
 	}}

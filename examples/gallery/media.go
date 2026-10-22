@@ -36,7 +36,7 @@ func imagesPage(cx *core.Scope, t *theme) core.Node {
 		),
 		t.demo("Remote", "A URL the platform fetches and caches, with a placeholder and progress until it loads.",
 			core.Image{Source: core.Src(riverURL), ResizeMode: core.Cover, Label: "River",
-				Style:       core.Style{Height: core.Pt(180), CornerRadius: 10, Overflow: core.Hidden, Background: t.sunken},
+				Style:       core.Style{Height: core.Pt(180), CornerRadius: cardRadius, Overflow: core.Hidden, Background: t.sunken},
 				OnProgress:  func(loaded, total int64) { status.Set(fmt.Sprintf("loading… %d of %d bytes", loaded, total)) },
 				OnLoad:      func(px core.Size) { status.Set(fmt.Sprintf("loaded %g×%g px", px.Width, px.Height)) },
 				OnError:     func(err error) { status.Set("error: " + err.Error()) },

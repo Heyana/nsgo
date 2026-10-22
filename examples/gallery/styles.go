@@ -13,7 +13,7 @@ func stylesPage(cx *core.Scope, t *theme) core.Node {
 			AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Padding: core.All(4)}.Merge(style),
 			Children: []core.Node{core.Text{Content: label, Style: core.Style{FontSize: 12, TextAlign: core.TextAlignCenter}}}}
 	}
-	red, green, blue, amber := core.RGB(0xe5534b), core.RGB(0x2da44e), core.RGB(0x2f81f7), core.RGB(0xd4a72c)
+	red, green, blue, amber := t.danger, t.success, t.accent, t.warning
 
 	var radii, opacities []core.Node
 	for _, r := range []core.Points{0, 6, 16, 32} {
@@ -37,7 +37,7 @@ func stylesPage(cx *core.Scope, t *theme) core.Node {
 				swatch("accent", core.Style{Background: t.accent, Color: t.onAccent}),
 				swatch("success", core.Style{Background: t.success, Color: t.onAccent}),
 				swatch("danger", core.Style{Background: t.danger, Color: t.onAccent}),
-				swatch("40% alpha", core.Style{Background: core.RGBA(0x2f81f7, 0.4)}),
+				swatch("40% alpha", core.Style{Background: withAlpha(t.accent, 0.4)}),
 				swatch("sunken", core.Style{}),
 			),
 		),
@@ -65,7 +65,7 @@ func stylesPage(cx *core.Scope, t *theme) core.Node {
 			flow(
 				swatch("soft", core.Style{Background: t.surface, ShadowColor: core.RGBA(0, 0.12), ShadowRadius: 6, ShadowOffset: core.Point{Y: 2}}),
 				swatch("raised", core.Style{Background: t.surface, ShadowColor: core.RGBA(0, 0.2), ShadowRadius: 16, ShadowOffset: core.Point{Y: 8}}),
-				swatch("glow", core.Style{Background: t.accent, Color: t.onAccent, CornerRadius: 32, ShadowColor: core.RGBA(0x2f81f7, 0.6), ShadowRadius: 14}),
+				swatch("glow", core.Style{Background: t.accent, Color: t.onAccent, CornerRadius: 32, ShadowColor: withAlpha(t.accent, 0.6), ShadowRadius: 14}),
 			),
 		),
 		t.demo("Opacity", "Opacity fades a view and everything in it.", flow(opacities...)),

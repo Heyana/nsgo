@@ -55,7 +55,7 @@ export function HelloWindow({ locale }: { locale: Locale }) {
 
   return (
     <div className="flex h-full flex-col gap-3 bg-fd-muted/40 p-5 text-left sm:p-6">
-      <p className="text-xl font-bold tracking-tight sm:text-2xl">
+      <p className="text-xl font-semibold tracking-tight sm:text-2xl">
         {draft.trim() ? t.addPrompt(draft.trim()) : t.greeting}
       </p>
       <form
@@ -75,7 +75,7 @@ export function HelloWindow({ locale }: { locale: Locale }) {
         <button
           type="submit"
           aria-label={t.add}
-          className="inline-flex h-9 items-center gap-1 rounded-lg bg-emerald-600 px-3.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
+          className="inline-flex h-9 items-center gap-1 rounded-lg bg-fd-primary px-3.5 text-sm font-medium text-fd-primary-foreground transition-colors hover:bg-fd-primary/90"
         >
           <Plus className="size-4" />
           {t.add}
@@ -131,7 +131,7 @@ export function CounterWindow({ locale }: { locale: Locale }) {
       <button
         type="button"
         onClick={() => setCount((n) => n + 1)}
-        className="inline-flex h-9 w-fit items-center rounded-lg bg-emerald-600 px-4 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
+        className="inline-flex h-9 w-fit items-center rounded-lg bg-fd-primary px-4 text-sm font-medium text-fd-primary-foreground transition-colors hover:bg-fd-primary/90"
       >
         {t.press}
       </button>

@@ -31,11 +31,11 @@ const secondaryLink =
 // A running target is green, a build-only one amber, work in progress blue,
 // and a plan neutral.
 const statusTones = [
-  "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  "bg-success/10 text-success",
+  "bg-success/10 text-success",
+  "bg-success/10 text-success",
+  "bg-warning/10 text-warning",
+  "bg-info/10 text-info",
   "bg-fd-muted text-fd-muted-foreground",
 ]
 
@@ -106,7 +106,7 @@ export function Landing({
           <h1 className="text-5xl font-semibold tracking-tight text-balance sm:text-7xl">
             {t.headline[0]}
             <br />
-            <span className="bg-linear-to-r from-fd-primary via-[color-mix(in_oklab,var(--color-fd-primary)_65%,#b7d84a)] to-fd-primary bg-clip-text text-transparent">
+            <span className="bg-linear-to-r from-fd-primary via-[color-mix(in_oklab,var(--color-fd-primary)_70%,#f5b14c)] to-fd-primary bg-clip-text text-transparent">
               {t.headline[1]}
             </span>
           </h1>

@@ -43,6 +43,10 @@ Pages can use Fumadocs' `Steps`, `Tabs`, `Accordion`, `Accordions` and `TypeTabl
 
 `app/assets/icon.png` is copied from `docs/images/logo.png`.
 
+## Design
+
+The site follows the gallery's Onevra design language: warm neutral surfaces, one terracotta accent and 8-point controls. [`app/app.css`](app/app.css) holds the tokens for both appearances; use them instead of hardcoded colors. The home page's window recreations mirror `examples/hello` and the same control metrics.
+
 ## Deployment
 
 The [Website workflow](../.github/workflows/website.yml) checks, builds and publishes the site whenever `website/**` changes on `main`. Enable it once under **Settings → Pages → Build and deployment → Source → GitHub Actions**.

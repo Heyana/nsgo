@@ -18,28 +18,33 @@ func controlsPage(cx *core.Scope, t *theme) core.Node {
 	name := core.NewSignal(cx, "")
 	password := core.NewSignal(cx, "")
 
-	check := core.Style{Width: core.Pt(20), Height: core.Pt(20), CornerRadius: 5, BorderWidth: 2, BorderColor: t.line,
+	check := core.Style{Width: core.Pt(16), Height: core.Pt(16), CornerRadius: 4, BorderWidth: 1, BorderColor: t.borderStrong,
 		AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
 		Checked:  &core.Style{Background: t.accent, BorderColor: t.accent},
-		Disabled: &core.Style{Opacity: core.Alpha(0.4)}}
+		Disabled: &core.Style{Opacity: core.Alpha(0.45)}}
 	mark := func(on func() bool) core.Node {
 		return core.Show{When: on, Then: func(*core.Scope) core.Node {
-			return core.Text{Content: "✓", Style: core.Style{Color: t.onAccent, FontSize: 13, FontWeight: core.FontWeightBold}}
+			return core.Text{Content: "✓", Style: core.Style{Color: t.onAccent, FontSize: 11, FontWeight: core.FontWeightBold}}
 		}}
 	}
 	radio := func(v string) core.Node {
 		on := func() bool { return size.Get() == v }
 		return base.Radio{Checked: on, OnChange: func(bool) { size.Set(v) }, Label: v, Style: row, Children: []core.Node{
-			core.View{Checked: on, Style: core.Style{Width: core.Pt(18), Height: core.Pt(18), CornerRadius: 9, BorderWidth: 2, BorderColor: t.line,
+			core.View{Checked: on, Style: core.Style{Width: core.Pt(16), Height: core.Pt(16), CornerRadius: 8, BorderWidth: 1, BorderColor: t.borderStrong,
 				AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
-				Checked: &core.Style{BorderColor: t.accent, BorderWidth: 5}}},
+				Checked: &core.Style{Background: t.accent, BorderColor: t.accent}}, Children: []core.Node{
+				core.Show{When: on, Then: func(*core.Scope) core.Node {
+					return core.View{Style: core.Style{Width: core.Pt(6), Height: core.Pt(6), CornerRadius: 3, Background: t.onAccent}}
+				}},
+			}},
 			core.Text{Content: v},
 		}}
 	}
-	tabStyle := core.Style{Padding: core.Symmetric(6, 14), CornerRadius: 6, Color: t.muted,
+	pill := core.Points(18)
+	tabStyle := core.Style{Padding: core.Symmetric(6, 12), CornerRadius: pill, Color: t.muted,
 		Hover: &core.Style{Color: t.ink},
-		Selected: &core.Style{Background: t.surface, Color: t.ink, FontWeight: core.FontWeightSemibold,
-			ShadowColor: core.RGBA(0, 0.12), ShadowRadius: 3, ShadowOffset: core.Point{Y: 1}}}
+		Selected: &core.Style{Background: t.raised, Color: t.ink, FontWeight: core.FontWeightSemibold,
+			ShadowColor: core.RGBA(0, 0.14), ShadowRadius: 2, ShadowOffset: core.Point{Y: 1}}}
 	tabNames := []string{"Day", "Week", "Month"}
 	var tabs []core.Node
 	for i, n := range tabNames {
@@ -53,7 +58,7 @@ func controlsPage(cx *core.Scope, t *theme) core.Node {
 		return "off"
 	}
 	labelled := func(label string, field core.Node) core.Node {
-		return core.View{Style: core.Style{Gap: 4}, Children: []core.Node{core.Text{Content: label, Style: t.caption()}, field}}
+		return core.View{Style: core.Style{Gap: 6}, Children: []core.Node{core.Text{Content: label, Style: t.caption()}, field}}
 	}
 
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
@@ -74,11 +79,12 @@ func controlsPage(cx *core.Scope, t *theme) core.Node {
 				Style: row, IndicatorStyle: check, Indicator: mark(news.Get),
 				Children: []core.Node{core.Text{Content: "Send me news (needs the terms)"}}},
 			base.Switch{Checked: wifi.Get, OnChange: wifi.Set, Label: "Wi-Fi", Style: row,
-				TrackStyle: core.Style{Width: core.Pt(44), Height: core.Pt(26), CornerRadius: 13, Background: t.line, Padding: core.All(3),
+				TrackStyle: core.Style{Width: core.Pt(40), Height: core.Pt(20), CornerRadius: 10, Background: t.switchOff, Padding: core.All(2),
+					Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyStart,
 					Transition: core.Transition{Duration: 150 * time.Millisecond, Properties: core.TransitionBackground},
-					Checked:    &core.Style{Background: t.success, AlignItems: core.AlignEnd}},
-				ThumbStyle: core.Style{Width: core.Pt(20), Height: core.Pt(20), CornerRadius: 10, Background: core.RGB(0xffffff),
-					ShadowColor: core.RGBA(0, 0.2), ShadowRadius: 2, ShadowOffset: core.Point{Y: 1}},
+					Checked:    &core.Style{Background: t.accent, JustifyContent: core.JustifyEnd}},
+				ThumbStyle: core.Style{Width: core.Pt(20), Height: core.Pt(16), CornerRadius: 8, Background: t.knob,
+					ShadowColor: core.RGBA(0, 0.18), ShadowRadius: 2, ShadowOffset: core.Point{Y: 1}},
 				Children: []core.Node{core.Text{ContentFunc: func() string { return "Wi-Fi " + onOff(wifi.Get()) }}}},
 		),
 		t.demo("Radio group", "Radios in a RadioGroup; the app checks one and unchecks the others.",
@@ -86,8 +92,8 @@ func controlsPage(cx *core.Scope, t *theme) core.Node {
 			t.live(func() string { return "Size " + size.Get() }),
 		),
 		t.demo("Tabs", "Tab's Selected state style marks the selected tab.",
-			base.Tabs{Label: "Range", Style: core.Style{Direction: core.Row, Gap: 2, Padding: core.All(3), CornerRadius: radius,
-				Background: t.sunken, AlignSelf: core.AlignStart}, Children: tabs},
+			base.Tabs{Label: "Range", Style: core.Style{Direction: core.Row, Gap: 2, Padding: core.All(2), CornerRadius: pill,
+				Background: t.track(), AlignSelf: core.AlignStart}, Children: tabs},
 			core.Text{ContentFunc: func() string { return []string{"Today's view", "This week's view", "This month's view"}[tab.Get()] }},
 		),
 		t.demo("Text fields", "Input is the platform's field: controlled, masked, placeholders and keyboard types.",

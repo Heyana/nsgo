@@ -161,8 +161,8 @@ func gesturesPage(cx *core.Scope, t *theme) core.Node {
 						}}}},
 					core.View{StyleFunc: func() core.Style {
 						return core.Style{Position: core.Absolute, Top: core.Pt(4), Left: core.Pt(core.Points(value.Get()) * track.Get()),
-							Width: core.Pt(thumb), Height: core.Pt(thumb), CornerRadius: thumb / 2, Background: core.RGB(0xffffff),
-							BorderWidth: 1, BorderColor: t.line, ShadowColor: core.RGBA(0, 0.2), ShadowRadius: 3, ShadowOffset: core.Point{Y: 1}}
+							Width: core.Pt(thumb), Height: core.Pt(thumb), CornerRadius: thumb / 2, Background: t.knob,
+							BorderWidth: 1, BorderColor: t.line, ShadowColor: core.RGBA(0, 0.18), ShadowRadius: 3, ShadowOffset: core.Point{Y: 1}}
 					}},
 				}},
 			core.Text{TestID: "slider-value", Style: t.caption(), ContentFunc: func() string { return fmt.Sprintf("Volume %.0f%%", value.Get()*100) }},

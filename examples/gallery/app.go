@@ -217,20 +217,17 @@ func (g *gallery) sidebar(t *theme) core.Node {
 	items := []core.Node{core.View{Style: core.Style{Padding: core.Edges{Top: 8, Right: 10, Bottom: 12, Left: 10}, Direction: core.Row,
 		AlignItems: core.AlignCenter, Gap: 10}, Children: []core.Node{
 		core.Image{Source: core.ImageSource{Data: logo, Size: core.Size{Width: 28, Height: 28}}, Label: "NSGo"},
-		core.Text{Content: "Gallery", Style: core.Style{FontSize: 18, FontWeight: core.FontWeightBold}},
+		core.Text{Content: "Gallery", Style: core.Style{FontSize: 17, FontWeight: core.FontWeightSemibold}},
 	}}}
 	for _, s := range sections {
 		items = append(items, core.View{
 			OnPress: func() { g.open(s.name) }, Selected: func() bool { return g.section.Get() == s.name },
 			Role: core.RoleButton, Label: s.name, TestID: "nav-" + s.name,
-			Style: core.Style{Padding: core.Symmetric(7, 10), CornerRadius: 6, FontSize: 14, Color: t.ink,
-				Borders:  core.Edges{Left: 3},
-				Hover:    &core.Style{Background: t.hover},
-				Selected: &core.Style{Background: t.accentSoft, Color: t.accent, FontWeight: core.FontWeightSemibold, BorderColors: core.EdgeColors{Left: t.accent}}},
+			Style:    t.navItem(),
 			Children: []core.Node{core.Text{Content: s.name}},
 		})
 	}
-	return core.View{Style: core.Style{Width: core.Pt(210), Background: t.sidebar,
+	return core.View{Style: core.Style{Width: core.Pt(220), Background: t.sidebar,
 		Borders: core.Edges{Right: 1}, BorderColors: core.EdgeColors{Right: t.line}}, Children: []core.Node{
 		core.Scroll{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
 			core.View{Style: core.Style{Padding: core.All(12), Gap: 2}, Children: items},
@@ -252,7 +249,7 @@ func (g *gallery) sectionBody(cx *core.Scope, t *theme, s section, title bool) c
 	var head []core.Node
 	if title {
 		head = append(head, core.Text{Content: s.name, Role: core.RoleHeader, TestID: "title",
-			Style: core.Style{FontSize: 28, FontWeight: core.FontWeightBold}})
+			Style: core.Style{FontSize: 26, FontWeight: core.FontWeightSemibold}})
 	}
 	head = append(head, core.Show{When: g.descriptions.Get, Then: func(*core.Scope) core.Node {
 		return core.Text{Content: s.about, TestID: "about", Style: core.Style{Color: t.muted, FontSize: 15}}
@@ -290,9 +287,9 @@ func (t *theme) header(title string, back func()) core.Node {
 	if back != nil {
 		children = append(children, base.Button{OnPress: back, Label: "Back", Style: core.Style{Padding: core.Symmetric(4, 8),
 			Active: &core.Style{Opacity: core.Alpha(0.6)}},
-			Children: []core.Node{core.Text{Content: "‹ Back", Style: core.Style{Color: t.accent, FontSize: 16}}}})
+			Children: []core.Node{core.Text{Content: "‹ Back", Style: core.Style{Color: t.accent, FontSize: 15, FontWeight: core.FontWeightMedium}}}})
 	}
-	children = append(children, core.Text{Content: title, Role: core.RoleHeader, Style: core.Style{FontSize: 20, FontWeight: core.FontWeightBold}})
+	children = append(children, core.Text{Content: title, Role: core.RoleHeader, Style: core.Style{FontSize: 18, FontWeight: core.FontWeightSemibold}})
 	return base.SafeAreaView{Edges: base.Top | base.Left | base.Right, Style: core.Style{Background: t.surface,
 		Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: t.line}},
 		Children: []core.Node{core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8,
@@ -304,15 +301,15 @@ func (g *gallery) index(t *theme) core.Node {
 	items := []core.Node{}
 	for _, s := range sections {
 		items = append(items, core.View{OnPress: func() { g.open(s.name) }, Role: core.RoleButton, Label: s.name, TestID: "nav-" + s.name,
-			Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(12, 16),
+			Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(10, 16),
 				Background: t.surface, Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: t.line},
 				Active: &core.Style{Background: t.hover}},
 			Children: []core.Node{
 				core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: []core.Node{
-					core.Text{Content: s.name, Style: core.Style{FontSize: 17}},
+					core.Text{Content: s.name, Style: core.Style{FontSize: 15, FontWeight: core.FontWeightMedium}},
 					core.Text{Content: s.about, MaxLines: 1, Style: t.caption()},
 				}},
-				core.Text{Content: "›", Style: core.Style{FontSize: 20, Color: t.muted}},
+				core.Text{Content: "›", Style: core.Style{FontSize: 18, Color: t.muted}},
 			}})
 	}
 	return core.Scroll{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
