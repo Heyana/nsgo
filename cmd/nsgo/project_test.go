@@ -53,3 +53,61 @@ func TestBuildOpen(t *testing.T) {
 		}
 	}
 }
+
+func TestIcons(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string) {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	load := func(yaml string) (*project, error) {
+		if err := os.WriteFile(filepath.Join(dir, "nsgo.yaml"), []byte("name: Test\n"+yaml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return load(dir)
+	}
+
+	p, err := load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Icon.Apple != "" || p.Icon.PNG != "" {
+		t.Errorf("without icons: got %+v", p.Icon)
+	}
+
+	write("assets/AppIcon.icns")
+	write("assets/AppIcon.icon/icon.json")
+	write("assets/Icon.png")
+	p, err = load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, "assets", "AppIcon.icon"); p.Icon.Apple != want {
+		t.Errorf("default Apple icon: got %s, want %s", p.Icon.Apple, want)
+	}
+	if want := filepath.Join(dir, "assets", "Icon.png"); p.Icon.PNG != want {
+		t.Errorf("default PNG icon: got %s, want %s", p.Icon.PNG, want)
+	}
+
+	write("art/App.icns")
+	write("art/app.png")
+	p, err = load("icon:\n  apple: art/App.icns\n  png: art/app.png\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, "art", "App.icns"); p.Icon.Apple != want {
+		t.Errorf("icon.apple: got %s, want %s", p.Icon.Apple, want)
+	}
+
+	if _, err := load("icon:\n  png: art/missing.png\n"); err == nil {
+		t.Error("a missing icon.png loaded")
+	}
+	if _, err := load("icon:\n  apple: art/app.png\n"); err == nil {
+		t.Error("a PNG loaded as icon.apple")
+	}
+}

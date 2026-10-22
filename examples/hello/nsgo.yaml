@@ -6,6 +6,13 @@ window:
   width: 420
   height: 560
 
+# macOS and iOS use assets/AppIcon.icon, or assets/AppIcon.icns on macOS; the
+# other targets, and Apple ones without those, use assets/Icon.png. To use
+# other files, name them here:
+# icon:
+#   apple: assets/AppIcon.icon  # an Icon Composer .icon; macOS also takes .icns
+#   png: assets/Icon.png        # a square PNG, 1024 pixels wide
+
 dev:
   # native: this machine's backend; web: the browser; ios: a connected iPhone; ios_simulator; android: a connected device or emulator.
   target: native

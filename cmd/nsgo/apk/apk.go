@@ -11,7 +11,8 @@ import (
 )
 
 // Write writes a signed APK to w: template's manifest with m filled in,
-// then files, and the empty resource table the system expects.
+// then files, and the resource table the system expects, which holds the
+// launcher icon when m has one.
 func Write(w io.Writer, template []byte, m Manifest, files []File, key *Key) error {
 	manifest, err := EncodeManifest(template, m)
 	if err != nil {
@@ -19,7 +20,12 @@ func Write(w io.Writer, template []byte, m Manifest, files []File, key *Key) err
 	}
 	all := []File{{Name: "AndroidManifest.xml", Data: manifest, Stored: true}}
 	all = append(all, files...)
-	all = append(all, File{Name: "resources.arsc", Data: emptyResources, Stored: true})
+	resources := emptyResources
+	if m.Icon != nil {
+		resources = iconResources(m.Package)
+		all = append(all, File{Name: iconFile, Data: m.Icon, Stored: true})
+	}
+	all = append(all, File{Name: "resources.arsc", Data: resources, Stored: true})
 	zip, err := archive(all)
 	if err != nil {
 		return err
@@ -32,8 +38,7 @@ func Write(w io.Writer, template []byte, m Manifest, files []File, key *Key) err
 	return err
 }
 
-// emptyResources is an empty resource table: an NSGo app defines no
-// resources of its own yet.
+// emptyResources is an empty resource table, for an app without an icon.
 var emptyResources = []byte{
 	0x02, 0x00, 0x0c, 0x00, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x01, 0x00, 0x1c, 0x00, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

@@ -64,6 +64,9 @@ name: Hello
 id: dev.oneo.nsgo.hello
 version: 0.1.0
 window: { width: 420, height: 560 }
+icon:
+  apple: assets/AppIcon.icon  # macOS 和 iOS；macOS 也接受 .icns
+  png: assets/Icon.png        # 其他所有目标，以及没有上述图标的 Apple 目标
 dev:
   target: native        # native、web、ios（连接的 iPhone）、ios_simulator 或 android（真机或模拟器）
   hot_reload: false     # 只运行一次，应用退出后 dev 也随之退出；true 则在保存后重新编译并重启
@@ -72,6 +75,8 @@ build:
   open: true            # 构建后打开输出目录
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, android_arm64, android_x64, web]
 ```
+
+`nsgo.yaml` 旁边有两个目录。`resources/` 存放随应用发布的文件：每个包把它们放进自己的资源根目录，`asset:` 图片从这里加载。资源根目录在 macOS 上是 `Contents/Resources`，在 iOS 上是应用包本身，在 Android 上是 APK 的 assets，其他平台是可执行文件或页面旁的 `resources/`。`assets/` 存放不随应用发布的项目文件，例如 `icon` 默认使用的图标。
 
 在你的模块中添加一次该工具，之后用 `go tool nsgo` 运行，无需安装：
 

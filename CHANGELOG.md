@@ -18,6 +18,8 @@
 - Add `android_x64` packages and `nsgo dev`'s choice of the connected device's ABI, so apps run on x86_64 emulators too.
 - Add `nsgotest` for headless app tests.
 - Add the `nsgo` tool with `init`, `dev` and `build`, configured by `nsgo.yaml`.
+- Add app icons to every package, from `assets/` or `nsgo.yaml`'s `icon`.
+- Add `resources/`, shipped in each package and loaded by `asset:` images.
 - Add `nsgo build -target all` for every platform that needs only Go and Xcode.
 - Add `nsgo dev` and `nsgo build` flags that override `nsgo.yaml`'s values.
 - Add `nsgo dev`'s native target on Windows and Linux and its Android target on connected devices.

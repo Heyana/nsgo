@@ -118,7 +118,7 @@ func sameSource(a, b core.ImageSource) bool {
 }
 
 // imageURL returns where the browser loads src from: an object URL for
-// bytes, and "asset:" paths next to the page.
+// bytes, and "asset:" paths in the resources beside the page.
 func imageURL(src core.ImageSource) (url string, object bool) {
 	if len(src.Data) > 0 {
 		g := js.Global()
@@ -134,7 +134,7 @@ func imageURL(src core.ImageSource) (url string, object bool) {
 		return g.Get("URL").Call("createObjectURL", blob).String(), true
 	}
 	if path, ok := strings.CutPrefix(src.URI, "asset:"); ok {
-		return "assets/" + strings.TrimPrefix(path, "/"), false
+		return "resources/" + strings.TrimPrefix(path, "/"), false
 	}
 	return src.URI, false
 }

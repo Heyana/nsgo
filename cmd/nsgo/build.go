@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -111,17 +112,13 @@ func goAndXcodeTargets() []string {
 }
 
 func buildTarget(ctx context.Context, p *project, target, dir string) error {
-	osName, arch, _ := strings.Cut(target, "_")
+	_, arch, _ := strings.Cut(target, "_")
 	switch target {
 	case "macos_arm64", "macos_x64":
 		_, err := buildMacApp(ctx, p, dir, goArch(arch))
 		return err
 	case "windows_arm64", "windows_x64":
-		if err := goBuild(ctx, p, filepath.Join(dir, p.Name+".exe"),
-			[]string{"GOOS=" + osName, "GOARCH=" + goArch(arch), "CGO_ENABLED=0"}, "-H=windowsgui"); err != nil {
-			return err
-		}
-		return copyAssets(p, dir)
+		return buildWindows(ctx, p, dir, goArch(arch))
 	case "ios":
 		_, err := buildIOSApp(ctx, p, dir, false)
 		return err
@@ -131,11 +128,7 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 	case "web":
 		return buildWeb(ctx, p, dir, false)
 	case "linux_arm64", "linux_x64":
-		if err := goBuild(ctx, p, filepath.Join(dir, p.Name),
-			[]string{"GOOS=" + osName, "GOARCH=" + goArch(arch), "CGO_ENABLED=0"}); err != nil {
-			return err
-		}
-		return copyAssets(p, dir)
+		return buildLinux(ctx, p, dir, goArch(arch))
 	case "android_arm64", "android_x64":
 		_, err := buildAndroidAPK(ctx, p, dir, goArch(arch))
 		return err
@@ -187,13 +180,49 @@ func buildMacApp(ctx context.Context, p *project, dir, arch string) (string, err
 	if err := goBuild(ctx, p, bin, []string{"GOOS=darwin", "GOARCH=" + arch, "CGO_ENABLED=0"}); err != nil {
 		return "", err
 	}
-	if err := writePlist(filepath.Join(app, "Contents", "Info.plist"), p, macPlist); err != nil {
+	resources := filepath.Join(app, "Contents", "Resources")
+	if err := copyResources(p, resources); err != nil {
 		return "", err
 	}
-	if err := copyAssets(p, filepath.Join(app, "Contents", "MacOS")); err != nil {
+	if err := os.MkdirAll(resources, 0o755); err != nil {
+		return "", err
+	}
+	icon, err := writeMacIcon(ctx, p, resources)
+	if err != nil {
+		return "", err
+	}
+	if err := writePlist(filepath.Join(app, "Contents", "Info.plist"), p, macPlist, icon); err != nil {
 		return "", err
 	}
 	return app, run(ctx, "codesign", "--force", "--sign", "-", app)
+}
+
+// buildWindows writes <dir>/<name>.exe with the icon linked in and the
+// resources beside it.
+func buildWindows(ctx context.Context, p *project, dir, arch string) error {
+	removeIcon, err := writeWindowsIcon(p, arch)
+	if err != nil {
+		return err
+	}
+	err = goBuild(ctx, p, filepath.Join(dir, p.Name+".exe"),
+		[]string{"GOOS=windows", "GOARCH=" + arch, "CGO_ENABLED=0"}, "-H=windowsgui")
+	removeIcon()
+	if err != nil {
+		return err
+	}
+	return copyResources(p, filepath.Join(dir, resourcesDir))
+}
+
+// buildLinux writes <dir>/<name> with the resources and icon beside it.
+func buildLinux(ctx context.Context, p *project, dir, arch string) error {
+	if err := goBuild(ctx, p, filepath.Join(dir, p.Name),
+		[]string{"GOOS=linux", "GOARCH=" + arch, "CGO_ENABLED=0"}); err != nil {
+		return err
+	}
+	if err := copyResources(p, filepath.Join(dir, resourcesDir)); err != nil {
+		return err
+	}
+	return writeLinuxIcon(p, dir)
 }
 
 // buildWeb writes index.html, wasm_exec.js and app.wasm to dir.
@@ -212,15 +241,24 @@ func buildWeb(ctx context.Context, p *project, dir string, reload bool) error {
 	if err := os.WriteFile(filepath.Join(dir, "wasm_exec.js"), js, 0o644); err != nil {
 		return err
 	}
-	if err := copyAssets(p, dir); err != nil {
+	if err := copyResources(p, filepath.Join(dir, resourcesDir)); err != nil {
 		return err
+	}
+	img, err := p.iconImage()
+	if err != nil {
+		return err
+	}
+	if img != nil {
+		if err := os.WriteFile(filepath.Join(dir, "icon.png"), scaledPNG(img, 256), 0o644); err != nil {
+			return err
+		}
 	}
 	f, err := os.Create(filepath.Join(dir, "index.html"))
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return indexHTML.Execute(f, map[string]any{"Name": p.Name, "Reload": reload})
+	return indexHTML.Execute(f, map[string]any{"Name": p.Name, "Reload": reload, "Icon": img != nil})
 }
 
 var indexHTML = template.Must(template.New("index").Parse(`<!doctype html>
@@ -229,6 +267,9 @@ var indexHTML = template.Must(template.New("index").Parse(`<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{.Name}}</title>
+{{- if .Icon}}
+<link rel="icon" href="icon.png">
+{{- end}}
 <style>html, body { margin: 0; height: 100%; }</style>
 <script src="wasm_exec.js"></script>
 </head>
@@ -244,13 +285,19 @@ new EventSource("/_nsgo/reload").onmessage = () => location.reload();
 </html>
 `))
 
-func writePlist(path string, p *project, t *template.Template) error {
-	f, err := os.Create(path)
-	if err != nil {
+// writePlist writes t's plist for p, with extra entries, such as the
+// icon's, at the end of its top dictionary.
+func writePlist(path string, p *project, t *template.Template, extra string) error {
+	var out bytes.Buffer
+	if err := t.Execute(&out, p); err != nil {
 		return err
 	}
-	defer f.Close()
-	return t.Execute(f, p)
+	plist := out.String()
+	if extra != "" {
+		end := strings.LastIndex(plist, "</dict>")
+		plist = plist[:end] + "\t" + strings.TrimSpace(extra) + "\n" + plist[end:]
+	}
+	return os.WriteFile(path, []byte(plist), 0o644)
 }
 
 const plistHead = `<?xml version="1.0" encoding="UTF-8"?>

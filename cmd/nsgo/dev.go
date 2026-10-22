@@ -207,11 +207,7 @@ func windowsSession() session {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return err
 			}
-			if err := goBuild(ctx, p, filepath.Join(dir, p.Name+".exe"),
-				[]string{"GOOS=windows", "GOARCH=" + runtime.GOARCH, "CGO_ENABLED=0"}, "-H=windowsgui"); err != nil {
-				return err
-			}
-			return copyAssets(p, dir)
+			return buildWindows(ctx, p, dir, runtime.GOARCH)
 		},
 		start: func(ctx context.Context, p *project) (app, error) {
 			bin := filepath.Join(p.cache("dev", "windows"), p.Name+".exe")
@@ -234,11 +230,7 @@ func linuxSession() session {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return err
 			}
-			if err := goBuild(ctx, p, filepath.Join(dir, p.Name),
-				[]string{"GOOS=linux", "GOARCH=" + runtime.GOARCH, "CGO_ENABLED=0"}); err != nil {
-				return err
-			}
-			return copyAssets(p, dir)
+			return buildLinux(ctx, p, dir, runtime.GOARCH)
 		},
 		start: func(ctx context.Context, p *project) (app, error) {
 			bin := filepath.Join(p.cache("dev", "linux"), p.Name)

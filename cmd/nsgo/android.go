@@ -63,6 +63,26 @@ func buildAndroidAPK(ctx context.Context, p *project, dir, goarch string) (strin
 	if err != nil {
 		return "", err
 	}
+	files := []apk.File{
+		{Name: "classes.dex", Data: androidruntime.ClassesDex},
+		{Name: "lib/" + abi + "/libnsgo.so", Data: app},
+	}
+	// Resources go in the APK's assets, where the app reads them.
+	err = walkResources(p, func(rel string, data []byte) error {
+		files = append(files, apk.File{Name: "assets/" + rel, Data: data})
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	img, err := p.iconImage()
+	if err != nil {
+		return "", err
+	}
+	var icon []byte
+	if img != nil {
+		icon = scaledPNG(img, apk.IconSize)
+	}
 	path := filepath.Join(dir, p.Name+".apk")
 	f, err := os.Create(path)
 	if err != nil {
@@ -74,10 +94,8 @@ func buildAndroidAPK(ctx context.Context, p *project, dir, goarch string) (strin
 		Label:       p.Name,
 		VersionName: p.Version,
 		VersionCode: apk.VersionCode(p.Version),
-	}, []apk.File{
-		{Name: "classes.dex", Data: androidruntime.ClassesDex},
-		{Name: "lib/" + abi + "/libnsgo.so", Data: app},
-	}, key)
+		Icon:        icon,
+	}, files, key)
 	if err != nil {
 		return "", err
 	}

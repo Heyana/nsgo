@@ -74,6 +74,7 @@ var (
 	adjustWindowRect    = user32.NewProc("AdjustWindowRect")
 	screenToClient      = user32.NewProc("ScreenToClient")
 	loadCursorW         = user32.NewProc("LoadCursorW")
+	loadIconW           = user32.NewProc("LoadIconW")
 	moveWindow          = user32.NewProc("MoveWindow")
 	setWindowRgn        = user32.NewProc("SetWindowRgn")
 	setWindowTextW      = user32.NewProc("SetWindowTextW")
@@ -382,10 +383,15 @@ func Run(app engine.App, opts Options) {
 	instance, _, _ := getModuleHandleW.Call(0)
 	const idcArrow = 32512
 	cursor, _, _ := loadCursorW.Call(0, idcArrow)
+	// nsgo links the app's icon as group 1; without one the system's
+	// default stands. Windows picks the small icon from the same group.
+	const appIcon = 1
+	icon, _, _ := loadIconW.Call(instance, appIcon)
 	className := wide("NsgoWindow")
 	wc := wndClassEx{
 		WndProc:   wndProcCallback,
 		Instance:  instance,
+		Icon:      icon,
 		Cursor:    cursor,
 		ClassName: className,
 	}

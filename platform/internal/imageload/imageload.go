@@ -1,11 +1,12 @@
 // Package imageload fetches image bytes for the backends that decode
 // images themselves: https and http, file paths and file: URIs, data:
-// URIs, "asset:" paths under the app's assets and bytes the app holds.
+// URIs, "asset:" paths under the app's resources and bytes the app holds.
 // Requests for the same URI share one fetch, and the bytes stay in a
 // least-recently-used cache.
 package imageload
 
 import (
+	"archive/zip"
 	"container/list"
 	"context"
 	"encoding/base64"
@@ -16,21 +17,64 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
 	"github.com/oneo-me/nsgo/core"
 )
 
-// AssetRoot is the directory "asset:" paths resolve against; next to
-// the executable, in "assets", unless a backend sets it first.
-var AssetRoot = func() string {
+// ResourceRoot is the directory "asset:" paths resolve against: the
+// package's resource root, Contents/Resources in a macOS bundle, an iOS
+// bundle's root and "resources" beside the executable elsewhere. Android
+// reads them from its APK instead.
+var ResourceRoot = func() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return "assets"
+		return "resources"
 	}
-	return filepath.Join(filepath.Dir(exe), "assets")
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join(filepath.Dir(exe), "..", "Resources")
+	case "ios":
+		return filepath.Dir(exe)
+	}
+	return filepath.Join(filepath.Dir(exe), "resources")
 }()
+
+// readResource reads one of the app's resources by its slash-separated
+// path.
+func readResource(path string) ([]byte, error) {
+	if runtime.GOOS == "android" {
+		return readAPKAsset(path)
+	}
+	return os.ReadFile(filepath.Join(ResourceRoot, filepath.FromSlash(path)))
+}
+
+var apk = sync.OnceValues(func() (*zip.ReadCloser, error) {
+	// The runtime starts the app from the extracted native libraries,
+	// lib/<abi> beside the installed base.apk.
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	return zip.OpenReader(filepath.Join(filepath.Dir(exe), "..", "..", "base.apk"))
+})
+
+// readAPKAsset reads path from the assets of the APK the app runs from,
+// where packaging puts its resources.
+func readAPKAsset(path string) ([]byte, error) {
+	r, err := apk()
+	if err != nil {
+		return nil, err
+	}
+	f, err := r.Open("assets/" + path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(f)
+}
 
 // CacheBytes bounds the cache.
 const CacheBytes = 32 << 20
@@ -120,7 +164,7 @@ func fetch(ctx context.Context, uri string, progress Progress) ([]byte, error) {
 	case strings.HasPrefix(uri, "data:"):
 		return decodeDataURI(uri)
 	case strings.HasPrefix(uri, "asset:"):
-		return os.ReadFile(filepath.Join(AssetRoot, filepath.FromSlash(strings.TrimLeft(uri[len("asset:"):], "/"))))
+		return readResource(strings.TrimLeft(uri[len("asset:"):], "/"))
 	case strings.HasPrefix(uri, "file:"):
 		u, err := url.Parse(uri)
 		if err != nil {

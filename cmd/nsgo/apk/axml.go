@@ -19,6 +19,8 @@ type Manifest struct {
 	Label       string
 	VersionName string
 	VersionCode int
+	// Icon is the launcher icon, an IconSize PNG; nil keeps the system's.
+	Icon []byte
 }
 
 // The binary XML chunk and value types, from Android's ResourceTypes.h.
@@ -61,6 +63,7 @@ var androidAttrs = map[string]attrSpec{
 	"label":            {0x01010001, typeString, nil},
 	"exported":         {0x01010010, typeBool, parseBool},
 	"theme":            {0x01010000, typeReference, parseStyle},
+	"icon":             {0x01010002, typeReference, parseAppResource},
 
 	"extractNativeLibs":           {0x010104ea, typeBool, parseBool},
 	"enableOnBackInvokedCallback": {0x0101066c, typeBool, parseBool},
@@ -130,6 +133,9 @@ func EncodeManifest(template []byte, m Manifest) ([]byte, error) {
 		return nil, errors.New("manifest: no application element")
 	}
 	setAttr(app, androidNS, "label", m.Label)
+	if m.Icon != nil {
+		setAttr(app, androidNS, "icon", iconResource)
+	}
 
 	e := &encoder{index: map[string]int{}}
 	// Attribute names come first in the string pool: the resource map
@@ -205,6 +211,15 @@ func parseBool(s string) (uint32, error) {
 		return ^uint32(0), nil
 	}
 	return 0, nil
+}
+
+// parseAppResource resolves a reference to the app's own resources,
+// which the table packaging writes defines.
+func parseAppResource(s string) (uint32, error) {
+	if s != iconResource {
+		return 0, fmt.Errorf("unknown resource %q", s)
+	}
+	return iconResourceID, nil
 }
 
 func parseStyle(s string) (uint32, error) {

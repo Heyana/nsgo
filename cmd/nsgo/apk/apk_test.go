@@ -27,6 +27,7 @@ func TestWrite(t *testing.T) {
 		Label:       "Test",
 		VersionName: "1.0.0",
 		VersionCode: 10000,
+		Icon:        []byte("\x89PNG icon"),
 	}, []File{
 		{Name: "classes.dex", Data: []byte("dex")},
 		{Name: "lib/arm64-v8a/libnsgo.so", Data: []byte("go")},
@@ -56,7 +57,7 @@ func TestWrite(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"AndroidManifest.xml", "classes.dex", "lib/arm64-v8a/libnsgo.so", "resources.arsc"} {
+	for _, want := range []string{"AndroidManifest.xml", "classes.dex", "lib/arm64-v8a/libnsgo.so", iconFile, "resources.arsc"} {
 		if !names[want] {
 			t.Errorf("no %s entry", want)
 		}

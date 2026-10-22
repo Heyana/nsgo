@@ -17,6 +17,7 @@ func TestEncodeManifest(t *testing.T) {
 		Label:       "Test",
 		VersionName: "1.2.3",
 		VersionCode: 10203,
+		Icon:        []byte("png"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +44,9 @@ func TestEncodeManifest(t *testing.T) {
 	}
 	if got, want := app.value(t, "theme"), uint32(0x01030129); got != want {
 		t.Fatalf("theme = %#x, want %#x", got, want)
+	}
+	if got, want := app.value(t, "icon"), uint32(iconResourceID); got != want {
+		t.Fatalf("icon = %#x, want %#x", got, want)
 	}
 
 	doc.walk(func(e *xmlNode) {

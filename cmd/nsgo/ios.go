@@ -38,10 +38,16 @@ func buildIOSApp(ctx context.Context, p *project, dir string, simulator bool) (s
 	if err := goBuild(ctx, p, filepath.Join(app, p.Name), env, "-extldflags=-Wl,-w"); err != nil {
 		return "", err
 	}
-	if err := writePlist(filepath.Join(app, "Info.plist"), p, iosPlist); err != nil {
+	// An iOS bundle's root is its resource directory; a resources
+	// directory there would read as a macOS bundle's and fail signing.
+	if err := copyResources(p, app); err != nil {
 		return "", err
 	}
-	if err := copyAssets(p, app); err != nil {
+	icon, err := writeIOSIcon(ctx, p, app, simulator)
+	if err != nil {
+		return "", err
+	}
+	if err := writePlist(filepath.Join(app, "Info.plist"), p, iosPlist, icon); err != nil {
 		return "", err
 	}
 	if simulator {

@@ -25,6 +25,16 @@ type project struct {
 		Width  int `yaml:"width"`
 		Height int `yaml:"height"`
 	} `yaml:"window"`
+	// Icon names the app's icons; resolveIcons fills in the defaults
+	// under assets.
+	Icon struct {
+		// Apple is an Icon Composer .icon for macOS and iOS, or an .icns
+		// for macOS.
+		Apple string `yaml:"apple"`
+		// PNG is a square image for every other target, and for Apple
+		// targets Apple does not cover.
+		PNG string `yaml:"png"`
+	} `yaml:"icon"`
 	Dev struct {
 		Target string `yaml:"target"`
 		// HotReload rebuilds and restarts the app when a watched file
@@ -95,6 +105,9 @@ func load(dir string) (*project, error) {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	p.Build.Targets = expanded
+	if err := p.resolveIcons(); err != nil {
+		return nil, fmt.Errorf("nsgo.yaml: %w", err)
+	}
 	return p, nil
 }
 

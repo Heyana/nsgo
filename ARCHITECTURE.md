@@ -87,6 +87,8 @@ The Linux backend loads GTK 4 at run time, so building its package needs only Go
 - `nsgo dev`'s Android target installs each build over `adb`, streams the app's log here, and stops the app when `nsgo dev` ends.
 - With hot reload, `nsgo dev` watches the directories `go list -deps` reports, NSGo's own included, and keeps the last good build running when a build fails.
 - With hot reload, the web dev server reloads open pages over server-sent events after each build.
+- Packages ship `resources/` from beside `nsgo.yaml` in their resource root, which `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` paths against. `assets/` holds sources that do not ship, such as icons.
+- Icons are written in Go, except that `actool` compiles Apple's `.icon` files and asset catalogs. A Windows icon links in from a `.syso` written into the app's package directory for the build, since Go links `.syso` files only from there.
 - A command's flags replace the `nsgo.yaml` values they name: `dev.target` and `dev.hot_reload` for `nsgo dev`; `build.targets`, `build.output` and `build.open` for `nsgo build`; `name`, `id`, `version` and `window` for both.
 
 ## Core flows
