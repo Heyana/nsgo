@@ -46,7 +46,6 @@ These items wait for community contributions; the items above do not depend on t
 | --- | --- | --- |
 | Android runtime | `crates/nsh-platform-android` | The Java runtime compiles; `classes.dex` is committed with the command that rebuilds it |
 | Android packaging | `docs/dev/embedding.md`, `crates/nsh-cli/src/android.rs` | `nsgo build` writes a signed APK with nothing beyond Go and Xcode installed |
-| Windows run | `crates/nsh-platform-windows` | The gallery runs on Windows, with screenshots and input checked |
 | iOS touch | `crates/nsh-platform-ios` | Gestures and text input are checked in the simulator |
 
 ## Not ported

@@ -11,10 +11,11 @@
 - Add custom desktop title bars, window drag regions, window controls and an application menu.
 - Add environment signals, keyboard shortcuts, clipboard and screen-reader announcements.
 - Add key-value storage with change signals, and each app's data and cache directories.
-- Add native backends for macOS, iOS and the web.
+- Add native backends for macOS, iOS, Windows and the web.
 - Add `nsgotest` for headless app tests.
 - Add the `nsgo` tool with `init`, `dev` and `build`, configured by `nsgo.yaml`.
 - Add `nsgo dev` and `nsgo build` flags that override `nsgo.yaml`'s values.
+- Add `nsgo dev`'s native target on Windows.
 - Add `nsgo build` opening its output directory, unless `build.open` is false.
 - Add `dev.hot_reload` to rebuild on save, since `nsgo dev` now runs the app once and exits with it.
 - Add a layered app icon.

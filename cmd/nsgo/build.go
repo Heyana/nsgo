@@ -57,6 +57,17 @@ func openDir(dir string) {
 	}
 }
 
+// openCommand returns the command that shows a URL in the user's browser.
+func openCommand(url string) (string, []string) {
+	switch runtime.GOOS {
+	case "darwin":
+		return "open", []string{url}
+	case "windows":
+		return "rundll32", []string{"url.dll,FileProtocolHandler", url}
+	}
+	return "xdg-open", []string{url}
+}
+
 // targets are the names nsgo.yaml and -target accept, each one package.
 var targets = []string{
 	"macos_arm64", "macos_x64",

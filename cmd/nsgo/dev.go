@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -117,10 +118,13 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 func sessionFor(p *project, opts devOptions) (session, error) {
 	switch p.Dev.Target {
 	case "native":
-		if runtime.GOOS != "darwin" {
-			return session{}, fmt.Errorf("native development runs on macOS; use -target web")
+		switch runtime.GOOS {
+		case "darwin":
+			return macSession(), nil
+		case "windows":
+			return windowsSession(), nil
 		}
-		return macSession(), nil
+		return session{}, fmt.Errorf("native development runs on macOS and Windows; use -target web")
 	case "web":
 		return webSession(opts), nil
 	case "ios_simulator":
@@ -177,6 +181,33 @@ func macSession() session {
 		},
 		start: func(ctx context.Context, p *project) (app, error) {
 			bin := filepath.Join(p.cache("dev", "macos"), p.Name+".app", "Contents", "MacOS", p.Name)
+			stop, wait, err := startProcess(bin)
+			if err != nil {
+				return app{}, err
+			}
+			return app{stop: stop, wait: wait}, nil
+		},
+	}
+}
+
+// windowsSession builds the app as a Windows executable and runs it in
+// the foreground.
+func windowsSession() session {
+	return session{
+		build: func(ctx context.Context, p *project) error {
+			dir := p.cache("dev", "windows")
+			os.RemoveAll(dir)
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+			if err := goBuild(ctx, p, filepath.Join(dir, p.Name+".exe"),
+				[]string{"GOOS=windows", "GOARCH=" + runtime.GOARCH, "CGO_ENABLED=0"}, "-H=windowsgui"); err != nil {
+				return err
+			}
+			return copyAssets(p, dir)
+		},
+		start: func(ctx context.Context, p *project) (app, error) {
+			bin := filepath.Join(p.cache("dev", "windows"), p.Name+".exe")
 			stop, wait, err := startProcess(bin)
 			if err != nil {
 				return app{}, err
@@ -298,7 +329,8 @@ func webSession(opts devOptions) session {
 				url := fmt.Sprintf("http://localhost:%d/", opts.port)
 				step("serving %s", url)
 				if opts.open {
-					exec.Command("open", url).Start()
+					name, args := openCommand(url)
+					exec.Command(name, args...).Start()
 				}
 			})
 			if err != nil {
@@ -340,7 +372,13 @@ func startProcess(name string, args ...string) (stop func(), wait func(context.C
 				return
 			default:
 			}
-			cmd.Process.Signal(os.Interrupt)
+			if runtime.GOOS == "windows" {
+				// Ask the app's windows to close, so it saves and exits;
+				// a process without one is killed below.
+				exec.Command("taskkill", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
+			} else {
+				cmd.Process.Signal(os.Interrupt)
+			}
 			select {
 			case <-done:
 			case <-time.After(2 * time.Second):

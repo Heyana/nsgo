@@ -12,7 +12,7 @@ NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the
 
 ## Status
 
-NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, images, canvas, overlays, dialogs, navigation, unstyled base components and themed `ui` components, running on macOS, iOS and the web; Windows builds but is untested, Android is in progress and Linux is planned. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
+NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, images, canvas, overlays, dialogs, navigation, unstyled base components and themed `ui` components, running on macOS, iOS, Windows and the web; Android is in progress and Linux is planned. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
 
 ## Goals
 
@@ -85,7 +85,7 @@ Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `
 
 ## Development
 
-Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed for any target.
+Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed for any target. On Windows, Go 1.25 or later runs the native app and builds the Windows and web packages.
 
 Run the example from the repository root:
 
@@ -96,6 +96,8 @@ go tool nsgo dev -target ios_simulator examples/hello
 go tool nsgo build examples/hello                   # release packages in examples/hello/dist
 go test ./...
 ```
+
+On Windows, `go test ./platform/windows` opens a real window to check input and painting; it skips where no desktop is available.
 
 NSGo uses NSH as its reference implementation. Clone it into `nsh/` at the repository root; Git ignores that directory:
 

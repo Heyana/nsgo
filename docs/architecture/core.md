@@ -97,7 +97,8 @@ Native alerts, the clipboard, announcements, keyboard shortcuts, the status bar,
 
 - Engines given the same `Store` share its entries and quota. Each graph keeps a signal per key it read and one for the key set; its own changes bump them at once, and other graphs' changes arrive through `Post`.
 - The store hands each change to the backend under its lock, so every graph and the backend see one order.
-- Native targets keep `storage.json` in the data directory: `engine.OpenFileStorage` returns one store per file in the process and rewrites the file on a goroutine of its own. A file that does not parse is set aside as `storage.json.corrupt`, and one that cannot be read leaves changes in memory. Platforms call `engine.SyncStorage` as the process ends.
+- Native targets keep `storage.json` in the data directory: `engine.OpenFileStorage` returns one store per file in the process and rewrites the file on a goroutine of its own.
+- A file that does not parse is set aside as `storage.json.corrupt`, and one that cannot be read leaves changes in memory. Platforms call `engine.SyncStorage` as the process ends.
 - The web keeps entries in `localStorage` under `nsgo:<app id>:`.
 - `Scope.DataDir` and `Scope.CacheDir` are named by the app's ID, which the tool passes from `nsgo.yaml`: `engine.AppDirs` on Apple platforms, Windows and Linux, the files and cache directories the runtime passes on Android, and none on the web. The engine makes them as it starts.
 

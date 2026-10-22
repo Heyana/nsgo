@@ -44,7 +44,7 @@ Every target builds on macOS with Go, and iOS also with Xcode. No backend contai
 | macOS | `platform/macos` | purego and the Objective-C runtime; `CGO_ENABLED=0` | Runs |
 | iOS | `platform/ios` | The same; cgo only because Go links iOS with Xcode's linker | Runs in the simulator |
 | Web | `platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
-| Windows | `platform/windows` | `syscall`: Win32 window drawn with GDI into a 32-bit buffer, native EDIT inputs | Builds, never run |
+| Windows | `platform/windows` | `syscall`: Win32 window drawn with GDI into a 32-bit buffer, native EDIT inputs | Runs; native tests check its window, input and pixels |
 | Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Go side builds; the Java runtime has never been compiled; `classes.dex` and APK packaging pending |
 | Linux | — | Planned: GTK 4 through purego | Not started |
 
@@ -94,7 +94,7 @@ Record a design question here, and confirm the answer with the user before choos
 
 ## Verification
 
-`core` and `engine` have headless Go tests for the graph, layout, regions, commits and the mailbox; apps test themselves with `nsgotest`, as `examples/hello` does. Backends need a run on their target: screenshots of the window, simulator or headless browser, and input where it can be simulated.
+`core` and `engine` have headless Go tests for the graph, layout, regions, commits and the mailbox; apps test themselves with `nsgotest`, as `examples/hello` does. The Windows backend's tests open a real window and check clicks, typing, submit and painted pixels (`go test ./platform/windows`). Backends need a run on their target: screenshots of the window, simulator or headless browser, and input where it can be simulated.
 
 ## Subjects
 
