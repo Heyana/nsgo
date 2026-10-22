@@ -19,6 +19,7 @@ type TextView struct {
 	Document     textview.Document
 	DocumentFunc func() textview.Document
 	Extensions   []textview.Extension
+	Streaming    bool
 	Style        core.Style
 	Styles       textview.Styles
 	Selectable   bool
@@ -46,7 +47,7 @@ func (v TextView) Render(cx *core.Scope) core.Node {
 	}
 	tv := textview.TextView{
 		Markdown: v.Markdown, MarkdownFunc: v.MarkdownFunc, Document: v.Document, DocumentFunc: v.DocumentFunc,
-		Extensions: v.Extensions, Styles: styles, Selectable: v.Selectable, Highlighter: v.Highlighter,
+		Extensions: v.Extensions, Streaming: v.Streaming, Styles: styles, Selectable: v.Selectable, Highlighter: v.Highlighter,
 		StyleFunc:   func(p textview.Part) core.Style { return theme().textView(p) },
 		OnLinkPress: v.OnLinkPress, RenderCustom: v.RenderCustom, CustomSpan: v.CustomSpan,
 		RenderCodeBlock: v.RenderCodeBlock, RenderImage: v.RenderImage, TestID: v.TestID,

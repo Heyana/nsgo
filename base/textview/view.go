@@ -24,6 +24,9 @@ type TextView struct {
 	Document     Document
 	DocumentFunc func() Document
 	Extensions   []Extension
+	// Streaming repairs the syntax the Markdown's last block leaves open
+	// before parsing (RepairStreaming), for a document still arriving.
+	Streaming bool
 
 	// Styles style the parts; StyleFunc's result for a part goes under
 	// them, again when what it reads changes. ui.TextView passes its
@@ -114,13 +117,20 @@ func (tv TextView) Render(cx *core.Scope) core.Node {
 func (tv TextView) document() Document {
 	switch {
 	case tv.MarkdownFunc != nil:
-		return Parse(tv.MarkdownFunc(), tv.Extensions...)
+		return tv.parse(tv.MarkdownFunc())
 	case tv.Markdown != "":
-		return Parse(tv.Markdown, tv.Extensions...)
+		return tv.parse(tv.Markdown)
 	case tv.DocumentFunc != nil:
 		return tv.DocumentFunc()
 	}
 	return tv.Document
+}
+
+func (tv TextView) parse(markdown string) Document {
+	if tv.Streaming {
+		markdown = RepairStreaming(markdown)
+	}
+	return Parse(markdown, tv.Extensions...)
 }
 
 func equal[T any](a, b T) bool { return reflect.DeepEqual(a, b) }

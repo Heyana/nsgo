@@ -13,9 +13,8 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
-| Streaming repair | `crates/nsh-base/src/text_view/markdown/streaming.rs` | A streamed reply never shows syntax its end leaves open, such as `**` or a table's header alone |
 | HTML in text views | `crates/nsh-base/src/text_view/html` | `TextView` reads HTML documents and the HTML inside Markdown |
-| Formulas | `docs/dev/text-view.md` | `$…$` and `$$…$$` reach the app's renderer, else show as TeX |
+| Formulas | `docs/dev/text-view.md` | `$…$` and `$$…$$` reach the app's renderer, else show as TeX, and `RepairStreaming` closes them as NSH does |
 | Inline attachments | `docs/dev/text.md` | Views, images and custom nodes flow inside a text's lines |
 | Span backgrounds | `docs/dev/text.md` | Spans draw backgrounds, so inline code sits on a tint |
 | Strikethrough on Apple platforms | `crates/nsh-platform-ios/src/text.rs` | CoreText text draws its struck spans |

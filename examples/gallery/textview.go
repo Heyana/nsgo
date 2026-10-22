@@ -33,7 +33,8 @@ const markdown = "# Text View\n\n" +
 
 // reply is the text the streaming demo writes, a few words at a time.
 const reply = "Sure. Here is how a **streamed reply** grows:\n\n" +
-	"1. Each chunk is appended to the Markdown.\n2. Only the block being written is built again.\n\n" +
+	"1. Each chunk is appended to the Markdown.\n2. Only the block being written is built again.\n" +
+	"3. Syntax still open, such as **bold** or a [link](https://nsgo.dev), shows finished.\n\n" +
 	"```go\nfor chunk := range chunks {\n\ttext.Update(func(s string) string { return s + chunk })\n}\n```\n\n" +
 	"| Blocks | Built again |\n|---|---|\n| Finished | Never |\n| Last | Each chunk |\n\nDone."
 
@@ -82,6 +83,6 @@ func textViewPage(cx *core.Scope, t *theme) core.Node {
 		},
 		t.live(link.Get),
 		ui.Button{Label: "Stream a reply", Variant: ui.Secondary, OnPress: stream, TestID: "stream"},
-		ui.TextView{MarkdownFunc: streamed.Get, Highlighter: highlight.New(cx), TestID: "streamed"},
+		ui.TextView{MarkdownFunc: streamed.Get, Streaming: true, Highlighter: highlight.New(cx), TestID: "streamed"},
 	}}
 }

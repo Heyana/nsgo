@@ -19,6 +19,7 @@ Highlighting is its own package because chroma's lexers add about 4.5 MB to a bi
 - Alerts are blockquotes whose first line is `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]`.
 - Heading anchors are GitHub's slugs, made unique per document.
 - Raw HTML is dropped, except `<br>` as a line break.
+- `RepairStreaming`, which `Streaming` applies before parsing, ports NSH's streaming repair. It closes what the last block leaves open (emphasis, strikethrough, inline code), shows unfinished links as their text, drops unfinished images, footnote references and HTML tags, and completes a table's delimiter row. It leaves out NSH's `$` and `\(` formula repair until formulas parse.
 - An `Extension` makes `Custom` nodes from a regular expression in text (`Pattern`), a fenced code language (`Language`) or a `:::name` container (`Container`). Containers are a goldmark block parser, so their content parses as the document does. A container inside another closes with fewer colons.
 
 ## Rendering
@@ -46,4 +47,4 @@ Where NSGo departs from NSH:
 
 ## Limits
 
-These are goals in the [roadmap](../roadmap.md): streaming repair, HTML, formulas, inline attachments, span backgrounds and strikethrough on Apple platforms. Anchors are reported, not scrolled to. Highlighting runs on the engine goroutine, with the last 64 blocks' tokens cached for the process.
+These are goals in the [roadmap](../roadmap.md): HTML, formulas, inline attachments, span backgrounds and strikethrough on Apple platforms. Anchors are reported, not scrolled to. Highlighting runs on the engine goroutine, with the last 64 blocks' tokens cached for the process.
