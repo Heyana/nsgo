@@ -132,7 +132,7 @@ type buildFlags struct {
 
 func bindBuildFlags(fs *flag.FlagSet) *buildFlags {
 	f := &buildFlags{overrides: bindOverrides(fs)}
-	f.targets = stringFlag(fs, "target", "comma-separated `targets` (default: nsgo.yaml's build.targets)")
+	f.targets = stringFlag(fs, "target", "comma-separated `targets`, or all for every platform Go and Xcode build (default: nsgo.yaml's build.targets)")
 	f.output = stringFlag(fs, "output", "the `output` directory (default: nsgo.yaml's build.output)")
 	f.open = boolFlag(fs, "open", "open the output directory (default: nsgo.yaml's build.open)")
 	return f

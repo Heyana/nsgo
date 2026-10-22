@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -92,11 +90,11 @@ func load(dir string) (*project, error) {
 	if len(p.Build.Targets) == 0 {
 		p.Build.Targets = []string{"macos_" + goArchName(runtime.GOARCH)}
 	}
-	for _, t := range p.Build.Targets {
-		if !slices.Contains(targets, t) {
-			return nil, fmt.Errorf("nsgo.yaml: unknown target %q; use one of %s", t, strings.Join(targets, ", "))
-		}
+	expanded, err := expandTargets(p.Build.Targets)
+	if err != nil {
+		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
+	p.Build.Targets = expanded
 	return p, nil
 }
 

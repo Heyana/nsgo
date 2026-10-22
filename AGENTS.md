@@ -7,7 +7,8 @@ NSGo is a cross-platform native UI engine with a Go backend, ported from the des
 - Treat `nsh/` as read-only reference. Never edit, commit or vendor it; it is listed in `.gitignore`. Neorio copies it into new worktrees from the main checkout.
 - Before designing a subsystem, read how NSH does it in `nsh/docs/dev/` and its crate's module docs.
 - Write idiomatic Go. Port NSH's design and names, not its Rust idioms.
-- Assume only macOS, Xcode and Go on a user's machine. Building every target except the x86_64 emulator's from there must need nothing else: no NDK, Android SDK, JDK, GTK or Windows toolchain. That `android_x64` target is the one exception: Go links android/amd64 only with cgo, so it needs an NDK.
+- Assume only macOS, Xcode and Go on a user's machine. Building every target except the x86_64 emulator's from there must need nothing else: no NDK, Android SDK, JDK, GTK or Windows toolchain.
+- The `android_x64` target is the one exception: Go links android/amd64 only with cgo, so it needs an NDK.
 - Never hand-write C. Reach system APIs through purego or `syscall`, and use cgo only where Go itself demands it (linking for iOS and x86_64 Android).
 - Prebuild what users cannot build with Go and Xcode, such as the Android runtime's `classes.dex`, and commit it with the command that rebuilds it (`platform/android/runtime/build.sh`).
 - Keep `core` free of cgo and platform imports.

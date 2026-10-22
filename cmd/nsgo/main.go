@@ -2,7 +2,7 @@
 //
 //	nsgo init  [-name N] [-module M] [dir]               write a new app
 //	nsgo dev   [-target T] [-hot-reload] [flags] [dir]   run the app and rebuild it on changes
-//	nsgo build [-target T,...] [flags] [dir]             build packages for nsgo.yaml's targets
+//	nsgo build [-target all|T,...] [flags] [dir]         build packages for nsgo.yaml's targets or all platforms
 //
 // dir is the app's directory, holding nsgo.yaml and its main package; it
 // defaults to the current directory. Flags replace the nsgo.yaml values
@@ -68,7 +68,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   nsgo init  [-name N] [-module M] [dir]
   nsgo dev   [-target native|web|ios|ios_simulator|android] [-hot-reload] [-port N] [-open=false] [dir]
-  nsgo build [-target macos_arm64,windows_x64,linux_x64,ios,web,...] [-output DIR] [-open=false] [dir]
+  nsgo build [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [-output DIR] [-open=false] [dir]
 
 dev and build take -name, -id, -version, -width and -height, which replace
 nsgo.yaml's values, and -h lists every flag.`)

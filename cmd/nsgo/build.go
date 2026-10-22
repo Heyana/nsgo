@@ -15,12 +15,11 @@ import (
 // buildAll writes one directory per target: <output>/<name>-<version>-<target>.
 func buildAll(ctx context.Context, p *project) error {
 	p.Release = true
-	for _, target := range p.Build.Targets {
-		if !slices.Contains(targets, target) {
-			return fmt.Errorf("unknown target %q; use one of %s", target, strings.Join(targets, ", "))
-		}
+	buildTargets, err := expandTargets(p.Build.Targets)
+	if err != nil {
+		return err
 	}
-	for _, target := range p.Build.Targets {
+	for _, target := range buildTargets {
 		dir := filepath.Join(p.Build.Output, fmt.Sprintf("%s-%s-%s", p.Name, p.Version, target))
 		if err := os.RemoveAll(dir); err != nil {
 			return err
@@ -78,6 +77,39 @@ var targets = []string{
 	"web",
 }
 
+// expandTargets replaces "all" with every target that needs only Go and
+// Xcode, checks every name and drops duplicates, so each package is built
+// once. android_x64 stays out of "all" because it needs an NDK.
+func expandTargets(names []string) ([]string, error) {
+	var out []string
+	for _, name := range names {
+		expanded := []string{name}
+		if name == "all" {
+			expanded = goAndXcodeTargets()
+		} else if !slices.Contains(targets, name) {
+			return nil, fmt.Errorf("unknown target %q; use all or one of %s", name, strings.Join(targets, ", "))
+		}
+		for _, target := range expanded {
+			if !slices.Contains(out, target) {
+				out = append(out, target)
+			}
+		}
+	}
+	return out, nil
+}
+
+// goAndXcodeTargets are the packages a Mac with Go and Xcode can build.
+// android_x64 is omitted: Go links android/amd64 only with cgo, so it needs an NDK.
+func goAndXcodeTargets() []string {
+	out := make([]string, 0, len(targets)-1)
+	for _, target := range targets {
+		if target != "android_x64" {
+			out = append(out, target)
+		}
+	}
+	return out
+}
+
 func buildTarget(ctx context.Context, p *project, target, dir string) error {
 	osName, arch, _ := strings.Cut(target, "_")
 	switch target {
@@ -108,7 +140,7 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 		_, err := buildAndroidAPK(ctx, p, dir, goArch(arch))
 		return err
 	}
-	return fmt.Errorf("unknown target; use one of %s", strings.Join(targets, ", "))
+	return fmt.Errorf("unknown target %q; use all or one of %s", target, strings.Join(targets, ", "))
 }
 
 // goArch maps x64, the name packages use, to Go's amd64.

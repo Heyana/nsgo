@@ -55,7 +55,9 @@ Android runs the app as a second process because Go builds Android shared librar
 
 `nsgo dev -target ios` builds the app and Xcode signs it with automatic signing from the developer account in Xcode. It installs the app with `devicectl` and streams its output; `nsgo build -target ios` leaves the app to sign.
 
-Neither an NDK nor the Android SDK is needed for arm64: `platform/android/runtime` holds the Java runtime's prebuilt `classes.dex` (its `build.sh` rebuilds it), and `cmd/nsgo/apk` writes the binary manifest, the ZIP and the v2 signature in Go. `nsgo build -target android_arm64` writes an APK signed with the project's debug key. `nsgo dev -target android` builds for the connected device's ABI, installs the APK, starts it and streams its log, so device and emulator development needs `adb` from the SDK's platform-tools. An x86_64 emulator needs the `android_x64` package, which needs an NDK's clang: Go links android/amd64 only with cgo. An arm64 device or emulator still builds with Go alone.
+Neither an NDK nor the Android SDK is needed for arm64: `platform/android/runtime` holds the Java runtime's prebuilt `classes.dex` (its `build.sh` rebuilds it), and `cmd/nsgo/apk` writes the binary manifest, the ZIP and the v2 signature in Go. `nsgo build -target android_arm64` writes an APK signed with the project's debug key. `nsgo dev -target android` builds for the connected device's ABI, installs the APK, starts it and streams its log, so device and emulator development needs `adb` from the SDK's platform-tools.
+
+An x86_64 emulator needs the `android_x64` package, which needs an NDK's clang: Go links android/amd64 only with cgo. An arm64 device or emulator still builds with Go alone.
 
 The Linux backend loads GTK 4 at run time, so building its package needs only Go, while running it needs GTK 4.14 or newer, Pango and Cairo installed as any GTK app does. The application menu is a GTK menu bar above the surface, but the backend draws no window controls of its own, so a hidden title bar reports the app's bar height only.
 
@@ -79,6 +81,7 @@ The Linux backend loads GTK 4 at run time, so building its package needs only Go
 
 - Targets name an OS and an architecture (`macos_arm64`, `windows_x64`), so each package holds one binary.
 - `nsgo build` is a release build: `-s -w`, `-trimpath`, no VCS stamp. `nsgo dev` keeps symbols.
+- `nsgo build -target all` names every target that needs only Go and Xcode; `android_x64` stays explicit because it needs an NDK.
 - `nsgo build` shows the output directory when it finishes, unless `nsgo.yaml` sets `build.open` to false.
 - `nsgo dev` runs the app once and exits when the app does, unless `nsgo.yaml` sets `dev.hot_reload` to true; the web target serves until interrupted.
 - `nsgo dev`'s Android target installs each build over `adb`, streams the app's log here, and stops the app when `nsgo dev` ends.
