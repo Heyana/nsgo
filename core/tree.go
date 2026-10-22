@@ -77,6 +77,7 @@ type node struct {
 	screen  *screenNode
 	list    *listNode
 	canvas  *canvasNode
+	icon    *iconNode
 	web     *webNode
 	isStack bool
 	ref     *Ref
@@ -374,6 +375,10 @@ func (t *Tree) mount(cx *Scope, parent *node, el Node) {
 		t.mountCanvas(cx, parent, el)
 	case *Canvas:
 		t.mountCanvas(cx, parent, *el)
+	case Icon:
+		t.mountIcon(cx, parent, el)
+	case *Icon:
+		t.mountIcon(cx, parent, *el)
 	case WebView:
 		t.mountWebView(cx, parent, el)
 	case *WebView:

@@ -9,6 +9,11 @@ The Go packages ported from NSH are modified: Rust is translated into Go, names
 follow Go conventions, and behavior differs where ARCHITECTURE.md records it.
 ARCHITECTURE.md's "Code map" names the NSH crate each package comes from.
 
+The Lucide icon set in icons/lucide comes from
+https://github.com/lucide-icons/lucide, Copyright (c) 2026 Lucide Icons and
+Contributors, licensed under the ISC License, together with Feather's MIT
+notice. icons/lucide/LICENSE holds both texts.
+
 Layout test fixtures in core/internal/layout/testdata/ come from Taffy,
 https://github.com/DioxusLabs/taffy, Copyright (c) 2018 Visly Inc. and
 Copyright (c) 2026 Taffy Authors, licensed under the MIT License. That directory's

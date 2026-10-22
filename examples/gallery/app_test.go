@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -125,7 +126,7 @@ func TestApplicationMenu(t *testing.T) {
 		}
 	}
 	app.ChooseMenu("View", "Next Section")
-	app.Find("id:section-Canvas")
+	app.Find("id:section-Icons")
 
 	app.Find("id:about")
 	app.ChooseMenu("View", "Show Descriptions")
@@ -238,4 +239,30 @@ func TestWebViewMessages(t *testing.T) {
 	}
 	app.Navigate("id:site", core.WebNavigation{URL: "https://example.com/", Title: "Example", CanGoBack: true})
 	app.Find("text:Example — https://example.com/ (loaded, back true, forward false)")
+}
+
+// TestIconBrowserFilters checks that a query rebuilds the bundled pack's
+// browser rows, and that clearing it shows the whole catalog again.
+func TestIconBrowserFilters(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Icons")
+	app.Find("text:1879 of 1879 icons")
+	app.Type("id:icon-search", "heart")
+	found := 0
+	for _, e := range iconCatalog {
+		if strings.Contains(e.name, "heart") {
+			found++
+		}
+	}
+	app.Find(fmt.Sprintf("text:%d of 1879 icons", found))
+	if !app.Exists("text:heart") {
+		t.Fatal("the filtered browser shows no heart")
+	}
+	app.Type("id:icon-search", "no-such-icon")
+	app.Find("text:No icon matches.")
+	if app.Exists("text:heart") {
+		t.Fatal("an emptied browser still shows icons")
+	}
+	app.Type("id:icon-search", "")
+	app.Find("text:1879 of 1879 icons")
 }

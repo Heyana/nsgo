@@ -37,6 +37,7 @@ func init() {
 		{"Styled", "The ui package: base components with the default theme.", styledPage},
 		{"Lists", "A virtualized list of many rows and a keyed list you edit.", listsPage},
 		{"Images", "Embedded and remote images, placeholders and resize modes.", imagesPage},
+		{"Icons", "The bundled Lucide pack, drawn in inherited text color at any size.", iconsPage},
 		{"Canvas", "2D drawing recorded on the engine and played by the platform.", canvasPage},
 		{"Web View", "The platform's web view: inline HTML, a site, history and messages both ways.", webPage},
 		{"Animation", "Values stepped with Animate and transitions run by the platform.", animationPage},

@@ -93,6 +93,11 @@ func (t *Tree) resolve(n *node, inherited Style) {
 		inherited = n.style.inherit(inherited)
 	}
 	switch {
+	case n.icon != nil:
+		// An icon paints in the text color it inherits.
+		in := n.icon
+		in.text = t.scaled(inherited.textStyle())
+		t.within(n.owner, func() { in.color.Set(in.text.Color) })
 	case n.text != nil:
 		n.props.SelectionColor = inherited.SelectionColor
 		tn := n.text

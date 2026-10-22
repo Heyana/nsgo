@@ -64,16 +64,9 @@ func (n *node) Measure(known layout.Size[layout.Opt], available layout.Size[layo
 	case n.input != nil:
 		m = Size{160, ceil(n.input.lineH)}
 	case n.image != nil:
-		nat := n.image.naturalSize()
-		w, h := known.Width, known.Height
-		switch {
-		case !w.Valid && !h.Valid:
-			m = nat
-		case !w.Valid && nat.Height > 0:
-			m.Width = Points(h.Value) * nat.Width / nat.Height
-		case !h.Valid && nat.Width > 0:
-			m.Height = Points(w.Value) * nat.Height / nat.Width
-		}
+		m = fitNatural(n.image.naturalSize(), known)
+	case n.icon != nil:
+		m = fitNatural(n.icon.naturalSize(), known)
 	default:
 		return layout.Size[float32]{}
 	}
@@ -81,6 +74,20 @@ func (n *node) Measure(known layout.Size[layout.Opt], available layout.Size[layo
 		Width:  known.Width.Or(float32(m.Width)),
 		Height: known.Height.Or(float32(m.Height)),
 	}
+}
+
+// fitNatural fits a leaf's natural size to the sizes layout already knows.
+func fitNatural(nat Size, known layout.Size[layout.Opt]) Size {
+	w, h := known.Width, known.Height
+	switch {
+	case !w.Valid && !h.Valid:
+		return nat
+	case !w.Valid && nat.Height > 0:
+		return Size{Width: Points(h.Value) * nat.Width / nat.Height}
+	case !h.Valid && nat.Width > 0:
+		return Size{Height: Points(w.Value) * nat.Height / nat.Width}
+	}
+	return Size{}
 }
 
 // markLayout marks n and its ancestors for layout, dropping their cached

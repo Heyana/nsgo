@@ -21,11 +21,12 @@ Packages mirror NSH's crates:
 
 | Package | NSH counterpart | Responsibility |
 | --- | --- | --- |
-| `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, layout, text, mount items |
+| `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, layout, text, SVG drawings, mount items |
 | `base` | `nsh-base` | Unstyled base components: controls, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack |
 | `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark), HTML (x/net/html) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
 | `ui` | `nsh-base`'s `Theme` | The theme as Go values, and `base`'s controls, popups and text view styled with it |
 | `ui/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma, in NSH's palette |
+| `icons/lucide` | — (NSH loads SVG as images) | The bundled Lucide pack: one generated accessor per icon, parsed on first use ([icons](docs/architecture/icons.md)) |
 | `engine` | `nsh-engine` | Engine goroutine: an unbounded mailbox, commits, one batch per commit to the platform |
 | `core/internal/layout` | Taffy | Block, flexbox and grid layout, checked against Taffy's fixtures |
 | `nsgotest` | `nsh-testing` | Headless app tests: approximate text, a manual clock, selectors over a model of the views |
@@ -36,6 +37,7 @@ Packages mirror NSH's crates:
 | `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags; the tool sets name and window size |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `nsgo dev` and `nsgo build`, driven by an app's `nsgo.yaml` |
 | `cmd/nsgo/apk` | `nsh-cli` (`android.rs`) | Android packaging: binary XML, ZIP and v2 signature in Go |
+| `tools/lucidegen` | — | Regenerates `icons/lucide` and the gallery's catalog from a pinned Lucide checkout |
 | `examples/hello` | `examples/counter` | A todo list: text, input, button, scroll view and keyed list, with a headless test |
 | `examples/gallery` | `examples/gallery-rs` | A sidebar of sections showing each element, base component, gesture and desktop service, with headless tests |
 
@@ -71,6 +73,7 @@ The Linux backend loads GTK 4 at run time, so building its package needs only Go
 - The platform main thread never waits for the engine. The engine never touches main-thread-only UI objects.
 - The reactive graph belongs to the engine goroutine and never locks; other goroutines reach it through `Scope.Post`.
 - Text is prepared and laid out on the engine side through a platform `TextEngine`; the main thread only draws the result.
+- Icons draw through the canvas protocol: an SVG becomes one `Drawing`, so no backend learns about icons.
 - One engine is one app instance with no global state, so a host app can embed several.
 - Keep NSH's public names and semantics unless Go requires otherwise, so NSH's documentation stays a usable reference.
 - Apps are written in Go. The shadow tree's operations are the reserved entry for a TSX runtime, which does not exist yet.
@@ -89,7 +92,7 @@ The Linux backend loads GTK 4 at run time, so building its package needs only Go
 - With hot reload, `nsgo dev` watches the directories `go list -deps` reports, NSGo's own included, and keeps the last good build running when a build fails.
 - With hot reload, the web dev server reloads open pages over server-sent events after each build.
 - Packages ship `resources/` from beside `nsgo.yaml` in their resource root, which `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` paths against. `assets/` holds sources that do not ship, such as icons.
-- Icons are written in Go, except that `actool` compiles Apple's `.icon` files and asset catalogs. A Windows icon links in from a `.syso` written into the app's package directory for the build, since Go links `.syso` files only from there.
+- App icons are written in Go, except that `actool` compiles Apple's `.icon` files and asset catalogs. A Windows icon links in from a `.syso` written into the app's package directory for the build, since Go links `.syso` files only from there.
 - A command's flags replace the `nsgo.yaml` values they name: `dev.target` and `dev.hot_reload` for `nsgo dev`; `build.targets`, `build.output` and `build.open` for `nsgo build`; `name`, `id`, `version` and `window` for both.
 
 ## Core flows
@@ -119,3 +122,4 @@ Subjects go in `docs/architecture/` once a subsystem has a lasting design.
 | --- | --- |
 | [Core](docs/architecture/core.md) | Changing the reactive graph, elements, regions, commit, text, selection, storage or the mount protocol |
 | [Text view](docs/architecture/textview.md) | Changing `TextView`: the document model, Markdown and HTML parsing, its parts or code highlighting |
+| [Icons](docs/architecture/icons.md) | Changing SVG parsing, `core.Icon` or the Lucide pack and its generator |

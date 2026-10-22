@@ -13,7 +13,7 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | Video | `docs/dev/elements.md` | Playback with progress, resize modes and media info |
-| Animated and vector images | `docs/dev/images.md`, `docs/dev/elements.md` | GIF, animated WebP and SVG load on every target |
+| Animated and vector images | `docs/dev/images.md`, `docs/dev/elements.md` | GIF, animated WebP and SVG files load as an `Image` on every target |
 | File drop | `docs/dev/file-drop.md` | Desktop and web views receive dropped files |
 | InputAccessoryView | `docs/dev/elements.md` | A view rides above the iOS and Android keyboard |
 | Native components | `docs/dev/embedding.md` | Apps mount their own native views inside the tree |

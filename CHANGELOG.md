@@ -5,8 +5,9 @@
 - Add a reactive Go engine with owners, memos, effects and regions (`Show`, `Each`, `Dynamic`, `Catch`).
 - Add block, flexbox and grid layout matching Taffy, with styles, per-side borders, state styles, transforms and transitions.
 - Add images, rich text with links, text selection across texts, canvas, virtualized lists, overlays, modals and navigation stacks.
-- Add `TextView` for Markdown and HTML, including tables, alerts, footnotes, disclosures, formulas the app renders, inline images, extensions, highlighted code and streaming.
+- Add `TextView` for Markdown and HTML with tables, code highlighting, images, formulas and streaming.
 - Add span backgrounds and views inside text that flow with its lines.
+- Add SVG icons with `core.Icon`, drawn in the inherited text color, and the bundled Lucide pack.
 - Add `WebView` with inline HTML, injected scripts, history and messages between page and app.
 - Add unstyled base controls, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
 - Add the `ui` package with themed controls and popups in light and dark.
@@ -34,6 +35,6 @@
 - Fix Android builds failing because Go's implied `linux` tag included the Linux backend.
 - Fix strikethrough missing on macOS and iOS.
 - Fix Windows' aliased rounded corners, borders and canvas curves.
-- Fix nested scroll views scrolling together on iOS, or not passing on at their edge on macOS: the inner one scrolls until its edge, then the outer one.
+- Fix nested scroll views scrolling together on iOS or not passing at their edge on macOS.
 - Fix the gallery's and hello's outer scroll views never scrolling on desktops, because their roots grew past the window.
 - Fix text in a padded grid cell overlapping the row below when its width changes how many lines it wraps, and Windows drawing symbols such as ⌘ as boxes.
