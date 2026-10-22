@@ -92,6 +92,7 @@ func init() {
 	loadSystem()
 	loadImage(cf, cg)
 	loadCanvas(cg)
+	loadBorders(cg)
 	qc := load("/System/Library/Frameworks/QuartzCore.framework/QuartzCore")
 	purego.RegisterLibFunc(&caCurrentMediaTime, qc, "CACurrentMediaTime")
 }

@@ -119,6 +119,10 @@ func Run(app engine.App) {
 				Text:  r.str(),
 				Size:  core.Size{Width: r.points(), Height: r.points()},
 				Index: int(int32(r.u32())),
+				// A gesture's; zero for other events.
+				Phase:    core.GesturePhase(r.byte()),
+				Velocity: core.Point{X: r.points(), Y: r.points()},
+				Value:    r.float(),
 			})
 		case msgMeasured:
 			s.measured <- core.Size{Width: r.points(), Height: r.points()}
@@ -423,8 +427,9 @@ func readMessage(r *bufio.Reader) (byte, []byte, error) {
 
 // encode writes a batch in the format NsgoView.mount reads: each item is
 // its kind, its ID and the fields of that kind; requests numbers its
-// ItemImage items in order. Kinds it does not know, and ItemBackUnhandled,
-// have no fields.
+// ItemImage items in order. Kinds it does not know, ItemBackUnhandled and
+// the desktop-only ItemWindow and ItemMenu, which Java ignores, have no
+// fields.
 func encode(w *writer, b *core.MountBatch, requests []uint32) {
 	w.u32(uint32(b.Root))
 	w.u32(uint32(len(b.Items)))
@@ -446,6 +451,16 @@ func encode(w *writer, b *core.MountBatch, requests []uint32) {
 			w.points(v.CornerRadius)
 			w.points(v.BorderWidth)
 			w.u32(uint32(v.BorderColor))
+			// Each side's border, all 0 unless they differ.
+			b, c := v.Borders, v.BorderColors
+			w.points(b.Top)
+			w.points(b.Right)
+			w.points(b.Bottom)
+			w.points(b.Left)
+			w.u32(uint32(c.Top))
+			w.u32(uint32(c.Right))
+			w.u32(uint32(c.Bottom))
+			w.u32(uint32(c.Left))
 			w.float(v.Opacity)
 			// Android draws shadows from elevation, which has no offset.
 			w.u32(uint32(v.ShadowColor))
@@ -492,6 +507,12 @@ func encode(w *writer, b *core.MountBatch, requests []uint32) {
 			w.flags(p.Disabled, p.Selected, p.Checked, p.Indeterminate)
 			w.str(p.Label)
 			w.str(p.TestID)
+			// Java decides when a drag activates the pan.
+			a := p.PanActivation
+			w.points(a.ActiveOffsetX)
+			w.points(a.ActiveOffsetY)
+			w.points(a.FailOffsetX)
+			w.points(a.FailOffsetY)
 		case core.ItemScrollConfig:
 			w.flags(it.Scroll.Horizontal, it.Scroll.HideIndicator)
 		case core.ItemScrollContent:

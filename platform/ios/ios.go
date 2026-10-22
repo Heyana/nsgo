@@ -54,6 +54,9 @@ type view struct {
 	animation core.ModalAnimation // a modal's
 	presented bool                // whether a modal was inserted yet
 	drawing   *core.Drawing       // a canvas's
+
+	activation           core.PanActivation
+	pan, pinch, rotation objc.ID // the recognizers of the gestures it follows
 }
 
 type surface struct {
@@ -168,16 +171,18 @@ func loadUIKit() {
 		{Cmd: sel("touchesCancelled:withEvent:"), Fn: touchesCancelled},
 		{Cmd: sel("accessibilityActivate"), Fn: accessibilityActivate},
 	}
+	common = append(common, gestureMethods()...)
+	registerGestures()
 	classView = register("NsgoView", uiView, nil, common)
 	classSurface = register("NsgoSurface", uiView, nil, append(common,
 		objc.MethodDef{Cmd: sel("layoutSubviews"), Fn: surfaceLayout},
 		objc.MethodDef{Cmd: selApply, Fn: surfaceApply},
 		objc.MethodDef{Cmd: sel("safeAreaInsetsDidChange"), Fn: func(self objc.ID, cmd objc.SEL) {
-			self.SendSuper(cmd)
+			apple.Super(self, cmd)
 			app.refresh()
 		}},
 		objc.MethodDef{Cmd: sel("traitCollectionDidChange:"), Fn: func(self objc.ID, cmd objc.SEL, previous objc.ID) {
-			self.SendSuper(cmd, previous)
+			apple.Super(self, cmd, previous)
 			app.refresh()
 		}},
 	))
@@ -186,7 +191,7 @@ func loadUIKit() {
 		{Cmd: sel("prefersStatusBarHidden"), Fn: func(objc.ID, objc.SEL) bool { return app.hideBar }},
 		{Cmd: sel("canBecomeFirstResponder"), Fn: func(objc.ID, objc.SEL) bool { return true }},
 		{Cmd: sel("viewDidAppear:"), Fn: func(self objc.ID, cmd objc.SEL, animated bool) {
-			self.SendSuper(cmd, animated)
+			apple.Super(self, cmd, animated)
 			self.Send(selBecomeFirst)
 		}},
 		{Cmd: sel("pressesBegan:withEvent:"), Fn: pressesBegan},
@@ -218,14 +223,7 @@ func loadUIKit() {
 }
 
 func register(name string, super objc.Class, protocols []*objc.Protocol, methods []objc.MethodDef) objc.Class {
-	if protocols == nil {
-		protocols = []*objc.Protocol{}
-	}
-	c, err := objc.RegisterClass(name, super, protocols, []objc.FieldDef{}, methods)
-	if err != nil {
-		panic(err)
-	}
-	return c
+	return apple.RegisterClass(name, super, protocols, methods)
 }
 
 // Run shows app full screen and runs UIKit's event loop. Call it from
@@ -413,7 +411,7 @@ func (s *surface) pressOutside(touch objc.ID) {
 }
 
 func watcherBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
-	self.SendSuper(cmd, touches, event)
+	apple.Super(self, cmd, touches, event)
 	if app.engine != nil {
 		apple.ForEach(touches, app.pressOutside)
 	}
@@ -478,7 +476,7 @@ func (s *surface) apply(b *core.MountBatch) {
 			s.hideBar = it.Animated
 			controller.Send(sel("setNeedsStatusBarAppearanceUpdate"))
 			continue
-		case core.ItemTitle, core.ItemBackUnhandled:
+		case core.ItemTitle, core.ItemBackUnhandled, core.ItemWindow, core.ItemMenu:
 			continue
 		}
 		v := s.views[it.ID]
@@ -506,6 +504,7 @@ func (s *surface) apply(b *core.MountBatch) {
 			b.Size = apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)}
 			v.native.Send(sel("setBounds:"), b)
 			v.native.Send(sel("setCenter:"), apple.CGPoint{X: float64(f.Origin.X + f.Size.Width/2), Y: float64(f.Origin.Y + f.Size.Height/2)})
+			apple.LayoutBorders(v.native.Send(selLayer))
 			if v.image != nil {
 				v.image.Layout(apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)})
 				s.images = append(s.images, v)
@@ -539,8 +538,10 @@ func (s *surface) apply(b *core.MountBatch) {
 			v.native.Send(sel("setContentOffset:animated:"), to, it.Animated)
 		case core.ItemViewProps:
 			setAccessibility(v.native, it.ViewProps)
+			v.activation = it.ViewProps.PanActivation
 		case core.ItemEvents:
 			v.events = it.Events
+			v.setGestures(it.Events)
 		case core.ItemText:
 			v.layout.Release()
 			v.layout, _ = it.Text.Layout.(*apple.Layout)
@@ -633,6 +634,8 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 
 func (s *surface) delete(v *view) {
 	v.native.Send(selRemoveFromSuperview)
+	apple.ForgetBorders(v.native.Send(selLayer))
+	delete(gates, v.pan)
 	v.layout.Release()
 	if v.image != nil {
 		v.image.Close()
@@ -778,7 +781,7 @@ func touchesBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 		return
 	}
 	if v == nil || !v.pressable() {
-		self.SendSuper(cmd, touches, event)
+		apple.Super(self, cmd, touches, event)
 		return
 	}
 	v.pressing.Store(true)
@@ -797,7 +800,7 @@ func touchesBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 func touchesCancelled(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	v := views[self]
 	if v == nil || !v.pressable() {
-		self.SendSuper(cmd, touches, event)
+		apple.Super(self, cmd, touches, event)
 		return
 	}
 	if v.pressing.Swap(false) {
@@ -808,7 +811,7 @@ func touchesCancelled(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 func touchesEnded(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	v := views[self]
 	if v == nil || !v.pressable() {
-		self.SendSuper(cmd, touches, event)
+		apple.Super(self, cmd, touches, event)
 		return
 	}
 	p := objc.Send[apple.CGPoint](touches.Send(selAnyObject), selLocationInView, self)
@@ -857,7 +860,7 @@ func pressesBegan(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
 		})
 	}
 	if binding == "" {
-		self.SendSuper(cmd, presses, event)
+		apple.Super(self, cmd, presses, event)
 		return
 	}
 	app.engine.Dispatch(core.Event{Kind: core.EventKey, Text: binding})
@@ -873,7 +876,7 @@ func accessibilityActivate(self objc.ID, _ objc.SEL) bool {
 }
 
 func surfaceLayout(self objc.ID, cmd objc.SEL) {
-	self.SendSuper(cmd)
+	apple.Super(self, cmd)
 	if v := views[self]; v != nil && v.surface.engine != nil {
 		b := objc.Send[apple.CGRect](self, selBounds)
 		v.surface.engine.Resize(core.Size{Width: core.Points(b.Size.Width), Height: core.Points(b.Size.Height)})
@@ -888,7 +891,7 @@ func surfaceApply(self objc.ID, _ objc.SEL, _ objc.ID) {
 }
 
 func inputLayout(self objc.ID, cmd objc.SEL) {
-	self.SendSuper(cmd)
+	apple.Super(self, cmd)
 	v := views[self]
 	in := v.inset
 	v.field.Send(selSetFrame, apple.Rect(float64(in.Origin.X), float64(in.Origin.Y),

@@ -12,7 +12,6 @@ import android.content.res.Configuration;
 import android.database.ContentObserver;
 import android.graphics.Bitmap;
 import android.graphics.Insets;
-import android.graphics.drawable.GradientDrawable;
 import android.net.ConnectivityManager;
 import android.net.LinkProperties;
 import android.net.Network;
@@ -33,6 +32,8 @@ import android.view.Gravity;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
+import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
@@ -129,12 +130,15 @@ public class NsgoView extends FrameLayout {
     private final Set<Integer> consumedKeys = new HashSet<>();
     private int statusBarStyle;
     private boolean statusBarHidden;
+    /** The pan, pinch and rotation of the touch in progress, on the UI thread. */
+    private final Gestures gestures;
 
     public NsgoView(Context context) {
         super(context);
         density = context.getResources().getDisplayMetrics().density;
         ime = context.getSystemService(InputMethodManager.class);
         accessibility = context.getSystemService(AccessibilityManager.class);
+        gestures = new Gestures(context);
         setOnApplyWindowInsetsListener((v, insets) -> {
             insets(insets);
             environment();
@@ -440,9 +444,17 @@ public class NsgoView extends FrameLayout {
         write(kind, bytes.toByteArray());
     }
 
-    /** Sends an event to the engine: its kind, node, count, point, text, size and index. */
     private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
             int index) {
+        event(kind, id, count, x, y, text, width, height, index, 0, 0, 0, 0);
+    }
+
+    /**
+     * Sends an event to the engine: its kind, node, count, point, text,
+     * size and index, then a gesture's phase, velocity and value.
+     */
+    private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
+            int index, int phase, float vx, float vy, float value) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream d = new DataOutputStream(bytes);
         try {
@@ -455,6 +467,10 @@ public class NsgoView extends FrameLayout {
             d.writeFloat(width);
             d.writeFloat(height);
             d.writeInt(index);
+            d.writeByte(phase);
+            d.writeFloat(vx);
+            d.writeFloat(vy);
+            d.writeFloat(value);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -507,10 +523,24 @@ public class NsgoView extends FrameLayout {
         backCallback = null;
     }
 
+    /**
+     * Sees each touch before the views below: a touch starting reports
+     * presses outside overlays and collects the gesture views under it as
+     * they see it; each later one moves the gestures first, so a pan that
+     * activates stops the scroll views around it from taking the move.
+     */
     @Override
     public boolean dispatchTouchEvent(MotionEvent e) {
-        if (e.getActionMasked() == MotionEvent.ACTION_DOWN) pressOutside(e);
-        return super.dispatchTouchEvent(e);
+        boolean down = e.getActionMasked() == MotionEvent.ACTION_DOWN;
+        if (down) {
+            pressOutside(e);
+            gestures.reset();
+        } else {
+            gestures.track(e);
+        }
+        boolean handled = super.dispatchTouchEvent(e);
+        if (down) gestures.down(e);
+        return handled;
     }
 
     /** Reports a touch starting outside a node that listens for one, at its point in points. */
@@ -727,6 +757,10 @@ public class NsgoView extends FrameLayout {
                 if (activity != null) activity.setTitle(title);
                 break;
             }
+            case Protocol.ITEM_WINDOW:
+            case Protocol.ITEM_MENU:
+                // Desktop windows' and menus'; Go writes no fields.
+                break;
             case Protocol.ITEM_BACK_UNHANDLED: {
                 // As the system's back does from API 31: a task's root
                 // activity goes to the background, keeping the app; any
@@ -972,8 +1006,9 @@ public class NsgoView extends FrameLayout {
                 : kind == Protocol.KIND_IMAGE ? new ImageNode(context)
                 : kind == Protocol.KIND_CANVAS ? new CanvasNode(context)
                 : kind == Protocol.KIND_SCROLL ? new FrameLayout(context)
-                : kind == Protocol.KIND_MODAL ? new Layer(context) : group(context);
+                : kind == Protocol.KIND_MODAL ? new Layer(context) : new Group(context);
         Node n = new Node(id, view);
+        if (view instanceof Group) ((Group) view).node = n;
         switch (kind) {
             case Protocol.KIND_TEXT:
                 break;
@@ -1003,13 +1038,6 @@ public class NsgoView extends FrameLayout {
         });
         nodes.put(id, n);
         return n;
-    }
-
-    /** A container whose children may draw outside it, as without Clip. */
-    private static FrameLayout group(Context context) {
-        FrameLayout group = new FrameLayout(context);
-        group.setClipChildren(false);
-        return group;
     }
 
     private EditText field(Node n) {
@@ -1068,6 +1096,9 @@ public class NsgoView extends FrameLayout {
         look.radius = in.readFloat() * density;
         look.border = in.readFloat() * density;
         look.borderColor = Text.argb(in.readInt());
+        for (int i = 0; i < 4; i++) look.borders[i] = in.readFloat() * density;
+        for (int i = 0; i < 4; i++) look.borderColors[i] = Text.argb(in.readInt());
+        look.sides = look.borders[0] > 0 || look.borders[1] > 0 || look.borders[2] > 0 || look.borders[3] > 0;
         look.opacity = in.readFloat();
         look.shadowColor = Text.argb(in.readInt());
         look.shadowRadius = in.readFloat() * density;
@@ -1087,7 +1118,7 @@ public class NsgoView extends FrameLayout {
         view.setClipToOutline(Protocol.flag(flags, 0));
         view.setVisibility(Protocol.flag(flags, 1) ? GONE : VISIBLE);
         if (n.background == null) {
-            n.background = new GradientDrawable();
+            n.background = new Box();
             view.setBackground(n.background);
         }
         if (n.animator != null) n.animator.cancel(); // n.shown is where it stopped
@@ -1164,7 +1195,8 @@ public class NsgoView extends FrameLayout {
 
     /**
      * Listens for the events in mask. A view takes touches only while it
-     * reports presses, so other touches reach the pressable view under it.
+     * reports presses or follows gestures (Group), so other touches reach
+     * the pressable view under it.
      */
     private void events(Node n, long mask) {
         n.events = mask;
@@ -1223,6 +1255,10 @@ public class NsgoView extends FrameLayout {
         n.mixed = Protocol.flag(flags, 3);
         n.label = Protocol.readString(in);
         n.testID = Protocol.readString(in);
+        n.activeX = in.readFloat();
+        n.activeY = in.readFloat();
+        n.failX = in.readFloat();
+        n.failY = in.readFloat();
         View view = n.accessible();
         // A text field's ItemInput enables it.
         if (n.field == null) view.setEnabled(!n.disabled);
@@ -1277,6 +1313,358 @@ public class NsgoView extends FrameLayout {
     }
 
     /**
+     * A view node's container, whose children may draw outside it, as
+     * without Clip. While its node follows gestures it takes the touches
+     * its children leave, so the gestures see them, and while one of them
+     * is active it takes its children's too, cancelling their presses.
+     */
+    private final class Group extends FrameLayout {
+        Node node;
+
+        Group(Context context) {
+            super(context);
+            setClipChildren(false);
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent e) {
+            if (node != null && node.followsGestures()) {
+                int action = e.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) gestures.candidate(node);
+                // An ancestor, such as a scroll view, took the touch.
+                else if (action == MotionEvent.ACTION_CANCEL) gestures.lost(node, true);
+            }
+            return super.dispatchTouchEvent(e);
+        }
+
+        @Override
+        public void requestDisallowInterceptTouchEvent(boolean disallow) {
+            // A descendant, such as a scroll view, took the touch first.
+            if (disallow && node != null && !gestures.claiming) gestures.lost(node, false);
+            super.requestDisallowInterceptTouchEvent(disallow);
+        }
+
+        @Override
+        public boolean onInterceptTouchEvent(MotionEvent e) {
+            return gestures.owns(node) || super.onInterceptTouchEvent(e);
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent e) {
+            if (gestures.owns(node)) {
+                // The gesture took the press: end the view's own once.
+                if (gestures.takePress(node)) {
+                    MotionEvent cancel = MotionEvent.obtain(e);
+                    cancel.setAction(MotionEvent.ACTION_CANCEL);
+                    super.onTouchEvent(cancel);
+                    cancel.recycle();
+                }
+                return true;
+            }
+            boolean handled = super.onTouchEvent(e);
+            return handled || node != null && node.followsGestures();
+        }
+    }
+
+    /**
+     * Recognizes the pan, pinch and rotation of one touch from the root's
+     * motion events, all pointers in its coordinates, and reports them.
+     * The innermost view under the first finger that follows each kind is
+     * its target. A pan activates as its view's PanActivation decides
+     * (core.PanActivation.Decide), on the move before the views below see
+     * it; until then a scroll view that takes the touch fails it. An
+     * active gesture keeps the scroll views around it from taking the
+     * touch and takes it from the views inside its own.
+     */
+    private final class Gestures implements ScaleGestureDetector.OnScaleGestureListener {
+        /** The distance a pan without active offsets moves before it activates, in points. */
+        private static final float PAN_SLOP = 10;
+        /** The angle a rotation turns before it begins, in radians. */
+        private static final float ROTATION_SLOP = (float) (Math.PI / 36);
+
+        /** Set while a gesture disallows its ancestors' interception, which is no other claim. */
+        boolean claiming;
+        private boolean collecting;
+        private final ArrayList<Node> candidates = new ArrayList<>();
+        private final ScaleGestureDetector scaler;
+        private VelocityTracker velocity;
+        private boolean cancelling;
+
+        // The pan: its node, its pointer, where that went down, its last
+        // translation in points, its state (0 undecided, 1 active, -1
+        // failed or over) and whether it took the view's own press.
+        private Node pan;
+        private int panPointer;
+        private float downX, downY, panX, panY;
+        private int panState;
+        private boolean panTookPress;
+
+        // The pinch: its node, whether it is in progress, its scale and velocity.
+        private Node pinch;
+        private boolean pinching, pinchTookPress;
+        private float scale = 1, scaleVelocity;
+
+        // The rotation: its node, its two pointers (-1: none), its state as
+        // a pan's, its angle so far, the last angle between the pointers,
+        // its velocity and the time of the last move.
+        private Node rotation;
+        private int first = -1, second = -1;
+        private int rotationState;
+        private boolean rotationTookPress;
+        private float angle, lastAngle, angleVelocity;
+        private long angleTime;
+
+        Gestures(Context context) {
+            scaler = new ScaleGestureDetector(context, this);
+            scaler.setQuickScaleEnabled(false);
+        }
+
+        /** Forgets the last touch as a new one starts. */
+        void reset() {
+            candidates.clear();
+            collecting = true;
+            pan = pinch = rotation = null;
+            panState = rotationState = 0;
+            panTookPress = pinchTookPress = rotationTookPress = false;
+            pinching = false;
+            first = second = -1;
+            if (velocity != null) {
+                velocity.recycle();
+                velocity = null;
+            }
+        }
+
+        /** Notes a gesture view the new touch went down on, outermost first. */
+        void candidate(Node n) {
+            if (collecting) candidates.add(n);
+        }
+
+        /** Takes the targets of the touch that went down. */
+        void down(MotionEvent e) {
+            collecting = false;
+            for (Node n : candidates) {
+                if (n.has(Protocol.EVENT_PAN)) pan = n;
+                if (n.has(Protocol.EVENT_PINCH)) pinch = n;
+                if (n.has(Protocol.EVENT_ROTATION)) rotation = n;
+            }
+            candidates.clear();
+            if (pan == null && pinch == null && rotation == null) return;
+            panPointer = e.getPointerId(0);
+            downX = e.getX(0);
+            downY = e.getY(0);
+            panX = panY = 0;
+            velocity = VelocityTracker.obtain();
+            velocity.addMovement(e);
+            if (pinch != null) scaler.onTouchEvent(e);
+        }
+
+        /** Follows a touch after it went down, before the views below see it. */
+        void track(MotionEvent e) {
+            if (velocity == null) return; // no gesture views under it
+            int action = e.getActionMasked();
+            cancelling = action == MotionEvent.ACTION_CANCEL;
+            velocity.addMovement(e);
+            trackPan(e, action);
+            trackRotation(e, action);
+            if (pinch != null) scaler.onTouchEvent(e);
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                velocity.recycle();
+                velocity = null;
+                pan = pinch = rotation = null;
+            }
+        }
+
+        private void trackPan(MotionEvent e, int action) {
+            if (pan == null || panState < 0) return;
+            int i = e.findPointerIndex(panPointer);
+            boolean lifted = action == MotionEvent.ACTION_UP
+                    || action == MotionEvent.ACTION_POINTER_UP && e.getPointerId(e.getActionIndex()) == panPointer;
+            if (i >= 0 && action != MotionEvent.ACTION_CANCEL) {
+                panX = (e.getX(i) - downX) / density;
+                panY = (e.getY(i) - downY) / density;
+            }
+            if (i < 0 || action == MotionEvent.ACTION_CANCEL || lifted) {
+                if (panState > 0) panEvent(lifted ? Protocol.GESTURE_ENDED : Protocol.GESTURE_CANCELLED);
+                panState = -1;
+                return;
+            }
+            if (action != MotionEvent.ACTION_MOVE) return;
+            if (panState > 0) {
+                panEvent(Protocol.GESTURE_CHANGED);
+                return;
+            }
+            int decision = decide(pan, panX, panY);
+            if (decision < 0) {
+                panState = -1;
+            } else if (decision > 0) {
+                panState = 1;
+                claim(pan);
+                panEvent(Protocol.GESTURE_BEGAN);
+            }
+        }
+
+        private void panEvent(int phase) {
+            float vx = 0, vy = 0;
+            if (velocity != null) {
+                velocity.computeCurrentVelocity(1000);
+                vx = velocity.getXVelocity(panPointer) / density;
+                vy = velocity.getYVelocity(panPointer) / density;
+            }
+            gesture(pan, Protocol.EVENT_PAN, phase, panX, panY, vx, vy, 0);
+        }
+
+        private void trackRotation(MotionEvent e, int action) {
+            if (rotation == null || rotationState < 0) return;
+            if (action == MotionEvent.ACTION_POINTER_DOWN && second < 0) {
+                int index = e.getActionIndex();
+                first = e.getPointerId(index == 0 ? 1 : 0);
+                second = e.getPointerId(index);
+                lastAngle = angleOf(e);
+                angle = angleVelocity = 0;
+                angleTime = e.getEventTime();
+                return;
+            }
+            if (second < 0) return;
+            int a = e.findPointerIndex(first), b = e.findPointerIndex(second);
+            int up = action == MotionEvent.ACTION_POINTER_UP ? e.getPointerId(e.getActionIndex()) : -1;
+            boolean lifted = action == MotionEvent.ACTION_UP || up == first || up == second;
+            if (a < 0 || b < 0 || action == MotionEvent.ACTION_CANCEL || lifted) {
+                if (rotationState > 0) {
+                    rotationEvent(lifted ? Protocol.GESTURE_ENDED : Protocol.GESTURE_CANCELLED);
+                    rotationState = 0; // another pair may rotate again
+                    rotationTookPress = false;
+                }
+                first = second = -1;
+                return;
+            }
+            if (action != MotionEvent.ACTION_MOVE) return;
+            float now = angleOf(e);
+            float delta = now - lastAngle;
+            // The shorter way round, across the atan2 seam.
+            if (delta > Math.PI) delta -= (float) (2 * Math.PI);
+            else if (delta < -Math.PI) delta += (float) (2 * Math.PI);
+            lastAngle = now;
+            angle += delta;
+            long time = e.getEventTime();
+            if (time > angleTime) angleVelocity = delta * 1000f / (time - angleTime);
+            angleTime = time;
+            if (rotationState > 0) {
+                rotationEvent(Protocol.GESTURE_CHANGED);
+            } else if (Math.abs(angle) >= ROTATION_SLOP) {
+                rotationState = 1;
+                claim(rotation);
+                rotationEvent(Protocol.GESTURE_BEGAN);
+            }
+        }
+
+        /** The angle of the line from the first pointer to the second, clockwise on screen. */
+        private float angleOf(MotionEvent e) {
+            int a = e.findPointerIndex(first), b = e.findPointerIndex(second);
+            return (float) Math.atan2(e.getY(b) - e.getY(a), e.getX(b) - e.getX(a));
+        }
+
+        private void rotationEvent(int phase) {
+            gesture(rotation, Protocol.EVENT_ROTATION, phase, 0, 0, angleVelocity, 0, angle);
+        }
+
+        @Override
+        public boolean onScaleBegin(ScaleGestureDetector d) {
+            if (pinch == null) return false;
+            pinching = true;
+            scale = 1;
+            scaleVelocity = 0;
+            claim(pinch);
+            gesture(pinch, Protocol.EVENT_PINCH, Protocol.GESTURE_BEGAN, 0, 0, 0, 0, scale);
+            return true;
+        }
+
+        @Override
+        public boolean onScale(ScaleGestureDetector d) {
+            if (!pinching) return true;
+            float next = scale * d.getScaleFactor();
+            long dt = d.getTimeDelta();
+            if (dt > 0) scaleVelocity = (next - scale) * 1000f / dt;
+            scale = next;
+            gesture(pinch, Protocol.EVENT_PINCH, Protocol.GESTURE_CHANGED, 0, 0, scaleVelocity, 0, scale);
+            return true;
+        }
+
+        @Override
+        public void onScaleEnd(ScaleGestureDetector d) {
+            if (!pinching) return;
+            pinching = false;
+            pinchTookPress = false;
+            int phase = cancelling ? Protocol.GESTURE_CANCELLED : Protocol.GESTURE_ENDED;
+            gesture(pinch, Protocol.EVENT_PINCH, phase, 0, 0, scaleVelocity, 0, scale);
+        }
+
+        /**
+         * Notes that something else took n's touch: its gestures that have
+         * not begun fail, and with active, those in progress are cancelled.
+         */
+        void lost(Node n, boolean active) {
+            if (pan == n && (panState == 0 || active && panState > 0)) {
+                if (panState > 0) panEvent(Protocol.GESTURE_CANCELLED);
+                panState = -1;
+            }
+            if (pinch == n && (!pinching || active)) {
+                if (pinching) {
+                    gesture(pinch, Protocol.EVENT_PINCH, Protocol.GESTURE_CANCELLED, 0, 0, scaleVelocity, 0, scale);
+                }
+                pinching = false;
+                pinch = null;
+            }
+            if (rotation == n && (rotationState == 0 || active && rotationState > 0)) {
+                if (rotationState > 0) rotationEvent(Protocol.GESTURE_CANCELLED);
+                rotationState = -1;
+            }
+        }
+
+        /** Whether an active gesture of n's holds the touch. */
+        boolean owns(Node n) {
+            return n != null && (pan == n && panState > 0 || pinch == n && pinching
+                    || rotation == n && rotationState > 0);
+        }
+
+        /** Whether n's own press is still to cancel for the gesture holding the touch, once. */
+        boolean takePress(Node n) {
+            boolean took = panTookPress && pan == n || pinchTookPress && pinch == n
+                    || rotationTookPress && rotation == n;
+            if (took) return false;
+            if (pan == n) panTookPress = true;
+            if (pinch == n) pinchTookPress = true;
+            if (rotation == n) rotationTookPress = true;
+            return true;
+        }
+
+        /** Keeps the scroll views and gesture views around n from taking the touch. */
+        private void claim(Node n) {
+            ViewParent parent = n.view.getParent();
+            if (parent == null) return;
+            claiming = true;
+            parent.requestDisallowInterceptTouchEvent(true);
+            claiming = false;
+        }
+
+        private void gesture(Node n, int kind, int phase, float x, float y, float vx, float vy, float value) {
+            if (n.has(kind)) event(kind, n.id, 0, x, y, "", 0, 0, 0, phase, vx, vy, value);
+        }
+    }
+
+    /** Whether a drag of n translated by (dx, dy) points activates its pan (1), fails it (-1) or is undecided (0). */
+    private static int decide(Node n, float dx, float dy) {
+        if (past(dx, n.failX) || past(dy, n.failY)) return -1;
+        if (n.activeX == 0 && n.activeY == 0) {
+            return Math.abs(dx) >= Gestures.PAN_SLOP || Math.abs(dy) >= Gestures.PAN_SLOP ? 1 : 0;
+        }
+        return past(dx, n.activeX) || past(dy, n.activeY) ? 1 : 0;
+    }
+
+    private static boolean past(float v, float limit) {
+        return limit != 0 && Math.abs(v) >= Math.abs(limit);
+    }
+
+    /**
      * A scroll view's content. Scroll views leave its length along their
      * axis unbounded, so it takes the size ItemScrollContent gave it.
      */
@@ -1320,7 +1708,7 @@ public class NsgoView extends FrameLayout {
         ImageNode image;
         CanvasNode canvas;
         /** The view's background, the look it shows and the transition moving it. */
-        GradientDrawable background;
+        Box background;
         Look shown;
         ValueAnimator animator;
         /** A modal's animation, -1 for other nodes, and whether it was presented. */
@@ -1334,6 +1722,8 @@ public class NsgoView extends FrameLayout {
         int role;
         boolean disabled, selected, checked, mixed;
         String label = "", text = "", testID = "";
+        /** The pan's activation offsets in points, as in core.PanActivation; 0 is unset. */
+        float activeX, activeY, failX, failY;
 
         Node(int id, View view) {
             this.id = id;
@@ -1342,6 +1732,11 @@ public class NsgoView extends FrameLayout {
 
         boolean has(int kind) {
             return (events & (1L << kind)) != 0;
+        }
+
+        /** Whether the node follows a pan, a pinch or a rotation. */
+        boolean followsGestures() {
+            return has(Protocol.EVENT_PAN) || has(Protocol.EVENT_PINCH) || has(Protocol.EVENT_ROTATION);
         }
 
         /** The view assistive technology sees: an input's text field, else the view. */

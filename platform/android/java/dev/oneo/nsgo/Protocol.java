@@ -60,6 +60,8 @@ final class Protocol {
     static final int ITEM_STATUS_BAR = 26;
     static final int ITEM_TITLE = 27;
     static final int ITEM_BACK_UNHANDLED = 28;
+    static final int ITEM_WINDOW = 29;
+    static final int ITEM_MENU = 30;
 
     // View kinds, as in core/mount.go.
     static final int KIND_VIEW = 1;
@@ -93,6 +95,15 @@ final class Protocol {
     static final int EVENT_CLIPBOARD = 20;
     static final int EVENT_CONTEXT_MENU = 21;
     static final int EVENT_KEY = 22;
+    static final int EVENT_PAN = 23;
+    static final int EVENT_PINCH = 24;
+    static final int EVENT_ROTATION = 25;
+
+    // Gesture phases, as in core/gesture.go.
+    static final int GESTURE_BEGAN = 1;
+    static final int GESTURE_CHANGED = 2;
+    static final int GESTURE_ENDED = 3;
+    static final int GESTURE_CANCELLED = 4;
 
     // Accessibility roles, as in core/mount.go.
     static final int ROLE_BUTTON = 1;

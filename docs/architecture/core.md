@@ -67,13 +67,29 @@ A platform's `TextEngine` runs on the engine goroutine in three phases. `Prepare
 
 A `Canvas` records its drawing on the engine into an immutable `Drawing`, again when a signal it read or its size changes, and the platform plays the operations on the main thread.
 
+## Gestures
+
+`View.OnPan`, `OnPinch` and `OnRotation` follow gestures the platform recognizes; they report to the engine, which merges each gesture's moves per turn and never its first or last report.
+
+- The platform decides on the main thread when a drag becomes a pan, from the view's `PanActivation`. Until it does, a scroll view around may still take the touch.
+- An active pan takes the touch from presses and scroll views.
+- NSGo has no native animated values yet, so a drag moves a view through a signal and a commit per turn, not on the main thread as NSH's bound values do.
+
+## Desktop windows
+
+Window chrome follows NSH's `nsh/desktop`: native controls, an app-drawn title bar.
+
+- `SetTitleBar` hides the system title bar. `Env.TitleBar` then reports the area the window controls keep, and views with `WindowDrag` drag the window.
+- The platform decides a window drag on the main thread, from the mounted props: the nearest view setting `WindowDrag` decides, and a nearer pressable, input or gesture view keeps the press.
+- `SetApplicationMenu` sends the menu as data, with handlers replaced by IDs that come back in `EventMenu`. Role items are the platform's own and are never reported. The default menu returns when the owner that set the menu goes.
+
 ## Animation
 
 Style `Transition`s animate on the platform, with no engine work per frame and nothing for Go's garbage collector to pause. `Scope.Animate` steps app values once a frame on the engine for what a platform cannot animate itself; every step commits.
 
 ## Services
 
-Native alerts, the clipboard, announcements, keyboard shortcuts, the status bar and the window title are command items answered by events. Shortcuts are scoped to their owner: the platform matches key presses against the table synchronously and reports only matches.
+Native alerts, the clipboard, announcements, keyboard shortcuts, the status bar, the window title, window commands and the application menu are command items answered by events. Shortcuts are scoped to their owner: the platform matches key presses against the table synchronously and reports only matches.
 
 ## Mount protocol
 

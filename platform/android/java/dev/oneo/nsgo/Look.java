@@ -1,6 +1,5 @@
 package dev.oneo.nsgo;
 
-import android.graphics.drawable.GradientDrawable;
 import android.view.View;
 
 /**
@@ -11,6 +10,13 @@ final class Look {
     int background, borderColor, shadowColor;
     float radius, border, opacity = 1, shadowRadius;
     float translateX, translateY, scaleX = 1, scaleY = 1, rotation;
+    /**
+     * Each side's border width and color (top, right, bottom, left), set
+     * when they differ; otherwise every side is border and borderColor.
+     */
+    boolean sides;
+    float[] borders = new float[4];
+    int[] borderColors = new int[4];
 
     Look copy() {
         Look l = new Look();
@@ -26,6 +32,9 @@ final class Look {
         l.scaleX = scaleX;
         l.scaleY = scaleY;
         l.rotation = rotation;
+        l.sides = sides;
+        l.borders = borders.clone();
+        l.borderColors = borderColors.clone();
         return l;
     }
 
@@ -41,6 +50,12 @@ final class Look {
             l.borderColor = mix(a.borderColor, b.borderColor, t);
             l.border = Math.max(0, mix(a.border, b.border, t));
             l.radius = Math.max(0, mix(a.radius, b.radius, t));
+            // A look with one border moves as one with it on every side.
+            l.sides = a.sides || b.sides;
+            for (int i = 0; i < 4; i++) {
+                l.borders[i] = Math.max(0, mix(a.side(i), b.side(i), t));
+                l.borderColors[i] = mix(a.sideColor(i), b.sideColor(i), t);
+            }
         }
         if (has(mask, Protocol.TRANSITION_SHADOW)) {
             l.shadowColor = mix(a.shadowColor, b.shadowColor, t);
@@ -61,11 +76,13 @@ final class Look {
      * scale, then rotate, then translate around the center, as core's do,
      * and touches follow them.
      */
-    void apply(View view, GradientDrawable bg) {
+    void apply(View view, Box bg) {
         bg.setColor(background);
         bg.setCornerRadius(radius);
         // A stroke of width 0 draws nothing.
-        bg.setStroke(border > 0 ? Math.max(1, Math.round(border)) : 0, borderColor);
+        float stroke = sides ? 0 : border;
+        bg.setStroke(stroke > 0 ? Math.max(1, Math.round(stroke)) : 0, borderColor);
+        bg.setSides(sides ? borders : null, sides ? borderColors : null, radius);
         view.setAlpha(opacity);
         boolean shadowed = (shadowColor >>> 24) != 0 && shadowRadius > 0;
         view.setElevation(shadowed ? shadowRadius : 0);
@@ -78,6 +95,15 @@ final class Look {
         view.setScaleX(scaleX);
         view.setScaleY(scaleY);
         view.setRotation(rotation);
+    }
+
+    /** Side i's border width and color, whether or not the sides differ. */
+    float side(int i) {
+        return sides ? borders[i] : border;
+    }
+
+    int sideColor(int i) {
+        return sides ? borderColors[i] : borderColor;
     }
 
     private static boolean has(int mask, int property) {

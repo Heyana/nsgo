@@ -158,6 +158,14 @@ func mix(from, to core.ViewStyle, t float64, props core.TransitionProperty) core
 	if props&core.TransitionBorder != 0 {
 		out.BorderWidth = mixPoints(from.BorderWidth, to.BorderWidth, t)
 		out.BorderColor = mixColor(from.BorderColor, to.BorderColor, t)
+		out.Borders = core.Edges{Top: mixPoints(from.Borders.Top, to.Borders.Top, t),
+			Right:  mixPoints(from.Borders.Right, to.Borders.Right, t),
+			Bottom: mixPoints(from.Borders.Bottom, to.Borders.Bottom, t),
+			Left:   mixPoints(from.Borders.Left, to.Borders.Left, t)}
+		out.BorderColors = core.EdgeColors{Top: mixColor(from.BorderColors.Top, to.BorderColors.Top, t),
+			Right:  mixColor(from.BorderColors.Right, to.BorderColors.Right, t),
+			Bottom: mixColor(from.BorderColors.Bottom, to.BorderColors.Bottom, t),
+			Left:   mixColor(from.BorderColors.Left, to.BorderColors.Left, t)}
 		out.CornerRadius = mixPoints(from.CornerRadius, to.CornerRadius, t)
 	}
 	if props&core.TransitionShadow != 0 {

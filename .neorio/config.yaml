@@ -3,11 +3,11 @@ tasks:
   - label: Run
     group: run
     command: go
-    args: [tool, nsgo, dev, examples/hello]
+    args: [tool, nsgo, dev, examples/gallery]
   - label: Build
     group: build
     command: go
-    args: [tool, nsgo, build, examples/hello]
+    args: [tool, nsgo, build, examples/gallery]
   - label: Website dev
     type: shell
     command: bun install && bun run dev

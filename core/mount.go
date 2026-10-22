@@ -98,6 +98,12 @@ const (
 	// ItemBackUnhandled says nothing took the last EventBack: Android
 	// leaves the app, as its back button does; others ignore it.
 	ItemBackUnhandled
+	// ItemWindow asks the desktop window to change (Window); platforms
+	// without one ignore it.
+	ItemWindow
+	// ItemMenu replaces the application menu (Menu; nil restores the
+	// platform's); a chosen item is reported with EventMenu.
+	ItemMenu
 )
 
 // MountItem is one change to the native views. Kind says which fields
@@ -127,7 +133,9 @@ type MountItem struct {
 	Alert     *AlertConfig
 	Drawing   *Drawing
 	// Keys are ItemKeymap's normalized bindings (see NormalizeKey).
-	Keys []string
+	Keys   []string
+	Window *WindowCommand
+	Menu   []MenuEntry
 }
 
 // MountBatch is one commit's changes, applied in order on the main thread.
@@ -141,8 +149,13 @@ type MountBatch struct {
 type ViewStyle struct {
 	Background   Color
 	CornerRadius Points
+	// BorderWidth and BorderColor are the border on every side, unless
+	// Borders is set: then each side has its width there and its color
+	// in BorderColors.
 	BorderWidth  Points
 	BorderColor  Color
+	Borders      Edges
+	BorderColors EdgeColors
 	Opacity      float32
 	// Clip clips children to the bounds and corners.
 	Clip         bool
@@ -221,6 +234,9 @@ type ViewProps struct {
 	Checked       bool
 	Indeterminate bool
 	TestID        string
+	// WindowDrag and PanActivation are decided on the main thread.
+	WindowDrag    WindowDrag
+	PanActivation PanActivation
 }
 
 // Role is a view's accessibility role.

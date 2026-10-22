@@ -47,6 +47,17 @@ type View struct {
 	// sizes it.
 	OnLayout func(Bounds)
 
+	// OnPan follows a drag on the view, once PanActivation activates it;
+	// an active pan takes the touch from presses and scroll views.
+	OnPan         func(PanEvent)
+	PanActivation PanActivation
+	// OnPinch follows a two-finger pinch (a trackpad's on desktops);
+	// OnRotation a two-finger rotation.
+	OnPinch    func(GestureEvent)
+	OnRotation func(GestureEvent)
+	// WindowDrag makes the view a handle that moves the desktop window.
+	WindowDrag WindowDrag
+
 	Ref *Ref
 	// Disabled stops presses and is reported to assistive technology.
 	Disabled func() bool

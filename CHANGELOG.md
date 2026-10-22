@@ -3,9 +3,11 @@
 ## [Unreleased]
 
 - Add a reactive Go engine with owners, memos, effects and regions (`Show`, `Each`, `Dynamic`, `Catch`).
-- Add block, flexbox and grid layout matching Taffy, with styles, state styles, transforms and transitions.
+- Add block, flexbox and grid layout matching Taffy, with styles, per-side borders, state styles, transforms and transitions.
 - Add images, rich text with links, canvas, virtualized lists, overlays, modals and navigation stacks.
 - Add unstyled base controls, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
+- Add pan, pinch and rotation gestures.
+- Add custom desktop title bars, window drag regions, window controls and an application menu.
 - Add environment signals, keyboard shortcuts, clipboard and screen-reader announcements.
 - Add native backends for macOS, iOS and the web.
 - Add `nsgotest` for headless app tests.

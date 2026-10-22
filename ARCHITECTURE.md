@@ -32,7 +32,7 @@ Packages mirror NSH's crates:
 | `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags; the tool sets name and window size |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `nsgo dev` and `nsgo build`, driven by an app's `nsgo.yaml` |
 | `examples/hello` | `examples/counter` | A todo list: text, input, button, scroll view and keyed list, with a headless test |
-| `examples/gallery` | `examples/gallery-rs` | Navigation, controls, popups, dialogs and images, with a headless test |
+| `examples/gallery` | `examples/gallery-rs` | A sidebar of sections showing each element, base component, gesture and desktop service, with headless tests |
 
 ## Platforms
 

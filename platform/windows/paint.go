@@ -199,6 +199,7 @@ func (w *window) paint() {
 	if root := w.view(w.root); root != nil {
 		p.draw(root, 0, 0)
 	}
+	p.drawCaptionButtons(client.Right)
 	bitBlt.Call(hdc, 0, 0, uintptr(client.Right), uintptr(client.Bottom), back.dc, 0, 0, srcCopy)
 }
 
@@ -231,8 +232,8 @@ func (p *painter) drawView(v *view, s *core.ViewStyle, x, y core.Points) {
 	case core.KindImage:
 		// Inside the border, and inside the corners when clipping.
 		in := r
-		if s.BorderWidth > 0 && s.BorderColor&0xff != 0 {
-			in = r.inset(w.px(s.BorderWidth))
+		if b := w.borderWidths(s); b != (rect{}) {
+			in = rect{r.Left + b.Left, r.Top + b.Top, r.Right - b.Right, r.Bottom - b.Bottom}
 		}
 		if s.Clip && diameter > 0 {
 			saved, _, _ := saveDC.Call(p.dc)
@@ -414,6 +415,10 @@ func (p *painter) fill(r rect, diameter int32, s *core.ViewStyle) {
 	case a != 0:
 		p.blend(r, diameter, rect{}, 0, s.Background)
 	}
+	if s.Borders != (core.Edges{}) {
+		p.sides(r, diameter, s)
+		return
+	}
 	if s.BorderWidth <= 0 || s.BorderColor&0xff == 0 {
 		return
 	}
@@ -525,4 +530,74 @@ func (p *painter) clipRects() []rect {
 		out = append(out, r.intersect(whole))
 	}
 	return out
+}
+
+// borderWidths returns the width of each side's drawn border, in pixels:
+// a side without a visible color has none.
+func (w *window) borderWidths(s *core.ViewStyle) rect {
+	side := func(width core.Points, c core.Color) int32 {
+		if width <= 0 || c&0xff == 0 {
+			return 0
+		}
+		return max(w.px(width), 1)
+	}
+	if s.Borders == (core.Edges{}) {
+		d := side(s.BorderWidth, s.BorderColor)
+		return rect{d, d, d, d}
+	}
+	b, c := s.Borders, s.BorderColors
+	return rect{Left: side(b.Left, c.Left), Top: side(b.Top, c.Top), Right: side(b.Right, c.Right), Bottom: side(b.Bottom, c.Bottom)}
+}
+
+// sides paints a border with a width and a color per side inside r: each
+// side is the ring between r and its inside, with their corners, cut to
+// the trapezoid from its outer edge to its inner one, so the sides meet
+// on the diagonals as CSS's do. The inner corners are approximate.
+func (p *painter) sides(r rect, diameter int32, s *core.ViewStyle) {
+	b := p.w.borderWidths(s)
+	in := rect{min(r.Left+b.Left, r.Right), min(r.Top+b.Top, r.Bottom), max(r.Right-b.Right, r.Left), max(r.Bottom-b.Bottom, r.Top)}
+	inDiameter := max(diameter-(b.Left+b.Top+b.Right+b.Bottom)/2, 0)
+	c := s.BorderColors
+	for _, side := range []struct {
+		width int32
+		color core.Color
+		shape [4]point
+	}{
+		{b.Top, c.Top, [4]point{{r.Left, r.Top}, {r.Right, r.Top}, {in.Right, in.Top}, {in.Left, in.Top}}},
+		{b.Right, c.Right, [4]point{{r.Right, r.Top}, {r.Right, r.Bottom}, {in.Right, in.Bottom}, {in.Right, in.Top}}},
+		{b.Bottom, c.Bottom, [4]point{{r.Right, r.Bottom}, {r.Left, r.Bottom}, {in.Left, in.Bottom}, {in.Right, in.Bottom}}},
+		{b.Left, c.Left, [4]point{{r.Left, r.Bottom}, {r.Left, r.Top}, {in.Left, in.Top}, {in.Left, in.Bottom}}},
+	} {
+		if side.width == 0 {
+			continue
+		}
+		saved, _, _ := saveDC.Call(p.dc)
+		p.clip(r, diameter, rgnAnd)
+		if !in.empty() {
+			p.clip(in, inDiameter, rgnDiff)
+		}
+		p.clipPolygon(side.shape[:], rgnAnd)
+		p.fillClip(side.color)
+		p.restore(saved)
+	}
+}
+
+// clipPolygon combines the clipping with the polygon pts by mode, as
+// clip does with a rectangle.
+func (p *painter) clipPolygon(pts []point, mode uintptr) {
+	const winding = 2
+	if p.m != identity {
+		beginPath.Call(p.dc)
+		polygon.Call(p.dc, uintptr(unsafe.Pointer(&pts[0])), uintptr(len(pts)))
+		endPath.Call(p.dc)
+		selectClipPath.Call(p.dc, mode)
+		return
+	}
+	moved := make([]point, len(pts)) // regions are in the target's pixels
+	for i, pt := range pts {
+		moved[i] = point{pt.X - p.ox, pt.Y - p.oy}
+	}
+	rgn, _, _ := createPolygonRgn.Call(uintptr(unsafe.Pointer(&moved[0])), uintptr(len(moved)), winding)
+	extSelectClipRgn.Call(p.dc, rgn, mode)
+	deleteObject.Call(rgn)
 }

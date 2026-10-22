@@ -25,8 +25,8 @@ func (s *surface) paint(v *view) {
 	if ratio <= 0 {
 		ratio = 1
 	}
-	w := math.Max(float64(v.size.Width-2*v.border), 0)
-	h := math.Max(float64(v.size.Height-2*v.border), 0)
+	w := math.Max(float64(v.size.Width-v.border.Left-v.border.Right), 0)
+	h := math.Max(float64(v.size.Height-v.border.Top-v.border.Bottom), 0)
 	// Setting the size clears the canvas and resets its context.
 	v.inner.Set("width", math.Ceil(w*ratio))
 	v.inner.Set("height", math.Ceil(h*ratio))

@@ -39,6 +39,9 @@ type Tree struct {
 	keys        []*keyBinding
 	keysChanged bool
 	alertID     uint32
+	menuActions map[uint32]menuAction
+	menuID      uint32
+	menuGen     uint32
 	rtl         bool // the layout direction the nodes were mapped for
 }
 
@@ -105,6 +108,8 @@ type handlers struct {
 	progress                                                func(int64, int64)
 	load                                                    func(Size)
 	loadError                                               func(error)
+	pan                                                     func(PanEvent)
+	pinch, rotation                                         func(GestureEvent)
 }
 
 type textNode struct {
@@ -440,8 +445,12 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	n := t.newNode(KindView, parent, cx)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	n.h = handlers{press: v.OnPress, longPress: v.OnLongPress, pressDown: v.OnPressDown, pressUp: v.OnPressUp,
-		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, layout: v.OnLayout, contextMenu: v.OnContextMenu}
-	n.props = ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID}
+		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, layout: v.OnLayout, contextMenu: v.OnContextMenu,
+		pan: v.OnPan, pinch: v.OnPinch, rotation: v.OnRotation}
+	n.props = ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID, WindowDrag: v.WindowDrag}
+	if v.OnPan != nil {
+		n.props.PanActivation = v.PanActivation
+	}
 	t.setRef(n, v.Ref)
 	t.bindBool(cx, n, v.Disabled, &n.props.Disabled)
 	t.bindBool(cx, n, v.Selected, &n.props.Selected)
@@ -617,6 +626,9 @@ func (t *Tree) Dispatch(ev Event) {
 	case EventKey:
 		t.pressKey(ev.Text)
 		return
+	case EventMenu:
+		t.chooseMenu(ev.Count)
+		return
 	}
 	n := t.node(ev.ID)
 	if n == nil {
@@ -683,6 +695,21 @@ func (t *Tree) Dispatch(ev Event) {
 		if h.submit != nil {
 			t.within(n.owner, func() { h.submit(ev.Text) })
 		}
+	case EventPan:
+		if h.pan != nil {
+			if ev.Phase == GestureBegan {
+				t.setState(n, statePressed, false) // the pan took the press
+			}
+			t.within(n.owner, func() { h.pan(PanEvent{Phase: ev.Phase, Translation: ev.Point, Velocity: ev.Velocity}) })
+		}
+	case EventPinch, EventRotation:
+		fn := h.pinch
+		if ev.Kind == EventRotation {
+			fn = h.rotation
+		}
+		if fn != nil {
+			t.within(n.owner, func() { fn(GestureEvent{Phase: ev.Phase, Value: ev.Value, Velocity: float32(ev.Velocity.X)}) })
+		}
 	case EventContextMenu:
 		if h.contextMenu != nil && !n.props.Disabled {
 			t.within(n.owner, func() { h.contextMenu(ev.Point) })
@@ -744,6 +771,10 @@ func (t *Tree) HitTest(p Point) NodeID {
 }
 
 func hit(n *node, p Point) NodeID {
+	return hitWith(n, p, func(n *node) bool { return n.h.press != nil || n.kind == KindInput })
+}
+
+func hitWith(n *node, p Point, ok func(*node) bool) NodeID {
 	if n.style.Display == DisplayNone || !n.frame.Contains(p) {
 		return 0
 	}
@@ -754,11 +785,11 @@ func hit(n *node, p Point) NodeID {
 	}
 	kids := n.nativeChildren()
 	for i := len(kids) - 1; i >= 0; i-- {
-		if id := hit(kids[i], local); id != 0 {
+		if id := hitWith(kids[i], local, ok); id != 0 {
 			return id
 		}
 	}
-	if n.h.press != nil || n.kind == KindInput {
+	if ok(n) {
 		return n.id
 	}
 	return 0
@@ -832,5 +863,8 @@ func (n *node) events() EventMask {
 	bit(EventError, h.loadError != nil)
 	bit(EventLoadEnd, h.loadEnd != nil)
 	bit(EventChangeText, n.kind == KindInput)
+	bit(EventPan, h.pan != nil)
+	bit(EventPinch, h.pinch != nil)
+	bit(EventRotation, h.rotation != nil)
 	return m
 }

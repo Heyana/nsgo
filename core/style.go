@@ -63,7 +63,10 @@ type Style struct {
 	BorderWidth Points
 	Borders     Edges
 	BorderColor Color
-	Opacity     Opacity
+	// BorderColors, when set, colors each side; a side left 0 takes
+	// BorderColor.
+	BorderColors EdgeColors
+	Opacity      Opacity
 	// Overflow Hidden clips children to the node's bounds and corners, and
 	// keeps their overflow out of an enclosing scroll view's content.
 	// OverflowX and OverflowY override it per axis.
@@ -310,6 +313,7 @@ func (s Style) Merge(o Style) Style {
 	set(&s.BorderWidth, o.BorderWidth)
 	set(&s.Borders, o.Borders)
 	set(&s.BorderColor, o.BorderColor)
+	set(&s.BorderColors, o.BorderColors)
 	set(&s.Opacity, o.Opacity)
 	set(&s.Overflow, o.Overflow)
 	set(&s.OverflowX, o.OverflowX)
@@ -428,7 +432,7 @@ func (s Style) textStyle() TextStyle {
 
 // viewStyle is what platforms draw for any view.
 func (s Style) viewStyle() ViewStyle {
-	return ViewStyle{
+	v := ViewStyle{
 		Background:   s.Background,
 		CornerRadius: s.CornerRadius,
 		BorderWidth:  s.BorderWidth,
@@ -442,6 +446,31 @@ func (s Style) viewStyle() ViewStyle {
 		Transform:    s.Transform,
 		Transition:   s.Transition,
 	}
+	if s.Borders != (Edges{}) || s.BorderColors != (EdgeColors{}) {
+		w, c := s.borders(), s.BorderColors.or(s.BorderColor)
+		if w == All(w.Top) && c == (EdgeColors{c.Top, c.Top, c.Top, c.Top}) {
+			v.BorderWidth, v.BorderColor = w.Top, c.Top
+		} else {
+			v.BorderWidth, v.BorderColor, v.Borders, v.BorderColors = 0, 0, w, c
+		}
+	}
+	return v
+}
+
+// EdgeColors is a color for each side of a box.
+type EdgeColors struct{ Top, Right, Bottom, Left Color }
+
+// AllColors returns edge colors of the same color on every side.
+func AllColors(c Color) EdgeColors { return EdgeColors{c, c, c, c} }
+
+// or returns e with its unset sides c.
+func (e EdgeColors) or(c Color) EdgeColors {
+	for _, side := range []*Color{&e.Top, &e.Right, &e.Bottom, &e.Left} {
+		if *side == 0 {
+			*side = c
+		}
+	}
+	return e
 }
 
 // overflow returns the overflow on each axis.

@@ -262,6 +262,10 @@ func (t *Tree) emit(n *node) {
 func (n *node) viewStyle() ViewStyle {
 	vs := n.style.viewStyle()
 	vs.Hidden = n.style.Display == DisplayNone
+	if n.rtl && vs.Borders != (Edges{}) {
+		vs.Borders.Left, vs.Borders.Right = vs.Borders.Right, vs.Borders.Left
+		vs.BorderColors.Left, vs.BorderColors.Right = vs.BorderColors.Right, vs.BorderColors.Left
+	}
 	return vs
 }
 

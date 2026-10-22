@@ -124,7 +124,7 @@ func (e *Engine) push(m message) {
 		switch {
 		case m.resize != nil && q.resize != nil,
 			m.env != nil && q.env != nil,
-			m.event.Mergeable() && q.event.Kind == m.event.Kind && q.event.ID == m.event.ID:
+			m.event.Mergeable() && q.event.Mergeable() && q.event.Kind == m.event.Kind && q.event.ID == m.event.ID:
 			*q = m
 			merged = true
 		}

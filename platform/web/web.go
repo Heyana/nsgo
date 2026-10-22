@@ -52,6 +52,7 @@ type surface struct {
 	live      js.Value        // the region announcements are read from
 	watch     watch
 	env       core.Environment // as last sent
+	gestures  gestures
 }
 
 // view is the element of one NodeID.
@@ -62,17 +63,19 @@ type view struct {
 	content   js.Value // where children go: el, or a scroll view's content
 	inner     js.Value // a text view's text, a text field's <input> or a <canvas>
 	events    core.EventMask
-	edits     uint32 // the user's edits of a text field
-	border    core.Points
-	size      core.Size // the frame's
-	scroll    core.Size // a scroll view's content size
+	edits     uint32     // the user's edits of a text field
+	border    core.Edges // the width of each side's border
+	size      core.Size  // the frame's
+	scroll    core.Size  // a scroll view's content size
 	layout    *textLayout
 	image     *image
 	drawing   *core.Drawing // a canvas's
 	modal     core.ModalAnimation
 	presented bool // a modal was inserted once
 	hover     bool // pointerenter and pointerleave are listened to
-	listeners listeners
+	// panActivation decides when a drag on the view becomes its pan.
+	panActivation core.PanActivation
+	listeners     listeners
 }
 
 // listeners are event listeners added until their owner goes.
@@ -403,8 +406,12 @@ func (s *surface) Mount(b *core.MountBatch) {
 		case core.ItemTitle:
 			s.doc.Set("title", it.Value)
 			continue
-		case core.ItemStatusBar, core.ItemBackUnhandled:
-			// A page has no status bar, and the browser's back is its own.
+		case core.ItemStatusBar, core.ItemBackUnhandled, core.ItemMenu:
+			// A page has no status bar nor menu bar, and the browser's
+			// back is its own.
+			continue
+		case core.ItemWindow:
+			s.windowCommand(it.Window)
 			continue
 		}
 		v := s.view(it.ID)
@@ -422,6 +429,11 @@ func (s *surface) Mount(b *core.MountBatch) {
 			} else {
 				parent.content.Call("appendChild", v.el)
 			}
+			b := core.Edges{}
+			if parent.content.Equal(parent.el) {
+				b = parent.border
+			}
+			unborder(v.el, b)
 			if v.kind == core.KindModal && !v.presented {
 				v.presented = true
 				s.present(v)
@@ -486,6 +498,10 @@ func (s *surface) Mount(b *core.MountBatch) {
 			s.setEvents(v, it.Events)
 		case core.ItemViewProps:
 			setViewProps(v, it.ViewProps)
+			if v.panActivation != it.ViewProps.PanActivation {
+				v.panActivation = it.ViewProps.PanActivation
+				s.setGestureStyle(v)
+			}
 		case core.ItemScrollConfig:
 			x, y := "hidden", "auto"
 			if it.Scroll.Horizontal {
@@ -561,7 +577,7 @@ func (s *surface) create(id core.NodeID, kind core.ViewKind) *view {
 func (v *view) placeContent() {
 	b := v.border
 	setStyle(v.content, map[string]string{
-		"left": px(-b), "top": px(-b), "width": px(v.scroll.Width - b), "height": px(v.scroll.Height - b),
+		"left": px(-b.Left), "top": px(-b.Top), "width": px(v.scroll.Width - b.Left), "height": px(v.scroll.Height - b.Top),
 	})
 }
 
@@ -569,7 +585,6 @@ func (s *surface) setViewStyle(v *view, vs *core.ViewStyle) {
 	style := map[string]string{
 		"background-color": cssColor(vs.Background),
 		"border-radius":    px(vs.CornerRadius),
-		"border":           px(vs.BorderWidth) + " solid " + cssColor(vs.BorderColor),
 		"opacity":          fmt.Sprint(vs.Opacity),
 		"box-shadow":       "none",
 		"display":          "block",
@@ -583,17 +598,43 @@ func (s *surface) setViewStyle(v *view, vs *core.ViewStyle) {
 	if vs.Hidden {
 		style["display"] = "none"
 	}
+	border := core.All(vs.BorderWidth)
+	colors := core.AllColors(vs.BorderColor)
+	if vs.Borders != (core.Edges{}) {
+		border, colors = vs.Borders, vs.BorderColors
+	}
+	for _, side := range []struct {
+		name  string
+		width core.Points
+		color core.Color
+	}{
+		{"top", border.Top, colors.Top}, {"right", border.Right, colors.Right},
+		{"bottom", border.Bottom, colors.Bottom}, {"left", border.Left, colors.Left},
+	} {
+		style["border-"+side.name+"-style"] = "solid"
+		style["border-"+side.name+"-width"] = px(side.width)
+		style["border-"+side.name+"-color"] = cssColor(side.color)
+	}
 	if im := v.image; im != nil && im.tint != vs.TintColor {
 		im.tint = vs.TintColor
 		im.draw(v.size)
 	}
-	if vs.BorderWidth != v.border {
-		v.border = vs.BorderWidth
+	if border != v.border {
+		v.border = border
 		switch v.kind {
 		case core.KindScroll:
 			v.placeContent()
 		case core.KindCanvas:
 			s.paint(v)
+		}
+		if v.kind != core.KindScroll {
+			kids := v.el.Get("children")
+			for i := range kids.Length() {
+				el := kids.Index(i)
+				if !el.Get("nsgoID").IsUndefined() || el.Equal(v.inner) && (v.kind == core.KindText || v.kind == core.KindInput) {
+					unborder(el, border)
+				}
+			}
 		}
 	}
 	if v.kind != core.KindScroll {
@@ -603,6 +644,12 @@ func (s *surface) setViewStyle(v *view, vs *core.ViewStyle) {
 		}
 	}
 	setStyle(v.el, style)
+}
+
+// unborder places el, framed from its parent view's origin, where the
+// frame says: CSS places it inside the parent's border b.
+func unborder(el js.Value, b core.Edges) {
+	setStyle(el, map[string]string{"margin-left": px(-b.Left), "margin-top": px(-b.Top)})
 }
 
 // transformCSS is t around the view's center, which is CSS's default
@@ -821,12 +868,60 @@ func (s *surface) setEvents(v *view, m core.EventMask) {
 	}
 	setStyle(v.el, style)
 	setAttr(v.el, "tabindex", tabIndex)
+	s.setGestureStyle(v)
 	if !v.hover && (m.Has(core.EventHoverIn) || m.Has(core.EventHoverOut)) {
 		v.hover = true
 		v.listeners.on(v.el, "pointerenter", func(js.Value) { s.send(v, core.Event{Kind: core.EventHoverIn}) })
 		v.listeners.on(v.el, "pointerleave", func(js.Value) { s.send(v, core.Event{Kind: core.EventHoverOut}) })
 	}
 }
+
+// setGestureStyle keeps the browser's touch scrolling and zooming and
+// its text selection out of a view's gestures.
+func (s *surface) setGestureStyle(v *view) {
+	if v.kind == core.KindInput {
+		return
+	}
+	style := map[string]string{"touch-action": v.touchAction()}
+	if v.hasGestures() {
+		style["user-select"], style["-webkit-user-select"], style["-webkit-touch-callout"] = "none", "none", "none"
+	} else if !v.pressable() {
+		style["user-select"], style["-webkit-user-select"], style["-webkit-touch-callout"] = "", "", ""
+	}
+	setStyle(v.el, style)
+}
+
+// windowCommand carries out what a page can of a window's commands: full
+// screen and closing a window the page opened.
+func (s *surface) windowCommand(c *core.WindowCommand) {
+	switch c.Action {
+	case core.WindowToggleFullScreen:
+		if s.doc.Get("fullscreenElement").Truthy() || s.doc.Get("webkitFullscreenElement").Truthy() {
+			call(s.doc, "exitFullscreen", "webkitExitFullscreen")
+		} else {
+			call(s.doc.Get("documentElement"), "requestFullscreen", "webkitRequestFullscreen")
+		}
+	case core.WindowClose:
+		js.Global().Call("close")
+	}
+}
+
+// call calls the first of methods el has, ignoring a promise's rejection,
+// such as a browser refusing full screen without a user gesture.
+func call(el js.Value, methods ...string) {
+	for _, m := range methods {
+		if el.Get(m).Type() != js.TypeFunction {
+			continue
+		}
+		if r := el.Call(m); r.Type() == js.TypeObject && r.Get("catch").Type() == js.TypeFunction {
+			r.Call("catch", ignore)
+		}
+		return
+	}
+}
+
+// ignore is a promise rejection handler doing nothing.
+var ignore = js.FuncOf(func(js.Value, []js.Value) any { return nil })
 
 // listen follows presses on the whole page: the nearest pressable view
 // takes a press, unless a text field holds it first. The document's
@@ -840,6 +935,7 @@ func (s *surface) listen() {
 	ls.on(s.host, "keydown", s.keyDown)
 	ls.on(s.host, "contextmenu", s.contextMenu)
 	ls.on(s.doc, "keydown", s.escape)
+	s.listenGestures(&ls)
 	// Captured, so shortcuts come before what has focus.
 	s.doc.Call("addEventListener", "keydown", js.FuncOf(func(_ js.Value, args []js.Value) any {
 		s.shortcut(args[0])

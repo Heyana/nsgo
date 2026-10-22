@@ -65,6 +65,9 @@ type view struct {
 	presented bool                // whether a modal was inserted yet
 	transform core.Transform      // AppKit drops it when the frame changes
 	drawing   *core.Drawing       // a canvas's
+
+	windowDrag core.WindowDrag
+	activation core.PanActivation
 }
 
 type surface struct {
@@ -78,6 +81,12 @@ type surface struct {
 
 	// What a batch touched, finished once its frames are set.
 	images, presenting []*view
+
+	// The gestures in progress.
+	pan             *panTrack
+	pinch, rotation *gestureTrack
+
+	chrome
 }
 
 // active is the surface observers report to.
@@ -127,7 +136,7 @@ var (
 	selIsEqualToString              = sel("isEqualToString:")
 
 	classView, classSurface, classInput, classField, classSecureField objc.Class
-	classObserver                                                     objc.Class
+	classObserver, classMenuTarget                                    objc.Class
 )
 
 func loadAppKit() {
@@ -142,6 +151,9 @@ func loadAppKit() {
 		{Cmd: sel("hitTest:"), Fn: hitTest},
 		{Cmd: sel("mouseDown:"), Fn: mouseDown},
 		{Cmd: sel("mouseUp:"), Fn: mouseUp},
+		{Cmd: sel("mouseDragged:"), Fn: mouseDragged},
+		{Cmd: sel("magnifyWithEvent:"), Fn: magnify},
+		{Cmd: sel("rotateWithEvent:"), Fn: rotate},
 		{Cmd: sel("rightMouseDown:"), Fn: rightMouseDown},
 		{Cmd: sel("mouseEntered:"), Fn: mouseEntered},
 		{Cmd: sel("mouseExited:"), Fn: mouseExited},
@@ -149,7 +161,7 @@ func loadAppKit() {
 	}
 	classView = register("NsgoView", nsView, nil, common)
 	refresh := func(self objc.ID, cmd objc.SEL) {
-		self.SendSuper(cmd)
+		apple.Super(self, cmd)
 		if v := views[self]; v != nil {
 			v.surface.refresh()
 		}
@@ -178,6 +190,9 @@ func loadAppKit() {
 	delegate := []*objc.Protocol{objc.GetProtocol("NSTextFieldDelegate")}
 	classField = register("NsgoField", objc.GetClass("NSTextField"), delegate, fieldMethods)
 	classSecureField = register("NsgoSecureField", objc.GetClass("NSSecureTextField"), delegate, fieldMethods)
+	classMenuTarget = register("NsgoMenuTarget", objc.GetClass("NSObject"), nil, []objc.MethodDef{
+		{Cmd: selMenuChosen, Fn: menuChosen},
+	})
 }
 
 var (
@@ -189,7 +204,7 @@ var (
 // makeBackingLayer gives a view AppKit's own backing layer, made a
 // subclass that keeps the transform a style gives it.
 func makeBackingLayer(self objc.ID, cmd objc.SEL) objc.ID {
-	layer := self.SendSuper(cmd)
+	layer := apple.SendSuper[objc.ID](self, cmd)
 	if classLayer == 0 {
 		libobjc, err := purego.Dlopen("/usr/lib/libobjc.A.dylib", purego.RTLD_NOW|purego.RTLD_GLOBAL)
 		if err != nil {
@@ -206,14 +221,7 @@ func makeBackingLayer(self objc.ID, cmd objc.SEL) objc.ID {
 }
 
 func register(name string, super objc.Class, protocols []*objc.Protocol, methods []objc.MethodDef) objc.Class {
-	if protocols == nil {
-		protocols = []*objc.Protocol{}
-	}
-	c, err := objc.RegisterClass(name, super, protocols, []objc.FieldDef{}, methods)
-	if err != nil {
-		panic(err)
-	}
-	return c
+	return apple.RegisterClass(name, super, protocols, methods)
 }
 
 // Run opens a window showing app and runs the event loop. Call it from
@@ -225,7 +233,8 @@ func Run(app engine.App, opts Options) {
 	loadAppKit()
 	nsApp := objc.ID(objc.GetClass("NSApplication")).Send(sel("sharedApplication"))
 	nsApp.Send(sel("setActivationPolicy:"), 0)
-	nsApp.Send(sel("setMainMenu:"), mainMenu())
+	defaultMenu := mainMenu()
+	nsApp.Send(sel("setMainMenu:"), defaultMenu)
 	delegate := objc.ID(register("NsgoAppDelegate", objc.GetClass("NSObject"), nil, []objc.MethodDef{{
 		Cmd: sel("applicationShouldTerminateAfterLastWindowClosed:"),
 		Fn:  func(self objc.ID, _ objc.SEL, app objc.ID) bool { return true },
@@ -241,6 +250,7 @@ func Run(app engine.App, opts Options) {
 	window.Send(sel("setReleasedWhenClosed:"), false)
 
 	s := &surface{window: window}
+	s.defaultMenu, s.appName = defaultMenu, opts.Title
 	active = s
 	s.native = objc.ID(classSurface).Send(selAlloc).Send(sel("initWithFrame:"),
 		apple.Rect(0, 0, float64(opts.Width), float64(opts.Height)))
@@ -298,6 +308,7 @@ func (s *surface) environment() core.Environment {
 		Locale:       locale,
 		OS:           core.OSMacOS,
 		Idiom:        core.IdiomDesktop,
+		TitleBar:     s.titleBarArea(),
 	}
 }
 
@@ -325,6 +336,25 @@ func (s *surface) observe() {
 	center := objc.ID(objc.GetClass("NSNotificationCenter")).Send(sel("defaultCenter"))
 	apple.Observe(center, apple.Global(foundation, "NSCurrentLocaleDidChangeNotification"), refresh)
 	apple.Observe(center, apple.Global(appKit, "NSViewBoundsDidChangeNotification"), clipScrolled)
+	for _, name := range []string{"NSWindowDidResizeNotification", "NSWindowDidEnterFullScreenNotification",
+		"NSWindowDidExitFullScreenNotification"} {
+		apple.Observe(center, apple.Global(appKit, name), func(note objc.ID) {
+			if note.Send(sel("object")) == s.window {
+				s.refresh()
+			}
+		})
+	}
+	// Full screen keeps a toolbar over the app: the hidden title bar's
+	// hides with the rest of the bar.
+	for name, visible := range map[string]bool{"NSWindowWillEnterFullScreenNotification": false,
+		"NSWindowDidExitFullScreenNotification": true} {
+		apple.Observe(center, apple.Global(appKit, name), func(note objc.ID) {
+			if note.Send(sel("object")) == s.window && s.toolbar != 0 {
+				s.toolbar.Send(sel("setVisible:"), visible)
+				s.refresh()
+			}
+		})
+	}
 	observer := objc.ID(classObserver).Send(selNew)
 	ws.Send(sel("addObserver:forKeyPath:options:context:"), observer, apple.NSString("voiceOverEnabled"), uint(0), uintptr(0))
 
@@ -353,7 +383,12 @@ func (s *surface) filter(event objc.ID) objc.ID {
 			s.engine.Dispatch(core.Event{Kind: core.EventBack})
 			return 0
 		}
-	case typeLeftDown, typeRightDown:
+	case typeLeftDown:
+		s.pressOutside(event)
+		if s.dragWindow(event) {
+			return 0
+		}
+	case typeRightDown:
 		s.pressOutside(event)
 	case typeOtherDown:
 		const backButton = 3
@@ -559,6 +594,12 @@ func (s *surface) apply(b *core.MountBatch) {
 		case core.ItemTitle:
 			s.window.Send(sel("setTitle:"), apple.NSString(it.Value))
 			continue
+		case core.ItemWindow:
+			s.command(it.Window)
+			continue
+		case core.ItemMenu:
+			s.setMenu(it.Menu)
+			continue
 		case core.ItemStatusBar, core.ItemBackUnhandled:
 			continue
 		}
@@ -587,6 +628,7 @@ func (s *surface) apply(b *core.MountBatch) {
 			if v.transform != (core.Transform{}) {
 				apple.SetTransform(v.native.Send(selLayer), v.transform)
 			}
+			apple.LayoutBorders(v.native.Send(selLayer))
 			if v.drawing != nil {
 				v.native.Send(selSetNeedsDisplay, true)
 			}
@@ -613,6 +655,7 @@ func (s *surface) apply(b *core.MountBatch) {
 			v.scrollTo(it.Point, it.Animated)
 		case core.ItemViewProps:
 			setAccessibility(v.native, it.ViewProps)
+			v.windowDrag, v.activation = it.ViewProps.WindowDrag, it.ViewProps.PanActivation
 		case core.ItemEvents:
 			v.setEvents(it.Events)
 		case core.ItemText:
@@ -712,6 +755,7 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 func (s *surface) delete(v *view) {
 	v.native.Send(selRemoveFromSuperview)
 	apple.ForgetTransform(v.native.Send(selLayer))
+	apple.ForgetBorders(v.native.Send(selLayer))
 	v.layout.Release()
 	if v.image != nil {
 		v.image.Close()
@@ -885,14 +929,17 @@ func drawRect(self objc.ID, _ objc.SEL, dirty apple.CGRect) {
 // hitTest lets presses on text and plain containers through to the
 // nearest pressable ancestor; text fields keep theirs.
 func hitTest(self objc.ID, cmd objc.SEL, p apple.CGPoint) objc.ID {
-	hit := objc.SendSuper[objc.ID](self, cmd, p)
+	hit := apple.SendSuper[objc.ID](self, cmd, p)
+	if rawHit {
+		return hit
+	}
 	stop := self.Send(selSuperview)
 	for n := hit; n != 0 && n != stop; n = n.Send(selSuperview) {
 		if v := views[n]; v != nil {
 			if v.field == n || v.kind == core.KindScroll {
 				return hit
 			}
-			if v.pressable() && v.native == n {
+			if (v.pressable() || v.events.Has(core.EventPan)) && v.native == n {
 				return n
 			}
 		}
@@ -913,8 +960,13 @@ func mouseDown(self objc.ID, cmd objc.SEL, event objc.ID) {
 		rightMouseDown(self, cmd, event)
 		return
 	}
+	if v != nil {
+		v.surface.startPan(self, event)
+	}
 	if v == nil || !v.pressable() {
-		self.SendSuper(cmd, event)
+		if v == nil || v.surface.pan == nil {
+			apple.Super(self, cmd, event)
+		}
 		return
 	}
 	v.pressing.Store(true)
@@ -932,13 +984,19 @@ func mouseDown(self objc.ID, cmd objc.SEL, event objc.ID) {
 
 func mouseUp(self objc.ID, cmd objc.SEL, event objc.ID) {
 	v := views[self]
+	panned := v != nil && v.surface.endPan(event)
 	if v == nil || !v.pressable() {
-		self.SendSuper(cmd, event)
+		if !panned {
+			apple.Super(self, cmd, event)
+		}
 		return
 	}
 	p := objc.Send[apple.CGPoint](self, selConvertPoint, objc.Send[apple.CGPoint](event, selLocationInWindow), objc.ID(0))
 	b := objc.Send[apple.CGRect](self, selBounds)
 	pressed := v.pressing.Swap(false)
+	if !pressed {
+		return // a pan took the press
+	}
 	v.dispatch(core.EventPressUp)
 	if pressed && !v.longFired.Load() && p.X >= 0 && p.Y >= 0 && p.X < b.Size.Width && p.Y < b.Size.Height {
 		v.report(core.Event{Kind: core.EventPress, Index: v.indexAt(p)})
@@ -961,7 +1019,7 @@ func (v *view) indexAt(p apple.CGPoint) int {
 func rightMouseDown(self objc.ID, cmd objc.SEL, event objc.ID) {
 	v := views[self]
 	if v == nil || !v.events.Has(core.EventContextMenu) {
-		self.SendSuper(cmd, event)
+		apple.Super(self, cmd, event)
 		return
 	}
 	p := objc.Send[apple.CGPoint](self, selConvertPoint, objc.Send[apple.CGPoint](event, selLocationInWindow), objc.ID(0))
@@ -990,7 +1048,7 @@ func accessibilityPress(self objc.ID, _ objc.SEL) bool {
 }
 
 func surfaceSetFrameSize(self objc.ID, cmd objc.SEL, size apple.CGSize) {
-	self.SendSuper(cmd, size)
+	apple.Super(self, cmd, size)
 	if v := views[self]; v != nil && v.surface.engine != nil {
 		v.surface.engine.Resize(core.Size{Width: core.Points(size.Width), Height: core.Points(size.Height)})
 	}
@@ -1004,7 +1062,7 @@ func surfaceApply(self objc.ID, _ objc.SEL, _ objc.ID) {
 }
 
 func inputLayout(self objc.ID, cmd objc.SEL) {
-	self.SendSuper(cmd)
+	apple.Super(self, cmd)
 	v := views[self]
 	h := objc.Send[apple.CGSize](v.field, selIntrinsicContentSize).Height
 	in := v.inset
@@ -1028,7 +1086,7 @@ func fieldSubmit(self objc.ID, _ objc.SEL, _ objc.ID) {
 }
 
 func fieldFocused(self objc.ID, cmd objc.SEL) bool {
-	ok := objc.SendSuper[bool](self, cmd)
+	ok := apple.SendSuper[bool](self, cmd)
 	if v := views[self]; v != nil && ok {
 		v.dispatch(core.EventFocus)
 	}

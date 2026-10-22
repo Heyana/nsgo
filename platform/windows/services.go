@@ -99,9 +99,10 @@ func (w *window) setKeymap(keys []string) {
 }
 
 // shortcut reports a key press matching a shortcut, by its name with
-// "mod" for Control or with "ctrl" itself, and whether it matched.
+// "mod" for Control or with "ctrl" itself, and whether it matched: the
+// app's own first, then the application menu's.
 func (w *window) shortcut(vk uintptr) bool {
-	if len(w.keys) == 0 {
+	if len(w.keys) == 0 && len(w.chrome.keys) == 0 {
 		return false
 	}
 	name := keyName(vk)
@@ -110,6 +111,7 @@ func (w *window) shortcut(vk uintptr) bool {
 	}
 	ctrl, alt, shift := keyDown(vkControl), keyDown(vkMenu), keyDown(vkShift)
 	meta := keyDown(vkLWin) || keyDown(vkRWin)
+	var names []string
 	for _, control := range []string{"mod", "ctrl"} {
 		var parts []string
 		if ctrl {
@@ -124,8 +126,15 @@ func (w *window) shortcut(vk uintptr) bool {
 		if meta {
 			parts = append(parts, "meta")
 		}
-		if key := strings.Join(append(parts, name), "+"); w.keys[key] {
+		key := strings.Join(append(parts, name), "+")
+		if w.keys[key] {
 			w.engine.Dispatch(core.Event{Kind: core.EventKey, Text: key})
+			return true
+		}
+		names = append(names, key)
+	}
+	for _, key := range names {
+		if w.menuShortcut(key) {
 			return true
 		}
 	}

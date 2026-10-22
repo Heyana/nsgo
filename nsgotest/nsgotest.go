@@ -47,6 +47,10 @@ type App struct {
 	// Keymap is the keyboard shortcuts the app binds; Title its title.
 	Keymap []string
 	Title  string
+	// Menu is the application menu the app set; Window the window
+	// commands it sent, oldest first.
+	Menu   []core.MenuEntry
+	Window []core.WindowCommand
 	tree   *core.Tree
 	root   *core.Scope
 	Clock  *core.ManualClock
@@ -385,6 +389,87 @@ func (a *App) Key(key string) {
 	a.t.Fatalf("nsgotest: no binding for %q in %v", key, a.Keymap)
 }
 
+// Pan drags the view selector matches, or the one around it with a pan,
+// through each translation in turn, then lets go.
+func (a *App) Pan(selector string, translations ...core.Point) {
+	a.t.Helper()
+	v := a.gestureView(selector, core.EventPan)
+	a.gesture(v, core.EventPan, len(translations), func(ev *core.Event, i int) {
+		ev.Point = translations[i]
+	})
+}
+
+// Pinch pinches the view selector matches, or the one around it with a
+// pinch, through each scale in turn.
+func (a *App) Pinch(selector string, scales ...float32) {
+	a.t.Helper()
+	v := a.gestureView(selector, core.EventPinch)
+	a.gesture(v, core.EventPinch, len(scales), func(ev *core.Event, i int) { ev.Value = scales[i] })
+}
+
+// Rotate rotates the view selector matches, or the one around it with a
+// rotation, through each angle in radians in turn.
+func (a *App) Rotate(selector string, angles ...float32) {
+	a.t.Helper()
+	v := a.gestureView(selector, core.EventRotation)
+	a.gesture(v, core.EventRotation, len(angles), func(ev *core.Event, i int) { ev.Value = angles[i] })
+}
+
+func (a *App) gestureView(selector string, kind core.EventKind) *View {
+	a.t.Helper()
+	for p := a.Find(selector); p != nil; p = p.Parent {
+		if p.Events.Has(kind) {
+			return p
+		}
+	}
+	a.t.Fatalf("nsgotest: no gesture view at %q", selector)
+	return nil
+}
+
+// gesture sends a gesture of n steps: began with the first, changed with
+// the rest and ended with the last.
+func (a *App) gesture(v *View, kind core.EventKind, n int, step func(*core.Event, int)) {
+	if n == 0 {
+		return
+	}
+	send := func(phase core.GesturePhase, i int) {
+		ev := core.Event{Kind: kind, ID: v.ID, Phase: phase}
+		step(&ev, i)
+		a.dispatch(ev)
+	}
+	send(core.GestureBegan, 0)
+	for i := 1; i < n; i++ {
+		send(core.GestureChanged, i)
+	}
+	send(core.GestureEnded, n-1)
+}
+
+// ChooseMenu chooses the application menu item at path, its labels from
+// the menu bar down, such as "File", "New".
+func (a *App) ChooseMenu(path ...string) {
+	a.t.Helper()
+	items := a.Menu
+	for i, label := range path {
+		var found *core.MenuEntry
+		for k := range items {
+			if items[k].Label == label {
+				found = &items[k]
+			}
+		}
+		if found == nil || found.Disabled {
+			a.t.Fatalf("nsgotest: no menu item %q", path[:i+1])
+		}
+		if i == len(path)-1 {
+			if found.ID == 0 {
+				a.t.Fatalf("nsgotest: menu item %q does nothing", path)
+			}
+			a.dispatch(core.Event{Kind: core.EventMenu, Count: found.ID})
+			return
+		}
+		items = found.Items
+	}
+}
+
 // Back presses Escape or the back button.
 func (a *App) Back() { a.dispatch(core.Event{Kind: core.EventBack, ID: a.rootID}) }
 
@@ -526,6 +611,10 @@ func (a *App) apply(b *core.MountBatch) {
 			a.Keymap = it.Keys
 		case core.ItemTitle:
 			a.Title = it.Value
+		case core.ItemMenu:
+			a.Menu = it.Menu
+		case core.ItemWindow:
+			a.Window = append(a.Window, *it.Window)
 		case core.ItemAnnounce:
 			a.Announced = append(a.Announced, it.Value)
 		case core.ItemAlert:

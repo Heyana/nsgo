@@ -47,6 +47,16 @@ const (
 	EventContextMenu
 	// EventKey is a key press matching a binding of the keymap (Text).
 	EventKey
+	// EventPan follows an active pan: its phase (Phase), translation
+	// (Point) and velocity (Velocity).
+	EventPan
+	// EventPinch and EventRotation follow a pinch's scale and a rotation's
+	// angle in radians (Value) with their phase (Phase) and velocity
+	// (Velocity.X).
+	EventPinch
+	EventRotation
+	// EventMenu is an application menu item chosen (Count, its ID).
+	EventMenu
 )
 
 // EventMask is a set of event kinds.
@@ -74,8 +84,21 @@ type Event struct {
 	// Loaded and Total are an image's bytes loaded and expected.
 	Loaded, Total int64
 	Index         int
+	// Phase, Velocity and Value are a gesture's.
+	Phase    GesturePhase
+	Velocity Point
+	Value    float32
 }
 
 // Mergeable reports whether a later event of the same kind and view
-// replaces this one before the engine handles it.
-func (e Event) Mergeable() bool { return e.Kind == EventScroll || e.Kind == EventProgress }
+// replaces this one before the engine handles it: scrolls, progress and
+// a gesture's moves, never its first or last report.
+func (e Event) Mergeable() bool {
+	switch e.Kind {
+	case EventScroll, EventProgress:
+		return true
+	case EventPan, EventPinch, EventRotation:
+		return e.Phase == GestureChanged
+	}
+	return false
+}

@@ -76,6 +76,7 @@ func StyleLayer(layer objc.ID, vs *core.ViewStyle, upward bool) {
 		layer.Send(selSetShadowOpacity, float32(1))
 	}
 	SetTransform(layer, vs.Transform)
+	setBorders(layer, vs, &tr)
 	for i, k := range keys {
 		to := layer.Send(selValueForKey, NSString(k))
 		if from[i] == to || (from[i] != 0 && objc.Send[bool](from[i], sel("isEqual:"), to)) {
@@ -175,14 +176,14 @@ func HeldTransformMethods() []objc.MethodDef {
 			if h, ok := held[self]; ok && !setting {
 				m = h
 			}
-			self.SendSuper(cmd, m)
+			Super(self, cmd, m)
 		}},
 		{Cmd: sel("setAffineTransform:"), Fn: func(self objc.ID, cmd objc.SEL, m affine) {
 			if h, ok := held[self]; ok {
-				self.SendSuper(sel("setTransform:"), h)
+				Super(self, sel("setTransform:"), h)
 				return
 			}
-			self.SendSuper(cmd, m)
+			Super(self, cmd, m)
 		}},
 	}
 }

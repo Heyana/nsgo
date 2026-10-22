@@ -249,6 +249,7 @@ type view struct {
 	frame    core.Bounds
 	style    core.ViewStyle
 	events   core.EventMask
+	props    core.ViewProps
 	deleted  bool
 
 	// A text view's layout and where it goes in the view.
@@ -320,6 +321,11 @@ type window struct {
 	keys      map[string]bool // the keyboard shortcuts
 	animating []*view
 	ticking   bool
+	chrome    chrome
+
+	// The gestures in progress.
+	pan                            *pan
+	pinch, rotation, wheelPinching *twoFinger
 
 	measureDC uintptr // the engine thread's
 }
@@ -379,6 +385,7 @@ func Run(app engine.App, opts Options) {
 		0, 0, instance, 0)
 	w.hwnd = hwnd
 	windows[hwnd] = w
+	w.configureGestures()
 	w.env = w.environment()
 	w.darkTitleBar(w.env.Dark)
 	// The engine starts once the window exists, so Mount can post to it.
@@ -698,6 +705,14 @@ func (w *window) apply(b *core.MountBatch) {
 			w.title = it.Value
 			setWindowTextW.Call(w.hwnd, uintptr(unsafe.Pointer(wide(it.Value))))
 			continue
+		case core.ItemWindow:
+			if it.Window != nil {
+				w.windowCommand(it.Window)
+			}
+			continue
+		case core.ItemMenu:
+			w.setMenu(it.Menu)
+			continue
 		case core.ItemAnnounce, core.ItemStatusBar, core.ItemBackUnhandled:
 			// No announcements without UI Automation; no status bar.
 			continue
@@ -745,6 +760,10 @@ func (w *window) apply(b *core.MountBatch) {
 			w.setValue(v, it.Value, it.Count)
 		case core.ItemEvents:
 			v.events = it.Events
+		case core.ItemViewProps:
+			if it.ViewProps != nil {
+				v.props = *it.ViewProps
+			}
 		case core.ItemScrollConfig:
 			v.scroll = *it.Scroll
 		case core.ItemScrollContent:
@@ -1150,10 +1169,41 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmLButtonDown, wmRButtonDown:
 		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
 		w.pressOutside(int32(x), int32(y))
+		if message == wmLButtonDown {
+			w.panDown(w.point(int32(x), int32(y)))
+		}
+	case wmMouseMove:
+		w.setHover(0) // off the caption buttons
+		if wParam&mkLButton != 0 && w.pan != nil {
+			x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
+			w.panMove(w.point(int32(x), int32(y)))
+		}
+		return 0
 	case wmLButtonUp:
 		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
-		w.press(w.point(int32(x), int32(y)))
+		if at := w.point(int32(x), int32(y)); !w.panUp(at) {
+			w.press(at)
+		}
 		return 0
+	case wmCaptureChanged:
+		w.panLost()
+		return 0
+	case wmGesture:
+		if w.gesture(lParam) {
+			return 0
+		}
+	case wmNCCalcSize:
+		if r, ok := w.ncCalcSize(wParam, lParam); ok {
+			return r
+		}
+	case wmNCHitTest:
+		return w.ncHitTest(lParam)
+	case wmNCActivate:
+		return w.ncActivate(wParam, lParam)
+	case wmNCMouseMove, wmNCMouseLeave, wmNCLButtonDown, wmNCLButtonUp, wmNCLButtonDblClk:
+		if w.ncMouse(message, wParam) {
+			return 0
+		}
 	case wmContextMenu:
 		if lParam&0xffffffff != contextFromKey&0xffffffff {
 			at := point{int32(int16(lParam & 0xffff)), int32(int16(lParam >> 16 & 0xffff))}
@@ -1162,8 +1212,11 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case wmTimer:
-		if wParam == animationTimer {
+		switch wParam {
+		case animationTimer:
 			w.tick()
+		case pinchTimer:
+			w.wheelPinchEnded()
 		}
 		return 0
 	case wmKeyDown:
@@ -1187,12 +1240,18 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		// Wheel messages carry screen coordinates.
 		at := point{int32(int16(lParam & 0xffff)), int32(int16(lParam >> 16 & 0xffff))}
 		screenToClient.Call(hwnd, uintptr(unsafe.Pointer(&at)))
-		notches := core.Points(int16(wParam>>16&0xffff)) / 120
-		w.wheel(w.point(at.X, at.Y), notches, message == wmMouseHWheel)
+		delta := int16(wParam >> 16 & 0xffff)
+		// A precision touchpad's pinch comes as turns with Control held.
+		if message == wmMouseWheel && wParam&mkControl != 0 && w.wheelPinch(w.point(at.X, at.Y), delta) {
+			return 0
+		}
+		w.wheel(w.point(at.X, at.Y), core.Points(delta)/120, message == wmMouseHWheel)
 		return 0
 	case wmCommand:
 		if v := w.edits[lParam]; v != nil {
 			w.editCommand(v, wParam>>16&0xffff)
+		} else if lParam == 0 && wParam>>16&0xffff == 0 {
+			w.menuCommand(uint16(wParam))
 		}
 		return 0
 	case wmCtlColorEdit, wmCtlColorStatic:

@@ -30,9 +30,9 @@ const (
 	dwmwaUseImmersiveDarkModeOld = 19 // before Windows 10 20H1
 )
 
-// environment reads what Windows says about where the app runs. The
-// title bar is the system's and there is no software keyboard, so their
-// insets stay 0.
+// environment reads what Windows says about where the app runs, with
+// what the hidden title bar's window controls cover. There is no
+// software keyboard, so its inset stays 0.
 func (w *window) environment() core.Environment {
 	locale := userLocale()
 	return core.Environment{
@@ -45,6 +45,7 @@ func (w *window) environment() core.Environment {
 		Locale:       locale,
 		OS:           core.OSWindows,
 		Idiom:        core.IdiomDesktop,
+		TitleBar:     w.titleBarArea(),
 	}
 }
 
