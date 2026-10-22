@@ -109,6 +109,12 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md) and [AGENTS.md](AGENTS.md) before changi
 
 The website is a separate Bun project in `website/`; [website/README.md](website/README.md) has its commands.
 
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE). NSGo is a port of NSH, and [NOTICE](NOTICE) records the attribution that port owes.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in NSGo by you, as defined in the Apache-2.0 license, shall be licensed under Apache-2.0, without any additional terms or conditions.
+
 ## Author
 
 [Blog](https://oneo.me) · [X @oneo666](https://x.com/oneo666)

@@ -17,3 +17,4 @@
 - Add `dev.hot_reload` to rebuild on save, since `nsgo dev` now runs the app once and exits with it.
 - Add a layered app icon.
 - Add the official website.
+- License the project under Apache-2.0, with NSH's attribution in `NOTICE`.

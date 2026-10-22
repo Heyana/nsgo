@@ -109,6 +109,12 @@ git clone https://github.com/longbridge/nsh.git nsh
 
 官方网站是 `website/` 下的独立 Bun 项目，命令见 [website/README.md](website/README.md)。
 
+## 许可证
+
+本项目以 [Apache License 2.0](LICENSE) 授权。NSGo 是 NSH 的移植，[NOTICE](NOTICE) 记录了移植所需的署名。
+
+除非你明确声明，否则你提交给 NSGo 的任何贡献，按 Apache-2.0 许可证的定义，均以 Apache-2.0 授权，不附加任何额外条款或条件。
+
 ## 作者
 
 [博客](https://oneo.me) · [X @oneo666](https://x.com/oneo666)
