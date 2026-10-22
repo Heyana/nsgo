@@ -53,9 +53,14 @@ type TextStyle struct {
 	Decoration    TextDecoration
 }
 
+// FontMonospace is the family name of the platform's fixed-pitch font,
+// for code.
+const FontMonospace = "monospace"
+
 // Font is what a text engine needs to pick a font.
 type Font struct {
-	// Family is a font family name; empty is the system font.
+	// Family is a font family name; empty is the system font, and
+	// FontMonospace the platform's fixed-pitch font.
 	Family string
 	Size   Points
 	Weight FontWeight

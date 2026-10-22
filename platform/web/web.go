@@ -33,6 +33,20 @@ type Options struct {
 
 const fontFamily = `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
 
+// monospaceFamily is the CSS of core.FontMonospace.
+const monospaceFamily = `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
+
+// cssFamily returns the CSS font-family of a family name.
+func cssFamily(family string) string {
+	switch family {
+	case "":
+		return fontFamily
+	case core.FontMonospace:
+		return monospaceFamily
+	}
+	return strconv.Quote(family) + ", " + fontFamily
+}
+
 // longPressDelay is how long a press is held to be a long press, in
 // milliseconds.
 const longPressDelay = 500
@@ -219,10 +233,7 @@ var textBase = map[string]string{"white-space": "pre-wrap", "overflow-wrap": "br
 
 // fontStyle is the CSS of a resolved text style.
 func fontStyle(t core.TextStyle) map[string]string {
-	family := fontFamily
-	if t.Font.Family != "" {
-		family = strconv.Quote(t.Font.Family) + ", " + fontFamily
-	}
+	family := cssFamily(t.Font.Family)
 	italic := "normal"
 	if t.Font.Italic {
 		italic = "italic"

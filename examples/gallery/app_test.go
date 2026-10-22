@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/nsgotest"
@@ -104,16 +105,16 @@ func TestGestures(t *testing.T) {
 
 func TestApplicationMenu(t *testing.T) {
 	app := startDesktop(t)
-	app.ChooseMenu("View", "Canvas")
-	app.Find("id:section-Canvas")
+	app.ChooseMenu("View", "Images")
+	app.Find("id:section-Images")
 	view := app.Menu[slices.IndexFunc(app.Menu, func(e core.MenuEntry) bool { return e.Label == "View" })]
 	for _, e := range view.Items {
-		if e.Label == "Canvas" && (!e.Checked || e.Shortcut != "mod+9") {
-			t.Fatalf("View › Canvas = %+v, want checked with mod+9", e)
+		if e.Label == "Images" && (!e.Checked || e.Shortcut != "mod+9") {
+			t.Fatalf("View › Images = %+v, want checked with mod+9", e)
 		}
 	}
 	app.ChooseMenu("View", "Next Section")
-	app.Find("id:section-Animation")
+	app.Find("id:section-Canvas")
 
 	app.Find("id:about")
 	app.ChooseMenu("View", "Show Descriptions")
@@ -196,4 +197,16 @@ func TestStorageSection(t *testing.T) {
 	if keys := app.Storage().Keys(); len(keys) != 0 {
 		t.Fatalf("keys after clearing: %v", keys)
 	}
+}
+
+func TestTextViewStreams(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Text View")
+	app.Find("id:markdown >> role:header Text View")
+	app.Press("id:stream")
+	for range 200 {
+		app.Advance(50 * time.Millisecond)
+	}
+	app.Find("id:streamed >> text:Done.")
+	app.Find("id:streamed >> text:Never")
 }

@@ -82,7 +82,9 @@ type Style struct {
 	Transition Transition
 
 	// Text, inherited by descendants that set none.
-	Color          Color
+	Color Color
+	// FontFamily names a font family; empty is the system font, and
+	// FontMonospace the system's fixed-pitch font.
 	FontFamily     string
 	FontSize       Points
 	FontWeight     FontWeight

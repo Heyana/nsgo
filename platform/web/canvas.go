@@ -106,10 +106,7 @@ func play(ctx js.Value, op *core.DrawOp) {
 
 // fontCSS is the CSS font shorthand of fnt.
 func fontCSS(fnt core.Font) string {
-	family := fontFamily
-	if fnt.Family != "" {
-		family = strconv.Quote(fnt.Family) + ", " + fontFamily
-	}
+	family := cssFamily(fnt.Family)
 	style := ""
 	if fnt.Italic {
 		style = "italic "

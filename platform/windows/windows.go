@@ -184,6 +184,17 @@ const (
 	defaultFontName = "Segoe UI"
 )
 
+// fontName returns the GDI face of a family name.
+func fontName(family string) string {
+	switch family {
+	case "":
+		return defaultFontName
+	case core.FontMonospace:
+		return "Consolas"
+	}
+	return family
+}
+
 // wheelStep is how far one notch of a mouse wheel scrolls.
 const wheelStep core.Points = 48
 
@@ -448,10 +459,7 @@ func (c *fontCache) acquire(key fontKey) *font {
 		f.refs++
 		return f
 	}
-	family := key.font.Family
-	if family == "" {
-		family = defaultFontName
-	}
+	family := fontName(key.font.Family)
 	var italic, underline, strike uintptr
 	if key.font.Italic {
 		italic = 1

@@ -2,8 +2,10 @@ package ui_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/oneo-me/nsgo/base"
+	"github.com/oneo-me/nsgo/base/textview"
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/nsgotest"
 	"github.com/oneo-me/nsgo/ui"
@@ -87,5 +89,30 @@ func TestPopupsTakeTheThemeAndKeepBaseBehavior(t *testing.T) {
 	app.Press("text:Open")
 	if app.Exists("id:open") || len(reasons) != 2 || reasons[1] != "select" {
 		t.Errorf("choosing an item: open %v, reasons %v", app.Exists("id:open"), reasons)
+	}
+}
+
+func TestTextViewCopiesCodeAndFollowsTheTheme(t *testing.T) {
+	light, dark := ui.DefaultTheme().Light, ui.DefaultTheme().Dark
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return ui.ThemeView{Children: []core.Node{ui.TextView{TestID: "doc",
+			Markdown: "Read [the docs](https://nsgo.dev).\n\n```sh\ngo test ./...\n```",
+			Styles:   textview.Styles{textview.PartCodeBlock: {CornerRadius: 2}},
+		}}}
+	})
+	block := func() core.ViewStyle { return app.Find("text:go test").Parent.Parent.Style }
+	if s := block(); s.Background != light.Muted || s.CornerRadius != 2 {
+		t.Errorf("code block = %x radius %v, want muted with the app's radius", s.Background, s.CornerRadius)
+	}
+	app.Press("role:button Copy")
+	if app.Clipboard != "go test ./..." {
+		t.Errorf("clipboard = %q, want the code", app.Clipboard)
+	}
+	app.Find("text:Copied")
+	app.Advance(2 * time.Second)
+	app.Find("text:Copy")
+	app.SetEnvironment(core.Environment{Dark: true})
+	if got := block().Background; got != dark.Muted {
+		t.Errorf("dark code block = %x, want the dark muted color", got)
 	}
 }

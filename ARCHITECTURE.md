@@ -23,7 +23,9 @@ Packages mirror NSH's crates:
 | --- | --- | --- |
 | `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, layout, text, mount items |
 | `base` | `nsh-base` | Unstyled base components: controls, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack |
-| `ui` | `nsh-base`'s `Theme` | The theme as Go values, and `base`'s controls and popups styled with it |
+| `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
+| `ui` | `nsh-base`'s `Theme` | The theme as Go values, and `base`'s controls, popups and text view styled with it |
+| `ui/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma, in NSH's palette |
 | `engine` | `nsh-engine` | Engine goroutine: an unbounded mailbox, commits, one batch per commit to the platform |
 | `core/internal/layout` | Taffy | Block, flexbox and grid layout, checked against Taffy's fixtures |
 | `nsgotest` | `nsh-testing` | Headless app tests: approximate text, a manual clock, selectors over a model of the views |
@@ -88,7 +90,6 @@ Android runs the app as a second process because Go builds Android shared librar
 
 Record a design question here, and confirm the answer with the user before choosing it.
 
-- **Markdown.** Write `TextView`'s parser in NSGo, or depend on a Go library such as goldmark?
 - **Windows web view and video.** Reach WebView2 and Media Foundation through COM over `syscall`, or ship WebView2's loader?
 - **Signed packages and capabilities.** Port NSH's package signing and capability sandbox, or drop them because Go apps are native code?
 
@@ -103,3 +104,4 @@ Subjects go in `docs/architecture/` once a subsystem has a lasting design.
 | Document | When to read |
 | --- | --- |
 | [Core](docs/architecture/core.md) | Changing the reactive graph, elements, regions, commit, text, selection, storage or the mount protocol |
+| [Text view](docs/architecture/textview.md) | Changing `TextView`: the document model, Markdown parsing, its parts or code highlighting |

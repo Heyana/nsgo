@@ -412,10 +412,7 @@ func (c *canvasPlayer) text(op *core.DrawOp) {
 	dc := c.p.dc
 	f := c.fonts[op.Font]
 	if f == 0 {
-		family := op.Font.Family
-		if family == "" {
-			family = defaultFontName
-		}
+		family := fontName(op.Font.Family)
 		f, _, _ = createFontW.Call(uintptr(-int32(float64(op.Font.Size)*subpixels+0.5)), 0, 0, 0, uintptr(op.Font.Weight),
 			boolArg(op.Font.Italic), 0, 0, defaultCharset, 0, 0, clearType, 0, uintptr(unsafe.Pointer(wide(family))))
 		c.fonts[op.Font] = f

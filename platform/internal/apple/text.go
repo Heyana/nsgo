@@ -115,7 +115,10 @@ var weights = [...]float64{-0.8, -0.6, -0.4, 0, 0.23, 0.3, 0.4, 0.56, 0.62}
 // unless f names a family. The caller releases it.
 func Font(f core.Font) uintptr {
 	var base uintptr
-	if f.Family != "" {
+	if f.Family == core.FontMonospace {
+		const uiFontUserFixedPitch = 1
+		base = ctFontCreateUIFont(uiFontUserFixedPitch, float64(f.Size), 0)
+	} else if f.Family != "" {
 		name := CFString(f.Family)
 		base = ctFontCreateWithName(name, float64(f.Size), 0)
 		Release(name)

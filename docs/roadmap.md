@@ -4,16 +4,21 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 
 ## Order
 
-1. Add the services and text features most apps need.
+1. Complete text: what `TextView` and `Text` still lack.
 2. Add media, embedding and native-driven animation.
 3. Complete the tool, then add Linux and the embedding SDKs.
 4. Finish the platforms NSGo already claims, so every target runs. This is left to community contributions.
 
-## 1. Services and text
+## 1. Text
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
-| TextView | `crates/nsh-base/src/text_view` | Markdown renders with code highlighting, links and extensions |
+| Streaming repair | `crates/nsh-base/src/text_view/markdown/streaming.rs` | A streamed reply never shows syntax its end leaves open, such as `**` or a table's header alone |
+| HTML in text views | `crates/nsh-base/src/text_view/html` | `TextView` reads HTML documents and the HTML inside Markdown |
+| Formulas | `docs/dev/text-view.md` | `$…$` and `$$…$$` reach the app's renderer, else show as TeX |
+| Inline attachments | `docs/dev/text.md` | Views, images and custom nodes flow inside a text's lines |
+| Span backgrounds | `docs/dev/text.md` | Spans draw backgrounds, so inline code sits on a tint |
+| Strikethrough on Apple platforms | `crates/nsh-platform-ios/src/text.rs` | CoreText text draws its struck spans |
 
 ## 2. Media, embedding and animation
 
