@@ -8,6 +8,11 @@ tasks:
     group: build
     command: go
     args: [tool, nsgo, build, examples/hello]
+  - label: Website dev
+    type: shell
+    command: bun install && bun run dev
+    options:
+      cwd: website
 worktree:
   copy:
     - nsh

@@ -1,0 +1,157 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fumadocs/base-ui/css/shadcn.css";
+@import "@fumadocs/base-ui/css/preset.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', sans-serif;
+    --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    --background: #f9fcfa;
+    --foreground: #17302b;
+    --card: #fdfefd;
+    --card-foreground: #17302b;
+    --popover: #fdfefd;
+    --popover-foreground: #17302b;
+    --primary: #0f8f7f;
+    --primary-foreground: #ffffff;
+    --secondary: #e5f1ed;
+    --secondary-foreground: #17302b;
+    --muted: #e5f1ed;
+    --muted-foreground: #5d7871;
+    --accent: #e5f1ed;
+    --accent-foreground: #17302b;
+    --destructive: #b4444c;
+    --border: #d3e5df;
+    --input: #d3e5df;
+    --ring: #0f8f7f;
+    --chart-1: #2bb59f;
+    --chart-2: #7bc96f;
+    --chart-3: #e4d34a;
+    --chart-4: #6b93a8;
+    --chart-5: #a06f8f;
+    --radius: 0.5rem;
+    --sidebar: #f1f8f5;
+    --sidebar-foreground: #17302b;
+    --sidebar-primary: #0f8f7f;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #e5f1ed;
+    --sidebar-accent-foreground: #17302b;
+    --sidebar-border: #d3e5df;
+    --sidebar-ring: #0f8f7f;
+}
+
+.dark {
+    --background: #0d1a17;
+    --foreground: #e7f3ef;
+    --card: #142622;
+    --card-foreground: #e7f3ef;
+    --popover: #142622;
+    --popover-foreground: #e7f3ef;
+    --primary: #4fd1b8;
+    --primary-foreground: #06251f;
+    --secondary: #1d332e;
+    --secondary-foreground: #e7f3ef;
+    --muted: #1d332e;
+    --muted-foreground: #a3bcb5;
+    --accent: #1d332e;
+    --accent-foreground: #e7f3ef;
+    --destructive: #e58f95;
+    --border: #2d4741;
+    --input: #2d4741;
+    --ring: #4fd1b8;
+    --chart-1: #4fd1b8;
+    --chart-2: #8ddc7f;
+    --chart-3: #e7d75c;
+    --chart-4: #8fb3c7;
+    --chart-5: #c39ab4;
+    --sidebar: #0a1513;
+    --sidebar-foreground: #e7f3ef;
+    --sidebar-primary: #4fd1b8;
+    --sidebar-primary-foreground: #06251f;
+    --sidebar-accent: #1d332e;
+    --sidebar-accent-foreground: #e7f3ef;
+    --sidebar-border: #263e39;
+    --sidebar-ring: #a3bcb5;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply scroll-pt-20 font-sans;
+    scrollbar-gutter: stable;
+    }
+  ::selection {
+    @apply bg-primary/20;
+    }
+}
+
+/* Go source is indented with tabs. */
+pre {
+    tab-size: 4;
+}
+
+/* API headings name a Go identifier without the inline-code chip. */
+.prose :where(h3) > code {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-size: 0.95em;
+}
+
+/* Long Go signatures wrap rather than scroll. */
+.api-entry pre code .line {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}

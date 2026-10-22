@@ -107,6 +107,8 @@ git clone https://github.com/longbridge/nsh.git nsh
 
 修改代码前请先阅读 [ARCHITECTURE.md](ARCHITECTURE.md) 和 [AGENTS.md](AGENTS.md)。
 
+官方网站是 `website/` 下的独立 Bun 项目，命令见 [website/README.md](website/README.md)。
+
 ## 作者
 
 [博客](https://oneo.me) · [X @oneo666](https://x.com/oneo666)

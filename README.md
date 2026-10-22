@@ -107,6 +107,8 @@ git clone https://github.com/longbridge/nsh.git nsh
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) and [AGENTS.md](AGENTS.md) before changing code.
 
+The website is a separate Bun project in `website/`; [website/README.md](website/README.md) has its commands.
+
 ## Author
 
 [Blog](https://oneo.me) · [X @oneo666](https://x.com/oneo666)
