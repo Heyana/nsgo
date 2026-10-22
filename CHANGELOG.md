@@ -32,3 +32,4 @@
 - Fix Android builds failing because Go's implied `linux` tag included the Linux backend.
 - Fix strikethrough missing on macOS and iOS.
 - Fix Windows' aliased rounded corners, borders and canvas curves.
+- Fix text in a padded grid cell overlapping the row below when its width changes how many lines it wraps, and Windows drawing symbols such as ⌘ as boxes.

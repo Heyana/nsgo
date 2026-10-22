@@ -14,9 +14,24 @@ import (
 var (
 	getTextExtentExPointW = gdi32.NewProc("GetTextExtentExPointW")
 	getGlyphOutlineW      = gdi32.NewProc("GetGlyphOutlineW")
+	getGlyphIndicesW      = gdi32.NewProc("GetGlyphIndicesW")
+	getFontData           = gdi32.NewProc("GetFontData")
 )
 
-// drawnText is a TextLayout of this backend: plain or with spans.
+const (
+	// ggiMarkNonExistingGlyphs makes GetGlyphIndicesW return 0xffff for a
+	// character the font has no glyph for.
+	ggiMarkNonExistingGlyphs = 0x1
+	// cmapTag is the font table that maps characters to glyphs, as
+	// GetFontData wants it: 'c', 'm', 'a', 'p' in little-endian order.
+	cmapTag = 0x70616d63
+)
+
+// fallbackFonts are tried in order for a rune the text's font has no
+// glyph for, as GDI draws a box for it instead of choosing another font.
+var fallbackFonts = []string{"Segoe UI Symbol", "Segoe UI Emoji", "Microsoft YaHei UI", "Malgun Gothic", "Yu Gothic UI"}
+
+// drawnText is a TextLayout of this backend: spans, drawn by it.
 type drawnText interface {
 	core.TextLayout
 	draw(p *painter, x, y int32)
@@ -106,12 +121,13 @@ func (p *piece) fit(from int, avail int32) int {
 	return k
 }
 
-// spanText is text with styled spans. DrawText takes one font, so it is
-// broken into lines and drawn here run by run.
+// spanText is text broken into lines and pieces, each with its own font,
+// color and decoration, and drawn run by run: GDI draws one font at a time.
 type spanText struct {
 	w        *window
 	pieces   []piece
 	fonts    []*font
+	byKey    map[fontKey]*font // the fonts it holds, once each
 	align    core.TextAlign
 	step     int32 // a line height in pixels; 0 is each line's fonts'
 	maxLines int
@@ -119,20 +135,29 @@ type spanText struct {
 	attachments int
 }
 
+// acquire returns the font for key, holding one reference to it until
+// Release and sharing it with the text's other runs.
+func (st *spanText) acquire(key fontKey) *font {
+	if f := st.byKey[key]; f != nil {
+		return f
+	}
+	f := st.w.fonts.acquire(key)
+	st.byKey[key] = f
+	st.fonts = append(st.fonts, f)
+	return f
+}
+
 func (w *window) prepareSpans(t *core.AttributedText) core.PreparedText {
-	st := &spanText{w: w, align: t.Style.Align, maxLines: t.MaxLines, attachments: len(t.Attachments)}
+	if w.measureDC == 0 {
+		w.measureDC, _, _ = createCompatibleDC.Call(0)
+	}
+	st := &spanText{w: w, align: t.Style.Align, maxLines: t.MaxLines, attachments: len(t.Attachments),
+		byKey: map[fontKey]*font{}}
 	if t.Style.LineHeight > 0 {
 		st.step = max(w.px(t.Style.LineHeight), 1)
 	}
-	byKey := map[fontKey]*font{}
 	add := func(start, end int, style core.TextStyle, span int, bg core.TextBackground) {
-		key := fontKey{style.Font, style.Decoration}
-		f := byKey[key]
-		if f == nil {
-			f = w.fonts.acquire(key)
-			byKey[key] = f
-			st.fonts = append(st.fonts, f)
-		}
+		f := st.acquire(fontKey{style.Font, style.Decoration})
 		if bg.Color&0xff == 0 {
 			bg = core.TextBackground{}
 		}
@@ -156,10 +181,12 @@ func (w *window) prepareSpans(t *core.AttributedText) core.PreparedText {
 	return st
 }
 
-// split adds t.Text[start:end] as pieces in one style.
+// split adds t.Text[start:end] as pieces in one style, each rune in its
+// own font's face or in a fallback's where that face has no glyph.
 func (st *spanText) split(t *core.AttributedText, start, end int, f *font, color core.Color, extra int32,
 	span int, bg core.TextBackground) {
 	text := t.Text
+	missing := st.w.missingGlyphs(f, text[start:end])
 	for i := start; i < end; {
 		r, size := utf8.DecodeRuneInString(text[i:end])
 		if r == core.AttachmentRune {
@@ -177,10 +204,15 @@ func (st *spanText) split(t *core.AttributedText, start, end int, f *font, color
 		case ' ', '\t':
 			kind = pieceSpace
 		}
+		font := f
+		// A line break draws nothing and a space is in every face.
+		if kind == pieceWord && missing[i-start] {
+			font = st.fallback(f, r)
+		}
 		n := len(st.pieces)
-		if kind == pieceBreak || n == 0 || st.pieces[n-1].kind != kind || st.pieces[n-1].font != f ||
+		if kind == pieceBreak || n == 0 || st.pieces[n-1].kind != kind || st.pieces[n-1].font != font ||
 			st.pieces[n-1].color != color || st.pieces[n-1].extra != extra || st.pieces[n-1].att != nil || i == start {
-			st.pieces = append(st.pieces, piece{kind: kind, font: f, color: color, extra: extra, span: span, bg: bg})
+			st.pieces = append(st.pieces, piece{kind: kind, font: font, color: color, extra: extra, span: span, bg: bg})
 			n++
 		}
 		p := &st.pieces[n-1]
@@ -197,6 +229,229 @@ func (st *spanText) split(t *core.AttributedText, start, end int, f *font, color
 		}
 		i += size
 	}
+}
+
+// fallback returns f, or a font in the first fallback family that has a
+// glyph for r, in f's size, weight and decoration.
+func (st *spanText) fallback(f *font, r rune) *font {
+	family := st.w.fallbackFamily(r)
+	if family == "" {
+		return f
+	}
+	key := f.key
+	key.font.Family = family
+	return st.acquire(key)
+}
+
+// missingGlyphs returns the offsets in text of the runes f has no glyph
+// for. It asks GDI once for the whole string; a rune beyond the Basic
+// Multilingual Plane, such as an emoji, is read from the font's cmap
+// table, which GetGlyphIndicesW does not reach.
+func (w *window) missingGlyphs(f *font, text string) map[int]bool {
+	if !hasNonASCII(text) {
+		return nil
+	}
+	var runes []rune
+	var units []uint16
+	var offsets []int
+	for i := 0; i < len(text); {
+		r, size := utf8.DecodeRuneInString(text[i:])
+		runes = append(runes, r)
+		offsets = append(offsets, i)
+		units = utf16.AppendRune(units, r)
+		i += size
+	}
+	indices := make([]uint16, len(units))
+	old, _, _ := selectObject.Call(w.measureDC, f.handle)
+	getGlyphIndicesW.Call(w.measureDC, uintptr(unsafe.Pointer(&units[0])), uintptr(len(units)),
+		uintptr(unsafe.Pointer(&indices[0])), ggiMarkNonExistingGlyphs)
+	selectObject.Call(w.measureDC, old)
+	missing := map[int]bool{}
+	u := 0
+	for k, r := range runes {
+		ok := indices[u] != 0xffff
+		if r > 0xffff {
+			ok = w.hasGlyph(f, r)
+			u += 2
+		} else {
+			u++
+		}
+		if !ok {
+			missing[offsets[k]] = true
+		}
+	}
+	return missing
+}
+
+// hasNonASCII reports whether text has a byte outside ASCII, which no
+// font this backend picks lacks a glyph for.
+func hasNonASCII(text string) bool {
+	for i := 0; i < len(text); i++ {
+		if text[i] >= utf8.RuneSelf {
+			return true
+		}
+	}
+	return false
+}
+
+// glyphKey asks whether a font has a glyph for a rune.
+type glyphKey struct {
+	font fontKey
+	r    rune
+}
+
+// hasGlyph reports whether f draws r rather than its missing-glyph box.
+// The answers are the same for every text, so it remembers each one.
+func (w *window) hasGlyph(f *font, r rune) bool {
+	key := glyphKey{f.key, r}
+	if ok, found := w.glyphs[key]; found {
+		return ok
+	}
+	ok := w.draws(f, r)
+	if w.glyphs == nil {
+		w.glyphs = map[glyphKey]bool{}
+	}
+	w.glyphs[key] = ok
+	return ok
+}
+
+// draws asks GDI, or for a character above U+FFFF the font's cmap table,
+// whether f has a glyph for r.
+func (w *window) draws(f *font, r rune) bool {
+	if r > 0xffff {
+		return w.cmapHasRune(f, r)
+	}
+	old, _, _ := selectObject.Call(w.measureDC, f.handle)
+	u := uint16(r)
+	var glyph uint16
+	getGlyphIndicesW.Call(w.measureDC, uintptr(unsafe.Pointer(&u)), 1, uintptr(unsafe.Pointer(&glyph)),
+		ggiMarkNonExistingGlyphs)
+	selectObject.Call(w.measureDC, old)
+	return glyph != 0xffff
+}
+
+// fallbackFamily returns the first family of fallbackFonts that has a
+// glyph for r, or "". The families are the same for every text, so it
+// remembers each answer.
+func (w *window) fallbackFamily(r rune) string {
+	if family, ok := w.fallbacks[r]; ok {
+		return family
+	}
+	family := ""
+	for _, name := range fallbackFonts {
+		f := w.fonts.acquire(fontKey{font: core.Font{Family: name, Size: 12}})
+		ok := w.hasGlyph(f, r)
+		w.fonts.release(f)
+		if ok {
+			family = name
+			break
+		}
+	}
+	if w.fallbacks == nil {
+		w.fallbacks = map[rune]string{}
+	}
+	w.fallbacks[r] = family
+	return family
+}
+
+// cmapHasRune reads the font's cmap table to find whether it maps r, which
+// GDI's own character APIs cannot answer above U+FFFF.
+func (w *window) cmapHasRune(f *font, r rune) bool {
+	old, _, _ := selectObject.Call(w.measureDC, f.handle)
+	defer selectObject.Call(w.measureDC, old)
+	n, _, _ := getFontData.Call(w.measureDC, cmapTag, 0, 0, 0)
+	if int32(n) <= 0 {
+		return false
+	}
+	table := make([]byte, int32(n))
+	if read, _, _ := getFontData.Call(w.measureDC, cmapTag, 0, uintptr(unsafe.Pointer(&table[0])),
+		uintptr(len(table))); int32(read) <= 0 {
+		return false
+	}
+	u16 := func(i int) int {
+		if i < 0 || i+2 > len(table) {
+			return 0
+		}
+		return int(table[i])<<8 | int(table[i+1])
+	}
+	u32 := func(i int) int {
+		if i < 0 || i+4 > len(table) {
+			return 0
+		}
+		return int(table[i])<<24 | int(table[i+1])<<16 | int(table[i+2])<<8 | int(table[i+3])
+	}
+	if u16(0) != 0 {
+		return false
+	}
+	// Prefer a full-repertoire subtable, then a BMP one, then a
+	// Unicode-platform one.
+	best, rank := -1, 0
+	for i := 0; i < u16(2); i++ {
+		rec := 4 + i*8
+		if rec+8 > len(table) {
+			break
+		}
+		platform, encoding, off := u16(rec), u16(rec+2), u32(rec+4)
+		if off+2 > len(table) {
+			continue
+		}
+		format := u16(off)
+		next := 0
+		switch {
+		case platform == 3 && encoding == 10 && format == 12:
+			next = 3
+		case platform == 3 && encoding == 1 && format == 4:
+			next = 2
+		case platform == 0 && (format == 4 || format == 12):
+			next = 1
+		}
+		if next > rank {
+			best, rank = off, next
+		}
+	}
+	if best < 0 {
+		return false
+	}
+	c := int(r)
+	switch u16(best) {
+	case 12:
+		for i := 0; i < u32(best+12); i++ {
+			p := best + 16 + i*12
+			if p+12 > len(table) {
+				return false
+			}
+			start, end, glyph := u32(p), u32(p+4), u32(p+8)
+			if c >= start && c <= end {
+				return glyph+c-start != 0
+			}
+		}
+	case 4:
+		if c > 0xffff {
+			return false
+		}
+		segments := u16(best+6) / 2
+		ends := best + 14
+		starts := ends + segments*2 + 2
+		deltas := starts + segments*2
+		ranges := deltas + segments*2
+		for i := 0; i < segments; i++ {
+			end := u16(ends + i*2)
+			if c > end {
+				continue
+			}
+			start := u16(starts + i*2)
+			if c < start {
+				return false
+			}
+			offset := u16(ranges + i*2)
+			if offset == 0 {
+				return uint16(c+int(int16(u16(deltas+i*2)))) != 0
+			}
+			at := ranges + i*2 + offset + (c-start)*2
+			return u16(at) != 0
+		}
+	}
+	return false
 }
 
 // attachmentAt returns the index of t's attachment at byte offset i, or
@@ -261,8 +516,13 @@ type textLine struct {
 }
 
 // wrap breaks the pieces into lines at most limit pixels wide (< 0: no
-// limit), at spaces, or inside words longer than a line.
+// limit), at spaces, or inside words longer than a line. A text limited
+// to one line does not wrap at the width: it is truncated with an
+// ellipsis instead.
 func (st *spanText) wrap(limit int32) []textLine {
+	if st.maxLines == 1 {
+		limit = -1
+	}
 	var lines []textLine
 	var cur textLine
 	var x int32
@@ -371,6 +631,11 @@ func (st *spanText) Layout(size core.Size) core.TextLayout {
 	width := int32(math.Ceil(float64(size.Width) * st.w.scale))
 	lines := st.wrap(width)
 	cut := st.maxLines > 0 && len(lines) > st.maxLines
+	if st.maxLines == 1 && !cut && len(lines) == 1 && lines[0].width > width {
+		// A one-line text does not wrap, so its line may be wider than
+		// the box it is truncated to.
+		cut = true
+	}
 	if cut {
 		lines = lines[:st.maxLines]
 	}

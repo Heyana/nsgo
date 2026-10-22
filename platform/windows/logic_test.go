@@ -4,7 +4,9 @@ package windows
 
 import (
 	"math"
+	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/oneo-me/nsgo/core"
 )
@@ -437,5 +439,144 @@ func TestSpanBackgroundsBoxEachLineWithoutHangingSpaces(t *testing.T) {
 	}
 	if b := l.backgrounds[0]; b.r.Right > ink {
 		t.Errorf("the first line's box ends at %d, past its last word's end %d", b.r.Right, ink)
+	}
+}
+
+// TestPlainTextMeasuresTheLinesItDraws is a table header's case: bold
+// text with a custom line height, wrapped at a narrow width. Measure and
+// Layout must break it into the same lines, or the row reserves less than
+// the text draws.
+func TestPlainTextMeasuresTheLinesItDraws(t *testing.T) {
+	w := testWindow()
+	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 13, Weight: core.FontWeightSemibold},
+		Color: core.RGB(0), LineHeight: 21.7}
+	p := w.Prepare(&core.AttributedText{Text: "Reaches the system through", Style: style})
+	defer p.Release()
+	natural := p.Measure(core.Auto)
+	narrow := core.Points(float64(natural.Width) * 0.55)
+	size := p.Measure(narrow)
+	l := p.Layout(size).(*spanLayout)
+	defer l.Release()
+	step := w.px(style.LineHeight)
+	if len(l.lines) < 2 {
+		t.Fatalf("%v wide text drew %d line(s) at %v, want at least 2", natural.Width, len(l.lines), narrow)
+	}
+	if want := core.Points(float64(len(l.lines)*int(step)) / w.scale); size.Height != want {
+		t.Errorf("measured height %v, want %v for %d lines of %dpx", size.Height, want, len(l.lines), step)
+	}
+	for i := 1; i < len(l.lines); i++ {
+		if l.lines[i].top < l.lines[i-1].bottom {
+			t.Errorf("line %d starts at %d, before the last ends at %d", i, l.lines[i].top, l.lines[i-1].bottom)
+		}
+	}
+}
+
+// TestFallbackFontsDrawMissingGlyphs checks that a rune the text's font
+// lacks is set in the family of fallbackFonts that has it, so it takes
+// that family's width rather than the missing-glyph box's.
+func TestFallbackFontsDrawMissingGlyphs(t *testing.T) {
+	w := testWindow()
+	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 32}, Color: core.RGB(0)}
+	for _, c := range []struct{ text, family string }{
+		{"⌘", "Segoe UI Symbol"},
+		{"✓", "Segoe UI Symbol"},
+		{"😀", "Segoe UI Symbol"},
+		{"中", "Microsoft YaHei UI"},
+	} {
+		if got := w.fallbackFamily([]rune(c.text)[0]); got != c.family {
+			t.Errorf("%q falls back to %q, want %q", c.text, got, c.family)
+		}
+		p := w.Prepare(&core.AttributedText{Text: c.text, Style: style})
+		got := p.Measure(core.Auto).Width
+		p.Release()
+		fallback := style
+		fallback.Font.Family = c.family
+		q := w.Prepare(&core.AttributedText{Text: c.text, Style: fallback})
+		want := q.Measure(core.Auto).Width
+		q.Release()
+		if got != want {
+			t.Errorf("%q is %v wide, the %s glyph is %v", c.text, got, c.family, want)
+		}
+	}
+}
+
+// TestSingleLineTextTruncatesInsteadOfWrapping checks MaxLines 1 keeps
+// the text on one line, ending it with an ellipsis at the box's width.
+func TestSingleLineTextTruncatesInsteadOfWrapping(t *testing.T) {
+	w := testWindow()
+	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 16}, Color: core.RGB(0)}
+	at := &core.AttributedText{Text: "one two three four", Style: style, MaxLines: 1}
+	p := w.Prepare(at)
+	defer p.Release()
+	full := p.Measure(core.Auto)
+	one := w.Prepare(&core.AttributedText{Text: "one", Style: style})
+	oneSize := one.Measure(core.Auto)
+	one.Release()
+	two := w.Prepare(&core.AttributedText{Text: "one two", Style: style})
+	twoSize := two.Measure(core.Auto)
+	two.Release()
+	// Wide enough for "one t", too narrow for "one two": word wrapping
+	// would end the line after "one".
+	narrow := core.Points(float64(twoSize.Width) - 1)
+	size := p.Measure(narrow)
+	if size.Height != full.Height {
+		t.Errorf("height %v at %v, want one line's %v", size.Height, narrow, full.Height)
+	}
+	l := p.Layout(size).(*spanLayout)
+	defer l.Release()
+	if len(l.lines) != 1 || len(l.runs) == 0 || string(utf16.Decode(l.runs[len(l.runs)-1].text)) != "…" {
+		t.Fatalf("%d line(s) %d runs, want one line ending with an ellipsis", len(l.lines), len(l.runs))
+	}
+	var visible []rune
+	for _, r := range l.runs {
+		visible = append(visible, utf16.Decode(r.text)...)
+	}
+	if got := string(visible); !strings.HasPrefix(got, "one t") || oneSize.Width >= narrow {
+		t.Errorf("the line shows %q at %v wide, want it truncated from %q, not wrapped after %q",
+			got, narrow, "one two three four", "one")
+	}
+	last := l.runs[len(l.runs)-1]
+	if last.x+last.ends[len(last.ends)-1] > w.px(size.Width) {
+		t.Errorf("the ellipsis ends past the %v wide box", size.Width)
+	}
+}
+
+// TestIndexAtFindsPlainTextOffsets checks that a press on plain text maps
+// to the UTF-8 offset under it, as a press on spans does.
+func TestIndexAtFindsPlainTextOffsets(t *testing.T) {
+	w := testWindow()
+	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 16}, Color: core.RGB(0)}
+	p := w.Prepare(&core.AttributedText{Text: "ab cd", Style: style})
+	defer p.Release()
+	l := p.Layout(p.Measure(core.Auto)).(*spanLayout)
+	defer l.Release()
+	first := l.runs[0]
+	if got := l.indexAt(first.x+1, first.baseline); got != 0 {
+		t.Errorf("press at the first character = %d, want 0", got)
+	}
+	if got := l.indexAt(first.x+first.ends[0]+1, first.baseline); got != 1 {
+		t.Errorf("press at the second character = %d, want 1", got)
+	}
+	for _, r := range l.runs {
+		if string(utf16.Decode(r.text)) == "cd" {
+			if got := l.indexAt(r.x+1, r.baseline); got != 3 {
+				t.Errorf("press at the second word = %d, want 3", got)
+			}
+			return
+		}
+	}
+	t.Fatal("the second word did not lay out")
+}
+
+// TestLineBreaksAndSpacesKeepTheirFont checks that control characters,
+// which no font has glyphs for, do not send a line break or a tab to a
+// fallback font: only the characters actually drawn need one.
+func TestLineBreaksAndSpacesKeepTheirFont(t *testing.T) {
+	w := testWindow()
+	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 16}, Color: core.RGB(0)}
+	p := w.Prepare(&core.AttributedText{Text: "a\nb\tc", Style: style}).(*spanText)
+	defer p.Release()
+	if len(p.fonts) != 1 {
+		t.Errorf("the text holds %d fonts, want its own one", len(p.fonts))
 	}
 }

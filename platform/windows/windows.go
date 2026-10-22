@@ -168,11 +168,8 @@ const (
 
 	dtCenter      = 0x0001
 	dtRight       = 0x0002
-	dtWordBreak   = 0x0010
 	dtSingleLine  = 0x0020
-	dtCalcRect    = 0x0400
 	dtNoPrefix    = 0x0800
-	dtEditControl = 0x2000
 	dtEndEllipsis = 0x8000
 
 	transparent     = 1
@@ -344,7 +341,9 @@ type window struct {
 	pan                            *pan
 	pinch, rotation, wheelPinching *twoFinger
 
-	measureDC uintptr // the engine thread's
+	measureDC uintptr           // the engine thread's
+	fallbacks map[rune]string   // the engine thread's fallback family per rune
+	glyphs    map[glyphKey]bool // the engine thread's glyph presence per font and rune
 	aa        *smoothing
 }
 
@@ -511,145 +510,11 @@ func (c *fontCache) release(f *font) {
 	}
 }
 
-// preparedText is text with its font, measured on the engine thread.
-type preparedText struct {
-	w        *window
-	text     []uint16
-	font     *font
-	color    core.Color
-	flags    uintptr // DrawTextW's, for measuring and drawing
-	extra    int32   // letter spacing, in pixels
-	step     int32   // line height, in pixels
-	maxLines int
-}
-
-// Prepare implements core.TextEngine on the engine thread.
+// Prepare implements core.TextEngine on the engine thread. Every text
+// goes through the span engine, so plain and styled text share one
+// measure, wrap and draw, whatever their line height or alignment.
 func (w *window) Prepare(t *core.AttributedText) core.PreparedText {
-	if len(t.Spans) > 0 || len(t.Attachments) > 0 {
-		return w.prepareSpans(t)
-	}
-	p := &preparedText{
-		w:        w,
-		text:     utf16.Encode([]rune(t.Text)),
-		font:     w.fonts.acquire(fontKey{t.Style.Font, t.Style.Decoration}),
-		color:    t.Style.Color,
-		flags:    dtNoPrefix,
-		extra:    w.px(t.Style.LetterSpacing),
-		maxLines: t.MaxLines,
-	}
-	p.step = p.font.height
-	if t.Style.LineHeight > 0 {
-		p.step = max(w.px(t.Style.LineHeight), 1)
-	}
-	switch t.Style.Align {
-	case core.TextAlignCenter:
-		p.flags |= dtCenter
-	case core.TextAlignEnd:
-		p.flags |= dtRight
-	}
-	switch {
-	case t.MaxLines == 1:
-		p.flags |= dtSingleLine
-	case t.MaxLines > 1:
-		// Hide the lines past the box and end the last shown with "…".
-		p.flags |= dtWordBreak | dtEditControl
-	default:
-		p.flags |= dtWordBreak
-	}
-	return p
-}
-
-// lines returns the width in pixels of the text wrapped at maxWidth and
-// its number of lines, at most maxLines.
-func (p *preparedText) lines(maxWidth core.Points) (int32, int32) {
-	if len(p.text) == 0 {
-		return 0, 1
-	}
-	if p.w.measureDC == 0 {
-		p.w.measureDC, _, _ = createCompatibleDC.Call(0)
-	}
-	dc := p.w.measureDC
-	old, _, _ := selectObject.Call(dc, p.font.handle)
-	setTextCharacterExtra.Call(dc, uintptr(p.extra))
-	r := rect{Right: 1 << 24}
-	if !maxWidth.IsAuto() {
-		r.Right = int32(float64(maxWidth) * p.w.scale)
-	}
-	limit := r.Right
-	drawTextW.Call(dc, uintptr(unsafe.Pointer(&p.text[0])), uintptr(len(p.text)),
-		uintptr(unsafe.Pointer(&r)), p.flags|dtCalcRect)
-	setTextCharacterExtra.Call(dc, 0)
-	selectObject.Call(dc, old)
-	n := max((r.Bottom-r.Top+p.font.height/2)/p.font.height, 1)
-	if p.maxLines > 0 {
-		n = min(n, int32(p.maxLines))
-	}
-	return min(r.Right-r.Left, limit), n
-}
-
-func (p *preparedText) Measure(maxWidth core.Points) core.Size {
-	width, n := p.lines(maxWidth)
-	return core.Size{
-		Width:  core.Points(float64(width) / p.w.scale),
-		Height: core.Points(float64(n*p.step) / p.w.scale),
-	}
-}
-
-func (p *preparedText) Layout(size core.Size) core.TextLayout {
-	p.w.fonts.retain(p.font)
-	width := int32(math.Ceil(float64(size.Width) * p.w.scale))
-	height := int32(math.Ceil(float64(size.Height) * p.w.scale))
-	// DrawTextW spaces lines by the font's height: a custom line height
-	// only centers the first line in its own.
-	n := max((height+p.step/2)/p.step, 1)
-	if p.maxLines > 0 {
-		n = min(n, int32(p.maxLines))
-	}
-	top := (p.step - p.font.height) / 2
-	flags := p.flags
-	if p.maxLines > 0 {
-		flags |= dtEndEllipsis
-	}
-	return &textLayout{
-		fonts: &p.w.fonts,
-		text:  p.text,
-		font:  p.font,
-		color: p.color,
-		flags: flags,
-		extra: p.extra,
-		box:   rect{0, top, width, top + n*p.font.height},
-	}
-}
-
-func (p *preparedText) Release() { p.w.fonts.release(p.font) }
-
-// textLayout is what painting needs to draw text without measuring it.
-type textLayout struct {
-	fonts *fontCache
-	text  []uint16
-	font  *font
-	color core.Color
-	flags uintptr
-	extra int32
-	box   rect // relative to the content's origin, in pixels
-}
-
-// Release implements core.TextLayout on the main thread.
-func (t *textLayout) Release() { t.fonts.release(t.font) }
-
-func (t *textLayout) draw(p *painter, x, y int32) {
-	if len(t.text) == 0 || t.color&0xff == 0 {
-		return
-	}
-	dc := p.dc
-	r := rect{x + t.box.Left, y + t.box.Top, x + t.box.Right, y + t.box.Bottom}
-	old, _, _ := selectObject.Call(dc, t.font.handle)
-	setTextColor.Call(dc, colorRef(t.color))
-	setTextCharacterExtra.Call(dc, uintptr(t.extra))
-	drawTextW.Call(dc, uintptr(unsafe.Pointer(&t.text[0])), uintptr(len(t.text)),
-		uintptr(unsafe.Pointer(&r)), t.flags)
-	setTextCharacterExtra.Call(dc, 0)
-	selectObject.Call(dc, old)
+	return w.prepareSpans(t)
 }
 
 // Mount implements engine.Platform.

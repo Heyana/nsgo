@@ -46,11 +46,13 @@ func (n *node) Measure(known layout.Size[layout.Opt], available layout.Size[layo
 	var m Size
 	switch {
 	case n.text != nil:
+		// available is the content box: a known width is the border box,
+		// so measuring at it would ignore the text's own padding.
 		width := Auto
-		if known.Width.Valid {
-			width = Points(known.Width.Value)
-		} else if available.Width.Kind == layout.SpaceDefinite {
+		if available.Width.Kind == layout.SpaceDefinite {
 			width = Points(available.Width.Value)
+		} else if known.Width.Valid {
+			width = Points(known.Width.Value)
 		}
 		if !width.IsAuto() {
 			width = max(width, 0)

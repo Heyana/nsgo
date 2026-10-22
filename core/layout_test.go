@@ -127,3 +127,21 @@ func TestGridTracksValid(t *testing.T) {
 		t.Error(`"1 fr banana" is valid`)
 	}
 }
+
+// TestGridMeasuresTextAtItsContentWidth is a table cell's case: a padded
+// text in an auto-sized grid track. The track's width is its border box;
+// measuring the text at that width lets it fit one line, while drawing it
+// in the content box wraps it to two, overflowing the row.
+func TestGridMeasuresTextAtItsContentWidth(t *testing.T) {
+	h := newHost(t, Size{200, 100}, func(cx *Scope) Node {
+		return View{Style: Style{Display: DisplayGrid, GridTemplateColumns: "1fr 100px"}, Children: []Node{
+			Text{Content: "aaaa bbbb", Style: Style{Padding: All(10)}, TestID: "cell"},
+			View{Style: Style{GridColumn: GridLines{Start: GridLine(2)}, Height: Pt(10)}},
+		}}
+	})
+	h.commit()
+	// Two 40.8 pt lines of the approximate 17 pt font, in 20 pt of padding.
+	if got := h.find("cell").frame.Size.Height; got != 61 {
+		t.Errorf("cell height = %v, want 61: the text wraps to two lines at its content width", got)
+	}
+}

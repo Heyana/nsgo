@@ -471,3 +471,101 @@ func TestTextDecorationsBackgroundsAndAttachments(t *testing.T) {
 			att.bottom, bg.top, bg.bottom)
 	}
 }
+
+// TestFallbackGlyphsPaintAsTheirFallback draws a command symbol, a check
+// mark and an emoji in the default font and again in the fallback family
+// that has them, and checks the two renderings' ink has the same box: a
+// glyph the font lacks would be GDI's missing-glyph box instead.
+func TestFallbackGlyphsPaintAsTheirFallback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-glyphs"
+	glyphs := []struct{ text, family string }{
+		{"⌘", "Segoe UI Symbol"},
+		{"✓", "Segoe UI Symbol"},
+		{"😀", "Segoe UI Symbol"},
+	}
+	var rows []core.Node
+	for _, g := range glyphs {
+		for _, family := range []string{"", g.family} {
+			style := core.Style{FontSize: 40, FontFamily: family, Color: core.RGB(0)}
+			rows = append(rows, core.View{Style: core.Style{Height: core.Pt(60), AlignItems: core.AlignStart},
+				Children: []core.Node{core.Text{Content: g.text, Style: style}}})
+		}
+	}
+	app := func(*core.Scope) core.Node {
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(400), Background: core.RGB(0xffffff),
+			Padding: core.All(10)}, Children: rows}
+	}
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(app, Options{Title: title, Width: 320, Height: 400})
+	}()
+	hwnd := waitForWindow(t, title, done)
+	if hwnd == 0 {
+		return
+	}
+	t.Cleanup(func() {
+		postMessageW.Call(hwnd, wmClose, 0, 0)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("the window did not close")
+		}
+	})
+	scale := 1.0
+	if dpi, _, _ := getDpiForSystem.Call(); dpi != 0 {
+		scale = float64(dpi) / 96
+	}
+	px := func(p float64) int { return int(p * scale) }
+	dark := func(pix []byte, width, x, y int) bool {
+		at := (y*width + x) * 4
+		return pix[at] < 0x80 && pix[at+1] < 0x80 && pix[at+2] < 0x80
+	}
+	// ink returns the box of the dark pixels in a band, or a zero box.
+	ink := func(pix []byte, width, top, bottom int) (left, right, y0, y1 int) {
+		left, right, y0, y1 = 1<<30, -1, 1<<30, -1
+		for y := top; y < bottom && (y+1)*width*4 <= len(pix); y++ {
+			for x := 0; x < width; x++ {
+				if dark(pix, width, x, y) {
+					left, right = min(left, x), max(right, x)
+					y0, y1 = min(y0, y), max(y1, y)
+				}
+			}
+		}
+		if right < 0 {
+			return 0, 0, 0, 0
+		}
+		return
+	}
+	var pix []byte
+	var width int32
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var ok bool
+		if pix, width, _, ok = clientPixels(hwnd); ok {
+			if l, r, top, bottom := ink(pix, int(width), px(10), px(70)); r > l && bottom > top {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Skip("the window painted no text")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for i, g := range glyphs {
+		l1, r1, t1, b1 := ink(pix, int(width), px(10+float64(i*2)*60), px(10+float64(i*2+1)*60))
+		l2, r2, t2, b2 := ink(pix, int(width), px(10+float64(i*2+1)*60), px(10+float64(i*2+2)*60))
+		if r1 <= l1 || r2 <= l2 {
+			t.Errorf("%q drew nothing in the default or the %s font", g.text, g.family)
+			continue
+		}
+		if r1-l1 != r2-l2 || b1-t1 != b2-t2 || l1 != l2 {
+			t.Errorf("%q's default glyph is %d×%d at x=%d, but %s's is %d×%d at x=%d",
+				g.text, r1-l1, b1-t1, l1, g.family, r2-l2, b2-t2, l2)
+		}
+	}
+}
