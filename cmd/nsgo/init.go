@@ -59,7 +59,7 @@ window:
   height: 640
 
 dev:
-  # native: this machine's backend; web: the browser; ios_simulator.
+  # native: this machine's backend; web: the browser; ios_simulator; android: a connected device.
   target: native
   # false, the default, runs once and exits with the app; true rebuilds on save.
   hot_reload: false
@@ -68,7 +68,7 @@ build:
   output: dist
   # open the output directory after building; set false to keep it closed.
   open: true
-  targets: [macos_arm64, windows_x64, ios_simulator, web]
+  targets: [macos_arm64, windows_x64, ios_simulator, android_arm64, web]
 `))
 
 var initMod = template.Must(template.New("mod").Parse(`module {{.Module}}

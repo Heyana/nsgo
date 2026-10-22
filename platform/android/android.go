@@ -2,7 +2,8 @@
 
 // Package android is NSGo's Android backend. The app is a plain Go
 // executable, built with CGO_ENABLED=0, that the prebuilt Java runtime in
-// java/ starts as a child process. The two talk over the process's pipes:
+// java/ starts as a child process; nsgo packages it as libnsgo.so in an
+// APK. The two talk over the process's pipes:
 // one message per commit, per event and per step of text. Java keeps the
 // text the engine prepares, measures it and lays it out with StaticLayout,
 // and mounts one Android view per node; measuring is the only round trip.

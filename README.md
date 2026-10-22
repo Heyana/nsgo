@@ -12,7 +12,7 @@ NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the
 
 ## Status
 
-NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, images, canvas, Markdown and HTML text views, overlays, dialogs, navigation, unstyled base components and themed `ui` components, running on macOS, iOS, Windows, Linux and the web; Android is in progress. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
+NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, images, canvas, Markdown and HTML text views, overlays, dialogs, navigation, unstyled base components and themed `ui` components, running on macOS, iOS, Windows, Linux, the web and Android devices. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
 
 ## Goals
 
@@ -65,12 +65,12 @@ id: dev.oneo.nsgo.hello
 version: 0.1.0
 window: { width: 420, height: 560 }
 dev:
-  target: native        # native, web or ios_simulator
+  target: native        # native, web, ios_simulator or android
   hot_reload: false     # run once and exit with the app; true rebuilds and restarts on save
 build:
   output: dist          # packages go to dist/<name>-<version>-<target>
   open: true            # open the output directory after building
-  targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, web]
+  targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, android_arm64, web]
 ```
 
 Add the tool to your module once; `go tool nsgo` then runs it without installing:
@@ -85,7 +85,7 @@ Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `
 
 ## Development
 
-Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed to build any target. On Windows, Go 1.25 or later runs the native app and builds the Windows and web packages. On Linux, Go runs the native app once GTK 4.14 or newer, Pango and Cairo are installed.
+Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed to build any target, Android's APK included. Android device development additionally needs `adb` from the Android SDK's platform-tools. On Windows, Go 1.25 or later runs the native app and builds the Windows and web packages. On Linux, Go runs the native app once GTK 4.14 or newer, Pango and Cairo are installed.
 
 Run the example from the repository root:
 
@@ -93,6 +93,7 @@ Run the example from the repository root:
 go tool nsgo dev examples/hello                     # nsgo.yaml's dev target, exiting with the app
 go tool nsgo dev -target web examples/hello         # in the browser, serving until interrupted
 go tool nsgo dev -target ios_simulator examples/hello
+go tool nsgo dev -target android examples/hello     # on the connected device, over adb
 go tool nsgo build examples/hello                   # release packages in examples/hello/dist
 go test ./...
 ```

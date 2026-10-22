@@ -102,7 +102,7 @@ type devFlags struct {
 
 func bindDevFlags(fs *flag.FlagSet) *devFlags {
 	f := &devFlags{overrides: bindOverrides(fs)}
-	f.target = stringFlag(fs, "target", "`target` to use: native, web or ios_simulator (default: nsgo.yaml's dev.target)")
+	f.target = stringFlag(fs, "target", "`target` to use: native, web, ios_simulator or android (default: nsgo.yaml's dev.target)")
 	f.hotReload = boolFlag(fs, "hot-reload", "rebuild and restart on changes (default: nsgo.yaml's dev.hot_reload)")
 	fs.IntVar(&f.port, "port", 8080, "the web target's port")
 	fs.BoolVar(&f.open, "open", true, "open the web target in the browser")

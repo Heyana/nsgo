@@ -1,0 +1,32 @@
+#!/bin/sh
+# Rebuilds classes.dex from the Java runtime in ../java after changing it.
+#
+# This is the one artifact NSGo cannot build with Go, so it is committed.
+# It needs a JDK 17+ and a recent d8: the SDK's cmdline-tools, or
+# build-tools 36+. Set ANDROID_HOME to the SDK that holds them.
+set -eu
+
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+sdk=${ANDROID_HOME:-$HOME/Android}
+jar=$sdk/platforms/android-34/android.jar
+d8=$sdk/cmdline-tools/latest/bin/d8
+if [ ! -x "$d8" ]; then
+	d8=$(ls "$sdk"/build-tools/*/d8 2>/dev/null | sort | tail -1)
+fi
+if ! command -v javac >/dev/null || [ -z "$d8" ] || [ ! -f "$jar" ]; then
+	echo "set PATH to a JDK 17+ and ANDROID_HOME to an SDK with platform-34 and a recent d8" >&2
+	exit 1
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir "$tmp/classes"
+
+# The runtime uses lambdas, so it compiles against the JDK's own java.*
+# classes; d8 then reads the result with android.jar's stubs.
+javac -nowarn -Xlint:-options --release 17 -classpath "$jar" \
+	-d "$tmp/classes" "$dir"/../java/dev/oneo/nsgo/*.java
+"$d8" --lib "$jar" --min-api 28 --output "$tmp" \
+	$(find "$tmp/classes" -name '*.class')
+cp "$tmp/classes.dex" "$dir/classes.dex"
+echo "wrote $dir/classes.dex"

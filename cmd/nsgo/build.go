@@ -105,7 +105,8 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 		}
 		return copyAssets(p, dir)
 	case "android_arm64":
-		return fmt.Errorf("APK packaging is not available yet")
+		_, err := buildAndroidAPK(ctx, p, dir)
+		return err
 	}
 	return fmt.Errorf("unknown target; use one of %s", strings.Join(targets, ", "))
 }

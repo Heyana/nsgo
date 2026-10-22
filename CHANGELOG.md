@@ -13,11 +13,11 @@
 - Add `core.FontMonospace` for the platform's fixed-pitch font.
 - Add environment signals, keyboard shortcuts, clipboard and screen-reader announcements.
 - Add key-value storage with change signals, and each app's data and cache directories.
-- Add native backends for macOS, iOS, Windows, Linux and the web.
+- Add native backends for macOS, iOS, Windows, Linux, Android and the web.
 - Add `nsgotest` for headless app tests.
 - Add the `nsgo` tool with `init`, `dev` and `build`, configured by `nsgo.yaml`.
 - Add `nsgo dev` and `nsgo build` flags that override `nsgo.yaml`'s values.
-- Add `nsgo dev`'s native target on Windows and Linux.
+- Add `nsgo dev`'s native target on Windows and Linux and its Android target on connected devices.
 - Add `nsgo build` opening its output directory, unless `build.open` is false.
 - Add `dev.hot_reload` to rebuild on save, since `nsgo dev` now runs the app once and exits with it.
 - Add a layered app icon.

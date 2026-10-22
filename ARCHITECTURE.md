@@ -34,6 +34,7 @@ Packages mirror NSH's crates:
 | `platform/internal/imageload` | Platforms' image loaders | Fetching and caching image bytes once, in Go, for the backends that decode images themselves |
 | `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags; the tool sets name and window size |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `nsgo dev` and `nsgo build`, driven by an app's `nsgo.yaml` |
+| `cmd/nsgo/apk` | `nsh-cli` (`android.rs`) | Android packaging: binary XML, ZIP and v2 signature in Go |
 | `examples/hello` | `examples/counter` | A todo list: text, input, button, scroll view and keyed list, with a headless test |
 | `examples/gallery` | `examples/gallery-rs` | A sidebar of sections showing each element, base component, gesture and desktop service, with headless tests |
 
@@ -48,9 +49,11 @@ Every target builds on macOS with Go, and iOS also with Xcode. No backend contai
 | Web | `platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
 | Windows | `platform/windows` | `syscall`: a Win32 window drawn with GDI, and GDI+ for antialiased edges, into a 32-bit buffer; native EDIT inputs | Runs; native tests check its window, input and pixels |
 | Linux | `platform/linux` | GTK 4, Pango and Cairo loaded with purego: a GtkDrawingArea drawn with Cairo, Pango text, native GtkEntry inputs | Runs; native tests check its window, input and pixels |
-| Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Go side builds; the Java runtime has never been compiled; `classes.dex` and APK packaging pending |
+| Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Runs on arm64 devices; `nsgo` builds, signs and installs the APK with Go alone |
 
 Android runs the app as a second process because Go builds Android shared libraries only with cgo and the NDK. Without cgo, Go builds Android executables for arm64 only, so 32-bit devices and x86_64 emulators are out of reach. iOS forbids child processes, so it links in-process with Xcode instead.
+
+Neither an NDK nor the Android SDK is needed: `platform/android/runtime` holds the Java runtime's prebuilt `classes.dex` (its `build.sh` rebuilds it), and `cmd/nsgo/apk` writes the binary manifest, the ZIP and the v2 signature in Go. `nsgo build -target android_arm64` writes an APK signed with the project's debug key. `nsgo dev -target android` installs it on the connected device, starts it and streams its log, so device development needs `adb` from the SDK's platform-tools.
 
 The Linux backend loads GTK 4 at run time, so building its package needs only Go, while running it needs GTK 4.14 or newer, Pango and Cairo installed as any GTK app does. The application menu is a GTK menu bar above the surface, but the backend draws no window controls of its own, so a hidden title bar reports the app's bar height only.
 
@@ -76,6 +79,7 @@ The Linux backend loads GTK 4 at run time, so building its package needs only Go
 - `nsgo build` is a release build: `-s -w`, `-trimpath`, no VCS stamp. `nsgo dev` keeps symbols.
 - `nsgo build` shows the output directory when it finishes, unless `nsgo.yaml` sets `build.open` to false.
 - `nsgo dev` runs the app once and exits when the app does, unless `nsgo.yaml` sets `dev.hot_reload` to true; the web target serves until interrupted.
+- `nsgo dev`'s Android target installs each build over `adb`, streams the app's log here, and stops the app when `nsgo dev` ends.
 - With hot reload, `nsgo dev` watches the directories `go list -deps` reports, NSGo's own included, and keeps the last good build running when a build fails.
 - With hot reload, the web dev server reloads open pages over server-sent events after each build.
 - A command's flags replace the `nsgo.yaml` values they name: `dev.target` and `dev.hot_reload` for `nsgo dev`; `build.targets`, `build.output` and `build.open` for `nsgo build`; `name`, `id`, `version` and `window` for both.
@@ -97,7 +101,7 @@ Record a design question here, and confirm the answer with the user before choos
 
 ## Verification
 
-`core` and `engine` have headless Go tests for the graph, layout, regions, commits and the mailbox; apps test themselves with `nsgotest`, as `examples/hello` does. The Windows and Linux backends' tests open a real window and check clicks, typing, submit and painted pixels (`go test ./platform/windows`, `go test ./platform/linux`). Backends need a run on their target: screenshots of the window, simulator or headless browser, and input where it can be simulated.
+`core` and `engine` have headless Go tests for the graph, layout, regions, commits and the mailbox; apps test themselves with `nsgotest`, as `examples/hello` does. The Windows and Linux backends' tests open a real window and check clicks, typing, submit and painted pixels (`go test ./platform/windows`, `go test ./platform/linux`). Backends need a run on their target: screenshots of the window, simulator, device or headless browser, and input where it can be simulated. `go test ./cmd/nsgo/apk` checks the APK's archive and, when the SDK's `apksigner` is installed, its signature.
 
 ## Subjects
 

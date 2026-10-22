@@ -25,6 +25,18 @@ func TestNativeSessionFollowsTheHost(t *testing.T) {
 	}
 }
 
+func TestAndroidSessionInstallsOverADB(t *testing.T) {
+	p := &project{}
+	p.Dev.Target = "android"
+	s, err := sessionFor(p, devOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.build == nil || s.start == nil {
+		t.Fatal("the Android session is missing a step")
+	}
+}
+
 func TestOpenCommandShowsURLs(t *testing.T) {
 	name, args := openCommand("https://nsh.dev")
 	if got := append([]string{name}, args...); len(got) == 0 || got[len(got)-1] != "https://nsh.dev" {

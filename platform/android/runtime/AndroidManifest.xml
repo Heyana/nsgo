@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The manifest of a standalone NSGo app, for packaging to use. Packaging
-  sets the package, version and label of each app. The runtime starts the
-  app's Go executable from the native library directory, so native
-  libraries must be extracted; NsgoActivity handles the configuration
-  changes below itself instead of restarting the app.
+  The manifest of a standalone NSGo app. nsgo build sets the package,
+  version and label of each app and encodes the result into the APK's
+  binary XML. The runtime starts the app's Go executable from the native
+  library directory, so native libraries must be extracted; NsgoActivity
+  handles the configuration changes below itself instead of restarting
+  the app.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="dev.oneo.nsgo.app">
+    package="dev.oneo.nsgo.app"
+    android:versionCode="1"
+    android:versionName="0.1.0">
 
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
 
@@ -17,6 +20,7 @@
 
     <application
         android:label="NSGo"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
         android:extractNativeLibs="true"
         android:enableOnBackInvokedCallback="true">
         <activity

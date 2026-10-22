@@ -67,7 +67,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   nsgo init  [-name N] [-module M] [dir]
-  nsgo dev   [-target native|web|ios_simulator] [-hot-reload] [-port N] [-open=false] [dir]
+  nsgo dev   [-target native|web|ios_simulator|android] [-hot-reload] [-port N] [-open=false] [dir]
   nsgo build [-target macos_arm64,windows_x64,linux_x64,ios,web,...] [-output DIR] [-open=false] [dir]
 
 dev and build take -name, -id, -version, -width and -height, which replace

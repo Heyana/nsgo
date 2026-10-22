@@ -131,8 +131,10 @@ func sessionFor(p *project, opts devOptions) (session, error) {
 		return webSession(opts), nil
 	case "ios_simulator":
 		return iosSession(), nil
+	case "android":
+		return androidSession(), nil
 	default:
-		return session{}, fmt.Errorf("unknown dev target %q; use native, web or ios_simulator", p.Dev.Target)
+		return session{}, fmt.Errorf("unknown dev target %q; use native, web, ios_simulator or android", p.Dev.Target)
 	}
 }
 
