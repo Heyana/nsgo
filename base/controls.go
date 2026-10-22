@@ -16,9 +16,12 @@ type Checkbox struct {
 	OnChange func(checked bool)
 
 	// Style is the checkbox's; its Checked, Indeterminate and Disabled
-	// state styles apply in those states.
-	Style          core.Style
-	IndicatorStyle core.Style
+	// state styles apply in those states. Each StyleFunc's result merges
+	// over its style, again when what it reads changes.
+	Style              core.Style
+	StyleFunc          func() core.Style
+	IndicatorStyle     core.Style
+	IndicatorStyleFunc func() core.Style
 	// Indicator is the mark inside the indicator, which the app shows by
 	// the value it owns.
 	Indicator core.Node
@@ -35,6 +38,7 @@ func (c Checkbox) Render(*core.Scope) core.Node {
 	shows := func() bool { return checked() && !mixed() }
 	return core.View{
 		Style:         c.Style,
+		StyleFunc:     c.StyleFunc,
 		Role:          orRole(c.Role, core.RoleCheckbox),
 		Label:         c.Label,
 		TestID:        c.TestID,
@@ -48,6 +52,7 @@ func (c Checkbox) Render(*core.Scope) core.Node {
 		},
 		Children: append([]core.Node{core.View{
 			Style:         c.IndicatorStyle,
+			StyleFunc:     c.IndicatorStyleFunc,
 			Checked:       shows,
 			Indeterminate: mixed,
 			Disabled:      c.Disabled,
@@ -64,33 +69,38 @@ type Switch struct {
 	Disabled func() bool
 	OnChange func(checked bool)
 
-	Style      core.Style
-	TrackStyle core.Style
-	ThumbStyle core.Style
-	Children   []core.Node
-	Label      string
-	TestID     string
+	// Each StyleFunc's result merges over its style.
+	Style          core.Style
+	StyleFunc      func() core.Style
+	TrackStyle     core.Style
+	TrackStyleFunc func() core.Style
+	ThumbStyle     core.Style
+	ThumbStyleFunc func() core.Style
+	Children       []core.Node
+	Label          string
+	TestID         string
 }
 
 // Render implements core.Node.
 func (s Switch) Render(*core.Scope) core.Node {
 	checked := orFalse(s.Checked)
-	part := func(style core.Style, children ...core.Node) core.View {
-		return core.View{Style: style, Checked: checked, Disabled: s.Disabled, Children: children}
+	part := func(style core.Style, fn func() core.Style, children ...core.Node) core.View {
+		return core.View{Style: style, StyleFunc: fn, Checked: checked, Disabled: s.Disabled, Children: children}
 	}
 	return core.View{
-		Style:    s.Style,
-		Role:     core.RoleSwitch,
-		Label:    s.Label,
-		TestID:   s.TestID,
-		Checked:  checked,
-		Disabled: s.Disabled,
+		Style:     s.Style,
+		StyleFunc: s.StyleFunc,
+		Role:      core.RoleSwitch,
+		Label:     s.Label,
+		TestID:    s.TestID,
+		Checked:   checked,
+		Disabled:  s.Disabled,
 		OnPress: func() {
 			if s.OnChange != nil {
 				s.OnChange(!checked())
 			}
 		},
-		Children: append([]core.Node{part(s.TrackStyle, part(s.ThumbStyle))}, s.Children...),
+		Children: append([]core.Node{part(s.TrackStyle, s.TrackStyleFunc, part(s.ThumbStyle, s.ThumbStyleFunc))}, s.Children...),
 	}
 }
 
@@ -102,22 +112,24 @@ type Radio struct {
 	Disabled func() bool
 	OnChange func(checked bool)
 
-	Style    core.Style
-	Children []core.Node
-	Label    string
-	TestID   string
+	Style     core.Style
+	StyleFunc func() core.Style
+	Children  []core.Node
+	Label     string
+	TestID    string
 }
 
 // Render implements core.Node.
 func (r Radio) Render(*core.Scope) core.Node {
 	checked := orFalse(r.Checked)
 	return core.View{
-		Style:    r.Style,
-		Role:     core.RoleRadio,
-		Label:    r.Label,
-		TestID:   r.TestID,
-		Checked:  checked,
-		Disabled: r.Disabled,
+		Style:     r.Style,
+		StyleFunc: r.StyleFunc,
+		Role:      core.RoleRadio,
+		Label:     r.Label,
+		TestID:    r.TestID,
+		Checked:   checked,
+		Disabled:  r.Disabled,
 		OnPress: func() {
 			if r.OnChange != nil && !checked() {
 				r.OnChange(true)
@@ -129,15 +141,16 @@ func (r Radio) Render(*core.Scope) core.Node {
 
 // RadioGroup groups radios for assistive technology.
 type RadioGroup struct {
-	Style    core.Style
-	Children []core.Node
-	Label    string
-	TestID   string
+	Style     core.Style
+	StyleFunc func() core.Style
+	Children  []core.Node
+	Label     string
+	TestID    string
 }
 
 // Render implements core.Node.
 func (g RadioGroup) Render(*core.Scope) core.Node {
-	return core.View{Style: g.Style, Role: core.RoleRadioGroup, Label: g.Label, TestID: g.TestID, Children: g.Children}
+	return core.View{Style: g.Style, StyleFunc: g.StyleFunc, Role: core.RoleRadioGroup, Label: g.Label, TestID: g.TestID, Children: g.Children}
 }
 
 // Tab is one tab of a Tabs list, with no look of its own. OnPress
@@ -148,37 +161,40 @@ type Tab struct {
 	OnPress  func()
 
 	// Style's Selected state style applies while the tab is selected.
-	Style    core.Style
-	Children []core.Node
-	Label    string
-	TestID   string
+	Style     core.Style
+	StyleFunc func() core.Style
+	Children  []core.Node
+	Label     string
+	TestID    string
 }
 
 // Render implements core.Node.
 func (t Tab) Render(*core.Scope) core.Node {
 	return core.View{
-		Style:    t.Style,
-		Role:     core.RoleTab,
-		Label:    t.Label,
-		TestID:   t.TestID,
-		Selected: orFalse(t.Selected),
-		Disabled: t.Disabled,
-		OnPress:  orNop(t.OnPress),
-		Children: t.Children,
+		Style:     t.Style,
+		StyleFunc: t.StyleFunc,
+		Role:      core.RoleTab,
+		Label:     t.Label,
+		TestID:    t.TestID,
+		Selected:  orFalse(t.Selected),
+		Disabled:  t.Disabled,
+		OnPress:   orNop(t.OnPress),
+		Children:  t.Children,
 	}
 }
 
 // Tabs is a list of tabs.
 type Tabs struct {
-	Style    core.Style
-	Children []core.Node
-	Label    string
-	TestID   string
+	Style     core.Style
+	StyleFunc func() core.Style
+	Children  []core.Node
+	Label     string
+	TestID    string
 }
 
 // Render implements core.Node.
 func (t Tabs) Render(*core.Scope) core.Node {
-	return core.View{Style: t.Style, Role: core.RoleTabList, Label: t.Label, TestID: t.TestID, Children: t.Children}
+	return core.View{Style: t.Style, StyleFunc: t.StyleFunc, Role: core.RoleTabList, Label: t.Label, TestID: t.TestID, Children: t.Children}
 }
 
 func orFalse(fn func() bool) func() bool {

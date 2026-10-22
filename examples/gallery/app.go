@@ -33,6 +33,7 @@ func init() {
 		{"Styles", "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
 		{"Controls", "Buttons, checkboxes, radios, switches, tabs and text fields.", controlsPage},
 		{"Popups", "Tooltips, popovers, menus, dialogs, sheets and alerts.", popupsPage},
+		{"Styled", "The ui package: base components with the default theme.", styledPage},
 		{"Lists", "A virtualized list of many rows and a keyed list you edit.", listsPage},
 		{"Images", "Embedded and remote images, placeholders and resize modes.", imagesPage},
 		{"Canvas", "2D drawing recorded on the engine and played by the platform.", canvasPage},

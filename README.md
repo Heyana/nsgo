@@ -12,7 +12,7 @@ NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the
 
 ## Status
 
-NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, images, canvas, overlays, dialogs, navigation and unstyled base components, running on macOS, iOS and the web; Windows builds but is untested, Android is in progress and Linux is planned. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
+NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, images, canvas, overlays, dialogs, navigation, unstyled base components and themed `ui` components, running on macOS, iOS and the web; Windows builds but is untested, Android is in progress and Linux is planned. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
 
 ## Goals
 
@@ -32,17 +32,15 @@ import (
 	"fmt"
 
 	"github.com/oneo-me/nsgo"
-	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/ui"
 )
 
 func Root(cx *core.Scope) core.Node {
 	count := core.NewSignal(cx, 0)
-	return core.View{Style: core.Style{Padding: core.All(24), Gap: 12}, Children: []core.Node{
+	return ui.ThemeView{Style: core.Style{Padding: core.All(24), Gap: 12}, Children: []core.Node{
 		core.Text{ContentFunc: func() string { return fmt.Sprintf("Pressed %d times", count.Get()) }},
-		base.Button{OnPress: func() { count.Update(func(n int) int { return n + 1 }) }, Children: []core.Node{
-			core.Text{Content: "Press me"},
-		}},
+		ui.Button{Label: "Press me", OnPress: func() { count.Update(func(n int) int { return n + 1 }) }},
 	}}
 }
 

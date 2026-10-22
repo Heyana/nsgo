@@ -12,7 +12,7 @@ NSGo 参考 [Native Shell（NSH）](https://nsh.dev) 的设计，NSH 用 Rust �
 
 ## 状态
 
-NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、图片、画布、浮层、对话框、导航和无样式基础组件，可在 macOS、iOS 和 Web 上运行；Windows 可以编译但未测试，Android 正在开发，Linux 尚未开始。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
+NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、图片、画布、浮层、对话框、导航、无样式基础组件和带主题的 `ui` 组件，可在 macOS、iOS 和 Web 上运行；Windows 可以编译但未测试，Android 正在开发，Linux 尚未开始。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
 
 ## 目标
 
@@ -32,17 +32,15 @@ import (
 	"fmt"
 
 	"github.com/oneo-me/nsgo"
-	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/ui"
 )
 
 func Root(cx *core.Scope) core.Node {
 	count := core.NewSignal(cx, 0)
-	return core.View{Style: core.Style{Padding: core.All(24), Gap: 12}, Children: []core.Node{
+	return ui.ThemeView{Style: core.Style{Padding: core.All(24), Gap: 12}, Children: []core.Node{
 		core.Text{ContentFunc: func() string { return fmt.Sprintf("Pressed %d times", count.Get()) }},
-		base.Button{OnPress: func() { count.Update(func(n int) int { return n + 1 }) }, Children: []core.Node{
-			core.Text{Content: "Press me"},
-		}},
+		ui.Button{Label: "Press me", OnPress: func() { count.Update(func(n int) int { return n + 1 }) }},
 	}}
 }
 

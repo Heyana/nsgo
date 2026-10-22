@@ -108,8 +108,8 @@ func TestApplicationMenu(t *testing.T) {
 	app.Find("id:section-Canvas")
 	view := app.Menu[slices.IndexFunc(app.Menu, func(e core.MenuEntry) bool { return e.Label == "View" })]
 	for _, e := range view.Items {
-		if e.Label == "Canvas" && (!e.Checked || e.Shortcut != "mod+8") {
-			t.Fatalf("View › Canvas = %+v, want checked with mod+8", e)
+		if e.Label == "Canvas" && (!e.Checked || e.Shortcut != "mod+9") {
+			t.Fatalf("View › Canvas = %+v, want checked with mod+9", e)
 		}
 	}
 	app.ChooseMenu("View", "Next Section")
@@ -168,4 +168,15 @@ func TestEverySectionBuilds(t *testing.T) {
 	env.Dark = true
 	wide.SetEnvironment(env)
 	wide.Find("id:section-" + sections[len(sections)-1].name)
+}
+
+func TestStyledSection(t *testing.T) {
+	app := startDesktop(t)
+	app.ChooseMenu("View", "Styled")
+	app.Press("text:Dialog")
+	app.Find("text:Discard changes?")
+	app.Press("text:Cancel")
+	if app.Exists("text:Discard changes?") {
+		t.Fatal("Cancel left the dialog open")
+	}
 }

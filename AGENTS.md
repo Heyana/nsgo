@@ -11,6 +11,7 @@ NSGo is a cross-platform native UI engine with a Go backend, ported from the des
 - Never hand-write C. Reach system APIs through purego or `syscall`, and use cgo only where Go itself demands it (linking for iOS).
 - Prebuild what users cannot build with Go and Xcode, such as the Android runtime's `classes.dex`, and commit it with the command that rebuilds it.
 - Keep `core` free of cgo and platform imports.
+- Write configuration files people edit by hand in YAML, never JSON, including ones ported from NSH's JSON files.
 - Mark unimplemented designs as goals or open questions; never document them as existing behavior.
 
 ## Working with the user

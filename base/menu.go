@@ -19,12 +19,14 @@ type Menu struct {
 	Align          core.Align
 	Offset, Margin core.Points
 
-	Style      core.Style // the trigger's
-	PopupStyle core.Style
-	Trigger    core.Node
-	Children   []core.Node
-	Label      string
-	TestID     string
+	Style          core.Style // the trigger's
+	StyleFunc      func() core.Style
+	PopupStyle     core.Style
+	PopupStyleFunc func() core.Style
+	Trigger        core.Node
+	Children       []core.Node
+	Label          string
+	TestID         string
 }
 
 // Render implements core.Node.
@@ -32,20 +34,20 @@ func (m Menu) Render(cx *core.Scope) core.Node {
 	st := newPopup(cx, m.Open, m.DefaultOpen, m.OnOpenChange, m.OnOpen, m.OnClose)
 	anchor := new(core.Ref)
 	return core.Group{
-		core.View{Ref: anchor, Style: m.Style, Label: m.Label, TestID: m.TestID, Role: core.RoleButton,
+		core.View{Ref: anchor, Style: m.Style, StyleFunc: m.StyleFunc, Label: m.Label, TestID: m.TestID, Role: core.RoleButton,
 			OnPress:  func() { st.set(!st.open(), ReasonTriggerPress) },
 			Children: []core.Node{m.Trigger}},
-		menuPopup(st, anchor, m.Placement, m.Align, m.Offset, m.Margin, m.PopupStyle, m.Children, m.OnCancel),
+		menuPopup(st, anchor, m.Placement, m.Align, m.Offset, m.Margin, m.PopupStyle, m.PopupStyleFunc, m.Children, m.OnCancel),
 	}
 }
 
 func menuPopup(st *popup, anchor *core.Ref, place core.Placement, align core.Align, offset, margin core.Points,
-	style core.Style, items []core.Node, onCancel func()) core.Node {
+	style core.Style, styleFunc func() core.Style, items []core.Node, onCancel func()) core.Node {
 	return core.Show{When: st.open, Then: func(cx *core.Scope) core.Node {
 		menuKey.Provide(cx, func(r Reason) { st.set(false, r) })
 		return core.Overlay{
 			Anchor: anchor, Placement: place, Align: align, Offset: offset, Margin: margin,
-			Style: style, Children: items, Role: core.RoleMenu,
+			Style: style, StyleFunc: styleFunc, Children: items, Role: core.RoleMenu,
 			OnPressOutside: func(core.Point) { st.set(false, ReasonPressOutside) },
 			OnCancel: func() {
 				if onCancel != nil {
@@ -69,7 +71,9 @@ type ContextMenu struct {
 
 	Offset, Margin core.Points
 	Style          core.Style // the content's
+	StyleFunc      func() core.Style
 	PopupStyle     core.Style
+	PopupStyleFunc func() core.Style
 	Trigger        core.Node
 	Children       []core.Node
 	TestID         string
@@ -80,7 +84,7 @@ func (m ContextMenu) Render(cx *core.Scope) core.Node {
 	st := newPopup(cx, m.Open, false, m.OnOpenChange, m.OnOpen, m.OnClose)
 	anchor := new(core.Ref)
 	return core.Group{
-		core.View{Ref: anchor, Style: m.Style, TestID: m.TestID,
+		core.View{Ref: anchor, Style: m.Style, StyleFunc: m.StyleFunc, TestID: m.TestID,
 			OnLongPress: func() {
 				if !m.Disabled {
 					st.set(true, ReasonLongPress)
@@ -92,7 +96,8 @@ func (m ContextMenu) Render(cx *core.Scope) core.Node {
 				}
 			},
 			Children: []core.Node{m.Trigger}},
-		menuPopup(st, anchor, core.PlaceDefault, core.AlignStart, m.Offset, m.Margin, m.PopupStyle, m.Children, m.OnCancel),
+		menuPopup(st, anchor, core.PlaceDefault, core.AlignStart, m.Offset, m.Margin, m.PopupStyle, m.PopupStyleFunc, m.Children,
+			m.OnCancel),
 	}
 }
 
@@ -103,6 +108,7 @@ type MenuItem struct {
 	Disabled        func() bool
 	NoCloseOnSelect bool
 	Style           core.Style
+	StyleFunc       func() core.Style
 	Children        []core.Node
 	Label           string
 	TestID          string
@@ -111,7 +117,7 @@ type MenuItem struct {
 // Render implements core.Node.
 func (i MenuItem) Render(cx *core.Scope) core.Node {
 	close := menuKey.Use(cx)
-	return core.View{Style: i.Style, Role: core.RoleMenuItem, Label: i.Label, TestID: i.TestID,
+	return core.View{Style: i.Style, StyleFunc: i.StyleFunc, Role: core.RoleMenuItem, Label: i.Label, TestID: i.TestID,
 		Disabled: i.Disabled, Children: i.Children,
 		OnPress: func() {
 			if i.OnSelect != nil {
@@ -124,21 +130,28 @@ func (i MenuItem) Render(cx *core.Scope) core.Node {
 }
 
 // MenuSeparator separates groups of items.
-type MenuSeparator struct{ Style core.Style }
+type MenuSeparator struct {
+	Style     core.Style
+	StyleFunc func() core.Style
+}
 
 // Render implements core.Node.
-func (s MenuSeparator) Render(*core.Scope) core.Node { return core.View{Style: s.Style} }
+func (s MenuSeparator) Render(*core.Scope) core.Node {
+	return core.View{Style: s.Style, StyleFunc: s.StyleFunc}
+}
 
 // Submenu is an item that opens more items beside it; choosing one of
 // them closes the whole menu.
 type Submenu struct {
-	Disabled   func() bool
-	Style      core.Style // the item's
-	PopupStyle core.Style
-	Trigger    core.Node
-	Children   []core.Node
-	Label      string
-	TestID     string
+	Disabled       func() bool
+	Style          core.Style // the item's
+	StyleFunc      func() core.Style
+	PopupStyle     core.Style
+	PopupStyleFunc func() core.Style
+	Trigger        core.Node
+	Children       []core.Node
+	Label          string
+	TestID         string
 }
 
 // Render implements core.Node.
@@ -147,7 +160,7 @@ func (s Submenu) Render(cx *core.Scope) core.Node {
 	open := core.NewSignal(cx, false)
 	anchor := new(core.Ref)
 	return core.Group{
-		core.View{Ref: anchor, Style: s.Style, Role: core.RoleMenuItem, Label: s.Label, TestID: s.TestID,
+		core.View{Ref: anchor, Style: s.Style, StyleFunc: s.StyleFunc, Role: core.RoleMenuItem, Label: s.Label, TestID: s.TestID,
 			Disabled: s.Disabled,
 			OnPress:  func() { open.Update(func(o bool) bool { return !o }) },
 			OnHoverIn: func() {
@@ -164,7 +177,7 @@ func (s Submenu) Render(cx *core.Scope) core.Node {
 				}
 			})
 			return core.Overlay{Anchor: anchor, Placement: core.PlaceRight, Align: core.AlignStart,
-				Style: s.PopupStyle, Children: s.Children, Role: core.RoleMenu,
+				Style: s.PopupStyle, StyleFunc: s.PopupStyleFunc, Children: s.Children, Role: core.RoleMenu,
 				OnCancel: func() { open.Set(false) }}
 		}},
 	}

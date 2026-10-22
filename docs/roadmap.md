@@ -4,28 +4,12 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 
 ## Order
 
-1. Finish the platforms NSGo already claims, so every target runs.
-2. Make `base` usable without styling from scratch.
-3. Add the services and text features most apps need.
-4. Add media, embedding and native-driven animation.
-5. Complete the tool, then add Linux and the embedding SDKs.
+1. Add the services and text features most apps need.
+2. Add media, embedding and native-driven animation.
+3. Complete the tool, then add Linux and the embedding SDKs.
+4. Finish the platforms NSGo already claims, so every target runs. This is left to community contributions.
 
-## 1. Finish the existing platforms
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| Android runtime | `crates/nsh-platform-android` | The Java runtime compiles; `classes.dex` is committed with the command that rebuilds it |
-| Android packaging | `docs/dev/embedding.md`, `crates/nsh-cli/src/android.rs` | `nsgo build` writes a signed APK with nothing beyond Go and Xcode installed |
-| Windows run | `crates/nsh-platform-windows` | The gallery runs on Windows, with screenshots and input checked |
-| iOS touch | `crates/nsh-platform-ios` | Gestures and text input are checked in the simulator |
-
-## 2. Theme
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| Theme tokens | `crates/nsh-base/src/theme.rs`, `default-theme.json` | Light and dark semantic colors, radii and font size reach every `base` component |
-
-## 3. Services and text
+## 1. Services and text
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -34,7 +18,7 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 | SelectionArea | `crates/nsh-base/src/selection_area.rs`, `crates/nsh-core/src/selection.rs` | Static text can be selected and copied |
 | TextView | `crates/nsh-base/src/text_view` | Markdown renders with code highlighting, links and extensions |
 
-## 4. Media, embedding and animation
+## 2. Media, embedding and animation
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -46,7 +30,7 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 | Native components | `docs/dev/embedding.md` | Apps mount their own native views inside the tree |
 | LayoutAnimation | `docs/dev/animation.md`, `crates/nsh-core/src/animation` | Layout changes and animated values run on the platform without a Go frame per step |
 
-## 5. Tool, Linux and embedding
+## 3. Tool, Linux and embedding
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -55,6 +39,17 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 | Store signing | `docs/dev/embedding.md` | `nsgo build` writes an IPA with a provisioning profile and an APK with a keystore |
 | Linux backend | `docs/dev/linux.md`, `crates/nsh-platform-linux` | GTK 4 through purego runs the gallery |
 | Embedding SDKs | `docs/dev/embedding.md` | iOS, Android and desktop host apps can show an NSGo view |
+
+## 4. Finish the existing platforms
+
+These items wait for community contributions; the items above do not depend on them.
+
+| Item | NSH reference | Done when |
+| --- | --- | --- |
+| Android runtime | `crates/nsh-platform-android` | The Java runtime compiles; `classes.dex` is committed with the command that rebuilds it |
+| Android packaging | `docs/dev/embedding.md`, `crates/nsh-cli/src/android.rs` | `nsgo build` writes a signed APK with nothing beyond Go and Xcode installed |
+| Windows run | `crates/nsh-platform-windows` | The gallery runs on Windows, with screenshots and input checked |
+| iOS touch | `crates/nsh-platform-ios` | Gestures and text input are checked in the simulator |
 
 ## Not ported
 

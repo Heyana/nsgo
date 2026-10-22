@@ -23,6 +23,7 @@ Packages mirror NSH's crates:
 | --- | --- | --- |
 | `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, layout, text, mount items |
 | `base` | `nsh-base` | Unstyled base components: controls, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack |
+| `ui` | `nsh-base`'s `Theme` | The theme as Go values, and `base`'s controls and popups styled with it |
 | `engine` | `nsh-engine` | Engine goroutine: an unbounded mailbox, commits, one batch per commit to the platform |
 | `core/internal/layout` | Taffy | Block, flexbox and grid layout, checked against Taffy's fixtures |
 | `nsgotest` | `nsh-testing` | Headless app tests: approximate text, a manual clock, selectors over a model of the views |
@@ -52,7 +53,8 @@ Android runs the app as a second process because Go builds Android shared librar
 ## Boundaries
 
 - `core` never imports `engine`, `platform` or any cgo package. It stays pure Go and testable headless.
-- `base` depends on `core` only. Styled component libraries are never part of NSGo; apps build their own on `base`.
+- `base` depends on `core` only and has no look: it takes styles, including `StyleFunc` for each part, so apps can style it freely.
+- `ui` styles `base` with a theme. Apps change the theme with `ui.ThemeView`, adjust a component with its `Style`, or build their own components on `base`.
 - Backends call system APIs through purego or `syscall`, never hand-written C.
 - The platform main thread never waits for the engine. The engine never touches main-thread-only UI objects.
 - The reactive graph belongs to the engine goroutine and never locks; other goroutines reach it through `Scope.Post`.
@@ -86,7 +88,6 @@ Android runs the app as a second process because Go builds Android shared librar
 
 Record a design question here, and confirm the answer with the user before choosing it.
 
-- **Theme format.** Read NSH's theme JSON files, or define themes only as Go values?
 - **Markdown.** Write `TextView`'s parser in NSGo, or depend on a Go library such as goldmark?
 - **Windows web view and video.** Reach WebView2 and Media Foundation through COM over `syscall`, or ship WebView2's loader?
 - **Signed packages and capabilities.** Port NSH's package signing and capability sandbox, or drop them because Go apps are native code?

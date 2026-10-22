@@ -6,6 +6,7 @@
 - Add block, flexbox and grid layout matching Taffy, with styles, per-side borders, state styles, transforms and transitions.
 - Add images, rich text with links, canvas, virtualized lists, overlays, modals and navigation stacks.
 - Add unstyled base controls, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
+- Add the `ui` package: base controls and popups styled with a light and dark theme drawn from the icon.
 - Add pan, pinch and rotation gestures.
 - Add custom desktop title bars, window drag regions, window controls and an application menu.
 - Add environment signals, keyboard shortcuts, clipboard and screen-reader announcements.
