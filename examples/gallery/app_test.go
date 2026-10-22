@@ -48,6 +48,17 @@ func TestSidebarSwitchesSections(t *testing.T) {
 	}
 }
 
+// TestContentScrollsWithinTheWindow keeps the section's scroll view
+// inside the window, so a long section scrolls rather than overflows.
+func TestContentScrollsWithinTheWindow(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Layout")
+	content := app.Find("id:content")
+	if content.Frame.Size.Height > 760 || content.Content.Height <= content.Frame.Size.Height {
+		t.Fatalf("content frame %v holds %v, want it within the window and scrolling", content.Frame, content.Content)
+	}
+}
+
 func TestPhoneStack(t *testing.T) {
 	app := nsgotest.Start(t, Root)
 	app.Find("id:index")

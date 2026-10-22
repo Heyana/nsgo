@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/platform/internal/scrollbar"
 )
 
 // view is the main thread's copy of one mounted view.
@@ -160,6 +161,88 @@ func scrollsAt(v *view, p core.Point, out []*view) []*view {
 		}
 	}
 	return out
+}
+
+// barDrag is the pointer dragging a scroll bar: from is where it pressed
+// and origin the scroll view's, in the surface.
+type barDrag struct {
+	v            *view
+	from, origin core.Point
+	drag         scrollbar.Drag
+}
+
+// bar returns a scroll view's scroll bar.
+func (v *view) bar() scrollbar.Bar {
+	return scrollbar.Bar{Horizontal: v.scroll.Horizontal, Frame: v.frame.Size, Content: v.size, Offset: v.offset}
+}
+
+// hoverBars shows the bars of the scroll views under at, the pointer.
+func (w *window) hoverBars(at core.Point) {
+	var under []*view
+	if root := w.view(w.root); root != nil {
+		under = scrollsAt(root, at, nil)
+	}
+	if !slices.Equal(under, w.bars) {
+		w.bars = under
+		gtkWidgetQueueDraw(w.area)
+	}
+}
+
+// showsBar reports whether v's scroll bar shows: while the pointer is
+// over v or drags the bar.
+func (w *window) showsBar(v *view) bool {
+	return !v.scroll.HideIndicator && (w.barDrag != nil && w.barDrag.v == v || slices.Contains(w.bars, v))
+}
+
+// pressBar starts dragging the scroll bar under at, if there is one.
+func (w *window) pressBar(at core.Point) bool {
+	root := w.view(w.root)
+	if root == nil {
+		return false
+	}
+	v, local := barAt(root, at)
+	if v == nil {
+		return false
+	}
+	w.barDrag = &barDrag{v: v, from: at, origin: core.Point{X: at.X - local.X, Y: at.Y - local.Y}, drag: v.bar().Press(local)}
+	w.dragBar(at)
+	return true
+}
+
+// dragBar scrolls the dragged bar's view to follow the pointer at at.
+func (w *window) dragBar(at core.Point) {
+	d := w.barDrag
+	if d.v.deleted {
+		w.barDrag = nil
+		return
+	}
+	d.v.scrolling = nil // the bar takes over
+	if w.scrollTo(d.v, d.drag.Offset(core.Point{X: at.X - d.origin.X, Y: at.Y - d.origin.Y})) {
+		w.placeWidgets()
+	}
+	gtkWidgetQueueDraw(w.area)
+}
+
+// barAt returns the innermost scroll view whose bar is under p, and p in
+// that view; p is in the coordinates of v's parent's content.
+func barAt(v *view, p core.Point) (*view, core.Point) {
+	if v.style.Hidden || v.style.Opacity <= 0 || !v.frame.Contains(p) {
+		return nil, p
+	}
+	local := core.Point{X: p.X - v.frame.Origin.X, Y: p.Y - v.frame.Origin.Y}
+	inner := core.Point{X: local.X + v.offset.X, Y: local.Y + v.offset.Y}
+	for i := len(v.children) - 1; i >= 0; i-- {
+		if c := v.children[i]; !c.style.Hidden && c.frame.Contains(inner) {
+			if hit, at := barAt(c, inner); hit != nil {
+				return hit, at
+			}
+			break
+		}
+	}
+	if v.kind == core.KindScroll && !v.scroll.HideIndicator && v.bar().Contains(local) {
+		return v, local
+	}
+	return nil, p
 }
 
 // press reports a click at p in the surface: on text with links, with

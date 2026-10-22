@@ -102,6 +102,8 @@ Selection follows NSH's: one selection runs across the texts of a selection area
 
 - The platform decides on the main thread when a drag becomes a pan, from the view's `PanActivation`. Until it does, a scroll view around may still take the touch.
 - An active pan takes the touch from presses and scroll views.
+- A drag or wheel turn scrolls the innermost scroll view under it that can move its content that way, so an inner one passes on only at its edge. A touch or trackpad gesture keeps the scroll view it began with. Android still uses its scroll views' own handling.
+- Desktop scroll bars show while the pointer is over their scroll view and can be dragged: AppKit's overlay scrollers on macOS, the browser's on the web, and `platform/internal/scrollbar`'s on Windows and Linux.
 - NSGo has no native animated values yet, so a drag moves a view through a signal and a commit per turn, not on the main thread as NSH's bound values do.
 
 ## Desktop windows

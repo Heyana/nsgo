@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/platform/internal/scrollbar"
 )
 
 // painter draws one frame into a cairo context.
@@ -240,31 +241,15 @@ func (p *painter) ringPath(outer, inner rect) {
 	}
 }
 
-// drawIndicator paints a scroll bar's thumb along v's scrolling edge; x
-// and y are v's origin in the window.
+// drawIndicator paints a scroll bar's thumb along v's scrolling edge
+// while it shows; x and y are v's origin in the window.
 func (p *painter) drawIndicator(v *view, x, y core.Points) {
-	const thickness, inset, minLength = 4.0, 2.0, 24.0
-	if v.size == (core.Size{}) {
+	thumb, ok := v.bar().Thumb()
+	if !ok || !p.w.showsBar(v) {
 		return
 	}
-	frame := rect{x: float64(x), y: float64(y), w: float64(v.frame.Size.Width), h: float64(v.frame.Size.Height)}
-	var thumb rect
-	if v.scroll.Horizontal {
-		if v.size.Width <= 0 || v.size.Width <= v.frame.Size.Width {
-			return
-		}
-		length := math.Max(float64(v.frame.Size.Width)*float64(v.frame.Size.Width)/float64(v.size.Width), minLength)
-		at := float64(v.offset.X) / float64(v.size.Width-v.frame.Size.Width) * (float64(v.frame.Size.Width) - length)
-		thumb = rect{x: frame.x + at, y: frame.y + frame.h - thickness - inset, w: length, h: thickness, r: thickness / 2}
-	} else {
-		if v.size.Height <= 0 || v.size.Height <= v.frame.Size.Height {
-			return
-		}
-		length := math.Max(float64(v.frame.Size.Height)*float64(v.frame.Size.Height)/float64(v.size.Height), minLength)
-		at := float64(v.offset.Y) / float64(v.size.Height-v.frame.Size.Height) * (float64(v.frame.Size.Height) - length)
-		thumb = rect{x: frame.x + frame.w - thickness - inset, y: frame.y + at, w: thickness, h: length, r: thickness / 2}
-	}
-	p.fill(thumb, core.RGBA(0x000000, 0.35))
+	p.fill(rect{x: float64(x + thumb.Origin.X), y: float64(y + thumb.Origin.Y), w: float64(thumb.Size.Width),
+		h: float64(thumb.Size.Height), r: float64(scrollbar.Thickness) / 2}, core.RGBA(0x000000, 0.35))
 }
 
 // rect is a rectangle in the window's points.

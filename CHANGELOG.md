@@ -11,6 +11,7 @@
 - Add unstyled base controls, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
 - Add the `ui` package with themed controls and popups in light and dark.
 - Add pan, pinch and rotation gestures.
+- Add desktop scroll bars that show while the pointer is over their scroll view and can be dragged.
 - Add custom desktop title bars, window drag regions, window controls and an application menu.
 - Add `core.FontMonospace` for the platform's fixed-pitch font.
 - Add environment signals, keyboard shortcuts, clipboard and screen-reader announcements.
@@ -33,4 +34,6 @@
 - Fix Android builds failing because Go's implied `linux` tag included the Linux backend.
 - Fix strikethrough missing on macOS and iOS.
 - Fix Windows' aliased rounded corners, borders and canvas curves.
+- Fix nested scroll views scrolling together on iOS, or not passing on at their edge on macOS: the inner one scrolls until its edge, then the outer one.
+- Fix the gallery's and hello's outer scroll views never scrolling on desktops, because their roots grew past the window.
 - Fix text in a padded grid cell overlapping the row below when its width changes how many lines it wraps, and Windows drawing symbols such as ⌘ as boxes.

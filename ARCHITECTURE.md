@@ -32,6 +32,7 @@ Packages mirror NSH's crates:
 | `platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
 | `platform/internal/apple` | Shared Apple code | CoreFoundation, CALayer styling, images, canvas, `WKWebView` web views and the CoreText text engine through purego |
 | `platform/internal/imageload` | Platforms' image loaders | Fetching and caching image bytes once, in Go, for the backends that decode images themselves |
+| `platform/internal/scrollbar` | Platforms' scroll bars | Thumb geometry, hits and dragging for the backends that paint their own scroll bars |
 | `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags; the tool sets name and window size |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `nsgo dev` and `nsgo build`, driven by an app's `nsgo.yaml` |
 | `cmd/nsgo/apk` | `nsh-cli` (`android.rs`) | Android packaging: binary XML, ZIP and v2 signature in Go |

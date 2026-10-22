@@ -86,6 +86,11 @@ func clickPressedCallback(gesture uintptr, n int32, x, y float64, data uintptr) 
 		w.focusEntry(nil)
 	}
 	w.pressOutside(at)
+	if gtkGestureSingleGetCurrentButton(gesture) == 1 && w.pressBar(at) {
+		w.pressConsumed = true
+		w.panning = nil
+		return
+	}
 	switch gtkGestureSingleGetCurrentButton(gesture) {
 	case 3:
 		w.contextMenu(at)
@@ -115,6 +120,15 @@ func motionCallback(controller uintptr, x, y float64, data uintptr) {
 		return
 	}
 	w.lastPointer = core.Point{X: core.Points(x), Y: core.Points(y)}
+	if w.barDrag == nil {
+		w.hoverBars(w.lastPointer)
+	}
+}
+
+func leaveCallback(controller uintptr, data uintptr) {
+	if w := windowOf(data); w != nil && w.barDrag == nil {
+		w.hoverBars(core.Point{X: -1, Y: -1})
+	}
 }
 
 func dragBeginCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
@@ -127,6 +141,11 @@ func dragBeginCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) 
 
 func dragUpdateCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
 	w := windowOf(data)
+	if w != nil && w.barDrag != nil {
+		d := w.barDrag
+		w.dragBar(core.Point{X: d.from.X + core.Points(offsetX), Y: d.from.Y + core.Points(offsetY)})
+		return
+	}
 	if w == nil || w.panning == nil || w.panning.failed {
 		return
 	}
@@ -161,6 +180,12 @@ func dragUpdateCallback(gesture uintptr, offsetX, offsetY float64, data uintptr)
 
 func dragEndCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
 	w := windowOf(data)
+	if w != nil && w.barDrag != nil {
+		w.barDrag = nil
+		w.hoverBars(w.lastPointer)
+		gtkWidgetQueueDraw(w.area)
+		return
+	}
 	if w == nil || w.panning == nil {
 		return
 	}
@@ -283,6 +308,7 @@ func (w *window) setupInputs() {
 
 	motion := gtkEventControllerMotionNew()
 	gSignalConnect(motion, "motion", cbMotion, w.handle)
+	gSignalConnect(motion, "leave", cbLeave, w.handle)
 	gtkWidgetAddController(w.area, motion)
 
 	drag := gtkGestureDragNew()

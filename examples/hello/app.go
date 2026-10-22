@@ -64,7 +64,7 @@ func Root(cx *core.Scope) core.Node {
 	}
 
 	return core.View{
-		Style: core.Style{FlexGrow: 1, Padding: core.Edges{Top: 56, Right: 24, Bottom: 24, Left: 24}, Gap: 16,
+		Style: core.Style{FlexGrow: 1, FlexShrink: 1, Padding: core.Edges{Top: 56, Right: 24, Bottom: 24, Left: 24}, Gap: 16,
 			Background: core.RGB(0xfcfbf9), Color: ink},
 		Children: []core.Node{
 			core.Text{ContentFunc: greeting, Style: core.Style{FontSize: 24, FontWeight: core.FontWeightSemibold}},

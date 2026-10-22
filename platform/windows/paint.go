@@ -653,25 +653,14 @@ func premultiply(c core.Color) uint32 {
 	return a<<24 | r<<16 | g<<8 | b
 }
 
-// drawIndicator paints a scroll bar's thumb along v's scrolling edge;
-// x and y are v's origin in the window.
+// drawIndicator paints a scroll bar's thumb along v's scrolling edge
+// while it shows; x and y are v's origin in the window.
 func (p *painter) drawIndicator(v *view, x, y core.Points) {
-	const thickness, inset, minLength = 3, 2, 20
-	frame, content, offset := v.frame.Size.Height, v.size.Height, v.offset.Y
-	if v.scroll.Horizontal {
-		frame, content, offset = v.frame.Size.Width, v.size.Width, v.offset.X
-	}
-	if content <= frame || frame <= 0 {
+	thumb, ok := v.bar().Thumb()
+	if !ok || !p.w.showsBar(v) {
 		return
 	}
-	length := min(max(frame*frame/content, minLength), frame)
-	at := offset / (content - frame) * (frame - length)
-	var bar rect
-	if v.scroll.Horizontal {
-		bar = p.w.rect(x+at, y+v.frame.Size.Height-inset-thickness, core.Size{Width: length, Height: thickness})
-	} else {
-		bar = p.w.rect(x+v.frame.Size.Width-inset-thickness, y+at, core.Size{Width: thickness, Height: length})
-	}
+	bar := p.w.rect(x+thumb.Origin.X, y+thumb.Origin.Y, thumb.Size)
 	brush, _, _ := createSolidBrush.Call(colorRef(core.RGB(0x8c8c8c)))
 	fillRect.Call(p.dc, uintptr(unsafe.Pointer(&bar)), brush)
 	deleteObject.Call(brush)

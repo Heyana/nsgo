@@ -186,7 +186,7 @@ func (g *gallery) desktop(cx *core.Scope, t *theme) core.Node {
 		g.section.Get()
 		content.ScrollTo(core.Point{}, false)
 	})
-	return base.SafeAreaView{Style: core.Style{FlexGrow: 1, Background: t.background, Color: t.ink}, Children: []core.Node{
+	return base.SafeAreaView{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Background: t.background, Color: t.ink}, Children: []core.Node{
 		g.titleBar(cx, t),
 		core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Direction: core.Row}, Children: []core.Node{
 			g.sidebar(t),

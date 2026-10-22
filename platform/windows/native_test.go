@@ -4,6 +4,7 @@ package windows
 
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"strings"
 	"testing"
@@ -15,10 +16,13 @@ import (
 )
 
 var (
-	findWindowW   = user32.NewProc("FindWindowW")
-	findWindowExW = user32.NewProc("FindWindowExW")
-	printWindow   = user32.NewProc("PrintWindow")
-	getDIBits     = gdi32.NewProc("GetDIBits")
+	findWindowW     = user32.NewProc("FindWindowW")
+	findWindowExW   = user32.NewProc("FindWindowExW")
+	printWindow     = user32.NewProc("PrintWindow")
+	getWindowRect   = user32.NewProc("GetWindowRect")
+	getWindowRgnBox = user32.NewProc("GetWindowRgnBox")
+	clientToScreen  = user32.NewProc("ClientToScreen")
+	getDIBits       = gdi32.NewProc("GetDIBits")
 )
 
 const clientOnly = 1 // PrintWindow's PW_CLIENTONLY

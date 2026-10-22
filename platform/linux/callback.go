@@ -16,6 +16,7 @@ var (
 	cbClickPressed  uintptr
 	cbClickReleased uintptr
 	cbMotion        uintptr
+	cbLeave         uintptr
 	cbDragBegin     uintptr
 	cbDragUpdate    uintptr
 	cbDragEnd       uintptr
@@ -53,6 +54,7 @@ func init() {
 	cbClickPressed = newCallback(clickPressedCallback)
 	cbClickReleased = newCallback(clickReleasedCallback)
 	cbMotion = newCallback(motionCallback)
+	cbLeave = newCallback(leaveCallback)
 	cbDragBegin = newCallback(dragBeginCallback)
 	cbDragUpdate = newCallback(dragUpdateCallback)
 	cbDragEnd = newCallback(dragEndCallback)

@@ -228,7 +228,7 @@ func loadUIKit() {
 	))
 	classScroll = register("NsgoScrollView", objc.GetClass("UIScrollView"),
 		[]*objc.Protocol{objc.GetProtocol("UIScrollViewDelegate")},
-		[]objc.MethodDef{{Cmd: sel("scrollViewDidScroll:"), Fn: scrolled}})
+		append(scrollMethods(), objc.MethodDef{Cmd: sel("scrollViewDidScroll:"), Fn: scrolled}))
 	register("NsgoAppDelegate", objc.GetClass("UIResponder"),
 		[]*objc.Protocol{objc.GetProtocol("UIApplicationDelegate")},
 		[]objc.MethodDef{{Cmd: sel("application:didFinishLaunchingWithOptions:"),

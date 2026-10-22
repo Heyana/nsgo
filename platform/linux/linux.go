@@ -74,6 +74,8 @@ type window struct {
 
 	lastPointer    core.Point
 	panning        *pan
+	bars           []*view  // the scroll views under the pointer, which show their bars
+	barDrag        *barDrag // the bar the pointer drags
 	pinching       *twoFinger
 	rotating       *twoFinger
 	closing        bool

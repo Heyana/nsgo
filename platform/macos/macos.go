@@ -9,6 +9,7 @@
 package macos
 
 import (
+	"math"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -58,6 +59,7 @@ type view struct {
 
 	field  objc.ID // an input's NSTextField
 	clip   objc.ID // a scroll view's NSClipView
+	wheel  wheelOwner
 	masked bool
 	inset  core.Bounds
 	edits  uint32
@@ -147,6 +149,7 @@ var (
 	selIsEqualToString              = sel("isEqualToString:")
 
 	classView, classSurface, classInput, classField, classSecureField objc.Class
+	classScroll                                                       objc.Class
 	classObserver, classMenuTarget                                    objc.Class
 )
 
@@ -196,6 +199,14 @@ func loadAppKit() {
 			apple.OnMain(func() { active.refresh() })
 		},
 	}})
+	// A scroll view shows its scroll bars while the pointer is over it,
+	// so they can be dragged, and reports hovers itself.
+	classScroll = register("NsgoScrollView", objc.GetClass("NSScrollView"), nil, []objc.MethodDef{
+		{Cmd: sel("mouseEntered:"), Fn: scrollEntered},
+		{Cmd: sel("mouseMoved:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) { self.Send(sel("flashScrollers")) }},
+		{Cmd: sel("mouseExited:"), Fn: mouseExited},
+		{Cmd: sel("scrollWheel:"), Fn: scrollWheel},
+	})
 	classInput = register("NsgoInput", nsView, nil, append(common,
 		objc.MethodDef{Cmd: sel("layout"), Fn: inputLayout},
 	))
@@ -778,9 +789,10 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 	v := &view{surface: s, id: id, kind: kind}
 	switch kind {
 	case core.KindScroll:
-		v.native = objc.ID(objc.GetClass("NSScrollView")).Send(selNew)
+		v.native = objc.ID(classScroll).Send(selNew)
 		v.native.Send(sel("setDrawsBackground:"), false)
 		v.native.Send(sel("setAutohidesScrollers:"), true)
+		v.hover = trackingArea(v.native, true)
 		// The clip view posts its scrolling, which observe follows; an
 		// override would recurse once animator's KVO subclasses it.
 		clip := objc.ID(objc.GetClass("NSClipView")).Send(selNew)
@@ -898,17 +910,28 @@ func (v *view) setEvents(m core.EventMask) {
 	v.events = m
 	wantHover := m.Has(core.EventHoverIn) || m.Has(core.EventHoverOut)
 	switch {
+	case v.kind == core.KindScroll: // its tracking area reports hovers
 	case wantHover && v.hover == 0:
-		const enteredAndExited, activeInActiveApp, inVisibleRect = 0x01, 0x40, 0x200
-		v.hover = objc.ID(objc.GetClass("NSTrackingArea")).Send(selAlloc).Send(
-			sel("initWithRect:options:owner:userInfo:"), apple.Rect(0, 0, 0, 0),
-			uint(enteredAndExited|activeInActiveApp|inVisibleRect), v.native, objc.ID(0))
-		v.native.Send(sel("addTrackingArea:"), v.hover)
+		v.hover = trackingArea(v.native, false)
 	case !wantHover && v.hover != 0:
 		v.native.Send(sel("removeTrackingArea:"), v.hover)
 		v.hover.Send(selRelease)
 		v.hover = 0
 	}
+}
+
+// trackingArea adds a tracking area over view's visible rect, reporting
+// the pointer entering and leaving it and, if moves, moving within it.
+func trackingArea(view objc.ID, moves bool) objc.ID {
+	const enteredAndExited, mouseMoved, activeInActiveApp, inVisibleRect = 0x01, 0x02, 0x40, 0x200
+	options := uint(enteredAndExited | activeInActiveApp | inVisibleRect)
+	if moves {
+		options |= mouseMoved
+	}
+	area := objc.ID(objc.GetClass("NSTrackingArea")).Send(selAlloc).Send(
+		sel("initWithRect:options:owner:userInfo:"), apple.Rect(0, 0, 0, 0), options, view, objc.ID(0))
+	view.Send(sel("addTrackingArea:"), area)
+	return area
 }
 
 func (v *view) dispatch(kind core.EventKind) {
@@ -1100,6 +1123,63 @@ func mouseEntered(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v := views[self]; v != nil {
 		v.dispatch(core.EventHoverIn)
 	}
+}
+
+// wheelOwner is who takes a scroll view's wheel events: the view itself
+// or the scroll views around it.
+type wheelOwner uint8
+
+const (
+	wheelUndecided wheelOwner = iota
+	wheelOwn
+	wheelPass
+)
+
+// scrollWheel scrolls the view unless it is at its edge in the wheel's
+// direction, when the scroll views around it scroll instead. A trackpad
+// gesture and its momentum keep the choice made as it began; a mouse
+// wheel makes it on each turn.
+func scrollWheel(self objc.ID, cmd objc.SEL, event objc.ID) {
+	const began, mayBegin = 1, 32
+	v := views[self]
+	if v == nil {
+		apple.Super(self, cmd, event)
+		return
+	}
+	phase, momentum := objc.Send[uint](event, sel("phase")), objc.Send[uint](event, sel("momentumPhase"))
+	if phase&(began|mayBegin) != 0 || phase == 0 && momentum == 0 {
+		v.wheel = wheelUndecided
+	}
+	dx, dy := objc.Send[float64](event, sel("scrollingDeltaX")), objc.Send[float64](event, sel("scrollingDeltaY"))
+	if v.wheel == wheelUndecided && (dx != 0 || dy != 0) {
+		v.wheel = wheelPass
+		if v.canScroll(dx, dy) {
+			v.wheel = wheelOwn
+		}
+	}
+	if next := self.Send(sel("nextResponder")); v.wheel == wheelPass && next != 0 {
+		next.Send(cmd, event)
+		return
+	}
+	apple.Super(self, cmd, event)
+}
+
+// canScroll reports whether a scroll view's content can move by a wheel's
+// deltas along their main axis: positive ones show what is above or left.
+func (v *view) canScroll(dx, dy float64) bool {
+	doc := objc.Send[apple.CGRect](v.content, selBounds).Size
+	seen := objc.Send[apple.CGRect](v.clip, selBounds)
+	const slack = 0.5 // offsets land on fractions of a point
+	if math.Abs(dx) > math.Abs(dy) {
+		return dx > 0 && seen.Origin.X > slack || dx < 0 && seen.Origin.X+seen.Size.Width < doc.Width-slack
+	}
+	return dy > 0 && seen.Origin.Y > slack || dy < 0 && seen.Origin.Y+seen.Size.Height < doc.Height-slack
+}
+
+// scrollEntered shows a scroll view's scroll bars as the pointer enters.
+func scrollEntered(self objc.ID, cmd objc.SEL, event objc.ID) {
+	self.Send(sel("flashScrollers"))
+	mouseEntered(self, cmd, event)
 }
 
 func mouseExited(self objc.ID, _ objc.SEL, _ objc.ID) {
