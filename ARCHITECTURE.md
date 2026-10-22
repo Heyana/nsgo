@@ -46,7 +46,7 @@ Every target builds on macOS with Go, and iOS also with Xcode. No backend contai
 | macOS | `platform/macos` | purego and the Objective-C runtime; `CGO_ENABLED=0` | Runs |
 | iOS | `platform/ios` | The same; cgo only because Go links iOS with Xcode's linker | Runs in the simulator |
 | Web | `platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
-| Windows | `platform/windows` | `syscall`: Win32 window drawn with GDI into a 32-bit buffer, native EDIT inputs | Runs; native tests check its window, input and pixels |
+| Windows | `platform/windows` | `syscall`: a Win32 window drawn with GDI, and GDI+ for antialiased edges, into a 32-bit buffer; native EDIT inputs | Runs; native tests check its window, input and pixels |
 | Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Go side builds; the Java runtime has never been compiled; `classes.dex` and APK packaging pending |
 | Linux | — | Planned: GTK 4 through purego | Not started |
 

@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/engine"
 )
 
 var (
@@ -164,29 +165,41 @@ func click(t *testing.T, hwnd uintptr, x, y int32) {
 	postMessageW.Call(hwnd, wmLButtonUp, 0, lParam)
 }
 
-// windowPixel reads the client pixel at x, y as the window painted it.
-// It skips when Windows cannot copy the window's pixels, as on a session
-// with no desktop.
+// windowPixel reads the client pixel at x, y as the window painted it,
+// and reports whether Windows could copy the window's pixels.
 func windowPixel(hwnd uintptr, x, y int32) (r, g, b uint8, ok bool) {
+	pix, width, height, ok := clientPixels(hwnd)
+	if !ok || width <= x || height <= y {
+		return 0, 0, 0, false
+	}
+	at := (int(y)*int(width) + int(x)) * 4
+	return pix[at+2], pix[at+1], pix[at], true
+}
+
+// clientPixels reads the window's client area as it painted it: 32-bit
+// pixels, top to bottom, in the order B, G, R, A. It reports false when
+// Windows cannot copy the window's pixels, as on a session with no
+// desktop.
+func clientPixels(hwnd uintptr) (pix []byte, width, height int32, ok bool) {
 	var client rect
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
-	width, height := client.Right, client.Bottom
-	if width <= x || height <= y {
-		return 0, 0, 0, false
+	width, height = client.Right, client.Bottom
+	if width <= 0 || height <= 0 {
+		return nil, 0, 0, false
 	}
 	dc, _, _ := getDC.Call(hwnd)
 	if dc == 0 {
-		return 0, 0, 0, false
+		return nil, 0, 0, false
 	}
 	defer releaseDC.Call(hwnd, dc)
 	mem, _, _ := createCompatibleDC.Call(dc)
 	if mem == 0 {
-		return 0, 0, 0, false
+		return nil, 0, 0, false
 	}
 	defer deleteDC.Call(mem)
 	bmp, _, _ := createCompatibleBitmap.Call(dc, uintptr(width), uintptr(height))
 	if bmp == 0 {
-		return 0, 0, 0, false
+		return nil, 0, 0, false
 	}
 	defer deleteObject.Call(bmp)
 	old, _, _ := selectObject.Call(mem, bmp)
@@ -195,18 +208,154 @@ func windowPixel(hwnd uintptr, x, y int32) (r, g, b uint8, ok bool) {
 		// screen; copy it directly.
 		if r, _, _ := bitBlt.Call(mem, 0, 0, uintptr(width), uintptr(height), dc, 0, 0, srcCopy); r == 0 {
 			selectObject.Call(mem, old)
-			return 0, 0, 0, false
+			return nil, 0, 0, false
 		}
 	}
 	// GetDIBits wants the bitmap out of the DC.
 	selectObject.Call(mem, old)
-	pix := make([]byte, int(width)*int(height)*4)
+	pix = make([]byte, int(width)*int(height)*4)
 	info := bitmapInfo{Width: width, Height: -height, Planes: 1, BitCount: 32}
 	info.Size = uint32(unsafe.Sizeof(info))
 	if n, _, _ := getDIBits.Call(mem, bmp, 0, uintptr(height), uintptr(unsafe.Pointer(&pix[0])),
 		uintptr(unsafe.Pointer(&info)), 0); n == 0 {
-		return 0, 0, 0, false
+		return nil, 0, 0, false
 	}
-	at := (int(y)*int(width) + int(x)) * 4
-	return pix[at+2], pix[at+1], pix[at], true
+	return pix, width, height, true
+}
+
+// TestRoundedCornersBlend draws a circle and checks the pixels along its
+// edge: without antialiasing every one of them is black or white.
+func TestRoundedCornersBlend(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	testEdgesBlend(t, "nsgo-round", func(*core.Scope) core.Node {
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(240), Background: core.RGB(0xffffff),
+			JustifyContent: core.JustifyCenter, AlignItems: core.AlignCenter}, Children: []core.Node{
+			core.View{Style: core.Style{Width: core.Pt(200), Height: core.Pt(200), CornerRadius: 100,
+				Background: core.RGB(0x000000)}},
+		}}
+	})
+}
+
+// TestRoundedClipBlendsItsEdge clips a black child to a circle and checks
+// both that the corner of its frame keeps the background and that the
+// circle's edge blends.
+func TestRoundedClipBlendsItsEdge(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	app := func(*core.Scope) core.Node {
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(240), Background: core.RGB(0xffffff),
+			Padding: core.All(20)}, Children: []core.Node{
+			core.View{Style: core.Style{Width: core.Pt(200), Height: core.Pt(200), CornerRadius: 100,
+				Overflow: core.Hidden, Background: core.RGB(0xffffff)}, Children: []core.Node{
+				core.View{Style: core.Style{Width: core.Pt(300), Height: core.Pt(300), Background: core.RGB(0x000000)}},
+			}}}}
+	}
+	hwnd := testEdgesBlend(t, "nsgo-clip", app)
+	if hwnd == 0 {
+		return
+	}
+	scale := 1.0
+	if dpi, _, _ := getDpiForSystem.Call(); dpi != 0 {
+		scale = float64(dpi) / 96
+	}
+	// The frame's corner is outside the circle, so the child must not have
+	// painted there.
+	if r, g, b, ok := windowPixel(hwnd, int32(22*scale), int32(22*scale)); ok && (r != 0xff || g != 0xff || b != 0xff) {
+		t.Errorf("the frame's corner = #%02x%02x%02x, want the background", r, g, b)
+	}
+	if r, g, b, ok := windowPixel(hwnd, int32(120*scale), int32(120*scale)); ok && (r != 0 || g != 0 || b != 0) {
+		t.Errorf("the circle's centre = #%02x%02x%02x, want the child's black", r, g, b)
+	}
+}
+
+// TestCanvasCurvesBlend checks that a canvas's curves blend too: GDI+
+// draws them into a bitmap the painter blends back.
+func TestCanvasCurvesBlend(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	draw := func(d *core.Drawing, size core.Size) {
+		d.SetFillColor(core.RGB(0x000000)).BeginPath().
+			Ellipse(float32(size.Width)/2, float32(size.Height)/2, float32(size.Width)/2-20, float32(size.Height)/2-20).Fill()
+	}
+	testEdgesBlend(t, "nsgo-curve", func(*core.Scope) core.Node {
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(240), Background: core.RGB(0xffffff)},
+			Children: []core.Node{core.Canvas{Draw: draw, Style: core.Style{Width: core.Pt(320), Height: core.Pt(240)}}}}
+	})
+}
+
+// testEdgesBlend runs app in a window and checks that what it painted
+// holds black, white and the greys between them, which only a blended
+// edge makes.
+func testEdgesBlend(t *testing.T, title string, app engine.App) uintptr {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(app, Options{Title: title, Width: 320, Height: 240})
+	}()
+	hwnd := waitForWindow(t, title, done)
+	if hwnd == 0 {
+		return 0
+	}
+	t.Cleanup(func() {
+		postMessageW.Call(hwnd, wmClose, 0, 0)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("the window did not close")
+		}
+	})
+	// Wait for the frame that has the shape, since the first may come
+	// before the engine has laid it out.
+	var pix []byte
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var ok bool
+		if pix, _, _, ok = clientPixels(hwnd); ok && blackAndWhite(pix) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Skip("the window painted no shape")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	var black, white, blends int
+	for i := 0; i+3 < len(pix); i += 4 {
+		b, g, r := pix[i], pix[i+1], pix[i+2]
+		switch {
+		case r == 0 && g == 0 && b == 0:
+			black++
+		case r == 0xff && g == 0xff && b == 0xff:
+			white++
+		case r == g && g == b:
+			blends++
+		}
+	}
+	if black == 0 || white == 0 {
+		t.Fatalf("pixels: %d black, %d white; want both", black, white)
+	}
+	if blends < 20 {
+		t.Fatalf("%d pixels blend the shape's edge, want at least 20", blends)
+	}
+	return hwnd
+}
+
+// blackAndWhite reports whether pix holds both colors, which means the
+// shape has been painted.
+func blackAndWhite(pix []byte) bool {
+	var black, white bool
+	for i := 0; i+3 < len(pix); i += 4 {
+		switch {
+		case pix[i] == 0 && pix[i+1] == 0 && pix[i+2] == 0:
+			black = true
+		case pix[i] == 0xff && pix[i+1] == 0xff && pix[i+2] == 0xff:
+			white = true
+		}
+	}
+	return black && white
 }

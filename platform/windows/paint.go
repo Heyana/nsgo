@@ -236,10 +236,10 @@ func (p *painter) drawView(v *view, s *core.ViewStyle, x, y core.Points) {
 			in = rect{r.Left + b.Left, r.Top + b.Top, r.Right - b.Right, r.Bottom - b.Bottom}
 		}
 		if s.Clip && diameter > 0 {
-			saved, _, _ := saveDC.Call(p.dc)
-			p.clip(r, diameter, rgnAnd)
-			p.drawImage(v, s.TintColor, in)
-			p.restore(saved)
+			in2 := in
+			p.clipRound(p.m.bound(r), r, float64(diameter)/2, func(q *painter) {
+				q.drawImage(v, s.TintColor, in2)
+			})
 		} else {
 			p.drawImage(v, s.TintColor, in)
 		}
@@ -254,16 +254,24 @@ func (p *painter) drawView(v *view, s *core.ViewStyle, x, y core.Points) {
 	if len(v.children) == 0 {
 		return
 	}
-	if s.Clip || v.kind == core.KindScroll {
+	draw := func(q *painter) {
+		for _, c := range v.children {
+			q.draw(c, x-v.offset.X, y-v.offset.Y)
+		}
+		if v.kind == core.KindScroll && !v.scroll.HideIndicator {
+			q.drawIndicator(v, x, y)
+		}
+	}
+	switch {
+	case !s.Clip && v.kind != core.KindScroll:
+		draw(p)
+	case diameter > 0 && p.m.axisAligned():
+		p.clipRound(p.m.bound(r), r, float64(diameter)/2, draw)
+	default:
 		saved, _, _ := saveDC.Call(p.dc)
 		p.clip(r, diameter, rgnAnd)
 		defer p.restore(saved)
-	}
-	for _, c := range v.children {
-		p.draw(c, x-v.offset.X, y-v.offset.Y)
-	}
-	if v.kind == core.KindScroll && !v.scroll.HideIndicator {
-		p.drawIndicator(v, x, y)
+		draw(p)
 	}
 }
 
@@ -339,15 +347,33 @@ func (p *painter) layer(box rect, opacity float32, fn func(*painter)) {
 	if box.empty() {
 		return
 	}
-	width, height := box.Right-box.Left, box.Bottom-box.Top
-	l, ok := newBitmap(p.dc, width, height)
+	l, lp, ok := p.newLayer(box)
 	if !ok {
 		fn(p)
 		return
 	}
 	defer l.free()
+	fn(lp)
+	// GDI maps a bit block through the source DC's viewport too, which
+	// moved to the layer's place in the window.
+	setViewportOrgEx.Call(l.dc, 0, 0, 0)
+	alpha := uintptr(math.Round(float64(opacity)*255)) << 16 // BLENDFUNCTION{AC_SRC_OVER, 0, alpha, 0}
 	p.device(func() {
-		bitBlt.Call(l.dc, 0, 0, uintptr(width), uintptr(height), p.dc, uintptr(box.Left), uintptr(box.Top), srcCopy)
+		alphaBlend.Call(p.dc, uintptr(box.Left), uintptr(box.Top), uintptr(l.width), uintptr(l.height),
+			l.dc, 0, 0, uintptr(l.width), uintptr(l.height), alpha)
+	})
+}
+
+// newLayer copies what is behind box, in the target's pixels, into a
+// bitmap of its own, and returns it with a painter drawing into it.
+func (p *painter) newLayer(box rect) (*bitmap, *painter, bool) {
+	l, ok := newBitmap(p.dc, box.Right-box.Left, box.Bottom-box.Top)
+	if !ok {
+		return nil, nil, false
+	}
+	p.device(func() {
+		bitBlt.Call(l.dc, 0, 0, uintptr(l.width), uintptr(l.height),
+			p.dc, uintptr(box.Left), uintptr(box.Top), srcCopy)
 	})
 	lp := &painter{w: p.w, target: l, dc: l.dc, ox: p.ox + box.Left, oy: p.oy + box.Top, m: p.m, solid: p.solid}
 	setBkMode.Call(l.dc, transparent)
@@ -357,12 +383,91 @@ func (p *painter) layer(box rect, opacity float32, fn func(*painter)) {
 		x := lp.m.xform()
 		setWorldTransform.Call(l.dc, uintptr(unsafe.Pointer(&x)))
 	}
-	fn(lp)
-	alpha := uintptr(math.Round(float64(opacity)*255)) << 16 // BLENDFUNCTION{AC_SRC_OVER, 0, alpha, 0}
-	p.device(func() {
-		alphaBlend.Call(p.dc, uintptr(box.Left), uintptr(box.Top), uintptr(width), uintptr(height),
-			l.dc, 0, 0, uintptr(width), uintptr(height), alpha)
-	})
+	return l, lp, true
+}
+
+// clipRound draws what fn paints through r's rounded corners, so that a
+// clipped view's edge blends into what lies outside it instead of
+// stepping a whole pixel.
+//
+// The subtree draws inside r as usual, clipped to a rectangle. What the
+// corner squares held is kept first, and blended with what the subtree
+// drew there afterwards: the corners are the only pixels whose coverage
+// is fractional, so they are the only ones that need it.
+func (p *painter) clipRound(box rect, r rect, radius float64, fn func(*painter)) {
+	box = box.offset(-p.ox, -p.oy).intersect(p.clipBox())
+	if radius <= 0 || !p.m.axisAligned() || box.empty() {
+		p.clipped(r, radius, fn)
+		return
+	}
+	corners, _ := parts(r, radius)
+	var squares [4]rect
+	var behind [4]*bitmap
+	defer func() {
+		for _, b := range behind {
+			if b != nil {
+				b.free()
+			}
+		}
+	}()
+	for i, c := range corners {
+		sq := p.m.bound(c).offset(-p.ox, -p.oy).intersect(box)
+		if sq.empty() {
+			continue
+		}
+		b, ok := newBitmap(p.dc, sq.Right-sq.Left, sq.Bottom-sq.Top)
+		if !ok {
+			p.clipped(r, radius, fn)
+			return
+		}
+		squares[i], behind[i] = sq, b
+		p.device(func() {
+			bitBlt.Call(b.dc, 0, 0, uintptr(b.width), uintptr(b.height),
+				p.dc, uintptr(sq.Left), uintptr(sq.Top), srcCopy)
+		})
+	}
+	saved, _, _ := saveDC.Call(p.dc)
+	p.clip(r, 0, rgnAnd)
+	fn(p)
+	p.restore(saved)
+	p.repairCorners(squares, behind, shape{r: r, radius: radius})
+}
+
+// clipped draws through fn with r's rounded region as the clipping, which
+// GDI can only do a whole pixel at a time.
+func (p *painter) clipped(r rect, radius float64, fn func(*painter)) {
+	saved, _, _ := saveDC.Call(p.dc)
+	p.clip(r, int32(math.Round(2*radius)), rgnAnd)
+	fn(p)
+	p.restore(saved)
+}
+
+// repairCorners blends the corner squares' pixels from what they held
+// before the subtree drew there and what it drew, by how much of each
+// pixel the shape covers.
+func (p *painter) repairCorners(squares [4]rect, behind [4]*bitmap, s shape) {
+	gdiFlush.Call() // the pixels may still be in a batched GDI call
+	smp := p.sampler()
+	clips := p.clipRects()
+	target := unsafe.Slice((*uint32)(p.target.bits), int(p.target.width)*int(p.target.height))
+	for i, sq := range squares {
+		b := behind[i]
+		if b == nil {
+			continue
+		}
+		was := unsafe.Slice((*uint32)(b.bits), int(b.width)*int(b.height))
+		for _, clip := range clips {
+			r := sq.intersect(clip)
+			for y := r.Top; y < r.Bottom; y++ {
+				row := target[int(y)*int(p.target.width):]
+				for x := r.Left; x < r.Right; x++ {
+					if cov := smp.cover(s, x, y); cov < 255 {
+						row[x] = mixPixels(was[int(y-sq.Top)*int(b.width)+int(x-sq.Left)], row[x], uint32(cov))
+					}
+				}
+			}
+		}
+	}
 }
 
 // shape adds r with its corners to the DC's path.
@@ -400,34 +505,108 @@ func (p *painter) clip(r rect, diameter int32, mode uintptr) {
 // fill paints a view's background and its border inside r; translucent
 // colors blend with what is behind.
 func (p *painter) fill(r rect, diameter int32, s *core.ViewStyle) {
-	switch a := s.Background & 0xff; {
-	case a == 0xff:
-		brush, _, _ := createSolidBrush.Call(colorRef(s.Background))
-		pen, _, _ := getStockObject.Call(nullPen)
-		oldBrush, _, _ := selectObject.Call(p.dc, brush)
-		oldPen, _, _ := selectObject.Call(p.dc, pen)
-		// A null pen leaves out the right and bottom edges.
-		roundRect.Call(p.dc, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right+1), uintptr(r.Bottom+1),
-			uintptr(diameter), uintptr(diameter))
-		selectObject.Call(p.dc, oldBrush)
-		selectObject.Call(p.dc, oldPen)
-		deleteObject.Call(brush)
-	case a != 0:
-		p.blend(r, diameter, rect{}, 0, s.Background)
+	radius := float64(diameter) / 2
+	if c := s.Background; c&0xff != 0 {
+		p.paintShape(r, radius, c)
 	}
+	b := p.w.borderWidths(s)
+	if b == (rect{}) {
+		return
+	}
+	colors := [4]core.Color{s.BorderColor, s.BorderColor, s.BorderColor, s.BorderColor}
 	if s.Borders != (core.Edges{}) {
-		p.sides(r, diameter, s)
+		c := s.BorderColors
+		colors = [4]core.Color{c.Top, c.Right, c.Bottom, c.Left}
+	}
+	p.paintRing(r, radius, b, colors)
+}
+
+// paintShape fills r and its rounded corners with c.
+func (p *painter) paintShape(r rect, radius float64, c core.Color) {
+	if radius <= 0 {
+		p.fillRects([]rect{r}, c)
 		return
 	}
-	if s.BorderWidth <= 0 || s.BorderColor&0xff == 0 {
+	if p.m != identity {
+		// A transform leaves no straight edge in the target's pixels, so
+		// every pixel is measured.
+		p.paintCoverage([]rect{r}, shape{r: r, radius: radius}, c)
 		return
 	}
-	width := max(p.w.px(s.BorderWidth), 1)
-	if s.BorderColor&0xff != 0xff {
-		p.blend(r, diameter, r.inset(width), max(diameter-2*width, 0), s.BorderColor)
+	corners, middle := parts(r, radius)
+	p.paintCoverage(corners[:], shape{r: r, radius: radius}, c)
+	p.fillRects(middle[:], c)
+}
+
+// paintRing paints a border inside r: the ring between r and the inner
+// rectangle the sides' widths leave, in one color or in a color per side.
+func (p *painter) paintRing(r rect, radius float64, b rect, colors [4]core.Color) {
+	in := rect{
+		min(r.Left+b.Left, r.Right), min(r.Top+b.Top, r.Bottom),
+		max(r.Right-b.Right, r.Left), max(r.Bottom-b.Bottom, r.Top),
+	}
+	inRadius := max(radius-float64(b.Left+b.Top+b.Right+b.Bottom)/4, 0)
+	uniform := colors[0] == colors[1] && colors[0] == colors[2] && colors[0] == colors[3]
+	if radius <= 0 || (p.m != identity && !uniform) {
+		// A rotated border with a color per side has no edge GDI can fill
+		// exactly.
+		p.ringGDI(r, radius, b, in, inRadius, colors, uniform)
 		return
 	}
-	pen, _, _ := createPen.Call(psInsideFrame, uintptr(width), colorRef(s.BorderColor))
+	s := shape{r: r, radius: radius, hole: in, holeRadius: inRadius}
+	if p.m != identity {
+		// A transform leaves no straight edge in the target's pixels, so
+		// every pixel is measured.
+		p.paintCoverage([]rect{r}, s, colors[0])
+		return
+	}
+	corners, middle := parts(r, radius)
+	if uniform {
+		p.paintCoverage(corners[:], s, colors[0])
+	} else {
+		// A corner belongs to the two sides that meet there, split down
+		// the diagonal from the corner: the top left one to the top and
+		// the left, the top right one to the top and the right, and so on.
+		for i, pair := range [4][2]int{{1, 4}, {1, 2}, {3, 4}, {3, 2}} {
+			ca, cb := colors[pair[0]-1], colors[pair[1]-1]
+			if ca&0xff == 0 && cb&0xff == 0 || corners[i].empty() {
+				continue
+			}
+			a, b := s, s
+			a.side, b.side = uint8(pair[0]), uint8(pair[1])
+			p.paintCorner(corners[i], a, b, ca, cb)
+		}
+	}
+	// The straight parts, one fill per color.
+	var bands [4][]rect
+	for _, piece := range middle {
+		for _, part := range sub(piece, in) {
+			if i := sideOf(part, in) - 1; colors[i]&0xff != 0 {
+				bands[i] = append(bands[i], part)
+			}
+		}
+	}
+	for i, rects := range bands {
+		p.fillRects(rects, colors[i])
+	}
+}
+
+// ringGDI paints a border through GDI, for the shapes coverage cannot
+// draw: rotated ones, and rings with a color per side that a transform
+// applies to.
+func (p *painter) ringGDI(r rect, radius float64, b, in rect, inRadius float64, colors [4]core.Color, uniform bool) {
+	diameter := int32(math.Round(2 * radius))
+	if !uniform || b.Left != b.Top || b.Top != b.Right || b.Right != b.Bottom {
+		p.sides(r, diameter, b, colors)
+		return
+	}
+	c := colors[0]
+	if c&0xff != 0xff {
+		p.blend(r, diameter, in, int32(math.Round(2*inRadius)), c)
+		return
+	}
+	width := max(b.Top, 1)
+	pen, _, _ := createPen.Call(psInsideFrame, uintptr(width), colorRef(c))
 	brush, _, _ := getStockObject.Call(nullBrush)
 	oldBrush, _, _ := selectObject.Call(p.dc, brush)
 	oldPen, _, _ := selectObject.Call(p.dc, pen)
@@ -553,20 +732,18 @@ func (w *window) borderWidths(s *core.ViewStyle) rect {
 // side is the ring between r and its inside, with their corners, cut to
 // the trapezoid from its outer edge to its inner one, so the sides meet
 // on the diagonals as CSS's do. The inner corners are approximate.
-func (p *painter) sides(r rect, diameter int32, s *core.ViewStyle) {
-	b := p.w.borderWidths(s)
+func (p *painter) sides(r rect, diameter int32, b rect, colors [4]core.Color) {
 	in := rect{min(r.Left+b.Left, r.Right), min(r.Top+b.Top, r.Bottom), max(r.Right-b.Right, r.Left), max(r.Bottom-b.Bottom, r.Top)}
 	inDiameter := max(diameter-(b.Left+b.Top+b.Right+b.Bottom)/2, 0)
-	c := s.BorderColors
 	for _, side := range []struct {
 		width int32
 		color core.Color
 		shape [4]point
 	}{
-		{b.Top, c.Top, [4]point{{r.Left, r.Top}, {r.Right, r.Top}, {in.Right, in.Top}, {in.Left, in.Top}}},
-		{b.Right, c.Right, [4]point{{r.Right, r.Top}, {r.Right, r.Bottom}, {in.Right, in.Bottom}, {in.Right, in.Top}}},
-		{b.Bottom, c.Bottom, [4]point{{r.Right, r.Bottom}, {r.Left, r.Bottom}, {in.Left, in.Bottom}, {in.Right, in.Bottom}}},
-		{b.Left, c.Left, [4]point{{r.Left, r.Bottom}, {r.Left, r.Top}, {in.Left, in.Top}, {in.Left, in.Bottom}}},
+		{b.Top, colors[0], [4]point{{r.Left, r.Top}, {r.Right, r.Top}, {in.Right, in.Top}, {in.Left, in.Top}}},
+		{b.Right, colors[1], [4]point{{r.Right, r.Top}, {r.Right, r.Bottom}, {in.Right, in.Bottom}, {in.Right, in.Top}}},
+		{b.Bottom, colors[2], [4]point{{r.Right, r.Bottom}, {r.Left, r.Bottom}, {in.Left, in.Bottom}, {in.Right, in.Bottom}}},
+		{b.Left, colors[3], [4]point{{r.Left, r.Bottom}, {r.Left, r.Top}, {in.Left, in.Top}, {in.Left, in.Bottom}}},
 	} {
 		if side.width == 0 {
 			continue

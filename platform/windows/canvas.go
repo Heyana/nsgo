@@ -339,9 +339,112 @@ func (c *canvasPlayer) color(col core.Color) core.Color {
 	return col&^0xff | core.Color(a)
 }
 
+// strokeWidth returns the width of a stroke in the target's pixels.
+func (c *canvasPlayer) strokeWidth() float64 {
+	return float64(c.st.width) * c.st.ctm.then(c.base).stretch()
+}
+
+// antialias fills or strokes the path with GDI+, whose edges blend
+// instead of stepping a whole pixel, and reports whether it drew it:
+// false leaves the path to GDI.
+func (c *canvasPlayer) antialias(col core.Color, stroke bool) bool {
+	if len(c.path) == 0 || !startGDIPlus() {
+		return false
+	}
+	path, box := c.gdiplusPath()
+	if path == 0 {
+		return false
+	}
+	defer gdipDeletePath.Call(path)
+	width := c.strokeWidth()
+	pad := int32(2)
+	if stroke {
+		pad = int32(math.Ceil(width*5)) + 2 // a miter joins up to five widths out
+	}
+	box = box.inset(-pad)
+	return c.p.drawAA(box, func(g uintptr) bool {
+		if stroke {
+			p := pen(col, width, c.st.cap, c.st.join)
+			if p == 0 {
+				return false
+			}
+			gdipDrawPath.Call(g, p, path)
+			gdipDeletePen.Call(p)
+			return true
+		}
+		brush := solidBrush(col)
+		if brush == 0 {
+			return false
+		}
+		gdipFillPath.Call(g, brush, path)
+		gdipDeleteBrush.Call(brush)
+		return true
+	})
+}
+
+// gdiplusPath returns the player's path as GDI+'s, in the target's pixels,
+// with the box it and its control points reach.
+func (c *canvasPlayer) gdiplusPath() (uintptr, rect) {
+	var h uintptr
+	if r, _, _ := gdipCreatePath.Call(windingFill, uintptr(unsafe.Pointer(&h))); r != 0 || h == 0 {
+		return 0, rect{}
+	}
+	ox, oy := float64(c.p.ox), float64(c.p.oy)
+	x0, y0 := math.Inf(1), math.Inf(1)
+	x1, y1 := math.Inf(-1), math.Inf(-1)
+	reach := func(x, y float64) {
+		x0, y0, x1, y1 = min(x0, x), min(y0, y), max(x1, x), max(y1, y)
+	}
+	var cur, start [2]float64
+	var has bool
+	for _, s := range c.path {
+		switch s.kind {
+		case segMove:
+			cur = [2]float64{s.pts[0][0] - ox, s.pts[0][1] - oy}
+			start, has = cur, true
+			gdipStartPathFigure.Call(h)
+			reach(cur[0], cur[1])
+		case segLine:
+			if !has {
+				continue
+			}
+			next := [2]float64{s.pts[0][0] - ox, s.pts[0][1] - oy}
+			gdipAddPathLine.Call(h, real32(cur[0]), real32(cur[1]), real32(next[0]), real32(next[1]))
+			cur = next
+			reach(cur[0], cur[1])
+		case segCubic:
+			if !has {
+				continue
+			}
+			c1 := [2]float64{s.pts[0][0] - ox, s.pts[0][1] - oy}
+			c2 := [2]float64{s.pts[1][0] - ox, s.pts[1][1] - oy}
+			end := [2]float64{s.pts[2][0] - ox, s.pts[2][1] - oy}
+			gdipAddPathBezier.Call(h, real32(cur[0]), real32(cur[1]), real32(c1[0]), real32(c1[1]),
+				real32(c2[0]), real32(c2[1]), real32(end[0]), real32(end[1]))
+			cur = end
+			reach(c1[0], c1[1])
+			reach(c2[0], c2[1])
+			reach(end[0], end[1])
+		case segClose:
+			if has {
+				gdipClosePathFigure.Call(h)
+				cur = start
+			}
+		}
+	}
+	if math.IsInf(x0, 1) {
+		gdipDeletePath.Call(h)
+		return 0, rect{}
+	}
+	return h, rect{int32(math.Floor(x0)), int32(math.Floor(y0)), int32(math.Ceil(x1)), int32(math.Ceil(y1))}
+}
+
 func (c *canvasPlayer) fill() {
 	col := c.color(c.st.fill)
-	if col&0xff == 0 || !c.emit() {
+	if col&0xff == 0 || len(c.path) == 0 || c.antialias(col, false) {
+		return
+	}
+	if !c.emit() {
 		return
 	}
 	dc := c.p.dc
@@ -361,8 +464,11 @@ func (c *canvasPlayer) fill() {
 
 func (c *canvasPlayer) stroke() {
 	col := c.color(c.st.stroke)
-	width := float64(c.st.width) * c.st.ctm.then(c.base).stretch() * subpixels
-	if col&0xff == 0 || width <= 0 || !c.emit() {
+	width := c.strokeWidth() * subpixels
+	if col&0xff == 0 || width <= 0 || len(c.path) == 0 || c.antialias(col, true) {
+		return
+	}
+	if !c.emit() {
 		return
 	}
 	dc := c.p.dc

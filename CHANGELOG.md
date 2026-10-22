@@ -23,3 +23,4 @@
 - Add a layered app icon.
 - Add the official website.
 - License the project under Apache-2.0, with NSH's attribution in `NOTICE`.
+- Fix Windows' aliased rounded corners, borders and canvas curves.

@@ -3,16 +3,19 @@
 // Package windows is NSGo's Win32 backend: one window that draws a
 // retained tree of views with GDI into a 32-bit bitmap, text the engine
 // measured and laid out with GDI fonts, presses hit tested by the engine,
-// inputs as native EDIT controls, images decoded by Go, canvases played
-// as GDI paths, and alerts as task dialogs. It uses only the syscall
-// package, so it builds without cgo.
+// inputs as native EDIT controls, images decoded by Go, canvases drawn
+// antialiased by GDI+, and alerts as task dialogs. It uses only the
+// syscall package, so it builds without cgo.
 //
-// GDI has no alpha, so translucent colors fill their clipped shape with
-// AlphaBlend, translucent views draw into a layer blended back at their
-// opacity, and transforms are GDI world transforms. Style transitions
-// tick on a timer. EDIT controls ignore transforms and opacity; shadows,
-// image blur and modal animations are not drawn, and there is no
-// accessibility yet, which needs UI Automation providers.
+// GDI has no alpha and cannot blend a fractional edge. Translucent colors
+// fill their clipped shape with AlphaBlend, translucent views draw into a
+// layer blended back at their opacity, and the painter measures rounded
+// corners itself, blending them pixel by pixel. Canvases, whose paths are
+// arbitrary, are drawn by GDI+ into a bitmap the painter blends back.
+// Transforms are GDI world transforms. Style transitions tick on a timer.
+// EDIT controls ignore transforms and opacity; shadows, image blur and
+// modal animations are not drawn, and there is no accessibility yet, which
+// needs UI Automation providers.
 package windows
 
 import (
@@ -341,6 +344,7 @@ type window struct {
 	pinch, rotation, wheelPinching *twoFinger
 
 	measureDC uintptr // the engine thread's
+	aa        *smoothing
 }
 
 // Window procedures are process-wide callbacks; they find their window
