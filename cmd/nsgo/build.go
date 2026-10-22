@@ -99,7 +99,11 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 	case "web":
 		return buildWeb(ctx, p, dir, false)
 	case "linux_arm64", "linux_x64":
-		return fmt.Errorf("there is no Linux backend yet")
+		if err := goBuild(ctx, p, filepath.Join(dir, p.Name),
+			[]string{"GOOS=" + osName, "GOARCH=" + goArch(arch), "CGO_ENABLED=0"}); err != nil {
+			return err
+		}
+		return copyAssets(p, dir)
 	case "android_arm64":
 		return fmt.Errorf("APK packaging is not available yet")
 	}

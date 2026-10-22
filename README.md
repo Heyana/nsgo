@@ -12,7 +12,7 @@ NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the
 
 ## Status
 
-NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, images, canvas, Markdown text views, overlays, dialogs, navigation, unstyled base components and themed `ui` components, running on macOS, iOS, Windows and the web; Android is in progress and Linux is planned. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
+NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, images, canvas, Markdown text views, overlays, dialogs, navigation, unstyled base components and themed `ui` components, running on macOS, iOS, Windows, Linux and the web; Android is in progress. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
 
 ## Goals
 
@@ -70,7 +70,7 @@ dev:
 build:
   output: dist          # packages go to dist/<name>-<version>-<target>
   open: true            # open the output directory after building
-  targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, ios, ios_simulator, web]
+  targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, web]
 ```
 
 Add the tool to your module once; `go tool nsgo` then runs it without installing:
@@ -85,7 +85,7 @@ Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `
 
 ## Development
 
-Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed for any target. On Windows, Go 1.25 or later runs the native app and builds the Windows and web packages.
+Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed to build any target. On Windows, Go 1.25 or later runs the native app and builds the Windows and web packages. On Linux, Go runs the native app once GTK 4.14 or newer, Pango and Cairo are installed.
 
 Run the example from the repository root:
 
@@ -97,7 +97,7 @@ go tool nsgo build examples/hello                   # release packages in exampl
 go test ./...
 ```
 
-On Windows, `go test ./platform/windows` opens a real window to check input and painting; it skips where no desktop is available.
+Run `go test ./platform/windows` on Windows or `go test ./platform/linux` on Linux to open a real window and check input and painting; they skip where no desktop is available.
 
 NSGo uses NSH as its reference implementation. Clone it into `nsh/` at the repository root; Git ignores that directory:
 

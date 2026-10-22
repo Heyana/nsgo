@@ -123,8 +123,10 @@ func sessionFor(p *project, opts devOptions) (session, error) {
 			return macSession(), nil
 		case "windows":
 			return windowsSession(), nil
+		case "linux":
+			return linuxSession(), nil
 		}
-		return session{}, fmt.Errorf("native development runs on macOS and Windows; use -target web")
+		return session{}, fmt.Errorf("native development runs on macOS, Windows and Linux; use -target web")
 	case "web":
 		return webSession(opts), nil
 	case "ios_simulator":
@@ -208,6 +210,33 @@ func windowsSession() session {
 		},
 		start: func(ctx context.Context, p *project) (app, error) {
 			bin := filepath.Join(p.cache("dev", "windows"), p.Name+".exe")
+			stop, wait, err := startProcess(bin)
+			if err != nil {
+				return app{}, err
+			}
+			return app{stop: stop, wait: wait}, nil
+		},
+	}
+}
+
+// linuxSession builds the app as a Linux executable and runs it in the
+// foreground.
+func linuxSession() session {
+	return session{
+		build: func(ctx context.Context, p *project) error {
+			dir := p.cache("dev", "linux")
+			os.RemoveAll(dir)
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+			if err := goBuild(ctx, p, filepath.Join(dir, p.Name),
+				[]string{"GOOS=linux", "GOARCH=" + runtime.GOARCH, "CGO_ENABLED=0"}); err != nil {
+				return err
+			}
+			return copyAssets(p, dir)
+		},
+		start: func(ctx context.Context, p *project) (app, error) {
+			bin := filepath.Join(p.cache("dev", "linux"), p.Name)
 			stop, wait, err := startProcess(bin)
 			if err != nil {
 				return app{}, err

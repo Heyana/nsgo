@@ -47,10 +47,12 @@ Every target builds on macOS with Go, and iOS also with Xcode. No backend contai
 | iOS | `platform/ios` | The same; cgo only because Go links iOS with Xcode's linker | Runs in the simulator |
 | Web | `platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
 | Windows | `platform/windows` | `syscall`: a Win32 window drawn with GDI, and GDI+ for antialiased edges, into a 32-bit buffer; native EDIT inputs | Runs; native tests check its window, input and pixels |
+| Linux | `platform/linux` | GTK 4, Pango and Cairo loaded with purego: a GtkDrawingArea drawn with Cairo, Pango text, native GtkEntry inputs | Runs; native tests check its window, input and pixels |
 | Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Go side builds; the Java runtime has never been compiled; `classes.dex` and APK packaging pending |
-| Linux | — | Planned: GTK 4 through purego | Not started |
 
 Android runs the app as a second process because Go builds Android shared libraries only with cgo and the NDK. Without cgo, Go builds Android executables for arm64 only, so 32-bit devices and x86_64 emulators are out of reach. iOS forbids child processes, so it links in-process with Xcode instead.
+
+The Linux backend loads GTK 4 at run time, so building its package needs only Go, while running it needs GTK 4.14 or newer, Pango and Cairo installed as any GTK app does. The application menu is a GTK menu bar above the surface, but the backend draws no window controls of its own, so a hidden title bar reports the app's bar height only.
 
 ## Boundaries
 
@@ -95,7 +97,7 @@ Record a design question here, and confirm the answer with the user before choos
 
 ## Verification
 
-`core` and `engine` have headless Go tests for the graph, layout, regions, commits and the mailbox; apps test themselves with `nsgotest`, as `examples/hello` does. The Windows backend's tests open a real window and check clicks, typing, submit and painted pixels (`go test ./platform/windows`). Backends need a run on their target: screenshots of the window, simulator or headless browser, and input where it can be simulated.
+`core` and `engine` have headless Go tests for the graph, layout, regions, commits and the mailbox; apps test themselves with `nsgotest`, as `examples/hello` does. The Windows and Linux backends' tests open a real window and check clicks, typing, submit and painted pixels (`go test ./platform/windows`, `go test ./platform/linux`). Backends need a run on their target: screenshots of the window, simulator or headless browser, and input where it can be simulated.
 
 ## Subjects
 

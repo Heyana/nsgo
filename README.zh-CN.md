@@ -12,7 +12,7 @@ NSGo 参考 [Native Shell（NSH）](https://nsh.dev) 的设计，NSH 用 Rust �
 
 ## 状态
 
-NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、图片、画布、Markdown 文本视图、浮层、对话框、导航、无样式基础组件和带主题的 `ui` 组件，可在 macOS、iOS、Windows 和 Web 上运行；Android 正在开发，Linux 尚未开始。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
+NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、图片、画布、Markdown 文本视图、浮层、对话框、导航、无样式基础组件和带主题的 `ui` 组件，可在 macOS、iOS、Windows、Linux 和 Web 上运行；Android 正在开发。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
 
 ## 目标
 
@@ -70,7 +70,7 @@ dev:
 build:
   output: dist          # 构建产物位于 dist/<name>-<version>-<target>
   open: true            # 构建后打开输出目录
-  targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, ios, ios_simulator, web]
+  targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, web]
 ```
 
 在你的模块中添加一次该工具，之后用 `go tool nsgo` 运行，无需安装：
@@ -85,7 +85,7 @@ dev 和 build 命令的参数会覆盖它们所对应的 `nsgo.yaml` 值：两�
 
 ## 开发
 
-要求：装有 Xcode 的 macOS，以及 Go 1.25 或更高版本。任何目标平台都不需要其他工具。在 Windows 上，只需 Go 1.25 或更高版本即可运行原生应用，并构建 Windows 和 Web 包。
+要求：装有 Xcode 的 macOS，以及 Go 1.25 或更高版本。构建任何目标平台都不需要其他工具。在 Windows 上，只需 Go 1.25 或更高版本即可运行原生应用，并构建 Windows 和 Web 包。在 Linux 上，安装 GTK 4.14 或更高版本、Pango 和 Cairo 后即可用 Go 运行原生应用。
 
 在仓库根目录运行示例：
 
@@ -97,7 +97,7 @@ go tool nsgo build examples/hello                   # release packages in exampl
 go test ./...
 ```
 
-在 Windows 上，`go test ./platform/windows` 会打开真实窗口，检查输入和绘制；没有桌面时会跳过。
+在 Windows 上运行 `go test ./platform/windows`，或在 Linux 上运行 `go test ./platform/linux`，会打开真实窗口检查输入和绘制；没有桌面时会跳过。
 
 NSGo 以 NSH 作为参考实现。将它克隆到仓库根目录的 `nsh/`，Git 会忽略该目录：
 

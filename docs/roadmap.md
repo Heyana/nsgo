@@ -6,7 +6,7 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 
 1. Complete text: what `TextView` and `Text` still lack.
 2. Add media, embedding and native-driven animation.
-3. Complete the tool, then add Linux and the embedding SDKs.
+3. Complete the tool, then add the embedding SDKs.
 4. Finish the platforms NSGo already claims, so every target runs. This is left to community contributions.
 
 ## 1. Text
@@ -32,14 +32,13 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 | Native components | `docs/dev/embedding.md` | Apps mount their own native views inside the tree |
 | LayoutAnimation | `docs/dev/animation.md`, `crates/nsh-core/src/animation` | Layout changes and animated values run on the platform without a Go frame per step |
 
-## 3. Tool, Linux and embedding
+## 3. Tool and embedding
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | `nsgo test` | `crates/nsh-cli/src/test*.rs` | Runs an app's `nsgotest` tests, and on simulators and browsers |
 | Icons | `docs/dev/embedding.md` | `nsgo build` turns the app icon into each target's format |
 | Store signing | `docs/dev/embedding.md` | `nsgo build` writes an IPA with a provisioning profile and an APK with a keystore |
-| Linux backend | `docs/dev/linux.md`, `crates/nsh-platform-linux` | GTK 4 through purego runs the gallery |
 | Embedding SDKs | `docs/dev/embedding.md` | iOS, Android and desktop host apps can show an NSGo view |
 
 ## 4. Finish the existing platforms

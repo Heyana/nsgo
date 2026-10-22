@@ -11,7 +11,7 @@ func TestNativeSessionFollowsTheHost(t *testing.T) {
 	p.Dev.Target = "native"
 	s, err := sessionFor(p, devOptions{})
 	switch runtime.GOOS {
-	case "darwin", "windows":
+	case "darwin", "windows", "linux":
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -38,6 +38,10 @@ func TestOpenCommandShowsURLs(t *testing.T) {
 	case "windows":
 		if name != "rundll32" || len(args) != 2 || args[0] != "url.dll,FileProtocolHandler" {
 			t.Fatalf("Windows opens with %q %q", name, args)
+		}
+	case "linux":
+		if name != "xdg-open" || len(args) != 1 {
+			t.Fatalf("Linux opens with %q %q", name, args)
 		}
 	}
 }

@@ -1,4 +1,4 @@
-//go:build !darwin && !windows && !android && !(js && wasm)
+//go:build !darwin && !windows && !android && !linux && !(js && wasm)
 
 package nsgo
 
