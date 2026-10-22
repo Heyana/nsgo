@@ -74,11 +74,17 @@ func (g *gallery) desktop(cx *core.Scope) core.Node {
 				Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(sidebarWidth), FlexGrow: 1}, Children: []core.Node{
 					g.sidebarHeader(cx),
 					g.searchField(cx),
-					core.Scroll{Style: core.Style{FlexGrow: 1}, Children: []core.Node{g.navigation()}},
+					g.navigation(),
 					g.toolbar(),
 				}}}}
 		}},
-		core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, Children: []core.Node{
+		// Base pages sit on their own black and white.
+		core.View{TestID: "page", Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, StyleFunc: func() core.Style {
+			if s, _ := find(g.section.Get()); s.kind == kindBase {
+				return core.Style{Background: monoTheme(g.dark()).background}
+			}
+			return core.Style{}
+		}, Children: []core.Node{
 			g.header(cx),
 			core.Scroll{Ref: content, TestID: "content", Style: core.Style{FlexGrow: 1, FlexShrink: 1},
 				OnLayout: func(b core.Bounds) { viewport.Set(b.Size.Height) },
@@ -147,18 +153,39 @@ func shortcut(cx *core.Scope, key string) string {
 	return "⌘" + key
 }
 
-// navigation is the sidebar's list of sections by group.
+// navigation is the sidebar's list: Welcome, then tabs choosing Base or
+// UI over that category's sections by group.
 func (g *gallery) navigation() core.Node {
-	var groupNodes []core.Node
-	for _, group := range groups() {
-		var items []core.Node
-		for _, s := range group {
-			items = append(items, ui.SidebarItem{Label: s.name, Icon: s.icon(), TestID: "nav-" + s.name,
-				Selected: func() bool { return g.section.Get() == s.name }, OnPress: func() { g.open(s.name) }})
-		}
-		groupNodes = append(groupNodes, ui.SidebarSection{Title: group[0].group, Children: items})
+	item := func(s section) core.Node {
+		return ui.SidebarItem{Label: s.name, Icon: s.icon(), TestID: "nav-" + s.name,
+			Selected: func() bool { return g.section.Get() == s.name }, OnPress: func() { g.open(s.name) }}
 	}
-	return ui.Sidebar{Label: "Sections", Children: groupNodes}
+	tab := func(k kind) core.Node {
+		return ui.Tab{Label: k.label(), TestID: "tab-" + string(k), Style: core.Style{FlexGrow: 1, AlignItems: core.AlignCenter},
+			Selected: func() bool { return g.tab.Get() == k }, OnPress: func() { g.tab.Set(k) }}
+	}
+	list := func(k kind) core.Node {
+		var sections []core.Node
+		for _, group := range groups(k) {
+			var items []core.Node
+			for _, s := range group {
+				items = append(items, item(s))
+			}
+			sections = append(sections, ui.SidebarSection{Title: group[0].group, Children: items})
+		}
+		return ui.Sidebar{Label: k.label(), Children: sections}
+	}
+	welcome, _ := find("Welcome")
+	return core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)}, Children: []core.Node{
+		core.View{Style: core.Style{Padding: core.Edges{Right: 12, Bottom: 10, Left: 12}, Gap: 10}, Children: []core.Node{
+			item(welcome),
+			ui.Tabs{Label: "Category", Style: core.Style{AlignSelf: core.AlignStretch},
+				Children: []core.Node{tab(kindBase), tab(kindUI)}},
+		}},
+		core.Scroll{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
+			core.Dynamic(func(cx *core.Scope) core.Node { return list(g.tab.Get()) }),
+		}},
+	}}
 }
 
 // toolbar is the sidebar's bottom row: settings, then the appearance.
@@ -208,8 +235,8 @@ func (g *gallery) header(cx *core.Scope) core.Node {
 		}},
 		core.Text{MaxLines: 1,
 			ContentFunc: func() string {
-				if s, _ := find(g.section.Get()); s.group != groupOverview {
-					return s.group + " /"
+				if s, _ := find(g.section.Get()); s.kind != kindNone {
+					return s.kind.label() + " / " + s.group + " /"
 				}
 				return ""
 			},
@@ -227,7 +254,7 @@ func (g *gallery) header(cx *core.Scope) core.Node {
 func (g *gallery) page(viewport func() core.Points) core.Node {
 	return core.Dynamic(func(cx *core.Scope) core.Node {
 		s, _ := find(g.section.Get())
-		t := newTheme(g.dark())
+		t := newTheme(g.dark(), s.kind)
 		return core.Func(func(cx *core.Scope) core.Node {
 			if s.name == "Welcome" {
 				return core.View{StyleFunc: func() core.Style { return core.Style{MinHeight: core.Pt(viewport())} },
@@ -268,7 +295,7 @@ func (g *gallery) phone(cx *core.Scope) core.Node {
 			}
 			s, _ := find(name)
 			body := core.Dynamic(func(cx *core.Scope) core.Node {
-				t := newTheme(g.dark())
+				t := newTheme(g.dark(), s.kind)
 				return core.Func(func(cx *core.Scope) core.Node {
 					if s.name == "Welcome" {
 						return s.page(cx, t)
@@ -279,6 +306,9 @@ func (g *gallery) phone(cx *core.Scope) core.Node {
 			})
 			return core.Screen{Title: s.name, Header: g.phoneHeader(cx, s.name, func() { g.nav.Pop(1) }), TestID: "screen-" + s.name,
 				Children: []core.Node{core.Scroll{Style: core.Style{FlexGrow: 1}, StyleFunc: func() core.Style {
+					if s.kind == kindBase {
+						return core.Style{Background: monoTheme(g.dark()).background}
+					}
 					return core.Style{Background: theme().Background}
 				}, Children: []core.Node{body}}}}
 		})
@@ -308,8 +338,16 @@ func (g *gallery) phoneHeader(cx *core.Scope, title string, back func(), actions
 func (g *gallery) index(cx *core.Scope) core.Node {
 	theme := ui.UseTheme(cx)
 	var items []core.Node
-	for _, group := range groups() {
-		items = append(items, core.Text{Content: group[0].group, Role: core.RoleHeader, StyleFunc: func() core.Style {
+	var all [][]section
+	for _, k := range []kind{kindNone, kindBase, kindUI} {
+		all = append(all, groups(k)...)
+	}
+	for _, group := range all {
+		heading := group[0].group
+		if k := group[0].kind; k != kindNone {
+			heading = k.label() + " · " + heading
+		}
+		items = append(items, core.Text{Content: heading, Role: core.RoleHeader, StyleFunc: func() core.Style {
 			t := theme()
 			return core.Style{Padding: core.Edges{Top: 18, Right: 16, Bottom: 6, Left: 16}, FontSize: 13,
 				FontWeight: core.FontWeightSemibold, Color: t.MutedForeground}

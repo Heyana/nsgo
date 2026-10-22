@@ -6,12 +6,10 @@ import (
 	"github.com/oneo-me/nsgo/ui"
 )
 
-// theme is the gallery's palette for one appearance and the styles built
-// from it. NSGo itself has no look of its own, so the gallery follows the
-// Onevra design language: warm neutral surfaces, one terracotta accent, soft
-// borders and 8-point control radii. galleryTheme holds the palettes, which
-// the ui components take from ThemeView; the demos built on base take their
-// colors and metrics from here.
+// theme is a page's palette for one appearance and the styles the demos
+// build from it. Base pages are black and white, as base has no look of
+// its own: whatever color they show is the app's. UI pages and the shell
+// take theirs from ui.DefaultTheme, whose palette comes from NSGo's icon.
 type theme struct {
 	dark bool
 
@@ -36,8 +34,53 @@ const (
 	dialogRadius core.Points = 16
 )
 
-// galleryTheme is Onevra's palettes as a ui theme.
-func galleryTheme() ui.Theme {
+// newTheme returns the palette of a category's pages.
+func newTheme(dark bool, k kind) *theme {
+	if k == kindBase {
+		return monoTheme(dark)
+	}
+	p := ui.DefaultTheme().Tokens(dark)
+	return &theme{dark: dark,
+		background: p.Background, surface: p.Surface, sunken: p.Muted, sidebar: p.Muted,
+		ink: p.Foreground, muted: p.MutedForeground, line: p.Border, hover: p.Accent,
+		borderStrong: p.Input, selection: p.Tint(0.1), raised: p.Surface,
+		quiet: p.Secondary, quietHover: p.Hover(p.Secondary), quietPressed: p.Pressed(p.Secondary),
+		accent: p.Primary, accentHover: p.Hover(p.Primary), accentPressed: p.Pressed(p.Primary),
+		accentSoft: p.Accent, onAccent: p.PrimaryForeground,
+		danger: p.Danger, dangerHover: p.Hover(p.Danger), dangerPressed: p.Pressed(p.Danger),
+		onDanger: p.DangerForeground, success: p.Success, warning: p.Warning,
+		knob: core.RGB(0xffffff), switchOff: p.Input}
+}
+
+// monoTheme is black and white with grays between.
+func monoTheme(dark bool) *theme {
+	if dark {
+		ink := core.RGB(0xf2f2f2)
+		return &theme{dark: true,
+			background: core.RGB(0x0a0a0a), surface: core.RGB(0x121212), sunken: core.RGB(0x1c1c1c), sidebar: core.RGB(0x0f0f0f),
+			ink: ink, muted: core.RGB(0x9a9a9a), line: core.RGB(0x2e2e2e), hover: core.RGB(0x1f1f1f),
+			borderStrong: core.RGB(0x5a5a5a), selection: core.RGBA(0xffffff, 0.1), raised: core.RGB(0x1c1c1c),
+			quiet: core.RGB(0x1c1c1c), quietHover: core.RGB(0x262626), quietPressed: core.RGB(0x303030),
+			accent: ink, accentHover: core.RGB(0xffffff), accentPressed: core.RGB(0xd0d0d0),
+			accentSoft: core.RGB(0x262626), onAccent: core.RGB(0x0a0a0a),
+			danger: ink, dangerHover: core.RGB(0xffffff), dangerPressed: core.RGB(0xd0d0d0), onDanger: core.RGB(0x0a0a0a),
+			success: ink, warning: core.RGB(0xbdbdbd), knob: core.RGB(0x0a0a0a), switchOff: core.RGB(0x5a5a5a)}
+	}
+	ink := core.RGB(0x111111)
+	return &theme{
+		background: core.RGB(0xffffff), surface: core.RGB(0xffffff), sunken: core.RGB(0xf4f4f4), sidebar: core.RGB(0xf7f7f7),
+		ink: ink, muted: core.RGB(0x6b6b6b), line: core.RGB(0xe0e0e0), hover: core.RGB(0xf0f0f0),
+		borderStrong: core.RGB(0xa8a8a8), selection: core.RGBA(0x000000, 0.06), raised: core.RGB(0xffffff),
+		quiet: core.RGB(0xf2f2f2), quietHover: core.RGB(0xe9e9e9), quietPressed: core.RGB(0xdedede),
+		accent: ink, accentHover: core.RGB(0x2b2b2b), accentPressed: core.RGB(0x000000),
+		accentSoft: core.RGB(0xededed), onAccent: core.RGB(0xffffff),
+		danger: ink, dangerHover: core.RGB(0x2b2b2b), dangerPressed: core.RGB(0x000000), onDanger: core.RGB(0xffffff),
+		success: ink, warning: core.RGB(0x555555), knob: core.RGB(0xffffff), switchOff: core.RGB(0xc8c8c8)}
+}
+
+// warmTheme is an app's own theme for the Theme page: Onevra's warm
+// neutrals and terracotta accent.
+func warmTheme() ui.Theme {
 	return ui.Theme{
 		Light: ui.Palette{
 			Background: core.RGB(0xfcfbf9), Foreground: core.RGB(0x33332f),
@@ -71,28 +114,6 @@ func galleryTheme() ui.Theme {
 		RadiusLarge: cardRadius,
 		FontSize:    15,
 	}
-}
-
-func newTheme(dark bool) *theme {
-	p := galleryTheme().Tokens(dark)
-	t := &theme{dark: dark,
-		background: p.Background, surface: p.Surface, sunken: p.Muted,
-		ink: p.Foreground, muted: p.MutedForeground, line: p.Border, hover: p.Accent,
-		quiet: p.Secondary, accent: p.Primary, onAccent: p.PrimaryForeground,
-		danger: p.Danger, onDanger: p.DangerForeground, success: p.Success, warning: p.Warning,
-		switchOff: p.Input}
-	if dark {
-		t.sidebar, t.borderStrong, t.selection, t.raised = core.RGB(0x1b1a17), core.RGB(0x78736b), core.RGBA(0xeeeae2, 0.10), core.RGB(0x36332e)
-		t.quietHover, t.quietPressed = core.RGB(0x3a3734), core.RGB(0x464440)
-		t.accentHover, t.accentPressed, t.accentSoft = core.RGB(0xefa47f), core.RGB(0xd18661), core.RGB(0x392e26)
-		t.dangerHover, t.dangerPressed, t.knob = core.RGB(0xe89ca2), core.RGB(0xca7e83), core.RGB(0xf4f1ec)
-		return t
-	}
-	t.sidebar, t.borderStrong, t.selection, t.raised = core.RGB(0xf4f2ee), core.RGB(0xb3b3ac), core.RGBA(0x33332f, 0.08), core.RGB(0xfefefd)
-	t.quietHover, t.quietPressed = core.RGB(0xe4e3e1), core.RGB(0xd8d7d5)
-	t.accentHover, t.accentPressed, t.accentSoft = core.RGB(0xa63f18), core.RGB(0x8e3614), core.RGB(0xf4e6de)
-	t.dangerHover, t.dangerPressed, t.knob = core.RGB(0x9e3c43), core.RGB(0x873339), core.RGB(0xffffff)
-	return t
 }
 
 var (

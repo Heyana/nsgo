@@ -141,9 +141,9 @@ func brandMark(t *theme, size core.Points) core.Node {
 			}}}}
 }
 
-// welcomeArt paints the page's backdrop: glows in the accent and the brand
-// teal from opposite corners, and a tilted lattice of icons tinted from one
-// to the other, fading around the center so the title stays legible.
+// welcomeArt paints the page's backdrop: glows in the icon's teal and
+// green from opposite corners, and a tilted lattice of icons tinted from
+// one to the other, fading around the center so the title stays legible.
 func welcomeArt(t *theme) core.Node {
 	strength, alpha := 1.0, 0.13
 	if t.dark {
@@ -153,8 +153,8 @@ func welcomeArt(t *theme) core.Node {
 		Draw: func(d *core.Drawing, size core.Size) {
 			w, h := float32(size.Width), float32(size.Height)
 			reach := max(w, h)
-			glow(d, w, 0, reach*0.45, t.accent, 0.14*strength)
-			glow(d, 0, h, reach*0.45, brandTeal, 0.16*strength)
+			glow(d, w, 0, reach*0.45, brandTeal, 0.16*strength)
+			glow(d, 0, h, reach*0.45, brandGreen, 0.14*strength)
 
 			icons := welcomeIcons()
 			const step, side = 56, 20
@@ -174,7 +174,7 @@ func welcomeArt(t *theme) core.Node {
 					diagonal := min(1, max(0, sx/w*0.5+(1-sy/h)*0.5))
 					center := min(1, max(0.25, float32(math.Hypot(float64(sx-w/2), float64(sy-h/2)))/half*1.4))
 					a := alpha * float64(center) * (0.45 + float64(diagonal)*0.55)
-					color := withAlpha(ui.Mix(brandTeal, t.accent, float64(diagonal)), float32(a))
+					color := withAlpha(ui.Mix(brandGreen, brandTeal, float64(diagonal)), float32(a))
 					d.Save().Translate(x-side/2, y-side/2)
 					icons[(row*7+col*3)%len(icons)].Draw(d, core.Size{Width: side, Height: side}, color)
 					d.Restore()

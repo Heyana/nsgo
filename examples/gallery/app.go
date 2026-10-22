@@ -25,19 +25,44 @@ const version = "0.1.0"
 
 // section is one page of the gallery.
 type section struct {
-	name, group string
-	icon        func() *core.SVG
-	about       string
-	page        func(cx *core.Scope, t *theme) core.Node
+	name  string
+	kind  kind
+	group string
+	icon  func() *core.SVG
+	about string
+	page  func(cx *core.Scope, t *theme) core.Node
 }
 
-// The groups of the sidebar, in its order.
+// kind is a section's category: what NSGo draws with no look of its own,
+// or the ui package's themed components.
+type kind string
+
+const (
+	kindNone kind = ""
+	kindBase kind = "base"
+	kindUI   kind = "ui"
+)
+
+// label names the category in the sidebar's tabs and page titles.
+func (k kind) label() string {
+	switch k {
+	case kindBase:
+		return "Base"
+	case kindUI:
+		return "UI"
+	}
+	return ""
+}
+
+// The groups within a category, in the sidebar's order.
 const (
 	groupOverview   = "Overview"
 	groupElements   = "Elements"
 	groupComponents = "Components"
 	groupMedia      = "Media"
 	groupDesktop    = "Desktop & system"
+	groupComposites = "Composites"
+	groupTheming    = "Theming"
 )
 
 // sections are set in init because the App Menu section lists them.
@@ -45,31 +70,36 @@ var sections []section
 
 func init() {
 	sections = []section{
-		{"Welcome", groupOverview, lucide.House, "", welcomePage},
-		{"Text", groupElements, lucide.Type, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
-		{"Text View", groupElements, lucide.FileText, "Markdown and HTML with code highlighting, tables, alerts, extensions and streaming.", textViewPage},
-		{"Layout", groupElements, lucide.LayoutGrid, "Flexbox, wrapping, absolute positioning, grid and block layout.", layoutPage},
-		{"Styles", groupElements, lucide.Paintbrush, "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
-		{"Images", groupElements, lucide.Image, "Embedded and remote images, placeholders and resize modes.", imagesPage},
-		{"Icons", groupElements, lucide.Shapes, "The bundled Lucide pack, drawn in inherited text color at any size.", iconsPage},
-		{"Canvas", groupElements, lucide.PenTool, "2D drawing recorded on the engine and played by the platform.", canvasPage},
-		{"Lists", groupElements, lucide.List, "A virtualized list of many rows and a keyed list you edit.", listsPage},
-		{"Controls", groupComponents, lucide.ToggleRight, "Buttons, checkboxes, radios, switches, tabs and text fields, built on base.", controlsPage},
-		{"Fields", groupComponents, lucide.TextCursorInput, "The ui package's inputs, selects, sliders and icon buttons.", fieldsPage},
-		{"Feedback", groupComponents, lucide.BellRing, "Badges, progress bars and toasts.", feedbackPage},
-		{"Popups", groupComponents, lucide.MessageSquare, "Tooltips, popovers, menus, dialogs, sheets and alerts.", popupsPage},
-		{"Settings", groupComponents, lucide.SlidersHorizontal, "A settings surface: categories, search, groups and rows.", settingsPage},
-		{"Command Palette", groupComponents, lucide.Command, "Find and run commands from the keyboard.", commandPage},
-		{"Navigation", groupComponents, lucide.Compass, "A navigation stack, and a sidebar of sections.", navigationPage},
-		{"Styled", groupComponents, lucide.Palette, "The ui package's components in NSGo's default theme or the gallery's.", styledPage},
-		{"Web View", groupMedia, lucide.Globe, "The platform's web view: inline HTML, a site, history and messages both ways.", webPage},
-		{"Video", groupMedia, lucide.Clapperboard, "The platform's video player: playback the app drives, resize modes and the platform's controls.", videoPage},
-		{"Animation", groupMedia, lucide.Sparkles, "Values stepped with Animate and transitions run by the platform.", animationPage},
-		{"Gestures", groupMedia, lucide.Hand, "Pans, pinches and rotations, sharing touches with scrolling.", gesturesPage},
-		{"Window", groupDesktop, lucide.AppWindow, "The gallery's own title bar and the desktop window's commands.", windowPage},
-		{"App Menu", groupDesktop, lucide.Menu, "The application menu: roles, shortcuts and checkable items.", menuPage},
-		{"Environment", groupDesktop, lucide.Monitor, "What the platform reports, and the system services.", environmentPage},
-		{"Storage", groupDesktop, lucide.Database, "Key-value storage kept on the device, and the app's directories.", storagePage},
+		{"Welcome", kindNone, groupOverview, lucide.House, "", welcomePage},
+
+		{"Text", kindBase, groupElements, lucide.Type, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
+		{"Layout", kindBase, groupElements, lucide.LayoutGrid, "Flexbox, wrapping, absolute positioning, grid and block layout.", layoutPage},
+		{"Styles", kindBase, groupElements, lucide.Paintbrush, "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
+		{"Images", kindBase, groupElements, lucide.Image, "Embedded and remote images, placeholders and resize modes.", imagesPage},
+		{"Icons", kindBase, groupElements, lucide.Shapes, "The bundled Lucide pack, drawn in inherited text color at any size.", iconsPage},
+		{"Canvas", kindBase, groupElements, lucide.PenTool, "2D drawing recorded on the engine and played by the platform.", canvasPage},
+		{"Lists", kindBase, groupElements, lucide.List, "A virtualized list of many rows and a keyed list you edit.", listsPage},
+		{"Controls", kindBase, groupComponents, lucide.ToggleRight, "base's buttons, checkboxes, radios, switches and tabs, and text fields, styled by the app.", controlsPage},
+		{"Popups", kindBase, groupComponents, lucide.MessageSquare, "base's tooltips, popovers, menus, dialogs, sheets and alerts.", popupsPage},
+		{"Navigation", kindBase, groupComponents, lucide.Compass, "A navigation stack: push and pop screens.", navigationPage},
+		{"Web View", kindBase, groupMedia, lucide.Globe, "The platform's web view: inline HTML, a site, history and messages both ways.", webPage},
+		{"Video", kindBase, groupMedia, lucide.Clapperboard, "The platform's video player: playback the app drives, resize modes and the platform's controls.", videoPage},
+		{"Animation", kindBase, groupMedia, lucide.Sparkles, "Values stepped with Animate and transitions run by the platform.", animationPage},
+		{"Gestures", kindBase, groupMedia, lucide.Hand, "Pans, pinches and rotations, sharing touches with scrolling.", gesturesPage},
+		{"Window", kindBase, groupDesktop, lucide.AppWindow, "The gallery's own title bar and the desktop window's commands.", windowPage},
+		{"App Menu", kindBase, groupDesktop, lucide.Menu, "The application menu: roles, shortcuts and checkable items.", menuPage},
+		{"Environment", kindBase, groupDesktop, lucide.Monitor, "What the platform reports, and the system services.", environmentPage},
+		{"Storage", kindBase, groupDesktop, lucide.Database, "Key-value storage kept on the device, and the app's directories.", storagePage},
+
+		{"Buttons", kindUI, groupComponents, lucide.MousePointerClick, "Buttons in each variant, checkboxes, switches, radios and tabs.", buttonsPage},
+		{"Fields", kindUI, groupComponents, lucide.TextCursorInput, "Inputs, selects, sliders and icon buttons.", fieldsPage},
+		{"Feedback", kindUI, groupComponents, lucide.BellRing, "Badges, progress bars and toasts.", feedbackPage},
+		{"Overlays", kindUI, groupComponents, lucide.Layers, "Menus, popovers, tooltips, dialogs and sheets.", overlaysPage},
+		{"Text View", kindUI, groupComponents, lucide.FileText, "Markdown and HTML with code highlighting, tables, alerts, extensions and streaming.", textViewPage},
+		{"Sidebar", kindUI, groupComposites, lucide.PanelLeft, "Sections of navigation items, with counts and heading actions.", sidebarPage},
+		{"Settings", kindUI, groupComposites, lucide.SlidersHorizontal, "A settings surface: categories, search, groups and rows.", settingsPage},
+		{"Command Palette", kindUI, groupComposites, lucide.Command, "Find and run commands from the keyboard.", commandPage},
+		{"Theme", kindUI, groupTheming, lucide.Palette, "One ThemeView restyles every component: NSGo's theme or one of the app's.", themePage},
 	}
 }
 
@@ -82,10 +112,13 @@ func find(name string) (section, int) {
 	return sections[0], 0
 }
 
-// groups returns the sections by group, in the sidebar's order.
-func groups() [][]section {
+// groups returns a category's sections by group, in the sidebar's order.
+func groups(k kind) [][]section {
 	var out [][]section
 	for _, s := range sections {
+		if s.kind != k {
+			continue
+		}
 		if n := len(out); n > 0 && out[n-1][0].group == s.group {
 			out[n-1] = append(out[n-1], s)
 		} else {
@@ -112,6 +145,8 @@ const (
 type gallery struct {
 	// section is the selected section; on phones, the one last opened.
 	section *core.Signal[string]
+	// tab is the category the sidebar lists; it follows the section.
+	tab *core.Signal[kind]
 	// nav is the phone layout's stack: "" is the index, a name a section.
 	nav *base.Nav[string]
 	// descriptions shows each section's description line.
@@ -189,6 +224,12 @@ func Root(cx *core.Scope) core.Node {
 	if start != sections[0].name {
 		g.nav.SetRoutes("", start)
 	}
+	g.tab = core.NewSignal(cx, kindBase)
+	cx.Effect(func() {
+		if s, _ := find(g.section.Get()); s.kind != kindNone {
+			g.tab.Set(s.kind)
+		}
+	})
 	galleryKey.Provide(cx, g)
 	env := cx.Env()
 	g.dark = core.NewMemo(cx, func() bool {
@@ -227,7 +268,7 @@ func Root(cx *core.Scope) core.Node {
 	cx.OnKey("mod+,", g.openSettings)
 	cx.OnKey("mod+alt+s", g.toggleSidebar)
 
-	return ui.ThemeView{Theme: galleryTheme, Dark: g.dark, Style: core.Style{FlexGrow: 1, FlexShrink: 1}, Children: []core.Node{
+	return ui.ThemeView{Dark: g.dark, Style: core.Style{FlexGrow: 1, FlexShrink: 1}, Children: []core.Node{
 		ui.ToastView{Style: core.Style{FlexGrow: 1, FlexShrink: 1}, Children: []core.Node{
 			core.Dynamic(func(cx *core.Scope) core.Node {
 				isWide := wide.Get()

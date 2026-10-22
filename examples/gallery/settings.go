@@ -255,7 +255,7 @@ func initials(name string) string {
 func aboutCard(cx *core.Scope) core.Node {
 	g := galleryKey.Use(cx)
 	return core.Dynamic(func(cx *core.Scope) core.Node {
-		t := newTheme(g.dark())
+		t := newTheme(g.dark(), kindNone)
 		return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 16}, Children: []core.Node{
 			brandMark(t, 56),
 			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 6}, Children: []core.Node{

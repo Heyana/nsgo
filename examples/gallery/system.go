@@ -6,8 +6,6 @@ import (
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
-	"github.com/oneo-me/nsgo/icons/lucide"
-	"github.com/oneo-me/nsgo/ui"
 )
 
 // galleryKey gives sections the shell's state.
@@ -185,7 +183,6 @@ func navigationPage(cx *core.Scope, t *theme) core.Node {
 			Background: t.surface, Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: t.line}}, Children: children}
 	}
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
-		sidebarDemo(cx, t),
 		t.demo("Stack", "base.Nav keeps routes and renders them as a core.Stack; back pops the innermost stack that can.",
 			nav.Stack(core.Style{Height: core.Pt(240), CornerRadius: radius, BorderWidth: 1, BorderColor: t.line, Overflow: core.Hidden,
 				Background: t.background},
@@ -201,49 +198,4 @@ func navigationPage(cx *core.Scope, t *theme) core.Node {
 				}),
 		),
 	}}
-}
-
-// sidebarDemo is a mail app's navigation: ui.Sidebar's sections and items,
-// with counts after them and an action on a section's heading.
-func sidebarDemo(cx *core.Scope, t *theme) core.Node {
-	at := core.NewSignal(cx, "Inbox")
-	labels := core.NewSignalFunc(cx, []string{"Work", "Family"}, nil)
-	item := func(label string, icon *core.SVG, count string) core.Node {
-		var trailing []core.Node
-		if count != "" {
-			trailing = append(trailing, core.Text{Content: count, Style: core.Style{FontSize: 12, Color: t.muted}})
-		}
-		return ui.SidebarItem{Label: label, Icon: icon, Trailing: trailing, TestID: "mail-" + label,
-			Selected: func() bool { return at.Get() == label }, OnPress: func() { at.Set(label) }}
-	}
-	return t.demo("Sidebar", "ui.Sidebar's sections and items; the app owns the selection. Items take trailing content, headings actions.",
-		core.View{Style: core.Style{Direction: core.Row, Height: core.Pt(300), CornerRadius: radius, BorderWidth: 1, BorderColor: t.line,
-			Overflow: core.Hidden}, Children: []core.Node{
-			core.Scroll{Style: core.Style{Width: core.Pt(210), Padding: core.Edges{Top: 12}, Background: t.sidebar,
-				Borders: core.Edges{Right: 1}, BorderColors: core.EdgeColors{Right: t.line}}, Children: []core.Node{
-				ui.Sidebar{Label: "Mail", Children: []core.Node{
-					ui.SidebarSection{Title: "Mail", Children: []core.Node{
-						item("Inbox", lucide.Inbox(), "12"),
-						item("Starred", lucide.Star(), ""),
-						item("Sent", lucide.Send(), ""),
-						item("Drafts", lucide.FileText(), "2"),
-					}},
-					ui.SidebarSection{Title: "Labels",
-						Actions: []core.Node{ui.IconButton{Icon: lucide.Plus(), Label: "Add a label", Size: 14, TestID: "add-label",
-							OnPress: func() {
-								labels.Update(func(l []string) []string { return append(l, fmt.Sprintf("Label %d", len(l)+1)) })
-							}}},
-						Children: []core.Node{core.Each(labels.Get, func(l string) string { return l },
-							func(cx *core.Scope, l func() string, _ func() int) core.Node {
-								return item(core.Untracked(cx, l), lucide.Tag(), "")
-							})}},
-				}},
-			}},
-			core.View{Style: core.Style{FlexGrow: 1, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 6},
-				Children: []core.Node{
-					core.Text{ContentFunc: at.Get, Style: core.Style{FontSize: 20, FontWeight: core.FontWeightSemibold}},
-					t.note("The selected item shows here."),
-				}},
-		}},
-	)
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/nsgotest"
+	"github.com/oneo-me/nsgo/ui"
 )
 
 var desktopEnv = core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop, Locale: "en-US"}
@@ -122,8 +123,8 @@ func TestApplicationMenu(t *testing.T) {
 	app.Find("id:section-Images")
 	view := app.Menu[slices.IndexFunc(app.Menu, func(e core.MenuEntry) bool { return e.Label == "View" })]
 	for _, e := range view.Items {
-		if e.Label == "Images" && (!e.Checked || e.Shortcut != "mod+6") {
-			t.Fatalf("View › Images = %+v, want checked with mod+6", e)
+		if e.Label == "Images" && (!e.Checked || e.Shortcut != "mod+5") {
+			t.Fatalf("View › Images = %+v, want checked with mod+5", e)
 		}
 	}
 	app.ChooseMenu("View", "Next Section")
@@ -182,6 +183,9 @@ func TestWindowCommands(t *testing.T) {
 func TestEverySectionBuilds(t *testing.T) {
 	wide, phone := startDesktop(t), nsgotest.Start(t, Root)
 	for _, s := range sections {
+		if s.kind != kindNone {
+			wide.Press("id:tab-" + string(s.kind))
+		}
 		wide.Press("id:nav-" + s.name)
 		wide.Find("id:section-" + s.name)
 		phone.Press("id:nav-" + s.name)
@@ -195,10 +199,10 @@ func TestEverySectionBuilds(t *testing.T) {
 	wide.Find("id:section-" + sections[len(sections)-1].name)
 }
 
-func TestStyledSection(t *testing.T) {
+func TestOverlaysSection(t *testing.T) {
 	app := startDesktop(t)
-	app.ChooseMenu("View", "Styled")
-	app.Press("text:Dialog")
+	app.ChooseMenu("View", "Overlays")
+	app.Press("role:button Dialog")
 	app.Find("text:Discard changes?")
 	app.Press("text:Cancel")
 	if app.Exists("text:Discard changes?") {
@@ -225,6 +229,7 @@ func TestStorageSection(t *testing.T) {
 
 func TestTextViewStreams(t *testing.T) {
 	app := startDesktop(t)
+	app.Press("id:tab-ui")
 	app.Press("id:nav-Text View")
 	app.Find("id:markdown >> role:header Text View")
 	app.Find("id:html >> role:header An HTML page")
@@ -336,7 +341,7 @@ func TestCommandPalette(t *testing.T) {
 	if v, _ := app.Storage().GetItem(keyAppearance); v != "dark" {
 		t.Fatalf("appearance = %q, want dark", v)
 	}
-	if got, want := app.Find("id:sidebar").Style.Background, sidebarColor(galleryTheme().Tokens(true)); got != want {
+	if got, want := app.Find("id:sidebar").Style.Background, sidebarColor(ui.DefaultTheme().Tokens(true)); got != want {
 		t.Fatalf("sidebar = %x, want the dark one %x", got, want)
 	}
 }
@@ -400,6 +405,7 @@ func TestPreferencesPersist(t *testing.T) {
 
 func TestComponentPages(t *testing.T) {
 	app := startDesktop(t)
+	app.Press("id:tab-ui")
 	app.Press("id:nav-Fields")
 	app.Type("id:field-name", "Ada")
 	app.Find("text:Hello, Ada.")
@@ -422,10 +428,40 @@ func TestComponentPages(t *testing.T) {
 	app.Submit("id:command-search")
 	app.Find("text:Ran open.")
 
-	app.Press("id:nav-Navigation")
+	app.Press("id:nav-Sidebar")
 	app.Press("id:add-label")
 	app.Press("id:mail-Label 3")
 	if !app.Find("id:mail-Label 3").Props.Selected {
 		t.Fatal("the new label is not selected")
+	}
+}
+
+func TestCategories(t *testing.T) {
+	app := startDesktop(t)
+	if !app.Find("id:tab-base").Props.Selected || app.Exists("id:nav-Fields") {
+		t.Fatal("the sidebar does not start on Base")
+	}
+	// Opening a UI page elsewhere moves the sidebar to its category.
+	app.ChooseMenu("View", "Fields")
+	if !app.Find("id:tab-ui").Props.Selected || app.Exists("id:nav-Text") {
+		t.Fatal("the sidebar did not follow the page to UI")
+	}
+	app.Find("id:header >> text:UI / Components /")
+	// The Theme page swaps the sample's theme.
+	app.Press("id:nav-Theme")
+	sample := func() core.Color { return app.Find("id:theme-sample").Style.Background }
+	if sample() != ui.DefaultTheme().Light.Background {
+		t.Fatal("the sample does not start in NSGo's theme")
+	}
+	app.Press("id:theme-warm")
+	if sample() != warmTheme().Light.Background {
+		t.Fatal("the sample did not take the warm theme")
+	}
+
+	// Base pages are black and white.
+	app.Press("id:tab-base")
+	app.Press("id:nav-Controls")
+	if got := app.Find("id:page").Style.Background; got != core.RGB(0xffffff) {
+		t.Fatalf("base page background = %x, want white", got)
 	}
 }
