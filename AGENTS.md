@@ -4,7 +4,7 @@ NSGo is a cross-platform native UI engine with a Go backend, ported from the des
 
 ## Principles
 
-- Treat `nsh/` as read-only reference. Never edit, commit or vendor it; it is listed in `.gitignore`.
+- Treat `nsh/` as read-only reference. Never edit, commit or vendor it; it is listed in `.gitignore`. Neorio copies it into new worktrees from the main checkout.
 - Before designing a subsystem, read how NSH does it in `nsh/docs/dev/` and its crate's module docs.
 - Write idiomatic Go. Port NSH's design and names, not its Rust idioms.
 - Assume only macOS, Xcode and Go on a user's machine. Building for every target from there must need nothing else: no NDK, Android SDK, JDK, GTK or Windows toolchain.

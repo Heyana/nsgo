@@ -8,3 +8,6 @@ tasks:
     group: build
     command: go
     args: [tool, nsgo, build, examples/hello]
+worktree:
+  copy:
+    - nsh
