@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
 )
 
@@ -71,6 +72,23 @@ func textPage(cx *core.Scope, t *theme) core.Node {
 				{Content: "."},
 			}},
 			t.live(link.Get),
+		),
+		t.demo("Selection", "Selectable text selects alone; a SelectionArea selects across its texts. Drag, double or "+
+			"triple click, or long press on touch screens, then copy.",
+			core.Text{Content: "This text selects on its own, in the accent.", Selectable: core.SelectableOn,
+				Style: core.Style{SelectionColor: core.RGBA(0xbd481b, 0.3)}},
+			base.SelectionArea{Style: core.Style{Gap: 8, Padding: core.All(12), Background: t.sunken, CornerRadius: radius},
+				Children: []core.Node{
+					core.Text{Content: "A selection area", Style: core.Style{FontWeight: core.FontWeightSemibold}},
+					core.Text{Content: lorem},
+					core.View{Style: core.Style{Direction: core.Row, Gap: 24}, Children: []core.Node{
+						core.Text{Content: "Cells on one row"}, core.Text{Content: "copy with tabs"},
+						core.Text{Content: "中文按字选择"},
+					}},
+					core.Text{Content: "This text stays out of the selection.", Selectable: core.SelectableOff,
+						Style: t.caption()},
+					t.plain("Buttons keep their presses", func() { link.Set("pressed the button in the area") }),
+				}},
 		),
 	}}
 }

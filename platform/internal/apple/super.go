@@ -70,3 +70,14 @@ func SendSuper[T any](self objc.ID, cmd objc.SEL, args ...any) T {
 
 // Super sends cmd to self's NSGo superclass, discarding the result.
 func Super(self objc.ID, cmd objc.SEL, args ...any) { SendSuper[objc.ID](self, cmd, args...) }
+
+// Subviews returns a view's subviews, back to front.
+func Subviews(view objc.ID) []objc.ID {
+	arr := view.Send(objc.RegisterName("subviews"))
+	n := objc.Send[uint](arr, selCount)
+	out := make([]objc.ID, n)
+	for i := range n {
+		out[i] = arr.Send(selObjectAtIndex, i)
+	}
+	return out
+}

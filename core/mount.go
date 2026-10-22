@@ -234,9 +234,14 @@ type ViewProps struct {
 	Checked       bool
 	Indeterminate bool
 	TestID        string
-	// WindowDrag and PanActivation are decided on the main thread.
+	// WindowDrag, PanActivation and selections are decided on the main
+	// thread.
 	WindowDrag    WindowDrag
 	PanActivation PanActivation
+	// SelectionArea is a view's, Selectable and SelectionColor a text's.
+	SelectionArea  bool
+	Selectable     Selectable
+	SelectionColor Color
 }
 
 // Role is a view's accessibility role.

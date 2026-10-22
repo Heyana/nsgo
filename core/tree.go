@@ -447,7 +447,8 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	n.h = handlers{press: v.OnPress, longPress: v.OnLongPress, pressDown: v.OnPressDown, pressUp: v.OnPressUp,
 		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, layout: v.OnLayout, contextMenu: v.OnContextMenu,
 		pan: v.OnPan, pinch: v.OnPinch, rotation: v.OnRotation}
-	n.props = ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID, WindowDrag: v.WindowDrag}
+	n.props = ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID, WindowDrag: v.WindowDrag,
+		SelectionArea: v.SelectionArea}
 	if v.OnPan != nil {
 		n.props.PanActivation = v.PanActivation
 	}
@@ -465,7 +466,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 	n := t.newNode(KindText, parent, cx)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
-	n.props = ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID}
+	n.props = ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID, Selectable: v.Selectable}
 	if n.props.Role == RoleNone {
 		n.props.Role = RoleText
 	}

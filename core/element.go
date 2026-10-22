@@ -57,6 +57,9 @@ type View struct {
 	OnRotation func(GestureEvent)
 	// WindowDrag makes the view a handle that moves the desktop window.
 	WindowDrag WindowDrag
+	// SelectionArea makes the texts inside select together, as a web
+	// page's do. base.SelectionArea sets it.
+	SelectionArea bool
 
 	Ref *Ref
 	// Disabled stops presses and is reported to assistive technology.
@@ -86,6 +89,9 @@ type Text struct {
 	// Spans, when set, are the text: runs in order, each styled over the
 	// Text's style. A span with OnPress is a link.
 	Spans []Span
+	// Selectable lets the user select and copy the text; the highlight is
+	// the style's SelectionColor.
+	Selectable Selectable
 
 	OnPress  func()
 	OnLayout func(Bounds)
@@ -97,6 +103,20 @@ type Text struct {
 
 // Render implements Node.
 func (t Text) Render(*Scope) Node { return t }
+
+// Selectable says whether the user can select a text.
+type Selectable uint8
+
+const (
+	// SelectableAuto selects the text with its selection area when it is
+	// in one. Elsewhere only the web selects it, on desktops, as a page's
+	// text.
+	SelectableAuto Selectable = iota
+	// SelectableOn selects the text, alone when it is in no area.
+	SelectableOn
+	// SelectableOff keeps the text out of selections, its area's too.
+	SelectableOff
+)
 
 // Span is a run of a Text with a style of its own.
 type Span struct {

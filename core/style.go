@@ -91,6 +91,9 @@ type Style struct {
 	LetterSpacing  Points
 	TextAlign      TextAlign
 	TextDecoration TextDecoration
+	// SelectionColor is the highlight of selected text; 0 is the
+	// platform's.
+	SelectionColor Color
 
 	// State styles merge over the rest while the node is in the state, in
 	// this order of precedence, lowest first: hovered, focused (text
@@ -376,6 +379,7 @@ func (s *Style) mergeText(o Style) {
 	set(&s.LetterSpacing, o.LetterSpacing)
 	set(&s.TextAlign, o.TextAlign)
 	set(&s.TextDecoration, o.TextDecoration)
+	set(&s.SelectionColor, o.SelectionColor)
 }
 
 func set[T comparable](dst *T, v T) {
@@ -396,7 +400,7 @@ func (s Style) textOnly() Style {
 	return Style{
 		Color: s.Color, FontFamily: s.FontFamily, FontSize: s.FontSize, FontWeight: s.FontWeight,
 		FontStyle: s.FontStyle, LineHeight: s.LineHeight, LetterSpacing: s.LetterSpacing,
-		TextAlign: s.TextAlign, TextDecoration: s.TextDecoration,
+		TextAlign: s.TextAlign, TextDecoration: s.TextDecoration, SelectionColor: s.SelectionColor,
 	}
 }
 

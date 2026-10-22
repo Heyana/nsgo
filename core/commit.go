@@ -94,6 +94,7 @@ func (t *Tree) resolve(n *node, inherited Style) {
 	}
 	switch {
 	case n.text != nil:
+		n.props.SelectionColor = inherited.SelectionColor
 		tn := n.text
 		ts := t.scaled(inherited.textStyle())
 		if tn.stale || tn.prepared == nil || ts != tn.style {

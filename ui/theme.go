@@ -152,7 +152,8 @@ func (v ThemeView) Render(cx *core.Scope) core.Node {
 	return core.View{
 		StyleFunc: func() core.Style {
 			t := theme()
-			return core.Style{Background: t.Background, Color: t.Foreground, FontSize: t.FontSize}.Merge(v.Style)
+			return core.Style{Background: t.Background, Color: t.Foreground, FontSize: t.FontSize,
+				SelectionColor: t.Selection}.Merge(v.Style)
 		},
 		Children: v.Children,
 		TestID:   v.TestID,

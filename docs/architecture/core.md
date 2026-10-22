@@ -67,6 +67,16 @@ A platform's `TextEngine` runs on the engine goroutine in three phases. `Prepare
 
 A `Canvas` records its drawing on the engine into an immutable `Drawing`, again when a signal it read or its size changes, and the platform plays the operations on the main thread.
 
+## Text selection
+
+Selection follows NSH's: one selection runs across the texts of a selection area (a `View` with `SelectionArea`, which `base.SelectionArea` sets), in document order, as a web page's does. A `Text` with `SelectableOn` outside any area is an area of its own; one with `SelectableOff` stays out. The highlight is the inherited `SelectionColor`, else the platform's.
+
+- `ViewProps` carries `SelectionArea`, `Selectable` and `SelectionColor`, so a selection never waits for the engine.
+- `SelectionModel` in `selection.go` is the platform-independent model macOS and iOS drive on their main thread. Windows does not select text yet. A backend lists an area's texts as `SelectionTexts` (content, frames in the area, its text engine's hit test, NodeIDs as keys), feeds it presses, drags and long presses, and draws its `Ranges`. Offsets are UTF-16, and `Text` joins texts on one row with a tab, others with a line break, leaving attachments out.
+- macOS takes mouse presses in its event monitor before views see them; pressables, fields and gestures inside an area keep theirs. The surface becomes first responder for Copy, Select All and Escape.
+- iOS selects with a long press, then by words as the finger drags, and shows the edit menu; the view controller answers Copy and Select All. Touch handles are not drawn yet.
+- The web uses the browser's own selection through `user-select`, and a `copy` handler joins texts as the model does.
+
 ## Gestures
 
 `View.OnPan`, `OnPinch` and `OnRotation` follow gestures the platform recognizes; they report to the engine, which merges each gesture's moves per turn and never its first or last report.

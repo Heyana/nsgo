@@ -57,6 +57,15 @@ type view struct {
 
 	activation           core.PanActivation
 	pan, pinch, rotation objc.ID // the recognizers of the gestures it follows
+
+	// A text's content and selection, whether a view is an area, and the
+	// long press that selects in it.
+	plain            string
+	selectable       core.Selectable
+	selColor         core.Color
+	selStart, selEnd int // UTF-16
+	area             bool
+	longPress        objc.ID
 }
 
 type surface struct {
@@ -77,6 +86,8 @@ type surface struct {
 
 	// What a batch touched, finished once its frames are set.
 	images, presenting []*view
+
+	selecting *selection
 }
 
 // edgeInsets is UIEdgeInsets.
@@ -174,6 +185,7 @@ func loadUIKit() {
 	}
 	common = append(common, gestureMethods()...)
 	registerGestures()
+	registerSelection()
 	classView = register("NsgoView", uiView, nil, common)
 	classSurface = register("NsgoSurface", uiView, nil, append(common,
 		objc.MethodDef{Cmd: sel("layoutSubviews"), Fn: surfaceLayout},
@@ -196,6 +208,9 @@ func loadUIKit() {
 			self.Send(selBecomeFirst)
 		}},
 		{Cmd: sel("pressesBegan:withEvent:"), Fn: pressesBegan},
+		{Cmd: sel("copy:"), Fn: controllerCopy},
+		{Cmd: sel("selectAll:"), Fn: controllerSelectAll},
+		{Cmd: sel("canPerformAction:withSender:"), Fn: controllerCanPerform},
 	})
 	// The watcher sees every touch going down in the surface, before its
 	// views do, and lets it through.
@@ -423,6 +438,7 @@ func watcherBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	apple.Super(self, cmd, touches, event)
 	if app.engine != nil {
 		apple.ForEach(touches, app.pressOutside)
+		apple.ForEach(touches, app.clearTouched)
 	}
 	// Failing at once keeps the watcher out of every other gesture.
 	const failed = 5
@@ -547,14 +563,20 @@ func (s *surface) apply(b *core.MountBatch) {
 			v.native.Send(sel("setContentOffset:animated:"), to, it.Animated)
 		case core.ItemViewProps:
 			setAccessibility(v.native, it.ViewProps)
-			v.activation = it.ViewProps.PanActivation
+			p := it.ViewProps
+			v.activation, v.area, v.selectable = p.PanActivation, p.SelectionArea, p.Selectable
+			if v.selColor != p.SelectionColor {
+				v.selColor = p.SelectionColor
+				v.native.Send(selSetNeedsDisplay)
+			}
+			v.setSelectable()
 		case core.ItemEvents:
 			v.events = it.Events
 			v.setGestures(it.Events)
 		case core.ItemText:
 			v.layout.Release()
 			v.layout, _ = it.Text.Layout.(*apple.Layout)
-			v.box = it.Text.Content
+			v.box, v.plain = it.Text.Content, it.Text.Text
 			v.native.Send(selSetAccessibilityLabel, apple.NSString(it.Text.Text))
 			v.native.Send(selSetNeedsDisplay)
 		case core.ItemInput:
@@ -589,6 +611,7 @@ func (s *surface) apply(b *core.MountBatch) {
 		s.native.Send(selAddSubview, root.native)
 	}
 	s.finish()
+	s.refreshSelection()
 }
 
 // finish starts what a batch asked for once its frames are set: image
@@ -773,6 +796,7 @@ func drawRect(self objc.ID, _ objc.SEL, dirty apple.CGRect) {
 		return
 	}
 	b := objc.Send[apple.CGRect](self, selBounds)
+	v.drawSelection(uiGraphicsGetCurrentContext())
 	box := v.box
 	v.layout.Draw(uiGraphicsGetCurrentContext(), b.Size.Height, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y),
 		float64(box.Size.Width), float64(box.Size.Height)))

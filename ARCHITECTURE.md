@@ -102,4 +102,4 @@ Subjects go in `docs/architecture/` once a subsystem has a lasting design.
 
 | Document | When to read |
 | --- | --- |
-| [Core](docs/architecture/core.md) | Changing the reactive graph, elements, regions, commit, text, storage or the mount protocol |
+| [Core](docs/architecture/core.md) | Changing the reactive graph, elements, regions, commit, text, selection, storage or the mount protocol |

@@ -55,6 +55,8 @@ type surface struct {
 	watch     watch
 	env       core.Environment // as last sent
 	gestures  gestures
+	// selectionCSS is whether the ::selection rule is in the page.
+	selectionCSS bool
 }
 
 // view is the element of one NodeID.
@@ -78,6 +80,10 @@ type view struct {
 	// panActivation decides when a drag on the view becomes its pan.
 	panActivation core.PanActivation
 	listeners     listeners
+	// A text's selection props, and whether a view is a selection area.
+	selectable core.Selectable
+	selColor   core.Color
+	area       bool
 }
 
 // listeners are event listeners added until their owner goes.
@@ -503,6 +509,7 @@ func (s *surface) Mount(b *core.MountBatch) {
 			s.setEvents(v, it.Events)
 		case core.ItemViewProps:
 			setViewProps(v, it.ViewProps)
+			s.setSelection(v, it.ViewProps)
 			if v.panActivation != it.ViewProps.PanActivation {
 				v.panActivation = it.ViewProps.PanActivation
 				s.setGestureStyle(v)
@@ -550,6 +557,7 @@ func (s *surface) create(id core.NodeID, kind core.ViewKind) *view {
 	switch kind {
 	case core.KindText:
 		v.inner = s.element("div")
+		v.inner.Set("className", "nsgo-text")
 		setStyle(v.inner, textBase)
 		v.el.Call("appendChild", v.inner)
 	case core.KindInput:
@@ -939,6 +947,7 @@ func (s *surface) listen() {
 	ls.on(s.host, "click", s.click)
 	ls.on(s.host, "keydown", s.keyDown)
 	ls.on(s.host, "contextmenu", s.contextMenu)
+	ls.on(s.doc, "copy", s.copySelection)
 	ls.on(s.doc, "keydown", s.escape)
 	s.listenGestures(&ls)
 	// Captured, so shortcuts come before what has focus.
@@ -1128,9 +1137,13 @@ func (s *surface) pressOutside(e js.Value) {
 	}
 }
 
-// escape cancels the topmost alert, or reports back unless a text field
-// takes Escape.
+// escape cancels the topmost alert, or clears a text selection, or
+// reports back unless a text field takes Escape. It also gives Select All
+// to text selections.
 func (s *surface) escape(e js.Value) {
+	if len(s.alerts) == 0 && s.selectKey(e) {
+		return
+	}
 	if e.Get("key").String() != "Escape" || e.Get("isComposing").Bool() || e.Get("defaultPrevented").Bool() {
 		return
 	}

@@ -28,7 +28,7 @@ var sections []section
 
 func init() {
 	sections = []section{
-		{"Text", "Fonts, weights, decoration, alignment, line limits and links.", textPage},
+		{"Text", "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
 		{"Layout", "Flexbox, wrapping, absolute positioning, grid and block layout.", layoutPage},
 		{"Styles", "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
 		{"Controls", "Buttons, checkboxes, radios, switches, tabs and text fields.", controlsPage},

@@ -270,7 +270,7 @@ type TextEngine struct{}
 func (TextEngine) Prepare(t *core.AttributedText) core.PreparedText {
 	toUTF16, toUTF8 := utf16Offsets(t.Text)
 	str := attributed(t, toUTF16)
-	p := &prepared{str: str, fs: ctFramesetterCreate(str), maxLines: t.MaxLines, toUTF8: toUTF8}
+	p := &prepared{str: str, fs: ctFramesetterCreate(str), maxLines: t.MaxLines, text: t.Text, toUTF8: toUTF8}
 	if cfAttributedStringLength(str) == 0 {
 		f := Font(t.Style.Font)
 		p.emptyHeight = ctFontGetAscent(f) + ctFontGetDescent(f) + ctFontGetLeading(f)
@@ -286,6 +286,7 @@ type prepared struct {
 	str, fs     uintptr
 	maxLines    int
 	emptyHeight float64
+	text        string
 	toUTF8      []int // byte offsets of UTF-16 offsets
 }
 
@@ -337,7 +338,7 @@ func (p *prepared) frame(size CGSize) uintptr {
 
 // Layout implements core.PreparedText: the CTFrame the main thread draws.
 func (p *prepared) Layout(size core.Size) core.TextLayout {
-	l := &Layout{height: float64(size.Height), toUTF8: p.toUTF8}
+	l := &Layout{height: float64(size.Height), text: p.text, toUTF8: p.toUTF8}
 	if p.emptyHeight > 0 {
 		return l
 	}
@@ -408,6 +409,7 @@ type Layout struct {
 	shown     int
 	restStart int // the truncated line's first UTF-16 offset
 
+	text   string
 	toUTF8 []int
 }
 
@@ -424,20 +426,15 @@ func (l *Layout) Release() {
 	*l = Layout{}
 }
 
-// IndexAt returns the UTF-8 byte offset of the character at p, a point of
-// the view Draw drew l in at box, or -1 when no character is there.
-func (l *Layout) IndexAt(p CGPoint, box CGRect) int {
-	if l == nil || (l.frame == 0 && l.truncated == 0) {
-		return -1
-	}
-	x, y := p.X-box.Origin.X, p.Y-box.Origin.Y // from the box's top left
-	var lines []uintptr
-	var baselines []CGPoint // from the box's top
+// placed returns l's lines, their baselines from the box's top and the
+// UTF-16 offset each line's string range starts from: 0, or the rest's
+// start for the truncated last line.
+func (l *Layout) placed() (lines []uintptr, baselines []CGPoint, bases []int) {
 	if l.frame != 0 {
 		arr := ctFrameGetLines(l.frame)
 		n := cfArrayGetCount(arr)
 		if n == 0 {
-			return -1
+			return nil, nil, nil
 		}
 		origins := make([]CGPoint, n)
 		ctFrameGetLineOrigins(l.frame, cfRange{Length: n}, &origins[0])
@@ -446,10 +443,22 @@ func (l *Layout) IndexAt(p CGPoint, box CGRect) int {
 			lines = append(lines, cfArrayGetValueAtIndex(arr, i))
 			baselines = append(baselines, CGPoint{X: origins[i].X, Y: l.height + 1 - origins[i].Y})
 		}
-	} else {
-		lines = append(append(lines, l.lines...), l.truncated)
-		baselines = l.origins[:l.shown]
+		return lines, baselines, make([]int, n)
 	}
+	lines = append(append(lines, l.lines...), l.truncated)
+	bases = make([]int, len(lines))
+	bases[len(lines)-1] = l.restStart
+	return lines, l.origins[:l.shown], bases
+}
+
+// IndexAt returns the UTF-8 byte offset of the character at p, a point of
+// the view Draw drew l in at box, or -1 when no character is there.
+func (l *Layout) IndexAt(p CGPoint, box CGRect) int {
+	if l == nil || (l.frame == 0 && l.truncated == 0) {
+		return -1
+	}
+	x, y := p.X-box.Origin.X, p.Y-box.Origin.Y // from the box's top left
+	lines, baselines, bases := l.placed()
 	for i, line := range lines {
 		var ascent, descent, leading float64
 		width := ctLineGetTypographicBounds(line, &ascent, &descent, &leading)
@@ -467,16 +476,100 @@ func (l *Layout) IndexAt(p CGPoint, box CGRect) int {
 		if idx > r.Location && ctLineOffsetForIndex(line, idx, nil) > lx {
 			idx--
 		}
-		idx = min(max(idx, r.Location), r.Location+r.Length-1)
-		if l.frame == 0 && i == len(lines)-1 {
-			idx += l.restStart
-		}
+		idx = min(max(idx, r.Location), r.Location+r.Length-1) + bases[i]
 		if idx < 0 || idx >= len(l.toUTF8)-1 {
 			return -1
 		}
 		return l.toUTF8[idx]
 	}
 	return -1
+}
+
+// OffsetAt returns the UTF-16 offset of the caret nearest p, a point of
+// the view Draw drew l in at box: on the line nearest p, before the
+// line's break.
+func (l *Layout) OffsetAt(p CGPoint, box CGRect) int {
+	if l == nil {
+		return 0
+	}
+	lines, baselines, bases := l.placed()
+	if len(lines) == 0 {
+		return 0
+	}
+	y := p.Y - box.Origin.Y
+	i := len(lines) - 1
+	for k, line := range lines {
+		var ascent, descent, leading float64
+		ctLineGetTypographicBounds(line, &ascent, &descent, &leading)
+		if y <= baselines[k].Y+descent+leading/2 {
+			i = k
+			break
+		}
+	}
+	line := lines[i]
+	r := ctLineGetStringRange(line)
+	idx := ctLineIndexForPosition(line, CGPoint{X: p.X - box.Origin.X - baselines[i].X})
+	end := r.Location + r.Length
+	if end > r.Location && l.breaksAt(end-1+bases[i]) {
+		end--
+	}
+	return min(max(idx, r.Location), end) + bases[i]
+}
+
+// breaksAt reports whether UTF-16 offset i is a line break.
+func (l *Layout) breaksAt(i int) bool {
+	if i < 0 || i >= len(l.toUTF8)-1 {
+		return false
+	}
+	c := l.text[l.toUTF8[i]]
+	return c == '\n' || c == '\r'
+}
+
+// SelectionRects returns the boxes of the UTF-16 range from start to end
+// in the view Draw draws l in at box, a box per line it covers. A range
+// that goes on past a line covers the rest of it.
+func (l *Layout) SelectionRects(start, end int, box CGRect) []CGRect {
+	if l == nil || end <= start {
+		return nil
+	}
+	var out []CGRect
+	lines, baselines, bases := l.placed()
+	for i, line := range lines {
+		r := ctLineGetStringRange(line)
+		from, to := r.Location+bases[i], r.Location+r.Length+bases[i]
+		a, b := max(start, from), min(end, to)
+		if a >= b {
+			continue
+		}
+		var ascent, descent, leading float64
+		width := ctLineGetTypographicBounds(line, &ascent, &descent, &leading)
+		x0 := ctLineOffsetForIndex(line, a-bases[i], nil)
+		x1 := ctLineOffsetForIndex(line, b-bases[i], nil)
+		if end >= to {
+			x1 = width
+		}
+		if x1 < x0 {
+			x0, x1 = x1, x0
+		}
+		o := baselines[i]
+		top := o.Y - ascent - leading/2
+		out = append(out, Rect(box.Origin.X+o.X+x0, box.Origin.Y+top, x1-x0, ascent+descent+leading))
+	}
+	return out
+}
+
+// FillRects fills rects with color, a CGColor.
+func FillRects(ctx uintptr, rects []CGRect, color uintptr) {
+	if ctx == 0 || len(rects) == 0 {
+		return
+	}
+	cgContextSaveGState(ctx)
+	cgContextSetFillColor(ctx, color)
+	for _, r := range rects {
+		cgContextAddRect(ctx, r)
+	}
+	cgContextFillPath(ctx)
+	cgContextRestoreGState(ctx)
 }
 
 // Draw draws l in box of a flipped context of a view viewHeight tall.

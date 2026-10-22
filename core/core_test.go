@@ -878,3 +878,36 @@ func TestChangesInsideRegionsRelayout(t *testing.T) {
 		t.Errorf("modal opened at %v, want the root's size", got)
 	}
 }
+
+func TestSelectionProps(t *testing.T) {
+	var color *Signal[Color]
+	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+		color = NewSignal(cx, RGB(0x00ff00))
+		return View{SelectionArea: true, StyleFunc: func() Style { return Style{SelectionColor: color.Get()} },
+			TestID: "area", Children: []Node{
+				Text{Content: "in", TestID: "in"},
+				Text{Content: "out", Selectable: SelectableOff, TestID: "out"},
+			}}
+	})
+	b := h.commit()
+	props := map[NodeID]ViewProps{}
+	for _, it := range b.Items {
+		if it.Kind == ItemViewProps {
+			props[it.ID] = *it.ViewProps
+		}
+	}
+	if !props[h.find("area").id].SelectionArea {
+		t.Error("the area view is not sent as an area")
+	}
+	if p := props[h.find("in").id]; p.SelectionColor != RGB(0x00ff00) || p.Selectable != SelectableAuto {
+		t.Errorf("text props = %+v, want the inherited selection color", p)
+	}
+	if p := props[h.find("out").id]; p.Selectable != SelectableOff {
+		t.Errorf("text props = %+v, want selectable off", p)
+	}
+	color.Set(RGB(0x0000ff))
+	b = h.commit()
+	if k := kinds(b); k[ItemViewProps] != 2 || k[ItemText] != 0 {
+		t.Errorf("a new selection color sends %v, want the texts' props only", k)
+	}
+}

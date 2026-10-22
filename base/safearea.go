@@ -98,3 +98,22 @@ func (v KeyboardAvoidingView) Render(cx *core.Scope) core.Node {
 		TestID:   v.TestID,
 	}
 }
+
+// SelectionArea makes the texts inside select together, as a web page's
+// do: one selection runs from a place in one text to a place in another,
+// across views. On desktops it is made by dragging, a double click (a
+// word) or a triple click (a whole text), and extended by Shift-clicks;
+// on touch screens by a long press. Cmd or Ctrl+A selects the area, Cmd
+// or Ctrl+C copies and Escape clears. Texts with SelectableOff stay out,
+// and an area inside another is part of the outer one. It has no look of
+// its own: the highlight is each text's SelectionColor.
+type SelectionArea struct {
+	Style    core.Style
+	Children []core.Node
+	TestID   string
+}
+
+// Render implements core.Node.
+func (a SelectionArea) Render(*core.Scope) core.Node {
+	return core.View{SelectionArea: true, Style: a.Style, Children: a.Children, TestID: a.TestID}
+}

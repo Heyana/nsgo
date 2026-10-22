@@ -70,6 +70,13 @@ type view struct {
 
 	windowDrag core.WindowDrag
 	activation core.PanActivation
+
+	// A text's content and selection, and whether a view is an area.
+	plain            string
+	selectable       core.Selectable
+	selColor         core.Color
+	selStart, selEnd int // UTF-16
+	area             bool
 }
 
 type surface struct {
@@ -87,6 +94,7 @@ type surface struct {
 	// The gestures in progress.
 	pan             *panTrack
 	pinch, rotation *gestureTrack
+	selecting       *selection
 
 	chrome
 }
@@ -173,6 +181,13 @@ func loadAppKit() {
 		objc.MethodDef{Cmd: selApply, Fn: surfaceApply},
 		objc.MethodDef{Cmd: sel("viewDidChangeEffectiveAppearance"), Fn: refresh},
 		objc.MethodDef{Cmd: sel("viewDidChangeBackingProperties"), Fn: refresh},
+		objc.MethodDef{Cmd: sel("acceptsFirstResponder"), Fn: func(objc.ID, objc.SEL) bool { return true }},
+		objc.MethodDef{Cmd: sel("resignFirstResponder"), Fn: surfaceResign},
+		// Keys reach the surface only while it holds a selection; it
+		// takes them, as a text view would, rather than beep.
+		objc.MethodDef{Cmd: sel("keyDown:"), Fn: func(objc.ID, objc.SEL, objc.ID) {}},
+		objc.MethodDef{Cmd: sel("copy:"), Fn: surfaceCopy},
+		objc.MethodDef{Cmd: sel("selectAll:"), Fn: surfaceSelectAll},
 	))
 	classObserver = register("NsgoObserver", objc.GetClass("NSObject"), nil, []objc.MethodDef{{
 		Cmd: sel("observeValueForKeyPath:ofObject:change:context:"),
@@ -365,25 +380,28 @@ func (s *surface) observe() {
 	observer := objc.ID(classObserver).Send(selNew)
 	ws.Send(sel("addObserver:forKeyPath:options:context:"), observer, apple.NSString("voiceOverEnabled"), uint(0), uintptr(0))
 
-	const keyDown, leftDown, rightDown, otherDown = 1 << 10, 1 << 1, 1 << 3, 1 << 25
+	const keyDown, leftDown, leftUp, leftDragged, rightDown, otherDown = 1 << 10, 1 << 1, 1 << 2, 1 << 6, 1 << 3, 1 << 25
 	handler := objc.NewBlock(func(_ objc.Block, event objc.ID) objc.ID { return s.filter(event) })
 	objc.ID(objc.GetClass("NSEvent")).Send(sel("addLocalMonitorForEventsMatchingMask:handler:"),
-		uint64(keyDown|leftDown|rightDown|otherDown), handler)
+		uint64(keyDown|leftDown|leftUp|leftDragged|rightDown|otherDown), handler)
 	handler.Release()
 }
 
-// filter sees the app's key and mouse-down events before their views do.
-// It turns back keys and the back button into EventBack, which it takes,
-// and reports presses outside to the views that listen.
+// filter sees the app's key and mouse events before their views do. It
+// turns back keys and the back button into EventBack, which it takes,
+// reports presses outside to the views that listen and runs selections.
 func (s *surface) filter(event objc.ID) objc.ID {
 	if event.Send(selWindow) != s.window {
 		return event
 	}
-	const typeLeftDown, typeRightDown, typeKeyDown, typeOtherDown = 1, 3, 10, 25
+	const typeLeftDown, typeLeftUp, typeRightDown, typeLeftDragged, typeKeyDown, typeOtherDown = 1, 2, 3, 6, 10, 25
 	switch objc.Send[uint](event, sel("type")) {
 	case typeKeyDown:
 		if binding := s.binding(event); binding != "" {
 			s.engine.Dispatch(core.Event{Kind: core.EventKey, Text: binding})
+			return 0
+		}
+		if s.selectKey(event) {
 			return 0
 		}
 		if s.isBack(event) {
@@ -392,7 +410,15 @@ func (s *surface) filter(event objc.ID) objc.ID {
 		}
 	case typeLeftDown:
 		s.pressOutside(event)
-		if s.dragWindow(event) {
+		if s.dragWindow(event) || s.selectPress(event) {
+			return 0
+		}
+	case typeLeftDragged:
+		if s.selectDrag(event) {
+			return 0
+		}
+	case typeLeftUp:
+		if s.selectUp() {
 			return 0
 		}
 	case typeRightDown:
@@ -662,13 +688,18 @@ func (s *surface) apply(b *core.MountBatch) {
 			v.scrollTo(it.Point, it.Animated)
 		case core.ItemViewProps:
 			setAccessibility(v.native, it.ViewProps)
-			v.windowDrag, v.activation = it.ViewProps.WindowDrag, it.ViewProps.PanActivation
+			p := it.ViewProps
+			v.windowDrag, v.activation, v.area, v.selectable = p.WindowDrag, p.PanActivation, p.SelectionArea, p.Selectable
+			if v.selColor != p.SelectionColor {
+				v.selColor = p.SelectionColor
+				v.native.Send(selSetNeedsDisplay, true)
+			}
 		case core.ItemEvents:
 			v.setEvents(it.Events)
 		case core.ItemText:
 			v.layout.Release()
 			v.layout, _ = it.Text.Layout.(*apple.Layout)
-			v.box = it.Text.Content
+			v.box, v.plain = it.Text.Content, it.Text.Text
 			v.native.Send(selSetAccessibilityLabel, apple.NSString(it.Text.Text))
 			v.native.Send(selSetNeedsDisplay, true)
 		case core.ItemInput:
@@ -700,6 +731,7 @@ func (s *surface) apply(b *core.MountBatch) {
 		s.native.Send(selAddSubview, root.native)
 	}
 	s.finish()
+	s.refreshSelection()
 }
 
 // finish starts what a batch asked for once its frames are set: image
@@ -928,6 +960,7 @@ func drawRect(self objc.ID, _ objc.SEL, dirty apple.CGRect) {
 		apple.Play(ctx, v.drawing)
 		return
 	}
+	v.drawSelection(ctx)
 	box := v.box
 	v.layout.Draw(ctx, b.Size.Height, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y),
 		float64(box.Size.Width), float64(box.Size.Height)))

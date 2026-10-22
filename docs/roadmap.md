@@ -13,7 +13,6 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
-| SelectionArea | `crates/nsh-base/src/selection_area.rs`, `crates/nsh-core/src/selection.rs` | Static text can be selected and copied |
 | TextView | `crates/nsh-base/src/text_view` | Markdown renders with code highlighting, links and extensions |
 
 ## 2. Media, embedding and animation
@@ -46,7 +45,7 @@ These items wait for community contributions; the items above do not depend on t
 | --- | --- | --- |
 | Android runtime | `crates/nsh-platform-android` | The Java runtime compiles; `classes.dex` is committed with the command that rebuilds it |
 | Android packaging | `docs/dev/embedding.md`, `crates/nsh-cli/src/android.rs` | `nsgo build` writes a signed APK with nothing beyond Go and Xcode installed |
-| iOS touch | `crates/nsh-platform-ios` | Gestures and text input are checked in the simulator |
+| iOS touch | `crates/nsh-platform-ios` | Gestures, text input and text selection are checked in the simulator; selections have touch handles |
 
 ## Not ported
 
