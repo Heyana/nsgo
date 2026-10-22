@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -19,7 +20,7 @@ import (
 
 // Extension is syntax of the app's that becomes Custom nodes named Name,
 // which the TextView's RenderCustom (blocks) and CustomSpan (inline)
-// show. Set one of Pattern, Language or Container.
+// show. Set one of Pattern, Language, Container or Tag.
 type Extension struct {
 	Name string
 	// Pattern is inline syntax matched in text, outside code and links
@@ -36,15 +37,22 @@ type Extension struct {
 	// "label", {key=value .class #id} the other attributes. A container
 	// inside another closes with fewer colons than the outer one.
 	Container string
+	// Tag makes HTML elements of this name, in any case (<Callout>), custom
+	// nodes: their attributes the node's, their text its Text, and what
+	// they hold its blocks when they stand alone, else its inline content.
+	// An element may close itself as JSX writes it (<Callout />).
+	Tag string
 }
 
 // Parse reads Markdown into a document: CommonMark with GitHub's tables,
 // task lists, strikethrough, autolinks, footnotes and alerts, and the
-// syntax of extensions. Raw HTML is left out, except <br> as a line break.
+// syntax of extensions. HTML inside reads as ParseHTML reads it; the
+// Markdown between an element's tags, on lines of their own or in a
+// paragraph (<b>x *y*</b>), stays Markdown.
 func Parse(markdown string, extensions ...Extension) Document {
 	src := []byte(markdown)
 	root := markdownFor(extensions).Parser().Parse(text.NewReader(src))
-	r := reader{src: src, ext: extensions, labels: map[int]string{}, slugs: map[string]int{}}
+	r := reader{src: src, ext: extensions, labels: map[int]string{}, slugs: slugs{}}
 	var doc Document
 	for n := root.FirstChild(); n != nil; n = n.NextSibling() {
 		if list, ok := n.(*east.FootnoteList); ok {
@@ -63,12 +71,9 @@ func Parse(markdown string, extensions ...Extension) Document {
 						Footnote{Label: string(f.Ref), Index: f.Index, Children: r.blocks(f)})
 				}
 			}
-			continue
-		}
-		if b := r.block(n); b != nil {
-			doc.Blocks = append(doc.Blocks, b)
 		}
 	}
+	doc.Blocks = r.blockRun(root.FirstChild(), nil)
 	return doc
 }
 
@@ -107,17 +112,91 @@ type reader struct {
 	src    []byte
 	ext    []Extension
 	labels map[int]string // footnote labels by number
-	slugs  map[string]int
+	slugs  slugs
 }
 
 func (r *reader) blocks(parent ast.Node) []Block {
+	return r.blockRun(parent.FirstChild(), nil)
+}
+
+// blockRun reads the blocks from n up to stop, or to the last sibling.
+// An HTML block that opens an element another closes holds the Markdown
+// between them.
+func (r *reader) blockRun(n, stop ast.Node) []Block {
 	var out []Block
-	for n := parent.FirstChild(); n != nil; n = n.NextSibling() {
-		if b := r.block(n); b != nil {
-			out = append(out, b)
+	for ; n != nil && n != stop; n = n.NextSibling() {
+		h, ok := n.(*ast.HTMLBlock)
+		if !ok {
+			if b := r.block(n); b != nil {
+				out = append(out, b)
+			}
+			continue
 		}
+		if close := r.htmlElement(h, &out); close != nil {
+			n = close
+			continue
+		}
+		out = append(out, htmlBlocks(r.html(h), r.ext)...)
 	}
 	return out
+}
+
+// htmlElement reads an element whose opening and closing tags are blocks
+// of their own with Markdown between them (<details>, a blank line,
+// Markdown, </details>) as one element holding the Markdown's blocks. It
+// returns the closing tag's block, or nil when open is no such element.
+func (r *reader) htmlElement(open *ast.HTMLBlock, out *[]Block) ast.Node {
+	source := r.html(open)
+	name, ok := unclosedElement(source)
+	if !ok {
+		return nil
+	}
+	close := matchingClose(open, name, func(n ast.Node) (string, bool) {
+		h, ok := n.(*ast.HTMLBlock)
+		if !ok {
+			return "", false
+		}
+		return r.html(h), true
+	})
+	if close == nil {
+		return nil
+	}
+	element := htmlBlocks(source+"\n"+strings.TrimSpace(r.html(close.(*ast.HTMLBlock))), r.ext)
+	if len(element) == 0 {
+		return nil
+	}
+	inner := r.blockRun(open.NextSibling(), close)
+	switch b := element[len(element)-1].(type) {
+	case Details:
+		b.Children = append(b.Children, inner...)
+		element[len(element)-1] = b
+	case Blockquote:
+		b.Children = append(b.Children, inner...)
+		element[len(element)-1] = b
+	case Custom:
+		b.Children = append(b.Children, inner...)
+		if len(b.Content) == 0 {
+			b.Text = Document{Blocks: b.Children}.PlainText()
+		}
+		element[len(element)-1] = b
+	default:
+		return nil
+	}
+	*out = append(*out, element...)
+	return close
+}
+
+// html returns an HTML block's source.
+func (r *reader) html(h *ast.HTMLBlock) string {
+	var b strings.Builder
+	for i := 0; i < h.Lines().Len(); i++ {
+		seg := h.Lines().At(i)
+		b.Write(seg.Value(r.src))
+	}
+	if h.HasClosure() {
+		b.Write(h.ClosureLine.Value(r.src))
+	}
+	return b.String()
 }
 
 func (r *reader) block(n ast.Node) Block {
@@ -202,21 +281,16 @@ func (r *reader) quote(n *ast.Blockquote) Block {
 		return Blockquote{Children: r.blocks(n)}
 	}
 	q := Blockquote{Alert: alert}
-	var rest []Inline
-	for c := first.FirstChild(); c != nil; c = c.NextSibling() {
-		if t, ok := c.(*ast.Text); ok && t.Segment.Stop <= line.Stop {
-			continue
+	c := first.FirstChild()
+	for ; c != nil; c = c.NextSibling() {
+		if t, ok := c.(*ast.Text); !ok || t.Segment.Stop > line.Stop {
+			break
 		}
-		rest = r.inline(rest, c)
 	}
-	if rest = r.finish(rest); len(rest) > 0 {
+	if rest := r.finish(r.inlineRun(nil, c, nil)); len(rest) > 0 {
 		q.Children = append(q.Children, Paragraph{Content: rest})
 	}
-	for c := first.NextSibling(); c != nil; c = c.NextSibling() {
-		if b := r.block(c); b != nil {
-			q.Children = append(q.Children, b)
-		}
-	}
+	q.Children = append(q.Children, r.blockRun(first.NextSibling(), nil)...)
 	return q
 }
 
@@ -248,11 +322,154 @@ func (r *reader) lines(n ast.Node) string {
 
 // content reads a block's inline content.
 func (r *reader) content(n ast.Node) []Inline {
-	var out []Inline
-	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
-		out = r.inline(out, c)
+	return r.finish(r.inlineRun(nil, n.FirstChild(), nil))
+}
+
+// inlineRun appends the inline content from n up to stop, or to the last
+// sibling. An HTML tag another closes reads as one element from the
+// source between them; a formatting element holds the Markdown between
+// its tags.
+func (r *reader) inlineRun(out []Inline, n, stop ast.Node) []Inline {
+	for ; n != nil && n != stop; n = n.NextSibling() {
+		open, ok := n.(*ast.RawHTML)
+		if !ok {
+			out = r.inline(out, n)
+			continue
+		}
+		tag := r.raw(open)
+		name, ok := unclosedElement(tag)
+		var close ast.Node
+		if ok {
+			close = matchingClose(open, name, func(n ast.Node) (string, bool) {
+				h, ok := n.(*ast.RawHTML)
+				if !ok {
+					return "", false
+				}
+				return r.raw(h), true
+			})
+		}
+		if close == nil {
+			out = append(out, htmlInlines(tag, r.ext)...)
+			continue
+		}
+		if in, ok := r.formatting(open, close.(*ast.RawHTML), strings.ToLower(name)); ok {
+			out = append(out, in)
+		} else {
+			start := open.Segments.At(0).Start
+			end := close.(*ast.RawHTML).Segments.At(close.(*ast.RawHTML).Segments.Len() - 1).Stop
+			out = append(out, htmlInlines(string(r.src[start:end]), r.ext)...)
+		}
+		n = close
 	}
-	return r.finish(out)
+	return out
+}
+
+// formatting reads a formatting element whose content is Markdown
+// (<strong>b *c*</strong>: c is emphasized): the element as HTML reads its
+// opening tag (a <mark>'s color, a link's URL), holding the Markdown
+// between its tags.
+func (r *reader) formatting(open, close *ast.RawHTML, name string) (Inline, bool) {
+	// slot stands for the content while the opening tag is read.
+	const slot = "\ue000"
+	if !formattingElements[name] {
+		return nil, false
+	}
+	read := htmlInlines(r.raw(open)+slot+"</"+name+">", r.ext)
+	if len(read) != 1 {
+		return nil, false
+	}
+	content := join(r.inlineRun(nil, open.NextSibling(), close))
+	isSlot := func(c []Inline) bool { return len(c) == 1 && c[0] == Inline(Text{slot}) }
+	switch in := read[0].(type) {
+	case Strong:
+		return Strong{content}, isSlot(in.Content)
+	case Emphasis:
+		return Emphasis{content}, isSlot(in.Content)
+	case Strikethrough:
+		return Strikethrough{content}, isSlot(in.Content)
+	case Underline:
+		return Underline{content}, isSlot(in.Content)
+	case Mark:
+		return Mark{content, in.Color}, isSlot(in.Content)
+	case Superscript:
+		return Superscript{content}, isSlot(in.Content)
+	case Subscript:
+		return Subscript{content}, isSlot(in.Content)
+	case Small:
+		return Small{content}, isSlot(in.Content)
+	case Link:
+		return Link{URL: in.URL, Title: in.Title, Content: content}, isSlot(in.Content)
+	}
+	return nil, false
+}
+
+// raw returns an inline HTML tag's source.
+func (r *reader) raw(h *ast.RawHTML) string {
+	var b strings.Builder
+	for i := 0; i < h.Segments.Len(); i++ {
+		s := h.Segments.At(i)
+		b.Write(s.Value(r.src))
+	}
+	return b.String()
+}
+
+// unclosedElement returns the name of the element tag opens and does not
+// close (<details>, <b class="x">), but not of void elements.
+func unclosedElement(tag string) (string, bool) {
+	inner, ok := strings.CutPrefix(strings.TrimLeftFunc(tag, unicode.IsSpace), "<")
+	if !ok {
+		return "", false
+	}
+	n := 0
+	for n < len(inner) && (inner[n] == '-' || inner[n] < utf8.RuneSelf && (unicode.IsLetter(rune(inner[n])) || unicode.IsDigit(rune(inner[n])))) {
+		n++
+	}
+	if n == 0 || !unicode.IsLetter(rune(inner[0])) {
+		return "", false
+	}
+	name := inner[:n]
+	if voidElements[strings.ToLower(name)] {
+		return "", false
+	}
+	end := strings.IndexByte(inner, '>')
+	if end < 0 || strings.HasSuffix(inner[:end], "/") {
+		return "", false
+	}
+	if strings.Contains(strings.ToLower(inner), "</"+strings.ToLower(name)) {
+		return "", false
+	}
+	return name, true
+}
+
+// isClosingTag reports whether tag closes the element name (</details>).
+func isClosingTag(tag, name string) bool {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(tag), "</")
+	if !ok {
+		return false
+	}
+	rest, ok = strings.CutSuffix(rest, ">")
+	return ok && strings.EqualFold(strings.TrimSpace(rest), name)
+}
+
+// matchingClose returns the sibling after open that closes the element
+// name, reading HTML siblings' source with source.
+func matchingClose(open ast.Node, name string, source func(ast.Node) (string, bool)) ast.Node {
+	depth := 0
+	for n := open.NextSibling(); n != nil; n = n.NextSibling() {
+		s, ok := source(n)
+		if !ok {
+			continue
+		}
+		if inner, ok := unclosedElement(s); ok && strings.EqualFold(inner, name) {
+			depth++
+		} else if isClosingTag(s, name) {
+			if depth == 0 {
+				return n
+			}
+			depth--
+		}
+	}
+	return nil
 }
 
 // finish joins neighboring texts, trims the end and splits text where
@@ -319,21 +536,12 @@ func (r *reader) inline(out []Inline, n ast.Node) []Inline {
 	case *ast.Image:
 		out = append(out, Image{Src: string(n.Destination), Alt: r.text(n), Title: string(n.Title)})
 	case *ast.RawHTML:
-		var tag strings.Builder
-		for i := 0; i < n.Segments.Len(); i++ {
-			s := n.Segments.At(i)
-			tag.Write(s.Value(r.src))
-		}
-		if isBreak(tag.String()) {
-			out = append(out, Break{})
-		}
+		out = append(out, htmlInlines(r.raw(n), r.ext)...)
 	case *east.FootnoteLink:
 		out = append(out, FootnoteReference{Label: r.labels[n.Index], Index: n.Index})
 	case *east.TaskCheckBox, *east.FootnoteBacklink:
 	default:
-		for c := n.FirstChild(); c != nil; c = c.NextSibling() {
-			out = r.inline(out, c)
-		}
+		out = r.inlineRun(out, n.FirstChild(), nil)
 	}
 	return out
 }
@@ -341,11 +549,7 @@ func (r *reader) inline(out []Inline, n ast.Node) []Inline {
 // children reads n's inline content; patterns run once over the whole
 // block, in finish.
 func (r *reader) children(n ast.Node) []Inline {
-	var out []Inline
-	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
-		out = r.inline(out, c)
-	}
-	return join(out)
+	return join(r.inlineRun(nil, n.FirstChild(), nil))
 }
 
 // text returns the text of n's descendants.
@@ -368,14 +572,14 @@ func (r *reader) text(n ast.Node) string {
 	return b.String()
 }
 
-func isBreak(tag string) bool {
-	tag = strings.ToLower(strings.Join(strings.Fields(tag), ""))
-	return tag == "<br>" || tag == "<br/>"
-}
+func (r *reader) anchor(text string) string { return r.slugs.slug(text) }
 
-// anchor returns the next heading's slug as GitHub makes it: lower case,
+// slugs makes headings' anchors unique in a document.
+type slugs map[string]int
+
+// slug returns the next heading's slug as GitHub makes it: lower case,
 // spaces as hyphens, punctuation left out, a count after repeats.
-func (r *reader) anchor(text string) string {
+func (r slugs) slug(text string) string {
 	var b strings.Builder
 	for _, c := range strings.TrimSpace(text) {
 		switch {
@@ -388,13 +592,13 @@ func (r *reader) anchor(text string) string {
 	base := b.String()
 	slug := base
 	for {
-		if _, seen := r.slugs[slug]; !seen {
+		if _, seen := r[slug]; !seen {
 			break
 		}
-		r.slugs[base]++
-		slug = base + "-" + strconv.Itoa(r.slugs[base])
+		r[base]++
+		slug = base + "-" + strconv.Itoa(r[base])
 	}
-	r.slugs[slug] = 0
+	r[slug] = 0
 	return slug
 }
 
@@ -423,6 +627,16 @@ func applyPatterns(in []Inline, ext []Extension) []Inline {
 				out = append(out, Emphasis{walk(it.Content)})
 			case Strikethrough:
 				out = append(out, Strikethrough{walk(it.Content)})
+			case Underline:
+				out = append(out, Underline{walk(it.Content)})
+			case Mark:
+				out = append(out, Mark{walk(it.Content), it.Color})
+			case Superscript:
+				out = append(out, Superscript{walk(it.Content)})
+			case Subscript:
+				out = append(out, Subscript{walk(it.Content)})
+			case Small:
+				out = append(out, Small{walk(it.Content)})
 			default:
 				out = append(out, it)
 			}

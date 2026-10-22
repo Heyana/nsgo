@@ -36,7 +36,7 @@ func (d Document) PlainText() string {
 }
 
 // Block is a block of a document: Paragraph, Heading, Blockquote, List,
-// CodeBlock, Table, Rule or Custom.
+// CodeBlock, Table, Rule, Details, Math or Custom.
 type Block interface {
 	// Kind names the block's type ("paragraph", "codeBlock"), or a custom
 	// node's name.
@@ -45,7 +45,8 @@ type Block interface {
 }
 
 // Inline is content of a block's text: Text, Strong, Emphasis,
-// Strikethrough, Code, Link, Image, Break, FootnoteReference or Custom.
+// Strikethrough, Underline, Mark, Superscript, Subscript, Small,
+// Code, Keyboard, Math, Link, Image, Break, FootnoteReference or Custom.
 type Inline interface{ inline() }
 
 // Paragraph is a block of text.
@@ -167,6 +168,19 @@ const (
 // Rule is a thematic break.
 type Rule struct{}
 
+// Details is a disclosure (<details>): its summary, always shown, and its
+// blocks, shown while open. Open is whether it starts open.
+type Details struct {
+	Open     bool
+	Summary  []Inline
+	Children []Block
+}
+
+// Math is a formula written in TeX, a block of its own or inline in
+// text. HTML gives one for MathML with a TeX annotation, as KaTeX and
+// MathJax write it.
+type Math struct{ TeX string }
+
 // Footnote is a footnote of a document: its label ("1", "note"), its
 // number from 1 and its blocks.
 type Footnote struct {
@@ -204,8 +218,30 @@ type Emphasis struct{ Content []Inline }
 // Strikethrough is struck text, as ~~this~~.
 type Strikethrough struct{ Content []Inline }
 
+// Underline is underlined text, as <u>this</u>.
+type Underline struct{ Content []Inline }
+
+// Mark is marked text, as <mark>this</mark>. Color is the background it
+// asks for; zero is the view's.
+type Mark struct {
+	Content []Inline
+	Color   core.Color
+}
+
+// Superscript is text above the line, as <sup>2</sup>.
+type Superscript struct{ Content []Inline }
+
+// Subscript is text below the line, as <sub>2</sub>.
+type Subscript struct{ Content []Inline }
+
+// Small is smaller text, as <small>this</small>.
+type Small struct{ Content []Inline }
+
 // Code is code in text, as `this`.
 type Code struct{ Code string }
+
+// Keyboard is keys to press, as <kbd>Ctrl</kbd>+<kbd>C</kbd>.
+type Keyboard struct{ Text string }
 
 // Link is a link to URL.
 type Link struct {
@@ -236,6 +272,8 @@ func (List) Kind() string       { return "list" }
 func (CodeBlock) Kind() string  { return "codeBlock" }
 func (Table) Kind() string      { return "table" }
 func (Rule) Kind() string       { return "rule" }
+func (Details) Kind() string    { return "details" }
+func (Math) Kind() string       { return "math" }
 func (c Custom) Kind() string   { return c.Name }
 
 func (Paragraph) block()  {}
@@ -245,13 +283,22 @@ func (List) block()       {}
 func (CodeBlock) block()  {}
 func (Table) block()      {}
 func (Rule) block()       {}
+func (Details) block()    {}
+func (Math) block()       {}
 func (Custom) block()     {}
 
 func (Text) inline()              {}
 func (Strong) inline()            {}
 func (Emphasis) inline()          {}
 func (Strikethrough) inline()     {}
+func (Underline) inline()         {}
+func (Mark) inline()              {}
+func (Superscript) inline()       {}
+func (Subscript) inline()         {}
+func (Small) inline()             {}
 func (Code) inline()              {}
+func (Keyboard) inline()          {}
+func (Math) inline()              {}
 func (Link) inline()              {}
 func (Image) inline()             {}
 func (Break) inline()             {}
@@ -304,6 +351,14 @@ func writeBlock(b *strings.Builder, bl Block) {
 				writeInlines(b, c.Content)
 			}
 		}
+	case Details:
+		writeInlines(b, bl.Summary)
+		if len(bl.Summary) > 0 && len(bl.Children) > 0 {
+			b.WriteString("\n\n")
+		}
+		writeBlocks(b, bl.Children, "\n\n")
+	case Math:
+		b.WriteString(bl.TeX)
 	case Custom:
 		bl.write(b)
 	}
@@ -333,6 +388,20 @@ func writeInlines(b *strings.Builder, content []Inline) {
 			writeInlines(b, in.Content)
 		case Strikethrough:
 			writeInlines(b, in.Content)
+		case Underline:
+			writeInlines(b, in.Content)
+		case Mark:
+			writeInlines(b, in.Content)
+		case Superscript:
+			writeInlines(b, in.Content)
+		case Subscript:
+			writeInlines(b, in.Content)
+		case Small:
+			writeInlines(b, in.Content)
+		case Keyboard:
+			b.WriteString(in.Text)
+		case Math:
+			b.WriteString(in.TeX)
 		case Link:
 			writeInlines(b, in.Content)
 		case Image:

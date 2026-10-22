@@ -66,9 +66,17 @@ const (
 	PartCodeBlockCode
 	// PartCode is code in text.
 	PartCode
+	// PartKeyboard is keys to press (<kbd>).
+	PartKeyboard
 	PartStrong
 	PartEmphasis
 	PartStrikethrough
+	PartUnderline
+	// PartMark is marked text (<mark>), under the color it asks for.
+	PartMark
+	PartSuperscript
+	PartSubscript
+	PartSmall
 	PartLink
 	// PartImage is images alone in a paragraph: their natural size, at
 	// most the text's width, unless they ask for one.
@@ -88,6 +96,18 @@ const (
 	PartTableHeaderCell
 	// PartRule is a thematic break, a view.
 	PartRule
+	// PartMath is a formula in text: its TeX.
+	PartMath
+	// PartMathBlock is a formula block: its TeX.
+	PartMathBlock
+	// PartDetails is a disclosure: a column of its summary and, while
+	// open, its blocks.
+	PartDetails
+	// PartSummary is a disclosure's summary, a row of its marker and its
+	// text; a press opens or closes it.
+	PartSummary
+	// PartSummaryMarker is the summary's marker: "▸" closed, "▾" open.
+	PartSummaryMarker
 	// PartFootnotes is the column of footnotes after the blocks.
 	PartFootnotes
 	// PartFootnote is a footnote: a row of its label and its blocks.

@@ -203,6 +203,10 @@ func TestTextViewStreams(t *testing.T) {
 	app := startDesktop(t)
 	app.Press("id:nav-Text View")
 	app.Find("id:markdown >> role:header Text View")
+	app.Find("id:html >> role:header An HTML page")
+	if app.Exists("id:html >> text:Menu") {
+		t.Error("a hidden element shows")
+	}
 	app.Press("id:stream")
 	for range 200 {
 		app.Advance(50 * time.Millisecond)

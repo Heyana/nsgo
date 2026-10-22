@@ -65,3 +65,20 @@ func TestTextViewRebuildsOnlyChangedBlocks(t *testing.T) {
 		t.Error("a block that changed kind was not replaced")
 	}
 }
+
+func TestTextViewShowsHTML(t *testing.T) {
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return textview.TextView{HTML: "<h2>Title</h2><p>Press <kbd>Ctrl</kbd> and <mark>see</mark> x<sup>2</sup>.</p>" +
+			"<details><summary>More</summary><p>Hidden</p></details>"}
+	})
+	app.Find("role:header Title")
+	app.Find("text:Press Ctrl and see x2.")
+	app.Find("text:▸")
+	if app.Exists("text:Hidden") {
+		t.Error("a closed disclosure shows its blocks")
+	}
+	app.Press("role:button")
+	app.Settle()
+	app.Find("text:▾")
+	app.Find("text:Hidden")
+}

@@ -23,7 +23,7 @@ Packages mirror NSH's crates:
 | --- | --- | --- |
 | `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, layout, text, mount items |
 | `base` | `nsh-base` | Unstyled base components: controls, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack |
-| `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
+| `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark), HTML (x/net/html) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
 | `ui` | `nsh-base`'s `Theme` | The theme as Go values, and `base`'s controls, popups and text view styled with it |
 | `ui/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma, in NSH's palette |
 | `engine` | `nsh-engine` | Engine goroutine: an unbounded mailbox, commits, one batch per commit to the platform |
@@ -106,4 +106,4 @@ Subjects go in `docs/architecture/` once a subsystem has a lasting design.
 | Document | When to read |
 | --- | --- |
 | [Core](docs/architecture/core.md) | Changing the reactive graph, elements, regions, commit, text, selection, storage or the mount protocol |
-| [Text view](docs/architecture/textview.md) | Changing `TextView`: the document model, Markdown parsing, its parts or code highlighting |
+| [Text view](docs/architecture/textview.md) | Changing `TextView`: the document model, Markdown and HTML parsing, its parts or code highlighting |

@@ -5,7 +5,7 @@
 - Add a reactive Go engine with owners, memos, effects and regions (`Show`, `Each`, `Dynamic`, `Catch`).
 - Add block, flexbox and grid layout matching Taffy, with styles, per-side borders, state styles, transforms and transitions.
 - Add images, rich text with links, text selection across texts, canvas, virtualized lists, overlays, modals and navigation stacks.
-- Add `TextView` for Markdown with tables, alerts, footnotes, app extensions and highlighted code, rebuilding only the blocks that change and closing a streamed reply's open syntax.
+- Add `TextView` for Markdown and HTML with tables, alerts, footnotes, disclosures, app extensions and highlighted code, rebuilding only the blocks that change and closing a streamed reply's open syntax.
 - Add unstyled base controls, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
 - Add the `ui` package: base controls and popups styled with a light and dark theme drawn from the icon.
 - Add pan, pinch and rotation gestures.

@@ -10,8 +10,8 @@ import (
 	"github.com/oneo-me/nsgo/core"
 )
 
-// TextView shows a document: Markdown, parsed once per change, else the
-// app's own Document. Its blocks are rows keyed by position and kind, so
+// TextView shows a document: Markdown or HTML, parsed once per change,
+// else the app's own Document. Its blocks are rows keyed by position and kind, so
 // a document that grows at its end (a reply streaming in) builds only its
 // last block again.
 type TextView struct {
@@ -19,8 +19,12 @@ type TextView struct {
 	// MarkdownFunc replaces it, again when what it reads changes.
 	Markdown     string
 	MarkdownFunc func() string
-	// Document is the document as blocks the app made, when no Markdown
-	// is given; DocumentFunc replaces it.
+	// HTML is the document as HTML, read by ParseHTML with Extensions,
+	// when no Markdown is given; HTMLFunc replaces it.
+	HTML     string
+	HTMLFunc func() string
+	// Document is the document as blocks the app made, when neither
+	// Markdown nor HTML is given; DocumentFunc replaces it.
 	Document     Document
 	DocumentFunc func() Document
 	Extensions   []Extension
@@ -120,6 +124,10 @@ func (tv TextView) document() Document {
 		return tv.parse(tv.MarkdownFunc())
 	case tv.Markdown != "":
 		return tv.parse(tv.Markdown)
+	case tv.HTMLFunc != nil:
+		return ParseHTML(tv.HTMLFunc(), tv.Extensions...)
+	case tv.HTML != "":
+		return ParseHTML(tv.HTML, tv.Extensions...)
 	case tv.DocumentFunc != nil:
 		return tv.DocumentFunc()
 	}
@@ -198,6 +206,10 @@ func (r *renderer) block(cx *core.Scope, b Block, first bool, depth int) core.No
 		return r.table(b)
 	case Rule:
 		return core.View{Style: r.style(PartRule)}
+	case Details:
+		return r.details(cx, b, depth)
+	case Math:
+		return core.Text{Content: b.TeX, Style: r.style(PartMathBlock)}
 	case Custom:
 		if r.tv.RenderCustom != nil {
 			return r.tv.RenderCustom(cx, b)
@@ -211,6 +223,27 @@ func (r *renderer) block(cx *core.Scope, b Block, first bool, depth int) core.No
 		return core.Text{Content: b.Text, Style: r.style(PartCustom)}
 	}
 	return nil
+}
+
+// details shows a disclosure: its summary, which a press opens and
+// closes, and its blocks, made each time it opens.
+func (r *renderer) details(cx *core.Scope, d Details, depth int) core.Node {
+	open := core.NewSignal(cx, d.Open)
+	return core.View{Style: r.style(PartDetails), Children: []core.Node{
+		core.View{Style: r.style(PartSummary), Role: core.RoleButton, OnPress: func() { open.Set(!open.Get()) },
+			Children: []core.Node{
+				core.Text{ContentFunc: func() string {
+					if open.Get() {
+						return "▾"
+					}
+					return "▸"
+				}, Style: r.style(PartSummaryMarker)},
+				core.Text{Spans: r.spans(nil, d.Summary, core.Style{}, nil), Style: core.Style{FlexGrow: 1, FlexShrink: 1}},
+			}},
+		core.Show{When: open.Get, Then: func(cx *core.Scope) core.Node {
+			return core.Group(r.blocks(cx, d.Children, depth))
+		}},
+	}}
 }
 
 var bullets = [...]string{"•", "◦", "▪"}
@@ -406,8 +439,26 @@ func (r *renderer) spans(out []core.Span, content []Inline, style core.Style, li
 			out = r.spans(out, in.Content, style.Merge(r.style(PartEmphasis)), link)
 		case Strikethrough:
 			out = r.spans(out, in.Content, style.Merge(r.style(PartStrikethrough)), link)
+		case Underline:
+			out = r.spans(out, in.Content, style.Merge(r.style(PartUnderline)), link)
+		case Mark:
+			s := style.Merge(r.style(PartMark))
+			if in.Color != 0 {
+				s.Background = in.Color
+			}
+			out = r.spans(out, in.Content, s, link)
+		case Superscript:
+			out = r.spans(out, in.Content, style.Merge(r.style(PartSuperscript)), link)
+		case Subscript:
+			out = r.spans(out, in.Content, style.Merge(r.style(PartSubscript)), link)
+		case Small:
+			out = r.spans(out, in.Content, style.Merge(r.style(PartSmall)), link)
 		case Code:
 			out = append(out, core.Span{Content: in.Code, Style: style.Merge(r.style(PartCode)), OnPress: link})
+		case Keyboard:
+			out = append(out, core.Span{Content: in.Text, Style: style.Merge(r.style(PartKeyboard)), OnPress: link})
+		case Math:
+			out = append(out, core.Span{Content: in.TeX, Style: style.Merge(r.style(PartMath)), OnPress: link})
 		case Link:
 			out = r.spans(out, in.Content, style.Merge(r.style(PartLink)), r.press(in.URL))
 		case Image:

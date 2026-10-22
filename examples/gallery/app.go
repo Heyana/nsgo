@@ -29,7 +29,7 @@ var sections []section
 func init() {
 	sections = []section{
 		{"Text", "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
-		{"Text View", "Markdown with code highlighting, tables, alerts, extensions and streaming.", textViewPage},
+		{"Text View", "Markdown and HTML with code highlighting, tables, alerts, extensions and streaming.", textViewPage},
 		{"Layout", "Flexbox, wrapping, absolute positioning, grid and block layout.", layoutPage},
 		{"Styles", "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
 		{"Controls", "Buttons, checkboxes, radios, switches, tabs and text fields.", controlsPage},

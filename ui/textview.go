@@ -16,6 +16,8 @@ import (
 type TextView struct {
 	Markdown     string
 	MarkdownFunc func() string
+	HTML         string
+	HTMLFunc     func() string
 	Document     textview.Document
 	DocumentFunc func() textview.Document
 	Extensions   []textview.Extension
@@ -46,7 +48,8 @@ func (v TextView) Render(cx *core.Scope) core.Node {
 		styles[textview.PartRoot] = v.Style.Merge(v.Styles[textview.PartRoot])
 	}
 	tv := textview.TextView{
-		Markdown: v.Markdown, MarkdownFunc: v.MarkdownFunc, Document: v.Document, DocumentFunc: v.DocumentFunc,
+		Markdown: v.Markdown, MarkdownFunc: v.MarkdownFunc, HTML: v.HTML, HTMLFunc: v.HTMLFunc,
+		Document: v.Document, DocumentFunc: v.DocumentFunc,
 		Extensions: v.Extensions, Streaming: v.Streaming, Styles: styles, Selectable: v.Selectable, Highlighter: v.Highlighter,
 		StyleFunc:   func(p textview.Part) core.Style { return theme().textView(p) },
 		OnLinkPress: v.OnLinkPress, RenderCustom: v.RenderCustom, CustomSpan: v.CustomSpan,
@@ -170,14 +173,27 @@ func (t Tokens) textView(p textview.Part) core.Style {
 		return core.Style{Padding: core.All(6)}
 	case textview.PartCodeBlockCode:
 		return mono.Merge(core.Style{LineHeight: codeSize * 1.6, Padding: core.Symmetric(14, 16)})
-	case textview.PartCode:
+	case textview.PartCode, textview.PartMath:
 		return mono.Merge(core.Style{Color: t.AccentForeground})
+	case textview.PartKeyboard:
+		return mono.Merge(core.Style{FontSize: 12, FontWeight: core.FontWeightMedium})
+	case textview.PartMathBlock:
+		return mono.Merge(core.Style{LineHeight: codeSize * 1.6, Padding: core.Symmetric(14, 16), Background: t.Muted,
+			BorderWidth: 1, BorderColor: t.Border, CornerRadius: 8})
 	case textview.PartStrong:
 		return core.Style{FontWeight: core.FontWeightSemibold}
 	case textview.PartEmphasis:
 		return core.Style{FontStyle: core.FontStyleItalic}
 	case textview.PartStrikethrough:
 		return core.Style{TextDecoration: core.TextDecorationLineThrough}
+	case textview.PartUnderline:
+		return core.Style{TextDecoration: core.TextDecorationUnderline}
+	case textview.PartMark:
+		return core.Style{Background: fade(t.Warning, 0.3)}
+	case textview.PartSuperscript, textview.PartSubscript:
+		return core.Style{FontSize: 11}
+	case textview.PartSmall:
+		return core.Style{FontSize: codeSize}
 	case textview.PartLink:
 		return core.Style{Color: t.Link, TextDecoration: core.TextDecorationUnderline}
 	case textview.PartImage:
@@ -194,6 +210,12 @@ func (t Tokens) textView(p textview.Part) core.Style {
 	case textview.PartRule:
 		return core.Style{Height: core.Pt(1), Background: fade(t.Foreground, 0.15),
 			Margin: core.Symmetric(bodySize*1.6-blockGap, 0)}
+	case textview.PartDetails:
+		return core.Style{Gap: blockGap}
+	case textview.PartSummary:
+		return core.Style{Direction: core.Row, Gap: 6}
+	case textview.PartSummaryMarker:
+		return core.Style{Color: t.MutedForeground}
 	case textview.PartFootnotes:
 		return core.Style{FontSize: codeSize, LineHeight: codeSize * 1.6, Color: t.MutedForeground, Gap: 4,
 			Borders: core.Edges{Top: 1}, BorderColor: t.Border, Padding: core.Edges{Top: 12}, Margin: core.Edges{Top: blockGap}}

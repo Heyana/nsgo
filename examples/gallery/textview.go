@@ -28,8 +28,26 @@ const markdown = "# Text View\n\n" +
 	"> Port the design, not the code line by line.\n\n" +
 	"> [!NOTE]\n> Alerts are GitHub's `> [!NOTE]` syntax.\n\n> [!WARNING]\n> Warnings, tips, important notes and cautions too.\n\n" +
 	":::callout[A container]\nContainers are an extension the app declares.\n:::\n\n" +
+	"## HTML\n\n" +
+	"HTML in Markdown reads as text: <kbd>⌘</kbd> <kbd>C</kbd>, <mark>marks</mark>, <u>underlines</u>, " +
+	"H<sub>2</sub>O and E=mc<sup>2</sup>, and <b>Markdown *inside* tags</b> stays Markdown.\n\n" +
+	"<details>\n<summary>A disclosure</summary>\n\nIts blocks show while it is **open**.\n\n</details>\n\n" +
 	"---\n\n" +
 	"Footnotes follow the blocks.[^1]\n\n[^1]: Like this one."
+
+// page is an HTML document, read as a reader mode reads a page.
+const page = `<!DOCTYPE html><html><head><title>Ignored</title><script>track()</script></head><body>
+<nav hidden>Menu</nav>
+<article>
+  <h2>An HTML page</h2>
+  <p>TextView also reads <a href="https://html.spec.whatwg.org">HTML</a>: whitespace
+     collapses as a browser collapses it, and scripts, styles and hidden elements are left out.</p>
+  <ul><li><input type="checkbox" checked> Task lists</li><li><input type="checkbox"> as GitHub writes them</li></ul>
+  <pre><code class="language-go">fmt.Println("code keeps its    spacing")</code></pre>
+  <table><thead><tr><th>Element</th><th align="right">Reads as</th></tr></thead>
+    <tbody><tr><td><code>&lt;dl&gt;</code></td><td align="right">paragraphs</td></tr>
+    <tr><td><code>&lt;details&gt;</code></td><td align="right">a disclosure</td></tr></tbody></table>
+</article></body></html>`
 
 // reply is the text the streaming demo writes, a few words at a time.
 const reply = "Sure. Here is how a **streamed reply** grows:\n\n" +
@@ -81,6 +99,7 @@ func textViewPage(cx *core.Scope, t *theme) core.Node {
 				}}
 			},
 		},
+		ui.TextView{HTML: page, Selectable: true, Highlighter: highlight.New(cx), OnLinkPress: link.Set, TestID: "html"},
 		t.live(link.Get),
 		ui.Button{Label: "Stream a reply", Variant: ui.Secondary, OnPress: stream, TestID: "stream"},
 		ui.TextView{MarkdownFunc: streamed.Get, Streaming: true, Highlighter: highlight.New(cx), TestID: "streamed"},
