@@ -1,6 +1,6 @@
 # NSGo architecture
 
-NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles, layout and text layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views. Views, text, text fields, scroll views and keyed lists exist today; sections below say what exists and what is planned.
+NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles, layout and text layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views. Most of NSH's elements, layers, navigation, base components and services exist today; sections below say what exists and what is planned.
 
 ## Reference implementation
 
@@ -21,15 +21,18 @@ Packages mirror NSH's crates:
 
 | Package | NSH counterpart | Responsibility |
 | --- | --- | --- |
-| `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, flexbox, text, mount items |
-| `base` | `nsh-base` | Unstyled base components; `Button` today |
+| `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, layout, text, mount items |
+| `base` | `nsh-base` | Unstyled base components: controls, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack |
 | `engine` | `nsh-engine` | Engine goroutine: an unbounded mailbox, commits, one batch per commit to the platform |
+| `core/internal/layout` | Taffy | Block, flexbox and grid layout, checked against Taffy's fixtures |
 | `nsgotest` | `nsh-testing` | Headless app tests: approximate text, a manual clock, selectors over a model of the views |
 | `platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
-| `platform/internal/apple` | Shared Apple code | CoreFoundation, CALayer styling and the CoreText text engine through purego |
+| `platform/internal/apple` | Shared Apple code | CoreFoundation, CALayer styling, images, canvas and the CoreText text engine through purego |
+| `platform/internal/imageload` | Platforms' image loaders | Fetching and caching image bytes once, in Go, for the backends that decode images themselves |
 | `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags; the tool sets name and window size |
-| `cmd/nsgo` | `nsh-cli` | `nsgo dev` and `nsgo build`, driven by an app's `nsgo.yaml` |
+| `cmd/nsgo` | `nsh-cli` | `nsgo init`, `nsgo dev` and `nsgo build`, driven by an app's `nsgo.yaml` |
 | `examples/hello` | `examples/counter` | A todo list: text, input, button, scroll view and keyed list, with a headless test |
+| `examples/gallery` | `examples/gallery-rs` | Navigation, controls, popups, dialogs and images, with a headless test |
 
 ## Platforms
 
@@ -40,8 +43,8 @@ Every target builds on macOS with Go, and iOS also with Xcode. No backend contai
 | macOS | `platform/macos` | purego and the Objective-C runtime; `CGO_ENABLED=0` | Runs |
 | iOS | `platform/ios` | The same; cgo only because Go links iOS with Xcode's linker | Runs in the simulator |
 | Web | `platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
-| Windows | `platform/windows` | `syscall`: Win32 window drawn with GDI, native EDIT inputs | Builds, never run |
-| Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Builds; runtime `classes.dex` and APK packaging pending |
+| Windows | `platform/windows` | `syscall`: Win32 window drawn with GDI into a 32-bit buffer, native EDIT inputs | Builds, never run |
+| Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Go side builds; the Java runtime has never been compiled; `classes.dex` and APK packaging pending |
 | Linux | — | Planned: GTK 4 through purego | Not started |
 
 Android runs the app as a second process because Go builds Android shared libraries only with cgo and the NDK. Without cgo, Go builds Android executables for arm64 only, so 32-bit devices and x86_64 emulators are out of reach. iOS forbids child processes, so it links in-process with Xcode instead.
@@ -57,6 +60,7 @@ Android runs the app as a second process because Go builds Android shared librar
 - One engine is one app instance with no global state, so a host app can embed several.
 - Keep NSH's public names and semantics unless Go requires otherwise, so NSH's documentation stays a usable reference.
 - Apps are written in Go. The shadow tree's operations are the reserved entry for a TSX runtime, which does not exist yet.
+- Layout (`core/internal/layout`) reimplements Taffy 0.15's block, flexbox and grid algorithms in Go, step by step, and must pass every Taffy fixture that applies to NSH's features.
 
 ## Tool
 
@@ -80,7 +84,7 @@ Android runs the app as a second process because Go builds Android shared librar
 
 ## Open questions
 
-- How `core` gets grid layout: an implementation beside its flexbox, or a Go port of Taffy replacing both.
+None are open. Record a design question here, and confirm the answer with the user before choosing it.
 
 ## Verification
 

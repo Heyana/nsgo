@@ -1,5 +1,7 @@
 package core
 
+import "time"
+
 // NodeID identifies a view of one tree. IDs start at 1, stay dense and
 // are reused after a Delete.
 type NodeID uint32
@@ -16,6 +18,13 @@ const (
 	KindInput
 	// KindScroll scrolls its children; ItemScrollContent sizes them.
 	KindScroll
+	// KindImage shows an image the platform loads (ItemImage).
+	KindImage
+	// KindModal is a layer covering the root view or an outer modal,
+	// presented when inserted and dismissed when removed (ItemModal).
+	KindModal
+	// KindCanvas plays a Drawing (ItemCanvas).
+	KindCanvas
 )
 
 // ItemKind is what a mount item does.
@@ -56,6 +65,39 @@ const (
 	ItemFocus
 	// ItemBlur takes keyboard focus away from ID.
 	ItemBlur
+	// ItemImage sets an image view's source and look (Image).
+	ItemImage
+	// ItemModal configures a modal (Modal).
+	ItemModal
+	// ItemAlert shows a native alert (Alert); the platform answers with
+	// EventAlert.
+	ItemAlert
+	// ItemDismissKeyboard takes focus away from the focused text field.
+	ItemDismissKeyboard
+	// ItemScrollTo scrolls ID to Point (its content's offset), animated
+	// when Animated; the platform clamps it and reports EventScroll.
+	ItemScrollTo
+	// ItemCanvas replaces a canvas's drawing (Drawing), in the view's
+	// coordinates.
+	ItemCanvas
+	// ItemSetClipboard puts Value on the clipboard.
+	ItemSetClipboard
+	// ItemReadClipboard asks for the clipboard's text; the platform
+	// answers with EventClipboard carrying Count.
+	ItemReadClipboard
+	// ItemAnnounce has the screen reader say Value.
+	ItemAnnounce
+	// ItemKeymap replaces the surface's keyboard shortcuts (Keys); the
+	// platform consumes matching key presses and reports EventKey.
+	ItemKeymap
+	// ItemStatusBar sets the status bar's style (Count, a StatusBarStyle)
+	// and hides it when Animated is set.
+	ItemStatusBar
+	// ItemTitle sets the window's or page's title (Value).
+	ItemTitle
+	// ItemBackUnhandled says nothing took the last EventBack: Android
+	// leaves the app, as its back button does; others ignore it.
+	ItemBackUnhandled
 )
 
 // MountItem is one change to the native views. Kind says which fields
@@ -70,13 +112,22 @@ type MountItem struct {
 	Size   Size     // ItemScrollContent
 	Value  string   // ItemInputValue
 	Count  uint32   // ItemInputValue
-	Events EventMask
+	// Point and Animated are ItemScrollTo's.
+	Point    Point
+	Animated bool
+	Events   EventMask
 
 	ViewStyle *ViewStyle
 	Text      *TextContent
 	Input     *InputConfig
 	ViewProps *ViewProps
 	Scroll    *ScrollConfig
+	Image     *ImageConfig
+	Modal     *ModalConfig
+	Alert     *AlertConfig
+	Drawing   *Drawing
+	// Keys are ItemKeymap's normalized bindings (see NormalizeKey).
+	Keys []string
 }
 
 // MountBatch is one commit's changes, applied in order on the main thread.
@@ -98,8 +149,30 @@ type ViewStyle struct {
 	ShadowColor  Color
 	ShadowOffset Point
 	ShadowRadius Points
+	// TintColor recolors an image's opaque pixels; 0 keeps its colors.
+	TintColor Color
+	// Transform moves, scales and rotates the view around its center
+	// without moving its children's frames; hit testing follows it.
+	Transform Transform
+	// Transition, when it has a duration, animates the change from the
+	// previous ViewStyle to this one.
+	Transition Transition
 	// Hidden hides the view and its children (display none).
 	Hidden bool
+}
+
+// ImageConfig is an image view's source and look.
+type ImageConfig struct {
+	Source       ImageSource
+	Placeholder  ImageSource
+	ResizeMode   ResizeMode
+	BlurRadius   Points
+	FadeDuration time.Duration
+}
+
+// ModalConfig is how a modal appears and goes.
+type ModalConfig struct {
+	Animation ModalAnimation
 }
 
 // TextContent is a text view's content, laid out by the engine.
@@ -142,10 +215,12 @@ type ViewProps struct {
 	Role     Role
 	Label    string
 	Disabled bool
-	// Selected and Checked are reported to assistive technology.
-	Selected bool
-	Checked  bool
-	TestID   string
+	// Selected, Checked and Indeterminate (mixed) are reported to
+	// assistive technology.
+	Selected      bool
+	Checked       bool
+	Indeterminate bool
+	TestID        string
 }
 
 // Role is a view's accessibility role.
@@ -163,6 +238,12 @@ const (
 	RoleTab
 	RoleText
 	RoleTextField
+	RoleRadioGroup
+	RoleTabList
+	RoleMenu
+	RoleMenuItem
+	RoleDialog
+	RoleAlert
 )
 
 // ScrollConfig configures a scroll view.

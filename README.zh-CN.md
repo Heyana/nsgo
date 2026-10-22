@@ -12,7 +12,7 @@ NSGo 参考 [Native Shell（NSH）](https://nsh.dev) 的设计，NSH 用 Rust �
 
 ## 状态
 
-NSGo 处于早期阶段。引擎已能在 macOS、iOS 和 Web 上以 flexbox 布局渲染视图、文本、输入框、滚动视图和带 key 的列表；Windows 可以编译但未测试，Android 正在开发，Linux 尚未开始。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
+NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、图片、画布、浮层、对话框、导航和无样式基础组件，可在 macOS、iOS 和 Web 上运行；Windows 可以编译但未测试，Android 正在开发，Linux 尚未开始。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
 
 ## 目标
 

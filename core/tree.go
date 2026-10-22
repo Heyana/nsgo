@@ -1,5 +1,11 @@
 package core
 
+import (
+	"errors"
+
+	"github.com/oneo-me/nsgo/core/internal/layout"
+)
+
 // The shadow tree has one node per native view and one per region. A
 // region is a span of its parent's children that a Show, Each, Dynamic
 // or Catch replaces; it mounts nothing natively and lays its children out
@@ -12,19 +18,38 @@ package core
 // Tree is the shadow tree of one surface. Commit turns its changes into a
 // MountBatch. It is not safe for concurrent use: the engine owns it.
 type Tree struct {
-	root     *Scope
-	rt       *runtime
-	text     TextEngine
-	nodes    []*node // index is NodeID; 0 is unused
-	free     []NodeID
-	view     *node // the surface's root view
-	size     Size
-	changed  bool
-	deleted  []NodeID
-	commands []MountItem
-	items    []MountItem
-	laidOut  []*node
+	root        *Scope
+	rt          *runtime
+	text        TextEngine
+	nodes       []*node // index is NodeID; 0 is unused
+	free        []NodeID
+	view        *node // the surface's root view
+	size        Size
+	changed     bool
+	deleted     []NodeID
+	commands    []MountItem
+	items       []MountItem
+	laidOut     []*node
+	reports     []report
+	stacks      []*node
+	lists       []*node
+	fontScale   float32
+	alerts      map[uint32]alertWait
+	reads       map[uint32]readWait
+	keys        []*keyBinding
+	keysChanged bool
+	alertID     uint32
+	rtl         bool // the layout direction the nodes were mapped for
 }
+
+// report is a handler to run under owner after the commit.
+type report struct {
+	owner *node
+	fn    func()
+}
+
+// after runs fn under n's owner once the commit's items are out.
+func (t *Tree) after(n *node, fn func()) { t.reports = append(t.reports, report{n, fn}) }
 
 type node struct {
 	id       NodeID   // 0 for regions
@@ -33,20 +58,34 @@ type node struct {
 	children []*node
 	owner    *Scope
 
-	base   Style
-	dyn    Style
-	style  Style // base and dyn merged, with the states' styles
-	states uint8
-	h      handlers
-	props  ViewProps
-	text   *textNode
-	input  *inputNode
-	scroll *scrollNode
+	base    Style
+	dyn     Style
+	style   Style // base and dyn merged, with the states' styles
+	states  uint8
+	h       handlers
+	props   ViewProps
+	text    *textNode
+	input   *inputNode
+	scroll  *scrollNode
+	image   *imageNode
+	hoist   *hoistNode // an overlay's or a modal's
+	hosted  []*node    // the overlays and modals this root view or modal hosts
+	screen  *screenNode
+	list    *listNode
+	canvas  *canvasNode
+	isStack bool
+	ref     *Ref
 
 	frame       Bounds
 	layoutDirty bool
-	limits      [4]Points // min and max width, min and max height
-	cache       []measured
+	// lstate is what layout keeps for the node; lstyle its style mapped for
+	// layout, while lstyleOK.
+	lstate   layout.State
+	lstyle   layout.Style
+	lstyleOK bool
+	rtl      bool  // laid out right to left
+	isRoot   bool  // a layout root: the root view, an overlay or a modal
+	fill     *Size // the size a root fills, if it fills one
 
 	created       bool
 	deleted       bool
@@ -59,19 +98,32 @@ type handlers struct {
 	press, longPress, pressDown, pressUp, hoverIn, hoverOut func()
 	focus, blur                                             func()
 	change, submit                                          func(string)
-	scroll                                                  func(Point)
+	scroll, pressOutside, contextMenu                       func(Point)
 	layout                                                  func(Bounds)
+	cancel                                                  func()
+	loadStart, loadEnd                                      func()
+	progress                                                func(int64, int64)
+	load                                                    func(Size)
+	loadError                                               func(error)
 }
 
 type textNode struct {
 	content  string
 	maxLines int
+	spans    []spanNode
+	text     AttributedText // what was prepared
 	style    TextStyle
 	prepared PreparedText
 	stale    bool // content or style changed since prepared
 	box      Bounds
 	sentBox  Bounds
 	resent   bool // a new prepared text needs a new layout
+}
+
+type spanNode struct {
+	content string
+	style   Style
+	press   func()
 }
 
 type inputNode struct {
@@ -106,6 +158,7 @@ type sent struct {
 // NewTree returns an empty tree under root, laying text out with text.
 func NewTree(root *Scope, text TextEngine) *Tree {
 	t := &Tree{root: root, rt: root.rt, text: text, nodes: []*node{nil}}
+	root.rt.tree = t
 	t.view = t.newNode(KindView, nil, root)
 	t.view.style = Style{Direction: Column}
 	return t
@@ -124,7 +177,15 @@ func (t *Tree) Resize(size Size) {
 		t.size = size
 		t.view.markLayout()
 		t.changed = true
+		t.root.Env().window.Set(size)
 	}
+}
+
+// SetEnvironment records what the platform reports about where the app
+// runs.
+func (t *Tree) SetEnvironment(env Environment) {
+	t.root.Env().set(env)
+	t.changed = true
 }
 
 // Size returns the surface size.
@@ -137,8 +198,7 @@ func (t *Tree) Changed() bool { return t.changed }
 func (t *Tree) within(o *Scope, fn func()) { t.rt.run(o, fn) }
 
 func (t *Tree) newNode(kind ViewKind, parent *node, owner *Scope) *node {
-	n := &node{kind: kind, parent: parent, owner: owner, layoutDirty: true, childrenDirty: true,
-		limits: [4]Points{Auto, Auto, Auto, Auto}}
+	n := &node{kind: kind, parent: parent, owner: owner, layoutDirty: true, childrenDirty: true, rtl: t.rtl}
 	if kind != 0 {
 		if k := len(t.free); k > 0 {
 			n.id = t.free[k-1]
@@ -163,6 +223,9 @@ func (t *Tree) newRegion(parent *node, owner *Scope) *node {
 
 // nativeParent is the view n's native view goes into.
 func (n *node) nativeParent() *node {
+	if n.hoist != nil {
+		return n.hoist.host
+	}
 	p := n.parent
 	for p != nil && p.kind == 0 {
 		p = p.parent
@@ -179,13 +242,6 @@ func (t *Tree) childrenChanged(n *node) {
 		n.flat = nil
 		n.markLayout()
 		t.changed = true
-	}
-}
-
-func (n *node) markLayout() {
-	for p := n; p != nil && !(p.layoutDirty && p != n); p = p.parent {
-		p.layoutDirty = true
-		p.cache = p.cache[:0]
 	}
 }
 
@@ -213,6 +269,14 @@ func (t *Tree) discard(n *node) {
 		return
 	}
 	n.deleted = true
+	if n.ref != nil && n.ref.n == n {
+		n.ref.n = nil
+	}
+	if n.hoist != nil {
+		h := n.hoist.host
+		h.childrenDirty = true
+		h.markLayout()
+	}
 	if n.kind != 0 {
 		if n.created {
 			t.deleted = append(t.deleted, n.id)
@@ -269,6 +333,34 @@ func (t *Tree) mount(cx *Scope, parent *node, el Node) {
 		t.mountScroll(cx, parent, el)
 	case *Scroll:
 		t.mountScroll(cx, parent, *el)
+	case Image:
+		t.mountImage(cx, parent, el)
+	case *Image:
+		t.mountImage(cx, parent, *el)
+	case Overlay:
+		t.mountOverlay(cx, parent, el)
+	case *Overlay:
+		t.mountOverlay(cx, parent, *el)
+	case Modal:
+		t.mountModal(cx, parent, el)
+	case *Modal:
+		t.mountModal(cx, parent, *el)
+	case Stack:
+		t.mountStack(cx, parent, el)
+	case *Stack:
+		t.mountStack(cx, parent, *el)
+	case Screen:
+		t.mountScreen(cx, parent, el)
+	case *Screen:
+		t.mountScreen(cx, parent, *el)
+	case Canvas:
+		t.mountCanvas(cx, parent, el)
+	case *Canvas:
+		t.mountCanvas(cx, parent, *el)
+	case List:
+		t.mountList(cx, parent, el)
+	case *List:
+		t.mountList(cx, parent, *el)
 	case Group:
 		for _, c := range el {
 			t.mount(cx, parent, c)
@@ -307,11 +399,15 @@ func (t *Tree) bindStyle(cx *Scope, n *node, base Style, fn func() Style) {
 
 // restyle merges n's style from its parts and states.
 func (n *node) restyle() {
-	s := n.base.Merge(n.dyn)
-	disabled := n.props.Disabled || (n.input != nil && n.input.config.Disabled)
-	n.style = s.withStates(n.states, disabled)
-	// The state styles stay, so the events they need stay reported.
-	n.style.Hover, n.style.Focus, n.style.Active, n.style.Disabled = s.Hover, s.Focus, s.Active, s.Disabled
+	p := n.props
+	if n.input != nil && n.input.config.Disabled {
+		p.Disabled = true
+	}
+	n.style = n.base.Merge(n.dyn).withStates(n.states, p)
+	n.lstyleOK = false
+	if n.screen != nil && n.screen.hidden {
+		n.style.Display = DisplayNone
+	}
 }
 
 // setState records an interaction state and restyles n if a state style
@@ -344,11 +440,13 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	n := t.newNode(KindView, parent, cx)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	n.h = handlers{press: v.OnPress, longPress: v.OnLongPress, pressDown: v.OnPressDown, pressUp: v.OnPressUp,
-		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, layout: v.OnLayout}
+		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, layout: v.OnLayout, contextMenu: v.OnContextMenu}
 	n.props = ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID}
+	t.setRef(n, v.Ref)
 	t.bindBool(cx, n, v.Disabled, &n.props.Disabled)
 	t.bindBool(cx, n, v.Selected, &n.props.Selected)
 	t.bindBool(cx, n, v.Checked, &n.props.Checked)
+	t.bindBool(cx, n, v.Indeterminate, &n.props.Indeterminate)
 	for _, c := range v.Children {
 		t.mount(cx, n, c)
 	}
@@ -362,7 +460,23 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 	if n.props.Role == RoleNone {
 		n.props.Role = RoleText
 	}
+	t.setRef(n, v.Ref)
 	n.text = &textNode{content: v.Content, maxLines: v.MaxLines, stale: true}
+	for i, sp := range v.Spans {
+		n.text.spans = append(n.text.spans, spanNode{content: sp.Content, style: sp.Style, press: sp.OnPress})
+		if sp.OnPress != nil {
+			n.h.press = func() {} // presses come with the offset of the span
+		}
+		if sp.ContentFunc != nil {
+			cx.renderEffect(func() {
+				if s := sp.ContentFunc(); s != n.text.spans[i].content {
+					n.text.spans[i].content = s
+					n.text.stale = true
+					t.relayout(n)
+				}
+			})
+		}
+	}
 	if v.ContentFunc != nil {
 		cx.renderEffect(func() {
 			if s := v.ContentFunc(); s != n.text.content || n.text.prepared == nil {
@@ -379,6 +493,7 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	n.h = handlers{change: v.OnChange, submit: v.OnSubmit, focus: v.OnFocus, blur: v.OnBlur, layout: v.OnLayout}
 	n.props = ViewProps{Role: RoleTextField, Label: v.Label, TestID: v.TestID}
+	t.setRef(n, v.Ref)
 	in := &inputNode{valueFn: v.Value, value: v.DefaultValue, autoFocus: v.AutoFocus}
 	in.config = InputConfig{Placeholder: v.Placeholder, Masked: v.Masked, Readonly: v.Readonly, KeyboardType: v.KeyboardType}
 	n.input = in
@@ -391,14 +506,26 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 	}
 }
 
+// scrollDefaults lets a scroll view shrink below its content, as React
+// Native's ScrollView does; its content scrolls instead.
+var scrollDefaults = Style{FlexShrink: 1}
+
 func (t *Tree) mountScroll(cx *Scope, parent *node, v Scroll) {
 	n := t.newNode(KindScroll, parent, cx)
-	t.bindStyle(cx, n, v.Style, v.StyleFunc)
+	t.bindStyle(cx, n, scrollDefaults.Merge(v.Style), v.StyleFunc)
 	n.h = handlers{scroll: v.OnScroll, layout: v.OnLayout}
 	n.props = ViewProps{TestID: v.TestID}
+	t.setRef(n, v.Ref)
 	n.scroll = &scrollNode{config: ScrollConfig{Horizontal: v.Horizontal, HideIndicator: v.HideIndicator}}
 	for _, c := range v.Children {
 		t.mount(cx, n, c)
+	}
+}
+
+func (t *Tree) setRef(n *node, r *Ref) {
+	if r != nil {
+		r.t, r.n = t, n
+		n.ref = r
 	}
 }
 
@@ -477,6 +604,20 @@ func (t *Tree) mountCatch(cx *Scope, parent *node, c Catch) {
 
 // Dispatch handles a platform event.
 func (t *Tree) Dispatch(ev Event) {
+	switch ev.Kind {
+	case EventBack:
+		t.back()
+		return
+	case EventAlert:
+		t.answerAlert(ev.Count, ev.Index)
+		return
+	case EventClipboard:
+		t.answerRead(ev.Count, ev.Text)
+		return
+	case EventKey:
+		t.pressKey(ev.Text)
+		return
+	}
 	n := t.node(ev.ID)
 	if n == nil {
 		return
@@ -490,9 +631,16 @@ func (t *Tree) Dispatch(ev Event) {
 	switch ev.Kind {
 	case EventPress:
 		t.setState(n, statePressed, false)
-		if !n.props.Disabled {
-			call(h.press)
+		if n.props.Disabled {
+			break
 		}
+		if tn := n.text; tn != nil && len(tn.spans) > 0 {
+			if sp := tn.spanAt(ev.Index); sp != nil && sp.press != nil {
+				call(sp.press)
+			}
+			break
+		}
+		call(h.press)
 	case EventLongPress:
 		if !n.props.Disabled {
 			call(h.longPress)
@@ -535,14 +683,58 @@ func (t *Tree) Dispatch(ev Event) {
 		if h.submit != nil {
 			t.within(n.owner, func() { h.submit(ev.Text) })
 		}
+	case EventContextMenu:
+		if h.contextMenu != nil && !n.props.Disabled {
+			t.within(n.owner, func() { h.contextMenu(ev.Point) })
+		}
+	case EventPressOutside:
+		if n.hoist != nil {
+			t.pressOutside(n, ev.Point)
+		}
+	case EventLoadStart:
+		call(h.loadStart)
+	case EventLoadEnd:
+		call(h.loadEnd)
+	case EventProgress:
+		if h.progress != nil {
+			t.within(n.owner, func() { h.progress(ev.Loaded, ev.Total) })
+		}
+	case EventLoad:
+		if h.load != nil {
+			t.within(n.owner, func() { h.load(ev.Size) })
+		}
+	case EventError:
+		if h.loadError != nil {
+			t.within(n.owner, func() { h.loadError(errors.New(ev.Text)) })
+		}
 	case EventScroll:
 		if n.scroll != nil {
 			n.scroll.offset = ev.Point
+			if n.list != nil {
+				t.changed = true
+			}
+			if len(t.view.hosted) > 0 {
+				t.view.markLayout() // anchored overlays follow the scroll
+				t.changed = true
+			}
 		}
 		if h.scroll != nil {
 			t.within(n.owner, func() { h.scroll(ev.Point) })
 		}
 	}
+}
+
+// spanAt returns the span holding byte offset i of the text.
+func (tn *textNode) spanAt(i int) *spanNode {
+	at := 0
+	for k := range tn.spans {
+		end := at + len(tn.spans[k].content)
+		if i >= at && i < end {
+			return &tn.spans[k]
+		}
+		at = end
+	}
+	return nil
 }
 
 // HitTest returns the innermost pressable view at p in surface points,
@@ -560,7 +752,7 @@ func hit(n *node, p Point) NodeID {
 		local.X += n.scroll.offset.X
 		local.Y += n.scroll.offset.Y
 	}
-	kids := n.flatChildren()
+	kids := n.nativeChildren()
 	for i := len(kids) - 1; i >= 0; i-- {
 		if id := hit(kids[i], local); id != 0 {
 			return id
@@ -572,12 +764,14 @@ func hit(n *node, p Point) NodeID {
 	return 0
 }
 
-// Focus asks the platform to focus node id's text field.
-func (t *Tree) focus(n *node) {
-	t.commands = append(t.commands, MountItem{Kind: ItemFocus, ID: n.id})
+// command queues a command item for n after the next commit's changes.
+func (t *Tree) command(kind ItemKind, n *node) {
+	t.commands = append(t.commands, MountItem{Kind: kind, ID: n.id})
 	t.changed = true
 }
 
+// flatChildren returns the views laid out as n's children: its children
+// and those of its regions, without the overlays and modals it hoists.
 func (n *node) flatChildren() []*node {
 	if n.flat == nil {
 		n.flat = appendNative(make([]*node, 0, len(n.children)), n.children)
@@ -587,10 +781,26 @@ func (n *node) flatChildren() []*node {
 
 func appendNative(out []*node, children []*node) []*node {
 	for _, c := range children {
-		if c.kind == 0 {
+		switch {
+		case c.kind == 0:
 			out = appendNative(out, c.children)
-		} else {
+		case c.hoist == nil:
 			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// nativeChildren returns n's native children: the views it lays out,
+// then the overlays and modals it hosts, last on top.
+func (n *node) nativeChildren() []*node {
+	if len(n.hosted) == 0 {
+		return n.flatChildren()
+	}
+	out := append([]*node(nil), n.flatChildren()...)
+	for _, h := range n.hosted {
+		if !h.deleted {
+			out = append(out, h)
 		}
 	}
 	return out
@@ -614,6 +824,13 @@ func (n *node) events() EventMask {
 	bit(EventBlur, h.blur != nil || s.Focus != nil)
 	bit(EventSubmitEditing, h.submit != nil)
 	bit(EventScroll, h.scroll != nil)
+	bit(EventPressOutside, h.pressOutside != nil)
+	bit(EventContextMenu, h.contextMenu != nil)
+	bit(EventLoadStart, h.loadStart != nil)
+	bit(EventProgress, h.progress != nil)
+	bit(EventLoad, h.load != nil)
+	bit(EventError, h.loadError != nil)
+	bit(EventLoadEnd, h.loadEnd != nil)
 	bit(EventChangeText, n.kind == KindInput)
 	return m
 }

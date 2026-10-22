@@ -5,6 +5,7 @@ package apple
 import (
 	"math"
 	"structs"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -47,6 +48,10 @@ var (
 	ctLineCreateWithAttrString func(str uintptr) uintptr
 	ctLineCreateTruncatedLine  func(line uintptr, width float64, kind uint32, token uintptr) uintptr
 	ctLineDraw                 func(line, ctx uintptr)
+	ctLineIndexForPosition     func(line uintptr, p CGPoint) int
+	ctLineOffsetForIndex       func(line uintptr, i int, secondary *float64) float64
+	cfAttributedStringMutable  func(alloc uintptr, max int, str uintptr) uintptr
+	cfAttributedStringSetAttrs func(str uintptr, r cfRange, attrs uintptr, clear bool)
 
 	attrFont, attrColor, attrKern, attrUnderline, attrParagraph uintptr
 	attrTraits, attrWeight, attrSymbolic                        uintptr
@@ -89,6 +94,10 @@ func loadText(cf, cg uintptr) {
 	reg(&ctLineCreateWithAttrString, ct, "CTLineCreateWithAttributedString")
 	reg(&ctLineCreateTruncatedLine, ct, "CTLineCreateTruncatedLine")
 	reg(&ctLineDraw, ct, "CTLineDraw")
+	reg(&ctLineIndexForPosition, ct, "CTLineGetStringIndexForPosition")
+	reg(&ctLineOffsetForIndex, ct, "CTLineGetOffsetForStringIndex")
+	reg(&cfAttributedStringMutable, cf, "CFAttributedStringCreateMutableCopy")
+	reg(&cfAttributedStringSetAttrs, cf, "CFAttributedStringSetAttributes")
 	attrFont = constant(ct, "kCTFontAttributeName")
 	attrColor = constant(ct, "kCTForegroundColorAttributeName")
 	attrKern = constant(ct, "kCTKernAttributeName")
@@ -151,15 +160,65 @@ const (
 	specMinLineHeight                  = 9
 )
 
-// attributed returns a new CFAttributedString of t. The caller releases
-// it.
-func attributed(t *core.AttributedText) uintptr {
-	st := t.Style
+// runAttributes returns a new dictionary of what st sets per character:
+// font, color, letter spacing and underline, plus extra keys and values.
+// The caller releases it.
+func runAttributes(st core.TextStyle, keys, values []uintptr) uintptr {
 	font := Font(st.Font)
 	color := CGColor(st.Color)
-	keys := []uintptr{attrFont, attrColor}
-	values := []uintptr{font, color}
-	owned := []uintptr{font, color}
+	var line int32
+	if st.Decoration&core.TextDecorationUnderline != 0 {
+		line = 1 // single
+	}
+	underline := int32Number(line)
+	owned := []uintptr{font, color, underline}
+	keys = append(keys, attrFont, attrColor, attrUnderline)
+	values = append(values, font, color, underline)
+	// A kern of 0 would turn the font's own kerning off.
+	if st.LetterSpacing != 0 {
+		kern := float64Number(float64(st.LetterSpacing))
+		keys, values, owned = append(keys, attrKern), append(values, kern), append(owned, kern)
+	}
+	attrs := dictionary(keys, values)
+	for _, ref := range owned {
+		Release(ref)
+	}
+	return attrs
+}
+
+// utf16Offsets maps text's UTF-8 byte offsets to UTF-16 offsets, and
+// back: toUTF16 has an entry per byte and one past the end, toUTF8 one
+// per UTF-16 unit and one past the end.
+func utf16Offsets(text string) (toUTF16, toUTF8 []int) {
+	toUTF16 = make([]int, len(text)+1)
+	n := 0
+	for i, r := range text {
+		size := utf8.RuneLen(r)
+		if size < 0 {
+			size = 1
+		}
+		for j := range size {
+			toUTF16[i+j] = n
+		}
+		units := 1
+		if r >= 0x10000 {
+			units = 2
+		}
+		for range units {
+			toUTF8 = append(toUTF8, i)
+		}
+		n += units
+	}
+	toUTF16[len(text)] = n
+	toUTF8 = append(toUTF8, len(text))
+	return toUTF16, toUTF8
+}
+
+// attributed returns a new CFAttributedString of t, its spans styled over
+// its style. The caller releases it.
+func attributed(t *core.AttributedText, toUTF16 []int) uintptr {
+	st := t.Style
+	var keys, values, owned []uintptr
 
 	align := uint8(alignLeft)
 	switch st.Align {
@@ -177,16 +236,7 @@ func attributed(t *core.AttributedText) uintptr {
 	}
 	para := ctParagraphStyleCreate(unsafe.Pointer(&settings[0]), uintptr(len(settings)))
 	keys, values, owned = append(keys, attrParagraph), append(values, para), append(owned, para)
-	if st.LetterSpacing != 0 {
-		kern := float64Number(float64(st.LetterSpacing))
-		keys, values, owned = append(keys, attrKern), append(values, kern), append(owned, kern)
-	}
-	if st.Decoration&core.TextDecorationUnderline != 0 {
-		const single = 1
-		u := int32Number(single)
-		keys, values, owned = append(keys, attrUnderline), append(values, u), append(owned, u)
-	}
-	attrs := dictionary(keys, values)
+	attrs := runAttributes(st, keys, values)
 	str := CFString(t.Text)
 	out := cfAttributedStringCreate(0, str, attrs)
 	Release(str)
@@ -194,7 +244,22 @@ func attributed(t *core.AttributedText) uintptr {
 	for _, ref := range owned {
 		Release(ref)
 	}
-	return out
+	if len(t.Spans) == 0 {
+		return out
+	}
+	m := cfAttributedStringMutable(0, 0, out)
+	Release(out)
+	for _, sp := range t.Spans {
+		start, end := min(max(sp.Start, 0), len(t.Text)), min(max(sp.End, 0), len(t.Text))
+		if end <= start {
+			continue
+		}
+		a := runAttributes(sp.Style, nil, nil)
+		r := cfRange{Location: toUTF16[start], Length: toUTF16[end] - toUTF16[start]}
+		cfAttributedStringSetAttrs(m, r, a, false)
+		Release(a)
+	}
+	return m
 }
 
 // TextEngine implements core.TextEngine with CoreText. Strikethrough is
@@ -203,8 +268,9 @@ type TextEngine struct{}
 
 // Prepare implements core.TextEngine. It is safe off the main thread.
 func (TextEngine) Prepare(t *core.AttributedText) core.PreparedText {
-	str := attributed(t)
-	p := &prepared{str: str, fs: ctFramesetterCreate(str), maxLines: t.MaxLines}
+	toUTF16, toUTF8 := utf16Offsets(t.Text)
+	str := attributed(t, toUTF16)
+	p := &prepared{str: str, fs: ctFramesetterCreate(str), maxLines: t.MaxLines, toUTF8: toUTF8}
 	if cfAttributedStringLength(str) == 0 {
 		f := Font(t.Style.Font)
 		p.emptyHeight = ctFontGetAscent(f) + ctFontGetDescent(f) + ctFontGetLeading(f)
@@ -220,6 +286,7 @@ type prepared struct {
 	str, fs     uintptr
 	maxLines    int
 	emptyHeight float64
+	toUTF8      []int // byte offsets of UTF-16 offsets
 }
 
 // unbounded is a size limit nothing reaches; tall is a frame height
@@ -270,7 +337,7 @@ func (p *prepared) frame(size CGSize) uintptr {
 
 // Layout implements core.PreparedText: the CTFrame the main thread draws.
 func (p *prepared) Layout(size core.Size) core.TextLayout {
-	l := &Layout{height: float64(size.Height)}
+	l := &Layout{height: float64(size.Height), toUTF8: p.toUTF8}
 	if p.emptyHeight > 0 {
 		return l
 	}
@@ -294,7 +361,7 @@ func (p *prepared) Layout(size core.Size) core.TextLayout {
 	Release(token)
 	Release(line)
 	Release(rest)
-	l.shown = p.maxLines
+	l.shown, l.restStart = p.maxLines, r.Location
 	origins := make([]CGPoint, p.maxLines)
 	ctFrameGetLineOrigins(all, cfRange{Length: p.maxLines}, &origins[0])
 	// Origins count from the frame's bottom; keep them from its top.
@@ -339,6 +406,9 @@ type Layout struct {
 	truncated uintptr
 	origins   []CGPoint
 	shown     int
+	restStart int // the truncated line's first UTF-16 offset
+
+	toUTF8 []int
 }
 
 // Release implements core.TextLayout.
@@ -352,6 +422,61 @@ func (l *Layout) Release() {
 	}
 	Release(l.truncated)
 	*l = Layout{}
+}
+
+// IndexAt returns the UTF-8 byte offset of the character at p, a point of
+// the view Draw drew l in at box, or -1 when no character is there.
+func (l *Layout) IndexAt(p CGPoint, box CGRect) int {
+	if l == nil || (l.frame == 0 && l.truncated == 0) {
+		return -1
+	}
+	x, y := p.X-box.Origin.X, p.Y-box.Origin.Y // from the box's top left
+	var lines []uintptr
+	var baselines []CGPoint // from the box's top
+	if l.frame != 0 {
+		arr := ctFrameGetLines(l.frame)
+		n := cfArrayGetCount(arr)
+		if n == 0 {
+			return -1
+		}
+		origins := make([]CGPoint, n)
+		ctFrameGetLineOrigins(l.frame, cfRange{Length: n}, &origins[0])
+		// Draw puts the frame's bottom at the box's top plus height+1.
+		for i := range n {
+			lines = append(lines, cfArrayGetValueAtIndex(arr, i))
+			baselines = append(baselines, CGPoint{X: origins[i].X, Y: l.height + 1 - origins[i].Y})
+		}
+	} else {
+		lines = append(append(lines, l.lines...), l.truncated)
+		baselines = l.origins[:l.shown]
+	}
+	for i, line := range lines {
+		var ascent, descent, leading float64
+		width := ctLineGetTypographicBounds(line, &ascent, &descent, &leading)
+		o := baselines[i]
+		if y < o.Y-ascent-leading/2 || y > o.Y+descent+leading/2 {
+			continue
+		}
+		lx := x - o.X
+		if lx < 0 || lx > width {
+			return -1
+		}
+		r := ctLineGetStringRange(line)
+		idx := ctLineIndexForPosition(line, CGPoint{X: lx})
+		// The index is the caret's: step back when it is past the point.
+		if idx > r.Location && ctLineOffsetForIndex(line, idx, nil) > lx {
+			idx--
+		}
+		idx = min(max(idx, r.Location), r.Location+r.Length-1)
+		if l.frame == 0 && i == len(lines)-1 {
+			idx += l.restStart
+		}
+		if idx < 0 || idx >= len(l.toUTF8)-1 {
+			return -1
+		}
+		return l.toUTF8[idx]
+	}
+	return -1
 }
 
 // Draw draws l in box of a flipped context of a view viewHeight tall.

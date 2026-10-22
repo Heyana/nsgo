@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"sync"
@@ -503,5 +504,377 @@ func TestStateStyles(t *testing.T) {
 	b := h.commit()
 	if k := kinds(b); k[ItemViewStyle] != 1 {
 		t.Errorf("kinds = %v, want one view style", k)
+	}
+}
+
+func TestEnvironment(t *testing.T) {
+	var widths []Points
+	var darks []bool
+	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+		cx.Effect(func() { widths = append(widths, cx.Env().Window().Width) })
+		cx.Effect(func() { darks = append(darks, cx.Env().Dark()) })
+		return Text{Content: "Aa", Style: Style{FontSize: 10}, TestID: "text"}
+	})
+	h.commit()
+	h.tree.Resize(Size{200, 100})
+	h.tree.SetEnvironment(Environment{Dark: true, FontScale: 2})
+	h.tree.SetEnvironment(Environment{Dark: true, FontScale: 2}) // unchanged: no runs
+	h.commit()
+	if !slices.Equal(widths, []Points{100, 200}) || !slices.Equal(darks, []bool{false, true}) {
+		t.Fatalf("widths %v, darks %v", widths, darks)
+	}
+	if got := h.find("text").text.style.Font.Size; got != 20 {
+		t.Fatalf("font size = %v, want scaled to 20", got)
+	}
+}
+
+func TestPlaceFlipsAndClamps(t *testing.T) {
+	area := Bounds{Size: Size{100, 100}}
+	anchor := Bounds{Point{40, 80}, Size{20, 10}}
+	p, side := place(anchor, Size{30, 30}, area, PlaceBottom, 0, 4, false)
+	if side != PlaceTop || p != (Point{35, 46}) {
+		t.Errorf("no room below: %v %v, want flipped above at {35 46}", p, side)
+	}
+	p, _ = place(Bounds{Point{90, 10}, Size{10, 10}}, Size{30, 10}, area, PlaceBottom, AlignStart, 0, false)
+	if p.X != 70 {
+		t.Errorf("x = %v, want clamped to 70", p.X)
+	}
+}
+
+func TestOverlayModalAndStack(t *testing.T) {
+	var anchor Ref
+	var log []string
+	var routes *Signal[[]string]
+	h := newHost(t, Size{200, 300}, func(cx *Scope) Node {
+		routes = NewSignalFunc(cx, []string{"home", "detail"}, nil)
+		return View{Style: Style{FlexGrow: 1}, Children: []Node{
+			View{Ref: &anchor, Style: Style{Height: Pt(40), Margin: Edges{Top: 20}}, TestID: "anchor"},
+			Overlay{Anchor: &anchor, Offset: 5, Style: Style{Width: Pt(50), Height: Pt(30)}, TestID: "popover",
+				OnCancel:       func() { log = append(log, "cancel") },
+				OnPressOutside: func(Point) { log = append(log, "outside") }},
+			Stack{Style: Style{FlexGrow: 1}, Children: []Node{
+				Each(routes.Get, func(r string) string { return r }, func(cx *Scope, r func() string, _ func() int) Node {
+					return Screen{Title: r(), TestID: "screen-" + r(),
+						OnDismiss: func() {
+							log = append(log, "dismiss "+r())
+							routes.Update(func(rs []string) []string { return rs[:len(rs)-1] })
+						}}
+				}),
+			}},
+		}}
+	})
+	h.commit()
+	pop := h.find("popover")
+	if got, want := pop.frame, (Bounds{Point{75, 65}, Size{50, 30}}); got != want {
+		t.Errorf("popover = %v, want centered below the anchor", got)
+	}
+	if pop.nativeParent() != h.tree.view {
+		t.Error("the overlay is not hoisted to the root view")
+	}
+	if !h.find("screen-home").screen.hidden || h.find("screen-detail").screen.hidden {
+		t.Error("the stack does not show only its top screen")
+	}
+	h.tree.Dispatch(Event{Kind: EventPressOutside, ID: pop.id, Point: Point{100, 40}})
+	h.tree.Dispatch(Event{Kind: EventPressOutside, ID: pop.id, Point: Point{5, 200}})
+	h.tree.Dispatch(Event{Kind: EventBack})
+	h.commit()
+	if want := []string{"outside", "cancel"}; !slices.Equal(log, want) {
+		t.Fatalf("log = %q, want a press on the anchor ignored and back sent to the overlay", log)
+	}
+	log = nil
+	// Without the overlay's cancel, back pops the stack.
+	pop.h.cancel = nil
+	h.tree.Dispatch(Event{Kind: EventBack})
+	h.commit()
+	if want := []string{"dismiss detail"}; !slices.Equal(log, want) {
+		t.Fatalf("log = %q", log)
+	}
+	if h.find("screen-home").screen.hidden {
+		t.Error("home is not shown after popping")
+	}
+	h.tree.Dispatch(Event{Kind: EventBack})
+	if len(log) != 1 {
+		t.Error("the last screen popped")
+	}
+}
+
+func TestModalIsALayerOfItsOwn(t *testing.T) {
+	var closed string
+	h := newHost(t, Size{200, 300}, func(cx *Scope) Node {
+		return View{Style: Style{Padding: All(20)}, Children: []Node{
+			Modal{TestID: "modal", Style: Style{Padding: All(10)}, OnRequestClose: func(r string) { closed = r },
+				Children: []Node{Text{Content: "hi", TestID: "text"}}},
+		}}
+	})
+	h.commit()
+	m := h.find("modal")
+	if m.frame != (Bounds{Size: Size{200, 300}}) || m.nativeParent() != h.tree.view {
+		t.Errorf("modal = %v, want the root's size, hosted by it", m.frame)
+	}
+	if got := h.find("text").frame.Origin; got != (Point{10, 10}) {
+		t.Errorf("text at %v, want inside the modal's padding", got)
+	}
+	h.tree.Dispatch(Event{Kind: EventBack})
+	if closed != "cancel" {
+		t.Errorf("close reason = %q", closed)
+	}
+}
+
+func TestImageSizesFromItsSource(t *testing.T) {
+	h := newHost(t, Size{300, 300}, func(cx *Scope) Node {
+		return View{Style: Style{AlignItems: AlignStart}, Children: []Node{
+			Image{Source: ImageSource{URI: "asset:/logo.png", Size: Size{40, 20}}, TestID: "natural"},
+			Image{Source: ImageSource{URI: "https://x/y.png", Size: Size{40, 20}}, Style: Style{Width: Pt(100)}, TestID: "wide"},
+			Image{Source: Src("https://x/z.png"), TestID: "unknown"},
+		}}
+	})
+	h.tree.SetEnvironment(Environment{PixelRatio: 2})
+	b := h.commit()
+	sizes := map[string]Size{"natural": {40, 20}, "wide": {100, 50}, "unknown": {}}
+	for id, want := range sizes {
+		if got := h.find(id).frame.Size; got != want {
+			t.Errorf("%s = %v, want %v", id, got, want)
+		}
+	}
+	for _, it := range b.Items {
+		if it.Kind == ItemImage && it.ID == h.find("natural").id && it.Image.Source.URI != "asset:/logo@2x.png" {
+			t.Errorf("source = %q, want the @2x variant", it.Image.Source.URI)
+		}
+	}
+}
+
+func TestListMountsAWindowAndReusesCells(t *testing.T) {
+	var count *Signal[int]
+	ends := 0
+	h := newHost(t, Size{200, 300}, func(cx *Scope) Node {
+		count = NewSignal(cx, 10000)
+		return List{Count: count.Get, Style: Style{FlexGrow: 1}, TestID: "list",
+			OnEndReached: func() { ends++ },
+			Row: func(cx *Scope, row ListRow) Node {
+				return Text{ContentFunc: func() string { return "row " + strconv.Itoa(row.Index()) },
+					Style: Style{Height: Pt(30)}}
+			}}
+	})
+	h.commit()
+	list := h.find("list")
+	ln := list.list
+	mounted := func() (n int, first, last int) {
+		first = -1
+		for i := range ln.byIndex {
+			n++
+			if first < 0 || i < first {
+				first = i
+			}
+			last = max(last, i)
+		}
+		return
+	}
+	n, first, last := mounted()
+	if first != 0 || n > 40 || n < 10 {
+		t.Fatalf("mounted %d rows %d..%d, want a window from 0", n, first, last)
+	}
+	// Real sizes replaced the estimate.
+	if got := ln.sizes.sum(10); got != 300 {
+		t.Errorf("first ten rows = %v points, want 300 measured", got)
+	}
+	measured := 0
+	for _, k := range ln.known {
+		if k {
+			measured++
+		}
+	}
+	if got, want := list.scroll.content.Height, Points(30*measured+50*(10000-measured)); measured < 10 || got != want {
+		t.Errorf("content = %v with %d rows measured, want measured rows plus estimates (%v)", got, measured, want)
+	}
+	cells := len(h.tree.nodes)
+	h.tree.Dispatch(Event{Kind: EventScroll, ID: list.id, Point: Point{Y: 3000}})
+	h.commit()
+	_, first, last = mounted()
+	// Row 65 or so sits at 3000; the window starts a viewport above it.
+	if first > 66 || last < 70 {
+		t.Errorf("after scrolling to 3000, rows %d..%d are mounted", first, last)
+	}
+	// The window now holds ~30 measured rows instead of ~20 estimated
+	// ones: 10 more cells of 2 nodes. Rebuilding would add ~60.
+	if grew := len(h.tree.nodes) - cells; grew > 24 {
+		t.Errorf("scrolling created %d nodes, want cells reused", grew)
+	}
+	row := ln.byIndex[first+1]
+	if row == nil || row.node.children[0].text.content != "row "+strconv.Itoa(first+1) {
+		t.Errorf("a reused cell shows the wrong row")
+	}
+	count.Set(20)
+	h.commit()
+	if n, _, last := mounted(); last != 19 || n != 20 {
+		t.Errorf("after shrinking to 20 rows: %d mounted, last %d", n, last)
+	}
+	if ends != 1 {
+		t.Errorf("OnEndReached ran %d times, want once", ends)
+	}
+}
+
+func TestFenwick(t *testing.T) {
+	f := newFenwick([]Points{10, 20, 30, 40})
+	if f.sum(3) != 60 || f.find(0) != 0 || f.find(29) != 1 || f.find(30) != 2 || f.find(1000) != 4 {
+		t.Fatalf("sum %v, find %d %d %d %d", f.sum(3), f.find(0), f.find(29), f.find(30), f.find(1000))
+	}
+	f.set(1, 5)
+	if f.sum(2) != 15 || f.find(14) != 1 {
+		t.Fatal("set did not update the sums")
+	}
+}
+
+func TestAnimateStepsOnTheClock(t *testing.T) {
+	var x *Signal[float64]
+	var steps []float64
+	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+		x = NewSignal(cx, 0.0)
+		cx.Animate(100*time.Millisecond, Linear, func(p float64) { x.Set(p); steps = append(steps, p) })
+		return View{StyleFunc: func() Style {
+			return Style{Transform: Transform{TranslateX: Points(x.Get() * 100)}, Transition: Transition{}}
+		}, TestID: "box"}
+	})
+	for range 10 {
+		h.clock.Advance(FrameInterval)
+		h.drain()
+	}
+	if last := steps[len(steps)-1]; last != 1 || len(steps) < 6 {
+		t.Fatalf("steps = %v, want frames ending at 1", steps)
+	}
+	b := h.commit()
+	for _, it := range b.Items {
+		if it.Kind == ItemViewStyle && it.ID == h.find("box").id && it.ViewStyle.Transform.TranslateX != 100 {
+			t.Errorf("transform = %+v", it.ViewStyle.Transform)
+		}
+	}
+	if got := EaseInOut.At(0.5); math.Abs(got-0.5) > 1e-6 {
+		t.Errorf("ease-in-out at half = %v", got)
+	}
+}
+
+func TestSpansStyleRangesAndLink(t *testing.T) {
+	var name *Signal[string]
+	pressed := 0
+	h := newHost(t, Size{300, 100}, func(cx *Scope) Node {
+		name = NewSignal(cx, "Ada")
+		return Text{Style: Style{FontSize: 10}, TestID: "text", Spans: []Span{
+			{Content: "Hi "},
+			{ContentFunc: name.Get, Style: Style{FontWeight: FontWeightBold}},
+			{Content: ", see ", Style: Style{}},
+			{Content: "docs", Style: Style{Color: RGB(0x0969da)}, OnPress: func() { pressed++ }},
+		}}
+	})
+	h.commit()
+	n := h.find("text")
+	at := n.text.text
+	if at.Text != "Hi Ada, see docs" || len(at.Spans) != 4 {
+		t.Fatalf("text = %q with %d spans", at.Text, len(at.Spans))
+	}
+	if sp := at.Spans[1]; sp.Start != 3 || sp.End != 6 || sp.Style.Font.Weight != FontWeightBold || sp.Style.Font.Size != 10 {
+		t.Errorf("bold span = %+v", sp)
+	}
+	if !at.Spans[3].Link || !n.events().Has(EventPress) {
+		t.Error("the link span is not reported pressable")
+	}
+	h.tree.Dispatch(Event{Kind: EventPress, ID: n.id, Index: 1})
+	h.tree.Dispatch(Event{Kind: EventPress, ID: n.id, Index: 13})
+	if pressed != 1 {
+		t.Errorf("pressed = %d, want only the press on the link", pressed)
+	}
+	name.Set("Grace")
+	h.commit()
+	if n.text.text.Text != "Hi Grace, see docs" || n.text.text.Spans[3].Start != 14 {
+		t.Errorf("after the change: %q %+v", n.text.text.Text, n.text.text.Spans[3])
+	}
+}
+
+func TestCanvasDrawsAtItsSizeAndOnChange(t *testing.T) {
+	var level *Signal[float32]
+	draws := 0
+	h := newHost(t, Size{200, 100}, func(cx *Scope) Node {
+		level = NewSignal(cx, float32(0.5))
+		return Canvas{Style: Style{Height: Pt(40)}, TestID: "meter", Draw: func(d *Drawing, size Size) {
+			draws++
+			d.SetFillColor(RGB(0x1f883d)).FillRect(0, 0, float32(size.Width)*level.Get(), float32(size.Height))
+		}}
+	})
+	drawing := func(b *MountBatch) *Drawing {
+		for _, it := range b.Items {
+			if it.Kind == ItemCanvas {
+				return it.Drawing
+			}
+		}
+		return nil
+	}
+	d := drawing(h.commit())
+	if d == nil || draws != 1 {
+		t.Fatalf("first commit drew %d times, drawing %v", draws, d)
+	}
+	rect := d.Ops[3]
+	if rect.Kind != DrawRect || rect.W != 100 || rect.H != 40 {
+		t.Fatalf("rect = %+v, want half of 200 by 40", rect)
+	}
+	level.Set(1)
+	if d := drawing(h.commit()); d == nil || d.Ops[3].W != 200 {
+		t.Fatal("a change did not redraw")
+	}
+}
+
+func TestKeyBindingsFollowOwners(t *testing.T) {
+	var log []string
+	var open *Signal[bool]
+	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+		open = NewSignal(cx, true)
+		cx.OnKey("Cmd+S", func() { log = append(log, "save") })
+		return Show{When: open.Get, Then: func(cx *Scope) Node {
+			cx.OnKey("shift+mod+s", func() { log = append(log, "save as") })
+			return View{}
+		}}
+	})
+	b := h.commit()
+	var keys []string
+	for _, it := range b.Items {
+		if it.Kind == ItemKeymap {
+			keys = it.Keys
+		}
+	}
+	if !slices.Equal(keys, []string{"meta+s", "mod+shift+s"}) {
+		t.Fatalf("keymap = %q", keys)
+	}
+	h.tree.Dispatch(Event{Kind: EventKey, Text: "mod+shift+s"})
+	open.Set(false)
+	h.commit()
+	h.tree.Dispatch(Event{Kind: EventKey, Text: "mod+shift+s"})
+	h.tree.Dispatch(Event{Kind: EventKey, Text: "meta+s"})
+	if want := []string{"save as", "save"}; !slices.Equal(log, want) {
+		t.Fatalf("log = %q, want %q", log, want)
+	}
+}
+
+func TestChangesInsideRegionsRelayout(t *testing.T) {
+	var label *Signal[string]
+	var open *Signal[bool]
+	h := newHost(t, Size{300, 300}, func(cx *Scope) Node {
+		label = NewSignal(cx, "a")
+		open = NewSignal(cx, false)
+		return View{Style: Style{AlignItems: AlignStart}, Children: []Node{
+			Each(func() []int { return []int{1} }, func(i int) int { return i }, func(cx *Scope, _ func() int, _ func() int) Node {
+				return View{TestID: "row", Children: []Node{Text{ContentFunc: label.Get, Style: Style{FontSize: 10}}}}
+			}),
+			Show{When: open.Get, Then: func(cx *Scope) Node {
+				return Modal{TestID: "modal", Children: []Node{Text{Content: "hi"}}}
+			}},
+		}}
+	})
+	h.commit()
+	label.Set("a much longer label")
+	h.commit()
+	if got := h.find("row").frame.Size.Width; got < 100 {
+		t.Errorf("row width = %v after its text grew", got)
+	}
+	open.Set(true)
+	h.commit()
+	if got := h.find("modal").frame.Size; got != (Size{300, 300}) {
+		t.Errorf("modal opened at %v, want the root's size", got)
 	}
 }

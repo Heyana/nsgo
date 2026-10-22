@@ -2,8 +2,9 @@
 
 // Package apple holds what the AppKit and UIKit backends share, called
 // through purego without cgo: CoreFoundation strings, CoreGraphics colors
-// and the CoreText text engine, which prepares and lays text out on the
-// engine goroutine for the main thread to draw.
+// and canvases, layer styles and transitions, the CoreText text engine,
+// which prepares and lays text out on the engine goroutine for the main
+// thread to draw, and image views, which load and decode off it.
 package apple
 
 import (
@@ -88,6 +89,11 @@ func init() {
 	valueCBs = symbol(cf, "kCFTypeDictionaryValueCallBacks")
 	purego.RegisterLibFunc(&cgColorCreateSRGB, cg, "CGColorCreateSRGB")
 	loadText(cf, cg)
+	loadSystem()
+	loadImage(cf, cg)
+	loadCanvas(cg)
+	qc := load("/System/Library/Frameworks/QuartzCore.framework/QuartzCore")
+	purego.RegisterLibFunc(&caCurrentMediaTime, qc, "CACurrentMediaTime")
 }
 
 // Release calls CFRelease on a CoreFoundation object.

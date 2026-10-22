@@ -38,16 +38,24 @@ func Size(width, height core.Points) Option {
 // goroutine; the app's goroutines reach it through Scope.Post, which App
 // runs when it settles.
 type App struct {
-	t     testing.TB
-	size  core.Size
-	tree  *core.Tree
-	root  *core.Scope
-	Clock *core.ManualClock
+	t    testing.TB
+	size core.Size
+	// Clipboard is the clipboard's text; Announced what screen readers
+	// were asked to say.
+	Clipboard string
+	Announced []string
+	// Keymap is the keyboard shortcuts the app binds; Title its title.
+	Keymap []string
+	Title  string
+	tree   *core.Tree
+	root   *core.Scope
+	Clock  *core.ManualClock
 
 	mu    sync.Mutex
 	posts []func()
 
 	views  map[core.NodeID]*View
+	alerts []core.AlertConfig
 	rootID core.NodeID
 	edits  map[core.NodeID]uint32
 }
@@ -64,7 +72,9 @@ type View struct {
 	Events   core.EventMask
 	Text     string // a text view's text or a field's value
 	Input    core.InputConfig
-	Content  core.Size // a scroll view's content
+	Content  core.Size  // a scroll view's content
+	Offset   core.Point // and its offset
+	Image    core.ImageConfig
 	Focused  bool
 }
 
@@ -141,6 +151,12 @@ func (a *App) WaitFor(selector string, timeout time.Duration) *View {
 		}
 		time.Sleep(time.Millisecond)
 	}
+}
+
+// SetEnvironment reports env as a platform would and settles.
+func (a *App) SetEnvironment(env core.Environment) {
+	a.tree.SetEnvironment(env)
+	a.Settle()
 }
 
 // Resize sets the surface size and settles.
@@ -273,8 +289,20 @@ func (a *App) Press(selector string) {
 	a.t.Fatalf("nsgotest: nothing pressable at %q", selector)
 }
 
-// press sends what a tap on v sends: down, up, then the press itself.
+// press sends what a tap on v sends: presses outside to the overlays
+// that listen and do not hold v, then down, up and the press itself.
 func (a *App) press(v *View, kind core.EventKind) {
+	at := v.surfaceFrame()
+	center := core.Point{X: at.Origin.X + at.Size.Width/2, Y: at.Origin.Y + at.Size.Height/2}
+	var outside []core.NodeID
+	walk(a.views[a.rootID], false, func(o *View) {
+		if o.Events.Has(core.EventPressOutside) && !v.within(o) {
+			outside = append(outside, o.ID)
+		}
+	})
+	for _, id := range outside {
+		a.dispatch(core.Event{Kind: core.EventPressOutside, ID: id, Point: center})
+	}
 	for _, k := range []core.EventKind{core.EventPressDown, core.EventPressUp, kind} {
 		if v.Events.Has(k) {
 			a.dispatch(core.Event{Kind: k, ID: v.ID})
@@ -325,6 +353,59 @@ func (a *App) LongPress(selector string) {
 	a.t.Fatalf("nsgotest: nothing long-pressable at %q", selector)
 }
 
+// Alerts returns the alerts shown and not answered yet, oldest first.
+func (a *App) Alerts() []core.AlertConfig { return a.alerts }
+
+// Answer chooses the button at index (-1: dismiss) of the oldest alert
+// shown.
+func (a *App) Answer(index int) {
+	a.t.Helper()
+	if len(a.alerts) == 0 {
+		a.t.Fatal("nsgotest: no alert to answer")
+	}
+	id := a.alerts[0].ID
+	a.alerts = a.alerts[1:]
+	a.dispatch(core.Event{Kind: core.EventAlert, Count: id, Index: index})
+}
+
+// RightClick sends a secondary click to the view selector matches, or the
+// one around it that listens.
+func (a *App) RightClick(selector string) { a.t.Helper(); a.half(selector, core.EventContextMenu) }
+
+// Key presses a keyboard shortcut, such as "mod+s", if the app binds it.
+func (a *App) Key(key string) {
+	a.t.Helper()
+	k := core.NormalizeKey(key)
+	for _, b := range a.Keymap {
+		if b == k {
+			a.dispatch(core.Event{Kind: core.EventKey, Text: k})
+			return
+		}
+	}
+	a.t.Fatalf("nsgotest: no binding for %q in %v", key, a.Keymap)
+}
+
+// Back presses Escape or the back button.
+func (a *App) Back() { a.dispatch(core.Event{Kind: core.EventBack, ID: a.rootID}) }
+
+func (v *View) surfaceFrame() core.Bounds {
+	b := v.Frame
+	for p := v.Parent; p != nil; p = p.Parent {
+		b.Origin.X += p.Frame.Origin.X
+		b.Origin.Y += p.Frame.Origin.Y
+	}
+	return b
+}
+
+func (v *View) within(o *View) bool {
+	for p := v; p != nil; p = p.Parent {
+		if p == o {
+			return true
+		}
+	}
+	return false
+}
+
 // Type replaces the text of the field selector matches, as a user's edit.
 func (a *App) Type(selector, text string) {
 	a.t.Helper()
@@ -347,10 +428,22 @@ func (a *App) Submit(selector string) {
 	a.dispatch(core.Event{Kind: core.EventSubmitEditing, ID: v.ID, Text: v.Text})
 }
 
+// Load reports that the image selector matches loaded at pixels.
+func (a *App) Load(selector string, pixels core.Size) {
+	a.t.Helper()
+	v := a.Find(selector)
+	for _, k := range []core.EventKind{core.EventLoadStart, core.EventLoad, core.EventLoadEnd} {
+		if v.Events.Has(k) {
+			a.dispatch(core.Event{Kind: k, ID: v.ID, Size: pixels})
+		}
+	}
+}
+
 // Scroll scrolls the view selector matches to offset.
 func (a *App) Scroll(selector string, offset core.Point) {
 	a.t.Helper()
 	v := a.Find(selector)
+	v.Offset = offset
 	a.dispatch(core.Event{Kind: core.EventScroll, ID: v.ID, Point: offset})
 }
 
@@ -403,6 +496,8 @@ func (a *App) apply(b *core.MountBatch) {
 			}
 		case core.ItemScrollContent:
 			v.Content = it.Size
+		case core.ItemImage:
+			v.Image = *it.Image
 		case core.ItemFocus:
 			for _, o := range a.views {
 				o.Focused = false
@@ -410,6 +505,35 @@ func (a *App) apply(b *core.MountBatch) {
 			v.Focused = true
 		case core.ItemBlur:
 			v.Focused = false
+		case core.ItemScrollTo:
+			v.Offset = it.Point
+			// A platform reports where a scroll lands.
+			a.mu.Lock()
+			a.posts = append(a.posts, func() {
+				a.tree.Dispatch(core.Event{Kind: core.EventScroll, ID: it.ID, Point: it.Point})
+			})
+			a.mu.Unlock()
+		case core.ItemSetClipboard:
+			a.Clipboard = it.Value
+		case core.ItemReadClipboard:
+			id, text := it.Count, a.Clipboard
+			a.mu.Lock()
+			a.posts = append(a.posts, func() {
+				a.tree.Dispatch(core.Event{Kind: core.EventClipboard, Count: id, Text: text})
+			})
+			a.mu.Unlock()
+		case core.ItemKeymap:
+			a.Keymap = it.Keys
+		case core.ItemTitle:
+			a.Title = it.Value
+		case core.ItemAnnounce:
+			a.Announced = append(a.Announced, it.Value)
+		case core.ItemAlert:
+			a.alerts = append(a.alerts, *it.Alert)
+		case core.ItemDismissKeyboard:
+			for _, o := range a.views {
+				o.Focused = false
+			}
 		}
 	}
 }
@@ -468,6 +592,10 @@ func kindName(k core.ViewKind) string {
 		return "input"
 	case core.KindScroll:
 		return "scroll"
+	case core.KindImage:
+		return "image"
+	case core.KindModal:
+		return "modal"
 	}
 	return "?"
 }

@@ -2,12 +2,14 @@
 
 // Package ios is NSGo's UIKit backend: one UIView per node, styled through
 // its CALayer, with text the engine laid out with CoreText drawn on the
-// main thread. It calls UIKit through purego; Go itself needs cgo to link
-// for iOS.
+// main thread and images decoded off it. Alerts are UIAlertControllers.
+// It calls UIKit through purego; Go itself needs cgo to link for iOS.
 package ios
 
 import (
 	"runtime"
+	"strings"
+	"structs"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -47,6 +49,11 @@ type view struct {
 	inset    core.Bounds
 	readonly bool
 	edits    uint32
+
+	image     *apple.ImageView
+	animation core.ModalAnimation // a modal's
+	presented bool                // whether a modal was inserted yet
+	drawing   *core.Drawing       // a canvas's
 }
 
 type surface struct {
@@ -55,6 +62,23 @@ type surface struct {
 	engine  *engine.Engine
 	batches queue.Batches
 	views   []*view // index is NodeID
+	env     core.Environment
+
+	keyboard         core.Points
+	keyboardDuration time.Duration
+
+	keys      map[string]bool // the keymap's bindings
+	statusBar int             // the UIStatusBarStyle the controller asks for
+	hideBar   bool
+
+	// What a batch touched, finished once its frames are set.
+	images, presenting []*view
+}
+
+// edgeInsets is UIEdgeInsets.
+type edgeInsets struct {
+	_                        structs.HostLayout
+	Top, Left, Bottom, Right float64
 }
 
 // views maps native objects to their Go side. Only the main thread uses it.
@@ -67,56 +91,68 @@ var app *surface
 var (
 	sel = objc.RegisterName
 
-	selAlloc, selNew              = sel("alloc"), sel("new")
-	selRelease                    = sel("release")
-	selLayer                      = sel("layer")
-	selSetFrame, selBounds        = sel("setFrame:"), sel("bounds")
-	selAddSubview, selSuperview   = sel("addSubview:"), sel("superview")
-	selInsertBelow                = sel("insertSubview:belowSubview:")
-	selRemoveFromSuperview        = sel("removeFromSuperview")
-	selSetHidden                  = sel("setHidden:")
-	selSetNeedsDisplay            = sel("setNeedsDisplay")
-	selSetNeedsLayout             = sel("setNeedsLayout")
-	selLocationInView             = sel("locationInView:")
-	selAnyObject                  = sel("anyObject")
-	selText, selSetText           = sel("text"), sel("setText:")
-	selSetFont, selSetTextColor   = sel("setFont:"), sel("setTextColor:")
-	selSetPlaceholder             = sel("setPlaceholder:")
-	selSetTextAlignment           = sel("setTextAlignment:")
-	selSetSecure                  = sel("setSecureTextEntry:")
-	selSetKeyboardType            = sel("setKeyboardType:")
-	selSetEnabled                 = sel("setEnabled:")
-	selBecomeFirst, selResign     = sel("becomeFirstResponder"), sel("resignFirstResponder")
-	selApply                      = sel("nsgoApply:")
-	selChanged                    = sel("nsgoChanged:")
-	selPerformOnMain              = sel("performSelectorOnMainThread:withObject:waitUntilDone:")
-	selSetIsAccessibilityElement  = sel("setIsAccessibilityElement:")
-	selSetAccessibilityTraits     = sel("setAccessibilityTraits:")
-	selSetAccessibilityLabel      = sel("setAccessibilityLabel:")
-	selSetAccessibilityValue      = sel("setAccessibilityValue:")
-	selSetAccessibilityIdentifier = sel("setAccessibilityIdentifier:")
-	selIsEqualToString            = sel("isEqualToString:")
-	selSetContentMode             = sel("setContentMode:")
-	selSetOpaque                  = sel("setOpaque:")
-	selInitWithFrame, selSetDeleg = sel("initWithFrame:"), sel("setDelegate:")
-	selContentOffset              = sel("contentOffset")
-	selSetContentSize             = sel("setContentSize:")
+	selAlloc, selNew                 = sel("alloc"), sel("new")
+	selRelease                       = sel("release")
+	selLayer                         = sel("layer")
+	selSetFrame, selBounds           = sel("setFrame:"), sel("bounds")
+	selAddSubview, selSuperview      = sel("addSubview:"), sel("superview")
+	selInsertBelow                   = sel("insertSubview:belowSubview:")
+	selRemoveFromSuperview           = sel("removeFromSuperview")
+	selSetHidden                     = sel("setHidden:")
+	selSetNeedsDisplay               = sel("setNeedsDisplay")
+	selSetNeedsLayout                = sel("setNeedsLayout")
+	selLocationInView                = sel("locationInView:")
+	selAnyObject                     = sel("anyObject")
+	selText, selSetText              = sel("text"), sel("setText:")
+	selSetFont, selSetTextColor      = sel("setFont:"), sel("setTextColor:")
+	selSetPlaceholder                = sel("setPlaceholder:")
+	selSetTextAlignment              = sel("setTextAlignment:")
+	selSetSecure                     = sel("setSecureTextEntry:")
+	selSetKeyboardType               = sel("setKeyboardType:")
+	selSetEnabled                    = sel("setEnabled:")
+	selBecomeFirst, selResign        = sel("becomeFirstResponder"), sel("resignFirstResponder")
+	selApply                         = sel("nsgoApply:")
+	selChanged                       = sel("nsgoChanged:")
+	selPerformOnMain                 = sel("performSelectorOnMainThread:withObject:waitUntilDone:")
+	selSetIsAccessibilityElement     = sel("setIsAccessibilityElement:")
+	selSetAccessibilityTraits        = sel("setAccessibilityTraits:")
+	selSetAccessibilityLabel         = sel("setAccessibilityLabel:")
+	selSetAccessibilityValue         = sel("setAccessibilityValue:")
+	selSetAccessibilityIdentifier    = sel("setAccessibilityIdentifier:")
+	selSetAccessibilityContainerType = sel("setAccessibilityContainerType:")
+	selIsEqualToString               = sel("isEqualToString:")
+	selSetContentMode                = sel("setContentMode:")
+	selSetOpaque                     = sel("setOpaque:")
+	selInitWithFrame, selSetDeleg    = sel("initWithFrame:"), sel("setDelegate:")
+	selContentOffset                 = sel("contentOffset")
+	selSetContentSize                = sel("setContentSize:")
 
-	classView, classSurface, classInput, classScroll objc.Class
+	classView, classSurface, classInput, classScroll, classWatcher, classController objc.Class
 
 	uiGraphicsGetCurrentContext func() uintptr
 	uiApplicationMain           func(argc int, argv unsafe.Pointer, principal, delegate uintptr) int
+	uiReduceMotion, uiVoiceOver func() bool
+	uiAccessibilityPost         func(notification uint32, argument objc.ID)
+	announcement                uint32 // UIAccessibilityAnnouncementNotification
 	traits                      = map[string]uint64{}
 )
 
+const uikitPath = "/System/Library/Frameworks/UIKit.framework/UIKit"
+
 func loadUIKit() {
-	uikit, err := purego.Dlopen("/System/Library/Frameworks/UIKit.framework/UIKit", purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	uikit, err := purego.Dlopen(uikitPath, purego.RTLD_NOW|purego.RTLD_GLOBAL)
 	if err != nil {
 		panic(err)
 	}
 	purego.RegisterLibFunc(&uiGraphicsGetCurrentContext, uikit, "UIGraphicsGetCurrentContext")
 	purego.RegisterLibFunc(&uiApplicationMain, uikit, "UIApplicationMain")
-	for _, name := range []string{"Button", "Link", "Header", "Image", "StaticText", "Selected", "NotEnabled"} {
+	purego.RegisterLibFunc(&uiReduceMotion, uikit, "UIAccessibilityIsReduceMotionEnabled")
+	purego.RegisterLibFunc(&uiVoiceOver, uikit, "UIAccessibilityIsVoiceOverRunning")
+	purego.RegisterLibFunc(&uiAccessibilityPost, uikit, "UIAccessibilityPostNotification")
+	if addr, err := purego.Dlsym(uikit, "UIAccessibilityAnnouncementNotification"); err == nil {
+		announcement = **(**uint32)(unsafe.Pointer(&addr))
+	}
+	for _, name := range []string{"Button", "Link", "Header", "Image", "StaticText", "Selected", "NotEnabled", "TabBar"} {
 		addr, err := purego.Dlsym(uikit, "UIAccessibilityTrait"+name)
 		if err != nil {
 			panic(err)
@@ -136,7 +172,30 @@ func loadUIKit() {
 	classSurface = register("NsgoSurface", uiView, nil, append(common,
 		objc.MethodDef{Cmd: sel("layoutSubviews"), Fn: surfaceLayout},
 		objc.MethodDef{Cmd: selApply, Fn: surfaceApply},
+		objc.MethodDef{Cmd: sel("safeAreaInsetsDidChange"), Fn: func(self objc.ID, cmd objc.SEL) {
+			self.SendSuper(cmd)
+			app.refresh()
+		}},
+		objc.MethodDef{Cmd: sel("traitCollectionDidChange:"), Fn: func(self objc.ID, cmd objc.SEL, previous objc.ID) {
+			self.SendSuper(cmd, previous)
+			app.refresh()
+		}},
 	))
+	classController = register("NsgoViewController", objc.GetClass("UIViewController"), nil, []objc.MethodDef{
+		{Cmd: sel("preferredStatusBarStyle"), Fn: func(objc.ID, objc.SEL) int { return app.statusBar }},
+		{Cmd: sel("prefersStatusBarHidden"), Fn: func(objc.ID, objc.SEL) bool { return app.hideBar }},
+		{Cmd: sel("canBecomeFirstResponder"), Fn: func(objc.ID, objc.SEL) bool { return true }},
+		{Cmd: sel("viewDidAppear:"), Fn: func(self objc.ID, cmd objc.SEL, animated bool) {
+			self.SendSuper(cmd, animated)
+			self.Send(selBecomeFirst)
+		}},
+		{Cmd: sel("pressesBegan:withEvent:"), Fn: pressesBegan},
+	})
+	// The watcher sees every touch going down in the surface, before its
+	// views do, and lets it through.
+	classWatcher = register("NsgoTouchWatcher", objc.GetClass("UIGestureRecognizer"), nil, []objc.MethodDef{
+		{Cmd: sel("touchesBegan:withEvent:"), Fn: watcherBegan},
+	})
 	classInput = register("NsgoInput", uiView, []*objc.Protocol{objc.GetProtocol("UITextFieldDelegate")}, append(common,
 		objc.MethodDef{Cmd: sel("layoutSubviews"), Fn: inputLayout},
 		objc.MethodDef{Cmd: selChanged, Fn: inputChanged},
@@ -178,22 +237,189 @@ func Run(root engine.App) {
 	uiApplicationMain(1, unsafe.Pointer(&argv[0]), 0, apple.CFString("NsgoAppDelegate"))
 }
 
-// window keeps the key window alive.
-var window objc.ID
+// window keeps the key window alive; controller is its root view
+// controller.
+var window, controller objc.ID
 
 func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID) {
 	window = objc.ID(objc.GetClass("UIWindow")).Send(selAlloc).Send(sel("initWithWindowScene:"), scene)
 	bounds := objc.Send[apple.CGRect](window, selBounds)
-	controller := objc.ID(objc.GetClass("UIViewController")).Send(selNew)
+	controller = objc.ID(classController).Send(selNew)
 	s := app
 	s.native = objc.ID(classSurface).Send(selAlloc).Send(selInitWithFrame, bounds)
 	views[s.native] = &view{surface: s}
 	controller.Send(sel("setView:"), s.native)
 	window.Send(sel("setRootViewController:"), controller)
 	window.Send(sel("makeKeyAndVisible"))
+	watcher := objc.ID(classWatcher).Send(selAlloc).Send(sel("initWithTarget:action:"), objc.ID(0), objc.SEL(0))
+	watcher.Send(sel("setCancelsTouchesInView:"), false)
+	watcher.Send(sel("setDelaysTouchesEnded:"), false)
+	s.native.Send(sel("addGestureRecognizer:"), watcher)
+	watcher.Send(selRelease)
+	s.env = s.environment()
 	s.engine = engine.Start(s, s.app, engine.Options{
-		Size: core.Size{Width: core.Points(bounds.Size.Width), Height: core.Points(bounds.Size.Height)},
+		Size:        core.Size{Width: core.Points(bounds.Size.Width), Height: core.Points(bounds.Size.Height)},
+		Environment: s.env,
 	})
+	s.observe()
+}
+
+// environment returns what UIKit tells about where the app runs.
+func (s *surface) environment() core.Environment {
+	in := objc.Send[edgeInsets](s.native, sel("safeAreaInsets"))
+	traits := s.native.Send(sel("traitCollection"))
+	scale := objc.Send[float64](traits, sel("displayScale"))
+	if scale <= 0 {
+		scale = objc.Send[float64](objc.ID(objc.GetClass("UIScreen")).Send(sel("mainScreen")), sel("scale"))
+	}
+	// The body text style is 17 points at the default text size.
+	body := objc.ID(objc.GetClass("UIFont")).Send(sel("preferredFontForTextStyle:"),
+		apple.Global(uikitPath, "UIFontTextStyleBody"))
+	idiom := core.IdiomPhone
+	const pad, mac = 1, 5
+	switch objc.Send[int](objc.ID(objc.GetClass("UIDevice")).Send(sel("currentDevice")), sel("userInterfaceIdiom")) {
+	case pad:
+		idiom = core.IdiomTablet
+	case mac:
+		idiom = core.IdiomDesktop
+	}
+	const dark = 2
+	locale, rtl := apple.Locale()
+	return core.Environment{
+		SafeArea: core.Edges{Top: core.Points(in.Top), Right: core.Points(in.Right),
+			Bottom: core.Points(in.Bottom), Left: core.Points(in.Left)},
+		KeyboardHeight:   s.keyboard,
+		KeyboardDuration: s.keyboardDuration,
+		Dark:             objc.Send[int](traits, sel("userInterfaceStyle")) == dark,
+		FontScale:        float32(objc.Send[float64](body, sel("pointSize")) / 17),
+		ReduceMotion:     uiReduceMotion(),
+		ScreenReader:     uiVoiceOver(),
+		RTL:              rtl,
+		PixelRatio:       float32(scale),
+		Locale:           locale,
+		OS:               core.OSIOS,
+		Idiom:            idiom,
+	}
+}
+
+// refresh reports the environment to the engine if it changed.
+func (s *surface) refresh() {
+	if s == nil || s.engine == nil {
+		return
+	}
+	if env := s.environment(); env != s.env {
+		s.env = env
+		s.engine.SetEnvironment(env)
+	}
+}
+
+// observe watches the notifications parts of the environment change with.
+func (s *surface) observe() {
+	center := objc.ID(objc.GetClass("NSNotificationCenter")).Send(sel("defaultCenter"))
+	refresh := func(objc.ID) { s.refresh() }
+	for _, name := range []string{"UIContentSizeCategoryDidChangeNotification",
+		"UIAccessibilityReduceMotionStatusDidChangeNotification", "UIAccessibilityVoiceOverStatusDidChangeNotification"} {
+		apple.Observe(center, apple.Global(uikitPath, name), refresh)
+	}
+	apple.Observe(center, apple.Global("/System/Library/Frameworks/Foundation.framework/Foundation",
+		"NSCurrentLocaleDidChangeNotification"), refresh)
+	apple.Observe(center, apple.Global(uikitPath, "UIKeyboardWillChangeFrameNotification"),
+		func(note objc.ID) { s.keyboardMoved(note, false) })
+	apple.Observe(center, apple.Global(uikitPath, "UIKeyboardWillHideNotification"),
+		func(note objc.ID) { s.keyboardMoved(note, true) })
+}
+
+// keyboardMoved follows the software keyboard: how much of the surface's
+// bottom it will cover, and how long it takes to get there.
+func (s *surface) keyboardMoved(note objc.ID, hiding bool) {
+	info := note.Send(sel("userInfo"))
+	get := func(key string) objc.ID { return info.Send(sel("objectForKey:"), apple.Global(uikitPath, key)) }
+	seconds := objc.Send[float64](get("UIKeyboardAnimationDurationUserInfoKey"), sel("doubleValue"))
+	s.keyboardDuration = time.Duration(seconds * float64(time.Second))
+	s.keyboard = 0
+	if frame := get("UIKeyboardFrameEndUserInfoKey"); !hiding && frame != 0 {
+		end := objc.Send[apple.CGRect](frame, sel("CGRectValue"))
+		space := window.Send(sel("screen")).Send(sel("coordinateSpace"))
+		local := objc.Send[apple.CGRect](s.native, sel("convertRect:fromCoordinateSpace:"), end, space)
+		h := objc.Send[apple.CGRect](s.native, selBounds).Size.Height - local.Origin.Y
+		s.keyboard = core.Points(max(h, 0))
+	}
+	s.refresh()
+}
+
+// alert presents a over whatever the window shows; the action chosen goes
+// to the engine as EventAlert.
+func (s *surface) alert(a *core.AlertConfig) {
+	const styleAlert = 1
+	ctrl := objc.ID(objc.GetClass("UIAlertController")).Send(sel("alertControllerWithTitle:message:preferredStyle:"),
+		apple.NSString(a.Title), apple.NSString(a.Message), styleAlert)
+	id := a.ID
+	add := func(label string, style, index int) {
+		handler := objc.NewBlock(func(_ objc.Block, _ objc.ID) {
+			s.engine.Dispatch(core.Event{Kind: core.EventAlert, Count: id, Index: index})
+		})
+		action := objc.ID(objc.GetClass("UIAlertAction")).Send(sel("actionWithTitle:style:handler:"),
+			apple.NSString(label), style, handler)
+		handler.Release()
+		ctrl.Send(sel("addAction:"), action)
+	}
+	const actionDefault, actionCancel, actionDestructive = 0, 1, 2
+	cancel := false
+	for i, act := range a.Actions {
+		style := actionDefault
+		switch act.Role {
+		case core.AlertCancel:
+			// UIKit allows one cancel action.
+			if !cancel {
+				style, cancel = actionCancel, true
+			}
+		case core.AlertDestructive:
+			style = actionDestructive
+		}
+		add(act.Label, style, i)
+	}
+	if len(a.Actions) == 0 {
+		add("OK", actionCancel, -1)
+	}
+	top := window.Send(sel("rootViewController"))
+	for p := top.Send(sel("presentedViewController")); p != 0; p = top.Send(sel("presentedViewController")) {
+		top = p
+	}
+	top.Send(sel("presentViewController:animated:completion:"), ctrl, true, objc.ID(0))
+}
+
+// pressOutside reports a touch going down to each view listening for
+// presses outside it that holds neither the view touched nor the point.
+func (s *surface) pressOutside(touch objc.ID) {
+	hit := touch.Send(sel("view"))
+	var at core.Point
+	found := false
+	for _, v := range s.views {
+		if v == nil || !v.events.Has(core.EventPressOutside) || v.native.Send(sel("window")) == 0 {
+			continue
+		}
+		if !found {
+			p := objc.Send[apple.CGPoint](touch, selLocationInView, s.native)
+			at, found = core.Point{X: core.Points(p.X), Y: core.Points(p.Y)}, true
+		}
+		p := objc.Send[apple.CGPoint](touch, selLocationInView, v.native)
+		b := objc.Send[apple.CGRect](v.native, selBounds)
+		inside := p.X >= 0 && p.Y >= 0 && p.X < b.Size.Width && p.Y < b.Size.Height
+		if inside || (hit != 0 && objc.Send[bool](hit, sel("isDescendantOfView:"), v.native)) {
+			continue
+		}
+		s.engine.Dispatch(core.Event{Kind: core.EventPressOutside, ID: v.id, Point: at})
+	}
+}
+
+func watcherBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
+	self.SendSuper(cmd, touches, event)
+	if app.engine != nil {
+		apple.ForEach(touches, app.pressOutside)
+	}
+	// Failing at once keeps the watcher out of every other gesture.
+	const failed = 5
+	self.Send(sel("setState:"), failed)
 }
 
 // Prepare implements core.TextEngine with CoreText.
@@ -211,11 +437,48 @@ func (s *surface) Mount(b *core.MountBatch) {
 func (s *surface) apply(b *core.MountBatch) {
 	for i := range b.Items {
 		it := &b.Items[i]
-		if it.Kind == core.ItemCreate {
+		switch it.Kind {
+		case core.ItemCreate:
 			for len(s.views) <= int(it.ID) {
 				s.views = append(s.views, nil)
 			}
 			s.views[it.ID] = s.create(it.View, it.ID)
+			continue
+		case core.ItemAlert:
+			s.alert(it.Alert)
+			continue
+		case core.ItemDismissKeyboard:
+			s.native.Send(sel("endEditing:"), true)
+			continue
+		case core.ItemSetClipboard:
+			objc.ID(objc.GetClass("UIPasteboard")).Send(sel("generalPasteboard")).Send(sel("setString:"), apple.NSString(it.Value))
+			continue
+		case core.ItemReadClipboard:
+			text := apple.GoString(objc.ID(objc.GetClass("UIPasteboard")).Send(sel("generalPasteboard")).Send(sel("string")))
+			s.engine.Dispatch(core.Event{Kind: core.EventClipboard, Count: it.Count, Text: text})
+			continue
+		case core.ItemAnnounce:
+			uiAccessibilityPost(announcement, apple.NSString(it.Value))
+			continue
+		case core.ItemKeymap:
+			s.keys = map[string]bool{}
+			for _, k := range it.Keys {
+				s.keys[k] = true
+			}
+			continue
+		case core.ItemStatusBar:
+			const lightContent, darkContent = 1, 3
+			s.statusBar = 0
+			switch core.StatusBarStyle(it.Count) {
+			case core.StatusBarDark:
+				s.statusBar = darkContent
+			case core.StatusBarLight:
+				s.statusBar = lightContent
+			}
+			s.hideBar = it.Animated
+			controller.Send(sel("setNeedsStatusBarAppearanceUpdate"))
+			continue
+		case core.ItemTitle, core.ItemBackUnhandled:
 			continue
 		}
 		v := s.views[it.ID]
@@ -231,13 +494,49 @@ func (s *surface) apply(b *core.MountBatch) {
 			} else {
 				parent.Send(selInsertBelow, v.native, s.views[it.Before].native)
 			}
+			if v.kind == core.KindModal && !v.presented {
+				v.presented = true
+				s.presenting = append(s.presenting, v)
+			}
 		case core.ItemFrame:
+			// Bounds and center, unlike the frame, hold with a transform; the
+			// bounds' origin is a scroll view's offset.
 			f := it.Frame
-			v.native.Send(selSetFrame, apple.Rect(float64(f.Origin.X), float64(f.Origin.Y),
-				float64(f.Size.Width), float64(f.Size.Height)))
+			b := objc.Send[apple.CGRect](v.native, selBounds)
+			b.Size = apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)}
+			v.native.Send(sel("setBounds:"), b)
+			v.native.Send(sel("setCenter:"), apple.CGPoint{X: float64(f.Origin.X + f.Size.Width/2), Y: float64(f.Origin.Y + f.Size.Height/2)})
+			if v.image != nil {
+				v.image.Layout(apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)})
+				s.images = append(s.images, v)
+			}
 		case core.ItemViewStyle:
 			apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, false)
 			v.native.Send(selSetHidden, it.ViewStyle.Hidden)
+			if v.kind == core.KindScroll {
+				// A scroll view shows only what it scrolls to.
+				v.native.Send(sel("setClipsToBounds:"), true)
+			}
+			if v.image != nil {
+				v.image.SetStyle(it.ViewStyle)
+			}
+		case core.ItemImage:
+			v.image.Configure(it.Image)
+			s.images = append(s.images, v)
+		case core.ItemModal:
+			v.animation = it.Modal.Animation
+		case core.ItemCanvas:
+			v.drawing = it.Drawing
+			v.native.Send(selSetNeedsDisplay)
+		case core.ItemScrollTo:
+			size := objc.Send[apple.CGSize](v.native, sel("contentSize"))
+			in := objc.Send[edgeInsets](v.native, sel("adjustedContentInset"))
+			seen := objc.Send[apple.CGRect](v.native, selBounds).Size
+			to := apple.CGPoint{
+				X: min(max(float64(it.Point.X), -in.Left), max(size.Width-seen.Width+in.Right, -in.Left)),
+				Y: min(max(float64(it.Point.Y), -in.Top), max(size.Height-seen.Height+in.Bottom, -in.Top)),
+			}
+			v.native.Send(sel("setContentOffset:animated:"), to, it.Animated)
 		case core.ItemViewProps:
 			setAccessibility(v.native, it.ViewProps)
 		case core.ItemEvents:
@@ -279,6 +578,26 @@ func (s *surface) apply(b *core.MountBatch) {
 	if root := s.views[b.Root]; root.native.Send(selSuperview) != s.native {
 		s.native.Send(selAddSubview, root.native)
 	}
+	s.finish()
+}
+
+// finish starts what a batch asked for once its frames are set: image
+// loads at the views' sizes and modals' entrances.
+func (s *surface) finish() {
+	for _, v := range s.images {
+		if s.views[v.id] == v {
+			v.image.Start(float64(s.env.PixelRatio))
+		}
+	}
+	for _, v := range s.presenting {
+		if s.views[v.id] == v && v.native.Send(selSuperview) != 0 {
+			h := objc.Send[apple.CGRect](v.native.Send(selSuperview), selBounds).Size.Height
+			apple.AnimateIn(v.native.Send(selLayer), v.animation, h, s.env.ReduceMotion)
+		}
+	}
+	clear(s.images)
+	clear(s.presenting)
+	s.images, s.presenting = s.images[:0], s.presenting[:0]
 }
 
 func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
@@ -298,12 +617,16 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 		v.field = field
 	default:
 		v.native = objc.ID(classView).Send(selNew)
-		if kind == core.KindText {
+		if kind == core.KindText || kind == core.KindCanvas {
 			const redraw = 3
 			v.native.Send(selSetContentMode, redraw)
 		}
 	}
 	v.native.Send(selSetOpaque, false)
+	if kind == core.KindImage {
+		v.image = apple.NewImageView(v.native.Send(selLayer))
+		v.image.Dispatch = v.report
+	}
 	views[v.native] = v
 	return v
 }
@@ -311,6 +634,9 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 func (s *surface) delete(v *view) {
 	v.native.Send(selRemoveFromSuperview)
 	v.layout.Release()
+	if v.image != nil {
+		v.image.Close()
+	}
 	delete(views, v.native)
 	v.native.Send(selRelease)
 	s.views[v.id] = nil
@@ -353,12 +679,27 @@ func setAccessibility(native objc.ID, p *core.ViewProps) {
 	if p.TestID != "" {
 		native.Send(selSetAccessibilityIdentifier, apple.NSString(p.TestID))
 	}
+	// VoiceOver keeps to a dialog while it shows.
+	native.Send(sel("setAccessibilityViewIsModal:"), p.Role == core.RoleDialog)
+	const noContainer, semanticGroup = 0, 4
 	var t uint64
 	switch p.Role {
 	case core.RoleNone:
 		native.Send(selSetIsAccessibilityElement, false)
+		native.Send(selSetAccessibilityContainerType, noContainer)
 		return
-	case core.RoleButton, core.RoleCheckbox, core.RoleSwitch, core.RoleRadio, core.RoleTab:
+	case core.RoleRadioGroup, core.RoleTabList, core.RoleMenu, core.RoleDialog, core.RoleAlert:
+		// Groups are containers, so their children stay accessible.
+		native.Send(selSetIsAccessibilityElement, false)
+		native.Send(selSetAccessibilityContainerType, semanticGroup)
+		if p.Role == core.RoleTabList {
+			native.Send(selSetAccessibilityTraits, traits["TabBar"])
+		}
+		if p.Label != "" {
+			native.Send(selSetAccessibilityLabel, apple.NSString(p.Label))
+		}
+		return
+	case core.RoleButton, core.RoleCheckbox, core.RoleSwitch, core.RoleRadio, core.RoleTab, core.RoleMenuItem:
 		t = traits["Button"]
 	case core.RoleLink:
 		t = traits["Link"]
@@ -376,13 +717,17 @@ func setAccessibility(native objc.ID, p *core.ViewProps) {
 		t |= traits["NotEnabled"]
 	}
 	native.Send(selSetIsAccessibilityElement, true)
+	native.Send(selSetAccessibilityContainerType, noContainer)
 	native.Send(selSetAccessibilityTraits, t)
 	if p.Label != "" {
 		native.Send(selSetAccessibilityLabel, apple.NSString(p.Label))
 	}
 	if p.Role == core.RoleCheckbox || p.Role == core.RoleSwitch || p.Role == core.RoleRadio {
 		value := "0"
-		if p.Checked || p.Selected {
+		switch {
+		case p.Indeterminate:
+			value = "mixed"
+		case p.Checked || p.Selected:
 			value = "1"
 		}
 		native.Send(selSetAccessibilityValue, apple.NSString(value))
@@ -390,8 +735,14 @@ func setAccessibility(native objc.ID, p *core.ViewProps) {
 }
 
 func (v *view) dispatch(kind core.EventKind) {
-	if v.events.Has(kind) {
-		v.surface.engine.Dispatch(core.Event{Kind: kind, ID: v.id})
+	v.report(core.Event{Kind: kind})
+}
+
+// report sends e about v if v listens for its kind.
+func (v *view) report(e core.Event) {
+	if v.events.Has(e.Kind) {
+		e.ID = v.id
+		v.surface.engine.Dispatch(e)
 	}
 }
 
@@ -402,6 +753,10 @@ func (v *view) pressable() bool {
 
 func drawRect(self objc.ID, _ objc.SEL, dirty apple.CGRect) {
 	v := views[self]
+	if v != nil && v.drawing != nil {
+		apple.Play(uiGraphicsGetCurrentContext(), v.drawing)
+		return
+	}
 	if v == nil || v.layout == nil {
 		return
 	}
@@ -415,6 +770,13 @@ func drawRect(self objc.ID, _ objc.SEL, dirty apple.CGRect) {
 // ancestor.
 func touchesBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	v := views[self]
+	// A secondary click of a pointer opens a context menu.
+	const secondary = 1 << 1
+	if v != nil && v.events.Has(core.EventContextMenu) && objc.Send[uint](event, sel("buttonMask"))&secondary != 0 {
+		p := objc.Send[apple.CGPoint](touches.Send(selAnyObject), selLocationInView, self)
+		v.report(core.Event{Kind: core.EventContextMenu, Point: core.Point{X: core.Points(p.X), Y: core.Points(p.Y)}})
+		return
+	}
 	if v == nil || !v.pressable() {
 		self.SendSuper(cmd, touches, event)
 		return
@@ -454,8 +816,51 @@ func touchesEnded(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	pressed := v.pressing.Swap(false)
 	v.dispatch(core.EventPressUp)
 	if pressed && !v.longFired.Load() && p.X >= 0 && p.Y >= 0 && p.X < b.Size.Width && p.Y < b.Size.Height {
-		v.dispatch(core.EventPress)
+		index := -1
+		if v.layout != nil {
+			box := v.box
+			index = v.layout.IndexAt(p, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y),
+				float64(box.Size.Width), float64(box.Size.Height)))
+		}
+		v.report(core.Event{Kind: core.EventPress, Index: index})
 	}
+}
+
+// UIKeyboardHIDUsage codes of the keys core.NormalizeKey names.
+var keyNames = map[int]string{
+	40: "enter", 88: "enter", 41: "escape", 43: "tab", 44: "space", 42: "backspace", 76: "delete",
+	82: "up", 81: "down", 80: "left", 79: "right", 74: "home", 77: "end", 75: "pageup", 78: "pagedown",
+	58: "f1", 59: "f2", 60: "f3", 61: "f4", 62: "f5", 63: "f6", 64: "f7", 65: "f8", 66: "f9",
+	67: "f10", 68: "f11", 69: "f12",
+}
+
+// pressesBegan takes hardware key presses the keymap binds, as EventKey,
+// and passes the rest on.
+func pressesBegan(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
+	binding := ""
+	if len(app.keys) > 0 {
+		apple.ForEach(presses, func(press objc.ID) {
+			key := press.Send(sel("key"))
+			if key == 0 || binding != "" {
+				return
+			}
+			name, ok := keyNames[objc.Send[int](key, sel("keyCode"))]
+			if !ok {
+				name = strings.ToLower(apple.GoString(key.Send(sel("charactersIgnoringModifiers"))))
+			}
+			for _, k := range apple.KeyNames(name, objc.Send[uint](key, sel("modifierFlags"))) {
+				if name != "" && app.keys[k] {
+					binding = k
+					return
+				}
+			}
+		})
+	}
+	if binding == "" {
+		self.SendSuper(cmd, presses, event)
+		return
+	}
+	app.engine.Dispatch(core.Event{Kind: core.EventKey, Text: binding})
 }
 
 func accessibilityActivate(self objc.ID, _ objc.SEL) bool {
@@ -463,7 +868,7 @@ func accessibilityActivate(self objc.ID, _ objc.SEL) bool {
 	if v == nil || !v.events.Has(core.EventPress) {
 		return false
 	}
-	v.dispatch(core.EventPress)
+	v.report(core.Event{Kind: core.EventPress, Index: -1})
 	return true
 }
 

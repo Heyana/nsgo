@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The manifest of a standalone NSGo app, for packaging to use. Packaging
+  sets the package, version and label of each app. The runtime starts the
+  app's Go executable from the native library directory, so native
+  libraries must be extracted; NsgoActivity handles the configuration
+  changes below itself instead of restarting the app.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.oneo.nsgo.app">
+
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The runtime tells the app the network's DNS servers. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:label="NSGo"
+        android:extractNativeLibs="true"
+        android:enableOnBackInvokedCallback="true">
+        <activity
+            android:name="dev.oneo.nsgo.NsgoActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -71,6 +71,8 @@ type runtime struct {
 	post     func(func())
 	clock    Clock
 	report   func(error)
+	env      *Env
+	tree     *Tree
 }
 
 // current is the scope that owns what code using cx creates now.

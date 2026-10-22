@@ -13,9 +13,33 @@ import (
 type AttributedText struct {
 	Text  string
 	Style TextStyle
+	// Spans style byte ranges of Text over Style, in order, without gaps
+	// or overlaps where they cover it.
+	Spans []TextSpan
 	// MaxLines limits the lines shown, ending the last with an ellipsis;
 	// 0 shows every line.
 	MaxLines int
+}
+
+// TextSpan styles the bytes from Start to End of an AttributedText.
+type TextSpan struct {
+	Start, End int
+	Style      TextStyle
+	// Link marks a span with a press handler: a press on it reports
+	// EventPress with Index set to a byte offset inside it.
+	Link bool
+}
+
+func (a *AttributedText) equal(b *AttributedText) bool {
+	if a.Text != b.Text || a.Style != b.Style || a.MaxLines != b.MaxLines || len(a.Spans) != len(b.Spans) {
+		return false
+	}
+	for i := range a.Spans {
+		if a.Spans[i] != b.Spans[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // TextStyle is resolved text style: nothing in it is unset.

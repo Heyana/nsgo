@@ -1,0 +1,118 @@
+//go:build windows
+
+package windows
+
+import (
+	"strings"
+	"syscall"
+	"unsafe"
+
+	"github.com/oneo-me/nsgo/core"
+)
+
+var (
+	dwmapi = syscall.NewLazyDLL("dwmapi.dll")
+
+	systemParametersInfoW    = user32.NewProc("SystemParametersInfoW")
+	getUserDefaultLocaleName = kernel32.NewProc("GetUserDefaultLocaleName")
+	getLocaleInfoEx          = kernel32.NewProc("GetLocaleInfoEx")
+	dwmSetWindowAttribute    = dwmapi.NewProc("DwmSetWindowAttribute")
+)
+
+const (
+	spiGetScreenReader        = 0x0046
+	spiGetClientAreaAnimation = 0x1042
+	localeIReadingLayout      = 0x0070
+	localeReturnNumber        = 0x20000000
+	localeNameMaxLength       = 85
+
+	dwmwaUseImmersiveDarkMode    = 20
+	dwmwaUseImmersiveDarkModeOld = 19 // before Windows 10 20H1
+)
+
+// environment reads what Windows says about where the app runs. The
+// title bar is the system's and there is no software keyboard, so their
+// insets stay 0.
+func (w *window) environment() core.Environment {
+	locale := userLocale()
+	return core.Environment{
+		Dark:         regDWORD(`Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`, "AppsUseLightTheme", 1) == 0,
+		FontScale:    float32(regDWORD(`Software\Microsoft\Accessibility`, "TextScaleFactor", 100)) / 100,
+		ReduceMotion: !systemFlag(spiGetClientAreaAnimation, true),
+		ScreenReader: systemFlag(spiGetScreenReader, false),
+		RTL:          rightToLeft(locale),
+		PixelRatio:   float32(w.scale),
+		Locale:       locale,
+		OS:           core.OSWindows,
+		Idiom:        core.IdiomDesktop,
+	}
+}
+
+// updateEnvironment reads the environment again, after Windows broadcast
+// a settings change, and reports it when it changed.
+func (w *window) updateEnvironment() {
+	env := w.environment()
+	if env == w.env {
+		return
+	}
+	if env.Dark != w.env.Dark {
+		w.darkTitleBar(env.Dark)
+	}
+	w.env = env
+	w.engine.SetEnvironment(env)
+}
+
+// darkTitleBar matches the title bar to the appearance, where DWM can.
+func (w *window) darkTitleBar(dark bool) {
+	if dwmSetWindowAttribute.Find() != nil {
+		return
+	}
+	on := int32(boolArg(dark))
+	if r, _, _ := dwmSetWindowAttribute.Call(w.hwnd, dwmwaUseImmersiveDarkMode, uintptr(unsafe.Pointer(&on)), 4); r != 0 {
+		dwmSetWindowAttribute.Call(w.hwnd, dwmwaUseImmersiveDarkModeOld, uintptr(unsafe.Pointer(&on)), 4)
+	}
+}
+
+// regDWORD reads a DWORD under HKEY_CURRENT_USER, or returns fallback.
+func regDWORD(path, name string, fallback uint32) uint32 {
+	var key syscall.Handle
+	if syscall.RegOpenKeyEx(syscall.HKEY_CURRENT_USER, wide(path), 0, syscall.KEY_READ, &key) != nil {
+		return fallback
+	}
+	defer syscall.RegCloseKey(key)
+	var value, kind uint32
+	size := uint32(unsafe.Sizeof(value))
+	if syscall.RegQueryValueEx(key, wide(name), nil, &kind, (*byte)(unsafe.Pointer(&value)), &size) != nil ||
+		kind != syscall.REG_DWORD {
+		return fallback
+	}
+	return value
+}
+
+// systemFlag reads a BOOL system parameter, or returns fallback.
+func systemFlag(action uintptr, fallback bool) bool {
+	var on int32
+	if r, _, _ := systemParametersInfoW.Call(action, 0, uintptr(unsafe.Pointer(&on)), 0); r == 0 {
+		return fallback
+	}
+	return on != 0
+}
+
+// userLocale returns the user's locale as a BCP 47 tag, such as "en-US".
+func userLocale() string {
+	var buf [localeNameMaxLength]uint16
+	if n, _, _ := getUserDefaultLocaleName.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf))); n == 0 {
+		return ""
+	}
+	// An alternate sort order follows an underscore, as in "de-DE_phoneb".
+	name, _, _ := strings.Cut(syscall.UTF16ToString(buf[:]), "_")
+	return name
+}
+
+// rightToLeft reports whether locale's script reads right to left.
+func rightToLeft(locale string) bool {
+	var layout uint32 // 0 left to right, 1 right to left, 2 and 3 vertical
+	r, _, _ := getLocaleInfoEx.Call(uintptr(unsafe.Pointer(wide(locale))), localeIReadingLayout|localeReturnNumber,
+		uintptr(unsafe.Pointer(&layout)), unsafe.Sizeof(layout)/2) // in UTF-16 units
+	return r != 0 && layout == 1
+}

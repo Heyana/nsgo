@@ -9,9 +9,11 @@ import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.LineHeightSpan;
+import android.text.style.MetricAffectingSpan;
 import android.view.Gravity;
 import java.io.DataInputStream;
 import java.io.IOException;
+import java.util.List;
 
 /**
  * Text the engine prepares, measures and lays out on the reader thread, all
@@ -92,6 +94,18 @@ final class Text {
         }
     }
 
+    /** A style over the bytes from start to end of a text, as android.go writes it. */
+    static final class Span {
+        final int start, end;
+        final Style style;
+
+        Span(DataInputStream in, float density) throws IOException {
+            start = in.readInt();
+            end = in.readInt();
+            style = new Style(in, density);
+        }
+    }
+
     /** Text prepared once, then measured at any width and laid out at its final size. */
     static final class Prepared {
         private final CharSequence text;
@@ -99,11 +113,18 @@ final class Text {
         private final Layout.Alignment align;
         private final int maxLines;
 
-        Prepared(String text, Style style, int maxLines) {
-            if (style.lineHeight > 0) {
+        Prepared(String text, Style style, int maxLines, List<Span> spans) {
+            if (style.lineHeight > 0 || !spans.isEmpty()) {
                 SpannableString spanned = new SpannableString(text);
-                spanned.setSpan(new LineHeight(Math.round(style.lineHeight)), 0, text.length(),
-                        Spanned.SPAN_INCLUSIVE_INCLUSIVE);
+                if (style.lineHeight > 0) {
+                    spanned.setSpan(new LineHeight(Math.round(style.lineHeight)), 0, text.length(),
+                            Spanned.SPAN_INCLUSIVE_INCLUSIVE);
+                }
+                Utf8 offsets = new Utf8(text);
+                for (Span span : spans) {
+                    int start = offsets.index(span.start), end = offsets.index(span.end);
+                    if (start < end) spanned.setSpan(new Run(span.style), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
                 this.text = spanned;
             } else {
                 this.text = text;
@@ -143,6 +164,70 @@ final class Text {
             if (maxLines > 0) b.setMaxLines(maxLines).setEllipsize(TextUtils.TruncateAt.END);
             return b.build();
         }
+    }
+
+    /** Styles a run of text over the paint: font, size, letter spacing, decoration and color. */
+    private static final class Run extends MetricAffectingSpan {
+        private final Style style;
+        private final Typeface typeface;
+
+        Run(Style style) {
+            this.style = style;
+            typeface = style.typeface();
+        }
+
+        @Override
+        public void updateMeasureState(TextPaint paint) {
+            paint.setTextSize(style.size);
+            paint.setTypeface(typeface);
+            paint.setLetterSpacing(style.letterSpacingEm());
+        }
+
+        @Override
+        public void updateDrawState(TextPaint paint) {
+            updateMeasureState(paint);
+            paint.setColor(style.color);
+            paint.setFlags(style.paintFlags(paint.getFlags()));
+        }
+    }
+
+    /** Converts ascending UTF-8 byte offsets into a string to UTF-16 indices, walking it once. */
+    private static final class Utf8 {
+        private final String s;
+        private int index, bytes;
+
+        Utf8(String s) {
+            this.s = s;
+        }
+
+        int index(int offset) {
+            if (offset < bytes) index = bytes = 0;
+            while (index < s.length() && bytes < offset) {
+                int c = s.codePointAt(index);
+                bytes += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4;
+                index += Character.charCount(c);
+            }
+            return index;
+        }
+    }
+
+    /** The UTF-8 length of the first end chars of s. */
+    static int utf8Length(CharSequence s, int end) {
+        int n = 0;
+        for (int i = 0; i < end; i++) {
+            char c = s.charAt(i);
+            if (c < 0x80) {
+                n += 1;
+            } else if (c < 0x800) {
+                n += 2;
+            } else if (Character.isHighSurrogate(c) && i + 1 < end && Character.isLowSurrogate(s.charAt(i + 1))) {
+                n += 4;
+                i++;
+            } else {
+                n += 3;
+            }
+        }
+        return n;
     }
 
     /** Gives every line the same height, the glyphs centered in it as in CSS. */

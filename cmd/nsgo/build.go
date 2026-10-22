@@ -74,8 +74,11 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 		_, err := buildMacApp(ctx, p, dir, goArch(arch))
 		return err
 	case "windows_arm64", "windows_x64":
-		return goBuild(ctx, p, filepath.Join(dir, p.Name+".exe"),
-			[]string{"GOOS=" + osName, "GOARCH=" + goArch(arch), "CGO_ENABLED=0"}, "-H=windowsgui")
+		if err := goBuild(ctx, p, filepath.Join(dir, p.Name+".exe"),
+			[]string{"GOOS=" + osName, "GOARCH=" + goArch(arch), "CGO_ENABLED=0"}, "-H=windowsgui"); err != nil {
+			return err
+		}
+		return copyAssets(p, dir)
 	case "ios":
 		_, err := buildIOSApp(ctx, p, dir, false)
 		return err
@@ -139,6 +142,9 @@ func buildMacApp(ctx context.Context, p *project, dir, arch string) (string, err
 	if err := writePlist(filepath.Join(app, "Contents", "Info.plist"), p, macPlist); err != nil {
 		return "", err
 	}
+	if err := copyAssets(p, filepath.Join(app, "Contents", "MacOS")); err != nil {
+		return "", err
+	}
 	return app, run(ctx, "codesign", "--force", "--sign", "-", app)
 }
 
@@ -170,6 +176,9 @@ func buildIOSApp(ctx context.Context, p *project, dir string, simulator bool) (s
 	if err := writePlist(filepath.Join(app, "Info.plist"), p, iosPlist); err != nil {
 		return "", err
 	}
+	if err := copyAssets(p, app); err != nil {
+		return "", err
+	}
 	if simulator {
 		return app, run(ctx, "codesign", "--force", "--sign", "-", app)
 	}
@@ -192,6 +201,9 @@ func buildWeb(ctx context.Context, p *project, dir string, reload bool) error {
 	if err := os.WriteFile(filepath.Join(dir, "wasm_exec.js"), js, 0o644); err != nil {
 		return err
 	}
+	if err := copyAssets(p, dir); err != nil {
+		return err
+	}
 	f, err := os.Create(filepath.Join(dir, "index.html"))
 	if err != nil {
 		return err
@@ -204,7 +216,7 @@ var indexHTML = template.Must(template.New("index").Parse(`<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{.Name}}</title>
 <style>html, body { margin: 0; height: 100%; }</style>
 <script src="wasm_exec.js"></script>

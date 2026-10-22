@@ -5,8 +5,9 @@ package core
 // parent as in CSS. A style with nothing set draws nothing: NSGo has no
 // look of its own.
 type Style struct {
-	// Layout, with React Native's defaults: column flexbox, no shrinking,
-	// children stretched on the cross axis.
+	// Layout, with React Native's defaults: a column flexbox, items that
+	// do not shrink and stretch on the cross axis, border-box sizes, no
+	// automatic minimum sizes. Grid and block layout are CSS's.
 	Display        Display
 	Position       Position
 	Direction      FlexDirection
@@ -15,36 +16,67 @@ type Style struct {
 	AlignItems     Align
 	AlignSelf      Align
 	AlignContent   Align
-	FlexGrow       float32
-	FlexShrink     float32
-	FlexBasis      Length
+	// JustifyItems and JustifySelf align grid items (and block children)
+	// along the row.
+	JustifyItems Align
+	JustifySelf  Align
+	FlexGrow     float32
+	FlexShrink   float32
+	FlexBasis    Length
 
 	Width, Height       Length
 	MinWidth, MinHeight Length
 	MaxWidth, MaxHeight Length
 	// AspectRatio is width divided by height; 0 is unset.
 	AspectRatio float32
+	// BoxSizing says whether sizes include padding and borders, which they
+	// do unless it is ContentBox.
+	BoxSizing BoxSizing
 
 	// Top, Right, Bottom and Left place an absolutely positioned node in
-	// its parent, or offset a relative one.
+	// its parent, or offset a relative one. Right to left, left and right
+	// swap, as in React Native.
 	Top, Right, Bottom, Left Length
 
-	Margin  Edges
-	Padding Edges
+	Margin Edges
+	// AutoMargin makes the margins on those sides auto: they take the free
+	// space, centering a node between two of them.
+	AutoMargin Sides
+	Padding    Edges
 	// Gap separates children; RowGap and ColumnGap override it per axis.
 	Gap, RowGap, ColumnGap Points
+
+	// GridTemplateColumns and GridTemplateRows are a grid's tracks in CSS
+	// syntax, such as "repeat(3, 1fr)" or "[full-start] 100px minmax(0, 1fr)";
+	// GridAutoColumns and GridAutoRows size the tracks it adds.
+	GridTemplateColumns, GridTemplateRows GridTracks
+	GridAutoColumns, GridAutoRows         GridTracks
+	GridAutoFlow                          GridFlow
+	// GridRow and GridColumn place the node in its parent grid.
+	GridRow, GridColumn GridLines
 
 	// Look.
 	Background   Color
 	CornerRadius Points
-	BorderWidth  Points
-	BorderColor  Color
-	Opacity      Opacity
-	// Overflow Hidden clips children to the node's bounds and corners.
-	Overflow     Overflow
-	ShadowColor  Color
-	ShadowOffset Point
-	ShadowRadius Points
+	// BorderWidth is the width of the border on every side. Borders, when
+	// set, gives each side's width to layout instead.
+	BorderWidth Points
+	Borders     Edges
+	BorderColor Color
+	Opacity     Opacity
+	// Overflow Hidden clips children to the node's bounds and corners, and
+	// keeps their overflow out of an enclosing scroll view's content.
+	// OverflowX and OverflowY override it per axis.
+	Overflow             Overflow
+	OverflowX, OverflowY Overflow
+	ShadowColor          Color
+	ShadowOffset         Point
+	ShadowRadius         Points
+	// TintColor recolors an image's opaque pixels.
+	TintColor Color
+	Transform Transform
+	// Transition animates changes of the look on the platform.
+	Transition Transition
 
 	// Text, inherited by descendants that set none.
 	Color          Color
@@ -57,10 +89,10 @@ type Style struct {
 	TextAlign      TextAlign
 	TextDecoration TextDecoration
 
-	// State styles merge over the rest while the node is pressed, hovered,
-	// focused (text fields) or disabled, in that order of precedence from
-	// lowest to highest.
-	Hover, Focus, Active, Disabled *Style
+	// State styles merge over the rest while the node is in the state, in
+	// this order of precedence, lowest first: hovered, focused (text
+	// fields), pressed, selected, checked, indeterminate, disabled.
+	Hover, Focus, Active, Selected, Checked, Indeterminate, Disabled *Style
 }
 
 // Display says whether a node takes part in layout.
@@ -70,6 +102,33 @@ const (
 	DisplayFlex Display = iota + 1
 	// DisplayNone hides the node and takes it out of layout.
 	DisplayNone
+	// DisplayGrid lays children out in a CSS grid.
+	DisplayGrid
+	// DisplayBlock stacks children as CSS block boxes, collapsing their
+	// vertical margins.
+	DisplayBlock
+)
+
+// BoxSizing is the CSS box-sizing property.
+type BoxSizing uint8
+
+const (
+	BorderBox BoxSizing = iota + 1
+	ContentBox
+)
+
+// Sides is a set of sides of a box.
+type Sides uint8
+
+const (
+	SideTop Sides = 1 << iota
+	SideRight
+	SideBottom
+	SideLeft
+	// SidesHorizontal and SidesVertical are left and right, top and bottom.
+	SidesHorizontal = SideLeft | SideRight
+	SidesVertical   = SideTop | SideBottom
+	SidesAll        = SidesHorizontal | SidesVertical
 )
 
 // Position says how a node is placed in its parent.
@@ -107,7 +166,8 @@ const (
 )
 
 // Align places children on the cross axis (align-items, align-self,
-// align-content).
+// align-content) and grid items along the row (justify-items,
+// justify-self). Start and end are React Native's flex-start and flex-end.
 type Align uint8
 
 const (
@@ -117,6 +177,8 @@ const (
 	AlignEnd
 	AlignSpaceBetween // align-content only
 	AlignSpaceAround  // align-content only
+	AlignBaseline     // items only
+	AlignSpaceEvenly  // align-content only
 )
 
 // Justify places children on the main axis (justify-content).
@@ -129,6 +191,9 @@ const (
 	JustifySpaceBetween
 	JustifySpaceAround
 	JustifySpaceEvenly
+	// JustifyStretch stretches a grid's auto tracks across the row, which
+	// grids do when it is unset.
+	JustifyStretch
 )
 
 // Overflow says whether a node clips its children.
@@ -137,6 +202,9 @@ type Overflow uint8
 const (
 	Visible Overflow = iota + 1
 	Hidden
+	// OverflowScroll makes the node a scroll container in layout, as
+	// CSS's overflow: scroll, and clips it; only Scroll views scroll.
+	OverflowScroll
 )
 
 // Opacity is a node's opacity from 0 to 1. Its zero value is unset,
@@ -207,6 +275,8 @@ func (s Style) Merge(o Style) Style {
 	set(&s.AlignItems, o.AlignItems)
 	set(&s.AlignSelf, o.AlignSelf)
 	set(&s.AlignContent, o.AlignContent)
+	set(&s.JustifyItems, o.JustifyItems)
+	set(&s.JustifySelf, o.JustifySelf)
 	set(&s.FlexGrow, o.FlexGrow)
 	set(&s.FlexShrink, o.FlexShrink)
 	set(&s.FlexBasis, o.FlexBasis)
@@ -217,28 +287,46 @@ func (s Style) Merge(o Style) Style {
 	set(&s.MaxWidth, o.MaxWidth)
 	set(&s.MaxHeight, o.MaxHeight)
 	set(&s.AspectRatio, o.AspectRatio)
+	set(&s.BoxSizing, o.BoxSizing)
 	set(&s.Top, o.Top)
 	set(&s.Right, o.Right)
 	set(&s.Bottom, o.Bottom)
 	set(&s.Left, o.Left)
 	set(&s.Margin, o.Margin)
+	set(&s.AutoMargin, o.AutoMargin)
 	set(&s.Padding, o.Padding)
 	set(&s.Gap, o.Gap)
 	set(&s.RowGap, o.RowGap)
 	set(&s.ColumnGap, o.ColumnGap)
+	set(&s.GridTemplateColumns, o.GridTemplateColumns)
+	set(&s.GridTemplateRows, o.GridTemplateRows)
+	set(&s.GridAutoColumns, o.GridAutoColumns)
+	set(&s.GridAutoRows, o.GridAutoRows)
+	set(&s.GridAutoFlow, o.GridAutoFlow)
+	set(&s.GridRow, o.GridRow)
+	set(&s.GridColumn, o.GridColumn)
 	set(&s.Background, o.Background)
 	set(&s.CornerRadius, o.CornerRadius)
 	set(&s.BorderWidth, o.BorderWidth)
+	set(&s.Borders, o.Borders)
 	set(&s.BorderColor, o.BorderColor)
 	set(&s.Opacity, o.Opacity)
 	set(&s.Overflow, o.Overflow)
+	set(&s.OverflowX, o.OverflowX)
+	set(&s.OverflowY, o.OverflowY)
 	set(&s.ShadowColor, o.ShadowColor)
 	set(&s.ShadowOffset, o.ShadowOffset)
 	set(&s.ShadowRadius, o.ShadowRadius)
+	set(&s.TintColor, o.TintColor)
+	set(&s.Transform, o.Transform)
+	set(&s.Transition, o.Transition)
 	s.mergeText(o)
 	set(&s.Hover, o.Hover)
 	set(&s.Focus, o.Focus)
 	set(&s.Active, o.Active)
+	set(&s.Selected, o.Selected)
+	set(&s.Checked, o.Checked)
+	set(&s.Indeterminate, o.Indeterminate)
 	set(&s.Disabled, o.Disabled)
 	return s
 }
@@ -250,21 +338,27 @@ const (
 	stateFocused
 )
 
-// withStates returns s with the state styles of the states merged in.
-func (s Style) withStates(states uint8, disabled bool) Style {
+// withStates returns s with the styles of the states n is in merged in.
+func (s Style) withStates(states uint8, p ViewProps) Style {
 	out := s
-	if s.Hover != nil && states&stateHovered != 0 {
-		out = out.Merge(*s.Hover)
+	for _, st := range [...]struct {
+		on    bool
+		style *Style
+	}{
+		{states&stateHovered != 0, s.Hover},
+		{states&stateFocused != 0, s.Focus},
+		{states&statePressed != 0, s.Active},
+		{p.Selected, s.Selected},
+		{p.Checked, s.Checked},
+		{p.Indeterminate, s.Indeterminate},
+		{p.Disabled, s.Disabled},
+	} {
+		if st.on && st.style != nil {
+			out = out.Merge(*st.style)
+		}
 	}
-	if s.Focus != nil && states&stateFocused != 0 {
-		out = out.Merge(*s.Focus)
-	}
-	if s.Active != nil && states&statePressed != 0 {
-		out = out.Merge(*s.Active)
-	}
-	if s.Disabled != nil && disabled {
-		out = out.Merge(*s.Disabled)
-	}
+	out.Hover, out.Focus, out.Active = s.Hover, s.Focus, s.Active
+	out.Selected, out.Checked, out.Indeterminate, out.Disabled = s.Selected, s.Checked, s.Indeterminate, s.Disabled
 	return out
 }
 
@@ -340,9 +434,30 @@ func (s Style) viewStyle() ViewStyle {
 		BorderWidth:  s.BorderWidth,
 		BorderColor:  s.BorderColor,
 		Opacity:      s.Opacity.Value(),
-		Clip:         s.Overflow == Hidden,
+		Clip:         s.clips(),
 		ShadowColor:  s.ShadowColor,
 		ShadowOffset: s.ShadowOffset,
 		ShadowRadius: s.ShadowRadius,
+		TintColor:    s.TintColor,
+		Transform:    s.Transform,
+		Transition:   s.Transition,
 	}
+}
+
+// overflow returns the overflow on each axis.
+func (s *Style) overflow() (x, y Overflow) {
+	x, y = s.Overflow, s.Overflow
+	if s.OverflowX != 0 {
+		x = s.OverflowX
+	}
+	if s.OverflowY != 0 {
+		y = s.OverflowY
+	}
+	return x, y
+}
+
+// clips reports whether the node clips its children when drawn.
+func (s *Style) clips() bool {
+	x, y := s.overflow()
+	return x == Hidden || x == OverflowScroll || y == Hidden || y == OverflowScroll
 }

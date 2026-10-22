@@ -1,237 +1,158 @@
 package core
 
-import "math"
+import (
+	"math"
 
-// Layout is CSS flexbox with React Native's defaults: column direction,
-// no shrinking, children stretched on the cross axis, border-box sizes.
-// It supports wrapping, grow, shrink and basis, min and max sizes,
-// margins, gaps, aspect ratio, absolute positioning and display none.
-//
-// Each node is measured at any number of constraints (cached until it or
-// a descendant changes) and placed once per layout at its final size.
+	"github.com/oneo-me/nsgo/core/internal/layout"
+)
 
-type measured struct {
-	w, h, aw, ah Points
-	size         Size
-}
+// Layout runs NSGo's port of Taffy (core/internal/layout): CSS flexbox,
+// grid and block layout. Each shadow node with a native view is a layout
+// node whose children are its native children, regions flattened and
+// overlays and modals left out; those are layout roots of their own, sized
+// against their host. Styles map onto CSS with React Native's defaults, as
+// NSH maps its styles onto Taffy's.
 
-func same(a, b Points) bool { return a == b || (a.IsAuto() && b.IsAuto()) }
-
-func sub(a, b Points) Points {
-	if a.IsAuto() {
-		return Auto
-	}
-	return max(a-b, 0)
-}
-
-func clamp(v, lo, hi Points) Points {
-	if !hi.IsAuto() && v > hi {
-		v = hi
-	}
-	if !lo.IsAuto() && v < lo {
-		v = lo
-	}
-	return v
-}
-
+// ceil rounds text sizes up so that rendering never truncates a glyph.
 func ceil(p Points) Points { return Points(math.Ceil(float64(p))) }
 
-func (n *node) insets() Edges {
-	return n.style.Padding.add(All(n.style.BorderWidth))
+// borders returns the border widths layout uses.
+func (s *Style) borders() Edges {
+	if s.Borders != (Edges{}) {
+		return s.Borders
+	}
+	return All(s.BorderWidth)
 }
 
-func (n *node) contentBox(size Size) Bounds {
-	in := n.insets()
-	return Bounds{
-		Origin: Point{in.Left, in.Top},
-		Size:   Size{max(size.Width-in.horizontal(), 0), max(size.Height-in.vertical(), 0)},
+// The layout.Node methods.
+
+func (n *node) ChildCount() int { return len(n.flatChildren()) }
+
+func (n *node) Child(i int) layout.Node { return n.flatChildren()[i] }
+
+func (n *node) LayoutState() *layout.State { return &n.lstate }
+
+func (n *node) Style() *layout.Style {
+	if !n.lstyleOK {
+		n.lstyle = n.layoutStyle()
+		n.lstyleOK = true
 	}
+	return &n.lstyle
 }
 
-// setLimits resolves n's min and max sizes against its parent's inner
-// size, dropping cached measures when they change.
-func (n *node) setLimits(innerW, innerH Points) {
-	s := n.style
-	l := [4]Points{s.MinWidth.resolve(innerW), s.MaxWidth.resolve(innerW),
-		s.MinHeight.resolve(innerH), s.MaxHeight.resolve(innerH)}
-	for i := range l {
-		if !same(l[i], n.limits[i]) {
-			n.limits = l
-			n.cache = n.cache[:0]
-			return
+// Measure measures a leaf's content: its text, a field's line, an image's
+// declared size. Views and canvases have none.
+func (n *node) Measure(known layout.Size[layout.Opt], available layout.Size[layout.AvailableSpace]) layout.Size[float32] {
+	var m Size
+	switch {
+	case n.text != nil:
+		width := Auto
+		if known.Width.Valid {
+			width = Points(known.Width.Value)
+		} else if available.Width.Kind == layout.SpaceDefinite {
+			width = Points(available.Width.Value)
 		}
-	}
-}
-
-// measure returns n's border-box size: w and h are definite sizes or
-// Auto, aw and ah the space available when they are Auto.
-func (t *Tree) measure(n *node, w, h, aw, ah Points) Size {
-	for _, m := range n.cache {
-		if same(m.w, w) && same(m.h, h) && same(m.aw, aw) && same(m.ah, ah) {
-			return m.size
+		if !width.IsAuto() {
+			width = max(width, 0)
 		}
-	}
-	size := t.measureUncached(n, w, h, aw, ah)
-	if len(n.cache) >= 8 {
-		n.cache = n.cache[:0]
-	}
-	n.cache = append(n.cache, measured{w, h, aw, ah, size})
-	return size
-}
-
-func (t *Tree) measureUncached(n *node, w, h, aw, ah Points) Size {
-	s := n.style
-	minW, maxW, minH, maxH := n.limits[0], n.limits[1], n.limits[2], n.limits[3]
-	if !w.IsAuto() {
-		w = clamp(w, minW, maxW)
-	}
-	if !h.IsAuto() {
-		h = clamp(h, minH, maxH)
-	}
-	if ar := s.AspectRatio; ar > 0 {
-		if !w.IsAuto() && h.IsAuto() {
-			h = clamp(w/Points(ar), minH, maxH)
-		} else if w.IsAuto() && !h.IsAuto() {
-			w = clamp(h*Points(ar), minW, maxW)
-		}
-	}
-	if w.IsAuto() && !maxW.IsAuto() && (aw.IsAuto() || aw > maxW) {
-		aw = maxW
-	}
-	if h.IsAuto() && !maxH.IsAuto() && (ah.IsAuto() || ah > maxH) {
-		ah = maxH
-	}
-	in := n.insets()
-	switch n.kind {
-	case KindText:
-		if !w.IsAuto() && !h.IsAuto() {
-			return Size{w, h}
-		}
-		wrap := aw
-		if !w.IsAuto() {
-			wrap = w
-		}
-		var m Size
 		if n.text.prepared != nil {
-			m = n.text.prepared.Measure(sub(wrap, in.horizontal()))
+			m = n.text.prepared.Measure(width)
 		}
-		if w.IsAuto() {
-			w = clamp(ceil(m.Width)+in.horizontal(), minW, maxW)
+		m = Size{ceil(m.Width), ceil(m.Height)}
+	case n.input != nil:
+		m = Size{160, ceil(n.input.lineH)}
+	case n.image != nil:
+		nat := n.image.naturalSize()
+		w, h := known.Width, known.Height
+		switch {
+		case !w.Valid && !h.Valid:
+			m = nat
+		case !w.Valid && nat.Height > 0:
+			m.Width = Points(h.Value) * nat.Width / nat.Height
+		case !h.Valid && nat.Width > 0:
+			m.Height = Points(w.Value) * nat.Height / nat.Width
 		}
-		if h.IsAuto() {
-			h = clamp(ceil(m.Height)+in.vertical(), minH, maxH)
-		}
-		return Size{w, h}
-	case KindInput:
-		if h.IsAuto() {
-			h = clamp(ceil(n.input.lineH)+in.vertical(), minH, maxH)
-		}
-		if w.IsAuto() {
-			w = clamp(160+in.horizontal(), minW, maxW)
-		}
-		return Size{w, h}
-	}
-	size := t.flex(n, w, h, aw, ah, false)
-	if w.IsAuto() {
-		if cw := clamp(size.Width, minW, maxW); cw != size.Width {
-			size = t.flex(n, cw, h, aw, ah, false)
-			size.Width = cw
-		}
-	}
-	if h.IsAuto() {
-		size.Height = clamp(size.Height, minH, maxH)
-	}
-	return size
-}
-
-// place lays out n's content at its final border-box size.
-func (t *Tree) place(n *node, size Size) {
-	switch n.kind {
-	case KindText:
-		n.text.box = n.contentBox(size)
-	case KindInput:
-		n.input.config.Content = n.contentBox(size)
 	default:
-		t.flex(n, size.Width, size.Height, size.Width, size.Height, true)
+		return layout.Size[float32]{}
 	}
-	n.layoutDirty = false
+	return layout.Size[float32]{
+		Width:  known.Width.Or(float32(m.Width)),
+		Height: known.Height.Or(float32(m.Height)),
+	}
 }
 
-type flexItem struct {
-	n                    *node
-	mainStart, mainEnd   Points // margins
-	crossStart, crossEnd Points
-	defMain, defCross    Points
-	minMain, maxMain     Points
-	minCross, maxCross   Points
-	align                Align
-	stretch              bool
-	grow, shrink         float32
-	basis, hypo, target  Points
-	cross                Points
-	frozen               bool
-	violation            Points
+// markLayout marks n and its ancestors for layout, dropping their cached
+// results. Regions are never laid out themselves, so they pass the mark
+// on.
+func (n *node) markLayout() {
+	for p := n; p != nil; p = p.parent {
+		p.layoutDirty = true
+		p.lstate.Invalidate()
+	}
 }
 
-func (it *flexItem) marginMain() Points  { return it.mainStart + it.mainEnd }
-func (it *flexItem) marginCross() Points { return it.crossStart + it.crossEnd }
+// layoutStyle maps n's style onto a CSS style with React Native's
+// defaults, as NSH does.
+func (n *node) layoutStyle() layout.Style {
+	s := &n.style
+	var l layout.Style
 
-// axes maps main and cross lengths to widths and heights.
-type axes struct{ row bool }
+	switch s.Display {
+	case DisplayNone:
+		l.Display = layout.DisplayNone
+	case DisplayGrid:
+		l.Display = layout.DisplayGrid
+	case DisplayBlock:
+		l.Display = layout.DisplayBlock
+	}
+	l.Position = layout.PositionRelative
+	if s.Position == Absolute {
+		l.Position = layout.PositionAbsolute
+	}
+	switch s.Direction {
+	case Row:
+		l.FlexDirection = layout.Row
+	case RowReverse:
+		l.FlexDirection = layout.RowReverse
+	case ColumnReverse:
+		l.FlexDirection = layout.ColumnReverse
+	default:
+		l.FlexDirection = layout.Column
+	}
+	switch s.Wrap {
+	case Wrap:
+		l.FlexWrap = layout.Wrap
+	case WrapReverse:
+		l.FlexWrap = layout.WrapReverse
+	}
+	l.FlexGrow = s.FlexGrow
+	l.FlexShrink = layout.Some(s.FlexShrink)
+	l.FlexBasis = s.FlexBasis.layout()
 
-func (a axes) pick(w, h Points) (main, cross Points) {
-	if a.row {
-		return w, h
+	l.Size = layout.Size[layout.Length]{Width: s.Width.layout(), Height: s.Height.layout()}
+	// Yoga has no automatic minimum size: an unset minimum is 0.
+	l.MinSize = layout.Size[layout.Length]{Width: s.MinWidth.minLayout(), Height: s.MinHeight.minLayout()}
+	l.MaxSize = layout.Size[layout.Length]{Width: s.MaxWidth.layout(), Height: s.MaxHeight.layout()}
+	if s.AspectRatio > 0 {
+		l.AspectRatio = layout.Some(s.AspectRatio)
 	}
-	return h, w
-}
+	if s.BoxSizing == ContentBox {
+		l.BoxSizing = layout.ContentBox
+	}
 
-func (a axes) size(main, cross Points) Size {
-	if a.row {
-		return Size{main, cross}
+	l.Inset = layout.Rect[layout.Length]{Left: s.Left.layout(), Right: s.Right.layout(),
+		Top: s.Top.layout(), Bottom: s.Bottom.layout()}
+	l.Margin = s.Margin.layout()
+	for _, side := range [...]struct {
+		bit Sides
+		dst *layout.Length
+	}{{SideTop, &l.Margin.Top}, {SideRight, &l.Margin.Right}, {SideBottom, &l.Margin.Bottom}, {SideLeft, &l.Margin.Left}} {
+		if s.AutoMargin&side.bit != 0 {
+			*side.dst = layout.Auto
+		}
 	}
-	return Size{cross, main}
-}
-
-func (a axes) point(main, cross Points) Point {
-	if a.row {
-		return Point{main, cross}
-	}
-	return Point{cross, main}
-}
-
-func (a axes) measure(t *Tree, n *node, main, cross, availMain, availCross Points) Size {
-	s := a.size(main, cross)
-	av := a.size(availMain, availCross)
-	return t.measure(n, s.Width, s.Height, av.Width, av.Height)
-}
-
-// flex lays n's children out as a flex container of border-box size w by
-// h (Auto: sized by content, within aw by ah) and returns n's size. With
-// place it also sets the children's frames and places them.
-func (t *Tree) flex(n *node, w, h, aw, ah Points, place bool) Size {
-	s := n.style
-	dir := s.Direction
-	if dir == 0 {
-		dir = Column
-	}
-	ax := axes{dir.row()}
-	in := n.insets()
-	innerW, innerH := sub(w, in.horizontal()), sub(h, in.vertical())
-	availW, availH := innerW, innerH
-	if availW.IsAuto() {
-		availW = sub(aw, in.horizontal())
-	}
-	if availH.IsAuto() {
-		availH = sub(ah, in.vertical())
-	}
-	ownMain, crossSize := ax.pick(innerW, innerH)
-	availMain, availCross := ax.pick(availW, availH)
-	mainSize := ownMain
-	scroll := n.kind == KindScroll
-	if scroll {
-		mainSize, availMain = Auto, Auto
-	}
+	l.Padding = s.Padding.layout()
+	l.Border = s.borders().layout()
 	rowGap, colGap := s.Gap, s.Gap
 	if s.RowGap != 0 {
 		rowGap = s.RowGap
@@ -239,390 +160,277 @@ func (t *Tree) flex(n *node, w, h, aw, ah Points, place bool) Size {
 	if s.ColumnGap != 0 {
 		colGap = s.ColumnGap
 	}
-	gapMain, gapCross := ax.pick(colGap, rowGap)
+	l.Gap = layout.Size[layout.Length]{Width: layout.Px(float32(colGap)), Height: layout.Px(float32(rowGap))}
 
-	kids := n.flatChildren()
-	items := make([]flexItem, 0, len(kids))
-	var abs []*node
-	for _, c := range kids {
-		if c.style.Display == DisplayNone {
-			if place {
-				c.frame = Bounds{}
-				c.layoutDirty = false
-			}
-			continue
-		}
-		c.setLimits(innerW, innerH)
-		if c.style.Position == Absolute {
-			abs = append(abs, c)
-			continue
-		}
-		items = append(items, t.newItem(c, ax, s.AlignItems, innerW, innerH, mainSize, crossSize, availMain, availCross))
+	l.AlignItems = s.AlignItems.items()
+	l.AlignSelf = s.AlignSelf.items()
+	l.JustifyItems = s.JustifyItems.items()
+	l.JustifySelf = s.JustifySelf.items()
+	l.AlignContent = s.AlignContent.content()
+	l.JustifyContent = s.JustifyContent.layout()
+	// An unset align-content is React Native's flex-start outside grids,
+	// where CSS's normal would stretch wrapped lines; grids keep normal, so
+	// their auto tracks stretch.
+	if l.Display != layout.DisplayGrid && l.AlignContent.Keyword == layout.ContentNormal {
+		l.AlignContent.Keyword = layout.ContentFlexStart
 	}
 
-	// Lines.
-	wrap := s.Wrap == Wrap || s.Wrap == WrapReverse
-	limit := mainSize
-	if limit.IsAuto() {
-		limit = availMain
+	// Hidden clips in layout as well as in paint: what a box clips away
+	// must not reach an enclosing scroll view's content. Clip, not Hidden,
+	// which would also make the box a scroll container with no automatic
+	// minimum size.
+	x, y := s.overflow()
+	l.Overflow = layout.Point[layout.Overflow]{X: x.layout(), Y: y.layout()}
+
+	if t := s.GridTemplateColumns; t != "" {
+		if g, err := parseTemplate(t); err == nil {
+			l.GridTemplateColumns, l.GridTemplateColumnNames = g.tracks, g.names
+		}
 	}
-	var lines [][]int
-	if !wrap || limit.IsAuto() {
-		all := make([]int, len(items))
-		for i := range all {
-			all[i] = i
+	if t := s.GridTemplateRows; t != "" {
+		if g, err := parseTemplate(t); err == nil {
+			l.GridTemplateRows, l.GridTemplateRowNames = g.tracks, g.names
 		}
-		lines = [][]int{all}
-	} else {
-		var line []int
-		var used Points
-		for i := range items {
-			outer := items[i].hypo + items[i].marginMain()
-			if len(line) > 0 && used+gapMain+outer > limit {
-				lines = append(lines, line)
-				line, used = nil, 0
-			}
-			if len(line) > 0 {
-				used += gapMain
-			}
-			line = append(line, i)
-			used += outer
+	}
+	if t := s.GridAutoColumns; t != "" {
+		if g, err := parseTemplate(t); err == nil {
+			l.GridAutoColumns = g.auto
 		}
-		lines = append(lines, line)
+	}
+	if t := s.GridAutoRows; t != "" {
+		if g, err := parseTemplate(t); err == nil {
+			l.GridAutoRows = g.auto
+		}
+	}
+	switch s.GridAutoFlow {
+	case FlowColumn:
+		l.GridAutoFlow = layout.FlowColumn
+	case FlowRowDense:
+		l.GridAutoFlow = layout.FlowRowDense
+	case FlowColumnDense:
+		l.GridAutoFlow = layout.FlowColumnDense
+	}
+	l.GridRow = layout.Line[layout.GridPlacement]{Start: s.GridRow.Start.layout(), End: s.GridRow.End.layout()}
+	l.GridColumn = layout.Line[layout.GridPlacement]{Start: s.GridColumn.Start.layout(), End: s.GridColumn.End.layout()}
+
+	// A scroll view's content may overflow along its axis; a horizontal one
+	// lays its content out in a row.
+	horizontalScroll := n.scroll != nil && n.scroll.config.Horizontal
+	if n.scroll != nil {
+		if horizontalScroll {
+			l.FlexDirection = layout.Row
+			l.Overflow.X = layout.OverflowScroll
+		} else {
+			l.Overflow.Y = layout.OverflowScroll
+		}
 	}
 
-	// Main sizes.
-	for _, line := range lines {
-		if mainSize.IsAuto() {
-			for _, i := range line {
-				items[i].target = items[i].hypo
-			}
-			continue
+	// Right to left, left and right swap, as in React Native. A horizontal
+	// scroll view lays its content out left to right with its own sides as
+	// written, and its children's frames are mirrored.
+	if n.rtl {
+		l.Margin.Left, l.Margin.Right = l.Margin.Right, l.Margin.Left
+		l.Inset.Left, l.Inset.Right = l.Inset.Right, l.Inset.Left
+		if !horizontalScroll {
+			l.Direction = layout.RTL
+			l.Padding.Left, l.Padding.Right = l.Padding.Right, l.Padding.Left
+			l.Border.Left, l.Border.Right = l.Border.Right, l.Border.Left
 		}
-		space := mainSize - gapMain*Points(max(len(line)-1, 0))
-		for _, i := range line {
-			space -= items[i].marginMain()
-		}
-		resolveFlexible(items, line, space)
 	}
 
-	// Cross sizes.
-	single := len(lines) == 1
-	lineCross := make([]Points, len(lines))
-	for l, line := range lines {
-		for _, i := range line {
-			it := &items[i]
-			cross := it.defCross
-			if cross.IsAuto() {
-				switch {
-				case it.stretch && single && !crossSize.IsAuto():
-					cross = clamp(max(crossSize-it.marginCross(), 0), it.minCross, it.maxCross)
-				case it.n.style.AspectRatio > 0:
-					ar := Points(it.n.style.AspectRatio)
-					if ax.row {
-						cross = it.target / ar
-					} else {
-						cross = it.target * ar
-					}
-				default:
-					sz := ax.measure(t, it.n, it.target, Auto, availMain, sub(availCross, it.marginCross()))
-					_, cross = ax.pick(sz.Width, sz.Height)
-				}
-			}
-			it.cross = cross
-			lineCross[l] = max(lineCross[l], cross+it.marginCross())
+	// Roots are placed by core: the root view and modals fill their host,
+	// overlays size to their content.
+	if n.isRoot {
+		l.Position = layout.PositionRelative
+		l.Inset = layout.Rect[layout.Length]{}
+		if n.fill != nil {
+			l.Size = layout.Size[layout.Length]{Width: layout.Px(float32(n.fill.Width)), Height: layout.Px(float32(n.fill.Height))}
+			l.MinSize, l.MaxSize = layout.Size[layout.Length]{}, layout.Size[layout.Length]{}
 		}
 	}
-	if single && !crossSize.IsAuto() {
-		lineCross[0] = crossSize
-	}
+	return l
+}
 
-	var contentMain, contentCross Points
-	for l, line := range lines {
-		var sum Points
-		for k, i := range line {
-			if k > 0 {
-				sum += gapMain
-			}
-			sum += items[i].target + items[i].marginMain()
-		}
-		contentMain = max(contentMain, sum)
-		if l > 0 {
-			contentCross += gapCross
-		}
-		contentCross += lineCross[l]
+func (l Length) layout() layout.Length {
+	switch l.unit {
+	case unitPoints:
+		return layout.Px(l.value)
+	case unitPercent:
+		return layout.Percent(l.value / 100)
 	}
-	outMain := ownMain
-	if outMain.IsAuto() {
-		outMain = contentMain
-	}
-	outCross := crossSize
-	if outCross.IsAuto() {
-		outCross = contentCross
-	}
-	insMain, insCross := ax.pick(in.horizontal(), in.vertical())
-	size := ax.size(outMain+insMain, outCross+insCross)
-	if !place {
-		return size
-	}
+	return layout.Auto
+}
 
-	// Placement.
-	extent := outMain
-	if scroll {
-		extent = max(contentMain, outMain)
-		n.scroll.content = ax.size(extent+insMain, outCross+insCross)
+// minLayout maps a minimum size: auto is 0, as in Yoga.
+func (l Length) minLayout() layout.Length {
+	if l.IsAuto() {
+		return layout.Px(0)
 	}
-	startMain, startCross := ax.pick(in.Left, in.Top)
-	free := outCross - contentCross
-	crossPos, crossSpacing := startCross, gapCross
-	switch s.AlignContent {
-	case AlignCenter:
-		crossPos += free / 2
-	case AlignEnd:
-		crossPos += free
-	case AlignSpaceBetween:
-		if len(lines) > 1 && free > 0 {
-			crossSpacing += free / Points(len(lines)-1)
-		}
-	case AlignSpaceAround:
-		if free > 0 {
-			crossSpacing += free / Points(len(lines))
-			crossPos += free / Points(len(lines)) / 2
-		}
+	return l.layout()
+}
+
+func (e Edges) layout() layout.Rect[layout.Length] {
+	return layout.Rect[layout.Length]{Left: layout.Px(float32(e.Left)), Right: layout.Px(float32(e.Right)),
+		Top: layout.Px(float32(e.Top)), Bottom: layout.Px(float32(e.Bottom))}
+}
+
+func (o Overflow) layout() layout.Overflow {
+	switch o {
+	case Hidden:
+		return layout.OverflowClip
+	case OverflowScroll:
+		return layout.OverflowScroll
+	}
+	return layout.OverflowVisible
+}
+
+// items maps an align-items, align-self, justify-items or justify-self
+// value; start and end are flex-start and flex-end.
+func (a Align) items() layout.Align {
+	var k layout.AlignKeyword
+	switch a {
 	case AlignStretch:
-		if !single && free > 0 {
-			for l := range lineCross {
-				lineCross[l] += free / Points(len(lines))
-			}
-		}
+		k = layout.AlignStretch
+	case AlignStart:
+		k = layout.AlignFlexStart
+	case AlignCenter:
+		k = layout.AlignCenter
+	case AlignEnd:
+		k = layout.AlignFlexEnd
+	case AlignBaseline:
+		k = layout.AlignBaseline
 	}
-	order := make([]int, len(lines))
-	for l := range order {
-		order[l] = l
-	}
-	if s.Wrap == WrapReverse {
-		for a, b := 0, len(order)-1; a < b; a, b = a+1, b-1 {
-			order[a], order[b] = order[b], order[a]
-		}
-	}
-	for _, l := range order {
-		line := lines[l]
-		var sum Points
-		for k, i := range line {
-			if k > 0 {
-				sum += gapMain
-			}
-			sum += items[i].target + items[i].marginMain()
-		}
-		freeMain := max(extent-sum, 0)
-		pos, spacing := Points(0), gapMain
-		count := Points(len(line))
-		switch s.JustifyContent {
-		case JustifyCenter:
-			pos = freeMain / 2
-		case JustifyEnd:
-			pos = freeMain
-		case JustifySpaceBetween:
-			if len(line) > 1 {
-				spacing += freeMain / (count - 1)
-			}
-		case JustifySpaceAround:
-			spacing += freeMain / count
-			pos = freeMain / count / 2
-		case JustifySpaceEvenly:
-			spacing += freeMain / (count + 1)
-			pos = freeMain / (count + 1)
-		}
-		lc := lineCross[l]
-		for _, i := range line {
-			it := &items[i]
-			cross := it.cross
-			if it.stretch {
-				cross = clamp(max(lc-it.marginCross(), 0), it.minCross, it.maxCross)
-			}
-			mainAt := pos + it.mainStart
-			if dir.reverse() {
-				mainAt = extent - mainAt - it.target
-			}
-			var crossAt Points
-			switch it.align {
-			case AlignCenter:
-				crossAt = (lc - cross - it.marginCross()) / 2
-			case AlignEnd:
-				crossAt = lc - cross - it.marginCross()
-			}
-			crossAt += crossPos + it.crossStart
-			origin := ax.point(startMain+mainAt, crossAt)
-			t.setFrame(it.n, origin, ax.size(it.target, cross), innerW, innerH)
-			pos += it.target + it.marginMain() + spacing
-		}
-		crossPos += lc + crossSpacing
-	}
-
-	// Absolutely positioned children, in the padding box.
-	bw := s.BorderWidth
-	padW, padH := sub(w, 2*bw), sub(h, 2*bw)
-	for _, c := range abs {
-		cs := c.style
-		l, r := cs.Left.resolve(padW), cs.Right.resolve(padW)
-		tp, b := cs.Top.resolve(padH), cs.Bottom.resolve(padH)
-		m := cs.Margin
-		cw, ch := cs.Width.resolve(padW), cs.Height.resolve(padH)
-		if cw.IsAuto() && !l.IsAuto() && !r.IsAuto() {
-			cw = max(padW-l-r-m.horizontal(), 0)
-		}
-		if ch.IsAuto() && !tp.IsAuto() && !b.IsAuto() {
-			ch = max(padH-tp-b-m.vertical(), 0)
-		}
-		sz := t.measure(c, cw, ch, padW, padH)
-		x := in.Left + m.Left
-		switch {
-		case !l.IsAuto():
-			x = bw + l + m.Left
-		case !r.IsAuto():
-			x = bw + padW - r - m.Right - sz.Width
-		}
-		y := in.Top + m.Top
-		switch {
-		case !tp.IsAuto():
-			y = bw + tp + m.Top
-		case !b.IsAuto():
-			y = bw + padH - b - m.Bottom - sz.Height
-		}
-		t.setFrame(c, Point{x, y}, sz, Auto, Auto)
-	}
-	return size
+	return layout.Align{Keyword: k}
 }
 
-// setFrame sets c's frame, offsetting a relative node by its insets, and
-// places its content when its size changed or it changed inside.
-func (t *Tree) setFrame(c *node, origin Point, size Size, innerW, innerH Points) {
-	if c.style.Position != Absolute {
-		cs := c.style
-		if l := cs.Left.resolve(innerW); !l.IsAuto() {
-			origin.X += l
-		} else if r := cs.Right.resolve(innerW); !r.IsAuto() {
-			origin.X -= r
-		}
-		if tp := cs.Top.resolve(innerH); !tp.IsAuto() {
-			origin.Y += tp
-		} else if b := cs.Bottom.resolve(innerH); !b.IsAuto() {
-			origin.Y -= b
-		}
+// content maps an align-content value.
+func (a Align) content() layout.AlignContent {
+	k := layout.ContentNormal
+	switch a {
+	case AlignStretch:
+		k = layout.ContentStretch
+	case AlignStart:
+		k = layout.ContentFlexStart
+	case AlignCenter:
+		k = layout.ContentCenter
+	case AlignEnd:
+		k = layout.ContentFlexEnd
+	case AlignSpaceBetween:
+		k = layout.ContentSpaceBetween
+	case AlignSpaceAround:
+		k = layout.ContentSpaceAround
+	case AlignSpaceEvenly:
+		k = layout.ContentSpaceEvenly
 	}
-	resized := c.frame.Size != size
-	c.frame = Bounds{origin, size}
-	if resized || c.layoutDirty {
-		t.place(c, size)
+	return layout.AlignContent{Keyword: k}
+}
+
+func (j Justify) layout() layout.AlignContent {
+	k := layout.ContentNormal
+	switch j {
+	case JustifyStart:
+		k = layout.ContentFlexStart
+	case JustifyCenter:
+		k = layout.ContentCenter
+	case JustifyEnd:
+		k = layout.ContentFlexEnd
+	case JustifySpaceBetween:
+		k = layout.ContentSpaceBetween
+	case JustifySpaceAround:
+		k = layout.ContentSpaceAround
+	case JustifySpaceEvenly:
+		k = layout.ContentSpaceEvenly
+	case JustifyStretch:
+		k = layout.ContentStretch
+	}
+	return layout.AlignContent{Keyword: k}
+}
+
+// layout lays the root view out at the surface size, then the overlays
+// and modals it hosts.
+func (t *Tree) layout() {
+	if !t.view.layoutDirty {
+		return
+	}
+	t.layoutRoot(t.view, t.size, true)
+	t.view.frame = Bounds{Size: t.size}
+	t.syncFrames(t.view)
+	t.placeHoisted(t.view)
+}
+
+// layoutRoot lays root out in space, which it fills when fill is set.
+func (t *Tree) layoutRoot(root *node, space Size, fill bool) {
+	root.isRoot = true
+	var want *Size
+	if fill {
+		want = &space
+	}
+	if (want == nil) != (root.fill == nil) || (want != nil && *want != *root.fill) {
+		root.fill = want
+		root.lstyleOK = false
+		root.lstate.Invalidate()
+	}
+	layout.Compute(root, layout.Size[layout.AvailableSpace]{
+		Width:  layout.Definite(float32(space.Width)),
+		Height: layout.Definite(float32(space.Height)),
+	})
+	layout.Round(root)
+}
+
+// syncFrames sets the frames of n's children from their layouts, and
+// what depends on them, through n's subtree. n's own frame is set.
+func (t *Tree) syncFrames(n *node) {
+	t.syncContent(n)
+	n.layoutDirty = false
+	mirror := n.rtl && n.scroll != nil && n.scroll.config.Horizontal
+	for _, c := range n.flatChildren() {
+		l := &c.lstate.Rounded
+		f := Bounds{
+			Origin: Point{Points(l.Location.X), Points(l.Location.Y)},
+			Size:   Size{Points(l.Size.Width), Points(l.Size.Height)},
+		}
+		if mirror {
+			f.Origin.X = n.scroll.content.Width - f.Origin.X - f.Size.Width
+		}
+		c.frame = f
+		t.syncFrames(c)
 	}
 }
 
-func (t *Tree) newItem(c *node, ax axes, alignItems Align, innerW, innerH, mainSize, crossSize, availMain, availCross Points) flexItem {
-	cs := c.style
-	it := flexItem{n: c, grow: cs.FlexGrow, shrink: cs.FlexShrink}
-	m := cs.Margin
-	if ax.row {
-		it.mainStart, it.mainEnd, it.crossStart, it.crossEnd = m.Left, m.Right, m.Top, m.Bottom
-		it.minMain, it.maxMain, it.minCross, it.maxCross = c.limits[0], c.limits[1], c.limits[2], c.limits[3]
-	} else {
-		it.mainStart, it.mainEnd, it.crossStart, it.crossEnd = m.Top, m.Bottom, m.Left, m.Right
-		it.minMain, it.maxMain, it.minCross, it.maxCross = c.limits[2], c.limits[3], c.limits[0], c.limits[1]
+// syncContent sets what n's layout decides inside it: where its text goes
+// and how far its content scrolls.
+func (t *Tree) syncContent(n *node) {
+	l := &n.lstate.Rounded
+	switch {
+	case n.text != nil:
+		n.text.box = contentBox(l)
+	case n.input != nil:
+		n.input.config.Content = contentBox(l)
+	case n.scroll != nil:
+		n.scroll.content = Size{Points(l.Size.Width + l.ScrollWidth()), Points(l.Size.Height + l.ScrollHeight())}
 	}
-	it.defMain, it.defCross = ax.pick(cs.Width.resolve(innerW), cs.Height.resolve(innerH))
-	if !it.defCross.IsAuto() {
-		it.defCross = clamp(it.defCross, it.minCross, it.maxCross)
-	}
-	it.align = cs.AlignSelf
-	if it.align == 0 {
-		it.align = alignItems
-	}
-	if it.align == 0 {
-		it.align = AlignStretch
-	}
-	it.stretch = it.align == AlignStretch && it.defCross.IsAuto()
-	basis := cs.FlexBasis.resolve(mainSize)
-	if basis.IsAuto() {
-		basis = it.defMain
-	}
-	if basis.IsAuto() {
-		cross := it.defCross
-		if cross.IsAuto() && it.stretch && !crossSize.IsAuto() {
-			cross = clamp(max(crossSize-it.marginCross(), 0), it.minCross, it.maxCross)
-		}
-		sz := ax.measure(t, c, Auto, cross, sub(availMain, it.marginMain()), sub(availCross, it.marginCross()))
-		basis, _ = ax.pick(sz.Width, sz.Height)
-	}
-	it.basis = basis
-	it.hypo = clamp(basis, it.minMain, it.maxMain)
-	return it
 }
 
-// resolveFlexible grows or shrinks a line's items to fill space, freezing
-// those min and max sizes stop, as CSS does.
-func resolveFlexible(items []flexItem, line []int, space Points) {
-	var sumHypo Points
-	for _, i := range line {
-		sumHypo += items[i].hypo
+// contentBox is the box inside a layout's padding and border.
+func contentBox(l *layout.Layout) Bounds {
+	return Bounds{
+		Origin: Point{Points(l.Border.Left + l.Padding.Left), Points(l.Border.Top + l.Padding.Top)},
+		Size: Size{
+			Width:  Points(max(l.Size.Width-l.Border.Left-l.Border.Right-l.Padding.Left-l.Padding.Right, 0)),
+			Height: Points(max(l.Size.Height-l.Border.Top-l.Border.Bottom-l.Padding.Top-l.Padding.Bottom, 0)),
+		},
 	}
-	growing := sumHypo < space
-	for _, i := range line {
-		it := &items[i]
-		it.target, it.frozen = it.hypo, false
-		factor := it.shrink
-		if growing {
-			factor = it.grow
-		}
-		if factor == 0 || (growing && it.basis > it.hypo) || (!growing && it.basis < it.hypo) {
-			it.frozen = true
-		}
-	}
-	for range len(line) + 1 {
-		remaining := space
-		var sumGrow, sumShrink float32
-		unfrozen := 0
-		for _, i := range line {
-			it := &items[i]
-			if it.frozen {
-				remaining -= it.target
-				continue
-			}
-			remaining -= it.basis
-			sumGrow += it.grow
-			sumShrink += it.shrink * float32(it.basis)
-			unfrozen++
-		}
-		if unfrozen == 0 {
-			return
-		}
-		if growing && sumGrow < 1 {
-			remaining *= Points(sumGrow)
-		}
-		var total Points
-		for _, i := range line {
-			it := &items[i]
-			if it.frozen {
-				continue
-			}
-			target := it.basis
-			switch {
-			case growing && sumGrow > 0:
-				target += remaining * Points(it.grow/sumGrow)
-			case !growing && sumShrink > 0:
-				target += remaining * Points(it.shrink*float32(it.basis)/sumShrink)
-			}
-			clamped := clamp(max(target, 0), it.minMain, it.maxMain)
-			it.violation = clamped - target
-			total += it.violation
-			it.target = clamped
-		}
-		for _, i := range line {
-			it := &items[i]
-			if !it.frozen && (total == 0 || (total > 0) == (it.violation > 0) && it.violation != 0) {
-				it.frozen = true
-			}
-		}
-		if total == 0 {
-			return
+}
+
+// setRTL lays every node out again in the new direction.
+func (t *Tree) setRTL(rtl bool) {
+	t.rtl = rtl
+	for _, n := range t.nodes {
+		if n != nil {
+			n.rtl = rtl
+			n.lstyleOK = false
+			n.lstate.Invalidate()
 		}
 	}
+	t.view.markLayout()
 }

@@ -3,7 +3,8 @@
 // Package web is NSGo's browser backend: Go compiled to WebAssembly, one
 // absolutely positioned element per view. Text is measured with the
 // browser's own layout in a hidden element styled as the one that draws
-// it, so measuring and drawing agree.
+// it, so measuring and drawing agree. The browser loads and draws images
+// from their URIs, and alerts are dialogs drawn over the page.
 //
 // In WebAssembly the engine goroutine shares the page's only thread, so
 // text is measured and batches are applied right where the engine asks.
@@ -11,9 +12,11 @@ package web
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall/js"
+	"unicode/utf16"
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/engine"
@@ -35,6 +38,7 @@ const longPressDelay = 500
 type surface struct {
 	doc       js.Value
 	host      js.Value
+	root      *view
 	measure   js.Value      // a hidden element text is measured in
 	measuring *preparedText // the text measure holds
 	engine    *engine.Engine
@@ -42,22 +46,62 @@ type surface struct {
 	press     press
 	timer     js.Value // the pending long press
 	longPress js.Func
+	outside   []*view // views that report presses outside them
+	alerts    []*alert
+	keys      map[string]bool // the keymap
+	live      js.Value        // the region announcements are read from
+	watch     watch
+	env       core.Environment // as last sent
 }
 
 // view is the element of one NodeID.
 type view struct {
-	id      core.NodeID
-	kind    core.ViewKind
-	el      js.Value // framed and styled by the view's items
-	content js.Value // where children go: el, or a scroll view's content
-	inner   js.Value // a text view's text or a text field's <input>
-	events  core.EventMask
-	edits   uint32 // the user's edits of a text field
-	border  core.Points
-	scroll  core.Size // a scroll view's content size
-	layout  *textLayout
-	hover   bool // pointerenter and pointerleave are listened to
-	funcs   []js.Func
+	id        core.NodeID
+	kind      core.ViewKind
+	el        js.Value // framed and styled by the view's items
+	content   js.Value // where children go: el, or a scroll view's content
+	inner     js.Value // a text view's text, a text field's <input> or a <canvas>
+	events    core.EventMask
+	edits     uint32 // the user's edits of a text field
+	border    core.Points
+	size      core.Size // the frame's
+	scroll    core.Size // a scroll view's content size
+	layout    *textLayout
+	image     *image
+	drawing   *core.Drawing // a canvas's
+	modal     core.ModalAnimation
+	presented bool // a modal was inserted once
+	hover     bool // pointerenter and pointerleave are listened to
+	listeners listeners
+}
+
+// listeners are event listeners added until their owner goes.
+type listeners []listener
+
+type listener struct {
+	target js.Value
+	name   string
+	fn     js.Func
+}
+
+// on listens to name on target until the listeners are released.
+func (ls *listeners) on(target js.Value, name string, fn func(e js.Value)) {
+	f := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		fn(args[0])
+		return nil
+	})
+	*ls = append(*ls, listener{target, name, f})
+	target.Call("addEventListener", name, f)
+}
+
+// release removes the listeners first, so no event queued for them can
+// call a released function.
+func (ls *listeners) release() {
+	for _, l := range *ls {
+		l.target.Call("removeEventListener", l.name, l.fn)
+		l.fn.Release()
+	}
+	*ls = nil
 }
 
 // press is what the pointer last pressed in the page.
@@ -87,14 +131,17 @@ func Run(app engine.App, opts Options) {
 	})
 	host.Call("appendChild", s.measure)
 	s.listen()
+	s.watchStart(opts.Mount == "")
 
-	s.engine = engine.Start(s, app, engine.Options{Size: s.size()})
+	s.env = s.environment()
+	s.engine = engine.Start(s, app, engine.Options{Size: s.size(), Environment: s.env})
 	// The host can change size without the window doing so.
 	observer := js.Global().Get("ResizeObserver").New(js.FuncOf(func(js.Value, []js.Value) any {
 		s.engine.Resize(s.size())
 		return nil
 	}))
 	observer.Call("observe", host)
+	s.watchChanges()
 	select {}
 }
 
@@ -195,19 +242,30 @@ func fontStyle(t core.TextStyle) map[string]string {
 	}
 }
 
-// preparedText is text styled for the browser to lay out.
-type preparedText struct {
-	s     *surface
+// richText is text with the CSS that lays it out: one style for the
+// whole and one per span.
+type richText struct {
 	text  string
 	style map[string]string
+	spans []span
+}
+
+// span is a styled run of the text, from byte start to byte end.
+type span struct {
+	start, end int
+	style      map[string]string
+	link       bool
+}
+
+// preparedText is text styled for the browser to lay out.
+type preparedText struct {
+	s *surface
+	richText
 }
 
 // textLayout is what the element that draws text needs; the browser lays
 // it out at the size the engine measured.
-type textLayout struct {
-	text  string
-	style map[string]string
-}
+type textLayout struct{ richText }
 
 // Release implements core.TextLayout.
 func (*textLayout) Release() {}
@@ -223,7 +281,51 @@ func (s *surface) Prepare(t *core.AttributedText) core.PreparedText {
 		style["display"], style["-webkit-box-orient"], style["-webkit-line-clamp"], style["overflow"] =
 			"-webkit-box", "vertical", strconv.Itoa(t.MaxLines), "hidden"
 	}
-	return &preparedText{s: s, text: t.Text, style: style}
+	var spans []span
+	at := 0
+	for _, sp := range t.Spans {
+		start, end := max(sp.Start, at), min(sp.End, len(t.Text))
+		if start >= end {
+			continue
+		}
+		// Alignment is the paragraph's.
+		css := fontStyle(sp.Style)
+		delete(css, "text-align")
+		spans = append(spans, span{start, end, css, sp.Link})
+		at = end
+	}
+	return &preparedText{s: s, richText: richText{text: t.Text, style: style, spans: spans}}
+}
+
+// fill puts the text in el: as it is, or as a <span> per span carrying
+// its byte offset, so a press can tell the character it hit. Links take
+// keyboard focus when interactive.
+func (r *richText) fill(doc, el js.Value, interactive bool) {
+	if len(r.spans) == 0 {
+		el.Set("textContent", r.text)
+		return
+	}
+	el.Set("textContent", "")
+	at := 0
+	for _, sp := range r.spans {
+		if sp.start > at {
+			el.Call("append", r.text[at:sp.start])
+		}
+		e := doc.Call("createElement", "span")
+		setStyle(e, sp.style)
+		e.Set("textContent", r.text[sp.start:sp.end])
+		e.Call("setAttribute", "data-start", sp.start)
+		if sp.link && interactive {
+			e.Call("setAttribute", "role", "link")
+			e.Call("setAttribute", "tabindex", "0")
+			setStyle(e, map[string]string{"cursor": "pointer"})
+		}
+		el.Call("appendChild", e)
+		at = sp.end
+	}
+	if at < len(r.text) {
+		el.Call("append", r.text[at:])
+	}
 }
 
 // Measure implements core.PreparedText with the browser's layout.
@@ -232,11 +334,11 @@ func (p *preparedText) Measure(maxWidth core.Points) core.Size {
 	if p.s.measuring != p {
 		p.s.measuring = p
 		setStyle(m, p.style)
-		text := p.text
-		if text == "" {
-			text = "​" // an empty text keeps a line's height
+		if p.text == "" {
+			m.Set("textContent", "​") // an empty text keeps a line's height
+		} else {
+			p.fill(p.s.doc, m, false)
 		}
-		m.Set("textContent", text)
 	}
 	limit := "none"
 	if !maxWidth.IsAuto() {
@@ -253,7 +355,7 @@ func (p *preparedText) Measure(maxWidth core.Points) core.Size {
 
 // Layout implements core.PreparedText.
 func (p *preparedText) Layout(core.Size) core.TextLayout {
-	return &textLayout{text: p.text, style: p.style}
+	return &textLayout{p.richText}
 }
 
 // Release implements core.PreparedText.
@@ -270,11 +372,39 @@ func (p *preparedText) Release() {
 func (s *surface) Mount(b *core.MountBatch) {
 	for i := range b.Items {
 		it := &b.Items[i]
-		if it.Kind == core.ItemCreate {
+		switch it.Kind {
+		case core.ItemCreate:
 			v := s.create(it.ID, it.View)
 			if it.ID == b.Root {
+				s.root = v
 				s.host.Call("appendChild", v.el)
 			}
+			continue
+		case core.ItemAlert:
+			s.showAlert(it.Alert)
+			continue
+		case core.ItemDismissKeyboard:
+			if el := s.doc.Get("activeElement"); editing(el) {
+				el.Call("blur")
+			}
+			continue
+		case core.ItemSetClipboard:
+			s.setClipboard(it.Value)
+			continue
+		case core.ItemReadClipboard:
+			s.readClipboard(it.Count)
+			continue
+		case core.ItemAnnounce:
+			s.announce(it.Value)
+			continue
+		case core.ItemKeymap:
+			s.setKeymap(it.Keys)
+			continue
+		case core.ItemTitle:
+			s.doc.Set("title", it.Value)
+			continue
+		case core.ItemStatusBar, core.ItemBackUnhandled:
+			// A page has no status bar, and the browser's back is its own.
 			continue
 		}
 		v := s.view(it.ID)
@@ -292,6 +422,10 @@ func (s *surface) Mount(b *core.MountBatch) {
 			} else {
 				parent.content.Call("appendChild", v.el)
 			}
+			if v.kind == core.KindModal && !v.presented {
+				v.presented = true
+				s.present(v)
+			}
 		case core.ItemRemove:
 			v.el.Call("remove")
 		case core.ItemDelete:
@@ -301,17 +435,48 @@ func (s *surface) Mount(b *core.MountBatch) {
 			if v.layout != nil {
 				v.layout.Release()
 			}
-			for _, f := range v.funcs {
-				f.Release()
+			if v.image != nil {
+				v.image.release()
 			}
+			s.setOutside(v, false)
+			v.listeners.release()
 		case core.ItemFrame:
 			setStyle(v.el, frameStyle(it.Frame))
+			if v.size != it.Frame.Size {
+				v.size = it.Frame.Size
+				if v.image != nil && v.image.config.ResizeMode == core.Center {
+					v.image.draw(v.size)
+				}
+				if v.kind == core.KindCanvas {
+					s.paint(v)
+				}
+			}
 		case core.ItemViewStyle:
 			s.setViewStyle(v, it.ViewStyle)
 		case core.ItemText:
 			s.setText(v, it.Text)
 		case core.ItemInput:
 			s.setInput(v, it.Input)
+		case core.ItemImage:
+			s.setImage(v, it.Image)
+		case core.ItemModal:
+			v.modal = it.Modal.Animation
+		case core.ItemCanvas:
+			if v.kind == core.KindCanvas {
+				v.drawing = it.Drawing
+				s.paint(v)
+			}
+		case core.ItemScrollTo:
+			if v.kind == core.KindScroll {
+				behavior := "auto"
+				if it.Animated {
+					behavior = "smooth"
+				}
+				// The browser clamps the offset and reports the scroll.
+				v.el.Call("scrollTo", map[string]any{
+					"left": float64(it.Point.X), "top": float64(it.Point.Y), "behavior": behavior,
+				})
+			}
 		case core.ItemInputValue:
 			// Setting the text the field shows would move the caret.
 			if v.kind == core.KindInput && v.edits <= it.Count && v.inner.Get("value").String() != it.Value {
@@ -368,11 +533,19 @@ func (s *surface) create(id core.NodeID, kind core.ViewKind) *view {
 		v.el.Call("appendChild", v.inner)
 	case core.KindInput:
 		s.createInput(v)
+	case core.KindImage:
+		s.createImage(v)
+	case core.KindModal:
+		v.el.Call("setAttribute", "aria-modal", "true")
+	case core.KindCanvas:
+		v.inner = s.element("canvas")
+		setStyle(v.inner, map[string]string{"width": "100%", "height": "100%"})
+		v.el.Call("appendChild", v.inner)
 	case core.KindScroll:
 		setStyle(v.el, map[string]string{"overflow": "auto"})
 		v.content = s.element("div")
 		v.el.Call("appendChild", v.content)
-		v.on(v.el, "scroll", func(js.Value) {
+		v.listeners.on(v.el, "scroll", func(js.Value) {
 			s.send(v, core.Event{Kind: core.EventScroll, Point: core.Point{
 				X: core.Points(v.el.Get("scrollLeft").Float()),
 				Y: core.Points(v.el.Get("scrollTop").Float()),
@@ -381,16 +554,6 @@ func (s *surface) create(id core.NodeID, kind core.ViewKind) *view {
 	}
 	s.views[id] = v
 	return v
-}
-
-// on listens to name on target until v is deleted.
-func (v *view) on(target js.Value, name string, fn func(e js.Value)) {
-	f := js.FuncOf(func(_ js.Value, args []js.Value) any {
-		fn(args[0])
-		return nil
-	})
-	v.funcs = append(v.funcs, f)
-	target.Call("addEventListener", name, f)
 }
 
 // placeContent sizes a scroll view's content. Children are framed from
@@ -410,6 +573,8 @@ func (s *surface) setViewStyle(v *view, vs *core.ViewStyle) {
 		"opacity":          fmt.Sprint(vs.Opacity),
 		"box-shadow":       "none",
 		"display":          "block",
+		"transform":        transformCSS(vs.Transform),
+		"transition":       transitionCSS(vs.Transition),
 	}
 	if vs.ShadowColor != 0 {
 		style["box-shadow"] = fmt.Sprintf("%s %s %s %s",
@@ -418,18 +583,94 @@ func (s *surface) setViewStyle(v *view, vs *core.ViewStyle) {
 	if vs.Hidden {
 		style["display"] = "none"
 	}
-	if v.kind == core.KindScroll {
-		if vs.BorderWidth != v.border {
-			v.border = vs.BorderWidth
+	if im := v.image; im != nil && im.tint != vs.TintColor {
+		im.tint = vs.TintColor
+		im.draw(v.size)
+	}
+	if vs.BorderWidth != v.border {
+		v.border = vs.BorderWidth
+		switch v.kind {
+		case core.KindScroll:
 			v.placeContent()
+		case core.KindCanvas:
+			s.paint(v)
 		}
-	} else {
+	}
+	if v.kind != core.KindScroll {
 		style["overflow"] = "visible"
 		if vs.Clip {
 			style["overflow"] = "hidden"
 		}
 	}
 	setStyle(v.el, style)
+}
+
+// transformCSS is t around the view's center, which is CSS's default
+// origin: translate, then rotate, then scale.
+func transformCSS(t core.Transform) string {
+	if t == (core.Transform{}) {
+		return "none"
+	}
+	sx, sy := t.Scales()
+	return fmt.Sprintf("translate(%s, %s) rotate(%gdeg) scale(%g, %g)",
+		px(t.TranslateX), px(t.TranslateY), t.Rotate, sx, sy)
+}
+
+// transitionProperties are the CSS properties of each transition
+// property.
+var transitionProperties = []struct {
+	property core.TransitionProperty
+	css      []string
+}{
+	{core.TransitionOpacity, []string{"opacity"}},
+	{core.TransitionBackground, []string{"background-color"}},
+	{core.TransitionTransform, []string{"transform"}},
+	{core.TransitionBorder, []string{"border-width", "border-color", "border-radius"}},
+	{core.TransitionShadow, []string{"box-shadow"}},
+}
+
+// transitionCSS animates the listed properties from what the view shows
+// to what the same style change sets.
+func transitionCSS(t core.Transition) string {
+	if t.Duration <= 0 {
+		return "none"
+	}
+	easing := "linear"
+	if c := t.Easing; c != (core.Curve{}) {
+		easing = fmt.Sprintf("cubic-bezier(%g, %g, %g, %g)", c.X1, c.Y1, c.X2, c.Y2)
+	}
+	timing := fmt.Sprintf(" %gms %s %gms", float64(t.Duration)/1e6, easing, float64(t.Delay)/1e6)
+	var parts []string
+	for _, p := range transitionProperties {
+		if t.Properties == 0 || t.Properties&p.property != 0 {
+			for _, name := range p.css {
+				parts = append(parts, name+timing)
+			}
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+// present animates a modal in as it is first inserted; reduced motion
+// fades what would slide.
+func (s *surface) present(v *view) {
+	anim := v.modal
+	if anim == core.ModalSlide && s.env.ReduceMotion {
+		anim = core.ModalFade
+	}
+	switch anim {
+	case core.ModalSlide:
+		animate(v.el, map[string]any{"transform": "translateY(100%)"}, 300, "cubic-bezier(0.2, 0.8, 0.2, 1)")
+	case core.ModalFade:
+		animate(v.el, map[string]any{"opacity": 0}, 200, "ease-out")
+	}
+}
+
+// animate runs el from the keyframe from to its own style. The animation
+// leaves nothing behind, so the style items set stays in charge.
+func animate(el js.Value, from map[string]any, ms int, easing string) {
+	from["offset"] = 0
+	el.Call("animate", []any{from}, map[string]any{"duration": ms, "easing": easing})
 }
 
 func (s *surface) setText(v *view, t *core.TextContent) {
@@ -447,7 +688,7 @@ func (s *surface) setText(v *view, t *core.TextContent) {
 	}
 	setStyle(v.inner, l.style)
 	setStyle(v.inner, frameStyle(t.Content))
-	v.inner.Set("textContent", l.text)
+	l.fill(s.doc, v.inner, true)
 }
 
 // Text fields.
@@ -470,17 +711,17 @@ func (s *surface) createInput(v *view) {
 	})
 	v.inner = in
 	v.el.Call("appendChild", in)
-	v.on(in, "input", func(js.Value) {
+	v.listeners.on(in, "input", func(js.Value) {
 		v.edits++
 		s.send(v, core.Event{Kind: core.EventChangeText, Text: in.Get("value").String(), Count: v.edits})
 	})
-	v.on(in, "keydown", func(e js.Value) {
+	v.listeners.on(in, "keydown", func(e js.Value) {
 		if e.Get("key").String() == "Enter" && !e.Get("isComposing").Bool() {
 			s.send(v, core.Event{Kind: core.EventSubmitEditing, Text: in.Get("value").String()})
 		}
 	})
-	v.on(in, "focus", func(js.Value) { s.send(v, core.Event{Kind: core.EventFocus}) })
-	v.on(in, "blur", func(js.Value) { s.send(v, core.Event{Kind: core.EventBlur}) })
+	v.listeners.on(in, "focus", func(js.Value) { s.send(v, core.Event{Kind: core.EventFocus}) })
+	v.listeners.on(in, "blur", func(js.Value) { s.send(v, core.Event{Kind: core.EventBlur}) })
 }
 
 func (s *surface) setInput(v *view, c *core.InputConfig) {
@@ -506,14 +747,20 @@ func (s *surface) setInput(v *view, c *core.InputConfig) {
 // Events and accessibility.
 
 var roles = map[core.Role]string{
-	core.RoleButton:   "button",
-	core.RoleLink:     "link",
-	core.RoleHeader:   "heading",
-	core.RoleImage:    "img",
-	core.RoleCheckbox: "checkbox",
-	core.RoleSwitch:   "switch",
-	core.RoleRadio:    "radio",
-	core.RoleTab:      "tab",
+	core.RoleButton:     "button",
+	core.RoleLink:       "link",
+	core.RoleHeader:     "heading",
+	core.RoleImage:      "img",
+	core.RoleCheckbox:   "checkbox",
+	core.RoleSwitch:     "switch",
+	core.RoleRadio:      "radio",
+	core.RoleTab:        "tab",
+	core.RoleRadioGroup: "radiogroup",
+	core.RoleTabList:    "tablist",
+	core.RoleMenu:       "menu",
+	core.RoleMenuItem:   "menuitem",
+	core.RoleDialog:     "dialog",
+	core.RoleAlert:      "alert",
 }
 
 // setViewProps maps props to ARIA. A text field's go on its <input>,
@@ -533,6 +780,9 @@ func setViewProps(v *view, p *core.ViewProps) {
 	switch p.Role {
 	case core.RoleCheckbox, core.RoleSwitch, core.RoleRadio:
 		checked = strconv.FormatBool(p.Checked)
+		if p.Indeterminate {
+			checked = "mixed"
+		}
 	}
 	setAttr(el, "role", roles[p.Role])
 	setAttr(el, "aria-label", p.Label)
@@ -551,6 +801,7 @@ func (v *view) pressable() bool {
 
 func (s *surface) setEvents(v *view, m core.EventMask) {
 	v.events = m
+	s.setOutside(v, m.Has(core.EventPressOutside))
 	if v.kind == core.KindInput {
 		return
 	}
@@ -572,25 +823,33 @@ func (s *surface) setEvents(v *view, m core.EventMask) {
 	setAttr(v.el, "tabindex", tabIndex)
 	if !v.hover && (m.Has(core.EventHoverIn) || m.Has(core.EventHoverOut)) {
 		v.hover = true
-		v.on(v.el, "pointerenter", func(js.Value) { s.send(v, core.Event{Kind: core.EventHoverIn}) })
-		v.on(v.el, "pointerleave", func(js.Value) { s.send(v, core.Event{Kind: core.EventHoverOut}) })
+		v.listeners.on(v.el, "pointerenter", func(js.Value) { s.send(v, core.Event{Kind: core.EventHoverIn}) })
+		v.listeners.on(v.el, "pointerleave", func(js.Value) { s.send(v, core.Event{Kind: core.EventHoverOut}) })
 	}
 }
 
 // listen follows presses on the whole page: the nearest pressable view
-// takes a press, unless a text field holds it first.
+// takes a press, unless a text field holds it first. The document's
+// listeners see presses outside views and Escape anywhere.
 func (s *surface) listen() {
-	on := func(name string, fn func(e js.Value)) {
-		s.host.Call("addEventListener", name, js.FuncOf(func(_ js.Value, args []js.Value) any {
-			fn(args[0])
-			return nil
-		}))
-	}
-	on("pointerdown", s.pointerDown)
-	on("pointerup", s.pointerUp)
-	on("pointercancel", s.pointerUp)
-	on("click", s.click)
-	on("keydown", s.keyDown)
+	var ls listeners
+	ls.on(s.host, "pointerdown", s.pointerDown)
+	ls.on(s.host, "pointerup", s.pointerUp)
+	ls.on(s.host, "pointercancel", s.pointerUp)
+	ls.on(s.host, "click", s.click)
+	ls.on(s.host, "keydown", s.keyDown)
+	ls.on(s.host, "contextmenu", s.contextMenu)
+	ls.on(s.doc, "keydown", s.escape)
+	// Captured, so shortcuts come before what has focus.
+	s.doc.Call("addEventListener", "keydown", js.FuncOf(func(_ js.Value, args []js.Value) any {
+		s.shortcut(args[0])
+		return nil
+	}), true)
+	// Captured, so it sees presses that views stop from bubbling.
+	s.doc.Call("addEventListener", "pointerdown", js.FuncOf(func(_ js.Value, args []js.Value) any {
+		s.pressOutside(args[0])
+		return nil
+	}), true)
 	s.longPress = js.FuncOf(func(js.Value, []js.Value) any {
 		s.timer = js.Undefined()
 		if p := &s.press; p.view != nil && !p.done {
@@ -605,16 +864,71 @@ func (s *surface) listen() {
 // field or pressable view holding it.
 func (s *surface) target(el js.Value) *view {
 	for ; el.Truthy() && !el.Equal(s.host); el = el.Get("parentElement") {
-		id := el.Get("nsgoID")
-		if id.IsUndefined() {
-			continue
-		}
-		v := s.view(core.NodeID(id.Int()))
-		if v != nil && v.el.Equal(el) && (v.kind == core.KindInput || v.pressable()) {
+		if v := s.viewOf(el); v != nil && (v.kind == core.KindInput || v.pressable()) {
 			return v
 		}
 	}
 	return nil
+}
+
+// viewOf returns the view whose element el is, if any.
+func (s *surface) viewOf(el js.Value) *view {
+	id := el.Get("nsgoID")
+	if id.IsUndefined() {
+		return nil
+	}
+	if v := s.view(core.NodeID(id.Int())); v != nil && v.el.Equal(el) {
+		return v
+	}
+	return nil
+}
+
+// textIndex returns the byte offset of the character of text view v at
+// e's pointer, or -1 when e is not on a span.
+func (s *surface) textIndex(v *view, e js.Value) int {
+	sp := e.Get("target").Call("closest", "[data-start]")
+	if v.kind != core.KindText || !sp.Truthy() || !v.inner.Call("contains", sp).Bool() {
+		return -1
+	}
+	start, _ := strconv.Atoi(sp.Call("getAttribute", "data-start").String())
+	node := sp.Get("firstChild")
+	text := sp.Get("textContent").String()
+	x, y := e.Get("clientX").Float(), e.Get("clientY").Float()
+	// The caret nearest the pointer is before or after the character.
+	var off js.Value
+	switch {
+	case s.doc.Get("caretPositionFromPoint").Truthy():
+		if p := s.doc.Call("caretPositionFromPoint", x, y); p.Truthy() && p.Get("offsetNode").Equal(node) {
+			off = p.Get("offset")
+		}
+	case s.doc.Get("caretRangeFromPoint").Truthy():
+		if r := s.doc.Call("caretRangeFromPoint", x, y); r.Truthy() && r.Get("startContainer").Equal(node) {
+			off = r.Get("startOffset")
+		}
+	}
+	if off.Type() != js.TypeNumber {
+		return start
+	}
+	// Browsers count UTF-16 units.
+	i, n := off.Int(), len(utf16.Encode([]rune(text)))
+	if i >= n {
+		i = n - 1
+	} else if i > 0 {
+		r := s.doc.Call("createRange")
+		r.Call("setStart", node, i-1)
+		r.Call("setEnd", node, i)
+		if b := r.Call("getBoundingClientRect"); x >= b.Get("left").Float() && x <= b.Get("right").Float() {
+			i--
+		}
+	}
+	units := 0
+	for b, r := range text {
+		if units >= i {
+			return start + b
+		}
+		units += utf16.RuneLen(r)
+	}
+	return start
 }
 
 func (s *surface) stopLongPress() {
@@ -677,7 +991,90 @@ func (s *surface) click(e js.Value) {
 	if p.active && (p.view != v || p.cancel) {
 		return
 	}
-	s.send(v, core.Event{Kind: core.EventPress})
+	s.send(v, core.Event{Kind: core.EventPress, Index: s.textIndex(v, e)})
+}
+
+// setOutside adds v to the views that report presses outside them, or
+// takes it out.
+func (s *surface) setOutside(v *view, on bool) {
+	i := slices.Index(s.outside, v)
+	switch {
+	case on && i < 0:
+		s.outside = append(s.outside, v)
+	case !on && i >= 0:
+		s.outside = slices.Delete(s.outside, i, i+1)
+	}
+}
+
+// pressOutside reports a press in the root view to each view it lands
+// outside of, before anything handles the press.
+func (s *surface) pressOutside(e js.Value) {
+	target := e.Get("target")
+	if len(s.outside) == 0 || s.root == nil || !s.root.el.Call("contains", target).Bool() {
+		return
+	}
+	r := s.host.Call("getBoundingClientRect")
+	at := core.Point{
+		X: core.Points(e.Get("clientX").Float() - r.Get("left").Float() - s.host.Get("clientLeft").Float()),
+		Y: core.Points(e.Get("clientY").Float() - r.Get("top").Float() - s.host.Get("clientTop").Float()),
+	}
+	// The engine handles the events after this returns, so the views
+	// reporting cannot change meanwhile.
+	for _, v := range s.outside {
+		if v.el.Get("isConnected").Bool() && !v.el.Call("contains", target).Bool() {
+			s.send(v, core.Event{Kind: core.EventPressOutside, Point: at})
+		}
+	}
+}
+
+// escape cancels the topmost alert, or reports back unless a text field
+// takes Escape.
+func (s *surface) escape(e js.Value) {
+	if e.Get("key").String() != "Escape" || e.Get("isComposing").Bool() || e.Get("defaultPrevented").Bool() {
+		return
+	}
+	if n := len(s.alerts); n > 0 {
+		e.Call("preventDefault")
+		s.answer(s.alerts[n-1], s.alerts[n-1].cancel)
+		return
+	}
+	if !editing(s.doc.Get("activeElement")) {
+		s.engine.Dispatch(core.Event{Kind: core.EventBack})
+	}
+}
+
+// editing reports whether el takes typed text.
+func editing(el js.Value) bool {
+	if !el.Truthy() {
+		return false
+	}
+	switch el.Get("tagName").String() {
+	case "INPUT", "TEXTAREA", "SELECT":
+		return true
+	}
+	return el.Get("isContentEditable").Bool()
+}
+
+// contextMenu reports a secondary click to the nearest view asking for
+// it, instead of the browser's menu; a text field keeps its own.
+func (s *surface) contextMenu(e js.Value) {
+	for el := e.Get("target"); el.Truthy() && !el.Equal(s.host); el = el.Get("parentElement") {
+		v := s.viewOf(el)
+		switch {
+		case v == nil:
+			continue
+		case v.kind == core.KindInput:
+			return
+		case v.events.Has(core.EventContextMenu):
+			e.Call("preventDefault")
+			r := v.el.Call("getBoundingClientRect")
+			s.send(v, core.Event{Kind: core.EventContextMenu, Point: core.Point{
+				X: core.Points(e.Get("clientX").Float() - r.Get("left").Float()),
+				Y: core.Points(e.Get("clientY").Float() - r.Get("top").Float()),
+			}})
+			return
+		}
+	}
 }
 
 // keyDown presses a focused pressable view with Enter or Space.
@@ -687,9 +1084,17 @@ func (s *surface) keyDown(e js.Value) {
 	}
 	el := e.Get("target")
 	v := s.target(el)
-	if v == nil || v.kind == core.KindInput || !v.el.Equal(el) {
+	if v == nil || v.kind == core.KindInput {
+		return
+	}
+	index := -1
+	switch {
+	case el.Get("tagName").String() == "SPAN" && el.Call("hasAttribute", "data-start").Bool():
+		// A focused link of a text.
+		index, _ = strconv.Atoi(el.Call("getAttribute", "data-start").String())
+	case !v.el.Equal(el):
 		return
 	}
 	e.Call("preventDefault")
-	s.send(v, core.Event{Kind: core.EventPress})
+	s.send(v, core.Event{Kind: core.EventPress, Index: index})
 }

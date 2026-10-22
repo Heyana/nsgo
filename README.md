@@ -12,7 +12,7 @@ NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the
 
 ## Status
 
-NSGo is early. The engine renders views, text, text fields, scroll views and keyed lists with flexbox layout on macOS, iOS and the web; Windows builds but is untested, Android is in progress and Linux is planned. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
+NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, images, canvas, overlays, dialogs, navigation and unstyled base components, running on macOS, iOS and the web; Windows builds but is untested, Android is in progress and Linux is planned. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
 
 ## Goals
 

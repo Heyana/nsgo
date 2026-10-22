@@ -14,7 +14,12 @@ The graph follows NSH's (Solid 1.9's scheduling): signals, memos, render effects
 
 ## Elements and components
 
-Host elements (`View`, `Text`, `Input`, `Scroll`) are structs with exported fields: zero values are defaults, as in `http.Server`. A field that can change takes a function (`StyleFunc`, `ContentFunc`, `Value`, `Disabled`), bound by one render effect per part. Styles compose with `Style.Merge`, and text fields inherit down the tree as in CSS. State styles (`Hover`, `Focus`, `Active`, `Disabled`) merge over the rest; the engine tracks those states from the press, hover and focus events it asks the platform to report.
+Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Canvas`, `Overlay`, `Modal`, `Stack`, `Screen`) are structs with exported fields: zero values are defaults, as in `http.Server`.
+
+- A field that can change takes a function (`StyleFunc`, `ContentFunc`, `Value`, `Disabled`), bound by one render effect per part.
+- Styles compose with `Style.Merge`, and text fields inherit down the tree as in CSS.
+- State styles (`Hover`, `Focus`, `Active`, `Selected`, `Checked`, `Indeterminate`, `Disabled`) merge over the rest. The engine tracks interaction states from the press, hover and focus events it asks the platform to report.
+- A `Ref`, usable at its zero value, names a mounted element for anchoring, focus, scrolling and its bounds.
 
 A component is any type whose `Render(cx) Node` returns its nodes, like `http.Handler`. Its fields are its props. `Render` runs once under a scope of its own, so `Key.Provide` and cleanups stay inside it. `Func` turns a function into a component.
 
@@ -25,18 +30,50 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - Branches and rows belong to the region's owner, not to its effect, so they outlive the effect's runs and go only when replaced.
 - `Each` matches rows by key. A kept row gets its item and index through signals, and only the rows that moved are reinserted.
 - Go methods cannot take type parameters, so `Each` is a generic function rather than a method or struct.
+- Region nodes are never laid out. Layout marks pass through them, so a change inside a branch or row still reaches the root.
+
+## Layers and navigation
+
+`Overlay` and `Modal` stay in the shadow tree where they are built, for their owner, context, inherited text and lifetime. Their native views are hoisted into their host: the nearest modal around them, or the root view. Each is a layout root of its own at the host's size, placed after the main layout.
+
+- An overlay with an anchor goes beside it as NSH's `place` does: the side asked unless only the opposite side fits or has more room, aligned along it, then clamped into the safe area less its margin.
+- A modal provides the insets its content keeps clear of; a screen does too, without the top when it has a header. `Insets` reads them.
+- `EventBack` (Escape, the back button) goes to the topmost overlay that listens for cancel, else the topmost modal's `OnRequestClose`, else the innermost stack that can pop. A popped screen reports `OnDismiss` and stays hidden until the app removes it; the last screen never pops.
+- `EventPressOutside` reports presses outside an overlay, ignoring those on its anchor or on overlays above it.
+
+## Lists
+
+`List` mounts only the rows within a viewport of its scroll offset, in cells it reuses: a cell's content is built once, and its `ListRow` signals move it to another row. Row sizes start as an estimate and are corrected as rows are laid out, in a Fenwick tree, so offsets and the row at an offset cost O(log n). The window is refilled after each layout, within the same commit.
 
 ## Commit
 
 `Tree.Commit` runs up to eight rounds. `OnLayout` handlers' changes go into the same batch.
 
 1. **Resolve.** Inherit text styles and prepare text whose content or style changed.
-2. **Layout.** CSS flexbox with React Native's defaults, in `layout.go`. Nodes are measured at any number of constraints, cached until they or a descendant change, and placed once at their final size.
+2. **Layout.** CSS block, flexbox and grid from `internal/layout` over each view's native children; overlays and modals are layout roots of their own. Results stay cached until a node changes, and frames are rounded to whole points as Taffy does.
 3. **Emit.** Compare each view's parts with what was sent: view style, props, events, text, input, scroll. Then sync children against the sibling order last sent, reinserting only the views outside the longest run already in order.
 
-## Text
+`layout.go` maps styles with React Native's defaults, as NSH does:
+
+- Column direction, no shrinking and no automatic minimum sizes.
+- `flex-start` content alignment outside grids.
+- Left and right swapped when right to left.
+
+## Text and drawing
 
 A platform's `TextEngine` runs on the engine goroutine in three phases. `Prepare` shapes the text once, `PreparedText.Measure` answers layout at any width, and `PreparedText.Layout` lays it out at its final size. The `TextLayout` travels in `ItemText`, and the main thread only draws it and releases the one it replaces. The core releases prepared text when it changes or its node goes.
+
+`Text.Spans` style byte ranges over the text's style; offsets are UTF-8 bytes, Go's own, and platforms convert them. A press on a span with a handler comes back with the byte offset under the point.
+
+A `Canvas` records its drawing on the engine into an immutable `Drawing`, again when a signal it read or its size changes, and the platform plays the operations on the main thread.
+
+## Animation
+
+Style `Transition`s animate on the platform, with no engine work per frame and nothing for Go's garbage collector to pause. `Scope.Animate` steps app values once a frame on the engine for what a platform cannot animate itself; every step commits.
+
+## Services
+
+Native alerts, the clipboard, announcements, keyboard shortcuts, the status bar and the window title are command items answered by events. Shortcuts are scoped to their owner: the platform matches key presses against the table synchronously and reports only matches.
 
 ## Mount protocol
 
@@ -58,6 +95,8 @@ The protocol is defined in `mount.go` and `events.go`. Backends apply items in o
 | A future executor on the engine thread | Goroutines, `Scope.Post` and `Scope.Context` | Go has them built in |
 | `catch_unwind` | `recover`, reported as `PanicError` | The same, in Go terms |
 | `MountItem` enum | One struct with a `Kind` and pointers to large parts | No allocation per item kind; easy to encode across a pipe |
+| Options with defaults of `true` (`closeOnEscape`) | Negative names (`NoCloseOnEscape`) | The zero value must be the default |
+| Per-platform image loading and caching | One Go loader (`platform/internal/imageload`): `net/http`, shared fetches, an LRU, `context` cancellation | Written once; platforms only decode and draw |
 
 ## TSX entry
 

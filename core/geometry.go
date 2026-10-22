@@ -50,10 +50,6 @@ func Symmetric(vertical, horizontal Points) Edges {
 func (e Edges) horizontal() Points { return e.Left + e.Right }
 func (e Edges) vertical() Points   { return e.Top + e.Bottom }
 
-func (e Edges) add(o Edges) Edges {
-	return Edges{e.Top + o.Top, e.Right + o.Right, e.Bottom + o.Bottom, e.Left + o.Left}
-}
-
 // Length is a style's length. Its zero value is auto: the layout decides.
 type Length struct {
 	value float32

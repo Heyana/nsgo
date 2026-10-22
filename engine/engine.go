@@ -25,6 +25,8 @@ type App = func(cx *core.Scope) core.Node
 type Options struct {
 	// Size is the surface's size at start.
 	Size core.Size
+	// Environment is what the platform knows at start.
+	Environment core.Environment
 	// Clock runs the app's timers; the system's when nil.
 	Clock core.Clock
 	// Logger receives failures the app does not catch; slog's default
@@ -47,6 +49,7 @@ type Engine struct {
 type message struct {
 	event  core.Event
 	resize *core.Size
+	env    *core.Environment
 	at     *core.Point
 	fn     func()
 }
@@ -80,6 +83,7 @@ func (e *Engine) run(p Platform, app App, opts Options) {
 	defer root.Dispose()
 	tree := core.NewTree(root, p)
 	tree.Resize(opts.Size)
+	tree.SetEnvironment(opts.Environment)
 	tree.Mount(app)
 	for {
 		if b := tree.Commit(); b != nil {
@@ -96,6 +100,8 @@ func (e *Engine) run(p Platform, app App, opts Options) {
 				m.fn()
 			case m.resize != nil:
 				tree.Resize(*m.resize)
+			case m.env != nil:
+				tree.SetEnvironment(*m.env)
 			case m.at != nil:
 				if id := tree.HitTest(*m.at); id != 0 {
 					tree.Dispatch(core.Event{Kind: core.EventPress, ID: id})
@@ -117,6 +123,7 @@ func (e *Engine) push(m message) {
 		q := &e.queue[i]
 		switch {
 		case m.resize != nil && q.resize != nil,
+			m.env != nil && q.env != nil,
 			m.event.Mergeable() && q.event.Kind == m.event.Kind && q.event.ID == m.event.ID:
 			*q = m
 			merged = true
@@ -148,6 +155,10 @@ func (e *Engine) Dispatch(ev core.Event) { e.push(message{event: ev}) }
 
 // Resize sets the surface size.
 func (e *Engine) Resize(size core.Size) { e.push(message{resize: &size}) }
+
+// SetEnvironment reports what the platform knows about where the app
+// runs; only the latest report queued is applied.
+func (e *Engine) SetEnvironment(env core.Environment) { e.push(message{env: &env}) }
 
 // PressAt reports a press at p in surface points, for platforms that
 // draw their own views and leave hit testing to the engine.

@@ -1,5 +1,7 @@
 package core
 
+import "strings"
+
 // maxRounds bounds the commits OnLayout handlers may cause in one batch.
 const maxRounds = 8
 
@@ -25,13 +27,44 @@ func (t *Tree) commitRound() {
 	for _, id := range t.deleted {
 		t.items = append(t.items, MountItem{Kind: ItemDelete, ID: id})
 	}
-	t.resolve(t.view, Style{})
-	if t.view.layoutDirty {
-		t.view.frame = Bounds{Size: t.size}
-		t.place(t.view, t.size)
+	t.fontScale = t.root.Env().fontScale.GetUntracked()
+	if rtl := t.root.Env().rtl.GetUntracked(); rtl != t.rtl {
+		t.setRTL(rtl)
 	}
+	live := t.stacks[:0]
+	for _, s := range t.stacks {
+		if !s.deleted {
+			t.showTop(s)
+			live = append(live, s)
+		}
+	}
+	t.stacks = live
+	t.resolve(t.view, Style{})
+	t.layout()
+	// Lists fill their windows from the layout, which may need another.
+	for range 4 {
+		changed := false
+		live := t.lists[:0]
+		for _, l := range t.lists {
+			if !l.deleted {
+				live = append(live, l)
+				changed = t.within2(l, func() bool { return t.updateList(l) }) || changed
+			}
+		}
+		t.lists = live
+		if !changed {
+			break
+		}
+		t.resolve(t.view, Style{})
+		t.layout()
+	}
+	t.sizeCanvases(t.view)
 	t.laidOut = t.laidOut[:0]
 	t.emit(t.view)
+	if t.keysChanged {
+		t.keysChanged = false
+		t.items = append(t.items, MountItem{Kind: ItemKeymap, Keys: t.keymap()})
+	}
 	t.items = append(t.items, t.commands...)
 	t.commands = t.commands[:0]
 	for _, id := range t.deleted {
@@ -45,6 +78,13 @@ func (t *Tree) commitRound() {
 			t.within(n.owner, func() { n.h.layout(frame) })
 		}
 	}
+	reports := t.reports
+	t.reports = nil
+	for _, r := range reports {
+		if !r.owner.deleted {
+			t.within(r.owner.owner, r.fn)
+		}
+	}
 }
 
 // resolve inherits text styles down the tree and prepares changed text.
@@ -55,20 +95,34 @@ func (t *Tree) resolve(n *node, inherited Style) {
 	switch {
 	case n.text != nil:
 		tn := n.text
-		ts := inherited.textStyle()
+		ts := t.scaled(inherited.textStyle())
 		if tn.stale || tn.prepared == nil || ts != tn.style {
+			at := AttributedText{Text: tn.content, Style: ts, MaxLines: tn.maxLines}
+			if len(tn.spans) > 0 {
+				var b strings.Builder
+				for _, sp := range tn.spans {
+					start := b.Len()
+					b.WriteString(sp.content)
+					at.Spans = append(at.Spans, TextSpan{Start: start, End: b.Len(),
+						Style: t.scaled(sp.style.inherit(inherited).textStyle()), Link: sp.press != nil})
+				}
+				at.Text = b.String()
+			}
 			tn.style = ts
 			tn.stale = false
-			if tn.prepared != nil {
-				tn.prepared.Release()
+			if tn.prepared == nil || !at.equal(&tn.text) {
+				if tn.prepared != nil {
+					tn.prepared.Release()
+				}
+				tn.text = at
+				tn.prepared = t.text.Prepare(&at)
+				tn.resent = true
+				n.markLayout()
 			}
-			tn.prepared = t.text.Prepare(&AttributedText{Text: tn.content, Style: ts, MaxLines: tn.maxLines})
-			tn.resent = true
-			n.markLayout()
 		}
 	case n.input != nil:
 		in := n.input
-		if ts := inherited.textStyle(); ts != in.config.Style || in.lineH == 0 {
+		if ts := t.scaled(inherited.textStyle()); ts != in.config.Style || in.lineH == 0 {
 			in.config.Style = ts
 			p := t.text.Prepare(&AttributedText{Text: "Ag", Style: ts})
 			in.lineH = p.Measure(Auto).Height
@@ -79,6 +133,33 @@ func (t *Tree) resolve(n *node, inherited Style) {
 	for _, c := range n.children {
 		t.resolve(c, inherited)
 	}
+}
+
+// sizeCanvases tells canvases their laid-out size, which draws those
+// that changed.
+func (t *Tree) sizeCanvases(n *node) {
+	if n.canvas != nil && n.canvas.size.GetUntracked() != n.frame.Size {
+		size := n.frame.Size
+		t.within(n.owner, func() { n.canvas.size.Set(size) })
+	}
+	for _, c := range n.nativeChildren() {
+		t.sizeCanvases(c)
+	}
+}
+
+// within2 runs fn under n's owner and returns its result.
+func (t *Tree) within2(n *node, fn func() bool) (r bool) {
+	t.within(n.owner, func() { r = fn() })
+	return r
+}
+
+// scaled applies the user's text size setting.
+func (t *Tree) scaled(ts TextStyle) TextStyle {
+	if s := Points(t.fontScale); s != 1 && s > 0 {
+		ts.Font.Size *= s
+		ts.LineHeight *= s
+	}
+	return ts
 }
 
 func (t *Tree) emit(n *node) {
@@ -114,7 +195,7 @@ func (t *Tree) emit(n *node) {
 			tn.resent = false
 			tn.sentBox = tn.box
 			add(MountItem{Kind: ItemText, ID: n.id, Text: &TextContent{
-				Text: tn.content, Layout: tn.prepared.Layout(tn.box.Size), Content: tn.box,
+				Text: tn.text.Text, Layout: tn.prepared.Layout(tn.box.Size), Content: tn.box,
 			}})
 		}
 	case n.input != nil:
@@ -129,7 +210,25 @@ func (t *Tree) emit(n *node) {
 			add(MountItem{Kind: ItemInputValue, ID: n.id, Value: in.value, Count: in.count})
 		}
 		if first && in.autoFocus {
-			t.focus(n)
+			t.command(ItemFocus, n)
+		}
+	case n.image != nil:
+		im := n.image
+		c := im.config
+		c.Source = t.pickScale(c.Source)
+		c.Placeholder = t.pickScale(c.Placeholder)
+		if first || !c.same(im.sent) {
+			im.sent = c
+			add(MountItem{Kind: ItemImage, ID: n.id, Image: &c})
+		}
+	case n.hoist != nil && n.hoist.modal != nil:
+		if first {
+			add(MountItem{Kind: ItemModal, ID: n.id, Modal: &ModalConfig{Animation: n.hoist.modal.Animation}})
+		}
+	case n.canvas != nil:
+		if cn := n.canvas; cn.fresh && cn.drawing != nil {
+			cn.fresh = false
+			add(MountItem{Kind: ItemCanvas, ID: n.id, Drawing: cn.drawing})
 		}
 	case n.scroll != nil:
 		sc := n.scroll
@@ -143,7 +242,7 @@ func (t *Tree) emit(n *node) {
 			add(MountItem{Kind: ItemScrollContent, ID: n.id, Size: sc.content})
 		}
 	}
-	kids := n.flatChildren()
+	kids := n.nativeChildren()
 	for _, c := range kids {
 		t.emit(c)
 	}
