@@ -106,7 +106,10 @@ func Run(app engine.App) {
 		switch kind {
 		case msgStart:
 			size := core.Size{Width: r.points(), Height: r.points()}
-			s.engine = engine.Start(s, app, engine.Options{Size: size, Environment: s.env})
+			opts := engine.Options{Size: size, Environment: s.env}
+			// The runtime passes the app's own files and cache directories.
+			opts.SetDirs(os.Getenv("NSGO_DATA_DIR"), os.Getenv("NSGO_CACHE_DIR"))
+			s.engine = engine.Start(s, app, opts)
 			close(s.started)
 		case msgResize:
 			s.engine.Resize(core.Size{Width: r.points(), Height: r.points()})

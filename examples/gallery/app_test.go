@@ -12,8 +12,8 @@ import (
 var desktopEnv = core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop, Locale: "en-US"}
 
 // startDesktop runs the gallery in a wide desktop window.
-func startDesktop(t *testing.T) *nsgotest.App {
-	app := nsgotest.Start(t, Root, nsgotest.Size(1100, 760))
+func startDesktop(t *testing.T, opts ...nsgotest.Option) *nsgotest.App {
+	app := nsgotest.Start(t, Root, append([]nsgotest.Option{nsgotest.Size(1100, 760)}, opts...)...)
 	app.SetEnvironment(desktopEnv)
 	return app
 }
@@ -178,5 +178,22 @@ func TestStyledSection(t *testing.T) {
 	app.Press("text:Cancel")
 	if app.Exists("text:Discard changes?") {
 		t.Fatal("Cancel left the dialog open")
+	}
+}
+
+func TestStorageSection(t *testing.T) {
+	app := startDesktop(t, nsgotest.Storage(map[string]string{"gallery.draft": "kept", "gallery.opened": "2"}))
+	app.Press("id:nav-Storage")
+	app.Find(`text:Kept: "kept"`)
+	app.Find("text:opened 3 times")
+	app.Type("id:draft", "new")
+	app.Find(`text:Kept: "new"`)
+	// A change from another window shows here too.
+	app.Storage().SetItem("gallery.draft", "elsewhere")
+	app.Settle()
+	app.Find(`text:Kept: "elsewhere"`)
+	app.Press("role:button Clear storage")
+	if keys := app.Storage().Keys(); len(keys) != 0 {
+		t.Fatalf("keys after clearing: %v", keys)
 	}
 }

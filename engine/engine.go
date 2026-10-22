@@ -4,6 +4,7 @@ package engine
 
 import (
 	"log/slog"
+	"os"
 	"runtime"
 	"sync"
 
@@ -32,6 +33,12 @@ type Options struct {
 	// Logger receives failures the app does not catch; slog's default
 	// when nil.
 	Logger *slog.Logger
+	// Storage keeps the app's entries; in memory for the engine's life
+	// when nil. Platforms pass OpenFileStorage in the data directory.
+	Storage *core.Store
+	// DataDir and CacheDir are the app's directories, made when the
+	// engine starts; "" where the target has none.
+	DataDir, CacheDir string
 }
 
 // Engine is one running app: one tree, one reactive graph, one goroutine.
@@ -73,12 +80,23 @@ func (e *Engine) run(p Platform, app App, opts Options) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	for _, dir := range []string{opts.DataDir, opts.CacheDir} {
+		if dir == "" {
+			continue
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			logger.Error("nsgo: the app's directory could not be made", "err", err)
+		}
+	}
 	root := core.NewRoot(core.RootOptions{
 		Post:  func(fn func()) { e.push(message{fn: fn}) },
 		Clock: opts.Clock,
 		Report: func(err error) {
 			logger.Error("nsgo: the app failed", "err", err)
 		},
+		Storage:  opts.Storage,
+		DataDir:  opts.DataDir,
+		CacheDir: opts.CacheDir,
 	})
 	defer root.Dispose()
 	tree := core.NewTree(root, p)

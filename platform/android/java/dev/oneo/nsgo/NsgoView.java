@@ -190,7 +190,10 @@ public class NsgoView extends FrameLayout {
     private void start() {
         File exe = new File(getContext().getApplicationInfo().nativeLibraryDir, "libnsgo.so");
         try {
-            process = new ProcessBuilder(exe.getAbsolutePath()).start();
+            ProcessBuilder builder = new ProcessBuilder(exe.getAbsolutePath());
+            builder.environment().put("NSGO_DATA_DIR", getContext().getFilesDir().getAbsolutePath());
+            builder.environment().put("NSGO_CACHE_DIR", getContext().getCacheDir().getAbsolutePath());
+            process = builder.start();
         } catch (IOException e) {
             throw new IllegalStateException("cannot start " + exe, e);
         }

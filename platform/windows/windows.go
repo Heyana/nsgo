@@ -38,6 +38,8 @@ func init() {
 type Options struct {
 	Title         string
 	Width, Height core.Points
+	// ID names the app's directories and storage (engine.AppDirs).
+	ID string
 }
 
 var (
@@ -389,16 +391,19 @@ func Run(app engine.App, opts Options) {
 	w.env = w.environment()
 	w.darkTitleBar(w.env.Dark)
 	// The engine starts once the window exists, so Mount can post to it.
-	w.engine = engine.Start(w, app, engine.Options{
+	eopts := engine.Options{
 		Size:        core.Size{Width: opts.Width, Height: opts.Height},
 		Environment: w.env,
-	})
+	}
+	eopts.SetDirs(engine.AppDirs(opts.ID))
+	w.engine = engine.Start(w, app, eopts)
 	showWindow.Call(hwnd, swShow)
 
 	var m msg
 	for {
 		r, _, _ := getMessageW.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
 		if int32(r) <= 0 {
+			engine.SyncStorage()
 			return
 		}
 		// Shortcuts take key presses before they become characters.

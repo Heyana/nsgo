@@ -61,6 +61,7 @@ type view struct {
 
 type surface struct {
 	app     engine.App
+	id      string
 	native  objc.ID
 	engine  *engine.Engine
 	batches queue.Batches
@@ -226,10 +227,16 @@ func register(name string, super objc.Class, protocols []*objc.Protocol, methods
 	return apple.RegisterClass(name, super, protocols, methods)
 }
 
+// Options configure Run.
+type Options struct {
+	// ID names the app's directories and storage (engine.AppDirs).
+	ID string
+}
+
 // Run shows app full screen and runs UIKit's event loop. Call it from
 // main; it does not return.
-func Run(root engine.App) {
-	app = &surface{app: root}
+func Run(root engine.App, opts Options) {
+	app = &surface{app: root, id: opts.ID}
 	loadUIKit()
 	argv := []*byte{&[]byte("nsgo\x00")[0], nil}
 	uiApplicationMain(1, unsafe.Pointer(&argv[0]), 0, apple.CFString("NsgoAppDelegate"))
@@ -255,10 +262,12 @@ func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID)
 	s.native.Send(sel("addGestureRecognizer:"), watcher)
 	watcher.Send(selRelease)
 	s.env = s.environment()
-	s.engine = engine.Start(s, s.app, engine.Options{
+	opts := engine.Options{
 		Size:        core.Size{Width: core.Points(bounds.Size.Width), Height: core.Points(bounds.Size.Height)},
 		Environment: s.env,
-	})
+	}
+	opts.SetDirs(engine.AppDirs(s.id))
+	s.engine = engine.Start(s, s.app, opts)
 	s.observe()
 }
 

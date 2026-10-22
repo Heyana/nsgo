@@ -27,6 +27,8 @@ type Options struct {
 	// Mount is the CSS selector of the element the app fills; the body
 	// when empty.
 	Mount string
+	// ID names the app's entries in localStorage.
+	ID string
 }
 
 const fontFamily = `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
@@ -137,7 +139,10 @@ func Run(app engine.App, opts Options) {
 	s.watchStart(opts.Mount == "")
 
 	s.env = s.environment()
-	s.engine = engine.Start(s, app, engine.Options{Size: s.size(), Environment: s.env})
+	s.engine = engine.Start(s, app, engine.Options{
+		Size: s.size(), Environment: s.env,
+		Storage: core.NewStore(newLocalStorage(opts.ID)),
+	})
 	// The host can change size without the window doing so.
 	observer := js.Global().Get("ResizeObserver").New(js.FuncOf(func(js.Value, []js.Value) any {
 		s.engine.Resize(s.size())

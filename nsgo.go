@@ -2,7 +2,7 @@
 //
 //	func main() { nsgo.Run(Root) }
 //
-// Build tags pick the backend. The nsgo tool sets the app's name and
+// Build tags pick the backend. The nsgo tool sets the app's name, ID and
 // window size from nsgo.yaml.
 package nsgo
 
@@ -16,6 +16,7 @@ import (
 // Set by the nsgo tool with -ldflags -X.
 var (
 	name   = "NSGo"
+	id     = ""
 	width  = "480"
 	height = "640"
 )

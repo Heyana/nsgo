@@ -42,6 +42,7 @@ func init() {
 		{"Window", "A custom title bar and the desktop window's commands.", windowPage},
 		{"App Menu", "The application menu: roles, shortcuts and checkable items.", menuPage},
 		{"Environment", "What the platform reports, and the system services.", environmentPage},
+		{"Storage", "Key-value storage kept on the device, and the app's directories.", storagePage},
 		{"Navigation", "A navigation stack: push and pop screens.", navigationPage},
 	}
 }

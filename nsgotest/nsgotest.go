@@ -34,6 +34,18 @@ func Size(width, height core.Points) Option {
 	return func(a *App) { a.size = core.Size{Width: width, Height: height} }
 }
 
+// Storage starts the app with entries in its storage, as if kept from an
+// earlier run; it starts empty otherwise.
+func Storage(entries map[string]string) Option {
+	return func(a *App) { a.store = core.NewStore(seed(entries)) }
+}
+
+// seed is a storage backend that loads entries and keeps nothing.
+type seed map[string]string
+
+func (s seed) Load() (map[string]string, error) { return s, nil }
+func (seed) Write(core.StorageChange)           {}
+
 // App is an app running headless. Its methods run on the test's
 // goroutine; the app's goroutines reach it through Scope.Post, which App
 // runs when it settles.
@@ -53,6 +65,7 @@ type App struct {
 	Window []core.WindowCommand
 	tree   *core.Tree
 	root   *core.Scope
+	store  *core.Store
 	Clock  *core.ManualClock
 
 	mu    sync.Mutex
@@ -101,8 +114,9 @@ func Start(t testing.TB, app func(cx *core.Scope) core.Node, opts ...Option) *Ap
 			a.posts = append(a.posts, fn)
 			a.mu.Unlock()
 		},
-		Clock:  a.Clock,
-		Report: func(err error) { t.Errorf("nsgotest: the app failed: %v", err) },
+		Clock:   a.Clock,
+		Report:  func(err error) { t.Errorf("nsgotest: the app failed: %v", err) },
+		Storage: a.store,
 	})
 	t.Cleanup(a.root.Dispose)
 	a.tree = core.NewTree(a.root, core.ApproxTextEngine{})
@@ -111,6 +125,10 @@ func Start(t testing.TB, app func(cx *core.Scope) core.Node, opts ...Option) *Ap
 	a.Settle()
 	return a
 }
+
+// Storage returns the app's storage, to read what it kept or change it as
+// another of the app's windows would.
+func (a *App) Storage() core.Storage { return a.root.Storage() }
 
 // Settle runs what the app's goroutines posted and applies the commits
 // that follow, until nothing is left.

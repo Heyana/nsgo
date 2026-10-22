@@ -91,6 +91,16 @@ Style `Transition`s animate on the platform, with no engine work per frame and n
 
 Native alerts, the clipboard, announcements, keyboard shortcuts, the status bar, the window title, window commands and the application menu are command items answered by events. Shortcuts are scoped to their owner: the platform matches key presses against the table synchronously and reports only matches.
 
+## Storage and directories
+
+`Scope.Storage` follows NSH's `nsh/storage`: strings by key with a 5 MB quota, held in memory by a `Store` and loaded once from the platform's `StorageBackend`.
+
+- Engines given the same `Store` share its entries and quota. Each graph keeps a signal per key it read and one for the key set; its own changes bump them at once, and other graphs' changes arrive through `Post`.
+- The store hands each change to the backend under its lock, so every graph and the backend see one order.
+- Native targets keep `storage.json` in the data directory: `engine.OpenFileStorage` returns one store per file in the process and rewrites the file on a goroutine of its own. A file that does not parse is set aside as `storage.json.corrupt`, and one that cannot be read leaves changes in memory. Platforms call `engine.SyncStorage` as the process ends.
+- The web keeps entries in `localStorage` under `nsgo:<app id>:`.
+- `Scope.DataDir` and `Scope.CacheDir` are named by the app's ID, which the tool passes from `nsgo.yaml`: `engine.AppDirs` on Apple platforms, Windows and Linux, the files and cache directories the runtime passes on Android, and none on the web. The engine makes them as it starts.
+
 ## Mount protocol
 
 The protocol is defined in `mount.go` and `events.go`. Backends apply items in order on the main thread, in one hop per batch.

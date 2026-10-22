@@ -33,6 +33,8 @@ func init() {
 type Options struct {
 	Title         string
 	Width, Height core.Points
+	// ID names the app's directories and storage (engine.AppDirs).
+	ID string
 }
 
 // longPressDelay is how long a press is held before it is a long press.
@@ -238,6 +240,9 @@ func Run(app engine.App, opts Options) {
 	delegate := objc.ID(register("NsgoAppDelegate", objc.GetClass("NSObject"), nil, []objc.MethodDef{{
 		Cmd: sel("applicationShouldTerminateAfterLastWindowClosed:"),
 		Fn:  func(self objc.ID, _ objc.SEL, app objc.ID) bool { return true },
+	}, {
+		Cmd: sel("applicationWillTerminate:"),
+		Fn:  func(self objc.ID, _ objc.SEL, note objc.ID) { engine.SyncStorage() },
 	}})).Send(selNew)
 	nsApp.Send(sel("setDelegate:"), delegate)
 
@@ -258,7 +263,9 @@ func Run(app engine.App, opts Options) {
 	views[s.native] = &view{surface: s}
 	window.Send(sel("setContentView:"), s.native)
 	s.env = s.environment()
-	s.engine = engine.Start(s, app, engine.Options{Size: core.Size{Width: opts.Width, Height: opts.Height}, Environment: s.env})
+	eopts := engine.Options{Size: core.Size{Width: opts.Width, Height: opts.Height}, Environment: s.env}
+	eopts.SetDirs(engine.AppDirs(opts.ID))
+	s.engine = engine.Start(s, app, eopts)
 	s.observe()
 	window.Send(sel("center"))
 	window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))

@@ -47,6 +47,11 @@ type RootOptions struct {
 	Clock Clock
 	// Report receives failures no Catch handles; they are dropped when nil.
 	Report func(error)
+	// Storage keeps the app's entries; a store in memory when nil.
+	Storage *Store
+	// DataDir and CacheDir are the app's directories, "" where the target
+	// has none.
+	DataDir, CacheDir string
 }
 
 // NewRoot returns the root scope of a new graph.
@@ -54,8 +59,10 @@ func NewRoot(opts RootOptions) *Scope {
 	if opts.Clock == nil {
 		opts.Clock = SystemClock{}
 	}
-	rt := &runtime{post: opts.Post, clock: opts.Clock, report: opts.Report}
-	return &Scope{rt: rt}
+	rt := &runtime{post: opts.Post, clock: opts.Clock, report: opts.Report,
+		store: opts.Storage, dataDir: opts.DataDir, cacheDir: opts.CacheDir}
+	rt.root = &Scope{rt: rt}
+	return rt.root
 }
 
 const maxRuns = 1_000_000
@@ -73,6 +80,11 @@ type runtime struct {
 	report   func(error)
 	env      *Env
 	tree     *Tree
+	root     *Scope
+	store    *Store
+	storage  *storageWatch
+	dataDir  string
+	cacheDir string
 }
 
 // current is the scope that owns what code using cx creates now.

@@ -13,8 +13,6 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
-| Storage | `crates/nsh-core/src/storage.rs` | Key-value storage with change signals on every target, `localStorage` on the web |
-| App directories | `crates/nsh-core/src/filesystem.rs` | Apps find their data and cache directories on every target |
 | SelectionArea | `crates/nsh-base/src/selection_area.rs`, `crates/nsh-core/src/selection.rs` | Static text can be selected and copied |
 | TextView | `crates/nsh-base/src/text_view` | Markdown renders with code highlighting, links and extensions |
 

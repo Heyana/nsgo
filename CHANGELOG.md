@@ -10,6 +10,7 @@
 - Add pan, pinch and rotation gestures.
 - Add custom desktop title bars, window drag regions, window controls and an application menu.
 - Add environment signals, keyboard shortcuts, clipboard and screen-reader announcements.
+- Add key-value storage with change signals, and each app's data and cache directories.
 - Add native backends for macOS, iOS and the web.
 - Add `nsgotest` for headless app tests.
 - Add the `nsgo` tool with `init`, `dev` and `build`, configured by `nsgo.yaml`.

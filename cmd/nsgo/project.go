@@ -119,11 +119,11 @@ func (p *project) cache(parts ...string) string {
 	return filepath.Join(append([]string{p.Dir, ".nsgo"}, parts...)...)
 }
 
-// ldflags passes nsgo.yaml's name and window size to nsgo.Run.
+// ldflags passes nsgo.yaml's name, ID and window size to nsgo.Run.
 func (p *project) ldflags(extra ...string) string {
 	const pkg = "github.com/oneo-me/nsgo"
-	flags := fmt.Sprintf("-X '%s.name=%s' -X %s.width=%d -X %s.height=%d",
-		pkg, p.Name, pkg, p.Window.Width, pkg, p.Window.Height)
+	flags := fmt.Sprintf("-X '%s.name=%s' -X '%s.id=%s' -X %s.width=%d -X %s.height=%d",
+		pkg, p.Name, pkg, p.ID, pkg, p.Window.Width, pkg, p.Window.Height)
 	if p.Release {
 		flags += " -s -w"
 	}
