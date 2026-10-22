@@ -5,6 +5,7 @@ import (
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/icons/lucide"
 )
 
 // Popups behave as base's do; see base for Open, OnOpenChange and the
@@ -76,8 +77,11 @@ func (m ContextMenu) Render(cx *core.Scope) core.Node {
 // MenuItem is a base.MenuItem highlighted while hovered; its content is
 // its children or Label as text.
 type MenuItem struct {
-	OnSelect        func()
-	Disabled        func() bool
+	OnSelect func()
+	Disabled func() bool
+	// Checked, when set, leads the item with a check mark while it returns
+	// true, keeping the mark's room while it does not.
+	Checked         func() bool
 	NoCloseOnSelect bool
 	Style           core.Style
 	Children        []core.Node
@@ -87,8 +91,19 @@ type MenuItem struct {
 
 // Render implements core.Node.
 func (i MenuItem) Render(cx *core.Scope) core.Node {
+	children := orLabel(i.Children, i.Label)
+	if i.Checked != nil {
+		mark := core.Icon{SVG: lucide.Check(), StyleFunc: func() core.Style {
+			style := core.Style{Width: core.Pt(16), Height: core.Pt(16), FlexShrink: 0, Opacity: core.Alpha(0)}
+			if i.Checked() {
+				style.Opacity = core.Alpha(1)
+			}
+			return style
+		}}
+		children = append([]core.Node{mark}, children...)
+	}
 	return base.MenuItem{OnSelect: i.OnSelect, Disabled: i.Disabled, NoCloseOnSelect: i.NoCloseOnSelect,
-		StyleFunc: look(cx, i.Style, Tokens.menuItem), Children: orLabel(i.Children, i.Label),
+		StyleFunc: look(cx, i.Style, Tokens.menuItem), Children: children,
 		Label: i.Label, TestID: i.TestID}
 }
 
@@ -198,6 +213,9 @@ type Dialog struct {
 	Animation              core.ModalAnimation
 	NoCloseOnEscape        bool
 	NoCloseOnBackdropPress bool
+	// Bare leaves out the panel's padding and gap, for content that lays
+	// itself out to the panel's edges, such as Settings.
+	Bare bool
 
 	BackdropStyle core.Style
 	PopupStyle    core.Style
@@ -213,8 +231,14 @@ func (d Dialog) Render(cx *core.Scope) core.Node {
 		OnOpen: d.OnOpen, OnClose: d.OnClose, OnCancel: d.OnCancel, Animation: d.Animation,
 		NoCloseOnEscape: d.NoCloseOnEscape, NoCloseOnBackdropPress: d.NoCloseOnBackdropPress,
 		BackdropStyleFunc: look(cx, d.BackdropStyle, Tokens.backdrop),
-		PopupStyleFunc:    look(cx, d.PopupStyle, Tokens.dialog),
-		Children:          d.Children, Label: d.Label, TestID: d.TestID,
+		PopupStyleFunc: look(cx, d.PopupStyle, func(t Tokens) core.Style {
+			s := t.dialog()
+			if d.Bare {
+				s.Padding, s.Gap = core.Edges{}, 0
+			}
+			return s
+		}),
+		Children: d.Children, Label: d.Label, TestID: d.TestID,
 	}
 }
 

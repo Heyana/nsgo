@@ -108,28 +108,50 @@ func (t Tokens) Hover(c core.Color) core.Color { return t.shade(c, 0.06) }
 func (t Tokens) Pressed(c core.Color) core.Color { return t.shade(c, 0.12) }
 
 func (t Tokens) shade(c core.Color, amount float64) core.Color {
-	var to float64
+	to := core.RGB(0x000000)
 	if t.Dark {
-		to = 1
+		to = core.RGB(0xffffff)
 	}
-	r, g, b, a := c.Components()
-	mix := func(v float64) uint32 { return uint32((v+(to-v)*amount)*255 + 0.5) }
-	return core.Color(mix(r)<<24 | mix(g)<<16 | mix(b)<<8 | uint32(a*255+0.5))
+	// The shade keeps c's alpha.
+	return Mix(c, to, amount)&^0xff | c&0xff
 }
 
-var themeKey = core.NewKey[func() Theme]("theme", nil)
+// Tint returns the foreground at alpha: the neutral wash of a hovered or
+// selected row, which reads on any surface of the theme.
+func (t Tokens) Tint(alpha float64) core.Color { return Fade(t.Foreground, alpha) }
+
+// Mix returns a blended amount of the way to b, alpha included.
+func Mix(a, b core.Color, amount float64) core.Color {
+	ar, ag, ab, aa := a.Components()
+	br, bg, bb, ba := b.Components()
+	mix := func(x, y float64) uint32 { return uint32((x+(y-x)*amount)*255 + 0.5) }
+	return core.Color(mix(ar, br)<<24 | mix(ag, bg)<<16 | mix(ab, bb)<<8 | mix(aa, ba))
+}
+
+// Fade returns c with its alpha set to alpha.
+func Fade(c core.Color, alpha float64) core.Color {
+	return c&^0xff | core.Color(uint32(alpha*255+0.5)&0xff)
+}
+
+var (
+	themeKey = core.NewKey[func() Theme]("theme", nil)
+	darkKey  = core.NewKey[func() bool]("dark", nil)
+)
 
 // UseTheme returns what reads the theme the nearest ThemeView provides, or
-// the default theme, for the current appearance. Apps style their own
-// views with it. Calls of what it returns
-// subscribe to both, so a style function using it follows them.
+// the default theme, for the appearance it chooses or else the system's.
+// Apps style their own views with it. Calls of what it returns subscribe
+// to both, so a style function using it follows them.
 func UseTheme(cx *core.Scope) func() Tokens {
-	theme, env := themeKey.Use(cx), cx.Env()
+	theme, dark := themeKey.Use(cx), darkKey.Use(cx)
+	if dark == nil {
+		dark = cx.Env().Dark
+	}
 	return func() Tokens {
 		if theme == nil {
-			return DefaultTheme().Tokens(env.Dark())
+			return DefaultTheme().Tokens(dark())
 		}
-		return theme().Tokens(env.Dark())
+		return theme().Tokens(dark())
 	}
 }
 
@@ -137,7 +159,12 @@ func UseTheme(cx *core.Scope) func() Tokens {
 // background, text color and font size. With no Theme it provides the
 // default one.
 type ThemeView struct {
-	Theme    func() Theme
+	Theme func() Theme
+	// Dark, when set, chooses the dark or the light palette below the view
+	// instead of the system's appearance, for an app's own appearance
+	// setting. Native parts the platform draws, such as window controls,
+	// keep the system's.
+	Dark     func() bool
 	Style    core.Style
 	Children []core.Node
 	TestID   string
@@ -147,6 +174,9 @@ type ThemeView struct {
 func (v ThemeView) Render(cx *core.Scope) core.Node {
 	if v.Theme != nil {
 		themeKey.Provide(cx, v.Theme)
+	}
+	if v.Dark != nil {
+		darkKey.Provide(cx, v.Dark)
 	}
 	theme := UseTheme(cx)
 	return core.View{
@@ -282,3 +312,82 @@ func (t Tokens) sheet(side core.Placement) core.Style {
 }
 
 func (t Tokens) backdrop() core.Style { return core.Style{Background: t.Overlay} }
+
+// iconButton has no face until hovered or pressed, when the foreground
+// tints it.
+func (t Tokens) iconButton() core.Style {
+	return core.Style{Width: core.Pt(32), Height: core.Pt(32), FlexShrink: 0, CornerRadius: t.Radius,
+		AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Color: t.MutedForeground,
+		Hover:    &core.Style{Background: t.Tint(0.08)},
+		Active:   &core.Style{Background: t.Tint(0.14)},
+		Disabled: disabled}
+}
+
+func (t Tokens) field() core.Style {
+	return core.Style{Height: core.Pt(36), Padding: core.Symmetric(0, 10), CornerRadius: t.Radius,
+		BorderWidth: 1, BorderColor: t.Border, Background: t.Background, Color: t.Foreground, FontSize: t.FontSize,
+		Hover:    &core.Style{BorderColor: t.Input},
+		Focus:    &core.Style{BorderColor: t.Ring},
+		Disabled: disabled}
+}
+
+func (t Tokens) selectField() core.Style {
+	return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, AlignSelf: core.AlignStart, Gap: 8,
+		MinWidth: core.Pt(140), Height: core.Pt(34), Padding: core.Symmetric(0, 10), CornerRadius: t.Radius,
+		BorderWidth: 1, BorderColor: t.Border, Background: t.Background, Color: t.Foreground, FontSize: t.FontSize,
+		Hover:  &core.Style{Background: t.Hover(t.Background)},
+		Active: &core.Style{Background: t.Pressed(t.Background)}}
+}
+
+func (t Tokens) slider() core.Style {
+	return core.Style{Height: core.Pt(20), MinWidth: core.Pt(120), JustifyContent: core.JustifyCenter, Disabled: disabled}
+}
+
+func (t Tokens) sliderTrack() core.Style {
+	return core.Style{Height: core.Pt(4), CornerRadius: 2, Background: t.Tint(0.12)}
+}
+
+func (t Tokens) sliderFill() core.Style {
+	return core.Style{CornerRadius: 2, Background: t.Primary}
+}
+
+func (t Tokens) sliderThumb() core.Style {
+	return core.Style{Width: core.Pt(16), Height: core.Pt(16), CornerRadius: 8, Background: core.RGB(0xffffff),
+		BorderWidth: 1, BorderColor: core.RGBA(0x000000, 0.08),
+		ShadowColor: t.Shadow, ShadowRadius: 3, ShadowOffset: core.Point{Y: 1}}
+}
+
+// badge is a pill: neutral on the surface, or washed with its tone's color.
+func (t Tokens) badge(tone Tone) core.Style {
+	bg, fg, border := t.Surface, t.Foreground, t.Border
+	if tint, ok := t.tone(tone); ok {
+		bg, fg, border = Mix(t.Background, tint, 0.12), Mix(tint, t.Foreground, 0.3), Mix(t.Background, tint, 0.3)
+	}
+	return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, AlignSelf: core.AlignStart, FlexShrink: 0, Gap: 4,
+		Padding: core.Symmetric(2, 8), CornerRadius: 12, BorderWidth: 1, BorderColor: border, Background: bg,
+		Color: fg, FontSize: t.small(), FontWeight: core.FontWeightMedium}
+}
+
+// tone returns a tone's color, or false for the neutral tone.
+func (t Tokens) tone(tone Tone) (core.Color, bool) {
+	switch tone {
+	case ToneAccent:
+		return t.Primary, true
+	case ToneSuccess:
+		return t.Success, true
+	case ToneWarning:
+		return t.Warning, true
+	case ToneDanger:
+		return t.Danger, true
+	case ToneInfo:
+		return t.Info, true
+	}
+	return 0, false
+}
+
+// small is the font size of captions, badges and descriptions.
+func (t Tokens) small() core.Points { return core.Points(float32(t.FontSize)*0.85 + 0.5) }
+
+func (t Tokens) progress() core.Style {
+	return core.Style{Height: core.Pt(6), CornerRadius: 3, Background: t.Tint(0.1), Overflow: core.Hidden}
+}

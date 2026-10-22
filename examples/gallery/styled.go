@@ -6,9 +6,11 @@ import (
 	"github.com/oneo-me/nsgo/ui"
 )
 
-// styledPage shows ui's components with the default theme, on its own
-// background so the gallery's palette does not mix in.
+// styledPage shows ui's components in NSGo's default theme or the
+// gallery's, on the chosen theme's background: a ThemeView swaps every
+// component's look at once.
 func styledPage(cx *core.Scope, t *theme) core.Node {
+	gallery := core.NewSignal(cx, false)
 	agree := core.NewSignal(cx, true)
 	mixed := core.NewSignal(cx, true)
 	wifi := core.NewSignal(cx, true)
@@ -33,7 +35,17 @@ func styledPage(cx *core.Scope, t *theme) core.Node {
 				BorderWidth: 1, BorderColor: th.Border}
 		}, Children: children}
 	}
-	return ui.ThemeView{Style: core.Style{Padding: core.All(16), Gap: 16, CornerRadius: cardRadius}, Children: []core.Node{
+	pick := func() ui.Theme {
+		if gallery.Get() {
+			return galleryTheme()
+		}
+		return ui.DefaultTheme()
+	}
+	return ui.ThemeView{Theme: pick, Style: core.Style{Padding: core.All(16), Gap: 16, CornerRadius: cardRadius}, Children: []core.Node{
+		ui.Tabs{Label: "Theme", Children: []core.Node{
+			ui.Tab{Label: "NSGo default", Selected: func() bool { return !gallery.Get() }, OnPress: func() { gallery.Set(false) }},
+			ui.Tab{Label: "Gallery", Selected: gallery.Get, OnPress: func() { gallery.Set(true) }},
+		}},
 		panel(
 			flow(
 				ui.Button{Label: "Primary"},

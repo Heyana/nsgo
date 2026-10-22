@@ -3,13 +3,15 @@ package main
 import (
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/ui"
 )
 
 // theme is the gallery's palette for one appearance and the styles built
 // from it. NSGo itself has no look of its own, so the gallery follows the
 // Onevra design language: warm neutral surfaces, one terracotta accent, soft
-// borders and 8-point control radii. Every demo takes its colors and metrics
-// from here.
+// borders and 8-point control radii. galleryTheme holds the palettes, which
+// the ui components take from ThemeView; the demos built on base take their
+// colors and metrics from here.
 type theme struct {
 	dark bool
 
@@ -34,29 +36,63 @@ const (
 	dialogRadius core.Points = 16
 )
 
-func newTheme(dark bool) *theme {
-	if dark {
-		return &theme{dark: true,
-			background: core.RGB(0x211f1c), surface: core.RGB(0x2b2925), sunken: core.RGB(0x1a1916), sidebar: core.RGB(0x1b1a17),
-			ink: core.RGB(0xeeeae2), muted: core.RGB(0xbdb6aa), line: core.RGB(0x504b43), hover: core.RGB(0x36332e),
-			borderStrong: core.RGB(0x78736b), selection: core.RGBA(0xeeeae2, 0.10), raised: core.RGB(0x36332e),
-			quiet: core.RGB(0x312f2c), quietHover: core.RGB(0x3a3734), quietPressed: core.RGB(0x464440),
-			accent: core.RGB(0xed986e), accentHover: core.RGB(0xefa47f), accentPressed: core.RGB(0xd18661),
-			accentSoft: core.RGB(0x392e26), onAccent: core.RGB(0x291b14),
-			danger: core.RGB(0xe58f95), dangerHover: core.RGB(0xe89ca2), dangerPressed: core.RGB(0xca7e83),
-			onDanger: core.RGB(0x291b14), success: core.RGB(0x79bea1), warning: core.RGB(0xe6b567),
-			knob: core.RGB(0xf4f1ec), switchOff: core.RGB(0x68635b)}
+// galleryTheme is Onevra's palettes as a ui theme.
+func galleryTheme() ui.Theme {
+	return ui.Theme{
+		Light: ui.Palette{
+			Background: core.RGB(0xfcfbf9), Foreground: core.RGB(0x33332f),
+			Surface: core.RGB(0xfefefd), SurfaceForeground: core.RGB(0x33332f),
+			Muted: core.RGB(0xf2f0ec), MutedForeground: core.RGB(0x72726a),
+			Accent: core.RGB(0xeceae4), AccentForeground: core.RGB(0x33332f),
+			Border: core.RGB(0xdeded5), Input: core.RGB(0xc4c4bc), Ring: core.RGBA(0xb94716, 0.55),
+			Primary: core.RGB(0xbd481b), PrimaryForeground: core.RGB(0xffffff),
+			Secondary: core.RGB(0xecebe9), SecondaryForeground: core.RGB(0x33332f),
+			Danger: core.RGB(0xb4444c), DangerForeground: core.RGB(0xffffff),
+			Success: core.RGB(0x059669), Warning: core.RGB(0xb45309), Info: core.RGB(0x3e7f96),
+			Overlay:   core.RGBA(0x000000, 0.18),
+			Selection: core.RGBA(0xe6652b, 0.22), Link: core.RGB(0xbd481b),
+			Shadow: core.RGBA(0x000000, 0.14),
+		},
+		Dark: ui.Palette{
+			Background: core.RGB(0x211f1c), Foreground: core.RGB(0xeeeae2),
+			Surface: core.RGB(0x2b2925), SurfaceForeground: core.RGB(0xeeeae2),
+			Muted: core.RGB(0x1a1916), MutedForeground: core.RGB(0xbdb6aa),
+			Accent: core.RGB(0x36332e), AccentForeground: core.RGB(0xeeeae2),
+			Border: core.RGB(0x504b43), Input: core.RGB(0x68635b), Ring: core.RGBA(0xed986e, 0.8),
+			Primary: core.RGB(0xed986e), PrimaryForeground: core.RGB(0x291b14),
+			Secondary: core.RGB(0x312f2c), SecondaryForeground: core.RGB(0xeeeae2),
+			Danger: core.RGB(0xe58f95), DangerForeground: core.RGB(0x291b14),
+			Success: core.RGB(0x79bea1), Warning: core.RGB(0xe6b567), Info: core.RGB(0x86bfd3),
+			Overlay:   core.RGBA(0x000000, 0.45),
+			Selection: core.RGBA(0xed986e, 0.24), Link: core.RGB(0xed986e),
+			Shadow: core.RGBA(0x000000, 0.4),
+		},
+		Radius:      radius,
+		RadiusLarge: cardRadius,
+		FontSize:    15,
 	}
-	return &theme{
-		background: core.RGB(0xfcfbf9), surface: core.RGB(0xfefefd), sunken: core.RGB(0xf2f0ec), sidebar: core.RGB(0xf4f2ee),
-		ink: core.RGB(0x33332f), muted: core.RGB(0x72726a), line: core.RGB(0xdeded5), hover: core.RGB(0xeceae4),
-		borderStrong: core.RGB(0xb3b3ac), selection: core.RGBA(0x33332f, 0.08), raised: core.RGB(0xfefefd),
-		quiet: core.RGB(0xecebe9), quietHover: core.RGB(0xe4e3e1), quietPressed: core.RGB(0xd8d7d5),
-		accent: core.RGB(0xbd481b), accentHover: core.RGB(0xa63f18), accentPressed: core.RGB(0x8e3614),
-		accentSoft: core.RGB(0xf4e6de), onAccent: core.RGB(0xffffff),
-		danger: core.RGB(0xb4444c), dangerHover: core.RGB(0x9e3c43), dangerPressed: core.RGB(0x873339),
-		onDanger: core.RGB(0xffffff), success: core.RGB(0x059669), warning: core.RGB(0xb45309),
-		knob: core.RGB(0xffffff), switchOff: core.RGB(0xc4c4bc)}
+}
+
+func newTheme(dark bool) *theme {
+	p := galleryTheme().Tokens(dark)
+	t := &theme{dark: dark,
+		background: p.Background, surface: p.Surface, sunken: p.Muted,
+		ink: p.Foreground, muted: p.MutedForeground, line: p.Border, hover: p.Accent,
+		quiet: p.Secondary, accent: p.Primary, onAccent: p.PrimaryForeground,
+		danger: p.Danger, onDanger: p.DangerForeground, success: p.Success, warning: p.Warning,
+		switchOff: p.Input}
+	if dark {
+		t.sidebar, t.borderStrong, t.selection, t.raised = core.RGB(0x1b1a17), core.RGB(0x78736b), core.RGBA(0xeeeae2, 0.10), core.RGB(0x36332e)
+		t.quietHover, t.quietPressed = core.RGB(0x3a3734), core.RGB(0x464440)
+		t.accentHover, t.accentPressed, t.accentSoft = core.RGB(0xefa47f), core.RGB(0xd18661), core.RGB(0x392e26)
+		t.dangerHover, t.dangerPressed, t.knob = core.RGB(0xe89ca2), core.RGB(0xca7e83), core.RGB(0xf4f1ec)
+		return t
+	}
+	t.sidebar, t.borderStrong, t.selection, t.raised = core.RGB(0xf4f2ee), core.RGB(0xb3b3ac), core.RGBA(0x33332f, 0.08), core.RGB(0xfefefd)
+	t.quietHover, t.quietPressed = core.RGB(0xe4e3e1), core.RGB(0xd8d7d5)
+	t.accentHover, t.accentPressed, t.accentSoft = core.RGB(0xa63f18), core.RGB(0x8e3614), core.RGB(0xf4e6de)
+	t.dangerHover, t.dangerPressed, t.knob = core.RGB(0x9e3c43), core.RGB(0x873339), core.RGB(0xffffff)
+	return t
 }
 
 var (

@@ -10,8 +10,8 @@
 - Add SVG icons with `core.Icon`, drawn in the inherited text color, and the bundled Lucide pack.
 - Add `WebView` with inline HTML, injected scripts, history and messages between page and app.
 - Add `Video` with playback control, seeking, resize modes and the platform's controls.
-- Add unstyled base controls, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
-- Add the `ui` package with themed controls and popups in light and dark.
+- Add unstyled base controls, sliders, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
+- Add the `ui` package with themed controls, fields, popups, a sidebar, settings, a command palette and toasts, in the system's appearance or the app's.
 - Add pan, pinch and rotation gestures.
 - Add desktop scroll bars that show while the pointer is over their scroll view and can be dragged.
 - Add custom desktop title bars, window drag regions, window controls and an application menu.

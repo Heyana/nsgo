@@ -65,10 +65,16 @@ func keyName(e js.Value) string {
 	return strings.ToLower(key)
 }
 
+// fieldKeys are the keys without modifiers that bindings take from a
+// text field.
+var fieldKeys = map[string]bool{"up": true, "down": true, "pageup": true, "pagedown": true}
+
 // shortcut consumes a key press that a binding of the keymap names,
 // with "mod" or with the literal modifier, and reports it. In a text
-// field only presses with Control, Alt or Command, or function keys,
-// count, so bindings never take typing.
+// field only presses with Control, Alt or Command, function keys, and
+// Up, Down, Page Up and Page Down, which a one-line field barely uses,
+// count, so bindings never take typing yet can move through a list
+// from its search field.
 func (s *surface) shortcut(e js.Value) {
 	if len(s.keys) == 0 || len(s.alerts) > 0 || e.Get("isComposing").Bool() {
 		return
@@ -78,7 +84,7 @@ func (s *surface) shortcut(e js.Value) {
 		return
 	}
 	ctrl, alt, shift, meta := e.Get("ctrlKey").Bool(), e.Get("altKey").Bool(), e.Get("shiftKey").Bool(), e.Get("metaKey").Bool()
-	if editing(s.doc.Get("activeElement")) && !ctrl && !alt && !meta &&
+	if editing(s.doc.Get("activeElement")) && !ctrl && !alt && !meta && !fieldKeys[name] &&
 		!(len(name) > 1 && name[0] == 'f' && name[1] >= '1' && name[1] <= '9') {
 		return
 	}

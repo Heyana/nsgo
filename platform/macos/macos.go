@@ -12,6 +12,7 @@ import (
 	"math"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -455,9 +456,10 @@ var keyNames = map[uint16]string{
 }
 
 // binding returns the keymap's binding a key event presses, or "". It
-// names the press both with "mod", Command here, and with "meta".
+// names the press both with "mod", Command here, and with "meta". Keys
+// go to an input method composing text, as arrows choose its candidates.
 func (s *surface) binding(event objc.ID) string {
-	if len(s.keys) == 0 {
+	if len(s.keys) == 0 || s.composing() {
 		return ""
 	}
 	name, ok := keyNames[objc.Send[uint16](event, sel("keyCode"))]
@@ -490,6 +492,14 @@ func (s *surface) isBack(event objc.ID) bool {
 		return apple.GoString(event.Send(sel("charactersIgnoringModifiers"))) == "["
 	}
 	return false
+}
+
+// composing reports whether an input method is composing text in the
+// focused text field.
+func (s *surface) composing() bool {
+	first := s.window.Send(sel("firstResponder"))
+	return first != 0 && objc.Send[bool](first, sel("respondsToSelector:"), sel("hasMarkedText")) &&
+		objc.Send[bool](first, sel("hasMarkedText"))
 }
 
 // editing reports whether keys go to a text field or a web page.
@@ -905,7 +915,6 @@ func (v *view) configure(c *core.InputConfig) {
 	}
 	font := apple.Font(c.Style.Font)
 	v.field.Send(selSetFont, objc.ID(font))
-	apple.Release(font)
 	v.field.Send(selSetTextColor, nsColor(c.Style.Color))
 	align := nsAlignLeft
 	switch c.Style.Align {
@@ -915,7 +924,8 @@ func (v *view) configure(c *core.InputConfig) {
 		align = nsAlignRight
 	}
 	v.field.Send(selSetAlignment, align)
-	v.field.Send(selSetPlaceholder, apple.NSString(c.Placeholder))
+	setPlaceholder(v.field, c.Placeholder, objc.ID(font), c.Style.Color)
+	apple.Release(font)
 	v.field.Send(selSetEditable, !c.Readonly)
 	v.field.Send(selSetEnabled, !c.Disabled)
 	v.inset = c.Content
@@ -1010,6 +1020,32 @@ func setAccessibility(native objc.ID, p *core.ViewProps) {
 		}
 		native.Send(selSetAccessibilityValue, objc.ID(objc.GetClass("NSNumber")).Send(sel("numberWithInt:"), n))
 	}
+}
+
+// Attribute names for a field's placeholder, read on first use.
+var placeholderAttrs = sync.OnceValues(func() (font, color objc.ID) {
+	const appKit = "/System/Library/Frameworks/AppKit.framework/AppKit"
+	return apple.Global(appKit, "NSFontAttributeName"), apple.Global(appKit, "NSForegroundColorAttributeName")
+})
+
+// setPlaceholder gives a field its placeholder in its font and its text
+// color at half strength, so the placeholder follows the app's colors as
+// the text does rather than the system's appearance.
+func setPlaceholder(field objc.ID, text string, font objc.ID, color core.Color) {
+	fontKey, colorKey := placeholderAttrs()
+	if color == 0 || fontKey == 0 || colorKey == 0 {
+		field.Send(selSetPlaceholder, apple.NSString(text))
+		return
+	}
+	r, g, b, a := color.Components()
+	attrs := objc.ID(objc.GetClass("NSMutableDictionary")).Send(sel("dictionary"))
+	attrs.Send(sel("setObject:forKey:"), font, fontKey)
+	attrs.Send(sel("setObject:forKey:"), objc.ID(objc.GetClass("NSColor")).Send(
+		sel("colorWithSRGBRed:green:blue:alpha:"), r, g, b, a*0.5), colorKey)
+	str := objc.ID(objc.GetClass("NSAttributedString")).Send(selAlloc).Send(
+		sel("initWithString:attributes:"), apple.NSString(text), attrs)
+	field.Send(sel("setPlaceholderAttributedString:"), str)
+	str.Send(selRelease)
 }
 
 func nsColor(c core.Color) objc.ID {

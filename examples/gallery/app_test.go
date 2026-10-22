@@ -22,14 +22,15 @@ func startDesktop(t *testing.T, opts ...nsgotest.Option) *nsgotest.App {
 
 func TestSidebarSwitchesSections(t *testing.T) {
 	app := startDesktop(t)
-	if got := app.Find("id:title").Text; got != "Text" {
-		t.Fatalf("first section = %q, want Text", got)
+	if got := app.Find("id:title").Text; got != "Welcome" {
+		t.Fatalf("first section = %q, want Welcome", got)
 	}
 	app.Press("id:nav-Controls")
 	app.Find("id:section-Controls")
-	if !app.Find("id:nav-Controls").Props.Selected || app.Find("id:nav-Text").Props.Selected {
+	if !app.Find("id:nav-Controls").Props.Selected || app.Find("id:nav-Welcome").Props.Selected {
 		t.Fatal("the sidebar does not highlight the selected section")
 	}
+	app.Find("id:header >> text:Components /")
 	if app.Title != "NSGo Gallery — Controls" {
 		t.Fatalf("title = %q", app.Title)
 	}
@@ -121,8 +122,8 @@ func TestApplicationMenu(t *testing.T) {
 	app.Find("id:section-Images")
 	view := app.Menu[slices.IndexFunc(app.Menu, func(e core.MenuEntry) bool { return e.Label == "View" })]
 	for _, e := range view.Items {
-		if e.Label == "Images" && (!e.Checked || e.Shortcut != "mod+9") {
-			t.Fatalf("View › Images = %+v, want checked with mod+9", e)
+		if e.Label == "Images" && (!e.Checked || e.Shortcut != "mod+6") {
+			t.Fatalf("View › Images = %+v, want checked with mod+6", e)
 		}
 	}
 	app.ChooseMenu("View", "Next Section")
@@ -146,21 +147,32 @@ func TestWindowCommands(t *testing.T) {
 	app.Press("role:button Zoom")
 	app.Press("role:button Full screen")
 	app.Press("role:button Close")
+	hidden := core.WindowCommand{Action: core.WindowSetTitleBar, TitleBar: core.TitleBarHidden, Height: headerHeight}
 	want := []core.WindowCommand{
-		{Action: core.WindowSetTitleBar, TitleBar: core.TitleBarHidden, Height: titleBarHeight},
+		// The gallery hides the title bar as it starts.
+		hidden, hidden,
 		{Action: core.WindowMinimize}, {Action: core.WindowToggleMaximize}, {Action: core.WindowToggleFullScreen}, {Action: core.WindowClose},
 	}
 	if !slices.Equal(app.Window, want) {
 		t.Fatalf("window commands = %+v, want %+v", app.Window, want)
 	}
 
-	// The platform reports the hidden title bar: the gallery draws its own.
+	// The platform reports the hidden title bar: the sidebar's top row
+	// clears the window controls and the header lines up with the content.
 	env := desktopEnv
-	env.TitleBar = core.Edges{Top: titleBarHeight, Left: 78}
+	env.TitleBar = core.Edges{Top: headerHeight, Left: 78}
 	app.SetEnvironment(env)
-	bar := app.Find("id:titlebar")
-	if bar.Props.WindowDrag != core.WindowDragOn || bar.Frame.Size.Height != titleBarHeight {
-		t.Fatalf("title bar = %+v", bar)
+	for _, id := range []string{"id:sidebar-header", "id:header"} {
+		if bar := app.Find(id); bar.Props.WindowDrag != core.WindowDragOn || bar.Frame.Size.Height != headerHeight {
+			t.Fatalf("%s = %+v", id, bar)
+		}
+	}
+	x := core.Points(0)
+	for v := app.Find("id:hide-sidebar"); v != nil; v = v.Parent {
+		x += v.Frame.Origin.X
+	}
+	if x < 78 {
+		t.Fatalf("the sidebar's toggle is at %v, under the window controls", x)
 	}
 
 	app.SetEnvironment(core.Environment{Idiom: core.IdiomTablet})
@@ -285,5 +297,135 @@ func TestVideoPlayback(t *testing.T) {
 	app.Press("role:button Start over")
 	if s := app.Find("id:player").Seeks; len(s) != 1 || s[0] != 0 {
 		t.Fatalf("seeks = %v", s)
+	}
+}
+
+func TestWelcome(t *testing.T) {
+	app := startDesktop(t)
+	app.Find("id:welcome-name")
+	app.Press("id:welcome-repository")
+	if app.Clipboard != "https://"+repository {
+		t.Fatalf("clipboard = %q, want the repository's link", app.Clipboard)
+	}
+	app.Find("id:toast >> text:Link copied")
+	app.Press("id:welcome-search")
+	app.Find("id:command-search")
+	app.Back()
+	if app.Exists("id:command-search") {
+		t.Fatal("Escape did not close the palette")
+	}
+}
+
+func TestCommandPalette(t *testing.T) {
+	app := startDesktop(t)
+	app.Key("mod+k")
+	app.Find("id:palette >> role:header Elements")
+	app.Type("id:command-search", "stor")
+	if !app.Find("id:command-page:Storage").Props.Selected {
+		t.Fatal("the matching page is not active")
+	}
+	app.Submit("id:command-search")
+	app.Find("id:section-Storage")
+	if app.Exists("id:command-search") {
+		t.Fatal("running a command did not close the palette")
+	}
+
+	app.Press("id:search")
+	app.Type("id:command-search", "dark appearance")
+	app.Submit("id:command-search")
+	if v, _ := app.Storage().GetItem(keyAppearance); v != "dark" {
+		t.Fatalf("appearance = %q, want dark", v)
+	}
+	if got, want := app.Find("id:sidebar").Style.Background, sidebarColor(galleryTheme().Tokens(true)); got != want {
+		t.Fatalf("sidebar = %x, want the dark one %x", got, want)
+	}
+}
+
+func TestSettingsDialog(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Text")
+	app.Find("id:about")
+	app.Key("mod+,")
+	app.Find("id:settings >> role:header General")
+	app.Press("role:switch Page descriptions")
+	if app.Exists("id:about") {
+		t.Fatal("turning page descriptions off left the description")
+	}
+
+	app.Press("id:settings-category-appearance")
+	app.Press("label:Appearance >> text:System")
+	app.Press("label:Light")
+	if v, _ := app.Storage().GetItem(keyAppearance); v != "light" {
+		t.Fatalf("appearance = %q, want light", v)
+	}
+
+	app.Type("id:settings-search", "gutter")
+	app.Find("id:setting-line-numbers")
+	app.Press("id:settings-close")
+	if app.Exists("id:settings") {
+		t.Fatal("the close button did not close the settings")
+	}
+	app.Press("id:open-settings")
+	if got := app.Find("id:settings-search").Text; got != "" {
+		t.Fatalf("reopening kept the search %q", got)
+	}
+}
+
+func TestPreferencesPersist(t *testing.T) {
+	app := startDesktop(t, nsgotest.Storage(map[string]string{
+		keyStart: "last", keySection: "Storage", keySidebar: "false", keyAppearance: "dark",
+	}))
+	app.Find("id:section-Storage")
+	if app.Exists("id:sidebar") {
+		t.Fatal("the sidebar shows though it was hidden")
+	}
+	app.Press("id:show-sidebar")
+	app.Advance(300 * time.Millisecond)
+	if w := app.Find("id:sidebar").Frame.Size.Width; w != sidebarWidth {
+		t.Fatalf("sidebar = %v wide after opening, want %v", w, sidebarWidth)
+	}
+	if v, _ := app.Storage().GetItem(keySidebar); v != "true" {
+		t.Fatalf("kept sidebar = %q", v)
+	}
+	app.Press("id:hide-sidebar")
+	app.Advance(300 * time.Millisecond)
+	if app.Exists("id:sidebar") {
+		t.Fatal("the sidebar did not close")
+	}
+
+	// Opening on Welcome, the default, ignores the last page.
+	fresh := startDesktop(t, nsgotest.Storage(map[string]string{keySection: "Storage"}))
+	fresh.Find("id:welcome-name")
+}
+
+func TestComponentPages(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Fields")
+	app.Type("id:field-name", "Ada")
+	app.Find("text:Hello, Ada.")
+	app.Press("id:select-size")
+	app.Press("label:Large")
+	app.Find("text:Size large, no city yet.")
+
+	app.Press("id:nav-Feedback")
+	app.Press("role:button Saved")
+	app.Find("id:toast >> text:Changes saved")
+
+	app.Press("id:nav-Settings")
+	app.Find("id:embedded-settings >> role:header Wi-Fi")
+	app.Press("role:switch Hide sidebar")
+	app.Find("id:embedded-settings >> role:header Sound")
+
+	app.Press("id:nav-Command Palette")
+	app.Press("id:open-files")
+	app.Key("down")
+	app.Submit("id:command-search")
+	app.Find("text:Ran open.")
+
+	app.Press("id:nav-Navigation")
+	app.Press("id:add-label")
+	app.Press("id:mail-Label 3")
+	if !app.Find("id:mail-Label 3").Props.Selected {
+		t.Fatal("the new label is not selected")
 	}
 }

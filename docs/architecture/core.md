@@ -113,6 +113,9 @@ Style `Transition`s animate on the platform, with no engine work per frame and n
 
 Native alerts, the clipboard, announcements, keyboard shortcuts, the status bar, the window title, window commands and the application menu are command items answered by events. Shortcuts are scoped to their owner: the platform matches key presses against the table synchronously and reports only matches.
 
+- An input method composing text keeps its keys on macOS and the web, so arrows still choose its candidates.
+- In a text field the web matches only presses with a modifier, function keys, Up, Down, Page Up and Page Down, so typing never triggers a binding. The native backends match every key.
+
 ## Storage and directories
 
 `Scope.Storage` follows NSH's `nsh/storage`: strings by key with a 5 MB quota, held in memory by a `Store` and loaded once from the platform's `StorageBackend`.

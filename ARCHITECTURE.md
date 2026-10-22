@@ -22,9 +22,9 @@ Packages mirror NSH's crates:
 | Package | NSH counterpart | Responsibility |
 | --- | --- | --- |
 | `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, layout, text, SVG drawings, mount items |
-| `base` | `nsh-base` | Unstyled base components: controls, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack |
+| `base` | `nsh-base` | Unstyled base components: controls, sliders, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack |
 | `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark), HTML (x/net/html) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
-| `ui` | `nsh-base`'s `Theme` | The theme as Go values, and `base`'s controls, popups and text view styled with it |
+| `ui` | `nsh-base`'s `Theme` | The theme as Go values; `base`'s controls, popups and text view styled with it; fields, a sidebar, settings, a command palette and toasts composed on them, after Onevra's components |
 | `ui/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma, in NSH's palette |
 | `icons/lucide` | — (NSH loads SVG as images) | The bundled Lucide pack: one generated accessor per icon, parsed on first use ([icons](docs/architecture/icons.md)) |
 | `engine` | `nsh-engine` | Engine goroutine: an unbounded mailbox, commits, one batch per commit to the platform |
@@ -39,7 +39,7 @@ Packages mirror NSH's crates:
 | `cmd/nsgo/apk` | `nsh-cli` (`android.rs`) | Android packaging: binary XML, ZIP and v2 signature in Go |
 | `tools/lucidegen` | — | Regenerates `icons/lucide` and the gallery's catalog from a pinned Lucide checkout |
 | `examples/hello` | `examples/counter` | A todo list: text, input, button, scroll view and keyed list, with a headless test |
-| `examples/gallery` | `examples/gallery-rs` | A sidebar of sections showing each element, base component, gesture and desktop service, with headless tests |
+| `examples/gallery` | `examples/gallery-rs` | Every element, component and service, a page each, in the design of Onevra's gallery, with headless tests |
 
 ## Platforms
 
@@ -59,8 +59,6 @@ Android runs the app as a second process because Go builds Android shared librar
 `nsgo dev -target ios` builds the app and Xcode signs it with automatic signing from the developer account in Xcode. It installs the app with `devicectl` and streams its output; `nsgo build -target ios` leaves the app to sign.
 
 Neither an NDK nor the Android SDK is needed for arm64: `platform/android/runtime` holds the Java runtime's prebuilt `classes.dex` (its `build.sh` rebuilds it), and `cmd/nsgo/apk` writes the binary manifest, the ZIP and the v2 signature in Go. `nsgo build -target android_arm64` writes an APK signed with the project's debug key. `nsgo dev -target android` builds for the connected device's ABI, installs the APK, starts it and streams its log, so device and emulator development needs `adb` from the SDK's platform-tools.
-
-An x86_64 emulator needs the `android_x64` package, which needs an NDK's clang: Go links android/amd64 only with cgo. An arm64 device or emulator still builds with Go alone.
 
 The Linux backend loads GTK 4 at run time, so building its package needs only Go. Running it needs GTK 4.14 or newer, Pango and Cairo, as any GTK app does; web views also need WebKitGTK 6.0 and videos the GStreamer plug-ins for their formats. Without WebKitGTK a web view shows a placeholder, as NSH's does.
 
@@ -95,7 +93,6 @@ As in NSH, each Linux view is a widget its parent places at the core's frame, so
 - With hot reload, the web dev server reloads open pages over server-sent events after each build.
 - Packages ship `resources/` from beside `nsgo.yaml` in their resource root, which `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` paths against. `assets/` holds sources that do not ship, such as icons.
 - App icons are written in Go, except that `actool` compiles Apple's `.icon` files and asset catalogs. A Windows icon links in from a `.syso` written into the app's package directory for the build, since Go links `.syso` files only from there.
-- A command's flags replace the `nsgo.yaml` values they name: `dev.target` and `dev.hot_reload` for `nsgo dev`; `build.targets`, `build.output` and `build.open` for `nsgo build`; `name`, `id`, `version` and `window` for both.
 
 ## Core flows
 

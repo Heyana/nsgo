@@ -679,11 +679,13 @@ func (a *App) apply(b *core.MountBatch) {
 			v.Seeks = append(v.Seeks, it.Time)
 		case core.ItemFocus:
 			for _, o := range a.views {
-				o.Focused = false
+				if o != v {
+					a.setFocus(o, false)
+				}
 			}
-			v.Focused = true
+			a.setFocus(v, true)
 		case core.ItemBlur:
-			v.Focused = false
+			a.setFocus(v, false)
 		case core.ItemScrollTo:
 			v.Offset = it.Point
 			// A platform reports where a scroll lands.
@@ -715,10 +717,26 @@ func (a *App) apply(b *core.MountBatch) {
 			a.alerts = append(a.alerts, *it.Alert)
 		case core.ItemDismissKeyboard:
 			for _, o := range a.views {
-				o.Focused = false
+				a.setFocus(o, false)
 			}
 		}
 	}
+}
+
+// setFocus moves focus to or from v and, as a platform does, reports the
+// change to the app.
+func (a *App) setFocus(v *View, on bool) {
+	if v.Focused == on {
+		return
+	}
+	v.Focused = on
+	kind := core.EventBlur
+	if on {
+		kind = core.EventFocus
+	}
+	a.mu.Lock()
+	a.posts = append(a.posts, func() { a.tree.Dispatch(core.Event{Kind: kind, ID: v.ID}) })
+	a.mu.Unlock()
 }
 
 func (v *View) detach() {
