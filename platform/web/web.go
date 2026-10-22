@@ -89,6 +89,7 @@ type view struct {
 	image     *image
 	drawing   *core.Drawing // a canvas's
 	web       *webFrame     // a web view's
+	video     *video        // a video's
 	modal     core.ModalAnimation
 	presented bool // a modal was inserted once
 	hover     bool // pointerenter and pointerleave are listened to
@@ -583,6 +584,9 @@ func (s *surface) Mount(b *core.MountBatch) {
 			if v.web != nil {
 				v.web.closePort()
 			}
+			if v.video != nil {
+				v.video.release()
+			}
 			s.setOutside(v, false)
 			v.listeners.release()
 		case core.ItemFrame:
@@ -608,6 +612,14 @@ func (s *surface) Mount(b *core.MountBatch) {
 			s.setWeb(v, it.Web)
 		case core.ItemWebCommand:
 			s.webCommand(v, it.WebCommand, it.Value)
+		case core.ItemVideo:
+			if v.video != nil {
+				s.setVideo(v, it.Video)
+			}
+		case core.ItemVideoSeek:
+			if v.video != nil {
+				v.video.seek(it.Time)
+			}
 		case core.ItemModal:
 			v.modal = it.Modal.Animation
 		case core.ItemCanvas:
@@ -692,6 +704,8 @@ func (s *surface) create(id core.NodeID, kind core.ViewKind) *view {
 		s.createImage(v)
 	case core.KindWeb:
 		s.createWeb(v)
+	case core.KindVideo:
+		s.createVideo(v)
 	case core.KindModal:
 		v.el.Call("setAttribute", "aria-modal", "true")
 	case core.KindCanvas:

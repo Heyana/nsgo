@@ -8,8 +8,8 @@
 // text the engine prepares, measures it and lays it out with StaticLayout,
 // and mounts one Android view per node; measuring, and laying out text
 // with attachments, are the only round trips.
-// Go fetches images and Java decodes them; Java hosts web views, plays
-// canvas drawings, runs style transitions and reports the environment,
+// Go fetches images and Java decodes them; Java hosts web views and
+// videos, plays canvas drawings, runs style transitions and reports the environment,
 // back, keys, presses outside overlays and answers to alerts and
 // clipboard reads.
 //
@@ -136,6 +136,10 @@ func Run(app engine.App) {
 				Value:    r.float(),
 			}
 			ev.Navigation = readNavigation(&r)
+			// A video's; zero for other events.
+			ev.Time = time.Duration(r.u64()) * time.Millisecond
+			ev.Duration = time.Duration(r.u64()) * time.Millisecond
+			ev.Buffering = r.byte() != 0
 			s.engine.Dispatch(ev)
 		case msgMeasured:
 			s.measured <- core.Size{Width: r.points(), Height: r.points()}
@@ -503,10 +507,15 @@ func readMessage(r *bufio.Reader) (byte, []byte, error) {
 }
 
 // webInterface is the JavaScript interface WebNode adds for pages to post
-// through, as WebNode.INTERFACE.
-const webInterface = "nsgoAndroid"
+// through, as WebNode.INTERFACE: window.nsgo is there from a page's first
+// script, as NSH's window.nsh is.
+const webInterface = "nsgo"
 
-var webBridge = core.WebBridge("function (d) { " + webInterface + ".postMessage(d); }")
+// webBridge wraps the interface once the script before content runs, so
+// pages post any value as a string, as core.WebBridge's do; the Java
+// bridge turns objects into "undefined".
+const webBridge = "(function (n) { if (n) window." + webInterface +
+	" = { postMessage: function (data) { n.postMessage(String(data)); } }; })(window." + webInterface + ");"
 
 // encode writes a batch in the format NsgoView.mount reads: each item is
 // its kind, its ID and the fields of that kind; requests numbers its
@@ -608,7 +617,7 @@ func encode(w *writer, b *core.MountBatch, requests []uint32) {
 			c := it.Image
 			w.u32(requests[0])
 			requests = requests[1:]
-			w.byte(byte(c.ResizeMode))
+			w.byte(byte(c.ResizeMode - core.Cover)) // Java's are 0-based
 			w.points(c.BlurRadius)
 			w.u32(uint32(max(c.FadeDuration.Milliseconds(), 0))) // 0: the platform's
 		case core.ItemModal:
@@ -656,6 +665,16 @@ func encode(w *writer, b *core.MountBatch, requests []uint32) {
 			w.str(webBridge + "\n" + c.InjectedJavaScriptBeforeContent)
 			w.str(c.UserAgent)
 			w.flags(c.NoScroll, c.NoJavaScript) // Android has no back and forward swipes
+		case core.ItemVideo:
+			c := it.Video
+			w.str(c.Source)
+			w.flags(c.Paused, c.Muted, c.Repeat, c.Controls)
+			w.float(c.Volume)
+			w.float(c.Rate)
+			w.byte(byte(c.ResizeMode - core.Cover)) // Java's are 0-based
+			w.u32(uint32(c.ProgressInterval.Milliseconds()))
+		case core.ItemVideoSeek:
+			w.u64(uint64(it.Time.Milliseconds()))
 		case core.ItemWebCommand:
 			w.byte(byte(it.WebCommand))
 			if it.WebCommand == core.WebPostMessage {
@@ -780,6 +799,15 @@ func (r *reader) u32() uint32 {
 	}
 	v := binary.BigEndian.Uint32(r.buf)
 	r.buf = r.buf[4:]
+	return v
+}
+
+func (r *reader) u64() uint64 {
+	if len(r.buf) < 8 {
+		return 0
+	}
+	v := binary.BigEndian.Uint64(r.buf)
+	r.buf = r.buf[8:]
 	return v
 }
 

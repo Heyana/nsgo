@@ -27,6 +27,8 @@ const (
 	KindCanvas
 	// KindWeb hosts the platform's web view, filling it (ItemWeb).
 	KindWeb
+	// KindVideo hosts the platform's video player, filling it (ItemVideo).
+	KindVideo
 )
 
 // ItemKind is what a mount item does.
@@ -111,6 +113,10 @@ const (
 	// ItemWebCommand has a web view do WebCommand, with Value for the
 	// message or script.
 	ItemWebCommand
+	// ItemVideo configures a video (Video).
+	ItemVideo
+	// ItemVideoSeek jumps a video to Time.
+	ItemVideoSeek
 )
 
 // MountItem is one change to the native views. Kind says which fields
@@ -146,6 +152,8 @@ type MountItem struct {
 	Web    *WebConfig
 	// WebCommand is ItemWebCommand's.
 	WebCommand WebCommand
+	Video      *VideoConfig
+	Time       time.Duration // ItemVideoSeek
 }
 
 // MountBatch is one commit's changes, applied in order on the main thread.

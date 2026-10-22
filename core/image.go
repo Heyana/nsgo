@@ -18,7 +18,7 @@ func (t *Tree) mountImage(cx *Scope, parent *node, v Image) {
 		progress: v.OnProgress, load: v.OnLoad, loadError: v.OnError}
 	n.props = ViewProps{Role: RoleImage, Label: v.Label, TestID: v.TestID}
 	n.image = &imageNode{config: ImageConfig{Source: v.Source, Placeholder: v.Placeholder,
-		ResizeMode: v.ResizeMode, BlurRadius: v.BlurRadius, FadeDuration: v.FadeDuration}}
+		ResizeMode: resolveMode(v.ResizeMode, Cover), BlurRadius: v.BlurRadius, FadeDuration: v.FadeDuration}}
 	if v.SourceFunc != nil {
 		cx.renderEffect(func() {
 			src := v.SourceFunc()
@@ -68,4 +68,12 @@ func (t *Tree) pickScale(s ImageSource) ImageSource {
 	}
 	s.URI = s.URI[:dot] + "@" + strconv.FormatFloat(float64(pick), 'g', -1, 32) + "x" + s.URI[dot:]
 	return s
+}
+
+// resolveMode is m, or def for the zero value.
+func resolveMode(m, def ResizeMode) ResizeMode {
+	if m == 0 {
+		return def
+	}
+	return m
 }

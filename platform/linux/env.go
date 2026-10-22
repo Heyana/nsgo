@@ -31,9 +31,9 @@ func (w *window) environment() core.Environment {
 		dark = true
 	}
 	scale := 1.0
-	if surface := gtkNativeGetSurface(gtkWidgetGetNative(w.area)); surface != 0 {
+	if surface := gtkNativeGetSurface(gtkWidgetGetNative(w.surface)); surface != 0 {
 		scale = gdkSurfaceGetScale(surface)
-	} else if f := gtkWidgetGetScaleFactor(w.area); f > 0 {
+	} else if f := gtkWidgetGetScaleFactor(w.surface); f > 0 {
 		scale = float64(f)
 	}
 	if scale <= 0 {

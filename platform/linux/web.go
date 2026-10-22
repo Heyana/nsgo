@@ -4,13 +4,15 @@ package linux
 
 import (
 	"fmt"
-	"net/url"
-	"strings"
+	"log"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/ebitengine/purego"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/engine"
 )
 
 // WebKitGTK 6.0, the GTK 4 one, loads on the first web view, so apps
@@ -19,7 +21,11 @@ var (
 	webkitOnce sync.Once
 	webkitErr  error
 
-	webkitWebViewNew                     func() uintptr
+	webkitWebViewGetType                 func() uintptr
+	webkitWebViewGetBackgroundColor      func(uintptr, *[4]float32)
+	webkitNetworkSessionNew              func(*byte, *byte) uintptr
+	webkitNetworkSessionGetCookieManager func(uintptr) uintptr
+	webkitCookieManagerSetPersistent     func(uintptr, *byte, int32)
 	webkitWebViewGetUserContentManager   func(uintptr) uintptr
 	webkitWebViewGetSettings             func(uintptr) uintptr
 	webkitWebViewSetBackgroundColor      func(uintptr, *[4]float32)
@@ -79,7 +85,11 @@ func openWebKit() error {
 
 func bindWebKit(webkit, jsc uintptr) {
 	reg := func(fn any, name string) { purego.RegisterLibFunc(fn, webkit, name) }
-	reg(&webkitWebViewNew, "webkit_web_view_new")
+	reg(&webkitWebViewGetType, "webkit_web_view_get_type")
+	reg(&webkitWebViewGetBackgroundColor, "webkit_web_view_get_background_color")
+	reg(&webkitNetworkSessionNew, "webkit_network_session_new")
+	reg(&webkitNetworkSessionGetCookieManager, "webkit_network_session_get_cookie_manager")
+	reg(&webkitCookieManagerSetPersistent, "webkit_cookie_manager_set_persistent_storage")
 	reg(&webkitWebViewGetUserContentManager, "webkit_web_view_get_user_content_manager")
 	reg(&webkitWebViewGetSettings, "webkit_web_view_get_settings")
 	reg(&webkitWebViewSetBackgroundColor, "webkit_web_view_set_background_color")
@@ -120,10 +130,10 @@ const (
 	webkitAtEnd            = 1 // WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_END
 	webkitUserStyle        = 0 // WEBKIT_USER_STYLE_LEVEL_USER
 	webkitLoadStarted      = 0
-	webkitLoadCommitted    = 2
 	webkitLoadFinished     = 3
 	webkitNetworkCancelled = 302 // WEBKIT_NETWORK_ERROR_CANCELLED
 	webkitPolicyInterrupt  = 102 // WEBKIT_POLICY_ERROR_FRAME_LOAD_INTERRUPTED_BY_POLICY_CHANGE
+	webkitCookieSQLite     = 1   // WEBKIT_COOKIE_PERSISTENT_STORAGE_SQLITE
 	gtkOverflowHidden      = 1
 )
 
@@ -136,32 +146,33 @@ var webBridge = core.WebBridge("function (d) { window.webkit.messageHandlers." +
 // webNoScroll keeps the top document from scrolling.
 const webNoScroll = "html, body { overflow: hidden !important; }"
 
-// web is a web view's WebKitWebView. It sits in a clipping GtkOverlay
-// placed over the surface as entries are, so scroll views and clipping
-// ancestors cut it off; the overlay gives the page its whole frame.
+// web is a web view's WebKitWebView, hosted in the view's widget as NSH's
+// Linux backend hosts it. Without WebKitGTK it is a placeholder label and
+// widget is 0.
 type web struct {
-	holder  uintptr // GtkOverlay, the visible part of the frame
-	widget  uintptr // WebKitWebView
-	content uintptr // its WebKitUserContentManager
-	config  core.WebConfig
-	made    bool
-	failed  bool // the navigation failed; WebKit still finishes it
-	pending bool // a load waits for the page to be mapped
-	shown   bool
-	placed  core.Bounds // the page's frame in the holder
-	visible core.Bounds // the holder's frame in the surface
+	hosted
+	widget     uintptr // WebKitWebView
+	content    uintptr // its WebKitUserContentManager
+	config     core.WebConfig
+	made       bool
+	failed     bool       // the navigation failed; WebKit still finishes it
+	pending    bool       // a load waits for the page to be mapped
+	background [4]float32 // WebKit's own, for views without an opaque one
+	pointer    core.Point // where the pointer is in the page
 }
+
+// webWarned is the warning, once, that web views show a placeholder.
+var webWarned sync.Once
 
 // configureWeb applies a web view's configuration, making its page on
 // the first one and loading the source again when it or the scripts
-// changed.
+// changed; the rest applies to the page as it is.
 func (w *window) configureWeb(v *view, c *core.WebConfig) {
 	if v.web == nil {
 		v.web = &web{}
 		if err := openWebKit(); err != nil {
-			// After the batch, which may carry the view's events after
-			// its configuration.
-			w.post(func() { w.report(v, core.Event{Kind: core.EventError, ID: v.id, Text: err.Error()}) })
+			webWarned.Do(func() { log.Printf("nsgo: WebView is not available: %v; it shows a placeholder", err) })
+			w.host(v, &v.web.hosted, webPlaceholder(), false)
 			return
 		}
 		w.makeWeb(v)
@@ -181,6 +192,8 @@ func (w *window) configureWeb(v *view, c *core.WebConfig) {
 		addScript(wv.content, c.InjectedJavaScript, webkitAtEnd)
 	}
 	if first || c.NoScroll != old.NoScroll {
+		// Wheels over a page that does not scroll go to the scroll views
+		// around it (webScrollCallback).
 		webkitContentRemoveAllStyleSheets(wv.content)
 		if c.NoScroll {
 			sheet := webkitUserStyleSheetNew(cstr(webNoScroll), webkitTopFrame, webkitUserStyle, 0, 0)
@@ -198,9 +211,40 @@ func (w *window) configureWeb(v *view, c *core.WebConfig) {
 		webkitSettingsSetUserAgent(settings, cstr(c.UserAgent))
 	}
 	webkitSettingsSetBackForwardGestures(settings, boolInt(c.BackForwardGestures))
-	if first || scripts || c.NoScroll != old.NoScroll || c.NoJavaScript != old.NoJavaScript || c.Source != old.Source {
+	w.webBackground(v)
+	// Scripts apply to pages loaded from now on: load again.
+	if first || scripts || c.Source != old.Source {
 		w.loadWeb(v)
 	}
+}
+
+// webBackground shows the view's background behind the page while it
+// loads and behind pages without one of their own, when it is opaque,
+// as on Windows; else WebKit's own.
+func (w *window) webBackground(v *view) {
+	wv := v.web
+	if wv == nil || wv.widget == 0 {
+		return
+	}
+	bg := wv.background
+	if c := v.style.Background; c&0xff == 0xff {
+		bg = [4]float32{float32(c>>24) / 255, float32(c>>16&0xff) / 255, float32(c>>8&0xff) / 255, 1}
+	}
+	webkitWebViewSetBackgroundColor(wv.widget, &bg)
+}
+
+// webPlaceholder is what a web view shows without WebKitGTK, as NSH's
+// does: gray, which reads on light and dark apps alike.
+func webPlaceholder() uintptr {
+	label := gtkLabelNew(nil)
+	gtkLabelSetMarkup(label, cstr(`<span foreground="#8c8c8c">WebView is not available on Linux</span>`))
+	gtkLabelSetWrap(label, 1)
+	// Small boxes clip the text rather than overflow.
+	gtkLabelSetEllipsize(label, pangoEllipsizeEnd)
+	gtkLabelSetLines(label, 3)
+	gtkLabelSetJustify(label, gtkJustifyCenter)
+	gtkWidgetSetCanTarget(label, 0)
+	return label
 }
 
 func addScript(content uintptr, source string, at int32) {
@@ -212,28 +256,69 @@ func addScript(content uintptr, source string, at int32) {
 	webkitUserScriptUnref(script)
 }
 
-// makeWeb makes v's page and its holder, hidden until placed.
+// makeWeb makes v's page in the app's network session and hosts it.
 func (w *window) makeWeb(v *view) {
 	wv := v.web
-	wv.widget = webkitWebViewNew()
+	wv.widget = gObjectNew(webkitWebViewGetType(), cstr("network-session"), w.webSession(), uintptr(0))
 	wv.content = webkitWebViewGetUserContentManager(wv.widget)
 	webkitContentRegisterHandler(wv.content, cstr(webHandler), nil)
-	// WebKit paints white otherwise; a page without a background shows
-	// the view's own, as its style expects.
-	webkitWebViewSetBackgroundColor(wv.widget, &[4]float32{})
-	wv.holder = gtkOverlayNew()
-	gtkWidgetSetOverflow(wv.holder, gtkOverflowHidden)
-	gtkOverlayAddOverlay(wv.holder, wv.widget)
-	gtkWidgetSetVisible(wv.holder, 0)
-	gtkFixedPut(w.fixed, wv.holder, 0, 0)
-	for _, p := range []uintptr{wv.holder, wv.widget, wv.content} {
-		w.webs[p] = v
+	webkitWebViewGetBackgroundColor(wv.widget, &wv.background)
+	w.host(v, &wv.hosted, wv.widget, true)
+	w.connect(v, wv.widget, "load-changed", cbWebLoadChanged)
+	w.connect(v, wv.widget, "load-failed", cbWebLoadFailed)
+	w.connect(v, wv.widget, "map", cbWebMap)
+	w.connect(v, wv.content, "script-message-received::"+webHandler, cbWebMessage)
+
+	// History keys and mouse buttons, before WebKit sees them: it keeps
+	// arrow keys, used or not, so Alt+Left would never reach the window.
+	keys := gtkEventControllerKeyNew()
+	gtkEventControllerSetPropagationPhase(keys, propagationPhaseCapture)
+	w.connect(v, keys, "key-pressed", cbWebKey)
+	gtkWidgetAddController(wv.widget, keys)
+	buttons := gtkGestureClickNew()
+	// Any button: only the back (8) and forward (9) ones are taken.
+	gtkGestureSingleSetButton(buttons, 0)
+	gtkEventControllerSetPropagationPhase(buttons, propagationPhaseCapture)
+	w.connect(v, buttons, "pressed", cbWebButton)
+	gtkWidgetAddController(wv.widget, buttons)
+
+	motion := gtkEventControllerMotionNew()
+	w.connect(v, motion, "motion", cbWebMotion)
+	gtkWidgetAddController(wv.widget, motion)
+	scroll := gtkEventControllerScrollNew(3) // both axes
+	gtkEventControllerSetPropagationPhase(scroll, propagationPhaseCapture)
+	w.connect(v, scroll, "scroll", cbWebScroll)
+	gtkWidgetAddController(wv.widget, scroll)
+}
+
+// webSessions are the network sessions by app ID: one network process,
+// and one set of cookies and storage, serves every web view of an app.
+var webSessions = map[string]uintptr{}
+
+// webSession returns the network session of w's app, which keeps
+// website data in $XDG_DATA_HOME/<app id>/webkit and its cache in
+// $XDG_CACHE_HOME/<app id>/webkit, with cookies in cookies.sqlite there.
+func (w *window) webSession() uintptr {
+	if s := webSessions[w.appID]; s != 0 {
+		return s
 	}
-	gSignalConnect(wv.holder, "get-child-position", cbWebChildPosition, w.handle)
-	gSignalConnect(wv.widget, "load-changed", cbWebLoadChanged, w.handle)
-	gSignalConnect(wv.widget, "load-failed", cbWebLoadFailed, w.handle)
-	gSignalConnect(wv.widget, "map", cbWebMap, w.handle)
-	gSignalConnect(wv.content, "script-message-received::"+webHandler, cbWebMessage, w.handle)
+	data, cache := webFolders(w.appID)
+	if err := os.MkdirAll(data, 0o755); err != nil {
+		log.Printf("nsgo: web view: %v", err)
+	}
+	s := webkitNetworkSessionNew(cstr(data), cstr(cache))
+	// Cookies outlive the app, as other website data does.
+	if cookies := webkitNetworkSessionGetCookieManager(s); cookies != 0 {
+		webkitCookieManagerSetPersistent(cookies, cstr(filepath.Join(data, "cookies.sqlite")), webkitCookieSQLite)
+	}
+	webSessions[w.appID] = s
+	return s
+}
+
+// webFolders are where web views of app id keep their data and cache.
+func webFolders(id string) (data, cache string) {
+	data, cache = engine.AppDirs(id)
+	return filepath.Join(data, "webkit"), filepath.Join(cache, "webkit")
 }
 
 // loadWeb loads v's source once its page is mapped. With WebKit's
@@ -252,26 +337,18 @@ func (w *window) loadWeb(v *view) {
 	case src.HTML != "":
 		var base *byte
 		if src.BaseURL != "" {
-			base = cstr(webURI(src.BaseURL))
+			base = cstr(src.BaseURL)
 		}
 		webkitWebViewLoadHTML(wv.widget, cstr(src.HTML), base)
 	case src.Src != "":
-		webkitWebViewLoadURI(wv.widget, cstr(webURI(src.Src)))
+		webkitWebViewLoadURI(wv.widget, cstr(src.Src))
 	}
-}
-
-// webURI takes a path without a scheme as a file's.
-func webURI(s string) string {
-	if strings.HasPrefix(s, "/") {
-		return (&url.URL{Scheme: "file", Path: s}).String()
-	}
-	return s
 }
 
 // webCommand has v's page do c, with value for messages and scripts.
 func (w *window) webCommand(v *view, c core.WebCommand, value string) {
 	if v.web == nil || v.web.widget == 0 {
-		return
+		return // the placeholder has no page
 	}
 	page := v.web.widget
 	switch c {
@@ -294,81 +371,26 @@ func evaluate(page uintptr, script string) {
 	webkitWebViewEvaluateJavascript(page, cstr(script), -1, nil, nil, 0, 0, 0)
 }
 
-// closeWeb stops v's page and lets it go with its holder.
+// closeWeb stops v's page and lets it go.
 func (w *window) closeWeb(v *view) {
 	wv := v.web
 	v.web = nil
-	if wv == nil || wv.widget == 0 {
-		return
+	if wv.widget != 0 {
+		webkitWebViewStopLoading(wv.widget)
 	}
-	for _, p := range []uintptr{wv.holder, wv.widget, wv.content} {
-		delete(w.webs, p)
+	w.unhost(v, &wv.hosted)
+	if wv.widget != 0 {
+		webkitContentUnregisterHandler(wv.content, cstr(webHandler), nil)
 	}
-	webkitWebViewStopLoading(wv.widget)
-	webkitContentUnregisterHandler(wv.content, cstr(webHandler), nil)
-	// Unparenting drops GTK's only reference, which gtk_fixed_put took.
-	gtkFixedRemove(w.fixed, wv.holder)
-}
-
-// placeWebs moves each page's holder to the part of its frame its
-// clipping ancestors leave, and hides the ones that are hidden, detached
-// or clipped away.
-func (w *window) placeWebs() {
-	for p, v := range w.webs {
-		wv := v.web
-		if p != wv.widget {
-			continue
-		}
-		at := w.frameAt(v)
-		b := core.Bounds{Origin: at, Size: v.frame.Size}
-		visible := intersectBounds(b, w.surfaceClip(v))
-		if !w.shownInTree(v) || visible.Size.Width <= 0 || visible.Size.Height <= 0 {
-			if wv.shown {
-				gtkWidgetSetVisible(wv.holder, 0)
-				wv.shown = false
-			}
-			continue
-		}
-		placed := core.Bounds{
-			Origin: core.Point{X: b.Origin.X - visible.Origin.X, Y: b.Origin.Y - visible.Origin.Y},
-			Size:   b.Size,
-		}
-		if visible != wv.visible {
-			gtkFixedMove(w.fixed, wv.holder, float64(visible.Origin.X), float64(visible.Origin.Y))
-			gtkWidgetSetSizeRequest(wv.holder, int32(visible.Size.Width), int32(visible.Size.Height))
-			wv.visible = visible
-		}
-		if placed != wv.placed {
-			wv.placed = placed
-			gtkWidgetQueueAllocate(wv.holder)
-		}
-		if !wv.shown {
-			gtkWidgetSetVisible(wv.holder, 1)
-			wv.shown = true
-		}
-	}
-}
-
-// shownInTree reports whether v is in the root's tree with it and every
-// ancestor shown.
-func (w *window) shownInTree(v *view) bool {
-	top := v
-	for p := v; p != nil; p = p.parent {
-		if p.deleted || p.style.Hidden || p.style.Opacity <= 0 {
-			return false
-		}
-		top = p
-	}
-	return top == w.view(w.root)
 }
 
 // focusedWeb returns the web view whose page has keyboard focus, or nil.
 func (w *window) focusedWeb() *view {
-	if len(w.webs) == 0 {
+	if len(w.natives) == 0 {
 		return nil
 	}
 	for f := gtkWindowGetFocus(w.win); f != 0; f = gtkWidgetGetParent(f) {
-		if v := w.webs[f]; v != nil && v.web.widget == f {
+		if v := w.natives[f]; v != nil && v.web != nil && v.web.widget == f {
 			return v
 		}
 	}
@@ -389,21 +411,18 @@ func (w *window) webEdit(role core.MenuRole) bool {
 	return true
 }
 
-// webOf returns the live web view p belongs to.
+// webOf returns the live web view whose page p belongs to.
 func webOf(data, p uintptr) (*window, *view) {
-	w := windowOf(data)
-	if w == nil || w.closing {
-		return nil, nil
-	}
-	v := w.webs[p]
-	if v == nil || v.deleted || v.web == nil {
+	w, v := nativeOf(data, p)
+	if v == nil || v.web == nil || v.web.widget == 0 {
 		return nil, nil
 	}
 	return w, v
 }
 
-// navigated reports the page's state as kinds.
-func (w *window) navigated(v *view, loading bool, kinds ...core.EventKind) {
+// navigated reports the page's state as kind and as a navigation state
+// change.
+func (w *window) navigated(v *view, loading bool, kind core.EventKind) {
 	page := v.web.widget
 	nav := core.WebNavigation{
 		URL:          goString(webkitWebViewGetURI(page)),
@@ -412,7 +431,7 @@ func (w *window) navigated(v *view, loading bool, kinds ...core.EventKind) {
 		CanGoBack:    webkitWebViewCanGoBack(page) != 0,
 		CanGoForward: webkitWebViewCanGoForward(page) != 0,
 	}
-	for _, k := range kinds {
+	for _, k := range []core.EventKind{kind, core.EventNavigationStateChange} {
 		n := nav
 		w.report(v, core.Event{Kind: k, ID: v.id, Navigation: &n})
 	}
@@ -426,13 +445,11 @@ func webLoadChangedCallback(page uintptr, event uint32, data uintptr) {
 	switch event {
 	case webkitLoadStarted:
 		v.web.failed = false
-		w.navigated(v, true, core.EventLoadStart, core.EventNavigationStateChange)
-	case webkitLoadCommitted:
-		w.navigated(v, true, core.EventNavigationStateChange)
+		w.navigated(v, true, core.EventLoadStart)
 	case webkitLoadFinished:
 		// A failed navigation finishes too; it was reported as an error.
 		if !v.web.failed {
-			w.navigated(v, false, core.EventLoad, core.EventNavigationStateChange)
+			w.navigated(v, false, core.EventLoad)
 		}
 	}
 }
@@ -456,7 +473,8 @@ func webLoadFailedCallback(page uintptr, event uint32, uri, gerr uintptr, data u
 		cancelled := e.domain == webkitNetworkErrorQuark() && e.code == webkitNetworkCancelled ||
 			e.domain == webkitPolicyErrorQuark() && e.code == webkitPolicyInterrupt
 		if !cancelled {
-			w.report(v, core.Event{Kind: core.EventError, ID: v.id, Text: goString(e.message)})
+			w.report(v, core.Event{Kind: core.EventError, ID: v.id, Text: goString(e.message),
+				Navigation: &core.WebNavigation{URL: goString(uri)}})
 		}
 	}
 	return 1 // the app shows failures itself, without WebKit's error page
@@ -482,15 +500,95 @@ func webMapCallback(page uintptr, data uintptr) {
 	}
 }
 
-// webChildPositionCallback gives the page its whole frame in the holder,
-// which clips it to the visible part.
-func webChildPositionCallback(holder, child, allocation uintptr, data uintptr) int32 {
-	_, v := webOf(data, holder)
-	if v == nil || allocation == 0 {
+// The keys that step through a page's history, beside the arrows.
+const (
+	gdkKPLeft  = 0xff96
+	gdkKPRight = 0xff98
+	gdkBack    = 0x1008ff26
+	gdkForward = 0x1008ff27
+
+	gestureClaimed = 1 // GTK_EVENT_SEQUENCE_CLAIMED
+)
+
+// historyKey reports which way keyval with state steps through history:
+// -1 back, 1 forward, 0 neither. Lock keys and held buttons do not count.
+func historyKey(keyval, state uint32) int {
+	mods := state & (gdkControl | gdkAlt | gdkShift | gdkSuper)
+	switch {
+	case keyval == gdkBack && mods == 0:
+		return -1
+	case keyval == gdkForward && mods == 0:
+		return 1
+	case (keyval == gdkLeft || keyval == gdkKPLeft) && mods == gdkAlt:
+		return -1
+	case (keyval == gdkRight || keyval == gdkKPRight) && mods == gdkAlt:
+		return 1
+	}
+	return 0
+}
+
+// goHistory steps the page way through its history, or back in the app
+// when the page has nowhere to go back to, and reports whether something
+// took it.
+func (w *window) goHistory(v *view, way int) bool {
+	page := v.web.widget
+	switch {
+	case way < 0 && webkitWebViewCanGoBack(page) != 0:
+		webkitWebViewGoBack(page)
+	case way > 0 && webkitWebViewCanGoForward(page) != 0:
+		webkitWebViewGoForward(page)
+	case way < 0:
+		w.back()
+	default:
+		return false
+	}
+	return true
+}
+
+func webKeyCallback(controller uintptr, keyval, keycode, state uint32, data uintptr) int32 {
+	w, v := webOf(data, controller)
+	if v == nil {
 		return 0
 	}
-	r := (*[4]int32)(cPointer(allocation))
-	p := v.web.placed
-	*r = [4]int32{int32(p.Origin.X), int32(p.Origin.Y), int32(p.Size.Width), int32(p.Size.Height)}
+	if way := historyKey(keyval, state); way != 0 && w.goHistory(v, way) {
+		return 1
+	}
+	return 0
+}
+
+func webButtonCallback(gesture uintptr, presses int32, x, y float64, data uintptr) {
+	w, v := webOf(data, gesture)
+	if v == nil {
+		return
+	}
+	way := 0
+	switch gtkGestureSingleGetCurrentButton(gesture) {
+	case 8:
+		way = -1
+	case 9:
+		way = 1
+	}
+	if way != 0 && w.goHistory(v, way) {
+		gtkGestureSetState(gesture, gestureClaimed)
+	}
+}
+
+func webMotionCallback(controller uintptr, x, y float64, data uintptr) {
+	if _, v := webOf(data, controller); v != nil {
+		v.web.pointer = core.Point{X: core.Points(x), Y: core.Points(y)}
+	}
+}
+
+// webScrollCallback leaves the wheels over a page that does not scroll
+// to the scroll views around it.
+func webScrollCallback(controller uintptr, dx, dy float64, data uintptr) int32 {
+	w, v := webOf(data, controller)
+	if v == nil || !v.web.config.NoScroll {
+		return 0
+	}
+	at := w.frameAt(v)
+	at.X += v.web.pointer.X
+	at.Y += v.web.pointer.Y
+	w.wheelEvent(gtkEventControllerGetCurrentEventState(controller), at, dx, dy)
 	return 1
 }

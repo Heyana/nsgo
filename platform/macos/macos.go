@@ -70,6 +70,7 @@ type view struct {
 	transform core.Transform      // AppKit drops it when the frame changes
 	drawing   *core.Drawing       // a canvas's
 	web       *apple.Web          // a web view's
+	video     *apple.Video        // a video's
 
 	windowDrag core.WindowDrag
 	activation core.PanActivation
@@ -713,6 +714,14 @@ func (s *surface) apply(b *core.MountBatch) {
 			views[v.web.View()] = v
 		case core.ItemWebCommand:
 			v.web.Command(it.WebCommand, it.Value)
+		case core.ItemVideo:
+			delete(views, v.video.View())
+			v.video.Configure(it.Video)
+			if shown := v.video.View(); shown != 0 {
+				views[shown] = v
+			}
+		case core.ItemVideoSeek:
+			v.video.Seek(it.Time)
 		case core.ItemCanvas:
 			v.drawing = it.Drawing
 			v.native.Send(selSetNeedsDisplay, true)
@@ -823,6 +832,9 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 	case core.KindWeb:
 		v.web = apple.NewWeb(v.native)
 		v.web.Dispatch = v.report
+	case core.KindVideo:
+		v.video = apple.NewVideo(v.native)
+		v.video.Dispatch = v.report
 	}
 	views[v.native] = v
 	return v
@@ -839,6 +851,10 @@ func (s *surface) delete(v *view) {
 	if v.web != nil {
 		delete(views, v.web.View())
 		v.web.Close()
+	}
+	if v.video != nil {
+		delete(views, v.video.View())
+		v.video.Close()
 	}
 	if v.hover != 0 {
 		v.hover.Send(selRelease)
@@ -1031,6 +1047,9 @@ func hitTest(self objc.ID, cmd objc.SEL, p apple.CGPoint) objc.ID {
 		if v := views[n]; v != nil {
 			if v.field == n || v.kind == core.KindScroll || v.kind == core.KindWeb {
 				return hit
+			}
+			if v.kind == core.KindVideo && v.native != n {
+				return hit // the player's controls
 			}
 			if (v.pressable() || v.events.Has(core.EventPan)) && v.native == n {
 				return n

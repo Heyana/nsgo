@@ -474,14 +474,21 @@ public class NsgoView extends FrameLayout {
         event(kind, id, count, x, y, text, width, height, index, 0, 0, 0, 0, null);
     }
 
+    private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
+            int index, int phase, float vx, float vy, float value, WebNode.Navigation nav) {
+        event(kind, id, count, x, y, text, width, height, index, phase, vx, vy, value, nav, 0, 0, false);
+    }
+
     /**
      * Sends an event to the engine: its kind, node, count, point, text,
      * size and index, then a gesture's phase, velocity and value, then a
      * web view's navigation: flags of whether there is one, loading,
-     * canGoBack and canGoForward, and if there is, its URL and title.
+     * canGoBack and canGoForward, and if there is, its URL and title; then
+     * a video's time and duration in milliseconds and whether it buffers.
      */
     private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
-            int index, int phase, float vx, float vy, float value, WebNode.Navigation nav) {
+            int index, int phase, float vx, float vy, float value, WebNode.Navigation nav,
+            long time, long duration, boolean buffering) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream d = new DataOutputStream(bytes);
         try {
@@ -505,6 +512,9 @@ public class NsgoView extends FrameLayout {
                 Protocol.writeString(d, nav.url);
                 Protocol.writeString(d, nav.title);
             }
+            d.writeLong(time);
+            d.writeLong(duration);
+            d.writeByte(buffering ? 1 : 0);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -656,6 +666,7 @@ public class NsgoView extends FrameLayout {
                 outside.remove(n);
                 if (n.animator != null) n.animator.cancel();
                 if (n.web != null) n.web.destroy();
+                if (n.video != null) n.video.destroy();
                 break;
             case Protocol.ITEM_FRAME:
                 n.view.setLayoutParams(frame(in));
@@ -800,6 +811,12 @@ public class NsgoView extends FrameLayout {
                 n.web.command(command, Protocol.readString(in));
                 break;
             }
+            case Protocol.ITEM_VIDEO:
+                n.video.configure(in);
+                break;
+            case Protocol.ITEM_VIDEO_SEEK:
+                n.video.seek(in.readLong());
+                break;
             case Protocol.ITEM_WINDOW:
             case Protocol.ITEM_MENU:
                 // Desktop windows' and menus'; Go writes no fields.
@@ -1074,6 +1091,25 @@ public class NsgoView extends FrameLayout {
                 });
                 n.children = (ViewGroup) view;
                 n.children.addView(n.web.view, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+                break;
+            case Protocol.KIND_VIDEO:
+                // The player fills the node's view, which draws its style
+                // and takes its presses.
+                n.video = new VideoNode(context, new VideoNode.Reporter() {
+                    @Override
+                    public boolean wants(int k) {
+                        return n.has(k);
+                    }
+
+                    @Override
+                    public void report(int k, String text, long time, long duration, int width, int height,
+                            boolean buffering) {
+                        event(k, n.id, 0, 0, 0, text, width / density, height / density, 0, 0, 0, 0, 0, null,
+                                time, duration, buffering);
+                    }
+                });
+                n.children = (ViewGroup) view;
+                n.children.addView(n.video, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
                 break;
             case Protocol.KIND_SCROLL:
                 n.children = new Content(context);
@@ -1761,6 +1797,7 @@ public class NsgoView extends FrameLayout {
         ImageNode image;
         CanvasNode canvas;
         WebNode web;
+        VideoNode video;
         /** The view's background, the look it shows and the transition moving it. */
         Box background;
         Look shown;

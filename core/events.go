@@ -1,5 +1,7 @@
 package core
 
+import "time"
+
 // EventKind is what a platform reports about a view.
 type EventKind uint8
 
@@ -27,7 +29,9 @@ const (
 	// EventLoadStart, EventProgress (Loaded, Total), EventLoad (Size, the
 	// source's pixels), EventError (Text) and EventLoadEnd follow an image
 	// view's loading. A web view reports EventLoadStart and EventLoad with
-	// its Navigation, and EventError.
+	// its Navigation, and EventError with the URL in Navigation. A video
+	// reports EventLoadStart, EventLoad (Duration and Size, in points),
+	// EventProgress (Time and Duration) and EventError.
 	EventLoadStart
 	EventProgress
 	EventLoad
@@ -63,6 +67,11 @@ const (
 	// EventNavigationStateChange is a web view's page or history changing
 	// (Navigation).
 	EventNavigationStateChange
+	// EventEnd is a video reaching its end, also when it repeats.
+	EventEnd
+	// EventBuffer is a video starting or stopping waiting for data
+	// (Buffering).
+	EventBuffer
 )
 
 // EventMask is a set of event kinds.
@@ -96,6 +105,9 @@ type Event struct {
 	Value    float32
 	// Navigation is a web view's state.
 	Navigation *WebNavigation
+	// Time, Duration and Buffering are a video's.
+	Time, Duration time.Duration
+	Buffering      bool
 }
 
 // Mergeable reports whether a later event of the same kind and view

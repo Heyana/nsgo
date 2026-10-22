@@ -40,6 +40,7 @@ func init() {
 		{"Icons", "The bundled Lucide pack, drawn in inherited text color at any size.", iconsPage},
 		{"Canvas", "2D drawing recorded on the engine and played by the platform.", canvasPage},
 		{"Web View", "The platform's web view: inline HTML, a site, history and messages both ways.", webPage},
+		{"Video", "The platform's video player: playback the app drives, resize modes and the platform's controls.", videoPage},
 		{"Animation", "Values stepped with Animate and transitions run by the platform.", animationPage},
 		{"Gestures", "Pans, pinches and rotations, sharing touches with scrolling.", gesturesPage},
 		{"Window", "A custom title bar and the desktop window's commands.", windowPage},

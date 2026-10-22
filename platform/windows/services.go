@@ -199,8 +199,8 @@ func (w *window) press(at core.Point) {
 		v := hit(root, at, func(v *view) bool { return v.events.Has(core.EventPress) || v.kind == core.KindInput })
 		if l, ok := textOf(v); ok {
 			b, _ := w.surfaceBounds(v)
-			x := w.px(at.X - b.Origin.X - v.content.Origin.X)
-			y := w.px(at.Y - b.Origin.Y - v.content.Origin.Y)
+			x := float32(at.X - b.Origin.X - v.content.Origin.X)
+			y := float32(at.Y - b.Origin.Y - v.content.Origin.Y)
 			w.engine.Dispatch(core.Event{Kind: core.EventPress, ID: v.id, Index: l.indexAt(x, y)})
 			return
 		}
@@ -208,11 +208,11 @@ func (w *window) press(at core.Point) {
 	w.engine.PressAt(at)
 }
 
-func textOf(v *view) (*spanLayout, bool) {
+func textOf(v *view) (*textLayout, bool) {
 	if v == nil || v.kind != core.KindText {
 		return nil, false
 	}
-	l, ok := v.text.(*spanLayout)
+	l, ok := v.text.(*textLayout)
 	return l, ok
 }
 

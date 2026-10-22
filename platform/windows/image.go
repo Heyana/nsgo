@@ -14,7 +14,6 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 	"unsafe"
 
@@ -22,32 +21,8 @@ import (
 	"github.com/oneo-me/nsgo/platform/internal/imageload"
 )
 
-var (
-	msimg32 = syscall.NewLazyDLL("msimg32.dll")
-
-	alphaBlend       = msimg32.NewProc("AlphaBlend")
-	createDIBSection = gdi32.NewProc("CreateDIBSection")
-)
-
-const (
-	dibRGBColors = 0
-	// blendPremultiplied is BLENDFUNCTION{AC_SRC_OVER, 0, 255,
-	// AC_SRC_ALPHA}, passed by value.
-	blendPremultiplied = 0x01ff0000
-)
-
 // progressInterval spaces an image's progress reports.
 const progressInterval = 100 * time.Millisecond
-
-type bitmapInfo struct {
-	Size                         uint32
-	Width, Height                int32
-	Planes, BitCount             uint16
-	Compression, SizeImage       uint32
-	XPelsPerMeter, YPelsPerMeter int32
-	ClrUsed, ClrImportant        uint32
-	Colors                       [1]uint32
-}
 
 // picture is a decoded image: premultiplied BGRA rows, top to bottom.
 type picture struct {
@@ -58,12 +33,12 @@ type picture struct {
 // imageSlot is an image view's source or placeholder and what the window
 // keeps for it.
 type imageSlot struct {
-	src    core.ImageSource
-	load   *imageLoad // the load under way, if any
-	pic    *picture
-	bitmap uintptr // pic as a DIB section, tinted with tint
-	bits   unsafe.Pointer
-	tint   core.Color
+	src        core.ImageSource
+	load       *imageLoad // the load under way, if any
+	pic        *picture
+	bitmap     *comObject // pic as a Direct2D bitmap, tinted with tint, made in generation
+	tint       core.Color
+	generation uint64
 }
 
 type imageLoad struct{ cancel context.CancelFunc }
@@ -76,10 +51,7 @@ func (s *imageSlot) reset(src core.ImageSource) {
 		s.load.cancel()
 		s.load = nil
 	}
-	if s.bitmap != 0 {
-		deleteObject.Call(s.bitmap)
-		s.bitmap = 0
-	}
+	releaseAll(&s.bitmap)
 	s.pic = nil
 	s.src = src
 }
@@ -186,7 +158,7 @@ func decode(data []byte) (*picture, error) {
 	}
 	rgba := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
 	draw.Draw(rgba, rgba.Rect, img, b.Min, draw.Src)
-	// image.RGBA is premultiplied already; GDI wants blue first.
+	// image.RGBA is premultiplied already; Direct2D wants blue first.
 	pix := rgba.Pix
 	for i := 0; i+3 < len(pix); i += 4 {
 		pix[i], pix[i+2] = pix[i+2], pix[i]
@@ -194,31 +166,31 @@ func decode(data []byte) (*picture, error) {
 	return &picture{width: b.Dx(), height: b.Dy(), pix: pix}, nil
 }
 
-// bitmapOf returns s's picture as a DIB section with tint applied, made
-// once per picture and tint; 0 until the picture arrives.
-func (s *imageSlot) bitmapOf(tint core.Color) uintptr {
+// bitmapOf returns s's picture as a Direct2D bitmap with tint applied,
+// made once per picture, tint and device; nil until the picture arrives.
+func (s *imageSlot) bitmapOf(dc *comObject, tint core.Color) *comObject {
 	if s.pic == nil {
-		return 0
+		return nil
 	}
-	if s.bitmap != 0 {
-		if s.tint == tint {
+	if s.bitmap != nil {
+		if s.tint == tint && s.generation == gfxGeneration {
 			return s.bitmap
 		}
-		deleteObject.Call(s.bitmap)
-		s.bitmap = 0
+		releaseAll(&s.bitmap)
 	}
-	h, bits := newDIB(int32(s.pic.width), int32(s.pic.height))
-	if h == 0 {
-		return 0
+	pix := s.pic.pix
+	if tint&0xff != 0 {
+		pix = make([]byte, len(s.pic.pix))
+		tintInto(pix, s.pic.pix, tint)
 	}
-	dst := unsafe.Slice((*byte)(bits), len(s.pic.pix))
-	if tint&0xff == 0 {
-		copy(dst, s.pic.pix)
-	} else {
-		tintInto(dst, s.pic.pix, tint)
+	props := bitmapProperties1{format: dxgiFormatBGRA, alphaMode: d2dAlphaPremultiplied, dpiX: 96, dpiY: 96}
+	if failed(dc.callSize(dcCreateBitmap, uint32(s.pic.width), uint32(s.pic.height), uintptr(unsafe.Pointer(&pix[0])),
+		uintptr(s.pic.width*4), uintptr(unsafe.Pointer(&props)), uintptr(unsafe.Pointer(&s.bitmap)))) {
+		s.bitmap = nil
+		return nil
 	}
-	s.bitmap, s.bits, s.tint = h, bits, tint
-	return h
+	s.tint, s.generation = tint, gfxGeneration
+	return s.bitmap
 }
 
 // tintInto copies premultiplied pixels from src to dst with their colors
@@ -232,87 +204,32 @@ func tintInto(dst, src []byte, tint core.Color) {
 }
 
 // drawImage paints v's source, or its placeholder until the source
-// arrives, into r as v's resize mode fits it: blended by GDI where the
-// transform keeps it a rectangle, else sampled here.
-func (p *painter) drawImage(v *view, tint core.Color, r rect) {
+// arrives, into r (points) as v's resize mode fits it.
+func (p *painter) drawImage(v *view, tint core.Color, r rectF) {
 	s := &v.source
 	if s.pic == nil {
 		s = &v.placeholder
 	}
-	bmp := s.bitmapOf(tint)
-	if bmp == 0 || r.empty() {
+	if s.pic == nil || r.empty() {
 		return
 	}
-	src, dst := p.w.fit(s, v.image.ResizeMode, r)
+	bmp := s.bitmapOf(p.dc, tint)
+	if bmp == nil {
+		return
+	}
+	// Fit in pixels, so the picture's edges fall on whole ones.
+	scale := float64(p.scale)
+	box := rect{int32(math.Round(float64(r.left) * scale)), int32(math.Round(float64(r.top) * scale)),
+		int32(math.Round(float64(r.right) * scale)), int32(math.Round(float64(r.bottom) * scale))}
+	src, dst := p.w.fit(s, v.image.ResizeMode, box)
 	if src.empty() || dst.empty() {
 		return
 	}
-	switch {
-	case p.m == identity:
-		blendBitmap(p.dc, dst, bmp, src)
-	case p.m.axisAligned():
-		d := p.m.bound(dst).offset(-p.ox, -p.oy)
-		p.device(func() { blendBitmap(p.dc, d, bmp, src) })
-	default:
-		p.sample(s, src, dst)
-	}
-}
-
-// blendBitmap blends the premultiplied bitmap's src into dst.
-func blendBitmap(dc uintptr, dst rect, bmp uintptr, src rect) {
-	mem, _, _ := createCompatibleDC.Call(dc)
-	old, _, _ := selectObject.Call(mem, bmp)
-	alphaBlend.Call(dc, uintptr(dst.Left), uintptr(dst.Top), uintptr(dst.Right-dst.Left), uintptr(dst.Bottom-dst.Top),
-		mem, uintptr(src.Left), uintptr(src.Top), uintptr(src.Right-src.Left), uintptr(src.Bottom-src.Top),
-		blendPremultiplied)
-	selectObject.Call(mem, old)
-	deleteDC.Call(mem)
-}
-
-// sample draws src of s's bitmap into dst, in the window's pixels, under
-// a rotating transform AlphaBlend cannot take: each target pixel inside
-// the clipping maps back to its nearest source pixel.
-func (p *painter) sample(s *imageSlot, src, dst rect) {
-	gdiFlush.Call()
-	inv := p.m.invert()
-	box := p.m.bound(dst).offset(-p.ox, -p.oy)
-	target := unsafe.Slice((*uint32)(p.target.bits), int(p.target.width)*int(p.target.height))
-	pix := unsafe.Slice((*uint32)(s.bits), s.pic.width*s.pic.height)
-	sx := float64(src.Right-src.Left) / float64(dst.Right-dst.Left)
-	sy := float64(src.Bottom-src.Top) / float64(dst.Bottom-dst.Top)
-	for _, c := range p.clipRects() {
-		c = c.intersect(box)
-		for y := c.Top; y < c.Bottom; y++ {
-			for x := c.Left; x < c.Right; x++ {
-				lx, ly := inv.apply(float64(x+p.ox)+0.5, float64(y+p.oy)+0.5)
-				if lx < float64(dst.Left) || ly < float64(dst.Top) || lx >= float64(dst.Right) || ly >= float64(dst.Bottom) {
-					continue
-				}
-				u := min(int(src.Left)+int((lx-float64(dst.Left))*sx), int(src.Right)-1)
-				w := min(int(src.Top)+int((ly-float64(dst.Top))*sy), int(src.Bottom)-1)
-				sp := pix[w*s.pic.width+u]
-				i := int(y)*int(p.target.width) + int(x)
-				switch a := sp >> 24; a {
-				case 0:
-				case 255:
-					target[i] = sp
-				default:
-					target[i] = over(sp, target[i])
-				}
-			}
-		}
-	}
-}
-
-// over composites premultiplied pixel s over d.
-func over(s, d uint32) uint32 {
-	k := 255 - s>>24
-	var out uint32
-	for shift := 0; shift < 32; shift += 8 {
-		c := s>>shift&0xff + (d>>shift&0xff)*k/255
-		out |= min(c, 255) << shift
-	}
-	return out
+	k := float32(1 / scale)
+	d := rectF{float32(dst.Left) * k, float32(dst.Top) * k, float32(dst.Right) * k, float32(dst.Bottom) * k}
+	sr := rectF{float32(src.Left), float32(src.Top), float32(src.Right), float32(src.Bottom)}
+	p.dc.callF(rtDrawBitmap, 0b100, bmp.ptr(), uintptr(unsafe.Pointer(&d)), f32(1), d2dInterpolationLinear,
+		uintptr(unsafe.Pointer(&sr)))
 }
 
 // fit returns the part of s's picture to draw and where, in r, for mode.

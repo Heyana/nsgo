@@ -4,9 +4,8 @@ package windows
 
 import (
 	"math"
-	"strings"
 	"testing"
-	"unicode/utf16"
+	"unsafe"
 
 	"github.com/oneo-me/nsgo/core"
 )
@@ -36,18 +35,17 @@ func TestMatrixComposesAndInverts(t *testing.T) {
 }
 
 func TestTransformOfTurnsAroundTheCentre(t *testing.T) {
-	w := &window{scale: 1}
-	r := rect{0, 0, 100, 100}
-	if got := w.transformOf(core.Transform{TranslateX: 10, TranslateY: -5}, r); got != translation(10, -5) {
+	r := core.Size{Width: 100, Height: 100}
+	if got := transformOf(core.Transform{TranslateX: 10, TranslateY: -5}, r); got != translation(10, -5) {
 		t.Fatalf("translate = %+v", got)
 	}
-	m := w.transformOf(core.Transform{ScaleX: 2, ScaleY: 2}, r)
+	m := transformOf(core.Transform{ScaleX: 2, ScaleY: 2}, r)
 	if x, y := m.apply(0, 0); x != -50 || y != -50 {
 		t.Fatalf("scaled corner = %g, %g", x, y)
 	}
 	// A quarter turn in degrees sends (100, 50) to (50, 100) around the
 	// centre.
-	m = w.transformOf(core.Transform{Rotate: 90}, r)
+	m = transformOf(core.Transform{Rotate: 90}, r)
 	if x, y := m.apply(100, 50); !closeTo(x, 50) || !closeTo(y, 100) {
 		t.Fatalf("rotated point = %g, %g", x, y)
 	}
@@ -195,24 +193,9 @@ func TestCenteredRoundsToWholePixels(t *testing.T) {
 	}
 }
 
-func TestPixelsCompositeAsPremultipliedBGRA(t *testing.T) {
-	if got := premultiply(core.RGBA(0xff0000, 0.5)); got != 0x80800000 {
-		t.Fatalf("premultiply = %08x", got)
-	}
-	if got := colorRef(core.RGB(0x123456)); got != 0x563412 {
-		t.Fatalf("colorRef = %06x", got)
-	}
-	// A transparent source leaves the destination alone, and an opaque one
-	// replaces it.
-	if got := over(0x00000000, 0xff00ff00); got != 0xff00ff00 {
-		t.Fatalf("transparent over = %08x", got)
-	}
-	if got := over(0xff112233, 0xff445566); got != 0xff112233 {
-		t.Fatalf("opaque over = %08x", got)
-	}
-	// Half black over white rounds each channel toward white.
-	if got := over(0x80000000, 0xffffffff); got != 0xff7f7f7f {
-		t.Fatalf("half black over white = %08x", got)
+func TestColorsConvertForDirect2D(t *testing.T) {
+	if got := colorOf(core.RGBA(0xff0000, 0.5)); got.r != 1 || got.g != 0 || got.b != 0 || got.a < 0.49 || got.a > 0.51 {
+		t.Fatalf("colorOf = %+v", got)
 	}
 }
 
@@ -337,16 +320,13 @@ func TestPixelConversionsUseTheWindowScale(t *testing.T) {
 	if got := w.px(10); got != 15 {
 		t.Fatalf("px = %d", got)
 	}
-	if got := w.rect(10, 20, core.Size{Width: 30, Height: 40}); got != (rect{15, 30, 60, 90}) {
-		t.Fatalf("rect = %+v", got)
-	}
 	if got := w.point(15, 30); got != (core.Point{X: 10, Y: 20}) {
 		t.Fatalf("point = %+v", got)
 	}
 }
 
 func testWindow() *window {
-	return &window{scale: 1, fonts: fontCache{scale: 1, fonts: map[fontKey]*font{}}}
+	return &window{scale: 1}
 }
 
 func TestSpanAttachmentsTakeTheirPlaceAndGrowTheLine(t *testing.T) {
@@ -371,18 +351,43 @@ func TestSpanAttachmentsTakeTheirPlaceAndGrowTheLine(t *testing.T) {
 		t.Fatal("the layout reports no attachments")
 	}
 	box, shown := al.Attachment(0)
-	if !shown || box.Size != (core.Size{Width: 40, Height: 60}) || box.Origin.X <= 0 || box.Origin.Y != 0 {
+	if !shown || box.Size != (core.Size{Width: 40, Height: 60}) || box.Origin.X <= 0 || math.Abs(float64(box.Origin.Y)) > 0.5 {
 		t.Fatalf("attachment = %+v, %v; want 40×60 after the first word, at the top of its line", box, shown)
 	}
-	// It stands on the baseline: its bottom is the font's ascent above the
-	// bottom of the line, less the descent.
-	f := w.fonts.acquire(fontKey{font: style.Font})
-	defer w.fonts.release(f)
-	if bottom, want := box.Origin.Y+box.Size.Height, size.Height-core.Points(f.height-f.ascent); bottom != want {
-		t.Errorf("attachment bottom = %v, want the baseline %v", bottom, want)
+	// It stands on the baseline.
+	baseline := l.(*textLayout).lines[0].baseline
+	if bottom := float32(box.Origin.Y + box.Size.Height); math.Abs(float64(bottom-baseline)) > 0.01 {
+		t.Errorf("attachment bottom = %v, want the baseline %v", bottom, baseline)
 	}
 	if _, shown := al.Attachment(1); shown {
 		t.Error("a missing attachment is shown")
+	}
+}
+
+// TestAttachmentsGrowLinesOfAFixedHeight checks that a line height does
+// not cut an attachment taller than it: its line grows, and the lines
+// after it move down.
+func TestAttachmentsGrowLinesOfAFixedHeight(t *testing.T) {
+	w := testWindow()
+	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 16, Weight: 400}, Color: core.RGB(0), LineHeight: 24}
+	text := "ab " + string(core.AttachmentRune) + "\ncd\nef"
+	at := &core.AttributedText{Text: text, Style: style,
+		Attachments: []core.TextAttachment{{Offset: 3, Size: core.Size{Width: 40, Height: 60}}}}
+	p := w.Prepare(at)
+	defer p.Release()
+	size := p.Measure(core.Auto)
+	if want := core.Points(math.Ceil(float64(60 + 24 + 24 + 24 - p.(*preparedText).baseline))); size.Height != want {
+		t.Errorf("height = %v, want the attachment's line, grown, and two of 24", size.Height)
+	}
+	l := p.Layout(size).(*textLayout)
+	defer l.Release()
+	// Every line moves down by what the first grew above its baseline.
+	b := p.(*preparedText).baseline
+	if len(l.lines) != 3 || len(l.groups) != 1 || math.Abs(float64(l.groups[0].shift-(60-b))) > 0.01 {
+		t.Fatalf("lines %+v, groups %+v; want all moved down by %v", l.lines, l.groups, 60-b)
+	}
+	if box, _ := l.Attachment(0); box.Origin.Y != 0 {
+		t.Errorf("the attachment is at %v, want the top", box.Origin.Y)
 	}
 }
 
@@ -413,32 +418,28 @@ func TestSpanBackgroundsBoxEachLineWithoutHangingSpaces(t *testing.T) {
 	p := w.Prepare(at)
 	defer p.Release()
 	one := p.Measure(core.Auto)
-	l := p.Layout(one).(*spanLayout)
+	l := p.Layout(one).(*textLayout)
 	if len(l.backgrounds) != 1 {
 		t.Fatalf("%d background boxes on one line, want 1", len(l.backgrounds))
 	}
 	b := l.backgrounds[0]
-	f := w.fonts.acquire(fontKey{font: style.Font})
-	defer w.fonts.release(f)
-	if b.r.Bottom-b.r.Top != f.height || b.r.Left <= 0 || b.radius != float64(f.height)/2 {
-		t.Errorf("box = %+v, want the font's height after the first word, radius half of it", b)
+	m := metricsOf(style.Font)
+	height := (m.ascent + m.descent) * 16
+	if math.Abs(float64(b.r.bottom-b.r.top-height)) > 0.01 || b.r.left <= 0 || b.radius != (b.r.bottom-b.r.top)/2 {
+		t.Errorf("box = %+v, want the font's height %v after the first word, radius half of it", b, height)
 	}
 	l.Release()
 	// Wrapped after "bbbb ", the first line's box ends at its ink.
-	narrow := p.Measure(core.Points(float64(b.r.Left) + float64(one.Width-core.Points(b.r.Left))/2))
-	l = p.Layout(narrow).(*spanLayout)
+	narrow := p.Measure(core.Points(b.r.left + (float32(one.Width)-b.r.left)/2))
+	l = p.Layout(narrow).(*textLayout)
 	defer l.Release()
 	if len(l.lines) < 2 || len(l.backgrounds) != 2 {
 		t.Fatalf("%d lines, %d boxes; want a box on each of 2 lines", len(l.lines), len(l.backgrounds))
 	}
-	var ink int32
-	for _, r := range l.runs[l.lines[0].first:l.lines[0].last] {
-		if r.text[0] != ' ' { // spaces are not ink
-			ink = max(ink, r.x+r.ends[len(r.ends)-1])
-		}
-	}
-	if b := l.backgrounds[0]; b.r.Right > ink {
-		t.Errorf("the first line's box ends at %d, past its last word's end %d", b.r.Right, ink)
+	first := l.lines[0]
+	_, ink := inkWidth(l.layout, first.start, first.end-first.trailing-first.newline)
+	if b := l.backgrounds[0]; b.r.right > ink+0.01 {
+		t.Errorf("the first line's box ends at %v, past its last word's end %v", b.r.right, ink)
 	}
 }
 
@@ -455,37 +456,31 @@ func TestPlainTextMeasuresTheLinesItDraws(t *testing.T) {
 	natural := p.Measure(core.Auto)
 	narrow := core.Points(float64(natural.Width) * 0.55)
 	size := p.Measure(narrow)
-	l := p.Layout(size).(*spanLayout)
+	l := p.Layout(size).(*textLayout)
 	defer l.Release()
-	step := w.px(style.LineHeight)
 	if len(l.lines) < 2 {
 		t.Fatalf("%v wide text drew %d line(s) at %v, want at least 2", natural.Width, len(l.lines), narrow)
 	}
-	if want := core.Points(float64(len(l.lines)*int(step)) / w.scale); size.Height != want {
-		t.Errorf("measured height %v, want %v for %d lines of %dpx", size.Height, want, len(l.lines), step)
+	if want := core.Points(math.Ceil(float64(len(l.lines)) * 21.7)); size.Height != want {
+		t.Errorf("measured height %v, want %v for %d lines of 21.7", size.Height, want, len(l.lines))
 	}
 	for i := 1; i < len(l.lines); i++ {
-		if l.lines[i].top < l.lines[i-1].bottom {
-			t.Errorf("line %d starts at %d, before the last ends at %d", i, l.lines[i].top, l.lines[i-1].bottom)
+		if l.lines[i].top < l.lines[i-1].top+l.lines[i-1].height-0.01 {
+			t.Errorf("line %d starts at %v, before the last ends", i, l.lines[i].top)
 		}
 	}
 }
 
-// TestFallbackFontsDrawMissingGlyphs checks that a rune the text's font
-// lacks is set in the family of fallbackFonts that has it, so it takes
-// that family's width rather than the missing-glyph box's.
+// TestFallbackFontsDrawMissingGlyphs checks that DirectWrite sets a rune
+// the text's font lacks in a family that has it, so it takes that
+// family's width rather than the missing-glyph box's.
 func TestFallbackFontsDrawMissingGlyphs(t *testing.T) {
 	w := testWindow()
 	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 32}, Color: core.RGB(0)}
 	for _, c := range []struct{ text, family string }{
-		{"⌘", "Segoe UI Symbol"},
-		{"✓", "Segoe UI Symbol"},
-		{"😀", "Segoe UI Symbol"},
+		{"😀", "Segoe UI Emoji"},
 		{"中", "Microsoft YaHei UI"},
 	} {
-		if got := w.fallbackFamily([]rune(c.text)[0]); got != c.family {
-			t.Errorf("%q falls back to %q, want %q", c.text, got, c.family)
-		}
 		p := w.Prepare(&core.AttributedText{Text: c.text, Style: style})
 		got := p.Measure(core.Auto).Width
 		p.Release()
@@ -494,14 +489,14 @@ func TestFallbackFontsDrawMissingGlyphs(t *testing.T) {
 		q := w.Prepare(&core.AttributedText{Text: c.text, Style: fallback})
 		want := q.Measure(core.Auto).Width
 		q.Release()
-		if got != want {
+		if got != want || got == 0 {
 			t.Errorf("%q is %v wide, the %s glyph is %v", c.text, got, c.family, want)
 		}
 	}
 }
 
 // TestSingleLineTextTruncatesInsteadOfWrapping checks MaxLines 1 keeps
-// the text on one line, ending it with an ellipsis at the box's width.
+// the text on one line, trimmed to the box's width.
 func TestSingleLineTextTruncatesInsteadOfWrapping(t *testing.T) {
 	w := testWindow()
 	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 16}, Color: core.RGB(0)}
@@ -509,35 +504,23 @@ func TestSingleLineTextTruncatesInsteadOfWrapping(t *testing.T) {
 	p := w.Prepare(at)
 	defer p.Release()
 	full := p.Measure(core.Auto)
-	one := w.Prepare(&core.AttributedText{Text: "one", Style: style})
-	oneSize := one.Measure(core.Auto)
-	one.Release()
 	two := w.Prepare(&core.AttributedText{Text: "one two", Style: style})
 	twoSize := two.Measure(core.Auto)
 	two.Release()
-	// Wide enough for "one t", too narrow for "one two": word wrapping
-	// would end the line after "one".
 	narrow := core.Points(float64(twoSize.Width) - 1)
 	size := p.Measure(narrow)
-	if size.Height != full.Height {
-		t.Errorf("height %v at %v, want one line's %v", size.Height, narrow, full.Height)
+	if size.Height != full.Height || size.Width > narrow {
+		t.Errorf("size %v at %v, want one line's height %v within the width", size, narrow, full.Height)
 	}
-	l := p.Layout(size).(*spanLayout)
+	l := p.Layout(size).(*textLayout)
 	defer l.Release()
-	if len(l.lines) != 1 || len(l.runs) == 0 || string(utf16.Decode(l.runs[len(l.runs)-1].text)) != "…" {
-		t.Fatalf("%d line(s) %d runs, want one line ending with an ellipsis", len(l.lines), len(l.runs))
+	if len(l.lines) != 1 {
+		t.Fatalf("%d lines, want one", len(l.lines))
 	}
-	var visible []rune
-	for _, r := range l.runs {
-		visible = append(visible, utf16.Decode(r.text)...)
-	}
-	if got := string(visible); !strings.HasPrefix(got, "one t") || oneSize.Width >= narrow {
-		t.Errorf("the line shows %q at %v wide, want it truncated from %q, not wrapped after %q",
-			got, narrow, "one two three four", "one")
-	}
-	last := l.runs[len(l.runs)-1]
-	if last.x+last.ends[len(last.ends)-1] > w.px(size.Width) {
-		t.Errorf("the ellipsis ends past the %v wide box", size.Width)
+	var m textMetrics
+	l.layout.call(layoutGetMetrics, uintptr(unsafe.Pointer(&m)))
+	if m.lineCount != 1 || m.width > float32(size.Width)+0.5 {
+		t.Errorf("the line is %v wide in %d line(s), want it trimmed to %v", m.width, m.lineCount, size.Width)
 	}
 }
 
@@ -548,35 +531,200 @@ func TestIndexAtFindsPlainTextOffsets(t *testing.T) {
 	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 16}, Color: core.RGB(0)}
 	p := w.Prepare(&core.AttributedText{Text: "ab cd", Style: style})
 	defer p.Release()
-	l := p.Layout(p.Measure(core.Auto)).(*spanLayout)
+	l := p.Layout(p.Measure(core.Auto)).(*textLayout)
 	defer l.Release()
-	first := l.runs[0]
-	if got := l.indexAt(first.x+1, first.baseline); got != 0 {
+	y := l.lines[0].baseline - 2
+	if got := l.indexAt(1, y); got != 0 {
 		t.Errorf("press at the first character = %d, want 0", got)
 	}
-	if got := l.indexAt(first.x+first.ends[0]+1, first.baseline); got != 1 {
+	_, a := inkWidth(l.layout, 0, 1)
+	if got := l.indexAt(a+1, y); got != 1 {
 		t.Errorf("press at the second character = %d, want 1", got)
 	}
-	for _, r := range l.runs {
-		if string(utf16.Decode(r.text)) == "cd" {
-			if got := l.indexAt(r.x+1, r.baseline); got != 3 {
-				t.Errorf("press at the second word = %d, want 3", got)
-			}
-			return
-		}
+	_, space := inkWidth(l.layout, 0, 3)
+	if got := l.indexAt(space+1, y); got != 3 {
+		t.Errorf("press at the second word = %d, want 3", got)
 	}
-	t.Fatal("the second word did not lay out")
+	if got := l.indexAt(1, y+100); got != -1 {
+		t.Errorf("press below the text = %d, want -1", got)
+	}
 }
 
-// TestLineBreaksAndSpacesKeepTheirFont checks that control characters,
-// which no font has glyphs for, do not send a line break or a tab to a
-// fallback font: only the characters actually drawn need one.
-func TestLineBreaksAndSpacesKeepTheirFont(t *testing.T) {
-	w := testWindow()
-	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 16}, Color: core.RGB(0)}
-	p := w.Prepare(&core.AttributedText{Text: "a\nb\tc", Style: style}).(*spanText)
-	defer p.Release()
-	if len(p.fonts) != 1 {
-		t.Errorf("the text holds %d fonts, want its own one", len(p.fonts))
+func editModelOf(text string) *editModel {
+	m := &editModel{}
+	m.setText(text)
+	return m
+}
+
+func TestEditModelEditsAsNSHs(t *testing.T) {
+	eq := func(got, want any) {
+		t.Helper()
+		if got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	}
+	s := "a😀b"
+	eq(utf16Len(s), 4)
+	eq(utf16ToByte(s, 2), 5)
+	eq(utf16ToByte(s, 3), 5)
+	eq(utf16ToByte(s, 99), 6)
+	// Values keep the caret, at the end or on a boundary.
+	m := editModelOf("hello")
+	m.setText("hello world")
+	eq(m.caret, 11)
+	m.selectRange(2, 2)
+	m.setText("héllo")
+	eq(m.caret, 1)
+	// Typing and deleting.
+	m = editModelOf("")
+	for _, c := range []string{"a", "b", "c"} {
+		m.insert(c)
+	}
+	eq(m.delete(unitChar, false), true)
+	eq(m.text, "ab")
+	m.moveTo(0, false)
+	eq(m.delete(unitChar, false), false)
+	eq(m.delete(unitChar, true), true)
+	eq(m.text, "b")
+	m = editModelOf("one two three")
+	m.delete(unitWord, false)
+	eq(m.text, "one two ")
+	m.moveTo(0, false)
+	m.delete(unitWord, true)
+	eq(m.text, "two ")
+	// Undo merges runs of typing and of deleting.
+	m = editModelOf("")
+	for _, c := range []string{"h", "i", " ", "y", "o"} {
+		m.insert(c)
+	}
+	m.delete(unitChar, false)
+	m.delete(unitChar, false)
+	eq(m.undo(), true)
+	eq(m.text, "hi yo")
+	eq(m.undo(), true)
+	eq(m.text, "")
+	eq(m.undo(), false)
+	eq(m.redo(), true)
+	eq(m.redo(), true)
+	eq(m.text, "hi ")
+	eq(m.redo(), false)
+	m = editModelOf("")
+	m.insert("a")
+	m.moveTo(1, false)
+	m.insert("c")
+	m.insert("pasted")
+	m.undo()
+	eq(m.text, "ac")
+	// Clusters, but Backspace takes a code point.
+	family := "a👨‍👩‍👧b"
+	eq(nextCluster(family, 1), len(family)-1)
+	eq(prevCluster(family, len(family)-1), 1)
+	eq(nextCluster("🇨🇳🇯🇵", 0), 8)
+	m = editModelOf("é")
+	m.delete(unitChar, false)
+	eq(m.text, "e")
+	// Words.
+	w := "hello, world  foo"
+	eq(wordRight(w, 0), 5)
+	eq(wordRight(w, 7), 14)
+	eq(wordLeft(w, 14), 7)
+	eq(wordLeft(w, 5), 0)
+	start, end := wordAt(w, 8)
+	eq(start, 7)
+	eq(end, 12)
+	start, end = wordAt("你好world", 0)
+	eq(start, 0)
+	eq(end, 6)
+	// A selection collapses to the end a step goes to.
+	m = editModelOf("abcdef")
+	m.selectRange(1, 4)
+	eq(m.selected(), "bcd")
+	m.step(unitChar, false, false)
+	eq(m.caret, 1)
+	eq(m.anchor, 1)
+	// The composition shows at the caret; a mask shows one bullet a
+	// character.
+	m = editModelOf("ab")
+	m.moveTo(1, false)
+	m.composition = &imeText{text: "ni", cursor: 1}
+	eq(m.display(), "anib")
+	eq(m.toDisplay(2, false), uint32(4))
+	eq(m.displayCaret(false), uint32(2))
+	eq(m.textAt(2, false), 1)
+	eq(m.textAt(4, false), 2)
+	m = editModelOf("a😀b")
+	eq(m.toDisplay(5, true), uint32(2))
+	eq(m.textAt(2, true), 5)
+	eq(pasted("a\r\nb\r\n"), "a b")
+}
+
+func TestInputHelpers(t *testing.T) {
+	if s, e, ok := targetClause([]byte{0, 0, 1, 1, 2}); !ok || s != 2 || e != 4 {
+		t.Fatalf("clause = %d, %d, %v", s, e, ok)
+	}
+	if s, e, ok := targetClause([]byte{3, 0}); !ok || s != 0 || e != 1 {
+		t.Fatalf("clause = %d, %d, %v", s, e, ok)
+	}
+	if _, _, ok := targetClause([]byte{0, 2}); ok {
+		t.Fatal("a clause without a target")
+	}
+	if got := revealAxis(0, 100, 150, 30); got != 80 {
+		t.Fatalf("reveal below = %v", got)
+	}
+	if got := revealAxis(100, 100, 50, 30); got != 50 {
+		t.Fatalf("reveal above = %v", got)
+	}
+	if got := revealAxis(40, 100, 50, 30); got != 40 {
+		t.Fatalf("reveal shown = %v", got)
+	}
+	if xAlign(core.TextAlignCenter) != 0.5 || xAlign(core.TextAlignEnd) != 1 || xAlign(0) != 0 {
+		t.Fatal("xAlign")
+	}
+}
+
+// TestFocusFollowsModalsAndTab checks the focus without a window: Tab
+// goes around the fields of the newest modal, and a modal takes the focus
+// from a field under it until it goes.
+func TestFocusFollowsModalsAndTab(t *testing.T) {
+	w := &window{root: 1}
+	visible := core.ViewStyle{Opacity: 1}
+	mk := func(id core.NodeID, kind core.ViewKind, parent *view) *view {
+		v := &view{id: id, kind: kind, style: visible, parent: parent}
+		if kind == core.KindInput {
+			v.field = newTextInput(w, v)
+		}
+		if parent != nil {
+			parent.children = append(parent.children, v)
+		}
+		for len(w.views) <= int(id) {
+			w.views = append(w.views, nil)
+		}
+		w.views[id] = v
+		return v
+	}
+	root := mk(1, core.KindView, nil)
+	a := mk(2, core.KindInput, root)
+	b := mk(3, core.KindInput, root)
+	if !w.tab(false) || w.focus != a.field || !w.tab(false) || w.focus != b.field || !w.tab(false) || w.focus != a.field {
+		t.Fatal("Tab does not go around the fields")
+	}
+	if !w.tab(true) || w.focus != b.field {
+		t.Fatal("Shift+Tab does not go back")
+	}
+	modal := mk(4, core.KindModal, root)
+	c := mk(5, core.KindInput, modal)
+	w.checkFocus()
+	if w.focus != nil || w.restore != b.field {
+		t.Fatalf("the modal left the focus at %v", w.focus)
+	}
+	if !w.tab(false) || w.focus != c.field || !w.tab(false) || w.focus != c.field {
+		t.Fatal("Tab left the modal")
+	}
+	w.setFocus(nil)
+	w.restore = b.field
+	modal.style.Hidden = true
+	w.checkFocus()
+	if w.focus != b.field {
+		t.Fatal("the field did not get the focus back after the modal")
 	}
 }

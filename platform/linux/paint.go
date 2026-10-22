@@ -9,7 +9,7 @@ import (
 	"github.com/oneo-me/nsgo/platform/internal/scrollbar"
 )
 
-// painter draws one frame into a cairo context.
+// painter draws a view's Cairo content (an image) into a context.
 type painter struct {
 	w  *window
 	cr uintptr
@@ -18,241 +18,173 @@ type painter struct {
 const (
 	operatorSourceOver = 2
 	operatorClear      = 0
-	fillRuleEvenOdd    = 1
 )
 
-// paint fills the surface and draws the tree.
-func (w *window) paint(cr uintptr, size core.Size) {
-	bg := core.RGB(0xffffff)
-	if root := w.view(w.root); root != nil {
-		bg = background(root)
-	}
-	setColor(cr, bg)
-	cairoRectangle(cr, 0, 0, float64(size.Width), float64(size.Height))
-	cairoFill(cr)
-	if root := w.view(w.root); root != nil {
-		p := &painter{w: w, cr: cr}
-		p.draw(root, 0, 0)
-	}
-}
-
-// draw paints v and its children; x and y are the origin of v's parent's
-// content in the window.
-func (p *painter) draw(v *view, x, y core.Points) {
-	s := p.w.styleOf(v)
+// snapshotView draws v into its widget's snapshot, as NSH's NshView
+// does: its shadow and background, its content (Cairo nodes for images,
+// canvases and text), its children (clipped to its rounded bounds when
+// it clips), its scroll indicator, then its border over the content, as
+// UIKit draws layer borders. The view's opacity fades all of it, natives
+// included.
+func (w *window) snapshotView(v *view, snap uintptr) {
+	s := w.styleOf(v)
 	if s.Hidden || s.Opacity <= 0 {
 		return
 	}
+	width, height := float32(v.frame.Size.Width), float32(v.frame.Size.Height)
 	if s.Opacity < 1 {
-		cairoSave(p.cr)
-		cairoPushGroup(p.cr)
-		p.drawView(v, s, x, y)
-		cairoPopGroupToSource(p.cr)
-		cairoIdentityMatrix(p.cr)
-		cairoPaintWithAlpha(p.cr, float64(s.Opacity))
-		cairoRestore(p.cr)
-		return
+		gtkSnapshotPushOpacity(snap, float64(s.Opacity))
 	}
-	p.drawView(v, s, x, y)
+	bounds := roundedRect(0, 0, width, height, float32(s.CornerRadius))
+	filled := s.Background&0xff != 0
+	shadowed := s.ShadowColor&0xff != 0 && (s.ShadowRadius > 0 || s.ShadowOffset != core.Point{})
+	// A shadow takes the box's shape when the view fills it, else the
+	// shape of what it draws.
+	contentShadow := shadowed && !filled
+	if contentShadow {
+		sh := gskShadow{rgba(s.ShadowColor), float32(s.ShadowOffset.X), float32(s.ShadowOffset.Y),
+			float32(s.ShadowRadius) * shadowBlurPerUnit}
+		gtkSnapshotPushShadow(snap, &sh, 1)
+	}
+	if width > 0 && height > 0 {
+		if shadowed && filled {
+			c := rgba(s.ShadowColor)
+			gtkSnapshotAppendOutset(snap, &bounds, &c, float32(s.ShadowOffset.X), float32(s.ShadowOffset.Y),
+				0, float32(s.ShadowRadius)*shadowBlurPerUnit)
+		}
+		if filled {
+			fillRounded(snap, &bounds, s.Background)
+		}
+	}
+	clip := s.Clip || v.kind == core.KindScroll || v.kind == core.KindImage || v.kind == core.KindInput
+	if clip {
+		gtkSnapshotPushRoundedClip(snap, &bounds)
+	}
+	w.snapshotContent(v, s, snap)
+	for c := gtkWidgetGetFirstChild(v.widget); c != 0; c = gtkWidgetGetNextSibling(c) {
+		// A view inserted since the last layout has no allocation until
+		// the next frame's; a snapshot taken between skips it.
+		if r, ok := lookupWidget(c); ok && r.v != nil && gtkWidgetGetWidth(c) == 0 && gtkWidgetGetHeight(c) == 0 &&
+			r.v.frame.Size.Width >= 1 && r.v.frame.Size.Height >= 1 {
+			continue
+		}
+		gtkWidgetSnapshotChild(v.widget, c, snap)
+	}
+	if v.kind == core.KindScroll && w.showsBar(v) {
+		snapshotIndicator(v, snap)
+	}
+	if clip {
+		gtkSnapshotPop(snap)
+	}
+	snapshotBorder(snap, &bounds, s)
+	if contentShadow {
+		gtkSnapshotPop(snap)
+	}
+	if s.Opacity < 1 {
+		gtkSnapshotPop(snap)
+	}
 }
 
-// drawView paints one view with s.
-func (p *painter) drawView(v *view, s *core.ViewStyle, x, y core.Points) {
-	w := p.w
-	x, y = x+v.frame.Origin.X, y+v.frame.Origin.Y
+// snapshotContent draws what v shows inside its box with Cairo, as the
+// backend's images, canvases and Pango text are drawn.
+func (w *window) snapshotContent(v *view, s *core.ViewStyle, snap uintptr) {
 	width, height := float64(v.frame.Size.Width), float64(v.frame.Size.Height)
-	radius := float64(s.CornerRadius)
-	r := rect{x: float64(x), y: float64(y), w: width, h: height, r: radius}
-
-	if s.Transform != (core.Transform{}) {
-		cairoSave(p.cr)
-		p.applyTransform(s.Transform, r)
-		defer cairoRestore(p.cr)
+	r := rect{w: width, h: height, r: float64(s.CornerRadius)}
+	box := grapheneRect{0, 0, float32(width), float32(height)}
+	switch {
+	case width <= 0 || height <= 0:
+	case v.kind == core.KindImage && (v.source.pic != nil || v.placeholder.pic != nil):
+		cr := gtkSnapshotAppendCairo(snap, &box)
+		(&painter{w: w, cr: cr}).drawImage(v, s.TintColor, r)
+		cairoDestroy(cr)
+	case v.kind == core.KindCanvas && v.drawing != nil:
+		cr := gtkSnapshotAppendCairo(snap, &box)
+		w.playCanvas(v.drawing, cr, r)
+		cairoDestroy(cr)
 	}
-	p.drawShadow(r, s)
-	p.fill(r, s.Background)
-	switch v.kind {
-	case core.KindImage:
-		if s.Clip && radius > 0 {
-			cairoSave(p.cr)
-			roundRect(p.cr, r)
-			cairoClip(p.cr)
-			p.drawImage(v, s.TintColor, r)
-			cairoRestore(p.cr)
-		} else {
-			p.drawImage(v, s.TintColor, r)
-		}
-	case core.KindCanvas:
-		if v.drawing != nil {
-			w.playCanvas(v.drawing, p.cr, r)
-		}
+	if l, ok := v.text.(*textLayout); ok && l != nil && l.text != "" {
+		// Glyphs may paint a little outside their view, as before.
+		x, y := float32(v.content.Origin.X), float32(v.content.Origin.Y)
+		grown := grapheneRect{min(0, x) - textOverhang, min(0, y) - textOverhang,
+			max(float32(width), x+float32(l.width)) - min(0, x) + 2*textOverhang,
+			max(float32(height), y+float32(l.height)) - min(0, y) + 2*textOverhang}
+		cr := gtkSnapshotAppendCairo(snap, &grown)
+		l.draw(cr, v.content.Origin.X, v.content.Origin.Y)
+		cairoDestroy(cr)
 	}
-
-	if l, ok := v.text.(*textLayout); ok && l != nil {
-		l.draw(p.cr, x+v.content.Origin.X, y+v.content.Origin.Y)
-	}
-
-	if len(v.children) > 0 {
-		if s.Clip || v.kind == core.KindScroll {
-			cairoSave(p.cr)
-			roundRect(p.cr, r)
-			cairoClip(p.cr)
-			for _, c := range v.children {
-				p.draw(c, x-v.offset.X, y-v.offset.Y)
-			}
-			cairoRestore(p.cr)
-		} else {
-			for _, c := range v.children {
-				p.draw(c, x-v.offset.X, y-v.offset.Y)
-			}
-		}
-	}
-	if v.kind == core.KindScroll && !v.scroll.HideIndicator {
-		p.drawIndicator(v, x, y)
-	}
-	p.drawBorder(r, s)
 }
 
-// applyTransform turns the drawing around r's centre, translates it and
-// scales it, as CSS does.
-func (p *painter) applyTransform(t core.Transform, r rect) {
-	sx, sy := t.Scales()
-	cx, cy := r.x+r.w/2, r.y+r.h/2
-	cairoTranslate(p.cr, cx+float64(t.TranslateX), cy+float64(t.TranslateY))
-	cairoRotate(p.cr, float64(t.Rotate)*math.Pi/180)
-	cairoScale(p.cr, float64(sx), float64(sy))
-	cairoTranslate(p.cr, -cx, -cy)
-}
-
-// drawShadow paints an approximation of a blurred shadow under r. Cairo
-// has no shadow filter, so a few growing rounded rectangles fade out.
-func (p *painter) drawShadow(r rect, s *core.ViewStyle) {
-	if s.ShadowColor&0xff == 0 || s.ShadowRadius <= 0 && s.ShadowOffset == (core.Point{}) {
+// fillRounded paints c inside r's corners.
+func fillRounded(snap uintptr, r *gskRoundedRect, c core.Color) {
+	color := rgba(c)
+	if r.corner[0].w > 0 {
+		gtkSnapshotPushRoundedClip(snap, r)
+		gtkSnapshotAppendColor(snap, &color, &r.bounds)
+		gtkSnapshotPop(snap)
 		return
 	}
-	spread := float64(s.ShadowRadius)
-	layers := 6
-	if spread <= 0 {
-		layers = 1
-	}
-	hex := uint32(s.ShadowColor) >> 8
-	baseAlpha := float64(s.ShadowColor&0xff) / 255
-	for i := layers; i >= 1; i-- {
-		grow := spread * float64(i) / float64(layers)
-		alpha := baseAlpha / float64(layers)
-		c := core.RGBA(hex, float32(alpha))
-		rr := rect{
-			x: r.x + float64(s.ShadowOffset.X) - grow,
-			y: r.y + float64(s.ShadowOffset.Y) - grow,
-			w: r.w + 2*grow,
-			h: r.h + 2*grow,
-			r: max(r.r+grow, 0),
-		}
-		p.fill(rr, c)
-	}
+	gtkSnapshotAppendColor(snap, &color, &r.bounds)
 }
 
-// fill paints r with c's visible alpha, inside its corners.
-func (p *painter) fill(r rect, c core.Color) {
-	if c&0xff == 0 || r.w <= 0 || r.h <= 0 {
+// snapshotBorder draws the border inside outline, with a width and color
+// per side when ViewStyle.Borders sets them; GSK meets the sides on the
+// diagonals, as CSS does.
+func snapshotBorder(snap uintptr, outline *gskRoundedRect, s *core.ViewStyle) {
+	if outline.bounds.w <= 0 || outline.bounds.h <= 0 {
 		return
 	}
-	setColor(p.cr, c)
-	roundRect(p.cr, r)
-	cairoFill(p.cr)
-}
-
-// drawBorder paints the border inside r, with a width and color per side
-// when ViewStyle.Borders sets them.
-func (p *painter) drawBorder(r rect, s *core.ViewStyle) {
+	var widths [4]float32
+	var colors [4]gdkRGBA
 	if s.Borders == (core.Edges{}) {
 		if s.BorderWidth <= 0 || s.BorderColor&0xff == 0 {
 			return
 		}
-		p.ring(r, s.BorderWidth, s.BorderColor)
-		return
-	}
-	b, c := s.Borders, s.BorderColors
-	width := func(points core.Points, col core.Color) float64 {
-		if points <= 0 || col&0xff == 0 {
-			return 0
+		c := rgba(s.BorderColor)
+		b := float32(s.BorderWidth)
+		widths, colors = [4]float32{b, b, b, b}, [4]gdkRGBA{c, c, c, c}
+	} else {
+		width := func(points core.Points, col core.Color) float32 {
+			if points <= 0 || col&0xff == 0 {
+				return 0
+			}
+			return float32(math.Max(float64(points), 1))
 		}
-		return math.Max(float64(points), 1)
-	}
-	top, right := width(b.Top, c.Top), width(b.Right, c.Right)
-	bottom, left := width(b.Bottom, c.Bottom), width(b.Left, c.Left)
-	if top == 0 && right == 0 && bottom == 0 && left == 0 {
-		return
-	}
-	// Each side is the ring between r and its inside, cut to the side's
-	// trapezoid, so the sides meet on the diagonals as CSS's do.
-	in := rect{x: r.x + left, y: r.y + top, w: math.Max(r.w-left-right, 0), h: math.Max(r.h-top-bottom, 0),
-		r: math.Max(r.r-(left+top+right+bottom)/4, 0)}
-	sides := []struct {
-		width float64
-		color core.Color
-		pts   [4][2]float64
-	}{
-		{top, c.Top, [4][2]float64{{r.x, r.y}, {r.x + r.w, r.y}, {in.x + in.w, in.y}, {in.x, in.y}}},
-		{right, c.Right, [4][2]float64{{r.x + r.w, r.y}, {r.x + r.w, r.y + r.h}, {in.x + in.w, in.y + in.h}, {in.x + in.w, in.y}}},
-		{bottom, c.Bottom, [4][2]float64{{r.x + r.w, r.y + r.h}, {r.x, r.y + r.h}, {in.x, in.y + in.h}, {in.x + in.w, in.y + in.h}}},
-		{left, c.Left, [4][2]float64{{r.x, r.y + r.h}, {r.x, r.y}, {in.x, in.y}, {in.x, in.y + in.h}}},
-	}
-	for _, side := range sides {
-		if side.width == 0 || side.color&0xff == 0 {
-			continue
+		b, c := s.Borders, s.BorderColors
+		widths = [4]float32{width(b.Top, c.Top), width(b.Right, c.Right), width(b.Bottom, c.Bottom), width(b.Left, c.Left)}
+		if widths == ([4]float32{}) {
+			return
 		}
-		cairoSave(p.cr)
-		roundRect(p.cr, r)
-		cairoClip(p.cr)
-		cairoMoveTo(p.cr, side.pts[0][0], side.pts[0][1])
-		for _, pt := range side.pts[1:] {
-			cairoLineTo(p.cr, pt[0], pt[1])
-		}
-		cairoClosePath(p.cr)
-		cairoClip(p.cr)
-		p.ringPath(r, in)
-		setColor(p.cr, side.color)
-		cairoSetFillRule(p.cr, fillRuleEvenOdd)
-		cairoFill(p.cr)
-		cairoSetFillRule(p.cr, 0)
-		cairoRestore(p.cr)
+		colors = [4]gdkRGBA{rgba(c.Top), rgba(c.Right), rgba(c.Bottom), rgba(c.Left)}
 	}
+	gtkSnapshotAppendBorder(snap, outline, &widths, &colors)
 }
 
-// ring paints the border of width points inside r.
-func (p *painter) ring(r rect, width core.Points, c core.Color) {
-	in := rect{x: r.x + float64(width), y: r.y + float64(width),
-		w: math.Max(r.w-2*float64(width), 0), h: math.Max(r.h-2*float64(width), 0),
-		r: math.Max(r.r-float64(width), 0)}
-	p.ringPath(r, in)
-	setColor(p.cr, c)
-	cairoSetFillRule(p.cr, fillRuleEvenOdd)
-	cairoFill(p.cr)
-	cairoSetFillRule(p.cr, 0)
-}
-
-// ringPath adds outer and inner rounded rectangles to the current path;
-// the even-odd fill rule leaves the ring between them.
-func (p *painter) ringPath(outer, inner rect) {
-	roundRect(p.cr, outer)
-	if inner.w > 0 && inner.h > 0 {
-		roundRect(p.cr, inner)
-	}
-}
-
-// drawIndicator paints a scroll bar's thumb along v's scrolling edge
-// while it shows; x and y are v's origin in the window.
-func (p *painter) drawIndicator(v *view, x, y core.Points) {
+// snapshotIndicator draws a scroll bar's thumb while the pointer is over
+// the scroll view or drags the thumb.
+func snapshotIndicator(v *view, snap uintptr) {
 	thumb, ok := v.bar().Thumb()
-	if !ok || !p.w.showsBar(v) {
+	if !ok {
 		return
 	}
-	p.fill(rect{x: float64(x + thumb.Origin.X), y: float64(y + thumb.Origin.Y), w: float64(thumb.Size.Width),
-		h: float64(thumb.Size.Height), r: float64(scrollbar.Thickness) / 2}, core.RGBA(0x000000, 0.35))
+	r := roundedRect(float32(thumb.Origin.X), float32(thumb.Origin.Y), float32(thumb.Size.Width), float32(thumb.Size.Height), float32(scrollbar.Thickness)/2)
+	fillRounded(snap, &r, core.RGBA(0x000000, indicatorAlpha))
 }
 
-// rect is a rectangle in the window's points.
+// paint draws the surface as GTK shows it, natives included, into cr:
+// the window's pixels without reading the screen back.
+func (w *window) paint(cr uintptr) {
+	width, height := gtkWidgetGetWidth(w.surface), gtkWidgetGetHeight(w.surface)
+	paintable := gtkWidgetPaintableNew(w.surface)
+	snap := gtkSnapshotNew()
+	gdkPaintableSnapshot(paintable, snap, float64(width), float64(height))
+	if node := gtkSnapshotFreeToNode(snap); node != 0 {
+		gskRenderNodeDraw(node, cr)
+		gskRenderNodeUnref(node)
+	}
+	gObjectUnref(paintable)
+}
+
+// rect is a rectangle in points.
 type rect struct {
 	x, y, w, h, r float64
 }

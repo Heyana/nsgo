@@ -65,6 +65,8 @@ final class Protocol {
     static final int ITEM_MENU = 30;
     static final int ITEM_WEB = 31;
     static final int ITEM_WEB_COMMAND = 32;
+    static final int ITEM_VIDEO = 33;
+    static final int ITEM_VIDEO_SEEK = 34;
 
     // View kinds, as in core/mount.go.
     static final int KIND_VIEW = 1;
@@ -75,6 +77,7 @@ final class Protocol {
     static final int KIND_MODAL = 6;
     static final int KIND_CANVAS = 7;
     static final int KIND_WEB = 8;
+    static final int KIND_VIDEO = 9;
 
     // Event kinds, as in core/events.go. An event mask holds 1 << kind.
     static final int EVENT_PRESS = 1;
@@ -105,6 +108,8 @@ final class Protocol {
     static final int EVENT_MENU = 26;
     static final int EVENT_MESSAGE = 27;
     static final int EVENT_NAVIGATION_STATE_CHANGE = 28;
+    static final int EVENT_END = 29;
+    static final int EVENT_BUFFER = 30;
 
     // Web view commands, as in core/webview.go.
     static final int WEB_RELOAD = 1;
@@ -145,7 +150,8 @@ final class Protocol {
     static final int KEYBOARD_PHONE = 4;
     static final int KEYBOARD_URL = 5;
 
-    // Resize modes, as in core/element.go; Cover is 0.
+    // Resize modes, as in core/element.go.
+    static final int RESIZE_COVER = 0;
     static final int RESIZE_CONTAIN = 1;
     static final int RESIZE_STRETCH = 2;
     static final int RESIZE_CENTER = 3;

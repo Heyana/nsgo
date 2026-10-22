@@ -3,11 +3,9 @@ package dev.oneo.nsgo;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.Color;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.MotionEvent;
-import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceError;
@@ -20,18 +18,19 @@ import java.io.IOException;
 import java.util.Objects;
 
 /**
- * A web view node's android.webkit.WebView, filling the node's view. Pages
- * post to the app through window.nsgo.postMessage, which the bridge Go
- * puts first in the script before content forwards to the JavaScript
- * interface INTERFACE. The view loads its source again when it, the
- * scripts or NoJavaScript change.
+ * A web view node's android.webkit.WebView, filling the node's view, as
+ * NSH's WebBox. Pages post to the app through window.nsgo.postMessage: the
+ * JavaScript interface INTERFACE is there from the page's first script,
+ * and the bridge Go puts first in the script before content wraps it to
+ * pass any value as a string. The view loads its source again when it or
+ * the scripts change.
  */
 @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface", "ClickableViewAccessibility"})
 final class WebNode {
-    /** The JavaScript interface the bridge posts to, as webInterface in android.go. */
-    static final String INTERFACE = "nsgoAndroid";
+    /** The JavaScript interface pages post to, as webInterface in android.go. */
+    static final String INTERFACE = "nsgo";
 
-    /** Receives a web view's events; navigation is null for errors and messages. UI thread. */
+    /** Receives a web view's events; navigation is null for messages and has only the URL for errors. UI thread. */
     interface Reporter {
         void report(int kind, String text, Navigation navigation);
     }
@@ -56,17 +55,12 @@ final class WebNode {
     private boolean configured;
     private String src = "", html = "", baseURL = "";
     private String injected = "", injectedBefore = "", userAgent = "";
-    private boolean noScroll, noJavaScript;
-    private boolean loading;
+    private boolean noScroll;
 
     WebNode(Context context, Reporter reporter) {
         this.reporter = reporter;
         view = new WebView(context);
-        // A page without a background shows the node's own, as its style expects.
-        view.setBackgroundColor(Color.TRANSPARENT);
-        WebSettings settings = view.getSettings();
-        settings.setDomStorageEnabled(true);
-        settings.setJavaScriptEnabled(true);
+        view.getSettings().setDomStorageEnabled(true);
         view.addJavascriptInterface(new Bridge(), INTERFACE);
         view.setWebViewClient(new Client());
         view.setOnTouchListener((v, e) -> {
@@ -96,36 +90,28 @@ final class WebNode {
             // then the app's) runs as the page starts loading instead, so a
             // page's earliest scripts may run before it.
             if (!injectedBefore.isEmpty()) web.evaluateJavascript(injectedBefore, null);
-            loading = true;
-            navigated(url, Protocol.EVENT_LOAD_START);
-        }
-
-        @Override
-        public void doUpdateVisitedHistory(WebView web, String url, boolean reload) {
-            // The page committed or its history changed, as within a single-page app.
-            navigated(url);
+            state(Protocol.EVENT_LOAD_START, url, true);
         }
 
         @Override
         public void onPageFinished(WebView web, String url) {
             if (!injected.isEmpty()) web.evaluateJavascript(injected, null);
-            loading = false;
-            navigated(url, Protocol.EVENT_LOAD);
+            state(Protocol.EVENT_LOAD, url, false);
         }
 
         @Override
         public void onReceivedError(WebView web, WebResourceRequest request, WebResourceError error) {
-            if (request.isForMainFrame()) {
-                reporter.report(Protocol.EVENT_ERROR, String.valueOf(error.getDescription()), null);
-            }
+            if (!request.isForMainFrame()) return;
+            Navigation nav = new Navigation(request.getUrl().toString(), "", false, false, false);
+            reporter.report(Protocol.EVENT_ERROR, String.valueOf(error.getDescription()), nav);
         }
     }
 
-    /** Reports the page's state as kind, if any, and as a navigation state change. */
-    private void navigated(String url, int... kinds) {
+    /** Reports the page's state as kind and as a navigation state change. */
+    private void state(int kind, String url, boolean loading) {
         Navigation nav = new Navigation(url != null ? url : "", Objects.toString(view.getTitle(), ""),
                 loading, view.canGoBack(), view.canGoForward());
-        for (int kind : kinds) reporter.report(kind, "", nav);
+        reporter.report(kind, "", nav);
         reporter.report(Protocol.EVENT_NAVIGATION_STATE_CHANGE, "", nav);
     }
 
@@ -139,7 +125,7 @@ final class WebNode {
 
         boolean reload = !configured || !src.equals(this.src) || !html.equals(this.html)
                 || !baseURL.equals(this.baseURL) || !injected.equals(this.injected)
-                || !injectedBefore.equals(this.injectedBefore) || noJavaScript != this.noJavaScript;
+                || !injectedBefore.equals(this.injectedBefore);
         configured = true;
         this.src = src;
         this.html = html;
@@ -147,36 +133,28 @@ final class WebNode {
         this.injected = injected;
         this.injectedBefore = injectedBefore;
         this.noScroll = noScroll;
-        this.noJavaScript = noJavaScript;
 
+        view.setVerticalScrollBarEnabled(!noScroll);
+        view.setHorizontalScrollBarEnabled(!noScroll);
         WebSettings settings = view.getSettings();
         settings.setJavaScriptEnabled(!noJavaScript);
         if (!userAgent.equals(this.userAgent)) {
             this.userAgent = userAgent;
             settings.setUserAgentString(userAgent.isEmpty() ? null : userAgent); // null: the default
         }
-        view.setVerticalScrollBarEnabled(!noScroll);
-        view.setHorizontalScrollBarEnabled(!noScroll);
-        view.setOverScrollMode(noScroll ? View.OVER_SCROLL_NEVER : View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         if (reload) load();
     }
 
     private void load() {
+        // Apps load their own files; pages from elsewhere may not.
         WebSettings settings = view.getSettings();
         if (!html.isEmpty()) {
-            settings.setAllowFileAccess(baseURL.startsWith("file:") || baseURL.startsWith("/"));
-            view.loadDataWithBaseURL(baseURL.isEmpty() ? null : fileURL(baseURL), html, "text/html", "UTF-8", null);
+            settings.setAllowFileAccess(baseURL.startsWith("file:"));
+            view.loadDataWithBaseURL(baseURL.isEmpty() ? null : baseURL, html, "text/html", "UTF-8", null);
         } else if (!src.isEmpty()) {
-            String url = fileURL(src);
-            // Apps load their own files; pages from elsewhere may not.
-            settings.setAllowFileAccess(url.startsWith("file:"));
-            view.loadUrl(url);
+            settings.setAllowFileAccess(src.startsWith("file:"));
+            view.loadUrl(src);
         }
-    }
-
-    /** s, taking a path without a scheme as a file's. */
-    private static String fileURL(String s) {
-        return s.startsWith("/") ? "file://" + s : s;
     }
 
     /** Does a core.WebCommand, with value for messages and scripts. */

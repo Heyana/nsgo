@@ -8,7 +8,6 @@ package linux
 // rebuilt as an app changes sections, and per-connection trampolines
 // would exhaust purego's limit.
 var (
-	cbDraw         uintptr
 	cbCloseRequest uintptr
 	cbApply        uintptr
 	cbRun          uintptr
@@ -34,11 +33,26 @@ var (
 	cbClipboardText uintptr
 	cbAlertChosen   uintptr
 
-	cbWebLoadChanged   uintptr
-	cbWebLoadFailed    uintptr
-	cbWebMessage       uintptr
-	cbWebMap           uintptr
-	cbWebChildPosition uintptr
+	cbWebLoadChanged uintptr
+	cbWebLoadFailed  uintptr
+	cbWebMessage     uintptr
+	cbWebMap         uintptr
+	cbWebKey         uintptr
+	cbWebButton      uintptr
+	cbWebMotion      uintptr
+	cbWebScroll      uintptr
+
+	cbShield           uintptr
+	cbViewClassInit    uintptr
+	cbViewDispose      uintptr
+	cbViewSizeAllocate uintptr
+	cbViewSnapshot     uintptr
+	cbViewContains     uintptr
+	cbVideoPrepared    uintptr
+	cbVideoSize        uintptr
+	cbVideoEnded       uintptr
+	cbVideoError       uintptr
+	cbVideoProgress    uintptr
 
 	cbSettingsChanged uintptr
 	cbMenuActivate    uintptr
@@ -46,7 +60,6 @@ var (
 )
 
 func init() {
-	cbDraw = newCallback(drawCallback)
 	cbCloseRequest = newCallback(closeRequestCallback)
 	cbApply = newCallback(applyCallback)
 	cbRun = newCallback(runCallback)
@@ -76,7 +89,22 @@ func init() {
 	cbWebLoadFailed = newCallback(webLoadFailedCallback)
 	cbWebMessage = newCallback(webMessageCallback)
 	cbWebMap = newCallback(webMapCallback)
-	cbWebChildPosition = newCallback(webChildPositionCallback)
+	cbWebKey = newCallback(webKeyCallback)
+	cbWebButton = newCallback(webButtonCallback)
+	cbWebMotion = newCallback(webMotionCallback)
+	cbWebScroll = newCallback(webScrollCallback)
+
+	cbShield = newCallback(shieldCallback)
+	cbViewClassInit = newCallback(viewClassInitCallback)
+	cbViewDispose = newCallback(viewDisposeCallback)
+	cbViewSizeAllocate = newCallback(viewSizeAllocateCallback)
+	cbViewSnapshot = newCallback(viewSnapshotCallback)
+	cbViewContains = newCallback(viewContainsCallback)
+	cbVideoPrepared = newCallback(videoPreparedCallback)
+	cbVideoSize = newCallback(videoSizeCallback)
+	cbVideoEnded = newCallback(videoEndedCallback)
+	cbVideoError = newCallback(videoErrorCallback)
+	cbVideoProgress = newCallback(videoProgressCallback)
 
 	cbSettingsChanged = newCallback(settingsChangedCallback)
 	cbMenuActivate = newCallback(menuActivateCallback)

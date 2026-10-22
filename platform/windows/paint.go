@@ -2,38 +2,37 @@
 
 package windows
 
+// Drawing the window's view tree with Direct2D, as NSH's render.rs: each
+// frame draws the whole tree into the swap chain's back buffer and
+// presents it. Each view draws, in this order:
+//
+//  1. its shadow and background,
+//  2. its content, clipped to its bounds: text, image, canvas,
+//  3. its children, clipped to its rounded bounds when it clips,
+//  4. its scroll indicator,
+//  5. its border, over the children,
+//
+// all inside an opacity layer when it is translucent. Coordinates are
+// points: the context's DPI is the window's scale times 96. Transforms are
+// 3x2 world transforms.
+//
+// A window with web views draws the same single pass, split at each web
+// view (compose.go): reaching one records where it goes (compose), and
+// the next thing drawn first moves the context to the next layer above it
+// (realize: the clips and layers pushed so far are popped, the target
+// changes, and they are pushed again). Without a composition, realize is
+// one test of a nil pointer.
+
 import (
-	"encoding/binary"
 	"math"
+	"slices"
 	"unsafe"
 
 	"github.com/oneo-me/nsgo/core"
 )
 
-var (
-	setGraphicsMode   = gdi32.NewProc("SetGraphicsMode")
-	setWorldTransform = gdi32.NewProc("SetWorldTransform")
-	setViewportOrgEx  = gdi32.NewProc("SetViewportOrgEx")
-	beginPath         = gdi32.NewProc("BeginPath")
-	endPath           = gdi32.NewProc("EndPath")
-	selectClipPath    = gdi32.NewProc("SelectClipPath")
-	rectangle         = gdi32.NewProc("Rectangle")
-	getClipBox        = gdi32.NewProc("GetClipBox")
-	getClipRgn        = gdi32.NewProc("GetClipRgn")
-	getRegionData     = gdi32.NewProc("GetRegionData")
-	gdiFlush          = gdi32.NewProc("GdiFlush")
-)
-
-const (
-	gmCompatible = 1
-	gmAdvanced   = 2
-	rgnDiff      = 4
-)
-
-// xform is GDI's XFORM.
-type xform struct{ M11, M12, M21, M22, Dx, Dy float32 }
-
-// matrix is an affine transform: x' = a x + c y + e, y' = b x + d y + f.
+// matrix is an affine transform: x' = a x + c y + e, y' = b x + d y + f,
+// laid out as D2D1_MATRIX_3X2_F.
 type matrix struct{ a, b, c, d, e, f float64 }
 
 var identity = matrix{a: 1, d: 1}
@@ -73,8 +72,8 @@ func (m matrix) axisAligned() bool { return m.b == 0 && m.c == 0 && m.a > 0 && m
 // stretch returns how much m scales lengths, on average.
 func (m matrix) stretch() float64 { return math.Sqrt(math.Abs(m.a*m.d - m.b*m.c)) }
 
-func (m matrix) xform() xform {
-	return xform{float32(m.a), float32(m.b), float32(m.c), float32(m.d), float32(m.e), float32(m.f)}
+func (m matrix) d2d() matrix3x2 {
+	return matrix3x2{float32(m.a), float32(m.b), float32(m.c), float32(m.d), float32(m.e), float32(m.f)}
 }
 
 // bound returns the box around r mapped by m, rounded out.
@@ -88,35 +87,19 @@ func (m matrix) bound(r rect) rect {
 	return rect{int32(math.Floor(x0)), int32(math.Floor(y0)), int32(math.Ceil(x1)), int32(math.Ceil(y1))}
 }
 
-func (r rect) union(o rect) rect {
-	switch {
-	case r.empty():
-		return o
-	case o.empty():
-		return r
-	}
-	return rect{min(r.Left, o.Left), min(r.Top, o.Top), max(r.Right, o.Right), max(r.Bottom, o.Bottom)}
-}
-
-func (r rect) offset(dx, dy int32) rect {
-	return rect{r.Left + dx, r.Top + dy, r.Right + dx, r.Bottom + dy}
-}
-
-func (r rect) inset(d int32) rect { return rect{r.Left + d, r.Top + d, r.Right - d, r.Bottom - d} }
-
-// transformOf returns t in the window's pixels for a view drawn in r:
-// around its center, translated, then rotated, then scaled.
-func (w *window) transformOf(t core.Transform, r rect) matrix {
+// transformOf returns t for a view of size: around its center,
+// translated, then rotated, then scaled, in points.
+func transformOf(t core.Transform, size core.Size) matrix {
 	if t == (core.Transform{}) {
 		return identity
 	}
 	sx, sy := t.Scales()
-	cx, cy := float64(r.Left+r.Right)/2, float64(r.Top+r.Bottom)/2
+	cx, cy := float64(size.Width)/2, float64(size.Height)/2
 	sin, cos := math.Sincos(float64(t.Rotate) * math.Pi / 180)
 	m := translation(-cx, -cy).
 		then(scaling(float64(sx), float64(sy))).
 		then(matrix{a: cos, b: sin, c: -sin, d: cos}).
-		then(translation(cx+float64(t.TranslateX)*w.scale, cy+float64(t.TranslateY)*w.scale))
+		then(translation(cx+float64(t.TranslateX), cy+float64(t.TranslateY)))
 	if math.Abs(m.a-1) < 1e-9 && math.Abs(m.d-1) < 1e-9 && math.Abs(m.b) < 1e-9 && math.Abs(m.c) < 1e-9 &&
 		math.Abs(m.e) < 1e-9 && math.Abs(m.f) < 1e-9 {
 		return identity
@@ -124,393 +107,634 @@ func (w *window) transformOf(t core.Transform, r rect) matrix {
 	return m
 }
 
-// bitmap is a 32-bit top-down DIB section selected into a DC of its own.
-type bitmap struct {
-	dc, handle, old uintptr
-	bits            unsafe.Pointer
-	width, height   int32
+func colorOf(c core.Color) colorF {
+	return colorF{float32(c>>24&0xff) / 255, float32(c>>16&0xff) / 255, float32(c>>8&0xff) / 255, float32(c&0xff) / 255}
 }
 
-func newDIB(width, height int32) (uintptr, unsafe.Pointer) {
-	bi := bitmapInfo{Width: width, Height: -height, Planes: 1, BitCount: 32}
-	bi.Size = uint32(unsafe.Offsetof(bi.Colors))
-	var bits unsafe.Pointer
-	h, _, _ := createDIBSection.Call(0, uintptr(unsafe.Pointer(&bi)), dibRGBColors, uintptr(unsafe.Pointer(&bits)), 0, 0)
-	if h == 0 || bits == nil {
-		return 0, nil
-	}
-	return h, bits
+func visible(c core.Color) bool { return c&0xff != 0 }
+
+// infinite bounds a layer's content without limiting it.
+var infinite = rectF{-1e7, -1e7, 1e7, 1e7}
+
+// pushed is a layer or clip the painter pushed, with what it needs to
+// push it again.
+type pushed struct {
+	clip    bool // an axis-aligned clip, else a layer
+	m       matrix
+	rect    rectF      // the clip's
+	opacity float32    // the layer's
+	mask    *comObject // the layer's geometric mask, held
 }
 
-func newBitmap(like uintptr, width, height int32) (*bitmap, bool) {
-	h, bits := newDIB(width, height)
-	if h == 0 {
-		return nil, false
-	}
-	b := &bitmap{handle: h, bits: bits, width: width, height: height}
-	b.dc, _, _ = createCompatibleDC.Call(like)
-	b.old, _, _ = selectObject.Call(b.dc, h)
-	return b, true
-}
-
-func (b *bitmap) free() {
-	selectObject.Call(b.dc, b.old)
-	deleteDC.Call(b.dc)
-	deleteObject.Call(b.handle)
-}
-
-// painter draws views into a target: the window's back buffer, or a
-// layer a translucent subtree draws into first. It draws in the window's
-// pixels; the DC maps them to the target's through m, a world transform
-// views' transforms make, and the target's origin.
+// painter is one frame's drawing pass.
 type painter struct {
 	w      *window
-	target *bitmap
-	dc     uintptr
-	ox, oy int32 // the target's origin in the window, in pixels
-	m      matrix
-	solid  *bitmap // 1×1, blended over clipped areas to fill them translucently
+	g      *gfx
+	dc     *comObject
+	scale  float32 // pixels per point
+	m      matrix  // the world transform: the drawn view's points to the target's DIPs
+	brush  *comObject
+	pushed []pushed
+	// alpha is the opacity of what is drawn now: its views', multiplied.
+	alpha float32
+	// composed are the web views reached in this pass, in paint order,
+	// with where they go.
+	composed []composed
+	// split is the pass's layers when the window has a composition.
+	split *split
 }
 
+// composed is a web view a pass reached.
+type composed struct {
+	web *webView
+	at  placement
+}
+
+// split is the layers a window's pass draws into (realize).
+type split struct {
+	c             *composition
+	width, height uint32 // the window's, in pixels
+	// layers holds, for each layer started, how many web views are below
+	// it.
+	layers []int
+	// pending is set when a web view was reached: the next drawing
+	// starts a layer.
+	pending bool
+	// ended is the first failure of ending a target's drawing.
+	ended uintptr
+}
+
+func newPainter(w *window, g *gfx) *painter {
+	p := &painter{w: w, g: g, dc: g.dc, scale: float32(w.scale), m: identity, alpha: 1}
+	black := colorF{a: 1}
+	g.dc.call(rtCreateSolidColorBrush, uintptr(unsafe.Pointer(&black)), 0, uintptr(unsafe.Pointer(&p.brush)))
+	return p
+}
+
+func (p *painter) release() {
+	for len(p.pushed) > 0 {
+		p.pop()
+	}
+	releaseAll(&p.brush)
+}
+
+// solid returns the pass's brush in color c.
+func (p *painter) solid(c core.Color) *comObject {
+	col := colorOf(c)
+	p.brush.call(brushSetColor, uintptr(unsafe.Pointer(&col)))
+	return p.brush
+}
+
+// setTransform makes m the world transform.
+func (p *painter) setTransform(m matrix) {
+	p.m = m
+	t := m.d2d()
+	p.dc.call(rtSetTransform, uintptr(unsafe.Pointer(&t)))
+}
+
+// pushLayer draws what follows at opacity, inside mask (in the current
+// coordinates) unless it is nil.
+func (p *painter) pushLayer(opacity float32, mask *comObject) {
+	p.pushLayerRaw(opacity, mask)
+	mask.addRef()
+	p.pushed = append(p.pushed, pushed{m: p.m, opacity: opacity, mask: mask})
+}
+
+func (p *painter) pushLayerRaw(opacity float32, mask *comObject) {
+	params := layerParameters1{contentBounds: infinite, maskAntialias: d2dAntialiasPerPrimitive,
+		maskTransform: identity.d2d(), opacity: opacity}
+	if mask != nil {
+		params.mask = mask.ptr()
+	}
+	p.dc.call(dcPushLayer, uintptr(unsafe.Pointer(&params)), 0)
+}
+
+// pushClipRect clips what follows to r, in the current coordinates:
+// exactly while the transform keeps rectangles upright, else through a
+// geometry.
+func (p *painter) pushClipRect(r rectF) {
+	if p.m.b == 0 && p.m.c == 0 {
+		// Aliased, as a pixel-aligned layer's bounds clip.
+		p.dc.call(rtPushAxisAlignedClip, uintptr(unsafe.Pointer(&r)), d2dAntialiasAliased)
+		p.pushed = append(p.pushed, pushed{clip: true, m: p.m, rect: r})
+		return
+	}
+	g := p.roundedGeometry(r, 0)
+	p.pushLayer(1, g)
+	g.release()
+}
+
+// pushClipRounded clips what follows to r with its corners rounded by
+// radius.
+func (p *painter) pushClipRounded(r rectF, radius float32) {
+	if radius <= 0 {
+		p.pushClipRect(r)
+		return
+	}
+	g := p.roundedGeometry(r, radius)
+	p.pushLayer(1, g)
+	g.release()
+}
+
+// pop pops the last push.
+func (p *painter) pop() {
+	n := len(p.pushed)
+	if n == 0 {
+		return
+	}
+	top := p.pushed[n-1]
+	p.pushed = p.pushed[:n-1]
+	if top.clip {
+		p.dc.call(rtPopAxisAlignedClip)
+		return
+	}
+	p.dc.call(rtPopLayer)
+	top.mask.release()
+}
+
+// flatten pops every layer and clip pushed so far, runs between, and
+// pushes them again as they were: exact for clips, while a translucent
+// layer splits in two.
+func (p *painter) flatten(between func()) {
+	for i := len(p.pushed) - 1; i >= 0; i-- {
+		if p.pushed[i].clip {
+			p.dc.call(rtPopAxisAlignedClip)
+		} else {
+			p.dc.call(rtPopLayer)
+		}
+	}
+	between()
+	current := p.m
+	for _, q := range p.pushed {
+		p.setTransform(q.m)
+		if q.clip {
+			r := q.rect
+			p.dc.call(rtPushAxisAlignedClip, uintptr(unsafe.Pointer(&r)), d2dAntialiasAliased)
+		} else {
+			p.pushLayerRaw(q.opacity, q.mask)
+		}
+	}
+	p.setTransform(current)
+}
+
+// clipBounds returns what the clips pushed so far leave visible, in the
+// target's DIPs.
+func (p *painter) clipBounds() rectF {
+	r := infinite
+	for _, q := range p.pushed {
+		switch {
+		case q.clip:
+			r = r.intersect(mapBounds(q.m, q.rect))
+		case q.mask != nil:
+			var b rectF
+			t := q.m.d2d()
+			if !failed(q.mask.call(geometryGetBounds, uintptr(unsafe.Pointer(&t)), uintptr(unsafe.Pointer(&b)))) {
+				r = r.intersect(b)
+			}
+		}
+	}
+	return r
+}
+
+// compose records that web view wv, width by height points at world with
+// corners of radius, is drawn here: what follows goes into the next
+// layer.
+func (p *painter) compose(wv *webView, world matrix, width, height, radius float32) {
+	s := float64(p.scale)
+	// The page's pixels are the view's points times the scale: the linear
+	// part stays, the translation is in pixels.
+	m := world
+	m.e, m.f = m.e*s, m.f*s
+	if world.a == 1 && world.d == 1 && world.b == 0 && world.c == 0 {
+		// Only moved: on whole pixels, so that the page stays sharp.
+		m.e, m.f = math.Round(m.e), math.Round(m.f)
+	}
+	c := p.clipBounds()
+	sc := float32(s)
+	clip := rectF{max(c.left*sc, 0), max(c.top*sc, 0), min(c.right*sc, 1e7), min(c.bottom*sc, 1e7)}
+	w, h := int32(math.Round(float64(width)*s)), int32(math.Round(float64(height)*s))
+	if w <= 0 || h <= 0 || mapBounds(m, rectF{0, 0, float32(w), float32(h)}).intersect(clip).empty() {
+		return
+	}
+	p.composed = append(p.composed, composed{wv, placement{m: m, width: w, height: h, clip: clip,
+		radius: radius * sc, alpha: p.alpha}})
+	if p.split != nil {
+		p.split.pending = true
+	}
+}
+
+// realize is called before something is drawn: after a web view, the pass
+// goes on in the next layer, made as needed, with its clips and layers
+// pushed again there.
+func (p *painter) realize() {
+	s := p.split
+	if s == nil || !s.pending {
+		return
+	}
+	s.pending = false
+	target, err := s.c.layerTarget(p.g, len(s.layers), s.width, s.height, p.scale)
+	if err != nil {
+		// Drawn below the web view instead.
+		return
+	}
+	s.layers = append(s.layers, len(p.composed))
+	p.flatten(func() {
+		if hr := p.dc.call(rtEndDraw, 0, 0); failed(hr) && s.ended == 0 {
+			s.ended = hr
+		}
+		p.dc.call(dcSetTarget, target.ptr())
+		p.dc.call(rtBeginDraw)
+		t := identity.d2d()
+		p.dc.call(rtSetTransform, uintptr(unsafe.Pointer(&t)))
+		clear := colorF{}
+		p.dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
+	})
+}
+
+// roundedGeometry returns r with corners of radius as a geometry the
+// caller releases; nil when Direct2D cannot make it, which a layer takes
+// as no mask.
+func (p *painter) roundedGeometry(r rectF, radius float32) *comObject {
+	radius = max(min(radius, (r.right-r.left)/2, (r.bottom-r.top)/2), 0)
+	rr := roundedRect{rect: r, radiusX: radius, radiusY: radius}
+	var g *comObject
+	if failed(p.g.factory.call(d2dFactoryCreateRoundedRectangleGeometry, uintptr(unsafe.Pointer(&rr)),
+		uintptr(unsafe.Pointer(&g)))) {
+		return nil
+	}
+	return g
+}
+
+func (p *painter) fillRect(r rectF, c core.Color) {
+	if visible(c) && !r.empty() {
+		p.dc.call(rtFillRectangle, uintptr(unsafe.Pointer(&r)), p.solid(c).ptr())
+	}
+}
+
+// fillRounded fills r with corners of radius.
+func (p *painter) fillRounded(r rectF, radius float32, c core.Color) {
+	if !visible(c) || r.empty() {
+		return
+	}
+	radius = max(min(radius, (r.right-r.left)/2, (r.bottom-r.top)/2), 0)
+	if radius <= 0 {
+		p.fillRect(r, c)
+		return
+	}
+	rr := roundedRect{rect: r, radiusX: radius, radiusY: radius}
+	p.dc.call(rtFillRoundedRectangle, uintptr(unsafe.Pointer(&rr)), p.solid(c).ptr())
+}
+
+func (p *painter) fillGeometry(g *comObject, c core.Color) {
+	if g != nil && visible(c) {
+		p.dc.call(rtFillGeometry, g.ptr(), p.solid(c).ptr(), 0)
+	}
+}
+
+// paint answers WM_PAINT.
 func (w *window) paint() {
 	var ps paintStruct
-	hdc, _, _ := beginPaint.Call(w.hwnd, uintptr(unsafe.Pointer(&ps)))
+	beginPaint.Call(w.hwnd, uintptr(unsafe.Pointer(&ps)))
 	defer endPaint.Call(w.hwnd, uintptr(unsafe.Pointer(&ps)))
+	w.frame()
+}
+
+// frame draws the whole tree into the swap chain and presents it.
+func (w *window) frame() {
 	var client rect
 	getClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&client)))
 	if client.empty() {
 		return
 	}
-	// Draw into a bitmap first so the window never shows a half-drawn frame.
-	back, ok := newBitmap(hdc, client.Right, client.Bottom)
-	if !ok {
+	g, err := devices()
+	if err != nil {
 		return
 	}
-	defer back.free()
-	solid, ok := newBitmap(hdc, 1, 1)
-	if !ok {
+	if w.swap != nil && w.swap.stale() {
+		w.swap.release()
+		w.swap = nil
+	}
+	if w.swap == nil {
+		if w.swap, err = newSwapChain(g, w.hwnd, uint32(client.Right), uint32(client.Bottom)); err != nil {
+			return
+		}
+	}
+	if err := w.swap.resize(uint32(client.Right), uint32(client.Bottom)); err != nil {
+		w.lost()
 		return
 	}
-	defer solid.free()
-	p := &painter{w: w, target: back, dc: back.dc, m: identity, solid: solid}
-	white, _, _ := getStockObject.Call(whiteBrush)
-	fillRect.Call(back.dc, uintptr(unsafe.Pointer(&client)), white)
-	setBkMode.Call(back.dc, transparent)
+	scale := float32(w.scale)
+	target, err := w.swap.targetBitmap(g, scale)
+	if err != nil {
+		w.lost()
+		return
+	}
+	dc := g.dc
+	dc.call(dcSetTarget, target.ptr())
+	dc.callF(rtSetDpi, 0b11, f32(96*scale), f32(96*scale))
+	dc.call(rtBeginDraw)
+	p := newPainter(w, g)
+	// Only a window with web views has a composition: without one the
+	// frame is the one swap chain.
+	c := w.composition
+	if c != nil {
+		p.split = &split{c: c, width: uint32(client.Right), height: uint32(client.Bottom)}
+	}
+	p.setTransform(identity)
+	white := colorF{1, 1, 1, 1}
+	dc.call(rtClear, uintptr(unsafe.Pointer(&white)))
 	if root := w.view(w.root); root != nil {
-		p.draw(root, 0, 0)
+		p.draw(root, identity, root.frame.Origin.X, root.frame.Origin.Y)
 	}
 	p.drawCaptionButtons(client.Right)
-	bitBlt.Call(hdc, 0, 0, uintptr(client.Right), uintptr(client.Bottom), back.dc, 0, 0, srcCopy)
+	p.release()
+	hr := dc.call(rtEndDraw, 0, 0)
+	dc.call(dcSetTarget, 0)
+	var layers []int
+	if p.split != nil {
+		layers = p.split.layers
+		if hr == 0 {
+			hr = p.split.ended
+		}
+	}
+	if hr == d2dErrRecreateTarget {
+		w.lost()
+		return
+	}
+	if c != nil {
+		if hr := c.present(len(layers)); failed(hr) {
+			w.lost()
+			return
+		}
+	}
+	if hr := w.swap.present(); hr == dxgiErrDeviceRemoved || hr == dxgiErrDeviceReset {
+		w.lost()
+		return
+	}
+	w.composedPlaced(p.composed, layers)
 }
 
-// draw paints v and its children; x and y are the origin of v's parent's
-// content in the window.
-func (p *painter) draw(v *view, x, y core.Points) {
+// composedPlaced tells the web views the frame just shown drew where they
+// go, and those it no longer drew, and stacks them with the layers drawn,
+// layers[i] being how many web views are below layer i.
+func (w *window) composedPlaced(drawn []composed, layers []int) {
+	old := w.composed
+	w.composed = w.composed[:0:0]
+	for _, c := range drawn {
+		w.composed = append(w.composed, c.web)
+	}
+	if len(old) == 0 && len(drawn) == 0 {
+		return
+	}
+	for _, wv := range old {
+		if !slices.Contains(w.composed, wv) {
+			wv.composeAt(nil)
+		}
+	}
+	visuals := make([]*comObject, 0, len(drawn))
+	for _, c := range drawn {
+		c.web.composeAt(&c.at)
+		if c.web.portal != nil {
+			visuals = append(visuals, c.web.portal.outer)
+		}
+	}
+	if w.composition != nil {
+		w.composition.arrange(visuals, layers)
+	}
+}
+
+// lost drops the swap chains and the devices, and draws again on new
+// ones.
+func (w *window) lost() {
+	if w.swap != nil {
+		w.swap.release()
+		w.swap = nil
+	}
+	if w.composition != nil {
+		w.composition.deviceLost()
+	}
+	deviceLost()
+	invalidateRect.Call(w.hwnd, 0, 0)
+}
+
+// draw paints v and its subtree; parent is the world transform of v's
+// parent's coordinates, and x, y where v's origin goes in them.
+func (p *painter) draw(v *view, parent matrix, x, y core.Points) {
 	s := p.w.styleOf(v)
 	if s.Hidden || s.Opacity <= 0 {
 		return
 	}
+	world := transformOf(s.Transform, v.frame.Size).then(translation(float64(x), float64(y))).then(parent)
+	// Drawn above a web view reached before it, if any.
+	p.realize()
+	p.setTransform(world)
 	if s.Opacity < 1 {
-		box := p.w.extent(v, x, y, p.m).inset(-2) // text may overhang its frame
-		p.layer(box, s.Opacity, func(lp *painter) { lp.drawView(v, s, x, y) })
-		return
+		p.pushLayer(s.Opacity, nil)
 	}
-	p.drawView(v, s, x, y)
+	alpha := p.alpha
+	p.alpha *= s.Opacity
+	p.drawContent(v, s, world)
+	p.alpha = alpha
+	if s.Opacity < 1 {
+		p.pop()
+	}
 }
 
-func (p *painter) drawView(v *view, s *core.ViewStyle, x, y core.Points) {
-	w := p.w
-	x, y = x+v.frame.Origin.X, y+v.frame.Origin.Y
-	r := w.rect(x, y, v.frame.Size)
-	if t := w.transformOf(s.Transform, r); t != identity {
-		saved, old := p.push(t.then(p.m))
-		defer p.pop(saved, old)
+// drawContent paints v at world, the transform already set.
+func (p *painter) drawContent(v *view, s *core.ViewStyle, world matrix) {
+	width, height := float32(v.frame.Size.Width), float32(v.frame.Size.Height)
+	radius := max(min(float32(s.CornerRadius), width/2, height/2), 0)
+	bounds := rectF{0, 0, width, height}
+	p.drawBackground(v, s, width, height, radius)
+	clip := s.Clip || v.kind == core.KindScroll
+	if clip {
+		p.pushClipRounded(bounds, radius)
+	} else {
+		// The view's own content stays inside it.
+		p.pushClipRect(bounds)
 	}
-	diameter := min(2*w.px(s.CornerRadius), r.Right-r.Left, r.Bottom-r.Top)
-	p.fill(r, diameter, s)
 	switch v.kind {
 	case core.KindImage:
-		// Inside the border, and inside the corners when clipping.
-		in := r
-		if b := w.borderWidths(s); b != (rect{}) {
-			in = rect{r.Left + b.Left, r.Top + b.Top, r.Right - b.Right, r.Bottom - b.Bottom}
-		}
-		if s.Clip && diameter > 0 {
-			in2 := in
-			p.clipRound(p.m.bound(r), r, float64(diameter)/2, func(q *painter) {
-				q.drawImage(v, s.TintColor, in2)
-			})
-		} else {
-			p.drawImage(v, s.TintColor, in)
-		}
+		b := p.w.borderEdges(s)
+		p.drawImage(v, s.TintColor, rectF{b[3], b[0], width - b[1], height - b[2]})
 	case core.KindCanvas:
 		if v.drawing != nil {
-			p.canvas(v, r)
+			p.canvas(v, width, height)
+		}
+	case core.KindWeb:
+		if wv := v.web; wv != nil && wv.composed() {
+			corners := float32(0)
+			if s.Clip {
+				corners = radius
+			}
+			p.compose(wv, world, width, height, corners)
+		} else if wv != nil && wv.failed {
+			p.drawWebPlaceholder(width, height)
+		}
+	case core.KindVideo:
+		if v.video != nil {
+			p.drawVideo(v.video, width, height)
+		}
+	case core.KindInput:
+		if v.field != nil {
+			v.field.draw(p, world)
 		}
 	}
 	if v.text != nil {
-		v.text.draw(p, w.px(x+v.content.Origin.X), w.px(y+v.content.Origin.Y))
+		v.text.draw(p, float32(v.content.Origin.X), float32(v.content.Origin.Y))
 	}
-	if len(v.children) == 0 {
-		return
-	}
-	draw := func(q *painter) {
-		for _, c := range v.children {
-			q.draw(c, x-v.offset.X, y-v.offset.Y)
-		}
-		if v.kind == core.KindScroll && !v.scroll.HideIndicator {
-			q.drawIndicator(v, x, y)
-		}
-	}
-	switch {
-	case !s.Clip && v.kind != core.KindScroll:
-		draw(p)
-	case diameter > 0 && p.m.axisAligned():
-		p.clipRound(p.m.bound(r), r, float64(diameter)/2, draw)
-	default:
-		saved, _, _ := saveDC.Call(p.dc)
-		p.clip(r, diameter, rgnAnd)
-		defer p.restore(saved)
-		draw(p)
-	}
-}
-
-// extent returns the window's pixels v's subtree may draw on through m:
-// its frames, transformed, cut by the views that clip.
-func (w *window) extent(v *view, x, y core.Points, m matrix) rect {
-	s := w.styleOf(v)
-	if s.Hidden || s.Opacity <= 0 {
-		return rect{}
-	}
-	x, y = x+v.frame.Origin.X, y+v.frame.Origin.Y
-	r := w.rect(x, y, v.frame.Size)
-	m = w.transformOf(s.Transform, r).then(m)
-	box := m.bound(r)
-	if s.Clip || v.kind == core.KindScroll {
-		return box
+	if !clip {
+		p.pop()
 	}
 	for _, c := range v.children {
-		box = box.union(w.extent(c, x-v.offset.X, y-v.offset.Y, m))
+		p.draw(c, world, c.frame.Origin.X-v.offset.X, c.frame.Origin.Y-v.offset.Y)
 	}
-	return box
-}
-
-// push applies m as the world transform until pop.
-func (p *painter) push(m matrix) (saved uintptr, old matrix) {
-	saved, _, _ = saveDC.Call(p.dc)
-	old, p.m = p.m, m
-	setGraphicsMode.Call(p.dc, gmAdvanced)
-	x := m.xform()
-	setWorldTransform.Call(p.dc, uintptr(unsafe.Pointer(&x)))
-	return saved, old
-}
-
-func (p *painter) pop(saved uintptr, old matrix) {
-	p.m = old
-	p.restore(saved)
-}
-
-// restore restores the DC's state, back in the compatible graphics mode
-// views without transforms draw in.
-func (p *painter) restore(saved uintptr) {
-	restoreDC.Call(p.dc, saved)
-	if p.m == identity {
-		x := identity.xform()
-		setWorldTransform.Call(p.dc, uintptr(unsafe.Pointer(&x)))
-		setGraphicsMode.Call(p.dc, gmCompatible)
+	indicator := v.kind == core.KindScroll && p.w.showsBar(v)
+	if indicator || p.w.borderEdges(s) != ([4]float32{}) {
+		// A scroll indicator, a border over a web view.
+		p.realize()
 	}
+	p.setTransform(world)
+	if indicator {
+		p.drawIndicator(v)
+	}
+	if clip {
+		p.pop()
+	}
+	p.drawBorder(s, width, height, radius)
 }
 
-// device runs fn with the DC's coordinates the target's pixels.
-func (p *painter) device(fn func()) {
-	saved, _, _ := saveDC.Call(p.dc)
-	x := identity.xform() // fails harmlessly in the compatible mode
-	setWorldTransform.Call(p.dc, uintptr(unsafe.Pointer(&x)))
-	setViewportOrgEx.Call(p.dc, 0, 0, 0)
-	fn()
-	restoreDC.Call(p.dc, saved)
-}
-
-// clipBox returns the box the clipping lets through, in the target's
-// pixels.
-func (p *painter) clipBox() rect {
-	var box rect
-	p.device(func() { getClipBox.Call(p.dc, uintptr(unsafe.Pointer(&box))) })
-	return box
-}
-
-// layer draws through fn into a bitmap holding what is behind box (in
-// the window's pixels), then blends it back at opacity: the subtree
-// fades as one, as group opacity does.
-func (p *painter) layer(box rect, opacity float32, fn func(*painter)) {
-	box = box.offset(-p.ox, -p.oy).intersect(p.clipBox())
-	if box.empty() {
+// drawIndicator paints a scroll bar's thumb while the pointer is over
+// the scroll view or drags the thumb.
+func (p *painter) drawIndicator(v *view) {
+	thumb, ok := v.bar().Thumb()
+	if !ok || !p.w.showsBar(v) {
 		return
 	}
-	l, lp, ok := p.newLayer(box)
-	if !ok {
-		fn(p)
-		return
-	}
-	defer l.free()
-	fn(lp)
-	// GDI maps a bit block through the source DC's viewport too, which
-	// moved to the layer's place in the window.
-	setViewportOrgEx.Call(l.dc, 0, 0, 0)
-	alpha := uintptr(math.Round(float64(opacity)*255)) << 16 // BLENDFUNCTION{AC_SRC_OVER, 0, alpha, 0}
-	p.device(func() {
-		alphaBlend.Call(p.dc, uintptr(box.Left), uintptr(box.Top), uintptr(l.width), uintptr(l.height),
-			l.dc, 0, 0, uintptr(l.width), uintptr(l.height), alpha)
-	})
+	bar := rectF{float32(thumb.Origin.X), float32(thumb.Origin.Y),
+		float32(thumb.Origin.X + thumb.Size.Width), float32(thumb.Origin.Y + thumb.Size.Height)}
+	p.fillRect(bar, core.RGB(0x8c8c8c))
 }
 
-// newLayer copies what is behind box, in the target's pixels, into a
-// bitmap of its own, and returns it with a painter drawing into it.
-func (p *painter) newLayer(box rect) (*bitmap, *painter, bool) {
-	l, ok := newBitmap(p.dc, box.Right-box.Left, box.Bottom-box.Top)
-	if !ok {
-		return nil, nil, false
-	}
-	p.device(func() {
-		bitBlt.Call(l.dc, 0, 0, uintptr(l.width), uintptr(l.height),
-			p.dc, uintptr(box.Left), uintptr(box.Top), srcCopy)
-	})
-	lp := &painter{w: p.w, target: l, dc: l.dc, ox: p.ox + box.Left, oy: p.oy + box.Top, m: p.m, solid: p.solid}
-	setBkMode.Call(l.dc, transparent)
-	setViewportOrgEx.Call(l.dc, uintptr(-lp.ox), uintptr(-lp.oy), 0)
-	if lp.m != identity {
-		setGraphicsMode.Call(l.dc, gmAdvanced)
-		x := lp.m.xform()
-		setWorldTransform.Call(l.dc, uintptr(unsafe.Pointer(&x)))
-	}
-	return l, lp, true
-}
-
-// clipRound draws what fn paints through r's rounded corners, so that a
-// clipped view's edge blends into what lies outside it instead of
-// stepping a whole pixel.
-//
-// The subtree draws inside r as usual, clipped to a rectangle. What the
-// corner squares held is kept first, and blended with what the subtree
-// drew there afterwards: the corners are the only pixels whose coverage
-// is fractional, so they are the only ones that need it.
-func (p *painter) clipRound(box rect, r rect, radius float64, fn func(*painter)) {
-	box = box.offset(-p.ox, -p.oy).intersect(p.clipBox())
-	if radius <= 0 || !p.m.axisAligned() || box.empty() {
-		p.clipped(r, radius, fn)
+// drawBackground paints v's shadow, under a fill only, as iOS draws a
+// shadow of a layer with a background, then its background.
+func (p *painter) drawBackground(v *view, s *core.ViewStyle, width, height, radius float32) {
+	if width <= 0 || height <= 0 || !visible(s.Background) {
 		return
 	}
-	corners, _ := parts(r, radius)
-	var squares [4]rect
-	var behind [4]*bitmap
-	defer func() {
-		for _, b := range behind {
-			if b != nil {
-				b.free()
-			}
-		}
-	}()
-	for i, c := range corners {
-		sq := p.m.bound(c).offset(-p.ox, -p.oy).intersect(box)
-		if sq.empty() {
-			continue
-		}
-		b, ok := newBitmap(p.dc, sq.Right-sq.Left, sq.Bottom-sq.Top)
-		if !ok {
-			p.clipped(r, radius, fn)
+	if visible(s.ShadowColor) {
+		p.drawShadow(v, s, width, height, radius)
+	}
+	p.fillRounded(rectF{0, 0, width, height}, radius, s.Background)
+}
+
+// shadowKey is what a shadow's drawing depends on.
+type shadowKey struct {
+	width, height, radius, sigma, scale float32
+	color                               core.Color
+}
+
+// shadow is a view's shadow: its shape filled in its color, recorded,
+// blurred by an effect.
+type shadow struct {
+	key        shadowKey
+	generation uint64
+	list       *comObject // ID2D1CommandList
+	blur       *comObject // ID2D1Effect
+	image      *comObject // the image drawn: the blur's output, or the list
+}
+
+func (sh *shadow) release() {
+	if sh != nil {
+		releaseAll(&sh.image, &sh.blur, &sh.list)
+	}
+}
+
+// drawShadow draws v's shadow: React Native's shadowRadius is the blur's
+// standard deviation, as Core Animation's shadowRadius is half CSS's blur.
+func (p *painter) drawShadow(v *view, s *core.ViewStyle, width, height, radius float32) {
+	key := shadowKey{width, height, radius, max(float32(s.ShadowRadius), 0), p.scale, s.ShadowColor}
+	if v.shadow == nil || v.shadow.key != key || v.shadow.generation != gfxGeneration {
+		v.shadow.release()
+		v.shadow = p.makeShadow(key)
+		if v.shadow == nil {
 			return
 		}
-		squares[i], behind[i] = sq, b
-		p.device(func() {
-			bitBlt.Call(b.dc, 0, 0, uintptr(b.width), uintptr(b.height),
-				p.dc, uintptr(sq.Left), uintptr(sq.Top), srcCopy)
-		})
 	}
-	saved, _, _ := saveDC.Call(p.dc)
-	p.clip(r, 0, rgnAnd)
-	fn(p)
-	p.restore(saved)
-	p.repairCorners(squares, behind, shape{r: r, radius: radius})
+	at := pointF{float32(s.ShadowOffset.X), float32(s.ShadowOffset.Y)}
+	p.dc.call(dcDrawImage, v.shadow.image.ptr(), uintptr(unsafe.Pointer(&at)), 0, d2dInterpolationLinear, 0)
 }
 
-// clipped draws through fn with r's rounded region as the clipping, which
-// GDI can only do a whole pixel at a time.
-func (p *painter) clipped(r rect, radius float64, fn func(*painter)) {
-	saved, _, _ := saveDC.Call(p.dc)
-	p.clip(r, int32(math.Round(2*radius)), rgnAnd)
-	fn(p)
-	p.restore(saved)
+// makeShadow records key's shape on the second context and blurs it.
+func (p *painter) makeShadow(key shadowKey) *shadow {
+	sh := &shadow{key: key, generation: gfxGeneration}
+	bake := p.g.bake
+	if failed(bake.call(dcCreateCommandList, uintptr(unsafe.Pointer(&sh.list)))) {
+		return nil
+	}
+	bake.call(dcSetTarget, sh.list.ptr())
+	bake.callF(rtSetDpi, 0b11, f32(96*key.scale), f32(96*key.scale))
+	bake.call(rtBeginDraw)
+	t := identity.d2d()
+	bake.call(rtSetTransform, uintptr(unsafe.Pointer(&t)))
+	col := colorOf(key.color)
+	var brush *comObject
+	bake.call(rtCreateSolidColorBrush, uintptr(unsafe.Pointer(&col)), 0, uintptr(unsafe.Pointer(&brush)))
+	if brush != nil {
+		rr := roundedRect{rect: rectF{0, 0, key.width, key.height}, radiusX: key.radius, radiusY: key.radius}
+		bake.call(rtFillRoundedRectangle, uintptr(unsafe.Pointer(&rr)), brush.ptr())
+		brush.release()
+	}
+	hr := bake.call(rtEndDraw, 0, 0)
+	bake.call(dcSetTarget, 0)
+	if failed(hr) || failed(sh.list.call(commandListClose)) {
+		sh.release()
+		return nil
+	}
+	if key.sigma <= 0 {
+		sh.list.addRef()
+		sh.image = sh.list
+		return sh
+	}
+	if failed(p.dc.call(dcCreateEffect, uintptr(unsafe.Pointer(&clsidGaussianBlur)), uintptr(unsafe.Pointer(&sh.blur)))) {
+		sh.release()
+		return nil
+	}
+	const standardDeviation = 0
+	sigma := key.sigma
+	sh.blur.call(effectSetValue, standardDeviation, d2dPropertyFloat, uintptr(unsafe.Pointer(&sigma)), 4)
+	sh.blur.call(effectSetInput, 0, sh.list.ptr(), 1)
+	sh.blur.call(effectGetOutput, uintptr(unsafe.Pointer(&sh.image)))
+	if sh.image == nil {
+		sh.release()
+		return nil
+	}
+	return sh
 }
 
-// repairCorners blends the corner squares' pixels from what they held
-// before the subtree drew there and what it drew, by how much of each
-// pixel the shape covers.
-func (p *painter) repairCorners(squares [4]rect, behind [4]*bitmap, s shape) {
-	gdiFlush.Call() // the pixels may still be in a batched GDI call
-	smp := p.sampler()
-	clips := p.clipRects()
-	target := unsafe.Slice((*uint32)(p.target.bits), int(p.target.width)*int(p.target.height))
-	for i, sq := range squares {
-		b := behind[i]
-		if b == nil {
-			continue
+// borderEdges returns the width of each side's drawn border in points,
+// top, right, bottom, left: a side without a visible color has none, and
+// one that has is at least a pixel wide.
+func (w *window) borderEdges(s *core.ViewStyle) [4]float32 {
+	side := func(width core.Points, c core.Color) float32 {
+		if width <= 0 || !visible(c) {
+			return 0
 		}
-		was := unsafe.Slice((*uint32)(b.bits), int(b.width)*int(b.height))
-		for _, clip := range clips {
-			r := sq.intersect(clip)
-			for y := r.Top; y < r.Bottom; y++ {
-				row := target[int(y)*int(p.target.width):]
-				for x := r.Left; x < r.Right; x++ {
-					if cov := smp.cover(s, x, y); cov < 255 {
-						row[x] = mixPixels(was[int(y-sq.Top)*int(b.width)+int(x-sq.Left)], row[x], uint32(cov))
-					}
-				}
-			}
-		}
+		return max(float32(width), float32(1/w.scale))
 	}
+	if s.Borders == (core.Edges{}) {
+		d := side(s.BorderWidth, s.BorderColor)
+		return [4]float32{d, d, d, d}
+	}
+	b, c := s.Borders, s.BorderColors
+	return [4]float32{side(b.Top, c.Top), side(b.Right, c.Right), side(b.Bottom, c.Bottom), side(b.Left, c.Left)}
 }
 
-// shape adds r with its corners to the DC's path.
-func (p *painter) shape(r rect, diameter int32) {
-	if diameter > 0 {
-		roundRect.Call(p.dc, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right), uintptr(r.Bottom),
-			uintptr(diameter), uintptr(diameter))
-	} else {
-		rectangle.Call(p.dc, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right), uintptr(r.Bottom))
-	}
-}
-
-// clip combines the clipping with r and its corners by mode: through a
-// path under a transform, else exactly as a region.
-func (p *painter) clip(r rect, diameter int32, mode uintptr) {
-	if p.m != identity {
-		beginPath.Call(p.dc)
-		p.shape(r, diameter)
-		endPath.Call(p.dc)
-		selectClipPath.Call(p.dc, mode)
-		return
-	}
-	r = r.offset(-p.ox, -p.oy) // regions are in the target's pixels
-	var rgn uintptr
-	if diameter > 0 {
-		rgn, _, _ = createRoundRectRgn.Call(uintptr(r.Left), uintptr(r.Top), uintptr(r.Right+1), uintptr(r.Bottom+1),
-			uintptr(diameter), uintptr(diameter))
-	} else {
-		rgn, _, _ = createRectRgn.Call(uintptr(r.Left), uintptr(r.Top), uintptr(r.Right), uintptr(r.Bottom))
-	}
-	extSelectClipRgn.Call(p.dc, rgn, mode) // copies the region
-	deleteObject.Call(rgn)
-}
-
-// fill paints a view's background and its border inside r; translucent
-// colors blend with what is behind.
-func (p *painter) fill(r rect, diameter int32, s *core.ViewStyle) {
-	radius := float64(diameter) / 2
-	if c := s.Background; c&0xff != 0 {
-		p.paintShape(r, radius, c)
-	}
-	b := p.w.borderWidths(s)
-	if b == (rect{}) {
+// drawBorder paints a view's border inside its bounds, over its
+// children, as NSH's draw_borders does with solid borders.
+func (p *painter) drawBorder(s *core.ViewStyle, width, height, radius float32) {
+	widths := p.w.borderEdges(s)
+	if widths == ([4]float32{}) || width <= 0 || height <= 0 {
 		return
 	}
 	colors := [4]core.Color{s.BorderColor, s.BorderColor, s.BorderColor, s.BorderColor}
@@ -518,252 +742,206 @@ func (p *painter) fill(r rect, diameter int32, s *core.ViewStyle) {
 		c := s.BorderColors
 		colors = [4]core.Color{c.Top, c.Right, c.Bottom, c.Left}
 	}
-	p.paintRing(r, radius, b, colors)
-}
-
-// paintShape fills r and its rounded corners with c.
-func (p *painter) paintShape(r rect, radius float64, c core.Color) {
-	if radius <= 0 {
-		p.fillRects([]rect{r}, c)
-		return
-	}
-	if p.m != identity {
-		// A transform leaves no straight edge in the target's pixels, so
-		// every pixel is measured.
-		p.paintCoverage([]rect{r}, shape{r: r, radius: radius}, c)
-		return
-	}
-	corners, middle := parts(r, radius)
-	p.paintCoverage(corners[:], shape{r: r, radius: radius}, c)
-	p.fillRects(middle[:], c)
-}
-
-// paintRing paints a border inside r: the ring between r and the inner
-// rectangle the sides' widths leave, in one color or in a color per side.
-func (p *painter) paintRing(r rect, radius float64, b rect, colors [4]core.Color) {
-	in := rect{
-		min(r.Left+b.Left, r.Right), min(r.Top+b.Top, r.Bottom),
-		max(r.Right-b.Right, r.Left), max(r.Bottom-b.Bottom, r.Top),
-	}
-	inRadius := max(radius-float64(b.Left+b.Top+b.Right+b.Bottom)/4, 0)
-	uniform := colors[0] == colors[1] && colors[0] == colors[2] && colors[0] == colors[3]
-	if radius <= 0 || (p.m != identity && !uniform) {
-		// A rotated border with a color per side has no edge GDI can fill
-		// exactly.
-		p.ringGDI(r, radius, b, in, inRadius, colors, uniform)
-		return
-	}
-	s := shape{r: r, radius: radius, hole: in, holeRadius: inRadius}
-	if p.m != identity {
-		// A transform leaves no straight edge in the target's pixels, so
-		// every pixel is measured.
-		p.paintCoverage([]rect{r}, s, colors[0])
-		return
-	}
-	corners, middle := parts(r, radius)
-	if uniform {
-		p.paintCoverage(corners[:], s, colors[0])
-	} else {
-		// A corner belongs to the two sides that meet there, split down
-		// the diagonal from the corner: the top left one to the top and
-		// the left, the top right one to the top and the right, and so on.
-		for i, pair := range [4][2]int{{1, 4}, {1, 2}, {3, 4}, {3, 2}} {
-			ca, cb := colors[pair[0]-1], colors[pair[1]-1]
-			if ca&0xff == 0 && cb&0xff == 0 || corners[i].empty() {
-				continue
-			}
-			a, b := s, s
-			a.side, b.side = uint8(pair[0]), uint8(pair[1])
-			p.paintCorner(corners[i], a, b, ca, cb)
+	uniform := widths[0] == widths[1] && widths[1] == widths[2] && widths[2] == widths[3] &&
+		colors[0] == colors[1] && colors[1] == colors[2] && colors[2] == colors[3]
+	if bw := widths[0]; uniform && (radius <= 0 || radius >= bw) {
+		// Stroking the middle line is exact while the inner corners stay
+		// round, or square.
+		half := bw / 2
+		line := rectF{half, half, max(width-half, half), max(height-half, half)}
+		if radius <= 0 {
+			p.dc.callF(rtDrawRectangle, 0b100, uintptr(unsafe.Pointer(&line)), p.solid(colors[0]).ptr(), f32(bw), 0)
+		} else {
+			rr := roundedRect{rect: line, radiusX: radius - half, radiusY: radius - half}
+			p.dc.callF(rtDrawRoundedRectangle, 0b100, uintptr(unsafe.Pointer(&rr)), p.solid(colors[0]).ptr(), f32(bw), 0)
 		}
+		return
 	}
-	// The straight parts, one fill per color.
-	var bands [4][]rect
-	for _, piece := range middle {
-		for _, part := range sub(piece, in) {
-			if i := sideOf(part, in) - 1; colors[i]&0xff != 0 {
-				bands[i] = append(bands[i], part)
+	// The ring between the border box and the padding box.
+	outer := corners{{radius, radius}, {radius, radius}, {radius, radius}, {radius, radius}}
+	figures := []roundedFigure{{rectF{0, 0, width, height}, outer}}
+	if inner, c := paddingBox(width, height, radius, widths); !inner.empty() {
+		figures = append(figures, roundedFigure{inner, c})
+	}
+	ring := p.path(figures)
+	if ring == nil {
+		return
+	}
+	defer ring.release()
+	first, same := core.Color(0), true
+	for i := range 4 {
+		if widths[i] > 0 {
+			if first == 0 {
+				first = colors[i]
+			} else if colors[i] != first {
+				same = false
 			}
 		}
 	}
-	for i, rects := range bands {
-		p.fillRects(rects, colors[i])
-	}
-}
-
-// ringGDI paints a border through GDI, for the shapes coverage cannot
-// draw: rotated ones, and rings with a color per side that a transform
-// applies to.
-func (p *painter) ringGDI(r rect, radius float64, b, in rect, inRadius float64, colors [4]core.Color, uniform bool) {
-	diameter := int32(math.Round(2 * radius))
-	if !uniform || b.Left != b.Top || b.Top != b.Right || b.Right != b.Bottom {
-		p.sides(r, diameter, b, colors)
+	if same {
+		p.fillGeometry(ring, first)
 		return
 	}
-	c := colors[0]
-	if c&0xff != 0xff {
-		p.blend(r, diameter, in, int32(math.Round(2*inRadius)), c)
-		return
-	}
-	width := max(b.Top, 1)
-	pen, _, _ := createPen.Call(psInsideFrame, uintptr(width), colorRef(c))
-	brush, _, _ := getStockObject.Call(nullBrush)
-	oldBrush, _, _ := selectObject.Call(p.dc, brush)
-	oldPen, _, _ := selectObject.Call(p.dc, pen)
-	roundRect.Call(p.dc, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right), uintptr(r.Bottom), uintptr(diameter), uintptr(diameter))
-	selectObject.Call(p.dc, oldBrush)
-	selectObject.Call(p.dc, oldPen)
-	deleteObject.Call(pen)
-}
-
-// blend fills r and its corners, less hole and its corners, with c.
-func (p *painter) blend(r rect, diameter int32, hole rect, holeDiameter int32, c core.Color) {
-	saved, _, _ := saveDC.Call(p.dc)
-	p.clip(r, diameter, rgnAnd)
-	if !hole.empty() {
-		p.clip(hole, holeDiameter, rgnDiff)
-	}
-	p.fillClip(c)
-	p.restore(saved)
-}
-
-// fillClip blends c over everything the clipping lets through: a 1×1
-// bitmap of c stretched over the clipped box.
-func (p *painter) fillClip(c core.Color) {
-	if c&0xff == 0 {
-		return
-	}
-	gdiFlush.Call() // the pixel may still be in use by a batched blend
-	*(*uint32)(p.solid.bits) = premultiply(c)
-	p.device(func() {
-		var box rect
-		getClipBox.Call(p.dc, uintptr(unsafe.Pointer(&box)))
-		if box.empty() {
-			return
+	// Sides that differ: the ring cut to each side's part of the box.
+	for i, quad := range sideQuads(width, height, widths) {
+		if widths[i] <= 0 || !visible(colors[i]) {
+			continue
 		}
-		alphaBlend.Call(p.dc, uintptr(box.Left), uintptr(box.Top), uintptr(box.Right-box.Left), uintptr(box.Bottom-box.Top),
-			p.solid.dc, 0, 0, 1, 1, blendPremultiplied)
+		clip := p.polygon(quad[:])
+		if clip == nil {
+			continue
+		}
+		p.pushLayer(1, clip)
+		clip.release()
+		p.fillGeometry(ring, colors[i])
+		p.pop()
+	}
+}
+
+// corners are the horizontal and vertical radii of a box's corners,
+// clockwise from the top left.
+type corners [4][2]float32
+
+type roundedFigure struct {
+	r rectF
+	c corners
+}
+
+// paddingBox returns the box inside borders of widths (top, right,
+// bottom, left) of a width by height box with corners of radius, and its
+// corners: the outer ones less the borders on each axis.
+func paddingBox(width, height, radius float32, widths [4]float32) (rectF, corners) {
+	top, right, bottom, left := widths[0], widths[1], widths[2], widths[3]
+	r := rectF{left, top, max(width-right, left), max(height-bottom, top)}
+	c := func(x, y float32) [2]float32 { return [2]float32{max(radius-x, 0), max(radius-y, 0)} }
+	return r, corners{c(left, top), c(right, top), c(right, bottom), c(left, bottom)}
+}
+
+// fitCorners scales c down as CSS does where adjacent corners overlap on
+// a width by height box.
+func fitCorners(width, height float32, c corners) corners {
+	f := float32(1)
+	for _, side := range [4][2]float32{
+		{c[0][0] + c[1][0], width}, {c[1][1] + c[2][1], height},
+		{c[2][0] + c[3][0], width}, {c[3][1] + c[0][1], height},
+	} {
+		if side[0] > 0 {
+			f = min(f, side[1]/side[0])
+		}
+	}
+	if f < 1 {
+		for i := range c {
+			c[i][0] *= f
+			c[i][1] *= f
+		}
+	}
+	return c
+}
+
+// sideQuads returns each side's part of a width by height box with border
+// widths, clockwise from the top: corners split along the lines from the
+// outer corners through the inner ones, as CSS joins differing borders.
+func sideQuads(width, height float32, widths [4]float32) [4][4]pointF {
+	t, r, b, l := widths[0], widths[1], widths[2], widths[3]
+	end := func(cx, cy, dx, dy float32) pointF {
+		if dx == 0 && dy == 0 {
+			dx, dy = 1, 1
+			if cx != 0 {
+				dx = -1
+			}
+			if cy != 0 {
+				dy = -1
+			}
+		}
+		k := float32(math.Inf(1))
+		if dx != 0 {
+			k = width / 2 / float32(math.Abs(float64(dx)))
+		}
+		if dy != 0 {
+			k = min(k, height/2/float32(math.Abs(float64(dy))))
+		}
+		return pointF{cx + dx*k, cy + dy*k}
+	}
+	tl := end(0, 0, l, t)
+	tr := end(width, 0, -r, t)
+	br := end(width, height, -r, -b)
+	bl := end(0, height, l, -b)
+	return [4][4]pointF{
+		{{0, 0}, {width, 0}, tr, tl},
+		{{width, 0}, {width, height}, br, tr},
+		{{width, height}, {0, height}, bl, br},
+		{{0, height}, {0, 0}, tl, bl},
+	}
+}
+
+// pathGeometry opens a path geometry; fill returns it, closed, or nil.
+func (p *painter) pathGeometry(mode uintptr, fill func(sink *comObject)) *comObject {
+	var path, sink *comObject
+	if failed(p.g.factory.call(d2dFactoryCreatePathGeometry, uintptr(unsafe.Pointer(&path)))) {
+		return nil
+	}
+	if failed(path.call(pathOpen, uintptr(unsafe.Pointer(&sink)))) {
+		path.release()
+		return nil
+	}
+	sink.call(sinkSetFillMode, mode)
+	fill(sink)
+	hr := sink.call(sinkClose)
+	sink.release()
+	if failed(hr) {
+		path.release()
+		return nil
+	}
+	return path
+}
+
+// path returns rounded rectangles as one geometry filled alternately: one
+// inside another makes a ring.
+func (p *painter) path(figures []roundedFigure) *comObject {
+	return p.pathGeometry(d2dFillAlternate, func(sink *comObject) {
+		for _, f := range figures {
+			addRounded(sink, f.r, f.c)
+		}
 	})
 }
 
-// premultiply returns c, 0xRRGGBBAA, as a premultiplied BGRA pixel.
-func premultiply(c core.Color) uint32 {
-	a := uint32(c & 0xff)
-	r, g, b := uint32(c>>24&0xff)*a/255, uint32(c>>16&0xff)*a/255, uint32(c>>8&0xff)*a/255
-	return a<<24 | r<<16 | g<<8 | b
+// polygon returns a closed polygon.
+func (p *painter) polygon(pts []pointF) *comObject {
+	return p.pathGeometry(d2dFillAlternate, func(sink *comObject) {
+		sink.callPoint(sinkBeginFigure, pts[0].x, pts[0].y, d2dFigureFilled)
+		sink.call(sinkAddLines, uintptr(unsafe.Pointer(&pts[1])), uintptr(len(pts)-1))
+		sink.call(sinkEndFigure, d2dFigureClosed)
+	})
 }
 
-// drawIndicator paints a scroll bar's thumb along v's scrolling edge
-// while it shows; x and y are v's origin in the window.
-func (p *painter) drawIndicator(v *view, x, y core.Points) {
-	thumb, ok := v.bar().Thumb()
-	if !ok || !p.w.showsBar(v) {
-		return
-	}
-	bar := p.w.rect(x+thumb.Origin.X, y+thumb.Origin.Y, thumb.Size)
-	brush, _, _ := createSolidBrush.Call(colorRef(core.RGB(0x8c8c8c)))
-	fillRect.Call(p.dc, uintptr(unsafe.Pointer(&bar)), brush)
-	deleteObject.Call(brush)
-}
-
-// clipRects returns the rectangles the clipping lets through, in the
-// target's pixels.
-func (p *painter) clipRects() []rect {
-	whole := rect{0, 0, p.target.width, p.target.height}
-	rgn, _, _ := createRectRgn.Call(0, 0, 0, 0)
-	defer deleteObject.Call(rgn)
-	if r, _, _ := getClipRgn.Call(p.dc, rgn); int32(r) != 1 {
-		return []rect{whole}
-	}
-	size, _, _ := getRegionData.Call(rgn, 0, 0)
-	if size < 32 {
-		return nil
-	}
-	buf := make([]byte, size)
-	if n, _, _ := getRegionData.Call(rgn, size, uintptr(unsafe.Pointer(&buf[0]))); n == 0 {
-		return nil
-	}
-	count := binary.LittleEndian.Uint32(buf[8:])
-	header := binary.LittleEndian.Uint32(buf[0:])
-	var out []rect
-	for i := range count {
-		at := header + i*16
-		if int(at)+16 > len(buf) {
-			break
+// addRounded adds r with corners c to an open sink as a closed figure.
+func addRounded(sink *comObject, r rectF, c corners) {
+	x, y, w, h := r.left, r.top, r.right-r.left, r.bottom-r.top
+	c = fitCorners(w, h, c)
+	round := func(k [2]float32) bool { return k[0] > 0 && k[1] > 0 }
+	for i := range c {
+		if !round(c[i]) {
+			c[i] = [2]float32{}
 		}
-		r := rect{
-			int32(binary.LittleEndian.Uint32(buf[at:])), int32(binary.LittleEndian.Uint32(buf[at+4:])),
-			int32(binary.LittleEndian.Uint32(buf[at+8:])), int32(binary.LittleEndian.Uint32(buf[at+12:])),
+	}
+	line := func(px, py float32) {
+		pt := pointF{px, py}
+		sink.call(sinkAddLines, uintptr(unsafe.Pointer(&pt)), 1)
+	}
+	arc := func(px, py float32, k [2]float32) {
+		if round(k) {
+			a := arcSegment{point: pointF{px, py}, width: k[0], height: k[1], sweep: d2dSweepClockwise}
+			sink.call(sinkAddArc, uintptr(unsafe.Pointer(&a)))
 		}
-		out = append(out, r.intersect(whole))
 	}
-	return out
-}
-
-// borderWidths returns the width of each side's drawn border, in pixels:
-// a side without a visible color has none.
-func (w *window) borderWidths(s *core.ViewStyle) rect {
-	side := func(width core.Points, c core.Color) int32 {
-		if width <= 0 || c&0xff == 0 {
-			return 0
-		}
-		return max(w.px(width), 1)
-	}
-	if s.Borders == (core.Edges{}) {
-		d := side(s.BorderWidth, s.BorderColor)
-		return rect{d, d, d, d}
-	}
-	b, c := s.Borders, s.BorderColors
-	return rect{Left: side(b.Left, c.Left), Top: side(b.Top, c.Top), Right: side(b.Right, c.Right), Bottom: side(b.Bottom, c.Bottom)}
-}
-
-// sides paints a border with a width and a color per side inside r: each
-// side is the ring between r and its inside, with their corners, cut to
-// the trapezoid from its outer edge to its inner one, so the sides meet
-// on the diagonals as CSS's do. The inner corners are approximate.
-func (p *painter) sides(r rect, diameter int32, b rect, colors [4]core.Color) {
-	in := rect{min(r.Left+b.Left, r.Right), min(r.Top+b.Top, r.Bottom), max(r.Right-b.Right, r.Left), max(r.Bottom-b.Bottom, r.Top)}
-	inDiameter := max(diameter-(b.Left+b.Top+b.Right+b.Bottom)/2, 0)
-	for _, side := range []struct {
-		width int32
-		color core.Color
-		shape [4]point
-	}{
-		{b.Top, colors[0], [4]point{{r.Left, r.Top}, {r.Right, r.Top}, {in.Right, in.Top}, {in.Left, in.Top}}},
-		{b.Right, colors[1], [4]point{{r.Right, r.Top}, {r.Right, r.Bottom}, {in.Right, in.Bottom}, {in.Right, in.Top}}},
-		{b.Bottom, colors[2], [4]point{{r.Right, r.Bottom}, {r.Left, r.Bottom}, {in.Left, in.Bottom}, {in.Right, in.Bottom}}},
-		{b.Left, colors[3], [4]point{{r.Left, r.Bottom}, {r.Left, r.Top}, {in.Left, in.Top}, {in.Left, in.Bottom}}},
-	} {
-		if side.width == 0 {
-			continue
-		}
-		saved, _, _ := saveDC.Call(p.dc)
-		p.clip(r, diameter, rgnAnd)
-		if !in.empty() {
-			p.clip(in, inDiameter, rgnDiff)
-		}
-		p.clipPolygon(side.shape[:], rgnAnd)
-		p.fillClip(side.color)
-		p.restore(saved)
-	}
-}
-
-// clipPolygon combines the clipping with the polygon pts by mode, as
-// clip does with a rectangle.
-func (p *painter) clipPolygon(pts []point, mode uintptr) {
-	const winding = 2
-	if p.m != identity {
-		beginPath.Call(p.dc)
-		polygon.Call(p.dc, uintptr(unsafe.Pointer(&pts[0])), uintptr(len(pts)))
-		endPath.Call(p.dc)
-		selectClipPath.Call(p.dc, mode)
-		return
-	}
-	moved := make([]point, len(pts)) // regions are in the target's pixels
-	for i, pt := range pts {
-		moved[i] = point{pt.X - p.ox, pt.Y - p.oy}
-	}
-	rgn, _, _ := createPolygonRgn.Call(uintptr(unsafe.Pointer(&moved[0])), uintptr(len(moved)), winding)
-	extSelectClipRgn.Call(p.dc, rgn, mode)
-	deleteObject.Call(rgn)
+	sink.callPoint(sinkBeginFigure, x+c[0][0], y, d2dFigureFilled)
+	line(x+w-c[1][0], y)
+	arc(x+w, y+c[1][1], c[1])
+	line(x+w, y+h-c[2][1])
+	arc(x+w-c[2][0], y+h, c[2])
+	line(x+c[3][0], y+h)
+	arc(x, y+h-c[3][1], c[3])
+	line(x, y+c[0][1])
+	arc(x+c[0][0], y, c[0])
+	sink.call(sinkEndFigure, d2dFigureClosed)
 }

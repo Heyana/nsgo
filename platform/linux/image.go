@@ -135,7 +135,7 @@ func (w *window) load(v *view, s *imageSlot, report bool) {
 				w.report(v, core.Event{Kind: core.EventLoad, ID: v.id, Size: size})
 				w.report(v, core.Event{Kind: core.EventLoadEnd, ID: v.id})
 			}
-			gtkWidgetQueueDraw(w.area)
+			w.changed(v)
 		})
 	}()
 }

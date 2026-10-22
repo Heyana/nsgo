@@ -78,26 +78,35 @@ func clickPressedCallback(gesture uintptr, n int32, x, y float64, data uintptr) 
 	if w == nil || w.closing {
 		return
 	}
-	at := core.Point{X: core.Points(x), Y: core.Points(y)}
+	// Presses on a field, a page or a video's controls are theirs, even
+	// where they bubble up here.
+	if w.nativeAt(gtkWidgetPick(w.surface, x, y, gtkPickDefault)) {
+		w.pressConsumed = true
+		return
+	}
+	w.pointerDown(core.Point{X: core.Points(x), Y: core.Points(y)},
+		gtkGestureSingleGetCurrentButton(gesture), gtkGestureGetDevice(gesture))
+}
+
+// pointerDown follows a press of button at surface point at.
+func (w *window) pointerDown(at core.Point, button uint32, device uintptr) {
 	w.lastPointer, w.pressConsumed = at, false
-	// A press on the surface leaves the focused field or page; a press
-	// on either never reaches this controller.
+	// A press on the surface leaves the focused field or page.
 	if w.focus != nil || w.focusedWeb() != nil {
 		w.focusEntry(nil)
 	}
 	w.pressOutside(at)
-	if gtkGestureSingleGetCurrentButton(gesture) == 1 && w.pressBar(at) {
+	if button == 1 && w.pressBar(at) {
 		w.pressConsumed = true
 		w.panning = nil
 		return
 	}
-	switch gtkGestureSingleGetCurrentButton(gesture) {
-	case 3:
+	if button == 3 {
 		w.contextMenu(at)
 		w.pressConsumed = true
 		return
 	}
-	if w.beginWindowDrag(gesture, at) {
+	if w.beginWindowDrag(device, at) {
 		w.pressConsumed = true
 	}
 	w.panDown(at)
@@ -105,13 +114,18 @@ func clickPressedCallback(gesture uintptr, n int32, x, y float64, data uintptr) 
 
 func clickReleasedCallback(gesture uintptr, n int32, x, y float64, data uintptr) {
 	w := windowOf(data)
-	if w == nil || w.closing || w.pressConsumed {
+	if w == nil || w.closing {
 		return
 	}
-	if w.panning != nil && w.panning.active {
+	w.pointerUp(core.Point{X: core.Points(x), Y: core.Points(y)})
+}
+
+// pointerUp follows the release of a press at surface point at.
+func (w *window) pointerUp(at core.Point) {
+	if w.pressConsumed || w.panning != nil && w.panning.active {
 		return
 	}
-	w.press(core.Point{X: core.Points(x), Y: core.Points(y)})
+	w.press(at)
 }
 
 func motionCallback(controller uintptr, x, y float64, data uintptr) {
@@ -183,7 +197,7 @@ func dragEndCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
 	if w != nil && w.barDrag != nil {
 		w.barDrag = nil
 		w.hoverBars(w.lastPointer)
-		gtkWidgetQueueDraw(w.area)
+		gtkWidgetQueueDraw(w.surface)
 		return
 	}
 	if w == nil || w.panning == nil {
@@ -251,10 +265,20 @@ func scrollCallback(controller uintptr, dx, dy float64, data uintptr) int32 {
 	if w == nil {
 		return 0
 	}
-	state := gtkEventControllerGetCurrentEventState(controller)
+	at := w.lastPointer
+	if w.controlAt(gtkWidgetPick(w.surface, float64(at.X), float64(at.Y), gtkPickDefault)) != nil {
+		return 0 // the page or the controls scroll themselves
+	}
+	w.wheelEvent(gtkEventControllerGetCurrentEventState(controller), at, dx, dy)
+	return 1
+}
+
+// wheelEvent follows a wheel turn with modifiers state at surface point
+// at: a pinch with Control held, else a scroll.
+func (w *window) wheelEvent(state uint32, at core.Point, dx, dy float64) {
 	if state&gdkControl != 0 {
-		w.wheelPinch(w.lastPointer, dy)
-		return 1
+		w.wheelPinch(at, dy)
+		return
 	}
 	if state&gdkShift != 0 {
 		dx, dy = dy, 0
@@ -264,8 +288,7 @@ func scrollCallback(controller uintptr, dx, dy float64, data uintptr) int32 {
 	if math.Abs(dx) <= 3 && math.Abs(dy) <= 3 {
 		dx, dy = dx*notch, dy*notch
 	}
-	w.wheel(w.lastPointer, dx, dy)
-	return 1
+	w.wheel(at, dx, dy)
 }
 
 func keyPressedCallback(controller uintptr, keyval, keycode, state uint32, data uintptr) int32 {
@@ -297,44 +320,51 @@ func keyPressedCallback(controller uintptr, keyval, keycode, state uint32, data 
 	return 0
 }
 
-// setupInputs adds GTK's event controllers to the drawing area and the
-// window.
+// setupInputs adds GTK's event controllers to the surface and the
+// window. Events on views bubble up to the surface, which hit tests them
+// itself, as NSH's input does: GTK's picking knows nothing of rounded
+// clips or hidden views.
 func (w *window) setupInputs() {
+	shield := gtkEventControllerLegacyNew()
+	gtkEventControllerSetPropagationPhase(shield, propagationPhaseCapture)
+	gSignalConnect(shield, "event", cbShield, w.handle)
+	gtkWidgetAddController(w.surface, shield)
+
 	click := gtkGestureClickNew()
 	gtkGestureSingleSetButton(click, 0)
 	gSignalConnect(click, "pressed", cbClickPressed, w.handle)
 	gSignalConnect(click, "released", cbClickReleased, w.handle)
-	gtkWidgetAddController(w.area, click)
+	gtkWidgetAddController(w.surface, click)
 
 	motion := gtkEventControllerMotionNew()
 	gSignalConnect(motion, "motion", cbMotion, w.handle)
 	gSignalConnect(motion, "leave", cbLeave, w.handle)
-	gtkWidgetAddController(w.area, motion)
+	gtkWidgetAddController(w.surface, motion)
 
 	drag := gtkGestureDragNew()
 	gtkGestureSingleSetButton(drag, 1)
 	gSignalConnect(drag, "drag-begin", cbDragBegin, w.handle)
 	gSignalConnect(drag, "drag-update", cbDragUpdate, w.handle)
 	gSignalConnect(drag, "drag-end", cbDragEnd, w.handle)
-	gtkWidgetAddController(w.area, drag)
+	gtkWidgetAddController(w.surface, drag)
 
 	long := gtkGestureLongPressNew()
 	gSignalConnect(long, "pressed", cbLongPress, w.handle)
-	gtkWidgetAddController(w.area, long)
+	gtkWidgetAddController(w.surface, long)
 
 	zoom := gtkGestureZoomNew()
 	gSignalConnect(zoom, "scale-changed", cbZoomChanged, w.handle)
 	gSignalConnect(zoom, "end", cbGestureEnd, w.handle)
-	gtkWidgetAddController(w.area, zoom)
+	gtkWidgetAddController(w.surface, zoom)
 
 	rotate := gtkGestureRotateNew()
 	gSignalConnect(rotate, "angle-changed", cbRotateChanged, w.handle)
 	gSignalConnect(rotate, "end", cbGestureEnd, w.handle)
-	gtkWidgetAddController(w.area, rotate)
+	gtkWidgetAddController(w.surface, rotate)
 
 	scroll := gtkEventControllerScrollNew(3) // both axes
 	gSignalConnect(scroll, "scroll", cbScroll, w.handle)
-	gtkWidgetAddController(w.area, scroll)
+	gtkWidgetAddController(w.surface, scroll)
 
 	keys := gtkEventControllerKeyNew()
 	gtkEventControllerSetPropagationPhase(keys, propagationPhaseCapture)
@@ -463,7 +493,7 @@ func pinchTimeoutCallback(data uintptr) int32 {
 
 // beginWindowDrag starts moving the window when the press is in a window
 // drag region and not on a nearer control.
-func (w *window) beginWindowDrag(gesture uintptr, at core.Point) bool {
+func (w *window) beginWindowDrag(device uintptr, at core.Point) bool {
 	root := w.view(w.root)
 	if root == nil {
 		return false
@@ -477,11 +507,10 @@ func (w *window) beginWindowDrag(gesture uintptr, at core.Point) bool {
 	}); control != nil && descendant(control, drag) {
 		return false
 	}
-	device := gtkGestureGetDevice(gesture)
 	if device == 0 {
 		return false
 	}
-	surface := gtkNativeGetSurface(gtkWidgetGetNative(w.area))
+	surface := gtkNativeGetSurface(gtkWidgetGetNative(w.surface))
 	if surface == 0 {
 		return false
 	}
@@ -657,4 +686,107 @@ func (w *window) menuChosen(ref menuRef) bool {
 		return false
 	}
 	return true
+}
+
+// GDK's event types and modifier bits the shield reads.
+const (
+	gdkMotionNotify  = 1
+	gdkButtonPress   = 2
+	gdkButtonRelease = 3
+	gdkScrollEvent   = 15
+	gdkScrollSmooth  = 4
+	gdkButtonsMask   = 1<<8 | 1<<9 | 1<<10
+)
+
+// shieldCallback keeps from a hosted control (a page, a video's
+// controls) the events GTK would give it where the app does not show it,
+// as NSH's shields_page does: GTK picks widgets by their allocations and
+// knows nothing of rounded clips, so a control a scroll view or a
+// rounded parent cuts off would take clicks, hovers and wheels outside
+// what is drawn of it. The view actually under the pointer gets them.
+func shieldCallback(controller, event, data uintptr) int32 {
+	w := windowOf(data)
+	if w == nil || w.closing {
+		return 0
+	}
+	return boolInt(w.shield(event))
+}
+
+func (w *window) shield(event uintptr) bool {
+	typ := gdkEventGetEventType(event)
+	if typ != gdkMotionNotify && typ != gdkButtonPress && typ != gdkButtonRelease && typ != gdkScrollEvent {
+		return false
+	}
+	at, ok := w.eventPoint(event)
+	if !ok {
+		return false
+	}
+	if w.shielding {
+		// The press went to the app; its moves and release follow.
+		switch typ {
+		case gdkButtonRelease:
+			w.shielding = false
+			w.pointerUp(at)
+			return true
+		case gdkMotionNotify:
+			w.lastPointer = at
+			return true
+		}
+	}
+	if typ == gdkButtonRelease || typ == gdkMotionNotify && gdkEventGetModifierState(event)&gdkButtonsMask != 0 {
+		return false // drags that began in the control stay with it
+	}
+	if !w.hostsControls() {
+		return false
+	}
+	v := w.controlAt(gtkWidgetPick(w.surface, float64(at.X), float64(at.Y), gtkPickDefault))
+	if v == nil {
+		return false
+	}
+	if root := w.view(w.root); root != nil && hit(root, at, func(*view) bool { return true }) == v {
+		return false
+	}
+	switch typ {
+	case gdkMotionNotify:
+		w.lastPointer = at
+	case gdkButtonPress:
+		w.shielding = true
+		w.pointerDown(at, gdkButtonEventGetButton(event), gdkEventGetDevice(event))
+	case gdkScrollEvent:
+		var dx, dy float64
+		switch gdkScrollEventGetDirection(event) {
+		case gdkScrollSmooth:
+			gdkScrollEventGetDeltas(event, &dx, &dy)
+		case 0:
+			dy = -1
+		case 1:
+			dy = 1
+		case 2:
+			dx = -1
+		case 3:
+			dx = 1
+		}
+		w.lastPointer = at
+		w.wheelEvent(gdkEventGetModifierState(event), at, dx, dy)
+	}
+	return true
+}
+
+// eventPoint returns where event happened in the surface's points.
+func (w *window) eventPoint(event uintptr) (core.Point, bool) {
+	var x, y float64
+	if gdkEventGetPosition(event, &x, &y) == 0 {
+		return core.Point{}, false
+	}
+	native := gtkWidgetGetNative(w.surface)
+	if native == 0 {
+		return core.Point{}, false
+	}
+	var sx, sy float64
+	gtkNativeGetSurfaceTransform(native, &sx, &sy)
+	var out graphenePoint
+	if gtkWidgetComputePoint(native, w.surface, &graphenePoint{float32(x - sx), float32(y - sy)}, &out) == 0 {
+		return core.Point{}, false
+	}
+	return core.Point{X: core.Points(out.x), Y: core.Points(out.y)}, true
 }

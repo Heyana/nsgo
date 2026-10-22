@@ -12,7 +12,6 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
-| Video | `docs/dev/elements.md` | Playback with progress, resize modes and media info |
 | Animated and vector images | `docs/dev/images.md`, `docs/dev/elements.md` | GIF, animated WebP and SVG files load as an `Image` on every target |
 | File drop | `docs/dev/file-drop.md` | Desktop and web views receive dropped files |
 | InputAccessoryView | `docs/dev/elements.md` | A view rides above the iOS and Android keyboard |
@@ -34,7 +33,7 @@ These items wait for community contributions; the items above do not depend on t
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | iOS touch | `crates/nsh-platform-ios` | Gestures, text input and text selection are checked in the simulator; selections have touch handles |
-| Linux web views | `crates/nsh-platform-linux/src/native/web.rs` | Web views are checked on a machine with WebKitGTK 6.0 |
+| Linux web views and videos | `crates/nsh-platform-linux/src/native` | Web views and playback are checked on a machine with WebKitGTK 6.0 and GStreamer's decoders |
 
 ## Not ported
 

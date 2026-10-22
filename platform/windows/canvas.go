@@ -10,51 +10,15 @@ import (
 	"github.com/oneo-me/nsgo/core"
 )
 
-var (
-	moveToEx       = gdi32.NewProc("MoveToEx")
-	lineTo         = gdi32.NewProc("LineTo")
-	polyBezierTo   = gdi32.NewProc("PolyBezierTo")
-	closeFigure    = gdi32.NewProc("CloseFigure")
-	fillPath       = gdi32.NewProc("FillPath")
-	strokePath     = gdi32.NewProc("StrokePath")
-	widenPath      = gdi32.NewProc("WidenPath")
-	extCreatePen   = gdi32.NewProc("ExtCreatePen")
-	setPolyFillMod = gdi32.NewProc("SetPolyFillMode")
-	textOutW       = gdi32.NewProc("TextOutW")
-	setTextAlign   = gdi32.NewProc("SetTextAlign")
-)
-
-const (
-	winding        = 2
-	taBaseline     = 24
-	psGeometric    = 0x00010000
-	psEndcapRound  = 0x0000
-	psEndcapSquare = 0x0100
-	psEndcapFlat   = 0x0200
-	psJoinRound    = 0x0000
-	psJoinBevel    = 0x1000
-	psJoinMiter    = 0x2000
-
-	// subpixels is how many GDI units make a pixel in canvas paths, which
-	// GDI takes in whole units.
-	subpixels = 16
-)
-
-type logBrush struct {
-	Style uint32
-	Color uint32
-	Hatch uintptr
-}
-
 // canvasState is what Save and Restore keep.
 type canvasState struct {
-	ctm          matrix // the drawing's transform, in points
+	ctm          matrix // the drawing's transform, to the view's points
 	fill, stroke core.Color
 	width        float32
 	cap          core.LineCap
 	join         core.LineJoin
 	alpha        float32
-	saved        uintptr // the DC's state, for the clipping
+	clips        int // the clip layers pushed since the last Save
 }
 
 type segKind uint8
@@ -66,69 +30,67 @@ const (
 	segClose
 )
 
-// segment is a piece of the path, in the window's pixels.
+// segment is a piece of the path, in the view's points.
 type segment struct {
 	kind segKind
-	pts  [3][2]float64
+	pts  [3]pointF
 }
 
 // canvasPlayer plays a Drawing as the web's 2D context does: it builds
-// the path in the window's pixels, as each operation's transform maps
-// it, and has GDI fill, stroke or clip to it; translucent colors fill the
-// clipped path through the painter's blend.
+// the path in the view's points, as each operation's transform maps it,
+// and has Direct2D fill, stroke or clip to it.
 type canvasPlayer struct {
-	p      *painter
-	base   matrix // points to the window's pixels, through the view
-	st     canvasState
-	stack  []canvasState
-	path   []segment
-	cur    [2]float64 // in the window's pixels
-	start  [2]float64
-	has    bool
-	fonts  map[core.Font]uintptr
-	behind core.Color
+	p       *painter
+	world   matrix // the view's
+	st      canvasState
+	stack   []canvasState
+	path    []segment
+	cur     pointF
+	start   pointF
+	has     bool
+	strokes map[[2]uint32]*comObject
+	behind  core.Color
 }
 
-// canvas plays v's drawing into r.
-func (p *painter) canvas(v *view, r rect) {
-	saved, _, _ := saveDC.Call(p.dc)
-	p.clip(r, 0, rgnAnd)
+// canvas plays v's drawing into its width by height points.
+func (p *painter) canvas(v *view, width, height float32) {
 	c := &canvasPlayer{
-		p:      p,
-		base:   scaling(p.w.scale, p.w.scale).then(translation(float64(r.Left), float64(r.Top))).then(p.m),
-		st:     canvasState{ctm: identity, fill: 0x000000ff, stroke: 0x000000ff, width: 1, alpha: 1},
-		fonts:  map[core.Font]uintptr{},
-		behind: background(v),
+		p:       p,
+		world:   p.m,
+		st:      canvasState{ctm: identity, fill: 0x000000ff, stroke: 0x000000ff, width: 1, alpha: 1},
+		strokes: map[[2]uint32]*comObject{},
+		behind:  background(v),
 	}
-	setGraphicsMode.Call(p.dc, gmAdvanced)
-	c.world(scaling(1.0/subpixels, 1.0/subpixels))
-	setPolyFillMod.Call(p.dc, winding)
 	for i := range v.drawing.Ops {
 		c.play(&v.drawing.Ops[i])
 	}
-	for _, f := range c.fonts {
-		deleteObject.Call(f)
+	for n := c.st.clips; n > 0; n-- {
+		p.pop()
 	}
-	p.restore(saved)
-}
-
-func (c *canvasPlayer) world(m matrix) {
-	x := m.xform()
-	setWorldTransform.Call(c.p.dc, uintptr(unsafe.Pointer(&x)))
+	for _, s := range c.stack {
+		for n := s.clips; n > 0; n-- {
+			p.pop()
+		}
+	}
+	for _, s := range c.strokes {
+		s.release()
+	}
+	p.setTransform(c.world)
 }
 
 func (c *canvasPlayer) play(op *core.DrawOp) {
-	dc := c.p.dc
 	x, y := float64(op.X), float64(op.Y)
 	switch op.Kind {
 	case core.DrawSave:
-		c.st.saved, _, _ = saveDC.Call(dc)
 		c.stack = append(c.stack, c.st)
+		c.st.clips = 0
 	case core.DrawRestore:
 		if n := len(c.stack); n > 0 {
+			for ; c.st.clips > 0; c.st.clips-- {
+				c.p.pop()
+			}
 			c.st = c.stack[n-1]
 			c.stack = c.stack[:n-1]
-			restoreDC.Call(dc, c.st.saved)
 		}
 	case core.DrawTranslate:
 		c.st.ctm = translation(x, y).then(c.st.ctm)
@@ -148,16 +110,16 @@ func (c *canvasPlayer) play(op *core.DrawOp) {
 		if !c.has {
 			c.moveTo(float64(op.X1), float64(op.Y1))
 		}
-		q := c.toPixels(float64(op.X1), float64(op.Y1))
-		e := c.toPixels(x, y)
-		c1 := [2]float64{c.cur[0] + 2.0/3*(q[0]-c.cur[0]), c.cur[1] + 2.0/3*(q[1]-c.cur[1])}
-		c2 := [2]float64{e[0] + 2.0/3*(q[0]-e[0]), e[1] + 2.0/3*(q[1]-e[1])}
+		q := c.toView(float64(op.X1), float64(op.Y1))
+		e := c.toView(x, y)
+		c1 := pointF{c.cur.x + 2.0/3*(q.x-c.cur.x), c.cur.y + 2.0/3*(q.y-c.cur.y)}
+		c2 := pointF{e.x + 2.0/3*(q.x-e.x), e.y + 2.0/3*(q.y-e.y)}
 		c.cubic(c1, c2, e)
 	case core.DrawCubicTo:
 		if !c.has {
 			c.moveTo(float64(op.X1), float64(op.Y1))
 		}
-		c.cubic(c.toPixels(float64(op.X1), float64(op.Y1)), c.toPixels(float64(op.X2), float64(op.Y2)), c.toPixels(x, y))
+		c.cubic(c.toView(float64(op.X1), float64(op.Y1)), c.toView(float64(op.X2), float64(op.Y2)), c.toView(x, y))
 	case core.DrawArc:
 		c.arc(op)
 	case core.DrawRect:
@@ -193,8 +155,10 @@ func (c *canvasPlayer) play(op *core.DrawOp) {
 	case core.DrawStroke:
 		c.stroke()
 	case core.DrawClip:
-		if c.emit() {
-			selectClipPath.Call(dc, rgnAnd)
+		if g := c.geometry(); g != nil {
+			c.p.pushLayer(1, g)
+			g.release()
+			c.st.clips++
 		}
 	case core.DrawFillColor:
 		c.st.fill = op.Color
@@ -213,28 +177,26 @@ func (c *canvasPlayer) play(op *core.DrawOp) {
 	case core.DrawClear:
 		// What is behind cannot show through: clearing paints the
 		// background behind the canvas.
-		saved, _, _ := saveDC.Call(dc)
 		path, has, cur, start := c.path, c.has, c.cur, c.start
 		c.path, c.has = nil, false
 		c.play(&core.DrawOp{Kind: core.DrawRect, X: op.X, Y: op.Y, W: op.W, H: op.H})
-		if c.emit() {
-			selectClipPath.Call(dc, rgnAnd)
-			c.p.fillClip(c.behind | 0xff)
+		if g := c.geometry(); g != nil {
+			c.p.fillGeometry(g, c.behind|0xff)
+			g.release()
 		}
 		c.path, c.has, c.cur, c.start = path, has, cur, start
-		restoreDC.Call(dc, saved)
 	}
 }
 
-func (c *canvasPlayer) toPixels(x, y float64) [2]float64 {
-	px, py := c.st.ctm.then(c.base).apply(x, y)
-	return [2]float64{px, py}
+func (c *canvasPlayer) toView(x, y float64) pointF {
+	px, py := c.st.ctm.apply(x, y)
+	return pointF{float32(px), float32(py)}
 }
 
 func (c *canvasPlayer) moveTo(x, y float64) {
-	c.cur = c.toPixels(x, y)
+	c.cur = c.toView(x, y)
 	c.start, c.has = c.cur, true
-	c.path = append(c.path, segment{kind: segMove, pts: [3][2]float64{c.cur}})
+	c.path = append(c.path, segment{kind: segMove, pts: [3]pointF{c.cur}})
 }
 
 func (c *canvasPlayer) lineTo(x, y float64) {
@@ -242,13 +204,13 @@ func (c *canvasPlayer) lineTo(x, y float64) {
 		c.moveTo(x, y)
 		return
 	}
-	c.cur = c.toPixels(x, y)
-	c.path = append(c.path, segment{kind: segLine, pts: [3][2]float64{c.cur}})
+	c.cur = c.toView(x, y)
+	c.path = append(c.path, segment{kind: segLine, pts: [3]pointF{c.cur}})
 }
 
-func (c *canvasPlayer) cubic(c1, c2, end [2]float64) {
+func (c *canvasPlayer) cubic(c1, c2, end pointF) {
 	c.cur = end
-	c.path = append(c.path, segment{kind: segCubic, pts: [3][2]float64{c1, c2, end}})
+	c.path = append(c.path, segment{kind: segCubic, pts: [3]pointF{c1, c2, end}})
 }
 
 func (c *canvasPlayer) closePath() {
@@ -269,9 +231,9 @@ func (c *canvasPlayer) ellipseArc(cx, cy, rx, ry, a0, sweep float64) {
 		sin0, cos0 := math.Sincos(a)
 		sin1, cos1 := math.Sincos(a + step)
 		c.cubic(
-			c.toPixels(cx+rx*(cos0-k*sin0), cy+ry*(sin0+k*cos0)),
-			c.toPixels(cx+rx*(cos1+k*sin1), cy+ry*(sin1-k*cos1)),
-			c.toPixels(cx+rx*cos1, cy+ry*sin1))
+			c.toView(cx+rx*(cos0-k*sin0), cy+ry*(sin0+k*cos0)),
+			c.toView(cx+rx*(cos1+k*sin1), cy+ry*(sin1-k*cos1)),
+			c.toView(cx+rx*cos1, cy+ry*sin1))
 		a += step
 	}
 }
@@ -304,33 +266,50 @@ func (c *canvasPlayer) arc(op *core.DrawOp) {
 	}
 }
 
-// emit makes the path GDI's, in subpixels, and reports whether it has
-// anything.
-func (c *canvasPlayer) emit() bool {
+// geometry returns the path as a Direct2D geometry filled by the nonzero
+// rule, as a canvas fills, or nil when it is empty.
+func (c *canvasPlayer) geometry() *comObject {
 	if len(c.path) == 0 {
-		return false
+		return nil
 	}
-	dc := c.p.dc
-	unit := func(v float64) uintptr { return uintptr(int32(math.Round(v * subpixels))) }
-	beginPath.Call(dc)
-	for _, s := range c.path {
-		switch s.kind {
-		case segMove:
-			moveToEx.Call(dc, unit(s.pts[0][0]), unit(s.pts[0][1]), 0)
-		case segLine:
-			lineTo.Call(dc, unit(s.pts[0][0]), unit(s.pts[0][1]))
-		case segCubic:
-			var pts [3]point
-			for i, q := range s.pts {
-				pts[i] = point{int32(math.Round(q[0] * subpixels)), int32(math.Round(q[1] * subpixels))}
+	return c.p.pathGeometry(d2dFillWinding, func(sink *comObject) {
+		open := false
+		var start pointF
+		for i := range c.path {
+			s := &c.path[i]
+			switch s.kind {
+			case segMove:
+				if open {
+					sink.call(sinkEndFigure, d2dFigureOpen)
+				}
+				start = s.pts[0]
+				sink.callPoint(sinkBeginFigure, start.x, start.y, d2dFigureFilled)
+				open = true
+			case segLine:
+				if open {
+					sink.call(sinkAddLines, uintptr(unsafe.Pointer(&s.pts[0])), 1)
+				}
+			case segCubic:
+				if open {
+					b := bezierSegment{s.pts[0], s.pts[1], s.pts[2]}
+					sink.call(sinkAddBeziers, uintptr(unsafe.Pointer(&b)), 1)
+				}
+			case segClose:
+				if open {
+					sink.call(sinkEndFigure, d2dFigureClosed)
+					open = false
+					// What follows a close starts where the figure did.
+					if i+1 < len(c.path) && c.path[i+1].kind != segMove {
+						sink.callPoint(sinkBeginFigure, start.x, start.y, d2dFigureFilled)
+						open = true
+					}
+				}
 			}
-			polyBezierTo.Call(dc, uintptr(unsafe.Pointer(&pts[0])), 3)
-		case segClose:
-			closeFigure.Call(dc)
 		}
-	}
-	endPath.Call(dc)
-	return true
+		if open {
+			sink.call(sinkEndFigure, d2dFigureOpen)
+		}
+	})
 }
 
 // color applies the global alpha to col.
@@ -339,205 +318,104 @@ func (c *canvasPlayer) color(col core.Color) core.Color {
 	return col&^0xff | core.Color(a)
 }
 
-// strokeWidth returns the width of a stroke in the target's pixels.
-func (c *canvasPlayer) strokeWidth() float64 {
-	return float64(c.st.width) * c.st.ctm.then(c.base).stretch()
-}
-
-// antialias fills or strokes the path with GDI+, whose edges blend
-// instead of stepping a whole pixel, and reports whether it drew it:
-// false leaves the path to GDI.
-func (c *canvasPlayer) antialias(col core.Color, stroke bool) bool {
-	if len(c.path) == 0 || !startGDIPlus() {
-		return false
-	}
-	path, box := c.gdiplusPath()
-	if path == 0 {
-		return false
-	}
-	defer gdipDeletePath.Call(path)
-	width := c.strokeWidth()
-	pad := int32(2)
-	if stroke {
-		pad = int32(math.Ceil(width*5)) + 2 // a miter joins up to five widths out
-	}
-	box = box.inset(-pad)
-	return c.p.drawAA(box, func(g uintptr) bool {
-		if stroke {
-			p := pen(col, width, c.st.cap, c.st.join)
-			if p == 0 {
-				return false
-			}
-			gdipDrawPath.Call(g, p, path)
-			gdipDeletePen.Call(p)
-			return true
-		}
-		brush := solidBrush(col)
-		if brush == 0 {
-			return false
-		}
-		gdipFillPath.Call(g, brush, path)
-		gdipDeleteBrush.Call(brush)
-		return true
-	})
-}
-
-// gdiplusPath returns the player's path as GDI+'s, in the target's pixels,
-// with the box it and its control points reach.
-func (c *canvasPlayer) gdiplusPath() (uintptr, rect) {
-	var h uintptr
-	if r, _, _ := gdipCreatePath.Call(windingFill, uintptr(unsafe.Pointer(&h))); r != 0 || h == 0 {
-		return 0, rect{}
-	}
-	ox, oy := float64(c.p.ox), float64(c.p.oy)
-	x0, y0 := math.Inf(1), math.Inf(1)
-	x1, y1 := math.Inf(-1), math.Inf(-1)
-	reach := func(x, y float64) {
-		x0, y0, x1, y1 = min(x0, x), min(y0, y), max(x1, x), max(y1, y)
-	}
-	var cur, start [2]float64
-	var has bool
-	for _, s := range c.path {
-		switch s.kind {
-		case segMove:
-			cur = [2]float64{s.pts[0][0] - ox, s.pts[0][1] - oy}
-			start, has = cur, true
-			gdipStartPathFigure.Call(h)
-			reach(cur[0], cur[1])
-		case segLine:
-			if !has {
-				continue
-			}
-			next := [2]float64{s.pts[0][0] - ox, s.pts[0][1] - oy}
-			gdipAddPathLine.Call(h, real32(cur[0]), real32(cur[1]), real32(next[0]), real32(next[1]))
-			cur = next
-			reach(cur[0], cur[1])
-		case segCubic:
-			if !has {
-				continue
-			}
-			c1 := [2]float64{s.pts[0][0] - ox, s.pts[0][1] - oy}
-			c2 := [2]float64{s.pts[1][0] - ox, s.pts[1][1] - oy}
-			end := [2]float64{s.pts[2][0] - ox, s.pts[2][1] - oy}
-			gdipAddPathBezier.Call(h, real32(cur[0]), real32(cur[1]), real32(c1[0]), real32(c1[1]),
-				real32(c2[0]), real32(c2[1]), real32(end[0]), real32(end[1]))
-			cur = end
-			reach(c1[0], c1[1])
-			reach(c2[0], c2[1])
-			reach(end[0], end[1])
-		case segClose:
-			if has {
-				gdipClosePathFigure.Call(h)
-				cur = start
-			}
-		}
-	}
-	if math.IsInf(x0, 1) {
-		gdipDeletePath.Call(h)
-		return 0, rect{}
-	}
-	return h, rect{int32(math.Floor(x0)), int32(math.Floor(y0)), int32(math.Ceil(x1)), int32(math.Ceil(y1))}
-}
-
 func (c *canvasPlayer) fill() {
 	col := c.color(c.st.fill)
-	if col&0xff == 0 || len(c.path) == 0 || c.antialias(col, false) {
+	if !visible(col) {
 		return
 	}
-	if !c.emit() {
-		return
+	if g := c.geometry(); g != nil {
+		c.p.fillGeometry(g, col)
+		g.release()
 	}
-	dc := c.p.dc
-	if col&0xff == 0xff {
-		brush, _, _ := createSolidBrush.Call(colorRef(col))
-		old, _, _ := selectObject.Call(dc, brush)
-		fillPath.Call(dc)
-		selectObject.Call(dc, old)
-		deleteObject.Call(brush)
-		return
-	}
-	saved, _, _ := saveDC.Call(dc)
-	selectClipPath.Call(dc, rgnAnd)
-	c.p.fillClip(col)
-	restoreDC.Call(dc, saved)
 }
 
 func (c *canvasPlayer) stroke() {
 	col := c.color(c.st.stroke)
-	width := c.strokeWidth() * subpixels
-	if col&0xff == 0 || width <= 0 || len(c.path) == 0 || c.antialias(col, true) {
+	width := float32(float64(c.st.width) * c.st.ctm.stretch())
+	if !visible(col) || width <= 0 {
 		return
 	}
-	if !c.emit() {
+	g := c.geometry()
+	if g == nil {
 		return
 	}
-	dc := c.p.dc
-	style := uintptr(psGeometric)
-	switch c.st.cap {
-	case core.CapRound:
-		style |= psEndcapRound
-	case core.CapSquare:
-		style |= psEndcapSquare
-	default:
-		style |= psEndcapFlat
+	defer g.release()
+	style := c.strokeStyle()
+	var sp uintptr
+	if style != nil {
+		sp = style.ptr()
 	}
-	switch c.st.join {
-	case core.JoinRound:
-		style |= psJoinRound
-	case core.JoinBevel:
-		style |= psJoinBevel
-	default:
-		style |= psJoinMiter
-	}
-	lb := logBrush{Color: uint32(colorRef(col))}
-	pen, _, _ := extCreatePen.Call(style, uintptr(max(math.Round(width), subpixels)), uintptr(unsafe.Pointer(&lb)), 0, 0)
-	if pen == 0 {
-		return
-	}
-	old, _, _ := selectObject.Call(dc, pen)
-	if col&0xff == 0xff {
-		strokePath.Call(dc)
-	} else {
-		widenPath.Call(dc)
-		saved, _, _ := saveDC.Call(dc)
-		selectClipPath.Call(dc, rgnAnd)
-		c.p.fillClip(col)
-		restoreDC.Call(dc, saved)
-	}
-	selectObject.Call(dc, old)
-	deleteObject.Call(pen)
+	c.p.dc.callF(rtDrawGeometry, 0b100, g.ptr(), c.p.solid(col).ptr(), f32(width), sp)
 }
 
-// text draws op's text with its baseline at its point, the font scaled
-// with the drawing; translucent text fills its outline.
+// strokeStyle returns the stroke style of the line's ends and joins,
+// made once per pass.
+func (c *canvasPlayer) strokeStyle() *comObject {
+	lineCap := uint32(d2dCapFlat)
+	switch c.st.cap {
+	case core.CapRound:
+		lineCap = d2dCapRound
+	case core.CapSquare:
+		lineCap = d2dCapSquare
+	}
+	join := uint32(d2dJoinMiterOrBevel)
+	switch c.st.join {
+	case core.JoinRound:
+		join = d2dJoinRound
+	case core.JoinBevel:
+		join = d2dJoinBevel
+	}
+	key := [2]uint32{lineCap, join}
+	if s, ok := c.strokes[key]; ok {
+		return s
+	}
+	props := strokeStyleProperties{startCap: lineCap, endCap: lineCap, dashCap: lineCap, lineJoin: join, miterLimit: 10}
+	var s *comObject
+	if failed(c.p.g.factory.call(d2dFactoryCreateStrokeStyle, uintptr(unsafe.Pointer(&props)), 0, 0,
+		uintptr(unsafe.Pointer(&s)))) {
+		s = nil
+	}
+	c.strokes[key] = s
+	return s
+}
+
+// text draws op's text with its baseline at its point, in the drawing's
+// transform.
 func (c *canvasPlayer) text(op *core.DrawOp) {
 	col := c.color(c.st.fill)
-	if col&0xff == 0 || op.Text == "" {
+	if !visible(col) || op.Text == "" {
 		return
 	}
-	dc := c.p.dc
-	f := c.fonts[op.Font]
-	if f == 0 {
-		family := fontName(op.Font.Family)
-		f, _, _ = createFontW.Call(uintptr(-int32(float64(op.Font.Size)*subpixels+0.5)), 0, 0, 0, uintptr(op.Font.Weight),
-			boolArg(op.Font.Italic), 0, 0, defaultCharset, 0, 0, clearType, 0, uintptr(unsafe.Pointer(wide(family))))
-		c.fonts[op.Font] = f
+	layout := plainLayout(op.Text, op.Font)
+	if layout == nil {
+		return
 	}
-	text := utf16.Encode([]rune(op.Text))
-	saved, _, _ := saveDC.Call(dc)
-	c.world(scaling(1.0/subpixels, 1.0/subpixels).then(c.st.ctm).then(c.base))
-	selectObject.Call(dc, f)
-	setTextAlign.Call(dc, taBaseline)
-	x, y := uintptr(int32(math.Round(float64(op.X)*subpixels))), uintptr(int32(math.Round(float64(op.Y)*subpixels)))
-	if col&0xff == 0xff {
-		setTextColor.Call(dc, colorRef(col))
-		textOutW.Call(dc, x, y, uintptr(unsafe.Pointer(&text[0])), uintptr(len(text)))
-	} else {
-		beginPath.Call(dc)
-		textOutW.Call(dc, x, y, uintptr(unsafe.Pointer(&text[0])), uintptr(len(text)))
-		endPath.Call(dc)
-		selectClipPath.Call(dc, rgnAnd)
-		c.p.fillClip(col)
+	defer layout.release()
+	var line lineMetrics
+	var count uint32
+	layout.call(layoutGetLineMetrics, uintptr(unsafe.Pointer(&line)), 1, uintptr(unsafe.Pointer(&count)))
+	c.p.setTransform(c.st.ctm.then(c.world))
+	c.p.dc.callPoint(rtDrawTextLayout, op.X, op.Y-line.baseline, layout.ptr(), c.p.solid(col).ptr(),
+		d2dDrawTextEnableColorFont)
+	c.p.setTransform(c.world)
+}
+
+// plainLayout returns text in font on one line, or nil.
+func plainLayout(text string, font core.Font) *comObject {
+	format := textFormat(font)
+	if format == nil {
+		return nil
 	}
-	restoreDC.Call(dc, saved)
+	defer format.release()
+	units := utf16.Encode([]rune(text))
+	if len(units) == 0 {
+		return nil
+	}
+	format.call(formatSetWordWrapping, dwNoWrap)
+	var layout *comObject
+	if failed(dwriteFactory().callF(dwCreateTextLayout, 0b11000, uintptr(unsafe.Pointer(&units[0])), uintptr(len(units)),
+		format.ptr(), f32(unbounded), f32(unbounded), uintptr(unsafe.Pointer(&layout)))) {
+		return nil
+	}
+	return layout
 }

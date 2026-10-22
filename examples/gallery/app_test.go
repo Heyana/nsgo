@@ -266,3 +266,24 @@ func TestIconBrowserFilters(t *testing.T) {
 	app.Type("id:icon-search", "")
 	app.Find("text:1879 of 1879 icons")
 }
+
+func TestVideoPlayback(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Video")
+	if v := app.Find("id:player").Video; !v.Paused || !v.Muted || !v.Repeat || v.ResizeMode != core.Contain {
+		t.Fatalf("config = %+v", v)
+	}
+	app.Play("id:player", core.VideoInfo{Duration: 5 * time.Second, Size: core.Size{Width: 640, Height: 360}})
+	app.Find("text:loaded: 5s, 640×360")
+	app.Press("role:button Play / pause")
+	app.Press("role:button Cover")
+	if v := app.Find("id:player").Video; v.Paused || v.ResizeMode != core.Cover {
+		t.Fatalf("config = %+v", v)
+	}
+	app.Progress("id:player", 2*time.Second, 5*time.Second)
+	app.Find("text:2s of 5s")
+	app.Press("role:button Start over")
+	if s := app.Find("id:player").Seeks; len(s) != 1 || s[0] != 0 {
+		t.Fatalf("seeks = %v", s)
+	}
+}

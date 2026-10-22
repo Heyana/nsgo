@@ -288,3 +288,45 @@ func TestEntryStyleCarriesTheTextStyle(t *testing.T) {
 		}
 	}
 }
+
+func TestHistoryKeysStepThroughAPage(t *testing.T) {
+	for _, c := range []struct {
+		keyval, state uint32
+		want          int
+	}{
+		{gdkLeft, gdkAlt, -1}, {gdkKPRight, gdkAlt, 1}, {gdkBack, 0, -1}, {gdkForward, 0, 1},
+		{gdkLeft, 0, 0}, {gdkLeft, gdkAlt | gdkShift, 0}, {gdkBack, gdkControl, 0},
+		// Lock keys do not count.
+		{gdkLeft, gdkAlt | 1<<1, -1},
+	} {
+		if got := historyKey(c.keyval, c.state); got != c.want {
+			t.Errorf("historyKey(0x%X, 0x%X) = %d, want %d", c.keyval, c.state, got, c.want)
+		}
+	}
+}
+
+func TestMediaErrorsKeepTheFirstLine(t *testing.T) {
+	gst := "Error from element /GstPlayBin3:playbin3/GstDecodebin3:decodebin3-0: " +
+		"Your GStreamer installation is missing a plug-in.\n" +
+		"Your GStreamer installation is missing a plug-in.\n" +
+		"../gstdecodebin3.c(3258): mq_slot_check_reconfiguration (): /GstPlayBin3\n" +
+		"No suitable plugins found"
+	if got := mediaError(gst); !strings.HasPrefix(got, "Your GStreamer installation is missing a plug-in. No") ||
+		strings.Contains(got, "\n") {
+		t.Errorf("mediaError = %q", got)
+	}
+	if got := mediaError("Resource not found."); got != "Resource not found." {
+		t.Errorf("mediaError = %q", got)
+	}
+}
+
+func TestVideoFitModes(t *testing.T) {
+	for mode, want := range map[core.ResizeMode]int32{
+		core.Cover: gtkContentFitCover, core.Contain: gtkContentFitContain,
+		core.Stretch: gtkContentFitFill, core.Center: gtkContentFitScaleDown,
+	} {
+		if got := contentFit(mode); got != want {
+			t.Errorf("contentFit(%d) = %d, want %d", mode, got, want)
+		}
+	}
+}

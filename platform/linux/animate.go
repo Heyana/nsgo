@@ -95,13 +95,13 @@ func tickCallback(data uintptr) int32 {
 		return 0
 	}
 	w.tick()
-	return 0
+	// The timer repeats while something animates.
+	return boolInt(w.ticking)
 }
 
 // tick moves every animation to now and repaints.
 func (w *window) tick() {
 	now := time.Now()
-	scrolled := false
 	live := w.animating[:0]
 	for _, v := range w.animating {
 		if v.deleted {
@@ -113,6 +113,7 @@ func (w *window) tick() {
 				continue
 			}
 			elapsed := now.Sub(t.start)
+			w.moved(v)
 			if elapsed >= t.duration {
 				v.transition = nil
 			} else {
@@ -126,32 +127,23 @@ func (w *window) tick() {
 			if elapsed >= scrollDuration {
 				v.scrolling = nil
 				w.scrollTo(v, s.to)
-				scrolled = true
 			} else {
 				p := float64(elapsed) / float64(scrollDuration)
 				at := core.Point{
 					X: core.Points(float64(s.from.X) + float64(s.to.X-s.from.X)*p),
 					Y: core.Points(float64(s.from.Y) + float64(s.to.Y-s.from.Y)*p),
 				}
-				if w.scrollTo(v, at) {
-					scrolled = true
-				}
+				w.scrollTo(v, at)
 				live = append(live, v)
 			}
 		}
 	}
 	w.animating = live
 	if len(live) == 0 {
+		// tickCallback's return removes the timer.
 		w.ticking = false
-		if w.tickID != 0 {
-			gSourceRemove(w.tickID)
-			w.tickID = 0
-		}
+		w.tickID = 0
 	}
-	if scrolled {
-		w.placeWidgets()
-	}
-	gtkWidgetQueueDraw(w.area)
 }
 
 // mix returns a style between from and to at t, moving only props.

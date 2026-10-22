@@ -15,58 +15,49 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
 )
 
 var (
-	ole32          = syscall.NewLazyDLL("ole32.dll")
-	coInitializeEx = ole32.NewProc("CoInitializeEx")
-	coTaskMemFree  = ole32.NewProc("CoTaskMemFree")
+	ole32             = syscall.NewLazyDLL("ole32.dll")
+	coInitializeEx    = ole32.NewProc("CoInitializeEx")
+	coTaskMemFree     = ole32.NewProc("CoTaskMemFree")
+	shlwapi           = syscall.NewLazyDLL("shlwapi.dll")
+	shCreateMemStream = shlwapi.NewProc("SHCreateMemStream")
+
+	setCursor             = user32.NewProc("SetCursor")
+	isChild               = user32.NewProc("IsChild")
+	getDoubleClickTime    = user32.NewProc("GetDoubleClickTime")
+	getSystemMetrics      = user32.NewProc("GetSystemMetrics")
+	getPointerType        = user32.NewProc("GetPointerType")
+	getPointerInfo        = user32.NewProc("GetPointerInfo")
+	getPointerTouchInfo   = user32.NewProc("GetPointerTouchInfo")
+	getPointerPenInfo     = user32.NewProc("GetPointerPenInfo")
+	getPointerDeviceRects = user32.NewProc("GetPointerDeviceRects")
 )
 
-// guid is a COM interface ID.
-type guid struct {
-	a    uint32
-	b, c uint16
-	d    [8]byte
-}
-
-// parseGUID parses "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"; it is only
-// given the constants below.
-func parseGUID(s string) guid {
-	hex := strings.ReplaceAll(s, "-", "")
-	word := func(from, to int) uint64 {
-		n, err := strconv.ParseUint(hex[from:to], 16, 64)
-		if err != nil {
-			panic("bad GUID " + s)
-		}
-		return n
-	}
-	g := guid{a: uint32(word(0, 8)), b: uint16(word(8, 12)), c: uint16(word(12, 16))}
-	for i := range g.d {
-		g.d[i] = byte(word(16+2*i, 18+2*i))
-	}
-	return g
-}
-
 var (
-	iidUnknown                = parseGUID("00000000-0000-0000-c000-000000000046")
-	iidEnvironment            = parseGUID("b96d755e-0319-4e92-a296-23436f46a1fc")
-	iidController2            = parseGUID("c979903e-d4ca-4228-92eb-47ee3fa96eab")
-	iidSettings2              = parseGUID("ee9a0f68-f46c-4e32-ac23-ef8cac224d2a")
-	iidEnvironmentCompleted   = parseGUID("4e8a3389-c9d8-4bd2-b6b5-124fee6cc14d")
-	iidControllerCompleted    = parseGUID("6c4819f3-c9b7-4260-8127-c9f5bde7f68c")
-	iidNavigationStarting     = parseGUID("9adbe429-f36d-432b-9ddc-f8881fbd76e3")
-	iidNavigationCompleted    = parseGUID("d33a35bf-1c49-4f98-93ab-006e0533fe1c")
-	iidWebMessageReceived     = parseGUID("57213f19-00e6-49fa-8e07-898ea01ecbd2")
-	iidDocumentTitleChanged   = parseGUID("f5f2b923-953e-4042-9f95-f3a118e1afd4")
-	iidHistoryChanged         = parseGUID("c79a420c-efd9-4058-9295-3e8b4bcab645")
-	iidExecuteScriptCompleted = parseGUID("49511172-cc67-4bca-9923-137112f4c4cc")
-	iidAddScriptCompleted     = parseGUID("b99369f3-9b11-47b5-bc6f-8e7895fcea17")
+	iidUnknown                        = parseGUID("00000000-0000-0000-c000-000000000046")
+	iidEnvironment                    = parseGUID("b96d755e-0319-4e92-a296-23436f46a1fc")
+	iidEnvironment3                   = parseGUID("80a22ae3-be7c-4ce2-afe1-5a50056cdeeb")
+	iidController                     = parseGUID("4d00c0d1-9434-4eb6-8078-8697a560334f")
+	iidController2                    = parseGUID("c979903e-d4ca-4228-92eb-47ee3fa96eab")
+	iidController3                    = parseGUID("f9614724-5d2b-41dc-aef7-73d62b51543b")
+	iidSettings2                      = parseGUID("ee9a0f68-f46c-4e32-ac23-ef8cac224d2a")
+	iidSettings6                      = parseGUID("11cb3acd-9bc8-43b8-83bf-f40753714f87")
+	iidEnvironmentCompleted           = parseGUID("4e8a3389-c9d8-4bd2-b6b5-124fee6cc14d")
+	iidCompositionControllerCompleted = parseGUID("02fab84b-1428-4fb7-ad45-1b2e64736184")
+	iidNavigationStarting             = parseGUID("9adbe429-f36d-432b-9ddc-f8881fbd76e3")
+	iidNavigationCompleted            = parseGUID("d33a35bf-1c49-4f98-93ab-006e0533fe1c")
+	iidWebMessageReceived             = parseGUID("57213f19-00e6-49fa-8e07-898ea01ecbd2")
+	iidWebResourceRequested           = parseGUID("ab00b74c-15f1-4646-80e8-e76341d25d71")
+	iidCursorChanged                  = parseGUID("9da43ccc-26e1-4dad-b56c-d8961c94c571")
+	iidFocusChanged                   = parseGUID("05ea24bd-6452-4926-9014-4b82b498135d")
+	iidMoveFocusRequested             = parseGUID("69035451-6dc7-4cb8-9bce-b2bd70ad289f")
+	iidExecuteScriptCompleted         = parseGUID("49511172-cc67-4bca-9923-137112f4c4cc")
+	iidAddScriptCompleted             = parseGUID("b99369f3-9b11-47b5-bc6f-8e7895fcea17")
 )
 
 // Vtable indexes.
@@ -75,16 +66,31 @@ const (
 	comAddRef         = 1
 	comRelease        = 2
 
-	// ICoreWebView2Environment
-	envCreateController = 3
+	// ICoreWebView2Environment, then ICoreWebView2Environment3
+	envCreateWebResourceResponse   = 4
+	envCreateCompositionController = 9
+	envCreatePointerInfo           = 10
 
-	// ICoreWebView2Controller, then ICoreWebView2Controller2
-	controllerPutIsVisible                = 4
-	controllerPutBounds                   = 6
-	controllerNotifyParentPositionChanged = 23
-	controllerClose                       = 24
-	controllerGetCoreWebView2             = 25
-	controllerPutDefaultBackgroundColor   = 27
+	// ICoreWebView2CompositionController
+	compPutRootVisualTarget = 4
+	compSendMouseInput      = 5
+	compSendPointerInput    = 6
+	compGetCursor           = 7
+	compAddCursorChanged    = 9
+
+	// ICoreWebView2Controller, then ICoreWebView2Controller2 and 3
+	controllerPutIsVisible                       = 4
+	controllerPutBounds                          = 6
+	controllerMoveFocus                          = 12
+	controllerAddMoveFocusRequested              = 13
+	controllerAddGotFocus                        = 15
+	controllerAddLostFocus                       = 17
+	controllerNotifyParentPositionChanged        = 23
+	controllerClose                              = 24
+	controllerGetCoreWebView2                    = 25
+	controllerPutDefaultBackgroundColor          = 27
+	controllerPutRasterizationScale              = 29
+	controllerPutShouldDetectMonitorScaleChanges = 31
 
 	// ICoreWebView2
 	webGetSettings                   = 3
@@ -92,7 +98,6 @@ const (
 	webNavigate                      = 5
 	webNavigateToString              = 6
 	webAddNavigationStarting         = 7
-	webAddHistoryChanged             = 13
 	webAddNavigationCompleted        = 15
 	webAddScriptOnDocumentCreated    = 27
 	webRemoveScriptOnDocumentCreated = 28
@@ -104,58 +109,122 @@ const (
 	webGoBack                        = 40
 	webGoForward                     = 41
 	webStop                          = 43
-	webAddDocumentTitleChanged       = 46
 	webGetDocumentTitle              = 48
+	webAddWebResourceRequested       = 55
+	webAddWebResourceRequestedFilter = 57
 
-	// ICoreWebView2Settings, then ICoreWebView2Settings2
-	settingsPutIsScriptEnabled = 4
-	settingsGetUserAgent       = 21
-	settingsPutUserAgent       = 22
+	// ICoreWebView2Settings, then ICoreWebView2Settings2 and 6
+	settingsPutIsScriptEnabled          = 4
+	settingsPutIsStatusBarEnabled       = 10
+	settingsGetUserAgent                = 21
+	settingsPutUserAgent                = 22
+	settingsPutIsSwipeNavigationEnabled = 32
+
+	// ICoreWebView2NavigationStartingEventArgs
+	navigationStartingGetUri = 3
 
 	// ICoreWebView2NavigationCompletedEventArgs
 	navigationGetIsSuccess      = 3
 	navigationGetWebErrorStatus = 4
 
 	// ICoreWebView2WebMessageReceivedEventArgs
+	messageGetJSON      = 4
 	messageTryGetString = 5
+
+	// ICoreWebView2MoveFocusRequestedEventArgs
+	moveFocusPutHandled = 5
+
+	// ICoreWebView2WebResourceRequestedEventArgs, ICoreWebView2WebResourceRequest
+	resourceArgsGetRequest  = 3
+	resourceArgsPutResponse = 5
+	requestGetUri           = 3
+
+	// ICoreWebView2PointerInfo
+	pointerPutPointerKind         = 4
+	pointerPutPointerId           = 6
+	pointerPutFrameId             = 8
+	pointerPutPointerFlags        = 10
+	pointerPutPointerDeviceRect   = 12
+	pointerPutDisplayRect         = 14
+	pointerPutPixelLocation       = 16
+	pointerPutHimetricLocation    = 18
+	pointerPutPixelLocationRaw    = 20
+	pointerPutHimetricLocationRaw = 22
+	pointerPutTime                = 24
+	pointerPutHistoryCount        = 26
+	pointerPutInputData           = 28
+	pointerPutKeyStates           = 30
+	pointerPutPerformanceCount    = 32
+	pointerPutButtonChangeKind    = 34
+	pointerPutPenFlags            = 36
+	pointerPutPenMask             = 38
+	pointerPutPenPressure         = 40
+	pointerPutPenRotation         = 42
+	pointerPutPenTiltX            = 44
+	pointerPutPenTiltY            = 46
+	pointerPutTouchFlags          = 48
+	pointerPutTouchMask           = 50
+	pointerPutTouchContact        = 52
+	pointerPutTouchContactRaw     = 54
+	pointerPutTouchOrientation    = 56
+	pointerPutTouchPressure       = 58
 )
+
+// COREWEBVIEW2_POINTER_EVENT_KIND
+const (
+	pointerEventUpdate = 581
+	pointerEventDown   = 582
+	pointerEventUp     = 583
+	pointerEventLeave  = 586
+)
+
+// Pointer messages and types.
+const (
+	wmPointerUpdate = 0x0245
+	wmPointerDown   = 0x0246
+	wmPointerUp     = 0x0247
+	wmPointerLeave  = 0x024A
+	ptTouch         = 2
+	ptPen           = 3
+
+	smCXDoubleClk = 36
+	smCYDoubleClk = 37
+)
+
+// pointerInfo is POINTER_INFO, padded to its size on every architecture.
+type pointerInfo struct {
+	pointerType, pointerID, frameID, pointerFlags uint32
+	sourceDevice, hwndTarget                      uintptr
+	pixelLocation, himetricLocation               point
+	pixelLocationRaw, himetricLocationRaw         point
+	time, historyCount                            uint32
+	inputData                                     int32
+	keyStates                                     uint32
+	performanceCount                              uint64
+	buttonChangeType                              uint32
+	_                                             uint32
+}
+
+// pointerTouchInfo is POINTER_TOUCH_INFO.
+type pointerTouchInfo struct {
+	pointerInfo
+	touchFlags, touchMask uint32
+	contact, contactRaw   rect
+	orientation, pressure uint32
+}
+
+// pointerPenInfo is POINTER_PEN_INFO.
+type pointerPenInfo struct {
+	pointerInfo
+	penFlags, penMask, pressure, rotation uint32
+	tiltX, tiltY                          int32
+}
 
 const (
 	sOK             = 0
 	eNoInterface    = 0x80004002
 	rpcEChangedMode = 0x80010106
 )
-
-func failed(hr uintptr) bool { return int32(hr) < 0 }
-
-// comObject is what a COM interface pointer points to: its vtable first.
-type comObject struct{ vtbl *[64]uintptr }
-
-// call calls method on o. Its arguments may be Go pointers converted to
-// uintptr, which the directive keeps on the heap during the call.
-//
-//go:uintptrescapes
-func (o *comObject) call(method int, args ...uintptr) uintptr {
-	all := make([]uintptr, 0, len(args)+1)
-	all = append(all, uintptr(unsafe.Pointer(o)))
-	r, _, _ := syscall.SyscallN(o.vtbl[method], append(all, args...)...)
-	return r
-}
-
-func (o *comObject) release() {
-	if o != nil {
-		o.call(comRelease)
-	}
-}
-
-// query returns o's interface iid, nil if it has none.
-func (o *comObject) query(iid *guid) *comObject {
-	var out *comObject
-	if failed(o.call(comQueryInterface, uintptr(unsafe.Pointer(iid)), uintptr(unsafe.Pointer(&out)))) {
-		return nil
-	}
-	return out
-}
 
 // getString calls a getter returning a string the caller frees.
 func (o *comObject) getString(method int) string {
@@ -194,14 +263,16 @@ func wideString(p *uint16) string {
 	return syscall.UTF16ToString(unsafe.Slice(p, n))
 }
 
-// comHandler is a WebView2 callback object: IUnknown and Invoke, whose
-// two arguments are an HRESULT or sender and a result or event's
-// arguments. Go keeps it alive while COM holds a reference.
+// comHandler is a COM callback object: IUnknown and one method. A
+// WebView2 handler's Invoke takes two arguments, an HRESULT or sender and
+// a result or event's arguments; a notify object's method takes three
+// words. Go keeps it alive while COM holds a reference.
 type comHandler struct {
 	vtbl   *[4]uintptr
 	refs   int32
 	iid    *guid
 	invoke func(a uintptr, b unsafe.Pointer)
+	notify func(a, b, c uintptr)
 }
 
 var (
@@ -211,6 +282,12 @@ var (
 		syscall.NewCallback(handlerRelease),
 		syscall.NewCallback(handlerInvoke),
 	}
+	// notifyVtbl is a callback object's whose method takes three words,
+	// such as IMFMediaEngineNotify's EventNotify.
+	notifyVtbl = [4]uintptr{
+		handlerVtbl[0], handlerVtbl[1], handlerVtbl[2],
+		syscall.NewCallback(handlerNotify),
+	}
 	handlersMu sync.Mutex
 	handlers   = map[*comHandler]struct{}{}
 )
@@ -219,6 +296,17 @@ var (
 // the caller's, which it gives up with release.
 func newHandler(iid *guid, invoke func(a uintptr, b unsafe.Pointer)) *comHandler {
 	h := &comHandler{vtbl: &handlerVtbl, refs: 1, iid: iid, invoke: invoke}
+	handlersMu.Lock()
+	handlers[h] = struct{}{}
+	handlersMu.Unlock()
+	return h
+}
+
+// newNotify returns a callback object of interface iid whose one method
+// takes three words, holding the caller's reference. It may be called on
+// any thread.
+func newNotify(iid *guid, notify func(a, b, c uintptr)) *comHandler {
+	h := &comHandler{vtbl: &notifyVtbl, refs: 1, iid: iid, notify: notify}
 	handlersMu.Lock()
 	handlers[h] = struct{}{}
 	handlersMu.Unlock()
@@ -253,6 +341,11 @@ func handlerRelease(h *comHandler) uintptr {
 		delete(handlers, h)
 	}
 	return uintptr(h.refs)
+}
+
+func handlerNotify(h *comHandler, a, b, c uintptr) uintptr {
+	h.notify(a, b, c)
+	return sOK
 }
 
 func handlerInvoke(h *comHandler, a uintptr, b unsafe.Pointer) uintptr {
@@ -338,9 +431,9 @@ func regString(root syscall.Handle, view uint32, path, name string) string {
 	return syscall.UTF16ToString(buf)
 }
 
-// webEnvironment is a window's WebView2 environment: one browser process
-// for all its web views, made on the window's thread, which it belongs
-// to.
+// webEnvironment is a WebView2 environment: one browser process for the
+// web views of a profile folder, made on the main thread, which it
+// belongs to.
 type webEnvironment struct {
 	env     *comObject
 	err     error
@@ -348,16 +441,37 @@ type webEnvironment struct {
 	waiting []func(*comObject, error)
 }
 
-// withWebEnvironment calls fn on the main thread once the environment is
-// made, or cannot be.
-func (w *window) withWebEnvironment(fn func(*comObject, error)) {
-	e := w.webEnv
-	if e == nil {
+// webEnvironments are the UI threads', by thread and profile folder.
+var (
+	webEnvironmentsMu sync.Mutex
+	webEnvironments   = map[webEnvironmentKey]*webEnvironment{}
+)
+
+type webEnvironmentKey struct {
+	thread uintptr
+	folder string
+}
+
+var getCurrentThreadID = kernel32.NewProc("GetCurrentThreadId")
+
+// withWebEnvironment calls fn on the calling UI thread once its
+// environment of profile folder is made, or cannot be; w posts the
+// failure to start.
+func withWebEnvironment(w *window, folder string, fn func(*comObject, error)) {
+	thread, _, _ := getCurrentThreadID.Call()
+	key := webEnvironmentKey{thread, folder}
+	webEnvironmentsMu.Lock()
+	e := webEnvironments[key]
+	fresh := e == nil
+	if fresh {
 		e = &webEnvironment{}
-		w.webEnv = e
+		webEnvironments[key] = e
+	}
+	webEnvironmentsMu.Unlock()
+	if fresh {
 		e.waiting = append(e.waiting, fn)
-		if err := w.startWebEnvironment(); err != nil {
-			// Report from a task of its own: the view's events may come
+		if err := startWebEnvironment(e, folder); err != nil {
+			// Reported from a message of its own: the view's events may come
 			// later in the batch being applied.
 			w.post(func() { e.finish(nil, err) })
 		}
@@ -379,10 +493,19 @@ func (e *webEnvironment) finish(env *comObject, err error) {
 	}
 }
 
-func (w *window) startWebEnvironment() error {
+// initCOM makes the main thread a single-threaded apartment, as WebView2
+// and Media Foundation's media engine need.
+func initCOM() error {
 	const coinitApartmentThreaded = 2
 	if hr, _, _ := coInitializeEx.Call(0, coinitApartmentThreaded); hr == rpcEChangedMode {
 		return errors.New("WebView2 needs a single-threaded COM apartment on the UI thread")
+	}
+	return nil
+}
+
+func startWebEnvironment(e *webEnvironment, folder string) error {
+	if err := initCOM(); err != nil {
+		return err
 	}
 	path, err := findWebView2()
 	if err != nil {
@@ -396,11 +519,6 @@ func (w *window) startWebEnvironment() error {
 	if err != nil {
 		return err
 	}
-	var folder *uint16
-	if w.cacheDir != "" {
-		folder = wide(filepath.Join(w.cacheDir, "WebView2"))
-	}
-	e := w.webEnv
 	var h *comHandler
 	h = newHandler(&iidEnvironmentCompleted, func(hr uintptr, result unsafe.Pointer) {
 		defer h.release()
@@ -418,14 +536,10 @@ func (w *window) startWebEnvironment() error {
 		e.finish(env, nil)
 	})
 	const checkRunningInstance, installedRuntime = 1, 0
-	hr, _, _ := create.Call(checkRunningInstance, installedRuntime, uintptr(unsafe.Pointer(folder)), 0, h.ptr())
+	hr, _, _ := create.Call(checkRunningInstance, installedRuntime, uintptr(unsafe.Pointer(wide(folder))), 0, h.ptr())
 	if failed(hr) {
 		h.release()
 		return hresultError("WebView2 could not start", hr)
 	}
 	return nil
-}
-
-func hresultError(what string, hr uintptr) error {
-	return errors.New(what + ": HRESULT 0x" + strconv.FormatUint(uint64(uint32(hr)), 16))
 }

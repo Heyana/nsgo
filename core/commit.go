@@ -323,6 +323,12 @@ func (t *Tree) emit(n *node) {
 			wn.sent = c
 			add(MountItem{Kind: ItemWeb, ID: n.id, Web: &c})
 		}
+	case n.video != nil:
+		if vn := n.video; first || vn.config != vn.sent {
+			c := vn.config
+			vn.sent = c
+			add(MountItem{Kind: ItemVideo, ID: n.id, Video: &c})
+		}
 	case n.scroll != nil:
 		sc := n.scroll
 		if first || sc.config != n.sent.scroll {

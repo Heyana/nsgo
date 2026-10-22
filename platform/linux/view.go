@@ -9,8 +9,10 @@ import (
 	"github.com/oneo-me/nsgo/platform/internal/scrollbar"
 )
 
-// view is the main thread's copy of one mounted view.
+// view is the main thread's copy of one mounted view, drawn by its
+// widget.
 type view struct {
+	widget   uintptr // NsgoView
 	id       core.NodeID
 	kind     core.ViewKind
 	parent   *view
@@ -31,12 +33,11 @@ type view struct {
 	offset core.Point
 
 	// An input's GtkEntry and what the window keeps for it.
-	entry      uintptr
-	provider   uintptr // the entry's CSS
-	input      core.InputConfig
-	edits      uint32 // user edits so far
-	setting    bool   // the window is setting the text, not the user
-	entryShown bool
+	entry    uintptr
+	provider uintptr // the entry's CSS
+	input    core.InputConfig
+	edits    uint32 // user edits so far
+	setting  bool   // the window is setting the text, not the user
 
 	// An image view's configuration, source and placeholder.
 	image               core.ImageConfig
@@ -45,8 +46,9 @@ type view struct {
 	// A canvas's drawing.
 	drawing *core.Drawing
 
-	// A web view's page.
-	web *web
+	// A web view's page and a video's player.
+	web   *web
+	video *video
 
 	// What animates: the style after the first, and the scroll offset.
 	styled     bool
@@ -184,7 +186,7 @@ func (w *window) hoverBars(at core.Point) {
 	}
 	if !slices.Equal(under, w.bars) {
 		w.bars = under
-		gtkWidgetQueueDraw(w.area)
+		gtkWidgetQueueDraw(w.surface)
 	}
 }
 
@@ -217,10 +219,8 @@ func (w *window) dragBar(at core.Point) {
 		return
 	}
 	d.v.scrolling = nil // the bar takes over
-	if w.scrollTo(d.v, d.drag.Offset(core.Point{X: at.X - d.origin.X, Y: at.Y - d.origin.Y})) {
-		w.placeWidgets()
-	}
-	gtkWidgetQueueDraw(w.area)
+	w.scrollTo(d.v, d.drag.Offset(core.Point{X: at.X - d.origin.X, Y: at.Y - d.origin.Y}))
+	gtkWidgetQueueDraw(w.surface)
 }
 
 // barAt returns the innermost scroll view whose bar is under p, and p in

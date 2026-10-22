@@ -95,7 +95,11 @@ type View struct {
 	Web      core.WebConfig
 	// WebCommands are what the app asked a web view to do, oldest first.
 	WebCommands []WebCommand
-	Focused     bool
+	Video       core.VideoConfig
+	// Seeks are the positions the app asked a video to jump to, oldest
+	// first.
+	Seeks   []time.Duration
+	Focused bool
 }
 
 // WebCommand is a command a web view received, with its message or script.
@@ -551,6 +555,31 @@ func (a *App) Load(selector string, pixels core.Size) {
 	}
 }
 
+// Play reports that the video selector matches opened and loaded
+// info, as a platform does: it starts loading, then loads.
+func (a *App) Play(selector string, info core.VideoInfo) {
+	a.t.Helper()
+	v := a.Find(selector)
+	for _, k := range []core.EventKind{core.EventLoadStart, core.EventLoad} {
+		if v.Events.Has(k) {
+			a.dispatch(core.Event{Kind: k, ID: v.ID, Duration: info.Duration, Size: info.Size})
+		}
+	}
+}
+
+// Progress reports that the video selector matches played to position:
+// its progress, then its end when position reaches duration.
+func (a *App) Progress(selector string, position, duration time.Duration) {
+	a.t.Helper()
+	v := a.Find(selector)
+	if v.Events.Has(core.EventProgress) {
+		a.dispatch(core.Event{Kind: core.EventProgress, ID: v.ID, Time: position, Duration: duration})
+	}
+	if position >= duration && v.Events.Has(core.EventEnd) {
+		a.dispatch(core.Event{Kind: core.EventEnd, ID: v.ID})
+	}
+}
+
 // Navigate reports that the web view selector matches loaded the page
 // nav describes, as a platform does: it starts loading, then loads.
 func (a *App) Navigate(selector string, nav core.WebNavigation) {
@@ -644,6 +673,10 @@ func (a *App) apply(b *core.MountBatch) {
 			v.Web = *it.Web
 		case core.ItemWebCommand:
 			v.WebCommands = append(v.WebCommands, WebCommand{it.WebCommand, it.Value})
+		case core.ItemVideo:
+			v.Video = *it.Video
+		case core.ItemVideoSeek:
+			v.Seeks = append(v.Seeks, it.Time)
 		case core.ItemFocus:
 			for _, o := range a.views {
 				o.Focused = false
@@ -750,6 +783,8 @@ func kindName(k core.ViewKind) string {
 		return "canvas"
 	case core.KindWeb:
 		return "web"
+	case core.KindVideo:
+		return "video"
 	}
 	return "?"
 }

@@ -285,12 +285,14 @@ func (s ImageSource) same(o ImageSource) bool {
 		(len(s.Data) == 0 || &s.Data[0] == &o.Data[0])
 }
 
-// ResizeMode fits an image into its view.
+// ResizeMode fits an image or a video into its view. The zero value is
+// the element's default: Cover for an image, Contain for a video, as in
+// NSH. Platforms receive the resolved mode.
 type ResizeMode uint8
 
 const (
 	// Cover fills the view, cropping what overflows.
-	Cover ResizeMode = iota
+	Cover ResizeMode = iota + 1
 	// Contain fits the whole image, leaving space.
 	Contain
 	// Stretch fills the view, distorting the image.

@@ -1,24 +1,26 @@
 //go:build linux && !android
 
-// Package linux is NSGo's GTK 4 backend. One GtkWindow shows a
-// GtkDrawingArea that draws the whole tree with Cairo, text the engine
-// measured and laid out with Pango, and inputs and web views as native
-// GtkEntry and WebKitWebView widgets above it. GTK delivers the pointer, wheel and keyboard events;
-// the engine hit tests presses and keeps the interaction state.
+// Package linux is NSGo's GTK 4 backend, on NSH's Linux design: every
+// view is a widget of its own (NsgoView, a GtkWidget subclass) that its
+// parent places at the core's frame and that draws itself with GtkSnapshot
+// and Cairo, text the engine measured and laid out with Pango included.
+// Inputs, web views and videos are native GtkEntry, WebKitWebView and
+// GtkPicture widgets hosted in their view's widget, so they stack, clip,
+// fade and transform with the views around them. GTK delivers the
+// pointer, wheel and keyboard events to the surface; the backend hit
+// tests presses and the engine keeps the interaction state.
 //
 // The backend is the one the roadmap asks for: GTK 4 through purego, no
 // cgo and no hand-written C. It loads its libraries at run time, so an
 // app built on macOS needs only Go and Xcode, and an app built for Linux
 // needs GTK 4.14 or newer, Pango and Cairo where it runs. Web views also
 // need WebKitGTK 6.0, which loads on the first one; without it a web view
-// stays empty and reports an error.
+// shows a placeholder, as NSH's does. Videos play through GTK's
+// GStreamer media backend.
 //
 // The application menu is a GTK menu bar above the surface. The backend
 // does not select text, expose accessibility, draw window controls of its
-// own or animate modals. A partly clipped input is hidden, because GTK
-// has no per-widget clip rectangle; a web view is clipped to a rectangle,
-// without its ancestors' rounded corners. Inputs and web views stay above
-// everything the surface draws, including views drawn over them.
+// own or animate modals.
 package linux
 
 import (
@@ -45,10 +47,8 @@ type Options struct {
 // reaches its main-thread half only through Mount and post.
 type window struct {
 	win     uintptr // GtkWindow
-	area    uintptr // GtkDrawingArea
-	box     uintptr // the window content: menu bar and overlay
-	overlay uintptr
-	fixed   uintptr // GtkFixed hosting the entries
+	surface uintptr // the NsgoView holding the root view
+	box     uintptr // the window content: menu bar and surface
 	menuBar uintptr
 	loop    uintptr // GMainLoop
 
@@ -66,13 +66,15 @@ type window struct {
 	views     []*view
 	root      core.NodeID
 	entries   map[uintptr]*view
-	webs      map[uintptr]*view // by page, holder and content manager
+	natives   map[uintptr]*view // by the objects of hosted widgets
+	appID     string
 	keys      map[string]bool
 	animating []*view
 	ticking   bool
 	tickID    uint32
 
 	lastPointer    core.Point
+	shielding      bool // a press kept from a hosted control goes on
 	panning        *pan
 	bars           []*view  // the scroll views under the pointer, which show their bars
 	barDrag        *barDrag // the bar the pointer drags
@@ -122,9 +124,13 @@ func start(app engine.App, opts Options) (*window, error) {
 	if gtkInitCheck() == 0 {
 		return nil, errors.New("no display; run the app in a desktop session or with xvfb-run")
 	}
+	if err := registerViewType(); err != nil {
+		return nil, fmt.Errorf("the Linux backend needs GTK 4: %w", err)
+	}
 	w := &window{
 		entries:    map[uintptr]*view{},
-		webs:       map[uintptr]*view{},
+		natives:    map[uintptr]*view{},
+		appID:      opts.ID,
 		keys:       map[string]bool{},
 		actionRefs: map[uintptr]menuRef{},
 		env:        core.Environment{OS: core.OSLinux, Idiom: core.IdiomDesktop},
@@ -167,8 +173,7 @@ func (w *window) stop() {
 	// window whose loop has stopped as its widgets are finalized.
 }
 
-// createWindow makes the window, its menu bar box, the drawing area and
-// the overlay that hosts the entries.
+// createWindow makes the window, its menu bar box and the surface.
 func (w *window) createWindow(opts Options) {
 	w.win = gtkWindowNew()
 	title := opts.Title
@@ -177,19 +182,11 @@ func (w *window) createWindow(opts Options) {
 	w.lastWidth, w.lastHeight = opts.Width, opts.Height
 
 	w.box = gtkBoxNew(1, 0) // vertical
-	w.overlay = gtkOverlayNew()
-	w.area = gtkDrawingAreaNew()
-	gtkWidgetSetHexpand(w.area, 1)
-	gtkWidgetSetVexpand(w.area, 1)
-	gtkOverlaySetChild(w.overlay, w.area)
-
-	w.fixed = gtkFixedNew()
-	gtkWidgetSetHexpand(w.fixed, 1)
-	gtkWidgetSetVexpand(w.fixed, 1)
-	gtkOverlayAddOverlay(w.overlay, w.fixed)
-	gtkBoxAppend(w.box, w.overlay)
+	w.surface = w.newViewWidget(nil)
+	gtkWidgetSetHexpand(w.surface, 1)
+	gtkWidgetSetVexpand(w.surface, 1)
+	gtkBoxAppend(w.box, w.surface)
 	gtkWindowSetChild(w.win, w.box)
-	gtkDrawingAreaSetDrawFunc(w.area, cbDraw, w.handle, 0)
 	w.setupInputs()
 	gSignalConnect(w.win, "close-request", cbCloseRequest, w.handle)
 }
@@ -243,7 +240,6 @@ func applyCallback(data uintptr) int32 {
 	for _, b := range w.batches.Drain() {
 		w.apply(b)
 	}
-	gtkWidgetQueueDraw(w.area)
 	return 0
 }
 
@@ -252,14 +248,6 @@ func closeRequestCallback(win uintptr, data uintptr) int32 {
 		w.close()
 	}
 	return 1 // the window closes; Run returns after the loop ends
-}
-
-func drawCallback(area uintptr, cr uintptr, width, height int32, data uintptr) {
-	w := windowOf(data)
-	if w == nil || w.closing {
-		return
-	}
-	w.draw(cr, width, height)
 }
 
 // runTasks runs what other goroutines posted, in order.
@@ -296,23 +284,6 @@ func (w *window) view(id core.NodeID) *view {
 		return w.views[id]
 	}
 	return nil
-}
-
-// draw paints the tree, reports the size GTK gave the area, and tells GTK
-// about the new size as the user resizes the window.
-func (w *window) draw(cr uintptr, width, height int32) {
-	size := core.Size{Width: core.Points(width), Height: core.Points(height)}
-	if !w.started {
-		// The surface exists now, so its scale and direction are known.
-		w.started = true
-		w.updateEnvironment()
-	} else if size.Width != w.lastWidth || size.Height != w.lastHeight {
-		if w.engine != nil {
-			w.engine.Resize(size)
-		}
-	}
-	w.lastWidth, w.lastHeight = size.Width, size.Height
-	w.paint(cr, size)
 }
 
 // apply applies one commit's items.
@@ -367,34 +338,48 @@ func (w *window) apply(b *core.MountBatch) {
 			if p := w.view(it.Parent); p != nil {
 				v.detach()
 				at := len(p.children)
-				if before := w.view(it.Before); before != nil {
+				before := w.view(it.Before)
+				if before != nil {
 					if j := slices.Index(p.children, before); j >= 0 {
 						at = j
+					} else {
+						before = nil
 					}
 				}
 				p.children = slices.Insert(p.children, at, v)
 				v.parent = p
+				w.insertWidget(p, v, before)
 			}
 		case core.ItemRemove:
 			v.detach()
+			w.unparentWidget(v.widget)
 		case core.ItemDelete:
 			w.delete(v)
 		case core.ItemFrame:
+			resized := v.frame.Size != it.Frame.Size
 			v.frame = it.Frame
+			w.moved(v)
+			if resized && v.widget != 0 {
+				gtkWidgetQueueAllocate(v.widget)
+			}
 			if v.kind == core.KindScroll {
 				rescroll = append(rescroll, v)
 			}
 		case core.ItemViewStyle:
 			w.setStyle(v, it.ViewStyle)
+			w.showWidget(v)
+			w.moved(v)
 			if v.entry != 0 {
 				w.styleEntry(v)
 			}
+			w.webBackground(v)
 		case core.ItemText:
 			if v.text != nil {
 				v.text.Release()
 			}
 			v.text = it.Text.Layout
 			v.content = it.Text.Content
+			w.changed(v)
 		case core.ItemInput:
 			w.configure(v, it.Input)
 		case core.ItemInputValue:
@@ -409,6 +394,7 @@ func (w *window) apply(b *core.MountBatch) {
 			v.scroll = *it.Scroll
 		case core.ItemScrollContent:
 			v.size = it.Size
+			w.changed(v)
 			rescroll = append(rescroll, v)
 		case core.ItemFocus, core.ItemBlur:
 			focus = append(focus, focusChange{v, it.Kind == core.ItemFocus})
@@ -416,14 +402,22 @@ func (w *window) apply(b *core.MountBatch) {
 			if w.setImage(v, it.Image) {
 				loads = append(loads, v)
 			}
+			w.changed(v)
 		case core.ItemModal:
 			// A modal is a view: it shows without a separate window.
 		case core.ItemCanvas:
 			v.drawing = it.Drawing
+			w.changed(v)
 		case core.ItemWeb:
 			w.configureWeb(v, it.Web)
 		case core.ItemWebCommand:
 			w.webCommand(v, it.WebCommand, it.Value)
+		case core.ItemVideo:
+			w.configureVideo(v, it.Video)
+		case core.ItemVideoSeek:
+			if v.video != nil {
+				v.video.seek(it.Time)
+			}
 		case core.ItemScrollTo:
 			v.scrolling = nil
 			if it.Animated {
@@ -433,7 +427,7 @@ func (w *window) apply(b *core.MountBatch) {
 			}
 		}
 	}
-	w.root = b.Root
+	w.setRoot(b.Root)
 	for _, v := range rescroll {
 		if !v.deleted {
 			w.scrollTo(v, v.offset)
@@ -445,7 +439,6 @@ func (w *window) apply(b *core.MountBatch) {
 			w.load(v, &v.source, true)
 		}
 	}
-	w.placeWidgets()
 	for _, f := range focus {
 		switch {
 		case f.v == nil:
@@ -461,14 +454,31 @@ func (w *window) apply(b *core.MountBatch) {
 			}
 		}
 	}
-	gtkWidgetQueueDraw(w.area)
 }
 
 func (w *window) create(id core.NodeID, kind core.ViewKind) {
 	for len(w.views) <= int(id) {
 		w.views = append(w.views, nil)
 	}
-	w.views[id] = &view{id: id, kind: kind, style: core.ViewStyle{Opacity: 1}}
+	v := &view{id: id, kind: kind, style: core.ViewStyle{Opacity: 1}}
+	v.widget = w.newViewWidget(v)
+	w.views[id] = v
+}
+
+// setRoot makes the view id the surface's child.
+func (w *window) setRoot(id core.NodeID) {
+	if old := w.view(w.root); old != nil && w.root != id && old.widget != 0 && gtkWidgetGetParent(old.widget) == w.surface {
+		w.unparentWidget(old.widget)
+	}
+	w.root = id
+	if root := w.view(id); root != nil && root.widget != 0 && gtkWidgetGetParent(root.widget) != w.surface {
+		if gtkWidgetGetParent(root.widget) != 0 {
+			gtkWidgetUnparent(root.widget)
+		}
+		gtkWidgetSetParent(root.widget, w.surface)
+		gtkWidgetQueueAllocate(w.surface)
+	}
+	gtkWidgetQueueDraw(w.surface)
 }
 
 // delete drops v and its subtree. The engine deletes the children too,
@@ -492,18 +502,19 @@ func (w *window) delete(v *view) {
 			w.focus = nil
 		}
 		delete(w.entries, v.entry)
-		if parent := gtkWidgetGetParent(v.entry); parent != 0 {
-			// Unparenting drops GTK's only reference: the widget was
-			// floating when gtk_fixed_put sank it.
-			gtkFixedRemove(w.fixed, v.entry)
-		}
+		w.unparentWidget(v.entry)
+		gObjectUnref(v.entry)
 		v.entry = 0
 	}
 	if v.web != nil {
 		w.closeWeb(v)
 	}
+	if v.video != nil {
+		w.closeVideo(v)
+	}
 	v.source.reset(core.ImageSource{})
 	v.placeholder.reset(core.ImageSource{})
+	w.dropWidget(v)
 	v.deleted = true
 	w.views[v.id] = nil
 }
@@ -558,6 +569,10 @@ func (w *window) scrollTo(v *view, offset core.Point) bool {
 		return false
 	}
 	v.offset = offset
+	if v.widget != 0 {
+		gtkWidgetQueueAllocate(v.widget)
+		gtkWidgetQueueDraw(v.widget)
+	}
 	w.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id, Point: offset})
 	return true
 }
@@ -586,8 +601,6 @@ func (w *window) wheel(at core.Point, dx, dy float64) {
 		}
 		v.scrolling = nil
 		if w.scrollTo(v, offset) {
-			w.placeWidgets()
-			gtkWidgetQueueDraw(w.area)
 			return
 		}
 	}

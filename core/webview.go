@@ -1,7 +1,5 @@
 package core
 
-import "errors"
-
 // WebView shows a web page in the platform's web view, which fills the
 // view and takes its own pointer, wheel and keyboard input. Pages reach
 // the app with window.nsgo.postMessage(data), which OnMessage receives;
@@ -32,7 +30,8 @@ type WebView struct {
 	OnLoadStart             func(WebNavigation)
 	OnLoad                  func(WebNavigation)
 	OnNavigationStateChange func(WebNavigation)
-	OnError                 func(err error)
+	// OnError receives a *WebError.
+	OnError func(err error)
 	// OnMessage receives what the page posted, as a string.
 	OnMessage func(data string)
 	OnLayout  func(Bounds)
@@ -67,6 +66,15 @@ type WebNavigation struct {
 	CanGoBack    bool
 	CanGoForward bool
 }
+
+// WebError is a page that failed to load, or a navigation the
+// platform refused; URL is the page's, when known.
+type WebError struct {
+	URL     string
+	Message string
+}
+
+func (e *WebError) Error() string { return e.Message }
 
 // WebConfig is everything a web view loads and allows (ItemWeb).
 // Platforms load the source again when it or the scripts change.
@@ -183,7 +191,7 @@ func (t *Tree) dispatchWeb(n *node, ev Event) {
 		call(wn.navigation)
 	case EventError:
 		if wn.loadError != nil {
-			t.within(n.owner, func() { wn.loadError(errors.New(ev.Text)) })
+			t.within(n.owner, func() { wn.loadError(&WebError{URL: nav.URL, Message: ev.Text}) })
 		}
 	case EventMessage:
 		if wn.message != nil {

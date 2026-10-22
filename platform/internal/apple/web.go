@@ -4,7 +4,6 @@ package apple
 
 import (
 	"runtime"
-	"strings"
 
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
@@ -14,8 +13,7 @@ import (
 
 // Web is a web view's WKWebView, filling the view that holds it. WebKit
 // loads on the first web view, so apps without one do not pay for it.
-// The WKWebView is made on the first Configure, and again when
-// NoJavaScript changes, since WebKit fixes its preferences then.
+// The WKWebView is made on the first Configure.
 type Web struct {
 	// Dispatch reports the web view's events.
 	Dispatch func(core.Event)
@@ -58,7 +56,14 @@ func loadWebKit() {
 	}
 	failed := func(self objc.ID, _ objc.SEL, _, _, err objc.ID) {
 		if w := webHandlers[self]; w != nil {
-			w.Dispatch(core.Event{Kind: core.EventError, Text: GoString(err.Send(sel("localizedDescription")))})
+			info := err.Send(sel("userInfo"))
+			// NSURLErrorFailingURLStringErrorKey, else NSURLErrorFailingURLErrorKey.
+			url := GoString(info.Send(sel("objectForKey:"), NSString("NSErrorFailingURLStringKey")))
+			if url == "" {
+				url = GoString(info.Send(sel("objectForKey:"), NSString("NSErrorFailingURLKey")).Send(sel("absoluteString")))
+			}
+			w.Dispatch(core.Event{Kind: core.EventError, Text: GoString(err.Send(sel("localizedDescription"))),
+				Navigation: &core.WebNavigation{URL: url}})
 		}
 	}
 	var protocols []*objc.Protocol
@@ -70,7 +75,6 @@ func loadWebKit() {
 	classWebHandler = RegisterClass("NsgoWebHandler", objc.GetClass("NSObject"), protocols,
 		[]objc.MethodDef{
 			nav("webView:didStartProvisionalNavigation:", true, core.EventLoadStart, core.EventNavigationStateChange),
-			nav("webView:didCommitNavigation:", true, core.EventNavigationStateChange),
 			nav("webView:didFinishNavigation:", false, core.EventLoad, core.EventNavigationStateChange),
 			{Cmd: sel("webView:didFailNavigation:withError:"), Fn: failed},
 			{Cmd: sel("webView:didFailProvisionalNavigation:withError:"), Fn: failed},
@@ -94,14 +98,15 @@ func (w *Web) View() objc.ID { return w.web }
 // Configure applies c, loading the source again when it or the scripts
 // changed.
 func (w *Web) Configure(c *core.WebConfig) {
-	old, first := w.config, !w.made || c.NoJavaScript != w.config.NoJavaScript
+	old, first := w.config, !w.made
 	w.config = *c
 	if first {
 		w.make()
 	}
 	scripts := first || c.InjectedJavaScript != old.InjectedJavaScript ||
-		c.InjectedJavaScriptBeforeContent != old.InjectedJavaScriptBeforeContent || c.NoScroll != old.NoScroll
-	if scripts {
+		c.InjectedJavaScriptBeforeContent != old.InjectedJavaScriptBeforeContent
+	// NoScroll's script (macOS) applies from the next page on.
+	if scripts || c.NoScroll != old.NoScroll {
 		w.addScripts()
 	}
 	if c.UserAgent == "" {
@@ -110,6 +115,8 @@ func (w *Web) Configure(c *core.WebConfig) {
 		w.web.Send(sel("setCustomUserAgent:"), NSString(c.UserAgent))
 	}
 	w.web.Send(sel("setAllowsBackForwardNavigationGestures:"), c.BackForwardGestures)
+	w.web.Send(sel("configuration")).Send(sel("defaultWebpagePreferences")).
+		Send(sel("setAllowsContentJavaScript:"), !c.NoJavaScript)
 	if runtime.GOOS == "ios" {
 		w.web.Send(sel("scrollView")).Send(sel("setScrollEnabled:"), !c.NoScroll)
 	}
@@ -120,11 +127,7 @@ func (w *Web) Configure(c *core.WebConfig) {
 
 func (w *Web) make() {
 	loadWebKit()
-	if w.web != 0 {
-		w.close()
-	}
 	config := objc.ID(objc.GetClass("WKWebViewConfiguration")).Send(sel("new"))
-	config.Send(sel("defaultWebpagePreferences")).Send(sel("setAllowsContentJavaScript:"), !w.config.NoJavaScript)
 	w.handler = objc.ID(classWebHandler).Send(sel("new"))
 	webHandlers[w.handler] = w
 	config.Send(sel("userContentController")).Send(sel("addScriptMessageHandler:name:"), w.handler, NSString(messageHandler))
@@ -134,14 +137,10 @@ func (w *Web) make() {
 	w.web.Send(sel("setNavigationDelegate:"), w.handler)
 	const flexibleSize = 2 | 16 // width and height, in AppKit and UIKit alike
 	w.web.Send(sel("setAutoresizingMask:"), uint(flexibleSize))
-	// WebKit paints white otherwise; a page without a background shows
-	// the view's own, as its style expects.
-	if runtime.GOOS == "ios" {
-		clear := objc.ID(objc.GetClass("UIColor")).Send(sel("clearColor"))
-		w.web.Send(sel("setOpaque:"), false)
-		w.web.Send(sel("setBackgroundColor:"), clear)
-		w.web.Send(sel("scrollView")).Send(sel("setBackgroundColor:"), clear)
-	} else {
+	// WebKit paints white otherwise; on macOS a page without a
+	// background shows the view's own, as its style expects. iOS keeps
+	// WebKit's, as NSH does.
+	if runtime.GOOS != "ios" {
 		no := objc.ID(objc.GetClass("NSNumber")).Send(sel("numberWithBool:"), false)
 		w.web.Send(sel("setValue:forKey:"), no, NSString("drawsBackground"))
 	}
@@ -180,25 +179,15 @@ func (w *Web) load() {
 		}
 		w.web.Send(sel("loadHTMLString:baseURL:"), NSString(src.HTML), base)
 	case src.Src != "":
-		url := nsURL(src.Src)
-		if url == 0 {
-			w.Dispatch(core.Event{Kind: core.EventError, Text: "invalid URL " + src.Src})
-			return
+		// A URL NSURL cannot parse loads nothing.
+		if url := nsURL(src.Src); url != 0 {
+			request := objc.ID(objc.GetClass("NSURLRequest")).Send(sel("requestWithURL:"), url)
+			w.web.Send(sel("loadRequest:"), request)
 		}
-		if objc.Send[bool](url, sel("isFileURL")) {
-			w.web.Send(sel("loadFileURL:allowingReadAccessToURL:"), url, url.Send(sel("URLByDeletingLastPathComponent")))
-			return
-		}
-		request := objc.ID(objc.GetClass("NSURLRequest")).Send(sel("requestWithURL:"), url)
-		w.web.Send(sel("loadRequest:"), request)
 	}
 }
 
-// nsURL parses s, taking a path without a scheme as a file's.
 func nsURL(s string) objc.ID {
-	if strings.HasPrefix(s, "/") {
-		return objc.ID(objc.GetClass("NSURL")).Send(sel("fileURLWithPath:"), NSString(s))
-	}
 	return objc.ID(objc.GetClass("NSURL")).Send(sel("URLWithString:"), NSString(s))
 }
 
@@ -222,15 +211,19 @@ func (w *Web) Command(c core.WebCommand, value string) {
 	if w.web == 0 {
 		return
 	}
+	// stopLoading may call the delegate back at once; the view outlives
+	// the command.
+	web := w.web.Send(sel("retain"))
+	defer web.Send(sel("release"))
 	switch c {
 	case core.WebReload:
-		w.web.Send(sel("reload"))
+		web.Send(sel("reload"))
 	case core.WebGoBack:
-		w.web.Send(sel("goBack"))
+		web.Send(sel("goBack"))
 	case core.WebGoForward:
-		w.web.Send(sel("goForward"))
+		web.Send(sel("goForward"))
 	case core.WebStopLoading:
-		w.web.Send(sel("stopLoading"))
+		web.Send(sel("stopLoading"))
 	case core.WebPostMessage:
 		w.evaluate(core.WebMessageScript(value))
 	case core.WebInjectJavaScript:

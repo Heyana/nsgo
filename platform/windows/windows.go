@@ -1,22 +1,19 @@
 //go:build windows
 
 // Package windows is NSGo's Win32 backend: one window that draws a
-// retained tree of views with GDI into a 32-bit bitmap, text the engine
-// measured and laid out with GDI fonts, presses hit tested by the engine,
-// inputs as native EDIT controls, web views as WebView2 controllers in
-// child windows, images decoded by Go, canvases drawn antialiased by
-// GDI+, and alerts as task dialogs. It uses only the syscall package, so
-// it builds without cgo.
+// retained tree of views with Direct2D into a flip-model swap chain on a
+// Direct3D 11 device, text the engine laid out with DirectWrite, presses
+// hit tested by the engine, inputs as editors of the backend's own drawn
+// with the views (input.go), web views as WebView2 composition controllers
+// in the window's DirectComposition tree, videos played by Media
+// Foundation's media engine, images decoded by Go, and alerts as task
+// dialogs. It uses only the syscall package, so it builds without cgo.
 //
-// GDI has no alpha and cannot blend a fractional edge. Translucent colors
-// fill their clipped shape with AlphaBlend, translucent views draw into a
-// layer blended back at their opacity, and the painter measures rounded
-// corners itself, blending them pixel by pixel. Canvases, whose paths are
-// arbitrary, are drawn by GDI+ into a bitmap the painter blends back.
-// Transforms are GDI world transforms. Style transitions tick on a timer.
-// EDIT controls ignore transforms and opacity; shadows, image blur and
-// modal animations are not drawn, and there is no accessibility yet, which
-// needs UI Automation providers.
+// Transforms are Direct2D world transforms, translucent views draw in
+// layers, and shapes and text are antialiased by Direct2D. Style
+// transitions tick on a timer. Image blur and modal animations are not
+// drawn, and there is no accessibility yet, which needs UI Automation
+// providers.
 package windows
 
 import (
@@ -25,7 +22,7 @@ import (
 	"slices"
 	"sync"
 	"syscall"
-	"unicode/utf16"
+	"time"
 	"unsafe"
 
 	"github.com/oneo-me/nsgo/core"
@@ -49,156 +46,70 @@ type Options struct {
 
 var (
 	user32   = syscall.NewLazyDLL("user32.dll")
-	gdi32    = syscall.NewLazyDLL("gdi32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
 
-	registerClassExW    = user32.NewProc("RegisterClassExW")
-	createWindowExW     = user32.NewProc("CreateWindowExW")
-	destroyWindow       = user32.NewProc("DestroyWindow")
-	defWindowProcW      = user32.NewProc("DefWindowProcW")
-	callWindowProcW     = user32.NewProc("CallWindowProcW")
-	getMessageW         = user32.NewProc("GetMessageW")
-	translateMessage    = user32.NewProc("TranslateMessage")
-	dispatchMessageW    = user32.NewProc("DispatchMessageW")
-	postMessageW        = user32.NewProc("PostMessageW")
-	sendMessageW        = user32.NewProc("SendMessageW")
-	postQuitMessage     = user32.NewProc("PostQuitMessage")
-	showWindow          = user32.NewProc("ShowWindow")
-	enableWindow        = user32.NewProc("EnableWindow")
-	setFocus            = user32.NewProc("SetFocus")
-	getFocus            = user32.NewProc("GetFocus")
-	beginPaint          = user32.NewProc("BeginPaint")
-	endPaint            = user32.NewProc("EndPaint")
-	getDC               = user32.NewProc("GetDC")
-	releaseDC           = user32.NewProc("ReleaseDC")
-	invalidateRect      = user32.NewProc("InvalidateRect")
-	getClientRect       = user32.NewProc("GetClientRect")
-	adjustWindowRect    = user32.NewProc("AdjustWindowRect")
-	screenToClient      = user32.NewProc("ScreenToClient")
-	loadCursorW         = user32.NewProc("LoadCursorW")
-	loadIconW           = user32.NewProc("LoadIconW")
-	moveWindow          = user32.NewProc("MoveWindow")
-	setWindowRgn        = user32.NewProc("SetWindowRgn")
-	setWindowTextW      = user32.NewProc("SetWindowTextW")
-	getWindowTextW      = user32.NewProc("GetWindowTextW")
-	getWindowTextLength = user32.NewProc("GetWindowTextLengthW")
-	getWindowLongPtrW   = user32.NewProc("GetWindowLongPtrW")
-	setWindowLongPtrW   = user32.NewProc("SetWindowLongPtrW")
-	hideCaret           = user32.NewProc("HideCaret")
-	showCaret           = user32.NewProc("ShowCaret")
-	getSysColor         = user32.NewProc("GetSysColor")
-	getDpiForSystem     = user32.NewProc("GetDpiForSystem")
-	setDpiAwareness     = user32.NewProc("SetProcessDpiAwarenessContext")
-	drawTextW           = user32.NewProc("DrawTextW")
-	fillRect            = user32.NewProc("FillRect")
-
-	createCompatibleDC     = gdi32.NewProc("CreateCompatibleDC")
-	createCompatibleBitmap = gdi32.NewProc("CreateCompatibleBitmap")
-	deleteDC               = gdi32.NewProc("DeleteDC")
-	saveDC                 = gdi32.NewProc("SaveDC")
-	restoreDC              = gdi32.NewProc("RestoreDC")
-	deleteObject           = gdi32.NewProc("DeleteObject")
-	selectObject           = gdi32.NewProc("SelectObject")
-	bitBlt                 = gdi32.NewProc("BitBlt")
-	createFontW            = gdi32.NewProc("CreateFontW")
-	getTextMetricsW        = gdi32.NewProc("GetTextMetricsW")
-	setTextCharacterExtra  = gdi32.NewProc("SetTextCharacterExtra")
-	createSolidBrush       = gdi32.NewProc("CreateSolidBrush")
-	createPen              = gdi32.NewProc("CreatePen")
-	getStockObject         = gdi32.NewProc("GetStockObject")
-	roundRect              = gdi32.NewProc("RoundRect")
-	createRectRgn          = gdi32.NewProc("CreateRectRgn")
-	createRoundRectRgn     = gdi32.NewProc("CreateRoundRectRgn")
-	extSelectClipRgn       = gdi32.NewProc("ExtSelectClipRgn")
-	setBkMode              = gdi32.NewProc("SetBkMode")
-	setTextColor           = gdi32.NewProc("SetTextColor")
-	setBkColor             = gdi32.NewProc("SetBkColor")
+	registerClassExW  = user32.NewProc("RegisterClassExW")
+	createWindowExW   = user32.NewProc("CreateWindowExW")
+	defWindowProcW    = user32.NewProc("DefWindowProcW")
+	getMessageW       = user32.NewProc("GetMessageW")
+	translateMessage  = user32.NewProc("TranslateMessage")
+	dispatchMessageW  = user32.NewProc("DispatchMessageW")
+	postMessageW      = user32.NewProc("PostMessageW")
+	postQuitMessage   = user32.NewProc("PostQuitMessage")
+	showWindow        = user32.NewProc("ShowWindow")
+	setFocus          = user32.NewProc("SetFocus")
+	getFocus          = user32.NewProc("GetFocus")
+	beginPaint        = user32.NewProc("BeginPaint")
+	endPaint          = user32.NewProc("EndPaint")
+	invalidateRect    = user32.NewProc("InvalidateRect")
+	getClientRect     = user32.NewProc("GetClientRect")
+	adjustWindowRect  = user32.NewProc("AdjustWindowRect")
+	screenToClient    = user32.NewProc("ScreenToClient")
+	loadCursorW       = user32.NewProc("LoadCursorW")
+	loadIconW         = user32.NewProc("LoadIconW")
+	setWindowTextW    = user32.NewProc("SetWindowTextW")
+	getWindowLongPtrW = user32.NewProc("GetWindowLongPtrW")
+	setWindowLongPtrW = user32.NewProc("SetWindowLongPtrW")
+	getDpiForSystem   = user32.NewProc("GetDpiForSystem")
+	setDpiAwareness   = user32.NewProc("SetProcessDpiAwarenessContext")
 
 	getModuleHandleW = kernel32.NewProc("GetModuleHandleW")
 )
 
 const (
-	wmDestroy        = 0x0002
-	wmMove           = 0x0003
-	wmSize           = 0x0005
-	wmPaint          = 0x000F
-	wmEraseBkgnd     = 0x0014
-	wmSettingChange  = 0x001A
-	wmSetFont        = 0x0030
-	wmKeyDown        = 0x0100
-	wmChar           = 0x0102
-	wmSysKeyDown     = 0x0104
-	wmCommand        = 0x0111
-	wmCtlColorEdit   = 0x0133
-	wmCtlColorStatic = 0x0138 // what read-only and disabled EDITs send
-	wmLButtonDown    = 0x0201
-	wmLButtonUp      = 0x0202
-	wmRButtonDown    = 0x0204
-	wmMouseWheel     = 0x020A
-	wmMouseHWheel    = 0x020E
-	wmMouseLeave     = 0x02A3
-	wmAppCommand     = 0x0319     // what DefWindowProc makes of XBUTTON1 and back keys
-	wmApply          = 0x8000 + 1 // WM_APP + 1: batches are queued
-	wmRun            = 0x8000 + 2 // functions are queued
-	wmAlert          = 0x8000 + 3 // alerts are queued
+	wmDestroy       = 0x0002
+	wmMove          = 0x0003
+	wmSize          = 0x0005
+	wmPaint         = 0x000F
+	wmEraseBkgnd    = 0x0014
+	wmSettingChange = 0x001A
+	wmKeyDown       = 0x0100
+	wmChar          = 0x0102
+	wmSysKeyDown    = 0x0104
+	wmCommand       = 0x0111
+	wmLButtonDown   = 0x0201
+	wmLButtonUp     = 0x0202
+	wmRButtonDown   = 0x0204
+	wmMouseWheel    = 0x020A
+	wmMouseHWheel   = 0x020E
+	wmAppCommand    = 0x0319     // what DefWindowProc makes of XBUTTON1 and back keys
+	wmApply         = 0x8000 + 1 // WM_APP + 1: batches are queued
+	wmRun           = 0x8000 + 2 // functions are queued
+	wmAlert         = 0x8000 + 3 // alerts are queued
 
 	wsOverlappedWindow = 0x00CF0000
 	wsClipChildren     = 0x02000000
-	wsChild            = 0x40000000
-	esCenter           = 0x0001
-	esRight            = 0x0002
-	esPassword         = 0x0020
-	esAutoHScroll      = 0x0080
-	enSetFocus         = 0x0100
-	enKillFocus        = 0x0200
-	enChange           = 0x0300
-	emSetSel           = 0x00B1
-	emSetPasswordChar  = 0x00CC
-	emSetReadOnly      = 0x00CF
-	emSetMargins       = 0x00D3
-	ecBothMargins      = 0x0003
 	cwUseDefault       = ^uintptr(0x7FFFFFFF) // CW_USEDEFAULT as a uintptr
-	gwlpWndProc        = ^uintptr(3)          // -4
 	gwlStyle           = ^uintptr(15)         // -16
-	swHide             = 0
 	swShow             = 5
-	swShowNA           = 8
 	sizeMinimized      = 1
 	vkReturn           = 0x0D
 	vkEscape           = 0x1B
 	vkLeft             = 0x25
-	appCommandBack     = 1      // APPCOMMAND_BROWSER_BACKWARD
-	maskChar           = 0x25CF // ●
+	appCommandBack     = 1 // APPCOMMAND_BROWSER_BACKWARD
 
-	dtCenter      = 0x0001
-	dtRight       = 0x0002
-	dtSingleLine  = 0x0020
-	dtNoPrefix    = 0x0800
-	dtEndEllipsis = 0x8000
-
-	transparent     = 1
-	whiteBrush      = 0
-	nullBrush       = 5
-	nullPen         = 8
-	psInsideFrame   = 6
-	rgnAnd          = 1
-	srcCopy         = 0x00CC0020
-	clearType       = 5
-	defaultCharset  = 1
-	colorGrayText   = 17
 	defaultFontName = "Segoe UI"
 )
-
-// fontName returns the GDI face of a family name.
-func fontName(family string) string {
-	switch family {
-	case "":
-		return defaultFontName
-	case core.FontMonospace:
-		return "Consolas"
-	}
-	return family
-}
 
 // wheelStep is how far one notch of a mouse wheel scrolls.
 const wheelStep core.Points = 48
@@ -206,13 +117,6 @@ const wheelStep core.Points = 48
 type rect struct{ Left, Top, Right, Bottom int32 }
 
 func (r rect) empty() bool { return r.Right <= r.Left || r.Bottom <= r.Top }
-
-func (r rect) intersect(o rect) rect {
-	return rect{max(r.Left, o.Left), max(r.Top, o.Top), min(r.Right, o.Right), min(r.Bottom, o.Bottom)}
-}
-
-// everywhere clips nothing.
-var everywhere = rect{-1 << 30, -1 << 30, 1 << 30, 1 << 30}
 
 type point struct{ X, Y int32 }
 
@@ -250,14 +154,6 @@ type paintStruct struct {
 	_         [32]byte
 }
 
-type textMetric struct {
-	Height, Ascent, Descent, InternalLeading, ExternalLeading int32
-	AveCharWidth, MaxCharWidth, Weight, Overhang              int32
-	DigitizedAspectX, DigitizedAspectY                        int32
-	FirstChar, LastChar, DefaultChar, BreakChar               uint16
-	Italic, Underlined, StruckOut, PitchAndFamily, CharSet    uint8
-}
-
 // view is the main thread's copy of one mounted view.
 type view struct {
 	id       core.NodeID
@@ -274,24 +170,16 @@ type view struct {
 	text    drawnText
 	content core.Bounds
 
+	// The shadow drawn under the background.
+	shadow *shadow
+
 	// A scroll view's configuration, content size and offset.
 	scroll core.ScrollConfig
 	size   core.Size
 	offset core.Point
 
-	// An input's EDIT control and what the window keeps for it.
-	edit       uintptr
-	editProc   uintptr
-	input      core.InputConfig
-	font       *font
-	brush      uintptr // the background WM_CTLCOLOREDIT returns
-	brushColor core.Color
-	edits      uint32 // user edits so far
-	setting    bool   // the window is setting the text, not the user
-	shown      bool
-	placed     uint32 // the last placeEdits pass that showed the EDIT
-	editRect   rect   // in the window's client area
-	editClip   rect   // the visible part, in the EDIT's own coordinates
+	// An input's editor.
+	field *textInput
 
 	// An image view's configuration, source and placeholder.
 	image               core.ImageConfig
@@ -300,8 +188,9 @@ type view struct {
 	// A canvas's drawing.
 	drawing *core.Drawing
 
-	// A web view's WebView2 controller and host window.
-	web *webView
+	// A web view's WebView2 controller and portal, a video's media engine.
+	web   *webView
+	video *video
 
 	// What animates: the style, after the first, and the scroll offset.
 	styled     bool
@@ -325,7 +214,6 @@ type window struct {
 	engine  *engine.Engine
 	batches queue.Batches
 	scale   float64 // pixels per point
-	fonts   fontCache
 
 	// What other goroutines hand the main thread.
 	mu    sync.Mutex
@@ -334,8 +222,6 @@ type window struct {
 	// The main thread's.
 	views     []*view // index is NodeID
 	root      core.NodeID
-	edits     map[uintptr]*view
-	pass      uint32
 	env       core.Environment // the last reported
 	alerts    []core.AlertConfig
 	alerting  bool
@@ -343,9 +229,20 @@ type window struct {
 	animating []*view
 	ticking   bool
 	chrome    chrome
-	webs      map[uintptr]*view // web views by host window
-	webEnv    *webEnvironment
-	cacheDir  string // where web views keep their profile
+	webs      map[*webView]bool
+	cacheDir  string                 // where web views keep their profile
+	frames    []func(time.Time) bool // frame clients (onFrame)
+
+	// composition is the window's while it has web views, and composed
+	// the web views the last frame drew.
+	composition *composition
+	composed    []*webView
+	// The page holding the mouse while a button is held on it, the one
+	// under it, those holding touch and pen contacts, and the video whose
+	// control bar holds the mouse.
+	rawWeb, hoverWeb *webView
+	touchWebs        map[uint32]*webView
+	barVideo         *video
 
 	// The gestures in progress.
 	pan                            *pan
@@ -357,21 +254,28 @@ type window struct {
 	barDrag  *barDrag
 	tracking bool
 
-	measureDC uintptr           // the engine thread's
-	fallbacks map[rune]string   // the engine thread's fallback family per rune
-	glyphs    map[glyphKey]bool // the engine thread's glyph presence per font and rune
-	aa        *smoothing
+	// The field with the keyboard focus, the one a modal took it from,
+	// the one a press is selecting in, and whether the window lacks the
+	// keyboard. blinking is set while the caret's timer runs; surrogate
+	// holds the first half of a character typed in two WM_CHARs.
+	focus, restore, selecting *textInput
+	inactive, blinking        bool
+	surrogate                 uint16
+	// The last press, for counting double and triple clicks.
+	clicks struct {
+		time  uint32
+		at    point
+		count int
+	}
+
+	swap *swapChain
 }
 
 // Window procedures are process-wide callbacks; they find their window
 // here. Only the main thread uses these maps.
-var (
-	windows     = map[uintptr]*window{}
-	editWindows = map[uintptr]*window{}
-)
+var windows = map[uintptr]*window{}
 
 var wndProcCallback = syscall.NewCallback(wndProc)
-var editProcCallback = syscall.NewCallback(editProc)
 
 func wide(s string) *uint16 {
 	p, err := syscall.UTF16PtrFromString(s)
@@ -389,11 +293,10 @@ func Run(app engine.App, opts Options) {
 	}
 	const perMonitorAwareV2 = ^uintptr(3) // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 (-4)
 	setDpiAwareness.Call(perMonitorAwareV2)
-	w := &window{title: opts.Title, scale: 1, edits: map[uintptr]*view{}, webs: map[uintptr]*view{}}
+	w := &window{title: opts.Title, scale: 1, webs: map[*webView]bool{}, touchWebs: map[uint32]*webView{}}
 	if dpi, _, _ := getDpiForSystem.Call(); dpi != 0 {
 		w.scale = float64(dpi) / 96
 	}
-	w.fonts = fontCache{scale: w.scale, fonts: map[fontKey]*font{}}
 
 	instance, _, _ := getModuleHandleW.Call(0)
 	const idcArrow = 32512
@@ -423,6 +326,8 @@ func Run(app engine.App, opts Options) {
 		0, 0, instance, 0)
 	w.hwnd = hwnd
 	windows[hwnd] = w
+	// Nothing has the focus yet: typing must not open a composition.
+	w.updateIME()
 	w.configureGestures()
 	w.env = w.environment()
 	w.darkTitleBar(w.env.Dark)
@@ -446,93 +351,12 @@ func Run(app engine.App, opts Options) {
 			return
 		}
 		// Shortcuts take key presses before they become characters.
-		if (m.Message == wmKeyDown || m.Message == wmSysKeyDown) && (m.Hwnd == hwnd || editWindows[m.Hwnd] == w) &&
-			w.shortcut(m.WParam) {
+		if (m.Message == wmKeyDown || m.Message == wmSysKeyDown) && m.Hwnd == hwnd && w.shortcut(m.WParam) {
 			continue
 		}
 		translateMessage.Call(uintptr(unsafe.Pointer(&m)))
 		dispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
 	}
-}
-
-// fontKey is what a GDI font is made from.
-type fontKey struct {
-	font       core.Font
-	decoration core.TextDecoration
-}
-
-// font is a GDI font shared by text layouts and EDIT controls, and freed
-// when the last of them releases it.
-type font struct {
-	key     fontKey
-	handle  uintptr
-	height  int32 // of a line, in pixels
-	ascent  int32
-	xHeight int32 // where attachments align their middle
-	refs    int
-}
-
-// fontCache holds the fonts the engine thread measures with and the main
-// thread draws and edits with.
-type fontCache struct {
-	mu    sync.Mutex
-	scale float64
-	fonts map[fontKey]*font
-}
-
-func (c *fontCache) acquire(key fontKey) *font {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if f := c.fonts[key]; f != nil {
-		f.refs++
-		return f
-	}
-	family := fontName(key.font.Family)
-	var italic, underline, strike uintptr
-	if key.font.Italic {
-		italic = 1
-	}
-	if key.decoration&core.TextDecorationUnderline != 0 {
-		underline = 1
-	}
-	if key.decoration&core.TextDecorationLineThrough != 0 {
-		strike = 1
-	}
-	height := -int32(float64(key.font.Size)*c.scale + 0.5)
-	h, _, _ := createFontW.Call(uintptr(height), 0, 0, 0, uintptr(key.font.Weight), italic, underline, strike,
-		defaultCharset, 0, 0, clearType, 0, uintptr(unsafe.Pointer(wide(family))))
-	dc, _, _ := createCompatibleDC.Call(0)
-	old, _, _ := selectObject.Call(dc, h)
-	var tm textMetric
-	getTextMetricsW.Call(dc, uintptr(unsafe.Pointer(&tm)))
-	xHeight := glyphTop(dc, 'x', tm.Ascent/2)
-	selectObject.Call(dc, old)
-	deleteDC.Call(dc)
-	f := &font{key: key, handle: h, height: max(tm.Height, 1), ascent: tm.Ascent, xHeight: xHeight, refs: 1}
-	c.fonts[key] = f
-	return f
-}
-
-func (c *fontCache) retain(f *font) {
-	c.mu.Lock()
-	f.refs++
-	c.mu.Unlock()
-}
-
-func (c *fontCache) release(f *font) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if f.refs--; f.refs == 0 {
-		delete(c.fonts, f.key)
-		deleteObject.Call(f.handle)
-	}
-}
-
-// Prepare implements core.TextEngine on the engine thread. Every text
-// goes through the span engine, so plain and styled text share one
-// measure, wrap and draw, whatever their line height or alignment.
-func (w *window) Prepare(t *core.AttributedText) core.PreparedText {
-	return w.prepareSpans(t)
 }
 
 // Mount implements engine.Platform.
@@ -564,10 +388,6 @@ func (w *window) runTasks() {
 }
 
 func (w *window) px(p core.Points) int32 { return int32(math.Round(float64(p) * w.scale)) }
-
-func (w *window) rect(x, y core.Points, size core.Size) rect {
-	return rect{w.px(x), w.px(y), w.px(x + size.Width), w.px(y + size.Height)}
-}
 
 func (w *window) point(x, y int32) core.Point {
 	return core.Point{X: core.Points(float64(x) / w.scale), Y: core.Points(float64(y) / w.scale)}
@@ -655,9 +475,6 @@ func (w *window) apply(b *core.MountBatch) {
 			}
 		case core.ItemViewStyle:
 			w.setStyle(v, it.ViewStyle)
-			if v.edit != 0 {
-				invalidateRect.Call(v.edit, 0, 1) // its background may have changed
-			}
 			if v.web != nil {
 				v.web.restyle()
 			}
@@ -668,9 +485,13 @@ func (w *window) apply(b *core.MountBatch) {
 			v.text, _ = it.Text.Layout.(drawnText)
 			v.content = it.Text.Content
 		case core.ItemInput:
-			w.configure(v, it.Input)
+			if v.field != nil && it.Input != nil {
+				v.field.configure(it.Input)
+			}
 		case core.ItemInputValue:
-			w.setValue(v, it.Value, it.Count)
+			if v.field != nil {
+				v.field.setValue(it.Value, it.Count)
+			}
 		case core.ItemEvents:
 			v.events = it.Events
 		case core.ItemViewProps:
@@ -703,6 +524,17 @@ func (w *window) apply(b *core.MountBatch) {
 			if v.web != nil {
 				v.web.command(it.WebCommand, it.Value)
 			}
+		case core.ItemVideo:
+			if v.kind == core.KindVideo && it.Video != nil {
+				if v.video == nil {
+					v.video = &video{w: w, v: v}
+				}
+				v.video.configure(it.Video)
+			}
+		case core.ItemVideoSeek:
+			if v.video != nil {
+				v.video.seek(it.Time)
+			}
 		case core.ItemScrollTo:
 			v.scrolling = nil
 			if it.Animated {
@@ -724,23 +556,22 @@ func (w *window) apply(b *core.MountBatch) {
 			w.load(v, &v.source, true)
 		}
 	}
-	w.placeEdits()
-	// Focus once the EDITs are shown.
+	// Focus once the batch placed the fields.
 	for _, f := range focus {
 		switch {
 		case f.v == nil:
-			if current, _, _ := getFocus.Call(); w.edits[current] != nil {
-				setFocus.Call(w.hwnd)
-			}
-		case f.v.deleted || f.v.edit == 0:
+			w.blurAll()
+		case f.v.deleted || f.v.field == nil:
 		case f.focus:
-			setFocus.Call(f.v.edit)
-		default:
-			if current, _, _ := getFocus.Call(); current == f.v.edit {
-				setFocus.Call(w.hwnd)
+			if f.v.field.focusable() {
+				w.setFocus(f.v.field)
 			}
+		case w.focusedField() == f.v.field:
+			w.setFocus(nil)
 		}
 	}
+	w.checkFocus()
+	w.placeIME()
 	invalidateRect.Call(w.hwnd, 0, 0)
 }
 
@@ -748,7 +579,11 @@ func (w *window) create(id core.NodeID, kind core.ViewKind) {
 	for len(w.views) <= int(id) {
 		w.views = append(w.views, nil)
 	}
-	w.views[id] = &view{id: id, kind: kind, style: core.ViewStyle{Opacity: 1}}
+	v := &view{id: id, kind: kind, style: core.ViewStyle{Opacity: 1}}
+	if kind == core.KindInput {
+		v.field = newTextInput(w, v)
+	}
+	w.views[id] = v
 }
 
 // delete destroys v; its children get their own deletes.
@@ -762,25 +597,21 @@ func (w *window) delete(v *view) {
 		v.text.Release()
 		v.text = nil
 	}
-	if v.edit != 0 {
-		// Unsubclass first so the EDIT reports nothing while it goes.
-		setWindowLongPtrW.Call(v.edit, gwlpWndProc, v.editProc)
-		delete(w.edits, v.edit)
-		delete(editWindows, v.edit)
-		destroyWindow.Call(v.edit)
-		v.edit = 0
-	}
-	if v.font != nil {
-		w.fonts.release(v.font)
-		v.font = nil
-	}
-	if v.brush != 0 {
-		deleteObject.Call(v.brush)
-		v.brush = 0
+	v.shadow.release()
+	v.shadow = nil
+	if v.field != nil {
+		if w.selecting == v.field {
+			w.fieldUp()
+		}
+		v.field.release()
 	}
 	if v.web != nil {
 		v.web.close()
 		v.web = nil
+	}
+	if v.video != nil {
+		v.video.close()
+		v.video = nil
 	}
 	v.source.reset(core.ImageSource{})
 	v.placeholder.reset(core.ImageSource{})
@@ -788,176 +619,11 @@ func (w *window) delete(v *view) {
 	w.views[v.id] = nil
 }
 
-// configure applies an input's look and behavior to its EDIT, made on
-// the first configuration so it starts with its alignment and masking.
-func (w *window) configure(v *view, in *core.InputConfig) {
-	old := v.input
-	v.input = *in
-	if v.kind != core.KindInput {
-		return
-	}
-	var align uintptr
-	switch in.Style.Align {
-	case core.TextAlignCenter:
-		align = esCenter
-	case core.TextAlignEnd:
-		align = esRight
-	}
-	if v.edit == 0 {
-		style := wsChild | esAutoHScroll | align
-		if in.Masked {
-			style |= esPassword
-		}
-		instance, _, _ := getModuleHandleW.Call(0)
-		v.edit, _, _ = createWindowExW.Call(0, uintptr(unsafe.Pointer(wide("EDIT"))), 0,
-			style, 0, 0, 0, 0, w.hwnd, uintptr(v.id), instance, 0)
-		if v.edit == 0 {
-			return
-		}
-		w.edits[v.edit] = v
-		editWindows[v.edit] = w
-		v.editProc, _, _ = setWindowLongPtrW.Call(v.edit, gwlpWndProc, editProcCallback)
-	} else if in.Style.Align != old.Style.Align {
-		// Best effort: not every EDIT realigns after creation.
-		style, _, _ := getWindowLongPtrW.Call(v.edit, gwlStyle)
-		setWindowLongPtrW.Call(v.edit, gwlStyle, style&^(esCenter|esRight)|align)
-	}
-	if key := (fontKey{in.Style.Font, in.Style.Decoration}); v.font == nil || v.font.key != key {
-		f := w.fonts.acquire(key)
-		sendMessageW.Call(v.edit, wmSetFont, f.handle, 1)
-		sendMessageW.Call(v.edit, emSetMargins, ecBothMargins, 0)
-		if v.font != nil {
-			w.fonts.release(v.font)
-		}
-		v.font = f
-	}
-	var mask uintptr
-	if in.Masked {
-		mask = maskChar
-	}
-	sendMessageW.Call(v.edit, emSetPasswordChar, mask, 0)
-	sendMessageW.Call(v.edit, emSetReadOnly, boolArg(in.Readonly), 0)
-	enableWindow.Call(v.edit, boolArg(!in.Disabled))
-	invalidateRect.Call(v.edit, 0, 1)
-}
-
-// setValue sets an input's text unless the user edited it after edit
-// number count.
-func (w *window) setValue(v *view, value string, count uint32) {
-	if v.edit == 0 || v.edits > count || editText(v.edit) == value {
-		return
-	}
-	v.setting = true
-	setWindowTextW.Call(v.edit, uintptr(unsafe.Pointer(wide(value))))
-	v.setting = false
-	end := uintptr(len(utf16.Encode([]rune(value))))
-	sendMessageW.Call(v.edit, emSetSel, end, end)
-}
-
 func boolArg(b bool) uintptr {
 	if b {
 		return 1
 	}
 	return 0
-}
-
-// placeEdits moves each EDIT to its input's content, centered on a line
-// and clipped by scroll views and clipping ancestors, and hides the ones
-// of inputs that are hidden, detached or clipped away. Web views' host
-// windows go over their views the same way.
-func (w *window) placeEdits() {
-	if len(w.edits) == 0 && len(w.webs) == 0 {
-		return
-	}
-	w.pass++
-	if root := w.view(w.root); root != nil {
-		w.placeIn(root, 0, 0, everywhere)
-	}
-	for edit, v := range w.edits {
-		if v.placed != w.pass && v.shown {
-			showWindow.Call(edit, swHide)
-			v.shown = false
-		}
-	}
-	for _, v := range w.webs {
-		if v.web.placed != w.pass {
-			v.web.hide()
-		}
-	}
-}
-
-func (w *window) placeIn(v *view, x, y core.Points, clip rect) {
-	if v.style.Hidden || v.style.Opacity <= 0 {
-		return
-	}
-	x, y = x+v.frame.Origin.X, y+v.frame.Origin.Y
-	if v.kind == core.KindModal {
-		w.cover(w.rect(x, y, v.frame.Size).intersect(clip))
-	}
-	if v.edit != 0 {
-		w.placeEdit(v, x, y, clip)
-	}
-	if v.web != nil {
-		v.web.place(w.rect(x, y, v.frame.Size), clip, w.pass)
-	}
-	if v.style.Clip || v.kind == core.KindScroll {
-		clip = clip.intersect(w.rect(x, y, v.frame.Size))
-	}
-	for _, c := range v.children {
-		w.placeIn(c, x-v.offset.X, y-v.offset.Y, clip)
-	}
-}
-
-// cover hides the EDITs and web views placed so far in this pass that a
-// modal drawn over them covers, in r, and takes the focus from the EDITs.
-func (w *window) cover(r rect) {
-	for _, v := range w.webs {
-		if v.web.placed == w.pass && !v.web.rect.intersect(r).empty() {
-			v.web.placed = w.pass - 1
-		}
-	}
-	for edit, v := range w.edits {
-		if v.placed == w.pass && !v.editRect.intersect(r).empty() {
-			v.placed = w.pass - 1
-			if current, _, _ := getFocus.Call(); current == edit {
-				setFocus.Call(w.hwnd)
-			}
-		}
-	}
-}
-
-func (w *window) placeEdit(v *view, x, y core.Points, clip rect) {
-	c := v.input.Content
-	r := w.rect(x+c.Origin.X, y+c.Origin.Y, c.Size)
-	if v.font != nil {
-		if line := v.font.height; r.Bottom-r.Top > line {
-			r.Top += (r.Bottom - r.Top - line) / 2
-			r.Bottom = r.Top + line
-		}
-	}
-	visible := r.intersect(clip)
-	if visible.empty() {
-		return
-	}
-	v.placed = w.pass
-	if r != v.editRect {
-		moveWindow.Call(v.edit, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right-r.Left), uintptr(r.Bottom-r.Top), 1)
-		v.editRect = r
-	}
-	visible = rect{visible.Left - r.Left, visible.Top - r.Top, visible.Right - r.Left, visible.Bottom - r.Top}
-	if visible != v.editClip {
-		var rgn uintptr
-		if visible != (rect{0, 0, r.Right - r.Left, r.Bottom - r.Top}) {
-			// The EDIT owns the region from now on.
-			rgn, _, _ = createRectRgn.Call(uintptr(visible.Left), uintptr(visible.Top), uintptr(visible.Right), uintptr(visible.Bottom))
-		}
-		setWindowRgn.Call(v.edit, rgn, 1)
-		v.editClip = visible
-	}
-	if !v.shown {
-		showWindow.Call(v.edit, swShowNA)
-		v.shown = true
-	}
 }
 
 // scrollTo moves v's content to offset, clamped to the content, and
@@ -997,7 +663,6 @@ func (w *window) wheel(at core.Point, notches core.Points, tilt bool) {
 		}
 		v.scrolling = nil // the wheel takes over
 		if w.scrollTo(v, offset) {
-			w.placeEdits()
 			invalidateRect.Call(w.hwnd, 0, 0)
 			return
 		}
@@ -1060,7 +725,6 @@ func (w *window) dragBar(at core.Point) {
 	}
 	d.v.scrolling = nil // the bar takes over
 	if w.scrollTo(d.v, d.drag.Offset(core.Point{X: at.X - d.origin.X, Y: at.Y - d.origin.Y})) {
-		w.placeEdits()
 		invalidateRect.Call(w.hwnd, 0, 0)
 	}
 }
@@ -1105,10 +769,6 @@ func scrollsAt(v *view, p core.Point, out []*view) []*view {
 	return out
 }
 
-func colorRef(c core.Color) uintptr {
-	return uintptr(c>>24&0xff | (c>>16&0xff)<<8 | (c>>8&0xff)<<16)
-}
-
 // background is the color behind v: its own or its nearest ancestor's.
 func background(v *view) core.Color {
 	for ; v != nil; v = v.parent {
@@ -1117,13 +777,6 @@ func background(v *view) core.Color {
 		}
 	}
 	return core.RGB(0xffffff)
-}
-
-func editText(edit uintptr) string {
-	n, _, _ := getWindowTextLength.Call(edit)
-	buf := make([]uint16, n+1)
-	getWindowTextW.Call(edit, uintptr(unsafe.Pointer(&buf[0])), n+1)
-	return syscall.UTF16ToString(buf)
 }
 
 // pressOutside reports a press at x, y in the client area to each view
@@ -1165,6 +818,28 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		return r
 	}
 	switch message {
+	case wmMouseMove, wmLButtonDown, wmLButtonUp, wmRButtonDown, wmRButtonUp, wmMButtonDown, wmMButtonUp,
+		wmXButtonDown, wmXButtonUp:
+		if w.hostedMouse(message, wParam, lParam) {
+			return 0
+		}
+	case wmPointerDown, wmPointerUpdate, wmPointerUp, wmPointerLeave:
+		if w.hostedPointer(message, wParam, lParam) {
+			return 0
+		}
+	case wmMouseLeave:
+		w.mouseLeft()
+		return 0
+	case wmSetCursor:
+		if lParam&0xffff == htClientArea && (w.hostedCursor() || w.fieldCursor()) {
+			return 1
+		}
+	case wmImeSetContext, wmImeStartComposition, wmImeComposition, wmImeEndComposition:
+		if r, ok := w.ime(message, wParam, lParam); ok {
+			return r
+		}
+	}
+	switch message {
 	case wmApply:
 		for _, b := range w.batches.Drain() {
 			w.apply(b)
@@ -1198,7 +873,11 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		w.pressOutside(int32(x), int32(y))
 		if message == wmLButtonDown {
-			w.panDown(w.point(int32(x), int32(y)))
+			at := w.point(int32(x), int32(y))
+			if w.fieldDown(at, w.countClicks(lParam), wParam&mkShift != 0) {
+				return 0
+			}
+			w.panDown(at)
 		}
 	case wmMouseMove:
 		w.setHover(0) // off the caption buttons
@@ -1206,6 +885,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		at := w.point(int32(x), int32(y))
 		if w.barDrag != nil {
 			w.dragBar(at)
+			return 0
+		}
+		if w.selecting != nil {
+			w.fieldMove(at)
 			return 0
 		}
 		if !w.tracking {
@@ -1219,13 +902,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			w.panMove(at)
 		}
 		return 0
-	case wmMouseLeave:
-		w.tracking = false
-		if w.barDrag == nil {
-			w.hoverBars(core.Point{X: -1, Y: -1})
-		}
-		return 0
 	case wmLButtonUp:
+		if w.fieldUp() {
+			return 0
+		}
 		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
 		at := w.point(int32(x), int32(y))
 		if w.barDrag != nil {
@@ -1240,7 +920,12 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case wmCaptureChanged:
+		if lParam != hwnd && w.selecting != nil {
+			w.selecting.drag = dragNone
+			w.selecting = nil
+		}
 		w.barDrag = nil
+		w.captureLost(lParam)
 		w.panLost()
 		return 0
 	case wmGesture:
@@ -1260,10 +945,14 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 	case wmContextMenu:
-		if lParam&0xffffffff != contextFromKey&0xffffffff {
+		if lParam&0xffffffff == contextFromKey&0xffffffff {
+			w.fieldContextMenu(nil)
+		} else {
 			at := point{int32(int16(lParam & 0xffff)), int32(int16(lParam >> 16 & 0xffff))}
 			screenToClient.Call(hwnd, uintptr(unsafe.Pointer(&at)))
-			w.contextMenu(w.point(at.X, at.Y))
+			if p := w.point(at.X, at.Y); !w.fieldContextMenu(&p) {
+				w.contextMenu(p)
+			}
 		}
 		return 0
 	case wmTimer:
@@ -1272,14 +961,32 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			w.tick()
 		case pinchTimer:
 			w.wheelPinchEnded()
+		case caretTimer:
+			w.blink()
 		}
 		return 0
 	case wmKeyDown:
-		// The window has the keyboard only when no EDIT does.
-		if wParam == vkEscape && !repeated(lParam) {
-			w.back()
+		// The focused field first, then going back (Escape leaves the
+		// field instead), then Tab between the fields.
+		if w.fieldKey(wParam) {
 			return 0
 		}
+		if wParam == vkEscape && !repeated(lParam) {
+			if w.focusedField() != nil {
+				w.blurAll()
+			} else {
+				w.back()
+			}
+			return 0
+		}
+		if wParam == vkTab && !keyDown(vkControl) && !keyDown(vkMenu) && w.tab(keyDown(vkShift)) {
+			return 0
+		}
+	case wmChar:
+		w.fieldChar(uint16(wParam))
+		return 0
+	case wmSetFocus, wmKillFocus:
+		w.windowFocus(message == wmSetFocus)
 	case wmSysKeyDown:
 		// Alt+Left; DefWindowProc still sees it, or releasing Alt would
 		// open the window menu.
@@ -1296,6 +1003,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		at := point{int32(int16(lParam & 0xffff)), int32(int16(lParam >> 16 & 0xffff))}
 		screenToClient.Call(hwnd, uintptr(unsafe.Pointer(&at)))
 		delta := int16(wParam >> 16 & 0xffff)
+		if w.hostedWheel(at.X, at.Y, delta, message == wmMouseHWheel) {
+			return 0
+		}
 		// A precision touchpad's pinch comes as turns with Control held.
 		if message == wmMouseWheel && wParam&mkControl != 0 && w.wheelPinch(w.point(at.X, at.Y), delta) {
 			return 0
@@ -1303,120 +1013,21 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.wheel(w.point(at.X, at.Y), core.Points(delta)/120, message == wmMouseHWheel)
 		return 0
 	case wmCommand:
-		if v := w.edits[lParam]; v != nil {
-			w.editCommand(v, wParam>>16&0xffff)
-		} else if lParam == 0 && wParam>>16&0xffff == 0 {
+		if lParam == 0 && wParam>>16&0xffff == 0 {
 			w.menuCommand(uint16(wParam))
 		}
 		return 0
-	case wmCtlColorEdit, wmCtlColorStatic:
-		if v := w.edits[lParam]; v != nil {
-			bg := background(v)
-			if v.brush == 0 || v.brushColor != bg {
-				if v.brush != 0 {
-					deleteObject.Call(v.brush)
-				}
-				v.brush, _, _ = createSolidBrush.Call(colorRef(bg))
-				v.brushColor = bg
-			}
-			setTextColor.Call(wParam, colorRef(v.input.Style.Color))
-			setBkColor.Call(wParam, colorRef(bg))
-			return v.brush
-		}
 	case wmDestroy:
-		for _, v := range w.webs {
-			v.web.close()
+		for wv := range w.webs {
+			wv.close()
 		}
 		postQuitMessage.Call(0)
 		return 0
 	case wmMove:
-		for _, v := range w.webs {
-			v.web.moved()
+		for wv := range w.webs {
+			wv.moved()
 		}
 	}
 	r, _, _ := defWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
 	return r
-}
-
-// editCommand handles an EDIT's notification.
-func (w *window) editCommand(v *view, code uintptr) {
-	switch code {
-	case enChange:
-		if v.input.Placeholder != "" {
-			invalidateRect.Call(v.edit, 0, 1)
-		}
-		if !v.setting {
-			v.edits++
-			w.engine.Dispatch(core.Event{Kind: core.EventChangeText, ID: v.id, Text: editText(v.edit), Count: v.edits})
-		}
-	case enSetFocus:
-		if v.events.Has(core.EventFocus) {
-			w.engine.Dispatch(core.Event{Kind: core.EventFocus, ID: v.id})
-		}
-	case enKillFocus:
-		if v.events.Has(core.EventBlur) {
-			w.engine.Dispatch(core.Event{Kind: core.EventBlur, ID: v.id})
-		}
-	}
-}
-
-// editProc subclasses EDIT controls to report Return as a submit and to
-// draw placeholders, which plain EDITs lack.
-func editProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
-	w := editWindows[hwnd]
-	if w == nil {
-		r, _, _ := defWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
-		return r
-	}
-	v := w.edits[hwnd]
-	if v == nil {
-		r, _, _ := defWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
-		return r
-	}
-	if wParam == vkReturn && (message == wmKeyDown || message == wmChar) {
-		if message == wmKeyDown && v.events.Has(core.EventSubmitEditing) {
-			w.engine.Dispatch(core.Event{Kind: core.EventSubmitEditing, ID: v.id, Text: editText(hwnd)})
-		}
-		return 0 // no beep
-	}
-	switch {
-	case message == wmSysKeyDown && wParam == vkLeft && !repeated(lParam):
-		w.back()
-	case message == wmLButtonDown || message == wmRButtonDown:
-		// The EDIT has no border: its client area starts at editRect.
-		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
-		w.pressOutside(v.editRect.Left+int32(x), v.editRect.Top+int32(y))
-	}
-	r, _, _ := callWindowProcW.Call(v.editProc, hwnd, uintptr(message), wParam, lParam)
-	if message == wmPaint && v.input.Placeholder != "" {
-		if n, _, _ := getWindowTextLength.Call(hwnd); n == 0 {
-			drawPlaceholder(v)
-		}
-	}
-	return r
-}
-
-func drawPlaceholder(v *view) {
-	hideCaret.Call(v.edit)
-	defer showCaret.Call(v.edit)
-	dc, _, _ := getDC.Call(v.edit)
-	defer releaseDC.Call(v.edit, dc)
-	var r rect
-	getClientRect.Call(v.edit, uintptr(unsafe.Pointer(&r)))
-	if v.font != nil {
-		old, _, _ := selectObject.Call(dc, v.font.handle)
-		defer selectObject.Call(dc, old)
-	}
-	gray, _, _ := getSysColor.Call(colorGrayText)
-	setBkMode.Call(dc, transparent)
-	setTextColor.Call(dc, gray)
-	flags := uintptr(dtSingleLine | dtNoPrefix | dtEndEllipsis)
-	switch v.input.Style.Align {
-	case core.TextAlignCenter:
-		flags |= dtCenter
-	case core.TextAlignEnd:
-		flags |= dtRight
-	}
-	drawTextW.Call(dc, uintptr(unsafe.Pointer(wide(v.input.Placeholder))), ^uintptr(0),
-		uintptr(unsafe.Pointer(&r)), flags)
 }

@@ -98,10 +98,26 @@ func (w *window) animate(v *view) {
 	}
 }
 
-// tick moves every animation to now and repaints.
+// onFrame calls fn once a frame, with the frame's time, until it reports
+// false: videos copy their frames from it.
+func (w *window) onFrame(fn func(now time.Time) bool) {
+	w.frames = append(w.frames, fn)
+	if !w.ticking {
+		setTimer.Call(w.hwnd, animationTimer, frameMillis, 0)
+		w.ticking = true
+	}
+}
+
+// tick moves every animation to now, runs the frame clients and repaints.
 func (w *window) tick() {
 	now := time.Now()
-	scrolled := false
+	frames := w.frames
+	w.frames = nil
+	for _, fn := range frames {
+		if fn(now) {
+			w.frames = append(w.frames, fn)
+		}
+	}
 	live := w.animating[:0]
 	for _, v := range w.animating {
 		if v.deleted {
@@ -121,7 +137,7 @@ func (w *window) tick() {
 			x := min(float64(now.Sub(sc.start))/float64(scrollDuration), 1)
 			e := core.Points(core.EaseInOut.At(x))
 			at := core.Point{X: sc.from.X + (sc.to.X-sc.from.X)*e, Y: sc.from.Y + (sc.to.Y-sc.from.Y)*e}
-			scrolled = w.scrollTo(v, at) || scrolled
+			w.scrollTo(v, at)
 			if x >= 1 {
 				v.scrolling = nil
 			}
@@ -132,12 +148,9 @@ func (w *window) tick() {
 	}
 	clear(w.animating[len(live):])
 	w.animating = live
-	if len(live) == 0 {
+	if len(live) == 0 && len(w.frames) == 0 {
 		killTimer.Call(w.hwnd, animationTimer)
 		w.ticking = false
-	}
-	if scrolled {
-		w.placeEdits()
 	}
 	invalidateRect.Call(w.hwnd, 0, 0)
 }

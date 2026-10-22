@@ -79,6 +79,7 @@ type node struct {
 	canvas  *canvasNode
 	icon    *iconNode
 	web     *webNode
+	video   *videoNode
 	isStack bool
 	ref     *Ref
 
@@ -383,6 +384,10 @@ func (t *Tree) mount(cx *Scope, parent *node, el Node) {
 		t.mountWebView(cx, parent, el)
 	case *WebView:
 		t.mountWebView(cx, parent, *el)
+	case Video:
+		t.mountVideo(cx, parent, el)
+	case *Video:
+		t.mountVideo(cx, parent, *el)
 	case List:
 		t.mountList(cx, parent, el)
 	case *List:
@@ -669,6 +674,9 @@ func (t *Tree) Dispatch(ev Event) {
 		t.dispatchWeb(n, ev)
 		return
 	}
+	if n.video != nil && t.dispatchVideo(n, ev) {
+		return
+	}
 	h := &n.h
 	call := func(fn func()) {
 		if fn != nil {
@@ -911,6 +919,10 @@ func (n *node) events() EventMask {
 	bit(EventRotation, h.rotation != nil)
 	if n.web != nil {
 		m |= n.web.events()
+	}
+	if n.video != nil {
+		m &^= maskOf(EventLoadStart, EventProgress, EventLoad, EventError)
+		m |= n.video.events()
 	}
 	return m
 }

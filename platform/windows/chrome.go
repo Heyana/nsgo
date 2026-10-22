@@ -25,7 +25,7 @@ import (
 //   - The menu bar: a Win32 menu (SetMenu), not shown while the title bar
 //     is hidden or in full screen; its shortcuts are matched on key downs
 //     after the app's own, the editing roles excepted, which the focused
-//     EDIT handles itself.
+//     field handles itself.
 
 var (
 	setWindowPos           = user32.NewProc("SetWindowPos")
@@ -44,9 +44,6 @@ var (
 	destroyMenu            = user32.NewProc("DestroyMenu")
 	drawMenuBar            = user32.NewProc("DrawMenuBar")
 	dwmGetWindowAttribute  = dwmapi.NewProc("DwmGetWindowAttribute")
-	getPixel               = gdi32.NewProc("GetPixel")
-	createPolygonRgn       = gdi32.NewProc("CreatePolygonRgn")
-	polygon                = gdi32.NewProc("Polygon")
 )
 
 const (
@@ -59,10 +56,6 @@ const (
 	wmNCLButtonUp     = 0x00A2
 	wmNCLButtonDblClk = 0x00A3
 	wmNCMouseLeave    = 0x02A2
-	wmCut             = 0x0300
-	wmCopy            = 0x0301
-	wmPaste           = 0x0302
-	wmUndo            = 0x0304
 
 	htClient    = 1
 	htCaption   = 2
@@ -430,17 +423,21 @@ func (w *window) ncActivate(wParam, lParam uintptr) uintptr {
 }
 
 // drawCaptionButtons draws the caption buttons over the app, with the
-// title bar hidden, into dc, the back buffer of a client area width
-// pixels wide.
+// title bar hidden, at the right of a client area width pixels wide. It
+// draws in pixels, so the glyphs' lines fall on whole ones.
 func (p *painter) drawCaptionButtons(width int32) {
 	w := p.w
 	if !w.hidden() {
 		return
 	}
+	// In the topmost layer, above web views.
+	p.realize()
+	p.setTransform(scaling(1/w.scale, 1/w.scale))
 	c := &w.chrome
 	dark := w.env.Dark
 	buttonWidth, height := w.px(captionButtonWidth), w.px(w.captionHeight())
 	glyph := w.px(10)
+	stroke := float32(max(w.px(1), 1))
 	for i, code := range []uint32{htClose, htMaxButton, htMinButton} {
 		right := width - buttonWidth*int32(i)
 		r := rect{right - buttonWidth, 0, right, height}
@@ -462,9 +459,7 @@ func (p *painter) drawCaptionButtons(width int32) {
 		default:
 			bg = 0xffffff14
 		}
-		if bg != 0 {
-			p.blend(r, 0, rect{}, 0, bg)
-		}
+		p.fillRect(rectF{float32(r.Left), float32(r.Top), float32(r.Right), float32(r.Bottom)}, bg)
 		fg := core.Color(0x000000ff)
 		if dark {
 			fg = 0xffffffff
@@ -475,52 +470,41 @@ func (p *painter) drawCaptionButtons(width int32) {
 		case c.inactive && !hovered:
 			fg = fg&^0xff | 0x70
 		}
-		// GDI lines have no alpha: mix with what is under the glyph.
-		under, _, _ := getPixel.Call(p.dc, uintptr(r.Left+1), uintptr(r.Top+1))
-		pen, _, _ := createPen.Call(0, uintptr(max(w.px(1), 1)), mixOver(fg, uint32(under)))
-		oldPen, _, _ := selectObject.Call(p.dc, pen)
-		left, top := r.Left+(buttonWidth-glyph)/2, (height-glyph)/2
-		rgt, bottom := left+glyph-1, top+glyph-1
-		line := func(x0, y0, x1, y1 int32) {
-			moveToEx.Call(p.dc, uintptr(x0), uintptr(y0), 0)
-			lineTo.Call(p.dc, uintptr(x1), uintptr(y1))
+		left, top := float32(r.Left+(buttonWidth-glyph)/2), float32((height-glyph)/2)
+		size := float32(glyph)
+		// box strokes a square's outline inside the pixels from x, y.
+		box := func(x, y, side float32) {
+			line := rectF{x + stroke/2, y + stroke/2, x + side - stroke/2, y + side - stroke/2}
+			p.dc.callF(rtDrawRectangle, 0b100, uintptr(unsafe.Pointer(&line)), p.solid(fg).ptr(), f32(stroke), 0)
 		}
 		switch {
 		case code == htMinButton:
-			line(left, height/2, rgt+1, height/2)
+			mid := float32(height / 2)
+			p.fillRect(rectF{left, mid, left + size, mid + stroke}, fg)
 		case code == htMaxButton && w.zoomed():
 			// Restore: a square with another behind it.
-			o := max(w.px(2), 2)
-			line(left, top+o, rgt-o, top+o)
-			line(rgt-o, top+o, rgt-o, bottom)
-			line(rgt-o, bottom, left, bottom)
-			line(left, bottom, left, top+o)
-			line(left+o, top+o, left+o, top)
-			line(left+o, top, rgt, top)
-			line(rgt, top, rgt, bottom-o)
-			line(rgt, bottom-o, rgt-o, bottom-o)
+			o := float32(max(w.px(2), 2))
+			box(left, top+o, size-o)
+			p.fillRect(rectF{left + o, top, left + size, top + stroke}, fg)
+			p.fillRect(rectF{left + size - stroke, top, left + size, top + size - o}, fg)
+			p.fillRect(rectF{left + o, top, left + o + stroke, top + o}, fg)
+			p.fillRect(rectF{left + size - o, top + size - o - stroke, left + size, top + size - o}, fg)
 		case code == htMaxButton:
-			line(left, top, rgt, top)
-			line(rgt, top, rgt, bottom)
-			line(rgt, bottom, left, bottom)
-			line(left, bottom, left, top)
+			box(left, top, size)
 		default:
-			line(left, top, rgt+1, bottom+1)
-			line(rgt, top, left-1, bottom+1)
+			cross := p.pathGeometry(d2dFillAlternate, func(sink *comObject) {
+				for _, l := range [2][2]pointF{{{left, top}, {left + size, top + size}}, {{left + size, top}, {left, top + size}}} {
+					sink.callPoint(sinkBeginFigure, l[0].x, l[0].y, d2dFigureHollow)
+					sink.call(sinkAddLines, uintptr(unsafe.Pointer(&l[1])), 1)
+					sink.call(sinkEndFigure, d2dFigureOpen)
+				}
+			})
+			if cross != nil {
+				p.dc.callF(rtDrawGeometry, 0b100, cross.ptr(), p.solid(fg).ptr(), f32(stroke), 0)
+				cross.release()
+			}
 		}
-		selectObject.Call(p.dc, oldPen)
-		deleteObject.Call(pen)
 	}
-}
-
-// mixOver returns c, 0xRRGGBBAA, over under, a COLORREF, as a COLORREF.
-func mixOver(c core.Color, under uint32) uintptr {
-	a := uint32(c & 0xff)
-	ch := func(fg, bg uint32) uint32 { return (fg*a + bg*(255-a)) / 255 }
-	r := ch(uint32(c>>24&0xff), under&0xff)
-	g := ch(uint32(c>>16&0xff), under>>8&0xff)
-	b := ch(uint32(c>>8&0xff), under>>16&0xff)
-	return uintptr(r | g<<8 | b<<16)
 }
 
 // windowDragAt reports whether a press at p (client points) drags the
@@ -598,7 +582,7 @@ func shortcutOf(e *core.MenuEntry) string {
 }
 
 // menuKeys gathers the shortcuts of entries' items, but the editing
-// roles': the focused EDIT handles those keys itself.
+// roles': the focused field handles those keys itself.
 func (w *window) menuKeys(entries []core.MenuEntry) {
 	for i := range entries {
 		e := &entries[i]
@@ -737,22 +721,11 @@ func (w *window) chooseMenu(ref menuRef) {
 		w.toggleMaximize()
 	case core.MenuToggleFullScreen:
 		w.toggleFullScreen()
-	case core.MenuUndo, core.MenuCut, core.MenuCopy, core.MenuPaste, core.MenuSelectAll:
-		focused, _, _ := getFocus.Call()
-		if w.edits[focused] != nil {
-			switch ref.role {
-			case core.MenuUndo:
-				sendMessageW.Call(focused, wmUndo, 0, 0)
-			case core.MenuCut:
-				sendMessageW.Call(focused, wmCut, 0, 0)
-			case core.MenuCopy:
-				sendMessageW.Call(focused, wmCopy, 0, 0)
-			case core.MenuPaste:
-				sendMessageW.Call(focused, wmPaste, 0, 0)
-			default:
-				sendMessageW.Call(focused, emSetSel, 0, ^uintptr(0))
-			}
-		}
+	case core.MenuUndo, core.MenuRedo, core.MenuCut, core.MenuCopy, core.MenuPaste, core.MenuSelectAll:
+		// The focused field's own keys.
+		vk := map[core.MenuRole]uintptr{core.MenuUndo: 'Z', core.MenuRedo: 'Y', core.MenuCut: 'X',
+			core.MenuCopy: 'C', core.MenuPaste: 'V', core.MenuSelectAll: 'A'}[ref.role]
+		w.editKey(vk, true, false, false)
 	}
 	if ref.id != 0 {
 		w.engine.Dispatch(core.Event{Kind: core.EventMenu, Count: ref.id})

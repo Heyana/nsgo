@@ -14,7 +14,7 @@ The graph follows NSH's (Solid 1.9's scheduling): signals, memos, render effects
 
 ## Elements and components
 
-Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canvas`, `WebView`, `Overlay`, `Modal`, `Stack`, `Screen`) are structs with exported fields: zero values are defaults, as in `http.Server`.
+Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canvas`, `WebView`, `Video`, `Overlay`, `Modal`, `Stack`, `Screen`) are structs with exported fields: zero values are defaults, as in `http.Server`. [Web views and videos](native-views.md) covers the hosted platform controls.
 
 - A field that can change takes a function (`StyleFunc`, `ContentFunc`, `Value`, `Disabled`), bound by one render effect per part.
 - Styles compose with `Style.Merge`, and text fields inherit down the tree as in CSS.
@@ -67,26 +67,13 @@ The family `FontMonospace` is each platform's fixed-pitch font: CoreText's user 
 
 `Text.Spans` style byte ranges over the text's style; offsets are UTF-8 bytes, Go's own, and platforms convert them. A press on a span with a handler comes back with the byte offset under the point.
 
-- A span's `Background` and `CornerRadius` become its `TextBackground`: a box per line from the font's ascent to its descent, behind the selection and the glyphs. Hanging spaces at a line's end are not painted.
-- A span's `Attachment` is a view inside the text, as NSH's inline attachments are. Its view is a layout root at its content size, laid out before the text is prepared.
-- The text holds an `AttachmentRune` in its place, and `AttributedText.Attachments` gives the engine its size and `VerticalAlign`. A change inside the attachment prepares the text again.
-- Every engine places an attachment by NSH's rule: `TextAttachment.Ascent` and `Extent` against the placeholder font's `FontExtent`, so a line grows where an attachment reaches past its font.
-- After layout the core asks the `AttachmentLayout` where each went, then sends it as a native child of the text view at that frame. Those cut off by the line limit are hidden.
+- A span's `Background` and `CornerRadius` become its `TextBackground`: drawing only, a box per line from the font's ascent to its descent, rounded on every line, behind the selection and the glyphs. Hanging spaces at a line's end are not painted.
+- A span's `Attachment` is a view inside the text, as NSH's inline attachments are. Its view is a layout root at its content size, laid out before the text is prepared, so a change inside it prepares the text again.
+- The text holds an `AttachmentRune` in an attachment's place, and `AttributedText.Attachments` gives the engine its size and `VerticalAlign`.
+- Every engine places an attachment by NSH's rule, `TextAttachment.Ascent` and `Extent` against the placeholder font's `FontExtent`, so a line grows where an attachment reaches past its font.
+- After layout the core asks the `AttachmentLayout` where each attachment went and sends its view as a native child of the text view at that frame. Those cut off by the line limit are hidden.
 
 A `Canvas` records its drawing on the engine into an immutable `Drawing`, again when a signal it read or its size changes, and the platform plays the operations on the main thread.
-
-## Web views
-
-A `WebView` follows NSH's: the platform's web view fills a `KindWeb` view, which keeps the decoration, frame and accessibility, and takes its own pointer, wheel and keyboard input.
-
-- `ItemWeb` carries the whole `WebConfig`; the platform loads the source again when it or the scripts change. `ItemWebCommand` carries `Ref`'s reload, history, stop, `PostMessage` and `InjectJavaScript`.
-- Every page starts with `WebBridge`, defining `window.nsgo.postMessage(data)`, which reaches `OnMessage` as a string. `PostMessage` dispatches a `MessageEvent` on the page's window.
-- Load start, load and navigation events carry `WebNavigation`: URL, title, loading and history.
-- Apple platforms share one `WKWebView` host in `platform/internal/apple`, made on the first `ItemWeb` and again when `NoJavaScript` changes, since WebKit fixes its preferences then.
-- Windows hosts WebView2 in a child window placed as its inputs are. It finds the installed Evergreen runtime in the registry and calls its DLL as WebView2's loader would, so nothing ships with the app; the page's background is the view's, opaque.
-- Linux places WebKitGTK 6.0 over the surface, clipped to the visible part of its frame.
-- Android's Java runtime hosts `android.webkit.WebView` and runs scripts meant for the document's start when the page starts: android.webkit has no earlier hook.
-- The web uses an `<iframe>` as NSH does. HTML loads as `srcdoc` in a sandbox with an origin of its own and gets the bridge over a `MessageChannel`. A URL loads as it is: the browser hides what the page does, so it gets `PostMessage` and load events, but not scripts or history.
 
 ## Text selection
 

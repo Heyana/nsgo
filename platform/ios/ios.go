@@ -55,6 +55,7 @@ type view struct {
 	presented bool                // whether a modal was inserted yet
 	drawing   *core.Drawing       // a canvas's
 	web       *apple.Web          // a web view's
+	video     *apple.Video        // a video's
 
 	activation           core.PanActivation
 	pan, pinch, rotation objc.ID // the recognizers of the gestures it follows
@@ -535,11 +536,15 @@ func (s *surface) apply(b *core.MountBatch) {
 				v.image.Layout(apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)})
 				s.images = append(s.images, v)
 			}
+			if v.video != nil {
+				v.video.Layout()
+			}
 		case core.ItemViewStyle:
 			apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, false)
 			v.native.Send(selSetHidden, it.ViewStyle.Hidden)
-			if v.kind == core.KindScroll {
-				// A scroll view shows only what it scrolls to.
+			if v.kind == core.KindScroll || v.kind == core.KindVideo {
+				// A scroll view shows only what it scrolls to, and a video
+				// only its frame.
 				v.native.Send(sel("setClipsToBounds:"), true)
 			}
 			if v.image != nil {
@@ -554,6 +559,10 @@ func (s *surface) apply(b *core.MountBatch) {
 			v.web.Configure(it.Web)
 		case core.ItemWebCommand:
 			v.web.Command(it.WebCommand, it.Value)
+		case core.ItemVideo:
+			v.video.Configure(it.Video)
+		case core.ItemVideoSeek:
+			v.video.Seek(it.Time)
 		case core.ItemCanvas:
 			v.drawing = it.Drawing
 			v.native.Send(selSetNeedsDisplay)
@@ -668,6 +677,11 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 	case core.KindWeb:
 		v.web = apple.NewWeb(v.native)
 		v.web.Dispatch = v.report
+	case core.KindVideo:
+		v.video = apple.NewVideo(v.native)
+		v.video.Dispatch = v.report
+		v.video.Parent = controller
+		v.native.Send(sel("setClipsToBounds:"), true)
 	}
 	views[v.native] = v
 	return v
@@ -683,6 +697,9 @@ func (s *surface) delete(v *view) {
 	}
 	if v.web != nil {
 		v.web.Close()
+	}
+	if v.video != nil {
+		v.video.Close()
 	}
 	delete(views, v.native)
 	v.native.Send(selRelease)

@@ -43,10 +43,11 @@ func (w *window) configure(v *view, in *core.InputConfig) {
 		return
 	}
 	if v.entry == 0 {
+		// The entry is hosted in the input's widget, after its children,
+		// at the input's content.
 		v.entry = gtkEntryNew()
-		gtkWidgetSetHexpand(v.entry, 1)
-		gtkWidgetSetVexpand(v.entry, 1)
-		gtkFixedPut(w.fixed, v.entry, 0, 0)
+		gObjectRefSink(v.entry)
+		gtkWidgetSetParent(v.entry, v.widget)
 		w.entries[v.entry] = v
 		gSignalConnect(v.entry, "changed", cbEntryChanged, w.handle)
 		gSignalConnect(v.entry, "activate", cbEntryActivate, w.handle)
@@ -54,6 +55,7 @@ func (w *window) configure(v *view, in *core.InputConfig) {
 		v.provider = gtkCssProviderNew()
 		gtkStyleContextAddProvider(gtkWidgetGetStyleContext(v.entry), v.provider, 800)
 	}
+	gtkWidgetQueueAllocate(v.widget)
 	gtkEntrySetPlaceholderText(v.entry, cstr(in.Placeholder))
 	gtkEntrySetVisibility(v.entry, boolInt(!in.Masked))
 	gtkEditableSetEditable(v.entry, boolInt(!in.Readonly && !in.Disabled))
@@ -86,80 +88,6 @@ func (w *window) setValue(v *view, value string, count uint32) {
 	v.setting = true
 	gtkEditableSetText(v.entry, cstr(value))
 	v.setting = false
-}
-
-// placeWidgets places the native widgets over the surface.
-func (w *window) placeWidgets() {
-	w.placeEntries()
-	w.placeWebs()
-}
-
-// placeEntries moves each entry to its input's content and hides the ones
-// of inputs that are hidden, detached or clipped away.
-func (w *window) placeEntries() {
-	for entry, v := range w.entries {
-		if v.deleted || v.style.Hidden || v.style.Opacity <= 0 {
-			if v.entryShown {
-				gtkWidgetSetVisible(entry, 0)
-				v.entryShown = false
-			}
-			continue
-		}
-		at := w.frameAt(v)
-		b := core.Bounds{
-			Origin: core.Point{X: at.X + v.input.Content.Origin.X, Y: at.Y + v.input.Content.Origin.Y},
-			Size:   v.input.Content.Size,
-		}
-		clip := w.surfaceClip(v)
-		visible := intersectBounds(b, clip)
-		if visible.Size.Width <= 0 || visible.Size.Height <= 0 {
-			if v.entryShown {
-				gtkWidgetSetVisible(entry, 0)
-				v.entryShown = false
-			}
-			continue
-		}
-		// A partly clipped entry is hidden rather than drawn outside
-		// its scroll view; GTK has no per-widget clip rectangle.
-		if visible != b {
-			if v.entryShown {
-				gtkWidgetSetVisible(entry, 0)
-				v.entryShown = false
-			}
-			continue
-		}
-		gtkFixedMove(w.fixed, entry, float64(b.Origin.X), float64(b.Origin.Y))
-		gtkWidgetSetSizeRequest(entry, int32(b.Size.Width), int32(b.Size.Height))
-		if !v.entryShown {
-			gtkWidgetSetVisible(entry, 1)
-			v.entryShown = true
-		}
-	}
-}
-
-// surfaceClip returns the part of the surface v's clipping ancestors
-// leave for v.
-func (w *window) surfaceClip(v *view) core.Bounds {
-	clip := core.Bounds{Size: core.Size{Width: w.lastWidth, Height: w.lastHeight}}
-	for p := v.parent; p != nil; p = p.parent {
-		if p.style.Clip || p.kind == core.KindScroll {
-			at := w.frameAt(p)
-			r := core.Bounds{Origin: at, Size: p.frame.Size}
-			clip = intersectBounds(clip, r)
-		}
-	}
-	return clip
-}
-
-// intersectBounds returns the overlap of a and b.
-func intersectBounds(a, b core.Bounds) core.Bounds {
-	x0, y0 := max(a.Origin.X, b.Origin.X), max(a.Origin.Y, b.Origin.Y)
-	x1 := min(a.Origin.X+a.Size.Width, b.Origin.X+b.Size.Width)
-	y1 := min(a.Origin.Y+a.Size.Height, b.Origin.Y+b.Size.Height)
-	if x1 <= x0 || y1 <= y0 {
-		return core.Bounds{}
-	}
-	return core.Bounds{Origin: core.Point{X: x0, Y: y0}, Size: core.Size{Width: x1 - x0, Height: y1 - y0}}
 }
 
 // focusedEntry returns the input with keyboard focus, or nil.

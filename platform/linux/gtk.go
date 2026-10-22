@@ -148,20 +148,10 @@ var (
 	gtkWidgetSetSensitive                  func(uintptr, int32)
 	gtkWidgetActivate                      func(uintptr) int32
 	gtkNativeGetSurface                    func(uintptr) uintptr
-	gtkDrawingAreaNew                      func() uintptr
-	gtkDrawingAreaSetDrawFunc              func(uintptr, uintptr, uintptr, uintptr)
-	gtkFixedNew                            func() uintptr
-	gtkFixedPut                            func(uintptr, uintptr, float64, float64)
-	gtkFixedMove                           func(uintptr, uintptr, float64, float64)
-	gtkFixedRemove                         func(uintptr, uintptr)
-	gtkOverlayNew                          func() uintptr
 	gtkBoxNew                              func(int32, int32) uintptr
 	gtkBoxAppend                           func(uintptr, uintptr)
 	gtkBoxPrepend                          func(uintptr, uintptr)
 	gtkBoxRemove                           func(uintptr, uintptr)
-	gtkOverlaySetChild                     func(uintptr, uintptr)
-	gtkOverlayAddOverlay                   func(uintptr, uintptr)
-	gtkOverlayRemoveOverlay                func(uintptr, uintptr)
 	gtkEntryNew                            func() uintptr
 	gtkEditableSetText                     func(uintptr, *byte)
 	gtkEditableGetText                     func(uintptr) uintptr
@@ -450,20 +440,10 @@ func bind() {
 	purego.RegisterLibFunc(&gtkWidgetSetSensitive, gtkLib, "gtk_widget_set_sensitive")
 	purego.RegisterLibFunc(&gtkWidgetActivate, gtkLib, "gtk_widget_activate")
 	purego.RegisterLibFunc(&gtkNativeGetSurface, gtkLib, "gtk_native_get_surface")
-	purego.RegisterLibFunc(&gtkDrawingAreaNew, gtkLib, "gtk_drawing_area_new")
-	purego.RegisterLibFunc(&gtkDrawingAreaSetDrawFunc, gtkLib, "gtk_drawing_area_set_draw_func")
-	purego.RegisterLibFunc(&gtkFixedNew, gtkLib, "gtk_fixed_new")
-	purego.RegisterLibFunc(&gtkFixedPut, gtkLib, "gtk_fixed_put")
-	purego.RegisterLibFunc(&gtkFixedMove, gtkLib, "gtk_fixed_move")
-	purego.RegisterLibFunc(&gtkFixedRemove, gtkLib, "gtk_fixed_remove")
-	purego.RegisterLibFunc(&gtkOverlayNew, gtkLib, "gtk_overlay_new")
 	purego.RegisterLibFunc(&gtkBoxNew, gtkLib, "gtk_box_new")
 	purego.RegisterLibFunc(&gtkBoxAppend, gtkLib, "gtk_box_append")
 	purego.RegisterLibFunc(&gtkBoxPrepend, gtkLib, "gtk_box_prepend")
 	purego.RegisterLibFunc(&gtkBoxRemove, gtkLib, "gtk_box_remove")
-	purego.RegisterLibFunc(&gtkOverlaySetChild, gtkLib, "gtk_overlay_set_child")
-	purego.RegisterLibFunc(&gtkOverlayAddOverlay, gtkLib, "gtk_overlay_add_overlay")
-	purego.RegisterLibFunc(&gtkOverlayRemoveOverlay, gtkLib, "gtk_overlay_remove_overlay")
 	purego.RegisterLibFunc(&gtkEntryNew, gtkLib, "gtk_entry_new")
 	purego.RegisterLibFunc(&gtkEditableSetText, gtkLib, "gtk_editable_set_text")
 	purego.RegisterLibFunc(&gtkEditableGetText, gtkLib, "gtk_editable_get_text")
@@ -621,4 +601,6 @@ func bind() {
 	purego.RegisterLibFunc(&cairoSetOperator, cairoLib, "cairo_set_operator")
 	purego.RegisterLibFunc(&cairoSetSourceSurface, cairoLib, "cairo_set_source_surface")
 	purego.RegisterLibFunc(&cairoSurfaceWriteToPNG, cairoLib, "cairo_surface_write_to_png")
+	bindNative()
+	bindWidget()
 }

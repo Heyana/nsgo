@@ -28,6 +28,7 @@ type webFrame struct {
 	portFn js.Func
 	url    string
 	title  string
+	warned bool // that commands do not reach the page
 }
 
 // webBridge is the script an HTML source starts with.
@@ -62,9 +63,18 @@ func (s *surface) createWeb(v *view) {
 	v.listeners.on(w.frame, "load", func(js.Value) { s.webLoaded(v) })
 }
 
+// sameFrame reports whether a and b load the same frame, comparing what
+// NSH's web backend does: the user agent and swipes cannot apply to a
+// frame.
+func sameFrame(a, b *core.WebConfig) bool {
+	return a.Source == b.Source && a.InjectedJavaScript == b.InjectedJavaScript &&
+		a.InjectedJavaScriptBeforeContent == b.InjectedJavaScriptBeforeContent &&
+		a.NoScroll == b.NoScroll && a.NoJavaScript == b.NoJavaScript
+}
+
 func (s *surface) setWeb(v *view, c *core.WebConfig) {
 	w := v.web
-	if w.loaded && *c == w.config {
+	if w.loaded && sameFrame(c, &w.config) {
 		return
 	}
 	w.loaded, w.config = true, *c
@@ -143,7 +153,17 @@ func (s *surface) setWeb(v *view, c *core.WebConfig) {
 		}
 	}
 	if src.HTML != "" || src.Src != "" {
-		s.webNavigation(v, core.EventLoadStart, true)
+		// After the batch, which may carry the view's events after its
+		// configuration.
+		var start js.Func
+		start = js.FuncOf(func(js.Value, []js.Value) any {
+			start.Release()
+			if s.view(v.id) == v {
+				s.webNavigation(v, core.EventLoadStart, true)
+			}
+			return nil
+		})
+		js.Global().Call("queueMicrotask", start)
 	}
 }
 
@@ -199,11 +219,13 @@ func (w *webFrame) closePort() {
 
 func (s *surface) webCommand(v *view, c core.WebCommand, value string) {
 	w := v.web
-	viaPort := func(msg map[string]any) {
+	viaPort := func(name string, msg map[string]any) {
 		if w.port.Truthy() {
 			w.port.Call("postMessage", msg)
-		} else {
-			js.Global().Get("console").Call("warn", "nsgo: a web view reaches only the pages of its HTML sources")
+		} else if !w.warned {
+			w.warned = true
+			js.Global().Get("console").Call("warn", "nsgo: web view: "+name+
+				" only reaches HTML sources (a page of another site is the browser's own)")
 		}
 	}
 	switch c {
@@ -220,12 +242,11 @@ func (s *surface) webCommand(v *view, c core.WebCommand, value string) {
 			win.Call("postMessage", value, "*")
 		}
 	case core.WebInjectJavaScript:
-		viaPort(map[string]any{"eval": value})
-	case core.WebStopLoading:
-		viaPort(map[string]any{"eval": "window.stop()"})
+		viaPort("InjectJavaScript", map[string]any{"eval": value})
 	case core.WebGoBack:
-		viaPort(map[string]any{"go": -1})
+		viaPort("GoBack", map[string]any{"go": -1})
 	case core.WebGoForward:
-		viaPort(map[string]any{"go": 1})
+		viaPort("GoForward", map[string]any{"go": 1})
 	}
+	// StopLoading does nothing, as in NSH: the frame is another origin.
 }
