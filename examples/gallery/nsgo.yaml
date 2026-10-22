@@ -11,5 +11,5 @@ dev:
 
 build:
   output: dist
-  open: false
-  targets: [macos_arm64, linux_arm64, linux_x64, ios_simulator, web]
+  open: true
+  targets: [all]
