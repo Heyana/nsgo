@@ -1,6 +1,7 @@
 package dev.oneo.nsgo;
 
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.text.Layout;
 import android.text.SpannableString;
@@ -10,9 +11,11 @@ import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.LineHeightSpan;
 import android.text.style.MetricAffectingSpan;
+import android.text.style.ReplacementSpan;
 import android.view.Gravity;
 import java.io.DataInputStream;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -94,15 +97,33 @@ final class Text {
         }
     }
 
-    /** A style over the bytes from start to end of a text, as android.go writes it. */
+    /** A style over the bytes from start to end of a text, and its background, as android.go writes it. */
     static final class Span {
         final int start, end;
         final Style style;
+        /** The background's ARGB color, 0 for none, and its corner radius. */
+        final int background;
+        final float radius;
 
         Span(DataInputStream in, float density) throws IOException {
             start = in.readInt();
             end = in.readInt();
             style = new Style(in, density);
+            background = argb(in.readInt());
+            radius = in.readFloat() * density;
+        }
+    }
+
+    /** An attachment: the byte offset of its placeholder, its size and alignment, as android.go writes it. */
+    static final class Attachment {
+        final int offset;
+        final int width, height, align;
+
+        Attachment(DataInputStream in, float density) throws IOException {
+            offset = in.readInt();
+            width = Math.round(in.readFloat() * density);
+            height = Math.round(in.readFloat() * density);
+            align = in.readUnsignedByte();
         }
     }
 
@@ -112,18 +133,36 @@ final class Text {
         private final TextPaint paint;
         private final Layout.Alignment align;
         private final int maxLines;
+        private final boolean attached;
 
-        Prepared(String text, Style style, int maxLines, List<Span> spans) {
-            if (style.lineHeight > 0 || !spans.isEmpty()) {
+        Prepared(String text, Style style, int maxLines, List<Span> spans, List<Attachment> attachments) {
+            if (style.lineHeight > 0 || !spans.isEmpty() || !attachments.isEmpty()) {
                 SpannableString spanned = new SpannableString(text);
                 if (style.lineHeight > 0) {
                     spanned.setSpan(new LineHeight(Math.round(style.lineHeight)), 0, text.length(),
                             Spanned.SPAN_INCLUSIVE_INCLUSIVE);
                 }
                 Utf8 offsets = new Utf8(text);
+                Paint.FontMetrics font = new Paint.FontMetrics();
+                TextPaint measure = new TextPaint();
                 for (Span span : spans) {
                     int start = offsets.index(span.start), end = offsets.index(span.end);
-                    if (start < end) spanned.setSpan(new Run(span.style), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    if (start >= end) continue;
+                    spanned.setSpan(new Run(span.style), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    if ((span.background >>> 24) != 0) {
+                        measure.setTypeface(span.style.typeface());
+                        measure.setTextSize(span.style.size);
+                        measure.getFontMetrics(font);
+                        spanned.setSpan(new Background(span.background, span.radius, -font.ascent, font.descent),
+                                start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    }
+                }
+                // Attachments come in ascending offsets.
+                for (Attachment a : attachments) {
+                    int at = offsets.index(a.offset);
+                    if (at >= text.length()) continue;
+                    spanned.setSpan(new Placeholder(a.width, a.height, a.align), at, at + 1,
+                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
                 this.text = spanned;
             } else {
@@ -132,6 +171,12 @@ final class Text {
             this.paint = style.paint();
             this.align = style.alignment();
             this.maxLines = maxLines;
+            this.attached = !attachments.isEmpty();
+        }
+
+        /** Whether the text has attachments, so its layouts answer where they went. */
+        boolean hasAttachments() {
+            return attached;
         }
 
         /** The size of the text wrapped at maxWidth, or unwrapped when it is NaN. */
@@ -188,6 +233,111 @@ final class Text {
             updateMeasureState(paint);
             paint.setColor(style.color);
             paint.setFlags(style.paintFlags(paint.getFlags()));
+        }
+    }
+
+    /**
+     * Where layout put the placeholders of its attachments, in text order:
+     * the x and y of each one's top left in pixels, NaN for ones cut off by
+     * the line limit or the ellipsis.
+     */
+    static float[] attachments(Layout layout) {
+        CharSequence text = layout.getText();
+        if (!(text instanceof Spanned)) return new float[0];
+        Spanned spanned = (Spanned) text;
+        Placeholder[] spans = spanned.getSpans(0, text.length(), Placeholder.class);
+        Arrays.sort(spans, (a, b) -> spanned.getSpanStart(a) - spanned.getSpanStart(b));
+        float[] out = new float[spans.length * 2];
+        int lines = layout.getLineCount();
+        for (int i = 0; i < spans.length; i++) {
+            Placeholder p = spans[i];
+            int at = spanned.getSpanStart(p);
+            int line = layout.getLineForOffset(at);
+            boolean shown = lines > 0 && at < layout.getLineEnd(lines - 1);
+            if (shown && layout.getEllipsisCount(line) > 0) {
+                shown = at < layout.getLineStart(line) + layout.getEllipsisStart(line);
+            }
+            if (!shown) {
+                out[i * 2] = Float.NaN;
+                out[i * 2 + 1] = Float.NaN;
+                continue;
+            }
+            float x = layout.getPrimaryHorizontal(at);
+            // Right to left, the placeholder reaches left of its offset.
+            if (layout.isRtlCharAt(at)) x -= p.width;
+            out[i * 2] = x;
+            out[i * 2 + 1] = layout.getLineBaseline(line) - p.ascent;
+        }
+        return out;
+    }
+
+    /**
+     * An attachment's placeholder: as wide as the attachment, its top
+     * ascent above the baseline and its line reserving its extent, as
+     * core.TextAttachment.Ascent and Extent say against the font around it.
+     * Draws nothing: the attachment's view is a child of the text's.
+     */
+    static final class Placeholder extends ReplacementSpan {
+        final int width, height, align;
+        /** How far its top is above the baseline in pixels, below it when negative; set by getSize. */
+        int ascent;
+
+        Placeholder(int width, int height, int align) {
+            this.width = width;
+            this.height = height;
+            this.align = align;
+            this.ascent = height;
+        }
+
+        @Override
+        public int getSize(Paint paint, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
+            Paint.FontMetrics font = paint.getFontMetrics();
+            switch (align) {
+                case Protocol.VALIGN_TEXT_TOP:
+                    ascent = Math.round(-font.ascent);
+                    break;
+                case Protocol.VALIGN_TEXT_BOTTOM:
+                    ascent = Math.round(height - font.descent);
+                    break;
+                case Protocol.VALIGN_MIDDLE: {
+                    Rect x = new Rect();
+                    paint.getTextBounds("x", 0, 1, x);
+                    ascent = Math.round((height - x.top) / 2f); // x.top is the x height, negative
+                    break;
+                }
+                default:
+                    ascent = height;
+            }
+            if (fm != null) {
+                // The line grows where the attachment reaches past the font.
+                Paint.FontMetricsInt own = paint.getFontMetricsInt();
+                fm.ascent = Math.min(own.ascent, -Math.max(0, ascent));
+                fm.top = Math.min(own.top, fm.ascent);
+                fm.descent = Math.max(own.descent, height - ascent);
+                fm.bottom = Math.max(own.bottom, fm.descent);
+                fm.leading = own.leading;
+            }
+            return width;
+        }
+
+        @Override
+        public void draw(android.graphics.Canvas canvas, CharSequence text, int start, int end, float x, int top,
+                int y, int bottom, Paint paint) {}
+    }
+
+    /**
+     * A span's background, which TextNode draws behind each line's part of
+     * its characters, from its font's ascent to its descent (pixels).
+     */
+    static final class Background {
+        final int color;
+        final float radius, ascent, descent;
+
+        Background(int color, float radius, float ascent, float descent) {
+            this.color = color;
+            this.radius = radius;
+            this.ascent = ascent;
+            this.descent = descent;
         }
     }
 

@@ -67,6 +67,10 @@ The family `FontMonospace` is each platform's fixed-pitch font: CoreText's user 
 
 `Text.Spans` style byte ranges over the text's style; offsets are UTF-8 bytes, Go's own, and platforms convert them. A press on a span with a handler comes back with the byte offset under the point.
 
+- A span's `Background` and `CornerRadius` become its `TextBackground`: drawing only, a box per line from the font's ascent to its descent, rounded on every line, behind the selection and the glyphs. Hanging spaces at a line's end are not painted.
+- A span's `Attachment` is a view inside the text, as NSH's inline attachments are. Its view is a layout root of its own at its content size, resolved and laid out before the text is prepared, so a change inside it prepares the text again. The text holds an `AttachmentRune` in its place, and `AttributedText.Attachments` gives the engine its size and `VerticalAlign`.
+- Every engine places an attachment by NSH's rule, `TextAttachment.Ascent` and `Extent` against the placeholder font's `FontExtent`, so a line grows where an attachment reaches past its font. After layout the core asks the `AttachmentLayout` where each went and sends the attachment's view as a native child of the text view at that frame. Those cut off by the line limit are hidden.
+
 A `Canvas` records its drawing on the engine into an immutable `Drawing`, again when a signal it read or its size changes, and the platform plays the operations on the main thread.
 
 ## Text selection

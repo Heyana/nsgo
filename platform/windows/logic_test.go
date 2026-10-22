@@ -342,3 +342,100 @@ func TestPixelConversionsUseTheWindowScale(t *testing.T) {
 		t.Fatalf("point = %+v", got)
 	}
 }
+
+func testWindow() *window {
+	return &window{scale: 1, fonts: fontCache{scale: 1, fonts: map[fontKey]*font{}}}
+}
+
+func TestSpanAttachmentsTakeTheirPlaceAndGrowTheLine(t *testing.T) {
+	w := testWindow()
+	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 16, Weight: 400}, Color: core.RGB(0)}
+	text := "ab " + string(core.AttachmentRune) + " cd"
+	at := &core.AttributedText{Text: text, Style: style,
+		Spans:       []core.TextSpan{{Start: 0, End: 3, Style: style}, {Start: 3, End: 6, Style: style}, {Start: 6, End: len(text), Style: style}},
+		Attachments: []core.TextAttachment{{Offset: 3, Size: core.Size{Width: 40, Height: 60}}}}
+	plain := &core.AttributedText{Text: "ab x cd", Style: style}
+	pt, pp := w.Prepare(at), w.Prepare(plain)
+	defer pt.Release()
+	defer pp.Release()
+	size, plainSize := pt.Measure(core.Auto), pp.Measure(core.Auto)
+	if size.Height < 60 || size.Height <= plainSize.Height {
+		t.Fatalf("height with a 60pt attachment = %v, plain %v", size.Height, plainSize.Height)
+	}
+	l := pt.Layout(size)
+	defer l.Release()
+	al, ok := l.(core.AttachmentLayout)
+	if !ok {
+		t.Fatal("the layout reports no attachments")
+	}
+	box, shown := al.Attachment(0)
+	if !shown || box.Size != (core.Size{Width: 40, Height: 60}) || box.Origin.X <= 0 || box.Origin.Y != 0 {
+		t.Fatalf("attachment = %+v, %v; want 40×60 after the first word, at the top of its line", box, shown)
+	}
+	// It stands on the baseline: its bottom is the font's ascent above the
+	// bottom of the line, less the descent.
+	f := w.fonts.acquire(fontKey{font: style.Font})
+	defer w.fonts.release(f)
+	if bottom, want := box.Origin.Y+box.Size.Height, size.Height-core.Points(f.height-f.ascent); bottom != want {
+		t.Errorf("attachment bottom = %v, want the baseline %v", bottom, want)
+	}
+	if _, shown := al.Attachment(1); shown {
+		t.Error("a missing attachment is shown")
+	}
+}
+
+func TestSpanAttachmentsPastTheLineLimitAreCut(t *testing.T) {
+	w := testWindow()
+	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 16, Weight: 400}, Color: core.RGB(0)}
+	text := "first line words\n" + string(core.AttachmentRune)
+	at := &core.AttributedText{Text: text, Style: style, MaxLines: 1,
+		Spans:       []core.TextSpan{{Start: 0, End: len(text), Style: style}},
+		Attachments: []core.TextAttachment{{Offset: len(text) - 3, Size: core.Size{Width: 10, Height: 10}}}}
+	p := w.Prepare(at)
+	defer p.Release()
+	l := p.Layout(p.Measure(core.Auto))
+	defer l.Release()
+	if _, shown := l.(core.AttachmentLayout).Attachment(0); shown {
+		t.Error("an attachment on a line past the limit is shown")
+	}
+}
+
+func TestSpanBackgroundsBoxEachLineWithoutHangingSpaces(t *testing.T) {
+	w := testWindow()
+	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 16, Weight: 400}, Color: core.RGB(0)}
+	text := "aa bbbb cccc dd"
+	bg := core.TextBackground{Color: core.RGB(0xff0000), Radius: 100}
+	at := &core.AttributedText{Text: text, Style: style,
+		Spans: []core.TextSpan{{Start: 0, End: 3, Style: style}, {Start: 3, End: 13, Style: style, Background: bg},
+			{Start: 13, End: len(text), Style: style}}}
+	p := w.Prepare(at)
+	defer p.Release()
+	one := p.Measure(core.Auto)
+	l := p.Layout(one).(*spanLayout)
+	if len(l.backgrounds) != 1 {
+		t.Fatalf("%d background boxes on one line, want 1", len(l.backgrounds))
+	}
+	b := l.backgrounds[0]
+	f := w.fonts.acquire(fontKey{font: style.Font})
+	defer w.fonts.release(f)
+	if b.r.Bottom-b.r.Top != f.height || b.r.Left <= 0 || b.radius != float64(f.height)/2 {
+		t.Errorf("box = %+v, want the font's height after the first word, radius half of it", b)
+	}
+	l.Release()
+	// Wrapped after "bbbb ", the first line's box ends at its ink.
+	narrow := p.Measure(core.Points(float64(b.r.Left) + float64(one.Width-core.Points(b.r.Left))/2))
+	l = p.Layout(narrow).(*spanLayout)
+	defer l.Release()
+	if len(l.lines) < 2 || len(l.backgrounds) != 2 {
+		t.Fatalf("%d lines, %d boxes; want a box on each of 2 lines", len(l.lines), len(l.backgrounds))
+	}
+	var ink int32
+	for _, r := range l.runs[l.lines[0].first:l.lines[0].last] {
+		if r.text[0] != ' ' { // spaces are not ink
+			ink = max(ink, r.x+r.ends[len(r.ends)-1])
+		}
+	}
+	if b := l.backgrounds[0]; b.r.Right > ink {
+		t.Errorf("the first line's box ends at %d, past its last word's end %d", b.r.Right, ink)
+	}
+}

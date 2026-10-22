@@ -45,12 +45,18 @@ type Extension struct {
 }
 
 // Parse reads Markdown into a document: CommonMark with GitHub's tables,
-// task lists, strikethrough, autolinks, footnotes and alerts, and the
-// syntax of extensions. HTML inside reads as ParseHTML reads it; the
-// Markdown between an element's tags, on lines of their own or in a
+// task lists, strikethrough, autolinks, footnotes and alerts, formulas,
+// and the syntax of extensions. HTML inside reads as ParseHTML reads it;
+// the Markdown between an element's tags, on lines of their own or in a
 // paragraph (<b>x *y*</b>), stays Markdown.
+//
+// Formulas are TeX between dollars: $x$ and $$x$$ in text, a block
+// between $$ fences on lines of their own, or fenced code of language
+// math, as GitHub shows it. Single dollars around a space or before a
+// digit are prose ("costs $5 and $10"). TeX's own \(x\) and \[x\] are
+// formulas too.
 func Parse(markdown string, extensions ...Extension) Document {
-	src := []byte(markdown)
+	src := []byte(rewriteTeX(markdown))
 	root := markdownFor(extensions).Parser().Parse(text.NewReader(src))
 	r := reader{src: src, ext: extensions, labels: map[int]string{}, slugs: slugs{}}
 	var doc Document
@@ -99,12 +105,17 @@ func markdownFor(extensions []Extension) goldmark.Markdown {
 }
 
 func newMarkdown(containers map[string]string) goldmark.Markdown {
-	opts := []goldmark.Option{goldmark.WithExtensions(extension.GFM, extension.Footnote)}
+	blocks := []util.PrioritizedValue{util.Prioritized(&mathBlockParser{}, 650)}
 	if len(containers) > 0 {
-		opts = append(opts, goldmark.WithParserOptions(parser.WithBlockParsers(
-			util.Prioritized(&containerParser{names: containers}, 50))))
+		blocks = append(blocks, util.Prioritized(&containerParser{names: containers}, 50))
 	}
-	return goldmark.New(opts...)
+	return goldmark.New(
+		goldmark.WithExtensions(extension.GFM, extension.Footnote),
+		goldmark.WithParserOptions(
+			parser.WithBlockParsers(blocks...),
+			parser.WithInlineParsers(util.Prioritized(&mathInlineParser{}, 150)),
+		),
+	)
 }
 
 // reader turns goldmark's syntax tree into a Document.
@@ -227,6 +238,9 @@ func (r *reader) block(n ast.Node) Block {
 				return c
 			}
 		}
+		if strings.EqualFold(lang, "math") {
+			return Math{TeX: code}
+		}
 		return CodeBlock{Language: lang, Meta: meta, Code: code}
 	case *ast.Blockquote:
 		return r.quote(n)
@@ -263,6 +277,8 @@ func (r *reader) block(n ast.Node) Block {
 			}
 		}
 		return t
+	case *mathBlock:
+		return Math{TeX: r.lines(n)}
 	case *container:
 		return Custom{Name: n.name, Attributes: n.attrs, Children: r.blocks(n)}
 	}
@@ -506,7 +522,7 @@ func join(in []Inline) []Inline {
 func (r *reader) inline(out []Inline, n ast.Node) []Inline {
 	switch n := n.(type) {
 	case *ast.Text:
-		out = append(out, Text{string(n.Segment.Value(r.src))})
+		out = append(out, Text{r.value(n)})
 		switch {
 		case n.HardLineBreak():
 			out = append(out, Break{})
@@ -517,6 +533,8 @@ func (r *reader) inline(out []Inline, n ast.Node) []Inline {
 		out = append(out, Text{string(n.Value)})
 	case *ast.CodeSpan:
 		out = append(out, Code{r.text(n)})
+	case *mathInline:
+		out = append(out, Math{n.tex})
 	case *ast.Emphasis:
 		if n.Level >= 2 {
 			out = append(out, Strong{r.children(n)})
@@ -559,17 +577,29 @@ func (r *reader) text(n ast.Node) string {
 		if entering {
 			switch c := c.(type) {
 			case *ast.Text:
-				b.Write(c.Segment.Value(r.src))
+				b.WriteString(r.value(c))
 				if c.SoftLineBreak() {
 					b.WriteByte(' ')
 				}
 			case *ast.String:
 				b.Write(c.Value)
+			case *mathInline:
+				b.WriteString(c.tex)
 			}
 		}
 		return ast.WalkContinue, nil
 	})
 	return b.String()
+}
+
+// value returns a text's characters: escapes (\$) and character
+// references (&amp;) resolved, except in code.
+func (r *reader) value(t *ast.Text) string {
+	v := t.Segment.Value(r.src)
+	if !t.IsRaw() {
+		v = util.ResolveEntityNames(util.ResolveNumericReferences(util.UnescapePunctuations(v)))
+	}
+	return string(v)
 }
 
 func (r *reader) anchor(text string) string { return r.slugs.slug(text) }

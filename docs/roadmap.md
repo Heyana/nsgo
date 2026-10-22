@@ -4,21 +4,11 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 
 ## Order
 
-1. Complete text: what `TextView` and `Text` still lack.
-2. Add media, embedding and native-driven animation.
-3. Complete the tool, then add the embedding SDKs.
-4. Finish the platforms NSGo already claims, so every target runs. This is left to community contributions.
+1. Add media, embedding and native-driven animation.
+2. Complete the tool, then add the embedding SDKs.
+3. Finish the platforms NSGo already claims, so every target runs. This is left to community contributions.
 
-## 1. Text
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| Formulas | `docs/dev/text-view.md` | `$…$` and `$$…$$` parse to `Math`, which reaches the app's renderer, and `RepairStreaming` closes them as NSH does |
-| Inline attachments | `docs/dev/text.md` | Views, images and custom nodes flow inside a text's lines |
-| Span backgrounds | `docs/dev/text.md` | Spans draw backgrounds, so inline code, keys and marks sit on a tint |
-| Strikethrough on Apple platforms | `crates/nsh-platform-ios/src/text.rs` | CoreText text draws its struck spans |
-
-## 2. Media, embedding and animation
+## 1. Media, embedding and animation
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -30,7 +20,7 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 | Native components | `docs/dev/embedding.md` | Apps mount their own native views inside the tree |
 | LayoutAnimation | `docs/dev/animation.md`, `crates/nsh-core/src/animation` | Layout changes and animated values run on the platform without a Go frame per step |
 
-## 3. Tool and embedding
+## 2. Tool and embedding
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -39,7 +29,7 @@ This plan lists what NSGo still lacks compared with NSH, in the order to build i
 | Store signing | `docs/dev/embedding.md` | `nsgo build` writes an IPA with a provisioning profile and an APK with a keystore |
 | Embedding SDKs | `docs/dev/embedding.md` | iOS, Android and desktop host apps can show an NSGo view |
 
-## 4. Finish the existing platforms
+## 3. Finish the existing platforms
 
 These items wait for community contributions; the items above do not depend on them.
 

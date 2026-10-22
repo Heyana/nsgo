@@ -26,6 +26,7 @@ final class Protocol {
     static final int MEASURED = 4;
     static final int ENVIRONMENT = 5;
     static final int DNS = 6;
+    static final int LAID_OUT = 7;
 
     // The parts of an image request an IMAGE message carries.
     static final int IMAGE_PLACEHOLDER = 0;
@@ -195,6 +196,12 @@ final class Protocol {
     // Text alignment, as in core/style.go.
     static final int ALIGN_CENTER = 2;
     static final int ALIGN_END = 3;
+
+    // Vertical alignments of attachments, as in core/style.go; 0 and
+    // Baseline are the baseline.
+    static final int VALIGN_TEXT_TOP = 2;
+    static final int VALIGN_TEXT_BOTTOM = 3;
+    static final int VALIGN_MIDDLE = 4;
 
     private Protocol() {}
 

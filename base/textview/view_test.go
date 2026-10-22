@@ -1,6 +1,8 @@
 package textview_test
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -81,4 +83,29 @@ func TestTextViewShowsHTML(t *testing.T) {
 	app.Settle()
 	app.Find("text:▾")
 	app.Find("text:Hidden")
+}
+
+func TestTextViewRendersFormulasAndInlineNodes(t *testing.T) {
+	var shown []string
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return textview.TextView{
+			Markdown:   "Energy $E=mc^2$ and ![dot](dot.png) and @ada.\n\n$$\nx^2\n$$",
+			Extensions: []textview.Extension{{Name: "mention", Pattern: regexp.MustCompile(`@(\w+)`)}},
+			RenderMath: func(cx *core.Scope, m textview.Math, display bool) core.Node {
+				shown = append(shown, fmt.Sprint(m.TeX, " ", display))
+				return core.View{TestID: "math " + m.TeX}
+			},
+			RenderCustom: func(cx *core.Scope, node textview.Custom) core.Node {
+				return core.View{TestID: "custom " + node.Text}
+			},
+		}
+	})
+	app.Find("id:math E=mc^2")
+	app.Find("id:math x^2")
+	app.Find("id:custom @ada")
+	app.Find("role:image")
+	if got := strings.Join(shown, "|"); got != "E=mc^2 false|x^2 true" {
+		t.Errorf("rendered %q", got)
+	}
+	app.Find("text:Energy ￼ and ￼ and ￼.")
 }

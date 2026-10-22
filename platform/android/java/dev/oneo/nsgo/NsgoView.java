@@ -351,7 +351,11 @@ public class NsgoView extends FrameLayout {
         write(Protocol.DNS, bytes.toByteArray());
     }
 
-    /** Serves the engine's text engine. Only a measurement has an answer, which the engine waits for. */
+    /**
+     * Serves the engine's text engine. A measurement has an answer, and so
+     * has the layout of text with attachments, where they went; the engine
+     * waits for both.
+     */
     private void text(int kind, DataInputStream in) throws IOException {
         int id = in.readInt();
         switch (kind) {
@@ -361,7 +365,9 @@ public class NsgoView extends FrameLayout {
                 int maxLines = in.readInt();
                 List<Text.Span> spans = new ArrayList<>();
                 for (int i = 0, n = in.readInt(); i < n; i++) spans.add(new Text.Span(in, density));
-                prepared.put(id, new Text.Prepared(text, style, maxLines, spans));
+                List<Text.Attachment> attachments = new ArrayList<>();
+                for (int i = 0, n = in.readInt(); i < n; i++) attachments.add(new Text.Attachment(in, density));
+                prepared.put(id, new Text.Prepared(text, style, maxLines, spans, attachments));
                 break;
             }
             case Protocol.MEASURE: {
@@ -372,7 +378,10 @@ public class NsgoView extends FrameLayout {
             }
             case Protocol.LAYOUT: {
                 int layout = in.readInt();
-                layouts.put(layout, prepared.get(id).layout(in.readFloat() * density));
+                Text.Prepared p = prepared.get(id);
+                StaticLayout l = p.layout(in.readFloat() * density);
+                layouts.put(layout, l);
+                if (p.hasAttachments()) laidOut(Text.attachments(l));
                 break;
             }
             case Protocol.RELEASE:
@@ -421,6 +430,19 @@ public class NsgoView extends FrameLayout {
                 });
             });
         });
+    }
+
+    /** Answers a layout with where its attachments went: x and y in points, NaN for ones cut off. */
+    private void laidOut(float[] places) {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(4 + places.length * 4);
+        DataOutputStream d = new DataOutputStream(bytes);
+        try {
+            d.writeInt(places.length / 2);
+            for (float f : places) d.writeFloat(f / density);
+        } catch (IOException impossible) {
+            throw new AssertionError(impossible);
+        }
+        write(Protocol.LAID_OUT, bytes.toByteArray());
     }
 
     private synchronized void write(int kind, byte[] payload) {
@@ -1014,6 +1036,8 @@ public class NsgoView extends FrameLayout {
         if (view instanceof Group) ((Group) view).node = n;
         switch (kind) {
             case Protocol.KIND_TEXT:
+                // Its children are the views of its attachments.
+                n.children = (ViewGroup) view;
                 break;
             case Protocol.KIND_IMAGE:
                 n.image = (ImageNode) view;

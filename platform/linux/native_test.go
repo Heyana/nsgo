@@ -188,3 +188,80 @@ func pixelAt(data uintptr, stride, x, y int) []byte {
 	row := (*[1 << 30]byte)(p)[y*stride : (y+1)*stride]
 	return row[x*4 : x*4+4]
 }
+
+// TestTextDrawsBackgroundsAndAttachments opens a window with a text whose
+// span has a background and whose attachment is a pressable view, reads
+// the pixels painted and presses the attachment.
+func TestTextDrawsBackgroundsAndAttachments(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-" + t.Name()
+	app := func(cx *core.Scope) core.Node {
+		pressed := core.NewSignal(cx, 0)
+		cx.Effect(func() { cx.SetTitle(fmt.Sprintf("%s|%d", title, pressed.Get())) })
+		return core.View{Style: core.Style{Width: core.Pt(360), Height: core.Pt(240), Padding: core.All(10),
+			Background: core.RGB(0xffffff), FontSize: 16, Color: core.RGB(0x000000)},
+			Children: []core.Node{core.Text{Spans: []core.Span{
+				{Content: "text "},
+				{Content: "x      x", Style: core.Style{Background: core.RGB(0xff0000), CornerRadius: 4}},
+				{Content: " and "},
+				{Style: core.Style{VerticalAlign: core.VerticalAlignMiddle},
+					Attachment: core.View{TestID: "button", OnPress: func() { pressed.Update(func(n int) int { return n + 1 }) },
+						Style: core.Style{Width: core.Pt(40), Height: core.Pt(30), Background: core.RGB(0x0000ff)}}},
+				{Content: " after"},
+			}}},
+		}
+	}
+	w := startTestWindow(t, app, Options{Title: title, Width: 360, Height: 240})
+	waitForTitle(t, w, title+"|0")
+
+	var button core.Bounds
+	var bg rect
+	var textAt core.Point
+	w.onLoop(t, func() {
+		for _, v := range w.views {
+			if v == nil || v.kind != core.KindText {
+				continue
+			}
+			b, _ := w.surfaceBounds(v)
+			textAt = core.Point{X: b.Origin.X + v.content.Origin.X, Y: b.Origin.Y + v.content.Origin.Y}
+			if l, ok := v.text.(*textLayout); ok && len(l.under) > 0 {
+				bg = l.under[0]
+			}
+			for _, c := range v.children {
+				button, _ = w.surfaceBounds(c)
+			}
+		}
+	})
+	if button.Size != (core.Size{Width: 40, Height: 30}) {
+		t.Fatalf("attachment frame = %v, want a 40x30 child of the text", button)
+	}
+	if bg.w == 0 || button.Origin.X < textAt.X+core.Points(bg.x+bg.w) {
+		t.Fatalf("background %+v, attachment %v: want the attachment after the span", bg, button)
+	}
+
+	var span, attached []byte
+	w.onLoop(t, func() {
+		surface := cairoImageSurfaceCreate(0, 360, 240)
+		cr := cairoCreate(surface)
+		w.paint(cr, core.Size{Width: 360, Height: 240})
+		cairoSurfaceFlush(surface)
+		stride := int(cairoImageSurfaceGetStride(surface))
+		data := cairoImageSurfaceGetData(surface)
+		span = append(span, pixelAt(data, stride, int(textAt.X)+int(bg.x+bg.w/2), int(textAt.Y)+int(bg.y+bg.h/2))...)
+		attached = append(attached, pixelAt(data, stride, int(button.Origin.X+20), int(button.Origin.Y+15))...)
+		cairoDestroy(cr)
+		cairoSurfaceDestroy(surface)
+	})
+	if span[2] != 0xff || span[1] != 0 || span[0] != 0 {
+		t.Errorf("span background pixel = %v, want red", span)
+	}
+	if attached[0] != 0xff || attached[1] != 0 || attached[2] != 0 {
+		t.Errorf("attachment pixel = %v, want blue", attached)
+	}
+
+	// The attachment takes its own presses.
+	w.onLoop(t, func() { w.press(core.Point{X: button.Origin.X + 20, Y: button.Origin.Y + 15}) })
+	waitForTitle(t, w, title+"|1")
+}

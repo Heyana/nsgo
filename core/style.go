@@ -77,7 +77,10 @@ type Style struct {
 	ShadowRadius         Points
 	// TintColor recolors an image's opaque pixels.
 	TintColor Color
-	Transform Transform
+	// VerticalAlign places an attachment in its text's line, set on the
+	// span or on the attachment's view.
+	VerticalAlign VerticalAlign
+	Transform     Transform
 	// Transition animates changes of the look on the platform.
 	Transition Transition
 
@@ -261,6 +264,25 @@ const (
 	TextAlignEnd
 )
 
+// VerticalAlign is where an attachment sits in its line, as CSS's
+// vertical-align places a replaced inline box, against the font of the
+// text around it. Its line grows to hold it wherever it reaches past that
+// font.
+type VerticalAlign uint8
+
+const (
+	// VerticalAlignBaseline puts its bottom on the baseline; it is the
+	// default.
+	VerticalAlignBaseline VerticalAlign = iota + 1
+	// VerticalAlignTextTop puts its top at the font's ascent.
+	VerticalAlignTextTop
+	// VerticalAlignTextBottom puts its bottom at the font's descent.
+	VerticalAlignTextBottom
+	// VerticalAlignMiddle puts its middle half the font's x height above
+	// the baseline.
+	VerticalAlignMiddle
+)
+
 // TextDecoration draws lines on text; the values combine.
 type TextDecoration uint8
 
@@ -327,6 +349,7 @@ func (s Style) Merge(o Style) Style {
 	set(&s.ShadowOffset, o.ShadowOffset)
 	set(&s.ShadowRadius, o.ShadowRadius)
 	set(&s.TintColor, o.TintColor)
+	set(&s.VerticalAlign, o.VerticalAlign)
 	set(&s.Transform, o.Transform)
 	set(&s.Transition, o.Transition)
 	s.mergeText(o)

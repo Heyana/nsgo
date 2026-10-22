@@ -11,8 +11,9 @@ import (
 // RepairStreaming closes the syntax that the last block of Markdown still
 // arriving (a reply streamed token by token) leaves open, so it shows as
 // it will once the rest arrives: `**bold` as bold, a backtick and code as
-// code, `[text](htt` as its text and a table's header as a table, instead
-// of markers as text. The blocks before the last are complete and kept.
+// code, `$x^2` and `\(x^2` as formulas, `[text](htt` as its text and a
+// table's header as a table, instead of markers as text. The blocks
+// before the last are complete and kept.
 func RepairStreaming(markdown string) string {
 	start, ok := lastBlock(markdown)
 	if !ok {
@@ -34,10 +35,12 @@ func RepairStreaming(markdown string) string {
 
 // lastBlock returns where the last block of src starts (after its last
 // blank line or fenced block), and false when src ends inside a fenced
-// block, which runs to the end and needs no repair.
+// block of code or a $$ formula, which runs to the end and needs no
+// repair.
 func lastBlock(src string) (int, bool) {
 	var fence byte
 	var fenceLen, tail int
+	math := false
 	for start := 0; start < len(src); {
 		end := strings.IndexByte(src[start:], '\n')
 		if end < 0 {
@@ -50,14 +53,20 @@ func lastBlock(src string) (int, bool) {
 			if fenceCloses(line, fence, fenceLen) {
 				fence, tail = 0, end+1
 			}
+		} else if math {
+			if strings.HasPrefix(strings.TrimLeft(line, " \t"), "$$") {
+				math, tail = false, end+1
+			}
 		} else if ch, n, ok := fenceOpens(line); ok {
 			fence, fenceLen = ch, n
+		} else if rest, ok := strings.CutPrefix(strings.TrimLeft(line, " \t"), "$$"); ok && !strings.Contains(rest, "$") {
+			math = true
 		} else if strings.TrimSpace(line) == "" {
 			tail = end + 1
 		}
 		start = end + 1
 	}
-	return min(tail, len(src)), fence == 0
+	return min(tail, len(src)), fence == 0 && !math
 }
 
 // stripContainers drops the quote and list markers before a line's
@@ -191,7 +200,7 @@ func cells(row string) []string {
 
 // repairInline closes the inline syntax the last block leaves open.
 func repairInline(tail string) string {
-	text := closeMarkers(removeTag(removeLinks(tail)))
+	text := closeMarkers(removeTag(removeLinks(closeTeX(tail))))
 	if text != tail {
 		text = strings.TrimRightFunc(text, unicode.IsSpace)
 	}
@@ -199,12 +208,18 @@ func repairInline(tail string) string {
 }
 
 // inlineCode returns the inline code spans of text, from their first
-// backtick to after their last, and the start and length of an opening
-// backtick run nothing closes, its start -1 when there is none.
-func inlineCode(text string) (spans [][2]int, open, openLen int) {
+// backtick to after their last, with tex those of TeX formulas (\(…\),
+// \[…\]) too, and the start and length of an opening backtick run nothing
+// closes, its start -1 when there is none.
+func inlineCode(text string, tex bool) (spans [][2]int, open, openLen int) {
 	for i := 0; i < len(text); {
 		switch text[i] {
 		case '\\':
+			if end, ok := texEnd(text, i); tex && ok {
+				spans = append(spans, [2]int{i, end})
+				i = end
+				continue
+			}
 			i += 2
 			continue
 		case '`':
@@ -235,6 +250,41 @@ func inlineCode(text string) (spans [][2]int, open, openLen int) {
 	return spans, -1, 0
 }
 
+// closeTeX closes a TeX formula left open (`\(x`, `\[` and lines of
+// it), or removes its opener while nothing follows it.
+func closeTeX(text string) string {
+	spans, open, _ := inlineCode(text, false)
+	for i := 0; i < len(text); {
+		if !outside(spans, open, i) || text[i] != '\\' {
+			i++
+			continue
+		}
+		if i+1 >= len(text) || text[i+1] != '(' && text[i+1] != '[' {
+			i += 2
+			continue
+		}
+		if end, ok := texEnd(text, i); ok {
+			i = end
+			continue
+		}
+		body := text[i+2:]
+		if strings.TrimSpace(body) == "" {
+			return strings.TrimRightFunc(text[:i], unicode.IsSpace)
+		}
+		out := strings.TrimRightFunc(text, unicode.IsSpace)
+		switch {
+		case text[i+1] == '(':
+			return out + `\)`
+		case strings.Contains(body, "\n"):
+			// A display formula of lines of its own: its closer on a line
+			// of its own.
+			return out + "\n" + `\]`
+		}
+		return out + `\]`
+	}
+	return text
+}
+
 // outside reports whether byte i is outside code.
 func outside(spans [][2]int, open, i int) bool {
 	for _, s := range spans {
@@ -248,7 +298,7 @@ func outside(spans [][2]int, open, i int) bool {
 // removeLinks shows links not finished, `[text` and `[text](partial`, as
 // their text, and removes images and footnote references not finished.
 func removeLinks(text string) string {
-	spans, open, _ := inlineCode(text)
+	spans, open, _ := inlineCode(text, true)
 	var remove [][2]int
 	var brackets []int
 scan:
@@ -332,7 +382,7 @@ func destinationEnd(text string, from int) int {
 // removeTag removes an HTML tag or autolink being typed at the end: `<`,
 // `<di`, `<a href="x`, `</`.
 func removeTag(text string) string {
-	spans, open, _ := inlineCode(text)
+	spans, open, _ := inlineCode(text, true)
 	lt := strings.LastIndexByte(text, '<')
 	if lt < 0 || !outside(spans, open, lt) || strings.Contains(text[lt:], ">") || lt > 0 && text[lt-1] == '\\' {
 		return text
@@ -346,11 +396,12 @@ func removeTag(text string) string {
 	return text
 }
 
-// closeMarkers closes inline code and emphasis (`**`, `*`, `__`, `_`,
-// `~~`) left open, in the reverse order they opened; a marker with
-// nothing after it yet is removed instead.
+// closeMarkers closes inline code, emphasis (`**`, `*`, `__`, `_`, `~~`)
+// and formulas (`$$`, `$`) left open, in the reverse order they opened; a
+// marker with nothing after it yet is removed instead. `$5` opens
+// nothing.
 func closeMarkers(text string) string {
-	spans, openCode, openLen := inlineCode(text)
+	spans, openCode, openLen := inlineCode(text, true)
 	// A run of markers at the end after a space opens nothing yet
 	// (`a **`): removed.
 	trimmed := strings.TrimRightFunc(text, unicode.IsSpace)
@@ -380,7 +431,7 @@ func closeMarkers(text string) string {
 			i += 2
 			continue
 		}
-		if b != '*' && b != '_' && b != '~' {
+		if b != '*' && b != '_' && b != '~' && b != '$' {
 			i++
 			continue
 		}
@@ -388,7 +439,8 @@ func closeMarkers(text string) string {
 		prev, _ := utf8.DecodeLastRuneInString(text[:i])
 		next, _ := utf8.DecodeRuneInString(text[i+n:])
 		hasPrev, hasNext := i > 0, i+n < len(text)
-		canOpen := hasNext && !unicode.IsSpace(next) && (b != '_' || !hasPrev || !isAlnum(prev))
+		canOpen := hasNext && !unicode.IsSpace(next) && (b != '_' || !hasPrev || !isAlnum(prev)) &&
+			(b != '$' || next < '0' || next > '9')
 		canClose := hasPrev && !unicode.IsSpace(prev) && (b != '_' || !hasNext || !isAlnum(next))
 		var opened []string
 		for _, token := range markerTokens(b, n) {
@@ -426,7 +478,7 @@ func closeMarkers(text string) string {
 	// Markers with nothing after them yet: removed.
 	for codeCloser == 0 && len(stack) > 0 {
 		at := stack[len(stack)-1].at
-		if strings.TrimSpace(strings.TrimLeft(out[at:], "*_~")) != "" {
+		if strings.TrimSpace(strings.TrimLeft(out[at:], "*_~$")) != "" {
 			break
 		}
 		out = out[:at]
@@ -451,6 +503,10 @@ func markerTokens(b byte, n int) []string {
 	case b == '~' && n == 2:
 		return []string{double}
 	case b == '~':
+		return nil
+	case b == '$' && n <= 2:
+		return []string{strings.Repeat("$", n)}
+	case b == '$':
 		return nil
 	case n == 1:
 		return []string{single}

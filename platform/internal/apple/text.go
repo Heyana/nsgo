@@ -106,6 +106,7 @@ func loadText(cf, cg uintptr) {
 	attrTraits = constant(ct, "kCTFontTraitsAttribute")
 	attrWeight = constant(ct, "kCTFontWeightTrait")
 	attrSymbolic = constant(ct, "kCTFontSymbolicTrait")
+	loadInline(ct)
 }
 
 // CoreText weights of CSS's 100 to 900, from UIFontWeight.
@@ -219,7 +220,7 @@ func utf16Offsets(text string) (toUTF16, toUTF8 []int) {
 
 // attributed returns a new CFAttributedString of t, its spans styled over
 // its style. The caller releases it.
-func attributed(t *core.AttributedText, toUTF16 []int) uintptr {
+func attributed(t *core.AttributedText, toUTF16 []int, fonts []core.FontExtent) uintptr {
 	st := t.Style
 	var keys, values, owned []uintptr
 
@@ -233,9 +234,11 @@ func attributed(t *core.AttributedText, toUTF16 []int) uintptr {
 	lineHeight := float64(st.LineHeight)
 	settings := []paragraphSetting{{spec: specAlignment, size: 1, value: unsafe.Pointer(&align)}}
 	if lineHeight > 0 {
-		settings = append(settings,
-			paragraphSetting{spec: specMinLineHeight, size: 8, value: unsafe.Pointer(&lineHeight)},
-			paragraphSetting{spec: specMaxLineHeight, size: 8, value: unsafe.Pointer(&lineHeight)})
+		settings = append(settings, paragraphSetting{spec: specMinLineHeight, size: 8, value: unsafe.Pointer(&lineHeight)})
+		// A line grows where an attachment reaches past it.
+		if len(t.Attachments) == 0 {
+			settings = append(settings, paragraphSetting{spec: specMaxLineHeight, size: 8, value: unsafe.Pointer(&lineHeight)})
+		}
 	}
 	para := ctParagraphStyleCreate(unsafe.Pointer(&settings[0]), uintptr(len(settings)))
 	keys, values, owned = append(keys, attrParagraph), append(values, para), append(owned, para)
@@ -247,7 +250,7 @@ func attributed(t *core.AttributedText, toUTF16 []int) uintptr {
 	for _, ref := range owned {
 		Release(ref)
 	}
-	if len(t.Spans) == 0 {
+	if len(t.Spans) == 0 && len(t.Attachments) == 0 {
 		return out
 	}
 	m := cfAttributedStringMutable(0, 0, out)
@@ -262,18 +265,51 @@ func attributed(t *core.AttributedText, toUTF16 []int) uintptr {
 		cfAttributedStringSetAttrs(m, r, a, false)
 		Release(a)
 	}
+	// An attachment's placeholder is a run of its size that draws nothing.
+	for i, at := range t.Attachments {
+		if at.Offset < 0 || at.Offset >= len(t.Text) {
+			continue
+		}
+		above, below := at.Extent(fonts[i])
+		d := runDelegate(extent{above: float64(above), below: float64(below), width: float64(at.Size.Width)})
+		st := placeholderStyle(t, at.Offset)
+		st.Color = 0
+		a := runAttributes(st, []uintptr{attrRunDelegate}, []uintptr{d})
+		r := cfRange{Location: toUTF16[at.Offset], Length: toUTF16[at.Offset+len(string(core.AttachmentRune))] - toUTF16[at.Offset]}
+		cfAttributedStringSetAttrs(m, r, a, false)
+		Release(a)
+		Release(d)
+	}
 	return m
 }
 
-// TextEngine implements core.TextEngine with CoreText. Strikethrough is
-// not drawn: CoreText has no attribute for it.
+// placeholderStyle is the style of the span at byte offset i: the font an
+// attachment there is placed against.
+func placeholderStyle(t *core.AttributedText, i int) core.TextStyle {
+	for _, sp := range t.Spans {
+		if sp.Start <= i && i < sp.End {
+			return sp.Style
+		}
+	}
+	return t.Style
+}
+
+// TextEngine implements core.TextEngine with CoreText. Strikethrough and
+// span backgrounds, which CoreText has no attributes for, are drawn from
+// the lines' offsets; attachments' placeholders are sized by run
+// delegates.
 type TextEngine struct{}
 
 // Prepare implements core.TextEngine. It is safe off the main thread.
 func (TextEngine) Prepare(t *core.AttributedText) core.PreparedText {
 	toUTF16, toUTF8 := utf16Offsets(t.Text)
-	str := attributed(t, toUTF16)
-	p := &prepared{str: str, fs: ctFramesetterCreate(str), maxLines: t.MaxLines, text: t.Text, toUTF8: toUTF8}
+	fonts := make([]core.FontExtent, len(t.Attachments))
+	for i, at := range t.Attachments {
+		fonts[i] = fontExtent(placeholderStyle(t, at.Offset))
+	}
+	str := attributed(t, toUTF16, fonts)
+	p := &prepared{str: str, fs: ctFramesetterCreate(str), maxLines: t.MaxLines, text: t.Text, toUTF8: toUTF8,
+		toUTF16: toUTF16, decos: decorations(t, toUTF16), atts: t.Attachments, fonts: fonts}
 	if cfAttributedStringLength(str) == 0 {
 		f := Font(t.Style.Font)
 		p.emptyHeight = ctFontGetAscent(f) + ctFontGetDescent(f) + ctFontGetLeading(f)
@@ -291,6 +327,10 @@ type prepared struct {
 	emptyHeight float64
 	text        string
 	toUTF8      []int // byte offsets of UTF-16 offsets
+	toUTF16     []int
+	decos       []decoration
+	atts        []core.TextAttachment
+	fonts       []core.FontExtent // the attachments'
 }
 
 // unbounded is a size limit nothing reaches; tall is a frame height
@@ -341,6 +381,14 @@ func (p *prepared) frame(size CGSize) uintptr {
 
 // Layout implements core.PreparedText: the CTFrame the main thread draws.
 func (p *prepared) Layout(size core.Size) core.TextLayout {
+	l := p.layout(size)
+	if len(p.decos) > 0 || len(p.atts) > 0 {
+		l.place(p.decos, p.atts, p.fonts, p.toUTF16)
+	}
+	return l
+}
+
+func (p *prepared) layout(size core.Size) *Layout {
 	l := &Layout{height: float64(size.Height), text: p.text, toUTF8: p.toUTF8}
 	if p.emptyHeight > 0 {
 		return l
@@ -414,6 +462,11 @@ type Layout struct {
 
 	text   string
 	toUTF8 []int
+
+	// under are span backgrounds, over strikethroughs, both from the
+	// box's top left.
+	under, over []box
+	attachments []attachmentBox
 }
 
 // Release implements core.TextLayout.
@@ -580,6 +633,13 @@ func (l *Layout) Draw(ctx uintptr, viewHeight float64, box CGRect) {
 	if l == nil || ctx == 0 || (l.frame == 0 && l.truncated == 0) {
 		return
 	}
+	l.drawGlyphs(ctx, viewHeight, box)
+	if len(l.over) > 0 {
+		fillBoxes(ctx, l.over, box)
+	}
+}
+
+func (l *Layout) drawGlyphs(ctx uintptr, viewHeight float64, box CGRect) {
 	cgContextSaveGState(ctx)
 	defer cgContextRestoreGState(ctx)
 	// CoreText draws bottom-up; flip the view's top-down coordinates.

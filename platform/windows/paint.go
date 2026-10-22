@@ -249,7 +249,7 @@ func (p *painter) drawView(v *view, s *core.ViewStyle, x, y core.Points) {
 		}
 	}
 	if v.text != nil {
-		v.text.draw(p.dc, w.px(x+v.content.Origin.X), w.px(y+v.content.Origin.Y))
+		v.text.draw(p, w.px(x+v.content.Origin.X), w.px(y+v.content.Origin.Y))
 	}
 	if len(v.children) == 0 {
 		return

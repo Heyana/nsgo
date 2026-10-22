@@ -48,19 +48,24 @@ type TextView struct {
 	// "#<anchor>", a footnote reference "#footnote-<label>". Nothing opens
 	// a URL; the app decides.
 	OnLinkPress func(url string)
-	// RenderCustom shows a custom block; without it a custom block shows
-	// its content.
+	// RenderCustom shows a custom node: a block, or an inline node as an
+	// attachment in its text unless CustomSpan shows it. Without either, a
+	// node shows its content.
 	RenderCustom func(cx *core.Scope, node Custom) core.Node
-	// CustomSpan shows a custom node in text as a span; without it the
-	// node shows its text.
+	// CustomSpan shows a custom node in text as a span.
 	CustomSpan func(node Custom) core.Span
+	// RenderMath shows a formula, display when it is a block of its own
+	// ($$…$$ on lines of its own), else as an attachment in its text.
+	// Without it a formula shows its TeX in PartMath or PartMathBlock.
+	RenderMath func(cx *core.Scope, math Math, display bool) core.Node
 	// RenderCodeBlock shows a code block in place of the default: the code
 	// in a horizontal scroll view.
 	RenderCodeBlock func(cx *core.Scope, code CodeBlock) core.Node
 	// CodeBlockActions is content over each code block's top right corner,
 	// such as a copy button, in PartCodeBlockHeader.
 	CodeBlockActions func(cx *core.Scope, code CodeBlock) core.Node
-	// RenderImage shows an image in place of the default.
+	// RenderImage shows an image in place of the default: alone in a
+	// paragraph, a block; in a line of text, an attachment.
 	RenderImage func(cx *core.Scope, image Image) core.Node
 	TestID      string
 }
@@ -209,6 +214,9 @@ func (r *renderer) block(cx *core.Scope, b Block, first bool, depth int) core.No
 	case Details:
 		return r.details(cx, b, depth)
 	case Math:
+		if r.tv.RenderMath != nil {
+			return r.tv.RenderMath(cx, b, true)
+		}
 		return core.Text{Content: b.TeX, Style: r.style(PartMathBlock)}
 	case Custom:
 		if r.tv.RenderCustom != nil {
@@ -458,11 +466,15 @@ func (r *renderer) spans(out []core.Span, content []Inline, style core.Style, li
 		case Keyboard:
 			out = append(out, core.Span{Content: in.Text, Style: style.Merge(r.style(PartKeyboard)), OnPress: link})
 		case Math:
-			out = append(out, core.Span{Content: in.TeX, Style: style.Merge(r.style(PartMath)), OnPress: link})
+			if render := r.tv.RenderMath; render != nil {
+				out = append(out, core.Span{Attachment: core.Func(func(cx *core.Scope) core.Node { return render(cx, in, false) })})
+			} else {
+				out = append(out, core.Span{Content: in.TeX, Style: style.Merge(r.style(PartMath)), OnPress: link})
+			}
 		case Link:
 			out = r.spans(out, in.Content, style.Merge(r.style(PartLink)), r.press(in.URL))
 		case Image:
-			out = append(out, core.Span{Content: in.Alt, Style: style, OnPress: link})
+			out = append(out, core.Span{Attachment: r.inlineImage(in, style, link)})
 		case Break:
 			out = append(out, core.Span{Content: "\n", Style: style})
 		case FootnoteReference:
@@ -473,6 +485,8 @@ func (r *renderer) spans(out []core.Span, content []Inline, style core.Style, li
 				s := r.tv.CustomSpan(in)
 				s.Style = style.Merge(s.Style)
 				out = append(out, s)
+			} else if render := r.tv.RenderCustom; render != nil {
+				out = append(out, core.Span{Attachment: core.Func(func(cx *core.Scope) core.Node { return render(cx, in) })})
 			} else {
 				var b strings.Builder
 				in.write(&b)
@@ -519,6 +533,42 @@ func onlyImages(content []Inline) ([]linkedImage, bool) {
 		}
 	}
 	return out, len(out) > 0
+}
+
+// inlineImage shows an image in a line of text styled style: the size it
+// asks for, else three quarters of a line tall at its natural aspect.
+func (r *renderer) inlineImage(im Image, style core.Style, link func()) core.Node {
+	return core.Func(func(cx *core.Scope) core.Node {
+		if r.tv.RenderImage != nil {
+			return r.tv.RenderImage(cx, im)
+		}
+		text := r.style(PartRoot, PartParagraph).Merge(style)
+		line := text.LineHeight
+		if size := text.FontSize; line == 0 && size > 0 {
+			line = size * 1.2
+		} else if line == 0 {
+			line = core.DefaultFontSize * 1.2
+		}
+		natural := core.NewSignal(cx, core.Size{})
+		return core.Image{
+			Source:  core.Src(im.Src),
+			Label:   im.Alt,
+			OnLoad:  natural.Set,
+			OnPress: link,
+			StyleFunc: func() core.Style {
+				s := core.Style{Width: im.Width, Height: im.Height}
+				if s.Width.IsAuto() && s.Height.IsAuto() {
+					s.Height = core.Pt(line * 0.75)
+				}
+				if n := natural.Get(); n.Width > 0 && n.Height > 0 {
+					s.AspectRatio = float32(n.Width / n.Height)
+				} else if s.Width.IsAuto() {
+					s.Width = s.Height
+				}
+				return s
+			},
+		}
+	})
 }
 
 // image shows an image as a block: the size it asks for, else its

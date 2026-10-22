@@ -131,7 +131,7 @@ func (s *surface) copySelection(e js.Value) {
 	texts := s.host.Call("querySelectorAll", ".nsgo-text")
 	for i := range texts.Length() {
 		el := texts.Index(i)
-		if !r.Call("intersectsNode", el).Bool() || !s.userSelects(el) {
+		if !r.Call("intersectsNode", el).Bool() || !s.userSelects(el) || el.Call("closest", ".nsgo-attachment").Truthy() {
 			continue
 		}
 		part := s.doc.Call("createRange")

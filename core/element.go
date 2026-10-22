@@ -122,9 +122,17 @@ const (
 type Span struct {
 	Content     string
 	ContentFunc func() string
-	// Style's text fields merge over the Text's.
+	// Style's text fields merge over the Text's. Its Background and
+	// CornerRadius draw behind the span's characters, a box per line.
 	Style   Style
 	OnPress func()
+	// Attachment, when set, is a view in the text's lines in place of
+	// Content: laid out at its content size, it wraps with the words
+	// around it and takes its own presses. Style is then its view's
+	// style, and Style.VerticalAlign places it in its line, else the
+	// VerticalAlign of the one view Attachment makes. Copying text leaves
+	// attachments out.
+	Attachment Node
 }
 
 // Input is the platform's single-line text field. With Value it is

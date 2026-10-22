@@ -11,12 +11,50 @@ import (
 	"github.com/oneo-me/nsgo/core"
 )
 
-var getTextExtentExPointW = gdi32.NewProc("GetTextExtentExPointW")
+var (
+	getTextExtentExPointW = gdi32.NewProc("GetTextExtentExPointW")
+	getGlyphOutlineW      = gdi32.NewProc("GetGlyphOutlineW")
+)
 
 // drawnText is a TextLayout of this backend: plain or with spans.
 type drawnText interface {
 	core.TextLayout
-	draw(dc uintptr, x, y int32)
+	draw(p *painter, x, y int32)
+}
+
+// glyphMetrics is GDI's GLYPHMETRICS.
+type glyphMetrics struct {
+	BlackBoxX, BlackBoxY uint32
+	OriginX, OriginY     int32
+	CellIncX, CellIncY   int16
+}
+
+// glyphTop returns how far the ink of r rises above the baseline in the
+// font selected into dc, or fallback when GDI cannot tell.
+func glyphTop(dc uintptr, r rune, fallback int32) int32 {
+	const ggoMetrics = 0
+	var gm glyphMetrics
+	identity := [4]uint32{1 << 16, 0, 0, 1 << 16} // MAT2: 1.0 on the diagonal
+	if n, _, _ := getGlyphOutlineW.Call(dc, uintptr(r), ggoMetrics, uintptr(unsafe.Pointer(&gm)), 0, 0,
+		uintptr(unsafe.Pointer(&identity))); int32(n) == -1 || gm.OriginY <= 0 {
+		return fallback
+	}
+	return gm.OriginY
+}
+
+// fontExtent returns the metrics an attachment is placed against in f.
+func (w *window) fontExtent(f *font) core.FontExtent {
+	pt := func(px int32) core.Points { return core.Points(float64(px) / w.scale) }
+	return core.FontExtent{Ascent: pt(f.ascent), Descent: pt(f.height - f.ascent), XHeight: pt(f.xHeight)}
+}
+
+// inline is an attachment's placeholder, in pixels: what its line
+// reserves above and below the baseline, and how far its top is above it.
+type inline struct {
+	index        int // in the text's attachments
+	size         core.Size
+	above, below int32
+	top          int32
 }
 
 type pieceKind uint8
@@ -36,6 +74,12 @@ type piece struct {
 	font    *font
 	color   core.Color
 	extra   int32
+	// span is the index of its span in the text, or -1; bg is that
+	// span's background.
+	span int
+	bg   core.TextBackground
+	// att is the attachment whose placeholder the piece is, alone.
+	att *inline
 }
 
 func (p *piece) width(from, to int) int32 {
@@ -71,15 +115,17 @@ type spanText struct {
 	align    core.TextAlign
 	step     int32 // a line height in pixels; 0 is each line's fonts'
 	maxLines int
+	// attachments counts the text's attachments.
+	attachments int
 }
 
 func (w *window) prepareSpans(t *core.AttributedText) core.PreparedText {
-	st := &spanText{w: w, align: t.Style.Align, maxLines: t.MaxLines}
+	st := &spanText{w: w, align: t.Style.Align, maxLines: t.MaxLines, attachments: len(t.Attachments)}
 	if t.Style.LineHeight > 0 {
 		st.step = max(w.px(t.Style.LineHeight), 1)
 	}
 	byKey := map[fontKey]*font{}
-	add := func(start, end int, style core.TextStyle) {
+	add := func(start, end int, style core.TextStyle, span int, bg core.TextBackground) {
 		key := fontKey{style.Font, style.Decoration}
 		f := byKey[key]
 		if f == nil {
@@ -87,30 +133,43 @@ func (w *window) prepareSpans(t *core.AttributedText) core.PreparedText {
 			byKey[key] = f
 			st.fonts = append(st.fonts, f)
 		}
-		st.split(t.Text, start, end, f, style.Color, w.px(style.LetterSpacing))
+		if bg.Color&0xff == 0 {
+			bg = core.TextBackground{}
+		}
+		st.split(t, start, end, f, style.Color, w.px(style.LetterSpacing), span, bg)
 	}
 	at := 0
-	for _, sp := range t.Spans {
+	for i, sp := range t.Spans {
 		start, end := min(max(sp.Start, at), len(t.Text)), min(max(sp.End, at), len(t.Text))
 		if start > at {
-			add(at, start, t.Style)
+			add(at, start, t.Style, -1, core.TextBackground{})
 		}
 		if end > start {
-			add(start, end, sp.Style)
+			add(start, end, sp.Style, i, sp.Background)
 		}
 		at = max(at, end)
 	}
 	if at < len(t.Text) || len(st.pieces) == 0 {
-		add(at, len(t.Text), t.Style)
+		add(at, len(t.Text), t.Style, -1, core.TextBackground{})
 	}
 	st.measure()
 	return st
 }
 
-// split adds text[start:end] as pieces in one style.
-func (st *spanText) split(text string, start, end int, f *font, color core.Color, extra int32) {
+// split adds t.Text[start:end] as pieces in one style.
+func (st *spanText) split(t *core.AttributedText, start, end int, f *font, color core.Color, extra int32,
+	span int, bg core.TextBackground) {
+	text := t.Text
 	for i := start; i < end; {
 		r, size := utf8.DecodeRuneInString(text[i:end])
+		if r == core.AttachmentRune {
+			if k := attachmentAt(t, i); k >= 0 {
+				st.pieces = append(st.pieces, piece{kind: pieceWord, text: []uint16{uint16(r)}, offsets: []int{i},
+					font: f, color: color, extra: extra, span: span, bg: bg, att: st.w.inline(t.Attachments[k], k, f)})
+				i += size
+				continue
+			}
+		}
 		kind := pieceWord
 		switch r {
 		case '\n':
@@ -120,8 +179,8 @@ func (st *spanText) split(text string, start, end int, f *font, color core.Color
 		}
 		n := len(st.pieces)
 		if kind == pieceBreak || n == 0 || st.pieces[n-1].kind != kind || st.pieces[n-1].font != f ||
-			st.pieces[n-1].color != color || st.pieces[n-1].extra != extra || i == start {
-			st.pieces = append(st.pieces, piece{kind: kind, font: f, color: color, extra: extra})
+			st.pieces[n-1].color != color || st.pieces[n-1].extra != extra || st.pieces[n-1].att != nil || i == start {
+			st.pieces = append(st.pieces, piece{kind: kind, font: f, color: color, extra: extra, span: span, bg: bg})
 			n++
 		}
 		p := &st.pieces[n-1]
@@ -140,6 +199,25 @@ func (st *spanText) split(text string, start, end int, f *font, color core.Color
 	}
 }
 
+// attachmentAt returns the index of t's attachment at byte offset i, or
+// -1.
+func attachmentAt(t *core.AttributedText, i int) int {
+	for k, a := range t.Attachments {
+		if a.Offset == i {
+			return k
+		}
+	}
+	return -1
+}
+
+// inline returns the placeholder of attachment a, the kth of its text,
+// set in font f.
+func (w *window) inline(a core.TextAttachment, k int, f *font) *inline {
+	font := w.fontExtent(f)
+	top, height := w.px(a.Ascent(font)), w.px(a.Size.Height)
+	return &inline{index: k, size: a.Size, above: max(top, 0), below: max(height-top, 0), top: top}
+}
+
 // measure finds each unit's extent, on the engine thread.
 func (st *spanText) measure() {
 	w := st.w
@@ -150,6 +228,10 @@ func (st *spanText) measure() {
 	for i := range st.pieces {
 		p := &st.pieces[i]
 		if len(p.text) == 0 {
+			continue
+		}
+		if p.att != nil {
+			p.ends = []int32{max(st.w.px(p.att.size.Width), 0)}
 			continue
 		}
 		p.ends = make([]int32, len(p.text))
@@ -172,7 +254,10 @@ type run struct {
 type textLine struct {
 	runs            []run
 	width           int32 // without trailing spaces
-	ascent, descent int32
+	ascent, descent int32 // its fonts'
+	// above and below are what its attachments reserve around the
+	// baseline.
+	above, below int32
 }
 
 // wrap breaks the pieces into lines at most limit pixels wide (< 0: no
@@ -194,6 +279,10 @@ func (st *spanText) wrap(limit int32) []textLine {
 			f = r.p.font
 			cur.ascent = max(cur.ascent, f.ascent)
 			cur.descent = max(cur.descent, f.height-f.ascent)
+			if a := r.p.att; a != nil {
+				cur.above = max(cur.above, a.above)
+				cur.below = max(cur.below, a.below)
+			}
 		}
 		if len(cur.runs) == 0 {
 			cur.ascent, cur.descent = f.ascent, f.height-f.ascent
@@ -241,11 +330,21 @@ func (st *spanText) wrap(limit int32) []textLine {
 	return lines
 }
 
-func (st *spanText) height(l *textLine) int32 {
+// extent returns how far line l reaches above and below its baseline: its
+// fonts centered in the line height, grown where attachments reach past
+// them.
+func (st *spanText) extent(l *textLine) (above, below int32) {
+	above, below = l.ascent, l.descent
 	if st.step > 0 {
-		return st.step
+		above = (st.step-l.ascent-l.descent)/2 + l.ascent
+		below = st.step - above
 	}
-	return l.ascent + l.descent
+	return max(above, l.above), max(below, l.below)
+}
+
+func (st *spanText) height(l *textLine) int32 {
+	above, below := st.extent(l)
+	return above + below
 }
 
 func (st *spanText) Measure(maxWidth core.Points) core.Size {
@@ -275,7 +374,7 @@ func (st *spanText) Layout(size core.Size) core.TextLayout {
 	if cut {
 		lines = lines[:st.maxLines]
 	}
-	l := &spanLayout{fonts: &st.w.fonts}
+	l := &spanLayout{fonts: &st.w.fonts, attachments: make([]attachmentBox, st.attachments)}
 	held := map[*font]bool{}
 	hold := func(f *font) {
 		if !held[f] {
@@ -291,8 +390,9 @@ func (st *spanText) Layout(size core.Size) core.TextLayout {
 		if cut && i == len(lines)-1 {
 			ellipsis = st.ellipsize(line, width)
 		}
-		h := st.height(line)
-		baseline := top + (h-line.ascent-line.descent)/2 + line.ascent
+		above, below := st.extent(line)
+		h := above + below
+		baseline := top + above
 		var dx int32
 		switch st.align {
 		case core.TextAlignCenter:
@@ -309,6 +409,11 @@ func (st *spanText) Layout(size core.Size) core.TextLayout {
 			if r.to <= r.from {
 				continue
 			}
+			if a := r.p.att; a != nil {
+				l.attachments[a.index] = attachmentBox{shown: true, box: core.Bounds{
+					Origin: st.w.point(dx+r.x, baseline-a.top), Size: a.size}}
+				continue
+			}
 			hold(r.p.font)
 			ends := make([]int32, r.to-r.from)
 			for k := range ends {
@@ -319,10 +424,39 @@ func (st *spanText) Layout(size core.Size) core.TextLayout {
 				x: dx + r.x, baseline: baseline, font: r.p.font, color: r.p.color, extra: r.p.extra,
 			})
 		}
+		l.backgrounds = st.backgrounds(l.backgrounds, runs, dx, baseline)
 		l.lines = append(l.lines, lineBox{top: top, bottom: top + h, first: first, last: len(l.runs)})
 		top += h
 	}
 	return l
+}
+
+// backgrounds appends the boxes of the span backgrounds of a line's runs
+// to out: one per span, from its font's ascent to its descent, cut to the
+// line's ink, so the spaces hanging at its end are not painted.
+func (st *spanText) backgrounds(out []backgroundBox, runs []run, dx, baseline int32) []backgroundBox {
+	end := len(runs)
+	for end > 0 && (runs[end-1].p.kind != pieceWord || runs[end-1].to <= runs[end-1].from) {
+		end--
+	}
+	for i := 0; i < end; {
+		r := runs[i]
+		j := i + 1
+		for j < end && runs[j].p.span == r.p.span && runs[j].p.bg == r.p.bg {
+			j++
+		}
+		if bg := r.p.bg; bg.Color&0xff != 0 {
+			last := runs[j-1]
+			f := r.p.font
+			b := rect{dx + r.x, baseline - f.ascent, dx + last.x + last.p.width(last.from, last.to), baseline + f.height - f.ascent}
+			if b.Right > b.Left {
+				radius := min(float64(st.w.px(bg.Radius)), float64(b.Bottom-b.Top)/2)
+				out = append(out, backgroundBox{r: b, color: bg.Color, radius: max(radius, 0)})
+			}
+		}
+		i = j
+	}
+	return out
 }
 
 // ellipsize shortens line to end with "…" within width and returns the
@@ -333,7 +467,7 @@ func (st *spanText) ellipsize(line *textLine, width int32) *run {
 	}
 	lastRun := line.runs[len(line.runs)-1]
 	e := &piece{kind: pieceWord, text: []uint16{'…'}, font: lastRun.p.font, color: lastRun.p.color,
-		offsets: []int{lastRun.p.offsets[max(lastRun.to-1, 0)]}}
+		offsets: []int{lastRun.p.offsets[max(lastRun.to-1, 0)]}, span: -1}
 	st.measurePiece(e)
 	avail := width - e.width(0, 1)
 	for len(line.runs) > 0 {
@@ -379,6 +513,19 @@ type laidRun struct {
 	extra       int32
 }
 
+// backgroundBox is a span's background on one line, relative to the
+// content's origin, in pixels.
+type backgroundBox struct {
+	r      rect
+	color  core.Color
+	radius float64
+}
+
+type attachmentBox struct {
+	box   core.Bounds // in the content box, in points
+	shown bool
+}
+
 type lineBox struct {
 	top, bottom int32
 	first, last int // runs
@@ -386,10 +533,20 @@ type lineBox struct {
 
 // spanLayout is spanned text laid out in runs, ready to draw.
 type spanLayout struct {
-	fonts *fontCache
-	held  []*font
-	runs  []laidRun
-	lines []lineBox
+	fonts       *fontCache
+	held        []*font
+	runs        []laidRun
+	lines       []lineBox
+	backgrounds []backgroundBox
+	attachments []attachmentBox
+}
+
+// Attachment implements core.AttachmentLayout.
+func (l *spanLayout) Attachment(i int) (core.Bounds, bool) {
+	if i < 0 || i >= len(l.attachments) {
+		return core.Bounds{}, false
+	}
+	return l.attachments[i].box, l.attachments[i].shown
 }
 
 // Release implements core.TextLayout on the main thread.
@@ -399,7 +556,14 @@ func (l *spanLayout) Release() {
 	}
 }
 
-func (l *spanLayout) draw(dc uintptr, x, y int32) {
+// draw paints the span backgrounds, then the glyphs; attachments are
+// the text view's children, drawn after it. GDI fonts draw underlines
+// and strikethroughs themselves.
+func (l *spanLayout) draw(p *painter, x, y int32) {
+	for _, b := range l.backgrounds {
+		p.paintShape(b.r.offset(x, y), b.radius, b.color)
+	}
+	dc := p.dc
 	setTextAlign.Call(dc, taBaseline)
 	for _, r := range l.runs {
 		if r.color&0xff == 0 {

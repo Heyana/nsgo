@@ -97,15 +97,24 @@ func (t *Tree) resolve(n *node, inherited Style) {
 		n.props.SelectionColor = inherited.SelectionColor
 		tn := n.text
 		ts := t.scaled(inherited.textStyle())
-		if tn.stale || tn.prepared == nil || ts != tn.style {
+		sized := tn.attachments > 0 && t.sizeAttachments(n, inherited)
+		if tn.stale || sized || tn.prepared == nil || ts != tn.style {
 			at := AttributedText{Text: tn.content, Style: ts, MaxLines: tn.maxLines}
 			if len(tn.spans) > 0 {
 				var b strings.Builder
 				for _, sp := range tn.spans {
 					start := b.Len()
+					if w := sp.attach; w != nil {
+						b.WriteRune(AttachmentRune)
+						at.Attachments = append(at.Attachments, TextAttachment{Offset: start,
+							Size: w.attach.size, Align: w.verticalAlign()})
+						at.Spans = append(at.Spans, TextSpan{Start: start, End: b.Len(), Style: ts})
+						continue
+					}
 					b.WriteString(sp.content)
 					at.Spans = append(at.Spans, TextSpan{Start: start, End: b.Len(),
-						Style: t.scaled(sp.style.inherit(inherited).textStyle()), Link: sp.press != nil})
+						Style: t.scaled(sp.style.inherit(inherited).textStyle()), Link: sp.press != nil,
+						Background: TextBackground{Color: sp.style.Background, Radius: sp.style.CornerRadius}})
 				}
 				at.Text = b.String()
 			}
@@ -131,8 +140,76 @@ func (t *Tree) resolve(n *node, inherited Style) {
 			n.markLayout()
 		}
 	}
+	if n.text != nil {
+		return // its children are attachments, which it resolved
+	}
 	for _, c := range n.children {
 		t.resolve(c, inherited)
+	}
+}
+
+// attachmentSpace is the space attachments are laid out in: they take
+// their content size.
+const attachmentSpace = 1 << 20
+
+// sizeAttachments resolves and lays out the attachments of text n, each a
+// layout root at its content size, and reports whether a size changed.
+func (t *Tree) sizeAttachments(n *node, inherited Style) bool {
+	changed := false
+	for _, sp := range n.text.spans {
+		w := sp.attach
+		if w == nil {
+			continue
+		}
+		t.resolve(w, inherited)
+		if !w.layoutDirty {
+			continue
+		}
+		t.layoutRoot(w, Size{attachmentSpace, attachmentSpace}, false)
+		t.syncFrames(w)
+		l := &w.lstate.Rounded
+		if size := (Size{Points(l.Size.Width), Points(l.Size.Height)}); size != w.attach.size {
+			w.attach.size = size
+			changed = true
+		}
+	}
+	return changed
+}
+
+// verticalAlign is where attachment view w sits in its line: its span's
+// VerticalAlign, else that of the one view the attachment made.
+func (w *node) verticalAlign() VerticalAlign {
+	if a := w.style.VerticalAlign; a != 0 {
+		return a
+	}
+	if kids := w.flatChildren(); len(kids) == 1 {
+		return kids[0].style.VerticalAlign
+	}
+	return 0
+}
+
+// placeAttachments puts the views of text n's attachments where layout
+// put their placeholders, hiding those its line limit cut off.
+func (n *node) placeAttachments(l TextLayout) {
+	al, _ := l.(AttachmentLayout)
+	i := 0
+	for _, sp := range n.text.spans {
+		w := sp.attach
+		if w == nil {
+			continue
+		}
+		var b Bounds
+		ok := false
+		if al != nil {
+			b, ok = al.Attachment(i)
+		}
+		i++
+		w.attach.cut = !ok
+		if ok {
+			b.Origin.X += n.text.box.Origin.X
+			b.Origin.Y += n.text.box.Origin.Y
+			w.frame = Bounds{Origin: b.Origin, Size: w.attach.size}
+		}
 	}
 }
 
@@ -195,8 +272,12 @@ func (t *Tree) emit(n *node) {
 		if tn.prepared != nil && (tn.resent || tn.box != tn.sentBox) {
 			tn.resent = false
 			tn.sentBox = tn.box
+			l := tn.prepared.Layout(tn.box.Size)
+			if tn.attachments > 0 {
+				n.placeAttachments(l)
+			}
 			add(MountItem{Kind: ItemText, ID: n.id, Text: &TextContent{
-				Text: tn.text.Text, Layout: tn.prepared.Layout(tn.box.Size), Content: tn.box,
+				Text: tn.text.Text, Layout: l, Content: tn.box,
 			}})
 		}
 	case n.input != nil:
@@ -262,7 +343,7 @@ func (t *Tree) emit(n *node) {
 
 func (n *node) viewStyle() ViewStyle {
 	vs := n.style.viewStyle()
-	vs.Hidden = n.style.Display == DisplayNone
+	vs.Hidden = n.style.Display == DisplayNone || (n.attach != nil && n.attach.cut)
 	if n.rtl && vs.Borders != (Edges{}) {
 		vs.Borders.Left, vs.Borders.Right = vs.Borders.Right, vs.Borders.Left
 		vs.BorderColors.Left, vs.BorderColors.Right = vs.BorderColors.Right, vs.BorderColors.Left

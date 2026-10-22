@@ -2,20 +2,32 @@ package dev.oneo.nsgo;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.text.Layout;
+import android.text.Spanned;
 import android.text.StaticLayout;
 import android.view.MotionEvent;
-import android.view.View;
+import android.widget.FrameLayout;
 
-/** A text node: it draws the StaticLayout the engine laid out, where the engine placed it. */
-final class TextNode extends View {
+/**
+ * A text node: it draws the StaticLayout the engine laid out, where the
+ * engine placed it. A group: the views of its attachments are its
+ * children, drawn over the text where the engine placed them, and take
+ * their own touches.
+ */
+final class TextNode extends FrameLayout {
     private StaticLayout layout;
     private int x, y;
     /** Where the last touch went down, NaN once a press has used it. */
     private float downX = Float.NaN, downY;
+    private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF backgroundRect = new RectF();
 
     TextNode(Context context) {
         super(context);
+        setWillNotDraw(false);
+        setClipChildren(false);
     }
 
     /** Draws layout at (x, y) from now on and drops the layout it replaces. */
@@ -63,7 +75,38 @@ final class TextNode extends View {
         if (layout == null) return;
         canvas.save();
         canvas.translate(x, y);
+        drawBackgrounds(canvas);
         layout.draw(canvas);
         canvas.restore();
+    }
+
+    /**
+     * Fills the spans' backgrounds: a box on each line a span reaches,
+     * around its visible characters (trailing spaces left out), from its
+     * font's ascent to its descent, rounded at most to half its height.
+     */
+    private void drawBackgrounds(Canvas canvas) {
+        CharSequence text = layout.getText();
+        if (!(text instanceof Spanned)) return;
+        Spanned spanned = (Spanned) text;
+        Text.Background[] backgrounds = spanned.getSpans(0, text.length(), Text.Background.class);
+        int lines = layout.getLineCount();
+        for (Text.Background bg : backgrounds) {
+            int start = spanned.getSpanStart(bg), end = spanned.getSpanEnd(bg);
+            backgroundPaint.setColor(bg.color);
+            for (int line = layout.getLineForOffset(start); line < lines; line++) {
+                int lineStart = layout.getLineStart(line), lineEnd = layout.getLineVisibleEnd(line);
+                if (lineStart >= end) break;
+                int a = Math.max(start, lineStart), b = Math.min(end, lineEnd);
+                if (a >= b) continue;
+                float x1 = layout.getPrimaryHorizontal(a);
+                float x2 = b < layout.getLineEnd(line) ? layout.getPrimaryHorizontal(b) : layout.getLineRight(line);
+                if (layout.getParagraphDirection(line) < 0 && b >= lineEnd) x2 = layout.getLineLeft(line);
+                float baseline = layout.getLineBaseline(line);
+                backgroundRect.set(Math.min(x1, x2), baseline - bg.ascent, Math.max(x1, x2), baseline + bg.descent);
+                float r = Math.min(bg.radius, backgroundRect.height() / 2);
+                canvas.drawRoundRect(backgroundRect, r, r, backgroundPaint);
+            }
+        }
     }
 }

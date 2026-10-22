@@ -346,7 +346,7 @@ func (m *SelectionModel) Text(texts SelectionTexts) string {
 		previous = frame
 		content := texts.Content(r.Text)
 		part := content[byteOffset(content, r.Start):byteOffset(content, r.End)]
-		out.WriteString(strings.ReplaceAll(part, string(objectReplacement), ""))
+		out.WriteString(strings.ReplaceAll(part, string(AttachmentRune), ""))
 	}
 	return out.String()
 }
@@ -378,9 +378,6 @@ func (m *SelectionModel) extendTo(texts SelectionTexts, pos TextPosition) {
 		m.anchor, m.focus = m.unitStart, maxPos(end, m.unitEnd)
 	}
 }
-
-// objectReplacement stands for an attachment in a text's content.
-const objectReplacement = '￼'
 
 // hitText returns the position under p by the hit-testing rule above, and
 // false without texts.

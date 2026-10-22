@@ -441,11 +441,12 @@ type fontKey struct {
 // font is a GDI font shared by text layouts and EDIT controls, and freed
 // when the last of them releases it.
 type font struct {
-	key    fontKey
-	handle uintptr
-	height int32 // of a line, in pixels
-	ascent int32
-	refs   int
+	key     fontKey
+	handle  uintptr
+	height  int32 // of a line, in pixels
+	ascent  int32
+	xHeight int32 // where attachments align their middle
+	refs    int
 }
 
 // fontCache holds the fonts the engine thread measures with and the main
@@ -481,9 +482,10 @@ func (c *fontCache) acquire(key fontKey) *font {
 	old, _, _ := selectObject.Call(dc, h)
 	var tm textMetric
 	getTextMetricsW.Call(dc, uintptr(unsafe.Pointer(&tm)))
+	xHeight := glyphTop(dc, 'x', tm.Ascent/2)
 	selectObject.Call(dc, old)
 	deleteDC.Call(dc)
-	f := &font{key: key, handle: h, height: max(tm.Height, 1), ascent: tm.Ascent, refs: 1}
+	f := &font{key: key, handle: h, height: max(tm.Height, 1), ascent: tm.Ascent, xHeight: xHeight, refs: 1}
 	c.fonts[key] = f
 	return f
 }
@@ -517,7 +519,7 @@ type preparedText struct {
 
 // Prepare implements core.TextEngine on the engine thread.
 func (w *window) Prepare(t *core.AttributedText) core.PreparedText {
-	if len(t.Spans) > 0 {
+	if len(t.Spans) > 0 || len(t.Attachments) > 0 {
 		return w.prepareSpans(t)
 	}
 	p := &preparedText{
@@ -629,10 +631,11 @@ type textLayout struct {
 // Release implements core.TextLayout on the main thread.
 func (t *textLayout) Release() { t.fonts.release(t.font) }
 
-func (t *textLayout) draw(dc uintptr, x, y int32) {
+func (t *textLayout) draw(p *painter, x, y int32) {
 	if len(t.text) == 0 || t.color&0xff == 0 {
 		return
 	}
+	dc := p.dc
 	r := rect{x + t.box.Left, y + t.box.Top, x + t.box.Right, y + t.box.Bottom}
 	old, _, _ := selectObject.Call(dc, t.font.handle)
 	setTextColor.Call(dc, colorRef(t.color))

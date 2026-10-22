@@ -28,6 +28,11 @@ const markdown = "# Text View\n\n" +
 	"> Port the design, not the code line by line.\n\n" +
 	"> [!NOTE]\n> Alerts are GitHub's `> [!NOTE]` syntax.\n\n> [!WARNING]\n> Warnings, tips, important notes and cautions too.\n\n" +
 	":::callout[A container]\nContainers are an extension the app declares.\n:::\n\n" +
+	"## Formulas and inline images\n\n" +
+	"Formulas parse as `$…$` in text, such as $E = mc^2$ or \\(a^2 + b^2 = c^2\\), and as blocks between `$$` lines; " +
+	"the app renders them with RenderMath. Prices such as $5 and $10 stay text. " +
+	"An image in a line of text ![a river](https://picsum.photos/id/1015/120/60) flows with the words, three quarters of a line tall.\n\n" +
+	"$$\n\\int_0^1 x^2 \\, dx = \\frac{1}{3}\n$$\n\n" +
 	"## HTML\n\n" +
 	"HTML in Markdown reads as text: <kbd>⌘</kbd> <kbd>C</kbd>, <mark>marks</mark>, <u>underlines</u>, " +
 	"H<sub>2</sub>O and E=mc<sup>2</sup>, and <b>Markdown *inside* tags</b> stays Markdown.\n\n" +
@@ -83,7 +88,7 @@ func textViewPage(cx *core.Scope, t *theme) core.Node {
 	theme := ui.UseTheme(cx)
 	return ui.ThemeView{Style: core.Style{Padding: core.All(20), Gap: 16, CornerRadius: cardRadius}, Children: []core.Node{
 		ui.TextView{Markdown: markdown, Extensions: extensions, Selectable: true, Highlighter: highlight.New(cx),
-			OnLinkPress: link.Set, TestID: "markdown",
+			OnLinkPress: link.Set, TestID: "markdown", RenderMath: renderMath(theme),
 			CustomSpan: func(node textview.Custom) core.Span {
 				return core.Span{Content: node.Text, Style: core.Style{Color: theme().Primary, FontWeight: core.FontWeightMedium},
 					OnPress: func() { link.Set("mention " + node.Attributes["1"]) }}
@@ -104,4 +109,22 @@ func textViewPage(cx *core.Scope, t *theme) core.Node {
 		ui.Button{Label: "Stream a reply", Variant: ui.Secondary, OnPress: stream, TestID: "stream"},
 		ui.TextView{MarkdownFunc: streamed.Get, Streaming: true, Highlighter: highlight.New(cx), TestID: "streamed"},
 	}}
+}
+
+// renderMath stands in for a TeX renderer, which the app brings: it shows
+// a formula's TeX in a serif italic, inline on a tint, display centered.
+func renderMath(theme func() ui.Tokens) func(cx *core.Scope, m textview.Math, display bool) core.Node {
+	return func(cx *core.Scope, m textview.Math, display bool) core.Node {
+		text := core.Text{Content: m.TeX, Style: core.Style{FontFamily: "Times New Roman", FontStyle: core.FontStyleItalic}}
+		if display {
+			text.Style.FontSize = 18
+			return core.View{Style: core.Style{AlignItems: core.AlignCenter, Padding: core.Symmetric(8, 0)},
+				Children: []core.Node{text}}
+		}
+		text.Style.LineHeight = 20
+		return core.View{StyleFunc: func() core.Style {
+			return core.Style{Background: theme().Muted, CornerRadius: 4, Padding: core.Symmetric(0, 4),
+				VerticalAlign: core.VerticalAlignMiddle}
+		}, Children: []core.Node{text}}
+	}
 }

@@ -183,7 +183,7 @@ func Play(ctx uintptr, d *core.Drawing) {
 // fillText draws one line of text with its baseline starting at the op's
 // point.
 func fillText(ctx uintptr, op core.DrawOp, c core.Color) {
-	str := attributed(&core.AttributedText{Text: op.Text, Style: core.TextStyle{Font: op.Font, Color: c}}, nil)
+	str := attributed(&core.AttributedText{Text: op.Text, Style: core.TextStyle{Font: op.Font, Color: c}}, nil, nil)
 	line := ctLineCreateWithAttrString(str)
 	Release(str)
 	// Glyphs draw upright in a context whose y axis points down.

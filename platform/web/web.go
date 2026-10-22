@@ -268,11 +268,12 @@ func fontStyle(t core.TextStyle) map[string]string {
 }
 
 // richText is text with the CSS that lays it out: one style for the
-// whole and one per span.
+// whole and one per span, and its attachments' placeholders.
 type richText struct {
-	text  string
-	style map[string]string
-	spans []span
+	text        string
+	style       map[string]string
+	spans       []span
+	attachments []core.TextAttachment
 }
 
 // span is a styled run of the text, from byte start to byte end.
@@ -290,10 +291,28 @@ type preparedText struct {
 
 // textLayout is what the element that draws text needs; the browser lays
 // it out at the size the engine measured.
-type textLayout struct{ richText }
+type textLayout struct {
+	richText
+	// boxes are where the attachments' placeholders landed, in the
+	// content box; shown is false for those the line limit cut off.
+	boxes []attachmentBox
+}
+
+type attachmentBox struct {
+	box   core.Bounds
+	shown bool
+}
 
 // Release implements core.TextLayout.
 func (*textLayout) Release() {}
+
+// Attachment implements core.AttachmentLayout.
+func (l *textLayout) Attachment(i int) (core.Bounds, bool) {
+	if i < 0 || i >= len(l.boxes) {
+		return core.Bounds{}, false
+	}
+	return l.boxes[i].box, l.boxes[i].shown
+}
 
 // Prepare implements core.TextEngine.
 func (s *surface) Prepare(t *core.AttributedText) core.PreparedText {
@@ -316,17 +335,65 @@ func (s *surface) Prepare(t *core.AttributedText) core.PreparedText {
 		// Alignment is the paragraph's.
 		css := fontStyle(sp.Style)
 		delete(css, "text-align")
+		// A background is the span's inline box: from its font's ascent to
+		// its descent, a rounded box on every line, changing no line.
+		if bg := sp.Background; bg.Color != 0 {
+			css["background-color"] = cssColor(bg.Color)
+			css["border-radius"] = px(bg.Radius)
+			css["box-decoration-break"], css["-webkit-box-decoration-break"] = "clone", "clone"
+		}
 		spans = append(spans, span{start, end, css, sp.Link})
 		at = end
 	}
-	return &preparedText{s: s, richText: richText{text: t.Text, style: style, spans: spans}}
+	return &preparedText{s: s, richText: richText{text: t.Text, style: style, spans: spans,
+		attachments: t.Attachments}}
+}
+
+// verticalAligns are the CSS of the vertical aligns, which core defines
+// as CSS's vertical-align of a replaced inline box against the font
+// around it.
+var verticalAligns = map[core.VerticalAlign]string{
+	core.VerticalAlignTextTop:    "text-top",
+	core.VerticalAlignTextBottom: "text-bottom",
+	core.VerticalAlignMiddle:     "middle",
+}
+
+// appendText appends the text from byte start to end to el, an empty
+// inline block of its size in place of each attachment's character: the
+// line holds it as core.TextAttachment.Extent says, and its view is drawn
+// over it.
+func (r *richText) appendText(doc, el js.Value, start, end int) {
+	for i, a := range r.attachments {
+		if a.Offset < start || a.Offset >= end {
+			continue
+		}
+		if a.Offset > start {
+			el.Call("append", r.text[start:a.Offset])
+		}
+		align := verticalAligns[a.Align]
+		if align == "" {
+			align = "baseline"
+		}
+		ph := doc.Call("createElement", "span")
+		ph.Call("setAttribute", "data-attachment", i)
+		setStyle(ph, map[string]string{
+			"display": "inline-block", "vertical-align": align,
+			"width": px(a.Size.Width), "height": px(a.Size.Height),
+			"user-select": "none", "-webkit-user-select": "none",
+		})
+		el.Call("appendChild", ph)
+		start = a.Offset + len(string(core.AttachmentRune))
+	}
+	if start < end {
+		el.Call("append", r.text[start:end])
+	}
 }
 
 // fill puts the text in el: as it is, or as a <span> per span carrying
 // its byte offset, so a press can tell the character it hit. Links take
 // keyboard focus when interactive.
 func (r *richText) fill(doc, el js.Value, interactive bool) {
-	if len(r.spans) == 0 {
+	if len(r.spans) == 0 && len(r.attachments) == 0 {
 		el.Set("textContent", r.text)
 		return
 	}
@@ -334,11 +401,11 @@ func (r *richText) fill(doc, el js.Value, interactive bool) {
 	at := 0
 	for _, sp := range r.spans {
 		if sp.start > at {
-			el.Call("append", r.text[at:sp.start])
+			r.appendText(doc, el, at, sp.start)
 		}
 		e := doc.Call("createElement", "span")
 		setStyle(e, sp.style)
-		e.Set("textContent", r.text[sp.start:sp.end])
+		r.appendText(doc, e, sp.start, sp.end)
 		e.Call("setAttribute", "data-start", sp.start)
 		if sp.link && interactive {
 			e.Call("setAttribute", "role", "link")
@@ -349,22 +416,13 @@ func (r *richText) fill(doc, el js.Value, interactive bool) {
 		at = sp.end
 	}
 	if at < len(r.text) {
-		el.Call("append", r.text[at:])
+		r.appendText(doc, el, at, len(r.text))
 	}
 }
 
 // Measure implements core.PreparedText with the browser's layout.
 func (p *preparedText) Measure(maxWidth core.Points) core.Size {
-	m := p.s.measure
-	if p.s.measuring != p {
-		p.s.measuring = p
-		setStyle(m, p.style)
-		if p.text == "" {
-			m.Set("textContent", "​") // an empty text keeps a line's height
-		} else {
-			p.fill(p.s.doc, m, false)
-		}
-	}
+	m := p.hold()
 	limit := "none"
 	if !maxWidth.IsAuto() {
 		limit = px(maxWidth)
@@ -378,9 +436,55 @@ func (p *preparedText) Measure(maxWidth core.Points) core.Size {
 	return core.Size{Width: core.Points(w), Height: core.Points(r.Get("height").Float())}
 }
 
-// Layout implements core.PreparedText.
-func (p *preparedText) Layout(core.Size) core.TextLayout {
-	return &textLayout{p.richText}
+// hold puts p in the measuring element and returns it.
+func (p *preparedText) hold() js.Value {
+	m := p.s.measure
+	if p.s.measuring != p {
+		p.s.measuring = p
+		setStyle(m, p.style)
+		if p.text == "" {
+			m.Set("textContent", "​") // an empty text keeps a line's height
+		} else {
+			p.fill(p.s.doc, m, false)
+		}
+	}
+	return m
+}
+
+// Layout implements core.PreparedText. Where the text has attachments,
+// it lays the text out in the measuring element at size's width, as the
+// element drawing it will, and reads where their placeholders landed.
+func (p *preparedText) Layout(size core.Size) core.TextLayout {
+	l := &textLayout{richText: p.richText}
+	if len(p.attachments) == 0 {
+		return l
+	}
+	m := p.hold()
+	setStyle(m, map[string]string{"width": px(size.Width), "max-width": "none"})
+	r := m.Call("getBoundingClientRect")
+	left, top := r.Get("left").Float(), r.Get("top").Float()
+	// A line limit hides the lines below the element's height.
+	bottom := top + r.Get("height").Float()
+	l.boxes = make([]attachmentBox, len(p.attachments))
+	phs := m.Call("querySelectorAll", "[data-attachment]")
+	for i := range phs.Length() {
+		ph := phs.Index(i)
+		k, err := strconv.Atoi(ph.Call("getAttribute", "data-attachment").String())
+		if err != nil || k >= len(l.boxes) {
+			continue
+		}
+		b := ph.Call("getBoundingClientRect")
+		y := b.Get("top").Float()
+		l.boxes[k] = attachmentBox{
+			box: core.Bounds{
+				Origin: core.Point{X: core.Points(b.Get("left").Float() - left), Y: core.Points(y - top)},
+				Size:   p.attachments[k].Size,
+			},
+			shown: y+b.Get("height").Float() <= bottom+0.5,
+		}
+	}
+	setStyle(m, map[string]string{"width": "max-content"})
+	return l
 }
 
 // Release implements core.PreparedText.
@@ -456,6 +560,9 @@ func (s *surface) Mount(b *core.MountBatch) {
 				b = parent.border
 			}
 			unborder(v.el, b)
+			// A text's children are its attachments, which copying leaves
+			// out.
+			v.el.Get("classList").Call("toggle", "nsgo-attachment", parent.kind == core.KindText)
 			if v.kind == core.KindModal && !v.presented {
 				v.presented = true
 				s.present(v)

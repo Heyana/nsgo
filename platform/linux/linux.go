@@ -76,7 +76,8 @@ type window struct {
 	lastHeight     core.Points
 	started        bool
 	handle         uintptr
-	measureMap     uintptr // the engine thread's Pango font map
+	measureMap     uintptr                       // the engine thread's Pango font map
+	extents        map[core.Font]core.FontExtent // the engine thread's font metrics
 	pressConsumed  bool
 	focus          *view // the entry with keyboard focus
 	pinchTimeout   uint32

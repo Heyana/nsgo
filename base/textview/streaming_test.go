@@ -53,6 +53,33 @@ func TestRepairCode(t *testing.T) {
 	})
 }
 
+func TestRepairMath(t *testing.T) {
+	checkRepair(t, [][2]string{
+		{"Formula $$x^2", "Formula $$x^2$$"},
+		{"Inline $x^2", "Inline $x^2$"},
+		{"Costs $5 and more", "Costs $5 and more"},
+		{"$$\nx^2", "$$\nx^2"},
+		{"> $$\n> x **y", "> $$\n> x **y"},
+		{"$$\nx\n$$\nSo $y", "$$\nx\n$$\nSo $y$"},
+		{"Text $", "Text $"},
+		{"**bold $x", "**bold $x$**"},
+	})
+}
+
+func TestRepairTeX(t *testing.T) {
+	checkRepair(t, [][2]string{
+		{`Euler \(e^{i`, `Euler \(e^{i\)`},
+		{`Display \[x^2`, `Display \[x^2\]`},
+		{"\\[\nx = 1\n+ 2", "\\[\nx = 1\n+ 2\n\\]"},
+		{`Opened \(`, "Opened"},
+		{`Done \(x\) and **b`, `Done \(x\) and **b**`},
+		// Inside a formula, markers are TeX's.
+		{`\(a*b`, `\(a*b\)`},
+		{`\(a_1\) x`, `\(a_1\) x`},
+		{"`\\(` code", "`\\(` code"},
+	})
+}
+
 func TestRepairLinksAndTags(t *testing.T) {
 	checkRepair(t, [][2]string{
 		{"See [the docs](https://exa", "See the docs"},
@@ -106,6 +133,9 @@ func TestRepairParsesAsFinished(t *testing.T) {
 		{"Some **bold", "Some **bold**"},
 		{"See [the docs](https://exa", "See the docs"},
 		{"| a | b |\n| -", "| a | b |\n| --- | --- |"},
+		{"Inline $x^2", "Inline $x^2$"},
+		{"Formula $$x^2", "Formula $$x^2$$"},
+		{"So \\(x", "So $x$"},
 	} {
 		got, want := Parse(RepairStreaming(c[0])), Parse(c[1])
 		if !equal(got, want) {

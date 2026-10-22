@@ -5,7 +5,8 @@
 - Add a reactive Go engine with owners, memos, effects and regions (`Show`, `Each`, `Dynamic`, `Catch`).
 - Add block, flexbox and grid layout matching Taffy, with styles, per-side borders, state styles, transforms and transitions.
 - Add images, rich text with links, text selection across texts, canvas, virtualized lists, overlays, modals and navigation stacks.
-- Add `TextView` for Markdown and HTML, including tables, alerts, footnotes, disclosures, extensions, highlighted code and streaming.
+- Add `TextView` for Markdown and HTML, including tables, alerts, footnotes, disclosures, formulas the app renders, inline images, extensions, highlighted code and streaming.
+- Add span backgrounds and views inside text that flow with its lines.
 - Add unstyled base controls, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
 - Add the `ui` package with themed controls and popups in light and dark.
 - Add pan, pinch and rotation gestures.
@@ -27,4 +28,5 @@
 - Add the official website.
 - License the project under Apache-2.0, with NSH's attribution in `NOTICE`.
 - Fix Android builds failing because Go's implied `linux` tag included the Linux backend.
+- Fix strikethrough missing on macOS and iOS.
 - Fix Windows' aliased rounded corners, borders and canvas curves.

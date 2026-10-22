@@ -33,6 +33,7 @@ type TextView struct {
 	CustomSpan      func(node textview.Custom) core.Span
 	RenderCodeBlock func(cx *core.Scope, code textview.CodeBlock) core.Node
 	RenderImage     func(cx *core.Scope, image textview.Image) core.Node
+	RenderMath      func(cx *core.Scope, math textview.Math, display bool) core.Node
 	TestID          string
 }
 
@@ -53,7 +54,7 @@ func (v TextView) Render(cx *core.Scope) core.Node {
 		Extensions: v.Extensions, Streaming: v.Streaming, Styles: styles, Selectable: v.Selectable, Highlighter: v.Highlighter,
 		StyleFunc:   func(p textview.Part) core.Style { return theme().textView(p) },
 		OnLinkPress: v.OnLinkPress, RenderCustom: v.RenderCustom, CustomSpan: v.CustomSpan,
-		RenderCodeBlock: v.RenderCodeBlock, RenderImage: v.RenderImage, TestID: v.TestID,
+		RenderCodeBlock: v.RenderCodeBlock, RenderImage: v.RenderImage, RenderMath: v.RenderMath, TestID: v.TestID,
 	}
 	if !v.NoCopyButton {
 		tv.CodeBlockActions = copyButton
@@ -174,9 +175,9 @@ func (t Tokens) textView(p textview.Part) core.Style {
 	case textview.PartCodeBlockCode:
 		return mono.Merge(core.Style{LineHeight: codeSize * 1.6, Padding: core.Symmetric(14, 16)})
 	case textview.PartCode, textview.PartMath:
-		return mono.Merge(core.Style{Color: t.AccentForeground})
+		return mono.Merge(core.Style{Color: t.AccentForeground, Background: t.Muted, CornerRadius: 4})
 	case textview.PartKeyboard:
-		return mono.Merge(core.Style{FontSize: 12, FontWeight: core.FontWeightMedium})
+		return mono.Merge(core.Style{FontSize: 12, FontWeight: core.FontWeightMedium, Background: t.Muted, CornerRadius: 4})
 	case textview.PartMathBlock:
 		return mono.Merge(core.Style{LineHeight: codeSize * 1.6, Padding: core.Symmetric(14, 16), Background: t.Muted,
 			BorderWidth: 1, BorderColor: t.Border, CornerRadius: 8})
@@ -189,7 +190,7 @@ func (t Tokens) textView(p textview.Part) core.Style {
 	case textview.PartUnderline:
 		return core.Style{TextDecoration: core.TextDecorationUnderline}
 	case textview.PartMark:
-		return core.Style{Background: fade(t.Warning, 0.3)}
+		return core.Style{Background: fade(t.Warning, 0.3), CornerRadius: 3}
 	case textview.PartSuperscript, textview.PartSubscript:
 		return core.Style{FontSize: 11}
 	case textview.PartSmall:

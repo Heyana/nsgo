@@ -6,7 +6,8 @@
 // the process's pipes:
 // one message per commit, per event and per step of text. Java keeps the
 // text the engine prepares, measures it and lays it out with StaticLayout,
-// and mounts one Android view per node; measuring is the only round trip.
+// and mounts one Android view per node; measuring, and laying out text
+// with attachments, are the only round trips.
 // Go fetches images and Java decodes them; Java plays canvas drawings,
 // runs style transitions and reports the environment, back, keys,
 // presses outside overlays and answers to alerts and clipboard reads.
@@ -56,6 +57,7 @@ const (
 	msgMeasured    = 4
 	msgEnvironment = 5 // the environment, before msgStart and on change
 	msgDNS         = 6 // the default network's DNS servers
+	msgLaidOut     = 7 // where a msgLayout put a text's attachments
 )
 
 // The parts of an image view's request msgImage carries.
@@ -70,6 +72,7 @@ type surface struct {
 	buf      []byte
 	ids      atomic.Uint32 // the last prepared text or layout id
 	measured chan core.Size
+	laidOut  chan []attachmentBox
 	engine   *engine.Engine
 	started  chan struct{}    // closed once engine is set
 	env      core.Environment // the last reported, on the reader goroutine
@@ -94,6 +97,7 @@ func Run(app engine.App) {
 	s := &surface{
 		out:      os.NewFile(uintptr(fd), "nsgo-runtime"),
 		measured: make(chan core.Size, 1),
+		laidOut:  make(chan []attachmentBox, 1),
 		started:  make(chan struct{}),
 		env:      core.Environment{OS: core.OSAndroid},
 		images:   map[core.NodeID]*imageView{},
@@ -132,6 +136,14 @@ func Run(app engine.App) {
 			})
 		case msgMeasured:
 			s.measured <- core.Size{Width: r.points(), Height: r.points()}
+		case msgLaidOut:
+			boxes := make([]attachmentBox, r.u32())
+			for i := range boxes {
+				// NaN for one the line limit or the ellipsis cut off.
+				x, y := r.points(), r.points()
+				boxes[i] = attachmentBox{core.Point{X: x, Y: y}, !math.IsNaN(float64(x))}
+			}
+			s.laidOut <- boxes
 		case msgEnvironment:
 			env := readEnvironment(&r)
 			if env == s.env {
@@ -198,7 +210,10 @@ func useDNS() {
 // Prepare implements core.TextEngine: Java keeps the text and its paint
 // under a new id, so measuring and laying it out send only the id.
 func (s *surface) Prepare(t *core.AttributedText) core.PreparedText {
-	p := preparedText{s, s.ids.Add(1)}
+	p := preparedText{s: s, id: s.ids.Add(1)}
+	for _, a := range t.Attachments {
+		p.attachments = append(p.attachments, a.Size)
+	}
 	s.send(msgPrepare, func(w *writer) {
 		w.u32(p.id)
 		w.str(t.Text)
@@ -209,15 +224,28 @@ func (s *surface) Prepare(t *core.AttributedText) core.PreparedText {
 			w.u32(uint32(sp.Start)) // UTF-8 offsets; Java converts them
 			w.u32(uint32(sp.End))
 			writeStyle(w, &sp.Style)
+			w.u32(uint32(sp.Background.Color)) // 0: none
+			w.points(sp.Background.Radius)
+		}
+		// Java sizes each placeholder and places it in its line as
+		// core.TextAttachment.Ascent and Extent say.
+		w.u32(uint32(len(t.Attachments)))
+		for _, a := range t.Attachments {
+			w.u32(uint32(a.Offset))
+			w.points(a.Size.Width)
+			w.points(a.Size.Height)
+			w.byte(byte(a.Align))
 		}
 	})
 	return p
 }
 
-// preparedText is text Java keeps under id until Release.
+// preparedText is text Java keeps under id until Release, and the sizes
+// of its attachments.
 type preparedText struct {
-	s  *surface
-	id uint32
+	s           *surface
+	id          uint32
+	attachments []core.Size
 }
 
 // Measure asks the runtime's StaticLayout and waits for the answer. Only
@@ -231,14 +259,19 @@ func (p preparedText) Measure(maxWidth core.Points) core.Size {
 }
 
 // Layout has Java build the final StaticLayout under a new id for an
-// ItemText to name. It needs no answer: Java reads it before the batch.
+// ItemText to name: Java reads it before the batch. Only a text with
+// attachments waits for an answer, where they went.
 func (p preparedText) Layout(size core.Size) core.TextLayout {
-	l := textLayout(p.s.ids.Add(1))
+	l := &textLayout{id: p.s.ids.Add(1)}
 	p.s.send(msgLayout, func(w *writer) {
 		w.u32(p.id)
-		w.u32(uint32(l))
+		w.u32(l.id)
 		w.points(size.Width) // the height is the one measured
 	})
+	if len(p.attachments) > 0 {
+		l.attachments = <-p.s.laidOut
+		l.sizes = p.attachments
+	}
 	return l
 }
 
@@ -246,11 +279,30 @@ func (p preparedText) Release() {
 	p.s.send(msgRelease, func(w *writer) { w.u32(p.id) })
 }
 
-// textLayout is the id of a StaticLayout Java built. The runtime drops
-// it itself when a later ItemText replaces it or its view is deleted.
-type textLayout uint32
+// textLayout names a StaticLayout Java built, and where it put the
+// text's attachments. The runtime drops the layout itself when a later
+// ItemText replaces it or its view is deleted.
+type textLayout struct {
+	id          uint32
+	attachments []attachmentBox
+	sizes       []core.Size
+}
 
-func (textLayout) Release() {}
+// attachmentBox is the top left of an attachment in the content box.
+type attachmentBox struct {
+	origin core.Point
+	shown  bool
+}
+
+func (*textLayout) Release() {}
+
+// Attachment implements core.AttachmentLayout.
+func (l *textLayout) Attachment(i int) (core.Bounds, bool) {
+	if i < 0 || i >= len(l.attachments) || i >= len(l.sizes) || !l.attachments[i].shown {
+		return core.Bounds{}, false
+	}
+	return core.Bounds{Origin: l.attachments[i].origin, Size: l.sizes[i]}, true
+}
 
 // Mount implements engine.Platform: one message per commit, then the
 // loads of the image sources it changed.
@@ -490,9 +542,12 @@ func encode(w *writer, b *core.MountBatch, requests []uint32) {
 			w.flags(v.Clip, v.Hidden)
 		case core.ItemText:
 			t := it.Text
-			layout, _ := t.Layout.(textLayout)
+			var layout uint32
+			if l, ok := t.Layout.(*textLayout); ok {
+				layout = l.id
+			}
 			w.str(t.Text)
-			w.u32(uint32(layout))
+			w.u32(layout)
 			w.points(t.Content.Origin.X)
 			w.points(t.Content.Origin.Y)
 		case core.ItemInput:

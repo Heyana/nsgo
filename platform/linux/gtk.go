@@ -261,6 +261,17 @@ var (
 	pangoAttrLineHeightAbsoluteNew func(int32) uintptr
 	pangoAttrUnderlineNew          func(int32) uintptr
 	pangoAttrStrikethroughNew      func(int32) uintptr
+	pangoAttrShapeNew              func(*pangoRectangle, *pangoRectangle) uintptr
+	pangoLayoutGetExtents          func(uintptr, *pangoRectangle, *pangoRectangle)
+	pangoLayoutGetIter             func(uintptr) uintptr
+	pangoLayoutIterFree            func(uintptr)
+	pangoLayoutIterNextLine        func(uintptr) int32
+	pangoLayoutIterNextRun         func(uintptr) int32
+	pangoLayoutIterGetLine         func(uintptr) uintptr
+	pangoLayoutIterGetRun          func(uintptr) uintptr
+	pangoLayoutIterGetBaseline     func(uintptr) int32
+	pangoLayoutIterGetRunExtents   func(uintptr, *pangoRectangle, *pangoRectangle)
+	pangoLayoutLineGetXRanges      func(uintptr, int32, int32, *uintptr, *int32)
 	pangoCairoCreateLayout         func(uintptr) uintptr
 	pangoCairoShowLayout           func(uintptr, uintptr)
 	pangoCairoUpdateLayout         func(uintptr, uintptr)
@@ -548,6 +559,17 @@ func bind() {
 	purego.RegisterLibFunc(&pangoAttrLineHeightAbsoluteNew, pangoLib, "pango_attr_line_height_new_absolute")
 	purego.RegisterLibFunc(&pangoAttrUnderlineNew, pangoLib, "pango_attr_underline_new")
 	purego.RegisterLibFunc(&pangoAttrStrikethroughNew, pangoLib, "pango_attr_strikethrough_new")
+	purego.RegisterLibFunc(&pangoAttrShapeNew, pangoLib, "pango_attr_shape_new")
+	purego.RegisterLibFunc(&pangoLayoutGetExtents, pangoLib, "pango_layout_get_extents")
+	purego.RegisterLibFunc(&pangoLayoutGetIter, pangoLib, "pango_layout_get_iter")
+	purego.RegisterLibFunc(&pangoLayoutIterFree, pangoLib, "pango_layout_iter_free")
+	purego.RegisterLibFunc(&pangoLayoutIterNextLine, pangoLib, "pango_layout_iter_next_line")
+	purego.RegisterLibFunc(&pangoLayoutIterNextRun, pangoLib, "pango_layout_iter_next_run")
+	purego.RegisterLibFunc(&pangoLayoutIterGetLine, pangoLib, "pango_layout_iter_get_line_readonly")
+	purego.RegisterLibFunc(&pangoLayoutIterGetRun, pangoLib, "pango_layout_iter_get_run_readonly")
+	purego.RegisterLibFunc(&pangoLayoutIterGetBaseline, pangoLib, "pango_layout_iter_get_baseline")
+	purego.RegisterLibFunc(&pangoLayoutIterGetRunExtents, pangoLib, "pango_layout_iter_get_run_extents")
+	purego.RegisterLibFunc(&pangoLayoutLineGetXRanges, pangoLib, "pango_layout_line_get_x_ranges")
 	purego.RegisterLibFunc(&pangoCairoCreateLayout, pangocairoLib, "pango_cairo_create_layout")
 	purego.RegisterLibFunc(&pangoCairoShowLayout, pangocairoLib, "pango_cairo_show_layout")
 	purego.RegisterLibFunc(&pangoCairoUpdateLayout, pangocairoLib, "pango_cairo_update_layout")

@@ -359,3 +359,115 @@ func blackAndWhite(pix []byte) bool {
 	}
 	return black && white
 }
+
+// TestTextDecorationsBackgroundsAndAttachments draws struck-through
+// spaces, alone and in a span, a span's background and an attachment, and
+// finds each in the window's pixels.
+func TestTextDecorationsBackgroundsAndAttachments(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-inline"
+	black := core.RGB(0x000000)
+	strike := core.Style{TextDecoration: core.TextDecorationLineThrough, Color: black}
+	spaces := "            "
+	app := func(*core.Scope) core.Node {
+		box := core.Style{Height: core.Pt(40), AlignItems: core.AlignStart}
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(240), Background: core.RGB(0xffffff),
+			Padding: core.All(10), FontSize: 20, Color: black}, Children: []core.Node{
+			core.View{Style: box, Children: []core.Node{core.Text{Content: spaces, Style: strike}}},
+			core.View{Style: box, Children: []core.Node{core.Text{Spans: []core.Span{{Content: spaces, Style: strike}}}}},
+			core.View{Style: core.Style{Height: core.Pt(60), AlignItems: core.AlignStart}, Children: []core.Node{
+				core.Text{Spans: []core.Span{
+					{Content: "ab "},
+					{Content: "code", Style: core.Style{Background: core.RGB(0xff0000), CornerRadius: 4}},
+					{Content: " "},
+					{Attachment: core.View{Style: core.Style{Width: core.Pt(30), Height: core.Pt(30), Background: core.RGB(0x0000ff)}}},
+					{Content: " cd"},
+				}},
+			}},
+		}}
+	}
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(app, Options{Title: title, Width: 320, Height: 240})
+	}()
+	hwnd := waitForWindow(t, title, done)
+	if hwnd == 0 {
+		return
+	}
+	t.Cleanup(func() {
+		postMessageW.Call(hwnd, wmClose, 0, 0)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("the window did not close")
+		}
+	})
+	scale := 1.0
+	if dpi, _, _ := getDpiForSystem.Call(); dpi != 0 {
+		scale = float64(dpi) / 96
+	}
+	px := func(p float64) int { return int(p * scale) }
+	type box struct{ left, top, right, bottom, n int }
+	find := func(pix []byte, width int, match func(r, g, b byte) bool, top, bottom int) box {
+		bx := box{left: 1 << 30, top: 1 << 30}
+		for y := top; y < bottom && (y+1)*width*4 <= len(pix); y++ {
+			for x := 0; x < width; x++ {
+				at := (y*width + x) * 4
+				if match(pix[at+2], pix[at+1], pix[at]) {
+					bx.n++
+					bx.left, bx.right = min(bx.left, x), max(bx.right, x+1)
+					bx.top, bx.bottom = min(bx.top, y), max(bx.bottom, y+1)
+				}
+			}
+		}
+		return bx
+	}
+	dark := func(r, g, b byte) bool { return r < 0x80 && g < 0x80 && b < 0x80 }
+	red := func(r, g, b byte) bool { return r == 0xff && g == 0 && b == 0 }
+	blue := func(r, g, b byte) bool { return r == 0 && g == 0 && b == 0xff }
+	var pix []byte
+	var width int32
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var ok bool
+		if pix, width, _, ok = clientPixels(hwnd); ok && find(pix, int(width), blue, 0, px(240)).n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Skip("the window painted no attachment")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	w := int(width)
+	if s := find(pix, w, dark, px(10), px(50)); s.n == 0 || s.right-s.left < px(30) {
+		t.Errorf("a struck-through text's spaces drew %+v, want a line", s)
+	}
+	if s := find(pix, w, dark, px(50), px(90)); s.n == 0 || s.right-s.left < px(30) {
+		t.Errorf("a struck-through span's spaces drew %+v, want a line", s)
+	}
+	bg := find(pix, w, red, px(90), px(150))
+	att := find(pix, w, blue, px(90), px(150))
+	if bg.n < px(20)*px(10) {
+		t.Errorf("the span's background covers %d pixels, want a box", bg.n)
+	}
+	if got, want := att.right-att.left, px(30); got < want-1 || got > want+1 {
+		t.Errorf("the attachment is %d pixels wide, want %d", got, want)
+	}
+	if got, want := att.bottom-att.top, px(30); got < want-1 || got > want+1 {
+		t.Errorf("the attachment is %d pixels tall, want %d", got, want)
+	}
+	if att.left <= bg.right {
+		t.Errorf("the attachment starts at %d, inside the background ending at %d", att.left, bg.right)
+	}
+	// It stands on the baseline, which is below the background's top by
+	// the font's ascent: its bottom is between the background's top and
+	// bottom.
+	if att.bottom <= bg.top || att.bottom >= bg.bottom {
+		t.Errorf("the attachment's bottom %d is not on the baseline, inside the background %d..%d",
+			att.bottom, bg.top, bg.bottom)
+	}
+}

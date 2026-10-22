@@ -73,6 +73,7 @@ type node struct {
 	image   *imageNode
 	hoist   *hoistNode // an overlay's or a modal's
 	hosted  []*node    // the overlays and modals this root view or modal hosts
+	attach  *attachNode
 	screen  *screenNode
 	list    *listNode
 	canvas  *canvasNode
@@ -123,12 +124,22 @@ type textNode struct {
 	box      Bounds
 	sentBox  Bounds
 	resent   bool // a new prepared text needs a new layout
+	// attachments counts the spans that are attachments.
+	attachments int
 }
 
 type spanNode struct {
 	content string
 	style   Style
 	press   func()
+	attach  *node // the view of an attachment
+}
+
+// attachNode is the view of a text's attachment: a layout root of its own
+// at its content size, which the text places in its lines.
+type attachNode struct {
+	size Size // what the text was prepared with
+	cut  bool // cut off by the text's line limit
 }
 
 type inputNode struct {
@@ -473,6 +484,15 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 	t.setRef(n, v.Ref)
 	n.text = &textNode{content: v.Content, maxLines: v.MaxLines, stale: true}
 	for i, sp := range v.Spans {
+		if sp.Attachment != nil {
+			w := t.newNode(KindView, n, cx)
+			w.attach = &attachNode{}
+			t.bindStyle(cx, w, sp.Style, nil)
+			t.mount(cx, w, sp.Attachment)
+			n.text.spans = append(n.text.spans, spanNode{attach: w})
+			n.text.attachments++
+			continue
+		}
 		n.text.spans = append(n.text.spans, spanNode{content: sp.Content, style: sp.Style, press: sp.OnPress})
 		if sp.OnPress != nil {
 			n.h.press = func() {} // presses come with the offset of the span
@@ -776,7 +796,7 @@ func hit(n *node, p Point) NodeID {
 }
 
 func hitWith(n *node, p Point, ok func(*node) bool) NodeID {
-	if n.style.Display == DisplayNone || !n.frame.Contains(p) {
+	if n.style.Display == DisplayNone || !n.frame.Contains(p) || (n.attach != nil && n.attach.cut) {
 		return 0
 	}
 	local := Point{p.X - n.frame.Origin.X, p.Y - n.frame.Origin.Y}
@@ -816,20 +836,28 @@ func appendNative(out []*node, children []*node) []*node {
 		switch {
 		case c.kind == 0:
 			out = appendNative(out, c.children)
-		case c.hoist == nil:
+		case c.hoist == nil && c.attach == nil:
 			out = append(out, c)
 		}
 	}
 	return out
 }
 
-// nativeChildren returns n's native children: the views it lays out,
-// then the overlays and modals it hosts, last on top.
+// nativeChildren returns n's native children: the views it lays out, a
+// text's attachments, then the overlays and modals it hosts, last on top.
 func (n *node) nativeChildren() []*node {
-	if len(n.hosted) == 0 {
+	attached := n.text != nil && n.text.attachments > 0
+	if len(n.hosted) == 0 && !attached {
 		return n.flatChildren()
 	}
 	out := append([]*node(nil), n.flatChildren()...)
+	if attached {
+		for _, sp := range n.text.spans {
+			if sp.attach != nil {
+				out = append(out, sp.attach)
+			}
+		}
+	}
 	for _, h := range n.hosted {
 		if !h.deleted {
 			out = append(out, h)

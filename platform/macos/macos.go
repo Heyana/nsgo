@@ -960,8 +960,9 @@ func drawRect(self objc.ID, _ objc.SEL, dirty apple.CGRect) {
 		apple.Play(ctx, v.drawing)
 		return
 	}
-	v.drawSelection(ctx)
 	box := v.box
+	v.layout.DrawBackgrounds(ctx, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y), 0, 0))
+	v.drawSelection(ctx)
 	v.layout.Draw(ctx, b.Size.Height, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y),
 		float64(box.Size.Width), float64(box.Size.Height)))
 }
