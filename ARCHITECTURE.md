@@ -1,6 +1,6 @@
 # NSGo architecture
 
-NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles, layout and text layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views. Most of NSH's elements, layers, navigation, base components and services exist today; sections below say what exists and what is planned.
+NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles, layout and text layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views. Most of NSH's elements, layers, navigation, base components and services exist today; sections below say what exists, and the [roadmap](docs/roadmap.md) orders what is missing.
 
 ## Reference implementation
 
@@ -84,7 +84,12 @@ Android runs the app as a second process because Go builds Android shared librar
 
 ## Open questions
 
-None are open. Record a design question here, and confirm the answer with the user before choosing it.
+Record a design question here, and confirm the answer with the user before choosing it.
+
+- **Theme format.** Read NSH's theme JSON files, or define themes only as Go values?
+- **Markdown.** Write `TextView`'s parser in NSGo, or depend on a Go library such as goldmark?
+- **Windows web view and video.** Reach WebView2 and Media Foundation through COM over `syscall`, or ship WebView2's loader?
+- **Signed packages and capabilities.** Port NSH's package signing and capability sandbox, or drop them because Go apps are native code?
 
 ## Verification
 
