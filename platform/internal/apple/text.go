@@ -310,36 +310,48 @@ func utf16Offsets(text string) (toUTF16, toUTF8 []int) {
 	return toUTF16, toUTF8
 }
 
-// attributed returns a new CFAttributedString of t, its spans styled over
-// its style. The caller releases it.
-// styleAttributes returns a new CFDictionary of st's attributes. The
-// caller releases it.
-//
-// The attributes depend on the style, never on the text — except that a
-// line holding an attachment may grow past its line height, and that case
-// is built fresh instead of cached (see buildAttributes). So a screen
-// builds a handful and asks for them again for every cell of every frame.
-// A frame of the quotes case asks forty times: without this each ask
-// rebuilt a font, a colour, four CFNumbers, a paragraph style and the
-// dictionary, all through cgo.
 var (
 	attrsMu    sync.Mutex
 	attrsCache = map[attrsKey]uintptr{} // the cache holds one reference each
 )
 
-// attrsKey is everything buildAttributes reads: the style, and whether the
-// text has attachments, since a line holding one may grow past its line
-// height. Both are small and fixed, so both belong in the key.
+// attrsKey is everything buildAttributes reads: the style, whether the
+// text has attachments (a line holding one may grow past its line
+// height), and whether it is a whole text, which alone takes the
+// paragraph style. All are small and fixed, so all belong in the key.
 type attrsKey struct {
 	st              core.TextStyle
 	withAttachments bool
+	paragraph       bool
 }
 
 // attrsCacheLimit bounds the cache. A screen has a handful of styles.
 const attrsCacheLimit = 256
 
-func styleAttributes(st core.TextStyle, withAttachments bool) uintptr {
-	k := attrsKey{st: st, withAttachments: withAttachments}
+// textAttributes returns a new CFDictionary of a whole text's attributes:
+// what st sets per character and the paragraph style its alignment and
+// line height ask for. The caller releases it.
+//
+// The attributes depend on the style, never on the text — except that a
+// line holding an attachment may grow past its line height, which the
+// paragraph style says. A screen builds a handful and asks for them again
+// for every cell of every frame: without the cache each ask rebuilt a
+// font, a colour, four CFNumbers, a paragraph style and the dictionary,
+// all through cgo.
+func textAttributes(st core.TextStyle, withAttachments bool) uintptr {
+	return attributes(attrsKey{st: st, withAttachments: withAttachments, paragraph: true})
+}
+
+// spanAttributes returns a new CFDictionary of what a span sets per
+// character. The paragraph style belongs to the whole text, as NSH sets
+// it, so a span's own alignment or line height changes nothing. The
+// caller releases it.
+func spanAttributes(st core.TextStyle) uintptr {
+	return attributes(attrsKey{st: st})
+}
+
+// attributes returns the cached dictionary for k, building it on a miss.
+func attributes(k attrsKey) uintptr {
 	attrsMu.Lock()
 	if d, ok := attrsCache[k]; ok {
 		attrsMu.Unlock()
@@ -347,7 +359,7 @@ func styleAttributes(st core.TextStyle, withAttachments bool) uintptr {
 	}
 	attrsMu.Unlock()
 
-	d := buildAttributes(st, withAttachments)
+	d := buildAttributes(k)
 	if d == 0 {
 		return 0
 	}
@@ -370,42 +382,45 @@ func styleAttributes(st core.TextStyle, withAttachments bool) uintptr {
 	return cfRetain(d)
 }
 
-// buildAttributes returns a new dictionary of st's attributes: the font,
-// colour, letter spacing and underline from runAttributes, plus the
-// paragraph style the alignment and line height ask for. The caller
-// releases it.
-func buildAttributes(st core.TextStyle, withAttachments bool) uintptr {
+// buildAttributes returns a new dictionary of k's attributes: the font,
+// colour, letter spacing and underline from runAttributes, plus, for a
+// whole text, the paragraph style its alignment and line height ask for.
+// The caller releases it.
+func buildAttributes(k attrsKey) uintptr {
 	var keys, values, owned []uintptr
-
-	align := uint8(alignLeft)
-	switch st.Align {
-	case core.TextAlignCenter:
-		align = alignCenter
-	case core.TextAlignEnd:
-		align = alignRight
-	case core.TextAlignJustify:
-		align = alignJustified
-	}
-	lineHeight := float64(st.LineHeight)
-	settings := []paragraphSetting{{spec: specAlignment, size: 1, value: unsafe.Pointer(&align)}}
-	if lineHeight > 0 {
-		settings = append(settings, paragraphSetting{spec: specMinLineHeight, size: 8, value: unsafe.Pointer(&lineHeight)})
-		// A line grows where an attachment reaches past it.
-		if !withAttachments {
-			settings = append(settings, paragraphSetting{spec: specMaxLineHeight, size: 8, value: unsafe.Pointer(&lineHeight)})
+	if k.paragraph {
+		align := uint8(alignLeft)
+		switch k.st.Align {
+		case core.TextAlignCenter:
+			align = alignCenter
+		case core.TextAlignEnd:
+			align = alignRight
+		case core.TextAlignJustify:
+			align = alignJustified
 		}
+		lineHeight := float64(k.st.LineHeight)
+		settings := []paragraphSetting{{spec: specAlignment, size: 1, value: unsafe.Pointer(&align)}}
+		if lineHeight > 0 {
+			settings = append(settings, paragraphSetting{spec: specMinLineHeight, size: 8, value: unsafe.Pointer(&lineHeight)})
+			// A line grows where an attachment reaches past it.
+			if !k.withAttachments {
+				settings = append(settings, paragraphSetting{spec: specMaxLineHeight, size: 8, value: unsafe.Pointer(&lineHeight)})
+			}
+		}
+		para := ctParagraphStyleCreate(unsafe.Pointer(&settings[0]), uintptr(len(settings)))
+		keys, values, owned = append(keys, attrParagraph), append(values, para), append(owned, para)
 	}
-	para := ctParagraphStyleCreate(unsafe.Pointer(&settings[0]), uintptr(len(settings)))
-	keys, values, owned = append(keys, attrParagraph), append(values, para), append(owned, para)
-	attrs := runAttributes(st, keys, values)
+	attrs := runAttributes(k.st, keys, values)
 	for _, ref := range owned {
 		Release(ref)
 	}
 	return attrs
 }
 
+// attributed returns a new CFAttributedString of t, its spans styled over
+// its style. The caller releases it.
 func attributed(t *core.AttributedText, toUTF16 []int, fonts []core.FontExtent) uintptr {
-	attrs := styleAttributes(t.Style, len(t.Attachments) > 0)
+	attrs := textAttributes(t.Style, len(t.Attachments) > 0)
 	str := CFString(t.Text)
 	out := cfAttributedStringCreate(0, str, attrs)
 	Release(str)
@@ -420,7 +435,7 @@ func attributed(t *core.AttributedText, toUTF16 []int, fonts []core.FontExtent) 
 		if end <= start {
 			continue
 		}
-		a := styleAttributes(sp.Style, false)
+		a := spanAttributes(sp.Style)
 		r := cfRange{Location: toUTF16[start], Length: toUTF16[end] - toUTF16[start]}
 		cfAttributedStringSetAttrs(m, r, a, false)
 		Release(a)

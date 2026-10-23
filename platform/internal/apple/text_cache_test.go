@@ -73,7 +73,7 @@ func TestTextAttributesAreReused(t *testing.T) {
 // A style that differs in any field must not share the other's
 // attributes: alignment would change the paragraph style, colour the
 // foreground, and so on.
-func TestStyleAttributesKeyOnEveryField(t *testing.T) {
+func TestTextAttributesKeyOnEveryField(t *testing.T) {
 	base := core.TextStyle{Font: core.Font{Size: 13}, Color: core.RGB(0x111111)}
 	others := map[string]core.TextStyle{
 		"size":           {Font: core.Font{Size: 14}, Color: core.RGB(0x111111)},
@@ -84,10 +84,10 @@ func TestStyleAttributesKeyOnEveryField(t *testing.T) {
 		"letter spacing": {Font: core.Font{Size: 13}, Color: core.RGB(0x111111), LetterSpacing: 1},
 		"underline":      {Font: core.Font{Size: 13}, Color: core.RGB(0x111111), Decoration: core.TextDecorationUnderline},
 	}
-	a := styleAttributes(base, false)
+	a := textAttributes(base, false)
 	defer Release(a)
 	for name, st := range others {
-		b := styleAttributes(st, false)
+		b := textAttributes(st, false)
 		if b == a {
 			t.Errorf("%s: two different styles came back as one dictionary", name)
 		}
@@ -101,7 +101,7 @@ func TestStyleAttributesKeyOnEveryField(t *testing.T) {
 func TestCachedAttributesSurviveRelease(t *testing.T) {
 	st := core.TextStyle{Font: core.Font{Size: 13}, Color: core.RGB(0x222222)}
 	for range 4 {
-		d := styleAttributes(st, false)
+		d := textAttributes(st, false)
 		if d == 0 {
 			t.Fatal("the attributes were released with the caller's handle")
 		}
@@ -113,7 +113,7 @@ func TestCachedAttributesSurviveRelease(t *testing.T) {
 func TestAttributesCacheIsBounded(t *testing.T) {
 	for i := range attrsCacheLimit * 2 {
 		st := core.TextStyle{Font: core.Font{Size: 13}, Color: core.RGB(uint32(i%0xffffff) | 0x100000)}
-		Release(styleAttributes(st, false))
+		Release(textAttributes(st, false))
 	}
 	attrsMu.Lock()
 	n := len(attrsCache)
@@ -169,10 +169,10 @@ func TestMeasureCacheKeysOnWidth(t *testing.T) {
 // Whether the text holds an attachment changes the paragraph style (a line
 // with one may grow past its line height), so it is part of the key: the
 // two cases must not share attributes, and each must hit its own entry.
-func TestStyleAttributesKeyOnAttachments(t *testing.T) {
+func TestTextAttributesKeyOnAttachments(t *testing.T) {
 	st := core.TextStyle{Font: core.Font{Size: 13}, Color: core.RGB(0x222222), LineHeight: 20}
-	plain, plain2 := styleAttributes(st, false), styleAttributes(st, false)
-	withAtt := styleAttributes(st, true)
+	plain, plain2 := textAttributes(st, false), textAttributes(st, false)
+	withAtt := textAttributes(st, true)
 	defer Release(plain)
 	defer Release(plain2)
 	defer Release(withAtt)
@@ -182,9 +182,27 @@ func TestStyleAttributesKeyOnAttachments(t *testing.T) {
 	if plain == withAtt {
 		t.Fatal("text with an attachment shared plain text's attributes: its line cannot grow past the line height")
 	}
-	again := styleAttributes(st, true)
+	again := textAttributes(st, true)
 	if again != withAtt {
 		t.Fatalf("the attachment key built attributes twice (%#x, %#x)", again, withAtt)
 	}
 	Release(again)
+}
+
+// A span's attributes must not carry the paragraph style: NSH sets it for
+// the whole text, so a span's own alignment or line height would otherwise
+// rewrite its paragraph.
+func TestSpanAttributesCarryNoParagraph(t *testing.T) {
+	st := core.TextStyle{Font: core.Font{Size: 13}, Color: core.RGB(0x111111), Align: core.TextAlignEnd, LineHeight: 20}
+	span, span2 := spanAttributes(st), spanAttributes(st)
+	text := textAttributes(st, false)
+	defer Release(span)
+	defer Release(span2)
+	defer Release(text)
+	if span != span2 {
+		t.Fatalf("the same span style built its attributes twice (%#x, %#x)", span, span2)
+	}
+	if span == text {
+		t.Fatal("a span shared the whole text's attributes: its paragraph style would rewrite the paragraph")
+	}
 }
