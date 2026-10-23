@@ -51,6 +51,7 @@ var sections []section
 func init() {
 	sections = []section{
 		{"Welcome", groupOverview, lucide.House, "", welcomePage},
+		{"Base", groupOverview, lucide.Component, "The engine's unstyled parts: a pressable view, popups, menus, dialogs, sheets, navigation and safe areas, styled by the app.", basePage},
 		{"Documentation", groupGuide, lucide.BookOpen, "Guides for building NSGo applications.", docsPage},
 
 		{"Text", groupElements, lucide.Type, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
@@ -62,7 +63,6 @@ func init() {
 		{"Lists", groupElements, lucide.List, "Virtualized lists: sticky sections, columns, a chat, a list in the page, and a keyed list you edit.", listsPage},
 		{"Scrolling", groupElements, lucide.Scroll, "Paging, snapping, insets, pull to refresh, the scroll events and zooming.", scrollingPage},
 
-		{"Base", groupComponents, lucide.Component, "The engine's unstyled parts: a pressable view, popups, menus, dialogs, sheets, navigation and safe areas, styled by the app.", basePage},
 		{"Buttons", groupComponents, lucide.MousePointerClick, "Buttons in each variant, checkboxes, switches, radios and tabs.", buttonsPage},
 		{"Fields", groupComponents, lucide.TextCursorInput, "Inputs, selects, sliders, icon buttons and the platform field itself.", fieldsPage},
 		{"Feedback", groupComponents, lucide.BellRing, "Badges, progress bars and toasts.", feedbackPage},

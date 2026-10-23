@@ -14,7 +14,7 @@
 - Add unstyled base components: buttons, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
 - Add the `ui` package with themed controls, fields, popups, a sidebar, settings, a command palette and toasts, in a default theme after Onevra or the app's own, following the system's appearance.
 - Move checkboxes, switches, radio groups, tabs and sliders from `base` to `ui`, which draws them with the theme.
-- Show all of `base`'s components on one gallery page, in one sidebar of grouped sections.
+- Show all of `base`'s components on one gallery page, in one scrolling sidebar with Base before the elements.
 - Add pan, pinch and rotation gestures.
 - Add animated values and layout animations that run on each platform's frame clock, with drags and scroll offsets moving values directly.
 - Add `Scope.RequestAnimationFrame`, so an app draws on the display's frames, and step `Scope.Animate` on them.

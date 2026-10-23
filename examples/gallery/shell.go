@@ -70,8 +70,9 @@ func (g *gallery) desktop(cx *core.Scope) core.Node {
 					return core.Style{Width: core.Pt(width.Get()), FlexShrink: 0, Overflow: core.Hidden,
 						Background: sidebarColor(t), Borders: core.Edges{Right: 1}, BorderColors: core.EdgeColors{Right: t.Border}}
 				},
-				// The sidebar's content keeps its width while the column opens.
-				Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(sidebarWidth), FlexGrow: 1}, Children: []core.Node{
+				// The sidebar's content keeps its width while the column opens,
+				// and shrinks with the window so its list scrolls.
+				Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(sidebarWidth), FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)}, Children: []core.Node{
 					g.sidebarHeader(cx),
 					g.searchField(cx),
 					g.navigation(),
@@ -147,8 +148,8 @@ func shortcut(cx *core.Scope, key string) string {
 	return "⌘" + key
 }
 
-// navigation is the sidebar's list: Welcome and the guide above, then
-// every group of sections.
+// navigation is the sidebar's list: Welcome, Base and the guide above
+// every group of sections, all scrolling together.
 func (g *gallery) navigation() core.Node {
 	item := func(s section) core.Node {
 		return ui.SidebarItem{Label: s.name, Icon: s.icon(), TestID: "nav-" + s.name,
@@ -166,13 +167,15 @@ func (g *gallery) navigation() core.Node {
 		list = append(list, ui.SidebarSection{Title: group[0].group, Children: items})
 	}
 	welcome, _ := find("Welcome")
+	base, _ := find("Base")
 	guide, _ := find("Documentation")
 	return core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)}, Children: []core.Node{
-		core.View{Style: core.Style{Padding: core.Edges{Right: 12, Bottom: 10, Left: 12}, Gap: 10}, Children: []core.Node{
-			item(welcome),
-			item(guide),
-		}},
-		core.Scroll{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
+		core.Scroll{TestID: "nav-sections", Style: core.Style{FlexGrow: 1}, Children: []core.Node{
+			core.View{Style: core.Style{Padding: core.Edges{Right: 12, Bottom: 10, Left: 12}, Gap: 10}, Children: []core.Node{
+				item(welcome),
+				item(base),
+				item(guide),
+			}},
 			ui.Sidebar{Label: "Sections", Children: list},
 		}},
 	}}

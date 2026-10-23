@@ -85,6 +85,36 @@ func TestContentScrollsWithinTheWindow(t *testing.T) {
 	}
 }
 
+// TestSidebarScrollsWithinTheWindow keeps the sidebar's list inside the
+// window, so its later sections scroll rather than overflow.
+func TestSidebarScrollsWithinTheWindow(t *testing.T) {
+	app := startDesktop(t)
+	nav := app.Find("id:nav-sections")
+	if bottom := nav.Frame.Origin.Y + nav.Frame.Size.Height; bottom > 760 {
+		t.Fatalf("sidebar list ends at %v, past the window", bottom)
+	}
+	if nav.Content.Height <= nav.Frame.Size.Height {
+		t.Fatalf("sidebar list frame %v holds %v, want it scrolling", nav.Frame, nav.Content)
+	}
+	app.Scroll("id:nav-sections", core.Point{Y: nav.Content.Height})
+	if nav.Offset.Y == 0 {
+		t.Fatal("the sidebar list did not scroll")
+	}
+	// The top entries scroll with the groups, not above them.
+	for _, id := range []string{"nav-Welcome", "nav-Base", "nav-Documentation"} {
+		inside := false
+		for v := app.Find("id:" + id); v != nil; v = v.Parent {
+			if v.Props.TestID == "nav-sections" {
+				inside = true
+				break
+			}
+		}
+		if !inside {
+			t.Fatalf("%s stays above the sidebar's scroll view", id)
+		}
+	}
+}
+
 func TestPhoneStack(t *testing.T) {
 	app := nsgotest.Start(t, Root)
 	app.Find("id:index")
@@ -183,8 +213,8 @@ func TestApplicationMenu(t *testing.T) {
 	app.Find("id:section-Images")
 	view := app.Menu[slices.IndexFunc(app.Menu, func(e core.MenuEntry) bool { return e.Label == "View" })]
 	for _, e := range view.Items {
-		if e.Label == "Images" && (!e.Checked || e.Shortcut != "mod+6") {
-			t.Fatalf("View › Images = %+v, want checked with mod+6", e)
+		if e.Label == "Images" && (!e.Checked || e.Shortcut != "mod+7") {
+			t.Fatalf("View › Images = %+v, want checked with mod+7", e)
 		}
 	}
 	app.ChooseMenu("View", "Next Section")

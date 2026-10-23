@@ -43,7 +43,7 @@ go tool nsgo dev .
 
 ## Explore
 
-The sidebar groups the gallery by subject. The Components group shows the engine's unstyled **Base** parts beside the themed components **ui** builds from them. Search finds any page from the keyboard, and every control on a page is live.
+The sidebar puts the engine's unstyled **Base** parts first, above the element pages and the themed **ui** components built from them. Search finds any page from the keyboard, and every control on a page is live.
 
 The Theme page restyles the whole gallery at once, in the system's appearance or one chosen by hand.
 
