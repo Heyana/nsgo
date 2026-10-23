@@ -30,6 +30,7 @@ Run `bun run typecheck`, `bun run check` and `bun run build` in `website/` when 
 ## Documentation
 
 - Update a document only when a fact its reader needs changes.
+- Avoid secondary labels and descriptions that restate a heading or value; let the layout explain.
 - Keep each document within its budget and written for its reader.
 - Record completed user-visible outcomes as one-clause `Unreleased` bullets, ordered by type and merging related ones.
 - Repair documents you touch instead of only appending to them.
