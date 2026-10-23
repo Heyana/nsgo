@@ -55,6 +55,18 @@ type View struct {
 	// OnRotation a two-finger rotation.
 	OnPinch    func(GestureEvent)
 	OnRotation func(GestureEvent)
+	// PanValues are animated values a drag on the view moves on the
+	// platform's main thread, to its translation, with no engine work per
+	// move. They need no OnPan.
+	PanValues AnimatedXY
+	// OnFileDrop receives the file: URLs of files dropped on the view from
+	// another app, on desktops and the web; OnFileDragEnter and
+	// OnFileDragLeave follow them while they are dragged over it. The
+	// innermost view with OnFileDrop under the pointer takes them, unless
+	// it is Disabled.
+	OnFileDrop      func(uris []string)
+	OnFileDragEnter func()
+	OnFileDragLeave func()
 	// WindowDrag makes the view a handle that moves the desktop window.
 	WindowDrag WindowDrag
 	// SelectionArea makes the texts inside select together, as a web
@@ -147,8 +159,11 @@ type Input struct {
 	Disabled     func() bool
 	KeyboardType KeyboardType
 	AutoFocus    bool
-	Style        Style
-	StyleFunc    func() Style
+	// InputAccessoryViewID names the InputAccessoryView shown above the
+	// software keyboard while the field has focus.
+	InputAccessoryViewID string
+	Style                Style
+	StyleFunc            func() Style
 
 	OnChange func(text string)
 	OnSubmit func(text string)
@@ -174,9 +189,12 @@ type Scroll struct {
 	Children      []Node
 	// OnScroll receives the offset of the content as it scrolls.
 	OnScroll func(offset Point)
-	OnLayout func(Bounds)
-	Ref      *Ref
-	TestID   string
+	// OffsetValues follow the offset on the platform's main thread, in
+	// the same frame as it scrolls.
+	OffsetValues AnimatedXY
+	OnLayout     func(Bounds)
+	Ref          *Ref
+	TestID       string
 }
 
 // Render implements Node.

@@ -57,6 +57,10 @@ var (
 	cbSettingsChanged uintptr
 	cbMenuActivate    uintptr
 	cbTick            uintptr
+
+	cbDropMotion uintptr
+	cbDropLeave  uintptr
+	cbDrop       uintptr
 )
 
 func init() {
@@ -109,4 +113,8 @@ func init() {
 	cbSettingsChanged = newCallback(settingsChangedCallback)
 	cbMenuActivate = newCallback(menuActivateCallback)
 	cbTick = newCallback(tickCallback)
+
+	cbDropMotion = newCallback(dropMotionCallback)
+	cbDropLeave = newCallback(dropLeaveCallback)
+	cbDrop = newCallback(dropCallback)
 }

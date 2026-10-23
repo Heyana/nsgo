@@ -3,31 +3,35 @@
 package linux
 
 import (
-	"bytes"
 	"context"
-	"errors"
-	"image"
-	"image/draw"
-	_ "image/gif" // registers the decoders image.Decode uses
-	_ "image/jpeg"
-	_ "image/png"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unsafe"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/platform/internal/imagedecode"
 	"github.com/oneo-me/nsgo/platform/internal/imageload"
 )
 
 // progressInterval spaces an image's progress reports.
 const progressInterval = 100 * time.Millisecond
 
-// picture is a decoded image: premultiplied BGRA rows, top to bottom.
+// picture is a decoded image: premultiplied BGRA rows, top to bottom, of
+// the frame it shows.
 type picture struct {
 	width, height int
 	pix           []byte
+	// An animated GIF or WebP's frames, which take turns in pix, and how
+	// many times it plays, 0 for ever; nil for a still image.
+	frames []imagedecode.Frame
+	plays  int
+	// A vector picture is an SVG drawn oversampled; size is its intrinsic
+	// size in points.
+	vector bool
+	size   core.Size
 }
 
 // imageSlot is an image view's source or placeholder and what the window
@@ -38,6 +42,11 @@ type imageSlot struct {
 	pic     *picture
 	surface uintptr // pic as a Cairo surface, tinted with tint
 	tint    core.Color
+	// An animation's frame showing, since when, and how many times it
+	// played through.
+	frame   int
+	frameAt time.Time
+	played  int
 }
 
 type imageLoad struct{ cancel context.CancelFunc }
@@ -56,6 +65,7 @@ func (s *imageSlot) reset(src core.ImageSource) {
 	}
 	s.pic = nil
 	s.src = src
+	s.frame, s.played, s.frameAt = 0, 0, time.Time{}
 }
 
 func sameSource(a, b core.ImageSource) bool {
@@ -131,10 +141,17 @@ func (w *window) load(v *view, s *imageSlot, report bool) {
 			}
 			s.pic = pic
 			if report {
+				// The source's size: an SVG's in whole points, a bitmap's
+				// pixels.
 				size := core.Size{Width: core.Points(pic.width), Height: core.Points(pic.height)}
+				if pic.vector {
+					size = core.Size{Width: core.Points(math.Round(float64(pic.size.Width))),
+						Height: core.Points(math.Round(float64(pic.size.Height)))}
+				}
 				w.report(v, core.Event{Kind: core.EventLoad, ID: v.id, Size: size})
 				w.report(v, core.Event{Kind: core.EventLoadEnd, ID: v.id})
 			}
+			w.playImage(v)
 			w.changed(v)
 		})
 	}()
@@ -147,29 +164,129 @@ func (w *window) report(v *view, ev core.Event) {
 	}
 }
 
-// decode decodes a PNG, JPEG or GIF into premultiplied BGRA.
+// decode decodes a PNG, JPEG, GIF, WebP or SVG into premultiplied BGRA,
+// as Cairo's ARGB32 has it on little-endian machines. An SVG is drawn at
+// 4 pixels a point, at most 2048 a side, as NSH's Linux backend draws
+// it, so it stays sharp when scaled up.
 func decode(data []byte) (*picture, error) {
-	img, _, err := image.Decode(bytes.NewReader(data))
+	img, err := imagedecode.Decode(data, imagedecode.Options{Layout: imagedecode.BGRA})
 	if err != nil {
 		return nil, err
 	}
-	b := img.Bounds()
-	if b.Empty() {
-		return nil, errors.New("linux: empty image")
+	pic := &picture{width: img.Width, height: img.Height, pix: img.Frames[0].Pix,
+		vector: img.Format == imagedecode.SVG, size: img.Size}
+	if len(img.Frames) > 1 {
+		pic.frames, pic.plays = img.Frames, img.Plays
 	}
-	rgba := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	draw.Draw(rgba, rgba.Rect, img, b.Min, draw.Src)
-	// image.RGBA is premultiplied already; Cairo's ARGB32 wants blue
-	// first on little-endian machines.
-	pix := rgba.Pix
-	for i := 0; i+3 < len(pix); i += 4 {
-		pix[i], pix[i+2] = pix[i+2], pix[i]
+	return pic, nil
+}
+
+// playImage plays v's animated pictures on the frame clock, unless v is
+// tinted: a tinted animation shows its first frame, as NSH's does.
+func (w *window) playImage(v *view) {
+	if v.deleted || w.styleOf(v).TintColor&0xff != 0 {
+		return
 	}
-	return &picture{width: b.Dx(), height: b.Dy(), pix: pix}, nil
+	for _, s := range []*imageSlot{&v.source, &v.placeholder} {
+		if s.pic != nil && s.pic.frames != nil && !s.finished() {
+			if s.frameAt.IsZero() {
+				s.frameAt = time.Now()
+			}
+			if !slices.Contains(w.playing, v) {
+				w.playing = append(w.playing, v)
+			}
+			w.startClock()
+		}
+	}
+}
+
+// finished reports whether s's animation played as many times as it
+// plays.
+func (s *imageSlot) finished() bool {
+	return s.pic.plays > 0 && s.played >= s.pic.plays
+}
+
+// stepImages shows the frames of the playing animations due by now, and
+// reports whether any still plays.
+func (w *window) stepImages(now time.Time) bool {
+	live := w.playing[:0]
+	for _, v := range w.playing {
+		if v.deleted {
+			continue
+		}
+		tinted := w.styleOf(v).TintColor&0xff != 0
+		playing := false
+		for _, s := range []*imageSlot{&v.source, &v.placeholder} {
+			if s.pic == nil || s.pic.frames == nil || s.finished() {
+				continue
+			}
+			if tinted {
+				if s.frame != 0 {
+					s.show(0)
+					w.changed(v)
+				}
+				s.frameAt = time.Time{}
+				continue
+			}
+			if s.step(now) {
+				w.changed(v)
+			}
+			playing = playing || !s.finished()
+		}
+		if playing {
+			live = append(live, v)
+		}
+	}
+	clear(w.playing[len(live):])
+	w.playing = live
+	return len(live) > 0
+}
+
+// step moves s's animation to the frame due at now, and reports whether
+// it shows another one.
+func (s *imageSlot) step(now time.Time) bool {
+	frames := s.pic.frames
+	at := s.frame
+	// A frame shows for its delay from when the last one was due, so the
+	// animation keeps its pace; one far behind starts again from now.
+	for range len(frames) + 1 {
+		due := s.frameAt.Add(frames[at].Delay)
+		if now.Before(due) {
+			break
+		}
+		if at == len(frames)-1 {
+			s.played++
+			if s.finished() {
+				break // it stays on its last frame
+			}
+			at = 0
+		} else {
+			at++
+		}
+		s.frameAt = due
+	}
+	if now.Sub(s.frameAt) > time.Second {
+		s.frameAt = now
+	}
+	if at == s.frame {
+		return false
+	}
+	s.show(at)
+	return true
+}
+
+// show makes frame i the one s shows.
+func (s *imageSlot) show(i int) {
+	s.frame = i
+	s.pic.pix = s.pic.frames[i].Pix
+	if s.surface != 0 {
+		cairoSurfaceDestroy(s.surface)
+		s.surface = 0
+	}
 }
 
 // surfaceOf returns s's picture as a Cairo image surface with tint
-// applied, made once per picture and tint; 0 until the picture arrives.
+// applied, made once per frame and tint; 0 until the picture arrives.
 func (s *imageSlot) surfaceOf(tint core.Color) uintptr {
 	if s.pic == nil {
 		return 0
@@ -253,8 +370,11 @@ func (w *window) fit(s *imageSlot, mode core.ResizeMode, r rect) (src, dst rect)
 		return src, r
 	case core.Center:
 		// A picture's pixels are points, or its URI's "@2x" says how many
-		// make one, unless the source gave its size.
+		// make one, unless the source gave its size; an SVG has its own.
 		nw, nh := pw/density(s.src.URI), ph/density(s.src.URI)
+		if s.pic.vector {
+			nw, nh = float64(s.pic.size.Width), float64(s.pic.size.Height)
+		}
 		if size := s.src.Size; size.Width > 0 && size.Height > 0 {
 			nw, nh = float64(size.Width), float64(size.Height)
 		}

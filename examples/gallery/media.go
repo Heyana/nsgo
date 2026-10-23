@@ -44,6 +44,16 @@ func imagesPage(cx *core.Scope, t *theme) core.Node {
 			t.live(status.Get),
 		),
 		t.demo("Resize modes", "ResizeMode fits a 2:1 picture into a 4:3 view.", flow(resized...)),
+		t.demo("Animated and vector", "Animated GIF and WebP files play on the platform; an SVG file draws sharp at the view's size.",
+			hstack(
+				core.Image{Source: core.ImageSource{Data: animatedGIF}, Label: "Animated GIF", TestID: "gif",
+					Style: core.Style{Width: core.Pt(64), Height: core.Pt(64)}},
+				core.Image{Source: core.ImageSource{Data: []byte(badgeSVG)}, Label: "SVG badge", TestID: "svg",
+					Style: core.Style{Width: core.Pt(96), Height: core.Pt(96)}},
+				core.Image{Source: core.ImageSource{Data: []byte(starSVG)}, Label: "Tinted SVG", ResizeMode: core.Contain,
+					Style: core.Style{Width: core.Pt(48), Height: core.Pt(48), TintColor: t.accent}},
+			),
+		),
 	}}
 }
 

@@ -97,6 +97,7 @@ func mouseDragged(self objc.ID, cmd objc.SEL, event objc.ID) {
 			return
 		}
 	}
+	v.surface.panned(t.view, d)
 	t.view.report(core.Event{Kind: core.EventPan, Phase: phase, Point: d, Velocity: t.velocity})
 }
 

@@ -4,11 +4,14 @@
 // view is a widget of its own (NsgoView, a GtkWidget subclass) that its
 // parent places at the core's frame and that draws itself with GtkSnapshot
 // and Cairo, text the engine measured and laid out with Pango included.
-// Inputs, web views and videos are native GtkEntry, WebKitWebView and
-// GtkPicture widgets hosted in their view's widget, so they stack, clip,
-// fade and transform with the views around them. GTK delivers the
-// pointer, wheel and keyboard events to the surface; the backend hit
-// tests presses and the engine keeps the interaction state.
+// Inputs, web views, videos and the app's native components are native
+// GtkEntry, WebKitWebView, GtkPicture and app widgets hosted in their
+// view's widget, so they stack, clip, fade and transform with the views
+// around them. GTK delivers the pointer, wheel and keyboard events and
+// file drops to the surface; the backend hit tests them and the engine
+// keeps the interaction state. Transitions, animated values, layout
+// animations and animated images run on one frame clock that ticks only
+// while something animates.
 //
 // The backend is the one the roadmap asks for: GTK 4 through purego, no
 // cgo and no hand-written C. It loads its libraries at run time, so an
@@ -29,6 +32,7 @@ import (
 	"runtime"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/engine"
@@ -41,6 +45,8 @@ type Options struct {
 	Width, Height core.Points
 	// ID names the app's directories and storage (engine.AppDirs).
 	ID string
+	// Components are the native components Native elements name.
+	Components core.NativeComponents
 }
 
 // window is one GTK window and the tree it shows. The engine's goroutine
@@ -72,6 +78,13 @@ type window struct {
 	animating []*view
 	ticking   bool
 	tickID    uint32
+	animator  *core.Animator
+	epoch     time.Time // the animator's clock starts here
+	layouts   []*view   // views a layout animation moves, shows or retires
+	playing   []*view   // image views whose animated images play
+
+	components core.NativeComponents
+	drop       fileDrop
 
 	lastPointer    core.Point
 	shielding      bool // a press kept from a hosted control goes on
@@ -134,7 +147,10 @@ func start(app engine.App, opts Options) (*window, error) {
 		keys:       map[string]bool{},
 		actionRefs: map[uintptr]menuRef{},
 		env:        core.Environment{OS: core.OSLinux, Idiom: core.IdiomDesktop},
+		components: opts.Components,
+		epoch:      time.Now(),
 	}
+	w.animator = core.NewAnimator(w.animatorReport)
 	w.handle = registerWindow(w)
 	w.chrome.keys = map[string]menuRef{}
 	w.createWindow(opts)
@@ -294,11 +310,18 @@ func (w *window) apply(b *core.MountBatch) {
 		focus bool
 	}
 	var focus []focusChange
+	lb := w.newLayoutBatch(b)
 	for i := range b.Items {
 		it := &b.Items[i]
 		switch it.Kind {
 		case core.ItemCreate:
 			w.create(it.ID, it.View)
+			if lb != nil {
+				lb.created[it.ID] = true
+			}
+			continue
+		case core.ItemAnimation:
+			w.animations(it.Animation)
 			continue
 		case core.ItemAlert:
 			w.showAlert(it.Alert)
@@ -349,15 +372,25 @@ func (w *window) apply(b *core.MountBatch) {
 				p.children = slices.Insert(p.children, at, v)
 				v.parent = p
 				w.insertWidget(p, v, before)
+				w.inserted(v, p, lb)
 			}
 		case core.ItemRemove:
 			v.detach()
 			w.unparentWidget(v.widget)
 		case core.ItemDelete:
-			w.delete(v)
+			w.animator.Forget(v.id)
+			switch {
+			case v.parent != nil && v.parent.dying:
+				w.retireInner(v)
+			case w.retiring(v, lb):
+				w.retire(v, lb)
+			default:
+				w.delete(v)
+			}
 		case core.ItemFrame:
-			resized := v.frame.Size != it.Frame.Size
-			v.frame = it.Frame
+			old := v.shownFrame().Size
+			w.framed(v, it.Frame, lb)
+			resized := v.shownFrame().Size != old
 			w.moved(v)
 			if resized && v.widget != 0 {
 				gtkWidgetQueueAllocate(v.widget)
@@ -373,6 +406,9 @@ func (w *window) apply(b *core.MountBatch) {
 				w.styleEntry(v)
 			}
 			w.webBackground(v)
+			if v.kind == core.KindImage {
+				w.playImage(v) // again once it is no longer tinted
+			}
 		case core.ItemText:
 			if v.text != nil {
 				v.text.Release()
@@ -385,10 +421,13 @@ func (w *window) apply(b *core.MountBatch) {
 		case core.ItemInputValue:
 			w.setValue(v, it.Value, it.Count)
 		case core.ItemEvents:
-			v.events = it.Events
+			w.setEvents(v, it.Events)
 		case core.ItemViewProps:
 			if it.ViewProps != nil {
 				v.props = *it.ViewProps
+				if v.props.Disabled && w.drop.over == v {
+					w.setDropOver(nil)
+				}
 			}
 		case core.ItemScrollConfig:
 			v.scroll = *it.Scroll
@@ -418,6 +457,12 @@ func (w *window) apply(b *core.MountBatch) {
 			if v.video != nil {
 				v.video.seek(it.Time)
 			}
+		case core.ItemNative:
+			w.configureNative(v, it.Native)
+		case core.ItemNativeCommand:
+			if v.native != nil && v.native.comp != nil {
+				v.native.comp.Command(it.Value, it.Data)
+			}
 		case core.ItemScrollTo:
 			v.scrolling = nil
 			if it.Animated {
@@ -428,6 +473,9 @@ func (w *window) apply(b *core.MountBatch) {
 		}
 	}
 	w.setRoot(b.Root)
+	// Bindings change with the batch, and its views exist now.
+	w.showAnimated()
+	w.updateDropTarget()
 	for _, v := range rescroll {
 		if !v.deleted {
 			w.scrollTo(v, v.offset)
@@ -484,6 +532,7 @@ func (w *window) setRoot(id core.NodeID) {
 // delete drops v and its subtree. The engine deletes the children too,
 // so they are detached but their own items release what they hold.
 func (w *window) delete(v *view) {
+	w.forgetDestination(v)
 	v.detach()
 	for _, c := range v.children {
 		c.parent = nil
@@ -512,11 +561,16 @@ func (w *window) delete(v *view) {
 	if v.video != nil {
 		w.closeVideo(v)
 	}
+	if v.native != nil {
+		w.closeNative(v)
+	}
 	v.source.reset(core.ImageSource{})
 	v.placeholder.reset(core.ImageSource{})
 	w.dropWidget(v)
-	v.deleted = true
-	w.views[v.id] = nil
+	v.deleted, v.dying, v.layout, v.animated = true, false, nil, nil
+	if w.views[v.id] == v {
+		w.views[v.id] = nil
+	}
 }
 
 // windowCommand carries out a Window item.
@@ -572,6 +626,9 @@ func (w *window) scrollTo(v *view, offset core.Point) bool {
 	if v.widget != 0 {
 		gtkWidgetQueueAllocate(v.widget)
 		gtkWidgetQueueDraw(v.widget)
+	}
+	if w.animator.Scroll(v.id, offset) {
+		w.showAnimated()
 	}
 	w.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id, Point: offset})
 	return true

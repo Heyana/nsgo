@@ -1,6 +1,6 @@
 # NSGo architecture
 
-NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles, layout and text layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views. Most of NSH's elements, layers, navigation, base components and services exist today; sections below say what exists, and the [roadmap](docs/roadmap.md) orders what is missing.
+NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles, layout and text layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views and runs what animates on its own frame clock. Most of NSH's elements, layers, navigation, base components and services exist today; sections below say what exists, and the [roadmap](docs/roadmap.md) orders what is missing.
 
 ## Reference implementation
 
@@ -21,7 +21,7 @@ Packages mirror NSH's crates:
 
 | Package | NSH counterpart | Responsibility |
 | --- | --- | --- |
-| `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, layout, text, SVG drawings, mount items |
+| `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, layout, text, SVG drawings, mount items; the animation graph's evaluator (`Animator`) and the selection model the backends run |
 | `base` | `nsh-base` | Unstyled base components: controls, sliders, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack |
 | `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark), HTML (x/net/html) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
 | `ui` | `nsh-base`'s `Theme` | The theme as Go values; `base`'s controls, popups and text view styled with it; fields, a sidebar, settings, a command palette and toasts composed on them, after Onevra's components |
@@ -33,8 +33,9 @@ Packages mirror NSH's crates:
 | `platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
 | `platform/internal/apple` | Shared Apple code | CoreFoundation, CALayer styling, images, canvas, `WKWebView` web views, AVFoundation videos and the CoreText text engine through purego |
 | `platform/internal/imageload` | Platforms' image loaders | Fetching and caching image bytes once, in Go, for the backends that decode images themselves |
+| `platform/internal/imagedecode` | `nsh_core::svg`, platforms' decoders | Pure Go decoding into premultiplied pixels: PNG, JPEG, every frame of GIF and WebP animations, and SVG drawn by its own rasterizer within NSH's bounds ([images](docs/architecture/images.md)) |
 | `platform/internal/scrollbar` | Platforms' scroll bars | Thumb geometry, hits and dragging for the backends that paint their own scroll bars |
-| `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags; the tool sets name and window size |
+| `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags and hands it the app's native components; the tool sets name and window size |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `nsgo dev` and `nsgo build`, driven by an app's `nsgo.yaml` |
 | `cmd/nsgo/apk` | `nsh-cli` (`android.rs`) | Android packaging: binary XML, ZIP and v2 signature in Go |
 | `tools/lucidegen` | — | Regenerates `icons/lucide` and the gallery's catalog from a pinned Lucide checkout |
@@ -50,8 +51,8 @@ Every target builds on macOS with Go; iOS also needs Xcode, and x86_64 Android n
 | macOS | `platform/macos` | purego and the Objective-C runtime; `CGO_ENABLED=0` | Runs |
 | iOS | `platform/ios` | The same; cgo only because Go links iOS with Xcode's linker | Runs in the simulator and on devices |
 | Web | `platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
-| Windows | `platform/windows` | `syscall` and COM: a Win32 window drawn with Direct2D into a Direct3D 11 flip-model swap chain, DirectWrite text and drawn inputs; a DirectComposition tree that stacks WebView2 pages between layers of what is drawn after them; Media Foundation videos drawn as content | Runs; native tests check its window, input, pixels, web views and videos |
-| Linux | `platform/linux` | GTK 4, Pango and Cairo loaded with purego: a widget per view (`NsgoView`, a GtkWidget subclass registered from Go) drawn with GtkSnapshot and Cairo, Pango text, and GtkEntry inputs, WebKitGTK web views and GStreamer videos hosted in their views | Runs; native tests check its window, input, stacking, clipping and pixels |
+| Windows | `platform/windows` | `syscall` and COM: a Win32 window drawn with Direct2D into a Direct3D 11 flip-model swap chain, DirectWrite text and drawn inputs; a DirectComposition tree that stacks WebView2 pages between layers of what is drawn after them; Media Foundation videos drawn as content | Runs; native tests check its window, input, pixels, web views, videos, file drops, native components, animations and images |
+| Linux | `platform/linux` | GTK 4, Pango and Cairo loaded with purego: a widget per view (`NsgoView`, a GtkWidget subclass registered from Go) drawn with GtkSnapshot and Cairo, Pango text, and GtkEntry inputs, WebKitGTK web views and GStreamer videos hosted in their views | Runs; native tests check its window, input, stacking, clipping, pixels, file drops, native components, animations and images |
 | Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Runs on arm64 devices and x86_64 emulators; `nsgo` builds, signs and installs the APK |
 
 Android runs the app as a second process because Go builds Android shared libraries only with cgo and the NDK. Without cgo, Go builds Android executables for arm64 only, so 32-bit devices stay out of reach. iOS forbids child processes, so it links in-process with Xcode instead.
@@ -71,6 +72,7 @@ As in NSH, each Linux view is a widget its parent places at the core's frame, so
 - `ui` styles `base` with a theme. Apps change the theme with `ui.ThemeView`, adjust a component with its `Style`, or build their own components on `base`.
 - Backends call system APIs through purego or `syscall`, never hand-written C.
 - The platform main thread never waits for the engine. The engine never touches main-thread-only UI objects.
+- What animates runs on the platform's frame clock: transitions, animated values and layout animations are data the engine sends once, never a commit per frame.
 - The reactive graph belongs to the engine goroutine and never locks; other goroutines reach it through `Scope.Post`.
 - Text is prepared and laid out on the engine side through a platform `TextEngine`; the main thread only draws the result.
 - Icons draw through the canvas protocol: an SVG becomes one `Drawing`, so no backend learns about icons.
@@ -119,6 +121,8 @@ Subjects go in `docs/architecture/` once a subsystem has a lasting design.
 | Document | When to read |
 | --- | --- |
 | [Core](docs/architecture/core.md) | Changing the reactive graph, elements, regions, commit, text, selection, storage or the mount protocol |
-| [Web views and videos](docs/architecture/native-views.md) | Changing `WebView`, `Video` or a backend's host for them |
+| [Hosted views](docs/architecture/native-views.md) | Changing `WebView`, `Video`, `Native` components or a backend's host for them |
+| [Images](docs/architecture/images.md) | Changing how a backend loads, decodes or plays images, or `imagedecode` |
+| [Animation](docs/architecture/animation.md) | Changing animated values, layout animations or a backend's frame clock |
 | [Text view](docs/architecture/textview.md) | Changing `TextView`: the document model, Markdown and HTML parsing, its parts or code highlighting |
 | [Icons](docs/architecture/icons.md) | Changing SVG parsing, `core.Icon` or the Lucide pack and its generator |

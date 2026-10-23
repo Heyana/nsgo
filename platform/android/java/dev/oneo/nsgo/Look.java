@@ -11,6 +11,12 @@ final class Look {
     float radius, border, opacity = 1, shadowRadius;
     float translateX, translateY, scaleX = 1, scaleY = 1, rotation;
     /**
+     * The style's own Scale, ScaleX and ScaleY, 0 when unset, which
+     * scaleX and scaleY combine as core.Transform.Scales does: animated
+     * scales combine with them again.
+     */
+    float rawScale, rawScaleX, rawScaleY;
+    /**
      * Each side's border width and color (top, right, bottom, left), set
      * when they differ; otherwise every side is border and borderColor.
      */
@@ -32,6 +38,9 @@ final class Look {
         l.scaleX = scaleX;
         l.scaleY = scaleY;
         l.rotation = rotation;
+        l.rawScale = rawScale;
+        l.rawScaleX = rawScaleX;
+        l.rawScaleY = rawScaleY;
         l.sides = sides;
         l.borders = borders.clone();
         l.borderColors = borderColors.clone();
@@ -95,6 +104,47 @@ final class Look {
         view.setScaleX(scaleX);
         view.setScaleY(scaleY);
         view.setRotation(rotation);
+    }
+
+    /** Sets scaleX and scaleY from the raw scales, as core.Transform.Scales. */
+    void combineScales() {
+        float[] xy = scales(rawScale, rawScaleX, rawScaleY);
+        scaleX = xy[0];
+        scaleY = xy[1];
+    }
+
+    private static float[] scales(float s, float sx, float sy) {
+        float x = 1, y = 1;
+        if (s != 0) x = y = s;
+        if (sx != 0) x = sx;
+        if (sy != 0) y = sy;
+        return new float[] {x, y};
+    }
+
+    /**
+     * The look with an animator's bound values in place of its own, as
+     * core.AnimatedValues.Apply: points become pixels at density.
+     */
+    Look animated(Animator.Values v, float density) {
+        Look l = copy();
+        if (v.has(Animator.PROP_OPACITY)) l.opacity = v.opacity;
+        if (v.has(Animator.PROP_TRANSLATE_X)) l.translateX = v.translateX * density;
+        if (v.has(Animator.PROP_TRANSLATE_Y)) l.translateY = v.translateY * density;
+        boolean s = v.has(Animator.PROP_SCALE), sx = v.has(Animator.PROP_SCALE_X), sy = v.has(Animator.PROP_SCALE_Y);
+        if (s || sx || sy) {
+            float[] xy = scales(s ? v.scale : rawScale, sx ? v.scaleX : rawScaleX, sy ? v.scaleY : rawScaleY);
+            l.scaleX = xy[0];
+            l.scaleY = xy[1];
+        }
+        if (v.has(Animator.PROP_ROTATE)) l.rotation = v.rotate;
+        if (v.has(Animator.PROP_BACKGROUND)) l.background = Text.argb(v.background);
+        if (v.has(Animator.PROP_BORDER_COLOR)) {
+            l.borderColor = Text.argb(v.borderColor);
+            if (l.sides) java.util.Arrays.fill(l.borderColors, l.borderColor);
+        }
+        if (v.has(Animator.PROP_SHADOW_COLOR)) l.shadowColor = Text.argb(v.shadowColor);
+        if (v.has(Animator.PROP_SHADOW_RADIUS)) l.shadowRadius = v.shadowRadius * density;
+        return l;
     }
 
     /** Side i's border width and color, whether or not the sides differ. */

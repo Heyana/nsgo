@@ -2,15 +2,15 @@
 
 package windows
 
+// Images decode with imagedecode: PNG, JPEG, GIF, WebP and SVG, an SVG
+// drawn oversampled (4 pixels a point, at most 2048 a side) as NSH's
+// Windows backend draws it, so it stays sharp however its view scales it.
+// An animated GIF or WebP plays its frames on the frame clock with their
+// delays and loop count, each view on its own; tinted, it shows its first
+// frame, as NSH's does.
+
 import (
-	"bytes"
 	"context"
-	"errors"
-	"image"
-	"image/draw"
-	_ "image/gif" // registers the decoders image.Decode uses
-	_ "image/jpeg"
-	_ "image/png"
 	"math"
 	"strconv"
 	"strings"
@@ -18,27 +18,67 @@ import (
 	"unsafe"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/platform/internal/imagedecode"
 	"github.com/oneo-me/nsgo/platform/internal/imageload"
 )
 
 // progressInterval spaces an image's progress reports.
 const progressInterval = 100 * time.Millisecond
 
-// picture is a decoded image: premultiplied BGRA rows, top to bottom.
+// picture is a decoded image: its frames of premultiplied BGRA rows, top
+// to bottom, more than one for an animation.
 type picture struct {
 	width, height int
-	pix           []byte
+	frames        []imagedecode.Frame
+	plays         int // how many times an animation plays; 0 for ever
+	// size is its intrinsic size: an SVG's in points, a bitmap's pixels.
+	size core.Size
+	svg  bool
+}
+
+// animated reports whether the picture has frames to play.
+func (p *picture) animated() bool { return len(p.frames) > 1 }
+
+// frameAt returns the frame an animation shows elapsed after it started,
+// and whether it plays on after that.
+func (p *picture) frameAt(elapsed time.Duration) (int, bool) {
+	var total time.Duration
+	for _, f := range p.frames {
+		total += f.Delay
+	}
+	if total <= 0 {
+		return 0, false
+	}
+	if p.plays > 0 && elapsed >= total*time.Duration(p.plays) {
+		return len(p.frames) - 1, false
+	}
+	t := elapsed % total
+	for i, f := range p.frames {
+		if t < f.Delay {
+			return i, true
+		}
+		t -= f.Delay
+	}
+	return len(p.frames) - 1, true
 }
 
 // imageSlot is an image view's source or placeholder and what the window
 // keeps for it.
 type imageSlot struct {
-	src        core.ImageSource
-	load       *imageLoad // the load under way, if any
-	pic        *picture
-	bitmap     *comObject // pic as a Direct2D bitmap, tinted with tint, made in generation
-	tint       core.Color
-	generation uint64
+	src  core.ImageSource
+	load *imageLoad // the load under way, if any
+	pic  *picture
+	// frame is the frame an animation shows, playing since start while
+	// playing is set; ended once it played its loops.
+	frame          int
+	start          time.Time
+	playing, ended bool
+	// bitmap is frame as a Direct2D bitmap, tinted with tint, made in
+	// generation.
+	bitmap      *comObject
+	bitmapFrame int
+	tint        core.Color
+	generation  uint64
 }
 
 type imageLoad struct{ cancel context.CancelFunc }
@@ -54,6 +94,7 @@ func (s *imageSlot) reset(src core.ImageSource) {
 	releaseAll(&s.bitmap)
 	s.pic = nil
 	s.src = src
+	s.frame, s.playing, s.ended = 0, false, false
 }
 
 func sameSource(a, b core.ImageSource) bool {
@@ -129,8 +170,11 @@ func (w *window) load(v *view, s *imageSlot, report bool) {
 				return
 			}
 			s.pic = pic
+			w.play(v, s)
 			if report {
-				size := core.Size{Width: core.Points(pic.width), Height: core.Points(pic.height)}
+				// An SVG's size is its intrinsic one in whole points.
+				size := core.Size{Width: core.Points(math.Round(float64(pic.size.Width))),
+					Height: core.Points(math.Round(float64(pic.size.Height)))}
 				w.report(v, core.Event{Kind: core.EventLoad, ID: v.id, Size: size})
 				w.report(v, core.Event{Kind: core.EventLoadEnd, ID: v.id})
 			}
@@ -146,42 +190,70 @@ func (w *window) report(v *view, ev core.Event) {
 	}
 }
 
-// decode decodes a PNG, JPEG or GIF into premultiplied BGRA.
+// decode decodes an image into premultiplied BGRA frames, an SVG drawn
+// oversampled.
 func decode(data []byte) (*picture, error) {
-	img, _, err := image.Decode(bytes.NewReader(data))
+	img, err := imagedecode.Decode(data, imagedecode.Options{Layout: imagedecode.BGRA})
 	if err != nil {
 		return nil, err
 	}
-	b := img.Bounds()
-	if b.Empty() {
-		return nil, errors.New("windows: empty image")
-	}
-	rgba := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	draw.Draw(rgba, rgba.Rect, img, b.Min, draw.Src)
-	// image.RGBA is premultiplied already; Direct2D wants blue first.
-	pix := rgba.Pix
-	for i := 0; i+3 < len(pix); i += 4 {
-		pix[i], pix[i+2] = pix[i+2], pix[i]
-	}
-	return &picture{width: b.Dx(), height: b.Dy(), pix: pix}, nil
+	return &picture{width: img.Width, height: img.Height, frames: img.Frames, plays: img.Plays, size: img.Size,
+		svg: img.Format == imagedecode.SVG}, nil
 }
 
-// bitmapOf returns s's picture as a Direct2D bitmap with tint applied,
-// made once per picture, tint and device; nil until the picture arrives.
+// play plays s's picture in v from its first frame when it is animated
+// and v does not tint it, until it ends, v goes or s changes.
+func (w *window) play(v *view, s *imageSlot) {
+	pic := s.pic
+	if pic == nil || !pic.animated() || s.playing || s.ended || visible(v.style.TintColor) {
+		return
+	}
+	s.frame, s.start, s.playing = 0, time.Now(), true
+	w.onFrame(func(now time.Time) bool {
+		if s.pic != pic || v.deleted || !s.playing {
+			return false
+		}
+		if s == &v.placeholder && v.source.pic != nil {
+			s.playing = false // the source covers it
+			return false
+		}
+		if visible(v.style.TintColor) {
+			// Tinted, it shows its first frame until the tint goes.
+			s.frame, s.playing = 0, false
+			invalidateRect.Call(w.hwnd, 0, 0)
+			return false
+		}
+		frame, more := pic.frameAt(now.Sub(s.start))
+		if frame != s.frame {
+			s.frame = frame
+			invalidateRect.Call(w.hwnd, 0, 0)
+		}
+		s.playing, s.ended = more, !more
+		return more
+	})
+}
+
+// bitmapOf returns the frame s shows as a Direct2D bitmap with tint
+// applied, made once per frame, tint and device; nil until the picture
+// arrives. A tinted animation shows its first frame.
 func (s *imageSlot) bitmapOf(dc *comObject, tint core.Color) *comObject {
 	if s.pic == nil {
 		return nil
 	}
+	frame := s.frame
+	if tint&0xff != 0 || frame >= len(s.pic.frames) {
+		frame = 0
+	}
 	if s.bitmap != nil {
-		if s.tint == tint && s.generation == gfxGeneration {
+		if s.tint == tint && s.generation == gfxGeneration && s.bitmapFrame == frame {
 			return s.bitmap
 		}
 		releaseAll(&s.bitmap)
 	}
-	pix := s.pic.pix
+	pix := s.pic.frames[frame].Pix
 	if tint&0xff != 0 {
-		pix = make([]byte, len(s.pic.pix))
-		tintInto(pix, s.pic.pix, tint)
+		pix = make([]byte, len(pix))
+		tintInto(pix, s.pic.frames[frame].Pix, tint)
 	}
 	props := bitmapProperties1{format: dxgiFormatBGRA, alphaMode: d2dAlphaPremultiplied, dpiX: 96, dpiY: 96}
 	if failed(dc.callSize(dcCreateBitmap, uint32(s.pic.width), uint32(s.pic.height), uintptr(unsafe.Pointer(&pix[0])),
@@ -189,7 +261,7 @@ func (s *imageSlot) bitmapOf(dc *comObject, tint core.Color) *comObject {
 		s.bitmap = nil
 		return nil
 	}
-	s.tint, s.generation = tint, gfxGeneration
+	s.tint, s.generation, s.bitmapFrame = tint, gfxGeneration, frame
 	return s.bitmap
 }
 
@@ -250,8 +322,11 @@ func (w *window) fit(s *imageSlot, mode core.ResizeMode, r rect) (src, dst rect)
 		return src, r
 	case core.Center:
 		// A picture's pixels are points, or its URI's "@2x" says how many
-		// make one, unless the source gave its size.
+		// make one, unless the source gave its size; an SVG has its own.
 		nw, nh := pw/density(s.src.URI)*w.scale, ph/density(s.src.URI)*w.scale
+		if s.pic.svg {
+			nw, nh = float64(s.pic.size.Width)*w.scale, float64(s.pic.size.Height)*w.scale
+		}
 		if size := s.src.Size; size.Width > 0 && size.Height > 0 {
 			nw, nh = float64(size.Width)*w.scale, float64(size.Height)*w.scale
 		}

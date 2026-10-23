@@ -29,6 +29,9 @@ const (
 	KindWeb
 	// KindVideo hosts the platform's video player, filling it (ItemVideo).
 	KindVideo
+	// KindNative hosts a view of a component the app registered, filling
+	// it (ItemNative).
+	KindNative
 )
 
 // ItemKind is what a mount item does.
@@ -117,6 +120,15 @@ const (
 	ItemVideo
 	// ItemVideoSeek jumps a video to Time.
 	ItemVideoSeek
+	// ItemNative names a native view's component and sets its changed
+	// props (Native).
+	ItemNative
+	// ItemNativeCommand has a native view's component run the command
+	// Value with Data.
+	ItemNativeCommand
+	// ItemAnimation changes the native animation graph (Animation), after
+	// the batch's views exist.
+	ItemAnimation
 )
 
 // MountItem is one change to the native views. Kind says which fields
@@ -154,6 +166,10 @@ type MountItem struct {
 	WebCommand WebCommand
 	Video      *VideoConfig
 	Time       time.Duration // ItemVideoSeek
+	Native     *NativeConfig
+	// Data is ItemNativeCommand's argument.
+	Data      any
+	Animation []AnimationOp
 }
 
 // MountBatch is one commit's changes, applied in order on the main thread.
@@ -161,6 +177,9 @@ type MountItem struct {
 type MountBatch struct {
 	Root  NodeID
 	Items []MountItem
+	// LayoutAnimation, when set, animates the batch's frame changes,
+	// insertions and removals on the platform (Scope.AnimateLayout).
+	LayoutAnimation *LayoutAnimation
 }
 
 // ViewStyle is everything a platform draws for a view itself.
@@ -227,6 +246,9 @@ type InputConfig struct {
 	KeyboardType KeyboardType
 	// Content is where the text goes in the view: inside padding and border.
 	Content Bounds
+	// Accessory is the InputAccessoryView that rides above the keyboard
+	// while the field has focus, or 0.
+	Accessory NodeID
 }
 
 // KeyboardType picks a software keyboard.

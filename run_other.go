@@ -2,6 +2,6 @@
 
 package nsgo
 
-func run(app App) {
+func run(app App, o options) {
 	panic("nsgo: no backend for this platform yet")
 }

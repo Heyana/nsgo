@@ -75,7 +75,7 @@ func init() {
 		{"Text", kindBase, groupElements, lucide.Type, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
 		{"Layout", kindBase, groupElements, lucide.LayoutGrid, "Flexbox, wrapping, absolute positioning, grid and block layout.", layoutPage},
 		{"Styles", kindBase, groupElements, lucide.Paintbrush, "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
-		{"Images", kindBase, groupElements, lucide.Image, "Embedded and remote images, placeholders and resize modes.", imagesPage},
+		{"Images", kindBase, groupElements, lucide.Image, "Embedded, remote, animated and vector images, placeholders and resize modes.", imagesPage},
 		{"Icons", kindBase, groupElements, lucide.Shapes, "The bundled Lucide pack, drawn in inherited text color at any size.", iconsPage},
 		{"Canvas", kindBase, groupElements, lucide.PenTool, "2D drawing recorded on the engine and played by the platform.", canvasPage},
 		{"Lists", kindBase, groupElements, lucide.List, "A virtualized list of many rows and a keyed list you edit.", listsPage},
@@ -84,12 +84,14 @@ func init() {
 		{"Navigation", kindBase, groupComponents, lucide.Compass, "A navigation stack: push and pop screens.", navigationPage},
 		{"Web View", kindBase, groupMedia, lucide.Globe, "The platform's web view: inline HTML, a site, history and messages both ways.", webPage},
 		{"Video", kindBase, groupMedia, lucide.Clapperboard, "The platform's video player: playback the app drives, resize modes and the platform's controls.", videoPage},
-		{"Animation", kindBase, groupMedia, lucide.Sparkles, "Values stepped with Animate and transitions run by the platform.", animationPage},
+		{"Native View", kindBase, groupMedia, lucide.Puzzle, "The app's own platform views inside the tree, with props, events and commands.", nativePage},
+		{"Animation", kindBase, groupMedia, lucide.Sparkles, "Transitions, animated values and layout animations run by the platform.", animationPage},
 		{"Gestures", kindBase, groupMedia, lucide.Hand, "Pans, pinches and rotations, sharing touches with scrolling.", gesturesPage},
 		{"Window", kindBase, groupDesktop, lucide.AppWindow, "The gallery's own title bar and the desktop window's commands.", windowPage},
 		{"App Menu", kindBase, groupDesktop, lucide.Menu, "The application menu: roles, shortcuts and checkable items.", menuPage},
 		{"Environment", kindBase, groupDesktop, lucide.Monitor, "What the platform reports, and the system services.", environmentPage},
 		{"Storage", kindBase, groupDesktop, lucide.Database, "Key-value storage kept on the device, and the app's directories.", storagePage},
+		{"File Drop", kindBase, groupDesktop, lucide.FileUp, "Files dragged in from other apps, on desktops and the web.", filesPage},
 
 		{"Buttons", kindUI, groupComponents, lucide.MousePointerClick, "Buttons in each variant, checkboxes, switches, radios and tabs.", buttonsPage},
 		{"Fields", kindUI, groupComponents, lucide.TextCursorInput, "Inputs, selects, sliders and icon buttons.", fieldsPage},
@@ -361,4 +363,10 @@ func appearanceOptions() []ui.SelectOption {
 	}
 }
 
-func main() { nsgo.Run(Root) }
+func main() {
+	var opts []nsgo.Option
+	for name, factory := range components {
+		opts = append(opts, nsgo.Component(name, factory))
+	}
+	nsgo.Run(Root, opts...)
+}

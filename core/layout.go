@@ -67,6 +67,8 @@ func (n *node) Measure(known layout.Size[layout.Opt], available layout.Size[layo
 		m = fitNatural(n.image.naturalSize(), known)
 	case n.icon != nil:
 		m = fitNatural(n.icon.naturalSize(), known)
+	case n.native != nil:
+		m = fitNatural(n.native.size, known)
 	default:
 		return layout.Size[float32]{}
 	}
@@ -256,6 +258,10 @@ func (n *node) layoutStyle() layout.Style {
 			l.Size = layout.Size[layout.Length]{Width: layout.Px(float32(n.fill.Width)), Height: layout.Px(float32(n.fill.Height))}
 			l.MinSize, l.MaxSize = layout.Size[layout.Length]{}, layout.Size[layout.Length]{}
 		}
+		if a := n.accessory; a != nil {
+			l.Size.Width = layout.Px(float32(a.width))
+			l.MinSize.Width, l.MaxSize.Width = layout.Auto, layout.Auto
+		}
 	}
 	return l
 }
@@ -359,12 +365,14 @@ func (j Justify) layout() layout.AlignContent {
 // and modals it hosts.
 func (t *Tree) layout() {
 	if !t.view.layoutDirty {
+		t.layoutAccessories()
 		return
 	}
 	t.layoutRoot(t.view, t.size, true)
 	t.view.frame = Bounds{Size: t.size}
 	t.syncFrames(t.view)
 	t.placeHoisted(t.view)
+	t.layoutAccessories()
 }
 
 // layoutRoot lays root out in space, which it fills when fill is set.

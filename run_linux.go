@@ -4,7 +4,7 @@ package nsgo
 
 import "github.com/oneo-me/nsgo/platform/linux"
 
-func run(app App) {
+func run(app App, o options) {
 	w, h := windowSize()
-	linux.Run(app, linux.Options{Title: name, Width: w, Height: h, ID: id})
+	linux.Run(app, linux.Options{Title: name, Width: w, Height: h, ID: id, Components: o.components})
 }

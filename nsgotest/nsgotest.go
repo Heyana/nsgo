@@ -72,6 +72,8 @@ type App struct {
 	posts []func()
 
 	views  map[core.NodeID]*View
+	anim   *core.Animator
+	start  time.Time
 	alerts []core.AlertConfig
 	rootID core.NodeID
 	edits  map[core.NodeID]uint32
@@ -98,8 +100,22 @@ type View struct {
 	Video       core.VideoConfig
 	// Seeks are the positions the app asked a video to jump to, oldest
 	// first.
-	Seeks   []time.Duration
-	Focused bool
+	Seeks []time.Duration
+	// Component and NativeProps are a native view's component and props;
+	// NativeCommands what Ref.Command sent it, oldest first.
+	Component      string
+	NativeProps    map[string]any
+	NativeCommands []NativeCommand
+	// Animated are the values of the animated properties bound to the
+	// view, which the model's animator steps with the clock.
+	Animated core.AnimatedValues
+	Focused  bool
+}
+
+// NativeCommand is a command a native view received.
+type NativeCommand struct {
+	Name string
+	Args any
 }
 
 // WebCommand is a command a web view received, with its message or script.
@@ -132,6 +148,12 @@ func Start(t testing.TB, app func(cx *core.Scope) core.Node, opts ...Option) *Ap
 		Storage: a.store,
 	})
 	t.Cleanup(a.root.Dispose)
+	a.start = a.Clock.Now()
+	a.anim = core.NewAnimator(func(ev core.Event) {
+		a.mu.Lock()
+		a.posts = append(a.posts, func() { a.tree.Dispatch(ev) })
+		a.mu.Unlock()
+	})
 	a.tree = core.NewTree(a.root, core.ApproxTextEngine{})
 	a.tree.Resize(a.size)
 	a.tree.Mount(app)
@@ -158,7 +180,11 @@ func (a *App) Settle() {
 		if b != nil {
 			a.apply(b)
 		}
-		if b == nil && len(posts) == 0 {
+		a.animate()
+		a.mu.Lock()
+		more := len(a.posts) > 0
+		a.mu.Unlock()
+		if b == nil && len(posts) == 0 && !more {
 			return
 		}
 	}
@@ -218,12 +244,19 @@ func (a *App) Find(selector string) *View {
 // Exists reports whether a visible view matches selector.
 func (a *App) Exists(selector string) bool { return len(a.Query(selector)) > 0 }
 
-// Query returns the visible views selector matches, in tree order.
+// Query returns the visible views selector matches, in tree order, then
+// in the bar above the keyboard while a field with an
+// InputAccessoryView has focus.
 func (a *App) Query(selector string) []*View {
 	a.t.Helper()
 	scope := []*View{a.views[a.rootID]}
 	if scope[0] == nil {
 		return nil
+	}
+	for _, v := range a.views {
+		if bar := a.views[v.Input.Accessory]; v.Focused && bar != nil && v.Input.Accessory != 0 {
+			scope = append(scope, bar)
+		}
 	}
 	for i, part := range strings.Split(selector, " >> ") {
 		if n, ok := strings.CutPrefix(part, "nth="); ok {
@@ -466,6 +499,10 @@ func (a *App) gesture(v *View, kind core.EventKind, n int, step func(*core.Event
 	send := func(phase core.GesturePhase, i int) {
 		ev := core.Event{Kind: kind, ID: v.ID, Phase: phase}
 		step(&ev, i)
+		if kind == core.EventPan {
+			// A platform moves bound values before it reports the move.
+			a.anim.Pan(v.ID, ev.Point)
+		}
 		a.dispatch(ev)
 	}
 	send(core.GestureBegan, 0)
@@ -535,6 +572,22 @@ func (a *App) Type(selector, text string) {
 	a.edits[v.ID]++
 	v.Text = text
 	a.dispatch(core.Event{Kind: core.EventChangeText, ID: v.ID, Text: text, Count: a.edits[v.ID]})
+}
+
+// Focus focuses the text field selector matches, as a tap on it would.
+func (a *App) Focus(selector string) {
+	a.t.Helper()
+	v := a.Find(selector)
+	if v.Kind != core.KindInput {
+		a.t.Fatalf("nsgotest: %q is not a text field", selector)
+	}
+	for _, o := range a.views {
+		if o != v {
+			a.setFocus(o, false)
+		}
+	}
+	a.setFocus(v, true)
+	a.Settle()
 }
 
 // Submit presses Return in the field selector matches.
@@ -615,7 +668,40 @@ func (a *App) Scroll(selector string, offset core.Point) {
 	a.t.Helper()
 	v := a.Find(selector)
 	v.Offset = offset
+	a.anim.Scroll(v.ID, offset)
 	a.dispatch(core.Event{Kind: core.EventScroll, ID: v.ID, Point: offset})
+}
+
+// DropFiles drops files on the view selector matches, as a desktop or
+// the web does: the drag enters, then the files drop.
+func (a *App) DropFiles(selector string, uris ...string) {
+	a.t.Helper()
+	v := a.Find(selector)
+	if v.Events.Has(core.EventFileDragEnter) {
+		a.dispatch(core.Event{Kind: core.EventFileDragEnter, ID: v.ID})
+	}
+	a.dispatch(core.Event{Kind: core.EventFileDrop, ID: v.ID, URIs: uris})
+}
+
+// Emit reports that the component of the native view selector matches
+// emitted name with data.
+func (a *App) Emit(selector, name string, data any) {
+	a.t.Helper()
+	v := a.Find(selector)
+	a.dispatch(core.Event{Kind: core.EventNative, ID: v.ID, Text: name, Data: data})
+}
+
+// animate steps the animator to the clock and records the values it
+// moved.
+func (a *App) animate() {
+	if a.anim.Running() {
+		a.anim.Step(a.Clock.Now().Sub(a.start))
+	}
+	a.anim.Changed(func(id core.NodeID, vals core.AnimatedValues) {
+		if v := a.views[id]; v != nil {
+			v.Animated = vals
+		}
+	})
 }
 
 func (a *App) dispatch(ev core.Event) {
@@ -634,6 +720,7 @@ func (a *App) apply(b *core.MountBatch) {
 			if v != nil {
 				v.detach()
 			}
+			a.anim.Forget(it.ID)
 			delete(a.views, it.ID)
 			delete(a.edits, it.ID)
 		case core.ItemRemove:
@@ -677,6 +764,22 @@ func (a *App) apply(b *core.MountBatch) {
 			v.Video = *it.Video
 		case core.ItemVideoSeek:
 			v.Seeks = append(v.Seeks, it.Time)
+		case core.ItemNative:
+			v.Component = it.Native.Component
+			if v.NativeProps == nil {
+				v.NativeProps = map[string]any{}
+			}
+			for k, p := range it.Native.Props {
+				if p == nil {
+					delete(v.NativeProps, k)
+				} else {
+					v.NativeProps[k] = p
+				}
+			}
+		case core.ItemNativeCommand:
+			v.NativeCommands = append(v.NativeCommands, NativeCommand{it.Value, it.Data})
+		case core.ItemAnimation:
+			a.anim.Apply(it.Animation)
 		case core.ItemFocus:
 			for _, o := range a.views {
 				if o != v {

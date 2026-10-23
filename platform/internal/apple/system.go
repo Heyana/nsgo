@@ -104,6 +104,21 @@ func Global(path, name string) objc.ID {
 	return **(**objc.ID)(unsafe.Pointer(&addr))
 }
 
+// CommonModes returns NSRunLoopCommonModes. Run loop sources compare
+// modes by identity, so an equal string of another object is a mode of
+// its own that never runs.
+func CommonModes() objc.ID {
+	commonModesOnce.Do(func() {
+		commonModes = Global("/System/Library/Frameworks/Foundation.framework/Foundation", "NSRunLoopCommonModes")
+	})
+	return commonModes
+}
+
+var (
+	commonModesOnce sync.Once
+	commonModes     objc.ID
+)
+
 // Locale returns the user's locale as a BCP 47 tag, and whether their
 // first preferred language is written right to left.
 func Locale() (tag string, rtl bool) {

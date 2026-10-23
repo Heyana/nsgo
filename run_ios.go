@@ -4,4 +4,4 @@ package nsgo
 
 import "github.com/oneo-me/nsgo/platform/ios"
 
-func run(app App) { ios.Run(app, ios.Options{ID: id}) }
+func run(app App, o options) { ios.Run(app, ios.Options{ID: id, Components: o.components}) }

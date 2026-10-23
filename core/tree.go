@@ -33,6 +33,9 @@ type Tree struct {
 	reports     []report
 	stacks      []*node
 	lists       []*node
+	accessories []*node
+	anim        animations
+	layoutAnim  *LayoutAnimation
 	fontScale   float32
 	alerts      map[uint32]alertWait
 	reads       map[uint32]readWait
@@ -61,27 +64,33 @@ type node struct {
 	children []*node
 	owner    *Scope
 
-	base    Style
-	dyn     Style
-	style   Style // base and dyn merged, with the states' styles
-	states  uint8
-	h       handlers
-	props   ViewProps
-	text    *textNode
-	input   *inputNode
-	scroll  *scrollNode
-	image   *imageNode
-	hoist   *hoistNode // an overlay's or a modal's
-	hosted  []*node    // the overlays and modals this root view or modal hosts
-	attach  *attachNode
-	screen  *screenNode
-	list    *listNode
-	canvas  *canvasNode
-	icon    *iconNode
-	web     *webNode
-	video   *videoNode
-	isStack bool
-	ref     *Ref
+	base   Style
+	dyn    Style
+	style  Style // base and dyn merged, with the states' styles
+	states uint8
+	h      handlers
+	props  ViewProps
+	text   *textNode
+	input  *inputNode
+	scroll *scrollNode
+	image  *imageNode
+	hoist  *hoistNode // an overlay's or a modal's
+	hosted []*node    // the overlays and modals this root view or modal hosts
+	attach *attachNode
+	screen *screenNode
+	list   *listNode
+	canvas *canvasNode
+	icon   *iconNode
+	web    *webNode
+	video  *videoNode
+	native *nativeNode
+	// accessory is an InputAccessoryView's: a layout root as wide as the
+	// surface that no view holds.
+	accessory *accessoryNode
+	panning   bool           // it follows pans: OnPan or PanValues
+	anim      *viewAnimation // the animated values bound to the view
+	isStack   bool
+	ref       *Ref
 
 	frame       Bounds
 	layoutDirty bool
@@ -114,6 +123,8 @@ type handlers struct {
 	loadError                                               func(error)
 	pan                                                     func(PanEvent)
 	pinch, rotation                                         func(GestureEvent)
+	fileEnter, fileLeave                                    func()
+	fileDrop                                                func([]string)
 }
 
 type textNode struct {
@@ -152,6 +163,7 @@ type inputNode struct {
 	shown     string // what the field shows, as far as the engine knows
 	count     uint32 // the platform's last edit
 	autoFocus bool
+	accessory string // the InputAccessoryView's ID
 	lineH     Points
 	lineFor   TextStyle
 }
@@ -177,6 +189,7 @@ type sent struct {
 // NewTree returns an empty tree under root, laying text out with text.
 func NewTree(root *Scope, text TextEngine) *Tree {
 	t := &Tree{root: root, rt: root.rt, text: text, nodes: []*node{nil}}
+	t.anim.t = t
 	root.rt.tree = t
 	t.view = t.newNode(KindView, nil, root)
 	t.view.style = Style{Direction: Column}
@@ -388,6 +401,14 @@ func (t *Tree) mount(cx *Scope, parent *node, el Node) {
 		t.mountVideo(cx, parent, el)
 	case *Video:
 		t.mountVideo(cx, parent, *el)
+	case Native:
+		t.mountNative(cx, parent, el)
+	case *Native:
+		t.mountNative(cx, parent, *el)
+	case InputAccessoryView:
+		t.mountAccessory(cx, parent, el)
+	case *InputAccessoryView:
+		t.mountAccessory(cx, parent, *el)
 	case List:
 		t.mountList(cx, parent, el)
 	case *List:
@@ -472,17 +493,20 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	n.h = handlers{press: v.OnPress, longPress: v.OnLongPress, pressDown: v.OnPressDown, pressUp: v.OnPressUp,
 		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, layout: v.OnLayout, contextMenu: v.OnContextMenu,
-		pan: v.OnPan, pinch: v.OnPinch, rotation: v.OnRotation}
+		pan: v.OnPan, pinch: v.OnPinch, rotation: v.OnRotation,
+		fileEnter: v.OnFileDragEnter, fileLeave: v.OnFileDragLeave, fileDrop: v.OnFileDrop}
 	n.props = ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID, WindowDrag: v.WindowDrag,
 		SelectionArea: v.SelectionArea}
-	if v.OnPan != nil {
+	if v.OnPan != nil || v.PanValues != (AnimatedXY{}) {
 		n.props.PanActivation = v.PanActivation
+		n.panning = true
 	}
 	t.setRef(n, v.Ref)
 	t.bindBool(cx, n, v.Disabled, &n.props.Disabled)
 	t.bindBool(cx, n, v.Selected, &n.props.Selected)
 	t.bindBool(cx, n, v.Checked, &n.props.Checked)
 	t.bindBool(cx, n, v.Indeterminate, &n.props.Indeterminate)
+	t.bindPan(cx, n, v.PanValues)
 	for _, c := range v.Children {
 		t.mount(cx, n, c)
 	}
@@ -539,7 +563,7 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 	n.h = handlers{change: v.OnChange, submit: v.OnSubmit, focus: v.OnFocus, blur: v.OnBlur, layout: v.OnLayout}
 	n.props = ViewProps{Role: RoleTextField, Label: v.Label, TestID: v.TestID}
 	t.setRef(n, v.Ref)
-	in := &inputNode{valueFn: v.Value, value: v.DefaultValue, autoFocus: v.AutoFocus}
+	in := &inputNode{valueFn: v.Value, value: v.DefaultValue, autoFocus: v.AutoFocus, accessory: v.InputAccessoryViewID}
 	in.config = InputConfig{Placeholder: v.Placeholder, Masked: v.Masked, Readonly: v.Readonly, KeyboardType: v.KeyboardType}
 	n.input = in
 	t.bindBool(cx, n, v.Disabled, &in.config.Disabled)
@@ -562,6 +586,7 @@ func (t *Tree) mountScroll(cx *Scope, parent *node, v Scroll) {
 	n.props = ViewProps{TestID: v.TestID}
 	t.setRef(n, v.Ref)
 	n.scroll = &scrollNode{config: ScrollConfig{Horizontal: v.Horizontal, HideIndicator: v.HideIndicator}}
+	t.bindScroll(cx, n, v.OffsetValues)
 	for _, c := range v.Children {
 		t.mount(cx, n, c)
 	}
@@ -665,6 +690,9 @@ func (t *Tree) Dispatch(ev Event) {
 	case EventMenu:
 		t.chooseMenu(ev.Count)
 		return
+	case EventAnimation:
+		t.animationEvent(ev)
+		return
 	}
 	n := t.node(ev.ID)
 	if n == nil {
@@ -675,6 +703,9 @@ func (t *Tree) Dispatch(ev Event) {
 		return
 	}
 	if n.video != nil && t.dispatchVideo(n, ev) {
+		return
+	}
+	if n.native != nil && t.dispatchNative(n, ev) {
 		return
 	}
 	h := &n.h
@@ -760,6 +791,14 @@ func (t *Tree) Dispatch(ev Event) {
 	case EventPressOutside:
 		if n.hoist != nil {
 			t.pressOutside(n, ev.Point)
+		}
+	case EventFileDragEnter:
+		call(h.fileEnter)
+	case EventFileDragLeave:
+		call(h.fileLeave)
+	case EventFileDrop:
+		if h.fileDrop != nil && !n.props.Disabled {
+			t.within(n.owner, func() { h.fileDrop(ev.URIs) })
 		}
 	case EventLoadStart:
 		call(h.loadStart)
@@ -858,7 +897,7 @@ func appendNative(out []*node, children []*node) []*node {
 		switch {
 		case c.kind == 0:
 			out = appendNative(out, c.children)
-		case c.hoist == nil && c.attach == nil:
+		case c.hoist == nil && c.attach == nil && c.accessory == nil:
 			out = append(out, c)
 		}
 	}
@@ -914,9 +953,16 @@ func (n *node) events() EventMask {
 	bit(EventError, h.loadError != nil)
 	bit(EventLoadEnd, h.loadEnd != nil)
 	bit(EventChangeText, n.kind == KindInput)
-	bit(EventPan, h.pan != nil)
+	bit(EventPan, n.panning)
 	bit(EventPinch, h.pinch != nil)
 	bit(EventRotation, h.rotation != nil)
+	bit(EventFileDragEnter, h.fileEnter != nil)
+	bit(EventFileDragLeave, h.fileLeave != nil)
+	bit(EventFileDrop, h.fileDrop != nil)
+	if n.native != nil {
+		bit(EventNative, n.native.event != nil)
+		bit(EventNativeSize, true)
+	}
 	if n.web != nil {
 		m |= n.web.events()
 	}

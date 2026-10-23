@@ -46,7 +46,7 @@ func animationPage(cx *core.Scope, t *theme) core.Node {
 		}})
 	}
 
-	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
+	return core.View{Style: core.Style{Gap: 16}, Children: append([]core.Node{
 		t.demo("Animate", "Scope.Animate steps a value once a frame on the engine, for what the platform cannot animate itself.",
 			core.View{Style: core.Style{Height: core.Pt(10), Background: t.sunken, CornerRadius: 5, Overflow: core.Hidden}, Children: []core.Node{
 				core.View{StyleFunc: func() core.Style {
@@ -75,7 +75,7 @@ func animationPage(cx *core.Scope, t *theme) core.Node {
 			core.View{Style: core.Style{Gap: 6}, Children: lanes},
 			t.primary("Toggle", func() { moved.Update(func(m bool) bool { return !m }) }),
 		),
-	}}
+	}, nativeAnimationDemos(cx, t)...)}
 }
 
 func gesturesPage(cx *core.Scope, t *theme) core.Node {

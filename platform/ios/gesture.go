@@ -175,6 +175,7 @@ func gateMoved(self objc.ID, _ objc.SEL, _, _ objc.ID) {
 	} else {
 		self.Send(selSetState, stateChanged)
 	}
+	g.view.surface.panned(g.view, d)
 	g.view.report(core.Event{Kind: core.EventPan, Phase: phase, Point: d, Velocity: g.velocity})
 }
 

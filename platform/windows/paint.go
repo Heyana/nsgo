@@ -142,6 +142,9 @@ type painter struct {
 	composed []composed
 	// split is the pass's layers when the window has a composition.
 	split *split
+	// components are the native components' windows the pass reached,
+	// with where they go.
+	components []placedComponent
 }
 
 // composed is a web view a pass reached.
@@ -444,7 +447,8 @@ func (w *window) frame() {
 	white := colorF{1, 1, 1, 1}
 	dc.call(rtClear, uintptr(unsafe.Pointer(&white)))
 	if root := w.view(w.root); root != nil {
-		p.draw(root, identity, root.frame.Origin.X, root.frame.Origin.Y)
+		f := frameOf(root)
+		p.draw(root, identity, f.Origin.X, f.Origin.Y)
 	}
 	p.drawCaptionButtons(client.Right)
 	p.release()
@@ -472,6 +476,7 @@ func (w *window) frame() {
 		return
 	}
 	w.composedPlaced(p.composed, layers)
+	w.placeComponents(p.components)
 }
 
 // composedPlaced tells the web views the frame just shown drew where they
@@ -521,28 +526,44 @@ func (w *window) lost() {
 // parent's coordinates, and x, y where v's origin goes in them.
 func (p *painter) draw(v *view, parent matrix, x, y core.Points) {
 	s := p.w.styleOf(v)
-	if s.Hidden || s.Opacity <= 0 {
+	opacity := s.Opacity
+	size := frameOf(v).Size
+	local := transformOf(s.Transform, size)
+	if fd := v.fading; fd != nil {
+		// Appearing or going: faded, or scaled about its center first.
+		if fd.tr.Property == core.LayoutScale {
+			if fd.shown <= 0 {
+				return
+			}
+			cx, cy := float64(size.Width)/2, float64(size.Height)/2
+			local = translation(-cx, -cy).then(scaling(fd.shown, fd.shown)).then(translation(cx, cy)).then(local)
+		} else {
+			opacity *= float32(min(max(fd.shown, 0), 1))
+		}
+	}
+	if s.Hidden || opacity <= 0 {
 		return
 	}
-	world := transformOf(s.Transform, v.frame.Size).then(translation(float64(x), float64(y))).then(parent)
+	world := local.then(translation(float64(x), float64(y))).then(parent)
 	// Drawn above a web view reached before it, if any.
 	p.realize()
 	p.setTransform(world)
-	if s.Opacity < 1 {
-		p.pushLayer(s.Opacity, nil)
+	if opacity < 1 {
+		p.pushLayer(opacity, nil)
 	}
 	alpha := p.alpha
-	p.alpha *= s.Opacity
+	p.alpha *= opacity
 	p.drawContent(v, s, world)
 	p.alpha = alpha
-	if s.Opacity < 1 {
+	if opacity < 1 {
 		p.pop()
 	}
 }
 
 // drawContent paints v at world, the transform already set.
 func (p *painter) drawContent(v *view, s *core.ViewStyle, world matrix) {
-	width, height := float32(v.frame.Size.Width), float32(v.frame.Size.Height)
+	size := frameOf(v).Size
+	width, height := float32(size.Width), float32(size.Height)
 	radius := max(min(float32(s.CornerRadius), width/2, height/2), 0)
 	bounds := rectF{0, 0, width, height}
 	p.drawBackground(v, s, width, height, radius)
@@ -575,6 +596,14 @@ func (p *painter) drawContent(v *view, s *core.ViewStyle, world matrix) {
 		if v.video != nil {
 			p.drawVideo(v.video, width, height)
 		}
+	case core.KindNative:
+		if c := v.component; c != nil && c.hwnd != 0 {
+			corners := float32(0)
+			if s.Clip {
+				corners = radius
+			}
+			p.placeComponent(c, world, width, height, corners)
+		}
 	case core.KindInput:
 		if v.field != nil {
 			v.field.draw(p, world)
@@ -586,9 +615,20 @@ func (p *painter) drawContent(v *view, s *core.ViewStyle, world matrix) {
 	if !clip {
 		p.pop()
 	}
-	for _, c := range v.children {
-		p.draw(c, world, c.frame.Origin.X-v.offset.X, c.frame.Origin.Y-v.offset.Y)
+	// The children, with those going drawn where they were among them.
+	next := 0
+	drawLeaving := func(upTo int) {
+		for ; next < len(v.leaving) && v.leaving[next].at <= upTo; next++ {
+			c := v.leaving[next].v
+			p.draw(c, world, c.frame.Origin.X-v.offset.X, c.frame.Origin.Y-v.offset.Y)
+		}
 	}
+	for i, c := range v.children {
+		drawLeaving(i)
+		f := frameOf(c)
+		p.draw(c, world, f.Origin.X-v.offset.X, f.Origin.Y-v.offset.Y)
+	}
+	drawLeaving(math.MaxInt)
 	indicator := v.kind == core.KindScroll && p.w.showsBar(v)
 	if indicator || p.w.borderEdges(s) != ([4]float32{}) {
 		// A scroll indicator, a border over a web view.

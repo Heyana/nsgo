@@ -1,0 +1,348 @@
+//go:build ios
+
+package ios
+
+import (
+	"log"
+	"time"
+
+	"github.com/ebitengine/purego/objc"
+
+	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/platform/internal/apple"
+)
+
+// The surface's frame clock, a CADisplayLink, steps the native animation
+// graph and the layout animations once a display frame while either
+// runs.
+
+var selTick = sel("nsgoTick:")
+
+// motion is a view's part of a layout animation: its frame moving, or
+// the view appearing.
+type motion struct {
+	from, to core.Bounds
+	frame    *core.LayoutTransition
+	appear   *core.LayoutTransition
+	start    time.Duration
+}
+
+// ghost is a view a layout animation removes, left in place while it
+// fades or shrinks away, then released.
+type ghost struct {
+	native  objc.ID
+	opacity float32
+	tr      *core.LayoutTransition
+	start   time.Duration
+}
+
+func (s *surface) clock() time.Duration { return time.Since(s.epoch) }
+
+func (s *surface) startTicking() {
+	if s.ticking {
+		return
+	}
+	s.ticking = true
+	if s.link == 0 {
+		s.link = objc.ID(objc.GetClass("CADisplayLink")).Send(sel("displayLinkWithTarget:selector:"), s.native, selTick).
+			Send(sel("retain"))
+		s.link.Send(sel("addToRunLoop:forMode:"), objc.ID(objc.GetClass("NSRunLoop")).Send(sel("mainRunLoop")),
+			apple.CommonModes())
+		return
+	}
+	s.link.Send(sel("setPaused:"), false)
+}
+
+func (s *surface) stopTicking() {
+	if s.ticking {
+		s.ticking = false
+		s.link.Send(sel("setPaused:"), true)
+	}
+}
+
+func surfaceTick(self objc.ID, _ objc.SEL, _ objc.ID) {
+	if v := views[self]; v != nil {
+		v.surface.tick()
+	}
+}
+
+func (s *surface) tick() {
+	now := s.clock()
+	if s.animator.Running() {
+		s.animator.Step(now)
+	}
+	apple.WithoutAnimation(func() {
+		s.stepMotions(now)
+		s.applyAnimated()
+	})
+	s.startImages()
+	if !s.animator.Running() && len(s.motions) == 0 && len(s.ghosts) == 0 {
+		s.stopTicking()
+	}
+}
+
+func (s *surface) applyAnimated() {
+	s.animator.Changed(func(id core.NodeID, vals core.AnimatedValues) {
+		if int(id) >= len(s.views) || s.views[id] == nil {
+			return
+		}
+		v := s.views[id]
+		v.animated = vals
+		v.restyle()
+	})
+}
+
+// restyle draws v's style with its animated values and what a layout
+// animation does to it.
+func (v *view) restyle() {
+	vs := v.animated.Apply(v.style)
+	vs.Transition = core.Transition{}
+	if m := v.surface.motions[v]; m != nil && m.appear != nil {
+		p, _ := m.appear.At(v.surface.clock() - m.start)
+		if m.appear.Property == core.LayoutScale {
+			sx, sy := vs.Transform.Scales()
+			vs.Transform.ScaleX, vs.Transform.ScaleY = sx*float32(p), sy*float32(p)
+		} else {
+			vs.Opacity *= float32(p)
+		}
+	}
+	apple.StyleLayer(v.native.Send(selLayer), &vs, false)
+}
+
+func (v *view) animatesStyle() bool {
+	if v.animated.Set != 0 {
+		return true
+	}
+	m := v.surface.motions[v]
+	return m != nil && m.appear != nil
+}
+
+type layoutBatch struct {
+	anim    *core.LayoutAnimation
+	created map[core.NodeID]bool
+	deleted map[objc.ID]bool
+}
+
+// setFrame moves v, animating from where it shows now when the batch
+// animates layout.
+func (s *surface) setFrame(v *view, f core.Bounds, lb *layoutBatch) {
+	m := s.motions[v]
+	target := v.frame
+	if m != nil && m.frame != nil {
+		target = m.to
+	}
+	if f == target && v.framed {
+		return
+	}
+	if lb != nil && lb.anim.Update != nil && !lb.created[v.id] && v.framed {
+		if m == nil {
+			m = &motion{}
+			s.motions[v] = m
+		}
+		m.from, m.to, m.frame, m.start = v.frame, f, lb.anim.Update, s.clock()
+		s.startTicking()
+		return
+	}
+	if m != nil {
+		m.frame = nil
+	}
+	v.place(f)
+}
+
+// place sets v's frame and what follows it. Bounds and center, unlike
+// the frame, hold with a transform; the bounds' origin is a scroll view's
+// offset.
+func (v *view) place(f core.Bounds) {
+	v.frame, v.framed = f, true
+	b := objc.Send[apple.CGRect](v.native, selBounds)
+	b.Size = apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)}
+	v.native.Send(sel("setBounds:"), b)
+	v.native.Send(sel("setCenter:"), apple.CGPoint{X: float64(f.Origin.X + f.Size.Width/2), Y: float64(f.Origin.Y + f.Size.Height/2)})
+	apple.LayoutBorders(v.native.Send(selLayer))
+	if v.image != nil {
+		v.image.Layout(apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)})
+		v.surface.images = append(v.surface.images, v)
+	}
+	if v.video != nil {
+		v.video.Layout()
+	}
+	if field := v.surface.accessories[v.id]; field != nil && field.field != 0 {
+		// A taller bar shows only once the keyboard asks for it again.
+		field.field.Send(sel("reloadInputViews"))
+	}
+}
+
+func (s *surface) appear(v *view, lb *layoutBatch, parent core.NodeID) {
+	if lb == nil || lb.anim.Create == nil || !lb.created[v.id] || lb.created[parent] {
+		return
+	}
+	m := s.motions[v]
+	if m == nil {
+		m = &motion{}
+		s.motions[v] = m
+	}
+	m.appear, m.start = lb.anim.Create, s.clock()
+	s.startTicking()
+}
+
+func (s *surface) vanish(v *view, lb *layoutBatch) bool {
+	if lb == nil || lb.anim.Delete == nil || !v.framed {
+		return false
+	}
+	up := v.native.Send(selSuperview)
+	if up == 0 {
+		return false
+	}
+	for n := up; n != 0; n = n.Send(selSuperview) {
+		if lb.deleted[n] {
+			return false
+		}
+	}
+	lb.deleted[v.native] = true
+	v.native.Send(sel("retain"))
+	v.native.Send(sel("setUserInteractionEnabled:"), false)
+	s.ghosts = append(s.ghosts, &ghost{native: v.native, opacity: objc.Send[float32](v.native.Send(selLayer), sel("opacity")),
+		tr: lb.anim.Delete, start: s.clock()})
+	s.startTicking()
+	return true
+}
+
+func (s *surface) inGhost(native objc.ID) bool {
+	if len(s.ghosts) == 0 {
+		return false
+	}
+	for n := native.Send(selSuperview); n != 0; n = n.Send(selSuperview) {
+		for _, g := range s.ghosts {
+			if g.native == n {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (s *surface) stepMotions(now time.Duration) {
+	for v, m := range s.motions {
+		if s.views[v.id] != v {
+			delete(s.motions, v)
+			continue
+		}
+		done := true
+		if m.frame != nil {
+			p, end := m.frame.At(now - m.start)
+			v.place(core.LerpBounds(m.from, m.to, p))
+			if end {
+				v.place(m.to)
+				m.frame = nil
+			} else {
+				done = false
+			}
+		}
+		if m.appear != nil {
+			if _, end := m.appear.At(now - m.start); end {
+				m.appear = nil
+			} else {
+				done = false
+			}
+			v.restyle()
+		}
+		if done {
+			delete(s.motions, v)
+		}
+	}
+	live := s.ghosts[:0]
+	for _, g := range s.ghosts {
+		p, end := g.tr.At(now - g.start)
+		layer := g.native.Send(selLayer)
+		if g.tr.Property == core.LayoutScale {
+			apple.SetTransform(layer, core.Transform{Scale: float32(max(1-p, 0.0001))})
+		} else {
+			layer.Send(sel("setOpacity:"), g.opacity*float32(1-p))
+		}
+		if end {
+			apple.ForgetTransform(layer)
+			g.native.Send(selRemoveFromSuperview)
+			g.native.Send(selRelease)
+			continue
+		}
+		live = append(live, g)
+	}
+	clear(s.ghosts[len(live):])
+	s.ghosts = live
+}
+
+// panned moves the values bound to v's drags before the pan is reported.
+func (s *surface) panned(v *view, translation core.Point) {
+	if s.animator.Pan(v.id, translation) {
+		apple.WithoutAnimation(s.applyAnimated)
+	}
+}
+
+// configureNative makes a native view's component on its first item and
+// passes it the props that changed.
+func (s *surface) configureNative(v *view, c *core.NativeConfig) {
+	if v.component == nil && !v.componentTried {
+		v.componentTried = true
+		factory := s.components[c.Component]
+		if factory == nil {
+			if !s.unknown[c.Component] {
+				s.unknown[c.Component] = true
+				log.Printf("nsgo: no native component %q is registered", c.Component)
+			}
+			return
+		}
+		e := s.engine
+		id := v.id
+		v.component = factory(core.NewNativeContext(
+			func(name string, data any) {
+				e.Dispatch(core.Event{Kind: core.EventNative, ID: id, Text: name, Data: data})
+			},
+			func(size core.Size) { e.Dispatch(core.Event{Kind: core.EventNativeSize, ID: id, Size: size}) },
+		))
+		if v.component == nil {
+			return
+		}
+		var native objc.ID
+		switch h := v.component.View().(type) {
+		case objc.ID:
+			native = h
+		case uintptr:
+			native = objc.ID(h)
+		}
+		if native != 0 {
+			const flexibleWidth, flexibleHeight = 2, 16
+			native.Send(sel("setAutoresizingMask:"), uint(flexibleWidth|flexibleHeight))
+			native.Send(selSetFrame, objc.Send[apple.CGRect](v.native, selBounds))
+			v.native.Send(selAddSubview, native)
+		}
+	}
+	if v.component == nil {
+		return
+	}
+	for name, value := range c.Props {
+		v.component.SetProp(name, value)
+	}
+}
+
+// setAccessory makes the InputAccessoryView id the bar above input v's
+// keyboard, or removes the bar for 0.
+func (s *surface) setAccessory(v *view, id core.NodeID) {
+	if v.accessory == id {
+		return
+	}
+	if old := v.accessory; old != 0 && s.accessories[old] == v {
+		delete(s.accessories, old)
+	}
+	v.accessory = id
+	bar := objc.ID(0)
+	if id != 0 && int(id) < len(s.views) && s.views[id] != nil {
+		bar = s.views[id].native
+		const flexibleWidth = 2
+		bar.Send(sel("setAutoresizingMask:"), uint(flexibleWidth))
+		s.accessories[id] = v
+	}
+	v.field.Send(sel("setInputAccessoryView:"), bar)
+	if objc.Send[bool](v.field, sel("isFirstResponder")) {
+		v.field.Send(sel("reloadInputViews"))
+	}
+}

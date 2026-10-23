@@ -3,11 +3,16 @@ package dev.oneo.nsgo;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff;
+import android.graphics.RadialGradient;
 import android.graphics.RectF;
+import android.graphics.Shader;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.view.View;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -49,6 +54,8 @@ final class CanvasNode extends View {
         float lineWidth = 1, alpha = 1;
         Paint.Cap cap = Paint.Cap.BUTT;
         Paint.Join join = Paint.Join.MITER;
+        /** The gradients filling and stroking in place of the colors, or null. */
+        Shader fillShader, strokeShader;
 
         State copy() {
             State s = new State();
@@ -58,6 +65,8 @@ final class CanvasNode extends View {
             s.alpha = alpha;
             s.cap = cap;
             s.join = join;
+            s.fillShader = fillShader;
+            s.strokeShader = strokeShader;
             return s;
         }
     }
@@ -133,6 +142,7 @@ final class CanvasNode extends View {
                         path.close();
                         break;
                     case Protocol.DRAW_FILL:
+                        path.setFillType(b.get() != 0 ? Path.FillType.EVEN_ODD : Path.FillType.WINDING);
                         fill(state.fill);
                         canvas.drawPath(path, paint);
                         break;
@@ -140,21 +150,36 @@ final class CanvasNode extends View {
                         paint.reset();
                         paint.setAntiAlias(true);
                         paint.setStyle(Paint.Style.STROKE);
-                        paint.setColor(fade(state.stroke));
+                        paint.setColor(fade(state.strokeShader != null ? Color.BLACK : state.stroke));
+                        paint.setShader(state.strokeShader);
                         paint.setStrokeWidth(state.lineWidth);
                         paint.setStrokeCap(state.cap);
                         paint.setStrokeJoin(state.join);
                         canvas.drawPath(path, paint);
                         break;
                     case Protocol.DRAW_CLIP:
+                        path.setFillType(b.get() != 0 ? Path.FillType.EVEN_ODD : Path.FillType.WINDING);
                         canvas.clipPath(path);
                         break;
                     case Protocol.DRAW_FILL_COLOR:
                         state.fill = Text.argb(b.getInt());
+                        state.fillShader = null;
                         break;
                     case Protocol.DRAW_STROKE_COLOR:
                         state.stroke = Text.argb(b.getInt());
+                        state.strokeShader = null;
                         break;
+                    case Protocol.DRAW_FILL_GRADIENT: {
+                        // An invalid gradient keeps the color before it.
+                        Shader g = gradient(b);
+                        if (g != null) state.fillShader = g;
+                        break;
+                    }
+                    case Protocol.DRAW_STROKE_GRADIENT: {
+                        Shader g = gradient(b);
+                        if (g != null) state.strokeShader = g;
+                        break;
+                    }
                     case Protocol.DRAW_LINE_WIDTH:
                         state.lineWidth = b.getFloat();
                         break;
@@ -201,11 +226,69 @@ final class CanvasNode extends View {
             }
         }
 
+        /** Sets the paint to fill with color, or with the fill gradient over it. */
         private void fill(int color) {
             paint.reset();
             paint.setAntiAlias(true);
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(fade(color));
+            // A shader takes only the paint's alpha.
+            paint.setColor(fade(state.fillShader != null ? Color.BLACK : color));
+            paint.setShader(state.fillShader);
+        }
+
+        /**
+         * Reads a core.Gradient as android.go's writeGradient writes it and
+         * returns its shader, or null for one Android cannot paint. Before
+         * API 31 a radial gradient's focal circle is its center.
+         */
+        private static Shader gradient(ByteBuffer b) {
+            boolean radial = b.get() != 0;
+            float x1 = b.getFloat(), y1 = b.getFloat(), r1 = b.getFloat();
+            float x2 = b.getFloat(), y2 = b.getFloat(), r2 = b.getFloat();
+            float[] m = new float[6];
+            for (int i = 0; i < 6; i++) m[i] = b.getFloat();
+            int spread = b.get();
+            int n = b.getInt();
+            float[] offsets = new float[Math.max(n, 2)];
+            int[] colors = new int[Math.max(n, 2)];
+            for (int i = 0; i < n; i++) {
+                offsets[i] = b.getFloat();
+                colors[i] = Text.argb(b.getInt());
+            }
+            if (n == 0) return null;
+            if (n == 1) {
+                offsets[1] = 1;
+                colors[1] = colors[0];
+            }
+            Shader.TileMode tile = spread == Protocol.SPREAD_REFLECT ? Shader.TileMode.MIRROR
+                    : spread == Protocol.SPREAD_REPEAT ? Shader.TileMode.REPEAT : Shader.TileMode.CLAMP;
+            Shader shader;
+            try {
+                if (!radial) {
+                    shader = new LinearGradient(x1, y1, x2, y2, colors, offsets, tile);
+                } else if (Build.VERSION.SDK_INT >= 31) {
+                    long[] packed = new long[colors.length];
+                    for (int i = 0; i < colors.length; i++) packed[i] = Color.pack(colors[i]);
+                    shader = new RadialGradient(x1, y1, Math.max(r1, 0), x2, y2, r2, packed, offsets, tile);
+                } else {
+                    if (r2 <= 0) return null;
+                    // The focal circle's radius moves the stops outward.
+                    float inner = Math.max(0, Math.min(r1 / r2, 1));
+                    float[] stops = new float[offsets.length];
+                    for (int i = 0; i < stops.length; i++) stops[i] = inner + offsets[i] * (1 - inner);
+                    shader = new RadialGradient(x2, y2, r2, colors, stops, tile);
+                }
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+            boolean identity = true;
+            for (float v : m) identity &= v == 0;
+            if (!identity) {
+                Matrix local = new Matrix();
+                local.setValues(new float[] {m[0], m[2], m[4], m[1], m[3], m[5], 0, 0, 1});
+                shader.setLocalMatrix(local);
+            }
+            return shader;
         }
 
         /** The color with the global alpha applied. */

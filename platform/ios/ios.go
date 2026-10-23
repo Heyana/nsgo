@@ -68,6 +68,17 @@ type view struct {
 	selStart, selEnd int // UTF-16
 	area             bool
 	longPress        objc.ID
+
+	// frame is where the view shows now; style its own style, which its
+	// animated values and a layout animation draw over.
+	frame    core.Bounds
+	framed   bool
+	style    core.ViewStyle
+	animated core.AnimatedValues
+
+	component      core.NativeComponent // a native view's
+	componentTried bool
+	accessory      core.NodeID // an input's InputAccessoryView
 }
 
 type surface struct {
@@ -90,6 +101,18 @@ type surface struct {
 	images, presenting []*view
 
 	selecting *selection
+
+	// The frame clock and what it animates.
+	animator   *core.Animator
+	epoch      time.Time
+	link       objc.ID // the CADisplayLink
+	ticking    bool
+	motions    map[*view]*motion
+	ghosts     []*ghost
+	components core.NativeComponents
+	unknown    map[string]bool
+	// accessories are the inputs each InputAccessoryView rides above.
+	accessories map[core.NodeID]*view
 }
 
 // edgeInsets is UIEdgeInsets.
@@ -192,6 +215,7 @@ func loadUIKit() {
 	classSurface = register("NsgoSurface", uiView, nil, append(common,
 		objc.MethodDef{Cmd: sel("layoutSubviews"), Fn: surfaceLayout},
 		objc.MethodDef{Cmd: selApply, Fn: surfaceApply},
+		objc.MethodDef{Cmd: selTick, Fn: surfaceTick},
 		objc.MethodDef{Cmd: sel("safeAreaInsetsDidChange"), Fn: func(self objc.ID, cmd objc.SEL) {
 			apple.Super(self, cmd)
 			app.refresh()
@@ -248,12 +272,16 @@ func register(name string, super objc.Class, protocols []*objc.Protocol, methods
 type Options struct {
 	// ID names the app's directories and storage (engine.AppDirs).
 	ID string
+	// Components are the native components Native elements name.
+	Components core.NativeComponents
 }
 
 // Run shows app full screen and runs UIKit's event loop. Call it from
 // main; it does not return.
 func Run(root engine.App, opts Options) {
-	app = &surface{app: root, id: opts.ID}
+	app = &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*motion{},
+		components: opts.Components, unknown: map[string]bool{}, accessories: map[core.NodeID]*view{}}
+	app.animator = core.NewAnimator(func(e core.Event) { app.engine.Dispatch(e) })
 	loadUIKit()
 	argv := []*byte{&[]byte("nsgo\x00")[0], nil}
 	uiApplicationMain(1, unsafe.Pointer(&argv[0]), 0, apple.CFString("NsgoAppDelegate"))
@@ -460,6 +488,10 @@ func (s *surface) Mount(b *core.MountBatch) {
 }
 
 func (s *surface) apply(b *core.MountBatch) {
+	var lb *layoutBatch
+	if b.LayoutAnimation != nil && !s.env.ReduceMotion {
+		lb = &layoutBatch{anim: b.LayoutAnimation, created: map[core.NodeID]bool{}, deleted: map[objc.ID]bool{}}
+	}
 	for i := range b.Items {
 		it := &b.Items[i]
 		switch it.Kind {
@@ -468,6 +500,12 @@ func (s *surface) apply(b *core.MountBatch) {
 				s.views = append(s.views, nil)
 			}
 			s.views[it.ID] = s.create(it.View, it.ID)
+			if lb != nil {
+				lb.created[it.ID] = true
+			}
+			continue
+		case core.ItemAnimation:
+			s.animator.Apply(it.Animation)
 			continue
 		case core.ItemAlert:
 			s.alert(it.Alert)
@@ -509,7 +547,7 @@ func (s *surface) apply(b *core.MountBatch) {
 		v := s.views[it.ID]
 		switch it.Kind {
 		case core.ItemDelete:
-			s.delete(v)
+			s.delete(v, s.vanish(v, lb))
 		case core.ItemRemove:
 			v.native.Send(selRemoveFromSuperview)
 		case core.ItemInsert:
@@ -523,24 +561,16 @@ func (s *surface) apply(b *core.MountBatch) {
 				v.presented = true
 				s.presenting = append(s.presenting, v)
 			}
+			s.appear(v, lb, it.Parent)
 		case core.ItemFrame:
-			// Bounds and center, unlike the frame, hold with a transform; the
-			// bounds' origin is a scroll view's offset.
-			f := it.Frame
-			b := objc.Send[apple.CGRect](v.native, selBounds)
-			b.Size = apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)}
-			v.native.Send(sel("setBounds:"), b)
-			v.native.Send(sel("setCenter:"), apple.CGPoint{X: float64(f.Origin.X + f.Size.Width/2), Y: float64(f.Origin.Y + f.Size.Height/2)})
-			apple.LayoutBorders(v.native.Send(selLayer))
-			if v.image != nil {
-				v.image.Layout(apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)})
-				s.images = append(s.images, v)
-			}
-			if v.video != nil {
-				v.video.Layout()
-			}
+			s.setFrame(v, it.Frame, lb)
 		case core.ItemViewStyle:
-			apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, false)
+			v.style = *it.ViewStyle
+			if v.animatesStyle() {
+				v.restyle()
+			} else {
+				apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, false)
+			}
 			v.native.Send(selSetHidden, it.ViewStyle.Hidden)
 			if v.kind == core.KindScroll || v.kind == core.KindVideo {
 				// A scroll view shows only what it scrolls to, and a video
@@ -563,6 +593,12 @@ func (s *surface) apply(b *core.MountBatch) {
 			v.video.Configure(it.Video)
 		case core.ItemVideoSeek:
 			v.video.Seek(it.Time)
+		case core.ItemNative:
+			s.configureNative(v, it.Native)
+		case core.ItemNativeCommand:
+			if v.component != nil {
+				v.component.Command(it.Value, it.Data)
+			}
 		case core.ItemCanvas:
 			v.drawing = it.Drawing
 			v.native.Send(selSetNeedsDisplay)
@@ -595,6 +631,7 @@ func (s *surface) apply(b *core.MountBatch) {
 			v.native.Send(selSetNeedsDisplay)
 		case core.ItemInput:
 			v.configure(it.Input)
+			s.setAccessory(v, it.Input.Accessory)
 		case core.ItemInputValue:
 			if v.edits <= it.Count {
 				value := apple.NSString(it.Value)
@@ -626,25 +663,41 @@ func (s *surface) apply(b *core.MountBatch) {
 	}
 	s.finish()
 	s.refreshSelection()
+	apple.WithoutAnimation(func() {
+		if lb != nil {
+			s.stepMotions(s.clock())
+		}
+		s.applyAnimated()
+	})
+	if s.animator.Running() {
+		s.startTicking()
+	}
 }
 
 // finish starts what a batch asked for once its frames are set: image
 // loads at the views' sizes and modals' entrances.
 func (s *surface) finish() {
-	for _, v := range s.images {
-		if s.views[v.id] == v {
-			v.image.Start(float64(s.env.PixelRatio))
-		}
-	}
+	s.startImages()
 	for _, v := range s.presenting {
 		if s.views[v.id] == v && v.native.Send(selSuperview) != 0 {
 			h := objc.Send[apple.CGRect](v.native.Send(selSuperview), selBounds).Size.Height
 			apple.AnimateIn(v.native.Send(selLayer), v.animation, h, s.env.ReduceMotion)
 		}
 	}
-	clear(s.images)
 	clear(s.presenting)
-	s.images, s.presenting = s.images[:0], s.presenting[:0]
+	s.presenting = s.presenting[:0]
+}
+
+// startImages starts the image loads a batch or a frame's layout asked
+// for, at the views' new sizes.
+func (s *surface) startImages() {
+	for _, v := range s.images {
+		if s.views[v.id] == v {
+			v.image.Start(float64(s.env.PixelRatio))
+		}
+	}
+	clear(s.images)
+	s.images = s.images[:0]
 }
 
 func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
@@ -687,8 +740,23 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 	return v
 }
 
-func (s *surface) delete(v *view) {
-	v.native.Send(selRemoveFromSuperview)
+// delete releases v; kept leaves its native where it is, going away.
+func (s *surface) delete(v *view, kept bool) {
+	if !kept && !s.inGhost(v.native) {
+		v.native.Send(selRemoveFromSuperview)
+	}
+	s.animator.Forget(v.id)
+	delete(s.motions, v)
+	if v.component != nil {
+		v.component.Close()
+		v.component = nil
+	}
+	if in := s.accessories[v.id]; in != nil {
+		s.setAccessory(in, 0)
+	}
+	if v.accessory != 0 {
+		s.setAccessory(v, 0)
+	}
 	apple.ForgetBorders(v.native.Send(selLayer))
 	delete(gates, v.pan)
 	v.layout.Release()
@@ -995,9 +1063,16 @@ func inputEnded(self objc.ID, _ objc.SEL, _ objc.ID) {
 }
 
 func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
-	if v := views[self]; v != nil && v.events.Has(core.EventScroll) {
-		o := objc.Send[apple.CGPoint](self, selContentOffset)
-		v.surface.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id,
-			Point: core.Point{X: core.Points(o.X), Y: core.Points(o.Y)}})
+	v := views[self]
+	if v == nil {
+		return
+	}
+	o := objc.Send[apple.CGPoint](self, selContentOffset)
+	offset := core.Point{X: core.Points(o.X), Y: core.Points(o.Y)}
+	if v.surface.animator.Scroll(v.id, offset) {
+		apple.WithoutAnimation(v.surface.applyAnimated)
+	}
+	if v.events.Has(core.EventScroll) {
+		v.surface.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id, Point: offset})
 	}
 }

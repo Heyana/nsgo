@@ -19,7 +19,9 @@ func (t *Tree) Commit() *MountBatch {
 	if len(t.items) == 0 {
 		return nil
 	}
-	return &MountBatch{Root: t.view.id, Items: append([]MountItem(nil), t.items...)}
+	b := &MountBatch{Root: t.view.id, Items: append([]MountItem(nil), t.items...), LayoutAnimation: t.layoutAnim}
+	t.layoutAnim = nil
+	return b
 }
 
 func (t *Tree) commitRound() {
@@ -60,7 +62,9 @@ func (t *Tree) commitRound() {
 	}
 	t.sizeCanvases(t.view)
 	t.laidOut = t.laidOut[:0]
+	t.emitAccessories()
 	t.emit(t.view)
+	t.emitAnimation()
 	if t.keysChanged {
 		t.keysChanged = false
 		t.items = append(t.items, MountItem{Kind: ItemKeymap, Keys: t.keymap()})
@@ -267,6 +271,9 @@ func (t *Tree) emit(n *node) {
 		n.sent.props = p
 		add(MountItem{Kind: ItemViewProps, ID: n.id, ViewProps: &p})
 	}
+	if n.style.Animated != nil || n.anim != nil {
+		t.bindAnimated(n)
+	}
 	if ev := n.events(); first || ev != n.sent.events {
 		n.sent.events = ev
 		add(MountItem{Kind: ItemEvents, ID: n.id, Events: ev})
@@ -287,6 +294,7 @@ func (t *Tree) emit(n *node) {
 		}
 	case n.input != nil:
 		in := n.input
+		in.config.Accessory = t.accessoryFor(in.accessory)
 		if first || in.config != n.sent.input {
 			c := in.config
 			n.sent.input = c
@@ -323,6 +331,8 @@ func (t *Tree) emit(n *node) {
 			wn.sent = c
 			add(MountItem{Kind: ItemWeb, ID: n.id, Web: &c})
 		}
+	case n.native != nil:
+		t.emitNative(n)
 	case n.video != nil:
 		if vn := n.video; first || vn.config != vn.sent {
 			c := vn.config

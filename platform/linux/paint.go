@@ -28,12 +28,14 @@ const (
 // included.
 func (w *window) snapshotView(v *view, snap uintptr) {
 	s := w.styleOf(v)
-	if s.Hidden || s.Opacity <= 0 {
+	opacity := s.Opacity * v.layoutOpacity()
+	if s.Hidden || opacity <= 0 {
 		return
 	}
-	width, height := float32(v.frame.Size.Width), float32(v.frame.Size.Height)
-	if s.Opacity < 1 {
-		gtkSnapshotPushOpacity(snap, float64(s.Opacity))
+	size := v.shownFrame().Size
+	width, height := float32(size.Width), float32(size.Height)
+	if opacity < 1 {
+		gtkSnapshotPushOpacity(snap, float64(opacity))
 	}
 	bounds := roundedRect(0, 0, width, height, float32(s.CornerRadius))
 	filled := s.Background&0xff != 0
@@ -80,7 +82,7 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 	if contentShadow {
 		gtkSnapshotPop(snap)
 	}
-	if s.Opacity < 1 {
+	if opacity < 1 {
 		gtkSnapshotPop(snap)
 	}
 }
@@ -88,7 +90,8 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 // snapshotContent draws what v shows inside its box with Cairo, as the
 // backend's images, canvases and Pango text are drawn.
 func (w *window) snapshotContent(v *view, s *core.ViewStyle, snap uintptr) {
-	width, height := float64(v.frame.Size.Width), float64(v.frame.Size.Height)
+	size := v.shownFrame().Size
+	width, height := float64(size.Width), float64(size.Height)
 	r := rect{w: width, h: height, r: float64(s.CornerRadius)}
 	box := grapheneRect{0, 0, float32(width), float32(height)}
 	switch {

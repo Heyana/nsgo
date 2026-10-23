@@ -465,3 +465,71 @@ func TestCategories(t *testing.T) {
 		t.Fatalf("base page background = %x, want white", got)
 	}
 }
+
+func TestNativeViewAndFileDrop(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Native View")
+	slider := app.Find("id:native-slider")
+	if slider.Kind != core.KindNative || slider.Component != sliderComponent || slider.NativeProps["value"] != 0.4 {
+		t.Fatalf("native view %+v", slider)
+	}
+	app.Press("text:Set 0.8")
+	if v := app.Find("id:native-slider").NativeProps["value"]; v != 0.8 {
+		t.Fatalf("value prop %v after Set 0.8", v)
+	}
+	app.Press("text:Reset command")
+	if cmds := app.Find("id:native-slider").NativeCommands; len(cmds) != 1 || cmds[0].Name != "reset" {
+		t.Fatalf("commands %+v", cmds)
+	}
+	app.Emit("id:native-slider", "change", 0.25)
+	if got := app.Find("id:native-value").Text; !strings.HasPrefix(got, "value 0.25") {
+		t.Fatalf("after a change event: %q", got)
+	}
+
+	app.Press("id:nav-File Drop")
+	app.DropFiles("id:drop-zone", "file:///tmp/a%20b.txt", "blob:http://localhost/1234#notes.md")
+	if got := app.Find("id:dropped").Text; got != "2 dropped: a b.txt, notes.md" {
+		t.Fatalf("dropped = %q", got)
+	}
+}
+
+func TestPlatformAnimations(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Animation")
+	app.Press("text:Timing")
+	app.Advance(300 * time.Millisecond)
+	mid := app.Find("id:ball").Animated
+	if !mid.Has(core.PropTranslateX) || mid.TranslateX <= 0 || mid.TranslateX >= 220 {
+		t.Fatalf("ball halfway at %+v", mid)
+	}
+	app.Advance(time.Second)
+	if x := app.Find("id:ball").Animated.TranslateX; x != 220 {
+		t.Fatalf("ball ended at %v", x)
+	}
+	if got := app.Find("id:animated-state").Text; got != "Timing finished" {
+		t.Fatalf("state = %q", got)
+	}
+
+	app.Pan("id:platform-card", core.Point{X: 30}, core.Point{X: 60, Y: 20})
+	app.Advance(3 * time.Second)
+	if v := app.Find("id:platform-card").Animated; v.TranslateX != 0 || v.TranslateY != 0 {
+		t.Fatalf("the card did not spring home: %+v", v)
+	}
+}
+
+func TestKeyboardAccessory(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Controls")
+	if app.Exists("id:accessory-bar") {
+		t.Fatal("the bar shows before its field has focus")
+	}
+	app.Focus("id:accessory-field")
+	app.Type("id:accessory-field", "hello")
+	if got := app.Find("id:accessory-bar >> text:characters").Text; got != "5 characters" {
+		t.Fatalf("bar says %q", got)
+	}
+	app.Press("id:accessory-bar >> text:Clear")
+	if got := app.Find("id:accessory-field").Text; got != "" {
+		t.Fatalf("field holds %q after Clear", got)
+	}
+}

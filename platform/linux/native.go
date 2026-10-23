@@ -7,7 +7,8 @@ import (
 )
 
 // hosted is a native widget filling a view, as NSH's natives are: a web
-// view's page or placeholder, or a video's picture. It is a child of the
+// view's page or placeholder, a video's picture or a native component's
+// widget. It is a child of the
 // view's widget, after the view's children, given the view's frame at
 // every allocation, so ancestors clip it to their rounded bounds, later
 // views cover it and the view's opacity and transform apply to it.
@@ -30,6 +31,8 @@ func (v *view) hosted() *hosted {
 		return &v.web.hosted
 	case v.video != nil:
 		return &v.video.hosted
+	case v.native != nil:
+		return &v.native.hosted
 	}
 	return nil
 }
@@ -89,8 +92,8 @@ func nativeOf(data, p uintptr) (*window, *view) {
 	return w, v
 }
 
-// controlAt returns the view whose hosted control (a page, or a video
-// with GTK's controls) is or holds widget, or nil.
+// controlAt returns the view whose hosted control (a page, a video with
+// GTK's controls or a native component) is or holds widget, or nil.
 func (w *window) controlAt(widget uintptr) *view {
 	for ; widget != 0 && widget != w.surface; widget = gtkWidgetGetParent(widget) {
 		r, ok := lookupWidget(gtkWidgetGetParent(widget))
@@ -99,7 +102,7 @@ func (w *window) controlAt(widget uintptr) *view {
 		}
 		v := r.v
 		if h := v.hosted(); h != nil && h.child == widget &&
-			(v.web != nil && v.web.widget == widget || v.video != nil && v.video.controls) {
+			(v.web != nil && v.web.widget == widget || v.video != nil && v.video.controls || v.native != nil) {
 			return v
 		}
 		return nil
@@ -107,10 +110,11 @@ func (w *window) controlAt(widget uintptr) *view {
 	return nil
 }
 
-// hostsControls reports whether a page or a video's controls is hosted.
+// hostsControls reports whether a page, a video's controls or a native
+// component is hosted.
 func (w *window) hostsControls() bool {
 	for p, v := range w.natives {
-		if v.web != nil && v.web.widget == p || v.video != nil && v.video.controls {
+		if v.web != nil && v.web.widget == p || v.video != nil && v.video.controls || v.native != nil && v.native.child == p {
 			return true
 		}
 	}
@@ -118,7 +122,8 @@ func (w *window) hostsControls() bool {
 }
 
 // nativeAt reports whether widget is, or is inside, a native widget that
-// takes its own presses: an entry, a page or a video's controls.
+// takes its own presses: an entry, a page, a video's controls or a
+// native component.
 func (w *window) nativeAt(widget uintptr) bool {
 	for p := widget; p != 0 && p != w.surface; p = gtkWidgetGetParent(p) {
 		if _, ok := w.entries[p]; ok {

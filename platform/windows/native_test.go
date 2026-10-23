@@ -19,8 +19,6 @@ import (
 )
 
 var (
-	gdi32 = syscall.NewLazyDLL("gdi32.dll")
-
 	getDC                  = user32.NewProc("GetDC")
 	releaseDC              = user32.NewProc("ReleaseDC")
 	getWindowTextW         = user32.NewProc("GetWindowTextW")
@@ -30,7 +28,6 @@ var (
 	createCompatibleDC     = gdi32.NewProc("CreateCompatibleDC")
 	createCompatibleBitmap = gdi32.NewProc("CreateCompatibleBitmap")
 	deleteDC               = gdi32.NewProc("DeleteDC")
-	deleteObject           = gdi32.NewProc("DeleteObject")
 	selectObject           = gdi32.NewProc("SelectObject")
 	bitBlt                 = gdi32.NewProc("BitBlt")
 	getDIBits              = gdi32.NewProc("GetDIBits")

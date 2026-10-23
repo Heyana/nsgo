@@ -141,6 +141,7 @@ func (w *window) panMove(p core.Point) {
 		case 1:
 			g.active = true
 			g.last, g.lastTime = d, now
+			w.panned(g.v, d)
 			w.engine.Dispatch(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureBegan, Point: d})
 		case -1:
 			w.endPan()
@@ -152,6 +153,7 @@ func (w *window) panMove(p core.Point) {
 		g.velocity = core.Point{X: g.velocity.X*0.3 + vx*0.7, Y: g.velocity.Y*0.3 + vy*0.7}
 	}
 	g.last, g.lastTime = d, now
+	w.panned(g.v, d)
 	w.engine.Dispatch(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureChanged, Point: d, Velocity: g.velocity})
 }
 
@@ -171,6 +173,7 @@ func (w *window) panUp(p core.Point) bool {
 	if time.Since(g.lastTime) > 100*time.Millisecond {
 		velocity = core.Point{} // the pointer stopped before it let go
 	}
+	w.panned(g.v, d)
 	w.engine.Dispatch(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureEnded, Point: d, Velocity: velocity})
 	return true
 }
@@ -183,6 +186,7 @@ func (w *window) panLost() {
 	}
 	w.pan = nil
 	if g.active && !g.v.deleted {
+		w.panned(g.v, g.last)
 		w.engine.Dispatch(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureCancelled, Point: g.last})
 	}
 }

@@ -6,13 +6,17 @@
 // hit tested by the engine, inputs as editors of the backend's own drawn
 // with the views (input.go), web views as WebView2 composition controllers
 // in the window's DirectComposition tree, videos played by Media
-// Foundation's media engine, images decoded by Go, and alerts as task
-// dialogs. It uses only the syscall package, so it builds without cgo.
+// Foundation's media engine, images decoded by Go, native components'
+// child windows following their views (component.go), files dropped
+// through OLE (drop.go), and alerts as task dialogs. It uses only the
+// syscall package, so it builds without cgo.
 //
 // Transforms are Direct2D world transforms, translucent views draw in
 // layers, and shapes and text are antialiased by Direct2D. Style
-// transitions tick on a timer. Image blur and modal animations are not
-// drawn, and there is no accessibility yet, which needs UI Automation
+// transitions, animated values, layout animations and animated images
+// tick on one frame clock, a timer that runs only while something
+// animates (animate.go). Image blur and modal animations are not drawn,
+// and there is no accessibility yet, which needs UI Automation
 // providers.
 package windows
 
@@ -42,6 +46,8 @@ type Options struct {
 	Width, Height core.Points
 	// ID names the app's directories and storage (engine.AppDirs).
 	ID string
+	// Components are the native components Native elements name.
+	Components core.NativeComponents
 }
 
 var (
@@ -192,10 +198,28 @@ type view struct {
 	web   *webView
 	video *video
 
+	// A native view's component.
+	component *component
+
 	// What animates: the style, after the first, and the scroll offset.
 	styled     bool
 	transition *transition
 	scrolling  *scrolling
+	// animated are the values bound to the view, Set 0 when none; drawn is
+	// its style with them, as styleOf last made it.
+	animated core.AnimatedValues
+	drawn    core.ViewStyle
+	// What a LayoutAnimation animates: the frame drawn, moving to frame,
+	// and the view appearing or going.
+	moving *moving
+	fading *fading
+	// leaving are the deleted children a LayoutAnimation keeps drawing
+	// while they go, by where they were; leftFrom is the view a leaving
+	// view is drawn in. A retired view is one of those or in one: its ID
+	// is free and it only draws.
+	leaving  []leaving
+	leftFrom *view
+	retired  bool
 }
 
 // detach takes v out of its parent's children.
@@ -232,6 +256,20 @@ type window struct {
 	webs      map[*webView]bool
 	cacheDir  string                 // where web views keep their profile
 	frames    []func(time.Time) bool // frame clients (onFrame)
+	// animator runs the animated values on the frame clock, whose times
+	// count from epoch.
+	animator *core.Animator
+	epoch    time.Time
+	// components are the app's native components, hosts the views showing
+	// them with a window of their own, and missing the unknown names
+	// already logged.
+	components core.NativeComponents
+	hosts      map[*component]bool
+	missing    map[string]bool
+	// drop is the window's file drop target while views take dropped
+	// files: drops holds those views.
+	drop  *dropTarget
+	drops map[*view]bool
 
 	// composition is the window's while it has web views, and composed
 	// the web views the last frame drew.
@@ -293,7 +331,10 @@ func Run(app engine.App, opts Options) {
 	}
 	const perMonitorAwareV2 = ^uintptr(3) // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 (-4)
 	setDpiAwareness.Call(perMonitorAwareV2)
-	w := &window{title: opts.Title, scale: 1, webs: map[*webView]bool{}, touchWebs: map[uint32]*webView{}}
+	w := &window{title: opts.Title, scale: 1, webs: map[*webView]bool{}, touchWebs: map[uint32]*webView{},
+		epoch: time.Now(), components: opts.Components, hosts: map[*component]bool{}, missing: map[string]bool{},
+		drops: map[*view]bool{}}
+	w.animator = core.NewAnimator(func(ev core.Event) { w.engine.Dispatch(ev) })
 	if dpi, _, _ := getDpiForSystem.Call(); dpi != 0 {
 		w.scale = float64(dpi) / 96
 	}
@@ -402,6 +443,7 @@ func (w *window) view(id core.NodeID) *view {
 
 func (w *window) apply(b *core.MountBatch) {
 	var rescroll, loads []*view
+	lb := w.layoutBatch(b)
 	type focusChange struct {
 		v     *view // nil dismisses the keyboard
 		focus bool
@@ -412,6 +454,12 @@ func (w *window) apply(b *core.MountBatch) {
 		switch it.Kind {
 		case core.ItemCreate:
 			w.create(it.ID, it.View)
+			if lb != nil {
+				lb.created[w.views[it.ID]] = true
+			}
+			continue
+		case core.ItemAnimation:
+			w.applyAnimations(it.Animation)
 			continue
 		case core.ItemAlert:
 			// Shown from a message of its own: the dialog's message loop
@@ -463,13 +511,19 @@ func (w *window) apply(b *core.MountBatch) {
 				}
 				p.children = slices.Insert(p.children, at, v)
 				v.parent = p
+				if lb != nil && lb.created[v] {
+					lb.inserted = append(lb.inserted, v)
+				}
 			}
 		case core.ItemRemove:
 			v.detach()
 		case core.ItemDelete:
-			w.delete(v)
+			w.animator.Forget(v.id)
+			if !w.leave(v, lb) {
+				w.destroy(v)
+			}
 		case core.ItemFrame:
-			v.frame = it.Frame
+			w.setFrame(v, it.Frame, lb)
 			if v.kind == core.KindScroll {
 				rescroll = append(rescroll, v)
 			}
@@ -477,6 +531,11 @@ func (w *window) apply(b *core.MountBatch) {
 			w.setStyle(v, it.ViewStyle)
 			if v.web != nil {
 				v.web.restyle()
+			}
+			if v.kind == core.KindImage {
+				// Untinted, an animation plays again.
+				w.play(v, &v.source)
+				w.play(v, &v.placeholder)
 			}
 		case core.ItemText:
 			if v.text != nil {
@@ -494,6 +553,7 @@ func (w *window) apply(b *core.MountBatch) {
 			}
 		case core.ItemEvents:
 			v.events = it.Events
+			w.dropEvents(v)
 		case core.ItemViewProps:
 			if it.ViewProps != nil {
 				v.props = *it.ViewProps
@@ -535,6 +595,14 @@ func (w *window) apply(b *core.MountBatch) {
 			if v.video != nil {
 				v.video.seek(it.Time)
 			}
+		case core.ItemNative:
+			if v.kind == core.KindNative && it.Native != nil {
+				w.setNative(v, it.Native)
+			}
+		case core.ItemNativeCommand:
+			if c := v.component; c != nil && c.c != nil {
+				c.c.Command(it.Value, it.Data)
+			}
 		case core.ItemScrollTo:
 			v.scrolling = nil
 			if it.Animated {
@@ -545,6 +613,10 @@ func (w *window) apply(b *core.MountBatch) {
 		}
 	}
 	w.root = b.Root
+	w.appear(lb)
+	// Bindings change with the batch's views.
+	w.animatedChanged()
+	w.updateDrop()
 	for _, v := range rescroll {
 		if !v.deleted {
 			w.scrollTo(v, v.offset)
@@ -586,19 +658,65 @@ func (w *window) create(id core.NodeID, kind core.ViewKind) {
 	w.views[id] = v
 }
 
-// delete destroys v; its children get their own deletes.
-func (w *window) delete(v *view) {
+// destroy destroys v. Its children get their own deletes, unless they
+// were retired with it: those go with it.
+func (w *window) destroy(v *view) {
 	v.detach()
-	for _, c := range v.children {
-		c.parent = nil
+	if p := v.leftFrom; p != nil {
+		p.leaving = slices.DeleteFunc(p.leaving, func(l leaving) bool { return l.v == v })
+		v.leftFrom = nil
 	}
+	for _, l := range v.leaving {
+		l.v.leftFrom = nil
+		w.destroy(l.v)
+	}
+	v.leaving = nil
+	children := v.children
 	v.children = nil
+	for _, c := range children {
+		c.parent = nil
+		if c.retired {
+			w.destroy(c)
+		}
+	}
+	w.release(v)
+	if v.field != nil {
+		v.field.release() // drawn since it retired, if it did
+	}
 	if v.text != nil {
 		v.text.Release()
 		v.text = nil
 	}
 	v.shadow.release()
 	v.shadow = nil
+	v.retired, v.moving, v.fading, v.drawing = false, nil, nil, nil
+	v.source.reset(core.ImageSource{})
+	v.placeholder.reset(core.ImageSource{})
+	v.deleted = true
+	if w.views[v.id] == v {
+		w.views[v.id] = nil
+	}
+}
+
+// retire frees v's ID, as a delete does, but keeps what it draws for a
+// layout animation to draw it going: what takes input or plays goes at
+// once.
+func (w *window) retire(v *view) {
+	w.release(v)
+	v.retired, v.deleted = true, true
+	v.scrolling = nil
+	if w.views[v.id] == v {
+		w.views[v.id] = nil
+	}
+}
+
+// release lets go of what a deleted view takes input with, plays or
+// hosts, once.
+func (w *window) release(v *view) {
+	if v.retired {
+		return // it did when it retired
+	}
+	w.dropGone(v)
 	if v.field != nil {
 		if w.selecting == v.field {
 			w.fieldUp()
@@ -613,10 +731,10 @@ func (w *window) delete(v *view) {
 		v.video.close()
 		v.video = nil
 	}
-	v.source.reset(core.ImageSource{})
-	v.placeholder.reset(core.ImageSource{})
-	v.deleted = true
-	w.views[v.id] = nil
+	if v.component != nil {
+		w.closeComponent(v.component)
+		v.component = nil
+	}
 }
 
 func boolArg(b bool) uintptr {
@@ -636,6 +754,10 @@ func (w *window) scrollTo(v *view, offset core.Point) bool {
 		return false
 	}
 	v.offset = offset
+	// Values bound to the offset move in the frame that shows it.
+	if w.animator.Scroll(v.id, offset) {
+		w.animatedChanged()
+	}
 	w.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id, Point: offset})
 	return true
 }
@@ -1020,6 +1142,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmDestroy:
 		for wv := range w.webs {
 			wv.close()
+		}
+		w.revokeDrop()
+		for c := range w.hosts {
+			w.closeComponent(c)
 		}
 		postQuitMessage.Call(0)
 		return 0

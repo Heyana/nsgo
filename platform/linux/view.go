@@ -46,14 +46,24 @@ type view struct {
 	// A canvas's drawing.
 	drawing *core.Drawing
 
-	// A web view's page and a video's player.
-	web   *web
-	video *video
+	// A web view's page, a video's player and a native component.
+	web    *web
+	video  *video
+	native *component
 
 	// What animates: the style after the first, and the scroll offset.
 	styled     bool
 	transition *transition
 	scrolling  *scrolling
+	// animated holds the values the animator binds over the style, nil
+	// while none are bound.
+	animated *core.AnimatedValues
+	// layout is a running layout animation: the frame moving, the view
+	// appearing or leaving.
+	layout *layoutAnim
+	// dying views are deleted but still drawn while they leave; their
+	// IDs may belong to new views already.
+	dying bool
 }
 
 // detach takes v out of its parent's children.

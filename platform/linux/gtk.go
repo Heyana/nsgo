@@ -603,4 +603,5 @@ func bind() {
 	purego.RegisterLibFunc(&cairoSurfaceWriteToPNG, cairoLib, "cairo_surface_write_to_png")
 	bindNative()
 	bindWidget()
+	bindFileDrop()
 }

@@ -83,6 +83,9 @@ type Style struct {
 	Transform     Transform
 	// Transition animates changes of the look on the platform.
 	Transition Transition
+	// Animated binds properties to animated values the platform moves
+	// every frame, over the ones above.
+	Animated *AnimatedStyle
 
 	// Text, inherited by descendants that set none.
 	Color Color
@@ -352,6 +355,7 @@ func (s Style) Merge(o Style) Style {
 	set(&s.VerticalAlign, o.VerticalAlign)
 	set(&s.Transform, o.Transform)
 	set(&s.Transition, o.Transition)
+	set(&s.Animated, o.Animated)
 	s.mergeText(o)
 	set(&s.Hover, o.Hover)
 	set(&s.Focus, o.Focus)

@@ -16,19 +16,28 @@ import (
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/platform/internal/imagedecode"
 	"github.com/oneo-me/nsgo/platform/internal/imageload"
 )
 
 var (
-	cfDataCreate                  func(alloc uintptr, bytes *byte, n int) uintptr
-	cfDictionaryGetValue          func(dict, key uintptr) uintptr
-	cfNumberGetValue              func(num uintptr, kind int, value unsafe.Pointer) bool
-	cgImageGetWidth               func(uintptr) int
-	cgImageGetHeight              func(uintptr) int
-	cgImageSourceCreateWithData   func(data, options uintptr) uintptr
-	cgImageSourceCopyProperties   func(src uintptr, i int, options uintptr) uintptr
-	cgImageSourceCreateThumbnail  func(src uintptr, i int, options uintptr) uintptr
-	cfTrue                        uintptr
+	cfDataCreate                 func(alloc uintptr, bytes *byte, n int) uintptr
+	cfDictionaryGetValue         func(dict, key uintptr) uintptr
+	cfNumberGetValue             func(num uintptr, kind int, value unsafe.Pointer) bool
+	cgImageGetWidth              func(uintptr) int
+	cgImageGetHeight             func(uintptr) int
+	cgImageSourceCreateWithData  func(data, options uintptr) uintptr
+	cgImageSourceCopyProperties  func(src uintptr, i int, options uintptr) uintptr
+	cgImageSourceCreateThumbnail func(src uintptr, i int, options uintptr) uintptr
+	cgImageSourceGetCount        func(src uintptr) int
+	cgColorSpaceCreateWithName   func(name uintptr) uintptr
+	cgDataProviderCreateWithData func(data uintptr) uintptr
+	cgImageCreate                func(w, h, bits, pixelBits, row int, space uintptr, info uint32, provider, decode uintptr, interpolate bool, intent int32) uintptr
+	srgb                         uintptr
+	cfTrue                       uintptr
+	// The dictionaries of the animated formats, each with its delay keys
+	// (unclamped first) and loop count.
+	animatedKeys                  [][4]uintptr
 	keyWidth, keyHeight, keyTurn  uintptr
 	keyAlways, keyUpright, keyMax uintptr
 	keyDecodeNow                  uintptr
@@ -57,6 +66,26 @@ func loadImage(cf, cg uintptr) {
 	reg(&cgImageSourceCreateWithData, io, "CGImageSourceCreateWithData")
 	reg(&cgImageSourceCopyProperties, io, "CGImageSourceCopyPropertiesAtIndex")
 	reg(&cgImageSourceCreateThumbnail, io, "CGImageSourceCreateThumbnailAtIndex")
+	reg(&cgImageSourceGetCount, io, "CGImageSourceGetCount")
+	reg(&cgColorSpaceCreateWithName, cg, "CGColorSpaceCreateWithName")
+	reg(&cgDataProviderCreateWithData, cg, "CGDataProviderCreateWithCFData")
+	reg(&cgImageCreate, cg, "CGImageCreate")
+	srgb = cgColorSpaceCreateWithName(constant(cg, "kCGColorSpaceSRGB"))
+	for _, k := range [][4]string{
+		{"kCGImagePropertyGIFDictionary", "kCGImagePropertyGIFUnclampedDelayTime", "kCGImagePropertyGIFDelayTime", "kCGImagePropertyGIFLoopCount"},
+		{"kCGImagePropertyWebPDictionary", "kCGImagePropertyWebPUnclampedDelayTime", "kCGImagePropertyWebPDelayTime", "kCGImagePropertyWebPLoopCount"},
+		{"kCGImagePropertyPNGDictionary", "kCGImagePropertyAPNGUnclampedDelayTime", "kCGImagePropertyAPNGDelayTime", "kCGImagePropertyAPNGLoopCount"},
+	} {
+		var keys [4]uintptr
+		for i, name := range k {
+			if sym, err := purego.Dlsym(io, name); err == nil && sym != 0 {
+				keys[i] = **(**uintptr)(unsafe.Pointer(&sym))
+			}
+		}
+		if keys[0] != 0 {
+			animatedKeys = append(animatedKeys, keys)
+		}
+	}
 	cfTrue = constant(cf, "kCFBooleanTrue")
 	keyWidth = constant(io, "kCGImagePropertyPixelWidth")
 	keyHeight = constant(io, "kCGImagePropertyPixelHeight")
@@ -109,17 +138,70 @@ func (r request) maxPixels(w, h float64) float64 {
 }
 
 // decoded is a CGImage ImageIO decoded, released by its holder, and the
-// source's upright size in pixels.
+// source's upright size in pixels. An animated image also has its frames,
+// the first being image, each shown for its delay, and its loop count (0
+// repeats forever).
 type decoded struct {
 	image         uintptr
 	width, height float64
 	scale         float64
+	frames        []uintptr
+	delays        []float64 // seconds
+	loops         int
+}
+
+// maxFrames bounds the frames of an animated image, as NSH's iOS does.
+const maxFrames = 600
+
+// release releases the images d holds.
+func (d *decoded) release() {
+	Release(d.image)
+	for _, f := range d.frames[min(len(d.frames), 1):] {
+		Release(f)
+	}
+}
+
+// animation reads the delays and loop count of an animated source's
+// frames; ok is false for a still one.
+func animation(src uintptr) (delays []float64, loops int, ok bool) {
+	n := min(cgImageSourceGetCount(src), maxFrames)
+	if n < 2 {
+		return nil, 0, false
+	}
+	for i := range n {
+		delay := 0.1
+		props := cgImageSourceCopyProperties(src, i, 0)
+		for _, k := range animatedKeys {
+			dict := cfDictionaryGetValue(props, k[0])
+			if dict == 0 {
+				continue
+			}
+			d := number(dict, k[1])
+			if d <= 0 && k[2] != 0 {
+				d = number(dict, k[2])
+			}
+			// Browsers show frames of 10 ms or less for 100 ms.
+			if d > 0.01 {
+				delay = d
+			}
+			if i == 0 && k[3] != 0 {
+				loops = int(number(dict, k[3]))
+			}
+			break
+		}
+		Release(props)
+		delays = append(delays, delay)
+	}
+	return delays, loops, true
 }
 
 // decode decodes data upright and at once, at the size r shows it.
 func decode(data []byte, r request) (decoded, error) {
 	if len(data) == 0 {
 		return decoded{}, errors.New("apple: empty image data")
+	}
+	if imagedecode.Sniff(data) == imagedecode.SVG {
+		return decodeSVG(data, r)
 	}
 	cfData := cfDataCreate(0, &data[0], len(data))
 	defer Release(cfData)
@@ -151,6 +233,19 @@ func decode(data []byte, r request) (decoded, error) {
 	if img == 0 {
 		return decoded{}, errors.New("apple: cannot decode the image")
 	}
+	// An animated image plays unblurred, as NSH's does.
+	if delays, loops, ok := animation(src); ok && r.blur <= 0 {
+		d := decoded{image: img, width: w, height: h, scale: r.scale, frames: []uintptr{img}, loops: loops}
+		for i := 1; i < len(delays); i++ {
+			f := cgImageSourceCreateThumbnail(src, i, opts)
+			if f == 0 {
+				break
+			}
+			d.frames = append(d.frames, f)
+		}
+		d.delays = delays[:len(d.frames)]
+		return d, nil
+	}
 	if r.blur > 0 {
 		dw, dh := float64(cgImageGetWidth(img)), float64(cgImageGetHeight(img))
 		radius := r.blur * r.ratio
@@ -163,6 +258,42 @@ func decode(data []byte, r request) (decoded, error) {
 		}
 	}
 	return decoded{image: img, width: w, height: h, scale: r.scale}, nil
+}
+
+// decodeSVG draws an SVG with Go's rasterizer for the pixels r's view
+// shows it at: its shorter side as long as the view's longer side, so no
+// resize mode enlarges the raster; at its own size for the screen before
+// layout. Its size is the document's, in points.
+func decodeSVG(data []byte, r request) (decoded, error) {
+	opts := imagedecode.Options{Layout: imagedecode.RGBA, Scale: float32(max(r.ratio, 1))}
+	if r.view.Width > 0 && r.view.Height > 0 && r.mode != core.Center {
+		opts.Cover = int(math.Ceil(max(r.view.Width, r.view.Height) * max(r.ratio, 1)))
+	}
+	img, err := imagedecode.Decode(data, opts)
+	if err != nil {
+		return decoded{}, err
+	}
+	pix := img.Frames[0].Pix
+	cfData := cfDataCreate(0, &pix[0], len(pix))
+	defer Release(cfData)
+	provider := cgDataProviderCreateWithData(cfData)
+	defer Release(provider)
+	const premultipliedLast = 1
+	cg := cgImageCreate(img.Width, img.Height, 8, 32, img.Width*4, srgb, premultipliedLast, provider, 0, true, 0)
+	if cg == 0 {
+		return decoded{}, errors.New("apple: cannot make the SVG's image")
+	}
+	// Points per pixel of the raster: the contents scale that shows it at
+	// the document's size.
+	scale := float64(img.Width) / max(float64(img.Size.Width), 1)
+	if r.blur > 0 {
+		if out := blur(cg, r.blur*scale); out != 0 {
+			Release(cg)
+			cg = out
+		}
+	}
+	return decoded{image: cg, width: math.Round(float64(img.Size.Width)), height: math.Round(float64(img.Size.Height)),
+		scale: scale}, nil
 }
 
 func number(dict, key uintptr) float64 {
@@ -362,7 +493,7 @@ func (iv *ImageView) fetch(ctx context.Context, n int, src core.ImageSource, r r
 	}
 	OnMain(func() {
 		if iv.load != n || (!source && iv.source) {
-			Release(img.image)
+			img.release()
 			return
 		}
 		switch {
@@ -384,7 +515,7 @@ func (iv *ImageView) fetch(ctx context.Context, n int, src core.ImageSource, r r
 }
 
 func (iv *ImageView) show(img decoded, source bool, fade time.Duration) {
-	Release(iv.image)
+	iv.shown.release()
 	iv.image, iv.shown, iv.source = img.image, img, source && img.image != 0
 	iv.reduced = img.image != 0 && float64(cgImageGetWidth(img.image)) < img.width
 	iv.render(fade)
@@ -436,6 +567,10 @@ func (iv *ImageView) render(fade time.Duration) {
 			target.Send(selAddAnimation, t, NSString("contents"))
 		}
 		target.Send(selSetContents, iv.image)
+		target.Send(selRemoveAnimationForKey, NSString("nsgoFrames"))
+		if len(iv.shown.frames) > 1 && iv.tint == 0 {
+			target.Send(selAddAnimation, frameAnimation(&iv.shown), NSString("nsgoFrames"))
+		}
 		target.Send(selSetContentsGravity, NSString(iv.gravity()))
 		scale := iv.shown.scale
 		if scale <= 0 {
@@ -452,12 +587,48 @@ func (iv *ImageView) Close() {
 	}
 	iv.load++
 	iv.closed = true
-	Release(iv.image)
-	iv.image = 0
+	iv.shown.release()
+	iv.image, iv.shown = 0, decoded{}
 	if iv.mask != 0 {
 		iv.mask.Send(selRelease)
 		iv.mask = 0
 	}
+}
+
+var selRemoveAnimationForKey = sel("removeAnimationForKey:")
+
+// frameAnimation plays an animated image's frames on its layer's contents,
+// each for its delay: a discrete keyframe animation, which Core Animation
+// runs without the app.
+func frameAnimation(d *decoded) objc.ID {
+	values := objc.ID(objc.GetClass("NSMutableArray")).Send(sel("array"))
+	times := objc.ID(objc.GetClass("NSMutableArray")).Send(sel("array"))
+	number := objc.ID(objc.GetClass("NSNumber"))
+	total := 0.0
+	for _, delay := range d.delays {
+		total += delay
+	}
+	at := 0.0
+	for i, f := range d.frames {
+		values.Send(sel("addObject:"), f)
+		times.Send(sel("addObject:"), number.Send(selNumberWithDouble, at/total))
+		at += d.delays[i]
+	}
+	times.Send(sel("addObject:"), number.Send(selNumberWithDouble, 1.0))
+	anim := objc.ID(objc.GetClass("CAKeyframeAnimation")).Send(sel("animationWithKeyPath:"), NSString("contents"))
+	anim.Send(sel("setValues:"), values)
+	anim.Send(sel("setKeyTimes:"), times)
+	anim.Send(sel("setCalculationMode:"), NSString("discrete"))
+	anim.Send(sel("setDuration:"), total)
+	repeat := float32(math.Inf(1))
+	if d.loops > 0 {
+		repeat = float32(d.loops)
+	}
+	anim.Send(sel("setRepeatCount:"), repeat)
+	// Keep the last frame once a counted loop ends.
+	anim.Send(sel("setFillMode:"), NSString("forwards"))
+	anim.Send(sel("setRemovedOnCompletion:"), false)
+	return anim
 }
 
 // AnimateIn presents a modal's layer as a asks: sliding up from distance

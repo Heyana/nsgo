@@ -5,9 +5,11 @@ package windows
 import (
 	"math"
 	"testing"
+	"time"
 	"unsafe"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/platform/internal/imagedecode"
 )
 
 func closeTo(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
@@ -726,5 +728,96 @@ func TestFocusFollowsModalsAndTab(t *testing.T) {
 	w.checkFocus()
 	if w.focus != b.field {
 		t.Fatal("the field did not get the focus back after the modal")
+	}
+}
+
+// TestFileURLsEscapeAndKeepHosts checks the URLs of dropped files.
+func TestFileURLsEscapeAndKeepHosts(t *testing.T) {
+	for path, want := range map[string]string{
+		`C:\a b\c#d.txt`:     "file:///C:/a%20b/c%23d.txt",
+		`D:\日本`:              "file:///D:/%E6%97%A5%E6%9C%AC",
+		`\\server\share\x y`: "file://server/share/x%20y",
+		`relative\x`:         "",
+	} {
+		if got := fileURL(path); got != want {
+			t.Errorf("fileURL(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
+
+// TestPictureFramesFollowTheirDelaysAndLoops checks which frame an
+// animation shows when.
+func TestPictureFramesFollowTheirDelaysAndLoops(t *testing.T) {
+	ms := time.Millisecond
+	pic := &picture{frames: []imagedecode.Frame{{Delay: 100 * ms}, {Delay: 50 * ms}}, plays: 2}
+	for _, c := range []struct {
+		at    time.Duration
+		frame int
+		more  bool
+	}{{0, 0, true}, {99 * ms, 0, true}, {100 * ms, 1, true}, {160 * ms, 0, true}, {260 * ms, 1, true},
+		{300 * ms, 1, false}, {time.Hour, 1, false}} {
+		if frame, more := pic.frameAt(c.at); frame != c.frame || more != c.more {
+			t.Errorf("at %v: frame %d, more %v; want %d, %v", c.at, frame, more, c.frame, c.more)
+		}
+	}
+	pic.plays = 0
+	if frame, more := pic.frameAt(time.Hour + 120*ms); frame != 1 || !more {
+		t.Errorf("a looping animation shows frame %d (more %v) after an hour", frame, more)
+	}
+}
+
+// TestLayoutAnimationKeepsRemovedViewsDrawnApartFromTheirIDs applies
+// batches without a window: a Delete animation keeps a removed subtree
+// drawn under its parent while its IDs serve new views, an Update moves
+// a frame from the one shown, and the end destroys what went.
+func TestLayoutAnimationKeepsRemovedViewsDrawnApartFromTheirIDs(t *testing.T) {
+	w := &window{animator: core.NewAnimator(func(core.Event) {}), drops: map[*view]bool{}, hosts: map[*component]bool{}}
+	frame := func(id core.NodeID, x, y, width, height core.Points) core.MountItem {
+		return core.MountItem{Kind: core.ItemFrame, ID: id, Frame: core.Bounds{Origin: core.Point{X: x, Y: y},
+			Size: core.Size{Width: width, Height: height}}}
+	}
+	w.apply(&core.MountBatch{Root: 1, Items: []core.MountItem{
+		{Kind: core.ItemCreate, ID: 1, View: core.KindView},
+		{Kind: core.ItemCreate, ID: 2, View: core.KindView},
+		{Kind: core.ItemCreate, ID: 3, View: core.KindView},
+		{Kind: core.ItemCreate, ID: 4, View: core.KindView},
+		{Kind: core.ItemInsert, ID: 2, Parent: 1},
+		{Kind: core.ItemInsert, ID: 3, Parent: 2},
+		{Kind: core.ItemInsert, ID: 4, Parent: 1},
+		frame(1, 0, 0, 300, 300), frame(2, 0, 0, 100, 100), frame(3, 10, 10, 20, 20), frame(4, 0, 100, 50, 50),
+	}})
+	root, old, child, mover := w.views[1], w.views[2], w.views[3], w.views[4]
+	tr := &core.LayoutTransition{Duration: time.Second}
+	w.apply(&core.MountBatch{Root: 1, LayoutAnimation: &core.LayoutAnimation{Update: tr, Delete: tr, Create: tr},
+		Items: []core.MountItem{
+			{Kind: core.ItemDelete, ID: 2},
+			{Kind: core.ItemDelete, ID: 3},
+			{Kind: core.ItemCreate, ID: 2, View: core.KindView},
+			{Kind: core.ItemInsert, ID: 2, Parent: 1, Before: 4},
+			frame(2, 0, 0, 100, 40), frame(4, 0, 40, 50, 50),
+		}})
+	fresh := w.views[2]
+	switch {
+	case fresh == old || fresh == nil || w.views[3] != nil:
+		t.Fatal("the deleted IDs do not name the new views")
+	case len(root.leaving) != 1 || root.leaving[0].v != old || root.leaving[0].at != 0:
+		t.Fatalf("the root keeps %v going, want the old view at 0", root.leaving)
+	case !old.retired || !child.retired || len(old.children) != 1 || old.children[0] != child:
+		t.Fatal("the subtree going is not kept whole")
+	case old.fading == nil || !old.fading.out:
+		t.Fatal("the old view does not go out")
+	case fresh.fading == nil || fresh.fading.out:
+		t.Fatal("the new view does not come in")
+	case mover.moving == nil || mover.moving.from.Origin.Y != 100 || frameOf(mover).Origin.Y != 100 || mover.frame.Origin.Y != 40:
+		t.Fatalf("the moved view moves from %v to %v", frameOf(mover), mover.frame)
+	}
+	w.finishLeaving(old)
+	if len(root.leaving) != 0 || !old.deleted || old.retired || !child.deleted || w.views[2] != fresh {
+		t.Fatal("the end of the animation did not destroy only what went")
+	}
+	// Without an animation a frame snaps, and a delete is immediate.
+	w.apply(&core.MountBatch{Root: 1, Items: []core.MountItem{frame(4, 0, 0, 50, 50), {Kind: core.ItemDelete, ID: 2}}})
+	if mover.moving != nil || frameOf(mover).Origin.Y != 0 || len(root.leaving) != 0 || !fresh.deleted {
+		t.Fatal("a batch without a layout animation animated")
 	}
 }

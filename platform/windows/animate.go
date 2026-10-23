@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"slices"
 	"time"
 
 	"github.com/oneo-me/nsgo/core"
@@ -41,19 +42,176 @@ type scrolling struct {
 	start    time.Time
 }
 
-// styleOf returns the style v shows now: mid transition, or its own.
-func (w *window) styleOf(v *view) *core.ViewStyle {
+// moving is a view's frame animating to the one it was given, as a
+// LayoutAnimation's Update moves it.
+type moving struct {
+	from  core.Bounds
+	start time.Time // when the batch came
+	tr    core.LayoutTransition
+	shown core.Bounds // at the last frame
+}
+
+// fading is a view appearing or going, as a LayoutAnimation's Create and
+// Delete show it: shown multiplies its opacity, or scales it about its
+// center, by the transition's property.
+type fading struct {
+	start time.Time
+	tr    core.LayoutTransition
+	out   bool
+	from  float64 // what showed when it started going
+	shown float64 // at the last frame: 0 none of it, 1 all
+}
+
+// leaving is a child of a view that a LayoutAnimation's Delete keeps
+// drawn while it goes: at is where it was among the children.
+type leaving struct {
+	v  *view
+	at int
+}
+
+// layoutBatch is what a batch with a LayoutAnimation animates.
+type layoutBatch struct {
+	anim     *core.LayoutAnimation
+	now      time.Time
+	created  map[*view]bool
+	inserted []*view // the views created and inserted
+}
+
+// layoutBatch returns what b animates, or nil when it animates nothing:
+// it has no LayoutAnimation, or the user turned animation effects off.
+func (w *window) layoutBatch(b *core.MountBatch) *layoutBatch {
+	if b.LayoutAnimation == nil || w.env.ReduceMotion {
+		return nil
+	}
+	return &layoutBatch{anim: b.LayoutAnimation, now: time.Now(), created: map[*view]bool{}}
+}
+
+// frameOf returns the frame v is drawn in now: mid animation, or its own.
+func frameOf(v *view) core.Bounds {
+	if v.moving != nil {
+		return v.moving.shown
+	}
+	return v.frame
+}
+
+// setFrame gives v its new frame, which a batch's Update animates to
+// from the one v shows when v existed before the batch.
+func (w *window) setFrame(v *view, f core.Bounds, lb *layoutBatch) {
+	old := frameOf(v)
+	v.frame = f
+	if lb == nil || lb.anim.Update == nil || lb.created[v] || old == (core.Bounds{}) || old == f {
+		v.moving = nil
+		return
+	}
+	v.moving = &moving{from: old, start: lb.now, tr: *lb.anim.Update, shown: old}
+	w.animate(v)
+}
+
+// appear fades or scales in the views a batch created and inserted, those
+// whose parent was there before it, as its Create says.
+func (w *window) appear(lb *layoutBatch) {
+	if lb == nil || lb.anim.Create == nil {
+		return
+	}
+	for _, v := range lb.inserted {
+		if !v.deleted && v.parent != nil && !lb.created[v.parent] {
+			v.fading = &fading{start: lb.now, tr: *lb.anim.Create}
+			w.animate(v)
+		}
+	}
+}
+
+// leave keeps v, which a batch deletes, drawn as a batch's Delete fades or
+// shrinks it out, and reports whether it does: v is the top of the
+// subtree going, or in one. Its ID is free at once, for the batch to use
+// again.
+func (w *window) leave(v *view, lb *layoutBatch) bool {
+	p := v.parent
+	if p != nil && p.retired {
+		// Goes with the subtree it is in.
+		w.retire(v)
+		return true
+	}
+	if lb == nil || lb.anim.Delete == nil || p == nil || p.deleted || !w.shown(v) || v.frame.Size == (core.Size{}) {
+		return false
+	}
+	from := 1.0
+	if fd := v.fading; fd != nil {
+		from = fd.shown
+	}
+	at := slices.Index(p.children, v)
+	v.detach()
+	p.leaving = append(p.leaving, leaving{v: v, at: at})
+	slices.SortStableFunc(p.leaving, func(a, b leaving) int { return a.at - b.at })
+	v.leftFrom = p
+	w.retire(v)
+	v.fading = &fading{start: lb.now, tr: *lb.anim.Delete, out: true, from: from, shown: from}
+	w.animate(v)
+	return true
+}
+
+// finishLeaving destroys v, done going, and its subtree.
+func (w *window) finishLeaving(v *view) {
+	w.destroy(v)
+	invalidateRect.Call(w.hwnd, 0, 0)
+}
+
+// baseStyle returns v's style before animated values: mid transition, or
+// its own.
+func (w *window) baseStyle(v *view) *core.ViewStyle {
 	if v.transition != nil {
 		return &v.transition.shown
 	}
 	return &v.style
 }
 
+// styleOf returns the style v shows now: mid transition, or its own,
+// with the animated values bound to it over it.
+func (w *window) styleOf(v *view) *core.ViewStyle {
+	s := w.baseStyle(v)
+	if v.animated.Set == 0 {
+		return s
+	}
+	v.drawn = v.animated.Apply(*s)
+	return &v.drawn
+}
+
+// applyAnimations applies a batch's changes to the animation graph.
+func (w *window) applyAnimations(ops []core.AnimationOp) {
+	w.animator.Apply(ops)
+	if w.animator.Running() {
+		w.startClock()
+	}
+}
+
+// animatedChanged gives the views whose bound values changed their new
+// ones, to draw in the next frame.
+func (w *window) animatedChanged() {
+	changed := false
+	w.animator.Changed(func(id core.NodeID, vals core.AnimatedValues) {
+		if v := w.view(id); v != nil {
+			v.animated = vals
+			changed = true
+		}
+	})
+	if changed {
+		invalidateRect.Call(w.hwnd, 0, 0)
+	}
+}
+
+// panned moves the values bound to drags on v to translation, before the
+// move is reported: the next frame draws them there.
+func (w *window) panned(v *view, translation core.Point) {
+	if w.animator.Pan(v.id, translation) {
+		w.animatedChanged()
+	}
+}
+
 // setStyle applies v's new style, animating to it when it has a
 // transition. Windows turns its own animations off when the user turns
 // off animation effects, so these snap then.
 func (w *window) setStyle(v *view, s *core.ViewStyle) {
-	from := *w.styleOf(v)
+	from := *w.baseStyle(v)
 	styled := v.styled
 	v.style, v.styled, v.transition = *s, true, nil
 	t := s.Transition
@@ -92,16 +250,20 @@ func (w *window) animate(v *view) {
 		}
 	}
 	w.animating = append(w.animating, v)
-	if !w.ticking {
-		setTimer.Call(w.hwnd, animationTimer, frameMillis, 0)
-		w.ticking = true
-	}
+	w.startClock()
 }
 
 // onFrame calls fn once a frame, with the frame's time, until it reports
-// false: videos copy their frames from it.
+// false: videos copy their frames from it, animated images change theirs.
 func (w *window) onFrame(fn func(now time.Time) bool) {
 	w.frames = append(w.frames, fn)
+	w.startClock()
+}
+
+// startClock starts the frame clock, which tick stops when nothing
+// animates: no transition, scroll or layout animation, no animated value
+// running and no frame client.
+func (w *window) startClock() {
 	if !w.ticking {
 		setTimer.Call(w.hwnd, animationTimer, frameMillis, 0)
 		w.ticking = true
@@ -120,8 +282,31 @@ func (w *window) tick() {
 	}
 	live := w.animating[:0]
 	for _, v := range w.animating {
-		if v.deleted {
+		// A view a layout animation keeps going is retired, not gone.
+		if v.deleted && !v.retired {
 			continue
+		}
+		if mv := v.moving; mv != nil {
+			p, done := mv.tr.At(now.Sub(mv.start))
+			mv.shown = core.LerpBounds(mv.from, v.frame, p)
+			if done {
+				v.moving = nil
+			}
+		}
+		if fd := v.fading; fd != nil {
+			p, done := fd.tr.At(now.Sub(fd.start))
+			if fd.out {
+				fd.shown = fd.from * (1 - p)
+			} else {
+				fd.shown = p
+			}
+			if done {
+				v.fading = nil
+				if fd.out {
+					w.finishLeaving(v)
+					continue
+				}
+			}
 		}
 		if t := v.transition; t != nil {
 			x := 0.0
@@ -133,7 +318,7 @@ func (w *window) tick() {
 				v.transition = nil
 			}
 		}
-		if sc := v.scrolling; sc != nil {
+		if sc := v.scrolling; sc != nil && !v.deleted {
 			x := min(float64(now.Sub(sc.start))/float64(scrollDuration), 1)
 			e := core.Points(core.EaseInOut.At(x))
 			at := core.Point{X: sc.from.X + (sc.to.X-sc.from.X)*e, Y: sc.from.Y + (sc.to.Y-sc.from.Y)*e}
@@ -142,13 +327,19 @@ func (w *window) tick() {
 				v.scrolling = nil
 			}
 		}
-		if v.transition != nil || v.scrolling != nil {
+		if v.transition != nil || v.scrolling != nil || v.moving != nil || v.fading != nil {
 			live = append(live, v)
 		}
 	}
 	clear(w.animating[len(live):])
 	w.animating = live
-	if len(live) == 0 && len(w.frames) == 0 {
+	// Animated values, on the same clock: monotonic time since the window
+	// opened.
+	if w.animator.Running() {
+		w.animator.Step(now.Sub(w.epoch))
+	}
+	w.animatedChanged()
+	if len(live) == 0 && len(w.frames) == 0 && !w.animator.Running() {
 		killTimer.Call(w.hwnd, animationTimer)
 		w.ticking = false
 	}

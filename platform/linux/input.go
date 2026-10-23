@@ -181,7 +181,7 @@ func dragUpdateCallback(gesture uintptr, offsetX, offsetY float64, data uintptr)
 			return
 		}
 		g.active = true
-		w.engine.Dispatch(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureBegan, Point: d})
+		w.reportPan(g.v, core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureBegan, Point: d})
 	}
 	dt := time.Since(g.lastTime).Seconds()
 	var velocity core.Point
@@ -189,7 +189,7 @@ func dragUpdateCallback(gesture uintptr, offsetX, offsetY float64, data uintptr)
 		velocity = core.Point{X: core.Points(float64(now.X-g.last.X) / dt), Y: core.Points(float64(now.Y-g.last.Y) / dt)}
 	}
 	g.last, g.lastTime, g.velocity = now, time.Now(), velocity
-	w.engine.Dispatch(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureChanged, Point: d, Velocity: velocity})
+	w.reportPan(g.v, core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureChanged, Point: d, Velocity: velocity})
 }
 
 func dragEndCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
@@ -214,9 +214,9 @@ func dragEndCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
 	}
 	if !g.active {
 		g.active = true
-		w.engine.Dispatch(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureBegan, Point: d})
+		w.reportPan(g.v, core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureBegan, Point: d})
 	}
-	w.engine.Dispatch(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureEnded, Point: d, Velocity: g.velocity})
+	w.reportPan(g.v, core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureEnded, Point: d, Velocity: g.velocity})
 }
 
 func longPressCallback(gesture uintptr, x, y float64, data uintptr) {
@@ -389,6 +389,16 @@ func (w *window) panDown(p core.Point) {
 		return
 	}
 	w.panning = &pan{v: v, start: p, last: p, lastTime: time.Now(), activation: v.props.PanActivation}
+}
+
+// reportPan moves the animated values bound to drags on v to the pan's
+// translation, so they are drawn in the frame that shows the move, and
+// reports the pan.
+func (w *window) reportPan(v *view, ev core.Event) {
+	if w.animator.Pan(v.id, ev.Point) {
+		w.showAnimated()
+	}
+	w.engine.Dispatch(ev)
 }
 
 // activates reports whether a drag of d has moved far enough to start a

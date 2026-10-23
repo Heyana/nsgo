@@ -27,6 +27,7 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.SparseArray;
 import android.util.TypedValue;
+import android.view.Choreographer;
 import android.view.DisplayCutout;
 import android.view.Gravity;
 import android.view.KeyCharacterMap;
@@ -36,6 +37,7 @@ import android.view.ScaleGestureDetector;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewGroupOverlay;
 import android.view.ViewParent;
 import android.view.ViewTreeObserver;
 import android.view.WindowInsets;
@@ -67,6 +69,7 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -82,6 +85,9 @@ import java.util.function.IntConsumer;
  * per node placed at the frame the engine computed. Points are
  * density-independent pixels. It reports the environment as it changes,
  * consumes back while the app runs and decodes the images the app fetches.
+ * It runs the app's animated values (Animator) and layout animations on
+ * Choreographer frames, shows input accessory bars above the keyboard and
+ * hosts native components' views (Embedded).
  * It needs API 28, and its activity should handle configuration changes
  * itself and draw edge to edge, as NsgoActivity does.
  */
@@ -132,6 +138,29 @@ public class NsgoView extends FrameLayout {
     private boolean statusBarHidden;
     /** The pan, pinch and rotation of the touch in progress, on the UI thread. */
     private final Gestures gestures;
+    /** The view the root node shows in, among the accessory bar. */
+    private View rootView;
+
+    // Animation, on the UI thread: the graph, whether a frame callback is
+    // posted, the nodes whose frames move or which appear, and the views
+    // deleted views leave fading out in their parents' overlays.
+    private final Animator animator = new Animator((id, value, finished) ->
+            event(Protocol.EVENT_ANIMATION, 0, id, 0, 0, "", 0, 0, 0, 0, 0, 0, value, null, 0, 0, false, "",
+                    finished));
+    private final Choreographer.FrameCallback tick = this::tick;
+    private boolean ticking;
+    private final LinkedHashSet<Node> moving = new LinkedHashSet<>();
+    private final ArrayList<Ghost> ghosts = new ArrayList<>();
+    private final Set<View> ghostViews = new HashSet<>();
+    // The layout animation of the batch being mounted: its phases, when it
+    // was applied and the nodes it created.
+    private LayoutTransition layoutCreate, layoutUpdate, layoutDelete;
+    private long batchTime;
+    private final Set<Integer> created = new HashSet<>();
+
+    // The input accessory bar: the input with focus, and the accessory
+    // node shown above the keyboard.
+    private Node focusedInput, accessoryShown;
 
     public NsgoView(Context context) {
         super(context);
@@ -142,6 +171,7 @@ public class NsgoView extends FrameLayout {
         setOnApplyWindowInsetsListener((v, insets) -> {
             insets(insets);
             environment();
+            updateAccessory();
             return insets;
         });
     }
@@ -400,6 +430,8 @@ public class NsgoView extends FrameLayout {
     private void image(DataInputStream in) throws IOException {
         int id = in.readInt(), request = in.readInt(), part = in.readUnsignedByte();
         float scale = in.readFloat();
+        // The size EventLoad reports, as an SVG's in points; 0 for the bitmap's pixels.
+        float reportWidth = in.readFloat(), reportHeight = in.readFloat();
         byte[] data = new byte[in.readInt()];
         in.readFully(data);
         ui.post(() -> {
@@ -410,20 +442,21 @@ public class NsgoView extends FrameLayout {
             int width = lp != null && lp.width > 0 ? lp.width : screen.widthPixels;
             int height = lp != null && lp.height > 0 ? lp.height : screen.heightPixels;
             decoder.execute(() -> {
-                int[] size = new int[2];
-                Bitmap bitmap = ImageNode.decode(data, scale, width, height, size);
+                ImageNode.Decoded image = ImageNode.decodeDrawable(getContext(), data, scale, width, height);
                 ui.post(() -> {
                     if (nodes.get(id) != n || n.image.request != request) return;
                     if (part == Protocol.IMAGE_PLACEHOLDER) {
-                        if (bitmap != null) n.image.showPlaceholder(bitmap);
+                        if (image != null) n.image.showPlaceholder(image.drawable);
                         return;
                     }
-                    if (bitmap == null) {
+                    if (image == null) {
                         report(n, Protocol.EVENT_ERROR, 0, 0, "the image cannot be decoded");
                     } else {
-                        n.image.showSource(bitmap);
+                        n.image.showSource(image.drawable);
                         if (n.has(Protocol.EVENT_LOAD)) {
-                            event(Protocol.EVENT_LOAD, id, 0, 0, 0, "", size[0], size[1], 0);
+                            boolean given = reportWidth > 0 && reportHeight > 0;
+                            event(Protocol.EVENT_LOAD, id, 0, 0, 0, "", given ? reportWidth : image.width,
+                                    given ? reportHeight : image.height, 0);
                         }
                     }
                     report(n, Protocol.EVENT_LOAD_END);
@@ -476,7 +509,7 @@ public class NsgoView extends FrameLayout {
 
     private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
             int index, int phase, float vx, float vy, float value, WebNode.Navigation nav) {
-        event(kind, id, count, x, y, text, width, height, index, phase, vx, vy, value, nav, 0, 0, false);
+        event(kind, id, count, x, y, text, width, height, index, phase, vx, vy, value, nav, 0, 0, false, "", false);
     }
 
     /**
@@ -484,11 +517,13 @@ public class NsgoView extends FrameLayout {
      * size and index, then a gesture's phase, velocity and value, then a
      * web view's navigation: flags of whether there is one, loading,
      * canGoBack and canGoForward, and if there is, its URL and title; then
-     * a video's time and duration in milliseconds and whether it buffers.
+     * a video's time and duration in milliseconds and whether it buffers;
+     * then a native view's callback arguments as JSON and whether an
+     * animation finished.
      */
     private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
             int index, int phase, float vx, float vy, float value, WebNode.Navigation nav,
-            long time, long duration, boolean buffering) {
+            long time, long duration, boolean buffering, String data, boolean finished) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream d = new DataOutputStream(bytes);
         try {
@@ -515,6 +550,8 @@ public class NsgoView extends FrameLayout {
             d.writeLong(time);
             d.writeLong(duration);
             d.writeByte(buffering ? 1 : 0);
+            Protocol.writeString(d, data);
+            d.writeByte(finished ? 1 : 0);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -619,11 +656,24 @@ public class NsgoView extends FrameLayout {
         DataInputStream in = new DataInputStream(new ByteArrayInputStream(batch));
         try {
             int root = in.readInt();
+            layoutCreate = layoutUpdate = layoutDelete = null;
+            if (in.readUnsignedByte() != 0) {
+                LayoutTransition create = LayoutTransition.read(in), update = LayoutTransition.read(in);
+                LayoutTransition delete = LayoutTransition.read(in);
+                // Reduced motion turns layout animations off.
+                if (!reduceMotion()) {
+                    layoutCreate = create;
+                    layoutUpdate = update;
+                    layoutDelete = delete;
+                    batchTime = System.nanoTime();
+                }
+            }
             for (int i = 0, count = in.readInt(); i < count; i++) {
                 int kind = in.readUnsignedByte();
                 int id = in.readInt();
                 if (kind == Protocol.ITEM_CREATE) {
                     Node n = create(id, in.readUnsignedByte());
+                    if (layoutCreate != null || layoutUpdate != null) created.add(id);
                     // Show the root at once, so text fields can take focus
                     // while the rest of its first batch mounts.
                     if (id == root) show(n.view);
@@ -634,12 +684,26 @@ public class NsgoView extends FrameLayout {
         } catch (IOException e) {
             Log.e(TAG, "bad batch", e);
         }
+        layoutCreate = layoutUpdate = layoutDelete = null;
+        created.clear();
+        // Bindings and values change in batches too.
+        applyAnimated();
+        if (animator.running()) startTicking();
     }
 
     private void show(View root) {
         if (root.getParent() == this) return;
-        removeAllViews();
-        addView(root);
+        if (rootView != null && rootView.getParent() == this) removeView(rootView);
+        detach(root);
+        // Under the accessory bar.
+        addView(root, 0);
+        rootView = root;
+    }
+
+    /** Whether Android's reduce-motion setting, no animations, is on. */
+    private boolean reduceMotion() {
+        return Settings.Global.getFloat(getContext().getContentResolver(),
+                Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
     }
 
     private void apply(int kind, Node n, DataInputStream in) throws IOException {
@@ -654,22 +718,38 @@ public class NsgoView extends FrameLayout {
                     n.presented = true;
                     present(n);
                 }
+                // The top view of each subtree the batch creates appears.
+                if (layoutCreate != null && created.contains(n.id) && !created.contains(parent.id)) {
+                    n.appear = layoutCreate;
+                    n.appearStart = batchTime;
+                    moving.add(n);
+                    paint(n);
+                    startTicking();
+                }
                 break;
             }
             case Protocol.ITEM_REMOVE:
                 detach(n.view);
                 break;
             case Protocol.ITEM_DELETE:
-                // Dropping the node drops its views, its text layout and its bitmaps.
-                detach(n.view);
+                // Dropping the node drops its views, its text layout and its
+                // bitmaps. A view inside one fading out goes with it.
+                if (!vanish(n) && !inGhost(n.view)) detach(n.view);
                 nodes.remove(n.id);
                 outside.remove(n);
+                moving.remove(n);
+                animator.forget(n.id);
+                if (n == focusedInput) focusedInput = null;
+                if (n == accessoryShown) {
+                    if (n.view.getParent() == this) removeView(n.view);
+                    accessoryShown = null;
+                }
                 if (n.animator != null) n.animator.cancel();
                 if (n.web != null) n.web.destroy();
                 if (n.video != null) n.video.destroy();
                 break;
             case Protocol.ITEM_FRAME:
-                n.view.setLayoutParams(frame(in));
+                setFrame(n, new float[] {in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat()});
                 break;
             case Protocol.ITEM_VIEW_STYLE:
                 style(n, in);
@@ -684,6 +764,8 @@ public class NsgoView extends FrameLayout {
             }
             case Protocol.ITEM_INPUT:
                 input(n.field, in);
+                n.accessory = in.readInt();
+                updateAccessory();
                 break;
             case Protocol.ITEM_INPUT_VALUE: {
                 String value = Protocol.readString(in);
@@ -817,6 +899,21 @@ public class NsgoView extends FrameLayout {
             case Protocol.ITEM_VIDEO_SEEK:
                 n.video.seek(in.readLong());
                 break;
+            case Protocol.ITEM_NATIVE:
+                embed(n, in);
+                break;
+            case Protocol.ITEM_NATIVE_COMMAND: {
+                String name = Protocol.readString(in);
+                Object args = Embedded.parse(Protocol.readString(in));
+                if (n.embedded != null) {
+                    n.embedded.command(name, args);
+                    nativeSize(n);
+                }
+                break;
+            }
+            case Protocol.ITEM_ANIMATION:
+                for (int i = 0, count = in.readInt(); i < count; i++) animator.apply(Animator.readOp(in));
+                break;
             case Protocol.ITEM_WINDOW:
             case Protocol.ITEM_MENU:
                 // Desktop windows' and menus'; Go writes no fields.
@@ -835,6 +932,242 @@ public class NsgoView extends FrameLayout {
                 // Go writes no fields for the kinds it does not encode.
                 Log.w(TAG, "unknown mount item " + kind);
         }
+    }
+
+    /**
+     * Draws n's look: its style, or the transition moving it, with its
+     * animated values in place of their properties and a layout animation's
+     * appearance over them.
+     */
+    private void paint(Node n) {
+        if (n.shown == null) {
+            if (n.values == null && n.appear == null) return;
+            n.shown = new Look();
+        }
+        if (n.background == null) {
+            n.background = new Box();
+            n.view.setBackground(n.background);
+        }
+        Look l = n.shown;
+        if (n.values != null) l = l.animated(n.values, density);
+        if (n.appear != null) {
+            if (l == n.shown) l = l.copy();
+            float p = (float) n.appear.at(System.nanoTime() - n.appearStart);
+            if (n.appear.property == LayoutTransition.SCALE) {
+                l.scaleX *= p;
+                l.scaleY *= p;
+            } else {
+                l.opacity *= p;
+            }
+        }
+        l.apply(n.view, n.background);
+    }
+
+    /** Draws the views whose animated values changed. */
+    private void applyAnimated() {
+        animator.changed((id, values) -> {
+            Node n = nodes.get(id);
+            if (n == null) return;
+            n.values = values.set != 0 ? values : null;
+            paint(n);
+        });
+    }
+
+    private void startTicking() {
+        if (ticking) return;
+        ticking = true;
+        Choreographer.getInstance().postFrameCallback(tick);
+    }
+
+    /** Steps every animation once a frame, and stops when none runs. */
+    private void tick(long now) {
+        ticking = false;
+        if (animator.running()) animator.step(now);
+        applyAnimated();
+        boolean more = animator.running();
+        for (Node n : new ArrayList<>(moving)) {
+            if (nodes.get(n.id) != n) {
+                moving.remove(n);
+                continue;
+            }
+            if (n.motion != null) {
+                long elapsed = now - n.motionStart;
+                if (n.motion.done(elapsed)) {
+                    n.motion = null;
+                    place(n, n.to);
+                } else {
+                    place(n, LayoutTransition.lerp(n.from, n.to, n.motion.at(elapsed)));
+                }
+            }
+            if (n.appear != null) {
+                if (n.appear.done(now - n.appearStart)) n.appear = null;
+                paint(n);
+            }
+            if (n.motion == null && n.appear == null) moving.remove(n);
+        }
+        more |= !moving.isEmpty();
+        for (int i = ghosts.size() - 1; i >= 0; i--) {
+            Ghost g = ghosts.get(i);
+            long elapsed = now - g.start;
+            float p = (float) g.transition.at(elapsed);
+            if (g.transition.property == LayoutTransition.SCALE) {
+                float f = Math.max(1 - p, 0.0001f);
+                g.view.setScaleX(g.scaleX * f);
+                g.view.setScaleY(g.scaleY * f);
+            } else {
+                g.view.setAlpha(Math.max(0, g.alpha * (1 - p)));
+            }
+            if (g.transition.done(elapsed)) {
+                g.overlay.remove(g.view);
+                ghostViews.remove(g.view);
+                ghosts.remove(i);
+            }
+        }
+        more |= !ghosts.isEmpty();
+        if (more) startTicking();
+    }
+
+    /**
+     * Moves n to frame f in points; under a layout animation's Update a
+     * node that showed before the batch moves there from where it shows.
+     */
+    private void setFrame(Node n, float[] f) {
+        float[] target = n.motion != null ? n.to : n.frame;
+        if (target != null && Arrays.equals(target, f)) return;
+        if (layoutUpdate != null && n.frame != null && !created.contains(n.id) && n != accessoryShown) {
+            n.from = n.frame.clone();
+            n.to = f;
+            n.motion = layoutUpdate;
+            n.motionStart = batchTime;
+            moving.add(n);
+            startTicking();
+            return;
+        }
+        n.motion = null;
+        place(n, f);
+    }
+
+    /** Places n's view at frame f in points, rounding its edges to pixels. */
+    private void place(Node n, float[] f) {
+        n.frame = f;
+        if (n == accessoryShown) {
+            placeAccessory();
+            return;
+        }
+        int left = px(f[0]), top = px(f[1]);
+        LayoutParams lp = new LayoutParams(px(f[0] + f[2]) - left, px(f[1] + f[3]) - top, Gravity.LEFT | Gravity.TOP);
+        lp.leftMargin = left;
+        lp.topMargin = top;
+        n.view.setLayoutParams(lp);
+    }
+
+    /** A deleted view fading or shrinking out in its parent's overlay, its node gone. */
+    private static final class Ghost {
+        View view;
+        ViewGroupOverlay overlay;
+        float alpha, scaleX, scaleY;
+        LayoutTransition transition;
+        long start;
+    }
+
+    /**
+     * Keeps a view the batch deletes drawn where it was while it fades or
+     * shrinks out under the layout animation's Delete, and reports whether
+     * it does. Only the top view of a deleted subtree does; the views it
+     * holds go with it.
+     */
+    private boolean vanish(Node n) {
+        if (layoutDelete == null || !(n.view.getParent() instanceof ViewGroup) || inGhost(n.view)) return false;
+        ViewGroup parent = (ViewGroup) n.view.getParent();
+        if (!parent.isAttachedToWindow() || n.view.getVisibility() != VISIBLE) return false;
+        Ghost g = new Ghost();
+        g.view = n.view;
+        g.overlay = parent.getOverlay();
+        g.alpha = n.view.getAlpha();
+        g.scaleX = n.view.getScaleX();
+        g.scaleY = n.view.getScaleY();
+        g.transition = layoutDelete;
+        g.start = batchTime;
+        // The overlay draws it where it was and passes it no touches.
+        g.overlay.add(n.view);
+        ghosts.add(g);
+        ghostViews.add(n.view);
+        startTicking();
+        return true;
+    }
+
+    /** Whether view is inside a view fading out. */
+    private boolean inGhost(View view) {
+        if (ghostViews.isEmpty()) return false;
+        for (ViewParent p = view.getParent(); p instanceof View; p = p.getParent()) {
+            if (ghostViews.contains(p)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Shows the accessory bar of the input with focus above the keyboard
+     * while the keyboard shows, as wide as the surface; hides it otherwise.
+     * The core lays accessories out but never inserts them.
+     */
+    private void updateAccessory() {
+        Node bar = null;
+        if (focusedInput != null && focusedInput.accessory != 0 && keyboard > 0) {
+            bar = nodes.get(focusedInput.accessory);
+        }
+        if (accessoryShown != null && accessoryShown != bar && accessoryShown.view.getParent() == this) {
+            removeView(accessoryShown.view);
+        }
+        accessoryShown = bar;
+        if (bar == null) return;
+        if (bar.view.getParent() != this) {
+            detach(bar.view);
+            addView(bar.view);
+        }
+        placeAccessory();
+    }
+
+    /** Places the accessory bar on the keyboard: its top keyboard pixels plus its height above the bottom. */
+    private void placeAccessory() {
+        Node bar = accessoryShown;
+        int height = bar.frame != null ? px(bar.frame[3]) : 0;
+        LayoutParams lp = new LayoutParams(getWidth(), height, Gravity.LEFT | Gravity.TOP);
+        lp.topMargin = getHeight() - keyboard - height;
+        bar.view.setLayoutParams(lp);
+    }
+
+    /**
+     * Applies an ItemNative: the first one names the View class to build
+     * by reflection, which fills the node's view; each sets the props that
+     * changed through their setters. An empty class keeps the view.
+     */
+    private void embed(Node n, DataInputStream in) throws IOException {
+        String className = Protocol.readString(in);
+        if (!className.isEmpty() && !n.embedTried) {
+            n.embedTried = true;
+            n.embedded = Embedded.build(getContext(), className, (name, args) ->
+                    event(Protocol.EVENT_NATIVE, n.id, 0, 0, 0, name, 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, args,
+                            false));
+            if (n.embedded != null) {
+                n.children.addView(n.embedded.view, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+            }
+        }
+        for (int i = 0, count = in.readInt(); i < count; i++) {
+            String name = Protocol.readString(in);
+            Object value = Embedded.parse(Protocol.readString(in));
+            if (n.embedded != null) n.embedded.setProp(name, value);
+        }
+        nativeSize(n);
+    }
+
+    /** Reports a native view's natural size when it changed, for the element's open dimensions. */
+    private void nativeSize(Node n) {
+        if (n.embedded == null) return;
+        int[] size = n.embedded.measure();
+        if (size[0] == n.embedded.width && size[1] == n.embedded.height) return;
+        n.embedded.width = size[0];
+        n.embedded.height = size[1];
+        event(Protocol.EVENT_NATIVE_SIZE, n.id, 0, 0, 0, "", size[0] / density, size[1] / density, 0);
     }
 
     private static void detach(View view) {
@@ -1105,7 +1438,7 @@ public class NsgoView extends FrameLayout {
                     public void report(int k, String text, long time, long duration, int width, int height,
                             boolean buffering) {
                         event(k, n.id, 0, 0, 0, text, width / density, height / density, 0, 0, 0, 0, 0, null,
-                                time, duration, buffering);
+                                time, duration, buffering, "", false);
                     }
                 });
                 n.children = (ViewGroup) view;
@@ -1152,8 +1485,12 @@ public class NsgoView extends FrameLayout {
             }
             return false;
         });
-        field.setOnFocusChangeListener((v, focused) ->
-                report(n, focused ? Protocol.EVENT_FOCUS : Protocol.EVENT_BLUR));
+        field.setOnFocusChangeListener((v, focused) -> {
+            if (focused) focusedInput = n;
+            else if (focusedInput == n) focusedInput = null;
+            updateAccessory();
+            report(n, focused ? Protocol.EVENT_FOCUS : Protocol.EVENT_BLUR);
+        });
         return field;
     }
 
@@ -1161,8 +1498,11 @@ public class NsgoView extends FrameLayout {
     private void scroller(Node n, boolean horizontal) {
         if (n.scroller != null && (n.scroller instanceof HorizontalScrollView) == horizontal) return;
         FrameLayout scroller = horizontal ? new HorizontalScrollView(getContext()) : new ScrollView(getContext());
-        scroller.setOnScrollChangeListener((v, x, y, oldX, oldY) ->
-                report(n, Protocol.EVENT_SCROLL, x / density, y / density, ""));
+        scroller.setOnScrollChangeListener((v, x, y, oldX, oldY) -> {
+            // Values following the offset move in the same frame.
+            if (animator.scroll(n.id, x / density, y / density)) applyAnimated();
+            report(n, Protocol.EVENT_SCROLL, x / density, y / density, "");
+        });
         if (n.scroller != null) {
             n.scroller.removeView(n.children);
             ((ViewGroup) n.view).removeView(n.scroller);
@@ -1194,8 +1534,10 @@ public class NsgoView extends FrameLayout {
         int tint = in.readInt();
         look.translateX = in.readFloat() * density;
         look.translateY = in.readFloat() * density;
-        look.scaleX = in.readFloat();
-        look.scaleY = in.readFloat();
+        look.rawScale = in.readFloat();
+        look.rawScaleX = in.readFloat();
+        look.rawScaleY = in.readFloat();
+        look.combineScales();
         look.rotation = in.readFloat();
         long duration = in.readInt() & 0xffffffffL, delay = in.readInt() & 0xffffffffL;
         float x1 = in.readFloat(), y1 = in.readFloat(), x2 = in.readFloat(), y2 = in.readFloat();
@@ -1213,12 +1555,12 @@ public class NsgoView extends FrameLayout {
         if (n.animator != null) n.animator.cancel(); // n.shown is where it stopped
         if (duration == 0 || n.shown == null) {
             n.shown = look;
-            look.apply(view, n.background);
+            paint(n);
             return;
         }
         Look from = n.shown;
         n.shown = Look.mix(from, look, 0, properties);
-        n.shown.apply(view, n.background);
+        paint(n);
         ValueAnimator animator = ValueAnimator.ofFloat(0, 1);
         animator.setDuration(duration);
         animator.setStartDelay(delay);
@@ -1226,7 +1568,7 @@ public class NsgoView extends FrameLayout {
         animator.setInterpolator(linear ? new LinearInterpolator() : new PathInterpolator(x1, y1, x2, y2));
         animator.addUpdateListener(a -> {
             n.shown = Look.mix(from, look, (float) a.getAnimatedValue(), properties);
-            n.shown.apply(view, n.background);
+            paint(n);
         });
         n.animator = animator;
         animator.start();
@@ -1593,6 +1935,8 @@ public class NsgoView extends FrameLayout {
         }
 
         private void panEvent(int phase) {
+            // Values bound to the drag move in the frame it does.
+            if (phase != Protocol.GESTURE_CANCELLED && animator.pan(pan.id, panX, panY)) applyAnimated();
             float vx = 0, vy = 0;
             if (velocity != null) {
                 velocity.computeCurrentVelocity(1000);
@@ -1815,6 +2159,22 @@ public class NsgoView extends FrameLayout {
         String label = "", text = "", testID = "";
         /** The pan's activation offsets in points, as in core.PanActivation; 0 is unset. */
         float activeX, activeY, failX, failY;
+        /** The frame shown, in points (x, y, width, height), or null before the first. */
+        float[] frame;
+        /** A layout animation's move: from and to, its phase and when it began. */
+        float[] from, to;
+        LayoutTransition motion;
+        long motionStart;
+        /** A layout animation's appearance, and when it began. */
+        LayoutTransition appear;
+        long appearStart;
+        /** The animated values bound to it, drawn over its style, or null. */
+        Animator.Values values;
+        /** An input's InputAccessoryView, 0 for none. */
+        int accessory;
+        /** A native view's component view, and whether one was asked for. */
+        Embedded embedded;
+        boolean embedTried;
 
         Node(int id, View view) {
             this.id = id;

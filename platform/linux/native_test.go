@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ebitengine/purego"
+
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/engine"
 )
@@ -62,6 +64,12 @@ func startTestWindow(t *testing.T, app engine.App, opts Options) *window {
 		}
 		w.run()
 		w.stop()
+		// Close the window for good: its close request only stops the
+		// loop, and a tiling window manager shares the screen between the
+		// windows left open.
+		gtkWindowDestroy(w.win)
+		for gMainContextIteration(0, 0) != 0 {
+		}
 	}()
 	var r result
 	select {
@@ -89,6 +97,15 @@ func startTestWindow(t *testing.T, app engine.App, opts Options) *window {
 	})
 	return r.w
 }
+
+// gMainContextIteration runs what the default main context has ready.
+var gMainContextIteration = func() func(uintptr, int32) int32 {
+	var fn func(uintptr, int32) int32
+	if openLibs() == nil {
+		purego.RegisterLibFunc(&fn, glibLib, "g_main_context_iteration")
+	}
+	return fn
+}()
 
 // onLoop runs fn on the window's GTK thread and waits for it.
 func (w *window) onLoop(t *testing.T, fn func()) {

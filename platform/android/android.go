@@ -8,10 +8,13 @@
 // text the engine prepares, measures it and lays it out with StaticLayout,
 // and mounts one Android view per node; measuring, and laying out text
 // with attachments, are the only round trips.
-// Go fetches images and Java decodes them; Java hosts web views and
-// videos, plays canvas drawings, runs style transitions and reports the environment,
-// back, keys, presses outside overlays and answers to alerts and
-// clipboard reads.
+// Go fetches images and Java decodes them, animated GIF and WebP
+// included; Go rasterizes SVG with imagedecode first, as Android cannot.
+// Java hosts web views, videos and native components' views, plays canvas
+// drawings, runs style transitions, a port of core.Animator and layout
+// animations on Choreographer frames, shows input accessory bars above
+// the keyboard and reports the environment, back, keys, presses outside
+// overlays and answers to alerts and clipboard reads.
 //
 // Go builds Android shared libraries only with cgo and the NDK; a second
 // process keeps every build an executable, so arm64 needs only Go. An
@@ -78,14 +81,29 @@ type surface struct {
 	started  chan struct{}    // closed once engine is set
 	env      core.Environment // the last reported, on the reader goroutine
 
+	ratio atomic.Uint32 // the pixel ratio's float32 bits, for rasterizing SVG
+
 	// On the engine goroutine.
 	images   map[core.NodeID]*imageView
 	requests uint32 // the last image request number
+
+	// The native components; cmu guards them, as the reader goroutine
+	// hands them their views' events.
+	cmu        sync.Mutex
+	components core.NativeComponents
+	natives    map[core.NodeID]*nativeView
+	unknown    map[string]bool // component names logged as unregistered
+}
+
+// Options configures Run.
+type Options struct {
+	// Components are the native components Native elements name.
+	Components core.NativeComponents
 }
 
 // Run serves app to the Java runtime over standard input and output until
 // the runtime closes them. Call it from main.
-func Run(app engine.App) {
+func Run(app engine.App, opts Options) {
 	// Keep the pipe to the runtime to ourselves and send the app's own
 	// prints to standard error, which the runtime logs.
 	fd, err := syscall.Dup(1)
@@ -102,6 +120,10 @@ func Run(app engine.App) {
 		started:  make(chan struct{}),
 		env:      core.Environment{OS: core.OSAndroid},
 		images:   map[core.NodeID]*imageView{},
+
+		components: opts.Components,
+		natives:    map[core.NodeID]*nativeView{},
+		unknown:    map[string]bool{},
 	}
 	useDNS()
 	in := bufio.NewReader(os.Stdin)
@@ -114,10 +136,10 @@ func Run(app engine.App) {
 		switch kind {
 		case msgStart:
 			size := core.Size{Width: r.points(), Height: r.points()}
-			opts := engine.Options{Size: size, Environment: s.env}
+			eopts := engine.Options{Size: size, Environment: s.env}
 			// The runtime passes the app's own files and cache directories.
-			opts.SetDirs(os.Getenv("NSGO_DATA_DIR"), os.Getenv("NSGO_CACHE_DIR"))
-			s.engine = engine.Start(s, app, opts)
+			eopts.SetDirs(os.Getenv("NSGO_DATA_DIR"), os.Getenv("NSGO_CACHE_DIR"))
+			s.engine = engine.Start(s, app, eopts)
 			close(s.started)
 		case msgResize:
 			s.engine.Resize(core.Size{Width: r.points(), Height: r.points()})
@@ -140,6 +162,14 @@ func Run(app engine.App) {
 			ev.Time = time.Duration(r.u64()) * time.Millisecond
 			ev.Duration = time.Duration(r.u64()) * time.Millisecond
 			ev.Buffering = r.byte() != 0
+			// A native view's callback's arguments, as JSON, and whether
+			// an animation finished.
+			data := r.str()
+			ev.Finished = r.byte() != 0
+			if ev.Kind == core.EventNative {
+				s.nativeEvent(ev.ID, ev.Text, data)
+				break
+			}
 			s.engine.Dispatch(ev)
 		case msgMeasured:
 			s.measured <- core.Size{Width: r.points(), Height: r.points()}
@@ -157,6 +187,7 @@ func Run(app engine.App) {
 				break
 			}
 			s.env = env
+			s.ratio.Store(math.Float32bits(env.PixelRatio))
 			if s.engine != nil {
 				s.engine.SetEnvironment(env)
 			}
@@ -331,7 +362,8 @@ func (l *textLayout) Attachment(i int) (core.Bounds, bool) {
 // loads of the image sources it changed.
 func (s *surface) Mount(b *core.MountBatch) {
 	requests, loads := s.trackImages(b)
-	s.send(msgBatch, func(w *writer) { encode(w, b, requests) })
+	natives := s.trackNatives(b)
+	s.send(msgBatch, func(w *writer) { encode(w, b, requests, natives) })
 	for _, l := range loads {
 		go s.load(l)
 	}
@@ -344,6 +376,7 @@ type imageView struct {
 	events              core.EventMask
 	request             uint32
 	cancel              context.CancelFunc
+	size                core.Size // the view's, which an SVG is drawn for
 }
 
 func (v *imageView) stop() {
@@ -359,6 +392,7 @@ type imageLoad struct {
 	request             uint32
 	source, placeholder core.ImageSource
 	events              core.EventMask
+	size                core.Size
 }
 
 // trackImages follows the image views of b. A view whose sources change
@@ -384,6 +418,10 @@ func (s *surface) trackImages(b *core.MountBatch) ([]uint32, []imageLoad) {
 			if v != nil {
 				v.events = it.Events
 			}
+		case core.ItemFrame:
+			if v != nil {
+				v.size = it.Frame.Size
+			}
 		case core.ItemImage:
 			if v == nil {
 				v = &imageView{}
@@ -395,9 +433,15 @@ func (s *surface) trackImages(b *core.MountBatch) ([]uint32, []imageLoad) {
 				s.requests++
 				ctx, cancel := context.WithCancel(context.Background())
 				v.source, v.placeholder, v.request, v.cancel = c.Source, c.Placeholder, s.requests, cancel
-				loads = append(loads, imageLoad{ctx, it.ID, v.request, c.Source, c.Placeholder, v.events})
+				loads = append(loads, imageLoad{ctx, it.ID, v.request, c.Source, c.Placeholder, v.events, v.size})
 			}
 			requests = append(requests, v.request)
+		}
+	}
+	// A frame may follow its view's ItemImage.
+	for i := range loads {
+		if v := s.images[loads[i].id]; v != nil {
+			loads[i].size = v.size
 		}
 	}
 	return requests, loads
@@ -416,7 +460,9 @@ func (s *surface) load(l imageLoad) {
 	if !isEmpty(l.placeholder) {
 		go func() {
 			if data, err := imageload.Load(l.ctx, l.placeholder, nil); err == nil && l.ctx.Err() == nil {
-				s.sendImage(l, imagePlaceholder, l.placeholder, data)
+				if img, err := s.prepareImage(data, l.placeholder.URI, l.size); err == nil {
+					s.sendImage(l, imagePlaceholder, img)
+				}
 			}
 		}()
 	}
@@ -438,7 +484,13 @@ func (s *surface) load(l imageLoad) {
 		s.report(l, core.Event{Kind: core.EventError, Text: err.Error()})
 		s.report(l, core.Event{Kind: core.EventLoadEnd})
 	default:
-		s.sendImage(l, imageSource, l.source, data)
+		img, err := s.prepareImage(data, l.source.URI, l.size)
+		if err != nil {
+			s.report(l, core.Event{Kind: core.EventError, Text: err.Error()})
+			s.report(l, core.Event{Kind: core.EventLoadEnd})
+			return
+		}
+		s.sendImage(l, imageSource, img)
 	}
 }
 
@@ -451,14 +503,16 @@ func (s *surface) report(l imageLoad, ev core.Event) {
 	}
 }
 
-func (s *surface) sendImage(l imageLoad, part byte, src core.ImageSource, data []byte) {
+func (s *surface) sendImage(l imageLoad, part byte, img decodedImage) {
 	s.send(msgImage, func(w *writer) {
 		w.u32(uint32(l.id))
 		w.u32(l.request)
 		w.byte(part)
-		w.float(imageScale(src.URI))
-		w.u32(uint32(len(data)))
-		w.buf = append(w.buf, data...)
+		w.float(img.scale)
+		w.points(img.size.Width) // 0: the bitmap's own pixels
+		w.points(img.size.Height)
+		w.u32(uint32(len(img.data)))
+		w.buf = append(w.buf, img.data...)
 	})
 }
 
@@ -519,11 +573,13 @@ const webBridge = "(function (n) { if (n) window." + webInterface +
 
 // encode writes a batch in the format NsgoView.mount reads: each item is
 // its kind, its ID and the fields of that kind; requests numbers its
-// ItemImage items in order. Kinds it does not know, ItemBackUnhandled and
-// the desktop-only ItemWindow and ItemMenu, which Java ignores, have no
-// fields.
-func encode(w *writer, b *core.MountBatch, requests []uint32) {
+// ItemImage items in order, and natives says what its ItemNative items
+// send. Kinds it does not know, ItemBackUnhandled and the desktop-only
+// ItemWindow and ItemMenu, which Java ignores, have no fields. The batch's
+// layout animation comes before its items.
+func encode(w *writer, b *core.MountBatch, requests []uint32, natives []nativeItem) {
 	w.u32(uint32(b.Root))
+	writeLayoutAnimation(w, b.LayoutAnimation)
 	w.u32(uint32(len(b.Items)))
 	for i := range b.Items {
 		it := &b.Items[i]
@@ -558,12 +614,12 @@ func encode(w *writer, b *core.MountBatch, requests []uint32) {
 			w.u32(uint32(v.ShadowColor))
 			w.points(v.ShadowRadius)
 			w.u32(uint32(v.TintColor))
+			// The scales as they are, 0 unset, for Java to combine with
+			// animated ones as core.Transform.Scales does.
 			tr := v.Transform
-			sx, sy := tr.Scales()
 			w.points(tr.TranslateX)
 			w.points(tr.TranslateY)
-			w.float(sx)
-			w.float(sy)
+			w.floats(tr.Scale, tr.ScaleX, tr.ScaleY)
 			w.float(tr.Rotate)
 			tn := v.Transition
 			w.u32(uint32(max(tn.Duration.Milliseconds(), 0)))
@@ -591,6 +647,7 @@ func encode(w *writer, b *core.MountBatch, requests []uint32) {
 			w.byte(byte(in.KeyboardType))
 			w.flags(in.Masked, in.Readonly, in.Disabled)
 			w.bounds(in.Content)
+			w.u32(uint32(in.Accessory))
 		case core.ItemInputValue:
 			w.str(it.Value)
 			w.u32(it.Count)
@@ -675,6 +732,20 @@ func encode(w *writer, b *core.MountBatch, requests []uint32) {
 			w.u32(uint32(c.ProgressInterval.Milliseconds()))
 		case core.ItemVideoSeek:
 			w.u64(uint64(it.Time.Milliseconds()))
+		case core.ItemNative:
+			n := natives[0]
+			natives = natives[1:]
+			w.str(n.class)
+			w.u32(uint32(len(n.props)))
+			for _, p := range n.props {
+				w.str(p.Name)
+				w.str(jsonValue(p.Value))
+			}
+		case core.ItemNativeCommand:
+			w.str(it.Value)
+			w.str(jsonValue(it.Data))
+		case core.ItemAnimation:
+			writeAnimation(w, it.Animation)
 		case core.ItemWebCommand:
 			w.byte(byte(it.WebCommand))
 			if it.WebCommand == core.WebPostMessage {
@@ -713,8 +784,12 @@ func writeDrawing(w *writer, d *core.Drawing) {
 			w.floats(op.X, op.Y, op.W, op.H, op.R)
 		case core.DrawEllipse:
 			w.floats(op.X, op.Y, op.R, op.RY)
+		case core.DrawFill, core.DrawClip:
+			w.flags(op.EvenOdd)
 		case core.DrawFillColor, core.DrawStrokeColor:
 			w.u32(uint32(op.Color))
+		case core.DrawFillGradient, core.DrawStrokeGradient:
+			writeGradient(w, op.Gradient)
 		case core.DrawLineWidth:
 			w.float(op.W)
 		case core.DrawLineCap:
@@ -744,82 +819,4 @@ func writeStyle(w *writer, t *core.TextStyle) {
 	w.flags(t.Font.Italic,
 		t.Decoration&core.TextDecorationUnderline != 0,
 		t.Decoration&core.TextDecorationLineThrough != 0)
-}
-
-// writer and reader are the protocol's encoding: big-endian, lengths
-// as uint32, points as float32, strings as a length and UTF-8 bytes and
-// booleans as the bits of one byte, the first lowest.
-type writer struct{ buf []byte }
-
-func (w *writer) byte(b byte)          { w.buf = append(w.buf, b) }
-func (w *writer) u16(v uint16)         { w.buf = binary.BigEndian.AppendUint16(w.buf, v) }
-func (w *writer) u32(v uint32)         { w.buf = binary.BigEndian.AppendUint32(w.buf, v) }
-func (w *writer) u64(v uint64)         { w.buf = binary.BigEndian.AppendUint64(w.buf, v) }
-func (w *writer) float(f float32)      { w.u32(math.Float32bits(f)) }
-func (w *writer) points(p core.Points) { w.float(float32(p)) }
-func (w *writer) str(s string)         { w.u32(uint32(len(s))); w.buf = append(w.buf, s...) }
-
-func (w *writer) floats(fs ...float32) {
-	for _, f := range fs {
-		w.float(f)
-	}
-}
-
-func (w *writer) bounds(b core.Bounds) {
-	w.points(b.Origin.X)
-	w.points(b.Origin.Y)
-	w.points(b.Size.Width)
-	w.points(b.Size.Height)
-}
-
-func (w *writer) flags(bits ...bool) {
-	var b byte
-	for i, on := range bits {
-		if on {
-			b |= 1 << i
-		}
-	}
-	w.byte(b)
-}
-
-type reader struct{ buf []byte }
-
-func (r *reader) byte() byte {
-	if len(r.buf) < 1 {
-		return 0
-	}
-	b := r.buf[0]
-	r.buf = r.buf[1:]
-	return b
-}
-
-func (r *reader) u32() uint32 {
-	if len(r.buf) < 4 {
-		return 0
-	}
-	v := binary.BigEndian.Uint32(r.buf)
-	r.buf = r.buf[4:]
-	return v
-}
-
-func (r *reader) u64() uint64 {
-	if len(r.buf) < 8 {
-		return 0
-	}
-	v := binary.BigEndian.Uint64(r.buf)
-	r.buf = r.buf[8:]
-	return v
-}
-
-func (r *reader) float() float32      { return math.Float32frombits(r.u32()) }
-func (r *reader) points() core.Points { return core.Points(r.float()) }
-
-func (r *reader) str() string {
-	n := int(r.u32())
-	if n > len(r.buf) {
-		n = len(r.buf)
-	}
-	s := string(r.buf[:n])
-	r.buf = r.buf[n:]
-	return s
 }

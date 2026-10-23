@@ -67,6 +67,9 @@ final class Protocol {
     static final int ITEM_WEB_COMMAND = 32;
     static final int ITEM_VIDEO = 33;
     static final int ITEM_VIDEO_SEEK = 34;
+    static final int ITEM_NATIVE = 35;
+    static final int ITEM_NATIVE_COMMAND = 36;
+    static final int ITEM_ANIMATION = 37;
 
     // View kinds, as in core/mount.go.
     static final int KIND_VIEW = 1;
@@ -78,6 +81,7 @@ final class Protocol {
     static final int KIND_CANVAS = 7;
     static final int KIND_WEB = 8;
     static final int KIND_VIDEO = 9;
+    static final int KIND_NATIVE = 10;
 
     // Event kinds, as in core/events.go. An event mask holds 1 << kind.
     static final int EVENT_PRESS = 1;
@@ -110,6 +114,12 @@ final class Protocol {
     static final int EVENT_NAVIGATION_STATE_CHANGE = 28;
     static final int EVENT_END = 29;
     static final int EVENT_BUFFER = 30;
+    static final int EVENT_FILE_DRAG_ENTER = 31;
+    static final int EVENT_FILE_DRAG_LEAVE = 32;
+    static final int EVENT_FILE_DROP = 33;
+    static final int EVENT_NATIVE = 34;
+    static final int EVENT_NATIVE_SIZE = 35;
+    static final int EVENT_ANIMATION = 36;
 
     // Web view commands, as in core/webview.go.
     static final int WEB_RELOAD = 1;
@@ -202,6 +212,12 @@ final class Protocol {
     static final int DRAW_ALPHA = 24;
     static final int DRAW_FILL_TEXT = 25;
     static final int DRAW_CLEAR = 26;
+    static final int DRAW_FILL_GRADIENT = 27;
+    static final int DRAW_STROKE_GRADIENT = 28;
+
+    // Gradient spreads, as in core/canvas.go; Pad is 0.
+    static final int SPREAD_REFLECT = 1;
+    static final int SPREAD_REPEAT = 2;
 
     // Line caps and joins, as in core/canvas.go; Butt and Miter are 0.
     static final int CAP_ROUND = 1;

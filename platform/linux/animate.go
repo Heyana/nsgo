@@ -32,12 +32,18 @@ type scrolling struct {
 	start    time.Time
 }
 
-// styleOf returns the style v shows now: mid transition, or its own.
+// styleOf returns the style v shows now: mid transition, or its own,
+// with the values the animator binds over it.
 func (w *window) styleOf(v *view) *core.ViewStyle {
+	s := &v.style
 	if v.transition != nil {
-		return &v.transition.shown
+		s = &v.transition.shown
 	}
-	return &v.style
+	if v.animated != nil {
+		out := v.animated.Apply(*s)
+		return &out
+	}
+	return s
 }
 
 // setStyle applies v's new style, animating to it when it has a
@@ -82,11 +88,47 @@ func (w *window) animate(v *view) {
 		}
 	}
 	w.animating = append(w.animating, v)
-	if !w.ticking {
+	w.startClock()
+}
+
+// startClock ticks every frame until nothing animates: no transition or
+// scroll, no animator run, no layout animation and no animated image.
+func (w *window) startClock() {
+	if !w.ticking && !w.closing {
 		w.tickID = gTimeoutAdd(frameMillis, cbTick, w.handle)
 		w.ticking = true
 	}
 }
+
+// animatorReport hands what the animator reports to the engine.
+func (w *window) animatorReport(ev core.Event) { w.engine.Dispatch(ev) }
+
+// animations applies a batch's changes to the animation graph.
+func (w *window) animations(ops []core.AnimationOp) {
+	w.animator.Apply(ops)
+	if w.animator.Running() {
+		w.startClock()
+	}
+}
+
+// showAnimated draws the views whose bound values changed with them.
+func (w *window) showAnimated() {
+	w.animator.Changed(func(id core.NodeID, vals core.AnimatedValues) {
+		v := w.view(id)
+		if v == nil {
+			return
+		}
+		if vals.Set == 0 {
+			v.animated = nil
+		} else {
+			v.animated = &vals
+		}
+		w.moved(v)
+	})
+}
+
+// monotonic is the animator's clock: time since the window opened.
+func (w *window) monotonic(now time.Time) time.Duration { return now.Sub(w.epoch) }
 
 // tickCallback moves every animation to now and repaints.
 func tickCallback(data uintptr) int32 {
@@ -139,7 +181,19 @@ func (w *window) tick() {
 		}
 	}
 	w.animating = live
-	if len(live) == 0 {
+	running := false
+	if w.animator.Running() {
+		w.animator.Step(w.monotonic(now))
+		running = w.animator.Running()
+	}
+	w.showAnimated()
+	if w.stepLayout(now) {
+		running = true
+	}
+	if w.stepImages(now) {
+		running = true
+	}
+	if len(live) == 0 && !running {
 		// tickCallback's return removes the timer.
 		w.ticking = false
 		w.tickID = 0

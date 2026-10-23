@@ -14,7 +14,7 @@ The graph follows NSH's (Solid 1.9's scheduling): signals, memos, render effects
 
 ## Elements and components
 
-Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canvas`, `WebView`, `Video`, `Overlay`, `Modal`, `Stack`, `Screen`) are structs with exported fields: zero values are defaults, as in `http.Server`. [Web views and videos](native-views.md) covers the hosted platform controls.
+Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canvas`, `WebView`, `Video`, `Native`, `Overlay`, `Modal`, `InputAccessoryView`, `Stack`, `Screen`) are structs with exported fields: zero values are defaults, as in `http.Server`. [Hosted views](native-views.md) covers the platform controls and the app's own views inside the tree; [images](images.md) the image pipeline.
 
 - A field that can change takes a function (`StyleFunc`, `ContentFunc`, `Value`, `Disabled`), bound by one render effect per part.
 - Styles compose with `Style.Merge`, and text fields inherit down the tree as in CSS.
@@ -40,6 +40,7 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - A modal provides the insets its content keeps clear of; a screen does too, without the top when it has a header. `Insets` reads them.
 - `EventBack` (Escape, the back button) goes to the topmost overlay that listens for cancel, else the topmost modal's `OnRequestClose`, else the innermost stack that can pop. A popped screen reports `OnDismiss` and stays hidden until the app removes it; the last screen never pops.
 - `EventPressOutside` reports presses outside an overlay, ignoring those on its anchor or on overlays above it.
+- An `InputAccessoryView` is a layout root as wide as the surface and as tall as its content, which no view holds: its views are sent before the tree's, and an input's `InputConfig.Accessory` names it, resolved from `InputAccessoryViewID`. iOS makes it the field's `inputAccessoryView`; Android shows it above the keyboard while the field has focus; other platforms leave it unmounted.
 
 ## Lists
 
@@ -95,7 +96,15 @@ Selection follows NSH's: one selection runs across the texts of a selection area
 - An active pan takes the touch from presses and scroll views.
 - A drag or wheel turn scrolls the innermost scroll view under it that can move its content that way, so an inner one passes on only at its edge. A touch or trackpad gesture keeps the scroll view it began with. Android still uses its scroll views' own handling.
 - Desktop scroll bars show while the pointer is over their scroll view and can be dragged: AppKit's overlay scrollers on macOS, the browser's on the web, and `platform/internal/scrollbar`'s on Windows and Linux.
-- NSGo has no native animated values yet, so a drag moves a view through a signal and a commit per turn, not on the main thread as NSH's bound values do.
+- `View.PanValues` binds a drag to animated values: the platform moves them before it reports each move, so the view follows on the main thread, as NSH's bound values do. A drag through `OnPan` and a signal costs a commit per turn.
+
+## File drops
+
+Files dragged from other apps follow NSH's `file-drop.md`. `View.OnFileDrop` receives `file:` URLs; `OnFileDragEnter` and `OnFileDragLeave` follow the drag.
+
+- The destination is the innermost view under the pointer whose mask has `EventFileDrop`, unless it is disabled; the topmost modal bounds the search. The platform decides on the main thread from the mounted views and answers Copy or nothing.
+- Leaving one destination for another reports a leave, then an enter. A deleted destination hears nothing more, since its ID may be reused.
+- macOS takes `NSPasteboardTypeFileURL` on the surface, Windows registers an OLE `IDropTarget` written in Go while a view listens, and Linux adds a `GtkDropTarget` for `GdkFileList`. Browsers hide paths, so the web delivers each file as a `blob:` URL that `fetch` and `net/http` read, its name as the fragment.
 
 ## Desktop windows
 
@@ -107,7 +116,7 @@ Window chrome follows NSH's `nsh/desktop`: native controls, an app-drawn title b
 
 ## Animation
 
-Style `Transition`s animate on the platform, with no engine work per frame and nothing for Go's garbage collector to pause. `Scope.Animate` steps app values once a frame on the engine for what a platform cannot animate itself; every step commits.
+Style `Transition`s, animated values and layout animations run on the platform, with no engine work per frame and nothing for the engine's garbage collector to pause; [animation](animation.md) covers them. `Scope.Animate` steps app values once a frame on the engine for what a platform cannot animate itself; every step commits.
 
 ## Services
 

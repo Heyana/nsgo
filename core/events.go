@@ -72,6 +72,21 @@ const (
 	// EventBuffer is a video starting or stopping waiting for data
 	// (Buffering).
 	EventBuffer
+	// EventFileDragEnter and EventFileDragLeave follow files dragged over
+	// the view that would receive them, and EventFileDrop delivers them
+	// (URIs).
+	EventFileDragEnter
+	EventFileDragLeave
+	EventFileDrop
+	// EventNative is an event a native view's component emitted: its
+	// name (Text) and Data.
+	EventNative
+	// EventNativeSize is the size a native view's component asks for
+	// (Size).
+	EventNativeSize
+	// EventAnimation reports an animation's end or a value read (Count,
+	// the request), with Finished and the value's Value.
+	EventAnimation
 )
 
 // EventMask is a set of event kinds.
@@ -108,6 +123,12 @@ type Event struct {
 	// Time, Duration and Buffering are a video's.
 	Time, Duration time.Duration
 	Buffering      bool
+	// URIs are the file: URLs of dropped files.
+	URIs []string
+	// Data is what a native component emitted.
+	Data any
+	// Finished is whether an animation ran to its end.
+	Finished bool
 }
 
 // Mergeable reports whether a later event of the same kind and view

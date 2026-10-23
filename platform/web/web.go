@@ -29,6 +29,8 @@ type Options struct {
 	Mount string
 	// ID names the app's entries in localStorage.
 	ID string
+	// Components are the native components Native elements name.
+	Components core.NativeComponents
 }
 
 const fontFamily = `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
@@ -71,6 +73,13 @@ type surface struct {
 	gestures  gestures
 	// selectionCSS is whether the ::selection rule is in the page.
 	selectionCSS bool
+
+	animator   *core.Animator
+	frame      js.Func // the animation frame callback
+	ticking    bool
+	components core.NativeComponents
+	unknown    map[string]bool // component names warned about
+	drag       *view           // the view files are dragged over
 }
 
 // view is the element of one NodeID.
@@ -100,6 +109,17 @@ type view struct {
 	selectable core.Selectable
 	selColor   core.Color
 	area       bool
+	disabled   bool
+
+	// style is the view's own, which its animated values draw over;
+	// layoutAnim the layout animation moving it.
+	style      core.ViewStyle
+	animated   core.AnimatedValues
+	framed     bool
+	layoutAnim js.Value
+
+	component      core.NativeComponent // a native view's
+	componentTried bool
 }
 
 // listeners are event listeners added until their owner goes.
@@ -148,7 +168,8 @@ func Run(app engine.App, opts Options) {
 		host = doc.Call("querySelector", opts.Mount)
 	}
 	setStyle(host, map[string]string{"position": "relative", "overflow": "hidden"})
-	s := &surface{doc: doc, host: host}
+	s := &surface{doc: doc, host: host, components: opts.Components, unknown: map[string]bool{}}
+	s.animator = core.NewAnimator(func(e core.Event) { s.engine.Dispatch(e) })
 	// Inside the host, measured text inherits what drawn text does.
 	s.measure = doc.Call("createElement", "div")
 	setStyle(s.measure, textBase)
@@ -195,6 +216,9 @@ func (s *surface) send(v *view, ev core.Event) {
 		return
 	}
 	ev.ID = v.id
+	if ev.Kind == core.EventPan && s.animator.Pan(v.id, ev.Point) {
+		s.applyAnimated()
+	}
 	s.engine.Dispatch(ev)
 }
 
@@ -501,11 +525,21 @@ func (p *preparedText) Release() {
 // Mount implements engine.Platform; the page has one thread, so it
 // applies the batch right away.
 func (s *surface) Mount(b *core.MountBatch) {
+	var lb *layoutBatch
+	if b.LayoutAnimation != nil && !s.env.ReduceMotion {
+		lb = &layoutBatch{anim: b.LayoutAnimation, created: map[core.NodeID]bool{}}
+	}
 	for i := range b.Items {
 		it := &b.Items[i]
 		switch it.Kind {
+		case core.ItemAnimation:
+			s.animator.Apply(it.Animation)
+			continue
 		case core.ItemCreate:
 			v := s.create(it.ID, it.View)
+			if lb != nil {
+				lb.created[it.ID] = true
+			}
 			if it.ID == b.Root {
 				s.root = v
 				s.host.Call("appendChild", v.el)
@@ -569,12 +603,22 @@ func (s *surface) Mount(b *core.MountBatch) {
 				v.presented = true
 				s.present(v)
 			}
+			s.appear(v, lb, it.Parent)
 		case core.ItemRemove:
 			v.el.Call("remove")
 		case core.ItemDelete:
 			// Forgotten first, so events its removal fires are not sent.
 			s.views[it.ID] = nil
-			v.el.Call("remove")
+			if !s.vanish(v, lb) {
+				v.el.Call("remove")
+			}
+			s.animator.Forget(v.id)
+			if s.drag == v {
+				s.drag = nil
+			}
+			if v.component != nil {
+				v.component.Close()
+			}
 			if v.layout != nil {
 				v.layout.Release()
 			}
@@ -590,6 +634,8 @@ func (s *surface) Mount(b *core.MountBatch) {
 			s.setOutside(v, false)
 			v.listeners.release()
 		case core.ItemFrame:
+			s.moveFrame(v, it.Frame, lb)
+			v.framed = true
 			setStyle(v.el, frameStyle(it.Frame))
 			if v.size != it.Frame.Size {
 				v.size = it.Frame.Size
@@ -601,7 +647,17 @@ func (s *surface) Mount(b *core.MountBatch) {
 				}
 			}
 		case core.ItemViewStyle:
+			v.style = *it.ViewStyle
 			s.setViewStyle(v, it.ViewStyle)
+			if v.animated.Set != 0 {
+				s.animator.Touch(v.id)
+			}
+		case core.ItemNative:
+			s.configureNative(v, it.Native)
+		case core.ItemNativeCommand:
+			if v.component != nil {
+				v.component.Command(it.Value, it.Data)
+			}
 		case core.ItemText:
 			s.setText(v, it.Text)
 		case core.ItemInput:
@@ -646,6 +702,7 @@ func (s *surface) Mount(b *core.MountBatch) {
 		case core.ItemEvents:
 			s.setEvents(v, it.Events)
 		case core.ItemViewProps:
+			v.disabled = it.ViewProps.Disabled
 			setViewProps(v, it.ViewProps)
 			s.setSelection(v, it.ViewProps)
 			if v.panActivation != it.ViewProps.PanActivation {
@@ -674,6 +731,10 @@ func (s *surface) Mount(b *core.MountBatch) {
 				v.inner.Call("blur")
 			}
 		}
+	}
+	s.applyAnimated()
+	if s.animator.Running() {
+		s.startTicking()
 	}
 }
 
@@ -717,10 +778,14 @@ func (s *surface) create(id core.NodeID, kind core.ViewKind) *view {
 		v.content = s.element("div")
 		v.el.Call("appendChild", v.content)
 		v.listeners.on(v.el, "scroll", func(js.Value) {
-			s.send(v, core.Event{Kind: core.EventScroll, Point: core.Point{
+			offset := core.Point{
 				X: core.Points(v.el.Get("scrollLeft").Float()),
 				Y: core.Points(v.el.Get("scrollTop").Float()),
-			}})
+			}
+			if s.animator.Scroll(v.id, offset) {
+				s.applyAnimated()
+			}
+			s.send(v, core.Event{Kind: core.EventScroll, Point: offset})
 		})
 	}
 	s.views[id] = v
@@ -1092,6 +1157,7 @@ func (s *surface) listen() {
 	ls.on(s.doc, "copy", s.copySelection)
 	ls.on(s.doc, "keydown", s.escape)
 	s.listenGestures(&ls)
+	s.listenFiles(&ls)
 	// Captured, so shortcuts come before what has focus.
 	s.doc.Call("addEventListener", "keydown", js.FuncOf(func(_ js.Value, args []js.Value) any {
 		s.shortcut(args[0])

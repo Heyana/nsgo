@@ -193,10 +193,11 @@ func viewContainsCallback(widget uintptr, x, y float64) int32 {
 		return boolInt(x >= 0 && y >= 0 && x < float64(gtkWidgetGetWidth(widget)) && y < float64(gtkWidgetGetHeight(widget)))
 	}
 	v := r.v
-	if v.style.Hidden {
+	if v.style.Hidden || v.deleted {
 		return 0
 	}
-	return boolInt(x >= 0 && y >= 0 && x < float64(v.frame.Size.Width) && y < float64(v.frame.Size.Height))
+	f := v.shownFrame()
+	return boolInt(x >= 0 && y >= 0 && x < float64(f.Size.Width) && y < float64(f.Size.Height))
 }
 
 // newViewWidget makes an NsgoView for v (nil: the surface) and keeps a
@@ -322,7 +323,7 @@ func (w *window) allocateView(v *view) {
 		case c == v.entry:
 			allocateNative(c, v.input.Content)
 		case v.hosted() != nil && c == v.hosted().child:
-			b := core.Bounds{Size: v.frame.Size}
+			b := core.Bounds{Size: v.shownFrame().Size}
 			if v.web != nil {
 				// WebKit sizes a page's surface from its widget: mapped at
 				// 0 × 0 it may never present a frame, so a page maps once
@@ -334,16 +335,18 @@ func (w *window) allocateView(v *view) {
 	}
 }
 
-// place allocates v's widget at its frame, less its parent's scroll
-// offset ox, oy, with its transform around its center.
+// place allocates v's widget at the frame it shows, less its parent's
+// scroll offset ox, oy, with its transform around its center and the
+// scale of a layout animation after it.
 func (w *window) place(v *view, ox, oy float32) {
 	if gtkWidgetGetChildVisible(v.widget) == 0 {
 		return
 	}
-	f := v.frame
+	f := v.shownFrame()
 	t := gskTransformTranslate(0, &graphenePoint{float32(f.Origin.X) - ox, float32(f.Origin.Y) - oy})
-	if tr := w.styleOf(v).Transform; tr != (core.Transform{}) {
+	if tr, ls := w.styleOf(v).Transform, v.layoutScale(); tr != (core.Transform{}) || ls != 1 {
 		sx, sy := tr.Scales()
+		sx, sy = sx*ls, sy*ls
 		cx, cy := float32(f.Size.Width)/2, float32(f.Size.Height)/2
 		t = gskTransformTranslate(t, &graphenePoint{cx + float32(tr.TranslateX), cy + float32(tr.TranslateY)})
 		t = gskTransformRotate(t, tr.Rotate)

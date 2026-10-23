@@ -3,35 +3,34 @@ package core
 import (
 	"fmt"
 	"math"
-	"strings"
 )
 
 // rect adds a rect element's shape.
 func (p *svgParser) rect(a map[string]string) error {
-	x, err := svgNumberAttr(a, "x")
+	x, err := p.length(a, "x")
 	if err != nil {
 		return err
 	}
-	y, err := svgNumberAttr(a, "y")
+	y, err := p.length(a, "y")
 	if err != nil {
 		return err
 	}
-	w, err := svgNumberAttr(a, "width")
+	w, err := p.length(a, "width")
 	if err != nil {
 		return err
 	}
-	h, err := svgNumberAttr(a, "height")
+	h, err := p.length(a, "height")
 	if err != nil {
 		return err
 	}
 	if w <= 0 || h <= 0 {
 		return nil
 	}
-	rx, err := svgNumberAttr(a, "rx")
+	rx, err := p.length(a, "rx")
 	if err != nil {
 		return err
 	}
-	ry, err := svgNumberAttr(a, "ry")
+	ry, err := p.length(a, "ry")
 	if err != nil {
 		return err
 	}
@@ -44,28 +43,33 @@ func (p *svgParser) rect(a map[string]string) error {
 	p.begin()
 	switch {
 	case rx <= 0 || ry <= 0:
-		p.op(DrawOp{Kind: DrawRect, X: x, Y: y, W: w, H: h})
+		p.lop(DrawOp{Kind: DrawRect, X: x, Y: y, W: w, H: h})
 	case rx == ry:
-		p.op(DrawOp{Kind: DrawRoundRect, X: x, Y: y, W: w, H: h, R: rx})
+		p.lop(DrawOp{Kind: DrawRoundRect, X: x, Y: y, W: w, H: h, R: rx})
 	default:
-		// Rounded corners no machine rounds, as an elliptical arc each.
-		p.op(DrawOp{Kind: DrawMoveTo, X: x + rx, Y: y})
-		p.op(DrawOp{Kind: DrawLineTo, X: x + w - rx, Y: y})
-		p.corner(x+w-rx, y+ry, rx, ry, -90, 0)
-		p.op(DrawOp{Kind: DrawLineTo, X: x + w, Y: y + h - ry})
-		p.corner(x+w-rx, y+h-ry, rx, ry, 0, 90)
-		p.op(DrawOp{Kind: DrawLineTo, X: x + rx, Y: y + h})
-		p.corner(x+rx, y+h-ry, rx, ry, 90, 180)
-		p.op(DrawOp{Kind: DrawLineTo, X: x, Y: y + ry})
-		p.corner(x+rx, y+ry, rx, ry, 180, 270)
-		p.op(DrawOp{Kind: DrawClosePath})
+		p.local = roundRectPath(p.local, x, y, w, h, rx, ry)
 	}
 	return nil
 }
 
-// corner adds an axis-aligned elliptical arc around (cx, cy) between two
-// angles in degrees.
-func (p *svgParser) corner(cx, cy, rx, ry float32, from, to float64) {
+// roundRectPath appends a rectangle with elliptical corners of radii rx
+// and ry, as an elliptical arc each, to ops.
+func roundRectPath(ops []DrawOp, x, y, w, h, rx, ry float32) []DrawOp {
+	ops = append(ops, DrawOp{Kind: DrawMoveTo, X: x + rx, Y: y},
+		DrawOp{Kind: DrawLineTo, X: x + w - rx, Y: y})
+	ops = appendCorner(ops, x+w-rx, y+ry, rx, ry, -90, 0)
+	ops = append(ops, DrawOp{Kind: DrawLineTo, X: x + w, Y: y + h - ry})
+	ops = appendCorner(ops, x+w-rx, y+h-ry, rx, ry, 0, 90)
+	ops = append(ops, DrawOp{Kind: DrawLineTo, X: x + rx, Y: y + h})
+	ops = appendCorner(ops, x+rx, y+h-ry, rx, ry, 90, 180)
+	ops = append(ops, DrawOp{Kind: DrawLineTo, X: x, Y: y + ry})
+	ops = appendCorner(ops, x+rx, y+ry, rx, ry, 180, 270)
+	return append(ops, DrawOp{Kind: DrawClosePath})
+}
+
+// appendCorner appends an axis-aligned elliptical arc around (cx, cy)
+// between two angles in degrees to ops, as a cubic curve per quarter turn.
+func appendCorner(ops []DrawOp, cx, cy, rx, ry float32, from, to float64) []DrawOp {
 	a0 := from * math.Pi / 180
 	a1 := to * math.Pi / 180
 	n := int(math.Ceil(math.Abs(a1-a0) / (math.Pi / 2)))
@@ -78,75 +82,76 @@ func (p *svgParser) corner(cx, cy, rx, ry float32, from, to float64) {
 		x1, y1 := float64(cx)+float64(rx)*math.Cos(t1), float64(cy)+float64(ry)*math.Sin(t1)
 		d0x, d0y := -float64(rx)*math.Sin(t0), float64(ry)*math.Cos(t0)
 		d1x, d1y := -float64(rx)*math.Sin(t1), float64(ry)*math.Cos(t1)
-		p.op(DrawOp{Kind: DrawCubicTo, X1: float32(x0 + alpha*d0x), Y1: float32(y0 + alpha*d0y),
+		ops = append(ops, DrawOp{Kind: DrawCubicTo, X1: float32(x0 + alpha*d0x), Y1: float32(y0 + alpha*d0y),
 			X2: float32(x1 - alpha*d1x), Y2: float32(y1 - alpha*d1y), X: float32(x1), Y: float32(y1)})
 	}
+	return ops
 }
 
 func (p *svgParser) circle(a map[string]string) error {
-	cx, err := svgNumberAttr(a, "cx")
+	cx, err := p.length(a, "cx")
 	if err != nil {
 		return err
 	}
-	cy, err := svgNumberAttr(a, "cy")
+	cy, err := p.length(a, "cy")
 	if err != nil {
 		return err
 	}
-	r, err := svgNumberAttr(a, "r")
+	r, err := p.length(a, "r")
 	if err != nil {
 		return err
 	}
 	if r > 0 {
 		p.begin()
-		p.op(DrawOp{Kind: DrawEllipse, X: cx, Y: cy, R: r, RY: r})
+		p.lop(DrawOp{Kind: DrawEllipse, X: cx, Y: cy, R: r, RY: r})
 	}
 	return nil
 }
 
 func (p *svgParser) ellipse(a map[string]string) error {
-	cx, err := svgNumberAttr(a, "cx")
+	cx, err := p.length(a, "cx")
 	if err != nil {
 		return err
 	}
-	cy, err := svgNumberAttr(a, "cy")
+	cy, err := p.length(a, "cy")
 	if err != nil {
 		return err
 	}
-	rx, err := svgNumberAttr(a, "rx")
+	rx, err := p.length(a, "rx")
 	if err != nil {
 		return err
 	}
-	ry, err := svgNumberAttr(a, "ry")
+	ry, err := p.length(a, "ry")
 	if err != nil {
 		return err
 	}
 	if rx > 0 && ry > 0 {
 		p.begin()
-		p.op(DrawOp{Kind: DrawEllipse, X: cx, Y: cy, R: rx, RY: ry})
+		p.lop(DrawOp{Kind: DrawEllipse, X: cx, Y: cy, R: rx, RY: ry})
 	}
 	return nil
 }
 
 func (p *svgParser) line(a map[string]string) error {
-	x1, err := svgNumberAttr(a, "x1")
+	x1, err := p.length(a, "x1")
 	if err != nil {
 		return err
 	}
-	y1, err := svgNumberAttr(a, "y1")
+	y1, err := p.length(a, "y1")
 	if err != nil {
 		return err
 	}
-	x2, err := svgNumberAttr(a, "x2")
+	x2, err := p.length(a, "x2")
 	if err != nil {
 		return err
 	}
-	y2, err := svgNumberAttr(a, "y2")
+	y2, err := p.length(a, "y2")
 	if err != nil {
 		return err
 	}
 	p.begin()
-	p.op(DrawOp{Kind: DrawMoveTo, X: x1, Y: y1})
-	p.op(DrawOp{Kind: DrawLineTo, X: x2, Y: y2})
+	p.lop(DrawOp{Kind: DrawMoveTo, X: x1, Y: y1})
+	p.lop(DrawOp{Kind: DrawLineTo, X: x2, Y: y2})
 	return nil
 }
 
@@ -159,26 +164,14 @@ func (p *svgParser) polygon(a map[string]string, closed bool) error {
 		return nil
 	}
 	p.begin()
-	p.op(DrawOp{Kind: DrawMoveTo, X: values[0], Y: values[1]})
+	p.lop(DrawOp{Kind: DrawMoveTo, X: values[0], Y: values[1]})
 	for i := 2; i < len(values); i += 2 {
-		p.op(DrawOp{Kind: DrawLineTo, X: values[i], Y: values[i+1]})
+		p.lop(DrawOp{Kind: DrawLineTo, X: values[i], Y: values[i+1]})
 	}
 	if closed {
-		p.op(DrawOp{Kind: DrawClosePath})
+		p.lop(DrawOp{Kind: DrawClosePath})
 	}
 	return nil
-}
-
-func svgNumberAttr(a map[string]string, name string) (float32, error) {
-	v, ok := a[name]
-	if !ok || strings.TrimSpace(v) == "" {
-		return 0, nil
-	}
-	n, err := svgLength(v)
-	if err != nil {
-		return 0, fmt.Errorf("svg: %s: %w", name, err)
-	}
-	return n, nil
 }
 
 // path reads path data and adds its shape. It understands every command of
@@ -242,7 +235,7 @@ func (p *svgParser) path(d string) error {
 			}
 			x, y = toX(nx), toY(ny)
 			sx, sy = x, y
-			p.op(DrawOp{Kind: DrawMoveTo, X: x, Y: y})
+			p.lop(DrawOp{Kind: DrawMoveTo, X: x, Y: y})
 			prev = 'M'
 			last = 'L'
 			if lower {
@@ -258,7 +251,7 @@ func (p *svgParser) path(d string) error {
 					return err
 				}
 				x, y = toX(nx), toY(ny)
-				p.op(DrawOp{Kind: DrawLineTo, X: x, Y: y})
+				p.lop(DrawOp{Kind: DrawLineTo, X: x, Y: y})
 				prev = 'L'
 			}
 		case 'L', 'l':
@@ -275,7 +268,7 @@ func (p *svgParser) path(d string) error {
 					return err
 				}
 				x, y = toX(nx), toY(ny)
-				p.op(DrawOp{Kind: DrawLineTo, X: x, Y: y})
+				p.lop(DrawOp{Kind: DrawLineTo, X: x, Y: y})
 				prev = 'L'
 			}
 			last = cmd
@@ -289,7 +282,7 @@ func (p *svgParser) path(d string) error {
 					return err
 				}
 				x = toX(nx)
-				p.op(DrawOp{Kind: DrawLineTo, X: x, Y: y})
+				p.lop(DrawOp{Kind: DrawLineTo, X: x, Y: y})
 				prev = 'L'
 			}
 			last = cmd
@@ -303,7 +296,7 @@ func (p *svgParser) path(d string) error {
 					return err
 				}
 				y = toY(ny)
-				p.op(DrawOp{Kind: DrawLineTo, X: x, Y: y})
+				p.lop(DrawOp{Kind: DrawLineTo, X: x, Y: y})
 				prev = 'L'
 			}
 			last = cmd
@@ -338,7 +331,7 @@ func (p *svgParser) path(d string) error {
 				}
 				x1, y1, x2, y2 = toX(x1), toY(y1), toX(x2), toY(y2)
 				x, y = toX(nx), toY(ny)
-				p.op(DrawOp{Kind: DrawCubicTo, X1: x1, Y1: y1, X2: x2, Y2: y2, X: x, Y: y})
+				p.lop(DrawOp{Kind: DrawCubicTo, X1: x1, Y1: y1, X2: x2, Y2: y2, X: x, Y: y})
 				ctrlX, ctrlY, prev = x2, y2, 'C'
 			}
 			last = cmd
@@ -369,7 +362,7 @@ func (p *svgParser) path(d string) error {
 				}
 				x2, y2 = toX(x2), toY(y2)
 				x, y = toX(nx), toY(ny)
-				p.op(DrawOp{Kind: DrawCubicTo, X1: x1, Y1: y1, X2: x2, Y2: y2, X: x, Y: y})
+				p.lop(DrawOp{Kind: DrawCubicTo, X1: x1, Y1: y1, X2: x2, Y2: y2, X: x, Y: y})
 				ctrlX, ctrlY, prev = x2, y2, 'S'
 			}
 			last = cmd
@@ -396,7 +389,7 @@ func (p *svgParser) path(d string) error {
 				}
 				qx, qy = toX(qx), toY(qy)
 				x, y = toX(nx), toY(ny)
-				p.op(DrawOp{Kind: DrawQuadTo, X1: qx, Y1: qy, X: x, Y: y})
+				p.lop(DrawOp{Kind: DrawQuadTo, X1: qx, Y1: qy, X: x, Y: y})
 				quadX, quadY, prev = qx, qy, 'Q'
 			}
 			last = cmd
@@ -418,7 +411,7 @@ func (p *svgParser) path(d string) error {
 					qx, qy = 2*x-quadX, 2*y-quadY
 				}
 				x, y = toX(nx), toY(ny)
-				p.op(DrawOp{Kind: DrawQuadTo, X1: qx, Y1: qy, X: x, Y: y})
+				p.lop(DrawOp{Kind: DrawQuadTo, X1: qx, Y1: qy, X: x, Y: y})
 				quadX, quadY, prev = qx, qy, 'T'
 			}
 			last = cmd
@@ -462,7 +455,7 @@ func (p *svgParser) path(d string) error {
 			}
 			last = cmd
 		case 'Z', 'z':
-			p.op(DrawOp{Kind: DrawClosePath})
+			p.lop(DrawOp{Kind: DrawClosePath})
 			x, y = sx, sy
 			prev = 'Z'
 			last = 0
@@ -476,7 +469,7 @@ func (p *svgParser) path(d string) error {
 // following SVG 1.1's endpoint to center conversion (F.6.5).
 func (p *svgParser) arc(x0, y0, rx, ry, rotation float32, large, sweep bool, x1, y1 float32) {
 	if rx == 0 || ry == 0 {
-		p.op(DrawOp{Kind: DrawLineTo, X: x1, Y: y1})
+		p.lop(DrawOp{Kind: DrawLineTo, X: x1, Y: y1})
 		return
 	}
 	if x0 == x1 && y0 == y1 {
@@ -535,7 +528,7 @@ func (p *svgParser) arc(x0, y0, rx, ry, rotation float32, large, sweep bool, x1,
 		alpha := 4.0 / 3.0 * math.Tan((t1-t0)/4)
 		sx, sy, d0x, d0y := at(t0)
 		ex, ey, d1x, d1y := at(t1)
-		p.op(DrawOp{Kind: DrawCubicTo,
+		p.lop(DrawOp{Kind: DrawCubicTo,
 			X1: float32(sx + alpha*d0x), Y1: float32(sy + alpha*d0y),
 			X2: float32(ex - alpha*d1x), Y2: float32(ey - alpha*d1y),
 			X: float32(ex), Y: float32(ey)})

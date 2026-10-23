@@ -44,17 +44,25 @@ const (
 	DrawRoundRect // X, Y, W, H, R
 	DrawEllipse   // X, Y (center), RX, RY
 	DrawClosePath
-	DrawFill   // the current path with the fill color
-	DrawStroke // the current path with the stroke settings
-	DrawClip   // to the current path
-	DrawFillColor
-	DrawStrokeColor
-	DrawLineWidth // W
-	DrawLineCap   // Cap
-	DrawLineJoin  // Join
-	DrawAlpha     // A, the global alpha
-	DrawFillText  // Text at X, Y (baseline start), in Font
-	DrawClear     // X, Y, W, H to transparent
+	DrawFill        // the current path with the fill color, by EvenOdd's rule
+	DrawStroke      // the current path with the stroke settings
+	DrawClip        // to the current path, by EvenOdd's rule
+	DrawFillColor   // Color, the fill until the next DrawFillGradient
+	DrawStrokeColor // Color, the stroke until the next DrawStrokeGradient
+	DrawLineWidth   // W
+	DrawLineCap     // Cap
+	DrawLineJoin    // Join
+	DrawAlpha       // A, the global alpha
+	DrawFillText    // Text at X, Y (baseline start), in Font
+	DrawClear       // X, Y, W, H to transparent
+
+	// DrawFillGradient makes Gradient the fill until the next
+	// DrawFillColor. A recording always sets a fill color before it, so a
+	// player that does not paint gradients fills with that color instead.
+	DrawFillGradient
+	// DrawStrokeGradient makes Gradient the stroke until the next
+	// DrawStrokeColor, after a stroke color as DrawFillGradient is.
+	DrawStrokeGradient
 )
 
 // DrawOp is one operation; Kind says which fields it uses.
@@ -68,7 +76,46 @@ type DrawOp struct {
 	Join                   LineJoin
 	Text                   string
 	Font                   Font
+	// EvenOdd fills or clips by the even-odd rule instead of the nonzero
+	// one. Players that know only the nonzero rule ignore it.
+	EvenOdd  bool
+	Gradient *Gradient
 }
+
+// Gradient is a linear or radial color gradient that DrawFillGradient and
+// DrawStrokeGradient paint with. Its points are in gradient space, which
+// Transform maps into the coordinates of the fill or stroke that uses it.
+type Gradient struct {
+	// Radial makes a radial gradient from the focal circle (X1, Y1, R1)
+	// to the outer circle (X2, Y2, R2), as the web's
+	// createRadialGradient; otherwise offset 0 is at (X1, Y1) and offset 1
+	// at (X2, Y2), and R1 and R2 are unused.
+	Radial     bool
+	X1, Y1, R1 float32
+	X2, Y2, R2 float32
+	// Transform is a, b, c, d, e, f, as SVG's matrix(): it maps (x, y) to
+	// (a*x + c*y + e, b*x + d*y + f). All zeros is the identity.
+	Transform [6]float32
+	Spread    GradientSpread
+	// Stops are in increasing offsets from 0 to 1, with unpremultiplied
+	// colors; between them colors are interpolated.
+	Stops []GradientStop
+}
+
+// GradientStop is a color at an offset of a Gradient.
+type GradientStop struct {
+	Offset float32
+	Color  Color
+}
+
+// GradientSpread is how a Gradient paints beyond offsets 0 and 1.
+type GradientSpread uint8
+
+const (
+	SpreadPad     GradientSpread = iota // the end colors continue
+	SpreadReflect                       // the gradient repeats, mirrored
+	SpreadRepeat                        // the gradient repeats
+)
 
 // LineCap ends open strokes.
 type LineCap uint8

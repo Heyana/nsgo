@@ -37,6 +37,8 @@ type Options struct {
 	Width, Height core.Points
 	// ID names the app's directories and storage (engine.AppDirs).
 	ID string
+	// Components are the native components Native elements name.
+	Components core.NativeComponents
 }
 
 // longPressDelay is how long a press is held before it is a long press.
@@ -73,6 +75,17 @@ type view struct {
 	web       *apple.Web          // a web view's
 	video     *apple.Video        // a video's
 
+	// frame is where the view shows now; style its own style, which its
+	// animated values and a layout animation draw over.
+	frame    core.Bounds
+	framed   bool
+	style    core.ViewStyle
+	animated core.AnimatedValues
+
+	component     core.NativeComponent // a native view's
+	componentView objc.ID
+	disabled      bool
+
 	windowDrag core.WindowDrag
 	activation core.PanActivation
 
@@ -95,6 +108,19 @@ type surface struct {
 
 	// What a batch touched, finished once its frames are set.
 	images, presenting []*view
+
+	// The frame clock and what it animates.
+	animator   *core.Animator
+	epoch      time.Time
+	link       objc.ID // the frame clock's CADisplayLink, made once
+	timer      objc.ID // or its NSTimer while ticking, before macOS 14
+	ticking    bool
+	motions    map[*view]*motion
+	ghosts     []*ghost
+	components core.NativeComponents
+	unknown    map[string]bool // component names warned about
+	dragTarget *view           // the view files are dragged over
+	dragFiles  bool            // whether the drag carries files
 
 	// The gestures in progress.
 	pan             *panTrack
@@ -194,6 +220,13 @@ func loadAppKit() {
 		objc.MethodDef{Cmd: sel("keyDown:"), Fn: func(objc.ID, objc.SEL, objc.ID) {}},
 		objc.MethodDef{Cmd: sel("copy:"), Fn: surfaceCopy},
 		objc.MethodDef{Cmd: sel("selectAll:"), Fn: surfaceSelectAll},
+		objc.MethodDef{Cmd: selTick, Fn: surfaceTick},
+		objc.MethodDef{Cmd: sel("draggingEntered:"), Fn: draggingEntered},
+		objc.MethodDef{Cmd: sel("draggingUpdated:"), Fn: draggingUpdated},
+		objc.MethodDef{Cmd: sel("draggingExited:"), Fn: draggingExited},
+		objc.MethodDef{Cmd: sel("draggingEnded:"), Fn: draggingExited},
+		objc.MethodDef{Cmd: sel("prepareForDragOperation:"), Fn: prepareForDrag},
+		objc.MethodDef{Cmd: sel("performDragOperation:"), Fn: performDrag},
 	))
 	classObserver = register("NsgoObserver", objc.GetClass("NSObject"), nil, []objc.MethodDef{{
 		Cmd: sel("observeValueForKeyPath:ofObject:change:context:"),
@@ -283,7 +316,7 @@ func Run(app engine.App, opts Options) {
 	window.Send(sel("setTitle:"), apple.NSString(opts.Title))
 	window.Send(sel("setReleasedWhenClosed:"), false)
 
-	s := &surface{window: window}
+	s := &surface{window: window, epoch: time.Now(), motions: map[*view]*motion{}, components: opts.Components}
 	s.defaultMenu, s.appName = defaultMenu, opts.Title
 	active = s
 	s.native = objc.ID(classSurface).Send(selAlloc).Send(sel("initWithFrame:"),
@@ -291,6 +324,8 @@ func Run(app engine.App, opts Options) {
 	s.native.Send(selSetWantsLayer, true)
 	views[s.native] = &view{surface: s}
 	window.Send(sel("setContentView:"), s.native)
+	s.animator = core.NewAnimator(func(e core.Event) { s.engine.Dispatch(e) })
+	s.acceptFiles()
 	s.env = s.environment()
 	eopts := engine.Options{Size: core.Size{Width: opts.Width, Height: opts.Height}, Environment: s.env}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
@@ -627,6 +662,10 @@ func (s *surface) Mount(b *core.MountBatch) {
 }
 
 func (s *surface) apply(b *core.MountBatch) {
+	var lb *layoutBatch
+	if b.LayoutAnimation != nil && !s.env.ReduceMotion {
+		lb = &layoutBatch{anim: b.LayoutAnimation, created: map[core.NodeID]bool{}, deleted: map[objc.ID]bool{}}
+	}
 	for i := range b.Items {
 		it := &b.Items[i]
 		switch it.Kind {
@@ -635,6 +674,12 @@ func (s *surface) apply(b *core.MountBatch) {
 				s.views = append(s.views, nil)
 			}
 			s.views[it.ID] = s.create(it.View, it.ID)
+			if lb != nil {
+				lb.created[it.ID] = true
+			}
+			continue
+		case core.ItemAnimation:
+			s.animator.Apply(it.Animation)
 			continue
 		case core.ItemAlert:
 			s.alert(it.Alert)
@@ -676,7 +721,8 @@ func (s *surface) apply(b *core.MountBatch) {
 		v := s.views[it.ID]
 		switch it.Kind {
 		case core.ItemDelete:
-			s.delete(v)
+			kept := s.vanish(v, lb)
+			s.delete(v, kept)
 		case core.ItemRemove:
 			v.native.Send(selRemoveFromSuperview)
 		case core.ItemInsert:
@@ -691,25 +737,18 @@ func (s *surface) apply(b *core.MountBatch) {
 				v.presented = true
 				s.presenting = append(s.presenting, v)
 			}
+			s.appear(v, lb, it.Parent)
 		case core.ItemFrame:
-			f := it.Frame
-			v.native.Send(selSetFrame, apple.Rect(float64(f.Origin.X), float64(f.Origin.Y),
-				float64(f.Size.Width), float64(f.Size.Height)))
-			if v.transform != (core.Transform{}) {
-				apple.SetTransform(v.native.Send(selLayer), v.transform)
-			}
-			apple.LayoutBorders(v.native.Send(selLayer))
-			if v.drawing != nil {
-				v.native.Send(selSetNeedsDisplay, true)
-			}
-			if v.image != nil {
-				v.image.Layout(apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)})
-				s.images = append(s.images, v)
-			}
+			s.setFrame(v, it.Frame, lb)
 		case core.ItemViewStyle:
-			apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, true)
+			v.style = *it.ViewStyle
+			if v.animatesStyle() {
+				v.restyle()
+			} else {
+				apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, true)
+				v.transform = it.ViewStyle.Transform
+			}
 			v.native.Send(selSetHidden, it.ViewStyle.Hidden)
-			v.transform = it.ViewStyle.Transform
 			if v.image != nil {
 				v.image.SetStyle(it.ViewStyle)
 			}
@@ -732,6 +771,12 @@ func (s *surface) apply(b *core.MountBatch) {
 			}
 		case core.ItemVideoSeek:
 			v.video.Seek(it.Time)
+		case core.ItemNative:
+			s.configureNative(v, it.Native)
+		case core.ItemNativeCommand:
+			if v.component != nil {
+				v.component.Command(it.Value, it.Data)
+			}
 		case core.ItemCanvas:
 			v.drawing = it.Drawing
 			v.native.Send(selSetNeedsDisplay, true)
@@ -741,6 +786,7 @@ func (s *surface) apply(b *core.MountBatch) {
 			setAccessibility(v.native, it.ViewProps)
 			p := it.ViewProps
 			v.windowDrag, v.activation, v.area, v.selectable = p.WindowDrag, p.PanActivation, p.SelectionArea, p.Selectable
+			v.disabled = p.Disabled
 			if v.selColor != p.SelectionColor {
 				v.selColor = p.SelectionColor
 				v.native.Send(selSetNeedsDisplay, true)
@@ -783,25 +829,41 @@ func (s *surface) apply(b *core.MountBatch) {
 	}
 	s.finish()
 	s.refreshSelection()
+	apple.WithoutAnimation(func() {
+		if lb != nil {
+			s.stepMotions(s.clock())
+		}
+		s.applyAnimated()
+	})
+	if s.animator.Running() {
+		s.startTicking()
+	}
 }
 
 // finish starts what a batch asked for once its frames are set: image
 // loads at the views' sizes and modals' entrances.
 func (s *surface) finish() {
-	for _, v := range s.images {
-		if s.views[v.id] == v {
-			v.image.Start(float64(s.env.PixelRatio))
-		}
-	}
+	s.startImages()
 	for _, v := range s.presenting {
 		if s.views[v.id] == v && v.native.Send(selSuperview) != 0 {
 			h := objc.Send[apple.CGRect](v.native.Send(selSuperview), selBounds).Size.Height
 			apple.AnimateIn(v.native.Send(selLayer), v.animation, h, s.env.ReduceMotion)
 		}
 	}
-	clear(s.images)
 	clear(s.presenting)
-	s.images, s.presenting = s.images[:0], s.presenting[:0]
+	s.presenting = s.presenting[:0]
+}
+
+// startImages starts the image loads a batch or a frame's layout asked
+// for, at the views' new sizes.
+func (s *surface) startImages() {
+	for _, v := range s.images {
+		if s.views[v.id] == v {
+			v.image.Start(float64(s.env.PixelRatio))
+		}
+	}
+	clear(s.images)
+	s.images = s.images[:0]
 }
 
 func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
@@ -850,8 +912,20 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 	return v
 }
 
-func (s *surface) delete(v *view) {
-	v.native.Send(selRemoveFromSuperview)
+// delete releases v; kept leaves its native where it is, going away.
+func (s *surface) delete(v *view, kept bool) {
+	if !kept && !s.inGhost(v.native) {
+		v.native.Send(selRemoveFromSuperview)
+	}
+	s.animator.Forget(v.id)
+	delete(s.motions, v)
+	if s.dragTarget == v {
+		s.dragTarget = nil
+	}
+	if v.component != nil {
+		v.component.Close()
+		v.component = nil
+	}
 	apple.ForgetTransform(v.native.Send(selLayer))
 	apple.ForgetBorders(v.native.Send(selLayer))
 	v.layout.Release()
@@ -1307,9 +1381,16 @@ func fieldEnded(self objc.ID, _ objc.SEL, _ objc.ID) {
 // clipScrolled reports a scroll view's offset when its clip view moves.
 func clipScrolled(note objc.ID) {
 	clip := note.Send(sel("object"))
-	if v := views[clip]; v != nil && v.clip == clip && v.events.Has(core.EventScroll) {
-		o := objc.Send[apple.CGRect](clip, selBounds).Origin
-		v.surface.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id,
-			Point: core.Point{X: core.Points(o.X), Y: core.Points(o.Y)}})
+	v := views[clip]
+	if v == nil || v.clip != clip {
+		return
+	}
+	o := objc.Send[apple.CGRect](clip, selBounds).Origin
+	offset := core.Point{X: core.Points(o.X), Y: core.Points(o.Y)}
+	if v.surface.animator.Scroll(v.id, offset) {
+		apple.WithoutAnimation(v.surface.applyAnimated)
+	}
+	if v.events.Has(core.EventScroll) {
+		v.surface.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id, Point: offset})
 	}
 }

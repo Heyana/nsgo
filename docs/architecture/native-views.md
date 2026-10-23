@@ -1,11 +1,11 @@
-# Web views and videos
+# Hosted views
 
-`WebView` and `Video` host a platform control inside a view. Each follows NSH's design and behavior on every target; NSGo changes only the API's shape to Go's. Read this before changing either element or a backend's host for it.
+`WebView`, `Video` and `Native` host a platform view inside a view: the platform's web view and player, or one the app registered. Each follows NSH's design and behavior on every target; NSGo changes only the API's shape to Go's. Read this before changing these elements or a backend's host for them.
 
 ## Shared design
 
-- The control fills a `KindWeb` or `KindVideo` view, which keeps the decoration, frame and accessibility.
-- One config item carries the whole state: `ItemWeb` with `WebConfig`, `ItemVideo` with `VideoConfig`. Commands ride their own items: `ItemWebCommand` for `Ref`'s history, scripts and messages, `ItemVideoSeek` for `Ref.Seek`.
+- The control fills a `KindWeb`, `KindVideo` or `KindNative` view, which keeps the decoration, frame and accessibility.
+- One config item carries the whole state: `ItemWeb` with `WebConfig`, `ItemVideo` with `VideoConfig`; `ItemNative` carries a component's changed props. Commands ride their own items: `ItemWebCommand` for `Ref`'s history, scripts and messages, `ItemVideoSeek` for `Ref.Seek`, `ItemNativeCommand` for `Ref.Command`.
 - Core resolves defaults before sending, so platforms see final values: a video's volume, rate, progress interval and resize mode (Contain).
 - Platforms report an event only when the view's `EventMask` has it.
 - NSGo keeps Go's zero values as defaults: `NoScroll` and `NoJavaScript` invert NSH's `scrollable` and `javaScriptEnabled`, and `window.nsgo` replaces `window.nsh`.
@@ -39,6 +39,24 @@
 | Linux | `GtkMediaFile` (GStreamer) in a `GtkPicture` hosted in the view's widget, or a `GtkVideo` with controls; GTK streams have no playback rate |
 | Android | `MediaPlayer` on a `TextureView`, with a `MediaController` for controls |
 | Web | A `<video>` element |
+
+## Native components
+
+An app registers its own platform views by name, as NSH's embedding apps do (`nsh/docs/dev/embedding.md`): `nsgo.Run(app, nsgo.Component(name, factory))` hands each backend a `core.NativeComponents` table, so a registry belongs to one surface, never to the process.
+
+- `Native` names the component; its `Props` cross only when they change, a removed one as nil, and `Ref.Command` reaches the component's `Command`. The first `ItemNative` makes the component with a `NativeContext`, whose `Emit` reaches `OnEvent` and whose `SetSize` gives the element a natural size, as an image's.
+- Factories run on the main thread and may return nil; an unknown name leaves an empty box and is logged once.
+- Registering differs per platform only in what `View` returns, so an app registers a target's components in files built for it, as the gallery's `components_*.go` do.
+
+| Target | `View` returns | Hosted as |
+| --- | --- | --- |
+| Apple | An `NSView` or `UIView` | A subview resizing with the view |
+| Windows | A window handle | A child window following its view after every frame, clipped with a window region to what its clipping ancestors leave visible, above what NSGo draws, as NSH's `NativeComponent::window` |
+| Linux | A `GtkWidget` pointer | A widget hosted in the view's widget, as web views and videos are |
+| Web | A DOM element (`js.Value`) | A child element filling the view |
+| Android | The name of a `View` class | Built by reflection in the Java runtime, props set through its one-argument `set` methods and commands through its methods; the Go process cannot make views |
+
+On Android the runtime also installs a listener on each `setOn…Listener` method the view's own class declares and reports its callbacks as events named after them, their arguments as a JSON array. A component may implement `android.PropMapper` to turn a prop into ordered setter calls, and `android.EventMapper` to receive those callbacks itself, as the gallery's `SeekBar` does.
 
 ## Known gaps
 

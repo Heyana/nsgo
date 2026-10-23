@@ -13,6 +13,11 @@
 - Add unstyled base controls, sliders, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
 - Add the `ui` package with themed controls, fields, popups, a sidebar, settings, a command palette and toasts, in the system's appearance or the app's.
 - Add pan, pinch and rotation gestures.
+- Add animated values and layout animations that run on each platform's frame clock, with drags and scroll offsets moving values directly.
+- Add animated GIF and WebP images and SVG files as images on every target.
+- Add native components, the app's own platform views inside the tree, with props, events and commands.
+- Add file drops on desktops and the web.
+- Add `InputAccessoryView`, a bar above the iOS and Android keyboard.
 - Add desktop scroll bars that show while the pointer is over their scroll view and can be dragged.
 - Add custom desktop title bars, window drag regions, window controls and an application menu.
 - Add `core.FontMonospace` for the platform's fixed-pitch font.

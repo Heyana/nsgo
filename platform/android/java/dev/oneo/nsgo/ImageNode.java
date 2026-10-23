@@ -3,22 +3,27 @@ package dev.oneo.nsgo;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.ImageDecoder;
 import android.graphics.ColorFilter;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.RenderEffect;
 import android.graphics.Shader;
+import android.graphics.drawable.AnimatedImageDrawable;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.util.DisplayMetrics;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import java.nio.ByteBuffer;
 
 /**
  * An image node: its placeholder under its source, each an ImageView
  * fitted by the resize mode. Go numbers each change of its sources as a
  * request, and the node shows only the bitmaps of its current one. The
- * source fades in over the placeholder.
+ * source fades in over the placeholder. Animated GIF and WebP play with
+ * AnimatedImageDrawable, each node its own copy.
  */
 final class ImageNode extends FrameLayout {
     private static final int DEFAULT_FADE = 300;
@@ -65,8 +70,8 @@ final class ImageNode extends FrameLayout {
         this.request = request;
         loaded = false;
         source.animate().cancel();
-        placeholder.setImageDrawable(null);
-        source.setImageDrawable(null);
+        show(placeholder, null);
+        show(source, null);
     }
 
     /** Recolors the opaque pixels with argb, or keeps their colors for 0. */
@@ -76,16 +81,76 @@ final class ImageNode extends FrameLayout {
         source.setColorFilter(filter);
     }
 
-    void showPlaceholder(Bitmap bitmap) {
-        if (!loaded) placeholder.setImageDrawable(new BitmapDrawable(getResources(), bitmap));
+    void showPlaceholder(Drawable image) {
+        if (!loaded) show(placeholder, image);
     }
 
     /** Fades the source in, dropping the placeholder once it covers it. */
-    void showSource(Bitmap bitmap) {
+    void showSource(Drawable image) {
         loaded = true;
-        source.setImageDrawable(new BitmapDrawable(getResources(), bitmap));
+        show(source, image);
         source.setAlpha(0f);
-        source.animate().alpha(1f).setDuration(fade).withEndAction(() -> placeholder.setImageDrawable(null));
+        source.animate().alpha(1f).setDuration(fade).withEndAction(() -> show(placeholder, null));
+    }
+
+    /** Shows image in view, playing it when it is animated and stopping what it showed. */
+    private static void show(ImageView view, Drawable image) {
+        Drawable old = view.getDrawable();
+        if (old instanceof AnimatedImageDrawable && old != image) ((AnimatedImageDrawable) old).stop();
+        view.setImageDrawable(image);
+        if (image instanceof AnimatedImageDrawable) ((AnimatedImageDrawable) image).start();
+    }
+
+    /** A decoded image: a drawable and its size in pixels. */
+    static final class Decoded {
+        Drawable drawable;
+        int width, height;
+    }
+
+    /**
+     * Decodes an image off the UI thread as decode does, but GIF and WebP
+     * with ImageDecoder, so animated ones come as an AnimatedImageDrawable,
+     * sampled down while they stay at least width by height pixels. Null
+     * when data is no image.
+     */
+    static Decoded decodeDrawable(Context context, byte[] data, float scale, int width, int height) {
+        Decoded d = new Decoded();
+        if (animatable(data)) {
+            try {
+                Drawable drawable = ImageDecoder.decodeDrawable(ImageDecoder.createSource(ByteBuffer.wrap(data)),
+                        (decoder, info, src) -> {
+                            d.width = info.getSize().getWidth();
+                            d.height = info.getSize().getHeight();
+                            int sample = 1;
+                            while (d.width / (sample * 2) >= Math.max(width, 1)
+                                    && d.height / (sample * 2) >= Math.max(height, 1)) {
+                                sample *= 2;
+                            }
+                            decoder.setTargetSampleSize(sample);
+                        });
+                if (drawable instanceof AnimatedImageDrawable) {
+                    d.drawable = drawable;
+                    return d;
+                }
+            } catch (Exception e) {
+                // Leave it to BitmapFactory.
+            }
+        }
+        int[] size = new int[2];
+        Bitmap bitmap = decode(data, scale, width, height, size);
+        if (bitmap == null) return null;
+        d.drawable = new BitmapDrawable(context.getResources(), bitmap);
+        d.width = size[0];
+        d.height = size[1];
+        return d;
+    }
+
+    /** Whether data is a GIF or a WebP, which may be animated. */
+    private static boolean animatable(byte[] data) {
+        boolean gif = data.length >= 6 && data[0] == 'G' && data[1] == 'I' && data[2] == 'F' && data[3] == '8';
+        boolean webp = data.length >= 12 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F'
+                && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P';
+        return gif || webp;
     }
 
     private static ImageView.ScaleType scaleType(int mode) {
