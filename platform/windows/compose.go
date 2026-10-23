@@ -5,19 +5,21 @@ package windows
 // Window composition, as NSH's compose.rs: web views between what the
 // window draws below them and what it draws above them.
 //
-// A window without web views draws its whole tree into its flip-model
-// swap chain and has no composition at all. Its first web view makes the
-// composition: a DirectComposition target on the window, above the
-// window's own swap chain, whose root holds, bottom to top, each web view's visual (a portal,
-// which WebView2 draws the page into) and after each a layer, a
-// composition swap chain the window's size with premultiplied alpha,
-// holding what is drawn after that web view in paint order:
+// A window without web views or a material draws its whole tree into its
+// flip-model swap chain and has no composition at all. A material makes
+// the composition before its first frame, so DWM's backdrop shows where
+// the window's content is transparent; a window without a material makes
+// it with its first web view. The DirectComposition target's root holds,
+// bottom to top, the window's own content (the base), each web view's
+// visual (a portal, which WebView2 draws the page into) and after each a
+// layer, a composition swap chain the window's size with premultiplied
+// alpha, holding what is drawn after that web view in paint order:
 //
 //	top     layer 1       later siblings, modals, dialogs
 //	        web view 1
 //	        layer 0       what is drawn between the two web views
 //	        web view 0
-//	bottom  swap chain    everything drawn before the first web view
+//	bottom  base          everything drawn before the first web view
 //
 // The tree is still drawn in one pass (paint.go): reaching a web view
 // records where it goes, and the next thing drawn first moves the context
@@ -28,9 +30,10 @@ package windows
 // when the order of its visuals changes, and a frame's changes are one
 // Commit.
 //
-// The layers' swap chains are made on the Direct3D device and again after
-// it is lost; the DirectComposition device has no rendering device of its
-// own, as no DirectComposition surfaces are used, so it survives a loss.
+// The base's and the layers' swap chains are made on the Direct3D device
+// and again after it is lost; the DirectComposition device has no rendering
+// device of its own, as no DirectComposition surfaces are used, so it
+// survives a loss.
 
 import (
 	"errors"
@@ -125,6 +128,9 @@ type composition struct {
 	device *comObject // IDCompositionDesktopDevice
 	target *comObject // IDCompositionTarget
 	root   *comObject // IDCompositionVisual2
+	// base holds the window's own swap chain, below web views and the
+	// layers above them.
+	base *comObject // IDCompositionVisual2
 	// layers are those made so far: layer i holds what is drawn after
 	// the i-th web view something is drawn after.
 	layers []*layer
@@ -166,10 +172,21 @@ func (w *window) compose() (*composition, error) {
 		c.release()
 		return nil, hresultError("no composition visual", hr)
 	}
+	if hr := c.device.call(dcompCreateVisual, uintptr(unsafe.Pointer(&c.base))); failed(hr) {
+		c.release()
+		return nil, hresultError("no composition visual", hr)
+	}
 	c.target.call(dcompTargetSetRoot, c.root.ptr())
 	c.device.call(dcompCommit)
 	w.composition = c
 	return c, nil
+}
+
+// setBase shows swap as the window's content, below the portals.
+func (c *composition) setBase(swap *comObject) {
+	if c.base != nil && swap != nil {
+		c.base.call(visualSetContent, swap.ptr())
+	}
 }
 
 func (c *composition) release() {
@@ -177,7 +194,7 @@ func (c *composition) release() {
 		releaseAll(&l.target, &l.swap, &l.visual)
 	}
 	c.layers, c.order = nil, nil
-	releaseAll(&c.root, &c.target, &c.device)
+	releaseAll(&c.base, &c.root, &c.target, &c.device)
 	if c.w != nil && c.w.composition == c {
 		c.w.composition = nil
 	}
@@ -256,7 +273,10 @@ func (c *composition) present(used int) uintptr {
 // drawn this frame, layers[i] being how many web views are below layer
 // i, and commits the frame's changes, the portals' placements with them.
 func (c *composition) arrange(portals []*comObject, layers []int) {
-	order := make([]*comObject, 0, len(portals)+len(layers))
+	order := make([]*comObject, 0, len(portals)+len(layers)+1)
+	if c.base != nil {
+		order = append(order, c.base)
+	}
 	next := 0
 	for i, p := range portals {
 		order = append(order, p)
@@ -294,6 +314,9 @@ func (c *composition) deviceLost() {
 	for _, l := range c.layers {
 		releaseAll(&l.target, &l.swap)
 		l.visual.call(visualSetContent, 0)
+	}
+	if c.base != nil {
+		c.base.call(visualSetContent, 0)
 	}
 }
 
@@ -338,7 +361,7 @@ func (w *window) newPortal() (*portal, error) {
 		failed(c.device.call(dcompCreateVisual, uintptr(unsafe.Pointer(&p.inner)))) ||
 		failed(c.device.call(dcompCreateRectangleClip, uintptr(unsafe.Pointer(&p.corners)))) {
 		releaseAll(&p.corners, &p.inner, &p.outer)
-		if c.users == 0 {
+		if c.users == 0 && !c.w.baseComposed {
 			c.release()
 		}
 		return nil, errors.New("no composition visuals for the web view")
@@ -393,7 +416,7 @@ func (p *portal) release() {
 		c.device.call(dcompCommit)
 	}
 	releaseAll(&p.corners, &p.inner, &p.outer)
-	if c.users--; c.users == 0 {
+	if c.users--; c.users == 0 && !c.w.baseComposed {
 		c.release()
 		invalidateRect.Call(c.w.hwnd, 0, 0)
 	}

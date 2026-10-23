@@ -413,14 +413,22 @@ func (w *window) frame() {
 	if err != nil {
 		return
 	}
+	if w.baseComposed && w.composition == nil {
+		if _, err := w.compose(); err != nil {
+			return
+		}
+	}
 	if w.swap != nil && w.swap.stale() {
 		w.swap.release()
 		w.swap = nil
 	}
 	if w.swap == nil {
-		if w.swap, err = newSwapChain(g, w.hwnd, uint32(client.Right), uint32(client.Bottom)); err != nil {
+		if w.swap, err = newSwapChain(g, w.hwnd, uint32(client.Right), uint32(client.Bottom), w.baseComposed); err != nil {
 			return
 		}
+	}
+	if w.baseComposed {
+		w.composition.setBase(w.swap.swap)
 	}
 	if err := w.swap.resize(uint32(client.Right), uint32(client.Bottom)); err != nil {
 		w.lost()
@@ -437,15 +445,19 @@ func (w *window) frame() {
 	dc.callF(rtSetDpi, 0b11, f32(96*scale), f32(96*scale))
 	dc.call(rtBeginDraw)
 	p := newPainter(w, g)
-	// Only a window with web views has a composition: without one the
-	// frame is the one swap chain.
+	// A window with web views or a material has a composition: the base
+	// target is the window's own swap chain, and web views split the pass
+	// into layers above it.
 	c := w.composition
 	if c != nil {
 		p.split = &split{c: c, width: uint32(client.Right), height: uint32(client.Bottom)}
 	}
 	p.setTransform(identity)
-	white := colorF{1, 1, 1, 1}
-	dc.call(rtClear, uintptr(unsafe.Pointer(&white)))
+	clear := colorF{1, 1, 1, 1}
+	if w.baseComposed && w.backdrop != backdropNone {
+		clear = colorF{}
+	}
+	dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
 	if root := w.view(w.root); root != nil {
 		f := frameOf(root)
 		p.draw(root, identity, f.Origin.X, f.Origin.Y)
@@ -488,7 +500,7 @@ func (w *window) composedPlaced(drawn []composed, layers []int) {
 	for _, c := range drawn {
 		w.composed = append(w.composed, c.web)
 	}
-	if len(old) == 0 && len(drawn) == 0 {
+	if len(old) == 0 && len(drawn) == 0 && w.composition == nil {
 		return
 	}
 	for _, wv := range old {

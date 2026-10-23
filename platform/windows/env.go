@@ -36,16 +36,17 @@ const (
 func (w *window) environment() core.Environment {
 	locale := userLocale()
 	return core.Environment{
-		Dark:         regDWORD(`Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`, "AppsUseLightTheme", 1) == 0,
-		FontScale:    float32(regDWORD(`Software\Microsoft\Accessibility`, "TextScaleFactor", 100)) / 100,
-		ReduceMotion: !systemFlag(spiGetClientAreaAnimation, true),
-		ScreenReader: systemFlag(spiGetScreenReader, false),
-		RTL:          rightToLeft(locale),
-		PixelRatio:   float32(w.scale),
-		Locale:       locale,
-		OS:           core.OSWindows,
-		Idiom:        core.IdiomDesktop,
-		TitleBar:     w.titleBarArea(),
+		Dark:           regDWORD(`Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`, "AppsUseLightTheme", 1) == 0,
+		FontScale:      float32(regDWORD(`Software\Microsoft\Accessibility`, "TextScaleFactor", 100)) / 100,
+		ReduceMotion:   !systemFlag(spiGetClientAreaAnimation, true),
+		ScreenReader:   systemFlag(spiGetScreenReader, false),
+		RTL:            rightToLeft(locale),
+		PixelRatio:     float32(w.scale),
+		Locale:         locale,
+		OS:             core.OSWindows,
+		Idiom:          core.IdiomDesktop,
+		TitleBar:       w.titleBarArea(),
+		WindowMaterial: w.material,
 	}
 }
 

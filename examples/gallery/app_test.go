@@ -143,6 +143,19 @@ func TestSidebarScrollsWithinTheWindow(t *testing.T) {
 	}
 }
 
+func TestWindowMaterialTintsTheSidebar(t *testing.T) {
+	env := desktopEnv
+	env.WindowMaterial = core.WindowMaterialSidebar
+	app := nsgotest.Start(t, Root, nsgotest.Size(1100, 760), nsgotest.Environment(env))
+	want := ui.Fade(sidebarColor(ui.DefaultTheme().Tokens(false)), 0.72)
+	if got := app.Find("id:sidebar").Style.Background; got != want {
+		t.Fatalf("sidebar = %x, want the material's tint %x", got, want)
+	}
+	if got, want := app.Find("id:page").Style.Background, ui.DefaultTheme().Light.Background; got != want {
+		t.Fatalf("page = %x, want the opaque background %x", got, want)
+	}
+}
+
 func TestPhoneStack(t *testing.T) {
 	app := nsgotest.Start(t, Root)
 	app.Find("id:index")

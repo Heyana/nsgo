@@ -2,7 +2,8 @@
 
 // Package macos is NSGo's AppKit backend: one flipped, layer-backed NSView
 // per node, styled through its CALayer, with text the engine laid out
-// with CoreText drawn on the main thread and images decoded off it.
+// with CoreText drawn on the main thread and images decoded off it, and
+// an optional NSVisualEffectView material behind the window's content.
 // Alerts are sheets on the window; Escape, Cmd-[, Option-Left and the
 // mouse's back button go back. It calls AppKit through purego, so it
 // builds without cgo.
@@ -37,6 +38,9 @@ type Options struct {
 	ID string
 	// Components are the native components Native elements name.
 	Components core.NativeComponents
+	// Material is the material behind the app's views, where they draw
+	// nothing opaque (nsgo.WindowMaterial).
+	Material core.WindowMaterial
 	// Perf shows the performance monitor over the app: frame rate, frame
 	// and commit costs, CPU, GPU and memory.
 	Perf bool
@@ -112,7 +116,9 @@ type surface struct {
 	batches queue.Batches
 	views   []*view // index is NodeID
 	env     core.Environment
-	keys    map[string]bool // the keymap's bindings
+	// material is the material behind the app's views.
+	material core.WindowMaterial
+	keys     map[string]bool // the keymap's bindings
 
 	// What a batch touched, finished once its frames are set.
 	images, presenting []*view
@@ -192,6 +198,7 @@ var (
 	classView, classSurface, classInput objc.Class
 	classScroll                         objc.Class
 	classObserver, classMenuTarget      objc.Class
+	classMaterial                       objc.Class
 )
 
 func loadAppKit() {
@@ -221,6 +228,11 @@ func loadAppKit() {
 	}
 	common = append(common, accessMethods()...)
 	classView = register("NsgoView", nsView, nil, common)
+	// The material sits behind the app's views and takes no press.
+	classMaterial = register("NsgoMaterialView", objc.GetClass("NSVisualEffectView"), nil, []objc.MethodDef{{
+		Cmd: sel("hitTest:"),
+		Fn:  func(objc.ID, objc.SEL, apple.CGPoint) objc.ID { return 0 },
+	}})
 	refresh := func(self objc.ID, cmd objc.SEL) {
 		apple.Super(self, cmd)
 		if v := views[self]; v != nil {
@@ -336,6 +348,7 @@ func Run(app engine.App, opts Options) {
 	s.native.Send(selSetWantsLayer, true)
 	views[s.native] = &view{surface: s}
 	window.Send(sel("setContentView:"), s.native)
+	s.applyMaterial(opts.Material)
 	s.animator = core.NewAnimator(func(e core.Event) { s.engine.Dispatch(e) })
 	s.acceptFiles()
 	s.env = s.environment()
@@ -408,16 +421,17 @@ func (s *surface) environment() core.Environment {
 	locale, rtl := apple.Locale()
 	appearance := apple.GoString(s.native.Send(sel("effectiveAppearance")).Send(sel("name")))
 	return core.Environment{
-		Dark:         strings.Contains(appearance, "Dark"),
-		FontScale:    1,
-		ReduceMotion: objc.Send[bool](ws, sel("accessibilityDisplayShouldReduceMotion")),
-		ScreenReader: objc.Send[bool](ws, sel("isVoiceOverEnabled")),
-		RTL:          rtl,
-		PixelRatio:   float32(objc.Send[float64](s.window, sel("backingScaleFactor"))),
-		Locale:       locale,
-		OS:           core.OSMacOS,
-		Idiom:        core.IdiomDesktop,
-		TitleBar:     s.titleBarArea(),
+		Dark:           strings.Contains(appearance, "Dark"),
+		FontScale:      1,
+		ReduceMotion:   objc.Send[bool](ws, sel("accessibilityDisplayShouldReduceMotion")),
+		ScreenReader:   objc.Send[bool](ws, sel("isVoiceOverEnabled")),
+		RTL:            rtl,
+		PixelRatio:     float32(objc.Send[float64](s.window, sel("backingScaleFactor"))),
+		Locale:         locale,
+		OS:             core.OSMacOS,
+		Idiom:          core.IdiomDesktop,
+		TitleBar:       s.titleBarArea(),
+		WindowMaterial: s.material,
 	}
 }
 

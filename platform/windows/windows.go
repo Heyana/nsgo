@@ -8,8 +8,10 @@
 // in the window's DirectComposition tree, videos played by Media
 // Foundation's media engine, images decoded by Go, native components'
 // child windows following their views (component.go), files dropped
-// through OLE (drop.go), and alerts as task dialogs. It uses only the
-// syscall package, so it builds without cgo.
+// through OLE (drop.go), and alerts as task dialogs. A window with a
+// material behind its content draws through DirectComposition too, over
+// the system backdrop DWM draws (material.go). It uses only the syscall
+// package, so it builds without cgo.
 //
 // Transforms are Direct2D world transforms, translucent views draw in
 // layers, and shapes and text are antialiased by Direct2D. Style
@@ -21,6 +23,7 @@
 package windows
 
 import (
+	"log"
 	"math"
 	"runtime"
 	"slices"
@@ -49,6 +52,11 @@ type Options struct {
 	ID string
 	// Components are the native components Native elements name.
 	Components core.NativeComponents
+	// Material is the material behind the window's content, where the app
+	// draws nothing opaque (nsgo.WindowMaterial). It needs Windows 11
+	// 22H2 or later, where DWM draws system backdrops; earlier Windows
+	// keeps the window opaque.
+	Material core.WindowMaterial
 }
 
 var (
@@ -107,6 +115,7 @@ const (
 
 	wsOverlappedWindow = 0x00CF0000
 	wsClipChildren     = 0x02000000
+	wsExNoRedirect     = 0x00200000           // no redirection bitmap, for a composition surface
 	cwUseDefault       = ^uintptr(0x7FFFFFFF) // CW_USEDEFAULT as a uintptr
 	gwlStyle           = ^uintptr(15)         // -16
 	swShow             = 5
@@ -284,10 +293,18 @@ type window struct {
 	drop  *dropTarget
 	drops map[*view]bool
 
-	// composition is the window's while it has web views, and composed
-	// the web views the last frame drew.
+	// composition is the window's while it has web views or a material
+	// behind its content, and composed the web views the last frame drew.
 	composition *composition
 	composed    []*webView
+	// baseComposed draws the window's content through DirectComposition,
+	// with its alpha, for a material behind it; backdrop is the DWM
+	// system backdrop, backdropNone when the material could not be set.
+	baseComposed bool
+	backdrop     int32
+	// material is the material DWM draws, WindowMaterialNone when the
+	// window is opaque.
+	material core.WindowMaterial
 	// The page holding the mouse while a button is held on it, the one
 	// under it, those holding touch and pen contacts, and the video whose
 	// control bar holds the mouse.
@@ -353,6 +370,16 @@ func Run(app engine.App, opts Options) {
 	w := &window{title: opts.Title, scale: 1, webs: map[*webView]bool{}, touchWebs: map[uint32]*webView{},
 		epoch: time.Now(), components: opts.Components, hosts: map[*component]bool{}, missing: map[string]bool{},
 		drops: map[*view]bool{}}
+	if opts.Material != core.WindowMaterialNone {
+		switch {
+		case !systemBackdrops():
+			log.Printf("nsgo: window materials need Windows 11 22H2 or later: the window stays opaque")
+		case !compositionAvailable():
+			log.Printf("nsgo: window materials need DirectComposition: the window stays opaque")
+		default:
+			w.baseComposed, w.backdrop = true, backdropFor(opts.Material)
+		}
+	}
 	w.animator = core.NewAnimator(func(ev core.Event) { w.engine.Dispatch(ev) })
 	if dpi, _, _ := getDpiForSystem.Call(); dpi != 0 {
 		w.scale = float64(dpi) / 96
@@ -377,9 +404,13 @@ func Run(app engine.App, opts Options) {
 
 	// Size the window so its client area is the app's size.
 	const style = wsOverlappedWindow | wsClipChildren
+	var ex uintptr
+	if w.baseComposed {
+		ex = wsExNoRedirect
+	}
 	frame := rect{Right: w.px(opts.Width), Bottom: w.px(opts.Height)}
 	adjustWindowRect.Call(uintptr(unsafe.Pointer(&frame)), style, 0)
-	hwnd, _, _ := createWindowExW.Call(0, uintptr(unsafe.Pointer(className)),
+	hwnd, _, _ := createWindowExW.Call(ex, uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(wide(opts.Title))), style,
 		cwUseDefault, cwUseDefault, uintptr(frame.Right-frame.Left), uintptr(frame.Bottom-frame.Top),
 		0, 0, instance, 0)
@@ -388,6 +419,13 @@ func Run(app engine.App, opts Options) {
 	// Nothing has the focus yet: typing must not open a composition.
 	w.updateIME()
 	w.configureGestures()
+	if w.baseComposed {
+		if w.applyMaterial() {
+			w.material = opts.Material
+		} else {
+			w.backdrop = backdropNone
+		}
+	}
 	w.env = w.environment()
 	w.darkTitleBar(w.env.Dark)
 	// The engine starts once the window exists, so Mount can post to it.

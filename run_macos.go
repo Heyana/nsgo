@@ -8,6 +8,6 @@ func run(app App, o options) {
 	w, h := windowSize()
 	macos.Run(app, macos.Options{
 		Title: name, Width: w, Height: h, ID: id,
-		Components: o.components, Perf: o.monitor,
+		Components: o.components, Perf: o.monitor, Material: o.material,
 	})
 }

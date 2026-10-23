@@ -61,8 +61,13 @@ func (g *gallery) desktop(cx *core.Scope) core.Node {
 	sidebar := core.Show{When: func() bool { return g.sidebarPixels.Get() > 0 }, Then: func(cx *core.Scope) core.Node {
 		return core.View{TestID: "sidebar",
 			StyleFunc: func() core.Style {
+				t := theme()
+				bg := sidebarColor(t)
+				if g.material() {
+					bg = ui.Fade(bg, 0.72)
+				}
 				return core.Style{Width: core.Pct(100), FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0),
-					Overflow: core.Hidden, Background: sidebarColor(theme())}
+					Overflow: core.Hidden, Background: bg}
 			},
 			// The sidebar shrinks with its pane, so its list scrolls.
 			Children: []core.Node{core.View{Style: core.Style{Width: core.Pct(100), FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)}, Children: []core.Node{
@@ -101,12 +106,16 @@ func (g *gallery) desktop(cx *core.Scope) core.Node {
 			g.sidebarSize.Set(width)
 		},
 		First: sidebar,
-		Second: core.View{TestID: "page", Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, Children: []core.Node{
-			g.header(cx),
-			core.Scroll{Ref: content, TestID: "content", Style: core.Style{FlexGrow: 1, FlexShrink: 1},
-				OnLayout: func(b core.Bounds) { viewport.Set(b.Size.Height) },
-				Children: []core.Node{g.page(viewport.Get)}},
-		}},
+		Second: core.View{TestID: "page",
+			StyleFunc: func() core.Style {
+				return core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0), Background: theme().Background}
+			},
+			Children: []core.Node{
+				g.header(cx),
+				core.Scroll{Ref: content, TestID: "content", Style: core.Style{FlexGrow: 1, FlexShrink: 1},
+					OnLayout: func(b core.Bounds) { viewport.Set(b.Size.Height) },
+					Children: []core.Node{g.page(viewport.Get)}},
+			}},
 	}
 }
 

@@ -11,6 +11,9 @@ type Environment struct {
 	// TitleBar is what a hidden desktop title bar still covers: its
 	// height on top, its buttons on the left or right.
 	TitleBar Edges
+	// WindowMaterial is the material behind the window's content; None
+	// when the window is opaque.
+	WindowMaterial WindowMaterial
 	// KeyboardHeight is how much of the bottom the software keyboard
 	// covers; KeyboardDuration is how long it takes to move.
 	KeyboardHeight   Points
@@ -68,6 +71,7 @@ type Env struct {
 	locale                    *Signal[string]
 	os                        *Signal[OS]
 	idiom                     *Signal[Idiom]
+	material                  *Signal[WindowMaterial]
 	// headers are the system header's heights, which only the tree reads.
 	headers [2]Points
 }
@@ -88,6 +92,7 @@ func newEnv(cx *Scope) *Env {
 		locale:           NewSignal(cx, ""),
 		os:               NewSignal(cx, OS("")),
 		idiom:            NewSignal(cx, IdiomPhone),
+		material:         NewSignal(cx, WindowMaterialNone),
 	}
 }
 
@@ -127,6 +132,7 @@ func (e *Env) set(v Environment) {
 	e.locale.Set(v.Locale)
 	e.os.Set(v.OS)
 	e.idiom.Set(v.Idiom)
+	e.material.Set(v.WindowMaterial)
 	e.headers = [2]Points{v.HeaderHeight, max(v.LargeHeaderHeight, v.HeaderHeight)}
 }
 
@@ -171,6 +177,10 @@ func (e *Env) OS() OS { return e.os.Get() }
 
 // Idiom returns the kind of device.
 func (e *Env) Idiom() Idiom { return e.idiom.Get() }
+
+// WindowMaterial returns the material behind the window's content, or
+// WindowMaterialNone when the window is opaque.
+func (e *Env) WindowMaterial() WindowMaterial { return e.material.Get() }
 
 // Desktop reports whether the device is a desktop.
 func (e *Env) Desktop() bool { return e.idiom.Get() == IdiomDesktop }

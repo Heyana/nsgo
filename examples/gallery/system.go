@@ -21,6 +21,14 @@ func windowPage(cx *core.Scope, t *theme) core.Node {
 		},
 		Then: func(cx *core.Scope) core.Node {
 			return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
+				t.demo("Background material", "The gallery asks for WindowMaterialSidebar: macOS draws its sidebar material, and Windows 11 draws Mica, through the translucent sidebar beside you.",
+					t.live(func() string {
+						if env.WindowMaterial() != core.WindowMaterialNone {
+							return "This window has a material behind its views."
+						}
+						return "This window is opaque: this platform or Windows version has no window materials."
+					}),
+				),
 				t.demo("Title bar", "The gallery hides the system's title bar with SetTitleBar: its sidebar's and header's top rows are WindowDrag handles clear of the window controls.",
 					flow(
 						t.primary("Hide title bar", func() { cx.SetTitleBar(core.TitleBarHidden, headerHeight) }),

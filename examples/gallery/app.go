@@ -9,6 +9,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 
 	"github.com/oneo-me/nsgo"
@@ -78,7 +79,7 @@ func init() {
 		{"Animation", groupMedia, lucide.Sparkles, "Transitions, animated values and layout animations run by the platform.", animationPage},
 		{"Gestures", groupMedia, lucide.Hand, "Pans, pinches and rotations, sharing touches with scrolling.", gesturesPage},
 
-		{"Window", groupDesktop, lucide.AppWindow, "The gallery's own title bar and the desktop window's commands.", windowPage},
+		{"Window", groupDesktop, lucide.AppWindow, "The gallery's own title bar, its background material and the desktop window's commands.", windowPage},
 		{"App Menu", groupDesktop, lucide.Menu, "The application menu: roles, shortcuts and checkable items.", menuPage},
 		{"Environment", groupDesktop, lucide.Monitor, "What the platform reports, and the system services.", environmentPage},
 		{"Accessibility", groupDesktop, lucide.Accessibility, "What screen readers read: hints, values, actions, groups, hidden elements, live regions and focus.", accessibilityPage},
@@ -156,6 +157,8 @@ type gallery struct {
 	prefs *prefs
 	// wide is whether the layout built last is the sidebar's.
 	wide bool
+	// material is whether the window shows a material behind its views.
+	material func() bool
 }
 
 // open selects a section, pushing it over the index on phones.
@@ -247,6 +250,7 @@ func Root(cx *core.Scope) core.Node {
 		return env.Dark()
 	}).Get
 	wide := core.NewMemo(cx, func() bool { return env.Window().Width >= wideWidth })
+	g.material = core.NewMemo(cx, func() bool { return env.WindowMaterial() != core.WindowMaterialNone }).Get
 
 	keep := func(key string, value func() string) {
 		cx.Effect(func() { store.SetItem(key, value()) })
@@ -273,7 +277,12 @@ func Root(cx *core.Scope) core.Node {
 	cx.OnKey("mod+,", g.openSettings)
 	cx.OnKey("mod+alt+s", g.toggleSidebar)
 
-	return ui.ThemeView{Dark: g.dark, Style: core.Style{FlexGrow: 1, FlexShrink: 1}, Children: []core.Node{
+	style := core.Style{FlexGrow: 1, FlexShrink: 1}
+	if g.material() {
+		// The sidebar lets the window's material through.
+		style.Background = core.RGBA(0xffffff, 0)
+	}
+	return ui.ThemeView{Dark: g.dark, Style: style, Children: []core.Node{
 		ui.ToastView{Style: core.Style{FlexGrow: 1, FlexShrink: 1}, Children: []core.Node{
 			core.Dynamic(func(cx *core.Scope) core.Node {
 				isWide := wide.Get()
@@ -370,6 +379,9 @@ func main() {
 	var opts []nsgo.Option
 	for name, factory := range components {
 		opts = append(opts, nsgo.Component(name, factory))
+	}
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		opts = append(opts, nsgo.WindowMaterial(core.WindowMaterialSidebar))
 	}
 	nsgo.Run(Root, opts...)
 }

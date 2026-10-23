@@ -146,18 +146,31 @@ func targetProperties(scale float32, premultiplied bool) bitmapProperties1 {
 }
 
 // swapChain is a window's flip-model swap chain and the bitmap of its back
-// buffer.
+// buffer. A composed one is a composition swap chain with premultiplied
+// alpha, shown through DirectComposition over what DWM draws behind the
+// window.
 type swapChain struct {
 	swap          *comObject // IDXGISwapChain1
 	target        *comObject // ID2D1Bitmap1, made on demand
 	targetScale   float32
 	width, height uint32
 	generation    uint64
+	composed      bool
 }
 
-// newSwapChain makes a swap chain for hwnd of width by height pixels: two
-// buffers, flipped and discarded (sequential before Windows 10).
-func newSwapChain(g *gfx, hwnd uintptr, width, height uint32) (*swapChain, error) {
+// newSwapChain makes the window's swap chain of width by height pixels:
+// a flip-model swap chain for hwnd with two buffers, flipped and discarded
+// (sequential before Windows 10), or a composition swap chain when
+// composed.
+func newSwapChain(g *gfx, hwnd uintptr, width, height uint32, composed bool) (*swapChain, error) {
+	if composed {
+		width, height = max(width, 1), max(height, 1)
+		swap, err := compositionSwapChain(g, width, height)
+		if err != nil {
+			return nil, err
+		}
+		return &swapChain{swap: swap, width: width, height: height, generation: gfxGeneration, composed: true}, nil
+	}
 	factory, err := adapterFactory(g)
 	if err != nil {
 		return nil, err
@@ -241,7 +254,7 @@ func (s *swapChain) targetBitmap(g *gfx, scale float32) (*comObject, error) {
 		return nil, hresultError("no back buffer", hr)
 	}
 	defer surface.release()
-	props := targetProperties(scale, false)
+	props := targetProperties(scale, s.composed)
 	if hr := g.dc.call(dcCreateBitmapFromDxgiSurface, surface.ptr(), uintptr(unsafe.Pointer(&props)),
 		uintptr(unsafe.Pointer(&s.target))); failed(hr) {
 		return nil, hresultError("no back buffer bitmap", hr)
@@ -250,7 +263,11 @@ func (s *swapChain) targetBitmap(g *gfx, scale float32) (*comObject, error) {
 	return s.target, nil
 }
 
-// present shows the frame drawn, at the next vertical blank.
+// present shows the frame drawn, at the next vertical blank, or at the
+// compositor's next frame for a composition swap chain.
 func (s *swapChain) present() uintptr {
+	if s.composed {
+		return s.swap.call(swapPresent, 0, 0)
+	}
 	return s.swap.call(swapPresent, 1, 0)
 }

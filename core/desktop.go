@@ -33,6 +33,46 @@ const (
 	WindowDragOff
 )
 
+// WindowMaterial is a translucent material behind a desktop window's
+// content, where the app draws nothing opaque. macOS shows a system
+// vibrancy material; Windows 11 22H2 and later shows Mica, Acrylic or Mica
+// Alt, choosing the closest backdrop for the other names. Other platforms
+// keep the window opaque.
+//
+// The app chooses a material when it starts (nsgo.WindowMaterial) and the
+// window keeps it for its life; Env.WindowMaterial reports the one the
+// window actually shows. What it draws over the material decides how much
+// shows: a view with an opaque background hides it, and one with no
+// background, or a translucent one, lets it through.
+type WindowMaterial uint8
+
+const (
+	// WindowMaterialNone keeps the window opaque.
+	WindowMaterialNone WindowMaterial = iota
+	// The materials of window areas.
+	WindowMaterialWindow
+	WindowMaterialContent
+	WindowMaterialSidebar
+	WindowMaterialHeader
+	WindowMaterialTitlebar
+	WindowMaterialUnderWindow
+	WindowMaterialUnderPage
+	// The materials of transient surfaces: menus, popovers, HUD windows,
+	// sheets, tooltips, selections and full-screen UI.
+	WindowMaterialMenu
+	WindowMaterialPopover
+	WindowMaterialHUD
+	WindowMaterialSheet
+	WindowMaterialTooltip
+	WindowMaterialSelection
+	WindowMaterialFullScreenUI
+	// Windows 11's system backdrops. Mica and Tabbed use the under-window
+	// material on macOS; Acrylic uses the HUD one.
+	WindowMaterialMica
+	WindowMaterialAcrylic
+	WindowMaterialTabbed
+)
+
 // WindowAction is what an ItemWindow asks of the window.
 type WindowAction uint8
 

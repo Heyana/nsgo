@@ -27,6 +27,7 @@
 - Add `InputAccessoryView`, a bar above the iOS and Android keyboard.
 - Add desktop scroll bars that show while the pointer is over their scroll view and can be dragged.
 - Add custom desktop title bars, window drag regions, window controls and an application menu.
+- Add window background materials on macOS and Windows 11 22H2 through `nsgo.WindowMaterial` and `Env.WindowMaterial`, shown in the gallery's sidebar.
 - Add `core.FontMonospace` for the platform's fixed-pitch font.
 - Add environment signals, keyboard shortcuts, clipboard and screen-reader announcements.
 - Add key-value storage with change signals, and each app's data and cache directories.

@@ -42,6 +42,8 @@ type options struct {
 	components core.NativeComponents
 	// monitor shows the performance monitor over the app (macOS).
 	monitor bool
+	// material is the material behind the window's content.
+	material core.WindowMaterial
 }
 
 // FPS shows (or hides) the performance monitor over the app: frame rate,
@@ -49,6 +51,14 @@ type options struct {
 // for a development run.
 func FPS(on bool) Option {
 	return func(o *options) { o.monitor = on }
+}
+
+// WindowMaterial sets the material behind the window's content, where the
+// app draws nothing opaque: a system vibrancy material on macOS and a
+// system backdrop on Windows 11 22H2 or later. Other targets ignore it.
+// The window keeps it for its life.
+func WindowMaterial(material core.WindowMaterial) Option {
+	return func(o *options) { o.material = material }
 }
 
 // Component registers a native component the app's Native elements name:

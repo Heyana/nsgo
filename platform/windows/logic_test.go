@@ -126,6 +126,25 @@ func TestShortcutLabelsUseWindowsNames(t *testing.T) {
 	}
 }
 
+func TestBackdropFor(t *testing.T) {
+	for _, c := range []struct {
+		m    core.WindowMaterial
+		want int32
+	}{
+		{core.WindowMaterialNone, backdropNone},
+		{core.WindowMaterialMica, backdropMica},
+		{core.WindowMaterialTabbed, backdropMicaAlt},
+		{core.WindowMaterialAcrylic, backdropAcrylic},
+		{core.WindowMaterialSidebar, backdropMica},
+		{core.WindowMaterialMenu, backdropAcrylic},
+		{core.WindowMaterial(100), backdropMica},
+	} {
+		if got := backdropFor(c.m); got != c.want {
+			t.Errorf("backdropFor(%d) = %d, want %d", c.m, got, c.want)
+		}
+	}
+}
+
 func TestRightToLeftFollowsTheLocale(t *testing.T) {
 	for _, c := range []struct {
 		locale string

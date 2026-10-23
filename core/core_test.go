@@ -529,18 +529,21 @@ func TestStateStyles(t *testing.T) {
 func TestEnvironment(t *testing.T) {
 	var widths []Points
 	var darks []bool
+	var materials []WindowMaterial
 	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
 		cx.Effect(func() { widths = append(widths, cx.Env().Window().Width) })
 		cx.Effect(func() { darks = append(darks, cx.Env().Dark()) })
+		cx.Effect(func() { materials = append(materials, cx.Env().WindowMaterial()) })
 		return Text{Content: "Aa", Style: Style{FontSize: 10}, TestID: "text"}
 	})
 	h.commit()
 	h.tree.Resize(Size{200, 100})
-	h.tree.SetEnvironment(Environment{Dark: true, FontScale: 2})
-	h.tree.SetEnvironment(Environment{Dark: true, FontScale: 2}) // unchanged: no runs
+	h.tree.SetEnvironment(Environment{Dark: true, FontScale: 2, WindowMaterial: WindowMaterialSidebar})
+	h.tree.SetEnvironment(Environment{Dark: true, FontScale: 2, WindowMaterial: WindowMaterialSidebar}) // unchanged: no runs
 	h.commit()
-	if !slices.Equal(widths, []Points{100, 200}) || !slices.Equal(darks, []bool{false, true}) {
-		t.Fatalf("widths %v, darks %v", widths, darks)
+	if !slices.Equal(widths, []Points{100, 200}) || !slices.Equal(darks, []bool{false, true}) ||
+		!slices.Equal(materials, []WindowMaterial{WindowMaterialNone, WindowMaterialSidebar}) {
+		t.Fatalf("widths %v, darks %v, materials %v", widths, darks, materials)
 	}
 	if got := h.find("text").text.style.Font.Size; got != 20 {
 		t.Fatalf("font size = %v, want scaled to 20", got)
