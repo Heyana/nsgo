@@ -73,10 +73,12 @@ func (g *gallery) desktop(cx *core.Scope) core.Node {
 					Overflow: core.Hidden, Background: bg}
 			},
 			// The sidebar reaches the top behind the title row, so its
-			// content keeps clear of the row; it shrinks with its pane, so
-			// its list scrolls.
-			Children: []core.Node{core.View{StyleFunc: func() core.Style {
-				return core.Style{Width: core.Pct(100), FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0),
+			// content keeps clear of the row; it shrinks with its pane in
+			// height, so its list scrolls. Its content keeps the chosen
+			// width while the pane animates, so the page covers and
+			// uncovers it instead of squeezing it, as Onevra's does.
+			Children: []core.Node{core.View{TestID: "sidebar-content", StyleFunc: func() core.Style {
+				return core.Style{Width: core.Pt(g.sidebarSize.Get()), FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0),
 					Padding: core.Edges{Top: titleRowHeight(env)}}
 			}, Children: []core.Node{
 				g.searchField(cx),

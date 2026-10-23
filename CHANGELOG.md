@@ -19,7 +19,7 @@
 - Move checkboxes, switches, radio groups, tabs and sliders from `base` to `ui`, which draws them with the theme.
 - Add `base.Split` and `ui.Split`, resizable panes with point or percentage sizes, limits, a resize cursor on the divider and a double-click reset.
 - Add `core.Style.Cursor`, the pointer's look over a view, on macOS, Windows, Linux and the web.
-- Resize the gallery's sidebar with a split divider.
+- Resize the gallery's sidebar with a split divider, and hide it under the page without reflowing its content.
 - Show all of `base`'s components on one gallery page, in one scrolling sidebar grouped into Overview, Icon library, NSGo and the component categories.
 - Add pan, pinch and rotation gestures.
 - Add animated values and layout animations that run on each platform's frame clock, with drags and scroll offsets moving values directly.

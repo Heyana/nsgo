@@ -908,6 +908,20 @@ func TestListProps(t *testing.T) {
 	}
 }
 
+// TestSidebarCollapsesUnderThePage keeps the sidebar's content its full
+// width while it hides, so the page covers it, as Onevra's does.
+func TestSidebarCollapsesUnderThePage(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:hide-sidebar")
+	app.Advance(110 * time.Millisecond)
+	if w := app.Find("id:sidebar").Frame.Size.Width; w <= 0 || w >= sidebarWidth {
+		t.Fatalf("sidebar = %v wide mid-animation, want between 0 and %v", w, sidebarWidth)
+	}
+	if w := app.Find("id:sidebar-content").Frame.Size.Width; w != sidebarWidth {
+		t.Fatalf("sidebar content = %v wide mid-animation, want %v", w, sidebarWidth)
+	}
+}
+
 func TestSidebarResizesByDraggingItsDivider(t *testing.T) {
 	app := startDesktop(t)
 	width := func() core.Points { return app.Find("id:sidebar").Frame.Size.Width }
