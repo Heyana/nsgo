@@ -58,6 +58,7 @@
 - Start Android modals below the status bar unless `StatusBarTranslucent` is set.
 - Read pressable views without a role as buttons, and views without a label by their texts, on macOS and iOS.
 - License the project under Apache-2.0, with NSH's attribution in `NOTICE`.
+- Cache text fonts, attributes and measurements on macOS and iOS.
 - Fix Android builds failing because Go's implied `linux` tag included the Linux backend.
 - Fix strikethrough missing on macOS and iOS.
 - Fix Windows' aliased rounded corners, borders and canvas curves.
