@@ -100,6 +100,7 @@ type devFlags struct {
 	open      bool
 	device    string
 	team      string
+	fps       bool
 }
 
 func bindDevFlags(fs *flag.FlagSet) *devFlags {
@@ -110,6 +111,7 @@ func bindDevFlags(fs *flag.FlagSet) *devFlags {
 	fs.BoolVar(&f.open, "open", true, "open the web target in the browser")
 	fs.StringVar(&f.device, "device", "", "the `device` the iOS target runs on: a connected iPhone's name, UDID, serial or ECID (default: the only one connected)")
 	fs.StringVar(&f.team, "team", "", "the Apple developer `team` the iOS target signs with (default: the team Xcode last used)")
+	fs.BoolVar(&f.fps, "fps", false, "show the performance monitor over the app (macOS)")
 	return f
 }
 

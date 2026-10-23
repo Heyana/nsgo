@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/oneo-me/nsgo/core"
 )
@@ -39,6 +40,8 @@ type Options struct {
 	// DataDir and CacheDir are the app's directories, made when the
 	// engine starts; "" where the target has none.
 	DataDir, CacheDir string
+	// Perf collects this app's commit timings; nil measures nothing.
+	Perf *PerfMonitor
 }
 
 // Engine is one running app: one tree, one reactive graph, one goroutine.
@@ -102,15 +105,44 @@ func (e *Engine) run(p Platform, app App, opts Options) {
 	tree := core.NewTree(root, p)
 	tree.Resize(opts.Size)
 	tree.SetEnvironment(opts.Environment)
-	tree.Mount(app)
-	for {
-		if b := tree.Commit(); b != nil {
+	perf := opts.Perf
+	// commit applies what changed and records what it cost when a monitor
+	// measures; start is when the wake-up that led here began.
+	commit := func(start time.Time) {
+		if perf == nil {
+			if b := tree.Commit(); b != nil {
+				p.Mount(b)
+			}
+			return
+		}
+		coreStart := time.Now()
+		b := tree.Commit()
+		core := time.Since(coreStart)
+		if b != nil {
+			app := time.Since(start) - core
+			if app < 0 {
+				app = 0
+			}
+			b.Sent = time.Now()
+			perf.RecordCommit(CommitTiming{App: app, Core: core, Items: len(b.Items)})
 			p.Mount(b)
 		}
+		perf.RecordBusy(time.Since(start))
+	}
+	var start time.Time
+	if perf != nil {
+		start = time.Now()
+	}
+	tree.Mount(app)
+	commit(start)
+	for {
 		select {
 		case <-e.wake:
 		case <-e.done:
 			return
+		}
+		if perf != nil {
+			start = time.Now()
 		}
 		for _, m := range e.take() {
 			switch {
@@ -128,6 +160,7 @@ func (e *Engine) run(p Platform, app App, opts Options) {
 				tree.Dispatch(m.event)
 			}
 		}
+		commit(start)
 	}
 }
 

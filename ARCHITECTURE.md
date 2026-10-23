@@ -27,7 +27,7 @@ Packages mirror NSH's crates:
 | `ui` | `nsh-base`'s `Theme` | The theme as Go values, `base`'s components styled with it, and fields, a sidebar, settings, a command palette and toasts after Onevra's |
 | `ui/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma, in NSH's palette |
 | `icons/lucide` | — (NSH loads SVG as images) | The bundled Lucide pack: one generated accessor per icon, parsed on first use ([icons](docs/architecture/icons.md)) |
-| `engine` | `nsh-engine` | Engine goroutine: an unbounded mailbox, commits, one batch per commit to the platform |
+| `engine` | `nsh-engine` | Engine goroutine: an unbounded mailbox, commits, one batch per commit to the platform, and the performance monitor |
 | `core/internal/layout` | Taffy | Block, flexbox and grid layout, checked against Taffy's fixtures |
 | `nsgotest` | `nsh-testing` | Headless app tests: approximate text, a manual clock, selectors over a model of the views |
 | `platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
@@ -127,3 +127,4 @@ Record a design question here, and confirm the answer with the user before choos
 | [Animation](docs/architecture/animation.md) | Changing animated values, layout animations or a backend's frame clock |
 | [Text view](docs/architecture/textview.md) | Changing `TextView`, its parsers, parts or highlighting |
 | [Icons](docs/architecture/icons.md) | Changing SVG parsing, `core.Icon` or the Lucide pack |
+| [Performance](docs/architecture/performance.md) | Changing the performance monitor, its panel or a backend's timings |

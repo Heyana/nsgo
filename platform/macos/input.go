@@ -106,6 +106,9 @@ func registerInput() {
 			{Cmd: sel("keyDown:"), Fn: func(self objc.ID, cmd objc.SEL, event objc.ID) {
 				in := inputOf(self)
 				if in != nil {
+					if v := views[in.field]; v != nil {
+						defer v.surface.measuring(false)()
+					}
 					in.keyMods = objc.Send[uint](event, sel("modifierFlags"))
 				}
 				apple.Super(self, cmd, event)

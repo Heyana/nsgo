@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Add `nsgo dev -fps` and the `nsgo.FPS` option, a performance monitor over macOS apps with frame rate, frame and commit costs, CPU, GPU, memory and a frame trace.
 - Add a reactive Go engine with owners, memos, effects and regions (`Show`, `Each`, `Dynamic`, `Catch`).
 - Add block, flexbox and grid layout matching Taffy, with styles, per-side borders, state styles, transforms and transitions.
 - Add images, rich text with links, text selection across texts, canvas, virtualized lists, overlays, modals and navigation stacks.

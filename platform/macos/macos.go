@@ -37,6 +37,9 @@ type Options struct {
 	ID string
 	// Components are the native components Native elements name.
 	Components core.NativeComponents
+	// Perf shows the performance monitor over the app: frame rate, frame
+	// and commit costs, CPU, GPU and memory.
+	Perf bool
 }
 
 // longPressDelay is how long a press is held before it is a long press.
@@ -131,6 +134,10 @@ type surface struct {
 	pan             *panTrack
 	pinch, rotation *gestureTrack
 	selecting       *selection
+
+	// The performance monitor and the panel that shows it.
+	perf *engine.PerfMonitor
+	hud  *hud
 
 	chrome
 }
@@ -328,10 +335,19 @@ func Run(app engine.App, opts Options) {
 	s.animator = core.NewAnimator(func(e core.Event) { s.engine.Dispatch(e) })
 	s.acceptFiles()
 	s.env = s.environment()
-	eopts := engine.Options{Size: core.Size{Width: opts.Width, Height: opts.Height}, Environment: s.env}
+	var monitor *engine.PerfMonitor
+	if opts.Perf {
+		monitor = engine.NewPerfMonitor()
+		s.perf = monitor
+	}
+	eopts := engine.Options{Size: core.Size{Width: opts.Width, Height: opts.Height}, Environment: s.env, Perf: monitor}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
 	s.engine = engine.Start(s, app, eopts)
 	s.observe()
+	if monitor != nil {
+		s.hud = newHud(s, monitor)
+		s.startTicking()
+	}
 	window.Send(sel("center"))
 	window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
 	// Activate once the run loop runs: a request before it can be lost,
@@ -458,13 +474,25 @@ func (s *surface) observe() {
 	handler.Release()
 }
 
-// filter sees the app's key and mouse events before their views do. It
-// turns back keys and the back button into EventBack, which it takes,
-// reports presses outside to the views that listen, and follows a
-// selection's drag. Down presses are never taken: AppKit activates the
-// window and hands them to the views that hit, which move the window or
-// select text before their own handling.
+// filter sees the app's key and mouse events before their views do, and
+// measures them when a performance monitor does. It turns back keys and the
+// back button into EventBack, which it takes, reports presses outside to the
+// views that listen, and follows a selection's drag. Down presses are never
+// taken: AppKit activates the window and hands them to the views that hit,
+// which move the window or select text before their own handling.
 func (s *surface) filter(event objc.ID) objc.ID {
+	if s.perf == nil || event.Send(selWindow) != s.window {
+		return s.filterEvent(event)
+	}
+	start := time.Now()
+	out := s.filterEvent(event)
+	const typeLeftDragged = 6
+	dirty := objc.Send[uint](event, sel("type")) == typeLeftDragged
+	s.perf.RecordWork(time.Since(start), dirty)
+	return out
+}
+
+func (s *surface) filterEvent(event objc.ID) objc.ID {
 	if event.Send(selWindow) != s.window {
 		return event
 	}
@@ -1150,6 +1178,7 @@ func rightMouseDown(self objc.ID, cmd objc.SEL, event objc.ID) {
 
 func mouseEntered(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v := views[self]; v != nil {
+		defer v.surface.measuring(false)()
 		v.dispatch(core.EventHoverIn)
 	}
 }
@@ -1175,6 +1204,7 @@ func scrollWheel(self objc.ID, cmd objc.SEL, event objc.ID) {
 		apple.Super(self, cmd, event)
 		return
 	}
+	defer v.surface.measuring(true)()
 	phase, momentum := objc.Send[uint](event, sel("phase")), objc.Send[uint](event, sel("momentumPhase"))
 	if phase&(began|mayBegin) != 0 || phase == 0 && momentum == 0 {
 		v.wheel = wheelUndecided
@@ -1218,21 +1248,47 @@ func scrollEntered(self objc.ID, cmd objc.SEL, event objc.ID) {
 
 func mouseExited(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v := views[self]; v != nil {
+		defer v.surface.measuring(false)()
 		v.dispatch(core.EventHoverOut)
 	}
 }
 
 func surfaceSetFrameSize(self objc.ID, cmd objc.SEL, size apple.CGSize) {
+	v := views[self]
+	if v != nil && v.surface != nil && v.surface.perf != nil {
+		defer v.surface.measuring(false)()
+	}
 	apple.Super(self, cmd, size)
-	if v := views[self]; v != nil && v.surface.engine != nil {
+	if v != nil && v.surface != nil && v.surface.engine != nil {
 		v.surface.engine.Resize(core.Size{Width: core.Points(size.Width), Height: core.Points(size.Height)})
+	}
+	if v != nil && v.surface != nil && v.surface.hud != nil {
+		v.surface.hud.layout()
 	}
 }
 
 func surfaceApply(self objc.ID, _ objc.SEL, _ objc.ID) {
 	s := views[self].surface
-	for _, b := range s.batches.Drain() {
+	batches := s.batches.Drain()
+	if len(batches) == 0 {
+		return
+	}
+	if s.perf == nil {
+		for _, b := range batches {
+			s.apply(b)
+		}
+		return
+	}
+	start := time.Now()
+	for _, b := range batches {
+		if !b.Sent.IsZero() {
+			s.perf.RecordLatency(time.Since(b.Sent))
+		}
 		s.apply(b)
+	}
+	s.perf.RecordWork(time.Since(start), true)
+	if s.hud != nil {
+		s.hud.raise()
 	}
 }
 

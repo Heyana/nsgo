@@ -233,6 +233,10 @@ type MountBatch struct {
 	// LayoutAnimation, when set, animates the batch's frame changes,
 	// insertions and removals on the platform (Scope.AnimateLayout).
 	LayoutAnimation *LayoutAnimation
+	// Sent is when the engine handed the batch to the platform, for the
+	// performance monitor's latency reading; the zero time when no monitor
+	// measures.
+	Sent time.Time
 }
 
 // ViewStyle is everything a platform draws for a view itself.

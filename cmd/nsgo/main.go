@@ -34,7 +34,7 @@ func main() {
 		var p *project
 		if p, err = load(fs.Arg(0)); err == nil {
 			f.apply(p)
-			err = dev(ctx, p, devOptions{apply: f.apply, port: f.port, open: f.open, device: f.device, team: f.team})
+			err = dev(ctx, p, devOptions{apply: f.apply, port: f.port, open: f.open, device: f.device, team: f.team, fps: f.fps})
 		}
 	case "init":
 		fs := flag.NewFlagSet("init", flag.ExitOnError)
@@ -67,7 +67,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   nsgo init  [-name N] [-module M] [dir]
-  nsgo dev   [-target native|web|ios|ios_simulator|android] [-hot-reload] [-port N] [-open=false] [dir]
+  nsgo dev   [-target native|web|ios|ios_simulator|android] [-hot-reload] [-fps] [-port N] [-open=false] [dir]
   nsgo build [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [-output DIR] [-open] [dir]
 
 dev and build take -name, -id, -version, -width and -height, which replace

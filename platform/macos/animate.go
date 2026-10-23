@@ -77,12 +77,33 @@ func (s *surface) stopTicking() {
 
 func surfaceTick(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v := views[self]; v != nil {
-		v.surface.tick()
+		var period time.Duration
+		if v.surface.perf != nil {
+			period = v.surface.framePeriod()
+		}
+		v.surface.tick(period)
 	}
 }
 
+// framePeriod is the display link's period, or 60 Hz where there is none.
+func (s *surface) framePeriod() time.Duration {
+	if s.link != 0 {
+		stamp := objc.Send[float64](s.link, selTimestamp)
+		target := objc.Send[float64](s.link, selTargetTimestamp)
+		if target > stamp {
+			return time.Duration((target - stamp) * float64(time.Second))
+		}
+	}
+	return time.Second / 60
+}
+
 // tick steps one frame.
-func (s *surface) tick() {
+func (s *surface) tick(period time.Duration) {
+	dirty := s.animator.Running() || len(s.motions) > 0 || len(s.ghosts) > 0 || len(s.images) > 0
+	var start time.Time
+	if s.perf != nil {
+		start = time.Now()
+	}
 	now := s.clock()
 	if s.animator.Running() {
 		s.animator.Step(now)
@@ -92,7 +113,11 @@ func (s *surface) tick() {
 		s.applyAnimated()
 	})
 	s.startImages()
-	if !s.animator.Running() && len(s.motions) == 0 && len(s.ghosts) == 0 {
+	if s.perf != nil {
+		s.perf.RecordWork(time.Since(start), dirty)
+		s.perf.Vsync(time.Now(), period)
+	}
+	if !s.animator.Running() && len(s.motions) == 0 && len(s.ghosts) == 0 && s.perf == nil {
 		s.stopTicking()
 	}
 }

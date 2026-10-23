@@ -15,6 +15,9 @@ type project struct {
 	// Release strips symbols and debug information for the smallest
 	// binaries; nsgo build sets it, nsgo dev does not.
 	Release bool `yaml:"-"`
+	// Perf shows the performance monitor in the development build
+	// (nsgo dev -fps).
+	Perf bool `yaml:"-"`
 	// idDefault records that nsgo.yaml gave no id, so it follows the name.
 	idDefault bool
 
@@ -130,11 +133,15 @@ func (p *project) cache(parts ...string) string {
 	return filepath.Join(append([]string{p.Dir, ".nsgo"}, parts...)...)
 }
 
-// ldflags passes nsgo.yaml's name, ID and window size to nsgo.Run.
+// ldflags passes nsgo.yaml's name, ID and window size, and the development
+// monitor, to nsgo.Run.
 func (p *project) ldflags(extra ...string) string {
 	const pkg = "github.com/oneo-me/nsgo"
 	flags := fmt.Sprintf("-X '%s.name=%s' -X '%s.id=%s' -X %s.width=%d -X %s.height=%d",
 		pkg, p.Name, pkg, p.ID, pkg, p.Window.Width, pkg, p.Window.Height)
+	if p.Perf {
+		flags += fmt.Sprintf(" -X '%s.fps=1'", pkg)
+	}
 	if p.Release {
 		flags += " -s -w"
 	}

@@ -19,6 +19,7 @@ var (
 	id     = ""
 	width  = "480"
 	height = "640"
+	fps    = "0"
 )
 
 // App builds an app's root element once.
@@ -27,7 +28,7 @@ type App = engine.App
 // Run shows app and runs the platform's event loop. Call it from main; it
 // does not return while the app runs.
 func Run(app App, opts ...Option) {
-	var o options
+	o := options{monitor: fps == "1"}
 	for _, fn := range opts {
 		fn(&o)
 	}
@@ -39,6 +40,15 @@ type Option func(*options)
 
 type options struct {
 	components core.NativeComponents
+	// monitor shows the performance monitor over the app (macOS).
+	monitor bool
+}
+
+// FPS shows (or hides) the performance monitor over the app: frame rate,
+// frame and commit costs, CPU, GPU and memory. `nsgo dev -fps` turns it on
+// for a development run.
+func FPS(on bool) Option {
+	return func(o *options) { o.monitor = on }
 }
 
 // Component registers a native component the app's Native elements name:

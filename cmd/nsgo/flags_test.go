@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -209,5 +210,24 @@ func TestBuildFlagsAbsoluteOutput(t *testing.T) {
 
 	if p.Build.Output != out {
 		t.Errorf("build.output: got %q, want %q", p.Build.Output, out)
+	}
+}
+
+func TestDevFlagsFPS(t *testing.T) {
+	fs := flag.NewFlagSet("dev", flag.ContinueOnError)
+	f := bindDevFlags(fs)
+	if err := fs.Parse([]string{"-fps"}); err != nil {
+		t.Fatal(err)
+	}
+	if !f.fps {
+		t.Error("-fps did not set the monitor")
+	}
+}
+
+func TestPerfLDFlag(t *testing.T) {
+	p := &project{Name: "App", ID: "com.example.app"}
+	p.Perf = true
+	if !strings.Contains(p.ldflags(), "github.com/oneo-me/nsgo.fps=1") {
+		t.Errorf("ldflags = %q", p.ldflags())
 	}
 }

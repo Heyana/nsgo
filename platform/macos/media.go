@@ -133,6 +133,7 @@ func draggingEntered(self objc.ID, cmd objc.SEL, info objc.ID) uint {
 
 func draggingUpdated(self objc.ID, _ objc.SEL, info objc.ID) uint {
 	s := views[self].surface
+	defer s.measuring(false)()
 	if !s.dragFiles {
 		return 0
 	}
@@ -145,15 +146,20 @@ func draggingUpdated(self objc.ID, _ objc.SEL, info objc.ID) uint {
 }
 
 func draggingExited(self objc.ID, _ objc.SEL, _ objc.ID) {
-	views[self].surface.enter(nil)
+	s := views[self].surface
+	defer s.measuring(false)()
+	s.enter(nil)
 }
 
 func prepareForDrag(self objc.ID, _ objc.SEL, info objc.ID) bool {
-	return views[self].surface.dropTarget(info) != nil
+	s := views[self].surface
+	defer s.measuring(false)()
+	return s.dropTarget(info) != nil
 }
 
 func performDrag(self objc.ID, _ objc.SEL, info objc.ID) bool {
 	s := views[self].surface
+	defer s.measuring(false)()
 	v := s.dropTarget(info)
 	uris := droppedFiles(info)
 	if v == nil || len(uris) == 0 {

@@ -86,7 +86,7 @@ go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 
 `go tool nsgo dev` runs the app once and exits when the app does. Set `dev.hot_reload` to `true` to rebuild and restart it when a source file changes. `go tool nsgo build` writes a stripped release package per target; set `build.open` to `true` to open the output directory when it finishes. `build.targets` and `-target` accept `all` for every platform that needs only Go and Xcode; add `android_x64` when an NDK is installed.
 
-Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `-version`, `-width` and `-height` on both, `-target` and `-hot-reload` on `dev`, and `-target`, `-output` and `-open` on `build`. `dev` also takes `-device` to choose an iPhone and `-team` to choose the Apple developer team. `-h` lists every flag.
+Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `-version`, `-width` and `-height` on both, `-target` and `-hot-reload` on `dev`, and `-target`, `-output` and `-open` on `build`. `dev` also takes `-fps` to show the performance monitor on macOS, `-device` to choose an iPhone and `-team` to choose the Apple developer team. `-h` lists every flag.
 
 ## Development
 
@@ -100,6 +100,7 @@ Run the example from the repository root:
 
 ```sh
 go tool nsgo dev examples/hello                     # nsgo.yaml's dev target, exiting with the app
+go tool nsgo dev -fps examples/hello                # with the performance monitor (macOS)
 go tool nsgo dev -target web examples/hello         # in the browser, serving until interrupted
 go tool nsgo dev -target ios_simulator examples/hello
 go tool nsgo dev -target ios examples/hello         # on the connected iPhone, signed by Xcode

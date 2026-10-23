@@ -123,6 +123,9 @@ const phaseBegan, phaseChanged, phaseEnded, phaseCancelled = 1, 4, 8, 16
 // magnify follows a trackpad pinch: its scale is 1 plus the
 // magnification so far.
 func magnify(self objc.ID, cmd objc.SEL, event objc.ID) {
+	if v := views[self]; v != nil {
+		defer v.surface.measuring(true)()
+	}
 	m := objc.Send[float64](event, sel("magnification"))
 	if !trackpad(self, event, core.EventPinch, 1, m) {
 		apple.Super(self, cmd, event)
@@ -132,6 +135,9 @@ func magnify(self objc.ID, cmd objc.SEL, event objc.ID) {
 // rotate follows a trackpad rotation; AppKit counts degrees
 // counterclockwise, views turn clockwise.
 func rotate(self objc.ID, cmd objc.SEL, event objc.ID) {
+	if v := views[self]; v != nil {
+		defer v.surface.measuring(true)()
+	}
 	r := float64(objc.Send[float32](event, sel("rotation")))
 	if !trackpad(self, event, core.EventRotation, 0, -r*math.Pi/180) {
 		apple.Super(self, cmd, event)
