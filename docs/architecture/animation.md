@@ -2,6 +2,16 @@
 
 Style transitions, animated values and layout animations run on the platform's main thread, stepped by its own frame clock, so a running animation costs the engine nothing per frame. They follow NSH's `docs/dev/animation.md`. Read this before changing `core/animated.go`, `core/animator.go`, `core/layoutanim.go` or a backend's frame clock.
 
+## Frames
+
+`Scope.RequestAnimationFrame(fn)` calls fn once, on the graph's goroutine, when the next display frame begins, with the frame's time from the graph clock, as timers do. stop cancels the wait, and a callback whose owner is disposed does not run; registering again from fn is the loop that runs every frame, as `requestAnimationFrame`'s does. `Scope.Animate` steps this way, so an app draws at the display's rate without a timer of its own.
+
+The core holds the callbacks waiting for the next frame and tells the host when the first one appears (`RootOptions.RequestFrame`), once: the host calls `Scope.RunFrame` when that frame begins, and asks again when a callback waits for the next. The engine forwards the request to its platform (`engine.Platform.RequestFrame`) and runs the frame when the platform reports it (`Engine.Frame`), before committing what the callbacks changed.
+
+Each target's frame source is its frame clock (below): macOS and iOS share their surface's display link with the native animations, the web uses `requestAnimationFrame`, and Windows and Linux their frame timer. Android has no way to report `Choreographer` frames yet, so a 60 Hz timer stands in ([roadmap](../roadmap.md)).
+
+Headless tests run frames as the manual clock advances: `nsgotest.App.Advance` moves the clock a frame at a time and runs a waiting frame at each, as NSH's clock with frames does.
+
 ## Animated values
 
 The app builds a graph once: `AnimatedValue`s, nodes derived with `Interpolate` (numbers or colors, with React Native's extrapolation and easings), `Add`, `Sub`, `Mul`, `Div`, `Mod` and `DiffClamp`, and animations that move values. `Style.Animated` binds a view's opacity, translation, scales, rotation, background, border color, shadow color and shadow radius to nodes, over its style.

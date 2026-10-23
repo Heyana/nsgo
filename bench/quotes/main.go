@@ -10,11 +10,9 @@
 //   - green for a rise, red for a fall (MyGo's Success/Danger)
 //   - a 560x1040 window, injected by -ldflags; the root view stays 560 wide
 //
-// Unlike nsh, which drives a tick signal from requestAnimationFrame, NSGo
-// has no rAF on screen, so time.Ticker(16ms) drives the same signal writes
-// on the engine goroutine. That is Go's idiom for it and matches gogui's
-// built-in 16 ms ticker: the comparison is what the same moving screen
-// costs in CPU.
+// As in nsh, the display's frames drive the tick signal through
+// Scope.RequestAnimationFrame, so the comparison is what the same moving
+// screen costs in CPU at the screen's rate.
 //
 // With NSGO_BENCH_STATS=1 it writes `nsgo 1s: fps=N` to stderr once a
 // second, the format mygo's benchstats, gogui's framestat and nsh's
@@ -108,11 +106,10 @@ func mkRows() []quote {
 
 // frameStat writes a line of fps to stderr every second for bench/run.sh.
 var (
-	statsOn      = os.Getenv("NSGO_BENCH_STATS") == "1"
-	statN        int
-	statT0       time.Time
-	ticks        *core.Signal[int]
-	tickerPeriod = 16 * time.Millisecond
+	statsOn = os.Getenv("NSGO_BENCH_STATS") == "1"
+	statN   int
+	statT0  time.Time
+	ticks   *core.Signal[int]
 )
 
 func frameStat() {
@@ -213,7 +210,7 @@ func rowNode(st *core.Signal[rowState], sym string, i int) core.Node {
 	}
 }
 
-// Root builds the quote table and starts the 16 ms ticker.
+// Root builds the quote table and draws it on the display's frames.
 func Root(cx *core.Scope) core.Node {
 	for i := range state {
 		q := data[i]
@@ -221,17 +218,16 @@ func Root(cx *core.Scope) core.Node {
 	}
 	ticks = core.NewSignal(cx, 0)
 
-	// A 16 ms ticker stands in for gogui's built-in one. A goroutine off the
-	// engine reaches the graph only through Scope.Post.
-	go func() {
-		for range time.Tick(tickerPeriod) {
-			cx.Post(func() {
-				frameStat()
-				tick()
-				ticks.Update(func(n int) int { return n + 1 })
-			})
-		}
-	}()
+	// One frame changes the rows, then waits for the next, as nsh's
+	// requestAnimationFrame loop does.
+	var frame func(at time.Time)
+	frame = func(time.Time) {
+		frameStat()
+		tick()
+		ticks.Update(func(n int) int { return n + 1 })
+		cx.RequestAnimationFrame(frame)
+	}
+	cx.RequestAnimationFrame(frame)
 
 	kids := make([]core.Node, 0, rows)
 	for i := range data {

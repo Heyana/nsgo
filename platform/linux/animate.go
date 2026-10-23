@@ -202,7 +202,13 @@ func (w *window) tick() {
 	if w.stepImages(now) {
 		running = true
 	}
-	if len(live) == 0 && !running {
+	if w.frameWanted {
+		w.frameWanted = false
+		if w.engine != nil {
+			w.engine.Frame()
+		}
+	}
+	if len(live) == 0 && !running && !w.frameWanted {
 		// tickCallback's return removes the timer.
 		w.ticking = false
 		w.tickID = 0

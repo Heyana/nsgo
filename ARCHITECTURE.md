@@ -73,7 +73,7 @@ As in NSH, each Linux view is a widget its parent places at the core's frame, so
 - `ui` styles `base` with a theme. Apps change the theme with `ui.ThemeView`, adjust a component with its `Style`, or build their own components on `base`.
 - Backends call system APIs through purego or `syscall`, never hand-written C.
 - The platform main thread never waits for the engine. The engine never touches main-thread-only UI objects.
-- What animates runs on the platform's frame clock: transitions, animated values and layout animations are data the engine sends once, never a commit per frame.
+- What animates runs on the platform's frame clock: transitions, animated values and layout animations are data the engine sends once, never a commit per frame. The app's frame callbacks wait for the same clock.
 - The reactive graph belongs to the engine goroutine and never locks; other goroutines reach it through `Scope.Post`.
 - Text is prepared and laid out on the engine side through a platform `TextEngine`; the main thread only draws the result.
 - Icons draw through the canvas protocol: an SVG becomes one `Drawing`, so no backend learns about icons.
@@ -103,6 +103,8 @@ As in NSH, each Linux view is a widget its parent places at the core's frame, so
 **Mount.** The platform receives the batch with a single hop to its main thread and applies the items in order to native views. iOS and Android draw screens' system headers natively.
 
 **Input.** Native gestures become engine events, queued without blocking, run the handlers on the engine side and lead to the next commit.
+
+**Frame.** `Scope.RequestAnimationFrame` callbacks wait for the next display frame, and the core asks the host for one when the first waits. The platform's frame clock calls `Engine.Frame`, the engine runs the callbacks with the graph clock's time and commits, and the platform stops its clock when nothing animates or waits ([animation](docs/architecture/animation.md)).
 
 ## Open questions
 

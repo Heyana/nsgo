@@ -88,35 +88,35 @@ func (c Curve) At(x float64) float64 {
 	return bez((lo+hi)/2, y1, y2)
 }
 
-// FrameInterval is how often Animate steps: 60 times a second.
+// FrameInterval is a frame at 60 Hz: what an app assumes where the
+// display's own pace is unknown.
 const FrameInterval = time.Second / 60
 
-// Animate calls step with the eased progress from 0 to 1 once a frame
-// for d, on the graph's goroutine, ending with exactly 1, unless the
+// Animate calls step with the eased progress from 0 to 1 once a display
+// frame for d, on the graph's goroutine, ending with exactly 1, unless the
 // current owner is disposed or stop is called first. Each step's changes
 // commit as one batch, so prefer a style Transition for what a platform
 // can animate itself.
 func (cx *Scope) Animate(d time.Duration, curve Curve, step func(progress float64)) (stop func()) {
 	o := cx.current()
-	clock := cx.rt.clock
-	start := clock.Now()
+	start := cx.rt.clock.Now()
 	stopped := false
-	var cancel func() bool
-	var tick func()
-	tick = func() {
+	var cancel func()
+	var tick func(at time.Time)
+	tick = func(at time.Time) {
 		if stopped {
 			return
 		}
 		x := 1.0
 		if d > 0 {
-			x = math.Min(float64(clock.Now().Sub(start))/float64(d), 1)
+			x = math.Min(float64(at.Sub(start))/float64(d), 1)
 		}
 		step(curve.At(x))
 		if x < 1 {
-			cancel = clock.AfterFunc(FrameInterval, func() { o.Post(tick) })
+			cancel = o.RequestAnimationFrame(tick)
 		}
 	}
-	o.rt.run(o, tick)
+	cancel = o.RequestAnimationFrame(tick)
 	stop = func() {
 		stopped = true
 		if cancel != nil {

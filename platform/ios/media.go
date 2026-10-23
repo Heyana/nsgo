@@ -44,8 +44,14 @@ func (s *surface) startTicking() {
 	}
 	s.ticking = true
 	if s.link == 0 {
-		s.link = objc.ID(objc.GetClass("CADisplayLink")).Send(sel("displayLinkWithTarget:selector:"), s.native, selTick).
-			Send(sel("retain"))
+		// A link needs the view in a window: without one, the next mount
+		// asks again.
+		link := objc.ID(objc.GetClass("CADisplayLink")).Send(sel("displayLinkWithTarget:selector:"), s.native, selTick)
+		if link == 0 {
+			s.ticking = false
+			return
+		}
+		s.link = link.Send(sel("retain"))
 		s.link.Send(sel("addToRunLoop:forMode:"), objc.ID(objc.GetClass("NSRunLoop")).Send(sel("mainRunLoop")),
 			apple.CommonModes())
 		return
@@ -76,7 +82,13 @@ func (s *surface) tick() {
 		s.applyAnimated()
 	})
 	s.startImages()
-	if !s.animator.Running() && len(s.motions) == 0 && len(s.ghosts) == 0 {
+	if s.frameWanted {
+		s.frameWanted = false
+		if s.engine != nil {
+			s.engine.Frame()
+		}
+	}
+	if !s.animator.Running() && len(s.motions) == 0 && len(s.ghosts) == 0 && !s.frameWanted {
 		s.stopTicking()
 	}
 }

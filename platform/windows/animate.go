@@ -346,7 +346,13 @@ func (w *window) tick() {
 		w.animator.Step(now.Sub(w.epoch))
 	}
 	w.animatedChanged()
-	if len(live) == 0 && len(w.frames) == 0 && !w.animator.Running() {
+	if w.frameWanted {
+		w.frameWanted = false
+		if w.engine != nil {
+			w.engine.Frame()
+		}
+	}
+	if len(live) == 0 && len(w.frames) == 0 && !w.animator.Running() && !w.frameWanted {
 		killTimer.Call(w.hwnd, animationTimer)
 		w.ticking = false
 	}

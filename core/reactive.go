@@ -47,6 +47,12 @@ type RootOptions struct {
 	Clock Clock
 	// Report receives failures no Catch handles; they are dropped when nil.
 	Report func(error)
+	// RequestFrame tells the host that the app waits for the next display
+	// frame: it calls Scope.RunFrame when that frame begins, and is not
+	// asked again until then. It runs on the graph's goroutine, so it must
+	// not block. A host without display frames leaves it nil, and the
+	// callbacks wait.
+	RequestFrame func()
 	// Storage keeps the app's entries; a store in memory when nil.
 	Storage *Store
 	// DataDir and CacheDir are the app's directories, "" where the target
@@ -60,7 +66,8 @@ func NewRoot(opts RootOptions) *Scope {
 		opts.Clock = SystemClock{}
 	}
 	rt := &runtime{post: opts.Post, clock: opts.Clock, report: opts.Report,
-		store: opts.Storage, dataDir: opts.DataDir, cacheDir: opts.CacheDir}
+		store: opts.Storage, dataDir: opts.DataDir, cacheDir: opts.CacheDir,
+		requestFrame: opts.RequestFrame}
 	rt.root = &Scope{rt: rt}
 	return rt.root
 }
@@ -78,13 +85,19 @@ type runtime struct {
 	post     func(func())
 	clock    Clock
 	report   func(error)
-	env      *Env
-	tree     *Tree
-	root     *Scope
-	store    *Store
-	storage  *storageWatch
-	dataDir  string
-	cacheDir string
+
+	// The callbacks waiting for the next display frame, and whether the
+	// host has been asked for it.
+	frames         []*frameCallback
+	frameRequested bool
+	requestFrame   func()
+	env            *Env
+	tree           *Tree
+	root           *Scope
+	store          *Store
+	storage        *storageWatch
+	dataDir        string
+	cacheDir       string
 }
 
 // current is the scope that owns what code using cx creates now.

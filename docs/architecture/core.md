@@ -68,7 +68,7 @@ Window chrome follows NSH's `nsh/desktop`: native controls, an app-drawn title b
 
 ## Animation
 
-Style `Transition`s, animated values and layout animations run on the platform, with no engine work per frame and nothing for the engine's garbage collector to pause; [animation](animation.md) covers them. `Scope.Animate` steps app values once a frame on the engine for what a platform cannot animate itself; every step commits.
+Style `Transition`s, animated values and layout animations run on the platform, with no engine work per frame and nothing for the engine's garbage collector to pause; [animation](animation.md) covers them. `Scope.RequestAnimationFrame` waits for the display's frames, and `Scope.Animate` steps app values on them for what a platform cannot animate itself; every step commits.
 
 ## Services
 

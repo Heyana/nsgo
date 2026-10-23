@@ -37,6 +37,26 @@ type ghost struct {
 // clock returns the frame clock's time.
 func (s *surface) clock() time.Duration { return time.Since(s.epoch) }
 
+// frameRateRange is what the display link asks for: the screen's highest
+// rate, at least 80 there, so a ProMotion display does not settle at 60 Hz.
+type frameRateRange struct {
+	Minimum, Maximum, Preferred float32
+}
+
+func (s *surface) frameRateRange() frameRateRange {
+	max := float32(60)
+	screen := s.window.Send(sel("screen"))
+	if screen == 0 {
+		screen = objc.ID(objc.GetClass("NSScreen")).Send(sel("mainScreen"))
+	}
+	if screen != 0 {
+		if n := objc.Send[int](screen, sel("maximumFramesPerSecond")); n >= 1 {
+			max = float32(n)
+		}
+	}
+	return frameRateRange{Minimum: min(max, 80), Maximum: max, Preferred: max}
+}
+
 // startTicking runs the frame clock until nothing animates: AppKit's
 // display link where there is one (macOS 14), else a timer at the usual
 // 60 Hz, both in the run loop's common modes so they keep running while a
@@ -47,12 +67,22 @@ func (s *surface) startTicking() {
 	}
 	s.ticking = true
 	if s.link != 0 {
+		// The window may have moved to another screen meanwhile.
+		s.link.Send(sel("setPreferredFrameRateRange:"), s.frameRateRange())
 		s.link.Send(sel("setPaused:"), false)
 		return
 	}
 	loop := objc.ID(objc.GetClass("NSRunLoop")).Send(sel("mainRunLoop"))
 	if objc.Send[bool](s.native, sel("respondsToSelector:"), sel("displayLinkWithTarget:selector:")) {
-		s.link = s.native.Send(sel("displayLinkWithTarget:selector:"), s.native, selTick).Send(sel("retain"))
+		// A link needs the view in a window: without one, the next mount
+		// asks again.
+		link := s.native.Send(sel("displayLinkWithTarget:selector:"), s.native, selTick)
+		if link == 0 {
+			s.ticking = false
+			return
+		}
+		s.link = link.Send(sel("retain"))
+		s.link.Send(sel("setPreferredFrameRateRange:"), s.frameRateRange())
 		s.link.Send(sel("addToRunLoop:forMode:"), loop, apple.CommonModes())
 		return
 	}
@@ -97,7 +127,8 @@ func (s *surface) framePeriod() time.Duration {
 	return time.Second / 60
 }
 
-// tick steps one frame.
+// tick steps one frame: the native animations first, then the frame the
+// app waits for.
 func (s *surface) tick(period time.Duration) {
 	dirty := s.animator.Running() || len(s.motions) > 0 || len(s.ghosts) > 0 || len(s.images) > 0
 	var start time.Time
@@ -113,11 +144,17 @@ func (s *surface) tick(period time.Duration) {
 		s.applyAnimated()
 	})
 	s.startImages()
+	if s.frameWanted {
+		s.frameWanted = false
+		if s.engine != nil {
+			s.engine.Frame()
+		}
+	}
 	if s.perf != nil {
 		s.perf.RecordWork(time.Since(start), dirty)
 		s.perf.Vsync(time.Now(), period)
 	}
-	if !s.animator.Running() && len(s.motions) == 0 && len(s.ghosts) == 0 && s.perf == nil {
+	if !s.animator.Running() && len(s.motions) == 0 && len(s.ghosts) == 0 && !s.frameWanted && s.perf == nil {
 		s.stopTicking()
 	}
 }

@@ -85,6 +85,8 @@ type App struct {
 
 	mu    sync.Mutex
 	posts []func()
+	// frameWanted is set while the graph waits for a display frame.
+	frameWanted bool
 
 	views  map[core.NodeID]*View
 	anim   *core.Animator
@@ -202,8 +204,14 @@ func Start(t testing.TB, app func(cx *core.Scope) core.Node, opts ...Option) *Ap
 			a.posts = append(a.posts, fn)
 			a.mu.Unlock()
 		},
-		Clock:   a.Clock,
-		Report:  func(err error) { t.Errorf("nsgotest: the app failed: %v", err) },
+		Clock:  a.Clock,
+		Report: func(err error) { t.Errorf("nsgotest: the app failed: %v", err) },
+		// Frames run as the clock advances, as a platform's display does.
+		RequestFrame: func() {
+			a.mu.Lock()
+			a.frameWanted = true
+			a.mu.Unlock()
+		},
 		Storage: a.store,
 	})
 	t.Cleanup(a.root.Dispose)
@@ -252,11 +260,28 @@ func (a *App) Settle() {
 	}
 }
 
-// Advance moves the clock by d, runs the timers that come due and
-// settles.
+// Advance moves the clock by d, runs the timers and display frames that
+// come due and settles. A frame runs every FrameInterval while the app
+// waits for one, as a display's frames do.
 func (a *App) Advance(d time.Duration) {
-	a.Clock.Advance(d)
+	for d > 0 {
+		step := min(d, core.FrameInterval)
+		a.Clock.Advance(step)
+		d -= step
+		a.runFrame()
+	}
 	a.Settle()
+}
+
+// runFrame runs the display frame the app waits for, if it waits for one.
+func (a *App) runFrame() {
+	a.mu.Lock()
+	wanted := a.frameWanted
+	a.frameWanted = false
+	a.mu.Unlock()
+	if wanted {
+		a.root.RunFrame()
+	}
 }
 
 // WaitFor settles until selector matches a view, failing the test after

@@ -80,11 +80,13 @@ type window struct {
 	animating []*view
 	ticking   bool
 	tickID    uint32
-	animator  *core.Animator
-	epoch     time.Time // the animator's clock starts here
-	layouts   []*view   // views a layout animation moves, shows or retires
-	playing   []*view   // image views whose animated images play
-	fading    []*view   // image views whose sources fade in
+	// frameWanted is set while the app waits for a display frame.
+	frameWanted bool
+	animator    *core.Animator
+	epoch       time.Time // the animator's clock starts here
+	layouts     []*view   // views a layout animation moves, shows or retires
+	playing     []*view   // image views whose animated images play
+	fading      []*view   // image views whose sources fade in
 
 	components core.NativeComponents
 	drop       fileDrop
@@ -228,6 +230,16 @@ func (w *window) Mount(b *core.MountBatch) {
 	if w.batches.Push(b) {
 		gIdleApply(cbApply, w.handle)
 	}
+}
+
+// RequestFrame implements engine.Platform: the app waits for the next
+// display frame. Called from the engine goroutine, so it hops to the main
+// loop, whose frame clock runs there.
+func (w *window) RequestFrame() {
+	w.post(func() {
+		w.frameWanted = true
+		w.startClock()
+	})
 }
 
 // post runs fn on the main thread; any goroutine may call it.

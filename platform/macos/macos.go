@@ -118,17 +118,19 @@ type surface struct {
 	images, presenting []*view
 
 	// The frame clock and what it animates.
-	animator   *core.Animator
-	epoch      time.Time
-	link       objc.ID // the frame clock's CADisplayLink, made once
-	timer      objc.ID // or its NSTimer while ticking, before macOS 14
-	ticking    bool
-	motions    map[*view]*motion
-	ghosts     []*ghost
-	components core.NativeComponents
-	unknown    map[string]bool // component names warned about
-	dragTarget *view           // the view files are dragged over
-	dragFiles  bool            // whether the drag carries files
+	animator *core.Animator
+	epoch    time.Time
+	link     objc.ID // the frame clock's CADisplayLink, made once
+	timer    objc.ID // or its NSTimer while ticking, before macOS 14
+	ticking  bool
+	// frameWanted is set while the app waits for a display frame.
+	frameWanted bool
+	motions     map[*view]*motion
+	ghosts      []*ghost
+	components  core.NativeComponents
+	unknown     map[string]bool // component names warned about
+	dragTarget  *view           // the view files are dragged over
+	dragFiles   bool            // whether the drag carries files
 
 	// The gestures in progress.
 	pan             *panTrack
@@ -687,6 +689,16 @@ func (s *surface) Mount(b *core.MountBatch) {
 	if s.batches.Push(b) {
 		s.native.Send(selPerformOnMain, selApply, objc.ID(0), false)
 	}
+}
+
+// RequestFrame implements engine.Platform: the app waits for the next
+// display frame. Called from the engine goroutine, so it hops to the main
+// thread, where the display link lives.
+func (s *surface) RequestFrame() {
+	apple.OnMain(func() {
+		s.frameWanted = true
+		s.startTicking()
+	})
 }
 
 func (s *surface) apply(b *core.MountBatch) {
@@ -1277,18 +1289,23 @@ func surfaceApply(self objc.ID, _ objc.SEL, _ objc.ID) {
 		for _, b := range batches {
 			s.apply(b)
 		}
-		return
-	}
-	start := time.Now()
-	for _, b := range batches {
-		if !b.Sent.IsZero() {
-			s.perf.RecordLatency(time.Since(b.Sent))
+	} else {
+		start := time.Now()
+		for _, b := range batches {
+			if !b.Sent.IsZero() {
+				s.perf.RecordLatency(time.Since(b.Sent))
+			}
+			s.apply(b)
 		}
-		s.apply(b)
+		s.perf.RecordWork(time.Since(start), true)
+		if s.hud != nil {
+			s.hud.raise()
+		}
 	}
-	s.perf.RecordWork(time.Since(start), true)
-	if s.hud != nil {
-		s.hud.raise()
+	// A frame requested before the view was in a window starts the clock
+	// here: a display link needs the view mounted.
+	if s.frameWanted && !s.ticking {
+		s.startTicking()
 	}
 }
 

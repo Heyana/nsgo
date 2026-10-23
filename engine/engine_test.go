@@ -15,6 +15,8 @@ type recorder struct {
 	mu      sync.Mutex
 	batches []*core.MountBatch
 	mounted chan struct{}
+	// frames receives a value for each display frame the app asks for.
+	frames chan struct{}
 }
 
 func (r *recorder) Mount(b *core.MountBatch) {
@@ -23,6 +25,17 @@ func (r *recorder) Mount(b *core.MountBatch) {
 	r.mu.Unlock()
 	select {
 	case r.mounted <- struct{}{}:
+	default:
+	}
+}
+
+// RequestFrame implements Platform: the app waits for a display frame.
+func (r *recorder) RequestFrame() {
+	if r.frames == nil {
+		return
+	}
+	select {
+	case r.frames <- struct{}{}:
 	default:
 	}
 }
@@ -110,5 +123,43 @@ func TestCloseDisposesTheApp(t *testing.T) {
 	case <-cleaned:
 	default:
 		t.Fatal("Close did not dispose the app")
+	}
+}
+
+// The app's frame callbacks run when the platform reports the frame it
+// was asked for, and a callback that waits again asks for another.
+func TestFramesFollowThePlatform(t *testing.T) {
+	p := &recorder{mounted: make(chan struct{}, 1), frames: make(chan struct{}, 4)}
+	seen := make(chan time.Time, 4)
+	e := Start(p, func(cx *core.Scope) core.Node {
+		var next func(at time.Time)
+		next = func(at time.Time) {
+			seen <- at
+			cx.RequestAnimationFrame(next)
+		}
+		cx.RequestAnimationFrame(next)
+		return core.View{}
+	}, Options{})
+	defer e.Close()
+	<-p.mounted
+
+	select {
+	case <-p.frames:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the app asked for no display frame")
+	}
+	e.Frame()
+	select {
+	case at := <-seen:
+		if at.IsZero() {
+			t.Fatal("the frame had no time")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the frame did not run the app's callback")
+	}
+	select {
+	case <-p.frames:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the callback waiting for the next frame did not ask for it")
 	}
 }

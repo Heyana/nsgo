@@ -79,12 +79,14 @@ type surface struct {
 	// fieldCSS is whether fieldCSS is in the page.
 	fieldCSS bool
 
-	animator   *core.Animator
-	frame      js.Func // the animation frame callback
-	ticking    bool
-	components core.NativeComponents
-	unknown    map[string]bool // component names warned about
-	drag       *view           // the view files are dragged over
+	animator *core.Animator
+	frame    js.Func // the animation frame callback
+	ticking  bool
+	// frameWanted is set while the app waits for a display frame.
+	frameWanted bool
+	components  core.NativeComponents
+	unknown     map[string]bool // component names warned about
+	drag        *view           // the view files are dragged over
 }
 
 // view is the element of one NodeID.
@@ -946,6 +948,14 @@ func (s *surface) Mount(b *core.MountBatch) {
 	if s.animator.Running() {
 		s.startTicking()
 	}
+}
+
+// RequestFrame implements engine.Platform: the app waits for the next
+// display frame. The page runs everything on one thread, so no hop is
+// needed here.
+func (s *surface) RequestFrame() {
+	s.frameWanted = true
+	s.startTicking()
 }
 
 func (s *surface) element(tag string) js.Value {

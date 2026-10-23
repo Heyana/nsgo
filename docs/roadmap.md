@@ -17,7 +17,6 @@ Sections run in build order: what apps build on first, then components, services
 | Gesture values | `animation.md` | Pinch and rotation drive animated values as `PanValues` does; pan start and end report the bound values |
 | Keyboard focus | `macos.md` (keyboard focus for pressable views) | Pressables are Tab stops pressed by Return and Space, opt out with `Focusable` and show `Style.Focus`; focus returns when a modal closes |
 | Back and keys | `components.md`, `crates/nsh-core/src/keymap.rs` | Any owner can take back before stacks; key bindings take `when` and `repeat` and give labels such as ⇧⌘L |
-| Frames | `elements.md` (interaction and the environment) | `RequestAnimationFrame` follows the display's frame clock |
 
 ## 2. Styles and layout
 
@@ -115,6 +114,7 @@ These items wait for community contributions.
 | Desktop accessibility | `windows.md`, `linux.md` | Windows exposes UI Automation and Linux GTK's accessibility, and both announce |
 | Desktop chrome | `windows.md` (alerts), `linux.md` | Windows draws alerts in the surface; Linux draws window controls under a hidden title bar and animates modals |
 | Android | `elements.md`, `styles.md` (Android differences) | Ripples, predictive back on screens, and blurred images before Android 12 |
+| Android frames | `elements.md` (interaction and the environment) | `RequestAnimationFrame` runs on `Choreographer` frames |
 | Web | `web.md` | Browser history and back keys, a focus state for pressables, local time with daylight saving |
 | Real file drags | `file-drop.md` | A real drag from Finder, Explorer and a Linux file manager is checked to reach a view |
 

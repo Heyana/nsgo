@@ -1,15 +1,15 @@
 # Benchmarks
 
 `bench/quotes` reproduces the cost of text shaping in a moving screen: a
-40-row quote table where every 16 ms tick changes 10 rows, four text cells
-each, while the other 30 rows stay untouched. Its values, PRNG (mulberry32,
-seed 42), column widths and window size match the mygo, gogui and nsh ports
-of the same case.
+40-row quote table where every display frame changes 10 rows, four text
+cells each, while the other 30 rows stay untouched. Its values, PRNG
+(mulberry32, seed 42), column widths and window size match the mygo, gogui
+and nsh ports of the same case.
 
 The benchmark writes `nsgo 1s: fps=N` to stderr with `NSGO_BENCH_STATS=1`,
-and reports nothing otherwise. It uses `time.Ticker(16ms)` where nsh uses
-`requestAnimationFrame`, which is how a Go app drives a frame without a
-display link; gogui's built-in ticker does the same.
+and reports nothing otherwise. As nsh does from `requestAnimationFrame`, it
+drives the tick from `Scope.RequestAnimationFrame`; gogui's built-in ticker
+does the same.
 
 ## Running it
 

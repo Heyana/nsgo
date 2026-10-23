@@ -15,6 +15,7 @@
 - Add the `ui` package with themed controls, fields, popups, a sidebar, settings, a command palette and toasts, in a default theme after Onevra or the app's own, following the system's appearance.
 - Add pan, pinch and rotation gestures.
 - Add animated values and layout animations that run on each platform's frame clock, with drags and scroll offsets moving values directly.
+- Add `Scope.RequestAnimationFrame`, so an app draws on the display's frames, and step `Scope.Animate` on them.
 - Add animated GIF and WebP images and SVG files as images on every target.
 - Add native components, the app's own platform views inside the tree, with props, events and commands.
 - Add file drops on desktops and the web.

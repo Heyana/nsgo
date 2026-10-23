@@ -18,6 +18,12 @@ type Platform interface {
 	// Mount receives each commit on the engine goroutine. The platform
 	// applies it on its main thread, in one hop, without waiting.
 	Mount(batch *core.MountBatch)
+	// RequestFrame asks for the next display frame. The platform calls
+	// Frame when that frame begins, once for each request, and only then.
+	// It is called from the engine goroutine, so it must not block. A
+	// platform with no display frame leaves it empty, and the app's frame
+	// callbacks wait.
+	RequestFrame()
 }
 
 // App builds the root's content once.
@@ -57,6 +63,7 @@ type Engine struct {
 }
 
 type message struct {
+	frame  bool
 	event  core.Event
 	resize *core.Size
 	env    *core.Environment
@@ -97,9 +104,11 @@ func (e *Engine) run(p Platform, app App, opts Options) {
 		Report: func(err error) {
 			logger.Error("nsgo: the app failed", "err", err)
 		},
-		Storage:  opts.Storage,
-		DataDir:  opts.DataDir,
-		CacheDir: opts.CacheDir,
+		// The platform owns the display frame: the engine only asks.
+		RequestFrame: p.RequestFrame,
+		Storage:      opts.Storage,
+		DataDir:      opts.DataDir,
+		CacheDir:     opts.CacheDir,
 	})
 	defer root.Dispose()
 	tree := core.NewTree(root, p)
@@ -146,6 +155,8 @@ func (e *Engine) run(p Platform, app App, opts Options) {
 		}
 		for _, m := range e.take() {
 			switch {
+			case m.frame:
+				root.RunFrame()
 			case m.fn != nil:
 				m.fn()
 			case m.resize != nil:
@@ -165,15 +176,17 @@ func (e *Engine) run(p Platform, app App, opts Options) {
 }
 
 // push queues m and wakes the engine. A mergeable event replaces one of
-// the same kind for the same view still queued, and a resize the last
-// resize, so bursts cost one update each.
+// the same kind for the same view still queued, a resize the last resize,
+// and a frame request the one still queued, so bursts cost one update
+// each.
 func (e *Engine) push(m message) {
 	e.mu.Lock()
 	merged := false
 	for i := range e.queue {
 		q := &e.queue[i]
 		switch {
-		case m.resize != nil && q.resize != nil,
+		case m.frame && q.frame,
+			m.resize != nil && q.resize != nil,
 			m.env != nil && q.env != nil,
 			m.event.Mergeable() && q.event.Mergeable() && q.event.Kind == m.event.Kind && q.event.ID == m.event.ID:
 			*q = m
@@ -203,6 +216,10 @@ func (e *Engine) take() []message {
 
 // Dispatch reports a platform event.
 func (e *Engine) Dispatch(ev core.Event) { e.push(message{event: ev}) }
+
+// Frame reports that the display frame the app asked for has begun. The
+// engine runs the callbacks waiting for it on its goroutine, then commits.
+func (e *Engine) Frame() { e.push(message{frame: true}) }
 
 // Resize sets the surface size.
 func (e *Engine) Resize(size core.Size) { e.push(message{resize: &size}) }

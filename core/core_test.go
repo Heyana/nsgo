@@ -20,6 +20,8 @@ type host struct {
 	posts []func()
 	clock *ManualClock
 	errs  []error
+	// frameWanted is set while the graph waits for a display frame.
+	frameWanted bool
 }
 
 func newHost(t *testing.T, size Size, app func(cx *Scope) Node) *host {
@@ -30,8 +32,9 @@ func newHost(t *testing.T, size Size, app func(cx *Scope) Node) *host {
 			h.posts = append(h.posts, fn)
 			h.mu.Unlock()
 		},
-		Clock:  h.clock,
-		Report: func(err error) { h.errs = append(h.errs, err) },
+		Clock:        h.clock,
+		Report:       func(err error) { h.errs = append(h.errs, err) },
+		RequestFrame: func() { h.frameWanted = true },
 	})
 	h.tree = NewTree(h.root, ApproxTextEngine{})
 	h.tree.Resize(size)
@@ -54,6 +57,22 @@ func (h *host) drain() {
 			fn()
 		}
 	}
+}
+
+// frame runs the display frame the graph waits for, as a host's frame
+// clock does when the display reaches it.
+func (h *host) frame() {
+	if h.frameWanted {
+		h.frameWanted = false
+		h.root.RunFrame()
+	}
+}
+
+// advanceFrame moves the clock one frame and runs the frame it makes due.
+func (h *host) advanceFrame() {
+	h.clock.Advance(FrameInterval)
+	h.frame()
+	h.drain()
 }
 
 func (h *host) waitPost() {
@@ -759,8 +778,7 @@ func TestAnimateStepsOnTheClock(t *testing.T) {
 		}, TestID: "box"}
 	})
 	for range 10 {
-		h.clock.Advance(FrameInterval)
-		h.drain()
+		h.advanceFrame()
 	}
 	if last := steps[len(steps)-1]; last != 1 || len(steps) < 6 {
 		t.Fatalf("steps = %v, want frames ending at 1", steps)

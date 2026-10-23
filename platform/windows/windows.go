@@ -103,6 +103,7 @@ const (
 	wmApply         = 0x8000 + 1 // WM_APP + 1: batches are queued
 	wmRun           = 0x8000 + 2 // functions are queued
 	wmAlert         = 0x8000 + 3 // alerts are queued
+	wmFrame         = 0x8000 + 4 // the app waits for a display frame
 
 	wsOverlappedWindow = 0x00CF0000
 	wsClipChildren     = 0x02000000
@@ -262,10 +263,12 @@ type window struct {
 	keys      map[string]bool // the keyboard shortcuts
 	animating []*view
 	ticking   bool
-	chrome    chrome
-	webs      map[*webView]bool
-	cacheDir  string                 // where web views keep their profile
-	frames    []func(time.Time) bool // frame clients (onFrame)
+	// frameWanted is set while the app waits for a display frame.
+	frameWanted bool
+	chrome      chrome
+	webs        map[*webView]bool
+	cacheDir    string                 // where web views keep their profile
+	frames      []func(time.Time) bool // frame clients (onFrame)
 	// animator runs the animated values on the frame clock, whose times
 	// count from epoch.
 	animator *core.Animator
@@ -422,6 +425,11 @@ func (w *window) Mount(b *core.MountBatch) {
 		postMessageW.Call(w.hwnd, wmApply, 0, 0)
 	}
 }
+
+// RequestFrame implements engine.Platform: the app waits for the next
+// display frame. Called from the engine goroutine, so it posts to the
+// window, whose frame clock runs on the UI thread.
+func (w *window) RequestFrame() { postMessageW.Call(w.hwnd, wmFrame, 0, 0) }
 
 // post runs fn on the main thread; any goroutine may call it.
 func (w *window) post(fn func()) {
@@ -1060,6 +1068,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		return 0
 	case wmRun:
 		w.runTasks()
+		return 0
+	case wmFrame:
+		w.frameWanted = true
+		w.startClock()
 		return 0
 	case wmAlert:
 		w.showAlert()

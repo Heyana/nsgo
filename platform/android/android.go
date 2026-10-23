@@ -85,6 +85,12 @@ type surface struct {
 	started  chan struct{}    // closed once engine is set
 	env      core.Environment // the last reported, on the reader goroutine
 
+	// Frames. The Java runtime cannot report a display frame yet, so a
+	// 60 Hz timer stands in while the app waits for one.
+	frameMu     sync.Mutex
+	frameWanted bool
+	frameTimer  *time.Timer
+
 	ratio atomic.Uint32 // the pixel ratio's float32 bits, for rasterizing SVG
 
 	// On the engine goroutine.
@@ -394,6 +400,40 @@ func (l *textLayout) Attachment(i int) (core.Bounds, bool) {
 		return core.Bounds{}, false
 	}
 	return core.Bounds{Origin: l.attachments[i].origin, Size: l.sizes[i]}, true
+}
+
+// RequestFrame implements engine.Platform. The Java runtime runs the
+// native animations on Choreographer frames but cannot report one to the
+// app yet, so a 60 Hz timer stands in; the roadmap's Android item covers
+// reporting Choreographer's frames instead.
+func (s *surface) RequestFrame() {
+	s.frameMu.Lock()
+	defer s.frameMu.Unlock()
+	s.frameWanted = true
+	if s.frameTimer == nil {
+		s.frameTimer = time.AfterFunc(core.FrameInterval, s.frame)
+	}
+}
+
+// frame delivers the frame the timer stood in for, and arms it again
+// while another waits.
+func (s *surface) frame() {
+	s.frameMu.Lock()
+	s.frameTimer = nil
+	if !s.frameWanted {
+		s.frameMu.Unlock()
+		return
+	}
+	s.frameWanted = false
+	s.frameMu.Unlock()
+	if s.engine != nil {
+		s.engine.Frame()
+	}
+	s.frameMu.Lock()
+	if s.frameWanted && s.frameTimer == nil {
+		s.frameTimer = time.AfterFunc(core.FrameInterval, s.frame)
+	}
+	s.frameMu.Unlock()
 }
 
 // Mount implements engine.Platform: one message per commit, then the

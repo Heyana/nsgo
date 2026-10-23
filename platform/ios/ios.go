@@ -118,14 +118,16 @@ type surface struct {
 	selecting *selection
 
 	// The frame clock and what it animates.
-	animator   *core.Animator
-	epoch      time.Time
-	link       objc.ID // the CADisplayLink
-	ticking    bool
-	motions    map[*view]*motion
-	ghosts     []*ghost
-	components core.NativeComponents
-	unknown    map[string]bool
+	animator *core.Animator
+	epoch    time.Time
+	link     objc.ID // the CADisplayLink
+	ticking  bool
+	// frameWanted is set while the app waits for a display frame.
+	frameWanted bool
+	motions     map[*view]*motion
+	ghosts      []*ghost
+	components  core.NativeComponents
+	unknown     map[string]bool
 	// accessories are the inputs each InputAccessoryView rides above.
 	accessories map[core.NodeID]*view
 }
@@ -497,6 +499,16 @@ func (s *surface) Mount(b *core.MountBatch) {
 	if s.batches.Push(b) {
 		s.native.Send(selPerformOnMain, selApply, objc.ID(0), false)
 	}
+}
+
+// RequestFrame implements engine.Platform: the app waits for the next
+// display frame. Called from the engine goroutine, so it hops to the main
+// thread, where the display link lives.
+func (s *surface) RequestFrame() {
+	apple.OnMain(func() {
+		s.frameWanted = true
+		s.startTicking()
+	})
 }
 
 func (s *surface) apply(b *core.MountBatch) {
@@ -980,6 +992,11 @@ func surfaceApply(self objc.ID, _ objc.SEL, _ objc.ID) {
 	s := views[self].surface
 	for _, b := range s.batches.Drain() {
 		s.apply(b)
+	}
+	// A frame requested before the view was in a window starts the clock
+	// here: a display link needs the view mounted.
+	if s.frameWanted && !s.ticking {
+		s.startTicking()
 	}
 }
 
