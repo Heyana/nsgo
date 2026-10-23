@@ -96,7 +96,7 @@ Sections run in build order: what apps build on first, then components, services
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | Incremental layout | `pitfalls.md` (relayout boundaries), `performance.md` | Changes stop at fixed-size flex items, and a text that measures as before lays nothing out |
-| Measure cache | `architecture.md` (data flow and threads) | Text measurements are cached by content and width per engine |
+| Measure cache | `architecture.md` (data flow and threads) | Text measurements are cached by content and width per engine, so identical texts and list rows measure once |
 | Paced list binds | `scrolling-and-lists.md` (paced binding) | A list binds its viewport first and its overscan over later frames |
 | macOS frames | `macos.md` (architecture) | Scrolls move the container layer and commit at rest; batches take at most 4 ms a frame; resizes wait for layout; a timer covers a stalled display link |
 | macOS drawing | `macos.md` (architecture), `canvas.md` | Content layers replace `drawRect:`; canvases draw off the main thread and redraw only what changed |
