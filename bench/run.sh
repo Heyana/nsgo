@@ -1,5 +1,6 @@
 #!/bin/sh
-# Builds the quotes benchmark and reports its CPU time.
+# Builds the quotes benchmark and reports its CPU time, frame rate and
+# commit times.
 #
 # Usage: bench/run.sh [seconds]
 #
@@ -74,16 +75,67 @@ kill "$pid"
 wait "$pid" 2>/dev/null || true
 pid=
 
-awk -v a="$t0" -v b="$t1" -v s="$seconds" 'BEGIN {
-	printf "CPU: %.1f ms/s (%.1f%% of one core)\n", (b - a) / s * 1000, (b - a) / s * 100
+cpu=$(awk -v a="$t0" -v b="$t1" -v s="$seconds" 'BEGIN {
+	printf "%.2f", (b - a) / s * 1000
+}')
+awk -v c="$cpu" 'BEGIN {
+	printf "CPU: %.1f ms/s (%.1f%% of one core)\n", c, c / 10
 }'
 
 tail -n +"$((mark + 1))" "$tmp/out.log" |
-	grep -o 'fps=[0-9.]*' |
-	cut -d= -f2 |
-	sort -n |
-	awk '{ a[NR] = $1 }
-		END {
-			if (NR == 0) { print "fps: no samples"; exit }
-			printf "fps: median %.1f (min %.1f, max %.1f, %d samples)\n", a[int((NR + 1) / 2)], a[1], a[NR], NR
-		}'
+	awk -v s="$seconds" -v cpu="$cpu" '
+	function sort(a, n,   i, j, t) {
+		for (i = 2; i <= n; i++) {
+			t = a[i]
+			for (j = i - 1; j > 0 && a[j] > t; j--) a[j + 1] = a[j]
+			a[j + 1] = t
+		}
+	}
+	function pct(a, n, p,   k) {
+		if (n == 0) return 0
+		k = int((n - 1) * p / 100) + 1
+		return a[k]
+	}
+	/^nsgo 1s: frames=/ {
+		split($3, kv, "=")
+		frameSamples[++frameN] = kv[2] + 0
+		next
+	}
+	/^nsgo commit:/ {
+		for (i = 3; i <= NF; i++) {
+			split($i, kv, "=")
+			if (kv[1] == "frames") ft = kv[2] + 0
+			else if (kv[1] == "interval_us") fi = kv[2] + 0
+			else if (kv[1] == "commit_us") ff = kv[2] + 0
+			else if (kv[1] == "latency_us") fl = kv[2] + 0
+		}
+		n++
+		framesPerCommit += ft
+		intervalTotal += fi
+		interval[n] = fi
+		commit[n] = ff
+		latency[n] = fl
+	}
+	END {
+		if (frameN == 0) {
+			print "frames: no samples"
+		} else {
+			sort(frameSamples, frameN)
+			printf "frames: median %.1f/s (%d samples)\n", pct(frameSamples, frameN, 50), frameN
+		}
+		if (n == 0) {
+			print "commits: no samples"
+			exit
+		}
+		# Commit rate comes from the intervals between reports, not the
+		# shell window, so a partial first or last second does not change it.
+		rate = (n > 1 && intervalTotal > 0) ? (n - 1) / (intervalTotal / 1000000) : n / s
+		sort(interval, n)
+		sort(commit, n)
+		sort(latency, n)
+		printf "commits: %.1f/s (%d samples, %.2f frames/commit)\n", rate, n, framesPerCommit / n
+		printf "interval: p50 %.2f ms, p95 %.2f ms, p99 %.2f ms, max %.2f ms\n", pct(interval, n, 50) / 1000, pct(interval, n, 95) / 1000, pct(interval, n, 99) / 1000, interval[n] / 1000
+		printf "commit: p50 %.2f ms, p95 %.2f ms, p99 %.2f ms, max %.2f ms\n", pct(commit, n, 50) / 1000, pct(commit, n, 95) / 1000, pct(commit, n, 99) / 1000, commit[n] / 1000
+		printf "latency: p50 %.2f ms, p95 %.2f ms, p99 %.2f ms, max %.2f ms\n", pct(latency, n, 50) / 1000, pct(latency, n, 95) / 1000, pct(latency, n, 99) / 1000, latency[n] / 1000
+		printf "CPU per commit: %.2f ms (%.2f ms per frame)\n", cpu / rate, cpu / (rate * (framesPerCommit / n))
+	}'

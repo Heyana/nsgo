@@ -1,6 +1,7 @@
 // Command quotes benchmarks per-frame text shaping: 40 quote rows, 10 of
-// them reticked every 16 ms, four text cells each. The other 30 rows stay
-// untouched, so the run shows what re-shaping changed text costs per frame.
+// them reticked every display frame, four text cells each. The other 30
+// rows' signals stay untouched, so the run shows what re-shaping changed
+// text costs on top of the commit's full-tree work.
 //
 // It matches the mygo, gogui and nsh ports of the same case item by item:
 //   - 40 rows; each tick picks 10 with replacement and changes price and
@@ -11,13 +12,15 @@
 //   - a 560x1040 window, injected by -ldflags; the root view stays 560 wide
 //
 // As in nsh, the display's frames drive the tick signal through
-// Scope.RequestAnimationFrame, so the comparison is what the same moving
-// screen costs in CPU at the screen's rate.
+// Scope.RequestAnimationFrame. A callback is not a commit: several can
+// run in one wake-up before the engine commits, and a commit is not a
+// presented frame.
 //
-// With NSGO_BENCH_STATS=1 it writes `nsgo 1s: fps=N` to stderr once a
-// second, the format mygo's benchstats, gogui's framestat and nsh's
-// frameStat write, so one regex reads every port. Otherwise the counter is
-// one increment.
+// With NSGO_BENCH_STATS=1 it writes `nsgo 1s: frames=N` once a second and
+// `nsgo commit: ...` for each commit. The commit line is written from the
+// title's OnTextLayout callback, which runs after the commit laid the
+// title out, so it counts commits, not animation-frame callbacks and not
+// presented frames. Without the variable the counters cost nothing.
 package main
 
 import (
@@ -65,9 +68,10 @@ type quote struct {
 }
 
 // rowState holds one row's current values. The whole row is one signal, so
-// one Set recomputes only its four texts and the other 30 rows do nothing
-// in the frame. (The nsh port went through three versions: one large array
-// per column, one signal per cell, then one object signal per row.)
+// one Set recomputes only its four texts and leaves the other 30 rows'
+// texts alone in the commit. (The nsh port went through three versions: one
+// large array per column, one signal per cell, then one object signal per
+// row.)
 type rowState struct {
 	price, change, pct float64
 	volume             int
@@ -104,28 +108,77 @@ func mkRows() []quote {
 	return out
 }
 
-// frameStat writes a line of fps to stderr every second for bench/run.sh.
+// statsOn enables the counters bench/run.sh reads. frameStat writes the
+// animation-frame rate once a second; commitStat writes a line per commit
+// from the title's OnTextLayout callback.
 var (
 	statsOn = os.Getenv("NSGO_BENCH_STATS") == "1"
-	statN   int
-	statT0  time.Time
 	ticks   *core.Signal[int]
+
+	frameN  int
+	frameT0 time.Time
+
+	commitPending bool
+	commitFirst   time.Time // the first callback's frame time of the pending commit
+	commitLast    time.Time // when the last callback of the pending commit returned
+	commitFrames  int
+	lastCommit    time.Time
 )
 
-func frameStat() {
+// frameStat counts one animation-frame callback and writes callbacks per
+// second. at is the frame's time, before the callback's signal writes.
+func frameStat(at time.Time) {
 	if !statsOn {
 		return
 	}
 	now := time.Now()
-	if statT0.IsZero() {
-		statT0 = now
+	if !commitPending {
+		commitPending = true
+		commitFirst = at
 	}
-	statN++
-	if d := now.Sub(statT0); d >= time.Second {
-		fmt.Fprintf(os.Stderr, "nsgo 1s: fps=%.1f\n", float64(statN)*1000/float64(d.Milliseconds()))
-		statN = 0
-		statT0 = now
+	commitFrames++
+	frameN++
+	if frameT0.IsZero() {
+		frameT0 = now
 	}
+	if d := now.Sub(frameT0); d >= time.Second {
+		fmt.Fprintf(os.Stderr, "nsgo 1s: frames=%d\n", frameN)
+		frameN = 0
+		frameT0 = now
+	}
+}
+
+// frameDone records when the last callback of a batch returned; the commit
+// that follows is what commitStat measures.
+func frameDone() {
+	if statsOn {
+		commitLast = time.Now()
+	}
+}
+
+// commitStat writes one line per commit. The title's OnTextLayout runs
+// after the commit laid it out, so this counts commits, not animation-frame
+// callbacks and not presented frames. interval_us is since the previous
+// commit, commit_us from this batch's last callback, and latency_us from
+// its first callback's frame time.
+func commitStat() {
+	if !statsOn || !commitPending {
+		return
+	}
+	now := time.Now()
+	interval := time.Duration(0)
+	if !lastCommit.IsZero() {
+		interval = now.Sub(lastCommit)
+	}
+	commit := time.Duration(0)
+	if !commitLast.IsZero() {
+		commit = now.Sub(commitLast)
+	}
+	fmt.Fprintf(os.Stderr, "nsgo commit: frames=%d interval_us=%d commit_us=%d latency_us=%d\n",
+		commitFrames, interval.Microseconds(), commit.Microseconds(), now.Sub(commitFirst).Microseconds())
+	lastCommit = now
+	commitPending = false
+	commitFrames = 0
 }
 
 // tick changes a quarter of the rows, with replacement, exactly as mygo's
@@ -138,7 +191,7 @@ func tick() {
 		data[i].volume += int(rnd() * 500)
 		touched[i] = struct{}{}
 	}
-	// Write only the touched rows, once each: the other 30 stay still.
+	// Write only the touched rows, once each: the other 30 signals stay still.
 	for i := range touched {
 		q := data[i]
 		state[i].Set(rowState{
@@ -221,10 +274,11 @@ func Root(cx *core.Scope) core.Node {
 	// One frame changes the rows, then waits for the next, as nsh's
 	// requestAnimationFrame loop does.
 	var frame func(at time.Time)
-	frame = func(time.Time) {
-		frameStat()
+	frame = func(at time.Time) {
+		frameStat(at)
 		tick()
 		ticks.Update(func(n int) int { return n + 1 })
+		frameDone()
 		cx.RequestAnimationFrame(frame)
 	}
 	cx.RequestAnimationFrame(frame)
@@ -232,6 +286,15 @@ func Root(cx *core.Scope) core.Node {
 	kids := make([]core.Node, 0, rows)
 	for i := range data {
 		kids = append(kids, rowNode(state[i], data[i].sym, i))
+	}
+
+	// The title changes every frame, so its post-commit layout report runs
+	// once per commit that carries those changes. It adds no work when
+	// stats are off. Presented frames are what nsgo dev -fps counts on
+	// macOS; this report is only the engine's commit.
+	var reportTitle func([]core.TextLine)
+	if statsOn {
+		reportTitle = func([]core.TextLine) { commitStat() }
 	}
 
 	return core.View{
@@ -244,7 +307,8 @@ func Root(cx *core.Scope) core.Node {
 						ContentFunc: func() string {
 							return fmt.Sprintf("Streaming quotes · tick %d", ticks.Get())
 						},
-						Style: core.Style{FontSize: 18, FontWeight: core.FontWeightSemibold, Color: ink},
+						Style:        core.Style{FontSize: 18, FontWeight: core.FontWeightSemibold, Color: ink},
+						OnTextLayout: reportTitle,
 					},
 					core.View{
 						Style: core.Style{
