@@ -107,6 +107,7 @@ go tool nsgo dev -target android examples/hello     # 在已连接的设备或�
 go tool nsgo build examples/hello                   # 在 examples/hello/dist 中生成发布包
 go tool nsgo build -target all examples/hello       # 生成所有平台的发布包
 go test ./...
+bench/run.sh                                       # 测量行情表基准（见 bench/README.md）
 ```
 
 在 Windows 上运行 `go test ./platform/windows`，或在 Linux 上运行 `go test ./platform/linux`，会打开真实窗口检查输入和绘制；没有桌面时会跳过。

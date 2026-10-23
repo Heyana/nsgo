@@ -26,6 +26,7 @@
 - Add native backends for macOS, iOS, Windows, Linux, Android and the web.
 - Add `android_x64` packages and `nsgo dev`'s choice of the connected device's ABI, so apps run on x86_64 emulators too.
 - Add `nsgotest` for headless app tests.
+- Add the quotes benchmark and its CPU-time runner under `bench/`.
 - Add the `nsgo` tool with `init`, `dev` and `build`, configured by `nsgo.yaml`.
 - Add app icons to every package, from `assets/` or `nsgo.yaml`'s `icon`.
 - Add `resources/`, shipped in each package and loaded by `asset:` images.

@@ -107,6 +107,7 @@ go tool nsgo dev -target android examples/hello     # on the connected device or
 go tool nsgo build examples/hello                   # release packages in examples/hello/dist
 go tool nsgo build -target all examples/hello       # every platform's release packages
 go test ./...
+bench/run.sh                                       # measure the quotes benchmark (bench/README.md)
 ```
 
 Run `go test ./platform/windows` on Windows or `go test ./platform/linux` on Linux to open a real window and check input and painting; they skip where no desktop is available.
