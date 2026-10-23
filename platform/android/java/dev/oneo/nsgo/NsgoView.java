@@ -332,8 +332,11 @@ public class NsgoView extends FrameLayout {
             return;
         }
         // Before API 30 the bottom inset grows by the keyboard while it
-        // shows, and the stable one never does.
-        int bottom = insets.getSystemWindowInsetBottom(), stable = insets.getStableInsetBottom();
+        // shows, and the stable one never does. The decor view consumes
+        // the stable insets it passes down, so they come from the window.
+        WindowInsets root = getRootWindowInsets();
+        int bottom = insets.getSystemWindowInsetBottom();
+        int stable = (root != null ? root : insets).getStableInsetBottom();
         safeTop = insets.getSystemWindowInsetTop();
         safeRight = insets.getSystemWindowInsetRight();
         safeBottom = Math.min(bottom, stable);

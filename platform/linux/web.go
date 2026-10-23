@@ -377,11 +377,10 @@ func (w *window) closeWeb(v *view) {
 	v.web = nil
 	if wv.widget != 0 {
 		webkitWebViewStopLoading(wv.widget)
-	}
-	w.unhost(v, &wv.hosted)
-	if wv.widget != 0 {
+		// Before unhosting, which lets the page and its content manager go.
 		webkitContentUnregisterHandler(wv.content, cstr(webHandler), nil)
 	}
+	w.unhost(v, &wv.hosted)
 }
 
 // focusedWeb returns the web view whose page has keyboard focus, or nil.

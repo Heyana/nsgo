@@ -47,3 +47,5 @@
 - Fix nested scroll views scrolling together on iOS or not passing at their edge on macOS.
 - Fix the gallery's and hello's outer scroll views never scrolling on desktops, because their roots grew past the window.
 - Fix text in a padded grid cell overlapping the row below when its width changes how many lines it wraps, and Windows drawing symbols such as ⌘ as boxes.
+- Fix the Android keyboard inset before API 30, which the decor view had already consumed, so the accessory bar tracks the keyboard.
+- Fix closing a Linux web view releasing its page before its custom scheme handler was unregistered.

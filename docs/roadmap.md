@@ -22,9 +22,7 @@ These items wait for community contributions; the items above do not depend on t
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | iOS touch | `crates/nsh-platform-ios` | Gestures, text input and text selection are checked in the simulator; selections have touch handles |
-| Linux web views and videos | `crates/nsh-platform-linux/src/native` | Web views and playback are checked on a machine with WebKitGTK 6.0 and GStreamer's decoders |
 | Real file drags | `docs/dev/file-drop.md` | A real drag from Finder, Explorer and a Linux file manager is checked to reach a view, beyond the tests that drive the drop targets |
-| Android before API 30 | `crates/nsh-platform-android` | The keyboard accessory bar is checked on API 28 and 29, which tell the keyboard's height by older insets |
 
 ## Not ported
 
