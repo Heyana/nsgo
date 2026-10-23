@@ -4,7 +4,7 @@ Text in NSGo: how the core prepares, lays out and reports text, how fields edit 
 
 ## Text and drawing
 
-A platform's `TextEngine` runs on the engine goroutine in three phases. `Prepare` shapes the text once, `PreparedText.Measure` answers layout at any width, and `PreparedText.Layout` lays it out at its final size. The `TextLayout` travels in `ItemText`, and the main thread only draws it and releases the one it replaces. The core releases prepared text when it changes or its node goes.
+A platform's `TextEngine` runs on the engine goroutine in three phases. `Prepare` shapes the text once, `PreparedText.Measure` answers layout at any width, and `PreparedText.Layout` lays it out at its final size. The `TextLayout` travels in `ItemText`, and the main thread only draws it and releases the one it replaces. The core releases prepared text when it changes or its node goes. Apple's engine caches fonts and style attributes across prepares, and a prepared text keeps its measured size per width; the process-wide caches are bounded and internal.
 
 The core does what needs no engine, as NSH's does: `TextTransform` changes the case of each span's characters as they are joined, a text's own multiplier caps the user's text size (`NoFontScaling`, `MaxFontSizeMultiplier`), and `TextAlignVertical` moves the content box down to the text's measured height. `AdjustsFontSizeToFit` bisects a scale, down to `MinimumFontScale`, at which the untruncated text fits the box and its line limit, as NSH's `Paragraph::fit`, and prepares that text for the final layout only; layout measures the text as written. `Text.OnTextLayout` runs after the commit with the lines a `LineLayout` reports: UTF-8 ranges, boxes in the content box, and the metrics of the font each line starts in.
 
