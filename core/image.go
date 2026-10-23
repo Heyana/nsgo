@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -41,29 +42,64 @@ func (a ImageConfig) same(b ImageConfig) bool {
 		a.BlurRadius == b.BlurRadius && a.FadeDuration == b.FadeDuration
 }
 
-// scales are the variants an "asset:" image may have, as @2x files.
-var scales = [...]float32{1, 1.5, 2, 3, 4}
+// ImageScaleValues are the pixel densities an image asset can ship in, as
+// its file name's suffix says ("@1.5x" to "@4x"; the file without one is
+// 1x).
+var ImageScaleValues = [...]float32{1, 1.5, 2, 3, 4}
 
-// pickScale picks the variant of an "asset:" image for the pixel ratio:
-// the smallest scale at least the ratio, else the largest; a.png becomes
-// a@2x.png.
-func (t *Tree) pickScale(s ImageSource) ImageSource {
-	if !strings.HasPrefix(s.URI, "asset:") || strings.ContainsAny(s.URI, "?#") {
-		return s
-	}
-	ratio := t.root.Env().ratio.GetUntracked()
-	pick := scales[len(scales)-1]
-	for _, sc := range scales {
-		if sc >= ratio {
-			pick = sc
-			break
+// ImageScales is a set of ImageScaleValues: the variants an image asset
+// ships in.
+type ImageScales uint8
+
+// ScalesOf returns the set of scales, leaving out any that is not one of
+// ImageScaleValues.
+func ScalesOf(scales ...float32) ImageScales {
+	var set ImageScales
+	for _, s := range scales {
+		if i := slices.Index(ImageScaleValues[:], s); i >= 0 {
+			set |= 1 << i
 		}
 	}
+	return set
+}
+
+// pick returns the scale to load at ratio, as React Native picks: the
+// smallest at least the ratio, else the largest; 0 for an empty set.
+func (set ImageScales) pick(ratio float32) float32 {
+	var pick float32
+	for i, s := range ImageScaleValues {
+		if set&(1<<i) != 0 {
+			pick = s
+			if s >= ratio {
+				break
+			}
+		}
+	}
+	return pick
+}
+
+// pickScale returns s as the platform loads it at the screen's pixel
+// ratio: an "asset:" image with scales names the variant they pick
+// (asset:/a.png at 2 is asset:/a@2x.png); without scales, for the 1x pick
+// or with a query or fragment, which no file name has, the URI stays.
+func (t *Tree) pickScale(s ImageSource) ImageSource {
+	scales := s.Scales
+	s.Scales = 0
+	if scales == 0 || !strings.HasPrefix(s.URI, "asset:") || strings.ContainsAny(s.URI, "?#") {
+		return s
+	}
+	pick := scales.pick(t.root.Env().ratio.GetUntracked())
 	if pick == 1 {
 		return s
 	}
-	dot := strings.LastIndexByte(s.URI, '.')
-	if dot < 0 || strings.Contains(s.URI[dot:], "/") {
+	name := strings.LastIndexByte(s.URI, '/') + 1
+	if name == 0 {
+		name = len("asset:")
+	}
+	dot := strings.LastIndexByte(s.URI[name:], '.')
+	if dot > 0 {
+		dot += name
+	} else {
 		dot = len(s.URI)
 	}
 	s.URI = s.URI[:dot] + "@" + strconv.FormatFloat(float64(pick), 'g', -1, 32) + "x" + s.URI[dot:]

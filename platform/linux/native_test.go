@@ -629,3 +629,53 @@ func TestWheelScrollsContentAndClipsIt(t *testing.T) {
 		return in[0] == 0xff && in[2] == 0 && below[0] == 0xff && below[1] == 0xff && below[2] == 0xff
 	})
 }
+
+// TestHoverFollowsThePointer moves the pointer onto a view and its
+// child, off them and out of the window, as GTK's motion controller
+// reports it, and checks the hover state style shows while it is over.
+func TestHoverFollowsThePointer(t *testing.T) {
+	app := func(cx *core.Scope) core.Node {
+		in, out := core.NewSignal(cx, 0), core.NewSignal(cx, 0)
+		cx.Effect(func() { cx.SetTitle(fmt.Sprintf("hover|%d|%d", in.Get(), out.Get())) })
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(200), Padding: core.All(10)},
+			Children: []core.Node{
+				core.View{TestID: "target", Style: core.Style{Width: core.Pt(100), Height: core.Pt(80), Padding: core.All(20),
+					Background: core.RGB(0x123456), Hover: &core.Style{Background: core.RGB(0x654321)}},
+					OnHoverIn:  func() { in.Update(func(n int) int { return n + 1 }) },
+					OnHoverOut: func() { out.Update(func(n int) int { return n + 1 }) },
+					Children:   []core.Node{core.View{Style: core.Style{Width: core.Pt(20), Height: core.Pt(20)}}}},
+			}}
+	}
+	w := startTestWindow(t, app, Options{Title: "hover|0|0", Width: 320, Height: 200})
+	waitForTitle(t, w, "hover|0|0")
+	move := func(x, y float64) { w.onLoop(t, func() { motionCallback(0, x, y, w.handle) }) }
+	background := func() (c core.Color) {
+		w.onLoop(t, func() {
+			for _, v := range w.views {
+				if v != nil && v.props.TestID == "target" {
+					c = v.style.Background
+				}
+			}
+		})
+		return c
+	}
+	move(15, 15)
+	waitForTitle(t, w, "hover|1|0")
+	// Over its child, the view stays hovered.
+	move(40, 40)
+	time.Sleep(50 * time.Millisecond)
+	waitForTitle(t, w, "hover|1|0")
+	deadline := time.Now().Add(5 * time.Second)
+	for background() != core.RGB(0x654321) {
+		if time.Now().After(deadline) {
+			t.Fatalf("background = %x, want the hover style's", background())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	move(200, 150)
+	waitForTitle(t, w, "hover|1|1")
+	move(15, 15)
+	waitForTitle(t, w, "hover|2|1")
+	w.onLoop(t, func() { leaveCallback(0, w.handle) })
+	waitForTitle(t, w, "hover|2|2")
+}

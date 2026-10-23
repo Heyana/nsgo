@@ -6,7 +6,8 @@ import "github.com/oneo-me/nsgo/core"
 var menuKey = core.NewKey[func(Reason)]("menu", nil)
 
 // Menu opens a list of MenuItems beside its trigger when the trigger is
-// pressed. Choosing an item closes it, as do a press outside and Escape.
+// pressed. Choosing an item closes it, as do a press outside and Escape,
+// which OnCancel hears.
 type Menu struct {
 	Open         func() bool
 	DefaultOpen  bool
@@ -15,7 +16,8 @@ type Menu struct {
 	OnClose      func()
 	OnCancel     func()
 
-	Placement      core.Placement
+	Placement core.Placement
+	// Align lines the menu up with its trigger; at its start when 0.
 	Align          core.Align
 	Offset, Margin core.Points
 
@@ -32,29 +34,29 @@ type Menu struct {
 // Render implements core.Node.
 func (m Menu) Render(cx *core.Scope) core.Node {
 	st := newPopup(cx, m.Open, m.DefaultOpen, m.OnOpenChange, m.OnOpen, m.OnClose)
+	st.onCancel = m.OnCancel
 	anchor := new(core.Ref)
+	align := m.Align
+	if align == 0 {
+		align = core.AlignStart
+	}
 	return core.Group{
 		core.View{Ref: anchor, Style: m.Style, StyleFunc: m.StyleFunc, Label: m.Label, TestID: m.TestID, Role: core.RoleButton,
 			OnPress:  func() { st.set(!st.open(), ReasonTriggerPress) },
 			Children: []core.Node{m.Trigger}},
-		menuPopup(st, anchor, m.Placement, m.Align, m.Offset, m.Margin, m.PopupStyle, m.PopupStyleFunc, m.Children, m.OnCancel),
+		menuPopup(st, anchor, m.Placement, align, m.Offset, m.Margin, m.PopupStyle, m.PopupStyleFunc, m.Children),
 	}
 }
 
 func menuPopup(st *popup, anchor *core.Ref, place core.Placement, align core.Align, offset, margin core.Points,
-	style core.Style, styleFunc func() core.Style, items []core.Node, onCancel func()) core.Node {
+	style core.Style, styleFunc func() core.Style, items []core.Node) core.Node {
 	return core.Show{When: st.open, Then: func(cx *core.Scope) core.Node {
 		menuKey.Provide(cx, func(r Reason) { st.set(false, r) })
 		return core.Overlay{
 			Anchor: anchor, Placement: place, Align: align, Offset: offset, Margin: margin,
 			Style: style, StyleFunc: styleFunc, Children: items, Role: core.RoleMenu,
-			OnPressOutside: func(core.Point) { st.set(false, ReasonPressOutside) },
-			OnCancel: func() {
-				if onCancel != nil {
-					onCancel()
-				}
-				st.set(false, ReasonCancel)
-			},
+			OnPressOutside: func(core.Point) { st.cancel(ReasonPressOutside, false) },
+			OnCancel:       func() { st.cancel(ReasonCancel, false) },
 		}
 	}}
 }
@@ -82,6 +84,7 @@ type ContextMenu struct {
 // Render implements core.Node.
 func (m ContextMenu) Render(cx *core.Scope) core.Node {
 	st := newPopup(cx, m.Open, false, m.OnOpenChange, m.OnOpen, m.OnClose)
+	st.onCancel = m.OnCancel
 	anchor := new(core.Ref)
 	return core.Group{
 		core.View{Ref: anchor, Style: m.Style, StyleFunc: m.StyleFunc, TestID: m.TestID,
@@ -96,8 +99,7 @@ func (m ContextMenu) Render(cx *core.Scope) core.Node {
 				}
 			},
 			Children: []core.Node{m.Trigger}},
-		menuPopup(st, anchor, core.PlaceDefault, core.AlignStart, m.Offset, m.Margin, m.PopupStyle, m.PopupStyleFunc, m.Children,
-			m.OnCancel),
+		menuPopup(st, anchor, core.PlaceDefault, core.AlignStart, m.Offset, m.Margin, m.PopupStyle, m.PopupStyleFunc, m.Children),
 	}
 }
 

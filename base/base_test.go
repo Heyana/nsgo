@@ -1,6 +1,7 @@
 package base_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/oneo-me/nsgo/base"
@@ -118,3 +119,34 @@ func TestPopupsNavAndAlerts(t *testing.T) {
 }
 
 func NewNavHelper(cx *core.Scope) *base.Nav[string] { return base.NewNav(cx, "home") }
+
+func TestPopupsReportChangesAndEveryCancel(t *testing.T) {
+	var log []string
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return core.View{Style: core.Style{FlexGrow: 1, AlignItems: core.AlignStart}, Children: []core.Node{
+			base.Popover{TestID: "pop", Trigger: core.Text{Content: "Pop"}, DefaultOpen: true,
+				NoCloseOnEscape: true, NoCloseOnPressOutside: true,
+				OnOpenChange: func(open bool, r base.Reason) { log = append(log, "change "+r.String()) },
+				OnCancel:     func() { log = append(log, "cancel") },
+				PopupStyle:   core.Style{Width: core.Pt(20), Height: core.Pt(20)},
+				Children:     []core.Node{core.Text{Content: "inside"}}},
+			base.Tooltip{TestID: "tip", Trigger: core.Text{Content: "Tip"},
+				OnOpenChange: func(open bool, r base.Reason) { log = append(log, "tooltip "+r.String()) }},
+			base.Menu{TestID: "menu", Trigger: core.Text{Content: "Menu"}, Style: core.Style{Width: core.Pt(200)},
+				PopupStyle: core.Style{Width: core.Pt(50)},
+				Children:   []core.Node{base.MenuItem{Label: "Item", TestID: "item"}}},
+		}}
+	})
+	app.Back()
+	app.Hover("id:tip", false)
+	// Pressing the menu's trigger presses outside the popover.
+	app.Press("text:Menu")
+	if want := []string{"cancel", "cancel"}; !slices.Equal(log, want) {
+		t.Fatalf("log = %q, want both attempts to close cancelled and no requests that change nothing", log)
+	}
+	app.Find("text:inside")
+	menu, popup := app.Find("id:menu"), app.Find("id:item").Parent
+	if popup.Frame.Origin.X != menu.Frame.Origin.X {
+		t.Errorf("menu at x %v, want at its trigger's start %v", popup.Frame.Origin.X, menu.Frame.Origin.X)
+	}
+}

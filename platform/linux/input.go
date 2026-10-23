@@ -133,14 +133,20 @@ func motionCallback(controller uintptr, x, y float64, data uintptr) {
 	if w == nil {
 		return
 	}
-	w.lastPointer = core.Point{X: core.Points(x), Y: core.Points(y)}
+	w.movePointer(core.Point{X: core.Points(x), Y: core.Points(y)})
 	if w.barDrag == nil {
 		w.hoverBars(w.lastPointer)
 	}
 }
 
 func leaveCallback(controller uintptr, data uintptr) {
-	if w := windowOf(data); w != nil && w.barDrag == nil {
+	w := windowOf(data)
+	if w == nil {
+		return
+	}
+	w.pointerIn = false
+	w.hoverViews()
+	if w.barDrag == nil {
 		w.hoverBars(core.Point{X: -1, Y: -1})
 	}
 }
@@ -739,7 +745,7 @@ func (w *window) shield(event uintptr) bool {
 			w.pointerUp(at)
 			return true
 		case gdkMotionNotify:
-			w.lastPointer = at
+			w.movePointer(at)
 			return true
 		}
 	}
@@ -758,7 +764,7 @@ func (w *window) shield(event uintptr) bool {
 	}
 	switch typ {
 	case gdkMotionNotify:
-		w.lastPointer = at
+		w.movePointer(at)
 	case gdkButtonPress:
 		w.shielding = true
 		w.pointerDown(at, gdkButtonEventGetButton(event), gdkEventGetDevice(event))

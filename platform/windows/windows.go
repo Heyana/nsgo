@@ -31,6 +31,7 @@ import (
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/engine"
+	"github.com/oneo-me/nsgo/platform/internal/hover"
 	"github.com/oneo-me/nsgo/platform/internal/queue"
 	"github.com/oneo-me/nsgo/platform/internal/scrollbar"
 )
@@ -291,6 +292,12 @@ type window struct {
 	bars     []*view
 	barDrag  *barDrag
 	tracking bool
+
+	// The views under the pointer that follow hovers, and where the
+	// pointer is while it is over the client area.
+	hovered   hover.Tracker
+	pointer   core.Point
+	pointerIn bool
 
 	// The field with the keyboard focus, the one a modal took it from,
 	// the one a press is selecting in, and whether the window lacks the
@@ -644,6 +651,8 @@ func (w *window) apply(b *core.MountBatch) {
 	}
 	w.checkFocus()
 	w.placeIME()
+	// Views that moved, appeared or went under a still pointer.
+	w.hoverViews()
 	invalidateRect.Call(w.hwnd, 0, 0)
 }
 
@@ -693,6 +702,7 @@ func (w *window) destroy(v *view) {
 	v.source.reset(core.ImageSource{})
 	v.placeholder.reset(core.ImageSource{})
 	v.deleted = true
+	w.hovered.Forget(v.id)
 	if w.views[v.id] == v {
 		w.views[v.id] = nil
 	}
@@ -876,19 +886,52 @@ func barAt(v *view, p core.Point) (*view, core.Point) {
 // scrollsAt appends the scroll views under p, outermost first; p is in
 // the coordinates of v's parent's content.
 func scrollsAt(v *view, p core.Point, out []*view) []*view {
+	return viewsAt(v, p, func(v *view) bool { return v.kind == core.KindScroll }, out)
+}
+
+// viewsAt appends the views under p that match, outermost first: v and
+// the child drawn on top at p, down to the innermost.
+func viewsAt(v *view, p core.Point, match func(*view) bool, out []*view) []*view {
 	if v.style.Hidden || v.style.Opacity <= 0 || !v.frame.Contains(p) {
 		return out
 	}
-	if v.kind == core.KindScroll {
+	if match(v) {
 		out = append(out, v)
 	}
 	p = core.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
 	for i := len(v.children) - 1; i >= 0; i-- {
 		if c := v.children[i]; !c.style.Hidden && c.frame.Contains(p) {
-			return scrollsAt(c, p, out)
+			return viewsAt(c, p, match, out)
 		}
 	}
 	return out
+}
+
+// hoverViews reports the pointer entering and leaving the views that
+// follow hovers, as NSH's views hear it from the system.
+func (w *window) hoverViews() {
+	var under []core.NodeID
+	if root := w.view(w.root); root != nil && w.pointerIn {
+		for _, v := range viewsAt(root, w.pointer, func(v *view) bool { return hover.Follows(v.events) }, nil) {
+			under = append(under, v.id)
+		}
+	}
+	for _, e := range w.hovered.Move(under) {
+		w.engine.Dispatch(e)
+	}
+}
+
+// pointerMoved follows the mouse to client pixel x, y, asking to hear
+// when it leaves the client area.
+func (w *window) pointerMoved(x, y int32) {
+	if !w.tracking {
+		w.tracking = true
+		t := trackMouse{Flags: tmeLeave, Track: w.hwnd}
+		t.Size = uint32(unsafe.Sizeof(t))
+		trackMouseEvent.Call(uintptr(unsafe.Pointer(&t)))
+	}
+	w.pointer, w.pointerIn = w.point(x, y), true
+	w.hoverViews()
 }
 
 // background is the color behind v: its own or its nearest ancestor's.
@@ -938,6 +981,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	if w == nil {
 		r, _, _ := defWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
 		return r
+	}
+	if message == wmMouseMove {
+		w.pointerMoved(int32(int16(lParam&0xffff)), int32(int16(lParam>>16&0xffff)))
 	}
 	switch message {
 	case wmMouseMove, wmLButtonDown, wmLButtonUp, wmRButtonDown, wmRButtonUp, wmMButtonDown, wmMButtonUp,
@@ -1012,12 +1058,6 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if w.selecting != nil {
 			w.fieldMove(at)
 			return 0
-		}
-		if !w.tracking {
-			w.tracking = true
-			t := trackMouse{Flags: tmeLeave, Track: w.hwnd}
-			t.Size = uint32(unsafe.Sizeof(t))
-			trackMouseEvent.Call(uintptr(unsafe.Pointer(&t)))
 		}
 		w.hoverBars(at)
 		if wParam&mkLButton != 0 && w.pan != nil {

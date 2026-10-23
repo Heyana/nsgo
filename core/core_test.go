@@ -623,7 +623,8 @@ func TestModalIsALayerOfItsOwn(t *testing.T) {
 func TestImageSizesFromItsSource(t *testing.T) {
 	h := newHost(t, Size{300, 300}, func(cx *Scope) Node {
 		return View{Style: Style{AlignItems: AlignStart}, Children: []Node{
-			Image{Source: ImageSource{URI: "asset:/logo.png", Size: Size{40, 20}}, TestID: "natural"},
+			Image{Source: ImageSource{URI: "asset:/logo.png", Size: Size{40, 20}, Scales: ScalesOf(1, 2, 3)}, TestID: "natural"},
+			Image{Source: ImageSource{URI: "asset:/single.png", Size: Size{40, 20}}, TestID: "single"},
 			Image{Source: ImageSource{URI: "https://x/y.png", Size: Size{40, 20}}, Style: Style{Width: Pt(100)}, TestID: "wide"},
 			Image{Source: Src("https://x/z.png"), TestID: "unknown"},
 		}}
@@ -639,6 +640,29 @@ func TestImageSizesFromItsSource(t *testing.T) {
 	for _, it := range b.Items {
 		if it.Kind == ItemImage && it.ID == h.find("natural").id && it.Image.Source.URI != "asset:/logo@2x.png" {
 			t.Errorf("source = %q, want the @2x variant", it.Image.Source.URI)
+		}
+		if it.Kind == ItemImage && it.ID == h.find("single").id && it.Image.Source.URI != "asset:/single.png" {
+			t.Errorf("source = %q, want the plain file", it.Image.Source.URI)
+		}
+	}
+}
+
+func TestImageScalesPick(t *testing.T) {
+	for _, c := range []struct {
+		set   ImageScales
+		ratio float32
+		want  float32
+	}{
+		{0, 2, 0},
+		{ScalesOf(1, 2, 3), 1, 1},
+		{ScalesOf(1, 2, 3), 1.5, 2},
+		{ScalesOf(1, 2, 3), 2.5, 3},
+		{ScalesOf(1, 2, 3), 4, 3},
+		{ScalesOf(1, 3), 2, 3},
+		{ScalesOf(2.5, -1), 2, 0},
+	} {
+		if got := c.set.pick(c.ratio); got != c.want {
+			t.Errorf("%08b at %v = %v, want %v", c.set, c.ratio, got, c.want)
 		}
 	}
 }
@@ -909,5 +933,67 @@ func TestSelectionProps(t *testing.T) {
 	b = h.commit()
 	if k := kinds(b); k[ItemViewProps] != 2 || k[ItemText] != 0 {
 		t.Errorf("a new selection color sends %v, want the texts' props only", k)
+	}
+}
+
+func TestHiddenSubtreeHidesItsViewsOverlaysAndModals(t *testing.T) {
+	var shown *Signal[bool]
+	var cancels int
+	h := newHost(t, Size{200, 300}, func(cx *Scope) Node {
+		shown = NewSignal(cx, true)
+		return View{Children: []Node{
+			View{StyleFunc: func() Style {
+				if shown.Get() {
+					return Style{}
+				}
+				return Style{Display: DisplayNone}
+			}, TestID: "parent", Children: []Node{
+				View{Style: Style{Width: Pt(40), Height: Pt(20)}, TestID: "child", Children: []Node{
+					Text{Content: "hi", TestID: "text"},
+				}},
+				Overlay{Style: Style{Width: Pt(50), Height: Pt(30), Top: Pt(10)}, TestID: "overlay",
+					OnCancel: func() { cancels++ }, Children: []Node{
+						View{Style: Style{Width: Pt(10), Height: Pt(10)}, TestID: "in-overlay"},
+					}},
+				Modal{TestID: "modal", Children: []Node{
+					View{Style: Style{Width: Pt(10), Height: Pt(10)}, TestID: "in-modal"},
+				}},
+			}},
+		}}
+	})
+	h.commit()
+	if h.find("overlay").frame.Size != (Size{50, 30}) || h.find("modal").frame.Size != (Size{200, 300}) {
+		t.Fatal("the overlay and modal are not laid out while shown")
+	}
+	shown.Set(false)
+	b := h.commit()
+	for _, id := range []string{"parent", "child", "text", "overlay", "in-overlay", "modal", "in-modal"} {
+		if f := h.find(id).frame; f != (Bounds{}) {
+			t.Errorf("%s frame = %v, want empty", id, f)
+		}
+	}
+	if box := h.find("text").text.box; box != (Bounds{}) {
+		t.Errorf("text box = %v, want empty", box)
+	}
+	hidden := map[NodeID]bool{}
+	for _, it := range b.Items {
+		if it.Kind == ItemViewStyle {
+			hidden[it.ID] = it.ViewStyle.Hidden
+		}
+	}
+	for _, id := range []string{"overlay", "modal"} {
+		if !hidden[h.find(id).id] {
+			t.Errorf("%s is not sent hidden", id)
+		}
+	}
+	// Back passes the hidden modal and overlay by.
+	h.tree.Dispatch(Event{Kind: EventBack})
+	if cancels != 0 || !slices.ContainsFunc(h.commit().Items, func(it MountItem) bool { return it.Kind == ItemBackUnhandled }) {
+		t.Error("back went to a hidden modal or overlay")
+	}
+	shown.Set(true)
+	h.commit()
+	if h.find("overlay").frame.Size != (Size{50, 30}) || h.find("in-modal").frame.Size != (Size{10, 10}) {
+		t.Error("the overlay and modal do not come back")
 	}
 }

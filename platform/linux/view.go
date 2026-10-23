@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/platform/internal/hover"
 	"github.com/oneo-me/nsgo/platform/internal/scrollbar"
 )
 
@@ -160,19 +161,45 @@ func hit(v *view, p core.Point, match func(*view) bool) *view {
 // scrollsAt appends the scroll views under p, outermost first; p is in
 // the coordinates of v's parent's content.
 func scrollsAt(v *view, p core.Point, out []*view) []*view {
+	return viewsAt(v, p, func(v *view) bool { return v.kind == core.KindScroll }, out)
+}
+
+// viewsAt appends the views under p that match, outermost first: v and
+// the child drawn on top at p, down to the innermost.
+func viewsAt(v *view, p core.Point, match func(*view) bool, out []*view) []*view {
 	if v.style.Hidden || v.style.Opacity <= 0 || !v.frame.Contains(p) {
 		return out
 	}
-	if v.kind == core.KindScroll {
+	if match(v) {
 		out = append(out, v)
 	}
 	p = core.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
 	for i := len(v.children) - 1; i >= 0; i-- {
 		if c := v.children[i]; !c.style.Hidden && c.frame.Contains(p) {
-			return scrollsAt(c, p, out)
+			return viewsAt(c, p, match, out)
 		}
 	}
 	return out
+}
+
+// movePointer follows the pointer to surface point at.
+func (w *window) movePointer(at core.Point) {
+	w.lastPointer, w.pointerIn = at, true
+	w.hoverViews()
+}
+
+// hoverViews reports the pointer entering and leaving the views that
+// follow hovers, as NSH's views hear it from the system.
+func (w *window) hoverViews() {
+	var under []core.NodeID
+	if root := w.view(w.root); root != nil && w.pointerIn {
+		for _, v := range viewsAt(root, w.lastPointer, func(v *view) bool { return hover.Follows(v.events) }, nil) {
+			under = append(under, v.id)
+		}
+	}
+	for _, e := range w.hovered.Move(under) {
+		w.engine.Dispatch(e)
+	}
 }
 
 // barDrag is the pointer dragging a scroll bar: from is where it pressed

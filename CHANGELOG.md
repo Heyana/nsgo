@@ -40,6 +40,8 @@
 - Draw Windows with Direct2D and DirectWrite, adding view shadows and color emoji.
 - Layer Windows web views and text fields among the views around them, so dialogs and later views cover them.
 - Give each Linux view a GTK widget of its own, so web views, videos and fields stack and clip with the views around them.
+- Merge checked, indeterminate and selected state styles below hover, focus and pressed ones, and disabled over all, as NSH does.
+- Load an `asset:` image's `@Nx` variants only when its source's `Scales` lists them, else the plain file.
 - License the project under Apache-2.0, with NSH's attribution in `NOTICE`.
 - Fix Android builds failing because Go's implied `linux` tag included the Linux backend.
 - Fix strikethrough missing on macOS and iOS.
@@ -49,3 +51,6 @@
 - Fix text in a padded grid cell overlapping the row below when its width changes how many lines it wraps, and Windows drawing symbols such as ⌘ as boxes.
 - Fix the Android keyboard inset before API 30, which the decor view had already consumed, so the accessory bar tracks the keyboard.
 - Fix closing a Linux web view releasing its page before its custom scheme handler was unregistered.
+- Fix hover events, hover styles and tooltips never firing on Windows and Linux.
+- Fix overlays and modals inside a hidden view staying shown, and hidden views keeping their frames.
+- Fix popups reporting requests that change nothing and skipping `OnCancel` on presses outside, and menus centering on their trigger instead of aligning with its start.

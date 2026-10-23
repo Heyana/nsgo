@@ -1124,3 +1124,51 @@ func TestVideoLoadsDrawsSeeksAndEnds(t *testing.T) {
 		t.Fatalf("only %d of %d sampled pixels are lit: the frame is not drawn", lit, total)
 	}
 }
+
+// hoverApp is a view at (10, 10) to (110, 90) that counts the pointer
+// entering and leaving it in the title.
+func hoverApp(title string) func(*core.Scope) core.Node {
+	return func(cx *core.Scope) core.Node {
+		in, out := core.NewSignal(cx, 0), core.NewSignal(cx, 0)
+		cx.Effect(func() { cx.SetTitle(fmt.Sprintf("%s|%d|%d", title, in.Get(), out.Get())) })
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(200), Padding: core.All(10),
+			Background: core.RGB(0xffffff)}, Children: []core.Node{
+			core.View{Style: core.Style{Width: core.Pt(100), Height: core.Pt(80), Background: core.RGB(0x123456)},
+				OnHoverIn:  func() { in.Update(func(n int) int { return n + 1 }) },
+				OnHoverOut: func() { out.Update(func(n int) int { return n + 1 }) }},
+		}}
+	}
+}
+
+// TestHoverFollowsThePointer moves the mouse onto a view, off it and
+// back, then out of the window. Windows may report the mouse leaving at
+// once, as the real cursor is elsewhere, so only the counts the moves
+// settle on are checked.
+func TestHoverFollowsThePointer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-hover"
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(hoverApp(title), Options{Title: title + "|0|0", Width: 360, Height: 240})
+	}()
+	hwnd := waitForWindow(t, title+"|0|0", done)
+	if hwnd == 0 {
+		return
+	}
+	t.Cleanup(func() {
+		postMessageW.Call(hwnd, wmClose, 0, 0)
+		<-done
+	})
+	waitForText(t, hwnd, title+"|0|0", done)
+	move := func(x, y int32) { postMessageW.Call(hwnd, wmMouseMove, 0, uintptr(uint32(y)<<16|uint32(x)&0xffff)) }
+	move(60, 50)
+	move(200, 150)
+	waitForText(t, hwnd, title+"|1|1", done)
+	move(60, 50)
+	postMessageW.Call(hwnd, wmMouseLeave, 0, 0)
+	waitForText(t, hwnd, title+"|2|2", done)
+}

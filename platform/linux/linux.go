@@ -36,6 +36,7 @@ import (
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/engine"
+	"github.com/oneo-me/nsgo/platform/internal/hover"
 	"github.com/oneo-me/nsgo/platform/internal/queue"
 )
 
@@ -87,7 +88,9 @@ type window struct {
 	drop       fileDrop
 
 	lastPointer    core.Point
-	shielding      bool // a press kept from a hosted control goes on
+	pointerIn      bool          // the pointer is over the surface, at lastPointer
+	hovered        hover.Tracker // the views under it that follow hovers
+	shielding      bool          // a press kept from a hosted control goes on
 	panning        *pan
 	bars           []*view  // the scroll views under the pointer, which show their bars
 	barDrag        *barDrag // the bar the pointer drags
@@ -502,6 +505,8 @@ func (w *window) apply(b *core.MountBatch) {
 			}
 		}
 	}
+	// Views that moved, appeared or went under a still pointer.
+	w.hoverViews()
 }
 
 func (w *window) create(id core.NodeID, kind core.ViewKind) {
@@ -533,6 +538,7 @@ func (w *window) setRoot(id core.NodeID) {
 // so they are detached but their own items release what they hold.
 func (w *window) delete(v *view) {
 	w.forgetDestination(v)
+	w.hovered.Forget(v.id)
 	v.detach()
 	for _, c := range v.children {
 		c.parent = nil

@@ -205,11 +205,15 @@ func (p palette) Render(cx *core.Scope) core.Node {
 				Disabled: func() bool { return c.Disabled }, Selected: func() bool { return active.Get() == c.ID },
 				StyleFunc: func() core.Style {
 					t := theme()
-					return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10, Padding: core.Symmetric(9, 10),
+					s := core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10, Padding: core.Symmetric(9, 10),
 						CornerRadius: t.Radius + 4,
-						Hover:        &core.Style{Background: t.Tint(0.04)},
 						Selected:     &core.Style{Background: t.Tint(0.1)},
 						Disabled:     &core.Style{Color: t.MutedForeground}}
+					// Hover merges over selected, so only rows not chosen take it.
+					if active.Get() != c.ID {
+						s.Hover = &core.Style{Background: t.Tint(0.04)}
+					}
+					return s
 				},
 				Children: parts,
 			}},

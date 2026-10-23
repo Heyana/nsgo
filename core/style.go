@@ -104,8 +104,9 @@ type Style struct {
 	SelectionColor Color
 
 	// State styles merge over the rest while the node is in the state, in
-	// this order of precedence, lowest first: hovered, focused (text
-	// fields), pressed, selected, checked, indeterminate, disabled.
+	// NSH's order of precedence, lowest first: checked, indeterminate and
+	// selected, which the app sets, then hovered, focused (text fields) and
+	// pressed, which the platform reports, then disabled over all.
 	Hover, Focus, Active, Selected, Checked, Indeterminate, Disabled *Style
 }
 
@@ -381,12 +382,12 @@ func (s Style) withStates(states uint8, p ViewProps) Style {
 		on    bool
 		style *Style
 	}{
+		{p.Checked, s.Checked},
+		{p.Indeterminate, s.Indeterminate},
+		{p.Selected, s.Selected},
 		{states&stateHovered != 0, s.Hover},
 		{states&stateFocused != 0, s.Focus},
 		{states&statePressed != 0, s.Active},
-		{p.Selected, s.Selected},
-		{p.Checked, s.Checked},
-		{p.Indeterminate, s.Indeterminate},
 		{p.Disabled, s.Disabled},
 	} {
 		if st.on && st.style != nil {

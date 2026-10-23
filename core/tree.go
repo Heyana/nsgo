@@ -76,6 +76,9 @@ type node struct {
 	image  *imageNode
 	hoist  *hoistNode // an overlay's or a modal's
 	hosted []*node    // the overlays and modals this root view or modal hosts
+	// hidden is set, as the last layout found, for a node DisplayNone
+	// hides: its own or a shadow ancestor's, across hoisting too.
+	hidden bool
 	attach *attachNode
 	screen *screenNode
 	list   *listNode
@@ -857,7 +860,7 @@ func hit(n *node, p Point) NodeID {
 }
 
 func hitWith(n *node, p Point, ok func(*node) bool) NodeID {
-	if n.style.Display == DisplayNone || !n.frame.Contains(p) || (n.attach != nil && n.attach.cut) {
+	if n.style.Display == DisplayNone || n.hidden || !n.frame.Contains(p) || (n.attach != nil && n.attach.cut) {
 		return 0
 	}
 	local := Point{p.X - n.frame.Origin.X, p.Y - n.frame.Origin.Y}

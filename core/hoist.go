@@ -75,9 +75,24 @@ func (t *Tree) placeHoisted(host *node) {
 		} else {
 			t.placeOverlay(n, host, size)
 		}
+		// Its native view is its host's child, so a hidden shadow ancestor
+		// hides it only through the core.
+		if n.hidden = hiddenIn(n); n.hidden {
+			n.frame = Bounds{}
+		}
 		t.syncFrames(n)
 		t.placeHoisted(n)
 	}
+}
+
+// hiddenIn reports whether DisplayNone hides n or a shadow ancestor.
+func hiddenIn(n *node) bool {
+	for ; n != nil; n = n.parent {
+		if n.style.Display == DisplayNone {
+			return true
+		}
+	}
+	return false
 }
 
 // placeOverlay sizes overlay n to its content within its host and places
@@ -257,7 +272,7 @@ func (t *Tree) back() {
 
 func topModal(host *node) *node {
 	for i := len(host.hosted) - 1; i >= 0; i-- {
-		if n := host.hosted[i]; !n.deleted && n.kind == KindModal && n.style.Display != DisplayNone {
+		if n := host.hosted[i]; !n.deleted && n.kind == KindModal && !hiddenIn(n) {
 			return n
 		}
 	}
@@ -266,7 +281,7 @@ func topModal(host *node) *node {
 
 func topOverlay(host *node) *node {
 	for i := len(host.hosted) - 1; i >= 0; i-- {
-		if n := host.hosted[i]; !n.deleted && n.kind != KindModal && n.h.cancel != nil {
+		if n := host.hosted[i]; !n.deleted && n.kind != KindModal && n.h.cancel != nil && !hiddenIn(n) {
 			return n
 		}
 	}
@@ -276,7 +291,7 @@ func topOverlay(host *node) *node {
 // pressOutside reports a press outside overlay n unless it landed on its
 // anchor or an overlay above it.
 func (t *Tree) pressOutside(n *node, at Point) {
-	if n.h.pressOutside == nil {
+	if n.h.pressOutside == nil || hiddenIn(n) {
 		return
 	}
 	if a, ok := t.anchorRect(n.hoist.overlay.Anchor, t.view); ok && a.Contains(at) {
@@ -289,7 +304,7 @@ func (t *Tree) pressOutside(n *node, at Point) {
 			above = true
 			continue
 		}
-		if above && !o.deleted && t.surfaceBounds(o).Contains(at) {
+		if above && !o.deleted && !o.hidden && t.surfaceBounds(o).Contains(at) {
 			return
 		}
 	}

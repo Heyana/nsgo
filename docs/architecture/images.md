@@ -1,6 +1,6 @@
 # Images
 
-`Image` shows a picture the platform loads: a URL, a file, an `asset:` path in the app's resources, or bytes the app holds. Bitmaps, animated GIF and WebP files and SVG documents all load as images, as in NSH's `docs/dev/images.md`. Read this before changing how a backend loads, decodes or plays images.
+`Image` shows a picture the platform loads: a URL, a file, an `asset:` path in the app's resources, or bytes the app holds. Bitmaps, animated GIF and WebP files and SVG documents all load as images, as in NSH's `docs/dev/images.md`. An `asset:` source lists the `@Nx` variants it ships in `Scales`, and the core sends the one for the pixel ratio, as NSH's does; without `Scales` the plain file loads. Read this before changing how a backend loads, decodes or plays images.
 
 ## Decoding
 

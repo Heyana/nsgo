@@ -409,6 +409,12 @@ func (t *Tree) syncFrames(n *node) {
 		if mirror {
 			f.Origin.X = n.scroll.content.Width - f.Origin.X - f.Size.Width
 		}
+		// As NSH's frame walk does, a hidden subtree gets empty frames and
+		// content boxes, whatever its layout kept.
+		c.hidden = n.hidden || c.style.Display == DisplayNone
+		if c.hidden {
+			f = Bounds{}
+		}
 		c.frame = f
 		t.syncFrames(c)
 	}
@@ -418,6 +424,9 @@ func (t *Tree) syncFrames(n *node) {
 // and how far its content scrolls.
 func (t *Tree) syncContent(n *node) {
 	l := &n.lstate.Rounded
+	if n.hidden {
+		l = &layout.Layout{}
+	}
 	switch {
 	case n.text != nil:
 		n.text.box = contentBox(l)

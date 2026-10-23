@@ -196,11 +196,7 @@ func (w *window) hostedMove(x, y int32, time uint32) bool {
 		w.hoverWeb = nil
 	}
 	if wv != nil {
-		if w.hoverWeb == nil {
-			t := trackMouse{Flags: tmeLeave, Track: w.hwnd}
-			t.Size = uint32(unsafe.Sizeof(t))
-			trackMouseEvent.Call(uintptr(unsafe.Pointer(&t)))
-		}
+		// pointerMoved asked to hear when the mouse leaves.
 		w.hoverWeb = wv
 		wv.mouse(-1, false, px, py, time)
 	}
@@ -210,6 +206,8 @@ func (w *window) hostedMove(x, y int32, time uint32) bool {
 // mouseLeft follows the mouse out of the client area.
 func (w *window) mouseLeft() {
 	w.tracking = false
+	w.pointerIn = false
+	w.hoverViews()
 	if wv := w.hoverWeb; wv != nil && w.rawWeb == nil {
 		w.hoverWeb = nil
 		wv.leave()

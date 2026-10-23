@@ -293,13 +293,17 @@ type ImageSource struct {
 	Data []byte
 	// Size is the image's size in points, when known up front.
 	Size Size
+	// Scales are the pixel densities an "asset:" image ships in (a.png,
+	// a@2x.png, ...): the core mounts the one for the screen's pixel
+	// ratio. Empty for a single file.
+	Scales ImageScales
 }
 
 // Src returns a source for uri.
 func Src(uri string) ImageSource { return ImageSource{URI: uri} }
 
 func (s ImageSource) same(o ImageSource) bool {
-	return s.URI == o.URI && s.Size == o.Size && len(s.Data) == len(o.Data) &&
+	return s.URI == o.URI && s.Size == o.Size && s.Scales == o.Scales && len(s.Data) == len(o.Data) &&
 		(len(s.Data) == 0 || &s.Data[0] == &o.Data[0])
 }
 

@@ -6,21 +6,9 @@ References are files in `nsh/docs/dev/` unless they name a crate, with the bulle
 
 ## Order
 
-Sections run in build order: fixes first, then what apps build on, then components, services, the tool, embedding and performance. The last section waits for community contributions, and nothing above it depends on it.
+Sections run in build order: what apps build on first, then components, services, the tool, embedding and performance. The last section waits for community contributions, and nothing above it depends on it.
 
-## 1. Parity fixes
-
-Behavior that differs from NSH today.
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| State style order | `styles.md` (Tailwind) | Checked, indeterminate and selected styles merge below hover, focus and active, and disabled over all |
-| Hover on Windows and Linux | `windows.md`, `linux.md` | `Style.Hover`, `OnHoverIn`, `OnHoverOut` and `base.Tooltip` work on both |
-| Asset variants | `images.md` (pixel-density variants) | An `asset:` image picks an `@Nx` file only where one ships, else the plain file |
-| Hidden subtrees | `pitfalls.md` (the core keeps its own layout tree) | Views, overlays and modals under a `DisplayNone` view get no frames and stay hidden |
-| Popup requests | `crates/nsh-base/src/popup.rs`, `menu.rs` | `OnCancel` runs on every close attempt, a request matching the state reports nothing, and menus align to the start by default |
-
-## 2. Element props
+## 1. Element props
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -32,7 +20,7 @@ Behavior that differs from NSH today.
 | Accessibility | `elements.md` (interaction and the environment) | Hints, values and ranges, actions, hidden and grouped elements, live regions, the expanded state, `SetAccessibilityFocus` |
 | Screens and dialogs | `elements.md` (`<NavStack>`, `<Dialog>`) | Screens set a system header and a status bar; modals take iOS sheet presentations, swipe to close and orientations |
 
-## 3. Input and interaction
+## 2. Input and interaction
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -43,7 +31,7 @@ Behavior that differs from NSH today.
 | Back and keys | `components.md`, `crates/nsh-core/src/keymap.rs` | Any owner can take back before stacks; key bindings take `when` and `repeat` and give labels such as ⇧⌘L |
 | Frames | `elements.md` (interaction and the environment) | `RequestAnimationFrame` follows the display's frame clock |
 
-## 4. Styles and layout
+## 3. Styles and layout
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -57,7 +45,7 @@ Behavior that differs from NSH today.
 | Direction | `elements.md` (right to left) | A subtree overrides the direction; start and end style fields; writing direction |
 | Group and keyframe styles | `components.md` (styles), `styles.md` (effects) | Children style by an ancestor's state; spin, ping, pulse and bounce keyframes |
 
-## 5. Text and canvas
+## 4. Text and canvas
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -68,7 +56,7 @@ Behavior that differs from NSH today.
 | Animated drawings | `canvas.md`, `animation.md` | Animated values as drawing arguments, redrawn on the frame clock without commits |
 | Animation API | `animation.md` | Composite `Reset`, spring and decay samplers, shadow opacity and text color bindings |
 
-## 6. Base components and popups
+## 5. Base components and popups
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -81,9 +69,9 @@ Behavior that differs from NSH today.
 | Sheets and tooltips | `crates/nsh-base/src/sheet.rs`, `tooltip.rs` | Sheets slide from their side over a fading backdrop and report after the motion; any element takes a tooltip that never takes the pointer |
 | Text view | `text-view.md` | A streaming caret, table and code block actions, scroll bar switches, Markdown options, extensions for a subtree, highlighting off the engine goroutine |
 
-`DockArea` needs the resizable panels and the touch responder from section 3.
+`DockArea` needs the resizable panels and the touch responder from section 2.
 
-## 7. Services and windows
+## 6. Services and windows
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -93,7 +81,7 @@ Behavior that differs from NSH today.
 | Window commands | `crates/nsh-core/src/runtime/desktop.rs` | Animated, top-anchored `SetFrame`, window levels, `OrderFront`, an auto-hiding menu bar, native popup menus |
 | App lifecycle | `macos.md` (standalone shutdown) | `nsgo.Run` returns for cleanup; apps quit themselves or outlive their last window; a forced appearance reaches native chrome |
 
-## 8. Testing and the tool
+## 7. Testing and the tool
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -105,7 +93,7 @@ Behavior that differs from NSH today.
 | Packages | `embedding.md`, `web.md` | Build numbers, the app's appearance, Linux and Windows archives, IPAs, a cacheable web site with a manifest, `-run` |
 | Store signing | `embedding.md` | `nsgo build` signs an IPA with a provisioning profile and an APK with a keystore |
 
-## 9. Embedding
+## 8. Embedding
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -114,7 +102,7 @@ Behavior that differs from NSH today.
 | Host settings | `embedding.md` | A host registers components per view, sets locale, text size and appearance, receives app errors and sets the data directory |
 | Component lifetime | `embedding.md` (native components) | Native components are destroyed when their app stops, on Android too |
 
-## 10. Performance
+## 9. Performance
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -125,7 +113,7 @@ Behavior that differs from NSH today.
 | macOS drawing | `macos.md` (architecture), `canvas.md` | Content layers replace `drawRect:`; canvases draw off the main thread and redraw only what changed |
 | Windows frames | `windows.md` (frames) | The frame clock follows the compositor with `DwmFlush` |
 
-## 11. Finish the existing platforms
+## 10. Finish the existing platforms
 
 These items wait for community contributions.
 

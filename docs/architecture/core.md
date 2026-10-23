@@ -18,7 +18,7 @@ Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canv
 
 - A field that can change takes a function (`StyleFunc`, `ContentFunc`, `Value`, `Disabled`), bound by one render effect per part.
 - Styles compose with `Style.Merge`, and text fields inherit down the tree as in CSS.
-- State styles (`Hover`, `Focus`, `Active`, `Selected`, `Checked`, `Indeterminate`, `Disabled`) merge over the rest. The engine tracks interaction states from the press, hover and focus events it asks the platform to report.
+- State styles merge over the rest in NSH's order: `Checked`, `Indeterminate` and `Selected`, which the app sets, then `Hover`, `Focus` and `Active`, which the engine tracks from the press, hover and focus events it asks the platform to report, then `Disabled` over all. Windows and Linux hit-test hovers themselves (`platform/internal/hover`).
 - A `Ref`, usable at its zero value, names a mounted element for anchoring, focus, scrolling and its bounds.
 
 A component is any type whose `Render(cx) Node` returns its nodes, like `http.Handler`. Its fields are its props. `Render` runs once under a scope of its own, so `Key.Provide` and cleanups stay inside it. `Func` turns a function into a component.

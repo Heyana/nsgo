@@ -125,6 +125,7 @@ func (w *window) retire(v *view, lb *layoutBatch) {
 // draws until the view leaving goes.
 func (w *window) retireInner(v *view) {
 	w.forgetDestination(v)
+	w.hovered.Forget(v.id)
 	v.dying, v.deleted = true, true
 	if w.views[v.id] == v {
 		w.views[v.id] = nil
