@@ -17,7 +17,7 @@ The performance monitor measures what a surface's frames and commits cost while 
 
 `nsgo dev -fps` passes `-X github.com/oneo-me/nsgo.fps=1` to the app's build; `nsgo.Run` turns that into the backend's monitor. `nsgo.FPS(true)` does the same from an app, for `go run` or embedding. The flag exists only for the native macOS target: other targets have no monitor yet and the tool refuses `-fps` for them.
 
-The macOS panel sits at the top right of the surface, lets the mouse through, and is redrawn every 500 ms:
+The macOS panel sits at the top right of the surface, lets the mouse through, fades out while the pointer is over it, and is redrawn every 500 ms:
 
 - `FPS` counts frames shown over the last second; `max` is what the main thread could keep up with, capped at the display's rate.
 - `TICK` is the gaps between refreshes and the 95th-percentile gap between shown frames.

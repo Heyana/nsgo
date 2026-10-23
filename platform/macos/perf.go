@@ -35,7 +35,8 @@ import (
 // - The trace: the last 120 frames' main-thread cost against the frame
 //   budget (the line), green within half of it, amber within it, red over.
 //
-// The panel lets the mouse through. It measures nothing while hidden: the
+// The panel lets the mouse through and fades out while the pointer is over
+// it, so what it covers stays visible. It measures nothing while hidden: the
 // monitor is removed with it.
 
 // How often the readings are redrawn.
@@ -117,6 +118,7 @@ func newHud(s *surface, monitor *engine.PerfMonitor) *hud {
 	layer.Send(selSetBackgroundColor, fill)
 	apple.Release(fill)
 	layer.Send(selSetCornerRadius, 8.0)
+	trackingArea(panel, false).Send(selRelease)
 
 	label := objc.ID(objc.GetClass("NSTextField")).Send(sel("labelWithString:"), apple.NSString(""))
 	font := objc.ID(objc.GetClass("NSFont")).Send(sel("monospacedSystemFontOfSize:weight:"), 10.5, 0.0)
@@ -242,9 +244,18 @@ func registerPerfClasses() {
 	perfClassOnce.Do(func() {
 		nsView := objc.GetClass("NSView")
 		passThrough := func(objc.ID, objc.SEL, apple.CGPoint) objc.ID { return 0 }
-		classPerfPanel = register("NsgoPerfPanel", nsView, nil, []objc.MethodDef{{
-			Cmd: sel("hitTest:"), Fn: passThrough,
-		}})
+		// Tracking areas ignore hitTest, and a transparent view keeps its
+		// own; a hidden one would not report the pointer leaving.
+		fade := func(alpha float64) func(objc.ID, objc.SEL, objc.ID) {
+			return func(self objc.ID, _ objc.SEL, _ objc.ID) {
+				self.Send(sel("animator")).Send(sel("setAlphaValue:"), alpha)
+			}
+		}
+		classPerfPanel = register("NsgoPerfPanel", nsView, nil, []objc.MethodDef{
+			{Cmd: sel("hitTest:"), Fn: passThrough},
+			{Cmd: sel("mouseEntered:"), Fn: fade(0)},
+			{Cmd: sel("mouseExited:"), Fn: fade(1)},
+		})
 		classPerfTrace = register("NsgoPerfTrace", nsView, nil, []objc.MethodDef{
 			{Cmd: sel("hitTest:"), Fn: passThrough},
 			{Cmd: sel("drawRect:"), Fn: drawPerfTrace},

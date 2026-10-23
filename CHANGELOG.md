@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Add `nsgo dev -fps` and the `nsgo.FPS` option, a performance monitor over macOS apps with frame rate, frame and commit costs, CPU, GPU, memory and a frame trace.
+- Add `nsgo dev -fps` and the `nsgo.FPS` option, a performance monitor over macOS apps with frame rate, frame and commit costs, CPU, GPU, memory and a frame trace, fading out while the pointer is over it.
 - Add `ui.WindowControls`, Onevra's minimize, maximize or restore and close buttons for a title bar the app draws, and `Env.Maximized` to show restore.
 - Center a hidden macOS title bar's traffic lights in the app's bar, 16 points in, and draw Onevra's rounded caption buttons on Windows.
 - Float the gallery's title row over the sidebar and content, with Onevra's 220-point sidebar, 24-point content insets and title inset, and draw its window buttons on Linux.
