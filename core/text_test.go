@@ -1,0 +1,116 @@
+package core
+
+import (
+	"testing"
+)
+
+func TestTextFontScaling(t *testing.T) {
+	h := newHost(t, Size{400, 100}, func(cx *Scope) Node {
+		return View{Style: Style{FontSize: 10}, Children: []Node{
+			Text{Content: "a", TestID: "scaled"},
+			Text{Content: "b", TestID: "fixed", NoFontScaling: true},
+			Text{Content: "c", TestID: "capped", MaxFontSizeMultiplier: 1.5},
+		}}
+	})
+	h.tree.SetEnvironment(Environment{FontScale: 2})
+	h.commit()
+	for id, want := range map[string]Points{"scaled": 20, "fixed": 10, "capped": 15} {
+		if got := h.find(id).text.style.Font.Size; got != want {
+			t.Errorf("%s: font size = %v, want %v", id, got, want)
+		}
+	}
+}
+
+func TestTextTransformShadowAndDecoration(t *testing.T) {
+	h := newHost(t, Size{400, 100}, func(cx *Scope) Node {
+		return View{Style: Style{TextTransform: TextTransformUppercase, TextShadowOffset: Point{1, 2}}, Children: []Node{
+			Text{TestID: "text", Style: Style{TextDecoration: TextDecorationUnderline, TextDecorationStyle: DecorationWavy,
+				TextDecorationColor: RGB(0xff0000)}, Spans: []Span{
+				{Content: "hello "},
+				{Content: "big world", Style: Style{TextTransform: TextTransformCapitalize}},
+			}},
+		}}
+	})
+	h.commit()
+	tn := h.find("text").text
+	if got, want := tn.text.Text, "HELLO Big World"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+	if got, want := tn.text.Shadow, (TextShadow{Color: Color(0x00000055), Offset: Point{1, 2}}); got != want {
+		t.Errorf("shadow = %+v, want %+v", got, want)
+	}
+	if s := tn.style; s.DecorationStyle != DecorationWavy || s.DecorationColor != RGB(0xff0000) {
+		t.Errorf("decoration = %v %v, want wavy red", s.DecorationStyle, s.DecorationColor)
+	}
+	if tn.text.Ellipsize != EllipsizeTail {
+		t.Errorf("ellipsize = %v, want tail by default", tn.text.Ellipsize)
+	}
+}
+
+func TestTextFitsItsBox(t *testing.T) {
+	var lines []TextLine
+	var batch *MountBatch
+	h := newHost(t, Size{400, 100}, func(cx *Scope) Node {
+		return View{Style: Style{AlignItems: AlignStart}, Children: []Node{
+			Text{Content: "aaaaaaaaaa", TestID: "text", Style: Style{FontSize: 10, Width: Pt(30), Height: Pt(8)},
+				AdjustsFontSizeToFit: true, MinimumFontScale: 0.2, OnTextLayout: func(l []TextLine) { lines = l }},
+		}}
+	})
+	batch = h.commit()
+	var text *TextContent
+	for _, it := range batch.Items {
+		if it.Kind == ItemText {
+			text = it.Text
+		}
+	}
+	if text == nil {
+		t.Fatal("no text item")
+	}
+	l := text.Layout.(*ApproxLayout)
+	// Ten characters 6 wide at 10 points fit 30 points at a scale of 0.5.
+	if len(l.Lines) != 1 || len(lines) != 1 {
+		t.Fatalf("lines = %q, reported %+v, want one", l.Lines, lines)
+	}
+	if w := lines[0].Bounds.Size.Width; w > 30 || w < 28 {
+		t.Errorf("line width = %v, want just under 30", w)
+	}
+	if lines[0].Text != "aaaaaaaaaa" || lines[0].Start != 0 || lines[0].End != 10 {
+		t.Errorf("line = %+v, want the whole text", lines[0])
+	}
+}
+
+func TestTextAlignVertical(t *testing.T) {
+	h := newHost(t, Size{400, 100}, func(cx *Scope) Node {
+		return View{Style: Style{AlignItems: AlignStart}, Children: []Node{
+			Text{Content: "a", TestID: "text", Style: Style{FontSize: 10, Height: Pt(40),
+				TextAlignVertical: TextAlignVerticalBottom}},
+		}}
+	})
+	b := h.commit()
+	for _, it := range b.Items {
+		if it.Kind == ItemText {
+			if got, want := it.Text.Content, (Bounds{Point{0, 28}, Size{6, 12}}); got != want {
+				t.Errorf("content = %v, want %v", got, want)
+			}
+			return
+		}
+	}
+	t.Fatal("no text item")
+}
+
+func TestCutToFit(t *testing.T) {
+	text := AttributedText{Text: "abcdefghij", Ellipsize: EllipsizeMiddle,
+		Spans: []TextSpan{{Start: 0, End: 5}, {Start: 5, End: 10, Link: true}}}
+	fits := func(t *AttributedText) bool { return len([]rune(t.Text)) <= 5 }
+	got := text.CutToFit(fits)
+	if got.Text != "ab…ij" {
+		t.Errorf("middle = %q, want ab…ij", got.Text)
+	}
+	if len(got.Spans) != 2 || got.Spans[0] != (TextSpan{Start: 0, End: 5}) || got.Spans[1].Start != 5 || got.Spans[1].End != 7 {
+		t.Errorf("spans = %+v, want the ellipsis in the first", got.Spans)
+	}
+	text.Ellipsize = EllipsizeHead
+	if got := text.CutToFit(fits); got.Text != "…ghij" {
+		t.Errorf("head = %q, want …ghij", got.Text)
+	}
+}

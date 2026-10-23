@@ -52,7 +52,6 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
-import android.widget.ScrollView;
 import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 import java.io.BufferedInputStream;
@@ -105,6 +104,8 @@ public class NsgoView extends FrameLayout {
     private final SparseArray<Text.Prepared> prepared = new SparseArray<>();
     /** Laid-out text by ID: the reader thread adds it, the batch that draws it takes it. */
     private final ConcurrentHashMap<Integer, StaticLayout> layouts = new ConcurrentHashMap<>();
+    /** The lines a clipped layout shows, by layout id, until its ITEM_TEXT. */
+    private final ConcurrentHashMap<Integer, Integer> clips = new ConcurrentHashMap<>();
     /** Decodes images off the UI thread, one at a time. */
     private final ExecutorService decoder = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "nsgo-images");
@@ -306,6 +307,9 @@ public class NsgoView extends FrameLayout {
             d.writeByte((dark ? 1 : 0) | (reduceMotion ? 2 : 0) | (reader ? 4 : 0) | (rtl ? 8 : 0));
             d.writeByte(config.smallestScreenWidthDp >= 600 ? Protocol.IDIOM_TABLET : Protocol.IDIOM_PHONE);
             Protocol.writeString(d, config.getLocales().get(0).toLanguageTag());
+            // The system header's heights, without and with a large title.
+            d.writeFloat(Header.BAR);
+            d.writeFloat(Header.BAR);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -400,7 +404,11 @@ public class NsgoView extends FrameLayout {
                 for (int i = 0, n = in.readInt(); i < n; i++) spans.add(new Text.Span(in, density));
                 List<Text.Attachment> attachments = new ArrayList<>();
                 for (int i = 0, n = in.readInt(); i < n; i++) attachments.add(new Text.Attachment(in, density));
-                prepared.put(id, new Text.Prepared(text, style, maxLines, spans, attachments));
+                int ellipsize = in.readUnsignedByte();
+                Text.Shadow shadow = new Text.Shadow(in, density);
+                style.readDecoration(in);
+                for (Text.Span span : spans) span.style.readDecoration(in);
+                prepared.put(id, new Text.Prepared(text, style, maxLines, ellipsize, shadow, spans, attachments));
                 break;
             }
             case Protocol.MEASURE: {
@@ -414,9 +422,13 @@ public class NsgoView extends FrameLayout {
                 Text.Prepared p = prepared.get(id);
                 StaticLayout l = p.layout(in.readFloat() * density);
                 layouts.put(layout, l);
+                if (p.clipLines() > 0) clips.put(layout, p.clipLines());
                 if (p.hasAttachments()) laidOut(Text.attachments(l));
                 break;
             }
+            case Protocol.LINES:
+                lines(Text.lines(layouts.get(id)));
+                break;
             case Protocol.RELEASE:
                 prepared.remove(id);
                 break;
@@ -479,6 +491,23 @@ public class NsgoView extends FrameLayout {
             throw new AssertionError(impossible);
         }
         write(Protocol.LAID_OUT, bytes.toByteArray());
+    }
+
+    /** Answers a LINES message: per line its UTF-8 range, box and metrics, in points. */
+    private void lines(float[][] lines) {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(4 + lines.length * 40);
+        DataOutputStream d = new DataOutputStream(bytes);
+        try {
+            d.writeInt(lines.length);
+            for (float[] line : lines) {
+                d.writeInt((int) line[0]);
+                d.writeInt((int) line[1]);
+                for (int i = 2; i < line.length; i++) d.writeFloat(line[i] / density);
+            }
+        } catch (IOException impossible) {
+            throw new AssertionError(impossible);
+        }
+        write(Protocol.TEXT_LINES, bytes.toByteArray());
     }
 
     private synchronized void write(int kind, byte[] payload) {
@@ -749,6 +778,7 @@ public class NsgoView extends FrameLayout {
                 }
                 if (n.animator != null) n.animator.cancel();
                 if (n.web != null) n.web.destroy();
+                if (n.holder != null) detach(n.holder);
                 if (n.video != null) n.video.destroy();
                 break;
             case Protocol.ITEM_FRAME:
@@ -759,27 +789,27 @@ public class NsgoView extends FrameLayout {
                 break;
             case Protocol.ITEM_TEXT: {
                 n.text = Protocol.readString(in);
-                StaticLayout layout = layouts.remove(in.readInt());
+                int laid = in.readInt();
+                StaticLayout layout = layouts.remove(laid);
+                Integer clip = clips.remove(laid);
                 int x = px(in.readFloat()), y = px(in.readFloat());
-                ((TextNode) n.view).setLayout(layout, x, y);
+                ((TextNode) n.view).setLayout(layout, x, y, clip != null ? clip : 0);
                 describe(n);
                 break;
             }
             case Protocol.ITEM_INPUT:
-                input(n.field, in);
-                n.accessory = in.readInt();
+                input(n, in);
                 updateAccessory();
                 break;
             case Protocol.ITEM_INPUT_VALUE: {
                 String value = Protocol.readString(in);
                 long count = in.readInt() & 0xffffffffL;
-                // Skip values the user has typed past.
-                if (n.edits <= count && !n.field.getText().toString().equals(value)) {
-                    n.applying = true;
-                    n.field.setText(value);
-                    n.field.setSelection(n.field.length());
-                    n.applying = false;
-                }
+                n.field.setValue(value, count);
+                break;
+            }
+            case Protocol.ITEM_SELECTION: {
+                int start = in.readInt(), end = in.readInt();
+                if (n.field != null) n.field.select(start, end);
                 break;
             }
             case Protocol.ITEM_EVENTS:
@@ -789,10 +819,9 @@ public class NsgoView extends FrameLayout {
                 props(n, in);
                 break;
             case Protocol.ITEM_SCROLL_CONFIG: {
-                int flags = in.readUnsignedByte();
-                scroller(n, Protocol.flag(flags, 0));
-                n.scroller.setVerticalScrollBarEnabled(!Protocol.flag(flags, 1));
-                n.scroller.setHorizontalScrollBarEnabled(!Protocol.flag(flags, 1));
+                Scrolling.Config c = Scrolling.Config.read(in);
+                scroller(n, c.horizontal, c.zooms());
+                ((Scrolling.Scroller) n.scroller).configure(c);
                 break;
             }
             case Protocol.ITEM_SCROLL_CONTENT: {
@@ -816,7 +845,12 @@ public class NsgoView extends FrameLayout {
                 int request = in.readInt();
                 int mode = in.readUnsignedByte();
                 float blur = in.readFloat() * density;
-                n.image.configure(request, mode, blur, in.readInt());
+                int fade = in.readInt();
+                // Each axis of the position: a fraction of the free space plus points.
+                float xFraction = in.readFloat(), x = in.readFloat() * density;
+                float yFraction = in.readFloat(), y = in.readFloat() * density;
+                n.image.configure(request, mode, blur, fade);
+                n.image.position(xFraction, x, yFraction, y);
                 break;
             }
             case Protocol.ITEM_MODAL:
@@ -834,19 +868,50 @@ public class NsgoView extends FrameLayout {
                 break;
             }
             case Protocol.ITEM_SCROLL_TO: {
-                int x = px(in.readFloat()), y = px(in.readFloat());
+                float x = in.readFloat(), y = in.readFloat();
                 boolean animated = Protocol.flag(in.readUnsignedByte(), 0);
-                FrameLayout scroller = n.scroller;
+                Scrolling.Scroller scroller = (Scrolling.Scroller) n.scroller;
                 // Scroll views clamp to their content, which takes its new
-                // size at the next layout.
-                afterLayout(scroller, () -> {
-                    if (animated) {
-                        if (scroller instanceof ScrollView) ((ScrollView) scroller).smoothScrollTo(x, y);
-                        else ((HorizontalScrollView) scroller).smoothScrollTo(x, y);
-                    } else {
-                        scroller.scrollTo(x, y);
-                    }
+                // size at the next layout. Counted as applied, the scroll
+                // reports carry it.
+                afterLayout(n.scroller, () -> {
+                    n.applied++;
+                    scroller.scrollToPoints(x, y, animated);
                 });
+                break;
+            }
+            case Protocol.ITEM_SCROLL_BY: {
+                float x = in.readFloat(), y = in.readFloat();
+                Scrolling.Scroller scroller = (Scrolling.Scroller) n.scroller;
+                afterLayout(n.scroller, () -> {
+                    n.applied++;
+                    scroller.scrollByPoints(x, y);
+                });
+                break;
+            }
+            case Protocol.ITEM_STICKY_CELLS: {
+                float[] cells = new float[in.readInt() * 3];
+                for (int i = 0; i < cells.length; i += 3) {
+                    cells[i] = in.readInt();
+                    cells[i + 1] = in.readFloat();
+                    cells[i + 2] = in.readFloat();
+                }
+                if (n.sticky != null) {
+                    for (int i = 0; i < n.sticky.length; i += 3) stick(nodes.get((int) n.sticky[i]), 0, false);
+                }
+                n.sticky = cells;
+                pinSticky(n);
+                break;
+            }
+            case Protocol.ITEM_ZOOM_TO: {
+                float scale = in.readFloat();
+                boolean centered = Protocol.flag(in.readUnsignedByte(), 0);
+                float x = in.readFloat(), y = in.readFloat();
+                boolean animated = Protocol.flag(in.readUnsignedByte(), 0);
+                if (n.scroller instanceof Scrolling.ZoomScroll) {
+                    Scrolling.ZoomScroll z = (Scrolling.ZoomScroll) n.scroller;
+                    afterLayout(z, () -> z.zoomTo(scale, centered, x, y, animated));
+                }
                 break;
             }
             case Protocol.ITEM_CANVAS: {
@@ -878,6 +943,7 @@ public class NsgoView extends FrameLayout {
             }
             case Protocol.ITEM_STATUS_BAR:
                 statusBarStyle = in.readUnsignedByte();
+                // Hidden, then animated, which the system does as it likes.
                 statusBarHidden = Protocol.flag(in.readUnsignedByte(), 0);
                 systemBars();
                 break;
@@ -914,8 +980,20 @@ public class NsgoView extends FrameLayout {
                 }
                 break;
             }
+            case Protocol.ITEM_ACCESSIBILITY_LABEL:
+                n.label = Protocol.readString(in);
+                describe(n);
+                break;
+            case Protocol.ITEM_ACCESSIBILITY_FOCUS: {
+                View view = n.accessible();
+                view.performAccessibilityAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null);
+                break;
+            }
             case Protocol.ITEM_ANIMATION:
                 for (int i = 0, count = in.readInt(); i < count; i++) animator.apply(Animator.readOp(in));
+                break;
+            case Protocol.ITEM_SCREEN:
+                screen(n, in);
                 break;
             case Protocol.ITEM_WINDOW:
             case Protocol.ITEM_MENU:
@@ -964,6 +1042,35 @@ public class NsgoView extends FrameLayout {
             }
         }
         l.apply(n.view, n.background);
+        if (n.shift != 0) {
+            if (n.shiftAcross) n.view.setTranslationX(n.view.getTranslationX() + n.shift * density);
+            else n.view.setTranslationY(n.view.getTranslationY() + n.shift * density);
+        }
+    }
+
+    /** Moves scroll node n's sticky cells for its offset: each by clamp(offset - start, 0, end - start) points. */
+    private void pinSticky(Node n) {
+        if (n.sticky == null || !(n.scroller instanceof Scrolling.Scroller)) return;
+        Scrolling.Scroller s = (Scrolling.Scroller) n.scroller;
+        boolean horizontal = n.scroller instanceof Scrolling.HScroll;
+        float at = horizontal ? s.offsetX() : s.offsetY();
+        for (int i = 0; i < n.sticky.length; i += 3) {
+            float start = n.sticky[i + 1], end = n.sticky[i + 2];
+            stick(nodes.get((int) n.sticky[i]), Math.min(Math.max(at - start, 0), Math.max(end - start, 0)), horizontal);
+        }
+    }
+
+    /** Moves sticky cell c by d points along its list from its frame. */
+    private void stick(Node c, float d, boolean horizontal) {
+        if (c == null || c.shift == d && c.shiftAcross == horizontal) return;
+        c.shift = d;
+        c.shiftAcross = horizontal;
+        if (c.shown != null) {
+            paint(c);
+        } else {
+            c.view.setTranslationX(horizontal ? d * density : 0);
+            c.view.setTranslationY(horizontal ? 0 : d * density);
+        }
     }
 
     /** Draws the views whose animated values changed. */
@@ -1050,9 +1157,35 @@ public class NsgoView extends FrameLayout {
         place(n, f);
     }
 
+    /**
+     * Applies an ItemScreen: screen n's system header, over its content,
+     * holding the header views the core sized.
+     */
+    private void screen(Node n, DataInputStream in) throws IOException {
+        if (n.header == null) {
+            n.header = new Header(getContext(), density, () -> event(Protocol.EVENT_BACK, n.id, 0, 0, 0, ""));
+            n.children.addView(n.header.toolbar);
+        }
+        n.header.configure(in, id -> {
+            Node item = nodes.get(id);
+            if (item == null) return null;
+            if (item.holder == null) {
+                item.holder = new Header.Holder(getContext());
+                detach(item.view);
+                item.holder.addView(item.view);
+                float[] f = item.frame;
+                Header.size(item.holder, f != null ? px(f[2]) : 1, f != null ? px(f[3]) : 1);
+            }
+            return item.holder;
+        });
+    }
+
     /** Places n's view at frame f in points, rounding its edges to pixels. */
     private void place(Node n, float[] f) {
         n.frame = f;
+        if (n.holder != null) {
+            Header.size(n.holder, px(f[0] + f[2]) - px(f[0]), px(f[1] + f[3]) - px(f[1]));
+        }
         if (n == accessoryShown) {
             placeAccessory();
             return;
@@ -1449,7 +1582,7 @@ public class NsgoView extends FrameLayout {
                 break;
             case Protocol.KIND_SCROLL:
                 n.children = new Content(context);
-                scroller(n, false);
+                scroller(n, false, false);
                 break;
             default:
                 n.children = (ViewGroup) view;
@@ -1460,33 +1593,39 @@ public class NsgoView extends FrameLayout {
                 super.onInitializeAccessibilityNodeInfo(host, info);
                 describe(n, info);
             }
+
+            @Override
+            public boolean performAccessibilityAction(View host, int action, android.os.Bundle args) {
+                String name = actionName(n, action);
+                if (name != null && n.offers(name) && n.has(Protocol.EVENT_ACCESSIBILITY_ACTION)) {
+                    event(Protocol.EVENT_ACCESSIBILITY_ACTION, n.id, 0, 0, 0, name);
+                    return true;
+                }
+                return super.performAccessibilityAction(host, action, args);
+            }
         });
         nodes.put(id, n);
         return n;
     }
 
-    private EditText field(Node n) {
-        EditText field = new EditText(getContext());
-        field.setBackground(null);
-        field.setPadding(0, 0, 0, 0);
-        field.setSingleLine(true);
-        field.setInputType(InputType.TYPE_CLASS_TEXT);
-        field.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        field.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void afterTextChanged(Editable s) {
-                if (n.applying) return;
-                n.edits++;
-                event(Protocol.EVENT_CHANGE_TEXT, n.id, n.edits, 0, 0, s.toString());
+    private InputField field(Node n) {
+        InputField field = new InputField(getContext(), new InputField.Listener() {
+            @Override public boolean has(int kind) {
+                return n.has(kind);
             }
-        });
-        field.setOnEditorActionListener((v, action, key) -> {
-            // A hardware Enter calls this on key down and again on key up.
-            if (key == null || key.getAction() == KeyEvent.ACTION_DOWN) {
-                report(n, Protocol.EVENT_SUBMIT_EDITING, 0, 0, field.getText().toString());
+
+            @Override public void send(int kind, long count, int index, String text, boolean finished) {
+                // Text changes always go: the engine keeps the text.
+                if (kind != Protocol.EVENT_CHANGE_TEXT && !n.has(kind)) return;
+                event(kind, n.id, count, 0, 0, text, 0, 0, index, 0, 0, 0, 0, null, 0, 0, false, "", finished);
             }
-            return false;
+
+            @Override public void blur() {
+                if (n.field.hasFocus()) {
+                    n.field.clearFocus();
+                    ime.hideSoftInputFromWindow(n.field.getWindowToken(), 0);
+                }
+            }
         });
         field.setOnFocusChangeListener((v, focused) -> {
             if (focused) focusedInput = n;
@@ -1497,15 +1636,30 @@ public class NsgoView extends FrameLayout {
         return field;
     }
 
-    /** Gives scroll node n a scroll view of the orientation, moving its content into it. */
-    private void scroller(Node n, boolean horizontal) {
-        if (n.scroller != null && (n.scroller instanceof HorizontalScrollView) == horizontal) return;
-        FrameLayout scroller = horizontal ? new HorizontalScrollView(getContext()) : new ScrollView(getContext());
-        scroller.setOnScrollChangeListener((v, x, y, oldX, oldY) -> {
-            // Values following the offset move in the same frame.
-            if (animator.scroll(n.id, x / density, y / density)) applyAnimated();
-            report(n, Protocol.EVENT_SCROLL, x / density, y / density, "");
-        });
+    /**
+     * Gives scroll node n a scroll view of the orientation, or one that
+     * zooms, moving its content into it.
+     */
+    private void scroller(Node n, boolean horizontal, boolean zooms) {
+        if (n.scroller != null && (n.scroller instanceof Scrolling.ZoomScroll) == zooms
+                && (zooms || (n.scroller instanceof HorizontalScrollView) == horizontal)) return;
+        Scrolling.Host host = scrollHost(n);
+        ViewGroup frame = (ViewGroup) n.view;
+        FrameLayout scroller = zooms ? new Scrolling.ZoomScroll(getContext(), host, density, n.children)
+                : horizontal ? new Scrolling.HScroll(getContext(), host, density, n.children, frame)
+                : new Scrolling.VScroll(getContext(), host, density, n.children, frame);
+        // A scroll view inside another one scrolls first, then hands the
+        // rest to its parent (else the parent takes every drag along its axis).
+        scroller.setNestedScrollingEnabled(true);
+        if (!zooms) {
+            Scrolling.Scroller s = (Scrolling.Scroller) scroller;
+            scroller.setOnScrollChangeListener((v, x, y, oldX, oldY) -> host.scrolled(s.offsetX(), s.offsetY(), 1));
+        } else {
+            n.children.setScaleX(1);
+            n.children.setScaleY(1);
+        }
+        n.children.setTranslationX(0);
+        n.children.setTranslationY(0);
         if (n.scroller != null) {
             n.scroller.removeView(n.children);
             ((ViewGroup) n.view).removeView(n.scroller);
@@ -1577,7 +1731,8 @@ public class NsgoView extends FrameLayout {
         animator.start();
     }
 
-    private void input(EditText field, DataInputStream in) throws IOException {
+    private void input(Node n, DataInputStream in) throws IOException {
+        InputField field = n.field;
         Text.Style style = new Text.Style(in, density);
         String placeholder = Protocol.readString(in);
         int keyboard = in.readUnsignedByte();
@@ -1585,24 +1740,19 @@ public class NsgoView extends FrameLayout {
         boolean masked = Protocol.flag(flags, 0), readonly = Protocol.flag(flags, 1);
         boolean disabled = Protocol.flag(flags, 2);
         LayoutParams content = frame(in);
-
-        // Setting the input type restarts the keyboard, so only on change.
-        int type = inputType(keyboard, masked);
-        if (field.getInputType() != type) field.setInputType(type);
-        // Without a key listener the field takes no input but still selects.
-        if (readonly) field.setKeyListener(null);
-        field.setEnabled(!disabled);
+        n.accessory = in.readInt();
+        field.configure(in, keyboard, masked, readonly, disabled, density);
         field.setHint(placeholder);
         field.setTypeface(style.typeface());
         field.setTextSize(TypedValue.COMPLEX_UNIT_PX, style.size);
         field.setTextColor(style.color);
         field.setLetterSpacing(style.letterSpacingEm());
         field.setPaintFlags(style.paintFlags(field.getPaintFlags()));
-        field.setGravity(style.gravity() | Gravity.CENTER_VERTICAL);
+        field.setGravity(style.gravity() | (field.multiline() ? Gravity.TOP : Gravity.CENTER_VERTICAL));
         field.setLayoutParams(content);
     }
 
-    private static int inputType(int keyboard, boolean masked) {
+    static int inputType(int keyboard, boolean masked) {
         boolean decimal = keyboard == Protocol.KEYBOARD_DECIMAL;
         boolean numeric = decimal || keyboard == Protocol.KEYBOARD_NUMBER || keyboard == Protocol.KEYBOARD_PHONE;
         if (masked) {
@@ -1693,6 +1843,25 @@ public class NsgoView extends FrameLayout {
         n.activeY = in.readFloat();
         n.failX = in.readFloat();
         n.failY = in.readFloat();
+        n.hint = Protocol.readString(in);
+        int a11y = in.readUnsignedByte();
+        n.expandable = Protocol.flag(a11y, 0);
+        n.expanded = Protocol.flag(a11y, 1);
+        n.hidden = Protocol.flag(a11y, 2);
+        n.range = Protocol.flag(a11y, 3);
+        n.accessibleMode = in.readUnsignedByte();
+        n.liveRegion = in.readUnsignedByte();
+        n.min = in.readFloat();
+        n.max = in.readFloat();
+        n.now = in.readFloat();
+        n.valueText = Protocol.readString(in);
+        int actions = in.readInt();
+        n.actionNames = new String[actions];
+        n.actionLabels = new String[actions];
+        for (int i = 0; i < actions; i++) {
+            n.actionNames[i] = Protocol.readString(in);
+            n.actionLabels[i] = Protocol.readString(in);
+        }
         View view = n.accessible();
         // A text field's ItemInput enables it.
         if (n.field == null) view.setEnabled(!n.disabled);
@@ -1700,9 +1869,51 @@ public class NsgoView extends FrameLayout {
         view.setTag(n.testID.isEmpty() ? null : n.testID);
         // A dialog announces its label as it appears, an alert its content.
         view.setAccessibilityPaneTitle(n.role == Protocol.ROLE_DIALOG && !n.label.isEmpty() ? n.label : null);
-        view.setAccessibilityLiveRegion(n.role == Protocol.ROLE_ALERT
-                ? View.ACCESSIBILITY_LIVE_REGION_ASSERTIVE : View.ACCESSIBILITY_LIVE_REGION_NONE);
+        int live = n.liveRegion == 2 || n.role == Protocol.ROLE_ALERT ? View.ACCESSIBILITY_LIVE_REGION_ASSERTIVE
+                : n.liveRegion == 1 ? View.ACCESSIBILITY_LIVE_REGION_POLITE : View.ACCESSIBILITY_LIVE_REGION_NONE;
+        view.setAccessibilityLiveRegion(live);
+        if (n.hidden) {
+            view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        } else if (n.accessibleMode == Protocol.ACCESSIBLE_NO) {
+            view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        } else if (n.accessibleMode == Protocol.ACCESSIBLE_YES) {
+            view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        } else {
+            view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        }
+        // A group is one stop for TalkBack, which reads its label.
+        view.setScreenReaderFocusable(n.accessibleMode == Protocol.ACCESSIBLE_YES);
         describe(n);
+    }
+
+    /** The standard action a TalkBack action is, if any. */
+    private static String actionName(Node n, int action) {
+        if (action >= CUSTOM_ACTION && action < CUSTOM_ACTION + n.actionNames.length) {
+            return n.actionNames[action - CUSTOM_ACTION];
+        }
+        switch (action) {
+            case AccessibilityNodeInfo.ACTION_CLICK: return "activate";
+            case AccessibilityNodeInfo.ACTION_LONG_CLICK: return "longpress";
+            case AccessibilityNodeInfo.ACTION_SCROLL_FORWARD: return "increment";
+            case AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD: return "decrement";
+            case AccessibilityNodeInfo.ACTION_EXPAND: return "expand";
+            case AccessibilityNodeInfo.ACTION_COLLAPSE: return "collapse";
+            default: return null;
+        }
+    }
+
+    /** Ids of custom accessibility actions, outside the framework's. */
+    private static final int CUSTOM_ACTION = 0x3f000000;
+
+    /** Actions TalkBack performs through its own gestures, not its actions menu. */
+    private static boolean isStandardAction(String name) {
+        switch (name) {
+            case "activate": case "increment": case "decrement": case "longpress":
+            case "expand": case "collapse": case "escape": case "magicTap":
+                return true;
+            default:
+                return false;
+        }
     }
 
     /** Sets what assistive technology reads: the label, else a text node's text. */
@@ -1744,6 +1955,40 @@ public class NsgoView extends FrameLayout {
         }
         info.setSelected(n.selected);
         if (!n.testID.isEmpty()) info.setViewIdResourceName(n.testID);
+        if (!n.hint.isEmpty()) info.setHintText(n.hint);
+        StringBuilder state = new StringBuilder();
+        if (n.expandable) {
+            state.append(n.expanded ? "expanded" : "collapsed");
+            if (n.offers(n.expanded ? "collapse" : "expand")) {
+                info.addAction(n.expanded ? AccessibilityNodeInfo.AccessibilityAction.ACTION_COLLAPSE
+                        : AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND);
+            }
+        }
+        if (!n.valueText.isEmpty()) {
+            if (state.length() > 0) state.append(", ");
+            state.append(n.valueText);
+        } else if (n.range) {
+            info.setRangeInfo(AccessibilityNodeInfo.RangeInfo.obtain(
+                    AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_FLOAT, n.min, n.max, n.now));
+        }
+        if (n.role == Protocol.ROLE_ADJUSTABLE) info.setClassName("android.widget.SeekBar");
+        if (n.role == Protocol.ROLE_PROGRESS_BAR) info.setClassName("android.widget.ProgressBar");
+        if (state.length() > 0 && Build.VERSION.SDK_INT >= 30) info.setStateDescription(state);
+        if (n.offers("increment")) info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD);
+        if (n.offers("decrement")) info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD);
+        if (n.offers("activate")) {
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK);
+            info.setClickable(true);
+        }
+        if (n.offers("longpress")) {
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_LONG_CLICK);
+            info.setLongClickable(true);
+        }
+        for (int i = 0; i < n.actionNames.length; i++) {
+            if (isStandardAction(n.actionNames[i])) continue;
+            String label = n.actionLabels[i].isEmpty() ? n.actionNames[i] : n.actionLabels[i];
+            info.addAction(new AccessibilityNodeInfo.AccessibilityAction(CUSTOM_ACTION + i, label));
+        }
     }
 
     /**
@@ -2096,6 +2341,64 @@ public class NsgoView extends FrameLayout {
         return past(dx, n.activeX) || past(dy, n.activeY) ? 1 : 0;
     }
 
+    /** What scroll node n's scroll view asks of the runtime. */
+    private Scrolling.Host scrollHost(Node n) {
+        return new Scrolling.Host() {
+            @Override
+            public void scrollEvent(int kind, float x, float y, float zoom) {
+                if (n.has(kind)) event(kind, n.id, n.applied, x, y, "", 0, 0, 0, 0, 0, 0, zoom, null);
+            }
+
+            @Override
+            public void scrolled(float x, float y, float zoom) {
+                // Values following the offset move in the same frame, and
+                // so do sticky cells.
+                if (animator.scroll(n.id, x, y)) applyAnimated();
+                if (n.sticky != null) pinSticky(n);
+                scrollEvent(Protocol.EVENT_SCROLL, x, y, zoom);
+            }
+
+            @Override
+            public boolean dismissKeyboard() {
+                View focused = findFocus();
+                if (!(focused instanceof EditText)) return false;
+                ime.hideSoftInputFromWindow(focused.getWindowToken(), 0);
+                focused.clearFocus();
+                return true;
+            }
+
+            @Override
+            public boolean onInput(float rawX, float rawY) {
+                for (int i = 0; i < nodes.size(); i++) {
+                    Node o = nodes.valueAt(i);
+                    if (o.field != null && under(o.field, rawX, rawY)) return true;
+                }
+                return false;
+            }
+
+            @Override
+            public boolean handlesTap(float rawX, float rawY) {
+                for (int i = 0; i < nodes.size(); i++) {
+                    Node o = nodes.valueAt(i);
+                    if (o != n && (o.has(Protocol.EVENT_PRESS) || o.has(Protocol.EVENT_LONG_PRESS)
+                            || o.has(Protocol.EVENT_PRESS_DOWN) || o.followsGestures()) && under(o.view, rawX, rawY)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        };
+    }
+
+    /** Whether a shown view covers the raw screen point. */
+    private static boolean under(View v, float rawX, float rawY) {
+        if (!v.isShown()) return false;
+        int[] at = new int[2];
+        v.getLocationOnScreen(at);
+        return rawX >= at[0] && rawY >= at[1] && rawX < at[0] + v.getWidth() * v.getScaleX()
+                && rawY < at[1] + v.getHeight() * v.getScaleY();
+    }
+
     private static boolean past(float v, float limit) {
         return limit != 0 && Math.abs(v) >= Math.abs(limit);
     }
@@ -2140,7 +2443,7 @@ public class NsgoView extends FrameLayout {
         /** Where children go: the view, or a scroll view's content. */
         ViewGroup children;
         FrameLayout scroller;
-        EditText field;
+        InputField field;
         ImageNode image;
         CanvasNode canvas;
         WebNode web;
@@ -2153,17 +2456,28 @@ public class NsgoView extends FrameLayout {
         int modal = -1;
         boolean presented;
         long events;
-        /** User edits of field, numbered as EventChangeText numbers them. */
-        long edits;
-        /** Set while a batch sets field's text, which is no user edit. */
-        boolean applying;
         int role;
         boolean disabled, selected, checked, mixed;
         String label = "", text = "", testID = "";
+        /** Accessibility beyond the role, label and states, as core.ViewProps has it. */
+        String hint = "", valueText = "";
+        boolean expandable, expanded, hidden, range;
+        int accessibleMode, liveRegion;
+        float min, max, now;
+        String[] actionNames = new String[0], actionLabels = new String[0];
         /** The pan's activation offsets in points, as in core.PanActivation; 0 is unset. */
         float activeX, activeY, failX, failY;
         /** The frame shown, in points (x, y, width, height), or null before the first. */
         float[] frame;
+        /**
+         * A scroll node's ItemScrollTo and ItemScrollBy applied, which its
+         * reports carry, and its sticky cells (id, start, end); a sticky
+         * cell's shift from its frame in points, across for a horizontal list.
+         */
+        long applied;
+        float[] sticky;
+        float shift;
+        boolean shiftAcross;
         /** A layout animation's move: from and to, its phase and when it began. */
         float[] from, to;
         LayoutTransition motion;
@@ -2178,6 +2492,9 @@ public class NsgoView extends FrameLayout {
         /** A native view's component view, and whether one was asked for. */
         Embedded embedded;
         boolean embedTried;
+        /** A screen's system header, and the holder of a header view in one. */
+        Header header;
+        Header.Holder holder;
 
         Node(int id, View view) {
             this.id = id;
@@ -2186,6 +2503,14 @@ public class NsgoView extends FrameLayout {
 
         boolean has(int kind) {
             return (events & (1L << kind)) != 0;
+        }
+
+        /** Whether the node offers the accessibility action name. */
+        boolean offers(String name) {
+            for (String a : actionNames) {
+                if (a.equals(name)) return true;
+            }
+            return false;
         }
 
         /** Whether the node follows a pan, a pinch or a rotation. */

@@ -14,47 +14,52 @@ import (
 )
 
 var (
-	cfAttributedStringCreate   func(alloc, str, attrs uintptr) uintptr
-	cfAttributedStringLength   func(uintptr) int
-	cfAttributedStringSubstr   func(alloc, str uintptr, r cfRange) uintptr
-	cfAttributedStringAttrsAt  func(str uintptr, loc int, effective *cfRange) uintptr
-	cfRetain                   func(uintptr) uintptr
-	cfArrayGetCount            func(uintptr) int
-	cfArrayGetValueAtIndex     func(arr uintptr, i int) uintptr
-	cgPathCreateWithRect       func(rect CGRect, transform uintptr) uintptr
-	cgPathRelease              func(uintptr)
-	cgContextSaveGState        func(uintptr)
-	cgContextRestoreGState     func(uintptr)
-	cgContextTranslateCTM      func(ctx uintptr, x, y float64)
-	cgContextScaleCTM          func(ctx uintptr, x, y float64)
-	cgContextSetTextPosition   func(ctx uintptr, x, y float64)
-	ctFontCreateUIFont         func(kind uint32, size float64, lang uintptr) uintptr
-	ctFontCreateWithName       func(name uintptr, size float64, matrix uintptr) uintptr
-	ctFontCopyFontDescriptor   func(font uintptr) uintptr
-	ctFontDescriptorCopyAttrs  func(desc, attrs uintptr) uintptr
-	ctFontCreateWithDescriptor func(desc uintptr, size float64, matrix uintptr) uintptr
-	ctFontGetAscent            func(uintptr) float64
-	ctFontGetDescent           func(uintptr) float64
-	ctFontGetLeading           func(uintptr) float64
-	ctParagraphStyleCreate     func(settings unsafe.Pointer, n uintptr) uintptr
-	ctFramesetterCreate        func(str uintptr) uintptr
-	ctFramesetterSuggestSize   func(fs uintptr, r cfRange, attrs uintptr, limit CGSize, fit uintptr) CGSize
-	ctFramesetterCreateFrame   func(fs uintptr, r cfRange, path, attrs uintptr) uintptr
-	ctFrameGetLines            func(frame uintptr) uintptr
-	ctFrameGetLineOrigins      func(frame uintptr, r cfRange, origins *CGPoint)
-	ctFrameDraw                func(frame, ctx uintptr)
-	ctLineGetTypographicBounds func(line uintptr, ascent, descent, leading *float64) float64
-	ctLineGetStringRange       func(line uintptr) cfRange
-	ctLineCreateWithAttrString func(str uintptr) uintptr
-	ctLineCreateTruncatedLine  func(line uintptr, width float64, kind uint32, token uintptr) uintptr
-	ctLineDraw                 func(line, ctx uintptr)
-	ctLineIndexForPosition     func(line uintptr, p CGPoint) int
-	ctLineOffsetForIndex       func(line uintptr, i int, secondary *float64) float64
-	cfAttributedStringMutable  func(alloc uintptr, max int, str uintptr) uintptr
-	cfAttributedStringSetAttrs func(str uintptr, r cfRange, attrs uintptr, clear bool)
+	cfAttributedStringCreate    func(alloc, str, attrs uintptr) uintptr
+	cfAttributedStringLength    func(uintptr) int
+	cfAttributedStringSubstr    func(alloc, str uintptr, r cfRange) uintptr
+	cfAttributedStringAttrsAt   func(str uintptr, loc int, effective *cfRange) uintptr
+	cfRetain                    func(uintptr) uintptr
+	cfArrayGetCount             func(uintptr) int
+	cfArrayGetValueAtIndex      func(arr uintptr, i int) uintptr
+	cgPathCreateWithRect        func(rect CGRect, transform uintptr) uintptr
+	cgPathRelease               func(uintptr)
+	cgContextSaveGState         func(uintptr)
+	cgContextRestoreGState      func(uintptr)
+	cgContextTranslateCTM       func(ctx uintptr, x, y float64)
+	cgContextScaleCTM           func(ctx uintptr, x, y float64)
+	cgContextSetTextPosition    func(ctx uintptr, x, y float64)
+	ctFontCreateUIFont          func(kind uint32, size float64, lang uintptr) uintptr
+	ctFontCreateWithName        func(name uintptr, size float64, matrix uintptr) uintptr
+	ctFontCopyFontDescriptor    func(font uintptr) uintptr
+	ctFontDescriptorCopyAttrs   func(desc, attrs uintptr) uintptr
+	ctFontCreateWithDescriptor  func(desc uintptr, size float64, matrix uintptr) uintptr
+	ctFontGetAscent             func(uintptr) float64
+	ctFontGetDescent            func(uintptr) float64
+	ctFontGetLeading            func(uintptr) float64
+	ctParagraphStyleCreate      func(settings unsafe.Pointer, n uintptr) uintptr
+	ctFramesetterCreate         func(str uintptr) uintptr
+	ctFramesetterSuggestSize    func(fs uintptr, r cfRange, attrs uintptr, limit CGSize, fit uintptr) CGSize
+	ctFramesetterCreateFrame    func(fs uintptr, r cfRange, path, attrs uintptr) uintptr
+	ctFrameGetLines             func(frame uintptr) uintptr
+	ctFrameGetLineOrigins       func(frame uintptr, r cfRange, origins *CGPoint)
+	ctFrameDraw                 func(frame, ctx uintptr)
+	ctLineGetTypographicBounds  func(line uintptr, ascent, descent, leading *float64) float64
+	ctLineGetStringRange        func(line uintptr) cfRange
+	ctLineCreateWithAttrString  func(str uintptr) uintptr
+	ctLineCreateTruncatedLine   func(line uintptr, width float64, kind uint32, token uintptr) uintptr
+	ctLineDraw                  func(line, ctx uintptr)
+	ctLineIndexForPosition      func(line uintptr, p CGPoint) int
+	ctLineOffsetForIndex        func(line uintptr, i int, secondary *float64) float64
+	cfAttributedStringMutable   func(alloc uintptr, max int, str uintptr) uintptr
+	cfAttributedStringSetAttrs  func(str uintptr, r cfRange, attrs uintptr, clear bool)
+	ctLineGetGlyphRuns          func(line uintptr) uintptr
+	ctRunGetAttributes          func(run uintptr) uintptr
+	ctFontGetCapHeight          func(uintptr) float64
+	cgContextSetShadowWithColor func(ctx uintptr, offset CGSize, blur float64, color uintptr)
+	cgContextClipToRect         func(ctx uintptr, r CGRect)
 
 	attrFont, attrColor, attrKern, attrUnderline, attrParagraph uintptr
-	attrTraits, attrWeight, attrSymbolic                        uintptr
+	attrTraits, attrWeight, attrSymbolic, attrUnderlineColor    uintptr
 )
 
 func loadText(cf, cg uintptr) {
@@ -98,6 +103,11 @@ func loadText(cf, cg uintptr) {
 	reg(&ctLineOffsetForIndex, ct, "CTLineGetOffsetForStringIndex")
 	reg(&cfAttributedStringMutable, cf, "CFAttributedStringCreateMutableCopy")
 	reg(&cfAttributedStringSetAttrs, cf, "CFAttributedStringSetAttributes")
+	reg(&ctLineGetGlyphRuns, ct, "CTLineGetGlyphRuns")
+	reg(&ctRunGetAttributes, ct, "CTRunGetAttributes")
+	reg(&ctFontGetCapHeight, ct, "CTFontGetCapHeight")
+	reg(&cgContextSetShadowWithColor, cg, "CGContextSetShadowWithColor")
+	reg(&cgContextClipToRect, cg, "CGContextClipToRect")
 	attrFont = constant(ct, "kCTFontAttributeName")
 	attrColor = constant(ct, "kCTForegroundColorAttributeName")
 	attrKern = constant(ct, "kCTKernAttributeName")
@@ -106,7 +116,8 @@ func loadText(cf, cg uintptr) {
 	attrTraits = constant(ct, "kCTFontTraitsAttribute")
 	attrWeight = constant(ct, "kCTFontWeightTrait")
 	attrSymbolic = constant(ct, "kCTFontSymbolicTrait")
-	loadInline(ct)
+	attrUnderlineColor = constant(ct, "kCTUnderlineColorAttributeName")
+	loadInline(ct, cg)
 }
 
 // CoreText weights of CSS's 100 to 900, from UIFontWeight.
@@ -159,25 +170,49 @@ type paragraphSetting struct {
 // CoreText alignments and paragraph specifiers.
 const (
 	alignLeft, alignRight, alignCenter = 0, 1, 2
+	alignJustified                     = 3
 	specAlignment                      = 0
 	specMaxLineHeight                  = 8
 	specMinLineHeight                  = 9
 )
 
+// CoreText's underline styles and patterns.
+const (
+	underlineSingle = 0x01
+	underlineDouble = 0x09
+	underlineDot    = 0x0100
+	underlineDash   = 0x0200
+)
+
 // runAttributes returns a new dictionary of what st sets per character:
 // font, color, letter spacing and underline, plus extra keys and values.
-// The caller releases it.
+// A wavy underline is drawn from the lines instead. The caller releases
+// it.
 func runAttributes(st core.TextStyle, keys, values []uintptr) uintptr {
 	font := Font(st.Font)
 	color := CGColor(st.Color)
 	var line int32
 	if st.Decoration&core.TextDecorationUnderline != 0 {
-		line = 1 // single
+		switch st.DecorationStyle {
+		case core.DecorationDouble:
+			line = underlineDouble
+		case core.DecorationDotted:
+			line = underlineSingle | underlineDot
+		case core.DecorationDashed:
+			line = underlineSingle | underlineDash
+		case core.DecorationWavy:
+		default:
+			line = underlineSingle
+		}
 	}
 	underline := int32Number(line)
 	owned := []uintptr{font, color, underline}
 	keys = append(keys, attrFont, attrColor, attrUnderline)
 	values = append(values, font, color, underline)
+	if line != 0 && st.DecorationColor != 0 {
+		c := CGColor(st.DecorationColor)
+		keys, values, owned = append(keys, attrUnderlineColor), append(values, c), append(owned, c)
+	}
 	// A kern of 0 would turn the font's own kerning off.
 	if st.LetterSpacing != 0 {
 		kern := float64Number(float64(st.LetterSpacing))
@@ -230,6 +265,8 @@ func attributed(t *core.AttributedText, toUTF16 []int, fonts []core.FontExtent) 
 		align = alignCenter
 	case core.TextAlignEnd:
 		align = alignRight
+	case core.TextAlignJustify:
+		align = alignJustified
 	}
 	lineHeight := float64(st.LineHeight)
 	settings := []paragraphSetting{{spec: specAlignment, size: 1, value: unsafe.Pointer(&align)}}
@@ -308,7 +345,8 @@ func (TextEngine) Prepare(t *core.AttributedText) core.PreparedText {
 		fonts[i] = fontExtent(placeholderStyle(t, at.Offset))
 	}
 	str := attributed(t, toUTF16, fonts)
-	p := &prepared{str: str, fs: ctFramesetterCreate(str), maxLines: t.MaxLines, text: t.Text, toUTF8: toUTF8,
+	p := &prepared{str: str, fs: ctFramesetterCreate(str), maxLines: t.MaxLines, ellipsize: t.Ellipsize,
+		shadow: t.Shadow, text: t.Text, toUTF8: toUTF8,
 		toUTF16: toUTF16, decos: decorations(t, toUTF16), atts: t.Attachments, fonts: fonts}
 	if cfAttributedStringLength(str) == 0 {
 		f := Font(t.Style.Font)
@@ -324,6 +362,8 @@ func (TextEngine) Prepare(t *core.AttributedText) core.PreparedText {
 type prepared struct {
 	str, fs     uintptr
 	maxLines    int
+	ellipsize   core.EllipsizeMode
+	shadow      core.TextShadow
 	emptyHeight float64
 	text        string
 	toUTF8      []int // byte offsets of UTF-16 offsets
@@ -389,7 +429,7 @@ func (p *prepared) Layout(size core.Size) core.TextLayout {
 }
 
 func (p *prepared) layout(size core.Size) *Layout {
-	l := &Layout{height: float64(size.Height), text: p.text, toUTF8: p.toUTF8}
+	l := &Layout{height: float64(size.Height), text: p.text, toUTF8: p.toUTF8, shadow: p.shadow}
 	if p.emptyHeight > 0 {
 		return l
 	}
@@ -408,10 +448,22 @@ func (p *prepared) layout(size core.Size) *Layout {
 	r := ctLineGetStringRange(cfArrayGetValueAtIndex(lines, p.maxLines-1))
 	rest := cfAttributedStringSubstr(0, p.str, cfRange{Location: r.Location, Length: cfAttributedStringLength(p.str) - r.Location})
 	line := ctLineCreateWithAttrString(rest)
-	token := ellipsisToken(rest)
-	l.truncated = ctLineCreateTruncatedLine(line, float64(size.Width), truncateEnd, token)
-	Release(token)
-	Release(line)
+	if p.ellipsize == core.EllipsizeClip {
+		// The rest on one line, cut where the box ends.
+		l.truncated, l.clip = line, float64(size.Width)
+	} else {
+		kind := uint32(truncateEnd)
+		switch p.ellipsize {
+		case core.EllipsizeHead:
+			kind = truncateStart
+		case core.EllipsizeMiddle:
+			kind = truncateMiddle
+		}
+		token := ellipsisToken(rest)
+		l.truncated = ctLineCreateTruncatedLine(line, float64(size.Width), kind, token)
+		Release(token)
+		Release(line)
+	}
 	Release(rest)
 	l.shown, l.restStart = p.maxLines, r.Location
 	origins := make([]CGPoint, p.maxLines)
@@ -430,7 +482,12 @@ func (p *prepared) layout(size core.Size) *Layout {
 	return l
 }
 
-const truncateEnd = 1
+// CTLineTruncationType.
+const (
+	truncateStart  = 0
+	truncateEnd    = 1
+	truncateMiddle = 2
+)
 
 // ellipsisToken returns a line of "…" in the attributes str starts with.
 func ellipsisToken(str uintptr) uintptr {
@@ -459,6 +516,10 @@ type Layout struct {
 	origins   []CGPoint
 	shown     int
 	restStart int // the truncated line's first UTF-16 offset
+	// clip is the width a clipped last line is cut at, 0 for none.
+	clip float64
+	// shadow is drawn behind the glyphs and their lines.
+	shadow core.TextShadow
 
 	text   string
 	toUTF8 []int
@@ -505,6 +566,41 @@ func (l *Layout) placed() (lines []uintptr, baselines []CGPoint, bases []int) {
 	bases = make([]int, len(lines))
 	bases[len(lines)-1] = l.restStart
 	return lines, l.origins[:l.shown], bases
+}
+
+// TextLines implements core.LineLayout: each line's range, box and its
+// first run's font metrics.
+func (l *Layout) TextLines() []core.TextLine {
+	if l == nil || (l.frame == 0 && l.truncated == 0) {
+		return nil
+	}
+	lines, baselines, bases := l.placed()
+	out := make([]core.TextLine, 0, len(lines))
+	for i, line := range lines {
+		var ascent, descent, leading float64
+		width := ctLineGetTypographicBounds(line, &ascent, &descent, &leading)
+		if line == l.truncated && l.clip > 0 {
+			width = min(width, l.clip)
+		}
+		r := ctLineGetStringRange(line)
+		start, end := r.Location+bases[i], r.Location+r.Length+bases[i]
+		if line == l.truncated {
+			end = len(l.toUTF8) - 1 // the rest, which the line stands for
+		}
+		tl := core.TextLine{Ascender: core.Points(ascent), Descender: core.Points(descent),
+			Bounds: core.Bounds{Origin: core.Point{X: core.Points(baselines[i].X), Y: core.Points(baselines[i].Y - ascent - leading/2)},
+				Size: core.Size{Width: core.Points(width), Height: core.Points(ascent + descent + leading)}}}
+		if n := len(l.toUTF8) - 1; n >= 0 {
+			tl.Start, tl.End = l.toUTF8[min(max(start, 0), n)], l.toUTF8[min(max(end, 0), n)]
+		}
+		if runs := ctLineGetGlyphRuns(line); cfArrayGetCount(runs) > 0 {
+			if font := cfDictionaryGetValue(ctRunGetAttributes(cfArrayGetValueAtIndex(runs, 0)), attrFont); font != 0 {
+				tl.CapHeight, tl.XHeight = core.Points(ctFontGetCapHeight(font)), core.Points(ctFontGetXHeight(font))
+			}
+		}
+		out = append(out, tl)
+	}
+	return out
 }
 
 // IndexAt returns the UTF-8 byte offset of the character at p, a point of
@@ -633,9 +729,19 @@ func (l *Layout) Draw(ctx uintptr, viewHeight float64, box CGRect) {
 	if l == nil || ctx == 0 || (l.frame == 0 && l.truncated == 0) {
 		return
 	}
+	cgContextSaveGState(ctx)
+	defer cgContextRestoreGState(ctx)
+	if s := l.shadow; s.Color != 0 {
+		// Shadow offsets are in the base space, y up under the flipped
+		// context: a positive offset must still go down.
+		c := CGColor(s.Color)
+		cgContextSetShadowWithColor(ctx, CGSize{Width: float64(s.Offset.X), Height: -float64(s.Offset.Y)},
+			float64(s.Radius), c)
+		Release(c)
+	}
 	l.drawGlyphs(ctx, viewHeight, box)
 	if len(l.over) > 0 {
-		fillBoxes(ctx, l.over, box)
+		drawLines(ctx, l.over, box)
 	}
 }
 
@@ -657,7 +763,14 @@ func (l *Layout) drawGlyphs(ctx uintptr, viewHeight float64, box CGRect) {
 			line = l.lines[i]
 		}
 		o := l.origins[i]
+		if line == l.truncated && l.clip > 0 {
+			cgContextSaveGState(ctx)
+			cgContextClipToRect(ctx, Rect(box.Origin.X, -tall, l.clip, 2*tall))
+		}
 		cgContextSetTextPosition(ctx, box.Origin.X+o.X, top-o.Y)
 		ctLineDraw(line, ctx)
+		if line == l.truncated && l.clip > 0 {
+			cgContextRestoreGState(ctx)
+		}
 	}
 }

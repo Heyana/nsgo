@@ -18,6 +18,7 @@ final class Protocol {
     static final int LAYOUT = 4;
     static final int RELEASE = 5;
     static final int IMAGE = 6;
+    static final int LINES = 7;
 
     // Java to Go.
     static final int START = 1;
@@ -27,6 +28,7 @@ final class Protocol {
     static final int ENVIRONMENT = 5;
     static final int DNS = 6;
     static final int LAID_OUT = 7;
+    static final int TEXT_LINES = 8;
 
     // The parts of an image request an IMAGE message carries.
     static final int IMAGE_PLACEHOLDER = 0;
@@ -70,6 +72,13 @@ final class Protocol {
     static final int ITEM_NATIVE = 35;
     static final int ITEM_NATIVE_COMMAND = 36;
     static final int ITEM_ANIMATION = 37;
+    static final int ITEM_ZOOM_TO = 38;
+    static final int ITEM_SELECTION = 40;
+    static final int ITEM_SCROLL_BY = 41;
+    static final int ITEM_STICKY_CELLS = 42;
+    static final int ITEM_ACCESSIBILITY_LABEL = 43;
+    static final int ITEM_ACCESSIBILITY_FOCUS = 44;
+    static final int ITEM_SCREEN = 45;
 
     // View kinds, as in core/mount.go.
     static final int KIND_VIEW = 1;
@@ -120,6 +129,15 @@ final class Protocol {
     static final int EVENT_NATIVE = 34;
     static final int EVENT_NATIVE_SIZE = 35;
     static final int EVENT_ANIMATION = 36;
+    static final int EVENT_SCROLL_DRAG_START = 37;
+    static final int EVENT_SCROLL_DRAG_END = 38;
+    static final int EVENT_MOMENTUM_START = 39;
+    static final int EVENT_MOMENTUM_END = 40;
+    static final int EVENT_REFRESH = 41;
+    static final int EVENT_SELECTION_CHANGE = 43;
+    static final int EVENT_KEY_PRESS = 44;
+    static final int EVENT_COMPOSITION_CHANGE = 45;
+    static final int EVENT_ACCESSIBILITY_ACTION = 46;
 
     // Web view commands, as in core/webview.go.
     static final int WEB_RELOAD = 1;
@@ -152,6 +170,12 @@ final class Protocol {
     static final int ROLE_MENU_ITEM = 14;
     static final int ROLE_DIALOG = 15;
     static final int ROLE_ALERT = 16;
+    static final int ROLE_ADJUSTABLE = 17;
+    static final int ROLE_PROGRESS_BAR = 18;
+
+    // How a view is an accessibility element, as core.Accessible.
+    static final int ACCESSIBLE_YES = 1;
+    static final int ACCESSIBLE_NO = 2;
 
     // Keyboard types, as in core/mount.go.
     static final int KEYBOARD_EMAIL = 1;
@@ -165,6 +189,7 @@ final class Protocol {
     static final int RESIZE_CONTAIN = 1;
     static final int RESIZE_STRETCH = 2;
     static final int RESIZE_CENTER = 3;
+    static final int RESIZE_SCALE_DOWN = 4;
 
     // Modal animations, as in core/element.go.
     static final int MODAL_SLIDE = 0;
@@ -181,9 +206,9 @@ final class Protocol {
     static final int TRANSITION_BORDER = 8;
     static final int TRANSITION_SHADOW = 16;
 
-    // Status bar styles, as in core/keys.go; Auto is 0.
-    static final int STATUS_BAR_DARK = 1;
-    static final int STATUS_BAR_LIGHT = 2;
+    // Status bar styles, as in core/statusbar.go; Auto is 1.
+    static final int STATUS_BAR_DARK = 2;
+    static final int STATUS_BAR_LIGHT = 3;
 
     // Drawing operations, as in core/canvas.go.
     static final int DRAW_SAVE = 1;
@@ -232,6 +257,20 @@ final class Protocol {
     // Text alignment, as in core/style.go.
     static final int ALIGN_CENTER = 2;
     static final int ALIGN_END = 3;
+    static final int ALIGN_JUSTIFY = 4;
+
+    // Where a line limit cuts text, as in core/text.go; 0 and Tail end
+    // the last line with an ellipsis.
+    static final int ELLIPSIZE_HEAD = 2;
+    static final int ELLIPSIZE_MIDDLE = 3;
+    static final int ELLIPSIZE_CLIP = 4;
+
+    // Decoration styles, as in core/style.go; 0 and Solid are solid.
+    static final int DECORATION_SOLID = 1;
+    static final int DECORATION_DOUBLE = 2;
+    static final int DECORATION_DOTTED = 3;
+    static final int DECORATION_DASHED = 4;
+    static final int DECORATION_WAVY = 5;
 
     // Vertical alignments of attachments, as in core/style.go; 0 and
     // Baseline are the baseline.

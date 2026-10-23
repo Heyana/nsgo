@@ -1,7 +1,9 @@
-// Package scrollbar lays out the scroll bars of the backends that paint
-// their own views: where a scroll view's thumb is, whether a point is on
-// its bar, and where dragging the thumb scrolls to. The backends show a
-// bar while the pointer is over its scroll view or drags its thumb.
+// Package scrollbar is the scroll logic of the backends that paint their
+// own views: where a scroll view's thumb is, whether a point is on its
+// bar, and where dragging the thumb scrolls to; the offsets its content
+// inset allows; and where a snapping view settles after a wheel or a
+// thumb drag. The backends show a bar while the pointer is over its
+// scroll view or drags its thumb.
 package scrollbar
 
 import "github.com/oneo-me/nsgo/core"
@@ -24,14 +26,16 @@ type Bar struct {
 	// how far the content is scrolled.
 	Frame, Content core.Size
 	Offset         core.Point
+	// Inset is the content inset, which scrolls as part of the content.
+	Inset core.Edges
 }
 
 // along returns the bar's lengths along its axis: the view's, the
 // content's, the offset and the thumb's.
 func (b Bar) along() (frame, content, offset, thumb core.Points) {
-	frame, content, offset = b.Frame.Height, b.Content.Height, b.Offset.Y
+	frame, content, offset = b.Frame.Height, b.Content.Height+b.Inset.Top+b.Inset.Bottom, b.Offset.Y+b.Inset.Top
 	if b.Horizontal {
-		frame, content, offset = b.Frame.Width, b.Content.Width, b.Offset.X
+		frame, content, offset = b.Frame.Width, b.Content.Width+b.Inset.Left+b.Inset.Right, b.Offset.X+b.Inset.Left
 	}
 	if content <= frame || frame <= 0 {
 		return frame, content, offset, 0
@@ -74,6 +78,10 @@ type Drag struct {
 	start core.Points // the offset then
 }
 
+// Shift moves the drag along with the core moving the offset by d along
+// the axis (ItemScrollBy), so it continues from the content it was on.
+func (d *Drag) Shift(by core.Points) { d.start += by }
+
 // Press starts dragging the bar from p, in the scroll view. Off the
 // thumb, the thumb first jumps to center under p.
 func (b Bar) Press(p core.Point) Drag {
@@ -104,9 +112,9 @@ func (d Drag) Offset(p core.Point) core.Point {
 	}
 	to := min(max(d.start+(at-d.from)*(content-frame)/(frame-length), 0), content-frame)
 	if d.bar.Horizontal {
-		out.X = to
+		out.X = to - d.bar.Inset.Left
 	} else {
-		out.Y = to
+		out.Y = to - d.bar.Inset.Top
 	}
 	return out
 }

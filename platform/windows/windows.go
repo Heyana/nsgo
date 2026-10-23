@@ -184,6 +184,15 @@ type view struct {
 	scroll core.ScrollConfig
 	size   core.Size
 	offset core.Point
+	// applied counts the core's ItemScrollTo and ItemScrollBy items,
+	// reported with each offset; sticky are a scroll view's sticky cells,
+	// and laid and shift a sticky cell's frame from the core and how far
+	// it is moved from it.
+	applied uint32
+	sticky  []core.StickyCell
+	laid    core.Bounds
+	shift   core.Point
+	wheel   scrollbar.Wheel // a snapping view's wheel turns
 
 	// An input's editor.
 	field *textInput
@@ -483,6 +492,9 @@ func (w *window) apply(b *core.MountBatch) {
 		case core.ItemReadClipboard:
 			w.engine.Dispatch(core.Event{Kind: core.EventClipboard, Count: it.Count, Text: w.clipboard()})
 			continue
+		case core.ItemImageInfo:
+			w.imageInfo(it)
+			continue
 		case core.ItemKeymap:
 			w.setKeymap(it.Keys)
 			continue
@@ -498,8 +510,10 @@ func (w *window) apply(b *core.MountBatch) {
 		case core.ItemMenu:
 			w.setMenu(it.Menu)
 			continue
-		case core.ItemAnnounce, core.ItemStatusBar, core.ItemBackUnhandled:
-			// No announcements without UI Automation; no status bar.
+		case core.ItemAnnounce, core.ItemStatusBar, core.ItemBackUnhandled,
+			core.ItemAccessibilityLabel, core.ItemAccessibilityFocus:
+			// No announcements or accessibility without UI Automation; no
+			// status bar.
 			continue
 		}
 		v := w.view(it.ID)
@@ -558,15 +572,27 @@ func (w *window) apply(b *core.MountBatch) {
 			if v.field != nil {
 				v.field.setValue(it.Value, it.Count)
 			}
+		case core.ItemSelection:
+			if v.field != nil {
+				v.field.selectRange(it.Selection)
+			}
 		case core.ItemEvents:
 			v.events = it.Events
+			if v.field != nil {
+				v.field.fs.Events = it.Events
+			}
 			w.dropEvents(v)
 		case core.ItemViewProps:
 			if it.ViewProps != nil {
 				v.props = *it.ViewProps
 			}
 		case core.ItemScrollConfig:
+			to := scrollbar.KeepStart(v.scroll.Behavior.ContentInset, it.Scroll.Behavior.ContentInset, v.offset)
 			v.scroll = *it.Scroll
+			if to != v.offset {
+				w.scrollTo(v, to)
+			}
+			rescroll = append(rescroll, v) // insets change the offsets
 		case core.ItemScrollContent:
 			v.size = it.Size
 			rescroll = append(rescroll, v)
@@ -610,8 +636,14 @@ func (w *window) apply(b *core.MountBatch) {
 			if c := v.component; c != nil && c.c != nil {
 				c.c.Command(it.Value, it.Data)
 			}
+		case core.ItemScrollBy:
+			v.applied++
+			w.scrollBy(v, it.Point)
+		case core.ItemStickyCells:
+			w.setSticky(v, it.Sticky)
 		case core.ItemScrollTo:
-			v.scrolling = nil
+			v.applied++
+			w.interruptScroll(v)
 			if it.Animated {
 				w.scrollAnimated(v, it.Point)
 			} else {
@@ -758,18 +790,23 @@ func boolArg(b bool) uintptr {
 // reports whether it moved. The engine hit tests with the offset, so a
 // move is always reported, whatever v's events.
 func (w *window) scrollTo(v *view, offset core.Point) bool {
-	offset.X = min(max(offset.X, 0), max(v.size.Width-v.frame.Size.Width, 0))
-	offset.Y = min(max(offset.Y, 0), max(v.size.Height-v.frame.Size.Height, 0))
+	offset = scrollbar.Clamp(&v.scroll, v.frame.Size, v.size, offset)
 	if offset == v.offset {
 		return false
 	}
+	w.moveOffset(v, offset)
+	return true
+}
+
+// moveOffset puts v's content at offset, unclamped, and reports it.
+func (w *window) moveOffset(v *view, offset core.Point) {
 	v.offset = offset
 	// Values bound to the offset move in the frame that shows it.
 	if w.animator.Scroll(v.id, offset) {
 		w.animatedChanged()
 	}
-	w.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id, Point: offset})
-	return true
+	w.pinSticky(v)
+	w.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id, Point: offset, Count: v.applied})
 }
 
 // wheel scrolls the innermost scroll view under at that can still move
@@ -782,6 +819,9 @@ func (w *window) wheel(at core.Point, notches core.Points, tilt bool) {
 	under := scrollsAt(root, at, nil)
 	for i := len(under) - 1; i >= 0; i-- {
 		v := under[i]
+		if v.scroll.Behavior.NoScroll {
+			continue
+		}
 		offset := v.offset
 		switch {
 		case tilt && v.scroll.Horizontal: // a tilt right is positive
@@ -793,8 +833,10 @@ func (w *window) wheel(at core.Point, notches core.Points, tilt bool) {
 		default:
 			offset.Y -= notches * wheelStep
 		}
-		v.scrolling = nil // the wheel takes over
+		from := v.offset
+		w.interruptScroll(v) // the wheel takes over
 		if w.scrollTo(v, offset) {
+			w.wheelTurned(v, v.offset.X-from.X+v.offset.Y-from.Y)
 			invalidateRect.Call(w.hwnd, 0, 0)
 			return
 		}
@@ -811,7 +853,8 @@ type barDrag struct {
 
 // bar returns a scroll view's scroll bar.
 func (v *view) bar() scrollbar.Bar {
-	return scrollbar.Bar{Horizontal: v.scroll.Horizontal, Frame: v.frame.Size, Content: v.size, Offset: v.offset}
+	return scrollbar.Bar{Horizontal: v.scroll.Horizontal, Frame: v.frame.Size, Content: v.size, Offset: v.offset,
+		Inset: v.scroll.Behavior.ContentInset}
 }
 
 // hoverBars shows the bars of the scroll views under at, the pointer.
@@ -843,6 +886,8 @@ func (w *window) pressBar(at core.Point) bool {
 		return false
 	}
 	w.barDrag = &barDrag{v: v, origin: core.Point{X: at.X - local.X, Y: at.Y - local.Y}, drag: v.bar().Press(local)}
+	w.interruptScroll(v)
+	w.scrollEvent(v, core.EventScrollDragStart)
 	setCapture.Call(w.hwnd)
 	w.dragBar(at)
 	return true
@@ -855,7 +900,7 @@ func (w *window) dragBar(at core.Point) {
 		w.barDrag = nil
 		return
 	}
-	d.v.scrolling = nil // the bar takes over
+	w.interruptScroll(d.v) // the bar takes over
 	if w.scrollTo(d.v, d.drag.Offset(core.Point{X: at.X - d.origin.X, Y: at.Y - d.origin.Y})) {
 		invalidateRect.Call(w.hwnd, 0, 0)
 	}
@@ -877,7 +922,7 @@ func barAt(v *view, p core.Point) (*view, core.Point) {
 			break
 		}
 	}
-	if v.kind == core.KindScroll && !v.scroll.HideIndicator && v.bar().Contains(local) {
+	if v.kind == core.KindScroll && !v.scroll.HideIndicator && !v.scroll.Behavior.NoScroll && v.bar().Contains(local) {
 		return v, local
 	}
 	return nil, p
@@ -1071,7 +1116,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
 		at := w.point(int32(x), int32(y))
 		if w.barDrag != nil {
-			w.barDrag = nil
+			w.releaseBar()
 			releaseCapture.Call()
 			w.hoverBars(at)
 			invalidateRect.Call(w.hwnd, 0, 0)
@@ -1086,7 +1131,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			w.selecting.drag = dragNone
 			w.selecting = nil
 		}
-		w.barDrag = nil
+		w.releaseBar()
 		w.captureLost(lParam)
 		w.panLost()
 		return 0

@@ -40,6 +40,7 @@ type transition struct {
 type scrolling struct {
 	from, to core.Point
 	start    time.Time
+	momentum bool // a snap, which reports EventMomentumEnd
 }
 
 // moving is a view's frame animating to the one it was given, as a
@@ -98,6 +99,9 @@ func frameOf(v *view) core.Bounds {
 // from the one v shows when v existed before the batch.
 func (w *window) setFrame(v *view, f core.Bounds, lb *layoutBatch) {
 	old := frameOf(v)
+	v.laid = f
+	f.Origin.X += v.shift.X
+	f.Origin.Y += v.shift.Y
 	v.frame = f
 	if lb == nil || lb.anim.Update == nil || lb.created[v] || old == (core.Bounds{}) || old == f {
 		v.moving = nil
@@ -325,6 +329,9 @@ func (w *window) tick() {
 			w.scrollTo(v, at)
 			if x >= 1 {
 				v.scrolling = nil
+				if sc.momentum {
+					w.scrollEvent(v, core.EventMomentumEnd)
+				}
 			}
 		}
 		if v.transition != nil || v.scrolling != nil || v.moving != nil || v.fading != nil {

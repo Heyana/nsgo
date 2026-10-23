@@ -45,17 +45,20 @@ type view struct {
 	layout *apple.Layout // a text view's
 	box    core.Bounds
 
-	field    objc.ID // an input's UITextField
-	inset    core.Bounds
-	readonly bool
-	edits    uint32
+	sc    *scrollState // a scroll view's
+	input *input       // an input's editor
+	inset core.Bounds
 
 	image     *apple.ImageView
-	animation core.ModalAnimation // a modal's
-	presented bool                // whether a modal was inserted yet
-	drawing   *core.Drawing       // a canvas's
-	web       *apple.Web          // a web view's
-	video     *apple.Video        // a video's
+	modal     core.ModalConfig // a modal's
+	presented bool             // whether a modal was inserted yet
+	sheet     *sheet           // a modal presented as a sheet
+	bar       *navBar          // a screen's system header
+	// headerWrap holds a header view in its screen's bar.
+	headerWrap objc.ID
+	drawing    *core.Drawing // a canvas's
+	web        *apple.Web    // a web view's
+	video      *apple.Video  // a video's
 
 	activation           core.PanActivation
 	pan, pinch, rotation objc.ID // the recognizers of the gestures it follows
@@ -69,10 +72,17 @@ type view struct {
 	area             bool
 	longPress        objc.ID
 
+	// props are the view's last props; the rest what access.go last
+	// gave UIKit.
+	props               core.ViewProps
+	propsSet, textSet   bool
+	axElement, axCustom bool
+
 	// frame is where the view shows now; style its own style, which its
 	// animated values and a layout animation draw over.
 	frame    core.Bounds
 	framed   bool
+	shift    core.Point // a sticky cell's, from frame
 	style    core.ViewStyle
 	animated core.AnimatedValues
 
@@ -93,9 +103,14 @@ type surface struct {
 	keyboard         core.Points
 	keyboardDuration time.Duration
 
-	keys      map[string]bool // the keymap's bindings
-	statusBar int             // the UIStatusBarStyle the controller asks for
-	hideBar   bool
+	keys        map[string]bool // the keymap's bindings
+	statusBar   int             // the UIStatusBarStyle the controller asks for
+	hideBar     bool
+	barAnimated bool
+	// headers are the navigation bar's heights; oriented the modals
+	// that limit the orientations, in the order they were presented.
+	headers  [2]core.Points
+	oriented []*view
 
 	// What a batch touched, finished once its frames are set.
 	images, presenting []*view
@@ -156,7 +171,6 @@ var (
 	selPerformOnMain                 = sel("performSelectorOnMainThread:withObject:waitUntilDone:")
 	selSetIsAccessibilityElement     = sel("setIsAccessibilityElement:")
 	selSetAccessibilityTraits        = sel("setAccessibilityTraits:")
-	selSetAccessibilityLabel         = sel("setAccessibilityLabel:")
 	selSetAccessibilityValue         = sel("setAccessibilityValue:")
 	selSetAccessibilityIdentifier    = sel("setAccessibilityIdentifier:")
 	selSetAccessibilityContainerType = sel("setAccessibilityContainerType:")
@@ -189,16 +203,7 @@ func loadUIKit() {
 	purego.RegisterLibFunc(&uiReduceMotion, uikit, "UIAccessibilityIsReduceMotionEnabled")
 	purego.RegisterLibFunc(&uiVoiceOver, uikit, "UIAccessibilityIsVoiceOverRunning")
 	purego.RegisterLibFunc(&uiAccessibilityPost, uikit, "UIAccessibilityPostNotification")
-	if addr, err := purego.Dlsym(uikit, "UIAccessibilityAnnouncementNotification"); err == nil {
-		announcement = **(**uint32)(unsafe.Pointer(&addr))
-	}
-	for _, name := range []string{"Button", "Link", "Header", "Image", "StaticText", "Selected", "NotEnabled", "TabBar"} {
-		addr, err := purego.Dlsym(uikit, "UIAccessibilityTrait"+name)
-		if err != nil {
-			panic(err)
-		}
-		traits[name] = **(**uint64)(unsafe.Pointer(&addr))
-	}
+	loadAccessibility(uikit)
 
 	uiView := objc.GetClass("UIView")
 	common := []objc.MethodDef{
@@ -206,10 +211,12 @@ func loadUIKit() {
 		{Cmd: sel("touchesBegan:withEvent:"), Fn: touchesBegan},
 		{Cmd: sel("touchesEnded:withEvent:"), Fn: touchesEnded},
 		{Cmd: sel("touchesCancelled:withEvent:"), Fn: touchesCancelled},
-		{Cmd: sel("accessibilityActivate"), Fn: accessibilityActivate},
 	}
+	common = append(common, accessMethods()...)
 	common = append(common, gestureMethods()...)
+	common = append(common, navMethods()...)
 	registerGestures()
+	registerNav()
 	registerSelection()
 	classView = register("NsgoView", uiView, nil, common)
 	classSurface = register("NsgoSurface", uiView, nil, append(common,
@@ -228,6 +235,13 @@ func loadUIKit() {
 	classController = register("NsgoViewController", objc.GetClass("UIViewController"), nil, []objc.MethodDef{
 		{Cmd: sel("preferredStatusBarStyle"), Fn: func(objc.ID, objc.SEL) int { return app.statusBar }},
 		{Cmd: sel("prefersStatusBarHidden"), Fn: func(objc.ID, objc.SEL) bool { return app.hideBar }},
+		{Cmd: sel("preferredStatusBarUpdateAnimation"), Fn: func(objc.ID, objc.SEL) int { return app.barAnimation() }},
+		{Cmd: sel("supportedInterfaceOrientations"), Fn: func(self objc.ID, cmd objc.SEL) uint {
+			if m := app.orientations(); m != 0 {
+				return m
+			}
+			return apple.SendSuper[uint](self, cmd)
+		}},
 		{Cmd: sel("canBecomeFirstResponder"), Fn: func(objc.ID, objc.SEL) bool { return true }},
 		{Cmd: sel("viewDidAppear:"), Fn: func(self objc.ID, cmd objc.SEL, animated bool) {
 			apple.Super(self, cmd, animated)
@@ -243,17 +257,12 @@ func loadUIKit() {
 	classWatcher = register("NsgoTouchWatcher", objc.GetClass("UIGestureRecognizer"), nil, []objc.MethodDef{
 		{Cmd: sel("touchesBegan:withEvent:"), Fn: watcherBegan},
 	})
-	classInput = register("NsgoInput", uiView, []*objc.Protocol{objc.GetProtocol("UITextFieldDelegate")}, append(common,
-		objc.MethodDef{Cmd: sel("layoutSubviews"), Fn: inputLayout},
-		objc.MethodDef{Cmd: selChanged, Fn: inputChanged},
-		objc.MethodDef{Cmd: sel("textFieldShouldReturn:"), Fn: inputReturn},
-		objc.MethodDef{Cmd: sel("textFieldShouldBeginEditing:"), Fn: inputShouldBegin},
-		objc.MethodDef{Cmd: sel("textFieldDidBeginEditing:"), Fn: inputBegan},
-		objc.MethodDef{Cmd: sel("textFieldDidEndEditing:"), Fn: inputEnded},
-	))
+	classInput = register("NsgoInput", uiView, []*objc.Protocol{objc.GetProtocol("UITextFieldDelegate"),
+		objc.GetProtocol("UITextViewDelegate")}, append(common, inputMethods()...))
+	registerInput()
 	classScroll = register("NsgoScrollView", objc.GetClass("UIScrollView"),
 		[]*objc.Protocol{objc.GetProtocol("UIScrollViewDelegate")},
-		append(scrollMethods(), objc.MethodDef{Cmd: sel("scrollViewDidScroll:"), Fn: scrolled}))
+		append(append(scrollMethods(), behaviorMethods()...), objc.MethodDef{Cmd: sel("scrollViewDidScroll:"), Fn: scrolled}))
 	register("NsgoAppDelegate", objc.GetClass("UIResponder"),
 		[]*objc.Protocol{objc.GetProtocol("UIApplicationDelegate")},
 		[]objc.MethodDef{{Cmd: sel("application:didFinishLaunchingWithOptions:"),
@@ -306,6 +315,7 @@ func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID)
 	watcher.Send(sel("setDelaysTouchesEnded:"), false)
 	s.native.Send(sel("addGestureRecognizer:"), watcher)
 	watcher.Send(selRelease)
+	s.headers = headerHeights()
 	s.env = s.environment()
 	opts := engine.Options{
 		Size:        core.Size{Width: core.Points(bounds.Size.Width), Height: core.Points(bounds.Size.Height)},
@@ -337,7 +347,7 @@ func (s *surface) environment() core.Environment {
 	}
 	const dark = 2
 	locale, rtl := apple.Locale()
-	return core.Environment{
+	env := core.Environment{
 		SafeArea: core.Edges{Top: core.Points(in.Top), Right: core.Points(in.Right),
 			Bottom: core.Points(in.Bottom), Left: core.Points(in.Left)},
 		KeyboardHeight:   s.keyboard,
@@ -352,6 +362,8 @@ func (s *surface) environment() core.Environment {
 		OS:               core.OSIOS,
 		Idiom:            idiom,
 	}
+	env.HeaderHeight, env.LargeHeaderHeight = s.headers[0], s.headers[1]
+	return env
 }
 
 // refresh reports the environment to the engine if it changed.
@@ -520,6 +532,9 @@ func (s *surface) apply(b *core.MountBatch) {
 			text := apple.GoString(objc.ID(objc.GetClass("UIPasteboard")).Send(sel("generalPasteboard")).Send(sel("string")))
 			s.engine.Dispatch(core.Event{Kind: core.EventClipboard, Count: it.Count, Text: text})
 			continue
+		case core.ItemImageInfo:
+			apple.ImageInfo(it, s.engine.Dispatch)
+			continue
 		case core.ItemAnnounce:
 			uiAccessibilityPost(announcement, apple.NSString(it.Value))
 			continue
@@ -530,16 +545,7 @@ func (s *surface) apply(b *core.MountBatch) {
 			}
 			continue
 		case core.ItemStatusBar:
-			const lightContent, darkContent = 1, 3
-			s.statusBar = 0
-			switch core.StatusBarStyle(it.Count) {
-			case core.StatusBarDark:
-				s.statusBar = darkContent
-			case core.StatusBarLight:
-				s.statusBar = lightContent
-			}
-			s.hideBar = it.Animated
-			controller.Send(sel("setNeedsStatusBarAppearanceUpdate"))
+			s.setStatusBar(it.StatusBar)
 			continue
 		case core.ItemTitle, core.ItemBackUnhandled, core.ItemWindow, core.ItemMenu:
 			continue
@@ -549,9 +555,23 @@ func (s *surface) apply(b *core.MountBatch) {
 		case core.ItemDelete:
 			s.delete(v, s.vanish(v, lb))
 		case core.ItemRemove:
+			if v.sheet != nil {
+				s.dismissSheet(v)
+				v.presented = false
+				s.updateOrientations()
+			}
 			v.native.Send(selRemoveFromSuperview)
 		case core.ItemInsert:
-			parent := s.views[it.Parent].native
+			if v.kind == core.KindModal && v.isSheet() {
+				// A sheet holds the modal's view, wherever the core puts it.
+				if v.sheet == nil {
+					v.presented = true
+					s.presentSheet(v)
+					s.updateOrientations()
+				}
+				break
+			}
+			parent := s.views[it.Parent].children()
 			if it.Before == 0 {
 				parent.Send(selAddSubview, v.native)
 			} else {
@@ -560,10 +580,23 @@ func (s *surface) apply(b *core.MountBatch) {
 			if v.kind == core.KindModal && !v.presented {
 				v.presented = true
 				s.presenting = append(s.presenting, v)
+				s.updateOrientations()
+			}
+			if p := s.views[it.Parent]; p.bar != nil {
+				// The header stays over the screen's content.
+				parent.Send(sel("bringSubviewToFront:"), p.bar.bar)
 			}
 			s.appear(v, lb, it.Parent)
 		case core.ItemFrame:
 			s.setFrame(v, it.Frame, lb)
+			if v.bar != nil {
+				s.layoutBar(v)
+			}
+			if v.headerWrap != 0 {
+				s.sizeHeaderWrap(v)
+			}
+		case core.ItemScreen:
+			s.configureScreen(v, it.Screen)
 		case core.ItemViewStyle:
 			v.style = *it.ViewStyle
 			if v.animatesStyle() {
@@ -584,7 +617,10 @@ func (s *surface) apply(b *core.MountBatch) {
 			v.image.Configure(it.Image)
 			s.images = append(s.images, v)
 		case core.ItemModal:
-			v.animation = it.Modal.Animation
+			v.modal = *it.Modal
+			if v.modal.Orientations != 0 {
+				s.oriented = append(s.oriented, v)
+			}
 		case core.ItemWeb:
 			v.web.Configure(it.Web)
 		case core.ItemWebCommand:
@@ -610,9 +646,21 @@ func (s *surface) apply(b *core.MountBatch) {
 				X: min(max(float64(it.Point.X), -in.Left), max(size.Width-seen.Width+in.Right, -in.Left)),
 				Y: min(max(float64(it.Point.Y), -in.Top), max(size.Height-seen.Height+in.Bottom, -in.Top)),
 			}
+			if v.sc != nil {
+				v.sc.applied++
+			}
 			v.native.Send(sel("setContentOffset:animated:"), to, it.Animated)
+		case core.ItemScrollBy:
+			if v.sc != nil {
+				v.sc.applied++
+				v.scrollBy(it.Point)
+			}
+		case core.ItemStickyCells:
+			if v.sc != nil {
+				v.setSticky(it.Sticky)
+			}
 		case core.ItemViewProps:
-			setAccessibility(v.native, it.ViewProps)
+			v.setProps(it.ViewProps)
 			p := it.ViewProps
 			v.activation, v.area, v.selectable = p.PanActivation, p.SelectionArea, p.Selectable
 			if v.selColor != p.SelectionColor {
@@ -622,39 +670,47 @@ func (s *surface) apply(b *core.MountBatch) {
 			v.setSelectable()
 		case core.ItemEvents:
 			v.events = it.Events
+			if v.input != nil {
+				v.input.fs.Events = it.Events
+			}
 			v.setGestures(it.Events)
+			v.updateAccessibility()
+		case core.ItemAccessibilityLabel:
+			v.setLabel(it.Value)
+		case core.ItemAccessibilityFocus:
+			v.focusAccessibility()
 		case core.ItemText:
 			v.layout.Release()
 			v.layout, _ = it.Text.Layout.(*apple.Layout)
-			v.box, v.plain = it.Text.Content, it.Text.Text
-			v.native.Send(selSetAccessibilityLabel, apple.NSString(it.Text.Text))
+			v.box = it.Text.Content
+			v.textChanged(it.Text.Text)
 			v.native.Send(selSetNeedsDisplay)
 		case core.ItemInput:
 			v.configure(it.Input)
 			s.setAccessory(v, it.Input.Accessory)
 		case core.ItemInputValue:
-			if v.edits <= it.Count {
-				value := apple.NSString(it.Value)
-				// Setting the text the field shows would move the caret.
-				if !objc.Send[bool](v.field.Send(selText), selIsEqualToString, value) {
-					v.field.Send(selSetText, value)
-				}
+			v.input.value(it.Value, it.Count)
+		case core.ItemSelection:
+			if v.input != nil {
+				v.input.setSelection(it.Selection)
 			}
 		case core.ItemScrollConfig:
-			c := it.Scroll
-			v.native.Send(sel("setShowsVerticalScrollIndicator:"), !c.Horizontal && !c.HideIndicator)
-			v.native.Send(sel("setShowsHorizontalScrollIndicator:"), c.Horizontal && !c.HideIndicator)
-			v.native.Send(sel("setAlwaysBounceVertical:"), !c.Horizontal)
-			v.native.Send(sel("setAlwaysBounceHorizontal:"), c.Horizontal)
+			if v.sc != nil {
+				v.configureScroll(it.Scroll)
+			}
 		case core.ItemScrollContent:
-			v.native.Send(selSetContentSize, apple.CGSize{Width: float64(it.Size.Width), Height: float64(it.Size.Height)})
+			if v.sc != nil {
+				v.setContent(it.Size)
+			}
+		case core.ItemZoomTo:
+			v.zoomTo(it.Zoom, it.Animated)
 		case core.ItemFocus:
-			if v.field != 0 {
-				v.field.Send(selBecomeFirst)
+			if v.input != nil {
+				v.input.field.Send(selBecomeFirst)
 			}
 		case core.ItemBlur:
-			if v.field != 0 {
-				v.field.Send(selResign)
+			if v.input != nil {
+				v.input.field.Send(selResign)
 			}
 		}
 	}
@@ -681,7 +737,7 @@ func (s *surface) finish() {
 	for _, v := range s.presenting {
 		if s.views[v.id] == v && v.native.Send(selSuperview) != 0 {
 			h := objc.Send[apple.CGRect](v.native.Send(selSuperview), selBounds).Size.Height
-			apple.AnimateIn(v.native.Send(selLayer), v.animation, h, s.env.ReduceMotion)
+			apple.AnimateIn(v.native.Send(selLayer), v.modal.Animation, h, s.env.ReduceMotion)
 		}
 	}
 	clear(s.presenting)
@@ -705,16 +761,9 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 	switch kind {
 	case core.KindScroll:
 		v.native = objc.ID(classScroll).Send(selNew)
-		v.native.Send(selSetDeleg, v.native)
+		newScroll(v)
 	case core.KindInput:
-		v.native = objc.ID(classInput).Send(selNew)
-		field := objc.ID(objc.GetClass("UITextField")).Send(selNew)
-		field.Send(selSetDeleg, v.native)
-		const editingChanged = 1 << 17
-		field.Send(sel("addTarget:action:forControlEvents:"), v.native, selChanged, uint(editingChanged))
-		v.native.Send(selAddSubview, field)
-		field.Send(selRelease)
-		v.field = field
+		v.newInput()
 	default:
 		v.native = objc.ID(classView).Send(selNew)
 		if kind == core.KindText || kind == core.KindCanvas {
@@ -742,6 +791,20 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 
 // delete releases v; kept leaves its native where it is, going away.
 func (s *surface) delete(v *view, kept bool) {
+	if v.sheet != nil {
+		s.dismissSheet(v)
+		defer s.updateOrientations()
+	}
+	if b := v.bar; b != nil {
+		delete(bars, b.bar)
+		b.bar.Send(selRelease)
+		b.item.Send(selRelease)
+		b.back.Send(selRelease)
+	}
+	if v.headerWrap != 0 {
+		v.headerWrap.Send(selRemoveFromSuperview)
+		v.headerWrap.Send(selRelease)
+	}
 	if !kept && !s.inGhost(v.native) {
 		v.native.Send(selRemoveFromSuperview)
 	}
@@ -772,98 +835,6 @@ func (s *surface) delete(v *view, kept bool) {
 	delete(views, v.native)
 	v.native.Send(selRelease)
 	s.views[v.id] = nil
-}
-
-// UIKit's text alignments.
-const uiAlignLeft, uiAlignCenter, uiAlignRight = 0, 1, 2
-
-// UIKeyboardType of each core keyboard type.
-var keyboards = map[core.KeyboardType]int{
-	core.KeyboardDefault: 0, core.KeyboardURL: 3, core.KeyboardNumber: 4,
-	core.KeyboardPhone: 5, core.KeyboardEmail: 7, core.KeyboardDecimal: 8,
-}
-
-func (v *view) configure(c *core.InputConfig) {
-	f := v.field
-	font := apple.Font(c.Style.Font)
-	f.Send(selSetFont, objc.ID(font))
-	apple.Release(font)
-	r, g, b, a := c.Style.Color.Components()
-	f.Send(selSetTextColor, objc.ID(objc.GetClass("UIColor")).Send(sel("colorWithRed:green:blue:alpha:"), r, g, b, a))
-	align := uiAlignLeft
-	switch c.Style.Align {
-	case core.TextAlignCenter:
-		align = uiAlignCenter
-	case core.TextAlignEnd:
-		align = uiAlignRight
-	}
-	f.Send(selSetTextAlignment, align)
-	f.Send(selSetPlaceholder, apple.NSString(c.Placeholder))
-	f.Send(selSetSecure, c.Masked)
-	f.Send(selSetKeyboardType, keyboards[c.KeyboardType])
-	f.Send(selSetEnabled, !c.Disabled)
-	v.readonly = c.Readonly
-	v.inset = c.Content
-	v.native.Send(selSetNeedsLayout)
-}
-
-func setAccessibility(native objc.ID, p *core.ViewProps) {
-	if p.TestID != "" {
-		native.Send(selSetAccessibilityIdentifier, apple.NSString(p.TestID))
-	}
-	// VoiceOver keeps to a dialog while it shows.
-	native.Send(sel("setAccessibilityViewIsModal:"), p.Role == core.RoleDialog)
-	const noContainer, semanticGroup = 0, 4
-	var t uint64
-	switch p.Role {
-	case core.RoleNone:
-		native.Send(selSetIsAccessibilityElement, false)
-		native.Send(selSetAccessibilityContainerType, noContainer)
-		return
-	case core.RoleRadioGroup, core.RoleTabList, core.RoleMenu, core.RoleDialog, core.RoleAlert:
-		// Groups are containers, so their children stay accessible.
-		native.Send(selSetIsAccessibilityElement, false)
-		native.Send(selSetAccessibilityContainerType, semanticGroup)
-		if p.Role == core.RoleTabList {
-			native.Send(selSetAccessibilityTraits, traits["TabBar"])
-		}
-		if p.Label != "" {
-			native.Send(selSetAccessibilityLabel, apple.NSString(p.Label))
-		}
-		return
-	case core.RoleButton, core.RoleCheckbox, core.RoleSwitch, core.RoleRadio, core.RoleTab, core.RoleMenuItem:
-		t = traits["Button"]
-	case core.RoleLink:
-		t = traits["Link"]
-	case core.RoleHeader:
-		t = traits["Header"]
-	case core.RoleImage:
-		t = traits["Image"]
-	case core.RoleText:
-		t = traits["StaticText"]
-	}
-	if p.Selected {
-		t |= traits["Selected"]
-	}
-	if p.Disabled {
-		t |= traits["NotEnabled"]
-	}
-	native.Send(selSetIsAccessibilityElement, true)
-	native.Send(selSetAccessibilityContainerType, noContainer)
-	native.Send(selSetAccessibilityTraits, t)
-	if p.Label != "" {
-		native.Send(selSetAccessibilityLabel, apple.NSString(p.Label))
-	}
-	if p.Role == core.RoleCheckbox || p.Role == core.RoleSwitch || p.Role == core.RoleRadio {
-		value := "0"
-		switch {
-		case p.Indeterminate:
-			value = "mixed"
-		case p.Checked || p.Selected:
-			value = "1"
-		}
-		native.Send(selSetAccessibilityValue, apple.NSString(value))
-	}
 }
 
 func (v *view) dispatch(kind core.EventKind) {
@@ -997,15 +968,6 @@ func pressesBegan(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
 	app.engine.Dispatch(core.Event{Kind: core.EventKey, Text: binding})
 }
 
-func accessibilityActivate(self objc.ID, _ objc.SEL) bool {
-	v := views[self]
-	if v == nil || !v.events.Has(core.EventPress) {
-		return false
-	}
-	v.report(core.Event{Kind: core.EventPress, Index: -1})
-	return true
-}
-
 func surfaceLayout(self objc.ID, cmd objc.SEL) {
 	apple.Super(self, cmd)
 	if v := views[self]; v != nil && v.surface.engine != nil {
@@ -1021,47 +983,6 @@ func surfaceApply(self objc.ID, _ objc.SEL, _ objc.ID) {
 	}
 }
 
-func inputLayout(self objc.ID, cmd objc.SEL) {
-	apple.Super(self, cmd)
-	v := views[self]
-	in := v.inset
-	v.field.Send(selSetFrame, apple.Rect(float64(in.Origin.X), float64(in.Origin.Y),
-		float64(in.Size.Width), float64(in.Size.Height)))
-}
-
-func inputChanged(self objc.ID, _ objc.SEL, field objc.ID) {
-	if v := views[self]; v != nil {
-		v.edits++
-		v.surface.engine.Dispatch(core.Event{Kind: core.EventChangeText, ID: v.id,
-			Text: apple.GoString(field.Send(selText)), Count: v.edits})
-	}
-}
-
-func inputReturn(self objc.ID, _ objc.SEL, field objc.ID) bool {
-	if v := views[self]; v != nil {
-		v.surface.engine.Dispatch(core.Event{Kind: core.EventSubmitEditing, ID: v.id,
-			Text: apple.GoString(field.Send(selText))})
-	}
-	return true
-}
-
-func inputShouldBegin(self objc.ID, _ objc.SEL, _ objc.ID) bool {
-	v := views[self]
-	return v == nil || !v.readonly
-}
-
-func inputBegan(self objc.ID, _ objc.SEL, _ objc.ID) {
-	if v := views[self]; v != nil {
-		v.dispatch(core.EventFocus)
-	}
-}
-
-func inputEnded(self objc.ID, _ objc.SEL, _ objc.ID) {
-	if v := views[self]; v != nil {
-		v.dispatch(core.EventBlur)
-	}
-}
-
 func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
 	v := views[self]
 	if v == nil {
@@ -1072,7 +993,8 @@ func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v.surface.animator.Scroll(v.id, offset) {
 		apple.WithoutAnimation(v.surface.applyAnimated)
 	}
-	if v.events.Has(core.EventScroll) {
-		v.surface.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id, Point: offset})
+	if v.sc != nil && len(v.sc.sticky) > 0 {
+		v.pinSticky()
 	}
+	v.scrollEvent(core.EventScroll)
 }

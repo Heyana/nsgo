@@ -62,7 +62,7 @@ func (n *node) Measure(known layout.Size[layout.Opt], available layout.Size[layo
 		}
 		m = Size{ceil(m.Width), ceil(m.Height)}
 	case n.input != nil:
-		m = Size{160, ceil(n.input.lineH)}
+		m = n.input.measure(known, available)
 	case n.image != nil:
 		m = fitNatural(n.image.naturalSize(), known)
 	case n.icon != nil:
@@ -163,6 +163,10 @@ func (n *node) layoutStyle() layout.Style {
 		}
 	}
 	l.Padding = s.Padding.layout()
+	if sc := n.screen; sc != nil && sc.pad > 0 {
+		// The content goes below the system header.
+		l.Padding.Top = layout.Px(float32(s.Padding.Top + sc.pad))
+	}
 	l.Border = s.borders().layout()
 	rowGap, colGap := s.Gap, s.Gap
 	if s.RowGap != 0 {
@@ -366,6 +370,7 @@ func (j Justify) layout() layout.AlignContent {
 func (t *Tree) layout() {
 	if !t.view.layoutDirty {
 		t.layoutAccessories()
+		t.layoutHeaderViews()
 		return
 	}
 	t.layoutRoot(t.view, t.size, true)
@@ -373,6 +378,7 @@ func (t *Tree) layout() {
 	t.syncFrames(t.view)
 	t.placeHoisted(t.view)
 	t.layoutAccessories()
+	t.layoutHeaderViews()
 }
 
 // layoutRoot lays root out in space, which it fills when fill is set.

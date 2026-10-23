@@ -24,7 +24,8 @@ type video struct {
 }
 
 // videoFit is the CSS object-fit of each resize mode.
-var videoFit = map[core.ResizeMode]string{core.Cover: "cover", core.Contain: "contain", core.Stretch: "fill", core.Center: "scale-down"}
+var videoFit = map[core.ResizeMode]string{core.Cover: "cover", core.Contain: "contain", core.Stretch: "fill", core.Center: "none",
+	core.ScaleDown: "scale-down"}
 
 func (s *surface) createVideo(v *view) {
 	vd := &video{el: s.element("video")}

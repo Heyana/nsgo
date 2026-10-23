@@ -12,22 +12,26 @@ import (
 )
 
 // What CoreText draws besides glyphs: attachments' placeholders sized by
-// run delegates, span backgrounds and strikethrough, which CoreText has no
-// attribute for.
+// run delegates, span backgrounds, strikethrough and wavy underlines,
+// which CoreText has no attribute for.
 
 var (
 	ctRunDelegateCreate     func(callbacks *runDelegateCallbacks, refCon uintptr) uintptr
 	ctFontGetXHeight        func(uintptr) float64
 	ctFontGetUnderlineThick func(uintptr) float64
+	ctFontGetUnderlinePos   func(uintptr) float64
+	cgContextSetLineDash    func(ctx uintptr, phase float64, lengths *float64, count uintptr)
 
 	attrRunDelegate uintptr
 )
 
-func loadInline(ct uintptr) {
+func loadInline(ct, cg uintptr) {
 	reg := purego.RegisterLibFunc
 	reg(&ctRunDelegateCreate, ct, "CTRunDelegateCreate")
 	reg(&ctFontGetXHeight, ct, "CTFontGetXHeight")
 	reg(&ctFontGetUnderlineThick, ct, "CTFontGetUnderlineThickness")
+	reg(&ctFontGetUnderlinePos, ct, "CTFontGetUnderlinePosition")
+	reg(&cgContextSetLineDash, cg, "CGContextSetLineDash")
 	attrRunDelegate = constant(ct, "kCTRunDelegateAttributeName")
 	delegateCallbacks = runDelegateCallbacks{
 		version:    1, // kCTRunDelegateVersion1
@@ -94,12 +98,13 @@ func fontExtent(st core.TextStyle) core.FontExtent {
 	}
 }
 
-// decoration is a UTF-16 range drawn on: a span's background box, or a
-// strikethrough.
+// decoration is a UTF-16 range drawn on: a span's background box, a
+// strikethrough, or a wavy underline, which CoreText cannot draw.
 type decoration struct {
 	start, end int
 	color      core.Color
 	strike     bool
+	style      core.TextDecorationStyle
 	radius     float64
 	// ascent and descent bound a background; offset is a strike's height
 	// above the baseline and thickness its width.
@@ -125,7 +130,8 @@ func decorations(t *core.AttributedText, toUTF16 []int) []decoration {
 	for _, r := range runs {
 		start, end := min(max(r.start, 0), len(t.Text)), min(max(r.end, 0), len(t.Text))
 		strike := r.style.Decoration&core.TextDecorationLineThrough != 0
-		if end <= start || (!strike && r.background.Color == 0) {
+		wavy := r.style.Decoration&core.TextDecorationUnderline != 0 && r.style.DecorationStyle == core.DecorationWavy
+		if end <= start || (!strike && !wavy && r.background.Color == 0) {
 			continue
 		}
 		f := Font(r.style.Font)
@@ -136,10 +142,18 @@ func decorations(t *core.AttributedText, toUTF16 []int) []decoration {
 			bg.color, bg.radius = r.background.Color, float64(r.background.Radius)
 			out = append(out, bg)
 		}
+		lineColor := r.style.Color
+		if r.style.DecorationColor != 0 {
+			lineColor = r.style.DecorationColor
+		}
+		d.strike, d.color, d.style = true, lineColor, r.style.DecorationStyle
+		d.thickness = max(ctFontGetUnderlineThick(f), 1)
 		if strike {
-			d.strike, d.color = true, r.style.Color
-			d.thickness = max(ctFontGetUnderlineThick(f), 1)
 			d.offset = ctFontGetXHeight(f) / 2
+			out = append(out, d)
+		}
+		if wavy {
+			d.offset = ctFontGetUnderlinePos(f) - d.thickness
 			out = append(out, d)
 		}
 		Release(f)
@@ -152,7 +166,7 @@ type box struct {
 	rect   CGRect
 	color  core.Color
 	radius float64
-	strike bool
+	style  core.TextDecorationStyle
 }
 
 // place puts l's decorations on its lines, and its attachments.
@@ -177,7 +191,8 @@ func (l *Layout) place(decos []decoration, atts []core.TextAttachment, fonts []c
 			}
 			o := baselines[i]
 			if d.strike {
-				l.over = append(l.over, box{rect: Rect(o.X+x0, o.Y-d.offset-d.thickness/2, x1-x0, d.thickness), color: d.color})
+				l.over = append(l.over, box{rect: Rect(o.X+x0, o.Y-d.offset-d.thickness/2, x1-x0, d.thickness),
+					color: d.color, style: d.style})
 				continue
 			}
 			h := d.ascent + d.descent
@@ -237,6 +252,56 @@ func (l *Layout) DrawBackgrounds(ctx uintptr, at CGRect) {
 		return
 	}
 	fillBoxes(ctx, l.under, at)
+}
+
+// drawLines draws decoration lines, each in its box's style: a solid box
+// is the line, and the others are drawn along its middle.
+func drawLines(ctx uintptr, lines []box, at CGRect) {
+	for _, b := range lines {
+		r := b.rect
+		r.Origin.X += at.Origin.X
+		r.Origin.Y += at.Origin.Y
+		t := r.Size.Height
+		x0, x1, y := r.Origin.X, r.Origin.X+r.Size.Width, r.Origin.Y+t/2
+		color := CGColor(b.color)
+		cgContextSaveGState(ctx)
+		cgContextSetFillColor(ctx, color)
+		cgContextSetStrokeColor(ctx, color)
+		cgContextSetLineWidth(ctx, t)
+		switch b.style {
+		case core.DecorationDouble:
+			cgContextAddRect(ctx, Rect(x0, y-1.5*t, x1-x0, t))
+			cgContextAddRect(ctx, Rect(x0, y+0.5*t, x1-x0, t))
+			cgContextFillPath(ctx)
+		case core.DecorationDotted, core.DecorationDashed:
+			dash := [2]float64{t, t}
+			if b.style == core.DecorationDashed {
+				dash = [2]float64{3 * t, 2 * t}
+			}
+			cgContextSetLineDash(ctx, 0, &dash[0], 2)
+			cgContextMoveToPoint(ctx, x0, y)
+			cgContextAddLineToPoint(ctx, x1, y)
+			cgContextStrokePath(ctx)
+		case core.DecorationWavy:
+			amp, step := max(t, 1), 2*max(t, 1)
+			cgContextMoveToPoint(ctx, x0, y)
+			up := true
+			for x := x0; x < x1; x += step {
+				dy := amp
+				if up {
+					dy = -amp
+				}
+				cgContextAddQuadCurve(ctx, x+step/2, y+2*dy, min(x+step, x1), y)
+				up = !up
+			}
+			cgContextStrokePath(ctx)
+		default:
+			cgContextAddRect(ctx, r)
+			cgContextFillPath(ctx)
+		}
+		cgContextRestoreGState(ctx)
+		Release(color)
+	}
 }
 
 func fillBoxes(ctx uintptr, boxes []box, at CGRect) {

@@ -38,6 +38,7 @@ import (
 	"github.com/oneo-me/nsgo/engine"
 	"github.com/oneo-me/nsgo/platform/internal/hover"
 	"github.com/oneo-me/nsgo/platform/internal/queue"
+	"github.com/oneo-me/nsgo/platform/internal/scrollbar"
 )
 
 // Options configure the window.
@@ -83,6 +84,7 @@ type window struct {
 	epoch     time.Time // the animator's clock starts here
 	layouts   []*view   // views a layout animation moves, shows or retires
 	playing   []*view   // image views whose animated images play
+	fading    []*view   // image views whose sources fade in
 
 	components core.NativeComponents
 	drop       fileDrop
@@ -103,6 +105,7 @@ type window struct {
 	handle         uintptr
 	measureMap     uintptr                       // the engine thread's Pango font map
 	extents        map[core.Font]core.FontExtent // the engine thread's font metrics
+	capHeights     map[core.Font]core.Points     // and capital heights
 	pressConsumed  bool
 	focus          *view // the entry with keyboard focus
 	pinchTimeout   uint32
@@ -338,6 +341,9 @@ func (w *window) apply(b *core.MountBatch) {
 		case core.ItemReadClipboard:
 			w.readClipboard(it.Count)
 			continue
+		case core.ItemImageInfo:
+			w.imageInfo(it)
+			continue
 		case core.ItemKeymap:
 			w.setKeymap(it.Keys)
 			continue
@@ -352,7 +358,9 @@ func (w *window) apply(b *core.MountBatch) {
 		case core.ItemMenu:
 			w.setMenu(it.Menu)
 			continue
-		case core.ItemAnnounce, core.ItemStatusBar, core.ItemBackUnhandled:
+		case core.ItemAnnounce, core.ItemStatusBar, core.ItemBackUnhandled,
+			core.ItemAccessibilityLabel, core.ItemAccessibilityFocus:
+			// No accessibility without GTK's; no status bar.
 			continue
 		}
 		v := w.view(it.ID)
@@ -423,6 +431,8 @@ func (w *window) apply(b *core.MountBatch) {
 			w.configure(v, it.Input)
 		case core.ItemInputValue:
 			w.setValue(v, it.Value, it.Count)
+		case core.ItemSelection:
+			w.selectRange(v, it.Selection)
 		case core.ItemEvents:
 			w.setEvents(v, it.Events)
 		case core.ItemViewProps:
@@ -433,7 +443,12 @@ func (w *window) apply(b *core.MountBatch) {
 				}
 			}
 		case core.ItemScrollConfig:
+			to := scrollbar.KeepStart(v.scroll.Behavior.ContentInset, it.Scroll.Behavior.ContentInset, v.offset)
 			v.scroll = *it.Scroll
+			if to != v.offset {
+				w.scrollTo(v, to)
+			}
+			rescroll = append(rescroll, v) // insets change the offsets
 		case core.ItemScrollContent:
 			v.size = it.Size
 			w.changed(v)
@@ -466,8 +481,14 @@ func (w *window) apply(b *core.MountBatch) {
 			if v.native != nil && v.native.comp != nil {
 				v.native.comp.Command(it.Value, it.Data)
 			}
+		case core.ItemScrollBy:
+			v.applied++
+			w.scrollBy(v, it.Point)
+		case core.ItemStickyCells:
+			w.setSticky(v, it.Sticky)
 		case core.ItemScrollTo:
-			v.scrolling = nil
+			v.applied++
+			w.interruptScroll(v)
 			if it.Animated {
 				w.scrollAnimated(v, it.Point)
 			} else {
@@ -548,19 +569,7 @@ func (w *window) delete(v *view) {
 		v.text.Release()
 		v.text = nil
 	}
-	if v.provider != 0 {
-		gObjectUnref(v.provider)
-		v.provider = 0
-	}
-	if v.entry != 0 {
-		if w.focus == v {
-			w.focus = nil
-		}
-		delete(w.entries, v.entry)
-		w.unparentWidget(v.entry)
-		gObjectUnref(v.entry)
-		v.entry = 0
-	}
+	w.releaseEditor(v)
 	if v.web != nil {
 		w.closeWeb(v)
 	}
@@ -623,11 +632,16 @@ func boolInt(b bool) int32 {
 // scrollTo moves v's content to offset, clamped to its content, and
 // reports the move.
 func (w *window) scrollTo(v *view, offset core.Point) bool {
-	offset.X = min(max(offset.X, 0), max(v.size.Width-v.frame.Size.Width, 0))
-	offset.Y = min(max(offset.Y, 0), max(v.size.Height-v.frame.Size.Height, 0))
+	offset = scrollbar.Clamp(&v.scroll, v.frame.Size, v.size, offset)
 	if offset == v.offset {
 		return false
 	}
+	w.moveOffset(v, offset)
+	return true
+}
+
+// moveOffset puts v's content at offset, unclamped, and reports it.
+func (w *window) moveOffset(v *view, offset core.Point) {
 	v.offset = offset
 	if v.widget != 0 {
 		gtkWidgetQueueAllocate(v.widget)
@@ -636,8 +650,8 @@ func (w *window) scrollTo(v *view, offset core.Point) bool {
 	if w.animator.Scroll(v.id, offset) {
 		w.showAnimated()
 	}
-	w.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id, Point: offset})
-	return true
+	w.pinSticky(v)
+	w.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id, Point: offset, Count: v.applied})
 }
 
 // wheel scrolls the innermost scroll view under at that can move in the
@@ -650,6 +664,9 @@ func (w *window) wheel(at core.Point, dx, dy float64) {
 	under := scrollsAt(root, at, nil)
 	for i := len(under) - 1; i >= 0; i-- {
 		v := under[i]
+		if v.scroll.Behavior.NoScroll {
+			continue
+		}
 		offset := v.offset
 		if v.scroll.Horizontal {
 			if dx == 0 {
@@ -662,8 +679,10 @@ func (w *window) wheel(at core.Point, dx, dy float64) {
 			}
 			offset.Y += core.Points(dy)
 		}
-		v.scrolling = nil
+		from := v.offset
+		w.interruptScroll(v) // the wheel takes over
 		if w.scrollTo(v, offset) {
+			w.wheelTurned(v, v.offset.X-from.X+v.offset.Y-from.Y)
 			return
 		}
 	}

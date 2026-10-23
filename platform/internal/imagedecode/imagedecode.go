@@ -17,9 +17,13 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"math"
 	"time"
+
+	"golang.org/x/image/webp"
 
 	"github.com/oneo-me/nsgo/core"
 )
@@ -194,6 +198,41 @@ func Decode(data []byte, opts Options) (img *Image, err error) {
 		}
 	}
 	return img, nil
+}
+
+// Size returns an image's size as an image view's EventLoad reports it,
+// read from its header without decoding its pixels: a bitmap's pixels,
+// an SVG's intrinsic size in whole points.
+func Size(data []byte) (size core.Size, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			size, err = core.Size{}, fmt.Errorf("imagedecode: decoder panicked: %v", r)
+		}
+	}()
+	var cfg image.Config
+	switch Sniff(data) {
+	case PNG:
+		cfg, err = png.DecodeConfig(bytes.NewReader(data))
+	case JPEG:
+		cfg, err = jpeg.DecodeConfig(bytes.NewReader(data))
+	case GIF:
+		cfg, err = gif.DecodeConfig(bytes.NewReader(data))
+	case WebP:
+		cfg, err = webp.DecodeConfig(bytes.NewReader(data))
+	case SVG:
+		s, err := SVGSize(data)
+		if err != nil {
+			return core.Size{}, err
+		}
+		return core.Size{Width: core.Points(math.Round(float64(s.Width))),
+			Height: core.Points(math.Round(float64(s.Height)))}, nil
+	default:
+		return core.Size{}, ErrFormat
+	}
+	if err != nil {
+		return core.Size{}, err
+	}
+	return core.Size{Width: core.Points(cfg.Width), Height: core.Points(cfg.Height)}, nil
 }
 
 // decodeStill decodes a PNG or a JPEG.

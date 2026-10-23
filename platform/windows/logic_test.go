@@ -160,38 +160,62 @@ func TestImageDensityFromTheURI(t *testing.T) {
 func TestImageFitModes(t *testing.T) {
 	w := &window{scale: 1}
 	s := &imageSlot{src: core.ImageSource{}, pic: &picture{width: 400, height: 200}}
-	r := rect{0, 0, 100, 100}
-	if src, dst := w.fit(s, core.Stretch, r); src != (rect{0, 0, 400, 200}) || dst != r {
-		t.Fatalf("stretch = %+v, %+v", src, dst)
+	r := rectF{5, 0, 105, 100}
+	fit := func(mode core.ResizeMode, pos core.ObjectPosition, s *imageSlot) rectF {
+		return w.fit(&view{image: core.ImageConfig{ResizeMode: mode, Position: pos}}, s, r)
 	}
-	if _, dst := w.fit(s, core.Contain, r); dst != (rect{0, 25, 100, 75}) {
+	if dst := fit(core.Stretch, core.ObjectPosition{}, s); dst != r {
+		t.Fatalf("stretch = %+v", dst)
+	}
+	if dst := fit(core.Contain, core.ObjectPosition{}, s); dst != (rectF{5, 25, 105, 75}) {
 		t.Fatalf("contain = %+v", dst)
 	}
-	if src, dst := w.fit(s, core.Cover, r); src != (rect{100, 0, 300, 200}) || dst != r {
-		t.Fatalf("cover = %+v, %+v", src, dst)
+	if dst := fit(core.Cover, core.ObjectPosition{}, s); dst != (rectF{-45, 0, 155, 100}) {
+		t.Fatalf("cover = %+v", dst)
 	}
-	// A picture smaller than the box stays its own size, centered.
+	if dst := fit(core.Cover, core.ObjectPosition{X: core.PositionStart}, s); dst != (rectF{5, 0, 205, 100}) {
+		t.Fatalf("cover at the left = %+v", dst)
+	}
+	if dst := fit(core.Center, core.ObjectPosition{}, s); dst != (rectF{-145, -50, 255, 150}) {
+		t.Fatalf("center of a large picture = %+v", dst)
+	}
+	if dst := fit(core.ScaleDown, core.ObjectPosition{}, s); dst != (rectF{5, 25, 105, 75}) {
+		t.Fatalf("scale-down of a large picture = %+v", dst)
+	}
+	// A picture smaller than the box stays its own size.
 	small := &imageSlot{src: core.ImageSource{}, pic: &picture{width: 40, height: 20}}
-	if _, dst := w.fit(small, core.Center, r); dst != (rect{30, 40, 70, 60}) {
-		t.Fatalf("center = %+v", dst)
+	if dst := fit(core.ScaleDown, core.ObjectPosition{}, small); dst != (rectF{35, 40, 75, 60}) {
+		t.Fatalf("scale-down = %+v", dst)
 	}
 	small.src.URI = "logo@2x.png"
-	if _, dst := w.fit(small, core.Center, r); dst != (rect{40, 45, 60, 55}) {
+	if dst := fit(core.Center, core.ObjectPosition{}, small); dst != (rectF{45, 45, 65, 55}) {
 		t.Fatalf("center @2x = %+v", dst)
 	}
 	// A declared size wins over the URI's density.
 	small.src.Size = core.Size{Width: 80, Height: 40}
-	if _, dst := w.fit(small, core.Center, r); dst != (rect{10, 30, 90, 70}) {
-		t.Fatalf("center with size = %+v", dst)
+	if dst := fit(core.Center, core.ObjectPosition{Y: core.PositionEnd}, small); dst != (rectF{15, 60, 95, 100}) {
+		t.Fatalf("center with size at the bottom = %+v", dst)
+	}
+	// Edges fall on whole pixels.
+	w.scale = 2
+	odd := &imageSlot{pic: &picture{width: 3, height: 3}}
+	if dst := fit(core.Center, core.ObjectPosition{}, odd); dst != (rectF{53.5, 48.5, 56.5, 51.5}) {
+		t.Fatalf("center at 2x = %+v", dst)
 	}
 }
 
-func TestCenteredRoundsToWholePixels(t *testing.T) {
-	if got := centered(rect{0, 0, 100, 50}, 30, 20); got != (rect{35, 15, 65, 35}) {
-		t.Fatalf("centered = %+v", got)
+func TestImageFadesIn(t *testing.T) {
+	s := &imageSlot{}
+	now := time.Now()
+	if got := s.alpha(now); got != 1 {
+		t.Fatalf("alpha without a fade = %v", got)
 	}
-	if got := centered(rect{0, 0, 10, 10}, 3, 3); got != (rect{4, 4, 7, 7}) {
-		t.Fatalf("odd centered = %+v", got)
+	s.fadeAt, s.fade = now, 200*time.Millisecond
+	if got := s.alpha(now.Add(50 * time.Millisecond)); got != 0.25 {
+		t.Fatalf("alpha a quarter in = %v", got)
+	}
+	if got := s.alpha(now.Add(time.Second)); got != 1 {
+		t.Fatalf("alpha after = %v", got)
 	}
 }
 
@@ -549,6 +573,60 @@ func TestIndexAtFindsPlainTextOffsets(t *testing.T) {
 	}
 	if got := l.indexAt(1, y+100); got != -1 {
 		t.Errorf("press below the text = %d, want -1", got)
+	}
+}
+
+// TestTextEllipsizesJustifiesAndReportsLines checks the head and middle
+// cuts, clipping, justified lines, decoration styles and the lines
+// OnTextLayout reports.
+func TestTextEllipsizesJustifiesAndReportsLines(t *testing.T) {
+	w := testWindow()
+	style := core.TextStyle{Font: core.Font{Family: "Segoe UI", Size: 16}, Color: core.RGB(0)}
+	text := "Lorem ipsum dolor sit amet, consectetur adipiscing elit"
+	for _, mode := range []core.EllipsizeMode{core.EllipsizeHead, core.EllipsizeMiddle} {
+		p := w.Prepare(&core.AttributedText{Text: text, Style: style, MaxLines: 1, Ellipsize: mode})
+		size := p.Measure(120)
+		l := p.Layout(size).(*textLayout)
+		lines := l.TextLines()
+		if len(lines) != 1 || lines[0].Bounds.Size.Width > 120.5 {
+			t.Errorf("mode %v: lines %+v, want one within 120", mode, lines)
+		}
+		var m textMetrics
+		l.layout.call(layoutGetMetrics, uintptr(unsafe.Pointer(&m)))
+		if m.width > 120.5 {
+			t.Errorf("mode %v: the cut line is %v wide", mode, m.width)
+		}
+		l.Release()
+		p.Release()
+	}
+	p := w.Prepare(&core.AttributedText{Text: text, Style: style, MaxLines: 1, Ellipsize: core.EllipsizeClip})
+	l := p.Layout(p.Measure(120)).(*textLayout)
+	if l.clip.empty() || l.clip.right != 120 {
+		t.Errorf("clip = %v, want the box", l.clip)
+	}
+	l.Release()
+	p.Release()
+
+	justified := style
+	justified.Align = core.TextAlignJustify
+	justified.Decoration, justified.DecorationStyle, justified.DecorationColor =
+		core.TextDecorationUnderline, core.DecorationWavy, core.RGB(0xff0000)
+	p = w.Prepare(&core.AttributedText{Text: "aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp", Style: justified})
+	defer p.Release()
+	l = p.Layout(core.Size{Width: 120, Height: p.Measure(120).Height}).(*textLayout)
+	defer l.Release()
+	lines := l.TextLines()
+	if len(lines) < 2 || lines[1].Start != lines[0].End {
+		t.Fatalf("lines = %+v, want several in a row", lines)
+	}
+	if w := lines[0].Bounds.Size.Width; w < 118 {
+		t.Errorf("the justified first line is %v wide, want 120", w)
+	}
+	if lines[0].CapHeight <= lines[0].XHeight || lines[0].XHeight <= 0 {
+		t.Errorf("metrics %+v", lines[0])
+	}
+	if len(l.decorations) == 0 || l.decorations[0].style != core.DecorationWavy || l.decorations[0].color != core.RGB(0xff0000) {
+		t.Errorf("decorations = %+v, want red and wavy", l.decorations)
 	}
 }
 

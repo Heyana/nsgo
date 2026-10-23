@@ -41,6 +41,7 @@ import (
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/engine"
+	"github.com/oneo-me/nsgo/platform/internal/imagedecode"
 	"github.com/oneo-me/nsgo/platform/internal/imageload"
 )
 
@@ -53,6 +54,7 @@ const (
 	msgLayout  = 4 // lays a prepared text out under a new layout id
 	msgRelease = 5 // frees a prepared text
 	msgImage   = 6 // bytes of an image view's source or placeholder
+	msgLines   = 7 // asks a text layout's lines
 
 	// Java to Go.
 	msgStart       = 1
@@ -62,6 +64,7 @@ const (
 	msgEnvironment = 5 // the environment, before msgStart and on change
 	msgDNS         = 6 // the default network's DNS servers
 	msgLaidOut     = 7 // where a msgLayout put a text's attachments
+	msgTextLines   = 8 // a text layout's lines, answering msgLines
 )
 
 // The parts of an image view's request msgImage carries.
@@ -77,6 +80,7 @@ type surface struct {
 	ids      atomic.Uint32 // the last prepared text or layout id
 	measured chan core.Size
 	laidOut  chan []attachmentBox
+	lines    chan []core.TextLine
 	engine   *engine.Engine
 	started  chan struct{}    // closed once engine is set
 	env      core.Environment // the last reported, on the reader goroutine
@@ -117,6 +121,7 @@ func Run(app engine.App, opts Options) {
 		out:      os.NewFile(uintptr(fd), "nsgo-runtime"),
 		measured: make(chan core.Size, 1),
 		laidOut:  make(chan []attachmentBox, 1),
+		lines:    make(chan []core.TextLine, 1),
 		started:  make(chan struct{}),
 		env:      core.Environment{OS: core.OSAndroid},
 		images:   map[core.NodeID]*imageView{},
@@ -181,6 +186,16 @@ func Run(app engine.App, opts Options) {
 				boxes[i] = attachmentBox{core.Point{X: x, Y: y}, !math.IsNaN(float64(x))}
 			}
 			s.laidOut <- boxes
+		case msgTextLines:
+			lines := make([]core.TextLine, r.u32())
+			for i := range lines {
+				l := &lines[i]
+				l.Start, l.End = int(r.u32()), int(r.u32()) // UTF-8 offsets
+				l.Bounds = core.Bounds{Origin: core.Point{X: r.points(), Y: r.points()},
+					Size: core.Size{Width: r.points(), Height: r.points()}}
+				l.Ascender, l.Descender, l.CapHeight, l.XHeight = r.points(), r.points(), r.points(), r.points()
+			}
+			s.lines <- lines
 		case msgEnvironment:
 			env := readEnvironment(&r)
 			if env == s.env {
@@ -233,6 +248,8 @@ func readEnvironment(r *reader) core.Environment {
 	env.RTL = flags&8 != 0
 	env.Idiom = core.Idiom(r.byte())
 	env.Locale = r.str()
+	// The toolbar's heights, without and with a large title.
+	env.HeaderHeight, env.LargeHeaderHeight = r.points(), r.points()
 	return env
 }
 
@@ -290,6 +307,19 @@ func (s *surface) Prepare(t *core.AttributedText) core.PreparedText {
 			w.points(a.Size.Height)
 			w.byte(byte(a.Align))
 		}
+		// Where the line limit cuts, the shadow, then the decorations'
+		// styles and colors of the text and each span.
+		w.byte(byte(t.Ellipsize))
+		w.u32(uint32(t.Shadow.Color)) // 0: none
+		w.points(t.Shadow.Offset.X)
+		w.points(t.Shadow.Offset.Y)
+		w.points(t.Shadow.Radius)
+		w.byte(byte(t.Style.DecorationStyle))
+		w.u32(uint32(t.Style.DecorationColor))
+		for _, sp := range t.Spans {
+			w.byte(byte(sp.Style.DecorationStyle))
+			w.u32(uint32(sp.Style.DecorationColor))
+		}
 	})
 	return p
 }
@@ -316,7 +346,7 @@ func (p preparedText) Measure(maxWidth core.Points) core.Size {
 // ItemText to name: Java reads it before the batch. Only a text with
 // attachments waits for an answer, where they went.
 func (p preparedText) Layout(size core.Size) core.TextLayout {
-	l := &textLayout{id: p.s.ids.Add(1)}
+	l := &textLayout{id: p.s.ids.Add(1), s: p.s}
 	p.s.send(msgLayout, func(w *writer) {
 		w.u32(p.id)
 		w.u32(l.id)
@@ -338,8 +368,16 @@ func (p preparedText) Release() {
 // ItemText replaces it or its view is deleted.
 type textLayout struct {
 	id          uint32
+	s           *surface
 	attachments []attachmentBox
 	sizes       []core.Size
+}
+
+// TextLines implements core.LineLayout: Java answers with the lines of
+// the StaticLayout it keeps until the batch that names it.
+func (l *textLayout) TextLines() []core.TextLine {
+	l.s.send(msgLines, func(w *writer) { w.u32(l.id) })
+	return <-l.s.lines
 }
 
 // attachmentBox is the top left of an attachment in the content box.
@@ -366,6 +404,12 @@ func (s *surface) Mount(b *core.MountBatch) {
 	s.send(msgBatch, func(w *writer) { encode(w, b, requests, natives) })
 	for _, l := range loads {
 		go s.load(l)
+	}
+	// Go loads the images Java shows, so it answers ImageSize too.
+	for i := range b.Items {
+		if it := b.Items[i]; it.Kind == core.ItemImageInfo {
+			go s.engine.Dispatch(imageload.Info(&it, imagedecode.Size))
+		}
 	}
 }
 
@@ -648,9 +692,23 @@ func encode(w *writer, b *core.MountBatch, requests []uint32, natives []nativeIt
 			w.flags(in.Masked, in.Readonly, in.Disabled)
 			w.bounds(in.Content)
 			w.u32(uint32(in.Accessory))
+			writeEditing(w, in)
 		case core.ItemInputValue:
 			w.str(it.Value)
 			w.u32(it.Count)
+		case core.ItemSelection:
+			w.u32(uint32(max(it.Selection.Start, 0)))
+			w.u32(uint32(max(it.Selection.End, 0)))
+		case core.ItemScrollBy:
+			w.points(it.Point.X)
+			w.points(it.Point.Y)
+		case core.ItemStickyCells:
+			w.u32(uint32(len(it.Sticky)))
+			for _, c := range it.Sticky {
+				w.u32(uint32(c.Cell))
+				w.points(c.Start)
+				w.points(c.End)
+			}
 		case core.ItemEvents:
 			w.u64(uint64(it.Events))
 		case core.ItemViewProps:
@@ -665,8 +723,45 @@ func encode(w *writer, b *core.MountBatch, requests []uint32, natives []nativeIt
 			w.points(a.ActiveOffsetY)
 			w.points(a.FailOffsetX)
 			w.points(a.FailOffsetY)
+			// Accessibility beyond the role, label and states.
+			w.str(p.Hint)
+			w.flags(p.Expandable, p.Expanded, p.ElementsHidden, p.Value.IsRange())
+			w.byte(byte(p.Accessible))
+			w.byte(byte(p.LiveRegion))
+			w.float(p.Value.Min)
+			w.float(p.Value.Max)
+			w.float(p.Value.Now)
+			w.str(p.Value.Text)
+			actions := p.ActionList()
+			w.u32(uint32(len(actions)))
+			for _, act := range actions {
+				w.str(act.Name)
+				w.str(act.Label)
+			}
 		case core.ItemScrollConfig:
-			w.flags(it.Scroll.Horizontal, it.Scroll.HideIndicator)
+			c := it.Scroll
+			b := &c.Behavior
+			w.flags(c.Horizontal, c.HideIndicator)
+			w.flags(b.Paging, b.DisableIntervalMomentum, b.NoScroll, b.NoBounces, c.Refreshable, c.Refreshing,
+				c.NoBouncesZoom, c.NoPinchZoom)
+			w.flags(c.CenterContent)
+			w.points(b.SnapToInterval)
+			w.byte(byte(b.SnapToAlignment))
+			w.u32(uint32(len(b.SnapToOffsets)))
+			for _, o := range b.SnapToOffsets {
+				w.points(o)
+			}
+			w.float(b.Deceleration())
+			in := b.ContentInset
+			w.points(in.Top)
+			w.points(in.Right)
+			w.points(in.Bottom)
+			w.points(in.Left)
+			w.byte(byte(b.KeyboardDismissMode))
+			w.byte(byte(b.KeyboardShouldPersistTaps))
+			w.float(c.MinZoomScale)
+			w.float(c.MaxZoomScale)
+			w.float(c.ZoomScale)
 		case core.ItemScrollContent:
 			w.points(it.Size.Width)
 			w.points(it.Size.Height)
@@ -677,6 +772,13 @@ func encode(w *writer, b *core.MountBatch, requests []uint32, natives []nativeIt
 			w.byte(byte(c.ResizeMode - core.Cover)) // Java's are 0-based
 			w.points(c.BlurRadius)
 			w.u32(uint32(max(c.FadeDuration.Milliseconds(), 0))) // 0: the platform's
+			// Each axis of the position as a fraction of the free space
+			// plus points, which is what any position resolves to.
+			for _, a := range [...]core.PositionAxis{c.Position.X, c.Position.Y} {
+				at := a.Resolve(0)
+				w.float(float32(a.Resolve(1) - at))
+				w.points(at)
+			}
 		case core.ItemModal:
 			w.byte(byte(it.Modal.Animation))
 		case core.ItemAlert:
@@ -693,6 +795,17 @@ func encode(w *writer, b *core.MountBatch, requests []uint32, natives []nativeIt
 			w.points(it.Point.X)
 			w.points(it.Point.Y)
 			w.flags(it.Animated)
+		case core.ItemZoomTo:
+			z := it.Zoom
+			w.float(z.Scale)
+			var center core.Point
+			if z.Center != nil {
+				center = *z.Center
+			}
+			w.flags(z.Center != nil)
+			w.points(center.X)
+			w.points(center.Y)
+			w.flags(it.Animated)
 		case core.ItemCanvas:
 			// Length first: Java keeps the ops as they are and plays them
 			// on each draw.
@@ -700,7 +813,7 @@ func encode(w *writer, b *core.MountBatch, requests []uint32, natives []nativeIt
 			w.u32(0)
 			writeDrawing(w, it.Drawing)
 			binary.BigEndian.PutUint32(w.buf[at:], uint32(len(w.buf)-at-4))
-		case core.ItemSetClipboard, core.ItemAnnounce, core.ItemTitle:
+		case core.ItemSetClipboard, core.ItemAnnounce, core.ItemTitle, core.ItemAccessibilityLabel:
 			w.str(it.Value)
 		case core.ItemReadClipboard:
 			w.u32(it.Count)
@@ -710,8 +823,21 @@ func encode(w *writer, b *core.MountBatch, requests []uint32, natives []nativeIt
 				w.str(k)
 			}
 		case core.ItemStatusBar:
-			w.byte(byte(it.Count)) // a StatusBarStyle
-			w.flags(it.Animated)   // hidden
+			c := it.StatusBar
+			w.byte(byte(c.Style))
+			w.flags(c.Hidden, c.Animated)
+		case core.ItemScreen:
+			c := it.Screen
+			w.str(c.Title)
+			w.flags(c.HeaderHidden, c.HeaderTransparent, c.LargeTitle, c.CanGoBack, c.BackHidden, c.NoPopOnSwipe, c.NoPopOnBack)
+			w.str(c.BackTitle)
+			w.u32(uint32(c.Background))
+			w.u32(uint32(c.TitleColor))
+			w.u32(uint32(c.TintColor))
+			w.u32(uint32(c.Left))
+			w.u32(uint32(c.Right))
+			w.u32(uint32(c.TitleView))
+			w.points(c.HeaderHeight)
 		case core.ItemWeb:
 			c := it.Web
 			w.str(c.Source.Src)

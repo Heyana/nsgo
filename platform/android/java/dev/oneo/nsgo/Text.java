@@ -3,6 +3,7 @@ package dev.oneo.nsgo;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.text.Layout;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -36,6 +37,8 @@ final class Text {
         final float letterSpacing;
         final int align;
         final boolean italic, underline, lineThrough;
+        /** How the decoration's lines are drawn and their ARGB color, 0 for the text's; read after the rest. */
+        int decorationStyle, decorationColor;
 
         Style(DataInputStream in, float density) throws IOException {
             family = Protocol.readString(in);
@@ -51,6 +54,18 @@ final class Text {
             lineThrough = Protocol.flag(flags, 2);
         }
 
+        /** Reads the decoration's style and color, which PREPARE sends after the text's parts. */
+        void readDecoration(DataInputStream in) throws IOException {
+            decorationStyle = in.readUnsignedByte();
+            decorationColor = argb(in.readInt());
+        }
+
+        /** Whether TextNode draws the decoration, which a paint draws only solid and in the text's color. */
+        boolean drawsDecoration() {
+            return (underline || lineThrough)
+                    && (decorationStyle > Protocol.DECORATION_SOLID || (decorationColor >>> 24) != 0);
+        }
+
         Typeface typeface() {
             Typeface base = family.isEmpty() ? Typeface.DEFAULT : Typeface.create(family, Typeface.NORMAL);
             return Typeface.create(base, Math.max(1, Math.min(weight, 1000)), italic);
@@ -64,6 +79,7 @@ final class Text {
         /** The paint flags of the decoration, over the other bits of flags. */
         int paintFlags(int flags) {
             flags &= ~(Paint.UNDERLINE_TEXT_FLAG | Paint.STRIKE_THRU_TEXT_FLAG);
+            if (drawsDecoration()) return flags;
             if (underline) flags |= Paint.UNDERLINE_TEXT_FLAG;
             if (lineThrough) flags |= Paint.STRIKE_THRU_TEXT_FLAG;
             return flags;
@@ -85,6 +101,20 @@ final class Text {
                 case Protocol.ALIGN_END: return Layout.Alignment.ALIGN_OPPOSITE;
                 default: return Layout.Alignment.ALIGN_NORMAL;
             }
+        }
+
+        /** The decoration TextNode draws for this style, placed by its font's metrics. */
+        Decoration decoration(TextPaint measure) {
+            measure.setTypeface(typeface());
+            measure.setTextSize(size);
+            float thickness = size / 18, under = size / 9, strike = -size * 0.28f;
+            if (Build.VERSION.SDK_INT >= 29) {
+                thickness = measure.getUnderlineThickness();
+                under = measure.getUnderlinePosition();
+                strike = measure.getStrikeThruPosition();
+            }
+            int color = (decorationColor >>> 24) != 0 ? decorationColor : this.color;
+            return new Decoration(underline, lineThrough, decorationStyle, color, under, strike, Math.max(thickness, 1));
         }
 
         /** The horizontal gravity of a text field. */
@@ -114,6 +144,40 @@ final class Text {
         }
     }
 
+    /** A shadow behind the glyphs, as android.go writes it: its ARGB color, 0 for none, offset and radius in pixels. */
+    static final class Shadow {
+        final int color;
+        final float dx, dy, radius;
+
+        Shadow(DataInputStream in, float density) throws IOException {
+            color = argb(in.readInt());
+            dx = in.readFloat() * density;
+            dy = in.readFloat() * density;
+            radius = in.readFloat() * density;
+        }
+    }
+
+    /**
+     * A decoration TextNode draws, in a style or color a paint's flags
+     * cannot: positions and thickness in pixels, below the baseline when
+     * positive.
+     */
+    static final class Decoration {
+        final boolean underline, strike;
+        final int style, color;
+        final float under, through, thickness;
+
+        Decoration(boolean underline, boolean strike, int style, int color, float under, float through, float thickness) {
+            this.underline = underline;
+            this.strike = strike;
+            this.style = style;
+            this.color = color;
+            this.under = under;
+            this.through = through;
+            this.thickness = thickness;
+        }
+    }
+
     /** An attachment: the byte offset of its placeholder, its size and alignment, as android.go writes it. */
     static final class Attachment {
         final int offset;
@@ -132,11 +196,13 @@ final class Text {
         private final CharSequence text;
         private final TextPaint paint;
         private final Layout.Alignment align;
-        private final int maxLines;
-        private final boolean attached;
+        private final int maxLines, ellipsize;
+        private final boolean attached, justify;
 
-        Prepared(String text, Style style, int maxLines, List<Span> spans, List<Attachment> attachments) {
-            if (style.lineHeight > 0 || !spans.isEmpty() || !attachments.isEmpty()) {
+        Prepared(String text, Style style, int maxLines, int ellipsize, Shadow shadow, List<Span> spans,
+                List<Attachment> attachments) {
+            boolean decorated = spans.isEmpty() && style.drawsDecoration();
+            if (style.lineHeight > 0 || !spans.isEmpty() || !attachments.isEmpty() || decorated) {
                 SpannableString spanned = new SpannableString(text);
                 if (style.lineHeight > 0) {
                     spanned.setSpan(new LineHeight(Math.round(style.lineHeight)), 0, text.length(),
@@ -145,10 +211,16 @@ final class Text {
                 Utf8 offsets = new Utf8(text);
                 Paint.FontMetrics font = new Paint.FontMetrics();
                 TextPaint measure = new TextPaint();
+                if (decorated && !text.isEmpty()) {
+                    spanned.setSpan(style.decoration(measure), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
                 for (Span span : spans) {
                     int start = offsets.index(span.start), end = offsets.index(span.end);
                     if (start >= end) continue;
                     spanned.setSpan(new Run(span.style), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    if (span.style.drawsDecoration()) {
+                        spanned.setSpan(span.style.decoration(measure), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    }
                     if ((span.background >>> 24) != 0) {
                         measure.setTypeface(span.style.typeface());
                         measure.setTextSize(span.style.size);
@@ -169,9 +241,20 @@ final class Text {
                 this.text = text;
             }
             this.paint = style.paint();
+            if ((shadow.color >>> 24) != 0) {
+                // A zero radius would remove the shadow layer.
+                paint.setShadowLayer(Math.max(0.01f, shadow.radius), shadow.dx, shadow.dy, shadow.color);
+            }
             this.align = style.alignment();
+            this.justify = style.align == Protocol.ALIGN_JUSTIFY;
             this.maxLines = maxLines;
+            this.ellipsize = ellipsize;
             this.attached = !attachments.isEmpty();
+        }
+
+        /** The lines a clipped text shows, or 0 when an ellipsis ends them. */
+        int clipLines() {
+            return ellipsize == Protocol.ELLIPSIZE_CLIP ? maxLines : 0;
         }
 
         /** Whether the text has attachments, so its layouts answer where they went. */
@@ -206,7 +289,16 @@ final class Text {
             StaticLayout.Builder b = StaticLayout.Builder.obtain(text, 0, text.length(), paint, Math.max(px, 1))
                     .setAlignment(align)
                     .setIncludePad(false);
-            if (maxLines > 0) b.setMaxLines(maxLines).setEllipsize(TextUtils.TruncateAt.END);
+            if (justify) b.setJustificationMode(Layout.JUSTIFICATION_MODE_INTER_WORD);
+            if (maxLines > 0) {
+                b.setMaxLines(maxLines);
+                switch (ellipsize) {
+                    case Protocol.ELLIPSIZE_CLIP: break; // TextNode clips the lines past the limit
+                    case Protocol.ELLIPSIZE_HEAD: b.setEllipsize(TextUtils.TruncateAt.START); break;
+                    case Protocol.ELLIPSIZE_MIDDLE: b.setEllipsize(TextUtils.TruncateAt.MIDDLE); break;
+                    default: b.setEllipsize(TextUtils.TruncateAt.END);
+                }
+            }
             return b.build();
         }
     }
@@ -234,6 +326,38 @@ final class Text {
             paint.setColor(style.color);
             paint.setFlags(style.paintFlags(paint.getFlags()));
         }
+    }
+
+    /**
+     * The lines of a final layout, for OnTextLayout: per line its UTF-8
+     * start and end, left, top, width and height, ascent and descent, and
+     * the cap and x heights of the font it starts in, in pixels.
+     */
+    static float[][] lines(Layout layout) {
+        if (layout == null) return new float[0][];
+        CharSequence text = layout.getText();
+        int count = layout.getLineCount();
+        float[][] out = new float[count][];
+        Rect bounds = new Rect();
+        for (int i = 0; i < count; i++) {
+            int start = layout.getLineStart(i), end = layout.getLineEnd(i);
+            TextPaint paint = new TextPaint(layout.getPaint());
+            if (text instanceof Spanned) {
+                for (MetricAffectingSpan s : ((Spanned) text).getSpans(start, Math.min(start + 1, text.length()),
+                        MetricAffectingSpan.class)) {
+                    s.updateMeasureState(paint);
+                }
+            }
+            paint.getTextBounds("H", 0, 1, bounds);
+            float cap = bounds.height();
+            paint.getTextBounds("x", 0, 1, bounds);
+            float x = bounds.height();
+            float top = layout.getLineTop(i);
+            out[i] = new float[] {utf8Length(text, start), utf8Length(text, end), layout.getLineLeft(i), top,
+                    layout.getLineWidth(i), layout.getLineBottom(i) - top, -layout.getLineAscent(i),
+                    layout.getLineDescent(i), cap, x};
+        }
+        return out;
     }
 
     /**

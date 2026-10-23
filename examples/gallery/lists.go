@@ -42,7 +42,7 @@ func listsPage(cx *core.Scope, t *theme) core.Node {
 		})
 	}
 
-	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
+	return core.View{Style: core.Style{Gap: 16}, Children: append([]core.Node{
 		t.demo("Virtualized list", fmt.Sprintf("core.List mounts only the rows near its viewport, %d rows in reused cells.", rows),
 			flow(
 				t.plain("Top", func() { list.ScrollToIndex(0, true) }),
@@ -50,7 +50,7 @@ func listsPage(cx *core.Scope, t *theme) core.Node {
 				t.plain("Bottom", func() { list.ScrollToIndex(rows-1, true) }),
 			),
 			core.List{Ref: list, TestID: "rows", Count: func() int { return rows }, EstimatedSize: 44,
-				OnScroll: func(at core.Point) { visible.Set(int(at.Y / 44)) },
+				OnScroll: func(e core.ScrollEvent) { visible.Set(int(e.Offset.Y / 44)) },
 				Style:    core.Style{Height: core.Pt(320), BorderWidth: 1, BorderColor: t.line, CornerRadius: radius, Overflow: core.Hidden},
 				Row: func(cx *core.Scope, r core.ListRow) core.Node {
 					return core.View{
@@ -93,5 +93,5 @@ func listsPage(cx *core.Scope, t *theme) core.Node {
 			}},
 			t.live(func() string { return fmt.Sprintf("%d fruits", len(fruits.Get())) }),
 		),
-	}}
+	}, listDemos(cx, t)...)}
 }

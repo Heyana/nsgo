@@ -1,6 +1,9 @@
 package core
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // maxRounds bounds the commits OnLayout handlers may cause in one batch.
 const maxRounds = 8
@@ -45,30 +48,38 @@ func (t *Tree) commitRound() {
 	t.layout()
 	// Lists fill their windows from the layout, which may need another.
 	for range 4 {
-		changed := false
-		live := t.lists[:0]
-		for _, l := range t.lists {
-			if !l.deleted {
-				live = append(live, l)
-				changed = t.within2(l, func() bool { return t.updateList(l) }) || changed
-			}
-		}
-		t.lists = live
-		if !changed {
+		if !t.updateLists() {
 			break
 		}
 		t.resolve(t.view, Style{})
 		t.layout()
 	}
+	// System headers cover what the stacks' places decide.
+	for range 2 {
+		if !t.sizeHeaders() {
+			break
+		}
+		t.layout()
+	}
+	t.sendSticky()
 	t.sizeCanvases(t.view)
+	for _, roots := range [][]*node{t.accessories, t.headerViews} {
+		for _, n := range roots {
+			if !n.deleted {
+				t.sizeCanvases(n)
+			}
+		}
+	}
 	t.laidOut = t.laidOut[:0]
 	t.emitAccessories()
+	t.emitHeaderViews()
 	t.emit(t.view)
 	t.emitAnimation()
 	if t.keysChanged {
 		t.keysChanged = false
 		t.items = append(t.items, MountItem{Kind: ItemKeymap, Keys: t.keymap()})
 	}
+	t.emitStatusBar()
 	t.items = append(t.items, t.commands...)
 	t.commands = t.commands[:0]
 	for _, id := range t.deleted {
@@ -105,10 +116,20 @@ func (t *Tree) resolve(n *node, inherited Style) {
 	case n.text != nil:
 		n.props.SelectionColor = inherited.SelectionColor
 		tn := n.text
-		ts := t.scaled(inherited.textStyle())
+		if inherited.TextAlignVertical != tn.alignV {
+			tn.alignV = inherited.TextAlignVertical
+			tn.resent = true
+		}
+		scale := tn.fontMultiplier(t.fontScale)
+		ts := scaleText(inherited.textStyle(), scale)
 		sized := tn.attachments > 0 && t.sizeAttachments(n, inherited)
-		if tn.stale || sized || tn.prepared == nil || ts != tn.style {
-			at := AttributedText{Text: tn.content, Style: ts, MaxLines: tn.maxLines}
+		shadow := inherited.textShadow()
+		if tn.stale || sized || tn.prepared == nil || ts != tn.style || shadow != tn.text.Shadow {
+			at := AttributedText{Text: inherited.TextTransform.Apply(tn.content), Style: ts, MaxLines: tn.maxLines,
+				Ellipsize: tn.ellipsize, Shadow: shadow}
+			if at.Ellipsize == 0 {
+				at.Ellipsize = EllipsizeTail
+			}
 			if len(tn.spans) > 0 {
 				var b strings.Builder
 				for _, sp := range tn.spans {
@@ -120,9 +141,10 @@ func (t *Tree) resolve(n *node, inherited Style) {
 						at.Spans = append(at.Spans, TextSpan{Start: start, End: b.Len(), Style: ts})
 						continue
 					}
-					b.WriteString(sp.content)
+					own := sp.style.inherit(inherited)
+					b.WriteString(own.TextTransform.Apply(sp.content))
 					at.Spans = append(at.Spans, TextSpan{Start: start, End: b.Len(),
-						Style: t.scaled(sp.style.inherit(inherited).textStyle()), Link: sp.press != nil,
+						Style: scaleText(own.textStyle(), scale), Link: sp.press != nil,
 						Background: TextBackground{Color: sp.style.Background, Radius: sp.style.CornerRadius}})
 				}
 				at.Text = b.String()
@@ -141,6 +163,7 @@ func (t *Tree) resolve(n *node, inherited Style) {
 		}
 	case n.input != nil:
 		in := n.input
+		in.config.PlaceholderColor, in.config.SelectionColor = inherited.PlaceholderColor, inherited.SelectionColor
 		if ts := t.scaled(inherited.textStyle()); ts != in.config.Style || in.lineH == 0 {
 			in.config.Style = ts
 			p := t.text.Prepare(&AttributedText{Text: "Ag", Style: ts})
@@ -148,6 +171,7 @@ func (t *Tree) resolve(n *node, inherited Style) {
 			p.Release()
 			n.markLayout()
 		}
+		t.prepareInput(n)
 	}
 	if n.text != nil {
 		return // its children are attachments, which it resolved
@@ -215,8 +239,8 @@ func (n *node) placeAttachments(l TextLayout) {
 		i++
 		w.attach.cut = !ok
 		if ok {
-			b.Origin.X += n.text.box.Origin.X
-			b.Origin.Y += n.text.box.Origin.Y
+			b.Origin.X += n.text.shownBox.Origin.X
+			b.Origin.Y += n.text.shownBox.Origin.Y
 			w.frame = Bounds{Origin: b.Origin, Size: w.attach.size}
 		}
 	}
@@ -241,8 +265,11 @@ func (t *Tree) within2(n *node, fn func() bool) (r bool) {
 }
 
 // scaled applies the user's text size setting.
-func (t *Tree) scaled(ts TextStyle) TextStyle {
-	if s := Points(t.fontScale); s != 1 && s > 0 {
+func (t *Tree) scaled(ts TextStyle) TextStyle { return scaleText(ts, t.fontScale) }
+
+// scaleText multiplies ts's font size and line height by scale.
+func scaleText(ts TextStyle, scale float32) TextStyle {
+	if s := Points(scale); s != 1 && s > 0 {
 		ts.Font.Size *= s
 		ts.LineHeight *= s
 	}
@@ -266,10 +293,17 @@ func (t *Tree) emit(n *node) {
 		n.sent.viewStyle = vs
 		add(MountItem{Kind: ItemViewStyle, ID: n.id, ViewStyle: &vs})
 	}
-	if first || n.props != n.sent.props {
-		p := n.props
+	if p := n.sentProps(); first || p != n.sent.props {
+		// A label changing alone goes alone: it is the one that follows
+		// app state (a count, a price).
+		rest := p
+		rest.Label = n.sent.props.Label
+		if !first && rest == n.sent.props {
+			add(MountItem{Kind: ItemAccessibilityLabel, ID: n.id, Value: p.Label})
+		} else {
+			add(MountItem{Kind: ItemViewProps, ID: n.id, ViewProps: &p})
+		}
 		n.sent.props = p
-		add(MountItem{Kind: ItemViewProps, ID: n.id, ViewProps: &p})
 	}
 	if n.style.Animated != nil || n.anim != nil {
 		t.bindAnimated(n)
@@ -284,13 +318,7 @@ func (t *Tree) emit(n *node) {
 		if tn.prepared != nil && (tn.resent || tn.box != tn.sentBox) {
 			tn.resent = false
 			tn.sentBox = tn.box
-			l := tn.prepared.Layout(tn.box.Size)
-			if tn.attachments > 0 {
-				n.placeAttachments(l)
-			}
-			add(MountItem{Kind: ItemText, ID: n.id, Text: &TextContent{
-				Text: tn.text.Text, Layout: l, Content: tn.box,
-			}})
+			t.emitText(n)
 		}
 	case n.input != nil:
 		in := n.input
@@ -307,9 +335,11 @@ func (t *Tree) emit(n *node) {
 		if first && in.autoFocus {
 			t.command(ItemFocus, n)
 		}
+		t.reportContentSize(n)
 	case n.image != nil:
 		im := n.image
 		c := im.config
+		c.Position = n.style.ObjectPosition
 		c.Source = t.pickScale(c.Source)
 		c.Placeholder = t.pickScale(c.Placeholder)
 		if first || !c.same(im.sent) {
@@ -318,7 +348,9 @@ func (t *Tree) emit(n *node) {
 		}
 	case n.hoist != nil && n.hoist.modal != nil:
 		if first {
-			add(MountItem{Kind: ItemModal, ID: n.id, Modal: &ModalConfig{Animation: n.hoist.modal.Animation}})
+			m := n.hoist.modal
+			add(MountItem{Kind: ItemModal, ID: n.id, Modal: &ModalConfig{Animation: m.Animation, Presentation: m.Presentation,
+				NoCloseOnSwipe: m.NoCloseOnSwipe, Orientations: m.SupportedOrientations}})
 		}
 	case n.canvas != nil:
 		if cn := n.canvas; cn.fresh && cn.drawing != nil {
@@ -341,15 +373,23 @@ func (t *Tree) emit(n *node) {
 		}
 	case n.scroll != nil:
 		sc := n.scroll
-		if first || sc.config != n.sent.scroll {
+		if first || sc.resend || !sc.config.Equal(&n.sent.scroll) {
+			sc.resend = false
 			c := sc.config
+			c.Behavior.SnapToOffsets = slices.Clone(c.Behavior.SnapToOffsets)
 			n.sent.scroll = c
 			add(MountItem{Kind: ItemScrollConfig, ID: n.id, Scroll: &c})
 		}
+		t.emitScrollBy(n, true)
 		if first || sc.content != n.sent.content {
 			n.sent.content = sc.content
 			add(MountItem{Kind: ItemScrollContent, ID: n.id, Size: sc.content})
 		}
+		t.emitScrollBy(n, false)
+		t.emitScrollTo(n)
+	}
+	if sc := n.screen; sc != nil && sc.native {
+		t.emitScreen(n)
 	}
 	kids := n.nativeChildren()
 	for _, c := range kids {
@@ -366,6 +406,108 @@ func (t *Tree) emit(n *node) {
 			t.laidOut = append(t.laidOut, n)
 		}
 	}
+}
+
+// emitText lays text n out in its box and sends it: moved down by its
+// vertical alignment, shrunk to fit when it asks to be, its lines
+// reported after the commit.
+func (t *Tree) emitText(n *node) {
+	tn := n.text
+	box := tn.box
+	if f := tn.alignV.fraction(); f > 0 {
+		if h := tn.prepared.Measure(box.Size.Width).Height; h < box.Size.Height {
+			box.Origin.Y += f * (box.Size.Height - h)
+			box.Size.Height = h
+		}
+	}
+	tn.shownBox = box
+	prepared, text := tn.prepared, &tn.text
+	if tn.fitted != nil {
+		tn.fitted.Release()
+		tn.fitted = nil
+	}
+	if tn.fit {
+		if fitted, ok := fitText(t.text, text, box.Size, tn.minScale); ok {
+			tn.fitted = t.text.Prepare(&fitted)
+			prepared, text = tn.fitted, &fitted
+		}
+	}
+	l := prepared.Layout(box.Size)
+	if tn.attachments > 0 {
+		n.placeAttachments(l)
+	}
+	if tn.lines != nil {
+		if ll, ok := l.(LineLayout); ok {
+			lines := ll.TextLines()
+			for i := range lines {
+				a, b := min(max(lines[i].Start, 0), len(text.Text)), min(max(lines[i].End, 0), len(text.Text))
+				lines[i].Text = text.Text[a:max(a, b)]
+			}
+			report := tn.lines
+			t.after(n, func() { report(lines) })
+		}
+	}
+	t.items = append(t.items, MountItem{Kind: ItemText, ID: n.id, Text: &TextContent{
+		Text: text.Text, Layout: l, Content: box,
+	}})
+}
+
+// fitText returns text with its fonts, line heights and letter spacing
+// scaled down, to no less than least of them, until it fits size within
+// its line limit: the largest scale that fits, by bisection, as NSH's
+// Paragraph::fit. It reports false when text fits as it is.
+func fitText(engine TextEngine, text *AttributedText, size Size, least float32) (AttributedText, bool) {
+	scaled := func(scale float32) AttributedText {
+		s := *text
+		s.Style = fitStyle(s.Style, scale)
+		s.Spans = append([]TextSpan(nil), text.Spans...)
+		for i := range s.Spans {
+			s.Spans[i].Style = fitStyle(s.Spans[i].Style, scale)
+		}
+		return s
+	}
+	measure := func(t *AttributedText) Size {
+		p := engine.Prepare(t)
+		defer p.Release()
+		return p.Measure(size.Width)
+	}
+	fits := func(t AttributedText) bool {
+		// Untruncated, the text must be no taller than its truncated self
+		// (nothing cut) and than the box.
+		limit := size.Height
+		if t.MaxLines > 0 {
+			limit = min(limit, measure(&t).Height)
+		}
+		all := t
+		all.MaxLines = 0
+		full := measure(&all)
+		return full.Height <= limit+0.5 && full.Width <= size.Width+0.5
+	}
+	if fits(*text) {
+		return AttributedText{}, false
+	}
+	lo, hi := least, float32(1)
+	if !fits(scaled(lo)) {
+		return scaled(lo), true
+	}
+	for range 7 {
+		mid := (lo + hi) / 2
+		if fits(scaled(mid)) {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	return scaled(lo), true
+}
+
+// fitStyle scales what fitting shrinks.
+func fitStyle(ts TextStyle, scale float32) TextStyle {
+	s := Points(scale)
+	ts.Font.Size *= s
+	ts.LineHeight *= s
+	ts.LetterSpacing *= s
+	return ts
 }
 
 func (n *node) viewStyle() ViewStyle {

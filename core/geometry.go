@@ -102,6 +102,12 @@ func RGBA(hex uint32, alpha float32) Color {
 	return Color(hex<<8 | a)
 }
 
+// Faded returns c with its alpha multiplied by f, from 0 to 1.
+func (c Color) Faded(f float32) Color {
+	a := uint32(float32(c&0xff)*min(max(f, 0), 1) + 0.5)
+	return c&^0xff | Color(a)
+}
+
 // Components returns the red, green, blue and alpha channels from 0 to 1.
 func (c Color) Components() (r, g, b, a float64) {
 	return float64(c>>24&0xff) / 255, float64(c>>16&0xff) / 255,

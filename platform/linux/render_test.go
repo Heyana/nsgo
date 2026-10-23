@@ -264,3 +264,46 @@ func TestAttachmentsPastTheLineLimitAreCut(t *testing.T) {
 		}
 	}
 }
+
+// TestTextEllipsizesJustifiesAndReportsLines checks the ellipsis modes,
+// clipping, justified lines and the lines OnTextLayout reports.
+func TestTextEllipsizesJustifiesAndReportsLines(t *testing.T) {
+	if err := openLibs(); err != nil {
+		t.Skip(err)
+	}
+	w := &window{}
+	text := "Lorem ipsum dolor sit amet, consectetur adipiscing elit"
+	for _, mode := range []core.EllipsizeMode{core.EllipsizeTail, core.EllipsizeHead, core.EllipsizeMiddle, core.EllipsizeClip} {
+		l := layoutText(t, w, &core.AttributedText{Text: text, Style: textStyle, MaxLines: 1, Ellipsize: mode}, 120)
+		lines := l.TextLines()
+		if len(lines) != 1 {
+			t.Fatalf("mode %v: %d lines, want 1", mode, len(lines))
+		}
+		if lines[0].CapHeight <= lines[0].XHeight || lines[0].XHeight <= 0 || lines[0].Ascender <= 0 {
+			t.Errorf("mode %v: metrics %+v", mode, lines[0])
+		}
+		data, stride := drawText(t, l, 160, int(l.height)+2)
+		inked := 0
+		for x := 122; x < 160; x++ {
+			for y := 0; y < int(l.height); y++ {
+				if pixelAt(data, stride, x, y)[3] > 0x80 {
+					inked++
+				}
+			}
+		}
+		if inked > 0 {
+			t.Errorf("mode %v: %d pixels drawn past the box", mode, inked)
+		}
+	}
+	words := "aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp"
+	justified := textStyle
+	justified.Align = core.TextAlignJustify
+	l := layoutText(t, w, &core.AttributedText{Text: words, Style: justified}, 120)
+	lines := l.TextLines()
+	if len(lines) < 2 || lines[1].Start != lines[0].End {
+		t.Fatalf("lines = %+v, want several in a row", lines)
+	}
+	if w := lines[0].Bounds.Size.Width; w < 118 {
+		t.Errorf("justified first line %v wide, want stretched to 120", w)
+	}
+}

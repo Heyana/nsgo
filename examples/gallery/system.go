@@ -158,12 +158,16 @@ func environmentPage(cx *core.Scope, t *theme) core.Node {
 			core.Input{Value: title.Get, OnChange: title.Set, OnSubmit: cx.SetTitle, Style: t.field(), Label: "Title"},
 			t.primary("Set title", func() { cx.SetTitle(strings.TrimSpace(title.GetUntracked())) }),
 		),
-		t.demo("Status bar", "SetStatusBar picks a phone's status bar content color, or hides it.",
+		t.demo("Status bar", "SetStatusBar sets the app's default under the screens' and modals' own StatusBar.",
 			flow(
-				t.plain("Auto", func() { cx.SetStatusBar(core.StatusBarAuto, false) }),
-				t.plain("Dark content", func() { cx.SetStatusBar(core.StatusBarDark, false) }),
-				t.plain("Light content", func() { cx.SetStatusBar(core.StatusBarLight, false) }),
-				t.plain("Hidden", func() { cx.SetStatusBar(core.StatusBarAuto, true) }),
+				t.plain("Auto", func() { cx.SetStatusBar(core.StatusBarSetting{Foreground: core.StatusBarAuto, Hidden: core.ToggleOff}) }),
+				t.plain("Dark content", func() { cx.SetStatusBar(core.StatusBarSetting{Foreground: core.StatusBarDark, Hidden: core.ToggleOff}) }),
+				t.plain("Light content", func() {
+					cx.SetStatusBar(core.StatusBarSetting{Foreground: core.StatusBarLight, Hidden: core.ToggleOff})
+				}),
+				t.plain("Hidden", func() {
+					cx.SetStatusBar(core.StatusBarSetting{Hidden: core.ToggleOn, Animated: core.ToggleOn})
+				}),
 			),
 		),
 	}}
@@ -183,11 +187,21 @@ func navigationPage(cx *core.Scope, t *theme) core.Node {
 			Background: t.surface, Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: t.line}}, Children: children}
 	}
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
-		t.demo("Stack", "base.Nav keeps routes and renders them as a core.Stack; back pops the innermost stack that can.",
+		t.demo("Stack", "base.Nav keeps routes and renders them as a core.Stack; back pops the innermost stack that can. "+
+			"On iOS and Android each screen has the system header, with a back button and an action; "+
+			"even screens hide the status bar while they show.",
 			nav.Stack(core.Style{Height: core.Pt(240), CornerRadius: radius, BorderWidth: 1, BorderColor: t.line, Overflow: core.Hidden,
 				Background: t.background},
 				func(cx *core.Scope, n int, depth func() int) core.Screen {
+					var bar core.StatusBarSetting
+					if n%2 == 0 {
+						bar.Hidden = core.ToggleOn
+					}
 					return core.Screen{Title: fmt.Sprintf("Screen %d", n), Header: header(n), TestID: fmt.Sprintf("nav-screen-%d", n),
+						StatusBar: bar, HeaderBackTitle: fmt.Sprintf("%d", n),
+						HeaderStyle: core.Style{Background: t.surface, Color: t.ink, TintColor: t.accent},
+						HeaderRight: base.Button{OnPress: func() { nav.Push(n + 1) }, Label: "Push", Style: core.Style{Padding: core.Symmetric(4, 6)},
+							Children: []core.Node{core.Text{Content: "Push", Style: core.Style{Color: t.accent}}}},
 						Children: []core.Node{core.View{Style: core.Style{Padding: core.All(16), Gap: 12}, Children: []core.Node{
 							core.Text{ContentFunc: func() string { return fmt.Sprintf("Depth %d of a stack of routes.", depth()) }},
 							flow(

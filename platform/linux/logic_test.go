@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/oneo-me/nsgo/core"
 )
@@ -133,37 +134,54 @@ func TestImageDensityFromTheURI(t *testing.T) {
 func TestImageFitModes(t *testing.T) {
 	w := &window{}
 	s := &imageSlot{src: core.ImageSource{}, pic: &picture{width: 400, height: 200}}
-	r := rect{w: 100, h: 100}
-	if src, dst := w.fit(s, core.Stretch, r); src != (rect{w: 400, h: 200}) || dst != r {
-		t.Fatalf("stretch = %+v, %+v", src, dst)
+	r := rect{x: 5, w: 100, h: 100}
+	fit := func(mode core.ResizeMode, pos core.ObjectPosition, s *imageSlot) rect {
+		return w.fit(&view{image: core.ImageConfig{ResizeMode: mode, Position: pos}}, s, r)
 	}
-	if _, dst := w.fit(s, core.Contain, r); dst != (rect{x: 0, y: 25, w: 100, h: 50}) {
+	if dst := fit(core.Stretch, core.ObjectPosition{}, s); dst != r {
+		t.Fatalf("stretch = %+v", dst)
+	}
+	if dst := fit(core.Contain, core.ObjectPosition{}, s); dst != (rect{x: 5, y: 25, w: 100, h: 50}) {
 		t.Fatalf("contain = %+v", dst)
 	}
-	if src, dst := w.fit(s, core.Cover, r); src != (rect{x: 100, w: 200, h: 200}) || dst != r {
-		t.Fatalf("cover = %+v, %+v", src, dst)
+	if dst := fit(core.Cover, core.ObjectPosition{}, s); dst != (rect{x: -45, w: 200, h: 100}) {
+		t.Fatalf("cover = %+v", dst)
+	}
+	if dst := fit(core.Cover, core.ObjectPosition{X: core.PositionEnd}, s); dst != (rect{x: -95, w: 200, h: 100}) {
+		t.Fatalf("cover at the right = %+v", dst)
+	}
+	if dst := fit(core.Center, core.ObjectPosition{}, s); dst != (rect{x: -145, y: -50, w: 400, h: 200}) {
+		t.Fatalf("center of a large picture = %+v", dst)
+	}
+	if dst := fit(core.ScaleDown, core.ObjectPosition{}, s); dst != (rect{x: 5, y: 25, w: 100, h: 50}) {
+		t.Fatalf("scale-down of a large picture = %+v", dst)
 	}
 	small := &imageSlot{src: core.ImageSource{}, pic: &picture{width: 40, height: 20}}
-	if _, dst := w.fit(small, core.Center, r); dst != (rect{x: 30, y: 40, w: 40, h: 20}) {
-		t.Fatalf("center = %+v", dst)
+	if dst := fit(core.ScaleDown, core.ObjectPosition{}, small); dst != (rect{x: 35, y: 40, w: 40, h: 20}) {
+		t.Fatalf("scale-down = %+v", dst)
 	}
 	small.src.URI = "logo@2x.png"
-	if _, dst := w.fit(small, core.Center, r); dst != (rect{x: 40, y: 45, w: 20, h: 10}) {
+	if dst := fit(core.Center, core.ObjectPosition{}, small); dst != (rect{x: 45, y: 45, w: 20, h: 10}) {
 		t.Fatalf("center @2x = %+v", dst)
 	}
 	small.src.Size = core.Size{Width: 80, Height: 40}
-	if _, dst := w.fit(small, core.Center, r); dst != (rect{x: 10, y: 30, w: 80, h: 40}) {
-		t.Fatalf("center with size = %+v", dst)
+	if dst := fit(core.Center, core.ObjectPosition{Y: core.PositionStart}, small); dst != (rect{x: 15, w: 80, h: 40}) {
+		t.Fatalf("center with size at the top = %+v", dst)
 	}
 }
 
-func TestCenteredCentersARectangle(t *testing.T) {
-	r := rect{w: 100, h: 50}
-	if got := centered(r, 30, 20); got != (rect{x: 35, y: 15, w: 30, h: 20}) {
-		t.Fatalf("centered = %+v", got)
+func TestImageFadesIn(t *testing.T) {
+	s := &imageSlot{}
+	now := time.Now()
+	if got := s.alpha(now); got != 1 {
+		t.Fatalf("alpha without a fade = %v", got)
 	}
-	if got := centered(rect{w: 10, h: 10}, 3, 3); got != (rect{x: 3.5, y: 3.5, w: 3, h: 3}) {
-		t.Fatalf("odd centered = %+v", got)
+	s.fadeAt, s.fade = now, 200*time.Millisecond
+	if got := s.alpha(now.Add(50 * time.Millisecond)); got != 0.25 {
+		t.Fatalf("alpha a quarter in = %v", got)
+	}
+	if got := s.alpha(now.Add(time.Second)); got != 1 {
+		t.Fatalf("alpha after = %v", got)
 	}
 }
 
@@ -276,12 +294,12 @@ func TestMenuHelpers(t *testing.T) {
 }
 
 func TestEntryStyleCarriesTheTextStyle(t *testing.T) {
-	in := &core.InputConfig{Style: core.TextStyle{
+	v := &view{id: 4, input: core.InputConfig{Style: core.TextStyle{
 		Font:  core.Font{Family: "Noto Sans", Size: 15, Weight: core.FontWeightBold, Italic: true},
 		Color: core.RGB(0x123456), Align: core.TextAlignEnd,
-	}}
-	css := entryStyle(in)
-	for _, want := range []string{"transparent", `font-family: "Noto Sans"`, "font-size: 15.000pt", "font-weight: 700",
+	}, PlaceholderColor: core.RGB(0xff0000), SelectionColor: core.RGB(0x00ff00)}}
+	css := entryStyle(v)
+	for _, want := range []string{"transparent", "#nsgo-input-4 *", "placeholder", "rgba(255,0,0,1.000)", "selection { background-color: rgba(0,255,0,0.302)", "caret-color: rgba(0,255,0", `font-family: "Noto Sans"`, "font-size: 15.000pt", "font-weight: 700",
 		"font-style: italic", "rgba(18,52,86"} {
 		if !strings.Contains(css, want) {
 			t.Errorf("CSS lacks %q:\n%s", want, css)

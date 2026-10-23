@@ -284,14 +284,25 @@ func (g *gallery) phone(cx *core.Scope) core.Node {
 	}
 	g.wide = false
 	theme := ui.UseTheme(cx)
+	// iOS and Android draw the system header in the theme's colors;
+	// elsewhere the screens draw their own.
+	headerStyle := func() core.Style {
+		t := theme()
+		return core.Style{Background: sidebarColor(t), Color: t.Foreground, TintColor: t.Primary}
+	}
 	return g.nav.Stack(core.Style{FlexGrow: 1},
 		func(cx *core.Scope, name string, _ func() int) core.Screen {
 			if name == "" {
-				return core.Screen{Title: "Gallery", TestID: "index",
-					Header: g.phoneHeader(cx, "Gallery", nil,
+				actions := func() []core.Node {
+					return []core.Node{
 						ui.IconButton{Icon: lucide.Search(), Label: "Search", OnPress: g.openPalette, NoTooltip: true},
-						ui.IconButton{Icon: lucide.Settings(), Label: "Settings", OnPress: g.openSettings, NoTooltip: true}),
-					Children: []core.Node{g.index(cx)}}
+						ui.IconButton{Icon: lucide.Settings(), Label: "Settings", OnPress: g.openSettings, NoTooltip: true},
+					}
+				}
+				return core.Screen{Title: "Gallery", TestID: "index", HeaderStyleFunc: headerStyle,
+					Header:      g.phoneHeader(cx, "Gallery", nil, actions()...),
+					HeaderRight: core.View{Style: core.Style{Direction: core.Row, Gap: 4}, Children: actions()},
+					Children:    []core.Node{g.index(cx)}}
 			}
 			s, _ := find(name)
 			body := core.Dynamic(func(cx *core.Scope) core.Node {
@@ -305,6 +316,7 @@ func (g *gallery) phone(cx *core.Scope) core.Node {
 				})
 			})
 			return core.Screen{Title: s.name, Header: g.phoneHeader(cx, s.name, func() { g.nav.Pop(1) }), TestID: "screen-" + s.name,
+				HeaderStyleFunc: headerStyle,
 				Children: []core.Node{core.Scroll{Style: core.Style{FlexGrow: 1}, StyleFunc: func() core.Style {
 					return core.Style{Background: theme().Background}
 				}, Children: []core.Node{body}}}}

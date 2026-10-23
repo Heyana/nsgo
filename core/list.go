@@ -1,38 +1,153 @@
 package core
 
-// List renders a long run of rows lazily: only the rows within a screen
-// of the viewport are mounted, each in a cell that is reused for another
-// row when it scrolls away. A cell's content is built once; its ListRow
-// changes, so the content's bindings update instead of it being rebuilt.
-// Row sizes start as an estimate and are corrected as rows are laid out,
-// kept in a Fenwick tree of prefix sums.
+import (
+	"slices"
+	"time"
+)
+
+// List renders a long run of rows lazily, as NSH's <List>: only the rows
+// within a viewport of the visible ones are mounted, each in a cell that
+// is reused for another row when it scrolls away. A cell's content is
+// built once; its ListRow changes, so the content's bindings update
+// instead of it being rebuilt. Row sizes start as an estimate and are
+// corrected as rows are laid out, so offsets, columns, sticky rows and
+// viewability are all decided in the core.
+//
+// Every scroll view prop of Scroll a list takes (Behavior, the scroll
+// events, refreshing, OffsetValues) applies to its scroll view. Keep a
+// row's state in the app's data, keyed by Key, not in the row's scope,
+// which moves to other rows.
 type List struct {
 	Count func() int
+	// Key returns row i's identity, a comparable value such as an ID.
+	// With it, rows that stay keep their cells and sizes as rows come and
+	// go, and rows inserted or removed above the viewport keep the
+	// visible rows in place.
+	Key func(i int) any
 	// Row builds a cell's content; row says which row it shows.
 	Row func(cx *Scope, row ListRow) Node
 	// EstimatedSize is a row's expected size along the list; 50 when 0.
 	EstimatedSize Points
+	// NumColumns lays that many rows side by side across the list, each
+	// line of rows as long as its longest.
+	NumColumns    int
 	Horizontal    bool
 	HideIndicator bool
-	// Gap separates rows.
-	Gap    Points
-	Header Node
-	Footer Node
+	// Inverted puts row 0 at the end (a chat): the list starts scrolled
+	// to the end and keeps its distance from it as content changes.
+	Inverted bool
+	// MaintainVisibleContentPosition, when set, follows the end of a list
+	// that is not inverted while it is within AutoscrollToBottomThreshold
+	// of it, as content grows or the viewport shrinks.
+	MaintainVisibleContentPosition *VisibleContentPosition
+	// Gap separates rows, ColumnGap columns; the style's padding is the
+	// content's.
+	Gap       Points
+	ColumnGap Points
+	Header    Node
+	Footer    Node
 	// Empty shows while Count is 0.
 	Empty Node
+	// Separator builds what goes after each row but the last (before it
+	// in an inverted list), in the row's cell.
+	Separator func(cx *Scope) Node
+	// StickyHeaderIndices stick those rows to the viewport's start, at
+	// StickyHeaderOffset from it, while scrolled past, until the next one
+	// pushes them out; one column, not inverted. The platform pins them on
+	// every scroll. StickyHeaderIndicesFunc, when set, replaces them as
+	// they change.
+	StickyHeaderIndices     []int
+	StickyHeaderIndicesFunc func() []int
+	StickyHeaderOffset      Points
+	// InitialScrollIndex is the row the list starts scrolled to.
+	InitialScrollIndex int
+	// OnViewableItemsChange receives the viewable rows when they change,
+	// by ViewabilityConfig's rules.
+	OnViewableItemsChange func(ViewableItems)
+	ViewabilityConfig     ViewabilityConfig
 	// OnEndReached runs when the last rows come within EndThreshold rows
 	// of the viewport (5 when 0), once per count.
 	OnEndReached func()
 	EndThreshold int
-	OnScroll     func(offset Point)
-	Style        Style
-	StyleFunc    func() Style
-	Ref          *Ref
-	TestID       string
+	// Viewport is what the list scrolls in: a scroll view of its own, or
+	// with ListViewportParent the nearest scroll view around it on its
+	// axis (or its screen, modal or overlay), which scrolls it with what
+	// else it holds. Fixed when the list mounts.
+	Viewport ListViewport
+
+	// Behavior, ContentOffset, the scroll events, OnRefresh and
+	// Refreshing, and OffsetValues are Scroll's, for the list's scroll
+	// view. In its parent's viewport they are ignored, as are Inverted
+	// and MaintainVisibleContentPosition.
+	Behavior          ScrollBehavior
+	BehaviorFunc      func() ScrollBehavior
+	ContentOffset     Point
+	OnScroll          func(ScrollEvent)
+	OnScrollDragStart func(ScrollEvent)
+	OnScrollDragEnd   func(ScrollEvent)
+	OnMomentumStart   func(ScrollEvent)
+	OnMomentumEnd     func(ScrollEvent)
+	OnRefresh         func()
+	Refreshing        func() bool
+	OffsetValues      AnimatedXY
+	OnLayout          func(Bounds)
+	Style             Style
+	StyleFunc         func() Style
+	Ref               *Ref
+	TestID            string
 }
 
 // Render implements Node.
 func (l List) Render(*Scope) Node { return l }
+
+// ListViewport is what a list scrolls in.
+type ListViewport uint8
+
+const (
+	// ListViewportOwn is a scroll view of the list's own.
+	ListViewportOwn ListViewport = iota
+	// ListViewportParent lays the list out at its full length in its
+	// parent and renders the rows near the viewport of the scroll view
+	// around it.
+	ListViewportParent
+)
+
+// VisibleContentPosition is List.MaintainVisibleContentPosition's.
+type VisibleContentPosition struct {
+	// AutoscrollToBottomThreshold is how near the end the list must be
+	// to follow it.
+	AutoscrollToBottomThreshold Points
+}
+
+// ViewabilityConfig is when a row counts as viewable. Without a
+// threshold any visible point counts.
+type ViewabilityConfig struct {
+	// ViewAreaCoveragePercentThreshold is the percent of the viewport a
+	// row must cover; it wins over ItemVisiblePercentThreshold.
+	ViewAreaCoveragePercentThreshold float32
+	// ItemVisiblePercentThreshold is the percent of a row that must be
+	// visible.
+	ItemVisiblePercentThreshold float32
+	// MinimumViewTime is how long rows must stay viewable before they
+	// are reported.
+	MinimumViewTime time.Duration
+}
+
+// ViewableItems is what OnViewableItemsChange reports: the viewable rows
+// and the rows that became or stopped being viewable since the last
+// report.
+type ViewableItems struct {
+	Viewable []ViewToken
+	Changed  []ViewToken
+}
+
+// ViewToken is a row in ViewableItems: its index, its Key (nil without
+// List.Key) and whether it is viewable.
+type ViewToken struct {
+	Index      int
+	Key        any
+	IsViewable bool
+}
 
 // ListRow is the row a list cell shows, as signals, so content reading
 // it follows the cell to its next row.
@@ -53,19 +168,31 @@ func (p ListRow) First() bool { return p.index.Get() == 0 }
 func (p ListRow) Last() bool { return p.index.Get() == p.count.Get()-1 }
 
 type listNode struct {
-	spec    List
-	owner   *Scope
-	scroll  *node // the scroll view
-	spacer  *node // sized to all rows
-	cells   *node // region holding the cells
-	empty   *node // region holding Empty
-	count   *Signal[int]
-	n       int // rows known to the sizes
-	sizes   fenwick
-	known   []bool // whether a row's size was measured
+	spec  List
+	owner *Scope
+	// view is the scroll view, or in its parent's viewport the plain view
+	// that clips the cells.
+	view   *node
+	spacer *node // in the flow, as long as the content
+	cells  *node // region of the row cells
+	stuck  *node // region of the sticky cells, above the others
+	extras [3]*node
+	st     listState
+	count  *Signal[int]
+	keys   []any
+	// byIndex holds the cells bound to rows; free the others, hidden.
 	byIndex map[int]*listCell
 	free    []*listCell
+	cmds    []listCommand
 	endAt   int // the count OnEndReached last ran for
+	sticky  []StickyCell
+	// outer is the view a parent-viewport list scrolls in, depth the
+	// views between them.
+	outer *node
+	depth int
+	// viewable is the range reported last; latest the one found last.
+	viewable, latest [2]int
+	viewStop         func() bool
 }
 
 type listCell struct {
@@ -75,48 +202,152 @@ type listCell struct {
 	index int
 }
 
+// listCommand is a scroll a Ref asked a list for, resolved with the
+// sizes known in the next update.
+type listCommand struct {
+	pin      *listPin // ScrollToIndex or ScrollToEnd; nil for to
+	to       Point
+	animated bool
+}
+
 func (t *Tree) mountList(cx *Scope, parent *node, l List) {
-	sc := t.newNode(KindScroll, parent, cx)
-	ln := &listNode{spec: l, owner: cx, scroll: sc, byIndex: map[int]*listCell{}, endAt: -1}
+	ln := &listNode{spec: l, owner: cx, byIndex: map[int]*listCell{}, endAt: -1, st: newListState(),
+		viewable: [2]int{-1, -1}, latest: [2]int{-1, -1}}
 	if ln.spec.EstimatedSize <= 0 {
 		ln.spec.EstimatedSize = 50
 	}
 	if ln.spec.EndThreshold <= 0 {
 		ln.spec.EndThreshold = 5
 	}
-	t.bindStyle(cx, sc, scrollDefaults.Merge(l.Style), l.StyleFunc)
-	t.setRef(sc, l.Ref)
-	onScroll := l.OnScroll
-	sc.h = handlers{scroll: func(p Point) {
-		if onScroll != nil {
-			onScroll(p)
+	st := &ln.st
+	st.estimated, st.horizontal, st.gap, st.crossGap = ln.spec.EstimatedSize, l.Horizontal, l.Gap, l.ColumnGap
+	st.columns = max(l.NumColumns, 1)
+	st.stickyOffset = l.StickyHeaderOffset
+	st.setSticky(l.StickyHeaderIndices)
+	st.viewability = l.ViewabilityConfig
+	st.parent = l.Viewport == ListViewportParent
+	if !st.parent {
+		st.inverted = l.Inverted
+		if m := l.MaintainVisibleContentPosition; m != nil {
+			st.followEnd = max(m.AutoscrollToBottomThreshold, 0)
 		}
-	}}
-	sc.props = ViewProps{TestID: l.TestID}
-	sc.scroll = &scrollNode{config: ScrollConfig{Horizontal: l.Horizontal, HideIndicator: l.HideIndicator}}
-	sc.list = ln
-	ln.count = NewSignal(cx, 0)
-	if l.Header != nil {
-		t.mount(cx, sc, l.Header)
 	}
-	ln.spacer = t.newNode(KindView, sc, cx)
-	ln.cells = t.newRegion(sc, cx)
+
+	var v *node
+	if st.parent {
+		v = t.newNode(KindView, parent, cx)
+		t.bindStyle(cx, v, Style{Overflow: Hidden}.Merge(l.Style), l.StyleFunc)
+	} else {
+		v = t.newNode(KindScroll, parent, cx)
+		t.bindStyle(cx, v, scrollDefaults.Merge(l.Style), l.StyleFunc)
+	}
+	ln.view = v
+	v.list = ln
+	v.h = handlers{layout: l.OnLayout}
+	v.props = ViewProps{TestID: l.TestID}
+	t.setRef(v, l.Ref)
+	if !st.parent {
+		v.h.scroll = func(Point) {}
+		if on := l.OnScroll; on != nil {
+			v.h.scroll = func(p Point) { on(v.scrollEvent(p)) }
+		}
+		v.scroll = &scrollNode{config: ScrollConfig{Horizontal: l.Horizontal, HideIndicator: l.HideIndicator}}
+		t.bindScrollSpec(cx, v, scrollSpec{behavior: l.Behavior, behaviorFunc: l.BehaviorFunc,
+			refreshing: l.Refreshing, onRefresh: l.OnRefresh, onScroll: l.OnScroll,
+			onDragStart: l.OnScrollDragStart, onDragEnd: l.OnScrollDragEnd,
+			onMomentum: l.OnMomentumStart, onMomentumEnd: l.OnMomentumEnd})
+		t.bindScroll(cx, v, l.OffsetValues)
+	}
+	if l.ContentOffset != (Point{}) {
+		ln.cmds = append(ln.cmds, listCommand{to: l.ContentOffset})
+	}
+	if l.InitialScrollIndex > 0 {
+		ln.cmds = append(ln.cmds, listCommand{pin: &listPin{index: l.InitialScrollIndex}})
+	}
+
+	ln.count = NewSignal(cx, 0)
+	ln.spacer = t.newNode(KindView, v, cx)
+	ln.spacer.base = Style{FlexShrink: 0}
+	ln.spacer.restyle()
+	extra := func(kind int, content Node) {
+		c := t.newNode(KindView, v, cx)
+		c.base = Style{Position: Absolute}
+		c.restyle()
+		t.mount(cx, c, content)
+		ln.extras[kind] = c
+		st.extras[kind].present = true
+	}
+	if l.Header != nil {
+		extra(extraHeader, l.Header)
+	}
 	if l.Footer != nil {
-		t.mount(cx, sc, l.Footer)
+		extra(extraFooter, l.Footer)
 	}
 	if l.Empty != nil {
-		ln.empty = t.newRegion(sc, cx)
-		t.mount(cx, ln.empty, Show{When: func() bool { return ln.count.Get() == 0 }, Then: func(*Scope) Node { return l.Empty }})
+		extra(extraEmpty, Show{When: func() bool { return ln.count.Get() == 0 }, Then: func(*Scope) Node { return l.Empty }})
+	}
+	ln.cells = t.newRegion(v, cx)
+	ln.stuck = t.newRegion(v, cx)
+	if f := l.StickyHeaderIndicesFunc; f != nil {
+		cx.renderEffect(func() {
+			st.setSticky(f())
+			t.relayout(v)
+		})
 	}
 	cx.renderEffect(func() {
 		n := max(l.Count(), 0)
+		if l.Key != nil {
+			keys := make([]any, n)
+			for i := range keys {
+				keys[i] = l.Key(i)
+			}
+			if at, removed, inserted, ok := listSplice(ln.keys, keys); ok && len(ln.keys) == st.count {
+				t.spliceList(ln, at, removed, inserted)
+			}
+			ln.keys = keys
+		}
+		if n != st.count {
+			st.setCount(n)
+			ln.freeFrom(n)
+		}
 		ln.count.Set(n)
-		t.relayout(sc)
+		t.relayout(v)
 	})
-	t.lists = append(t.lists, sc)
+	t.lists = append(t.lists, v)
 }
 
-// axis returns the main-axis length of a size or point.
+// spliceList moves the list's measurements and cells with the rows that
+// stay as removed rows at at are replaced by inserted ones.
+func (t *Tree) spliceList(ln *listNode, at, removed, inserted int) {
+	ln.st.splice(at, removed, inserted)
+	cells := ln.byIndex
+	ln.byIndex = make(map[int]*listCell, len(cells))
+	for i, c := range cells {
+		switch {
+		case i < at:
+			ln.byIndex[i] = c
+		case i >= at+removed:
+			c.index = i - removed + inserted
+			c.pos.index.Set(c.index)
+			ln.byIndex[c.index] = c
+		default:
+			ln.free = append(ln.free, c)
+		}
+	}
+	ln.endAt = -1
+}
+
+// freeFrom frees the cells of rows count and after.
+func (ln *listNode) freeFrom(count int) {
+	for i, c := range ln.byIndex {
+		if i >= count {
+			delete(ln.byIndex, i)
+			ln.free = append(ln.free, c)
+		}
+	}
+}
+
+// main is the main-axis length of a size.
 func (ln *listNode) main(s Size) Points {
 	if ln.spec.Horizontal {
 		return s.Width
@@ -124,58 +355,203 @@ func (ln *listNode) main(s Size) Points {
 	return s.Height
 }
 
-func (ln *listNode) offset() Points {
+func (ln *listNode) cross(s Size) Points {
 	if ln.spec.Horizontal {
-		return ln.scroll.scroll.offset.X
+		return s.Height
 	}
-	return ln.scroll.scroll.offset.Y
+	return s.Width
 }
 
-// update measures the cells laid out, moves the window of rows to the
-// viewport and reports whether anything needs another layout.
-func (t *Tree) updateList(sc *node) bool {
-	ln := sc.list
-	changed := false
-	count := ln.count.GetUntracked()
-	if count != ln.n {
-		ln.resize(count)
-		changed = true
+// along is a point at d along the list's axis.
+func (ln *listNode) along(d Points) Point {
+	if ln.spec.Horizontal {
+		return Point{X: d}
 	}
+	return Point{Y: d}
+}
+
+// outerInput is where a parent-viewport list is in the view it scrolls
+// in.
+type outerInput struct {
+	view                   *node
+	start, offset          Points
+	viewport, maxOffset    Points
+	settled, scrolls, seen bool
+}
+
+// findOuter returns the view list n scrolls in: the nearest scroll view
+// on its axis around it, else the root, modal, overlay or screen it is
+// in, and the views between them.
+func (ln *listNode) findOuter() (*node, int) {
+	depth := 0
+	for p := ln.view.parent; p != nil; p = p.parent {
+		if p.kind == 0 {
+			continue
+		}
+		depth++
+		if p.scroll != nil && p.scroll.config.Horizontal == ln.spec.Horizontal {
+			return p, depth
+		}
+		if p.isRoot || p.hoist != nil || p.screen != nil || p.accessory != nil || p.attach != nil || p.parent == nil {
+			return p, depth
+		}
+	}
+	return nil, depth
+}
+
+// outer measures where a parent-viewport list is in its view.
+func (t *Tree) outer(ln *listNode) (outerInput, bool) {
+	o, _ := ln.findOuter()
+	if o == nil || ln.view.hidden || o.hidden {
+		return outerInput{}, false
+	}
+	var start Points
+	for n := ln.view; n != o; n = n.parent {
+		if n.kind != 0 {
+			start += ln.main(Size{n.frame.Origin.X, n.frame.Origin.Y})
+		}
+	}
+	b := ln.view.style.borders()
+	if ln.spec.Horizontal {
+		start += b.Left
+	} else {
+		start += b.Top
+	}
+	in := outerInput{view: o, start: start, viewport: ln.main(o.frame.Size), settled: true}
+	if sc := o.scroll; sc != nil {
+		in.scrolls = true
+		at := sc.main(sc.offset)
+		if sc.to != nil {
+			at = sc.main(sc.to.Point)
+		}
+		in.offset = at + sc.main(sc.by)
+		in.maxOffset = max(ln.main(sc.content)-in.viewport, 0)
+		in.settled = sc.settled()
+	} else {
+		in.maxOffset = max(ln.main(o.frame.Size)-in.viewport, 0)
+	}
+	return in, true
+}
+
+// updateList measures the cells laid out, keeps the visible content in
+// place, follows scroll targets, moves the window of rows to the
+// viewport and places the cells. It reports whether anything needs
+// another layout.
+func (t *Tree) updateList(v *node) bool {
+	ln := v.list
+	st := &ln.st
+	var outer outerInput
+	if st.parent {
+		o, ok := t.outer(ln)
+		if !ok {
+			return false
+		}
+		outer = o
+		st.setOuter(o.start, o.offset, o.viewport, o.maxOffset, o.settled)
+		if sc := o.view.scroll; sc != nil && !slices.Contains(sc.dependents, ln) {
+			sc.dependents = append(sc.dependents, ln)
+		}
+		ln.outer = o.view
+	}
+	changed := false
+	ps, b := v.style.Padding, v.style.borders()
+	if ln.spec.Horizontal {
+		st.padStart, st.padEnd, st.crossStart, st.crossEnd = ps.Left, ps.Right, ps.Top, ps.Bottom
+	} else {
+		st.padStart, st.padEnd, st.crossStart, st.crossEnd = ps.Top, ps.Bottom, ps.Left, ps.Right
+	}
+	if st.rows.tree == nil {
+		st.rebuild()
+	}
+
 	// Rows laid out since the last update correct the estimates.
-	gap := ln.spec.Gap
+	var anchor Points
 	for i, c := range ln.byIndex {
 		if c.node.layoutDirty || c.node.frame.Size == (Size{}) {
 			continue
 		}
-		size := ln.main(c.node.frame.Size) + gap
-		if !ln.known[i] || ln.sizes.at(i) != size {
-			ln.sizes.set(i, size)
-			ln.known[i] = true
-			changed = true
+		anchor += st.measured(i, ln.main(c.node.frame.Size))
+	}
+	for kind, c := range ln.extras {
+		if c != nil && !c.layoutDirty {
+			anchor += st.measuredExtra(kind, ln.main(c.frame.Size))
 		}
 	}
-	// The window: a viewport's length before and after the viewport.
-	view := ln.main(sc.frame.Size)
-	if view <= 0 {
-		view = ln.spec.EstimatedSize * 10
+	if !st.parent {
+		st.viewport = ln.main(v.frame.Size)
 	}
-	start := ln.headerSize()
+	cross := ln.cross(v.frame.Size) - ln.cross(Size{b.Left + b.Right, b.Top + b.Bottom})
+	st.offset += anchor
+	anchor += st.takeSpliceAnchor()
+	anchor += st.anchorEnd()
+	var retarget *Points
+	by, to, re := st.followPin(anchor)
+	anchor += by
+	if re {
+		retarget = &to
+	}
+
+	// Scroll commands, now that sizes are known: the window follows a
+	// jump in this same update.
+	var outerTo *MountItem
+	for _, cmd := range ln.cmds {
+		var offset Points
+		if cmd.pin != nil {
+			offset = st.targetOffset(cmd.pin)
+		} else {
+			offset = ln.main(Size{cmd.to.X, cmd.to.Y})
+			if st.parent {
+				offset = st.clamped(offset)
+			}
+		}
+		st.pin = nil
+		if cmd.pin != nil {
+			p := *cmd.pin
+			p.at, p.animating = offset, cmd.animated
+			st.pin = &p
+		}
+		retarget = nil
+		if !cmd.animated {
+			st.jump(offset)
+		}
+		if st.parent {
+			outerTo = &MountItem{Kind: ItemScrollTo, ID: outer.view.id, Point: ln.along(outer.start + offset), Animated: cmd.animated}
+			continue
+		}
+		t.scrollTo(v, ln.along(offset), cmd.animated)
+	}
+	if len(ln.cmds) > 0 {
+		ln.cmds = ln.cmds[:0]
+		changed = true
+	}
+	if retarget != nil {
+		if st.parent {
+			outerTo = &MountItem{Kind: ItemScrollTo, ID: outer.view.id, Point: ln.along(outer.start + *retarget), Animated: true}
+		} else {
+			t.scrollTo(v, ln.along(*retarget), true)
+		}
+	}
+
 	// An offset past the content, after rows went, is where the platform
 	// is about to clamp it.
-	off := min(ln.offset(), max(start+ln.sizes.sum(count)-view, 0))
-	first := ln.sizes.find(max(off-start-view, 0))
-	last := ln.sizes.find(off - start + 2*view)
-	last = min(last, count-1)
-	// Free the cells outside it, then fill it, reusing them.
+	if !st.parent {
+		in := v.scroll.config.Behavior.ContentInset
+		st.offset = min(st.offset, max(st.contentLen()-st.viewport, 0)+ln.main(Size{in.Right, in.Bottom}))
+	}
+
+	// The window, then cells freed outside it and bound inside it.
+	count := st.count
+	first, last, ok, stickies := st.window()
+	wanted := func(i int) bool { return ok && i >= first && i <= last || slices.Contains(stickies, i) }
 	for i, c := range ln.byIndex {
-		if i < first || i > last {
+		if !wanted(i) {
 			delete(ln.byIndex, i)
 			ln.free = append(ln.free, c)
 		}
 	}
-	for i := first; i <= last; i++ {
-		if _, ok := ln.byIndex[i]; ok {
-			continue
+	bind := func(i int) {
+		if _, has := ln.byIndex[i]; has || i >= count {
+			return
 		}
 		changed = true
 		var c *listCell
@@ -188,74 +564,194 @@ func (t *Tree) updateList(sc *node) bool {
 		c.index = i
 		ln.byIndex[i] = c
 	}
+	if ok {
+		for i := first; i <= last; i++ {
+			bind(i)
+		}
+	}
+	for _, i := range stickies {
+		bind(i)
+	}
+	if f := ln.spec.OnEndReached; f != nil && ok && count > 0 && last >= count-ln.spec.EndThreshold && ln.endAt != count {
+		ln.endAt = count
+		t.after(v, f)
+	}
+	t.reportViewable(ln)
+
 	// Spare cells hide until a row needs them.
 	for _, c := range ln.free {
-		if c.node.style.Display != DisplayNone {
+		if c.node.base.Display != DisplayNone {
 			c.node.base.Display = DisplayNone
 			c.node.restyle()
 			t.relayout(c.node)
 		}
+		t.restick(ln, c, false)
 	}
+	sticky := st.stickyEnabled()
+	var ranges []StickyCell
 	for i, c := range ln.byIndex {
-		at := start + ln.sizes.sum(i)
-		if c.node.base.Display == DisplayNone || ln.cellAt(c) != at {
-			c.node.base.Display = 0
-			ln.place(c, at)
-			c.node.restyle()
-			t.relayout(c.node)
+		c.pos.count.Set(count)
+		size := max(st.rowExtent(i), ln.main(c.node.frame.Size))
+		at := st.toContent(st.itemAt(i), size)
+		x, w := st.column(cross, st.columnOf(i))
+		if ln.place(c.node, at, x, w) {
 			changed = true
 		}
-		c.pos.count.Set(count)
+		isSticky := sticky && slices.Contains(st.sticky, i)
+		t.restick(ln, c, isSticky)
+		if isSticky && !c.node.layoutDirty {
+			ranges = append(ranges, st.stickyRange(i, c.node.id, ln.main(c.node.frame.Size)))
+		}
 	}
-	total := ln.sizes.sum(count)
-	if count > 0 {
-		total -= gap
+	blocks := st.blocks()
+	x, w := st.fullWidth(cross)
+	for kind, c := range ln.extras {
+		if c == nil {
+			continue
+		}
+		at := [...]Points{blocks.header, blocks.footer, blocks.body}[kind]
+		if ln.place(c, st.toContent(at, ln.main(c.frame.Size)), x, w) {
+			changed = true
+		}
 	}
+	slices.SortFunc(ranges, func(a, b StickyCell) int { return int(a.Cell) - int(b.Cell) })
+	ln.sticky = ranges
+
+	total := st.contentLen() - st.padStart - st.padEnd
 	if ln.main(Size{ln.spacerLen(), ln.spacerLen()}) != total {
 		ln.setSpacer(total)
 		t.relayout(ln.spacer)
 		changed = true
 	}
-	if f := ln.spec.OnEndReached; f != nil && count > 0 && last >= count-ln.spec.EndThreshold && ln.endAt != count {
-		ln.endAt = count
-		t.after(sc, f)
+
+	// The anchoring scroll, sent with the content size; in its parent's
+	// viewport the view around it scrolls.
+	if st.parent {
+		if sc := outer.view.scroll; sc != nil {
+			if outerTo != nil {
+				sc.to = outerTo
+			}
+			if anchor != 0 {
+				d := ln.along(anchor)
+				sc.by.X += d.X
+				sc.by.Y += d.Y
+			}
+		}
+	} else if anchor != 0 {
+		d := ln.along(anchor)
+		v.scroll.by.X += d.X
+		v.scroll.by.Y += d.Y
 	}
 	return changed
 }
 
-// headerSize is where rows start: the scroll view's padding, the header
-// and the gaps after it.
-func (ln *listNode) headerSize() Points {
-	st := ln.scroll.style
-	s := st.Padding.Top + st.borders().Top
+// place moves cell c to at along the list and x across it, w wide, and
+// shows it; it reports whether that changed its layout.
+func (ln *listNode) place(c *node, at, x, w Points) bool {
+	s := &c.base
+	old := *s
+	s.Display = 0
+	s.Position = Absolute
 	if ln.spec.Horizontal {
-		s = st.Padding.Left + st.borders().Left
-	}
-	for _, c := range ln.scroll.flatChildren() {
-		if c == ln.spacer {
-			break
-		}
-		if c.style.Position != Absolute && c.style.Display != DisplayNone {
-			s += ln.main(c.frame.Size) + st.Gap
-		}
-	}
-	return s
-}
-
-func (ln *listNode) cellAt(c *listCell) Points {
-	if ln.spec.Horizontal {
-		return Points(c.node.base.Left.value)
-	}
-	return Points(c.node.base.Top.value)
-}
-
-func (ln *listNode) place(c *listCell, at Points) {
-	s, p := &c.node.base, ln.scroll.style.Padding
-	if ln.spec.Horizontal {
-		s.Left, s.Top, s.Bottom, s.Right = Pt(at), Pt(p.Top), Pt(p.Bottom), Length{}
+		s.Left, s.Top, s.Height, s.Bottom, s.Right = Pt(at), Pt(x), Pt(w), Length{}, Length{}
+		s.Width = Length{}
 	} else {
-		s.Top, s.Left, s.Right, s.Bottom = Pt(at), Pt(p.Left), Pt(p.Right), Length{}
+		s.Top, s.Left, s.Width, s.Bottom, s.Right = Pt(at), Pt(x), Pt(w), Length{}, Length{}
+		s.Height = Length{}
 	}
+	if *s == old {
+		return false
+	}
+	c.restyle()
+	c.markLayout()
+	return true
+}
+
+// restick moves cell c among the sticky cells, which draw above the
+// others, or back.
+func (t *Tree) restick(ln *listNode, c *listCell, sticky bool) {
+	from, to := ln.cells, ln.stuck
+	if !sticky {
+		from, to = to, from
+	}
+	if c.node.parent != from {
+		return
+	}
+	from.children = slices.DeleteFunc(from.children, func(n *node) bool { return n == c.node })
+	to.children = append(to.children, c.node)
+	c.node.parent = to
+	t.childrenChanged(from)
+}
+
+// reportViewable reports the viewable rows when they changed, once they
+// stayed so for MinimumViewTime.
+func (t *Tree) reportViewable(ln *listNode) {
+	on := ln.spec.OnViewableItemsChange
+	if on == nil {
+		return
+	}
+	now := [2]int{-1, -1}
+	if first, last, ok := ln.st.viewableItems(); ok {
+		now = [2]int{first, last}
+	}
+	if now == ln.latest {
+		return
+	}
+	ln.latest = now
+	if ln.viewStop != nil {
+		ln.viewStop()
+		ln.viewStop = nil
+	}
+	report := func() {
+		if ln.view.deleted || ln.latest == ln.viewable {
+			return
+		}
+		before := ln.viewable
+		ln.viewable = ln.latest
+		on(ln.viewableItems(ln.viewable, before))
+	}
+	if d := ln.spec.ViewabilityConfig.MinimumViewTime; d > 0 {
+		ln.viewStop = ln.owner.AfterFunc(d, func() {
+			ln.viewStop = nil
+			if ln.latest == now {
+				report()
+				t.changed = true
+			}
+		})
+		return
+	}
+	t.after(ln.view, report)
+}
+
+// viewableItems is what OnViewableItemsChange gets for the rows now,
+// viewable since before.
+func (ln *listNode) viewableItems(now, before [2]int) ViewableItems {
+	in := func(r [2]int, i int) bool { return r[0] >= 0 && i >= r[0] && i <= r[1] }
+	token := func(i int, viewable bool) ViewToken {
+		tok := ViewToken{Index: i, IsViewable: viewable}
+		if i < len(ln.keys) {
+			tok.Key = ln.keys[i]
+		}
+		return tok
+	}
+	var v ViewableItems
+	if now[0] >= 0 {
+		for i := now[0]; i <= now[1]; i++ {
+			tok := token(i, true)
+			v.Viewable = append(v.Viewable, tok)
+			if !in(before, i) {
+				v.Changed = append(v.Changed, tok)
+			}
+		}
+	}
+	if before[0] >= 0 {
+		for i := before[0]; i <= before[1]; i++ {
+			if !in(now, i) {
+				v.Changed = append(v.Changed, token(i, false))
+			}
+		}
+	}
+	return v
 }
 
 func (ln *listNode) spacerLen() Points {
@@ -266,34 +762,13 @@ func (ln *listNode) spacerLen() Points {
 }
 
 func (ln *listNode) setSpacer(total Points) {
+	total = max(total, 0)
 	if ln.spec.Horizontal {
 		ln.spacer.base.Width = Pt(total)
 	} else {
 		ln.spacer.base.Height = Pt(total)
 	}
 	ln.spacer.restyle()
-}
-
-func (ln *listNode) resize(count int) {
-	est := ln.spec.EstimatedSize + ln.spec.Gap
-	sizes := make([]Points, count)
-	known := make([]bool, count)
-	for i := range sizes {
-		if i < ln.n && ln.known[i] {
-			sizes[i], known[i] = ln.sizes.at(i), true
-		} else {
-			sizes[i] = est
-		}
-	}
-	ln.sizes = newFenwick(sizes)
-	ln.known = known
-	ln.n = count
-	for i, c := range ln.byIndex {
-		if i >= count {
-			delete(ln.byIndex, i)
-			ln.free = append(ln.free, c)
-		}
-	}
 }
 
 func (t *Tree) newCell(ln *listNode, i int) *listCell {
@@ -303,10 +778,174 @@ func (t *Tree) newCell(ln *listNode, i int) *listCell {
 	t.within(c.scope, func() {
 		c.node = t.newNode(KindView, ln.cells, c.scope)
 		c.node.base = Style{Position: Absolute}
+		if ln.spec.Horizontal {
+			c.node.base.Direction = Row
+		}
 		c.node.restyle()
-		t.mount(c.scope, c.node, ln.spec.Row(c.scope, c.pos))
+		row := ln.spec.Row(c.scope, c.pos)
+		var sep Node
+		if f := ln.spec.Separator; f != nil {
+			pos := c.pos
+			sep = Show{When: func() bool { return !pos.Last() }, Then: f}
+		}
+		if ln.spec.Inverted && sep != nil {
+			t.mount(c.scope, c.node, sep)
+		}
+		t.mount(c.scope, c.node, row)
+		if !ln.spec.Inverted && sep != nil {
+			t.mount(c.scope, c.node, sep)
+		}
 	})
 	return c
+}
+
+// updateLists updates every list: those with views of their own first,
+// then those in their parents' viewports, outer ones first. It reports
+// whether any needs another layout.
+func (t *Tree) updateLists() bool {
+	changed := false
+	live := t.lists[:0]
+	var parents []*node
+	for _, l := range t.lists {
+		if l.scroll != nil {
+			l.scroll.dependents = l.scroll.dependents[:0]
+		}
+		if o := l.list.outer; o != nil && o.scroll != nil {
+			o.scroll.dependents = o.scroll.dependents[:0]
+		}
+	}
+	for _, l := range t.lists {
+		if l.deleted {
+			continue
+		}
+		live = append(live, l)
+		if l.list.st.parent {
+			_, l.list.depth = l.list.findOuter()
+			parents = append(parents, l)
+			continue
+		}
+		changed = t.within2(l, func() bool { return t.updateList(l) }) || changed
+	}
+	t.lists = live
+	slices.SortStableFunc(parents, func(a, b *node) int { return a.list.depth - b.list.depth })
+	for _, l := range parents {
+		changed = t.within2(l, func() bool { return t.updateList(l) }) || changed
+	}
+	return changed
+}
+
+// sendSticky sends each scroll view's sticky cells when they changed:
+// its own list's and those of the lists in its viewport.
+func (t *Tree) sendSticky() {
+	views := map[*node]bool{}
+	for _, l := range t.lists {
+		if l.deleted {
+			continue
+		}
+		if l.scroll != nil {
+			views[l] = true
+		}
+		if o := l.list.outer; o != nil && o.scroll != nil && !o.deleted {
+			views[o] = true
+		}
+	}
+	for v := range views {
+		sc := v.scroll
+		var cells []StickyCell
+		if v.list != nil {
+			cells = append(cells, v.list.sticky...)
+		}
+		for _, d := range sc.dependents {
+			if !d.view.deleted && d.outer == v {
+				cells = append(cells, d.sticky...)
+			}
+		}
+		if !slices.Equal(cells, sc.sticky) {
+			sc.sticky = cells
+			t.commands = append(t.commands, MountItem{Kind: ItemStickyCells, ID: v.id, Sticky: slices.Clone(cells)})
+			t.changed = true
+		}
+	}
+}
+
+// listCommand queues a scroll for list ln's next update.
+func (t *Tree) listCommand(ln *listNode, c listCommand) {
+	ln.cmds = append(ln.cmds, c)
+	t.relayout(ln.view)
+}
+
+// scrollTo sends scroll view n to p, counting the scroll.
+func (t *Tree) scrollTo(n *node, p Point, animated bool) {
+	n.scroll.issue(true, p)
+	t.commands = append(t.commands, MountItem{Kind: ItemScrollTo, ID: n.id, Point: p, Animated: animated})
+	t.changed = true
+}
+
+// scrolled records where the platform reports scroll view n is, for the
+// lists that scroll with it.
+func (t *Tree) scrolled(n *node, ev Event) {
+	sc := n.scroll
+	sc.report(ev.Point, ev.Count)
+	if ln := n.list; ln != nil && !ln.st.parent {
+		ln.st.movedTo(sc.main(sc.offset), sc.settled())
+		t.changed = true
+	}
+	if len(sc.dependents) > 0 {
+		t.changed = true
+	}
+}
+
+// emitScrollBy sends the lists' anchoring scroll of scroll view n: before
+// its content shrinks, after it grows, since platforms clamp offsets to
+// the content.
+func (t *Tree) emitScrollBy(n *node, before bool) {
+	sc := n.scroll
+	if sc.by == (Point{}) {
+		return
+	}
+	shrinks := sc.main(Point{sc.content.Width, sc.content.Height}) < sc.main(Point{n.sent.content.Width, n.sent.content.Height})
+	if before != shrinks {
+		return
+	}
+	d := sc.by
+	sc.by = Point{}
+	// A scroll to an offset not sent yet moves with it instead: it goes
+	// out after this batch's items.
+	for i := len(t.commands) - 1; i >= 0; i-- {
+		if c := &t.commands[i]; c.Kind == ItemScrollTo && c.ID == n.id {
+			c.Point.X += d.X
+			c.Point.Y += d.Y
+			for k := len(sc.pending) - 1; k >= 0; k-- {
+				if sc.pending[k].to {
+					sc.pending[k].p = c.Point
+					break
+				}
+			}
+			sc.offset.X += d.X
+			sc.offset.Y += d.Y
+			return
+		}
+	}
+	sc.issue(false, d)
+	t.items = append(t.items, MountItem{Kind: ItemScrollBy, ID: n.id, Point: d})
+}
+
+// emitScrollTo sends the scroll the lists in n's viewport asked for.
+func (t *Tree) emitScrollTo(n *node) {
+	sc := n.scroll
+	if sc.to == nil {
+		return
+	}
+	it := *sc.to
+	sc.to = nil
+	lo, hi := Points(0), max(sc.main(Point{sc.content.Width, sc.content.Height})-sc.main(Point{n.frame.Size.Width, n.frame.Size.Height}), 0)
+	if sc.config.Horizontal {
+		it.Point.X = min(max(it.Point.X, lo), hi)
+	} else {
+		it.Point.Y = min(max(it.Point.Y, lo), hi)
+	}
+	sc.issue(true, it.Point)
+	t.commands = append(t.commands, it)
 }
 
 // fenwick is a Fenwick tree of row sizes: prefix sums and the row at an
@@ -353,7 +992,7 @@ func (f *fenwick) find(offset Points) int {
 	for step*2 <= len(f.vals) {
 		step *= 2
 	}
-	for ; step > 0; step /= 2 {
+	for ; step > 0 && len(f.vals) > 0; step /= 2 {
 		if next := pos + step; next <= len(f.vals) && f.tree[next] <= offset {
 			pos = next
 			offset -= f.tree[next]

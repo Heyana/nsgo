@@ -4,6 +4,7 @@ package web
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"syscall/js"
 
@@ -168,7 +169,8 @@ func (im *image) draw(size core.Size) {
 	ph.layer.Get("style").Call("setProperty", "visibility", visibility)
 }
 
-// look is the CSS of a layer drawing p.
+// look is the CSS of a layer drawing p: at the rectangle core's fit gives
+// its natural size in box, by the resize mode and position.
 func (p *picture) look(im *image, box core.Size) map[string]string {
 	style := map[string]string{
 		"background-image": "none", "background-color": "transparent",
@@ -178,14 +180,18 @@ func (p *picture) look(im *image, box core.Size) map[string]string {
 		return style
 	}
 	url := cssURL(p.url)
-	fit := fitSize(im.config.ResizeMode, p.pixels, box)
+	b := im.config.ResizeMode.Fit(p.natural(), box, im.config.Position)
+	size := px(b.Size.Width) + " " + px(b.Size.Height)
+	at := px(b.Origin.X) + " " + px(b.Origin.Y)
 	if im.tint != 0 {
 		style["background-color"] = cssColor(im.tint)
 		style["mask-image"], style["-webkit-mask-image"] = url, url
-		style["mask-size"], style["-webkit-mask-size"] = fit, fit
+		style["mask-size"], style["-webkit-mask-size"] = size, size
+		style["mask-position"], style["-webkit-mask-position"] = at, at
 	} else {
 		style["background-image"] = url
-		style["background-size"] = fit
+		style["background-size"] = size
+		style["background-position"] = at
 	}
 	if b := im.config.BlurRadius; b > 0 {
 		style["filter"] = "blur(" + px(b) + ")"
@@ -193,21 +199,63 @@ func (p *picture) look(im *image, box core.Size) map[string]string {
 	return style
 }
 
-// fitSize is the CSS background or mask size that fits an image of
-// pixels into box by mode.
-func fitSize(mode core.ResizeMode, pixels, box core.Size) string {
-	switch mode {
-	case core.Contain:
-		return "contain"
-	case core.Stretch:
-		return "100% 100%"
-	case core.Center:
-		if pixels.Width > box.Width || pixels.Height > box.Height {
-			return "contain"
-		}
-		return "auto"
+// natural returns the size in points p shows at: the size its source
+// declares, else the browser's natural size over the density a name's
+// "@2x" declares (an SVG's is its own).
+func (p *picture) natural() core.Size {
+	if s := p.src.Size; s.Width > 0 && s.Height > 0 {
+		return s
 	}
-	return "cover"
+	d := core.Points(density(p.src.URI))
+	return core.Size{Width: p.pixels.Width / d, Height: p.pixels.Height / d}
+}
+
+// imageInfo answers an ItemImageInfo with an <img> outside the page: the
+// browser loads and decodes the source, keeping it in its caches for the
+// views that show it next, and reports its natural size.
+func (s *surface) imageInfo(it *core.MountItem) {
+	id := it.Count
+	var src core.ImageSource
+	if it.Image != nil {
+		src = it.Image.Source
+	}
+	url, object := imageURL(src)
+	answer := func(ev core.Event) {
+		if object {
+			js.Global().Get("URL").Call("revokeObjectURL", url)
+		}
+		ev.Kind, ev.Count = core.EventImageInfo, id
+		s.engine.Dispatch(ev)
+	}
+	if url == "" {
+		answer(core.Event{Text: "web: empty image source"})
+		return
+	}
+	img := s.doc.Call("createElement", "img")
+	img.Set("src", url)
+	then(img.Call("decode"), func(js.Value) {
+		answer(core.Event{Size: naturalSize(img)})
+	}, func(js.Value) {
+		answer(core.Event{Text: "web: cannot load the image " + shorten(src.URI)})
+	})
+}
+
+// density returns the N of a bitmap's "name@Nx.png" URI, else 1.
+func density(uri string) float64 {
+	name := uri[strings.LastIndexAny(uri, "/\\:")+1:]
+	if strings.HasSuffix(strings.ToLower(name), ".svg") {
+		return 1
+	}
+	at := strings.LastIndexByte(name, '@')
+	if at < 0 {
+		return 1
+	}
+	n, _, ok := strings.Cut(name[at+1:], "x")
+	f, err := strconv.ParseFloat(n, 64)
+	if !ok || err != nil || f <= 0 {
+		return 1
+	}
+	return f
 }
 
 var cssEscape = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\a `)

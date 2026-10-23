@@ -40,6 +40,12 @@ func Storage(entries map[string]string) Option {
 	return func(a *App) { a.store = core.NewStore(seed(entries)) }
 }
 
+// Environment starts the app in env, as a platform reports it before the
+// app mounts: screens have the system header where env has HeaderHeight.
+func Environment(env core.Environment) Option {
+	return func(a *App) { a.env = &env }
+}
+
 // seed is a storage backend that loads entries and keeps nothing.
 type seed map[string]string
 
@@ -56,6 +62,9 @@ type App struct {
 	// were asked to say.
 	Clipboard string
 	Announced []string
+	// AccessibilityFocus is the view the app last moved the screen
+	// reader's focus to.
+	AccessibilityFocus *View
 	// Keymap is the keyboard shortcuts the app binds; Title its title.
 	Keymap []string
 	Title  string
@@ -63,10 +72,16 @@ type App struct {
 	// commands it sent, oldest first.
 	Menu   []core.MenuEntry
 	Window []core.WindowCommand
-	tree   *core.Tree
-	root   *core.Scope
-	store  *core.Store
-	Clock  *core.ManualClock
+	// ImageSizes are the pixel sizes of the images the model's platform
+	// loads, by URI, which answer Scope.ImageSize; others fail to load.
+	ImageSizes map[string]core.Size
+	tree       *core.Tree
+	root       *core.Scope
+	store      *core.Store
+	Clock      *core.ManualClock
+
+	// StatusBar is the status bar the app last set.
+	StatusBar core.StatusBarConfig
 
 	mu    sync.Mutex
 	posts []func()
@@ -77,6 +92,7 @@ type App struct {
 	alerts []core.AlertConfig
 	rootID core.NodeID
 	edits  map[core.NodeID]uint32
+	env    *core.Environment
 }
 
 // View is the model of one native view, as the last batch left it.
@@ -93,8 +109,17 @@ type View struct {
 	Input    core.InputConfig
 	Content  core.Size  // a scroll view's content
 	Offset   core.Point // and its offset
-	Image    core.ImageConfig
-	Web      core.WebConfig
+	// Applied counts the ItemScrollTo and ItemScrollBy items the scroll
+	// view applied, which its reports carry; Sticky are its sticky
+	// cells.
+	Applied uint32
+	Sticky  []core.StickyCell
+	// Scroll is a scroll view's configuration, and ZoomScale its zoom
+	// (0 until it zooms).
+	Scroll    core.ScrollConfig
+	ZoomScale float32
+	Image     core.ImageConfig
+	Web       core.WebConfig
 	// WebCommands are what the app asked a web view to do, oldest first.
 	WebCommands []WebCommand
 	Video       core.VideoConfig
@@ -110,6 +135,40 @@ type View struct {
 	// view, which the model's animator steps with the clock.
 	Animated core.AnimatedValues
 	Focused  bool
+	// Selection is a field's selection, as the app last set it or Select
+	// moved it, in UTF-16 units.
+	Selection core.TextRange
+	// Composing is the text an input method composes in a field (Compose);
+	// held is a value the app set meanwhile, applied when it ends.
+	Composing string
+	held      *core.MountItem
+	// Screen is a screen's system header, sent where the environment
+	// has HeaderHeight; Modal a modal's config.
+	Screen core.ScreenConfig
+	Modal  core.ModalConfig
+}
+
+// clamp keeps a scroll view's offset within its content and insets, as
+// platforms do.
+func (v *View) clamp(p core.Point) core.Point {
+	in := v.Scroll.Behavior.ContentInset
+	p.X = min(max(p.X, -in.Left), max(v.Content.Width-v.Frame.Size.Width, 0)+in.Right)
+	p.Y = min(max(p.Y, -in.Top), max(v.Content.Height-v.Frame.Size.Height, 0)+in.Bottom)
+	return p
+}
+
+// StickyShift is how far the sticky cell id of scroll view v moves from
+// its frame at v's offset, as a platform moves it.
+func (v *View) StickyShift(id core.NodeID) core.Points {
+	for _, c := range v.Sticky {
+		if c.Cell == id {
+			if v.Scroll.Horizontal {
+				return c.StickyShift(v.Offset.X)
+			}
+			return c.StickyShift(v.Offset.Y)
+		}
+	}
+	return 0
 }
 
 // NativeCommand is a command a native view received.
@@ -156,6 +215,9 @@ func Start(t testing.TB, app func(cx *core.Scope) core.Node, opts ...Option) *Ap
 	})
 	a.tree = core.NewTree(a.root, core.ApproxTextEngine{})
 	a.tree.Resize(a.size)
+	if a.env != nil {
+		a.tree.SetEnvironment(*a.env)
+	}
 	a.tree.Mount(app)
 	a.Settle()
 	return a
@@ -325,7 +387,8 @@ func (v *View) textWithin() string {
 var roles = map[core.Role]string{
 	core.RoleButton: "button", core.RoleLink: "link", core.RoleHeader: "header", core.RoleImage: "image",
 	core.RoleCheckbox: "checkbox", core.RoleSwitch: "switch", core.RoleRadio: "radio", core.RoleTab: "tab",
-	core.RoleText: "text", core.RoleTextField: "textbox",
+	core.RoleText: "text", core.RoleTextField: "textbox", core.RoleAdjustable: "adjustable",
+	core.RoleProgressBar: "progressbar",
 }
 
 func roleName(r core.Role) string { return roles[r] }
@@ -419,6 +482,22 @@ func (a *App) LongPress(selector string) {
 		}
 	}
 	a.t.Fatalf("nsgotest: nothing long-pressable at %q", selector)
+}
+
+// AccessibilityAction performs the accessibility action name on the view
+// selector matches, as a screen reader would: an action the view offers,
+// or ActionActivate on a pressable view without it, which presses it.
+func (a *App) AccessibilityAction(selector, name string) {
+	a.t.Helper()
+	v := a.Find(selector)
+	switch {
+	case v.Props.HasAction(name) && v.Events.Has(core.EventAccessibilityAction):
+		a.dispatch(core.Event{Kind: core.EventAccessibilityAction, ID: v.ID, Text: name})
+	case name == core.ActionActivate && v.Events.Has(core.EventPress):
+		a.dispatch(core.Event{Kind: core.EventPress, ID: v.ID})
+	default:
+		a.t.Fatalf("nsgotest: %q offers no %q action", selector, name)
+	}
 }
 
 // Alerts returns the alerts shown and not answered yet, oldest first.
@@ -541,6 +620,41 @@ func (a *App) ChooseMenu(path ...string) {
 // Back presses Escape or the back button.
 func (a *App) Back() { a.dispatch(core.Event{Kind: core.EventBack, ID: a.rootID}) }
 
+// HeaderBack presses the back button in the system header of the screen
+// selector matches, as iOS and Android draw it.
+func (a *App) HeaderBack(selector string) {
+	a.t.Helper()
+	a.dispatch(core.Event{Kind: core.EventBack, ID: a.Find(selector).ID})
+}
+
+// SwipeClose swipes away the modal around what selector matches, as an
+// iOS sheet is: the platform closes it and asks the app to remove it
+// ("swipe").
+func (a *App) SwipeClose(selector string) {
+	a.t.Helper()
+	a.dispatch(core.Event{Kind: core.EventRequestClose, ID: a.modal(selector).ID, Text: "swipe", Finished: true})
+}
+
+// PresentModal reports that the platform presents the modal around what
+// selector matches at size, with insets covered, as an iOS sheet does.
+func (a *App) PresentModal(selector string, size core.Size, insets core.Edges) {
+	a.t.Helper()
+	a.dispatch(core.Event{Kind: core.EventModalSize, ID: a.modal(selector).ID, Size: size, Insets: insets})
+}
+
+// modal returns the modal selector matches or holds what it matches.
+func (a *App) modal(selector string) *View {
+	a.t.Helper()
+	v := a.Find(selector)
+	for m := v; m != nil; m = m.Parent {
+		if m.Kind == core.KindModal {
+			return m
+		}
+	}
+	a.t.Fatalf("nsgotest: %q is in no modal", selector)
+	return nil
+}
+
 func (v *View) surfaceFrame() core.Bounds {
 	b := v.Frame
 	for p := v.Parent; p != nil; p = p.Parent {
@@ -559,7 +673,9 @@ func (v *View) within(o *View) bool {
 	return false
 }
 
-// Type replaces the text of the field selector matches, as a user's edit.
+// Type replaces the text of the field selector matches, as a user's edit,
+// cut to its MaxLength as the platforms cut what the user enters. The
+// caret goes to the end.
 func (a *App) Type(selector, text string) {
 	a.t.Helper()
 	v := a.Find(selector)
@@ -569,9 +685,84 @@ func (a *App) Type(selector, text string) {
 	if v.Input.Readonly || v.Input.Disabled {
 		a.t.Fatalf("nsgotest: %q does not take text", selector)
 	}
+	a.edit(v, core.ClipUTF16(text, v.Input.MaxLength))
+}
+
+func (a *App) edit(v *View, text string) {
 	a.edits[v.ID]++
 	v.Text = text
 	a.dispatch(core.Event{Kind: core.EventChangeText, ID: v.ID, Text: text, Count: a.edits[v.ID]})
+	end := core.UTF16Len(text)
+	a.moveSelection(v, core.TextRange{Start: end, End: end})
+}
+
+// Select moves the selection of the field selector matches, as the user
+// would, in UTF-16 units.
+func (a *App) Select(selector string, start, end int) {
+	a.t.Helper()
+	v := a.Find(selector)
+	if v.Kind != core.KindInput {
+		a.t.Fatalf("nsgotest: %q is not a text field", selector)
+	}
+	a.moveSelection(v, core.TextRange{Start: start, End: end})
+}
+
+func (a *App) moveSelection(v *View, r core.TextRange) {
+	if r == v.Selection {
+		return
+	}
+	v.Selection = r
+	if v.Events.Has(core.EventSelectionChange) {
+		a.dispatch(core.Event{Kind: core.EventSelectionChange, ID: v.ID, Index: r.Start, Count: uint32(r.End)})
+	}
+}
+
+// KeyPress types key in the field selector matches, as a key the user
+// presses: its text, "Backspace" or "Enter". It reports the key, then
+// edits the end of the text as the key would; Enter goes as Submit.
+func (a *App) KeyPress(selector, key string) {
+	a.t.Helper()
+	v := a.Find(selector)
+	if v.Events.Has(core.EventKeyPress) {
+		a.dispatch(core.Event{Kind: core.EventKeyPress, ID: v.ID, Text: key})
+	}
+	switch key {
+	case "Enter":
+		a.Submit(selector)
+	case "Backspace":
+		if r := []rune(v.Text); len(r) > 0 {
+			a.edit(v, string(r[:len(r)-1]))
+		}
+	default:
+		if add, ok := core.LimitEdit(v.Text, 0, key, v.Input.MaxLength); ok {
+			a.edit(v, v.Text+add)
+		}
+	}
+}
+
+// Compose has an input method compose text in the field selector
+// matches; "" ends the composition, after the Type of what it commits.
+// While it lasts the field holds the values the app sets, as platforms do.
+func (a *App) Compose(selector, text string) {
+	a.t.Helper()
+	v := a.Find(selector)
+	if text != "" {
+		v.Composing = text
+		if v.Events.Has(core.EventCompositionChange) {
+			a.dispatch(core.Event{Kind: core.EventCompositionChange, ID: v.ID, Text: text})
+		}
+		return
+	}
+	v.Composing = ""
+	if v.Events.Has(core.EventCompositionChange) {
+		a.dispatch(core.Event{Kind: core.EventCompositionChange, ID: v.ID, Finished: true})
+	}
+	if it := v.held; it != nil {
+		v.held = nil
+		if a.edits[v.ID] <= it.Count {
+			v.Text = it.Value
+		}
+	}
 }
 
 // Focus focuses the text field selector matches, as a tap on it would.
@@ -590,10 +781,24 @@ func (a *App) Focus(selector string) {
 	a.Settle()
 }
 
-// Submit presses Return in the field selector matches.
+// Submit presses Return in the field selector matches, as its
+// SubmitBehavior says: a line break at the end of a multiline field's
+// text, else OnSubmit, and the focus leaves it unless it keeps it.
 func (a *App) Submit(selector string) {
 	a.t.Helper()
 	v := a.Find(selector)
+	switch v.Input.Submit() {
+	case core.SubmitBehaviorNewline:
+		if add, ok := core.LimitEdit(v.Text, 0, "\n", v.Input.MaxLength); ok && !v.Input.Readonly {
+			a.edit(v, v.Text+add)
+		}
+		return
+	case core.SubmitBehaviorBlurAndSubmit:
+		a.dispatch(core.Event{Kind: core.EventSubmitEditing, ID: v.ID, Text: v.Text})
+		a.setFocus(v, false)
+		a.Settle()
+		return
+	}
 	a.dispatch(core.Event{Kind: core.EventSubmitEditing, ID: v.ID, Text: v.Text})
 }
 
@@ -669,7 +874,87 @@ func (a *App) Scroll(selector string, offset core.Point) {
 	v := a.Find(selector)
 	v.Offset = offset
 	a.anim.Scroll(v.ID, offset)
-	a.dispatch(core.Event{Kind: core.EventScroll, ID: v.ID, Point: offset})
+	a.dispatch(core.Event{Kind: core.EventScroll, ID: v.ID, Point: offset, Count: v.Applied})
+}
+
+// DragScroll drags the scroll view selector matches to offset and lets
+// go at velocity (points per second along its axis, positive as the
+// offset grows), as a platform does: the drag's events, then the glide or
+// the snap its ScrollBehavior decides, clamped to its content and insets.
+func (a *App) DragScroll(selector string, offset core.Point, velocity float32) {
+	a.t.Helper()
+	v := a.Find(selector)
+	if v.Scroll.Behavior.NoScroll {
+		return
+	}
+	a.scrollEvent(v, core.EventScrollDragStart)
+	a.Scroll(selector, offset)
+	a.scrollEvent(v, core.EventScrollDragEnd)
+	b := &v.Scroll.Behavior
+	main := func(p core.Point) core.Points {
+		if v.Scroll.Horizontal {
+			return p.X
+		}
+		return p.Y
+	}
+	viewport, content := v.Frame.Size.Height, v.Content.Height
+	lo, hi := -b.ContentInset.Top, b.ContentInset.Bottom
+	if v.Scroll.Horizontal {
+		viewport, content = v.Frame.Size.Width, v.Content.Width
+		lo, hi = -b.ContentInset.Left, b.ContentInset.Right
+	}
+	at, ms := main(offset), velocity/1000
+	to := core.Projected(at, ms, b.Deceleration())
+	if snap, ok := b.SnapTarget(at, to, ms, viewport, content); ok {
+		to = snap
+	} else if ms == 0 {
+		return
+	}
+	to = min(max(to, lo), max(content-viewport, 0)+hi)
+	if to == at {
+		return
+	}
+	a.scrollEvent(v, core.EventMomentumStart)
+	end := offset
+	if v.Scroll.Horizontal {
+		end.X = to
+	} else {
+		end.Y = to
+	}
+	a.Scroll(selector, end)
+	a.scrollEvent(v, core.EventMomentumEnd)
+}
+
+// PullToRefresh pulls the refreshable scroll view selector matches down
+// past its top, as a user does to refresh it.
+func (a *App) PullToRefresh(selector string) {
+	a.t.Helper()
+	v := a.Find(selector)
+	if !v.Scroll.Refreshable || v.Scroll.Refreshing || v.Scroll.Horizontal || v.Scroll.Behavior.NoScroll {
+		return
+	}
+	a.scrollEvent(v, core.EventScrollDragStart)
+	a.dispatch(core.Event{Kind: core.EventRefresh, ID: v.ID, Point: v.Offset, Count: v.Applied})
+	a.scrollEvent(v, core.EventScrollDragEnd)
+}
+
+// PinchZoom zooms the zoomable scroll view selector matches to scale, as a
+// user's pinch does, within its limits.
+func (a *App) PinchZoom(selector string, scale float32) {
+	a.t.Helper()
+	v := a.Find(selector)
+	c := &v.Scroll
+	if !c.Zooms() || c.NoPinchZoom {
+		return
+	}
+	v.ZoomScale = min(max(scale, c.MinZoomScale), c.MaxZoomScale)
+	a.dispatch(core.Event{Kind: core.EventScroll, ID: v.ID, Point: v.Offset, Value: v.ZoomScale, Count: v.Applied})
+}
+
+func (a *App) scrollEvent(v *View, kind core.EventKind) {
+	if v.Events.Has(kind) {
+		a.dispatch(core.Event{Kind: kind, ID: v.ID, Point: v.Offset, Value: v.ZoomScale, Count: v.Applied})
+	}
 }
 
 // DropFiles drops files on the view selector matches, as a desktop or
@@ -742,6 +1027,10 @@ func (a *App) apply(b *core.MountBatch) {
 			v.Style = *it.ViewStyle
 		case core.ItemViewProps:
 			v.Props = *it.ViewProps
+		case core.ItemAccessibilityLabel:
+			v.Props.Label = it.Value
+		case core.ItemAccessibilityFocus:
+			a.AccessibilityFocus = v
 		case core.ItemEvents:
 			v.Events = it.Events
 		case core.ItemText:
@@ -749,11 +1038,31 @@ func (a *App) apply(b *core.MountBatch) {
 		case core.ItemInput:
 			v.Input = *it.Input
 		case core.ItemInputValue:
-			if a.edits[it.ID] <= it.Count {
+			if v.Composing != "" {
+				held := it
+				v.held = &held
+			} else if a.edits[it.ID] <= it.Count {
 				v.Text = it.Value
 			}
+		case core.ItemSelection:
+			n := core.UTF16Len(v.Text)
+			r := it.Selection
+			v.Selection = core.TextRange{Start: min(max(r.Start, 0), n), End: min(max(r.End, 0), n)}
 		case core.ItemScrollContent:
 			v.Content = it.Size
+		case core.ItemScrollConfig:
+			if !v.Scroll.Zooms() && it.Scroll.Zooms() || it.Scroll.ZoomScale != v.Scroll.ZoomScale {
+				v.ZoomScale = it.Scroll.ZoomScale
+			}
+			v.Scroll = *it.Scroll
+		case core.ItemZoomTo:
+			v.ZoomScale = it.Zoom.Scale
+			id, at, z := it.ID, v.Offset, v.ZoomScale
+			a.mu.Lock()
+			a.posts = append(a.posts, func() {
+				a.tree.Dispatch(core.Event{Kind: core.EventScroll, ID: id, Point: at, Value: z})
+			})
+			a.mu.Unlock()
 		case core.ItemImage:
 			v.Image = *it.Image
 		case core.ItemWeb:
@@ -789,14 +1098,23 @@ func (a *App) apply(b *core.MountBatch) {
 			a.setFocus(v, true)
 		case core.ItemBlur:
 			a.setFocus(v, false)
-		case core.ItemScrollTo:
-			v.Offset = it.Point
+		case core.ItemScrollTo, core.ItemScrollBy:
+			v.Applied++
+			if it.Kind == core.ItemScrollBy {
+				v.Offset.X += it.Point.X
+				v.Offset.Y += it.Point.Y
+			} else {
+				v.Offset = v.clamp(it.Point)
+			}
 			// A platform reports where a scroll lands.
+			id, at, n := it.ID, v.Offset, v.Applied
 			a.mu.Lock()
 			a.posts = append(a.posts, func() {
-				a.tree.Dispatch(core.Event{Kind: core.EventScroll, ID: it.ID, Point: it.Point})
+				a.tree.Dispatch(core.Event{Kind: core.EventScroll, ID: id, Point: at, Count: n})
 			})
 			a.mu.Unlock()
+		case core.ItemStickyCells:
+			v.Sticky = it.Sticky
 		case core.ItemSetClipboard:
 			a.Clipboard = it.Value
 		case core.ItemReadClipboard:
@@ -806,10 +1124,26 @@ func (a *App) apply(b *core.MountBatch) {
 				a.tree.Dispatch(core.Event{Kind: core.EventClipboard, Count: id, Text: text})
 			})
 			a.mu.Unlock()
+		case core.ItemImageInfo:
+			ev := core.Event{Kind: core.EventImageInfo, Count: it.Count}
+			if size, ok := a.ImageSizes[it.Image.Source.URI]; ok {
+				ev.Size = size
+			} else {
+				ev.Text = "nsgotest: no image at " + it.Image.Source.URI
+			}
+			a.mu.Lock()
+			a.posts = append(a.posts, func() { a.tree.Dispatch(ev) })
+			a.mu.Unlock()
 		case core.ItemKeymap:
 			a.Keymap = it.Keys
 		case core.ItemTitle:
 			a.Title = it.Value
+		case core.ItemStatusBar:
+			a.StatusBar = *it.StatusBar
+		case core.ItemScreen:
+			v.Screen = *it.Screen
+		case core.ItemModal:
+			v.Modal = *it.Modal
 		case core.ItemMenu:
 			a.Menu = it.Menu
 		case core.ItemWindow:

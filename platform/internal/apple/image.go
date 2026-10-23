@@ -116,10 +116,9 @@ func (r request) pointsPerPixel(w, h float64) float64 {
 	case core.Contain:
 		return min(sx, sy)
 	case core.Center:
-		if w/r.scale > r.view.Width || h/r.scale > r.view.Height {
-			return min(sx, sy)
-		}
 		return 1 / r.scale
+	case core.ScaleDown:
+		return min(sx, sy, 1/r.scale)
 	}
 	return max(sx, sy)
 }
@@ -145,9 +144,12 @@ type decoded struct {
 	image         uintptr
 	width, height float64
 	scale         float64
-	frames        []uintptr
-	delays        []float64 // seconds
-	loops         int
+	// points is the natural size in points: an SVG's intrinsic size, else
+	// the pixels over the scale its name declares.
+	points core.Size
+	frames []uintptr
+	delays []float64 // seconds
+	loops  int
 }
 
 // maxFrames bounds the frames of an animated image, as NSH's iOS does.
@@ -235,7 +237,7 @@ func decode(data []byte, r request) (decoded, error) {
 	}
 	// An animated image plays unblurred, as NSH's does.
 	if delays, loops, ok := animation(src); ok && r.blur <= 0 {
-		d := decoded{image: img, width: w, height: h, scale: r.scale, frames: []uintptr{img}, loops: loops}
+		d := decoded{image: img, width: w, height: h, scale: r.scale, points: pointsOf(w, h, r.scale), frames: []uintptr{img}, loops: loops}
 		for i := 1; i < len(delays); i++ {
 			f := cgImageSourceCreateThumbnail(src, i, opts)
 			if f == 0 {
@@ -257,7 +259,7 @@ func decode(data []byte, r request) (decoded, error) {
 			img = out
 		}
 	}
-	return decoded{image: img, width: w, height: h, scale: r.scale}, nil
+	return decoded{image: img, width: w, height: h, scale: r.scale, points: pointsOf(w, h, r.scale)}, nil
 }
 
 // decodeSVG draws an SVG with Go's rasterizer for the pixels r's view
@@ -293,7 +295,55 @@ func decodeSVG(data []byte, r request) (decoded, error) {
 		}
 	}
 	return decoded{image: cg, width: math.Round(float64(img.Size.Width)), height: math.Round(float64(img.Size.Height)),
-		scale: scale}, nil
+		scale: scale, points: img.Size}, nil
+}
+
+// pointsOf returns the natural size of a w×h image whose pixels per point
+// are scale.
+func pointsOf(w, h, scale float64) core.Size {
+	if scale <= 0 {
+		scale = 1
+	}
+	return core.Size{Width: core.Points(w / scale), Height: core.Points(h / scale)}
+}
+
+// ImageInfo answers an ItemImageInfo on a goroutine of its own: it loads
+// the source, keeping its bytes for the views that show it next, and
+// dispatches EventImageInfo with the size ImageIO reads, upright, or an
+// SVG's in whole points.
+func ImageInfo(it *core.MountItem, dispatch func(core.Event)) {
+	item := *it
+	go func() { dispatch(imageload.Info(&item, imageSize)) }()
+}
+
+// imageSize returns the size EventLoad reports for data.
+func imageSize(data []byte) (core.Size, error) {
+	if len(data) == 0 {
+		return core.Size{}, errors.New("apple: empty image data")
+	}
+	if imagedecode.Sniff(data) == imagedecode.SVG {
+		return imagedecode.Size(data)
+	}
+	cfData := cfDataCreate(0, &data[0], len(data))
+	defer Release(cfData)
+	src := cgImageSourceCreateWithData(cfData, 0)
+	if src == 0 {
+		return core.Size{}, errors.New("apple: unsupported image data")
+	}
+	defer Release(src)
+	props := cgImageSourceCopyProperties(src, 0, 0)
+	if props == 0 {
+		return core.Size{}, errors.New("apple: unsupported image data")
+	}
+	defer Release(props)
+	w, h := number(props, keyWidth), number(props, keyHeight)
+	if number(props, keyTurn) >= 5 {
+		w, h = h, w
+	}
+	if w <= 0 || h <= 0 {
+		return core.Size{}, errors.New("apple: image has no pixels")
+	}
+	return core.Size{Width: core.Points(w), Height: core.Points(h)}, nil
 }
 
 func number(dict, key uintptr) float64 {
@@ -348,18 +398,20 @@ func sameSource(a, b core.ImageSource) bool {
 }
 
 // ImageView shows an image view's source, and its placeholder until the
-// source arrives, in a layer it adds to the view's own. It loads them
-// with imageload and decodes them with ImageIO on goroutines, at the size
-// the view shows them. Its methods run on the main thread.
+// source arrives, in a picture layer framed at the fitted rectangle
+// inside a clipping layer it adds to the view's own, as NSH's does (the
+// tint and its mask inside the picture). It loads them with imageload and
+// decodes them with ImageIO on goroutines, at the size the view shows
+// them. Its methods run on the main thread.
 type ImageView struct {
 	// Dispatch reports an event to the engine if the view listens for it.
 	Dispatch func(core.Event)
 
-	layer, mask objc.ID
-	config      core.ImageConfig
-	tint        core.Color
-	bounds      CGSize
-	ratio       float64
+	layer, picture, mask objc.ID
+	config               core.ImageConfig
+	tint                 core.Color
+	bounds               CGSize
+	ratio                float64
 
 	image   uintptr // the CGImage shown, retained
 	shown   decoded // what image was decoded from
@@ -375,8 +427,11 @@ type ImageView struct {
 
 // NewImageView adds an image layer to host, a view's layer.
 func NewImageView(host objc.ID) *ImageView {
-	iv := &ImageView{layer: objc.ID(objc.GetClass("CALayer")).Send(selNew)}
+	layer := objc.ID(objc.GetClass("CALayer"))
+	iv := &ImageView{layer: layer.Send(selNew), picture: layer.Send(selNew)}
 	iv.layer.Send(selSetMasksToBounds, true)
+	iv.layer.Send(sel("addSublayer:"), iv.picture)
+	iv.picture.Send(selRelease)
 	host.Send(sel("addSublayer:"), iv.layer)
 	iv.layer.Send(selRelease)
 	return iv
@@ -389,6 +444,8 @@ func (iv *ImageView) Configure(c *core.ImageConfig) {
 	if iv.load == 0 || !sameSource(old.Source, c.Source) || !sameSource(old.Placeholder, c.Placeholder) ||
 		old.BlurRadius != c.BlurRadius {
 		iv.pending, iv.quiet = true, false
+	} else if old.ResizeMode != c.ResizeMode && iv.source && iv.reduced {
+		iv.pending, iv.quiet = true, true // the mode may show more pixels
 	}
 	iv.render(0)
 }
@@ -521,43 +578,44 @@ func (iv *ImageView) show(img decoded, source bool, fade time.Duration) {
 	iv.render(fade)
 }
 
-// gravity returns the CALayer contents gravity of the resize mode.
-func (iv *ImageView) gravity() string {
-	switch iv.config.ResizeMode {
-	case core.Contain:
-		return "resizeAspect"
-	case core.Stretch:
-		return "resize"
-	case core.Center:
-		s := iv.shown
-		if s.scale > 0 && (s.width/s.scale > iv.bounds.Width || s.height/s.scale > iv.bounds.Height) {
-			return "resizeAspect"
-		}
-		return "center"
+// fitted returns where the picture goes in the view: core's fit of the
+// shown image's natural size, or the size its source declares, by the
+// resize mode and position.
+func (iv *ImageView) fitted() CGRect {
+	natural := iv.shown.points
+	src := iv.config.Placeholder
+	if iv.source {
+		src = iv.config.Source
 	}
-	return "resizeAspectFill"
+	if size := src.Size; size.Width > 0 && size.Height > 0 {
+		natural = size
+	}
+	box := core.Size{Width: core.Points(iv.bounds.Width), Height: core.Points(iv.bounds.Height)}
+	b := iv.config.ResizeMode.Fit(natural, box, iv.config.Position)
+	return Rect(float64(b.Origin.X), float64(b.Origin.Y), float64(b.Size.Width), float64(b.Size.Height))
 }
 
-// render shows the image: as it is, or as a template the tint fills
-// through a mask of the image's alpha.
+// render shows the image in the picture layer: as it is, or as a template
+// the tint fills through a mask of the image's alpha.
 func (iv *ImageView) render(fade time.Duration) {
 	WithoutAnimation(func() {
-		frame := Rect(0, 0, iv.bounds.Width, iv.bounds.Height)
-		iv.layer.Send(selSetFrame, frame)
-		target := iv.layer
+		iv.layer.Send(selSetFrame, Rect(0, 0, iv.bounds.Width, iv.bounds.Height))
+		fit := iv.fitted()
+		iv.picture.Send(selSetFrame, fit)
+		target := iv.picture
 		if iv.tint == 0 {
-			iv.layer.Send(selSetBackgroundColor, uintptr(0))
-			iv.layer.Send(selSetMask, objc.ID(0))
+			iv.picture.Send(selSetBackgroundColor, uintptr(0))
+			iv.picture.Send(selSetMask, objc.ID(0))
 		} else {
 			if iv.mask == 0 {
 				iv.mask = objc.ID(objc.GetClass("CALayer")).Send(selNew)
 			}
-			iv.mask.Send(selSetFrame, frame)
+			iv.mask.Send(selSetFrame, Rect(0, 0, fit.Size.Width, fit.Size.Height))
 			color := CGColor(iv.tint)
-			iv.layer.Send(selSetBackgroundColor, color)
+			iv.picture.Send(selSetBackgroundColor, color)
 			Release(color)
-			iv.layer.Send(selSetContents, uintptr(0))
-			iv.layer.Send(selSetMask, iv.mask)
+			iv.picture.Send(selSetContents, uintptr(0))
+			iv.picture.Send(selSetMask, iv.mask)
 			target = iv.mask
 		}
 		if fade > 0 {
@@ -571,7 +629,7 @@ func (iv *ImageView) render(fade time.Duration) {
 		if len(iv.shown.frames) > 1 && iv.tint == 0 {
 			target.Send(selAddAnimation, frameAnimation(&iv.shown), NSString("nsgoFrames"))
 		}
-		target.Send(selSetContentsGravity, NSString(iv.gravity()))
+		target.Send(selSetContentsGravity, NSString("resize"))
 		scale := iv.shown.scale
 		if scale <= 0 {
 			scale = 1

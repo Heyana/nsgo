@@ -30,6 +30,7 @@ var (
 	iidDWriteTextLayout1 = parseGUID("9064d822-80a7-465c-a986-df65f78b8feb")
 	iidDWriteInline      = parseGUID("8339fde3-106f-47ab-8373-1c6295eb10b3")
 	clsidGaussianBlur    = parseGUID("1feb6d69-2fe6-4ac9-8c58-1d7f93e7a6a5")
+	clsidShadow          = parseGUID("c67ea361-1863-4e69-89db-695d3e9a5b6b")
 )
 
 // Vtable indexes.
@@ -175,6 +176,7 @@ const (
 	d2dFillWinding             = 1
 	d2dSweepClockwise          = 1
 	d2dPropertyFloat           = 5
+	d2dPropertyVector4         = 8
 	d2dDrawTextEnableColorFont = 4
 	d2dCapFlat                 = 0
 	d2dCapSquare               = 1
@@ -195,10 +197,12 @@ const (
 	dwAlignLeading       = 0
 	dwAlignTrailing      = 1
 	dwAlignCenter        = 2
+	dwAlignJustified     = 3
 	dwParagraphCenter    = 2
 	dwWrap               = 0
 	dwNoWrap             = 1
 	dwLineSpacingUniform = 1
+	dwTrimmingNone       = 0
 	dwTrimmingCharacter  = 1
 )
 

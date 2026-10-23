@@ -175,6 +175,8 @@ func (s *surface) setFrame(v *view, f core.Bounds, lb *layoutBatch) {
 // place sets v's frame and what follows it.
 func (v *view) place(f core.Bounds) {
 	v.frame, v.framed = f, true
+	f.Origin.X += v.shift.X
+	f.Origin.Y += v.shift.Y
 	v.native.Send(selSetFrame, apple.Rect(float64(f.Origin.X), float64(f.Origin.Y),
 		float64(f.Size.Width), float64(f.Size.Height)))
 	if v.transform != (core.Transform{}) {

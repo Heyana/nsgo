@@ -27,6 +27,7 @@ const gdkActionCopy = 1 // GDK_ACTION_COPY
 
 // setEvents applies v's events, counting the views that take files.
 func (w *window) setEvents(v *view, events core.EventMask) {
+	v.fs.Events = events
 	had, has := v.events.Has(core.EventFileDrop), events.Has(core.EventFileDrop)
 	v.events = events
 	switch {

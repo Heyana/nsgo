@@ -1,5 +1,10 @@
 package core
 
+import (
+	"strings"
+	"unicode"
+)
+
 // Style is a node's layout, look and text. Every field's zero value means
 // unset, so styles compose with Merge and text fields inherit from the
 // parent as in CSS. A style with nothing set draws nothing: NSGo has no
@@ -77,6 +82,9 @@ type Style struct {
 	ShadowRadius         Points
 	// TintColor recolors an image's opaque pixels.
 	TintColor Color
+	// ObjectPosition places an image in its view once ResizeMode has
+	// sized it; centered when unset.
+	ObjectPosition ObjectPosition
 	// VerticalAlign places an attachment in its text's line, set on the
 	// span or on the attachment's view.
 	VerticalAlign VerticalAlign
@@ -99,9 +107,27 @@ type Style struct {
 	LetterSpacing  Points
 	TextAlign      TextAlign
 	TextDecoration TextDecoration
-	// SelectionColor is the highlight of selected text; 0 is the
-	// platform's.
+	// TextDecorationStyle draws the decoration's lines solid, double,
+	// dotted, dashed or wavy; TextDecorationColor colors them, the text's
+	// color when 0.
+	TextDecorationStyle TextDecorationStyle
+	TextDecorationColor Color
+	// TextTransform changes the case of the characters, as written in the
+	// text it is set on.
+	TextTransform TextTransform
+	// TextShadowColor, TextShadowOffset and TextShadowRadius draw a shadow
+	// behind a text's glyphs, the text's own style's for its whole block.
+	// An offset or radius without a color is black at a third of opacity.
+	TextShadowColor  Color
+	TextShadowOffset Point
+	TextShadowRadius Points
+	// TextAlignVertical moves text shorter than its box down within it.
+	TextAlignVertical TextAlignVertical
+	// SelectionColor is the highlight of selected text, and an input's
+	// caret; 0 is the platform's.
 	SelectionColor Color
+	// PlaceholderColor colors an input's placeholder; 0 is the platform's.
+	PlaceholderColor Color
 
 	// State styles merge over the rest while the node is in the state, in
 	// NSH's order of precedence, lowest first: checked, indeterminate and
@@ -266,7 +292,30 @@ const (
 	TextAlignStart TextAlign = iota + 1
 	TextAlignCenter
 	TextAlignEnd
+	// TextAlignJustify stretches every line but a paragraph's last to the
+	// box's width, aligned to the start.
+	TextAlignJustify
 )
+
+// TextAlignVertical is where text shorter than its box sits in it.
+type TextAlignVertical uint8
+
+const (
+	TextAlignVerticalTop TextAlignVertical = iota + 1
+	TextAlignVerticalCenter
+	TextAlignVerticalBottom
+)
+
+// fraction is how far down the free space the text moves.
+func (a TextAlignVertical) fraction() Points {
+	switch a {
+	case TextAlignVerticalCenter:
+		return 0.5
+	case TextAlignVerticalBottom:
+		return 1
+	}
+	return 0
+}
 
 // VerticalAlign is where an attachment sits in its line, as CSS's
 // vertical-align places a replaced inline box, against the font of the
@@ -295,6 +344,57 @@ const (
 	TextDecorationUnderline                  // underline
 	TextDecorationLineThrough                // strikethrough
 )
+
+// TextDecorationStyle is how a text's decoration lines are drawn; the
+// zero value is solid.
+type TextDecorationStyle uint8
+
+const (
+	DecorationSolid TextDecorationStyle = iota + 1
+	DecorationDouble
+	DecorationDotted
+	DecorationDashed
+	DecorationWavy
+)
+
+// TextTransform changes the case of text as it is laid out.
+type TextTransform uint8
+
+const (
+	TextTransformNone TextTransform = iota + 1
+	TextTransformUppercase
+	TextTransformLowercase
+	// TextTransformCapitalize upper-cases the first letter or digit of
+	// each word.
+	TextTransformCapitalize
+)
+
+// Apply returns s in the case x asks for.
+func (x TextTransform) Apply(s string) string {
+	switch x {
+	case TextTransformUppercase:
+		return strings.ToUpper(s)
+	case TextTransformLowercase:
+		return strings.ToLower(s)
+	case TextTransformCapitalize:
+		var b strings.Builder
+		b.Grow(len(s))
+		start := true
+		for _, r := range s {
+			if start && (unicode.IsLetter(r) || unicode.IsDigit(r)) {
+				b.WriteRune(unicode.ToTitle(r))
+				start = false
+				continue
+			}
+			b.WriteRune(r)
+			if unicode.IsSpace(r) {
+				start = true
+			}
+		}
+		return b.String()
+	}
+	return s
+}
 
 // DefaultFontSize is the font size of text no ancestor sizes.
 const DefaultFontSize Points = 17
@@ -353,6 +453,7 @@ func (s Style) Merge(o Style) Style {
 	set(&s.ShadowOffset, o.ShadowOffset)
 	set(&s.ShadowRadius, o.ShadowRadius)
 	set(&s.TintColor, o.TintColor)
+	set(&s.ObjectPosition, o.ObjectPosition)
 	set(&s.VerticalAlign, o.VerticalAlign)
 	set(&s.Transform, o.Transform)
 	set(&s.Transition, o.Transition)
@@ -409,7 +510,15 @@ func (s *Style) mergeText(o Style) {
 	set(&s.LetterSpacing, o.LetterSpacing)
 	set(&s.TextAlign, o.TextAlign)
 	set(&s.TextDecoration, o.TextDecoration)
+	set(&s.TextDecorationStyle, o.TextDecorationStyle)
+	set(&s.TextDecorationColor, o.TextDecorationColor)
+	set(&s.TextTransform, o.TextTransform)
+	set(&s.TextShadowColor, o.TextShadowColor)
+	set(&s.TextShadowOffset, o.TextShadowOffset)
+	set(&s.TextShadowRadius, o.TextShadowRadius)
+	set(&s.TextAlignVertical, o.TextAlignVertical)
 	set(&s.SelectionColor, o.SelectionColor)
+	set(&s.PlaceholderColor, o.PlaceholderColor)
 }
 
 func set[T comparable](dst *T, v T) {
@@ -431,7 +540,26 @@ func (s Style) textOnly() Style {
 		Color: s.Color, FontFamily: s.FontFamily, FontSize: s.FontSize, FontWeight: s.FontWeight,
 		FontStyle: s.FontStyle, LineHeight: s.LineHeight, LetterSpacing: s.LetterSpacing,
 		TextAlign: s.TextAlign, TextDecoration: s.TextDecoration, SelectionColor: s.SelectionColor,
+		TextDecorationStyle: s.TextDecorationStyle, TextDecorationColor: s.TextDecorationColor,
+		TextTransform: s.TextTransform, TextShadowColor: s.TextShadowColor, TextShadowOffset: s.TextShadowOffset,
+		TextShadowRadius: s.TextShadowRadius, TextAlignVertical: s.TextAlignVertical,
+		PlaceholderColor: s.PlaceholderColor,
 	}
+}
+
+// textShadow is the shadow the text fields describe, if any.
+func (s Style) textShadow() TextShadow {
+	if s.TextShadowColor == 0 && s.TextShadowOffset == (Point{}) && s.TextShadowRadius == 0 {
+		return TextShadow{}
+	}
+	c := s.TextShadowColor
+	if c == 0 {
+		c = Color(0x00000055)
+	}
+	if c&0xff == 0 {
+		return TextShadow{}
+	}
+	return TextShadow{Color: c, Offset: s.TextShadowOffset, Radius: max(s.TextShadowRadius, 0)}
 }
 
 // textStyle resolves inherited text fields into what a text engine needs.
@@ -448,6 +576,12 @@ func (s Style) textStyle() TextStyle {
 		LetterSpacing: s.LetterSpacing,
 		Align:         s.TextAlign,
 		Decoration:    s.TextDecoration &^ TextDecorationNone,
+	}
+	if t.Decoration != 0 {
+		if s.TextDecorationStyle > DecorationSolid {
+			t.DecorationStyle = s.TextDecorationStyle
+		}
+		t.DecorationColor = s.TextDecorationColor
 	}
 	if t.Font.Size == 0 {
 		t.Font.Size = DefaultFontSize

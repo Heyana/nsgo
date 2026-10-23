@@ -47,9 +47,21 @@ type imageSlot struct {
 	frame   int
 	frameAt time.Time
 	played  int
+	// A source that loaded fades in over fade from fadeAt, over the
+	// placeholder.
+	fadeAt time.Time
+	fade   time.Duration
 }
 
 type imageLoad struct{ cancel context.CancelFunc }
+
+// alpha returns the opacity s's fade-in shows it at by now: 1 once over.
+func (s *imageSlot) alpha(now time.Time) float64 {
+	if s.fade <= 0 {
+		return 1
+	}
+	return min(float64(now.Sub(s.fadeAt))/float64(s.fade), 1)
+}
 
 func (s *imageSlot) empty() bool { return s.src.URI == "" && len(s.src.Data) == 0 }
 
@@ -66,6 +78,7 @@ func (s *imageSlot) reset(src core.ImageSource) {
 	s.pic = nil
 	s.src = src
 	s.frame, s.played, s.frameAt = 0, 0, time.Time{}
+	s.fade = 0
 }
 
 func sameSource(a, b core.ImageSource) bool {
@@ -150,6 +163,11 @@ func (w *window) load(v *view, s *imageSlot, report bool) {
 				}
 				w.report(v, core.Event{Kind: core.EventLoad, ID: v.id, Size: size})
 				w.report(v, core.Event{Kind: core.EventLoadEnd, ID: v.id})
+				if fade := v.image.FadeDuration; fade > 0 {
+					s.fadeAt, s.fade = time.Now(), fade
+					w.fading = append(w.fading, v)
+					w.startClock()
+				}
 			}
 			w.playImage(v)
 			w.changed(v)
@@ -239,7 +257,22 @@ func (w *window) stepImages(now time.Time) bool {
 	}
 	clear(w.playing[len(live):])
 	w.playing = live
-	return len(live) > 0
+	// Fading sources draw again each frame until they are opaque.
+	fading := w.fading[:0]
+	for _, v := range w.fading {
+		if v.deleted || v.source.fade <= 0 {
+			continue
+		}
+		w.changed(v)
+		if v.source.alpha(now) >= 1 {
+			v.source.fade = 0
+			continue
+		}
+		fading = append(fading, v)
+	}
+	clear(w.fading[len(fading):])
+	w.fading = fading
+	return len(live) > 0 || len(fading) > 0
 }
 
 // step moves s's animation to the frame due at now, and reports whether
@@ -330,8 +363,69 @@ func tintInto(dst, src []byte, tint core.Color) {
 	}
 }
 
+// snapshotImage draws image view v in a box of width by height: its
+// placeholder until the source arrives or while the source fades in over
+// it, then the source, each fitted by the view's resize mode and position
+// and blurred by its blur radius, as NSH's Linux backend draws them.
+func (w *window) snapshotImage(v *view, tint core.Color, snap uintptr, width, height float64) {
+	box := rect{w: width, h: height}
+	now := time.Now()
+	alpha := 1.0
+	if v.source.pic != nil {
+		alpha = v.source.alpha(now)
+	}
+	if v.source.pic == nil || alpha < 1 {
+		w.snapshotPicture(v, &v.placeholder, tint, snap, box)
+	}
+	if v.source.pic == nil || alpha <= 0 {
+		return
+	}
+	if alpha < 1 {
+		gtkSnapshotPushOpacity(snap, alpha)
+	}
+	w.snapshotPicture(v, &v.source, tint, snap, box)
+	if alpha < 1 {
+		gtkSnapshotPop(snap)
+	}
+}
+
+// snapshotPicture draws s's picture fitted in box. A blurred one is drawn
+// enlarged under a clip to its own rectangle, so the blur's transparent
+// fringe falls outside and its edges stay opaque.
+func (w *window) snapshotPicture(v *view, s *imageSlot, tint core.Color, snap uintptr, box rect) {
+	surf := s.surfaceOf(tint)
+	if surf == 0 {
+		return
+	}
+	dst := w.fit(v, s, box)
+	if dst.w <= 0 || dst.h <= 0 {
+		return
+	}
+	blur := max(float64(v.image.BlurRadius), 0)
+	if blur > 0 {
+		x0, y0 := max(dst.x, box.x), max(dst.y, box.y)
+		x1, y1 := min(dst.x+dst.w, box.x+box.w), min(dst.y+dst.h, box.y+box.h)
+		if x1 <= x0 || y1 <= y0 {
+			return
+		}
+		clip := grapheneRect{float32(x0), float32(y0), float32(x1 - x0), float32(y1 - y0)}
+		gtkSnapshotPushClip(snap, &clip)
+		gtkSnapshotPushBlur(snap, blur)
+		grow := 2 * blur
+		dst = rect{x: dst.x - grow, y: dst.y - grow, w: dst.w + 2*grow, h: dst.h + 2*grow}
+	}
+	bounds := grapheneRect{float32(dst.x), float32(dst.y), float32(dst.w), float32(dst.h)}
+	cr := gtkSnapshotAppendCairo(snap, &bounds)
+	paintPicture(cr, s, surf, dst)
+	cairoDestroy(cr)
+	if blur > 0 {
+		gtkSnapshotPop(snap)
+		gtkSnapshotPop(snap)
+	}
+}
+
 // drawImage paints v's source, or its placeholder until the source
-// arrives, into r as v's resize mode fits it.
+// arrives, into r as v's resize mode and position fit it, unblurred.
 func (p *painter) drawImage(v *view, tint core.Color, r rect) {
 	s := &v.source
 	if s.pic == nil {
@@ -341,58 +435,52 @@ func (p *painter) drawImage(v *view, tint core.Color, r rect) {
 	if surf == 0 || r.w <= 0 || r.h <= 0 {
 		return
 	}
-	src, dst := p.w.fit(s, v.image.ResizeMode, r)
-	if dst.w <= 0 || dst.h <= 0 || src.w <= 0 || src.h <= 0 {
+	cairoSave(p.cr)
+	cairoRectangle(p.cr, r.x, r.y, r.w, r.h)
+	cairoClip(p.cr)
+	paintPicture(p.cr, s, surf, p.w.fit(v, s, r))
+	cairoRestore(p.cr)
+}
+
+// paintPicture paints surf, s's picture, scaled into dst.
+func paintPicture(cr uintptr, s *imageSlot, surf uintptr, dst rect) {
+	if dst.w <= 0 || dst.h <= 0 {
 		return
 	}
-	cr := p.cr
 	cairoSave(cr)
 	cairoTranslate(cr, dst.x, dst.y)
-	cairoScale(cr, dst.w/src.w, dst.h/src.h)
-	cairoSetSourceSurface(cr, surf, -src.x, -src.y)
+	cairoScale(cr, dst.w/float64(s.pic.width), dst.h/float64(s.pic.height))
+	cairoSetSourceSurface(cr, surf, 0, 0)
 	cairoPaint(cr)
 	cairoRestore(cr)
 }
 
-// fit returns the part of s's picture to draw and where, in r, for mode.
-func (w *window) fit(s *imageSlot, mode core.ResizeMode, r rect) (src, dst rect) {
-	pw, ph := float64(s.pic.width), float64(s.pic.height)
-	src = rect{w: pw, h: ph}
-	switch mode {
-	case core.Stretch:
-		return src, r
-	case core.Cover:
-		// Crop the middle of the picture to r's aspect.
-		scale := math.Max(r.w/pw, r.h/ph)
-		cw, ch := r.w/scale, r.h/scale
-		src.x, src.y = (pw-cw)/2, (ph-ch)/2
-		src.w, src.h = cw, ch
-		return src, r
-	case core.Center:
-		// A picture's pixels are points, or its URI's "@2x" says how many
-		// make one, unless the source gave its size; an SVG has its own.
-		nw, nh := pw/density(s.src.URI), ph/density(s.src.URI)
-		if s.pic.vector {
-			nw, nh = float64(s.pic.size.Width), float64(s.pic.size.Height)
-		}
-		if size := s.src.Size; size.Width > 0 && size.Height > 0 {
-			nw, nh = float64(size.Width), float64(size.Height)
-		}
-		if nw <= r.w && nh <= r.h {
-			return src, centered(r, nw, nh)
-		}
-	}
-	scale := math.Min(r.w/pw, r.h/ph) // Contain, and Center when larger than r
-	return src, centered(r, pw*scale, ph*scale)
+// fit returns where s's picture goes in r: core's fit of its natural
+// size, by v's resize mode and position.
+func (w *window) fit(v *view, s *imageSlot, r rect) rect {
+	b := v.image.ResizeMode.Fit(natural(s), core.Size{Width: core.Points(r.w), Height: core.Points(r.h)}, v.image.Position)
+	return rect{x: r.x + float64(b.Origin.X), y: r.y + float64(b.Origin.Y),
+		w: float64(b.Size.Width), h: float64(b.Size.Height)}
 }
 
-// centered returns a rectangle of width by height centered in r.
-func centered(r rect, width, height float64) rect {
-	return rect{
-		x: r.x + (r.w-width)/2,
-		y: r.y + (r.h-height)/2,
-		w: width, h: height,
+// natural returns the size in points s's picture shows at: the size its
+// source declares, an SVG's intrinsic size, or its pixels over the
+// density its URI's "@2x" declares.
+func natural(s *imageSlot) core.Size {
+	if size := s.src.Size; size.Width > 0 && size.Height > 0 {
+		return size
 	}
+	if s.pic.vector {
+		return s.pic.size
+	}
+	d := density(s.src.URI)
+	return core.Size{Width: core.Points(float64(s.pic.width) / d), Height: core.Points(float64(s.pic.height) / d)}
+}
+
+// imageInfo answers an ItemImageInfo off the main thread.
+func (w *window) imageInfo(it *core.MountItem) {
+	item := *it
+	go func() { w.engine.Dispatch(imageload.Info(&item, imagedecode.Size)) }()
 }
 
 // density returns the N of a "name@Nx.png" URI, else 1.

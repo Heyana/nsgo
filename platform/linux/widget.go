@@ -320,7 +320,7 @@ func (w *window) allocateView(v *view) {
 			continue
 		}
 		switch {
-		case c == v.entry:
+		case c == v.entry, c == v.hint:
 			allocateNative(c, v.input.Content)
 		case v.hosted() != nil && c == v.hosted().child:
 			b := core.Bounds{Size: v.shownFrame().Size}
@@ -431,6 +431,8 @@ var (
 	gtkSnapshotAppendOutset      func(uintptr, *gskRoundedRect, *gdkRGBA, float32, float32, float32, float32)
 	gtkSnapshotPushRoundedClip   func(uintptr, *gskRoundedRect)
 	gtkSnapshotPushOpacity       func(uintptr, float64)
+	gtkSnapshotPushClip          func(uintptr, *grapheneRect)
+	gtkSnapshotPushBlur          func(uintptr, float64)
 	gtkSnapshotPushShadow        func(uintptr, *gskShadow, uintptr)
 	gtkSnapshotPop               func(uintptr)
 	gskRenderNodeDraw            func(uintptr, uintptr)
@@ -481,6 +483,8 @@ func bindWidget() {
 	gtk(&gtkSnapshotAppendOutset, "gtk_snapshot_append_outset_shadow")
 	gtk(&gtkSnapshotPushRoundedClip, "gtk_snapshot_push_rounded_clip")
 	gtk(&gtkSnapshotPushOpacity, "gtk_snapshot_push_opacity")
+	gtk(&gtkSnapshotPushClip, "gtk_snapshot_push_clip")
+	gtk(&gtkSnapshotPushBlur, "gtk_snapshot_push_blur")
 	gtk(&gtkSnapshotPushShadow, "gtk_snapshot_push_shadow")
 	gtk(&gtkSnapshotPop, "gtk_snapshot_pop")
 	gtk(&gskRenderNodeDraw, "gsk_render_node_draw")

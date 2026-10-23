@@ -21,13 +21,18 @@ const (
 	pangoWrapChar     = 1
 	pangoWrapWordChar = 2
 
-	pangoEllipsizeEnd = 3
+	pangoEllipsizeNone   = 0
+	pangoEllipsizeStart  = 1
+	pangoEllipsizeMiddle = 2
+	pangoEllipsizeEnd    = 3
 
 	pangoStyleNormal  = 0
 	pangoStyleOblique = 1
 	pangoStyleItalic  = 2
 
 	pangoUnderlineSingle = 1
+	pangoUnderlineDouble = 2
+	pangoUnderlineError  = 4 // wavy
 )
 
 // textSource is what a text is laid out from: plain data, so the engine
@@ -37,6 +42,10 @@ type textSource struct {
 	style    core.TextStyle
 	spans    []core.TextSpan
 	maxLines int
+	// ellipsize cuts what maxLines leaves out; a clipped text is measured
+	// as if it ended with an ellipsis and drawn whole, clipped to its box.
+	ellipsize core.EllipsizeMode
+	shadow    core.TextShadow
 	// atts are the text's attachments and fonts the metrics of the font
 	// around each, which places it.
 	atts  []core.TextAttachment
@@ -57,6 +66,9 @@ type textLayout struct {
 	under       []rect
 	underColors []core.Color
 	attachments []attachmentBox
+
+	// lines are the lines OnTextLayout reports.
+	lines []core.TextLine
 
 	// The main thread's PangoLayout, made when first drawn and freed by
 	// Release.
@@ -81,7 +93,8 @@ type preparedText struct {
 
 // Prepare implements core.TextEngine.
 func (w *window) Prepare(t *core.AttributedText) core.PreparedText {
-	src := textSource{text: t.Text, style: t.Style, spans: t.Spans, maxLines: t.MaxLines}
+	src := textSource{text: t.Text, style: t.Style, spans: t.Spans, maxLines: t.MaxLines, ellipsize: t.Ellipsize,
+		shadow: t.Shadow}
 	if len(t.Attachments) > 0 {
 		src.atts = append([]core.TextAttachment(nil), t.Attachments...)
 		src.fonts = make([]core.FontExtent, len(t.Attachments))
@@ -149,15 +162,16 @@ func toPango(p core.Points) int32   { return int32(math.Round(float64(p * pangoS
 func fromPango(v int32) core.Points { return core.Points(v) / pangoScale }
 
 // newLayout makes a PangoLayout on the current thread with the text and
-// attributes of s.
+// attributes of s, to measure.
 func newLayout(context uintptr, s *textSource, width core.Points) uintptr {
 	l := pangoLayoutNew(context)
-	applyLayout(l, s, width)
+	applyLayout(l, s, width, false)
 	return l
 }
 
-// applyLayout gives l its text, attributes and box.
-func applyLayout(l uintptr, s *textSource, width core.Points) {
+// applyLayout gives l its text, attributes and box; drawn, a clipped
+// text keeps every line.
+func applyLayout(l uintptr, s *textSource, width core.Points, drawn bool) {
 	text := s.text
 	if text == "" {
 		text = " "
@@ -166,11 +180,7 @@ func applyLayout(l uintptr, s *textSource, width core.Points) {
 	pangoLayoutSetAttributes(l, attrs)
 	pangoAttrListUnref(attrs)
 	pangoLayoutSetText(l, cstr(text), int32(len(text)))
-	if s.maxLines == 1 || width.IsAuto() {
-		pangoLayoutSetWidth(l, -1)
-	} else {
-		pangoLayoutSetWidth(l, int32(width*pangoScale+0.5))
-	}
+	pangoLayoutSetWidth(l, s.pangoWidth(width, drawn))
 	switch s.style.Align {
 	case core.TextAlignCenter:
 		pangoLayoutSetAlignment(l, pangoAlignCenter)
@@ -179,13 +189,30 @@ func applyLayout(l uintptr, s *textSource, width core.Points) {
 	default:
 		pangoLayoutSetAlignment(l, pangoAlignLeft)
 	}
+	pangoLayoutSetJustify(l, s.style.Align == core.TextAlignJustify)
 	if s.maxLines > 1 {
 		pangoLayoutSetWrap(l, pangoWrapWord)
 	}
-	if s.maxLines > 0 {
-		pangoLayoutSetEllipsize(l, pangoEllipsizeEnd)
+	if s.maxLines > 0 && !(drawn && s.ellipsize == core.EllipsizeClip) {
+		mode := int32(pangoEllipsizeEnd)
+		switch s.ellipsize {
+		case core.EllipsizeHead:
+			mode = pangoEllipsizeStart
+		case core.EllipsizeMiddle:
+			mode = pangoEllipsizeMiddle
+		}
+		pangoLayoutSetEllipsize(l, mode)
 		pangoLayoutSetHeight(l, -int32(s.maxLines))
 	}
+}
+
+// pangoWidth is the width Pango wraps and ellipsizes s at: none for a
+// clipped line drawn whole, which its box cuts.
+func (s *textSource) pangoWidth(width core.Points, drawn bool) int32 {
+	if width.IsAuto() || (drawn && s.maxLines == 1 && s.ellipsize == core.EllipsizeClip) {
+		return -1
+	}
+	return int32(width*pangoScale + 0.5)
 }
 
 // placeholderLen is the length in bytes of an attachment's placeholder.
@@ -259,10 +286,7 @@ func addStyle(list uintptr, textLen, start, end int, s core.TextStyle, holes [][
 	if f.Italic {
 		add(pangoAttrStyleNew(pangoStyleItalic))
 	}
-	r16 := uint16(s.Color>>24&0xff) * 0x101
-	g16 := uint16(s.Color>>16&0xff) * 0x101
-	b16 := uint16(s.Color>>8&0xff) * 0x101
-	add(pangoAttrForegroundNew(r16, g16, b16))
+	add(pangoAttrForegroundNew(rgb16(s.Color)))
 	if s.LetterSpacing != 0 {
 		add(pangoAttrLetterSpacingNew(int32(s.LetterSpacing * pangoScale)))
 	}
@@ -278,12 +302,31 @@ func addStyle(list uintptr, textLen, start, end int, s core.TextStyle, holes [][
 			from = max(from, h[1])
 		}
 	}
+	// Pango draws no dotted or dashed lines, and strikes through solid.
 	if s.Decoration&core.TextDecorationUnderline != 0 {
-		add(pangoAttrUnderlineNew(pangoUnderlineSingle))
+		line := int32(pangoUnderlineSingle)
+		switch s.DecorationStyle {
+		case core.DecorationDouble:
+			line = pangoUnderlineDouble
+		case core.DecorationWavy:
+			line = pangoUnderlineError
+		}
+		add(pangoAttrUnderlineNew(line))
+		if s.DecorationColor != 0 {
+			add(pangoAttrUnderlineColorNew(rgb16(s.DecorationColor)))
+		}
 	}
 	if s.Decoration&core.TextDecorationLineThrough != 0 {
 		add(pangoAttrStrikethroughNew(1))
+		if s.DecorationColor != 0 {
+			add(pangoAttrStrikethroughColorNew(rgb16(s.DecorationColor)))
+		}
 	}
+}
+
+// rgb16 returns c's channels as Pango's 16-bit ones.
+func rgb16(c core.Color) (r, g, b uint16) {
+	return uint16(c>>24&0xff) * 0x101, uint16(c>>16&0xff) * 0x101, uint16(c>>8&0xff) * 0x101
 }
 
 // setAttributeRange fills a PangoAttribute's byte range, the first three
@@ -299,11 +342,7 @@ func (p *preparedText) measure(width core.Points) core.Size {
 	if p.layout == 0 {
 		p.layout = newLayout(p.w.measureContext(), &p.textSource, width)
 	} else {
-		if p.maxLines == 1 || width.IsAuto() {
-			pangoLayoutSetWidth(p.layout, -1)
-		} else {
-			pangoLayoutSetWidth(p.layout, int32(width*pangoScale+0.5))
-		}
+		pangoLayoutSetWidth(p.layout, p.pangoWidth(width, false))
 	}
 	var w, h int32
 	pangoLayoutGetPixelSize(p.layout, &w, &h)
@@ -327,7 +366,62 @@ func (p *preparedText) Layout(size core.Size) core.TextLayout {
 	l := &textLayout{textSource: src, width: size.Width, height: measured.Height}
 	p.placeBackgrounds(l)
 	p.placeAttachments(l)
+	p.placeLines(l)
 	return l
+}
+
+// placeLines lists the layout's lines for OnTextLayout, with the metrics
+// of the font each starts in.
+func (p *preparedText) placeLines(l *textLayout) {
+	if p.text == "" {
+		return
+	}
+	iter := pangoLayoutGetIter(p.layout)
+	defer pangoLayoutIterFree(iter)
+	for {
+		line := pangoLayoutIterGetLine(iter)
+		from := int(*(*int32)(unsafe.Add(cPointer(line), 8)))
+		to := from + int(*(*int32)(unsafe.Add(cPointer(line), 12)))
+		var ink, logical pangoRectangle
+		pangoLayoutIterGetLineExtents(iter, &ink, &logical)
+		baseline := pangoLayoutIterGetBaseline(iter)
+		font := p.styleAt(from).Font
+		ext := p.w.fontExtent(font)
+		l.lines = append(l.lines, core.TextLine{Start: min(from, len(p.text)), End: min(to, len(p.text)),
+			Bounds: core.Bounds{Origin: core.Point{X: fromPango(logical.X), Y: fromPango(logical.Y)},
+				Size: core.Size{Width: fromPango(logical.Width), Height: fromPango(logical.Height)}},
+			Ascender: fromPango(baseline - logical.Y), Descender: fromPango(logical.Y + logical.Height - baseline),
+			CapHeight: p.w.capHeight(font), XHeight: ext.XHeight})
+		if pangoLayoutIterNextLine(iter) == 0 {
+			break
+		}
+	}
+}
+
+// TextLines implements core.LineLayout.
+func (l *textLayout) TextLines() []core.TextLine { return l.lines }
+
+// capHeight returns the height of f's capitals, from the ink of an "H".
+// The engine thread calls it; it caches what it measured.
+func (w *window) capHeight(f core.Font) core.Points {
+	if h, ok := w.capHeights[f]; ok {
+		return h
+	}
+	l := pangoLayoutNew(w.measureContext())
+	attrs := pangoAttrListNew()
+	addStyle(attrs, 1, 0, 1, core.TextStyle{Font: f}, nil)
+	pangoLayoutSetAttributes(l, attrs)
+	pangoAttrListUnref(attrs)
+	pangoLayoutSetText(l, cstr("H"), 1)
+	var ink, logical pangoRectangle
+	pangoLayoutGetExtents(l, &ink, &logical)
+	h := fromPango(pangoLayoutGetBaseline(l) - ink.Y)
+	gObjectUnref(l)
+	if w.capHeights == nil {
+		w.capHeights = map[core.Font]core.Points{}
+	}
+	w.capHeights[f] = h
+	return h
 }
 
 // blank reports whether c is a space or a line break, which a line's
@@ -444,7 +538,7 @@ func (l *textLayout) ensure(cr uintptr) {
 		return
 	}
 	l.layout = pangoCairoCreateLayout(cr)
-	applyLayout(l.layout, &l.textSource, l.width)
+	applyLayout(l.layout, &l.textSource, l.width, true)
 	pangoCairoUpdateLayout(cr, l.layout)
 }
 
@@ -462,8 +556,17 @@ func (l *textLayout) draw(cr uintptr, x, y core.Points) {
 		cairoFill(cr)
 	}
 	l.ensure(cr)
+	clip := l.maxLines > 0 && l.ellipsize == core.EllipsizeClip
+	if clip {
+		cairoSave(cr)
+		cairoRectangle(cr, float64(x), float64(y), float64(l.width), float64(l.height))
+		cairoClip(cr)
+	}
 	cairoMoveTo(cr, float64(x), float64(y))
 	pangoCairoShowLayout(cr, l.layout)
+	if clip {
+		cairoRestore(cr)
+	}
 }
 
 // indexAt returns the byte offset of the character nearest x, y, in the

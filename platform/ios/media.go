@@ -157,7 +157,8 @@ func (v *view) place(f core.Bounds) {
 	b := objc.Send[apple.CGRect](v.native, selBounds)
 	b.Size = apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)}
 	v.native.Send(sel("setBounds:"), b)
-	v.native.Send(sel("setCenter:"), apple.CGPoint{X: float64(f.Origin.X + f.Size.Width/2), Y: float64(f.Origin.Y + f.Size.Height/2)})
+	v.native.Send(sel("setCenter:"), apple.CGPoint{X: float64(f.Origin.X + v.shift.X + f.Size.Width/2),
+		Y: float64(f.Origin.Y + v.shift.Y + f.Size.Height/2)})
 	apple.LayoutBorders(v.native.Send(selLayer))
 	if v.image != nil {
 		v.image.Layout(apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)})
@@ -166,9 +167,9 @@ func (v *view) place(f core.Bounds) {
 	if v.video != nil {
 		v.video.Layout()
 	}
-	if field := v.surface.accessories[v.id]; field != nil && field.field != 0 {
+	if field := v.surface.accessories[v.id]; field != nil && field.input != nil {
 		// A taller bar shows only once the keyboard asks for it again.
-		field.field.Send(sel("reloadInputViews"))
+		field.input.field.Send(sel("reloadInputViews"))
 	}
 }
 
@@ -341,8 +342,5 @@ func (s *surface) setAccessory(v *view, id core.NodeID) {
 		bar.Send(sel("setAutoresizingMask:"), uint(flexibleWidth))
 		s.accessories[id] = v
 	}
-	v.field.Send(sel("setInputAccessoryView:"), bar)
-	if objc.Send[bool](v.field, sel("isFirstResponder")) {
-		v.field.Send(sel("reloadInputViews"))
-	}
+	v.input.setBar(bar)
 }

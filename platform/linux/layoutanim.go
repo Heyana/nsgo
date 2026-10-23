@@ -75,6 +75,9 @@ func animatesLayout(v *view) bool { return v.kind != core.KindModal }
 // lb's Update when it existed before the commit, else at once.
 func (w *window) framed(v *view, frame core.Bounds, lb *layoutBatch) {
 	old := v.shownFrame()
+	v.laid = frame
+	frame.Origin.X += v.shift.X
+	frame.Origin.Y += v.shift.Y
 	v.frame = frame
 	if lb == nil || lb.anim.Update == nil || lb.created[v.id] || !animatesLayout(v) || old == frame {
 		if v.layout != nil && v.layout.move != nil {

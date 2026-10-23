@@ -97,9 +97,7 @@ func (w *window) snapshotContent(v *view, s *core.ViewStyle, snap uintptr) {
 	switch {
 	case width <= 0 || height <= 0:
 	case v.kind == core.KindImage && (v.source.pic != nil || v.placeholder.pic != nil):
-		cr := gtkSnapshotAppendCairo(snap, &box)
-		(&painter{w: w, cr: cr}).drawImage(v, s.TintColor, r)
-		cairoDestroy(cr)
+		w.snapshotImage(v, s.TintColor, snap, width, height)
 	case v.kind == core.KindCanvas && v.drawing != nil:
 		cr := gtkSnapshotAppendCairo(snap, &box)
 		w.playCanvas(v.drawing, cr, r)
@@ -111,9 +109,16 @@ func (w *window) snapshotContent(v *view, s *core.ViewStyle, snap uintptr) {
 		grown := grapheneRect{min(0, x) - textOverhang, min(0, y) - textOverhang,
 			max(float32(width), x+float32(l.width)) - min(0, x) + 2*textOverhang,
 			max(float32(height), y+float32(l.height)) - min(0, y) + 2*textOverhang}
+		if sh := l.shadow; sh.Color != 0 {
+			s := gskShadow{rgba(sh.Color), float32(sh.Offset.X), float32(sh.Offset.Y), float32(sh.Radius) * shadowBlurPerUnit}
+			gtkSnapshotPushShadow(snap, &s, 1)
+		}
 		cr := gtkSnapshotAppendCairo(snap, &grown)
 		l.draw(cr, v.content.Origin.X, v.content.Origin.Y)
 		cairoDestroy(cr)
+		if l.shadow.Color != 0 {
+			gtkSnapshotPop(snap)
+		}
 	}
 }
 

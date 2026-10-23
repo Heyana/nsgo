@@ -28,6 +28,7 @@ package windows
 import (
 	"math"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"unicode/utf16"
@@ -55,12 +56,13 @@ type drawnText interface {
 // ems.
 type faceMetrics struct {
 	ascent, descent, xHeight      float32
+	capHeight                     float32
 	underline, underlineThickness float32 // the position above the baseline
 	strike, strikeThickness       float32
 }
 
 // defaultFaceMetrics stand for a font DirectWrite cannot find.
-var defaultFaceMetrics = faceMetrics{ascent: 1.07, descent: 0.26, xHeight: 0.5,
+var defaultFaceMetrics = faceMetrics{ascent: 1.07, descent: 0.26, xHeight: 0.5, capHeight: 0.7,
 	underline: -0.1, underlineThickness: 0.05, strike: 0.3, strikeThickness: 0.05}
 
 type faceKey struct {
@@ -140,6 +142,7 @@ func metricsOf(font core.Font) faceMetrics {
 				if em := float32(fm.designUnitsPerEm); em > 0 {
 					m = faceMetrics{
 						ascent: float32(fm.ascent) / em, descent: float32(fm.descent) / em, xHeight: float32(fm.xHeight) / em,
+						capHeight: float32(fm.capHeight) / em,
 						underline: float32(fm.underlinePosition) / em, underlineThickness: float32(fm.underlineThickness) / em,
 						strike: float32(fm.strikethroughPosition) / em, strikeThickness: float32(fm.strikethroughThickness) / em,
 					}
@@ -274,6 +277,11 @@ type preparedText struct {
 	runs        []textRun
 	attachments []textAttachment
 	maxLines    int
+	ellipsize   core.EllipsizeMode
+	shadow      core.TextShadow
+	// cut is the text, kept when its one line ellipsizes at its head or
+	// middle, which DirectWrite's trimming cannot: Layout cuts it.
+	cut *core.AttributedText
 	// step is the uniform line height, 0 for DirectWrite's own, and
 	// baseline where the baseline is in each of its lines.
 	step, baseline float32
@@ -283,7 +291,12 @@ type preparedText struct {
 
 // Prepare implements core.TextEngine on the engine goroutine.
 func (w *window) Prepare(t *core.AttributedText) core.PreparedText {
-	pt := &preparedText{w: w, style: t.Style, maxLines: t.MaxLines}
+	pt := &preparedText{w: w, style: t.Style, maxLines: t.MaxLines, ellipsize: t.Ellipsize, shadow: t.Shadow}
+	if t.MaxLines == 1 && (t.Ellipsize == core.EllipsizeHead || t.Ellipsize == core.EllipsizeMiddle) &&
+		len(t.Attachments) == 0 && !strings.ContainsAny(t.Text, "\n\r") {
+		c := *t
+		pt.cut = &c
+	}
 	units16 := func(s string) {
 		for i, r := range s {
 			n := len(pt.units)
@@ -378,6 +391,8 @@ func (pt *preparedText) build() *comObject {
 		align = dwAlignCenter
 	case core.TextAlignEnd:
 		align = dwAlignTrailing
+	case core.TextAlignJustify:
+		align = dwAlignJustified
 	}
 	format.call(formatSetTextAlignment, align)
 	if pt.maxLines == 1 {
@@ -387,7 +402,7 @@ func (pt *preparedText) build() *comObject {
 	if pt.step > 0 {
 		format.callF(formatSetLineSpacing, 0b110, dwLineSpacingUniform, f32(pt.step), f32(pt.baseline))
 	}
-	if pt.maxLines > 0 {
+	if pt.maxLines > 0 && pt.ellipsize != core.EllipsizeClip {
 		var sign *comObject
 		dwriteFactory().call(dwCreateEllipsisTrimmingSign, format.ptr(), uintptr(unsafe.Pointer(&sign)))
 		trim := trimming{granularity: dwTrimmingCharacter}
@@ -551,7 +566,21 @@ func (pt *preparedText) Measure(maxWidth core.Points) core.Size {
 // Layout lays the text out at size in a layout of its own, which the
 // main thread draws and releases.
 func (pt *preparedText) Layout(size core.Size) core.TextLayout {
-	l := &textLayout{color: pt.style.Color, offsets: pt.offsets, attachments: make([]attachmentBox, len(pt.attachments))}
+	if pt.cut != nil && pt.Measure(core.Auto).Width > size.Width {
+		// The most characters that fit around the ellipsis, as a text of
+		// their own.
+		fits := func(c *core.AttributedText) bool {
+			p := pt.w.Prepare(c)
+			defer p.Release()
+			return p.Measure(core.Auto).Width <= size.Width+0.01
+		}
+		cut := pt.cut.CutToFit(fits)
+		p := pt.w.Prepare(&cut)
+		defer p.Release()
+		return p.Layout(size)
+	}
+	l := &textLayout{color: pt.style.Color, offsets: pt.offsets, attachments: make([]attachmentBox, len(pt.attachments)),
+		shadow: pt.shadow, runs: pt.runs, style: pt.style}
 	layout := pt.build()
 	if layout == nil {
 		return l
@@ -571,6 +600,10 @@ func (pt *preparedText) Layout(size core.Size) core.TextLayout {
 		layout.callF(layoutSetMaxHeight, 1, f32(h+0.01))
 	}
 	l.lines = boxes[:shown]
+	if pt.maxLines > 0 && pt.ellipsize == core.EllipsizeClip && len(l.lines) > 0 {
+		last := l.lines[len(l.lines)-1]
+		l.clip = rectF{0, 0, float32(size.Width), last.top + last.height}
+	}
 	for i, b := range l.lines {
 		if n := len(l.groups); n > 0 && l.groups[n-1].shift == b.shift {
 			l.groups[n-1].to = i + 1
@@ -605,6 +638,10 @@ func (pt *preparedText) Layout(size core.Size) core.TextLayout {
 		}
 		bg := visible(r.bg.Color)
 		deco := r.style.Decoration & (core.TextDecorationUnderline | core.TextDecorationLineThrough)
+		lineColor := r.style.Color
+		if r.style.DecorationColor != 0 {
+			lineColor = r.style.DecorationColor
+		}
 		if !bg && deco == 0 {
 			continue
 		}
@@ -629,7 +666,7 @@ func (pt *preparedText) Layout(size core.Size) core.TextLayout {
 			line := func(position, thickness float32) {
 				t := max(thickness*size, thin)
 				y := b.baseline - position*size
-				l.decorations = append(l.decorations, decoration{rectF{x0, y - t/2, x1, y + t/2}, r.style.Color})
+				l.decorations = append(l.decorations, decoration{rectF{x0, y - t/2, x1, y + t/2}, lineColor, r.style.DecorationStyle})
 			}
 			if deco&core.TextDecorationUnderline != 0 {
 				line(m.underline, m.underlineThickness)
@@ -663,10 +700,55 @@ type backgroundBox struct {
 	radius float32
 }
 
-// decoration is an underline or a strikethrough on one line.
+// decoration is an underline or a strikethrough on one line: its line's
+// box, centered on it.
 type decoration struct {
 	r     rectF
 	color core.Color
+	style core.TextDecorationStyle
+}
+
+// draw paints d moved by x, y in its style: a solid line fills its box,
+// the others are drawn along its middle.
+func (d decoration) draw(p *painter, x, y float32) {
+	r := rectF{d.r.left + x, d.r.top + y, d.r.right + x, d.r.bottom + y}
+	t := r.bottom - r.top
+	switch d.style {
+	case core.DecorationDouble:
+		p.fillRect(rectF{r.left, r.top - t, r.right, r.bottom - t}, d.color)
+		p.fillRect(rectF{r.left, r.top + t, r.right, r.bottom + t}, d.color)
+	case core.DecorationDotted, core.DecorationDashed:
+		on, step := t, 2*t
+		if d.style == core.DecorationDashed {
+			on, step = 3*t, 5*t
+		}
+		for a := r.left; a < r.right; a += step {
+			p.fillRect(rectF{a, r.top, min(a+on, r.right), r.bottom}, d.color)
+		}
+	case core.DecorationWavy:
+		// A band along a sine, a wavelength four thicknesses long.
+		amp, wave := max(t, 1), 4*max(t, 1)
+		mid := (r.top + r.bottom) / 2
+		var top, bottom []pointF
+		for a := r.left; ; a += wave / 8 {
+			a = min(a, r.right)
+			dy := amp * float32(math.Sin(float64(2*math.Pi*(a-r.left)/wave)))
+			top = append(top, pointF{a, mid + dy - t/2})
+			bottom = append(bottom, pointF{a, mid + dy + t/2})
+			if a >= r.right {
+				break
+			}
+		}
+		for i := len(bottom) - 1; i >= 0; i-- {
+			top = append(top, bottom[i])
+		}
+		if g := p.polygon(top); g != nil {
+			p.fillGeometry(g, d.color)
+			g.release()
+		}
+	default:
+		p.fillRect(r, d.color)
+	}
 }
 
 type attachmentBox struct {
@@ -692,6 +774,17 @@ type textLayout struct {
 	backgrounds []backgroundBox
 	decorations []decoration
 	attachments []attachmentBox
+	// runs and style are the text's, for the fonts of its lines.
+	runs  []textRun
+	style core.TextStyle
+	// clip, when not empty, cuts the lines a clipped text shows.
+	clip rectF
+	// shadow is drawn behind the glyphs: their outline recorded, then
+	// shaded by an effect, in shadowGeneration.
+	shadow                   core.TextShadow
+	shadowList, shadowEffect *comObject
+	shadowImage              *comObject
+	shadowGeneration         uint64
 	// The brushes of colors, set as drawing effects in generation.
 	brushes    []*comObject
 	generation uint64
@@ -707,7 +800,7 @@ func (l *textLayout) Attachment(i int) (core.Bounds, bool) {
 
 // Release implements core.TextLayout on the main thread.
 func (l *textLayout) Release() {
-	releaseAll(&l.layout)
+	releaseAll(&l.layout, &l.shadowImage, &l.shadowEffect, &l.shadowList)
 	for i := range l.brushes {
 		releaseAll(&l.brushes[i])
 	}
@@ -743,6 +836,12 @@ func (l *textLayout) draw(p *painter, x, y float32) {
 		p.fillRounded(rectF{b.r.left + x, b.r.top + y, b.r.right + x, b.r.bottom + y}, b.radius, b.color)
 	}
 	l.effects(p)
+	if !l.clip.empty() {
+		p.pushClipRect(rectF{l.clip.left + x, l.clip.top + y, l.clip.right + x, l.clip.bottom + y})
+	}
+	if l.shadow.Color != 0 {
+		l.drawShadow(p, x, y)
+	}
 	for _, g := range l.groups {
 		clip := len(l.groups) > 1
 		if clip {
@@ -755,9 +854,94 @@ func (l *textLayout) draw(p *painter, x, y float32) {
 		}
 	}
 	for _, d := range l.decorations {
-		p.fillRect(rectF{d.r.left + x, d.r.top + y, d.r.right + x, d.r.bottom + y}, d.color)
+		d.draw(p, x, y)
+	}
+	if !l.clip.empty() {
+		p.pop()
 	}
 	runtime.KeepAlive(l)
+}
+
+// drawShadow draws the shadow of the glyphs: the layout recorded on the
+// second context, shaded in the shadow's color by Direct2D's shadow
+// effect, its blur a standard deviation half the radius, as Core
+// Graphics blurs.
+func (l *textLayout) drawShadow(p *painter, x, y float32) {
+	if l.shadowImage == nil || l.shadowGeneration != gfxGeneration {
+		releaseAll(&l.shadowImage, &l.shadowEffect, &l.shadowList)
+		l.shadowGeneration = gfxGeneration
+		bake := p.g.bake
+		if failed(bake.call(dcCreateCommandList, uintptr(unsafe.Pointer(&l.shadowList)))) {
+			return
+		}
+		bake.call(dcSetTarget, l.shadowList.ptr())
+		bake.callF(rtSetDpi, 0b11, f32(96*p.scale), f32(96*p.scale))
+		bake.call(rtBeginDraw)
+		t := identity.d2d()
+		bake.call(rtSetTransform, uintptr(unsafe.Pointer(&t)))
+		col := colorOf(core.RGB(0))
+		var brush *comObject
+		bake.call(rtCreateSolidColorBrush, uintptr(unsafe.Pointer(&col)), 0, uintptr(unsafe.Pointer(&brush)))
+		if brush != nil {
+			for _, g := range l.groups {
+				bake.callPoint(rtDrawTextLayout, 0, g.shift, l.layout.ptr(), brush.ptr(), d2dDrawTextEnableColorFont)
+			}
+			brush.release()
+		}
+		hr := bake.call(rtEndDraw, 0, 0)
+		bake.call(dcSetTarget, 0)
+		if failed(hr) || failed(l.shadowList.call(commandListClose)) ||
+			failed(p.dc.call(dcCreateEffect, uintptr(unsafe.Pointer(&clsidShadow)), uintptr(unsafe.Pointer(&l.shadowEffect)))) {
+			releaseAll(&l.shadowEffect, &l.shadowList)
+			return
+		}
+		const standardDeviation, color = 0, 1
+		sigma := max(float32(l.shadow.Radius)/2, 0)
+		c := colorOf(l.shadow.Color)
+		l.shadowEffect.call(effectSetValue, standardDeviation, d2dPropertyFloat, uintptr(unsafe.Pointer(&sigma)), 4)
+		l.shadowEffect.call(effectSetValue, color, d2dPropertyVector4, uintptr(unsafe.Pointer(&c)), 16)
+		l.shadowEffect.call(effectSetInput, 0, l.shadowList.ptr(), 1)
+		l.shadowEffect.call(effectGetOutput, uintptr(unsafe.Pointer(&l.shadowImage)))
+		if l.shadowImage == nil {
+			return
+		}
+	}
+	at := pointF{x + float32(l.shadow.Offset.X), y + float32(l.shadow.Offset.Y)}
+	p.dc.call(dcDrawImage, l.shadowImage.ptr(), uintptr(unsafe.Pointer(&at)), 0, d2dInterpolationLinear, 0)
+}
+
+// fonts returns the metrics and size of the font unit i is set in.
+func (l *textLayout) fonts(i uint32) (faceMetrics, float32) {
+	f := l.style.Font
+	for _, r := range l.runs {
+		if i >= r.start && i < r.end {
+			f = r.style.Font
+			break
+		}
+	}
+	return metricsOf(f), float32(f.Size)
+}
+
+// TextLines implements core.LineLayout: each line's units, box and the
+// metrics of the font it starts in.
+func (l *textLayout) TextLines() []core.TextLine {
+	out := make([]core.TextLine, 0, len(l.lines))
+	end := len(l.offsets) - 1
+	for _, b := range l.lines {
+		left, right := float32(0), float32(0)
+		if l.layout != nil {
+			left, right = spanEdges(l.layout, b.start, b.end-b.trailing-b.newline)
+		}
+		m, size := l.fonts(b.start)
+		out = append(out, core.TextLine{
+			Start: l.offsets[min(int(b.start), end)], End: l.offsets[min(int(b.end), end)],
+			Bounds: core.Bounds{Origin: core.Point{X: core.Points(left), Y: core.Points(b.top)},
+				Size: core.Size{Width: core.Points(right - left), Height: core.Points(b.height)}},
+			Ascender: core.Points(b.baseline - b.top), Descender: core.Points(b.top + b.height - b.baseline),
+			CapHeight: core.Points(m.capHeight * size), XHeight: core.Points(m.xHeight * size),
+		})
+	}
+	return out
 }
 
 // indexAt returns the UTF-8 offset of the character at x, y, in points

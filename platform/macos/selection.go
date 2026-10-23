@@ -116,11 +116,11 @@ func (s *surface) areaAt(event objc.ID) *view {
 	taken := false
 	for n := hit; n != 0 && n != s.native; n = n.Send(selSuperview) {
 		v := views[n]
-		if v == nil || v.native != n && v.field != n {
+		if v == nil || v.native != n && !v.isEditor(n) {
 			continue
 		}
 		switch {
-		case v.field == n || v.kind == core.KindInput || v.kind == core.KindWeb:
+		case v.isEditor(n) || v.kind == core.KindInput || v.kind == core.KindWeb:
 			taken = true
 		case area == nil && (v.pressable() || v.events.Has(core.EventPan)):
 			taken = true

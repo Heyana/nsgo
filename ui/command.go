@@ -239,7 +239,7 @@ func (p palette) Render(cx *core.Scope) core.Node {
 		}},
 		core.View{StyleFunc: func() core.Style { return core.Style{Height: core.Pt(1), FlexShrink: 0, Background: theme().Border} }},
 		core.Scroll{Ref: list, Style: core.Style{Height: core.Pt(340), FlexShrink: 1},
-			OnScroll: func(at core.Point) { offset = at.Y },
+			OnScroll: func(e core.ScrollEvent) { offset = e.Offset.Y },
 			OnLayout: func(b core.Bounds) { visible = b.Size.Height },
 			Children: []core.Node{
 				core.View{Style: core.Style{Padding: core.All(8)}, Children: []core.Node{

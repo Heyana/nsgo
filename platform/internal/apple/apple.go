@@ -40,6 +40,12 @@ func Rect(x, y, w, h float64) CGRect {
 	return CGRect{Origin: CGPoint{X: x, Y: y}, Size: CGSize{Width: w, Height: h}}
 }
 
+// NSRange is Foundation's range of UTF-16 units.
+type NSRange struct {
+	_                structs.HostLayout
+	Location, Length uint
+}
+
 type cfRange struct {
 	_                structs.HostLayout
 	Location, Length int

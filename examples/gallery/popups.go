@@ -9,6 +9,9 @@ func popupsPage(cx *core.Scope, t *theme) core.Node {
 	dialog := core.NewSignal(cx, false)
 	sheet := core.NewSignal(cx, false)
 	side := core.NewSignal(cx, false)
+	presented := core.NewSignal(cx, core.ModalFullScreen)
+	presenting := core.NewSignal(cx, false)
+	closedBy := core.NewSignal(cx, "nothing yet")
 	picked := core.NewSignal(cx, "nothing")
 
 	trigger := func(label string) core.Node { return core.Text{Content: label} }
@@ -64,6 +67,14 @@ func popupsPage(cx *core.Scope, t *theme) core.Node {
 			),
 			t.live(func() string { return "Picked " + picked.Get() }),
 		),
+		t.demo("Presentations", "On iOS a dialog's Presentation makes it the system's sheet, which a swipe down closes; "+
+			"the page sheet keeps to portrait and lightens the status bar. Elsewhere both are dialogs.",
+			flow(
+				t.plain("Page sheet", func() { presented.Set(core.ModalPageSheet); presenting.Set(true) }),
+				t.plain("Form sheet", func() { presented.Set(core.ModalFormSheet); presenting.Set(true) }),
+			),
+			t.live(func() string { return "Last closed by " + closedBy.Get() }),
+		),
 		t.demo("Dialogs and sheets", "Modal layers over the app; Escape, back or the backdrop closes them.",
 			flow(
 				t.primary("Dialog", func() { dialog.Set(true) }),
@@ -81,6 +92,29 @@ func popupsPage(cx *core.Scope, t *theme) core.Node {
 				BorderWidth: 1, BorderColor: t.borderStrong, Width: core.Pct(80), MaxWidth: core.Pt(420),
 				ShadowColor: core.RGBA(0, 0.12), ShadowRadius: 24, ShadowOffset: core.Point{Y: 8}},
 			Label: "Dialog", Children: panel("A dialog", "Escape, back or the backdrop closes it.", func() { dialog.Set(false) })},
+		core.Dynamic(func(cx *core.Scope) core.Node {
+			p := presented.Get()
+			name := map[core.ModalPresentation]string{core.ModalPageSheet: "A page sheet", core.ModalFormSheet: "A form sheet"}[p]
+			d := base.Dialog{Open: presenting.Get, Presentation: p, Label: name, TestID: "presented",
+				OnOpenChange: func(open bool, r base.Reason) {
+					if !open {
+						closedBy.Set(r.String())
+					}
+					presenting.Set(open)
+				},
+				PopupStyle: core.Style{Background: t.surface, Color: t.ink, CornerRadius: dialogRadius, Padding: core.All(20), Gap: 12,
+					BorderWidth: 1, BorderColor: t.borderStrong, Width: core.Pct(80), MaxWidth: core.Pt(420)},
+				Children: panel(name, "Swipe it down on iOS; Escape, back or the backdrop elsewhere.", func() { presenting.Set(false) })}
+			if cx.Env().OS() != core.OSIOS {
+				// iOS's sheets have the system's dimming behind them.
+				d.BackdropStyle = t.backdrop()
+			}
+			if p == core.ModalPageSheet {
+				d.SupportedOrientations = core.OrientationPortrait
+				d.StatusBar = core.StatusBarSetting{Foreground: core.StatusBarLight, Animated: core.ToggleOn}
+			}
+			return d
+		}),
 		base.Sheet{Open: sheet.Get, OnOpenChange: func(open bool, _ base.Reason) { sheet.Set(open) }, BackdropStyle: t.backdrop(),
 			PopupStyle: core.Style{Background: t.surface, Color: t.ink, Padding: core.All(20), Gap: 12, CornerRadius: dialogRadius, Height: core.Pct(40),
 				BorderWidth: 1, BorderColor: t.line, ShadowColor: core.RGBA(0, 0.12), ShadowRadius: 24, ShadowOffset: core.Point{Y: 8}},

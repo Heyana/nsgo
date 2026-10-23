@@ -42,6 +42,7 @@ func (m Menu) Render(cx *core.Scope) core.Node {
 	}
 	return core.Group{
 		core.View{Ref: anchor, Style: m.Style, StyleFunc: m.StyleFunc, Label: m.Label, TestID: m.TestID, Role: core.RoleButton,
+			Expanded: st.open,
 			OnPress:  func() { st.set(!st.open(), ReasonTriggerPress) },
 			Children: []core.Node{m.Trigger}},
 		menuPopup(st, anchor, m.Placement, align, m.Offset, m.Margin, m.PopupStyle, m.PopupStyleFunc, m.Children),
@@ -163,8 +164,8 @@ func (s Submenu) Render(cx *core.Scope) core.Node {
 	anchor := new(core.Ref)
 	return core.Group{
 		core.View{Ref: anchor, Style: s.Style, StyleFunc: s.StyleFunc, Role: core.RoleMenuItem, Label: s.Label, TestID: s.TestID,
-			Disabled: s.Disabled,
-			OnPress:  func() { open.Update(func(o bool) bool { return !o }) },
+			Disabled: s.Disabled, Expanded: open.Get,
+			OnPress: func() { open.Update(func(o bool) bool { return !o }) },
 			OnHoverIn: func() {
 				if cx.Env().Desktop() {
 					open.Set(true)

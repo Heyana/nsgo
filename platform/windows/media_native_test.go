@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/color"
 	"image/gif"
+	"image/png"
 	"math"
 	"runtime"
 	"strings"
@@ -607,4 +608,67 @@ func TestAnimatedGIFAndSVGImagesDraw(t *testing.T) {
 	waitForColor(t, hwnd, px(150), px(150), 0x00ff00, time.Second)
 	waitForColor(t, hwnd, px(150), px(98), 0xff0000, time.Second)
 	waitForColor(t, hwnd, px(150), px(102), 0x00ff00, time.Second)
+}
+
+// TestImagesFitAtTheirPositionBlurAndFade checks the core fit with a
+// position, NSH's Center at the natural size, a blur that blends the
+// halves but keeps the edges opaque, a fade-in and ImageSize.
+func TestImagesFitAtTheirPositionBlurAndFade(t *testing.T) {
+	title := "nsgo-image-props"
+	m := image.NewRGBA(image.Rect(0, 0, 20, 10))
+	for y := range 10 {
+		for x := range 20 {
+			c := color.RGBA{0xff, 0, 0, 0xff}
+			if x >= 10 {
+				c = color.RGBA{0, 0, 0xff, 0xff}
+			}
+			m.Set(x, y, c)
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, m); err != nil {
+		t.Fatal(err)
+	}
+	data := buf.Bytes()
+	app := func(cx *core.Scope) core.Node {
+		size := core.NewSignal(cx, "")
+		cx.Effect(func() { cx.SetTitle(title + "|" + size.Get()) })
+		cx.ImageSize(core.ImageSource{Data: data}, func(px core.Size, err error) { size.Set(fmt.Sprint(px, err)) })
+		at := func(left, top, width, height core.Points, pos core.ObjectPosition) core.Style {
+			return core.Style{Position: core.Absolute, Left: core.Pt(left), Top: core.Pt(top),
+				Width: core.Pt(width), Height: core.Pt(height), ObjectPosition: pos}
+		}
+		return core.View{Style: core.Style{Width: core.Pt(360), Height: core.Pt(240), Background: core.RGB(0xffffff)},
+			Children: []core.Node{
+				// Contained at the end: 80 by 40 on the right of 120 by 40.
+				core.Image{Source: core.ImageSource{Data: data}, ResizeMode: core.Contain,
+					Style: at(0, 0, 120, 40, core.ObjectPosition{X: core.PositionEnd})},
+				// Its natural size, 20 by 10, 5 points from the top left.
+				core.Image{Source: core.ImageSource{Data: data}, ResizeMode: core.Center,
+					Style: at(0, 50, 100, 100, core.ObjectPosition{X: core.PositionAxis{Offset: core.Pt(5)},
+						Y: core.PositionAxis{Offset: core.Pt(5)}})},
+				core.Image{Source: core.ImageSource{Data: data}, ResizeMode: core.Stretch, BlurRadius: 6,
+					Style: at(150, 0, 80, 40, core.ObjectPosition{})},
+				core.Image{Source: core.ImageSource{Data: data}, ResizeMode: core.Stretch, FadeDuration: 300 * time.Millisecond,
+					Style: at(150, 50, 80, 40, core.ObjectPosition{})},
+			}}
+	}
+	hwnd := startWith(t, app, Options{Title: title + "|", Width: 360, Height: 240})
+	waitForTitle(t, hwnd, title+"|"+fmt.Sprint(core.Size{Width: 20, Height: 10}, nil), 5*time.Second)
+	waitForColor(t, hwnd, px(20), px(20), 0xffffff, time.Second)
+	waitForColor(t, hwnd, px(50), px(20), 0xff0000, time.Second)
+	waitForColor(t, hwnd, px(100), px(20), 0x0000ff, time.Second)
+	waitForColor(t, hwnd, px(3), px(57), 0xffffff, time.Second)
+	waitForColor(t, hwnd, px(8), px(60), 0xff0000, time.Second)
+	waitForColor(t, hwnd, px(22), px(60), 0x0000ff, time.Second)
+	waitForColor(t, hwnd, px(28), px(60), 0xffffff, time.Second)
+	waitForColor(t, hwnd, px(10), px(68), 0xffffff, time.Second)
+	// Blurred, the middle mixes red and blue and the edge stays red.
+	if c := clientColor(t, hwnd, px(190), px(20)); c>>16&0xff < 0x40 || c&0xff < 0x40 {
+		t.Fatalf("blurred middle = #%06x, want red and blue mixed", c)
+	}
+	if c := clientColor(t, hwnd, px(151), px(1)); c>>16&0xff < 0xc0 {
+		t.Fatalf("blurred edge = #%06x, want opaque red", c)
+	}
+	waitForColor(t, hwnd, px(160), px(70), 0xff0000, time.Second)
 }

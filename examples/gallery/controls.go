@@ -115,6 +115,7 @@ func controlsPage(cx *core.Scope, t *theme) core.Node {
 				return fmt.Sprintf("Hello, %s. Your password has %d characters.", name.Get(), len([]rune(password.Get())))
 			}),
 		),
+		fieldsDemo(cx, t),
 		accessoryDemo(cx, t),
 	}}
 }

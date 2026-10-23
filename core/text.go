@@ -16,9 +16,13 @@ type AttributedText struct {
 	// Spans style byte ranges of Text over Style, in order, without gaps
 	// or overlaps where they cover it.
 	Spans []TextSpan
-	// MaxLines limits the lines shown, ending the last with an ellipsis;
-	// 0 shows every line.
-	MaxLines int
+	// MaxLines limits the lines shown, cutting the rest as Ellipsize
+	// says; 0 shows every line.
+	MaxLines  int
+	Ellipsize EllipsizeMode
+	// Shadow is drawn behind the whole text's glyphs. It is drawing only:
+	// it changes no line.
+	Shadow TextShadow
 	// Attachments are views inside the text, in order: each takes the
 	// place of an AttachmentRune of Text, which a span styles.
 	Attachments []TextAttachment
@@ -100,8 +104,29 @@ type AttachmentLayout interface {
 	Attachment(i int) (Bounds, bool)
 }
 
+// CutToFit returns t cut at its head or middle, as its Ellipsize says,
+// keeping the most characters with which fits reports true.
+func (t *AttributedText) CutToFit(fits func(*AttributedText) bool) AttributedText {
+	head := t.Ellipsize == EllipsizeHead
+	cut := func(k int) AttributedText {
+		front := (k + 1) / 2
+		return t.Cut(head, front, k-front)
+	}
+	lo, hi := 0, utf8.RuneCountInString(t.Text)-1
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		if c := cut(mid); fits(&c) {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	return cut(max(lo, 0))
+}
+
 func (a *AttributedText) equal(b *AttributedText) bool {
 	if a.Text != b.Text || a.Style != b.Style || a.MaxLines != b.MaxLines ||
+		a.Ellipsize != b.Ellipsize || a.Shadow != b.Shadow ||
 		len(a.Spans) != len(b.Spans) || len(a.Attachments) != len(b.Attachments) {
 		return false
 	}
@@ -127,6 +152,113 @@ type TextStyle struct {
 	LetterSpacing Points
 	Align         TextAlign
 	Decoration    TextDecoration
+	// DecorationStyle is how Decoration's lines are drawn, solid when 0;
+	// DecorationColor colors them, Color when 0.
+	DecorationStyle TextDecorationStyle
+	DecorationColor Color
+}
+
+// EllipsizeMode is where a text cut by its line limit loses the rest.
+type EllipsizeMode uint8
+
+const (
+	// EllipsizeTail ends the last line with an ellipsis: "Lorem ips…".
+	// It is the default.
+	EllipsizeTail EllipsizeMode = iota + 1
+	// EllipsizeHead starts it with one, "…sum dolor", and EllipsizeMiddle
+	// puts one in its middle, "Lorem…dolor". Platforms do it on a single
+	// line; on several lines some cut only the last one's end.
+	EllipsizeHead
+	EllipsizeMiddle
+	// EllipsizeClip cuts the text without an ellipsis.
+	EllipsizeClip
+)
+
+// TextShadow is a shadow behind a text's glyphs; a zero Color is none.
+type TextShadow struct {
+	Color  Color
+	Offset Point
+	// Radius blurs it, as a view's ShadowRadius does.
+	Radius Points
+}
+
+// TextLine is a line of laid-out text, as Text.OnTextLayout reports it.
+type TextLine struct {
+	// Text is its characters, from byte Start to byte End of the text.
+	Text       string
+	Start, End int
+	// Bounds is its box in the text's content box: its typographic width
+	// and its height.
+	Bounds Bounds
+	// Ascender and Descender reach above and below its baseline;
+	// CapHeight and XHeight are the heights of its font's capitals and
+	// lowercase letters.
+	Ascender, Descender Points
+	CapHeight, XHeight  Points
+}
+
+// LineLayout is a TextLayout that reports its lines. The core asks it
+// only when the text has an OnTextLayout handler, on the engine side,
+// before the layout goes to the main thread; the core fills Text in.
+type LineLayout interface {
+	TextLines() []TextLine
+}
+
+// Cut returns t with the characters between keep runes from its start
+// and keep from its end replaced by an ellipsis, "Lorem…dolor", or with
+// only the last keep runes after one when head is set, "…sum dolor". The
+// ellipsis takes the style of the first character it replaces, and
+// attachments cut out are dropped. The result is one line, clipped.
+// Engines that cannot ellipsize a line's head or middle themselves search
+// for the most characters that still fit.
+func (t *AttributedText) Cut(head bool, front, back int) AttributedText {
+	bounds := make([]int, 0, len(t.Text)+1)
+	for i := range t.Text {
+		bounds = append(bounds, i)
+	}
+	bounds = append(bounds, len(t.Text))
+	n := len(bounds) - 1
+	if head {
+		front = 0
+	}
+	front, back = min(max(front, 0), n), min(max(back, 0), n)
+	if front+back >= n {
+		return *t
+	}
+	a, b := bounds[front], bounds[n-back]
+	const ellipsis = "…"
+	out := *t
+	out.Text = t.Text[:a] + ellipsis + t.Text[b:]
+	out.MaxLines, out.Ellipsize = 1, EllipsizeClip
+	// What was cut moves to the ellipsis's end, so the span of the first
+	// character cut takes the ellipsis.
+	moved := func(i int) int {
+		switch {
+		case i <= a:
+			return i
+		case i >= b:
+			return i - (b - a) + len(ellipsis)
+		}
+		return a + len(ellipsis)
+	}
+	out.Spans = nil
+	for _, sp := range t.Spans {
+		sp.Start, sp.End = moved(sp.Start), moved(sp.End)
+		if sp.End > sp.Start {
+			out.Spans = append(out.Spans, sp)
+		}
+	}
+	out.Attachments = nil
+	for _, at := range t.Attachments {
+		if at.Offset < a || at.Offset >= b {
+			at.Offset = moved(at.Offset)
+			out.Attachments = append(out.Attachments, at)
+		}
+	}
+	if len(out.Attachments) == 0 {
+		out.Attachments = nil
+	}
+	return out
 }
 
 // FontMonospace is the family name of the platform's fixed-pitch font,
@@ -160,6 +292,8 @@ type approxText struct{ t AttributedText }
 type ApproxLayout struct {
 	Lines []string
 	Size  Size
+	// lines are the lines' boxes and offsets, for TextLines.
+	lines []TextLine
 	// attachments are the boxes of the text's attachments, cut off
 	// unless shown.
 	attachments []approxBox
@@ -172,6 +306,9 @@ type approxBox struct {
 
 // Release implements TextLayout.
 func (*ApproxLayout) Release() {}
+
+// TextLines implements LineLayout.
+func (l *ApproxLayout) TextLines() []TextLine { return l.lines }
 
 // Attachment implements AttachmentLayout.
 func (l *ApproxLayout) Attachment(i int) (Bounds, bool) {
@@ -193,6 +330,7 @@ func (a approxText) lineHeight() Points {
 // and where its attachments sit.
 type approxLine struct {
 	text           string
+	start, end     int // byte offsets of its first and last words
 	width          Points
 	ascent, height Points
 	atts           []approxAtt
@@ -233,8 +371,12 @@ func (a approxText) lines(maxWidth Points) []approxLine {
 	font := FontExtent{Ascent: lh, XHeight: a.t.Style.Font.Size / 2}
 	var line approxLine
 	started := false
+	start := 0 // the paragraph's byte offset
 	flush := func() {
 		line.ascent, line.height = lh, lh
+		if !started {
+			line.start, line.end = start, start
+		}
 		var below Points
 		for _, at := range line.atts {
 			above, b := a.t.Attachments[at.index].Extent(font)
@@ -249,7 +391,10 @@ func (a approxText) lines(maxWidth Points) []approxLine {
 		if started {
 			line.text += " "
 			line.width += cw
+		} else {
+			line.start = at
 		}
+		line.end = at + len(word)
 		for i, r := range word {
 			if k := a.attachmentAt(at + i); r == AttachmentRune && k >= 0 {
 				line.atts = append(line.atts, approxAtt{index: k, x: line.width})
@@ -261,7 +406,6 @@ func (a approxText) lines(maxWidth Points) []approxLine {
 		line.text += word
 		started = true
 	}
-	start := 0
 	for _, para := range strings.Split(a.t.Text, "\n") {
 		for i := 0; i < len(para); {
 			if para[i] == ' ' {
@@ -330,8 +474,12 @@ func (a approxText) Layout(size Size) TextLayout {
 	lines := a.lines(size.Width + 0.01)
 	l := &ApproxLayout{Size: size, attachments: make([]approxBox, len(a.t.Attachments))}
 	var y Points
+	fs := a.t.Style.Font.Size
 	for _, line := range lines {
 		l.Lines = append(l.Lines, line.text)
+		l.lines = append(l.lines, TextLine{Start: line.start, End: line.end,
+			Bounds:   Bounds{Origin: Point{0, y}, Size: Size{line.width, line.height}},
+			Ascender: line.ascent, Descender: line.height - line.ascent, CapHeight: fs * 0.7, XHeight: fs / 2})
 		for _, at := range line.atts {
 			att := a.t.Attachments[at.index]
 			font := FontExtent{Ascent: a.lineHeight(), XHeight: a.t.Style.Font.Size / 2}

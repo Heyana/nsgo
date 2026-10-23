@@ -81,9 +81,37 @@ type View struct {
 	// Indeterminate is neither checked nor unchecked, as a "select all"
 	// over a partial selection.
 	Indeterminate func() bool
-	Role          Role
-	Label         string
-	TestID        string
+	// Expanded makes the element expandable, as a disclosure or a menu
+	// button, and expanded while it returns true.
+	Expanded func() bool
+	Role     Role
+	// Label is what assistive technology reads; LabelFunc replaces it,
+	// again when what it reads changes.
+	Label     string
+	LabelFunc func() string
+	// Hint says what activating the element does, read after its label.
+	Hint string
+	// AccessibilityValue is a range's or a textual element's value, as
+	// a slider's or a progress bar's.
+	AccessibilityValue func() AccessibilityValue
+	// AccessibilityActions are the actions assistive technology offers
+	// on the element: the standard ones (ActionActivate, ActionIncrement,
+	// ...) through the screen reader's own gestures, others in its
+	// actions menu. OnAccessibilityAction receives their names.
+	AccessibilityActions  []AccessibilityAction
+	OnAccessibilityAction func(name string)
+	// Accessible makes the view one element: its descendants are not
+	// exposed separately, and without a label it reads their text.
+	Accessible                bool
+	ImportantForAccessibility Importance
+	// AccessibilityElementsHidden hides the view and its subtree from
+	// assistive technology while it returns true, as content behind a
+	// drawer.
+	AccessibilityElementsHidden func() bool
+	// LiveRegion has screen readers announce changes of the label and
+	// text inside the view.
+	LiveRegion LiveRegion
+	TestID     string
 }
 
 // Render implements Node.
@@ -96,8 +124,20 @@ type Text struct {
 	ContentFunc func() string
 	Style       Style
 	StyleFunc   func() Style
-	// MaxLines limits the lines shown, ending the last with an ellipsis.
-	MaxLines int
+	// MaxLines limits the lines shown, cutting the rest as EllipsizeMode
+	// says: an ellipsis at the last line's end by default.
+	MaxLines      int
+	EllipsizeMode EllipsizeMode
+	// NoFontScaling keeps the text's sizes whatever the user's text size
+	// setting; MaxFontSizeMultiplier, when 1 or more, caps the setting's
+	// multiplier for it.
+	NoFontScaling         bool
+	MaxFontSizeMultiplier float32
+	// AdjustsFontSizeToFit shrinks the text's fonts, line heights and
+	// letter spacing, down to MinimumFontScale of them (at least 0.1),
+	// until it fits its box and MaxLines.
+	AdjustsFontSizeToFit bool
+	MinimumFontScale     float32
 	// Spans, when set, are the text: runs in order, each styled over the
 	// Text's style. A span with OnPress is a link.
 	Spans []Span
@@ -107,10 +147,19 @@ type Text struct {
 
 	OnPress  func()
 	OnLayout func(Bounds)
-	Ref      *Ref
-	Role     Role
-	Label    string
-	TestID   string
+	// OnTextLayout receives the text's lines each time it is laid out
+	// anew, after the commit.
+	OnTextLayout func(lines []TextLine)
+	Ref          *Ref
+	Role         Role
+	// Label replaces the text for assistive technology; LabelFunc
+	// replaces Label, again when what it reads changes.
+	Label     string
+	LabelFunc func() string
+	Hint      string
+	// LiveRegion has screen readers announce the text as it changes.
+	LiveRegion LiveRegion
+	TestID     string
 }
 
 // Render implements Node.
@@ -147,8 +196,10 @@ type Span struct {
 	Attachment Node
 }
 
-// Input is the platform's single-line text field. With Value it is
-// controlled: the app updates the value in OnChange.
+// Input is the platform's text field, a single line unless Multiline.
+// With Value it is controlled: the app updates the value in OnChange.
+// Its style's PlaceholderColor colors the placeholder and SelectionColor
+// the caret and the selection.
 type Input struct {
 	Value        func() string
 	DefaultValue string
@@ -159,6 +210,27 @@ type Input struct {
 	Disabled     func() bool
 	KeyboardType KeyboardType
 	AutoFocus    bool
+	// Multiline wraps the text in lines and grows with them unless its
+	// style sizes it; Return inserts a line break unless SubmitBehavior
+	// says else.
+	Multiline bool
+	// MaxLength caps the text the user enters, in UTF-16 units; 0 sets
+	// no cap.
+	MaxLength int
+	// ReturnKeyType labels the software keyboard's return key.
+	ReturnKeyType  ReturnKeyType
+	SubmitBehavior SubmitBehavior
+	AutoCapitalize AutoCapitalize
+	// NoAutoCorrect turns the system's autocorrection off.
+	NoAutoCorrect bool
+	// AutoComplete says what the field holds, for the system's autofill.
+	AutoComplete AutoComplete
+	// KeyboardAppearance picks iOS's light or dark keyboard.
+	KeyboardAppearance KeyboardAppearance
+	// HideCaret draws no caret.
+	HideCaret bool
+	// SelectedRange, when set, selects its range whenever it changes.
+	SelectedRange func() TextRange
 	// InputAccessoryViewID names the InputAccessoryView shown above the
 	// software keyboard while the field has focus.
 	InputAccessoryViewID string
@@ -166,13 +238,30 @@ type Input struct {
 	StyleFunc            func() Style
 
 	OnChange func(text string)
+	// OnSubmit runs on Return, as SubmitBehavior says.
 	OnSubmit func(text string)
 	OnFocus  func()
 	OnBlur   func()
-	OnLayout func(Bounds)
-	Ref      *Ref
-	Label    string
-	TestID   string
+	// OnSelectionChange receives the selection, or the caret, as the user
+	// moves it.
+	OnSelectionChange func(TextRange)
+	// OnKeyPress receives each key the user types: the text it enters,
+	// "Backspace" or "Enter".
+	OnKeyPress func(key string)
+	// OnCompositionChange follows an input method composing text: as the
+	// composition starts and changes, and as it ends, after the OnChange
+	// of the text it commits. While one lasts, the field holds a Value the
+	// app sets and shows it when the composition ends, unless the user
+	// edited the text since.
+	OnCompositionChange func(Composition)
+	// OnContentSizeChange receives the size of the value's text, wrapped
+	// at the content width when Multiline, after a layout that changed
+	// it. An empty field's is one empty line's.
+	OnContentSizeChange func(Size)
+	OnLayout            func(Bounds)
+	Ref                 *Ref
+	Label               string
+	TestID              string
 }
 
 // Render implements Node.
@@ -184,11 +273,44 @@ func (i Input) Render(*Scope) Node { return i }
 type Scroll struct {
 	Horizontal    bool
 	HideIndicator bool
+	// Behavior is how it scrolls: paging, snapping, deceleration,
+	// bounces, insets and the keyboard; BehaviorFunc, when set, replaces
+	// it as it changes.
+	Behavior     ScrollBehavior
+	BehaviorFunc func() ScrollBehavior
+	// ContentOffset is where it starts.
+	ContentOffset Point
 	Style         Style
 	StyleFunc     func() Style
 	Children      []Node
-	// OnScroll receives the offset of the content as it scrolls.
-	OnScroll func(offset Point)
+	// OnScroll receives where it is as it scrolls, at most once a turn.
+	OnScroll func(ScrollEvent)
+	// OnScrollDragStart and OnScrollDragEnd bracket the user dragging it
+	// (its content or its scroll bar); OnMomentumStart and
+	// OnMomentumEnd the glide or snap after. A glide a new drag catches
+	// ends with OnMomentumEnd.
+	OnScrollDragStart func(ScrollEvent)
+	OnScrollDragEnd   func(ScrollEvent)
+	OnMomentumStart   func(ScrollEvent)
+	OnMomentumEnd     func(ScrollEvent)
+	// OnRefresh makes it refreshable: pulling the content down past its
+	// top calls it and shows the platform's spinner while Refreshing
+	// returns true. Set Refreshing in OnRefresh, clear it when done.
+	OnRefresh  func()
+	Refreshing func() bool
+	// MaxZoomScale above MinZoomScale (both 1 when 0) lets pinches zoom
+	// the content, which then scrolls both ways. ZoomScale is the scale
+	// it starts at, and ZoomScaleFunc zooms to its value when it
+	// changes; the user's zoom stays otherwise. NoBouncesZoom stops
+	// pinches at the limits, NoPinchZoom ignores them, and CenterContent
+	// centers content smaller than the viewport.
+	MinZoomScale  float32
+	MaxZoomScale  float32
+	ZoomScale     float32
+	ZoomScaleFunc func() float32
+	NoBouncesZoom bool
+	NoPinchZoom   bool
+	CenterContent bool
 	// OffsetValues follow the offset on the platform's main thread, in
 	// the same frame as it scrolls.
 	OffsetValues AnimatedXY
@@ -227,26 +349,72 @@ func (r *Ref) Focus() {
 // ScrollTo scrolls the element, a Scroll or List, so its content's
 // offset is at.
 func (r *Ref) ScrollTo(at Point, animated bool) {
+	if r.n == nil || r.n.deleted {
+		return
+	}
+	if ln := r.n.list; ln != nil {
+		r.t.listCommand(ln, listCommand{to: at, animated: animated})
+		return
+	}
+	if r.n.scroll != nil {
+		r.t.scrollTo(r.n, at, animated)
+	}
+}
+
+// ScrollToEnd scrolls the element, a Scroll or List, to the end of its
+// content. A list keeps following the end as the rows there are
+// measured, until the user scrolls away.
+func (r *Ref) ScrollToEnd(animated bool) {
+	if r.n == nil || r.n.deleted {
+		return
+	}
+	if ln := r.n.list; ln != nil {
+		r.t.listCommand(ln, listCommand{pin: &listPin{end: true}, animated: animated})
+		return
+	}
+	if sc := r.n.scroll; sc != nil {
+		d := sc.config.Behavior.ContentInset
+		end := Point{X: max(sc.content.Width-r.n.frame.Size.Width+d.Right, -d.Left)}
+		if !sc.config.Horizontal {
+			end = Point{Y: max(sc.content.Height-r.n.frame.Size.Height+d.Bottom, -d.Top)}
+		}
+		r.t.scrollTo(r.n, end, animated)
+	}
+}
+
+// ZoomTo zooms the element, a Scroll that zooms, to scale (clamped to
+// its limits), with content point center (unzoomed) in the middle of the
+// viewport, or keeping the middle when center is nil.
+func (r *Ref) ZoomTo(scale float32, center *Point, animated bool) {
 	if r.n == nil || r.n.deleted || r.n.scroll == nil {
 		return
 	}
-	r.t.commands = append(r.t.commands, MountItem{Kind: ItemScrollTo, ID: r.n.id, Point: at, Animated: animated})
+	z := &ZoomRequest{Scale: r.n.scroll.config.clampZoom(zoomOr(scale, 1))}
+	if center != nil {
+		c := *center
+		z.Center = &c
+	}
+	r.t.commands = append(r.t.commands, MountItem{Kind: ItemZoomTo, ID: r.n.id, Zoom: z, Animated: animated})
 	r.t.changed = true
 }
 
-// ScrollToIndex scrolls the element, a List, so row index is at the top
-// (or the start of a horizontal list).
+// ScrollToIndex scrolls the element, a List, so row index is at the
+// start of its viewport.
 func (r *Ref) ScrollToIndex(index int, animated bool) {
+	r.ScrollToIndexAt(index, 0, 0, animated)
+}
+
+// ScrollToIndexAt scrolls the element, a List, so row index is at
+// viewPosition of its viewport (0 its start, 0.5 its middle, 1 its end),
+// viewOffset before it. Sizes of rows never shown are estimates, so the
+// list keeps following the row as the rows around it are measured, until
+// the user scrolls away or the rows change.
+func (r *Ref) ScrollToIndexAt(index int, viewPosition float32, viewOffset Points, animated bool) {
 	if r.n == nil || r.n.deleted || r.n.list == nil {
 		return
 	}
-	ln := r.n.list
-	at := ln.headerSize() + ln.sizes.sum(max(min(index, ln.n), 0))
-	if ln.spec.Horizontal {
-		r.ScrollTo(Point{X: at}, animated)
-	} else {
-		r.ScrollTo(Point{Y: at}, animated)
-	}
+	r.t.listCommand(r.n.list, listCommand{pin: &listPin{index: max(index, 0), viewPosition: viewPosition, viewOffset: viewOffset},
+		animated: animated})
 }
 
 // Blur takes keyboard focus away from the element.
@@ -319,8 +487,12 @@ const (
 	Contain
 	// Stretch fills the view, distorting the image.
 	Stretch
-	// Center keeps the image's size, centered.
+	// Center keeps the image's natural size, cropped where it is larger
+	// than the view (CSS's object-fit: none).
 	Center
+	// ScaleDown keeps the natural size, shrunk to fit where it is larger
+	// than the view (CSS's object-fit: scale-down, React Native's center).
+	ScaleDown
 )
 
 // Overlay floats its children above everything in the nearest Modal or
@@ -370,11 +542,29 @@ const (
 // removing it dismisses it.
 type Modal struct {
 	Animation ModalAnimation
-	Style     Style
-	StyleFunc func() Style
-	Children  []Node
+	// Presentation is how it covers the screen on iOS; other platforms
+	// ignore it and cover the host.
+	Presentation ModalPresentation
+	// NoCloseOnSwipe keeps an iOS sheet from being swiped away; the swipe
+	// still asks to close it ("swipe").
+	NoCloseOnSwipe bool
+	// SupportedOrientations are the orientations iOS allows while the
+	// modal shows; 0 keeps the app's.
+	SupportedOrientations Orientation
+	// StatusBarTranslucent lets the content reach under Android's status
+	// bar; otherwise the modal starts below it.
+	StatusBarTranslucent bool
+	// StatusBar, or StatusBarFunc, is set over the app's status bar while
+	// the modal is in the tree.
+	StatusBar     StatusBarSetting
+	StatusBarFunc func() StatusBarSetting
+	Style         Style
+	StyleFunc     func() Style
+	Children      []Node
 	// OnRequestClose receives Escape or back ("cancel") while the modal is
-	// the topmost; the app decides whether to remove it.
+	// the topmost, and an iOS sheet's swipe ("swipe"); the app decides
+	// whether to remove it. A sheet swiped away has left the screen
+	// already and stays hidden until the app removes it.
 	OnRequestClose func(reason string)
 	Role           Role
 	Label          string
@@ -383,6 +573,31 @@ type Modal struct {
 
 // Render implements Node.
 func (m Modal) Render(*Scope) Node { return m }
+
+// ModalPresentation is how a modal covers the screen on iOS.
+type ModalPresentation uint8
+
+const (
+	// ModalFullScreen covers the whole screen with the modal's own look.
+	ModalFullScreen ModalPresentation = iota
+	// ModalPageSheet is the system's sheet, which leaves the content
+	// behind it in sight.
+	ModalPageSheet
+	// ModalFormSheet is a smaller sheet, centered on large screens.
+	ModalFormSheet
+)
+
+// Orientation is a set of interface orientations.
+type Orientation uint8
+
+const (
+	OrientationPortrait Orientation = 1 << iota
+	OrientationPortraitUpsideDown
+	OrientationLandscapeLeft
+	OrientationLandscapeRight
+
+	OrientationLandscape = OrientationLandscapeLeft | OrientationLandscapeRight
+)
 
 // ModalAnimation is how a modal appears.
 type ModalAnimation uint8
@@ -405,15 +620,46 @@ type Stack struct {
 // Render implements Node.
 func (s Stack) Render(*Scope) Node { return s }
 
-// Screen is one page of a Stack, filling it. Header, when set, is drawn
-// at its top and keeps the content's insets clear of it.
+// Screen is one page of a Stack, filling it.
+//
+// On iOS and Android the platform draws the system header, a navigation
+// bar or a toolbar: Title, the header views, a back button to the screen
+// below, and HeaderStyle's Background, Color (the title's) and TintColor
+// (the buttons'). The content is laid out below it. Elsewhere Header, when
+// set, is drawn at the top and the header options are ignored.
 type Screen struct {
-	Title    string
-	Header   Node
-	Style    Style
-	Children []Node
+	Title     string
+	TitleFunc func() string
+	Header    Node
+	// HeaderLeft, HeaderRight and HeaderTitle are views the system header
+	// shows at its start, at its end and in place of the title, each at
+	// its content's size.
+	HeaderLeft, HeaderRight, HeaderTitle Node
+	// HeaderHidden hides the system header.
+	HeaderHidden bool
+	// HeaderTransparent lays the content out under a header without a
+	// background.
+	HeaderTransparent bool
+	// HeaderLargeTitle shows iOS's large title.
+	HeaderLargeTitle bool
+	// HeaderBackHidden hides the back button.
+	HeaderBackHidden bool
+	// HeaderBackTitle labels the back button leading back to this screen;
+	// its title by default.
+	HeaderBackTitle string
+	HeaderStyle     Style
+	HeaderStyleFunc func() Style
+	// StatusBar, or StatusBarFunc, is set over the app's status bar while
+	// the screen is in the tree and not popped.
+	StatusBar     StatusBarSetting
+	StatusBarFunc func() StatusBarSetting
+	Style         Style
+	Children      []Node
 	// NoPopOnBack keeps the screen when back is pressed.
 	NoPopOnBack bool
+	// NoPopOnSwipe turns off iOS's swipe from the leading edge back to
+	// the screen below.
+	NoPopOnSwipe bool
 	// OnBackPress receives every back press while the screen is on top.
 	OnBackPress func()
 	// OnDismiss reports that the user popped the screen; remove it.

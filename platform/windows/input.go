@@ -37,12 +37,14 @@ package windows
 import (
 	"math"
 	"slices"
+	"strings"
 	"syscall"
 	"unicode"
 	"unicode/utf16"
 	"unsafe"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/platform/internal/field"
 )
 
 var (
@@ -89,6 +91,8 @@ const (
 	vkHome    = 0x24
 	vkEnd     = 0x23
 	vkRight   = 0x27
+	vkUp      = 0x26
+	vkDown    = 0x28
 	vkInsert  = 0x2D
 	vkDelete  = 0x2E
 	mkShift   = 0x0004
@@ -150,16 +154,14 @@ type textInput struct {
 	v      *view
 	model  editModel
 	config core.InputConfig
-	// count is the user edits reported to the engine.
-	count uint32
-	// pending is a value that came while the IME composed, applied when
-	// the composition ends.
-	pending      *string
-	pendingCount uint32
+	// fs reports the edits, selections, keys and compositions, and holds
+	// a value that comes while the IME composes until it ends.
+	fs field.State
 	// focused is set while the field has the window's focus, active while
 	// the window has the keyboard, caretOn in the caret's blink.
 	focused, active, caretOn bool
-	// scroll is how far the text is scrolled to the left.
+	// scroll is how far the text is scrolled to the left, or a multiline
+	// field's up.
 	scroll float32
 	// What the press selecting now selects by, and the word it started on.
 	drag                 dragKind
@@ -172,12 +174,20 @@ type textInput struct {
 }
 
 func newTextInput(w *window, v *view) *textInput {
-	return &textInput{w: w, v: v, active: true, caretOn: true}
+	in := &textInput{w: w, v: v, active: true, caretOn: true}
+	in.fs = field.State{ID: v.id, Dispatch: func(ev core.Event) {
+		if !v.deleted && w.engine != nil {
+			w.engine.Dispatch(ev)
+		}
+	}}
+	return in
 }
+
+func (in *textInput) multiline() bool { return in.config.Multiline }
 
 func (in *textInput) editable() bool { return !in.config.Readonly && !in.config.Disabled }
 
-func (in *textInput) masked() bool { return in.config.Masked }
+func (in *textInput) masked() bool { return in.config.Masked && !in.config.Multiline }
 
 // release lets the editor's DirectWrite objects go.
 func (in *textInput) release() { releaseAll(&in.layout, &in.hint, &in.format) }
@@ -200,8 +210,9 @@ func (in *textInput) textFormat() *comObject {
 	return in.format
 }
 
-// makeLayout lays out units on one unwrapped line aligned as align, or
-// returns nil.
+// makeLayout lays out units aligned as align, on one unwrapped line, or
+// in lines wrapped at the field's width when multiline; it returns nil
+// when DirectWrite fails.
 func (in *textInput) makeLayout(units []uint16, align uintptr) *comObject {
 	format := in.textFormat()
 	if format == nil {
@@ -216,7 +227,12 @@ func (in *textInput) makeLayout(units []uint16, align uintptr) *comObject {
 		format.ptr(), f32(1e6), f32(1e6), uintptr(unsafe.Pointer(&layout)))) {
 		return nil
 	}
-	layout.call(formatSetWordWrapping, dwNoWrap)
+	if in.multiline() {
+		layout.call(formatSetWordWrapping, dwWrap)
+		layout.callF(layoutSetMaxWidth, 1, f32(max(in.width, 1)))
+	} else {
+		layout.call(formatSetWordWrapping, dwNoWrap)
+	}
 	layout.call(formatSetTextAlignment, align)
 	s := in.config.Style
 	if ls := float32(s.LetterSpacing); ls != 0 && n > 0 {
@@ -245,7 +261,12 @@ func (in *textInput) textLayout() *comObject {
 		} else {
 			units = utf16.Encode([]rune(in.model.display()))
 		}
-		in.layout = in.makeLayout(units, dwAlignLeading)
+		align := uintptr(dwAlignLeading)
+		if in.multiline() {
+			// Lines align in the layout; one line aligns in origin.
+			align = dwAlignment(in.config.Style.Align)
+		}
+		in.layout = in.makeLayout(units, align)
 	}
 	return in.layout
 }
@@ -255,7 +276,7 @@ func (in *textInput) textLayout() *comObject {
 func (in *textInput) placeholderLayout() *comObject {
 	if in.hint == nil && in.config.Placeholder != "" {
 		in.hint = in.makeLayout(utf16.Encode([]rune(in.config.Placeholder)), dwAlignment(in.config.Style.Align))
-		if in.hint != nil {
+		if in.hint != nil && !in.multiline() {
 			in.hint.callF(layoutSetMaxWidth, 1, f32(max(in.width, 1)))
 			var sign *comObject
 			dwriteFactory().call(dwCreateEllipsisTrimmingSign, in.hint.ptr(), uintptr(unsafe.Pointer(&sign)))
@@ -299,6 +320,11 @@ func dwAlignment(a core.TextAlign) uintptr {
 // does not.
 func (in *textInput) origin(layout *comObject) (x, y float32) {
 	m := layoutMetrics(layout)
+	if in.multiline() {
+		// Lines start at the top, scrolled up as far as they overflow.
+		in.scroll = min(max(in.scroll, 0), max(m.height-in.height, 0))
+		return 0, -in.scroll
+	}
 	textW := m.widthWithTrailing
 	caret := caretWidth()
 	y = (in.height - m.height) / 2
@@ -349,14 +375,46 @@ func (in *textInput) hit(x, y float32) int {
 	return in.model.textAt(pos, in.masked())
 }
 
+// lineHit returns the text offset on the caret's line moved by lines: at
+// the caret's x, or the line's end or start when lines is 0.
+func (in *textInput) lineHit(end bool, lines int) int {
+	layout := in.textLayout()
+	if layout == nil {
+		return in.model.caret
+	}
+	ox, oy := in.origin(layout)
+	x, y, h := caretAt(layout, in.model.displayCaret(in.masked()))
+	switch {
+	case lines != 0:
+		y += float32(lines) * h
+	case end:
+		x = 1e6
+	default:
+		x = -1e6
+	}
+	if lines < 0 && y+h/2 < 0 {
+		return 0
+	}
+	if m := layoutMetrics(layout); lines > 0 && y+h/2 > m.height {
+		return len(in.model.text)
+	}
+	return in.hit(x+ox, y+h/2+oy)
+}
+
 // reveal scrolls the text so that the caret shows.
 func (in *textInput) reveal() {
 	layout := in.textLayout()
 	if layout == nil {
 		return
 	}
-	x, _, _ := caretAt(layout, in.model.displayCaret(in.masked()))
-	if x < in.scroll {
+	x, y, h := caretAt(layout, in.model.displayCaret(in.masked()))
+	if in.multiline() {
+		if y < in.scroll {
+			in.scroll = y
+		} else if y+h > in.scroll+in.height {
+			in.scroll = y + h - in.height
+		}
+	} else if x < in.scroll {
 		in.scroll = x
 	} else if caret := caretWidth(); x+caret > in.scroll+in.width {
 		in.scroll = x + caret - in.width
@@ -406,8 +464,12 @@ func (in *textInput) draw(p *painter, world matrix) {
 	}
 	cx, cy := float32(c.Origin.X), float32(c.Origin.Y)
 	// One line may be taller than its box: it stays centered and the
-	// view's bounds clip it.
-	p.pushClipRect(rectF{cx, cy - 1e4, cx + in.width, cy + 1e4})
+	// view's bounds clip it. Several lines scroll inside the box.
+	clip := rectF{cx, cy - 1e4, cx + in.width, cy + 1e4}
+	if in.multiline() {
+		clip.top, clip.bottom = cy, cy+in.height
+	}
+	p.pushClipRect(clip)
 	defer p.pop()
 	ox, oy := in.origin(layout)
 	ox, oy = ox+cx, oy+cy
@@ -419,14 +481,17 @@ func (in *textInput) draw(p *painter, world matrix) {
 		s, e := m.selection()
 		from, to := m.toDisplay(s, masked), m.toDisplay(e, masked)
 		for _, r := range hitRects(layout, from, to-from, ox, oy) {
-			p.fillRect(rectF{r.left, r.top, r.left + max(r.width, 4), r.top + r.height}, selectionTint)
+			p.fillRect(rectF{r.left, r.top, r.left + max(r.width, 4), r.top + r.height}, in.selectionColor())
 		}
 	}
 
 	if m.text == "" && !m.composing() {
 		if hint := in.placeholderLayout(); hint != nil {
 			y := cy + (in.height-layoutMetrics(hint).height)/2
-			p.dc.callPoint(rtDrawTextLayout, cx, y, hint.ptr(), p.solid(color&^0xff|0x80).ptr(), d2dDrawTextEnableColorFont)
+			if in.multiline() {
+				y = cy
+			}
+			p.dc.callPoint(rtDrawTextLayout, cx, y, hint.ptr(), p.solid(in.placeholderColor()).ptr(), d2dDrawTextEnableColorFont)
 		}
 	} else {
 		p.dc.callPoint(rtDrawTextLayout, ox, oy, layout.ptr(), p.solid(color).ptr(), d2dDrawTextEnableColorFont)
@@ -448,11 +513,11 @@ func (in *textInput) draw(p *painter, world matrix) {
 		}
 	}
 
-	if in.focused && in.active && in.caretOn && in.editable() && (!m.hasSelection() || m.composing()) {
+	if in.focused && in.active && in.caretOn && in.editable() && !in.config.HideCaret && (!m.hasSelection() || m.composing()) {
 		x, y, h := caretAt(layout, m.displayCaret(masked))
 		// On whole pixels, so that the caret stays sharp.
 		x = float32(math.Round(float64((ox+x)*p.scale))) / p.scale
-		p.fillRect(rectF{x, oy + y, x + caretWidth(), oy + y + h}, color)
+		p.fillRect(rectF{x, oy + y, x + caretWidth(), oy + y + h}, in.caretColor())
 	}
 }
 
@@ -515,7 +580,7 @@ func (w *window) setFocus(in *textInput) {
 		old.drag = dragNone
 		old.model.composition = nil
 		old.relayout()
-		old.applyPending()
+		old.compose()
 		w.focus = nil
 		if w.selecting == old {
 			w.selecting = nil
@@ -911,7 +976,7 @@ func (w *window) ime(message uint32, wParam, lParam uintptr) (uintptr, bool) {
 		in.relayout()
 		in.wakeCaret()
 		in.reveal()
-		in.applyPending()
+		in.compose()
 		w.invalidate()
 		w.placeIME()
 		return 0, true
@@ -919,7 +984,7 @@ func (w *window) ime(message uint32, wParam, lParam uintptr) (uintptr, bool) {
 		in.model.composition = nil
 		in.relayout()
 		in.reveal()
-		in.applyPending()
+		in.compose()
 		w.invalidate()
 		return 0, true
 	}
@@ -929,28 +994,93 @@ func (w *window) ime(message uint32, wParam, lParam uintptr) (uintptr, bool) {
 // --- Edits and events ----------------------------------------------------------
 
 // afterEdit follows a user edit (changed: the text changed) or a caret
-// movement: it reports the text with a new edit count and shows the
-// caret.
+// movement: it reports the text with a new edit count and the selection,
+// and shows the caret.
 func (in *textInput) afterEdit(changed bool) {
 	w := in.w
 	if changed {
 		in.relayout()
-		in.count++
-		// Always reported: the engine keeps the text for layout and for
-		// dropping stale values.
-		w.engine.Dispatch(core.Event{Kind: core.EventChangeText, ID: in.v.id, Text: in.model.text, Count: in.count})
+		in.fs.Edited(in.model.text)
 	}
+	in.reportSelection()
 	in.wakeCaret()
 	in.reveal()
 	w.invalidate()
 	w.placeIME()
 }
 
-// insert inserts typed, pasted or composed text.
-func (in *textInput) insert(text string) {
-	if in.editable() {
-		in.afterEdit(in.model.insert(text))
+// reportSelection reports the selection in UTF-16 units, if it moved.
+func (in *textInput) reportSelection() {
+	if in.fs.Events.Has(core.EventSelectionChange) {
+		in.fs.Selected(in.selectionUnits())
 	}
+}
+
+// selectionUnits is the selection in UTF-16 units.
+func (in *textInput) selectionUnits() core.TextRange {
+	s, e := in.model.selection()
+	return core.TextRange{Start: core.UTF16Units(in.model.text, s), End: core.UTF16Units(in.model.text, e)}
+}
+
+// insert inserts typed, pasted or composed text, cut to maxLength.
+func (in *textInput) insert(text string) {
+	if !in.editable() {
+		return
+	}
+	s, e := in.model.selection()
+	if kept, ok, _ := in.fs.Insert(in.model.text, core.UTF16Len(in.model.text[s:e]), text); ok {
+		in.afterEdit(in.model.insert(kept))
+	}
+}
+
+// selectRange is ItemSelection: start to end in UTF-16 units, clamped.
+func (in *textInput) selectRange(r core.TextRange) {
+	t := in.model.text
+	in.model.selectRange(core.UTF16Offset(t, max(r.Start, 0)), core.UTF16Offset(t, max(r.End, r.Start)))
+	in.fs.SetSelection(in.selectionUnits())
+	if in.focused {
+		in.wakeCaret()
+		in.reveal()
+		in.w.placeIME()
+	}
+	in.w.invalidate()
+}
+
+// compose follows the IME's composition once the model has it, applying
+// a value the app set while it lasted.
+func (in *textInput) compose() {
+	m := &in.model
+	text := ""
+	if m.composing() {
+		text = m.composition.text
+	}
+	if value, apply := in.fs.Compose(m.composing(), text, m.text); apply {
+		in.setText(value)
+	}
+}
+
+// selectionColor, placeholderColor and caretColor are the config's, or
+// else iOS's blue at 30%, the text color at half strength and the text
+// color.
+func (in *textInput) selectionColor() core.Color {
+	if c := in.config.SelectionColor; c != 0 {
+		return c.Faded(0.3)
+	}
+	return selectionTint
+}
+
+func (in *textInput) placeholderColor() core.Color {
+	if c := in.config.PlaceholderColor; c != 0 {
+		return c
+	}
+	return in.config.Style.Color.Faded(0.5)
+}
+
+func (in *textInput) caretColor() core.Color {
+	if c := in.config.SelectionColor; c != 0 {
+		return c
+	}
+	return in.config.Style.Color
 }
 
 // configure applies an input's look and behavior.
@@ -959,11 +1089,13 @@ func (in *textInput) configure(c *core.InputConfig) {
 	if old.Style.Font != c.Style.Font {
 		releaseAll(&in.format)
 	}
-	if old.Style != c.Style || old.Masked != c.Masked {
+	if old.Style != c.Style || old.Masked != c.Masked || old.Multiline != c.Multiline {
 		in.relayout()
+		in.scroll = 0
 	}
 	releaseAll(&in.hint)
 	in.config = *c
+	in.fs.Config = *c
 	in.setSize(float32(c.Content.Size.Width), float32(c.Content.Size.Height))
 	if in.focused {
 		if c.Disabled {
@@ -977,11 +1109,13 @@ func (in *textInput) configure(c *core.InputConfig) {
 // setValue applies the engine's text unless the user edited it after
 // edit count; while the IME composes it waits for the composition's end.
 func (in *textInput) setValue(text string, count uint32) {
-	if in.model.composing() {
-		in.pending, in.pendingCount = &text, count
-		return
+	if in.fs.Value(text, count) {
+		in.setText(text)
 	}
-	if count < in.count || in.model.text == text {
+}
+
+func (in *textInput) setText(text string) {
+	if in.model.text == text {
 		return
 	}
 	// A composition the IME opened with nothing in it yet stays open (a
@@ -994,15 +1128,6 @@ func (in *textInput) setValue(text string, count uint32) {
 	in.relayout()
 	if in.focused {
 		in.reveal()
-	}
-}
-
-// applyPending applies the value that came while the IME composed, once
-// it no longer does.
-func (in *textInput) applyPending() {
-	if p := in.pending; p != nil && !in.model.composing() {
-		in.pending = nil
-		in.setValue(*p, in.pendingCount)
 	}
 }
 
@@ -1188,10 +1313,23 @@ func (w *window) editKey(vk uintptr, ctrl, shift, alt bool) bool {
 		if vk == vkEnd {
 			to = len(m.text)
 		}
+		if in.multiline() && !ctrl {
+			// The caret's line's start or end.
+			to = in.lineHit(vk == vkEnd, 0)
+		}
 		return moved(func() { m.moveTo(to, shift) })
+	case (vk == vkUp || vk == vkDown) && in.multiline():
+		lines := 1
+		if vk == vkUp {
+			lines = -1
+		}
+		return moved(func() { m.moveTo(in.lineHit(false, lines), shift) })
 	case vk == vkBack || vk == vkDelete:
 		if !in.editable() {
 			return true
+		}
+		if vk == vkBack {
+			in.fs.Key("Backspace")
 		}
 		if vk == vkDelete && shift && !ctrl {
 			// Shift+Delete cuts, as in every Windows editor.
@@ -1207,7 +1345,15 @@ func (w *window) editKey(vk uintptr, ctrl, shift, alt bool) bool {
 			w.notifyComposition(cpsComplete)
 			return true
 		}
-		w.report(in.v, core.Event{Kind: core.EventSubmitEditing, ID: in.v.id, Text: m.text})
+		// Return does what SubmitBehavior says; Shift or Alt with it break
+		// a multiline field's line whatever it says.
+		insert, blur := in.fs.Return(m.text, shift || alt)
+		switch {
+		case insert:
+			in.insert("\n")
+		case blur:
+			w.setFocus(nil)
+		}
 		return true
 	case ctrl && !alt:
 		switch {
@@ -1260,7 +1406,11 @@ func (w *window) cut(in *textInput) {
 }
 
 func (w *window) paste(in *textInput) {
-	if text := pasted(w.clipboard()); text != "" {
+	text := pasted(w.clipboard())
+	if in.multiline() {
+		text = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(w.clipboard())
+	}
+	if text != "" {
 		in.insert(text)
 	}
 }

@@ -10,8 +10,21 @@ import (
 const lorem = "NSGo lays text out on the engine through the platform's text engine, " +
 	"so layout knows each line before the main thread draws it. Long text wraps at the width it is given."
 
+// decorated is underlined text in a decoration style and color.
+func decorated(name string, style core.TextDecorationStyle, color core.Color) core.Node {
+	return core.Text{Content: name, Style: core.Style{TextDecoration: core.TextDecorationUnderline,
+		TextDecorationStyle: style, TextDecorationColor: color}}
+}
+
+// valigned is text placed in a taller box by TextAlignVertical.
+func valigned(t *theme, align core.TextAlignVertical, name string) core.Node {
+	return core.Text{Content: name, Style: core.Style{TextAlignVertical: align, Height: core.Pt(56), FlexGrow: 1,
+		Background: t.sunken, Padding: core.Symmetric(4, 8), CornerRadius: 4}}
+}
+
 func textPage(cx *core.Scope, t *theme) core.Node {
 	link := core.NewSignal(cx, "no link pressed yet")
+	lines := core.NewSignal(cx, "not laid out yet")
 
 	var sizes, weights []core.Node
 	for _, size := range []core.Points{12, 15, 17, 22, 28} {
@@ -51,11 +64,58 @@ func textPage(cx *core.Scope, t *theme) core.Node {
 			),
 			core.Text{Content: lorem, Style: core.Style{LineHeight: 28}},
 		),
-		t.demo("Alignment", "TextAlign start, center and end; start and end follow the writing direction.",
-			aligned(core.TextAlignStart, "Start"), aligned(core.TextAlignCenter, "Center"), aligned(core.TextAlignEnd, "End"),
+		t.demo("Decoration styles and shadows", "TextDecorationStyle draws the lines double, dotted, dashed or wavy, "+
+			"in TextDecorationColor; TextShadow draws behind the glyphs; TextTransform changes the case.",
+			flow(
+				decorated("Double", core.DecorationDouble, t.accent),
+				decorated("Dotted", core.DecorationDotted, t.accent),
+				decorated("Dashed", core.DecorationDashed, t.accent),
+				decorated("Wavy", core.DecorationWavy, t.danger),
+				core.Text{Content: "Struck wavy", Style: core.Style{TextDecoration: core.TextDecorationLineThrough,
+					TextDecorationStyle: core.DecorationWavy, TextDecorationColor: t.danger}},
+			),
+			flow(
+				core.Text{Content: "Shadow", Style: core.Style{FontSize: 22, FontWeight: core.FontWeightBold,
+					TextShadowColor: core.RGBA(0x000000, 0.35), TextShadowOffset: core.Point{X: 2, Y: 2}, TextShadowRadius: 3}},
+				core.Text{Content: "Glow", Style: core.Style{FontSize: 22, FontWeight: core.FontWeightBold, Color: t.accent,
+					TextShadowColor: t.accent, TextShadowRadius: 6}},
+				core.Text{Content: "uppercase", Style: core.Style{TextTransform: core.TextTransformUppercase}},
+				core.Text{Content: "capitalize each word", Style: core.Style{TextTransform: core.TextTransformCapitalize}},
+			),
 		),
-		t.demo("Line limits", "MaxLines ends the last line it shows with an ellipsis.",
+		t.demo("Alignment", "TextAlign start, center, end and justify; start and end follow the writing direction. "+
+			"TextAlignVertical moves text down a taller box.",
+			aligned(core.TextAlignStart, "Start"), aligned(core.TextAlignCenter, "Center"), aligned(core.TextAlignEnd, "End"),
+			core.Text{Content: lorem, Style: core.Style{TextAlign: core.TextAlignJustify, Background: t.sunken,
+				Padding: core.Symmetric(4, 8), CornerRadius: 4}},
+			core.View{Style: core.Style{Direction: core.Row, Gap: 8}, Children: []core.Node{
+				valigned(t, core.TextAlignVerticalTop, "Top"), valigned(t, core.TextAlignVerticalCenter, "Center"),
+				valigned(t, core.TextAlignVerticalBottom, "Bottom"),
+			}},
+		),
+		t.demo("Line limits", "MaxLines cuts what does not fit; EllipsizeMode puts the ellipsis at the tail, head or "+
+			"middle, or clips without one.",
 			core.Text{Content: lorem + " " + lorem, MaxLines: 2},
+			core.Text{Content: "Head: " + lorem, MaxLines: 1, EllipsizeMode: core.EllipsizeHead},
+			core.Text{Content: "Middle: " + lorem, MaxLines: 1, EllipsizeMode: core.EllipsizeMiddle},
+			core.Text{Content: "Clip: " + lorem, MaxLines: 1, EllipsizeMode: core.EllipsizeClip},
+		),
+		t.demo("Fitting and font scaling", "AdjustsFontSizeToFit shrinks the text into its box, down to "+
+			"MinimumFontScale; NoFontScaling and MaxFontSizeMultiplier limit the user's text size. OnTextLayout "+
+			"reports the lines.",
+			core.Text{Content: "This sentence shrinks to fit one line of its box.", MaxLines: 1, AdjustsFontSizeToFit: true,
+				MinimumFontScale: 0.3, Style: core.Style{FontSize: 28, Width: core.Pt(240), Background: t.sunken},
+				OnTextLayout: func(ls []core.TextLine) {
+					if len(ls) > 0 {
+						lines.Set(fmt.Sprintf("%d line, %.0f wide, cap height %.1f", len(ls), ls[0].Bounds.Size.Width, ls[0].CapHeight))
+					}
+				}},
+			t.live(lines.Get),
+			flow(
+				core.Text{Content: "Follows the text size"},
+				core.Text{Content: "Never scales", NoFontScaling: true},
+				core.Text{Content: "At most 1.2×", MaxFontSizeMultiplier: 1.2},
+			),
 		),
 		t.demo("Spans and links", "Spans style runs of one text; a span with OnPress is a link.",
 			core.Text{Spans: []core.Span{

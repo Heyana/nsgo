@@ -78,24 +78,6 @@ func (t *Tree) pressKey(key string) {
 	}
 }
 
-// StatusBarStyle is the color of a phone's status bar content.
-type StatusBarStyle uint8
-
-const (
-	// StatusBarAuto follows the appearance: dark content on light.
-	StatusBarAuto StatusBarStyle = iota
-	StatusBarDark
-	StatusBarLight
-)
-
-// SetStatusBar sets the status bar's content style and whether it hides.
-func (cx *Scope) SetStatusBar(style StatusBarStyle, hidden bool) {
-	if t := cx.rt.tree; t != nil {
-		t.commands = append(t.commands, MountItem{Kind: ItemStatusBar, Count: uint32(style), Animated: hidden})
-		t.changed = true
-	}
-}
-
 // SetTitle sets the window's title on desktops and the page's on the web.
 func (cx *Scope) SetTitle(title string) {
 	if t := cx.rt.tree; t != nil {

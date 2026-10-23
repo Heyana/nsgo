@@ -81,8 +81,12 @@ const (
 	ItemAlert
 	// ItemDismissKeyboard takes focus away from the focused text field.
 	ItemDismissKeyboard
-	// ItemScrollTo scrolls ID to Point (its content's offset), animated
-	// when Animated; the platform clamps it and reports EventScroll.
+	// ItemScrollTo scrolls ID to Point (its content's offset, UIKit's
+	// contentOffset: ContentInset makes it negative at the start),
+	// animated when Animated; the platform clamps it and reports
+	// EventScroll. Platforms count the ItemScrollTo and ItemScrollBy
+	// items they applied to each scroll view and report the count with
+	// its offsets.
 	ItemScrollTo
 	// ItemCanvas replaces a canvas's drawing (Drawing), in the view's
 	// coordinates.
@@ -97,8 +101,8 @@ const (
 	// ItemKeymap replaces the surface's keyboard shortcuts (Keys); the
 	// platform consumes matching key presses and reports EventKey.
 	ItemKeymap
-	// ItemStatusBar sets the status bar's style (Count, a StatusBarStyle)
-	// and hides it when Animated is set.
+	// ItemStatusBar sets the status bar (StatusBar): the layers of
+	// settings merged.
 	ItemStatusBar
 	// ItemTitle sets the window's or page's title (Value).
 	ItemTitle
@@ -129,6 +133,34 @@ const (
 	// ItemAnimation changes the native animation graph (Animation), after
 	// the batch's views exist.
 	ItemAnimation
+	// ItemZoomTo zooms a zoomable scroll view (Zoom), animated when
+	// Animated; the platform clamps it and reports EventScroll.
+	ItemZoomTo
+	// ItemImageInfo loads Image's Source, keeping its bytes for the views
+	// that show it next; the platform answers with EventImageInfo carrying
+	// Count.
+	ItemImageInfo
+	// ItemSelection selects Selection in text field ID, after the batch's
+	// value; the platform clamps it to the text.
+	ItemSelection
+	// ItemScrollBy moves scroll view ID's offset by Point without
+	// clamping it, carrying a drag or glide in flight along, so the
+	// visible content stays in place as rows above it change size.
+	ItemScrollBy
+	// ItemStickyCells replaces the sticky cells of scroll view ID
+	// (Sticky): on every scroll the platform moves each along the main
+	// axis by clamp(offset - Start, 0, End - Start) from its frame.
+	ItemStickyCells
+	// ItemAccessibilityLabel changes the label (Value) of a view whose
+	// ViewProps were sent before, and nothing else: a label following app
+	// state changes alone, so the rest is not sent again.
+	ItemAccessibilityLabel
+	// ItemAccessibilityFocus moves the screen reader's focus to ID.
+	ItemAccessibilityFocus
+	// ItemScreen configures a screen's system header (Screen) on the
+	// platforms that report header heights, before the screen is
+	// inserted and when it changes.
+	ItemScreen
 )
 
 // MountItem is one change to the native views. Kind says which fields
@@ -170,6 +202,27 @@ type MountItem struct {
 	// Data is ItemNativeCommand's argument.
 	Data      any
 	Animation []AnimationOp
+	Zoom      *ZoomRequest
+	// Selection is ItemSelection's range.
+	Selection TextRange
+	// Sticky are ItemStickyCells' cells.
+	Sticky    []StickyCell
+	StatusBar *StatusBarConfig
+	Screen    *ScreenConfig
+}
+
+// StickyCell is a sticky list cell and its travel, in its scroll view's
+// main-axis offsets: from Start it moves with the offset, as far as End
+// (which may be infinite).
+type StickyCell struct {
+	Cell       NodeID
+	Start, End Points
+}
+
+// StickyShift is how far a sticky cell moves from its frame along the
+// main axis at offset.
+func (c StickyCell) StickyShift(offset Points) Points {
+	return min(max(offset-c.Start, 0), max(c.End-c.Start, 0))
 }
 
 // MountBatch is one commit's changes, applied in order on the main thread.
@@ -218,11 +271,48 @@ type ImageConfig struct {
 	ResizeMode   ResizeMode
 	BlurRadius   Points
 	FadeDuration time.Duration
+	// Position is the style's ObjectPosition: where the fitted image sits
+	// (ResizeMode.Fit). It travels with the image, not the ViewStyle.
+	Position ObjectPosition
 }
 
 // ModalConfig is how a modal appears and goes.
 type ModalConfig struct {
 	Animation ModalAnimation
+	// Presentation, NoCloseOnSwipe and Orientations are iOS's. A sheet
+	// reports its size with EventModalSize, its swipes with
+	// EventRequestClose.
+	Presentation   ModalPresentation
+	NoCloseOnSwipe bool
+	Orientations   Orientation
+}
+
+// ScreenConfig is a screen's system header, which the platform draws
+// over the top of the screen's view, HeaderHeight tall.
+type ScreenConfig struct {
+	Title string
+	// HeaderHidden hides the header; HeaderHeight is then 0.
+	HeaderHidden      bool
+	HeaderTransparent bool
+	LargeTitle        bool
+	// CanGoBack says a screen is below; BackHidden hides the back button
+	// to it, and BackTitle is its label.
+	CanGoBack  bool
+	BackHidden bool
+	BackTitle  string
+	// NoPopOnSwipe turns the swipe back off, as NoPopOnBack does with the
+	// back button's popping: a press still reports EventBack.
+	NoPopOnSwipe bool
+	NoPopOnBack  bool
+	// Background, TitleColor and TintColor are the header's colors; 0
+	// keeps the platform's.
+	Background, TitleColor, TintColor Color
+	// Left, Right and TitleView are the header views, each a layout root
+	// at its content's size that no view holds, or 0.
+	Left, Right, TitleView NodeID
+	// HeaderHeight is the area the header covers from the screen's top:
+	// the bar and the part of the status bar the screen reaches under.
+	HeaderHeight Points
 }
 
 // TextContent is a text view's content, laid out by the engine.
@@ -249,6 +339,25 @@ type InputConfig struct {
 	// Accessory is the InputAccessoryView that rides above the keyboard
 	// while the field has focus, or 0.
 	Accessory NodeID
+	// Multiline takes several lines in a multi-line control.
+	Multiline bool
+	// MaxLength caps what the user enters, in UTF-16 units; 0 sets none.
+	MaxLength int
+	// SubmitBehavior is as set; platforms read Submit.
+	SubmitBehavior SubmitBehavior
+	ReturnKey      ReturnKeyType
+	AutoCapitalize AutoCapitalize
+	NoAutoCorrect  bool
+	AutoComplete   AutoComplete
+	// KeyboardAppearance is iOS's.
+	KeyboardAppearance KeyboardAppearance
+	// PlaceholderColor is 0 for the platform's: the text color at half
+	// strength where the platform styles placeholders itself.
+	PlaceholderColor Color
+	// SelectionColor colors the caret and the selection; 0 is the
+	// platform's.
+	SelectionColor Color
+	HideCaret      bool
 }
 
 // KeyboardType picks a software keyboard.
@@ -265,15 +374,31 @@ const (
 
 // ViewProps is a view's accessibility and identity.
 type ViewProps struct {
-	Role     Role
-	Label    string
+	Role  Role
+	Label string
+	// Hint says what activating the element does.
+	Hint     string
 	Disabled bool
 	// Selected, Checked and Indeterminate (mixed) are reported to
-	// assistive technology.
+	// assistive technology, and Expanded when Expandable.
 	Selected      bool
 	Checked       bool
 	Indeterminate bool
-	TestID        string
+	Expandable    bool
+	Expanded      bool
+	// Value is a range's or a textual element's value.
+	Value AccessibilityValue
+	// Accessible makes the view one element, or none.
+	Accessible Accessible
+	// ElementsHidden hides the view and its subtree from assistive
+	// technology.
+	ElementsHidden bool
+	LiveRegion     LiveRegion
+	// Actions are the actions offered to assistive technology, reported
+	// with EventAccessibilityAction. The list is shared and never changed,
+	// so ViewProps stay comparable; read it with ActionList.
+	Actions *[]AccessibilityAction
+	TestID  string
 	// WindowDrag, PanActivation and selections are decided on the main
 	// thread.
 	WindowDrag    WindowDrag
@@ -305,6 +430,11 @@ const (
 	RoleMenuItem
 	RoleDialog
 	RoleAlert
+	// RoleAdjustable is a slider: its Value is a range that the
+	// increment and decrement actions adjust.
+	RoleAdjustable
+	// RoleProgressBar shows progress, its Value a range.
+	RoleProgressBar
 )
 
 // ScrollConfig configures a scroll view.
@@ -312,6 +442,22 @@ type ScrollConfig struct {
 	Horizontal bool
 	// HideIndicator hides the scroll bar.
 	HideIndicator bool
+	Behavior      ScrollBehavior
+	// Refreshable says the app listens for EventRefresh: pulling the
+	// content down past its top refreshes. Refreshing shows the spinner;
+	// a config after EventRefresh says whether the app keeps it.
+	Refreshable bool
+	Refreshing  bool
+	// MinZoomScale and MaxZoomScale bound pinches (1 and at least
+	// MinZoomScale); the content zooms when Zooms. ZoomScale is the app's
+	// scale, which the platform zooms to when it changes.
+	MinZoomScale, MaxZoomScale float32
+	ZoomScale                  float32
+	// NoBouncesZoom stops pinches at the limits; NoPinchZoom ignores
+	// pinches; CenterContent centers content smaller than the viewport.
+	NoBouncesZoom bool
+	NoPinchZoom   bool
+	CenterContent bool
 }
 
 // TextEngine prepares text for layout. The engine calls it on its own

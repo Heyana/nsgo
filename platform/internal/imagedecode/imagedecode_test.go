@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/oneo-me/nsgo/core"
 )
 
 // The WebP fixtures in testdata were written with Pillow:
@@ -103,6 +105,28 @@ func TestSniff(t *testing.T) {
 		if got := Sniff([]byte(c.data)); got != c.want {
 			t.Errorf("Sniff(%.40q) = %v, want %v", c.data, got, c.want)
 		}
+	}
+}
+
+func TestSize(t *testing.T) {
+	var pngData bytes.Buffer
+	png.Encode(&pngData, image.NewRGBA(image.Rect(0, 0, 3, 2)))
+	for _, c := range []struct {
+		name string
+		data []byte
+		want core.Size
+	}{
+		{"png", pngData.Bytes(), core.Size{Width: 3, Height: 2}},
+		{"webp", readFixture(t, "green-half-lossy-16x16.webp"), core.Size{Width: 16, Height: 16}},
+		{"animated webp", readFixture(t, "animated-8x8.webp"), core.Size{Width: 8, Height: 8}},
+		{"svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="10.4" height="20.6"/>`), core.Size{Width: 10, Height: 21}},
+	} {
+		if got, err := Size(c.data); err != nil || got != c.want {
+			t.Errorf("%s: Size = %v, %v; want %v", c.name, got, err, c.want)
+		}
+	}
+	if _, err := Size([]byte("BM....")); !errors.Is(err, ErrFormat) {
+		t.Errorf("unknown format: err = %v, want ErrFormat", err)
 	}
 }
 

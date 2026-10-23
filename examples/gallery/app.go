@@ -80,7 +80,8 @@ func init() {
 		{"Images", kindBase, groupElements, lucide.Image, "Embedded, remote, animated and vector images, placeholders and resize modes.", imagesPage},
 		{"Icons", kindBase, groupElements, lucide.Shapes, "The bundled Lucide pack, drawn in inherited text color at any size.", iconsPage},
 		{"Canvas", kindBase, groupElements, lucide.PenTool, "2D drawing recorded on the engine and played by the platform.", canvasPage},
-		{"Lists", kindBase, groupElements, lucide.List, "A virtualized list of many rows and a keyed list you edit.", listsPage},
+		{"Lists", kindBase, groupElements, lucide.List, "Virtualized lists: sticky sections, columns, a chat, a list in the page, and a keyed list you edit.", listsPage},
+		{"Scrolling", kindBase, groupElements, lucide.Scroll, "Paging, snapping, insets, pull to refresh, the scroll events and zooming.", scrollingPage},
 		{"Controls", kindBase, groupComponents, lucide.ToggleRight, "base's buttons, checkboxes, radios, switches and tabs, and text fields, styled by the app.", controlsPage},
 		{"Popups", kindBase, groupComponents, lucide.MessageSquare, "base's tooltips, popovers, menus, dialogs, sheets and alerts.", popupsPage},
 		{"Navigation", kindBase, groupComponents, lucide.Compass, "A navigation stack: push and pop screens.", navigationPage},
@@ -92,6 +93,7 @@ func init() {
 		{"Window", kindBase, groupDesktop, lucide.AppWindow, "The gallery's own title bar and the desktop window's commands.", windowPage},
 		{"App Menu", kindBase, groupDesktop, lucide.Menu, "The application menu: roles, shortcuts and checkable items.", menuPage},
 		{"Environment", kindBase, groupDesktop, lucide.Monitor, "What the platform reports, and the system services.", environmentPage},
+		{"Accessibility", kindBase, groupDesktop, lucide.Accessibility, "What screen readers read: hints, values, actions, groups, hidden elements, live regions and focus.", accessibilityPage},
 		{"Storage", kindBase, groupDesktop, lucide.Database, "Key-value storage kept on the device, and the app's directories.", storagePage},
 		{"File Drop", kindBase, groupDesktop, lucide.FileUp, "Files dragged in from other apps, on desktops and the web.", filesPage},
 

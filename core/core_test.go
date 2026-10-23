@@ -698,12 +698,12 @@ func TestListMountsAWindowAndReusesCells(t *testing.T) {
 		t.Fatalf("mounted %d rows %d..%d, want a window from 0", n, first, last)
 	}
 	// Real sizes replaced the estimate.
-	if got := ln.sizes.sum(10); got != 300 {
+	if got := ln.st.rows.sum(10); got != 300 {
 		t.Errorf("first ten rows = %v points, want 300 measured", got)
 	}
 	measured := 0
-	for _, k := range ln.known {
-		if k {
+	for _, k := range ln.st.sizes {
+		if !isNaN(k) {
 			measured++
 		}
 	}

@@ -29,6 +29,10 @@ type Environment struct {
 	Locale string
 	OS     OS
 	Idiom  Idiom
+	// HeaderHeight and LargeHeaderHeight are the heights of the system
+	// header a platform draws over screens, without the status bar, and
+	// with a large title. 0 where screens show their Header instead.
+	HeaderHeight, LargeHeaderHeight Points
 }
 
 // OS names the operating system the app runs on.
@@ -64,6 +68,8 @@ type Env struct {
 	locale                    *Signal[string]
 	os                        *Signal[OS]
 	idiom                     *Signal[Idiom]
+	// headers are the system header's heights, which only the tree reads.
+	headers [2]Points
 }
 
 func newEnv(cx *Scope) *Env {
@@ -121,6 +127,7 @@ func (e *Env) set(v Environment) {
 	e.locale.Set(v.Locale)
 	e.os.Set(v.OS)
 	e.idiom.Set(v.Idiom)
+	e.headers = [2]Points{v.HeaderHeight, max(v.LargeHeaderHeight, v.HeaderHeight)}
 }
 
 // Window returns the surface's size.

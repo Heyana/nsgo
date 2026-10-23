@@ -138,6 +138,26 @@ func Load(ctx context.Context, src core.ImageSource, progress Progress) ([]byte,
 	}
 }
 
+// Info answers an ItemImageInfo: it loads the item's source, which keeps
+// its bytes in the cache for the views that show it next, and returns the
+// EventImageInfo with the size read by size from the bytes, or the error.
+// It blocks; call it on a goroutine of its own.
+func Info(it *core.MountItem, size func(data []byte) (core.Size, error)) core.Event {
+	ev := core.Event{Kind: core.EventImageInfo, Count: it.Count}
+	var src core.ImageSource
+	if it.Image != nil {
+		src = it.Image.Source
+	}
+	data, err := Load(context.Background(), src, nil)
+	if err == nil {
+		ev.Size, err = size(data)
+	}
+	if err != nil {
+		ev.Text = err.Error()
+	}
+	return ev
+}
+
 func (c *call) fetch(ctx context.Context, uri string) {
 	data, err := fetch(ctx, uri, c.report)
 	mu.Lock()

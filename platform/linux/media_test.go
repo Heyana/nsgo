@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"image/gif"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -589,4 +590,73 @@ func TestSVGImagesDrawSharpAndReportTheirSize(t *testing.T) {
 		return isColor(p.at(20, 20), 0xff0000) && isColor(p.at(60, 20), 0x0000ff) &&
 			isColor(p.at(38, 20), 0xff0000) && isColor(p.at(41, 20), 0x0000ff)
 	})
+}
+
+// halves returns a PNG of 20 by 10 pixels, red on the left, blue on the
+// right.
+func halves(t *testing.T) []byte {
+	m := image.NewRGBA(image.Rect(0, 0, 20, 10))
+	for y := range 10 {
+		for x := range 20 {
+			c := color.RGBA{0xff, 0, 0, 0xff}
+			if x >= 10 {
+				c = color.RGBA{0, 0, 0xff, 0xff}
+			}
+			m.Set(x, y, c)
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, m); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// TestImagesFitAtTheirPositionBlurAndFade checks the core fit with a
+// position, NSH's Center at the natural size, a blur that blends the
+// halves but keeps the edges opaque, a fade-in and ImageSize.
+func TestImagesFitAtTheirPositionBlurAndFade(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	data := halves(t)
+	title := "nsgo-native-" + t.Name()
+	app := func(cx *core.Scope) core.Node {
+		size := core.NewSignal(cx, "")
+		cx.Effect(func() { cx.SetTitle(title + "|" + size.Get()) })
+		cx.ImageSize(core.ImageSource{Data: data}, func(px core.Size, err error) { size.Set(fmt.Sprint(px, err)) })
+		at := func(left, top, width, height core.Points, pos core.ObjectPosition) core.Style {
+			s := abs(left, top, width, height, 0)
+			s.ObjectPosition = pos
+			return s
+		}
+		return core.View{Style: core.Style{Width: core.Pt(360), Height: core.Pt(240), Background: core.RGB(0xffffff)},
+			Children: []core.Node{
+				// Contained at the end: 80 by 40 on the right of 120 by 40.
+				core.Image{Source: core.ImageSource{Data: data}, ResizeMode: core.Contain,
+					Style: at(0, 0, 120, 40, core.ObjectPosition{X: core.PositionEnd})},
+				// Its natural size, 20 by 10, 5 points from the top left.
+				core.Image{Source: core.ImageSource{Data: data}, ResizeMode: core.Center,
+					Style: at(0, 50, 100, 100, core.ObjectPosition{X: core.PositionAxis{Offset: core.Pt(5)},
+						Y: core.PositionAxis{Offset: core.Pt(5)}})},
+				core.Image{Source: core.ImageSource{Data: data}, ResizeMode: core.Stretch, BlurRadius: 6,
+					Style: abs(150, 0, 80, 40, 0)},
+				core.Image{Source: core.ImageSource{Data: data}, ResizeMode: core.Stretch, FadeDuration: 300 * time.Millisecond,
+					Style: abs(150, 50, 80, 40, 0)},
+			}}
+	}
+	w := startTestWindow(t, app, Options{Title: title, Width: 360, Height: 240})
+	waitForTitle(t, w, title+"|"+fmt.Sprint(core.Size{Width: 20, Height: 10}, nil))
+	waitPixels(t, w, "the contained image at the end", func(p pixels) bool {
+		return isColor(p.at(20, 20), 0xffffff) && isColor(p.at(50, 20), 0xff0000) && isColor(p.at(100, 20), 0x0000ff)
+	})
+	waitPixels(t, w, "the centered image at its natural size and position", func(p pixels) bool {
+		return isColor(p.at(3, 57), 0xffffff) && isColor(p.at(8, 60), 0xff0000) && isColor(p.at(22, 60), 0x0000ff) &&
+			isColor(p.at(28, 60), 0xffffff) && isColor(p.at(10, 68), 0xffffff)
+	})
+	waitPixels(t, w, "the blur blending the halves with opaque edges", func(p pixels) bool {
+		mid, edge := p.at(190, 20), p.at(151, 1)
+		return mid[3] == 0xff && mid[2] > 0x40 && mid[0] > 0x40 && edge[3] == 0xff && edge[2] > 0xc0
+	})
+	waitPixels(t, w, "the faded-in image", func(p pixels) bool { return isColor(p.at(160, 70), 0xff0000) })
 }

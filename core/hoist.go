@@ -10,6 +10,16 @@ type hoistNode struct {
 	overlay *Overlay // nil for a modal
 	modal   *Modal
 	placed  Placement
+	// reported is a modal's size and insets when the platform presents
+	// it at a size of its own (EventModalSize); dismissed says the
+	// platform closed it, as when a sheet is swiped away.
+	reported  *Signal[*modalSize]
+	dismissed bool
+}
+
+type modalSize struct {
+	size   Size
+	insets Edges
 }
 
 // hostOf returns the root view or the nearest modal around parent.
@@ -45,16 +55,25 @@ func (t *Tree) mountOverlay(cx *Scope, parent *node, o Overlay) {
 
 func (t *Tree) mountModal(cx *Scope, parent *node, m Modal) {
 	n := t.newNode(KindModal, parent, cx)
-	t.hoist(n, &hoistNode{modal: &m})
+	t.hoist(n, &hoistNode{modal: &m, reported: NewSignal[*modalSize](cx, nil)})
 	t.bindStyle(cx, n, m.Style, m.StyleFunc)
 	n.props = ViewProps{Role: m.Role, Label: m.Label, TestID: m.TestID}
 	if n.props.Role == RoleNone {
 		n.props.Role = RoleDialog
 	}
-	// What a modal's content keeps clear of is the surface's safe area.
+	t.bindStatusBar(cx, n, m.StatusBar, m.StatusBarFunc)
+	// What a modal's content keeps clear of is the surface's safe area, or
+	// what the platform reported of a modal it sized.
 	inner := cx.Child()
-	insetsKey.Provide(inner, func() Edges { return cx.Env().SafeArea() })
+	insets := func() Edges {
+		if r := n.hoist.reported.Get(); r != nil {
+			return r.insets
+		}
+		return t.modalArea(n, cx.Env().SafeArea(), cx.Env().OS()).insets
+	}
+	// Provided while inner runs, so it is inner's own.
 	t.within(inner, func() {
+		insetsKey.Provide(inner, insets)
 		for _, c := range m.Children {
 			t.mount(inner, n, c)
 		}
@@ -70,18 +89,80 @@ func (t *Tree) placeHoisted(host *node) {
 		}
 		size := host.frame.Size
 		if n.hoist.modal != nil {
+			env := t.root.Env()
+			var top Points
+			if r := n.hoist.reported.GetUntracked(); r != nil {
+				size = r.size
+			} else {
+				top = t.modalArea(n, env.safe.GetUntracked(), env.os.GetUntracked()).top
+				size.Height = max(size.Height-top, 0)
+			}
 			t.layoutRoot(n, size, true)
-			n.frame = Bounds{Size: size}
+			n.frame = Bounds{Origin: Point{Y: top}, Size: size}
 		} else {
 			t.placeOverlay(n, host, size)
 		}
 		// Its native view is its host's child, so a hidden shadow ancestor
-		// hides it only through the core.
-		if n.hidden = hiddenIn(n); n.hidden {
+		// hides it only through the core; so does a sheet swiped away.
+		if n.hidden = hiddenIn(n) || n.hoist.dismissed; n.hidden {
 			n.frame = Bounds{}
 		}
 		t.syncFrames(n)
 		t.placeHoisted(n)
+	}
+}
+
+// modalPlace is where a modal starts in its host, and what its content
+// keeps clear of.
+type modalPlace struct {
+	top    Points
+	insets Edges
+}
+
+// modalArea places modal n, unless the platform sized it, in the safe
+// area safe on os: over its whole host, except that on Android the
+// status bar stays above a modal over the surface that is not
+// StatusBarTranslucent, as above NSH's dialog windows. A modal in a
+// modal keeps clear of its host's insets.
+func (t *Tree) modalArea(n *node, safe Edges, os OS) modalPlace {
+	if host := n.hoist.host; host.kind == KindModal {
+		return modalPlace{insets: t.modalInsets(host)}
+	}
+	if os == OSAndroid && !n.hoist.modal.StatusBarTranslucent {
+		top := safe.Top
+		safe.Top = 0
+		return modalPlace{top, safe}
+	}
+	return modalPlace{insets: safe}
+}
+
+// modalInsets returns what modal n's content keeps clear of, untracked.
+func (t *Tree) modalInsets(n *node) Edges {
+	if r := n.hoist.reported.GetUntracked(); r != nil {
+		return r.insets
+	}
+	env := t.root.Env()
+	return t.modalArea(n, env.safe.GetUntracked(), env.os.GetUntracked()).insets
+}
+
+// modalEvent handles what the platform reports of modal n: the size it
+// presents it at, or a request to close it.
+func (t *Tree) modalEvent(n *node, ev Event) {
+	h := n.hoist
+	if ev.Kind == EventModalSize {
+		r := &modalSize{ev.Size, ev.Insets}
+		if old := h.reported.GetUntracked(); old == nil || *old != *r {
+			t.within(n.owner, func() { h.reported.Set(r) })
+			t.relayout(n)
+		}
+		return
+	}
+	if ev.Finished && !h.dismissed {
+		h.dismissed = true
+		t.relayout(n)
+	}
+	if f := h.modal.OnRequestClose; f != nil {
+		t.within(n.owner, func() { f(ev.Text) })
 	}
 }
 
@@ -272,7 +353,7 @@ func (t *Tree) back() {
 
 func topModal(host *node) *node {
 	for i := len(host.hosted) - 1; i >= 0; i-- {
-		if n := host.hosted[i]; !n.deleted && n.kind == KindModal && !hiddenIn(n) {
+		if n := host.hosted[i]; !n.deleted && n.kind == KindModal && !n.hoist.dismissed && !hiddenIn(n) {
 			return n
 		}
 	}

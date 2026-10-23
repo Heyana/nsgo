@@ -1,6 +1,6 @@
 # NSGo architecture
 
-NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles, layout and text layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views and runs what animates on its own frame clock. Most of NSH's elements, layers, navigation, base components and services exist, many with fewer props than NSH's; sections below say what exists, and the [roadmap](docs/roadmap.md) orders what is missing.
+NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles, layout and text. Each commit produces one batch of mount items, and a thin platform backend applies it to native views and runs what animates on its own frame clock. NSH's elements and their props, layers, navigation, most base components and services exist; sections below say what exists, and the [roadmap](docs/roadmap.md) orders what is missing.
 
 ## Reference implementation
 
@@ -10,10 +10,10 @@ NSH is the reference for behavior, naming and layering. Its checkout lives in `n
 | --- | --- |
 | Overview and crate layout | `AGENTS.md`, `README.md` |
 | Threads, data flow and layers | `docs/dev/architecture.md` |
-| One subsystem (text, styles, lists, animation) | The matching page in `docs/dev/` |
+| One subsystem | The matching page in `docs/dev/` |
 | How a module works inside | The module docs in `crates/*/src` |
 
-Port the design, not the code line by line. Where Go idioms differ from Rust, follow Go and record the deviation in the owning subject.
+Port the design, not the code line by line. Where Go differs from Rust, follow Go and record the deviation in the owning subject.
 
 ## Code map
 
@@ -34,6 +34,7 @@ Packages mirror NSH's crates:
 | `platform/internal/apple` | Shared Apple code | CoreFoundation, CALayer styling, images, canvas, `WKWebView` web views, AVFoundation videos and the CoreText text engine through purego |
 | `platform/internal/imageload` | Platforms' image loaders | Fetching and caching image bytes once, in Go, for the backends that decode images themselves |
 | `platform/internal/imagedecode` | `nsh_core::svg`, platforms' decoders | Pure Go decoding into premultiplied pixels: PNG, JPEG, every frame of GIF and WebP animations, and SVG drawn by its own rasterizer within NSH's bounds ([images](docs/architecture/images.md)) |
+| `platform/internal/field` | Platforms' text fields | A text field's edits, composition, selection, keys and max length, reported as NSH's platforms do |
 | `platform/internal/scrollbar` | Platforms' scroll bars | Thumb geometry, hits and dragging for the backends that paint their own scroll bars |
 | `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags and hands it the app's native components; the tool sets name and window size |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `nsgo dev` and `nsgo build`, driven by an app's `nsgo.yaml` |
@@ -61,7 +62,7 @@ Android runs the app as a second process because Go builds Android shared librar
 
 Neither an NDK nor the Android SDK is needed for arm64: `platform/android/runtime` holds the Java runtime's prebuilt `classes.dex` (its `build.sh` rebuilds it), and `cmd/nsgo/apk` writes the binary manifest, the ZIP and the v2 signature in Go. `nsgo build -target android_arm64` writes an APK signed with the project's debug key.
 
-The Linux backend loads GTK 4 at run time, so building its package needs only Go. Running it needs GTK 4.14 or newer, Pango and Cairo; web views also need WebKitGTK 6.0 and videos the GStreamer plug-ins for their formats. Without WebKitGTK a web view shows a placeholder, as NSH's does.
+The Linux backend loads GTK 4 at run time, so building it needs only Go. Running it needs GTK 4.14+, Pango and Cairo; web views also need WebKitGTK 6.0, videos GStreamer's plug-ins. Without WebKitGTK a web view shows a placeholder, as NSH's does.
 
 As in NSH, each Linux view is a widget its parent places at the core's frame, so hosted controls stack, clip, fade and transform with the views around them. The application menu is a GTK menu bar above the surface, but the backend draws no window controls of its own, so a hidden title bar reports the app's bar height only.
 
@@ -99,7 +100,7 @@ As in NSH, each Linux view is a widget its parent places at the core's frame, so
 
 **Render.** Components run once and bind signals to element parts; regions (`Show`, `Each`, `Dynamic`, `Catch`) rebuild only their span. A commit resolves styles, prepares text, lays out and sends what changed as one `MountBatch` ([core](docs/architecture/core.md)).
 
-**Mount.** The platform receives the batch with a single hop to its main thread and applies the items in order to native views.
+**Mount.** The platform receives the batch with a single hop to its main thread and applies the items in order to native views. iOS and Android draw screens' system headers natively.
 
 **Input.** Native gestures become engine events, queued without blocking, run the handlers on the engine side and lead to the next commit.
 
@@ -115,13 +116,14 @@ Record a design question here, and confirm the answer with the user before choos
 
 ## Subjects
 
-Subjects go in `docs/architecture/` once a subsystem has a lasting design.
-
 | Document | When to read |
 | --- | --- |
-| [Core](docs/architecture/core.md) | Changing the reactive graph, elements, regions, commit, text, selection, storage or the mount protocol |
-| [Hosted views](docs/architecture/native-views.md) | Changing `WebView`, `Video`, `Native` components or a backend's host for them |
-| [Images](docs/architecture/images.md) | Changing how a backend loads, decodes or plays images, or `imagedecode` |
+| [Core](docs/architecture/core.md) | Changing the graph, elements, regions, layers, commit, storage or the mount protocol |
+| [Text](docs/architecture/text.md) | Changing text, a `TextEngine`, `Input` or selection |
+| [Scrolling](docs/architecture/scrolling.md) | Changing `Scroll`, `List` or a scroll view |
+| [Interaction](docs/architecture/interaction.md) | Changing accessibility, gestures or drops |
+| [Hosted views](docs/architecture/native-views.md) | Changing `WebView`, `Video` or `Native` components |
+| [Images](docs/architecture/images.md) | Changing how backends load, decode or play images |
 | [Animation](docs/architecture/animation.md) | Changing animated values, layout animations or a backend's frame clock |
-| [Text view](docs/architecture/textview.md) | Changing `TextView`: the document model, Markdown and HTML parsing, its parts or code highlighting |
-| [Icons](docs/architecture/icons.md) | Changing SVG parsing, `core.Icon` or the Lucide pack and its generator |
+| [Text view](docs/architecture/textview.md) | Changing `TextView`, its parsers, parts or highlighting |
+| [Icons](docs/architecture/icons.md) | Changing SVG parsing, `core.Icon` or the Lucide pack |

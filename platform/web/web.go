@@ -59,6 +59,7 @@ type surface struct {
 	root      *view
 	measure   js.Value      // a hidden element text is measured in
 	measuring *preparedText // the text measure holds
+	metrics   js.Value      // a canvas's 2D context, for fonts' metrics
 	engine    *engine.Engine
 	views     []*view // index is NodeID
 	press     press
@@ -73,6 +74,10 @@ type surface struct {
 	gestures  gestures
 	// selectionCSS is whether the ::selection rule is in the page.
 	selectionCSS bool
+	scrollCSS    bool
+	stickyCSS    bool
+	// fieldCSS is whether fieldCSS is in the page.
+	fieldCSS bool
 
 	animator   *core.Animator
 	frame      js.Func // the animation frame callback
@@ -90,10 +95,11 @@ type view struct {
 	content   js.Value // where children go: el, or a scroll view's content
 	inner     js.Value // a text view's text, a text field's <input> or a <canvas>
 	events    core.EventMask
-	edits     uint32     // the user's edits of a text field
+	input     *webInput  // a text field's
 	border    core.Edges // the width of each side's border
 	size      core.Size  // the frame's
 	scroll    core.Size  // a scroll view's content size
+	sc        *scrollState
 	layout    *textLayout
 	image     *image
 	drawing   *core.Drawing // a canvas's
@@ -110,6 +116,11 @@ type view struct {
 	selColor   core.Color
 	area       bool
 	disabled   bool
+	// props are the view's last props; grouped hides its children from
+	// screen readers, and a11yFocus keeps it focusable for them.
+	props     core.ViewProps
+	grouped   bool
+	a11yFocus bool
 
 	// style is the view's own, which its animated values draw over;
 	// layoutAnim the layout animation moving it.
@@ -120,6 +131,14 @@ type view struct {
 
 	component      core.NativeComponent // a native view's
 	componentTried bool
+
+	// frame is the view's frame; a sticky cell's track holds it in its
+	// list, stickyIn, along sticky's range.
+	frame     core.Bounds
+	track     js.Value
+	trackPage bool // in a list in its scroll view's viewport
+	stickyIn  *view
+	sticky    core.StickyCell
 }
 
 // listeners are event listeners added until their owner goes.
@@ -274,6 +293,8 @@ func fontStyle(t core.TextStyle) map[string]string {
 		align = "center"
 	case core.TextAlignEnd:
 		align = "end"
+	case core.TextAlignJustify:
+		align = "justify"
 	}
 	var lines []string
 	if t.Decoration&core.TextDecorationUnderline != 0 {
@@ -286,11 +307,30 @@ func fontStyle(t core.TextStyle) map[string]string {
 	if len(lines) > 0 {
 		decoration = strings.Join(lines, " ")
 	}
+	decorationColor := "currentcolor"
+	if t.DecorationColor != 0 {
+		decorationColor = cssColor(t.DecorationColor)
+	}
 	return map[string]string{
 		"font-family": family, "font-size": px(t.Font.Size), "font-weight": fmt.Sprint(t.Font.Weight),
 		"font-style": italic, "line-height": lineHeight, "letter-spacing": px(t.LetterSpacing),
 		"color": cssColor(t.Color), "text-align": align, "text-decoration-line": decoration,
+		"text-decoration-style": decorationStyles[t.DecorationStyle], "text-decoration-color": decorationColor,
 	}
+}
+
+// decorationStyles are the CSS of the decoration styles.
+var decorationStyles = map[core.TextDecorationStyle]string{
+	0: "solid", core.DecorationSolid: "solid", core.DecorationDouble: "double", core.DecorationDotted: "dotted",
+	core.DecorationDashed: "dashed", core.DecorationWavy: "wavy",
+}
+
+// textShadow is the CSS of a text shadow.
+func textShadow(s core.TextShadow) string {
+	if s.Color == 0 {
+		return "none"
+	}
+	return fmt.Sprintf("%s %s %s %s", px(s.Offset.X), px(s.Offset.Y), px(s.Radius), cssColor(s.Color))
 }
 
 // richText is text with the CSS that lays it out: one style for the
@@ -300,6 +340,10 @@ type richText struct {
 	style       map[string]string
 	spans       []span
 	attachments []core.TextAttachment
+	// drawn is CSS over style for the element that draws the text: a
+	// clipped text is measured as clamped and drawn cut by its box.
+	drawn    map[string]string
+	maxLines int
 }
 
 // span is a styled run of the text, from byte start to byte end.
@@ -313,6 +357,9 @@ type span struct {
 type preparedText struct {
 	s *surface
 	richText
+	// cut is the text, kept when its one line ellipsizes at its head or
+	// middle, which CSS cannot: Layout cuts it.
+	cut *core.AttributedText
 }
 
 // textLayout is what the element that draws text needs; the browser lays
@@ -322,6 +369,8 @@ type textLayout struct {
 	// boxes are where the attachments' placeholders landed, in the
 	// content box; shown is false for those the line limit cut off.
 	boxes []attachmentBox
+	s     *surface
+	width core.Points
 }
 
 type attachmentBox struct {
@@ -347,9 +396,14 @@ func (s *surface) Prepare(t *core.AttributedText) core.PreparedText {
 	// last text's.
 	style["display"], style["-webkit-box-orient"], style["-webkit-line-clamp"], style["overflow"] =
 		"block", "", "", "visible"
+	style["text-shadow"] = textShadow(t.Shadow)
+	var drawn map[string]string
 	if t.MaxLines > 0 {
 		style["display"], style["-webkit-box-orient"], style["-webkit-line-clamp"], style["overflow"] =
 			"-webkit-box", "vertical", strconv.Itoa(t.MaxLines), "hidden"
+		if t.Ellipsize == core.EllipsizeClip {
+			drawn = map[string]string{"display": "block", "-webkit-box-orient": "", "-webkit-line-clamp": ""}
+		}
 	}
 	var spans []span
 	at := 0
@@ -371,8 +425,14 @@ func (s *surface) Prepare(t *core.AttributedText) core.PreparedText {
 		spans = append(spans, span{start, end, css, sp.Link})
 		at = end
 	}
-	return &preparedText{s: s, richText: richText{text: t.Text, style: style, spans: spans,
-		attachments: t.Attachments}}
+	p := &preparedText{s: s, richText: richText{text: t.Text, style: style, spans: spans,
+		attachments: t.Attachments, drawn: drawn, maxLines: t.MaxLines}}
+	if t.MaxLines == 1 && (t.Ellipsize == core.EllipsizeHead || t.Ellipsize == core.EllipsizeMiddle) &&
+		len(t.Attachments) == 0 && !strings.ContainsAny(t.Text, "\n\r") {
+		c := *t
+		p.cut = &c
+	}
+	return p
 }
 
 // verticalAligns are the CSS of the vertical aligns, which core defines
@@ -462,6 +522,100 @@ func (p *preparedText) Measure(maxWidth core.Points) core.Size {
 	return core.Size{Width: core.Points(w), Height: core.Points(r.Get("height").Float())}
 }
 
+// unclamped returns the width of p on one line.
+func (p *preparedText) unclamped() core.Points {
+	m := p.hold()
+	m.Get("style").Call("setProperty", "max-width", "none")
+	return core.Points(m.Call("getBoundingClientRect").Get("width").Float())
+}
+
+// TextLines implements core.LineLayout: the text laid out again in the
+// measuring element at its width, its lines the rows its characters'
+// boxes fall in, their metrics those of the font each starts in.
+func (l *textLayout) TextLines() []core.TextLine {
+	if l.text == "" {
+		return nil
+	}
+	p := &preparedText{s: l.s, richText: l.richText}
+	m := p.hold()
+	defer p.Release()
+	setStyle(m, map[string]string{"width": px(l.width), "max-width": "none"})
+	defer setStyle(m, map[string]string{"width": "max-content"})
+	origin := m.Call("getBoundingClientRect")
+	left, top := origin.Get("left").Float(), origin.Get("top").Float()
+	r := l.s.doc.Call("createRange")
+	var lines []core.TextLine
+	var bottom float64
+	at := 0 // the byte offset of the node walked
+	var walk func(n js.Value)
+	walk = func(n js.Value) {
+		switch n.Get("nodeType").Int() {
+		case 3: // text
+			s := n.Get("data").String()
+			u := 0
+			for i, c := range s {
+				units := len(utf16.Encode([]rune{c}))
+				r.Call("setStart", n, u)
+				r.Call("setEnd", n, u+units)
+				u += units
+				b := r.Call("getBoundingClientRect")
+				x0, y0 := b.Get("left").Float()-left, b.Get("top").Float()-top
+				x1, y1 := x0+b.Get("width").Float(), y0+b.Get("height").Float()
+				if y1 <= y0 {
+					continue
+				}
+				if k := len(lines); k == 0 || y0 >= bottom-0.5 {
+					font := n.Get("parentElement").Call("closest", "span, div")
+					lines = append(lines, l.s.lineAt(font, at+i, x0, y0, x1-x0, y1-y0))
+					bottom = y1
+				} else {
+					last := &lines[k-1]
+					x := min(float64(last.Bounds.Origin.X), x0)
+					right := max(float64(last.Bounds.Origin.X+last.Bounds.Size.Width), x1)
+					last.Bounds.Origin.X, last.Bounds.Size.Width = core.Points(x), core.Points(right-x)
+					bottom = max(bottom, y1)
+				}
+				lines[len(lines)-1].End = at + i + len(string(c))
+			}
+			at += len(s)
+		case 1: // element
+			if n.Call("hasAttribute", "data-attachment").Bool() {
+				at += len(string(core.AttachmentRune))
+				return
+			}
+			for c := n.Get("firstChild"); !c.IsNull(); c = c.Get("nextSibling") {
+				walk(c)
+			}
+		}
+	}
+	walk(m)
+	if l.maxLines > 0 && len(lines) > l.maxLines {
+		lines = lines[:l.maxLines]
+		lines[len(lines)-1].End = len(l.text)
+	}
+	return lines
+}
+
+// lineAt starts a line at byte offset i, its first character's box
+// x, y, w, h, with the metrics of el's font, from a canvas.
+func (s *surface) lineAt(el js.Value, i int, x, y, w, h float64) core.TextLine {
+	if s.metrics.IsUndefined() || s.metrics.IsNull() {
+		s.metrics = s.doc.Call("createElement", "canvas").Call("getContext", "2d")
+	}
+	cs := js.Global().Call("getComputedStyle", el)
+	s.metrics.Set("font", cs.Get("fontStyle").String()+" "+cs.Get("fontWeight").String()+" "+
+		cs.Get("fontSize").String()+" "+cs.Get("fontFamily").String())
+	capital := s.metrics.Call("measureText", "H")
+	small := s.metrics.Call("measureText", "x")
+	return core.TextLine{Start: i, End: i,
+		Bounds:    core.Bounds{Origin: core.Point{X: core.Points(x), Y: core.Points(y)}, Size: core.Size{Width: core.Points(w), Height: core.Points(h)}},
+		Ascender:  core.Points(capital.Get("fontBoundingBoxAscent").Float()),
+		Descender: core.Points(capital.Get("fontBoundingBoxDescent").Float()),
+		CapHeight: core.Points(capital.Get("actualBoundingBoxAscent").Float()),
+		XHeight:   core.Points(small.Get("actualBoundingBoxAscent").Float()),
+	}
+}
+
 // hold puts p in the measuring element and returns it.
 func (p *preparedText) hold() js.Value {
 	m := p.s.measure
@@ -481,7 +635,20 @@ func (p *preparedText) hold() js.Value {
 // it lays the text out in the measuring element at size's width, as the
 // element drawing it will, and reads where their placeholders landed.
 func (p *preparedText) Layout(size core.Size) core.TextLayout {
-	l := &textLayout{richText: p.richText}
+	if p.cut != nil && p.unclamped() > size.Width+0.01 {
+		// The most characters that fit around the ellipsis, as a text of
+		// their own.
+		fits := func(c *core.AttributedText) bool {
+			q := p.s.Prepare(c).(*preparedText)
+			defer q.Release()
+			return q.unclamped() <= size.Width+0.01
+		}
+		cut := p.cut.CutToFit(fits)
+		q := p.s.Prepare(&cut).(*preparedText)
+		defer q.Release()
+		return q.Layout(size)
+	}
+	l := &textLayout{richText: p.richText, s: p.s, width: size.Width}
 	if len(p.attachments) == 0 {
 		return l
 	}
@@ -559,6 +726,9 @@ func (s *surface) Mount(b *core.MountBatch) {
 		case core.ItemReadClipboard:
 			s.readClipboard(it.Count)
 			continue
+		case core.ItemImageInfo:
+			s.imageInfo(it)
+			continue
 		case core.ItemAnnounce:
 			s.announce(it.Value)
 			continue
@@ -586,16 +756,20 @@ func (s *surface) Mount(b *core.MountBatch) {
 			if parent == nil {
 				continue
 			}
-			if before := s.view(it.Before); before != nil {
-				parent.content.Call("insertBefore", v.el, before.el)
+			if before := s.view(it.Before); before != nil && before.outer().Get("parentNode").Equal(parent.content) {
+				parent.content.Call("insertBefore", v.outer(), before.outer())
 			} else {
-				parent.content.Call("appendChild", v.el)
+				parent.content.Call("appendChild", v.outer())
 			}
 			b := core.Edges{}
 			if parent.content.Equal(parent.el) {
 				b = parent.border
 			}
 			unborder(v.el, b)
+			if parent.grouped || v.el.Call("hasAttribute", "aria-hidden").Bool() {
+				hidden := parent.grouped || v.props.ElementsHidden && v.kind != core.KindInput
+				setAttr(v.el, "aria-hidden", map[bool]string{true: "true"}[hidden])
+			}
 			// A text's children are its attachments, which copying leaves
 			// out.
 			v.el.Get("classList").Call("toggle", "nsgo-attachment", parent.kind == core.KindText)
@@ -605,10 +779,13 @@ func (s *surface) Mount(b *core.MountBatch) {
 			}
 			s.appear(v, lb, it.Parent)
 		case core.ItemRemove:
-			v.el.Call("remove")
+			v.outer().Call("remove")
 		case core.ItemDelete:
 			// Forgotten first, so events its removal fires are not sent.
 			s.views[it.ID] = nil
+			if v.track.Truthy() {
+				v.track.Call("remove")
+			}
 			if !s.vanish(v, lb) {
 				v.el.Call("remove")
 			}
@@ -633,17 +810,28 @@ func (s *surface) Mount(b *core.MountBatch) {
 			}
 			s.setOutside(v, false)
 			v.listeners.release()
+			if v.input != nil {
+				v.input.listeners.release()
+			}
 		case core.ItemFrame:
-			s.moveFrame(v, it.Frame, lb)
+			v.frame = it.Frame
+			if v.track.Truthy() {
+				s.placeTrack(v)
+			} else {
+				s.moveFrame(v, it.Frame, lb)
+				setStyle(v.el, frameStyle(it.Frame))
+			}
 			v.framed = true
-			setStyle(v.el, frameStyle(it.Frame))
 			if v.size != it.Frame.Size {
 				v.size = it.Frame.Size
-				if v.image != nil && v.image.config.ResizeMode == core.Center {
+				if v.image != nil {
 					v.image.draw(v.size)
 				}
 				if v.kind == core.KindCanvas {
 					s.paint(v)
+				}
+				if v.kind == core.KindScroll {
+					v.placeContent() // centering and snap points follow the size
 				}
 			}
 		case core.ItemViewStyle:
@@ -685,43 +873,65 @@ func (s *surface) Mount(b *core.MountBatch) {
 			}
 		case core.ItemScrollTo:
 			if v.kind == core.KindScroll {
-				behavior := "auto"
-				if it.Animated {
-					behavior = "smooth"
-				}
 				// The browser clamps the offset and reports the scroll.
-				v.el.Call("scrollTo", map[string]any{
-					"left": float64(it.Point.X), "top": float64(it.Point.Y), "behavior": behavior,
-				})
+				v.sc.applied++
+				s.interruptMomentum(v)
+				v.scrollTo(it.Point, it.Animated)
+			}
+		case core.ItemScrollBy:
+			if v.kind == core.KindScroll {
+				v.sc.applied++
+				v.scrollBy(it.Point)
+			}
+		case core.ItemStickyCells:
+			if v.kind == core.KindScroll {
+				s.setSticky(v, it.Sticky)
+			}
+		case core.ItemZoomTo:
+			if v.kind == core.KindScroll {
+				s.zoomCommand(v, it.Zoom, it.Animated)
 			}
 		case core.ItemInputValue:
-			// Setting the text the field shows would move the caret.
-			if v.kind == core.KindInput && v.edits <= it.Count && v.inner.Get("value").String() != it.Value {
-				v.inner.Set("value", it.Value)
+			if v.input != nil {
+				s.inputValue(v, it.Value, it.Count)
+			}
+		case core.ItemSelection:
+			if v.input != nil {
+				s.selectInput(v, it.Selection)
 			}
 		case core.ItemEvents:
 			s.setEvents(v, it.Events)
+		case core.ItemAccessibilityLabel:
+			v.props.Label = it.Value
+			el := v.el
+			if v.kind == core.KindInput {
+				el = v.inner
+			}
+			setAttr(el, "aria-label", it.Value)
+		case core.ItemAccessibilityFocus:
+			v.focusAccessibility()
 		case core.ItemViewProps:
 			v.disabled = it.ViewProps.Disabled
+			v.props = *it.ViewProps
 			setViewProps(v, it.ViewProps)
+			if v.input != nil {
+				v.input.props = it.ViewProps
+			}
 			s.setSelection(v, it.ViewProps)
 			if v.panActivation != it.ViewProps.PanActivation {
 				v.panActivation = it.ViewProps.PanActivation
 				s.setGestureStyle(v)
 			}
 		case core.ItemScrollConfig:
-			x, y := "hidden", "auto"
-			if it.Scroll.Horizontal {
-				x, y = y, x
+			if v.kind == core.KindScroll {
+				s.configureScroll(v, it.Scroll)
 			}
-			bar := "auto"
-			if it.Scroll.HideIndicator {
-				bar = "none"
-			}
-			setStyle(v.el, map[string]string{"overflow-x": x, "overflow-y": y, "scrollbar-width": bar})
 		case core.ItemScrollContent:
 			v.scroll = it.Size
 			v.placeContent()
+			for _, c := range v.sc.tracks {
+				s.placeTrack(c)
+			}
 		case core.ItemFocus:
 			if v.kind == core.KindInput {
 				v.inner.Call("focus")
@@ -777,28 +987,10 @@ func (s *surface) create(id core.NodeID, kind core.ViewKind) *view {
 		setStyle(v.el, map[string]string{"overflow": "auto"})
 		v.content = s.element("div")
 		v.el.Call("appendChild", v.content)
-		v.listeners.on(v.el, "scroll", func(js.Value) {
-			offset := core.Point{
-				X: core.Points(v.el.Get("scrollLeft").Float()),
-				Y: core.Points(v.el.Get("scrollTop").Float()),
-			}
-			if s.animator.Scroll(v.id, offset) {
-				s.applyAnimated()
-			}
-			s.send(v, core.Event{Kind: core.EventScroll, Point: offset})
-		})
+		s.newScroll(v)
 	}
 	s.views[id] = v
 	return v
-}
-
-// placeContent sizes a scroll view's content. Children are framed from
-// the view's origin, but the browser scrolls inside its border.
-func (v *view) placeContent() {
-	b := v.border
-	setStyle(v.content, map[string]string{
-		"left": px(-b.Left), "top": px(-b.Top), "width": px(v.scroll.Width - b.Left), "height": px(v.scroll.Height - b.Top),
-	})
 }
 
 func (s *surface) setViewStyle(v *view, vs *core.ViewStyle) {
@@ -860,7 +1052,7 @@ func (s *surface) setViewStyle(v *view, vs *core.ViewStyle) {
 	if v.kind != core.KindScroll {
 		style["overflow"] = "visible"
 		if vs.Clip {
-			style["overflow"] = "hidden"
+			style["overflow"] = clipOverflow()
 		}
 	}
 	setStyle(v.el, style)
@@ -954,80 +1146,42 @@ func (s *surface) setText(v *view, t *core.TextContent) {
 		return
 	}
 	setStyle(v.inner, l.style)
+	if l.drawn != nil {
+		setStyle(v.inner, l.drawn)
+	}
 	setStyle(v.inner, frameStyle(t.Content))
 	l.fill(s.doc, v.inner, true)
-}
-
-// Text fields.
-
-var inputModes = map[core.KeyboardType]string{
-	core.KeyboardEmail:   "email",
-	core.KeyboardNumber:  "numeric",
-	core.KeyboardDecimal: "decimal",
-	core.KeyboardPhone:   "tel",
-	core.KeyboardURL:     "url",
-}
-
-// createInput puts an <input> in v's element, which draws the field's
-// background and border.
-func (s *surface) createInput(v *view) {
-	in := s.element("input")
-	in.Set("type", "text")
-	setStyle(in, map[string]string{
-		"padding": "0", "border": "0", "outline": "none", "background": "transparent",
-	})
-	v.inner = in
-	v.el.Call("appendChild", in)
-	v.listeners.on(in, "input", func(js.Value) {
-		v.edits++
-		s.send(v, core.Event{Kind: core.EventChangeText, Text: in.Get("value").String(), Count: v.edits})
-	})
-	v.listeners.on(in, "keydown", func(e js.Value) {
-		if e.Get("key").String() == "Enter" && !e.Get("isComposing").Bool() {
-			s.send(v, core.Event{Kind: core.EventSubmitEditing, Text: in.Get("value").String()})
-		}
-	})
-	v.listeners.on(in, "focus", func(js.Value) { s.send(v, core.Event{Kind: core.EventFocus}) })
-	v.listeners.on(in, "blur", func(js.Value) { s.send(v, core.Event{Kind: core.EventBlur}) })
-}
-
-func (s *surface) setInput(v *view, c *core.InputConfig) {
-	if v.kind != core.KindInput {
-		return
-	}
-	in := v.inner
-	setStyle(in, fontStyle(c.Style))
-	setStyle(in, frameStyle(c.Content))
-	kind := "text"
-	if c.Masked {
-		kind = "password"
-	}
-	if in.Get("type").String() != kind {
-		in.Set("type", kind)
-	}
-	in.Set("placeholder", c.Placeholder)
-	in.Set("readOnly", c.Readonly)
-	in.Set("disabled", c.Disabled)
-	setAttr(in, "inputmode", inputModes[c.KeyboardType])
 }
 
 // Events and accessibility.
 
 var roles = map[core.Role]string{
-	core.RoleButton:     "button",
-	core.RoleLink:       "link",
-	core.RoleHeader:     "heading",
-	core.RoleImage:      "img",
-	core.RoleCheckbox:   "checkbox",
-	core.RoleSwitch:     "switch",
-	core.RoleRadio:      "radio",
-	core.RoleTab:        "tab",
-	core.RoleRadioGroup: "radiogroup",
-	core.RoleTabList:    "tablist",
-	core.RoleMenu:       "menu",
-	core.RoleMenuItem:   "menuitem",
-	core.RoleDialog:     "dialog",
-	core.RoleAlert:      "alert",
+	core.RoleButton:      "button",
+	core.RoleLink:        "link",
+	core.RoleHeader:      "heading",
+	core.RoleImage:       "img",
+	core.RoleCheckbox:    "checkbox",
+	core.RoleSwitch:      "switch",
+	core.RoleRadio:       "radio",
+	core.RoleTab:         "tab",
+	core.RoleRadioGroup:  "radiogroup",
+	core.RoleTabList:     "tablist",
+	core.RoleMenu:        "menu",
+	core.RoleMenuItem:    "menuitem",
+	core.RoleDialog:      "dialog",
+	core.RoleAlert:       "alert",
+	core.RoleAdjustable:  "slider",
+	core.RoleProgressBar: "progressbar",
+}
+
+var liveRegions = [...]string{core.LiveRegionPolite: "polite", core.LiveRegionAssertive: "assertive"}
+
+// actionKeys are the keys that perform a focused view's standard actions,
+// as ARIA's sliders and dialogs take them.
+var actionKeys = map[string]string{
+	"ArrowUp": core.ActionIncrement, "ArrowRight": core.ActionIncrement,
+	"ArrowDown": core.ActionDecrement, "ArrowLeft": core.ActionDecrement,
+	"Escape": core.ActionEscape, "Enter": core.ActionActivate, " ": core.ActionActivate,
 }
 
 // setViewProps maps props to ARIA. A text field's go on its <input>,
@@ -1051,12 +1205,85 @@ func setViewProps(v *view, p *core.ViewProps) {
 			checked = "mixed"
 		}
 	}
-	setAttr(el, "role", roles[p.Role])
+	role := roles[p.Role]
+	grouped := p.Accessible == core.AccessibleYes && v.kind != core.KindText && v.kind != core.KindInput
+	if role == "" && grouped {
+		role = "group"
+	}
+	if p.Accessible == core.AccessibleNo && p.Role == core.RoleNone {
+		role = "presentation"
+	}
+	setAttr(el, "role", role)
 	setAttr(el, "aria-label", p.Label)
+	setAttr(el, "aria-description", p.Hint)
 	setAttr(el, "aria-disabled", flag(p.Disabled))
 	setAttr(el, "aria-selected", flag(p.Selected))
 	setAttr(el, "aria-checked", checked)
+	expanded := ""
+	if p.Expandable {
+		expanded = strconv.FormatBool(p.Expanded)
+	}
+	setAttr(el, "aria-expanded", expanded)
+	var lo, hi, now string
+	if val := p.Value; val.IsRange() {
+		f := func(x float32) string { return strconv.FormatFloat(float64(x), 'g', -1, 32) }
+		lo, hi, now = f(val.Min), f(val.Max), f(val.Now)
+	}
+	setAttr(el, "aria-valuemin", lo)
+	setAttr(el, "aria-valuemax", hi)
+	setAttr(el, "aria-valuenow", now)
+	setAttr(el, "aria-valuetext", p.Value.Text)
+	setAttr(el, "aria-live", liveRegions[p.LiveRegion])
+	setAttr(el, "aria-hidden", flag(p.ElementsHidden))
 	setAttr(el, "data-testid", p.TestID)
+	if grouped != v.grouped {
+		// A group's children are read through its label alone.
+		v.grouped = grouped
+		for c := v.content.Get("firstElementChild"); c.Truthy(); c = c.Get("nextElementSibling") {
+			setAttr(c, "aria-hidden", flag(grouped))
+		}
+	}
+	v.setTabIndex()
+}
+
+// setTabIndex makes pressable views and views with keyboard actions
+// Tab stops, and a view the screen reader was moved to focusable.
+func (v *view) setTabIndex() {
+	if v.kind == core.KindInput {
+		return
+	}
+	tabIndex := ""
+	switch {
+	case v.props.ElementsHidden:
+	case v.pressable() || v.events.Has(core.EventAccessibilityAction) && v.hasKeyAction():
+		tabIndex = "0"
+	case v.a11yFocus:
+		tabIndex = "-1"
+	}
+	setAttr(v.el, "tabindex", tabIndex)
+}
+
+func (v *view) hasKeyAction() bool {
+	for _, a := range v.props.ActionList() {
+		for _, name := range actionKeys {
+			if a.Name == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// focusAccessibility moves the focus, which screen readers follow, to v.
+func (v *view) focusAccessibility() {
+	el := v.el
+	if v.kind == core.KindInput {
+		el = v.inner
+	} else if !el.Call("hasAttribute", "tabindex").Bool() {
+		v.a11yFocus = true
+		v.setTabIndex()
+	}
+	el.Call("focus")
 }
 
 // pressable reports whether v captures presses on its descendants.
@@ -1068,6 +1295,9 @@ func (v *view) pressable() bool {
 
 func (s *surface) setEvents(v *view, m core.EventMask) {
 	v.events = m
+	if v.input != nil {
+		v.input.fs.Events = m
+	}
 	s.setOutside(v, m.Has(core.EventPressOutside))
 	if v.kind == core.KindInput {
 		return
@@ -1078,16 +1308,14 @@ func (s *surface) setEvents(v *view, m core.EventMask) {
 		"cursor": "", "user-select": "", "-webkit-user-select": "",
 		"-webkit-touch-callout": "", "-webkit-tap-highlight-color": "",
 	}
-	tabIndex := ""
 	if v.pressable() {
 		style = map[string]string{
 			"cursor": "pointer", "user-select": "none", "-webkit-user-select": "none",
 			"-webkit-touch-callout": "none", "-webkit-tap-highlight-color": "transparent",
 		}
-		tabIndex = "0"
 	}
 	setStyle(v.el, style)
-	setAttr(v.el, "tabindex", tabIndex)
+	v.setTabIndex()
 	s.setGestureStyle(v)
 	if !v.hover && (m.Has(core.EventHoverIn) || m.Has(core.EventHoverOut)) {
 		v.hover = true
@@ -1401,12 +1629,20 @@ func (s *surface) contextMenu(e js.Value) {
 
 // keyDown presses a focused pressable view with Enter or Space.
 func (s *surface) keyDown(e js.Value) {
-	if k := e.Get("key").String(); k != "Enter" && k != " " {
-		return
-	}
+	k := e.Get("key").String()
 	el := e.Get("target")
 	v := s.target(el)
 	if v == nil || v.kind == core.KindInput {
+		return
+	}
+	if name := actionKeys[k]; name != "" && v.el.Equal(el) && v.props.HasAction(name) &&
+		v.events.Has(core.EventAccessibilityAction) && !e.Get("isComposing").Bool() {
+		e.Call("preventDefault")
+		e.Call("stopPropagation")
+		s.send(v, core.Event{Kind: core.EventAccessibilityAction, Text: name})
+		return
+	}
+	if k != "Enter" && k != " " {
 		return
 	}
 	index := -1

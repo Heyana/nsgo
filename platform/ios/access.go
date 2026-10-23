@@ -1,0 +1,368 @@
+//go:build ios
+
+package ios
+
+import (
+	"fmt"
+	"math"
+	"runtime"
+	"strings"
+	"unsafe"
+
+	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
+
+	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/platform/internal/apple"
+)
+
+// Accessibility: VoiceOver reads each view's UIAccessibility properties,
+// set here from its props, events and text.
+//
+// - A view is an element when its role says so; without a role, text and
+//   pressable, labelled or Accessible views are. An element's subviews
+//   are not read, so an Accessible view is one element (the core labels
+//   it with its text). AccessibleNo views are none, and hidden ones hide
+//   their subtree.
+// - The value is Text, else a range's percentage, then the checked and
+//   expanded states, which UIKit has no traits for.
+// - Increment and decrement are the adjustable trait's swipes, escape
+//   and magic tap VoiceOver's gestures; custom actions are
+//   UIAccessibilityCustomActions.
+// - Live regions are announced from here: a changed label, or a changed
+//   text inside one.
+
+var (
+	selSetAccessibilityHint           = sel("setAccessibilityHint:")
+	selSetAccessibilityElementsHidden = sel("setAccessibilityElementsHidden:")
+	selCustomAction                   = sel("nsgoAccessibilityAction:")
+	layoutChanged                     uint32 // UIAccessibilityLayoutChangedNotification
+)
+
+var traitNames = []string{"Button", "Link", "Header", "Image", "StaticText", "Selected", "NotEnabled", "TabBar",
+	"Adjustable", "UpdatesFrequently"}
+
+func loadAccessibility(uikit uintptr) {
+	for _, name := range []string{"UIAccessibilityAnnouncementNotification", "UIAccessibilityLayoutChangedNotification"} {
+		if addr, err := purego.Dlsym(uikit, name); err == nil {
+			n := **(**uint32)(unsafe.Pointer(&addr))
+			if name == "UIAccessibilityAnnouncementNotification" {
+				announcement = n
+			} else {
+				layoutChanged = n
+			}
+		}
+	}
+	for _, name := range traitNames {
+		addr, err := purego.Dlsym(uikit, "UIAccessibilityTrait"+name)
+		if err != nil {
+			panic(err)
+		}
+		traits[name] = **(**uint64)(unsafe.Pointer(&addr))
+	}
+}
+
+// accessMethods are what every view answers VoiceOver's actions with.
+func accessMethods() []objc.MethodDef {
+	standard := func(name string) func(objc.ID, objc.SEL) bool {
+		return func(self objc.ID, _ objc.SEL) bool {
+			v := views[self]
+			return v != nil && v.action(name)
+		}
+	}
+	return []objc.MethodDef{
+		{Cmd: sel("accessibilityActivate"), Fn: accessibilityActivate},
+		{Cmd: sel("accessibilityIncrement"), Fn: func(self objc.ID, _ objc.SEL) {
+			if v := views[self]; v != nil {
+				v.action(core.ActionIncrement)
+			}
+		}},
+		{Cmd: sel("accessibilityDecrement"), Fn: func(self objc.ID, _ objc.SEL) {
+			if v := views[self]; v != nil {
+				v.action(core.ActionDecrement)
+			}
+		}},
+		{Cmd: sel("accessibilityPerformEscape"), Fn: standard(core.ActionEscape)},
+		{Cmd: sel("accessibilityPerformMagicTap"), Fn: standard(core.ActionMagicTap)},
+		{Cmd: selCustomAction, Fn: accessibilityCustom},
+		{Cmd: sel("accessibilityLabel"), Fn: accessibilityLabel},
+	}
+}
+
+func nsOrNil(s string) objc.ID {
+	if s == "" {
+		return 0
+	}
+	return apple.NSString(s)
+}
+
+// setProps applies new props, announcing a live region's new label.
+func (v *view) setProps(p *core.ViewProps) {
+	old := v.props
+	v.props = *p
+	if p.TestID != old.TestID {
+		v.native.Send(selSetAccessibilityIdentifier, nsOrNil(p.TestID))
+	}
+	v.updateAccessibility()
+	if v.propsSet && p.Label != old.Label {
+		v.announceLive(p.Label)
+	}
+	v.propsSet = true
+}
+
+// setLabel is ItemAccessibilityLabel.
+func (v *view) setLabel(label string) {
+	if label == v.props.Label {
+		return
+	}
+	v.props.Label = label
+	v.announceLive(label)
+}
+
+// label is what VoiceOver reads for v: its label, else a text's text.
+func (v *view) label() string {
+	if v.props.Label == "" && v.kind == core.KindText {
+		return v.plain
+	}
+	return v.props.Label
+}
+
+// spokenLabel is what VoiceOver reads for v: its label, a text's text,
+// or the texts inside it, as React Native's elements without a label.
+func (v *view) spokenLabel() string {
+	if l := v.label(); l != "" || v.kind == core.KindText || !v.axElement {
+		return l
+	}
+	var parts []string
+	collectText(v.native, &parts)
+	return strings.Join(parts, " ")
+}
+
+func collectText(native objc.ID, out *[]string) {
+	for _, c := range apple.Subviews(native) {
+		if objc.Send[bool](c, sel("isHidden")) {
+			continue
+		}
+		if cv := views[c]; cv != nil && cv.kind == core.KindText {
+			if l := cv.label(); l != "" {
+				*out = append(*out, l)
+			}
+			continue
+		}
+		collectText(c, out)
+	}
+}
+
+// accessibilityLabel answers VoiceOver with spokenLabel, read when asked
+// so that it follows the texts inside.
+func accessibilityLabel(self objc.ID, cmd objc.SEL) objc.ID {
+	if v := views[self]; v != nil && v.id != 0 {
+		return nsOrNil(v.spokenLabel())
+	}
+	return apple.SendSuper[objc.ID](self, cmd)
+}
+
+// textChanged follows ItemText: a text inside a live region is announced.
+func (v *view) textChanged(text string) {
+	if text == v.plain {
+		return
+	}
+	first := !v.textSet
+	v.plain, v.textSet = text, true
+	if first {
+		return
+	}
+	for p := v; p != nil; p = p.parent() {
+		if p.props.LiveRegion != core.LiveRegionNone {
+			uiAccessibilityPost(announcement, apple.NSString(text))
+			return
+		}
+	}
+}
+
+// parent returns the view v is mounted in, if any.
+func (v *view) parent() *view {
+	for n := v.native.Send(selSuperview); n != 0; n = n.Send(selSuperview) {
+		if p := views[n]; p != nil {
+			if p.id == 0 {
+				return nil // the surface
+			}
+			return p
+		}
+	}
+	return nil
+}
+
+func (v *view) announceLive(text string) {
+	if v.props.LiveRegion != core.LiveRegionNone && v.kind != core.KindText && text != "" {
+		uiAccessibilityPost(announcement, apple.NSString(text))
+	}
+}
+
+// updateAccessibility sets v's properties from its props, events and text.
+func (v *view) updateAccessibility() {
+	native, p := v.native, &v.props
+	// VoiceOver keeps to a dialog while it shows.
+	native.Send(sel("setAccessibilityViewIsModal:"), p.Role == core.RoleDialog)
+	native.Send(selSetAccessibilityElementsHidden, p.ElementsHidden)
+	const noContainer, semanticGroup = 0, 4
+	pressable := v.events.Has(core.EventPress) || v.events.Has(core.EventLongPress)
+	var t uint64
+	switch p.Role {
+	case core.RoleRadioGroup, core.RoleTabList, core.RoleMenu, core.RoleDialog, core.RoleAlert:
+		// Groups are containers, so their children stay accessible.
+		native.Send(selSetIsAccessibilityElement, false)
+		v.axElement = false
+		native.Send(selSetAccessibilityContainerType, semanticGroup)
+		if p.Role == core.RoleTabList {
+			native.Send(selSetAccessibilityTraits, traits["TabBar"])
+		}
+		return
+	case core.RoleNone:
+		if pressable {
+			t = traits["Button"]
+		}
+	case core.RoleButton, core.RoleCheckbox, core.RoleSwitch, core.RoleRadio, core.RoleTab, core.RoleMenuItem:
+		t = traits["Button"]
+	case core.RoleLink:
+		t = traits["Link"]
+	case core.RoleHeader:
+		t = traits["Header"]
+	case core.RoleImage:
+		t = traits["Image"]
+	case core.RoleText:
+		t = traits["StaticText"]
+	case core.RoleAdjustable:
+		t = traits["Adjustable"]
+	case core.RoleProgressBar:
+		t = traits["UpdatesFrequently"]
+	}
+	if p.HasAction(core.ActionIncrement) || p.HasAction(core.ActionDecrement) {
+		t |= traits["Adjustable"]
+	}
+	if p.Selected {
+		t |= traits["Selected"]
+	}
+	if p.Disabled {
+		t |= traits["NotEnabled"]
+	}
+	element := p.Role != core.RoleNone || v.kind == core.KindText || pressable || p.Label != "" ||
+		p.Accessible == core.AccessibleYes
+	if p.Accessible == core.AccessibleNo || p.Role == core.RoleTextField {
+		element = false
+	}
+	native.Send(selSetIsAccessibilityElement, element)
+	v.axElement = element
+	native.Send(selSetAccessibilityContainerType, noContainer)
+	if !element {
+		return
+	}
+	native.Send(selSetAccessibilityTraits, t)
+	native.Send(selSetAccessibilityHint, nsOrNil(p.Hint))
+	native.Send(selSetAccessibilityValue, nsOrNil(spokenValue(p)))
+	var custom []objc.ID
+	for _, a := range p.ActionList() {
+		if core.IsStandardAction(a.Name) {
+			continue
+		}
+		label := a.Label
+		if label == "" {
+			label = a.Name
+		}
+		act := objc.ID(objc.GetClass("UIAccessibilityCustomAction")).Send(selAlloc).Send(
+			sel("initWithName:target:selector:"), apple.NSString(label), native, selCustomAction)
+		custom = append(custom, act)
+	}
+	if len(custom) > 0 || v.axCustom {
+		v.axCustom = len(custom) > 0
+		arr := objc.ID(0)
+		if len(custom) > 0 {
+			arr = objc.ID(objc.GetClass("NSArray")).Send(sel("arrayWithObjects:count:"),
+				unsafe.Pointer(&custom[0]), uint(len(custom)))
+			runtime.KeepAlive(custom)
+		}
+		native.Send(sel("setAccessibilityCustomActions:"), arr)
+		for _, a := range custom {
+			a.Send(selRelease)
+		}
+	}
+}
+
+// spokenValue is the value VoiceOver reads: the value's text, else a
+// range's percentage, then the checked and expanded states.
+func spokenValue(p *core.ViewProps) string {
+	var parts []string
+	val := p.Value
+	switch {
+	case val.Text != "":
+		parts = append(parts, val.Text)
+	case val.IsRange():
+		parts = append(parts, fmt.Sprintf("%g%%", math.Round(float64((val.Now-val.Min)/(val.Max-val.Min)*100))))
+	}
+	switch p.Role {
+	case core.RoleCheckbox, core.RoleSwitch, core.RoleRadio:
+		switch {
+		case p.Indeterminate:
+			parts = append(parts, "mixed")
+		case p.Checked || p.Selected:
+			parts = append(parts, "1")
+		default:
+			parts = append(parts, "0")
+		}
+	}
+	if p.Expandable {
+		if p.Expanded {
+			parts = append(parts, "expanded")
+		} else {
+			parts = append(parts, "collapsed")
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+// action reports the accessibility action name if v offers it.
+func (v *view) action(name string) bool {
+	if !v.props.HasAction(name) || !v.events.Has(core.EventAccessibilityAction) {
+		return false
+	}
+	v.report(core.Event{Kind: core.EventAccessibilityAction, Text: name})
+	return true
+}
+
+func accessibilityActivate(self objc.ID, _ objc.SEL) bool {
+	v := views[self]
+	switch {
+	case v == nil:
+		return false
+	case v.action(core.ActionActivate):
+		return true
+	case !v.events.Has(core.EventPress):
+		return false
+	}
+	v.report(core.Event{Kind: core.EventPress, Index: -1})
+	return true
+}
+
+// accessibilityCustom runs the custom action whose name VoiceOver chose.
+func accessibilityCustom(self objc.ID, _ objc.SEL, action objc.ID) bool {
+	v := views[self]
+	if v == nil {
+		return false
+	}
+	label := apple.GoString(action.Send(sel("name")))
+	for _, a := range v.props.ActionList() {
+		if a.Label == label || (a.Label == "" && a.Name == label) {
+			return v.action(a.Name)
+		}
+	}
+	return false
+}
+
+// focusAccessibility moves VoiceOver to v.
+func (v *view) focusAccessibility() {
+	target := v.native
+	if v.input != nil {
+		target = v.input.field
+	}
+	uiAccessibilityPost(layoutChanged, target)
+}

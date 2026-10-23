@@ -49,6 +49,17 @@ func TestSidebarSwitchesSections(t *testing.T) {
 	if got := app.Find("id:logo").Frame.Size; got != (core.Size{Width: 96, Height: 96}) {
 		t.Fatalf("logo = %v, want its declared size", got)
 	}
+	if got := app.Find("label:Cover, left").Image.Position.X; got != core.PositionStart {
+		t.Fatalf("position = %+v, want the start", got)
+	}
+	if got := app.Find("id:blurred").Image.BlurRadius; got != 6 {
+		t.Fatalf("blur radius = %v", got)
+	}
+	app.ImageSizes = map[string]core.Size{riverURL: {Width: 600, Height: 300}}
+	app.Press("label:Get size")
+	if got := app.Find("id:image-size").Text; got != "600×300 px" {
+		t.Fatalf("size = %q", got)
+	}
 }
 
 func TestDocumentationSwitchesLanguages(t *testing.T) {
@@ -94,6 +105,43 @@ func TestPhoneStack(t *testing.T) {
 	app.Press("id:nav-Lists")
 	app.Resize(1000, 700)
 	app.Find("id:section-Lists")
+}
+
+func TestPhoneSystemHeader(t *testing.T) {
+	ios := core.Environment{OS: core.OSIOS, Locale: "en-US", SafeArea: core.Edges{Top: 47, Bottom: 34},
+		HeaderHeight: 44, LargeHeaderHeight: 96}
+	app := nsgotest.Start(t, Root, nsgotest.Environment(ios))
+	index := app.Find("id:index").Screen
+	if index.Title != "Gallery" || index.HeaderHeight != 91 || index.Right == 0 || index.CanGoBack {
+		t.Fatalf("index header = %+v", index)
+	}
+	app.Press("id:nav-Popups")
+	popups := app.Find("id:screen-Popups").Screen
+	if !popups.CanGoBack || popups.BackTitle != "Gallery" || popups.Background == 0 {
+		t.Fatalf("section header = %+v", popups)
+	}
+
+	// A page sheet lightens the status bar while it is open, and a swipe
+	// closes it.
+	app.Press("role:button Page sheet")
+	app.Find("text:A page sheet")
+	if m := app.Find("id:presented").Parent.Modal; m.Presentation != core.ModalPageSheet || m.Orientations != core.OrientationPortrait {
+		t.Fatalf("modal = %+v", m)
+	}
+	if app.StatusBar.Style != core.StatusBarLight {
+		t.Errorf("status bar = %+v under the page sheet", app.StatusBar)
+	}
+	app.SwipeClose("id:presented")
+	app.Find("text:Last closed by swipe")
+	if app.Exists("text:A page sheet") || app.StatusBar.Style != core.StatusBarAuto {
+		t.Errorf("the swiped sheet stayed, status bar %+v", app.StatusBar)
+	}
+
+	app.HeaderBack("id:screen-Popups")
+	app.Find("id:index")
+	if app.Exists("id:screen-Popups") {
+		t.Error("the header's back button did not pop the section")
+	}
 }
 
 func TestGestures(t *testing.T) {
@@ -221,6 +269,52 @@ func TestOverlaysSection(t *testing.T) {
 	}
 }
 
+func TestAccessibilitySection(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Accessibility")
+	q := app.Find("role:adjustable Quantity")
+	if q.Props.Hint == "" || q.Props.Value != (core.AccessibilityValue{Max: 10, Now: 2, Text: "2 items"}) {
+		t.Fatalf("quantity props = %+v", q.Props)
+	}
+	app.AccessibilityAction("id:a11y-quantity", core.ActionIncrement)
+	if v := app.Find("id:a11y-quantity").Props.Value; v.Now != 3 || v.Text != "3 items" {
+		t.Errorf("after an increment the value is %+v", v)
+	}
+
+	if d := app.Find("id:a11y-disclosure"); !d.Props.Expandable || d.Props.Expanded {
+		t.Fatalf("disclosure props = %+v, want collapsed", d.Props)
+	}
+	app.Press("id:a11y-disclosure")
+	if !app.Find("id:a11y-disclosure").Props.Expanded {
+		t.Error("the disclosure does not report it expanded")
+	}
+
+	app.AccessibilityAction("id:a11y-message", "archive")
+	app.Find("text:Last action: archive")
+	if m := app.Find("id:a11y-message"); m.Props.Label != "Ana Lunch on Friday?" || m.Props.Accessible != core.AccessibleYes {
+		t.Errorf("message props = %+v, want one element read from its text", m.Props)
+	}
+	app.Press("role:button Change the price")
+	if got := app.Find("id:a11y-card").Props.Label; got != "Apples $1.35 a kilo" {
+		t.Errorf("card label = %q after the price changed", got)
+	}
+
+	if !app.Find("id:a11y-hidden").Props.ElementsHidden {
+		t.Error("the decoration is not hidden")
+	}
+	app.Press("role:switch Hide the decoration")
+	if app.Find("id:a11y-hidden").Props.ElementsHidden {
+		t.Error("the switch did not show the decoration")
+	}
+	if app.Find("id:a11y-live").Props.LiveRegion != core.LiveRegionPolite {
+		t.Error("the basket count is no live region")
+	}
+	app.Press("id:a11y-search")
+	if f := app.AccessibilityFocus; f == nil || f.Props.TestID != "a11y-result" {
+		t.Errorf("accessibility focus = %v, want the results", f)
+	}
+}
+
 func TestStorageSection(t *testing.T) {
 	app := startDesktop(t, nsgotest.Storage(map[string]string{"gallery.draft": "kept", "gallery.opened": "2"}))
 	app.Press("id:nav-Storage")
@@ -235,6 +329,48 @@ func TestStorageSection(t *testing.T) {
 	app.Press("role:button Clear storage")
 	if keys := app.Storage().Keys(); len(keys) != 0 {
 		t.Fatalf("keys after clearing: %v", keys)
+	}
+}
+
+func TestEditingFields(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Controls")
+	app.Type("id:code", "12345678")
+	if v := app.Find("id:code"); v.Text != "123456" {
+		t.Fatalf("code %q, want it cut to 6", v.Text)
+	}
+	app.Find("text:6 of 6 characters")
+	// Return sends a message and keeps the field; a multiline note grows.
+	app.Type("id:message", "hi")
+	app.Submit("id:message")
+	app.Find(`text:Sent 1: "hi"`)
+	if v := app.Find("id:message"); v.Text != "" {
+		t.Fatalf("message %q after sending", v.Text)
+	}
+	short := app.Find("id:note").Frame.Size.Height
+	app.Type("id:note", "one")
+	app.Submit("id:note")
+	app.KeyPress("id:note", "t")
+	if v := app.Find("id:note"); v.Text != "one\nt" || v.Frame.Size.Height <= short {
+		t.Fatalf("note %q, %v tall (was %v)", v.Text, v.Frame.Size.Height, short)
+	}
+	app.Press("role:button Select all")
+	if r := app.Find("id:words").Selection; r != (core.TextRange{Start: 0, End: 26}) {
+		t.Fatalf("selection %v", r)
+	}
+	app.Select("id:words", 2, 4)
+	app.Find(`text:Selection 2 to 4, last key ""`)
+	app.KeyPress("id:words", "x")
+	app.Find(`text:Selection 27 to 27, last key "x"`)
+	// A value the app sets while an input method composes waits for its end.
+	app.Compose("id:upper", "ni")
+	app.Type("id:upper", "ni")
+	if v := app.Find("id:upper"); v.Text != "ni" {
+		t.Fatalf("upper %q during the composition", v.Text)
+	}
+	app.Compose("id:upper", "")
+	if v := app.Find("id:upper"); v.Text != "NI" {
+		t.Fatalf("upper %q", v.Text)
 	}
 }
 
@@ -253,6 +389,16 @@ func TestTextViewStreams(t *testing.T) {
 	}
 	app.Find("id:streamed >> text:Done.")
 	app.Find("id:streamed >> text:Never")
+}
+
+func TestTextTransformsFitsAndReportsLines(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Text")
+	app.Find("text:UPPERCASE")
+	app.Find("text:Capitalize Each Word")
+	if got := app.Find("text:1 line, ").Text; !strings.HasPrefix(got, "1 line, ") {
+		t.Fatalf("reported lines = %q, want the shrunk text on one line", got)
+	}
 }
 
 func TestWebViewMessages(t *testing.T) {
@@ -535,5 +681,113 @@ func TestKeyboardAccessory(t *testing.T) {
 	app.Press("id:accessory-bar >> text:Clear")
 	if got := app.Find("id:accessory-field").Text; got != "" {
 		t.Fatalf("field holds %q after Clear", got)
+	}
+}
+
+func TestScrollingSection(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Scrolling")
+	pages := app.Find("id:pages")
+	if !pages.Scroll.Behavior.Paging || pages.Offset.X != 280 {
+		t.Fatalf("pages: config %+v at %v, want paging from the second page", pages.Scroll, pages.Offset)
+	}
+	// A fling forward pages on, one page at a time.
+	app.DragScroll("id:pages", core.Point{X: 330}, 900)
+	if got := app.Find("id:pages").Offset.X; got != 560 {
+		t.Fatalf("paged to %v, want 560", got)
+	}
+	app.Find("text:Page 3 of 5")
+
+	app.Press("role:button One card per fling")
+	app.Find("text:Each fling moves one card")
+	if c := app.Find("id:cards").Scroll.Behavior; !c.DisableIntervalMomentum || c.SnapToInterval != 152 {
+		t.Fatalf("cards: %+v", c)
+	}
+
+	app.DragScroll("id:feed", core.Point{Y: 100}, 0)
+	feed := app.Find("id:feed")
+	app.Find(fmt.Sprintf("text:Drag end at 100 · content %.0f × %.0f in %.0f × 220",
+		feed.Content.Width, feed.Content.Height, feed.Frame.Size.Width))
+	app.PullToRefresh("id:feed")
+	if !app.Find("id:feed").Scroll.Refreshing {
+		t.Fatal("the pull did not refresh")
+	}
+	app.Find("text:Refreshing…")
+	app.Advance(1500 * time.Millisecond)
+	app.Find("text:Refreshed 1 times")
+	if app.Find("id:feed").Scroll.Refreshing {
+		t.Fatal("still refreshing")
+	}
+	app.Press("role:button Scrolling on or off")
+	app.DragScroll("id:feed", core.Point{Y: 300}, 0)
+	if got := app.Find("id:feed").Offset.Y; got != 100 {
+		t.Fatalf("a view that does not scroll moved to %v", got)
+	}
+
+	if z := app.Find("id:zoom").Scroll; !z.Zooms() || z.MinZoomScale != 0.5 || z.MaxZoomScale != 4 || !z.CenterContent {
+		t.Fatalf("zoom: %+v", z)
+	}
+	app.PinchZoom("id:zoom", 2)
+	app.Find("text:Zoom 2.0×")
+	app.Press("role:button Zoom in on C")
+	app.Find("text:Zoom 3.0×")
+}
+
+func TestListProps(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Lists")
+
+	// Rows inserted above the viewport keep the visible ones in place.
+	sections := app.Find("id:sections")
+	app.Scroll("id:sections", core.Point{Y: 600})
+	row := func(text string) *nsgotest.View { return app.Find("text:" + text).Parent.Parent }
+	first := app.Query("text:Row #")[0]
+	name := first.Text
+	at := row(name).Frame.Origin.Y - sections.Offset.Y
+	app.Press("text:Insert 5 above")
+	if got := row(name).Frame.Origin.Y - sections.Offset.Y; got != at {
+		t.Errorf("%s moved from %v to %v on screen after inserting above it", name, at, got)
+	}
+	// Section headers stick: one is pinned at the top.
+	if len(sections.Sticky) == 0 {
+		t.Error("no sticky cells")
+	}
+	if !strings.HasPrefix(app.Find("text:Viewing").Text, "Viewing") {
+		t.Error("no viewable rows reported")
+	}
+
+	// Three columns of tiles.
+	tile := func(n string) *nsgotest.View {
+		for _, v := range app.Query("id:grid >> text:" + n) {
+			if v.Text == n {
+				return v.Parent.Parent
+			}
+		}
+		t.Fatalf("no tile %s", n)
+		return nil
+	}
+	one, two := tile("1"), tile("2")
+	if one.Frame.Origin.Y != two.Frame.Origin.Y || two.Frame.Origin.X <= one.Frame.Origin.X {
+		t.Errorf("tiles 1 and 2 at %+v and %+v, want side by side", one.Frame, two.Frame)
+	}
+	app.PullToRefresh("id:grid")
+	if !app.Find("id:grid").Scroll.Refreshing {
+		t.Error("pulling the grid did not refresh it")
+	}
+
+	// The chat starts at its end, the newest message at the bottom.
+	chat := app.Find("id:chat")
+	app.Press("text:Send")
+	newest := app.Find("text:Message 3").Parent.Parent
+	if bottom := newest.Frame.Origin.Y + newest.Frame.Size.Height - chat.Offset.Y; bottom < chat.Frame.Size.Height-20 {
+		t.Errorf("the newest message ends at %v in a chat %v tall", bottom, chat.Frame.Size.Height)
+	}
+
+	// The page list is laid out at its full length in the page.
+	if l := app.Find("id:page-list"); l.Kind != core.KindView || l.Frame.Size.Height < 200*40 {
+		t.Errorf("the page list is a %v %v tall", l.Kind, l.Frame.Size.Height)
+	}
+	if app.Exists("text:Page row 150") {
+		t.Error("a row far below the page's viewport is mounted")
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/platform/internal/field"
 	"github.com/oneo-me/nsgo/platform/internal/hover"
 	"github.com/oneo-me/nsgo/platform/internal/scrollbar"
 )
@@ -32,13 +33,26 @@ type view struct {
 	scroll core.ScrollConfig
 	size   core.Size
 	offset core.Point
+	wheel  scrollbar.Wheel // a snapping view's wheel turns
+	// applied counts the core's ItemScrollTo and ItemScrollBy items,
+	// reported with each offset; sticky are a scroll view's sticky cells,
+	// and laid and shift a sticky cell's frame from the core and how far
+	// it is moved from it.
+	applied uint32
+	sticky  []core.StickyCell
+	laid    core.Bounds
+	shift   core.Point
 
-	// An input's GtkEntry and what the window keeps for it.
-	entry    uintptr
-	provider uintptr // the entry's CSS
-	input    core.InputConfig
-	edits    uint32 // user edits so far
-	setting  bool   // the window is setting the text, not the user
+	// An input's editor: entry is what is placed at the content, a
+	// GtkEntry, or a GtkScrolledWindow holding the GtkTextView textView
+	// of buffer; hint is a text view's placeholder label.
+	entry, textView, buffer, hint uintptr
+	provider                      uintptr // the editor's CSS, for the display
+	input                         core.InputConfig
+	fs                            field.State
+	// setting is the window setting the text, not the user; clipping an
+	// insertion cut to maxLength.
+	setting, clipping bool
 
 	// An image view's configuration, source and placeholder.
 	image               core.ImageConfig
@@ -212,7 +226,8 @@ type barDrag struct {
 
 // bar returns a scroll view's scroll bar.
 func (v *view) bar() scrollbar.Bar {
-	return scrollbar.Bar{Horizontal: v.scroll.Horizontal, Frame: v.frame.Size, Content: v.size, Offset: v.offset}
+	return scrollbar.Bar{Horizontal: v.scroll.Horizontal, Frame: v.frame.Size, Content: v.size, Offset: v.offset,
+		Inset: v.scroll.Behavior.ContentInset}
 }
 
 // hoverBars shows the bars of the scroll views under at, the pointer.
@@ -244,6 +259,8 @@ func (w *window) pressBar(at core.Point) bool {
 		return false
 	}
 	w.barDrag = &barDrag{v: v, from: at, origin: core.Point{X: at.X - local.X, Y: at.Y - local.Y}, drag: v.bar().Press(local)}
+	w.interruptScroll(v)
+	w.scrollEvent(v, core.EventScrollDragStart)
 	w.dragBar(at)
 	return true
 }
@@ -255,7 +272,7 @@ func (w *window) dragBar(at core.Point) {
 		w.barDrag = nil
 		return
 	}
-	d.v.scrolling = nil // the bar takes over
+	w.interruptScroll(d.v) // the bar takes over
 	w.scrollTo(d.v, d.drag.Offset(core.Point{X: at.X - d.origin.X, Y: at.Y - d.origin.Y}))
 	gtkWidgetQueueDraw(w.surface)
 }
@@ -276,7 +293,7 @@ func barAt(v *view, p core.Point) (*view, core.Point) {
 			break
 		}
 	}
-	if v.kind == core.KindScroll && !v.scroll.HideIndicator && v.bar().Contains(local) {
+	if v.kind == core.KindScroll && !v.scroll.HideIndicator && !v.scroll.Behavior.NoScroll && v.bar().Contains(local) {
 		return v, local
 	}
 	return nil, p

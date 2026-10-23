@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"time"
 
 	"github.com/oneo-me/nsgo/core"
 )
@@ -15,7 +16,8 @@ func imagesPage(cx *core.Scope, t *theme) core.Node {
 	modes := []struct {
 		name string
 		mode core.ResizeMode
-	}{{"Cover", core.Cover}, {"Contain", core.Contain}, {"Stretch", core.Stretch}, {"Center", core.Center}}
+	}{{"Cover", core.Cover}, {"Contain", core.Contain}, {"Stretch", core.Stretch}, {"Center", core.Center},
+		{"ScaleDown", core.ScaleDown}}
 	var resized []core.Node
 	for _, m := range modes {
 		resized = append(resized, core.View{Style: core.Style{Gap: 4, AlignItems: core.AlignCenter}, Children: []core.Node{
@@ -23,6 +25,47 @@ func imagesPage(cx *core.Scope, t *theme) core.Node {
 				Style: core.Style{Width: core.Pt(120), Height: core.Pt(90), CornerRadius: 6, Background: t.sunken, Overflow: core.Hidden}},
 			t.note(m.name),
 		}})
+	}
+	frame := core.Style{Width: core.Pt(120), Height: core.Pt(90), CornerRadius: 6, Background: t.sunken, Overflow: core.Hidden}
+	positions := []struct {
+		name string
+		mode core.ResizeMode
+		at   core.ObjectPosition
+	}{
+		{"Contain, top", core.Contain, core.ObjectPosition{Y: core.PositionStart}},
+		{"Contain, 8pt from the bottom", core.Contain, core.ObjectPosition{Y: core.PositionAxis{Offset: core.Pt(8), FromEnd: true}}},
+		{"Cover, left", core.Cover, core.ObjectPosition{X: core.PositionStart}},
+		{"Cover, right", core.Cover, core.ObjectPosition{X: core.PositionEnd}},
+	}
+	var placed []core.Node
+	for _, p := range positions {
+		style := frame
+		style.ObjectPosition = p.at
+		placed = append(placed, core.View{Style: core.Style{Gap: 4, AlignItems: core.AlignCenter}, Children: []core.Node{
+			core.Image{Source: core.Src(riverURL), ResizeMode: p.mode, Label: p.name, Style: style},
+			t.note(p.name),
+		}})
+	}
+	size := core.NewSignal(cx, "not asked")
+	getSize := func() {
+		size.Set("asking…")
+		cx.ImageSize(core.Src(riverURL), func(px core.Size, err error) {
+			if err != nil {
+				size.Set("error: " + err.Error())
+				return
+			}
+			size.Set(fmt.Sprintf("%g×%g px", px.Width, px.Height))
+		})
+	}
+	prefetch := func() {
+		size.Set("prefetching…")
+		cx.PrefetchImage(core.Src(riverURL), func(ok bool) {
+			if ok {
+				size.Set("prefetched: views show it without loading again")
+			} else {
+				size.Set("prefetch failed")
+			}
+		})
 	}
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
 		t.demo("Embedded", "Bytes from go:embed, sized by the source's declared size; TintColor recolors opaque pixels.",
@@ -43,7 +86,20 @@ func imagesPage(cx *core.Scope, t *theme) core.Node {
 				Placeholder: core.ImageSource{Data: logo}},
 			t.live(status.Get),
 		),
-		t.demo("Resize modes", "ResizeMode fits a 2:1 picture into a 4:3 view.", flow(resized...)),
+		t.demo("Resize modes", "ResizeMode fits a 2:1 picture into a 4:3 view: Center keeps its size, cropped, and ScaleDown shrinks it.",
+			flow(resized...)),
+		t.demo("Object position", "The style's ObjectPosition places the fitted picture; it is centered by default.", flow(placed...)),
+		t.demo("Blur and fade", "BlurRadius blurs the picture in points; FadeDuration fades it in over its placeholder.",
+			hstack(
+				core.Image{Source: core.Src(riverURL), BlurRadius: 6, Label: "Blurred", TestID: "blurred", Style: frame},
+				core.Image{Source: core.Src(riverURL), FadeDuration: 800 * time.Millisecond, Label: "Fades in",
+					Placeholder: core.ImageSource{Data: logo}, Style: frame},
+			),
+		),
+		t.demo("Size and prefetch", "Scope.ImageSize loads an image and reports its pixels; PrefetchImage loads one ahead.",
+			hstack(t.plain("Get size", getSize), t.plain("Prefetch", prefetch)),
+			core.Text{ContentFunc: size.Get, Style: t.caption(), TestID: "image-size"},
+		),
 		t.demo("Animated and vector", "Animated GIF and WebP files play on the platform; an SVG file draws sharp at the view's size.",
 			hstack(
 				core.Image{Source: core.ImageSource{Data: animatedGIF}, Label: "Animated GIF", TestID: "gif",

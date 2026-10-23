@@ -8,19 +8,7 @@ References are files in `nsh/docs/dev/` unless they name a crate, with the bulle
 
 Sections run in build order: what apps build on first, then components, services, the tool, embedding and performance. The last section waits for community contributions, and nothing above it depends on it.
 
-## 1. Element props
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| Input | `elements.md` (`<Input>`) | Multiline fields, max length, return keys, submit behavior, capitalization, correction, content types, selection ranges, key, composition and size events, placeholder color |
-| Scroll | `scrolling-and-lists.md` | Paging, snapping, deceleration, bounces, insets, an initial offset, keyboard dismissal, drag, momentum and end events with sizes, pull to refresh, zooming |
-| List | `scrolling-and-lists.md` | Keyed rows with anchoring, columns, inverted lists, following the end, sticky headers with an offset, separators, an initial index, viewability, refresh, `OffsetValues`, lists in their parent's viewport |
-| Text | `text.md` | Head, middle and clip ellipsis, per-text font scaling and fitting, `OnTextLayout` lines, text transforms, decoration styles and colors, justified text, text shadows |
-| Image | `images.md` | `ObjectPosition`, NSH's `Center` beside `ScaleDown`, `GetSize` and `Prefetch`, blur and fade on Windows and Linux |
-| Accessibility | `elements.md` (interaction and the environment) | Hints, values and ranges, actions, hidden and grouped elements, live regions, the expanded state, `SetAccessibilityFocus` |
-| Screens and dialogs | `elements.md` (`<NavStack>`, `<Dialog>`) | Screens set a system header and a status bar; modals take iOS sheet presentations, swipe to close and orientations |
-
-## 2. Input and interaction
+## 1. Input and interaction
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -31,7 +19,7 @@ Sections run in build order: what apps build on first, then components, services
 | Back and keys | `components.md`, `crates/nsh-core/src/keymap.rs` | Any owner can take back before stacks; key bindings take `when` and `repeat` and give labels such as ⇧⌘L |
 | Frames | `elements.md` (interaction and the environment) | `RequestAnimationFrame` follows the display's frame clock |
 
-## 3. Styles and layout
+## 2. Styles and layout
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -45,18 +33,19 @@ Sections run in build order: what apps build on first, then components, services
 | Direction | `elements.md` (right to left) | A subtree overrides the direction; start and end style fields; writing direction |
 | Group and keyframe styles | `components.md` (styles), `styles.md` (effects) | Children style by an ancestor's state; spin, ping, pulse and bounce keyframes |
 
-## 4. Text and canvas
+## 3. Text and canvas
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | Fonts | `components.md` (assets) | Apps ship font files that every backend registers before the first view |
+| Ellipses | `text.md` | Head and middle ellipses on several lines, and beside attachments on Windows and the web |
 | Canvas drawing | `canvas.md` | Matrices, composite modes, dashes, miter limits, shadows, text alignment and stroking, `arcTo`, rotated ellipses, per-corner rectangles, conic gradients, SVG paths, images |
 | Canvas queries | `canvas.md` | `MeasureText`, text metrics, point-in-path and point-in-stroke tests |
 | Canvas nodes | `canvas.md` (nodes) | Named parts of a drawing are accessibility and test elements with a role, label and selected state |
 | Animated drawings | `canvas.md`, `animation.md` | Animated values as drawing arguments, redrawn on the frame clock without commits |
 | Animation API | `animation.md` | Composite `Reset`, spring and decay samplers, shadow opacity and text color bindings |
 
-## 5. Base components and popups
+## 4. Base components and popups
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -66,12 +55,13 @@ Sections run in build order: what apps build on first, then components, services
 | Resizable panels | `dock.md` (layers) | `ResizablePanelGroup`, `ResizablePanel` and `ResizeHandle` with sizes, limits, handle parts and screen-reader steps |
 | Dock area | `dock.md` | `DockArea` reads and writes gpui-base's layout format, drags tabs between groups and docks, and shows one group at a time below 600 pt |
 | Touch-screen popups | `components.md` (popups) | Phones give popovers a backdrop and menus a bottom sheet with submenu levels; context menus open at the pointer or after a 400 ms hold |
+| System headers | `elements.md` (`<NavStack>`) | Large titles collapse on scroll, transparent headers inset scroll views, platforms measure each screen's header, and `ui.Dialog` takes the modal props |
 | Sheets and tooltips | `crates/nsh-base/src/sheet.rs`, `tooltip.rs` | Sheets slide from their side over a fading backdrop and report after the motion; any element takes a tooltip that never takes the pointer |
 | Text view | `text-view.md` | A streaming caret, table and code block actions, scroll bar switches, Markdown options, extensions for a subtree, highlighting off the engine goroutine |
 
-`DockArea` needs the resizable panels and the touch responder from section 2.
+`DockArea` needs the resizable panels and the touch responder from section 1.
 
-## 6. Services and windows
+## 5. Services and windows
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -81,7 +71,7 @@ Sections run in build order: what apps build on first, then components, services
 | Window commands | `crates/nsh-core/src/runtime/desktop.rs` | Animated, top-anchored `SetFrame`, window levels, `OrderFront`, an auto-hiding menu bar, native popup menus |
 | App lifecycle | `macos.md` (standalone shutdown) | `nsgo.Run` returns for cleanup; apps quit themselves or outlive their last window; a forced appearance reaches native chrome |
 
-## 7. Testing and the tool
+## 6. Testing and the tool
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -93,7 +83,7 @@ Sections run in build order: what apps build on first, then components, services
 | Packages | `embedding.md`, `web.md` | Build numbers, the app's appearance, Linux and Windows archives, IPAs, a cacheable web site with a manifest, `-run` |
 | Store signing | `embedding.md` | `nsgo build` signs an IPA with a provisioning profile and an APK with a keystore |
 
-## 8. Embedding
+## 7. Embedding
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -102,7 +92,7 @@ Sections run in build order: what apps build on first, then components, services
 | Host settings | `embedding.md` | A host registers components per view, sets locale, text size and appearance, receives app errors and sets the data directory |
 | Component lifetime | `embedding.md` (native components) | Native components are destroyed when their app stops, on Android too |
 
-## 9. Performance
+## 8. Performance
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -113,7 +103,7 @@ Sections run in build order: what apps build on first, then components, services
 | macOS drawing | `macos.md` (architecture), `canvas.md` | Content layers replace `drawRect:`; canvases draw off the main thread and redraw only what changed |
 | Windows frames | `windows.md` (frames) | The frame clock follows the compositor with `DwmFlush` |
 
-## 10. Finish the existing platforms
+## 9. Finish the existing platforms
 
 These items wait for community contributions.
 
@@ -124,7 +114,7 @@ These items wait for community contributions.
 | Text selection | `text.md` (selection areas) | Selectable text and selection areas work on Windows, Linux and Android |
 | Desktop accessibility | `windows.md`, `linux.md` | Windows exposes UI Automation and Linux GTK's accessibility, and both announce |
 | Desktop chrome | `windows.md` (alerts), `linux.md` | Windows draws alerts in the surface; Linux draws window controls under a hidden title bar and animates modals |
-| Android | `elements.md`, `styles.md` (Android differences) | Ripples, the system header and the translucent status bar |
+| Android | `elements.md`, `styles.md` (Android differences) | Ripples, predictive back on screens, and blurred images before Android 12 |
 | Web | `web.md` | Browser history and back keys, a focus state for pressables, local time with daylight saving |
 | Real file drags | `file-drop.md` | A real drag from Finder, Explorer and a Linux file manager is checked to reach a view |
 

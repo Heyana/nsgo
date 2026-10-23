@@ -34,11 +34,14 @@ type Tree struct {
 	stacks      []*node
 	lists       []*node
 	accessories []*node
+	headerViews []*node
+	status      statusBars
 	anim        animations
 	layoutAnim  *LayoutAnimation
 	fontScale   float32
 	alerts      map[uint32]alertWait
 	reads       map[uint32]readWait
+	imageInfos  map[uint32]imageInfoWait
 	keys        []*keyBinding
 	keysChanged bool
 	alertID     uint32
@@ -90,10 +93,13 @@ type node struct {
 	// accessory is an InputAccessoryView's: a layout root as wide as the
 	// surface that no view holds.
 	accessory *accessoryNode
-	panning   bool           // it follows pans: OnPan or PanValues
-	anim      *viewAnimation // the animated values bound to the view
-	isStack   bool
-	ref       *Ref
+	// headerView is a view of a screen's system header: a layout root
+	// at its content size that the platform puts in the bar.
+	headerView bool
+	panning    bool           // it follows pans: OnPan or PanValues
+	anim       *viewAnimation // the animated values bound to the view
+	isStack    bool
+	ref        *Ref
 
 	frame       Bounds
 	layoutDirty bool
@@ -128,21 +134,56 @@ type handlers struct {
 	pinch, rotation                                         func(GestureEvent)
 	fileEnter, fileLeave                                    func()
 	fileDrop                                                func([]string)
+	action                                                  func(string)
 }
 
 type textNode struct {
-	content  string
-	maxLines int
+	content   string
+	maxLines  int
+	ellipsize EllipsizeMode
+	// noScale and maxScale limit the user's text size setting.
+	noScale  bool
+	maxScale float32
+	// fit shrinks the text into its box, down to minScale.
+	fit      bool
+	minScale float32
+	lines    func([]TextLine) // OnTextLayout
+	alignV   TextAlignVertical
 	spans    []spanNode
 	text     AttributedText // what was prepared
 	style    TextStyle
 	prepared PreparedText
+	// fitted is the text shrunk to fit its box, when fit shrank it.
+	fitted   PreparedText
 	stale    bool // content or style changed since prepared
 	box      Bounds
 	sentBox  Bounds
-	resent   bool // a new prepared text needs a new layout
+	shownBox Bounds // where the layout went: box, moved by its vertical alignment
+	resent   bool   // a new prepared text needs a new layout
 	// attachments counts the spans that are attachments.
 	attachments int
+}
+
+// release frees the text's prepared texts.
+func (tn *textNode) release() {
+	for _, p := range []*PreparedText{&tn.prepared, &tn.fitted} {
+		if *p != nil {
+			(*p).Release()
+			*p = nil
+		}
+	}
+}
+
+// fontMultiplier is what the user's text size setting, scale, multiplies
+// the text's sizes by.
+func (tn *textNode) fontMultiplier(scale float32) float32 {
+	if tn.noScale {
+		return 1
+	}
+	if tn.maxScale >= 1 {
+		return min(scale, tn.maxScale)
+	}
+	return scale
 }
 
 type spanNode struct {
@@ -169,12 +210,110 @@ type inputNode struct {
 	accessory string // the InputAccessoryView's ID
 	lineH     Points
 	lineFor   TextStyle
+
+	selection   func(TextRange)
+	keyPress    func(string)
+	composition func(Composition)
+	contentSize func(Size)
+	// measured is what a multiline field is measured with: its value, or
+	// its placeholder while empty; sized the value's text, for
+	// OnContentSizeChange.
+	measured, sized preparedInput
+	reported        Size // the content size last reported
+	reportedOK      bool
+}
+
+// preparedInput is text of a field prepared in its style.
+type preparedInput struct {
+	text     AttributedText
+	prepared PreparedText
 }
 
 type scrollNode struct {
 	config  ScrollConfig
 	content Size
-	offset  Point
+	// offset is the reported offset with the scrolls the platform had not
+	// applied yet replayed over it.
+	offset Point
+	zoom   float32 // the last reported
+	on     scrollSpec
+	resend bool // EventRefresh came: send the config again
+	// issued counts the ItemScrollTo and ItemScrollBy items sent, and
+	// pending holds those a report has not shown applied, oldest first.
+	issued  uint32
+	applied uint32
+	pending []pendingScroll
+	// by is the ItemScrollBy the lists ask for in this commit, sent with
+	// the content size; to the ItemScrollTo their parent-viewport lists
+	// ask for.
+	by Point
+	to *MountItem
+	// dependents are the lists in this view's viewport; sticky the cells
+	// sent in its last ItemStickyCells.
+	dependents []*listNode
+	sticky     []StickyCell
+}
+
+// pendingScroll is a scroll the core sent and the platform has not shown
+// applied.
+type pendingScroll struct {
+	n  uint32
+	to bool // an ItemScrollTo; else an ItemScrollBy
+	p  Point
+}
+
+// issue records a scroll sent to the platform.
+func (sc *scrollNode) issue(to bool, p Point) {
+	sc.issued++
+	sc.pending = append(sc.pending, pendingScroll{sc.issued, to, p})
+	if to {
+		sc.offset = p
+	} else {
+		sc.offset.X += p.X
+		sc.offset.Y += p.Y
+	}
+}
+
+// report records an offset the platform reported after applying applied
+// scrolls: those it had not applied yet still count, so a report that
+// predates them does not move the content back.
+func (sc *scrollNode) report(p Point, applied uint32) {
+	sc.applied = max(sc.applied, applied)
+	k := 0
+	for k < len(sc.pending) && sc.pending[k].n <= sc.applied {
+		k++
+	}
+	sc.pending = sc.pending[k:]
+	for _, s := range sc.pending {
+		if s.to {
+			p = s.p
+		} else {
+			p.X += s.p.X
+			p.Y += s.p.Y
+		}
+	}
+	sc.offset = p
+}
+
+// settled reports whether every scroll the core asked for was applied.
+func (sc *scrollNode) settled() bool {
+	return len(sc.pending) == 0 && sc.by == (Point{}) && sc.to == nil
+}
+
+// main is p along the scroll view's axis.
+func (sc *scrollNode) main(p Point) Points {
+	if sc.config.Horizontal {
+		return p.X
+	}
+	return p.Y
+}
+
+// along is a point offset by d along the scroll view's axis.
+func (sc *scrollNode) along(d Points) Point {
+	if sc.config.Horizontal {
+		return Point{X: d}
+	}
+	return Point{Y: d}
 }
 
 type sent struct {
@@ -219,7 +358,13 @@ func (t *Tree) Resize(size Size) {
 // SetEnvironment records what the platform reports about where the app
 // runs.
 func (t *Tree) SetEnvironment(env Environment) {
-	t.root.Env().set(env)
+	e := t.root.Env()
+	safe, headers := e.safe.GetUntracked(), e.headers
+	e.set(env)
+	// Modals and system headers are placed by the safe area.
+	if e.safe.GetUntracked() != safe || e.headers != headers {
+		t.view.markLayout()
+	}
 	t.changed = true
 }
 
@@ -320,9 +465,12 @@ func (t *Tree) discard(n *node) {
 			t.free = append(t.free, n.id)
 		}
 	}
-	if n.text != nil && n.text.prepared != nil {
-		n.text.prepared.Release()
-		n.text.prepared = nil
+	if n.text != nil {
+		n.text.release()
+	}
+	if n.input != nil {
+		n.input.measured.release()
+		n.input.sized.release()
 	}
 	for _, c := range n.children {
 		t.discard(c)
@@ -498,8 +646,12 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, layout: v.OnLayout, contextMenu: v.OnContextMenu,
 		pan: v.OnPan, pinch: v.OnPinch, rotation: v.OnRotation,
 		fileEnter: v.OnFileDragEnter, fileLeave: v.OnFileDragLeave, fileDrop: v.OnFileDrop}
-	n.props = ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID, WindowDrag: v.WindowDrag,
-		SelectionArea: v.SelectionArea}
+	n.h.action = v.OnAccessibilityAction
+	n.props = ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
+		WindowDrag: v.WindowDrag, SelectionArea: v.SelectionArea}
+	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, value: v.AccessibilityValue, expanded: v.Expanded,
+		hidden: v.AccessibilityElementsHidden, actions: v.AccessibilityActions, accessible: v.Accessible,
+		important: v.ImportantForAccessibility})
 	if v.OnPan != nil || v.PanValues != (AnimatedXY{}) {
 		n.props.PanActivation = v.PanActivation
 		n.panning = true
@@ -519,12 +671,16 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 	n := t.newNode(KindText, parent, cx)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
-	n.props = ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID, Selectable: v.Selectable}
+	n.props = ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
+		Selectable: v.Selectable}
 	if n.props.Role == RoleNone {
 		n.props.Role = RoleText
 	}
+	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc})
 	t.setRef(n, v.Ref)
-	n.text = &textNode{content: v.Content, maxLines: v.MaxLines, stale: true}
+	n.text = &textNode{content: v.Content, maxLines: v.MaxLines, ellipsize: v.EllipsizeMode,
+		noScale: v.NoFontScaling, maxScale: v.MaxFontSizeMultiplier,
+		fit: v.AdjustsFontSizeToFit, minScale: max(v.MinimumFontScale, 0.1), lines: v.OnTextLayout, stale: true}
 	for i, sp := range v.Spans {
 		if sp.Attachment != nil {
 			w := t.newNode(KindView, n, cx)
@@ -566,14 +722,27 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 	n.h = handlers{change: v.OnChange, submit: v.OnSubmit, focus: v.OnFocus, blur: v.OnBlur, layout: v.OnLayout}
 	n.props = ViewProps{Role: RoleTextField, Label: v.Label, TestID: v.TestID}
 	t.setRef(n, v.Ref)
-	in := &inputNode{valueFn: v.Value, value: v.DefaultValue, autoFocus: v.AutoFocus, accessory: v.InputAccessoryViewID}
-	in.config = InputConfig{Placeholder: v.Placeholder, Masked: v.Masked, Readonly: v.Readonly, KeyboardType: v.KeyboardType}
+	in := &inputNode{valueFn: v.Value, value: v.DefaultValue, autoFocus: v.AutoFocus, accessory: v.InputAccessoryViewID,
+		selection: v.OnSelectionChange, keyPress: v.OnKeyPress, composition: v.OnCompositionChange,
+		contentSize: v.OnContentSizeChange}
+	in.config = InputConfig{Placeholder: v.Placeholder, Masked: v.Masked, Readonly: v.Readonly, KeyboardType: v.KeyboardType,
+		Multiline: v.Multiline, MaxLength: max(v.MaxLength, 0), SubmitBehavior: v.SubmitBehavior, ReturnKey: v.ReturnKeyType,
+		AutoCapitalize: v.AutoCapitalize, NoAutoCorrect: v.NoAutoCorrect, AutoComplete: v.AutoComplete,
+		KeyboardAppearance: v.KeyboardAppearance, HideCaret: v.HideCaret}
 	n.input = in
 	t.bindBool(cx, n, v.Disabled, &in.config.Disabled)
 	if v.Value != nil {
 		cx.renderEffect(func() {
 			in.value = v.Value()
 			t.touch(n)
+		})
+	}
+	if v.SelectedRange != nil {
+		// After the value, which the commit sends before its commands.
+		cx.renderEffect(func() {
+			r := v.SelectedRange()
+			t.commands = append(t.commands, MountItem{Kind: ItemSelection, ID: n.id, Selection: r})
+			t.changed = true
 		})
 	}
 }
@@ -585,10 +754,19 @@ var scrollDefaults = Style{FlexShrink: 1}
 func (t *Tree) mountScroll(cx *Scope, parent *node, v Scroll) {
 	n := t.newNode(KindScroll, parent, cx)
 	t.bindStyle(cx, n, scrollDefaults.Merge(v.Style), v.StyleFunc)
-	n.h = handlers{scroll: v.OnScroll, layout: v.OnLayout}
+	n.h = handlers{layout: v.OnLayout}
+	if on := v.OnScroll; on != nil {
+		n.h.scroll = func(p Point) { on(n.scrollEvent(p)) }
+	}
 	n.props = ViewProps{TestID: v.TestID}
 	t.setRef(n, v.Ref)
 	n.scroll = &scrollNode{config: ScrollConfig{Horizontal: v.Horizontal, HideIndicator: v.HideIndicator}}
+	t.bindScrollSpec(cx, n, scrollSpec{behavior: v.Behavior, behaviorFunc: v.BehaviorFunc, offset: v.ContentOffset,
+		refreshing: v.Refreshing, onRefresh: v.OnRefresh, onScroll: v.OnScroll,
+		onDragStart: v.OnScrollDragStart, onDragEnd: v.OnScrollDragEnd,
+		onMomentum: v.OnMomentumStart, onMomentumEnd: v.OnMomentumEnd,
+		minZoom: v.MinZoomScale, maxZoom: v.MaxZoomScale, zoom: v.ZoomScale, zoomFunc: v.ZoomScaleFunc,
+		noBouncesZoom: v.NoBouncesZoom, noPinch: v.NoPinchZoom, centerContent: v.CenterContent})
 	t.bindScroll(cx, n, v.OffsetValues)
 	for _, c := range v.Children {
 		t.mount(cx, n, c)
@@ -679,13 +857,25 @@ func (t *Tree) mountCatch(cx *Scope, parent *node, c Catch) {
 func (t *Tree) Dispatch(ev Event) {
 	switch ev.Kind {
 	case EventBack:
-		t.back()
+		if n := t.node(ev.ID); n != nil && n.screen != nil {
+			t.backFrom(n)
+		} else {
+			t.back()
+		}
+		return
+	case EventRequestClose, EventModalSize:
+		if n := t.node(ev.ID); n != nil && n.hoist != nil && n.hoist.modal != nil {
+			t.modalEvent(n, ev)
+		}
 		return
 	case EventAlert:
 		t.answerAlert(ev.Count, ev.Index)
 		return
 	case EventClipboard:
 		t.answerRead(ev.Count, ev.Text)
+		return
+	case EventImageInfo:
+		t.answerImageInfo(ev)
 		return
 	case EventKey:
 		t.pressKey(ev.Text)
@@ -734,6 +924,10 @@ func (t *Tree) Dispatch(ev Event) {
 		if !n.props.Disabled {
 			call(h.longPress)
 		}
+	case EventAccessibilityAction:
+		if h.action != nil && !n.props.Disabled {
+			t.within(n.owner, func() { h.action(ev.Text) })
+		}
 	case EventPressDown:
 		t.setState(n, statePressed, !n.props.Disabled)
 		call(h.pressDown)
@@ -771,6 +965,22 @@ func (t *Tree) Dispatch(ev Event) {
 	case EventSubmitEditing:
 		if h.submit != nil {
 			t.within(n.owner, func() { h.submit(ev.Text) })
+		}
+	case EventSelectionChange:
+		if in := n.input; in != nil && in.selection != nil {
+			t.within(n.owner, func() { in.selection(TextRange{ev.Index, int(ev.Count)}) })
+		}
+	case EventKeyPress:
+		if in := n.input; in != nil && in.keyPress != nil {
+			t.within(n.owner, func() { in.keyPress(ev.Text) })
+		}
+	case EventCompositionChange:
+		if in := n.input; in != nil && in.composition != nil {
+			c := Composition{Composing: !ev.Finished, Text: ev.Text}
+			if ev.Finished {
+				c.Text = ""
+			}
+			t.within(n.owner, func() { in.composition(c) })
 		}
 	case EventPan:
 		if h.pan != nil {
@@ -819,11 +1029,16 @@ func (t *Tree) Dispatch(ev Event) {
 		if h.loadError != nil {
 			t.within(n.owner, func() { h.loadError(errors.New(ev.Text)) })
 		}
+	case EventScrollDragStart, EventScrollDragEnd, EventMomentumStart, EventMomentumEnd, EventRefresh:
+		if n.scroll != nil {
+			t.scrolled(n, ev)
+			t.dispatchScroll(n, ev)
+		}
 	case EventScroll:
 		if n.scroll != nil {
-			n.scroll.offset = ev.Point
-			if n.list != nil {
-				t.changed = true
+			t.scrolled(n, ev)
+			if ev.Value > 0 {
+				n.scroll.zoom = ev.Value
 			}
 			if len(t.view.hosted) > 0 {
 				t.view.markLayout() // anchored overlays follow the scroll
@@ -838,13 +1053,10 @@ func (t *Tree) Dispatch(ev Event) {
 
 // spanAt returns the span holding byte offset i of the text.
 func (tn *textNode) spanAt(i int) *spanNode {
-	at := 0
-	for k := range tn.spans {
-		end := at + len(tn.spans[k].content)
-		if i >= at && i < end {
+	for k, sp := range tn.text.Spans {
+		if i >= sp.Start && i < sp.End && k < len(tn.spans) {
 			return &tn.spans[k]
 		}
-		at = end
 	}
 	return nil
 }
@@ -900,7 +1112,7 @@ func appendNative(out []*node, children []*node) []*node {
 		switch {
 		case c.kind == 0:
 			out = appendNative(out, c.children)
-		case c.hoist == nil && c.attach == nil && c.accessory == nil:
+		case c.hoist == nil && c.attach == nil && c.accessory == nil && !c.headerView:
 			out = append(out, c)
 		}
 	}
@@ -956,12 +1168,18 @@ func (n *node) events() EventMask {
 	bit(EventError, h.loadError != nil)
 	bit(EventLoadEnd, h.loadEnd != nil)
 	bit(EventChangeText, n.kind == KindInput)
+	if in := n.input; in != nil {
+		bit(EventSelectionChange, in.selection != nil)
+		bit(EventKeyPress, in.keyPress != nil)
+		bit(EventCompositionChange, in.composition != nil)
+	}
 	bit(EventPan, n.panning)
 	bit(EventPinch, h.pinch != nil)
 	bit(EventRotation, h.rotation != nil)
 	bit(EventFileDragEnter, h.fileEnter != nil)
 	bit(EventFileDragLeave, h.fileLeave != nil)
 	bit(EventFileDrop, h.fileDrop != nil)
+	bit(EventAccessibilityAction, h.action != nil)
 	if n.native != nil {
 		bit(EventNative, n.native.event != nil)
 		bit(EventNativeSize, true)
@@ -972,6 +1190,9 @@ func (n *node) events() EventMask {
 	if n.video != nil {
 		m &^= maskOf(EventLoadStart, EventProgress, EventLoad, EventError)
 		m |= n.video.events()
+	}
+	if n.scroll != nil {
+		m |= n.scroll.events()
 	}
 	return m
 }

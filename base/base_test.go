@@ -120,6 +120,28 @@ func TestPopupsNavAndAlerts(t *testing.T) {
 
 func NewNavHelper(cx *core.Scope) *base.Nav[string] { return base.NewNav(cx, "home") }
 
+func TestSliderIsAdjustable(t *testing.T) {
+	var value *core.Signal[float64]
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		value = core.NewSignal(cx, 0.5)
+		return base.Slider{Value: value.Get, OnChange: value.Set, Step: 0.25, Label: "Volume", TestID: "s"}
+	})
+	s := app.Find("role:adjustable Volume")
+	if v := s.Props.Value; v != (core.AccessibilityValue{Min: 0, Max: 1, Now: 0.5}) {
+		t.Fatalf("slider value = %+v", v)
+	}
+	for range 3 {
+		app.AccessibilityAction("id:s", core.ActionIncrement)
+	}
+	if value.GetUntracked() != 1 || app.Find("id:s").Props.Value.Now != 1 {
+		t.Errorf("after three increments the value is %v, want the maximum", value.GetUntracked())
+	}
+	app.AccessibilityAction("id:s", core.ActionDecrement)
+	if value.GetUntracked() != 0.75 {
+		t.Errorf("after a decrement the value is %v", value.GetUntracked())
+	}
+}
+
 func TestPopupsReportChangesAndEveryCancel(t *testing.T) {
 	var log []string
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {

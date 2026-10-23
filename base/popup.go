@@ -12,7 +12,7 @@ import (
 // what is shown, with its reason, and a controlled popup shows what Open
 // returns. OnOpen and OnClose follow it being shown and gone. OnCancel
 // hears every attempt to close it (Escape or back, a press outside or on
-// the backdrop), and NoCloseOn... flags keep it open on that attempt.
+// the backdrop, a sheet's swipe), and NoCloseOn... flags keep it open on that attempt.
 
 // Reason is why a popup asks to open or close.
 type Reason uint8
@@ -26,11 +26,13 @@ const (
 	ReasonHover
 	ReasonLongPress
 	ReasonContextMenu
+	// ReasonSwipe is an iOS sheet swiped down.
+	ReasonSwipe
 )
 
 func (r Reason) String() string {
 	return [...]string{"", "triggerPress", "pressOutside", "backdropPress", "cancel", "select",
-		"hover", "longPress", "contextMenu"}[r]
+		"hover", "longPress", "contextMenu", "swipe"}[r]
 }
 
 // popup is the open state of one popup.
@@ -124,6 +126,7 @@ func (p Popover) Render(cx *core.Scope) core.Node {
 	anchor := new(core.Ref)
 	return core.Group{
 		core.View{Ref: anchor, Style: p.Style, StyleFunc: p.StyleFunc, Label: p.Label, TestID: p.TestID, Role: core.RoleButton,
+			Expanded: st.open,
 			OnPress:  func() { st.set(!st.open(), ReasonTriggerPress) },
 			Children: []core.Node{p.Trigger}},
 		core.Show{When: st.open, Then: func(cx *core.Scope) core.Node {
@@ -218,6 +221,15 @@ type Dialog struct {
 	Animation              core.ModalAnimation
 	NoCloseOnEscape        bool
 	NoCloseOnBackdropPress bool
+	// Presentation, NoCloseOnSwipe and SupportedOrientations are iOS's,
+	// StatusBarTranslucent is Android's, and StatusBar is set over the
+	// app's while the dialog is open, as core.Modal's are.
+	Presentation          core.ModalPresentation
+	NoCloseOnSwipe        bool
+	SupportedOrientations core.Orientation
+	StatusBarTranslucent  bool
+	StatusBar             core.StatusBarSetting
+	StatusBarFunc         func() core.StatusBarSetting
 	// BackdropStyle or BackdropStyleFunc, when set, draws a backdrop whose
 	// press asks to close.
 	BackdropStyle     core.Style
@@ -233,9 +245,12 @@ type Dialog struct {
 func (d Dialog) Render(cx *core.Scope) core.Node {
 	st := newPopup(cx, d.Open, d.DefaultOpen, d.OnOpenChange, d.OnOpen, d.OnClose)
 	st.onCancel = d.OnCancel
-	return modalLayer(st, d.Animation, d.BackdropStyle, d.BackdropStyleFunc, d.NoCloseOnBackdropPress,
-		d.NoCloseOnEscape, core.Style{JustifyContent: core.JustifyCenter, AlignItems: core.AlignCenter},
-		d.PopupStyle, d.PopupStyleFunc, d.Children, d.Label, d.TestID)
+	m := core.Modal{Animation: d.Animation, Presentation: d.Presentation, NoCloseOnSwipe: d.NoCloseOnSwipe,
+		SupportedOrientations: d.SupportedOrientations, StatusBarTranslucent: d.StatusBarTranslucent,
+		StatusBar: d.StatusBar, StatusBarFunc: d.StatusBarFunc,
+		Style: core.Style{JustifyContent: core.JustifyCenter, AlignItems: core.AlignCenter}}
+	return modalLayer(st, m, d.BackdropStyle, d.BackdropStyleFunc, d.NoCloseOnBackdropPress,
+		d.NoCloseOnEscape, d.PopupStyle, d.PopupStyleFunc, d.Children, d.Label, d.TestID)
 }
 
 // Sheet slides a panel in from a side of the app, over a backdrop.
@@ -273,14 +288,16 @@ func (s Sheet) Render(cx *core.Scope) core.Node {
 	case core.PlaceRight:
 		layer = core.Style{Direction: core.Row, JustifyContent: core.JustifyEnd}
 	}
-	return modalLayer(st, core.ModalSlide, s.BackdropStyle, s.BackdropStyleFunc, s.NoCloseOnBackdropPress,
-		s.NoCloseOnEscape, layer, s.PopupStyle, s.PopupStyleFunc, s.Children, s.Label, s.TestID)
+	return modalLayer(st, core.Modal{Animation: core.ModalSlide, Style: layer}, s.BackdropStyle, s.BackdropStyleFunc,
+		s.NoCloseOnBackdropPress, s.NoCloseOnEscape, s.PopupStyle, s.PopupStyleFunc, s.Children, s.Label, s.TestID)
 }
 
 var fill = core.Style{Position: core.Absolute, Top: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0), Left: core.Pt(0)}
 
-func modalLayer(st *popup, anim core.ModalAnimation, backdrop core.Style, backdropFunc func() core.Style,
-	keepOnBackdrop, keepOnEscape bool, layer, popupStyle core.Style, popupFunc func() core.Style,
+// modalLayer shows m, holding the backdrop and the popup, while st is
+// open.
+func modalLayer(st *popup, m core.Modal, backdrop core.Style, backdropFunc func() core.Style,
+	keepOnBackdrop, keepOnEscape bool, popupStyle core.Style, popupFunc func() core.Style,
 	children []core.Node, label, testID string) core.Node {
 	return core.Show{When: st.open, Then: func(cx *core.Scope) core.Node {
 		var nodes []core.Node
@@ -290,7 +307,15 @@ func modalLayer(st *popup, anim core.ModalAnimation, backdrop core.Style, backdr
 		}
 		nodes = append(nodes, core.View{Style: popupStyle, StyleFunc: popupFunc, Role: core.RoleDialog,
 			Label: label, TestID: testID, Children: children})
-		return core.Modal{Animation: anim, Style: layer, Children: nodes,
-			OnRequestClose: func(string) { st.cancel(ReasonCancel, keepOnEscape) }}
+		m.Children = nodes
+		m.OnRequestClose = func(reason string) {
+			if reason == "swipe" {
+				// An iOS sheet's swipe; NoCloseOnSwipe kept it on screen.
+				st.cancel(ReasonSwipe, m.NoCloseOnSwipe)
+				return
+			}
+			st.cancel(ReasonCancel, keepOnEscape)
+		}
+		return m
 	}}
 }

@@ -514,21 +514,9 @@ func scrubber(width float32) (start, end float32) { return videoButton + 8, widt
 // videoFit returns where a picture of natural size goes in a box of size,
 // as x, y, width and height.
 func videoFit(mode core.ResizeMode, nw, nh, w, h float32) (x, y, fw, fh float32) {
-	if nw <= 0 || nh <= 0 || mode == core.Stretch {
-		return 0, 0, w, h
-	}
-	var s float32
-	switch mode {
-	case core.Cover:
-		s = max(w/nw, h/nh)
-	case core.Center:
-		// Shrunk to fit, never enlarged.
-		s = min(w/nw, h/nh, 1)
-	default:
-		s = min(w/nw, h/nh)
-	}
-	fw, fh = nw*s, nh*s
-	return (w - fw) / 2, (h - fh) / 2, fw, fh
+	b := mode.Fit(core.Size{Width: core.Points(nw), Height: core.Points(nh)},
+		core.Size{Width: core.Points(w), Height: core.Points(h)}, core.ObjectPosition{})
+	return float32(b.Origin.X), float32(b.Origin.Y), float32(b.Size.Width), float32(b.Size.Height)
 }
 
 // drawVideo paints vd's last frame in a view of width by height points,

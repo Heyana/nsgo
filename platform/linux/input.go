@@ -201,7 +201,7 @@ func dragUpdateCallback(gesture uintptr, offsetX, offsetY float64, data uintptr)
 func dragEndCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
 	w := windowOf(data)
 	if w != nil && w.barDrag != nil {
-		w.barDrag = nil
+		w.releaseBar()
 		w.hoverBars(w.lastPointer)
 		gtkWidgetQueueDraw(w.surface)
 		return

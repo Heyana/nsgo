@@ -165,7 +165,7 @@ func TestWindowRunsAnAppAndTakesNativeInput(t *testing.T) {
 	// The native GtkEntry reports its changes to the engine.
 	w.onLoop(t, func() {
 		for entry, v := range w.entries {
-			if v.kind == core.KindInput {
+			if v.kind == core.KindInput && entry == v.entry {
 				gtkEditableSetText(entry, cstr("hi"))
 			}
 		}
@@ -175,7 +175,7 @@ func TestWindowRunsAnAppAndTakesNativeInput(t *testing.T) {
 	// Return submits the focused field.
 	w.onLoop(t, func() {
 		for entry, v := range w.entries {
-			if v.kind == core.KindInput {
+			if v.kind == core.KindInput && entry == v.entry {
 				gSignalEmitByName(entry, cstr("activate"))
 			}
 		}
@@ -612,7 +612,7 @@ func TestWheelScrollsContentAndClipsIt(t *testing.T) {
 		cx.Effect(func() { cx.SetTitle(fmt.Sprintf("%s|%v", title, offset.Get())) })
 		return core.View{Style: core.Style{Width: core.Pt(360), Height: core.Pt(240), Padding: core.All(5),
 			Background: core.RGB(0xffffff)},
-			Children: []core.Node{core.Scroll{HideIndicator: true, OnScroll: func(p core.Point) { offset.Set(p.Y) },
+			Children: []core.Node{core.Scroll{HideIndicator: true, OnScroll: func(e core.ScrollEvent) { offset.Set(e.Offset.Y) },
 				Style: core.Style{Width: core.Pt(40), Height: core.Pt(40)},
 				Children: []core.Node{
 					core.View{Style: core.Style{Height: core.Pt(40), Background: core.RGB(0xff0000)}},
@@ -628,6 +628,31 @@ func TestWheelScrollsContentAndClipsIt(t *testing.T) {
 		in, below := p.at(20, 10), p.at(20, 52)
 		return in[0] == 0xff && in[2] == 0 && below[0] == 0xff && below[1] == 0xff && below[2] == 0xff
 	})
+}
+
+// TestWheelSettlesOnPagesWithinInsets turns the wheel over a paging
+// scroll view with a content inset: it settles on the next page once the
+// wheel rests, reporting the momentum, and the inset widens its offsets.
+func TestWheelSettlesOnPagesWithinInsets(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-" + t.Name()
+	app := func(cx *core.Scope) core.Node {
+		offset, rested := core.NewSignal(cx, core.Points(0)), core.NewSignal(cx, 0)
+		cx.Effect(func() { cx.SetTitle(fmt.Sprintf("%s|%v|%d", title, offset.Get(), rested.Get())) })
+		return core.View{Style: core.Style{Width: core.Pt(360), Height: core.Pt(240), Background: core.RGB(0xffffff)},
+			Children: []core.Node{core.Scroll{HideIndicator: true, ContentOffset: core.Point{Y: -10},
+				Behavior:      core.ScrollBehavior{Paging: true, ContentInset: core.Edges{Top: 10}},
+				OnScroll:      func(e core.ScrollEvent) { offset.Set(e.Offset.Y) },
+				OnMomentumEnd: func(core.ScrollEvent) { rested.Update(func(n int) int { return n + 1 }) },
+				Style:         core.Style{Width: core.Pt(100), Height: core.Pt(100)},
+				Children:      []core.Node{core.View{Style: core.Style{Height: core.Pt(400), Background: core.RGB(0x0000ff)}}}}}}
+	}
+	w := startTestWindow(t, app, Options{Title: title, Width: 360, Height: 240})
+	waitForTitle(t, w, title+"|-10|0")
+	w.onLoop(t, func() { w.wheel(core.Point{X: 20, Y: 20}, 0, 30) })
+	waitForTitle(t, w, title+"|100|1")
 }
 
 // TestHoverFollowsThePointer moves the pointer onto a view and its
@@ -678,4 +703,38 @@ func TestHoverFollowsThePointer(t *testing.T) {
 	waitForTitle(t, w, "hover|2|1")
 	w.onLoop(t, func() { leaveCallback(0, w.handle) })
 	waitForTitle(t, w, "hover|2|2")
+}
+
+// TestStickyListRowsStayPinned turns the wheel over a list whose first
+// row sticks: the row stays at the top, moved natively from its frame.
+func TestStickyListRowsStayPinned(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-" + t.Name()
+	app := func(cx *core.Scope) core.Node {
+		offset := core.NewSignal(cx, core.Points(0))
+		cx.Effect(func() { cx.SetTitle(fmt.Sprintf("%s|%v", title, offset.Get())) })
+		return core.View{Style: core.Style{Width: core.Pt(360), Height: core.Pt(240), Padding: core.All(5),
+			Background: core.RGB(0xffffff)},
+			Children: []core.Node{core.List{HideIndicator: true, OnScroll: func(e core.ScrollEvent) { offset.Set(e.Offset.Y) },
+				Count: func() int { return 20 }, StickyHeaderIndices: []int{0}, EstimatedSize: 20,
+				Style: core.Style{Width: core.Pt(40), Height: core.Pt(100)},
+				Row: func(cx *core.Scope, r core.ListRow) core.Node {
+					return core.View{StyleFunc: func() core.Style {
+						if r.Index() == 0 {
+							return core.Style{Height: core.Pt(20), Background: core.RGB(0xff0000)}
+						}
+						return core.Style{Height: core.Pt(20), Background: core.RGB(0x0000ff)}
+					}}
+				}}}}
+	}
+	w := startTestWindow(t, app, Options{Title: title, Width: 360, Height: 240})
+	waitForTitle(t, w, title+"|0")
+	w.onLoop(t, func() { w.wheel(core.Point{X: 20, Y: 20}, 0, 60) })
+	waitForTitle(t, w, title+"|60")
+	waitPixels(t, w, "the sticky row at the top over blue rows", func(p pixels) bool {
+		top, below := p.at(20, 12), p.at(20, 40)
+		return top[2] == 0xff && top[0] == 0 && below[0] == 0xff && below[2] == 0
+	})
 }

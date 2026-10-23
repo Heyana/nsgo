@@ -85,7 +85,8 @@ func contentFit(m core.ResizeMode) int32 {
 		return gtkContentFitCover
 	case core.Stretch:
 		return gtkContentFitFill
-	case core.Center:
+	// GtkPicture has no natural-size fit: Center shrinks too.
+	case core.Center, core.ScaleDown:
 		return gtkContentFitScaleDown
 	}
 	return gtkContentFitContain

@@ -12,10 +12,8 @@ import (
 	"math"
 	"runtime"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
@@ -60,12 +58,11 @@ type view struct {
 	layout *apple.Layout // a text view's
 	box    core.Bounds
 
-	field  objc.ID // an input's NSTextField
-	clip   objc.ID // a scroll view's NSClipView
-	wheel  wheelOwner
-	masked bool
-	inset  core.Bounds
-	edits  uint32
+	sc    *scrollState // a scroll view's
+	input *input       // an input's editor
+	clip  objc.ID      // a scroll view's NSClipView
+	wheel wheelOwner
+	inset core.Bounds
 
 	image     *apple.ImageView
 	animation core.ModalAnimation // a modal's
@@ -79,12 +76,20 @@ type view struct {
 	// animated values and a layout animation draw over.
 	frame    core.Bounds
 	framed   bool
+	shift    core.Point // a sticky cell's, from frame
 	style    core.ViewStyle
 	animated core.AnimatedValues
 
 	component     core.NativeComponent // a native view's
 	componentView objc.ID
 	disabled      bool
+
+	// props are the view's last props; the rest what access.go last
+	// gave AppKit.
+	props                core.ViewProps
+	propsSet, textSet    bool
+	axElement, axGrouped bool
+	axCustom             bool
 
 	windowDrag core.WindowDrag
 	activation core.PanActivation
@@ -160,14 +165,13 @@ var (
 	selSetEditable, selSetEnabled   = sel("setEditable:"), sel("setEnabled:")
 	selSetDelegate                  = sel("setDelegate:")
 	selSetTarget, selSetAction      = sel("setTarget:"), sel("setAction:")
-	selApply, selSubmit             = sel("nsgoApply:"), sel("nsgoSubmit:")
+	selApply                        = sel("nsgoApply:")
 	selPerformOnMain                = sel("performSelectorOnMainThread:withObject:waitUntilDone:")
 	selWindow, selMakeFirstResponer = sel("window"), sel("makeFirstResponder:")
 	selDocumentView                 = sel("documentView")
 	selSetAccessibilityElement      = sel("setAccessibilityElement:")
 	selSetAccessibilityRole         = sel("setAccessibilityRole:")
 	selSetAccessibilitySubrole      = sel("setAccessibilitySubrole:")
-	selSetAccessibilityLabel        = sel("setAccessibilityLabel:")
 	selSetAccessibilityEnabled      = sel("setAccessibilityEnabled:")
 	selSetAccessibilitySelected     = sel("setAccessibilitySelected:")
 	selSetAccessibilityValue        = sel("setAccessibilityValue:")
@@ -176,9 +180,9 @@ var (
 	selCurrentContext, selCGContext = sel("currentContext"), sel("CGContext")
 	selIsEqualToString              = sel("isEqualToString:")
 
-	classView, classSurface, classInput, classField, classSecureField objc.Class
-	classScroll                                                       objc.Class
-	classObserver, classMenuTarget                                    objc.Class
+	classView, classSurface, classInput objc.Class
+	classScroll                         objc.Class
+	classObserver, classMenuTarget      objc.Class
 )
 
 func loadAppKit() {
@@ -199,8 +203,8 @@ func loadAppKit() {
 		{Cmd: sel("rightMouseDown:"), Fn: rightMouseDown},
 		{Cmd: sel("mouseEntered:"), Fn: mouseEntered},
 		{Cmd: sel("mouseExited:"), Fn: mouseExited},
-		{Cmd: sel("accessibilityPerformPress"), Fn: accessibilityPress},
 	}
+	common = append(common, accessMethods()...)
 	classView = register("NsgoView", nsView, nil, common)
 	refresh := func(self objc.ID, cmd objc.SEL) {
 		apple.Super(self, cmd)
@@ -245,15 +249,7 @@ func loadAppKit() {
 	classInput = register("NsgoInput", nsView, nil, append(common,
 		objc.MethodDef{Cmd: sel("layout"), Fn: inputLayout},
 	))
-	fieldMethods := []objc.MethodDef{
-		{Cmd: sel("controlTextDidChange:"), Fn: fieldChanged},
-		{Cmd: sel("controlTextDidEndEditing:"), Fn: fieldEnded},
-		{Cmd: sel("becomeFirstResponder"), Fn: fieldFocused},
-		{Cmd: selSubmit, Fn: fieldSubmit},
-	}
-	delegate := []*objc.Protocol{objc.GetProtocol("NSTextFieldDelegate")}
-	classField = register("NsgoField", objc.GetClass("NSTextField"), delegate, fieldMethods)
-	classSecureField = register("NsgoSecureField", objc.GetClass("NSSecureTextField"), delegate, fieldMethods)
+	registerInput()
 	classMenuTarget = register("NsgoMenuTarget", objc.GetClass("NSObject"), nil, []objc.MethodDef{
 		{Cmd: selMenuChosen, Fn: menuChosen},
 	})
@@ -407,6 +403,10 @@ func (s *surface) observe() {
 	center := objc.ID(objc.GetClass("NSNotificationCenter")).Send(sel("defaultCenter"))
 	apple.Observe(center, apple.Global(foundation, "NSCurrentLocaleDidChangeNotification"), refresh)
 	apple.Observe(center, apple.Global(appKit, "NSViewBoundsDidChangeNotification"), clipScrolled)
+	apple.Observe(center, apple.Global(appKit, "NSScrollViewWillStartLiveScrollNotification"),
+		func(note objc.ID) { liveScroll(note, true) })
+	apple.Observe(center, apple.Global(appKit, "NSScrollViewDidEndLiveScrollNotification"),
+		func(note objc.ID) { liveScroll(note, false) })
 	for _, name := range []string{"NSWindowDidResizeNotification", "NSWindowDidEnterFullScreenNotification",
 		"NSWindowDidExitFullScreenNotification"} {
 		apple.Observe(center, apple.Global(appKit, name), func(note objc.ID) {
@@ -611,36 +611,14 @@ func (s *surface) alert(a *core.AlertConfig) {
 // pasteboardText is NSPasteboardTypeString.
 const pasteboardText = "public.utf8-plain-text"
 
-// announce has VoiceOver say text.
-func announce(text string) {
-	const appKit = "/System/Library/Frameworks/AppKit.framework/AppKit"
-	lib, err := purego.Dlopen(appKit, purego.RTLD_NOW|purego.RTLD_GLOBAL)
-	if err != nil {
-		return
-	}
-	var post func(element, name, info objc.ID)
-	purego.RegisterLibFunc(&post, lib, "NSAccessibilityPostNotificationWithUserInfo")
-	const high = 90 // NSAccessibilityPriorityHigh
-	keys := []objc.ID{apple.Global(appKit, "NSAccessibilityAnnouncementKey"), apple.Global(appKit, "NSAccessibilityPriorityKey")}
-	values := []objc.ID{apple.NSString(text), objc.ID(objc.GetClass("NSNumber")).Send(sel("numberWithInt:"), high)}
-	info := objc.ID(objc.GetClass("NSDictionary")).Send(sel("dictionaryWithObjects:forKeys:count:"),
-		unsafe.Pointer(&values[0]), unsafe.Pointer(&keys[0]), uint(len(keys)))
-	app := objc.ID(objc.GetClass("NSApplication")).Send(sel("sharedApplication"))
-	post(app, apple.Global(appKit, "NSAccessibilityAnnouncementRequestedNotification"), info)
-	runtime.KeepAlive(keys)
-	runtime.KeepAlive(values)
-}
-
 // scrollTo scrolls a scroll view's content to p, clamped to what it can
 // show; the clip view reports the offset as it moves.
 func (v *view) scrollTo(p core.Point, animated bool) {
 	if v.clip == 0 {
 		return
 	}
-	doc := objc.Send[apple.CGRect](v.content, selBounds).Size
-	seen := objc.Send[apple.CGRect](v.clip, selBounds).Size
-	to := apple.CGPoint{X: min(max(float64(p.X), 0), max(doc.Width-seen.Width, 0)),
-		Y: min(max(float64(p.Y), 0), max(doc.Height-seen.Height, 0))}
+	lo, hi := v.limits()
+	to := apple.CGPoint{X: float64(min(max(p.X, lo.X), hi.X)), Y: float64(min(max(p.Y, lo.Y), hi.Y))}
 	clip := v.clip
 	if animated {
 		clip = clip.Send(sel("animator"))
@@ -696,6 +674,9 @@ func (s *surface) apply(b *core.MountBatch) {
 			pb := objc.ID(objc.GetClass("NSPasteboard")).Send(sel("generalPasteboard"))
 			text := apple.GoString(pb.Send(sel("stringForType:"), apple.NSString(pasteboardText)))
 			s.engine.Dispatch(core.Event{Kind: core.EventClipboard, Count: it.Count, Text: text})
+			continue
+		case core.ItemImageInfo:
+			apple.ImageInfo(it, s.engine.Dispatch)
 			continue
 		case core.ItemAnnounce:
 			announce(it.Value)
@@ -781,9 +762,22 @@ func (s *surface) apply(b *core.MountBatch) {
 			v.drawing = it.Drawing
 			v.native.Send(selSetNeedsDisplay, true)
 		case core.ItemScrollTo:
-			v.scrollTo(it.Point, it.Animated)
+			if v.sc != nil {
+				v.sc.applied++
+				v.interruptSnap()
+				v.scrollTo(it.Point, it.Animated)
+			}
+		case core.ItemScrollBy:
+			if v.sc != nil {
+				v.sc.applied++
+				v.scrollBy(it.Point)
+			}
+		case core.ItemStickyCells:
+			if v.sc != nil {
+				v.setSticky(it.Sticky)
+			}
 		case core.ItemViewProps:
-			setAccessibility(v.native, it.ViewProps)
+			v.setProps(it.ViewProps)
 			p := it.ViewProps
 			v.windowDrag, v.activation, v.area, v.selectable = p.WindowDrag, p.PanActivation, p.SelectionArea, p.Selectable
 			v.disabled = p.Disabled
@@ -793,30 +787,32 @@ func (s *surface) apply(b *core.MountBatch) {
 			}
 		case core.ItemEvents:
 			v.setEvents(it.Events)
+			v.updateAccessibility()
+		case core.ItemAccessibilityLabel:
+			v.setLabel(it.Value)
+		case core.ItemAccessibilityFocus:
+			v.focusAccessibility()
 		case core.ItemText:
 			v.layout.Release()
 			v.layout, _ = it.Text.Layout.(*apple.Layout)
-			v.box, v.plain = it.Text.Content, it.Text.Text
-			v.native.Send(selSetAccessibilityLabel, apple.NSString(it.Text.Text))
+			v.box = it.Text.Content
+			v.textChanged(it.Text.Text)
 			v.native.Send(selSetNeedsDisplay, true)
 		case core.ItemInput:
 			v.configure(it.Input)
 		case core.ItemInputValue:
-			if v.edits <= it.Count {
-				value := apple.NSString(it.Value)
-				// Setting the text the field shows would move the caret.
-				if !objc.Send[bool](v.field.Send(selStringValue), selIsEqualToString, value) {
-					v.field.Send(selSetString, value)
-				}
+			v.input.value(it.Value, it.Count)
+		case core.ItemSelection:
+			if v.input != nil {
+				v.input.setSelection(it.Selection)
 			}
 		case core.ItemScrollConfig:
-			v.native.Send(sel("setHasVerticalScroller:"), !it.Scroll.Horizontal && !it.Scroll.HideIndicator)
-			v.native.Send(sel("setHasHorizontalScroller:"), it.Scroll.Horizontal && !it.Scroll.HideIndicator)
+			v.configureScroll(it.Scroll)
 		case core.ItemScrollContent:
 			v.content.Send(selSetFrameSize, apple.CGSize{Width: float64(it.Size.Width), Height: float64(it.Size.Height)})
 		case core.ItemFocus:
-			if w := v.native.Send(selWindow); w != 0 && v.field != 0 {
-				w.Send(selMakeFirstResponer, v.field)
+			if v.input != nil {
+				v.input.focus()
 			}
 		case core.ItemBlur:
 			if w := v.native.Send(selWindow); w != 0 {
@@ -873,6 +869,8 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 		v.native = objc.ID(classScroll).Send(selNew)
 		v.native.Send(sel("setDrawsBackground:"), false)
 		v.native.Send(sel("setAutohidesScrollers:"), true)
+		v.native.Send(sel("setAutomaticallyAdjustsContentInsets:"), false)
+		v.sc = &scrollState{}
 		v.hover = trackingArea(v.native, true)
 		// The clip view posts its scrolling, which observe follows; an
 		// override would recurse once animator's KVO subclasses it.
@@ -889,7 +887,7 @@ func (s *surface) create(kind core.ViewKind, id core.NodeID) *view {
 		views[clip] = v
 	case core.KindInput:
 		v.native = objc.ID(classInput).Send(selNew)
-		v.setField(false)
+		v.newInput()
 	default:
 		v.native = objc.ID(classView).Send(selNew)
 	}
@@ -944,69 +942,19 @@ func (s *surface) delete(v *view, kept bool) {
 		v.hover.Send(selRelease)
 	}
 	delete(views, v.native)
-	delete(views, v.field)
+	if in := v.input; in != nil {
+		delete(views, in.field)
+		delete(views, in.host)
+	}
 	delete(views, v.clip)
 	v.native.Send(selRelease)
 	s.views[v.id] = nil
 }
 
-// setField replaces an input's text field, keeping its text.
-func (v *view) setField(masked bool) {
-	text := apple.NSString("")
-	if v.field != 0 {
-		text = v.field.Send(selStringValue)
-		v.field.Send(selRemoveFromSuperview)
-		delete(views, v.field)
-	}
-	class := classField
-	if masked {
-		class = classSecureField
-	}
-	field := objc.ID(class).Send(selNew)
-	field.Send(sel("setBezeled:"), false)
-	field.Send(sel("setBordered:"), false)
-	field.Send(sel("setDrawsBackground:"), false)
-	field.Send(sel("setFocusRingType:"), 1)
-	field.Send(selSetDelegate, field)
-	field.Send(selSetTarget, field)
-	field.Send(selSetAction, selSubmit)
-	field.Send(selSetString, text)
-	cell := field.Send(sel("cell"))
-	cell.Send(sel("setScrollable:"), true)
-	cell.Send(sel("setUsesSingleLineMode:"), true)
-	v.native.Send(selAddSubview, field)
-	field.Send(selRelease)
-	v.field, v.masked = field, masked
-	views[field] = v
-}
-
-// AppKit's text alignments.
-const nsAlignLeft, nsAlignRight, nsAlignCenter = 0, 1, 2
-
-func (v *view) configure(c *core.InputConfig) {
-	if c.Masked != v.masked {
-		v.setField(c.Masked)
-	}
-	font := apple.Font(c.Style.Font)
-	v.field.Send(selSetFont, objc.ID(font))
-	v.field.Send(selSetTextColor, nsColor(c.Style.Color))
-	align := nsAlignLeft
-	switch c.Style.Align {
-	case core.TextAlignCenter:
-		align = nsAlignCenter
-	case core.TextAlignEnd:
-		align = nsAlignRight
-	}
-	v.field.Send(selSetAlignment, align)
-	setPlaceholder(v.field, c.Placeholder, objc.ID(font), c.Style.Color)
-	apple.Release(font)
-	v.field.Send(selSetEditable, !c.Readonly)
-	v.field.Send(selSetEnabled, !c.Disabled)
-	v.inset = c.Content
-	v.native.Send(selSetNeedsLayout, true)
-}
-
 func (v *view) setEvents(m core.EventMask) {
+	if v.input != nil {
+		v.input.fs.Events = m
+	}
 	v.events = m
 	wantHover := m.Has(core.EventHoverIn) || m.Has(core.EventHoverOut)
 	switch {
@@ -1046,82 +994,6 @@ func (v *view) report(e core.Event) {
 	}
 }
 
-// AppKit accessibility roles of core roles: role and subrole.
-var roles = map[core.Role][2]string{
-	core.RoleButton:     {"AXButton", ""},
-	core.RoleLink:       {"AXLink", ""},
-	core.RoleHeader:     {"AXStaticText", ""},
-	core.RoleImage:      {"AXImage", ""},
-	core.RoleCheckbox:   {"AXCheckBox", ""},
-	core.RoleSwitch:     {"AXCheckBox", "AXSwitch"},
-	core.RoleRadio:      {"AXRadioButton", ""},
-	core.RoleTab:        {"AXRadioButton", "AXTabButton"},
-	core.RoleText:       {"AXStaticText", ""},
-	core.RoleRadioGroup: {"AXRadioGroup", ""},
-	core.RoleTabList:    {"AXTabGroup", ""},
-	core.RoleMenu:       {"AXMenu", ""},
-	core.RoleMenuItem:   {"AXMenuItem", ""},
-	// WebKit's subroles for ARIA's dialog and alert.
-	core.RoleDialog: {"AXGroup", "AXApplicationDialog"},
-	core.RoleAlert:  {"AXGroup", "AXApplicationAlert"},
-}
-
-func setAccessibility(native objc.ID, p *core.ViewProps) {
-	if p.TestID != "" {
-		native.Send(selSetAccessibilityIdentifier, apple.NSString(p.TestID))
-	}
-	r, ok := roles[p.Role]
-	native.Send(selSetAccessibilityElement, ok)
-	if !ok {
-		return
-	}
-	native.Send(selSetAccessibilityRole, apple.NSString(r[0]))
-	if r[1] != "" {
-		native.Send(selSetAccessibilitySubrole, apple.NSString(r[1]))
-	}
-	if p.Label != "" {
-		native.Send(selSetAccessibilityLabel, apple.NSString(p.Label))
-	}
-	native.Send(selSetAccessibilityEnabled, !p.Disabled)
-	native.Send(selSetAccessibilitySelected, p.Selected)
-	if p.Role == core.RoleCheckbox || p.Role == core.RoleSwitch || p.Role == core.RoleRadio {
-		n := 0
-		switch {
-		case p.Indeterminate:
-			n = 2 // mixed
-		case p.Checked || p.Selected:
-			n = 1
-		}
-		native.Send(selSetAccessibilityValue, objc.ID(objc.GetClass("NSNumber")).Send(sel("numberWithInt:"), n))
-	}
-}
-
-// Attribute names for a field's placeholder, read on first use.
-var placeholderAttrs = sync.OnceValues(func() (font, color objc.ID) {
-	const appKit = "/System/Library/Frameworks/AppKit.framework/AppKit"
-	return apple.Global(appKit, "NSFontAttributeName"), apple.Global(appKit, "NSForegroundColorAttributeName")
-})
-
-// setPlaceholder gives a field its placeholder in its font and its text
-// color at half strength, so the placeholder follows the app's colors as
-// the text does rather than the system's appearance.
-func setPlaceholder(field objc.ID, text string, font objc.ID, color core.Color) {
-	fontKey, colorKey := placeholderAttrs()
-	if color == 0 || fontKey == 0 || colorKey == 0 {
-		field.Send(selSetPlaceholder, apple.NSString(text))
-		return
-	}
-	r, g, b, a := color.Components()
-	attrs := objc.ID(objc.GetClass("NSMutableDictionary")).Send(sel("dictionary"))
-	attrs.Send(sel("setObject:forKey:"), font, fontKey)
-	attrs.Send(sel("setObject:forKey:"), objc.ID(objc.GetClass("NSColor")).Send(
-		sel("colorWithSRGBRed:green:blue:alpha:"), r, g, b, a*0.5), colorKey)
-	str := objc.ID(objc.GetClass("NSAttributedString")).Send(selAlloc).Send(
-		sel("initWithString:attributes:"), apple.NSString(text), attrs)
-	field.Send(sel("setPlaceholderAttributedString:"), str)
-	str.Send(selRelease)
-}
-
 func nsColor(c core.Color) objc.ID {
 	r, g, b, a := c.Components()
 	return objc.ID(objc.GetClass("NSColor")).Send(sel("colorWithSRGBRed:green:blue:alpha:"), r, g, b, a)
@@ -1155,7 +1027,7 @@ func hitTest(self objc.ID, cmd objc.SEL, p apple.CGPoint) objc.ID {
 	stop := self.Send(selSuperview)
 	for n := hit; n != 0 && n != stop; n = n.Send(selSuperview) {
 		if v := views[n]; v != nil {
-			if v.field == n || v.kind == core.KindScroll || v.kind == core.KindWeb {
+			if v.isEditor(n) || v.kind == core.KindScroll || v.kind == core.KindWeb {
 				return hit
 			}
 			if v.kind == core.KindVideo && v.native != n {
@@ -1290,19 +1162,24 @@ func scrollWheel(self objc.ID, cmd objc.SEL, event objc.ID) {
 		next.Send(cmd, event)
 		return
 	}
+	if v.scrollWheelOwn(event, phase, momentum, dx, dy) {
+		return
+	}
 	apple.Super(self, cmd, event)
 }
 
 // canScroll reports whether a scroll view's content can move by a wheel's
 // deltas along their main axis: positive ones show what is above or left.
 func (v *view) canScroll(dx, dy float64) bool {
-	doc := objc.Send[apple.CGRect](v.content, selBounds).Size
-	seen := objc.Send[apple.CGRect](v.clip, selBounds)
-	const slack = 0.5 // offsets land on fractions of a point
-	if math.Abs(dx) > math.Abs(dy) {
-		return dx > 0 && seen.Origin.X > slack || dx < 0 && seen.Origin.X+seen.Size.Width < doc.Width-slack
+	if v.sc.config.Behavior.NoScroll {
+		return false
 	}
-	return dy > 0 && seen.Origin.Y > slack || dy < 0 && seen.Origin.Y+seen.Size.Height < doc.Height-slack
+	at := v.offset()
+	lo, hi := v.limits()
+	if math.Abs(dx) > math.Abs(dy) {
+		return canScrollAxis(dx, float64(at.X), float64(lo.X), float64(hi.X))
+	}
+	return canScrollAxis(dy, float64(at.Y), float64(lo.Y), float64(hi.Y))
 }
 
 // scrollEntered shows a scroll view's scroll bars as the pointer enters.
@@ -1315,15 +1192,6 @@ func mouseExited(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v := views[self]; v != nil {
 		v.dispatch(core.EventHoverOut)
 	}
-}
-
-func accessibilityPress(self objc.ID, _ objc.SEL) bool {
-	v := views[self]
-	if v == nil || !v.events.Has(core.EventPress) {
-		return false
-	}
-	v.report(core.Event{Kind: core.EventPress, Index: -1})
-	return true
 }
 
 func surfaceSetFrameSize(self objc.ID, cmd objc.SEL, size apple.CGSize) {
@@ -1340,44 +1208,6 @@ func surfaceApply(self objc.ID, _ objc.SEL, _ objc.ID) {
 	}
 }
 
-func inputLayout(self objc.ID, cmd objc.SEL) {
-	apple.Super(self, cmd)
-	v := views[self]
-	h := objc.Send[apple.CGSize](v.field, selIntrinsicContentSize).Height
-	in := v.inset
-	y := float64(in.Origin.Y) + (float64(in.Size.Height)-h)/2
-	v.field.Send(selSetFrame, apple.Rect(float64(in.Origin.X), y, float64(in.Size.Width), h))
-}
-
-func fieldChanged(self objc.ID, _ objc.SEL, _ objc.ID) {
-	if v := views[self]; v != nil {
-		v.edits++
-		v.surface.engine.Dispatch(core.Event{Kind: core.EventChangeText, ID: v.id,
-			Text: apple.GoString(self.Send(selStringValue)), Count: v.edits})
-	}
-}
-
-func fieldSubmit(self objc.ID, _ objc.SEL, _ objc.ID) {
-	if v := views[self]; v != nil {
-		v.surface.engine.Dispatch(core.Event{Kind: core.EventSubmitEditing, ID: v.id,
-			Text: apple.GoString(self.Send(selStringValue))})
-	}
-}
-
-func fieldFocused(self objc.ID, cmd objc.SEL) bool {
-	ok := apple.SendSuper[bool](self, cmd)
-	if v := views[self]; v != nil && ok {
-		v.dispatch(core.EventFocus)
-	}
-	return ok
-}
-
-func fieldEnded(self objc.ID, _ objc.SEL, _ objc.ID) {
-	if v := views[self]; v != nil {
-		v.dispatch(core.EventBlur)
-	}
-}
-
 // clipScrolled reports a scroll view's offset when its clip view moves.
 func clipScrolled(note objc.ID) {
 	clip := note.Send(sel("object"))
@@ -1390,7 +1220,10 @@ func clipScrolled(note objc.ID) {
 	if v.surface.animator.Scroll(v.id, offset) {
 		apple.WithoutAnimation(v.surface.applyAnimated)
 	}
+	if len(v.sc.sticky) > 0 {
+		v.pinSticky()
+	}
 	if v.events.Has(core.EventScroll) {
-		v.surface.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id, Point: offset})
+		v.surface.engine.Dispatch(core.Event{Kind: core.EventScroll, ID: v.id, Point: offset, Count: v.sc.applied})
 	}
 }

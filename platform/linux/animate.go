@@ -30,6 +30,7 @@ type transition struct {
 type scrolling struct {
 	from, to core.Point
 	start    time.Time
+	momentum bool // a snap, which reports EventMomentumEnd
 }
 
 // styleOf returns the style v shows now: mid transition, or its own,
@@ -164,11 +165,19 @@ func (w *window) tick() {
 				live = append(live, v)
 			}
 		}
+		if velocity, ok := v.wheel.Settled(now); ok {
+			w.settle(v, velocity)
+		} else if v.wheel.Turning() && v.scrolling == nil {
+			live = append(live, v)
+		}
 		if s := v.scrolling; s != nil {
 			elapsed := now.Sub(s.start)
 			if elapsed >= scrollDuration {
 				v.scrolling = nil
 				w.scrollTo(v, s.to)
+				if s.momentum {
+					w.scrollEvent(v, core.EventMomentumEnd)
+				}
 			} else {
 				p := float64(elapsed) / float64(scrollDuration)
 				at := core.Point{

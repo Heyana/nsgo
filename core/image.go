@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -39,7 +40,137 @@ func (im *imageNode) naturalSize() Size { return im.config.Source.Size }
 
 func (a ImageConfig) same(b ImageConfig) bool {
 	return a.Source.same(b.Source) && a.Placeholder.same(b.Placeholder) && a.ResizeMode == b.ResizeMode &&
-		a.BlurRadius == b.BlurRadius && a.FadeDuration == b.FadeDuration
+		a.BlurRadius == b.BlurRadius && a.FadeDuration == b.FadeDuration && a.Position == b.Position
+}
+
+// ObjectPosition is where an image sits in its view once its ResizeMode
+// has sized it, as CSS's object-position places it. The parts of a
+// covering image that overflow are cropped. The zero value centers it.
+type ObjectPosition struct {
+	X, Y PositionAxis
+}
+
+// PositionAxis is an ObjectPosition along one axis: Offset from the start
+// edge (left, top), or from the end edge (right, bottom) when FromEnd.
+// A percentage is of the free space, the view's size less the image's, so
+// Pct(0) is the start, Pct(50) the center and Pct(100) the end; an auto
+// Offset, the zero value, is the center.
+type PositionAxis struct {
+	Offset  Length
+	FromEnd bool
+}
+
+// Positions along an axis.
+var (
+	PositionStart  = PositionAxis{Offset: Pct(0)}
+	PositionCenter = PositionAxis{Offset: Pct(50)}
+	PositionEnd    = PositionAxis{Offset: Pct(100)}
+)
+
+// Resolve returns where content starts along the axis, from the start
+// edge, given the free space: the box's size less the content's.
+func (a PositionAxis) Resolve(free Points) Points {
+	var d Points
+	switch a.Offset.unit {
+	case unitPoints:
+		d = Points(a.Offset.value)
+	case unitPercent:
+		d = free * Points(a.Offset.value) / 100
+	default:
+		d = free / 2
+	}
+	if a.FromEnd {
+		return free - d
+	}
+	return d
+}
+
+// Place returns the top left corner of content of the given size placed
+// in a box of size.
+func (p ObjectPosition) Place(box, content Size) Point {
+	return Point{X: p.X.Resolve(box.Width - content.Width), Y: p.Y.Resolve(box.Height - content.Height)}
+}
+
+// Fit returns where an image of natural size, in points, goes in a view
+// of size box: scaled as m scales it (Center keeps the natural size, as
+// CSS's none; ScaleDown shrinks an image larger than the box, as CSS's
+// scale-down), then placed at pos. The rectangle may reach outside the
+// box, which crops it. An image without a size fills the box. Every
+// backend fits images and videos with it, as NSH's ResizeMode::fit.
+func (m ResizeMode) Fit(natural, box Size, pos ObjectPosition) Bounds {
+	nw, nh := natural.Width, natural.Height
+	if nw <= 0 || nh <= 0 || m == Stretch {
+		return Bounds{Size: box}
+	}
+	contain := min(box.Width/nw, box.Height/nh)
+	var scale Points
+	switch m {
+	case Contain:
+		scale = contain
+	case Center:
+		scale = 1
+	case ScaleDown:
+		scale = min(contain, 1)
+	default: // Cover
+		scale = max(box.Width/nw, box.Height/nh)
+	}
+	content := Size{Width: nw * scale, Height: nh * scale}
+	return Bounds{Origin: pos.Place(box, content), Size: content}
+}
+
+// ImageSize calls done with the size in pixels of the image src names,
+// as Image's OnLoad reports it, or the error loading or reading it (NSH's
+// Image.getSize). The platform loads it as an Image would, the variant of
+// an "asset:" source with Scales included, and keeps its bytes for the
+// views that show it next.
+func (cx *Scope) ImageSize(src ImageSource, done func(pixels Size, err error)) {
+	t := cx.rt.tree
+	if t == nil {
+		return
+	}
+	t.alertID++
+	if t.imageInfos == nil {
+		t.imageInfos = map[uint32]imageInfoWait{}
+	}
+	t.imageInfos[t.alertID] = imageInfoWait{cx.current(), done}
+	t.commands = append(t.commands, MountItem{Kind: ItemImageInfo, Count: t.alertID,
+		Image: &ImageConfig{Source: t.pickScale(src)}})
+	t.changed = true
+}
+
+// PrefetchImage loads the image src names ahead of showing it, keeping
+// its bytes for the views that show it next (NSH's Image.prefetch), and
+// calls done, when not nil, with whether it loaded.
+func (cx *Scope) PrefetchImage(src ImageSource, done func(ok bool)) {
+	cx.ImageSize(src, func(_ Size, err error) {
+		if done != nil {
+			done(err == nil)
+		}
+	})
+}
+
+type imageInfoWait struct {
+	owner *Scope
+	done  func(Size, error)
+}
+
+func (t *Tree) answerImageInfo(ev Event) {
+	w, ok := t.imageInfos[ev.Count]
+	if !ok {
+		return
+	}
+	delete(t.imageInfos, ev.Count)
+	owner := w.owner
+	if owner.disposed {
+		owner = t.root
+	}
+	var err error
+	if ev.Text != "" {
+		err = errors.New(ev.Text)
+	}
+	if w.done != nil {
+		t.within(owner, func() { w.done(ev.Size, err) })
+	}
 }
 
 // ImageScaleValues are the pixel densities an image asset can ship in, as

@@ -1,6 +1,6 @@
 # Core
 
-`core` turns Go components into one `MountBatch` per commit. Components run once; signals drive bindings, regions rebuild only what changed, and the commit lays the tree out and sends the differences. Read this before changing `core`, `engine` or the mount protocol a backend implements.
+`core` turns Go components into one `MountBatch` per commit. Components run once; signals drive bindings, regions rebuild only what changed, and the commit lays the tree out and sends the differences. Read this before changing `core`, `engine` or the mount protocol a backend implements; [text](text.md), [scrolling and lists](scrolling.md) and [interaction](interaction.md) cover those parts of `core`.
 
 ## Reactive graph
 
@@ -39,12 +39,10 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - An overlay with an anchor goes beside it as NSH's `place` does: the side asked unless only the opposite side fits or has more room, aligned along it, then clamped into the safe area less its margin.
 - A modal provides the insets its content keeps clear of; a screen does too, without the top when it has a header. `Insets` reads them.
 - `EventBack` (Escape, the back button) goes to the topmost overlay that listens for cancel, else the topmost modal's `OnRequestClose`, else the innermost stack that can pop. A popped screen reports `OnDismiss` and stays hidden until the app removes it; the last screen never pops.
+- Where the environment has `HeaderHeight` (iOS, Android), screens get NSH's system header: the core pads the content below the bar plus the status bar it reaches under, sends `ItemScreen`, and lays `HeaderLeft`, `HeaderRight` and `HeaderTitle` out as roots at their content size that the platform puts in the bar. `Header` is then not mounted; elsewhere it is the screen's first child. iOS gives each screen a `UINavigationBar` of its own with a back item, Android a `Toolbar`; their back buttons and iOS's leading-edge swipe send `EventBack` with the screen's ID. Large titles take the taller bar without collapsing on scroll.
+- iOS presents a modal with `ModalPageSheet` or `ModalFormSheet` as a sheet view controller, which reports its size (`EventModalSize`) and its swipes (`EventRequestClose`, "swipe"); a swiped sheet stays hidden until the app removes it. `SupportedOrientations` goes to the controllers' `supportedInterfaceOrientations`. On Android a modal over the surface starts below the status bar unless `StatusBarTranslucent`. Other platforms ignore these.
 - `EventPressOutside` reports presses outside an overlay, ignoring those on its anchor or on overlays above it.
 - An `InputAccessoryView` is a layout root as wide as the surface and as tall as its content, which no view holds: its views are sent before the tree's, and an input's `InputConfig.Accessory` names it, resolved from `InputAccessoryViewID`. iOS makes it the field's `inputAccessoryView`; Android shows it above the keyboard while the field has focus; other platforms leave it unmounted.
-
-## Lists
-
-`List` mounts only the rows within a viewport of its scroll offset, in cells it reuses: a cell's content is built once, and its `ListRow` signals move it to another row. Row sizes start as an estimate and are corrected as rows are laid out, in a Fenwick tree, so offsets and the row at an offset cost O(log n). The window is refilled after each layout, within the same commit.
 
 ## Commit
 
@@ -60,52 +58,6 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - `flex-start` content alignment outside grids.
 - Left and right swapped when right to left.
 
-## Text and drawing
-
-A platform's `TextEngine` runs on the engine goroutine in three phases. `Prepare` shapes the text once, `PreparedText.Measure` answers layout at any width, and `PreparedText.Layout` lays it out at its final size. The `TextLayout` travels in `ItemText`, and the main thread only draws it and releases the one it replaces. The core releases prepared text when it changes or its node goes.
-
-The family `FontMonospace` is each platform's fixed-pitch font: CoreText's user fixed-pitch font, CSS's `ui-monospace` stack, Consolas on Windows, Pango's `monospace` on Linux, Android's `monospace`.
-
-`Text.Spans` style byte ranges over the text's style; offsets are UTF-8 bytes, Go's own, and platforms convert them. A press on a span with a handler comes back with the byte offset under the point.
-
-- A span's `Background` and `CornerRadius` become its `TextBackground`: drawing only, a box per line from the font's ascent to its descent, rounded on every line, behind the selection and the glyphs. Hanging spaces at a line's end are not painted.
-- A span's `Attachment` is a view inside the text, as NSH's inline attachments are. Its view is a layout root at its content size, laid out before the text is prepared, so a change inside it prepares the text again.
-- The text holds an `AttachmentRune` in an attachment's place, and `AttributedText.Attachments` gives the engine its size and `VerticalAlign`.
-- Every engine places an attachment by NSH's rule, `TextAttachment.Ascent` and `Extent` against the placeholder font's `FontExtent`, so a line grows where an attachment reaches past its font.
-- After layout the core asks the `AttachmentLayout` where each attachment went and sends its view as a native child of the text view at that frame. Those cut off by the line limit are hidden.
-
-A `Canvas` records its drawing on the engine into an immutable `Drawing`, again when a signal it read or its size changes, and the platform plays the operations on the main thread.
-
-## Text selection
-
-Selection follows NSH's: one selection runs across the texts of a selection area (a `View` with `SelectionArea`, which `base.SelectionArea` sets), in document order, as a web page's does. A `Text` with `SelectableOn` outside any area is an area of its own; one with `SelectableOff` stays out. The highlight is the inherited `SelectionColor`, else the platform's.
-
-- `ViewProps` carries `SelectionArea`, `Selectable` and `SelectionColor`, so a selection never waits for the engine.
-- `SelectionModel` in `selection.go` is the platform-independent model macOS and iOS drive on their main thread. Windows does not select text yet.
-- A backend lists an area's texts as `SelectionTexts`, with content, frames, hit test and NodeIDs, then feeds it presses, drags and long presses and draws its `Ranges`.
-- Offsets are UTF-16. `Text` joins texts on one row with a tab and others with a line break, leaving attachments out.
-- macOS takes mouse presses in its event monitor before views see them; pressables, fields and gestures inside an area keep theirs. The surface becomes first responder for Copy, Select All and Escape.
-- iOS selects with a long press, then by words as the finger drags, and shows the edit menu; the view controller answers Copy and Select All. Touch handles are not drawn yet.
-- The web uses the browser's own selection through `user-select`, and a `copy` handler joins texts as the model does.
-
-## Gestures
-
-`View.OnPan`, `OnPinch` and `OnRotation` follow gestures the platform recognizes; they report to the engine, which merges each gesture's moves per turn and never its first or last report.
-
-- The platform decides on the main thread when a drag becomes a pan, from the view's `PanActivation`. Until it does, a scroll view around may still take the touch.
-- An active pan takes the touch from presses and scroll views.
-- A drag or wheel turn scrolls the innermost scroll view under it that can move its content that way, so an inner one passes on only at its edge. A touch or trackpad gesture keeps the scroll view it began with. Android still uses its scroll views' own handling.
-- Desktop scroll bars show while the pointer is over their scroll view and can be dragged: AppKit's overlay scrollers on macOS, the browser's on the web, and `platform/internal/scrollbar`'s on Windows and Linux.
-- `View.PanValues` binds a drag to animated values: the platform moves them before it reports each move, so the view follows on the main thread, as NSH's bound values do. A drag through `OnPan` and a signal costs a commit per turn.
-
-## File drops
-
-Files dragged from other apps follow NSH's `file-drop.md`. `View.OnFileDrop` receives `file:` URLs; `OnFileDragEnter` and `OnFileDragLeave` follow the drag.
-
-- The destination is the innermost view under the pointer whose mask has `EventFileDrop`, unless it is disabled; the topmost modal bounds the search. The platform decides on the main thread from the mounted views and answers Copy or nothing.
-- Leaving one destination for another reports a leave, then an enter. A deleted destination hears nothing more, since its ID may be reused.
-- macOS takes `NSPasteboardTypeFileURL` on the surface, Windows registers an OLE `IDropTarget` written in Go while a view listens, and Linux adds a `GtkDropTarget` for `GdkFileList`. Browsers hide paths, so the web delivers each file as a `blob:` URL that `fetch` and `net/http` read, its name as the fragment.
-
 ## Desktop windows
 
 Window chrome follows NSH's `nsh/desktop`: native controls, an app-drawn title bar.
@@ -120,8 +72,9 @@ Style `Transition`s, animated values and layout animations run on the platform, 
 
 ## Services
 
-Native alerts, the clipboard, announcements, keyboard shortcuts, the status bar, the window title, window commands and the application menu are command items answered by events. Shortcuts are scoped to their owner: the platform matches key presses against the table synchronously and reports only matches.
+Native alerts, the clipboard, image sizes and prefetches, announcements, keyboard shortcuts, the status bar, the window title, window commands and the application menu are command items answered by events. Shortcuts are scoped to their owner: the platform matches key presses against the table synchronously and reports only matches.
 
+- The status bar is layered as NSH's `status_bar.rs`: `SetStatusBar` patches the app's default, and each screen's or modal's `StatusBar` is over it, in mount order, while it is in the tree and not popped or swiped away. The latest wins field by field, and the commit sends one `ItemStatusBar` when the merged result changes. iOS and Android apply it; Android ignores `Animated`.
 - An input method composing text keeps its keys on macOS and the web, so arrows still choose its candidates.
 - In a text field the web matches only presses with a modifier, function keys, Up, Down, Page Up and Page Down, so typing never triggers a binding. The native backends match every key.
 
@@ -156,6 +109,7 @@ The protocol is defined in `mount.go` and `events.go`. Backends apply items in o
 | A future executor on the engine thread | Goroutines, `Scope.Post` and `Scope.Context` | Go has them built in |
 | `catch_unwind` | `recover`, reported as `PanicError` | The same, in Go terms |
 | `MountItem` enum | One struct with a `Kind` and pointers to large parts | No allocation per item kind; easy to encode across a pipe |
+| `accessibilityActions` as a list in the props | `ViewProps.Actions` points at the element's list, never changed | `ViewProps` stays comparable, so the core diffs it with `!=` |
 | Options with defaults of `true` (`closeOnEscape`) | Negative names (`NoCloseOnEscape`) | The zero value must be the default |
 | Per-platform image loading and caching | One Go loader (`platform/internal/imageload`): `net/http`, shared fetches, an LRU, `context` cancellation | Written once; platforms only decode and draw |
 

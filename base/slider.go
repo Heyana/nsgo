@@ -13,8 +13,10 @@ import (
 // to Step, and the slider shows what Value returns.
 //
 // A drag anywhere on the slider moves the value by the distance dragged,
-// so a narrow thumb need not be hit. Assistive technology sees Label; the
-// platforms have no adjustable role for it yet.
+// so a narrow thumb need not be hit. Assistive technology sees an
+// adjustable element with Label and the value as a range, and its
+// increment and decrement actions move the value by Step, or a tenth of
+// the range when continuous.
 type Slider struct {
 	Value func() float64
 	// Min and Max bound the value; 0 to 1 when Max is not above Min.
@@ -76,9 +78,36 @@ func (s Slider) Render(cx *core.Scope) core.Node {
 			s.OnChange(v)
 		}
 	}
+	step := s.Step
+	if step <= 0 {
+		step = (hi - lo) / 10
+	}
+	adjust := func(name string) {
+		if s.OnChange == nil {
+			return
+		}
+		v := core.Untracked(cx, value)
+		switch name {
+		case core.ActionIncrement:
+			v = math.Min(v+step, hi)
+		case core.ActionDecrement:
+			v = math.Max(v-step, lo)
+		default:
+			return
+		}
+		if v != core.Untracked(cx, value) {
+			s.OnChange(v)
+		}
+	}
 	return core.View{
 		Style: s.Style, StyleFunc: s.StyleFunc, Label: s.Label, TestID: s.TestID, Disabled: s.Disabled,
-		OnPan: pan, PanActivation: core.PanActivation{ActiveOffsetX: 2, FailOffsetY: 12},
+		Role: core.RoleAdjustable,
+		AccessibilityValue: func() core.AccessibilityValue {
+			return core.AccessibilityValue{Min: float32(lo), Max: float32(hi), Now: float32(value())}
+		},
+		AccessibilityActions:  sliderActions,
+		OnAccessibilityAction: adjust,
+		OnPan:                 pan, PanActivation: core.PanActivation{ActiveOffsetX: 2, FailOffsetY: 12},
 		Children: []core.Node{core.View{
 			Style: s.TrackStyle, StyleFunc: s.TrackStyleFunc, Disabled: s.Disabled,
 			OnLayout: func(b core.Bounds) { width.Set(b.Size.Width) },
@@ -100,3 +129,6 @@ func (s Slider) Render(cx *core.Scope) core.Node {
 		}},
 	}
 }
+
+// sliderActions are what assistive technology adjusts a slider with.
+var sliderActions = []core.AccessibilityAction{{Name: core.ActionIncrement}, {Name: core.ActionDecrement}}

@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.ImageDecoder;
 import android.graphics.ColorFilter;
+import android.graphics.Matrix;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.RenderEffect;
@@ -20,7 +21,8 @@ import java.nio.ByteBuffer;
 
 /**
  * An image node: its placeholder under its source, each an ImageView
- * fitted by the resize mode. Go numbers each change of its sources as a
+ * whose matrix fits its drawable by the resize mode and position, as
+ * core.ResizeMode.Fit does. Go numbers each change of its sources as a
  * request, and the node shows only the bitmaps of its current one. The
  * source fades in over the placeholder. Animated GIF and WebP play with
  * AnimatedImageDrawable, each node its own copy.
@@ -34,6 +36,9 @@ final class ImageNode extends FrameLayout {
     /** Whether the request's source is shown, which the placeholder then stays under. */
     private boolean loaded;
     private int fade = DEFAULT_FADE;
+    private int mode = Protocol.RESIZE_COVER;
+    /** The position on each axis: a fraction of the free space plus pixels. */
+    private float xFraction = 0.5f, x, yFraction = 0.5f, y;
 
     ImageNode(Context context) {
         super(context);
@@ -45,7 +50,7 @@ final class ImageNode extends FrameLayout {
         ImageView view = new ImageView(context);
         // The node itself is what assistive technology reads.
         view.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-        view.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        view.setScaleType(ImageView.ScaleType.MATRIX);
         addView(view, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         return view;
     }
@@ -56,9 +61,7 @@ final class ImageNode extends FrameLayout {
      * node until its bitmaps arrive.
      */
     void configure(int request, int mode, float blur, int fadeMillis) {
-        ImageView.ScaleType type = scaleType(mode);
-        placeholder.setScaleType(type);
-        source.setScaleType(type);
+        this.mode = mode;
         fade = fadeMillis > 0 ? fadeMillis : DEFAULT_FADE;
         // Blurring a view needs API 31; older systems show it sharp.
         if (Build.VERSION.SDK_INT >= 31) {
@@ -66,12 +69,63 @@ final class ImageNode extends FrameLayout {
             placeholder.setRenderEffect(effect);
             source.setRenderEffect(effect);
         }
+        fit(placeholder);
+        fit(source);
         if (request == this.request) return;
         this.request = request;
         loaded = false;
         source.animate().cancel();
         show(placeholder, null);
         show(source, null);
+    }
+
+    /** Sets the position: each axis a fraction of the free space plus pixels. */
+    void position(float xFraction, float x, float yFraction, float y) {
+        this.xFraction = xFraction;
+        this.x = x;
+        this.yFraction = yFraction;
+        this.y = y;
+        fit(placeholder);
+        fit(source);
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        fit(placeholder);
+        fit(source);
+    }
+
+    /**
+     * Fits view's drawable in the node as core.ResizeMode.Fit does: scaled
+     * by the mode (Center keeps the natural size, ScaleDown shrinks only a
+     * larger one), then placed at the position; it may reach outside the
+     * node, which clips it. The drawable's intrinsic size is its natural
+     * size in pixels.
+     */
+    private void fit(ImageView view) {
+        Drawable d = view.getDrawable();
+        int w = getWidth(), h = getHeight();
+        if (d == null || w == 0 || h == 0) return;
+        float nw = d.getIntrinsicWidth(), nh = d.getIntrinsicHeight();
+        if (mode == Protocol.RESIZE_STRETCH || nw <= 0 || nh <= 0) {
+            view.setScaleType(ImageView.ScaleType.FIT_XY);
+            return;
+        }
+        float contain = Math.min(w / nw, h / nh);
+        float s;
+        switch (mode) {
+            case Protocol.RESIZE_CONTAIN: s = contain; break;
+            case Protocol.RESIZE_CENTER: s = 1; break;
+            case Protocol.RESIZE_SCALE_DOWN: s = Math.min(contain, 1); break;
+            default: s = Math.max(w / nw, h / nh);
+        }
+        float freeX = w - nw * s, freeY = h - nh * s;
+        Matrix m = new Matrix();
+        m.setScale(s, s);
+        m.postTranslate(xFraction * freeX + x, yFraction * freeY + y);
+        view.setScaleType(ImageView.ScaleType.MATRIX);
+        view.setImageMatrix(m);
     }
 
     /** Recolors the opaque pixels with argb, or keeps their colors for 0. */
@@ -93,11 +147,12 @@ final class ImageNode extends FrameLayout {
         source.animate().alpha(1f).setDuration(fade).withEndAction(() -> show(placeholder, null));
     }
 
-    /** Shows image in view, playing it when it is animated and stopping what it showed. */
-    private static void show(ImageView view, Drawable image) {
+    /** Shows image in view, fitted, playing it when it is animated and stopping what it showed. */
+    private void show(ImageView view, Drawable image) {
         Drawable old = view.getDrawable();
         if (old instanceof AnimatedImageDrawable && old != image) ((AnimatedImageDrawable) old).stop();
         view.setImageDrawable(image);
+        fit(view);
         if (image instanceof AnimatedImageDrawable) ((AnimatedImageDrawable) image).start();
     }
 
@@ -151,16 +206,6 @@ final class ImageNode extends FrameLayout {
         boolean webp = data.length >= 12 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F'
                 && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P';
         return gif || webp;
-    }
-
-    private static ImageView.ScaleType scaleType(int mode) {
-        switch (mode) {
-            case Protocol.RESIZE_CONTAIN: return ImageView.ScaleType.FIT_CENTER;
-            case Protocol.RESIZE_STRETCH: return ImageView.ScaleType.FIT_XY;
-            // Its own size, centered, and fitted only when larger.
-            case Protocol.RESIZE_CENTER: return ImageView.ScaleType.CENTER_INSIDE;
-            default: return ImageView.ScaleType.CENTER_CROP;
-        }
     }
 
     /**

@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -176,9 +177,10 @@ func fieldApp(title string) func(*core.Scope) core.Node {
 				Background: core.RGB(0xffffff)},
 			Children: []core.Node{
 				core.Input{Value: text.Get, OnChange: text.Set, Placeholder: "Type here",
-					OnFocus:  func() { focused.Update(func(n int) int { return n + 1 }) },
-					OnBlur:   func() { blurred.Update(func(n int) int { return n + 1 }) },
-					OnSubmit: func(string) { submitted.Update(func(n int) int { return n + 1 }) },
+					OnFocus:        func() { focused.Update(func(n int) int { return n + 1 }) },
+					OnBlur:         func() { blurred.Update(func(n int) int { return n + 1 }) },
+					SubmitBehavior: core.SubmitBehaviorSubmit,
+					OnSubmit:       func(string) { submitted.Update(func(n int) int { return n + 1 }) },
 					Style: core.Style{Width: core.Pt(300), Height: core.Pt(40), Background: core.RGB(0xffffff),
 						FontSize: 20, Color: core.RGB(0x000000)}},
 				core.Show{When: open.Get, Then: func(*core.Scope) core.Node {
@@ -960,6 +962,43 @@ func waitForPixel(t *testing.T, hwnd uintptr, x, y int32, want uint32, timeout t
 	}
 }
 
+// TestWheelSettlesOnPagesWithinInsets turns the wheel over a paging
+// scroll view with a content inset: it settles on the next page once the
+// wheel rests, reporting the momentum, and the inset widens its offsets.
+func TestWheelSettlesOnPagesWithinInsets(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-" + t.Name()
+	var offset, rested atomic.Int64
+	offset.Store(math.MinInt32)
+	app := func(cx *core.Scope) core.Node {
+		return core.View{Style: core.Style{Width: core.Pt(360), Height: core.Pt(240), Background: core.RGB(0xffffff)},
+			Children: []core.Node{core.Scroll{HideIndicator: true, ContentOffset: core.Point{Y: -10},
+				Behavior:      core.ScrollBehavior{Paging: true, ContentInset: core.Edges{Top: 10}},
+				OnScroll:      func(e core.ScrollEvent) { offset.Store(int64(e.Offset.Y)) },
+				OnMomentumEnd: func(core.ScrollEvent) { rested.Add(1) },
+				Style:         core.Style{Width: core.Pt(100), Height: core.Pt(100)},
+				Children:      []core.Node{core.View{Style: core.Style{Height: core.Pt(400), Background: core.RGB(0x0000ff)}}}}}}
+	}
+	hwnd := startApp(t, title, app, 360, 240)
+	wait := func(wantOffset, wantRested int64) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for offset.Load() != wantOffset || rested.Load() != wantRested {
+			if time.Now().After(deadline) {
+				t.Fatalf("offset %d after %d rests, want %d after %d", offset.Load(), rested.Load(), wantOffset, wantRested)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	wait(-10, 0)
+	at := point{px(20), px(20)}
+	clientToScreen.Call(hwnd, uintptr(unsafe.Pointer(&at)))
+	postMessageW.Call(hwnd, wmMouseWheel, uintptr(uint32(uint16(0xff88))<<16), uintptr(uint32(at.Y)<<16|uint32(at.X)&0xffff))
+	wait(100, 1)
+}
+
 // startApp runs app in a window titled title and returns it, closed when
 // the test ends.
 func startApp(t *testing.T, title string, app engine.App, width, height core.Points) uintptr {
@@ -1171,4 +1210,48 @@ func TestHoverFollowsThePointer(t *testing.T) {
 	move(60, 50)
 	postMessageW.Call(hwnd, wmMouseLeave, 0, 0)
 	waitForText(t, hwnd, title+"|2|2", done)
+}
+
+// TestStickyListRowsStayPinned turns the wheel over a list whose first
+// row sticks: the row stays at the top, moved natively from its frame.
+func TestStickyListRowsStayPinned(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-" + t.Name()
+	var offset atomic.Int64
+	app := func(cx *core.Scope) core.Node {
+		return core.View{Style: core.Style{Width: core.Pt(360), Height: core.Pt(240), Background: core.RGB(0xffffff)},
+			Children: []core.Node{core.List{HideIndicator: true, OnScroll: func(e core.ScrollEvent) { offset.Store(int64(e.Offset.Y)) },
+				Count: func() int { return 40 }, StickyHeaderIndices: []int{0}, EstimatedSize: 20,
+				Style: core.Style{Width: core.Pt(40), Height: core.Pt(100)},
+				Row: func(cx *core.Scope, r core.ListRow) core.Node {
+					return core.View{StyleFunc: func() core.Style {
+						if r.Index() == 0 {
+							return core.Style{Height: core.Pt(20), Background: core.RGB(0xff0000)}
+						}
+						return core.Style{Height: core.Pt(20), Background: core.RGB(0x0000ff)}
+					}}
+				}}}}
+	}
+	hwnd := startApp(t, title, app, 360, 240)
+	at := point{px(20), px(20)}
+	clientToScreen.Call(hwnd, uintptr(unsafe.Pointer(&at)))
+	time.Sleep(300 * time.Millisecond)
+	postMessageW.Call(hwnd, wmMouseWheel, uintptr(uint32(uint16(0xff88))<<16), uintptr(uint32(at.Y)<<16|uint32(at.X)&0xffff))
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pix, w, _, ok := clientPixels(hwnd)
+		if ok && offset.Load() > 20 {
+			bgr := func(x, y float64) []byte { i := (px(y)*w + px(x)) * 4; return pix[i : i+3] }
+			top, below := bgr(20, 10), bgr(20, 50)
+			if top[2] == 0xff && top[0] == 0 && below[0] == 0xff && below[2] == 0 {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("offset %d: the sticky row is not pinned at the top", offset.Load())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }

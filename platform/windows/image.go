@@ -79,6 +79,14 @@ type imageSlot struct {
 	bitmapFrame int
 	tint        core.Color
 	generation  uint64
+	// blur is the Gaussian blur effect a blurred picture draws through,
+	// made in blurGeneration.
+	blur           *comObject
+	blurGeneration uint64
+	// A source that loaded fades in over fade from fadeAt, over the
+	// placeholder.
+	fadeAt time.Time
+	fade   time.Duration
 }
 
 type imageLoad struct{ cancel context.CancelFunc }
@@ -91,10 +99,19 @@ func (s *imageSlot) reset(src core.ImageSource) {
 		s.load.cancel()
 		s.load = nil
 	}
-	releaseAll(&s.bitmap)
+	releaseAll(&s.bitmap, &s.blur)
 	s.pic = nil
 	s.src = src
 	s.frame, s.playing, s.ended = 0, false, false
+	s.fade = 0
+}
+
+// alpha returns the opacity s's fade-in shows it at by now: 1 once over.
+func (s *imageSlot) alpha(now time.Time) float32 {
+	if s.fade <= 0 {
+		return 1
+	}
+	return float32(min(float64(now.Sub(s.fadeAt))/float64(s.fade), 1))
 }
 
 func sameSource(a, b core.ImageSource) bool {
@@ -177,6 +194,7 @@ func (w *window) load(v *view, s *imageSlot, report bool) {
 					Height: core.Points(math.Round(float64(pic.size.Height)))}
 				w.report(v, core.Event{Kind: core.EventLoad, ID: v.id, Size: size})
 				w.report(v, core.Event{Kind: core.EventLoadEnd, ID: v.id})
+				w.fadeIn(v, s)
 			}
 			invalidateRect.Call(w.hwnd, 0, 0)
 		})
@@ -275,74 +293,155 @@ func tintInto(dst, src []byte, tint core.Color) {
 	}
 }
 
-// drawImage paints v's source, or its placeholder until the source
-// arrives, into r (points) as v's resize mode fits it.
-func (p *painter) drawImage(v *view, tint core.Color, r rectF) {
-	s := &v.source
-	if s.pic == nil {
-		s = &v.placeholder
+// fadeIn fades s, v's source that just loaded, in over the placeholder
+// for the view's fade duration, on the frame clock.
+func (w *window) fadeIn(v *view, s *imageSlot) {
+	fade := v.image.FadeDuration
+	if fade <= 0 {
+		return
 	}
-	if s.pic == nil || r.empty() {
+	pic := s.pic
+	s.fadeAt, s.fade = time.Now(), fade
+	w.onFrame(func(now time.Time) bool {
+		if v.deleted || s.pic != pic || s.fade <= 0 {
+			return false
+		}
+		invalidateRect.Call(w.hwnd, 0, 0)
+		if s.alpha(now) >= 1 {
+			s.fade = 0
+			return false
+		}
+		return true
+	})
+}
+
+// drawImage paints v in r (points): its placeholder until the source
+// arrives or while the source fades in over it, then the source, each as
+// v's resize mode and position fit it, blurred by its blur radius.
+func (p *painter) drawImage(v *view, tint core.Color, r rectF) {
+	if r.empty() {
+		return
+	}
+	alpha := float32(1)
+	if v.source.pic != nil {
+		alpha = v.source.alpha(time.Now())
+	}
+	p.pushClipRect(r)
+	defer p.pop()
+	if v.source.pic == nil || alpha < 1 {
+		p.drawPicture(v, &v.placeholder, tint, r)
+	}
+	if v.source.pic == nil || alpha <= 0 {
+		return
+	}
+	if alpha < 1 {
+		p.pushLayer(alpha, nil)
+	}
+	p.drawPicture(v, &v.source, tint, r)
+	if alpha < 1 {
+		p.pop()
+	}
+}
+
+// drawPicture draws s's picture fitted in r. A blurred one draws through
+// a Direct2D Gaussian blur with hard borders, so its edges stay opaque,
+// under a clip to its own rectangle.
+func (p *painter) drawPicture(v *view, s *imageSlot, tint core.Color, r rectF) {
+	if s.pic == nil {
 		return
 	}
 	bmp := s.bitmapOf(p.dc, tint)
 	if bmp == nil {
 		return
 	}
-	// Fit in pixels, so the picture's edges fall on whole ones.
-	scale := float64(p.scale)
-	box := rect{int32(math.Round(float64(r.left) * scale)), int32(math.Round(float64(r.top) * scale)),
-		int32(math.Round(float64(r.right) * scale)), int32(math.Round(float64(r.bottom) * scale))}
-	src, dst := p.w.fit(s, v.image.ResizeMode, box)
-	if src.empty() || dst.empty() {
+	d := p.w.fit(v, s, r)
+	if d.empty() {
 		return
 	}
-	k := float32(1 / scale)
-	d := rectF{float32(dst.Left) * k, float32(dst.Top) * k, float32(dst.Right) * k, float32(dst.Bottom) * k}
-	sr := rectF{float32(src.Left), float32(src.Top), float32(src.Right), float32(src.Bottom)}
-	p.dc.callF(rtDrawBitmap, 0b100, bmp.ptr(), uintptr(unsafe.Pointer(&d)), f32(1), d2dInterpolationLinear,
-		uintptr(unsafe.Pointer(&sr)))
-}
-
-// fit returns the part of s's picture to draw and where, in r, for mode.
-func (w *window) fit(s *imageSlot, mode core.ResizeMode, r rect) (src, dst rect) {
-	pw, ph := float64(s.pic.width), float64(s.pic.height)
-	rw, rh := float64(r.Right-r.Left), float64(r.Bottom-r.Top)
-	src = rect{0, 0, int32(s.pic.width), int32(s.pic.height)}
-	switch mode {
-	case core.Stretch:
-		return src, r
-	case core.Cover:
-		// Crop the middle of the picture to r's aspect.
-		scale := max(rw/pw, rh/ph)
-		cw, ch := rw/scale, rh/scale
-		src.Left, src.Top = int32(math.Round((pw-cw)/2)), int32(math.Round((ph-ch)/2))
-		src.Right, src.Bottom = int32(math.Round((pw+cw)/2)), int32(math.Round((ph+ch)/2))
-		src.Left, src.Top = min(src.Left, src.Right-1), min(src.Top, src.Bottom-1)
-		return src, r
-	case core.Center:
-		// A picture's pixels are points, or its URI's "@2x" says how many
-		// make one, unless the source gave its size; an SVG has its own.
-		nw, nh := pw/density(s.src.URI)*w.scale, ph/density(s.src.URI)*w.scale
-		if s.pic.svg {
-			nw, nh = float64(s.pic.size.Width)*w.scale, float64(s.pic.size.Height)*w.scale
-		}
-		if size := s.src.Size; size.Width > 0 && size.Height > 0 {
-			nw, nh = float64(size.Width)*w.scale, float64(size.Height)*w.scale
-		}
-		if nw <= rw && nh <= rh {
-			return src, centered(r, nw, nh)
-		}
+	blur := max(float32(v.image.BlurRadius), 0)
+	if blur <= 0 {
+		p.dc.callF(rtDrawBitmap, 0b100, bmp.ptr(), uintptr(unsafe.Pointer(&d)), f32(1), d2dInterpolationLinear, 0)
+		return
 	}
-	scale := min(rw/pw, rh/ph) // Contain, and Center when larger than r
-	return src, centered(r, pw*scale, ph*scale)
+	effect := s.blurOf(p.dc)
+	if effect == nil {
+		return
+	}
+	// The effect draws in the picture's own pixels, one DIP each, which
+	// the world transform maps onto d; a blur radius is twice the
+	// standard deviation, in points, as NSH reads it.
+	sx := float64(d.right-d.left) / float64(s.pic.width)
+	sy := float64(d.bottom-d.top) / float64(s.pic.height)
+	sigma := blur / 2 / float32(max(min(sx, sy), 1e-6))
+	const standardDeviation, borderMode, borderHard = 0, 2, 1
+	const d2dPropertyEnum = 11
+	effect.call(effectSetValue, standardDeviation, d2dPropertyFloat, uintptr(unsafe.Pointer(&sigma)), 4)
+	hard := uint32(borderHard)
+	effect.call(effectSetValue, borderMode, d2dPropertyEnum, uintptr(unsafe.Pointer(&hard)), 4)
+	effect.call(effectSetInput, 0, bmp.ptr(), 1)
+	var out *comObject
+	effect.call(effectGetOutput, uintptr(unsafe.Pointer(&out)))
+	if out == nil {
+		return
+	}
+	defer out.release()
+	p.pushClipRect(d)
+	saved := p.m
+	p.setTransform(scaling(sx, sy).then(translation(float64(d.left), float64(d.top))).then(saved))
+	p.dc.call(dcDrawImage, out.ptr(), 0, 0, d2dInterpolationLinear, 0)
+	p.setTransform(saved)
+	p.pop()
+	// The effect keeps no bitmap alive between draws.
+	effect.call(effectSetInput, 0, 0, 0)
 }
 
-// centered returns a rectangle of width by height centered in r.
-func centered(r rect, width, height float64) rect {
-	x := float64(r.Left) + (float64(r.Right-r.Left)-width)/2
-	y := float64(r.Top) + (float64(r.Bottom-r.Top)-height)/2
-	return rect{int32(math.Round(x)), int32(math.Round(y)), int32(math.Round(x + width)), int32(math.Round(y + height))}
+// blurOf returns s's blur effect, made once per device.
+func (s *imageSlot) blurOf(dc *comObject) *comObject {
+	if s.blur != nil && s.blurGeneration == gfxGeneration {
+		return s.blur
+	}
+	releaseAll(&s.blur)
+	if failed(dc.call(dcCreateEffect, uintptr(unsafe.Pointer(&clsidGaussianBlur)), uintptr(unsafe.Pointer(&s.blur)))) {
+		s.blur = nil
+		return nil
+	}
+	s.blurGeneration = gfxGeneration
+	return s.blur
+}
+
+// fit returns where s's picture goes in r, in points: core's fit of its
+// natural size by v's resize mode and position, its edges moved to whole
+// pixels.
+func (w *window) fit(v *view, s *imageSlot, r rectF) rectF {
+	box := core.Size{Width: core.Points(r.right - r.left), Height: core.Points(r.bottom - r.top)}
+	b := v.image.ResizeMode.Fit(natural(s), box, v.image.Position)
+	scale := max(w.scale, 1e-6)
+	snap := func(at float32, x core.Points) float32 {
+		return float32(math.Round((float64(at)+float64(x))*scale) / scale)
+	}
+	return rectF{snap(r.left, b.Origin.X), snap(r.top, b.Origin.Y),
+		snap(r.left, b.Origin.X+b.Size.Width), snap(r.top, b.Origin.Y+b.Size.Height)}
+}
+
+// natural returns the size in points s's picture shows at: the size its
+// source declares, an SVG's intrinsic size, or its pixels over the
+// density its URI's "@2x" declares. Bitmaps are 96 DPI, so a pixel is a
+// point.
+func natural(s *imageSlot) core.Size {
+	if size := s.src.Size; size.Width > 0 && size.Height > 0 {
+		return size
+	}
+	if s.pic.svg {
+		return s.pic.size
+	}
+	d := density(s.src.URI)
+	return core.Size{Width: core.Points(float64(s.pic.width) / d), Height: core.Points(float64(s.pic.height) / d)}
+}
+
+// imageInfo answers an ItemImageInfo off the window thread.
+func (w *window) imageInfo(it *core.MountItem) {
+	item := *it
+	go func() { w.engine.Dispatch(imageload.Info(&item, imagedecode.Size)) }()
 }
 
 // density returns the N of a "name@Nx.png" URI, else 1.

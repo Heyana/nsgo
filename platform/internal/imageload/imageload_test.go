@@ -63,3 +63,23 @@ func TestDataURIAndCancel(t *testing.T) {
 		t.Fatal("a cancelled load succeeded")
 	}
 }
+
+func TestInfoKeepsTheBytesForViews(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Write([]byte("abc"))
+	}))
+	defer srv.Close()
+	it := &core.MountItem{Kind: core.ItemImageInfo, Count: 7, Image: &core.ImageConfig{Source: core.Src(srv.URL + "/b.png")}}
+	ev := Info(it, func(data []byte) (core.Size, error) { return core.Size{Width: core.Points(len(data)), Height: 1}, nil })
+	if ev.Kind != core.EventImageInfo || ev.Count != 7 || ev.Size != (core.Size{Width: 3, Height: 1}) || ev.Text != "" {
+		t.Fatalf("Info = %+v", ev)
+	}
+	if data, err := Load(context.Background(), it.Image.Source, nil); err != nil || string(data) != "abc" || hits.Load() != 1 {
+		t.Fatalf("a view's load after Info = %q, %v, after %d fetches", data, err, hits.Load())
+	}
+	if ev := Info(&core.MountItem{Count: 8, Image: &core.ImageConfig{}}, nil); ev.Count != 8 || ev.Text == "" {
+		t.Fatalf("Info of no source = %+v, want an error", ev)
+	}
+}

@@ -23,6 +23,13 @@
 - Add `core.FontMonospace` for the platform's fixed-pitch font.
 - Add environment signals, keyboard shortcuts, clipboard and screen-reader announcements.
 - Add key-value storage with change signals, and each app's data and cache directories.
+- Add multiline inputs, max lengths, return keys, submit behavior, capitalization, autocorrection, autofill, selections, placeholder colors and editing events.
+- Add scroll view paging, snapping, deceleration, bounces, insets, initial offsets, keyboard dismissal, drag and momentum events, pull to refresh and zooming.
+- Add anchored keyed rows, columns, inversion, end following, sticky headers, separators, initial indices, viewability, refresh and parent viewports to lists.
+- Add ellipsis modes, font scaling limits, shrink-to-fit, `OnTextLayout`, transforms, decoration styles and colors, justification, shadows and vertical alignment.
+- Add `ObjectPosition`, `ScaleDown`, `Scope.ImageSize` and `Scope.PrefetchImage`, and image blur and fades on Windows and Linux.
+- Add accessibility hints, values, actions, groups, hidden elements, live regions, expanded states and `Ref.SetAccessibilityFocus` on macOS, iOS, web and Android.
+- Add system headers on iOS and Android, status bars per screen and modal, iOS sheets that swipe closed, orientations and swipe back.
 - Add native backends for macOS, iOS, Windows, Linux, Android and the web.
 - Add `android_x64` packages and `nsgo dev`'s choice of the connected device's ABI, so apps run on x86_64 emulators too.
 - Add `nsgotest` for headless app tests.
@@ -43,6 +50,11 @@
 - Give each Linux view a GTK widget of its own, so web views, videos and fields stack and clip with the views around them.
 - Merge checked, indeterminate and selected state styles below hover, focus and pressed ones, and disabled over all, as NSH does.
 - Load an `asset:` image's `@Nx` variants only when its source's `Scales` lists them, else the plain file.
+- Keep a `Center` image at its natural size, cropped, as NSH does.
+- Take a `StatusBarSetting` in `SetStatusBar`, patching the app's default, with `StatusBarInherit` as `StatusBarStyle`'s zero value.
+- Pass a `ScrollEvent` to `List.OnScroll`.
+- Start Android modals below the status bar unless `StatusBarTranslucent` is set.
+- Read pressable views without a role as buttons, and views without a label by their texts, on macOS and iOS.
 - License the project under Apache-2.0, with NSH's attribution in `NOTICE`.
 - Fix Android builds failing because Go's implied `linux` tag included the Linux backend.
 - Fix strikethrough missing on macOS and iOS.
@@ -55,3 +67,5 @@
 - Fix hover events, hover styles and tooltips never firing on Windows and Linux.
 - Fix overlays and modals inside a hidden view staying shown, and hidden views keeping their frames.
 - Fix popups reporting requests that change nothing and skipping `OnCancel` on presses outside, and menus centering on their trigger instead of aligning with its start.
+- Fix nested scroll views not scrolling on Android, and Linux single-line inputs never reporting focus and texts never ellipsized.
+- Fix sibling screens and modals overwriting each other's insets, and icons in headers and accessory views never drawing.
