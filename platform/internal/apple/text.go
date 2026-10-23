@@ -139,7 +139,11 @@ var (
 	fontCache = map[fontKey]uintptr{} // the cache holds one reference each
 )
 
-// Font returns a new CTFont (an NSFont or UIFont) for f: the system face
+// fontCacheLimit bounds the cache. A screen uses a handful of fonts; an
+// app that animates its font size would otherwise add one per frame.
+const fontCacheLimit = 64
+
+// Font returns a CTFont (an NSFont or UIFont) for f: the system face
 // unless f names a family. The caller releases it.
 //
 // Fonts are immutable and few, so they are built once and handed out
@@ -163,6 +167,14 @@ func Font(f core.Font) uintptr {
 		fontMu.Unlock()
 		Release(font)
 		return cfRetain(ref)
+	}
+	if len(fontCache) >= fontCacheLimit {
+		// Fonts are few, but an animated size would add one per frame.
+		// Dropping everything is enough; a rebuild costs one frame.
+		for key, ref := range fontCache {
+			Release(ref)
+			delete(fontCache, key)
+		}
 	}
 	fontCache[k] = font // the cache keeps this reference
 	fontMu.Unlock()

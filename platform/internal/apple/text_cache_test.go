@@ -42,11 +42,27 @@ func TestFontCacheKeysOnEveryField(t *testing.T) {
 	}
 }
 
+// The font cache is bounded: an app that animates its font size must not
+// grow it forever.
+func TestFontCacheIsBounded(t *testing.T) {
+	for i := range fontCacheLimit * 2 {
+		if f := Font(core.Font{Size: core.Points(10 + i)}); f != 0 {
+			Release(f)
+		}
+	}
+	fontMu.Lock()
+	n := len(fontCache)
+	fontMu.Unlock()
+	if n > fontCacheLimit {
+		t.Fatalf("the cache holds %d fonts, over its limit of %d", n, fontCacheLimit)
+	}
+}
+
 // The attributes depend on the style alone, so asking twice must not
 // build them twice.
-func TestStyleAttributesAreReused(t *testing.T) {
+func TestTextAttributesAreReused(t *testing.T) {
 	st := core.TextStyle{Font: core.Font{Size: 13}, Color: core.RGB(0x111111)}
-	a, b := styleAttributes(st, false), styleAttributes(st, false)
+	a, b := textAttributes(st, false), textAttributes(st, false)
 	defer Release(a)
 	defer Release(b)
 	if a != b {
