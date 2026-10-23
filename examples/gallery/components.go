@@ -11,8 +11,8 @@ import (
 	"github.com/oneo-me/nsgo/ui"
 )
 
-// The pages of the ui package's components, which take the gallery's
-// theme from the ThemeView at its root.
+// The pages of the ui package's components and the fields they build on,
+// which take the gallery's theme from the ThemeView at its root.
 
 func always() bool { return true }
 
@@ -26,8 +26,13 @@ func fieldsPage(cx *core.Scope, t *theme) core.Node {
 	rating := core.NewSignal(cx, 3.0)
 	likes := core.NewSignal(cx, 0)
 	last := core.NewSignal(cx, "nothing yet")
+	plainName := core.NewSignal(cx, "")
+	plainPassword := core.NewSignal(cx, "")
 	fields := func(children ...core.Node) core.Node {
 		return core.View{Style: core.Style{Gap: 10, MaxWidth: core.Pt(380)}, Children: children}
+	}
+	labelled := func(label string, field core.Node) core.Node {
+		return core.View{Style: core.Style{Gap: 6}, Children: []core.Node{core.Text{Content: label, Style: t.caption()}, field}}
 	}
 	slider := func(s ui.Slider, value func() string) core.Node {
 		s.Style = core.Style{Width: core.Pt(240)}
@@ -89,6 +94,27 @@ func fieldsPage(cx *core.Scope, t *theme) core.Node {
 			),
 			t.live(func() string { return fmt.Sprintf("Liked %d times; last chose %s.", likes.Get(), last.Get()) }),
 		),
+		t.demo("core.Input", "The platform's field itself: controlled, masked, placeholders and keyboard types, styled by the app.",
+			labelled("Name", core.Input{Value: plainName.Get, OnChange: plainName.Set, Placeholder: "Your name", Style: t.field(), Label: "Name", TestID: "name"}),
+			labelled("Password", core.Input{Value: plainPassword.Get, OnChange: plainPassword.Set, Masked: true, Placeholder: "Masked", Style: t.field(), Label: "Password"}),
+			core.View{Style: core.Style{Display: core.DisplayGrid, GridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", Gap: 10},
+				Children: []core.Node{
+					labelled("Email", core.Input{KeyboardType: core.KeyboardEmail, Placeholder: "name@example.com", Style: t.field(), Label: "Email"}),
+					labelled("Number", core.Input{KeyboardType: core.KeyboardNumber, Placeholder: "42", Style: t.field(), Label: "Number"}),
+					labelled("Phone", core.Input{KeyboardType: core.KeyboardPhone, Placeholder: "+1 555 0100", Style: t.field(), Label: "Phone"}),
+					labelled("URL", core.Input{KeyboardType: core.KeyboardURL, Placeholder: "https://", Style: t.field(), Label: "URL"}),
+					labelled("Read-only", core.Input{DefaultValue: "Read-only text", Readonly: true, Style: t.field(), Label: "Read-only"}),
+					labelled("Disabled", core.Input{DefaultValue: "Disabled", Disabled: always, Style: t.field(), Label: "Disabled"}),
+				}},
+			t.live(func() string {
+				if plainName.Get() == "" {
+					return "Type a name above."
+				}
+				return fmt.Sprintf("Hello, %s. Your password has %d characters.", plainName.Get(), len([]rune(plainPassword.Get())))
+			}),
+		),
+		fieldsDemo(cx, t),
+		accessoryDemo(cx, t),
 	}}
 }
 

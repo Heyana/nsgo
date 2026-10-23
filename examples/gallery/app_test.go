@@ -26,18 +26,19 @@ func TestSidebarSwitchesSections(t *testing.T) {
 	if got := app.Find("id:title").Text; got != "Welcome" {
 		t.Fatalf("first section = %q, want Welcome", got)
 	}
-	app.Press("id:nav-Controls")
-	app.Find("id:section-Controls")
-	if !app.Find("id:nav-Controls").Props.Selected || app.Find("id:nav-Welcome").Props.Selected {
+	app.Press("id:nav-Buttons")
+	app.Find("id:section-Buttons")
+	if !app.Find("id:nav-Buttons").Props.Selected || app.Find("id:nav-Welcome").Props.Selected {
 		t.Fatal("the sidebar does not highlight the selected section")
 	}
 	app.Find("id:header >> text:Components /")
-	if app.Title != "NSGo Gallery — Controls" {
+	if app.Title != "NSGo Gallery — Buttons" {
 		t.Fatalf("title = %q", app.Title)
 	}
-	app.Press("label:Agree")
-	if !app.Find("role:checkbox Agree").Props.Checked {
-		t.Fatal("the checkbox did not check")
+	before := app.Find("role:checkbox Accept the terms").Props.Checked
+	app.Press("label:Accept the terms")
+	if app.Find("role:checkbox Accept the terms").Props.Checked == before {
+		t.Fatal("the checkbox did not toggle")
 	}
 	app.Press("label:L")
 	if !app.Find("role:radio L").Props.Checked {
@@ -87,8 +88,8 @@ func TestContentScrollsWithinTheWindow(t *testing.T) {
 func TestPhoneStack(t *testing.T) {
 	app := nsgotest.Start(t, Root)
 	app.Find("id:index")
-	app.Press("id:nav-Popups")
-	app.Find("id:screen-Popups")
+	app.Press("id:nav-Base")
+	app.Find("id:screen-Base")
 	app.Press("role:button Menu")
 	app.Press("label:Paste")
 	app.Find("text:Picked Paste")
@@ -115,10 +116,10 @@ func TestPhoneSystemHeader(t *testing.T) {
 	if index.Title != "Gallery" || index.HeaderHeight != 91 || index.Right == 0 || index.CanGoBack {
 		t.Fatalf("index header = %+v", index)
 	}
-	app.Press("id:nav-Popups")
-	popups := app.Find("id:screen-Popups").Screen
-	if !popups.CanGoBack || popups.BackTitle != "Gallery" || popups.Background == 0 {
-		t.Fatalf("section header = %+v", popups)
+	app.Press("id:nav-Base")
+	baseScreen := app.Find("id:screen-Base").Screen
+	if !baseScreen.CanGoBack || baseScreen.BackTitle != "Gallery" || baseScreen.Background == 0 {
+		t.Fatalf("section header = %+v", baseScreen)
 	}
 
 	// A page sheet lightens the status bar while it is open, and a swipe
@@ -137,9 +138,9 @@ func TestPhoneSystemHeader(t *testing.T) {
 		t.Errorf("the swiped sheet stayed, status bar %+v", app.StatusBar)
 	}
 
-	app.HeaderBack("id:screen-Popups")
+	app.HeaderBack("id:screen-Base")
 	app.Find("id:index")
-	if app.Exists("id:screen-Popups") {
+	if app.Exists("id:screen-Base") {
 		t.Error("the header's back button did not pop the section")
 	}
 }
@@ -242,9 +243,6 @@ func TestWindowCommands(t *testing.T) {
 func TestEverySectionBuilds(t *testing.T) {
 	wide, phone := startDesktop(t), nsgotest.Start(t, Root)
 	for _, s := range sections {
-		if s.kind != kindNone {
-			wide.Press("id:tab-" + string(s.kind))
-		}
 		wide.Press("id:nav-" + s.name)
 		wide.Find("id:section-" + s.name)
 		phone.Press("id:nav-" + s.name)
@@ -334,7 +332,7 @@ func TestStorageSection(t *testing.T) {
 
 func TestEditingFields(t *testing.T) {
 	app := startDesktop(t)
-	app.Press("id:nav-Controls")
+	app.Press("id:nav-Fields")
 	app.Type("id:code", "12345678")
 	if v := app.Find("id:code"); v.Text != "123456" {
 		t.Fatalf("code %q, want it cut to 6", v.Text)
@@ -376,7 +374,6 @@ func TestEditingFields(t *testing.T) {
 
 func TestTextViewStreams(t *testing.T) {
 	app := startDesktop(t)
-	app.Press("id:tab-ui")
 	app.Press("id:nav-Text View")
 	app.Find("id:markdown >> role:header Text View")
 	app.Find("id:html >> role:header An HTML page")
@@ -562,7 +559,6 @@ func TestPreferencesPersist(t *testing.T) {
 
 func TestComponentPages(t *testing.T) {
 	app := startDesktop(t)
-	app.Press("id:tab-ui")
 	app.Press("id:nav-Fields")
 	app.Type("id:field-name", "Ada")
 	app.Find("text:Hello, Ada.")
@@ -593,17 +589,8 @@ func TestComponentPages(t *testing.T) {
 	}
 }
 
-func TestCategories(t *testing.T) {
+func TestThemePageSwapsTheTheme(t *testing.T) {
 	app := startDesktop(t)
-	if !app.Find("id:tab-base").Props.Selected || app.Exists("id:nav-Fields") {
-		t.Fatal("the sidebar does not start on Base")
-	}
-	// Opening a UI page elsewhere moves the sidebar to its category.
-	app.ChooseMenu("View", "Fields")
-	if !app.Find("id:tab-ui").Props.Selected || app.Exists("id:nav-Text") {
-		t.Fatal("the sidebar did not follow the page to UI")
-	}
-	app.Find("id:header >> text:UI / Components /")
 	// The Theme page swaps the sample's theme.
 	app.Press("id:nav-Theme")
 	sample := func() core.Color { return app.Find("id:theme-sample").Style.Background }
@@ -669,7 +656,7 @@ func TestPlatformAnimations(t *testing.T) {
 
 func TestKeyboardAccessory(t *testing.T) {
 	app := startDesktop(t)
-	app.Press("id:nav-Controls")
+	app.Press("id:nav-Fields")
 	if app.Exists("id:accessory-bar") {
 		t.Fatal("the bar shows before its field has focus")
 	}

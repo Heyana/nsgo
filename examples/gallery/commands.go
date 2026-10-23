@@ -25,11 +25,7 @@ func (g *gallery) commands(cx *core.Scope) []ui.Command {
 	for i, s := range sections {
 		// The description finds a page by what it shows without crowding
 		// the rows.
-		group := s.group
-		if s.kind != kindNone {
-			group = s.kind.label() + " · " + group
-		}
-		c := ui.Command{ID: "page:" + s.name, Title: s.name, Group: group, Icon: s.icon(), Keywords: []string{s.about}}
+		c := ui.Command{ID: "page:" + s.name, Title: s.name, Group: s.group, Icon: s.icon(), Keywords: []string{s.about}}
 		if i < 9 {
 			c.Shortcut = shortcut(cx, fmt.Sprint(i+1))
 		}

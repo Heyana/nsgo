@@ -9,48 +9,6 @@ import (
 	"github.com/oneo-me/nsgo/nsgotest"
 )
 
-func TestControlsReportTheNextValue(t *testing.T) {
-	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		on := core.NewSignal(cx, false)
-		mixed := core.NewSignal(cx, true)
-		tab := core.NewSignal(cx, 0)
-		return core.View{Children: []core.Node{
-			base.Checkbox{Checked: on.Get, Indeterminate: mixed.Get, Label: "Select all", TestID: "all",
-				OnChange: func(v bool) { on.Set(v); mixed.Set(false) },
-				IndicatorStyle: core.Style{Width: core.Pt(16), Height: core.Pt(16),
-					Checked: &core.Style{Background: core.RGB(0x0969da)}},
-			},
-			base.Switch{Checked: on.Get, OnChange: on.Set, Label: "Wi-Fi", TestID: "wifi"},
-			base.Tabs{Children: []core.Node{
-				base.Tab{Selected: func() bool { return tab.Get() == 0 }, OnPress: func() { tab.Set(0) }, Label: "One", TestID: "one"},
-				base.Tab{Selected: func() bool { return tab.Get() == 1 }, OnPress: func() { tab.Set(1) }, Label: "Two", TestID: "two"},
-			}},
-		}}
-	})
-	all := app.Find("role:checkbox Select all")
-	if !all.Props.Indeterminate || all.Props.Checked {
-		t.Fatalf("checkbox starts %+v, want mixed", all.Props)
-	}
-	app.Press("id:all")
-	if all := app.Find("id:all"); !all.Props.Checked || all.Props.Indeterminate {
-		t.Fatalf("after press %+v, want checked", all.Props)
-	}
-	if indicator := app.Find("id:all").Children[0]; indicator.Style.Background != core.RGB(0x0969da) {
-		t.Errorf("indicator background = %x, want its checked style", indicator.Style.Background)
-	}
-	if !app.Find("role:switch Wi-Fi").Props.Checked {
-		t.Error("the switch does not follow the shared value")
-	}
-	app.Press("id:wifi")
-	if app.Find("id:all").Props.Checked {
-		t.Error("turning the switch off did not uncheck the checkbox")
-	}
-	app.Press("label:Two")
-	if !app.Find("id:two").Props.Selected || app.Find("id:one").Props.Selected {
-		t.Error("pressing a tab did not select it")
-	}
-}
-
 func TestSafeAreaAndKeyboard(t *testing.T) {
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		return base.SafeAreaView{Edges: base.Top | base.Bottom, Style: core.Style{Padding: core.All(10)}, TestID: "safe",
@@ -119,28 +77,6 @@ func TestPopupsNavAndAlerts(t *testing.T) {
 }
 
 func NewNavHelper(cx *core.Scope) *base.Nav[string] { return base.NewNav(cx, "home") }
-
-func TestSliderIsAdjustable(t *testing.T) {
-	var value *core.Signal[float64]
-	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		value = core.NewSignal(cx, 0.5)
-		return base.Slider{Value: value.Get, OnChange: value.Set, Step: 0.25, Label: "Volume", TestID: "s"}
-	})
-	s := app.Find("role:adjustable Volume")
-	if v := s.Props.Value; v != (core.AccessibilityValue{Min: 0, Max: 1, Now: 0.5}) {
-		t.Fatalf("slider value = %+v", v)
-	}
-	for range 3 {
-		app.AccessibilityAction("id:s", core.ActionIncrement)
-	}
-	if value.GetUntracked() != 1 || app.Find("id:s").Props.Value.Now != 1 {
-		t.Errorf("after three increments the value is %v, want the maximum", value.GetUntracked())
-	}
-	app.AccessibilityAction("id:s", core.ActionDecrement)
-	if value.GetUntracked() != 0.75 {
-		t.Errorf("after a decrement the value is %v", value.GetUntracked())
-	}
-}
 
 func TestPopupsReportChangesAndEveryCancel(t *testing.T) {
 	var log []string

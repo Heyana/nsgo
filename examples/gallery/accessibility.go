@@ -5,6 +5,7 @@ import (
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/ui"
 )
 
 // accessibilityPage shows what screen readers read beyond roles and
@@ -91,8 +92,7 @@ func accessibilityPage(cx *core.Scope, t *theme) core.Node {
 		t.demo("Hidden elements", "AccessibilityElementsHidden hides decoration from screen readers while it shows.",
 			core.View{AccessibilityElementsHidden: hidden.Get, TestID: "a11y-hidden",
 				Children: []core.Node{t.note("✦ ✦ ✦ decoration ✦ ✦ ✦")}},
-			base.Switch{Checked: hidden.Get, OnChange: hidden.Set, Label: "Hide the decoration", Style: row,
-				Children: []core.Node{core.Text{Content: "Hide the decoration"}}},
+			ui.Switch{Checked: hidden.Get, OnChange: hidden.Set, Label: "Hide the decoration"},
 		),
 		t.demo("Live regions", "A live region's changes are announced as they happen, without moving focus.",
 			core.Text{LiveRegion: core.LiveRegionPolite, TestID: "a11y-live",

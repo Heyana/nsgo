@@ -147,27 +147,23 @@ func shortcut(cx *core.Scope, key string) string {
 	return "⌘" + key
 }
 
-// navigation is the sidebar's list: Welcome, then tabs choosing Base or
-// UI over that category's sections by group.
+// navigation is the sidebar's list: Welcome and the guide above, then
+// every group of sections.
 func (g *gallery) navigation() core.Node {
 	item := func(s section) core.Node {
 		return ui.SidebarItem{Label: s.name, Icon: s.icon(), TestID: "nav-" + s.name,
 			Selected: func() bool { return g.section.Get() == s.name }, OnPress: func() { g.open(s.name) }}
 	}
-	tab := func(k kind) core.Node {
-		return ui.Tab{Label: k.label(), TestID: "tab-" + string(k), Style: core.Style{FlexGrow: 1, AlignItems: core.AlignCenter},
-			Selected: func() bool { return g.tab.Get() == k }, OnPress: func() { g.tab.Set(k) }}
-	}
-	list := func(k kind) core.Node {
-		var sections []core.Node
-		for _, group := range groups(k) {
-			var items []core.Node
-			for _, s := range group {
-				items = append(items, item(s))
-			}
-			sections = append(sections, ui.SidebarSection{Title: group[0].group, Children: items})
+	var list []core.Node
+	for _, group := range groups() {
+		if group[0].group == groupOverview || group[0].group == groupGuide {
+			continue
 		}
-		return ui.Sidebar{Label: k.label(), Children: sections}
+		var items []core.Node
+		for _, s := range group {
+			items = append(items, item(s))
+		}
+		list = append(list, ui.SidebarSection{Title: group[0].group, Children: items})
 	}
 	welcome, _ := find("Welcome")
 	guide, _ := find("Documentation")
@@ -175,11 +171,9 @@ func (g *gallery) navigation() core.Node {
 		core.View{Style: core.Style{Padding: core.Edges{Right: 12, Bottom: 10, Left: 12}, Gap: 10}, Children: []core.Node{
 			item(welcome),
 			item(guide),
-			ui.Tabs{Label: "Category", Style: core.Style{AlignSelf: core.AlignStretch},
-				Children: []core.Node{tab(kindBase), tab(kindUI)}},
 		}},
 		core.Scroll{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
-			core.Dynamic(func(cx *core.Scope) core.Node { return list(g.tab.Get()) }),
+			ui.Sidebar{Label: "Sections", Children: list},
 		}},
 	}}
 }
@@ -235,10 +229,7 @@ func (g *gallery) header(cx *core.Scope) core.Node {
 				if s.name == "Welcome" {
 					return ""
 				}
-				if s.kind == kindNone {
-					return s.group + " /"
-				}
-				return s.kind.label() + " / " + s.group + " /"
+				return s.group + " /"
 			},
 			StyleFunc: func() core.Style {
 				return core.Style{Color: theme().MutedForeground, FontWeight: core.FontWeightMedium}
@@ -347,16 +338,8 @@ func (g *gallery) phoneHeader(cx *core.Scope, title string, back func(), actions
 func (g *gallery) index(cx *core.Scope) core.Node {
 	theme := ui.UseTheme(cx)
 	var items []core.Node
-	var all [][]section
-	for _, k := range []kind{kindNone, kindBase, kindUI} {
-		all = append(all, groups(k)...)
-	}
-	for _, group := range all {
-		heading := group[0].group
-		if k := group[0].kind; k != kindNone {
-			heading = k.label() + " · " + heading
-		}
-		items = append(items, core.Text{Content: heading, Role: core.RoleHeader, StyleFunc: func() core.Style {
+	for _, group := range groups() {
+		items = append(items, core.Text{Content: group[0].group, Role: core.RoleHeader, StyleFunc: func() core.Style {
 			t := theme()
 			return core.Style{Padding: core.Edges{Top: 18, Right: 16, Bottom: 6, Left: 16}, FontSize: 13,
 				FontWeight: core.FontWeightSemibold, Color: t.MutedForeground}

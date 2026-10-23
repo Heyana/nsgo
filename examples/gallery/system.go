@@ -6,6 +6,7 @@ import (
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/ui"
 )
 
 // galleryKey gives sections the shell's state.
@@ -75,13 +76,7 @@ func menuPage(cx *core.Scope, t *theme) core.Node {
 			core.View{Children: keys},
 		),
 		t.demo("Checkable items", "View › Show Descriptions is checkable: it and this switch share one value.",
-			base.Switch{Checked: g.descriptions.Get, OnChange: g.descriptions.Set, Label: "Show descriptions", Style: row,
-				TrackStyle: core.Style{Width: core.Pt(40), Height: core.Pt(20), CornerRadius: 10, Background: t.switchOff, Padding: core.All(2),
-					Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyStart,
-					Checked: &core.Style{Background: t.accent, JustifyContent: core.JustifyEnd}},
-				ThumbStyle: core.Style{Width: core.Pt(20), Height: core.Pt(16), CornerRadius: 8, Background: t.knob,
-					ShadowColor: core.RGBA(0, 0.18), ShadowRadius: 2, ShadowOffset: core.Point{Y: 1}},
-				Children: []core.Node{core.Text{Content: "Show section descriptions"}}},
+			ui.Switch{Checked: g.descriptions.Get, OnChange: g.descriptions.Set, Label: "Show descriptions"},
 		),
 	}}
 }
@@ -173,7 +168,8 @@ func environmentPage(cx *core.Scope, t *theme) core.Node {
 	}}
 }
 
-func navigationPage(cx *core.Scope, t *theme) core.Node {
+// navigationDemo shows base.Nav's stack of routes.
+func navigationDemo(cx *core.Scope, t *theme) core.Node {
 	nav := base.NewNav(cx, 1)
 	header := func(n int) core.Node {
 		children := []core.Node{}

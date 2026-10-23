@@ -1,5 +1,6 @@
-// Package base holds unstyled base components: they own behavior and
-// accessibility and take every visual choice from the app.
+// Package base holds the parts the engine owns: a pressable view, popups,
+// menus, dialogs, sheets, navigation, safe areas and the keyboard. They own
+// behavior and accessibility and take every visual choice from the app.
 package base
 
 import "github.com/oneo-me/nsgo/core"

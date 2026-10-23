@@ -261,6 +261,70 @@ func TestInputWithIconShowsFocus(t *testing.T) {
 	}
 }
 
+func TestControlsReportTheNextValue(t *testing.T) {
+	theme := ui.DefaultTheme().Light
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		on := core.NewSignal(cx, false)
+		mixed := core.NewSignal(cx, true)
+		tab := core.NewSignal(cx, 0)
+		return ui.ThemeView{Children: []core.Node{
+			ui.Checkbox{Checked: on.Get, Indeterminate: mixed.Get, Label: "Select all", TestID: "all",
+				OnChange: func(v bool) { on.Set(v); mixed.Set(false) }},
+			ui.Switch{Checked: on.Get, OnChange: on.Set, Label: "Wi-Fi", TestID: "wifi"},
+			ui.Tabs{Children: []core.Node{
+				ui.Tab{Selected: func() bool { return tab.Get() == 0 }, OnPress: func() { tab.Set(0) }, Label: "One", TestID: "one"},
+				ui.Tab{Selected: func() bool { return tab.Get() == 1 }, OnPress: func() { tab.Set(1) }, Label: "Two", TestID: "two"},
+			}},
+		}}
+	})
+	all := app.Find("role:checkbox Select all")
+	if !all.Props.Indeterminate || all.Props.Checked {
+		t.Fatalf("checkbox starts %+v, want mixed", all.Props)
+	}
+	app.Press("id:all")
+	if all := app.Find("id:all"); !all.Props.Checked || all.Props.Indeterminate {
+		t.Fatalf("after press %+v, want checked", all.Props)
+	}
+	if indicator := app.Find("id:all").Children[0]; indicator.Style.Background != theme.Primary {
+		t.Errorf("indicator background = %x, want the primary", indicator.Style.Background)
+	}
+	if !app.Find("role:switch Wi-Fi").Props.Checked {
+		t.Error("the switch does not follow the shared value")
+	}
+	app.Press("id:wifi")
+	if app.Find("id:all").Props.Checked {
+		t.Error("turning the switch off did not uncheck the checkbox")
+	}
+	app.Press("label:Two")
+	if !app.Find("id:two").Props.Selected || app.Find("id:one").Props.Selected {
+		t.Error("pressing a tab did not select it")
+	}
+}
+
+func TestSliderIsAdjustable(t *testing.T) {
+	var value *core.Signal[float64]
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		value = core.NewSignal(cx, 0.5)
+		return ui.ThemeView{Children: []core.Node{
+			ui.Slider{Value: value.Get, OnChange: value.Set, Step: 0.25, Label: "Volume", TestID: "s"},
+		}}
+	})
+	s := app.Find("role:adjustable Volume")
+	if v := s.Props.Value; v != (core.AccessibilityValue{Min: 0, Max: 1, Now: 0.5}) {
+		t.Fatalf("slider value = %+v", v)
+	}
+	for range 3 {
+		app.AccessibilityAction("id:s", core.ActionIncrement)
+	}
+	if value.GetUntracked() != 1 || app.Find("id:s").Props.Value.Now != 1 {
+		t.Errorf("after three increments the value is %v, want the maximum", value.GetUntracked())
+	}
+	app.AccessibilityAction("id:s", core.ActionDecrement)
+	if value.GetUntracked() != 0.75 {
+		t.Errorf("after a decrement the value is %v", value.GetUntracked())
+	}
+}
+
 func TestSwitchHidesItsLabel(t *testing.T) {
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		return ui.ThemeView{Children: []core.Node{

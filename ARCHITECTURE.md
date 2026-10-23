@@ -22,9 +22,9 @@ Packages mirror NSH's crates:
 | Package | NSH counterpart | Responsibility |
 | --- | --- | --- |
 | `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, layout, text, SVG drawings, mount items; the animation graph's evaluator (`Animator`) and the selection model the backends run |
-| `base` | `nsh-base` | Unstyled base components: controls, sliders, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack |
+| `base` | `nsh-base` | Unstyled base components: a pressable view, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack |
 | `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark), HTML (x/net/html) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
-| `ui` | `nsh-base`'s `Theme` | The theme as Go values, `base`'s components styled with it, and fields, a sidebar, settings, a command palette and toasts after Onevra's |
+| `ui` | `nsh-base`'s `Theme` | The theme as Go values, `base`'s components styled with it, and controls, fields, a sidebar, settings, a command palette and toasts after Onevra's |
 | `ui/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma, in NSH's palette |
 | `icons/lucide` | — (NSH loads SVG as images) | The bundled Lucide pack: one generated accessor per icon, parsed on first use ([icons](docs/architecture/icons.md)) |
 | `engine` | `nsh-engine` | Engine goroutine: an unbounded mailbox, commits, one batch per commit to the platform, and the performance monitor |

@@ -9,8 +9,8 @@ import (
 	"github.com/oneo-me/nsgo/ui"
 )
 
-// The UI category's pages show the ui package's components in the theme
-// the gallery's ThemeView provides: NSGo's default.
+// The pages of the ui package's components show them in the theme the
+// gallery's ThemeView provides: NSGo's default.
 
 func buttonsPage(cx *core.Scope, t *theme) core.Node {
 	agree := core.NewSignal(cx, true)
@@ -46,7 +46,7 @@ func buttonsPage(cx *core.Scope, t *theme) core.Node {
 			),
 			t.live(func() string { return fmt.Sprintf("Pressed %d times.", presses.Get()) }),
 		),
-		t.demo("Toggles", "ui.Checkbox, ui.Switch and ui.Radio: base's behavior drawn with the theme.",
+		t.demo("Toggles", "ui.Checkbox, ui.Switch and ui.Radio draw their behavior with the theme.",
 			ui.Checkbox{Label: "Accept the terms", Checked: agree.Get, OnChange: agree.Set},
 			ui.Checkbox{Label: "Select all", Checked: func() bool { return !mixed.Get() }, Indeterminate: mixed.Get,
 				OnChange: func(bool) { mixed.Update(func(m bool) bool { return !m }) }},

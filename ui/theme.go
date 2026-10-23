@@ -1,5 +1,6 @@
-// Package ui holds styled components: base's behavior with the look of a
-// theme, which apps adjust with Style or replace with a Theme of their own.
+// Package ui holds styled components: controls, fields, popups, surfaces
+// and composites with the look of a theme, which apps adjust with Style
+// or replace with a Theme of their own.
 package ui
 
 import "github.com/oneo-me/nsgo/core"

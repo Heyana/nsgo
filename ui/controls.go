@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"math"
+
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/icons/lucide"
@@ -42,9 +44,9 @@ func (b Button) Render(cx *core.Scope) core.Node {
 	}
 }
 
-// Checkbox is a base.Checkbox drawn as a box with a check mark, then its
-// children or Label as text. HideLabel leaves the text out, keeping Label
-// for assistive technology, as where a row's own text names it.
+// Checkbox is a box with a check mark, then its children or Label as
+// text. HideLabel leaves the text out, keeping Label for assistive
+// technology, as where a row's own text names it.
 type Checkbox struct {
 	Checked       func() bool
 	Indeterminate func() bool
@@ -60,26 +62,40 @@ type Checkbox struct {
 // Render implements core.Node.
 func (c Checkbox) Render(cx *core.Scope) core.Node {
 	checked, mixed := orFalse(c.Checked), orFalse(c.Indeterminate)
-	return base.Checkbox{
-		Checked: c.Checked, Indeterminate: c.Indeterminate, Disabled: c.Disabled, OnChange: c.OnChange,
-		StyleFunc:          look(cx, c.Style, Tokens.control),
-		IndicatorStyleFunc: look(cx, core.Style{}, Tokens.checkboxIndicator),
-		Indicator: core.Text{ContentFunc: func() string {
-			switch {
-			case mixed():
-				return "−"
-			case checked():
-				return "✓"
+	shows := func() bool { return checked() && !mixed() }
+	return core.View{
+		StyleFunc:     look(cx, c.Style, Tokens.control),
+		Role:          core.RoleCheckbox,
+		Label:         c.Label,
+		TestID:        c.TestID,
+		Checked:       shows,
+		Indeterminate: mixed,
+		Disabled:      c.Disabled,
+		OnPress: func() {
+			if c.OnChange != nil {
+				c.OnChange(mixed() || !checked())
 			}
-			return ""
-		}},
-		Children: shown(c.Children, c.Label, c.HideLabel), Label: c.Label, TestID: c.TestID,
+		},
+		Children: append([]core.Node{core.View{
+			StyleFunc:     look(cx, core.Style{}, Tokens.checkboxIndicator),
+			Checked:       shows,
+			Indeterminate: mixed,
+			Disabled:      c.Disabled,
+			Children: []core.Node{core.Text{ContentFunc: func() string {
+				switch {
+				case mixed():
+					return "−"
+				case checked():
+					return "✓"
+				}
+				return ""
+			}}},
+		}}, shown(c.Children, c.Label, c.HideLabel)...),
 	}
 }
 
-// Switch is a base.Switch drawn as a track and a sliding thumb, then its
-// children or Label as text. HideLabel leaves the text out, as a
-// Checkbox's does.
+// Switch is a track and a sliding thumb, then its children or Label as
+// text. HideLabel leaves the text out, as a Checkbox's does.
 type Switch struct {
 	Checked   func() bool
 	Disabled  func() bool
@@ -93,17 +109,29 @@ type Switch struct {
 
 // Render implements core.Node.
 func (s Switch) Render(cx *core.Scope) core.Node {
-	return base.Switch{
-		Checked: s.Checked, Disabled: s.Disabled, OnChange: s.OnChange,
-		StyleFunc:      look(cx, s.Style, Tokens.control),
-		TrackStyleFunc: look(cx, core.Style{}, Tokens.switchTrack),
-		ThumbStyleFunc: look(cx, core.Style{}, Tokens.switchThumb),
-		Children:       shown(s.Children, s.Label, s.HideLabel), Label: s.Label, TestID: s.TestID,
+	checked := orFalse(s.Checked)
+	track := look(cx, core.Style{}, Tokens.switchTrack)
+	thumb := look(cx, core.Style{}, Tokens.switchThumb)
+	part := func(style func() core.Style, children ...core.Node) core.View {
+		return core.View{StyleFunc: style, Checked: checked, Disabled: s.Disabled, Children: children}
+	}
+	return core.View{
+		StyleFunc: look(cx, s.Style, Tokens.control),
+		Role:      core.RoleSwitch,
+		Label:     s.Label,
+		TestID:    s.TestID,
+		Checked:   checked,
+		Disabled:  s.Disabled,
+		OnPress: func() {
+			if s.OnChange != nil {
+				s.OnChange(!checked())
+			}
+		},
+		Children: append([]core.Node{part(track, part(thumb))}, shown(s.Children, s.Label, s.HideLabel)...),
 	}
 }
 
-// Radio is a base.Radio drawn as a ring, then its children or Label as
-// text.
+// Radio is a ring, then its children or Label as text.
 type Radio struct {
 	Checked  func() bool
 	Disabled func() bool
@@ -116,17 +144,25 @@ type Radio struct {
 
 // Render implements core.Node.
 func (r Radio) Render(cx *core.Scope) core.Node {
-	ring := core.View{StyleFunc: look(cx, core.Style{}, Tokens.radioIndicator),
-		Checked: orFalse(r.Checked), Disabled: r.Disabled}
-	return base.Radio{
-		Checked: r.Checked, Disabled: r.Disabled, OnChange: r.OnChange,
+	checked := orFalse(r.Checked)
+	ring := core.View{StyleFunc: look(cx, core.Style{}, Tokens.radioIndicator), Checked: checked, Disabled: r.Disabled}
+	return core.View{
 		StyleFunc: look(cx, r.Style, Tokens.control),
-		Children:  append([]core.Node{ring}, orLabel(r.Children, r.Label)...),
-		Label:     r.Label, TestID: r.TestID,
+		Role:      core.RoleRadio,
+		Label:     r.Label,
+		TestID:    r.TestID,
+		Checked:   checked,
+		Disabled:  r.Disabled,
+		OnPress: func() {
+			if r.OnChange != nil && !checked() {
+				r.OnChange(true)
+			}
+		},
+		Children: append([]core.Node{ring}, orLabel(r.Children, r.Label)...),
 	}
 }
 
-// RadioGroup is a base.RadioGroup that spaces its radios.
+// RadioGroup is a group of radios that spaces them.
 type RadioGroup struct {
 	Style    core.Style
 	Children []core.Node
@@ -136,11 +172,11 @@ type RadioGroup struct {
 
 // Render implements core.Node.
 func (g RadioGroup) Render(cx *core.Scope) core.Node {
-	return base.RadioGroup{StyleFunc: look(cx, g.Style, Tokens.radioGroup), Children: g.Children,
-		Label: g.Label, TestID: g.TestID}
+	return core.View{StyleFunc: look(cx, g.Style, Tokens.radioGroup), Role: core.RoleRadioGroup,
+		Label: g.Label, TestID: g.TestID, Children: g.Children}
 }
 
-// Tabs is a base.Tabs on a muted track.
+// Tabs is a list of tabs on a muted track.
 type Tabs struct {
 	Style    core.Style
 	Children []core.Node
@@ -150,11 +186,12 @@ type Tabs struct {
 
 // Render implements core.Node.
 func (t Tabs) Render(cx *core.Scope) core.Node {
-	return base.Tabs{StyleFunc: look(cx, t.Style, Tokens.tabs), Children: t.Children, Label: t.Label, TestID: t.TestID}
+	return core.View{StyleFunc: look(cx, t.Style, Tokens.tabs), Role: core.RoleTabList,
+		Label: t.Label, TestID: t.TestID, Children: t.Children}
 }
 
-// Tab is a base.Tab raised while selected; its content is its children or
-// Label as text.
+// Tab is raised while selected; its content is its children or Label as
+// text.
 type Tab struct {
 	Selected func() bool
 	Disabled func() bool
@@ -167,9 +204,16 @@ type Tab struct {
 
 // Render implements core.Node.
 func (t Tab) Render(cx *core.Scope) core.Node {
-	return base.Tab{Selected: t.Selected, Disabled: t.Disabled, OnPress: t.OnPress,
-		StyleFunc: look(cx, t.Style, Tokens.tab), Children: orLabel(t.Children, t.Label),
-		Label: t.Label, TestID: t.TestID}
+	return core.View{
+		StyleFunc: look(cx, t.Style, Tokens.tab),
+		Role:      core.RoleTab,
+		Label:     t.Label,
+		TestID:    t.TestID,
+		Selected:  orFalse(t.Selected),
+		Disabled:  t.Disabled,
+		OnPress:   orNop(t.OnPress),
+		Children:  orLabel(t.Children, t.Label),
+	}
 }
 
 // look returns a style function of the theme's look with style merged
@@ -198,6 +242,13 @@ func shown(children []core.Node, label string, hidden bool) []core.Node {
 func orFalse(fn func() bool) func() bool {
 	if fn == nil {
 		return func() bool { return false }
+	}
+	return fn
+}
+
+func orNop(fn func()) func() {
+	if fn == nil {
+		return func() {}
 	}
 	return fn
 }
@@ -417,8 +468,9 @@ func (s Select) Render(cx *core.Scope) core.Node {
 	}
 }
 
-// Slider is a base.Slider drawn as a thin track filled with the primary
-// color up to a round thumb.
+// Slider is a thin track filled with the primary color up to a round
+// thumb. The app owns the value: a drag reports each value it passes to
+// OnChange, snapped to Step, and the slider shows what Value returns.
 type Slider struct {
 	Value    func() float64
 	Min, Max float64
@@ -432,10 +484,94 @@ type Slider struct {
 
 // Render implements core.Node.
 func (s Slider) Render(cx *core.Scope) core.Node {
-	return base.Slider{Value: s.Value, Min: s.Min, Max: s.Max, Step: s.Step, Disabled: s.Disabled, OnChange: s.OnChange,
-		StyleFunc:      look(cx, s.Style, Tokens.slider),
-		TrackStyleFunc: look(cx, core.Style{}, Tokens.sliderTrack),
-		FillStyleFunc:  look(cx, core.Style{}, Tokens.sliderFill),
-		ThumbStyleFunc: look(cx, core.Style{}, Tokens.sliderThumb),
-		Label:          s.Label, TestID: s.TestID}
+	lo, hi := s.Min, s.Max
+	if hi <= lo {
+		lo, hi = 0, 1
+	}
+	value := func() float64 {
+		if s.Value == nil {
+			return lo
+		}
+		return math.Min(math.Max(s.Value(), lo), hi)
+	}
+	fraction := func() float32 { return float32((value() - lo) / (hi - lo)) }
+	width := core.NewSignal(cx, core.Points(0))
+	var start float64
+	disabled := orFalse(s.Disabled)
+	pan := func(e core.PanEvent) {
+		w := width.GetUntracked()
+		if disabled() || w <= 0 || s.OnChange == nil {
+			return
+		}
+		switch e.Phase {
+		case core.GestureBegan:
+			start = core.Untracked(cx, value)
+		case core.GestureEnded, core.GestureCancelled:
+			return
+		}
+		v := start + float64(e.Translation.X/w)*(hi-lo)
+		if s.Step > 0 {
+			v = lo + math.Round((v-lo)/s.Step)*s.Step
+		}
+		v = math.Min(math.Max(v, lo), hi)
+		if v != core.Untracked(cx, value) {
+			s.OnChange(v)
+		}
+	}
+	step := s.Step
+	if step <= 0 {
+		step = (hi - lo) / 10
+	}
+	adjust := func(name string) {
+		if s.OnChange == nil {
+			return
+		}
+		v := core.Untracked(cx, value)
+		switch name {
+		case core.ActionIncrement:
+			v = math.Min(v+step, hi)
+		case core.ActionDecrement:
+			v = math.Max(v-step, lo)
+		default:
+			return
+		}
+		if v != core.Untracked(cx, value) {
+			s.OnChange(v)
+		}
+	}
+	track := look(cx, core.Style{}, Tokens.sliderTrack)
+	fill := look(cx, core.Style{}, Tokens.sliderFill)
+	thumb := look(cx, core.Style{}, Tokens.sliderThumb)
+	return core.View{
+		StyleFunc: look(cx, s.Style, Tokens.slider),
+		Label:     s.Label,
+		TestID:    s.TestID,
+		Disabled:  s.Disabled,
+		Role:      core.RoleAdjustable,
+		AccessibilityValue: func() core.AccessibilityValue {
+			return core.AccessibilityValue{Min: float32(lo), Max: float32(hi), Now: float32(value())}
+		},
+		AccessibilityActions:  sliderActions,
+		OnAccessibilityAction: adjust,
+		OnPan:                 pan,
+		PanActivation:         core.PanActivation{ActiveOffsetX: 2, FailOffsetY: 12},
+		Children: []core.Node{core.View{
+			StyleFunc: track, Disabled: s.Disabled,
+			OnLayout: func(b core.Bounds) { width.Set(b.Size.Width) },
+			Children: []core.Node{
+				core.View{Disabled: s.Disabled, StyleFunc: func() core.Style {
+					bar := core.Style{Position: core.Absolute, Left: core.Pt(0), Top: core.Pt(0), Bottom: core.Pt(0),
+						Width: core.Pct(fraction() * 100)}
+					return bar.Merge(fill())
+				}},
+				core.View{StyleFunc: func() core.Style {
+					return core.Style{Position: core.Absolute, Left: core.Pct(fraction() * 100), Top: core.Pt(0), Bottom: core.Pt(0),
+						Width: core.Pt(0), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}
+				}, Children: []core.Node{core.View{StyleFunc: thumb, Disabled: s.Disabled}}},
+			},
+		}},
+	}
 }
+
+// sliderActions are what assistive technology adjusts a slider with.
+var sliderActions = []core.AccessibilityAction{{Name: core.ActionIncrement}, {Name: core.ActionDecrement}}

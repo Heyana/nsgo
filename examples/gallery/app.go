@@ -27,37 +27,16 @@ const version = "0.1.0"
 // section is one page of the gallery.
 type section struct {
 	name  string
-	kind  kind
 	group string
 	icon  func() *core.SVG
 	about string
 	page  func(cx *core.Scope, t *theme) core.Node
 }
 
-// kind is a section's category: what NSGo draws with no look of its own,
-// or the ui package's themed components.
-type kind string
-
-const (
-	kindNone kind = ""
-	kindBase kind = "base"
-	kindUI   kind = "ui"
-)
-
-// label names the category in the sidebar's tabs and page titles.
-func (k kind) label() string {
-	switch k {
-	case kindBase:
-		return "Base"
-	case kindUI:
-		return "UI"
-	}
-	return ""
-}
-
-// The groups within a category, in the sidebar's order.
+// The sidebar's groups, in its order.
 const (
 	groupOverview   = "Overview"
+	groupGuide      = "Guide"
 	groupElements   = "Elements"
 	groupComponents = "Components"
 	groupMedia      = "Media"
@@ -71,41 +50,43 @@ var sections []section
 
 func init() {
 	sections = []section{
-		{"Welcome", kindNone, groupOverview, lucide.House, "", welcomePage},
-		{"Documentation", kindNone, "Guide", lucide.BookOpen, "Guides for building NSGo applications.", docsPage},
+		{"Welcome", groupOverview, lucide.House, "", welcomePage},
+		{"Documentation", groupGuide, lucide.BookOpen, "Guides for building NSGo applications.", docsPage},
 
-		{"Text", kindBase, groupElements, lucide.Type, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
-		{"Layout", kindBase, groupElements, lucide.LayoutGrid, "Flexbox, wrapping, absolute positioning, grid and block layout.", layoutPage},
-		{"Styles", kindBase, groupElements, lucide.Paintbrush, "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
-		{"Images", kindBase, groupElements, lucide.Image, "Embedded, remote, animated and vector images, placeholders and resize modes.", imagesPage},
-		{"Icons", kindBase, groupElements, lucide.Shapes, "The bundled Lucide pack, drawn in inherited text color at any size.", iconsPage},
-		{"Canvas", kindBase, groupElements, lucide.PenTool, "2D drawing recorded on the engine and played by the platform.", canvasPage},
-		{"Lists", kindBase, groupElements, lucide.List, "Virtualized lists: sticky sections, columns, a chat, a list in the page, and a keyed list you edit.", listsPage},
-		{"Scrolling", kindBase, groupElements, lucide.Scroll, "Paging, snapping, insets, pull to refresh, the scroll events and zooming.", scrollingPage},
-		{"Controls", kindBase, groupComponents, lucide.ToggleRight, "base's buttons, checkboxes, radios, switches and tabs, and text fields, styled by the app.", controlsPage},
-		{"Popups", kindBase, groupComponents, lucide.MessageSquare, "base's tooltips, popovers, menus, dialogs, sheets and alerts.", popupsPage},
-		{"Navigation", kindBase, groupComponents, lucide.Compass, "A navigation stack: push and pop screens.", navigationPage},
-		{"Web View", kindBase, groupMedia, lucide.Globe, "The platform's web view: inline HTML, a site, history and messages both ways.", webPage},
-		{"Video", kindBase, groupMedia, lucide.Clapperboard, "The platform's video player: playback the app drives, resize modes and the platform's controls.", videoPage},
-		{"Native View", kindBase, groupMedia, lucide.Puzzle, "The app's own platform views inside the tree, with props, events and commands.", nativePage},
-		{"Animation", kindBase, groupMedia, lucide.Sparkles, "Transitions, animated values and layout animations run by the platform.", animationPage},
-		{"Gestures", kindBase, groupMedia, lucide.Hand, "Pans, pinches and rotations, sharing touches with scrolling.", gesturesPage},
-		{"Window", kindBase, groupDesktop, lucide.AppWindow, "The gallery's own title bar and the desktop window's commands.", windowPage},
-		{"App Menu", kindBase, groupDesktop, lucide.Menu, "The application menu: roles, shortcuts and checkable items.", menuPage},
-		{"Environment", kindBase, groupDesktop, lucide.Monitor, "What the platform reports, and the system services.", environmentPage},
-		{"Accessibility", kindBase, groupDesktop, lucide.Accessibility, "What screen readers read: hints, values, actions, groups, hidden elements, live regions and focus.", accessibilityPage},
-		{"Storage", kindBase, groupDesktop, lucide.Database, "Key-value storage kept on the device, and the app's directories.", storagePage},
-		{"File Drop", kindBase, groupDesktop, lucide.FileUp, "Files dragged in from other apps, on desktops and the web.", filesPage},
+		{"Text", groupElements, lucide.Type, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
+		{"Layout", groupElements, lucide.LayoutGrid, "Flexbox, wrapping, absolute positioning, grid and block layout.", layoutPage},
+		{"Styles", groupElements, lucide.Paintbrush, "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
+		{"Images", groupElements, lucide.Image, "Embedded, remote, animated and vector images, placeholders and resize modes.", imagesPage},
+		{"Icons", groupElements, lucide.Shapes, "The bundled Lucide pack, drawn in inherited text color at any size.", iconsPage},
+		{"Canvas", groupElements, lucide.PenTool, "2D drawing recorded on the engine and played by the platform.", canvasPage},
+		{"Lists", groupElements, lucide.List, "Virtualized lists: sticky sections, columns, a chat, a list in the page, and a keyed list you edit.", listsPage},
+		{"Scrolling", groupElements, lucide.Scroll, "Paging, snapping, insets, pull to refresh, the scroll events and zooming.", scrollingPage},
 
-		{"Buttons", kindUI, groupComponents, lucide.MousePointerClick, "Buttons in each variant, checkboxes, switches, radios and tabs.", buttonsPage},
-		{"Fields", kindUI, groupComponents, lucide.TextCursorInput, "Inputs, selects, sliders and icon buttons.", fieldsPage},
-		{"Feedback", kindUI, groupComponents, lucide.BellRing, "Badges, progress bars and toasts.", feedbackPage},
-		{"Overlays", kindUI, groupComponents, lucide.Layers, "Menus, popovers, tooltips, dialogs and sheets.", overlaysPage},
-		{"Text View", kindUI, groupComponents, lucide.FileText, "Markdown and HTML with code highlighting, tables, alerts, extensions and streaming.", textViewPage},
-		{"Sidebar", kindUI, groupComposites, lucide.PanelLeft, "Sections of navigation items, with counts and heading actions.", sidebarPage},
-		{"Settings", kindUI, groupComposites, lucide.SlidersHorizontal, "A settings surface: categories, search, groups and rows.", settingsPage},
-		{"Command Palette", kindUI, groupComposites, lucide.Command, "Find and run commands from the keyboard.", commandPage},
-		{"Theme", kindUI, groupTheming, lucide.Palette, "One ThemeView restyles every component: NSGo's theme or one of the app's.", themePage},
+		{"Base", groupComponents, lucide.Component, "The engine's unstyled parts: a pressable view, popups, menus, dialogs, sheets, navigation and safe areas, styled by the app.", basePage},
+		{"Buttons", groupComponents, lucide.MousePointerClick, "Buttons in each variant, checkboxes, switches, radios and tabs.", buttonsPage},
+		{"Fields", groupComponents, lucide.TextCursorInput, "Inputs, selects, sliders, icon buttons and the platform field itself.", fieldsPage},
+		{"Feedback", groupComponents, lucide.BellRing, "Badges, progress bars and toasts.", feedbackPage},
+		{"Overlays", groupComponents, lucide.Layers, "Menus, popovers, tooltips, dialogs and sheets.", overlaysPage},
+		{"Text View", groupComponents, lucide.FileText, "Markdown and HTML with code highlighting, tables, alerts, extensions and streaming.", textViewPage},
+
+		{"Web View", groupMedia, lucide.Globe, "The platform's web view: inline HTML, a site, history and messages both ways.", webPage},
+		{"Video", groupMedia, lucide.Clapperboard, "The platform's video player: playback the app drives, resize modes and the platform's controls.", videoPage},
+		{"Native View", groupMedia, lucide.Puzzle, "The app's own platform views inside the tree, with props, events and commands.", nativePage},
+		{"Animation", groupMedia, lucide.Sparkles, "Transitions, animated values and layout animations run by the platform.", animationPage},
+		{"Gestures", groupMedia, lucide.Hand, "Pans, pinches and rotations, sharing touches with scrolling.", gesturesPage},
+
+		{"Window", groupDesktop, lucide.AppWindow, "The gallery's own title bar and the desktop window's commands.", windowPage},
+		{"App Menu", groupDesktop, lucide.Menu, "The application menu: roles, shortcuts and checkable items.", menuPage},
+		{"Environment", groupDesktop, lucide.Monitor, "What the platform reports, and the system services.", environmentPage},
+		{"Accessibility", groupDesktop, lucide.Accessibility, "What screen readers read: hints, values, actions, groups, hidden elements, live regions and focus.", accessibilityPage},
+		{"Storage", groupDesktop, lucide.Database, "Key-value storage kept on the device, and the app's directories.", storagePage},
+		{"File Drop", groupDesktop, lucide.FileUp, "Files dragged in from other apps, on desktops and the web.", filesPage},
+
+		{"Sidebar", groupComposites, lucide.PanelLeft, "Sections of navigation items, with counts and heading actions.", sidebarPage},
+		{"Settings", groupComposites, lucide.SlidersHorizontal, "A settings surface: categories, search, groups and rows.", settingsPage},
+		{"Command Palette", groupComposites, lucide.Command, "Find and run commands from the keyboard.", commandPage},
+
+		{"Theme", groupTheming, lucide.Palette, "One ThemeView restyles every component: NSGo's theme or one of the app's.", themePage},
 	}
 }
 
@@ -118,13 +99,10 @@ func find(name string) (section, int) {
 	return sections[0], 0
 }
 
-// groups returns a category's sections by group, in the sidebar's order.
-func groups(k kind) [][]section {
+// groups returns the sections by group, in the sidebar's order.
+func groups() [][]section {
 	var out [][]section
 	for _, s := range sections {
-		if s.kind != k {
-			continue
-		}
 		if n := len(out); n > 0 && out[n-1][0].group == s.group {
 			out[n-1] = append(out[n-1], s)
 		} else {
@@ -151,8 +129,6 @@ const (
 type gallery struct {
 	// section is the selected section; on phones, the one last opened.
 	section *core.Signal[string]
-	// tab is the category the sidebar lists; it follows the section.
-	tab *core.Signal[kind]
 	// nav is the phone layout's stack: "" is the index, a name a section.
 	nav *base.Nav[string]
 	// descriptions shows each section's description line.
@@ -233,12 +209,6 @@ func Root(cx *core.Scope) core.Node {
 	if start != sections[0].name {
 		g.nav.SetRoutes("", start)
 	}
-	g.tab = core.NewSignal(cx, kindBase)
-	cx.Effect(func() {
-		if s, _ := find(g.section.Get()); s.kind != kindNone {
-			g.tab.Set(s.kind)
-		}
-	})
 	galleryKey.Provide(cx, g)
 	listenRoute(cx, func(name string) {
 		if g.section.GetUntracked() == name {

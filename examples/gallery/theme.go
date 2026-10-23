@@ -8,8 +8,8 @@ import (
 
 // theme is the gallery's palette for one appearance and the styles the
 // demos build from it. Every page and the shell take it from
-// ui.DefaultTheme; Base pages apply it themselves, as base has no look of
-// its own.
+// ui.DefaultTheme; the base and element demos apply it themselves, as
+// those have no look of their own.
 type theme struct {
 	dark bool
 
@@ -22,7 +22,7 @@ type theme struct {
 	accentSoft, onAccent                 core.Color
 	danger, dangerHover, dangerPressed   core.Color
 	onDanger, success, warning           core.Color
-	knob, switchOff                      core.Color
+	knob                                 core.Color
 }
 
 // The radii shared by every demo. Controls take the 8-point radius; cards,
@@ -46,7 +46,7 @@ func newTheme(dark bool) *theme {
 		accentSoft: p.Accent, onAccent: p.PrimaryForeground,
 		danger: p.Danger, dangerHover: p.Hover(p.Danger), dangerPressed: p.Pressed(p.Danger),
 		onDanger: p.DangerForeground, success: p.Success, warning: p.Warning,
-		knob: core.RGB(0xffffff), switchOff: p.Input}
+		knob: core.RGB(0xffffff)}
 }
 
 // tealTheme is an app's own theme for the Theme page: a teal primary
