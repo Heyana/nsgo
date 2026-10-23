@@ -32,3 +32,18 @@ jobs:
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
         run: xvfb-run -a go test ./...
+
+  apple:
+    runs-on: macos-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Vet
+        run: go vet ./platform/internal/apple
+      - name: Test
+        run: go test ./platform/internal/apple
