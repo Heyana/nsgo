@@ -69,3 +69,4 @@
 - Fix popups reporting requests that change nothing and skipping `OnCancel` on presses outside, and menus centering on their trigger instead of aligning with its start.
 - Fix nested scroll views not scrolling on Android, and Linux single-line inputs never reporting focus and texts never ellipsized.
 - Fix sibling screens and modals overwriting each other's insets, and icons in headers and accessory views never drawing.
+- Fix the window not activating on clicks into a hidden title bar or on the traffic lights on macOS, and the app sometimes starting behind other apps.

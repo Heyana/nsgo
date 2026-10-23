@@ -157,6 +157,14 @@ func (s *surface) titleBarArea() core.Edges {
 	return core.Edges{Top: core.Points(height), Left: core.Points(left)}
 }
 
+// takePress moves the window from a drag handle, or starts or extends a
+// selection, at a left press the view has been given; it reports whether
+// it took the press from the view. AppKit has already activated the
+// window, so the press reaches the views it hit.
+func (s *surface) takePress(event objc.ID) bool {
+	return s.dragWindow(event) || s.selectPress(event)
+}
+
 // dragWindow moves the window, or zooms it on a double click, when a
 // left mouse down lands on a window drag handle; it reports whether it
 // took the press. The nearest view from the one hit up that sets

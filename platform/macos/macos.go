@@ -203,6 +203,11 @@ func loadAppKit() {
 		{Cmd: sel("rightMouseDown:"), Fn: rightMouseDown},
 		{Cmd: sel("mouseEntered:"), Fn: mouseEntered},
 		{Cmd: sel("mouseExited:"), Fn: mouseExited},
+		// A click on an inactive window is the app's, as NSH's views take
+		// it: AppKit activates the window, then delivers the press.
+		{Cmd: sel("acceptsFirstMouse:"), Fn: func(objc.ID, objc.SEL, objc.ID) bool { return true }},
+		// The surface moves the window from its drag handles, not AppKit.
+		{Cmd: sel("mouseDownCanMoveWindow"), Fn: func(objc.ID, objc.SEL) bool { return false }},
 	}
 	common = append(common, accessMethods()...)
 	classView = register("NsgoView", nsView, nil, common)
@@ -329,8 +334,25 @@ func Run(app engine.App, opts Options) {
 	s.observe()
 	window.Send(sel("center"))
 	window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
-	nsApp.Send(sel("activateIgnoringOtherApps:"), true)
+	// Activate once the run loop runs: a request before it can be lost,
+	// and launch activation settles after the app has finished starting.
+	apple.OnMain(func() {
+		activateApp()
+		window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
+	})
 	nsApp.Send(sel("run"))
+}
+
+// activateApp makes the app active. activateIgnoringOtherApps: is
+// deprecated but still the request the system honors soonest, and
+// macOS 14's replacement, activate, is asynchronous.
+func activateApp() {
+	app := objc.ID(objc.GetClass("NSApplication")).Send(sel("sharedApplication"))
+	if objc.Send[bool](app, sel("respondsToSelector:"), sel("activateIgnoringOtherApps:")) {
+		app.Send(sel("activateIgnoringOtherApps:"), true)
+	} else {
+		app.Send(sel("activate"))
+	}
 }
 
 func mainMenu() objc.ID {
@@ -438,7 +460,10 @@ func (s *surface) observe() {
 
 // filter sees the app's key and mouse events before their views do. It
 // turns back keys and the back button into EventBack, which it takes,
-// reports presses outside to the views that listen and runs selections.
+// reports presses outside to the views that listen, and follows a
+// selection's drag. Down presses are never taken: AppKit activates the
+// window and hands them to the views that hit, which move the window or
+// select text before their own handling.
 func (s *surface) filter(event objc.ID) objc.ID {
 	if event.Send(selWindow) != s.window {
 		return event
@@ -459,9 +484,6 @@ func (s *surface) filter(event objc.ID) objc.ID {
 		}
 	case typeLeftDown:
 		s.pressOutside(event)
-		if s.dragWindow(event) || s.selectPress(event) {
-			return 0
-		}
 	case typeLeftDragged:
 		if s.selectDrag(event) {
 			return 0
@@ -1052,6 +1074,12 @@ func mouseDown(self objc.ID, cmd objc.SEL, event objc.ID) {
 	const control = 1 << 18
 	if v != nil && v.events.Has(core.EventContextMenu) && objc.Send[uint](event, sel("modifierFlags"))&control != 0 {
 		rightMouseDown(self, cmd, event)
+		return
+	}
+	// AppKit has activated the window and handed the press to the view it
+	// hit: a drag handle moves the window, and a selection area starts or
+	// extends its selection, before the view sees it.
+	if v != nil && v.surface.takePress(event) {
 		return
 	}
 	if v != nil {
