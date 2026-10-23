@@ -11,7 +11,7 @@
 - Add `WebView` with inline HTML, injected scripts, history and messages between page and app.
 - Add `Video` with playback control, seeking, resize modes and the platform's controls.
 - Add unstyled base controls, sliders, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
-- Add the `ui` package with themed controls, fields, popups, a sidebar, settings, a command palette and toasts, in the system's appearance or the app's.
+- Add the `ui` package with themed controls, fields, popups, a sidebar, settings, a command palette and toasts, in a default theme after Onevra or the app's own, following the system's appearance.
 - Add pan, pinch and rotation gestures.
 - Add animated values and layout animations that run on each platform's frame clock, with drags and scroll offsets moving values directly.
 - Add animated GIF and WebP images and SVG files as images on every target.

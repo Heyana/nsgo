@@ -8,9 +8,9 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* The site follows the gallery's Onevra design language: warm neutral
-   surfaces, one terracotta accent and 8-point controls. Both appearances are
-   tokenized below; use them instead of hardcoded colors. */
+/* The site follows NSGo's theme, ui.DefaultTheme, after Onevra: warm
+   neutral surfaces, one terracotta accent and 8-point controls. Both
+   appearances are tokenized below; use them instead of hardcoded colors. */
 
 @theme inline {
     --font-heading: var(--font-sans);
@@ -68,7 +68,7 @@
     --popover-foreground: #33332f;
     --primary: #bd481b;
     --primary-foreground: #ffffff;
-    --secondary: #eceae4;
+    --secondary: #ecebe9;
     --secondary-foreground: #33332f;
     --muted: #eceae4;
     --muted-foreground: #72726a;
@@ -77,9 +77,9 @@
     --destructive: #b4444c;
     --success: #059669;
     --warning: #b45309;
-    --info: #3d63d1;
+    --info: #3e7f96;
     --border: #deded5;
-    --input: #deded5;
+    --input: #c4c4bc;
     --ring: #bd481b;
     --chart-1: #ed986e;
     --chart-2: #c9a227;
@@ -106,7 +106,7 @@
     --popover-foreground: #eeeae2;
     --primary: #ed986e;
     --primary-foreground: #291b14;
-    --secondary: #36332e;
+    --secondary: #312f2c;
     --secondary-foreground: #eeeae2;
     --muted: #36332e;
     --muted-foreground: #bdb6aa;
@@ -115,14 +115,14 @@
     --destructive: #e58f95;
     --success: #79bea1;
     --warning: #e6b567;
-    --info: #93a4c4;
+    --info: #86bfd3;
     --border: #504b43;
-    --input: #504b43;
+    --input: #68635b;
     --ring: #ed986e;
     --chart-1: #ed986e;
     --chart-2: #e6b567;
     --chart-3: #79bea1;
-    --chart-4: #93a4c4;
+    --chart-4: #86bfd3;
     --chart-5: #c39ab4;
     --sidebar: #1b1a17;
     --sidebar-foreground: #eeeae2;

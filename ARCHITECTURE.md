@@ -40,7 +40,7 @@ Packages mirror NSH's crates:
 | `cmd/nsgo/apk` | `nsh-cli` (`android.rs`) | Android packaging: binary XML, ZIP and v2 signature in Go |
 | `tools/lucidegen` | — | Regenerates `icons/lucide` and the gallery's catalog from a pinned Lucide checkout |
 | `examples/hello` | `examples/counter` | A todo list: text, input, button, scroll view and keyed list, with a headless test |
-| `examples/gallery` | `examples/gallery-rs` | Every element, component and service, a page each, with headless tests |
+| `examples/gallery` | `examples/gallery-rs` | Every element, component and service, a page each, in the default theme, with headless tests |
 
 ## Platforms
 

@@ -78,13 +78,7 @@ func (g *gallery) desktop(cx *core.Scope) core.Node {
 					g.toolbar(),
 				}}}}
 		}},
-		// Base pages sit on their own black and white.
-		core.View{TestID: "page", Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, StyleFunc: func() core.Style {
-			if s, _ := find(g.section.Get()); s.kind == kindBase {
-				return core.Style{Background: monoTheme(g.dark()).background}
-			}
-			return core.Style{}
-		}, Children: []core.Node{
+		core.View{TestID: "page", Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, Children: []core.Node{
 			g.header(cx),
 			core.Scroll{Ref: content, TestID: "content", Style: core.Style{FlexGrow: 1, FlexShrink: 1},
 				OnLayout: func(b core.Bounds) { viewport.Set(b.Size.Height) },
@@ -254,7 +248,7 @@ func (g *gallery) header(cx *core.Scope) core.Node {
 func (g *gallery) page(viewport func() core.Points) core.Node {
 	return core.Dynamic(func(cx *core.Scope) core.Node {
 		s, _ := find(g.section.Get())
-		t := newTheme(g.dark(), s.kind)
+		t := newTheme(g.dark())
 		return core.Func(func(cx *core.Scope) core.Node {
 			if s.name == "Welcome" {
 				return core.View{StyleFunc: func() core.Style { return core.Style{MinHeight: core.Pt(viewport())} },
@@ -295,7 +289,7 @@ func (g *gallery) phone(cx *core.Scope) core.Node {
 			}
 			s, _ := find(name)
 			body := core.Dynamic(func(cx *core.Scope) core.Node {
-				t := newTheme(g.dark(), s.kind)
+				t := newTheme(g.dark())
 				return core.Func(func(cx *core.Scope) core.Node {
 					if s.name == "Welcome" {
 						return s.page(cx, t)
@@ -306,9 +300,6 @@ func (g *gallery) phone(cx *core.Scope) core.Node {
 			})
 			return core.Screen{Title: s.name, Header: g.phoneHeader(cx, s.name, func() { g.nav.Pop(1) }), TestID: "screen-" + s.name,
 				Children: []core.Node{core.Scroll{Style: core.Style{FlexGrow: 1}, StyleFunc: func() core.Style {
-					if s.kind == kindBase {
-						return core.Style{Background: monoTheme(g.dark()).background}
-					}
 					return core.Style{Background: theme().Background}
 				}, Children: []core.Node{body}}}}
 		})

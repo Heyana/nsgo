@@ -6,17 +6,27 @@
     {
       "value" : {
         "linear-gradient" : [
-          "display-p3:0.37921,0.80738,0.87010,1.00000",
-          "display-p3:0.39185,0.74994,0.53605,1.00000"
-        ]
+          "display-p3:0.93566,0.72577,0.51019,1.00000",
+          "display-p3:0.96359,0.86608,0.76250,1.00000"
+        ],
+        "orientation" : {
+          "start" : {
+            "x" : 0.5,
+            "y" : 1
+          },
+          "stop" : {
+            "x" : 0.5,
+            "y" : 0
+          }
+        }
       }
     },
     {
       "appearance" : "dark",
       "value" : {
         "linear-gradient" : [
-          "srgb:0.04314,0.30980,0.34510,1.00000",
-          "srgb:0.07059,0.24706,0.17647,1.00000"
+          "srgb:0.16863,0.16078,0.14510,1.00000",
+          "srgb:0.12941,0.12157,0.10980,1.00000"
         ]
       }
     }
@@ -28,13 +38,13 @@
           "fill-specializations" : [
             {
               "value" : {
-                "automatic-gradient" : "display-p3:1.00000,0.92873,0.06719,1.00000"
+                "automatic-gradient" : "display-p3:0.93559,0.52148,0.20283,1.00000"
               }
             },
             {
               "appearance" : "dark",
               "value" : {
-                "solid" : "srgb:0.91765,0.96863,0.93725,1.00000"
+                "solid" : "srgb:0.90196,0.70980,0.40392,1.00000"
               }
             }
           ],
@@ -55,6 +65,19 @@
     {
       "layers" : [
         {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "automatic-gradient" : "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "automatic-gradient" : "srgb:0.92941,0.59608,0.43137,1.00000"
+              }
+            }
+          ],
           "image-name" : "02-arch.png",
           "name" : "02-arch"
         }

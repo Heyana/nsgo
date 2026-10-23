@@ -45,7 +45,7 @@ Pages can use Fumadocs' `Steps`, `Tabs`, `Accordion`, `Accordions` and `TypeTabl
 
 ## Design
 
-The site follows the gallery's Onevra design language: warm neutral surfaces, one terracotta accent and 8-point controls. [`app/app.css`](app/app.css) holds the tokens for both appearances; use them instead of hardcoded colors. The home page's window recreations mirror `examples/hello` and the same control metrics.
+The site follows NSGo's theme, `ui.DefaultTheme`, after Onevra: warm neutral surfaces, one terracotta accent and 8-point controls. [`app/app.css`](app/app.css) holds the tokens for both appearances; use them instead of hardcoded colors. The home page's window recreations mirror `examples/hello` and the same control metrics.
 
 ## Deployment
 

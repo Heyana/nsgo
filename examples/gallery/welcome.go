@@ -10,12 +10,12 @@ import (
 	"github.com/oneo-me/nsgo/ui"
 )
 
-// The brand's colors follow the app icon rather than the interface theme:
-// its gradient from teal to green, and the yellow dot.
+// The brand's colors follow the app icon: a white arch and an orange dot
+// on a tile shading from peach to cream.
 var (
-	brandTeal   = core.RGB(0x58c6d3)
-	brandGreen  = core.RGB(0x5dbd8a)
-	brandYellow = core.RGB(0xf0e43c)
+	brandPeach  = core.RGB(0xefb982)
+	brandCream  = core.RGB(0xf6dec3)
+	brandOrange = core.RGB(0xf08f3d)
 )
 
 const repository = "github.com/oneo-me/nsgo"
@@ -113,16 +113,17 @@ func entrance(cx *core.Scope) func(order int, n core.Node) core.Node {
 	}
 }
 
-// brandMark redraws the app icon at size, so it stays sharp: the
-// gradient tile, the arch and the dot.
+// brandMark redraws the app icon at size, so it stays sharp: the tile,
+// the arch and the dot. The dark icon has a charcoal tile and a
+// terracotta arch.
 func brandMark(t *theme, size core.Points) core.Node {
-	top, bottom, dot := brandTeal, brandGreen, brandYellow
+	top, bottom, arch, dot := brandPeach, brandCream, core.RGB(0xffffff), brandOrange
 	if t.dark {
-		top, bottom, dot = core.RGB(0x0b4f58), core.RGB(0x123f2d), core.RGB(0xeaf7ef)
+		top, bottom, arch, dot = core.RGB(0x2b2925), core.RGB(0x211f1c), core.RGB(0xed986e), core.RGB(0xe6b567)
 	}
 	s := float32(size)
 	return core.View{Style: core.Style{Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size * 0.23,
-		Background: bottom, ShadowColor: withAlpha(core.RGB(0x1f6f6a), 0.35), ShadowRadius: size * 0.2, ShadowOffset: core.Point{Y: size * 0.06}},
+		Background: bottom, ShadowColor: withAlpha(core.RGB(0x000000), 0.18), ShadowRadius: size * 0.2, ShadowOffset: core.Point{Y: size * 0.06}},
 		Children: []core.Node{core.Canvas{Label: "NSGo", Style: core.Style{Width: core.Pt(size), Height: core.Pt(size)},
 			Draw: func(d *core.Drawing, _ core.Size) {
 				d.Save().BeginPath().RoundRect(0, 0, s, s, s*0.23).Clip()
@@ -135,14 +136,14 @@ func brandMark(t *theme, size core.Points) core.Node {
 				// The arch: two legs joined by a half circle.
 				w, r := s*0.12, s*0.2
 				cx, cy := s/2, s*0.42
-				d.SetStrokeColor(core.RGB(0xffffff)).SetLineWidth(w).SetLineCap(core.CapRound).
+				d.SetStrokeColor(arch).SetLineWidth(w).SetLineCap(core.CapRound).
 					BeginPath().MoveTo(cx-r, s*0.74).LineTo(cx-r, cy).Arc(cx, cy, r, math.Pi, 0, false).LineTo(cx+r, s*0.74).Stroke()
 				d.SetFillColor(dot).BeginPath().Ellipse(cx, s*0.68, s*0.075, s*0.075).Fill()
 			}}}}
 }
 
-// welcomeArt paints the page's backdrop: glows in the icon's teal and
-// green from opposite corners, and a tilted lattice of icons tinted from
+// welcomeArt paints the page's backdrop: glows in the icon's peach and
+// orange from opposite corners, and a tilted lattice of icons tinted from
 // one to the other, fading around the center so the title stays legible.
 func welcomeArt(t *theme) core.Node {
 	strength, alpha := 1.0, 0.13
@@ -153,8 +154,8 @@ func welcomeArt(t *theme) core.Node {
 		Draw: func(d *core.Drawing, size core.Size) {
 			w, h := float32(size.Width), float32(size.Height)
 			reach := max(w, h)
-			glow(d, w, 0, reach*0.45, brandTeal, 0.16*strength)
-			glow(d, 0, h, reach*0.45, brandGreen, 0.14*strength)
+			glow(d, w, 0, reach*0.45, brandPeach, 0.2*strength)
+			glow(d, 0, h, reach*0.45, brandOrange, 0.12*strength)
 
 			icons := welcomeIcons()
 			const step, side = 56, 20
@@ -174,7 +175,7 @@ func welcomeArt(t *theme) core.Node {
 					diagonal := min(1, max(0, sx/w*0.5+(1-sy/h)*0.5))
 					center := min(1, max(0.25, float32(math.Hypot(float64(sx-w/2), float64(sy-h/2)))/half*1.4))
 					a := alpha * float64(center) * (0.45 + float64(diagonal)*0.55)
-					color := withAlpha(ui.Mix(brandGreen, brandTeal, float64(diagonal)), float32(a))
+					color := withAlpha(ui.Mix(brandOrange, brandPeach, float64(diagonal)), float32(a))
 					d.Save().Translate(x-side/2, y-side/2)
 					icons[(row*7+col*3)%len(icons)].Draw(d, core.Size{Width: side, Height: side}, color)
 					d.Restore()

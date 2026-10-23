@@ -10,7 +10,7 @@ import (
 )
 
 // The UI category's pages show the ui package's components in the theme
-// the gallery's ThemeView provides: NSGo's default, from its icon.
+// the gallery's ThemeView provides: NSGo's default.
 
 func buttonsPage(cx *core.Scope, t *theme) core.Node {
 	agree := core.NewSignal(cx, true)
@@ -115,15 +115,15 @@ func overlaysPage(cx *core.Scope, t *theme) core.Node {
 }
 
 // themePage shows a sample of components under a ThemeView of the chosen
-// theme: NSGo's default or the app's own, here warm neutrals with a
-// terracotta accent.
+// theme: NSGo's default or the app's own, here cool neutrals with a teal
+// primary.
 func themePage(cx *core.Scope, t *theme) core.Node {
-	warm := core.NewSignal(cx, false)
+	teal := core.NewSignal(cx, false)
 	on := core.NewSignal(cx, true)
 	level := core.NewSignal(cx, 60.0)
 	pick := func() ui.Theme {
-		if warm.Get() {
-			return warmTheme()
+		if teal.Get() {
+			return tealTheme()
 		}
 		return ui.DefaultTheme()
 	}
@@ -131,8 +131,8 @@ func themePage(cx *core.Scope, t *theme) core.Node {
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
 		t.demo("Theme", "ui.ThemeView provides a Theme: two palettes, radii and a font size. Every component below it follows.",
 			ui.Tabs{Label: "Theme", Children: []core.Node{
-				ui.Tab{Label: "NSGo", TestID: "theme-default", Selected: func() bool { return !warm.Get() }, OnPress: func() { warm.Set(false) }},
-				ui.Tab{Label: "Warm", TestID: "theme-warm", Selected: warm.Get, OnPress: func() { warm.Set(true) }},
+				ui.Tab{Label: "NSGo", TestID: "theme-default", Selected: func() bool { return !teal.Get() }, OnPress: func() { teal.Set(false) }},
+				ui.Tab{Label: "Teal", TestID: "theme-teal", Selected: teal.Get, OnPress: func() { teal.Set(true) }},
 			}},
 			ui.ThemeView{Theme: pick, TestID: "theme-sample",
 				Style: core.Style{Padding: core.All(20), Gap: 16, CornerRadius: cardRadius, BorderWidth: 1, BorderColor: theme().Border},

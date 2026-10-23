@@ -6,10 +6,10 @@ import (
 	"github.com/oneo-me/nsgo/ui"
 )
 
-// theme is a page's palette for one appearance and the styles the demos
-// build from it. Base pages are black and white, as base has no look of
-// its own: whatever color they show is the app's. UI pages and the shell
-// take theirs from ui.DefaultTheme, whose palette comes from NSGo's icon.
+// theme is the gallery's palette for one appearance and the styles the
+// demos build from it. Every page and the shell take it from
+// ui.DefaultTheme; Base pages apply it themselves, as base has no look of
+// its own.
 type theme struct {
 	dark bool
 
@@ -34,11 +34,8 @@ const (
 	dialogRadius core.Points = 16
 )
 
-// newTheme returns the palette of a category's pages.
-func newTheme(dark bool, k kind) *theme {
-	if k == kindBase {
-		return monoTheme(dark)
-	}
+// newTheme returns the gallery's palette for the appearance.
+func newTheme(dark bool) *theme {
 	p := ui.DefaultTheme().Tokens(dark)
 	return &theme{dark: dark,
 		background: p.Background, surface: p.Surface, sunken: p.Muted, sidebar: p.Muted,
@@ -52,62 +49,36 @@ func newTheme(dark bool, k kind) *theme {
 		knob: core.RGB(0xffffff), switchOff: p.Input}
 }
 
-// monoTheme is black and white with grays between.
-func monoTheme(dark bool) *theme {
-	if dark {
-		ink := core.RGB(0xf2f2f2)
-		return &theme{dark: true,
-			background: core.RGB(0x0a0a0a), surface: core.RGB(0x121212), sunken: core.RGB(0x1c1c1c), sidebar: core.RGB(0x0f0f0f),
-			ink: ink, muted: core.RGB(0x9a9a9a), line: core.RGB(0x2e2e2e), hover: core.RGB(0x1f1f1f),
-			borderStrong: core.RGB(0x5a5a5a), selection: core.RGBA(0xffffff, 0.1), raised: core.RGB(0x1c1c1c),
-			quiet: core.RGB(0x1c1c1c), quietHover: core.RGB(0x262626), quietPressed: core.RGB(0x303030),
-			accent: ink, accentHover: core.RGB(0xffffff), accentPressed: core.RGB(0xd0d0d0),
-			accentSoft: core.RGB(0x262626), onAccent: core.RGB(0x0a0a0a),
-			danger: ink, dangerHover: core.RGB(0xffffff), dangerPressed: core.RGB(0xd0d0d0), onDanger: core.RGB(0x0a0a0a),
-			success: ink, warning: core.RGB(0xbdbdbd), knob: core.RGB(0x0a0a0a), switchOff: core.RGB(0x5a5a5a)}
-	}
-	ink := core.RGB(0x111111)
-	return &theme{
-		background: core.RGB(0xffffff), surface: core.RGB(0xffffff), sunken: core.RGB(0xf4f4f4), sidebar: core.RGB(0xf7f7f7),
-		ink: ink, muted: core.RGB(0x6b6b6b), line: core.RGB(0xe0e0e0), hover: core.RGB(0xf0f0f0),
-		borderStrong: core.RGB(0xa8a8a8), selection: core.RGBA(0x000000, 0.06), raised: core.RGB(0xffffff),
-		quiet: core.RGB(0xf2f2f2), quietHover: core.RGB(0xe9e9e9), quietPressed: core.RGB(0xdedede),
-		accent: ink, accentHover: core.RGB(0x2b2b2b), accentPressed: core.RGB(0x000000),
-		accentSoft: core.RGB(0xededed), onAccent: core.RGB(0xffffff),
-		danger: ink, dangerHover: core.RGB(0x2b2b2b), dangerPressed: core.RGB(0x000000), onDanger: core.RGB(0xffffff),
-		success: ink, warning: core.RGB(0x555555), knob: core.RGB(0xffffff), switchOff: core.RGB(0xc8c8c8)}
-}
-
-// warmTheme is an app's own theme for the Theme page: Onevra's warm
-// neutrals and terracotta accent.
-func warmTheme() ui.Theme {
+// tealTheme is an app's own theme for the Theme page: a teal primary
+// over cool neutrals.
+func tealTheme() ui.Theme {
 	return ui.Theme{
 		Light: ui.Palette{
-			Background: core.RGB(0xfcfbf9), Foreground: core.RGB(0x33332f),
-			Surface: core.RGB(0xfefefd), SurfaceForeground: core.RGB(0x33332f),
-			Muted: core.RGB(0xf2f0ec), MutedForeground: core.RGB(0x72726a),
-			Accent: core.RGB(0xeceae4), AccentForeground: core.RGB(0x33332f),
-			Border: core.RGB(0xdeded5), Input: core.RGB(0xc4c4bc), Ring: core.RGBA(0xb94716, 0.55),
-			Primary: core.RGB(0xbd481b), PrimaryForeground: core.RGB(0xffffff),
-			Secondary: core.RGB(0xecebe9), SecondaryForeground: core.RGB(0x33332f),
-			Danger: core.RGB(0xb4444c), DangerForeground: core.RGB(0xffffff),
-			Success: core.RGB(0x059669), Warning: core.RGB(0xb45309), Info: core.RGB(0x3e7f96),
-			Overlay:   core.RGBA(0x000000, 0.18),
-			Selection: core.RGBA(0xe6652b, 0.22), Link: core.RGB(0xbd481b),
-			Shadow: core.RGBA(0x000000, 0.14),
+			Background: core.RGB(0xfbfdfc), Foreground: core.RGB(0x14302b),
+			Surface: core.RGB(0xffffff), SurfaceForeground: core.RGB(0x14302b),
+			Muted: core.RGB(0xedf4f2), MutedForeground: core.RGB(0x5a6f6a),
+			Accent: core.RGB(0xe2f4ef), AccentForeground: core.RGB(0x0d4f47),
+			Border: core.RGB(0xd8e4e0), Input: core.RGB(0xb9cbc6), Ring: core.RGB(0x2fb3a1),
+			Primary: core.RGB(0x0b7d72), PrimaryForeground: core.RGB(0xffffff),
+			Secondary: core.RGB(0xe4eeeb), SecondaryForeground: core.RGB(0x14302b),
+			Danger: core.RGB(0xc8423d), DangerForeground: core.RGB(0xffffff),
+			Success: core.RGB(0x2e9e62), Warning: core.RGB(0xc79a00), Info: core.RGB(0x2a9fbd),
+			Overlay:   core.RGBA(0x0a1f1c, 0.32),
+			Selection: core.RGBA(0x2fb3a1, 0.28), Link: core.RGB(0x0b7d72),
+			Shadow: core.RGBA(0x0a1f1c, 0.14),
 		},
 		Dark: ui.Palette{
-			Background: core.RGB(0x211f1c), Foreground: core.RGB(0xeeeae2),
-			Surface: core.RGB(0x2b2925), SurfaceForeground: core.RGB(0xeeeae2),
-			Muted: core.RGB(0x1a1916), MutedForeground: core.RGB(0xbdb6aa),
-			Accent: core.RGB(0x36332e), AccentForeground: core.RGB(0xeeeae2),
-			Border: core.RGB(0x504b43), Input: core.RGB(0x68635b), Ring: core.RGBA(0xed986e, 0.8),
-			Primary: core.RGB(0xed986e), PrimaryForeground: core.RGB(0x291b14),
-			Secondary: core.RGB(0x312f2c), SecondaryForeground: core.RGB(0xeeeae2),
-			Danger: core.RGB(0xe58f95), DangerForeground: core.RGB(0x291b14),
-			Success: core.RGB(0x79bea1), Warning: core.RGB(0xe6b567), Info: core.RGB(0x86bfd3),
-			Overlay:   core.RGBA(0x000000, 0.45),
-			Selection: core.RGBA(0xed986e, 0.24), Link: core.RGB(0xed986e),
+			Background: core.RGB(0x0e1817), Foreground: core.RGB(0xe4f1ee),
+			Surface: core.RGB(0x162321), SurfaceForeground: core.RGB(0xe4f1ee),
+			Muted: core.RGB(0x1c2b29), MutedForeground: core.RGB(0x93a8a3),
+			Accent: core.RGB(0x1d3632), AccentForeground: core.RGB(0xd2f1ea),
+			Border: core.RGB(0x283a37), Input: core.RGB(0x3d5551), Ring: core.RGB(0x5ccfb9),
+			Primary: core.RGB(0x5ccfb9), PrimaryForeground: core.RGB(0x04231e),
+			Secondary: core.RGB(0x223532), SecondaryForeground: core.RGB(0xe4f1ee),
+			Danger: core.RGB(0xef6b65), DangerForeground: core.RGB(0x2a0806),
+			Success: core.RGB(0x6fcf97), Warning: core.RGB(0xf2d63b), Info: core.RGB(0x6bcfe6),
+			Overlay:   core.RGBA(0x000000, 0.5),
+			Selection: core.RGBA(0x5ccfb9, 0.32), Link: core.RGB(0x5ccfb9),
 			Shadow: core.RGBA(0x000000, 0.4),
 		},
 		Radius:      radius,

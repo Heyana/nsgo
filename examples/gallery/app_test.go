@@ -453,16 +453,9 @@ func TestCategories(t *testing.T) {
 	if sample() != ui.DefaultTheme().Light.Background {
 		t.Fatal("the sample does not start in NSGo's theme")
 	}
-	app.Press("id:theme-warm")
-	if sample() != warmTheme().Light.Background {
-		t.Fatal("the sample did not take the warm theme")
-	}
-
-	// Base pages are black and white.
-	app.Press("id:tab-base")
-	app.Press("id:nav-Controls")
-	if got := app.Find("id:page").Style.Background; got != core.RGB(0xffffff) {
-		t.Fatalf("base page background = %x, want white", got)
+	app.Press("id:theme-teal")
+	if sample() != tealTheme().Light.Background {
+		t.Fatal("the sample did not take the teal theme")
 	}
 }
 
