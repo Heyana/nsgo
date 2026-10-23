@@ -61,6 +61,7 @@
 - Read pressable views without a role as buttons, and views without a label by their texts, on macOS and iOS.
 - License the project under Apache-2.0, with NSH's attribution in `NOTICE`.
 - Cache text fonts and attributes, and each prepared text's measurements per width, on macOS and iOS.
+- Size unsized text at 14 points and the default theme at 13 on macOS.
 - Fix Android builds failing because Go's implied `linux` tag included the Linux backend.
 - Fix strikethrough missing on macOS and iOS.
 - Fix Windows' aliased rounded corners, borders and canvas curves.

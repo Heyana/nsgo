@@ -114,3 +114,13 @@ func TestCutToFit(t *testing.T) {
 		t.Errorf("head = %q, want …ghij", got.Text)
 	}
 }
+
+func TestTextDefaultsToFourteenPoints(t *testing.T) {
+	h := newHost(t, Size{400, 100}, func(cx *Scope) Node {
+		return Text{Content: "a", TestID: "text"}
+	})
+	h.commit()
+	if got := h.find("text").text.style.Font.Size; got != 14 {
+		t.Errorf("font size = %v, want 14", got)
+	}
+}

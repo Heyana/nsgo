@@ -1,6 +1,7 @@
 package ui_test
 
 import (
+	"runtime"
 	"testing"
 	"time"
 
@@ -114,5 +115,15 @@ func TestTextViewCopiesCodeAndFollowsTheTheme(t *testing.T) {
 	app.SetEnvironment(core.Environment{Dark: true})
 	if got := block().Background; got != dark.Muted {
 		t.Errorf("dark code block = %x, want the dark muted color", got)
+	}
+}
+
+func TestDefaultThemeTextFollowsThePlatform(t *testing.T) {
+	want := core.Points(14)
+	if runtime.GOOS == "darwin" {
+		want = 13
+	}
+	if got := ui.DefaultTheme().FontSize; got != want {
+		t.Errorf("default theme font size = %v, want %v on %s", got, want, runtime.GOOS)
 	}
 }

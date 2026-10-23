@@ -396,8 +396,9 @@ func (x TextTransform) Apply(s string) string {
 	return s
 }
 
-// DefaultFontSize is the font size of text no ancestor sizes.
-const DefaultFontSize Points = 17
+// DefaultFontSize is the font size of text no ancestor sizes: 14, as
+// NSH's and MyGo's text defaults.
+const DefaultFontSize Points = 14
 
 // Merge returns s with every field o sets replacing s's.
 func (s Style) Merge(o Style) Style {

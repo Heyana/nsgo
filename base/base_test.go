@@ -13,7 +13,7 @@ func TestSafeAreaAndKeyboard(t *testing.T) {
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		return base.SafeAreaView{Edges: base.Top | base.Bottom, Style: core.Style{Padding: core.All(10)}, TestID: "safe",
 			Children: []core.Node{
-				base.KeyboardAvoidingView{TestID: "avoid", Children: []core.Node{core.Text{Content: "x"}}},
+				base.KeyboardAvoidingView{TestID: "avoid", Children: []core.Node{core.Text{Content: "x", Style: core.Style{FontSize: 17}}}},
 			}}
 	})
 	app.SetEnvironment(core.Environment{SafeArea: core.Edges{Top: 44, Bottom: 34, Left: 5}, KeyboardHeight: 300})

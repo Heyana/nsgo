@@ -135,7 +135,7 @@ func TestGridTracksValid(t *testing.T) {
 func TestGridMeasuresTextAtItsContentWidth(t *testing.T) {
 	h := newHost(t, Size{200, 100}, func(cx *Scope) Node {
 		return View{Style: Style{Display: DisplayGrid, GridTemplateColumns: "1fr 100px"}, Children: []Node{
-			Text{Content: "aaaa bbbb", Style: Style{Padding: All(10)}, TestID: "cell"},
+			Text{Content: "aaaa bbbb", Style: Style{Padding: All(10), FontSize: 17}, TestID: "cell"},
 			View{Style: Style{GridColumn: GridLines{Start: GridLine(2)}, Height: Pt(10)}},
 		}}
 	})

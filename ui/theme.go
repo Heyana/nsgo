@@ -3,7 +3,11 @@
 // or replace with a Theme of their own.
 package ui
 
-import "github.com/oneo-me/nsgo/core"
+import (
+	"runtime"
+
+	"github.com/oneo-me/nsgo/core"
+)
 
 // Theme is the look of ui's components: semantic colors for the light and
 // the dark appearance, corner radii and the base font size.
@@ -79,8 +83,17 @@ func DefaultTheme() Theme {
 		},
 		Radius:      8,
 		RadiusLarge: 12,
-		FontSize:    15,
+		FontSize:    defaultFontSize(),
 	}
+}
+
+// defaultFontSize is the size of the theme's text: 13 on macOS, as its
+// controls are, and 14 elsewhere, as MyGo's default theme is.
+func defaultFontSize() core.Points {
+	if runtime.GOOS == "darwin" {
+		return 13
+	}
+	return 14
 }
 
 // Tokens is a theme resolved for the current appearance.
