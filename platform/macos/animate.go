@@ -245,6 +245,9 @@ func (v *view) place(f core.Bounds) {
 		apple.SetTransform(v.native.Send(selLayer), v.transform)
 	}
 	apple.LayoutBorders(v.native.Send(selLayer))
+	if v.style.Cursor != core.CursorAuto {
+		invalidateCursor(v)
+	}
 	if v.drawing != nil {
 		v.native.Send(selSetNeedsDisplay, true)
 	}

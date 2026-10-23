@@ -1066,6 +1066,18 @@ func (s *surface) setViewStyle(v *view, vs *core.ViewStyle) {
 		}
 	}
 	setStyle(v.el, style)
+	s.setCursor(v)
+}
+
+// setCursor shows v's cursor, or a pointer over a pressable view.
+func (s *surface) setCursor(v *view) {
+	cursor := ""
+	if v.style.Cursor != core.CursorAuto {
+		cursor = v.style.Cursor.Name()
+	} else if v.pressable() {
+		cursor = core.CursorPointer.Name()
+	}
+	setStyle(v.el, map[string]string{"cursor": cursor})
 }
 
 // unborder places el, framed from its parent view's origin, where the
@@ -1309,18 +1321,19 @@ func (s *surface) setEvents(v *view, m core.EventMask) {
 		v.input.fs.Events = m
 	}
 	s.setOutside(v, m.Has(core.EventPressOutside))
+	s.setCursor(v)
 	if v.kind == core.KindInput {
 		return
 	}
 	// Pressable views take keyboard focus and keep the page's own text
 	// selection and tap highlight out of presses.
 	style := map[string]string{
-		"cursor": "", "user-select": "", "-webkit-user-select": "",
+		"user-select": "", "-webkit-user-select": "",
 		"-webkit-touch-callout": "", "-webkit-tap-highlight-color": "",
 	}
 	if v.pressable() {
 		style = map[string]string{
-			"cursor": "pointer", "user-select": "none", "-webkit-user-select": "none",
+			"user-select": "none", "-webkit-user-select": "none",
 			"-webkit-touch-callout": "none", "-webkit-tap-highlight-color": "transparent",
 		}
 	}

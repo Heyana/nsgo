@@ -51,7 +51,7 @@ var sections []section
 func init() {
 	sections = []section{
 		{"Welcome", groupOverview, lucide.House, "", welcomePage},
-		{"Base", groupOverview, lucide.Component, "The engine's unstyled parts: a pressable view, popups, menus, dialogs, sheets, navigation and safe areas, styled by the app.", basePage},
+		{"Base", groupOverview, lucide.Component, "The engine's unstyled parts: a pressable view, popups, menus, dialogs, sheets, navigation, safe areas and split panes, styled by the app.", basePage},
 		{"Documentation", groupGuide, lucide.BookOpen, "Guides for building NSGo applications.", docsPage},
 
 		{"Text", groupElements, lucide.Type, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
@@ -138,6 +138,9 @@ type gallery struct {
 	dark       func() bool
 	// sidebar shows the wide layout's sidebar.
 	sidebar *core.Signal[bool]
+	// sidebarPixels is the sidebar's width while it opens or closes, and
+	// sidebarSize the width it returns to when shown again.
+	sidebarPixels, sidebarSize *core.Signal[core.Points]
 	// start is the page the gallery opens on: "welcome" or "last".
 	start *core.Signal[string]
 	// settings and palette open the settings dialog and the command
@@ -193,18 +196,25 @@ func Root(cx *core.Scope) core.Node {
 	if s, _ := find(start); s.name != start {
 		start = sections[0].name
 	}
+	showsSidebar := saved(keySidebar, "true") == "true"
+	sidebarPixels := core.Points(0)
+	if showsSidebar {
+		sidebarPixels = sidebarWidth
+	}
 	g := &gallery{
-		section:      core.NewSignal(cx, start),
-		nav:          base.NewNav(cx, ""),
-		descriptions: core.NewSignal(cx, saved(keyDescriptions, "true") == "true"),
-		appearance:   core.NewSignal(cx, saved(keyAppearance, "system")),
-		sidebar:      core.NewSignal(cx, saved(keySidebar, "true") == "true"),
-		start:        core.NewSignal(cx, opensOn),
-		settings:     core.NewSignal(cx, false),
-		palette:      core.NewSignal(cx, false),
-		category:     core.NewSignal(cx, "general"),
-		chosen:       core.NewSignal(cx, "nothing yet"),
-		prefs:        newPrefs(cx),
+		section:       core.NewSignal(cx, start),
+		nav:           base.NewNav(cx, ""),
+		descriptions:  core.NewSignal(cx, saved(keyDescriptions, "true") == "true"),
+		appearance:    core.NewSignal(cx, saved(keyAppearance, "system")),
+		sidebar:       core.NewSignal(cx, showsSidebar),
+		sidebarPixels: core.NewSignal(cx, sidebarPixels),
+		sidebarSize:   core.NewSignal(cx, sidebarWidth),
+		start:         core.NewSignal(cx, opensOn),
+		settings:      core.NewSignal(cx, false),
+		palette:       core.NewSignal(cx, false),
+		category:      core.NewSignal(cx, "general"),
+		chosen:        core.NewSignal(cx, "nothing yet"),
+		prefs:         newPrefs(cx),
 	}
 	if start != sections[0].name {
 		g.nav.SetRoutes("", start)

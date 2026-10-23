@@ -14,6 +14,10 @@ Elements carry NSH's accessibility props: `Role`, `Label` (`LabelFunc` when it c
 - Android sets `importantForAccessibility`, live regions and screen-reader focus on the view, and range info, hint, state description and actions in its `AccessibilityNodeInfo`. It has no escape or magic tap.
 - Windows and Linux keep the props but expose none of them, since neither backend has an accessibility provider yet.
 
+## Cursors
+
+`Style.Cursor` sets the pointer's look over a view. `Auto` leaves it to the nearest ancestor that names one, and the web shows a pointer over pressable views. macOS gives each view cursor rects, Windows answers `WM_SETCURSOR` with the view under the pointer, Linux sets GTK's named cursor, and the web sets CSS `cursor`. Touch platforms ignore it; `Split` asks for the horizontal or vertical resize cursor on its divider.
+
 ## Gestures
 
 `View.OnPan`, `OnPinch` and `OnRotation` follow gestures the platform recognizes; they report to the engine, which merges each gesture's moves per turn and never its first or last report.

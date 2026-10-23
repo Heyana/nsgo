@@ -212,6 +212,7 @@ func loadAppKit() {
 		{Cmd: sel("rightMouseDown:"), Fn: rightMouseDown},
 		{Cmd: sel("mouseEntered:"), Fn: mouseEntered},
 		{Cmd: sel("mouseExited:"), Fn: mouseExited},
+		{Cmd: sel("resetCursorRects"), Fn: resetCursorRects},
 		// A click on an inactive window is the app's, as NSH's views take
 		// it: AppKit activates the window, then delivers the press.
 		{Cmd: sel("acceptsFirstMouse:"), Fn: func(objc.ID, objc.SEL, objc.ID) bool { return true }},
@@ -259,6 +260,7 @@ func loadAppKit() {
 		{Cmd: sel("mouseMoved:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) { self.Send(sel("flashScrollers")) }},
 		{Cmd: sel("mouseExited:"), Fn: mouseExited},
 		{Cmd: sel("scrollWheel:"), Fn: scrollWheel},
+		{Cmd: sel("resetCursorRects"), Fn: resetCursorRects},
 	})
 	classInput = register("NsgoInput", nsView, nil, append(common,
 		objc.MethodDef{Cmd: sel("layout"), Fn: inputLayout},
@@ -776,6 +778,9 @@ func (s *surface) apply(b *core.MountBatch) {
 				const below = -1
 				parent.Send(selAddSubviewPositioned, v.native, below, s.views[it.Before].native)
 			}
+			if v.style.Cursor != core.CursorAuto {
+				invalidateCursor(v)
+			}
 			if v.kind == core.KindModal && !v.presented {
 				v.presented = true
 				s.presenting = append(s.presenting, v)
@@ -784,7 +789,11 @@ func (s *surface) apply(b *core.MountBatch) {
 		case core.ItemFrame:
 			s.setFrame(v, it.Frame, lb)
 		case core.ItemViewStyle:
+			cursor := v.style.Cursor
 			v.style = *it.ViewStyle
+			if cursor != v.style.Cursor {
+				invalidateCursor(v)
+			}
 			if v.animatesStyle() {
 				v.restyle()
 			} else {
@@ -1186,6 +1195,66 @@ func rightMouseDown(self objc.ID, cmd objc.SEL, event objc.ID) {
 	}
 	p := objc.Send[apple.CGPoint](self, selConvertPoint, objc.Send[apple.CGPoint](event, selLocationInWindow), objc.ID(0))
 	v.report(core.Event{Kind: core.EventContextMenu, Point: core.Point{X: core.Points(p.X), Y: core.Points(p.Y)}})
+}
+
+// resetCursorRects gives the view its style's cursor, or none to inherit
+// its parent's.
+func resetCursorRects(self objc.ID, cmd objc.SEL) {
+	apple.Super(self, cmd)
+	v := views[self]
+	if v == nil || v.style.Cursor == core.CursorAuto {
+		return
+	}
+	self.Send(sel("addCursorRect:cursor:"), objc.Send[apple.CGRect](self, selBounds), nsCursor(v.style.Cursor))
+}
+
+// invalidateCursor makes the window ask for the view's cursor rects again.
+func invalidateCursor(v *view) {
+	if w := v.native.Send(selWindow); w != 0 {
+		w.Send(sel("invalidateCursorRectsForView:"), v.native)
+	}
+}
+
+// nsCursor is the AppKit cursor of c. AppKit has no public wait, progress,
+// help or zoom cursors: those show the arrow.
+func nsCursor(c core.Cursor) objc.ID {
+	class := objc.ID(objc.GetClass("NSCursor"))
+	pick := func(name string) objc.ID { return class.Send(sel(name)) }
+	switch c {
+	case core.CursorPointer:
+		return pick("pointingHandCursor")
+	case core.CursorText:
+		return pick("IBeamCursor")
+	case core.CursorCrosshair:
+		return pick("crosshairCursor")
+	case core.CursorMove, core.CursorGrab:
+		return pick("openHandCursor")
+	case core.CursorGrabbing:
+		return pick("closedHandCursor")
+	case core.CursorNotAllowed:
+		return pick("operationNotAllowedCursor")
+	case core.CursorColResize:
+		return pick("resizeLeftRightCursor")
+	case core.CursorRowResize:
+		return pick("resizeUpDownCursor")
+	case core.CursorNone:
+		return invisibleCursor()
+	}
+	return pick("arrowCursor")
+}
+
+var invisibleNS objc.ID
+
+// invisibleCursor is a cursor that draws nothing.
+func invisibleCursor() objc.ID {
+	if invisibleNS == 0 {
+		image := objc.ID(objc.GetClass("NSImage")).Send(sel("alloc"))
+		image = image.Send(sel("initWithSize:"), apple.CGSize{Width: 1, Height: 1})
+		invisibleNS = objc.ID(objc.GetClass("NSCursor")).Send(sel("alloc"))
+		invisibleNS = invisibleNS.Send(sel("initWithImage:hotSpot:"), image, apple.CGPoint{})
+		image.Send(selRelease)
+	}
+	return invisibleNS
 }
 
 func mouseEntered(self objc.ID, _ objc.SEL, _ objc.ID) {

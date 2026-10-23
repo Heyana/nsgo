@@ -24,6 +24,7 @@ NSGo is a cross-platform native UI engine with a Go backend, ported from the des
 - `ui` composes `base` into everything else: styled controls and variants, fields and selects, settings, a sidebar, a command palette, toasts. A component looking complex is the sign it belongs here, since its complexity is arrangement rather than engine access.
 - A component belongs in `base` only when composing it from `base`'s parts cannot reach what it needs: a role, focus, platform input, virtualization or a system surface. Sharing a look with `ui` is never a reason.
 - When in doubt, build it in `ui`; move it down once a second component needs the same behavior and cannot share it another way.
+- In `ui`, a component's look belongs in the component's file, built from `Tokens` fields such as `theme().Border`; `Tokens` methods are only for color operations, never component looks or one-token aliases.
 
 ## Working with the user
 

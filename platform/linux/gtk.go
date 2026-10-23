@@ -146,6 +146,7 @@ var (
 	gtkWidgetSetValign                     func(uintptr, int32)
 	gtkWidgetSetOverflow                   func(uintptr, int32)
 	gtkWidgetSetSensitive                  func(uintptr, int32)
+	gtkWidgetSetCursorFromName             func(uintptr, *byte)
 	gtkWidgetActivate                      func(uintptr) int32
 	gtkNativeGetSurface                    func(uintptr) uintptr
 	gtkBoxNew                              func(int32, int32) uintptr
@@ -442,6 +443,7 @@ func bind() {
 	purego.RegisterLibFunc(&gtkWidgetSetValign, gtkLib, "gtk_widget_set_valign")
 	purego.RegisterLibFunc(&gtkWidgetSetOverflow, gtkLib, "gtk_widget_set_overflow")
 	purego.RegisterLibFunc(&gtkWidgetSetSensitive, gtkLib, "gtk_widget_set_sensitive")
+	purego.RegisterLibFunc(&gtkWidgetSetCursorFromName, gtkLib, "gtk_widget_set_cursor_from_name")
 	purego.RegisterLibFunc(&gtkWidgetActivate, gtkLib, "gtk_widget_activate")
 	purego.RegisterLibFunc(&gtkNativeGetSurface, gtkLib, "gtk_native_get_surface")
 	purego.RegisterLibFunc(&gtkBoxNew, gtkLib, "gtk_box_new")

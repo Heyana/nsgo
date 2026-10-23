@@ -139,3 +139,15 @@ func TestBordersPerSide(t *testing.T) {
 		}
 	}
 }
+
+func TestCursorStyleReachesTheView(t *testing.T) {
+	if got := (Style{Cursor: CursorColResize}).viewStyle().Cursor; got != CursorColResize {
+		t.Fatalf("view cursor = %v, want the style's", got)
+	}
+	if got := (Style{Cursor: CursorRowResize}).Merge(Style{Cursor: CursorPointer}).Cursor; got != CursorPointer {
+		t.Fatalf("merged cursor = %v, want the later style's", got)
+	}
+	if got := CursorRowResize.Name(); got != "row-resize" {
+		t.Fatalf("cursor name = %q, want its CSS name", got)
+	}
+}

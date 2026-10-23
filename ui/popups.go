@@ -41,7 +41,7 @@ func (m Menu) Render(cx *core.Scope) core.Node {
 		OnOpen: m.OnOpen, OnClose: m.OnClose, OnCancel: m.OnCancel,
 		Placement: m.Placement, Align: m.Align, Offset: m.Offset, Margin: m.Margin,
 		StyleFunc:      trigger(cx, m.Variant, m.Style),
-		PopupStyleFunc: look(cx, m.PopupStyle, Tokens.popup),
+		PopupStyleFunc: look(cx, m.PopupStyle, popupStyle),
 		Trigger:        orText(m.Trigger, m.Label), Children: m.Children, Label: m.Label, TestID: m.TestID,
 	}
 }
@@ -69,7 +69,7 @@ func (m ContextMenu) Render(cx *core.Scope) core.Node {
 	return base.ContextMenu{
 		Open: m.Open, OnOpenChange: m.OnOpenChange, OnOpen: m.OnOpen, OnClose: m.OnClose, OnCancel: m.OnCancel,
 		Disabled: m.Disabled, Offset: m.Offset, Margin: m.Margin,
-		Style: m.Style, PopupStyleFunc: look(cx, m.PopupStyle, Tokens.popup),
+		Style: m.Style, PopupStyleFunc: look(cx, m.PopupStyle, popupStyle),
 		Trigger: m.Trigger, Children: m.Children, TestID: m.TestID,
 	}
 }
@@ -103,7 +103,7 @@ func (i MenuItem) Render(cx *core.Scope) core.Node {
 		children = append([]core.Node{mark}, children...)
 	}
 	return base.MenuItem{OnSelect: i.OnSelect, Disabled: i.Disabled, NoCloseOnSelect: i.NoCloseOnSelect,
-		StyleFunc: look(cx, i.Style, Tokens.menuItem), Children: children,
+		StyleFunc: look(cx, i.Style, menuItemStyle), Children: children,
 		Label: i.Label, TestID: i.TestID}
 }
 
@@ -112,7 +112,7 @@ type MenuSeparator struct{ Style core.Style }
 
 // Render implements core.Node.
 func (s MenuSeparator) Render(cx *core.Scope) core.Node {
-	return base.MenuSeparator{StyleFunc: look(cx, s.Style, Tokens.menuSeparator)}
+	return base.MenuSeparator{StyleFunc: look(cx, s.Style, menuSeparatorStyle)}
 }
 
 // Submenu is a base.Submenu: an item that looks like a MenuItem and opens
@@ -130,7 +130,7 @@ type Submenu struct {
 // Render implements core.Node.
 func (s Submenu) Render(cx *core.Scope) core.Node {
 	return base.Submenu{Disabled: s.Disabled,
-		StyleFunc: look(cx, s.Style, Tokens.menuItem), PopupStyleFunc: look(cx, s.PopupStyle, Tokens.popup),
+		StyleFunc: look(cx, s.Style, menuItemStyle), PopupStyleFunc: look(cx, s.PopupStyle, popupStyle),
 		Trigger: orText(s.Trigger, s.Label), Children: s.Children, Label: s.Label, TestID: s.TestID}
 }
 
@@ -165,7 +165,7 @@ func (p Popover) Render(cx *core.Scope) core.Node {
 		Placement: p.Placement, Align: p.Align, Offset: p.Offset, Margin: p.Margin,
 		NoCloseOnEscape: p.NoCloseOnEscape, NoCloseOnPressOutside: p.NoCloseOnPressOutside,
 		StyleFunc:      trigger(cx, p.Variant, p.Style),
-		PopupStyleFunc: look(cx, p.PopupStyle, Tokens.popup),
+		PopupStyleFunc: look(cx, p.PopupStyle, popupStyle),
 		Trigger:        orText(p.Trigger, p.Label), Children: p.Children, Label: p.Label, TestID: p.TestID,
 	}
 }
@@ -197,7 +197,7 @@ func (t Tooltip) Render(cx *core.Scope) core.Node {
 	return base.Tooltip{
 		Open: t.Open, DefaultOpen: t.DefaultOpen, OnOpenChange: t.OnOpenChange, OnOpen: t.OnOpen, OnClose: t.OnClose,
 		Placement: t.Placement, Align: t.Align, Offset: t.Offset, Margin: t.Margin, Delay: t.Delay, Disabled: t.Disabled,
-		Style: t.Style, PopupStyleFunc: look(cx, t.PopupStyle, Tokens.tooltip),
+		Style: t.Style, PopupStyleFunc: look(cx, t.PopupStyle, tooltipStyle),
 		Trigger: t.Trigger, Children: orLabel(t.Children, t.Text), TestID: t.TestID,
 	}
 }
@@ -230,9 +230,9 @@ func (d Dialog) Render(cx *core.Scope) core.Node {
 		Open: d.Open, DefaultOpen: d.DefaultOpen, OnOpenChange: d.OnOpenChange,
 		OnOpen: d.OnOpen, OnClose: d.OnClose, OnCancel: d.OnCancel, Animation: d.Animation,
 		NoCloseOnEscape: d.NoCloseOnEscape, NoCloseOnBackdropPress: d.NoCloseOnBackdropPress,
-		BackdropStyleFunc: look(cx, d.BackdropStyle, Tokens.backdrop),
+		BackdropStyleFunc: look(cx, d.BackdropStyle, backdropStyle),
 		PopupStyleFunc: look(cx, d.PopupStyle, func(t Tokens) core.Style {
-			s := t.dialog()
+			s := dialogStyle(t)
 			if d.Bare {
 				s.Padding, s.Gap = core.Edges{}, 0
 			}
@@ -267,15 +267,15 @@ func (s Sheet) Render(cx *core.Scope) core.Node {
 		Open: s.Open, DefaultOpen: s.DefaultOpen, OnOpenChange: s.OnOpenChange,
 		OnOpen: s.OnOpen, OnClose: s.OnClose, OnCancel: s.OnCancel, Side: s.Side,
 		NoCloseOnEscape: s.NoCloseOnEscape, NoCloseOnBackdropPress: s.NoCloseOnBackdropPress,
-		BackdropStyleFunc: look(cx, s.BackdropStyle, Tokens.backdrop),
-		PopupStyleFunc:    look(cx, s.PopupStyle, func(t Tokens) core.Style { return t.sheet(s.Side) }),
+		BackdropStyleFunc: look(cx, s.BackdropStyle, backdropStyle),
+		PopupStyleFunc:    look(cx, s.PopupStyle, func(t Tokens) core.Style { return sheetStyle(t, s.Side) }),
 		Children:          s.Children, Label: s.Label, TestID: s.TestID,
 	}
 }
 
 // trigger is the look of a popup's trigger: a button of variant.
 func trigger(cx *core.Scope, v Variant, style core.Style) func() core.Style {
-	return look(cx, style, func(t Tokens) core.Style { return t.button(v) })
+	return look(cx, style, func(t Tokens) core.Style { return buttonStyle(t, v) })
 }
 
 // orText returns node, or label as text when it is nil.
@@ -285,3 +285,49 @@ func orText(node core.Node, label string) core.Node {
 	}
 	return node
 }
+
+// The popups' looks.
+
+func popupStyle(t Tokens) core.Style {
+	return core.Style{Background: t.Surface, Color: t.SurfaceForeground, FontSize: t.FontSize,
+		CornerRadius: t.RadiusLarge, BorderWidth: 1, BorderColor: t.Border, Padding: core.All(6),
+		ShadowColor: t.Shadow, ShadowRadius: 16, ShadowOffset: core.Point{Y: 4}}
+}
+
+func menuItemStyle(t Tokens) core.Style {
+	return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8,
+		Padding: core.Symmetric(6, 10), CornerRadius: t.Radius - 2, MinWidth: core.Pt(160),
+		Hover:    &core.Style{Background: t.Accent, Color: t.AccentForeground},
+		Active:   &core.Style{Background: t.Pressed(t.Accent), Color: t.AccentForeground},
+		Disabled: disabled}
+}
+
+func menuSeparatorStyle(t Tokens) core.Style {
+	return core.Style{Height: core.Pt(1), Background: t.Border, Margin: core.Symmetric(4, 0)}
+}
+
+func tooltipStyle(t Tokens) core.Style {
+	return core.Style{Background: t.Foreground, Color: t.Background, FontSize: t.FontSize - 2,
+		CornerRadius: t.Radius - 2, Padding: core.Symmetric(4, 8)}
+}
+
+func dialogStyle(t Tokens) core.Style {
+	return core.Style{Background: t.Surface, Color: t.SurfaceForeground, FontSize: t.FontSize,
+		CornerRadius: t.RadiusLarge, BorderWidth: 1, BorderColor: t.Border, Padding: core.All(24), Gap: 12,
+		MinWidth: core.Pt(280), MaxWidth: core.Pct(90),
+		ShadowColor: t.Shadow, ShadowRadius: 24, ShadowOffset: core.Point{Y: 8}}
+}
+
+func sheetStyle(t Tokens, side core.Placement) core.Style {
+	s := core.Style{Background: t.Surface, Color: t.SurfaceForeground, FontSize: t.FontSize,
+		Padding: core.All(24), Gap: 12, ShadowColor: t.Shadow, ShadowRadius: 24}
+	switch side {
+	case core.PlaceLeft, core.PlaceRight:
+		s.Width, s.MaxWidth = core.Pt(320), core.Pct(85)
+	default:
+		s.CornerRadius = t.RadiusLarge
+	}
+	return s
+}
+
+func backdropStyle(t Tokens) core.Style { return core.Style{Background: t.Overlay} }

@@ -14,16 +14,18 @@ import (
 // view is the main thread's copy of one mounted view, drawn by its
 // widget.
 type view struct {
-	widget   uintptr // NsgoView
-	id       core.NodeID
-	kind     core.ViewKind
-	parent   *view
-	children []*view
-	frame    core.Bounds
-	style    core.ViewStyle
-	events   core.EventMask
-	props    core.ViewProps
-	deleted  bool
+	widget    uintptr // NsgoView
+	id        core.NodeID
+	kind      core.ViewKind
+	parent    *view
+	children  []*view
+	frame     core.Bounds
+	style     core.ViewStyle
+	cursor    core.Cursor // the cursor set on widget
+	cursorSet bool
+	events    core.EventMask
+	props     core.ViewProps
+	deleted   bool
 
 	// A text view's layout and where it goes in the view.
 	text    core.TextLayout
@@ -348,4 +350,17 @@ func (w *window) contextMenu(at core.Point) {
 		w.engine.Dispatch(core.Event{Kind: core.EventContextMenu, ID: v.id,
 			Point: core.Point{X: at.X - b.Origin.X, Y: at.Y - b.Origin.Y}})
 	}
+}
+
+// setCursor shows the cursor v's style names, or lets its parent's show.
+func (w *window) setCursor(v *view) {
+	if v.widget == 0 || v.cursorSet && v.cursor == v.style.Cursor {
+		return
+	}
+	v.cursor, v.cursorSet = v.style.Cursor, true
+	if v.cursor != core.CursorAuto {
+		gtkWidgetSetCursorFromName(v.widget, cstr(v.cursor.Name()))
+		return
+	}
+	gtkWidgetSetCursorFromName(v.widget, nil)
 }

@@ -39,7 +39,7 @@ type Button struct {
 func (b Button) Render(cx *core.Scope) core.Node {
 	return base.Button{
 		OnPress: b.OnPress, OnLongPress: b.OnLongPress, Disabled: b.Disabled,
-		StyleFunc: look(cx, b.Style, func(t Tokens) core.Style { return t.button(b.Variant) }),
+		StyleFunc: look(cx, b.Style, func(t Tokens) core.Style { return buttonStyle(t, b.Variant) }),
 		Label:     b.Label, TestID: b.TestID, Children: orLabel(b.Children, b.Label),
 	}
 }
@@ -64,7 +64,7 @@ func (c Checkbox) Render(cx *core.Scope) core.Node {
 	checked, mixed := orFalse(c.Checked), orFalse(c.Indeterminate)
 	shows := func() bool { return checked() && !mixed() }
 	return core.View{
-		StyleFunc:     look(cx, c.Style, Tokens.control),
+		StyleFunc:     look(cx, c.Style, controlStyle),
 		Role:          core.RoleCheckbox,
 		Label:         c.Label,
 		TestID:        c.TestID,
@@ -77,7 +77,7 @@ func (c Checkbox) Render(cx *core.Scope) core.Node {
 			}
 		},
 		Children: append([]core.Node{core.View{
-			StyleFunc:     look(cx, core.Style{}, Tokens.checkboxIndicator),
+			StyleFunc:     look(cx, core.Style{}, checkboxIndicatorStyle),
 			Checked:       shows,
 			Indeterminate: mixed,
 			Disabled:      c.Disabled,
@@ -110,13 +110,13 @@ type Switch struct {
 // Render implements core.Node.
 func (s Switch) Render(cx *core.Scope) core.Node {
 	checked := orFalse(s.Checked)
-	track := look(cx, core.Style{}, Tokens.switchTrack)
-	thumb := look(cx, core.Style{}, Tokens.switchThumb)
+	track := look(cx, core.Style{}, switchTrackStyle)
+	thumb := look(cx, core.Style{}, switchThumbStyle)
 	part := func(style func() core.Style, children ...core.Node) core.View {
 		return core.View{StyleFunc: style, Checked: checked, Disabled: s.Disabled, Children: children}
 	}
 	return core.View{
-		StyleFunc: look(cx, s.Style, Tokens.control),
+		StyleFunc: look(cx, s.Style, controlStyle),
 		Role:      core.RoleSwitch,
 		Label:     s.Label,
 		TestID:    s.TestID,
@@ -145,9 +145,9 @@ type Radio struct {
 // Render implements core.Node.
 func (r Radio) Render(cx *core.Scope) core.Node {
 	checked := orFalse(r.Checked)
-	ring := core.View{StyleFunc: look(cx, core.Style{}, Tokens.radioIndicator), Checked: checked, Disabled: r.Disabled}
+	ring := core.View{StyleFunc: look(cx, core.Style{}, radioIndicatorStyle), Checked: checked, Disabled: r.Disabled}
 	return core.View{
-		StyleFunc: look(cx, r.Style, Tokens.control),
+		StyleFunc: look(cx, r.Style, controlStyle),
 		Role:      core.RoleRadio,
 		Label:     r.Label,
 		TestID:    r.TestID,
@@ -172,7 +172,7 @@ type RadioGroup struct {
 
 // Render implements core.Node.
 func (g RadioGroup) Render(cx *core.Scope) core.Node {
-	return core.View{StyleFunc: look(cx, g.Style, Tokens.radioGroup), Role: core.RoleRadioGroup,
+	return core.View{StyleFunc: look(cx, g.Style, radioGroupStyle), Role: core.RoleRadioGroup,
 		Label: g.Label, TestID: g.TestID, Children: g.Children}
 }
 
@@ -186,7 +186,7 @@ type Tabs struct {
 
 // Render implements core.Node.
 func (t Tabs) Render(cx *core.Scope) core.Node {
-	return core.View{StyleFunc: look(cx, t.Style, Tokens.tabs), Role: core.RoleTabList,
+	return core.View{StyleFunc: look(cx, t.Style, tabsStyle), Role: core.RoleTabList,
 		Label: t.Label, TestID: t.TestID, Children: t.Children}
 }
 
@@ -205,7 +205,7 @@ type Tab struct {
 // Render implements core.Node.
 func (t Tab) Render(cx *core.Scope) core.Node {
 	return core.View{
-		StyleFunc: look(cx, t.Style, Tokens.tab),
+		StyleFunc: look(cx, t.Style, tabStyle),
 		Role:      core.RoleTab,
 		Label:     t.Label,
 		TestID:    t.TestID,
@@ -285,11 +285,11 @@ func (b IconButton) Render(cx *core.Scope) core.Node {
 	}
 	icon := core.Icon{SVG: b.Icon, SVGFunc: b.IconFunc, Style: core.Style{Width: core.Pt(size), Height: core.Pt(size)}}
 	var button core.Node = base.Button{OnPress: b.OnPress, Disabled: b.Disabled,
-		StyleFunc: look(cx, b.Style, Tokens.iconButton), Label: b.Label, TestID: b.TestID,
+		StyleFunc: look(cx, b.Style, iconButtonStyle), Label: b.Label, TestID: b.TestID,
 		Children: []core.Node{icon}}
 	if len(b.Menu) > 0 {
 		button = base.Menu{Placement: b.Placement, Align: b.Align, Offset: 4, Margin: 8,
-			StyleFunc: look(cx, b.Style, Tokens.iconButton), PopupStyleFunc: look(cx, core.Style{}, Tokens.popup),
+			StyleFunc: look(cx, b.Style, iconButtonStyle), PopupStyleFunc: look(cx, core.Style{}, popupStyle),
 			Trigger: icon, Children: b.Menu, Label: b.Label, TestID: b.TestID}
 	}
 	if b.NoTooltip || b.Label == "" {
@@ -329,7 +329,7 @@ func (i Input) Render(cx *core.Scope) core.Node {
 		OnChange: i.OnChange, OnSubmit: i.OnSubmit, OnFocus: i.OnFocus, OnBlur: i.OnBlur,
 		Ref: i.Ref, Label: i.Label, TestID: i.TestID}
 	if i.Icon == nil {
-		input.StyleFunc = look(cx, i.Style, Tokens.field)
+		input.StyleFunc = look(cx, i.Style, fieldStyle)
 		return input
 	}
 	// The icon and the input share the field's frame, which shows the
@@ -356,7 +356,7 @@ func (i Input) Render(cx *core.Scope) core.Node {
 	return core.View{
 		StyleFunc: func() core.Style {
 			t := theme()
-			s := t.field()
+			s := fieldStyle(t)
 			s.Direction, s.AlignItems, s.Gap = core.Row, core.AlignCenter, 8
 			if focused.Get() {
 				s.BorderColor, s.Hover = t.Ring, nil
@@ -439,9 +439,9 @@ func (s Select) Render(cx *core.Scope) core.Node {
 	}
 	return base.Menu{
 		Placement: place, Align: align, Offset: 4, Margin: 8,
-		StyleFunc: look(cx, s.Style, Tokens.selectField),
+		StyleFunc: look(cx, s.Style, selectFieldStyle),
 		PopupStyleFunc: look(cx, s.PopupStyle, func(t Tokens) core.Style {
-			popup := t.popup()
+			popup := popupStyle(t)
 			popup.MinWidth = core.Pt(180)
 			return popup
 		}),
@@ -539,11 +539,11 @@ func (s Slider) Render(cx *core.Scope) core.Node {
 			s.OnChange(v)
 		}
 	}
-	track := look(cx, core.Style{}, Tokens.sliderTrack)
-	fill := look(cx, core.Style{}, Tokens.sliderFill)
-	thumb := look(cx, core.Style{}, Tokens.sliderThumb)
+	track := look(cx, core.Style{}, sliderTrackStyle)
+	fill := look(cx, core.Style{}, sliderFillStyle)
+	thumb := look(cx, core.Style{}, sliderThumbStyle)
 	return core.View{
-		StyleFunc: look(cx, s.Style, Tokens.slider),
+		StyleFunc: look(cx, s.Style, sliderStyle),
 		Label:     s.Label,
 		TestID:    s.TestID,
 		Disabled:  s.Disabled,
@@ -575,3 +575,127 @@ func (s Slider) Render(cx *core.Scope) core.Node {
 
 // sliderActions are what assistive technology adjusts a slider with.
 var sliderActions = []core.AccessibilityAction{{Name: core.ActionIncrement}, {Name: core.ActionDecrement}}
+
+// The controls' looks.
+
+// disabled is the look shared by components that cannot act.
+var disabled = &core.Style{Opacity: core.Alpha(0.5)}
+
+func buttonStyle(t Tokens, v Variant) core.Style {
+	bg, fg, border := t.Primary, t.PrimaryForeground, t.Primary
+	switch v {
+	case Secondary:
+		bg, fg, border = t.Secondary, t.SecondaryForeground, t.Border
+	case Danger:
+		bg, fg, border = t.Danger, t.DangerForeground, t.Danger
+	case Ghost:
+		return core.Style{CornerRadius: t.Radius, Padding: core.Symmetric(6, 14), AlignSelf: core.AlignStart,
+			Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 6,
+			Color: t.Foreground, FontSize: t.FontSize, FontWeight: core.FontWeightMedium,
+			Hover:    &core.Style{Background: t.Accent, Color: t.AccentForeground},
+			Active:   &core.Style{Background: t.Pressed(t.Accent), Color: t.AccentForeground},
+			Disabled: disabled}
+	}
+	return core.Style{Background: bg, BorderWidth: 1, BorderColor: border, CornerRadius: t.Radius,
+		Padding: core.Symmetric(6, 14), AlignSelf: core.AlignStart,
+		Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 6,
+		Color: fg, FontSize: t.FontSize, FontWeight: core.FontWeightMedium,
+		Hover:    &core.Style{Background: t.Hover(bg)},
+		Active:   &core.Style{Background: t.Pressed(bg)},
+		Disabled: disabled}
+}
+
+// controlStyle is a checkbox's, radio's or switch's row: its indicator,
+// then its label.
+func controlStyle(t Tokens) core.Style {
+	return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, AlignSelf: core.AlignStart, Gap: 8,
+		Color: t.Foreground, FontSize: t.FontSize, Disabled: disabled}
+}
+
+func checkboxIndicatorStyle(t Tokens) core.Style {
+	on := &core.Style{Background: t.Primary, BorderColor: t.Primary}
+	return core.Style{Width: core.Pt(18), Height: core.Pt(18), CornerRadius: t.Radius / 2,
+		BorderWidth: 1, BorderColor: t.Input, Background: t.Background,
+		AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
+		Color: t.PrimaryForeground, FontSize: 12, FontWeight: core.FontWeightBold,
+		Hover: &core.Style{BorderColor: t.Ring}, Checked: on, Indeterminate: on}
+}
+
+func radioIndicatorStyle(t Tokens) core.Style {
+	return core.Style{Width: core.Pt(18), Height: core.Pt(18), CornerRadius: 9,
+		BorderWidth: 1, BorderColor: t.Input, Background: t.Background,
+		AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
+		Checked: &core.Style{BorderWidth: 5, BorderColor: t.Primary}}
+}
+
+func radioGroupStyle(Tokens) core.Style { return core.Style{Gap: 8} }
+
+func switchTrackStyle(t Tokens) core.Style {
+	return core.Style{Width: core.Pt(40), Height: core.Pt(24), CornerRadius: 12, Padding: core.All(2),
+		Background: t.Input, Transition: core.Transition{Duration: 150e6, Easing: core.EaseOut},
+		Checked: &core.Style{Background: t.Primary}}
+}
+
+func switchThumbStyle(t Tokens) core.Style {
+	return core.Style{Width: core.Pt(20), Height: core.Pt(20), CornerRadius: 10, Background: core.RGB(0xffffff),
+		ShadowColor: t.Shadow, ShadowRadius: 2, ShadowOffset: core.Point{Y: 1},
+		Transition: core.Transition{Duration: 150e6, Easing: core.EaseOut},
+		Checked:    &core.Style{Transform: core.Transform{TranslateX: 16}}}
+}
+
+func tabsStyle(t Tokens) core.Style {
+	return core.Style{Direction: core.Row, AlignSelf: core.AlignStart, Padding: core.All(3), Gap: 2,
+		Background: t.Muted, CornerRadius: t.Radius}
+}
+
+func tabStyle(t Tokens) core.Style {
+	return core.Style{Padding: core.Symmetric(5, 12), CornerRadius: t.Radius - 2,
+		Color: t.MutedForeground, FontSize: t.FontSize, FontWeight: core.FontWeightMedium,
+		Hover:    &core.Style{Color: t.Foreground},
+		Selected: &core.Style{Background: t.Background, Color: t.Foreground, ShadowColor: t.Shadow, ShadowRadius: 2, ShadowOffset: core.Point{Y: 1}},
+		Disabled: disabled}
+}
+
+// iconButtonStyle has no face until hovered or pressed, when the
+// foreground tints it.
+func iconButtonStyle(t Tokens) core.Style {
+	return core.Style{Width: core.Pt(32), Height: core.Pt(32), FlexShrink: 0, CornerRadius: t.Radius,
+		AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Color: t.MutedForeground,
+		Hover:    &core.Style{Background: t.Tint(0.08)},
+		Active:   &core.Style{Background: t.Tint(0.14)},
+		Disabled: disabled}
+}
+
+func fieldStyle(t Tokens) core.Style {
+	return core.Style{Height: core.Pt(36), Padding: core.Symmetric(0, 10), CornerRadius: t.Radius,
+		BorderWidth: 1, BorderColor: t.Border, Background: t.Background, Color: t.Foreground, FontSize: t.FontSize,
+		Hover:    &core.Style{BorderColor: t.Input},
+		Focus:    &core.Style{BorderColor: t.Ring},
+		Disabled: disabled}
+}
+
+func selectFieldStyle(t Tokens) core.Style {
+	return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, AlignSelf: core.AlignStart, Gap: 8,
+		MinWidth: core.Pt(140), Height: core.Pt(34), Padding: core.Symmetric(0, 10), CornerRadius: t.Radius,
+		BorderWidth: 1, BorderColor: t.Border, Background: t.Background, Color: t.Foreground, FontSize: t.FontSize,
+		Hover:  &core.Style{Background: t.Hover(t.Background)},
+		Active: &core.Style{Background: t.Pressed(t.Background)}}
+}
+
+func sliderStyle(t Tokens) core.Style {
+	return core.Style{Height: core.Pt(20), MinWidth: core.Pt(120), JustifyContent: core.JustifyCenter, Disabled: disabled}
+}
+
+func sliderTrackStyle(t Tokens) core.Style {
+	return core.Style{Height: core.Pt(4), CornerRadius: 2, Background: t.Tint(0.12)}
+}
+
+func sliderFillStyle(t Tokens) core.Style {
+	return core.Style{CornerRadius: 2, Background: t.Primary}
+}
+
+func sliderThumbStyle(t Tokens) core.Style {
+	return core.Style{Width: core.Pt(16), Height: core.Pt(16), CornerRadius: 8, Background: core.RGB(0xffffff),
+		BorderWidth: 1, BorderColor: core.RGBA(0x000000, 0.08),
+		ShadowColor: t.Shadow, ShadowRadius: 3, ShadowOffset: core.Point{Y: 1}}
+}

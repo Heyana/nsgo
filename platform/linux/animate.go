@@ -53,6 +53,7 @@ func (w *window) setStyle(v *view, s *core.ViewStyle) {
 	from := *w.styleOf(v)
 	styled := v.styled
 	v.style, v.styled, v.transition = *s, true, nil
+	w.setCursor(v)
 	t := s.Transition
 	if !styled || t.Duration <= 0 || w.env.ReduceMotion {
 		return

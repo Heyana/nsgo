@@ -82,6 +82,9 @@ type Style struct {
 	ShadowRadius         Points
 	// TintColor recolors an image's opaque pixels.
 	TintColor Color
+	// Cursor is the pointer's look over the view; Auto inherits the
+	// nearest ancestor's, and a pressable view's is a pointer on the web.
+	Cursor Cursor
 	// ObjectPosition places an image in its view once ResizeMode has
 	// sized it; centered when unset.
 	ObjectPosition ObjectPosition
@@ -454,6 +457,7 @@ func (s Style) Merge(o Style) Style {
 	set(&s.ShadowOffset, o.ShadowOffset)
 	set(&s.ShadowRadius, o.ShadowRadius)
 	set(&s.TintColor, o.TintColor)
+	set(&s.Cursor, o.Cursor)
 	set(&s.ObjectPosition, o.ObjectPosition)
 	set(&s.VerticalAlign, o.VerticalAlign)
 	set(&s.Transform, o.Transform)
@@ -612,6 +616,7 @@ func (s Style) viewStyle() ViewStyle {
 		ShadowOffset: s.ShadowOffset,
 		ShadowRadius: s.ShadowRadius,
 		TintColor:    s.TintColor,
+		Cursor:       s.Cursor,
 		Transform:    s.Transform,
 		Transition:   s.Transition,
 	}

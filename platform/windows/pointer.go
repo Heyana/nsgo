@@ -30,7 +30,16 @@ const (
 	wmXButtonUp    = 0x020C
 	wmMouseLeave   = 0x02A3
 	htClientArea   = 1
+	idcArrow       = 32512
+	idcWait        = 32514
+	idcCross       = 32515
+	idcSizeWE      = 32644
+	idcSizeNS      = 32645
+	idcSizeAll     = 32646
+	idcNo          = 32648
 	idcHand        = 32649
+	idcAppStarting = 32650
+	idcHelp        = 32651
 	xButtonForward = 2
 )
 
@@ -274,6 +283,62 @@ func (w *window) hostedPointer(message uint32, wParam, lParam uintptr) bool {
 		w.touchWebs[id] = wv
 	}
 	return true
+}
+
+// viewCursor shows the cursor of the nearest view under the pointer, or
+// its ancestor's, and reports whether it set one.
+func (w *window) viewCursor() bool {
+	var at point
+	if r, _, _ := getCursorPos.Call(uintptr(unsafe.Pointer(&at))); r == 0 {
+		return false
+	}
+	screenToClient.Call(w.hwnd, uintptr(unsafe.Pointer(&at)))
+	v := w.pickAt(at.X, at.Y)
+	for ; v != nil; v = v.parent {
+		if c := v.style.Cursor; c != core.CursorAuto {
+			setCursor.Call(systemCursor(c))
+			return true
+		}
+	}
+	return false
+}
+
+// systemCursor loads and keeps the Windows cursor of c; 0 hides the
+// pointer.
+var cursors [core.CursorNone + 1]uintptr
+
+func systemCursor(c core.Cursor) uintptr {
+	if c == core.CursorNone {
+		return 0
+	}
+	id := uintptr(idcArrow)
+	switch c {
+	case core.CursorPointer, core.CursorGrab, core.CursorGrabbing:
+		id = idcHand
+	case core.CursorText:
+		id = idcIBeam
+	case core.CursorWait:
+		id = idcWait
+	case core.CursorProgress:
+		id = idcAppStarting
+	case core.CursorHelp:
+		id = idcHelp
+	case core.CursorCrosshair:
+		id = idcCross
+	case core.CursorMove:
+		id = idcSizeAll
+	case core.CursorNotAllowed:
+		id = idcNo
+	case core.CursorColResize:
+		id = idcSizeWE
+	case core.CursorRowResize:
+		id = idcSizeNS
+	}
+	if cursors[c] == 0 {
+		h, _, _ := loadCursorW.Call(0, id)
+		cursors[c] = h
+	}
+	return cursors[c]
 }
 
 // hostedCursor sets the cursor over the client area: the page's, or a

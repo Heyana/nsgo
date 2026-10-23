@@ -359,7 +359,6 @@ func Run(app engine.App, opts Options) {
 	}
 
 	instance, _, _ := getModuleHandleW.Call(0)
-	const idcArrow = 32512
 	cursor, _, _ := loadCursorW.Call(0, idcArrow)
 	// nsgo links the app's icon as group 1; without one the system's
 	// default stands. Windows picks the small icon from the same group.
@@ -1052,7 +1051,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.mouseLeft()
 		return 0
 	case wmSetCursor:
-		if lParam&0xffff == htClientArea && (w.hostedCursor() || w.fieldCursor()) {
+		if lParam&0xffff == htClientArea && (w.hostedCursor() || w.fieldCursor() || w.viewCursor()) {
 			return 1
 		}
 	case wmImeSetContext, wmImeStartComposition, wmImeComposition, wmImeEndComposition:

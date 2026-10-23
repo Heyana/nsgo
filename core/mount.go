@@ -258,6 +258,9 @@ type ViewStyle struct {
 	ShadowRadius Points
 	// TintColor recolors an image's opaque pixels; 0 keeps its colors.
 	TintColor Color
+	// Cursor is the pointer's look over the view; Auto inherits the
+	// nearest ancestor's, and a pressable view's is a pointer on the web.
+	Cursor Cursor
 	// Transform moves, scales and rotates the view around its center
 	// without moving its children's frames; hit testing follows it.
 	Transform Transform

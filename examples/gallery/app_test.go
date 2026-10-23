@@ -808,3 +808,37 @@ func TestListProps(t *testing.T) {
 		t.Error("a row far below the page's viewport is mounted")
 	}
 }
+
+func TestSidebarResizesByDraggingItsDivider(t *testing.T) {
+	app := startDesktop(t)
+	width := func() core.Points { return app.Find("id:sidebar").Frame.Size.Width }
+	if width() != sidebarWidth {
+		t.Fatalf("sidebar = %v wide, want %v", width(), sidebarWidth)
+	}
+	page := app.Find("id:page").Frame.Size.Width
+	app.Pan("id:sidebar-split-divider", core.Point{X: 100})
+	if width() != sidebarWidth+100 {
+		t.Fatalf("sidebar = %v wide after the drag, want %v", width(), sidebarWidth+100)
+	}
+	if got := app.Find("id:page").Frame.Size.Width; got != page-100 {
+		t.Fatalf("page = %v wide after the drag, want %v", got, page-100)
+	}
+	app.Press("id:sidebar-split-divider")
+	app.Press("id:sidebar-split-divider")
+	if width() != sidebarWidth {
+		t.Fatalf("sidebar = %v wide after a double click, want the default %v", width(), sidebarWidth)
+	}
+
+	// The width the user chose comes back when the sidebar does.
+	app.Pan("id:sidebar-split-divider", core.Point{X: 40})
+	app.Press("id:hide-sidebar")
+	app.Advance(300 * time.Millisecond)
+	if app.Exists("id:sidebar") {
+		t.Fatal("the sidebar did not close")
+	}
+	app.Press("id:show-sidebar")
+	app.Advance(300 * time.Millisecond)
+	if width() != sidebarWidth+40 {
+		t.Fatalf("sidebar = %v wide after reopening, want the resized %v", width(), sidebarWidth+40)
+	}
+}

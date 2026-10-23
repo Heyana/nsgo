@@ -33,26 +33,22 @@ func (g *gallery) desktop(cx *core.Scope) core.Node {
 	env := cx.Env()
 
 	// width follows the sidebar's toggle, animated where motion is welcome.
-	width := core.NewSignal(cx, core.Points(0))
-	if core.Untracked(cx, g.sidebar.Get) {
-		width.Set(sidebarWidth)
-	}
 	var stop func()
 	cx.Effect(func() {
 		to := core.Points(0)
 		if g.sidebar.Get() {
-			to = sidebarWidth
+			to = core.Untracked(cx, g.sidebarSize.Get)
 		}
-		from := width.GetUntracked()
+		from := g.sidebarPixels.GetUntracked()
 		if stop != nil {
 			stop()
 		}
 		if from == to || core.Untracked(cx, env.ReduceMotion) {
-			width.Set(to)
+			g.sidebarPixels.Set(to)
 			return
 		}
 		stop = cx.Animate(220*time.Millisecond, core.EaseInOut, func(p float64) {
-			width.Set(from + (to-from)*core.Points(p))
+			g.sidebarPixels.Set(from + (to-from)*core.Points(p))
 		})
 	})
 
@@ -62,30 +58,56 @@ func (g *gallery) desktop(cx *core.Scope) core.Node {
 		g.section.Get()
 		content.ScrollTo(core.Point{}, false)
 	})
-	return core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Direction: core.Row}, Children: []core.Node{
-		core.Show{When: func() bool { return width.Get() > 0 }, Then: func(cx *core.Scope) core.Node {
-			return core.View{TestID: "sidebar",
-				StyleFunc: func() core.Style {
-					t := theme()
-					return core.Style{Width: core.Pt(width.Get()), FlexShrink: 0, Overflow: core.Hidden,
-						Background: sidebarColor(t), Borders: core.Edges{Right: 1}, BorderColors: core.EdgeColors{Right: t.Border}}
-				},
-				// The sidebar's content keeps its width while the column opens,
-				// and shrinks with the window so its list scrolls.
-				Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(sidebarWidth), FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)}, Children: []core.Node{
-					g.sidebarHeader(cx),
-					g.searchField(cx),
-					g.navigation(),
-					g.toolbar(),
-				}}}}
-		}},
-		core.View{TestID: "page", Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, Children: []core.Node{
+	sidebar := core.Show{When: func() bool { return g.sidebarPixels.Get() > 0 }, Then: func(cx *core.Scope) core.Node {
+		return core.View{TestID: "sidebar",
+			StyleFunc: func() core.Style {
+				return core.Style{Width: core.Pct(100), FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0),
+					Overflow: core.Hidden, Background: sidebarColor(theme())}
+			},
+			// The sidebar shrinks with its pane, so its list scrolls.
+			Children: []core.Node{core.View{Style: core.Style{Width: core.Pct(100), FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)}, Children: []core.Node{
+				g.sidebarHeader(cx),
+				g.searchField(cx),
+				g.navigation(),
+				g.toolbar(),
+			}}}}
+	}}
+	return ui.Split{
+		Direction:   base.SplitHorizontal,
+		TestID:      "sidebar-split",
+		Label:       "Resize sidebar",
+		Hint:        "Drag to resize the sidebar, or double click to restore its default width.",
+		Style:       core.Style{FlexGrow: 1, FlexShrink: 1},
+		Size:        func() core.Length { return core.Pt(g.sidebarPixels.Get()) },
+		DefaultSize: core.Pt(sidebarWidth),
+		Min:         core.Pt(180),
+		Max:         core.Pt(420),
+		Disabled:    func() bool { return !g.sidebar.Get() },
+		LineStyleFunc: func() core.Style {
+			if g.sidebarPixels.Get() <= 0 {
+				return core.Style{Opacity: core.Alpha(0)}
+			}
+			return core.Style{}
+		},
+		OnResize: func(size core.Length) {
+			width, ok := size.Points()
+			if !ok {
+				return
+			}
+			if stop != nil {
+				stop()
+			}
+			g.sidebarPixels.Set(width)
+			g.sidebarSize.Set(width)
+		},
+		First: sidebar,
+		Second: core.View{TestID: "page", Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, Children: []core.Node{
 			g.header(cx),
 			core.Scroll{Ref: content, TestID: "content", Style: core.Style{FlexGrow: 1, FlexShrink: 1},
 				OnLayout: func(b core.Bounds) { viewport.Set(b.Size.Height) },
 				Children: []core.Node{g.page(viewport.Get)}},
 		}},
-	}}
+	}
 }
 
 // sidebarColor is the sidebar's surface: the background faintly tinted

@@ -80,14 +80,14 @@ func (p CommandPalette) Render(cx *core.Scope) core.Node {
 	}
 	return base.Dialog{
 		Open: p.Open, OnOpenChange: p.OnOpenChange, Animation: core.ModalFade,
-		BackdropStyleFunc: look(cx, p.BackdropStyle, Tokens.backdrop),
-		PopupStyleFunc:    look(cx, p.PopupStyle, Tokens.palette),
+		BackdropStyleFunc: look(cx, p.BackdropStyle, backdropStyle),
+		PopupStyleFunc:    look(cx, p.PopupStyle, paletteStyle),
 		Children:          []core.Node{palette{p}},
 		Label:             label, TestID: p.TestID,
 	}
 }
 
-func (t Tokens) palette() core.Style {
+func paletteStyle(t Tokens) core.Style {
 	return core.Style{Width: core.Pt(600), MaxWidth: core.Pct(92), MaxHeight: core.Pct(85),
 		Background: t.Surface, Color: t.SurfaceForeground, FontSize: t.FontSize,
 		CornerRadius: t.RadiusLarge + 4, BorderWidth: 1, BorderColor: t.Border, Overflow: core.Hidden,
@@ -169,7 +169,7 @@ func (p palette) Render(cx *core.Scope) core.Node {
 			t := theme()
 			s := core.Style{Color: t.MutedForeground}
 			if size {
-				s.FontSize = t.small()
+				s.FontSize = core.Points(float32(t.FontSize)*0.85 + 0.5)
 			}
 			return s
 		}

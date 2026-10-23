@@ -52,7 +52,7 @@ func (v TextView) Render(cx *core.Scope) core.Node {
 		Markdown: v.Markdown, MarkdownFunc: v.MarkdownFunc, HTML: v.HTML, HTMLFunc: v.HTMLFunc,
 		Document: v.Document, DocumentFunc: v.DocumentFunc,
 		Extensions: v.Extensions, Streaming: v.Streaming, Styles: styles, Selectable: v.Selectable, Highlighter: v.Highlighter,
-		StyleFunc:   func(p textview.Part) core.Style { return theme().textView(p) },
+		StyleFunc:   func(p textview.Part) core.Style { return textViewStyle(theme(), p) },
 		OnLinkPress: v.OnLinkPress, RenderCustom: v.RenderCustom, CustomSpan: v.CustomSpan,
 		RenderCodeBlock: v.RenderCodeBlock, RenderImage: v.RenderImage, RenderMath: v.RenderMath, TestID: v.TestID,
 	}
@@ -106,7 +106,7 @@ func heading(size, line, above core.Points, spacing float32) core.Style {
 		Margin: core.Edges{Top: max(above-blockGap, 0)}}
 }
 
-func (t Tokens) textView(p textview.Part) core.Style {
+func textViewStyle(t Tokens, p textview.Part) core.Style {
 	alert := func(c core.Color) core.Style {
 		return core.Style{Background: fade(c, 0.08), Borders: core.All(1), BorderColors: core.AllColors(fade(c, 0.35)),
 			Color: c, Padding: core.Symmetric(12, 16), CornerRadius: 8, Gap: 4}

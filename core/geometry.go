@@ -73,6 +73,17 @@ func Pct(percent float32) Length { return Length{percent, unitPercent} }
 // IsAuto reports whether l is auto.
 func (l Length) IsAuto() bool { return l.unit == unitAuto }
 
+// Points returns l's value in points, and whether l is a length in
+// points.
+func (l Length) Points() (Points, bool) {
+	return Points(l.value), l.unit == unitPoints
+}
+
+// Percent returns l's value in percent, and whether l is a percentage.
+func (l Length) Percent() (float32, bool) {
+	return l.value, l.unit == unitPercent
+}
+
 // resolve returns l in points against base, or Auto. A percentage of an
 // unknown base is Auto.
 func (l Length) resolve(base Points) Points {

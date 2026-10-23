@@ -30,6 +30,7 @@ func (w *window) setEvents(v *view, events core.EventMask) {
 	v.fs.Events = events
 	had, has := v.events.Has(core.EventFileDrop), events.Has(core.EventFileDrop)
 	v.events = events
+	w.setCursor(v)
 	switch {
 	case !had && has:
 		w.drop.views++

@@ -338,3 +338,28 @@ func TestSwitchHidesItsLabel(t *testing.T) {
 		t.Fatal("assistive technology lost the label")
 	}
 }
+
+func TestSplitDrawsTheThemeBorder(t *testing.T) {
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return ui.ThemeView{Children: []core.Node{
+			ui.Split{Direction: base.SplitHorizontal, TestID: "split", DefaultSize: core.Pt(120),
+				Style:  core.Style{Height: core.Pt(160)},
+				First:  core.View{TestID: "first", Style: core.Style{Height: core.Pct(100)}},
+				Second: core.View{TestID: "second", Style: core.Style{Height: core.Pct(100)}}},
+		}}
+	}, nsgotest.Size(400, 300))
+	app.Find("id:split")
+	line := app.Find("id:split-divider").Children[0]
+	if line.Style.Background != ui.DefaultTheme().Light.Border {
+		t.Errorf("divider line = %x, want the theme's border", line.Style.Background)
+	}
+	if line.Frame.Size != (core.Size{Width: 1, Height: 160}) {
+		t.Errorf("divider line = %v, want one point wide and the split's height", line.Frame.Size)
+	}
+	if first := app.Find("id:first").Frame.Size.Width; first != 120 {
+		t.Errorf("first pane = %v wide, want the default 120", first)
+	}
+	if c := app.Find("id:split-divider").Style.Cursor; c != core.CursorColResize {
+		t.Errorf("divider cursor = %v, want the horizontal resize cursor", c)
+	}
+}

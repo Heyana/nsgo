@@ -225,7 +225,7 @@ func (s Settings) Render(cx *core.Scope) core.Node {
 		all := find || s.HideSidebar
 		muted := func() core.Style {
 			t := theme()
-			return core.Style{Color: t.MutedForeground, FontSize: t.small()}
+			return core.Style{Color: t.MutedForeground, FontSize: core.Points(float32(t.FontSize)*0.85 + 0.5)}
 		}
 		var rows []core.Node
 		lastCategory, lastGroup := -1, -1

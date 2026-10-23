@@ -90,7 +90,7 @@ func (v ToastView) Render(cx *core.Scope) core.Node {
 		if s.Icon != nil {
 			children = append(children, core.Icon{SVG: s.Icon, StyleFunc: func() core.Style {
 				t := theme()
-				color, ok := t.tone(s.Tone)
+				color, ok := toneColor(t, s.Tone)
 				if !ok {
 					color = t.MutedForeground
 				}
@@ -101,14 +101,14 @@ func (v ToastView) Render(cx *core.Scope) core.Node {
 		if s.Description != "" {
 			text = append(text, core.Text{Content: s.Description, StyleFunc: func() core.Style {
 				t := theme()
-				return core.Style{Color: t.MutedForeground, FontSize: t.small()}
+				return core.Style{Color: t.MutedForeground, FontSize: core.Points(float32(t.FontSize)*0.85 + 0.5)}
 			}})
 		}
 		children = append(children, core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: text})
 		return core.View{OnPress: leave, Role: core.RoleAlert, Label: s.Title, TestID: "toast",
 			StyleFunc: func() core.Style {
 				t := theme()
-				style := t.popup()
+				style := popupStyle(t)
 				style.Direction, style.AlignItems, style.Gap = core.Row, core.AlignStart, 10
 				style.Padding = core.Symmetric(12, 14)
 				style.Transition = core.Transition{Duration: toastExit, Easing: core.EaseOut}

@@ -34,7 +34,7 @@ func (s SidebarSection) Render(cx *core.Scope) core.Node {
 	heading := core.Text{Content: s.Title, Role: core.RoleHeader, MaxLines: 1, StyleFunc: func() core.Style {
 		t := theme()
 		return core.Style{FlexGrow: 1, FlexShrink: 1, Padding: core.Symmetric(4, 8),
-			FontSize: t.small(), FontWeight: core.FontWeightSemibold, Color: t.MutedForeground}
+			FontSize: core.Points(float32(t.FontSize)*0.85 + 0.5), FontWeight: core.FontWeightSemibold, Color: t.MutedForeground}
 	}}
 	var head core.Node = heading
 	if len(s.Actions) > 0 {
@@ -77,12 +77,12 @@ func (i SidebarItem) Render(cx *core.Scope) core.Node {
 	return core.View{
 		OnPress: i.OnPress, Disabled: i.Disabled, Selected: selected,
 		Role: core.RoleButton, Label: i.Label, TestID: i.TestID,
-		StyleFunc: look(cx, i.Style, Tokens.sidebarItem),
+		StyleFunc: look(cx, i.Style, sidebarItemStyle),
 		Children:  append(children, i.Trailing...),
 	}
 }
 
-func (t Tokens) sidebarItem() core.Style {
+func sidebarItemStyle(t Tokens) core.Style {
 	return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Symmetric(7, 8),
 		CornerRadius: t.Radius, Color: t.Foreground, FontSize: t.FontSize,
 		Active:   &core.Style{Background: t.Tint(0.06)},
