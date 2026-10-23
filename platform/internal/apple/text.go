@@ -5,7 +5,6 @@ package apple
 import (
 	"math"
 	"structs"
-	"sync"
 	"unicode/utf8"
 	"unsafe"
 
@@ -134,51 +133,28 @@ type fontKey struct {
 	italic bool
 }
 
-var (
-	fontMu    sync.Mutex
-	fontCache = map[fontKey]uintptr{} // the cache holds one reference each
-)
-
 // fontCacheLimit bounds the cache. A screen uses a handful of fonts; an
 // app that animates its font size would otherwise add one per frame.
 const fontCacheLimit = 64
+
+var fontCache = newRefCache[fontKey](fontCacheLimit)
 
 // Font returns a CTFont (an NSFont or UIFont) for f: the system face
 // unless f names a family. The caller releases it.
 //
 // Fonts are immutable and few, so they are built once and handed out
-// again by reference. Building one is seven CoreText calls through cgo;
+// again by reference. Building one is seven CoreText calls through purego;
 // a frame of a table asks for the same font forty times.
 func Font(f core.Font) uintptr {
 	k := fontKey{family: f.Family, size: float64(f.Size), weight: f.Weight, italic: f.Italic}
-	fontMu.Lock()
-	if ref, ok := fontCache[k]; ok {
-		fontMu.Unlock()
-		return cfRetain(ref)
+	if ref := fontCache.get(k); ref != 0 {
+		return ref
 	}
-	fontMu.Unlock()
-
 	font := buildFont(f)
 	if font == 0 {
 		return 0
 	}
-	fontMu.Lock()
-	if ref, ok := fontCache[k]; ok { // another goroutine built it first
-		fontMu.Unlock()
-		Release(font)
-		return cfRetain(ref)
-	}
-	if len(fontCache) >= fontCacheLimit {
-		// Fonts are few, but an animated size would add one per frame.
-		// Dropping everything is enough; a rebuild costs one frame.
-		for key, ref := range fontCache {
-			Release(ref)
-			delete(fontCache, key)
-		}
-	}
-	fontCache[k] = font // the cache keeps this reference
-	fontMu.Unlock()
-	return cfRetain(font)
+	return fontCache.put(k, font)
 }
 
 // buildFont returns a new CTFont for f. The caller releases it.
@@ -310,11 +286,6 @@ func utf16Offsets(text string) (toUTF16, toUTF8 []int) {
 	return toUTF16, toUTF8
 }
 
-var (
-	attrsMu    sync.Mutex
-	attrsCache = map[attrsKey]uintptr{} // the cache holds one reference each
-)
-
 // attrsKey is everything buildAttributes reads: the style, whether the
 // text has attachments (a line holding one may grow past its line
 // height), and whether it is a whole text, which alone takes the
@@ -328,6 +299,8 @@ type attrsKey struct {
 // attrsCacheLimit bounds the cache. A screen has a handful of styles.
 const attrsCacheLimit = 256
 
+var attrsCache = newRefCache[attrsKey](attrsCacheLimit)
+
 // textAttributes returns a new CFDictionary of a whole text's attributes:
 // what st sets per character and the paragraph style its alignment and
 // line height ask for. The caller releases it.
@@ -337,7 +310,7 @@ const attrsCacheLimit = 256
 // paragraph style says. A screen builds a handful and asks for them again
 // for every cell of every frame: without the cache each ask rebuilt a
 // font, a colour, four CFNumbers, a paragraph style and the dictionary,
-// all through cgo.
+// all through purego.
 func textAttributes(st core.TextStyle, withAttachments bool) uintptr {
 	return attributes(attrsKey{st: st, withAttachments: withAttachments, paragraph: true})
 }
@@ -352,34 +325,14 @@ func spanAttributes(st core.TextStyle) uintptr {
 
 // attributes returns the cached dictionary for k, building it on a miss.
 func attributes(k attrsKey) uintptr {
-	attrsMu.Lock()
-	if d, ok := attrsCache[k]; ok {
-		attrsMu.Unlock()
-		return cfRetain(d)
+	if d := attrsCache.get(k); d != 0 {
+		return d
 	}
-	attrsMu.Unlock()
-
 	d := buildAttributes(k)
 	if d == 0 {
 		return 0
 	}
-	attrsMu.Lock()
-	if old, ok := attrsCache[k]; ok { // another goroutine built it first
-		attrsMu.Unlock()
-		Release(d)
-		return cfRetain(old)
-	}
-	if len(attrsCache) >= attrsCacheLimit {
-		// Styles are few, but a colour that animates would add one per
-		// frame. Dropping everything is enough; a rebuild costs one frame.
-		for key, v := range attrsCache {
-			Release(v)
-			delete(attrsCache, key)
-		}
-	}
-	attrsCache[k] = d // the cache keeps this reference
-	attrsMu.Unlock()
-	return cfRetain(d)
+	return attrsCache.put(k, d)
 }
 
 // buildAttributes returns a new dictionary of k's attributes: the font,
@@ -512,7 +465,7 @@ type prepared struct {
 	// measured caches Measure by wrap width: layout asks the same prepared
 	// text its size at the width it tried before, two or three times per
 	// frame for a table of numbers. Each entry costs one CTFramesetter call
-	// through cgo, so the answer is kept per width.
+	// through purego, so the answer is kept per width.
 	measured map[measureKey]core.Size
 }
 

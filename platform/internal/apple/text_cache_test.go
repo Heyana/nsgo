@@ -50,10 +50,7 @@ func TestFontCacheIsBounded(t *testing.T) {
 			Release(f)
 		}
 	}
-	fontMu.Lock()
-	n := len(fontCache)
-	fontMu.Unlock()
-	if n > fontCacheLimit {
+	if n := fontCache.len(); n > fontCacheLimit {
 		t.Fatalf("the cache holds %d fonts, over its limit of %d", n, fontCacheLimit)
 	}
 }
@@ -115,10 +112,7 @@ func TestAttributesCacheIsBounded(t *testing.T) {
 		st := core.TextStyle{Font: core.Font{Size: 13}, Color: core.RGB(uint32(i%0xffffff) | 0x100000)}
 		Release(textAttributes(st, false))
 	}
-	attrsMu.Lock()
-	n := len(attrsCache)
-	attrsMu.Unlock()
-	if n > attrsCacheLimit {
+	if n := attrsCache.len(); n > attrsCacheLimit {
 		t.Fatalf("the cache holds %d entries, over its limit of %d", n, attrsCacheLimit)
 	}
 }
