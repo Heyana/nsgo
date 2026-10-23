@@ -34,7 +34,7 @@
 - Add `nsgo dev` and `nsgo build` flags that override `nsgo.yaml`'s values.
 - Add `nsgo dev`'s native target on Windows and Linux and its Android target on connected devices.
 - Add `nsgo dev`'s iOS target on connected iPhones, signed with Xcode's automatic signing.
-- Add `nsgo build` opening its output directory, unless `build.open` is false.
+- Add `nsgo build` opening its output directory when `build.open` is true.
 - Add `dev.hot_reload` to rebuild on save, since `nsgo dev` now runs the app once and exits with it.
 - Add a layered app icon.
 - Replace the Bun and React website with the gallery compiled to the web, with a bilingual guide and an address for each page.

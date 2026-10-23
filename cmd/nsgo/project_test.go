@@ -35,7 +35,7 @@ func TestBuildOpen(t *testing.T) {
 		yaml string
 		want bool
 	}{
-		{"", true},
+		{"", false},
 		{"open: true\n", true},
 		{"open: false\n", false},
 	} {

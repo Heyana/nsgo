@@ -73,8 +73,8 @@ dev:
 
 build:
   output: dist
-  # open the output directory after building; set false to keep it closed.
-  open: true
+  # true opens the output directory after building.
+  open: false
   targets: [macos_arm64, windows_x64, ios_simulator, android_arm64, web]
 `))
 

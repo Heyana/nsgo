@@ -45,14 +45,14 @@ type project struct {
 		Output  string   `yaml:"output"`
 		Targets []string `yaml:"targets"`
 		// Open shows the output directory once the build finishes; it
-		// defaults to true.
+		// defaults to false.
 		Open *bool `yaml:"open"`
 	} `yaml:"build"`
 }
 
 // openOutput reports whether nsgo build opens its output directory.
 func (p *project) openOutput() bool {
-	return p.Build.Open == nil || *p.Build.Open
+	return p.Build.Open != nil && *p.Build.Open
 }
 
 // hotReload reports whether nsgo dev rebuilds the app on changes; without

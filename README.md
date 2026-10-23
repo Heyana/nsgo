@@ -72,7 +72,7 @@ dev:
   hot_reload: false     # run once and exit with the app; true rebuilds and restarts on save
 build:
   output: dist          # packages go to dist/<name>-<version>-<target>
-  open: true            # open the output directory after building
+  open: false           # true opens the output directory after building
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, android_arm64, android_x64, web]
 ```
 
@@ -84,7 +84,7 @@ Add the tool to your module once; `go tool nsgo` then runs it without installing
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` runs the app once and exits when the app does. Set `dev.hot_reload` to `true` to rebuild and restart it when a source file changes. `go tool nsgo build` writes a stripped release package per target and opens the output directory, unless `build.open` is `false`. `build.targets` and `-target` accept `all` for every platform that needs only Go and Xcode; add `android_x64` when an NDK is installed.
+`go tool nsgo dev` runs the app once and exits when the app does. Set `dev.hot_reload` to `true` to rebuild and restart it when a source file changes. `go tool nsgo build` writes a stripped release package per target; set `build.open` to `true` to open the output directory when it finishes. `build.targets` and `-target` accept `all` for every platform that needs only Go and Xcode; add `android_x64` when an NDK is installed.
 
 Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `-version`, `-width` and `-height` on both, `-target` and `-hot-reload` on `dev`, and `-target`, `-output` and `-open` on `build`. `dev` also takes `-device` to choose an iPhone and `-team` to choose the Apple developer team. `-h` lists every flag.
 
