@@ -1,15 +1,16 @@
 name: Website
 
+# Auto-deploy is temporarily disabled: restore the push trigger to publish on main again.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "**/*.go"
-      - "go.mod"
-      - "go.sum"
-      - "examples/gallery/**"
-      - ".github/workflows/website.yml"
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "**/*.go"
+  #     - "go.mod"
+  #     - "go.sum"
+  #     - "examples/gallery/**"
+  #     - ".github/workflows/website.yml"
   workflow_dispatch:
 
 permissions:
