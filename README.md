@@ -120,7 +120,7 @@ git clone https://github.com/longbridge/nsh.git nsh
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) and [AGENTS.md](AGENTS.md) before changing code.
 
-The website is a separate Bun project in `website/`; [website/README.md](website/README.md) has its commands.
+The website is the gallery compiled to the web at <https://oneo-me.github.io/nsgo/>. Run it with `go tool nsgo dev -target web examples/gallery`; the [Website workflow](.github/workflows/website.yml) publishes it to GitHub Pages.
 
 ## License
 

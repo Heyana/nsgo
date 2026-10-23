@@ -170,9 +170,11 @@ func (g *gallery) navigation() core.Node {
 		return ui.Sidebar{Label: k.label(), Children: sections}
 	}
 	welcome, _ := find("Welcome")
+	guide, _ := find("Documentation")
 	return core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)}, Children: []core.Node{
 		core.View{Style: core.Style{Padding: core.Edges{Right: 12, Bottom: 10, Left: 12}, Gap: 10}, Children: []core.Node{
 			item(welcome),
+			item(guide),
 			ui.Tabs{Label: "Category", Style: core.Style{AlignSelf: core.AlignStretch},
 				Children: []core.Node{tab(kindBase), tab(kindUI)}},
 		}},
@@ -229,10 +231,14 @@ func (g *gallery) header(cx *core.Scope) core.Node {
 		}},
 		core.Text{MaxLines: 1,
 			ContentFunc: func() string {
-				if s, _ := find(g.section.Get()); s.kind != kindNone {
-					return s.kind.label() + " / " + s.group + " /"
+				s, _ := find(g.section.Get())
+				if s.name == "Welcome" {
+					return ""
 				}
-				return ""
+				if s.kind == kindNone {
+					return s.group + " /"
+				}
+				return s.kind.label() + " / " + s.group + " /"
 			},
 			StyleFunc: func() core.Style {
 				return core.Style{Color: theme().MutedForeground, FontWeight: core.FontWeightMedium}

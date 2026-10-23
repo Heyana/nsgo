@@ -37,7 +37,7 @@
 - Add `nsgo build` opening its output directory, unless `build.open` is false.
 - Add `dev.hot_reload` to rebuild on save, since `nsgo dev` now runs the app once and exits with it.
 - Add a layered app icon.
-- Add the official website.
+- Replace the Bun and React website with the gallery compiled to the web, with a bilingual guide and an address for each page.
 - Draw Windows with Direct2D and DirectWrite, adding view shadows and color emoji.
 - Layer Windows web views and text fields among the views around them, so dialogs and later views cover them.
 - Give each Linux view a GTK widget of its own, so web views, videos and fields stack and clip with the views around them.

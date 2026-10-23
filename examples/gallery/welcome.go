@@ -76,6 +76,13 @@ func welcomePage(cx *core.Scope, t *theme) core.Node {
 								core.Text{Content: repository, MaxLines: 1, Style: core.Style{FlexShrink: 1}},
 								wide(core.Icon{SVG: lucide.Copy(), Style: core.Style{Width: core.Pt(14), Height: core.Pt(14), Color: t.muted}}),
 							}},
+						ui.Button{Variant: ui.Secondary, OnPress: func() { g.open("Documentation") }, Label: "Read the documentation", TestID: "welcome-docs",
+							Style: pill.Merge(core.Style{Background: withAlpha(t.surface, 0.8)}),
+							Children: []core.Node{
+								icon(lucide.BookOpen(), 16),
+								core.Text{Content: "Documentation", MaxLines: 1, Style: core.Style{FlexShrink: 1}},
+								wide(core.Icon{SVG: lucide.ArrowRight(), Style: core.Style{Width: core.Pt(14), Height: core.Pt(14), Color: t.muted}}),
+							}},
 						ui.Button{OnPress: g.openPalette, Label: "Search everything", TestID: "welcome-search", Style: pill,
 							Children: []core.Node{
 								icon(lucide.Search(), 16),

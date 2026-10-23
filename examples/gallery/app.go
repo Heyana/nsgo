@@ -1,7 +1,8 @@
 // Command gallery shows NSGo's elements, components and services, a page
 // each, in the design of Onevra's gallery: a sidebar of grouped pages
 // beside the selected one on wide windows, a navigation stack of them on
-// phones, and on both a command palette and a settings dialog.
+// phones, and on both a command palette and a settings dialog. Compiled to
+// the web, it is the official website, guide included.
 package main
 
 import (
@@ -71,6 +72,7 @@ var sections []section
 func init() {
 	sections = []section{
 		{"Welcome", kindNone, groupOverview, lucide.House, "", welcomePage},
+		{"Documentation", kindNone, "Guide", lucide.BookOpen, "Guides for building NSGo applications.", docsPage},
 
 		{"Text", kindBase, groupElements, lucide.Type, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
 		{"Layout", kindBase, groupElements, lucide.LayoutGrid, "Flexbox, wrapping, absolute positioning, grid and block layout.", layoutPage},
@@ -207,6 +209,9 @@ func Root(cx *core.Scope) core.Node {
 	if open := os.Getenv("NSGO_GALLERY_OPEN"); open != "" {
 		start = open
 	}
+	if name := routeName(); name != "" {
+		start = name
+	}
 	if s, _ := find(start); s.name != start {
 		start = sections[0].name
 	}
@@ -233,6 +238,19 @@ func Root(cx *core.Scope) core.Node {
 		}
 	})
 	galleryKey.Provide(cx, g)
+	listenRoute(cx, func(name string) {
+		if g.section.GetUntracked() == name {
+			return
+		}
+		if s, _ := find(name); s.name == name {
+			g.open(name)
+		}
+	})
+	addressShown := false
+	cx.Effect(func() {
+		setRoute(g.section.Get(), !addressShown)
+		addressShown = true
+	})
 	env := cx.Env()
 	g.dark = core.NewMemo(cx, func() bool {
 		switch g.appearance.Get() {

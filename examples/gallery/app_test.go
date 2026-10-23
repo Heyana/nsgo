@@ -51,6 +51,17 @@ func TestSidebarSwitchesSections(t *testing.T) {
 	}
 }
 
+func TestDocumentationSwitchesLanguages(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Documentation")
+	app.Find("id:section-Documentation")
+	app.Find("text:Getting started")
+	app.Press("id:docs-zh")
+	app.Find("text:开始")
+	app.Press("id:docs-en")
+	app.Find("text:Getting started")
+}
+
 // TestContentScrollsWithinTheWindow keeps the section's scroll view
 // inside the window, so a long section scrolls rather than overflows.
 func TestContentScrollsWithinTheWindow(t *testing.T) {
@@ -123,8 +134,8 @@ func TestApplicationMenu(t *testing.T) {
 	app.Find("id:section-Images")
 	view := app.Menu[slices.IndexFunc(app.Menu, func(e core.MenuEntry) bool { return e.Label == "View" })]
 	for _, e := range view.Items {
-		if e.Label == "Images" && (!e.Checked || e.Shortcut != "mod+5") {
-			t.Fatalf("View › Images = %+v, want checked with mod+5", e)
+		if e.Label == "Images" && (!e.Checked || e.Shortcut != "mod+6") {
+			t.Fatalf("View › Images = %+v, want checked with mod+6", e)
 		}
 	}
 	app.ChooseMenu("View", "Next Section")

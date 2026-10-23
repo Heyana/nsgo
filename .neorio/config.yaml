@@ -10,9 +10,7 @@ tasks:
     args: [tool, nsgo, build, examples/gallery]
   - label: Website dev
     type: shell
-    command: bun install && bun run dev
-    options:
-      cwd: website
+    command: go tool nsgo dev -target web examples/gallery
 worktree:
   copy:
     - nsh

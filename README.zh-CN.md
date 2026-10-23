@@ -120,7 +120,7 @@ git clone https://github.com/longbridge/nsh.git nsh
 
 修改代码前请先阅读 [ARCHITECTURE.md](ARCHITECTURE.md) 和 [AGENTS.md](AGENTS.md)。
 
-官方网站是 `website/` 下的独立 Bun 项目，命令见 [website/README.md](website/README.md)。
+官方网站就是编译到 web 的 gallery，地址为 <https://oneo-me.github.io/nsgo/>。运行方式为 `go tool nsgo dev -target web examples/gallery`；[Website 工作流](.github/workflows/website.yml) 将它发布到 GitHub Pages。
 
 ## 许可证
 
