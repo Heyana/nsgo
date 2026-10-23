@@ -112,7 +112,7 @@ These items wait for community contributions.
 | iOS system UI | `elements.md` (overlays), `pitfalls.md` | VoiceOver's escape gesture goes back and closes popups; inputs in scroll views stay clear of the keyboard |
 | Text selection | `text.md` (selection areas) | Selectable text and selection areas work on Windows, Linux and Android |
 | Desktop accessibility | `windows.md`, `linux.md` | Windows exposes UI Automation and Linux GTK's accessibility, and both announce |
-| Desktop chrome | `windows.md` (alerts), `linux.md` | Windows draws alerts in the surface; Linux draws window controls under a hidden title bar and animates modals |
+| Desktop chrome | `windows.md` (alerts), `linux.md` | Windows draws alerts in the surface; Linux animates modals |
 | Android | `elements.md`, `styles.md` (Android differences) | Ripples, predictive back on screens, and blurred images before Android 12 |
 | Android frames | `elements.md` (interaction and the environment) | `RequestAnimationFrame` runs on `Choreographer` frames |
 | Web | `web.md` | Browser history and back keys, a focus state for pressables, local time with daylight saving |

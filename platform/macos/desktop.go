@@ -13,20 +13,19 @@ import (
 
 // The window's chrome, as NSH's macOS chrome.rs does it. A hidden title
 // bar gives the window a full-size content view under a transparent,
-// untitled title bar; a custom height above 0 selects a unified toolbar,
-// compact up to 44 points, so AppKit centers the traffic lights in it.
-// Env.TitleBar reports the bar's height and the traffic lights' width,
-// nothing in full screen. A left press on a window drag handle moves the
-// window with AppKit's own drag, and a double click does what the user
-// chose in System Settings. The application menu is an NSMenu bar: role
-// items send AppKit's standard actions down the responder chain, the
-// others report their ID with EventMenu.
+// untitled title bar, with the traffic lights centered in the app's bar,
+// where Onevra puts them: 16 points in from the left edge. Env.TitleBar
+// reports the bar's height and the traffic lights' width, nothing in
+// full screen. A left press on a window drag handle moves the window
+// with AppKit's own drag, and a double click does what the user chose in
+// System Settings. The application menu is an NSMenu bar: role items
+// send AppKit's standard actions down the responder chain, the others
+// report their ID with EventMenu.
 
 // chrome is a surface's window state.
 type chrome struct {
 	titleBar    core.TitleBarStyle
 	titleHeight core.Points
-	toolbar     objc.ID // the toolbar a custom title bar height installed
 
 	appName     string
 	defaultMenu objc.ID // the menu bar the backend builds
@@ -35,18 +34,23 @@ type chrome struct {
 }
 
 // The title bar's height and the traffic lights' width when AppKit
-// cannot tell.
+// cannot tell, and where the traffic lights start in the app's bar.
 const titleBarHeight, trafficLightsWidth = 28, 78
+const trafficLightsLeft = 16
 
 const (
-	maskFullScreen   = 1 << 14
-	maskFullSize     = 1 << 15
-	toolbarUnified   = 3
-	toolbarCompact   = 4
-	zoomButton       = 2
-	titleHidden      = 1
-	titleVisible     = 0
-	toolbarAutomatic = 0
+	maskFullScreen = 1 << 14
+	maskFullSize   = 1 << 15
+	zoomButton     = 2
+	titleHidden    = 1
+	titleVisible   = 0
+)
+
+var (
+	selStyleMask           = sel("styleMask")
+	selStandardButton      = sel("standardWindowButton:")
+	selSetFrameOrigin      = sel("setFrameOrigin:")
+	selContentRectForFrame = sel("contentRectForFrameRect:styleMask:")
 )
 
 // rawHit makes the views' hitTest: return the deepest view, for the
@@ -82,44 +86,62 @@ func (s *surface) applyTitleBar() {
 		mask &^= maskFullSize
 	}
 	w.Send(sel("setStyleMask:"), mask)
-	if hidden && s.titleHeight > 0 {
-		style := toolbarUnified
-		if s.titleHeight <= 44 {
-			style = toolbarCompact
-		}
-		if s.toolbar == 0 && w.Send(sel("toolbar")) == 0 {
-			s.toolbar = objc.ID(objc.GetClass("NSToolbar")).Send(selAlloc).Send(sel("initWithIdentifier:"),
-				apple.NSString("nsgo.title-bar"))
-			w.Send(sel("setToolbar:"), s.toolbar)
-		}
-		if s.toolbar != 0 {
-			w.Send(sel("setToolbarStyle:"), style)
-		}
-	} else if s.toolbar != 0 {
-		if w.Send(sel("toolbar")) == s.toolbar {
-			w.Send(sel("setToolbar:"), objc.ID(0))
-			w.Send(sel("setToolbarStyle:"), toolbarAutomatic)
-		}
-		s.toolbar.Send(selRelease)
-		s.toolbar = 0
-	}
 	w.Send(sel("setTitlebarAppearsTransparent:"), hidden)
 	visibility := titleVisible
 	if hidden {
 		visibility = titleHidden
 	}
 	w.Send(sel("setTitleVisibility:"), visibility)
+	s.layoutTrafficLights()
 	s.refresh()
-	// AppKit can restore the old content size after setStyleMask:, and
-	// the toolbar's layout settles later.
+	// AppKit can restore the old content size after setStyleMask:.
 	apple.OnMain(func() {
 		content := w.Send(sel("contentView"))
 		size := objc.Send[apple.CGRect](w, sel("contentRectForFrameRect:"), objc.Send[apple.CGRect](w, sel("frame"))).Size
 		if objc.Send[apple.CGRect](content, sel("frame")).Size != size {
 			content.Send(selSetFrameSize, size)
 		}
+		s.layoutTrafficLights()
 		s.refresh()
 	})
+}
+
+// layoutTrafficLights centers the traffic lights in the app's bar, 16
+// points in from the window's left edge as Onevra places them. AppKit
+// lays the title bar out again when the window resizes, its title or
+// appearance changes, or it leaves full screen, so this runs after each.
+func (s *surface) layoutTrafficLights() {
+	w := s.window
+	// An embedding host's toolbar lays the title bar out itself.
+	if w == 0 || s.titleBar != core.TitleBarHidden || s.titleHeight <= 0 || w.Send(sel("toolbar")) != 0 {
+		return
+	}
+	if objc.Send[uint](w, selStyleMask)&maskFullScreen != 0 {
+		return
+	}
+	close := w.Send(selStandardButton, 0)
+	if close == 0 {
+		return
+	}
+	container := close.Send(selSuperview).Send(selSuperview)
+	if container == 0 {
+		return
+	}
+	button := objc.Send[apple.CGRect](close, sel("frame"))
+	height := float64(s.titleHeight)
+	top := max((height-button.Size.Height)/2, 0)
+	frame := objc.Send[apple.CGRect](container, sel("frame"))
+	frame.Size.Height = height
+	frame.Origin.Y = objc.Send[apple.CGRect](w, sel("frame")).Size.Height - height
+	container.Send(selSetFrame, frame)
+	mini := w.Send(selStandardButton, 1)
+	gap := objc.Send[apple.CGRect](mini, sel("frame")).Origin.X - button.Origin.X
+	for i := 0; i < 3; i++ {
+		b := w.Send(selStandardButton, i)
+		if b != 0 {
+			b.Send(selSetFrameOrigin, apple.CGPoint{X: trafficLightsLeft + float64(i)*gap, Y: top})
+		}
+	}
 }
 
 // titleBarArea is what a hidden title bar covers: its height on top and
@@ -129,26 +151,30 @@ func (s *surface) titleBarArea() core.Edges {
 	if w == 0 || s.titleBar != core.TitleBarHidden {
 		return core.Edges{}
 	}
-	mask := objc.Send[uint](w, sel("styleMask"))
+	mask := objc.Send[uint](w, selStyleMask)
 	if mask&maskFullScreen != 0 {
 		return core.Edges{}
 	}
-	frame := objc.Send[apple.CGRect](w, sel("frame"))
-	content := objc.Send[apple.CGRect](objc.ID(objc.GetClass("NSWindow")), sel("contentRectForFrameRect:styleMask:"),
-		frame, mask&^maskFullSize)
-	height := frame.Size.Height - content.Size.Height
-	if w.Send(sel("toolbar")) != 0 {
-		// A toolbar's height is AppKit's, not the one that chose its style.
-		layout := objc.Send[apple.CGRect](w, sel("contentLayoutRect"))
-		if h := frame.Size.Height - (layout.Origin.Y + layout.Size.Height); h > 0 {
-			height = h
+	height := float64(s.titleHeight)
+	if height <= 0 || w.Send(sel("toolbar")) != 0 {
+		// Measure the default bar, or the toolbar an embedding host put
+		// there, as AppKit laid it out.
+		frame := objc.Send[apple.CGRect](w, sel("frame"))
+		content := objc.Send[apple.CGRect](objc.ID(objc.GetClass("NSWindow")), selContentRectForFrame,
+			frame, mask&^maskFullSize)
+		height = frame.Size.Height - content.Size.Height
+		if w.Send(sel("toolbar")) != 0 {
+			layout := objc.Send[apple.CGRect](w, sel("contentLayoutRect"))
+			if h := frame.Size.Height - (layout.Origin.Y + layout.Size.Height); h > 0 {
+				height = h
+			}
 		}
 	}
 	if height <= 0 {
 		height = titleBarHeight
 	}
 	left := float64(trafficLightsWidth)
-	if zoom := w.Send(sel("standardWindowButton:"), zoomButton); zoom != 0 {
+	if zoom := w.Send(selStandardButton, zoomButton); zoom != 0 {
 		f := objc.Send[apple.CGRect](zoom, sel("frame"))
 		if r := f.Origin.X + f.Size.Width + 8; r > 8 {
 			left = r

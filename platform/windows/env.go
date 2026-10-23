@@ -47,6 +47,7 @@ func (w *window) environment() core.Environment {
 		Idiom:          core.IdiomDesktop,
 		TitleBar:       w.titleBarArea(),
 		WindowMaterial: w.material,
+		Maximized:      w.zoomed(),
 	}
 }
 

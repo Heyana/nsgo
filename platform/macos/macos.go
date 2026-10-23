@@ -432,14 +432,17 @@ func (s *surface) environment() core.Environment {
 		Idiom:          core.IdiomDesktop,
 		TitleBar:       s.titleBarArea(),
 		WindowMaterial: s.material,
+		Maximized:      objc.Send[bool](s.window, sel("isZoomed")),
 	}
 }
 
-// refresh reports the environment to the engine if it changed.
+// refresh lays the title bar out again and reports the environment to the
+// engine if it changed.
 func (s *surface) refresh() {
 	if s == nil || s.engine == nil {
 		return
 	}
+	s.layoutTrafficLights()
 	if env := s.environment(); env != s.env {
 		s.env = env
 		s.engine.SetEnvironment(env)
@@ -466,24 +469,22 @@ func (s *surface) observe() {
 	for _, name := range []string{"NSWindowDidResizeNotification", "NSWindowDidEnterFullScreenNotification",
 		"NSWindowDidExitFullScreenNotification"} {
 		apple.Observe(center, apple.Global(appKit, name), func(note objc.ID) {
-			if note.Send(sel("object")) == s.window {
-				s.refresh()
+			if note.Send(sel("object")) != s.window {
+				return
 			}
-		})
-	}
-	// Full screen keeps a toolbar over the app: the hidden title bar's
-	// hides with the rest of the bar.
-	for name, visible := range map[string]bool{"NSWindowWillEnterFullScreenNotification": false,
-		"NSWindowDidExitFullScreenNotification": true} {
-		apple.Observe(center, apple.Global(appKit, name), func(note objc.ID) {
-			if note.Send(sel("object")) == s.window && s.toolbar != 0 {
-				s.toolbar.Send(sel("setVisible:"), visible)
-				s.refresh()
+			s.refresh()
+			if name != "NSWindowDidResizeNotification" {
+				// AppKit lays the bar out again as it leaves full screen,
+				// after the notification.
+				apple.OnMain(func() { s.layoutTrafficLights(); s.refresh() })
 			}
 		})
 	}
 	observer := objc.ID(classObserver).Send(selNew)
 	ws.Send(sel("addObserver:forKeyPath:options:context:"), observer, apple.NSString("voiceOverEnabled"), uint(0), uintptr(0))
+	// The window's appearance lays its title bar out again too.
+	s.window.Send(sel("addObserver:forKeyPath:options:context:"), observer,
+		apple.NSString("effectiveAppearance"), uint(0), uintptr(0))
 
 	const keyDown, leftDown, leftUp, leftDragged, rightDown, otherDown = 1 << 10, 1 << 1, 1 << 2, 1 << 6, 1 << 3, 1 << 25
 	handler := objc.NewBlock(func(_ objc.Block, event objc.ID) objc.ID { return s.filter(event) })
@@ -767,6 +768,7 @@ func (s *surface) apply(b *core.MountBatch) {
 			continue
 		case core.ItemTitle:
 			s.window.Send(sel("setTitle:"), apple.NSString(it.Value))
+			s.layoutTrafficLights()
 			continue
 		case core.ItemWindow:
 			s.command(it.Window)

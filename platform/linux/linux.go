@@ -213,6 +213,9 @@ func (w *window) createWindow(opts Options) {
 	gtkWindowSetChild(w.win, w.box)
 	w.setupInputs()
 	gSignalConnect(w.win, "close-request", cbCloseRequest, w.handle)
+	for _, name := range []string{"maximized", "fullscreen"} {
+		gSignalConnect(w.win, "notify::"+name, cbWindowState, w.handle)
+	}
 }
 
 // setupSettings rereads the environment whenever GTK's settings change.
@@ -612,12 +615,10 @@ func (w *window) windowCommand(c *core.WindowCommand) {
 	case core.WindowMinimize:
 		gtkWindowMinimize(w.win)
 	case core.WindowToggleMaximize:
-		if w.chrome.max {
+		if gtkWindowIsMaximized(w.win) != 0 {
 			gtkWindowUnmaximize(w.win)
-			w.chrome.max = false
 		} else {
 			gtkWindowMaximize(w.win)
-			w.chrome.max = true
 		}
 	case core.WindowToggleFullScreen:
 		if w.chrome.fullScreen {

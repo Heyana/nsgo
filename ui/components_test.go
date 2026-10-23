@@ -363,3 +363,30 @@ func TestSplitDrawsTheThemeBorder(t *testing.T) {
 		t.Errorf("divider cursor = %v, want the horizontal resize cursor", c)
 	}
 }
+
+func TestWindowControlsCommandTheWindow(t *testing.T) {
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return ui.ThemeView{Children: []core.Node{ui.WindowControls{TestID: "controls"}}}
+	})
+	env := core.Environment{OS: core.OSLinux, Idiom: core.IdiomDesktop}
+	app.SetEnvironment(env)
+	app.Press("id:controls-minimize")
+	app.Press("id:controls-maximize")
+	app.Press("id:controls-close")
+	want := []core.WindowCommand{{Action: core.WindowMinimize}, {Action: core.WindowToggleMaximize}, {Action: core.WindowClose}}
+	if !slices.Equal(app.Window, want) {
+		t.Fatalf("window commands = %+v, want %+v", app.Window, want)
+	}
+	// The close button is Onevra's red under the pointer.
+	app.Hover("id:controls-close", true)
+	if got := app.Find("id:controls-close").Style.Background; got != core.RGB(0xe81123) {
+		t.Fatalf("hovered close = %x, want Onevra's red", got)
+	}
+	// A maximized window shows restore.
+	env.Maximized = true
+	app.SetEnvironment(env)
+	app.Find("id:controls-restore")
+	if app.Exists("id:controls-maximize") {
+		t.Fatal("the maximize button stays while the window is maximized")
+	}
+}

@@ -64,7 +64,7 @@ Neither an NDK nor the Android SDK is needed for arm64: `platform/android/runtim
 
 The Linux backend loads GTK 4 at run time, so building it needs only Go. Running it needs GTK 4.14+, Pango and Cairo; web views also need WebKitGTK 6.0, videos GStreamer's plug-ins. Without WebKitGTK a web view shows a placeholder, as NSH's does.
 
-As in NSH, each Linux view is a widget its parent places at the core's frame, so hosted controls stack, clip, fade and transform with the views around them. The application menu is a GTK menu bar above the surface, but the backend draws no window controls of its own, so a hidden title bar reports the app's bar height only.
+As in NSH, each Linux view is a widget its parent places at the core's frame, so hosted controls stack, clip, fade and transform with the views around them. The application menu is a GTK menu bar above the surface. The backend draws no window controls of its own, so a hidden title bar reports the app's bar height only and `ui.WindowControls` draws them.
 
 ## Boundaries
 

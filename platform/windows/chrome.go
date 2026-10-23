@@ -93,11 +93,17 @@ const (
 	mfSeparator = 0x0800
 )
 
-// The caption buttons' size, in points; the bar is 32 tall unless the
-// app says otherwise.
+// The caption buttons after Onevra's: 32 point squares 4 apart, their
+// glyphs 14, centered in the app's bar and 8 points in from the right
+// edge; the bar is 32 tall unless the app says otherwise.
 const (
 	defaultCaptionHeight core.Points = 32
-	captionButtonWidth   core.Points = 46
+	captionButtonSize    core.Points = 32
+	captionButtonGap     core.Points = 4
+	captionMargin        core.Points = 8
+	captionGlyphSize     core.Points = 14
+	// captionRight is how far the buttons reach in from the right edge.
+	captionRight = captionMargin + 3*captionButtonSize + 2*captionButtonGap
 )
 
 type ncCalcSizeParams struct {
@@ -157,11 +163,9 @@ func (w *window) hidden() bool {
 	return w.chrome.titleBar == core.TitleBarHidden && !w.chrome.fullScreen
 }
 
+// captionHeight is the app's bar height, and at least Windows' own.
 func (w *window) captionHeight() core.Points {
-	if w.chrome.height > 0 {
-		return w.chrome.height
-	}
-	return defaultCaptionHeight
+	return max(w.chrome.height, defaultCaptionHeight)
 }
 
 // titleBarArea is what the hidden title bar's window controls cover.
@@ -169,7 +173,7 @@ func (w *window) titleBarArea() core.Edges {
 	if !w.hidden() {
 		return core.Edges{}
 	}
-	return core.Edges{Top: w.captionHeight(), Right: 3 * captionButtonWidth}
+	return core.Edges{Top: w.captionHeight(), Right: captionRight}
 }
 
 func (w *window) zoomed() bool {
@@ -301,19 +305,19 @@ func (w *window) ncCalcSize(wParam, lParam uintptr) (uintptr, bool) {
 // captionAt returns the caption button at p (client points), as its hit
 // test code, or 0.
 func (w *window) captionAt(p core.Point) uint32 {
-	if !w.hidden() || p.Y < 0 || p.Y >= w.captionHeight() {
+	height := w.captionHeight()
+	top := (height - captionButtonSize) / 2
+	if !w.hidden() || p.Y < top || p.Y >= top+captionButtonSize {
 		return 0
 	}
 	var client rect
 	getClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&client)))
 	width := w.point(client.Right, 0).X
-	switch int((width - p.X) / captionButtonWidth) {
-	case 0:
-		return htClose
-	case 1:
-		return htMaxButton
-	case 2:
-		return htMinButton
+	for i, code := range []uint32{htClose, htMaxButton, htMinButton} {
+		right := width - captionMargin - core.Points(i)*(captionButtonSize+captionButtonGap)
+		if p.X >= right-captionButtonSize && p.X < right {
+			return code
+		}
 	}
 	return 0
 }
@@ -424,7 +428,9 @@ func (w *window) ncActivate(wParam, lParam uintptr) uintptr {
 
 // drawCaptionButtons draws the caption buttons over the app, with the
 // title bar hidden, at the right of a client area width pixels wide. It
-// draws in pixels, so the glyphs' lines fall on whole ones.
+// draws Onevra's: rounded squares in the middle of the bar, the close one
+// red under the pointer. It draws in pixels, so the glyphs' lines fall on
+// whole ones.
 func (p *painter) drawCaptionButtons(width int32) {
 	w := p.w
 	if !w.hidden() {
@@ -435,34 +441,37 @@ func (p *painter) drawCaptionButtons(width int32) {
 	p.setTransform(scaling(1/w.scale, 1/w.scale))
 	c := &w.chrome
 	dark := w.env.Dark
-	buttonWidth, height := w.px(captionButtonWidth), w.px(w.captionHeight())
-	glyph := w.px(10)
+	button, gap, margin := w.px(captionButtonSize), w.px(captionButtonGap), w.px(captionMargin)
+	height := w.px(w.captionHeight())
+	top := (height - button) / 2
+	glyph := w.px(captionGlyphSize)
 	stroke := float32(max(w.px(1), 1))
+	radius := float32(w.px(8))
 	for i, code := range []uint32{htClose, htMaxButton, htMinButton} {
-		right := width - buttonWidth*int32(i)
-		r := rect{right - buttonWidth, 0, right, height}
+		right := width - margin - int32(i)*(button+gap)
+		r := rect{right - button, top, right, top + button}
 		hovered := c.hover == code
 		pressed := hovered && c.pressed == code
 		var bg core.Color
 		switch {
 		case !hovered:
 		case code == htClose && pressed:
-			bg = 0xc42b1ce6
-		case code == htClose:
 			bg = 0xc42b1cff
+		case code == htClose:
+			bg = 0xe81123ff
 		case !dark && pressed:
-			bg = 0x0000001c
+			bg = 0x33332f24
 		case !dark:
-			bg = 0x00000012
+			bg = 0x33332f14
 		case pressed:
-			bg = 0xffffff0c
+			bg = 0xeeeae224
 		default:
-			bg = 0xffffff14
+			bg = 0xeeeae214
 		}
-		p.fillRect(rectF{float32(r.Left), float32(r.Top), float32(r.Right), float32(r.Bottom)}, bg)
-		fg := core.Color(0x000000ff)
+		p.fillRounded(rectF{float32(r.Left), float32(r.Top), float32(r.Right), float32(r.Bottom)}, radius, bg)
+		fg := core.Color(0x72726aff)
 		if dark {
-			fg = 0xffffffff
+			fg = 0xbdb6aaff
 		}
 		switch {
 		case code == htClose && hovered:
@@ -470,7 +479,11 @@ func (p *painter) drawCaptionButtons(width int32) {
 		case c.inactive && !hovered:
 			fg = fg&^0xff | 0x70
 		}
-		left, top := float32(r.Left+(buttonWidth-glyph)/2), float32((height-glyph)/2)
+		left, glyphTop := float32(r.Left+(button-glyph)/2), float32(top+(button-glyph)/2)
+		if code == htMinButton {
+			// Onevra sets the minus a little low, as its glyph reads.
+			glyphTop += float32(w.px(2))
+		}
 		size := float32(glyph)
 		// box strokes a square's outline inside the pixels from x, y.
 		box := func(x, y, side float32) {
@@ -479,21 +492,21 @@ func (p *painter) drawCaptionButtons(width int32) {
 		}
 		switch {
 		case code == htMinButton:
-			mid := float32(height / 2)
+			mid := glyphTop + size/2
 			p.fillRect(rectF{left, mid, left + size, mid + stroke}, fg)
 		case code == htMaxButton && w.zoomed():
 			// Restore: a square with another behind it.
 			o := float32(max(w.px(2), 2))
-			box(left, top+o, size-o)
-			p.fillRect(rectF{left + o, top, left + size, top + stroke}, fg)
-			p.fillRect(rectF{left + size - stroke, top, left + size, top + size - o}, fg)
-			p.fillRect(rectF{left + o, top, left + o + stroke, top + o}, fg)
-			p.fillRect(rectF{left + size - o, top + size - o - stroke, left + size, top + size - o}, fg)
+			box(left, glyphTop+o, size-o)
+			p.fillRect(rectF{left + o, glyphTop, left + size, glyphTop + stroke}, fg)
+			p.fillRect(rectF{left + size - stroke, glyphTop, left + size, glyphTop + size - o}, fg)
+			p.fillRect(rectF{left + o, glyphTop, left + o + stroke, glyphTop + o}, fg)
+			p.fillRect(rectF{left + size - o, glyphTop + size - o - stroke, left + size, glyphTop + size - o}, fg)
 		case code == htMaxButton:
-			box(left, top, size)
+			box(left, glyphTop, size)
 		default:
 			cross := p.pathGeometry(d2dFillAlternate, func(sink *comObject) {
-				for _, l := range [2][2]pointF{{{left, top}, {left + size, top + size}}, {{left + size, top}, {left, top + size}}} {
+				for _, l := range [2][2]pointF{{{left, glyphTop}, {left + size, glyphTop + size}}, {{left + size, glyphTop}, {left, glyphTop + size}}} {
 					sink.callPoint(sinkBeginFigure, l[0].x, l[0].y, d2dFigureHollow)
 					sink.call(sinkAddLines, uintptr(unsafe.Pointer(&l[1])), 1)
 					sink.call(sinkEndFigure, d2dFigureOpen)

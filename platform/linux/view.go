@@ -98,7 +98,6 @@ type chrome struct {
 	titleBar   core.TitleBarStyle
 	height     core.Points // the app's title bar height
 	fullScreen bool
-	max        bool
 	menu       []core.MenuEntry
 	keys       map[string]menuRef
 }

@@ -673,12 +673,11 @@ func (w *window) menuChosen(ref menuRef) bool {
 	case core.MenuMinimize:
 		gtkWindowMinimize(w.win)
 	case core.MenuZoom:
-		if w.chrome.max {
+		if gtkWindowIsMaximized(w.win) != 0 {
 			gtkWindowUnmaximize(w.win)
 		} else {
 			gtkWindowMaximize(w.win)
 		}
-		w.chrome.max = !w.chrome.max
 	case core.MenuToggleFullScreen:
 		if w.chrome.fullScreen {
 			gtkWindowUnfullscreen(w.win)

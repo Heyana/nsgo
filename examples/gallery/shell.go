@@ -10,16 +10,19 @@ import (
 )
 
 // The desktop shell follows Onevra's: a sidebar of grouped sections with
-// a search field and a toolbar of settings and appearance, and a header
-// over the content naming the section. The system's title bar is hidden,
-// so the sidebar's and the header's top rows are the window's drag handle,
-// clear of its controls.
+// a search field and a toolbar of settings and appearance, and a floating
+// title row over them naming the section. The system's title bar is
+// hidden, so the sidebar and the page paint the window's top edge behind
+// the row, the row is the window's drag handle, and its controls clear
+// the window's own.
 
-// headerHeight is the height of the rows that stand in for the title bar.
+// headerHeight is the height the gallery asks the title row to have; the
+// platform's controls can keep more.
 const headerHeight core.Points = 48
 
-// sidebarWidth is the sidebar's width while it shows.
-const sidebarWidth core.Points = 248
+// sidebarWidth is the sidebar's width while it shows, and how narrow it
+// can get; Onevra's gallery grows it up to 520.
+const sidebarWidth core.Points = 220
 
 // desktop is the wide layout: the sidebar beside the header and the
 // selected section.
@@ -69,15 +72,19 @@ func (g *gallery) desktop(cx *core.Scope) core.Node {
 				return core.Style{Width: core.Pct(100), FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0),
 					Overflow: core.Hidden, Background: bg}
 			},
-			// The sidebar shrinks with its pane, so its list scrolls.
-			Children: []core.Node{core.View{Style: core.Style{Width: core.Pct(100), FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)}, Children: []core.Node{
-				g.sidebarHeader(cx),
+			// The sidebar reaches the top behind the title row, so its
+			// content keeps clear of the row; it shrinks with its pane, so
+			// its list scrolls.
+			Children: []core.Node{core.View{StyleFunc: func() core.Style {
+				return core.Style{Width: core.Pct(100), FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0),
+					Padding: core.Edges{Top: titleRowHeight(env)}}
+			}, Children: []core.Node{
 				g.searchField(cx),
 				g.navigation(),
 				g.toolbar(),
 			}}}}
 	}}
-	return ui.Split{
+	split := ui.Split{
 		Direction:   base.SplitHorizontal,
 		TestID:      "sidebar-split",
 		Label:       "Resize sidebar",
@@ -85,8 +92,8 @@ func (g *gallery) desktop(cx *core.Scope) core.Node {
 		Style:       core.Style{FlexGrow: 1, FlexShrink: 1},
 		Size:        func() core.Length { return core.Pt(g.sidebarPixels.Get()) },
 		DefaultSize: core.Pt(sidebarWidth),
-		Min:         core.Pt(180),
-		Max:         core.Pt(420),
+		Min:         core.Pt(sidebarWidth),
+		Max:         core.Pt(520),
 		Disabled:    func() bool { return !g.sidebar.Get() },
 		LineStyleFunc: func() core.Style {
 			if g.sidebarPixels.Get() <= 0 {
@@ -111,39 +118,50 @@ func (g *gallery) desktop(cx *core.Scope) core.Node {
 				return core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0), Background: theme().Background}
 			},
 			Children: []core.Node{
-				g.header(cx),
-				core.Scroll{Ref: content, TestID: "content", Style: core.Style{FlexGrow: 1, FlexShrink: 1},
-					OnLayout: func(b core.Bounds) { viewport.Set(b.Size.Height) },
-					Children: []core.Node{g.page(viewport.Get)}},
+				core.View{StyleFunc: func() core.Style {
+					return core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0),
+						Padding: core.Edges{Top: titleRowHeight(env)}}
+				}, Children: []core.Node{
+					core.Scroll{Ref: content, TestID: "content", Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)},
+						OnLayout: func(b core.Bounds) { viewport.Set(b.Size.Height) },
+						Children: []core.Node{g.page(viewport.Get)}},
+				}},
 			}},
 	}
+	// The title row floats over both regions, which paint under it.
+	return core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)},
+		Children: []core.Node{split, g.header(cx)}}
 }
 
 // sidebarColor is the sidebar's surface: the background faintly tinted
 // with the text, as Onevra's navigation is.
 func sidebarColor(t ui.Tokens) core.Color { return ui.Mix(t.Background, t.Foreground, 0.035) }
 
-// titleRow is a row standing in for the title bar: as tall as the window
-// controls' area and a drag handle. pad gives its padding from the area
-// the controls keep, so it can clear them.
+// titleRowHeight is how tall the title row is: Onevra's 48 points, or
+// more where the platform's window controls keep a taller bar.
+func titleRowHeight(env *core.Env) core.Points { return max(headerHeight, env.TitleBar().Top) }
+
+// titleRow is the row standing in for the title bar: as tall as the
+// window controls' area, a drag handle, and drawn over the window behind
+// its contents. pad gives its padding from the area the controls keep, so
+// it can clear them.
 func titleRow(cx *core.Scope, testID string, pad func(controls core.Edges) core.Edges, children ...core.Node) core.Node {
 	env := cx.Env()
 	return core.View{WindowDrag: core.WindowDragOn, TestID: testID, Children: children,
 		StyleFunc: func() core.Style {
 			tb := env.TitleBar()
 			return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, FlexShrink: 0,
-				Height: core.Pt(max(headerHeight, tb.Top)), Padding: pad(tb)}
+				Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(0), Right: core.Pt(0),
+				Height: core.Pt(titleRowHeight(env)), Padding: pad(tb),
+				// The row owns the pointer: the split's divider below it
+				// keeps its resize cursor out of the title bar.
+				Cursor: core.CursorDefault}
 		}}
 }
 
 // undraggable keeps a control in a title row pressable.
 func undraggable(n core.Node) core.Node {
 	return core.View{WindowDrag: core.WindowDragOff, Children: []core.Node{n}}
-}
-
-func (g *gallery) sidebarHeader(cx *core.Scope) core.Node {
-	return titleRow(cx, "sidebar-header", func(tb core.Edges) core.Edges { return core.Edges{Left: max(tb.Left, 4) + 8, Right: 8} },
-		undraggable(ui.IconButton{Icon: lucide.PanelLeft(), Label: "Hide sidebar", OnPress: g.toggleSidebar, TestID: "hide-sidebar"}))
 }
 
 // searchField is the sidebar's search trigger: it looks like a field and
@@ -230,35 +248,60 @@ func (g *gallery) appearanceMenu(place core.Placement) core.Node {
 		}}
 }
 
-// header names the section over the content: its group, then its name,
-// with the sidebar's toggle while the sidebar is hidden.
+// header is the floating title row: the sidebar's toggle, then the
+// section's group and name, and on Linux the window's buttons. It drags
+// the window, clear of the traffic lights and the caption buttons, and
+// leaves the controls in it pressable.
 func (g *gallery) header(cx *core.Scope) core.Node {
-	theme := ui.UseTheme(cx)
-	// The title lines up with the content beside the sidebar, and follows
-	// the sidebar's toggle past the window controls without it.
+	theme, env := ui.UseTheme(cx), cx.Env()
+	// The toggle clears the window controls, and macOS's traffic lights
+	// keep 16 points after them; the platform's reported edge already
+	// leaves 8. A drawn control keeps a gap before its buttons, as Onevra
+	// leaves both.
 	pad := func(tb core.Edges) core.Edges {
-		if g.sidebar.Get() {
-			return core.Edges{Left: 32, Right: tb.Right + 16}
+		left, right := max(tb.Left, 8), max(tb.Right, 8)
+		if env.OS() == core.OSMacOS && tb.Left > 0 {
+			left += 8
 		}
-		return core.Edges{Left: max(tb.Left, 4) + 8, Right: tb.Right + 16}
+		if tb.Right > 0 {
+			right += 8
+		}
+		return core.Edges{Left: left, Right: right}
 	}
+	// The title sits 16 points into the page, as Onevra places it, so it
+	// follows the sidebar as it animates; without the sidebar it follows
+	// the toggle.
+	spacer := core.View{StyleFunc: func() core.Style {
+		left := pad(env.TitleBar()).Left
+		return core.Style{Width: core.Pt(max(0, g.sidebarPixels.Get()-left-32)), FlexShrink: 0}
+	}}
+	windowButtons := core.Show{When: func() bool { return env.OS() == core.OSLinux },
+		Then: func(*core.Scope) core.Node { return ui.WindowControls{TestID: "window-controls"} }}
 	return titleRow(cx, "header", pad,
+		core.Show{When: func() bool { return g.sidebar.Get() }, Then: func(*core.Scope) core.Node {
+			return undraggable(ui.IconButton{Icon: lucide.PanelLeft(), Label: "Hide sidebar", OnPress: g.toggleSidebar, TestID: "hide-sidebar"})
+		}},
 		core.Show{When: func() bool { return !g.sidebar.Get() }, Then: func(*core.Scope) core.Node {
 			return undraggable(ui.IconButton{Icon: lucide.PanelLeft(), Label: "Show sidebar", OnPress: g.toggleSidebar, TestID: "show-sidebar"})
 		}},
-		core.Text{MaxLines: 1,
-			ContentFunc: func() string {
-				s, _ := find(g.section.Get())
-				if s.name == "Welcome" {
-					return ""
-				}
-				return s.group + " /"
-			},
-			StyleFunc: func() core.Style {
-				return core.Style{Color: theme().MutedForeground, FontWeight: core.FontWeightMedium}
-			}},
-		core.Text{ContentFunc: g.section.Get, Role: core.RoleHeader, TestID: "title", MaxLines: 1,
-			Style: core.Style{FontWeight: core.FontWeightSemibold, FlexShrink: 1}},
+		spacer,
+		core.View{TestID: "header-title", Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8,
+			FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0), Overflow: core.Hidden}, Children: []core.Node{
+			core.Text{MaxLines: 1,
+				ContentFunc: func() string {
+					s, _ := find(g.section.Get())
+					if s.name == "Welcome" {
+						return ""
+					}
+					return s.group + " /"
+				},
+				StyleFunc: func() core.Style {
+					return core.Style{Color: theme().MutedForeground, FontWeight: core.FontWeightMedium}
+				}},
+			core.Text{ContentFunc: g.section.Get, Role: core.RoleHeader, TestID: "title", MaxLines: 1,
+				Style: core.Style{FontWeight: core.FontWeightSemibold, FlexShrink: 1}},
+		}},
+		windowButtons,
 	)
 }
 
@@ -274,7 +317,7 @@ func (g *gallery) page(viewport func() core.Points) core.Node {
 				return core.View{StyleFunc: func() core.Style { return core.Style{MinHeight: core.Pt(viewport())} },
 					Children: []core.Node{s.page(cx, t)}}
 			}
-			return core.View{Style: core.Style{Padding: core.Edges{Top: 8, Right: 32, Bottom: 40, Left: 32}, MaxWidth: core.Pt(880)},
+			return core.View{Style: core.Style{Padding: core.All(24)},
 				Children: []core.Node{g.sectionBody(cx, t, s)}}
 		})
 	})

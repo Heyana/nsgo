@@ -104,8 +104,9 @@ func (cx *Scope) window(c WindowCommand) {
 }
 
 // SetTitleBar hides the system's title bar so the app can draw its own
-// height points tall (0: the platform's height), or restores it.
-// Env.TitleBar then reports the area the window controls keep.
+// height points tall (0: the platform's height), or restores it. The
+// platform centers its window controls in that height. Env.TitleBar then
+// reports the area they keep.
 func (cx *Scope) SetTitleBar(style TitleBarStyle, height Points) {
 	cx.window(WindowCommand{Action: WindowSetTitleBar, TitleBar: style, Height: min(max(height, 0), 200)})
 }

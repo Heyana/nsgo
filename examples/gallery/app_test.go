@@ -289,26 +289,84 @@ func TestWindowCommands(t *testing.T) {
 		t.Fatalf("window commands = %+v, want %+v", app.Window, want)
 	}
 
-	// The platform reports the hidden title bar: the sidebar's top row
-	// clears the window controls and the header lines up with the content.
+	// The platform reports the hidden title bar: the floating title row
+	// clears the window controls and floats over both regions.
 	env := desktopEnv
 	env.TitleBar = core.Edges{Top: headerHeight, Left: 78}
 	app.SetEnvironment(env)
-	for _, id := range []string{"id:sidebar-header", "id:header"} {
-		if bar := app.Find(id); bar.Props.WindowDrag != core.WindowDragOn || bar.Frame.Size.Height != headerHeight {
-			t.Fatalf("%s = %+v", id, bar)
-		}
+	bar := app.Find("id:header")
+	if bar.Props.WindowDrag != core.WindowDragOn || bar.Frame.Origin.Y != 0 || bar.Frame.Size.Height != headerHeight {
+		t.Fatalf("header = %+v", bar)
 	}
 	x := core.Points(0)
 	for v := app.Find("id:hide-sidebar"); v != nil; v = v.Parent {
 		x += v.Frame.Origin.X
 	}
-	if x < 78 {
+	if x < 78+8 {
 		t.Fatalf("the sidebar's toggle is at %v, under the window controls", x)
+	}
+	if bar.Style.Cursor != core.CursorDefault {
+		t.Fatalf("the title row leaves the pointer to %v, not the default", bar.Style.Cursor)
+	}
+	// The regions paint the window's top edge behind the row; their
+	// content keeps clear of it.
+	surfaceY := func(v *nsgotest.View) core.Points {
+		y := core.Points(0)
+		for ; v != nil; v = v.Parent {
+			y += v.Frame.Origin.Y
+		}
+		return y
+	}
+	if y := surfaceY(app.Find("id:search")); y < headerHeight {
+		t.Fatalf("the search field starts at %v, under the title row", y)
+	}
+	if y := surfaceY(app.Find("id:content")); y != headerHeight {
+		t.Fatalf("the content starts at %v, want below the title row", y)
+	}
+	// The title sits 16 points into the page beside the sidebar.
+	surfaceX := func(v *nsgotest.View) core.Points {
+		x := core.Points(0)
+		for ; v != nil; v = v.Parent {
+			x += v.Frame.Origin.X
+		}
+		return x
+	}
+	if got, want := surfaceX(app.Find("id:header-title")), sidebarWidth+16; got != want {
+		t.Fatalf("the title starts at %v, want %v", got, want)
+	}
+	// A platform whose controls keep a taller bar gets a taller row.
+	env.TitleBar.Top = 64
+	app.SetEnvironment(env)
+	if got := app.Find("id:header").Frame.Size.Height; got != 64 {
+		t.Fatalf("header = %v tall, want the platform's 64", got)
 	}
 
 	app.SetEnvironment(core.Environment{Idiom: core.IdiomTablet})
 	app.Find("text:Desktop only")
+}
+
+// TestLinuxWindowButtons keeps Linux's drawn controls working: the title
+// row carries Onevra's buttons, and a maximized window shows restore.
+func TestLinuxWindowButtons(t *testing.T) {
+	app := startDesktop(t)
+	env := desktopEnv
+	env.OS = core.OSLinux
+	env.TitleBar = core.Edges{Top: headerHeight}
+	app.SetEnvironment(env)
+	app.Find("id:window-controls")
+	app.Press("id:window-controls-minimize")
+	app.Press("id:window-controls-maximize")
+	app.Press("id:window-controls-close")
+	want := []core.WindowCommand{{Action: core.WindowMinimize}, {Action: core.WindowToggleMaximize}, {Action: core.WindowClose}}
+	if got := app.Window[len(app.Window)-3:]; !slices.Equal(got, want) {
+		t.Fatalf("window commands = %+v, want %+v", got, want)
+	}
+	env.Maximized = true
+	app.SetEnvironment(env)
+	app.Find("id:window-controls-restore")
+	if app.Exists("id:window-controls-maximize") {
+		t.Fatal("the maximize button stays while the window is maximized")
+	}
 }
 
 func TestEverySectionBuilds(t *testing.T) {

@@ -261,11 +261,12 @@ func Root(cx *core.Scope) core.Node {
 	keep(keySidebar, func() string { return strconv.FormatBool(g.sidebar.Get()) })
 	keep(keyStart, g.start.Get)
 
-	// The desktop layout draws the title bar's row itself where the window
-	// keeps its controls without it; Linux's would lose them.
+	// The desktop layout draws the title bar's row itself, over the
+	// content. macOS keeps its traffic lights, Windows its caption
+	// buttons, and Linux none of its own, so the row draws them.
 	cx.Effect(func() {
 		switch env.OS() {
-		case core.OSMacOS, core.OSWindows:
+		case core.OSMacOS, core.OSWindows, core.OSLinux:
 			cx.Untrack(func() { cx.SetTitleBar(core.TitleBarHidden, headerHeight) })
 		}
 	})

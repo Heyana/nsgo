@@ -1122,6 +1122,8 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			size := w.point(width, height)
 			w.engine.Resize(core.Size{Width: size.X, Height: size.Y})
 		}
+		// A maximize or restore changes the environment.
+		w.updateEnvironment()
 		return 0
 	case wmEraseBkgnd:
 		return 1

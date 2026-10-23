@@ -17,7 +17,7 @@ func windowPage(cx *core.Scope, t *theme) core.Node {
 	return core.Show{When: func() bool { return env.Idiom() == core.IdiomDesktop },
 		Else: func(*core.Scope) core.Node {
 			return t.demo("Desktop only", "Window commands need a desktop window; phones, tablets and the web ignore them.",
-				t.note("Run the gallery on macOS or Windows to try them."))
+				t.note("Run the gallery on macOS, Windows or Linux to try them."))
 		},
 		Then: func(cx *core.Scope) core.Node {
 			return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
@@ -29,7 +29,7 @@ func windowPage(cx *core.Scope, t *theme) core.Node {
 						return "This window is opaque: this platform or Windows version has no window materials."
 					}),
 				),
-				t.demo("Title bar", "The gallery hides the system's title bar with SetTitleBar: its sidebar's and header's top rows are WindowDrag handles clear of the window controls.",
+				t.demo("Title bar", "The gallery hides the system's title bar with SetTitleBar: the title row floats over the content as a WindowDrag handle clear of the window controls, and Linux draws those controls itself.",
 					flow(
 						t.primary("Hide title bar", func() { cx.SetTitleBar(core.TitleBarHidden, headerHeight) }),
 						t.plain("Show title bar", func() { cx.SetTitleBar(core.TitleBarDefault, 0) }),

@@ -14,6 +14,9 @@ type Environment struct {
 	// WindowMaterial is the material behind the window's content; None
 	// when the window is opaque.
 	WindowMaterial WindowMaterial
+	// Maximized is whether the window is maximized or zoomed, so an
+	// app-drawn maximize button can show restore.
+	Maximized bool
 	// KeyboardHeight is how much of the bottom the software keyboard
 	// covers; KeyboardDuration is how long it takes to move.
 	KeyboardHeight   Points
@@ -64,6 +67,7 @@ const (
 type Env struct {
 	window                    *Signal[Size]
 	safe, titleBar            *Signal[Edges]
+	maximized                 *Signal[bool]
 	keyboard                  *Signal[Points]
 	keyboardDuration          *Signal[time.Duration]
 	dark, reduce, rtl, reader *Signal[bool]
@@ -81,6 +85,7 @@ func newEnv(cx *Scope) *Env {
 		window:           NewSignal(cx, Size{}),
 		safe:             NewSignal(cx, Edges{}),
 		titleBar:         NewSignal(cx, Edges{}),
+		maximized:        NewSignal(cx, false),
 		keyboard:         NewSignal(cx, Points(0)),
 		keyboardDuration: NewSignal(cx, 250*time.Millisecond),
 		dark:             NewSignal(cx, false),
@@ -121,6 +126,7 @@ func (e *Env) set(v Environment) {
 	}
 	e.safe.Set(v.SafeArea)
 	e.titleBar.Set(v.TitleBar)
+	e.maximized.Set(v.Maximized)
 	e.keyboard.Set(v.KeyboardHeight)
 	e.keyboardDuration.Set(v.KeyboardDuration)
 	e.dark.Set(v.Dark)
@@ -147,6 +153,9 @@ func (e *Env) KeyboardHeight() Points { return e.keyboard.Get() }
 
 // TitleBar returns what a hidden desktop title bar covers.
 func (e *Env) TitleBar() Edges { return e.titleBar.Get() }
+
+// Maximized reports whether the window is maximized or zoomed.
+func (e *Env) Maximized() bool { return e.maximized.Get() }
 
 // KeyboardDuration returns how long the keyboard takes to move.
 func (e *Env) KeyboardDuration() time.Duration { return e.keyboardDuration.Get() }

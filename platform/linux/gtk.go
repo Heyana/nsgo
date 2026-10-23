@@ -123,6 +123,7 @@ var (
 	gtkWindowFullscreen                    func(uintptr)
 	gtkWindowUnfullscreen                  func(uintptr)
 	gtkWindowIsFullscreen                  func(uintptr) int32
+	gtkWindowIsMaximized                   func(uintptr) int32
 	gtkWidgetShow                          func(uintptr)
 	gtkWidgetSetVisible                    func(uintptr, int32)
 	gtkWidgetAddController                 func(uintptr, uintptr)
@@ -420,6 +421,7 @@ func bind() {
 	purego.RegisterLibFunc(&gtkWindowFullscreen, gtkLib, "gtk_window_fullscreen")
 	purego.RegisterLibFunc(&gtkWindowUnfullscreen, gtkLib, "gtk_window_unfullscreen")
 	purego.RegisterLibFunc(&gtkWindowIsFullscreen, gtkLib, "gtk_window_is_fullscreen")
+	purego.RegisterLibFunc(&gtkWindowIsMaximized, gtkLib, "gtk_window_is_maximized")
 	purego.RegisterLibFunc(&gtkWidgetShow, gtkLib, "gtk_widget_show")
 	purego.RegisterLibFunc(&gtkWidgetSetVisible, gtkLib, "gtk_widget_set_visible")
 	purego.RegisterLibFunc(&gtkWidgetAddController, gtkLib, "gtk_widget_add_controller")

@@ -54,6 +54,7 @@ func (w *window) environment() core.Environment {
 		OS:           core.OSLinux,
 		Idiom:        core.IdiomDesktop,
 		TitleBar:     w.titleBarArea(),
+		Maximized:    gtkWindowIsMaximized(w.win) != 0,
 	}
 }
 
@@ -102,6 +103,18 @@ func settingsChangedCallback(settings, pspec, data uintptr) {
 	if w := windowOf(data); w != nil && !w.closing {
 		w.updateEnvironment()
 	}
+}
+
+// windowStateCallback rereads the environment after the window is
+// maximized, restored or made full screen, by the app or the window
+// manager.
+func windowStateCallback(window, pspec, data uintptr) {
+	w := windowOf(data)
+	if w == nil || w.closing {
+		return
+	}
+	w.chrome.fullScreen = gtkWindowIsFullscreen(w.win) != 0
+	w.updateEnvironment()
 }
 
 // sessionLocale returns the user's locale as a BCP 47 tag, such as
