@@ -58,4 +58,4 @@ The pack keeps Lucide's ISC license and Feather's MIT notice in `icons/lucide/LI
 
 ## Verification
 
-`go test ./core -run SVG` covers the parser, the path grammar and fitting; `go test ./platform/internal/imagedecode` checks rasterized SVG pixels, decoded frames and the bounds. `go test ./icons/lucide` parses every icon, checks its size and that accessors share their document. The gallery's Icons section reviews the pack by eye: sizes, colors, buttons and the filtered browser, in both appearances on a running target.
+`go test ./core -run SVG` covers the parser, the path grammar and fitting; `go test ./platform/internal/imagedecode` checks rasterized SVG pixels, decoded frames and the bounds. `go test ./icons/lucide` parses every icon, checks its size and that accessors share their document. The gallery's Lucide section reviews the pack by eye: sizes, colors, buttons and the filtered browser, in both appearances on a running target.

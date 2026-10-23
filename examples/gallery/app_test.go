@@ -21,6 +21,34 @@ func startDesktop(t *testing.T, opts ...nsgotest.Option) *nsgotest.App {
 	return app
 }
 
+// TestSidebarGroups keeps the sidebar grouped as Onevra's: Overview, the
+// icon library, NSGo, then the component categories.
+func TestSidebarGroups(t *testing.T) {
+	app := startDesktop(t)
+	groups := []struct{ heading, first string }{
+		{"Overview", "nav-Welcome"},
+		{"Icon library", "nav-Lucide"},
+		{"NSGo", "nav-Base"},
+		{"Elements", "nav-Text"},
+		{"Components", "nav-Buttons"},
+	}
+	last := core.Points(-1)
+	for _, group := range groups {
+		root := app.Find("id:nav-group-" + group.heading)
+		app.Find("id:nav-group-" + group.heading + " >> text:" + group.heading)
+		app.Find("id:nav-group-" + group.heading + " >> id:" + group.first)
+		if root.Frame.Origin.Y <= last {
+			t.Fatalf("the %s group is above the group before it", group.heading)
+		}
+		last = root.Frame.Origin.Y
+	}
+	welcome := app.Find("id:nav-group-Overview >> id:nav-Welcome")
+	docs := app.Find("id:nav-group-Overview >> id:nav-Documentation")
+	if welcome.Frame.Origin.Y >= docs.Frame.Origin.Y {
+		t.Fatal("Documentation does not follow Welcome in Overview")
+	}
+}
+
 func TestSidebarSwitchesSections(t *testing.T) {
 	app := startDesktop(t)
 	if got := app.Find("id:title").Text; got != "Welcome" {
@@ -213,12 +241,12 @@ func TestApplicationMenu(t *testing.T) {
 	app.Find("id:section-Images")
 	view := app.Menu[slices.IndexFunc(app.Menu, func(e core.MenuEntry) bool { return e.Label == "View" })]
 	for _, e := range view.Items {
-		if e.Label == "Images" && (!e.Checked || e.Shortcut != "mod+7") {
-			t.Fatalf("View › Images = %+v, want checked with mod+7", e)
+		if e.Label == "Images" && (!e.Checked || e.Shortcut != "mod+8") {
+			t.Fatalf("View › Images = %+v, want checked with mod+8", e)
 		}
 	}
 	app.ChooseMenu("View", "Next Section")
-	app.Find("id:section-Icons")
+	app.Find("id:section-Canvas")
 
 	app.Find("id:about")
 	app.ChooseMenu("View", "Show Descriptions")
@@ -446,7 +474,7 @@ func TestWebViewMessages(t *testing.T) {
 // browser rows, and that clearing it shows the whole catalog again.
 func TestIconBrowserFilters(t *testing.T) {
 	app := startDesktop(t)
-	app.Press("id:nav-Icons")
+	app.Press("id:nav-Lucide")
 	app.Find("text:1879 of 1879 icons")
 	app.Type("id:icon-search", "heart")
 	found := 0

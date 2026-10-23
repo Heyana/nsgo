@@ -170,8 +170,8 @@ func shortcut(cx *core.Scope, key string) string {
 	return "⌘" + key
 }
 
-// navigation is the sidebar's list: Welcome, Base and the guide above
-// every group of sections, all scrolling together.
+// navigation is the sidebar's list: every group of sections, scrolling
+// together.
 func (g *gallery) navigation() core.Node {
 	item := func(s section) core.Node {
 		return ui.SidebarItem{Label: s.name, Icon: s.icon(), TestID: "nav-" + s.name,
@@ -179,25 +179,14 @@ func (g *gallery) navigation() core.Node {
 	}
 	var list []core.Node
 	for _, group := range groups() {
-		if group[0].group == groupOverview || group[0].group == groupGuide {
-			continue
-		}
 		var items []core.Node
 		for _, s := range group {
 			items = append(items, item(s))
 		}
-		list = append(list, ui.SidebarSection{Title: group[0].group, Children: items})
+		list = append(list, ui.SidebarSection{Title: group[0].group, TestID: "nav-group-" + group[0].group, Children: items})
 	}
-	welcome, _ := find("Welcome")
-	base, _ := find("Base")
-	guide, _ := find("Documentation")
 	return core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)}, Children: []core.Node{
 		core.Scroll{TestID: "nav-sections", Style: core.Style{FlexGrow: 1}, Children: []core.Node{
-			core.View{Style: core.Style{Padding: core.Edges{Right: 12, Bottom: 10, Left: 12}, Gap: 10}, Children: []core.Node{
-				item(welcome),
-				item(base),
-				item(guide),
-			}},
 			ui.Sidebar{Label: "Sections", Children: list},
 		}},
 	}}

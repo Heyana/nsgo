@@ -36,7 +36,8 @@ type section struct {
 // The sidebar's groups, in its order.
 const (
 	groupOverview   = "Overview"
-	groupGuide      = "Guide"
+	groupIcons      = "Icon library"
+	groupNSGo       = "NSGo"
 	groupElements   = "Elements"
 	groupComponents = "Components"
 	groupMedia      = "Media"
@@ -51,14 +52,16 @@ var sections []section
 func init() {
 	sections = []section{
 		{"Welcome", groupOverview, lucide.House, "", welcomePage},
-		{"Base", groupOverview, lucide.Component, "The engine's unstyled parts: a pressable view, popups, menus, dialogs, sheets, navigation, safe areas and split panes, styled by the app.", basePage},
-		{"Documentation", groupGuide, lucide.BookOpen, "Guides for building NSGo applications.", docsPage},
+		{"Documentation", groupOverview, lucide.BookOpen, "Guides for building NSGo applications.", docsPage},
+
+		{"Lucide", groupIcons, lucide.Shapes, "The bundled Lucide pack, drawn in inherited text color at any size.", iconsPage},
+
+		{"Base", groupNSGo, lucide.Component, "The engine's unstyled parts: a pressable view, popups, menus, dialogs, sheets, navigation, safe areas and split panes, styled by the app.", basePage},
 
 		{"Text", groupElements, lucide.Type, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
 		{"Layout", groupElements, lucide.LayoutGrid, "Flexbox, wrapping, absolute positioning, grid and block layout.", layoutPage},
 		{"Styles", groupElements, lucide.Paintbrush, "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
 		{"Images", groupElements, lucide.Image, "Embedded, remote, animated and vector images, placeholders and resize modes.", imagesPage},
-		{"Icons", groupElements, lucide.Shapes, "The bundled Lucide pack, drawn in inherited text color at any size.", iconsPage},
 		{"Canvas", groupElements, lucide.PenTool, "2D drawing recorded on the engine and played by the platform.", canvasPage},
 		{"Lists", groupElements, lucide.List, "Virtualized lists: sticky sections, columns, a chat, a list in the page, and a keyed list you edit.", listsPage},
 		{"Scrolling", groupElements, lucide.Scroll, "Paging, snapping, insets, pull to refresh, the scroll events and zooming.", scrollingPage},
