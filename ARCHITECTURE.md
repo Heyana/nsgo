@@ -1,6 +1,6 @@
 # NSGo architecture
 
-NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles, layout and text layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views and runs what animates on its own frame clock. Most of NSH's elements, layers, navigation, base components and services exist today; sections below say what exists, and the [roadmap](docs/roadmap.md) orders what is missing.
+NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longbridge/nsh). A Go engine owns the reactive graph, the shadow tree, styles, layout and text layout. Each commit produces one batch of mount items, and a thin platform backend applies it to native views and runs what animates on its own frame clock. Most of NSH's elements, layers, navigation, base components and services exist, many with fewer props than NSH's; sections below say what exists, and the [roadmap](docs/roadmap.md) orders what is missing.
 
 ## Reference implementation
 
@@ -24,7 +24,7 @@ Packages mirror NSH's crates:
 | `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, layout, text, SVG drawings, mount items; the animation graph's evaluator (`Animator`) and the selection model the backends run |
 | `base` | `nsh-base` | Unstyled base components: controls, sliders, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack |
 | `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark), HTML (x/net/html) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
-| `ui` | `nsh-base`'s `Theme` | The theme as Go values; `base`'s controls, popups and text view styled with it; fields, a sidebar, settings, a command palette and toasts composed on them, after Onevra's components |
+| `ui` | `nsh-base`'s `Theme` | The theme as Go values, `base`'s components styled with it, and fields, a sidebar, settings, a command palette and toasts after Onevra's |
 | `ui/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma, in NSH's palette |
 | `icons/lucide` | — (NSH loads SVG as images) | The bundled Lucide pack: one generated accessor per icon, parsed on first use ([icons](docs/architecture/icons.md)) |
 | `engine` | `nsh-engine` | Engine goroutine: an unbounded mailbox, commits, one batch per commit to the platform |
@@ -40,7 +40,7 @@ Packages mirror NSH's crates:
 | `cmd/nsgo/apk` | `nsh-cli` (`android.rs`) | Android packaging: binary XML, ZIP and v2 signature in Go |
 | `tools/lucidegen` | — | Regenerates `icons/lucide` and the gallery's catalog from a pinned Lucide checkout |
 | `examples/hello` | `examples/counter` | A todo list: text, input, button, scroll view and keyed list, with a headless test |
-| `examples/gallery` | `examples/gallery-rs` | Every element, component and service, a page each, in the design of Onevra's gallery: Base pages in black and white, UI pages in the default theme, with headless tests |
+| `examples/gallery` | `examples/gallery-rs` | Every element, component and service, a page each, with headless tests |
 
 ## Platforms
 
@@ -51,17 +51,17 @@ Every target builds on macOS with Go; iOS also needs Xcode, and x86_64 Android n
 | macOS | `platform/macos` | purego and the Objective-C runtime; `CGO_ENABLED=0` | Runs |
 | iOS | `platform/ios` | The same; cgo only because Go links iOS with Xcode's linker | Runs in the simulator and on devices |
 | Web | `platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
-| Windows | `platform/windows` | `syscall` and COM: a Win32 window drawn with Direct2D into a Direct3D 11 flip-model swap chain, DirectWrite text and drawn inputs; a DirectComposition tree that stacks WebView2 pages between layers of what is drawn after them; Media Foundation videos drawn as content | Runs; native tests check its window, input, pixels, web views, videos, file drops, native components, animations and images |
-| Linux | `platform/linux` | GTK 4, Pango and Cairo loaded with purego: a widget per view (`NsgoView`, a GtkWidget subclass registered from Go) drawn with GtkSnapshot and Cairo, Pango text, and GtkEntry inputs, WebKitGTK web views and GStreamer videos hosted in their views | Runs; native tests check its window, input, stacking, clipping, pixels, file drops, native components, animations, images, web views and videos |
+| Windows | `platform/windows` | `syscall` and COM: Direct2D on a Direct3D 11 swap chain, DirectWrite text, drawn inputs, WebView2 in DirectComposition, Media Foundation videos | Runs; native tests open a real window |
+| Linux | `platform/linux` | GTK 4, Pango and Cairo loaded with purego: a widget per view drawn with GtkSnapshot, hosting GtkEntry inputs, WebKitGTK web views and GStreamer videos | Runs; native tests open a real window |
 | Android | `platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Runs on arm64 devices and x86_64 emulators; `nsgo` builds, signs and installs the APK |
 
 Android runs the app as a second process because Go builds Android shared libraries only with cgo and the NDK. Without cgo, Go builds Android executables for arm64 only, so 32-bit devices stay out of reach. iOS forbids child processes, so it links in-process with Xcode instead.
 
 `nsgo dev -target ios` builds the app and Xcode signs it with automatic signing from the developer account in Xcode. It installs the app with `devicectl` and streams its output; `nsgo build -target ios` leaves the app to sign.
 
-Neither an NDK nor the Android SDK is needed for arm64: `platform/android/runtime` holds the Java runtime's prebuilt `classes.dex` (its `build.sh` rebuilds it), and `cmd/nsgo/apk` writes the binary manifest, the ZIP and the v2 signature in Go. `nsgo build -target android_arm64` writes an APK signed with the project's debug key. `nsgo dev -target android` builds for the connected device's ABI, installs the APK, starts it and streams its log, so device and emulator development needs `adb` from the SDK's platform-tools.
+Neither an NDK nor the Android SDK is needed for arm64: `platform/android/runtime` holds the Java runtime's prebuilt `classes.dex` (its `build.sh` rebuilds it), and `cmd/nsgo/apk` writes the binary manifest, the ZIP and the v2 signature in Go. `nsgo build -target android_arm64` writes an APK signed with the project's debug key.
 
-The Linux backend loads GTK 4 at run time, so building its package needs only Go. Running it needs GTK 4.14 or newer, Pango and Cairo, as any GTK app does; web views also need WebKitGTK 6.0 and videos the GStreamer plug-ins for their formats. Without WebKitGTK a web view shows a placeholder, as NSH's does.
+The Linux backend loads GTK 4 at run time, so building its package needs only Go. Running it needs GTK 4.14 or newer, Pango and Cairo; web views also need WebKitGTK 6.0 and videos the GStreamer plug-ins for their formats. Without WebKitGTK a web view shows a placeholder, as NSH's does.
 
 As in NSH, each Linux view is a widget its parent places at the core's frame, so hosted controls stack, clip, fade and transform with the views around them. The application menu is a GTK menu bar above the surface, but the backend draws no window controls of its own, so a hidden title bar reports the app's bar height only.
 
@@ -88,12 +88,11 @@ As in NSH, each Linux view is a widget its parent places at the core's frame, so
 - Targets name an OS and an architecture (`macos_arm64`, `windows_x64`), so each package holds one binary.
 - `nsgo build` is a release build: `-s -w`, `-trimpath`, no VCS stamp. `nsgo dev` keeps symbols.
 - `nsgo build -target all` names every target that needs only Go and Xcode; `android_x64` stays explicit because it needs an NDK.
-- `nsgo build` shows the output directory when it finishes, unless `nsgo.yaml` sets `build.open` to false.
-- `nsgo dev` runs the app once and exits when the app does, unless `nsgo.yaml` sets `dev.hot_reload` to true; the web target serves until interrupted.
+- `nsgo dev`'s web target serves until interrupted.
 - `nsgo dev`'s Android target installs each build over `adb`, streams the app's log here, and stops the app when `nsgo dev` ends.
 - With hot reload, `nsgo dev` watches the directories `go list -deps` reports, NSGo's own included, and keeps the last good build running when a build fails.
 - With hot reload, the web dev server reloads open pages over server-sent events after each build.
-- Packages ship `resources/` from beside `nsgo.yaml` in their resource root, which `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` paths against. `assets/` holds sources that do not ship, such as icons.
+- Packages ship `resources/` in their resource root, which `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` paths against.
 - App icons are written in Go, except that `actool` compiles Apple's `.icon` files and asset catalogs. A Windows icon links in from a `.syso` written into the app's package directory for the build, since Go links `.syso` files only from there.
 
 ## Core flows
