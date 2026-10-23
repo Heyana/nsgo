@@ -15,6 +15,16 @@ NSGo is a cross-platform native UI engine with a Go backend, ported from the des
 - Write configuration files people edit by hand in YAML, never JSON, including ones ported from NSH's JSON files.
 - Mark unimplemented designs as goals or open questions; never document them as existing behavior.
 
+## Components
+
+`base` and `ui` split by what an app cannot build itself, not by how NSH's crates are cut. This outranks NSH: `nsh-base` is the reference for a component's behavior and names, never for which package it belongs to.
+
+- `base` holds the basic implementations of what the engine must own, and nothing else: text (`core.Text`), a pressable view with a role, a virtualized list, the overlay behind popups, menus, dialogs and sheets, navigation, safe areas and the keyboard.
+- Each of those takes the app's styles part by part and has no look.
+- `ui` composes `base` into everything else: styled controls and variants, fields and selects, settings, a sidebar, a command palette, toasts. A component looking complex is the sign it belongs here, since its complexity is arrangement rather than engine access.
+- A component belongs in `base` only when composing it from `base`'s parts cannot reach what it needs: a role, focus, platform input, virtualization or a system surface. Sharing a look with `ui` is never a reason.
+- When in doubt, build it in `ui`; move it down once a second component needs the same behavior and cannot share it another way.
+
 ## Working with the user
 
 - Never create sub-Agents or Git worktrees; work directly in the current checkout.
