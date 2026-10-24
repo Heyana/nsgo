@@ -49,6 +49,7 @@ func init() {
 		{"Styles", groupElements, "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
 		{"Images", groupElements, "Embedded, remote, animated and vector images, placeholders and resize modes.", imagesPage},
 		{"Canvas", groupElements, "2D drawing recorded on the engine and played by the platform.", canvasPage},
+		{"Shader", groupElements, "Fragment shaders in Go's syntax, run on the GPU with uniforms the platform animates.", shaderPage},
 		{"Lists", groupElements, "Virtualized lists: sticky sections, columns, a chat, a list in the page, and a keyed list you edit.", listsPage},
 		{"Scrolling", groupElements, "Paging, snapping, insets, pull to refresh, the scroll events and zooming.", scrollingPage},
 

@@ -1320,6 +1320,8 @@ func kindName(k driver.ViewKind) string {
 		return "web"
 	case driver.KindVideo:
 		return "video"
+	case driver.KindShader:
+		return "shader"
 	}
 	return "?"
 }

@@ -30,9 +30,10 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `nsgotest` | `nsh-testing` | Headless app tests: approximate text, a manual clock, selectors over a model of the views |
 | `internal/driver` | `nsh-core`'s mount protocol | Mount items, events, `TextEngine` and the values both sides share; the `Animator`, selection model and edit limits every backend runs |
 | `internal/layout` | Taffy | Block, flexbox and grid layout, checked against Taffy's fixtures |
+| `internal/shader`, `internal/shaderir` | — (MyGo's fork of Ebitengine's Kage) | The shader compiler: Go's syntax checked into an IR, written as MSL, GLSL or HLSL ([shaders](docs/architecture/shaders.md)) |
 | `internal/engine` | `nsh-engine` | The engine goroutine: a mailbox, one batch per commit to the platform, storage files and the performance monitor |
 | `internal/platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
-| `internal/platform/apple` | Shared Apple code | Layers, images, canvas, web views, videos and CoreText for macOS and iOS |
+| `internal/platform/apple` | Shared Apple code | Layers, images, canvas, Metal shaders, web views, videos and CoreText for macOS and iOS |
 | `internal/platform/*` | Platforms' shared code | Image loading and pure Go decoding ([images](docs/architecture/images.md)), text field edits, drawn scroll bars, hover and finger tracking |
 | `examples/gallery` | `examples/gallery-rs` | Every element, component and service, a page each, with headless tests; its web build is the website |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `dev` and `build`, driven by an app's `nsgo.yaml`; `apk` packages and signs Android apps in Go |
@@ -77,8 +78,8 @@ Packages import only downward; `layering_test.go` checks it on every target:
 
 - Apps import `nsgo`, `core`, `base`, `icons` and `nsgotest` only, including for their native components. `core` and `nsgotest` alias the internal types their API reaches; `TestPublicAPINamesNoInternalType` checks it.
 - `internal/driver` is the protocol and imports nothing else from the module. Backends import it and `internal/engine`, never `core`.
-- `core` imports only `internal/driver` and `internal/layout`. `internal/engine` runs one app on `core` and defines `engine.Platform`, which backends implement. `nsgotest` is the headless backend, without the engine.
-- `core`, `base`, `icons`, `nsgotest`, `internal/driver`, `internal/layout` and `internal/engine` build unchanged for every target: no purego, `syscall` or `unsafe`. No package has cgo files or hand-written C.
+- `core` imports only `internal/driver`, `internal/layout` and the shader compiler (`internal/shader`, `internal/shaderir`), which backends share too. `internal/engine` runs one app on `core` and defines `engine.Platform`, which backends implement. `nsgotest` is the headless backend, without the engine.
+- `core`, `base`, `icons`, `nsgotest`, `internal/driver`, `internal/layout`, the shader compiler and `internal/engine` build unchanged for every target: no purego, `syscall` or `unsafe`. No package has cgo files or hand-written C.
 - `base` holds NSGo's built-in unstyled components. Each takes styles, including `StyleFunc` for each part, so apps can style it freely.
 - A component gets its own package under `base` only when it links dependencies an app without it should not, as `base/textview` links goldmark and `base/textview/highlight` chroma.
 - NSGo ships no theme or styled components. Apps, or a component library, build them on `base`.
@@ -130,6 +131,7 @@ Record a design question here, and confirm the answer with the user before choos
 | [Hosted views](docs/architecture/native-views.md) | Changing `WebView`, `Video` or `Native` components |
 | [Images](docs/architecture/images.md) | Changing how backends load, decode or play images |
 | [Animation](docs/architecture/animation.md) | Changing animated values, layout animations or a backend's frame clock |
+| [Shaders](docs/architecture/shaders.md) | Changing `Shader`, the shader compiler or a backend's shader view |
 | [Text view](docs/architecture/textview.md) | Changing `TextView`, its parsers, parts or highlighting |
 | [Icons](docs/architecture/icons.md) | Changing SVG parsing, `core.Icon` or the Lucide pack |
 | [Performance](docs/architecture/performance.md) | Changing the performance monitor or a per-frame path |

@@ -32,6 +32,7 @@ Sections run in build order: what apps build on first, then components, services
 | Canvas queries | `canvas.md` | `MeasureText`, text metrics, point-in-path and point-in-stroke tests |
 | Canvas nodes | `canvas.md` (nodes) | Named parts of a drawing are accessibility and test elements with a role, label and selected state |
 | Animated drawings | `canvas.md`, `animation.md` | Animated values as drawing arguments, redrawn on the frame clock without commits |
+| Shaders everywhere | — ([shaders](architecture/shaders.md)) | Windows draws shaders with Direct3D 11 and the HLSL backend, Linux with GTK's GL, Android with AGSL or GLES; shaders read images |
 | Animation API | `animation.md` | Composite `Reset`, spring and decay samplers, keyframes and motion presets, a snapping `diffClamp`, shadow opacity and text color bindings |
 
 ## 3. Base components and popups

@@ -141,3 +141,46 @@ func TestGesturesMoveTheirValuesFromWhereTheyWere(t *testing.T) {
 		t.Fatal("a view with no value bound moved one")
 	}
 }
+
+// A shader view's bound lanes follow their nodes, and the view is
+// reported only when a lane it draws changed.
+func TestAnimatorShaderLanes(t *testing.T) {
+	a := NewAnimator(func(Event) {})
+	// The lanes bind before the batch's ItemAnimation makes the nodes.
+	a.BindShader(5, []ShaderNode{{Lane: 1, Node: 1}, {Lane: 2, Node: 3}})
+	a.Apply([]AnimationOp{{Kind: AnimCreateValue, Node: 1, Value: 2}, {Kind: AnimCreateValue, Node: 2},
+		{Kind: AnimCreateMath, Node: 3, Math: MathMul, A: Operand{Node: 1}, B: Operand{Const: 10}}})
+	changed := func() (views []NodeID) {
+		a.ChangedShaders(func(v NodeID) { views = append(views, v) })
+		return views
+	}
+	if got := changed(); len(got) != 1 || got[0] != 5 {
+		t.Fatalf("after binding: %v changed, want view 5", got)
+	}
+	lanes := []float64{7, 0, 0}
+	a.ShaderLanes(5, lanes)
+	if lanes[0] != 7 || lanes[1] != 2 || lanes[2] != 20 {
+		t.Fatalf("lanes = %v", lanes)
+	}
+	// A value the shader does not read changes nothing it draws.
+	a.Apply([]AnimationOp{{Kind: AnimSet, Node: 2, Value: 9}})
+	if got := changed(); len(got) != 0 {
+		t.Fatalf("an unbound value reported %v", got)
+	}
+	a.Apply([]AnimationOp{{Kind: AnimStart, ID: 1, Animation: &Animation{Kind: AnimationTiming, Value: 1, To: 4,
+		Timing: TimingConfig{Duration: 100 * time.Millisecond}}}})
+	a.Step(0)
+	a.Step(50 * time.Millisecond)
+	if got := changed(); len(got) != 1 {
+		t.Fatalf("a running animation reported %v", got)
+	}
+	a.ShaderLanes(5, lanes)
+	if lanes[1] != 3 || lanes[2] != 30 {
+		t.Fatalf("mid-animation lanes = %v", lanes)
+	}
+	a.Forget(5)
+	a.Step(100 * time.Millisecond)
+	if got := changed(); len(got) != 0 {
+		t.Fatalf("a forgotten view reported %v", got)
+	}
+}

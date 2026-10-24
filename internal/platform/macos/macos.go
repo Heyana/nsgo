@@ -91,6 +91,7 @@ type view struct {
 	presented bool                  // whether a modal was inserted yet
 	transform driver.Transform      // AppKit drops it when the frame changes
 	drawing   *driver.Drawing       // a canvas's
+	shader    *apple.ShaderLayer    // a shader view's (shader.go)
 	web       *apple.Web            // a web view's
 	video     *apple.Video          // a video's
 
@@ -151,6 +152,9 @@ type surface struct {
 	fieldEditor        objc.ID // NSGo's field editor of the window, made as a field first edits
 	// stale are the views whose content changed out of sight.
 	stale []*view
+	// shading are the shader views to draw once the batch or the frame
+	// is applied.
+	shading []*view
 
 	// The frame clock and what it animates.
 	animator *driver.Animator
@@ -912,6 +916,8 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemCanvas:
 			v.drawing = it.Drawing
 			v.redraw()
+		case driver.ItemShader:
+			s.setShader(v, it.Shader)
 		case driver.ItemScrollTo:
 			if v.sc != nil {
 				v.sc.applied++
@@ -984,6 +990,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 		}
 		s.applyAnimated()
 	})
+	s.drawShaders()
 	if s.animator.Running() {
 		s.startTicking()
 	}
@@ -1058,6 +1065,8 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 	case driver.KindVideo:
 		v.video = apple.NewVideo(v.native)
 		v.video.Dispatch = v.report
+	case driver.KindShader:
+		v.newShader()
 	}
 	views[v.native] = v
 	return v
@@ -1080,6 +1089,9 @@ func (s *surface) delete(v *view, kept bool) {
 	apple.ForgetTransform(v.native.Send(selLayer))
 	apple.ForgetBorders(v.native.Send(selLayer))
 	v.forgetContent()
+	if v.shader != nil {
+		v.shader.Release()
+	}
 	v.layout.Release()
 	if v.image != nil {
 		v.image.Close()

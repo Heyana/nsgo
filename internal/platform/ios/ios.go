@@ -59,9 +59,10 @@ type view struct {
 	bar       *navBar            // a screen's system header
 	// headerWrap holds a header view in its screen's bar.
 	headerWrap objc.ID
-	drawing    *driver.Drawing // a canvas's
-	web        *apple.Web      // a web view's
-	video      *apple.Video    // a video's
+	drawing    *driver.Drawing    // a canvas's
+	shader     *apple.ShaderLayer // a shader view's (shader.go)
+	web        *apple.Web         // a web view's
+	video      *apple.Video       // a video's
 
 	activation           driver.PanActivation
 	pan, pinch, rotation objc.ID // the recognizers of the gestures it follows
@@ -122,6 +123,9 @@ type surface struct {
 
 	// What a batch touched, finished once its frames are set.
 	images, presenting []*view
+	// shading are the shader views to draw once the batch or the frame
+	// is applied.
+	shading []*view
 
 	selecting *selection
 
@@ -670,6 +674,8 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemCanvas:
 			v.drawing = it.Drawing
 			v.native.Send(selSetNeedsDisplay)
+		case driver.ItemShader:
+			s.setShader(v, it.Shader)
 		case driver.ItemScrollTo:
 			size := objc.Send[apple.CGSize](v.native, sel("contentSize"))
 			in := objc.Send[edgeInsets](v.native, sel("adjustedContentInset"))
@@ -757,6 +763,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 		}
 		s.applyAnimated()
 	})
+	s.drawShaders()
 	if s.animator.Running() {
 		s.startTicking()
 	}
@@ -816,6 +823,8 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 		v.video.Dispatch = v.report
 		v.video.Parent = controller
 		v.native.Send(sel("setClipsToBounds:"), true)
+	case driver.KindShader:
+		v.newShader()
 	}
 	views[v.native] = v
 	return v
@@ -863,6 +872,9 @@ func (s *surface) delete(v *view, kept bool) {
 	}
 	if v.video != nil {
 		v.video.Close()
+	}
+	if v.shader != nil {
+		v.shader.Release()
 	}
 	delete(views, v.native)
 	v.native.Send(selRelease)

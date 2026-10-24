@@ -115,6 +115,9 @@ type surface struct {
 	components  driver.NativeComponents
 	unknown     map[string]bool // component names warned about
 	drag        *view           // the view files are dragged over
+	// shading are the shader views to draw once the batch or the frame
+	// is applied.
+	shading []*view
 }
 
 // view is the element of one NodeID.
@@ -133,6 +136,7 @@ type view struct {
 	layout    *textLayout
 	image     *image
 	drawing   *driver.Drawing // a canvas's
+	gl        *glShader       // a shader view's
 	web       *webFrame       // a web view's
 	video     *video          // a video's
 	modal     driver.ModalAnimation
@@ -843,6 +847,9 @@ func (s *surface) Mount(b *driver.MountBatch) {
 			if v.image != nil {
 				v.image.release()
 			}
+			if v.gl != nil {
+				v.gl.release()
+			}
 			if v.web != nil {
 				v.web.closePort()
 			}
@@ -870,6 +877,9 @@ func (s *surface) Mount(b *driver.MountBatch) {
 				}
 				if v.kind == driver.KindCanvas {
 					s.paint(v)
+				}
+				if v.kind == driver.KindShader {
+					s.shadeLater(v)
 				}
 				if v.kind == driver.KindScroll {
 					v.placeContent() // centering and snap points follow the size
@@ -911,6 +921,10 @@ func (s *surface) Mount(b *driver.MountBatch) {
 			if v.kind == driver.KindCanvas {
 				v.drawing = it.Drawing
 				s.paint(v)
+			}
+		case driver.ItemShader:
+			if v.gl != nil {
+				s.setShader(v, it.Shader)
 			}
 		case driver.ItemScrollTo:
 			if v.kind == driver.KindScroll {
@@ -985,7 +999,8 @@ func (s *surface) Mount(b *driver.MountBatch) {
 		}
 	}
 	s.applyAnimated()
-	if s.animator.Running() {
+	s.changedShaders()
+	if s.animator.Running() || len(s.shading) > 0 {
 		s.startTicking()
 	}
 }
@@ -1033,6 +1048,8 @@ func (s *surface) create(id driver.NodeID, kind driver.ViewKind) *view {
 		v.inner = s.element("canvas")
 		setStyle(v.inner, map[string]string{"width": "100%", "height": "100%"})
 		v.el.Call("appendChild", v.inner)
+	case driver.KindShader:
+		s.createShader(v)
 	case driver.KindScroll:
 		setStyle(v.el, map[string]string{"overflow": "auto"})
 		v.content = s.element("div")
@@ -1088,6 +1105,8 @@ func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
 			v.placeContent()
 		case driver.KindCanvas:
 			s.paint(v)
+		case driver.KindShader:
+			s.shadeLater(v)
 		}
 		if v.kind != driver.KindScroll {
 			kids := v.el.Get("children")

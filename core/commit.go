@@ -364,6 +364,11 @@ func (t *Tree) emit(n *node) {
 			cn.fresh = false
 			add(driver.MountItem{Kind: driver.ItemCanvas, ID: n.id, Drawing: cn.drawing})
 		}
+	case n.shader != nil:
+		if sn := n.shader; sn.fresh {
+			sn.fresh = false
+			add(driver.MountItem{Kind: driver.ItemShader, ID: n.id, Shader: sn.sent})
+		}
 	case n.web != nil:
 		if wn := n.web; first || wn.config != wn.sent {
 			c := wn.config

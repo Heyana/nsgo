@@ -34,6 +34,9 @@ const (
 	// KindNative hosts a view of a component the app registered, filling
 	// it (ItemNative).
 	KindNative
+	// KindShader fills itself with a fragment shader on the GPU
+	// (ItemShader).
+	KindShader
 )
 
 // ItemKind is what a mount item does.
@@ -172,6 +175,8 @@ const (
 	// responder, from taking the touches until they end, or lets them
 	// again with no ID.
 	ItemBlockNative
+	// ItemShader sets a shader view's program and uniforms (Shader).
+	ItemShader
 )
 
 // MountItem is one change to the native views. Kind says which fields
@@ -200,6 +205,7 @@ type MountItem struct {
 	Modal     *ModalConfig
 	Alert     *AlertConfig
 	Drawing   *Drawing
+	Shader    *Shader
 	// Keys are ItemKeymap's bindings, oldest first; see FindKey.
 	Keys   []KeyBinding
 	Window *WindowCommand

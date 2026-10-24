@@ -30,6 +30,11 @@ type Animator struct {
 	changed            map[NodeID]bool
 	now                float64 // seconds of the last step
 	finished           []Event
+
+	// shaders are the shader views with bound lanes; shadersStale says
+	// values changed since ChangedShaders last looked.
+	shaders      map[NodeID]*ashader
+	shadersStale bool
 }
 
 // NewAnimator returns an animator that reports finished runs and reads
@@ -37,7 +42,8 @@ type Animator struct {
 func NewAnimator(report func(Event)) *Animator {
 	return &Animator{nodes: map[uint32]*anode{}, runs: map[uint32]*arun{}, views: map[NodeID]*aview{},
 		pans: map[NodeID][2]uint32{}, scrolls: map[NodeID][2]uint32{}, report: report, changed: map[NodeID]bool{},
-		pinches: map[NodeID]uint32{}, rotations: map[NodeID]uint32{}, starts: map[NodeID][4]float64{}}
+		pinches: map[NodeID]uint32{}, rotations: map[NodeID]uint32{}, starts: map[NodeID][4]float64{},
+		shaders: map[NodeID]*ashader{}}
 }
 
 // anode is a node of the graph.
@@ -60,6 +66,13 @@ type anode struct {
 type aview struct {
 	nodes [PropCount]uint32
 	sent  AnimatedValues
+}
+
+// ashader is a shader view's bound lanes and their values ChangedShaders
+// last reported.
+type ashader struct {
+	nodes []ShaderNode
+	sent  []float64
 }
 
 // AnimatedValues are the bound properties of a view, as the animator
@@ -214,6 +227,7 @@ func (a *Animator) touch() {
 	for id := range a.views {
 		a.changed[id] = true
 	}
+	a.shadersStale = true
 }
 
 func (a *Animator) value(id uint32) *anode {
@@ -417,8 +431,62 @@ func (a *Animator) drive(m map[NodeID][2]uint32, view NodeID, p Point) bool {
 	return true
 }
 
+// BindShader has nodes drive lanes of shader view's uniforms, replacing
+// what it bound before (Shader.Nodes). ChangedShaders reports the view
+// next.
+func (a *Animator) BindShader(view NodeID, nodes []ShaderNode) {
+	if len(nodes) == 0 {
+		delete(a.shaders, view)
+		return
+	}
+	a.shaders[view] = &ashader{nodes: nodes}
+	a.shadersStale = true
+}
+
+// ShaderLanes writes the values of view's bound lanes into lanes, which
+// hold its Shader.Lanes; a lane beyond them is left out.
+func (a *Animator) ShaderLanes(view NodeID, lanes []float64) {
+	sh := a.shaders[view]
+	if sh == nil {
+		return
+	}
+	for _, b := range sh.nodes {
+		if n := a.nodes[b.Node]; n != nil && b.Lane >= 0 && b.Lane < len(lanes) {
+			lanes[b.Lane], _ = a.eval(n)
+		}
+	}
+}
+
+// ChangedShaders calls fn with each shader view whose bound lanes
+// changed since the last call, for the backend to draw again.
+func (a *Animator) ChangedShaders(fn func(view NodeID)) {
+	if !a.shadersStale {
+		return
+	}
+	a.shadersStale = false
+	for id, sh := range a.shaders {
+		changed := len(sh.sent) != len(sh.nodes)
+		if changed {
+			sh.sent = make([]float64, len(sh.nodes))
+		}
+		for i, b := range sh.nodes {
+			var v float64
+			if n := a.nodes[b.Node]; n != nil {
+				v, _ = a.eval(n)
+			}
+			if v != sh.sent[i] {
+				sh.sent[i], changed = v, true
+			}
+		}
+		if changed {
+			fn(id)
+		}
+	}
+}
+
 // Forget drops what is bound to a deleted view.
 func (a *Animator) Forget(view NodeID) {
+	delete(a.shaders, view)
 	delete(a.views, view)
 	delete(a.pans, view)
 	delete(a.scrolls, view)

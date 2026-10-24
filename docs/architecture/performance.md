@@ -45,6 +45,7 @@ Every frame runs the commit on the engine goroutine and, on the main thread, the
 - The cores clock down between frames, so a commit in the app takes longer than the same work in a Go benchmark; measure a change both ways.
 - A commit allocates only what it sends: compare a node's values on the stack and copy them into an item once they changed. Flex layout reuses its item buffers.
 - macOS draws only content that changed and can be seen ([text and drawing](text.md#text-and-drawing)), and decides what can be seen from the batches' state rather than by asking AppKit.
+- The main thread never waits for the GPU: Metal shader views take drawables and present on goroutines of their own ([shaders](shaders.md#platforms)).
 
 purego prices each foreign call by what its Go signature asks of reflection (Apple M1 Max):
 

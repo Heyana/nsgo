@@ -81,6 +81,7 @@ func (s *surface) tick() {
 		s.stepMotions(now)
 		s.applyAnimated()
 	})
+	s.drawShaders()
 	s.startImages()
 	if s.frameWanted {
 		s.frameWanted = false
@@ -178,6 +179,9 @@ func (v *view) place(f driver.Bounds) {
 	}
 	if v.video != nil {
 		v.video.Layout()
+	}
+	if v.shader != nil {
+		v.sizeShader()
 	}
 	if field := v.surface.accessories[v.id]; field != nil && field.input != nil {
 		// A taller bar shows only once the keyboard asks for it again.

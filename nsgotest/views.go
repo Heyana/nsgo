@@ -127,6 +127,7 @@ const (
 	KindWeb    = driver.KindWeb
 	KindVideo  = driver.KindVideo
 	KindNative = driver.KindNative
+	KindShader = driver.KindShader
 )
 
 const (

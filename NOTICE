@@ -18,3 +18,10 @@ Layout test fixtures in internal/layout/testdata/ come from Taffy,
 https://github.com/DioxusLabs/taffy, Copyright (c) 2018 Visly Inc. and
 Copyright (c) 2026 Taffy Authors, licensed under the MIT License. That directory's
 LICENSE file holds the full text.
+
+The shader compiler in internal/shader and internal/shaderir is Ebitengine's
+Kage compiler, https://github.com/hajimehoshi/ebiten, Copyright 2020 The Ebiten
+Authors, licensed under the Apache License, Version 2.0, as MyGo,
+https://github.com/egoist/mygo, Copyright (c) 2026 MyGo contributors, forked
+it under the MIT License. Its files keep their notices and say what MyGo
+changed; NSGo replaced MyGo's bridge. internal/shader/LICENSE holds both texts.

@@ -143,6 +143,7 @@ func (s *surface) tick(period time.Duration) {
 		s.stepMotions(now)
 		s.applyAnimated()
 	})
+	s.drawShaders()
 	s.startImages()
 	if len(s.motions) > 0 {
 		s.revisit()

@@ -80,11 +80,11 @@ func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 // once it shows (surface.revisit). Lists keep rows out of sight, and
 // hidden screens stay mounted.
 func (v *view) redraw() {
-	if v.contentLayer == 0 && v.layout == nil && v.drawing == nil {
+	if v.contentLayer == 0 && v.layout == nil && v.drawing == nil && v.shader == nil {
 		return
 	}
 	if v.shown() {
-		apple.Msg(v.drawLayer(), selSetNeedsDisplayLayer)
+		v.display()
 		return
 	}
 	if !v.stale {
@@ -173,15 +173,29 @@ func (s *surface) revisit() {
 			continue
 		}
 		v.stale = false
-		apple.Msg(v.drawLayer(), selSetNeedsDisplayLayer)
+		v.display()
 	}
 	clear(s.stale[len(waiting):])
 	s.stale = waiting
 }
 
+// display draws v's content, which can be seen: a content layer when Core
+// Animation next displays, a shader once the batch or the frame is
+// applied.
+func (v *view) display() {
+	if v.shader != nil {
+		v.surface.shadeLater(v)
+		return
+	}
+	apple.Msg(v.drawLayer(), selSetNeedsDisplayLayer)
+}
+
 // sizeContent keeps v's content layer over its bounds; a new size draws
 // it again (needsDisplayOnBoundsChange).
 func (v *view) sizeContent() {
+	if v.shader != nil {
+		v.sizeShader()
+	}
 	if v.contentLayer == 0 {
 		return
 	}
@@ -191,6 +205,9 @@ func (v *view) sizeContent() {
 // rescale draws every content layer again at the window's backing scale.
 func (s *surface) rescale() {
 	for _, v := range s.views {
+		if v != nil && v.shader != nil {
+			v.sizeShader()
+		}
 		if v == nil || v.contentLayer == 0 {
 			continue
 		}

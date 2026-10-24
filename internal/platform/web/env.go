@@ -101,6 +101,9 @@ func (s *surface) updateEnv() {
 			if repaint && v != nil && v.kind == driver.KindCanvas {
 				s.paint(v)
 			}
+			if repaint && v != nil && v.gl != nil {
+				s.shadeLater(v)
+			}
 		}
 	}
 }

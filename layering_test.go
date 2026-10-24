@@ -21,7 +21,9 @@ var layers = []struct {
 }{
 	{"internal/layout", nil},
 	{"internal/driver", nil},
-	{"core", []string{"internal/driver", "internal/layout"}},
+	{"internal/shaderir/", []string{"internal/shaderir"}},
+	{"internal/shader", []string{"internal/shaderir"}},
+	{"core", []string{"internal/driver", "internal/layout", "internal/shader", "internal/shaderir"}},
 	{"internal/engine", []string{"core", "internal/driver"}},
 	{"internal/platform/android/runtime", nil},
 	{"internal/platform/apple", append([]string{"internal/driver"}, platformShared...)},
@@ -44,15 +46,18 @@ var layers = []struct {
 	{"tools/", []string{"core"}},
 }
 
-// platformShared is the code several backends share.
+// platformShared is the code several backends share, the shader
+// compiler included.
 var platformShared = []string{
 	"internal/platform/apple", "internal/platform/field", "internal/platform/finger", "internal/platform/hover",
 	"internal/platform/imagedecode", "internal/platform/imageload", "internal/platform/queue", "internal/platform/scrollbar",
+	"internal/shader", "internal/shaderir/",
 }
 
 // portable lists the packages that build unchanged for every target: no
 // purego, syscall or unsafe.
-var portable = []string{"core", "internal/driver", "internal/layout", "internal/engine", "base/", "icons/", "nsgotest"}
+var portable = []string{"core", "internal/driver", "internal/layout", "internal/shader", "internal/shaderir/", "internal/engine",
+	"base/", "icons/", "nsgotest"}
 
 // layerTargets are the GOOS/GOARCH pairs the nsgo tool builds for.
 var layerTargets = [][2]string{
