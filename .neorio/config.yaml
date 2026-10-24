@@ -1,4 +1,4 @@
-icon: icon.png
+icon: examples/gallery/assets/Icon.png
 tasks:
   - label: Run
     group: run

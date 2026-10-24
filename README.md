@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="128" height="128" alt="NSGo" src="docs/images/logo.png">
+  <img width="128" height="128" alt="NSGo" src="examples/gallery/assets/Icon.png">
 </p>
 
 # NSGo
