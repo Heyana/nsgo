@@ -249,7 +249,7 @@ func (v *view) place(f driver.Bounds) {
 	if v.transform != (driver.Transform{}) {
 		apple.SetTransform(v.native.Send(selLayer), v.transform)
 	}
-	apple.LayoutBorders(v.native.Send(selLayer))
+	apple.LayoutDecor(v.native.Send(selLayer))
 	if v.style.Cursor != driver.CursorAuto {
 		invalidateCursor(v)
 	}

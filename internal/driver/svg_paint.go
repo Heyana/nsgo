@@ -350,7 +350,7 @@ func parseSVGTransform(v string) (svgMatrix, bool) {
 // shape in p.local, drawn through ctm. It returns a solid color instead
 // for a gradient that paints one, and ok false for one that paints
 // nothing: no stops, or bounding box units on a shape without area.
-func (p *svgParser) gradient(el *svgNode, ctm svgMatrix) (g *Gradient, solid Color, ok bool) {
+func (p *svgParser) gradient(el *svgNode, ctm svgMatrix) (g *CanvasGradient, solid Color, ok bool) {
 	chain := []*svgNode{el}
 	for cur := el; len(chain) < maxSVGUses; {
 		next := p.ids[svgHref(cur.attrs)]
@@ -434,7 +434,7 @@ func (p *svgParser) gradient(el *svgNode, ctm svgMatrix) (g *Gradient, solid Col
 		}
 		return n
 	}
-	g = &Gradient{Stops: stops}
+	g = &CanvasGradient{Stops: stops}
 	switch v, _ := attr("spreadMethod"); v {
 	case "reflect":
 		g.Spread = SpreadReflect
@@ -476,7 +476,7 @@ func (p *svgParser) gradient(el *svgNode, ctm svgMatrix) (g *Gradient, solid Col
 
 // average returns the gradient's mean color over offsets 0 to 1, the
 // fallback for players that paint no gradients.
-func (g *Gradient) average() Color {
+func (g *CanvasGradient) average() Color {
 	var sum [4]float64
 	add := func(c0, c1 Color, w float64) {
 		r0, g0, b0, a0 := c0.Components()

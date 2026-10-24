@@ -88,16 +88,32 @@ func (e EdgeColors) Or(c Color) EdgeColors {
 	return e
 }
 
-// Transform moves, scales and rotates a view without changing its
-// layout, around its center: translate, then rotate, then scale. The
-// zero value changes nothing.
+// Transform moves, scales, rotates and skews a view without changing its
+// layout, around its transform origin (its center unless the style says),
+// in CSS's order: perspective, translate, rotate, rotateX, rotateY, skew,
+// then scale. The zero value changes nothing.
 type Transform struct {
 	TranslateX, TranslateY Points
+	// TranslateXPercent and TranslateYPercent move the view by percentages
+	// of its own width and height, which the core adds to TranslateX and
+	// TranslateY each time the size changes.
+	TranslateXPercent, TranslateYPercent float32
 	// Scale scales both axes; ScaleX and ScaleY one each. 0 is unset (1).
 	Scale, ScaleX, ScaleY float32
-	// Rotate is in degrees, clockwise.
-	Rotate float32
+	// Rotate is in degrees, clockwise. RotateX and RotateY turn the view
+	// out of its plane around the horizontal and vertical axes, which
+	// shows depth only with a Perspective, its own or its parent's.
+	Rotate, RotateX, RotateY float32
+	// SkewX and SkewY slant the view along each axis, in degrees.
+	SkewX, SkewY float32
+	// Perspective is the distance the view is seen from, for its own
+	// rotations out of its plane; 0 is none.
+	Perspective Points
 }
+
+// Flat reports whether t stays in the view's plane, a 2D affine
+// transform.
+func (t Transform) Flat() bool { return t.RotateX == 0 && t.RotateY == 0 }
 
 // Scales returns the x and y scale factors.
 func (t Transform) Scales() (x, y float32) {

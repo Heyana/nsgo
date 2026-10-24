@@ -1,5 +1,12 @@
 package dev.oneo.nsgo;
 
+import android.graphics.BlendMode;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.Paint;
+import android.graphics.RenderEffect;
+import android.graphics.Shader;
+import android.os.Build;
 import android.view.View;
 
 /**
@@ -23,6 +30,36 @@ final class Look {
     boolean sides;
     float[] borders = new float[4];
     int[] borderColors = new int[4];
+    /** Each corner's radius (top left, top right, bottom right, bottom left), null when radius rounds them all. */
+    float[] corners;
+    boolean continuous;
+    int borderStyle;
+    Outline outline;
+    Shadow[] shadows = {};
+    Box.Gradient[] gradients = {};
+    /** Turns out of the plane, the depth they are seen from and where they act, from the center. */
+    float rotationX, rotationY, cameraDistance, originX, originY;
+    boolean backfaceHidden;
+    /** The depth the children's turns are seen from, 0 for none. */
+    float childPerspective;
+    /** A color matrix of the filters (4×5, offsets from 0 to 1), null for none, and their blur. */
+    float[] colorMatrix;
+    float blur;
+    /** The blend mode, as driver.BlendMode numbers them. */
+    int blend;
+
+    /** One box shadow, in pixels. */
+    static final class Shadow {
+        float dx, dy, blur, spread;
+        int color;
+        boolean inset;
+    }
+
+    /** An outline, in pixels. */
+    static final class Outline {
+        float width, offset;
+        int color, style;
+    }
 
     Look copy() {
         Look l = new Look();
@@ -44,6 +81,22 @@ final class Look {
         l.sides = sides;
         l.borders = borders.clone();
         l.borderColors = borderColors.clone();
+        l.corners = corners;
+        l.continuous = continuous;
+        l.borderStyle = borderStyle;
+        l.outline = outline;
+        l.shadows = shadows;
+        l.gradients = gradients;
+        l.rotationX = rotationX;
+        l.rotationY = rotationY;
+        l.cameraDistance = cameraDistance;
+        l.originX = originX;
+        l.originY = originY;
+        l.backfaceHidden = backfaceHidden;
+        l.childPerspective = childPerspective;
+        l.colorMatrix = colorMatrix;
+        l.blur = blur;
+        l.blend = blend;
         return l;
     }
 
@@ -86,13 +139,9 @@ final class Look {
      * and touches follow them.
      */
     void apply(View view, Box bg) {
-        bg.setColor(background);
-        bg.setCornerRadius(radius);
-        // A stroke of width 0 draws nothing.
-        float stroke = sides ? 0 : border;
-        bg.setStroke(stroke > 0 ? Math.max(1, Math.round(stroke)) : 0, borderColor);
-        bg.setSides(sides ? borders : null, sides ? borderColors : null, radius);
-        view.setAlpha(opacity);
+        bg.decorate(this);
+        boolean away = backfaceHidden && Math.cos(Math.toRadians(rotationX)) * Math.cos(Math.toRadians(rotationY)) < 0;
+        view.setAlpha(away ? 0 : opacity);
         boolean shadowed = (shadowColor >>> 24) != 0 && shadowRadius > 0;
         view.setElevation(shadowed ? shadowRadius : 0);
         if (shadowed) {
@@ -104,7 +153,58 @@ final class Look {
         view.setScaleX(scaleX);
         view.setScaleY(scaleY);
         view.setRotation(rotation);
+        view.setRotationX(rotationX);
+        view.setRotationY(rotationY);
+        if (cameraDistance > 0) view.setCameraDistance(cameraDistance);
+        if (originX != 0 || originY != 0) {
+            view.setPivotX(view.getWidth() / 2f + originX);
+            view.setPivotY(view.getHeight() / 2f + originY);
+        } else if (view.isPivotSet()) {
+            view.resetPivot();
+        }
+        effects(view);
     }
+
+    /**
+     * Gives the view its filters and blend mode: RenderEffects from
+     * Android 12, else a layer whose paint takes the color matrix and the
+     * blend mode, without the blur.
+     */
+    private void effects(View view) {
+        ColorMatrixColorFilter filter = null;
+        if (colorMatrix != null) {
+            float[] m = colorMatrix.clone();
+            // Android's offsets are from 0 to 255.
+            for (int i = 4; i < 20; i += 5) m[i] *= 255;
+            filter = new ColorMatrixColorFilter(new ColorMatrix(m));
+        }
+        if (Build.VERSION.SDK_INT >= 31) {
+            RenderEffect effect = null;
+            if (filter != null) effect = RenderEffect.createColorFilterEffect(filter);
+            if (blur > 0) {
+                RenderEffect b = RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.DECAL);
+                effect = effect == null ? b : RenderEffect.createChainEffect(b, effect);
+            }
+            view.setRenderEffect(effect);
+            filter = null;
+        }
+        if (filter == null && blend == 0) {
+            if (view.getLayerType() != View.LAYER_TYPE_NONE) view.setLayerType(View.LAYER_TYPE_NONE, null);
+            return;
+        }
+        Paint paint = new Paint();
+        paint.setColorFilter(filter);
+        if (blend != 0 && Build.VERSION.SDK_INT >= 29) paint.setBlendMode(BLENDS[Math.min(blend, BLENDS.length - 1)]);
+        view.setLayerType(View.LAYER_TYPE_HARDWARE, paint);
+    }
+
+    /** Android's blend modes in driver.BlendMode's order, normal first. */
+    private static final BlendMode[] BLENDS = Build.VERSION.SDK_INT >= 29 ? new BlendMode[] {
+        BlendMode.SRC_OVER, BlendMode.MULTIPLY, BlendMode.SCREEN, BlendMode.OVERLAY, BlendMode.DARKEN,
+        BlendMode.LIGHTEN, BlendMode.COLOR_DODGE, BlendMode.COLOR_BURN, BlendMode.HARD_LIGHT, BlendMode.SOFT_LIGHT,
+        BlendMode.DIFFERENCE, BlendMode.EXCLUSION, BlendMode.HUE, BlendMode.SATURATION, BlendMode.COLOR,
+        BlendMode.LUMINOSITY, BlendMode.PLUS,
+    } : null;
 
     /** Sets scaleX and scaleY from the raw scales, as core.Transform.Scales. */
     void combineScales() {

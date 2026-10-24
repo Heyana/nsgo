@@ -18,6 +18,9 @@ func ceil(p Points) Points { return Points(math.Ceil(float64(p))) }
 
 // borders returns the border widths layout uses.
 func (s *Style) borders() Edges {
+	if s.BorderStyle == BorderNone || s.BorderStyle == BorderHidden {
+		return Edges{}
+	}
 	if s.Borders != (Edges{}) {
 		return s.Borders
 	}
@@ -48,11 +51,16 @@ func (n *node) Measure(known layout.Size[layout.Opt], available layout.Size[layo
 	case n.text != nil:
 		// available is the content box: a known width is the border box,
 		// so measuring at it would ignore the text's own padding.
+		// Unwrapped lines are as wide as they are, whatever the space.
 		width := Auto
-		if available.Width.Kind == layout.SpaceDefinite {
+		switch {
+		case n.text.noWrap:
+		case available.Width.Kind == layout.SpaceDefinite:
 			width = Points(available.Width.Value)
-		} else if known.Width.Valid {
+		case known.Width.Valid:
 			width = Points(known.Width.Value)
+		case available.Width.Kind == layout.SpaceMinContent:
+			width = n.text.minContent()
 		}
 		if !width.IsAuto() {
 			width = max(width, 0)
@@ -117,7 +125,14 @@ func (n *node) layoutStyle() layout.Style {
 		l.Display = layout.DisplayBlock
 	}
 	l.Position = layout.PositionRelative
-	if s.Position == Absolute {
+	switch s.Position {
+	case Absolute:
+		l.Position = layout.PositionAbsolute
+	case Static:
+		l.Position = layout.PositionStatic
+	case Fixed:
+		// A fixed node is the layout root of its layer, placed in it
+		// absolutely (fixedRoot).
 		l.Position = layout.PositionAbsolute
 	}
 	switch s.Direction {
@@ -138,12 +153,12 @@ func (n *node) layoutStyle() layout.Style {
 	}
 	l.FlexGrow = s.FlexGrow
 	l.FlexShrink = layout.Some(s.FlexShrink)
-	l.FlexBasis = lengthLayout(s.FlexBasis)
+	l.FlexBasis = sizeLayout(s.FlexBasis)
 
-	l.Size = layout.Size[layout.Length]{Width: lengthLayout(s.Width), Height: lengthLayout(s.Height)}
+	l.Size = layout.Size[layout.Length]{Width: sizeLayout(s.Width), Height: sizeLayout(s.Height)}
 	// Yoga has no automatic minimum size: an unset minimum is 0.
 	l.MinSize = layout.Size[layout.Length]{Width: lengthMinLayout(s.MinWidth), Height: lengthMinLayout(s.MinHeight)}
-	l.MaxSize = layout.Size[layout.Length]{Width: lengthLayout(s.MaxWidth), Height: lengthLayout(s.MaxHeight)}
+	l.MaxSize = layout.Size[layout.Length]{Width: sizeLayout(s.MaxWidth), Height: sizeLayout(s.MaxHeight)}
 	if s.AspectRatio > 0 {
 		l.AspectRatio = layout.Some(s.AspectRatio)
 	}
@@ -153,6 +168,10 @@ func (n *node) layoutStyle() layout.Style {
 
 	l.Inset = layout.Rect[layout.Length]{Left: lengthLayout(s.Left), Right: lengthLayout(s.Right),
 		Top: lengthLayout(s.Top), Bottom: lengthLayout(s.Bottom)}
+	if s.Position == Sticky {
+		// Its insets are where it sticks, not offsets.
+		l.Inset = layout.Rect[layout.Length]{}
+	}
 	l.Margin = edgesLayout(s.Margin)
 	for _, side := range [...]struct {
 		bit Sides
@@ -280,12 +299,25 @@ func lengthLayout(l Length) layout.Length {
 	return layout.Auto
 }
 
+// sizeLayout maps a size, which may be intrinsic.
+func sizeLayout(l Length) layout.Length {
+	switch l {
+	case MinContent:
+		return layout.MinContent
+	case MaxContent:
+		return layout.MaxContent
+	case FitContent:
+		return layout.FitContent
+	}
+	return lengthLayout(l)
+}
+
 // minLayout maps a minimum size: auto is 0, as in Yoga.
 func lengthMinLayout(l Length) layout.Length {
 	if l.IsAuto() {
 		return layout.Px(0)
 	}
-	return lengthLayout(l)
+	return sizeLayout(l)
 }
 
 func edgesLayout(e Edges) layout.Rect[layout.Length] {
@@ -414,6 +446,14 @@ func (t *Tree) syncFrames(n *node) {
 		}
 		if mirror {
 			f.Origin.X = n.scroll.content.Width - f.Origin.X - f.Size.Width
+		}
+		if c.style.Position == Absolute {
+			// Layout placed it in its containing block, past the static
+			// views around it; its frame is in its parent's.
+			for p := n; p.style.Position == Static && !p.isRoot && p.parent != nil; p = p.nativeParent() {
+				f.Origin.X -= p.frame.Origin.X
+				f.Origin.Y -= p.frame.Origin.Y
+			}
 		}
 		// As NSH's frame walk does, a hidden subtree gets empty frames and
 		// content boxes, whatever its layout kept.

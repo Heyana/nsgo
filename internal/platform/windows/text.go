@@ -395,6 +395,10 @@ func (pt *preparedText) build() *comObject {
 		align = dwAlignJustified
 	}
 	format.call(formatSetTextAlignment, align)
+	if pt.style.RTL {
+		// Leading and trailing alignments follow it.
+		format.call(formatSetReadingDirection, dwReadingRTL)
+	}
 	if pt.maxLines == 1 {
 		// A text limited to one line does not wrap: it is truncated.
 		format.call(formatSetWordWrapping, dwNoWrap)

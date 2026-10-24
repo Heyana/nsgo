@@ -52,6 +52,12 @@ func (w *window) styleOf(v *view) *driver.ViewStyle {
 func (w *window) setStyle(v *view, s *driver.ViewStyle) {
 	from := *w.styleOf(v)
 	styled := v.styled
+	if s.Animation != v.style.Animation || !styled {
+		v.keyframeStart = time.Now()
+		if s.Animation.Keyframes != 0 {
+			w.animate(v)
+		}
+	}
 	v.style, v.styled, v.transition = *s, true, nil
 	w.setCursor(v)
 	t := s.Transition
@@ -62,7 +68,7 @@ func (w *window) setStyle(v *view, s *driver.ViewStyle) {
 	if props == 0 {
 		props = allProperties
 	}
-	first, last := mix(from, *s, 0, props), mix(from, *s, 1, props)
+	first, last := driver.MixStyles(from, *s, 0, props), driver.MixStyles(from, *s, 1, props)
 	if first == last {
 		return
 	}
@@ -143,51 +149,62 @@ func tickCallback(data uintptr) int32 {
 	return boolInt(w.ticking)
 }
 
+// step moves v's animations to now and reports whether one goes on.
+func (w *window) step(v *view, now time.Time) bool {
+	keep := false
+	if t := v.transition; t != nil {
+		if now.Before(t.start) {
+			return true
+		}
+		elapsed := now.Sub(t.start)
+		w.moved(v)
+		if elapsed >= t.duration {
+			v.transition = nil
+		} else {
+			p := t.curve.At(float64(elapsed) / float64(t.duration))
+			t.shown = driver.MixStyles(t.from, t.to, p, t.props)
+			keep = true
+		}
+	}
+	if a := v.style.Animation; a.Keyframes != 0 {
+		w.moved(v)
+		if _, running := a.At(now.Sub(v.keyframeStart)); running {
+			keep = true
+		}
+	}
+	if velocity, ok := v.wheel.Settled(now); ok {
+		w.settle(v, velocity)
+	} else if v.wheel.Turning() && v.scrolling == nil {
+		keep = true
+	}
+	if s := v.scrolling; s != nil {
+		elapsed := now.Sub(s.start)
+		if elapsed >= scrollDuration {
+			v.scrolling = nil
+			w.scrollTo(v, s.to)
+			if s.momentum {
+				w.scrollEvent(v, driver.EventMomentumEnd)
+			}
+		} else {
+			p := float64(elapsed) / float64(scrollDuration)
+			at := driver.Point{
+				X: driver.Points(float64(s.from.X) + float64(s.to.X-s.from.X)*p),
+				Y: driver.Points(float64(s.from.Y) + float64(s.to.Y-s.from.Y)*p),
+			}
+			w.scrollTo(v, at)
+			keep = true
+		}
+	}
+	return keep
+}
+
 // tick moves every animation to now and repaints.
 func (w *window) tick() {
 	now := time.Now()
 	live := w.animating[:0]
 	for _, v := range w.animating {
-		if v.deleted {
-			continue
-		}
-		if t := v.transition; t != nil {
-			if now.Before(t.start) {
-				live = append(live, v)
-				continue
-			}
-			elapsed := now.Sub(t.start)
-			w.moved(v)
-			if elapsed >= t.duration {
-				v.transition = nil
-			} else {
-				p := t.curve.At(float64(elapsed) / float64(t.duration))
-				t.shown = mix(t.from, t.to, p, t.props)
-				live = append(live, v)
-			}
-		}
-		if velocity, ok := v.wheel.Settled(now); ok {
-			w.settle(v, velocity)
-		} else if v.wheel.Turning() && v.scrolling == nil {
+		if !v.deleted && w.step(v, now) {
 			live = append(live, v)
-		}
-		if s := v.scrolling; s != nil {
-			elapsed := now.Sub(s.start)
-			if elapsed >= scrollDuration {
-				v.scrolling = nil
-				w.scrollTo(v, s.to)
-				if s.momentum {
-					w.scrollEvent(v, driver.EventMomentumEnd)
-				}
-			} else {
-				p := float64(elapsed) / float64(scrollDuration)
-				at := driver.Point{
-					X: driver.Points(float64(s.from.X) + float64(s.to.X-s.from.X)*p),
-					Y: driver.Points(float64(s.from.Y) + float64(s.to.Y-s.from.Y)*p),
-				}
-				w.scrollTo(v, at)
-				live = append(live, v)
-			}
 		}
 	}
 	w.animating = live
@@ -213,84 +230,5 @@ func (w *window) tick() {
 		// tickCallback's return removes the timer.
 		w.ticking = false
 		w.tickID = 0
-	}
-}
-
-// mix returns a style between from and to at t, moving only props.
-func mix(from, to driver.ViewStyle, t float64, props driver.TransitionProperty) driver.ViewStyle {
-	out := to
-	if props&driver.TransitionOpacity != 0 {
-		out.Opacity = mixFloat(from.Opacity, to.Opacity, t)
-	}
-	if props&driver.TransitionBackground != 0 {
-		out.Background = mixColor(from.Background, to.Background, t)
-	}
-	if props&driver.TransitionTransform != 0 {
-		out.Transform = mixTransform(from.Transform, to.Transform, t)
-	}
-	if props&driver.TransitionBorder != 0 {
-		out.BorderWidth = mixPoints(from.BorderWidth, to.BorderWidth, t)
-		out.BorderColor = mixColor(from.BorderColor, to.BorderColor, t)
-		out.Borders = mixEdges(from.Borders, to.Borders, t)
-		out.BorderColors = mixEdgeColors(from.BorderColors, to.BorderColors, t)
-		out.CornerRadius = mixPoints(from.CornerRadius, to.CornerRadius, t)
-	}
-	if props&driver.TransitionShadow != 0 {
-		out.ShadowRadius = mixPoints(from.ShadowRadius, to.ShadowRadius, t)
-		out.ShadowColor = mixColor(from.ShadowColor, to.ShadowColor, t)
-		out.ShadowOffset = driver.Point{
-			X: mixPoints(from.ShadowOffset.X, to.ShadowOffset.X, t),
-			Y: mixPoints(from.ShadowOffset.Y, to.ShadowOffset.Y, t),
-		}
-	}
-	return out
-}
-
-func mixPoints(a, b driver.Points, t float64) driver.Points { return a + (b-a)*driver.Points(t) }
-
-func mixFloat(a, b float32, t float64) float32 { return a + (b-a)*float32(t) }
-
-// mixColor blends two colors in straight alpha, taking the visible
-// color of a transparent start rather than fading through black.
-func mixColor(a, b driver.Color, t float64) driver.Color {
-	if a == b {
-		return a
-	}
-	ar, ag, ab, aa := a.Components()
-	br, bg, bb, ba := b.Components()
-	alpha := aa + (ba-aa)*t
-	var r, g, bl float64
-	if alpha > 0 {
-		// Weight each color by its alpha, so a transparent color does
-		// not darken the result.
-		r = (ar*aa + (br*ba-ar*aa)*t) / alpha
-		g = (ag*aa + (bg*ba-ag*aa)*t) / alpha
-		bl = (ab*aa + (bb*ba-ab*aa)*t) / alpha
-	}
-	return driver.RGBA(uint32(r*255+0.5)<<16|uint32(g*255+0.5)<<8|uint32(bl*255+0.5), float32(alpha))
-}
-
-func mixTransform(a, b driver.Transform, t float64) driver.Transform {
-	return driver.Transform{
-		TranslateX: mixPoints(a.TranslateX, b.TranslateX, t),
-		TranslateY: mixPoints(a.TranslateY, b.TranslateY, t),
-		Scale:      mixFloat(a.Scale, b.Scale, t),
-		ScaleX:     mixFloat(a.ScaleX, b.ScaleX, t),
-		ScaleY:     mixFloat(a.ScaleY, b.ScaleY, t),
-		Rotate:     mixFloat(a.Rotate, b.Rotate, t),
-	}
-}
-
-func mixEdges(a, b driver.Edges, t float64) driver.Edges {
-	return driver.Edges{
-		Top: mixPoints(a.Top, b.Top, t), Right: mixPoints(a.Right, b.Right, t),
-		Bottom: mixPoints(a.Bottom, b.Bottom, t), Left: mixPoints(a.Left, b.Left, t),
-	}
-}
-
-func mixEdgeColors(a, b driver.EdgeColors, t float64) driver.EdgeColors {
-	return driver.EdgeColors{
-		Top: mixColor(a.Top, b.Top, t), Right: mixColor(a.Right, b.Right, t),
-		Bottom: mixColor(a.Bottom, b.Bottom, t), Left: mixColor(a.Left, b.Left, t),
 	}
 }

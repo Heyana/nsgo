@@ -1,6 +1,10 @@
 package core
 
-import "github.com/oneo-me/nsgo/internal/driver"
+import (
+	"slices"
+
+	"github.com/oneo-me/nsgo/internal/driver"
+)
 
 // Overlays and modals stay where they are built in the shadow tree, for
 // their owner, context, inherited text style and lifetime, but their
@@ -9,9 +13,11 @@ import "github.com/oneo-me/nsgo/internal/driver"
 
 type hoistNode struct {
 	host    *node
-	overlay *Overlay // nil for a modal
+	overlay *Overlay // nil for a modal or a fixed view
 	modal   *Modal
-	placed  Placement
+	// fixed is a view hoisted while its position is Fixed.
+	fixed  bool
+	placed Placement
 	// reported is a modal's size and insets when the platform presents
 	// it at a size of its own (EventModalSize); dismissed says the
 	// platform closed it, as when a sheet is swiped away.
@@ -123,6 +129,11 @@ func (t *Tree) placeHoisted(host *node) {
 			}
 			t.layoutRoot(n, size, true)
 			n.frame = Bounds{Origin: Point{Y: top}, Size: size}
+		} else if n.hoist.fixed {
+			t.layoutRoot(n, size, false)
+			l := &n.lstate.Rounded
+			box := Size{Width: Points(l.Size.Width), Height: Points(l.Size.Height)}
+			n.frame = Bounds{Origin: insetOrigin(&n.style, box, size, n.rtl), Size: box}
 		} else {
 			t.placeOverlay(n, host, size)
 		}
@@ -222,23 +233,7 @@ func (t *Tree) placeOverlay(n *node, host *node, hostSize Size) {
 	if !ok {
 		// Without an anchor, an overlay is placed as an absolute child of
 		// its host.
-		left, right := s.Left.Resolve(w), s.Right.Resolve(w)
-		if n.rtl {
-			left, right = right, left
-		}
-		tp, b := s.Top.Resolve(h), s.Bottom.Resolve(h)
-		switch {
-		case !left.IsAuto():
-			origin.X = left
-		case !right.IsAuto():
-			origin.X = w - right - size.Width
-		}
-		switch {
-		case !tp.IsAuto():
-			origin.Y = tp
-		case !b.IsAuto():
-			origin.Y = h - b - size.Height
-		}
+		origin = insetOrigin(&s, size, hostSize, n.rtl)
 	} else {
 		safe := t.root.Env().safe.GetUntracked()
 		if host.kind == driver.KindModal {
@@ -263,6 +258,64 @@ func (t *Tree) placeOverlay(n *node, host *node, hostSize Size) {
 		n.hoist.placed = side
 	}
 	n.frame = Bounds{Origin: origin, Size: size}
+}
+
+// insetOrigin places a box of size in a host of hostSize by s's insets,
+// as an absolute child of the host.
+func insetOrigin(s *Style, size, hostSize Size, rtl bool) Point {
+	w, h := hostSize.Width, hostSize.Height
+	left, right := s.Left.Resolve(w), s.Right.Resolve(w)
+	if rtl {
+		left, right = right, left
+	}
+	tp, b := s.Top.Resolve(h), s.Bottom.Resolve(h)
+	var origin Point
+	switch {
+	case !left.IsAuto():
+		origin.X = left
+	case !right.IsAuto():
+		origin.X = w - right - size.Width
+	}
+	switch {
+	case !tp.IsAuto():
+		origin.Y = tp
+	case !b.IsAuto():
+		origin.Y = h - b - size.Height
+	}
+	return origin
+}
+
+// syncPosition hoists n into its host while its position is Fixed, puts
+// it back in its parent when it no longer is, and keeps the sticky views
+// the tree pins.
+func (t *Tree) syncPosition(n *node) {
+	if n.kind == 0 || n.attach != nil || n.accessory != nil || n.headerView || n.isStack {
+		return
+	}
+	if sticky := n.style.Position == Sticky; sticky != t.sticky[n] {
+		if sticky {
+			if t.sticky == nil {
+				t.sticky = map[*node]bool{}
+			}
+			t.sticky[n] = true
+		} else {
+			delete(t.sticky, n)
+		}
+	}
+	fixed := n.style.Position == Fixed
+	switch {
+	case fixed && n.hoist == nil && n.parent != nil:
+		t.hoist(n, &hoistNode{fixed: true})
+		t.relayout(n)
+	case !fixed && n.hoist != nil && n.hoist.fixed:
+		host := n.hoist.host
+		host.hosted = slices.DeleteFunc(host.hosted, func(h *node) bool { return h == n })
+		host.childrenDirty = true
+		host.markLayout()
+		n.hoist, n.isRoot, n.fill, n.lstyleOK = nil, false, nil, false
+		n.lstate.Invalidate()
+		t.childrenChanged(n.parent)
+	}
 }
 
 // anchorRect returns ref's bounds in host's coordinates.

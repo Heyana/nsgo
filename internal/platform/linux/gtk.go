@@ -221,6 +221,9 @@ var (
 	pangoFontMapCreateContext      func(uintptr) uintptr
 	pangoFontMapUnref              func(uintptr)
 	pangoLayoutNew                 func(uintptr) uintptr
+	pangoLayoutSetAutoDir          func(uintptr, bool)
+	pangoLayoutGetContext          func(uintptr) uintptr
+	pangoContextSetBaseDir         func(uintptr, int32)
 	pangoLayoutSetText             func(uintptr, *byte, int32)
 	pangoLayoutSetWidth            func(uintptr, int32)
 	pangoLayoutSetHeight           func(uintptr, int32)
@@ -517,6 +520,9 @@ func bind() {
 	purego.RegisterLibFunc(&pangoFontMapCreateContext, pangoLib, "pango_font_map_create_context")
 	purego.RegisterLibFunc(&pangoFontMapUnref, pangoLib, "g_object_unref") // PangoFontMap is a GObject
 	purego.RegisterLibFunc(&pangoLayoutNew, pangoLib, "pango_layout_new")
+	purego.RegisterLibFunc(&pangoLayoutSetAutoDir, pangoLib, "pango_layout_set_auto_dir")
+	purego.RegisterLibFunc(&pangoLayoutGetContext, pangoLib, "pango_layout_get_context")
+	purego.RegisterLibFunc(&pangoContextSetBaseDir, pangoLib, "pango_context_set_base_dir")
 	purego.RegisterLibFunc(&pangoLayoutSetText, pangoLib, "pango_layout_set_text")
 	purego.RegisterLibFunc(&pangoLayoutSetWidth, pangoLib, "pango_layout_set_width")
 	purego.RegisterLibFunc(&pangoLayoutSetHeight, pangoLib, "pango_layout_set_height")
@@ -613,6 +619,7 @@ func bind() {
 	purego.RegisterLibFunc(&cairoSurfaceWriteToPNG, cairoLib, "cairo_surface_write_to_png")
 	bindNative()
 	bindWidget()
+	bindDecor()
 	bindFileDrop()
 	bindPaste()
 	bindEditing()

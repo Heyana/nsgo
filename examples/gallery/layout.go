@@ -6,6 +6,34 @@ import (
 	"github.com/oneo-me/nsgo/core"
 )
 
+func positionDemo(cx *core.Scope, t *theme, box func(string, core.Style) core.Node, frame func(core.Style, ...core.Node) core.Node) core.Node {
+	// Each section holds its rows, so its header stops at the section's end.
+	var sections []core.Node
+	for _, name := range []string{"Fruit", "Vegetables", "Grains"} {
+		section := []core.Node{core.View{Style: core.Style{Position: core.Sticky, Top: core.Pt(0), Background: t.sunken,
+			Padding: core.Symmetric(4, 8)}, Children: []core.Node{core.Text{Content: name, Style: core.Style{FontWeight: core.FontWeightSemibold}}}}}
+		for i := 1; i <= 4; i++ {
+			section = append(section, core.Text{Content: fmt.Sprintf("%s %d", name, i), Style: core.Style{Padding: core.Symmetric(6, 8)}})
+		}
+		sections = append(sections, core.View{Children: section})
+	}
+	shown := core.NewSignal(cx, false)
+	return t.demo("Static, sticky and fixed", "Static ignores insets and lets absolute views inside reach past it; Sticky pins a header while its section scrolls; Fixed places a view in the window, out of every scroll view.",
+		frame(core.Style{Height: core.Pt(80)},
+			core.View{Style: core.Style{Position: core.Static, Top: core.Pt(40), Padding: core.All(4)}, Children: []core.Node{
+				box("absolute, in the frame", core.Style{Position: core.Absolute, Bottom: core.Pt(4), Right: core.Pt(4)}),
+			}},
+		),
+		core.Scroll{Style: core.Style{Height: core.Pt(160), BorderWidth: 1, BorderColor: t.line, CornerRadius: radius}, Children: sections},
+		t.plain("Show a fixed note", func() { shown.Update(func(b bool) bool { return !b }) }),
+		core.Show{When: shown.Get, Then: func(*core.Scope) core.Node {
+			return core.View{Style: core.Style{Position: core.Fixed, Right: core.Pt(24), Bottom: core.Pt(24), Padding: core.Symmetric(10, 14),
+				Background: t.ink, Color: t.background, CornerRadius: radius, ZIndex: 10},
+				Children: []core.Node{core.Text{Content: "Fixed to the window"}}}
+		}},
+	)
+}
+
 func layoutPage(cx *core.Scope, t *theme) core.Node {
 	box := func(label string, style core.Style) core.Node {
 		return core.View{Style: t.tile().Merge(style), Children: []core.Node{core.Text{Content: label, Style: core.Style{FontSize: 13}}}}
@@ -76,6 +104,29 @@ func layoutPage(cx *core.Scope, t *theme) core.Node {
 			t.note(`"repeat(auto-fill, minmax(80px, 1fr))" fits as many columns as the width allows`),
 			core.View{Style: core.Style{Display: core.DisplayGrid, GridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))", Gap: 8},
 				Children: cells},
+		),
+		positionDemo(cx, t, box, frame),
+		t.demo("Intrinsic sizes", "MinContent fits the longest word, MaxContent the whole line, FitContent the line up to the space there is.",
+			frame(core.Style{AlignItems: core.AlignStart},
+				box("min-content: each word on a line", core.Style{Width: core.MinContent, Background: t.accentSoft}),
+				box("max-content: one line", core.Style{Width: core.MaxContent, Background: t.accentSoft}),
+				box("fit-content: one line up to the width, then it wraps as the space runs out", core.Style{Width: core.FitContent, Background: t.accentSoft}),
+			),
+		),
+		t.demo("Stacking", "ZIndex raises a view above its siblings without moving it in layout.",
+			frame(core.Style{Direction: core.Row, Height: core.Pt(90)},
+				box("ZIndex 2", core.Style{Width: core.Pt(100), Height: core.Pt(60), ZIndex: 2, Background: t.accentSoft, BorderWidth: 1, BorderColor: t.accent}),
+				box("0", core.Style{Width: core.Pt(100), Height: core.Pt(60), Margin: core.Edges{Left: -30, Top: 20}, Background: t.surface, BorderWidth: 1, BorderColor: t.line}),
+				box("ZIndex 1", core.Style{Width: core.Pt(100), Height: core.Pt(60), Margin: core.Edges{Left: -30}, ZIndex: 1, Background: t.sunken, BorderWidth: 1, BorderColor: t.borderStrong}),
+			),
+		),
+		t.demo("Direction", "LayoutDirection lays a subtree out right to left; WritingDirection Auto takes a text's direction from its first letter.",
+			frame(core.Style{Direction: core.Row, LayoutDirection: core.DirectionRTL},
+				box("first", core.Style{}), box("second", core.Style{}), box("third", core.Style{})),
+			frame(core.Style{},
+				core.Text{Content: "שלום עולם, hello world", Style: core.Style{WritingDirection: core.WritingAuto}},
+				core.Text{Content: "Hello world, שלום עולם", Style: core.Style{WritingDirection: core.WritingAuto}},
+			),
 		),
 		t.demo("Block", "DisplayBlock stacks children as CSS block boxes; vertical margins between them collapse.",
 			frame(core.Style{Display: core.DisplayBlock},

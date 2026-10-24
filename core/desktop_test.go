@@ -134,7 +134,7 @@ func TestBordersPerSide(t *testing.T) {
 		{Style{BorderWidth: 2, BorderColor: red, BorderColors: EdgeColors{Left: blue}},
 			driver.ViewStyle{Borders: All(2), BorderColors: EdgeColors{Top: red, Right: red, Bottom: red, Left: blue}}},
 	} {
-		got := c.s.viewStyle()
+		got := c.s.viewStyle(Size{}, 0, false)
 		got.Opacity = 0
 		if got != c.want {
 			t.Errorf("%+v: got %+v, want %+v", c.s, got, c.want)
@@ -143,7 +143,8 @@ func TestBordersPerSide(t *testing.T) {
 }
 
 func TestCursorStyleReachesTheView(t *testing.T) {
-	if got := (Style{Cursor: CursorColResize}).viewStyle().Cursor; got != CursorColResize {
+	s := Style{Cursor: CursorColResize}
+	if got := s.viewStyle(Size{}, 0, false).Cursor; got != CursorColResize {
 		t.Fatalf("view cursor = %v, want the style's", got)
 	}
 	if got := (Style{Cursor: CursorRowResize}).Merge(Style{Cursor: CursorPointer}).Cursor; got != CursorPointer {

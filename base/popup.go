@@ -301,7 +301,7 @@ func modalLayer(st *popup, m core.Modal, backdrop core.Style, backdropFunc func(
 	children []core.Node, label, testID string) core.Node {
 	return core.Show{When: st.open, Then: func(cx *core.Scope) core.Node {
 		var nodes []core.Node
-		if backdrop != (core.Style{}) || backdropFunc != nil {
+		if !backdrop.IsZero() || backdropFunc != nil {
 			nodes = append(nodes, core.View{Style: fill.Merge(backdrop), StyleFunc: backdropFunc,
 				OnPress: func(core.PressEvent) { st.cancel(ReasonBackdropPress, keepOnBackdrop) }, NoFocus: true})
 		}

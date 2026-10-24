@@ -283,6 +283,16 @@ final class Protocol {
     static final int DECORATION_DASHED = 4;
     static final int DECORATION_WAVY = 5;
 
+    // Border and outline styles, as in driver/effects.go; 0 is solid.
+    static final int BORDER_SOLID = 0;
+    static final int BORDER_DASHED = 2;
+    static final int BORDER_DOTTED = 3;
+
+    // Gradient kinds, as in driver/gradient.go.
+    static final int GRADIENT_LINEAR = 0;
+    static final int GRADIENT_RADIAL = 1;
+    static final int GRADIENT_CONIC = 2;
+
     // Vertical alignments of attachments, as in core/style.go; 0 and
     // Baseline are the baseline.
     static final int VALIGN_TEXT_TOP = 2;

@@ -77,13 +77,6 @@ func (s *surface) applyAnimated() {
 	})
 }
 
-func shadowCSS(vs *driver.ViewStyle) string {
-	if vs.ShadowColor == 0 {
-		return "none"
-	}
-	return fmt.Sprintf("%s %s %s %s", px(vs.ShadowOffset.X), px(vs.ShadowOffset.Y), px(vs.ShadowRadius), cssColor(vs.ShadowColor))
-}
-
 // layoutBatch is what a batch with a layout animation tracks.
 type layoutBatch struct {
 	anim    *driver.LayoutAnimation

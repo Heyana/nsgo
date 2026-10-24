@@ -727,7 +727,8 @@ func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []native
 			w.float(tn.Easing.X2)
 			w.float(tn.Easing.Y2)
 			w.byte(byte(tn.Properties))
-			w.flags(v.Clip, v.Hidden)
+			w.flags(v.Clip, v.Hidden, v.ContinuousCorners, v.BackfaceHidden)
+			writeDecor(w, v)
 		case driver.ItemText:
 			t := it.Text
 			var layout uint32
@@ -997,6 +998,69 @@ func writeDrawing(w *writer, d *driver.Drawing) {
 	}
 }
 
+// writeDecor writes what a view style draws past React Native's styles,
+// after the rest, in the order NsgoView.style reads it.
+func writeDecor(w *writer, v *driver.ViewStyle) {
+	c := v.Corners
+	w.points(c.TopLeft)
+	w.points(c.TopRight)
+	w.points(c.BottomRight)
+	w.points(c.BottomLeft)
+	w.byte(byte(v.BorderStyle))
+	o := v.Outline
+	w.points(o.Width)
+	w.points(o.Offset)
+	w.u32(uint32(o.Color))
+	w.byte(byte(o.Style))
+	tr := v.Transform
+	w.floats(tr.RotateX, tr.RotateY)
+	w.points(tr.Perspective)
+	w.points(v.Origin.X)
+	w.points(v.Origin.Y)
+	w.points(v.ChildPerspective)
+	w.byte(byte(v.BlendMode))
+	e := v.Effects
+	if e == nil {
+		e = &driver.Effects{}
+	}
+	w.byte(byte(min(len(e.Shadows), 255)))
+	for _, sh := range e.Shadows[:min(len(e.Shadows), 255)] {
+		w.points(sh.Offset.X)
+		w.points(sh.Offset.Y)
+		w.points(sh.Blur)
+		w.points(sh.Spread)
+		w.u32(uint32(sh.Color))
+		w.flags(sh.Inset)
+	}
+	w.byte(byte(min(len(e.Gradients), 255)))
+	for _, g := range e.Gradients[:min(len(e.Gradients), 255)] {
+		w.byte(byte(g.Kind))
+		w.floats(g.X0, g.Y0, g.X1, g.Y1, g.CX, g.CY, g.RX, g.RY, g.Angle)
+		w.u32(uint32(len(g.Stops)))
+		for _, s := range g.Stops {
+			w.float(s.Offset)
+			w.u32(uint32(s.Color))
+		}
+	}
+	// Filters: their color matrix and blur, which Android draws.
+	m, color, blur, _ := driver.SplitFilters(e.Filters)
+	w.flags(color)
+	if color {
+		w.floats(m[:]...)
+	}
+	w.points(blur)
+	// The keyframes' steps, which Java eases between.
+	a := v.Animation
+	d, frames := a.Cycle()
+	w.u32(uint32(max(d.Milliseconds(), 0)))
+	w.u32(uint32(max(a.Delay.Milliseconds(), 0)))
+	w.u32(uint32(max(a.Iterations, 0)))
+	w.byte(byte(len(frames)))
+	for _, k := range frames {
+		w.floats(k.Offset, k.Opacity, k.Scale, k.Rotate, k.TranslateY, k.Easing.X1, k.Easing.Y1, k.Easing.X2, k.Easing.Y2)
+	}
+}
+
 // writeStyle writes a text style in the format Text.Style reads.
 func writeStyle(w *writer, t *driver.TextStyle) {
 	w.str(t.Font.Family)
@@ -1008,5 +1072,5 @@ func writeStyle(w *writer, t *driver.TextStyle) {
 	w.byte(byte(t.Align))
 	w.flags(t.Font.Italic,
 		t.Decoration&driver.TextDecorationUnderline != 0,
-		t.Decoration&driver.TextDecorationLineThrough != 0)
+		t.Decoration&driver.TextDecorationLineThrough != 0, t.RTL)
 }

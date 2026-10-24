@@ -17,6 +17,9 @@ const (
 	pangoAlignCenter = 1
 	pangoAlignRight  = 2
 
+	pangoDirectionLTR = 0
+	pangoDirectionRTL = 1
+
 	pangoWrapWord     = 0
 	pangoWrapChar     = 1
 	pangoWrapWordChar = 2
@@ -119,11 +122,24 @@ func (s *textSource) styleAt(i int) driver.TextStyle {
 // measureContext returns the Pango context the engine thread measures
 // with, made on first use from a font map of its own. It is never the
 // default context, which belongs to the main thread.
-func (w *window) measureContext() uintptr {
-	if w.measureMap == 0 {
-		w.measureMap = pangoFontMapCreateContext(pangoCairoFontMapNew())
+func (w *window) measureContext(rtl bool) uintptr {
+	i := 0
+	if rtl {
+		i = 1
 	}
-	return w.measureMap
+	if w.measureMap[i] == 0 {
+		w.measureMap[i] = pangoFontMapCreateContext(pangoCairoFontMapNew())
+		pangoContextSetBaseDir(w.measureMap[i], textDirection(rtl))
+	}
+	return w.measureMap[i]
+}
+
+// textDirection is the PangoDirection of a base direction.
+func textDirection(rtl bool) int32 {
+	if rtl {
+		return pangoDirectionRTL
+	}
+	return pangoDirectionLTR
 }
 
 // fontExtent returns the vertical metrics of f, from a line of "x" in
@@ -133,7 +149,7 @@ func (w *window) fontExtent(f driver.Font) driver.FontExtent {
 	if e, ok := w.extents[f]; ok {
 		return e
 	}
-	l := pangoLayoutNew(w.measureContext())
+	l := pangoLayoutNew(w.measureContext(false))
 	attrs := pangoAttrListNew()
 	addStyle(attrs, 1, 0, 1, driver.TextStyle{Font: f}, nil)
 	pangoLayoutSetAttributes(l, attrs)
@@ -181,13 +197,24 @@ func applyLayout(l uintptr, s *textSource, width driver.Points, drawn bool) {
 	pangoAttrListUnref(attrs)
 	pangoLayoutSetText(l, cstr(text), int32(len(text)))
 	pangoLayoutSetWidth(l, s.pangoWidth(width, drawn))
+	// The text's own base direction, not its first letter's; start and
+	// end follow it.
+	pangoLayoutSetAutoDir(l, false)
+	if drawn {
+		pangoContextSetBaseDir(pangoLayoutGetContext(l), textDirection(s.style.RTL))
+		pangoLayoutContextChanged(l)
+	}
+	start, end := int32(pangoAlignLeft), int32(pangoAlignRight)
+	if s.style.RTL {
+		start, end = end, start
+	}
 	switch s.style.Align {
 	case driver.TextAlignCenter:
 		pangoLayoutSetAlignment(l, pangoAlignCenter)
 	case driver.TextAlignEnd:
-		pangoLayoutSetAlignment(l, pangoAlignRight)
+		pangoLayoutSetAlignment(l, end)
 	default:
-		pangoLayoutSetAlignment(l, pangoAlignLeft)
+		pangoLayoutSetAlignment(l, start)
 	}
 	pangoLayoutSetJustify(l, s.style.Align == driver.TextAlignJustify)
 	if s.maxLines > 1 {
@@ -340,7 +367,7 @@ func setAttributeRange(attr uintptr, start, end uint32) {
 // engine thread's font map.
 func (p *preparedText) measure(width driver.Points) driver.Size {
 	if p.layout == 0 {
-		p.layout = newLayout(p.w.measureContext(), &p.textSource, width)
+		p.layout = newLayout(p.w.measureContext(p.style.RTL), &p.textSource, width)
 	} else {
 		pangoLayoutSetWidth(p.layout, p.pangoWidth(width, false))
 	}
@@ -407,7 +434,7 @@ func (w *window) capHeight(f driver.Font) driver.Points {
 	if h, ok := w.capHeights[f]; ok {
 		return h
 	}
-	l := pangoLayoutNew(w.measureContext())
+	l := pangoLayoutNew(w.measureContext(false))
 	attrs := pangoAttrListNew()
 	addStyle(attrs, 1, 0, 1, driver.TextStyle{Font: f}, nil)
 	pangoLayoutSetAttributes(l, attrs)

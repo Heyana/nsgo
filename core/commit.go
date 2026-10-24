@@ -104,10 +104,24 @@ func (t *Tree) commitRound() {
 	}
 }
 
-// resolve inherits text styles down the tree and prepares changed text.
+// resolve inherits text styles and directions down the tree and prepares
+// changed text.
 func (t *Tree) resolve(n *node, inherited Style) {
 	if n.kind != 0 {
 		inherited = n.style.inherit(inherited)
+		n.color = inherited.Color
+		if n.color == 0 {
+			n.color = RGB(0x000000)
+		}
+		rtl := t.rtl
+		if d := inherited.LayoutDirection; d != 0 {
+			rtl = d == DirectionRTL
+		}
+		if rtl != n.rtl {
+			n.rtl = rtl
+			n.lstyleOK = false
+			n.markLayout()
+		}
 	}
 	switch {
 	case n.icon != nil:
@@ -118,12 +132,28 @@ func (t *Tree) resolve(n *node, inherited Style) {
 	case n.text != nil:
 		n.props.SelectionColor = inherited.SelectionColor
 		tn := n.text
+		n.props.Selectable = tn.selectable
+		if tn.selectable == SelectableAuto {
+			switch inherited.UserSelect {
+			case UserSelectText:
+				n.props.Selectable = SelectableOn
+			case UserSelectNone:
+				n.props.Selectable = SelectableOff
+			}
+		}
+		if noWrap := inherited.WhiteSpace == WhiteSpaceNoWrap; noWrap != tn.noWrap {
+			tn.noWrap = noWrap
+			tn.resent = true
+			n.markLayout()
+		}
+		tn.engine = t.text
 		if inherited.TextAlignVertical != tn.alignV {
 			tn.alignV = inherited.TextAlignVertical
 			tn.resent = true
 		}
 		scale := tn.fontMultiplier(t.fontScale)
 		ts := scaleText(inherited.textStyle(), scale)
+		ts.RTL = n.textRTL(inherited, tn.content)
 		sized := tn.attachments > 0 && t.sizeAttachments(n, inherited)
 		shadow := inherited.textShadow()
 		if tn.stale || sized || tn.prepared == nil || ts != tn.style || shadow != tn.text.Shadow {
@@ -145,8 +175,10 @@ func (t *Tree) resolve(n *node, inherited Style) {
 					}
 					own := sp.style.inherit(inherited)
 					b.WriteString(own.TextTransform.Apply(sp.content))
+					spanStyle := scaleText(own.textStyle(), scale)
+					spanStyle.RTL = ts.RTL
 					at.Spans = append(at.Spans, driver.TextSpan{Start: start, End: b.Len(),
-						Style: scaleText(own.textStyle(), scale), Link: sp.press != nil,
+						Style: spanStyle, Link: sp.press != nil,
 						Background: driver.TextBackground{Color: sp.style.Background, Radius: sp.style.CornerRadius}})
 				}
 				at.Text = b.String()
@@ -159,6 +191,7 @@ func (t *Tree) resolve(n *node, inherited Style) {
 				}
 				tn.text = at
 				tn.prepared = t.text.Prepare(&at)
+				tn.minWidth = -1
 				tn.resent = true
 				n.markLayout()
 			}
@@ -166,7 +199,9 @@ func (t *Tree) resolve(n *node, inherited Style) {
 	case n.input != nil:
 		in := n.input
 		in.config.PlaceholderColor, in.config.SelectionColor = inherited.PlaceholderColor, inherited.SelectionColor
-		if ts := t.scaled(inherited.textStyle()); ts != in.config.Style || in.lineH == 0 {
+		ts := t.scaled(inherited.textStyle())
+		ts.RTL = n.textRTL(inherited, in.value)
+		if ts != in.config.Style || in.lineH == 0 {
 			in.config.Style = ts
 			p := t.text.Prepare(&driver.AttributedText{Text: "Ag", Style: ts})
 			in.lineH = p.Measure(Auto).Height
@@ -181,6 +216,27 @@ func (t *Tree) resolve(n *node, inherited Style) {
 	for _, c := range n.children {
 		t.resolve(c, inherited)
 	}
+}
+
+// textRTL reports whether text node n, styled inherited, writes content
+// right to left.
+func (n *node) textRTL(inherited Style, content string) bool {
+	switch inherited.WritingDirection {
+	case WritingLTR:
+		return false
+	case WritingRTL:
+		return true
+	case WritingAuto:
+		if n.text != nil && len(n.text.spans) > 0 {
+			var b strings.Builder
+			for _, sp := range n.text.spans {
+				b.WriteString(sp.content)
+			}
+			content = b.String()
+		}
+		return rtlText(content)
+	}
+	return n.rtl
 }
 
 // attachmentSpace is the space attachments are laid out in: they take
@@ -450,6 +506,10 @@ func (t *Tree) emitText(n *node) {
 			prepared, text = tn.fitted, &fitted
 		}
 	}
+	if tn.noWrap {
+		// Unwrapped lines overflow the box.
+		box.Size.Width = max(box.Size.Width, ceil(prepared.Measure(Auto).Width))
+	}
 	l := prepared.Layout(box.Size)
 	if tn.attachments > 0 {
 		n.placeAttachments(l)
@@ -529,11 +589,12 @@ func fitStyle(ts driver.TextStyle, scale float32) driver.TextStyle {
 }
 
 func (n *node) viewStyle() driver.ViewStyle {
-	vs := n.style.viewStyle()
-	vs.Hidden = n.style.Display == DisplayNone || (n.hoist != nil && n.hidden) || (n.attach != nil && n.attach.cut)
-	if n.rtl && vs.Borders != (Edges{}) {
-		vs.Borders.Left, vs.Borders.Right = vs.Borders.Right, vs.Borders.Left
-		vs.BorderColors.Left, vs.BorderColors.Right = vs.BorderColors.Right, vs.BorderColors.Left
+	vs := n.style.viewStyle(n.frame.Size, n.color, n.rtl)
+	vs.Hidden = vs.Hidden || n.style.Display == DisplayNone || (n.hoist != nil && n.hidden) || (n.attach != nil && n.attach.cut)
+	// Effects that draw as before keep the pointer that was sent, so the
+	// comparison finds nothing to send.
+	if vs.Effects != nil && vs.Effects.Equal(n.sent.viewStyle.Effects) {
+		vs.Effects = n.sent.viewStyle.Effects
 	}
 	return vs
 }

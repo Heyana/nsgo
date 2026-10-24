@@ -885,6 +885,7 @@ public class NsgoView extends FrameLayout {
             case Protocol.ITEM_INSERT: {
                 Node parent = nodes.get(in.readInt());
                 Node before = nodes.get(in.readInt()); // none for ID 0: last
+                n.up = parent;
                 detach(n.view);
                 ViewGroup group = parent.children;
                 group.addView(n.view, before == null ? -1 : group.indexOfChild(before.view));
@@ -920,6 +921,7 @@ public class NsgoView extends FrameLayout {
                     accessoryShown = null;
                 }
                 if (n.animator != null) n.animator.cancel();
+                if (n.keyframer != null) n.keyframer.cancel();
                 if (n.web != null) n.web.destroy();
                 if (n.holder != null) detach(n.holder);
                 if (n.video != null) n.video.destroy();
@@ -1193,6 +1195,14 @@ public class NsgoView extends FrameLayout {
         }
         Look l = n.shown;
         if (n.values != null) l = l.animated(n.values, density);
+        if (n.keyframer != null) {
+            l = n.keyframes.apply(l, (float) n.keyframer.getAnimatedValue(), n.view.getHeight());
+        }
+        if (l.cameraDistance == 0 && n.up != null && n.up.shown != null && n.up.shown.childPerspective > 0) {
+            // Seen in its parent's perspective, about its own pivot.
+            if (l == n.shown) l = l.copy();
+            l.cameraDistance = n.up.shown.childPerspective;
+        }
         if (n.appear != null) {
             if (l == n.shown) l = l.copy();
             float p = (float) n.appear.at(System.nanoTime() - n.appearStart);
@@ -1881,6 +1891,10 @@ public class NsgoView extends FrameLayout {
         float x1 = in.readFloat(), y1 = in.readFloat(), x2 = in.readFloat(), y2 = in.readFloat();
         int properties = in.readUnsignedByte();
         int flags = in.readUnsignedByte();
+        look.continuous = Protocol.flag(flags, 2);
+        look.backfaceHidden = Protocol.flag(flags, 3);
+        readDecor(look, in);
+        Keyframes keyframes = Keyframes.read(in);
 
         if (n.image != null) n.image.setTint(Text.argb(tint));
         // The outline is the background's, corners included.
@@ -1891,6 +1905,7 @@ public class NsgoView extends FrameLayout {
             view.setBackground(n.background);
         }
         if (n.animator != null) n.animator.cancel(); // n.shown is where it stopped
+        runKeyframes(n, keyframes);
         if (duration == 0 || n.shown == null) {
             n.shown = look;
             paint(n);
@@ -1910,6 +1925,88 @@ public class NsgoView extends FrameLayout {
         });
         n.animator = animator;
         animator.start();
+    }
+
+    /** Reads what android.go's writeDecor writes into look, in pixels. */
+    private void readDecor(Look look, DataInputStream in) throws IOException {
+        float[] corners = new float[4];
+        boolean any = false;
+        for (int i = 0; i < 4; i++) {
+            corners[i] = in.readFloat() * density;
+            any |= corners[i] > 0;
+        }
+        look.corners = any ? corners : null;
+        look.borderStyle = in.readUnsignedByte();
+        Look.Outline o = new Look.Outline();
+        o.width = in.readFloat() * density;
+        o.offset = in.readFloat() * density;
+        o.color = Text.argb(in.readInt());
+        o.style = in.readUnsignedByte();
+        look.outline = o.width > 0 ? o : null;
+        look.rotationX = in.readFloat();
+        look.rotationY = in.readFloat();
+        look.cameraDistance = in.readFloat() * density;
+        look.originX = in.readFloat() * density;
+        look.originY = in.readFloat() * density;
+        look.childPerspective = in.readFloat() * density;
+        look.blend = in.readUnsignedByte();
+        Look.Shadow[] shadows = new Look.Shadow[in.readUnsignedByte()];
+        for (int i = 0; i < shadows.length; i++) {
+            Look.Shadow sh = new Look.Shadow();
+            sh.dx = in.readFloat() * density;
+            sh.dy = in.readFloat() * density;
+            sh.blur = in.readFloat() * density;
+            sh.spread = in.readFloat() * density;
+            sh.color = Text.argb(in.readInt());
+            sh.inset = Protocol.flag(in.readUnsignedByte(), 0);
+            shadows[i] = sh;
+        }
+        look.shadows = shadows;
+        Box.Gradient[] gradients = new Box.Gradient[in.readUnsignedByte()];
+        for (int i = 0; i < gradients.length; i++) {
+            Box.Gradient g = new Box.Gradient();
+            g.kind = in.readUnsignedByte();
+            g.x0 = in.readFloat();
+            g.y0 = in.readFloat();
+            g.x1 = in.readFloat();
+            g.y1 = in.readFloat();
+            g.cx = in.readFloat();
+            g.cy = in.readFloat();
+            g.rx = in.readFloat();
+            g.ry = in.readFloat();
+            g.angle = in.readFloat();
+            int n = in.readInt();
+            g.offsets = new float[n];
+            g.colors = new int[n];
+            for (int k = 0; k < n; k++) {
+                g.offsets[k] = in.readFloat();
+                g.colors[k] = Text.argb(in.readInt());
+            }
+            gradients[i] = g;
+        }
+        look.gradients = gradients;
+        if (Protocol.flag(in.readUnsignedByte(), 0)) {
+            look.colorMatrix = new float[20];
+            for (int i = 0; i < 20; i++) look.colorMatrix[i] = in.readFloat();
+        }
+        look.blur = in.readFloat() * density;
+    }
+
+    /** Runs keyframes over n's look, or stops what ran when they change. */
+    private void runKeyframes(Node n, Keyframes keyframes) {
+        if (keyframes.equals(n.keyframes)) return;
+        if (n.keyframer != null) n.keyframer.cancel();
+        n.keyframer = null;
+        n.keyframes = keyframes.steps.length > 0 ? keyframes : null;
+        if (n.keyframes == null) return;
+        ValueAnimator a = ValueAnimator.ofFloat(0, 1);
+        a.setDuration(keyframes.duration);
+        a.setStartDelay(keyframes.delay);
+        a.setInterpolator(new LinearInterpolator());
+        a.setRepeatCount(keyframes.iterations > 0 ? keyframes.iterations - 1 : ValueAnimator.INFINITE);
+        a.addUpdateListener(v -> paint(n));
+        n.keyframer = a;
+        a.start();
     }
 
     private void input(Node n, DataInputStream in) throws IOException {
@@ -2741,6 +2838,11 @@ public class NsgoView extends FrameLayout {
         Box background;
         Look shown;
         ValueAnimator animator;
+        /** The keyframe animation running over the look, and what it runs. */
+        Keyframes keyframes;
+        ValueAnimator keyframer;
+        /** The node the view went into, whose perspective its turns are seen in. */
+        Node up;
         /** A modal's animation, -1 for other nodes, and whether it was presented. */
         int modal = -1;
         boolean presented;

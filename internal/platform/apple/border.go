@@ -35,9 +35,10 @@ func loadBorders(cg uintptr) {
 
 // ring is the per-side border of one layer.
 type ring struct {
-	widths driver.Edges
-	colors driver.EdgeColors
-	radius float64
+	widths     driver.Edges
+	colors     driver.EdgeColors
+	corners    driver.ViewStyle // its corners: CornerRadius, Corners, ContinuousCorners
+	continuous bool
 	// sides are the shape layers: only [0] when every side has one color.
 	sides [4]objc.ID
 }
@@ -62,7 +63,8 @@ func setBorders(layer objc.ID, vs *driver.ViewStyle, tr *driver.Transition) {
 		r = &ring{}
 		rings[layer] = r
 	}
-	r.widths, r.colors, r.radius = vs.Borders, vs.BorderColors, float64(vs.CornerRadius)
+	r.widths, r.colors, r.continuous = vs.Borders, vs.BorderColors, vs.ContinuousCorners
+	r.corners = driver.ViewStyle{CornerRadius: vs.CornerRadius, Corners: vs.Corners}
 	if tr.Duration <= 0 || (tr.Properties != 0 && tr.Properties&driver.TransitionBorder == 0) {
 		tr = nil
 	}
@@ -176,43 +178,14 @@ func animate(layer objc.ID, key string, tr *driver.Transition, fresh bool, set f
 // inner edge, for an even-odd fill. The inner corners are elliptical
 // where the sides around them differ, as CSS draws them.
 func (r *ring) ringPath(w, h float64) uintptr {
-	path := cgPathCreateMutable()
-	rad := max(min(r.radius, w/2, h/2), 0)
-	outline(path, 0, 0, w, h, [4][2]float64{{rad, rad}, {rad, rad}, {rad, rad}, {rad, rad}})
+	radii := r.corners.Radii(driver.Size{Width: driver.Points(w), Height: driver.Points(h)})
+	segs := driver.RoundedRect(nil, 0, 0, w, h, radii, r.continuous, false)
 	b := r.widths
 	top, right, bottom, left := float64(b.Top), float64(b.Right), float64(b.Bottom), float64(b.Left)
-	iw, ih := w-left-right, h-top-bottom
-	if iw > 0 && ih > 0 {
-		corner := func(hw, vw float64) [2]float64 { return [2]float64{max(rad-hw, 0), max(rad-vw, 0)} }
-		outline(path, left, top, iw, ih, [4][2]float64{
-			corner(left, top), corner(right, top), corner(right, bottom), corner(left, bottom)})
+	if iw, ih := w-left-right, h-top-bottom; iw > 0 && ih > 0 {
+		segs = driver.EllipticRect(segs, left, top, iw, ih, driver.InnerRadii(radii, b), r.continuous, false)
 	}
-	return path
-}
-
-// outline adds a rectangle with elliptical corners (top left, top right,
-// bottom right, bottom left; horizontal and vertical radii) to path. The
-// layers' y axes point down: UIKit's and flipped AppKit views' both.
-func outline(path uintptr, x, y, w, h float64, c [4][2]float64) {
-	const k = 0.5522847498 // a quarter circle's control points
-	move := func(px, py float64) { cgPathMoveToPoint(path, 0, px, py) }
-	line := func(px, py float64) { cgPathAddLineToPoint(path, 0, px, py) }
-	// curve goes from the current point (fx, fy) to (tx, ty) around the
-	// corner (cx, cy).
-	curve := func(fx, fy, cx, cy, tx, ty float64) {
-		cgPathAddCurveToPoint(path, 0, fx+(cx-fx)*k, fy+(cy-fy)*k, tx+(cx-tx)*k, ty+(cy-ty)*k, tx, ty)
-	}
-	tl, tr, br, bl := c[0], c[1], c[2], c[3]
-	move(x+tl[0], y)
-	line(x+w-tr[0], y)
-	curve(x+w-tr[0], y, x+w, y, x+w, y+tr[1])
-	line(x+w, y+h-br[1])
-	curve(x+w, y+h-br[1], x+w, y+h, x+w-br[0], y+h)
-	line(x+bl[0], y+h)
-	curve(x+bl[0], y+h, x, y+h, x, y+h-bl[1])
-	line(x, y+tl[1])
-	curve(x, y+tl[1], x, y, x+tl[0], y)
-	cgPathCloseSubpath(path)
+	return cgPath(segs)
 }
 
 // wedgePath returns a new path of side i's share of the ring (top, right,
@@ -221,7 +194,11 @@ func outline(path uintptr, x, y, w, h float64, c [4][2]float64) {
 func (r *ring) wedgePath(i int, w, h float64) uintptr {
 	b := r.widths
 	top, right, bottom, left := float64(b.Top), float64(b.Right), float64(b.Bottom), float64(b.Left)
-	rad := max(min(r.radius, w/2, h/2), 0)
+	radii := r.corners.Radii(driver.Size{Width: driver.Points(w), Height: driver.Points(h)}).Array()
+	rad := float64(max(radii[0], radii[1], radii[2], radii[3]))
+	if r.continuous {
+		rad *= 1 + driver.Smoothing
+	}
 	reach := func(ox, oy, dx, dy float64) [2]float64 {
 		m := max(abs(dx), abs(dy))
 		if m == 0 {

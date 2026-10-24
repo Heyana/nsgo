@@ -1,7 +1,12 @@
 package core
 
 import (
+	"cmp"
 	"errors"
+	"slices"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/oneo-me/nsgo/internal/driver"
 	"github.com/oneo-me/nsgo/internal/layout"
@@ -52,6 +57,10 @@ type Tree struct {
 	menuID      uint32
 	menuGen     uint32
 	rtl         bool // the layout direction the nodes were mapped for
+	// sticky are the views whose position is Sticky; stuckIn the scroll
+	// views that pinned some at the last commit.
+	sticky  map[*node]bool
+	stuckIn []*node
 }
 
 // report is a handler to run under owner after the commit.
@@ -76,6 +85,8 @@ type node struct {
 	dyn    Style
 	style  Style // base and dyn merged, with the states' styles
 	states uint8
+	// color is the text color the node has, for CurrentColor.
+	color  Color
 	h      handlers
 	props  driver.ViewProps
 	text   *textNode
@@ -173,6 +184,71 @@ type textNode struct {
 	resent   bool   // a new prepared text needs a new layout
 	// attachments counts the spans that are attachments.
 	attachments int
+	// selectable is the text's own Selectable, over the UserSelect it
+	// inherits.
+	selectable Selectable
+	// noWrap keeps the lines unwrapped (WhiteSpaceNoWrap).
+	noWrap bool
+	// engine measures the words of minContent, whose width minWidth
+	// caches while it is not negative.
+	engine   driver.TextEngine
+	minWidth Points
+}
+
+// minContent returns the text's min-content width: its widest word,
+// measured alone.
+func (tn *textNode) minContent() Points {
+	if tn.minWidth >= 0 {
+		return tn.minWidth
+	}
+	tn.minWidth = 0
+	if tn.engine == nil {
+		return 0
+	}
+	seen := map[string]bool{}
+	for _, word := range breakWords(tn.text.Text) {
+		if seen[word] {
+			continue
+		}
+		seen[word] = true
+		p := tn.engine.Prepare(&driver.AttributedText{Text: word, Style: tn.text.Style})
+		tn.minWidth = max(tn.minWidth, ceil(p.Measure(Auto).Width))
+		p.Release()
+	}
+	return tn.minWidth
+}
+
+// breakWords splits s where lines may break: after spaces and hyphens, and
+// around each Han, Kana and Hangul character, as most of Unicode's line
+// breaking rules allow. Trailing spaces hang, so words leave them out.
+func breakWords(s string) []string {
+	var words []string
+	start := 0
+	cut := func(end int) {
+		if w := strings.TrimRight(s[start:end], " \t\n"); w != "" {
+			words = append(words, w)
+		}
+		start = end
+	}
+	for i, r := range s {
+		size := utf8.RuneLen(r)
+		switch {
+		case wide(r):
+			cut(i)
+			cut(i + size)
+		case r == ' ' || r == '\t' || r == '\n' || r == '-' || r == '\u2014':
+			cut(i + size)
+		}
+	}
+	cut(len(s))
+	return words
+}
+
+// wide reports whether lines may break on either side of r: a Han, Kana
+// or Hangul character.
+func wide(r rune) bool {
+	return unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) || unicode.Is(unicode.Katakana, r) ||
+		unicode.Is(unicode.Hangul, r)
 }
 
 // release frees the text's prepared texts.
@@ -463,6 +539,7 @@ func (t *Tree) discard(n *node) {
 		return
 	}
 	n.deleted = true
+	delete(t.sticky, n)
 	if n.ref != nil && n.ref.n == n {
 		n.ref.n = nil
 	}
@@ -608,12 +685,14 @@ type regionMounter interface {
 func (t *Tree) bindStyle(cx *Scope, n *node, base Style, fn func() Style) {
 	n.base = base
 	n.restyle()
+	t.syncPosition(n)
 	if fn == nil {
 		return
 	}
 	cx.renderEffect(func() {
 		n.dyn = fn()
 		n.restyle()
+		t.syncPosition(n)
 		t.relayout(n)
 	})
 }
@@ -624,15 +703,39 @@ func (n *node) restyle() {
 	if n.input != nil && n.input.config.Disabled {
 		p.Disabled = true
 	}
-	n.style = n.base.Merge(n.dyn).withStates(n.states, p)
+	merged := n.base.Merge(n.dyn)
+	var g groupState
+	if gs := merged.GroupStyle; gs != nil {
+		g = n.groupState(gs.Name)
+	}
+	z, sticky := n.stackRank()
+	n.style = merged.withStates(n.states, p, g)
 	n.lstyleOK = false
+	if z2, sticky2 := n.stackRank(); z2 != z || sticky2 != sticky {
+		if parent := n.nativeParent(); parent != nil {
+			parent.childrenDirty = true
+		}
+	}
 	if n.screen != nil && n.screen.hidden {
 		n.style.Display = DisplayNone
 	}
 }
 
+// groupState returns the states of n's nearest group named name, or of
+// any group when name is empty.
+func (n *node) groupState(name string) groupState {
+	for a := n.parent; a != nil; a = a.parent {
+		if g := a.style.Group; g != "" && (name == "" || g == name) {
+			disabled := a.props.Disabled || a.input != nil && a.input.config.Disabled
+			return groupState{states: a.states, checked: a.props.Checked, indeterminate: a.props.Indeterminate,
+				selected: a.props.Selected, disabled: disabled}
+		}
+	}
+	return groupState{}
+}
+
 // setState records an interaction state and restyles n if a state style
-// depends on it.
+// depends on it, and the nodes inside it that follow it as their group.
 func (t *Tree) setState(n *node, state uint8, on bool) {
 	was := n.states
 	if on {
@@ -640,10 +743,39 @@ func (t *Tree) setState(n *node, state uint8, on bool) {
 	} else {
 		n.states &^= state
 	}
-	if n.states != was && (n.style.Hover != nil || n.style.Focus != nil || n.style.Active != nil) {
+	if n.states == was {
+		return
+	}
+	if n.style.Hover != nil || n.style.Focus != nil || n.style.Active != nil {
 		n.restyle()
 		t.relayout(n)
 	}
+	t.restyleGroup(n)
+}
+
+// restyleGroup restyles the nodes inside group n that follow its states.
+func (t *Tree) restyleGroup(n *node) {
+	if n.style.Group == "" {
+		return
+	}
+	var walk func(c *node)
+	walk = func(c *node) {
+		for _, k := range c.children {
+			if k.style.GroupStyle != nil {
+				k.restyle()
+				t.relayout(k)
+			}
+			walk(k)
+		}
+		if c.text != nil {
+			for _, sp := range c.text.spans {
+				if sp.attach != nil {
+					walk(sp.attach)
+				}
+			}
+		}
+	}
+	walk(n)
 }
 
 func (t *Tree) bindBool(cx *Scope, n *node, fn func() bool, dst *bool) {
@@ -654,6 +786,7 @@ func (t *Tree) bindBool(cx *Scope, n *node, fn func() bool, dst *bool) {
 		*dst = fn()
 		n.restyle()
 		t.relayout(n)
+		t.restyleGroup(n)
 	})
 }
 
@@ -705,7 +838,8 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 	t.setRef(n, v.Ref)
 	n.text = &textNode{content: v.Content, maxLines: v.MaxLines, ellipsize: v.EllipsizeMode,
 		noScale: v.NoFontScaling, maxScale: v.MaxFontSizeMultiplier,
-		fit: v.AdjustsFontSizeToFit, minScale: max(v.MinimumFontScale, 0.1), lines: v.OnTextLayout, stale: true}
+		fit: v.AdjustsFontSizeToFit, minScale: max(v.MinimumFontScale, 0.1), lines: v.OnTextLayout, stale: true,
+		selectable: v.Selectable, minWidth: -1}
 	for i, sp := range v.Spans {
 		if sp.Attachment != nil {
 			w := t.newNode(driver.KindView, n, cx)
@@ -1147,7 +1281,8 @@ func hit(n *node, p Point) (NodeID, Point) {
 // and p in it.
 func hitWith(n *node, p Point, ok func(*node) bool) (NodeID, Point) {
 	self, inside := driver.Reach(n.frame, &n.props, n.sent.overflow, p)
-	if n.style.Display == DisplayNone || n.hidden || !self && !inside || (n.attach != nil && n.attach.cut) {
+	if n.style.Display == DisplayNone || n.style.Visibility == VisibilityHidden || n.hidden || !self && !inside ||
+		(n.attach != nil && n.attach.cut) {
 		return 0, Point{}
 	}
 	local := Point{X: p.X - n.frame.Origin.X, Y: p.Y - n.frame.Origin.Y}
@@ -1201,10 +1336,11 @@ func appendNative(out []*node, children []*node) []*node {
 // text's attachments, then the overlays and modals it hosts, last on top.
 func (n *node) nativeChildren() []*node {
 	attached := n.text != nil && n.text.attachments > 0
+	flat := stacked(n.flatChildren())
 	if len(n.hosted) == 0 && !attached {
-		return n.flatChildren()
+		return flat
 	}
-	out := append([]*node(nil), n.flatChildren()...)
+	out := append([]*node(nil), flat...)
 	if attached {
 		for _, sp := range n.text.spans {
 			if sp.attach != nil {
@@ -1220,6 +1356,43 @@ func (n *node) nativeChildren() []*node {
 	return out
 }
 
+// stackRank orders a view among its siblings: by ZIndex, a sticky view
+// above the others of its ZIndex.
+func (n *node) stackRank() (int, bool) {
+	return n.style.ZIndex, n.style.Position == Sticky
+}
+
+// stacked returns kids in the order they stack, lowest first: by their
+// stack ranks, the order they came in among equals. It returns kids
+// itself when that is their order.
+func stacked(kids []*node) []*node {
+	sorted := true
+	for i := 1; i < len(kids) && sorted; i++ {
+		a, as := kids[i-1].stackRank()
+		b, bs := kids[i].stackRank()
+		sorted = a < b || a == b && (!as || bs)
+	}
+	if sorted {
+		return kids
+	}
+	out := slices.Clone(kids)
+	slices.SortStableFunc(out, func(x, y *node) int {
+		a, as := x.stackRank()
+		b, bs := y.stackRank()
+		if a != b {
+			return cmp.Compare(a, b)
+		}
+		switch {
+		case as == bs:
+			return 0
+		case as:
+			return 1
+		}
+		return -1
+	})
+	return out
+}
+
 func (n *node) events() driver.EventMask {
 	var m driver.EventMask
 	bit := func(k driver.EventKind, on bool) {
@@ -1228,12 +1401,14 @@ func (n *node) events() driver.EventMask {
 		}
 	}
 	h, s := &n.h, &n.style
+	// A group reports the states the styles inside it follow.
+	group := s.Group != ""
 	bit(driver.EventPress, h.press != nil)
 	bit(driver.EventLongPress, h.longPress != nil)
-	bit(driver.EventPressDown, h.pressDown != nil || s.Active != nil)
-	bit(driver.EventPressUp, h.pressUp != nil || s.Active != nil)
-	bit(driver.EventHoverIn, h.hoverIn != nil || s.Hover != nil)
-	bit(driver.EventHoverOut, h.hoverOut != nil || s.Hover != nil)
+	bit(driver.EventPressDown, h.pressDown != nil || s.Active != nil || group)
+	bit(driver.EventPressUp, h.pressUp != nil || s.Active != nil || group)
+	bit(driver.EventHoverIn, h.hoverIn != nil || s.Hover != nil || group)
+	bit(driver.EventHoverOut, h.hoverOut != nil || s.Hover != nil || group)
 	bit(driver.EventHoverMove, h.hoverMove != nil)
 	bit(driver.EventMouseMove, h.mouseMove != nil)
 	bit(driver.EventTouch, n.hearsTouches())

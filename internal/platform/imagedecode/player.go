@@ -58,7 +58,7 @@ const (
 type paintState struct {
 	ctm                  affine
 	fill, stroke         driver.Color
-	fillGrad, strokeGrad *driver.Gradient
+	fillGrad, strokeGrad *driver.CanvasGradient
 	width                float64
 	cap                  driver.LineCap
 	join                 driver.LineJoin
@@ -497,13 +497,13 @@ const lutSize = 1024
 // gradient mapped to pixels.
 type source struct {
 	color [4]float32 // premultiplied, from 0 to 1
-	grad  *driver.Gradient
+	grad  *driver.CanvasGradient
 	inv   affine // from pixels to gradient space
 	lut   []([4]float32)
 }
 
 // source returns the paint of color or g, or nil when it paints nothing.
-func (p *player) source(color driver.Color, g *driver.Gradient) *source {
+func (p *player) source(color driver.Color, g *driver.CanvasGradient) *source {
 	alpha := float32(p.st.alpha)
 	if g == nil || len(g.Stops) == 0 {
 		c := premultiply(color, alpha)
@@ -591,7 +591,7 @@ func (s *source) at(x, y int) ([4]float32, bool) {
 // radialOffset solves for the largest t whose circle, interpolated from
 // the focal circle to the outer one, passes through q, as the web's
 // two-circle radial gradients do.
-func radialOffset(g *driver.Gradient, q point) (float64, bool) {
+func radialOffset(g *driver.CanvasGradient, q point) (float64, bool) {
 	cdx, cdy := float64(g.X2-g.X1), float64(g.Y2-g.Y1)
 	r0, dr := float64(g.R1), float64(g.R2-g.R1)
 	px, py := q.x-float64(g.X1), q.y-float64(g.Y1)

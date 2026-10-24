@@ -3,7 +3,6 @@
 package apple
 
 import (
-	"math"
 	"strings"
 	"structs"
 
@@ -75,8 +74,9 @@ func StyleLayer(layer objc.ID, vs *driver.ViewStyle, upward bool) {
 		layer.Send(selSetShadowRadius, float64(vs.ShadowRadius))
 		layer.Send(selSetShadowOpacity, float32(1))
 	}
-	SetTransform(layer, vs.Transform)
 	setBorders(layer, vs, &tr)
+	applyDecor(layer, vs, upward)
+	SetTransform(layer, vs.Transform)
 	for i, k := range keys {
 		to := layer.Send(selValueForKey, NSString(k))
 		if from[i] == to || (from[i] != 0 && objc.Send[bool](from[i], sel("isEqual:"), to)) {
@@ -134,22 +134,19 @@ type transform3D struct {
 	M11, M12, M13, M14, M21, M22, M23, M24, M31, M32, M33, M34, M41, M42, M43, M44 float64
 }
 
-// SetTransform sets a layer's transform to t around the layer's center:
-// translate, then rotate, then scale. It works from wherever the anchor
-// point is, since AppKit keeps its layers' at their corner.
+// SetTransform sets a layer's transform to t around its transform
+// origin: its center, moved by its style's Origin. It works from wherever
+// the anchor point is, since AppKit keeps its layers' at their corner.
 func SetTransform(layer objc.ID, t driver.Transform) {
-	sx, sy := t.Scales()
-	rad := float64(t.Rotate) * math.Pi / 180
-	cos, sin := math.Cos(rad), math.Sin(rad)
-	// The rotation and scale, for column vectors.
-	a, b := cos*float64(sx), -sin*float64(sy)
-	c, d := sin*float64(sx), cos*float64(sy)
 	size := objc.Send[CGRect](layer, selBounds).Size
 	anchor := objc.Send[CGPoint](layer, sel("anchorPoint"))
-	cx, cy := (0.5-anchor.X)*size.Width, (0.5-anchor.Y)*size.Height
-	m := transform3D{M11: a, M12: c, M21: b, M22: d, M33: 1, M44: 1,
-		M41: float64(t.TranslateX) + cx - (a*cx + b*cy),
-		M42: float64(t.TranslateY) + cy - (c*cx + d*cy)}
+	ax, ay := anchor.X*size.Width, anchor.Y*size.Height
+	origin := driver.Point{X: driver.Points(size.Width / 2), Y: driver.Points(size.Height / 2)}
+	if d := decors[layer]; d != nil {
+		origin.X += d.vs.Origin.X
+		origin.Y += d.vs.Origin.Y
+	}
+	m := toCA(driver.Translate3D(-ax, -ay, 0).Mul(t.Matrix(origin)).Mul(driver.Translate3D(ax, ay, 0)))
 	if m == (transform3D{M11: 1, M22: 1, M33: 1, M44: 1}) {
 		delete(held, layer)
 	} else {

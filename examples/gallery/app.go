@@ -45,8 +45,8 @@ func init() {
 
 		{"Text", groupElements, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
 		{"Input", groupElements, "The platform's field: keyboard types, editing props, the caret, pasting and a keyboard accessory.", inputPage},
-		{"Layout", groupElements, "Flexbox, wrapping, absolute positioning, grid and block layout.", layoutPage},
-		{"Styles", groupElements, "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
+		{"Layout", groupElements, "Flexbox, wrapping, positioning, grid and block layout, intrinsic sizes, stacking and direction.", layoutPage},
+		{"Styles", groupElements, "Backgrounds, corners, borders, shadows, gradients, filters, transforms, keyframes and state styles.", stylesPage},
 		{"Images", groupElements, "Embedded, remote, animated and vector images, placeholders and resize modes.", imagesPage},
 		{"Canvas", groupElements, "2D drawing recorded on the engine and played by the platform.", canvasPage},
 		{"Shader", groupElements, "Fragment shaders in Go's syntax, run on the GPU with uniforms the platform animates.", shaderPage},

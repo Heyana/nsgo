@@ -87,7 +87,7 @@ func TestMixMovesOnlyThePropertiesAsked(t *testing.T) {
 		Transform: driver.Transform{TranslateX: 0}, ShadowRadius: 0}
 	to := driver.ViewStyle{Opacity: 1, Background: driver.RGB(0x0000ff), BorderWidth: 10,
 		Transform: driver.Transform{TranslateX: 20}, ShadowRadius: 4}
-	mixed := mix(from, to, 0.5, driver.TransitionOpacity|driver.TransitionBackground)
+	mixed := driver.MixStyles(from, to, 0.5, driver.TransitionOpacity|driver.TransitionBackground)
 	if mixed.Opacity != 0.5 {
 		t.Fatalf("opacity = %v", mixed.Opacity)
 	}
@@ -97,24 +97,14 @@ func TestMixMovesOnlyThePropertiesAsked(t *testing.T) {
 	if mixed.BorderWidth != 10 || mixed.Transform.TranslateX != 20 {
 		t.Fatalf("untouched fields = %+v", mixed)
 	}
-	full := mix(from, to, 0.5, allProperties)
+	full := driver.MixStyles(from, to, 0.5, allProperties)
 	if full.Transform.TranslateX != 10 || full.ShadowRadius != 2 {
 		t.Fatalf("full mix = %+v", full)
 	}
-	same := mix(to, to, 0.5, allProperties)
+	same := driver.MixStyles(to, to, 0.5, allProperties)
 	if same.Opacity != to.Opacity || same.Background != to.Background || same.BorderWidth != to.BorderWidth ||
 		same.Transform.TranslateX != to.Transform.TranslateX {
 		t.Fatalf("unchanged = %+v, want %+v", same, to)
-	}
-}
-
-func TestMixColorFadesThroughTheVisibleColor(t *testing.T) {
-	got := mixColor(driver.RGBA(0xff0000, 0), driver.RGBA(0x0000ff, 1), 0.5)
-	if got != driver.RGBA(0x0000ff, 0.5) {
-		t.Fatalf("mix = %08x", got)
-	}
-	if got := mixColor(driver.RGB(0x123456), driver.RGB(0x123456), 0.3); got != driver.RGB(0x123456) {
-		t.Fatalf("same colors = %08x", got)
 	}
 }
 

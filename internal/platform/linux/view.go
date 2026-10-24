@@ -4,6 +4,7 @@ package linux
 
 import (
 	"slices"
+	"time"
 
 	"github.com/oneo-me/nsgo/internal/driver"
 	"github.com/oneo-me/nsgo/internal/platform/field"
@@ -73,7 +74,9 @@ type view struct {
 	// What animates: the style after the first, and the scroll offset.
 	styled     bool
 	transition *transition
-	scrolling  *scrolling
+	// keyframeStart is when the keyframe animation of style began.
+	keyframeStart time.Time
+	scrolling     *scrolling
 	// animated holds the values the animator binds over the style, nil
 	// while none are bound.
 	animated *driver.AnimatedValues

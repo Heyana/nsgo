@@ -39,6 +39,11 @@ type view struct {
 	kind    driver.ViewKind
 	native  objc.ID
 	events  driver.EventMask
+	// contentLayer draws a text's or a canvas's content.
+	contentLayer objc.ID
+	// backdrop is the view's backdrop blur or Liquid Glass.
+	backdrop objc.ID
+	glass    bool
 
 	pressing  atomic.Bool
 	longFired atomic.Bool
@@ -168,7 +173,6 @@ var (
 	selInsertBelow                   = sel("insertSubview:belowSubview:")
 	selRemoveFromSuperview           = sel("removeFromSuperview")
 	selSetHidden                     = sel("setHidden:")
-	selSetNeedsDisplay               = sel("setNeedsDisplay")
 	selSetNeedsLayout                = sel("setNeedsLayout")
 	selLocationInView                = sel("locationInView:")
 	selAnyObject                     = sel("anyObject")
@@ -189,7 +193,6 @@ var (
 	selSetAccessibilityIdentifier    = sel("setAccessibilityIdentifier:")
 	selSetAccessibilityContainerType = sel("setAccessibilityContainerType:")
 	selIsEqualToString               = sel("isEqualToString:")
-	selSetContentMode                = sel("setContentMode:")
 	selSetOpaque                     = sel("setOpaque:")
 	selInitWithFrame, selSetDeleg    = sel("initWithFrame:"), sel("setDelegate:")
 	selContentOffset                 = sel("contentOffset")
@@ -197,7 +200,6 @@ var (
 
 	classView, classSurface, classInput, classScroll, classWatcher, classController objc.Class
 
-	uiGraphicsGetCurrentContext func() uintptr
 	uiApplicationMain           func(argc int, argv unsafe.Pointer, principal, delegate uintptr) int
 	uiReduceMotion, uiVoiceOver func() bool
 	uiAccessibilityPost         func(notification uint32, argument objc.ID)
@@ -212,7 +214,6 @@ func loadUIKit() {
 	if err != nil {
 		panic(err)
 	}
-	purego.RegisterLibFunc(&uiGraphicsGetCurrentContext, uikit, "UIGraphicsGetCurrentContext")
 	purego.RegisterLibFunc(&uiApplicationMain, uikit, "UIApplicationMain")
 	purego.RegisterLibFunc(&uiReduceMotion, uikit, "UIAccessibilityIsReduceMotionEnabled")
 	purego.RegisterLibFunc(&uiVoiceOver, uikit, "UIAccessibilityIsVoiceOverRunning")
@@ -221,7 +222,6 @@ func loadUIKit() {
 
 	uiView := objc.GetClass("UIView")
 	common := []objc.MethodDef{
-		{Cmd: sel("drawRect:"), Fn: drawRect},
 		{Cmd: sel("hitTest:withEvent:"), Fn: hitTest},
 		{Cmd: sel("touchesBegan:withEvent:"), Fn: touchesBegan},
 		{Cmd: sel("touchesEnded:withEvent:"), Fn: touchesEnded},
@@ -234,6 +234,7 @@ func loadUIKit() {
 	registerTouches()
 	registerNav()
 	registerSelection()
+	registerContent()
 	classView = register("NsgoView", uiView, nil, common)
 	classSurface = register("NsgoSurface", uiView, nil, append(common,
 		objc.MethodDef{Cmd: sel("layoutSubviews"), Fn: surfaceLayout},
@@ -640,6 +641,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			} else {
 				apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, false)
 			}
+			v.setBackdrop(it.ViewStyle)
 			v.native.Send(selSetHidden, it.ViewStyle.Hidden)
 			if v.kind == driver.KindScroll || v.kind == driver.KindVideo {
 				// A scroll view shows only what it scrolls to, and a video
@@ -673,7 +675,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemCanvas:
 			v.drawing = it.Drawing
-			v.native.Send(selSetNeedsDisplay)
+			v.redraw()
 		case driver.ItemShader:
 			s.setShader(v, it.Shader)
 		case driver.ItemScrollTo:
@@ -703,7 +705,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			v.activation, v.area, v.selectable = p.PanActivation, p.SelectionArea, p.Selectable
 			if v.selColor != p.SelectionColor {
 				v.selColor = p.SelectionColor
-				v.native.Send(selSetNeedsDisplay)
+				v.redraw()
 			}
 			v.setSelectable()
 		case driver.ItemEvents:
@@ -722,7 +724,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			v.layout, _ = it.Text.Layout.(*apple.Layout)
 			v.box = it.Text.Content
 			v.textChanged(it.Text.Text)
-			v.native.Send(selSetNeedsDisplay)
+			v.redraw()
 		case driver.ItemInput:
 			v.configure(it.Input)
 			s.setAccessory(v, it.Input.Accessory)
@@ -805,13 +807,11 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 		v.newInput()
 	default:
 		v.native = objc.ID(classView).Send(selNew)
-		if kind == driver.KindText || kind == driver.KindCanvas {
-			const redraw = 3
-			v.native.Send(selSetContentMode, redraw)
-		}
 	}
 	v.native.Send(selSetOpaque, false)
 	switch kind {
+	case driver.KindText, driver.KindCanvas:
+		v.newContent()
 	case driver.KindImage:
 		v.image = apple.NewImageView(v.native.Send(selLayer))
 		v.image.Dispatch = v.report
@@ -861,7 +861,9 @@ func (s *surface) delete(v *view, kept bool) {
 	if v.accessory != 0 {
 		s.setAccessory(v, 0)
 	}
-	apple.ForgetBorders(v.native.Send(selLayer))
+	apple.ForgetTransform(v.native.Send(selLayer))
+	apple.ForgetDecor(v.native.Send(selLayer))
+	v.forgetContent()
 	delete(gates, v.pan)
 	v.layout.Release()
 	if v.image != nil {
@@ -984,23 +986,6 @@ func (v *view) longPressDelay() time.Duration {
 func (v *view) pressable() bool {
 	return v.events.Has(driver.EventPress) || v.events.Has(driver.EventLongPress) ||
 		v.events.Has(driver.EventPressDown) || v.events.Has(driver.EventPressUp)
-}
-
-func drawRect(self objc.ID, _ objc.SEL, dirty apple.CGRect) {
-	v := views[self]
-	if v != nil && v.drawing != nil {
-		apple.Play(uiGraphicsGetCurrentContext(), v.drawing)
-		return
-	}
-	if v == nil || v.layout == nil {
-		return
-	}
-	b := objc.Send[apple.CGRect](self, selBounds)
-	box := v.box
-	v.layout.DrawBackgrounds(uiGraphicsGetCurrentContext(), apple.Rect(float64(box.Origin.X), float64(box.Origin.Y), 0, 0))
-	v.drawSelection(uiGraphicsGetCurrentContext())
-	v.layout.Draw(uiGraphicsGetCurrentContext(), b.Size.Height, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y),
-		float64(box.Size.Width), float64(box.Size.Height)))
 }
 
 // Touches a view does not handle go up the responder chain to a pressable

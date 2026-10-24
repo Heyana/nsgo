@@ -8,6 +8,8 @@ import android.text.Layout;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.StaticLayout;
+import android.text.TextDirectionHeuristic;
+import android.text.TextDirectionHeuristics;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.LineHeightSpan;
@@ -37,6 +39,8 @@ final class Text {
         final float letterSpacing;
         final int align;
         final boolean italic, underline, lineThrough;
+        /** The paragraphs' base direction is right to left. */
+        final boolean rtl;
         /** How the decoration's lines are drawn and their ARGB color, 0 for the text's; read after the rest. */
         int decorationStyle, decorationColor;
 
@@ -52,6 +56,7 @@ final class Text {
             italic = Protocol.flag(flags, 0);
             underline = Protocol.flag(flags, 1);
             lineThrough = Protocol.flag(flags, 2);
+            rtl = Protocol.flag(flags, 3);
         }
 
         /** Reads the decoration's style and color, which PREPARE sends after the text's parts. */
@@ -198,6 +203,7 @@ final class Text {
         private final Layout.Alignment align;
         private final int maxLines, ellipsize;
         private final boolean attached, justify;
+        private final TextDirectionHeuristic direction;
 
         Prepared(String text, Style style, int maxLines, int ellipsize, Shadow shadow, List<Span> spans,
                 List<Attachment> attachments) {
@@ -247,6 +253,7 @@ final class Text {
             }
             this.align = style.alignment();
             this.justify = style.align == Protocol.ALIGN_JUSTIFY;
+            this.direction = style.rtl ? TextDirectionHeuristics.RTL : TextDirectionHeuristics.LTR;
             this.maxLines = maxLines;
             this.ellipsize = ellipsize;
             this.attached = !attachments.isEmpty();
@@ -288,6 +295,7 @@ final class Text {
                     : (int) Math.ceil(width - 0.01f);
             StaticLayout.Builder b = StaticLayout.Builder.obtain(text, 0, text.length(), paint, Math.max(px, 1))
                     .setAlignment(align)
+                    .setTextDirection(direction)
                     .setIncludePad(false);
             if (justify) b.setJustificationMode(Layout.JUSTIFICATION_MODE_INTER_WORD);
             if (maxLines > 0) {

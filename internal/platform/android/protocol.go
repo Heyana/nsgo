@@ -155,9 +155,9 @@ func writeSpec(w *writer, a *driver.Animation) {
 }
 
 // writeGradient writes a fill or stroke gradient as CanvasNode reads it.
-func writeGradient(w *writer, g *driver.Gradient) {
+func writeGradient(w *writer, g *driver.CanvasGradient) {
 	if g == nil {
-		g = &driver.Gradient{}
+		g = &driver.CanvasGradient{}
 	}
 	w.flags(g.Radial)
 	w.floats(g.X1, g.Y1, g.R1, g.X2, g.Y2, g.R2)

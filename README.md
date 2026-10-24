@@ -12,7 +12,7 @@ NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the
 
 ## Status
 
-NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, animated and vector images, canvas, GPU shaders written in Go, SVG icons with the bundled Lucide pack, web views, videos, the app's own native views, animated values and layout animations, file drops, Markdown and HTML text views, overlays, dialogs, navigation and unstyled base components, running on macOS, iOS, Windows, Linux, the web and Android devices and x86_64 emulators. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
+NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, animated and vector images, canvas, GPU shaders written in Go, SVG icons with the bundled Lucide pack, web views, videos, the app's own native views, animated values and layout animations, CSS-like gradients, shadows, filters and 3D transforms, file drops, Markdown and HTML text views, overlays, dialogs, navigation and unstyled base components, running on macOS, iOS, Windows, Linux, the web and Android devices and x86_64 emulators. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
 
 ## Goals
 

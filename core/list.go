@@ -651,7 +651,12 @@ func (t *Tree) updateList(v *node) bool {
 // shows it; it reports whether that changed its layout.
 func (ln *listNode) place(c *node, at, x, w Points) bool {
 	s := &c.base
-	old := *s
+	type placed struct {
+		display          Display
+		position         Position
+		l, t, w, h, b, r Length
+	}
+	at0 := placed{s.Display, s.Position, s.Left, s.Top, s.Width, s.Height, s.Bottom, s.Right}
 	s.Display = 0
 	s.Position = Absolute
 	if ln.spec.Horizontal {
@@ -661,7 +666,7 @@ func (ln *listNode) place(c *node, at, x, w Points) bool {
 		s.Top, s.Left, s.Width, s.Bottom, s.Right = Pt(at), Pt(x), Pt(w), Length{}, Length{}
 		s.Height = Length{}
 	}
-	if *s == old {
+	if (placed{s.Display, s.Position, s.Left, s.Top, s.Width, s.Height, s.Bottom, s.Right}) == at0 {
 		return false
 	}
 	c.restyle()
@@ -853,6 +858,22 @@ func (t *Tree) sendSticky() {
 			views[o] = true
 		}
 	}
+	// Sticky views pin in the nearest scroll view around them.
+	pinned := map[*node][]StickyCell{}
+	for n := range t.sticky {
+		if v, c, ok := pinRange(n); ok {
+			pinned[v] = append(pinned[v], c)
+		}
+	}
+	for v := range pinned {
+		views[v] = true
+	}
+	for _, v := range t.stuckIn {
+		if !v.deleted {
+			views[v] = true
+		}
+	}
+	t.stuckIn = t.stuckIn[:0]
 	for v := range views {
 		sc := v.scroll
 		var cells []StickyCell
@@ -864,12 +885,72 @@ func (t *Tree) sendSticky() {
 				cells = append(cells, d.sticky...)
 			}
 		}
+		if own := pinned[v]; len(own) > 0 {
+			slices.SortFunc(own, func(a, b StickyCell) int { return int(a.Cell) - int(b.Cell) })
+			cells = append(cells, own...)
+			t.stuckIn = append(t.stuckIn, v)
+		}
 		if !slices.Equal(cells, sc.sticky) {
 			sc.sticky = cells
 			t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemStickyCells, ID: v.id, Sticky: slices.Clone(cells)})
 			t.changed = true
 		}
 	}
+}
+
+// pinRange returns the scroll view sticky view n pins in and its range
+// of travel there, as CSS's position: sticky: from where its start meets
+// the viewport's start less its Top (Left across a horizontal scroll
+// view), to where its end meets its parent's content end.
+func pinRange(n *node) (*node, StickyCell, bool) {
+	if n.deleted || n.hidden || n.style.Display == DisplayNone || n.hoist != nil {
+		return nil, StickyCell{}, false
+	}
+	var pos Point
+	var sv *node
+	for p := n.nativeParent(); p != nil; p = p.nativeParent() {
+		if p.scroll != nil {
+			sv = p
+			break
+		}
+		if p.hoist != nil {
+			return nil, StickyCell{}, false
+		}
+		pos.X += p.frame.Origin.X
+		pos.Y += p.frame.Origin.Y
+	}
+	if sv == nil {
+		return nil, StickyCell{}, false
+	}
+	horizontal := sv.scroll.config.Horizontal
+	main := func(p Point) Points {
+		if horizontal {
+			return p.X
+		}
+		return p.Y
+	}
+	inset, viewport := n.style.Top, sv.frame.Size.Height
+	if horizontal {
+		inset, viewport = n.style.Left, sv.frame.Size.Width
+	}
+	at := inset.Resolve(viewport)
+	if at.IsAuto() {
+		return nil, StickyCell{}, false
+	}
+	// The parent's content box, in the scroll view's content.
+	parent := n.nativeParent()
+	var end Points
+	if parent == sv {
+		end = main(Point{X: sv.scroll.content.Width, Y: sv.scroll.content.Height})
+	} else {
+		l := &parent.lstate.Rounded
+		box := contentBox(l)
+		end = main(pos) + main(box.Origin) + main(Point{X: box.Size.Width, Y: box.Size.Height})
+	}
+	start := main(pos) + main(n.frame.Origin)
+	size := main(Point{X: n.frame.Size.Width, Y: n.frame.Size.Height})
+	travel := max(end-start-size, 0)
+	return sv, StickyCell{Cell: n.id, Start: start - at, End: start - at + travel}, true
 }
 
 // listCommand queues a scroll for list ln's next update.

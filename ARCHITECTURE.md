@@ -4,7 +4,7 @@ NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longb
 
 ## Reference implementation
 
-NSH is the reference for behavior and naming, not a constraint: NSGo keeps its names and semantics by default, so NSH's documentation stays usable, and departs where a design is clearer or easier to maintain. Its checkout lives in `nsh/` and is never committed.
+NSH is the reference for behavior and naming, not a constraint: NSGo keeps its names and semantics by default and departs where a design is clearer or easier to maintain. Its checkout lives in `nsh/` and is never committed.
 
 | Need | Read in `nsh/` |
 | --- | --- |
@@ -13,7 +13,7 @@ NSH is the reference for behavior and naming, not a constraint: NSGo keeps its n
 | One subsystem | The matching page in `docs/dev/` |
 | How a module works inside | The module docs in `crates/*/src` |
 
-Port the design, not the code line by line, and record each deviation in the owning subject.
+Port the design, not the code, and record each deviation in the owning subject.
 
 ## Code map
 
@@ -104,7 +104,7 @@ Packages import only downward; `layering_test.go` checks it on every target:
 
 **Render.** Components run once and bind signals to element parts; regions (`Show`, `Each`, `Dynamic`, `Catch`) rebuild only their span. A commit resolves styles, prepares text, lays out and sends what changed as one `MountBatch` ([core](docs/architecture/core.md)).
 
-**Mount.** The platform receives the batch with a single hop to its main thread and applies the items in order to native views. iOS and Android draw screens' system headers natively.
+**Mount.** The platform receives the batch with a single hop to its main thread and applies the items in order. iOS and Android draw screens' system headers natively.
 
 **Input.** Native gestures become engine events, queued without blocking, run the handlers on the engine side and lead to the next commit.
 
@@ -125,6 +125,7 @@ Record a design question here, and confirm the answer with the user before choos
 | Document | When to read |
 | --- | --- |
 | [Core](docs/architecture/core.md) | Changing the graph, elements, regions, layers, commit, storage or the mount protocol |
+| [Styles](docs/architecture/styles.md) | Changing `Style` or how a backend draws a view |
 | [Text](docs/architecture/text.md) | Changing text, a `TextEngine`, `Input` or selection |
 | [Scrolling](docs/architecture/scrolling.md) | Changing `Scroll`, `List` or a scroll view |
 | [Interaction](docs/architecture/interaction.md) | Changing accessibility, pointers, focus, touches, gestures or drops |

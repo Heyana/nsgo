@@ -37,29 +37,12 @@ func TestMatrixComposesAndInverts(t *testing.T) {
 	}
 }
 
-func TestTransformOfTurnsAroundTheCentre(t *testing.T) {
-	r := driver.Size{Width: 100, Height: 100}
-	if got := transformOf(driver.Transform{TranslateX: 10, TranslateY: -5}, r); got != translation(10, -5) {
-		t.Fatalf("translate = %+v", got)
-	}
-	m := transformOf(driver.Transform{ScaleX: 2, ScaleY: 2}, r)
-	if x, y := m.apply(0, 0); x != -50 || y != -50 {
-		t.Fatalf("scaled corner = %g, %g", x, y)
-	}
-	// A quarter turn in degrees sends (100, 50) to (50, 100) around the
-	// centre.
-	m = transformOf(driver.Transform{Rotate: 90}, r)
-	if x, y := m.apply(100, 50); !closeTo(x, 50) || !closeTo(y, 100) {
-		t.Fatalf("rotated point = %g, %g", x, y)
-	}
-}
-
 func TestMixMovesOnlyThePropertiesAsked(t *testing.T) {
 	from := driver.ViewStyle{Opacity: 0, Background: driver.RGB(0xff0000), BorderWidth: 0,
 		Transform: driver.Transform{TranslateX: 0}, ShadowRadius: 0}
 	to := driver.ViewStyle{Opacity: 1, Background: driver.RGB(0x0000ff), BorderWidth: 10,
 		Transform: driver.Transform{TranslateX: 20}, ShadowRadius: 4}
-	mixed := mix(from, to, 0.5, driver.TransitionOpacity|driver.TransitionBackground)
+	mixed := driver.MixStyles(from, to, 0.5, driver.TransitionOpacity|driver.TransitionBackground)
 	if mixed.Opacity != 0.5 {
 		t.Fatalf("opacity = %v", mixed.Opacity)
 	}
@@ -71,27 +54,15 @@ func TestMixMovesOnlyThePropertiesAsked(t *testing.T) {
 		t.Fatalf("untouched fields = %+v", mixed)
 	}
 
-	full := mix(from, to, 0.5, allProperties)
+	full := driver.MixStyles(from, to, 0.5, allProperties)
 	if full.Transform.TranslateX != 10 || full.ShadowRadius != 2 {
 		t.Fatalf("full mix = %+v", full)
 	}
 	// A style that does not change keeps its look.
-	same := mix(to, to, 0.5, allProperties)
+	same := driver.MixStyles(to, to, 0.5, allProperties)
 	if same.Opacity != to.Opacity || same.Background != to.Background || same.BorderWidth != to.BorderWidth ||
 		same.Transform.TranslateX != to.Transform.TranslateX {
 		t.Fatalf("unchanged = %+v, want %+v", same, to)
-	}
-}
-
-func TestMixColorFadesThroughTheVisibleColor(t *testing.T) {
-	// A transparent start takes the target's hue, so it does not pass
-	// through black.
-	got := mixColor(driver.RGBA(0xff0000, 0), driver.RGBA(0x0000ff, 1), 0.5)
-	if got != driver.RGBA(0x0000ff, 0.5) {
-		t.Fatalf("mix = %08x", got)
-	}
-	if got := mixColor(driver.RGB(0x123456), driver.RGB(0x123456), 0.3); got != driver.RGB(0x123456) {
-		t.Fatalf("same colors = %08x", got)
 	}
 }
 

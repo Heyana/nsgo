@@ -258,8 +258,15 @@ type MountBatch struct {
 
 // ViewStyle is everything a platform draws for a view itself.
 type ViewStyle struct {
-	Background   Color
+	Background Color
+	// CornerRadius rounds every corner, unless Corners is set: then each
+	// corner has its own radius. Platforms fit radii that do not fit
+	// with Corners.Fit.
 	CornerRadius Points
+	Corners      Corners
+	// ContinuousCorners eases the corners into the edges (RoundedRect)
+	// instead of drawing quarter circles.
+	ContinuousCorners bool
 	// BorderWidth and BorderColor are the border on every side, unless
 	// Borders is set: then each side has its width there and its color
 	// in BorderColors.
@@ -267,7 +274,10 @@ type ViewStyle struct {
 	BorderColor  Color
 	Borders      Edges
 	BorderColors EdgeColors
-	Opacity      float32
+	// BorderStyle dashes or dots the border; 0 is solid.
+	BorderStyle BorderStyle
+	Outline     Outline
+	Opacity     float32
 	// Clip clips children to the bounds and corners.
 	Clip         bool
 	ShadowColor  Color
@@ -278,14 +288,52 @@ type ViewStyle struct {
 	// Cursor is the pointer's look over the view; Auto inherits the
 	// nearest ancestor's, and a pressable view's is a pointer on the web.
 	Cursor Cursor
-	// Transform moves, scales and rotates the view around its center
-	// without moving its children's frames; hit testing follows it.
+	// Transform moves, scales and rotates the view around its transform
+	// origin without moving its children's frames; hit testing follows
+	// it. The core has resolved its percentages.
 	Transform Transform
+	// Origin is where the transform acts, from the view's center.
+	Origin Point
+	// BackfaceHidden hides the view while its rotations turn its back to
+	// the viewer.
+	BackfaceHidden bool
+	// ChildPerspective, when set, is the depth children's rotations out
+	// of the plane are seen from, at the view's center (ChildPerspective
+	// the function).
+	ChildPerspective Points
+	BlendMode        BlendMode
+	// Material and Glass are how iOS draws a backdrop blur.
+	Material BackdropMaterial
+	Glass    GlassEffect
+	// Effects are shadows, gradients, filters and masks, nil without any.
+	Effects *Effects
 	// Transition, when it has a duration, animates the change from the
 	// previous ViewStyle to this one.
 	Transition Transition
-	// Hidden hides the view and its children (display none).
+	// Animation runs keyframes over the view while it is set; a change
+	// starts it again.
+	Animation KeyframeAnimation
+	// Hidden hides the view and its children (display none, visibility
+	// hidden).
 	Hidden bool
+}
+
+// Radii returns the radius of each corner, fitted to size.
+func (vs *ViewStyle) Radii(size Size) Corners {
+	c := vs.Corners
+	if c == (Corners{}) {
+		c = AllCorners(vs.CornerRadius)
+	}
+	return c.Fit(size)
+}
+
+// Rounded reports whether some corner is rounded.
+func (vs *ViewStyle) Rounded() bool { return vs.CornerRadius > 0 || vs.Corners != (Corners{}) }
+
+// Matrix returns the view's transform for a box of size, around its
+// origin.
+func (vs *ViewStyle) Matrix(size Size) Matrix3D {
+	return vs.Transform.Matrix(Point{X: size.Width/2 + vs.Origin.X, Y: size.Height/2 + vs.Origin.Y})
 }
 
 // ImageConfig is an image view's source and look.

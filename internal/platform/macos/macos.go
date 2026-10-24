@@ -59,6 +59,9 @@ type view struct {
 	native  objc.ID
 	content objc.ID // where children go: native, or a scroll view's document
 	events  driver.EventMask
+	// backdrop is the view's backdrop blur, Liquid Glass when glass.
+	backdrop objc.ID
+	glass    bool
 
 	pressing  atomic.Bool
 	longFired atomic.Bool
@@ -243,6 +246,13 @@ func loadAppKit() {
 	common := []objc.MethodDef{
 		{Cmd: sel("makeBackingLayer"), Fn: makeBackingLayer},
 		{Cmd: sel("isFlipped"), Fn: func(self objc.ID, _ objc.SEL) bool { return true }},
+		// AppKit clips views to their bounds as their frames change, and
+		// with them the shadows and outlines drawn outside; a view clips
+		// as its style says.
+		{Cmd: sel("clipsToBounds"), Fn: func(self objc.ID, _ objc.SEL) bool {
+			v := views[self]
+			return v == nil || v.style.Clip || v.kind == driver.KindScroll
+		}},
 		{Cmd: sel("hitTest:"), Fn: hitTest},
 		{Cmd: sel("mouseDown:"), Fn: mouseDown},
 		{Cmd: sel("mouseUp:"), Fn: mouseUp},
@@ -878,12 +888,16 @@ func (s *surface) apply(b *driver.MountBatch) {
 			if cursor != v.style.Cursor {
 				invalidateCursor(v)
 			}
+			if apple.UsesFilters(it.ViewStyle) {
+				v.native.Send(sel("setLayerUsesCoreImageFilters:"), true)
+			}
 			if v.animatesStyle() {
 				v.restyle()
 			} else {
 				apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, true)
 				v.transform = it.ViewStyle.Transform
 			}
+			v.setBackdrop(it.ViewStyle)
 			v.native.Send(selSetHidden, it.ViewStyle.Hidden)
 			if v.image != nil {
 				v.image.SetStyle(it.ViewStyle)
@@ -1087,7 +1101,7 @@ func (s *surface) delete(v *view, kept bool) {
 		v.component = nil
 	}
 	apple.ForgetTransform(v.native.Send(selLayer))
-	apple.ForgetBorders(v.native.Send(selLayer))
+	apple.ForgetDecor(v.native.Send(selLayer))
 	v.forgetContent()
 	if v.shader != nil {
 		v.shader.Release()

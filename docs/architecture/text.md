@@ -23,6 +23,7 @@ The engines draw the rest:
 - `EllipsizeMode`. CoreText truncates the last line's rest at its head, middle or tail, and Pango the same way; Android's `TruncateAt` ellipsizes a head or middle on one line only. Clipping keeps the lines whole and cuts them at the box.
 - DirectWrite and the web trim only tails, so on one line without attachments they search with `AttributedText.CutToFit` for the most characters around an ellipsis.
 - `TextAlignJustify` is each engine's justification; Android's needs no newer API than NSGo's minimum.
+- `TextStyle.RTL` is the base direction: CoreText's paragraph writing direction, DirectWrite's reading direction, a Pango context's base direction without auto direction, Android's text direction heuristic and CSS's `direction`. Start and end alignments follow it ([styles](styles.md)).
 - `TextDecorationStyle` and `TextDecorationColor`. CoreText underlines solid, double, dotted and dashed in a color, and the backend draws wavy underlines and every strikethrough itself.
 - Windows and Android draw the lines a font or paint cannot; Pango has no dotted, dashed or styled strikethrough lines, so those are solid there.
 - `AttributedText.Shadow`, the block's shadow: a Core Graphics shadow, a CSS `text-shadow`, Direct2D's shadow effect over the recorded glyphs, a GSK shadow node, Android's shadow layer.

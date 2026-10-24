@@ -218,6 +218,12 @@ func (w *window) gestured(ev driver.Event) {
 func (w *window) setStyle(v *view, s *driver.ViewStyle) {
 	from := *w.baseStyle(v)
 	styled := v.styled
+	if s.Animation != v.style.Animation || !styled {
+		v.keyframeStart = time.Now()
+		if s.Animation.Keyframes != 0 {
+			w.animate(v)
+		}
+	}
 	v.style, v.styled, v.transition = *s, true, nil
 	t := s.Transition
 	if !styled || t.Duration <= 0 || w.env.ReduceMotion {
@@ -227,7 +233,7 @@ func (w *window) setStyle(v *view, s *driver.ViewStyle) {
 	if props == 0 {
 		props = allProperties
 	}
-	first, last := mix(from, *s, 0, props), mix(from, *s, 1, props)
+	first, last := driver.MixStyles(from, *s, 0, props), driver.MixStyles(from, *s, 1, props)
 	if first == last {
 		return
 	}
@@ -318,7 +324,7 @@ func (w *window) tick() {
 			if now.After(t.start) {
 				x = min(float64(now.Sub(t.start))/float64(t.duration), 1)
 			}
-			t.shown = mix(t.from, t.to, t.curve.At(x), t.props)
+			t.shown = driver.MixStyles(t.from, t.to, t.curve.At(x), t.props)
 			if x >= 1 {
 				v.transition = nil
 			}
@@ -335,7 +341,11 @@ func (w *window) tick() {
 				}
 			}
 		}
-		if v.transition != nil || v.scrolling != nil || v.moving != nil || v.fading != nil {
+		_, keyframed := v.keyframe()
+		if keyframed {
+			_, keyframed = v.style.Animation.At(now.Sub(v.keyframeStart))
+		}
+		if v.transition != nil || v.scrolling != nil || v.moving != nil || v.fading != nil || keyframed {
 			live = append(live, v)
 		}
 	}
@@ -360,74 +370,13 @@ func (w *window) tick() {
 	invalidateRect.Call(w.hwnd, 0, 0)
 }
 
-// mix returns the style at progress t from from to to, moving props and
-// taking everything else from to.
-func mix(from, to driver.ViewStyle, t float64, props driver.TransitionProperty) driver.ViewStyle {
-	out := to
-	if props&driver.TransitionOpacity != 0 {
-		out.Opacity = from.Opacity + (to.Opacity-from.Opacity)*float32(t)
+// keyframe returns the step of v's keyframe animation now, and whether
+// one runs.
+func (v *view) keyframe() (driver.Keyframe, bool) {
+	a := v.style.Animation
+	if a.Keyframes == 0 {
+		return driver.Keyframe{Opacity: 1, Scale: 1}, false
 	}
-	if props&driver.TransitionBackground != 0 {
-		out.Background = mixColor(from.Background, to.Background, t)
-	}
-	if props&driver.TransitionTransform != 0 {
-		out.Transform = mixTransform(from.Transform, to.Transform, t)
-	}
-	if props&driver.TransitionBorder != 0 {
-		out.BorderWidth = mixPoints(from.BorderWidth, to.BorderWidth, t)
-		out.BorderColor = mixColor(from.BorderColor, to.BorderColor, t)
-		out.Borders = driver.Edges{Top: mixPoints(from.Borders.Top, to.Borders.Top, t),
-			Right:  mixPoints(from.Borders.Right, to.Borders.Right, t),
-			Bottom: mixPoints(from.Borders.Bottom, to.Borders.Bottom, t),
-			Left:   mixPoints(from.Borders.Left, to.Borders.Left, t)}
-		out.BorderColors = driver.EdgeColors{Top: mixColor(from.BorderColors.Top, to.BorderColors.Top, t),
-			Right:  mixColor(from.BorderColors.Right, to.BorderColors.Right, t),
-			Bottom: mixColor(from.BorderColors.Bottom, to.BorderColors.Bottom, t),
-			Left:   mixColor(from.BorderColors.Left, to.BorderColors.Left, t)}
-		out.CornerRadius = mixPoints(from.CornerRadius, to.CornerRadius, t)
-	}
-	if props&driver.TransitionShadow != 0 {
-		out.ShadowColor = mixColor(from.ShadowColor, to.ShadowColor, t)
-		out.ShadowRadius = mixPoints(from.ShadowRadius, to.ShadowRadius, t)
-		out.ShadowOffset = driver.Point{X: mixPoints(from.ShadowOffset.X, to.ShadowOffset.X, t),
-			Y: mixPoints(from.ShadowOffset.Y, to.ShadowOffset.Y, t)}
-	}
-	return out
-}
-
-func mixPoints(a, b driver.Points, t float64) driver.Points { return a + (b-a)*driver.Points(t) }
-
-func mixFloat(a, b float32, t float64) float32 { return a + (b-a)*float32(t) }
-
-// mixColor mixes two 0xRRGGBBAA colors; none fades from or to the other
-// color's transparent self rather than through black.
-func mixColor(a, b driver.Color, t float64) driver.Color {
-	if a == b {
-		return b
-	}
-	if a&0xff == 0 {
-		a = b &^ 0xff
-	}
-	if b&0xff == 0 {
-		b = a &^ 0xff
-	}
-	var out driver.Color
-	for shift := 0; shift < 32; shift += 8 {
-		x, y := float64(a>>shift&0xff), float64(b>>shift&0xff)
-		out |= driver.Color(x+(y-x)*t+0.5) << shift
-	}
-	return out
-}
-
-// mixTransform mixes each part of two transforms, scales resolved.
-func mixTransform(a, b driver.Transform, t float64) driver.Transform {
-	ax, ay := a.Scales()
-	bx, by := b.Scales()
-	return driver.Transform{
-		TranslateX: mixPoints(a.TranslateX, b.TranslateX, t),
-		TranslateY: mixPoints(a.TranslateY, b.TranslateY, t),
-		ScaleX:     mixFloat(ax, bx, t),
-		ScaleY:     mixFloat(ay, by, t),
-		Rotate:     mixFloat(a.Rotate, b.Rotate, t),
-	}
+	k, _ := a.At(time.Since(v.keyframeStart))
+	return k, true
 }

@@ -87,10 +87,10 @@ type (
 	FontWeight = driver.FontWeight
 	// GesturePhase is where a gesture is in its course.
 	GesturePhase = driver.GesturePhase
-	// Gradient is a linear or radial color gradient that DrawFillGradient and
+	// CanvasGradient is a linear or radial color gradient that DrawFillGradient and
 	// DrawStrokeGradient paint with.
-	Gradient = driver.Gradient
-	// GradientSpread is how a Gradient paints beyond offsets 0 and 1.
+	CanvasGradient = driver.CanvasGradient
+	// GradientSpread is how a CanvasGradient paints beyond offsets 0 and 1.
 	GradientSpread = driver.GradientSpread
 	// GradientStop is a color at an offset of a Gradient.
 	GradientStop = driver.GradientStop

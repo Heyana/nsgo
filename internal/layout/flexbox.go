@@ -664,6 +664,25 @@ func flexDetermineBaseSize(c *flexConstants, available Size[AvailableSpace], ite
 			// (https://www.w3.org/TR/css-flexbox-1/#definite-sizes).
 			childCrossSizeIsDefinite = !c.isWrap && c.hasDefiniteCrossSize && crossParentSize.Valid
 		}
+		// A cross size that is a sizing keyword (min-content, max-content,
+		// fit-content) is the item's size under that constraint, known
+		// before its main size, as browsers size such items: a column's
+		// item of min-content width wraps its text before its height is
+		// measured.
+		if !childKnown.cross(dir).Valid {
+			sizeStyle := child.sizeStyle.cross(dir)
+			if r, ok := resolveSizingKeyword(sizeStyle, crossAvailable.intoOption(), crossParentSize); ok && !sizeStyle.isStretch() {
+				size := r.exact
+				if r.measure {
+					size = measureChildSize(child.node, childKnown, childParentSize,
+						maxContentSpaces.withCross(dir, r.available), contentSize, dir.crossAxis(), Line[bool]{})
+				}
+				cross := Some(size).clamp(child.minSize.cross(dir), child.maxSize.cross(dir))
+				childKnown.setCross(dir, cross)
+				child.size.setCross(dir, cross)
+				childCrossSizeIsDefinite = true
+			}
+		}
 
 		// Percentage padding and border resolve against the container's
 		// inline size (its width), whichever axis is the main axis.

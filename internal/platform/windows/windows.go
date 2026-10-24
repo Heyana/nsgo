@@ -189,8 +189,13 @@ type view struct {
 	text    drawnText
 	content driver.Bounds
 
-	// The shadow drawn under the background.
-	shadow *shadow
+	// The shadow drawn under the background, and the box shadows, by
+	// what each depends on; shadowsUsed are those the last pass drew.
+	shadow      *shadow
+	boxShadows  map[boxShadowKey]*boxShadow
+	shadowsUsed map[boxShadowKey]bool
+	// keyframeStart is when the keyframe animation of style began.
+	keyframeStart time.Time
 
 	// A scroll view's configuration, content size and offset.
 	scroll driver.ScrollConfig
@@ -784,6 +789,10 @@ func (w *window) destroy(v *view) {
 	}
 	v.shadow.release()
 	v.shadow = nil
+	for _, sh := range v.boxShadows {
+		sh.release()
+	}
+	v.boxShadows, v.shadowsUsed = nil, nil
 	v.retired, v.moving, v.fading, v.drawing = false, nil, nil, nil
 	v.source.reset(driver.ImageSource{})
 	v.placeholder.reset(driver.ImageSource{})

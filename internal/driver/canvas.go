@@ -62,13 +62,13 @@ type DrawOp struct {
 	// EvenOdd fills or clips by the even-odd rule instead of the nonzero
 	// one. Players that know only the nonzero rule ignore it.
 	EvenOdd  bool
-	Gradient *Gradient
+	Gradient *CanvasGradient
 }
 
-// Gradient is a linear or radial color gradient that DrawFillGradient and
+// CanvasGradient is a linear or radial color gradient that DrawFillGradient and
 // DrawStrokeGradient paint with. Its points are in gradient space, which
 // Transform maps into the coordinates of the fill or stroke that uses it.
-type Gradient struct {
+type CanvasGradient struct {
 	// Radial makes a radial gradient from the focal circle (X1, Y1, R1)
 	// to the outer circle (X2, Y2, R2), as the web's
 	// createRadialGradient; otherwise offset 0 is at (X1, Y1) and offset 1
@@ -85,13 +85,13 @@ type Gradient struct {
 	Stops []GradientStop
 }
 
-// GradientStop is a color at an offset of a Gradient.
+// GradientStop is a color at an offset of a gradient.
 type GradientStop struct {
 	Offset float32
 	Color  Color
 }
 
-// GradientSpread is how a Gradient paints beyond offsets 0 and 1.
+// GradientSpread is how a CanvasGradient paints beyond offsets 0 and 1.
 type GradientSpread uint8
 
 const (

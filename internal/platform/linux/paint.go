@@ -21,46 +21,79 @@ const (
 )
 
 // snapshotView draws v into its widget's snapshot, as NSH's NshView
-// does: its shadow and background, its content (Cairo nodes for images,
-// canvases and text), its children (clipped to its rounded bounds when
-// it clips), its scroll indicator, then its border over the content, as
-// UIKit draws layer borders. The view's opacity fades all of it, natives
-// included.
+// does: its shadows and background, its gradients and inset shadows, its
+// content (Cairo nodes for images, canvases and text), its children
+// (clipped to its shape when it clips), its scroll indicator, then its
+// border over the content, as UIKit draws layer borders, and its outline.
+// Its opacity, filters and mask take all of it, natives included.
 func (w *window) snapshotView(v *view, snap uintptr) {
 	s := w.styleOf(v)
-	opacity := s.Opacity * v.layoutOpacity()
+	k, _ := v.keyframe()
+	opacity := s.Opacity * v.layoutOpacity() * k.Opacity
 	if s.Hidden || opacity <= 0 {
+		return
+	}
+	if s.BackfaceHidden && v.parent != nil && facingAway(w.placement(v, 0, 0)) {
 		return
 	}
 	size := v.shownFrame().Size
 	width, height := float32(size.Width), float32(size.Height)
+	pops := 0
 	if opacity < 1 {
 		gtkSnapshotPushOpacity(snap, float64(opacity))
+		pops++
 	}
-	bounds := roundedRect(0, 0, width, height, float32(s.CornerRadius))
-	filled := s.Background&0xff != 0
+	e := s.Effects
+	if e == nil {
+		e = &driver.Effects{}
+	}
+	pops += pushFilters(snap, e.Filters)
+	if e.Mask != nil {
+		gtkSnapshotPushMask(snap, maskAlpha)
+		appendGradient(snap, e.Mask, width, height)
+		gtkSnapshotPop(snap)
+		pops++
+	}
+	sh := newShape(s, width, height)
+	filled := s.Background&0xff != 0 || len(e.Gradients) > 0
 	shadowed := s.ShadowColor&0xff != 0 && (s.ShadowRadius > 0 || s.ShadowOffset != driver.Point{})
 	// A shadow takes the box's shape when the view fills it, else the
 	// shape of what it draws.
 	contentShadow := shadowed && !filled
 	if contentShadow {
-		sh := gskShadow{rgba(s.ShadowColor), float32(s.ShadowOffset.X), float32(s.ShadowOffset.Y),
+		shadow := gskShadow{rgba(s.ShadowColor), float32(s.ShadowOffset.X), float32(s.ShadowOffset.Y),
 			float32(s.ShadowRadius) * shadowBlurPerUnit}
-		gtkSnapshotPushShadow(snap, &sh, 1)
+		gtkSnapshotPushShadow(snap, &shadow, 1)
+		pops++
 	}
 	if width > 0 && height > 0 {
 		if shadowed && filled {
 			c := rgba(s.ShadowColor)
-			gtkSnapshotAppendOutset(snap, &bounds, &c, float32(s.ShadowOffset.X), float32(s.ShadowOffset.Y),
+			gtkSnapshotAppendOutset(snap, &sh.rect, &c, float32(s.ShadowOffset.X), float32(s.ShadowOffset.Y),
 				0, float32(s.ShadowRadius)*shadowBlurPerUnit)
 		}
-		if filled {
-			fillRounded(snap, &bounds, s.Background)
+		// The first shadow is on top.
+		for i := len(e.Shadows) - 1; i >= 0; i-- {
+			if b := e.Shadows[i]; !b.Inset {
+				c := rgba(b.Color)
+				gtkSnapshotAppendOutset(snap, &sh.rect, &c, float32(b.Offset.X), float32(b.Offset.Y), float32(b.Spread), float32(b.Blur))
+			}
 		}
+		if s.Background&0xff != 0 {
+			sh.fill(snap, s.Background)
+		}
+		if len(e.Gradients) > 0 {
+			sh.pushClip(snap)
+			for i := len(e.Gradients) - 1; i >= 0; i-- {
+				appendGradient(snap, &e.Gradients[i], width, height)
+			}
+			gtkSnapshotPop(snap)
+		}
+		w.snapshotInsets(snap, s, &sh, e.Shadows)
 	}
 	clip := s.Clip || v.kind == driver.KindScroll || v.kind == driver.KindImage || v.kind == driver.KindInput
 	if clip {
-		gtkSnapshotPushRoundedClip(snap, &bounds)
+		sh.pushClip(snap)
 	}
 	w.snapshotContent(v, s, snap)
 	for c := gtkWidgetGetFirstChild(v.widget); c != 0; c = gtkWidgetGetNextSibling(c) {
@@ -78,12 +111,40 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 	if clip {
 		gtkSnapshotPop(snap)
 	}
-	snapshotBorder(snap, &bounds, s)
-	if contentShadow {
+	snapshotBorder(snap, &sh, s)
+	if o := s.Outline; o.Visible() && width > 0 && height > 0 {
+		sh.stroke(snap, -(o.Offset + o.Width/2), o.Width, o.Color, o.Style)
+	}
+	for range pops {
 		gtkSnapshotPop(snap)
 	}
-	if opacity < 1 {
-		gtkSnapshotPop(snap)
+}
+
+// snapshotInsets draws the inset shadows inside the padding box, the
+// first on top.
+func (w *window) snapshotInsets(snap uintptr, s *driver.ViewStyle, sh *shape, shadows []driver.BoxShadow) {
+	inset := false
+	for _, b := range shadows {
+		inset = inset || b.Inset
+	}
+	if !inset {
+		return
+	}
+	widths := s.Borders
+	if widths == (driver.Edges{}) {
+		widths = driver.All(s.BorderWidth)
+	}
+	inner := driver.InnerRadii(sh.radii, widths)
+	padding := gskRoundedRect{bounds: grapheneRect{float32(widths.Left), float32(widths.Top),
+		sh.w - float32(widths.Left+widths.Right), sh.h - float32(widths.Top+widths.Bottom)}}
+	for i, r := range inner {
+		padding.corner[i] = grapheneSize{float32(r[0]), float32(r[1])}
+	}
+	for i := len(shadows) - 1; i >= 0; i-- {
+		if b := shadows[i]; b.Inset {
+			c := rgba(b.Color)
+			gtkSnapshotAppendInset(snap, &padding, &c, float32(b.Offset.X), float32(b.Offset.Y), float32(b.Spread), float32(b.Blur))
+		}
 	}
 }
 
@@ -134,15 +195,17 @@ func fillRounded(snap uintptr, r *gskRoundedRect, c driver.Color) {
 	gtkSnapshotAppendColor(snap, &color, &r.bounds)
 }
 
-// snapshotBorder draws the border inside outline, with a width and color
+// snapshotBorder draws the border inside the box, with a width and color
 // per side when ViewStyle.Borders sets them; GSK meets the sides on the
-// diagonals, as CSS does.
-func snapshotBorder(snap uintptr, outline *gskRoundedRect, s *driver.ViewStyle) {
-	if outline.bounds.w <= 0 || outline.bounds.h <= 0 {
+// diagonals, as CSS does. Dashes, dots and continuous corners are a
+// stroked path, in the widest side's width and the top's color.
+func snapshotBorder(snap uintptr, sh *shape, s *driver.ViewStyle) {
+	if sh.w <= 0 || sh.h <= 0 {
 		return
 	}
 	var widths [4]float32
 	var colors [4]gdkRGBA
+	widest, top := s.BorderWidth, s.BorderColor
 	if s.Borders == (driver.Edges{}) {
 		if s.BorderWidth <= 0 || s.BorderColor&0xff == 0 {
 			return
@@ -163,8 +226,13 @@ func snapshotBorder(snap uintptr, outline *gskRoundedRect, s *driver.ViewStyle) 
 			return
 		}
 		colors = [4]gdkRGBA{rgba(c.Top), rgba(c.Right), rgba(c.Bottom), rgba(c.Left)}
+		widest, top = max(b.Top, b.Right, b.Bottom, b.Left), c.Top
 	}
-	gtkSnapshotAppendBorder(snap, outline, &widths, &colors)
+	if s.BorderStyle == driver.BorderDashed || s.BorderStyle == driver.BorderDotted || sh.continuous {
+		sh.stroke(snap, widest/2, widest, top, s.BorderStyle)
+		return
+	}
+	gtkSnapshotAppendBorder(snap, &sh.rect, &widths, &colors)
 }
 
 // snapshotIndicator draws a scroll bar's thumb while the pointer is over

@@ -64,6 +64,21 @@ func textPage(cx *core.Scope, t *theme) core.Node {
 			),
 			core.Text{Content: lorem, Style: core.Style{LineHeight: 28}},
 		),
+		t.demo("Inherited line heights and wrapping", "LineHeightMultiple inherits as a multiple of each text's font; "+
+			"LineHeightEm is resolved where it is set. WhiteSpace NoWrap and UserSelect pass to the texts inside a view.",
+			core.View{Style: core.Style{LineHeightMultiple: 1.8, Gap: 4}, Children: []core.Node{
+				core.Text{Content: "1.8 times 14: " + lorem, Style: core.Style{FontSize: 14}},
+				core.Text{Content: "1.8 times 18: " + lorem, Style: core.Style{FontSize: 18}},
+			}},
+			core.View{Style: core.Style{WhiteSpace: core.WhiteSpaceNoWrap, Overflow: core.Hidden, Background: t.sunken,
+				CornerRadius: 4, Padding: core.Symmetric(4, 8)}, Children: []core.Node{
+				core.Text{Content: "No wrap: " + lorem},
+			}},
+			core.View{Style: core.Style{UserSelect: core.UserSelectText}, Children: []core.Node{
+				core.Text{Content: "These lines are selectable through their view's UserSelect."},
+				core.Text{Content: "This one is not: its own Selectable says so.", Selectable: core.SelectableOff, Style: core.Style{Color: t.muted}},
+			}},
+		),
 		t.demo("Decoration styles and shadows", "TextDecorationStyle draws the lines double, dotted, dashed or wavy, "+
 			"in TextDecorationColor; TextShadow draws behind the glyphs; TextTransform changes the case.",
 			flow(

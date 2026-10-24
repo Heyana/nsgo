@@ -172,7 +172,8 @@ func (v *view) place(f driver.Bounds) {
 	v.native.Send(sel("setBounds:"), b)
 	v.native.Send(sel("setCenter:"), apple.CGPoint{X: float64(f.Origin.X + v.shift.X + f.Size.Width/2),
 		Y: float64(f.Origin.Y + v.shift.Y + f.Size.Height/2)})
-	apple.LayoutBorders(v.native.Send(selLayer))
+	apple.LayoutDecor(v.native.Send(selLayer))
+	v.sizeContent()
 	if v.image != nil {
 		v.image.Layout(apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)})
 		v.surface.images = append(v.surface.images, v)

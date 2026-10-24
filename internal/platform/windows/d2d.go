@@ -128,6 +128,7 @@ const (
 	formatSetTextAlignment      = 3
 	formatSetParagraphAlignment = 4
 	formatSetWordWrapping       = 5
+	formatSetReadingDirection   = 6
 	formatSetTrimming           = 9
 	formatSetLineSpacing        = 10
 
@@ -201,6 +202,7 @@ const (
 	dwParagraphCenter    = 2
 	dwWrap               = 0
 	dwNoWrap             = 1
+	dwReadingRTL         = 1 // DWRITE_READING_DIRECTION_RIGHT_TO_LEFT
 	dwLineSpacingUniform = 1
 	dwTrimmingNone       = 0
 	dwTrimmingCharacter  = 1

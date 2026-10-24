@@ -110,7 +110,7 @@ type window struct {
 	lastHeight     driver.Points
 	started        bool
 	handle         uintptr
-	measureMap     uintptr                           // the engine thread's Pango font map
+	measureMap     [2]uintptr                        // the engine thread's Pango contexts, left to right and right to left
 	extents        map[driver.Font]driver.FontExtent // the engine thread's font metrics
 	capHeights     map[driver.Font]driver.Points     // and capital heights
 	pressConsumed  bool
@@ -191,9 +191,11 @@ func (w *window) run() {
 func (w *window) stop() {
 	w.engine.Close()
 	engine.SyncStorage()
-	if w.measureMap != 0 {
-		gObjectUnref(w.measureMap)
-		w.measureMap = 0
+	for i, m := range w.measureMap {
+		if m != 0 {
+			gObjectUnref(m)
+			w.measureMap[i] = 0
+		}
 	}
 	if w.loop != 0 {
 		gMainLoopUnref(w.loop)

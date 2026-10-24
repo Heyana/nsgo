@@ -210,8 +210,11 @@ const (
 	alignLeft, alignRight, alignCenter = 0, 1, 2
 	alignJustified                     = 3
 	specAlignment                      = 0
-	specMaxLineHeight                  = 8
-	specMinLineHeight                  = 9
+	// specBaseWritingDirection's values are CTWritingDirection's: left
+	// to right 0, right to left 1.
+	specBaseWritingDirection = 13
+	specMaxLineHeight        = 8
+	specMinLineHeight        = 9
 )
 
 // CoreText's underline styles and patterns.
@@ -347,17 +350,24 @@ func attributes(k attrsKey) uintptr {
 func buildAttributes(k attrsKey) uintptr {
 	var keys, values, owned []uintptr
 	if k.paragraph {
-		align := uint8(alignLeft)
+		// Start and end follow the base direction.
+		start, end := uint8(alignLeft), uint8(alignRight)
+		direction := int8(0)
+		if k.st.RTL {
+			start, end, direction = alignRight, alignLeft, 1
+		}
+		align := start
 		switch k.st.Align {
 		case driver.TextAlignCenter:
 			align = alignCenter
 		case driver.TextAlignEnd:
-			align = alignRight
+			align = end
 		case driver.TextAlignJustify:
 			align = alignJustified
 		}
 		lineHeight := float64(k.st.LineHeight)
-		settings := []paragraphSetting{{spec: specAlignment, size: 1, value: unsafe.Pointer(&align)}}
+		settings := []paragraphSetting{{spec: specAlignment, size: 1, value: unsafe.Pointer(&align)},
+			{spec: specBaseWritingDirection, size: 1, value: unsafe.Pointer(&direction)}}
 		if lineHeight > 0 {
 			settings = append(settings, paragraphSetting{spec: specMinLineHeight, size: 8, value: unsafe.Pointer(&lineHeight)})
 			// A line grows where an attachment reaches past it.

@@ -138,8 +138,13 @@ type TextStyle struct {
 	// LineHeight is the height of a line; 0 is the font's.
 	LineHeight    Points
 	LetterSpacing Points
-	Align         TextAlign
-	Decoration    TextDecoration
+	// Align places lines; TextAlignStart is the left, or the right when
+	// RTL.
+	Align TextAlign
+	// RTL makes the paragraphs' base direction right to left, for the
+	// order of mixed-direction runs and where lines start.
+	RTL        bool
+	Decoration TextDecoration
 	// DecorationStyle is how Decoration's lines are drawn, solid when 0;
 	// DecorationColor colors them, Color when 0.
 	DecorationStyle TextDecorationStyle

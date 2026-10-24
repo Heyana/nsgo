@@ -343,16 +343,7 @@ func (w *window) place(v *view, ox, oy float32) {
 		return
 	}
 	f := v.shownFrame()
-	t := gskTransformTranslate(0, &graphenePoint{float32(f.Origin.X) - ox, float32(f.Origin.Y) - oy})
-	if tr, ls := w.styleOf(v).Transform, v.layoutScale(); tr != (driver.Transform{}) || ls != 1 {
-		sx, sy := tr.Scales()
-		sx, sy = sx*ls, sy*ls
-		cx, cy := float32(f.Size.Width)/2, float32(f.Size.Height)/2
-		t = gskTransformTranslate(t, &graphenePoint{cx + float32(tr.TranslateX), cy + float32(tr.TranslateY)})
-		t = gskTransformRotate(t, tr.Rotate)
-		t = gskTransformScale(t, sx, sy)
-		t = gskTransformTranslate(t, &graphenePoint{-cx, -cy})
-	}
+	t := gskMatrixTransform(0, w.placement(v, ox, oy))
 	width := int32(math.Ceil(max(float64(f.Size.Width), 0)))
 	height := int32(math.Ceil(max(float64(f.Size.Height), 0)))
 	gtkWidgetAllocate(v.widget, width, height, -1, t)
@@ -438,8 +429,6 @@ var (
 	gskRenderNodeDraw            func(uintptr, uintptr)
 	gskRenderNodeUnref           func(uintptr)
 	gskTransformTranslate        func(uintptr, *graphenePoint) uintptr
-	gskTransformRotate           func(uintptr, float32) uintptr
-	gskTransformScale            func(uintptr, float32, float32) uintptr
 	gtkEventControllerLegacyNew  func() uintptr
 	gdkEventGetEventType         func(uintptr) int32
 	gdkEventGetPosition          func(uintptr, *float64, *float64) int32
@@ -490,8 +479,6 @@ func bindWidget() {
 	gtk(&gskRenderNodeDraw, "gsk_render_node_draw")
 	gtk(&gskRenderNodeUnref, "gsk_render_node_unref")
 	gtk(&gskTransformTranslate, "gsk_transform_translate")
-	gtk(&gskTransformRotate, "gsk_transform_rotate")
-	gtk(&gskTransformScale, "gsk_transform_scale")
 	gtk(&gtkEventControllerLegacyNew, "gtk_event_controller_legacy_new")
 	gtk(&gdkEventGetEventType, "gdk_event_get_event_type")
 	gtk(&gdkEventGetPosition, "gdk_event_get_position")

@@ -1,0 +1,37 @@
+# Styles
+
+How a `Style` becomes what each backend draws: the corners, borders, outlines, shadows, gradients, filters, masks, blend modes, 3D transforms and keyframes past React Native's view styles, and the positions, sizes and directions layout takes from it. Read this before changing `core/style.go`, `internal/driver`'s `ViewStyle` or a backend's drawing of a view.
+
+## Resolving
+
+Styles follow NSH's `styles.md` with Go values in place of CSS strings: constructors (`LinearGradient`, `Blur`, `Ring`, `DropShadow`) build what apps write, and every zero value is unset.
+
+- `Merge` replaces a field the later style sets; a slice replaces only when it is not nil, so an empty one clears. State styles merge in NSH's order, after the `GroupStyle` of the nearest ancestor whose `Group` matches its `Name` (the nearest group when empty). A group asks the platform for presses and hovers, and its state changes restyle the views that follow it.
+- A state's `Background` without `Gradients` drops the gradients, as an animated background does, so press feedback shows over a gradient fill.
+- `CurrentColor` in a color other than `Color` is the text color the view has, its own or inherited, else black. An outline without a color takes it too, as CSS's does; a border keeps React Native's.
+- Text fields inherit as CSS does, now with `WhiteSpace`, `UserSelect`, `WritingDirection` and `LayoutDirection`. `LineHeight`, `LineHeightMultiple` and `LineHeightEm` are one group: the nearest node that sets any wins, a multiple follows each text's font, and em becomes a length where it is set.
+- `viewStyle` resolves what depends on the frame, so a resize sends it again: percentages of `Transform` and `TransformOrigin`, and each `Gradient` as a `GradientPaint`. A paint's geometry is in fractions of the box, its stops placed as CSS places them, repeats laid out, and pairs sampled in their `ColorSpace` (Oklab unless set) until blending in sRGB stays within an 8-bit step. Platforms draw paints without knowing CSS.
+- `Effects` travel behind a pointer the core keeps while they compare equal, so `ViewStyle` stays comparable and unchanged effects send nothing.
+
+## Layout
+
+- `Static` is Taffy's static position: an absolute view inside is placed in its nearest positioned ancestor, and `syncFrames` takes the static ancestors' offsets off its frame. `Fixed` hoists the view into its host (the root view or its modal) as an overlay without an anchor is, placed by its insets; it returns to its parent when it stops being fixed.
+- `Sticky` lays out as relative with no insets; `pinRange` gives it a travel in the nearest scroll view's offsets, from where it meets the viewport less `Top` (`Left` across) to where its end meets its parent's content box, sent with the scroll view's `ItemStickyCells`. Sticky views draw above siblings of the same `ZIndex`; `nativeChildren` orders children by both, stably.
+- `MinContent`, `MaxContent` and `FitContent` are Taffy's sizing keywords. A flex item's cross size in one is measured before its flex basis, as browsers do, so a column's min-content box wraps its text before its height is taken. A text's min-content width is its widest word, measured alone (`breakWords`). `WhiteSpaceNoWrap` measures and lays text out unwrapped, wider than its box.
+- `LayoutDirection` sets the direction per subtree during resolve. Left and right of insets, margins, paddings, borders and corners swap right to left, as React Native's do, so they are its start and end: NSGo has no separate start and end fields. `TextStyle.RTL` gives text engines the base direction, which `TextAlignStart` follows; `WritingAuto` takes it from the first strong letter.
+
+## Drawing
+
+Each backend draws `ViewStyle` with its own primitives; `driver` holds what they share: `RoundedRect` and `EllipticRect` (circular, or continuous corners with Figma's 60% smoothing), `Corners.Fit`, `ColorMatrix` and `SplitFilters`, `Transform.Matrix` and `ChildPerspective`, `MixStyles` for transitions and `KeyframeAnimation.Cycle`.
+
+| Backend | How | Not drawn |
+| --- | --- | --- |
+| Web | CSS: `border-radius`, `corner-shape: squircle`, layered `box-shadow`, `background-image`, `filter`, `backdrop-filter`, `mask-image`, `mix-blend-mode`, transform functions and `perspective`; keyframes as Web Animations on the individual `rotate`, `scale` and `translate` properties and an additive opacity | — |
+| macOS, iOS | The layer's own corners where one radius rounds them, else shape layers for the fill and a mask clip; dashed borders and outlines as stroked shapes; a layer per shadow with a shadow path, masked outside the box or inside the padding box; `CAGradientLayer`s; masks as gradient mask layers; `compositingFilter`; the transform as one `CATransform3D` around the origin, children's perspective as the `sublayerTransform`; keyframes as additive `transform` and opacity animations around the center. Backdrops are an `NSVisualEffectView` or `UIVisualEffectView` of the style's material, or Liquid Glass (`NSGlassEffectView`, `UIGlassEffect`) on version 26 and later | iOS: filters other than opacity and a drop shadow, which UIKit's layers have no Core Image for. Apple draws one drop shadow, the widest |
+| Windows | Direct2D path geometries for shapes, dashes and outlines; box shadows recorded and blurred, masked as on Apple; gradient brushes, conic gradients as bitmaps; masks as layers with an opacity brush; a view with filters or depth recorded into a command list and drawn through the color matrix, blur, shadow and 3D transform effects | Backdrop filters, blend modes |
+| Linux | GSK: rounded rectangles with a radius per corner, paths for continuous corners, strokes for dashes, outset and inset shadow nodes, gradient nodes, color matrix, blur, shadow and mask nodes; flat transforms as GSK's own, depth as a matrix | Backdrop filters, blend modes |
+| Android | `Box` draws shadows with blur mask filters, fills, gradients as shaders, inset shadows, borders and outlines on `Shape`'s outlines; filters as `RenderEffect`s from Android 12, before it a layer paint with the color matrix; blend modes as a layer paint from Android 10; rotations out of the plane, camera distance and pivot | Masks, backdrop filters, drop shadows, skews, blurs before Android 12 |
+
+- A view that clips clips its own shadows and outline on Apple, as it clips its React Native shadow. AppKit clips a view to its bounds as its frame changes, so NSGo's views answer `clipsToBounds` from the style.
+- iOS text and canvas views draw into a content layer under their sublayers, as macOS's do, so gradient and shaped fills sit under the text.
+- Transitions move every new field of `ViewStyle` on Windows and Linux through `MixStyles`; Apple and the web animate what their layers and CSS animate. Keyframes run on each platform's frame clock and restart when the animation changes.

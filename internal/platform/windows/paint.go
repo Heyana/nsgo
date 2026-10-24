@@ -87,26 +87,6 @@ func (m matrix) bound(r rect) rect {
 	return rect{int32(math.Floor(x0)), int32(math.Floor(y0)), int32(math.Ceil(x1)), int32(math.Ceil(y1))}
 }
 
-// transformOf returns t for a view of size: around its center,
-// translated, then rotated, then scaled, in points.
-func transformOf(t driver.Transform, size driver.Size) matrix {
-	if t == (driver.Transform{}) {
-		return identity
-	}
-	sx, sy := t.Scales()
-	cx, cy := float64(size.Width)/2, float64(size.Height)/2
-	sin, cos := math.Sincos(float64(t.Rotate) * math.Pi / 180)
-	m := translation(-cx, -cy).
-		then(scaling(float64(sx), float64(sy))).
-		then(matrix{a: cos, b: sin, c: -sin, d: cos}).
-		then(translation(cx+float64(t.TranslateX), cy+float64(t.TranslateY)))
-	if math.Abs(m.a-1) < 1e-9 && math.Abs(m.d-1) < 1e-9 && math.Abs(m.b) < 1e-9 && math.Abs(m.c) < 1e-9 &&
-		math.Abs(m.e) < 1e-9 && math.Abs(m.f) < 1e-9 {
-		return identity
-	}
-	return m
-}
-
 func colorOf(c driver.Color) colorF {
 	return colorF{float32(c>>24&0xff) / 255, float32(c>>16&0xff) / 255, float32(c>>8&0xff) / 255, float32(c&0xff) / 255}
 }
@@ -124,6 +104,7 @@ type pushed struct {
 	rect    rectF      // the clip's
 	opacity float32    // the layer's
 	mask    *comObject // the layer's geometric mask, held
+	brush   *comObject // the layer's opacity brush, held
 }
 
 // painter is one frame's drawing pass.
@@ -145,6 +126,10 @@ type painter struct {
 	// components are the native components' windows the pass reached,
 	// with where they go.
 	components []placedComponent
+	// perspective is the depth the views drawn now are seen from, at the
+	// center of perspectiveOf, their parent's size; 0 is none.
+	perspective   driver.Points
+	perspectiveOf driver.Size
 }
 
 // composed is a web view a pass reached.
@@ -198,16 +183,27 @@ func (p *painter) setTransform(m matrix) {
 // pushLayer draws what follows at opacity, inside mask (in the current
 // coordinates) unless it is nil.
 func (p *painter) pushLayer(opacity float32, mask *comObject) {
-	p.pushLayerRaw(opacity, mask)
+	p.pushLayerRaw(opacity, mask, nil)
 	mask.addRef()
 	p.pushed = append(p.pushed, pushed{m: p.m, opacity: opacity, mask: mask})
 }
 
-func (p *painter) pushLayerRaw(opacity float32, mask *comObject) {
+// pushLayerBrush draws what follows at opacity, as much as brush's alpha
+// says.
+func (p *painter) pushLayerBrush(opacity float32, brush *comObject) {
+	p.pushLayerRaw(opacity, nil, brush)
+	brush.addRef()
+	p.pushed = append(p.pushed, pushed{m: p.m, opacity: opacity, brush: brush})
+}
+
+func (p *painter) pushLayerRaw(opacity float32, mask, brush *comObject) {
 	params := layerParameters1{contentBounds: infinite, maskAntialias: d2dAntialiasPerPrimitive,
 		maskTransform: identity.d2d(), opacity: opacity}
 	if mask != nil {
 		params.mask = mask.ptr()
+	}
+	if brush != nil {
+		params.opacityBrush = brush.ptr()
 	}
 	p.dc.call(dcPushLayer, uintptr(unsafe.Pointer(&params)), 0)
 }
@@ -253,6 +249,7 @@ func (p *painter) pop() {
 	}
 	p.dc.call(rtPopLayer)
 	top.mask.release()
+	top.brush.release()
 }
 
 // flatten pops every layer and clip pushed so far, runs between, and
@@ -274,7 +271,7 @@ func (p *painter) flatten(between func()) {
 			r := q.rect
 			p.dc.call(rtPushAxisAlignedClip, uintptr(unsafe.Pointer(&r)), d2dAntialiasAliased)
 		} else {
-			p.pushLayerRaw(q.opacity, q.mask)
+			p.pushLayerRaw(q.opacity, q.mask, q.brush)
 		}
 	}
 	p.setTransform(current)
@@ -535,12 +532,20 @@ func (w *window) lost() {
 }
 
 // draw paints v and its subtree; parent is the world transform of v's
-// parent's coordinates, and x, y where v's origin goes in them.
+// parent's coordinates, and x, y where v's origin goes in them. A view
+// with filters or turned out of its plane is drawn through effects.
 func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
 	s := p.w.styleOf(v)
 	opacity := s.Opacity
 	size := frameOf(v).Size
-	local := transformOf(s.Transform, size)
+	local := s.Matrix(size)
+	if k, ok := v.keyframe(); ok {
+		local = k.Matrix(size).Mul(local)
+		opacity *= k.Opacity
+	}
+	if d := p.perspective; d > 0 {
+		local = driver.ChildPerspective(d, p.perspectiveOf, driver.Point{X: x, Y: y}).Mul(local)
+	}
 	if fd := v.fading; fd != nil {
 		// Appearing or going: faded, or scaled about its center first.
 		if fd.tr.Property == driver.LayoutScale {
@@ -548,15 +553,43 @@ func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
 				return
 			}
 			cx, cy := float64(size.Width)/2, float64(size.Height)/2
-			local = translation(-cx, -cy).then(scaling(fd.shown, fd.shown)).then(translation(cx, cy)).then(local)
+			local = local.Mul(driver.Translate3D(cx, cy, 0)).Mul(driver.Matrix3D{fd.shown, 0, 0, 0, 0, fd.shown, 0, 0,
+				0, 0, 1, 0, 0, 0, 0, 1}).Mul(driver.Translate3D(-cx, -cy, 0))
 		} else {
 			opacity *= float32(min(max(fd.shown, 0), 1))
 		}
 	}
-	if s.Hidden || opacity <= 0 {
+	if s.Hidden || opacity <= 0 || s.BackfaceHidden && facingAway(local) {
 		return
 	}
-	world := local.then(translation(float64(x), float64(y))).then(parent)
+	at := translation(float64(x), float64(y)).then(parent)
+	filters := s.Effects != nil && len(s.Effects.Filters) > 0
+	a, b, c, d, e, f, flat := local.Affine()
+	if filters || !flat {
+		p.realize()
+		world := at
+		if flat {
+			world = matrix{a, b, c, d, e, f}.then(at)
+			local = driver.Identity3D
+		}
+		p.setTransform(world)
+		if opacity < 1 {
+			p.pushLayer(opacity, nil)
+		}
+		alpha := p.alpha
+		p.alpha *= opacity
+		var list []driver.Filter
+		if filters {
+			list = s.Effects.Filters
+		}
+		p.drawFiltered(world, local, list, func() { p.drawContent(v, s, identity) })
+		p.alpha = alpha
+		if opacity < 1 {
+			p.pop()
+		}
+		return
+	}
+	world := matrix{a, b, c, d, e, f}.then(at)
 	// Drawn above a web view reached before it, if any.
 	p.realize()
 	p.setTransform(world)
@@ -572,24 +605,51 @@ func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
 	}
 }
 
-// drawContent paints v at world, the transform already set.
+// facingAway reports whether m turns a box's back to the viewer.
+func facingAway(m driver.Matrix3D) bool {
+	x0, y0 := m.Apply(0, 0)
+	x1, y1 := m.Apply(1, 0)
+	x2, y2 := m.Apply(0, 1)
+	return (x1-x0)*(y2-y0)-(y1-y0)*(x2-x0) < 0
+}
+
+// drawContent paints v at world, the transform already set: its shadows
+// and background, gradients and inset shadows, its content and children
+// (clipped to its shape when it clips), then its border and outline.
 func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	size := frameOf(v).Size
 	width, height := float32(size.Width), float32(size.Height)
-	radius := max(min(float32(s.CornerRadius), width/2, height/2), 0)
+	b := newBox(s, width, height)
+	radius, simple := b.simple()
+	radius = max(min(radius, width/2, height/2), 0)
 	bounds := rectF{0, 0, width, height}
-	p.drawBackground(v, s, width, height, radius)
+	e := s.Effects
+	if e == nil {
+		e = &driver.Effects{}
+	}
+	masked := e.Mask != nil && p.pushMask(e.Mask, width, height)
+	filled := visible(s.Background) || len(e.Gradients) > 0
+	if filled && visible(s.ShadowColor) && simple && width > 0 && height > 0 {
+		// React Native's shadow, under a fill only, as iOS draws a shadow
+		// of a layer with a background.
+		p.drawShadow(v, s, width, height, radius)
+	}
+	p.drawBoxShadows(v, s, &b, e.Shadows, false)
+	p.fillBox(&b, s.Background, nil)
+	p.drawGradients(&b, e.Gradients)
+	p.drawBoxShadows(v, s, &b, e.Shadows, true)
+	v.pruneShadows()
 	clip := s.Clip || v.kind == driver.KindScroll
 	if clip {
-		p.pushClipRounded(bounds, radius)
+		p.pushClipBox(&b)
 	} else {
 		// The view's own content stays inside it.
 		p.pushClipRect(bounds)
 	}
 	switch v.kind {
 	case driver.KindImage:
-		b := p.w.borderEdges(s)
-		p.drawImage(v, s.TintColor, rectF{b[3], b[0], width - b[1], height - b[2]})
+		bw := p.w.borderEdges(s)
+		p.drawImage(v, s.TintColor, rectF{bw[3], bw[0], width - bw[1], height - bw[2]})
 	case driver.KindCanvas:
 		if v.drawing != nil {
 			p.canvas(v, width, height)
@@ -627,7 +687,10 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	if !clip {
 		p.pop()
 	}
-	// The children, with those going drawn where they were among them.
+	// The children, with those going drawn where they were among them,
+	// in the view's perspective.
+	perspective, of := p.perspective, p.perspectiveOf
+	p.perspective, p.perspectiveOf = s.ChildPerspective, size
 	next := 0
 	drawLeaving := func(upTo int) {
 		for ; next < len(v.leaving) && v.leaving[next].at <= upTo; next++ {
@@ -641,8 +704,9 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 		p.draw(c, world, f.Origin.X-v.offset.X, f.Origin.Y-v.offset.Y)
 	}
 	drawLeaving(math.MaxInt)
+	p.perspective, p.perspectiveOf = perspective, of
 	indicator := v.kind == driver.KindScroll && p.w.showsBar(v)
-	if indicator || p.w.borderEdges(s) != ([4]float32{}) {
+	if indicator || p.w.borderEdges(s) != ([4]float32{}) || s.Outline.Visible() {
 		// A scroll indicator, a border over a web view.
 		p.realize()
 	}
@@ -653,7 +717,65 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	if clip {
 		p.pop()
 	}
-	p.drawBorder(s, width, height, radius)
+	if dashed := s.BorderStyle == driver.BorderDashed || s.BorderStyle == driver.BorderDotted; dashed || !simple {
+		p.drawShapedBorder(s, &b)
+	} else {
+		p.drawBorder(s, width, height, radius)
+	}
+	if o := s.Outline; o.Visible() {
+		p.strokeBox(&b, -(float32(o.Offset) + float32(o.Width)/2), float32(o.Width), o.Color, o.Style)
+	}
+	if masked {
+		p.pop()
+	}
+}
+
+// drawShapedBorder draws a dashed or dotted border, or one around corners
+// a rounded rectangle cannot draw: a stroke along the middle of a uniform
+// border, else the ring between the box and its padding box, cut to each
+// side's part where their colors differ. Dashes take the widest side.
+func (p *painter) drawShapedBorder(s *driver.ViewStyle, b *box) {
+	widths := p.w.borderEdges(s)
+	if widths == ([4]float32{}) || b.w <= 0 || b.h <= 0 {
+		return
+	}
+	colors := [4]driver.Color{s.BorderColor, s.BorderColor, s.BorderColor, s.BorderColor}
+	if s.Borders != (driver.Edges{}) {
+		c := s.BorderColors
+		colors = [4]driver.Color{c.Top, c.Right, c.Bottom, c.Left}
+	}
+	uniform := widths[0] == widths[1] && widths[1] == widths[2] && widths[2] == widths[3] &&
+		colors[0] == colors[1] && colors[1] == colors[2] && colors[2] == colors[3]
+	if dashed := s.BorderStyle == driver.BorderDashed || s.BorderStyle == driver.BorderDotted; dashed || uniform {
+		w := max(widths[0], widths[1], widths[2], widths[3])
+		p.strokeBox(b, w/2, w, colors[0], s.BorderStyle)
+		return
+	}
+	edges := driver.Edges{Top: driver.Points(widths[0]), Right: driver.Points(widths[1]), Bottom: driver.Points(widths[2]),
+		Left: driver.Points(widths[3])}
+	segs := driver.RoundedRect(nil, 0, 0, float64(b.w), float64(b.h), b.radii, b.continuous, false)
+	x, y := float64(edges.Left), float64(edges.Top)
+	if iw, ih := float64(b.w)-x-float64(edges.Right), float64(b.h)-y-float64(edges.Bottom); iw > 0 && ih > 0 {
+		segs = driver.EllipticRect(segs, x, y, iw, ih, driver.InnerRadii(b.radii, edges), b.continuous, false)
+	}
+	ring := p.pathGeometry(d2dFillAlternate, func(sink *comObject) { addSegments(sink, segs) })
+	if ring == nil {
+		return
+	}
+	defer ring.release()
+	for i, quad := range sideQuads(b.w, b.h, widths) {
+		if widths[i] <= 0 || !visible(colors[i]) {
+			continue
+		}
+		clip := p.polygon(quad[:])
+		if clip == nil {
+			continue
+		}
+		p.pushLayer(1, clip)
+		clip.release()
+		p.fillGeometry(ring, colors[i])
+		p.pop()
+	}
 }
 
 // drawIndicator paints a scroll bar's thumb while the pointer is over
@@ -666,18 +788,6 @@ func (p *painter) drawIndicator(v *view) {
 	bar := rectF{float32(thumb.Origin.X), float32(thumb.Origin.Y),
 		float32(thumb.Origin.X + thumb.Size.Width), float32(thumb.Origin.Y + thumb.Size.Height)}
 	p.fillRect(bar, driver.RGB(0x8c8c8c))
-}
-
-// drawBackground paints v's shadow, under a fill only, as iOS draws a
-// shadow of a layer with a background, then its background.
-func (p *painter) drawBackground(v *view, s *driver.ViewStyle, width, height, radius float32) {
-	if width <= 0 || height <= 0 || !visible(s.Background) {
-		return
-	}
-	if visible(s.ShadowColor) {
-		p.drawShadow(v, s, width, height, radius)
-	}
-	p.fillRounded(rectF{0, 0, width, height}, radius, s.Background)
 }
 
 // shadowKey is what a shadow's drawing depends on.

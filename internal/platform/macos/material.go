@@ -90,3 +90,64 @@ func (s *surface) applyMaterial(m driver.WindowMaterial) {
 	s.window.Send(selSetOpaque, false)
 	s.window.Send(selSetBackgroundColor, objc.ID(objc.GetClass("NSColor")).Send(selClearColor))
 }
+
+// A view's backdrop blur is an NSVisualEffectView under its children that
+// blends with what is behind it in the window, or Liquid Glass on macOS 26
+// and later. AppKit sets the blur's strength by material, not by radius:
+// the radius only turns it on.
+
+const blendingWithinWindow = 1
+
+// backdropMaterial is the NSVisualEffectMaterial of a backdrop material.
+func backdropMaterial(m driver.BackdropMaterial) int {
+	switch m {
+	case driver.BackdropThin:
+		return 6 // popover
+	case driver.BackdropRegular:
+		return 5 // menu
+	case driver.BackdropThick:
+		return 11 // sheet
+	case driver.BackdropChrome:
+		return 3 // titlebar
+	}
+	return 15 // fullScreenUI
+}
+
+// setBackdrop gives v the backdrop its style asks for, or takes it away.
+func (v *view) setBackdrop(vs *driver.ViewStyle) {
+	glass := vs.Glass != driver.GlassNone && objc.GetClass("NSGlassEffectView") != 0
+	want := vs.Effects.BackdropBlur() > 0 || glass
+	if !want || glass != v.glass {
+		if v.backdrop != 0 {
+			v.backdrop.Send(sel("removeFromSuperview"))
+			v.backdrop = 0
+		}
+		if !want {
+			return
+		}
+	}
+	if v.backdrop == 0 {
+		class := classMaterial
+		if glass {
+			class = objc.GetClass("NSGlassEffectView")
+		}
+		v.backdrop = objc.ID(class).Send(selAlloc).Send(sel("initWithFrame:"), objc.Send[apple.CGRect](v.native, selBounds))
+		v.backdrop.Send(selSetAutoresizingMask, widthHeightSizable)
+		v.native.Send(selAddSubviewPositioned, v.backdrop, viewBelow, objc.ID(0))
+		v.backdrop.Send(selRelease)
+		v.glass = glass
+	}
+	radius := float64(max(vs.CornerRadius, vs.Corners.TopLeft))
+	if glass {
+		v.backdrop.Send(sel("setStyle:"), int(vs.Glass)-1)
+		v.backdrop.Send(sel("setCornerRadius:"), radius)
+		return
+	}
+	v.backdrop.Send(selSetMaterial, backdropMaterial(vs.Material))
+	v.backdrop.Send(selSetBlendingMode, blendingWithinWindow)
+	v.backdrop.Send(selSetState, effectStateActive)
+	v.backdrop.Send(sel("setWantsLayer:"), true)
+	layer := v.backdrop.Send(selLayer)
+	layer.Send(sel("setCornerRadius:"), radius)
+	layer.Send(sel("setMasksToBounds:"), radius > 0)
+}

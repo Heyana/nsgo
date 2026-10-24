@@ -161,7 +161,11 @@ type view struct {
 
 	// style is the view's own, which its animated values draw over;
 	// layoutAnim the layout animation moving it.
-	style      driver.ViewStyle
+	style driver.ViewStyle
+	// keyframes is the keyframe animation the Web Animations in running
+	// play.
+	keyframes  driver.KeyframeAnimation
+	running    []js.Value
 	animated   driver.AnimatedValues
 	framed     bool
 	layoutAnim js.Value
@@ -349,11 +353,16 @@ func fontStyle(t driver.TextStyle) map[string]string {
 	if t.DecorationColor != 0 {
 		decorationColor = cssColor(t.DecorationColor)
 	}
+	direction := "ltr"
+	if t.RTL {
+		direction = "rtl"
+	}
 	return map[string]string{
 		"font-family": family, "font-size": px(t.Font.Size), "font-weight": fmt.Sprint(t.Font.Weight),
 		"font-style": italic, "line-height": lineHeight, "letter-spacing": px(t.LetterSpacing),
 		"color": cssColor(t.Color), "text-align": align, "text-decoration-line": decoration,
 		"text-decoration-style": decorationStyles[t.DecorationStyle], "text-decoration-color": decorationColor,
+		"direction": direction,
 	}
 }
 
@@ -858,6 +867,7 @@ func (s *surface) Mount(b *driver.MountBatch) {
 			}
 			s.setOutside(v, false)
 			v.listeners.release()
+			v.stopKeyframes()
 			if v.input != nil {
 				v.input.listeners.release()
 			}
@@ -884,6 +894,7 @@ func (s *surface) Mount(b *driver.MountBatch) {
 				if v.kind == driver.KindScroll {
 					v.placeContent() // centering and snap points follow the size
 				}
+				s.redrawGradients(v)
 			}
 		case driver.ItemViewStyle:
 			v.style = *it.ViewStyle
@@ -1061,19 +1072,12 @@ func (s *surface) create(id driver.NodeID, kind driver.ViewKind) *view {
 }
 
 func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
-	style := map[string]string{
-		"background-color": cssColor(vs.Background),
-		"border-radius":    px(vs.CornerRadius),
-		"opacity":          fmt.Sprint(vs.Opacity),
-		"box-shadow":       "none",
-		"display":          "block",
-		"transform":        transformCSS(vs.Transform),
-		"transition":       transitionCSS(vs.Transition),
-	}
-	if vs.ShadowColor != 0 {
-		style["box-shadow"] = fmt.Sprintf("%s %s %s %s",
-			px(vs.ShadowOffset.X), px(vs.ShadowOffset.Y), px(vs.ShadowRadius), cssColor(vs.ShadowColor))
-	}
+	style := decorCSS(vs, v.size)
+	style["background-color"] = cssColor(vs.Background)
+	style["opacity"] = fmt.Sprint(vs.Opacity)
+	style["display"] = "block"
+	style["transform"] = transformCSS(vs.Transform)
+	style["transition"] = transitionCSS(vs.Transition)
 	if vs.Hidden {
 		style["display"] = "none"
 	}
@@ -1090,7 +1094,7 @@ func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
 		{"top", border.Top, colors.Top}, {"right", border.Right, colors.Right},
 		{"bottom", border.Bottom, colors.Bottom}, {"left", border.Left, colors.Left},
 	} {
-		style["border-"+side.name+"-style"] = "solid"
+		style["border-"+side.name+"-style"] = lineStyle(vs.BorderStyle)
 		style["border-"+side.name+"-width"] = px(side.width)
 		style["border-"+side.name+"-color"] = cssColor(side.color)
 	}
@@ -1126,6 +1130,7 @@ func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
 	}
 	setStyle(v.el, style)
 	s.setCursor(v)
+	s.setKeyframes(v, vs.Animation)
 }
 
 // setCursor shows v's cursor, or a pointer over a pressable view.
@@ -1145,15 +1150,26 @@ func unborder(el js.Value, b driver.Edges) {
 	setStyle(el, map[string]string{"margin-left": px(-b.Left), "margin-top": px(-b.Top)})
 }
 
-// transformCSS is t around the view's center, which is CSS's default
-// origin: translate, then rotate, then scale.
+// transformCSS is t around the view's transform origin, in its order:
+// perspective, translate, rotate, rotateX, rotateY, skew, then scale.
 func transformCSS(t driver.Transform) string {
 	if t == (driver.Transform{}) {
 		return "none"
 	}
 	sx, sy := t.Scales()
-	return fmt.Sprintf("translate(%s, %s) rotate(%gdeg) scale(%g, %g)",
-		px(t.TranslateX), px(t.TranslateY), t.Rotate, sx, sy)
+	var b strings.Builder
+	if t.Perspective > 0 {
+		fmt.Fprintf(&b, "perspective(%s) ", px(t.Perspective))
+	}
+	fmt.Fprintf(&b, "translate(%s, %s) rotate(%gdeg)", px(t.TranslateX), px(t.TranslateY), t.Rotate)
+	if !t.Flat() {
+		fmt.Fprintf(&b, " rotateX(%gdeg) rotateY(%gdeg)", t.RotateX, t.RotateY)
+	}
+	if t.SkewX != 0 || t.SkewY != 0 {
+		fmt.Fprintf(&b, " skew(%gdeg, %gdeg)", t.SkewX, t.SkewY)
+	}
+	fmt.Fprintf(&b, " scale(%g, %g)", sx, sy)
+	return b.String()
 }
 
 // transitionProperties are the CSS properties of each transition
@@ -1165,7 +1181,7 @@ var transitionProperties = []struct {
 	{driver.TransitionOpacity, []string{"opacity"}},
 	{driver.TransitionBackground, []string{"background-color"}},
 	{driver.TransitionTransform, []string{"transform"}},
-	{driver.TransitionBorder, []string{"border-width", "border-color", "border-radius"}},
+	{driver.TransitionBorder, []string{"border-width", "border-color", "border-radius", "outline-color", "outline-width", "outline-offset"}},
 	{driver.TransitionShadow, []string{"box-shadow"}},
 }
 

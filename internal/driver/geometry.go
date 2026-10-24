@@ -60,6 +60,18 @@ const (
 	unitAuto unit = iota
 	unitPoints
 	unitPercent
+	unitMinContent
+	unitMaxContent
+	unitFitContent
+)
+
+// The intrinsic sizes, for widths and heights: the narrowest a box gets
+// without overflowing (its longest word), the widest its content asks for
+// (no wrapping), and the widest it asks for up to the space it has.
+var (
+	MinContent = Length{unit: unitMinContent}
+	MaxContent = Length{unit: unitMaxContent}
+	FitContent = Length{unit: unitFitContent}
 )
 
 // Pt returns a length in points.
