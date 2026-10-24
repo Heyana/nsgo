@@ -20,7 +20,7 @@
 - Add `base.Split` and `ui.Split`, resizable panes with point or percentage sizes, limits, a resize cursor on the divider and a double-click reset.
 - Add `core.Style.Cursor`, the pointer's look over a view, on macOS, Windows, Linux and the web.
 - Resize the gallery's sidebar with a split divider, and hide it under the page without reflowing its content.
-- Show all of `base`'s components on one gallery page, in one scrolling sidebar grouped into Overview, Icon library, NSGo and the component categories.
+- Split the gallery in two: `examples/base` shows core's elements, `base`'s components and the services in a standard window, and `examples/gallery` the `ui` components in one scrolling sidebar.
 - Add `OnHoverMove` and `OnMouseMove`, and pass press handlers a `core.PressEvent` and `OnContextMenu` a `core.ContextMenuEvent` with the pointer's position in the view and its root, the modifier keys and the click count.
 - Add `PointerEvents`, `HitSlop` and `DelayLongPress` to views, and let children placed outside their parent take touches where they are drawn.
 - Add `OnTouch` and `Responder`, React Native's touch responder, and report press down, up and long presses on Windows.

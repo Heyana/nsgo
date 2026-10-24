@@ -1,12 +1,11 @@
-// Command gallery shows NSGo's elements, components and services, a page
-// each, in the design of Onevra's gallery: a sidebar of grouped pages
-// beside the selected one on wide windows, a navigation stack of them on
-// phones, and on both a command palette and a settings dialog. Compiled to
+// Command gallery shows the ui package's components, a page each, in the
+// design of Onevra's gallery: a sidebar of grouped pages beside the
+// selected one on wide windows, a navigation stack of them on phones, and
+// on both a command palette and a settings dialog. Compiled to
 // the web, it is the official website, guide included.
 package main
 
 import (
-	_ "embed"
 	"fmt"
 	"os"
 	"runtime"
@@ -18,9 +17,6 @@ import (
 	"github.com/oneo-me/nsgo/icons/lucide"
 	"github.com/oneo-me/nsgo/ui"
 )
-
-//go:embed logo.png
-var logo []byte
 
 // version is the gallery's, as nsgo.yaml gives it.
 const version = "0.1.0"
@@ -38,12 +34,9 @@ type section struct {
 const (
 	groupOverview   = "Overview"
 	groupIcons      = "Icon library"
-	groupNSGo       = "NSGo"
-	groupElements   = "Elements"
 	groupComponents = "Components"
-	groupMedia      = "Media"
-	groupDesktop    = "Desktop & system"
 	groupComposites = "Composites"
+	groupDesktop    = "Desktop"
 	groupTheming    = "Theming"
 )
 
@@ -57,38 +50,17 @@ func init() {
 
 		{"Lucide", groupIcons, lucide.Shapes, "The bundled Lucide pack, drawn in inherited text color at any size.", iconsPage},
 
-		{"Base", groupNSGo, lucide.Component, "The engine's unstyled parts: a pressable view, popups, menus, dialogs, sheets, navigation, safe areas and split panes, styled by the app.", basePage},
-
-		{"Text", groupElements, lucide.Type, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
-		{"Layout", groupElements, lucide.LayoutGrid, "Flexbox, wrapping, absolute positioning, grid and block layout.", layoutPage},
-		{"Styles", groupElements, lucide.Paintbrush, "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
-		{"Images", groupElements, lucide.Image, "Embedded, remote, animated and vector images, placeholders and resize modes.", imagesPage},
-		{"Canvas", groupElements, lucide.PenTool, "2D drawing recorded on the engine and played by the platform.", canvasPage},
-		{"Lists", groupElements, lucide.List, "Virtualized lists: sticky sections, columns, a chat, a list in the page, and a keyed list you edit.", listsPage},
-		{"Scrolling", groupElements, lucide.Scroll, "Paging, snapping, insets, pull to refresh, the scroll events and zooming.", scrollingPage},
-
 		{"Buttons", groupComponents, lucide.MousePointerClick, "Buttons in each variant, checkboxes, switches, radios and tabs.", buttonsPage},
-		{"Fields", groupComponents, lucide.TextCursorInput, "Inputs, selects, sliders, icon buttons and the platform field itself.", fieldsPage},
+		{"Fields", groupComponents, lucide.TextCursorInput, "Inputs, selects, sliders and icon buttons.", fieldsPage},
 		{"Feedback", groupComponents, lucide.BellRing, "Badges, progress bars and toasts.", feedbackPage},
 		{"Overlays", groupComponents, lucide.Layers, "Menus, popovers, tooltips, dialogs and sheets.", overlaysPage},
 		{"Text View", groupComponents, lucide.FileText, "Markdown and HTML with code highlighting, tables, alerts, extensions and streaming.", textViewPage},
 
-		{"Web View", groupMedia, lucide.Globe, "The platform's web view: inline HTML, a site, history and messages both ways.", webPage},
-		{"Video", groupMedia, lucide.Clapperboard, "The platform's video player: playback the app drives, resize modes and the platform's controls.", videoPage},
-		{"Native View", groupMedia, lucide.Puzzle, "The app's own platform views inside the tree, with props, events and commands.", nativePage},
-		{"Animation", groupMedia, lucide.Sparkles, "Transitions, animated values and layout animations run by the platform.", animationPage},
-		{"Gestures", groupMedia, lucide.Hand, "Pointer events, pans, pinches and rotations, sharing touches with scrolling.", gesturesPage},
-
-		{"Window", groupDesktop, lucide.AppWindow, "The gallery's own title bar, its background material and the desktop window's commands.", windowPage},
-		{"App Menu", groupDesktop, lucide.Menu, "The application menu: roles, shortcuts and checkable items.", menuPage},
-		{"Environment", groupDesktop, lucide.Monitor, "What the platform reports, and the system services.", environmentPage},
-		{"Accessibility", groupDesktop, lucide.Accessibility, "What screen readers read: hints, values, actions, groups, hidden elements, live regions and focus.", accessibilityPage},
-		{"Storage", groupDesktop, lucide.Database, "Key-value storage kept on the device, and the app's directories.", storagePage},
-		{"File Drop", groupDesktop, lucide.FileUp, "Files dragged in from other apps, on desktops and the web.", filesPage},
-
 		{"Sidebar", groupComposites, lucide.PanelLeft, "Sections of navigation items, with counts and heading actions.", sidebarPage},
 		{"Settings", groupComposites, lucide.SlidersHorizontal, "A settings surface: categories, search, groups and rows.", settingsPage},
 		{"Command Palette", groupComposites, lucide.Command, "Find and run commands from the keyboard.", commandPage},
+
+		{"Window", groupDesktop, lucide.AppWindow, "The gallery's own title row and its background material.", windowPage},
 
 		{"Theme", groupTheming, lucide.Palette, "One ThemeView restyles every component: NSGo's theme or one of the app's.", themePage},
 	}
@@ -380,9 +352,6 @@ func appearanceOptions() []ui.SelectOption {
 
 func main() {
 	var opts []nsgo.Option
-	for name, factory := range components {
-		opts = append(opts, nsgo.Component(name, factory))
-	}
 	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
 		opts = append(opts, nsgo.WindowMaterial(core.WindowMaterialSidebar))
 	}

@@ -36,4 +36,4 @@
 
 ## Verification
 
-`go test ./platform/internal/imagedecode` checks decoded frames, rasterized pixels and the bounds; the Windows and Linux native tests check animated GIFs and SVG pixels in a window. The Windows and Linux native tests also check a fit at a position, `Center`'s natural size, blur, fade and `ImageSize` in a window. The gallery's Images section shows every resize mode, positions, blur, fade, `ImageSize` and `PrefetchImage`, an animated GIF and SVG badges, plain and tinted.
+`go test ./platform/internal/imagedecode` checks decoded frames, rasterized pixels and the bounds; the Windows and Linux native tests check animated GIFs and SVG pixels in a window. The Windows and Linux native tests also check a fit at a position, `Center`'s natural size, blur, fade and `ImageSize` in a window. The base gallery's Images page shows every resize mode, positions, blur, fade, `ImageSize` and `PrefetchImage`, an animated GIF and SVG badges, plain and tinted.

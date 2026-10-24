@@ -46,7 +46,7 @@ An app registers its own platform views by name, as NSH's embedding apps do (`ns
 
 - `Native` names the component; its `Props` cross only when they change, a removed one as nil, and `Ref.Command` reaches the component's `Command`. The first `ItemNative` makes the component with a `NativeContext`, whose `Emit` reaches `OnEvent` and whose `SetSize` gives the element a natural size, as an image's.
 - Factories run on the main thread and may return nil; an unknown name leaves an empty box and is logged once.
-- Registering differs per platform only in what `View` returns, so an app registers a target's components in files built for it, as the gallery's `components_*.go` do.
+- Registering differs per platform only in what `View` returns, so an app registers a target's components in files built for it, as the base gallery's `components_*.go` do.
 
 | Target | `View` returns | Hosted as |
 | --- | --- | --- |
@@ -56,7 +56,7 @@ An app registers its own platform views by name, as NSH's embedding apps do (`ns
 | Web | A DOM element (`js.Value`) | A child element filling the view |
 | Android | The name of a `View` class | Built by reflection in the Java runtime, props set through its one-argument `set` methods and commands through its methods; the Go process cannot make views |
 
-On Android the runtime also installs a listener on each `setOn…Listener` method the view's own class declares and reports its callbacks as events named after them, their arguments as a JSON array. A component may implement `android.PropMapper` to turn a prop into ordered setter calls, and `android.EventMapper` to receive those callbacks itself, as the gallery's `SeekBar` does.
+On Android the runtime also installs a listener on each `setOn…Listener` method the view's own class declares and reports its callbacks as events named after them, their arguments as a JSON array. A component may implement `android.PropMapper` to turn a prop into ordered setter calls, and `android.EventMapper` to receive those callbacks itself, as the base gallery's `SeekBar` does.
 
 ## Known gaps
 

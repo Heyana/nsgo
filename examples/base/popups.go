@@ -5,8 +5,8 @@ import (
 	"github.com/oneo-me/nsgo/core"
 )
 
-// popupsDemo shows base's tooltips, popovers, menus, dialogs and sheets.
-func popupsDemo(cx *core.Scope, t *theme) core.Node {
+// popupsPage shows base's tooltips, popovers, menus, dialogs and sheets.
+func popupsPage(cx *core.Scope, t *theme) core.Node {
 	dialog := core.NewSignal(cx, false)
 	sheet := core.NewSignal(cx, false)
 	side := core.NewSignal(cx, false)

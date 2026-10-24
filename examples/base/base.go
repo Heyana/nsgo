@@ -7,13 +7,14 @@ import (
 	"github.com/oneo-me/nsgo/core"
 )
 
-// basePage shows the parts the engine owns with no look: a pressable
-// view, popups and menus, navigation and safe areas. The app styles them.
-func basePage(cx *core.Scope, t *theme) core.Node {
+// The pages of base's components, which own behavior and accessibility
+// and take their look from the gallery's theme.
+
+func buttonPage(cx *core.Scope, t *theme) core.Node {
 	presses := core.NewSignal(cx, 0)
 	press := func() { presses.Update(func(n int) int { return n + 1 }) }
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
-		t.demo("Button", "base.Button is a pressable view with the button role; its look is the app's.",
+		t.demo("Button", "Each look here is a style the app gives base.Button, its states included.",
 			flow(
 				t.primary("Primary", press),
 				t.plain("Secondary", press),
@@ -23,11 +24,21 @@ func basePage(cx *core.Scope, t *theme) core.Node {
 			),
 			t.live(func() string { return fmt.Sprintf("%d presses", presses.Get()) }),
 		),
+	}}
+}
+
+func safeAreaPage(cx *core.Scope, t *theme) core.Node {
+	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
 		t.demo("Safe area", "base.SafeAreaView adds the screen's safe-area insets to its padding on the chosen edges.",
 			base.SafeAreaView{Edges: base.Top | base.Bottom, TestID: "base-safe-area",
 				Style:    core.Style{Padding: core.All(12), CornerRadius: radius, Background: t.sunken},
 				Children: []core.Node{core.Text{Content: "This box keeps clear of the system UI above and below."}}},
 		),
+	}}
+}
+
+func splitPage(cx *core.Scope, t *theme) core.Node {
+	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
 		t.demo("Split", "base.Split resizes its first pane with a drag; a double click restores its default. Sizes are points or percentages.",
 			base.Split{Direction: base.SplitHorizontal, TestID: "base-split", Label: "Resize the example split",
 				DefaultSize: core.Pct(35), Min: core.Pt(120), Max: core.Pct(70),
@@ -46,7 +57,5 @@ func basePage(cx *core.Scope, t *theme) core.Node {
 				}},
 			},
 		),
-		popupsDemo(cx, t),
-		navigationDemo(cx, t),
 	}}
 }

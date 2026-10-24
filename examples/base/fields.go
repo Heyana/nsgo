@@ -7,6 +7,40 @@ import (
 	"github.com/oneo-me/nsgo/core"
 )
 
+func always() bool { return true }
+
+func inputPage(cx *core.Scope, t *theme) core.Node {
+	plainName := core.NewSignal(cx, "")
+	plainPassword := core.NewSignal(cx, "")
+	labelled := func(label string, field core.Node) core.Node {
+		return core.View{Style: core.Style{Gap: 6}, Children: []core.Node{core.Text{Content: label, Style: t.caption()}, field}}
+	}
+	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
+		t.demo("Input", "The platform's field: controlled, masked, placeholders and keyboard types, styled by the app.",
+			labelled("Name", core.Input{Value: plainName.Get, OnChange: plainName.Set, Placeholder: "Your name", Style: t.field(), Label: "Name", TestID: "name"}),
+			labelled("Password", core.Input{Value: plainPassword.Get, OnChange: plainPassword.Set, Masked: true, Placeholder: "Masked", Style: t.field(), Label: "Password"}),
+			core.View{Style: core.Style{Display: core.DisplayGrid, GridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", Gap: 10},
+				Children: []core.Node{
+					labelled("Email", core.Input{KeyboardType: core.KeyboardEmail, Placeholder: "name@example.com", Style: t.field(), Label: "Email"}),
+					labelled("Number", core.Input{KeyboardType: core.KeyboardNumber, Placeholder: "42", Style: t.field(), Label: "Number"}),
+					labelled("Phone", core.Input{KeyboardType: core.KeyboardPhone, Placeholder: "+1 555 0100", Style: t.field(), Label: "Phone"}),
+					labelled("URL", core.Input{KeyboardType: core.KeyboardURL, Placeholder: "https://", Style: t.field(), Label: "URL"}),
+					labelled("Read-only", core.Input{DefaultValue: "Read-only text", Readonly: true, Style: t.field(), Label: "Read-only"}),
+					labelled("Disabled", core.Input{DefaultValue: "Disabled", Disabled: always, Style: t.field(), Label: "Disabled"}),
+				}},
+			t.live(func() string {
+				if plainName.Get() == "" {
+					return "Type a name above."
+				}
+				return fmt.Sprintf("Hello, %s. Your password has %d characters.", plainName.Get(), len([]rune(plainPassword.Get())))
+			}),
+		),
+		fieldsDemo(cx, t),
+		caretDemo(cx, t),
+		accessoryDemo(cx, t),
+	}}
+}
+
 // fieldsDemo shows Input's editing props: several lines, a length cap,
 // return keys, the selection, keys and compositions, and the colors of
 // the placeholder and the caret.

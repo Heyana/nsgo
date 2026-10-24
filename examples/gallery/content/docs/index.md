@@ -43,7 +43,7 @@ go tool nsgo dev .
 
 ## Explore
 
-The sidebar groups every page: Overview for the welcome and this guide, Icon library for Lucide, NSGo for the engine's unstyled **Base** parts, then the element pages and the themed **ui** components built from them. Search finds any page from the keyboard, and every control on a page is live.
+The sidebar groups every page: Overview for the welcome and this guide, Icon library for Lucide, then the themed **ui** components and the gallery's window. Search finds any page from the keyboard, and every control on a page is live. The elements and the unstyled **base** components they build on have their own gallery, `examples/base` in the repository.
 
 The Theme page restyles the whole gallery at once, in the system's appearance or one chosen by hand.
 
