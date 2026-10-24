@@ -1,43 +1,35 @@
-// Command gallery shows the ui package's components, a page each, in the
-// design of Onevra's gallery: a sidebar of grouped pages beside the
-// selected one on wide windows, a navigation stack of them on phones, and
-// on both a command palette and a settings dialog. Compiled to
-// the web, it is the official website, guide included.
+// Command base shows what apps build on beneath the ui package: core's
+// elements and services and base's unstyled components, a page each, in a
+// standard window. Every look is the app's own, set in theme.go.
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
-	"runtime"
-	"strconv"
 
 	"github.com/oneo-me/nsgo"
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
-	"github.com/oneo-me/nsgo/icons/lucide"
-	"github.com/oneo-me/nsgo/ui"
 )
 
-// version is the gallery's, as nsgo.yaml gives it.
-const version = "0.1.0"
+//go:embed logo.png
+var logo []byte
 
 // section is one page of the gallery.
 type section struct {
 	name  string
 	group string
-	icon  func() *core.SVG
 	about string
 	page  func(cx *core.Scope, t *theme) core.Node
 }
 
-// The sidebar's groups, in its order.
+// The section list's groups, in its order.
 const (
-	groupOverview   = "Overview"
-	groupIcons      = "Icon library"
 	groupComponents = "Components"
-	groupComposites = "Composites"
-	groupDesktop    = "Desktop"
-	groupTheming    = "Theming"
+	groupElements   = "Elements"
+	groupMedia      = "Media"
+	groupSystem     = "System"
 )
 
 // sections are set in init because the App Menu section lists them.
@@ -45,24 +37,33 @@ var sections []section
 
 func init() {
 	sections = []section{
-		{"Welcome", groupOverview, lucide.House, "", welcomePage},
-		{"Documentation", groupOverview, lucide.BookOpen, "Guides for building NSGo applications.", docsPage},
+		{"Button", groupComponents, "base.Button is a pressable view with the button role; its look is the app's.", buttonPage},
+		{"Popups", groupComponents, "Tooltips, popovers, menus, context menus, dialogs, sheets and the platform's alerts.", popupsPage},
+		{"Navigation", groupComponents, "base.Nav's stack of routes, with the system header on iOS and Android.", navigationPage},
+		{"Safe Area", groupComponents, "base.SafeAreaView keeps its content clear of the system's UI.", safeAreaPage},
+		{"Split", groupComponents, "base.Split resizes two panes with a divider.", splitPage},
 
-		{"Lucide", groupIcons, lucide.Shapes, "The bundled Lucide pack, drawn in inherited text color at any size.", iconsPage},
+		{"Text", groupElements, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
+		{"Input", groupElements, "The platform's field: keyboard types, editing props, the caret, pasting and a keyboard accessory.", inputPage},
+		{"Layout", groupElements, "Flexbox, wrapping, absolute positioning, grid and block layout.", layoutPage},
+		{"Styles", groupElements, "Backgrounds, borders, corners, shadows, transforms and state styles.", stylesPage},
+		{"Images", groupElements, "Embedded, remote, animated and vector images, placeholders and resize modes.", imagesPage},
+		{"Canvas", groupElements, "2D drawing recorded on the engine and played by the platform.", canvasPage},
+		{"Lists", groupElements, "Virtualized lists: sticky sections, columns, a chat, a list in the page, and a keyed list you edit.", listsPage},
+		{"Scrolling", groupElements, "Paging, snapping, insets, pull to refresh, the scroll events and zooming.", scrollingPage},
 
-		{"Buttons", groupComponents, lucide.MousePointerClick, "Buttons in each variant, checkboxes, switches, radios and tabs.", buttonsPage},
-		{"Fields", groupComponents, lucide.TextCursorInput, "Inputs, selects, sliders and icon buttons.", fieldsPage},
-		{"Feedback", groupComponents, lucide.BellRing, "Badges, progress bars and toasts.", feedbackPage},
-		{"Overlays", groupComponents, lucide.Layers, "Menus, popovers, tooltips, dialogs and sheets.", overlaysPage},
-		{"Text View", groupComponents, lucide.FileText, "Markdown and HTML with code highlighting, tables, alerts, extensions and streaming.", textViewPage},
+		{"Web View", groupMedia, "The platform's web view: inline HTML, a site, history and messages both ways.", webPage},
+		{"Video", groupMedia, "The platform's video player: playback the app drives, resize modes and the platform's controls.", videoPage},
+		{"Native View", groupMedia, "The app's own platform views inside the tree, with props, events and commands.", nativePage},
+		{"Animation", groupMedia, "Transitions, animated values and layout animations run by the platform.", animationPage},
+		{"Gestures", groupMedia, "Pointer events, pans, pinches and rotations, sharing touches with scrolling.", gesturesPage},
 
-		{"Sidebar", groupComposites, lucide.PanelLeft, "Sections of navigation items, with counts and heading actions.", sidebarPage},
-		{"Settings", groupComposites, lucide.SlidersHorizontal, "A settings surface: categories, search, groups and rows.", settingsPage},
-		{"Command Palette", groupComposites, lucide.Command, "Find and run commands from the keyboard.", commandPage},
-
-		{"Window", groupDesktop, lucide.AppWindow, "The gallery's own title row and its background material.", windowPage},
-
-		{"Theme", groupTheming, lucide.Palette, "One ThemeView restyles every component: NSGo's theme or one of the app's.", themePage},
+		{"Window", groupSystem, "The desktop window's title bar and commands, and dragging it from a view.", windowPage},
+		{"App Menu", groupSystem, "The application menu: roles, shortcuts and checkable items.", menuPage},
+		{"Environment", groupSystem, "What the platform reports, and the system services.", environmentPage},
+		{"Accessibility", groupSystem, "What screen readers read: hints, values, actions, groups, hidden elements, live regions and focus.", accessibilityPage},
+		{"Storage", groupSystem, "Key-value storage kept on the device, and the app's directories.", storagePage},
+		{"File Drop", groupSystem, "Files dragged in from other apps, on desktops and the web.", filesPage},
 	}
 }
 
@@ -75,7 +76,7 @@ func find(name string) (section, int) {
 	return sections[0], 0
 }
 
-// groups returns the sections by group, in the sidebar's order.
+// groups returns the sections by group, in the list's order.
 func groups() [][]section {
 	var out [][]section
 	for _, s := range sections {
@@ -88,20 +89,15 @@ func groups() [][]section {
 	return out
 }
 
-// wideWidth is the narrowest window that shows the sidebar.
+// wideWidth is the narrowest window that shows the section list beside
+// the page.
 const wideWidth core.Points = 720
 
-// The gallery's preferences, kept in storage.
-const (
-	keySection      = "gallery.section"
-	keyAppearance   = "gallery.appearance"
-	keyDescriptions = "gallery.descriptions"
-	keySidebar      = "gallery.sidebar"
-	keyStart        = "gallery.start"
-)
+// listWidth is the width of the wide layout's section list.
+const listWidth core.Points = 200
 
-// gallery is the state the shell's layouts share, so switching between
-// them (a window resized) keeps what is open.
+// gallery is the state the layouts share, so switching between them (a
+// window resized) keeps what is open.
 type gallery struct {
 	// section is the selected section; on phones, the one last opened.
 	section *core.Signal[string]
@@ -109,29 +105,14 @@ type gallery struct {
 	nav *base.Nav[string]
 	// descriptions shows each section's description line.
 	descriptions *core.Signal[bool]
-	// appearance is "system", "light" or "dark"; dark is what it chooses.
-	appearance *core.Signal[string]
-	dark       func() bool
-	// sidebar shows the wide layout's sidebar.
-	sidebar *core.Signal[bool]
-	// sidebarPixels is the sidebar's width while it opens or closes, and
-	// sidebarSize the width it returns to when shown again.
-	sidebarPixels, sidebarSize *core.Signal[core.Points]
-	// start is the page the gallery opens on: "welcome" or "last".
-	start *core.Signal[string]
-	// settings and palette open the settings dialog and the command
-	// palette; category is the settings' page.
-	settings, palette *core.Signal[bool]
-	category          *core.Signal[string]
 	// chosen is the label of the last application menu item chosen.
 	chosen *core.Signal[string]
-	// prefs are the settings dialog's template values, kept in memory.
-	prefs *prefs
-	// wide is whether the layout built last is the sidebar's.
+	// wide is whether the layout built last is the list's.
 	wide bool
-	// material is whether the window shows a material behind its views.
-	material func() bool
 }
+
+// galleryKey gives sections the shell's state.
+var galleryKey = core.NewKey[*gallery]("gallery", nil)
 
 // open selects a section, pushing it over the index on phones.
 func (g *gallery) open(name string) {
@@ -147,167 +128,58 @@ func (g *gallery) step(by int) {
 	g.open(sections[(i+by+len(sections))%len(sections)].name)
 }
 
-// Root builds the gallery again when the layout the window's width calls
-// for changes, keeping its state in a gallery. NSGO_GALLERY_OPEN names a
-// section to open at start, for screenshots.
+// Root builds the gallery again when the window's width calls for the
+// other layout or the appearance changes, keeping its state in a gallery.
+// NSGO_GALLERY_OPEN names a section to open at start, for screenshots.
 func Root(cx *core.Scope) core.Node {
-	store := cx.Storage()
-	saved := func(key, def string) string {
-		v, ok := def, false
-		cx.Untrack(func() { v, ok = store.GetItem(key) })
-		if !ok {
-			return def
-		}
-		return v
-	}
-	opensOn := saved(keyStart, "welcome")
 	start := sections[0].name
-	if opensOn == "last" {
-		start = saved(keySection, start)
-	}
-	if open := os.Getenv("NSGO_GALLERY_OPEN"); open != "" {
-		start = open
-	}
-	if name := routeName(); name != "" {
-		start = name
-	}
-	if s, _ := find(start); s.name != start {
-		start = sections[0].name
-	}
-	showsSidebar := saved(keySidebar, "true") == "true"
-	sidebarPixels := core.Points(0)
-	if showsSidebar {
-		sidebarPixels = sidebarWidth
+	if s, _ := find(os.Getenv("NSGO_GALLERY_OPEN")); s.name != start {
+		start = s.name
 	}
 	g := &gallery{
-		section:       core.NewSignal(cx, start),
-		nav:           base.NewNav(cx, ""),
-		descriptions:  core.NewSignal(cx, saved(keyDescriptions, "true") == "true"),
-		appearance:    core.NewSignal(cx, saved(keyAppearance, "system")),
-		sidebar:       core.NewSignal(cx, showsSidebar),
-		sidebarPixels: core.NewSignal(cx, sidebarPixels),
-		sidebarSize:   core.NewSignal(cx, sidebarWidth),
-		start:         core.NewSignal(cx, opensOn),
-		settings:      core.NewSignal(cx, false),
-		palette:       core.NewSignal(cx, false),
-		category:      core.NewSignal(cx, "general"),
-		chosen:        core.NewSignal(cx, "nothing yet"),
-		prefs:         newPrefs(cx),
+		section:      core.NewSignal(cx, start),
+		nav:          base.NewNav(cx, ""),
+		descriptions: core.NewSignal(cx, true),
+		chosen:       core.NewSignal(cx, "nothing yet"),
 	}
 	if start != sections[0].name {
 		g.nav.SetRoutes("", start)
 	}
 	galleryKey.Provide(cx, g)
-	listenRoute(cx, func(name string) {
-		if g.section.GetUntracked() == name {
-			return
-		}
-		if s, _ := find(name); s.name == name {
-			g.open(name)
-		}
-	})
-	addressShown := false
-	cx.Effect(func() {
-		setRoute(g.section.Get(), !addressShown)
-		addressShown = true
-	})
 	env := cx.Env()
-	g.dark = core.NewMemo(cx, func() bool {
-		switch g.appearance.Get() {
-		case "light":
-			return false
-		case "dark":
-			return true
-		}
-		return env.Dark()
-	}).Get
 	wide := core.NewMemo(cx, func() bool { return env.Window().Width >= wideWidth })
-	g.material = core.NewMemo(cx, func() bool { return env.WindowMaterial() != core.WindowMaterialNone }).Get
 
-	keep := func(key string, value func() string) {
-		cx.Effect(func() { store.SetItem(key, value()) })
-	}
-	keep(keySection, g.section.Get)
-	keep(keyAppearance, g.appearance.Get)
-	keep(keyDescriptions, func() string { return strconv.FormatBool(g.descriptions.Get()) })
-	keep(keySidebar, func() string { return strconv.FormatBool(g.sidebar.Get()) })
-	keep(keyStart, g.start.Get)
-
-	// The desktop layout draws the title bar's row itself, over the
-	// content. macOS keeps its traffic lights, Windows its caption
-	// buttons, and Linux none of its own, so the row draws them.
-	cx.Effect(func() {
-		switch env.OS() {
-		case core.OSMacOS, core.OSWindows, core.OSLinux:
-			cx.Untrack(func() { cx.SetTitleBar(core.TitleBarHidden, headerHeight) })
-		}
-	})
 	cx.Effect(func() { cx.SetApplicationMenu(g.menu(cx)) })
-	cx.Effect(func() { cx.SetTitle("NSGo Gallery — " + g.section.Get()) })
+	cx.Effect(func() { cx.SetTitle("NSGo Base — " + g.section.Get()) })
 	// Pages step from a field too, as a browser's tabs do.
 	always := core.KeyOptions{When: core.KeyAlways}
 	cx.OnKeyWith("ctrl+tab", always, func() { g.step(1) })
 	cx.OnKeyWith("ctrl+shift+tab", always, func() { g.step(-1) })
-	cx.OnKey("mod+k", g.openPalette)
-	cx.OnKey("mod+,", g.openSettings)
-	cx.OnKey("mod+alt+s", g.toggleSidebar)
 
-	style := core.Style{FlexGrow: 1, FlexShrink: 1}
-	if g.material() {
-		// The sidebar lets the window's material through.
-		style.Background = core.RGBA(0xffffff, 0)
-	}
-	return ui.ThemeView{Dark: g.dark, Style: style, Children: []core.Node{
-		ui.ToastView{Style: core.Style{FlexGrow: 1, FlexShrink: 1}, Children: []core.Node{
-			core.Dynamic(func(cx *core.Scope) core.Node {
-				isWide := wide.Get()
-				// What the layout builds mounts untracked, outside this function.
-				return core.Func(func(cx *core.Scope) core.Node {
-					if isWide {
-						return g.desktop(cx)
-					}
-					return g.phone(cx)
-				})
-			}),
-			g.settingsDialog(),
-			g.commandPalette(),
-		}},
-	}}
+	return core.Dynamic(func(cx *core.Scope) core.Node {
+		isWide, t := wide.Get(), newTheme(env.Dark())
+		// What the layout builds mounts untracked, outside this function.
+		return core.Func(func(cx *core.Scope) core.Node {
+			if isWide {
+				return g.desktop(cx, t)
+			}
+			return g.phone(cx, t)
+		})
+	})
 }
-
-func (g *gallery) openPalette() {
-	g.settings.Set(false)
-	g.palette.Set(true)
-}
-
-func (g *gallery) openSettings() {
-	g.palette.Set(false)
-	g.settings.Set(true)
-}
-
-func (g *gallery) toggleSidebar() { g.sidebar.Update(func(on bool) bool { return !on }) }
 
 // menu is the application menu: the app menu, Edit, View (a section
 // each, with shortcuts) and Window.
 func (g *gallery) menu(cx *core.Scope) []core.MenuItem {
-	selected, appearance := g.section.Get(), g.appearance.Get()
+	selected := g.section.Get()
 	choose := func(label string, fn func()) func() {
 		return func() { g.chosen.Set(label); fn() }
 	}
 	view := []core.MenuItem{
-		{Label: "Search…", Shortcut: "mod+k", OnSelect: choose("Search…", g.openPalette)},
-		{Label: "Show Sidebar", Shortcut: "mod+alt+s", Checkable: true, Checked: g.sidebar.Get(),
-			OnSelect: choose("Show Sidebar", g.toggleSidebar)},
 		{Label: "Show Descriptions", Checkable: true, Checked: g.descriptions.Get(),
 			OnSelect: choose("Show Descriptions", func() { g.descriptions.Update(func(on bool) bool { return !on }) })},
 		{Separator: true},
 	}
-	var appearances []core.MenuItem
-	for _, a := range appearanceOptions() {
-		appearances = append(appearances, core.MenuItem{Label: a.Label, Checkable: true, Checked: appearance == a.Value,
-			OnSelect: choose(a.Label, func() { g.appearance.Set(a.Value) })})
-	}
-	view = append(view, core.MenuItem{Label: "Appearance", Items: appearances}, core.MenuItem{Separator: true})
 	for i, s := range sections {
 		item := core.MenuItem{Label: s.name, Checked: s.name == selected, OnSelect: choose(s.name, func() { g.open(s.name) })}
 		if i < 9 {
@@ -321,9 +193,8 @@ func (g *gallery) menu(cx *core.Scope) []core.MenuItem {
 		core.MenuItem{Label: "Next Section", Shortcut: "mod+]", OnSelect: choose("Next Section", func() { g.step(1) })},
 	)
 	return []core.MenuItem{
-		{Label: "Gallery", Items: []core.MenuItem{
+		{Label: "Base", Items: []core.MenuItem{
 			{Role: core.MenuAbout}, {Separator: true},
-			{Label: "Settings…", Shortcut: "mod+,", OnSelect: choose("Settings…", g.openSettings)}, {Separator: true},
 			{Role: core.MenuHide}, {Role: core.MenuHideOthers}, {Role: core.MenuShowAll}, {Separator: true},
 			{Role: core.MenuQuit},
 		}},
@@ -334,26 +205,141 @@ func (g *gallery) menu(cx *core.Scope) []core.MenuItem {
 		{Label: "View", Items: view},
 		{Label: "Window", Items: []core.MenuItem{
 			{Role: core.MenuMinimize}, {Role: core.MenuZoom}, {Role: core.MenuToggleFullScreen}, {Separator: true},
-			{Label: "Hide Title Bar", OnSelect: choose("Hide Title Bar", func() { cx.SetTitleBar(core.TitleBarHidden, headerHeight) })},
-			{Label: "Show Title Bar", OnSelect: choose("Show Title Bar", func() { cx.SetTitleBar(core.TitleBarDefault, 0) })},
-			{Separator: true}, {Role: core.MenuClose},
+			{Role: core.MenuClose},
 		}},
 	}
 }
 
-// appearanceOptions are the choices of the gallery's appearance.
-func appearanceOptions() []ui.SelectOption {
-	return []ui.SelectOption{
-		{Value: "system", Label: "System", Icon: lucide.SunMoon()},
-		{Value: "light", Label: "Light", Icon: lucide.Sun()},
-		{Value: "dark", Label: "Dark", Icon: lucide.Moon()},
+// desktop is the wide layout: the section list beside the selected
+// section, under the system's title bar.
+func (g *gallery) desktop(cx *core.Scope, t *theme) core.Node {
+	g.wide = true
+	// Coming from the phone layout, show the section it had open.
+	if routes := core.Untracked(cx, g.nav.Routes); len(routes) > 1 {
+		g.section.Set(routes[len(routes)-1])
 	}
+	env := cx.Env()
+	content := &core.Ref{}
+	cx.Effect(func() {
+		g.section.Get()
+		content.ScrollTo(core.Point{}, false)
+	})
+	var list []core.Node
+	for _, group := range groups() {
+		var items []core.Node
+		for _, s := range group {
+			items = append(items, core.View{OnPress: func(core.PressEvent) { g.open(s.name) }, Role: core.RoleButton,
+				Label: s.name, TestID: "nav-" + s.name, Style: t.navItem(),
+				Selected: func() bool { return g.section.Get() == s.name },
+				Children: []core.Node{core.Text{Content: s.name, MaxLines: 1}}})
+		}
+		list = append(list, core.View{TestID: "nav-group-" + group[0].group, Style: core.Style{Gap: 2}, Children: append([]core.Node{
+			core.Text{Content: group[0].group, Role: core.RoleHeader, Style: t.caption().Merge(core.Style{
+				FontWeight: core.FontWeightSemibold, Padding: core.Edges{Top: 8, Right: 10, Bottom: 4, Left: 10}})},
+		}, items...)})
+	}
+	return core.View{
+		// A hidden title bar leaves the window controls over the top edge,
+		// so the layout keeps clear of the area they report.
+		StyleFunc: func() core.Style {
+			return core.Style{Direction: core.Row, FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0),
+				Padding: core.Edges{Top: env.TitleBar().Top}, Background: t.background, Color: t.ink}
+		},
+		Children: []core.Node{
+			// A scroll view shrinks by default, and Merge cannot set
+			// FlexShrink back to 0, so the minimum keeps the list's width.
+			core.Scroll{TestID: "nav-sections", Style: core.Style{Width: core.Pt(listWidth), MinWidth: core.Pt(listWidth), Background: t.sunken,
+				Borders: core.Edges{Right: 1}, BorderColors: core.EdgeColors{Right: t.line}},
+				Children: []core.Node{core.View{Style: core.Style{Padding: core.All(8), Gap: 8}, Children: list}}},
+			core.Scroll{Ref: content, TestID: "content", Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)},
+				Children: []core.Node{core.Dynamic(func(cx *core.Scope) core.Node {
+					s, _ := find(g.section.Get())
+					return core.Func(func(cx *core.Scope) core.Node {
+						return core.View{Style: core.Style{Padding: core.All(24), Gap: 16}, Children: []core.Node{
+							core.Text{Content: s.name, Role: core.RoleHeader, TestID: "title",
+								Style: core.Style{FontSize: 22, FontWeight: core.FontWeightSemibold}},
+							g.sectionBody(cx, t, s),
+						}}
+					})
+				})}},
+		}}
+}
+
+// sectionBody is a section's demos under its description.
+func (g *gallery) sectionBody(cx *core.Scope, t *theme, s section) core.Node {
+	about := core.Show{When: g.descriptions.Get, Then: func(*core.Scope) core.Node {
+		return core.Text{Content: s.about, TestID: "about", Style: core.Style{Color: t.muted, FontSize: 15}}
+	}}
+	return core.View{Style: core.Style{Gap: 16}, TestID: "section-" + s.name,
+		Children: []core.Node{about, s.page(cx, t)}}
+}
+
+// phone is the narrow layout: a stack of the index and the section opened
+// over it. iOS and Android draw the system header; elsewhere the screens
+// draw their own.
+func (g *gallery) phone(cx *core.Scope, t *theme) core.Node {
+	// Coming from the wide layout, keep its section open.
+	if g.wide {
+		g.nav.SetRoutes("", g.section.GetUntracked())
+	}
+	g.wide = false
+	headerStyle := core.Style{Background: t.sunken, Color: t.ink, TintColor: t.accent}
+	return g.nav.Stack(core.Style{FlexGrow: 1, Background: t.background, Color: t.ink},
+		func(cx *core.Scope, name string, _ func() int) core.Screen {
+			if name == "" {
+				return core.Screen{Title: "Base", TestID: "index", HeaderStyle: headerStyle,
+					Header:   g.phoneHeader(t, "Base", nil),
+					Children: []core.Node{g.index(t)}}
+			}
+			s, _ := find(name)
+			return core.Screen{Title: s.name, TestID: "screen-" + s.name, HeaderStyle: headerStyle,
+				Header: g.phoneHeader(t, s.name, func() { g.nav.Pop(1) }),
+				Children: []core.Node{core.Scroll{Style: core.Style{FlexGrow: 1, Background: t.background}, Children: []core.Node{
+					base.SafeAreaView{Edges: base.Bottom, Style: core.Style{Padding: core.All(16)},
+						Children: []core.Node{g.sectionBody(cx, t, s)}},
+				}}}}
+		})
+}
+
+// phoneHeader is a phone screen's bar: a back button and the title.
+func (g *gallery) phoneHeader(t *theme, title string, back func()) core.Node {
+	var children []core.Node
+	if back != nil {
+		children = append(children, base.Button{OnPress: func(core.PressEvent) { back() }, Label: "Back", Style: core.Style{Padding: core.Symmetric(6, 8)},
+			Children: []core.Node{core.Text{Content: "‹ Back", Style: core.Style{Color: t.accent}}}})
+	}
+	children = append(children, core.Text{Content: title, Role: core.RoleHeader, MaxLines: 1,
+		Style: core.Style{FontSize: 18, FontWeight: core.FontWeightSemibold, FlexGrow: 1, FlexShrink: 1}})
+	return core.View{Style: core.Style{Background: t.sunken, Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: t.line}},
+		Children: []core.Node{base.SafeAreaView{Edges: base.Top | base.Left | base.Right, Children: []core.Node{
+			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 4,
+				Height: core.Pt(52), Padding: core.Symmetric(0, 8)}, Children: children}}}}}
+}
+
+// index is the phone layout's list of sections by group.
+func (g *gallery) index(t *theme) core.Node {
+	var items []core.Node
+	for _, group := range groups() {
+		items = append(items, core.Text{Content: group[0].group, Role: core.RoleHeader,
+			Style: t.caption().Merge(core.Style{Padding: core.Edges{Top: 18, Right: 16, Bottom: 6, Left: 16}, FontWeight: core.FontWeightSemibold})})
+		for _, s := range group {
+			items = append(items, core.View{OnPress: func(core.PressEvent) { g.open(s.name) }, Role: core.RoleButton, Label: s.name, TestID: "nav-" + s.name,
+				Style: core.Style{Gap: 2, Padding: core.Symmetric(10, 16), Background: t.surface,
+					Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: t.line}, Active: &core.Style{Background: t.hover}},
+				Children: []core.Node{
+					core.Text{Content: s.name, Style: core.Style{FontSize: 15, FontWeight: core.FontWeightMedium}},
+					core.Text{Content: s.about, MaxLines: 1, Style: t.caption()},
+				}})
+		}
+	}
+	return core.Scroll{Style: core.Style{FlexGrow: 1, Background: t.background},
+		Children: []core.Node{base.SafeAreaView{Edges: base.Bottom, Children: items}}}
 }
 
 func main() {
 	var opts []nsgo.Option
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-		opts = append(opts, nsgo.WindowMaterial(core.WindowMaterialSidebar))
+	for name, factory := range components {
+		opts = append(opts, nsgo.Component(name, factory))
 	}
 	nsgo.Run(Root, opts...)
 }

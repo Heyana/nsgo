@@ -7,8 +7,7 @@
 | Package | What |
 | --- | --- |
 | `base/textview` | `Document` and its blocks and inlines, `Parse`, `ParseHTML`, `Extension`, and the unstyled `TextView`, styled by `Part` |
-| `ui` | `ui.TextView`: NSH's reading typography in the theme's colors, and a copy button on code blocks |
-| `ui/highlight` | A `Highlighter` from chroma's lexers in NSH's light and dark palette |
+| `base/textview/highlight` | A `Highlighter` from chroma's lexers in NSH's light and dark palette, following the system's appearance |
 
 Highlighting is its own package because chroma's lexers add about 4.5 MB to a binary, against about 0.3 MB for goldmark. Apps opt in with `Highlighter: highlight.New(cx)`.
 
@@ -43,7 +42,7 @@ Highlighting is its own package because chroma's lexers add about 4.5 MB to a bi
 ## Rendering
 
 - `TextView` parses in one memo, then shows the blocks as rows of an `Each` keyed by position and kind. Each row keeps its block in a memo compared deeply, so a document that grows at its end rebuilds only its last block.
-- A row is a `Dynamic`: the part styles and the highlighter it reads, such as the theme's appearance, rebuild it.
+- A row is a `Dynamic`: the part styles and the highlighter it reads, such as the system's appearance, rebuild it.
 - Paragraphs, headings, cells and code are each one `Text` with spans; links are spans with a press handler that calls `OnLinkPress`.
 - Images show as blocks when a paragraph holds only images. In a line of text an image is an attachment: the size it asks for, else three quarters of a line tall.
 - `RenderMath` shows formulas: blocks in place, inline ones as attachments, whose own view's `VerticalAlign` places them. Without it `Math` shows its TeX in `PartMath` or `PartMathBlock`.
@@ -54,18 +53,18 @@ Highlighting is its own package because chroma's lexers add about 4.5 MB to a bi
 
 ## Parts
 
-A node with several parts merges `StyleFunc`'s styles for each, then the app's `Styles` for each, later parts winning. `ui.TextView` passes its typography as `StyleFunc`, so the app's `Styles` override it.
+A node with several parts merges `StyleFunc`'s styles for each, then the app's `Styles` for each, later parts winning, so a typography passed as `StyleFunc` gives way to `Styles`.
 
 Where NSGo departs from NSH:
 
 | NSH | NSGo | Why |
 | --- | --- | --- |
 | `classes` and `styles` props by part | `Styles` map and `StyleFunc` by `Part` | Styles are Go values |
-| Typography in `nsh/base`'s `TextView` | Typography in `ui.TextView` | `base` has no look |
+| Typography in `nsh/base`'s `TextView` | Typography from the app | `base` has no look |
 | Alert icon | Alert title text, and `PartAlertContent` around its blocks | The title takes the alert's color while the blocks keep the text's |
 | `renderCustom` for inline nodes | `RenderCustom` as an attachment, or `CustomSpan` returning a span | A span keeps a link's press and the text's selection |
 | `renderMath` with a `TextViewMath` | `RenderMath` with the `Math` and whether it is display | Go functions take arguments, not a props object |
-| syntect and its feature flag | chroma in `ui/highlight` | Pure Go; linked only when used |
+| syntect and its feature flag | chroma in `base/textview/highlight` | Pure Go; linked only when used |
 
 ## Limits
 

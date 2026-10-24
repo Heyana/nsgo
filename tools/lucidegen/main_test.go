@@ -25,7 +25,6 @@ func TestIdentifier(t *testing.T) {
 func TestPinnedGeneration(t *testing.T) {
 	upstream := t.TempDir()
 	out := filepath.Join(t.TempDir(), "generated")
-	gallery := filepath.Join(t.TempDir(), "gallery", "icons_gen.go")
 	mustWrite := func(path, data string) {
 		t.Helper()
 		if err := os.WriteFile(path, []byte(data), 0644); err != nil {
@@ -51,41 +50,34 @@ func TestPinnedGeneration(t *testing.T) {
 	mustGit("add", ".")
 	mustGit("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "fixture")
 	commit := mustGit("rev-parse", "HEAD")
-	if err := run(upstream, commit, out, gallery, false); err != nil {
+	if err := run(upstream, commit, out, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(upstream, commit, out, gallery, true); err != nil {
+	if err := run(upstream, commit, out, true); err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := os.ReadFile(gallery)
-	if err != nil || !bytes.Contains(catalog, []byte(`{"search", lucide.Search}`)) {
-		t.Fatalf("missing gallery entry: %s, %v", catalog, err)
+	catalog, err := os.ReadFile(filepath.Join(out, "icons_gen_test.go"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	arrow := bytes.Index(catalog, []byte(`{"arrow-up", lucide.ArrowUp}`))
-	search := bytes.Index(catalog, []byte(`{"search", lucide.Search}`))
+	arrow := bytes.Index(catalog, []byte(`{"arrow-up", ArrowUp}`))
+	search := bytes.Index(catalog, []byte(`{"search", Search}`))
 	if arrow < 0 || search < 0 || arrow > search {
-		t.Fatal("gallery does not preserve upstream filename order")
+		t.Fatalf("the catalog does not follow upstream filename order: %s", catalog)
 	}
-	mustWrite(gallery, "outdated")
-	if err := run(upstream, commit, out, gallery, true); err == nil || !strings.Contains(err.Error(), gallery+" is not up to date") {
-		t.Fatalf("gallery drift: %v", err)
-	}
-	unchanged, err := os.ReadFile(gallery)
-	if err != nil || string(unchanged) != "outdated" {
-		t.Fatal("check mode wrote the catalog")
-	}
-	if err := run(upstream, commit, out, gallery, false); err != nil {
-		t.Fatal(err)
-	}
-	mustWrite(filepath.Join(out, "icons_gen.go"), "outdated")
-	if err := run(upstream, commit, out, gallery, true); err == nil || !strings.Contains(err.Error(), "not up to date") {
+	generated := filepath.Join(out, "icons_gen.go")
+	mustWrite(generated, "outdated")
+	if err := run(upstream, commit, out, true); err == nil || !strings.Contains(err.Error(), generated+" is not up to date") {
 		t.Fatalf("drift: %v", err)
 	}
-	if err := run(upstream, strings.Repeat("0", 40), out, gallery, false); err == nil {
+	if unchanged, err := os.ReadFile(generated); err != nil || string(unchanged) != "outdated" {
+		t.Fatal("check mode wrote the package")
+	}
+	if err := run(upstream, strings.Repeat("0", 40), out, false); err == nil {
 		t.Fatal("accepted wrong revision")
 	}
 	mustWrite(filepath.Join(upstream, "LICENSE"), "dirty")
-	if err := run(upstream, commit, out, gallery, false); err == nil || !strings.Contains(err.Error(), "clean") {
+	if err := run(upstream, commit, out, false); err == nil || !strings.Contains(err.Error(), "clean") {
 		t.Fatalf("dirty checkout: %v", err)
 	}
 }

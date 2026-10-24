@@ -3,17 +3,11 @@ tasks:
   - label: Run
     group: run
     command: go
-    args: [tool, nsgo, dev, -fps, examples/base]
+    args: [tool, nsgo, dev, -fps, examples/gallery]
   - label: Build
     group: build
     command: go
-    args: [tool, nsgo, build, examples/base]
-  - label: UI gallery
-    command: go
-    args: [tool, nsgo, dev, -fps, examples/gallery]
-  - label: Hello
-    command: go
-    args: [tool, nsgo, dev, -fps, examples/hello]
+    args: [tool, nsgo, build, examples/gallery]
   - label: Website dev
     type: shell
     command: go tool nsgo dev -target web examples/gallery

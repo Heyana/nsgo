@@ -17,14 +17,11 @@ NSGo is a cross-platform native UI engine with a Go backend, ported from the des
 
 ## Components
 
-`base` and `ui` split by what an app cannot build itself, not by how NSH's crates are cut. This outranks NSH: `nsh-base` is the reference for a component's behavior and names, never for which package it belongs to.
+This repository holds the engine and `base`, and stops at what an app cannot build itself. Themes, styled controls and variants, fields and selects, settings, sidebars, command palettes and toasts are composed from `base` by apps or a component library, never added here. This outranks NSH: `nsh-base` is the reference for a component's behavior and names, never for whether it belongs here.
 
 - `base` holds the basic implementations of what the engine must own, and nothing else: text (`core.Text`), a pressable view with a role, a virtualized list, the overlay behind popups, menus, dialogs and sheets, navigation, safe areas and the keyboard.
 - Each of those takes the app's styles part by part and has no look.
-- `ui` composes `base` into everything else: styled controls and variants, fields and selects, settings, a sidebar, a command palette, toasts. A component looking complex is the sign it belongs here, since its complexity is arrangement rather than engine access.
-- A component belongs in `base` only when composing it from `base`'s parts cannot reach what it needs: a role, focus, platform input, virtualization or a system surface. Sharing a look with `ui` is never a reason.
-- When in doubt, build it in `ui`; move it down once a second component needs the same behavior and cannot share it another way.
-- In `ui`, a component's look belongs in the component's file, built from `Tokens` fields such as `theme().Border`; `Tokens` methods are only for color operations, never component looks or one-token aliases.
+- A component belongs in `base` only when composing it from `base`'s parts cannot reach what it needs: a role, focus, platform input, virtualization or a system surface. A component looking complex is the sign it does not, since its complexity is arrangement rather than engine access.
 
 ## Working with the user
 

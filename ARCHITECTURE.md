@@ -24,8 +24,7 @@ Packages mirror NSH's crates:
 | `core` | `nsh-core` | Geometry, styles, reactive graph, elements and regions, shadow tree, layout, text, SVG drawings, mount items; the animation graph's evaluator (`Animator`) and the selection model the backends run |
 | `base` | `nsh-base` | Unstyled base components: a pressable view, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack, split panes |
 | `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark), HTML (x/net/html) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
-| `ui` | `nsh-base`'s `Theme` | The theme as Go values, `base`'s components styled with it, and controls, fields, a sidebar, settings, a command palette and toasts after Onevra's |
-| `ui/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma, in NSH's palette |
+| `base/textview/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma, in NSH's palette |
 | `icons/lucide` | — (NSH loads SVG as images) | The bundled Lucide pack: one generated accessor per icon, parsed on first use ([icons](docs/architecture/icons.md)) |
 | `engine` | `nsh-engine` | Engine goroutine: an unbounded mailbox, commits, one batch per commit to the platform, and the performance monitor |
 | `core/internal/layout` | Taffy | Block, flexbox and grid layout, checked against Taffy's fixtures |
@@ -39,10 +38,8 @@ Packages mirror NSH's crates:
 | `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags and hands it the app's native components; the tool sets name and window size |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `nsgo dev` and `nsgo build`, driven by an app's `nsgo.yaml` |
 | `cmd/nsgo/apk` | `nsh-cli` (`android.rs`) | Android packaging: binary XML, ZIP and v2 signature in Go |
-| `tools/lucidegen` | — | Regenerates `icons/lucide` and the gallery's catalog from a pinned Lucide checkout |
-| `examples/hello` | `examples/counter` | A todo list: text, input, button, scroll view and keyed list, with a headless test |
-| `examples/base` | `examples/gallery-rs` | Every element, `base` component and service, a page each, in a standard window and the app's own styles, with headless tests |
-| `examples/gallery` | `examples/gallery-rs` | Every `ui` component, a page each, in the default theme, with headless tests; compiled to the web, the official website and its guide |
+| `tools/lucidegen` | — | Regenerates `icons/lucide` from a pinned Lucide checkout |
+| `examples/gallery` | `examples/gallery-rs` | Every element, `base` component and service, a page each, in a standard window and the app's own styles, with headless tests; compiled to the web, the official website |
 
 ## Platforms
 
@@ -65,13 +62,13 @@ Neither an NDK nor the Android SDK is needed for arm64: `platform/android/runtim
 
 The Linux backend loads GTK 4 at run time, so building it needs only Go. Running it needs GTK 4.14+, Pango and Cairo; web views also need WebKitGTK 6.0, videos GStreamer's plug-ins. Without WebKitGTK a web view shows a placeholder, as NSH's does.
 
-As in NSH, each Linux view is a widget its parent places at the core's frame, so hosted controls stack, clip, fade and transform with the views around them. The application menu is a GTK menu bar above the surface. The backend draws no window controls of its own, so a hidden title bar reports the app's bar height only and `ui.WindowControls` draws them.
+As in NSH, each Linux view is a widget its parent places at the core's frame, so hosted controls stack, clip, fade and transform with the views around them. The application menu is a GTK menu bar above the surface. The backend draws no window controls of its own, so a hidden title bar reports the app's bar height only and the app draws them.
 
 ## Boundaries
 
 - `core` never imports `engine`, `platform` or any cgo package. It stays pure Go and testable headless.
 - `base` depends on `core` only and has no look: it takes styles, including `StyleFunc` for each part, so apps can style it freely.
-- `ui` styles `base` with a theme. Apps change the theme with `ui.ThemeView`, adjust a component with its `Style`, or build their own components on `base`.
+- NSGo ships no theme or styled components. Apps, or a component library, compose them from `base`.
 - Backends call system APIs through purego or `syscall`, never hand-written C.
 - The platform main thread never waits for the engine. The engine never touches main-thread-only UI objects.
 - What animates runs on the platform's frame clock: transitions, animated values and layout animations are data the engine sends once, never a commit per frame. The app's frame callbacks wait for the same clock.
@@ -115,7 +112,7 @@ Record a design question here, and confirm the answer with the user before choos
 
 ## Verification
 
-`core` and `engine` have headless Go tests for the graph, layout, regions, commits and the mailbox; apps test themselves with `nsgotest`, as `examples/hello` does. The Windows and Linux backends' tests open a real window and check clicks, typing, submit and painted pixels (`go test ./platform/windows`, `go test ./platform/linux`). Backends need a run on their target: screenshots of the window, simulator, device or headless browser, and input where it can be simulated. `go test ./cmd/nsgo/apk` checks the APK's archive and, when the SDK's `apksigner` is installed, its signature.
+`core` and `engine` have headless Go tests for the graph, layout, regions, commits and the mailbox; apps test themselves with `nsgotest`, as `examples/gallery` does. The Windows and Linux backends' tests open a real window and check clicks, typing, submit and painted pixels (`go test ./platform/windows`, `go test ./platform/linux`). Backends need a run on their target: screenshots of the window, simulator, device or headless browser, and input where it can be simulated. `go test ./cmd/nsgo/apk` checks the APK's archive and, when the SDK's `apksigner` is installed, its signature.
 
 ## Subjects
 

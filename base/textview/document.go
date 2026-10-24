@@ -4,7 +4,6 @@
 // with code, tables, footnotes and the app's own syntax.
 //
 // TextView has no look, as the rest of base: it takes a style per Part.
-// ui.TextView gives it a reading typography in the theme's colors.
 package textview
 
 import (

@@ -12,7 +12,7 @@ NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the
 
 ## Status
 
-NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, animated and vector images, canvas, SVG icons with the bundled Lucide pack, web views, videos, the app's own native views, animated values and layout animations, file drops, Markdown and HTML text views, overlays, dialogs, navigation, unstyled base components and themed `ui` components, running on macOS, iOS, Windows, Linux, the web and Android devices and x86_64 emulators. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
+NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, animated and vector images, canvas, SVG icons with the bundled Lucide pack, web views, videos, the app's own native views, animated values and layout animations, file drops, Markdown and HTML text views, overlays, dialogs, navigation and unstyled base components, running on macOS, iOS, Windows, Linux, the web and Android devices and x86_64 emulators. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
 
 ## Goals
 
@@ -32,15 +32,20 @@ import (
 	"fmt"
 
 	"github.com/oneo-me/nsgo"
+	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
-	"github.com/oneo-me/nsgo/ui"
 )
 
 func Root(cx *core.Scope) core.Node {
 	count := core.NewSignal(cx, 0)
-	return ui.ThemeView{Style: core.Style{Padding: core.All(24), Gap: 12}, Children: []core.Node{
+	return core.View{Style: core.Style{Padding: core.All(24), Gap: 12}, Children: []core.Node{
 		core.Text{ContentFunc: func() string { return fmt.Sprintf("Pressed %d times", count.Get()) }},
-		ui.Button{Label: "Press me", OnPress: func(core.PressEvent) { count.Update(func(n int) int { return n + 1 }) }},
+		base.Button{
+			Label:    "Press me",
+			OnPress:  func(core.PressEvent) { count.Update(func(n int) int { return n + 1 }) },
+			Style:    core.Style{Padding: core.Symmetric(6, 14), CornerRadius: 8, Background: core.RGB(0xbd481b), Color: core.RGB(0xffffff)},
+			Children: []core.Node{core.Text{Content: "Press me"}},
+		},
 	}}
 }
 
@@ -96,17 +101,17 @@ Android device and emulator development additionally needs `adb` from the Androi
 
 The x86_64 emulator target, `android_x64`, also needs an Android NDK: Go links android/amd64 only with cgo. On Windows, Go 1.25 or later runs the native app and builds the Windows and web packages. On Linux, Go runs the native app once GTK 4.14 or newer, Pango and Cairo are installed, WebKitGTK 6.0 for web views and GStreamer plug-ins for videos.
 
-Run an example from the repository root: `examples/hello` is a todo list, `examples/base` shows every element, `base` component and service in a standard window, and `examples/gallery` shows the `ui` components.
+Run the gallery from the repository root; it shows every element, `base` component and service in a standard window.
 
 ```sh
-go tool nsgo dev examples/hello                     # nsgo.yaml's dev target, exiting with the app
-go tool nsgo dev -fps examples/hello                # with the performance monitor (macOS)
-go tool nsgo dev -target web examples/hello         # in the browser, serving until interrupted
-go tool nsgo dev -target ios_simulator examples/hello
-go tool nsgo dev -target ios examples/hello         # on the connected iPhone, signed by Xcode
-go tool nsgo dev -target android examples/hello     # on the connected device or emulator, over adb
-go tool nsgo build examples/hello                   # release packages in examples/hello/dist
-go tool nsgo build -target all examples/hello       # every platform's release packages
+go tool nsgo dev examples/gallery                   # nsgo.yaml's dev target, exiting with the app
+go tool nsgo dev -fps examples/gallery              # with the performance monitor (macOS)
+go tool nsgo dev -target web examples/gallery       # in the browser, serving until interrupted
+go tool nsgo dev -target ios_simulator examples/gallery
+go tool nsgo dev -target ios examples/gallery       # on the connected iPhone, signed by Xcode
+go tool nsgo dev -target android examples/gallery   # on the connected device or emulator, over adb
+go tool nsgo build examples/gallery                 # release packages in examples/gallery/dist
+go tool nsgo build -target all examples/gallery     # every platform's release packages
 go test ./...
 bench/run.sh                                       # measure the quotes benchmark (bench/README.md)
 ```

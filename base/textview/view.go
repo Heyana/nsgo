@@ -33,8 +33,7 @@ type TextView struct {
 	Streaming bool
 
 	// Styles style the parts; StyleFunc's result for a part goes under
-	// them, again when what it reads changes. ui.TextView passes its
-	// typography as StyleFunc.
+	// them, again when what it reads changes.
 	Styles    Styles
 	StyleFunc func(Part) core.Style
 	// Selectable makes the view a selection area: one selection runs

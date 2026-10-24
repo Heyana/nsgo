@@ -62,7 +62,7 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 
 Window chrome follows NSH's `nsh/desktop`: native controls, an app-drawn title bar.
 
-- `SetTitleBar` hides the system title bar and gives the app's bar its height, in which the platform centers its controls; `Env.TitleBar` then reports the area they keep, and views with `WindowDrag` drag the window. macOS centers the traffic lights in the bar, 16 points in from the left edge, as Onevra does; Windows draws Onevra's rounded caption buttons; Linux reports the bar's height and the app draws `ui.WindowControls`.
+- `SetTitleBar` hides the system title bar and gives the app's bar its height, in which the platform centers its controls; `Env.TitleBar` then reports the area they keep, and views with `WindowDrag` drag the window. macOS centers the traffic lights in the bar, 16 points in from the left edge, as Onevra does; Windows draws Onevra's rounded caption buttons; Linux reports the bar's height and the app draws its own buttons.
 - `Env.Maximized` reports a maximized or zoomed window, so an app-drawn maximize button can show restore.
 - The platform decides a window drag on the main thread, from the mounted props: the nearest view setting `WindowDrag` decides, and a nearer pressable, input or gesture view keeps the press.
 - `SetApplicationMenu` sends the menu as data, with handlers replaced by IDs that come back in `EventMenu`. Role items are the platform's own and are never reported. The default menu returns when the owner that set the menu goes.

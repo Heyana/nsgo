@@ -38,15 +38,13 @@ Sections run in build order: what apps build on first, then components, services
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
-| Theme tokens | `components.md` (the theme) | `ui.Theme` names shadcn/ui's tokens as NSH's does and holds the app's own by name, in NSGo's own colors |
-| Collapsible and Progress | `crates/nsh-base/src/collapsible.rs`, `progress.rs` | `base.Collapsible` keeps its content while closed; `base.Progress` reports its role and value, and `ui.Progress` builds on it |
+| Collapsible and Progress | `crates/nsh-base/src/collapsible.rs`, `progress.rs` | `base.Collapsible` keeps its content while closed; `base.Progress` reports its role and value |
 | Control details | `crates/nsh-base/src/button.rs`, `radio.rs`, `keyboard.rs`, `alert_dialog.rs` | Buttons take selected, role and press down and up; radios report selected; `KeyboardAvoidingView` animates; alerts present as action sheets |
 | Resizable panels | `dock.md` (layers) | `ResizablePanelGroup`, `ResizablePanel` and `ResizeHandle` with sizes, limits, handle parts and screen-reader steps |
 | Dock area | `dock.md` | `DockArea` reads and writes gpui-base's layout format, drags tabs between groups and docks, and shows one group at a time below 600 pt |
 | Touch-screen popups | `components.md` (popups) | Phones give popovers a backdrop and menus a bottom sheet with submenu levels; context menus open at the pointer or after a 400 ms hold |
-| System headers | `elements.md` (`<NavStack>`) | Large titles collapse on scroll, transparent headers inset scroll views, platforms measure each screen's header, and `ui.Dialog` takes the modal props |
+| System headers | `elements.md` (`<NavStack>`) | Large titles collapse on scroll, transparent headers inset scroll views, platforms measure each screen's header, and `base.Dialog` takes the modal props |
 | Sheets and tooltips | `crates/nsh-base/src/sheet.rs`, `tooltip.rs` | Sheets slide from their side over a fading backdrop and report after the motion; any element takes a tooltip that never takes the pointer |
-| Toasts | `components.md` (toasts) | `ui`'s toasts stack at an edge as gpui-base's do, expand under the pointer or a finger, swipe away and announce themselves |
 | System tab bar | `js-modules.md` (`nsh/mobile`) | iOS and Android show the system's tab bar for an app's top-level sections |
 | Text view | `text-view.md` | A streaming caret, table and code block actions, scroll bar switches, Markdown options, extensions for a subtree, highlighting off the engine goroutine |
 | List loading | `scrolling-and-lists.md` (loading at either end) | `OnLoadMore` and `OnLoadMoreAtStart` replace `OnEndReached`, with thresholds in viewports, once per approach of either end |
@@ -125,3 +123,4 @@ Go apps do not need these NSH parts:
 - Component refs, slots, render props and typed rows, since Go fields and functions carry them.
 - `EngineContext`, since a host gives each engine's app function its values directly.
 - The GPUI backend and the LayerFS trial.
+- The theme, styled controls, toasts and other components composed from `base`, which apps or a component library build on it.

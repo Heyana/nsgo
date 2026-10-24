@@ -2,7 +2,7 @@
 // lexers and NSH's reading palette, light and dark. It is a package of
 // its own because chroma's lexers add about 4.5 MB to an app.
 //
-//	ui.TextView{Markdown: reply, Highlighter: highlight.New(cx)}
+//	textview.TextView{Markdown: reply, Highlighter: highlight.New(cx)}
 package highlight
 
 import (
@@ -13,17 +13,16 @@ import (
 
 	"github.com/oneo-me/nsgo/base/textview"
 	"github.com/oneo-me/nsgo/core"
-	"github.com/oneo-me/nsgo/ui"
 )
 
-// New returns a highlighter colored for the appearance of the nearest
-// ui.ThemeView, so an appearance change colors the code again without
-// lexing it again. A language chroma does not know leaves the code plain.
+// New returns a highlighter colored for the system's appearance, so an
+// appearance change colors the code again without lexing it again. A
+// language chroma does not know leaves the code plain.
 func New(cx *core.Scope) textview.Highlighter {
-	theme := ui.UseTheme(cx)
+	env := cx.Env()
 	return func(c textview.CodeBlock) []textview.Highlight {
 		palette := &light
-		if theme().Dark {
+		if env.Dark() {
 			palette = &dark
 		}
 		toks := tokens(c.Language, c.Code)

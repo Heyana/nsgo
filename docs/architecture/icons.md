@@ -39,7 +39,7 @@ Parsing reads the document into a tree first, so references may point forward, t
 
 `icons/lucide` has one accessor per icon of a pinned Lucide release. `upstream.json` records the repository, the full commit and a digest of the license and icons. Each accessor parses its document on first use and returns the same `*core.SVG` afterwards; a zero-value cache keeps unused icons out of package initializers, so a binary carries only the icons it uses.
 
-There is no runtime registry. The exhaustive catalog lives in `icons_gen_test.go` and in the gallery's generated `icons_gen.go`, so the package carries only what an app imports.
+There is no runtime registry. The exhaustive catalog lives in `icons_gen_test.go`, so the package carries only what an app imports.
 
 Regenerate from the repository root with a clean Lucide checkout at the commit:
 
@@ -49,7 +49,7 @@ go run ./tools/lucidegen -upstream /path/to/lucide -commit <40-character-commit>
 ```
 
 - The generator requires a clean checkout at exactly that commit, parses every icon with `core.ParseSVG` and rejects any icon that is not 24 by 24.
-- It writes `icons/lucide/icons_gen.go`, `icons_gen_test.go`, `LICENSE` and `upstream.json`, and the gallery's catalog.
+- It writes `icons/lucide/icons_gen.go`, `icons_gen_test.go`, `LICENSE` and `upstream.json`.
 - It reports accessors added and removed. Review removals and renames before accepting an update, since they change the public API.
 - `-check` verifies the files without writing them.
 - Names are upstream kebab-case in PascalCase; upstream aliases and lab icons are excluded.
@@ -58,4 +58,4 @@ The pack keeps Lucide's ISC license and Feather's MIT notice in `icons/lucide/LI
 
 ## Verification
 
-`go test ./core -run SVG` covers the parser, the path grammar and fitting; `go test ./platform/internal/imagedecode` checks rasterized SVG pixels, decoded frames and the bounds. `go test ./icons/lucide` parses every icon, checks its size and that accessors share their document. The gallery's Lucide section reviews the pack by eye: sizes, colors, buttons and the filtered browser, in both appearances on a running target.
+`go test ./core -run SVG` covers the parser, the path grammar and fitting; `go test ./platform/internal/imagedecode` checks rasterized SVG pixels, decoded frames and the bounds. `go test ./icons/lucide` parses every icon, checks its size and that accessors share their document.

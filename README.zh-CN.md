@@ -12,7 +12,7 @@ NSGo 参考 [Native Shell（NSH）](https://nsh.dev) 的设计，NSH 用 Rust �
 
 ## 状态
 
-NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、动图与矢量图片、画布、自带 Lucide 图标包的 SVG 图标、网页视图、视频、应用自己的原生视图、动画值与布局动画、文件拖放、Markdown 和 HTML 文本视图、浮层、对话框、导航、无样式基础组件和带主题的 `ui` 组件，可在 macOS、iOS、Windows、Linux、Web 和 Android 设备及 x86_64 模拟器上运行。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
+NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、动图与矢量图片、画布、自带 Lucide 图标包的 SVG 图标、网页视图、视频、应用自己的原生视图、动画值与布局动画、文件拖放、Markdown 和 HTML 文本视图、浮层、对话框、导航和无样式基础组件，可在 macOS、iOS、Windows、Linux、Web 和 Android 设备及 x86_64 模拟器上运行。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
 
 ## 目标
 
@@ -32,15 +32,20 @@ import (
 	"fmt"
 
 	"github.com/oneo-me/nsgo"
+	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
-	"github.com/oneo-me/nsgo/ui"
 )
 
 func Root(cx *core.Scope) core.Node {
 	count := core.NewSignal(cx, 0)
-	return ui.ThemeView{Style: core.Style{Padding: core.All(24), Gap: 12}, Children: []core.Node{
+	return core.View{Style: core.Style{Padding: core.All(24), Gap: 12}, Children: []core.Node{
 		core.Text{ContentFunc: func() string { return fmt.Sprintf("Pressed %d times", count.Get()) }},
-		ui.Button{Label: "Press me", OnPress: func(core.PressEvent) { count.Update(func(n int) int { return n + 1 }) }},
+		base.Button{
+			Label:    "Press me",
+			OnPress:  func(core.PressEvent) { count.Update(func(n int) int { return n + 1 }) },
+			Style:    core.Style{Padding: core.Symmetric(6, 14), CornerRadius: 8, Background: core.RGB(0xbd481b), Color: core.RGB(0xffffff)},
+			Children: []core.Node{core.Text{Content: "Press me"}},
+		},
 	}}
 }
 
@@ -96,17 +101,17 @@ Android 真机和模拟器开发还需要 Android SDK platform-tools 中的 `adb
 
 x86_64 模拟器目标 `android_x64` 还需要 Android NDK：Go 只能通过 cgo 链接 android/amd64。在 Windows 上，只需 Go 1.25 或更高版本即可运行原生应用，并构建 Windows 和 Web 包。在 Linux 上，安装 GTK 4.14 或更高版本、Pango 和 Cairo 后即可用 Go 运行原生应用；网页视图还需要 WebKitGTK 6.0，视频还需要 GStreamer 插件。
 
-在仓库根目录运行示例：`examples/hello` 是一个待办列表，`examples/base` 在标准窗口中展示所有元素、`base` 组件和服务，`examples/gallery` 展示 `ui` 组件。
+在仓库根目录运行 gallery，它在标准窗口中展示所有元素、`base` 组件和服务。
 
 ```sh
-go tool nsgo dev examples/hello                     # nsgo.yaml 的 dev 目标，应用退出后随之退出
-go tool nsgo dev -fps examples/hello                # 显示性能监视器（macOS）
-go tool nsgo dev -target web examples/hello         # 在浏览器中运行，直到中断
-go tool nsgo dev -target ios_simulator examples/hello
-go tool nsgo dev -target ios examples/hello         # 在已连接的 iPhone 上运行，由 Xcode 签名
-go tool nsgo dev -target android examples/hello     # 在已连接的设备或模拟器上运行，通过 adb
-go tool nsgo build examples/hello                   # 在 examples/hello/dist 中生成发布包
-go tool nsgo build -target all examples/hello       # 生成所有平台的发布包
+go tool nsgo dev examples/gallery                   # nsgo.yaml 的 dev 目标，应用退出后随之退出
+go tool nsgo dev -fps examples/gallery              # 显示性能监视器（macOS）
+go tool nsgo dev -target web examples/gallery       # 在浏览器中运行，直到中断
+go tool nsgo dev -target ios_simulator examples/gallery
+go tool nsgo dev -target ios examples/gallery       # 在已连接的 iPhone 上运行，由 Xcode 签名
+go tool nsgo dev -target android examples/gallery   # 在已连接的设备或模拟器上运行，通过 adb
+go tool nsgo build examples/gallery                 # 在 examples/gallery/dist 中生成发布包
+go tool nsgo build -target all examples/gallery     # 生成所有平台的发布包
 go test ./...
 bench/run.sh                                       # 测量行情表基准（见 bench/README.md）
 ```
