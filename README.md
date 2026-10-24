@@ -116,7 +116,7 @@ go test ./...
 bench/run.sh                                       # measure the quotes benchmark (bench/README.md)
 ```
 
-Run `go test ./platform/windows` on Windows or `go test ./platform/linux` on Linux to open a real window and check input and painting; they skip where no desktop is available.
+Run `go test ./internal/platform/windows` on Windows or `go test ./internal/platform/linux` on Linux to open a real window and check input and painting; they skip where no desktop is available.
 
 NSGo uses NSH as its reference implementation. Clone it into `nsh/` at the repository root; Git ignores that directory:
 

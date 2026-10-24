@@ -3,6 +3,8 @@ package core
 import (
 	"slices"
 	"strings"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 // Keyboard shortcuts: the surface's table of bindings goes to the
@@ -10,22 +12,9 @@ import (
 // the presses that match and reports them with EventKey.
 
 type keyBinding struct {
-	KeyBinding
+	driver.KeyBinding
 	owner *Scope
 	fn    func()
-}
-
-// KeyBinding is one binding of the keymap the platform matches key
-// presses against, on the main thread.
-type KeyBinding struct {
-	// Key is normalized, as NormalizeKey writes it.
-	Key string
-	// InText fires it while a text input or a web view has the keyboard
-	// focus.
-	InText bool
-	// Repeat fires it again on the auto-repeats of a held key; else they
-	// are consumed and fire nothing.
-	Repeat bool
 }
 
 // KeyWhen says when a binding fires.
@@ -63,9 +52,9 @@ func (cx *Scope) OnKeyWith(key string, opts KeyOptions, fn func()) {
 	if t == nil {
 		return
 	}
-	k := NormalizeKey(key)
+	k := driver.NormalizeKey(key)
 	inText := opts.When == KeyAlways || opts.When == KeyAuto && !EditsText(k)
-	b := &keyBinding{KeyBinding: KeyBinding{Key: k, InText: inText, Repeat: opts.Repeat}, owner: cx.current(), fn: fn}
+	b := &keyBinding{KeyBinding: driver.KeyBinding{Key: k, InText: inText, Repeat: opts.Repeat}, owner: cx.current(), fn: fn}
 	t.keys = append(t.keys, b)
 	t.keysChanged = true
 	t.changed = true
@@ -96,32 +85,9 @@ func (cx *Scope) OnBackPress(fn func() bool) {
 	b.owner.addCleanup(func() { t.backs = slices.DeleteFunc(t.backs, func(o *backHandler) bool { return o == b }) })
 }
 
-// NormalizeKey returns key lowercased with its modifiers in the order
-// mod, ctrl, alt, shift, meta; "cmd" and "command" are meta, "option" is
-// alt and "control" is ctrl.
-func NormalizeKey(key string) string {
-	parts := strings.Split(strings.ToLower(strings.ReplaceAll(key, " ", "")), "+")
-	name := parts[len(parts)-1]
-	alias := map[string]string{"cmd": "meta", "command": "meta", "option": "alt", "control": "ctrl"}
-	var given []string
-	for _, m := range parts[:len(parts)-1] {
-		if a, ok := alias[m]; ok {
-			m = a
-		}
-		given = append(given, m)
-	}
-	var mods []string
-	for _, m := range []string{"mod", "ctrl", "alt", "shift", "meta"} {
-		if slices.Contains(given, m) {
-			mods = append(mods, m)
-		}
-	}
-	return strings.Join(append(mods, name), "+")
-}
-
 // keymap returns the bindings, oldest first: the newest of a key wins.
-func (t *Tree) keymap() []KeyBinding {
-	out := make([]KeyBinding, 0, len(t.keys))
+func (t *Tree) keymap() []driver.KeyBinding {
+	out := make([]driver.KeyBinding, 0, len(t.keys))
 	for _, b := range t.keys {
 		out = append(out, b.KeyBinding)
 	}
@@ -129,33 +95,13 @@ func (t *Tree) keymap() []KeyBinding {
 }
 
 func (t *Tree) pressKey(key string) {
-	key = NormalizeKey(key)
+	key = driver.NormalizeKey(key)
 	for i := len(t.keys) - 1; i >= 0; i-- {
 		if b := t.keys[i]; b.Key == key && !b.owner.disposed {
 			t.within(b.owner, b.fn)
 			return
 		}
 	}
-}
-
-// FindKey says what a key press does with keymap: names are the press's
-// normalized names (with "mod" and with the literal modifier), editing
-// whether a text input or web view has the keyboard focus, and repeat
-// whether it is a held key's auto-repeat. It returns the binding that
-// fires, or "" and whether the press is consumed anyway: the repeat of a
-// binding that fires once.
-func FindKey(keymap []KeyBinding, names []string, editing, repeat bool) (key string, consumed bool) {
-	for i := len(keymap) - 1; i >= 0; i-- {
-		b := keymap[i]
-		if !slices.Contains(names, b.Key) || editing && !b.InText {
-			continue
-		}
-		if repeat && !b.Repeat {
-			return "", true
-		}
-		return b.Key, true
-	}
-	return "", false
 }
 
 // EditsText reports whether a text input with the keyboard focus uses
@@ -179,7 +125,7 @@ func EditsText(key string) bool {
 // Command (apple), else Ctrl+Alt+Shift+K, with "meta" as Win on Windows,
 // Meta on the web and Super elsewhere.
 func KeyLabel(key string, os OS, apple bool) string {
-	parts := strings.Split(NormalizeKey(key), "+")
+	parts := strings.Split(driver.NormalizeKey(key), "+")
 	name, mods := parts[len(parts)-1], parts[:len(parts)-1]
 	has := func(m string) bool { return slices.Contains(mods, m) }
 	ctrl, cmd := has("ctrl"), has("meta")
@@ -247,7 +193,7 @@ func (cx *Scope) KeyLabel(key string) string {
 // SetTitle sets the window's title on desktops and the page's on the web.
 func (cx *Scope) SetTitle(title string) {
 	if t := cx.rt.tree; t != nil {
-		t.commands = append(t.commands, MountItem{Kind: ItemTitle, Value: title})
+		t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemTitle, Value: title})
 		t.changed = true
 	}
 }

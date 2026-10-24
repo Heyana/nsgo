@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 func TestResizeModeFit(t *testing.T) {
-	box := Size{100, 50}
+	box := Size{Width: 100, Height: 50}
 	end := ObjectPosition{X: PositionEnd, Y: PositionEnd}
 	for _, c := range []struct {
 		name    string
@@ -16,19 +18,19 @@ func TestResizeModeFit(t *testing.T) {
 		pos     ObjectPosition
 		want    Bounds
 	}{
-		{"cover", Cover, Size{20, 20}, ObjectPosition{}, Bounds{Point{0, -25}, Size{100, 100}}},
-		{"cover at the top", Cover, Size{20, 20}, ObjectPosition{Y: PositionStart}, Bounds{Point{0, 0}, Size{100, 100}}},
-		{"contain", Contain, Size{20, 20}, ObjectPosition{}, Bounds{Point{25, 0}, Size{50, 50}}},
-		{"contain at the end", Contain, Size{20, 20}, end, Bounds{Point{50, 0}, Size{50, 50}}},
-		{"stretch", Stretch, Size{20, 20}, end, Bounds{Size: box}},
-		{"center keeps a small size", Center, Size{20, 10}, ObjectPosition{}, Bounds{Point{40, 20}, Size{20, 10}}},
-		{"center keeps a large size", Center, Size{200, 100}, ObjectPosition{}, Bounds{Point{-50, -25}, Size{200, 100}}},
-		{"scale-down keeps a small size", ScaleDown, Size{20, 10}, ObjectPosition{}, Bounds{Point{40, 20}, Size{20, 10}}},
-		{"scale-down shrinks a large one", ScaleDown, Size{200, 200}, ObjectPosition{}, Bounds{Point{25, 0}, Size{50, 50}}},
-		{"points from the end", Center, Size{20, 10},
+		{"cover", Cover, Size{Width: 20, Height: 20}, ObjectPosition{}, Bounds{Origin: Point{X: 0, Y: -25}, Size: Size{Width: 100, Height: 100}}},
+		{"cover at the top", Cover, Size{Width: 20, Height: 20}, ObjectPosition{Y: PositionStart}, Bounds{Origin: Point{X: 0, Y: 0}, Size: Size{Width: 100, Height: 100}}},
+		{"contain", Contain, Size{Width: 20, Height: 20}, ObjectPosition{}, Bounds{Origin: Point{X: 25, Y: 0}, Size: Size{Width: 50, Height: 50}}},
+		{"contain at the end", Contain, Size{Width: 20, Height: 20}, end, Bounds{Origin: Point{X: 50, Y: 0}, Size: Size{Width: 50, Height: 50}}},
+		{"stretch", Stretch, Size{Width: 20, Height: 20}, end, Bounds{Size: box}},
+		{"center keeps a small size", Center, Size{Width: 20, Height: 10}, ObjectPosition{}, Bounds{Origin: Point{X: 40, Y: 20}, Size: Size{Width: 20, Height: 10}}},
+		{"center keeps a large size", Center, Size{Width: 200, Height: 100}, ObjectPosition{}, Bounds{Origin: Point{X: -50, Y: -25}, Size: Size{Width: 200, Height: 100}}},
+		{"scale-down keeps a small size", ScaleDown, Size{Width: 20, Height: 10}, ObjectPosition{}, Bounds{Origin: Point{X: 40, Y: 20}, Size: Size{Width: 20, Height: 10}}},
+		{"scale-down shrinks a large one", ScaleDown, Size{Width: 200, Height: 200}, ObjectPosition{}, Bounds{Origin: Point{X: 25, Y: 0}, Size: Size{Width: 50, Height: 50}}},
+		{"points from the end", Center, Size{Width: 20, Height: 10},
 			ObjectPosition{X: PositionAxis{Offset: Pt(10), FromEnd: true}, Y: PositionAxis{Offset: Pt(5)}},
-			Bounds{Point{70, 5}, Size{20, 10}}},
-		{"percent", Center, Size{20, 10}, ObjectPosition{X: PositionAxis{Offset: Pct(25)}}, Bounds{Point{20, 20}, Size{20, 10}}},
+			Bounds{Origin: Point{X: 70, Y: 5}, Size: Size{Width: 20, Height: 10}}},
+		{"percent", Center, Size{Width: 20, Height: 10}, ObjectPosition{X: PositionAxis{Offset: Pct(25)}}, Bounds{Origin: Point{X: 20, Y: 20}, Size: Size{Width: 20, Height: 10}}},
 		{"no natural size", Contain, Size{}, end, Bounds{Size: box}},
 	} {
 		if got := c.mode.Fit(c.natural, box, c.pos); got != c.want {
@@ -39,7 +41,7 @@ func TestResizeModeFit(t *testing.T) {
 
 func TestObjectPositionReachesTheImageItemOnly(t *testing.T) {
 	var top *Signal[bool]
-	h := newHost(t, Size{200, 200}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
 		top = NewSignal(cx, false)
 		return Image{Source: Src("https://x/y.png"), TestID: "image", StyleFunc: func() Style {
 			s := Style{Width: Pt(100), Height: Pt(100)}
@@ -59,12 +61,12 @@ func TestObjectPositionReachesTheImageItemOnly(t *testing.T) {
 			continue
 		}
 		switch it.Kind {
-		case ItemImage:
+		case driver.ItemImage:
 			images++
 			if it.Image.Position.Y != PositionStart {
 				t.Errorf("position = %+v, want the top", it.Image.Position)
 			}
-		case ItemViewStyle:
+		case driver.ItemViewStyle:
 			styles++
 		}
 	}
@@ -76,7 +78,7 @@ func TestObjectPositionReachesTheImageItemOnly(t *testing.T) {
 func TestImageSizeAsksThePlatform(t *testing.T) {
 	var got []string
 	var root *Scope
-	h := newHost(t, Size{200, 200}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
 		root = cx
 		return View{}
 	})
@@ -89,19 +91,19 @@ func TestImageSizeAsksThePlatform(t *testing.T) {
 		got = append(got, fmt.Sprint("prefetched ", ok))
 	})
 	b := h.commit()
-	var asks []MountItem
+	var asks []driver.MountItem
 	for _, it := range b.Items {
-		if it.Kind == ItemImageInfo {
+		if it.Kind == driver.ItemImageInfo {
 			asks = append(asks, it)
 		}
 	}
 	if len(asks) != 2 || asks[0].Image.Source.URI != "asset:/a@2x.png" || asks[1].Image.Source.URI != "https://x/missing.png" {
 		t.Fatalf("asks = %+v, want the @2x variant then the URL", asks)
 	}
-	h.tree.Dispatch(Event{Kind: EventImageInfo, Count: asks[1].Count, Text: "404"})
-	h.tree.Dispatch(Event{Kind: EventImageInfo, Count: asks[0].Count, Size: Size{80, 40}})
-	h.tree.Dispatch(Event{Kind: EventImageInfo, Count: asks[0].Count, Size: Size{1, 1}}) // answered already
-	want := []string{"prefetched false", fmt.Sprint("size ", Size{80, 40}, " <nil>")}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventImageInfo, Count: asks[1].Count, Text: "404"})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventImageInfo, Count: asks[0].Count, Size: Size{Width: 80, Height: 40}})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventImageInfo, Count: asks[0].Count, Size: Size{Width: 1, Height: 1}}) // answered already
+	want := []string{"prefetched false", fmt.Sprint("size ", Size{Width: 80, Height: 40}, " <nil>")}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %q, want %q", got, want)
 	}

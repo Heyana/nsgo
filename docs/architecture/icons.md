@@ -2,7 +2,7 @@
 
 `core.Icon` draws an SVG as an icon in the text color it inherits, and `icons/lucide` is the bundled Lucide pack. Read this before changing SVG parsing, the icon element or the generated pack.
 
-An icon is a vector element, not an image: `core.SVG` turns a document into canvas operations, and every backend already plays those, so icons need no rasterizer, no per-platform SVG engine and no pixel-density variants. SVG files loaded as an `Image` take the image path instead, as in NSH: `platform/internal/imagedecode` plays `core.SVG`'s operations into pixels ([images](images.md)).
+An icon is a vector element, not an image: `core.SVG` turns a document into canvas operations, and every backend already plays those, so icons need no rasterizer, no per-platform SVG engine and no pixel-density variants. SVG files loaded as an `Image` take the image path instead, as in NSH: `internal/platform/imagedecode` plays `core.SVG`'s operations into pixels ([images](images.md)).
 
 ## SVG documents
 
@@ -58,4 +58,4 @@ The pack keeps Lucide's ISC license and Feather's MIT notice in `icons/lucide/LI
 
 ## Verification
 
-`go test ./core -run SVG` covers the parser, the path grammar and fitting; `go test ./platform/internal/imagedecode` checks rasterized SVG pixels, decoded frames and the bounds. `go test ./icons/lucide` parses every icon, checks its size and that accessors share their document.
+`go test ./internal/driver -run SVG` covers the parser, the path grammar and fitting; `go test ./internal/platform/imagedecode` checks rasterized SVG pixels, decoded frames and the bounds. `go test ./icons/lucide` parses every icon, checks its size and that accessors share their document.

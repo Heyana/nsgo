@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 // host runs a tree headless: posts queue until drain, text is approximate.
@@ -70,7 +72,7 @@ func (h *host) frame() {
 
 // advanceFrame moves the clock one frame and runs the frame it makes due.
 func (h *host) advanceFrame() {
-	h.clock.Advance(FrameInterval)
+	h.clock.Advance(driver.FrameInterval)
 	h.frame()
 	h.drain()
 }
@@ -87,11 +89,11 @@ func (h *host) waitPost() {
 	}
 }
 
-func (h *host) commit() *MountBatch {
+func (h *host) commit() *driver.MountBatch {
 	h.t.Helper()
 	b := h.tree.Commit()
 	if b == nil {
-		return &MountBatch{}
+		return &driver.MountBatch{}
 	}
 	return b
 }
@@ -106,8 +108,8 @@ func (h *host) find(testID string) *node {
 	return nil
 }
 
-func kinds(b *MountBatch) map[ItemKind]int {
-	out := map[ItemKind]int{}
+func kinds(b *driver.MountBatch) map[driver.ItemKind]int {
+	out := map[driver.ItemKind]int{}
 	for _, it := range b.Items {
 		out[it.Kind]++
 	}
@@ -189,7 +191,7 @@ var themeKey = NewKey("theme", "light")
 
 func TestContextAndPost(t *testing.T) {
 	var seen []string
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		themeKey.Provide(cx, "dark")
 		return Func(func(cx *Scope) Node {
 			seen = append(seen, themeKey.Use(cx))
@@ -213,7 +215,7 @@ func TestContextAndPost(t *testing.T) {
 }
 
 func TestAfterFuncRunsOnClock(t *testing.T) {
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		n := NewSignal(cx, 0)
 		cx.AfterFunc(time.Second, func() { n.Set(1) })
 		return Text{ContentFunc: func() string { return strconv.Itoa(n.Get()) }, TestID: "n"}
@@ -230,10 +232,10 @@ func TestAfterFuncRunsOnClock(t *testing.T) {
 	}
 }
 
-func frames(b *MountBatch) map[NodeID]Bounds {
+func frames(b *driver.MountBatch) map[NodeID]Bounds {
 	out := map[NodeID]Bounds{}
 	for _, it := range b.Items {
-		if it.Kind == ItemFrame {
+		if it.Kind == driver.ItemFrame {
 			out[it.ID] = it.Frame
 		}
 	}
@@ -241,7 +243,7 @@ func frames(b *MountBatch) map[NodeID]Bounds {
 }
 
 func TestColumnStretchesAndPads(t *testing.T) {
-	h := newHost(t, Size{200, 300}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 300}, func(cx *Scope) Node {
 		return View{Style: Style{Padding: All(10), Gap: 5, FlexGrow: 1}, TestID: "root", Children: []Node{
 			Text{Content: "hello", Style: Style{FontSize: 10}, TestID: "text"},
 			Input{Style: Style{Height: Pt(40)}, TestID: "input"},
@@ -249,9 +251,9 @@ func TestColumnStretchesAndPads(t *testing.T) {
 	})
 	h.commit()
 	cases := map[string]Bounds{
-		"root":  {Size: Size{200, 300}},
-		"text":  {Point{10, 10}, Size{180, 12}},
-		"input": {Point{10, 27}, Size{180, 40}},
+		"root":  {Size: Size{Width: 200, Height: 300}},
+		"text":  {Origin: Point{X: 10, Y: 10}, Size: Size{Width: 180, Height: 12}},
+		"input": {Origin: Point{X: 10, Y: 27}, Size: Size{Width: 180, Height: 40}},
 	}
 	for id, want := range cases {
 		if got := h.find(id).frame; got != want {
@@ -261,7 +263,7 @@ func TestColumnStretchesAndPads(t *testing.T) {
 }
 
 func TestRowGrowsShrinksAndCenters(t *testing.T) {
-	h := newHost(t, Size{100, 50}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 50}, func(cx *Scope) Node {
 		return View{Style: Style{Direction: Row, Height: Pt(50), AlignItems: AlignCenter}, Children: []Node{
 			View{Style: Style{Width: Pt(30), Height: Pt(20)}, TestID: "fixed"},
 			View{Style: Style{FlexGrow: 1, Height: Pt(10)}, TestID: "grow"},
@@ -270,9 +272,9 @@ func TestRowGrowsShrinksAndCenters(t *testing.T) {
 	})
 	h.commit()
 	cases := map[string]Bounds{
-		"fixed":  {Point{0, 15}, Size{30, 20}},
-		"grow":   {Point{30, 20}, Size{0, 10}},
-		"shrink": {Point{30, 20}, Size{70, 10}},
+		"fixed":  {Origin: Point{X: 0, Y: 15}, Size: Size{Width: 30, Height: 20}},
+		"grow":   {Origin: Point{X: 30, Y: 20}, Size: Size{Width: 0, Height: 10}},
+		"shrink": {Origin: Point{X: 30, Y: 20}, Size: Size{Width: 70, Height: 10}},
 	}
 	for id, want := range cases {
 		if got := h.find(id).frame; got != want {
@@ -282,7 +284,7 @@ func TestRowGrowsShrinksAndCenters(t *testing.T) {
 }
 
 func TestWrapAbsoluteAndPercent(t *testing.T) {
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		return View{Style: Style{Direction: Row, Wrap: Wrap, Gap: 10, Height: Pct(100)}, Children: []Node{
 			View{Style: Style{Width: Pct(50), Height: Pt(10)}, TestID: "a"},
 			View{Style: Style{Width: Pct(50), Height: Pt(10)}, TestID: "b"},
@@ -291,9 +293,9 @@ func TestWrapAbsoluteAndPercent(t *testing.T) {
 	})
 	h.commit()
 	cases := map[string]Bounds{
-		"a":   {Point{0, 0}, Size{50, 10}},
-		"b":   {Point{0, 20}, Size{50, 10}},
-		"abs": {Point{75, 75}, Size{20, 20}},
+		"a":   {Origin: Point{X: 0, Y: 0}, Size: Size{Width: 50, Height: 10}},
+		"b":   {Origin: Point{X: 0, Y: 20}, Size: Size{Width: 50, Height: 10}},
+		"abs": {Origin: Point{X: 75, Y: 75}, Size: Size{Width: 20, Height: 20}},
 	}
 	for id, want := range cases {
 		if got := h.find(id).frame; got != want {
@@ -303,7 +305,7 @@ func TestWrapAbsoluteAndPercent(t *testing.T) {
 }
 
 func TestTextInheritsAndWraps(t *testing.T) {
-	h := newHost(t, Size{30, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 30, Height: 100}, func(cx *Scope) Node {
 		return View{Style: Style{FontSize: 10, Color: RGB(0xff0000)}, Children: []Node{
 			Text{Content: "aaaa bbbb", TestID: "text"},
 		}}
@@ -313,14 +315,14 @@ func TestTextInheritsAndWraps(t *testing.T) {
 	if n.text.style.Font.Size != 10 || n.text.style.Color != RGB(0xff0000) {
 		t.Errorf("style = %+v, want inherited size and color", n.text.style)
 	}
-	if got, want := n.frame.Size, (Size{30, 24}); got != want {
+	if got, want := n.frame.Size, (Size{Width: 30, Height: 24}); got != want {
 		t.Errorf("size = %v, want %v (stretched, two lines)", got, want)
 	}
 }
 
 func TestCommitSendsOnlyChanges(t *testing.T) {
 	var count *Signal[int]
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		count = NewSignal(cx, 0)
 		return View{Children: []Node{
 			Text{ContentFunc: func() string { return strconv.Itoa(count.Get()) }, TestID: "n"},
@@ -328,19 +330,19 @@ func TestCommitSendsOnlyChanges(t *testing.T) {
 		}}
 	})
 	first := h.commit()
-	if k := kinds(first); k[ItemCreate] != 4 || k[ItemInsert] != 3 {
+	if k := kinds(first); k[driver.ItemCreate] != 4 || k[driver.ItemInsert] != 3 {
 		t.Fatalf("first batch kinds = %v", k)
 	}
 	if h.tree.Commit() != nil {
 		t.Fatal("an unchanged tree commits again")
 	}
 	button := h.find("button")
-	if got := h.tree.HitTest(Point{50, 40}); got != button.id {
+	if got := h.tree.HitTest(Point{X: 50, Y: 40}); got != button.id {
 		t.Fatalf("hit test = %d, want %d", got, button.id)
 	}
-	h.tree.Dispatch(Event{Kind: EventPress, ID: button.id})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPress, ID: button.id})
 	b := h.commit()
-	if k := kinds(b); k[ItemText] != 1 || len(b.Items) != 1 {
+	if k := kinds(b); k[driver.ItemText] != 1 || len(b.Items) != 1 {
 		t.Errorf("batch after press = %v, want one text item", k)
 	}
 }
@@ -348,7 +350,7 @@ func TestCommitSendsOnlyChanges(t *testing.T) {
 func TestShowAndEachMountAndUnmount(t *testing.T) {
 	var open *Signal[bool]
 	var items *Signal[[]string]
-	h := newHost(t, Size{100, 200}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 200}, func(cx *Scope) Node {
 		open = NewSignal(cx, true)
 		items = NewSignalFunc(cx, []string{"a", "b", "c"}, nil)
 		return View{TestID: "list", Children: []Node{
@@ -372,7 +374,7 @@ func TestShowAndEachMountAndUnmount(t *testing.T) {
 
 	open.Set(false)
 	b := h.commit()
-	if k := kinds(b); k[ItemDelete] != 1 {
+	if k := kinds(b); k[driver.ItemDelete] != 1 {
 		t.Errorf("closing kinds = %v, want one delete", k)
 	}
 
@@ -380,7 +382,7 @@ func TestShowAndEachMountAndUnmount(t *testing.T) {
 	items.Set([]string{"c", "a", "d"})
 	b = h.commit()
 	k := kinds(b)
-	if k[ItemDelete] != 1 || k[ItemCreate] != 1 {
+	if k[driver.ItemDelete] != 1 || k[driver.ItemCreate] != 1 {
 		t.Errorf("reorder kinds = %v, want b deleted and d created", k)
 	}
 	if h.find("row-c") != c {
@@ -390,15 +392,15 @@ func TestShowAndEachMountAndUnmount(t *testing.T) {
 		t.Errorf("children = %q", got)
 	}
 	// c moved before a: one insert for c, one for the new d.
-	if k[ItemInsert] != 2 {
-		t.Errorf("inserts = %d, want 2", k[ItemInsert])
+	if k[driver.ItemInsert] != 2 {
+		t.Errorf("inserts = %d, want 2", k[driver.ItemInsert])
 	}
 }
 
 func TestCatchShowsFallbackAndResets(t *testing.T) {
 	var fail *Signal[bool]
 	var reset func()
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		fail = NewSignal(cx, false)
 		return Catch{
 			Try: func(cx *Scope) Node {
@@ -432,7 +434,7 @@ func TestCatchShowsFallbackAndResets(t *testing.T) {
 
 func TestInputEditIsNotMountedBack(t *testing.T) {
 	var name *Signal[string]
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		name = NewSignal(cx, "")
 		upper := func(s string) {
 			if len(s) <= 3 {
@@ -444,7 +446,7 @@ func TestInputEditIsNotMountedBack(t *testing.T) {
 	h.commit()
 	in := h.find("input")
 
-	h.tree.Dispatch(Event{Kind: EventChangeText, ID: in.id, Text: "Go", Count: 1})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventChangeText, ID: in.id, Text: "Go", Count: 1})
 	if name.Get() != "Go" {
 		t.Fatalf("signal = %q", name.Get())
 	}
@@ -453,15 +455,15 @@ func TestInputEditIsNotMountedBack(t *testing.T) {
 	}
 
 	// The app refuses a fourth character: the field goes back.
-	h.tree.Dispatch(Event{Kind: EventChangeText, ID: in.id, Text: "Gooo", Count: 2})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventChangeText, ID: in.id, Text: "Gooo", Count: 2})
 	b := h.commit()
-	if len(b.Items) != 1 || b.Items[0].Kind != ItemInputValue || b.Items[0].Value != "Go" || b.Items[0].Count != 2 {
+	if len(b.Items) != 1 || b.Items[0].Kind != driver.ItemInputValue || b.Items[0].Value != "Go" || b.Items[0].Count != 2 {
 		t.Fatalf("items = %+v, want the value Go after edit 2", b.Items)
 	}
 }
 
 func TestScrollContentSize(t *testing.T) {
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		return Scroll{Style: Style{FlexGrow: 1}, TestID: "scroll", Children: []Node{
 			View{Style: Style{Height: Pt(80)}},
 			View{Style: Style{Height: Pt(80)}},
@@ -469,7 +471,7 @@ func TestScrollContentSize(t *testing.T) {
 	})
 	h.commit()
 	s := h.find("scroll")
-	if got, want := s.scroll.content, (Size{100, 160}); got != want {
+	if got, want := s.scroll.content, (Size{Width: 100, Height: 160}); got != want {
 		t.Fatalf("content = %v, want %v", got, want)
 	}
 }
@@ -484,7 +486,7 @@ func TestIncreasingRun(t *testing.T) {
 
 func TestStateStyles(t *testing.T) {
 	var disabled *Signal[bool]
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		disabled = NewSignal(cx, false)
 		return View{
 			Style: Style{Background: RGB(0x0000ff),
@@ -498,30 +500,30 @@ func TestStateStyles(t *testing.T) {
 	})
 	h.commit()
 	n := h.find("button")
-	if m := n.events(); !m.Has(EventPressDown) || !m.Has(EventHoverIn) {
+	if m := n.events(); !m.Has(driver.EventPressDown) || !m.Has(driver.EventHoverIn) {
 		t.Fatalf("mask = %b, want press down and hover reported", m)
 	}
 	bg := func() Color { return n.style.Background }
-	h.tree.Dispatch(Event{Kind: EventHoverIn, ID: n.id})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventHoverIn, ID: n.id})
 	if bg() != RGB(0x00ff00) {
 		t.Errorf("hovered = %x", bg())
 	}
-	h.tree.Dispatch(Event{Kind: EventPressDown, ID: n.id})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPressDown, ID: n.id})
 	if bg() != RGB(0xff0000) {
 		t.Errorf("pressed = %x, want active over hover", bg())
 	}
-	h.tree.Dispatch(Event{Kind: EventPressUp, ID: n.id})
-	h.tree.Dispatch(Event{Kind: EventHoverOut, ID: n.id})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPressUp, ID: n.id})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventHoverOut, ID: n.id})
 	if bg() != RGB(0x0000ff) {
 		t.Errorf("released = %x", bg())
 	}
 	disabled.Set(true)
-	h.tree.Dispatch(Event{Kind: EventPressDown, ID: n.id})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPressDown, ID: n.id})
 	if bg() != RGB(0x0000ff) || n.style.Opacity.Value() != 0.5 {
 		t.Errorf("disabled: background %x, opacity %v", bg(), n.style.Opacity.Value())
 	}
 	b := h.commit()
-	if k := kinds(b); k[ItemViewStyle] != 1 {
+	if k := kinds(b); k[driver.ItemViewStyle] != 1 {
 		t.Errorf("kinds = %v, want one view style", k)
 	}
 }
@@ -530,14 +532,14 @@ func TestEnvironment(t *testing.T) {
 	var widths []Points
 	var darks []bool
 	var materials []WindowMaterial
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		cx.Effect(func() { widths = append(widths, cx.Env().Window().Width) })
 		cx.Effect(func() { darks = append(darks, cx.Env().Dark()) })
 		cx.Effect(func() { materials = append(materials, cx.Env().WindowMaterial()) })
 		return Text{Content: "Aa", Style: Style{FontSize: 10}, TestID: "text"}
 	})
 	h.commit()
-	h.tree.Resize(Size{200, 100})
+	h.tree.Resize(Size{Width: 200, Height: 100})
 	h.tree.SetEnvironment(Environment{Dark: true, FontScale: 2, WindowMaterial: WindowMaterialSidebar})
 	h.tree.SetEnvironment(Environment{Dark: true, FontScale: 2, WindowMaterial: WindowMaterialSidebar}) // unchanged: no runs
 	h.commit()
@@ -551,13 +553,13 @@ func TestEnvironment(t *testing.T) {
 }
 
 func TestPlaceFlipsAndClamps(t *testing.T) {
-	area := Bounds{Size: Size{100, 100}}
-	anchor := Bounds{Point{40, 80}, Size{20, 10}}
-	p, side := place(anchor, Size{30, 30}, area, PlaceBottom, 0, 4, false)
-	if side != PlaceTop || p != (Point{35, 46}) {
+	area := Bounds{Size: Size{Width: 100, Height: 100}}
+	anchor := Bounds{Origin: Point{X: 40, Y: 80}, Size: Size{Width: 20, Height: 10}}
+	p, side := place(anchor, Size{Width: 30, Height: 30}, area, PlaceBottom, 0, 4, false)
+	if side != PlaceTop || p != (Point{X: 35, Y: 46}) {
 		t.Errorf("no room below: %v %v, want flipped above at {35 46}", p, side)
 	}
-	p, _ = place(Bounds{Point{90, 10}, Size{10, 10}}, Size{30, 10}, area, PlaceBottom, AlignStart, 0, false)
+	p, _ = place(Bounds{Origin: Point{X: 90, Y: 10}, Size: Size{Width: 10, Height: 10}}, Size{Width: 30, Height: 10}, area, PlaceBottom, AlignStart, 0, false)
 	if p.X != 70 {
 		t.Errorf("x = %v, want clamped to 70", p.X)
 	}
@@ -567,7 +569,7 @@ func TestOverlayModalAndStack(t *testing.T) {
 	var anchor Ref
 	var log []string
 	var routes *Signal[[]string]
-	h := newHost(t, Size{200, 300}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 300}, func(cx *Scope) Node {
 		routes = NewSignalFunc(cx, []string{"home", "detail"}, nil)
 		return View{Style: Style{FlexGrow: 1}, Children: []Node{
 			View{Ref: &anchor, Style: Style{Height: Pt(40), Margin: Edges{Top: 20}}, TestID: "anchor"},
@@ -587,7 +589,7 @@ func TestOverlayModalAndStack(t *testing.T) {
 	})
 	h.commit()
 	pop := h.find("popover")
-	if got, want := pop.frame, (Bounds{Point{75, 65}, Size{50, 30}}); got != want {
+	if got, want := pop.frame, (Bounds{Origin: Point{X: 75, Y: 65}, Size: Size{Width: 50, Height: 30}}); got != want {
 		t.Errorf("popover = %v, want centered below the anchor", got)
 	}
 	if pop.nativeParent() != h.tree.view {
@@ -596,9 +598,9 @@ func TestOverlayModalAndStack(t *testing.T) {
 	if !h.find("screen-home").screen.hidden || h.find("screen-detail").screen.hidden {
 		t.Error("the stack does not show only its top screen")
 	}
-	h.tree.Dispatch(Event{Kind: EventPressOutside, ID: pop.id, Point: Point{100, 40}})
-	h.tree.Dispatch(Event{Kind: EventPressOutside, ID: pop.id, Point: Point{5, 200}})
-	h.tree.Dispatch(Event{Kind: EventBack})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPressOutside, ID: pop.id, Point: Point{X: 100, Y: 40}})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPressOutside, ID: pop.id, Point: Point{X: 5, Y: 200}})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventBack})
 	h.commit()
 	if want := []string{"outside", "cancel"}; !slices.Equal(log, want) {
 		t.Fatalf("log = %q, want a press on the anchor ignored and back sent to the overlay", log)
@@ -606,7 +608,7 @@ func TestOverlayModalAndStack(t *testing.T) {
 	log = nil
 	// Without the overlay's cancel, back pops the stack.
 	pop.h.cancel = nil
-	h.tree.Dispatch(Event{Kind: EventBack})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventBack})
 	h.commit()
 	if want := []string{"dismiss detail"}; !slices.Equal(log, want) {
 		t.Fatalf("log = %q", log)
@@ -614,7 +616,7 @@ func TestOverlayModalAndStack(t *testing.T) {
 	if h.find("screen-home").screen.hidden {
 		t.Error("home is not shown after popping")
 	}
-	h.tree.Dispatch(Event{Kind: EventBack})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventBack})
 	if len(log) != 1 {
 		t.Error("the last screen popped")
 	}
@@ -622,7 +624,7 @@ func TestOverlayModalAndStack(t *testing.T) {
 
 func TestModalIsALayerOfItsOwn(t *testing.T) {
 	var closed string
-	h := newHost(t, Size{200, 300}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 300}, func(cx *Scope) Node {
 		return View{Style: Style{Padding: All(20)}, Children: []Node{
 			Modal{TestID: "modal", Style: Style{Padding: All(10)}, OnRequestClose: func(r string) { closed = r },
 				Children: []Node{Text{Content: "hi", TestID: "text"}}},
@@ -630,40 +632,40 @@ func TestModalIsALayerOfItsOwn(t *testing.T) {
 	})
 	h.commit()
 	m := h.find("modal")
-	if m.frame != (Bounds{Size: Size{200, 300}}) || m.nativeParent() != h.tree.view {
+	if m.frame != (Bounds{Size: Size{Width: 200, Height: 300}}) || m.nativeParent() != h.tree.view {
 		t.Errorf("modal = %v, want the root's size, hosted by it", m.frame)
 	}
-	if got := h.find("text").frame.Origin; got != (Point{10, 10}) {
+	if got := h.find("text").frame.Origin; got != (Point{X: 10, Y: 10}) {
 		t.Errorf("text at %v, want inside the modal's padding", got)
 	}
-	h.tree.Dispatch(Event{Kind: EventBack})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventBack})
 	if closed != "cancel" {
 		t.Errorf("close reason = %q", closed)
 	}
 }
 
 func TestImageSizesFromItsSource(t *testing.T) {
-	h := newHost(t, Size{300, 300}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 300, Height: 300}, func(cx *Scope) Node {
 		return View{Style: Style{AlignItems: AlignStart}, Children: []Node{
-			Image{Source: ImageSource{URI: "asset:/logo.png", Size: Size{40, 20}, Scales: ScalesOf(1, 2, 3)}, TestID: "natural"},
-			Image{Source: ImageSource{URI: "asset:/single.png", Size: Size{40, 20}}, TestID: "single"},
-			Image{Source: ImageSource{URI: "https://x/y.png", Size: Size{40, 20}}, Style: Style{Width: Pt(100)}, TestID: "wide"},
+			Image{Source: ImageSource{URI: "asset:/logo.png", Size: Size{Width: 40, Height: 20}, Scales: ScalesOf(1, 2, 3)}, TestID: "natural"},
+			Image{Source: ImageSource{URI: "asset:/single.png", Size: Size{Width: 40, Height: 20}}, TestID: "single"},
+			Image{Source: ImageSource{URI: "https://x/y.png", Size: Size{Width: 40, Height: 20}}, Style: Style{Width: Pt(100)}, TestID: "wide"},
 			Image{Source: Src("https://x/z.png"), TestID: "unknown"},
 		}}
 	})
 	h.tree.SetEnvironment(Environment{PixelRatio: 2})
 	b := h.commit()
-	sizes := map[string]Size{"natural": {40, 20}, "wide": {100, 50}, "unknown": {}}
+	sizes := map[string]Size{"natural": {Width: 40, Height: 20}, "wide": {Width: 100, Height: 50}, "unknown": {}}
 	for id, want := range sizes {
 		if got := h.find(id).frame.Size; got != want {
 			t.Errorf("%s = %v, want %v", id, got, want)
 		}
 	}
 	for _, it := range b.Items {
-		if it.Kind == ItemImage && it.ID == h.find("natural").id && it.Image.Source.URI != "asset:/logo@2x.png" {
+		if it.Kind == driver.ItemImage && it.ID == h.find("natural").id && it.Image.Source.URI != "asset:/logo@2x.png" {
 			t.Errorf("source = %q, want the @2x variant", it.Image.Source.URI)
 		}
-		if it.Kind == ItemImage && it.ID == h.find("single").id && it.Image.Source.URI != "asset:/single.png" {
+		if it.Kind == driver.ItemImage && it.ID == h.find("single").id && it.Image.Source.URI != "asset:/single.png" {
 			t.Errorf("source = %q, want the plain file", it.Image.Source.URI)
 		}
 	}
@@ -683,7 +685,7 @@ func TestImageScalesPick(t *testing.T) {
 		{ScalesOf(1, 3), 2, 3},
 		{ScalesOf(2.5, -1), 2, 0},
 	} {
-		if got := c.set.pick(c.ratio); got != c.want {
+		if got := c.set.Pick(c.ratio); got != c.want {
 			t.Errorf("%08b at %v = %v, want %v", c.set, c.ratio, got, c.want)
 		}
 	}
@@ -692,7 +694,7 @@ func TestImageScalesPick(t *testing.T) {
 func TestListMountsAWindowAndReusesCells(t *testing.T) {
 	var count *Signal[int]
 	ends := 0
-	h := newHost(t, Size{200, 300}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 300}, func(cx *Scope) Node {
 		count = NewSignal(cx, 10000)
 		return List{Count: count.Get, Style: Style{FlexGrow: 1}, TestID: "list",
 			OnEndReached: func() { ends++ },
@@ -733,7 +735,7 @@ func TestListMountsAWindowAndReusesCells(t *testing.T) {
 		t.Errorf("content = %v with %d rows measured, want measured rows plus estimates (%v)", got, measured, want)
 	}
 	cells := len(h.tree.nodes)
-	h.tree.Dispatch(Event{Kind: EventScroll, ID: list.id, Point: Point{Y: 3000}})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventScroll, ID: list.id, Point: Point{Y: 3000}})
 	h.commit()
 	_, first, last = mounted()
 	// Row 65 or so sits at 3000; the window starts a viewport above it.
@@ -773,7 +775,7 @@ func TestFenwick(t *testing.T) {
 func TestAnimateStepsOnTheClock(t *testing.T) {
 	var x *Signal[float64]
 	var steps []float64
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		x = NewSignal(cx, 0.0)
 		cx.Animate(100*time.Millisecond, Linear, func(p float64) { x.Set(p); steps = append(steps, p) })
 		return View{StyleFunc: func() Style {
@@ -788,7 +790,7 @@ func TestAnimateStepsOnTheClock(t *testing.T) {
 	}
 	b := h.commit()
 	for _, it := range b.Items {
-		if it.Kind == ItemViewStyle && it.ID == h.find("box").id && it.ViewStyle.Transform.TranslateX != 100 {
+		if it.Kind == driver.ItemViewStyle && it.ID == h.find("box").id && it.ViewStyle.Transform.TranslateX != 100 {
 			t.Errorf("transform = %+v", it.ViewStyle.Transform)
 		}
 	}
@@ -800,7 +802,7 @@ func TestAnimateStepsOnTheClock(t *testing.T) {
 func TestSpansStyleRangesAndLink(t *testing.T) {
 	var name *Signal[string]
 	pressed := 0
-	h := newHost(t, Size{300, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 300, Height: 100}, func(cx *Scope) Node {
 		name = NewSignal(cx, "Ada")
 		return Text{Style: Style{FontSize: 10}, TestID: "text", Spans: []Span{
 			{Content: "Hi "},
@@ -818,11 +820,11 @@ func TestSpansStyleRangesAndLink(t *testing.T) {
 	if sp := at.Spans[1]; sp.Start != 3 || sp.End != 6 || sp.Style.Font.Weight != FontWeightBold || sp.Style.Font.Size != 10 {
 		t.Errorf("bold span = %+v", sp)
 	}
-	if !at.Spans[3].Link || !n.events().Has(EventPress) {
+	if !at.Spans[3].Link || !n.events().Has(driver.EventPress) {
 		t.Error("the link span is not reported pressable")
 	}
-	h.tree.Dispatch(Event{Kind: EventPress, ID: n.id, Index: 1})
-	h.tree.Dispatch(Event{Kind: EventPress, ID: n.id, Index: 13})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPress, ID: n.id, Index: 1})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPress, ID: n.id, Index: 13})
 	if pressed != 1 {
 		t.Errorf("pressed = %d, want only the press on the link", pressed)
 	}
@@ -836,16 +838,16 @@ func TestSpansStyleRangesAndLink(t *testing.T) {
 func TestCanvasDrawsAtItsSizeAndOnChange(t *testing.T) {
 	var level *Signal[float32]
 	draws := 0
-	h := newHost(t, Size{200, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
 		level = NewSignal(cx, float32(0.5))
 		return Canvas{Style: Style{Height: Pt(40)}, TestID: "meter", Draw: func(d *Drawing, size Size) {
 			draws++
 			d.SetFillColor(RGB(0x1f883d)).FillRect(0, 0, float32(size.Width)*level.Get(), float32(size.Height))
 		}}
 	})
-	drawing := func(b *MountBatch) *Drawing {
+	drawing := func(b *driver.MountBatch) *Drawing {
 		for _, it := range b.Items {
-			if it.Kind == ItemCanvas {
+			if it.Kind == driver.ItemCanvas {
 				return it.Drawing
 			}
 		}
@@ -868,7 +870,7 @@ func TestCanvasDrawsAtItsSizeAndOnChange(t *testing.T) {
 func TestKeyBindingsFollowOwners(t *testing.T) {
 	var log []string
 	var open *Signal[bool]
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		open = NewSignal(cx, true)
 		cx.OnKey("Cmd+S", func() { log = append(log, "save") })
 		return Show{When: open.Get, Then: func(cx *Scope) Node {
@@ -877,20 +879,20 @@ func TestKeyBindingsFollowOwners(t *testing.T) {
 		}}
 	})
 	b := h.commit()
-	var keys []KeyBinding
+	var keys []driver.KeyBinding
 	for _, it := range b.Items {
-		if it.Kind == ItemKeymap {
+		if it.Kind == driver.ItemKeymap {
 			keys = it.Keys
 		}
 	}
-	if !slices.Equal(keys, []KeyBinding{{Key: "meta+s", InText: true}, {Key: "mod+shift+s", InText: true}}) {
+	if !slices.Equal(keys, []driver.KeyBinding{{Key: "meta+s", InText: true}, {Key: "mod+shift+s", InText: true}}) {
 		t.Fatalf("keymap = %+v", keys)
 	}
-	h.tree.Dispatch(Event{Kind: EventKey, Text: "mod+shift+s"})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventKey, Text: "mod+shift+s"})
 	open.Set(false)
 	h.commit()
-	h.tree.Dispatch(Event{Kind: EventKey, Text: "mod+shift+s"})
-	h.tree.Dispatch(Event{Kind: EventKey, Text: "meta+s"})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventKey, Text: "mod+shift+s"})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventKey, Text: "meta+s"})
 	if want := []string{"save as", "save"}; !slices.Equal(log, want) {
 		t.Fatalf("log = %q, want %q", log, want)
 	}
@@ -899,7 +901,7 @@ func TestKeyBindingsFollowOwners(t *testing.T) {
 func TestChangesInsideRegionsRelayout(t *testing.T) {
 	var label *Signal[string]
 	var open *Signal[bool]
-	h := newHost(t, Size{300, 300}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 300, Height: 300}, func(cx *Scope) Node {
 		label = NewSignal(cx, "a")
 		open = NewSignal(cx, false)
 		return View{Style: Style{AlignItems: AlignStart}, Children: []Node{
@@ -919,14 +921,14 @@ func TestChangesInsideRegionsRelayout(t *testing.T) {
 	}
 	open.Set(true)
 	h.commit()
-	if got := h.find("modal").frame.Size; got != (Size{300, 300}) {
+	if got := h.find("modal").frame.Size; got != (Size{Width: 300, Height: 300}) {
 		t.Errorf("modal opened at %v, want the root's size", got)
 	}
 }
 
 func TestSelectionProps(t *testing.T) {
 	var color *Signal[Color]
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		color = NewSignal(cx, RGB(0x00ff00))
 		return View{SelectionArea: true, StyleFunc: func() Style { return Style{SelectionColor: color.Get()} },
 			TestID: "area", Children: []Node{
@@ -935,9 +937,9 @@ func TestSelectionProps(t *testing.T) {
 			}}
 	})
 	b := h.commit()
-	props := map[NodeID]ViewProps{}
+	props := map[NodeID]driver.ViewProps{}
 	for _, it := range b.Items {
-		if it.Kind == ItemViewProps {
+		if it.Kind == driver.ItemViewProps {
 			props[it.ID] = *it.ViewProps
 		}
 	}
@@ -952,7 +954,7 @@ func TestSelectionProps(t *testing.T) {
 	}
 	color.Set(RGB(0x0000ff))
 	b = h.commit()
-	if k := kinds(b); k[ItemViewProps] != 2 || k[ItemText] != 0 {
+	if k := kinds(b); k[driver.ItemViewProps] != 2 || k[driver.ItemText] != 0 {
 		t.Errorf("a new selection color sends %v, want the texts' props only", k)
 	}
 }
@@ -960,7 +962,7 @@ func TestSelectionProps(t *testing.T) {
 func TestHiddenSubtreeHidesItsViewsOverlaysAndModals(t *testing.T) {
 	var shown *Signal[bool]
 	var cancels int
-	h := newHost(t, Size{200, 300}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 300}, func(cx *Scope) Node {
 		shown = NewSignal(cx, true)
 		return View{Children: []Node{
 			View{StyleFunc: func() Style {
@@ -983,7 +985,7 @@ func TestHiddenSubtreeHidesItsViewsOverlaysAndModals(t *testing.T) {
 		}}
 	})
 	h.commit()
-	if h.find("overlay").frame.Size != (Size{50, 30}) || h.find("modal").frame.Size != (Size{200, 300}) {
+	if h.find("overlay").frame.Size != (Size{Width: 50, Height: 30}) || h.find("modal").frame.Size != (Size{Width: 200, Height: 300}) {
 		t.Fatal("the overlay and modal are not laid out while shown")
 	}
 	shown.Set(false)
@@ -998,7 +1000,7 @@ func TestHiddenSubtreeHidesItsViewsOverlaysAndModals(t *testing.T) {
 	}
 	hidden := map[NodeID]bool{}
 	for _, it := range b.Items {
-		if it.Kind == ItemViewStyle {
+		if it.Kind == driver.ItemViewStyle {
 			hidden[it.ID] = it.ViewStyle.Hidden
 		}
 	}
@@ -1008,13 +1010,13 @@ func TestHiddenSubtreeHidesItsViewsOverlaysAndModals(t *testing.T) {
 		}
 	}
 	// Back passes the hidden modal and overlay by.
-	h.tree.Dispatch(Event{Kind: EventBack})
-	if cancels != 0 || !slices.ContainsFunc(h.commit().Items, func(it MountItem) bool { return it.Kind == ItemBackUnhandled }) {
+	h.tree.Dispatch(driver.Event{Kind: driver.EventBack})
+	if cancels != 0 || !slices.ContainsFunc(h.commit().Items, func(it driver.MountItem) bool { return it.Kind == driver.ItemBackUnhandled }) {
 		t.Error("back went to a hidden modal or overlay")
 	}
 	shown.Set(true)
 	h.commit()
-	if h.find("overlay").frame.Size != (Size{50, 30}) || h.find("in-modal").frame.Size != (Size{10, 10}) {
+	if h.find("overlay").frame.Size != (Size{Width: 50, Height: 30}) || h.find("in-modal").frame.Size != (Size{Width: 10, Height: 10}) {
 		t.Error("the overlay and modal do not come back")
 	}
 }

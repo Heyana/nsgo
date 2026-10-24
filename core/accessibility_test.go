@@ -3,12 +3,14 @@ package core
 import (
 	"slices"
 	"testing"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
-func propsOf(b *MountBatch) map[NodeID]ViewProps {
-	out := map[NodeID]ViewProps{}
+func propsOf(b *driver.MountBatch) map[NodeID]driver.ViewProps {
+	out := map[NodeID]driver.ViewProps{}
 	for _, it := range b.Items {
-		if it.Kind == ItemViewProps {
+		if it.Kind == driver.ItemViewProps {
 			out[it.ID] = *it.ViewProps
 		}
 	}
@@ -19,7 +21,7 @@ func TestAccessibilityPropsFollowTheirSignals(t *testing.T) {
 	var now *Signal[float32]
 	var open, hidden *Signal[bool]
 	actions := []AccessibilityAction{{Name: ActionIncrement}, {Name: "reset", Label: "Reset"}}
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		now = NewSignal(cx, float32(40))
 		open = NewSignal(cx, false)
 		hidden = NewSignal(cx, false)
@@ -42,10 +44,10 @@ func TestAccessibilityPropsFollowTheirSignals(t *testing.T) {
 	if m := props[h.find("menu").id]; !m.Expandable || m.Expanded {
 		t.Errorf("menu props = %+v, want expandable and collapsed", m)
 	}
-	if p := props[h.find("nohide").id]; !p.ElementsHidden || p.Accessible != AccessibleNo {
+	if p := props[h.find("nohide").id]; !p.ElementsHidden || p.Accessible != driver.AccessibleNo {
 		t.Errorf("no-hide-descendants props = %+v", p)
 	}
-	if p := props[h.find("no").id]; p.ElementsHidden || p.Accessible != AccessibleNo {
+	if p := props[h.find("no").id]; p.ElementsHidden || p.Accessible != driver.AccessibleNo {
 		t.Errorf("importantForAccessibility no props = %+v", p)
 	}
 
@@ -62,7 +64,7 @@ func TestAccessibilityPropsFollowTheirSignals(t *testing.T) {
 	if !props[h.find("menu").id].Expanded || !props[h.find("hidden").id].ElementsHidden {
 		t.Error("expanded and hidden states were not sent")
 	}
-	if k := kinds(h.commit()); k[ItemViewProps] != 0 {
+	if k := kinds(h.commit()); k[driver.ItemViewProps] != 0 {
 		t.Errorf("an idle commit sent %v", k)
 	}
 }
@@ -70,7 +72,7 @@ func TestAccessibilityPropsFollowTheirSignals(t *testing.T) {
 func TestALabelChangingAloneGoesAlone(t *testing.T) {
 	var count *Signal[int]
 	var off *Signal[bool]
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		count = NewSignal(cx, 1)
 		off = NewSignal(cx, false)
 		return View{TestID: "v", Role: RoleButton, Disabled: off.Get,
@@ -81,11 +83,11 @@ func TestALabelChangingAloneGoesAlone(t *testing.T) {
 	}
 	count.Set(2)
 	b := h.commit()
-	if k := kinds(b); k[ItemViewProps] != 0 || k[ItemAccessibilityLabel] != 1 {
+	if k := kinds(b); k[driver.ItemViewProps] != 0 || k[driver.ItemAccessibilityLabel] != 1 {
 		t.Fatalf("a label change sent %v, want one ItemAccessibilityLabel", k)
 	}
 	for _, it := range b.Items {
-		if it.Kind == ItemAccessibilityLabel && (it.ID != h.find("v").id || it.Value != "2") {
+		if it.Kind == driver.ItemAccessibilityLabel && (it.ID != h.find("v").id || it.Value != "2") {
 			t.Errorf("label item = %+v", it)
 		}
 	}
@@ -98,7 +100,7 @@ func TestALabelChangingAloneGoesAlone(t *testing.T) {
 
 func TestAGroupReadsItsTexts(t *testing.T) {
 	var price *Signal[string]
-	h := newHost(t, Size{200, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
 		price = NewSignal(cx, "$10")
 		return View{Children: []Node{
 			View{TestID: "row", Accessible: true, Children: []Node{
@@ -121,7 +123,7 @@ func TestAGroupReadsItsTexts(t *testing.T) {
 	b := h.commit()
 	found := false
 	for _, it := range b.Items {
-		if it.Kind == ItemAccessibilityLabel && it.ID == h.find("row").id {
+		if it.Kind == driver.ItemAccessibilityLabel && it.ID == h.find("row").id {
 			found = it.Value == "Apple $12 on sale"
 		}
 	}
@@ -134,7 +136,7 @@ func TestAccessibilityActionsAndFocus(t *testing.T) {
 	var got []string
 	var off *Signal[bool]
 	var ref Ref
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		off = NewSignal(cx, false)
 		return View{TestID: "v", Ref: &ref, Disabled: off.Get, Role: RoleAdjustable,
 			AccessibilityActions:  []AccessibilityAction{{Name: ActionIncrement}, {Name: ActionDecrement}},
@@ -143,23 +145,23 @@ func TestAccessibilityActionsAndFocus(t *testing.T) {
 	b := h.commit()
 	id := h.find("v").id
 	for _, it := range b.Items {
-		if it.Kind == ItemEvents && it.ID == id && !it.Events.Has(EventAccessibilityAction) {
+		if it.Kind == driver.ItemEvents && it.ID == id && !it.Events.Has(driver.EventAccessibilityAction) {
 			t.Error("the view does not listen for accessibility actions")
 		}
 	}
-	h.tree.Dispatch(Event{Kind: EventAccessibilityAction, ID: id, Text: ActionIncrement})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventAccessibilityAction, ID: id, Text: ActionIncrement})
 	off.Set(true)
 	h.commit()
-	h.tree.Dispatch(Event{Kind: EventAccessibilityAction, ID: id, Text: ActionDecrement})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventAccessibilityAction, ID: id, Text: ActionDecrement})
 	if !slices.Equal(got, []string{ActionIncrement}) {
 		t.Errorf("actions = %v, want the one before the view was disabled", got)
 	}
 	ref.SetAccessibilityFocus()
 	b = h.commit()
-	if k := kinds(b); k[ItemAccessibilityFocus] != 1 || b.Items[len(b.Items)-1].ID != id {
+	if k := kinds(b); k[driver.ItemAccessibilityFocus] != 1 || b.Items[len(b.Items)-1].ID != id {
 		t.Errorf("SetAccessibilityFocus sent %v", k)
 	}
-	if !IsStandardAction(ActionMagicTap) || IsStandardAction("reset") {
+	if !driver.IsStandardAction(ActionMagicTap) || driver.IsStandardAction("reset") {
 		t.Error("IsStandardAction")
 	}
 }

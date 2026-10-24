@@ -1,16 +1,10 @@
 package core
 
+import "github.com/oneo-me/nsgo/internal/driver"
+
 // Pointer events: where a press, hover or secondary click happened and
 // which modifier keys were held, as NSH's PressEvent, HoverEvent and
 // ContextMenuEvent report them. Positions are in points.
-
-// Modifiers are the modifier keys held during an event.
-type Modifiers struct {
-	Control, Alt, Shift bool
-	// Platform is Command on Apple platforms, the Windows or Super key
-	// elsewhere.
-	Platform bool
-}
 
 // PressEvent is where the pointer was at a press. Backends that know them
 // report the modifier keys held when the press began and the click count;
@@ -43,52 +37,8 @@ type ContextMenuEvent struct {
 	Modifiers    Modifiers
 }
 
-func (e Event) press() PressEvent {
+func pressOf(e driver.Event) PressEvent {
 	return PressEvent{Position: e.Point, PagePosition: e.Page, Modifiers: e.Modifiers, Clicks: int(e.Count)}
-}
-
-// PointerEvents says which of a view and its children take touches and
-// the pointer.
-type PointerEvents uint8
-
-const (
-	// PointerEventsAuto lets the view and its children take them.
-	PointerEventsAuto PointerEvents = iota
-	// PointerEventsNone lets neither take them: they reach what is below.
-	PointerEventsNone
-	// PointerEventsBoxNone lets only the children take them.
-	PointerEventsBoxNone
-	// PointerEventsBoxOnly lets only the view take them, never its
-	// children.
-	PointerEventsBoxOnly
-)
-
-// Reach reports what a point p, in the coordinates of a view's parent's
-// content, may reach of a view at frame with props: the view itself, by
-// its bounds and HitSlop, and its children, by its bounds and area, the
-// one ItemOverflow gave it. Platforms that hit-test their own views ask
-// it on the way down.
-func Reach(frame Bounds, props *ViewProps, area Bounds, p Point) (self, children bool) {
-	pe, slop := PointerEventsAuto, Edges{}
-	if props != nil {
-		pe, slop = props.PointerEvents, props.HitSlop
-	}
-	if pe == PointerEventsNone {
-		return false, false
-	}
-	in := frame.Contains(p)
-	if pe != PointerEventsBoxNone {
-		self = in || slop != (Edges{}) && Bounds{
-			Origin: Point{frame.Origin.X - slop.Left, frame.Origin.Y - slop.Top},
-			Size:   Size{frame.Size.Width + slop.horizontal(), frame.Size.Height + slop.vertical()},
-		}.Contains(p)
-	}
-	if pe != PointerEventsBoxOnly {
-		children = in || area.Size.Width > 0 && area.Size.Height > 0 && Bounds{
-			Origin: Point{frame.Origin.X + area.Origin.X, frame.Origin.Y + area.Origin.Y}, Size: area.Size,
-		}.Contains(p)
-	}
-	return self, children
 }
 
 // overflowArea returns the area n's children cover outside its bounds,
@@ -115,12 +65,12 @@ func (n *node) overflowArea(kids []*node) Bounds {
 			grow(c.frame)
 		}
 		if a := c.sent.overflow; a.Size.Width > 0 {
-			grow(Bounds{Origin: Point{c.frame.Origin.X + a.Origin.X, c.frame.Origin.Y + a.Origin.Y}, Size: a.Size})
+			grow(Bounds{Origin: Point{X: c.frame.Origin.X + a.Origin.X, Y: c.frame.Origin.Y + a.Origin.Y}, Size: a.Size})
 		}
 	}
 	const epsilon = 0.5
 	if x0 >= -epsilon && y0 >= -epsilon && x1 <= w+epsilon && y1 <= h+epsilon {
 		return Bounds{}
 	}
-	return Bounds{Origin: Point{x0, y0}, Size: Size{x1 - x0, y1 - y0}}
+	return Bounds{Origin: Point{X: x0, Y: y0}, Size: Size{Width: x1 - x0, Height: y1 - y0}}
 }

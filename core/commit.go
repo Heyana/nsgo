@@ -3,6 +3,8 @@ package core
 import (
 	"slices"
 	"strings"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 // maxRounds bounds the commits OnLayout handlers may cause in one batch.
@@ -11,7 +13,7 @@ const maxRounds = 8
 // Commit resolves styles, prepares text, lays the tree out and returns
 // what changed since the last commit, or nil when nothing did. Changes
 // that OnLayout handlers make go into the same batch.
-func (t *Tree) Commit() *MountBatch {
+func (t *Tree) Commit() *driver.MountBatch {
 	if !t.changed {
 		return nil
 	}
@@ -22,7 +24,7 @@ func (t *Tree) Commit() *MountBatch {
 	if len(t.items) == 0 {
 		return nil
 	}
-	b := &MountBatch{Root: t.view.id, Items: append([]MountItem(nil), t.items...), LayoutAnimation: t.layoutAnim}
+	b := &driver.MountBatch{Root: t.view.id, Items: append([]driver.MountItem(nil), t.items...), LayoutAnimation: t.layoutAnim}
 	t.layoutAnim = nil
 	return b
 }
@@ -30,7 +32,7 @@ func (t *Tree) Commit() *MountBatch {
 func (t *Tree) commitRound() {
 	t.changed = false
 	for _, id := range t.deleted {
-		t.items = append(t.items, MountItem{Kind: ItemDelete, ID: id})
+		t.items = append(t.items, driver.MountItem{Kind: driver.ItemDelete, ID: id})
 	}
 	t.fontScale = t.root.Env().fontScale.GetUntracked()
 	if rtl := t.root.Env().rtl.GetUntracked(); rtl != t.rtl {
@@ -77,7 +79,7 @@ func (t *Tree) commitRound() {
 	t.emitAnimation()
 	if t.keysChanged {
 		t.keysChanged = false
-		t.items = append(t.items, MountItem{Kind: ItemKeymap, Keys: t.keymap()})
+		t.items = append(t.items, driver.MountItem{Kind: driver.ItemKeymap, Keys: t.keymap()})
 	}
 	t.emitStatusBar()
 	t.items = append(t.items, t.commands...)
@@ -125,7 +127,7 @@ func (t *Tree) resolve(n *node, inherited Style) {
 		sized := tn.attachments > 0 && t.sizeAttachments(n, inherited)
 		shadow := inherited.textShadow()
 		if tn.stale || sized || tn.prepared == nil || ts != tn.style || shadow != tn.text.Shadow {
-			at := AttributedText{Text: inherited.TextTransform.Apply(tn.content), Style: ts, MaxLines: tn.maxLines,
+			at := driver.AttributedText{Text: inherited.TextTransform.Apply(tn.content), Style: ts, MaxLines: tn.maxLines,
 				Ellipsize: tn.ellipsize, Shadow: shadow}
 			if at.Ellipsize == 0 {
 				at.Ellipsize = EllipsizeTail
@@ -135,23 +137,23 @@ func (t *Tree) resolve(n *node, inherited Style) {
 				for _, sp := range tn.spans {
 					start := b.Len()
 					if w := sp.attach; w != nil {
-						b.WriteRune(AttachmentRune)
-						at.Attachments = append(at.Attachments, TextAttachment{Offset: start,
+						b.WriteRune(driver.AttachmentRune)
+						at.Attachments = append(at.Attachments, driver.TextAttachment{Offset: start,
 							Size: w.attach.size, Align: w.verticalAlign()})
-						at.Spans = append(at.Spans, TextSpan{Start: start, End: b.Len(), Style: ts})
+						at.Spans = append(at.Spans, driver.TextSpan{Start: start, End: b.Len(), Style: ts})
 						continue
 					}
 					own := sp.style.inherit(inherited)
 					b.WriteString(own.TextTransform.Apply(sp.content))
-					at.Spans = append(at.Spans, TextSpan{Start: start, End: b.Len(),
+					at.Spans = append(at.Spans, driver.TextSpan{Start: start, End: b.Len(),
 						Style: scaleText(own.textStyle(), scale), Link: sp.press != nil,
-						Background: TextBackground{Color: sp.style.Background, Radius: sp.style.CornerRadius}})
+						Background: driver.TextBackground{Color: sp.style.Background, Radius: sp.style.CornerRadius}})
 				}
 				at.Text = b.String()
 			}
 			tn.style = ts
 			tn.stale = false
-			if tn.prepared == nil || !at.equal(&tn.text) {
+			if tn.prepared == nil || !at.Equal(&tn.text) {
 				if tn.prepared != nil {
 					tn.prepared.Release()
 				}
@@ -166,7 +168,7 @@ func (t *Tree) resolve(n *node, inherited Style) {
 		in.config.PlaceholderColor, in.config.SelectionColor = inherited.PlaceholderColor, inherited.SelectionColor
 		if ts := t.scaled(inherited.textStyle()); ts != in.config.Style || in.lineH == 0 {
 			in.config.Style = ts
-			p := t.text.Prepare(&AttributedText{Text: "Ag", Style: ts})
+			p := t.text.Prepare(&driver.AttributedText{Text: "Ag", Style: ts})
 			in.lineH = p.Measure(Auto).Height
 			p.Release()
 			n.markLayout()
@@ -198,10 +200,10 @@ func (t *Tree) sizeAttachments(n *node, inherited Style) bool {
 		if !w.layoutDirty {
 			continue
 		}
-		t.layoutRoot(w, Size{attachmentSpace, attachmentSpace}, false)
+		t.layoutRoot(w, Size{Width: attachmentSpace, Height: attachmentSpace}, false)
 		t.syncFrames(w)
 		l := &w.lstate.Rounded
-		if size := (Size{Points(l.Size.Width), Points(l.Size.Height)}); size != w.attach.size {
+		if size := (Size{Width: Points(l.Size.Width), Height: Points(l.Size.Height)}); size != w.attach.size {
 			w.attach.size = size
 			changed = true
 		}
@@ -223,7 +225,7 @@ func (w *node) verticalAlign() VerticalAlign {
 
 // placeAttachments puts the views of text n's attachments where layout
 // put their placeholders, hiding those its line limit cut off.
-func (n *node) placeAttachments(l TextLayout) {
+func (n *node) placeAttachments(l driver.TextLayout) {
 	al, _ := l.(AttachmentLayout)
 	i := 0
 	for _, sp := range n.text.spans {
@@ -265,10 +267,10 @@ func (t *Tree) within2(n *node, fn func() bool) (r bool) {
 }
 
 // scaled applies the user's text size setting.
-func (t *Tree) scaled(ts TextStyle) TextStyle { return scaleText(ts, t.fontScale) }
+func (t *Tree) scaled(ts driver.TextStyle) driver.TextStyle { return scaleText(ts, t.fontScale) }
 
 // scaleText multiplies ts's font size and line height by scale.
-func scaleText(ts TextStyle, scale float32) TextStyle {
+func scaleText(ts driver.TextStyle, scale float32) driver.TextStyle {
 	if s := Points(scale); s != 1 && s > 0 {
 		ts.Font.Size *= s
 		ts.LineHeight *= s
@@ -283,15 +285,15 @@ func (t *Tree) emit(n *node) {
 		}
 		return
 	}
-	add := func(it MountItem) { t.items = append(t.items, it) }
+	add := func(it driver.MountItem) { t.items = append(t.items, it) }
 	first := !n.created
 	if first {
-		add(MountItem{Kind: ItemCreate, ID: n.id, View: n.kind})
+		add(driver.MountItem{Kind: driver.ItemCreate, ID: n.id, View: n.kind})
 		n.created = true
 	}
 	if vs := n.viewStyle(); first || vs != n.sent.viewStyle {
 		n.sent.viewStyle = vs
-		add(MountItem{Kind: ItemViewStyle, ID: n.id, ViewStyle: &vs})
+		add(driver.MountItem{Kind: driver.ItemViewStyle, ID: n.id, ViewStyle: &vs})
 	}
 	if p := n.sentProps(); first || p != n.sent.props {
 		// A label changing alone goes alone: it is the one that follows
@@ -299,9 +301,9 @@ func (t *Tree) emit(n *node) {
 		rest := p
 		rest.Label = n.sent.props.Label
 		if !first && rest == n.sent.props {
-			add(MountItem{Kind: ItemAccessibilityLabel, ID: n.id, Value: p.Label})
+			add(driver.MountItem{Kind: driver.ItemAccessibilityLabel, ID: n.id, Value: p.Label})
 		} else {
-			add(MountItem{Kind: ItemViewProps, ID: n.id, ViewProps: &p})
+			add(driver.MountItem{Kind: driver.ItemViewProps, ID: n.id, ViewProps: &p})
 		}
 		n.sent.props = p
 	}
@@ -310,7 +312,7 @@ func (t *Tree) emit(n *node) {
 	}
 	if ev := n.events(); first || ev != n.sent.events {
 		n.sent.events = ev
-		add(MountItem{Kind: ItemEvents, ID: n.id, Events: ev})
+		add(driver.MountItem{Kind: driver.ItemEvents, ID: n.id, Events: ev})
 	}
 	switch {
 	case n.text != nil:
@@ -326,14 +328,14 @@ func (t *Tree) emit(n *node) {
 		if first || in.config != n.sent.input {
 			c := in.config
 			n.sent.input = c
-			add(MountItem{Kind: ItemInput, ID: n.id, Input: &c})
+			add(driver.MountItem{Kind: driver.ItemInput, ID: n.id, Input: &c})
 		}
 		if first || in.value != in.shown {
 			in.shown = in.value
-			add(MountItem{Kind: ItemInputValue, ID: n.id, Value: in.value, Count: in.count})
+			add(driver.MountItem{Kind: driver.ItemInputValue, ID: n.id, Value: in.value, Count: in.count})
 		}
 		if first && in.autoFocus {
-			t.command(ItemFocus, n)
+			t.command(driver.ItemFocus, n)
 		}
 		t.reportContentSize(n)
 	case n.image != nil:
@@ -342,26 +344,26 @@ func (t *Tree) emit(n *node) {
 		c.Position = n.style.ObjectPosition
 		c.Source = t.pickScale(c.Source)
 		c.Placeholder = t.pickScale(c.Placeholder)
-		if first || !c.same(im.sent) {
+		if first || !c.Same(im.sent) {
 			im.sent = c
-			add(MountItem{Kind: ItemImage, ID: n.id, Image: &c})
+			add(driver.MountItem{Kind: driver.ItemImage, ID: n.id, Image: &c})
 		}
 	case n.hoist != nil && n.hoist.modal != nil:
 		if first {
 			m := n.hoist.modal
-			add(MountItem{Kind: ItemModal, ID: n.id, Modal: &ModalConfig{Animation: m.Animation, Presentation: m.Presentation,
+			add(driver.MountItem{Kind: driver.ItemModal, ID: n.id, Modal: &driver.ModalConfig{Animation: m.Animation, Presentation: m.Presentation,
 				NoCloseOnSwipe: m.NoCloseOnSwipe, Orientations: m.SupportedOrientations}})
 		}
 	case n.canvas != nil:
 		if cn := n.canvas; cn.fresh && cn.drawing != nil {
 			cn.fresh = false
-			add(MountItem{Kind: ItemCanvas, ID: n.id, Drawing: cn.drawing})
+			add(driver.MountItem{Kind: driver.ItemCanvas, ID: n.id, Drawing: cn.drawing})
 		}
 	case n.web != nil:
 		if wn := n.web; first || wn.config != wn.sent {
 			c := wn.config
 			wn.sent = c
-			add(MountItem{Kind: ItemWeb, ID: n.id, Web: &c})
+			add(driver.MountItem{Kind: driver.ItemWeb, ID: n.id, Web: &c})
 		}
 	case n.native != nil:
 		t.emitNative(n)
@@ -369,7 +371,7 @@ func (t *Tree) emit(n *node) {
 		if vn := n.video; first || vn.config != vn.sent {
 			c := vn.config
 			vn.sent = c
-			add(MountItem{Kind: ItemVideo, ID: n.id, Video: &c})
+			add(driver.MountItem{Kind: driver.ItemVideo, ID: n.id, Video: &c})
 		}
 	case n.scroll != nil:
 		sc := n.scroll
@@ -378,12 +380,12 @@ func (t *Tree) emit(n *node) {
 			c := sc.config
 			c.Behavior.SnapToOffsets = slices.Clone(c.Behavior.SnapToOffsets)
 			n.sent.scroll = c
-			add(MountItem{Kind: ItemScrollConfig, ID: n.id, Scroll: &c})
+			add(driver.MountItem{Kind: driver.ItemScrollConfig, ID: n.id, Scroll: &c})
 		}
 		t.emitScrollBy(n, true)
 		if first || sc.content != n.sent.content {
 			n.sent.content = sc.content
-			add(MountItem{Kind: ItemScrollContent, ID: n.id, Size: sc.content})
+			add(driver.MountItem{Kind: driver.ItemScrollContent, ID: n.id, Size: sc.content})
 		}
 		t.emitScrollBy(n, false)
 		t.emitScrollTo(n)
@@ -402,12 +404,12 @@ func (t *Tree) emit(n *node) {
 	if n != t.view {
 		if area := n.overflowArea(kids); area != n.sent.overflow {
 			n.sent.overflow = area
-			add(MountItem{Kind: ItemOverflow, ID: n.id, Frame: area})
+			add(driver.MountItem{Kind: driver.ItemOverflow, ID: n.id, Frame: area})
 		}
 	}
 	if first || n.frame != n.sent.frame {
 		n.sent.frame = n.frame
-		add(MountItem{Kind: ItemFrame, ID: n.id, Frame: n.frame})
+		add(driver.MountItem{Kind: driver.ItemFrame, ID: n.id, Frame: n.frame})
 		if n.h.layout != nil {
 			t.laidOut = append(t.laidOut, n)
 		}
@@ -453,7 +455,7 @@ func (t *Tree) emitText(n *node) {
 			t.after(n, func() { report(lines) })
 		}
 	}
-	t.items = append(t.items, MountItem{Kind: ItemText, ID: n.id, Text: &TextContent{
+	t.items = append(t.items, driver.MountItem{Kind: driver.ItemText, ID: n.id, Text: &driver.TextContent{
 		Text: text.Text, Layout: l, Content: box,
 	}})
 }
@@ -462,22 +464,22 @@ func (t *Tree) emitText(n *node) {
 // scaled down, to no less than least of them, until it fits size within
 // its line limit: the largest scale that fits, by bisection, as NSH's
 // Paragraph::fit. It reports false when text fits as it is.
-func fitText(engine TextEngine, text *AttributedText, size Size, least float32) (AttributedText, bool) {
-	scaled := func(scale float32) AttributedText {
+func fitText(engine driver.TextEngine, text *driver.AttributedText, size Size, least float32) (driver.AttributedText, bool) {
+	scaled := func(scale float32) driver.AttributedText {
 		s := *text
 		s.Style = fitStyle(s.Style, scale)
-		s.Spans = append([]TextSpan(nil), text.Spans...)
+		s.Spans = append([]driver.TextSpan(nil), text.Spans...)
 		for i := range s.Spans {
 			s.Spans[i].Style = fitStyle(s.Spans[i].Style, scale)
 		}
 		return s
 	}
-	measure := func(t *AttributedText) Size {
+	measure := func(t *driver.AttributedText) Size {
 		p := engine.Prepare(t)
 		defer p.Release()
 		return p.Measure(size.Width)
 	}
-	fits := func(t AttributedText) bool {
+	fits := func(t driver.AttributedText) bool {
 		// Untruncated, the text must be no taller than its truncated self
 		// (nothing cut) and than the box.
 		limit := size.Height
@@ -490,7 +492,7 @@ func fitText(engine TextEngine, text *AttributedText, size Size, least float32) 
 		return full.Height <= limit+0.5 && full.Width <= size.Width+0.5
 	}
 	if fits(*text) {
-		return AttributedText{}, false
+		return driver.AttributedText{}, false
 	}
 	lo, hi := least, float32(1)
 	if !fits(scaled(lo)) {
@@ -508,7 +510,7 @@ func fitText(engine TextEngine, text *AttributedText, size Size, least float32) 
 }
 
 // fitStyle scales what fitting shrinks.
-func fitStyle(ts TextStyle, scale float32) TextStyle {
+func fitStyle(ts driver.TextStyle, scale float32) driver.TextStyle {
 	s := Points(scale)
 	ts.Font.Size *= s
 	ts.LineHeight *= s
@@ -516,7 +518,7 @@ func fitStyle(ts TextStyle, scale float32) TextStyle {
 	return ts
 }
 
-func (n *node) viewStyle() ViewStyle {
+func (n *node) viewStyle() driver.ViewStyle {
 	vs := n.style.viewStyle()
 	vs.Hidden = n.style.Display == DisplayNone || (n.hoist != nil && n.hidden) || (n.attach != nil && n.attach.cut)
 	if n.rtl && vs.Borders != (Edges{}) {
@@ -542,7 +544,7 @@ func (t *Tree) syncChildren(p *node, want []*node) {
 	}
 	for _, c := range old {
 		if !c.deleted && !keep[c] {
-			t.items = append(t.items, MountItem{Kind: ItemRemove, ID: c.id})
+			t.items = append(t.items, driver.MountItem{Kind: driver.ItemRemove, ID: c.id})
 		}
 	}
 	seq := make([]int, len(want))
@@ -562,7 +564,7 @@ func (t *Tree) syncChildren(p *node, want []*node) {
 		if i+1 < len(want) {
 			before = want[i+1].id
 		}
-		t.items = append(t.items, MountItem{Kind: ItemInsert, ID: want[i].id, Parent: p.id, Before: before})
+		t.items = append(t.items, driver.MountItem{Kind: driver.ItemInsert, ID: want[i].id, Parent: p.id, Before: before})
 	}
 	p.sent.children = append(p.sent.children[:0], want...)
 }

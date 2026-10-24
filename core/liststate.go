@@ -629,3 +629,10 @@ func listSplice(old, new []any) (at, removed, inserted int, changed bool) {
 	removed, inserted = len(old)-at-end, len(new)-at-end
 	return at, removed, inserted, removed > 0 || inserted > 0
 }
+
+func abs32(p Points) Points {
+	if p < 0 {
+		return -p
+	}
+	return p
+}

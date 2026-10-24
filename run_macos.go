@@ -2,7 +2,7 @@
 
 package nsgo
 
-import "github.com/oneo-me/nsgo/platform/macos"
+import "github.com/oneo-me/nsgo/internal/platform/macos"
 
 func run(app App, o options) {
 	w, h := windowSize()

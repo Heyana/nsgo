@@ -3,6 +3,8 @@ package core
 import (
 	"slices"
 	"time"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 // Touches and the touch responder, as NSH's core runs them for Rust
@@ -29,19 +31,6 @@ const (
 	// view, taking the touches.
 	TouchCancel
 )
-
-// Touch is one finger of a TouchEvent.
-type Touch struct {
-	// ID tells the finger while it is down.
-	ID int
-	// Position is in the view hearing the event, PagePosition in the
-	// surface.
-	Position     Point
-	PagePosition Point
-	// Changed says the event is about this finger: it went down, moved
-	// or lifted.
-	Changed bool
-}
 
 // TouchEvent is the fingers on the surface as one of them changes. An
 // end or a cancel lists the fingers that lifted too.
@@ -83,7 +72,7 @@ func centroid(e *TouchEvent) (Point, int) {
 		}
 	}
 	d := Points(max(n, 1))
-	return Point{c.X / d, c.Y / d}, n
+	return Point{X: c.X / d, Y: c.Y / d}, n
 }
 
 // beginGesture starts a gesture at the fingers of e.
@@ -105,8 +94,8 @@ func (g *PanGesture) update(e *TouchEvent) {
 		dx, dy := c.X-g.last.X, c.Y-g.last.Y
 		g.Delta.X += dx
 		g.Delta.Y += dy
-		g.Velocity = Point{g.Velocity.X*0.3 + dx/Points(dt)*0.7, g.Velocity.Y*0.3 + dy/Points(dt)*0.7}
-		g.Position = Point{g.Position.X + dx, g.Position.Y + dy}
+		g.Velocity = Point{X: g.Velocity.X*0.3 + dx/Points(dt)*0.7, Y: g.Velocity.Y*0.3 + dy/Points(dt)*0.7}
+		g.Position = Point{X: g.Position.X + dx, Y: g.Position.Y + dy}
 	}
 	g.last, g.lastTime, g.lastN = c, e.Time, n
 }
@@ -211,7 +200,7 @@ func touchPhase(p GesturePhase) TouchPhase {
 
 // touched handles EventTouch: the views' OnTouch on the finger's path, the
 // negotiation, the responder's events.
-func (t *Tree) touched(ev Event) {
+func (t *Tree) touched(ev driver.Event) {
 	s := &t.touches
 	e := TouchEvent{Phase: touchPhase(ev.Phase), Time: ev.Time, Touches: ev.Touches}
 	lifted := e.Phase == TouchEnd || e.Phase == TouchCancel
@@ -303,7 +292,7 @@ func (t *Tree) localTouches(n *node, e *TouchEvent) TouchEvent {
 	local.Touches = slices.Clone(e.Touches)
 	for i := range local.Touches {
 		p := &local.Touches[i]
-		p.Position = Point{p.PagePosition.X - o.X, p.PagePosition.Y - o.Y}
+		p.Position = Point{X: p.PagePosition.X - o.X, Y: p.PagePosition.Y - o.Y}
 	}
 	return local
 }
@@ -323,7 +312,7 @@ func (t *Tree) forgetLifted(e *TouchEvent) {
 // responderEvent returns what n hears about finger about.
 func (t *Tree) responderEvent(n *node, about Touch, e *TouchEvent) ResponderEvent {
 	o := t.surfaceBounds(n).Origin
-	return ResponderEvent{Position: Point{about.PagePosition.X - o.X, about.PagePosition.Y - o.Y},
+	return ResponderEvent{Position: Point{X: about.PagePosition.X - o.X, Y: about.PagePosition.Y - o.Y},
 		PagePosition: about.PagePosition, Time: e.Time, Gesture: t.touches.gesture}
 }
 
@@ -468,10 +457,34 @@ func (t *Tree) blockNative(n *node) {
 		return
 	}
 	t.touches.blocking = n
-	it := MountItem{Kind: ItemBlockNative}
+	it := driver.MountItem{Kind: driver.ItemBlockNative}
 	if n != nil {
 		it.ID = n.id
 	}
 	t.commands = append(t.commands, it)
 	t.changed = true
+}
+
+// Gestures the platform recognizes on a view and reports as they happen:
+// drags (pans), pinches and rotations. Moves are merged per engine turn,
+// so a handler sees the latest state, never a backlog.
+
+// PanEvent is a drag: its translation since it began and its velocity,
+// in points and points per second.
+type PanEvent struct {
+	Phase       GesturePhase
+	Translation Point
+	Velocity    Point
+	// Values are the PanValues as the pan begins and ends: a drag may grab
+	// them mid animation, which a snap after it starts from.
+	Values Point
+}
+
+// GestureEvent is a pinch or a rotation: its amount since it began and
+// how fast that changes per second. A pinch's amount is its scale, 1 when
+// it begins; a rotation's is an angle in radians, clockwise.
+type GestureEvent struct {
+	Phase    GesturePhase
+	Value    float32
+	Velocity float32
 }

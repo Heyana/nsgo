@@ -25,14 +25,15 @@ import (
 	"time"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 // Option configures Start.
 type Option func(*App)
 
 // Size sets the surface size; 390 by 844 points by default.
-func Size(width, height core.Points) Option {
-	return func(a *App) { a.size = core.Size{Width: width, Height: height} }
+func Size(width, height driver.Points) Option {
+	return func(a *App) { a.size = driver.Size{Width: width, Height: height} }
 }
 
 // Storage starts the app with entries in its storage, as if kept from an
@@ -43,7 +44,7 @@ func Storage(entries map[string]string) Option {
 
 // Environment starts the app in env, as a platform reports it before the
 // app mounts: screens have the system header where env has HeaderHeight.
-func Environment(env core.Environment) Option {
+func Environment(env driver.Environment) Option {
 	return func(a *App) { a.env = &env }
 }
 
@@ -51,14 +52,14 @@ func Environment(env core.Environment) Option {
 type seed map[string]string
 
 func (s seed) Load() (map[string]string, error) { return s, nil }
-func (seed) Write(core.StorageChange)           {}
+func (seed) Write(driver.StorageChange)         {}
 
 // App is an app running headless. Its methods run on the test's
 // goroutine; the app's goroutines reach it through Scope.Post, which App
 // runs when it settles.
 type App struct {
 	t    testing.TB
-	size core.Size
+	size driver.Size
 	// Clipboard is the clipboard's text; Announced what screen readers
 	// were asked to say.
 	Clipboard string
@@ -71,61 +72,61 @@ type App struct {
 	Title  string
 	// Menu is the application menu the app set; Window the window
 	// commands it sent, oldest first.
-	Menu   []core.MenuEntry
-	Window []core.WindowCommand
+	Menu   []driver.MenuEntry
+	Window []driver.WindowCommand
 	// ImageSizes are the pixel sizes of the images the model's platform
 	// loads, by URI, which answer Scope.ImageSize; others fail to load.
-	ImageSizes map[string]core.Size
+	ImageSizes map[string]driver.Size
 	tree       *core.Tree
 	root       *core.Scope
 	store      *core.Store
 	Clock      *core.ManualClock
 
 	// StatusBar is the status bar the app last set.
-	StatusBar core.StatusBarConfig
+	StatusBar driver.StatusBarConfig
 
 	mu    sync.Mutex
 	posts []func()
 	// frameWanted is set while the graph waits for a display frame.
 	frameWanted bool
 
-	views  map[core.NodeID]*View
-	anim   *core.Animator
+	views  map[driver.NodeID]*View
+	anim   *driver.Animator
 	start  time.Time
-	alerts []core.AlertConfig
-	rootID core.NodeID
-	edits  map[core.NodeID]uint32
-	env    *core.Environment
+	alerts []driver.AlertConfig
+	rootID driver.NodeID
+	edits  map[driver.NodeID]uint32
+	env    *driver.Environment
 }
 
 // View is the model of one native view, as the last batch left it.
 type View struct {
-	ID       core.NodeID
-	Kind     core.ViewKind
+	ID       driver.NodeID
+	Kind     driver.ViewKind
 	Parent   *View
 	Children []*View
-	Frame    core.Bounds
-	Style    core.ViewStyle
-	Props    core.ViewProps
-	Events   core.EventMask
+	Frame    driver.Bounds
+	Style    driver.ViewStyle
+	Props    driver.ViewProps
+	Events   driver.EventMask
 	Text     string // a text view's text or a field's value
-	Input    core.InputConfig
-	Content  core.Size  // a scroll view's content
-	Offset   core.Point // and its offset
+	Input    driver.InputConfig
+	Content  driver.Size  // a scroll view's content
+	Offset   driver.Point // and its offset
 	// Applied counts the ItemScrollTo and ItemScrollBy items the scroll
 	// view applied, which its reports carry; Sticky are its sticky
 	// cells.
 	Applied uint32
-	Sticky  []core.StickyCell
+	Sticky  []driver.StickyCell
 	// Scroll is a scroll view's configuration, and ZoomScale its zoom
 	// (0 until it zooms).
-	Scroll    core.ScrollConfig
+	Scroll    driver.ScrollConfig
 	ZoomScale float32
-	Image     core.ImageConfig
-	Web       core.WebConfig
+	Image     driver.ImageConfig
+	Web       driver.WebConfig
 	// WebCommands are what the app asked a web view to do, oldest first.
 	WebCommands []WebCommand
-	Video       core.VideoConfig
+	Video       driver.VideoConfig
 	// Seeks are the positions the app asked a video to jump to, oldest
 	// first.
 	Seeks []time.Duration
@@ -136,24 +137,24 @@ type View struct {
 	NativeCommands []NativeCommand
 	// Animated are the values of the animated properties bound to the
 	// view, which the model's animator steps with the clock.
-	Animated core.AnimatedValues
+	Animated driver.AnimatedValues
 	Focused  bool
 	// Selection is a field's selection, as the app last set it or Select
 	// moved it, in UTF-16 units.
-	Selection core.TextRange
+	Selection driver.TextRange
 	// Composing is the text an input method composes in a field (Compose);
 	// held is a value the app set meanwhile, applied when it ends.
 	Composing string
-	held      *core.MountItem
+	held      *driver.MountItem
 	// Screen is a screen's system header, sent where the environment
 	// has HeaderHeight; Modal a modal's config.
-	Screen core.ScreenConfig
-	Modal  core.ModalConfig
+	Screen driver.ScreenConfig
+	Modal  driver.ModalConfig
 }
 
 // clamp keeps a scroll view's offset within its content and insets, as
 // platforms do.
-func (v *View) clamp(p core.Point) core.Point {
+func (v *View) clamp(p driver.Point) driver.Point {
 	in := v.Scroll.Behavior.ContentInset
 	p.X = min(max(p.X, -in.Left), max(v.Content.Width-v.Frame.Size.Width, 0)+in.Right)
 	p.Y = min(max(p.Y, -in.Top), max(v.Content.Height-v.Frame.Size.Height, 0)+in.Bottom)
@@ -162,7 +163,7 @@ func (v *View) clamp(p core.Point) core.Point {
 
 // StickyShift is how far the sticky cell id of scroll view v moves from
 // its frame at v's offset, as a platform moves it.
-func (v *View) StickyShift(id core.NodeID) core.Points {
+func (v *View) StickyShift(id driver.NodeID) driver.Points {
 	for _, c := range v.Sticky {
 		if c.Cell == id {
 			if v.Scroll.Horizontal {
@@ -182,7 +183,7 @@ type NativeCommand struct {
 
 // WebCommand is a command a web view received, with its message or script.
 type WebCommand struct {
-	Command core.WebCommand
+	Command driver.WebCommand
 	Value   string
 }
 
@@ -191,10 +192,10 @@ func Start(t testing.TB, app func(cx *core.Scope) core.Node, opts ...Option) *Ap
 	t.Helper()
 	a := &App{
 		t:     t,
-		size:  core.Size{Width: 390, Height: 844},
+		size:  driver.Size{Width: 390, Height: 844},
 		Clock: core.NewManualClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
-		views: map[core.NodeID]*View{},
-		edits: map[core.NodeID]uint32{},
+		views: map[driver.NodeID]*View{},
+		edits: map[driver.NodeID]uint32{},
 	}
 	for _, o := range opts {
 		o(a)
@@ -217,7 +218,7 @@ func Start(t testing.TB, app func(cx *core.Scope) core.Node, opts ...Option) *Ap
 	})
 	t.Cleanup(a.root.Dispose)
 	a.start = a.Clock.Now()
-	a.anim = core.NewAnimator(func(ev core.Event) {
+	a.anim = driver.NewAnimator(func(ev driver.Event) {
 		a.mu.Lock()
 		a.posts = append(a.posts, func() { a.tree.Dispatch(ev) })
 		a.mu.Unlock()
@@ -266,7 +267,7 @@ func (a *App) Settle() {
 // waits for one, as a display's frames do.
 func (a *App) Advance(d time.Duration) {
 	for d > 0 {
-		step := min(d, core.FrameInterval)
+		step := min(d, driver.FrameInterval)
 		a.Clock.Advance(step)
 		d -= step
 		a.runFrame()
@@ -303,14 +304,14 @@ func (a *App) WaitFor(selector string, timeout time.Duration) *View {
 }
 
 // SetEnvironment reports env as a platform would and settles.
-func (a *App) SetEnvironment(env core.Environment) {
+func (a *App) SetEnvironment(env driver.Environment) {
 	a.tree.SetEnvironment(env)
 	a.Settle()
 }
 
 // Resize sets the surface size and settles.
-func (a *App) Resize(width, height core.Points) {
-	a.tree.Resize(core.Size{Width: width, Height: height})
+func (a *App) Resize(width, height driver.Points) {
+	a.tree.Resize(driver.Size{Width: width, Height: height})
 	a.Settle()
 }
 
@@ -382,7 +383,7 @@ func matches(v *View, kind, arg string) bool {
 	case "id":
 		return v.Props.TestID == arg
 	case "text":
-		return v.Kind == core.KindText && strings.Contains(v.Text, arg)
+		return v.Kind == driver.KindText && strings.Contains(v.Text, arg)
 	case "label":
 		return v.Props.Label == arg
 	case "role":
@@ -399,7 +400,7 @@ func (v *View) textWithin() string {
 	var b strings.Builder
 	var walk func(*View)
 	walk = func(v *View) {
-		if v.Kind == core.KindText {
+		if v.Kind == driver.KindText {
 			b.WriteString(v.Text)
 		}
 		for _, c := range v.Children {
@@ -410,14 +411,14 @@ func (v *View) textWithin() string {
 	return b.String()
 }
 
-var roles = map[core.Role]string{
-	core.RoleButton: "button", core.RoleLink: "link", core.RoleHeader: "header", core.RoleImage: "image",
-	core.RoleCheckbox: "checkbox", core.RoleSwitch: "switch", core.RoleRadio: "radio", core.RoleTab: "tab",
-	core.RoleText: "text", core.RoleTextField: "textbox", core.RoleAdjustable: "adjustable",
-	core.RoleProgressBar: "progressbar",
+var roles = map[driver.Role]string{
+	driver.RoleButton: "button", driver.RoleLink: "link", driver.RoleHeader: "header", driver.RoleImage: "image",
+	driver.RoleCheckbox: "checkbox", driver.RoleSwitch: "switch", driver.RoleRadio: "radio", driver.RoleTab: "tab",
+	driver.RoleText: "text", driver.RoleTextField: "textbox", driver.RoleAdjustable: "adjustable",
+	driver.RoleProgressBar: "progressbar",
 }
 
-func roleName(r core.Role) string { return roles[r] }
+func roleName(r driver.Role) string { return roles[r] }
 
 // walk calls fn for v (unless only below) and its visible descendants.
 func walk(v *View, below bool, fn func(*View)) {
@@ -438,8 +439,8 @@ func (a *App) Press(selector string) {
 	a.t.Helper()
 	v := a.Find(selector)
 	for p := v; p != nil; p = p.Parent {
-		if p.Events.Has(core.EventPress) || p.Events.Has(core.EventPressDown) {
-			a.press(p, core.EventPress)
+		if p.Events.Has(driver.EventPress) || p.Events.Has(driver.EventPressDown) {
+			a.press(p, driver.EventPress)
 			return
 		}
 	}
@@ -449,46 +450,46 @@ func (a *App) Press(selector string) {
 // press sends what a tap on v's center sends, one click with no
 // modifiers: presses outside to the overlays that listen and do not hold
 // v, then down, up and the press itself.
-func (a *App) press(v *View, kind core.EventKind) {
+func (a *App) press(v *View, kind driver.EventKind) {
 	local, center := v.center()
-	var outside []core.NodeID
+	var outside []driver.NodeID
 	walk(a.views[a.rootID], false, func(o *View) {
-		if o.Events.Has(core.EventPressOutside) && !v.within(o) {
+		if o.Events.Has(driver.EventPressOutside) && !v.within(o) {
 			outside = append(outside, o.ID)
 		}
 	})
 	for _, id := range outside {
-		a.dispatch(core.Event{Kind: core.EventPressOutside, ID: id, Point: center})
+		a.dispatch(driver.Event{Kind: driver.EventPressOutside, ID: id, Point: center})
 	}
-	for _, k := range []core.EventKind{core.EventPressDown, core.EventPressUp, kind} {
+	for _, k := range []driver.EventKind{driver.EventPressDown, driver.EventPressUp, kind} {
 		if v.Events.Has(k) {
-			a.dispatch(core.Event{Kind: k, ID: v.ID, Point: local, Page: center, Count: 1})
+			a.dispatch(driver.Event{Kind: k, ID: v.ID, Point: local, Page: center, Count: 1})
 		}
 	}
 }
 
 // center returns the middle of v in its own and in surface points.
-func (v *View) center() (local, page core.Point) {
+func (v *View) center() (local, page driver.Point) {
 	at := v.surfaceFrame()
-	local = core.Point{X: at.Size.Width / 2, Y: at.Size.Height / 2}
-	return local, core.Point{X: at.Origin.X + local.X, Y: at.Origin.Y + local.Y}
+	local = driver.Point{X: at.Size.Width / 2, Y: at.Size.Height / 2}
+	return local, driver.Point{X: at.Origin.X + local.X, Y: at.Origin.Y + local.Y}
 }
 
 // PressDown starts a press on the view selector matches, or the pressable
 // view around it, and holds it until PressUp.
-func (a *App) PressDown(selector string) { a.t.Helper(); a.half(selector, core.EventPressDown) }
+func (a *App) PressDown(selector string) { a.t.Helper(); a.half(selector, driver.EventPressDown) }
 
 // PressUp ends a press PressDown started.
-func (a *App) PressUp(selector string) { a.t.Helper(); a.half(selector, core.EventPressUp) }
+func (a *App) PressUp(selector string) { a.t.Helper(); a.half(selector, driver.EventPressUp) }
 
-func (a *App) half(selector string, kind core.EventKind) {
+func (a *App) half(selector string, kind driver.EventKind) {
 	a.t.Helper()
 	for p := a.Find(selector); p != nil; p = p.Parent {
 		if p.Events.Has(kind) {
-			ev := core.Event{Kind: kind, ID: p.ID}
-			if kind != core.EventHoverIn && kind != core.EventHoverOut {
+			ev := driver.Event{Kind: kind, ID: p.ID}
+			if kind != driver.EventHoverIn && kind != driver.EventHoverOut {
 				ev.Point, ev.Page = p.center()
-				if kind != core.EventContextMenu {
+				if kind != driver.EventContextMenu {
 					ev.Count = 1
 				}
 			}
@@ -503,9 +504,9 @@ func (a *App) half(selector string, kind core.EventKind) {
 // matches.
 func (a *App) Hover(selector string, on bool) {
 	a.t.Helper()
-	kind := core.EventHoverIn
+	kind := driver.EventHoverIn
 	if !on {
-		kind = core.EventHoverOut
+		kind = driver.EventHoverOut
 	}
 	a.half(selector, kind)
 }
@@ -516,8 +517,8 @@ func (a *App) LongPress(selector string) {
 	a.t.Helper()
 	v := a.Find(selector)
 	for p := v; p != nil; p = p.Parent {
-		if p.Events.Has(core.EventLongPress) {
-			a.press(p, core.EventLongPress)
+		if p.Events.Has(driver.EventLongPress) {
+			a.press(p, driver.EventLongPress)
 			return
 		}
 	}
@@ -531,17 +532,17 @@ func (a *App) AccessibilityAction(selector, name string) {
 	a.t.Helper()
 	v := a.Find(selector)
 	switch {
-	case v.Props.HasAction(name) && v.Events.Has(core.EventAccessibilityAction):
-		a.dispatch(core.Event{Kind: core.EventAccessibilityAction, ID: v.ID, Text: name})
-	case name == core.ActionActivate && v.Events.Has(core.EventPress):
-		a.dispatch(core.Event{Kind: core.EventPress, ID: v.ID})
+	case v.Props.HasAction(name) && v.Events.Has(driver.EventAccessibilityAction):
+		a.dispatch(driver.Event{Kind: driver.EventAccessibilityAction, ID: v.ID, Text: name})
+	case name == driver.ActionActivate && v.Events.Has(driver.EventPress):
+		a.dispatch(driver.Event{Kind: driver.EventPress, ID: v.ID})
 	default:
 		a.t.Fatalf("nsgotest: %q offers no %q action", selector, name)
 	}
 }
 
 // Alerts returns the alerts shown and not answered yet, oldest first.
-func (a *App) Alerts() []core.AlertConfig { return a.alerts }
+func (a *App) Alerts() []driver.AlertConfig { return a.alerts }
 
 // Answer chooses the button at index (-1: dismiss) of the oldest alert
 // shown.
@@ -552,20 +553,20 @@ func (a *App) Answer(index int) {
 	}
 	id := a.alerts[0].ID
 	a.alerts = a.alerts[1:]
-	a.dispatch(core.Event{Kind: core.EventAlert, Count: id, Index: index})
+	a.dispatch(driver.Event{Kind: driver.EventAlert, Count: id, Index: index})
 }
 
 // RightClick sends a secondary click to the view selector matches, or the
 // one around it that listens.
-func (a *App) RightClick(selector string) { a.t.Helper(); a.half(selector, core.EventContextMenu) }
+func (a *App) RightClick(selector string) { a.t.Helper(); a.half(selector, driver.EventContextMenu) }
 
 // Key presses a keyboard shortcut, such as "mod+s", if the app binds it.
 func (a *App) Key(key string) {
 	a.t.Helper()
-	k := core.NormalizeKey(key)
+	k := driver.NormalizeKey(key)
 	for _, b := range a.Keymap {
 		if b == k {
-			a.dispatch(core.Event{Kind: core.EventKey, Text: k})
+			a.dispatch(driver.Event{Kind: driver.EventKey, Text: k})
 			return
 		}
 	}
@@ -574,10 +575,10 @@ func (a *App) Key(key string) {
 
 // Pan drags the view selector matches, or the one around it with a pan,
 // through each translation in turn, then lets go.
-func (a *App) Pan(selector string, translations ...core.Point) {
+func (a *App) Pan(selector string, translations ...driver.Point) {
 	a.t.Helper()
-	v := a.gestureView(selector, core.EventPan)
-	a.gesture(v, core.EventPan, len(translations), func(ev *core.Event, i int) {
+	v := a.gestureView(selector, driver.EventPan)
+	a.gesture(v, driver.EventPan, len(translations), func(ev *driver.Event, i int) {
 		ev.Point = translations[i]
 	})
 }
@@ -585,39 +586,39 @@ func (a *App) Pan(selector string, translations ...core.Point) {
 // Drag puts a finger down at the middle of the view selector matches,
 // moves it there plus each offset in turn, 16 ms apart, and lifts it, as
 // the platform reports touches: OnTouch and the touch responder hear it.
-func (a *App) Drag(selector string, offsets ...core.Point) {
+func (a *App) Drag(selector string, offsets ...driver.Point) {
 	a.t.Helper()
 	_, at := a.Find(selector).center()
-	finger := func(phase core.GesturePhase, p core.Point, step int) {
-		a.dispatch(core.Event{Kind: core.EventTouch, Phase: phase, Time: time.Duration(step) * 16 * time.Millisecond,
-			Touches: []core.Touch{{PagePosition: p, Changed: true}}})
+	finger := func(phase driver.GesturePhase, p driver.Point, step int) {
+		a.dispatch(driver.Event{Kind: driver.EventTouch, Phase: phase, Time: time.Duration(step) * 16 * time.Millisecond,
+			Touches: []driver.Touch{{PagePosition: p, Changed: true}}})
 	}
-	finger(core.GestureBegan, at, 0)
+	finger(driver.GestureBegan, at, 0)
 	p := at
 	for i, d := range offsets {
-		p = core.Point{X: at.X + d.X, Y: at.Y + d.Y}
-		finger(core.GestureChanged, p, i+1)
+		p = driver.Point{X: at.X + d.X, Y: at.Y + d.Y}
+		finger(driver.GestureChanged, p, i+1)
 	}
-	finger(core.GestureEnded, p, len(offsets)+1)
+	finger(driver.GestureEnded, p, len(offsets)+1)
 }
 
 // Pinch pinches the view selector matches, or the one around it with a
 // pinch, through each scale in turn.
 func (a *App) Pinch(selector string, scales ...float32) {
 	a.t.Helper()
-	v := a.gestureView(selector, core.EventPinch)
-	a.gesture(v, core.EventPinch, len(scales), func(ev *core.Event, i int) { ev.Value = scales[i] })
+	v := a.gestureView(selector, driver.EventPinch)
+	a.gesture(v, driver.EventPinch, len(scales), func(ev *driver.Event, i int) { ev.Value = scales[i] })
 }
 
 // Rotate rotates the view selector matches, or the one around it with a
 // rotation, through each angle in radians in turn.
 func (a *App) Rotate(selector string, angles ...float32) {
 	a.t.Helper()
-	v := a.gestureView(selector, core.EventRotation)
-	a.gesture(v, core.EventRotation, len(angles), func(ev *core.Event, i int) { ev.Value = angles[i] })
+	v := a.gestureView(selector, driver.EventRotation)
+	a.gesture(v, driver.EventRotation, len(angles), func(ev *driver.Event, i int) { ev.Value = angles[i] })
 }
 
-func (a *App) gestureView(selector string, kind core.EventKind) *View {
+func (a *App) gestureView(selector string, kind driver.EventKind) *View {
 	a.t.Helper()
 	for p := a.Find(selector); p != nil; p = p.Parent {
 		if p.Events.Has(kind) {
@@ -630,22 +631,22 @@ func (a *App) gestureView(selector string, kind core.EventKind) *View {
 
 // gesture sends a gesture of n steps: began with the first, changed with
 // the rest and ended with the last.
-func (a *App) gesture(v *View, kind core.EventKind, n int, step func(*core.Event, int)) {
+func (a *App) gesture(v *View, kind driver.EventKind, n int, step func(*driver.Event, int)) {
 	if n == 0 {
 		return
 	}
-	send := func(phase core.GesturePhase, i int) {
-		ev := core.Event{Kind: kind, ID: v.ID, Phase: phase}
+	send := func(phase driver.GesturePhase, i int) {
+		ev := driver.Event{Kind: kind, ID: v.ID, Phase: phase}
 		step(&ev, i)
 		// A platform moves bound values before it reports the move.
 		a.anim.Gesture(&ev)
 		a.dispatch(ev)
 	}
-	send(core.GestureBegan, 0)
+	send(driver.GestureBegan, 0)
 	for i := 1; i < n; i++ {
-		send(core.GestureChanged, i)
+		send(driver.GestureChanged, i)
 	}
-	send(core.GestureEnded, n-1)
+	send(driver.GestureEnded, n-1)
 }
 
 // ChooseMenu chooses the application menu item at path, its labels from
@@ -654,7 +655,7 @@ func (a *App) ChooseMenu(path ...string) {
 	a.t.Helper()
 	items := a.Menu
 	for i, label := range path {
-		var found *core.MenuEntry
+		var found *driver.MenuEntry
 		for k := range items {
 			if items[k].Label == label {
 				found = &items[k]
@@ -667,7 +668,7 @@ func (a *App) ChooseMenu(path ...string) {
 			if found.ID == 0 {
 				a.t.Fatalf("nsgotest: menu item %q does nothing", path)
 			}
-			a.dispatch(core.Event{Kind: core.EventMenu, Count: found.ID})
+			a.dispatch(driver.Event{Kind: driver.EventMenu, Count: found.ID})
 			return
 		}
 		items = found.Items
@@ -675,13 +676,13 @@ func (a *App) ChooseMenu(path ...string) {
 }
 
 // Back presses Escape or the back button.
-func (a *App) Back() { a.dispatch(core.Event{Kind: core.EventBack, ID: a.rootID}) }
+func (a *App) Back() { a.dispatch(driver.Event{Kind: driver.EventBack, ID: a.rootID}) }
 
 // HeaderBack presses the back button in the system header of the screen
 // selector matches, as iOS and Android draw it.
 func (a *App) HeaderBack(selector string) {
 	a.t.Helper()
-	a.dispatch(core.Event{Kind: core.EventBack, ID: a.Find(selector).ID})
+	a.dispatch(driver.Event{Kind: driver.EventBack, ID: a.Find(selector).ID})
 }
 
 // SwipeClose swipes away the modal around what selector matches, as an
@@ -689,14 +690,14 @@ func (a *App) HeaderBack(selector string) {
 // ("swipe").
 func (a *App) SwipeClose(selector string) {
 	a.t.Helper()
-	a.dispatch(core.Event{Kind: core.EventRequestClose, ID: a.modal(selector).ID, Text: "swipe", Finished: true})
+	a.dispatch(driver.Event{Kind: driver.EventRequestClose, ID: a.modal(selector).ID, Text: "swipe", Finished: true})
 }
 
 // PresentModal reports that the platform presents the modal around what
 // selector matches at size, with insets covered, as an iOS sheet does.
-func (a *App) PresentModal(selector string, size core.Size, insets core.Edges) {
+func (a *App) PresentModal(selector string, size driver.Size, insets driver.Edges) {
 	a.t.Helper()
-	a.dispatch(core.Event{Kind: core.EventModalSize, ID: a.modal(selector).ID, Size: size, Insets: insets})
+	a.dispatch(driver.Event{Kind: driver.EventModalSize, ID: a.modal(selector).ID, Size: size, Insets: insets})
 }
 
 // modal returns the modal selector matches or holds what it matches.
@@ -704,7 +705,7 @@ func (a *App) modal(selector string) *View {
 	a.t.Helper()
 	v := a.Find(selector)
 	for m := v; m != nil; m = m.Parent {
-		if m.Kind == core.KindModal {
+		if m.Kind == driver.KindModal {
 			return m
 		}
 	}
@@ -712,7 +713,7 @@ func (a *App) modal(selector string) *View {
 	return nil
 }
 
-func (v *View) surfaceFrame() core.Bounds {
+func (v *View) surfaceFrame() driver.Bounds {
 	b := v.Frame
 	for p := v.Parent; p != nil; p = p.Parent {
 		b.Origin.X += p.Frame.Origin.X - p.Offset.X
@@ -736,37 +737,37 @@ func (v *View) within(o *View) bool {
 func (a *App) Type(selector, text string) {
 	a.t.Helper()
 	v := a.Find(selector)
-	if v.Kind != core.KindInput {
+	if v.Kind != driver.KindInput {
 		a.t.Fatalf("nsgotest: %q is not a text field", selector)
 	}
 	if v.Input.Readonly || v.Input.Disabled {
 		a.t.Fatalf("nsgotest: %q does not take text", selector)
 	}
-	a.edit(v, core.ClipUTF16(text, v.Input.MaxLength))
+	a.edit(v, driver.ClipUTF16(text, v.Input.MaxLength))
 }
 
 func (a *App) edit(v *View, text string) {
 	a.edits[v.ID]++
 	v.Text = text
-	a.dispatch(core.Event{Kind: core.EventChangeText, ID: v.ID, Text: text, Count: a.edits[v.ID]})
-	end := core.UTF16Len(text)
-	a.moveSelection(v, core.TextRange{Start: end, End: end})
+	a.dispatch(driver.Event{Kind: driver.EventChangeText, ID: v.ID, Text: text, Count: a.edits[v.ID]})
+	end := driver.UTF16Len(text)
+	a.moveSelection(v, driver.TextRange{Start: end, End: end})
 }
 
 // Paste pastes into the field selector matches as the user would: the
 // field hears it with OnPaste, then, unless its PasteBehavior is
 // PasteReport, the text goes in at its end.
-func (a *App) Paste(selector string, p core.PasteEvent) {
+func (a *App) Paste(selector string, p driver.PasteEvent) {
 	a.t.Helper()
 	v := a.Find(selector)
-	if v.Kind != core.KindInput || v.Input.Readonly || v.Input.Disabled {
+	if v.Kind != driver.KindInput || v.Input.Readonly || v.Input.Disabled {
 		a.t.Fatalf("nsgotest: %q takes no paste", selector)
 	}
-	if v.Events.Has(core.EventPaste) {
-		a.dispatch(core.Event{Kind: core.EventPaste, ID: v.ID, Data: &p})
+	if v.Events.Has(driver.EventPaste) {
+		a.dispatch(driver.Event{Kind: driver.EventPaste, ID: v.ID, Data: &p})
 	}
-	if p.Text != "" && v.Input.PasteBehavior == core.PasteInsert {
-		a.edit(v, core.ClipUTF16(v.Text+p.Text, v.Input.MaxLength))
+	if p.Text != "" && v.Input.PasteBehavior == driver.PasteInsert {
+		a.edit(v, driver.ClipUTF16(v.Text+p.Text, v.Input.MaxLength))
 	}
 }
 
@@ -775,19 +776,19 @@ func (a *App) Paste(selector string, p core.PasteEvent) {
 func (a *App) Select(selector string, start, end int) {
 	a.t.Helper()
 	v := a.Find(selector)
-	if v.Kind != core.KindInput {
+	if v.Kind != driver.KindInput {
 		a.t.Fatalf("nsgotest: %q is not a text field", selector)
 	}
-	a.moveSelection(v, core.TextRange{Start: start, End: end})
+	a.moveSelection(v, driver.TextRange{Start: start, End: end})
 }
 
-func (a *App) moveSelection(v *View, r core.TextRange) {
+func (a *App) moveSelection(v *View, r driver.TextRange) {
 	if r == v.Selection {
 		return
 	}
 	v.Selection = r
-	if v.Events.Has(core.EventSelectionChange) {
-		a.dispatch(core.Event{Kind: core.EventSelectionChange, ID: v.ID, Index: r.Start, Count: uint32(r.End)})
+	if v.Events.Has(driver.EventSelectionChange) {
+		a.dispatch(driver.Event{Kind: driver.EventSelectionChange, ID: v.ID, Index: r.Start, Count: uint32(r.End)})
 	}
 }
 
@@ -797,8 +798,8 @@ func (a *App) moveSelection(v *View, r core.TextRange) {
 func (a *App) KeyPress(selector, key string) {
 	a.t.Helper()
 	v := a.Find(selector)
-	if v.Events.Has(core.EventKeyPress) {
-		a.dispatch(core.Event{Kind: core.EventKeyPress, ID: v.ID, Text: key})
+	if v.Events.Has(driver.EventKeyPress) {
+		a.dispatch(driver.Event{Kind: driver.EventKeyPress, ID: v.ID, Text: key})
 	}
 	switch key {
 	case "Enter":
@@ -808,7 +809,7 @@ func (a *App) KeyPress(selector, key string) {
 			a.edit(v, string(r[:len(r)-1]))
 		}
 	default:
-		if add, ok := core.LimitEdit(v.Text, 0, key, v.Input.MaxLength); ok {
+		if add, ok := driver.LimitEdit(v.Text, 0, key, v.Input.MaxLength); ok {
 			a.edit(v, v.Text+add)
 		}
 	}
@@ -822,14 +823,14 @@ func (a *App) Compose(selector, text string) {
 	v := a.Find(selector)
 	if text != "" {
 		v.Composing = text
-		if v.Events.Has(core.EventCompositionChange) {
-			a.dispatch(core.Event{Kind: core.EventCompositionChange, ID: v.ID, Text: text})
+		if v.Events.Has(driver.EventCompositionChange) {
+			a.dispatch(driver.Event{Kind: driver.EventCompositionChange, ID: v.ID, Text: text})
 		}
 		return
 	}
 	v.Composing = ""
-	if v.Events.Has(core.EventCompositionChange) {
-		a.dispatch(core.Event{Kind: core.EventCompositionChange, ID: v.ID, Finished: true})
+	if v.Events.Has(driver.EventCompositionChange) {
+		a.dispatch(driver.Event{Kind: driver.EventCompositionChange, ID: v.ID, Finished: true})
 	}
 	if it := v.held; it != nil {
 		v.held = nil
@@ -843,7 +844,7 @@ func (a *App) Compose(selector, text string) {
 func (a *App) Focus(selector string) {
 	a.t.Helper()
 	v := a.Find(selector)
-	if v.Kind != core.KindInput {
+	if v.Kind != driver.KindInput {
 		a.t.Fatalf("nsgotest: %q is not a text field", selector)
 	}
 	for _, o := range a.views {
@@ -862,27 +863,27 @@ func (a *App) Submit(selector string) {
 	a.t.Helper()
 	v := a.Find(selector)
 	switch v.Input.Submit() {
-	case core.SubmitBehaviorNewline:
-		if add, ok := core.LimitEdit(v.Text, 0, "\n", v.Input.MaxLength); ok && !v.Input.Readonly {
+	case driver.SubmitBehaviorNewline:
+		if add, ok := driver.LimitEdit(v.Text, 0, "\n", v.Input.MaxLength); ok && !v.Input.Readonly {
 			a.edit(v, v.Text+add)
 		}
 		return
-	case core.SubmitBehaviorBlurAndSubmit:
-		a.dispatch(core.Event{Kind: core.EventSubmitEditing, ID: v.ID, Text: v.Text})
+	case driver.SubmitBehaviorBlurAndSubmit:
+		a.dispatch(driver.Event{Kind: driver.EventSubmitEditing, ID: v.ID, Text: v.Text})
 		a.setFocus(v, false)
 		a.Settle()
 		return
 	}
-	a.dispatch(core.Event{Kind: core.EventSubmitEditing, ID: v.ID, Text: v.Text})
+	a.dispatch(driver.Event{Kind: driver.EventSubmitEditing, ID: v.ID, Text: v.Text})
 }
 
 // Load reports that the image selector matches loaded at pixels.
-func (a *App) Load(selector string, pixels core.Size) {
+func (a *App) Load(selector string, pixels driver.Size) {
 	a.t.Helper()
 	v := a.Find(selector)
-	for _, k := range []core.EventKind{core.EventLoadStart, core.EventLoad, core.EventLoadEnd} {
+	for _, k := range []driver.EventKind{driver.EventLoadStart, driver.EventLoad, driver.EventLoadEnd} {
 		if v.Events.Has(k) {
-			a.dispatch(core.Event{Kind: k, ID: v.ID, Size: pixels})
+			a.dispatch(driver.Event{Kind: k, ID: v.ID, Size: pixels})
 		}
 	}
 }
@@ -892,9 +893,9 @@ func (a *App) Load(selector string, pixels core.Size) {
 func (a *App) Play(selector string, info core.VideoInfo) {
 	a.t.Helper()
 	v := a.Find(selector)
-	for _, k := range []core.EventKind{core.EventLoadStart, core.EventLoad} {
+	for _, k := range []driver.EventKind{driver.EventLoadStart, driver.EventLoad} {
 		if v.Events.Has(k) {
-			a.dispatch(core.Event{Kind: k, ID: v.ID, Duration: info.Duration, Size: info.Size})
+			a.dispatch(driver.Event{Kind: k, ID: v.ID, Duration: info.Duration, Size: info.Size})
 		}
 	}
 }
@@ -904,29 +905,29 @@ func (a *App) Play(selector string, info core.VideoInfo) {
 func (a *App) Progress(selector string, position, duration time.Duration) {
 	a.t.Helper()
 	v := a.Find(selector)
-	if v.Events.Has(core.EventProgress) {
-		a.dispatch(core.Event{Kind: core.EventProgress, ID: v.ID, Time: position, Duration: duration})
+	if v.Events.Has(driver.EventProgress) {
+		a.dispatch(driver.Event{Kind: driver.EventProgress, ID: v.ID, Time: position, Duration: duration})
 	}
-	if position >= duration && v.Events.Has(core.EventEnd) {
-		a.dispatch(core.Event{Kind: core.EventEnd, ID: v.ID})
+	if position >= duration && v.Events.Has(driver.EventEnd) {
+		a.dispatch(driver.Event{Kind: driver.EventEnd, ID: v.ID})
 	}
 }
 
 // Navigate reports that the web view selector matches loaded the page
 // nav describes, as a platform does: it starts loading, then loads.
-func (a *App) Navigate(selector string, nav core.WebNavigation) {
+func (a *App) Navigate(selector string, nav driver.WebNavigation) {
 	a.t.Helper()
 	v := a.Find(selector)
 	for _, loading := range []bool{true, false} {
 		nav.Loading = loading
-		kind := core.EventLoad
+		kind := driver.EventLoad
 		if loading {
-			kind = core.EventLoadStart
+			kind = driver.EventLoadStart
 		}
-		for _, k := range []core.EventKind{kind, core.EventNavigationStateChange} {
+		for _, k := range []driver.EventKind{kind, driver.EventNavigationStateChange} {
 			if v.Events.Has(k) {
 				n := nav
-				a.dispatch(core.Event{Kind: k, ID: v.ID, Navigation: &n})
+				a.dispatch(driver.Event{Kind: k, ID: v.ID, Navigation: &n})
 			}
 		}
 	}
@@ -937,35 +938,35 @@ func (a *App) Navigate(selector string, nav core.WebNavigation) {
 func (a *App) PostMessage(selector, data string) {
 	a.t.Helper()
 	v := a.Find(selector)
-	if v.Events.Has(core.EventMessage) {
-		a.dispatch(core.Event{Kind: core.EventMessage, ID: v.ID, Text: data})
+	if v.Events.Has(driver.EventMessage) {
+		a.dispatch(driver.Event{Kind: driver.EventMessage, ID: v.ID, Text: data})
 	}
 }
 
 // Scroll scrolls the view selector matches to offset.
-func (a *App) Scroll(selector string, offset core.Point) {
+func (a *App) Scroll(selector string, offset driver.Point) {
 	a.t.Helper()
 	v := a.Find(selector)
 	v.Offset = offset
 	a.anim.Scroll(v.ID, offset)
-	a.dispatch(core.Event{Kind: core.EventScroll, ID: v.ID, Point: offset, Count: v.Applied})
+	a.dispatch(driver.Event{Kind: driver.EventScroll, ID: v.ID, Point: offset, Count: v.Applied})
 }
 
 // DragScroll drags the scroll view selector matches to offset and lets
 // go at velocity (points per second along its axis, positive as the
 // offset grows), as a platform does: the drag's events, then the glide or
 // the snap its ScrollBehavior decides, clamped to its content and insets.
-func (a *App) DragScroll(selector string, offset core.Point, velocity float32) {
+func (a *App) DragScroll(selector string, offset driver.Point, velocity float32) {
 	a.t.Helper()
 	v := a.Find(selector)
 	if v.Scroll.Behavior.NoScroll {
 		return
 	}
-	a.scrollEvent(v, core.EventScrollDragStart)
+	a.scrollEvent(v, driver.EventScrollDragStart)
 	a.Scroll(selector, offset)
-	a.scrollEvent(v, core.EventScrollDragEnd)
+	a.scrollEvent(v, driver.EventScrollDragEnd)
 	b := &v.Scroll.Behavior
-	main := func(p core.Point) core.Points {
+	main := func(p driver.Point) driver.Points {
 		if v.Scroll.Horizontal {
 			return p.X
 		}
@@ -978,7 +979,7 @@ func (a *App) DragScroll(selector string, offset core.Point, velocity float32) {
 		lo, hi = -b.ContentInset.Left, b.ContentInset.Right
 	}
 	at, ms := main(offset), velocity/1000
-	to := core.Projected(at, ms, b.Deceleration())
+	to := driver.Projected(at, ms, b.Deceleration())
 	if snap, ok := b.SnapTarget(at, to, ms, viewport, content); ok {
 		to = snap
 	} else if ms == 0 {
@@ -988,7 +989,7 @@ func (a *App) DragScroll(selector string, offset core.Point, velocity float32) {
 	if to == at {
 		return
 	}
-	a.scrollEvent(v, core.EventMomentumStart)
+	a.scrollEvent(v, driver.EventMomentumStart)
 	end := offset
 	if v.Scroll.Horizontal {
 		end.X = to
@@ -996,7 +997,7 @@ func (a *App) DragScroll(selector string, offset core.Point, velocity float32) {
 		end.Y = to
 	}
 	a.Scroll(selector, end)
-	a.scrollEvent(v, core.EventMomentumEnd)
+	a.scrollEvent(v, driver.EventMomentumEnd)
 }
 
 // PullToRefresh pulls the refreshable scroll view selector matches down
@@ -1007,9 +1008,9 @@ func (a *App) PullToRefresh(selector string) {
 	if !v.Scroll.Refreshable || v.Scroll.Refreshing || v.Scroll.Horizontal || v.Scroll.Behavior.NoScroll {
 		return
 	}
-	a.scrollEvent(v, core.EventScrollDragStart)
-	a.dispatch(core.Event{Kind: core.EventRefresh, ID: v.ID, Point: v.Offset, Count: v.Applied})
-	a.scrollEvent(v, core.EventScrollDragEnd)
+	a.scrollEvent(v, driver.EventScrollDragStart)
+	a.dispatch(driver.Event{Kind: driver.EventRefresh, ID: v.ID, Point: v.Offset, Count: v.Applied})
+	a.scrollEvent(v, driver.EventScrollDragEnd)
 }
 
 // PinchZoom zooms the zoomable scroll view selector matches to scale, as a
@@ -1022,12 +1023,12 @@ func (a *App) PinchZoom(selector string, scale float32) {
 		return
 	}
 	v.ZoomScale = min(max(scale, c.MinZoomScale), c.MaxZoomScale)
-	a.dispatch(core.Event{Kind: core.EventScroll, ID: v.ID, Point: v.Offset, Value: v.ZoomScale, Count: v.Applied})
+	a.dispatch(driver.Event{Kind: driver.EventScroll, ID: v.ID, Point: v.Offset, Value: v.ZoomScale, Count: v.Applied})
 }
 
-func (a *App) scrollEvent(v *View, kind core.EventKind) {
+func (a *App) scrollEvent(v *View, kind driver.EventKind) {
 	if v.Events.Has(kind) {
-		a.dispatch(core.Event{Kind: kind, ID: v.ID, Point: v.Offset, Value: v.ZoomScale, Count: v.Applied})
+		a.dispatch(driver.Event{Kind: kind, ID: v.ID, Point: v.Offset, Value: v.ZoomScale, Count: v.Applied})
 	}
 }
 
@@ -1036,10 +1037,10 @@ func (a *App) scrollEvent(v *View, kind core.EventKind) {
 func (a *App) DropFiles(selector string, uris ...string) {
 	a.t.Helper()
 	v := a.Find(selector)
-	if v.Events.Has(core.EventFileDragEnter) {
-		a.dispatch(core.Event{Kind: core.EventFileDragEnter, ID: v.ID})
+	if v.Events.Has(driver.EventFileDragEnter) {
+		a.dispatch(driver.Event{Kind: driver.EventFileDragEnter, ID: v.ID})
 	}
-	a.dispatch(core.Event{Kind: core.EventFileDrop, ID: v.ID, URIs: uris})
+	a.dispatch(driver.Event{Kind: driver.EventFileDrop, ID: v.ID, URIs: uris})
 }
 
 // Emit reports that the component of the native view selector matches
@@ -1047,7 +1048,7 @@ func (a *App) DropFiles(selector string, uris ...string) {
 func (a *App) Emit(selector, name string, data any) {
 	a.t.Helper()
 	v := a.Find(selector)
-	a.dispatch(core.Event{Kind: core.EventNative, ID: v.ID, Text: name, Data: data})
+	a.dispatch(driver.Event{Kind: driver.EventNative, ID: v.ID, Text: name, Data: data})
 }
 
 // animate steps the animator to the clock and records the values it
@@ -1056,35 +1057,35 @@ func (a *App) animate() {
 	if a.anim.Running() {
 		a.anim.Step(a.Clock.Now().Sub(a.start))
 	}
-	a.anim.Changed(func(id core.NodeID, vals core.AnimatedValues) {
+	a.anim.Changed(func(id driver.NodeID, vals driver.AnimatedValues) {
 		if v := a.views[id]; v != nil {
 			v.Animated = vals
 		}
 	})
 }
 
-func (a *App) dispatch(ev core.Event) {
+func (a *App) dispatch(ev driver.Event) {
 	a.tree.Dispatch(ev)
 	a.Settle()
 }
 
-func (a *App) apply(b *core.MountBatch) {
+func (a *App) apply(b *driver.MountBatch) {
 	a.rootID = b.Root
 	for _, it := range b.Items {
 		v := a.views[it.ID]
 		switch it.Kind {
-		case core.ItemCreate:
-			a.views[it.ID] = &View{ID: it.ID, Kind: it.View, Style: core.ViewStyle{Opacity: 1}}
-		case core.ItemDelete:
+		case driver.ItemCreate:
+			a.views[it.ID] = &View{ID: it.ID, Kind: it.View, Style: driver.ViewStyle{Opacity: 1}}
+		case driver.ItemDelete:
 			if v != nil {
 				v.detach()
 			}
 			a.anim.Forget(it.ID)
 			delete(a.views, it.ID)
 			delete(a.edits, it.ID)
-		case core.ItemRemove:
+		case driver.ItemRemove:
 			v.detach()
-		case core.ItemInsert:
+		case driver.ItemInsert:
 			v.detach()
 			p := a.views[it.Parent]
 			at := len(p.Children)
@@ -1095,59 +1096,59 @@ func (a *App) apply(b *core.MountBatch) {
 			}
 			p.Children = append(p.Children[:at], append([]*View{v}, p.Children[at:]...)...)
 			v.Parent = p
-		case core.ItemFrame:
+		case driver.ItemFrame:
 			v.Frame = it.Frame
-		case core.ItemViewStyle:
+		case driver.ItemViewStyle:
 			v.Style = *it.ViewStyle
-		case core.ItemViewProps:
+		case driver.ItemViewProps:
 			v.Props = *it.ViewProps
-		case core.ItemAccessibilityLabel:
+		case driver.ItemAccessibilityLabel:
 			v.Props.Label = it.Value
-		case core.ItemAccessibilityFocus:
+		case driver.ItemAccessibilityFocus:
 			a.AccessibilityFocus = v
-		case core.ItemEvents:
+		case driver.ItemEvents:
 			v.Events = it.Events
-		case core.ItemText:
+		case driver.ItemText:
 			v.Text = it.Text.Text
-		case core.ItemInput:
+		case driver.ItemInput:
 			v.Input = *it.Input
-		case core.ItemInputValue:
+		case driver.ItemInputValue:
 			if v.Composing != "" {
 				held := it
 				v.held = &held
 			} else if a.edits[it.ID] <= it.Count {
 				v.Text = it.Value
 			}
-		case core.ItemSelection:
-			n := core.UTF16Len(v.Text)
+		case driver.ItemSelection:
+			n := driver.UTF16Len(v.Text)
 			r := it.Selection
-			v.Selection = core.TextRange{Start: min(max(r.Start, 0), n), End: min(max(r.End, 0), n)}
-		case core.ItemScrollContent:
+			v.Selection = driver.TextRange{Start: min(max(r.Start, 0), n), End: min(max(r.End, 0), n)}
+		case driver.ItemScrollContent:
 			v.Content = it.Size
-		case core.ItemScrollConfig:
+		case driver.ItemScrollConfig:
 			if !v.Scroll.Zooms() && it.Scroll.Zooms() || it.Scroll.ZoomScale != v.Scroll.ZoomScale {
 				v.ZoomScale = it.Scroll.ZoomScale
 			}
 			v.Scroll = *it.Scroll
-		case core.ItemZoomTo:
+		case driver.ItemZoomTo:
 			v.ZoomScale = it.Zoom.Scale
 			id, at, z := it.ID, v.Offset, v.ZoomScale
 			a.mu.Lock()
 			a.posts = append(a.posts, func() {
-				a.tree.Dispatch(core.Event{Kind: core.EventScroll, ID: id, Point: at, Value: z})
+				a.tree.Dispatch(driver.Event{Kind: driver.EventScroll, ID: id, Point: at, Value: z})
 			})
 			a.mu.Unlock()
-		case core.ItemImage:
+		case driver.ItemImage:
 			v.Image = *it.Image
-		case core.ItemWeb:
+		case driver.ItemWeb:
 			v.Web = *it.Web
-		case core.ItemWebCommand:
+		case driver.ItemWebCommand:
 			v.WebCommands = append(v.WebCommands, WebCommand{it.WebCommand, it.Value})
-		case core.ItemVideo:
+		case driver.ItemVideo:
 			v.Video = *it.Video
-		case core.ItemVideoSeek:
+		case driver.ItemVideoSeek:
 			v.Seeks = append(v.Seeks, it.Time)
-		case core.ItemNative:
+		case driver.ItemNative:
 			v.Component = it.Native.Component
 			if v.NativeProps == nil {
 				v.NativeProps = map[string]any{}
@@ -1159,22 +1160,22 @@ func (a *App) apply(b *core.MountBatch) {
 					v.NativeProps[k] = p
 				}
 			}
-		case core.ItemNativeCommand:
+		case driver.ItemNativeCommand:
 			v.NativeCommands = append(v.NativeCommands, NativeCommand{it.Value, it.Data})
-		case core.ItemAnimation:
+		case driver.ItemAnimation:
 			a.anim.Apply(it.Animation)
-		case core.ItemFocus:
+		case driver.ItemFocus:
 			for _, o := range a.views {
 				if o != v {
 					a.setFocus(o, false)
 				}
 			}
 			a.setFocus(v, true)
-		case core.ItemBlur:
+		case driver.ItemBlur:
 			a.setFocus(v, false)
-		case core.ItemScrollTo, core.ItemScrollBy:
+		case driver.ItemScrollTo, driver.ItemScrollBy:
 			v.Applied++
-			if it.Kind == core.ItemScrollBy {
+			if it.Kind == driver.ItemScrollBy {
 				v.Offset.X += it.Point.X
 				v.Offset.Y += it.Point.Y
 			} else {
@@ -1184,22 +1185,22 @@ func (a *App) apply(b *core.MountBatch) {
 			id, at, n := it.ID, v.Offset, v.Applied
 			a.mu.Lock()
 			a.posts = append(a.posts, func() {
-				a.tree.Dispatch(core.Event{Kind: core.EventScroll, ID: id, Point: at, Count: n})
+				a.tree.Dispatch(driver.Event{Kind: driver.EventScroll, ID: id, Point: at, Count: n})
 			})
 			a.mu.Unlock()
-		case core.ItemStickyCells:
+		case driver.ItemStickyCells:
 			v.Sticky = it.Sticky
-		case core.ItemSetClipboard:
+		case driver.ItemSetClipboard:
 			a.Clipboard = it.Value
-		case core.ItemReadClipboard:
+		case driver.ItemReadClipboard:
 			id, text := it.Count, a.Clipboard
 			a.mu.Lock()
 			a.posts = append(a.posts, func() {
-				a.tree.Dispatch(core.Event{Kind: core.EventClipboard, Count: id, Text: text})
+				a.tree.Dispatch(driver.Event{Kind: driver.EventClipboard, Count: id, Text: text})
 			})
 			a.mu.Unlock()
-		case core.ItemImageInfo:
-			ev := core.Event{Kind: core.EventImageInfo, Count: it.Count}
+		case driver.ItemImageInfo:
+			ev := driver.Event{Kind: driver.EventImageInfo, Count: it.Count}
 			if size, ok := a.ImageSizes[it.Image.Source.URI]; ok {
 				ev.Size = size
 			} else {
@@ -1208,30 +1209,30 @@ func (a *App) apply(b *core.MountBatch) {
 			a.mu.Lock()
 			a.posts = append(a.posts, func() { a.tree.Dispatch(ev) })
 			a.mu.Unlock()
-		case core.ItemKeymap:
+		case driver.ItemKeymap:
 			a.Keymap = a.Keymap[:0]
 			for _, b := range it.Keys {
 				if !slices.Contains(a.Keymap, b.Key) {
 					a.Keymap = append(a.Keymap, b.Key)
 				}
 			}
-		case core.ItemTitle:
+		case driver.ItemTitle:
 			a.Title = it.Value
-		case core.ItemStatusBar:
+		case driver.ItemStatusBar:
 			a.StatusBar = *it.StatusBar
-		case core.ItemScreen:
+		case driver.ItemScreen:
 			v.Screen = *it.Screen
-		case core.ItemModal:
+		case driver.ItemModal:
 			v.Modal = *it.Modal
-		case core.ItemMenu:
+		case driver.ItemMenu:
 			a.Menu = it.Menu
-		case core.ItemWindow:
+		case driver.ItemWindow:
 			a.Window = append(a.Window, *it.Window)
-		case core.ItemAnnounce:
+		case driver.ItemAnnounce:
 			a.Announced = append(a.Announced, it.Value)
-		case core.ItemAlert:
+		case driver.ItemAlert:
 			a.alerts = append(a.alerts, *it.Alert)
-		case core.ItemDismissKeyboard:
+		case driver.ItemDismissKeyboard:
 			for _, o := range a.views {
 				a.setFocus(o, false)
 			}
@@ -1246,12 +1247,12 @@ func (a *App) setFocus(v *View, on bool) {
 		return
 	}
 	v.Focused = on
-	kind := core.EventBlur
+	kind := driver.EventBlur
 	if on {
-		kind = core.EventFocus
+		kind = driver.EventFocus
 	}
 	a.mu.Lock()
-	a.posts = append(a.posts, func() { a.tree.Dispatch(core.Event{Kind: kind, ID: v.ID}) })
+	a.posts = append(a.posts, func() { a.tree.Dispatch(driver.Event{Kind: kind, ID: v.ID}) })
 	a.mu.Unlock()
 }
 
@@ -1285,7 +1286,7 @@ func (a *App) Dump() string {
 		if v.Props.TestID != "" {
 			fmt.Fprintf(&b, " id=%s", v.Props.TestID)
 		}
-		if v.Kind == core.KindText || v.Kind == core.KindInput {
+		if v.Kind == driver.KindText || v.Kind == driver.KindInput {
 			fmt.Fprintf(&b, " %q", v.Text)
 		}
 		b.WriteByte('\n')
@@ -1299,25 +1300,25 @@ func (a *App) Dump() string {
 	return b.String()
 }
 
-func kindName(k core.ViewKind) string {
+func kindName(k driver.ViewKind) string {
 	switch k {
-	case core.KindView:
+	case driver.KindView:
 		return "view"
-	case core.KindText:
+	case driver.KindText:
 		return "text"
-	case core.KindInput:
+	case driver.KindInput:
 		return "input"
-	case core.KindScroll:
+	case driver.KindScroll:
 		return "scroll"
-	case core.KindImage:
+	case driver.KindImage:
 		return "image"
-	case core.KindModal:
+	case driver.KindModal:
 		return "modal"
-	case core.KindCanvas:
+	case driver.KindCanvas:
 		return "canvas"
-	case core.KindWeb:
+	case driver.KindWeb:
 		return "web"
-	case core.KindVideo:
+	case driver.KindVideo:
 		return "video"
 	}
 	return "?"

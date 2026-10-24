@@ -3,7 +3,8 @@ package core
 import (
 	"errors"
 
-	"github.com/oneo-me/nsgo/core/internal/layout"
+	"github.com/oneo-me/nsgo/internal/driver"
+	"github.com/oneo-me/nsgo/internal/layout"
 )
 
 // The shadow tree has one node per native view and one per region. A
@@ -20,7 +21,7 @@ import (
 type Tree struct {
 	root        *Scope
 	rt          *runtime
-	text        TextEngine
+	text        driver.TextEngine
 	nodes       []*node // index is NodeID; 0 is unused
 	free        []NodeID
 	view        *node // the surface's root view
@@ -28,8 +29,8 @@ type Tree struct {
 	size        Size
 	changed     bool
 	deleted     []NodeID
-	commands    []MountItem
-	items       []MountItem
+	commands    []driver.MountItem
+	items       []driver.MountItem
 	laidOut     []*node
 	reports     []report
 	stacks      []*node
@@ -63,8 +64,8 @@ type report struct {
 func (t *Tree) after(n *node, fn func()) { t.reports = append(t.reports, report{n, fn}) }
 
 type node struct {
-	id       NodeID   // 0 for regions
-	kind     ViewKind // 0 for regions
+	id       NodeID          // 0 for regions
+	kind     driver.ViewKind // 0 for regions
 	parent   *node
 	children []*node
 	owner    *Scope
@@ -76,7 +77,7 @@ type node struct {
 	style  Style // base and dyn merged, with the states' styles
 	states uint8
 	h      handlers
-	props  ViewProps
+	props  driver.ViewProps
 	text   *textNode
 	input  *inputNode
 	scroll *scrollNode
@@ -159,11 +160,11 @@ type textNode struct {
 	lines    func([]TextLine) // OnTextLayout
 	alignV   TextAlignVertical
 	spans    []spanNode
-	text     AttributedText // what was prepared
-	style    TextStyle
-	prepared PreparedText
+	text     driver.AttributedText // what was prepared
+	style    driver.TextStyle
+	prepared driver.PreparedText
 	// fitted is the text shrunk to fit its box, when fit shrank it.
-	fitted   PreparedText
+	fitted   driver.PreparedText
 	stale    bool // content or style changed since prepared
 	box      Bounds
 	sentBox  Bounds
@@ -175,7 +176,7 @@ type textNode struct {
 
 // release frees the text's prepared texts.
 func (tn *textNode) release() {
-	for _, p := range []*PreparedText{&tn.prepared, &tn.fitted} {
+	for _, p := range []*driver.PreparedText{&tn.prepared, &tn.fitted} {
 		if *p != nil {
 			(*p).Release()
 			*p = nil
@@ -210,7 +211,7 @@ type attachNode struct {
 }
 
 type inputNode struct {
-	config    InputConfig
+	config    driver.InputConfig
 	valueFn   func() string
 	value     string // the app's
 	shown     string // what the field shows, as far as the engine knows
@@ -218,7 +219,7 @@ type inputNode struct {
 	autoFocus bool
 	accessory string // the InputAccessoryView's ID
 	lineH     Points
-	lineFor   TextStyle
+	lineFor   driver.TextStyle
 
 	selection   func(TextRange)
 	keyPress    func(string)
@@ -236,12 +237,12 @@ type inputNode struct {
 
 // preparedInput is text of a field prepared in its style.
 type preparedInput struct {
-	text     AttributedText
-	prepared PreparedText
+	text     driver.AttributedText
+	prepared driver.PreparedText
 }
 
 type scrollNode struct {
-	config  ScrollConfig
+	config  driver.ScrollConfig
 	content Size
 	// offset is the reported offset with the scrolls the platform had not
 	// applied yet replayed over it.
@@ -258,7 +259,7 @@ type scrollNode struct {
 	// the content size; to the ItemScrollTo their parent-viewport lists
 	// ask for.
 	by Point
-	to *MountItem
+	to *driver.MountItem
 	// dependents are the lists in this view's viewport; sticky the cells
 	// sent in its last ItemStickyCells.
 	dependents []*listNode
@@ -329,11 +330,11 @@ func (sc *scrollNode) along(d Points) Point {
 
 type sent struct {
 	frame     Bounds
-	viewStyle ViewStyle
-	props     ViewProps
-	events    EventMask
-	input     InputConfig
-	scroll    ScrollConfig
+	viewStyle driver.ViewStyle
+	props     driver.ViewProps
+	events    driver.EventMask
+	input     driver.InputConfig
+	scroll    driver.ScrollConfig
 	content   Size
 	children  []*node
 	layout    Bounds
@@ -341,11 +342,11 @@ type sent struct {
 }
 
 // NewTree returns an empty tree under root, laying text out with text.
-func NewTree(root *Scope, text TextEngine) *Tree {
+func NewTree(root *Scope, text driver.TextEngine) *Tree {
 	t := &Tree{root: root, rt: root.rt, text: text, nodes: []*node{nil}}
 	t.anim.t = t
 	root.rt.tree = t
-	t.view = t.newNode(KindView, nil, root)
+	t.view = t.newNode(driver.KindView, nil, root)
 	t.view.style = Style{Direction: Column}
 	return t
 }
@@ -389,7 +390,7 @@ func (t *Tree) Changed() bool { return t.changed }
 // within runs fn with o owning what it creates, untracked, in a batch.
 func (t *Tree) within(o *Scope, fn func()) { t.rt.run(o, fn) }
 
-func (t *Tree) newNode(kind ViewKind, parent *node, owner *Scope) *node {
+func (t *Tree) newNode(kind driver.ViewKind, parent *node, owner *Scope) *node {
 	n := &node{kind: kind, parent: parent, owner: owner, layoutDirty: true, childrenDirty: true, rtl: t.rtl}
 	if kind != 0 {
 		if k := len(t.free); k > 0 {
@@ -652,7 +653,7 @@ func (t *Tree) bindBool(cx *Scope, n *node, fn func() bool, dst *bool) {
 }
 
 func (t *Tree) mountView(cx *Scope, parent *node, v View) {
-	n := t.newNode(KindView, parent, cx)
+	n := t.newNode(driver.KindView, parent, cx)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	n.h = handlers{press: v.OnPress, longPress: v.OnLongPress, pressDown: v.OnPressDown, pressUp: v.OnPressUp,
 		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, hoverMove: v.OnHoverMove, mouseMove: v.OnMouseMove,
@@ -661,7 +662,7 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 		fileEnter: v.OnFileDragEnter, fileLeave: v.OnFileDragLeave, fileDrop: v.OnFileDrop}
 	n.h.action = v.OnAccessibilityAction
 	n.responder = v.Responder
-	n.props = ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
+	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
 		WindowDrag: v.WindowDrag, SelectionArea: v.SelectionArea, PointerEvents: v.PointerEvents, HitSlop: v.HitSlop,
 		DelayLongPress: v.DelayLongPress, NoFocus: v.NoFocus}
 	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, value: v.AccessibilityValue, expanded: v.Expanded,
@@ -678,8 +679,8 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	t.bindBool(cx, n, v.Checked, &n.props.Checked)
 	t.bindBool(cx, n, v.Indeterminate, &n.props.Indeterminate)
 	t.bindPan(cx, n, v.PanValues)
-	t.bindGestureValue(n, AnimBindPinch, v.PinchValue)
-	t.bindGestureValue(n, AnimBindRotation, v.RotationValue)
+	t.bindGestureValue(n, driver.AnimBindPinch, v.PinchValue)
+	t.bindGestureValue(n, driver.AnimBindRotation, v.RotationValue)
 	n.pinching, n.rotating = v.OnPinch != nil || v.PinchValue != nil, v.OnRotation != nil || v.RotationValue != nil
 	for _, c := range v.Children {
 		t.mount(cx, n, c)
@@ -687,10 +688,10 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 }
 
 func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
-	n := t.newNode(KindText, parent, cx)
+	n := t.newNode(driver.KindText, parent, cx)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
-	n.props = ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
+	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
 		Selectable: v.Selectable}
 	if n.props.Role == RoleNone {
 		n.props.Role = RoleText
@@ -702,7 +703,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 		fit: v.AdjustsFontSizeToFit, minScale: max(v.MinimumFontScale, 0.1), lines: v.OnTextLayout, stale: true}
 	for i, sp := range v.Spans {
 		if sp.Attachment != nil {
-			w := t.newNode(KindView, n, cx)
+			w := t.newNode(driver.KindView, n, cx)
 			w.attach = &attachNode{}
 			t.bindStyle(cx, w, sp.Style, nil)
 			t.mount(cx, w, sp.Attachment)
@@ -736,15 +737,15 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 }
 
 func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
-	n := t.newNode(KindInput, parent, cx)
+	n := t.newNode(driver.KindInput, parent, cx)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	n.h = handlers{change: v.OnChange, submit: v.OnSubmit, focus: v.OnFocus, blur: v.OnBlur, layout: v.OnLayout}
-	n.props = ViewProps{Role: RoleTextField, Label: v.Label, TestID: v.TestID}
+	n.props = driver.ViewProps{Role: RoleTextField, Label: v.Label, TestID: v.TestID}
 	t.setRef(n, v.Ref)
 	in := &inputNode{valueFn: v.Value, value: v.DefaultValue, autoFocus: v.AutoFocus, accessory: v.InputAccessoryViewID,
 		selection: v.OnSelectionChange, keyPress: v.OnKeyPress, composition: v.OnCompositionChange,
 		contentSize: v.OnContentSizeChange, caret: v.OnCaretMove, paste: v.OnPaste}
-	in.config = InputConfig{Placeholder: v.Placeholder, Masked: v.Masked, Readonly: v.Readonly, KeyboardType: v.KeyboardType,
+	in.config = driver.InputConfig{Placeholder: v.Placeholder, Masked: v.Masked, Readonly: v.Readonly, KeyboardType: v.KeyboardType,
 		Multiline: v.Multiline, MaxLength: max(v.MaxLength, 0), SubmitBehavior: v.SubmitBehavior, ReturnKey: v.ReturnKeyType,
 		AutoCapitalize: v.AutoCapitalize, NoAutoCorrect: v.NoAutoCorrect, AutoComplete: v.AutoComplete,
 		KeyboardAppearance: v.KeyboardAppearance, HideCaret: v.HideCaret, PasteBehavior: v.PasteBehavior}
@@ -760,7 +761,7 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 		// After the value, which the commit sends before its commands.
 		cx.renderEffect(func() {
 			r := v.SelectedRange()
-			t.commands = append(t.commands, MountItem{Kind: ItemSelection, ID: n.id, Selection: r})
+			t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemSelection, ID: n.id, Selection: r})
 			t.changed = true
 		})
 	}
@@ -771,15 +772,15 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 var scrollDefaults = Style{FlexShrink: 1}
 
 func (t *Tree) mountScroll(cx *Scope, parent *node, v Scroll) {
-	n := t.newNode(KindScroll, parent, cx)
+	n := t.newNode(driver.KindScroll, parent, cx)
 	t.bindStyle(cx, n, scrollDefaults.Merge(v.Style), v.StyleFunc)
 	n.h = handlers{layout: v.OnLayout}
 	if on := v.OnScroll; on != nil {
 		n.h.scroll = func(p Point) { on(n.scrollEvent(p)) }
 	}
-	n.props = ViewProps{TestID: v.TestID}
+	n.props = driver.ViewProps{TestID: v.TestID}
 	t.setRef(n, v.Ref)
-	n.scroll = &scrollNode{config: ScrollConfig{Horizontal: v.Horizontal, HideIndicator: v.HideIndicator}}
+	n.scroll = &scrollNode{config: driver.ScrollConfig{Horizontal: v.Horizontal, HideIndicator: v.HideIndicator}}
 	t.bindScrollSpec(cx, n, scrollSpec{behavior: v.Behavior, behaviorFunc: v.BehaviorFunc, offset: v.ContentOffset,
 		refreshing: v.Refreshing, onRefresh: v.OnRefresh, onScroll: v.OnScroll,
 		onDragStart: v.OnScrollDragStart, onDragEnd: v.OnScrollDragEnd,
@@ -873,39 +874,39 @@ func (t *Tree) mountCatch(cx *Scope, parent *node, c Catch) {
 // Events.
 
 // Dispatch handles a platform event.
-func (t *Tree) Dispatch(ev Event) {
+func (t *Tree) Dispatch(ev driver.Event) {
 	switch ev.Kind {
-	case EventTouch:
+	case driver.EventTouch:
 		t.touched(ev)
 		return
-	case EventBack:
+	case driver.EventBack:
 		if n := t.node(ev.ID); n != nil && n.screen != nil {
 			t.backFrom(n)
 		} else {
 			t.back()
 		}
 		return
-	case EventRequestClose, EventModalSize:
+	case driver.EventRequestClose, driver.EventModalSize:
 		if n := t.node(ev.ID); n != nil && n.hoist != nil && n.hoist.modal != nil {
 			t.modalEvent(n, ev)
 		}
 		return
-	case EventAlert:
+	case driver.EventAlert:
 		t.answerAlert(ev.Count, ev.Index)
 		return
-	case EventClipboard:
+	case driver.EventClipboard:
 		t.answerRead(ev.Count, ev.Text)
 		return
-	case EventImageInfo:
+	case driver.EventImageInfo:
 		t.answerImageInfo(ev)
 		return
-	case EventKey:
+	case driver.EventKey:
 		t.pressKey(ev.Text)
 		return
-	case EventMenu:
+	case driver.EventMenu:
 		t.chooseMenu(ev.Count)
 		return
-	case EventAnimation:
+	case driver.EventAnimation:
 		t.animationEvent(ev)
 		return
 	}
@@ -931,11 +932,11 @@ func (t *Tree) Dispatch(ev Event) {
 	}
 	press := func(fn func(PressEvent)) {
 		if fn != nil {
-			t.within(n.owner, func() { fn(ev.press()) })
+			t.within(n.owner, func() { fn(pressOf(ev)) })
 		}
 	}
 	switch ev.Kind {
-	case EventPress:
+	case driver.EventPress:
 		t.setState(n, statePressed, false)
 		if n.props.Disabled {
 			break
@@ -947,41 +948,41 @@ func (t *Tree) Dispatch(ev Event) {
 			break
 		}
 		press(h.press)
-	case EventLongPress:
+	case driver.EventLongPress:
 		if !n.props.Disabled {
 			press(h.longPress)
 		}
-	case EventAccessibilityAction:
+	case driver.EventAccessibilityAction:
 		if h.action != nil && !n.props.Disabled {
 			t.within(n.owner, func() { h.action(ev.Text) })
 		}
-	case EventPressDown:
+	case driver.EventPressDown:
 		t.setState(n, statePressed, !n.props.Disabled)
 		press(h.pressDown)
-	case EventPressUp:
+	case driver.EventPressUp:
 		t.setState(n, statePressed, false)
 		press(h.pressUp)
-	case EventHoverIn:
+	case driver.EventHoverIn:
 		t.setState(n, stateHovered, true)
 		call(h.hoverIn)
-	case EventHoverOut:
+	case driver.EventHoverOut:
 		t.setState(n, stateHovered, false)
 		call(h.hoverOut)
-	case EventHoverMove:
+	case driver.EventHoverMove:
 		if h.hoverMove != nil {
 			t.within(n.owner, func() { h.hoverMove(HoverEvent{ev.Point, ev.Page, ev.Modifiers}) })
 		}
-	case EventMouseMove:
+	case driver.EventMouseMove:
 		if h.mouseMove != nil {
 			t.within(n.owner, func() { h.mouseMove(ev.Point) })
 		}
-	case EventFocus:
+	case driver.EventFocus:
 		t.setState(n, stateFocused, true)
 		call(h.focus)
-	case EventBlur:
+	case driver.EventBlur:
 		t.setState(n, stateFocused, false)
 		call(h.blur)
-	case EventChangeText:
+	case driver.EventChangeText:
 		in := n.input
 		if in == nil {
 			return
@@ -997,19 +998,19 @@ func (t *Tree) Dispatch(ev Event) {
 			}
 		}
 		t.touch(n)
-	case EventSubmitEditing:
+	case driver.EventSubmitEditing:
 		if h.submit != nil {
 			t.within(n.owner, func() { h.submit(ev.Text) })
 		}
-	case EventSelectionChange:
+	case driver.EventSelectionChange:
 		if in := n.input; in != nil && in.selection != nil {
-			t.within(n.owner, func() { in.selection(TextRange{ev.Index, int(ev.Count)}) })
+			t.within(n.owner, func() { in.selection(TextRange{Start: ev.Index, End: int(ev.Count)}) })
 		}
-	case EventKeyPress:
+	case driver.EventKeyPress:
 		if in := n.input; in != nil && in.keyPress != nil {
 			t.within(n.owner, func() { in.keyPress(ev.Text) })
 		}
-	case EventCompositionChange:
+	case driver.EventCompositionChange:
 		if in := n.input; in != nil && in.composition != nil {
 			c := Composition{Composing: !ev.Finished, Text: ev.Text}
 			if ev.Finished {
@@ -1017,23 +1018,23 @@ func (t *Tree) Dispatch(ev Event) {
 			}
 			t.within(n.owner, func() { in.composition(c) })
 		}
-	case EventCaretMove:
+	case driver.EventCaretMove:
 		if in := n.input; in != nil && in.caret != nil {
 			b := Bounds{Origin: ev.Point, Size: ev.Size}
 			page := b
 			if b.Size != (Size{}) {
 				o := t.surfaceBounds(n).Origin
-				page.Origin = Point{o.X + b.Origin.X, o.Y + b.Origin.Y}
+				page.Origin = Point{X: o.X + b.Origin.X, Y: o.Y + b.Origin.Y}
 			}
 			t.within(n.owner, func() { in.caret(CaretEvent{Bounds: b, PageBounds: page}) })
 		}
-	case EventPaste:
+	case driver.EventPaste:
 		if in := n.input; in != nil && in.paste != nil {
 			if p, ok := ev.Data.(*PasteEvent); ok {
 				t.within(n.owner, func() { in.paste(*p) })
 			}
 		}
-	case EventPan:
+	case driver.EventPan:
 		if ev.Phase == GestureBegan {
 			t.panActivated(n)
 		}
@@ -1045,52 +1046,52 @@ func (t *Tree) Dispatch(ev Event) {
 				h.pan(PanEvent{Phase: ev.Phase, Translation: ev.Point, Velocity: ev.Velocity, Values: ev.Values})
 			})
 		}
-	case EventPinch, EventRotation:
+	case driver.EventPinch, driver.EventRotation:
 		fn := h.pinch
-		if ev.Kind == EventRotation {
+		if ev.Kind == driver.EventRotation {
 			fn = h.rotation
 		}
 		if fn != nil {
 			t.within(n.owner, func() { fn(GestureEvent{Phase: ev.Phase, Value: ev.Value, Velocity: float32(ev.Velocity.X)}) })
 		}
-	case EventContextMenu:
+	case driver.EventContextMenu:
 		if h.contextMenu != nil && !n.props.Disabled {
 			t.within(n.owner, func() { h.contextMenu(ContextMenuEvent{ev.Point, ev.Page, ev.Modifiers}) })
 		}
-	case EventPressOutside:
+	case driver.EventPressOutside:
 		if n.hoist != nil {
 			t.pressOutside(n, ev.Point)
 		}
-	case EventFileDragEnter:
+	case driver.EventFileDragEnter:
 		call(h.fileEnter)
-	case EventFileDragLeave:
+	case driver.EventFileDragLeave:
 		call(h.fileLeave)
-	case EventFileDrop:
+	case driver.EventFileDrop:
 		if h.fileDrop != nil && !n.props.Disabled {
 			t.within(n.owner, func() { h.fileDrop(ev.URIs) })
 		}
-	case EventLoadStart:
+	case driver.EventLoadStart:
 		call(h.loadStart)
-	case EventLoadEnd:
+	case driver.EventLoadEnd:
 		call(h.loadEnd)
-	case EventProgress:
+	case driver.EventProgress:
 		if h.progress != nil {
 			t.within(n.owner, func() { h.progress(ev.Loaded, ev.Total) })
 		}
-	case EventLoad:
+	case driver.EventLoad:
 		if h.load != nil {
 			t.within(n.owner, func() { h.load(ev.Size) })
 		}
-	case EventError:
+	case driver.EventError:
 		if h.loadError != nil {
 			t.within(n.owner, func() { h.loadError(errors.New(ev.Text)) })
 		}
-	case EventScrollDragStart, EventScrollDragEnd, EventMomentumStart, EventMomentumEnd, EventRefresh:
+	case driver.EventScrollDragStart, driver.EventScrollDragEnd, driver.EventMomentumStart, driver.EventMomentumEnd, driver.EventRefresh:
 		if n.scroll != nil {
 			t.scrolled(n, ev)
 			t.dispatchScroll(n, ev)
 		}
-	case EventScroll:
+	case driver.EventScroll:
 		if n.scroll != nil {
 			t.scrolled(n, ev)
 			if ev.Value > 0 {
@@ -1126,25 +1127,25 @@ func (t *Tree) HitTest(p Point) NodeID {
 
 // PressAt dispatches ev as a press on the innermost pressable view at its
 // Page, in surface points, with its Point in that view.
-func (t *Tree) PressAt(ev Event) {
+func (t *Tree) PressAt(ev driver.Event) {
 	if id, local := hit(t.view, ev.Page); id != 0 {
-		ev.Kind, ev.ID, ev.Point = EventPress, id, local
+		ev.Kind, ev.ID, ev.Point = driver.EventPress, id, local
 		t.Dispatch(ev)
 	}
 }
 
 func hit(n *node, p Point) (NodeID, Point) {
-	return hitWith(n, p, func(n *node) bool { return n.h.press != nil || n.kind == KindInput })
+	return hitWith(n, p, func(n *node) bool { return n.h.press != nil || n.kind == driver.KindInput })
 }
 
 // hitWith returns the innermost view at p in n's parent that ok accepts,
 // and p in it.
 func hitWith(n *node, p Point, ok func(*node) bool) (NodeID, Point) {
-	self, inside := Reach(n.frame, &n.props, n.sent.overflow, p)
+	self, inside := driver.Reach(n.frame, &n.props, n.sent.overflow, p)
 	if n.style.Display == DisplayNone || n.hidden || !self && !inside || (n.attach != nil && n.attach.cut) {
 		return 0, Point{}
 	}
-	local := Point{p.X - n.frame.Origin.X, p.Y - n.frame.Origin.Y}
+	local := Point{X: p.X - n.frame.Origin.X, Y: p.Y - n.frame.Origin.Y}
 	at := local
 	if n.scroll != nil {
 		local.X += n.scroll.offset.X
@@ -1165,8 +1166,8 @@ func hitWith(n *node, p Point, ok func(*node) bool) (NodeID, Point) {
 }
 
 // command queues a command item for n after the next commit's changes.
-func (t *Tree) command(kind ItemKind, n *node) {
-	t.commands = append(t.commands, MountItem{Kind: kind, ID: n.id})
+func (t *Tree) command(kind driver.ItemKind, n *node) {
+	t.commands = append(t.commands, driver.MountItem{Kind: kind, ID: n.id})
 	t.changed = true
 }
 
@@ -1214,62 +1215,70 @@ func (n *node) nativeChildren() []*node {
 	return out
 }
 
-func (n *node) events() EventMask {
-	var m EventMask
-	bit := func(k EventKind, on bool) {
+func (n *node) events() driver.EventMask {
+	var m driver.EventMask
+	bit := func(k driver.EventKind, on bool) {
 		if on {
 			m |= 1 << k
 		}
 	}
 	h, s := &n.h, &n.style
-	bit(EventPress, h.press != nil)
-	bit(EventLongPress, h.longPress != nil)
-	bit(EventPressDown, h.pressDown != nil || s.Active != nil)
-	bit(EventPressUp, h.pressUp != nil || s.Active != nil)
-	bit(EventHoverIn, h.hoverIn != nil || s.Hover != nil)
-	bit(EventHoverOut, h.hoverOut != nil || s.Hover != nil)
-	bit(EventHoverMove, h.hoverMove != nil)
-	bit(EventMouseMove, h.mouseMove != nil)
-	bit(EventTouch, n.hearsTouches())
-	bit(EventFocus, h.focus != nil || s.Focus != nil)
-	bit(EventBlur, h.blur != nil || s.Focus != nil)
-	bit(EventSubmitEditing, h.submit != nil)
-	bit(EventScroll, h.scroll != nil)
-	bit(EventPressOutside, h.pressOutside != nil)
-	bit(EventContextMenu, h.contextMenu != nil)
-	bit(EventLoadStart, h.loadStart != nil)
-	bit(EventProgress, h.progress != nil)
-	bit(EventLoad, h.load != nil)
-	bit(EventError, h.loadError != nil)
-	bit(EventLoadEnd, h.loadEnd != nil)
-	bit(EventChangeText, n.kind == KindInput)
+	bit(driver.EventPress, h.press != nil)
+	bit(driver.EventLongPress, h.longPress != nil)
+	bit(driver.EventPressDown, h.pressDown != nil || s.Active != nil)
+	bit(driver.EventPressUp, h.pressUp != nil || s.Active != nil)
+	bit(driver.EventHoverIn, h.hoverIn != nil || s.Hover != nil)
+	bit(driver.EventHoverOut, h.hoverOut != nil || s.Hover != nil)
+	bit(driver.EventHoverMove, h.hoverMove != nil)
+	bit(driver.EventMouseMove, h.mouseMove != nil)
+	bit(driver.EventTouch, n.hearsTouches())
+	bit(driver.EventFocus, h.focus != nil || s.Focus != nil)
+	bit(driver.EventBlur, h.blur != nil || s.Focus != nil)
+	bit(driver.EventSubmitEditing, h.submit != nil)
+	bit(driver.EventScroll, h.scroll != nil)
+	bit(driver.EventPressOutside, h.pressOutside != nil)
+	bit(driver.EventContextMenu, h.contextMenu != nil)
+	bit(driver.EventLoadStart, h.loadStart != nil)
+	bit(driver.EventProgress, h.progress != nil)
+	bit(driver.EventLoad, h.load != nil)
+	bit(driver.EventError, h.loadError != nil)
+	bit(driver.EventLoadEnd, h.loadEnd != nil)
+	bit(driver.EventChangeText, n.kind == driver.KindInput)
 	if in := n.input; in != nil {
-		bit(EventSelectionChange, in.selection != nil)
-		bit(EventKeyPress, in.keyPress != nil)
-		bit(EventCompositionChange, in.composition != nil)
-		bit(EventCaretMove, in.caret != nil)
-		bit(EventPaste, in.paste != nil)
+		bit(driver.EventSelectionChange, in.selection != nil)
+		bit(driver.EventKeyPress, in.keyPress != nil)
+		bit(driver.EventCompositionChange, in.composition != nil)
+		bit(driver.EventCaretMove, in.caret != nil)
+		bit(driver.EventPaste, in.paste != nil)
 	}
-	bit(EventPan, n.panning)
-	bit(EventPinch, n.pinching)
-	bit(EventRotation, n.rotating)
-	bit(EventFileDragEnter, h.fileEnter != nil)
-	bit(EventFileDragLeave, h.fileLeave != nil)
-	bit(EventFileDrop, h.fileDrop != nil)
-	bit(EventAccessibilityAction, h.action != nil)
+	bit(driver.EventPan, n.panning)
+	bit(driver.EventPinch, n.pinching)
+	bit(driver.EventRotation, n.rotating)
+	bit(driver.EventFileDragEnter, h.fileEnter != nil)
+	bit(driver.EventFileDragLeave, h.fileLeave != nil)
+	bit(driver.EventFileDrop, h.fileDrop != nil)
+	bit(driver.EventAccessibilityAction, h.action != nil)
 	if n.native != nil {
-		bit(EventNative, n.native.event != nil)
-		bit(EventNativeSize, true)
+		bit(driver.EventNative, n.native.event != nil)
+		bit(driver.EventNativeSize, true)
 	}
 	if n.web != nil {
 		m |= n.web.events()
 	}
 	if n.video != nil {
-		m &^= maskOf(EventLoadStart, EventProgress, EventLoad, EventError)
+		m &^= maskOf(driver.EventLoadStart, driver.EventProgress, driver.EventLoad, driver.EventError)
 		m |= n.video.events()
 	}
 	if n.scroll != nil {
 		m |= n.scroll.events()
+	}
+	return m
+}
+
+func maskOf(kinds ...driver.EventKind) driver.EventMask {
+	var m driver.EventMask
+	for _, k := range kinds {
+		m |= 1 << k
 	}
 	return m
 }

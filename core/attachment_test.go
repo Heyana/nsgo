@@ -1,11 +1,15 @@
 package core
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/oneo-me/nsgo/internal/driver"
+)
 
 func TestAttachmentsFlowInText(t *testing.T) {
 	var wide *Signal[bool]
 	var pressed int
-	h := newHost(t, Size{200, 200}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
 		wide = NewSignal(cx, false)
 		return View{Style: Style{FontSize: 10}, Children: []Node{
 			Text{TestID: "text", Spans: []Span{
@@ -29,7 +33,7 @@ func TestAttachmentsFlowInText(t *testing.T) {
 	}
 	inserted := false
 	for _, it := range b.Items {
-		if it.Kind == ItemInsert && it.ID == wrapper.id && it.Parent == text.id {
+		if it.Kind == driver.ItemInsert && it.ID == wrapper.id && it.Parent == text.id {
 			inserted = true
 		}
 	}
@@ -41,16 +45,16 @@ func TestAttachmentsFlowInText(t *testing.T) {
 	}
 	// Characters are 6 wide and lines 12 tall; the box stands on the
 	// baseline, 6 above it.
-	if got, want := wrapper.frame, (Bounds{Point{18, 6}, Size{10, 6}}); got != want {
+	if got, want := wrapper.frame, (Bounds{Origin: Point{X: 18, Y: 6}, Size: Size{Width: 10, Height: 6}}); got != want {
 		t.Errorf("attachment frame = %v, want %v", got, want)
 	}
-	if got := h.tree.HitTest(Point{20, 8}); got != box.id {
+	if got := h.tree.HitTest(Point{X: 20, Y: 8}); got != box.id {
 		t.Errorf("hit test = %d, want the attachment %d", got, box.id)
 	}
 
 	wide.Set(true)
 	h.commit()
-	if got, want := wrapper.frame.Size, (Size{40, 6}); got != want {
+	if got, want := wrapper.frame.Size, (Size{Width: 40, Height: 6}); got != want {
 		t.Errorf("resized attachment = %v, want %v", got, want)
 	}
 	if got := text.text.text.Attachments[0].Size.Width; got != 40 {
@@ -59,7 +63,7 @@ func TestAttachmentsFlowInText(t *testing.T) {
 }
 
 func TestAttachmentsAlignAndGrowLines(t *testing.T) {
-	h := newHost(t, Size{200, 200}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
 		return View{Style: Style{FontSize: 10}, Children: []Node{
 			Text{TestID: "text", Spans: []Span{
 				{Content: "a"},
@@ -74,13 +78,13 @@ func TestAttachmentsAlignAndGrowLines(t *testing.T) {
 	if got, want := text.frame.Size.Height, Points(30); got != want {
 		t.Errorf("line height = %v, want %v", got, want)
 	}
-	if got := wrapper.frame.Origin; got != (Point{6, 0}) {
+	if got := wrapper.frame.Origin; got != (Point{X: 6, Y: 0}) {
 		t.Errorf("attachment origin = %v, want 6,0", got)
 	}
 }
 
 func TestAttachmentsCutOffHide(t *testing.T) {
-	h := newHost(t, Size{30, 200}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 30, Height: 200}, func(cx *Scope) Node {
 		return View{Style: Style{FontSize: 10}, Children: []Node{
 			Text{TestID: "text", MaxLines: 1, Spans: []Span{
 				{Content: "abcd "},
@@ -96,7 +100,7 @@ func TestAttachmentsCutOffHide(t *testing.T) {
 }
 
 func TestSpanBackgrounds(t *testing.T) {
-	h := newHost(t, Size{200, 200}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
 		return Text{TestID: "text", Spans: []Span{
 			{Content: "a "},
 			{Content: "code", Style: Style{Background: RGB(0xeeeeee), CornerRadius: 3}},
@@ -104,10 +108,10 @@ func TestSpanBackgrounds(t *testing.T) {
 	})
 	h.commit()
 	spans := h.find("text").text.text.Spans
-	if got, want := spans[1].Background, (TextBackground{RGB(0xeeeeee), 3}); got != want {
+	if got, want := spans[1].Background, (driver.TextBackground{Color: RGB(0xeeeeee), Radius: 3}); got != want {
 		t.Errorf("background = %+v, want %+v", got, want)
 	}
-	if spans[0].Background != (TextBackground{}) {
+	if spans[0].Background != (driver.TextBackground{}) {
 		t.Error("a span without a background has one")
 	}
 }

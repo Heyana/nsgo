@@ -1,5 +1,7 @@
 package core
 
+import "github.com/oneo-me/nsgo/internal/driver"
+
 // A stack shows its last screen that has not been popped. Back pops the
 // top screen: it reports OnDismiss and stays hidden until the app removes
 // it, and the last screen never pops.
@@ -26,14 +28,14 @@ type screenNode struct {
 	// the content is laid out below.
 	header, pad Points
 	top         *Signal[Points] // header, for a transparent header's insets
-	sent        ScreenConfig
+	sent        driver.ScreenConfig
 	sentOK      bool
 }
 
 func (t *Tree) mountStack(cx *Scope, parent *node, s Stack) {
-	n := t.newNode(KindView, parent, cx)
+	n := t.newNode(driver.KindView, parent, cx)
 	t.bindStyle(cx, n, Style{Overflow: Hidden}.Merge(s.Style), nil)
-	n.props = ViewProps{TestID: s.TestID}
+	n.props = driver.ViewProps{TestID: s.TestID}
 	n.isStack = true
 	t.stacks = append(t.stacks, n)
 	for _, c := range s.Children {
@@ -44,7 +46,7 @@ func (t *Tree) mountStack(cx *Scope, parent *node, s Stack) {
 var fill = Style{Position: Absolute, Top: Pt(0), Right: Pt(0), Bottom: Pt(0), Left: Pt(0)}
 
 func (t *Tree) mountScreen(cx *Scope, parent *node, s Screen) {
-	n := t.newNode(KindView, parent, cx)
+	n := t.newNode(driver.KindView, parent, cx)
 	sn := &screenNode{screen: &s, title: s.Title, headerStyle: s.HeaderStyle,
 		native: t.root.Env().headers[0] > 0, top: NewSignal(cx, Points(0))}
 	for p := parent; p != nil; p = p.parent {
@@ -55,7 +57,7 @@ func (t *Tree) mountScreen(cx *Scope, parent *node, s Screen) {
 	}
 	n.screen = sn
 	t.bindStyle(cx, n, fill.Merge(s.Style), nil)
-	n.props = ViewProps{Label: s.Title, TestID: s.TestID}
+	n.props = driver.ViewProps{Label: s.Title, TestID: s.TestID}
 	if s.TitleFunc != nil {
 		cx.renderEffect(func() {
 			sn.title = s.TitleFunc()
@@ -110,7 +112,7 @@ func (t *Tree) mountHeaderView(cx *Scope, screen *node, el Node) *node {
 	if el == nil {
 		return nil
 	}
-	n := t.newNode(KindView, screen, cx)
+	n := t.newNode(driver.KindView, screen, cx)
 	n.headerView = true
 	t.headerViews = append(t.headerViews, n)
 	t.mount(cx, n, el)
@@ -128,9 +130,9 @@ func (t *Tree) layoutHeaderViews() {
 		if !n.layoutDirty {
 			continue
 		}
-		t.layoutRoot(n, Size{attachmentSpace, attachmentSpace}, false)
+		t.layoutRoot(n, Size{Width: attachmentSpace, Height: attachmentSpace}, false)
 		l := &n.lstate.Rounded
-		n.frame = Bounds{Size: Size{Points(l.Size.Width), Points(l.Size.Height)}}
+		n.frame = Bounds{Size: Size{Width: Points(l.Size.Width), Height: Points(l.Size.Height)}}
 		t.syncFrames(n)
 	}
 	clear(t.headerViews[len(live):])
@@ -193,7 +195,7 @@ func (t *Tree) topOverlap(n *node) Points {
 	host := t.hostOf(n.parent)
 	top := t.root.Env().safe.GetUntracked().Top
 	y := t.surfaceBounds(n).Origin.Y
-	if host.kind == KindModal {
+	if host.kind == driver.KindModal {
 		top = t.modalInsets(host).Top
 		y -= t.surfaceBounds(host).Origin.Y
 	}
@@ -204,7 +206,7 @@ func (t *Tree) topOverlap(n *node) Points {
 func (t *Tree) emitScreen(n *node) {
 	sn := n.screen
 	s := sn.screen
-	c := ScreenConfig{
+	c := driver.ScreenConfig{
 		Title:             sn.title,
 		HeaderHidden:      s.HeaderHidden,
 		HeaderTransparent: s.HeaderTransparent,
@@ -240,7 +242,7 @@ func (t *Tree) emitScreen(n *node) {
 		return
 	}
 	sn.sent, sn.sentOK = c, true
-	t.items = append(t.items, MountItem{Kind: ItemScreen, ID: n.id, Screen: &c})
+	t.items = append(t.items, driver.MountItem{Kind: driver.ItemScreen, ID: n.id, Screen: &c})
 }
 
 func headerID(n *node) NodeID {
@@ -321,7 +323,7 @@ func (t *Tree) innerStack(host *node) *node {
 	var found *node
 	var walk func(n *node)
 	walk = func(n *node) {
-		if n.deleted || (n != host && n.kind == KindModal) || n.style.Display == DisplayNone {
+		if n.deleted || (n != host && n.kind == driver.KindModal) || n.style.Display == DisplayNone {
 			return
 		}
 		if n.isStack && len(n.screens()) >= 2 {

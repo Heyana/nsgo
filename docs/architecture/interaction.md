@@ -36,7 +36,7 @@ On macOS and the web, views that take presses are Tab stops beside the text inpu
 
 `View.PointerEvents` (`Auto`, `None`, `BoxNone`: only the children, `BoxOnly`: only the view), `HitSlop` and `DelayLongPress` go in `ViewProps`. Children placed outside their parent take touches where they are drawn: for each view whose children reach outside it, the core sends `ItemOverflow` with the area they cover, from layout frames and only when it changes. Clipping and scroll views have none, and transforms are not covered.
 
-- `core.Reach` decides for a point what it reaches of a view: the view itself by its bounds and slop, its children by its bounds and area. The core's own hit test, Windows' and Linux's walkers ask it on the way down.
+- `driver.Reach` decides for a point what it reaches of a view: the view itself by its bounds and slop, its children by its bounds and area. The core's own hit test, Windows' and Linux's walkers ask it on the way down.
 - macOS and iOS override `hitTest:`: outside the bounds they search the subviews of a view with an area and never return the view itself, except in its slop; a press ends as a press in the slop too.
 - Android's `Group` hands a touch outside every child's bounds to the topmost child whose slop or area holds it, for the rest of the gesture; `None` declines the touch, `BoxNone` leaves it to the children and `BoxOnly` intercepts theirs.
 - The web needs no area, since the browser finds children outside their parent itself. `pointer-events` classes carry `PointerEvents`, and a slop is a pseudo-element around the view.
@@ -50,7 +50,7 @@ On macOS and the web, views that take presses are Tab stops beside the text inpu
 - The responder is negotiated as in React Native: captures from the outermost in, then from the finger outwards; with a responder, only the views around it are asked, and `Keep` refuses to hand the touches over. A claim's `Ask` decides with the `PanGesture`; the responder stays pressed for its `Active` style until the touches end.
 - A responder whose claim does not `LetNative` sends `ItemBlockNative`: iOS disables the pans of the scroll views around it, Android disallows their interception and the web cancels `touchmove`. The desktops' mouse drags scroll nothing, so they ignore it.
 - A scroll view that starts dragging first cancels the touches: iOS from `scrollViewWillBeginDragging:`, Android when a scroll view takes the touch, the web through `pointercancel`.
-- The desktops report the primary mouse button as finger 0 (`platform/internal/finger`); iOS tracks every touch with a gesture recognizer that never recognizes, Android in its root view's `dispatchTouchEvent` and the web with capturing pointer listeners.
+- The desktops report the primary mouse button as finger 0 (`internal/platform/finger`); iOS tracks every touch with a gesture recognizer that never recognizes, Android in its root view's `dispatchTouchEvent` and the web with capturing pointer listeners.
 - A `TouchClaim` with `OnPan` claims as the platform activates the view's `PanActivation`, so scroll views share the touch until then: the view becomes the responder exactly when its pan begins (`EventPan`'s first report), and its other claims are not asked.
 
 ## Cursors
@@ -64,7 +64,7 @@ On macOS and the web, views that take presses are Tab stops beside the text inpu
 - The platform decides on the main thread when a drag becomes a pan, from the view's `PanActivation`. Until it does, a scroll view around may still take the touch.
 - An active pan takes the touch from presses and scroll views.
 - A drag or wheel turn scrolls the innermost scroll view under it that can move its content that way, so an inner one passes on only at its edge. A touch or trackpad gesture keeps the scroll view it began with. Android still uses its scroll views' own handling.
-- Desktop scroll bars show while the pointer is over their scroll view and can be dragged: AppKit's overlay scrollers on macOS, the browser's on the web, and `platform/internal/scrollbar`'s on Windows and Linux.
+- Desktop scroll bars show while the pointer is over their scroll view and can be dragged: AppKit's overlay scrollers on macOS, the browser's on the web, and `internal/platform/scrollbar`'s on Windows and Linux.
 - `View.PanValues` binds a drag to animated values: the platform moves them before it reports each move, so the view follows on the main thread, as NSH's bound values do. A drag through `OnPan` and a signal costs a commit per turn.
 
 ## File drops

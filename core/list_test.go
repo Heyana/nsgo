@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/internal/driver"
 	"github.com/oneo-me/nsgo/nsgotest"
 )
 
@@ -290,7 +291,7 @@ func TestListInItsParentsViewport(t *testing.T) {
 		}}
 	})
 	page, list := a.Find("id:page"), a.Find("id:list")
-	if list.Kind != core.KindView || list.Frame.Size.Height != 50000 {
+	if list.Kind != driver.KindView || list.Frame.Size.Height != 50000 {
 		t.Fatalf("list is a %v %v long, want a plain view at its full length", list.Kind, list.Frame.Size.Height)
 	}
 	if page.Content.Height != 300+50000+100 {

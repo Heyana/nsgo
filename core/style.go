@@ -3,6 +3,8 @@ package core
 import (
 	"strings"
 	"unicode"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 // Style is a node's layout, look and text. Every field's zero value means
@@ -269,35 +271,12 @@ func (o Opacity) Value() float32 {
 	return o.value
 }
 
-// FontWeight is a CSS font weight from 100 to 900; 0 is unset.
-type FontWeight uint16
-
-const (
-	FontWeightLight    FontWeight = 300
-	FontWeightNormal   FontWeight = 400
-	FontWeightMedium   FontWeight = 500
-	FontWeightSemibold FontWeight = 600
-	FontWeightBold     FontWeight = 700
-)
-
 // FontStyle is upright or italic.
 type FontStyle uint8
 
 const (
 	FontStyleNormal FontStyle = iota + 1
 	FontStyleItalic
-)
-
-// TextAlign aligns lines of text.
-type TextAlign uint8
-
-const (
-	TextAlignStart TextAlign = iota + 1
-	TextAlignCenter
-	TextAlignEnd
-	// TextAlignJustify stretches every line but a paragraph's last to the
-	// box's width, aligned to the start.
-	TextAlignJustify
 )
 
 // TextAlignVertical is where text shorter than its box sits in it.
@@ -319,46 +298,6 @@ func (a TextAlignVertical) fraction() Points {
 	}
 	return 0
 }
-
-// VerticalAlign is where an attachment sits in its line, as CSS's
-// vertical-align places a replaced inline box, against the font of the
-// text around it. Its line grows to hold it wherever it reaches past that
-// font.
-type VerticalAlign uint8
-
-const (
-	// VerticalAlignBaseline puts its bottom on the baseline; it is the
-	// default.
-	VerticalAlignBaseline VerticalAlign = iota + 1
-	// VerticalAlignTextTop puts its top at the font's ascent.
-	VerticalAlignTextTop
-	// VerticalAlignTextBottom puts its bottom at the font's descent.
-	VerticalAlignTextBottom
-	// VerticalAlignMiddle puts its middle half the font's x height above
-	// the baseline.
-	VerticalAlignMiddle
-)
-
-// TextDecoration draws lines on text; the values combine.
-type TextDecoration uint8
-
-const (
-	TextDecorationNone        TextDecoration = 1 << iota
-	TextDecorationUnderline                  // underline
-	TextDecorationLineThrough                // strikethrough
-)
-
-// TextDecorationStyle is how a text's decoration lines are drawn; the
-// zero value is solid.
-type TextDecorationStyle uint8
-
-const (
-	DecorationSolid TextDecorationStyle = iota + 1
-	DecorationDouble
-	DecorationDotted
-	DecorationDashed
-	DecorationWavy
-)
 
 // TextTransform changes the case of text as it is laid out.
 type TextTransform uint8
@@ -398,10 +337,6 @@ func (x TextTransform) Apply(s string) string {
 	}
 	return s
 }
-
-// DefaultFontSize is the font size of text no ancestor sizes: 14, as
-// NSH's and MyGo's text defaults.
-const DefaultFontSize Points = 14
 
 // Merge returns s with every field o sets replacing s's.
 func (s Style) Merge(o Style) Style {
@@ -482,7 +417,7 @@ const (
 )
 
 // withStates returns s with the styles of the states n is in merged in.
-func (s Style) withStates(states uint8, p ViewProps) Style {
+func (s Style) withStates(states uint8, p driver.ViewProps) Style {
 	out := s
 	for _, st := range [...]struct {
 		on    bool
@@ -553,23 +488,23 @@ func (s Style) textOnly() Style {
 }
 
 // textShadow is the shadow the text fields describe, if any.
-func (s Style) textShadow() TextShadow {
+func (s Style) textShadow() driver.TextShadow {
 	if s.TextShadowColor == 0 && s.TextShadowOffset == (Point{}) && s.TextShadowRadius == 0 {
-		return TextShadow{}
+		return driver.TextShadow{}
 	}
 	c := s.TextShadowColor
 	if c == 0 {
 		c = Color(0x00000055)
 	}
 	if c&0xff == 0 {
-		return TextShadow{}
+		return driver.TextShadow{}
 	}
-	return TextShadow{Color: c, Offset: s.TextShadowOffset, Radius: max(s.TextShadowRadius, 0)}
+	return driver.TextShadow{Color: c, Offset: s.TextShadowOffset, Radius: max(s.TextShadowRadius, 0)}
 }
 
 // textStyle resolves inherited text fields into what a text engine needs.
-func (s Style) textStyle() TextStyle {
-	t := TextStyle{
+func (s Style) textStyle() driver.TextStyle {
+	t := driver.TextStyle{
 		Font: Font{
 			Family: s.FontFamily,
 			Size:   s.FontSize,
@@ -604,8 +539,8 @@ func (s Style) textStyle() TextStyle {
 }
 
 // viewStyle is what platforms draw for any view.
-func (s Style) viewStyle() ViewStyle {
-	v := ViewStyle{
+func (s Style) viewStyle() driver.ViewStyle {
+	v := driver.ViewStyle{
 		Background:   s.Background,
 		CornerRadius: s.CornerRadius,
 		BorderWidth:  s.BorderWidth,
@@ -621,30 +556,14 @@ func (s Style) viewStyle() ViewStyle {
 		Transition:   s.Transition,
 	}
 	if s.Borders != (Edges{}) || s.BorderColors != (EdgeColors{}) {
-		w, c := s.borders(), s.BorderColors.or(s.BorderColor)
-		if w == All(w.Top) && c == (EdgeColors{c.Top, c.Top, c.Top, c.Top}) {
+		w, c := s.borders(), s.BorderColors.Or(s.BorderColor)
+		if w == All(w.Top) && c == (EdgeColors{Top: c.Top, Right: c.Top, Bottom: c.Top, Left: c.Top}) {
 			v.BorderWidth, v.BorderColor = w.Top, c.Top
 		} else {
 			v.BorderWidth, v.BorderColor, v.Borders, v.BorderColors = 0, 0, w, c
 		}
 	}
 	return v
-}
-
-// EdgeColors is a color for each side of a box.
-type EdgeColors struct{ Top, Right, Bottom, Left Color }
-
-// AllColors returns edge colors of the same color on every side.
-func AllColors(c Color) EdgeColors { return EdgeColors{c, c, c, c} }
-
-// or returns e with its unset sides c.
-func (e EdgeColors) or(c Color) EdgeColors {
-	for _, side := range []*Color{&e.Top, &e.Right, &e.Bottom, &e.Left} {
-		if *side == 0 {
-			*side = c
-		}
-	}
-	return e
 }
 
 // overflow returns the overflow on each axis.

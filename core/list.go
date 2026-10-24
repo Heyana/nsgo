@@ -3,6 +3,8 @@ package core
 import (
 	"slices"
 	"time"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 // List renders a long run of rows lazily, as NSH's <List>: only the rows
@@ -235,23 +237,23 @@ func (t *Tree) mountList(cx *Scope, parent *node, l List) {
 
 	var v *node
 	if st.parent {
-		v = t.newNode(KindView, parent, cx)
+		v = t.newNode(driver.KindView, parent, cx)
 		t.bindStyle(cx, v, Style{Overflow: Hidden}.Merge(l.Style), l.StyleFunc)
 	} else {
-		v = t.newNode(KindScroll, parent, cx)
+		v = t.newNode(driver.KindScroll, parent, cx)
 		t.bindStyle(cx, v, scrollDefaults.Merge(l.Style), l.StyleFunc)
 	}
 	ln.view = v
 	v.list = ln
 	v.h = handlers{layout: l.OnLayout}
-	v.props = ViewProps{TestID: l.TestID}
+	v.props = driver.ViewProps{TestID: l.TestID}
 	t.setRef(v, l.Ref)
 	if !st.parent {
 		v.h.scroll = func(Point) {}
 		if on := l.OnScroll; on != nil {
 			v.h.scroll = func(p Point) { on(v.scrollEvent(p)) }
 		}
-		v.scroll = &scrollNode{config: ScrollConfig{Horizontal: l.Horizontal, HideIndicator: l.HideIndicator}}
+		v.scroll = &scrollNode{config: driver.ScrollConfig{Horizontal: l.Horizontal, HideIndicator: l.HideIndicator}}
 		t.bindScrollSpec(cx, v, scrollSpec{behavior: l.Behavior, behaviorFunc: l.BehaviorFunc,
 			refreshing: l.Refreshing, onRefresh: l.OnRefresh, onScroll: l.OnScroll,
 			onDragStart: l.OnScrollDragStart, onDragEnd: l.OnScrollDragEnd,
@@ -266,11 +268,11 @@ func (t *Tree) mountList(cx *Scope, parent *node, l List) {
 	}
 
 	ln.count = NewSignal(cx, 0)
-	ln.spacer = t.newNode(KindView, v, cx)
+	ln.spacer = t.newNode(driver.KindView, v, cx)
 	ln.spacer.base = Style{FlexShrink: 0}
 	ln.spacer.restyle()
 	extra := func(kind int, content Node) {
-		c := t.newNode(KindView, v, cx)
+		c := t.newNode(driver.KindView, v, cx)
 		c.base = Style{Position: Absolute}
 		c.restyle()
 		t.mount(cx, c, content)
@@ -408,7 +410,7 @@ func (t *Tree) outer(ln *listNode) (outerInput, bool) {
 	var start Points
 	for n := ln.view; n != o; n = n.parent {
 		if n.kind != 0 {
-			start += ln.main(Size{n.frame.Origin.X, n.frame.Origin.Y})
+			start += ln.main(Size{Width: n.frame.Origin.X, Height: n.frame.Origin.Y})
 		}
 	}
 	b := ln.view.style.borders()
@@ -480,7 +482,7 @@ func (t *Tree) updateList(v *node) bool {
 	if !st.parent {
 		st.viewport = ln.main(v.frame.Size)
 	}
-	cross := ln.cross(v.frame.Size) - ln.cross(Size{b.Left + b.Right, b.Top + b.Bottom})
+	cross := ln.cross(v.frame.Size) - ln.cross(Size{Width: b.Left + b.Right, Height: b.Top + b.Bottom})
 	st.offset += anchor
 	anchor += st.takeSpliceAnchor()
 	anchor += st.anchorEnd()
@@ -493,13 +495,13 @@ func (t *Tree) updateList(v *node) bool {
 
 	// Scroll commands, now that sizes are known: the window follows a
 	// jump in this same update.
-	var outerTo *MountItem
+	var outerTo *driver.MountItem
 	for _, cmd := range ln.cmds {
 		var offset Points
 		if cmd.pin != nil {
 			offset = st.targetOffset(cmd.pin)
 		} else {
-			offset = ln.main(Size{cmd.to.X, cmd.to.Y})
+			offset = ln.main(Size{Width: cmd.to.X, Height: cmd.to.Y})
 			if st.parent {
 				offset = st.clamped(offset)
 			}
@@ -515,7 +517,7 @@ func (t *Tree) updateList(v *node) bool {
 			st.jump(offset)
 		}
 		if st.parent {
-			outerTo = &MountItem{Kind: ItemScrollTo, ID: outer.view.id, Point: ln.along(outer.start + offset), Animated: cmd.animated}
+			outerTo = &driver.MountItem{Kind: driver.ItemScrollTo, ID: outer.view.id, Point: ln.along(outer.start + offset), Animated: cmd.animated}
 			continue
 		}
 		t.scrollTo(v, ln.along(offset), cmd.animated)
@@ -526,7 +528,7 @@ func (t *Tree) updateList(v *node) bool {
 	}
 	if retarget != nil {
 		if st.parent {
-			outerTo = &MountItem{Kind: ItemScrollTo, ID: outer.view.id, Point: ln.along(outer.start + *retarget), Animated: true}
+			outerTo = &driver.MountItem{Kind: driver.ItemScrollTo, ID: outer.view.id, Point: ln.along(outer.start + *retarget), Animated: true}
 		} else {
 			t.scrollTo(v, ln.along(*retarget), true)
 		}
@@ -536,7 +538,7 @@ func (t *Tree) updateList(v *node) bool {
 	// is about to clamp it.
 	if !st.parent {
 		in := v.scroll.config.Behavior.ContentInset
-		st.offset = min(st.offset, max(st.contentLen()-st.viewport, 0)+ln.main(Size{in.Right, in.Bottom}))
+		st.offset = min(st.offset, max(st.contentLen()-st.viewport, 0)+ln.main(Size{Width: in.Right, Height: in.Bottom}))
 	}
 
 	// The window, then cells freed outside it and bound inside it.
@@ -618,7 +620,7 @@ func (t *Tree) updateList(v *node) bool {
 	ln.sticky = ranges
 
 	total := st.contentLen() - st.padStart - st.padEnd
-	if ln.main(Size{ln.spacerLen(), ln.spacerLen()}) != total {
+	if ln.main(Size{Width: ln.spacerLen(), Height: ln.spacerLen()}) != total {
 		ln.setSpacer(total)
 		t.relayout(ln.spacer)
 		changed = true
@@ -755,10 +757,12 @@ func (ln *listNode) viewableItems(now, before [2]int) ViewableItems {
 }
 
 func (ln *listNode) spacerLen() Points {
+	l := ln.spacer.base.Height
 	if ln.spec.Horizontal {
-		return Points(ln.spacer.base.Width.value)
+		l = ln.spacer.base.Width
 	}
-	return Points(ln.spacer.base.Height.value)
+	p, _ := l.Points()
+	return p
 }
 
 func (ln *listNode) setSpacer(total Points) {
@@ -776,7 +780,7 @@ func (t *Tree) newCell(ln *listNode, i int) *listCell {
 	ln.owner.adopt(c.scope)
 	c.pos = ListRow{index: NewSignal(c.scope, i), count: NewSignal(c.scope, ln.count.GetUntracked())}
 	t.within(c.scope, func() {
-		c.node = t.newNode(KindView, ln.cells, c.scope)
+		c.node = t.newNode(driver.KindView, ln.cells, c.scope)
 		c.node.base = Style{Position: Absolute}
 		if ln.spec.Horizontal {
 			c.node.base.Direction = Row
@@ -862,7 +866,7 @@ func (t *Tree) sendSticky() {
 		}
 		if !slices.Equal(cells, sc.sticky) {
 			sc.sticky = cells
-			t.commands = append(t.commands, MountItem{Kind: ItemStickyCells, ID: v.id, Sticky: slices.Clone(cells)})
+			t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemStickyCells, ID: v.id, Sticky: slices.Clone(cells)})
 			t.changed = true
 		}
 	}
@@ -877,13 +881,13 @@ func (t *Tree) listCommand(ln *listNode, c listCommand) {
 // scrollTo sends scroll view n to p, counting the scroll.
 func (t *Tree) scrollTo(n *node, p Point, animated bool) {
 	n.scroll.issue(true, p)
-	t.commands = append(t.commands, MountItem{Kind: ItemScrollTo, ID: n.id, Point: p, Animated: animated})
+	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemScrollTo, ID: n.id, Point: p, Animated: animated})
 	t.changed = true
 }
 
 // scrolled records where the platform reports scroll view n is, for the
 // lists that scroll with it.
-func (t *Tree) scrolled(n *node, ev Event) {
+func (t *Tree) scrolled(n *node, ev driver.Event) {
 	sc := n.scroll
 	sc.report(ev.Point, ev.Count)
 	if ln := n.list; ln != nil && !ln.st.parent {
@@ -903,7 +907,7 @@ func (t *Tree) emitScrollBy(n *node, before bool) {
 	if sc.by == (Point{}) {
 		return
 	}
-	shrinks := sc.main(Point{sc.content.Width, sc.content.Height}) < sc.main(Point{n.sent.content.Width, n.sent.content.Height})
+	shrinks := sc.main(Point{X: sc.content.Width, Y: sc.content.Height}) < sc.main(Point{X: n.sent.content.Width, Y: n.sent.content.Height})
 	if before != shrinks {
 		return
 	}
@@ -912,7 +916,7 @@ func (t *Tree) emitScrollBy(n *node, before bool) {
 	// A scroll to an offset not sent yet moves with it instead: it goes
 	// out after this batch's items.
 	for i := len(t.commands) - 1; i >= 0; i-- {
-		if c := &t.commands[i]; c.Kind == ItemScrollTo && c.ID == n.id {
+		if c := &t.commands[i]; c.Kind == driver.ItemScrollTo && c.ID == n.id {
 			c.Point.X += d.X
 			c.Point.Y += d.Y
 			for k := len(sc.pending) - 1; k >= 0; k-- {
@@ -927,7 +931,7 @@ func (t *Tree) emitScrollBy(n *node, before bool) {
 		}
 	}
 	sc.issue(false, d)
-	t.items = append(t.items, MountItem{Kind: ItemScrollBy, ID: n.id, Point: d})
+	t.items = append(t.items, driver.MountItem{Kind: driver.ItemScrollBy, ID: n.id, Point: d})
 }
 
 // emitScrollTo sends the scroll the lists in n's viewport asked for.
@@ -938,7 +942,7 @@ func (t *Tree) emitScrollTo(n *node) {
 	}
 	it := *sc.to
 	sc.to = nil
-	lo, hi := Points(0), max(sc.main(Point{sc.content.Width, sc.content.Height})-sc.main(Point{n.frame.Size.Width, n.frame.Size.Height}), 0)
+	lo, hi := Points(0), max(sc.main(Point{X: sc.content.Width, Y: sc.content.Height})-sc.main(Point{X: n.frame.Size.Width, Y: n.frame.Size.Height}), 0)
 	if sc.config.Horizontal {
 		it.Point.X = min(max(it.Point.X, lo), hi)
 	} else {

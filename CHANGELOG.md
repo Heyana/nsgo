@@ -2,88 +2,13 @@
 
 ## [Unreleased]
 
-- Add `nsgo dev -fps` and the `nsgo.FPS` option, a performance monitor over macOS apps with frame rate, frame and commit costs, CPU, GPU, memory and a frame trace, fading out while the pointer is over it.
-- Add `Env.Maximized`, so window buttons the app draws can show restore.
-- Center a hidden macOS title bar's traffic lights in the app's bar, 16 points in, and draw Onevra's rounded caption buttons on Windows.
-- Add a reactive Go engine with owners, memos, effects and regions (`Show`, `Each`, `Dynamic`, `Catch`).
-- Add block, flexbox and grid layout matching Taffy, with styles, per-side borders, state styles, transforms and transitions.
-- Add images, rich text with links, text selection across texts, canvas, virtualized lists, overlays, modals and navigation stacks.
-- Add `TextView` for Markdown and HTML, with tables, alerts, footnotes, formulas, inline images, highlighted code and streaming.
-- Add span backgrounds and views inside text that flow with its lines.
-- Add SVG icons with `core.Icon`, drawn in the inherited text color, and the bundled Lucide pack.
-- Add `WebView` with inline HTML, injected scripts, history and messages between page and app.
-- Add `Video` with playback control, seeking, resize modes and the platform's controls.
-- Add unstyled base components: buttons, popovers, menus, tooltips, dialogs, sheets, alerts and safe-area views.
-- Add `base.Split`, resizable panes with point or percentage sizes, limits, a resize cursor on the divider and a double-click reset.
-- Add `core.Style.Cursor`, the pointer's look over a view, on macOS, Windows, Linux and the web.
-- Add `examples/gallery`, showing core's elements, `base`'s components and the services in a standard window.
-- Add `OnHoverMove` and `OnMouseMove`, and pass press handlers a `core.PressEvent` and `OnContextMenu` a `core.ContextMenuEvent` with the pointer's position in the view and its root, the modifier keys and the click count.
-- Add `PointerEvents`, `HitSlop` and `DelayLongPress` to views, and let children placed outside their parent take touches where they are drawn.
-- Add `OnTouch` and `Responder`, React Native's touch responder, and report press down, up and long presses on Windows.
-- Add `OnCaretMove`, `OnPaste` with `PasteBehavior`, and `Overlay.AnchorBounds`, so popups open at an input's caret.
-- Add keyboard focus for pressable views on macOS and the web: Tab stops, Return and Space, `NoFocus`, and focus coming back as a modal closes.
-- Add `Scope.OnBackPress`, `OnKeyWith` with `KeyAlways`, `KeyNotEditing` and `Repeat`, `KeyLabel`, and keyboard shortcuts from iOS and Android hardware keyboards.
-- Add `PinchValue`, `RotationValue`, `PanEvent.Values` and pan claims, and let gestures move bound values from where they were.
-- Add pan, pinch and rotation gestures.
-- Add animated values and layout animations that run on each platform's frame clock, with drags and scroll offsets moving values directly.
-- Add `Scope.RequestAnimationFrame`, so an app draws on the display's frames, and step `Scope.Animate` on them.
-- Add animated GIF and WebP images and SVG files as images on every target.
-- Add native components, the app's own platform views inside the tree, with props, events and commands.
-- Add file drops on desktops and the web.
-- Add `InputAccessoryView`, a bar above the iOS and Android keyboard.
-- Add desktop scroll bars that show while the pointer is over their scroll view and can be dragged.
-- Add custom desktop title bars, window drag regions, window controls and an application menu.
-- Add window background materials on macOS and Windows 11 22H2 through `nsgo.WindowMaterial` and `Env.WindowMaterial`.
-- Add `core.FontMonospace` for the platform's fixed-pitch font.
-- Add environment signals, keyboard shortcuts, clipboard and screen-reader announcements.
-- Add key-value storage with change signals, and each app's data and cache directories.
-- Add multiline inputs, max lengths, return keys, submit behavior, capitalization, autocorrection, autofill, selections, placeholder colors and editing events.
-- Add scroll view paging, snapping, deceleration, bounces, insets, initial offsets, keyboard dismissal, drag and momentum events, pull to refresh and zooming.
-- Add anchored keyed rows, columns, inversion, end following, sticky headers, separators, initial indices, viewability, refresh and parent viewports to lists.
-- Add ellipsis modes, font scaling limits, shrink-to-fit, `OnTextLayout`, transforms, decoration styles and colors, justification, shadows and vertical alignment.
-- Add `ObjectPosition`, `ScaleDown`, `Scope.ImageSize` and `Scope.PrefetchImage`, and image blur and fades on Windows and Linux.
-- Add accessibility hints, values, actions, groups, hidden elements, live regions, expanded states and `Ref.SetAccessibilityFocus` on macOS, iOS, web and Android.
-- Add system headers on iOS and Android, status bars per screen and modal, iOS sheets that swipe closed, orientations and swipe back.
-- Add native backends for macOS, iOS, Windows, Linux, Android and the web.
-- Add `android_x64` packages and `nsgo dev`'s choice of the connected device's ABI, so apps run on x86_64 emulators too.
+- Add a reactive Go engine with owners, memos, effects and regions that commits each update to native views in one batch.
+- Add native backends for macOS, iOS, Windows, Linux, Android and the web, every one built from a Mac with Go and Xcode.
+- Add block, flexbox and grid layout with state styles, transforms, transitions, animated values and layout animations on each platform's frame clock.
+- Add rich and selectable text, inputs, images including GIF, WebP and SVG, canvas drawing and SVG icons with the bundled Lucide pack.
+- Add scroll views, virtualized lists, overlays, modals, navigation stacks with system headers, web views, videos and the app's own native views.
+- Add pointer, touch, focus, keyboard and gesture input, file drops, accessibility, clipboard, storage and environment signals.
+- Add custom desktop title bars, window controls, application menus, scroll bars and window materials.
+- Add `base`, unstyled buttons, menus, popovers, tooltips, dialogs, sheets, alerts, safe areas, split panes and a Markdown and HTML `TextView`.
 - Add `nsgotest` for headless app tests.
-- Add the quotes benchmark and its CPU-time runner under `bench/`, reporting commits, commit-time percentiles and CPU per commit instead of counting animation-frame callbacks as FPS.
-- Add the `nsgo` tool with `init`, `dev` and `build`, configured by `nsgo.yaml`.
-- Add app icons to every package, from `assets/` or `nsgo.yaml`'s `icon`, with a DEV badge in `nsgo dev`'s builds unless `dev.icon` or `-dev` files in `assets/` replace it.
-- Add `resources/`, shipped in each package and loaded by `asset:` images.
-- Add `nsgo build -target all` for every platform that needs only Go and Xcode.
-- Add `nsgo dev` and `nsgo build` flags that override `nsgo.yaml`'s values.
-- Add `nsgo dev`'s native target on Windows and Linux and its Android target on connected devices.
-- Add `nsgo dev`'s iOS target on connected iPhones, signed with Xcode's automatic signing.
-- Add `nsgo build` opening its output directory when `build.open` is true.
-- Add `dev.hot_reload` to rebuild on save, since `nsgo dev` now runs the app once and exits with it.
-- Add a layered app icon.
-- Replace the Bun and React website with the gallery compiled to the web.
-- Draw Windows with Direct2D and DirectWrite, adding view shadows and color emoji.
-- Layer Windows web views and text fields among the views around them, so dialogs and later views cover them.
-- Give each Linux view a GTK widget of its own, so web views, videos and fields stack and clip with the views around them.
-- Merge checked, indeterminate and selected state styles below hover, focus and pressed ones, and disabled over all, as NSH does.
-- Load an `asset:` image's `@Nx` variants only when its source's `Scales` lists them, else the plain file.
-- Keep a `Center` image at its natural size, cropped, as NSH does.
-- Take a `StatusBarSetting` in `SetStatusBar`, patching the app's default, with `StatusBarInherit` as `StatusBarStyle`'s zero value.
-- Pass a `ScrollEvent` to `List.OnScroll`.
-- Start Android modals below the status bar unless `StatusBarTranslucent` is set.
-- Read pressable views without a role as buttons, and views without a label by their texts, on macOS and iOS.
-- License the project under Apache-2.0, with NSH's attribution in `NOTICE`.
-- Cache text fonts and attributes, and each prepared text's measurements per width, on macOS and iOS.
-- Size unsized text at 14 points on macOS.
-- Fix Android builds failing because Go's implied `linux` tag included the Linux backend.
-- Fix presses in scrolled content reaching the wrong view on Windows and Linux.
-- Fix key bindings taking a field's typing and editing keys, which now fire there only with `KeyAlways`.
-- Fix strikethrough missing on macOS and iOS.
-- Fix Windows' aliased rounded corners, borders and canvas curves.
-- Fix nested scroll views scrolling together on iOS or not passing at their edge on macOS.
-- Fix text in a padded grid cell overlapping the row below when its width changes how many lines it wraps, and Windows drawing symbols such as ⌘ as boxes.
-- Fix the Android keyboard inset before API 30, which the decor view had already consumed, so the accessory bar tracks the keyboard.
-- Fix closing a Linux web view releasing its page before its custom scheme handler was unregistered.
-- Fix hover events, hover styles and tooltips never firing on Windows and Linux.
-- Fix overlays and modals inside a hidden view staying shown, and hidden views keeping their frames.
-- Fix popups reporting requests that change nothing and skipping `OnCancel` on presses outside, and menus centering on their trigger instead of aligning with its start.
-- Fix nested scroll views not scrolling on Android, and Linux single-line inputs never reporting focus and texts never ellipsized.
-- Fix sibling screens and modals overwriting each other's insets, and icons in headers and accessory views never drawing.
-- Fix the window not activating on clicks into a hidden title bar or on the traffic lights on macOS, and the app sometimes starting behind other apps.
+- Add the `nsgo` tool, which creates apps, runs them with hot reload and a performance monitor, and packages them from `nsgo.yaml`.

@@ -3,6 +3,8 @@ package core
 import (
 	"slices"
 	"testing"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 // phone is an environment with a system header and a status bar 40
@@ -10,16 +12,16 @@ import (
 var phone = Environment{OS: OSIOS, SafeArea: Edges{Top: 40, Bottom: 20}, HeaderHeight: 44, LargeHeaderHeight: 96}
 
 func newPhone(t *testing.T, env Environment, app func(cx *Scope) Node) *host {
-	h := newHost(t, Size{300, 600}, nil)
+	h := newHost(t, Size{Width: 300, Height: 600}, nil)
 	h.tree.SetEnvironment(env)
 	h.tree.Mount(app)
 	return h
 }
 
-func screenItems(b *MountBatch) map[NodeID]ScreenConfig {
-	out := map[NodeID]ScreenConfig{}
+func screenItems(b *driver.MountBatch) map[NodeID]driver.ScreenConfig {
+	out := map[NodeID]driver.ScreenConfig{}
 	for _, it := range b.Items {
-		if it.Kind == ItemScreen {
+		if it.Kind == driver.ItemScreen {
 			out[it.ID] = *it.Screen
 		}
 	}
@@ -66,7 +68,7 @@ func TestScreenSystemHeader(t *testing.T) {
 	}
 	detail, action := h.find("Detail"), h.find("action")
 	c, ok := screenItems(b)[detail.id]
-	want := ScreenConfig{Title: "Detail", CanGoBack: true, BackTitle: "Back to Home",
+	want := driver.ScreenConfig{Title: "Detail", CanGoBack: true, BackTitle: "Back to Home",
 		Background: RGB(0x0a141e), TitleColor: RGB(0xffffff), TintColor: RGB(0x0000ff),
 		Right: action.parent.id, HeaderHeight: 84}
 	if !ok || c != want {
@@ -81,20 +83,20 @@ func TestScreenSystemHeader(t *testing.T) {
 	if insets.Top != 0 || insets.Bottom != 20 {
 		t.Errorf("insets = %v, want the bottom only", insets)
 	}
-	if action.frame.Size != (Size{30, 20}) || slices.Contains(detail.nativeChildren(), action) {
+	if action.frame.Size != (Size{Width: 30, Height: 20}) || slices.Contains(detail.nativeChildren(), action) {
 		t.Errorf("header view = %v, want its own size outside the screen's children", action.frame)
 	}
 	for i, it := range b.Items {
-		if it.Kind == ItemScreen && it.ID == detail.id {
-			if !slices.ContainsFunc(b.Items[:i], func(x MountItem) bool { return x.Kind == ItemCreate && x.ID == action.id }) {
+		if it.Kind == driver.ItemScreen && it.ID == detail.id {
+			if !slices.ContainsFunc(b.Items[:i], func(x driver.MountItem) bool { return x.Kind == driver.ItemCreate && x.ID == action.id }) {
 				t.Error("the header view is created after the screen naming it")
 			}
 		}
 	}
 
 	// The back button of a screen not on top does nothing.
-	h.tree.Dispatch(Event{Kind: EventBack, ID: h.find("Home").id})
-	h.tree.Dispatch(Event{Kind: EventBack, ID: detail.id})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventBack, ID: h.find("Home").id})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventBack, ID: detail.id})
 	h.commit()
 	if !slices.Equal(popped, []string{"Detail"}) {
 		t.Errorf("popped = %q, want only the top screen", popped)
@@ -141,14 +143,14 @@ func TestScreenHeaderOptions(t *testing.T) {
 }
 
 func TestScreenHeaderWithoutNativeHeader(t *testing.T) {
-	h := newHost(t, Size{300, 600}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 300, Height: 600}, func(cx *Scope) Node {
 		return Stack{Style: Style{FlexGrow: 1}, Children: []Node{
 			Screen{Title: "Home", Header: View{TestID: "drawn", Style: Style{Height: Pt(50)}},
 				HeaderRight: View{TestID: "action"}, Children: []Node{View{TestID: "content"}}},
 		}}
 	})
 	b := h.commit()
-	if kinds(b)[ItemScreen] != 0 {
+	if kinds(b)[driver.ItemScreen] != 0 {
 		t.Error("ItemScreen sent without header heights")
 	}
 	if got := h.find("content").frame.Origin.Y; got != 50 {
@@ -161,9 +163,9 @@ func TestScreenHeaderWithoutNativeHeader(t *testing.T) {
 	}
 }
 
-func statusItems(b *MountBatch) (out []StatusBarConfig) {
+func statusItems(b *driver.MountBatch) (out []driver.StatusBarConfig) {
 	for _, it := range b.Items {
-		if it.Kind == ItemStatusBar {
+		if it.Kind == driver.ItemStatusBar {
 			out = append(out, *it.StatusBar)
 		}
 	}
@@ -174,7 +176,7 @@ func TestStatusBarLayers(t *testing.T) {
 	var routes *Signal[[]string]
 	var open, light *Signal[bool]
 	var root *Scope
-	h := newHost(t, Size{300, 600}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 300, Height: 600}, func(cx *Scope) Node {
 		root = cx
 		routes = NewSignalFunc(cx, []string{"home"}, nil)
 		open, light = NewSignal(cx, false), NewSignal(cx, true)
@@ -203,15 +205,15 @@ func TestStatusBarLayers(t *testing.T) {
 	}
 	steps := []struct {
 		do   func()
-		want []StatusBarConfig
+		want []driver.StatusBarConfig
 	}{
-		{func() { root.SetStatusBar(StatusBarSetting{Foreground: StatusBarDark}) }, []StatusBarConfig{{Style: StatusBarDark}}},
-		{func() { routes.Set([]string{"home", "photo"}) }, []StatusBarConfig{{Style: StatusBarDark, Hidden: true}}},
-		{func() { open.Set(true) }, []StatusBarConfig{{Style: StatusBarLight, Hidden: true, Animated: true}}},
-		{func() { light.Set(false) }, []StatusBarConfig{{Style: StatusBarDark, Hidden: true}}},
+		{func() { root.SetStatusBar(StatusBarSetting{Foreground: StatusBarDark}) }, []driver.StatusBarConfig{{Style: StatusBarDark}}},
+		{func() { routes.Set([]string{"home", "photo"}) }, []driver.StatusBarConfig{{Style: StatusBarDark, Hidden: true}}},
+		{func() { open.Set(true) }, []driver.StatusBarConfig{{Style: StatusBarLight, Hidden: true, Animated: true}}},
+		{func() { light.Set(false) }, []driver.StatusBarConfig{{Style: StatusBarDark, Hidden: true}}},
 		{func() { light.Set(true); light.Set(false) }, nil},
 		{func() { open.Set(false) }, nil},
-		{func() { h.tree.Dispatch(Event{Kind: EventBack}) }, []StatusBarConfig{{Style: StatusBarDark}}},
+		{func() { h.tree.Dispatch(driver.Event{Kind: driver.EventBack}) }, []driver.StatusBarConfig{{Style: StatusBarDark}}},
 	}
 	for i, s := range steps {
 		s.do()
@@ -238,14 +240,14 @@ func TestModalSheetSizeAndSwipe(t *testing.T) {
 	b := h.commit()
 	sheet := h.find("sheet")
 	for _, it := range b.Items {
-		if it.Kind == ItemModal && it.ID == sheet.id &&
+		if it.Kind == driver.ItemModal && it.ID == sheet.id &&
 			(it.Modal.Presentation != ModalPageSheet || it.Modal.Orientations != OrientationPortrait) {
 			t.Errorf("modal config = %+v", *it.Modal)
 		}
 	}
-	h.tree.Dispatch(Event{Kind: EventModalSize, ID: sheet.id, Size: Size{300, 540}, Insets: Edges{Bottom: 20}})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventModalSize, ID: sheet.id, Size: Size{Width: 300, Height: 540}, Insets: Edges{Bottom: 20}})
 	h.commit()
-	if sheet.frame != (Bounds{Size: Size{300, 540}}) || h.find("body").frame.Size.Height != 540 {
+	if sheet.frame != (Bounds{Size: Size{Width: 300, Height: 540}}) || h.find("body").frame.Size.Height != 540 {
 		t.Errorf("sheet = %v, want the size the platform reported", sheet.frame)
 	}
 	if insets != (Edges{Bottom: 20}) {
@@ -253,12 +255,12 @@ func TestModalSheetSizeAndSwipe(t *testing.T) {
 	}
 	// Swiped away, the sheet asks to close and stays hidden; back goes to
 	// the modal under it.
-	h.tree.Dispatch(Event{Kind: EventRequestClose, ID: sheet.id, Text: "swipe", Finished: true})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventRequestClose, ID: sheet.id, Text: "swipe", Finished: true})
 	h.commit()
 	if !sheet.hidden || sheet.viewStyle().Hidden != true {
 		t.Error("a swiped sheet is not hidden")
 	}
-	h.tree.Dispatch(Event{Kind: EventBack})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventBack})
 	if !slices.Equal(reasons, []string{"swipe"}) {
 		t.Errorf("reasons = %q, want back to skip the swiped sheet", reasons)
 	}
@@ -277,10 +279,10 @@ func TestAndroidModalStartsBelowTheStatusBar(t *testing.T) {
 		}}
 	})
 	h.commit()
-	if got := h.find("below").frame; got != (Bounds{Point{0, 24}, Size{300, 576}}) || below != (Edges{Bottom: 16}) {
+	if got := h.find("below").frame; got != (Bounds{Origin: Point{X: 0, Y: 24}, Size: Size{Width: 300, Height: 576}}) || below != (Edges{Bottom: 16}) {
 		t.Errorf("modal = %v with insets %v, want below the status bar", got, below)
 	}
-	if got := h.find("under").frame; got != (Bounds{Size: Size{300, 600}}) || under != env.SafeArea {
+	if got := h.find("under").frame; got != (Bounds{Size: Size{Width: 300, Height: 600}}) || under != env.SafeArea {
 		t.Errorf("translucent modal = %v with insets %v, want under the status bar", got, under)
 	}
 }

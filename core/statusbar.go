@@ -1,5 +1,7 @@
 package core
 
+import "github.com/oneo-me/nsgo/internal/driver"
+
 // The status bar's settings are layered as UIKit's view controllers
 // decide it, after NSH's status_bar.rs: the app's default at the bottom,
 // which Scope.SetStatusBar patches, then the StatusBar of each screen and
@@ -7,18 +9,6 @@ package core
 // by field, so a pushed screen or a presented modal is over the screens
 // below it, and popping or removing it takes its layer away. The commit
 // sends the merged result as ItemStatusBar when it changed.
-
-// StatusBarStyle is the color of a phone's status bar content.
-type StatusBarStyle uint8
-
-const (
-	// StatusBarInherit keeps the style of the layers below.
-	StatusBarInherit StatusBarStyle = iota
-	// StatusBarAuto follows the appearance: dark content on light.
-	StatusBarAuto
-	StatusBarDark
-	StatusBarLight
-)
 
 // Toggle is an option a layer turns on or off, or leaves to the layers
 // below.
@@ -55,16 +45,8 @@ func (s StatusBarSetting) over(below StatusBarSetting) StatusBarSetting {
 	return s
 }
 
-// StatusBarConfig is the status bar the platform shows (ItemStatusBar).
-type StatusBarConfig struct {
-	// Style is never StatusBarInherit.
-	Style    StatusBarStyle
-	Hidden   bool
-	Animated bool
-}
-
-func (s StatusBarSetting) config() StatusBarConfig {
-	c := StatusBarConfig{Style: s.Foreground, Hidden: s.Hidden == ToggleOn, Animated: s.Animated == ToggleOn}
+func (s StatusBarSetting) config() driver.StatusBarConfig {
+	c := driver.StatusBarConfig{Style: s.Foreground, Hidden: s.Hidden == ToggleOn, Animated: s.Animated == ToggleOn}
 	if c.Style == StatusBarInherit {
 		c.Style = StatusBarAuto
 	}
@@ -74,7 +56,7 @@ func (s StatusBarSetting) config() StatusBarConfig {
 type statusBars struct {
 	base    StatusBarSetting
 	layers  []*statusLayer
-	shown   StatusBarConfig // what the platform shows; Auto before any item
+	shown   driver.StatusBarConfig // what the platform shows; Auto before any item
 	started bool
 }
 
@@ -144,5 +126,5 @@ func (t *Tree) emitStatusBar() {
 		return
 	}
 	st.shown, st.started = c, true
-	t.commands = append(t.commands, MountItem{Kind: ItemStatusBar, StatusBar: &c})
+	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemStatusBar, StatusBar: &c})
 }

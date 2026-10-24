@@ -3,12 +3,14 @@ package core
 import (
 	"slices"
 	"testing"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 func TestGesturesReportAndMerge(t *testing.T) {
 	var pans []PanEvent
 	var scales []float32
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		return View{TestID: "card", Style: Style{Width: Pt(50), Height: Pt(50)},
 			OnPan:         func(e PanEvent) { pans = append(pans, e) },
 			PanActivation: PanActivation{ActiveOffsetX: 20},
@@ -17,23 +19,23 @@ func TestGesturesReportAndMerge(t *testing.T) {
 	b := h.commit()
 	n := h.find("card")
 	for _, it := range b.Items {
-		if it.ID == n.id && it.Kind == ItemEvents && (!it.Events.Has(EventPan) || !it.Events.Has(EventPinch) || it.Events.Has(EventRotation)) {
+		if it.ID == n.id && it.Kind == driver.ItemEvents && (!it.Events.Has(driver.EventPan) || !it.Events.Has(driver.EventPinch) || it.Events.Has(driver.EventRotation)) {
 			t.Fatalf("events = %b", it.Events)
 		}
-		if it.ID == n.id && it.Kind == ItemViewProps && it.ViewProps.PanActivation.ActiveOffsetX != 20 {
+		if it.ID == n.id && it.Kind == driver.ItemViewProps && it.ViewProps.PanActivation.ActiveOffsetX != 20 {
 			t.Fatalf("props = %+v", it.ViewProps)
 		}
 	}
-	h.tree.Dispatch(Event{Kind: EventPan, ID: n.id, Phase: GestureBegan, Point: Point{20, 0}})
-	h.tree.Dispatch(Event{Kind: EventPan, ID: n.id, Phase: GestureEnded, Point: Point{30, 5}, Velocity: Point{100, 0}})
-	h.tree.Dispatch(Event{Kind: EventPinch, ID: n.id, Phase: GestureChanged, Value: 1.5})
-	if len(pans) != 2 || pans[1].Translation != (Point{30, 5}) || pans[1].Velocity.X != 100 || pans[1].Phase != GestureEnded {
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPan, ID: n.id, Phase: GestureBegan, Point: Point{X: 20, Y: 0}})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPan, ID: n.id, Phase: GestureEnded, Point: Point{X: 30, Y: 5}, Velocity: Point{X: 100, Y: 0}})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPinch, ID: n.id, Phase: GestureChanged, Value: 1.5})
+	if len(pans) != 2 || pans[1].Translation != (Point{X: 30, Y: 5}) || pans[1].Velocity.X != 100 || pans[1].Phase != GestureEnded {
 		t.Fatalf("pans = %+v", pans)
 	}
 	if !slices.Equal(scales, []float32{1.5}) {
 		t.Fatalf("scales = %v", scales)
 	}
-	if !(Event{Kind: EventPan, Phase: GestureChanged}).Mergeable() || (Event{Kind: EventPan, Phase: GestureEnded}).Mergeable() {
+	if !(driver.Event{Kind: driver.EventPan, Phase: GestureChanged}).Mergeable() || (driver.Event{Kind: driver.EventPan, Phase: GestureEnded}).Mergeable() {
 		t.Fatal("only a gesture's moves merge")
 	}
 }
@@ -45,11 +47,11 @@ func TestPanActivationDecides(t *testing.T) {
 		d    Point
 		want int
 	}{
-		{PanActivation{}, Point{3, 4}, 0},
-		{PanActivation{}, Point{0, -12}, 1},
-		{horizontal, Point{-12, 2}, 1},
-		{horizontal, Point{4, 6}, -1},
-		{horizontal, Point{6, 2}, 0},
+		{PanActivation{}, Point{X: 3, Y: 4}, 0},
+		{PanActivation{}, Point{X: 0, Y: -12}, 1},
+		{horizontal, Point{X: -12, Y: 2}, 1},
+		{horizontal, Point{X: 4, Y: 6}, -1},
+		{horizontal, Point{X: 6, Y: 2}, 0},
 	} {
 		if got := c.a.Decide(c.d); got != c.want {
 			t.Errorf("%+v.Decide(%v) = %d, want %d", c.a, c.d, got, c.want)
@@ -58,14 +60,14 @@ func TestPanActivationDecides(t *testing.T) {
 }
 
 func TestWindowCommands(t *testing.T) {
-	h := newHost(t, Size{200, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
 		cx.SetTitleBar(TitleBarHidden, 40)
 		return View{TestID: "bar", WindowDrag: WindowDragOn}
 	})
 	b := h.commit()
 	var cmd *WindowCommand
 	for _, it := range b.Items {
-		if it.Kind == ItemWindow {
+		if it.Kind == driver.ItemWindow {
 			cmd = it.Window
 		}
 	}
@@ -80,7 +82,7 @@ func TestWindowCommands(t *testing.T) {
 func TestApplicationMenuFollowsItsOwner(t *testing.T) {
 	var log []string
 	var open *Signal[bool]
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		open = NewSignal(cx, true)
 		return Show{When: open.Get, Then: func(cx *Scope) Node {
 			cx.SetApplicationMenu([]MenuItem{
@@ -96,7 +98,7 @@ func TestApplicationMenuFollowsItsOwner(t *testing.T) {
 	})
 	var menu []MenuEntry
 	for _, it := range h.commit().Items {
-		if it.Kind == ItemMenu {
+		if it.Kind == driver.ItemMenu {
 			menu = it.Menu
 		}
 	}
@@ -107,13 +109,13 @@ func TestApplicationMenuFollowsItsOwner(t *testing.T) {
 	if file[0].Shortcut != "meta+n" || file[0].ID == 0 || !file[1].Separator || !file[2].Checkable {
 		t.Fatalf("file = %+v", file)
 	}
-	h.tree.Dispatch(Event{Kind: EventMenu, Count: file[0].ID})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventMenu, Count: file[0].ID})
 	open.Set(false)
 	restored := false
 	for _, it := range h.commit().Items {
-		restored = restored || it.Kind == ItemMenu && it.Menu == nil
+		restored = restored || it.Kind == driver.ItemMenu && it.Menu == nil
 	}
-	h.tree.Dispatch(Event{Kind: EventMenu, Count: file[0].ID})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventMenu, Count: file[0].ID})
 	if !restored || !slices.Equal(log, []string{"new"}) {
 		t.Fatalf("restored = %v, log = %q", restored, log)
 	}
@@ -123,14 +125,14 @@ func TestBordersPerSide(t *testing.T) {
 	red, blue := RGB(0xff0000), RGB(0x0000ff)
 	for _, c := range []struct {
 		s    Style
-		want ViewStyle
+		want driver.ViewStyle
 	}{
-		{Style{BorderWidth: 2, BorderColor: red}, ViewStyle{BorderWidth: 2, BorderColor: red}},
-		{Style{Borders: All(3), BorderColor: red}, ViewStyle{BorderWidth: 3, BorderColor: red}},
+		{Style{BorderWidth: 2, BorderColor: red}, driver.ViewStyle{BorderWidth: 2, BorderColor: red}},
+		{Style{Borders: All(3), BorderColor: red}, driver.ViewStyle{BorderWidth: 3, BorderColor: red}},
 		{Style{Borders: Edges{Bottom: 1}, BorderColor: red},
-			ViewStyle{Borders: Edges{Bottom: 1}, BorderColors: AllColors(red)}},
+			driver.ViewStyle{Borders: Edges{Bottom: 1}, BorderColors: AllColors(red)}},
 		{Style{BorderWidth: 2, BorderColor: red, BorderColors: EdgeColors{Left: blue}},
-			ViewStyle{Borders: All(2), BorderColors: EdgeColors{red, red, red, blue}}},
+			driver.ViewStyle{Borders: All(2), BorderColors: EdgeColors{Top: red, Right: red, Bottom: red, Left: blue}}},
 	} {
 		got := c.s.viewStyle()
 		got.Opacity = 0

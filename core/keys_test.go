@@ -3,10 +3,12 @@ package core
 import (
 	"slices"
 	"testing"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 func TestKeyBindingsFireAsTheirOptionsSay(t *testing.T) {
-	keymap := []KeyBinding{
+	keymap := []driver.KeyBinding{
 		{Key: "down", InText: !EditsText("down")},
 		{Key: "mod+k", InText: !EditsText("mod+k")},
 		{Key: "mod+z", InText: true, Repeat: true},
@@ -24,7 +26,7 @@ func TestKeyBindingsFireAsTheirOptionsSay(t *testing.T) {
 		{[]string{"mod+z"}, true, true, "mod+z", true},
 		{[]string{"x"}, false, false, "", false},
 	} {
-		key, consumed := FindKey(keymap, c.names, c.editing, c.repeat)
+		key, consumed := driver.FindKey(keymap, c.names, c.editing, c.repeat)
 		if key != c.key || consumed != c.consumed {
 			t.Errorf("FindKey(%v, editing %v, repeat %v) = %q, %v; want %q, %v", c.names, c.editing, c.repeat,
 				key, consumed, c.key, c.consumed)
@@ -56,7 +58,7 @@ func TestKeyLabelsFollowThePlatform(t *testing.T) {
 func TestBackGoesToTheNewestHandlerThatTakesIt(t *testing.T) {
 	var log []string
 	var inner *Signal[bool]
-	h := newHost(t, Size{100, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		inner = NewSignal(cx, true)
 		cx.OnBackPress(func() bool { log = append(log, "outer"); return true })
 		return Show{When: inner.Get, Then: func(cx *Scope) Node {
@@ -65,10 +67,10 @@ func TestBackGoesToTheNewestHandlerThatTakesIt(t *testing.T) {
 		}}
 	})
 	h.commit()
-	h.tree.Dispatch(Event{Kind: EventBack})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventBack})
 	inner.Set(false)
 	h.commit()
-	h.tree.Dispatch(Event{Kind: EventBack})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventBack})
 	if want := []string{"inner passes", "outer", "outer"}; !slices.Equal(log, want) {
 		t.Fatalf("log = %q, want %q", log, want)
 	}

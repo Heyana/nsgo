@@ -1,6 +1,10 @@
 package core
 
-import "time"
+import (
+	"time"
+
+	"github.com/oneo-me/nsgo/internal/driver"
+)
 
 // Node is what a tree is made of: a host element (View, Text, Input,
 // Scroll), a region (Group, Dynamic, Show, Each, Catch) or a component.
@@ -195,20 +199,6 @@ type Text struct {
 // Render implements Node.
 func (t Text) Render(*Scope) Node { return t }
 
-// Selectable says whether the user can select a text.
-type Selectable uint8
-
-const (
-	// SelectableAuto selects the text with its selection area when it is
-	// in one. Elsewhere only the web selects it, on desktops, as a page's
-	// text.
-	SelectableAuto Selectable = iota
-	// SelectableOn selects the text, alone when it is in no area.
-	SelectableOn
-	// SelectableOff keeps the text out of selections, its area's too.
-	SelectableOff
-)
-
 // Span is a run of a Text with a style of its own.
 type Span struct {
 	Content     string
@@ -382,7 +372,7 @@ func (r *Ref) Bounds() (Bounds, bool) {
 // Focus moves keyboard focus to the element, a text field.
 func (r *Ref) Focus() {
 	if r.n != nil && !r.n.deleted {
-		r.t.command(ItemFocus, r.n)
+		r.t.command(driver.ItemFocus, r.n)
 	}
 }
 
@@ -429,12 +419,12 @@ func (r *Ref) ZoomTo(scale float32, center *Point, animated bool) {
 	if r.n == nil || r.n.deleted || r.n.scroll == nil {
 		return
 	}
-	z := &ZoomRequest{Scale: r.n.scroll.config.clampZoom(zoomOr(scale, 1))}
+	z := &driver.ZoomRequest{Scale: r.n.scroll.config.ClampZoom(zoomOr(scale, 1))}
 	if center != nil {
 		c := *center
 		z.Center = &c
 	}
-	r.t.commands = append(r.t.commands, MountItem{Kind: ItemZoomTo, ID: r.n.id, Zoom: z, Animated: animated})
+	r.t.commands = append(r.t.commands, driver.MountItem{Kind: driver.ItemZoomTo, ID: r.n.id, Zoom: z, Animated: animated})
 	r.t.changed = true
 }
 
@@ -460,7 +450,7 @@ func (r *Ref) ScrollToIndexAt(index int, viewPosition float32, viewOffset Points
 // Blur takes keyboard focus away from the element.
 func (r *Ref) Blur() {
 	if r.n != nil && !r.n.deleted {
-		r.t.command(ItemBlur, r.n)
+		r.t.command(driver.ItemBlur, r.n)
 	}
 }
 
@@ -494,46 +484,8 @@ type Image struct {
 // Render implements Node.
 func (i Image) Render(*Scope) Node { return i }
 
-// ImageSource is where an image comes from: a URI (https, file path,
-// file:, data:) or bytes, such as a file embedded with go:embed.
-type ImageSource struct {
-	URI  string
-	Data []byte
-	// Size is the image's size in points, when known up front.
-	Size Size
-	// Scales are the pixel densities an "asset:" image ships in (a.png,
-	// a@2x.png, ...): the core mounts the one for the screen's pixel
-	// ratio. Empty for a single file.
-	Scales ImageScales
-}
-
 // Src returns a source for uri.
 func Src(uri string) ImageSource { return ImageSource{URI: uri} }
-
-func (s ImageSource) same(o ImageSource) bool {
-	return s.URI == o.URI && s.Size == o.Size && s.Scales == o.Scales && len(s.Data) == len(o.Data) &&
-		(len(s.Data) == 0 || &s.Data[0] == &o.Data[0])
-}
-
-// ResizeMode fits an image or a video into its view. The zero value is
-// the element's default: Cover for an image, Contain for a video, as in
-// NSH. Platforms receive the resolved mode.
-type ResizeMode uint8
-
-const (
-	// Cover fills the view, cropping what overflows.
-	Cover ResizeMode = iota + 1
-	// Contain fits the whole image, leaving space.
-	Contain
-	// Stretch fills the view, distorting the image.
-	Stretch
-	// Center keeps the image's natural size, cropped where it is larger
-	// than the view (CSS's object-fit: none).
-	Center
-	// ScaleDown keeps the natural size, shrunk to fit where it is larger
-	// than the view (CSS's object-fit: scale-down, React Native's center).
-	ScaleDown
-)
 
 // Overlay floats its children above everything in the nearest Modal or
 // the surface, outside the flow: placed beside Anchor on Placement, or by
@@ -617,40 +569,6 @@ type Modal struct {
 
 // Render implements Node.
 func (m Modal) Render(*Scope) Node { return m }
-
-// ModalPresentation is how a modal covers the screen on iOS.
-type ModalPresentation uint8
-
-const (
-	// ModalFullScreen covers the whole screen with the modal's own look.
-	ModalFullScreen ModalPresentation = iota
-	// ModalPageSheet is the system's sheet, which leaves the content
-	// behind it in sight.
-	ModalPageSheet
-	// ModalFormSheet is a smaller sheet, centered on large screens.
-	ModalFormSheet
-)
-
-// Orientation is a set of interface orientations.
-type Orientation uint8
-
-const (
-	OrientationPortrait Orientation = 1 << iota
-	OrientationPortraitUpsideDown
-	OrientationLandscapeLeft
-	OrientationLandscapeRight
-
-	OrientationLandscape = OrientationLandscapeLeft | OrientationLandscapeRight
-)
-
-// ModalAnimation is how a modal appears.
-type ModalAnimation uint8
-
-const (
-	ModalSlide ModalAnimation = iota
-	ModalFade
-	ModalNone
-)
 
 // Stack shows the last of its screens: pushing is adding a screen,
 // popping is removing it. Back pops the top screen, which reports

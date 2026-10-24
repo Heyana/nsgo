@@ -1,6 +1,6 @@
 # Core
 
-`core` turns Go components into one `MountBatch` per commit. Components run once; signals drive bindings, regions rebuild only what changed, and the commit lays the tree out and sends the differences. Read this before changing `core`, `engine` or the mount protocol a backend implements; [text](text.md), [scrolling and lists](scrolling.md) and [interaction](interaction.md) cover those parts of `core`.
+`core` turns Go components into one `MountBatch` per commit. Components run once; signals drive bindings, regions rebuild only what changed, and the commit lays the tree out and sends the differences. The mount protocol, the events and the values `core` shares with backends live in `internal/driver`; `core` aliases the values its app API reaches in `shared.go`, and `TestPublicAPINamesNoInternalType` fails when one is missing. Read this before changing `core`, `internal/engine` or the mount protocol a backend implements; [text](text.md), [scrolling and lists](scrolling.md) and [interaction](interaction.md) cover those parts of `core`.
 
 ## Reactive graph
 
@@ -18,7 +18,7 @@ Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canv
 
 - A field that can change takes a function (`StyleFunc`, `ContentFunc`, `Value`, `Disabled`), bound by one render effect per part.
 - Styles compose with `Style.Merge`, and text fields inherit down the tree as in CSS.
-- State styles merge over the rest in NSH's order: `Checked`, `Indeterminate` and `Selected`, which the app sets, then `Hover`, `Focus` and `Active`, which the engine tracks from the press, hover and focus events it asks the platform to report, then `Disabled` over all. Windows and Linux hit-test hovers themselves (`platform/internal/hover`).
+- State styles merge over the rest in NSH's order: `Checked`, `Indeterminate` and `Selected`, which the app sets, then `Hover`, `Focus` and `Active`, which the engine tracks from the press, hover and focus events it asks the platform to report, then `Disabled` over all. Windows and Linux hit-test hovers themselves (`internal/platform/hover`).
 - A `Ref`, usable at its zero value, names a mounted element for anchoring, focus, scrolling and its bounds.
 
 A component is any type whose `Render(cx) Node` returns its nodes, like `http.Handler`. Its fields are its props. `Render` runs once under a scope of its own, so `Key.Provide` and cleanups stay inside it. `Func` turns a function into a component.
@@ -78,7 +78,7 @@ Native alerts, the clipboard, image sizes and prefetches, announcements, keyboar
 
 - The status bar is layered as NSH's `status_bar.rs`: `SetStatusBar` patches the app's default, and each screen's or modal's `StatusBar` is over it, in mount order, while it is in the tree and not popped or swiped away. The latest wins field by field, and the commit sends one `ItemStatusBar` when the merged result changes. iOS and Android apply it; Android ignores `Animated`.
 - An input method composing text keeps its keys on macOS and the web, so arrows still choose its candidates.
-- Each `KeyBinding` says whether it fires while a text input or web view has the focus and on a held key's auto-repeats, and `core.FindKey` decides for every Go backend, Android's Java the same way. By default (`KeyAuto`) a binding leaves an input the keys it uses (`EditsText`) and fires once while its key is held; `OnKeyWith` asks for `KeyAlways`, `KeyNotEditing` and `Repeat`. GTK flags no repeats, so Linux counts a key pressed again before its release; UIKit reports a held key once, so iOS repeats a binding on a timer of its own.
+- Each `KeyBinding` says whether it fires while a text input or web view has the focus and on a held key's auto-repeats, and `driver.FindKey` decides for every Go backend, Android's Java the same way. By default (`KeyAuto`) a binding leaves an input the keys it uses (`EditsText`) and fires once while its key is held; `OnKeyWith` asks for `KeyAlways`, `KeyNotEditing` and `Repeat`. GTK flags no repeats, so Linux counts a key pressed again before its release; UIKit reports a held key once, so iOS repeats a binding on a timer of its own.
 - iOS and Android match a hardware keyboard's presses too. `KeyLabel` and `Scope.KeyLabel` name a binding as the platform shows it (⇧⌘L, Ctrl+Shift+L), with `Environment.AppleKeyboard` telling the web on Apple platforms.
 
 ## Storage and directories
@@ -114,7 +114,7 @@ The protocol is defined in `mount.go` and `events.go`. Backends apply items in o
 | `MountItem` enum | One struct with a `Kind` and pointers to large parts | No allocation per item kind; easy to encode across a pipe |
 | `accessibilityActions` as a list in the props | `ViewProps.Actions` points at the element's list, never changed | `ViewProps` stays comparable, so the core diffs it with `!=` |
 | Options with defaults of `true` (`closeOnEscape`) | Negative names (`NoCloseOnEscape`) | The zero value must be the default |
-| Per-platform image loading and caching | One Go loader (`platform/internal/imageload`): `net/http`, shared fetches, an LRU, `context` cancellation | Written once; platforms only decode and draw |
+| Per-platform image loading and caching | One Go loader (`internal/platform/imageload`): `net/http`, shared fetches, an LRU, `context` cancellation | Written once; platforms only decode and draw |
 
 ## TSX entry
 

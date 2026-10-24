@@ -3,7 +3,7 @@ package core
 import (
 	"math"
 
-	"github.com/oneo-me/nsgo/core/internal/layout"
+	"github.com/oneo-me/nsgo/internal/layout"
 )
 
 // Layout runs NSGo's port of Taffy (core/internal/layout): CSS flexbox,
@@ -60,7 +60,7 @@ func (n *node) Measure(known layout.Size[layout.Opt], available layout.Size[layo
 		if n.text.prepared != nil {
 			m = n.text.prepared.Measure(width)
 		}
-		m = Size{ceil(m.Width), ceil(m.Height)}
+		m = Size{Width: ceil(m.Width), Height: ceil(m.Height)}
 	case n.input != nil:
 		m = n.input.measure(known, available)
 	case n.image != nil:
@@ -138,12 +138,12 @@ func (n *node) layoutStyle() layout.Style {
 	}
 	l.FlexGrow = s.FlexGrow
 	l.FlexShrink = layout.Some(s.FlexShrink)
-	l.FlexBasis = s.FlexBasis.layout()
+	l.FlexBasis = lengthLayout(s.FlexBasis)
 
-	l.Size = layout.Size[layout.Length]{Width: s.Width.layout(), Height: s.Height.layout()}
+	l.Size = layout.Size[layout.Length]{Width: lengthLayout(s.Width), Height: lengthLayout(s.Height)}
 	// Yoga has no automatic minimum size: an unset minimum is 0.
-	l.MinSize = layout.Size[layout.Length]{Width: s.MinWidth.minLayout(), Height: s.MinHeight.minLayout()}
-	l.MaxSize = layout.Size[layout.Length]{Width: s.MaxWidth.layout(), Height: s.MaxHeight.layout()}
+	l.MinSize = layout.Size[layout.Length]{Width: lengthMinLayout(s.MinWidth), Height: lengthMinLayout(s.MinHeight)}
+	l.MaxSize = layout.Size[layout.Length]{Width: lengthLayout(s.MaxWidth), Height: lengthLayout(s.MaxHeight)}
 	if s.AspectRatio > 0 {
 		l.AspectRatio = layout.Some(s.AspectRatio)
 	}
@@ -151,9 +151,9 @@ func (n *node) layoutStyle() layout.Style {
 		l.BoxSizing = layout.ContentBox
 	}
 
-	l.Inset = layout.Rect[layout.Length]{Left: s.Left.layout(), Right: s.Right.layout(),
-		Top: s.Top.layout(), Bottom: s.Bottom.layout()}
-	l.Margin = s.Margin.layout()
+	l.Inset = layout.Rect[layout.Length]{Left: lengthLayout(s.Left), Right: lengthLayout(s.Right),
+		Top: lengthLayout(s.Top), Bottom: lengthLayout(s.Bottom)}
+	l.Margin = edgesLayout(s.Margin)
 	for _, side := range [...]struct {
 		bit Sides
 		dst *layout.Length
@@ -162,12 +162,12 @@ func (n *node) layoutStyle() layout.Style {
 			*side.dst = layout.Auto
 		}
 	}
-	l.Padding = s.Padding.layout()
+	l.Padding = edgesLayout(s.Padding)
 	if sc := n.screen; sc != nil && sc.pad > 0 {
 		// The content goes below the system header.
 		l.Padding.Top = layout.Px(float32(s.Padding.Top + sc.pad))
 	}
-	l.Border = s.borders().layout()
+	l.Border = edgesLayout(s.borders())
 	rowGap, colGap := s.Gap, s.Gap
 	if s.RowGap != 0 {
 		rowGap = s.RowGap
@@ -270,25 +270,25 @@ func (n *node) layoutStyle() layout.Style {
 	return l
 }
 
-func (l Length) layout() layout.Length {
-	switch l.unit {
-	case unitPoints:
-		return layout.Px(l.value)
-	case unitPercent:
-		return layout.Percent(l.value / 100)
+func lengthLayout(l Length) layout.Length {
+	if p, ok := l.Points(); ok {
+		return layout.Px(float32(p))
+	}
+	if pct, ok := l.Percent(); ok {
+		return layout.Percent(pct / 100)
 	}
 	return layout.Auto
 }
 
 // minLayout maps a minimum size: auto is 0, as in Yoga.
-func (l Length) minLayout() layout.Length {
+func lengthMinLayout(l Length) layout.Length {
 	if l.IsAuto() {
 		return layout.Px(0)
 	}
-	return l.layout()
+	return lengthLayout(l)
 }
 
-func (e Edges) layout() layout.Rect[layout.Length] {
+func edgesLayout(e Edges) layout.Rect[layout.Length] {
 	return layout.Rect[layout.Length]{Left: layout.Px(float32(e.Left)), Right: layout.Px(float32(e.Right)),
 		Top: layout.Px(float32(e.Top)), Bottom: layout.Px(float32(e.Bottom))}
 }
@@ -409,8 +409,8 @@ func (t *Tree) syncFrames(n *node) {
 	for _, c := range n.flatChildren() {
 		l := &c.lstate.Rounded
 		f := Bounds{
-			Origin: Point{Points(l.Location.X), Points(l.Location.Y)},
-			Size:   Size{Points(l.Size.Width), Points(l.Size.Height)},
+			Origin: Point{X: Points(l.Location.X), Y: Points(l.Location.Y)},
+			Size:   Size{Width: Points(l.Size.Width), Height: Points(l.Size.Height)},
 		}
 		if mirror {
 			f.Origin.X = n.scroll.content.Width - f.Origin.X - f.Size.Width
@@ -439,14 +439,14 @@ func (t *Tree) syncContent(n *node) {
 	case n.input != nil:
 		n.input.config.Content = contentBox(l)
 	case n.scroll != nil:
-		n.scroll.content = Size{Points(l.Size.Width + l.ScrollWidth()), Points(l.Size.Height + l.ScrollHeight())}
+		n.scroll.content = Size{Width: Points(l.Size.Width + l.ScrollWidth()), Height: Points(l.Size.Height + l.ScrollHeight())}
 	}
 }
 
 // contentBox is the box inside a layout's padding and border.
 func contentBox(l *layout.Layout) Bounds {
 	return Bounds{
-		Origin: Point{Points(l.Border.Left + l.Padding.Left), Points(l.Border.Top + l.Padding.Top)},
+		Origin: Point{X: Points(l.Border.Left + l.Padding.Left), Y: Points(l.Border.Top + l.Padding.Top)},
 		Size: Size{
 			Width:  Points(max(l.Size.Width-l.Border.Left-l.Border.Right-l.Padding.Left-l.Padding.Right, 0)),
 			Height: Points(max(l.Size.Height-l.Border.Top-l.Border.Bottom-l.Padding.Top-l.Padding.Bottom, 0)),

@@ -123,4 +123,4 @@ Go apps do not need these NSH parts:
 - Component refs, slots, render props and typed rows, since Go fields and functions carry them.
 - `EngineContext`, since a host gives each engine's app function its values directly.
 - The GPUI backend and the LayerFS trial.
-- The theme, styled controls, toasts and other components composed from `base`, which apps or a component library build on it.
+- The theme and styled components, which apps or a component library build on `base`.

@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/oneo-me/nsgo/core/internal/layout"
+	"github.com/oneo-me/nsgo/internal/layout"
 )
 
 // GridTracks is a list of grid tracks in CSS syntax: lengths in px,

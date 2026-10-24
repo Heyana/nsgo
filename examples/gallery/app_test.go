@@ -416,7 +416,7 @@ func TestWebViewMessages(t *testing.T) {
 	app.Find("text:The page said: clicked 1")
 	app.Press("role:button Post to the page")
 	cmds := app.Find("id:bridge").WebCommands
-	if len(cmds) != 1 || cmds[0] != (nsgotest.WebCommand{Command: core.WebPostMessage, Value: "hello #1"}) {
+	if len(cmds) != 1 || cmds[0] != (nsgotest.WebCommand{Command: nsgotest.WebPostMessage, Value: "hello #1"}) {
 		t.Fatalf("commands = %v", cmds)
 	}
 	app.Navigate("id:site", core.WebNavigation{URL: "https://example.com/", Title: "Example", CanGoBack: true})
@@ -448,7 +448,7 @@ func TestNativeViewAndFileDrop(t *testing.T) {
 	app := startDesktop(t)
 	app.Press("id:nav-Native View")
 	slider := app.Find("id:native-slider")
-	if slider.Kind != core.KindNative || slider.Component != sliderComponent || slider.NativeProps["value"] != 0.4 {
+	if slider.Kind != nsgotest.KindNative || slider.Component != sliderComponent || slider.NativeProps["value"] != 0.4 {
 		t.Fatalf("native view %+v", slider)
 	}
 	app.Press("text:Set 0.8")
@@ -477,7 +477,7 @@ func TestPlatformAnimations(t *testing.T) {
 	app.Press("text:Timing")
 	app.Advance(300 * time.Millisecond)
 	mid := app.Find("id:ball").Animated
-	if !mid.Has(core.PropTranslateX) || mid.TranslateX <= 0 || mid.TranslateX >= 220 {
+	if !mid.Has(nsgotest.PropTranslateX) || mid.TranslateX <= 0 || mid.TranslateX >= 220 {
 		t.Fatalf("ball halfway at %+v", mid)
 	}
 	app.Advance(time.Second)
@@ -620,7 +620,7 @@ func TestListProps(t *testing.T) {
 	}
 
 	// The page list is laid out at its full length in the page.
-	if l := app.Find("id:page-list"); l.Kind != core.KindView || l.Frame.Size.Height < 200*40 {
+	if l := app.Find("id:page-list"); l.Kind != nsgotest.KindView || l.Frame.Size.Height < 200*40 {
 		t.Errorf("the page list is a %v %v tall", l.Kind, l.Frame.Size.Height)
 	}
 	if app.Exists("text:Page row 150") {

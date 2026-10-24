@@ -4,7 +4,6 @@ package main
 
 import (
 	"github.com/oneo-me/nsgo/core"
-	"github.com/oneo-me/nsgo/platform/android"
 )
 
 // seekBar is Android's SeekBar, as a native component. The Go process
@@ -28,17 +27,17 @@ func (s *seekBar) View() any { return "android.widget.SeekBar" }
 
 func (s *seekBar) SetProp(string, any) {}
 
-// ViewProps implements android.PropMapper: value 0..1 sets the progress
+// ViewProps implements core.AndroidPropMapper: value 0..1 sets the progress
 // of a bar from 0 to seekSteps.
-func (s *seekBar) ViewProps(name string, value any) []android.ViewProp {
+func (s *seekBar) ViewProps(name string, value any) []core.AndroidViewProp {
 	v, ok := value.(float64)
 	if name != "value" || !ok {
 		return nil
 	}
-	return []android.ViewProp{{Name: "max", Value: seekSteps}, {Name: "progress", Value: int(v*seekSteps + 0.5)}}
+	return []core.AndroidViewProp{{Name: "max", Value: seekSteps}, {Name: "progress", Value: int(v*seekSteps + 0.5)}}
 }
 
-// ViewEvent implements android.EventMapper: SeekBar's
+// ViewEvent implements core.AndroidEventMapper: SeekBar's
 // onProgressChanged(bar, progress, fromUser) reports the user's changes.
 func (s *seekBar) ViewEvent(name string, args []any) {
 	if name != "onProgressChanged" || len(args) < 3 {

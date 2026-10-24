@@ -1,5 +1,7 @@
 package core
 
+import "github.com/oneo-me/nsgo/internal/driver"
+
 // InputAccessoryView is a bar that rides above the software keyboard on
 // iOS and Android while an Input naming its ID has focus, as React
 // Native's does. It is as wide as the surface and as tall as its content;
@@ -25,10 +27,10 @@ type accessoryNode struct {
 // context and inherited text, but no view holds its native view: inputs
 // hand it to the keyboard.
 func (t *Tree) mountAccessory(cx *Scope, parent *node, a InputAccessoryView) {
-	n := t.newNode(KindView, parent, cx)
+	n := t.newNode(driver.KindView, parent, cx)
 	n.accessory = &accessoryNode{name: a.ID}
 	t.bindStyle(cx, n, a.Style, a.StyleFunc)
-	n.props = ViewProps{TestID: a.TestID}
+	n.props = driver.ViewProps{TestID: a.TestID}
 	t.accessories = append(t.accessories, n)
 	if p := n.parent; p != nil {
 		t.childrenChanged(p)
@@ -68,9 +70,9 @@ func (t *Tree) layoutAccessories() {
 		if !n.layoutDirty {
 			continue
 		}
-		t.layoutRoot(n, Size{t.size.Width, attachmentSpace}, false)
+		t.layoutRoot(n, Size{Width: t.size.Width, Height: attachmentSpace}, false)
 		l := &n.lstate.Rounded
-		n.frame = Bounds{Size: Size{t.size.Width, Points(l.Size.Height)}}
+		n.frame = Bounds{Size: Size{Width: t.size.Width, Height: Points(l.Size.Height)}}
 		t.syncFrames(n)
 	}
 	clear(t.accessories[len(live):])

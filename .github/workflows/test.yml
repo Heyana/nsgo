@@ -45,6 +45,6 @@ jobs:
           go-version: "1.25.x"
           cache: true
       - name: Vet
-        run: go vet ./platform/internal/apple
+        run: go vet ./internal/platform/apple
       - name: Test
-        run: go test ./platform/internal/apple
+        run: go test ./internal/platform/apple

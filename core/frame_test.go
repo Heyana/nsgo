@@ -3,11 +3,13 @@ package core
 import (
 	"testing"
 	"time"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 // A frame callback runs once, with the frame's time, and not again.
 func TestRequestAnimationFrameRunsOnce(t *testing.T) {
-	h := newHost(t, Size{100, 100}, nil)
+	h := newHost(t, Size{Width: 100, Height: 100}, nil)
 	h.clock.Advance(5 * time.Millisecond)
 	var runs int
 	var at time.Time
@@ -20,7 +22,7 @@ func TestRequestAnimationFrameRunsOnce(t *testing.T) {
 	if want := h.clock.Now(); !at.Equal(want) {
 		t.Fatalf("frame time = %v, want the clock's %v", at, want)
 	}
-	h.clock.Advance(FrameInterval)
+	h.clock.Advance(driver.FrameInterval)
 	h.frame()
 	if runs != 1 {
 		t.Fatalf("an uncancelled callback ran again: %d times", runs)
@@ -30,7 +32,7 @@ func TestRequestAnimationFrameRunsOnce(t *testing.T) {
 // stop cancels the wait, and so does disposing the owner that registered
 // it: a screen that goes takes its frame callbacks with it.
 func TestRequestAnimationFrameStops(t *testing.T) {
-	h := newHost(t, Size{100, 100}, nil)
+	h := newHost(t, Size{Width: 100, Height: 100}, nil)
 	runs := 0
 	stop := h.root.RequestAnimationFrame(func(time.Time) { runs++ })
 	stop()

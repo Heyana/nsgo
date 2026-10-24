@@ -1,6 +1,10 @@
 package core
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/oneo-me/nsgo/internal/driver"
+)
 
 func TestSnapTargets(t *testing.T) {
 	snap := func(b ScrollBehavior, offset, projected Points, v float32, viewport, content Points) Points {
@@ -47,13 +51,13 @@ func TestSnapTargets(t *testing.T) {
 	if _, ok := (&ScrollBehavior{}).SnapTarget(10, 10, 1, 300, 2000); ok {
 		t.Error("a free scroll view snapped")
 	}
-	if r := (&ScrollBehavior{}).Deceleration(); r != DecelerationNormal {
+	if r := (&ScrollBehavior{}).Deceleration(); r != driver.DecelerationNormal {
 		t.Errorf("rate %v", r)
 	}
 	if r := paging.Deceleration(); r != DecelerationFast {
 		t.Errorf("paging rate %v", r)
 	}
-	if p := Projected(100, 1, DecelerationNormal); p < 590 || p > 600 {
+	if p := driver.Projected(100, 1, driver.DecelerationNormal); p < 590 || p > 600 {
 		t.Errorf("projected %v", p)
 	}
 }
@@ -94,18 +98,18 @@ func TestScrollConfigEventsAndCommands(t *testing.T) {
 		}
 	})
 	b := h.commit()
-	var cfg *ScrollConfig
-	var mask EventMask
-	var scrollTo []MountItem
+	var cfg *driver.ScrollConfig
+	var mask driver.EventMask
+	var scrollTo []driver.MountItem
 	for _, it := range b.Items {
 		switch it.Kind {
-		case ItemScrollConfig:
+		case driver.ItemScrollConfig:
 			cfg = it.Scroll
-		case ItemEvents:
+		case driver.ItemEvents:
 			if it.ID == h.find("scroll").id {
 				mask = it.Events
 			}
-		case ItemScrollTo:
+		case driver.ItemScrollTo:
 			scrollTo = append(scrollTo, it)
 		}
 	}
@@ -113,14 +117,14 @@ func TestScrollConfigEventsAndCommands(t *testing.T) {
 		!cfg.Refreshable || cfg.Refreshing || !cfg.Zooms() {
 		t.Fatalf("config %+v", cfg)
 	}
-	if !mask.Has(EventScroll) || !mask.Has(EventScrollDragStart) || !mask.Has(EventMomentumEnd) ||
-		!mask.Has(EventRefresh) || mask.Has(EventScrollDragEnd) || mask.Has(EventMomentumStart) {
+	if !mask.Has(driver.EventScroll) || !mask.Has(driver.EventScrollDragStart) || !mask.Has(driver.EventMomentumEnd) ||
+		!mask.Has(driver.EventRefresh) || mask.Has(driver.EventScrollDragEnd) || mask.Has(driver.EventMomentumStart) {
 		t.Fatalf("mask %b", mask)
 	}
 	if len(scrollTo) != 1 || scrollTo[0].Point != (Point{Y: 120}) || scrollTo[0].Animated {
 		t.Fatalf("initial offset %+v", scrollTo)
 	}
-	if k := kinds(h.commit()); k[ItemScrollConfig] != 0 {
+	if k := kinds(h.commit()); k[driver.ItemScrollConfig] != 0 {
 		t.Fatalf("resent an unchanged config: %v", k)
 	}
 
@@ -129,7 +133,7 @@ func TestScrollConfigEventsAndCommands(t *testing.T) {
 	b = h.commit()
 	cfg = nil
 	for _, it := range b.Items {
-		if it.Kind == ItemScrollConfig {
+		if it.Kind == driver.ItemScrollConfig {
 			cfg = it.Scroll
 		}
 	}
@@ -139,20 +143,20 @@ func TestScrollConfigEventsAndCommands(t *testing.T) {
 	}
 
 	id := h.find("scroll").id
-	h.tree.Dispatch(Event{Kind: EventScrollDragStart, ID: id, Point: Point{Y: 130}})
-	h.tree.Dispatch(Event{Kind: EventScroll, ID: id, Point: Point{X: 10, Y: 300}, Value: 2})
-	h.tree.Dispatch(Event{Kind: EventMomentumEnd, ID: id, Point: Point{X: 10, Y: 300}})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventScrollDragStart, ID: id, Point: Point{Y: 130}})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventScroll, ID: id, Point: Point{X: 10, Y: 300}, Value: 2})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventMomentumEnd, ID: id, Point: Point{X: 10, Y: 300}})
 	want := ScrollEvent{Offset: Point{X: 10, Y: 300}, ContentSize: Size{Width: 600, Height: 2000},
 		Size: Size{Width: 300, Height: 200}, ZoomScale: 2}
 	if len(events) != 3 || events[0] != "drag" || events[1] != "scroll" || events[2] != "rest" || last != want {
 		t.Fatalf("events %v, last %+v, want %+v", events, last, want)
 	}
 
-	h.tree.Dispatch(Event{Kind: EventRefresh, ID: id, Point: Point{Y: -70}})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventRefresh, ID: id, Point: Point{Y: -70}})
 	b = h.commit()
 	cfg = nil
 	for _, it := range b.Items {
-		if it.Kind == ItemScrollConfig {
+		if it.Kind == driver.ItemScrollConfig {
 			cfg = it.Scroll
 		}
 	}
@@ -162,18 +166,18 @@ func TestScrollConfigEventsAndCommands(t *testing.T) {
 	// A refresh the app does not take is sent back as not refreshing.
 	refreshing.Set(false)
 	h.commit()
-	h.tree.Dispatch(Event{Kind: EventRefresh, ID: id})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventRefresh, ID: id})
 	refreshing.Set(false)
 	b = h.commit()
-	if k := kinds(b); k[ItemScrollConfig] != 1 {
+	if k := kinds(b); k[driver.ItemScrollConfig] != 1 {
 		t.Fatalf("refresh not answered: %v", k)
 	}
 
 	ref.ZoomTo(10, &Point{X: 50, Y: 60}, true)
 	ref.ZoomTo(0, nil, false)
-	var zooms []*ZoomRequest
+	var zooms []*driver.ZoomRequest
 	for _, it := range h.commit().Items {
-		if it.Kind == ItemZoomTo {
+		if it.Kind == driver.ItemZoomTo {
 			zooms = append(zooms, it.Zoom)
 			if it.Animated != (len(zooms) == 1) {
 				t.Fatalf("zoom %d animated %v", len(zooms), it.Animated)

@@ -1,5 +1,7 @@
 package core
 
+import "github.com/oneo-me/nsgo/internal/driver"
+
 // Overlays and modals stay where they are built in the shadow tree, for
 // their owner, context, inherited text style and lifetime, but their
 // native views go into their host: the nearest modal around them, or the
@@ -38,7 +40,7 @@ type modalSize struct {
 // hostOf returns the root view or the nearest modal around parent.
 func (t *Tree) hostOf(parent *node) *node {
 	for p := parent; p != nil; p = p.parent {
-		if p.kind == KindModal {
+		if p.kind == driver.KindModal {
 			return p
 		}
 	}
@@ -56,7 +58,7 @@ func (t *Tree) hoist(n *node, h *hoistNode) {
 }
 
 func (t *Tree) mountOverlay(cx *Scope, parent *node, o Overlay) {
-	n := t.newNode(KindView, parent, cx)
+	n := t.newNode(driver.KindView, parent, cx)
 	h := &hoistNode{overlay: &o}
 	t.hoist(n, h)
 	t.bindStyle(cx, n, o.Style, o.StyleFunc)
@@ -69,17 +71,17 @@ func (t *Tree) mountOverlay(cx *Scope, parent *node, o Overlay) {
 		})
 	}
 	n.h = handlers{pressOutside: o.OnPressOutside, cancel: o.OnCancel}
-	n.props = ViewProps{Role: o.Role, Label: o.Label, TestID: o.TestID}
+	n.props = driver.ViewProps{Role: o.Role, Label: o.Label, TestID: o.TestID}
 	for _, c := range o.Children {
 		t.mount(cx, n, c)
 	}
 }
 
 func (t *Tree) mountModal(cx *Scope, parent *node, m Modal) {
-	n := t.newNode(KindModal, parent, cx)
+	n := t.newNode(driver.KindModal, parent, cx)
 	t.hoist(n, &hoistNode{modal: &m, reported: NewSignal[*modalSize](cx, nil)})
 	t.bindStyle(cx, n, m.Style, m.StyleFunc)
-	n.props = ViewProps{Role: m.Role, Label: m.Label, TestID: m.TestID}
+	n.props = driver.ViewProps{Role: m.Role, Label: m.Label, TestID: m.TestID}
 	if n.props.Role == RoleNone {
 		n.props.Role = RoleDialog
 	}
@@ -147,7 +149,7 @@ type modalPlace struct {
 // StatusBarTranslucent, as above NSH's dialog windows. A modal in a
 // modal keeps clear of its host's insets.
 func (t *Tree) modalArea(n *node, safe Edges, os OS) modalPlace {
-	if host := n.hoist.host; host.kind == KindModal {
+	if host := n.hoist.host; host.kind == driver.KindModal {
 		return modalPlace{insets: t.modalInsets(host)}
 	}
 	if os == OSAndroid && !n.hoist.modal.StatusBarTranslucent {
@@ -169,9 +171,9 @@ func (t *Tree) modalInsets(n *node) Edges {
 
 // modalEvent handles what the platform reports of modal n: the size it
 // presents it at, or a request to close it.
-func (t *Tree) modalEvent(n *node, ev Event) {
+func (t *Tree) modalEvent(n *node, ev driver.Event) {
 	h := n.hoist
-	if ev.Kind == EventModalSize {
+	if ev.Kind == driver.EventModalSize {
 		r := &modalSize{ev.Size, ev.Insets}
 		if old := h.reported.GetUntracked(); old == nil || *old != *r {
 			t.within(n.owner, func() { h.reported.Set(r) })
@@ -206,7 +208,7 @@ func (t *Tree) placeOverlay(n *node, host *node, hostSize Size) {
 	w, h := hostSize.Width, hostSize.Height
 	t.layoutRoot(n, hostSize, false)
 	l := &n.lstate.Rounded
-	size := Size{Points(l.Size.Width), Points(l.Size.Height)}
+	size := Size{Width: Points(l.Size.Width), Height: Points(l.Size.Height)}
 	var origin Point
 	anchor, ok := t.anchorRect(o.Anchor, host)
 	if !ok && n.hoist.anchorBounds != nil {
@@ -220,11 +222,11 @@ func (t *Tree) placeOverlay(n *node, host *node, hostSize Size) {
 	if !ok {
 		// Without an anchor, an overlay is placed as an absolute child of
 		// its host.
-		left, right := s.Left.resolve(w), s.Right.resolve(w)
+		left, right := s.Left.Resolve(w), s.Right.Resolve(w)
 		if n.rtl {
 			left, right = right, left
 		}
-		tp, b := s.Top.resolve(h), s.Bottom.resolve(h)
+		tp, b := s.Top.Resolve(h), s.Bottom.Resolve(h)
 		switch {
 		case !left.IsAuto():
 			origin.X = left
@@ -239,13 +241,13 @@ func (t *Tree) placeOverlay(n *node, host *node, hostSize Size) {
 		}
 	} else {
 		safe := t.root.Env().safe.GetUntracked()
-		if host.kind == KindModal {
+		if host.kind == driver.KindModal {
 			safe = Edges{}
 		}
 		area := Bounds{
-			Origin: Point{safe.Left + o.Margin, safe.Top + o.Margin},
-			Size: Size{max(w-safe.horizontal()-2*o.Margin, 0),
-				max(h-safe.vertical()-2*o.Margin, 0)},
+			Origin: Point{X: safe.Left + o.Margin, Y: safe.Top + o.Margin},
+			Size: Size{Width: max(w-safe.Horizontal()-2*o.Margin, 0),
+				Height: max(h-safe.Vertical()-2*o.Margin, 0)},
 		}
 		rtl := t.root.Env().rtl.GetUntracked()
 		var side Placement
@@ -260,7 +262,7 @@ func (t *Tree) placeOverlay(n *node, host *node, hostSize Size) {
 		}
 		n.hoist.placed = side
 	}
-	n.frame = Bounds{origin, size}
+	n.frame = Bounds{Origin: origin, Size: size}
 }
 
 // anchorRect returns ref's bounds in host's coordinates.
@@ -299,7 +301,7 @@ func (t *Tree) surfaceBounds(n *node) Bounds {
 func place(anchor Bounds, size Size, area Bounds, side Placement, align Align, offset Points, rtl bool) (Point, Placement) {
 	aLeft, aTop := anchor.Origin.X, anchor.Origin.Y
 	aRight, aBottom := aLeft+anchor.Size.Width, aTop+anchor.Size.Height
-	lo, hi := area.Origin, Point{area.Origin.X + area.Size.Width, area.Origin.Y + area.Size.Height}
+	lo, hi := area.Origin, Point{X: area.Origin.X + area.Size.Width, Y: area.Origin.Y + area.Size.Height}
 	room := func(p Placement) Points {
 		switch p {
 		case PlaceTop:
@@ -337,13 +339,13 @@ func place(anchor Bounds, size Size, area Bounds, side Placement, align Align, o
 	var p Point
 	switch side {
 	case PlaceTop:
-		p = Point{along(aLeft, aRight, size.Width, rtl), aTop - offset - size.Height}
+		p = Point{X: along(aLeft, aRight, size.Width, rtl), Y: aTop - offset - size.Height}
 	case PlaceBottom:
-		p = Point{along(aLeft, aRight, size.Width, rtl), aBottom + offset}
+		p = Point{X: along(aLeft, aRight, size.Width, rtl), Y: aBottom + offset}
 	case PlaceLeft:
-		p = Point{aLeft - offset - size.Width, along(aTop, aBottom, size.Height, false)}
+		p = Point{X: aLeft - offset - size.Width, Y: along(aTop, aBottom, size.Height, false)}
 	case PlaceRight:
-		p = Point{aRight + offset, along(aTop, aBottom, size.Height, false)}
+		p = Point{X: aRight + offset, Y: along(aTop, aBottom, size.Height, false)}
 	}
 	p.X = max(min(p.X, hi.X-size.Width), lo.X)
 	p.Y = max(min(p.Y, hi.Y-size.Height), lo.Y)
@@ -365,7 +367,7 @@ func (t *Tree) back() {
 		t.within(o.owner, o.h.cancel)
 		return
 	}
-	if host.kind == KindModal {
+	if host.kind == driver.KindModal {
 		if stack := t.innerStack(host); stack != nil && t.pop(stack) {
 			return
 		}
@@ -388,13 +390,13 @@ func (t *Tree) back() {
 	if stack := t.innerStack(host); stack != nil && t.pop(stack) {
 		return
 	}
-	t.commands = append(t.commands, MountItem{Kind: ItemBackUnhandled})
+	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemBackUnhandled})
 	t.changed = true
 }
 
 func topModal(host *node) *node {
 	for i := len(host.hosted) - 1; i >= 0; i-- {
-		if n := host.hosted[i]; !n.deleted && n.kind == KindModal && !n.hoist.dismissed && !hiddenIn(n) {
+		if n := host.hosted[i]; !n.deleted && n.kind == driver.KindModal && !n.hoist.dismissed && !hiddenIn(n) {
 			return n
 		}
 	}
@@ -403,7 +405,7 @@ func topModal(host *node) *node {
 
 func topOverlay(host *node) *node {
 	for i := len(host.hosted) - 1; i >= 0; i-- {
-		if n := host.hosted[i]; !n.deleted && n.kind != KindModal && n.h.cancel != nil && !hiddenIn(n) {
+		if n := host.hosted[i]; !n.deleted && n.kind != driver.KindModal && n.h.cancel != nil && !hiddenIn(n) {
 			return n
 		}
 	}

@@ -1,33 +1,9 @@
 package core
 
+import "github.com/oneo-me/nsgo/internal/driver"
+
 // Services the platform performs for the app, asked for with command
 // items and answered with events.
-
-// AlertConfig is a native alert: a title, a message and its buttons.
-type AlertConfig struct {
-	Title   string
-	Message string
-	Actions []AlertAction
-	// ID numbers the alert; the engine sets it.
-	ID uint32
-}
-
-// AlertAction is one button of an alert.
-type AlertAction struct {
-	Label string
-	Role  AlertRole
-}
-
-// AlertRole says what an alert's button does.
-type AlertRole uint8
-
-const (
-	AlertDefault AlertRole = iota
-	// AlertCancel is the button Escape and back choose.
-	AlertCancel
-	// AlertDestructive is drawn as dangerous.
-	AlertDestructive
-)
 
 // ShowAlert shows a native alert and calls done with the index of the
 // button chosen, or -1 when it was dismissed without one. done runs even
@@ -43,7 +19,7 @@ func (cx *Scope) ShowAlert(a AlertConfig, done func(index int)) {
 		t.alerts = map[uint32]alertWait{}
 	}
 	t.alerts[a.ID] = alertWait{cx.current(), done}
-	t.commands = append(t.commands, MountItem{Kind: ItemAlert, Alert: &a})
+	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemAlert, Alert: &a})
 	t.changed = true
 }
 
@@ -71,7 +47,7 @@ func (t *Tree) answerAlert(id uint32, index int) {
 // the software keyboard.
 func (cx *Scope) DismissKeyboard() {
 	if t := cx.rt.tree; t != nil {
-		t.commands = append(t.commands, MountItem{Kind: ItemDismissKeyboard})
+		t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemDismissKeyboard})
 		t.changed = true
 	}
 }
@@ -79,7 +55,7 @@ func (cx *Scope) DismissKeyboard() {
 // SetClipboard puts text on the system clipboard.
 func (cx *Scope) SetClipboard(text string) {
 	if t := cx.rt.tree; t != nil {
-		t.commands = append(t.commands, MountItem{Kind: ItemSetClipboard, Value: text})
+		t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemSetClipboard, Value: text})
 		t.changed = true
 	}
 }
@@ -96,7 +72,7 @@ func (cx *Scope) ReadClipboard(done func(text string)) {
 		t.reads = map[uint32]readWait{}
 	}
 	t.reads[t.alertID] = readWait{cx.current(), done}
-	t.commands = append(t.commands, MountItem{Kind: ItemReadClipboard, Count: t.alertID})
+	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemReadClipboard, Count: t.alertID})
 	t.changed = true
 }
 
@@ -121,7 +97,7 @@ func (t *Tree) answerRead(id uint32, text string) {
 // Announce has the screen reader say text.
 func (cx *Scope) Announce(text string) {
 	if t := cx.rt.tree; t != nil {
-		t.commands = append(t.commands, MountItem{Kind: ItemAnnounce, Value: text})
+		t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemAnnounce, Value: text})
 		t.changed = true
 	}
 }

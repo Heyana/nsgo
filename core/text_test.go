@@ -2,10 +2,12 @@ package core
 
 import (
 	"testing"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 func TestTextFontScaling(t *testing.T) {
-	h := newHost(t, Size{400, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 400, Height: 100}, func(cx *Scope) Node {
 		return View{Style: Style{FontSize: 10}, Children: []Node{
 			Text{Content: "a", TestID: "scaled"},
 			Text{Content: "b", TestID: "fixed", NoFontScaling: true},
@@ -22,8 +24,8 @@ func TestTextFontScaling(t *testing.T) {
 }
 
 func TestTextTransformShadowAndDecoration(t *testing.T) {
-	h := newHost(t, Size{400, 100}, func(cx *Scope) Node {
-		return View{Style: Style{TextTransform: TextTransformUppercase, TextShadowOffset: Point{1, 2}}, Children: []Node{
+	h := newHost(t, Size{Width: 400, Height: 100}, func(cx *Scope) Node {
+		return View{Style: Style{TextTransform: TextTransformUppercase, TextShadowOffset: Point{X: 1, Y: 2}}, Children: []Node{
 			Text{TestID: "text", Style: Style{TextDecoration: TextDecorationUnderline, TextDecorationStyle: DecorationWavy,
 				TextDecorationColor: RGB(0xff0000)}, Spans: []Span{
 				{Content: "hello "},
@@ -36,7 +38,7 @@ func TestTextTransformShadowAndDecoration(t *testing.T) {
 	if got, want := tn.text.Text, "HELLO Big World"; got != want {
 		t.Errorf("text = %q, want %q", got, want)
 	}
-	if got, want := tn.text.Shadow, (TextShadow{Color: Color(0x00000055), Offset: Point{1, 2}}); got != want {
+	if got, want := tn.text.Shadow, (driver.TextShadow{Color: Color(0x00000055), Offset: Point{X: 1, Y: 2}}); got != want {
 		t.Errorf("shadow = %+v, want %+v", got, want)
 	}
 	if s := tn.style; s.DecorationStyle != DecorationWavy || s.DecorationColor != RGB(0xff0000) {
@@ -49,17 +51,17 @@ func TestTextTransformShadowAndDecoration(t *testing.T) {
 
 func TestTextFitsItsBox(t *testing.T) {
 	var lines []TextLine
-	var batch *MountBatch
-	h := newHost(t, Size{400, 100}, func(cx *Scope) Node {
+	var batch *driver.MountBatch
+	h := newHost(t, Size{Width: 400, Height: 100}, func(cx *Scope) Node {
 		return View{Style: Style{AlignItems: AlignStart}, Children: []Node{
 			Text{Content: "aaaaaaaaaa", TestID: "text", Style: Style{FontSize: 10, Width: Pt(30), Height: Pt(8)},
 				AdjustsFontSizeToFit: true, MinimumFontScale: 0.2, OnTextLayout: func(l []TextLine) { lines = l }},
 		}}
 	})
 	batch = h.commit()
-	var text *TextContent
+	var text *driver.TextContent
 	for _, it := range batch.Items {
-		if it.Kind == ItemText {
+		if it.Kind == driver.ItemText {
 			text = it.Text
 		}
 	}
@@ -80,7 +82,7 @@ func TestTextFitsItsBox(t *testing.T) {
 }
 
 func TestTextAlignVertical(t *testing.T) {
-	h := newHost(t, Size{400, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 400, Height: 100}, func(cx *Scope) Node {
 		return View{Style: Style{AlignItems: AlignStart}, Children: []Node{
 			Text{Content: "a", TestID: "text", Style: Style{FontSize: 10, Height: Pt(40),
 				TextAlignVertical: TextAlignVerticalBottom}},
@@ -88,8 +90,8 @@ func TestTextAlignVertical(t *testing.T) {
 	})
 	b := h.commit()
 	for _, it := range b.Items {
-		if it.Kind == ItemText {
-			if got, want := it.Text.Content, (Bounds{Point{0, 28}, Size{6, 12}}); got != want {
+		if it.Kind == driver.ItemText {
+			if got, want := it.Text.Content, (Bounds{Origin: Point{X: 0, Y: 28}, Size: Size{Width: 6, Height: 12}}); got != want {
 				t.Errorf("content = %v, want %v", got, want)
 			}
 			return
@@ -99,14 +101,14 @@ func TestTextAlignVertical(t *testing.T) {
 }
 
 func TestCutToFit(t *testing.T) {
-	text := AttributedText{Text: "abcdefghij", Ellipsize: EllipsizeMiddle,
-		Spans: []TextSpan{{Start: 0, End: 5}, {Start: 5, End: 10, Link: true}}}
-	fits := func(t *AttributedText) bool { return len([]rune(t.Text)) <= 5 }
+	text := driver.AttributedText{Text: "abcdefghij", Ellipsize: EllipsizeMiddle,
+		Spans: []driver.TextSpan{{Start: 0, End: 5}, {Start: 5, End: 10, Link: true}}}
+	fits := func(t *driver.AttributedText) bool { return len([]rune(t.Text)) <= 5 }
 	got := text.CutToFit(fits)
 	if got.Text != "ab…ij" {
 		t.Errorf("middle = %q, want ab…ij", got.Text)
 	}
-	if len(got.Spans) != 2 || got.Spans[0] != (TextSpan{Start: 0, End: 5}) || got.Spans[1].Start != 5 || got.Spans[1].End != 7 {
+	if len(got.Spans) != 2 || got.Spans[0] != (driver.TextSpan{Start: 0, End: 5}) || got.Spans[1].Start != 5 || got.Spans[1].End != 7 {
 		t.Errorf("spans = %+v, want the ellipsis in the first", got.Spans)
 	}
 	text.Ellipsize = EllipsizeHead
@@ -116,7 +118,7 @@ func TestCutToFit(t *testing.T) {
 }
 
 func TestTextDefaultsToFourteenPoints(t *testing.T) {
-	h := newHost(t, Size{400, 100}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 400, Height: 100}, func(cx *Scope) Node {
 		return Text{Content: "a", TestID: "text"}
 	})
 	h.commit()

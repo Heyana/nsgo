@@ -1,6 +1,10 @@
 package core
 
-import "reflect"
+import (
+	"reflect"
+
+	"github.com/oneo-me/nsgo/internal/driver"
+)
 
 // Native shows a view of a component the app registered with its
 // platform by name (nsgo.Component), filling the element's box. Props
@@ -30,14 +34,6 @@ type Native struct {
 // Render implements Node.
 func (v Native) Render(*Scope) Node { return v }
 
-// NativeConfig is what ItemNative sends: the component's name and the
-// props that changed since the last item, nil for one removed. The first
-// item of a view carries all of them.
-type NativeConfig struct {
-	Component string
-	Props     map[string]any
-}
-
 type nativeNode struct {
 	component string
 	props     map[string]any
@@ -48,11 +44,11 @@ type nativeNode struct {
 }
 
 func (t *Tree) mountNative(cx *Scope, parent *node, v Native) {
-	n := t.newNode(KindNative, parent, cx)
+	n := t.newNode(driver.KindNative, parent, cx)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	t.setRef(n, v.Ref)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
-	n.props = ViewProps{Label: v.Label, TestID: v.TestID}
+	n.props = driver.ViewProps{Label: v.Label, TestID: v.TestID}
 	nn := &nativeNode{component: v.Component, props: v.Props, event: v.OnEvent}
 	n.native = nn
 	if v.PropsFunc != nil {
@@ -100,19 +96,19 @@ func (t *Tree) emitNative(n *node) {
 		return
 	}
 	nn.named = true
-	t.items = append(t.items, MountItem{Kind: ItemNative, ID: n.id,
-		Native: &NativeConfig{Component: nn.component, Props: props}})
+	t.items = append(t.items, driver.MountItem{Kind: driver.ItemNative, ID: n.id,
+		Native: &driver.NativeConfig{Component: nn.component, Props: props}})
 }
 
 // dispatchNative handles a native view's events.
-func (t *Tree) dispatchNative(n *node, ev Event) bool {
+func (t *Tree) dispatchNative(n *node, ev driver.Event) bool {
 	nn := n.native
 	switch ev.Kind {
-	case EventNative:
+	case driver.EventNative:
 		if nn.event != nil {
 			t.within(n.owner, func() { nn.event(ev.Text, ev.Data) })
 		}
-	case EventNativeSize:
+	case driver.EventNativeSize:
 		if ev.Size != nn.size {
 			nn.size = ev.Size
 			t.relayout(n)
@@ -129,51 +125,6 @@ func (r *Ref) Command(name string, args any) {
 	if r.n == nil || r.n.deleted || r.n.native == nil {
 		return
 	}
-	r.t.commands = append(r.t.commands, MountItem{Kind: ItemNativeCommand, ID: r.n.id, Value: name, Data: args})
+	r.t.commands = append(r.t.commands, driver.MountItem{Kind: driver.ItemNativeCommand, ID: r.n.id, Value: name, Data: args})
 	r.t.changed = true
 }
-
-// NativeComponents are the components an app registers with its
-// platform, by name.
-type NativeComponents map[string]NativeFactory
-
-// NativeFactory makes a component's view for one Native element, on the
-// platform's main thread; nil leaves the box empty.
-type NativeFactory func(cx *NativeContext) NativeComponent
-
-// NativeComponent is one Native element's platform view. Its methods run
-// on the main thread.
-type NativeComponent interface {
-	// View is the view that fills the box: an NSView or UIView pointer as
-	// a uintptr on Apple platforms, a child HWND on Windows, a GtkWidget
-	// pointer on Linux, a DOM element (syscall/js.Value) on the web, and
-	// on Android the name of a View class the runtime builds by
-	// reflection.
-	View() any
-	// SetProp sets a prop; nil removes it.
-	SetProp(name string, value any)
-	// Command runs a command Ref.Command sent.
-	Command(name string, args any)
-	// Close releases the component when its element goes.
-	Close()
-}
-
-// NativeContext is how a component talks back to its element. Its
-// methods may be called from any goroutine.
-type NativeContext struct {
-	emit func(name string, data any)
-	size func(Size)
-}
-
-// NewNativeContext returns the context a platform hands a factory: emit
-// reports an event, size the size the component asks for.
-func NewNativeContext(emit func(name string, data any), size func(Size)) *NativeContext {
-	return &NativeContext{emit: emit, size: size}
-}
-
-// Emit sends an event to the element's OnEvent.
-func (c *NativeContext) Emit(name string, data any) { c.emit(name, data) }
-
-// SetSize asks for a size: the element measures to it where its style
-// leaves a dimension open, as an image does to its natural size.
-func (c *NativeContext) SetSize(s Size) { c.size(s) }

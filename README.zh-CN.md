@@ -116,7 +116,7 @@ go test ./...
 bench/run.sh                                       # 测量行情表基准（见 bench/README.md）
 ```
 
-在 Windows 上运行 `go test ./platform/windows`，或在 Linux 上运行 `go test ./platform/linux`，会打开真实窗口检查输入和绘制；没有桌面时会跳过。
+在 Windows 上运行 `go test ./internal/platform/windows`，或在 Linux 上运行 `go test ./internal/platform/linux`，会打开真实窗口检查输入和绘制；没有桌面时会跳过。
 
 NSGo 以 NSH 作为参考实现。将它克隆到仓库根目录的 `nsh/`，Git 会忽略该目录：
 

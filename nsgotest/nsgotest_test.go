@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 // Frames follow the manual clock: Advance runs the frame an app waits for
@@ -20,13 +21,13 @@ func TestFramesFollowTheClock(t *testing.T) {
 		cx.RequestAnimationFrame(loop)
 		return core.View{}
 	})
-	app.Advance(3 * core.FrameInterval)
+	app.Advance(3 * driver.FrameInterval)
 	if len(times) != 3 {
 		t.Fatalf("the callback ran %d times in three frames, want 3", len(times))
 	}
 	for i := 1; i < len(times); i++ {
-		if got := times[i].Sub(times[i-1]); got != core.FrameInterval {
-			t.Fatalf("frame %d came %v after the one before, want %v", i, got, core.FrameInterval)
+		if got := times[i].Sub(times[i-1]); got != driver.FrameInterval {
+			t.Fatalf("frame %d came %v after the one before, want %v", i, got, driver.FrameInterval)
 		}
 	}
 	if !times[2].Equal(app.Clock.Now()) {

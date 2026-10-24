@@ -19,7 +19,7 @@
 
 | Target | Host |
 | --- | --- |
-| Apple | One `WKWebView` host in `platform/internal/apple`; `NoJavaScript` sets the live configuration's webpage preferences, which apply from the next page |
+| Apple | One `WKWebView` host in `internal/platform/apple`; `NoJavaScript` sets the live configuration's webpage preferences, which apply from the next page |
 | Windows | A WebView2 composition controller in a DirectComposition visual, between layers of what is drawn after it; the backend hit-tests and forwards input. The Evergreen runtime is found in the registry and its DLL called as WebView2's loader would, so nothing ships with the app |
 | Linux | WebKitGTK 6.0 hosted in the view's widget, mapped once the view has a size, with website data per app ID and NSH's history keys and mouse buttons |
 | Android | `android.webkit.WebView` with `window.nsgo` as a JavaScript interface; scripts meant for the document's start run when the page starts, as android.webkit has no earlier hook |

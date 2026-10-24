@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	androidruntime "github.com/oneo-me/nsgo/platform/android/runtime"
+	androidruntime "github.com/oneo-me/nsgo/internal/platform/android/runtime"
 )
 
 // TestWrite checks the archive structure and, when the Android SDK's

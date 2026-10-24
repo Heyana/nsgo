@@ -1,6 +1,10 @@
 package core
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/oneo-me/nsgo/internal/driver"
+)
 
 func TestInputSubmitResolvesWithMultiline(t *testing.T) {
 	for _, c := range []struct {
@@ -15,7 +19,7 @@ func TestInputSubmitResolvesWithMultiline(t *testing.T) {
 		{SubmitBehaviorSubmit, true, SubmitBehaviorSubmit},
 		{SubmitBehaviorBlurAndSubmit, true, SubmitBehaviorBlurAndSubmit},
 	} {
-		cfg := InputConfig{SubmitBehavior: c.set, Multiline: c.multiline}
+		cfg := driver.InputConfig{SubmitBehavior: c.set, Multiline: c.multiline}
 		if got := cfg.Submit(); got != c.want {
 			t.Errorf("Submit(%v, multiline %v) = %v, want %v", c.set, c.multiline, got, c.want)
 		}
@@ -23,7 +27,7 @@ func TestInputSubmitResolvesWithMultiline(t *testing.T) {
 }
 
 func TestInputConfigCarriesProps(t *testing.T) {
-	h := newHost(t, Size{200, 200}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
 		return View{Style: Style{SelectionColor: RGB(0x00ff00)}, Children: []Node{
 			Input{TestID: "in", Multiline: true, MaxLength: 5, ReturnKeyType: ReturnKeySend,
 				SubmitBehavior: SubmitBehaviorSubmit, AutoCapitalize: AutoCapitalizeWords, NoAutoCorrect: true,
@@ -32,21 +36,21 @@ func TestInputConfigCarriesProps(t *testing.T) {
 		}}
 	})
 	b := h.commit()
-	var c *InputConfig
+	var c *driver.InputConfig
 	for _, it := range b.Items {
-		if it.Kind == ItemInput {
+		if it.Kind == driver.ItemInput {
 			c = it.Input
 		}
 	}
 	if c == nil {
 		t.Fatal("no ItemInput")
 	}
-	want := InputConfig{Multiline: true, MaxLength: 5, ReturnKey: ReturnKeySend, SubmitBehavior: SubmitBehaviorSubmit,
+	want := driver.InputConfig{Multiline: true, MaxLength: 5, ReturnKey: ReturnKeySend, SubmitBehavior: SubmitBehaviorSubmit,
 		AutoCapitalize: AutoCapitalizeWords, NoAutoCorrect: true, AutoComplete: AutoCompleteEmail,
 		KeyboardAppearance: KeyboardAppearanceDark, HideCaret: true,
 		PlaceholderColor: RGB(0xff0000), SelectionColor: RGB(0x00ff00)}
 	got := *c
-	got.Style, got.Content = InputConfig{}.Style, Bounds{}
+	got.Style, got.Content = driver.InputConfig{}.Style, Bounds{}
 	if got != want {
 		t.Fatalf("config = %+v\nwant %+v", got, want)
 	}
@@ -58,7 +62,7 @@ func TestInputConfigCarriesProps(t *testing.T) {
 func TestMultilineInputGrowsWithItsText(t *testing.T) {
 	var text *Signal[string]
 	var sizes []Size
-	h := newHost(t, Size{200, 400}, func(cx *Scope) Node {
+	h := newHost(t, Size{Width: 200, Height: 400}, func(cx *Scope) Node {
 		text = NewSignal(cx, "")
 		return View{Style: Style{AlignItems: AlignStart}, Children: []Node{
 			Input{TestID: "in", Multiline: true, Value: text.Get, OnChange: text.Set,
@@ -71,11 +75,11 @@ func TestMultilineInputGrowsWithItsText(t *testing.T) {
 	if in.frame.Size.Height != 12 {
 		t.Fatalf("empty height %v, want a line of 12", in.frame.Size.Height)
 	}
-	if len(sizes) != 1 || sizes[0] != (Size{0, 12}) {
+	if len(sizes) != 1 || sizes[0] != (Size{Width: 0, Height: 12}) {
 		t.Fatalf("sizes %v, want an empty line", sizes)
 	}
 	// 20 characters of 6 points wrap at 100 points into two lines.
-	h.tree.Dispatch(Event{Kind: EventChangeText, ID: in.id, Text: "aaaaaaaaa bbbbbbbbbb", Count: 1})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventChangeText, ID: in.id, Text: "aaaaaaaaa bbbbbbbbbb", Count: 1})
 	h.commit()
 	if in.frame.Size.Height != 24 {
 		t.Fatalf("height %v, want two lines", in.frame.Size.Height)
@@ -84,7 +88,7 @@ func TestMultilineInputGrowsWithItsText(t *testing.T) {
 		t.Fatalf("sizes %v", sizes)
 	}
 	// A trailing line break takes a line.
-	h.tree.Dispatch(Event{Kind: EventChangeText, ID: in.id, Text: "a\n", Count: 2})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventChangeText, ID: in.id, Text: "a\n", Count: 2})
 	h.commit()
 	if in.frame.Size.Height != 24 {
 		t.Fatalf("height %v with a trailing line break, want two lines", in.frame.Size.Height)
@@ -97,8 +101,8 @@ func TestInputSelectionKeysAndComposition(t *testing.T) {
 	var keys []string
 	var comps []Composition
 	ref := &Ref{}
-	h := newHost(t, Size{200, 200}, func(cx *Scope) Node {
-		sel = NewSignal(cx, TextRange{1, 2})
+	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
+		sel = NewSignal(cx, TextRange{Start: 1, End: 2})
 		return Input{TestID: "in", Ref: ref, DefaultValue: "abc", SelectedRange: sel.Get,
 			OnSelectionChange:   func(r TextRange) { got = append(got, r) },
 			OnKeyPress:          func(k string) { keys = append(keys, k) },
@@ -109,11 +113,11 @@ func TestInputSelectionKeysAndComposition(t *testing.T) {
 	value, selected := -1, -1
 	for i, it := range b.Items {
 		switch it.Kind {
-		case ItemInputValue:
+		case driver.ItemInputValue:
 			value = i
-		case ItemSelection:
+		case driver.ItemSelection:
 			selected = i
-			if it.Selection != (TextRange{1, 2}) {
+			if it.Selection != (TextRange{Start: 1, End: 2}) {
 				t.Fatalf("selection %v", it.Selection)
 			}
 		}
@@ -121,24 +125,24 @@ func TestInputSelectionKeysAndComposition(t *testing.T) {
 	if value < 0 || selected < value {
 		t.Fatalf("value at %d, selection at %d: want the selection after the value", value, selected)
 	}
-	for _, k := range []EventKind{EventSelectionChange, EventKeyPress, EventCompositionChange} {
+	for _, k := range []driver.EventKind{driver.EventSelectionChange, driver.EventKeyPress, driver.EventCompositionChange} {
 		if !in.events().Has(k) {
 			t.Fatalf("mask lacks %v", k)
 		}
 	}
-	sel.Set(TextRange{0, 3})
-	if b := h.commit(); len(b.Items) != 1 || b.Items[0].Kind != ItemSelection || b.Items[0].Selection != (TextRange{0, 3}) {
+	sel.Set(TextRange{Start: 0, End: 3})
+	if b := h.commit(); len(b.Items) != 1 || b.Items[0].Kind != driver.ItemSelection || b.Items[0].Selection != (TextRange{Start: 0, End: 3}) {
 		t.Fatalf("items %+v", b.Items)
 	}
 	ref.SetSelection(2, 2)
-	if b := h.commit(); len(b.Items) != 1 || b.Items[0].Selection != (TextRange{2, 2}) {
+	if b := h.commit(); len(b.Items) != 1 || b.Items[0].Selection != (TextRange{Start: 2, End: 2}) {
 		t.Fatalf("items %+v", b.Items)
 	}
-	h.tree.Dispatch(Event{Kind: EventSelectionChange, ID: in.id, Index: 1, Count: 3})
-	h.tree.Dispatch(Event{Kind: EventKeyPress, ID: in.id, Text: "Backspace"})
-	h.tree.Dispatch(Event{Kind: EventCompositionChange, ID: in.id, Text: "ni"})
-	h.tree.Dispatch(Event{Kind: EventCompositionChange, ID: in.id, Text: "ni", Finished: true})
-	if len(got) != 1 || got[0] != (TextRange{1, 3}) || len(keys) != 1 || keys[0] != "Backspace" {
+	h.tree.Dispatch(driver.Event{Kind: driver.EventSelectionChange, ID: in.id, Index: 1, Count: 3})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventKeyPress, ID: in.id, Text: "Backspace"})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventCompositionChange, ID: in.id, Text: "ni"})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventCompositionChange, ID: in.id, Text: "ni", Finished: true})
+	if len(got) != 1 || got[0] != (TextRange{Start: 1, End: 3}) || len(keys) != 1 || keys[0] != "Backspace" {
 		t.Fatalf("selection %v, keys %v", got, keys)
 	}
 	if len(comps) != 2 || comps[0] != (Composition{true, "ni"}) || comps[1] != (Composition{}) {
@@ -147,19 +151,55 @@ func TestInputSelectionKeysAndComposition(t *testing.T) {
 }
 
 func TestLimitEditAndUTF16(t *testing.T) {
-	if UTF16Len("a😀") != 3 || ClipUTF16("a😀b", 2) != "a" || ClipUTF16("a😀b", 3) != "a😀" {
+	if UTF16Len("a😀") != 3 || driver.ClipUTF16("a😀b", 2) != "a" || driver.ClipUTF16("a😀b", 3) != "a😀" {
 		t.Fatal("utf-16 lengths")
 	}
-	if UTF16Offset("a😀b", 3) != 5 || UTF16Units("a😀b", 5) != 3 {
+	if driver.UTF16Offset("a😀b", 3) != 5 || driver.UTF16Units("a😀b", 5) != 3 {
 		t.Fatal("utf-16 offsets")
 	}
-	if kept, ok := LimitEdit("abc", 0, "de", 4); kept != "d" || !ok {
+	if kept, ok := driver.LimitEdit("abc", 0, "de", 4); kept != "d" || !ok {
 		t.Fatalf("kept %q %v", kept, ok)
 	}
-	if _, ok := LimitEdit("abcd", 0, "e", 4); ok {
+	if _, ok := driver.LimitEdit("abcd", 0, "e", 4); ok {
 		t.Fatal("a full field took a character")
 	}
-	if kept, ok := LimitEdit("abcd", 2, "xyz", 4); kept != "xy" || !ok {
+	if kept, ok := driver.LimitEdit("abcd", 2, "xyz", 4); kept != "xy" || !ok {
 		t.Fatalf("replacing kept %q %v", kept, ok)
+	}
+}
+
+func TestCaretAndPasteReachTheInputAndAnOverlayAnchorsToTheCaret(t *testing.T) {
+	var caret *Signal[Bounds]
+	var pasted []PasteEvent
+	h := newHost(t, Size{Width: 300, Height: 300}, func(cx *Scope) Node {
+		caret = NewSignal(cx, Bounds{})
+		return View{Style: Style{Padding: All(20)}, Children: []Node{
+			Input{TestID: "field", Style: Style{Height: Pt(30)}, PasteBehavior: PasteReport,
+				OnCaretMove: func(e CaretEvent) { caret.Set(e.PageBounds) },
+				OnPaste:     func(e PasteEvent) { pasted = append(pasted, e) }},
+			Overlay{AnchorBounds: caret.Get, Offset: 4, TestID: "mentions",
+				Style: Style{Width: Pt(80), Height: Pt(40)}},
+		}}
+	})
+	h.commit()
+	field := h.find("field")
+	if m := field.events(); !m.Has(driver.EventCaretMove) || !m.Has(driver.EventPaste) {
+		t.Fatal("an input with OnCaretMove and OnPaste does not report them")
+	}
+	if field.input.config.PasteBehavior != PasteReport {
+		t.Fatal("PasteBehavior does not reach the platform")
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventCaretMove, ID: field.id, Point: Point{X: 50, Y: 4}, Size: Size{Width: 2, Height: 20}})
+	if got, want := caret.GetUntracked(), (Bounds{Origin: Point{X: 70, Y: 24}, Size: Size{Width: 2, Height: 20}}); got != want {
+		t.Fatalf("caret page bounds = %v, want %v", got, want)
+	}
+	h.commit()
+	if got := h.find("mentions").frame.Origin; got != (Point{X: 31, Y: 48}) {
+		t.Fatalf("overlay at %v, want centred under the caret, 4 points below", got)
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPaste, ID: field.id, Data: &PasteEvent{Text: "hi",
+		Files: []PastedFile{{MIME: "image/png", Data: []byte{1}}}}})
+	if len(pasted) != 1 || pasted[0].Text != "hi" || len(pasted[0].Files) != 1 {
+		t.Fatalf("pasted %+v", pasted)
 	}
 }

@@ -5,40 +5,13 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 // StorageQuota is the most an app may keep, in UTF-8 bytes of its keys and
 // values.
 const StorageQuota = 5 << 20
-
-// StorageOp says what a StorageChange does.
-type StorageOp uint8
-
-const (
-	// StorageSet sets Key to Value.
-	StorageSet StorageOp = iota
-	// StorageRemove removes Key.
-	StorageRemove
-	// StorageClear removes every entry.
-	StorageClear
-)
-
-// StorageChange is a change to the entries, for the backend to keep.
-type StorageChange struct {
-	Op         StorageOp
-	Key, Value string
-}
-
-// StorageBackend is where a platform keeps an app's entries: a file in
-// the app's data directory, the browser's localStorage.
-type StorageBackend interface {
-	// Load returns the entries kept, read once when the app first uses
-	// its storage. An error leaves the app with none, logged.
-	Load() (map[string]string, error)
-	// Write keeps change. It is called in order, on the goroutine of the
-	// graph that made the change; a backend that blocks writes elsewhere.
-	Write(change StorageChange)
-}
 
 // StorageFullError refuses a value that would grow the storage past
 // StorageQuota.
@@ -57,7 +30,7 @@ func (e *StorageFullError) Error() string {
 // with NewStore and pass it in RootOptions.
 type Store struct {
 	mu       sync.Mutex
-	backend  StorageBackend
+	backend  driver.StorageBackend
 	entries  map[string]string
 	bytes    int
 	watchers []*storageWatch
@@ -65,7 +38,7 @@ type Store struct {
 
 // NewStore returns a store kept by backend, or only in memory when backend
 // is nil.
-func NewStore(backend StorageBackend) *Store { return &Store{backend: backend} }
+func NewStore(backend driver.StorageBackend) *Store { return &Store{backend: backend} }
 
 // load reads the backend's entries once. The caller holds mu.
 func (s *Store) load() {
@@ -115,7 +88,7 @@ func (s *Store) change(c StorageChange, from *runtime) (bool, error) {
 	defer s.mu.Unlock()
 	s.load()
 	switch c.Op {
-	case StorageSet:
+	case driver.StorageSet:
 		old, had := s.entries[c.Key]
 		if had && old == c.Value {
 			return false, nil
@@ -128,14 +101,14 @@ func (s *Store) change(c StorageChange, from *runtime) (bool, error) {
 			return false, &StorageFullError{Bytes: n}
 		}
 		s.entries[c.Key], s.bytes = c.Value, n
-	case StorageRemove:
+	case driver.StorageRemove:
 		old, had := s.entries[c.Key]
 		if !had {
 			return false, nil
 		}
 		delete(s.entries, c.Key)
 		s.bytes -= len(c.Key) + len(old)
-	case StorageClear:
+	case driver.StorageClear:
 		if len(s.entries) == 0 {
 			return false, nil
 		}
@@ -187,7 +160,7 @@ func (w *storageWatch) key(k string) *Signal[uint64] {
 func (w *storageWatch) changed(c StorageChange) {
 	w.rt.root.Batch(func() {
 		w.all.Update(func(n uint64) uint64 { return n + 1 })
-		if c.Op == StorageClear {
+		if c.Op == driver.StorageClear {
 			for _, s := range w.keys {
 				s.Update(func(n uint64) uint64 { return n + 1 })
 			}
@@ -239,12 +212,12 @@ func (s Storage) GetItem(key string) (string, bool) {
 // SetItem sets key to value. It fails with a *StorageFullError when the
 // storage would grow past StorageQuota, keeping what it held.
 func (s Storage) SetItem(key, value string) error {
-	return s.apply(StorageChange{Op: StorageSet, Key: key, Value: value})
+	return s.apply(StorageChange{Op: driver.StorageSet, Key: key, Value: value})
 }
 
 // RemoveItem removes key.
 func (s Storage) RemoveItem(key string) {
-	s.apply(StorageChange{Op: StorageRemove, Key: key})
+	s.apply(StorageChange{Op: driver.StorageRemove, Key: key})
 }
 
 // Keys returns every key, sorted.
@@ -255,7 +228,7 @@ func (s Storage) Keys() []string {
 
 // Clear removes every entry.
 func (s Storage) Clear() {
-	s.apply(StorageChange{Op: StorageClear})
+	s.apply(StorageChange{Op: driver.StorageClear})
 }
 
 func (s Storage) apply(c StorageChange) error {

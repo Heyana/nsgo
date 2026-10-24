@@ -10,7 +10,7 @@ import (
 	"strconv"
 
 	"github.com/oneo-me/nsgo/core"
-	"github.com/oneo-me/nsgo/engine"
+	"github.com/oneo-me/nsgo/internal/engine"
 )
 
 // Set by the nsgo tool with -ldflags -X.

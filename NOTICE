@@ -14,7 +14,7 @@ https://github.com/lucide-icons/lucide, Copyright (c) 2026 Lucide Icons and
 Contributors, licensed under the ISC License, together with Feather's MIT
 notice. icons/lucide/LICENSE holds both texts.
 
-Layout test fixtures in core/internal/layout/testdata/ come from Taffy,
+Layout test fixtures in internal/layout/testdata/ come from Taffy,
 https://github.com/DioxusLabs/taffy, Copyright (c) 2018 Visly Inc. and
 Copyright (c) 2026 Taffy Authors, licensed under the MIT License. That directory's
 LICENSE file holds the full text.

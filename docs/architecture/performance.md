@@ -1,6 +1,6 @@
 # Performance
 
-The performance monitor measures what a surface's frames and commits cost while it runs, for a panel over the app (`nsgo dev -fps` or `nsgo.FPS`). It follows NSH's `nsh_engine::perf` and macOS HUD; read this before changing `engine/perf.go`, `platform/macos/perf.go` or a backend's frame clock.
+The performance monitor measures what a surface's frames and commits cost while it runs, for a panel over the app (`nsgo dev -fps` or `nsgo.FPS`). It follows NSH's `nsh_engine::perf` and macOS HUD; read this before changing `engine/perf.go`, `internal/platform/macos/perf.go` or a backend's frame clock.
 
 ## Measuring
 
@@ -33,7 +33,7 @@ While a monitor measures, macOS runs its display link on every refresh, so an id
 
 A backend calls `RecordWork` around its main-thread work, `Vsync` from its frame clock with the display link's period, `RecordLatency` on the main thread when a batch with `Sent` applies, and `SetProcess` from its process sampler. The panel draws `PerfSnapshot.Readings()`; its look is the platform's.
 
-macOS reads memory with `proc_pid_rusage`'s physical footprint and GPU time from the `accumulatedGPUTime` of the process' accelerator clients in the IO registry (`platform/internal/apple/perf.go`), both through purego.
+macOS reads memory with `proc_pid_rusage`'s physical footprint and GPU time from the `accumulatedGPUTime` of the process' accelerator clients in the IO registry (`internal/platform/apple/perf.go`), both through purego.
 
 ## Where Go departs from NSH
 

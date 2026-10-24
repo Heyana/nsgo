@@ -1,5 +1,9 @@
 package core
 
+import (
+	"github.com/oneo-me/nsgo/internal/driver"
+)
+
 // Icon draws an SVG — an icon, a logo, an illustration — in the text color
 // it inherits, so a theme colors it as it colors text: its shapes scale to
 // the icon's size and stay sharp.
@@ -34,7 +38,7 @@ func (i Icon) Render(*Scope) Node { return i }
 type iconNode struct {
 	svg   *Signal[*SVG]
 	color *Signal[Color]
-	text  TextStyle
+	text  driver.TextStyle
 }
 
 // naturalSize is what an icon measures without a style size: as high as its
@@ -54,7 +58,7 @@ func (in *iconNode) naturalSize() Size {
 func (t *Tree) mountIcon(cx *Scope, parent *node, v Icon) {
 	// Icons draw through the canvas protocol: the engine records the shapes
 	// and a platform plays them, as canvases do.
-	n := t.newNode(KindCanvas, parent, cx)
+	n := t.newNode(driver.KindCanvas, parent, cx)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	t.setRef(n, v.Ref)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
@@ -64,7 +68,7 @@ func (t *Tree) mountIcon(cx *Scope, parent *node, v Icon) {
 	if v.Label != "" {
 		role = RoleImage
 	}
-	n.props = ViewProps{Role: role, Label: v.Label, TestID: v.TestID}
+	n.props = driver.ViewProps{Role: role, Label: v.Label, TestID: v.TestID}
 	in := &iconNode{svg: NewSignal(cx, v.SVG), color: NewSignal(cx, Color(0))}
 	cn := &canvasNode{size: NewSignal(cx, Size{})}
 	n.icon, n.canvas = in, cn
@@ -93,4 +97,14 @@ func (t *Tree) mountIcon(cx *Scope, parent *node, v Icon) {
 		cn.drawing, cn.fresh = d, true
 		t.touch(n)
 	})
+}
+
+// MustParseSVG is ParseSVG for documents that are part of the program, such
+// as embedded icons: it panics when one is in error.
+func MustParseSVG(data []byte) *SVG {
+	s, err := ParseSVG(data)
+	if err != nil {
+		panic(err)
+	}
+	return s
 }

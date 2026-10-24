@@ -1,6 +1,6 @@
 # Animation
 
-Style transitions, animated values and layout animations run on the platform's main thread, stepped by its own frame clock, so a running animation costs the engine nothing per frame. They follow NSH's `docs/dev/animation.md`. Read this before changing `core/animated.go`, `core/animator.go`, `core/layoutanim.go` or a backend's frame clock.
+Style transitions, animated values and layout animations run on the platform's main thread, stepped by its own frame clock, so a running animation costs the engine nothing per frame. They follow NSH's `docs/dev/animation.md`. Read this before changing `core/animated.go`, `internal/driver/animated.go`, `internal/driver/animator.go` or a backend's frame clock.
 
 ## Frames
 
@@ -22,7 +22,7 @@ The app builds a graph once: `AnimatedValue`s, nodes derived with `Interpolate` 
 - `View.PanValues` has drags move values by their translation, `PinchValue` scales a value by a pinch and `RotationValue` turns one by a rotation, each from where the value was as the gesture began, so a gesture grabs a value an animation is moving (`Animator.Gesture`). A pan's start and end report the values in `PanEvent.Values`, to snap from. `Scroll.OffsetValues` follows a scroll view's offset. Each moves in the frame the pointer or the content does.
 - Values are released with the owner that made them; derived nodes with the owner running when they were made.
 
-The graph travels as `ItemAnimation`, after the batch's views. Each backend keeps a `core.Animator`, applies the ops, steps it once a frame while a run is live and draws what `Changed` reports with `AnimatedValues.Apply` over the view's style. Finished runs and reads come back as `EventAnimation`.
+The graph travels as `ItemAnimation`, after the batch's views. Each backend keeps a `driver.Animator`, applies the ops, steps it once a frame while a run is live and draws what `Changed` reports with `AnimatedValues.Apply` over the view's style. Finished runs and reads come back as `EventAnimation`.
 
 | Target | Frame clock | Draws bound values with |
 | --- | --- | --- |

@@ -3,6 +3,8 @@ package core
 import (
 	"testing"
 	"time"
+
+	"github.com/oneo-me/nsgo/internal/driver"
 )
 
 func TestVideoConfiguresSeeksAndReports(t *testing.T) {
@@ -30,30 +32,30 @@ func TestVideoConfiguresSeeksAndReports(t *testing.T) {
 		}
 	})
 	b := h.commit()
-	var cfg *VideoConfig
-	var mask EventMask
+	var cfg *driver.VideoConfig
+	var mask driver.EventMask
 	for _, it := range b.Items {
 		switch it.Kind {
-		case ItemVideo:
+		case driver.ItemVideo:
 			cfg = it.Video
-		case ItemEvents:
+		case driver.ItemEvents:
 			if it.ID == h.find("video").id {
 				mask = it.Events
 			}
 		}
 	}
-	if n := h.find("video"); n.kind != KindVideo {
+	if n := h.find("video"); n.kind != driver.KindVideo {
 		t.Fatalf("kind %v, want KindVideo", n.kind)
 	}
-	want := VideoConfig{Source: "asset:/clip.mp4", Paused: true, Volume: 1, Rate: 1, Repeat: true, ResizeMode: Contain,
+	want := driver.VideoConfig{Source: "asset:/clip.mp4", Paused: true, Volume: 1, Rate: 1, Repeat: true, ResizeMode: Contain,
 		ProgressInterval: 250 * time.Millisecond}
 	if cfg == nil || *cfg != want {
 		t.Fatalf("config %+v, want %+v", cfg, want)
 	}
-	if !mask.Has(EventLoad) || !mask.Has(EventProgress) || !mask.Has(EventEnd) || mask.Has(EventLoadStart) {
+	if !mask.Has(driver.EventLoad) || !mask.Has(driver.EventProgress) || !mask.Has(driver.EventEnd) || mask.Has(driver.EventLoadStart) {
 		t.Fatalf("mask %b", mask)
 	}
-	if k := kinds(h.commit()); k[ItemVideo] != 0 {
+	if k := kinds(h.commit()); k[driver.ItemVideo] != 0 {
 		t.Fatalf("resent an unchanged config: %v", k)
 	}
 
@@ -64,24 +66,24 @@ func TestVideoConfiguresSeeksAndReports(t *testing.T) {
 	var seeks []time.Duration
 	for _, it := range b.Items {
 		switch it.Kind {
-		case ItemVideo:
+		case driver.ItemVideo:
 			if it.Video.Paused {
 				t.Fatalf("still paused: %+v", it.Video)
 			}
-		case ItemVideoSeek:
+		case driver.ItemVideoSeek:
 			seeks = append(seeks, it.Time)
 		}
 	}
-	if k := kinds(b); k[ItemVideo] != 1 || len(seeks) != 2 || seeks[0] != 0 || seeks[1] != 3*time.Second {
+	if k := kinds(b); k[driver.ItemVideo] != 1 || len(seeks) != 2 || seeks[0] != 0 || seeks[1] != 3*time.Second {
 		t.Fatalf("items %v, seeks %v", k, seeks)
 	}
 
 	id := h.find("video").id
-	h.tree.Dispatch(Event{Kind: EventLoad, ID: id, Duration: 90 * time.Second, Size: Size{Width: 640, Height: 360}})
-	h.tree.Dispatch(Event{Kind: EventProgress, ID: id, Time: time.Second, Duration: 90 * time.Second})
-	h.tree.Dispatch(Event{Kind: EventBuffer, ID: id, Buffering: true})
-	h.tree.Dispatch(Event{Kind: EventEnd, ID: id})
-	h.tree.Dispatch(Event{Kind: EventError, ID: id, Text: "no decoder"})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventLoad, ID: id, Duration: 90 * time.Second, Size: Size{Width: 640, Height: 360}})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventProgress, ID: id, Time: time.Second, Duration: 90 * time.Second})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventBuffer, ID: id, Buffering: true})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventEnd, ID: id})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventError, ID: id, Text: "no decoder"})
 	if len(info) != 1 || info[0].Duration != 90*time.Second || info[0].Size.Width != 640 ||
 		len(positions) != 1 || positions[0] != time.Second || ended != 1 || buffering != 1 {
 		t.Fatalf("info %v, positions %v, ended %d, buffering %d", info, positions, ended, buffering)

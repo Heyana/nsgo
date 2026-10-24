@@ -1,6 +1,9 @@
 package core
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 // frameCallback is one call waiting for the next display frame.
 type frameCallback struct {
@@ -78,4 +81,39 @@ func (rt *runtime) removeFrame(cb *frameCallback) {
 			return
 		}
 	}
+}
+
+// Animate calls step with the eased progress from 0 to 1 once a display
+// frame for d, on the graph's goroutine, ending with exactly 1, unless the
+// current owner is disposed or stop is called first. Each step's changes
+// commit as one batch, so prefer a style Transition for what a platform
+// can animate itself.
+func (cx *Scope) Animate(d time.Duration, curve Curve, step func(progress float64)) (stop func()) {
+	o := cx.current()
+	start := cx.rt.clock.Now()
+	stopped := false
+	var cancel func()
+	var tick func(at time.Time)
+	tick = func(at time.Time) {
+		if stopped {
+			return
+		}
+		x := 1.0
+		if d > 0 {
+			x = math.Min(float64(at.Sub(start))/float64(d), 1)
+		}
+		step(curve.At(x))
+		if x < 1 {
+			cancel = o.RequestAnimationFrame(tick)
+		}
+	}
+	cancel = o.RequestAnimationFrame(tick)
+	stop = func() {
+		stopped = true
+		if cancel != nil {
+			cancel()
+		}
+	}
+	o.addCleanup(stop)
+	return stop
 }

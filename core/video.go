@@ -1,6 +1,10 @@
 package core
 
-import "time"
+import (
+	"time"
+
+	"github.com/oneo-me/nsgo/internal/driver"
+)
 
 // Video plays a video in the platform's player, filling the view: the
 // picture fits it by ResizeMode, and Controls shows playback controls.
@@ -63,23 +67,8 @@ type VideoInfo struct {
 	Size Size
 }
 
-// VideoConfig is everything a video plays with (ItemVideo), with the
-// defaults applied: Volume in 0 to 1, Rate above 0, a ResizeMode and
-// ProgressInterval at least 16 milliseconds.
-type VideoConfig struct {
-	Source           string
-	Paused           bool
-	Muted            bool
-	Volume           float32
-	Rate             float32
-	Repeat           bool
-	ResizeMode       ResizeMode
-	Controls         bool
-	ProgressInterval time.Duration
-}
-
 type videoNode struct {
-	config, sent VideoConfig
+	config, sent driver.VideoConfig
 	loadStart    func()
 	load         func(VideoInfo)
 	progress     func(position, duration time.Duration)
@@ -89,20 +78,20 @@ type videoNode struct {
 }
 
 func (t *Tree) mountVideo(cx *Scope, parent *node, v Video) {
-	n := t.newNode(KindVideo, parent, cx)
+	n := t.newNode(driver.KindVideo, parent, cx)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	t.setRef(n, v.Ref)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
-	n.props = ViewProps{Label: v.Label, TestID: v.TestID}
+	n.props = driver.ViewProps{Label: v.Label, TestID: v.TestID}
 	vn := &videoNode{
-		config: VideoConfig{Source: v.Source, Paused: v.Paused, Muted: v.Muted, Volume: videoVolume(v.Volume),
+		config: driver.VideoConfig{Source: v.Source, Paused: v.Paused, Muted: v.Muted, Volume: videoVolume(v.Volume),
 			Rate: videoRate(v.Rate), Repeat: v.Repeat, ResizeMode: resolveMode(v.ResizeMode, Contain), Controls: v.Controls,
 			ProgressInterval: videoInterval(v.ProgressInterval)},
 		loadStart: v.OnLoadStart, load: v.OnLoad, progress: v.OnProgress, end: v.OnEnd,
 		buffer: v.OnBuffer, loadError: v.OnError,
 	}
 	n.video = vn
-	bind := func(set func(*VideoConfig)) {
+	bind := func(set func(*driver.VideoConfig)) {
 		cx.renderEffect(func() {
 			c := vn.config
 			set(&c)
@@ -113,22 +102,22 @@ func (t *Tree) mountVideo(cx *Scope, parent *node, v Video) {
 		})
 	}
 	if f := v.SourceFunc; f != nil {
-		bind(func(c *VideoConfig) { c.Source = f() })
+		bind(func(c *driver.VideoConfig) { c.Source = f() })
 	}
 	if f := v.PausedFunc; f != nil {
-		bind(func(c *VideoConfig) { c.Paused = f() })
+		bind(func(c *driver.VideoConfig) { c.Paused = f() })
 	}
 	if f := v.MutedFunc; f != nil {
-		bind(func(c *VideoConfig) { c.Muted = f() })
+		bind(func(c *driver.VideoConfig) { c.Muted = f() })
 	}
 	if f := v.VolumeFunc; f != nil {
-		bind(func(c *VideoConfig) { c.Volume = videoVolume(f()) })
+		bind(func(c *driver.VideoConfig) { c.Volume = videoVolume(f()) })
 	}
 	if f := v.ResizeModeFunc; f != nil {
-		bind(func(c *VideoConfig) { c.ResizeMode = resolveMode(f(), Contain) })
+		bind(func(c *driver.VideoConfig) { c.ResizeMode = resolveMode(f(), Contain) })
 	}
 	if f := v.RateFunc; f != nil {
-		bind(func(c *VideoConfig) { c.Rate = videoRate(f()) })
+		bind(func(c *driver.VideoConfig) { c.Rate = videoRate(f()) })
 	}
 }
 
@@ -154,33 +143,33 @@ func videoInterval(d time.Duration) time.Duration {
 }
 
 // dispatchVideo handles a video's events.
-func (t *Tree) dispatchVideo(n *node, ev Event) bool {
+func (t *Tree) dispatchVideo(n *node, ev driver.Event) bool {
 	vn := n.video
 	call := func(fn func()) {
 		t.within(n.owner, fn)
 	}
 	switch ev.Kind {
-	case EventLoadStart:
+	case driver.EventLoadStart:
 		if vn.loadStart != nil {
 			call(vn.loadStart)
 		}
-	case EventLoad:
+	case driver.EventLoad:
 		if vn.load != nil {
 			call(func() { vn.load(VideoInfo{Duration: ev.Duration, Size: ev.Size}) })
 		}
-	case EventProgress:
+	case driver.EventProgress:
 		if vn.progress != nil {
 			call(func() { vn.progress(ev.Time, ev.Duration) })
 		}
-	case EventEnd:
+	case driver.EventEnd:
 		if vn.end != nil {
 			call(vn.end)
 		}
-	case EventBuffer:
+	case driver.EventBuffer:
 		if vn.buffer != nil {
 			call(func() { vn.buffer(ev.Buffering) })
 		}
-	case EventError:
+	case driver.EventError:
 		if vn.loadError != nil {
 			call(func() { vn.loadError(&MediaError{Message: ev.Text}) })
 		}
@@ -191,19 +180,19 @@ func (t *Tree) dispatchVideo(n *node, ev Event) bool {
 }
 
 // events is what a video reports.
-func (vn *videoNode) events() EventMask {
-	var m EventMask
-	bit := func(k EventKind, on bool) {
+func (vn *videoNode) events() driver.EventMask {
+	var m driver.EventMask
+	bit := func(k driver.EventKind, on bool) {
 		if on {
 			m |= 1 << k
 		}
 	}
-	bit(EventLoadStart, vn.loadStart != nil)
-	bit(EventLoad, vn.load != nil)
-	bit(EventProgress, vn.progress != nil)
-	bit(EventEnd, vn.end != nil)
-	bit(EventBuffer, vn.buffer != nil)
-	bit(EventError, vn.loadError != nil)
+	bit(driver.EventLoadStart, vn.loadStart != nil)
+	bit(driver.EventLoad, vn.load != nil)
+	bit(driver.EventProgress, vn.progress != nil)
+	bit(driver.EventEnd, vn.end != nil)
+	bit(driver.EventBuffer, vn.buffer != nil)
+	bit(driver.EventError, vn.loadError != nil)
 	return m
 }
 
@@ -219,6 +208,6 @@ func (r *Ref) Seek(position time.Duration) {
 	if r.n == nil || r.n.deleted || r.n.video == nil {
 		return
 	}
-	r.t.commands = append(r.t.commands, MountItem{Kind: ItemVideoSeek, ID: r.n.id, Time: max(position, 0)})
+	r.t.commands = append(r.t.commands, driver.MountItem{Kind: driver.ItemVideoSeek, ID: r.n.id, Time: max(position, 0)})
 	r.t.changed = true
 }
