@@ -18,6 +18,8 @@ var (
 	poolPop          func(uintptr)
 	mainQueue        uintptr
 	mainWork         uintptr
+	msgSend          uintptr
+	setQOS           func(class uint32, priority int32) int32
 	mainMu           sync.Mutex
 	mainFuncs        []func()
 	selAddObserver   = sel("addObserverForName:object:queue:usingBlock:")
@@ -34,6 +36,39 @@ func loadSystem() {
 	runtimeLib := load("/usr/lib/libobjc.A.dylib")
 	purego.RegisterLibFunc(&poolPush, runtimeLib, "objc_autoreleasePoolPush")
 	purego.RegisterLibFunc(&poolPop, runtimeLib, "objc_autoreleasePoolPop")
+	msgSend = symbol(runtimeLib, "objc_msgSend")
+	purego.RegisterLibFunc(&setQOS, lib, "pthread_set_qos_class_self_np")
+}
+
+// qosUserInteractive is QOS_CLASS_USER_INTERACTIVE, the main thread's.
+const qosUserInteractive = 0x21
+
+// RaiseThread gives the calling OS thread the main thread's quality of
+// service, as NSH gives its engine thread. The engine's thread turns input
+// into frames; at the default class the system may run it on efficiency
+// cores, and the quotes benchmark's commits took about 15% longer and
+// varied with the machine's load.
+func RaiseThread() { setQOS(qosUserInteractive, 0) }
+
+// Msg sends sel to id with up to six arguments and a result that are
+// objects, selectors, pointers, integers or booleans, through
+// purego.SyscallN. objc.Send and ID.Send work each call out with
+// reflection, which costs several times the message itself; what runs for
+// every changed view of every frame sends with Msg.
+func Msg(id objc.ID, sel objc.SEL, args ...uintptr) uintptr {
+	var all [8]uintptr
+	if len(args) > len(all)-2 {
+		panic("apple: too many arguments to Msg")
+	}
+	all[0], all[1] = uintptr(id), uintptr(sel)
+	n := 2 + copy(all[2:], args)
+	r, _, _ := purego.SyscallN(msgSend, all[:n]...)
+	return r
+}
+
+// MsgBool is Msg for a BOOL result.
+func MsgBool(id objc.ID, sel objc.SEL, args ...uintptr) bool {
+	return byte(Msg(id, sel, args...)) != 0
 }
 
 // OnMain runs fn on the main thread after what is queued there already.

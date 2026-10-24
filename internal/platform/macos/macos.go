@@ -78,6 +78,14 @@ type view struct {
 	wheel wheelOwner
 	inset driver.Bounds
 
+	// contentLayer is what a text or canvas draws into (content.go);
+	// stale says its content changed while it could not be seen.
+	contentLayer objc.ID
+	stale        bool
+	// up is the view the batches inserted v in, nil while v is out of
+	// the tree.
+	up *view
+
 	image     *apple.ImageView
 	animation driver.ModalAnimation // a modal's
 	presented bool                  // whether a modal was inserted yet
@@ -123,6 +131,7 @@ type surface struct {
 	batches queue.Batches
 	views   []*view            // index is NodeID
 	movers  map[*view]struct{} // views following mouse moves
+	root    driver.NodeID      // the root view's, which the batches name
 	// mouse is finger 0 of the views' touches; touched is the last
 	// NSEvent reported, which AppKit passes up the views.
 	mouse   finger.Mouse
@@ -140,6 +149,8 @@ type surface struct {
 	images, presenting []*view
 	modals             []*view // the modals shown, oldest first, for the keyboard focus
 	fieldEditor        objc.ID // NSGo's field editor of the window, made as a field first edits
+	// stale are the views whose content changed out of sight.
+	stale []*view
 
 	// The frame clock and what it animates.
 	animator *driver.Animator
@@ -227,7 +238,6 @@ func loadAppKit() {
 	common := []objc.MethodDef{
 		{Cmd: sel("makeBackingLayer"), Fn: makeBackingLayer},
 		{Cmd: sel("isFlipped"), Fn: func(self objc.ID, _ objc.SEL) bool { return true }},
-		{Cmd: sel("drawRect:"), Fn: drawRect},
 		{Cmd: sel("hitTest:"), Fn: hitTest},
 		{Cmd: sel("mouseDown:"), Fn: mouseDown},
 		{Cmd: sel("mouseUp:"), Fn: mouseUp},
@@ -316,6 +326,7 @@ func loadAppKit() {
 		objc.MethodDef{Cmd: sel("layout"), Fn: inputLayout},
 	))
 	registerInput()
+	registerContent()
 	classMenuTarget = register("NsgoMenuTarget", objc.GetClass("NSObject"), nil, []objc.MethodDef{
 		{Cmd: selMenuChosen, Fn: menuChosen},
 	})
@@ -399,7 +410,8 @@ func Run(app engine.App, opts Options) {
 		monitor = engine.NewPerfMonitor()
 		s.perf = monitor
 	}
-	eopts := engine.Options{Size: driver.Size{Width: opts.Width, Height: opts.Height}, Environment: s.env, Perf: monitor}
+	eopts := engine.Options{Size: driver.Size{Width: opts.Width, Height: opts.Height}, Environment: s.env, Perf: monitor,
+		Thread: apple.RaiseThread}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
 	s.engine = engine.Start(s, app, eopts)
 	s.observe()
@@ -486,8 +498,12 @@ func (s *surface) refresh() {
 	}
 	s.layoutTrafficLights()
 	if env := s.environment(); env != s.env {
+		rescale := env.PixelRatio != s.env.PixelRatio
 		s.env = env
 		s.engine.SetEnvironment(env)
+		if rescale {
+			s.rescale()
+		}
 	}
 }
 
@@ -820,14 +836,17 @@ func (s *surface) apply(b *driver.MountBatch) {
 		v := s.views[it.ID]
 		switch it.Kind {
 		case driver.ItemDelete:
+			v.up = nil
 			kept := s.vanish(v, lb)
 			s.delete(v, kept)
 			if v.kind == driver.KindModal {
 				s.modalGone(v)
 			}
 		case driver.ItemRemove:
+			v.up = nil
 			v.native.Send(selRemoveFromSuperview)
 		case driver.ItemInsert:
+			v.up = s.views[it.Parent]
 			parent := s.views[it.Parent].content
 			if it.Before == 0 {
 				parent.Send(selAddSubview, v.native)
@@ -891,7 +910,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemCanvas:
 			v.drawing = it.Drawing
-			v.native.Send(selSetNeedsDisplay, true)
+			v.redraw()
 		case driver.ItemScrollTo:
 			if v.sc != nil {
 				v.sc.applied++
@@ -914,7 +933,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			v.disabled = p.Disabled
 			if v.selColor != p.SelectionColor {
 				v.selColor = p.SelectionColor
-				v.native.Send(selSetNeedsDisplay, true)
+				v.redraw()
 			}
 		case driver.ItemEvents:
 			v.setEvents(it.Events)
@@ -928,7 +947,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			v.layout, _ = it.Text.Layout.(*apple.Layout)
 			v.box = it.Text.Content
 			v.textChanged(it.Text.Text)
-			v.native.Send(selSetNeedsDisplay, true)
+			v.redraw()
 		case driver.ItemInput:
 			v.configure(it.Input)
 		case driver.ItemInputValue:
@@ -951,10 +970,12 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 		}
 	}
+	s.root = b.Root
 	if root := s.views[b.Root]; root.native.Send(selSuperview) != s.native {
 		s.native.Send(selAddSubview, root.native)
 	}
 	s.finish()
+	s.revisit()
 	s.refreshSelection()
 	apple.WithoutAnimation(func() {
 		if lb != nil {
@@ -1057,6 +1078,7 @@ func (s *surface) delete(v *view, kept bool) {
 	}
 	apple.ForgetTransform(v.native.Send(selLayer))
 	apple.ForgetBorders(v.native.Send(selLayer))
+	v.forgetContent()
 	v.layout.Release()
 	if v.image != nil {
 		v.image.Close()
@@ -1172,24 +1194,6 @@ func (v *view) report(e driver.Event) {
 func nsColor(c driver.Color) objc.ID {
 	r, g, b, a := c.Components()
 	return objc.ID(objc.GetClass("NSColor")).Send(sel("colorWithSRGBRed:green:blue:alpha:"), r, g, b, a)
-}
-
-func drawRect(self objc.ID, _ objc.SEL, dirty apple.CGRect) {
-	v := views[self]
-	if v == nil || (v.layout == nil && v.drawing == nil) {
-		return
-	}
-	b := objc.Send[apple.CGRect](self, selBounds)
-	ctx := objc.Send[uintptr](objc.ID(objc.GetClass("NSGraphicsContext")).Send(selCurrentContext), selCGContext)
-	if v.drawing != nil {
-		apple.Play(ctx, v.drawing)
-		return
-	}
-	box := v.box
-	v.layout.DrawBackgrounds(ctx, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y), 0, 0))
-	v.drawSelection(ctx)
-	v.layout.Draw(ctx, b.Size.Height, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y),
-		float64(box.Size.Width), float64(box.Size.Height)))
 }
 
 // hitTest lets presses on text and plain containers through to the
@@ -1638,12 +1642,14 @@ func clipScrolled(note objc.ID) {
 	}
 	o := objc.Send[apple.CGRect](clip, selBounds).Origin
 	offset := driver.Point{X: driver.Points(o.X), Y: driver.Points(o.Y)}
+	v.sc.shown = offset
 	if v.surface.animator.Scroll(v.id, offset) {
 		apple.WithoutAnimation(v.surface.applyAnimated)
 	}
 	if len(v.sc.sticky) > 0 {
 		v.pinSticky()
 	}
+	v.surface.revisit()
 	if v.events.Has(driver.EventScroll) {
 		v.surface.engine.Dispatch(driver.Event{Kind: driver.EventScroll, ID: v.id, Point: offset, Count: v.sc.applied})
 	}

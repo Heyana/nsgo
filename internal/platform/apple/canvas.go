@@ -73,6 +73,19 @@ func loadCanvas(cg uintptr) {
 	reg(&cgPathCreateWithRoundedRect, cg, "CGPathCreateWithRoundedRect")
 }
 
+// DrawTopDown runs draw with ctx's state saved and its y axis pointing
+// down over a layer height tall; flip turns a y-up context, which Core
+// Animation gives a layer whose contents are not flipped, top down.
+func DrawTopDown(ctx uintptr, height float64, flip bool, draw func()) {
+	cgContextSaveGState(ctx)
+	defer cgContextRestoreGState(ctx)
+	if flip {
+		cgContextTranslateCTM(ctx, 0, height)
+		cgContextScaleCTM(ctx, 1, -1)
+	}
+	draw()
+}
+
 // Play draws d into ctx, a view's context with its y axis pointing down,
 // as a web canvas would: CoreGraphics adds path points through the
 // transform current when they are added, as the canvas does, and a fill,

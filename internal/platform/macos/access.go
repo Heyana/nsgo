@@ -220,25 +220,12 @@ func (v *view) textChanged(text string) {
 	if first {
 		return
 	}
-	for p := v; p != nil; p = p.parent() {
+	for p := v; p != nil; p = p.up {
 		if p.props.LiveRegion != driver.LiveRegionNone {
 			announceWith(text, p.props.LiveRegion)
 			return
 		}
 	}
-}
-
-// parent returns the view v is mounted in, if any.
-func (v *view) parent() *view {
-	for n := v.native.Send(selSuperview); n != 0; n = n.Send(selSuperview) {
-		if p := views[n]; p != nil {
-			if p.id == 0 {
-				return nil // the surface
-			}
-			return p
-		}
-	}
-	return nil
 }
 
 func (v *view) announceLive(text string) {

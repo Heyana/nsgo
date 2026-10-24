@@ -132,4 +132,4 @@ Record a design question here, and confirm the answer with the user before choos
 | [Animation](docs/architecture/animation.md) | Changing animated values, layout animations or a backend's frame clock |
 | [Text view](docs/architecture/textview.md) | Changing `TextView`, its parsers, parts or highlighting |
 | [Icons](docs/architecture/icons.md) | Changing SVG parsing, `core.Icon` or the Lucide pack |
-| [Performance](docs/architecture/performance.md) | Changing the performance monitor, its panel or a backend's timings |
+| [Performance](docs/architecture/performance.md) | Changing the performance monitor or a per-frame path |

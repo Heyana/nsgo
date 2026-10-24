@@ -16,7 +16,7 @@ import (
 var (
 	cfAttributedStringCreate    func(alloc, str, attrs uintptr) uintptr
 	cfAttributedStringLength    func(uintptr) int
-	cfAttributedStringSubstr    func(alloc, str uintptr, r cfRange) uintptr
+	cfAttributedStringSubstr    func(alloc, str uintptr, loc, length int) uintptr
 	cfAttributedStringAttrsAt   func(str uintptr, loc int, effective *cfRange) uintptr
 	cfRetain                    func(uintptr) uintptr
 	cfArrayGetCount             func(uintptr) int
@@ -38,10 +38,10 @@ var (
 	ctFontGetLeading            func(uintptr) float64
 	ctParagraphStyleCreate      func(settings unsafe.Pointer, n uintptr) uintptr
 	ctFramesetterCreate         func(str uintptr) uintptr
-	ctFramesetterSuggestSize    func(fs uintptr, r cfRange, attrs uintptr, limit CGSize, fit uintptr) CGSize
-	ctFramesetterCreateFrame    func(fs uintptr, r cfRange, path, attrs uintptr) uintptr
+	ctFramesetterSuggestSize    func(fs uintptr, loc, length int, attrs uintptr, width, height float64, fit uintptr) CGSize
+	ctFramesetterCreateFrame    func(fs uintptr, loc, length int, path, attrs uintptr) uintptr
 	ctFrameGetLines             func(frame uintptr) uintptr
-	ctFrameGetLineOrigins       func(frame uintptr, r cfRange, origins *CGPoint)
+	ctFrameGetLineOrigins       func(frame uintptr, loc, length int, origins *CGPoint)
 	ctFrameDraw                 func(frame, ctx uintptr)
 	ctLineGetTypographicBounds  func(line uintptr, ascent, descent, leading *float64) float64
 	ctLineGetStringRange        func(line uintptr) cfRange
@@ -51,7 +51,7 @@ var (
 	ctLineIndexForPosition      func(line uintptr, p CGPoint) int
 	ctLineOffsetForIndex        func(line uintptr, i int, secondary *float64) float64
 	cfAttributedStringMutable   func(alloc uintptr, max int, str uintptr) uintptr
-	cfAttributedStringSetAttrs  func(str uintptr, r cfRange, attrs uintptr, clear bool)
+	cfAttributedStringSetAttrs  func(str uintptr, loc, length int, attrs uintptr, clear bool)
 	ctLineGetGlyphRuns          func(line uintptr) uintptr
 	ctRunGetAttributes          func(run uintptr) uintptr
 	ctFontGetCapHeight          func(uintptr) float64
@@ -61,6 +61,11 @@ var (
 	attrFont, attrColor, attrKern, attrUnderline, attrParagraph uintptr
 	attrTraits, attrWeight, attrSymbolic, attrUnderlineColor    uintptr
 )
+
+// A CFRange or CGSize argument above is declared as its two fields: both
+// arm64 and x86-64 pass these 16-byte structs in two registers, as they
+// pass two such scalars, and purego works out a struct argument's layout
+// with reflection on every call, which cost more than the call itself.
 
 func loadText(cf, cg uintptr) {
 	ct := load("/System/Library/Frameworks/CoreText.framework/CoreText")
@@ -390,7 +395,7 @@ func attributed(t *driver.AttributedText, toUTF16 []int, fonts []driver.FontExte
 		}
 		a := spanAttributes(sp.Style)
 		r := cfRange{Location: toUTF16[start], Length: toUTF16[end] - toUTF16[start]}
-		cfAttributedStringSetAttrs(m, r, a, false)
+		cfAttributedStringSetAttrs(m, r.Location, r.Length, a, false)
 		Release(a)
 	}
 	// An attachment's placeholder is a run of its size that draws nothing.
@@ -404,7 +409,7 @@ func attributed(t *driver.AttributedText, toUTF16 []int, fonts []driver.FontExte
 		st.Color = 0
 		a := runAttributes(st, []uintptr{attrRunDelegate}, []uintptr{d})
 		r := cfRange{Location: toUTF16[at.Offset], Length: toUTF16[at.Offset+len(string(driver.AttachmentRune))] - toUTF16[at.Offset]}
-		cfAttributedStringSetAttrs(m, r, a, false)
+		cfAttributedStringSetAttrs(m, r.Location, r.Length, a, false)
 		Release(a)
 		Release(d)
 	}
@@ -520,14 +525,14 @@ func (p *prepared) measure(maxWidth driver.Points) driver.Size {
 			return driver.Size{Width: driver.Points(math.Ceil(size.Width)), Height: driver.Points(math.Ceil(size.Height))}
 		}
 	}
-	size := ctFramesetterSuggestSize(p.fs, cfRange{}, 0, CGSize{Width: w, Height: unbounded}, 0)
+	size := ctFramesetterSuggestSize(p.fs, 0, 0, 0, w, unbounded, 0)
 	return driver.Size{Width: driver.Points(math.Ceil(size.Width)), Height: driver.Points(math.Ceil(size.Height))}
 }
 
 // firstLines returns the size of a frame's first n lines.
 func firstLines(frame, lines uintptr, n int, frameHeight float64) CGSize {
 	origins := make([]CGPoint, n)
-	ctFrameGetLineOrigins(frame, cfRange{Length: n}, &origins[0])
+	ctFrameGetLineOrigins(frame, 0, n, &origins[0])
 	var width, descent float64
 	for i := range n {
 		var a, d, l float64
@@ -538,9 +543,27 @@ func firstLines(frame, lines uintptr, n int, frameHeight float64) CGSize {
 }
 
 func (p *prepared) frame(size CGSize) uintptr {
-	path := cgPathCreateWithRect(Rect(0, 0, size.Width, size.Height), 0)
+	path := rectPath(size)
 	defer cgPathRelease(path)
-	return ctFramesetterCreateFrame(p.fs, cfRange{}, path, 0)
+	return ctFramesetterCreateFrame(p.fs, 0, 0, path, 0)
+}
+
+// pathCacheLimit bounds the cache. Text boxes come in few sizes: a table's
+// cells share one.
+const pathCacheLimit = 128
+
+var pathCache = newRefCache[CGSize](pathCacheLimit)
+
+// rectPath returns a CGPath of a rectangle of size at the origin, the
+// shape of a text frame. The caller releases it.
+//
+// Paths are immutable, so one is kept per size: each new one cost a
+// CGRect argument, which purego lays out with reflection on every call.
+func rectPath(size CGSize) uintptr {
+	if path := pathCache.get(size); path != 0 {
+		return path
+	}
+	return pathCache.put(size, cgPathCreateWithRect(Rect(0, 0, size.Width, size.Height), 0))
 }
 
 // Layout implements core.PreparedText: the CTFrame the main thread draws.
@@ -570,7 +593,7 @@ func (p *prepared) layout(size driver.Size) *Layout {
 	}
 	// The last line shown takes the rest of the text, truncated.
 	r := ctLineGetStringRange(cfArrayGetValueAtIndex(lines, p.maxLines-1))
-	rest := cfAttributedStringSubstr(0, p.str, cfRange{Location: r.Location, Length: cfAttributedStringLength(p.str) - r.Location})
+	rest := cfAttributedStringSubstr(0, p.str, r.Location, cfAttributedStringLength(p.str)-r.Location)
 	line := ctLineCreateWithAttrString(rest)
 	if p.ellipsize == driver.EllipsizeClip {
 		// The rest on one line, cut where the box ends.
@@ -591,7 +614,7 @@ func (p *prepared) layout(size driver.Size) *Layout {
 	Release(rest)
 	l.shown, l.restStart = p.maxLines, r.Location
 	origins := make([]CGPoint, p.maxLines)
-	ctFrameGetLineOrigins(all, cfRange{Length: p.maxLines}, &origins[0])
+	ctFrameGetLineOrigins(all, 0, p.maxLines, &origins[0])
 	// Origins count from the frame's bottom; keep them from its top.
 	l.origins = make([]CGPoint, p.maxLines)
 	for i, o := range origins {
@@ -678,7 +701,7 @@ func (l *Layout) placed() (lines []uintptr, baselines []CGPoint, bases []int) {
 			return nil, nil, nil
 		}
 		origins := make([]CGPoint, n)
-		ctFrameGetLineOrigins(l.frame, cfRange{Length: n}, &origins[0])
+		ctFrameGetLineOrigins(l.frame, 0, n, &origins[0])
 		// Draw puts the frame's bottom at the box's top plus height+1.
 		for i := range n {
 			lines = append(lines, cfArrayGetValueAtIndex(arr, i))

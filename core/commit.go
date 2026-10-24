@@ -291,9 +291,13 @@ func (t *Tree) emit(n *node) {
 		add(driver.MountItem{Kind: driver.ItemCreate, ID: n.id, View: n.kind})
 		n.created = true
 	}
+	// What goes into an item is a copy made only when it is sent: the
+	// comparison alone would otherwise put both values on the heap for
+	// every view of every commit.
 	if vs := n.viewStyle(); first || vs != n.sent.viewStyle {
 		n.sent.viewStyle = vs
-		add(driver.MountItem{Kind: driver.ItemViewStyle, ID: n.id, ViewStyle: &vs})
+		sent := vs
+		add(driver.MountItem{Kind: driver.ItemViewStyle, ID: n.id, ViewStyle: &sent})
 	}
 	if p := n.sentProps(); first || p != n.sent.props {
 		// A label changing alone goes alone: it is the one that follows
@@ -303,7 +307,8 @@ func (t *Tree) emit(n *node) {
 		if !first && rest == n.sent.props {
 			add(driver.MountItem{Kind: driver.ItemAccessibilityLabel, ID: n.id, Value: p.Label})
 		} else {
-			add(driver.MountItem{Kind: driver.ItemViewProps, ID: n.id, ViewProps: &p})
+			sent := p
+			add(driver.MountItem{Kind: driver.ItemViewProps, ID: n.id, ViewProps: &sent})
 		}
 		n.sent.props = p
 	}

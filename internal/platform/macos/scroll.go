@@ -67,6 +67,9 @@ type scrollState struct {
 	// reported with each offset; sticky are its sticky cells.
 	applied uint32
 	sticky  []driver.StickyCell
+	// shown is the offset the clip view last reported, which decides
+	// what of the content can be seen (view.shown).
+	shown driver.Point
 }
 
 // insets returns the content insets the view applies: the app's and the

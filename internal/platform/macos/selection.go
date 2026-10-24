@@ -96,7 +96,7 @@ func (v *view) setSelected(start, end int) {
 	}
 	if v.selStart != start || v.selEnd != end {
 		v.selStart, v.selEnd = start, end
-		v.native.Send(selSetNeedsDisplay, true)
+		v.redraw()
 	}
 }
 

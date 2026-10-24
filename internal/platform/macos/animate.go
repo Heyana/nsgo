@@ -144,6 +144,9 @@ func (s *surface) tick(period time.Duration) {
 		s.applyAnimated()
 	})
 	s.startImages()
+	if len(s.motions) > 0 {
+		s.revisit()
+	}
 	if s.frameWanted {
 		s.frameWanted = false
 		if s.engine != nil {
@@ -236,6 +239,7 @@ func (s *surface) setFrame(v *view, f driver.Bounds, lb *layoutBatch) {
 
 // place sets v's frame and what follows it.
 func (v *view) place(f driver.Bounds) {
+	resized := f.Size != v.frame.Size
 	v.frame, v.framed = f, true
 	f.Origin.X += v.shift.X
 	f.Origin.Y += v.shift.Y
@@ -248,8 +252,8 @@ func (v *view) place(f driver.Bounds) {
 	if v.style.Cursor != driver.CursorAuto {
 		invalidateCursor(v)
 	}
-	if v.drawing != nil {
-		v.native.Send(selSetNeedsDisplay, true)
+	if resized {
+		v.sizeContent()
 	}
 	if v.image != nil {
 		v.image.Layout(apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)})

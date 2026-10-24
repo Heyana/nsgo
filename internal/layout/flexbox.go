@@ -1,6 +1,9 @@
 package layout
 
-import "math"
+import (
+	"math"
+	"sync"
+)
 
 // This file is the CSS flexbox layout algorithm
 // (https://www.w3.org/TR/css-flexbox-1/), ported from Taffy's
@@ -191,7 +194,13 @@ func flexComputePreliminary(n Node, in layoutInput) layoutOutput {
 	// 9.1. Initial Setup
 
 	// 1. Generate anonymous flex items as described in §4 Flex Items.
-	items := flexGenerateItems(n, &c)
+	buf := itemBuffers.Get().(*[]flexItem)
+	items := flexGenerateItems(n, &c, (*buf)[:0])
+	defer func() {
+		clear(items)
+		*buf = items[:0]
+		itemBuffers.Put(buf)
+	}()
 
 	// 9.2. Line Length Determination
 
@@ -469,11 +478,17 @@ func flexResolveRelativeInset(inset Rect[Opt], c *flexConstants) Size[float32] {
 	return out
 }
 
-// flexGenerateItems generates anonymous flex items.
+// itemBuffers holds the flex items of passes that finished. A commit runs
+// several passes over each container on a changed path, every display
+// frame while something animates; nothing keeps an item past its pass.
+var itemBuffers = sync.Pool{New: func() any { return new([]flexItem) }}
+
+// flexGenerateItems generates anonymous flex items, appending them to
+// items.
 //
 // 9.1. Initial Setup (https://www.w3.org/TR/css-flexbox-1/#box-manip):
 // generate anonymous flex items as described in §4 Flex Items.
-func flexGenerateItems(n Node, c *flexConstants) []flexItem {
+func flexGenerateItems(n Node, c *flexConstants, items []flexItem) []flexItem {
 	// Percentage sizes of items resolve against the container's inner size,
 	// but only if that size is definite. A known main size derived from the
 	// container's own content is indefinite here.
@@ -483,7 +498,6 @@ func flexGenerateItems(n Node, c *flexConstants) []flexItem {
 	}
 
 	count := n.ChildCount()
-	items := make([]flexItem, 0, count)
 	for index := 0; index < count; index++ {
 		child := n.Child(index)
 		cs := child.Style()

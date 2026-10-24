@@ -4,15 +4,27 @@ Text in NSGo: how the core prepares, lays out and reports text, how fields edit 
 
 ## Text and drawing
 
-A platform's `TextEngine` runs on the engine goroutine in three phases. `Prepare` shapes the text once, `PreparedText.Measure` answers layout at any width, and `PreparedText.Layout` lays it out at its final size. The `TextLayout` travels in `ItemText`, and the main thread only draws it and releases the one it replaces. The core releases prepared text when it changes or its node goes. Apple's engine caches fonts and style attributes across prepares, and a prepared text keeps its measured size per width; the process-wide caches are bounded and internal.
+A platform's `TextEngine` runs on the engine goroutine in three phases. `Prepare` shapes the text once, `PreparedText.Measure` answers layout at any width, and `PreparedText.Layout` lays it out at its final size. The core releases prepared text when it changes or its node goes.
 
-The core does what needs no engine, as NSH's does: `TextTransform` changes the case of each span's characters as they are joined, a text's own multiplier caps the user's text size (`NoFontScaling`, `MaxFontSizeMultiplier`), and `TextAlignVertical` moves the content box down to the text's measured height. `AdjustsFontSizeToFit` bisects a scale, down to `MinimumFontScale`, at which the untruncated text fits the box and its line limit, as NSH's `Paragraph::fit`, and prepares that text for the final layout only; layout measures the text as written. `Text.OnTextLayout` runs after the commit with the lines a `LineLayout` reports: UTF-8 ranges, boxes in the content box, and the metrics of the font each line starts in.
+The `TextLayout` travels in `ItemText`; the main thread draws it and releases the one it replaces. Apple's engine keeps fonts, style attributes and frame paths in bounded process-wide caches, and a prepared text keeps its measured size per width.
+
+macOS draws a text or canvas view into a content layer of its own, as NSH does: a plain `CALayer` below the view's sublayers, drawn by its delegate's `drawLayer:inContext:`. No view implements `drawRect:`, whose display pass recorded and replayed every changed text, and redrew a scroll view's texts at every scroll step. A content layer draws again when its content or size changes, and only while some of it can be seen; the rest wait until a batch, a scroll or a layout animation shows them. Canvases draw on Core Animation's threads.
+
+The core does what needs no engine, as NSH's does:
+
+- `TextTransform` changes the case of each span's characters as they are joined.
+- A text's own multiplier caps the user's text size (`NoFontScaling`, `MaxFontSizeMultiplier`).
+- `TextAlignVertical` moves the content box down to the text's measured height.
+- `AdjustsFontSizeToFit` bisects a scale, down to `MinimumFontScale`, at which the untruncated text fits the box and its line limit, as NSH's `Paragraph::fit`. Only the final layout uses that text; layout measures the text as written.
+- `Text.OnTextLayout` runs after the commit with the lines a `LineLayout` reports: UTF-8 ranges, boxes in the content box, and the metrics of the font each line starts in.
 
 The engines draw the rest:
 
-- `EllipsizeMode`. CoreText truncates the last line's rest at its head, middle or tail; Pango ellipsizes the same way; Android passes `TruncateAt`, which ellipsizes a head or middle on one line only. DirectWrite and the web trim only tails, so on one line without attachments they search with `AttributedText.CutToFit` for the most characters around an ellipsis. Clipping keeps the lines whole and cuts them at the box.
+- `EllipsizeMode`. CoreText truncates the last line's rest at its head, middle or tail, and Pango the same way; Android's `TruncateAt` ellipsizes a head or middle on one line only. Clipping keeps the lines whole and cuts them at the box.
+- DirectWrite and the web trim only tails, so on one line without attachments they search with `AttributedText.CutToFit` for the most characters around an ellipsis.
 - `TextAlignJustify` is each engine's justification; Android's needs no newer API than NSGo's minimum.
-- `TextDecorationStyle` and `TextDecorationColor`. CoreText underlines solid, double, dotted and dashed in a color, and the backend draws wavy underlines and every strikethrough itself; Windows and Android draw the lines a font or paint cannot; Pango has no dotted, dashed or styled strikethrough lines, so those are solid there.
+- `TextDecorationStyle` and `TextDecorationColor`. CoreText underlines solid, double, dotted and dashed in a color, and the backend draws wavy underlines and every strikethrough itself.
+- Windows and Android draw the lines a font or paint cannot; Pango has no dotted, dashed or styled strikethrough lines, so those are solid there.
 - `AttributedText.Shadow`, the block's shadow: a Core Graphics shadow, a CSS `text-shadow`, Direct2D's shadow effect over the recorded glyphs, a GSK shadow node, Android's shadow layer.
 
 The family `FontMonospace` is each platform's fixed-pitch font: CoreText's user fixed-pitch font, CSS's `ui-monospace` stack, Consolas on Windows, Pango's `monospace` on Linux, Android's `monospace`.
@@ -25,20 +37,35 @@ The family `FontMonospace` is each platform's fixed-pitch font: CoreText's user 
 - Every engine places an attachment by NSH's rule, `TextAttachment.Ascent` and `Extent` against the placeholder font's `FontExtent`, so a line grows where an attachment reaches past its font.
 - After layout the core asks the `AttachmentLayout` where each attachment went and sends its view as a native child of the text view at that frame. Those cut off by the line limit are hidden.
 
-A `Canvas` records its drawing on the engine into an immutable `Drawing`, again when a signal it read or its size changes, and the platform plays the operations on the main thread.
+A `Canvas` records its drawing on the engine into an immutable `Drawing`, again when a signal it read or its size changes, and the platform plays the operations.
 
 ## Text inputs
 
 `Input` follows NSH's `<Input>`: one line, or several with `Multiline` in each platform's multi-line control (NSTextView, UITextView, `<textarea>`, GtkTextView, a multi-line EditText, and Windows' drawn editor wrapping its lines).
 
 - A multiline input is measured with its value, or its placeholder while empty, wrapped at its width, so it grows unless its style sizes it. `OnContentSizeChange` is the core's: after a layout that changed the value's size, one empty line's for an empty input.
-- `InputConfig.Submit` resolves `SubmitBehavior` with `Multiline` as NSH's `InputConfig::submit()`, and backends read only it: single lines blur and submit by default, multiline inputs break the line. Shift, Option or Alt with Return always break a multiline input's line; a Return that commits a composition never submits.
-- The platform answers `MaxLength` and Return natively, without the engine. `internal/platform/field` keeps what every Go backend reports the same way: edit counts, selections, keys, compositions and a `Value` held while an input method composes until the composition ends. Android's `InputField` does the same in Java.
+- `InputConfig.Submit` resolves `SubmitBehavior` with `Multiline` as NSH's `InputConfig::submit()`, and backends read only it: single lines blur and submit by default, multiline inputs break the line.
+- Shift, Option or Alt with Return always break a multiline input's line; a Return that commits a composition never submits.
+- The platform answers `MaxLength` and Return natively, without the engine.
+- `internal/platform/field` keeps what every Go backend reports the same way: edit counts, selections, keys, compositions, and a `Value` held while an input method composes. Android's `InputField` does the same in Java.
 - Selections are UTF-16 offsets. `SelectedRange` and `Ref.SetSelection` send `ItemSelection` after the batch's value.
 - `PlaceholderColor` and `SelectionColor` are inherited text styles; the caret takes the selection color, and `HideCaret` hides it.
-- `OnCaretMove` reports the caret's bounds in the input while it has the focus, and the core adds them in the surface for `Overlay.AnchorBounds`: AppKit's `firstRectForCharacterRange:`, UIKit's caret rect (even with `HideCaret`), the EditText's `Layout` after it takes the text, GTK's cursor extents and locations, Windows' own editor, and on the web a hidden copy of the field holding its text up to the caret.
-- `OnPaste` reports what the user pasted, read as they paste: the text, local files as `file:` URLs, else an image's bytes. `PasteBehavior` `PasteReport` keeps the text out; images and files never go in. macOS gives its fields a field editor of NSGo's own (the window's delegate hands it out) and its text views their own `paste:`; iOS overrides `paste:`, Android `onTextContextMenuItem`, Linux hears `paste-clipboard` and reads GDK's clipboard asynchronously, so its report comes after the text it inserts, as on the web for files, whose bytes are read first.
-- What a platform lacks is a no-op there: return keys, capitalization and the keyboard's appearance belong to software keyboards (iOS, Android, the web's `enterkeyhint` and `autocapitalize`; Linux passes GTK input hints); `AutoComplete` maps to iOS's `textContentType`, Android's autofill hints, the web's `autocomplete`, GTK's input purpose and macOS's content types for accounts, passwords and codes; Windows has no autofill or autocorrection. `KeyboardAppearance` is iOS's only.
+- `OnCaretMove` reports the caret's bounds in the input while it has the focus, and the core adds them in the surface for `Overlay.AnchorBounds`. Each platform reads them from its own editor:
+
+  | Platform | Caret bounds |
+  | --- | --- |
+  | macOS | AppKit's `firstRectForCharacterRange:` |
+  | iOS | UIKit's caret rect, even with `HideCaret` |
+  | Android | The EditText's `Layout` after it takes the text |
+  | Linux | GTK's cursor extents and locations |
+  | Windows | NSGo's own editor |
+  | Web | A hidden copy of the field holding its text up to the caret |
+
+- `OnPaste` reports what the user pasted, read as they paste: the text, local files as `file:` URLs, else an image's bytes. `PasteBehavior` `PasteReport` keeps the text out; images and files never go in.
+- Pastes are caught where each platform pastes. macOS gives its fields a field editor of NSGo's own (the window's delegate hands it out) and its text views their own `paste:`; iOS overrides `paste:`, Android `onTextContextMenuItem`.
+- Linux hears `paste-clipboard` and reads GDK's clipboard asynchronously, so its report comes after the text it inserts, as on the web for files, whose bytes are read first.
+- What a platform lacks is a no-op there. Return keys, capitalization and the keyboard's appearance belong to software keyboards: iOS, Android, the web's `enterkeyhint` and `autocapitalize`; Linux passes GTK input hints. `KeyboardAppearance` is iOS's only.
+- `AutoComplete` maps to iOS's `textContentType`, Android's autofill hints, the web's `autocomplete`, GTK's input purpose and macOS's content types for accounts, passwords and codes. Windows has no autofill or autocorrection.
 
 ## Text selection
 

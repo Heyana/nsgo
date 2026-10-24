@@ -1,13 +1,15 @@
 # Performance
 
-The performance monitor measures what a surface's frames and commits cost while it runs, for a panel over the app (`nsgo dev -fps` or `nsgo.FPS`). It follows NSH's `nsh_engine::perf` and macOS HUD; read this before changing `engine/perf.go`, `internal/platform/macos/perf.go` or a backend's frame clock.
+The performance monitor measures what a surface's frames and commits cost while it runs, for a panel over the app (`nsgo dev -fps` or `nsgo.FPS`). It follows NSH's `nsh_engine::perf` and macOS HUD. Read this before changing `internal/engine/perf.go`, `internal/platform/macos/perf.go`, a backend's frame clock or anything that runs every frame.
 
 ## Measuring
 
 `engine.PerfMonitor` is shared by the two threads of a surface:
 
-- The engine goroutine records every wake-up that produced a commit with `RecordCommit`: the app's code and the core's work, and the mount items the commit emitted. It records how long each wake-up was busy with `RecordBusy`. `engine.Options.Perf` installs a monitor; nil measures nothing and costs one check per wake-up.
-- The main thread records its work with `RecordWork`: applying batches, stepping animations, handling input; `dirty` says whether the work changes what the screen shows. It closes a frame at every display refresh with `Vsync`: a refresh in which something changed is a frame the screen showed, and its cost is the main-thread work since the previous refresh. Refreshes that changed nothing are not frames.
+- The engine goroutine records every wake-up that produced a commit with `RecordCommit`: the app's code and the core's work, and the mount items the commit emitted. `RecordBusy` records how long each wake-up was busy.
+- `engine.Options.Perf` installs a monitor; nil measures nothing and costs one check per wake-up.
+- The main thread records its work with `RecordWork`: applying batches, stepping animations, handling input; `dirty` says whether the work changes what the screen shows.
+- It closes a frame at every display refresh with `Vsync`. A refresh in which something changed is a frame the screen showed, and its cost is the main-thread work since the previous refresh; refreshes that changed nothing are not frames.
 - A batch carries `MountBatch.Sent` while a monitor measures, so the platform can report how long it waited between the engine goroutine and the main thread with `RecordLatency`.
 - The process' CPU, memory and (on macOS) GPU arrive with `SetProcess` from the platform's sampler.
 
@@ -34,6 +36,26 @@ While a monitor measures, macOS runs its display link on every refresh, so an id
 A backend calls `RecordWork` around its main-thread work, `Vsync` from its frame clock with the display link's period, `RecordLatency` on the main thread when a batch with `Sent` applies, and `SetProcess` from its process sampler. The panel draws `PerfSnapshot.Readings()`; its look is the platform's.
 
 macOS reads memory with `proc_pid_rusage`'s physical footprint and GPU time from the `accumulatedGPUTime` of the process' accelerator clients in the IO registry (`internal/platform/apple/perf.go`), both through purego.
+
+## Keeping frames cheap
+
+Every frame runs the commit on the engine goroutine and, on the main thread, the batch, the tick and the drawing of what changed. `bench/quotes` measures these paths ([benchmarks](../../bench/README.md)); compare its `CPU per commit`, and the panel's `MAIN` and `CORE`, before and after changing them.
+
+- The engine's OS thread has the main thread's quality of service on Apple platforms (`engine.Options.Thread`, `apple.RaiseThread`), as NSH's does: at the default class macOS may run it on efficiency cores. Raised, `bench/quotes` commits about 15% faster, and steadily under load.
+- The cores clock down between frames, so a commit in the app takes longer than the same work in a Go benchmark; measure a change both ways.
+- A commit allocates only what it sends: compare a node's values on the stack and copy them into an item once they changed. Flex layout reuses its item buffers.
+- macOS draws only content that changed and can be seen ([text and drawing](text.md#text-and-drawing)), and decides what can be seen from the batches' state rather than by asking AppKit.
+
+purego prices each foreign call by what its Go signature asks of reflection (Apple M1 Max):
+
+| Call | Cost |
+| --- | --- |
+| `purego.SyscallN`, `apple.Msg` | Under 0.15 µs |
+| A registered function or `ID.Send` with scalar arguments | 0.25–0.5 µs |
+| `objc.Send[T]`, which registers a function on every call | 0.4 µs |
+| A struct argument or result | About 2 µs |
+
+On per-frame paths, send messages whose arguments and result are objects, integers or booleans with `apple.Msg`. Declare a 16-byte struct argument (`CFRange`, `CGSize`, `CGPoint`) as its two fields, which arm64 and x86-64 both pass in two registers; larger structs pass differently on the two, so they stay structs. Keep immutable CoreFoundation objects, such as fonts, attributes and frame paths, in bounded caches.
 
 ## Where Go departs from NSH
 

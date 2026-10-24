@@ -49,6 +49,11 @@ type Options struct {
 	DataDir, CacheDir string
 	// Perf collects this app's commit timings; nil measures nothing.
 	Perf *PerfMonitor
+	// Thread runs first on the OS thread the engine keeps, before the
+	// app. The engine turns input into frames, as latency-critical as the
+	// main thread: a platform whose scheduler would put it on slower
+	// cores raises its priority here.
+	Thread func()
 }
 
 // Engine is one running app: one tree, one reactive graph, one goroutine.
@@ -87,6 +92,9 @@ func (e *Engine) run(p Platform, app App, opts Options) {
 	defer close(e.exited)
 	// Text engines such as Android's need the same OS thread each call.
 	runtime.LockOSThread()
+	if opts.Thread != nil {
+		opts.Thread()
+	}
 	logger := opts.Logger
 	if logger == nil {
 		logger = slog.Default()

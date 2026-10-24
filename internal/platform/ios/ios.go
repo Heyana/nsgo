@@ -335,6 +335,7 @@ func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID)
 	opts := engine.Options{
 		Size:        driver.Size{Width: driver.Points(bounds.Size.Width), Height: driver.Points(bounds.Size.Height)},
 		Environment: s.env,
+		Thread:      apple.RaiseThread,
 	}
 	opts.SetDirs(engine.AppDirs(s.id))
 	s.engine = engine.Start(s, s.app, opts)

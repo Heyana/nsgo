@@ -94,7 +94,8 @@ Sections run in build order: what apps build on first, then components, services
 | Measure cache | `architecture.md` (data flow and threads) | Text measurements are cached by content and width per engine, so identical texts and list rows measure once |
 | Paced list binds | `scrolling-and-lists.md` (paced binding) | A list binds its viewport first and its overscan over later frames |
 | macOS frames | `macos.md` (architecture) | Scrolls move the container layer and commit at rest; batches take at most 4 ms a frame; resizes wait for layout; a timer covers a stalled display link |
-| macOS drawing | `macos.md` (architecture), `canvas.md` | Content layers replace `drawRect:`; canvases draw off the main thread and redraw only what changed |
+| macOS canvas redraws | `canvas.md` (partial redraws) | A canvas redraws only the area that changed |
+| Commits that follow changes | `performance.md` (Rust components run once) | A commit resolves styles and emits items only for the nodes that changed, not the whole tree |
 | Windows frames | `windows.md` (frames) | The frame clock follows the compositor with `DwmFlush` |
 
 ## 8. Finish the existing platforms
