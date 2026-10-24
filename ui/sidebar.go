@@ -57,7 +57,7 @@ type SidebarItem struct {
 	Icon     *core.SVG
 	Selected func() bool
 	Disabled func() bool
-	OnPress  func()
+	OnPress  func(core.PressEvent)
 	Trailing []core.Node
 	Style    core.Style
 	TestID   string

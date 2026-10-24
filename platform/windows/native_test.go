@@ -77,7 +77,7 @@ func nativeApp(title string) func(*core.Scope) core.Node {
 			Style: core.Style{Width: core.Pt(360), Height: core.Pt(240), Padding: core.All(10),
 				Direction: core.Row, Gap: 10, Background: core.RGB(0xffffff)},
 			Children: []core.Node{
-				core.View{OnPress: func() { count.Update(func(n int) int { return n + 1 }) },
+				core.View{OnPress: func(core.PressEvent) { count.Update(func(n int) int { return n + 1 }) },
 					Style: core.Style{Width: core.Pt(100), Height: core.Pt(80), Background: core.RGB(0x123456)}},
 				core.Input{Value: field.Get, OnChange: field.Set, AutoFocus: true,
 					OnSubmit: func(string) { submitted.Update(func(n int) int { return n + 1 }) },
@@ -1177,6 +1177,272 @@ func hoverApp(title string) func(*core.Scope) core.Node {
 				OnHoverOut: func() { out.Update(func(n int) int { return n + 1 }) }},
 		}}
 	}
+}
+
+// TestPressesAndTouchesFollowTheMouse holds the button on a view whose
+// long press takes 300 ms, then drags on a view that takes the touches.
+func TestPressesAndTouchesFollowTheMouse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-presses"
+	app := func(cx *core.Scope) core.Node {
+		last := core.NewSignal(cx, "none")
+		cx.Effect(func() { cx.SetTitle(title + "|" + last.Get()) })
+		set := func(s string) func(core.PressEvent) { return func(core.PressEvent) { last.Set(s) } }
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(200), Background: core.RGB(0xffffff)},
+			Children: []core.Node{core.View{DelayLongPress: 300 * time.Millisecond,
+				Style:       core.Style{Width: core.Pt(100), Height: core.Pt(100), Background: core.RGB(0x123456)},
+				OnPressDown: set("down"), OnLongPress: set("long"), OnPress: set("press")}}}
+	}
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(app, Options{Title: title + "|start", Width: 360, Height: 240})
+	}()
+	hwnd := waitForWindow(t, title+"|none", done)
+	if hwnd == 0 {
+		return
+	}
+	t.Cleanup(func() {
+		postMessageW.Call(hwnd, wmClose, 0, 0)
+		<-done
+	})
+	at := uintptr(uint32(40)<<16 | 40)
+	postMessageW.Call(hwnd, wmLButtonDown, mkLButton, at)
+	waitForText(t, hwnd, title+"|long", done)
+	postMessageW.Call(hwnd, wmLButtonUp, 0, at)
+	time.Sleep(100 * time.Millisecond)
+	waitForText(t, hwnd, title+"|long", done)
+	postMessageW.Call(hwnd, wmLButtonDown, mkLButton, at)
+	postMessageW.Call(hwnd, wmLButtonUp, 0, at)
+	waitForText(t, hwnd, title+"|press", done)
+}
+
+// TestTheResponderFollowsADrag drags on a view that takes the touches as
+// they start: it is granted them, follows the move and is released.
+func TestTheResponderFollowsADrag(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-responder"
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(responderApp(title), Options{Title: title + "|start", Width: 360, Height: 240})
+	}()
+	hwnd := waitForWindow(t, title+"|", done)
+	if hwnd == 0 {
+		return
+	}
+	t.Cleanup(func() {
+		postMessageW.Call(hwnd, wmClose, 0, 0)
+		<-done
+	})
+	scale := 1.0
+	if dpi, _, _ := getDpiForSystem.Call(); dpi != 0 {
+		scale = float64(dpi) / 96
+	}
+	px := func(x, y float64) uintptr { return uintptr(uint32(y*scale)<<16 | uint32(x*scale)&0xffff) }
+	postMessageW.Call(hwnd, wmLButtonDown, mkLButton, px(20, 20))
+	waitForText(t, hwnd, title+"|grant 0,0", done)
+	postMessageW.Call(hwnd, wmMouseMove, mkLButton, px(50, 30))
+	waitForText(t, hwnd, title+"|move 30,10", done)
+	postMessageW.Call(hwnd, wmLButtonUp, 0, px(50, 30))
+	waitForText(t, hwnd, title+"|release 30,10", done)
+}
+
+// responderApp is a view that takes the touches as they start and logs
+// its responder's events in the title.
+func responderApp(title string) func(*core.Scope) core.Node {
+	return func(cx *core.Scope) core.Node {
+		log := core.NewSignal(cx, "")
+		cx.Effect(func() { cx.SetTitle(title + "|" + log.Get()) })
+		say := func(what string) func(core.ResponderEvent) {
+			return func(e core.ResponderEvent) {
+				log.Set(fmt.Sprintf("%s %.0f,%.0f", what, e.Gesture.Delta.X, e.Gesture.Delta.Y))
+			}
+		}
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(200), Background: core.RGB(0xffffff)},
+			Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(100), Height: core.Pt(100)},
+				Responder: &core.Responder{Claims: []core.TouchClaim{{}}, OnGrant: say("grant"), OnMove: say("move"),
+					OnRelease: say("release")}}}}
+	}
+}
+
+// TestKeysCaretAndPasteInAField focuses a field that reports its caret
+// and pastes: a plain key binding leaves the field its typing, one that
+// asks fires there and once while held, the caret is reported, and a
+// paste is reported with the clipboard's text, kept out of the field.
+func TestKeysCaretAndPasteInAField(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-keys"
+	app := func(cx *core.Scope) core.Node {
+		x, down := core.NewSignal(cx, 0), core.NewSignal(cx, 0)
+		caret := core.NewSignal(cx, false)
+		pasted := core.NewSignal(cx, "")
+		cx.OnKey("x", func() { x.Update(func(n int) int { return n + 1 }) })
+		cx.OnKeyWith("down", core.KeyOptions{When: core.KeyAlways}, func() { down.Update(func(n int) int { return n + 1 }) })
+		cx.Effect(func() {
+			cx.SetTitle(fmt.Sprintf("%s|%d|%d|%v|%s", title, x.Get(), down.Get(), caret.Get(), pasted.Get()))
+		})
+		return core.View{Style: core.Style{Padding: core.All(20), Background: core.RGB(0xffffff)}, Children: []core.Node{
+			core.Input{Style: core.Style{Height: core.Pt(30)}, PasteBehavior: core.PasteReport,
+				OnCaretMove: func(e core.CaretEvent) { caret.Set(e.Bounds.Size.Height > 0) },
+				OnPaste:     func(e core.PasteEvent) { pasted.Set(e.Text) }},
+		}}
+	}
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(app, Options{Title: title + "|start", Width: 360, Height: 240})
+	}()
+	hwnd := waitForWindow(t, title+"|0|0|false|", done)
+	if hwnd == 0 {
+		return
+	}
+	t.Cleanup(func() {
+		postMessageW.Call(hwnd, wmClose, 0, 0)
+		<-done
+	})
+	var field *textInput
+	onMain(t, hwnd, func(w *window) {
+		for _, v := range w.views {
+			if v != nil && v.field != nil {
+				field = v.field
+			}
+		}
+		w.setFocus(field)
+	})
+	waitForText(t, hwnd, title+"|0|0|true|", done)
+	const vkX, vkDown, repeat = 0x58, 0x28, 1 << 30
+	postMessageW.Call(hwnd, wmKeyDown, vkX, 1)
+	postMessageW.Call(hwnd, wmKeyDown, vkDown, 1)
+	postMessageW.Call(hwnd, wmKeyDown, vkDown, 1|repeat) // held: once
+	waitForText(t, hwnd, title+"|0|1|true|", done)
+	onMain(t, hwnd, func(w *window) {
+		w.setClipboard("pasted text")
+		w.paste(field)
+	})
+	waitForText(t, hwnd, title+"|0|1|true|pasted text", done)
+	onMain(t, hwnd, func(w *window) {
+		if got := field.model.text; got != "x" {
+			t.Errorf("the field reads %q, want the x typed and the paste kept out", got)
+		}
+	})
+}
+
+// TestTouchAreasDecideWhatTakesAPress clicks a menu outside its parent,
+// a small target by its hit slop and a button under a veil that takes no
+// pointer. Client pixels are points at the test machine's scale.
+func TestTouchAreasDecideWhatTakesAPress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-areas"
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(touchAreasApp(title), Options{Title: title + "|start", Width: 360, Height: 240})
+	}()
+	hwnd := waitForWindow(t, title+"|none", done)
+	if hwnd == 0 {
+		return
+	}
+	t.Cleanup(func() {
+		postMessageW.Call(hwnd, wmClose, 0, 0)
+		<-done
+	})
+	scale := 1.0
+	if dpi, _, _ := getDpiForSystem.Call(); dpi != 0 {
+		scale = float64(dpi) / 96
+	}
+	for _, c := range []struct {
+		x, y float64
+		want string
+	}{{60, 60, "menu"}, {225, 25, "slop"}, {200, 140, "under"}} {
+		at := uintptr(uint32(c.y*scale)<<16 | uint32(c.x*scale)&0xffff)
+		postMessageW.Call(hwnd, wmLButtonDown, mkLButton, at)
+		postMessageW.Call(hwnd, wmLButtonUp, 0, at)
+		waitForText(t, hwnd, title+"|"+c.want, done)
+	}
+}
+
+func touchAreasApp(title string) func(*core.Scope) core.Node {
+	return func(cx *core.Scope) core.Node {
+		last := core.NewSignal(cx, "none")
+		cx.Effect(func() { cx.SetTitle(title + "|" + last.Get()) })
+		press := func(name string) func(core.PressEvent) { return func(core.PressEvent) { last.Set(name) } }
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(200), Background: core.RGB(0xffffff)},
+			Children: []core.Node{
+				// A menu 30 points below its field, outside it.
+				core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(10), Top: core.Pt(10), Width: core.Pt(100),
+					Height: core.Pt(30)}, Children: []core.Node{
+					core.View{OnPress: press("menu"), Style: core.Style{Position: core.Absolute, Top: core.Pt(30),
+						Width: core.Pt(100), Height: core.Pt(40), Background: core.RGB(0x123456)}},
+				}},
+				// A 10-point target with 20 points of slop.
+				core.View{OnPress: press("slop"), HitSlop: core.All(20), Style: core.Style{Position: core.Absolute,
+					Left: core.Pt(200), Top: core.Pt(20), Width: core.Pt(10), Height: core.Pt(10), Background: core.RGB(0x123456)}},
+				// A veil over a button lets its presses through.
+				core.View{OnPress: press("under"), Style: core.Style{Position: core.Absolute, Left: core.Pt(150),
+					Top: core.Pt(120), Width: core.Pt(100), Height: core.Pt(40), Background: core.RGB(0x123456)}},
+				core.View{OnPress: press("veil"), PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute,
+					Left: core.Pt(140), Top: core.Pt(110), Width: core.Pt(120), Height: core.Pt(60)}},
+			}}
+	}
+}
+
+// TestPointerEventsReportPositions moves the mouse over a view and
+// clicks it twice: the move and the presses report where they are in the
+// view, 10 points from where they are in the surface, and the second
+// press counts two clicks.
+func TestPointerEventsReportPositions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-pointer"
+	app := func(cx *core.Scope) core.Node {
+		hover, press := core.NewSignal(cx, core.HoverEvent{}), core.NewSignal(cx, core.PressEvent{})
+		cx.Effect(func() {
+			h, p := hover.Get(), press.Get()
+			cx.SetTitle(fmt.Sprintf("%s|%.0f,%.0f|%.0f,%.0f|%d", title, h.PagePosition.X-h.Position.X,
+				h.PagePosition.Y-h.Position.Y, p.PagePosition.X-p.Position.X, p.PagePosition.Y-p.Position.Y, p.Clicks))
+		})
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(200), Padding: core.All(10),
+			Background: core.RGB(0xffffff)}, Children: []core.Node{
+			core.View{Style: core.Style{Width: core.Pt(100), Height: core.Pt(80), Background: core.RGB(0x123456)},
+				OnHoverMove: hover.Set, OnPress: press.Set},
+		}}
+	}
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(app, Options{Title: title + "|start", Width: 360, Height: 240})
+	}()
+	hwnd := waitForWindow(t, title+"|0,0|0,0|0", done)
+	if hwnd == 0 {
+		return
+	}
+	t.Cleanup(func() {
+		postMessageW.Call(hwnd, wmClose, 0, 0)
+		<-done
+	})
+	at := uintptr(uint32(50)<<16 | 60)
+	postMessageW.Call(hwnd, wmMouseMove, 0, at)
+	waitForText(t, hwnd, title+"|10,10|0,0|0", done)
+	for range 2 {
+		postMessageW.Call(hwnd, wmLButtonDown, mkLButton, at)
+		postMessageW.Call(hwnd, wmLButtonUp, 0, at)
+	}
+	waitForText(t, hwnd, title+"|10,10|10,10|2", done)
 }
 
 // TestHoverFollowsThePointer moves the mouse onto a view, off it and

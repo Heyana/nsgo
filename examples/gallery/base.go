@@ -18,7 +18,7 @@ func basePage(cx *core.Scope, t *theme) core.Node {
 				t.primary("Primary", press),
 				t.plain("Secondary", press),
 				t.destructive("Destructive", press),
-				base.Button{OnPress: func() {}, Disabled: func() bool { return true }, Label: "Disabled", Style: t.button(),
+				base.Button{OnPress: func(core.PressEvent) {}, Disabled: func() bool { return true }, Label: "Disabled", Style: t.button(),
 					Children: []core.Node{core.Text{Content: "Disabled"}}},
 			),
 			t.live(func() string { return fmt.Sprintf("%d presses", presses.Get()) }),

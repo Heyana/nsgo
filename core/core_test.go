@@ -324,7 +324,7 @@ func TestCommitSendsOnlyChanges(t *testing.T) {
 		count = NewSignal(cx, 0)
 		return View{Children: []Node{
 			Text{ContentFunc: func() string { return strconv.Itoa(count.Get()) }, TestID: "n"},
-			View{OnPress: func() { count.Update(func(n int) int { return n + 1 }) }, Style: Style{Height: Pt(30)}, TestID: "button"},
+			View{OnPress: func(PressEvent) { count.Update(func(n int) int { return n + 1 }) }, Style: Style{Height: Pt(30)}, TestID: "button"},
 		}}
 	})
 	first := h.commit()
@@ -491,7 +491,7 @@ func TestStateStyles(t *testing.T) {
 				Hover:    &Style{Background: RGB(0x00ff00)},
 				Active:   &Style{Background: RGB(0xff0000)},
 				Disabled: &Style{Opacity: Alpha(0.5)}},
-			OnPress:  func() {},
+			OnPress:  func(PressEvent) {},
 			Disabled: disabled.Get,
 			TestID:   "button",
 		}
@@ -806,7 +806,7 @@ func TestSpansStyleRangesAndLink(t *testing.T) {
 			{Content: "Hi "},
 			{ContentFunc: name.Get, Style: Style{FontWeight: FontWeightBold}},
 			{Content: ", see ", Style: Style{}},
-			{Content: "docs", Style: Style{Color: RGB(0x0969da)}, OnPress: func() { pressed++ }},
+			{Content: "docs", Style: Style{Color: RGB(0x0969da)}, OnPress: func(PressEvent) { pressed++ }},
 		}}
 	})
 	h.commit()
@@ -877,14 +877,14 @@ func TestKeyBindingsFollowOwners(t *testing.T) {
 		}}
 	})
 	b := h.commit()
-	var keys []string
+	var keys []KeyBinding
 	for _, it := range b.Items {
 		if it.Kind == ItemKeymap {
 			keys = it.Keys
 		}
 	}
-	if !slices.Equal(keys, []string{"meta+s", "mod+shift+s"}) {
-		t.Fatalf("keymap = %q", keys)
+	if !slices.Equal(keys, []KeyBinding{{Key: "meta+s", InText: true}, {Key: "mod+shift+s", InText: true}}) {
+		t.Fatalf("keymap = %+v", keys)
 	}
 	h.tree.Dispatch(Event{Kind: EventKey, Text: "mod+shift+s"})
 	open.Set(false)

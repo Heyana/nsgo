@@ -30,12 +30,7 @@ var apple = func() bool {
 		strings.Contains(p, "iPad") || strings.Contains(p, "macOS")
 }()
 
-func (s *surface) setKeymap(keys []string) {
-	s.keys = make(map[string]bool, len(keys))
-	for _, k := range keys {
-		s.keys[k] = true
-	}
-}
+func (s *surface) setKeymap(keys []core.KeyBinding) { s.keys = keys }
 
 // keyName returns the normalized name of e's key without modifiers, or
 // "" for a modifier. Letters and digits follow the layout, unless it
@@ -65,16 +60,9 @@ func keyName(e js.Value) string {
 	return strings.ToLower(key)
 }
 
-// fieldKeys are the keys without modifiers that bindings take from a
-// text field.
-var fieldKeys = map[string]bool{"up": true, "down": true, "pageup": true, "pagedown": true}
-
 // shortcut consumes a key press that a binding of the keymap names,
-// with "mod" or with the literal modifier, and reports it. In a text
-// field only presses with Control, Alt or Command, function keys, and
-// Up, Down, Page Up and Page Down, which a one-line field barely uses,
-// count, so bindings never take typing yet can move through a list
-// from its search field.
+// with "mod" or with the literal modifier, and reports it, as
+// core.FindKey decides for a text field and a held key.
 func (s *surface) shortcut(e js.Value) {
 	if len(s.keys) == 0 || len(s.alerts) > 0 || e.Get("isComposing").Bool() {
 		return
@@ -83,11 +71,13 @@ func (s *surface) shortcut(e js.Value) {
 	if name == "" {
 		return
 	}
-	ctrl, alt, shift, meta := e.Get("ctrlKey").Bool(), e.Get("altKey").Bool(), e.Get("shiftKey").Bool(), e.Get("metaKey").Bool()
-	if editing(s.doc.Get("activeElement")) && !ctrl && !alt && !meta && !fieldKeys[name] &&
-		!(len(name) > 1 && name[0] == 'f' && name[1] >= '1' && name[1] <= '9') {
+	// Return and Space press the focused view, whatever the keymap binds.
+	if v := s.viewOf(s.doc.Get("activeElement")); v != nil && v.kind != core.KindInput && v.pressable() &&
+		(name == "enter" || name == "space") && !e.Get("ctrlKey").Bool() && !e.Get("altKey").Bool() &&
+		!e.Get("metaKey").Bool() && !e.Get("shiftKey").Bool() {
 		return
 	}
+	ctrl, alt, shift, meta := e.Get("ctrlKey").Bool(), e.Get("altKey").Bool(), e.Get("shiftKey").Bool(), e.Get("metaKey").Bool()
 	join := func(mod, ctrl, alt, shift, meta bool) string {
 		var b strings.Builder
 		for _, m := range []struct {
@@ -107,12 +97,13 @@ func (s *surface) shortcut(e js.Value) {
 	case !apple && ctrl:
 		names = append([]string{join(true, false, alt, shift, meta)}, names...)
 	}
-	for _, k := range names {
-		if s.keys[k] {
-			e.Call("preventDefault")
-			e.Call("stopPropagation")
-			s.engine.Dispatch(core.Event{Kind: core.EventKey, Text: k})
-			return
-		}
+	k, consumed := core.FindKey(s.keys, names, editing(s.doc.Get("activeElement")), e.Get("repeat").Bool())
+	if !consumed {
+		return
+	}
+	e.Call("preventDefault")
+	e.Call("stopPropagation")
+	if k != "" {
+		s.engine.Dispatch(core.Event{Kind: core.EventKey, Text: k})
 	}
 }

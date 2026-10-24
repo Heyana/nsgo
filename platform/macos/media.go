@@ -172,8 +172,10 @@ func performDrag(self objc.ID, _ objc.SEL, info objc.ID) bool {
 }
 
 // droppedFiles returns the file: URLs of the local files a drag carries.
-func droppedFiles(info objc.ID) []string {
-	pb := info.Send(sel("draggingPasteboard"))
+func droppedFiles(info objc.ID) []string { return fileURLs(info.Send(sel("draggingPasteboard"))) }
+
+// fileURLs returns the file: URLs of the local files pasteboard pb holds.
+func fileURLs(pb objc.ID) []string {
 	classes := objc.ID(objc.GetClass("NSArray")).Send(sel("arrayWithObject:"), objc.ID(objc.GetClass("NSURL")))
 	key := apple.NSString("NSPasteboardURLReadingFileURLsOnlyKey")
 	yes := objc.ID(objc.GetClass("NSNumber")).Send(sel("numberWithBool:"), true)

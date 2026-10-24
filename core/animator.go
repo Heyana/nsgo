@@ -15,23 +15,29 @@ import (
 // the result does not depend on the frame rate or dropped frames. Not safe
 // for concurrent use.
 type Animator struct {
-	nodes    map[uint32]*anode
-	runs     map[uint32]*arun
-	views    map[NodeID]*aview
-	pans     map[NodeID][2]uint32
-	scrolls  map[NodeID][2]uint32
-	report   func(Event)
-	gen      uint64 // bumped when any value changes
-	changed  map[NodeID]bool
-	now      float64 // seconds of the last step
-	finished []Event
+	nodes   map[uint32]*anode
+	runs    map[uint32]*arun
+	views   map[NodeID]*aview
+	pans    map[NodeID][2]uint32
+	scrolls map[NodeID][2]uint32
+	// pinches and rotations are the values gestures on a view move, and
+	// starts where a gesture's values were as it began: pan x, y, pinch
+	// and rotation.
+	pinches, rotations map[NodeID]uint32
+	starts             map[NodeID][4]float64
+	report             func(Event)
+	gen                uint64 // bumped when any value changes
+	changed            map[NodeID]bool
+	now                float64 // seconds of the last step
+	finished           []Event
 }
 
 // NewAnimator returns an animator that reports finished runs and reads
 // through report, for the backend to dispatch to the engine.
 func NewAnimator(report func(Event)) *Animator {
 	return &Animator{nodes: map[uint32]*anode{}, runs: map[uint32]*arun{}, views: map[NodeID]*aview{},
-		pans: map[NodeID][2]uint32{}, scrolls: map[NodeID][2]uint32{}, report: report, changed: map[NodeID]bool{}}
+		pans: map[NodeID][2]uint32{}, scrolls: map[NodeID][2]uint32{}, report: report, changed: map[NodeID]bool{},
+		pinches: map[NodeID]uint32{}, rotations: map[NodeID]uint32{}, starts: map[NodeID][4]float64{}}
 }
 
 // anode is a node of the graph.
@@ -189,6 +195,10 @@ func (a *Animator) apply(o *AnimationOp) {
 		a.pans[o.View] = [2]uint32{o.X, o.Y}
 	case AnimBindScroll:
 		a.scrolls[o.View] = [2]uint32{o.X, o.Y}
+	case AnimBindPinch:
+		a.pinches[o.View] = o.Node
+	case AnimBindRotation:
+		a.rotations[o.View] = o.Node
 	case AnimRelease:
 		if n := a.nodes[o.Node]; n != nil {
 			a.interrupt(n)
@@ -323,10 +333,65 @@ func (a *Animator) evalView(vw *aview) AnimatedValues {
 	return v
 }
 
-// Pan sets the values bound to drags on view to translation, and reports
-// whether there are any.
-func (a *Animator) Pan(view NodeID, translation Point) bool {
-	return a.drive(a.pans, view, translation)
+// Gesture moves the values bound to ev's gesture, a pan, pinch or
+// rotation on ev.ID, before the platform reports it: from where they were
+// as it began, so a gesture grabs a value an animation is moving where it
+// is. A pan's start and end report the bound values in ev.Values. It
+// reports whether a value moved, to draw.
+func (a *Animator) Gesture(ev *Event) bool {
+	view := ev.ID
+	s := a.starts[view]
+	current := func(id uint32, unset float64) float64 {
+		if n := a.value(id); n != nil {
+			a.interrupt(n)
+			return n.value
+		}
+		return unset
+	}
+	set := func(id uint32, v float64) {
+		if n := a.value(id); n != nil {
+			n.value = v
+		}
+	}
+	began := ev.Phase == GestureBegan
+	switch ev.Kind {
+	case EventPan:
+		ids, ok := a.pans[view]
+		if !ok {
+			return false
+		}
+		if began {
+			s[0], s[1] = current(ids[0], 0), current(ids[1], 0)
+		}
+		set(ids[0], s[0]+float64(ev.Point.X))
+		set(ids[1], s[1]+float64(ev.Point.Y))
+		if began || ev.Phase == GestureEnded || ev.Phase == GestureCancelled {
+			ev.Values = Point{Points(current(ids[0], 0)), Points(current(ids[1], 0))}
+		}
+	case EventPinch:
+		id, ok := a.pinches[view]
+		if !ok {
+			return false
+		}
+		if began {
+			s[2] = current(id, 1)
+		}
+		set(id, s[2]*float64(ev.Value))
+	case EventRotation:
+		id, ok := a.rotations[view]
+		if !ok {
+			return false
+		}
+		if began {
+			s[3] = current(id, 0)
+		}
+		set(id, s[3]+float64(ev.Value))
+	default:
+		return false
+	}
+	a.starts[view] = s
+	a.touch()
+	return true
 }
 
 // Scroll sets the values bound to scroll view view to its offset.
@@ -357,6 +422,9 @@ func (a *Animator) Forget(view NodeID) {
 	delete(a.views, view)
 	delete(a.pans, view)
 	delete(a.scrolls, view)
+	delete(a.pinches, view)
+	delete(a.rotations, view)
+	delete(a.starts, view)
 	delete(a.changed, view)
 }
 

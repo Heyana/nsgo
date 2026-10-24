@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"slices"
 	"time"
@@ -53,6 +54,12 @@ func nativeAnimationDemos(cx *core.Scope, t *theme) []core.Node {
 	}
 	lift := core.Interpolate(core.Add(dx, dy), core.Interpolation{Input: []float64{-200, 0, 200}, Output: []float64{-12, 0, 12}})
 
+	// A tile pinches and turns on the main thread, each gesture going on
+	// from where the last left it.
+	zoom, turn := core.NewAnimatedValue(cx, 1), core.NewAnimatedValue(cx, 0)
+	degrees := core.Interpolate(turn, core.Interpolation{Input: []float64{0, 1}, Output: []float64{0, 180 / math.Pi},
+		Extrapolate: core.ExtrapolateExtend})
+
 	// A list whose changes the platform animates.
 	next := 4
 	items := core.NewSignalFunc(cx, []int{1, 2, 3}, slices.Equal)
@@ -102,6 +109,19 @@ func nativeAnimationDemos(cx *core.Scope, t *theme) []core.Node {
 						Animated: &core.AnimatedStyle{TranslateX: dx, TranslateY: dy, Rotate: lift}},
 					Children: []core.Node{core.Text{Content: "Drag me", Style: core.Style{Color: t.onAccent, FontWeight: core.FontWeightSemibold}}}},
 			}},
+		),
+		t.demo("Platform pinch and rotation", "PinchValue and RotationValue follow two fingers or a trackpad on the main thread, from where the last gesture left them.",
+			core.View{Style: core.Style{Height: core.Pt(200), Background: t.background, CornerRadius: radius, Overflow: core.Hidden,
+				AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}, Children: []core.Node{
+				core.View{TestID: "platform-pinch", Label: "Platform pinch target", PinchValue: zoom, RotationValue: turn,
+					Style: core.Style{Width: core.Pt(110), Height: core.Pt(110), CornerRadius: 18, Background: t.success,
+						AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
+						Animated: &core.AnimatedStyle{Scale: zoom, Rotate: degrees}},
+					Children: []core.Node{core.Text{Content: "Pinch me", Style: core.Style{Color: t.onAccent, FontWeight: core.FontWeightSemibold}}}},
+			}},
+			t.plain("Reset", func() {
+				cx.StartAnimation(core.Parallel(core.Spring(zoom, 1, core.SpringConfig{}), core.Spring(turn, 0, core.SpringConfig{})), nil)
+			}),
 		),
 		t.demo("Layout animation", "Scope.AnimateLayout animates the next commit's moves, insertions and removals on the platform, with React Native's presets.",
 			core.View{StyleFunc: func() core.Style {

@@ -15,6 +15,19 @@ type hoistNode struct {
 	// platform closed it, as when a sheet is swiped away.
 	reported  *Signal[*modalSize]
 	dismissed bool
+	// anchorBounds is an overlay's AnchorBounds, in the surface.
+	anchorBounds *Bounds
+}
+
+// anchored reports whether an overlay host hosts, or one inside its
+// modals, is placed beside an anchor, which a scroll may move.
+func anchored(host *node) bool {
+	for _, h := range host.hosted {
+		if o := h.hoist.overlay; o != nil && (o.Anchor != nil || o.AnchorBounds != nil) || h.hoist.modal != nil && anchored(h) {
+			return true
+		}
+	}
+	return false
 }
 
 type modalSize struct {
@@ -44,8 +57,17 @@ func (t *Tree) hoist(n *node, h *hoistNode) {
 
 func (t *Tree) mountOverlay(cx *Scope, parent *node, o Overlay) {
 	n := t.newNode(KindView, parent, cx)
-	t.hoist(n, &hoistNode{overlay: &o})
+	h := &hoistNode{overlay: &o}
+	t.hoist(n, h)
 	t.bindStyle(cx, n, o.Style, o.StyleFunc)
+	if o.AnchorBounds != nil && o.Anchor == nil {
+		cx.renderEffect(func() {
+			b := o.AnchorBounds()
+			h.anchorBounds = &b
+			t.view.markLayout()
+			t.changed = true
+		})
+	}
 	n.h = handlers{pressOutside: o.OnPressOutside, cancel: o.OnCancel}
 	n.props = ViewProps{Role: o.Role, Label: o.Label, TestID: o.TestID}
 	for _, c := range o.Children {
@@ -187,6 +209,14 @@ func (t *Tree) placeOverlay(n *node, host *node, hostSize Size) {
 	size := Size{Points(l.Size.Width), Points(l.Size.Height)}
 	var origin Point
 	anchor, ok := t.anchorRect(o.Anchor, host)
+	if !ok && n.hoist.anchorBounds != nil {
+		anchor, ok = *n.hoist.anchorBounds, true
+		if host != t.view {
+			hb := t.surfaceBounds(host)
+			anchor.Origin.X -= hb.Origin.X
+			anchor.Origin.Y -= hb.Origin.Y
+		}
+	}
 	if !ok {
 		// Without an anchor, an overlay is placed as an absolute child of
 		// its host.
@@ -343,6 +373,17 @@ func (t *Tree) back() {
 			t.within(host.owner, func() { f("cancel") })
 		}
 		return
+	}
+	for i := len(t.backs) - 1; i >= 0; i-- {
+		b := t.backs[i]
+		if b.owner.disposed {
+			continue
+		}
+		taken := false
+		t.within(b.owner, func() { taken = b.fn() })
+		if taken {
+			return
+		}
 	}
 	if stack := t.innerStack(host); stack != nil && t.pop(stack) {
 		return

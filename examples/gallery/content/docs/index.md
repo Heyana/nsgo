@@ -23,7 +23,7 @@ func Root(cx *core.Scope) core.Node {
 		core.Text{ContentFunc: func() string {
 			return fmt.Sprintf("Pressed %d times", count.Get())
 		}},
-		ui.Button{Label: "Press me", OnPress: func() {
+		ui.Button{Label: "Press me", OnPress: func(core.PressEvent) {
 			count.Update(func(n int) int { return n + 1 })
 		}},
 	}}

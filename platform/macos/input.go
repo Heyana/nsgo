@@ -88,6 +88,7 @@ func registerInput() {
 		{Cmd: selShouldChange, Fn: fieldShouldChange},
 		{Cmd: selDidChangeSel, Fn: fieldSelectionChanged},
 	}
+	registerPaste()
 	delegate := []*objc.Protocol{objc.GetProtocol("NSTextFieldDelegate")}
 	classField = register("NsgoField", objc.GetClass("NSTextField"), delegate, fieldMethods)
 	classSecureField = register("NsgoSecureField", objc.GetClass("NSSecureTextField"), delegate, fieldMethods)
@@ -135,6 +136,16 @@ func registerInput() {
 				inputOf(self).compositionChanged()
 			}},
 			{Cmd: sel("acceptsFirstMouse:"), Fn: func(objc.ID, objc.SEL, objc.ID) bool { return true }},
+			{Cmd: sel("paste:"), Fn: func(self objc.ID, cmd objc.SEL, sender objc.ID) {
+				if pasteInto(self) {
+					apple.Super(self, cmd, sender)
+				}
+			}},
+			{Cmd: sel("pasteAsPlainText:"), Fn: func(self objc.ID, cmd objc.SEL, sender objc.ID) {
+				if pasteInto(self) {
+					apple.Super(self, cmd, sender)
+				}
+			}},
 		})
 }
 
@@ -343,6 +354,7 @@ func (in *input) changed() {
 		in.compositionChanged()
 	}
 	in.selectionChanged()
+	in.caretMoved()
 }
 
 // selectionMoved hears the editor's selection change. Marking text does
@@ -358,6 +370,7 @@ func (in *input) selectionMoved() {
 	}
 	in.compositionChanged()
 	in.selectionChanged()
+	in.caretMoved()
 }
 
 // compositionChanged follows the editor's marked text, once its edits are
@@ -415,6 +428,7 @@ func (in *input) focusChanged(focused bool) {
 	if focused {
 		v.dispatch(core.EventFocus)
 		in.selectionChanged()
+		in.caretMoved()
 	} else {
 		v.dispatch(core.EventBlur)
 	}

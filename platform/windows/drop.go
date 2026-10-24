@@ -178,22 +178,7 @@ func droppedFiles(data *comObject) []string {
 	if m.tymed != tymedHGlobal || m.handle == 0 {
 		return nil
 	}
-	count, _, _ := dragQueryFileW.Call(m.handle, 0xFFFFFFFF, 0, 0)
-	var uris []string
-	for i := range uint32(count) {
-		n, _, _ := dragQueryFileW.Call(m.handle, uintptr(i), 0, 0)
-		if n == 0 {
-			continue
-		}
-		buf := make([]uint16, n+1)
-		if got, _, _ := dragQueryFileW.Call(m.handle, uintptr(i), uintptr(unsafe.Pointer(&buf[0])), n+1); got != n {
-			continue
-		}
-		if uri := fileURL(syscall.UTF16ToString(buf)); uri != "" {
-			uris = append(uris, uri)
-		}
-	}
-	return uris
+	return hdropFiles(m.handle)
 }
 
 // fileURL returns the file: URL of an absolute Windows path, "" for a

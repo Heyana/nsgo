@@ -79,9 +79,9 @@ func stylesPage(cx *core.Scope, t *theme) core.Node {
 		),
 		t.demo("State styles", "Hover, Active, Focus and Disabled merge over the style while the view is in that state.",
 			flow(
-				base.Button{OnPress: func() { pressed.Update(func(n int) int { return n + 1 }) }, Label: "Hover or press me", Style: interactive,
+				base.Button{OnPress: func(core.PressEvent) { pressed.Update(func(n int) int { return n + 1 }) }, Label: "Hover or press me", Style: interactive,
 					Children: []core.Node{core.Text{Content: "Hover or press me"}}},
-				base.Button{OnPress: func() {}, Disabled: disabled.Get, Label: "Disabled", Style: t.button(),
+				base.Button{OnPress: func(core.PressEvent) {}, Disabled: disabled.Get, Label: "Disabled", Style: t.button(),
 					Children: []core.Node{core.Text{Content: "Disabled"}}},
 				t.plain("Toggle disabled", func() { disabled.Update(func(d bool) bool { return !d }) }),
 			),

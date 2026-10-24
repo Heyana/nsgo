@@ -33,7 +33,7 @@ func docsPage(cx *core.Scope, _ *theme) core.Node {
 	}
 	tab := func(value, label string) core.Node {
 		return ui.Tab{Label: label, TestID: "docs-" + value, Style: core.Style{FlexGrow: 1, AlignItems: core.AlignCenter},
-			Selected: func() bool { return language.Get() == value }, OnPress: func() { language.Set(value) }}
+			Selected: func() bool { return language.Get() == value }, OnPress: func(core.PressEvent) { language.Set(value) }}
 	}
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
 		ui.Tabs{Label: "Language", Style: core.Style{MaxWidth: core.Pt(280)}, Children: []core.Node{

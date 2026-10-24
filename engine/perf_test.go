@@ -164,7 +164,7 @@ func TestPerfRecordsCommitItems(t *testing.T) {
 	var count *core.Signal[int]
 	e := Start(p, func(cx *core.Scope) core.Node {
 		count = core.NewSignal(cx, 0)
-		return core.View{OnPress: func() { count.Update(func(n int) int { return n + 1 }) }, TestID: "button", Children: []core.Node{
+		return core.View{OnPress: func(core.PressEvent) { count.Update(func(n int) int { return n + 1 }) }, TestID: "button", Children: []core.Node{
 			core.Text{ContentFunc: func() string { return strconv.Itoa(count.Get()) }},
 		}}
 	}, Options{Size: core.Size{Width: 100, Height: 100}, Perf: monitor})

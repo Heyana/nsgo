@@ -256,7 +256,7 @@ func (s *surface) takePress(id int) {
 	pr.cancel = true
 	if pr.view != nil && !pr.done {
 		pr.done = true
-		s.send(pr.view, core.Event{Kind: core.EventPressUp})
+		s.pressed(pr.view, core.EventPressUp)
 	}
 }
 

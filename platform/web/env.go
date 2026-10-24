@@ -121,12 +121,13 @@ func (s *surface) environment() core.Environment {
 			Top: length("paddingTop"), Right: length("paddingRight"),
 			Bottom: length("paddingBottom"), Left: length("paddingLeft"),
 		},
-		Dark:         w.dark.Get("matches").Bool(),
-		ReduceMotion: w.reduce.Get("matches").Bool(),
-		FontScale:    float32(length("width") / 16),
-		PixelRatio:   float32(g.Get("devicePixelRatio").Float()),
-		OS:           core.OSWeb,
-		Idiom:        core.IdiomPhone,
+		Dark:          w.dark.Get("matches").Bool(),
+		ReduceMotion:  w.reduce.Get("matches").Bool(),
+		FontScale:     float32(length("width") / 16),
+		PixelRatio:    float32(g.Get("devicePixelRatio").Float()),
+		OS:            core.OSWeb,
+		AppleKeyboard: apple,
+		Idiom:         core.IdiomPhone,
 	}
 	if w.desktop.Get("matches").Bool() {
 		env.Idiom = core.IdiomDesktop

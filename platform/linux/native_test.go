@@ -34,7 +34,7 @@ func nativeApp(title string) engine.App {
 			Style: core.Style{Width: core.Pt(360), Height: core.Pt(240), Padding: core.All(10),
 				Direction: core.Row, Gap: 10, Background: core.RGB(0xffffff)},
 			Children: []core.Node{
-				core.View{OnPress: func() { count.Update(func(n int) int { return n + 1 }) },
+				core.View{OnPress: func(core.PressEvent) { count.Update(func(n int) int { return n + 1 }) },
 					Style: core.Style{Width: core.Pt(100), Height: core.Pt(80), Background: core.RGB(0x123456)}},
 				core.Input{Value: field.Get, OnChange: field.Set, AutoFocus: true,
 					OnSubmit: func(string) { submitted.Update(func(n int) int { return n + 1 }) },
@@ -271,7 +271,7 @@ func TestTextDrawsBackgroundsAndAttachments(t *testing.T) {
 				{Content: "x      x", Style: core.Style{Background: core.RGB(0xff0000), CornerRadius: 4}},
 				{Content: " and "},
 				{Style: core.Style{VerticalAlign: core.VerticalAlignMiddle},
-					Attachment: core.View{TestID: "button", OnPress: func() { pressed.Update(func(n int) int { return n + 1 }) },
+					Attachment: core.View{TestID: "button", OnPress: func(core.PressEvent) { pressed.Update(func(n int) int { return n + 1 }) },
 						Style: core.Style{Width: core.Pt(40), Height: core.Pt(30), Background: core.RGB(0x0000ff)}}},
 				{Content: " after"},
 			}}},
@@ -653,6 +653,125 @@ func TestWheelSettlesOnPagesWithinInsets(t *testing.T) {
 	waitForTitle(t, w, title+"|-10|0")
 	w.onLoop(t, func() { w.wheel(core.Point{X: 20, Y: 20}, 0, 30) })
 	waitForTitle(t, w, title+"|100|1")
+}
+
+// TestTouchAreasDecideWhatTakesAPress presses a menu outside its parent,
+// a small target by its hit slop and a button under a veil that takes no
+// pointer.
+func TestTouchAreasDecideWhatTakesAPress(t *testing.T) {
+	w := startTestWindow(t, touchAreasApp("areas"), Options{Title: "areas|start", Width: 320, Height: 200})
+	waitForTitle(t, w, "areas|none")
+	for _, c := range []struct {
+		at   core.Point
+		want string
+	}{{core.Point{X: 60, Y: 60}, "menu"}, {core.Point{X: 225, Y: 25}, "slop"}, {core.Point{X: 200, Y: 140}, "under"}} {
+		w.onLoop(t, func() { w.press(c.at) })
+		waitForTitle(t, w, "areas|"+c.want)
+	}
+}
+
+// TestLongPressWaitsForTheViewsDelay holds a press on a view whose long
+// press takes 300 ms: it becomes a long press and its release presses
+// nothing, while a quick press stays a press.
+func TestLongPressWaitsForTheViewsDelay(t *testing.T) {
+	app := func(cx *core.Scope) core.Node {
+		last := core.NewSignal(cx, "none")
+		cx.Effect(func() { cx.SetTitle("long|" + last.Get()) })
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(200)}, Children: []core.Node{
+			core.View{DelayLongPress: 300 * time.Millisecond, Style: core.Style{Width: core.Pt(100), Height: core.Pt(100)},
+				OnPress:     func(core.PressEvent) { last.Set("press") },
+				OnLongPress: func(core.PressEvent) { last.Set("long") }},
+		}}
+	}
+	w := startTestWindow(t, app, Options{Title: "long|start", Width: 320, Height: 200})
+	waitForTitle(t, w, "long|none")
+	at := core.Point{X: 50, Y: 50}
+	w.onLoop(t, func() { w.pointerDown(at, 1, 0, 0, 1) })
+	waitForTitle(t, w, "long|long")
+	w.onLoop(t, func() { w.pointerUp(at) })
+	time.Sleep(100 * time.Millisecond)
+	waitForTitle(t, w, "long|long")
+	w.onLoop(t, func() { w.pointerDown(at, 1, 0, 0, 1); w.pointerUp(at) })
+	waitForTitle(t, w, "long|press")
+}
+
+// TestTheResponderFollowsADrag drags on a view that takes the touches as
+// they start: it is granted them, follows the move and is released.
+func TestTheResponderFollowsADrag(t *testing.T) {
+	w := startTestWindow(t, responderApp("responder"), Options{Title: "responder|start", Width: 320, Height: 200})
+	waitForTitle(t, w, "responder|")
+	w.onLoop(t, func() { w.pointerDown(core.Point{X: 20, Y: 20}, 1, 0, 0, 1) })
+	waitForTitle(t, w, "responder|grant 0,0")
+	w.onLoop(t, func() { w.movePointer(core.Point{X: 50, Y: 30}, gdkButton1) })
+	waitForTitle(t, w, "responder|move 30,10")
+	w.onLoop(t, func() { w.pointerUp(core.Point{X: 50, Y: 30}) })
+	waitForTitle(t, w, "responder|release 30,10")
+}
+
+// responderApp is a view that takes the touches as they start and logs
+// its responder's events in the title.
+func responderApp(title string) func(*core.Scope) core.Node {
+	return func(cx *core.Scope) core.Node {
+		log := core.NewSignal(cx, "")
+		cx.Effect(func() { cx.SetTitle(title + "|" + log.Get()) })
+		say := func(what string) func(core.ResponderEvent) {
+			return func(e core.ResponderEvent) {
+				log.Set(fmt.Sprintf("%s %.0f,%.0f", what, e.Gesture.Delta.X, e.Gesture.Delta.Y))
+			}
+		}
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(200), Background: core.RGB(0xffffff)},
+			Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(100), Height: core.Pt(100)},
+				Responder: &core.Responder{Claims: []core.TouchClaim{{}}, OnGrant: say("grant"), OnMove: say("move"),
+					OnRelease: say("release")}}}}
+	}
+}
+
+func touchAreasApp(title string) func(*core.Scope) core.Node {
+	return func(cx *core.Scope) core.Node {
+		last := core.NewSignal(cx, "none")
+		cx.Effect(func() { cx.SetTitle(title + "|" + last.Get()) })
+		press := func(name string) func(core.PressEvent) { return func(core.PressEvent) { last.Set(name) } }
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(200), Background: core.RGB(0xffffff)},
+			Children: []core.Node{
+				// A menu 30 points below its field, outside it.
+				core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(10), Top: core.Pt(10), Width: core.Pt(100),
+					Height: core.Pt(30)}, Children: []core.Node{
+					core.View{OnPress: press("menu"), Style: core.Style{Position: core.Absolute, Top: core.Pt(30),
+						Width: core.Pt(100), Height: core.Pt(40), Background: core.RGB(0x123456)}},
+				}},
+				// A 10-point target with 20 points of slop.
+				core.View{OnPress: press("slop"), HitSlop: core.All(20), Style: core.Style{Position: core.Absolute,
+					Left: core.Pt(200), Top: core.Pt(20), Width: core.Pt(10), Height: core.Pt(10), Background: core.RGB(0x123456)}},
+				// A veil over a button lets its presses through.
+				core.View{OnPress: press("under"), Style: core.Style{Position: core.Absolute, Left: core.Pt(150),
+					Top: core.Pt(120), Width: core.Pt(100), Height: core.Pt(40), Background: core.RGB(0x123456)}},
+				core.View{OnPress: press("veil"), PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute,
+					Left: core.Pt(140), Top: core.Pt(110), Width: core.Pt(120), Height: core.Pt(60)}},
+			}}
+	}
+}
+
+// TestPointerMovesReportPositions moves the pointer over a view that
+// follows moves: OnHoverMove hears it in the view and the surface, and
+// OnMouseMove in the view.
+func TestPointerMovesReportPositions(t *testing.T) {
+	app := func(cx *core.Scope) core.Node {
+		hover, mouse := core.NewSignal(cx, core.HoverEvent{}), core.NewSignal(cx, core.Point{})
+		cx.Effect(func() {
+			h, m := hover.Get(), mouse.Get()
+			cx.SetTitle(fmt.Sprintf("moves|%.0f,%.0f|%.0f,%.0f|%.0f,%.0f", h.Position.X, h.Position.Y,
+				h.PagePosition.X, h.PagePosition.Y, m.X, m.Y))
+		})
+		return core.View{Style: core.Style{Width: core.Pt(320), Height: core.Pt(200), Padding: core.All(10)},
+			Children: []core.Node{
+				core.View{Style: core.Style{Width: core.Pt(100), Height: core.Pt(80)},
+					OnHoverMove: hover.Set, OnMouseMove: mouse.Set},
+			}}
+	}
+	w := startTestWindow(t, app, Options{Title: "moves|start", Width: 320, Height: 200})
+	waitForTitle(t, w, "moves|0,0|0,0|0,0")
+	w.onLoop(t, func() { motionCallback(0, 40, 30, w.handle) })
+	waitForTitle(t, w, "moves|30,20|40,30|30,20")
 }
 
 // TestHoverFollowsThePointer moves the pointer onto a view and its

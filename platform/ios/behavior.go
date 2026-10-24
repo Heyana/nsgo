@@ -307,6 +307,7 @@ func scrollView(self objc.ID) *view {
 
 func scrollWillDrag(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v := scrollView(self); v != nil {
+		v.surface.touchesTaken()
 		// Caught while gliding: the glide ended.
 		if objc.Send[bool](self, sel("isDecelerating")) {
 			v.scrollEvent(core.EventMomentumEnd)

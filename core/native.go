@@ -20,7 +20,7 @@ type Native struct {
 
 	// OnEvent receives what the component emits.
 	OnEvent  func(name string, data any)
-	OnPress  func()
+	OnPress  func(PressEvent)
 	OnLayout func(Bounds)
 	Ref      *Ref
 	Label    string

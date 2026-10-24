@@ -27,7 +27,7 @@ func (g *gallery) commands(cx *core.Scope) []ui.Command {
 		// the rows.
 		c := ui.Command{ID: "page:" + s.name, Title: s.name, Group: s.group, Icon: s.icon(), Keywords: []string{s.about}}
 		if i < 9 {
-			c.Shortcut = shortcut(cx, fmt.Sprint(i+1))
+			c.Shortcut = cx.KeyLabel(fmt.Sprintf("mod+%d", i+1))
 		}
 		out = append(out, c)
 	}
@@ -41,9 +41,9 @@ func (g *gallery) commands(cx *core.Scope) []ui.Command {
 	}
 	out = append(out,
 		ui.Command{ID: "settings", Title: "Open settings", Group: "Commands", Icon: lucide.Settings(),
-			Shortcut: shortcut(cx, ","), Keywords: []string{"preferences", "options"}},
+			Shortcut: cx.KeyLabel("mod+,"), Keywords: []string{"preferences", "options"}},
 		ui.Command{ID: "sidebar", Title: sidebar, Group: "Commands", Icon: lucide.PanelLeft(),
-			Shortcut: modName(cx) + "+Alt+S", Keywords: []string{"toggle", "navigation"}, Disabled: !cx.Env().Desktop()},
+			Shortcut: cx.KeyLabel("mod+alt+s"), Keywords: []string{"toggle", "navigation"}, Disabled: !cx.Env().Desktop()},
 		ui.Command{ID: "descriptions", Title: descriptions, Group: "Commands", Icon: lucide.Info(), Keywords: []string{"toggle", "about"}},
 	)
 	for _, a := range appearanceOptions() {

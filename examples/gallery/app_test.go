@@ -217,8 +217,32 @@ func TestPhoneSystemHeader(t *testing.T) {
 }
 
 func TestGestures(t *testing.T) {
-	app := startDesktop(t)
+	// Tall enough to show the demos without scrolling, for the touches.
+	app := startDesktop(t, nsgotest.Size(1100, 2400))
 	app.Press("id:nav-Gestures")
+
+	pad := app.Find("id:pointer-pad").Frame.Size
+	app.Press("id:pointer-pad")
+	want := fmt.Sprintf("press %.0f, %.0f · clicks 1 · keys none", pad.Width/2, pad.Height/2)
+	if got := app.Find("id:press-status").Text; got != want {
+		t.Fatalf("press status = %q, want %q", got, want)
+	}
+	app.RightClick("id:pointer-pad")
+	if got := app.Find("id:menu-status").Text; !strings.HasPrefix(got, fmt.Sprintf("context menu %.0f,", pad.Width/2)) {
+		t.Fatalf("menu status = %q", got)
+	}
+
+	app.Drag("id:responder-knob", core.Point{X: 20}, core.Point{X: 60, Y: 5})
+	if got := app.Find("id:responder-status").Text; got != "the knob let go · 1 fingers" {
+		t.Fatalf("responder status = %q", got)
+	}
+	if got := app.Find("id:responder-knob").Frame.Origin; got != (core.Point{X: 84, Y: 63}) {
+		t.Fatalf("knob at %v after the drag", got)
+	}
+	app.Drag("id:responder-knob", core.Point{Y: 10}, core.Point{Y: 40})
+	if got := app.Find("id:responder-status").Text; got != "the pad let go · 1 fingers" {
+		t.Fatalf("responder status = %q after a vertical drag", got)
+	}
 
 	app.Pan("id:drag-card", core.Point{X: 20}, core.Point{X: 80, Y: 30})
 	if got := app.Find("id:pan-status").Text; !strings.HasPrefix(got, "ended · translation 80, 30") {
@@ -781,6 +805,14 @@ func TestPlatformAnimations(t *testing.T) {
 	if v := app.Find("id:platform-card").Animated; v.TranslateX != 0 || v.TranslateY != 0 {
 		t.Fatalf("the card did not spring home: %+v", v)
 	}
+
+	// The second pinch scales on from where the first left the tile.
+	app.Pinch("id:platform-pinch", 1.5, 2)
+	app.Pinch("id:platform-pinch", 1.5)
+	app.Rotate("id:platform-pinch", 0.5, 1.5707964)
+	if v := app.Find("id:platform-pinch").Animated; v.Scale != 3 || v.Rotate < 89.9 || v.Rotate > 90.1 {
+		t.Fatalf("the tile is at %+v, want scale 3 and 90 degrees", v)
+	}
 }
 
 func TestKeyboardAccessory(t *testing.T) {
@@ -953,5 +985,23 @@ func TestSidebarResizesByDraggingItsDivider(t *testing.T) {
 	app.Advance(300 * time.Millisecond)
 	if width() != sidebarWidth+40 {
 		t.Fatalf("sidebar = %v wide after reopening, want the resized %v", width(), sidebarWidth+40)
+	}
+}
+
+func TestCaretAndPaste(t *testing.T) {
+	app := startDesktop(t, nsgotest.Size(1100, 3000))
+	app.Press("id:nav-Fields")
+	app.Focus("id:caret-field")
+	app.Type("id:caret-field", "hi @a")
+	if !app.Exists("id:mentions") {
+		t.Fatal("no suggestions after @")
+	}
+	app.Press("id:mention-grace")
+	if got := app.Find("id:caret-field").Text; got != "hi @grace " {
+		t.Fatalf("field = %q", got)
+	}
+	app.Paste("id:caret-field", core.PasteEvent{Text: "x", Files: []core.PastedFile{{MIME: "image/png", Data: []byte{1, 2}}}})
+	if got := app.Find("id:paste-status").Text; got != "pasted 1 characters, a image/png of 2 bytes" {
+		t.Fatalf("paste status = %q", got)
 	}
 }

@@ -43,7 +43,7 @@ func (m Menu) Render(cx *core.Scope) core.Node {
 	return core.Group{
 		core.View{Ref: anchor, Style: m.Style, StyleFunc: m.StyleFunc, Label: m.Label, TestID: m.TestID, Role: core.RoleButton,
 			Expanded: st.open,
-			OnPress:  func() { st.set(!st.open(), ReasonTriggerPress) },
+			OnPress:  func(core.PressEvent) { st.set(!st.open(), ReasonTriggerPress) },
 			Children: []core.Node{m.Trigger}},
 		menuPopup(st, anchor, m.Placement, align, m.Offset, m.Margin, m.PopupStyle, m.PopupStyleFunc, m.Children),
 	}
@@ -89,12 +89,12 @@ func (m ContextMenu) Render(cx *core.Scope) core.Node {
 	anchor := new(core.Ref)
 	return core.Group{
 		core.View{Ref: anchor, Style: m.Style, StyleFunc: m.StyleFunc, TestID: m.TestID,
-			OnLongPress: func() {
+			OnLongPress: func(core.PressEvent) {
 				if !m.Disabled {
 					st.set(true, ReasonLongPress)
 				}
 			},
-			OnContextMenu: func(core.Point) {
+			OnContextMenu: func(core.ContextMenuEvent) {
 				if !m.Disabled {
 					st.set(true, ReasonContextMenu)
 				}
@@ -122,7 +122,7 @@ func (i MenuItem) Render(cx *core.Scope) core.Node {
 	close := menuKey.Use(cx)
 	return core.View{Style: i.Style, StyleFunc: i.StyleFunc, Role: core.RoleMenuItem, Label: i.Label, TestID: i.TestID,
 		Disabled: i.Disabled, Children: i.Children,
-		OnPress: func() {
+		OnPress: func(core.PressEvent) {
 			if i.OnSelect != nil {
 				i.OnSelect()
 			}
@@ -165,7 +165,7 @@ func (s Submenu) Render(cx *core.Scope) core.Node {
 	return core.Group{
 		core.View{Ref: anchor, Style: s.Style, StyleFunc: s.StyleFunc, Role: core.RoleMenuItem, Label: s.Label, TestID: s.TestID,
 			Disabled: s.Disabled, Expanded: open.Get,
-			OnPress: func() { open.Update(func(o bool) bool { return !o }) },
+			OnPress: func(core.PressEvent) { open.Update(func(o bool) bool { return !o }) },
 			OnHoverIn: func() {
 				if cx.Env().Desktop() {
 					open.Set(true)

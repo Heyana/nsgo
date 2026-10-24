@@ -36,6 +36,8 @@ final class Animator {
     static final int BIND_PAN = 14;
     static final int BIND_SCROLL = 15;
     static final int RELEASE = 16;
+    static final int BIND_PINCH = 17;
+    static final int BIND_ROTATION = 18;
 
     // Bound properties, as core.AnimatedProp.
     static final int PROP_OPACITY = 0;
@@ -98,6 +100,9 @@ final class Animator {
     private final Map<Integer, AView> views = new HashMap<>();
     private final Map<Integer, int[]> pans = new HashMap<>();
     private final Map<Integer, int[]> scrolls = new HashMap<>();
+    /** The values pinches and rotations on a view move, and where a gesture's values were as it began: pan x, y, pinch, rotation. */
+    private final Map<Integer, Integer> pinches = new HashMap<>(), rotations = new HashMap<>();
+    private final Map<Integer, double[]> starts = new HashMap<>();
     private final LinkedHashSet<Integer> changed = new LinkedHashSet<>();
     private final Reporter report;
     private long gen; // bumped when any value changes
@@ -447,6 +452,11 @@ final class Animator {
                 o.x = in.readInt();
                 o.y = in.readInt();
                 break;
+            case BIND_PINCH:
+            case BIND_ROTATION:
+                o.view = in.readInt();
+                o.node = in.readInt();
+                break;
             default:
                 break;
         }
@@ -540,6 +550,12 @@ final class Animator {
                 break;
             case BIND_SCROLL:
                 scrolls.put(o.view, new int[] {o.x, o.y});
+                break;
+            case BIND_PINCH:
+                pinches.put(o.view, o.node);
+                break;
+            case BIND_ROTATION:
+                rotations.put(o.view, o.node);
                 break;
             case RELEASE: {
                 ANode n = nodes.get(o.node);
@@ -647,9 +663,54 @@ final class Animator {
         return v;
     }
 
-    /** Sets the values bound to drags on view to translation, in points; whether there are any. */
-    boolean pan(int view, float x, float y) {
-        return drive(pans, view, x, y);
+    /**
+     * Moves the values bound to a gesture of kind on view, as
+     * core.Animator.Gesture does: a pan's by its translation (x, y), a
+     * pinch's scaled by value, a rotation's turned by value, from where
+     * they were as it began. Returns null when none is bound, else a pan's
+     * values as it begins and ends ({} otherwise).
+     */
+    float[] gesture(int kind, int view, int phase, float x, float y, float value) {
+        double[] s = starts.computeIfAbsent(view, k -> new double[4]);
+        boolean began = phase == Protocol.GESTURE_BEGAN;
+        float[] out = {};
+        if (kind == Protocol.EVENT_PAN) {
+            int[] ids = pans.get(view);
+            if (ids == null) return null;
+            if (began) {
+                s[0] = current(ids[0], 0);
+                s[1] = current(ids[1], 0);
+            }
+            set(ids[0], s[0] + x);
+            set(ids[1], s[1] + y);
+            if (began || phase == Protocol.GESTURE_ENDED || phase == Protocol.GESTURE_CANCELLED) {
+                out = new float[] {(float) current(ids[0], 0), (float) current(ids[1], 0)};
+            }
+        } else if (kind == Protocol.EVENT_PINCH || kind == Protocol.EVENT_ROTATION) {
+            boolean pinch = kind == Protocol.EVENT_PINCH;
+            Integer id = (pinch ? pinches : rotations).get(view);
+            if (id == null) return null;
+            int slot = pinch ? 2 : 3;
+            if (began) s[slot] = current(id, pinch ? 1 : 0);
+            set(id, pinch ? s[slot] * value : s[slot] + value);
+        } else {
+            return null;
+        }
+        touch();
+        return out;
+    }
+
+    /** Value id's value, stopping what animates it; unset without one. */
+    private double current(int id, double unset) {
+        ANode n = value(id);
+        if (n == null) return unset;
+        interrupt(n);
+        return n.value;
+    }
+
+    private void set(int id, double v) {
+        ANode n = value(id);
+        if (n != null) n.value = v;
     }
 
     /** Sets the values bound to scroll view view to its offset, in points. */
@@ -677,6 +738,9 @@ final class Animator {
         views.remove(view);
         pans.remove(view);
         scrolls.remove(view);
+        pinches.remove(view);
+        rotations.remove(view);
+        starts.remove(view);
         changed.remove(view);
     }
 

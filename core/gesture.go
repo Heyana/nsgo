@@ -25,6 +25,9 @@ type PanEvent struct {
 	Phase       GesturePhase
 	Translation Point
 	Velocity    Point
+	// Values are the PanValues as the pan begins and ends: a drag may grab
+	// them mid animation, which a snap after it starts from.
+	Values Point
 }
 
 // GestureEvent is a pinch or a rotation: its amount since it began and

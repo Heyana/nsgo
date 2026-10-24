@@ -26,23 +26,23 @@ func buttonsPage(cx *core.Scope, t *theme) core.Node {
 			OnChange: func(bool) { size.Set(v) }})
 	}
 	for i, n := range []string{"Day", "Week", "Month"} {
-		tabs = append(tabs, ui.Tab{Label: n, Selected: func() bool { return tab.Get() == i }, OnPress: func() { tab.Set(i) }})
+		tabs = append(tabs, ui.Tab{Label: n, Selected: func() bool { return tab.Get() == i }, OnPress: func(core.PressEvent) { tab.Set(i) }})
 	}
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
 		t.demo("Button", "ui.Button in each Variant; Style adjusts one without leaving the theme.",
 			flow(
-				ui.Button{Label: "Primary", OnPress: press},
-				ui.Button{Label: "Secondary", Variant: ui.Secondary, OnPress: press},
-				ui.Button{Label: "Danger", Variant: ui.Danger, OnPress: press},
-				ui.Button{Label: "Ghost", Variant: ui.Ghost, OnPress: press},
+				ui.Button{Label: "Primary", OnPress: func(core.PressEvent) { press() }},
+				ui.Button{Label: "Secondary", Variant: ui.Secondary, OnPress: func(core.PressEvent) { press() }},
+				ui.Button{Label: "Danger", Variant: ui.Danger, OnPress: func(core.PressEvent) { press() }},
+				ui.Button{Label: "Ghost", Variant: ui.Ghost, OnPress: func(core.PressEvent) { press() }},
 				ui.Button{Label: "Disabled", Disabled: always},
 			),
 			flow(
-				ui.Button{Label: "Download", OnPress: press, Children: []core.Node{
+				ui.Button{Label: "Download", OnPress: func(core.PressEvent) { press() }, Children: []core.Node{
 					core.Icon{SVG: lucide.Download(), Style: core.Style{Width: core.Pt(16), Height: core.Pt(16)}},
 					core.Text{Content: "Download"},
 				}},
-				ui.Button{Label: "Pill", Variant: ui.Secondary, OnPress: press, Style: core.Style{CornerRadius: 20, Padding: core.Symmetric(6, 18)}},
+				ui.Button{Label: "Pill", Variant: ui.Secondary, OnPress: func(core.PressEvent) { press() }, Style: core.Style{CornerRadius: 20, Padding: core.Symmetric(6, 18)}},
 			),
 			t.live(func() string { return fmt.Sprintf("Pressed %d times.", presses.Get()) }),
 		),
@@ -93,8 +93,8 @@ func overlaysPage(cx *core.Scope, t *theme) core.Node {
 		),
 		t.demo("Dialog and sheet", "ui.Dialog and ui.Sheet over the theme's overlay; Escape or a press outside closes them.",
 			flow(
-				ui.Button{Label: "Dialog", Variant: ui.Secondary, OnPress: func() { dialog.Set(true) }},
-				ui.Button{Label: "Sheet", Variant: ui.Secondary, OnPress: func() { sheet.Set(true) }},
+				ui.Button{Label: "Dialog", Variant: ui.Secondary, OnPress: func(core.PressEvent) { dialog.Set(true) }},
+				ui.Button{Label: "Sheet", Variant: ui.Secondary, OnPress: func(core.PressEvent) { sheet.Set(true) }},
 			),
 		),
 		ui.Dialog{Open: dialog.Get, OnOpenChange: func(open bool, _ base.Reason) { dialog.Set(open) }, Label: "Dialog",
@@ -102,14 +102,14 @@ func overlaysPage(cx *core.Scope, t *theme) core.Node {
 				core.Text{Content: "Discard changes?", Style: core.Style{FontSize: 17, FontWeight: core.FontWeightSemibold}},
 				core.Text{Content: "Your edits since the last save will be lost."},
 				hstack(
-					ui.Button{Label: "Cancel", Variant: ui.Secondary, OnPress: func() { dialog.Set(false) }},
-					ui.Button{Label: "Discard", Variant: ui.Danger, OnPress: func() { dialog.Set(false) }},
+					ui.Button{Label: "Cancel", Variant: ui.Secondary, OnPress: func(core.PressEvent) { dialog.Set(false) }},
+					ui.Button{Label: "Discard", Variant: ui.Danger, OnPress: func(core.PressEvent) { dialog.Set(false) }},
 				),
 			}},
 		ui.Sheet{Open: sheet.Get, OnOpenChange: func(open bool, _ base.Reason) { sheet.Set(open) }, Label: "Sheet",
 			Children: []core.Node{
 				core.Text{Content: "A sheet", Style: core.Style{FontSize: 17, FontWeight: core.FontWeightSemibold}},
-				ui.Button{Label: "Close", OnPress: func() { sheet.Set(false) }},
+				ui.Button{Label: "Close", OnPress: func(core.PressEvent) { sheet.Set(false) }},
 			}},
 	}}
 }
@@ -131,8 +131,8 @@ func themePage(cx *core.Scope, t *theme) core.Node {
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
 		t.demo("Theme", "ui.ThemeView provides a Theme: two palettes, radii and a font size. Every component below it follows.",
 			ui.Tabs{Label: "Theme", Children: []core.Node{
-				ui.Tab{Label: "NSGo", TestID: "theme-default", Selected: func() bool { return !teal.Get() }, OnPress: func() { teal.Set(false) }},
-				ui.Tab{Label: "Teal", TestID: "theme-teal", Selected: teal.Get, OnPress: func() { teal.Set(true) }},
+				ui.Tab{Label: "NSGo", TestID: "theme-default", Selected: func() bool { return !teal.Get() }, OnPress: func(core.PressEvent) { teal.Set(false) }},
+				ui.Tab{Label: "Teal", TestID: "theme-teal", Selected: teal.Get, OnPress: func(core.PressEvent) { teal.Set(true) }},
 			}},
 			ui.ThemeView{Theme: pick, TestID: "theme-sample",
 				Style: core.Style{Padding: core.All(20), Gap: 16, CornerRadius: cardRadius, BorderWidth: 1, BorderColor: theme().Border},
@@ -166,7 +166,7 @@ func sidebarPage(cx *core.Scope, t *theme) core.Node {
 			trailing = append(trailing, core.Text{Content: count, Style: core.Style{FontSize: 12, Color: t.muted}})
 		}
 		return ui.SidebarItem{Label: label, Icon: icon, Trailing: trailing, TestID: "mail-" + label,
-			Selected: func() bool { return at.Get() == label }, OnPress: func() { at.Set(label) }}
+			Selected: func() bool { return at.Get() == label }, OnPress: func(core.PressEvent) { at.Set(label) }}
 	}
 	return t.demo("Sidebar", "ui.Sidebar's sections and items; the app owns the selection. Items take trailing content, headings actions.",
 		core.View{Style: core.Style{Direction: core.Row, Height: core.Pt(300), CornerRadius: radius, BorderWidth: 1, BorderColor: t.line,
@@ -182,7 +182,7 @@ func sidebarPage(cx *core.Scope, t *theme) core.Node {
 					}},
 					ui.SidebarSection{Title: "Labels",
 						Actions: []core.Node{ui.IconButton{Icon: lucide.Plus(), Label: "Add a label", Size: 14, TestID: "add-label",
-							OnPress: func() {
+							OnPress: func(core.PressEvent) {
 								labels.Update(func(l []string) []string { return append(l, fmt.Sprintf("Label %d", len(l)+1)) })
 							}}},
 						Children: []core.Node{core.Each(labels.Get, func(l string) string { return l },

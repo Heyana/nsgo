@@ -238,7 +238,7 @@ func (r *renderer) block(cx *core.Scope, b Block, first bool, depth int) core.No
 func (r *renderer) details(cx *core.Scope, d Details, depth int) core.Node {
 	open := core.NewSignal(cx, d.Open)
 	return core.View{Style: r.style(PartDetails), Children: []core.Node{
-		core.View{Style: r.style(PartSummary), Role: core.RoleButton, OnPress: func() { open.Set(!open.Get()) },
+		core.View{Style: r.style(PartSummary), Role: core.RoleButton, OnPress: func(core.PressEvent) { open.Set(!open.Get()) },
 			Children: []core.Node{
 				core.Text{ContentFunc: func() string {
 					if open.Get() {
@@ -436,7 +436,7 @@ func (r *renderer) footnotes(cx *core.Scope, notes []Footnote) core.Node {
 
 // spans appends content's spans to out, each styled over style and
 // pressing link, the link around it, if any.
-func (r *renderer) spans(out []core.Span, content []Inline, style core.Style, link func()) []core.Span {
+func (r *renderer) spans(out []core.Span, content []Inline, style core.Style, link func(core.PressEvent)) []core.Span {
 	for _, in := range content {
 		switch in := in.(type) {
 		case Text:
@@ -499,11 +499,11 @@ func (r *renderer) spans(out []core.Span, content []Inline, style core.Style, li
 
 // press returns what reports a press on a link to url, if anything
 // listens.
-func (r *renderer) press(url string) func() {
+func (r *renderer) press(url string) func(core.PressEvent) {
 	if r.tv.OnLinkPress == nil {
 		return nil
 	}
-	return func() { r.tv.OnLinkPress(url) }
+	return func(core.PressEvent) { r.tv.OnLinkPress(url) }
 }
 
 type linkedImage struct {
@@ -537,7 +537,7 @@ func onlyImages(content []Inline) ([]linkedImage, bool) {
 
 // inlineImage shows an image in a line of text styled style: the size it
 // asks for, else three quarters of a line tall at its natural aspect.
-func (r *renderer) inlineImage(im Image, style core.Style, link func()) core.Node {
+func (r *renderer) inlineImage(im Image, style core.Style, link func(core.PressEvent)) core.Node {
 	return core.Func(func(cx *core.Scope) core.Node {
 		if r.tv.RenderImage != nil {
 			return r.tv.RenderImage(cx, im)

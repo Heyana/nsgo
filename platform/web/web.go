@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall/js"
+	"time"
 	"unicode/utf16"
 
 	"github.com/oneo-me/nsgo/core"
@@ -53,6 +54,28 @@ func cssFamily(family string) string {
 // milliseconds.
 const longPressDelay = 500
 
+// clicks counts consecutive presses, which pointer events do not: one
+// within 500 ms and 4 points of the last is its next click, as browsers
+// count a mouse's.
+type clicks struct {
+	at   core.Point
+	last time.Time
+	n    int
+}
+
+// down returns the count of a press at p, in surface points.
+func (c *clicks) down(p core.Point) int {
+	now := time.Now()
+	dx, dy := p.X-c.at.X, p.Y-c.at.Y
+	if c.n > 0 && now.Sub(c.last) <= 500*time.Millisecond && dx*dx+dy*dy <= 16 {
+		c.n++
+	} else {
+		c.n = 1
+	}
+	c.at, c.last = p, now
+	return c.n
+}
+
 type surface struct {
 	doc       js.Value
 	host      js.Value
@@ -63,12 +86,15 @@ type surface struct {
 	engine    *engine.Engine
 	views     []*view // index is NodeID
 	press     press
+	touch     fingers
+	covers    []covered // what the modals made inert, oldest first
+	clicks    clicks
 	timer     js.Value // the pending long press
 	longPress js.Func
 	outside   []*view // views that report presses outside them
 	alerts    []*alert
-	keys      map[string]bool // the keymap
-	live      js.Value        // the region announcements are read from
+	keys      []core.KeyBinding // the keymap
+	live      js.Value          // the region announcements are read from
 	watch     watch
 	env       core.Environment // as last sent
 	gestures  gestures
@@ -78,6 +104,8 @@ type surface struct {
 	stickyCSS    bool
 	// fieldCSS is whether fieldCSS is in the page.
 	fieldCSS bool
+	// pointerCSS is whether pointerCSS was added to the page.
+	pointerCSS bool
 
 	animator *core.Animator
 	frame    js.Func // the animation frame callback
@@ -110,6 +138,9 @@ type view struct {
 	modal     core.ModalAnimation
 	presented bool // a modal was inserted once
 	hover     bool // pointerenter and pointerleave are listened to
+	moves     bool // pointermove is
+	// keyFocused is whether the view has the keyboard focus it reported.
+	keyFocused bool
 	// panActivation decides when a drag on the view becomes its pan.
 	panActivation core.PanActivation
 	listeners     listeners
@@ -176,9 +207,10 @@ func (ls *listeners) release() {
 type press struct {
 	active  bool
 	pointer int
-	view    *view // the pressable view it landed in, if any
-	done    bool  // the pointer went up or the press was canceled
-	cancel  bool  // the press was canceled or held as a long press
+	view    *view      // the pressable view it landed in, if any
+	done    bool       // the pointer went up or the press was canceled
+	cancel  bool       // the press was canceled or held as a long press
+	at      core.Event // where it went down, and how
 }
 
 // Run fills the page with app. Call it from main; it does not return.
@@ -237,7 +269,7 @@ func (s *surface) send(v *view, ev core.Event) {
 		return
 	}
 	ev.ID = v.id
-	if ev.Kind == core.EventPan && s.animator.Pan(v.id, ev.Point) {
+	if s.animator.Gesture(&ev) {
 		s.applyAnimated()
 	}
 	s.engine.Dispatch(ev)
@@ -747,6 +779,9 @@ func (s *surface) Mount(b *core.MountBatch) {
 		case core.ItemWindow:
 			s.windowCommand(it.Window)
 			continue
+		case core.ItemBlockNative:
+			s.touch.blocked = it.ID != 0
+			continue
 		}
 		v := s.view(it.ID)
 		if v == nil {
@@ -778,6 +813,7 @@ func (s *surface) Mount(b *core.MountBatch) {
 			if v.kind == core.KindModal && !v.presented {
 				v.presented = true
 				s.present(v)
+				s.cover(v)
 			}
 			s.appear(v, lb, it.Parent)
 		case core.ItemRemove:
@@ -785,6 +821,9 @@ func (s *surface) Mount(b *core.MountBatch) {
 		case core.ItemDelete:
 			// Forgotten first, so events its removal fires are not sent.
 			s.views[it.ID] = nil
+			if v.kind == core.KindModal {
+				defer s.uncover(v) // once the batch is in
+			}
 			if v.track.Truthy() {
 				v.track.Call("remove")
 			}
@@ -916,6 +955,7 @@ func (s *surface) Mount(b *core.MountBatch) {
 			v.disabled = it.ViewProps.Disabled
 			v.props = *it.ViewProps
 			setViewProps(v, it.ViewProps)
+			s.setPointer(v, it.ViewProps)
 			if v.input != nil {
 				v.input.props = it.ViewProps
 			}
@@ -1268,6 +1308,46 @@ func setViewProps(v *view, p *core.ViewProps) {
 	v.setTabIndex()
 }
 
+// pointerCSS gives pointer events and hit slop their CSS: none takes the
+// subtree out, box-none the view alone, box-only its children; a slop is
+// a pseudo-element around the view, whose events are the view's.
+const pointerCSS = `.nsgo-pe-none, .nsgo-pe-none * { pointer-events: none !important; }
+.nsgo-pe-box-none { pointer-events: none; }
+:where(.nsgo-pe-box-none > *) { pointer-events: auto; }
+.nsgo-pe-box-only * { pointer-events: none !important; }
+.nsgo-slop::before { content: ""; position: absolute; top: var(--nsgo-slop-top); right: var(--nsgo-slop-right);
+  bottom: var(--nsgo-slop-bottom); left: var(--nsgo-slop-left); }`
+
+var pointerClasses = map[core.PointerEvents]string{
+	core.PointerEventsNone: "nsgo-pe-none", core.PointerEventsBoxNone: "nsgo-pe-box-none",
+	core.PointerEventsBoxOnly: "nsgo-pe-box-only",
+}
+
+// setPointer applies v's pointer events and hit slop. The browser finds
+// children outside their parent itself, so no area is needed.
+func (s *surface) setPointer(v *view, p *core.ViewProps) {
+	slop := p.HitSlop != (core.Edges{})
+	if !s.pointerCSS {
+		if p.PointerEvents == core.PointerEventsAuto && !slop {
+			return
+		}
+		s.pointerCSS = true
+		el := s.doc.Call("createElement", "style")
+		el.Set("textContent", pointerCSS)
+		s.doc.Get("head").Call("appendChild", el)
+	}
+	classes := v.el.Get("classList")
+	for pe, name := range pointerClasses {
+		classes.Call("toggle", name, pe == p.PointerEvents)
+	}
+	classes.Call("toggle", "nsgo-slop", slop)
+	if slop {
+		px := func(p core.Points) string { return strconv.FormatFloat(float64(-p), 'f', -1, 32) + "px" }
+		setStyle(v.el, map[string]string{"--nsgo-slop-top": px(p.HitSlop.Top), "--nsgo-slop-right": px(p.HitSlop.Right),
+			"--nsgo-slop-bottom": px(p.HitSlop.Bottom), "--nsgo-slop-left": px(p.HitSlop.Left)})
+	}
+}
+
 // setTabIndex makes pressable views and views with keyboard actions
 // Tab stops, and a view the screen reader was moved to focusable.
 func (v *view) setTabIndex() {
@@ -1276,13 +1356,17 @@ func (v *view) setTabIndex() {
 	}
 	tabIndex := ""
 	switch {
-	case v.props.ElementsHidden:
-	case v.pressable() || v.events.Has(core.EventAccessibilityAction) && v.hasKeyAction():
+	case v.props.ElementsHidden || v.props.Disabled:
+	case v.pressable() && !v.props.NoFocus || v.events.Has(core.EventAccessibilityAction) && v.hasKeyAction():
 		tabIndex = "0"
 	case v.a11yFocus:
 		tabIndex = "-1"
 	}
 	setAttr(v.el, "tabindex", tabIndex)
+	// A focused view that stops being a stop lets the focus go.
+	if tabIndex == "" && v.el.Equal(v.el.Get("ownerDocument").Get("activeElement")) {
+		v.el.Call("blur")
+	}
 }
 
 func (v *view) hasKeyAction() bool {
@@ -1345,6 +1429,53 @@ func (s *surface) setEvents(v *view, m core.EventMask) {
 		v.listeners.on(v.el, "pointerenter", func(js.Value) { s.send(v, core.Event{Kind: core.EventHoverIn}) })
 		v.listeners.on(v.el, "pointerleave", func(js.Value) { s.send(v, core.Event{Kind: core.EventHoverOut}) })
 	}
+	// Moves bubble, so each view under the pointer hears them, innermost
+	// first. Touches and pens never hover.
+	if !v.moves && (m.Has(core.EventHoverMove) || m.Has(core.EventMouseMove)) {
+		v.moves = true
+		v.listeners.on(v.el, "pointermove", func(e js.Value) {
+			if e.Get("pointerType").String() != "mouse" {
+				return
+			}
+			if e.Get("buttons").Int() == 0 && v.events.Has(core.EventHoverMove) {
+				s.send(v, s.pointer(v, core.EventHoverMove, e))
+			}
+			if v.events.Has(core.EventMouseMove) {
+				ev := s.pointer(v, core.EventMouseMove, e)
+				ev.Page, ev.Modifiers = core.Point{}, core.Modifiers{}
+				s.send(v, ev)
+			}
+		})
+	}
+}
+
+// pointer returns where e's pointer is in v and in v's root view, the
+// modal around it or the surface, and the modifier keys held.
+func (s *surface) pointer(v *view, kind core.EventKind, e js.Value) core.Event {
+	x, y := e.Get("clientX").Float(), e.Get("clientY").Float()
+	r := v.el.Call("getBoundingClientRect")
+	root := s.host
+	for el := v.el; el.Truthy() && !el.Equal(s.host); el = el.Get("parentElement") {
+		if m := s.viewOf(el); m != nil && m.kind == core.KindModal {
+			root = el
+			break
+		}
+	}
+	rr := root.Call("getBoundingClientRect")
+	return core.Event{Kind: kind,
+		Point: core.Point{X: core.Points(x - r.Get("left").Float()), Y: core.Points(y - r.Get("top").Float())},
+		Page: core.Point{X: core.Points(x - rr.Get("left").Float() - root.Get("clientLeft").Float()),
+			Y: core.Points(y - rr.Get("top").Float() - root.Get("clientTop").Float())},
+		Modifiers: core.Modifiers{Control: e.Get("ctrlKey").Bool(), Alt: e.Get("altKey").Bool(),
+			Shift: e.Get("shiftKey").Bool(), Platform: e.Get("metaKey").Bool()},
+	}
+}
+
+// pressed sends kind about the press in progress, with where it began.
+func (s *surface) pressed(v *view, kind core.EventKind) {
+	ev := s.press.at
+	ev.Kind = kind
+	s.send(v, ev)
 }
 
 // setGestureStyle keeps the browser's touch scrolling and zooming and
@@ -1408,6 +1539,8 @@ func (s *surface) listen() {
 	ls.on(s.doc, "copy", s.copySelection)
 	ls.on(s.doc, "keydown", s.escape)
 	s.listenGestures(&ls)
+	s.listenTouches(&ls)
+	s.listenFocus(&ls)
 	s.listenFiles(&ls)
 	// Captured, so shortcuts come before what has focus.
 	s.doc.Call("addEventListener", "keydown", js.FuncOf(func(_ js.Value, args []js.Value) any {
@@ -1423,7 +1556,7 @@ func (s *surface) listen() {
 		s.timer = js.Undefined()
 		if p := &s.press; p.view != nil && !p.done {
 			p.cancel = true
-			s.send(p.view, core.Event{Kind: core.EventLongPress})
+			s.pressed(p.view, core.EventLongPress)
 		}
 		return nil
 	})
@@ -1528,9 +1661,15 @@ func (s *surface) pointerDown(e js.Value) {
 		return
 	}
 	s.press.view = v
-	s.send(v, core.Event{Kind: core.EventPressDown})
+	s.press.at = s.pointer(v, core.EventPressDown, e)
+	s.press.at.Count = uint32(s.clicks.down(s.press.at.Page))
+	s.pressed(v, core.EventPressDown)
 	if v.events.Has(core.EventLongPress) {
-		s.timer = js.Global().Call("setTimeout", s.longPress, longPressDelay)
+		delay := longPressDelay
+		if d := v.props.DelayLongPress; d > 0 {
+			delay = int(d.Milliseconds())
+		}
+		s.timer = js.Global().Call("setTimeout", s.longPress, delay)
 	}
 }
 
@@ -1544,7 +1683,7 @@ func (s *surface) pointerUp(e js.Value) {
 	if e.Get("type").String() == "pointercancel" {
 		p.cancel = true
 	}
-	s.send(p.view, core.Event{Kind: core.EventPressUp})
+	s.pressed(p.view, core.EventPressUp)
 }
 
 // click completes a press. Clicks also come from assistive technology,
@@ -1560,7 +1699,13 @@ func (s *surface) click(e js.Value) {
 	if p.active && (p.view != v || p.cancel) {
 		return
 	}
-	s.send(v, core.Event{Kind: core.EventPress, Index: s.textIndex(v, e)})
+	ev := core.Event{Kind: core.EventPress}
+	if p.active {
+		ev = p.at
+		ev.Kind = core.EventPress
+	}
+	ev.Index = s.textIndex(v, e)
+	s.send(v, ev)
 }
 
 // setOutside adds v to the views that report presses outside them, or
@@ -1640,11 +1785,7 @@ func (s *surface) contextMenu(e js.Value) {
 			return
 		case v.events.Has(core.EventContextMenu):
 			e.Call("preventDefault")
-			r := v.el.Call("getBoundingClientRect")
-			s.send(v, core.Event{Kind: core.EventContextMenu, Point: core.Point{
-				X: core.Points(e.Get("clientX").Float() - r.Get("left").Float()),
-				Y: core.Points(e.Get("clientY").Float() - r.Get("top").Float()),
-			}})
+			s.send(v, s.pointer(v, core.EventContextMenu, e))
 			return
 		}
 	}
@@ -1677,5 +1818,10 @@ func (s *surface) keyDown(e js.Value) {
 		return
 	}
 	e.Call("preventDefault")
+	if e.Get("repeat").Bool() {
+		return // a held key presses once
+	}
+	s.send(v, core.Event{Kind: core.EventPressDown})
+	s.send(v, core.Event{Kind: core.EventPressUp})
 	s.send(v, core.Event{Kind: core.EventPress, Index: index})
 }

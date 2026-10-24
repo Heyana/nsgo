@@ -133,7 +133,7 @@ func TestFileDropFindsTheDestinationUnderThePointer(t *testing.T) {
 						destination("off", abs(70, 0, 50, 50, core.RGB(0xdddddd)), true),
 					}}
 				}},
-				core.View{TestID: "remove", OnPress: func() { show.Set(false) }, Style: abs(70, 70, 40, 40, core.RGB(0x000000))},
+				core.View{TestID: "remove", OnPress: func(core.PressEvent) { show.Set(false) }, Style: abs(70, 70, 40, 40, core.RGB(0x000000))},
 			}}
 	}
 	w := startTestWindow(t, app, Options{Title: title, Width: 360, Height: 240})
@@ -271,9 +271,9 @@ func TestNativeComponentFillsItsView(t *testing.T) {
 				}},
 				core.Native{Component: "nsgo-test-unknown", TestID: "unknown", Style: core.Style{Width: core.Pt(10), Height: core.Pt(10)}},
 				core.View{TestID: "grow", Style: abs(10, 60, 20, 20, core.RGB(0x0000ff)),
-					OnPress: func() { wide.Set(true); ref.Command("ping", 7) }},
+					OnPress: func(core.PressEvent) { wide.Set(true); ref.Command("ping", 7) }},
 				core.View{TestID: "remove", Style: abs(40, 60, 20, 20, core.RGB(0x000000)),
-					OnPress: func() { show.Set(false) }},
+					OnPress: func(core.PressEvent) { show.Set(false) }},
 			}}
 	}
 	w := startTestWindow(t, app, Options{Title: title, Width: 360, Height: 240, Components: components})
@@ -337,7 +337,7 @@ func TestAnimatorDrawsOnTheFrameClock(t *testing.T) {
 			Children: []core.Node{
 				core.View{TestID: "box", Style: box},
 				core.View{TestID: "handle", Style: handle, PanValues: core.AnimatedXY{X: dragged}},
-				core.View{TestID: "go", Style: abs(0, 100, 20, 20, core.RGB(0x0000ff)), OnPress: func() {
+				core.View{TestID: "go", Style: abs(0, 100, 20, 20, core.RGB(0x0000ff)), OnPress: func(core.PressEvent) {
 					cx.StartAnimation(core.Timing(x, 80, core.TimingConfig{Duration: 1500 * time.Millisecond}),
 						func(finished bool) { done.Set(fmt.Sprint(finished)) })
 				}},
@@ -391,16 +391,16 @@ func TestLayoutAnimationMovesShowsAndRetiresViews(t *testing.T) {
 				core.Show{When: added.Get, Then: func(*core.Scope) core.Node {
 					return core.View{Style: abs(80, 40, 40, 40, core.RGB(0x00ff00))}
 				}},
-				core.View{TestID: "move", Style: abs(0, 100, 20, 20, core.RGB(0x000000)), OnPress: func() {
+				core.View{TestID: "move", Style: abs(0, 100, 20, 20, core.RGB(0x000000)), OnPress: func(core.PressEvent) {
 					cx.AnimateLayout(core.LayoutAnimation{Update: &second})
 					x.Set(80)
 				}},
-				core.View{TestID: "remove", Style: abs(30, 100, 20, 20, core.RGB(0x000000)), OnPress: func() {
+				core.View{TestID: "remove", Style: abs(30, 100, 20, 20, core.RGB(0x000000)), OnPress: func(core.PressEvent) {
 					tr := second
 					cx.AnimateLayout(core.LayoutAnimation{Delete: &tr})
 					kept.Set(false)
 				}},
-				core.View{TestID: "add", Style: abs(60, 100, 20, 20, core.RGB(0x000000)), OnPress: func() {
+				core.View{TestID: "add", Style: abs(60, 100, 20, 20, core.RGB(0x000000)), OnPress: func(core.PressEvent) {
 					tr := second
 					tr.Property = core.LayoutScale
 					cx.AnimateLayout(core.LayoutAnimation{Create: &tr})

@@ -46,7 +46,7 @@ func accessibilityPage(cx *core.Scope, t *theme) core.Node {
 
 	disclosure := core.View{Style: core.Style{Gap: 8}, Children: []core.Node{
 		base.Button{Style: t.secondary(), Label: "Shipping details", Expanded: open.Get, TestID: "a11y-disclosure",
-			OnPress: func() { open.Update(func(o bool) bool { return !o }) },
+			OnPress: func(core.PressEvent) { open.Update(func(o bool) bool { return !o }) },
 			Children: []core.Node{core.Text{ContentFunc: func() string {
 				if open.Get() {
 					return "Shipping details ▾"
@@ -100,7 +100,7 @@ func accessibilityPage(cx *core.Scope, t *theme) core.Node {
 			t.plain("Add to basket", func() { added.Update(func(n int) int { return n + 1 }) }),
 		),
 		t.demo("Focus", "Ref.SetAccessibilityFocus moves the screen reader to an element, as after a search.",
-			base.Button{Style: t.secondary(), Label: "Search apples", TestID: "a11y-search", OnPress: result.SetAccessibilityFocus,
+			base.Button{Style: t.secondary(), Label: "Search apples", TestID: "a11y-search", OnPress: func(core.PressEvent) { result.SetAccessibilityFocus() },
 				Children: []core.Node{core.Text{Content: "Search apples"}}},
 			core.Text{Ref: &result, Content: "3 results for “apples”", TestID: "a11y-result"},
 		),

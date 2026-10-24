@@ -45,6 +45,7 @@ type webInput struct {
 	fs        field.State
 	listeners listeners
 	props     *core.ViewProps // the last, which a new element takes
+	config    *core.InputConfig
 }
 
 // createInput puts an <input> in v's element.
@@ -113,6 +114,10 @@ func (s *surface) setFieldElement(v *view, tag string) {
 	for _, name := range []string{"select", "keyup", "pointerup"} {
 		on(name, func(js.Value) { s.fieldSelection(v) })
 	}
+	for _, name := range []string{"select", "keyup", "pointerup", "input", "scroll", "focus"} {
+		on(name, func(js.Value) { s.caretMoved(v) })
+	}
+	on("paste", func(e js.Value) { s.pasted(v, e) })
 	on("focus", func(js.Value) { s.send(v, core.Event{Kind: core.EventFocus}) })
 	on("blur", func(js.Value) {
 		s.compose(v, false, "")
@@ -164,6 +169,7 @@ func (s *surface) setInput(v *view, c *core.InputConfig) {
 	if v.kind != core.KindInput {
 		return
 	}
+	v.input.config = c
 	in := v.input
 	tag := "input"
 	if c.Multiline {

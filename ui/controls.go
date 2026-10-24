@@ -25,8 +25,8 @@ const (
 // Button is a base.Button with the theme's look for its Variant. Style
 // merges over that look; the content is its children, or Label as text.
 type Button struct {
-	OnPress     func()
-	OnLongPress func()
+	OnPress     func(core.PressEvent)
+	OnLongPress func(core.PressEvent)
 	Disabled    func() bool
 	Variant     Variant
 	Style       core.Style
@@ -71,7 +71,7 @@ func (c Checkbox) Render(cx *core.Scope) core.Node {
 		Checked:       shows,
 		Indeterminate: mixed,
 		Disabled:      c.Disabled,
-		OnPress: func() {
+		OnPress: func(core.PressEvent) {
 			if c.OnChange != nil {
 				c.OnChange(mixed() || !checked())
 			}
@@ -122,7 +122,7 @@ func (s Switch) Render(cx *core.Scope) core.Node {
 		TestID:    s.TestID,
 		Checked:   checked,
 		Disabled:  s.Disabled,
-		OnPress: func() {
+		OnPress: func(core.PressEvent) {
 			if s.OnChange != nil {
 				s.OnChange(!checked())
 			}
@@ -153,7 +153,7 @@ func (r Radio) Render(cx *core.Scope) core.Node {
 		TestID:    r.TestID,
 		Checked:   checked,
 		Disabled:  r.Disabled,
-		OnPress: func() {
+		OnPress: func(core.PressEvent) {
 			if r.OnChange != nil && !checked() {
 				r.OnChange(true)
 			}
@@ -195,7 +195,7 @@ func (t Tabs) Render(cx *core.Scope) core.Node {
 type Tab struct {
 	Selected func() bool
 	Disabled func() bool
-	OnPress  func()
+	OnPress  func(core.PressEvent)
 	Style    core.Style
 	Children []core.Node
 	Label    string
@@ -246,9 +246,9 @@ func orFalse(fn func() bool) func() bool {
 	return fn
 }
 
-func orNop(fn func()) func() {
+func orNop(fn func(core.PressEvent)) func(core.PressEvent) {
 	if fn == nil {
-		return func() {}
+		return func(core.PressEvent) {}
 	}
 	return fn
 }
@@ -261,7 +261,7 @@ type IconButton struct {
 	Icon *core.SVG
 	// IconFunc replaces Icon, again when what it reads changes.
 	IconFunc func() *core.SVG
-	OnPress  func()
+	OnPress  func(core.PressEvent)
 	Disabled func() bool
 	// Menu holds MenuItems, MenuSeparators and Submenus. Placement and
 	// Align place the menu as a Menu's do.

@@ -314,7 +314,7 @@ func TestNativeComponentFollowsItsView(t *testing.T) {
 		return core.View{Style: core.Style{Width: core.Pt(300), Height: core.Pt(240), Background: core.RGB(0xffffff)},
 			Children: []core.Node{
 				core.View{Style: core.Style{Height: core.Pt(30), Background: core.RGB(0x123456)},
-					OnPress: func() {
+					OnPress: func(core.PressEvent) {
 						step.Update(func(n int) int { return n + 1 })
 						if step.GetUntracked() == 1 {
 							ref.Command("ping", 7)
@@ -473,7 +473,7 @@ func TestLayoutAnimationMovesFadesAndRemoves(t *testing.T) {
 		}
 		return core.View{Style: core.Style{Width: core.Pt(300), Height: core.Pt(200), Background: core.RGB(0xffffff), Gap: 10},
 			Children: []core.Node{
-				core.View{Style: core.Style{Height: core.Pt(30), Background: core.RGB(0x123456)}, OnPress: func() {
+				core.View{Style: core.Style{Height: core.Pt(30), Background: core.RGB(0x123456)}, OnPress: func(core.PressEvent) {
 					cx.AnimateLayout(core.LayoutAnimation{
 						Create: &core.LayoutTransition{Duration: 2 * time.Second},
 						Update: &core.LayoutTransition{Duration: 2 * time.Second},

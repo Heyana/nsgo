@@ -161,8 +161,11 @@ func (p palette) Render(cx *core.Scope) core.Node {
 			}
 		}
 	}
-	cx.OnKey("up", func() { move(-1) })
-	cx.OnKey("down", func() { move(1) })
+	// The arrows move through the list from the search field, and again
+	// while held.
+	arrows := core.KeyOptions{When: core.KeyAlways, Repeat: true}
+	cx.OnKeyWith("up", arrows, func() { move(-1) })
+	cx.OnKeyWith("down", arrows, func() { move(1) })
 
 	muted := func(size bool) func() core.Style {
 		return func() core.Style {
@@ -201,7 +204,7 @@ func (p palette) Render(cx *core.Scope) core.Node {
 		return core.View{
 			OnLayout: func(b core.Bounds) { rows[c.ID] = b },
 			Children: []core.Node{heading, core.View{
-				OnPress: func() { run(c.ID) }, Role: core.RoleButton, Label: c.Title, TestID: "command-" + c.ID,
+				OnPress: func(core.PressEvent) { run(c.ID) }, Role: core.RoleButton, Label: c.Title, TestID: "command-" + c.ID,
 				Disabled: func() bool { return c.Disabled }, Selected: func() bool { return active.Get() == c.ID },
 				StyleFunc: func() core.Style {
 					t := theme()

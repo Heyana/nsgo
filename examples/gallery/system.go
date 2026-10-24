@@ -66,7 +66,7 @@ func windowPage(cx *core.Scope, t *theme) core.Node {
 
 func menuPage(cx *core.Scope, t *theme) core.Node {
 	g := galleryKey.Use(cx)
-	shortcut := func(i int) string { return fmt.Sprintf("%s+%d", modName(cx), i+1) }
+	shortcut := func(i int) string { return cx.KeyLabel(fmt.Sprintf("mod+%d", i+1)) }
 	var keys []core.Node
 	for i, s := range sections[:9] {
 		keys = append(keys, core.View{Style: core.Style{Direction: core.Row, JustifyContent: core.JustifySpaceBetween,
@@ -87,15 +87,6 @@ func menuPage(cx *core.Scope, t *theme) core.Node {
 			ui.Switch{Checked: g.descriptions.Get, OnChange: g.descriptions.Set, Label: "Show descriptions"},
 		),
 	}}
-}
-
-// modName is what "mod" is on this platform.
-func modName(cx *core.Scope) string {
-	switch cx.Env().OS() {
-	case core.OSMacOS, core.OSIOS:
-		return "⌘"
-	}
-	return "Ctrl"
 }
 
 func environmentPage(cx *core.Scope, t *theme) core.Node {
@@ -152,7 +143,7 @@ func environmentPage(cx *core.Scope, t *theme) core.Node {
 			}),
 		),
 		t.demo("Keyboard shortcuts", "OnKey binds a key while its owner lives; this one only while this section shows.",
-			t.live(func() string { return fmt.Sprintf("Press %s+J: pressed %d times", modName(cx), keys.Get()) }),
+			t.live(func() string { return fmt.Sprintf("Press %s: pressed %d times", cx.KeyLabel("mod+j"), keys.Get()) }),
 		),
 		t.demo("Announcements", "Announce has the screen reader say something without moving focus.",
 			t.plain("Announce", func() { cx.Announce("Hello from the NSGo gallery") }),
@@ -182,7 +173,7 @@ func navigationDemo(cx *core.Scope, t *theme) core.Node {
 	header := func(n int) core.Node {
 		children := []core.Node{}
 		if n > 1 {
-			children = append(children, base.Button{OnPress: func() { nav.Pop(1) }, Label: "Back", Style: core.Style{Padding: core.Symmetric(4, 6)},
+			children = append(children, base.Button{OnPress: func(core.PressEvent) { nav.Pop(1) }, Label: "Back", Style: core.Style{Padding: core.Symmetric(4, 6)},
 				Children: []core.Node{core.Text{Content: "‹ Back", Style: core.Style{Color: t.accent}}}})
 		}
 		children = append(children, core.Text{Content: fmt.Sprintf("Screen %d", n), Role: core.RoleHeader,
@@ -204,7 +195,7 @@ func navigationDemo(cx *core.Scope, t *theme) core.Node {
 					return core.Screen{Title: fmt.Sprintf("Screen %d", n), Header: header(n), TestID: fmt.Sprintf("nav-screen-%d", n),
 						StatusBar: bar, HeaderBackTitle: fmt.Sprintf("%d", n),
 						HeaderStyle: core.Style{Background: t.surface, Color: t.ink, TintColor: t.accent},
-						HeaderRight: base.Button{OnPress: func() { nav.Push(n + 1) }, Label: "Push", Style: core.Style{Padding: core.Symmetric(4, 6)},
+						HeaderRight: base.Button{OnPress: func(core.PressEvent) { nav.Push(n + 1) }, Label: "Push", Style: core.Style{Padding: core.Symmetric(4, 6)},
 							Children: []core.Node{core.Text{Content: "Push", Style: core.Style{Color: t.accent}}}},
 						Children: []core.Node{core.View{Style: core.Style{Padding: core.All(16), Gap: 12}, Children: []core.Node{
 							core.Text{ContentFunc: func() string { return fmt.Sprintf("Depth %d of a stack of routes.", depth()) }},

@@ -177,9 +177,23 @@ func Run(app engine.App, opts Options) {
 			// an animation finished.
 			data := r.str()
 			ev.Finished = r.byte() != 0
+			// A pointer's position in its root view and modifier keys.
+			ev.Page = core.Point{X: r.points(), Y: r.points()}
+			mods := r.byte()
+			ev.Modifiers = core.Modifiers{Control: mods&1 != 0, Alt: mods&2 != 0, Shift: mods&4 != 0, Platform: mods&8 != 0}
 			if ev.Kind == core.EventNative {
 				s.nativeEvent(ev.ID, ev.Text, data)
 				break
+			}
+			if ev.Kind == core.EventTouch {
+				ev.Touches = readTouches(data)
+			}
+			if ev.Kind == core.EventPaste {
+				ev.Data, ev.Text = readPaste(ev.Text, data), ""
+			}
+			if ev.Kind == core.EventPan {
+				// A pan's start and end carry its bound values as the size.
+				ev.Values, ev.Size = core.Point{X: ev.Size.Width, Y: ev.Size.Height}, core.Size{}
 			}
 			s.engine.Dispatch(ev)
 		case msgMeasured:
@@ -778,6 +792,13 @@ func encode(w *writer, b *core.MountBatch, requests []uint32, natives []nativeIt
 				w.str(act.Name)
 				w.str(act.Label)
 			}
+			// The runtime routes touches by them and times long presses.
+			w.byte(byte(p.PointerEvents))
+			w.points(p.HitSlop.Top)
+			w.points(p.HitSlop.Right)
+			w.points(p.HitSlop.Bottom)
+			w.points(p.HitSlop.Left)
+			w.u32(uint32(max(p.DelayLongPress.Milliseconds(), 0)))
 		case core.ItemScrollConfig:
 			c := it.Scroll
 			b := &c.Behavior
@@ -860,12 +881,15 @@ func encode(w *writer, b *core.MountBatch, requests []uint32, natives []nativeIt
 		case core.ItemKeymap:
 			w.u32(uint32(len(it.Keys)))
 			for _, k := range it.Keys {
-				w.str(k)
+				w.str(k.Key)
+				w.flags(k.InText, k.Repeat)
 			}
 		case core.ItemStatusBar:
 			c := it.StatusBar
 			w.byte(byte(c.Style))
 			w.flags(c.Hidden, c.Animated)
+		case core.ItemOverflow:
+			w.bounds(it.Frame)
 		case core.ItemScreen:
 			c := it.Screen
 			w.str(c.Title)

@@ -105,7 +105,7 @@ func (v ToastView) Render(cx *core.Scope) core.Node {
 			}})
 		}
 		children = append(children, core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: text})
-		return core.View{OnPress: leave, Role: core.RoleAlert, Label: s.Title, TestID: "toast",
+		return core.View{OnPress: func(core.PressEvent) { leave() }, Role: core.RoleAlert, Label: s.Title, TestID: "toast",
 			StyleFunc: func() core.Style {
 				t := theme()
 				style := popupStyle(t)

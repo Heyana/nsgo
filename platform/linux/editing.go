@@ -310,6 +310,7 @@ func (w *window) makeEditor(v *view, multiline bool) {
 		gSignalConnect(v.buffer, "mark-set", cbBufferMark, w.handle)
 		gSignalConnect(v.textView, "preedit-changed", cbPreedit, w.handle)
 		gSignalConnect(v.textView, "notify::has-focus", cbEntryFocus, w.handle)
+		gSignalConnect(v.textView, "paste-clipboard", cbPasteClipboard, w.handle)
 		keys := gtkEventControllerKeyNew()
 		gtkEventControllerSetPropagationPhase(keys, propagationPhaseCapture)
 		gSignalConnect(keys, "key-pressed", cbAreaKey, w.handle)
@@ -329,6 +330,7 @@ func (w *window) makeEditor(v *view, multiline bool) {
 		if text := gtkEditableGetDelegate(v.entry); text != 0 {
 			gSignalConnect(text, "notify::has-focus", cbEntryFocus, w.handle)
 			gSignalConnect(text, "preedit-changed", cbPreedit, w.handle)
+			gSignalConnect(text, "paste-clipboard", cbPasteClipboard, w.handle)
 			w.entries[text] = v
 		}
 		gtkWidgetSetName(v.entry, cstr(editorName(v)))
@@ -478,6 +480,9 @@ func (w *window) selectRange(v *view, r core.TextRange) {
 
 // reportSelection reports the user's selection in UTF-16 units.
 func (w *window) reportSelection(v *view) {
+	if !v.setting {
+		w.caretMoved(v)
+	}
 	if v.setting || v.entry == 0 || !v.fs.Events.Has(core.EventSelectionChange) {
 		return
 	}
@@ -659,6 +664,7 @@ func entryFocusCallback(entry uintptr, pspec uintptr, data uintptr) {
 		if v.events.Has(core.EventFocus) {
 			w.engine.Dispatch(core.Event{Kind: core.EventFocus, ID: v.id})
 		}
+		w.caretMoved(v)
 		return
 	}
 	if w.focus == v {

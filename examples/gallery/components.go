@@ -81,9 +81,9 @@ func fieldsPage(cx *core.Scope, t *theme) core.Node {
 		),
 		t.demo("Icon buttons", "ui.IconButton is an icon its label names, in a tooltip on desktops; with Menu it opens a menu.",
 			hstack(
-				ui.IconButton{Icon: lucide.Heart(), Label: "Like", OnPress: func() { likes.Update(func(n int) int { return n + 1 }) }},
-				ui.IconButton{Icon: lucide.Copy(), Label: "Copy", OnPress: func() { last.Set("Copy") }},
-				ui.IconButton{Icon: lucide.Share2(), Label: "Share", OnPress: func() { last.Set("Share") }},
+				ui.IconButton{Icon: lucide.Heart(), Label: "Like", OnPress: func(core.PressEvent) { likes.Update(func(n int) int { return n + 1 }) }},
+				ui.IconButton{Icon: lucide.Copy(), Label: "Copy", OnPress: func(core.PressEvent) { last.Set("Copy") }},
+				ui.IconButton{Icon: lucide.Share2(), Label: "Share", OnPress: func(core.PressEvent) { last.Set("Share") }},
 				ui.IconButton{Icon: lucide.Trash(), Label: "Delete", Disabled: always},
 				ui.IconButton{Icon: lucide.Ellipsis(), Label: "More", Menu: []core.Node{
 					ui.MenuItem{Label: "Rename", OnSelect: func() { last.Set("Rename") }},
@@ -114,6 +114,7 @@ func fieldsPage(cx *core.Scope, t *theme) core.Node {
 			}),
 		),
 		fieldsDemo(cx, t),
+		caretDemo(cx, t),
 		accessoryDemo(cx, t),
 	}}
 }
@@ -135,8 +136,8 @@ func feedbackPage(cx *core.Scope, t *theme) core.Node {
 			}
 		})
 	}
-	nudge := func(by float64) func() {
-		return func() { progress.Update(func(v float64) float64 { return min(max(v+by, 0), 1) }) }
+	nudge := func(by float64) func(core.PressEvent) {
+		return func(core.PressEvent) { progress.Update(func(v float64) float64 { return min(max(v+by, 0), 1) }) }
 	}
 	toasts := []struct {
 		label string
@@ -151,7 +152,7 @@ func feedbackPage(cx *core.Scope, t *theme) core.Node {
 	}
 	var toastButtons []core.Node
 	for _, b := range toasts {
-		toastButtons = append(toastButtons, ui.Button{Label: b.label, Variant: ui.Secondary, OnPress: func() { toast(b.toast) }})
+		toastButtons = append(toastButtons, ui.Button{Label: b.label, Variant: ui.Secondary, OnPress: func(core.PressEvent) { toast(b.toast) }})
 	}
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
 		t.demo("Badge", "ui.Badge is a pill of text in a tone, with an optional icon.",
@@ -167,7 +168,7 @@ func feedbackPage(cx *core.Scope, t *theme) core.Node {
 		t.demo("Progress", "ui.Progress fills as far as its value goes from 0 to 1.",
 			ui.Progress{Value: progress.Get, Label: "Upload", TestID: "progress"},
 			flow(
-				ui.Button{Label: "Upload", OnPress: upload, Children: []core.Node{
+				ui.Button{Label: "Upload", OnPress: func(core.PressEvent) { upload() }, Children: []core.Node{
 					core.Icon{SVG: lucide.Upload(), Style: core.Style{Width: core.Pt(16), Height: core.Pt(16)}},
 					core.Text{Content: "Upload"},
 				}},
@@ -221,8 +222,8 @@ func settingsPage(cx *core.Scope, t *theme) core.Node {
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
 		t.demo("The gallery's settings", "ui.Settings in a bare ui.Dialog: the gallery's preferences, then template pages.",
 			flow(
-				ui.Button{Label: "Open settings", OnPress: g.openSettings, TestID: "page-open-settings"},
-				keycap(shortcut(cx, ",")),
+				ui.Button{Label: "Open settings", OnPress: func(core.PressEvent) { g.openSettings() }, TestID: "page-open-settings"},
+				keycap(cx.KeyLabel("mod+,")),
 			),
 		),
 		t.demo("In a page", "ui.Settings fills its parent, here a card. Search finds items by any word; narrow, a selector replaces the sidebar.",
@@ -246,9 +247,9 @@ func commandPage(cx *core.Scope, t *theme) core.Node {
 	open := core.NewSignal(cx, false)
 	last := core.NewSignal(cx, "")
 	files := []ui.Command{
-		{ID: "new", Title: "New file", Group: "File", Icon: lucide.FilePlus(), Shortcut: shortcut(cx, "N")},
-		{ID: "open", Title: "Open…", Group: "File", Icon: lucide.FolderOpen(), Shortcut: shortcut(cx, "O")},
-		{ID: "save", Title: "Save", Group: "File", Icon: lucide.Save(), Shortcut: shortcut(cx, "S"), Disabled: true},
+		{ID: "new", Title: "New file", Group: "File", Icon: lucide.FilePlus(), Shortcut: cx.KeyLabel("mod+n")},
+		{ID: "open", Title: "Open…", Group: "File", Icon: lucide.FolderOpen(), Shortcut: cx.KeyLabel("mod+o")},
+		{ID: "save", Title: "Save", Group: "File", Icon: lucide.Save(), Shortcut: cx.KeyLabel("mod+s"), Disabled: true},
 		{ID: "rename", Title: "Rename", Group: "Edit", Icon: lucide.Pencil(), Keywords: []string{"move"}},
 		{ID: "duplicate", Title: "Duplicate", Group: "Edit", Icon: lucide.CopyPlus()},
 		{ID: "tag", Title: "Add a tag", Group: "Edit", Icon: lucide.Tag(), Description: "Group files by what they are about."},
@@ -256,12 +257,12 @@ func commandPage(cx *core.Scope, t *theme) core.Node {
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
 		t.demo("The gallery's palette", "Every page and the gallery's commands. Up and Down choose, Return runs, Escape closes.",
 			flow(
-				ui.Button{Label: "Search everything", OnPress: g.openPalette, TestID: "page-open-palette"},
-				keycap(shortcut(cx, "K")),
+				ui.Button{Label: "Search everything", OnPress: func(core.PressEvent) { g.openPalette() }, TestID: "page-open-palette"},
+				keycap(cx.KeyLabel("mod+k")),
 			),
 		),
 		t.demo("Your own commands", "ui.CommandPalette takes the app's commands, grouped, and reports the one run; disabled ones are skipped.",
-			flow(ui.Button{Label: "Open file commands", Variant: ui.Secondary, OnPress: func() { open.Set(true) }, TestID: "open-files"}),
+			flow(ui.Button{Label: "Open file commands", Variant: ui.Secondary, OnPress: func(core.PressEvent) { open.Set(true) }, TestID: "open-files"}),
 			t.live(func() string {
 				if last.Get() == "" {
 					return "No command run yet."

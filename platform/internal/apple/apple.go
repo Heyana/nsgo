@@ -162,3 +162,11 @@ func CGColor(c core.Color) uintptr {
 	r, g, b, a := c.Components()
 	return cgColorCreateSRGB(r, g, b, a)
 }
+
+// Modifiers returns the modifier keys among the flags AppKit and UIKit
+// share.
+func Modifiers(flags uint) core.Modifiers {
+	const shift, control, option, command = 1 << 17, 1 << 18, 1 << 19, 1 << 20
+	return core.Modifiers{Control: flags&control != 0, Alt: flags&option != 0, Shift: flags&shift != 0,
+		Platform: flags&command != 0}
+}

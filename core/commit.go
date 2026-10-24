@@ -399,6 +399,12 @@ func (t *Tree) emit(n *node) {
 		t.syncChildren(n, kids)
 		n.childrenDirty = false
 	}
+	if n != t.view {
+		if area := n.overflowArea(kids); area != n.sent.overflow {
+			n.sent.overflow = area
+			add(MountItem{Kind: ItemOverflow, ID: n.id, Frame: area})
+		}
+	}
 	if first || n.frame != n.sent.frame {
 		n.sent.frame = n.frame
 		add(MountItem{Kind: ItemFrame, ID: n.id, Frame: n.frame})

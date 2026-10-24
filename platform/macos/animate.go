@@ -361,11 +361,3 @@ func (s *surface) stepMotions(now time.Duration) {
 	clear(s.ghosts[len(live):])
 	s.ghosts = live
 }
-
-// panned moves the values bound to v's drags, before the pan is
-// reported, so they follow in the same frame.
-func (s *surface) panned(v *view, translation core.Point) {
-	if s.animator.Pan(v.id, translation) {
-		apple.WithoutAnimation(s.applyAnimated)
-	}
-}

@@ -7,7 +7,7 @@ type Canvas struct {
 	Draw      func(d *Drawing, size Size)
 	Style     Style
 	StyleFunc func() Style
-	OnPress   func()
+	OnPress   func(PressEvent)
 	OnLayout  func(Bounds)
 	Ref       *Ref
 	Label     string

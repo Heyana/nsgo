@@ -27,7 +27,7 @@ func TestTextViewBuildsBlocks(t *testing.T) {
 				return core.Text{Content: "custom " + node.Name, TestID: "custom"}
 			},
 			CodeBlockActions: func(cx *core.Scope, code textview.CodeBlock) core.Node {
-				return core.View{OnPress: func() { pressed = append(pressed, "copy "+code.Code) }, TestID: "copy"}
+				return core.View{OnPress: func(core.PressEvent) { pressed = append(pressed, "copy "+code.Code) }, TestID: "copy"}
 			},
 		}
 	})

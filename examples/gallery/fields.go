@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/oneo-me/nsgo/core"
 )
@@ -85,4 +86,50 @@ func toUpper(s string) string {
 		}
 	}
 	return string(b)
+}
+
+// caretDemo shows OnCaretMove and OnPaste: typing @ opens suggestions at
+// the caret, and a paste of images or files is listed instead of typed.
+func caretDemo(cx *core.Scope, t *theme) core.Node {
+	text := core.NewSignal(cx, "")
+	caret := core.NewSignal(cx, core.Bounds{})
+	pasted := core.NewSignal(cx, "nothing pasted yet")
+	mentioning := func() bool {
+		s := text.Get()
+		i := strings.LastIndex(s, "@")
+		return i >= 0 && !strings.ContainsAny(s[i:], " \n")
+	}
+	mention := func(name string) core.Node {
+		return core.View{Role: core.RoleButton, Label: name, TestID: "mention-" + name,
+			OnPress: func(core.PressEvent) {
+				s := text.GetUntracked()
+				text.Set(s[:strings.LastIndex(s, "@")] + "@" + name + " ")
+			},
+			Style:    core.Style{Padding: core.Symmetric(6, 10), CornerRadius: 6, Hover: &core.Style{Background: t.sunken}},
+			Children: []core.Node{core.Text{Content: "@" + name}}}
+	}
+	return t.demo("Caret and paste", "OnCaretMove reports the caret's bounds, which an Overlay takes as AnchorBounds: type @ for suggestions at the caret. OnPaste reports pasted text, images and files; PasteReport keeps the text out.",
+		core.Input{TestID: "caret-field", Value: text.Get, OnChange: text.Set, Placeholder: "Write @ to mention someone",
+			Style: t.field(), OnCaretMove: func(e core.CaretEvent) { caret.Set(e.PageBounds) },
+			OnPaste: func(e core.PasteEvent) {
+				var parts []string
+				if e.Text != "" {
+					parts = append(parts, fmt.Sprintf("%d characters", len([]rune(e.Text))))
+				}
+				for _, f := range e.Files {
+					parts = append(parts, fmt.Sprintf("a %s of %d bytes", f.MIME, len(f.Data)))
+				}
+				if n := len(e.URIs); n > 0 {
+					parts = append(parts, fmt.Sprintf("%d files", n))
+				}
+				pasted.Set("pasted " + strings.Join(parts, ", "))
+			}},
+		core.Show{When: mentioning, Then: func(*core.Scope) core.Node {
+			return core.Overlay{AnchorBounds: caret.Get, Placement: core.PlaceBottom, Offset: 4, TestID: "mentions",
+				Style: core.Style{Padding: core.All(4), Background: t.surface, CornerRadius: 8, BorderWidth: 1,
+					BorderColor: t.line, ShadowColor: core.RGBA(0, 0.15), ShadowRadius: 8, ShadowOffset: core.Point{Y: 2}},
+				Children: []core.Node{mention("ada"), mention("grace"), mention("linus")}}
+		}},
+		core.Text{TestID: "paste-status", Style: t.caption(), ContentFunc: pasted.Get},
+	)
 }

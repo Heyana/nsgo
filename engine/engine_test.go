@@ -62,7 +62,7 @@ func TestDispatchNeverBlocksAndMerges(t *testing.T) {
 	e := Start(p, func(cx *core.Scope) core.Node {
 		count := core.NewSignal(cx, 0)
 		return core.View{Children: []core.Node{
-			core.View{OnPress: func() { presses++; count.Set(presses) }, TestID: "button"},
+			core.View{OnPress: func(core.PressEvent) { presses++; count.Set(presses) }, TestID: "button"},
 			core.Text{ContentFunc: func() string { return strconv.Itoa(count.Get()) }},
 		}}
 	}, Options{Size: core.Size{Width: 100, Height: 100}})

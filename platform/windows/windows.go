@@ -34,6 +34,7 @@ import (
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/engine"
+	"github.com/oneo-me/nsgo/platform/internal/finger"
 	"github.com/oneo-me/nsgo/platform/internal/hover"
 	"github.com/oneo-me/nsgo/platform/internal/queue"
 	"github.com/oneo-me/nsgo/platform/internal/scrollbar"
@@ -181,6 +182,7 @@ type view struct {
 	style    core.ViewStyle
 	events   core.EventMask
 	props    core.ViewProps
+	overflow core.Bounds // where its children reach outside it (ItemOverflow)
 	deleted  bool
 
 	// A text view's layout and where it goes in the view.
@@ -269,7 +271,7 @@ type window struct {
 	env       core.Environment // the last reported
 	alerts    []core.AlertConfig
 	alerting  bool
-	keys      map[string]bool // the keyboard shortcuts
+	keys      []core.KeyBinding // the keyboard shortcuts
 	animating []*view
 	ticking   bool
 	// frameWanted is set while the app waits for a display frame.
@@ -341,6 +343,11 @@ type window struct {
 		at    point
 		count int
 	}
+	down core.Event // the left button's last press: modifiers and count
+	// mouse is finger 0 of the views' touches.
+	mouse finger.Mouse
+	// pressing is the left button's press on a view, as it happens.
+	pressing *pressing
 
 	swap *swapChain
 }
@@ -448,7 +455,7 @@ func Run(app engine.App, opts Options) {
 			return
 		}
 		// Shortcuts take key presses before they become characters.
-		if (m.Message == wmKeyDown || m.Message == wmSysKeyDown) && m.Hwnd == hwnd && w.shortcut(m.WParam) {
+		if (m.Message == wmKeyDown || m.Message == wmSysKeyDown) && m.Hwnd == hwnd && w.shortcut(m.WParam, m.LParam) {
 			continue
 		}
 		translateMessage.Call(uintptr(unsafe.Pointer(&m)))
@@ -588,6 +595,8 @@ func (w *window) apply(b *core.MountBatch) {
 			if !w.leave(v, lb) {
 				w.destroy(v)
 			}
+		case core.ItemOverflow:
+			v.overflow = it.Frame
 		case core.ItemFrame:
 			w.setFrame(v, it.Frame, lb)
 			if v.kind == core.KindScroll {
@@ -982,15 +991,19 @@ func scrollsAt(v *view, p core.Point, out []*view) []*view {
 // viewsAt appends the views under p that match, outermost first: v and
 // the child drawn on top at p, down to the innermost.
 func viewsAt(v *view, p core.Point, match func(*view) bool, out []*view) []*view {
-	if v.style.Hidden || v.style.Opacity <= 0 || !v.frame.Contains(p) {
+	self, children := v.reach(p)
+	if v.style.Hidden || v.style.Opacity <= 0 || !self && !children {
 		return out
 	}
-	if match(v) {
+	if self && match(v) {
 		out = append(out, v)
+	}
+	if !children {
+		return out
 	}
 	p = core.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
 	for i := len(v.children) - 1; i >= 0; i-- {
-		if c := v.children[i]; !c.style.Hidden && c.frame.Contains(p) {
+		if c := v.children[i]; c.under(p) {
 			return viewsAt(c, p, match, out)
 		}
 	}
@@ -1022,6 +1035,51 @@ func (w *window) pointerMoved(x, y int32) {
 	}
 	w.pointer, w.pointerIn = w.point(x, y), true
 	w.hoverViews()
+}
+
+// touch reports the mouse as a finger, when ok.
+func (w *window) touch(ev core.Event, ok bool) {
+	if ok {
+		w.engine.Dispatch(ev)
+	}
+}
+
+// listensTouches reports whether a view listens to touches.
+func (w *window) listensTouches() bool {
+	for _, v := range w.views {
+		if v != nil && finger.Listens(v.events) {
+			return true
+		}
+	}
+	return false
+}
+
+// mouseMoved reports the mouse's move to the views under it that follow
+// moves, innermost first: OnMouseMove always, OnHoverMove with no button
+// down.
+func (w *window) mouseMoved(button bool) {
+	root := w.view(w.root)
+	if root == nil || !w.pointerIn {
+		return
+	}
+	under := viewsAt(root, w.pointer, func(v *view) bool {
+		return v.events.Has(core.EventMouseMove) || !button && v.events.Has(core.EventHoverMove)
+	}, nil)
+	if len(under) == 0 {
+		return
+	}
+	mods := modifiers()
+	for i := len(under) - 1; i >= 0; i-- {
+		v := under[i]
+		b, _ := w.surfaceBounds(v)
+		local := core.Point{X: w.pointer.X - b.Origin.X, Y: w.pointer.Y - b.Origin.Y}
+		if !button && v.events.Has(core.EventHoverMove) {
+			w.engine.Dispatch(core.Event{Kind: core.EventHoverMove, ID: v.id, Point: local, Page: w.pointer, Modifiers: mods})
+		}
+		if v.events.Has(core.EventMouseMove) {
+			w.engine.Dispatch(core.Event{Kind: core.EventMouseMove, ID: v.id, Point: local})
+		}
+	}
 }
 
 // background is the color behind v: its own or its nearest ancestor's.
@@ -1074,6 +1132,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	}
 	if message == wmMouseMove {
 		w.pointerMoved(int32(int16(lParam&0xffff)), int32(int16(lParam>>16&0xffff)))
+		w.mouseMoved(wParam&(mkLButton|mkRButton|mkMButton) != 0)
 	}
 	switch message {
 	case wmMouseMove, wmLButtonDown, wmLButtonUp, wmRButtonDown, wmRButtonUp, wmMButtonDown, wmMButtonUp,
@@ -1135,18 +1194,25 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if message == wmLButtonDown && w.pressBar(w.point(int32(x), int32(y))) {
 			return 0
 		}
+		if message == wmLButtonDown {
+			w.touch(w.mouse.Down(w.listensTouches(), w.point(int32(x), int32(y))))
+		}
 		w.pressOutside(int32(x), int32(y))
 		if message == wmLButtonDown {
 			at := w.point(int32(x), int32(y))
-			if w.fieldDown(at, w.countClicks(lParam), wParam&mkShift != 0) {
+			clicks := w.countClicks(lParam)
+			w.down = core.Event{Modifiers: modifiers(), Count: uint32(clicks)}
+			if w.fieldDown(at, clicks, wParam&mkShift != 0) {
 				return 0
 			}
+			w.pressDown(at)
 			w.panDown(at)
 		}
 	case wmMouseMove:
 		w.setHover(0) // off the caption buttons
 		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
 		at := w.point(int32(x), int32(y))
+		w.touch(w.mouse.Move(at))
 		if w.barDrag != nil {
 			w.dragBar(at)
 			return 0
@@ -1156,16 +1222,20 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 		w.hoverBars(at)
+		if wParam&mkLButton != 0 {
+			w.pressMoved(at)
+		}
 		if wParam&mkLButton != 0 && w.pan != nil {
 			w.panMove(at)
 		}
 		return 0
 	case wmLButtonUp:
+		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
+		at := w.point(int32(x), int32(y))
+		w.touch(w.mouse.Up(at))
 		if w.fieldUp() {
 			return 0
 		}
-		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
-		at := w.point(int32(x), int32(y))
 		if w.barDrag != nil {
 			w.releaseBar()
 			releaseCapture.Call()
@@ -1173,7 +1243,8 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			invalidateRect.Call(w.hwnd, 0, 0)
 			return 0
 		}
-		if !w.panUp(at) {
+		long := w.pressUp()
+		if !w.panUp(at) && !long {
 			w.press(at)
 		}
 		return 0
@@ -1185,6 +1256,12 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.releaseBar()
 		w.captureLost(lParam)
 		w.panLost()
+		if lParam != hwnd {
+			w.pressCancel()
+		}
+		if lParam != hwnd {
+			w.touch(w.mouse.Cancel(w.pointer))
+		}
 		return 0
 	case wmGesture:
 		if w.gesture(lParam) {
@@ -1221,6 +1298,8 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			w.wheelPinchEnded()
 		case caretTimer:
 			w.blink()
+		case longPressTimer:
+			w.longPressed()
 		}
 		return 0
 	case wmKeyDown:

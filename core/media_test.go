@@ -282,8 +282,12 @@ func TestAnimatorPanAndMath(t *testing.T) {
 		{Kind: AnimBind, View: 7, Prop: PropTranslateX, Node: 2},
 		{Kind: AnimBind, View: 7, Prop: PropTranslateY, Node: 3},
 	})
-	for _, x := range []Points{30, 100, 80} {
-		if !a.Pan(7, Point{X: x}) {
+	for i, x := range []Points{30, 100, 80} {
+		phase := GestureChanged
+		if i == 0 {
+			phase = GestureBegan
+		}
+		if !a.Gesture(&Event{Kind: EventPan, ID: 7, Phase: phase, Point: Point{X: x}}) {
 			t.Fatal("pan not bound")
 		}
 		a.Values(7)
@@ -336,5 +340,37 @@ func TestLayoutAnimationRidesTheNextBatch(t *testing.T) {
 	}
 	if p, done := LayoutSpringPreset.Update.At(700 * time.Millisecond); !over || p != 1 || !done {
 		t.Fatalf("spring: overshot %v, end %v %v", over, p, done)
+	}
+}
+
+func TestGesturesMoveTheirValuesFromWhereTheyWere(t *testing.T) {
+	a := NewAnimator(func(Event) {})
+	a.Apply([]AnimationOp{
+		{Kind: AnimCreateValue, Node: 1, Value: 40},
+		{Kind: AnimCreateValue, Node: 2, Value: 2},
+		{Kind: AnimCreateValue, Node: 3, Value: 0.5},
+		{Kind: AnimBindPan, View: 7, X: 1},
+		{Kind: AnimBindPinch, View: 7, Node: 2},
+		{Kind: AnimBindRotation, View: 7, Node: 3},
+	})
+	began := Event{Kind: EventPan, ID: 7, Phase: GestureBegan, Point: Point{X: 10}}
+	a.Gesture(&began)
+	if began.Values.X != 50 {
+		t.Fatalf("pan start values = %v, want 40 grabbed plus 10", began.Values)
+	}
+	ended := Event{Kind: EventPan, ID: 7, Phase: GestureEnded, Point: Point{X: -15}}
+	a.Gesture(&ended)
+	if ended.Values.X != 25 {
+		t.Fatalf("pan end values = %v, want 25", ended.Values)
+	}
+	a.Gesture(&Event{Kind: EventPinch, ID: 7, Phase: GestureBegan, Value: 1})
+	a.Gesture(&Event{Kind: EventPinch, ID: 7, Phase: GestureChanged, Value: 1.5})
+	a.Gesture(&Event{Kind: EventRotation, ID: 7, Phase: GestureBegan, Value: 0})
+	a.Gesture(&Event{Kind: EventRotation, ID: 7, Phase: GestureChanged, Value: 0.25})
+	if s, r := a.value(2).value, a.value(3).value; s != 3 || r != 0.75 {
+		t.Fatalf("pinch value %v, rotation value %v; want 3 and 0.75", s, r)
+	}
+	if a.Gesture(&Event{Kind: EventPinch, ID: 8, Phase: GestureBegan}) {
+		t.Fatal("a view with no value bound moved one")
 	}
 }

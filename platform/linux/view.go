@@ -7,6 +7,7 @@ import (
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/platform/internal/field"
+	"github.com/oneo-me/nsgo/platform/internal/finger"
 	"github.com/oneo-me/nsgo/platform/internal/hover"
 	"github.com/oneo-me/nsgo/platform/internal/scrollbar"
 )
@@ -25,6 +26,7 @@ type view struct {
 	cursorSet bool
 	events    core.EventMask
 	props     core.ViewProps
+	overflow  core.Bounds // where its children reach outside it (ItemOverflow)
 	deleted   bool
 
 	// A text view's layout and where it goes in the view.
@@ -158,19 +160,34 @@ func (w *window) menuKeys(entries []core.MenuEntry) {
 // hit returns the topmost view under p, in the coordinates of v's
 // parent's content, that matches.
 func hit(v *view, p core.Point, match func(*view) bool) *view {
-	if v.style.Hidden || !v.frame.Contains(p) {
+	if v.style.Hidden {
 		return nil
 	}
-	local := core.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
-	for i := len(v.children) - 1; i >= 0; i-- {
-		if h := hit(v.children[i], local, match); h != nil {
-			return h
+	self, children := v.reach(p)
+	if children {
+		local := core.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
+		for i := len(v.children) - 1; i >= 0; i-- {
+			if h := hit(v.children[i], local, match); h != nil {
+				return h
+			}
 		}
 	}
-	if match(v) {
+	if self && match(v) {
 		return v
 	}
 	return nil
+}
+
+// reach says what p, in the coordinates of v's parent's content, reaches
+// of v: v itself and its children, as core.Reach decides.
+func (v *view) reach(p core.Point) (self, children bool) {
+	return core.Reach(v.frame, &v.props, v.overflow, p)
+}
+
+// under reports whether p reaches v or its children.
+func (v *view) under(p core.Point) bool {
+	self, children := v.reach(p)
+	return !v.style.Hidden && (self || children)
 }
 
 // scrollsAt appends the scroll views under p, outermost first; p is in
@@ -182,25 +199,77 @@ func scrollsAt(v *view, p core.Point, out []*view) []*view {
 // viewsAt appends the views under p that match, outermost first: v and
 // the child drawn on top at p, down to the innermost.
 func viewsAt(v *view, p core.Point, match func(*view) bool, out []*view) []*view {
-	if v.style.Hidden || v.style.Opacity <= 0 || !v.frame.Contains(p) {
+	self, children := v.reach(p)
+	if v.style.Hidden || v.style.Opacity <= 0 || !self && !children {
 		return out
 	}
-	if match(v) {
+	if self && match(v) {
 		out = append(out, v)
+	}
+	if !children {
+		return out
 	}
 	p = core.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
 	for i := len(v.children) - 1; i >= 0; i-- {
-		if c := v.children[i]; !c.style.Hidden && c.frame.Contains(p) {
+		if c := v.children[i]; c.under(p) {
 			return viewsAt(c, p, match, out)
 		}
 	}
 	return out
 }
 
-// movePointer follows the pointer to surface point at.
-func (w *window) movePointer(at core.Point) {
+// movePointer follows the pointer to surface point at, with modifiers
+// state.
+func (w *window) movePointer(at core.Point, state uint32) {
 	w.lastPointer, w.pointerIn = at, true
 	w.hoverViews()
+	w.mouseMoved(state)
+	if state&gdkButton1 != 0 {
+		w.touch(w.mouse.Move(at))
+	}
+}
+
+// touch reports the mouse as a finger, when ok.
+func (w *window) touch(ev core.Event, ok bool) {
+	if ok {
+		w.engine.Dispatch(ev)
+	}
+}
+
+// listensTouches reports whether a view listens to touches.
+func (w *window) listensTouches() bool {
+	for _, v := range w.views {
+		if v != nil && finger.Listens(v.events) {
+			return true
+		}
+	}
+	return false
+}
+
+// mouseMoved reports the pointer's move to the views under it that
+// follow moves, innermost first: OnMouseMove always, OnHoverMove with no
+// button down.
+func (w *window) mouseMoved(state uint32) {
+	root := w.view(w.root)
+	if root == nil {
+		return
+	}
+	button := state&gdkButtonsMask != 0
+	under := viewsAt(root, w.lastPointer, func(v *view) bool {
+		return v.events.Has(core.EventMouseMove) || !button && v.events.Has(core.EventHoverMove)
+	}, nil)
+	for i := len(under) - 1; i >= 0; i-- {
+		v := under[i]
+		b, _ := w.surfaceBounds(v)
+		local := core.Point{X: w.lastPointer.X - b.Origin.X, Y: w.lastPointer.Y - b.Origin.Y}
+		if !button && v.events.Has(core.EventHoverMove) {
+			w.engine.Dispatch(core.Event{Kind: core.EventHoverMove, ID: v.id, Point: local, Page: w.lastPointer,
+				Modifiers: modifiers(state)})
+		}
+		if v.events.Has(core.EventMouseMove) {
+			w.engine.Dispatch(core.Event{Kind: core.EventMouseMove, ID: v.id, Point: local})
+		}
+	}
 }
 
 // hoverViews reports the pointer entering and leaving the views that
@@ -300,9 +369,9 @@ func barAt(v *view, p core.Point) (*view, core.Point) {
 	return nil, p
 }
 
-// press reports a click at p in the surface: on text with links, with
-// the offset of the character under it; elsewhere the engine finds the
-// view.
+// press reports a click at p in the surface, with the modifiers and
+// count of its press: on text with links, with the offset of the
+// character under it; elsewhere the engine finds the view.
 func (w *window) press(at core.Point) {
 	if root := w.view(w.root); root != nil {
 		v := hit(root, at, func(v *view) bool {
@@ -316,12 +385,17 @@ func (w *window) press(at core.Point) {
 				b, _ := w.surfaceBounds(v)
 				x := at.X - b.Origin.X - v.content.Origin.X
 				y := at.Y - b.Origin.Y - v.content.Origin.Y
-				w.engine.Dispatch(core.Event{Kind: core.EventPress, ID: v.id, Index: l.indexAt(x, y)})
+				ev := w.down
+				ev.Kind, ev.ID, ev.Index = core.EventPress, v.id, l.indexAt(x, y)
+				ev.Point, ev.Page = core.Point{X: at.X - b.Origin.X, Y: at.Y - b.Origin.Y}, at
+				w.engine.Dispatch(ev)
 				return
 			}
 		}
 	}
-	w.engine.PressAt(at)
+	ev := w.down
+	ev.Page = at
+	w.engine.PressAt(ev)
 }
 
 // pressOutside reports a press at p to each view that asks for presses
@@ -347,7 +421,7 @@ func (w *window) contextMenu(at core.Point) {
 	if v := hit(root, at, func(v *view) bool { return v.events.Has(core.EventContextMenu) }); v != nil {
 		b, _ := w.surfaceBounds(v)
 		w.engine.Dispatch(core.Event{Kind: core.EventContextMenu, ID: v.id,
-			Point: core.Point{X: at.X - b.Origin.X, Y: at.Y - b.Origin.Y}})
+			Point: core.Point{X: at.X - b.Origin.X, Y: at.Y - b.Origin.Y}, Page: at, Modifiers: w.down.Modifiers})
 	}
 }
 

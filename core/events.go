@@ -12,6 +12,10 @@ const (
 	EventPressDown
 	EventPressUp
 	// EventLongPress is a press held past the platform's delay.
+	//
+	// The four press events carry the position in the view (Point) and in
+	// its root view (Page), the Modifiers held when the press began and
+	// the click count (Count), where the platform knows them.
 	EventLongPress
 	// EventHoverIn and EventHoverOut follow a pointer over a view.
 	EventHoverIn
@@ -52,7 +56,8 @@ const (
 	// EventClipboard answers ItemReadClipboard Count with Text.
 	EventClipboard
 	// EventContextMenu is a secondary click (right click, control click)
-	// on ID at Point in the view's coordinates.
+	// on ID at Point in the view's coordinates and Page in its root
+	// view's, with the Modifiers held.
 	EventContextMenu
 	// EventKey is a key press matching a binding of the keymap (Text).
 	EventKey
@@ -126,6 +131,24 @@ const (
 	// EventModalSize is the Size and Insets of a modal the platform
 	// presents at a size of its own, such as an iOS sheet.
 	EventModalSize
+	// EventHoverMove is the mouse moving over a hovered view with no
+	// button down: Point, Page and Modifiers as EventContextMenu's.
+	EventHoverMove
+	// EventMouseMove is the mouse moving over the view, also with a
+	// button down (Point, in the view).
+	EventMouseMove
+	// EventTouch reports the fingers on the surface (Touches, with their
+	// PagePosition and Changed) as one goes down (Phase GestureBegan),
+	// moves (GestureChanged), lifts (GestureEnded) or the system takes
+	// them (GestureCancelled), at Time. Platforms send it, with no ID,
+	// while a view's mask has it; a mouse is finger 0.
+	EventTouch
+	// EventCaretMove is where a focused input's caret is: Point and Size
+	// in the input's view.
+	EventCaretMove
+	// EventPaste is what the user pasted into an input (Data, a
+	// *PasteEvent), before the text it inserts is reported.
+	EventPaste
 )
 
 // EventMask is a set of event kinds.
@@ -149,7 +172,11 @@ type Event struct {
 	Text  string
 	Count uint32
 	Point Point
-	Size  Size
+	// Page is a pointer's position in the root view, the surface or the
+	// modal, and Modifiers the keys held.
+	Page      Point
+	Modifiers Modifiers
+	Size      Size
 	// Loaded and Total are an image's bytes loaded and expected.
 	Loaded, Total int64
 	Index         int
@@ -171,16 +198,21 @@ type Event struct {
 	Finished bool
 	// Insets are what system UI covers of a modal (EventModalSize).
 	Insets Edges
+	// Touches are EventTouch's fingers.
+	Touches []Touch
+	// Values are the values a pan moves as it begins and ends
+	// (Animator.Gesture).
+	Values Point
 }
 
 // Mergeable reports whether a later event of the same kind and view
 // replaces this one before the engine handles it: scrolls, progress and
-// a gesture's moves, never its first or last report.
+// mouse moves and a gesture's moves, never its first or last report.
 func (e Event) Mergeable() bool {
 	switch e.Kind {
-	case EventScroll, EventProgress:
+	case EventScroll, EventProgress, EventHoverMove, EventMouseMove, EventCaretMove:
 		return true
-	case EventPan, EventPinch, EventRotation:
+	case EventPan, EventPinch, EventRotation, EventTouch:
 		return e.Phase == GestureChanged
 	}
 	return false

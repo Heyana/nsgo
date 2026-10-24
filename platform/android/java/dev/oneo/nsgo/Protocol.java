@@ -79,6 +79,8 @@ final class Protocol {
     static final int ITEM_ACCESSIBILITY_LABEL = 43;
     static final int ITEM_ACCESSIBILITY_FOCUS = 44;
     static final int ITEM_SCREEN = 45;
+    static final int ITEM_OVERFLOW = 46;
+    static final int ITEM_BLOCK_NATIVE = 47;
 
     // View kinds, as in core/mount.go.
     static final int KIND_VIEW = 1;
@@ -138,6 +140,15 @@ final class Protocol {
     static final int EVENT_KEY_PRESS = 44;
     static final int EVENT_COMPOSITION_CHANGE = 45;
     static final int EVENT_ACCESSIBILITY_ACTION = 46;
+    static final int EVENT_HOVER_MOVE = 49;
+    static final int EVENT_TOUCH = 51;
+    static final int EVENT_CARET_MOVE = 52;
+    static final int EVENT_PASTE = 53;
+
+    // core.PointerEvents.
+    static final int POINTER_EVENTS_NONE = 1;
+    static final int POINTER_EVENTS_BOX_NONE = 2;
+    static final int POINTER_EVENTS_BOX_ONLY = 3;
 
     // Web view commands, as in core/webview.go.
     static final int WEB_RELOAD = 1;

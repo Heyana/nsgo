@@ -45,7 +45,7 @@ type Video struct {
 	// OnBuffer receives whether playback waits for data.
 	OnBuffer func(buffering bool)
 	OnError  func(err error)
-	OnPress  func()
+	OnPress  func(PressEvent)
 	OnLayout func(Bounds)
 	Ref      *Ref
 	Label    string

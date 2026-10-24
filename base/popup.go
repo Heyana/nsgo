@@ -127,7 +127,7 @@ func (p Popover) Render(cx *core.Scope) core.Node {
 	return core.Group{
 		core.View{Ref: anchor, Style: p.Style, StyleFunc: p.StyleFunc, Label: p.Label, TestID: p.TestID, Role: core.RoleButton,
 			Expanded: st.open,
-			OnPress:  func() { st.set(!st.open(), ReasonTriggerPress) },
+			OnPress:  func(core.PressEvent) { st.set(!st.open(), ReasonTriggerPress) },
 			Children: []core.Node{p.Trigger}},
 		core.Show{When: st.open, Then: func(cx *core.Scope) core.Node {
 			return core.Overlay{
@@ -303,7 +303,7 @@ func modalLayer(st *popup, m core.Modal, backdrop core.Style, backdropFunc func(
 		var nodes []core.Node
 		if backdrop != (core.Style{}) || backdropFunc != nil {
 			nodes = append(nodes, core.View{Style: fill.Merge(backdrop), StyleFunc: backdropFunc,
-				OnPress: func() { st.cancel(ReasonBackdropPress, keepOnBackdrop) }})
+				OnPress: func(core.PressEvent) { st.cancel(ReasonBackdropPress, keepOnBackdrop) }, NoFocus: true})
 		}
 		nodes = append(nodes, core.View{Style: popupStyle, StyleFunc: popupFunc, Role: core.RoleDialog,
 			Label: label, TestID: testID, Children: children})

@@ -420,6 +420,7 @@ func (in *textInput) reveal() {
 		in.scroll = x + caret - in.width
 	}
 	in.origin(layout) // clamps it to the text
+	in.caretMoved()
 }
 
 // wakeCaret shows the caret for a whole blink: typing and moving never
@@ -1406,6 +1407,9 @@ func (w *window) cut(in *textInput) {
 }
 
 func (w *window) paste(in *textInput) {
+	if !w.pasteEvent(in) {
+		return
+	}
 	text := pasted(w.clipboard())
 	if in.multiline() {
 		text = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(w.clipboard())
@@ -1428,6 +1432,12 @@ func (w *window) fieldMenu(in *textInput, x, y int32) {
 	editable, masked, selected := in.editable(), in.masked(), m.hasSelection()
 	s, e := m.selection()
 	clip, _, _ := isClipboardFormatAvailable.Call(cfUnicodeText)
+	if clip == 0 && in.fs.Events.Has(core.EventPaste) {
+		// A field that hears pastes takes images and files too.
+		hdrop, _, _ := isClipboardFormatAvailable.Call(cfHDrop)
+		dib, _, _ := isClipboardFormatAvailable.Call(cfDIB)
+		clip = hdrop | dib
+	}
 	type item struct {
 		label   string
 		enabled bool

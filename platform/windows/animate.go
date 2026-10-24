@@ -203,12 +203,13 @@ func (w *window) animatedChanged() {
 	}
 }
 
-// panned moves the values bound to drags on v to translation, before the
-// move is reported: the next frame draws them there.
-func (w *window) panned(v *view, translation core.Point) {
-	if w.animator.Pan(v.id, translation) {
+// gestured moves the values bound to a pan, pinch or rotation before
+// it is reported, for the next frame to draw them there, and reports it.
+func (w *window) gestured(ev core.Event) {
+	if w.animator.Gesture(&ev) {
 		w.animatedChanged()
 	}
+	w.engine.Dispatch(ev)
 }
 
 // setStyle applies v's new style, animating to it when it has a

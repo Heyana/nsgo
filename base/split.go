@@ -244,7 +244,7 @@ func (s Split) Render(cx *core.Scope) core.Node {
 
 	var clicked bool
 	var stopClick func() bool
-	press := func() {
+	press := func(core.PressEvent) {
 		if disabled() {
 			return
 		}

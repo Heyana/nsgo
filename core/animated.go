@@ -437,6 +437,10 @@ const (
 	AnimBindScroll
 	// AnimRelease drops Node.
 	AnimRelease
+	// AnimBindPinch has pinches on View scale value Node, and
+	// AnimBindRotation has rotations on View turn it, in radians.
+	AnimBindPinch
+	AnimBindRotation
 )
 
 // AnimationOp is one change to the animation graph.
@@ -556,6 +560,13 @@ func (t *Tree) bindPan(cx *Scope, n *node, xy AnimatedXY) {
 		return
 	}
 	t.anim.add(AnimationOp{Kind: AnimBindPan, View: n.id, X: xy.idX(), Y: xy.idY()})
+}
+
+// bindGestureValue binds value v to view n's pinches or rotations.
+func (t *Tree) bindGestureValue(n *node, kind AnimationOpKind, v *AnimatedValue) {
+	if v != nil {
+		t.anim.add(AnimationOp{Kind: kind, View: n.id, Node: v.id})
+	}
 }
 
 func (t *Tree) bindScroll(cx *Scope, n *node, xy AnimatedXY) {

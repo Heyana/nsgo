@@ -77,7 +77,7 @@ func Root(cx *core.Scope) core.Node {
 					Style:       field.Merge(core.Style{FlexGrow: 1}),
 					TestID:      "draft",
 				},
-				base.Button{OnPress: add, Style: button, Label: "Add", TestID: "add", Children: []core.Node{
+				base.Button{OnPress: func(core.PressEvent) { add() }, Style: button, Label: "Add", TestID: "add", Children: []core.Node{
 					core.Text{Content: "Add", Style: label},
 				}},
 			}},
@@ -92,7 +92,7 @@ func Root(cx *core.Scope) core.Node {
 										Style: core.Style{Color: muted, FontSize: 15}},
 									core.Text{ContentFunc: func() string { return todo().Text },
 										Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15}},
-									base.Button{OnPress: func() { remove(todo().ID) }, Label: "Done",
+									base.Button{OnPress: func(core.PressEvent) { remove(todo().ID) }, Label: "Done",
 										Style: core.Style{Padding: core.Symmetric(4, 10), CornerRadius: 6, Background: core.RGB(0xeceae4),
 											Hover:  &core.Style{Background: core.RGB(0xe4e3e1)},
 											Active: &core.Style{Background: core.RGB(0xd8d7d5)}},

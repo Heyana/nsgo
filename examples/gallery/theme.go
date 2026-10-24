@@ -198,7 +198,7 @@ func (t *theme) destructive(label string, onPress func()) core.Node {
 }
 
 func (t *theme) labelled(style core.Style, label string, onPress func()) core.Node {
-	return base.Button{OnPress: onPress, Label: label, Style: style, Children: []core.Node{core.Text{Content: label}}}
+	return base.Button{OnPress: func(core.PressEvent) { onPress() }, Label: label, Style: style, Children: []core.Node{core.Text{Content: label}}}
 }
 
 // demo is one card of a section: a title, a line saying what it shows

@@ -19,7 +19,7 @@ The app builds a graph once: `AnimatedValue`s, nodes derived with `Interpolate` 
 - `Timing`, `Spring` and `Decay` move one value; `Sequence`, `Parallel`, `Stagger`, `Delay` and `Loop` compose them. `Scope.StartAnimation` runs one and calls back once with whether it finished. Each step of a composite starts at the exact end of the one before.
 - Drivers are closed-form functions of the time since they started, so dropped frames change nothing: React Native's damped spring, and NSH's decay, which stops at or bounces off its bounds at the exact time it reaches them.
 - A value's `Set`, `Stop`, or another animation of it ends its run unfinished; so does the owner going. `Read` asks the platform for a value.
-- `View.PanValues` has drags move values to their translation, and `Scroll.OffsetValues` follows a scroll view's offset, both in the frame the pointer or the content moves.
+- `View.PanValues` has drags move values by their translation, `PinchValue` scales a value by a pinch and `RotationValue` turns one by a rotation, each from where the value was as the gesture began, so a gesture grabs a value an animation is moving (`Animator.Gesture`). A pan's start and end report the values in `PanEvent.Values`, to snap from. `Scroll.OffsetValues` follows a scroll view's offset. Each moves in the frame the pointer or the content does.
 - Values are released with the owner that made them; derived nodes with the owner running when they were made.
 
 The graph travels as `ItemAnimation`, after the batch's views. Each backend keeps a `core.Animator`, applies the ops, steps it once a frame while a run is live and draws what `Changed` reports with `AnimatedValues.Apply` over the view's style. Finished runs and reads come back as `EventAnimation`.

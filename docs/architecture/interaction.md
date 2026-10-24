@@ -1,6 +1,6 @@
 # Interaction
 
-Accessibility, gestures and file drops: what the core sends so platforms decide on the main thread. Read this before changing accessibility props, gestures or drops.
+Accessibility, pointer events, keyboard focus, touch areas, touches and the responder, gestures and file drops: what the core sends so platforms decide on the main thread. Read this before changing accessibility props, pointer events, focus, touches, gestures or drops.
 
 ## Accessibility
 
@@ -13,6 +13,45 @@ Elements carry NSH's accessibility props: `Role`, `Label` (`LabelFunc` when it c
 - The web maps the props to ARIA. A group hides its children with `aria-hidden`, and a focused view's arrow keys, Escape, Enter and Space perform its standard actions; ARIA has no custom actions, so those are not offered.
 - Android sets `importantForAccessibility`, live regions and screen-reader focus on the view, and range info, hint, state description and actions in its `AccessibilityNodeInfo`. It has no escape or magic tap.
 - Windows and Linux keep the props but expose none of them, since neither backend has an accessibility provider yet.
+
+## Pointer events
+
+Presses, hovers and secondary clicks carry where they happened, as NSH's `PressEvent`, `HoverEvent` and `ContextMenuEvent` do: `Position` in the view, `PagePosition` in its root view (the surface, or the modal around it) and the `Modifiers` held (`Platform` is Command on Apple platforms, the Windows or Super key elsewhere). A `PressEvent` also counts its `Clicks`.
+
+- `OnPress`, `OnLongPress`, `OnPressDown` and `OnPressUp` take a `PressEvent` with where the press went down and the keys held then. A press from a screen reader or the keyboard has none.
+- `OnHoverMove` follows the mouse over a hovered view with no button down; a handler alone makes the view hoverable, as `OnHoverIn` does. `OnMouseMove` gets each move over the view in its coordinates, also with a button down, on desktops and the web. Each listening view under the pointer hears a move, innermost first, and the engine merges a view's queued moves.
+- macOS reads the `NSEvent`: `clickCount`, `modifierFlags`, and moves from a tracking area with `NSTrackingMouseMoved`. A drag goes only to the view it began in, so the surface reports drag moves to the views under the pointer itself.
+- Windows counts clicks against the system's double-click time and distance, and reads the keys with `GetKeyState`; Linux takes GTK's press count and the controller's modifier state. Both route moves through the views they hit-test.
+- The web counts clicks itself, since pointer events carry none: 500 ms and 4 points apart at most. Moves are mouse `pointermove`s.
+- iOS reads the touch's `tapCount` and the event's `modifierFlags`; it has no hover yet. Android reads `MotionEvent`'s meta state and hover moves, counts every press as one click, and sends the page position and keys after the rest of an event.
+
+## Keyboard focus
+
+On macOS and the web, views that take presses are Tab stops beside the text inputs, unless disabled, hidden, `NoFocus` (a backdrop that closes a popover) or under a newer modal; Return and Space press the focused one once, whatever the keymap binds, and a click presses without focusing. `Style.Focus` follows the keyboard focus. The other backends move the focus between fields only.
+
+- macOS puts the views in AppKit's key view loop (`acceptsFirstResponder`, `canBecomeKeyView`, the window recalculating it); the surface, which holds selections, hands Tab to the window's first key view. A modal remembers what had the focus as it came and gives it back as it goes, if the focus fell to the window; a field comes back with the caret at the end.
+- The web makes them `tabindex=0`, reports focus while `:focus-visible`, prevents a pressable's `mousedown` from moving the focus, and makes what a modal covers `inert` until it goes, then gives the focus back.
+
+## Touch areas
+
+`View.PointerEvents` (`Auto`, `None`, `BoxNone`: only the children, `BoxOnly`: only the view), `HitSlop` and `DelayLongPress` go in `ViewProps`. Children placed outside their parent take touches where they are drawn: for each view whose children reach outside it, the core sends `ItemOverflow` with the area they cover, from layout frames and only when it changes. Clipping and scroll views have none, and transforms are not covered.
+
+- `core.Reach` decides for a point what it reaches of a view: the view itself by its bounds and slop, its children by its bounds and area. The core's own hit test, Windows' and Linux's walkers ask it on the way down.
+- macOS and iOS override `hitTest:`: outside the bounds they search the subviews of a view with an area and never return the view itself, except in its slop; a press ends as a press in the slop too.
+- Android's `Group` hands a touch outside every child's bounds to the topmost child whose slop or area holds it, for the rest of the gesture; `None` declines the touch, `BoxNone` leaves it to the children and `BoxOnly` intercepts theirs.
+- The web needs no area, since the browser finds children outside their parent itself. `pointer-events` classes carry `PointerEvents`, and a slop is a pseudo-element around the view.
+- A slop works where the parent's bounds or area hold it, as in UIKit and React Native.
+- Long presses wait 500 ms, or the view's `DelayLongPress`: a timer on macOS, iOS, the web and Linux, which no longer uses GTK's long press gesture, and on Android when the delay is the view's own, the system's long click then only taking the press. Windows reports press down, up and long presses from the left button itself and leaves the press to the engine's hit test at the release.
+
+## Touches and the responder
+
+`View.OnTouch` hears the fingers and `View.Responder` takes part in React Native's touch responder, as NSH's core runs them for Rust components (`core/touch.go`). Platforms send `EventTouch` with each finger's surface position while a view's mask has it; the core finds the view under a finger from its own frames and the listening views around it, which hear the touches from the finger outwards.
+
+- The responder is negotiated as in React Native: captures from the outermost in, then from the finger outwards; with a responder, only the views around it are asked, and `Keep` refuses to hand the touches over. A claim's `Ask` decides with the `PanGesture`; the responder stays pressed for its `Active` style until the touches end.
+- A responder whose claim does not `LetNative` sends `ItemBlockNative`: iOS disables the pans of the scroll views around it, Android disallows their interception and the web cancels `touchmove`. The desktops' mouse drags scroll nothing, so they ignore it.
+- A scroll view that starts dragging first cancels the touches: iOS from `scrollViewWillBeginDragging:`, Android when a scroll view takes the touch, the web through `pointercancel`.
+- The desktops report the primary mouse button as finger 0 (`platform/internal/finger`); iOS tracks every touch with a gesture recognizer that never recognizes, Android in its root view's `dispatchTouchEvent` and the web with capturing pointer listeners.
+- A `TouchClaim` with `OnPan` claims as the platform activates the view's `PanActivation`, so scroll views share the touch until then: the view becomes the responder exactly when its pan begins (`EventPan`'s first report), and its other claims are not asked.
 
 ## Cursors
 

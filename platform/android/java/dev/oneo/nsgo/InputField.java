@@ -33,6 +33,12 @@ final class InputField extends EditText {
         void send(int kind, long count, int index, String text, boolean finished);
 
         void blur();
+
+        /** The caret is at (x, y), w by h, in points in the field's parent. */
+        void caret(float x, float y, float w, float h);
+
+        /** The user pasted text and data (as Go's readPaste reads it). */
+        void paste(String text, String data);
     }
 
     /** core.SubmitBehavior's codes, as InputConfig.Submit resolves them. */
@@ -53,6 +59,9 @@ final class InputField extends EditText {
     /** Inside the text watcher, where replacing the text would corrupt the IME's edit. */
     private boolean watching;
     private int selStart = -1, selEnd = -1;
+    /** core.PasteReport: a paste is only reported. */
+    private boolean pasteReport;
+    private boolean caretPosted;
 
     InputField(Context context, Listener listener) {
         super(context);
@@ -127,11 +136,89 @@ final class InputField extends EditText {
     @Override
     protected void onSelectionChanged(int start, int end) {
         super.onSelectionChanged(start, end);
+        // After the layout takes the text the selection moved with.
+        if (!caretPosted) {
+            caretPosted = true;
+            post(() -> {
+                caretPosted = false;
+                caretMoved();
+            });
+        }
         if (listener == null || applying || !listener.has(Protocol.EVENT_SELECTION_CHANGE)) return;
         if (start == selStart && end == selEnd) return;
         selStart = start;
         selEnd = end;
         listener.send(Protocol.EVENT_SELECTION_CHANGE, Math.max(start, end), Math.min(start, end), "", false);
+    }
+
+    /** Reports where the caret is, while the field has the focus, from its Layout. */
+    void caretMoved() {
+        if (listener == null || !hasFocus() || !listener.has(Protocol.EVENT_CARET_MOVE)) return;
+        android.text.Layout l = getLayout();
+        float density = getResources().getDisplayMetrics().density;
+        if (l == null) {
+            listener.caret(0, 0, 0, 0);
+            return;
+        }
+        int at = Math.max(getSelectionEnd(), 0), line = l.getLineForOffset(at);
+        float x = l.getPrimaryHorizontal(at) + getTotalPaddingLeft() - getScrollX() + getLeft();
+        float top = l.getLineTop(line) + getTotalPaddingTop() - getScrollY() + getTop();
+        float bottom = l.getLineBottom(line) + getTotalPaddingTop() - getScrollY() + getTop();
+        listener.caret(x / density, top / density, 2, (bottom - top) / density);
+    }
+
+    @Override
+    protected void onScrollChanged(int x, int y, int oldX, int oldY) {
+        super.onScrollChanged(x, y, oldX, oldY);
+        caretMoved();
+    }
+
+    @Override
+    public boolean onTextContextMenuItem(int id) {
+        if ((id == android.R.id.paste || id == android.R.id.pasteAsPlainText) && listener != null
+                && listener.has(Protocol.EVENT_PASTE)) {
+            boolean insert = reportPaste();
+            if (!insert) return true;
+        }
+        return super.onTextContextMenuItem(id);
+    }
+
+    /**
+     * Reports the clipboard as a paste: its text, the local files it
+     * names and the bytes of the images it holds. Returns whether its
+     * text goes in.
+     */
+    private boolean reportPaste() {
+        android.content.ClipboardManager cm =
+                (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+        android.content.ClipData clip = cm == null ? null : cm.getPrimaryClip();
+        StringBuilder text = new StringBuilder(), data = new StringBuilder();
+        for (int i = 0; clip != null && i < clip.getItemCount(); i++) {
+            android.content.ClipData.Item item = clip.getItemAt(i);
+            android.net.Uri uri = item.getUri();
+            if (uri != null && "file".equals(uri.getScheme())) {
+                data.append("uri\t").append(uri).append('\n');
+            } else if (uri != null) {
+                String mime = getContext().getContentResolver().getType(uri);
+                if (mime != null && mime.startsWith("image/")) {
+                    try (java.io.InputStream s = getContext().getContentResolver().openInputStream(uri)) {
+                        java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+                        byte[] buf = new byte[16384];
+                        for (int n; s != null && (n = s.read(buf)) > 0; ) b.write(buf, 0, n);
+                        data.append("file\t").append(mime).append('\t')
+                                .append(android.util.Base64.encodeToString(b.toByteArray(), android.util.Base64.NO_WRAP))
+                                .append('\n');
+                    } catch (IOException | SecurityException e) {
+                        // An image the app may not read is left out.
+                    }
+                    continue;
+                }
+            }
+            CharSequence t = item.getText();
+            if (t != null) text.append(t);
+        }
+        listener.paste(text.toString(), data.toString());
+        return text.length() > 0 && !pasteReport;
     }
 
     @Override
@@ -141,6 +228,8 @@ final class InputField extends EditText {
             // A composition does not outlive the focus.
             clearComposingText();
             syncComposition();
+        } else {
+            post(this::caretMoved);
         }
     }
 
@@ -159,6 +248,7 @@ final class InputField extends EditText {
         boolean noAutoCorrect = Protocol.flag(flags, 0), hideCaret = Protocol.flag(flags, 1);
         String autofill = Protocol.readString(in);
         int placeholderColor = in.readInt(), selectionColor = in.readInt();
+        pasteReport = in.readUnsignedByte() == 1;
 
         boolean restart = configured && multiline && this.submit != submit;
         this.multiline = multiline;

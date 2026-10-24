@@ -8,6 +8,7 @@ package ios
 
 import (
 	"runtime"
+	"slices"
 	"strings"
 	"structs"
 	"sync/atomic"
@@ -41,6 +42,8 @@ type view struct {
 
 	pressing  atomic.Bool
 	longFired atomic.Bool
+	pressAt   core.Event  // where the press began, and how
+	overflow  core.Bounds // where its children reach outside it (ItemOverflow)
 
 	layout *apple.Layout // a text view's
 	box    core.Bounds
@@ -98,13 +101,18 @@ type surface struct {
 	engine  *engine.Engine
 	batches queue.Batches
 	views   []*view // index is NodeID
+	fingers fingers // the touches reported
 	env     core.Environment
 
 	keyboard         core.Points
 	keyboardDuration time.Duration
 
-	keys        map[string]bool // the keymap's bindings
-	statusBar   int             // the UIStatusBarStyle the controller asks for
+	keys []core.KeyBinding // the keymap's bindings
+	// held is the binding a held key fires again, on a timer of its own:
+	// UIKit reports a held key's press once.
+	held        string
+	heldStop    chan struct{}
+	statusBar   int // the UIStatusBarStyle the controller asks for
 	hideBar     bool
 	barAnimated bool
 	// headers are the navigation bar's heights; oriented the modals
@@ -210,6 +218,7 @@ func loadUIKit() {
 	uiView := objc.GetClass("UIView")
 	common := []objc.MethodDef{
 		{Cmd: sel("drawRect:"), Fn: drawRect},
+		{Cmd: sel("hitTest:withEvent:"), Fn: hitTest},
 		{Cmd: sel("touchesBegan:withEvent:"), Fn: touchesBegan},
 		{Cmd: sel("touchesEnded:withEvent:"), Fn: touchesEnded},
 		{Cmd: sel("touchesCancelled:withEvent:"), Fn: touchesCancelled},
@@ -218,6 +227,7 @@ func loadUIKit() {
 	common = append(common, gestureMethods()...)
 	common = append(common, navMethods()...)
 	registerGestures()
+	registerTouches()
 	registerNav()
 	registerSelection()
 	classView = register("NsgoView", uiView, nil, common)
@@ -250,6 +260,8 @@ func loadUIKit() {
 			self.Send(selBecomeFirst)
 		}},
 		{Cmd: sel("pressesBegan:withEvent:"), Fn: pressesBegan},
+		{Cmd: sel("pressesEnded:withEvent:"), Fn: pressesEnded},
+		{Cmd: sel("pressesCancelled:withEvent:"), Fn: pressesEnded},
 		{Cmd: sel("copy:"), Fn: controllerCopy},
 		{Cmd: sel("selectAll:"), Fn: controllerSelectAll},
 		{Cmd: sel("canPerformAction:withSender:"), Fn: controllerCanPerform},
@@ -317,6 +329,7 @@ func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID)
 	watcher.Send(sel("setDelaysTouchesEnded:"), false)
 	s.native.Send(sel("addGestureRecognizer:"), watcher)
 	watcher.Send(selRelease)
+	s.addTracker()
 	s.headers = headerHeights()
 	s.env = s.environment()
 	opts := engine.Options{
@@ -550,11 +563,15 @@ func (s *surface) apply(b *core.MountBatch) {
 		case core.ItemAnnounce:
 			uiAccessibilityPost(announcement, apple.NSString(it.Value))
 			continue
-		case core.ItemKeymap:
-			s.keys = map[string]bool{}
-			for _, k := range it.Keys {
-				s.keys[k] = true
+		case core.ItemBlockNative:
+			var v *view
+			if int(it.ID) < len(s.views) {
+				v = s.views[it.ID]
 			}
+			s.blockNative(v)
+			continue
+		case core.ItemKeymap:
+			s.keys = it.Keys
 			continue
 		case core.ItemStatusBar:
 			s.setStatusBar(it.StatusBar)
@@ -599,6 +616,8 @@ func (s *surface) apply(b *core.MountBatch) {
 				parent.Send(sel("bringSubviewToFront:"), p.bar.bar)
 			}
 			s.appear(v, lb, it.Parent)
+		case core.ItemOverflow:
+			v.overflow = it.Frame
 		case core.ItemFrame:
 			s.setFrame(v, it.Frame, lb)
 			if v.bar != nil {
@@ -857,8 +876,96 @@ func (v *view) dispatch(kind core.EventKind) {
 func (v *view) report(e core.Event) {
 	if v.events.Has(e.Kind) {
 		e.ID = v.id
+		// Values bound to the gesture move before it is reported, so they
+		// are drawn in the frame that shows the move.
+		if s := v.surface; s.animator.Gesture(&e) {
+			apple.WithoutAnimation(s.applyAnimated)
+		}
 		v.surface.engine.Dispatch(e)
 	}
+}
+
+// pointer returns where touch is in v and in v's root view, the modal
+// around it or the surface, and the modifier keys event holds.
+func (v *view) pointer(kind core.EventKind, touch, event objc.ID) core.Event {
+	root := v.surface.native
+	for n := v.native; n != 0 && n != root; n = n.Send(selSuperview) {
+		if m := views[n]; m != nil && m.native == n && m.kind == core.KindModal {
+			root = n
+			break
+		}
+	}
+	p := objc.Send[apple.CGPoint](touch, selLocationInView, v.native)
+	page := objc.Send[apple.CGPoint](touch, selLocationInView, root)
+	return core.Event{Kind: kind, Point: core.Point{X: core.Points(p.X), Y: core.Points(p.Y)},
+		Page:      core.Point{X: core.Points(page.X), Y: core.Points(page.Y)},
+		Modifiers: apple.Modifiers(objc.Send[uint](event, sel("modifierFlags")))}
+}
+
+// pressed reports kind about the press v follows, with where it began.
+func (v *view) pressed(kind core.EventKind) {
+	e := v.pressAt
+	e.Kind = kind
+	v.report(e)
+}
+
+// hitTest is UIKit's hit test of self at p, in its own coordinates, by
+// its pointer events and hit slop, and looking in its children where
+// they reach outside it, as core.Reach says.
+func hitTest(self objc.ID, cmd objc.SEL, p apple.CGPoint, event objc.ID) objc.ID {
+	v := views[self]
+	if v == nil || v.native != self {
+		return apple.SendSuper[objc.ID](self, cmd, p, event)
+	}
+	b := objc.Send[apple.CGRect](self, selBounds)
+	frame := core.Bounds{Size: core.Size{Width: core.Points(b.Size.Width), Height: core.Points(b.Size.Height)}}
+	at := core.Point{X: core.Points(p.X - b.Origin.X), Y: core.Points(p.Y - b.Origin.Y)}
+	own, children := core.Reach(frame, &v.props, v.overflow, at)
+	if !frame.Contains(at) {
+		if objc.Send[bool](self, sel("isHidden")) || !objc.Send[bool](self, sel("isUserInteractionEnabled")) {
+			return 0
+		}
+		if children {
+			subs := self.Send(sel("subviews"))
+			for i := objc.Send[int](subs, sel("count")) - 1; i >= 0; i-- {
+				sub := subs.Send(sel("objectAtIndex:"), i)
+				local := objc.Send[apple.CGPoint](self, sel("convertPoint:toView:"), p, sub)
+				if hit := sub.Send(cmd, local, event); hit != 0 {
+					return hit
+				}
+			}
+		}
+		if own {
+			return self
+		}
+		return 0
+	}
+	hit := apple.SendSuper[objc.ID](self, cmd, p, event)
+	switch {
+	case !own && !children:
+		return 0
+	case !children && hit != 0: // box-only
+		return self
+	case !own && hit == self: // box-none
+		return 0
+	}
+	return hit
+}
+
+// within reports whether p, in v's coordinates, is on v of bounds b or
+// in its hit slop, where a press ends as a press.
+func (v *view) within(p apple.CGPoint, b apple.CGRect) bool {
+	s := v.props.HitSlop
+	return p.X >= -float64(s.Left) && p.Y >= -float64(s.Top) && p.X < b.Size.Width+float64(s.Right) &&
+		p.Y < b.Size.Height+float64(s.Bottom)
+}
+
+// longPressDelay is how long a touch on v is held to be a long press.
+func (v *view) longPressDelay() time.Duration {
+	if d := v.props.DelayLongPress; d > 0 {
+		return d
+	}
+	return longPressDelay
 }
 
 func (v *view) pressable() bool {
@@ -890,8 +997,7 @@ func touchesBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	// A secondary click of a pointer opens a context menu.
 	const secondary = 1 << 1
 	if v != nil && v.events.Has(core.EventContextMenu) && objc.Send[uint](event, sel("buttonMask"))&secondary != 0 {
-		p := objc.Send[apple.CGPoint](touches.Send(selAnyObject), selLocationInView, self)
-		v.report(core.Event{Kind: core.EventContextMenu, Point: core.Point{X: core.Points(p.X), Y: core.Points(p.Y)}})
+		v.report(v.pointer(core.EventContextMenu, touches.Send(selAnyObject), event))
 		return
 	}
 	if v == nil || !v.pressable() {
@@ -900,12 +1006,16 @@ func touchesBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	}
 	v.pressing.Store(true)
 	v.longFired.Store(false)
-	v.dispatch(core.EventPressDown)
+	touch := touches.Send(selAnyObject)
+	v.pressAt = v.pointer(core.EventPressDown, touch, event)
+	v.pressAt.Count = uint32(max(objc.Send[int](touch, sel("tapCount")), 1))
+	v.pressed(core.EventPressDown)
 	if v.events.Has(core.EventLongPress) {
-		e := v.surface.engine
-		time.AfterFunc(longPressDelay, func() {
+		e, long := v.surface.engine, v.pressAt
+		long.Kind, long.ID = core.EventLongPress, v.id
+		time.AfterFunc(v.longPressDelay(), func() {
 			if v.pressing.Load() && v.longFired.CompareAndSwap(false, true) {
-				e.Dispatch(core.Event{Kind: core.EventLongPress, ID: v.id})
+				e.Dispatch(long)
 			}
 		})
 	}
@@ -918,7 +1028,7 @@ func touchesCancelled(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 		return
 	}
 	if v.pressing.Swap(false) {
-		v.dispatch(core.EventPressUp)
+		v.pressed(core.EventPressUp)
 	}
 }
 
@@ -931,15 +1041,17 @@ func touchesEnded(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	p := objc.Send[apple.CGPoint](touches.Send(selAnyObject), selLocationInView, self)
 	b := objc.Send[apple.CGRect](self, selBounds)
 	pressed := v.pressing.Swap(false)
-	v.dispatch(core.EventPressUp)
-	if pressed && !v.longFired.Load() && p.X >= 0 && p.Y >= 0 && p.X < b.Size.Width && p.Y < b.Size.Height {
+	v.pressed(core.EventPressUp)
+	if pressed && !v.longFired.Load() && v.within(p, b) {
 		index := -1
 		if v.layout != nil {
 			box := v.box
 			index = v.layout.IndexAt(p, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y),
 				float64(box.Size.Width), float64(box.Size.Height)))
 		}
-		v.report(core.Event{Kind: core.EventPress, Index: index})
+		e := v.pressAt
+		e.Kind, e.Index = core.EventPress, index
+		v.report(e)
 	}
 }
 
@@ -954,30 +1066,74 @@ var keyNames = map[int]string{
 // pressesBegan takes hardware key presses the keymap binds, as EventKey,
 // and passes the rest on.
 func pressesBegan(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
-	binding := ""
+	binding, consumed := "", false
 	if len(app.keys) > 0 {
 		apple.ForEach(presses, func(press objc.ID) {
 			key := press.Send(sel("key"))
-			if key == 0 || binding != "" {
+			if key == 0 || consumed {
 				return
 			}
 			name, ok := keyNames[objc.Send[int](key, sel("keyCode"))]
 			if !ok {
 				name = strings.ToLower(apple.GoString(key.Send(sel("charactersIgnoringModifiers"))))
 			}
-			for _, k := range apple.KeyNames(name, objc.Send[uint](key, sel("modifierFlags"))) {
-				if name != "" && app.keys[k] {
-					binding = k
-					return
-				}
+			if name != "" {
+				binding, consumed = core.FindKey(app.keys, apple.KeyNames(name, objc.Send[uint](key, sel("modifierFlags"))),
+					app.editing(), false)
 			}
 		})
 	}
-	if binding == "" {
+	if !consumed {
 		apple.Super(self, cmd, presses, event)
 		return
 	}
 	app.engine.Dispatch(core.Event{Kind: core.EventKey, Text: binding})
+	if i := slices.IndexFunc(app.keys, func(b core.KeyBinding) bool { return b.Key == binding }); i >= 0 && app.keys[i].Repeat {
+		app.repeatKey(binding)
+	}
+}
+
+// pressesEnded stops repeating a held key's binding.
+func pressesEnded(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
+	if app.heldStop != nil {
+		close(app.heldStop)
+		app.heldStop, app.held = nil, ""
+	}
+	apple.Super(self, cmd, presses, event)
+}
+
+// repeatKey fires binding again while its key is held, as a hardware
+// keyboard's auto-repeat would: after 500 ms, then 30 times a second.
+func (s *surface) repeatKey(binding string) {
+	if s.heldStop != nil {
+		close(s.heldStop)
+	}
+	stop := make(chan struct{})
+	s.held, s.heldStop = binding, stop
+	e := s.engine
+	go func() {
+		t := time.NewTimer(500 * time.Millisecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				e.Dispatch(core.Event{Kind: core.EventKey, Text: binding})
+				t.Reset(33 * time.Millisecond)
+			}
+		}
+	}()
+}
+
+// editing reports whether a text input has the keyboard focus.
+func (s *surface) editing() bool {
+	for _, v := range s.views {
+		if v != nil && v.input != nil && v.input.focused {
+			return true
+		}
+	}
+	return false
 }
 
 func surfaceLayout(self objc.ID, cmd objc.SEL) {

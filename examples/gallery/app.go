@@ -77,7 +77,7 @@ func init() {
 		{"Video", groupMedia, lucide.Clapperboard, "The platform's video player: playback the app drives, resize modes and the platform's controls.", videoPage},
 		{"Native View", groupMedia, lucide.Puzzle, "The app's own platform views inside the tree, with props, events and commands.", nativePage},
 		{"Animation", groupMedia, lucide.Sparkles, "Transitions, animated values and layout animations run by the platform.", animationPage},
-		{"Gestures", groupMedia, lucide.Hand, "Pans, pinches and rotations, sharing touches with scrolling.", gesturesPage},
+		{"Gestures", groupMedia, lucide.Hand, "Pointer events, pans, pinches and rotations, sharing touches with scrolling.", gesturesPage},
 
 		{"Window", groupDesktop, lucide.AppWindow, "The gallery's own title bar, its background material and the desktop window's commands.", windowPage},
 		{"App Menu", groupDesktop, lucide.Menu, "The application menu: roles, shortcuts and checkable items.", menuPage},
@@ -272,8 +272,10 @@ func Root(cx *core.Scope) core.Node {
 	})
 	cx.Effect(func() { cx.SetApplicationMenu(g.menu(cx)) })
 	cx.Effect(func() { cx.SetTitle("NSGo Gallery — " + g.section.Get()) })
-	cx.OnKey("ctrl+tab", func() { g.step(1) })
-	cx.OnKey("ctrl+shift+tab", func() { g.step(-1) })
+	// Pages step from a field too, as a browser's tabs do.
+	always := core.KeyOptions{When: core.KeyAlways}
+	cx.OnKeyWith("ctrl+tab", always, func() { g.step(1) })
+	cx.OnKeyWith("ctrl+shift+tab", always, func() { g.step(-1) })
 	cx.OnKey("mod+k", g.openPalette)
 	cx.OnKey("mod+,", g.openSettings)
 	cx.OnKey("mod+alt+s", g.toggleSidebar)

@@ -166,7 +166,6 @@ var (
 	gtkGestureClickNew                     func() uintptr
 	gtkGestureSingleSetButton              func(uintptr, uint32)
 	gtkGestureDragNew                      func() uintptr
-	gtkGestureLongPressNew                 func() uintptr
 	gtkGestureZoomNew                      func() uintptr
 	gtkGestureRotateNew                    func() uintptr
 	gtkGestureSingleGetCurrentButton       func(uintptr) uint32
@@ -464,7 +463,6 @@ func bind() {
 	purego.RegisterLibFunc(&gtkGestureClickNew, gtkLib, "gtk_gesture_click_new")
 	purego.RegisterLibFunc(&gtkGestureSingleSetButton, gtkLib, "gtk_gesture_single_set_button")
 	purego.RegisterLibFunc(&gtkGestureDragNew, gtkLib, "gtk_gesture_drag_new")
-	purego.RegisterLibFunc(&gtkGestureLongPressNew, gtkLib, "gtk_gesture_long_press_new")
 	purego.RegisterLibFunc(&gtkGestureZoomNew, gtkLib, "gtk_gesture_zoom_new")
 	purego.RegisterLibFunc(&gtkGestureRotateNew, gtkLib, "gtk_gesture_rotate_new")
 	purego.RegisterLibFunc(&gtkGestureSingleGetCurrentButton, gtkLib, "gtk_gesture_single_get_current_button")
@@ -616,5 +614,6 @@ func bind() {
 	bindNative()
 	bindWidget()
 	bindFileDrop()
+	bindPaste()
 	bindEditing()
 }

@@ -19,7 +19,7 @@ type Icon struct {
 	SVGFunc   func() *SVG
 	Style     Style
 	StyleFunc func() Style
-	OnPress   func()
+	OnPress   func(PressEvent)
 	OnLayout  func(Bounds)
 	Ref       *Ref
 	Label     string

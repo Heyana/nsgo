@@ -1,24 +1,14 @@
 # Roadmap
 
-This plan lists what NSGo still lacks compared with NSH's `main` at `b2af2f21`, in the order to build it. Each item names its NSH reference and the result that finishes it. What exists today is in [ARCHITECTURE.md](../ARCHITECTURE.md); design questions that block an item are in its [Open questions](../ARCHITECTURE.md#open-questions).
+This plan lists what NSGo still lacks compared with NSH's `main` at `8c904424`, in the order to build it. Each item names its NSH reference and the result that finishes it. What exists today is in [ARCHITECTURE.md](../ARCHITECTURE.md); design questions that block an item are in its [Open questions](../ARCHITECTURE.md#open-questions).
 
-References are files in `nsh/docs/dev/` unless they name a crate, with the bullet or section to read in brackets. To refresh the plan, read `git log b2af2f21..` in `nsh/` and the documents it changed.
+References are files in `nsh/docs/dev/` unless they name a crate, with the bullet or section to read in brackets. To refresh the plan, read `git log 8c904424..` in `nsh/` and the documents it changed.
 
 ## Order
 
 Sections run in build order: what apps build on first, then components, services, the tool, embedding and performance. The last section waits for community contributions, and nothing above it depends on it.
 
-## 1. Input and interaction
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| Pointer events | `elements.md` (interaction and the environment) | `OnHoverMove` and `OnMouseMove` with positions and modifiers; presses and context menus report their point |
-| Touch handling | `elements.md`, `components.md` (touches and the responder) | `PointerEvents`, `HitSlop`, `DelayLongPress`, raw touches and the responder, touches on children outside their parent |
-| Gesture values | `animation.md` | Pinch and rotation drive animated values as `PanValues` does; pan start and end report the bound values |
-| Keyboard focus | `macos.md` (keyboard focus for pressable views) | Pressables are Tab stops pressed by Return and Space, opt out with `Focusable` and show `Style.Focus`; focus returns when a modal closes |
-| Back and keys | `components.md`, `crates/nsh-core/src/keymap.rs` | Any owner can take back before stacks; key bindings take `when` and `repeat` and give labels such as ⇧⌘L |
-
-## 2. Styles and layout
+## 1. Styles and layout
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -27,12 +17,12 @@ Sections run in build order: what apps build on first, then components, services
 | Backgrounds | `styles.md` (effects) | Linear, radial, conic and repeating gradients on views, mixed in Oklab, replaced by a state's background color |
 | Filters and materials | `styles.md` (effects), `elements.md` | Filters, backdrop blur with iOS materials, Liquid Glass on iOS 26, `MaskImage` gradients, blend modes |
 | Transforms | `styles.md` (view styles, `perspective-*`) | rotateX and rotateY, skew, perspective, transform origins, backface visibility, translation by a fraction of the size |
-| Positioning | `styles.md` (`position`, `position: "sticky"`) | `static`, `fixed` in its root, and `sticky` pinned in its scroll view or list |
+| Positioning | `styles.md` (`position`, `position: "sticky"`) | `static`, `fixed` in its root, and `sticky` pinned in its scroll view or list at an animated offset |
 | Sizing and inheritance | `styles.md` (layout values, line heights) | Min-, max- and fit-content sizes, line heights as multipliers and em, inherited white space and selectability, `zIndex`, visibility, cursors |
 | Direction | `elements.md` (right to left) | A subtree overrides the direction; start and end style fields; writing direction |
 | Group and keyframe styles | `components.md` (styles), `styles.md` (effects) | Children style by an ancestor's state; spin, ping, pulse and bounce keyframes |
 
-## 3. Text and canvas
+## 2. Text and canvas
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -42,9 +32,9 @@ Sections run in build order: what apps build on first, then components, services
 | Canvas queries | `canvas.md` | `MeasureText`, text metrics, point-in-path and point-in-stroke tests |
 | Canvas nodes | `canvas.md` (nodes) | Named parts of a drawing are accessibility and test elements with a role, label and selected state |
 | Animated drawings | `canvas.md`, `animation.md` | Animated values as drawing arguments, redrawn on the frame clock without commits |
-| Animation API | `animation.md` | Composite `Reset`, spring and decay samplers, shadow opacity and text color bindings |
+| Animation API | `animation.md` | Composite `Reset`, spring and decay samplers, keyframes and motion presets, a snapping `diffClamp`, shadow opacity and text color bindings |
 
-## 4. Base components and popups
+## 3. Base components and popups
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -56,42 +46,49 @@ Sections run in build order: what apps build on first, then components, services
 | Touch-screen popups | `components.md` (popups) | Phones give popovers a backdrop and menus a bottom sheet with submenu levels; context menus open at the pointer or after a 400 ms hold |
 | System headers | `elements.md` (`<NavStack>`) | Large titles collapse on scroll, transparent headers inset scroll views, platforms measure each screen's header, and `ui.Dialog` takes the modal props |
 | Sheets and tooltips | `crates/nsh-base/src/sheet.rs`, `tooltip.rs` | Sheets slide from their side over a fading backdrop and report after the motion; any element takes a tooltip that never takes the pointer |
+| Toasts | `components.md` (toasts) | `ui`'s toasts stack at an edge as gpui-base's do, expand under the pointer or a finger, swipe away and announce themselves |
+| System tab bar | `js-modules.md` (`nsh/mobile`) | iOS and Android show the system's tab bar for an app's top-level sections |
 | Text view | `text-view.md` | A streaming caret, table and code block actions, scroll bar switches, Markdown options, extensions for a subtree, highlighting off the engine goroutine |
+| List loading | `scrolling-and-lists.md` (loading at either end) | `OnLoadMore` and `OnLoadMoreAtStart` replace `OnEndReached`, with thresholds in viewports, once per approach of either end |
 
-`DockArea` needs the resizable panels and the touch responder from section 1.
+`DockArea` needs the resizable panels.
 
-## 5. Services and windows
+## 4. Services and windows
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | Clipboard | `crates/nsh-core/src/runtime/clipboard.rs` | Images and files besides text |
+| Open URLs | `js-modules.md` (`nsh/device`) | `OpenURL` opens a link outside the app, through the embedding host when there is one |
+| Photo picker | `js-modules.md` (`nsh/picker`) | The system's picker returns the photos a user chose as files |
+| Image disk cache | `images.md` (disk cache) | Downloaded images stay on disk across launches under HTTP's caching rules |
 | Environment | `crates/nsh-core/src/platform.rs` | The OS version and the mac and TV idioms |
 | System toast | `crates/nsh-core/src/runtime/android.rs` | Android shows the platform's toast |
 | Window commands | `crates/nsh-core/src/runtime/desktop.rs` | Animated, top-anchored `SetFrame`, window levels, `OrderFront`, an auto-hiding menu bar, native popup menus |
 | App lifecycle | `macos.md` (standalone shutdown) | `nsgo.Run` returns for cleanup; apps quit themselves or outlive their last window; a forced appearance reaches native chrome |
 
-## 6. Testing and the tool
+## 5. Testing and the tool
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | Test steps | `tooling.md` (headless runs) | Press, type, clear, submit, scroll, drag, hover and long press send what real input sends, move the clock and fail on disabled views |
-| Test queries | `crates/nsh-testing/src/selector.rs` | Bare and regex selectors, Playwright's visibility, more waits, `FastForward`, the environment from the first frame, default dialog answers |
+| Test queries | `crates/nsh-testing/src/selector.rs`, `tooling.md` | Bare and regex selectors, Playwright's visibility, more waits, `FastForward`, the environment from the first frame, default dialog and picker answers, the URLs opened |
 | `nsgo test` | `tooling.md` (`nsh test`) | Runs an app's tests with a filter, JUnit output and per-commit traces |
 | Tests on real targets | `tooling.md` (on a real platform) | `nsgo test -target` drives the steps on each backend with native input and takes screenshots |
 | Dev loop | `tooling.md` (dev server), `macos.md` (measuring) | Release dev builds, a free port, LAN hosts, an error overlay, a reload key and simulators by name |
 | Packages | `embedding.md`, `web.md` | Build numbers, the app's appearance, Linux and Windows archives, IPAs, a cacheable web site with a manifest, `-run` |
-| Store signing | `embedding.md` | `nsgo build` signs an IPA with a provisioning profile and an APK with a keystore |
+| Store signing | `embedding.md` | `nsgo build` signs an IPA with a provisioning profile, wildcard ones too, and an APK with a keystore |
 
-## 7. Embedding
+## 6. Embedding
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | Embedding SDKs | `embedding.md` | iOS, Android and desktop host apps show an NSGo view run by their own loop |
 | Several engines | `architecture.md` | Backends keep no singletons, so one process runs several surfaces |
-| Host settings | `embedding.md` | A host registers components per view, sets locale, text size and appearance, receives app errors and sets the data directory |
+| Host settings | `embedding.md` | A host registers components per view, sets locale, text size, appearance and theme tokens, receives app errors and opened URLs and sets the data directory |
+| Host channel | `embedding.md` (the host channel) | The host and the app call each other's functions and send events without a view between them |
 | Component lifetime | `embedding.md` (native components) | Native components are destroyed when their app stops, on Android too |
 
-## 8. Performance
+## 7. Performance
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -102,7 +99,7 @@ Sections run in build order: what apps build on first, then components, services
 | macOS drawing | `macos.md` (architecture), `canvas.md` | Content layers replace `drawRect:`; canvases draw off the main thread and redraw only what changed |
 | Windows frames | `windows.md` (frames) | The frame clock follows the compositor with `DwmFlush` |
 
-## 9. Finish the existing platforms
+## 8. Finish the existing platforms
 
 These items wait for community contributions.
 

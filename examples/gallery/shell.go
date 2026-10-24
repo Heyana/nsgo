@@ -171,7 +171,7 @@ func undraggable(n core.Node) core.Node {
 func (g *gallery) searchField(cx *core.Scope) core.Node {
 	theme := ui.UseTheme(cx)
 	return core.View{Style: core.Style{Padding: core.Edges{Right: 12, Bottom: 10, Left: 12}}, Children: []core.Node{
-		base.Button{OnPress: g.openPalette, Label: "Search", TestID: "search",
+		base.Button{OnPress: func(core.PressEvent) { g.openPalette() }, Label: "Search", TestID: "search",
 			StyleFunc: func() core.Style {
 				t := theme()
 				face := func(tint, border float64) core.Style {
@@ -186,17 +186,9 @@ func (g *gallery) searchField(cx *core.Scope) core.Node {
 			Children: []core.Node{
 				core.Icon{SVG: lucide.Search(), Style: core.Style{Width: core.Pt(16), Height: core.Pt(16)}},
 				core.Text{Content: "Search…", MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1}},
-				core.Text{Content: shortcut(cx, "K"), Style: core.Style{FontSize: 12}},
+				core.Text{Content: cx.KeyLabel("mod+k"), Style: core.Style{FontSize: 12}},
 			}},
 	}}
-}
-
-// shortcut is how the platform writes mod+key.
-func shortcut(cx *core.Scope, key string) string {
-	if m := modName(cx); m != "⌘" {
-		return m + "+" + key
-	}
-	return "⌘" + key
 }
 
 // navigation is the sidebar's list: every group of sections, scrolling
@@ -204,7 +196,7 @@ func shortcut(cx *core.Scope, key string) string {
 func (g *gallery) navigation() core.Node {
 	item := func(s section) core.Node {
 		return ui.SidebarItem{Label: s.name, Icon: s.icon(), TestID: "nav-" + s.name,
-			Selected: func() bool { return g.section.Get() == s.name }, OnPress: func() { g.open(s.name) }}
+			Selected: func() bool { return g.section.Get() == s.name }, OnPress: func(core.PressEvent) { g.open(s.name) }}
 	}
 	var list []core.Node
 	for _, group := range groups() {
@@ -225,7 +217,7 @@ func (g *gallery) navigation() core.Node {
 func (g *gallery) toolbar() core.Node {
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Padding: core.All(8), FlexShrink: 0},
 		Children: []core.Node{
-			ui.IconButton{Icon: lucide.Settings(), Label: "Settings", OnPress: g.openSettings, TestID: "open-settings"},
+			ui.IconButton{Icon: lucide.Settings(), Label: "Settings", OnPress: func(core.PressEvent) { g.openSettings() }, TestID: "open-settings"},
 			core.View{Style: core.Style{FlexGrow: 1}},
 			g.appearanceMenu(core.PlaceTop),
 		}}
@@ -281,10 +273,10 @@ func (g *gallery) header(cx *core.Scope) core.Node {
 		Then: func(*core.Scope) core.Node { return ui.WindowControls{TestID: "window-controls"} }}
 	return titleRow(cx, "header", pad,
 		core.Show{When: func() bool { return g.sidebar.Get() }, Then: func(*core.Scope) core.Node {
-			return undraggable(ui.IconButton{Icon: lucide.PanelLeft(), Label: "Hide sidebar", OnPress: g.toggleSidebar, TestID: "hide-sidebar"})
+			return undraggable(ui.IconButton{Icon: lucide.PanelLeft(), Label: "Hide sidebar", OnPress: func(core.PressEvent) { g.toggleSidebar() }, TestID: "hide-sidebar"})
 		}},
 		core.Show{When: func() bool { return !g.sidebar.Get() }, Then: func(*core.Scope) core.Node {
-			return undraggable(ui.IconButton{Icon: lucide.PanelLeft(), Label: "Show sidebar", OnPress: g.toggleSidebar, TestID: "show-sidebar"})
+			return undraggable(ui.IconButton{Icon: lucide.PanelLeft(), Label: "Show sidebar", OnPress: func(core.PressEvent) { g.toggleSidebar() }, TestID: "show-sidebar"})
 		}},
 		spacer,
 		core.View{TestID: "header-title", Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8,
@@ -354,8 +346,8 @@ func (g *gallery) phone(cx *core.Scope) core.Node {
 			if name == "" {
 				actions := func() []core.Node {
 					return []core.Node{
-						ui.IconButton{Icon: lucide.Search(), Label: "Search", OnPress: g.openPalette, NoTooltip: true},
-						ui.IconButton{Icon: lucide.Settings(), Label: "Settings", OnPress: g.openSettings, NoTooltip: true},
+						ui.IconButton{Icon: lucide.Search(), Label: "Search", OnPress: func(core.PressEvent) { g.openPalette() }, NoTooltip: true},
+						ui.IconButton{Icon: lucide.Settings(), Label: "Settings", OnPress: func(core.PressEvent) { g.openSettings() }, NoTooltip: true},
 					}
 				}
 				return core.Screen{Title: "Gallery", TestID: "index", HeaderStyleFunc: headerStyle,
@@ -388,7 +380,7 @@ func (g *gallery) phoneHeader(cx *core.Scope, title string, back func(), actions
 	theme := ui.UseTheme(cx)
 	var children []core.Node
 	if back != nil {
-		children = append(children, ui.IconButton{Icon: lucide.ChevronLeft(), Label: "Back", OnPress: back, NoTooltip: true, Size: 20})
+		children = append(children, ui.IconButton{Icon: lucide.ChevronLeft(), Label: "Back", OnPress: func(core.PressEvent) { back() }, NoTooltip: true, Size: 20})
 	}
 	children = append(children, core.Text{Content: title, Role: core.RoleHeader, MaxLines: 1,
 		Style: core.Style{FontSize: 18, FontWeight: core.FontWeightSemibold, FlexGrow: 1, FlexShrink: 1}})
@@ -413,7 +405,7 @@ func (g *gallery) index(cx *core.Scope) core.Node {
 				FontWeight: core.FontWeightSemibold, Color: t.MutedForeground}
 		}})
 		for _, s := range group {
-			items = append(items, core.View{OnPress: func() { g.open(s.name) }, Role: core.RoleButton, Label: s.name, TestID: "nav-" + s.name,
+			items = append(items, core.View{OnPress: func(core.PressEvent) { g.open(s.name) }, Role: core.RoleButton, Label: s.name, TestID: "nav-" + s.name,
 				StyleFunc: func() core.Style {
 					t := theme()
 					return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(10, 16),

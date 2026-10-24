@@ -80,11 +80,12 @@ func registerInput() {
 			in.fs.Key("Backspace")
 		}
 	}}
-	classField = register("NsgoField", objc.GetClass("UITextField"), nil, []objc.MethodDef{caretRect, deleteBackward})
-	classTextView = register("NsgoTextView", objc.GetClass("UITextView"), nil, []objc.MethodDef{caretRect, deleteBackward,
+	classField = register("NsgoField", objc.GetClass("UITextField"), nil,
+		append([]objc.MethodDef{caretRect, deleteBackward}, pasteMethods()...))
+	classTextView = register("NsgoTextView", objc.GetClass("UITextView"), nil, append(pasteMethods(), caretRect, deleteBackward,
 		// Shift and Option with Return break the line of a text view whose
 		// Return submits, as chat apps do on hardware keyboards.
-		{Cmd: sel("keyCommands"), Fn: func(self objc.ID, cmd objc.SEL) objc.ID {
+		objc.MethodDef{Cmd: sel("keyCommands"), Fn: func(self objc.ID, cmd objc.SEL) objc.ID {
 			inherited := apple.SendSuper[objc.ID](self, cmd)
 			in := inputOf(self)
 			if in == nil || in.fs.Config.Submit() == core.SubmitBehaviorNewline {
@@ -102,14 +103,14 @@ func registerInput() {
 			}
 			return commands
 		}},
-		{Cmd: sel("nsgoInsertLineBreak:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) {
+		objc.MethodDef{Cmd: sel("nsgoInsertLineBreak:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) {
 			if in := inputOf(self); in != nil {
 				in.lineBreak = true
 				self.Send(sel("insertText:"), apple.NSString("\n"))
 				in.lineBreak = false
 			}
 		}},
-	})
+	))
 }
 
 // inputOf returns the input an editor belongs to; inputAt the one of an
@@ -279,6 +280,7 @@ func (in *input) selectionMoved() {
 	if r, ok := in.selection(); ok && in.fs.Events.Has(core.EventSelectionChange) {
 		in.fs.Selected(r)
 	}
+	in.caretMoved()
 }
 
 func (in *input) focusChanged(focused bool) {

@@ -39,7 +39,8 @@ func (t *Tracker) Forget(id core.NodeID) {
 	t.over = slices.DeleteFunc(t.over, func(o core.NodeID) bool { return o == id })
 }
 
-// Follows reports whether a view reporting events m follows hovers.
+// Follows reports whether a view reporting events m follows hovers: any
+// of the three hover events makes it take part.
 func Follows(m core.EventMask) bool {
-	return m.Has(core.EventHoverIn) || m.Has(core.EventHoverOut)
+	return m.Has(core.EventHoverIn) || m.Has(core.EventHoverOut) || m.Has(core.EventHoverMove)
 }

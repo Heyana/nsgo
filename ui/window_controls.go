@@ -25,7 +25,7 @@ func (w WindowControls) Render(cx *core.Scope) core.Node {
 		return w.TestID + "-" + part
 	}
 	button := func(icon *core.SVG, label, testID string, press func(), style core.Style) core.Node {
-		return IconButton{Icon: icon, OnPress: press, Label: label, TestID: testID, Size: 14, Style: style}
+		return IconButton{Icon: icon, OnPress: func(core.PressEvent) { press() }, Label: label, TestID: testID, Size: 14, Style: style}
 	}
 	// Close is red under the pointer, as Onevra draws it, and white
 	// there.

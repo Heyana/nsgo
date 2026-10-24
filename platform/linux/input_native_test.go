@@ -77,3 +77,58 @@ func TestEditorsTakeLinesLimitsAndSubmit(t *testing.T) {
 	})
 	waitForTitle(t, w, title+"|one/twothree|true|12-12|1|1")
 }
+
+// TestKeysCaretAndPasteInAField focuses a field that reports its caret
+// and pastes: a plain key binding leaves the field its typing, one that
+// asks fires there and once while held, the caret is reported, and a
+// paste is reported with the clipboard's text, kept out of the field.
+func TestKeysCaretAndPasteInAField(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-keys"
+	app := func(cx *core.Scope) core.Node {
+		x, down := core.NewSignal(cx, 0), core.NewSignal(cx, 0)
+		caret := core.NewSignal(cx, false)
+		pasted := core.NewSignal(cx, "")
+		cx.OnKey("x", func() { x.Update(func(n int) int { return n + 1 }) })
+		cx.OnKeyWith("down", core.KeyOptions{When: core.KeyAlways}, func() { down.Update(func(n int) int { return n + 1 }) })
+		cx.Effect(func() {
+			cx.SetTitle(fmt.Sprintf("%s|%d|%d|%v|%s", title, x.Get(), down.Get(), caret.Get(), pasted.Get()))
+		})
+		return core.View{Style: core.Style{Padding: core.All(20)}, Children: []core.Node{
+			core.Input{Style: core.Style{Height: core.Pt(30)}, PasteBehavior: core.PasteReport,
+				OnCaretMove: func(e core.CaretEvent) { caret.Set(e.Bounds.Size.Height > 0) },
+				OnPaste:     func(e core.PasteEvent) { pasted.Set(e.Text) }},
+		}}
+	}
+	w := startTestWindow(t, app, Options{Title: title, Width: 320, Height: 200})
+	waitForTitle(t, w, title+"|0|0|false|")
+	var field *view
+	w.onLoop(t, func() {
+		for _, v := range w.entries {
+			if v.kind == core.KindInput {
+				field = v
+			}
+		}
+		w.focusEntry(field)
+	})
+	waitForTitle(t, w, title+"|0|0|true|")
+	w.onLoop(t, func() {
+		keyPressedCallback(0, 'x', 53, 0, w.handle) // the field types it
+		keyReleasedCallback(0, 'x', 53, 0, w.handle)
+		keyPressedCallback(0, gdkDown, 116, 0, w.handle)
+		keyPressedCallback(0, gdkDown, 116, 0, w.handle) // held: once
+	})
+	waitForTitle(t, w, title+"|0|1|true|")
+	w.onLoop(t, func() {
+		w.setClipboard("pasted text")
+		gSignalEmitByName(gtkEditableGetDelegate(field.entry), cstr("paste-clipboard"))
+	})
+	waitForTitle(t, w, title+"|0|1|true|pasted text")
+	w.onLoop(t, func() {
+		if got := w.editorText(field); got != "" {
+			t.Errorf("the field reads %q, want the paste kept out", got)
+		}
+	})
+}

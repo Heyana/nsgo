@@ -18,6 +18,7 @@ package nsgotest
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -445,11 +446,11 @@ func (a *App) Press(selector string) {
 	a.t.Fatalf("nsgotest: nothing pressable at %q", selector)
 }
 
-// press sends what a tap on v sends: presses outside to the overlays
-// that listen and do not hold v, then down, up and the press itself.
+// press sends what a tap on v's center sends, one click with no
+// modifiers: presses outside to the overlays that listen and do not hold
+// v, then down, up and the press itself.
 func (a *App) press(v *View, kind core.EventKind) {
-	at := v.surfaceFrame()
-	center := core.Point{X: at.Origin.X + at.Size.Width/2, Y: at.Origin.Y + at.Size.Height/2}
+	local, center := v.center()
 	var outside []core.NodeID
 	walk(a.views[a.rootID], false, func(o *View) {
 		if o.Events.Has(core.EventPressOutside) && !v.within(o) {
@@ -461,9 +462,16 @@ func (a *App) press(v *View, kind core.EventKind) {
 	}
 	for _, k := range []core.EventKind{core.EventPressDown, core.EventPressUp, kind} {
 		if v.Events.Has(k) {
-			a.dispatch(core.Event{Kind: k, ID: v.ID})
+			a.dispatch(core.Event{Kind: k, ID: v.ID, Point: local, Page: center, Count: 1})
 		}
 	}
+}
+
+// center returns the middle of v in its own and in surface points.
+func (v *View) center() (local, page core.Point) {
+	at := v.surfaceFrame()
+	local = core.Point{X: at.Size.Width / 2, Y: at.Size.Height / 2}
+	return local, core.Point{X: at.Origin.X + local.X, Y: at.Origin.Y + local.Y}
 }
 
 // PressDown starts a press on the view selector matches, or the pressable
@@ -477,7 +485,14 @@ func (a *App) half(selector string, kind core.EventKind) {
 	a.t.Helper()
 	for p := a.Find(selector); p != nil; p = p.Parent {
 		if p.Events.Has(kind) {
-			a.dispatch(core.Event{Kind: kind, ID: p.ID})
+			ev := core.Event{Kind: kind, ID: p.ID}
+			if kind != core.EventHoverIn && kind != core.EventHoverOut {
+				ev.Point, ev.Page = p.center()
+				if kind != core.EventContextMenu {
+					ev.Count = 1
+				}
+			}
+			a.dispatch(ev)
 			return
 		}
 	}
@@ -567,6 +582,25 @@ func (a *App) Pan(selector string, translations ...core.Point) {
 	})
 }
 
+// Drag puts a finger down at the middle of the view selector matches,
+// moves it there plus each offset in turn, 16 ms apart, and lifts it, as
+// the platform reports touches: OnTouch and the touch responder hear it.
+func (a *App) Drag(selector string, offsets ...core.Point) {
+	a.t.Helper()
+	_, at := a.Find(selector).center()
+	finger := func(phase core.GesturePhase, p core.Point, step int) {
+		a.dispatch(core.Event{Kind: core.EventTouch, Phase: phase, Time: time.Duration(step) * 16 * time.Millisecond,
+			Touches: []core.Touch{{PagePosition: p, Changed: true}}})
+	}
+	finger(core.GestureBegan, at, 0)
+	p := at
+	for i, d := range offsets {
+		p = core.Point{X: at.X + d.X, Y: at.Y + d.Y}
+		finger(core.GestureChanged, p, i+1)
+	}
+	finger(core.GestureEnded, p, len(offsets)+1)
+}
+
 // Pinch pinches the view selector matches, or the one around it with a
 // pinch, through each scale in turn.
 func (a *App) Pinch(selector string, scales ...float32) {
@@ -603,10 +637,8 @@ func (a *App) gesture(v *View, kind core.EventKind, n int, step func(*core.Event
 	send := func(phase core.GesturePhase, i int) {
 		ev := core.Event{Kind: kind, ID: v.ID, Phase: phase}
 		step(&ev, i)
-		if kind == core.EventPan {
-			// A platform moves bound values before it reports the move.
-			a.anim.Pan(v.ID, ev.Point)
-		}
+		// A platform moves bound values before it reports the move.
+		a.anim.Gesture(&ev)
 		a.dispatch(ev)
 	}
 	send(core.GestureBegan, 0)
@@ -683,8 +715,8 @@ func (a *App) modal(selector string) *View {
 func (v *View) surfaceFrame() core.Bounds {
 	b := v.Frame
 	for p := v.Parent; p != nil; p = p.Parent {
-		b.Origin.X += p.Frame.Origin.X
-		b.Origin.Y += p.Frame.Origin.Y
+		b.Origin.X += p.Frame.Origin.X - p.Offset.X
+		b.Origin.Y += p.Frame.Origin.Y - p.Offset.Y
 	}
 	return b
 }
@@ -719,6 +751,23 @@ func (a *App) edit(v *View, text string) {
 	a.dispatch(core.Event{Kind: core.EventChangeText, ID: v.ID, Text: text, Count: a.edits[v.ID]})
 	end := core.UTF16Len(text)
 	a.moveSelection(v, core.TextRange{Start: end, End: end})
+}
+
+// Paste pastes into the field selector matches as the user would: the
+// field hears it with OnPaste, then, unless its PasteBehavior is
+// PasteReport, the text goes in at its end.
+func (a *App) Paste(selector string, p core.PasteEvent) {
+	a.t.Helper()
+	v := a.Find(selector)
+	if v.Kind != core.KindInput || v.Input.Readonly || v.Input.Disabled {
+		a.t.Fatalf("nsgotest: %q takes no paste", selector)
+	}
+	if v.Events.Has(core.EventPaste) {
+		a.dispatch(core.Event{Kind: core.EventPaste, ID: v.ID, Data: &p})
+	}
+	if p.Text != "" && v.Input.PasteBehavior == core.PasteInsert {
+		a.edit(v, core.ClipUTF16(v.Text+p.Text, v.Input.MaxLength))
+	}
 }
 
 // Select moves the selection of the field selector matches, as the user
@@ -1160,7 +1209,12 @@ func (a *App) apply(b *core.MountBatch) {
 			a.posts = append(a.posts, func() { a.tree.Dispatch(ev) })
 			a.mu.Unlock()
 		case core.ItemKeymap:
-			a.Keymap = it.Keys
+			a.Keymap = a.Keymap[:0]
+			for _, b := range it.Keys {
+				if !slices.Contains(a.Keymap, b.Key) {
+					a.Keymap = append(a.Keymap, b.Key)
+				}
+			}
 		case core.ItemTitle:
 			a.Title = it.Value
 		case core.ItemStatusBar:

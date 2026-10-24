@@ -21,6 +21,13 @@
 - Add `core.Style.Cursor`, the pointer's look over a view, on macOS, Windows, Linux and the web.
 - Resize the gallery's sidebar with a split divider, and hide it under the page without reflowing its content.
 - Show all of `base`'s components on one gallery page, in one scrolling sidebar grouped into Overview, Icon library, NSGo and the component categories.
+- Add `OnHoverMove` and `OnMouseMove`, and pass press handlers a `core.PressEvent` and `OnContextMenu` a `core.ContextMenuEvent` with the pointer's position in the view and its root, the modifier keys and the click count.
+- Add `PointerEvents`, `HitSlop` and `DelayLongPress` to views, and let children placed outside their parent take touches where they are drawn.
+- Add `OnTouch` and `Responder`, React Native's touch responder, and report press down, up and long presses on Windows.
+- Add `OnCaretMove`, `OnPaste` with `PasteBehavior`, and `Overlay.AnchorBounds`, so popups open at an input's caret.
+- Add keyboard focus for pressable views on macOS and the web: Tab stops, Return and Space, `NoFocus`, and focus coming back as a modal closes.
+- Add `Scope.OnBackPress`, `OnKeyWith` with `KeyAlways`, `KeyNotEditing` and `Repeat`, `KeyLabel`, and keyboard shortcuts from iOS and Android hardware keyboards.
+- Add `PinchValue`, `RotationValue`, `PanEvent.Values` and pan claims, and let gestures move bound values from where they were.
 - Add pan, pinch and rotation gestures.
 - Add animated values and layout animations that run on each platform's frame clock, with drags and scroll offsets moving values directly.
 - Add `Scope.RequestAnimationFrame`, so an app draws on the display's frames, and step `Scope.Animate` on them.
@@ -70,6 +77,8 @@
 - Cache text fonts and attributes, and each prepared text's measurements per width, on macOS and iOS.
 - Size unsized text at 14 points and the default theme at 13 on macOS.
 - Fix Android builds failing because Go's implied `linux` tag included the Linux backend.
+- Fix presses in scrolled content reaching the wrong view on Windows and Linux.
+- Fix key bindings taking a field's typing and editing keys, which now fire there only with `KeyAlways`.
 - Fix strikethrough missing on macOS and iOS.
 - Fix Windows' aliased rounded corners, borders and canvas curves.
 - Fix nested scroll views scrolling together on iOS or not passing at their edge on macOS.

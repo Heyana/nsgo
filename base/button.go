@@ -9,8 +9,8 @@ import "github.com/oneo-me/nsgo/core"
 // Button is a pressable container with the button role. Its look is the
 // style and children the app gives it.
 type Button struct {
-	OnPress     func()
-	OnLongPress func()
+	OnPress     func(core.PressEvent)
+	OnLongPress func(core.PressEvent)
 	// Disabled stops presses and is reported to assistive technology.
 	Disabled func() bool
 	// Expanded makes the button expandable, as a disclosure, and expanded

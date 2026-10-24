@@ -35,6 +35,9 @@ type Environment struct {
 	Locale string
 	OS     OS
 	Idiom  Idiom
+	// AppleKeyboard says a browser runs on an Apple platform, where "mod"
+	// is Command as on macOS and iOS.
+	AppleKeyboard bool
 	// HeaderHeight and LargeHeaderHeight are the heights of the system
 	// header a platform draws over screens, without the status bar, and
 	// with a large title. 0 where screens show their Header instead.
@@ -76,6 +79,7 @@ type Env struct {
 	os                        *Signal[OS]
 	idiom                     *Signal[Idiom]
 	material                  *Signal[WindowMaterial]
+	appleKeys                 *Signal[bool]
 	// headers are the system header's heights, which only the tree reads.
 	headers [2]Points
 }
@@ -97,6 +101,7 @@ func newEnv(cx *Scope) *Env {
 		locale:           NewSignal(cx, ""),
 		os:               NewSignal(cx, OS("")),
 		idiom:            NewSignal(cx, IdiomPhone),
+		appleKeys:        NewSignal(cx, false),
 		material:         NewSignal(cx, WindowMaterialNone),
 	}
 }
@@ -137,6 +142,7 @@ func (e *Env) set(v Environment) {
 	e.ratio.Set(v.PixelRatio)
 	e.locale.Set(v.Locale)
 	e.os.Set(v.OS)
+	e.appleKeys.Set(v.OS == OSMacOS || v.OS == OSIOS || v.AppleKeyboard)
 	e.idiom.Set(v.Idiom)
 	e.material.Set(v.WindowMaterial)
 	e.headers = [2]Points{v.HeaderHeight, max(v.LargeHeaderHeight, v.HeaderHeight)}
@@ -186,6 +192,10 @@ func (e *Env) OS() OS { return e.os.Get() }
 
 // Idiom returns the kind of device.
 func (e *Env) Idiom() Idiom { return e.idiom.Get() }
+
+// AppleKeys reports whether shortcuts follow Apple's conventions: "mod"
+// is Command and labels use ⌘.
+func (e *Env) AppleKeys() bool { return e.appleKeys.Get() }
 
 // WindowMaterial returns the material behind the window's content, or
 // WindowMaterialNone when the window is opaque.

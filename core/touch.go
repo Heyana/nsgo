@@ -1,0 +1,477 @@
+package core
+
+import (
+	"slices"
+	"time"
+)
+
+// Touches and the touch responder, as NSH's core runs them for Rust
+// components (core/touch.rs). The platform reports each finger on the
+// surface with EventTouch; the core finds the view under it from the
+// frames it laid out and the views around that view that listen, which
+// hear the touches from the finger outwards. Then the responder is
+// negotiated among them by React Native's rules: captures from the
+// outermost in, then from the finger outwards; once there is a
+// responder only the views around it are asked, and it may keep the
+// touches.
+
+// TouchPhase is what happened to the fingers of a TouchEvent.
+type TouchPhase uint8
+
+const (
+	// TouchStart is fingers going down (the changed ones).
+	TouchStart TouchPhase = iota + 1
+	// TouchMove is fingers moving.
+	TouchMove
+	// TouchEnd is fingers lifting (the changed ones).
+	TouchEnd
+	// TouchCancel is the system or a native gesture, such as a scroll
+	// view, taking the touches.
+	TouchCancel
+)
+
+// Touch is one finger of a TouchEvent.
+type Touch struct {
+	// ID tells the finger while it is down.
+	ID int
+	// Position is in the view hearing the event, PagePosition in the
+	// surface.
+	Position     Point
+	PagePosition Point
+	// Changed says the event is about this finger: it went down, moved
+	// or lifted.
+	Changed bool
+}
+
+// TouchEvent is the fingers on the surface as one of them changes. An
+// end or a cancel lists the fingers that lifted too.
+type TouchEvent struct {
+	Phase TouchPhase
+	// Time is since an arbitrary origin.
+	Time    time.Duration
+	Touches []Touch
+}
+
+// PanGesture follows the centroid of the fingers down, since the first
+// went down or since the responder was granted.
+type PanGesture struct {
+	// Position is the centroid in the surface, Origin where it was as the
+	// gesture began, and Delta how far it moved since.
+	Position, Origin, Delta Point
+	// Velocity is the centroid's, in points per second, smoothed over a
+	// few moves.
+	Velocity Point
+	// Touches counts the fingers down.
+	Touches int
+
+	last     Point
+	lastTime time.Duration
+	lastN    int
+}
+
+// centroid returns the centroid of the fingers down during e and their
+// number.
+func centroid(e *TouchEvent) (Point, int) {
+	lifted := e.Phase == TouchEnd || e.Phase == TouchCancel
+	var c Point
+	n := 0
+	for _, t := range e.Touches {
+		if !lifted || !t.Changed {
+			c.X += t.PagePosition.X
+			c.Y += t.PagePosition.Y
+			n++
+		}
+	}
+	d := Points(max(n, 1))
+	return Point{c.X / d, c.Y / d}, n
+}
+
+// beginGesture starts a gesture at the fingers of e.
+func beginGesture(e *TouchEvent) PanGesture {
+	c, n := centroid(e)
+	return PanGesture{Position: c, Origin: c, Touches: n, last: c, lastTime: e.Time, lastN: n}
+}
+
+// update follows the fingers to e. A finger going down or lifting moves
+// the centroid without moving the gesture.
+func (g *PanGesture) update(e *TouchEvent) {
+	c, n := centroid(e)
+	if e.Time == g.lastTime && n == g.lastN {
+		return
+	}
+	g.Touches = n
+	if n == g.lastN {
+		dt := float32(max(e.Time-g.lastTime, time.Millisecond).Seconds())
+		dx, dy := c.X-g.last.X, c.Y-g.last.Y
+		g.Delta.X += dx
+		g.Delta.Y += dy
+		g.Velocity = Point{g.Velocity.X*0.3 + dx/Points(dt)*0.7, g.Velocity.Y*0.3 + dy/Points(dt)*0.7}
+		g.Position = Point{g.Position.X + dx, g.Position.Y + dy}
+	}
+	g.last, g.lastTime, g.lastN = c, e.Time, n
+}
+
+// ResponderEvent is what a responder or a claim hears: the finger the
+// event is about and the gesture.
+type ResponderEvent struct {
+	// Position is in the view hearing it, PagePosition in the surface.
+	Position     Point
+	PagePosition Point
+	Time         time.Duration
+	Gesture      PanGesture
+}
+
+// TouchClaim is when a view asks to become the touch responder.
+type TouchClaim struct {
+	// OnMove claims as a finger moves (onMoveShouldSetResponder) rather
+	// than as one goes down (onStartShouldSetResponder).
+	OnMove bool
+	// Capture asks the view before the views inside it.
+	Capture bool
+	// Ask decides with the gesture whether to claim; nil claims.
+	Ask func(ResponderEvent) bool
+	// LetNative lets the scroll views around go on taking the touches;
+	// by default a responder stops them.
+	LetNative bool
+	// OnPan claims as the platform activates the view's pan by its
+	// PanActivation, deciding on the main thread so the scroll views
+	// around share the touch until then. A view with such a claim is the
+	// responder exactly while its pan is active: its other claims are not
+	// asked.
+	OnPan bool
+}
+
+// panClaim returns r's claim on its pan, if it has one.
+func (r *Responder) panClaim() (TouchClaim, bool) {
+	if r != nil {
+		for _, c := range r.Claims {
+			if c.OnPan {
+				return c, true
+			}
+		}
+	}
+	return TouchClaim{}, false
+}
+
+// Responder makes a view take part in the touch responder, React
+// Native's: it claims the touches as its Claims say, and as the
+// responder hears where they go.
+type Responder struct {
+	// Claims are asked in order.
+	Claims []TouchClaim
+	// Keep refuses to hand the touches to a view that claims them later.
+	Keep bool
+	// OnGrant: the view became the responder. OnReject: it claimed, but
+	// the responder kept the touches.
+	OnGrant, OnReject func(ResponderEvent)
+	// OnStart, OnMove and OnEnd follow the fingers while it is the
+	// responder.
+	OnStart, OnMove, OnEnd func(ResponderEvent)
+	// OnRelease: the last finger lifted. OnTerminate: another view or the
+	// system took the touches.
+	OnRelease, OnTerminate func(ResponderEvent)
+}
+
+// touchState is the touches the views hear and their responder.
+type touchState struct {
+	// paths are the listening views around each finger down, innermost
+	// first.
+	paths     map[int][]*node
+	responder *node
+	gesture   PanGesture
+	// blocking is the responder whose scroll views ItemBlockNative last
+	// stopped.
+	blocking *node
+	// last is the last touches, and about the finger they were about,
+	// for a pan the platform activates between them.
+	last  TouchEvent
+	about Touch
+}
+
+// hearsTouches reports whether n listens to touches.
+func (n *node) hearsTouches() bool {
+	return n.h.touch != nil || n.responder != nil
+}
+
+// alive reports whether n is still mounted.
+func (n *node) alive() bool { return n != nil && !n.deleted && !n.owner.disposed }
+
+// touchPhase is the TouchPhase of a platform's report.
+func touchPhase(p GesturePhase) TouchPhase {
+	switch p {
+	case GestureBegan:
+		return TouchStart
+	case GestureChanged:
+		return TouchMove
+	case GestureEnded:
+		return TouchEnd
+	}
+	return TouchCancel
+}
+
+// touched handles EventTouch: the views' OnTouch on the finger's path, the
+// negotiation, the responder's events.
+func (t *Tree) touched(ev Event) {
+	s := &t.touches
+	e := TouchEvent{Phase: touchPhase(ev.Phase), Time: ev.Time, Touches: ev.Touches}
+	lifted := e.Phase == TouchEnd || e.Phase == TouchCancel
+	if e.Phase == TouchStart {
+		if s.paths == nil {
+			s.paths = map[int][]*node{}
+		}
+		for _, p := range e.Touches {
+			if !p.Changed {
+				continue
+			}
+			delete(s.paths, p.ID)
+			if path := t.touchPath(p.PagePosition); len(path) > 0 {
+				s.paths[p.ID] = path
+			}
+		}
+	}
+	down := 0
+	for _, p := range e.Touches {
+		if !lifted || !p.Changed {
+			down++
+		}
+	}
+	switch {
+	case e.Phase == TouchStart && down == 1:
+		s.gesture = beginGesture(&e)
+	case e.Phase == TouchStart || e.Phase == TouchMove:
+		s.gesture.update(&e)
+	}
+	i := slices.IndexFunc(e.Touches, func(p Touch) bool { return p.Changed })
+	if i < 0 {
+		return
+	}
+	about := e.Touches[i]
+	s.last, s.about = e, about
+	path := s.paths[about.ID]
+	defer t.forgetLifted(&e)
+	if len(path) == 0 && s.responder == nil {
+		return
+	}
+	for _, n := range path {
+		if n.h.touch != nil && n.alive() {
+			local := t.localTouches(n, &e)
+			t.within(n.owner, func() { n.h.touch(local) })
+		}
+	}
+	switch e.Phase {
+	case TouchStart:
+		t.negotiate(false, path, about, &e)
+	case TouchMove:
+		t.negotiate(true, path, about, &e)
+	}
+	r := s.responder
+	if r == nil {
+		return
+	}
+	if e.Phase == TouchCancel {
+		t.respond(r, r.responder.OnTerminate, about, &e)
+		t.releaseResponder()
+		return
+	}
+	s.gesture.update(&e)
+	pick := map[TouchPhase]func(ResponderEvent){TouchStart: r.responder.OnStart, TouchMove: r.responder.OnMove,
+		TouchEnd: r.responder.OnEnd}[e.Phase]
+	t.respond(r, pick, about, &e)
+	if e.Phase == TouchEnd && down == 0 {
+		t.releaseResponder()
+		t.respond(r, r.responder.OnRelease, about, &e)
+	}
+}
+
+// touchPath returns the views that listen to touches around the view
+// under p, in surface points, innermost first.
+func (t *Tree) touchPath(p Point) []*node {
+	id, _ := hitWith(t.view, p, func(*node) bool { return true })
+	var path []*node
+	for n := t.node(id); n != nil; n = n.nativeParent() {
+		if n.hearsTouches() {
+			path = append(path, n)
+		}
+	}
+	return path
+}
+
+// localTouches returns e with its positions in n.
+func (t *Tree) localTouches(n *node, e *TouchEvent) TouchEvent {
+	o := t.surfaceBounds(n).Origin
+	local := *e
+	local.Touches = slices.Clone(e.Touches)
+	for i := range local.Touches {
+		p := &local.Touches[i]
+		p.Position = Point{p.PagePosition.X - o.X, p.PagePosition.Y - o.Y}
+	}
+	return local
+}
+
+// forgetLifted drops the paths of the fingers that lifted in e.
+func (t *Tree) forgetLifted(e *TouchEvent) {
+	if e.Phase != TouchEnd && e.Phase != TouchCancel {
+		return
+	}
+	for _, p := range e.Touches {
+		if p.Changed {
+			delete(t.touches.paths, p.ID)
+		}
+	}
+}
+
+// responderEvent returns what n hears about finger about.
+func (t *Tree) responderEvent(n *node, about Touch, e *TouchEvent) ResponderEvent {
+	o := t.surfaceBounds(n).Origin
+	return ResponderEvent{Position: Point{about.PagePosition.X - o.X, about.PagePosition.Y - o.Y},
+		PagePosition: about.PagePosition, Time: e.Time, Gesture: t.touches.gesture}
+}
+
+// respond runs fn, one of n's responder handlers, about finger about.
+func (t *Tree) respond(n *node, fn func(ResponderEvent), about Touch, e *TouchEvent) {
+	if fn != nil && n.alive() {
+		ev := t.responderEvent(n, about, e)
+		t.within(n.owner, func() { fn(ev) })
+	}
+}
+
+// negotiate asks the views of path whether one claims the touches as they
+// start or move: the views around both the finger and the responder, the
+// responder left out; captures from the outermost in, then the others
+// from the finger outwards.
+func (t *Tree) negotiate(move bool, path []*node, about Touch, e *TouchEvent) {
+	r := t.touches.responder
+	if !r.alive() {
+		r = nil
+	}
+	asked := path
+	if r != nil {
+		from := 0
+		for from < len(path) && !r.within(path[from]) {
+			from++
+		}
+		if from < len(path) && path[from] == r {
+			from++
+		}
+		asked = path[from:]
+	}
+	var wanting *node
+	block := false
+	for i := len(asked) - 1; i >= 0 && wanting == nil; i-- {
+		if b, ok := t.claims(asked[i], move, true, about, e); ok {
+			wanting, block = asked[i], b
+		}
+	}
+	for i := 0; i < len(asked) && wanting == nil; i++ {
+		if b, ok := t.claims(asked[i], move, false, about, e); ok {
+			wanting, block = asked[i], b
+		}
+	}
+	if wanting == nil || wanting == r {
+		return
+	}
+	if r != nil {
+		if r.responder.Keep {
+			t.respond(wanting, wanting.responder.OnReject, about, e)
+			return
+		}
+		t.respond(r, r.responder.OnTerminate, about, e)
+	}
+	t.grant(wanting, block, about, e)
+}
+
+// panActivated makes n, whose pan the platform activated, the responder
+// when it claims on its pan.
+func (t *Tree) panActivated(n *node) {
+	s := &t.touches
+	c, ok := n.responder.panClaim()
+	if !ok || !n.alive() || n.props.Disabled || s.responder == n || len(s.last.Touches) == 0 {
+		return
+	}
+	if r := s.responder; r.alive() {
+		if r.responder.Keep {
+			t.respond(n, n.responder.OnReject, s.about, &s.last)
+			return
+		}
+		t.respond(r, r.responder.OnTerminate, s.about, &s.last)
+	}
+	t.grant(n, !c.LetNative, s.about, &s.last)
+}
+
+// within reports whether n is anc or inside it.
+func (n *node) within(anc *node) bool {
+	for p := n; p != nil; p = p.nativeParent() {
+		if p == anc {
+			return true
+		}
+	}
+	return false
+}
+
+// claims reports whether n claims the touches as they start or move,
+// asking its claims of that kind in order, and whether it stops the
+// scroll views around.
+func (t *Tree) claims(n *node, move, capture bool, about Touch, e *TouchEvent) (block, ok bool) {
+	if n.responder == nil || !n.alive() || n.props.Disabled {
+		return false, false
+	}
+	if _, gated := n.responder.panClaim(); gated {
+		return false, false
+	}
+	for _, c := range n.responder.Claims {
+		if c.OnMove != move || c.Capture != capture {
+			continue
+		}
+		claimed := c.Ask == nil
+		if !claimed {
+			ev := t.responderEvent(n, about, e)
+			t.within(n.owner, func() { claimed = c.Ask(ev) })
+		}
+		if claimed {
+			return !c.LetNative, true
+		}
+	}
+	return false, false
+}
+
+// grant makes n the responder; the gesture starts again there. It stays
+// pressed, for its Active style, until the touches end.
+func (t *Tree) grant(n *node, block bool, about Touch, e *TouchEvent) {
+	s := &t.touches
+	if s.responder.alive() {
+		t.setState(s.responder, statePressed, false)
+	}
+	s.responder = n
+	s.gesture = beginGesture(e)
+	t.setState(n, statePressed, true)
+	t.respond(n, n.responder.OnGrant, about, e)
+	if block {
+		t.blockNative(n)
+	} else {
+		t.blockNative(nil)
+	}
+}
+
+func (t *Tree) releaseResponder() {
+	s := &t.touches
+	if s.responder.alive() {
+		t.setState(s.responder, statePressed, false)
+	}
+	s.responder = nil
+	t.blockNative(nil)
+}
+
+// blockNative stops the scroll views around n from taking the touches,
+// or lets them again with nil.
+func (t *Tree) blockNative(n *node) {
+	if t.touches.blocking == n {
+		return
+	}
+	t.touches.blocking = n
+	it := MountItem{Kind: ItemBlockNative}
+	if n != nil {
+		it.ID = n.id
+	}
+	t.commands = append(t.commands, it)
+	t.changed = true
+}

@@ -35,14 +35,38 @@ type View struct {
 
 	// OnPress runs on a completed press: tap, click or accessibility
 	// action. Pressable views capture presses on their descendants.
-	OnPress     func()
-	OnLongPress func()
-	OnPressDown func()
-	OnPressUp   func()
+	OnPress     func(PressEvent)
+	OnLongPress func(PressEvent)
+	OnPressDown func(PressEvent)
+	OnPressUp   func(PressEvent)
+	// OnHoverIn and OnHoverOut follow the mouse over the view or a view
+	// inside it, and OnHoverMove where it is while it moves there with no
+	// button down. Touches never hover.
 	OnHoverIn   func()
 	OnHoverOut  func()
-	// OnContextMenu receives a secondary click at a point in the view.
-	OnContextMenu func(at Point)
+	OnHoverMove func(HoverEvent)
+	// OnMouseMove receives each mouse move over the view in its
+	// coordinates, also with a button down, on desktops and the web.
+	OnMouseMove func(Point)
+	// OnContextMenu receives a secondary click in the view.
+	OnContextMenu func(ContextMenuEvent)
+	// OnTouch hears the fingers on the surface while one that went down
+	// on the view or inside it is down; Responder makes the view take part
+	// in the touch responder.
+	OnTouch   func(TouchEvent)
+	Responder *Responder
+	// NoFocus keeps a view that takes presses out of the keyboard
+	// focus's Tab stops on macOS and the web: a backdrop that closes a
+	// popover, rows a list moves through with the arrow keys.
+	NoFocus bool
+	// PointerEvents says which of the view and its children take
+	// touches and the pointer.
+	PointerEvents PointerEvents
+	// HitSlop extends where the view takes touches beyond its bounds.
+	HitSlop Edges
+	// DelayLongPress is how long a press is held to be a long press; 0
+	// is 500 ms.
+	DelayLongPress time.Duration
 	// OnLayout receives the view's frame after each layout that moves or
 	// sizes it.
 	OnLayout func(Bounds)
@@ -56,9 +80,15 @@ type View struct {
 	OnPinch    func(GestureEvent)
 	OnRotation func(GestureEvent)
 	// PanValues are animated values a drag on the view moves on the
-	// platform's main thread, to its translation, with no engine work per
-	// move. They need no OnPan.
+	// platform's main thread, by its translation from where they were as
+	// it began, with no engine work per move. They need no OnPan.
 	PanValues AnimatedXY
+	// PinchValue is scaled by pinches on the view, and RotationValue turned
+	// by rotations, in radians, on the main thread as PanValues are: from
+	// where they were as the gesture began. They need no OnPinch or
+	// OnRotation.
+	PinchValue    *AnimatedValue
+	RotationValue *AnimatedValue
 	// OnFileDrop receives the file: URLs of files dropped on the view from
 	// another app, on desktops and the web; OnFileDragEnter and
 	// OnFileDragLeave follow them while they are dragged over it. The
@@ -145,7 +175,7 @@ type Text struct {
 	// the style's SelectionColor.
 	Selectable Selectable
 
-	OnPress  func()
+	OnPress  func(PressEvent)
 	OnLayout func(Bounds)
 	// OnTextLayout receives the text's lines each time it is laid out
 	// anew, after the commit.
@@ -186,7 +216,7 @@ type Span struct {
 	// Style's text fields merge over the Text's. Its Background and
 	// CornerRadius draw behind the span's characters, a box per line.
 	Style   Style
-	OnPress func()
+	OnPress func(PressEvent)
 	// Attachment, when set, is a view in the text's lines in place of
 	// Content: laid out at its content size, it wraps with the words
 	// around it and takes its own presses. Style is then its view's
@@ -258,10 +288,20 @@ type Input struct {
 	// at the content width when Multiline, after a layout that changed
 	// it. An empty field's is one empty line's.
 	OnContentSizeChange func(Size)
-	OnLayout            func(Bounds)
-	Ref                 *Ref
-	Label               string
-	TestID              string
+	// OnCaretMove receives where the caret is while the input has the
+	// focus, whenever it moves: with the selection, and when the text
+	// scrolls or wraps again. Something that opens at the caret, such as
+	// an @-mention's suggestions, anchors to its PageBounds.
+	OnCaretMove func(CaretEvent)
+	// OnPaste receives what the user pastes, before the text it inserts
+	// is reported; PasteBehavior PasteReport keeps the text out. Images
+	// and files are never inserted.
+	OnPaste       func(PasteEvent)
+	PasteBehavior PasteBehavior
+	OnLayout      func(Bounds)
+	Ref           *Ref
+	Label         string
+	TestID        string
 }
 
 // Render implements Node.
@@ -444,7 +484,7 @@ type Image struct {
 	OnLoad    func(pixels Size)
 	OnError   func(err error)
 	OnLoadEnd func()
-	OnPress   func()
+	OnPress   func(PressEvent)
 	OnLayout  func(Bounds)
 	Ref       *Ref
 	Label     string
@@ -500,8 +540,12 @@ const (
 // its style's Top, Right, Bottom and Left without one. It never closes
 // itself; the app removes it.
 type Overlay struct {
-	Anchor    *Ref
-	Placement Placement
+	Anchor *Ref
+	// AnchorBounds, when set and Anchor is not, places the overlay beside
+	// the bounds it returns in the surface, again when they change: an
+	// input's caret (CaretEvent.PageBounds), or a point.
+	AnchorBounds func() Bounds
+	Placement    Placement
 	// Align places the overlay along the anchor's side; centered when 0.
 	Align Align
 	// Offset is the gap to the anchor; Margin keeps the overlay off the

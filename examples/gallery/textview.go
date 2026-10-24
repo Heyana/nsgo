@@ -91,7 +91,7 @@ func textViewPage(cx *core.Scope, t *theme) core.Node {
 			OnLinkPress: link.Set, TestID: "markdown", RenderMath: renderMath(theme),
 			CustomSpan: func(node textview.Custom) core.Span {
 				return core.Span{Content: node.Text, Style: core.Style{Color: theme().Primary, FontWeight: core.FontWeightMedium},
-					OnPress: func() { link.Set("mention " + node.Attributes["1"]) }}
+					OnPress: func(core.PressEvent) { link.Set("mention " + node.Attributes["1"]) }}
 			},
 			RenderCustom: func(cx *core.Scope, node textview.Custom) core.Node {
 				return core.View{StyleFunc: func() core.Style {
@@ -106,7 +106,7 @@ func textViewPage(cx *core.Scope, t *theme) core.Node {
 		},
 		ui.TextView{HTML: page, Selectable: true, Highlighter: highlight.New(cx), OnLinkPress: link.Set, TestID: "html"},
 		t.live(link.Get),
-		ui.Button{Label: "Stream a reply", Variant: ui.Secondary, OnPress: stream, TestID: "stream"},
+		ui.Button{Label: "Stream a reply", Variant: ui.Secondary, OnPress: func(core.PressEvent) { stream() }, TestID: "stream"},
 		ui.TextView{MarkdownFunc: streamed.Get, Streaming: true, Highlighter: highlight.New(cx), TestID: "streamed"},
 	}}
 }

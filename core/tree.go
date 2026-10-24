@@ -24,6 +24,7 @@ type Tree struct {
 	nodes       []*node // index is NodeID; 0 is unused
 	free        []NodeID
 	view        *node // the surface's root view
+	touches     touchState
 	size        Size
 	changed     bool
 	deleted     []NodeID
@@ -44,6 +45,7 @@ type Tree struct {
 	imageInfos  map[uint32]imageInfoWait
 	keys        []*keyBinding
 	keysChanged bool
+	backs       []*backHandler
 	alertID     uint32
 	menuActions map[uint32]menuAction
 	menuID      uint32
@@ -66,6 +68,8 @@ type node struct {
 	parent   *node
 	children []*node
 	owner    *Scope
+
+	responder *Responder // a view's part in the touch responder
 
 	base   Style
 	dyn    Style
@@ -97,6 +101,8 @@ type node struct {
 	// at its content size that the platform puts in the bar.
 	headerView bool
 	panning    bool           // it follows pans: OnPan or PanValues
+	pinching   bool           // it follows pinches: OnPinch or PinchValue
+	rotating   bool           // it follows rotations: OnRotation or RotationValue
 	anim       *viewAnimation // the animated values bound to the view
 	isStack    bool
 	ref        *Ref
@@ -120,21 +126,24 @@ type node struct {
 }
 
 type handlers struct {
-	press, longPress, pressDown, pressUp, hoverIn, hoverOut func()
-	focus, blur                                             func()
-	change, submit                                          func(string)
-	scroll, pressOutside, contextMenu                       func(Point)
-	layout                                                  func(Bounds)
-	cancel                                                  func()
-	loadStart, loadEnd                                      func()
-	progress                                                func(int64, int64)
-	load                                                    func(Size)
-	loadError                                               func(error)
-	pan                                                     func(PanEvent)
-	pinch, rotation                                         func(GestureEvent)
-	fileEnter, fileLeave                                    func()
-	fileDrop                                                func([]string)
-	action                                                  func(string)
+	press, longPress, pressDown, pressUp func(PressEvent)
+	hoverIn, hoverOut, focus, blur       func()
+	hoverMove                            func(HoverEvent)
+	touch                                func(TouchEvent)
+	contextMenu                          func(ContextMenuEvent)
+	change, submit                       func(string)
+	scroll, pressOutside, mouseMove      func(Point)
+	layout                               func(Bounds)
+	cancel                               func()
+	loadStart, loadEnd                   func()
+	progress                             func(int64, int64)
+	load                                 func(Size)
+	loadError                            func(error)
+	pan                                  func(PanEvent)
+	pinch, rotation                      func(GestureEvent)
+	fileEnter, fileLeave                 func()
+	fileDrop                             func([]string)
+	action                               func(string)
 }
 
 type textNode struct {
@@ -189,7 +198,7 @@ func (tn *textNode) fontMultiplier(scale float32) float32 {
 type spanNode struct {
 	content string
 	style   Style
-	press   func()
+	press   func(PressEvent)
 	attach  *node // the view of an attachment
 }
 
@@ -215,6 +224,8 @@ type inputNode struct {
 	keyPress    func(string)
 	composition func(Composition)
 	contentSize func(Size)
+	caret       func(CaretEvent)
+	paste       func(PasteEvent)
 	// measured is what a multiline field is measured with: its value, or
 	// its placeholder while empty; sized the value's text, for
 	// OnContentSizeChange.
@@ -326,6 +337,7 @@ type sent struct {
 	content   Size
 	children  []*node
 	layout    Bounds
+	overflow  Bounds // the area ItemOverflow last gave
 }
 
 // NewTree returns an empty tree under root, laying text out with text.
@@ -643,16 +655,20 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	n := t.newNode(KindView, parent, cx)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	n.h = handlers{press: v.OnPress, longPress: v.OnLongPress, pressDown: v.OnPressDown, pressUp: v.OnPressUp,
-		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, layout: v.OnLayout, contextMenu: v.OnContextMenu,
+		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, hoverMove: v.OnHoverMove, mouseMove: v.OnMouseMove,
+		layout: v.OnLayout, contextMenu: v.OnContextMenu, touch: v.OnTouch,
 		pan: v.OnPan, pinch: v.OnPinch, rotation: v.OnRotation,
 		fileEnter: v.OnFileDragEnter, fileLeave: v.OnFileDragLeave, fileDrop: v.OnFileDrop}
 	n.h.action = v.OnAccessibilityAction
+	n.responder = v.Responder
 	n.props = ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
-		WindowDrag: v.WindowDrag, SelectionArea: v.SelectionArea}
+		WindowDrag: v.WindowDrag, SelectionArea: v.SelectionArea, PointerEvents: v.PointerEvents, HitSlop: v.HitSlop,
+		DelayLongPress: v.DelayLongPress, NoFocus: v.NoFocus}
 	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, value: v.AccessibilityValue, expanded: v.Expanded,
 		hidden: v.AccessibilityElementsHidden, actions: v.AccessibilityActions, accessible: v.Accessible,
 		important: v.ImportantForAccessibility})
-	if v.OnPan != nil || v.PanValues != (AnimatedXY{}) {
+	_, panClaim := v.Responder.panClaim()
+	if v.OnPan != nil || v.PanValues != (AnimatedXY{}) || panClaim {
 		n.props.PanActivation = v.PanActivation
 		n.panning = true
 	}
@@ -662,6 +678,9 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	t.bindBool(cx, n, v.Checked, &n.props.Checked)
 	t.bindBool(cx, n, v.Indeterminate, &n.props.Indeterminate)
 	t.bindPan(cx, n, v.PanValues)
+	t.bindGestureValue(n, AnimBindPinch, v.PinchValue)
+	t.bindGestureValue(n, AnimBindRotation, v.RotationValue)
+	n.pinching, n.rotating = v.OnPinch != nil || v.PinchValue != nil, v.OnRotation != nil || v.RotationValue != nil
 	for _, c := range v.Children {
 		t.mount(cx, n, c)
 	}
@@ -693,7 +712,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 		}
 		n.text.spans = append(n.text.spans, spanNode{content: sp.Content, style: sp.Style, press: sp.OnPress})
 		if sp.OnPress != nil {
-			n.h.press = func() {} // presses come with the offset of the span
+			n.h.press = func(PressEvent) {} // presses come with the offset of the span
 		}
 		if sp.ContentFunc != nil {
 			cx.renderEffect(func() {
@@ -724,11 +743,11 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 	t.setRef(n, v.Ref)
 	in := &inputNode{valueFn: v.Value, value: v.DefaultValue, autoFocus: v.AutoFocus, accessory: v.InputAccessoryViewID,
 		selection: v.OnSelectionChange, keyPress: v.OnKeyPress, composition: v.OnCompositionChange,
-		contentSize: v.OnContentSizeChange}
+		contentSize: v.OnContentSizeChange, caret: v.OnCaretMove, paste: v.OnPaste}
 	in.config = InputConfig{Placeholder: v.Placeholder, Masked: v.Masked, Readonly: v.Readonly, KeyboardType: v.KeyboardType,
 		Multiline: v.Multiline, MaxLength: max(v.MaxLength, 0), SubmitBehavior: v.SubmitBehavior, ReturnKey: v.ReturnKeyType,
 		AutoCapitalize: v.AutoCapitalize, NoAutoCorrect: v.NoAutoCorrect, AutoComplete: v.AutoComplete,
-		KeyboardAppearance: v.KeyboardAppearance, HideCaret: v.HideCaret}
+		KeyboardAppearance: v.KeyboardAppearance, HideCaret: v.HideCaret, PasteBehavior: v.PasteBehavior}
 	n.input = in
 	t.bindBool(cx, n, v.Disabled, &in.config.Disabled)
 	if v.Value != nil {
@@ -856,6 +875,9 @@ func (t *Tree) mountCatch(cx *Scope, parent *node, c Catch) {
 // Dispatch handles a platform event.
 func (t *Tree) Dispatch(ev Event) {
 	switch ev.Kind {
+	case EventTouch:
+		t.touched(ev)
+		return
 	case EventBack:
 		if n := t.node(ev.ID); n != nil && n.screen != nil {
 			t.backFrom(n)
@@ -907,6 +929,11 @@ func (t *Tree) Dispatch(ev Event) {
 			t.within(n.owner, fn)
 		}
 	}
+	press := func(fn func(PressEvent)) {
+		if fn != nil {
+			t.within(n.owner, func() { fn(ev.press()) })
+		}
+	}
 	switch ev.Kind {
 	case EventPress:
 		t.setState(n, statePressed, false)
@@ -915,14 +942,14 @@ func (t *Tree) Dispatch(ev Event) {
 		}
 		if tn := n.text; tn != nil && len(tn.spans) > 0 {
 			if sp := tn.spanAt(ev.Index); sp != nil && sp.press != nil {
-				call(sp.press)
+				press(sp.press)
 			}
 			break
 		}
-		call(h.press)
+		press(h.press)
 	case EventLongPress:
 		if !n.props.Disabled {
-			call(h.longPress)
+			press(h.longPress)
 		}
 	case EventAccessibilityAction:
 		if h.action != nil && !n.props.Disabled {
@@ -930,16 +957,24 @@ func (t *Tree) Dispatch(ev Event) {
 		}
 	case EventPressDown:
 		t.setState(n, statePressed, !n.props.Disabled)
-		call(h.pressDown)
+		press(h.pressDown)
 	case EventPressUp:
 		t.setState(n, statePressed, false)
-		call(h.pressUp)
+		press(h.pressUp)
 	case EventHoverIn:
 		t.setState(n, stateHovered, true)
 		call(h.hoverIn)
 	case EventHoverOut:
 		t.setState(n, stateHovered, false)
 		call(h.hoverOut)
+	case EventHoverMove:
+		if h.hoverMove != nil {
+			t.within(n.owner, func() { h.hoverMove(HoverEvent{ev.Point, ev.Page, ev.Modifiers}) })
+		}
+	case EventMouseMove:
+		if h.mouseMove != nil {
+			t.within(n.owner, func() { h.mouseMove(ev.Point) })
+		}
 	case EventFocus:
 		t.setState(n, stateFocused, true)
 		call(h.focus)
@@ -982,12 +1017,33 @@ func (t *Tree) Dispatch(ev Event) {
 			}
 			t.within(n.owner, func() { in.composition(c) })
 		}
+	case EventCaretMove:
+		if in := n.input; in != nil && in.caret != nil {
+			b := Bounds{Origin: ev.Point, Size: ev.Size}
+			page := b
+			if b.Size != (Size{}) {
+				o := t.surfaceBounds(n).Origin
+				page.Origin = Point{o.X + b.Origin.X, o.Y + b.Origin.Y}
+			}
+			t.within(n.owner, func() { in.caret(CaretEvent{Bounds: b, PageBounds: page}) })
+		}
+	case EventPaste:
+		if in := n.input; in != nil && in.paste != nil {
+			if p, ok := ev.Data.(*PasteEvent); ok {
+				t.within(n.owner, func() { in.paste(*p) })
+			}
+		}
 	case EventPan:
+		if ev.Phase == GestureBegan {
+			t.panActivated(n)
+		}
 		if h.pan != nil {
 			if ev.Phase == GestureBegan {
 				t.setState(n, statePressed, false) // the pan took the press
 			}
-			t.within(n.owner, func() { h.pan(PanEvent{Phase: ev.Phase, Translation: ev.Point, Velocity: ev.Velocity}) })
+			t.within(n.owner, func() {
+				h.pan(PanEvent{Phase: ev.Phase, Translation: ev.Point, Velocity: ev.Velocity, Values: ev.Values})
+			})
 		}
 	case EventPinch, EventRotation:
 		fn := h.pinch
@@ -999,7 +1055,7 @@ func (t *Tree) Dispatch(ev Event) {
 		}
 	case EventContextMenu:
 		if h.contextMenu != nil && !n.props.Disabled {
-			t.within(n.owner, func() { h.contextMenu(ev.Point) })
+			t.within(n.owner, func() { h.contextMenu(ContextMenuEvent{ev.Point, ev.Page, ev.Modifiers}) })
 		}
 	case EventPressOutside:
 		if n.hoist != nil {
@@ -1040,7 +1096,7 @@ func (t *Tree) Dispatch(ev Event) {
 			if ev.Value > 0 {
 				n.scroll.zoom = ev.Value
 			}
-			if len(t.view.hosted) > 0 {
+			if anchored(t.view) {
 				t.view.markLayout() // anchored overlays follow the scroll
 				t.changed = true
 			}
@@ -1064,32 +1120,48 @@ func (tn *textNode) spanAt(i int) *spanNode {
 // HitTest returns the innermost pressable view at p in surface points,
 // for platforms that draw their own views.
 func (t *Tree) HitTest(p Point) NodeID {
-	return hit(t.view, p)
+	id, _ := hit(t.view, p)
+	return id
 }
 
-func hit(n *node, p Point) NodeID {
+// PressAt dispatches ev as a press on the innermost pressable view at its
+// Page, in surface points, with its Point in that view.
+func (t *Tree) PressAt(ev Event) {
+	if id, local := hit(t.view, ev.Page); id != 0 {
+		ev.Kind, ev.ID, ev.Point = EventPress, id, local
+		t.Dispatch(ev)
+	}
+}
+
+func hit(n *node, p Point) (NodeID, Point) {
 	return hitWith(n, p, func(n *node) bool { return n.h.press != nil || n.kind == KindInput })
 }
 
-func hitWith(n *node, p Point, ok func(*node) bool) NodeID {
-	if n.style.Display == DisplayNone || n.hidden || !n.frame.Contains(p) || (n.attach != nil && n.attach.cut) {
-		return 0
+// hitWith returns the innermost view at p in n's parent that ok accepts,
+// and p in it.
+func hitWith(n *node, p Point, ok func(*node) bool) (NodeID, Point) {
+	self, inside := Reach(n.frame, &n.props, n.sent.overflow, p)
+	if n.style.Display == DisplayNone || n.hidden || !self && !inside || (n.attach != nil && n.attach.cut) {
+		return 0, Point{}
 	}
 	local := Point{p.X - n.frame.Origin.X, p.Y - n.frame.Origin.Y}
+	at := local
 	if n.scroll != nil {
 		local.X += n.scroll.offset.X
 		local.Y += n.scroll.offset.Y
 	}
-	kids := n.nativeChildren()
-	for i := len(kids) - 1; i >= 0; i-- {
-		if id := hitWith(kids[i], local, ok); id != 0 {
-			return id
+	if inside {
+		kids := n.nativeChildren()
+		for i := len(kids) - 1; i >= 0; i-- {
+			if id, in := hitWith(kids[i], local, ok); id != 0 {
+				return id, in
+			}
 		}
 	}
-	if ok(n) {
-		return n.id
+	if self && ok(n) {
+		return n.id, at
 	}
-	return 0
+	return 0, Point{}
 }
 
 // command queues a command item for n after the next commit's changes.
@@ -1156,6 +1228,9 @@ func (n *node) events() EventMask {
 	bit(EventPressUp, h.pressUp != nil || s.Active != nil)
 	bit(EventHoverIn, h.hoverIn != nil || s.Hover != nil)
 	bit(EventHoverOut, h.hoverOut != nil || s.Hover != nil)
+	bit(EventHoverMove, h.hoverMove != nil)
+	bit(EventMouseMove, h.mouseMove != nil)
+	bit(EventTouch, n.hearsTouches())
 	bit(EventFocus, h.focus != nil || s.Focus != nil)
 	bit(EventBlur, h.blur != nil || s.Focus != nil)
 	bit(EventSubmitEditing, h.submit != nil)
@@ -1172,10 +1247,12 @@ func (n *node) events() EventMask {
 		bit(EventSelectionChange, in.selection != nil)
 		bit(EventKeyPress, in.keyPress != nil)
 		bit(EventCompositionChange, in.composition != nil)
+		bit(EventCaretMove, in.caret != nil)
+		bit(EventPaste, in.paste != nil)
 	}
 	bit(EventPan, n.panning)
-	bit(EventPinch, h.pinch != nil)
-	bit(EventRotation, h.rotation != nil)
+	bit(EventPinch, n.pinching)
+	bit(EventRotation, n.rotating)
 	bit(EventFileDragEnter, h.fileEnter != nil)
 	bit(EventFileDragLeave, h.fileLeave != nil)
 	bit(EventFileDrop, h.fileDrop != nil)

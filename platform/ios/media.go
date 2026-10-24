@@ -284,13 +284,6 @@ func (s *surface) stepMotions(now time.Duration) {
 	s.ghosts = live
 }
 
-// panned moves the values bound to v's drags before the pan is reported.
-func (s *surface) panned(v *view, translation core.Point) {
-	if s.animator.Pan(v.id, translation) {
-		apple.WithoutAnimation(s.applyAnimated)
-	}
-}
-
 // configureNative makes a native view's component on its first item and
 // passes it the props that changed.
 func (s *surface) configureNative(v *view, c *core.NativeConfig) {

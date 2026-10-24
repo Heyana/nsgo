@@ -530,14 +530,20 @@ func (w *window) windowDragAt(p core.Point) bool {
 	}
 	var path []*view
 	for v := root; v != nil; {
-		if v.style.Hidden || !v.frame.Contains(p) {
+		self, children := v.reach(p)
+		if v.style.Hidden || !self && !children {
 			break
 		}
-		path = append(path, v)
+		if self {
+			path = append(path, v)
+		}
+		if !children {
+			break
+		}
 		p = core.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
 		var next *view
 		for i := len(v.children) - 1; i >= 0; i-- {
-			if c := v.children[i]; !c.style.Hidden && c.frame.Contains(p) {
+			if c := v.children[i]; c.under(p) {
 				next = c
 				break
 			}

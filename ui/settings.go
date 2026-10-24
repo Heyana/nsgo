@@ -160,7 +160,7 @@ func (s Settings) Render(cx *core.Scope) core.Node {
 			children = append(children, s.HeaderActions...)
 			if s.OnClose != nil {
 				children = append(children, IconButton{Icon: lucide.X(), Label: orString(s.CloseLabel, "Close settings"),
-					OnPress: s.OnClose, NoTooltip: true, TestID: "settings-close"})
+					OnPress: func(core.PressEvent) { s.OnClose() }, NoTooltip: true, TestID: "settings-close"})
 			}
 		}
 		return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, FlexShrink: 0,
@@ -179,7 +179,7 @@ func (s Settings) Render(cx *core.Scope) core.Node {
 			for i := start; i < end; i++ {
 				c := s.Categories[i]
 				items = append(items, SidebarItem{Label: c.Title, Icon: c.Icon, TestID: "settings-category-" + c.ID,
-					Selected: func() bool { return selected() == i }, OnPress: func() { choose(c.ID) }})
+					Selected: func() bool { return selected() == i }, OnPress: func(core.PressEvent) { choose(c.ID) }})
 			}
 			sections = append(sections, SidebarSection{Title: section, Children: items})
 			start = end

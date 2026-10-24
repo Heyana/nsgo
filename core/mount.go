@@ -161,6 +161,15 @@ const (
 	// platforms that report header heights, before the screen is
 	// inserted and when it changes.
 	ItemScreen
+	// ItemOverflow gives the area ID's children cover outside its bounds
+	// (Frame, in its own coordinates), or zero Bounds when they stay
+	// inside, for platforms to look for a touch's target there; see
+	// Reach. Sent only when it changes.
+	ItemOverflow
+	// ItemBlockNative stops the scroll views around ID, the touch
+	// responder, from taking the touches until they end, or lets them
+	// again with no ID.
+	ItemBlockNative
 )
 
 // MountItem is one change to the native views. Kind says which fields
@@ -189,8 +198,8 @@ type MountItem struct {
 	Modal     *ModalConfig
 	Alert     *AlertConfig
 	Drawing   *Drawing
-	// Keys are ItemKeymap's normalized bindings (see NormalizeKey).
-	Keys   []string
+	// Keys are ItemKeymap's bindings, oldest first; see FindKey.
+	Keys   []KeyBinding
 	Window *WindowCommand
 	Menu   []MenuEntry
 	Web    *WebConfig
@@ -365,6 +374,8 @@ type InputConfig struct {
 	// platform's.
 	SelectionColor Color
 	HideCaret      bool
+	// PasteBehavior says whether a paste inserts its text.
+	PasteBehavior PasteBehavior
 }
 
 // KeyboardType picks a software keyboard.
@@ -414,6 +425,13 @@ type ViewProps struct {
 	SelectionArea  bool
 	Selectable     Selectable
 	SelectionColor Color
+	// NoFocus keeps a pressable view out of the Tab stops.
+	NoFocus bool
+	// PointerEvents, HitSlop and DelayLongPress are the view's; a zero
+	// DelayLongPress is the platform's 500 ms.
+	PointerEvents  PointerEvents
+	HitSlop        Edges
+	DelayLongPress time.Duration
 }
 
 // Role is a view's accessibility role.

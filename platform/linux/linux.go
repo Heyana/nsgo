@@ -36,6 +36,7 @@ import (
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/engine"
+	"github.com/oneo-me/nsgo/platform/internal/finger"
 	"github.com/oneo-me/nsgo/platform/internal/hover"
 	"github.com/oneo-me/nsgo/platform/internal/queue"
 	"github.com/oneo-me/nsgo/platform/internal/scrollbar"
@@ -76,7 +77,8 @@ type window struct {
 	entries   map[uintptr]*view
 	natives   map[uintptr]*view // by the objects of hosted widgets
 	appID     string
-	keys      map[string]bool
+	keys      []core.KeyBinding
+	held      map[uint32]bool // the keys down, by keycode
 	animating []*view
 	ticking   bool
 	tickID    uint32
@@ -92,6 +94,9 @@ type window struct {
 	drop       fileDrop
 
 	lastPointer    core.Point
+	down           core.Event    // the last press: modifiers and click count
+	mouse          finger.Mouse  // finger 0 of the views' touches
+	paste          *pasting      // the paste whose clipboard is being read
 	pointerIn      bool          // the pointer is over the surface, at lastPointer
 	hovered        hover.Tracker // the views under it that follow hovers
 	shielding      bool          // a press kept from a hosted control goes on
@@ -109,7 +114,8 @@ type window struct {
 	extents        map[core.Font]core.FontExtent // the engine thread's font metrics
 	capHeights     map[core.Font]core.Points     // and capital heights
 	pressConsumed  bool
-	focus          *view // the entry with keyboard focus
+	longPress      uint64 // counts long presses waited for, to cancel the last
+	focus          *view  // the entry with keyboard focus
 	pinchTimeout   uint32
 	clipboardCount uint32
 	alerts         []core.AlertConfig
@@ -149,10 +155,10 @@ func start(app engine.App, opts Options) (*window, error) {
 		return nil, fmt.Errorf("the Linux backend needs GTK 4: %w", err)
 	}
 	w := &window{
-		entries:    map[uintptr]*view{},
-		natives:    map[uintptr]*view{},
-		appID:      opts.ID,
-		keys:       map[string]bool{},
+		entries: map[uintptr]*view{},
+		natives: map[uintptr]*view{},
+		appID:   opts.ID,
+
 		actionRefs: map[uintptr]menuRef{},
 		env:        core.Environment{OS: core.OSLinux, Idiom: core.IdiomDesktop},
 		components: opts.Components,
@@ -413,6 +419,8 @@ func (w *window) apply(b *core.MountBatch) {
 			default:
 				w.delete(v)
 			}
+		case core.ItemOverflow:
+			v.overflow = it.Frame
 		case core.ItemFrame:
 			old := v.shownFrame().Size
 			w.framed(v, it.Frame, lb)
@@ -739,9 +747,4 @@ func (w *window) back() {
 }
 
 // setKeymap replaces the app's keyboard shortcuts.
-func (w *window) setKeymap(keys []string) {
-	w.keys = map[string]bool{}
-	for _, k := range keys {
-		w.keys[k] = true
-	}
-}
+func (w *window) setKeymap(keys []core.KeyBinding) { w.keys = keys }

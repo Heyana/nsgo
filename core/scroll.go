@@ -364,7 +364,9 @@ func (sc *scrollNode) events() EventMask {
 			m |= 1 << k
 		}
 	}
-	bit(EventScroll, sc.on.onScroll != nil || sc.config.Zooms() || len(sc.dependents) > 0)
+	// Every scroll view reports its offset, so the core's hit tests and
+	// touches find what shows under a point, as NSH's core keeps them.
+	bit(EventScroll, true)
 	bit(EventScrollDragStart, sc.on.onDragStart != nil)
 	bit(EventScrollDragEnd, sc.on.onDragEnd != nil)
 	bit(EventMomentumStart, sc.on.onMomentum != nil)

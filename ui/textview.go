@@ -68,7 +68,7 @@ func copyButton(cx *core.Scope, code textview.CodeBlock) core.Node {
 	var stop func() bool
 	return Button{Variant: Ghost, Label: "Copy",
 		Style: core.Style{Padding: core.Symmetric(2, 8), FontSize: 12},
-		OnPress: func() {
+		OnPress: func(core.PressEvent) {
 			cx.SetClipboard(code.Code)
 			copied.Set(true)
 			if stop != nil {

@@ -67,7 +67,7 @@ type message struct {
 	event  core.Event
 	resize *core.Size
 	env    *core.Environment
-	at     *core.Point
+	at     *core.Event // a press to hit test
 	fn     func()
 }
 
@@ -164,9 +164,7 @@ func (e *Engine) run(p Platform, app App, opts Options) {
 			case m.env != nil:
 				tree.SetEnvironment(*m.env)
 			case m.at != nil:
-				if id := tree.HitTest(*m.at); id != 0 {
-					tree.Dispatch(core.Event{Kind: core.EventPress, ID: id})
-				}
+				tree.PressAt(*m.at)
 			default:
 				tree.Dispatch(m.event)
 			}
@@ -228,9 +226,10 @@ func (e *Engine) Resize(size core.Size) { e.push(message{resize: &size}) }
 // runs; only the latest report queued is applied.
 func (e *Engine) SetEnvironment(env core.Environment) { e.push(message{env: &env}) }
 
-// PressAt reports a press at p in surface points, for platforms that
-// draw their own views and leave hit testing to the engine.
-func (e *Engine) PressAt(p core.Point) { e.push(message{at: &p}) }
+// PressAt reports a press at ev.Page in surface points, with its
+// Modifiers and click Count, for platforms that draw their own views and
+// leave hit testing to the engine.
+func (e *Engine) PressAt(ev core.Event) { e.push(message{at: &ev}) }
 
 // Close stops the app, disposing its graph, and waits for the engine
 // goroutine to exit. It must not be called from the engine goroutine.

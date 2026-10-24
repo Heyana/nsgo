@@ -10,21 +10,62 @@ import (
 // the presses that match and reports them with EventKey.
 
 type keyBinding struct {
-	key   string
+	KeyBinding
 	owner *Scope
 	fn    func()
+}
+
+// KeyBinding is one binding of the keymap the platform matches key
+// presses against, on the main thread.
+type KeyBinding struct {
+	// Key is normalized, as NormalizeKey writes it.
+	Key string
+	// InText fires it while a text input or a web view has the keyboard
+	// focus.
+	InText bool
+	// Repeat fires it again on the auto-repeats of a held key; else they
+	// are consumed and fire nothing.
+	Repeat bool
+}
+
+// KeyWhen says when a binding fires.
+type KeyWhen uint8
+
+const (
+	// KeyAuto fires it unless a text input or a web view has the
+	// keyboard focus and uses the key itself (EditsText).
+	KeyAuto KeyWhen = iota
+	// KeyAlways fires it wherever the keyboard focus is.
+	KeyAlways
+	// KeyNotEditing fires it only while no text input or web view has
+	// the keyboard focus.
+	KeyNotEditing
+)
+
+// KeyOptions are how a binding fires.
+type KeyOptions struct {
+	When KeyWhen
+	// Repeat fires it again on the auto-repeats of a held key.
+	Repeat bool
 }
 
 // OnKey runs fn when key is pressed, while the current owner lives. key
 // names modifiers and a key joined by "+": "mod+s" (Command on Apple
 // platforms, Control elsewhere), "ctrl+shift+z", "alt+left", "escape",
-// "enter", "f5", "a". The newest binding of a key wins.
-func (cx *Scope) OnKey(key string, fn func()) {
+// "enter", "f5", "a". The newest binding of a key wins. It fires once
+// while the key is held, and not while a text input that uses the key
+// has the keyboard focus; OnKeyWith says else.
+func (cx *Scope) OnKey(key string, fn func()) { cx.OnKeyWith(key, KeyOptions{}, fn) }
+
+// OnKeyWith is OnKey firing as opts say.
+func (cx *Scope) OnKeyWith(key string, opts KeyOptions, fn func()) {
 	t := cx.rt.tree
 	if t == nil {
 		return
 	}
-	b := &keyBinding{key: NormalizeKey(key), owner: cx.current(), fn: fn}
+	k := NormalizeKey(key)
+	inText := opts.When == KeyAlways || opts.When == KeyAuto && !EditsText(k)
+	b := &keyBinding{KeyBinding: KeyBinding{Key: k, InText: inText, Repeat: opts.Repeat}, owner: cx.current(), fn: fn}
 	t.keys = append(t.keys, b)
 	t.keysChanged = true
 	t.changed = true
@@ -33,6 +74,26 @@ func (cx *Scope) OnKey(key string, fn func()) {
 		t.keysChanged = true
 		t.changed = true
 	})
+}
+
+type backHandler struct {
+	owner *Scope
+	fn    func() bool
+}
+
+// OnBackPress runs fn when back is pressed (Escape, the back button or
+// gesture, the browser's back) while the current owner lives: after the
+// overlays and modals, which take it first, and before the navigation
+// stacks, the newest handler first. fn returns true to take it; when none
+// does, the top stack pops, else the platform goes back itself.
+func (cx *Scope) OnBackPress(fn func() bool) {
+	t := cx.rt.tree
+	if t == nil {
+		return
+	}
+	b := &backHandler{owner: cx.current(), fn: fn}
+	t.backs = append(t.backs, b)
+	b.owner.addCleanup(func() { t.backs = slices.DeleteFunc(t.backs, func(o *backHandler) bool { return o == b }) })
 }
 
 // NormalizeKey returns key lowercased with its modifiers in the order
@@ -58,12 +119,11 @@ func NormalizeKey(key string) string {
 	return strings.Join(append(mods, name), "+")
 }
 
-func (t *Tree) keymap() []string {
-	var out []string
+// keymap returns the bindings, oldest first: the newest of a key wins.
+func (t *Tree) keymap() []KeyBinding {
+	out := make([]KeyBinding, 0, len(t.keys))
 	for _, b := range t.keys {
-		if !slices.Contains(out, b.key) {
-			out = append(out, b.key)
-		}
+		out = append(out, b.KeyBinding)
 	}
 	return out
 }
@@ -71,11 +131,117 @@ func (t *Tree) keymap() []string {
 func (t *Tree) pressKey(key string) {
 	key = NormalizeKey(key)
 	for i := len(t.keys) - 1; i >= 0; i-- {
-		if b := t.keys[i]; b.key == key && !b.owner.disposed {
+		if b := t.keys[i]; b.Key == key && !b.owner.disposed {
 			t.within(b.owner, b.fn)
 			return
 		}
 	}
+}
+
+// FindKey says what a key press does with keymap: names are the press's
+// normalized names (with "mod" and with the literal modifier), editing
+// whether a text input or web view has the keyboard focus, and repeat
+// whether it is a held key's auto-repeat. It returns the binding that
+// fires, or "" and whether the press is consumed anyway: the repeat of a
+// binding that fires once.
+func FindKey(keymap []KeyBinding, names []string, editing, repeat bool) (key string, consumed bool) {
+	for i := len(keymap) - 1; i >= 0; i-- {
+		b := keymap[i]
+		if !slices.Contains(names, b.Key) || editing && !b.InText {
+			continue
+		}
+		if repeat && !b.Repeat {
+			return "", true
+		}
+		return b.Key, true
+	}
+	return "", false
+}
+
+// EditsText reports whether a text input with the keyboard focus uses
+// the normalized key itself: keys that type, move the caret or delete,
+// and select all, cut, copy, paste, undo and redo. A binding of it fires
+// in text inputs only with KeyAlways.
+func EditsText(key string) bool {
+	parts := strings.Split(key, "+")
+	name, mods := parts[len(parts)-1], parts[:len(parts)-1]
+	command := slices.Contains(mods, "mod") || slices.Contains(mods, "ctrl") || slices.Contains(mods, "meta")
+	switch {
+	case len(name) > 1 && name[0] == 'f' && name[1] >= '1' && name[1] <= '9':
+		return false
+	case len(name) == 1:
+		return !command || strings.Contains("acvxyz", name)
+	}
+	return true
+}
+
+// KeyLabel is key as menus and hints show it: ⌃⌥⇧⌘K where "mod" is
+// Command (apple), else Ctrl+Alt+Shift+K, with "meta" as Win on Windows,
+// Meta on the web and Super elsewhere.
+func KeyLabel(key string, os OS, apple bool) string {
+	parts := strings.Split(NormalizeKey(key), "+")
+	name, mods := parts[len(parts)-1], parts[:len(parts)-1]
+	has := func(m string) bool { return slices.Contains(mods, m) }
+	ctrl, cmd := has("ctrl"), has("meta")
+	if has("mod") {
+		if apple {
+			cmd = true
+		} else {
+			ctrl = true
+		}
+	}
+	var b strings.Builder
+	if apple {
+		for _, m := range []struct {
+			on    bool
+			glyph string
+		}{{ctrl, "⌃"}, {has("alt"), "⌥"}, {has("shift"), "⇧"}, {cmd, "⌘"}} {
+			if m.on {
+				b.WriteString(m.glyph)
+			}
+		}
+	} else {
+		meta := map[OS]string{OSWindows: "Win+", OSWeb: "Meta+"}[os]
+		if meta == "" {
+			meta = "Super+"
+		}
+		for _, m := range []struct {
+			on   bool
+			name string
+		}{{ctrl, "Ctrl+"}, {has("alt"), "Alt+"}, {has("shift"), "Shift+"}, {cmd, meta}} {
+			if m.on {
+				b.WriteString(m.name)
+			}
+		}
+	}
+	named := map[string][2]string{
+		"enter": {"↩", "Enter"}, "escape": {"⎋", "Esc"}, "tab": {"⇥", "Tab"}, "backspace": {"⌫", "Backspace"},
+		"delete": {"⌦", "Del"}, "up": {"↑", "↑"}, "down": {"↓", "↓"}, "left": {"←", "←"}, "right": {"→", "→"},
+		"home": {"↖", "Home"}, "end": {"↘", "End"}, "pageup": {"⇞", "PgUp"}, "pagedown": {"⇟", "PgDn"},
+		"space": {"Space", "Space"},
+	}
+	switch n, ok := named[name]; {
+	case ok && apple:
+		b.WriteString(n[0])
+	case ok:
+		b.WriteString(n[1])
+	default:
+		b.WriteString(strings.ToUpper(name))
+	}
+	return b.String()
+}
+
+// KeyLabel is key as the platform the app runs on shows it, as
+// core.KeyLabel says.
+func (cx *Scope) KeyLabel(key string) string {
+	env := cx.Env()
+	var os OS
+	var apple bool
+	Untracked(cx, func() bool {
+		os, apple = env.OS(), env.AppleKeys()
+		return true
+	})
+	return KeyLabel(key, os, apple)
 }
 
 // SetTitle sets the window's title on desktops and the page's on the web.

@@ -44,6 +44,12 @@ const (
 	gdkMeta    = 1 << 28
 )
 
+// modifiers returns the modifier keys among GDK's state bits.
+func modifiers(state uint32) core.Modifiers {
+	return core.Modifiers{Control: state&gdkControl != 0, Alt: state&gdkAlt != 0, Shift: state&gdkShift != 0,
+		Platform: state&(gdkSuper|gdkMeta) != 0}
+}
+
 const (
 	propagationPhaseCapture = 1
 	propagationPhaseBubble  = 2
@@ -85,12 +91,18 @@ func clickPressedCallback(gesture uintptr, n int32, x, y float64, data uintptr) 
 		return
 	}
 	w.pointerDown(core.Point{X: core.Points(x), Y: core.Points(y)},
-		gtkGestureSingleGetCurrentButton(gesture), gtkGestureGetDevice(gesture))
+		gtkGestureSingleGetCurrentButton(gesture), gtkGestureGetDevice(gesture),
+		gtkEventControllerGetCurrentEventState(gesture), int(n))
 }
 
-// pointerDown follows a press of button at surface point at.
-func (w *window) pointerDown(at core.Point, button uint32, device uintptr) {
+// pointerDown follows a press of button at surface point at, the clicks'
+// press in a row, with modifiers state.
+func (w *window) pointerDown(at core.Point, button uint32, device uintptr, state uint32, clicks int) {
 	w.lastPointer, w.pressConsumed = at, false
+	w.down = core.Event{Modifiers: modifiers(state), Count: uint32(max(clicks, 1))}
+	if button == 1 {
+		w.touch(w.mouse.Down(w.listensTouches(), at))
+	}
 	// A press on the surface leaves the focused field or page.
 	if w.focus != nil || w.focusedWeb() != nil {
 		w.focusEntry(nil)
@@ -110,6 +122,9 @@ func (w *window) pointerDown(at core.Point, button uint32, device uintptr) {
 		w.pressConsumed = true
 	}
 	w.panDown(at)
+	if button == 1 && !w.pressConsumed {
+		w.startLongPress(at)
+	}
 }
 
 func clickReleasedCallback(gesture uintptr, n int32, x, y float64, data uintptr) {
@@ -122,6 +137,8 @@ func clickReleasedCallback(gesture uintptr, n int32, x, y float64, data uintptr)
 
 // pointerUp follows the release of a press at surface point at.
 func (w *window) pointerUp(at core.Point) {
+	w.touch(w.mouse.Up(at))
+	w.cancelLongPress()
 	if w.pressConsumed || w.panning != nil && w.panning.active {
 		return
 	}
@@ -133,7 +150,11 @@ func motionCallback(controller uintptr, x, y float64, data uintptr) {
 	if w == nil {
 		return
 	}
-	w.movePointer(core.Point{X: core.Points(x), Y: core.Points(y)})
+	var state uint32
+	if controller != 0 { // tests move the pointer without one
+		state = gtkEventControllerGetCurrentEventState(controller)
+	}
+	w.movePointer(core.Point{X: core.Points(x), Y: core.Points(y)}, state)
 	if w.barDrag == nil {
 		w.hoverBars(w.lastPointer)
 	}
@@ -161,6 +182,9 @@ func dragBeginCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) 
 
 func dragUpdateCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
 	w := windowOf(data)
+	if w != nil && math.Hypot(offsetX, offsetY) > longPressSlop {
+		w.cancelLongPress()
+	}
 	if w != nil && w.barDrag != nil {
 		d := w.barDrag
 		w.dragBar(core.Point{X: d.from.X + core.Points(offsetX), Y: d.from.Y + core.Points(offsetY)})
@@ -187,7 +211,7 @@ func dragUpdateCallback(gesture uintptr, offsetX, offsetY float64, data uintptr)
 			return
 		}
 		g.active = true
-		w.reportPan(g.v, core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureBegan, Point: d})
+		w.reportGesture(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureBegan, Point: d})
 	}
 	dt := time.Since(g.lastTime).Seconds()
 	var velocity core.Point
@@ -195,7 +219,7 @@ func dragUpdateCallback(gesture uintptr, offsetX, offsetY float64, data uintptr)
 		velocity = core.Point{X: core.Points(float64(now.X-g.last.X) / dt), Y: core.Points(float64(now.Y-g.last.Y) / dt)}
 	}
 	g.last, g.lastTime, g.velocity = now, time.Now(), velocity
-	w.reportPan(g.v, core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureChanged, Point: d, Velocity: velocity})
+	w.reportGesture(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureChanged, Point: d, Velocity: velocity})
 }
 
 func dragEndCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
@@ -220,21 +244,51 @@ func dragEndCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
 	}
 	if !g.active {
 		g.active = true
-		w.reportPan(g.v, core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureBegan, Point: d})
+		w.reportGesture(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureBegan, Point: d})
 	}
-	w.reportPan(g.v, core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureEnded, Point: d, Velocity: g.velocity})
+	w.reportGesture(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureEnded, Point: d, Velocity: g.velocity})
 }
 
-func longPressCallback(gesture uintptr, x, y float64, data uintptr) {
-	w := windowOf(data)
-	if w == nil {
+// longPressDelay is how long a press is held to be a long press, unless
+// the view's DelayLongPress says else.
+const longPressDelay = 500 * time.Millisecond
+
+// longPressSlop is how far a press may move and still become a long
+// press, in points, as GTK's drag threshold.
+const longPressSlop = 8
+
+// startLongPress waits for the press at surface point at to be held as
+// long as the view there that takes long presses asks. A timer of NSGo's
+// own rather than GTK's long press gesture, whose delay is not the view's.
+func (w *window) startLongPress(at core.Point) {
+	w.longPress++
+	v := w.hitEvent(at, core.EventLongPress)
+	if v == nil {
 		return
 	}
-	at := core.Point{X: core.Points(x), Y: core.Points(y)}
-	if v := w.hitEvent(at, core.EventLongPress); v != nil {
-		w.engine.Dispatch(core.Event{Kind: core.EventLongPress, ID: v.id})
+	delay := longPressDelay
+	if d := v.props.DelayLongPress; d > 0 {
+		delay = d
 	}
+	seq, ev := w.longPress, w.down
+	ev.Kind, ev.ID, ev.Page = core.EventLongPress, v.id, at
+	if b, ok := w.surfaceBounds(v); ok {
+		ev.Point = core.Point{X: at.X - b.Origin.X, Y: at.Y - b.Origin.Y}
+	}
+	time.AfterFunc(delay, func() {
+		w.post(func() {
+			if w.longPress != seq || w.closing || v.deleted {
+				return
+			}
+			w.longPress++
+			w.pressConsumed = true // the release presses nothing
+			w.engine.Dispatch(ev)
+		})
+	})
 }
+
+// cancelLongPress stops waiting for the press in progress to be long.
+func (w *window) cancelLongPress() { w.longPress++ }
 
 func zoomChangedCallback(gesture uintptr, scale float64, data uintptr) {
 	w := windowOf(data)
@@ -259,7 +313,7 @@ func gestureEndCallback(gesture uintptr, sequence uintptr, data uintptr) {
 	}
 	for _, g := range []*twoFinger{w.pinching, w.rotating} {
 		if g != nil && g.v != nil && !g.v.deleted {
-			w.engine.Dispatch(core.Event{Kind: g.kind, ID: g.v.id, Phase: core.GestureEnded, Value: g.value,
+			w.reportGesture(core.Event{Kind: g.kind, ID: g.v.id, Phase: core.GestureEnded, Value: g.value,
 				Velocity: core.Point{X: core.Points(g.velocity)}})
 		}
 	}
@@ -302,19 +356,18 @@ func keyPressedCallback(controller uintptr, keyval, keycode, state uint32, data 
 	if w == nil {
 		return 0
 	}
-	if w.focus != nil {
-		// The field takes plain keys and its own editing shortcuts.
-		if keyval != gdkEscape && state&(gdkControl|gdkAlt|gdkSuper|gdkMeta) == 0 {
-			return 0
-		}
-	} else if w.focusedWeb() != nil {
-		// The page takes plain keys, Escape among them.
-		if state&(gdkControl|gdkAlt|gdkSuper|gdkMeta) == 0 {
-			return 0
-		}
+	// GTK reports no auto-repeats: a key pressed again before it was
+	// released repeats.
+	repeat := w.held[keycode]
+	if w.held == nil {
+		w.held = map[uint32]bool{}
 	}
-	if w.shortcut(keyval, state) {
+	w.held[keycode] = true
+	if w.shortcut(keyval, state, repeat) {
 		return 1
+	}
+	if state&(gdkControl|gdkAlt|gdkSuper|gdkMeta) == 0 && (w.focusedWeb() != nil || w.focus != nil && keyval != gdkEscape) {
+		return 0 // the page's keys, Escape among them, and the field's
 	}
 	if keyval == gdkEscape {
 		if w.focus != nil {
@@ -354,10 +407,6 @@ func (w *window) setupInputs() {
 	gSignalConnect(drag, "drag-end", cbDragEnd, w.handle)
 	gtkWidgetAddController(w.surface, drag)
 
-	long := gtkGestureLongPressNew()
-	gSignalConnect(long, "pressed", cbLongPress, w.handle)
-	gtkWidgetAddController(w.surface, long)
-
 	zoom := gtkGestureZoomNew()
 	gSignalConnect(zoom, "scale-changed", cbZoomChanged, w.handle)
 	gSignalConnect(zoom, "end", cbGestureEnd, w.handle)
@@ -375,6 +424,7 @@ func (w *window) setupInputs() {
 	keys := gtkEventControllerKeyNew()
 	gtkEventControllerSetPropagationPhase(keys, propagationPhaseCapture)
 	gSignalConnect(keys, "key-pressed", cbKeyPressed, w.handle)
+	gSignalConnect(keys, "key-released", cbKeyReleased, w.handle)
 	gtkWidgetAddController(w.win, keys)
 }
 
@@ -397,11 +447,11 @@ func (w *window) panDown(p core.Point) {
 	w.panning = &pan{v: v, start: p, last: p, lastTime: time.Now(), activation: v.props.PanActivation}
 }
 
-// reportPan moves the animated values bound to drags on v to the pan's
-// translation, so they are drawn in the frame that shows the move, and
-// reports the pan.
-func (w *window) reportPan(v *view, ev core.Event) {
-	if w.animator.Pan(v.id, ev.Point) {
+// reportGesture moves the animated values bound to a pan, pinch or
+// rotation, so they are drawn in the frame that shows the move, and
+// reports it.
+func (w *window) reportGesture(ev core.Event) {
+	if w.animator.Gesture(&ev) {
 		w.showAnimated()
 	}
 	w.engine.Dispatch(ev)
@@ -436,7 +486,7 @@ func (w *window) reportTwoFinger(kind core.EventKind, value float32) {
 			return
 		}
 		*slot = &twoFinger{v: v, kind: kind, value: rest(kind), lastTime: time.Now()}
-		w.engine.Dispatch(core.Event{Kind: kind, ID: v.id, Phase: core.GestureBegan, Value: rest(kind)})
+		w.reportGesture(core.Event{Kind: kind, ID: v.id, Phase: core.GestureBegan, Value: rest(kind)})
 	}
 	g := *slot
 	if g.v.deleted {
@@ -453,7 +503,7 @@ func (w *window) reportTwoFinger(kind core.EventKind, value float32) {
 		velocity = (value - g.value) / float32(dt)
 	}
 	g.value, g.lastTime, g.velocity = value, now, velocity
-	w.engine.Dispatch(core.Event{Kind: kind, ID: g.v.id, Phase: core.GestureChanged, Value: value,
+	w.reportGesture(core.Event{Kind: kind, ID: g.v.id, Phase: core.GestureChanged, Value: value,
 		Velocity: core.Point{X: core.Points(velocity)}})
 }
 
@@ -485,10 +535,10 @@ func (w *window) wheelPinch(p core.Point, delta float64) {
 		}
 		g = &twoFinger{v: v, kind: core.EventPinch, value: 1, lastTime: time.Now()}
 		w.pinching = g
-		w.engine.Dispatch(core.Event{Kind: core.EventPinch, ID: v.id, Phase: core.GestureBegan, Value: 1})
+		w.reportGesture(core.Event{Kind: core.EventPinch, ID: v.id, Phase: core.GestureBegan, Value: 1})
 	}
 	g.value *= float32(math.Pow(2, -delta/20))
-	w.engine.Dispatch(core.Event{Kind: core.EventPinch, ID: g.v.id, Phase: core.GestureChanged, Value: g.value})
+	w.reportGesture(core.Event{Kind: core.EventPinch, ID: g.v.id, Phase: core.GestureChanged, Value: g.value})
 	if w.pinchTimeout != 0 {
 		gSourceRemove(w.pinchTimeout)
 	}
@@ -501,7 +551,7 @@ func pinchTimeoutCallback(data uintptr) int32 {
 	if g := w.pinching; g != nil {
 		w.pinching = nil
 		if !g.v.deleted {
-			w.engine.Dispatch(core.Event{Kind: core.EventPinch, ID: g.v.id, Phase: core.GestureEnded, Value: g.value})
+			w.reportGesture(core.Event{Kind: core.EventPinch, ID: g.v.id, Phase: core.GestureEnded, Value: g.value})
 		}
 	}
 	return 0 // G_SOURCE_REMOVE
@@ -546,11 +596,13 @@ func descendant(v, child *view) bool {
 
 // shortcut reports a key press matching the app's keymap or the
 // application menu's shortcuts, and whether it took it.
-func (w *window) shortcut(keyval, state uint32) bool {
+func (w *window) shortcut(keyval, state uint32, repeat bool) bool {
 	name := keyName(keyval, state&gdkShift != 0)
 	if name == "" {
 		return false
 	}
+	editing := w.focus != nil || w.focusedWeb() != nil
+	var names []string
 	ctrl, alt := state&gdkControl != 0, state&gdkAlt != 0
 	shift, meta := state&gdkShift != 0, state&(gdkSuper|gdkMeta) != 0
 	for _, control := range []string{"mod", "ctrl"} {
@@ -567,16 +619,29 @@ func (w *window) shortcut(keyval, state uint32) bool {
 		if meta {
 			parts = append(parts, "meta")
 		}
-		key := strings.Join(append(parts, name), "+")
-		if w.keys[key] {
+		names = append(names, strings.Join(append(parts, name), "+"))
+	}
+	if key, consumed := core.FindKey(w.keys, names, editing, repeat); consumed {
+		if key != "" {
 			w.engine.Dispatch(core.Event{Kind: core.EventKey, Text: key})
-			return true
 		}
+		return true
+	}
+	if editing && state&(gdkControl|gdkAlt|gdkSuper|gdkMeta) == 0 {
+		return false // a field's or a page's own keys
+	}
+	for _, key := range names {
 		if w.menuShortcut(key) {
 			return true
 		}
 	}
 	return false
+}
+
+func keyReleasedCallback(controller uintptr, keyval, keycode, state uint32, data uintptr) {
+	if w := windowOf(data); w != nil {
+		delete(w.held, keycode)
+	}
 }
 
 // keyName names a keyval as core.NormalizeKey does, or "" for a key it
@@ -711,6 +776,7 @@ const (
 	gdkScrollEvent   = 15
 	gdkScrollSmooth  = 4
 	gdkButtonsMask   = 1<<8 | 1<<9 | 1<<10
+	gdkButton1       = 1 << 8
 )
 
 // shieldCallback keeps from a hosted control (a page, a video's
@@ -744,7 +810,7 @@ func (w *window) shield(event uintptr) bool {
 			w.pointerUp(at)
 			return true
 		case gdkMotionNotify:
-			w.movePointer(at)
+			w.movePointer(at, gdkEventGetModifierState(event))
 			return true
 		}
 	}
@@ -763,10 +829,10 @@ func (w *window) shield(event uintptr) bool {
 	}
 	switch typ {
 	case gdkMotionNotify:
-		w.movePointer(at)
+		w.movePointer(at, gdkEventGetModifierState(event))
 	case gdkButtonPress:
 		w.shielding = true
-		w.pointerDown(at, gdkButtonEventGetButton(event), gdkEventGetDevice(event))
+		w.pointerDown(at, gdkButtonEventGetButton(event), gdkEventGetDevice(event), gdkEventGetModifierState(event), 1)
 	case gdkScrollEvent:
 		var dx, dy float64
 		switch gdkScrollEventGetDirection(event) {

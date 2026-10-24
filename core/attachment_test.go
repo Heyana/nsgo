@@ -10,7 +10,7 @@ func TestAttachmentsFlowInText(t *testing.T) {
 		return View{Style: Style{FontSize: 10}, Children: []Node{
 			Text{TestID: "text", Spans: []Span{
 				{Content: "ab "},
-				{Attachment: View{TestID: "box", OnPress: func() { pressed++ },
+				{Attachment: View{TestID: "box", OnPress: func(PressEvent) { pressed++ },
 					StyleFunc: func() Style {
 						if wide.Get() {
 							return Style{Width: Pt(40), Height: Pt(6)}

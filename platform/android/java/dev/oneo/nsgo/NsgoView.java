@@ -38,6 +38,7 @@ import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewGroupOverlay;
+import android.view.ViewConfiguration;
 import android.view.ViewParent;
 import android.view.ViewTreeObserver;
 import android.view.WindowInsets;
@@ -100,6 +101,8 @@ public class NsgoView extends FrameLayout {
     private final InputMethodManager ime;
     /** Mounted nodes by ID, on the UI thread. */
     private final SparseArray<Node> nodes = new SparseArray<>();
+    /** The node each node's view is, for a group to find its children's hit slop and areas. */
+    private final java.util.HashMap<View, Node> byView = new java.util.HashMap<>();
     /** Prepared text by ID, on the reader thread. */
     private final SparseArray<Text.Prepared> prepared = new SparseArray<>();
     /** Laid-out text by ID: the reader thread adds it, the batch that draws it takes it. */
@@ -132,8 +135,9 @@ public class NsgoView extends FrameLayout {
     private ConnectivityManager.NetworkCallback network;
     /** The OnBackInvokedDispatcher and OnBackInvokedCallback of back on API 33 and later. */
     private Object backDispatcher, backCallback;
-    /** The keymap's bindings, and the keys whose presses it consumed, on the UI thread. */
-    private Set<String> keys = new HashSet<>();
+    /** The keymap's bindings, oldest first: each key with its flags (1 fires in text, 2 repeats). */
+    private String[] keys = new String[0];
+    private int[] keyFlags = new int[0];
     private final Set<Integer> consumedKeys = new HashSet<>();
     private int statusBarStyle;
     private boolean statusBarHidden;
@@ -544,6 +548,13 @@ public class NsgoView extends FrameLayout {
         event(kind, id, count, x, y, text, width, height, index, phase, vx, vy, value, nav, 0, 0, false, "", false);
     }
 
+    private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
+            int index, int phase, float vx, float vy, float value, WebNode.Navigation nav,
+            long time, long duration, boolean buffering, String data, boolean finished) {
+        event(kind, id, count, x, y, text, width, height, index, phase, vx, vy, value, nav, time, duration, buffering,
+                data, finished, 0, 0, 0);
+    }
+
     /**
      * Sends an event to the engine: its kind, node, count, point, text,
      * size and index, then a gesture's phase, velocity and value, then a
@@ -551,11 +562,13 @@ public class NsgoView extends FrameLayout {
      * canGoBack and canGoForward, and if there is, its URL and title; then
      * a video's time and duration in milliseconds and whether it buffers;
      * then a native view's callback arguments as JSON and whether an
-     * animation finished.
+     * animation finished; then a pointer's position in its root view and
+     * the modifier keys (modifiers' bits).
      */
     private void event(int kind, int id, long count, float x, float y, String text, float width, float height,
             int index, int phase, float vx, float vy, float value, WebNode.Navigation nav,
-            long time, long duration, boolean buffering, String data, boolean finished) {
+            long time, long duration, boolean buffering, String data, boolean finished,
+            float pageX, float pageY, int mods) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream d = new DataOutputStream(bytes);
         try {
@@ -584,6 +597,9 @@ public class NsgoView extends FrameLayout {
             d.writeByte(buffering ? 1 : 0);
             Protocol.writeString(d, data);
             d.writeByte(finished ? 1 : 0);
+            d.writeFloat(pageX);
+            d.writeFloat(pageY);
+            d.writeByte(mods);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -601,6 +617,66 @@ public class NsgoView extends FrameLayout {
 
     private void report(Node n, int kind) {
         report(n, kind, 0, 0, "");
+    }
+
+    /** Sends a pointer event of kind about n at e if n reports that kind. */
+    private void report(Node n, int kind, MotionEvent e) {
+        if (!n.has(kind)) return;
+        float[] page = page(n.view, e);
+        event(kind, n.id, 0, e.getX() / density, e.getY() / density, "", 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, "",
+                false, page[0], page[1], modifiers(e.getMetaState()));
+    }
+
+    /** Sends a press event of kind about n, with where its touch went down. */
+    private void pressed(Node n, int kind, int index) {
+        if (!n.has(kind)) return;
+        event(kind, n.id, n.pressClicks, n.pressX, n.pressY, "", 0, 0, index, 0, 0, 0, 0, null, 0, 0, false, "",
+                false, n.pressPageX, n.pressPageY, n.pressMods);
+    }
+
+    /** Records where a touch went down on n, for its presses. */
+    private void pressedAt(Node n, MotionEvent e) {
+        float[] page = page(n.view, e);
+        n.pressX = e.getX() / density;
+        n.pressY = e.getY() / density;
+        n.pressPageX = page[0];
+        n.pressPageY = page[1];
+        n.pressMods = modifiers(e.getMetaState());
+        n.pressClicks = 1;
+    }
+
+    /** Stops timing n's long press. */
+    private static void stopLongPress(Node n) {
+        if (n.longTimer != null) {
+            n.view.removeCallbacks(n.longTimer);
+            n.longTimer = null;
+        }
+    }
+
+    /** Forgets n's touch once its press is reported, so a screen reader's click reports none. */
+    private static void pressDone(Node n) {
+        n.pressX = n.pressY = n.pressPageX = n.pressPageY = 0;
+        n.pressMods = n.pressClicks = 0;
+    }
+
+    /** Where e is in the root view v is in, the modal around it or this surface, in points. */
+    private float[] page(View v, MotionEvent e) {
+        View root = this;
+        for (View p = v; p != null && p != this; p = p.getParent() instanceof View ? (View) p.getParent() : null) {
+            if (p instanceof Layer) {
+                root = p;
+                break;
+            }
+        }
+        int[] at = new int[2];
+        root.getLocationOnScreen(at);
+        return new float[] {(e.getRawX() - at[0]) / density, (e.getRawY() - at[1]) / density};
+    }
+
+    /** The bits core.Modifiers is sent as: control, alt, shift and meta (the platform key). */
+    private static int modifiers(int meta) {
+        return ((meta & KeyEvent.META_CTRL_ON) != 0 ? 1 : 0) | ((meta & KeyEvent.META_ALT_ON) != 0 ? 2 : 0)
+                | ((meta & KeyEvent.META_SHIFT_ON) != 0 ? 4 : 0) | ((meta & KeyEvent.META_META_ON) != 0 ? 8 : 0);
     }
 
     private int px(float points) {
@@ -645,6 +721,7 @@ public class NsgoView extends FrameLayout {
     @Override
     public boolean dispatchTouchEvent(MotionEvent e) {
         boolean down = e.getActionMasked() == MotionEvent.ACTION_DOWN;
+        touches(e);
         if (down) {
             pressOutside(e);
             gestures.reset();
@@ -654,6 +731,71 @@ public class NsgoView extends FrameLayout {
         boolean handled = super.dispatchTouchEvent(e);
         if (down) gestures.down(e);
         return handled;
+    }
+
+    /** Whether the fingers are reported as EventTouch: from a first finger down while a node listens. */
+    private boolean touching;
+    /** The last fingers reported, for a cancel when a scroll view takes them. */
+    private String fingers = "";
+    /** Whether the runtime itself is stopping the scroll views, for the touch responder. */
+    private boolean blockingNative;
+
+    /**
+     * Reports the fingers of e as EventTouch while a node listens: each as
+     * "id x y changed" in points in this view, joined by ";", with the
+     * phase as core.GesturePhase.
+     */
+    private void touches(MotionEvent e) {
+        int action = e.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) touching = listensTouches();
+        if (!touching) return;
+        int phase;
+        int changed = -1; // every finger for a move
+        switch (action) {
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN:
+                phase = 1;
+                changed = e.getActionIndex();
+                break;
+            case MotionEvent.ACTION_MOVE:
+                phase = 2;
+                break;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_POINTER_UP:
+                phase = 3;
+                changed = e.getActionIndex();
+                break;
+            case MotionEvent.ACTION_CANCEL:
+                phase = 4;
+                break;
+            default:
+                return;
+        }
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < e.getPointerCount(); i++) {
+            if (i > 0) b.append(';');
+            b.append(e.getPointerId(i)).append(' ').append(e.getX(i) / density).append(' ')
+                    .append(e.getY(i) / density).append(' ').append(changed < 0 || changed == i ? 1 : 0);
+        }
+        fingers = b.toString();
+        event(Protocol.EVENT_TOUCH, 0, 0, 0, 0, "", 0, 0, 0, phase, 0, 0, 0, null, e.getEventTime(), 0, false,
+                fingers, false);
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) touching = false;
+    }
+
+    /** A scroll view took the touches: the nodes hear them cancelled. */
+    private void touchesTaken() {
+        if (!touching || blockingNative) return;
+        touching = false;
+        event(Protocol.EVENT_TOUCH, 0, 0, 0, 0, "", 0, 0, 0, 4, 0, 0, 0, null, android.os.SystemClock.uptimeMillis(), 0,
+                false, fingers.replaceAll(" [01](;|$)", " 1$1"), false);
+    }
+
+    private boolean listensTouches() {
+        for (int i = 0; i < nodes.size(); i++) {
+            if (nodes.valueAt(i).has(Protocol.EVENT_TOUCH)) return true;
+        }
+        return false;
     }
 
     /** Reports a touch starting outside a node that listens for one, at its point in points. */
@@ -768,6 +910,7 @@ public class NsgoView extends FrameLayout {
                 // bitmaps. A view inside one fading out goes with it.
                 if (!vanish(n) && !inGhost(n.view)) detach(n.view);
                 nodes.remove(n.id);
+                byView.remove(n.view);
                 outside.remove(n);
                 moving.remove(n);
                 animator.forget(n.id);
@@ -784,6 +927,11 @@ public class NsgoView extends FrameLayout {
             case Protocol.ITEM_FRAME:
                 setFrame(n, new float[] {in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat()});
                 break;
+            case Protocol.ITEM_OVERFLOW: {
+                float[] area = {in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat()};
+                n.area = area[2] > 0 && area[3] > 0 ? area : null;
+                break;
+            }
             case Protocol.ITEM_VIEW_STYLE:
                 style(n, in);
                 break;
@@ -935,10 +1083,24 @@ public class NsgoView extends FrameLayout {
             case Protocol.ITEM_ANNOUNCE:
                 announceForAccessibility(Protocol.readString(in));
                 break;
+            case Protocol.ITEM_BLOCK_NATIVE:
+                // The touch responder stops the scroll views around it.
+                if (n != null && n.view.getParent() != null) {
+                    blockingNative = true;
+                    n.view.getParent().requestDisallowInterceptTouchEvent(true);
+                    blockingNative = false;
+                }
+                break;
             case Protocol.ITEM_KEYMAP: {
-                Set<String> bindings = new HashSet<>();
-                for (int i = 0, count = in.readInt(); i < count; i++) bindings.add(Protocol.readString(in));
+                int count = in.readInt();
+                String[] bindings = new String[count];
+                int[] flags = new int[count];
+                for (int i = 0; i < count; i++) {
+                    bindings[i] = Protocol.readString(in);
+                    flags[i] = in.readUnsignedByte();
+                }
                 keys = bindings;
+                keyFlags = flags;
                 break;
             }
             case Protocol.ITEM_STATUS_BAR:
@@ -1375,27 +1537,33 @@ public class NsgoView extends FrameLayout {
     public boolean dispatchKeyEvent(KeyEvent e) {
         int code = e.getKeyCode();
         if (e.getAction() == KeyEvent.ACTION_UP && consumedKeys.remove(code)) return true;
-        if (e.getAction() == KeyEvent.ACTION_DOWN && !keys.isEmpty()) {
-            String binding = binding(e);
-            if (binding != null) {
+        if (e.getAction() == KeyEvent.ACTION_DOWN && keys.length > 0) {
+            String[] names = names(e);
+            // The newest binding of the key that fires here, as core.FindKey decides.
+            for (int i = keys.length - 1; names != null && i >= 0; i--) {
+                if (!keys[i].equals(names[0]) && !keys[i].equals(names[1])) continue;
+                if (editing() && (keyFlags[i] & 1) == 0) continue;
                 consumedKeys.add(code);
-                event(Protocol.EVENT_KEY, 0, 0, 0, 0, binding);
+                if (e.getRepeatCount() == 0 || (keyFlags[i] & 2) != 0) event(Protocol.EVENT_KEY, 0, 0, 0, 0, keys[i]);
                 return true;
             }
         }
         return super.dispatchKeyEvent(e);
     }
 
-    private String binding(KeyEvent e) {
+    /** The press's names: with "mod" for Control, and with the modifiers as they are. */
+    private static String[] names(KeyEvent e) {
         String key = keyName(e);
         if (key == null) return null;
         String rest = (e.isAltPressed() ? "alt+" : "") + (e.isShiftPressed() ? "shift+" : "")
                 + (e.isMetaPressed() ? "meta+" : "") + key;
-        if (e.isCtrlPressed()) {
-            if (keys.contains("mod+" + rest)) return "mod+" + rest;
-            rest = "ctrl+" + rest;
-        }
-        return keys.contains(rest) ? rest : null;
+        return e.isCtrlPressed() ? new String[] {"mod+" + rest, "ctrl+" + rest} : new String[] {rest, rest};
+    }
+
+    /** Whether a text field or a web view has the keyboard focus. */
+    private boolean editing() {
+        View focused = findFocus();
+        return focused instanceof android.widget.EditText || focused instanceof android.webkit.WebView;
     }
 
     /** The key's name as core.NormalizeKey writes it, or null for keys it has none for. */
@@ -1537,6 +1705,7 @@ public class NsgoView extends FrameLayout {
                 : kind == Protocol.KIND_SCROLL ? new FrameLayout(context)
                 : kind == Protocol.KIND_MODAL ? new Layer(context) : new Group(context);
         Node n = new Node(id, view);
+        byView.put(view, n);
         if (view instanceof Group) ((Group) view).node = n;
         switch (kind) {
             case Protocol.KIND_TEXT:
@@ -1618,6 +1787,18 @@ public class NsgoView extends FrameLayout {
                 // Text changes always go: the engine keeps the text.
                 if (kind != Protocol.EVENT_CHANGE_TEXT && !n.has(kind)) return;
                 event(kind, n.id, count, 0, 0, text, 0, 0, index, 0, 0, 0, 0, null, 0, 0, false, "", finished);
+            }
+
+            @Override public void caret(float x, float y, float w, float h) {
+                if (n.has(Protocol.EVENT_CARET_MOVE)) {
+                    event(Protocol.EVENT_CARET_MOVE, n.id, 0, x, y, "", w, h, 0);
+                }
+            }
+
+            @Override public void paste(String text, String data) {
+                if (n.has(Protocol.EVENT_PASTE)) {
+                    event(Protocol.EVENT_PASTE, n.id, 0, 0, 0, text, 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, data, false);
+                }
             }
 
             @Override public void blur() {
@@ -1788,21 +1969,59 @@ public class NsgoView extends FrameLayout {
         boolean press = n.has(Protocol.EVENT_PRESS);
         boolean longPress = n.has(Protocol.EVENT_LONG_PRESS);
         boolean downUp = n.has(Protocol.EVENT_PRESS_DOWN) || n.has(Protocol.EVENT_PRESS_UP);
-        boolean hover = n.has(Protocol.EVENT_HOVER_IN) || n.has(Protocol.EVENT_HOVER_OUT);
+        boolean hover = n.has(Protocol.EVENT_HOVER_IN) || n.has(Protocol.EVENT_HOVER_OUT)
+                || n.has(Protocol.EVENT_HOVER_MOVE);
         // A text view's press carries the byte offset of the character
-        // under it, for its link spans.
-        view.setOnClickListener(press ? v -> event(Protocol.EVENT_PRESS, n.id, 0, 0, 0, "", 0, 0,
-                v instanceof TextNode ? ((TextNode) v).pressedIndex() : 0) : null);
+        // under it, for its link spans; every press where its touch went
+        // down.
+        view.setOnClickListener(press ? v -> {
+            // A press held as a long press of the node's own delay ends there.
+            if (!n.longFired) pressed(n, Protocol.EVENT_PRESS, v instanceof TextNode ? ((TextNode) v).pressedIndex() : 0);
+            pressDone(n);
+        } : null);
+        // With a delay of its own the node times its long presses; the
+        // system's, which comes at its fixed delay, only consumes the press.
         view.setOnLongClickListener(longPress ? v -> {
-            report(n, Protocol.EVENT_LONG_PRESS);
+            if (n.delayLongPress > 0 && n.touching) {
+                n.swallowed = true;
+                return true;
+            }
+            pressed(n, Protocol.EVENT_LONG_PRESS, 0);
+            pressDone(n);
             return true;
         } : null);
-        view.setOnTouchListener(downUp ? (v, e) -> {
+        view.setOnTouchListener(press || longPress || downUp ? (v, e) -> {
+            if (v instanceof Group && !((Group) v).ownTouch()) return false;
             int action = e.getActionMasked();
             if (action == MotionEvent.ACTION_DOWN) {
-                report(n, Protocol.EVENT_PRESS_DOWN);
+                pressedAt(n, e);
+                n.touching = true;
+                n.longFired = n.swallowed = false;
+                n.downX = e.getX();
+                n.downY = e.getY();
+                if (n.delayLongPress > 0 && n.has(Protocol.EVENT_LONG_PRESS)) {
+                    n.longTimer = () -> {
+                        n.longTimer = null;
+                        n.longFired = true;
+                        pressed(n, Protocol.EVENT_LONG_PRESS, 0);
+                    };
+                    v.postDelayed(n.longTimer, n.delayLongPress);
+                }
+                pressed(n, Protocol.EVENT_PRESS_DOWN, 0);
+            } else if (action == MotionEvent.ACTION_MOVE) {
+                int slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                if (Math.hypot(e.getX() - n.downX, e.getY() - n.downY) > slop) stopLongPress(n);
             } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                report(n, Protocol.EVENT_PRESS_UP);
+                n.touching = false;
+                boolean timing = n.longTimer != null;
+                stopLongPress(n);
+                pressed(n, Protocol.EVENT_PRESS_UP, 0);
+                // The system's long press took the click, but the node's own
+                // had not come yet: the release is a press.
+                if (action == MotionEvent.ACTION_UP && n.swallowed && timing && !n.longFired) {
+                    pressed(n, Protocol.EVENT_PRESS, v instanceof TextNode ? ((TextNode) v).pressedIndex() : 0);
+                    pressDone(n);
+                }
             }
             return false;
         } : null);
@@ -1810,6 +2029,8 @@ public class NsgoView extends FrameLayout {
             int action = e.getActionMasked();
             if (action == MotionEvent.ACTION_HOVER_ENTER) {
                 report(n, Protocol.EVENT_HOVER_IN);
+            } else if (action == MotionEvent.ACTION_HOVER_MOVE) {
+                report(n, Protocol.EVENT_HOVER_MOVE, e);
             } else if (action == MotionEvent.ACTION_HOVER_EXIT) {
                 report(n, Protocol.EVENT_HOVER_OUT);
             }
@@ -1821,7 +2042,7 @@ public class NsgoView extends FrameLayout {
                     || e.getActionButton() != MotionEvent.BUTTON_SECONDARY) {
                 return false;
             }
-            report(n, Protocol.EVENT_CONTEXT_MENU, e.getX() / density, e.getY() / density, "");
+            report(n, Protocol.EVENT_CONTEXT_MENU, e);
             return true;
         } : null);
         view.setClickable(press || longPress || downUp);
@@ -1862,6 +2083,9 @@ public class NsgoView extends FrameLayout {
             n.actionNames[i] = Protocol.readString(in);
             n.actionLabels[i] = Protocol.readString(in);
         }
+        n.pointerEvents = in.readUnsignedByte();
+        n.slop = new float[] {in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat()};
+        n.delayLongPress = in.readInt();
         View view = n.accessible();
         // A text field's ItemInput enables it.
         if (n.field == null) view.setEnabled(!n.disabled);
@@ -1999,37 +2223,95 @@ public class NsgoView extends FrameLayout {
      */
     private final class Group extends FrameLayout {
         Node node;
+        /** The child a touch outside every child went to by its hit slop or area, until it lifts. */
+        private View routed;
+        /** Whether the touch reached the group outside its bounds and slop: only children may take it. */
+        boolean childrenOnly;
 
         Group(Context context) {
             super(context);
             setClipChildren(false);
         }
 
+        /** Whether the group itself may take the touch it is handed, as core.Reach says. */
+        boolean ownTouch() {
+            int pe = node == null ? 0 : node.pointerEvents;
+            return !childrenOnly && pe != Protocol.POINTER_EVENTS_NONE && pe != Protocol.POINTER_EVENTS_BOX_NONE;
+        }
+
         @Override
         public boolean dispatchTouchEvent(MotionEvent e) {
+            int action = e.getActionMasked();
+            if (node != null && node.pointerEvents == Protocol.POINTER_EVENTS_NONE) return false;
+            if (action == MotionEvent.ACTION_DOWN) routed = route(e);
+            if (routed != null) {
+                deliver(routed, e);
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) routed = null;
+                return true;
+            }
             if (node != null && node.followsGestures()) {
-                int action = e.getActionMasked();
                 if (action == MotionEvent.ACTION_DOWN) gestures.candidate(node);
                 // An ancestor, such as a scroll view, took the touch.
                 else if (action == MotionEvent.ACTION_CANCEL) gestures.lost(node, true);
             }
-            return super.dispatchTouchEvent(e);
+            boolean handled = super.dispatchTouchEvent(e);
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) childrenOnly = false;
+            return handled;
+        }
+
+        /**
+         * Hands a touch starting outside every child's bounds to the topmost
+         * child whose hit slop or area holds it, as UIKit's and AppKit's
+         * hit tests do in NSGo; null when a child's bounds hold it, or
+         * none takes it.
+         */
+        private View route(MotionEvent e) {
+            if (node != null && node.pointerEvents == Protocol.POINTER_EVENTS_BOX_ONLY) return null;
+            for (int i = getChildCount() - 1; i >= 0; i--) {
+                View child = getChildAt(i);
+                if (child.getVisibility() != VISIBLE) continue;
+                float x = e.getX() + getScrollX() - child.getLeft(), y = e.getY() + getScrollY() - child.getTop();
+                if (x >= 0 && y >= 0 && x < child.getWidth() && y < child.getHeight()) return null;
+                Node c = byView.get(child);
+                if (c == null) continue;
+                boolean slop = c.slop != null && x >= -c.slop[3] * density && y >= -c.slop[0] * density
+                        && x < child.getWidth() + c.slop[1] * density && y < child.getHeight() + c.slop[2] * density;
+                boolean area = c.area != null && x >= c.area[0] * density && y >= c.area[1] * density
+                        && x < (c.area[0] + c.area[2]) * density && y < (c.area[1] + c.area[3]) * density;
+                if (!slop && !area) continue;
+                if (child instanceof Group) ((Group) child).childrenOnly = !slop;
+                if (deliver(child, e)) return child;
+            }
+            return null;
+        }
+
+        /** Dispatches e to child, in its coordinates. */
+        private boolean deliver(View child, MotionEvent e) {
+            MotionEvent local = MotionEvent.obtain(e);
+            local.offsetLocation(getScrollX() - child.getLeft(), getScrollY() - child.getTop());
+            boolean taken = child.dispatchTouchEvent(local);
+            local.recycle();
+            return taken;
         }
 
         @Override
         public void requestDisallowInterceptTouchEvent(boolean disallow) {
             // A descendant, such as a scroll view, took the touch first.
+            if (disallow && !gestures.claiming) touchesTaken();
             if (disallow && node != null && !gestures.claiming) gestures.lost(node, false);
             super.requestDisallowInterceptTouchEvent(disallow);
         }
 
         @Override
         public boolean onInterceptTouchEvent(MotionEvent e) {
+            // A box-only group takes its children's touches.
+            if (node != null && node.pointerEvents == Protocol.POINTER_EVENTS_BOX_ONLY) return true;
             return gestures.owns(node) || super.onInterceptTouchEvent(e);
         }
 
         @Override
         public boolean onTouchEvent(MotionEvent e) {
+            if (!ownTouch() && !gestures.owns(node)) return false;
             if (gestures.owns(node)) {
                 // The gesture took the press: end the view's own once.
                 if (gestures.takePress(node)) {
@@ -2183,8 +2465,6 @@ public class NsgoView extends FrameLayout {
         }
 
         private void panEvent(int phase) {
-            // Values bound to the drag move in the frame it does.
-            if (phase != Protocol.GESTURE_CANCELLED && animator.pan(pan.id, panX, panY)) applyAnimated();
             float vx = 0, vy = 0;
             if (velocity != null) {
                 velocity.computeCurrentVelocity(1000);
@@ -2327,8 +2607,17 @@ public class NsgoView extends FrameLayout {
             claiming = false;
         }
 
+        /**
+         * Reports a gesture of n's, after moving the values bound to it in
+         * the frame it moves; a pan's start and end carry those values as
+         * the event's size.
+         */
         private void gesture(Node n, int kind, int phase, float x, float y, float vx, float vy, float value) {
-            if (n.has(kind)) event(kind, n.id, 0, x, y, "", 0, 0, 0, phase, vx, vy, value, null);
+            float[] values = animator.gesture(kind, n.id, phase, x, y, value);
+            if (values != null) applyAnimated();
+            float w = values != null && values.length == 2 ? values[0] : 0;
+            float h = values != null && values.length == 2 ? values[1] : 0;
+            if (n.has(kind)) event(kind, n.id, 0, x, y, "", w, h, 0, phase, vx, vy, value, null);
         }
     }
 
@@ -2467,6 +2756,17 @@ public class NsgoView extends FrameLayout {
         String[] actionNames = new String[0], actionLabels = new String[0];
         /** The pan's activation offsets in points, as in core.PanActivation; 0 is unset. */
         float activeX, activeY, failX, failY;
+        /** Where its touch went down, in it and its root view in points, with the modifier bits and clicks. */
+        float pressX, pressY, pressPageX, pressPageY;
+        int pressMods, pressClicks;
+        /** core.PointerEvents, the hit slop (top, right, bottom, left) and areas in points, the long press delay in ms. */
+        int pointerEvents;
+        float[] slop, area;
+        int delayLongPress;
+        /** A touch is down; the long press it is timed for fired; where it went down, in pixels. */
+        boolean touching, longFired, swallowed;
+        float downX, downY;
+        Runnable longTimer;
         /** The frame shown, in points (x, y, width, height), or null before the first. */
         float[] frame;
         /**

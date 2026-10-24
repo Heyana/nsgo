@@ -46,16 +46,22 @@ const (
 // pick returns the innermost view at p, in the coordinates of v's
 // parent's content, drawn on top there; nil when p is outside v.
 func pick(v *view, p core.Point) *view {
-	if v.style.Hidden || v.style.Opacity <= 0 || !v.frame.Contains(p) {
+	if v.style.Hidden || v.style.Opacity <= 0 {
 		return nil
 	}
-	local := core.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
-	for i := len(v.children) - 1; i >= 0; i-- {
-		if h := pick(v.children[i], local); h != nil {
-			return h
+	self, children := v.reach(p)
+	if children {
+		local := core.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
+		for i := len(v.children) - 1; i >= 0; i-- {
+			if h := pick(v.children[i], local); h != nil {
+				return h
+			}
 		}
 	}
-	return v
+	if self {
+		return v
+	}
+	return nil
 }
 
 // pickAt returns the view under client pixel x, y.

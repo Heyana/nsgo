@@ -31,6 +31,8 @@ const (
 	wmGesture        = 0x0119
 	wmCaptureChanged = 0x0215
 	mkLButton        = 0x0001
+	mkRButton        = 0x0002
+	mkMButton        = 0x0010
 	mkControl        = 0x0008
 
 	gidZoom   = 3
@@ -141,8 +143,8 @@ func (w *window) panMove(p core.Point) {
 		case 1:
 			g.active = true
 			g.last, g.lastTime = d, now
-			w.panned(g.v, d)
-			w.engine.Dispatch(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureBegan, Point: d})
+			w.pressCancel() // the pan took the press
+			w.gestured(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureBegan, Point: d})
 		case -1:
 			w.endPan()
 		}
@@ -153,8 +155,7 @@ func (w *window) panMove(p core.Point) {
 		g.velocity = core.Point{X: g.velocity.X*0.3 + vx*0.7, Y: g.velocity.Y*0.3 + vy*0.7}
 	}
 	g.last, g.lastTime = d, now
-	w.panned(g.v, d)
-	w.engine.Dispatch(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureChanged, Point: d, Velocity: g.velocity})
+	w.gestured(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureChanged, Point: d, Velocity: g.velocity})
 }
 
 // panUp ends the drag at p and reports whether an active pan took it,
@@ -173,8 +174,7 @@ func (w *window) panUp(p core.Point) bool {
 	if time.Since(g.lastTime) > 100*time.Millisecond {
 		velocity = core.Point{} // the pointer stopped before it let go
 	}
-	w.panned(g.v, d)
-	w.engine.Dispatch(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureEnded, Point: d, Velocity: velocity})
+	w.gestured(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureEnded, Point: d, Velocity: velocity})
 	return true
 }
 
@@ -186,8 +186,7 @@ func (w *window) panLost() {
 	}
 	w.pan = nil
 	if g.active && !g.v.deleted {
-		w.panned(g.v, g.last)
-		w.engine.Dispatch(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureCancelled, Point: g.last})
+		w.gestured(core.Event{Kind: core.EventPan, ID: g.v.id, Phase: core.GestureCancelled, Point: g.last})
 	}
 }
 
@@ -204,7 +203,7 @@ func (w *window) reportGesture(g *twoFinger, phase core.GesturePhase, value floa
 	if phase == core.GestureBegan {
 		velocity = 0
 	}
-	w.engine.Dispatch(core.Event{Kind: g.kind, ID: g.v.id, Phase: phase, Value: value,
+	w.gestured(core.Event{Kind: g.kind, ID: g.v.id, Phase: phase, Value: value,
 		Velocity: core.Point{X: core.Points(velocity)}})
 }
 

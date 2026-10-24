@@ -100,7 +100,7 @@ func iconsPage(cx *core.Scope, t *theme) core.Node {
 // iconButton is a button whose child is an icon: base.Button presses, the
 // icon only draws, so the button keeps the accessible label.
 func iconButton(t *theme, svg *core.SVG, label string, onPress func()) core.Node {
-	return base.Button{OnPress: onPress, Label: label, Children: []core.Node{
+	return base.Button{OnPress: func(core.PressEvent) { onPress() }, Label: label, Children: []core.Node{
 		core.Icon{SVG: svg, Style: core.Style{FontSize: 16}},
 		core.Text{Content: label, Style: core.Style{FontSize: 14}},
 	}, Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6, Padding: core.Symmetric(6, 12),

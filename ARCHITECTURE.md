@@ -123,7 +123,7 @@ Record a design question here, and confirm the answer with the user before choos
 | [Core](docs/architecture/core.md) | Changing the graph, elements, regions, layers, commit, storage or the mount protocol |
 | [Text](docs/architecture/text.md) | Changing text, a `TextEngine`, `Input` or selection |
 | [Scrolling](docs/architecture/scrolling.md) | Changing `Scroll`, `List` or a scroll view |
-| [Interaction](docs/architecture/interaction.md) | Changing accessibility, gestures or drops |
+| [Interaction](docs/architecture/interaction.md) | Changing accessibility, pointers, focus, touches, gestures or drops |
 | [Hosted views](docs/architecture/native-views.md) | Changing `WebView`, `Video` or `Native` components |
 | [Images](docs/architecture/images.md) | Changing how backends load, decode or play images |
 | [Animation](docs/architecture/animation.md) | Changing animated values, layout animations or a backend's frame clock |

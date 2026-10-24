@@ -66,6 +66,10 @@ func (s *surface) startPan(native, event objc.ID) {
 
 func mouseDragged(self objc.ID, cmd objc.SEL, event objc.ID) {
 	v := views[self]
+	if v != nil {
+		v.surface.dragMoved(event)
+		v.surface.touch(event, func(s *surface, p core.Point) (core.Event, bool) { return s.mouse.Move(p) })
+	}
 	if v == nil || v.surface.pan == nil {
 		apple.Super(self, cmd, event)
 		return
@@ -88,7 +92,7 @@ func mouseDragged(self objc.ID, cmd objc.SEL, event objc.ID) {
 			t.active, phase = true, core.GestureBegan
 			if p := t.pressed; p != nil && p.pressing.Swap(false) {
 				p.longFired.Store(true)
-				p.dispatch(core.EventPressUp)
+				p.pressed(core.EventPressUp)
 			}
 		case -1:
 			v.surface.pan = nil
@@ -97,7 +101,6 @@ func mouseDragged(self objc.ID, cmd objc.SEL, event objc.ID) {
 			return
 		}
 	}
-	v.surface.panned(t.view, d)
 	t.view.report(core.Event{Kind: core.EventPan, Phase: phase, Point: d, Velocity: t.velocity})
 }
 

@@ -90,18 +90,27 @@ func (w *window) clipboard() string {
 	return string(utf16.Decode(units))
 }
 
-// setKeymap replaces the keyboard shortcuts.
-func (w *window) setKeymap(keys []string) {
-	w.keys = map[string]bool{}
-	for _, k := range keys {
-		w.keys[k] = true
+// editing reports whether a text field or a page has the keyboard focus.
+func (w *window) editing() bool {
+	if w.focus != nil {
+		return true
 	}
+	for wv := range w.webs {
+		if wv.focused {
+			return true
+		}
+	}
+	return false
 }
 
+// setKeymap replaces the keyboard shortcuts.
+func (w *window) setKeymap(keys []core.KeyBinding) { w.keys = keys }
+
 // shortcut reports a key press matching a shortcut, by its name with
-// "mod" for Control or with "ctrl" itself, and whether it matched: the
-// app's own first, then the application menu's.
-func (w *window) shortcut(vk uintptr) bool {
+// "mod" for Control or with "ctrl" itself, and whether it was consumed:
+// the app's own first, as core.FindKey decides for a focused field and a
+// held key (lParam's repeat bit), then the application menu's.
+func (w *window) shortcut(vk, lParam uintptr) bool {
 	if len(w.keys) == 0 && len(w.chrome.keys) == 0 {
 		return false
 	}
@@ -126,12 +135,13 @@ func (w *window) shortcut(vk uintptr) bool {
 		if meta {
 			parts = append(parts, "meta")
 		}
-		key := strings.Join(append(parts, name), "+")
-		if w.keys[key] {
+		names = append(names, strings.Join(append(parts, name), "+"))
+	}
+	if key, consumed := core.FindKey(w.keys, names, w.editing(), repeated(lParam)); consumed {
+		if key != "" {
 			w.engine.Dispatch(core.Event{Kind: core.EventKey, Text: key})
-			return true
 		}
-		names = append(names, key)
+		return true
 	}
 	for _, key := range names {
 		if w.menuShortcut(key) {
@@ -144,6 +154,13 @@ func (w *window) shortcut(vk uintptr) bool {
 func keyDown(vk uintptr) bool {
 	r, _, _ := getKeyState.Call(vk)
 	return int16(r) < 0
+}
+
+// modifiers returns the modifier keys held as the current message was
+// sent.
+func modifiers() core.Modifiers {
+	return core.Modifiers{Control: keyDown(vkControl), Alt: keyDown(vkMenu), Shift: keyDown(vkShift),
+		Platform: keyDown(vkLWin) || keyDown(vkRWin)}
 }
 
 var keyNames = map[uintptr]string{
@@ -177,23 +194,39 @@ func keyName(vk uintptr) string {
 // content, that matches, as the engine's hit test finds the view a press
 // goes to: the topmost, passing through views that do not match.
 func hit(v *view, p core.Point, match func(*view) bool) *view {
-	if v.style.Hidden || !v.frame.Contains(p) {
+	if v.style.Hidden {
 		return nil
 	}
-	local := core.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
-	for i := len(v.children) - 1; i >= 0; i-- {
-		if h := hit(v.children[i], local, match); h != nil {
-			return h
+	self, children := v.reach(p)
+	if children {
+		local := core.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
+		for i := len(v.children) - 1; i >= 0; i-- {
+			if h := hit(v.children[i], local, match); h != nil {
+				return h
+			}
 		}
 	}
-	if match(v) {
+	if self && match(v) {
 		return v
 	}
 	return nil
 }
 
-// press reports a click at p: on text with links, with the offset of
-// the character under it; elsewhere the engine finds the view.
+// reach says what p, in the coordinates of v's parent's content, reaches
+// of v: v itself and its children, as core.Reach decides.
+func (v *view) reach(p core.Point) (self, children bool) {
+	return core.Reach(v.frame, &v.props, v.overflow, p)
+}
+
+// under reports whether p reaches v or its children.
+func (v *view) under(p core.Point) bool {
+	self, children := v.reach(p)
+	return !v.style.Hidden && (self || children)
+}
+
+// press reports a click at p, with the modifiers and count of the
+// button's press: on text with links, with the offset of the character
+// under it; elsewhere the engine finds the view.
 func (w *window) press(at core.Point) {
 	if root := w.view(w.root); root != nil {
 		v := hit(root, at, func(v *view) bool { return v.events.Has(core.EventPress) || v.kind == core.KindInput })
@@ -201,11 +234,16 @@ func (w *window) press(at core.Point) {
 			b, _ := w.surfaceBounds(v)
 			x := float32(at.X - b.Origin.X - v.content.Origin.X)
 			y := float32(at.Y - b.Origin.Y - v.content.Origin.Y)
-			w.engine.Dispatch(core.Event{Kind: core.EventPress, ID: v.id, Index: l.indexAt(x, y)})
+			ev := w.down
+			ev.Kind, ev.ID, ev.Index = core.EventPress, v.id, l.indexAt(x, y)
+			ev.Point, ev.Page = core.Point{X: at.X - b.Origin.X, Y: at.Y - b.Origin.Y}, at
+			w.engine.Dispatch(ev)
 			return
 		}
 	}
-	w.engine.PressAt(at)
+	ev := w.down
+	ev.Page = at
+	w.engine.PressAt(ev)
 }
 
 func textOf(v *view) (*textLayout, bool) {
@@ -226,6 +264,6 @@ func (w *window) contextMenu(at core.Point) {
 	if v := hit(root, at, func(v *view) bool { return v.events.Has(core.EventContextMenu) }); v != nil {
 		b, _ := w.surfaceBounds(v)
 		w.engine.Dispatch(core.Event{Kind: core.EventContextMenu, ID: v.id,
-			Point: core.Point{X: at.X - b.Origin.X, Y: at.Y - b.Origin.Y}})
+			Point: core.Point{X: at.X - b.Origin.X, Y: at.Y - b.Origin.Y}, Page: at, Modifiers: modifiers()})
 	}
 }

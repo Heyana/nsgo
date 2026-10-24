@@ -120,7 +120,7 @@ func textPage(cx *core.Scope, t *theme) core.Node {
 		t.demo("Spans and links", "Spans style runs of one text; a span with OnPress is a link.",
 			core.Text{Spans: []core.Span{
 				{Content: "Read "},
-				{Content: "the architecture", Style: linkStyle, OnPress: func() { link.Set("pressed the architecture link") }},
+				{Content: "the architecture", Style: linkStyle, OnPress: func(core.PressEvent) { link.Set("pressed the architecture link") }},
 				{Content: ", or see how "},
 				{Content: "bold", Style: core.Style{FontWeight: core.FontWeightBold}},
 				{Content: ", "},
@@ -128,7 +128,7 @@ func textPage(cx *core.Scope, t *theme) core.Node {
 				{Content: " and "},
 				{Content: "struck", Style: core.Style{TextDecoration: core.TextDecorationLineThrough}},
 				{Content: " runs share a line, then "},
-				{Content: "the core docs", Style: linkStyle, OnPress: func() { link.Set("pressed the core docs link") }},
+				{Content: "the core docs", Style: linkStyle, OnPress: func(core.PressEvent) { link.Set("pressed the core docs link") }},
 				{Content: "."},
 			}},
 			t.live(link.Get),

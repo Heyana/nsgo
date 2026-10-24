@@ -108,6 +108,9 @@ func writeAnimation(w *writer, ops []core.AnimationOp) {
 			w.u32(uint32(o.View))
 			w.u32(o.X)
 			w.u32(o.Y)
+		case core.AnimBindPinch, core.AnimBindRotation:
+			w.u32(uint32(o.View))
+			w.u32(o.Node)
 		}
 	}
 }

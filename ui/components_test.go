@@ -17,7 +17,7 @@ func TestThemeViewChoosesTheAppearance(t *testing.T) {
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		dark := core.NewSignal(cx, true)
 		return ui.ThemeView{Dark: dark.Get, TestID: "root", Children: []core.Node{
-			ui.Button{Label: "Light", OnPress: func() { dark.Set(false) }, TestID: "light"},
+			ui.Button{Label: "Light", OnPress: func(core.PressEvent) { dark.Set(false) }, TestID: "light"},
 		}}
 	})
 	if got := app.Find("id:root").Style.Background; got != theme.Dark.Background {
@@ -75,7 +75,7 @@ func TestToastShowsForItsDuration(t *testing.T) {
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		return ui.ThemeView{Children: []core.Node{ui.ToastView{Children: []core.Node{core.Func(func(cx *core.Scope) core.Node {
 			toast := ui.UseToast(cx)
-			return ui.Button{Label: "Save", OnPress: func() { toast(ui.Toast{Title: "Saved", Duration: time.Second}) }}
+			return ui.Button{Label: "Save", OnPress: func(core.PressEvent) { toast(ui.Toast{Title: "Saved", Duration: time.Second}) }}
 		})}}}}
 	})
 	app.Press("role:button Save")
@@ -164,7 +164,7 @@ func TestCommandPaletteFiltersMovesAndRuns(t *testing.T) {
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		open := core.NewSignal(cx, true)
 		return ui.ThemeView{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
-			ui.Button{Label: "Open", OnPress: func() { open.Set(true) }},
+			ui.Button{Label: "Open", OnPress: func(core.PressEvent) { open.Set(true) }},
 			ui.CommandPalette{Open: open.Get,
 				OnOpenChange: func(o bool, r base.Reason) { reasons = append(reasons, r); open.Set(o) },
 				OnSelect:     func(id string) { ran = append(ran, id) },
@@ -225,7 +225,7 @@ func TestSidebarItemShowsSelection(t *testing.T) {
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		at := core.NewSignal(cx, "inbox")
 		item := func(id string) core.Node {
-			return ui.SidebarItem{Label: id, TestID: id, Selected: func() bool { return at.Get() == id }, OnPress: func() { at.Set(id) }}
+			return ui.SidebarItem{Label: id, TestID: id, Selected: func() bool { return at.Get() == id }, OnPress: func(core.PressEvent) { at.Set(id) }}
 		}
 		return ui.ThemeView{Children: []core.Node{ui.Sidebar{Children: []core.Node{
 			ui.SidebarSection{Title: "Mail", Children: []core.Node{item("inbox"), item("sent")}},
@@ -248,7 +248,7 @@ func TestInputWithIconShowsFocus(t *testing.T) {
 		ref := &core.Ref{}
 		return ui.ThemeView{Children: []core.Node{
 			ui.Input{Value: q.Get, OnChange: q.Set, Icon: lucide.Search(), Ref: ref, Label: "Find", TestID: "find"},
-			ui.Button{Label: "Focus", OnPress: ref.Focus},
+			ui.Button{Label: "Focus", OnPress: func(core.PressEvent) { ref.Focus() }},
 		}}
 	})
 	frame := func() core.ViewStyle { return app.Find("id:find").Parent.Style }
@@ -272,8 +272,8 @@ func TestControlsReportTheNextValue(t *testing.T) {
 				OnChange: func(v bool) { on.Set(v); mixed.Set(false) }},
 			ui.Switch{Checked: on.Get, OnChange: on.Set, Label: "Wi-Fi", TestID: "wifi"},
 			ui.Tabs{Children: []core.Node{
-				ui.Tab{Selected: func() bool { return tab.Get() == 0 }, OnPress: func() { tab.Set(0) }, Label: "One", TestID: "one"},
-				ui.Tab{Selected: func() bool { return tab.Get() == 1 }, OnPress: func() { tab.Set(1) }, Label: "Two", TestID: "two"},
+				ui.Tab{Selected: func() bool { return tab.Get() == 0 }, OnPress: func(core.PressEvent) { tab.Set(0) }, Label: "One", TestID: "one"},
+				ui.Tab{Selected: func() bool { return tab.Get() == 1 }, OnPress: func(core.PressEvent) { tab.Set(1) }, Label: "Two", TestID: "two"},
 			}},
 		}}
 	})

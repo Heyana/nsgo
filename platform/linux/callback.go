@@ -20,12 +20,12 @@ var (
 	cbDragBegin     uintptr
 	cbDragUpdate    uintptr
 	cbDragEnd       uintptr
-	cbLongPress     uintptr
 	cbZoomChanged   uintptr
 	cbRotateChanged uintptr
 	cbGestureEnd    uintptr
 	cbScroll        uintptr
 	cbKeyPressed    uintptr
+	cbKeyReleased   uintptr
 	cbPinchTimeout  uintptr
 
 	cbEntryChanged  uintptr
@@ -77,12 +77,12 @@ func init() {
 	cbDragBegin = newCallback(dragBeginCallback)
 	cbDragUpdate = newCallback(dragUpdateCallback)
 	cbDragEnd = newCallback(dragEndCallback)
-	cbLongPress = newCallback(longPressCallback)
 	cbZoomChanged = newCallback(zoomChangedCallback)
 	cbRotateChanged = newCallback(rotateChangedCallback)
 	cbGestureEnd = newCallback(gestureEndCallback)
 	cbScroll = newCallback(scrollCallback)
 	cbKeyPressed = newCallback(keyPressedCallback)
+	cbKeyReleased = newCallback(keyReleasedCallback)
 	cbPinchTimeout = newCallback(pinchTimeoutCallback)
 
 	cbEntryChanged = newCallback(entryChangedCallback)

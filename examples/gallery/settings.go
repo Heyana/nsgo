@@ -96,10 +96,10 @@ func (g *gallery) settingsCategories(cx *core.Scope) []ui.SettingsCategory {
 		}},
 		{ID: "shortcuts", Title: "Shortcuts", Section: "Gallery", Icon: lucide.Keyboard(), Groups: []ui.SettingsGroup{
 			{ID: "keys", Items: []ui.SettingsItem{
-				{ID: "search", Title: "Search", Description: "Find a page or a command.", Control: keycap(shortcut(cx, "K"))},
-				{ID: "settings", Title: "Settings", Description: "Open these settings.", Control: keycap(shortcut(cx, ","))},
-				{ID: "toggle-sidebar", Title: "Toggle the sidebar", Control: keycap(modName(cx) + "+Alt+S")},
-				{ID: "pages", Title: "Pages", Description: "The first nine pages, in order.", Control: keycap(shortcut(cx, "1") + "…9")},
+				{ID: "search", Title: "Search", Description: "Find a page or a command.", Control: keycap(cx.KeyLabel("mod+k"))},
+				{ID: "settings", Title: "Settings", Description: "Open these settings.", Control: keycap(cx.KeyLabel("mod+,"))},
+				{ID: "toggle-sidebar", Title: "Toggle the sidebar", Control: keycap(cx.KeyLabel("mod+alt+s"))},
+				{ID: "pages", Title: "Pages", Description: "The first nine pages, in order.", Control: keycap(cx.KeyLabel("mod+1") + "…9")},
 				{ID: "step", Title: "Next and previous page", Control: keycap("Ctrl+Tab")},
 			}},
 		}},
@@ -124,7 +124,7 @@ func (g *gallery) settingsCategories(cx *core.Scope) []ui.SettingsCategory {
 		if last := (*groups)[len(*groups)-1]; last.ID != r.group {
 			group := r.group
 			*groups = append(*groups, ui.SettingsGroup{ID: group, Title: group, Actions: []core.Node{
-				ui.Button{Label: "Reset", Variant: ui.Ghost, Style: core.Style{Padding: core.Symmetric(4, 10)}, OnPress: func() {
+				ui.Button{Label: "Reset", Variant: ui.Ghost, Style: core.Style{Padding: core.Symmetric(4, 10)}, OnPress: func(core.PressEvent) {
 					for j, r := range notificationRows {
 						if r.group == group {
 							p.channels[j].Set(r.channel)
@@ -181,7 +181,7 @@ func (g *gallery) settingsCategories(cx *core.Scope) []ui.SettingsCategory {
 							core.Text{ContentFunc: func() string { return fmt.Sprintf("%.1f GB of 10 GB", p.cache.Get()) },
 								Style: core.Style{FlexGrow: 1, FontSize: 13}},
 							ui.Button{Label: "Clear cache", Variant: ui.Secondary, Disabled: func() bool { return p.cache.Get() == 0 },
-								OnPress: func() {
+								OnPress: func(core.PressEvent) {
 									p.cache.Set(0)
 									toast(ui.Toast{Title: "Cache cleared", Icon: lucide.CircleCheck(), Tone: ui.ToneSuccess})
 								}},
