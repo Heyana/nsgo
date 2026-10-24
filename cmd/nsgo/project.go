@@ -30,16 +30,12 @@ type project struct {
 	} `yaml:"window"`
 	// Icon names the app's icons; resolveIcons fills in the defaults
 	// under assets.
-	Icon struct {
-		// Apple is an Icon Composer .icon for macOS and iOS, or an .icns
-		// for macOS.
-		Apple string `yaml:"apple"`
-		// PNG is a square image for every other target, and for Apple
-		// targets Apple does not cover.
-		PNG string `yaml:"png"`
-	} `yaml:"icon"`
-	Dev struct {
+	Icon icons `yaml:"icon"`
+	Dev  struct {
 		Target string `yaml:"target"`
+		// Icon replaces Icon in nsgo dev's builds, field by field;
+		// without it they show Icon with a dev badge.
+		Icon icons `yaml:"icon"`
 		// HotReload rebuilds and restarts the app when a watched file
 		// changes; it defaults to false.
 		HotReload *bool `yaml:"hot_reload"`
@@ -51,6 +47,16 @@ type project struct {
 		// defaults to false.
 		Open *bool `yaml:"open"`
 	} `yaml:"build"`
+}
+
+// icons are an app's icon files.
+type icons struct {
+	// Apple is an Icon Composer .icon for macOS and iOS, or an .icns for
+	// macOS.
+	Apple string `yaml:"apple"`
+	// PNG is a square image for every other target, and for Apple targets
+	// Apple does not cover.
+	PNG string `yaml:"png"`
 }
 
 // openOutput reports whether nsgo build opens its output directory.

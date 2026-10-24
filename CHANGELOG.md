@@ -46,7 +46,7 @@
 - Add `nsgotest` for headless app tests.
 - Add the quotes benchmark and its CPU-time runner under `bench/`, reporting commits, commit-time percentiles and CPU per commit instead of counting animation-frame callbacks as FPS.
 - Add the `nsgo` tool with `init`, `dev` and `build`, configured by `nsgo.yaml`.
-- Add app icons to every package, from `assets/` or `nsgo.yaml`'s `icon`.
+- Add app icons to every package, from `assets/` or `nsgo.yaml`'s `icon`, with a DEV badge in `nsgo dev`'s builds unless `dev.icon` or `-dev` files in `assets/` replace it.
 - Add `resources/`, shipped in each package and loaded by `asset:` images.
 - Add `nsgo build -target all` for every platform that needs only Go and Xcode.
 - Add `nsgo dev` and `nsgo build` flags that override `nsgo.yaml`'s values.

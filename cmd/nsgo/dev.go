@@ -51,6 +51,9 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		return fmt.Errorf("-fps needs the native target on macOS (the other hosts have no performance monitor yet)")
 	}
 	p.Perf = opts.fps
+	if err := p.useDevIcons(); err != nil {
+		return err
+	}
 	s, err := sessionFor(p, opts)
 	if err != nil {
 		return err
@@ -114,6 +117,9 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		if next, err := load(p.Dir); err == nil {
 			next.Perf = opts.fps
 			opts.apply(next)
+			if err := next.useDevIcons(); err != nil {
+				step("%v", err)
+			}
 			*p = *next
 		} else {
 			step("%v", err)

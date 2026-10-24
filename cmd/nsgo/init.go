@@ -64,6 +64,9 @@ window:
 # icon:
 #   apple: assets/AppIcon.icon  # an Icon Composer .icon; macOS also takes .icns
 #   png: assets/Icon.png        # a square PNG, 1024 pixels wide
+# nsgo dev shows them with a DEV badge, or assets/AppIcon-dev.icon,
+# AppIcon-dev.icns and Icon-dev.png where they exist, or the files dev.icon
+# names.
 
 dev:
   # native: this machine's backend; web: the browser; ios: a connected iPhone; ios_simulator; android: a connected device or emulator.

@@ -84,7 +84,7 @@ build:
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` 运行一次应用，应用退出后随之退出。将 `dev.hot_reload` 设为 `true`，源文件变化时会重新编译并重启。`go tool nsgo build` 为每个目标输出一个去除符号的发布包；将 `build.open` 设为 `true`，构建完成后会打开输出目录。`build.targets` 和 `-target` 都接受 `all`，表示仅需 Go 和 Xcode 的所有平台；安装 NDK 后可再加上 `android_x64`。
+`go tool nsgo dev` 运行一次应用，应用退出后随之退出。将 `dev.hot_reload` 设为 `true`，源文件变化时会重新编译并重启。它构建的应用图标带有 DEV 标签；要改用其他文件，可在 `dev.icon` 中指定（与 `icon` 一样接受 `apple` 和 `png`），或在 `assets/` 中放入 `AppIcon-dev.icon`、`AppIcon-dev.icns` 或 `Icon-dev.png`。`go tool nsgo build` 为每个目标输出一个去除符号的发布包；将 `build.open` 设为 `true`，构建完成后会打开输出目录。`build.targets` 和 `-target` 都接受 `all`，表示仅需 Go 和 Xcode 的所有平台；安装 NDK 后可再加上 `android_x64`。
 
 dev 和 build 命令的参数会覆盖它们所对应的 `nsgo.yaml` 值：两者都接受 `-name`、`-id`、`-version`、`-width` 和 `-height`；dev 另有 `-target` 和 `-hot-reload`，build 另有 `-target`、`-output` 和 `-open`。dev 还接受 `-fps` 在 macOS 上显示性能监视器，`-device` 以选择 iPhone，以及 `-team` 以选择 Apple 开发者团队。`-h` 会列出全部参数。
 

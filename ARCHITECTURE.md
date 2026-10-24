@@ -94,7 +94,7 @@ As in NSH, each Linux view is a widget its parent places at the core's frame, so
 - With hot reload, `nsgo dev` watches the directories `go list -deps` reports, NSGo's own included, and keeps the last good build running when a build fails.
 - With hot reload, the web dev server reloads open pages over server-sent events after each build.
 - Packages ship `resources/` in their resource root, which `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` paths against.
-- App icons are written in Go, except that `actool` compiles Apple's `.icon` files and asset catalogs. A Windows icon links in from a `.syso` written into the app's package directory for the build, since Go links `.syso` files only from there.
+- App icons are written in Go, except that `actool` compiles Apple's `.icon` files and asset catalogs. `nsgo dev` badges them in its cache: an `.icon` gains the badge as its top group, or in its top group at actool's four, and flat images get it drawn in with `golang.org/x/image/vector`. A Windows icon links in from a `.syso` written into the app's package directory for the build, since Go links `.syso` files only from there.
 
 ## Core flows
 

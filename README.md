@@ -84,7 +84,7 @@ Add the tool to your module once; `go tool nsgo` then runs it without installing
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` runs the app once and exits when the app does. Set `dev.hot_reload` to `true` to rebuild and restart it when a source file changes. `go tool nsgo build` writes a stripped release package per target; set `build.open` to `true` to open the output directory when it finishes. `build.targets` and `-target` accept `all` for every platform that needs only Go and Xcode; add `android_x64` when an NDK is installed.
+`go tool nsgo dev` runs the app once and exits when the app does. Set `dev.hot_reload` to `true` to rebuild and restart it when a source file changes. Its builds show the app's icon with a DEV badge; to show other files, name them in `dev.icon`, which takes `apple` and `png` as `icon` does, or put `AppIcon-dev.icon`, `AppIcon-dev.icns` or `Icon-dev.png` in `assets/`. `go tool nsgo build` writes a stripped release package per target; set `build.open` to `true` to open the output directory when it finishes. `build.targets` and `-target` accept `all` for every platform that needs only Go and Xcode; add `android_x64` when an NDK is installed.
 
 Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `-version`, `-width` and `-height` on both, `-target` and `-hot-reload` on `dev`, and `-target`, `-output` and `-open` on `build`. `dev` also takes `-fps` to show the performance monitor on macOS, `-device` to choose an iPhone and `-team` to choose the Apple developer team. `-h` lists every flag.
 
