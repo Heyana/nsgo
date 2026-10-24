@@ -1,10 +1,11 @@
 name: Test
 
+# Automatic runs are temporarily disabled: restore the push and pull_request triggers to run again.
 on:
-  push:
-    branches:
-      - main
-  pull_request:
+  # push:
+  #   branches:
+  #     - main
+  # pull_request:
   workflow_dispatch:
 
 permissions:
