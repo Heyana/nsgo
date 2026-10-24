@@ -166,6 +166,7 @@ type surface struct {
 	unknown     map[string]bool // component names warned about
 	dragTarget  *view           // the view files are dragged over
 	dragFiles   bool            // whether the drag carries files
+	applying    bool            // whether batches are applying
 
 	// The gestures in progress.
 	pan             *panTrack
@@ -1591,6 +1592,13 @@ func mouseExited(self objc.ID, _ objc.SEL, _ objc.ID) {
 
 func surfaceSetFrameSize(self objc.ID, cmd objc.SEL, size apple.CGSize) {
 	v := views[self]
+	if v != nil && v.surface != nil {
+		// An animated resize, such as zooming from the title bar, steps the
+		// frame in a loop that runs no run loop sources until it ends, so
+		// nsgoApply: waits. Each step applies the commits that came in
+		// since the last one instead: the content trails a step behind.
+		v.surface.applyQueued()
+	}
 	if v != nil && v.surface != nil && v.surface.perf != nil {
 		defer v.surface.measuring(false)()
 	}
@@ -1604,11 +1612,21 @@ func surfaceSetFrameSize(self objc.ID, cmd objc.SEL, size apple.CGSize) {
 }
 
 func surfaceApply(self objc.ID, _ objc.SEL, _ objc.ID) {
-	s := views[self].surface
+	views[self].surface.applyQueued()
+}
+
+// applyQueued applies the batches the engine has sent, unless a batch is
+// being applied: one can resize the surface, and batches apply in order.
+func (s *surface) applyQueued() {
+	if s.applying {
+		return
+	}
 	batches := s.batches.Drain()
 	if len(batches) == 0 {
 		return
 	}
+	s.applying = true
+	defer func() { s.applying = false }()
 	if s.perf == nil {
 		for _, b := range batches {
 			s.apply(b)
