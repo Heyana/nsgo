@@ -27,7 +27,7 @@ They present themselves by `Env.Desktop`, as NSH's do:
 Items reach their menu through a context key (`menuContext`), so the app arranges them freely. A sheet's hidden levels are out of layout and their content out of the tree, so screen readers and tests see one level.
 
 - `Sheet` and a phone's menus are overlays, not modals: `sheetMotion` (`sheet.go`) ports NSH's `SheetMotion`. The panel's translation and the backdrop's opacity are animated nodes of one `fade` value and the panel's measured size, so they run on the platform's frame clock; the parts leave the tree when the motion out ends, or after its time where no end is reported.
-- With `CloseOnSwipe` a bottom sheet's `PanValues` move a drag value; a release past 30% of its height or 800 points a second asks to close (`ReasonSwipe`), else it comes back. iOS's handoff from a scroll view inside the panel is not ported.
+- With `CloseOnSwipe` a bottom sheet's `PanValues` move a drag value; a release past 30% of its height or 800 points a second asks to close (`ReasonSwipe`), else it comes back. On iOS the panel's pan hands off from the scroll view the drag starts in (`View.PanScrollHandoff`): the drag scrolls it back to its top first, and what goes on past that moves the sheet while the scroll view stays pinned there. Elsewhere the scroll view keeps the drag.
 - `View.Tooltip` is the short form: the core shows the node above the view, 4 points away, after half a second of hover on desktops. Tooltips never take the pointer (`Overlay.PointerEvents`).
 - `Dialog` stays a `core.Modal` the platform presents; `AlertDialog` is the system's alert, or with `AlertPresentActionSheet` its action sheet: `UIAlertController`'s (a popover anchored at the bottom on iPad, with an unshown cancel action for a tap outside), a list dialog on Android, stacked buttons with the cancel one last on macOS, the web and Windows (command links).
 
@@ -46,12 +46,12 @@ Items reach their menu through a context key (`menuContext`), so the app arrange
 
 - Container IDs come from a counter per area above the largest ID its layout holds, not one per process.
 - Each container renders from a memo of its shape (kind and children's IDs), so selecting a tab or resizing rebuilds nothing; a split whose children change is rendered again.
+- Each panel's content is a `core.Holder` the area keeps by key while its layout lists the panel, as NSH's render keys: the group showing the panel places it, so a panel moved to another group or dock, or across the compact presentation, keeps its state. A drawer dismissed at compact width leaves its panels built, out of the tree.
 - A tab drag claims the touches with the responder (`OnMove`, after 4 points of a pointer or a long press of a finger), measures the groups' tab bars and content frames with `Ref.Bounds`, and resolves the target as NSH's: a slot between tabs, a content frame's middle to merge, its outer 35% to split. The indicator and the drag preview are overlays that never take the pointer.
 - Zoom and the compact presentation narrow the tree to one group by hiding the containers off its path, so the panels keep their content.
 - Below 600 points the docks are `sheetMotion` drawers and a bottom sheet, presented one at a time, without changing the layout's `Closed`.
 
 | NSH | NSGo | Why |
 | --- | --- | --- |
-| Render keys move a panel's content to its new placeholder | A group renders its own panels' content | NSGo's core cannot move a mounted subtree; a panel moved to another group, or a dock's panel as the presentation switches, is rendered anew |
 | `renderHandle` and handle thumbs by class | `HandleStyle` and `HandleThumbStyle`, with `GroupStyle` for hover and press | Styles are Go values |
 | `DockAreaApi` through a ref | `DockAreaRef`, bound as the area mounts | Go has no refs to components |

@@ -210,3 +210,51 @@ func TestListSplice(t *testing.T) {
 		}
 	}
 }
+
+func TestListStateInvertedLoadingAtStartKeepsTheVisibleRows(t *testing.T) {
+	l := testList(100, 50, 400)
+	l.inverted, l.loadsAtStart = true, true
+	l.anchorEnd()
+	// 200 points from its start.
+	l.offset = 5000 - 400 - 200
+	onScreen := func(l *listState, i int) Points { return l.toContent(l.itemAt(i), 50) - l.offset }
+	// Newer items arrive before item 0: the rows on screen stay.
+	before := onScreen(l, 4)
+	l.splice(0, 0, 4)
+	if d := l.takeSpliceAnchor() + l.anchorEnd(); d != 0 || onScreen(l, 8) != before {
+		t.Errorf("splice scrolled %v; item 8 at %v, want %v", d, onScreen(l, 8), before)
+	}
+	// So does their measuring.
+	offset := l.offset
+	anchor := l.measured(0, 80)
+	l.offset += anchor
+	if d := anchor + l.anchorEnd(); d != 0 || l.offset != offset {
+		t.Errorf("measuring scrolled %v to %v, want %v", d, l.offset, offset)
+	}
+
+	// At the start, what arrives there shows (a chat's new message).
+	c := testList(100, 50, 400)
+	c.inverted, c.loadsAtStart = true, true
+	c.anchorEnd()
+	c.splice(0, 0, 1)
+	c.takeSpliceAnchor()
+	c.anchorEnd()
+	if n := c.naturalOffset(); n != 0 {
+		t.Errorf("at its start: natural offset %v, want 0", n)
+	}
+
+	// Without OnLoadMoreAtStart an inverted list keeps its distance from
+	// the end wherever it is.
+	d := testList(100, 50, 400)
+	d.inverted = true
+	d.anchorEnd()
+	d.offset = 5000 - 400 - 200
+	d.splice(0, 0, 4)
+	if a := d.takeSpliceAnchor(); a != 0 {
+		t.Errorf("splice anchor %v, want none", a)
+	}
+	d.anchorEnd()
+	if n := d.naturalOffset(); n != 200 {
+		t.Errorf("natural offset %v, want 200", n)
+	}
+}

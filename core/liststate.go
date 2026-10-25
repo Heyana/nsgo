@@ -46,6 +46,10 @@ type listState struct {
 	pin          *listPin
 	// moved is set once the user or a scroll command moved the list.
 	moved bool
+	// loadsAtStart: the list has OnLoadMoreAtStart, so an inverted one
+	// keeps its visible rows in place while scrolled away from its start,
+	// where the pages it loads arrive (keepsVisibleRows).
+	loadsAtStart bool
 	// parent: virtualized against the view around the list; outerStart
 	// is where the list's content starts in that view's content (NaN
 	// until placed), limits the list offsets the view scrolls to.
@@ -254,16 +258,19 @@ func (s *listState) splice(at, removed, inserted int) {
 		return
 	}
 	s.pin = nil
-	// The first visible item and where it is in the viewport; in its
-	// parent's viewport, only while the list's start is scrolled past.
+	// The first visible item and where it is in the viewport. An inverted
+	// list at its start (item 0 in view at the bottom) keeps its distance
+	// from the end instead, so what arrives there shows. In its parent's
+	// viewport, only while the list's start is scrolled past.
 	anchor, fromTop, anchored := 0, Points(0), false
-	if !s.inverted && s.count > 0 && s.viewport > 0 && (!s.parent || s.offset > 0) {
+	if s.keepsVisibleRows() && s.count > 0 && s.viewport > 0 && (!s.parent || s.offset > 0) {
 		top := s.naturalOffset()
 		row := s.rows.find(max(top-s.blocks().body, 0))
 		anchor = min(row*s.columns, s.count-1)
 		fromTop = s.itemAt(anchor) - top
 		anchored = true
 	}
+	naturalBefore := s.naturalOffset()
 	fresh := make([]Points, inserted)
 	for i := range fresh {
 		fresh[i] = nan
@@ -273,10 +280,41 @@ func (s *listState) splice(at, removed, inserted int) {
 	s.rebuild()
 	if anchored && anchor >= at+removed {
 		moved := anchor - removed + inserted
-		d := s.itemAt(moved) - fromTop - s.naturalOffset()
-		s.offset += d
-		s.spliceAnchor += d
+		if s.inverted {
+			// anchorEnd brings the natural offset back to what it was;
+			// the visible rows need it moved as far as they did.
+			d := max(s.itemAt(moved)-fromTop, 0) - naturalBefore
+			s.offset -= d
+			s.spliceAnchor -= d
+		} else {
+			d := s.itemAt(moved) - fromTop - s.naturalOffset()
+			s.offset += d
+			s.spliceAnchor += d
+		}
 	}
+}
+
+// keepsVisibleRows reports whether changes before the viewport keep the
+// visible rows in place: always for a list that is not inverted. An
+// inverted one keeps its distance from the end (the bottom) unless it
+// loads at its start and is laid out and scrolled away from it: at its
+// start it keeps showing item 0, a chat's newest message.
+func (s *listState) keepsVisibleRows() bool {
+	return !s.inverted || s.loadsAtStart && !isNaN(s.anchoredEnd) && s.naturalOffset() > pinSlack
+}
+
+// beforeViewportChanged is the scroll that keeps the visible rows in
+// place, when keep, after something before the viewport changed by d at
+// natural offset natural. An inverted list cancels what anchorEnd will
+// scroll to keep its distance from the end, without passing its start.
+func (s *listState) beforeViewportChanged(keep bool, d, natural Points) Points {
+	switch {
+	case !keep:
+		return 0
+	case s.inverted:
+		return -max(d, -natural)
+	}
+	return d
 }
 
 // takeSpliceAnchor returns the scroll a splice asked for, once.
@@ -297,21 +335,19 @@ func (s *listState) measured(i int, size Points) Points {
 	before := s.rowSize(row)
 	start := s.itemAt(i)
 	natural := s.naturalOffset()
-	above := start < natural && start+before <= natural
+	keep := start < natural && start+before <= natural && s.keepsVisibleRows()
 	s.sizes[i] = size
 	d := s.rowSize(row) - before
 	if d != 0 {
 		s.rows.set(row, s.rows.at(row)+d)
 	}
-	if above && !s.inverted {
-		return d
-	}
-	return 0
+	return s.beforeViewportChanged(keep, d, natural)
 }
 
 // measuredExtra records an extra cell's size, anchoring as measured does.
 func (s *listState) measuredExtra(kind int, size Points) Points {
 	b := s.blocks()
+	natural, keeps := s.naturalOffset(), s.keepsVisibleRows()
 	e := &s.extras[kind]
 	if e.size == size {
 		return 0
@@ -325,10 +361,8 @@ func (s *listState) measuredExtra(kind int, size Points) Points {
 	case extraEmpty:
 		at = b.body
 	}
-	if !s.inverted && at < s.offset && at+size-d <= s.offset {
-		return d
-	}
-	return 0
+	// Wholly before the viewport's start, as it was before the change.
+	return s.beforeViewportChanged(keeps && at < natural && at+size-d <= natural, d, natural)
 }
 
 // anchorEnd keeps an inverted list's distance from the end of its

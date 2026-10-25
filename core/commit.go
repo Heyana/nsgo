@@ -31,9 +31,6 @@ func (t *Tree) Commit() *driver.MountBatch {
 
 func (t *Tree) commitRound() {
 	t.changed = false
-	for _, id := range t.deleted {
-		t.items = append(t.items, driver.MountItem{Kind: driver.ItemDelete, ID: id})
-	}
 	t.fontScale = t.root.Env().fontScale.GetUntracked()
 	if rtl := t.root.Env().rtl.GetUntracked(); rtl != t.rtl {
 		t.setRTL(rtl)
@@ -76,6 +73,7 @@ func (t *Tree) commitRound() {
 	t.emitAccessories()
 	t.emitHeaderViews()
 	t.emit(t.view)
+	t.emitMoves()
 	t.emitAnimation()
 	if t.keysChanged {
 		t.keysChanged = false
@@ -84,6 +82,7 @@ func (t *Tree) commitRound() {
 	t.emitStatusBar()
 	t.items = append(t.items, t.commands...)
 	t.commands = t.commands[:0]
+	t.emitDeletes()
 	for _, id := range t.deleted {
 		t.nodes[id] = nil
 		t.free = append(t.free, id)
@@ -603,13 +602,33 @@ func (n *node) viewStyle() driver.ViewStyle {
 	return vs
 }
 
+// emitDeletes deletes the views discarded since the last round. They go
+// after the round's inserts, so a view moved out of a deleted one is in
+// its new parent first; one taken out of the tree is removed before.
+func (t *Tree) emitDeletes() {
+	for _, id := range t.deleted {
+		for _, c := range t.nodes[id].sent.children {
+			if !c.deleted && c.sent.parent == t.nodes[id] {
+				c.sent.parent, c.sent.removed = nil, true
+				t.items = append(t.items, driver.MountItem{Kind: driver.ItemRemove, ID: c.id})
+			}
+		}
+	}
+	for _, id := range t.deleted {
+		t.items = append(t.items, driver.MountItem{Kind: driver.ItemDelete, ID: id})
+	}
+}
+
 // syncChildren inserts, moves and removes p's native children so they
 // match want, moving as few as the longest run already in order allows.
+// A view that changes parents is never removed: its one insert, after
+// every new parent's, lets a backend move it in one step, keeping what a
+// removal loses (a web page's scroll offsets).
 func (t *Tree) syncChildren(p *node, want []*node) {
 	old := p.sent.children
 	pos := make(map[*node]int, len(old))
 	for i, c := range old {
-		if !c.deleted {
+		if !c.deleted && c.sent.parent == p {
 			pos[c] = i
 		}
 	}
@@ -618,7 +637,8 @@ func (t *Tree) syncChildren(p *node, want []*node) {
 		keep[c] = true
 	}
 	for _, c := range old {
-		if !c.deleted && !keep[c] {
+		if !c.deleted && !keep[c] && c.sent.parent == p && !t.insertedElsewhere(c, p) {
+			c.sent.parent, c.sent.removed = nil, true
 			t.items = append(t.items, driver.MountItem{Kind: driver.ItemRemove, ID: c.id})
 		}
 	}
@@ -631,17 +651,77 @@ func (t *Tree) syncChildren(p *node, want []*node) {
 		}
 	}
 	stay := increasingRun(seq)
+	var moving []bool
 	for i := len(want) - 1; i >= 0; i-- {
+		c := want[i]
 		if stay[i] {
 			continue
 		}
-		var before NodeID
-		if i+1 < len(want) {
-			before = want[i+1].id
+		if from := c.sent.parent; from != nil && from != p || c.sent.removed {
+			// Moved out of a view that still holds it, or put back: inserted
+			// after the round's other inserts, once its new parent is in
+			// place too.
+			if moving == nil {
+				moving = make([]bool, len(want))
+			}
+			moving[i] = true
+			m := move{view: c, parent: p}
+			if i+1 < len(want) {
+				m.before = want[i+1]
+			}
+			t.moves = append(t.moves, m)
+			c.sent.parent, c.sent.removed = p, false
+			continue
 		}
-		t.items = append(t.items, driver.MountItem{Kind: driver.ItemInsert, ID: want[i].id, Parent: p.id, Before: before})
+		var before NodeID
+		for j := i + 1; j < len(want); j++ {
+			if moving == nil || !moving[j] {
+				before = want[j].id
+				break
+			}
+		}
+		c.sent.parent = p
+		t.items = append(t.items, driver.MountItem{Kind: driver.ItemInsert, ID: c.id, Parent: p.id, Before: before})
 	}
 	p.sent.children = append(p.sent.children[:0], want...)
+}
+
+// move is the insert of a view inserted before into a parent, put off
+// to the end of the round.
+type move struct{ view, parent, before *node }
+
+// emitMoves inserts the views that change parents or come back, the
+// last of each parent's first, so the sibling each goes before is in
+// place.
+func (t *Tree) emitMoves() {
+	for _, m := range t.moves {
+		var before NodeID
+		if m.before != nil {
+			before = m.before.id
+		}
+		t.items = append(t.items, driver.MountItem{Kind: driver.ItemInsert, ID: m.view.id, Parent: m.parent.id, Before: before})
+	}
+	t.moves = t.moves[:0]
+}
+
+// insertedElsewhere reports whether c, no longer p's, is in another view
+// this commit sends, whose sync inserts it.
+func (t *Tree) insertedElsewhere(c, p *node) bool {
+	n := c.nativeParent()
+	if n == nil || n == p {
+		return false
+	}
+	for n != nil && !n.deleted {
+		switch {
+		case n == t.view || n.accessory != nil || n.headerView:
+			return true
+		case n.hoist != nil:
+			n = n.hoist.host
+		default:
+			n = n.parent
+		}
+	}
+	return false
 }
 
 // increasingRun marks a longest strictly increasing subsequence of seq,

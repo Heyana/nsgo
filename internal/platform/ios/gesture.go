@@ -14,8 +14,12 @@ import (
 // fails once it passes a fail offset first. The pans of the scroll views
 // around it wait for it to fail, so a drag it fails still scrolls them;
 // once it activates, UIKit cancels the touches of the views below,
-// which ends their presses. Pinches and rotations are UIKit's
-// recognizers, which recognize together.
+// which ends their presses. A pan that hands off (PanScrollHandoff, a
+// bottom sheet's) recognizes with the pan of the scroll view inside its
+// view where the finger went down, as NSH's pan_scroll_handoff: the drag
+// scrolls it back to its top first, and what goes on past that moves the
+// pan while the scroll view stays pinned there. Pinches and rotations are
+// UIKit's recognizers, which recognize together.
 
 // UIGestureRecognizerState values.
 const (
@@ -35,10 +39,20 @@ type panGate struct {
 	at       driver.Point
 	velocity driver.Point
 	time     float64
+	// scroll is the scroll view a handing off pan's finger went down in,
+	// retained, and offset how far it was from its top; consuming is set
+	// while the drag is past that and moves the pan.
+	scroll    objc.ID
+	offset    driver.Points
+	consuming bool
 }
 
-// gates maps pan recognizers to their Go side.
-var gates = map[objc.ID]*panGate{}
+// gates maps pan recognizers to their Go side; handoffs the scroll views
+// handing a drag off to the pans of the views around them.
+var (
+	gates    = map[objc.ID]*panGate{}
+	handoffs = map[objc.ID]*panGate{}
+)
 
 var (
 	selState, selSetState = sel("state"), sel("setState:")
@@ -61,18 +75,80 @@ func registerGestures() {
 		}},
 		{Cmd: sel("reset"), Fn: func(self objc.ID, cmd objc.SEL) {
 			apple.Super(self, cmd)
-			if g := gates[self]; g != nil && g.finger != 0 {
-				g.finger.Send(selRelease)
-				g.finger = 0
+			if g := gates[self]; g != nil {
+				if g.finger != 0 {
+					g.finger.Send(selRelease)
+					g.finger = 0
+				}
+				g.endHandoff()
 			}
 		}},
 		// The pans of the scroll views around the view wait for the gate.
 		{Cmd: sel("shouldBeRequiredToFailByGestureRecognizer:"), Fn: gateHoldsBack},
-		// Recognizers on the same view (pinch, rotation) go on with it.
+		// Recognizers on the same view (pinch, rotation) go on with it, and
+		// so does the pan of a scroll view handing off to it.
 		{Cmd: sel("canPreventGestureRecognizer:"), Fn: func(self objc.ID, _ objc.SEL, other objc.ID) bool {
-			return self.Send(selView) != other.Send(selView)
+			return self.Send(selView) != other.Send(selView) && !gates[self].sharesWith(other)
+		}},
+		{Cmd: sel("canBePreventedByGestureRecognizer:"), Fn: func(self objc.ID, cmd objc.SEL, other objc.ID) bool {
+			return !gates[self].sharesWith(other) && apple.SendSuper[bool](self, cmd, other)
 		}},
 	})
+}
+
+// handOff finds, for a view whose pan hands off (PanScrollHandoff), the
+// scroll view inside it that touch went down in and that scrolls
+// vertically: the drag first scrolls it back to its top.
+func (g *panGate) handOff(touch objc.ID) {
+	g.endHandoff()
+	if !g.view.handoff {
+		return
+	}
+	scrollClass := objc.GetClass("UIScrollView")
+	for n := touch.Send(selView); n != 0 && n != g.view.native; n = n.Send(selSuperview) {
+		if !objc.Send[bool](n, selIsKindOf, scrollClass) || !objc.Send[bool](n, sel("isScrollEnabled")) {
+			continue
+		}
+		size := objc.Send[apple.CGSize](n, sel("contentSize"))
+		if size.Height <= objc.Send[apple.CGRect](n, selBounds).Size.Height && !objc.Send[bool](n, sel("alwaysBounceVertical")) {
+			continue
+		}
+		in := objc.Send[edgeInsets](n, sel("adjustedContentInset"))
+		g.scroll = n.Send(sel("retain"))
+		g.offset = driver.Points(max(objc.Send[apple.CGPoint](n, selContentOffset).Y+in.Top, 0))
+		handoffs[g.scroll] = g
+		return
+	}
+}
+
+func (g *panGate) endHandoff() {
+	if g.scroll != 0 {
+		delete(handoffs, g.scroll)
+		g.scroll.Send(selRelease)
+		g.scroll, g.consuming = 0, false
+	}
+}
+
+// sharesWith reports whether other is the pan of the scroll view the
+// gate shares a drag with.
+func (g *panGate) sharesWith(other objc.ID) bool {
+	return g != nil && g.scroll != 0 && g.scroll.Send(selPanRecognizer) == other
+}
+
+// pinTop keeps a scroll view handing a drag off at its top while the
+// drag moves the pan instead, so it neither scrolls nor bounces under the
+// moving view. It reports whether it did.
+func pinTop(scroll objc.ID) bool {
+	g := handoffs[scroll]
+	if g == nil || !g.consuming {
+		return false
+	}
+	at := objc.Send[apple.CGPoint](scroll, selContentOffset)
+	top := -objc.Send[edgeInsets](scroll, sel("adjustedContentInset")).Top
+	if at.Y != top {
+		scroll.Send(sel("setContentOffset:"), apple.CGPoint{X: at.X, Y: top})
+	}
+	return true
 }
 
 // gestureMethods are the views' methods for their pinch and rotation
@@ -140,6 +216,7 @@ func gateBegan(self objc.ID, _ objc.SEL, touches, _ objc.ID) {
 	g.start = objc.Send[apple.CGPoint](touch, selLocationInView, objc.ID(0))
 	g.at, g.velocity = driver.Point{}, driver.Point{}
 	g.time = objc.Send[float64](touch, selTimestamp)
+	g.handOff(touch)
 }
 
 func gateMoved(self objc.ID, _ objc.SEL, _, _ objc.ID) {
@@ -175,7 +252,19 @@ func gateMoved(self objc.ID, _ objc.SEL, _, _ objc.ID) {
 	} else {
 		self.Send(selSetState, stateChanged)
 	}
-	g.view.report(driver.Event{Kind: driver.EventPan, Phase: phase, Point: d, Velocity: g.velocity})
+	g.view.report(driver.Event{Kind: driver.EventPan, Phase: phase, Point: g.handedOff(d), Velocity: g.velocity})
+}
+
+// handedOff is how far drag d moves the pan: past what the scroll view it
+// shares the drag with scrolls back first, never the other way.
+func (g *panGate) handedOff(d driver.Point) driver.Point {
+	if g.scroll == 0 {
+		return d
+	}
+	g.consuming = d.Y > g.offset
+	pinTop(g.scroll)
+	d.Y = max(d.Y-g.offset, 0)
+	return d
 }
 
 func gateLifted(self, touches objc.ID, how int) {
@@ -202,7 +291,11 @@ func gateLifted(self, touches objc.ID, how int) {
 	if objc.Send[float64](g.finger, selTimestamp)-g.time > 0.05 {
 		velocity = driver.Point{}
 	}
-	g.view.report(driver.Event{Kind: driver.EventPan, Phase: phase, Point: g.at, Velocity: velocity})
+	at := g.at
+	if g.scroll != 0 {
+		at.Y = max(at.Y-g.offset, 0)
+	}
+	g.view.report(driver.Event{Kind: driver.EventPan, Phase: phase, Point: at, Velocity: velocity})
 }
 
 // gateHoldsBack reports whether other is the pan of a scroll view around

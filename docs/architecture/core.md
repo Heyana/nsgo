@@ -32,6 +32,7 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - `Each` matches rows by key. A kept row gets its item and index through signals, and only the rows that moved are reinserted.
 - Go methods cannot take type parameters, so `Each` is a generic function rather than a method or struct.
 - Region nodes are never laid out. Layout marks pass through them, so a change inside a branch or row still reaches the root.
+- A `Holder` is NSH's render keys as a value: content built once, owned by the scope given to `NewHolder` rather than the running owner, and shown in the newest place mounted with `Place`. It moves there with its native views, keeping its state; with no place it stays built out of the tree, its overlays hidden.
 
 ## Layers and navigation
 
@@ -104,7 +105,7 @@ Native alerts, the clipboard, image sizes and prefetches, announcements, keyboar
 The protocol is defined in `mount.go` and `events.go`. Backends apply items in order on the main thread, in one hop per batch.
 
 - IDs are dense and reused after `ItemDelete`, possibly later in the same batch.
-- `ItemInsert` places a view before a sibling, not at an index, so views a platform adds itself cannot shift positions.
+- `ItemInsert` places a view before a sibling, not at an index, so views a platform adds itself cannot shift positions. A view that changes parents, or comes back after `ItemRemove`, is inserted after the round's other inserts, once its new parent is in place, and backends move it in one step: the web with `moveBefore` where the browser has it, parking removed views in a hidden element, so scroll offsets and iframes' pages stay. Each round's deletes come last.
 - A text field counts the user's edits. `ItemInputValue` carries the edit count the engine had seen, and the field ignores a value older than its last edit.
 - Platforms report only the events in a view's mask, and never wait for the engine. The engine queue is unbounded, merges scroll events per view and keeps only the last resize.
 

@@ -6,17 +6,9 @@ References are files in `nsh/docs/dev/` unless they name a crate, with the bulle
 
 ## Order
 
-Sections run in build order: what the components left, then services, the tool, embedding and performance. The last section waits for community contributions, and nothing above it depends on it.
+Sections run in build order: services, the tool, embedding and performance. The last section waits for community contributions, and nothing above it depends on it.
 
-## 1. Component leftovers
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| Kept panel state | `dock.md` (render keys) | A dock's panel moved to another group or dock, or across the compact presentation, keeps its content's state, as a core that moves a mounted subtree allows |
-| Sheet scroll handoff | `components.md` (popups) | On iOS a scroll view inside a bottom sheet hands a downward drag at its top to the sheet |
-| Inverted lists loading at the start | `scrolling-and-lists.md` (loading at either end) | An inverted list with `OnLoadMoreAtStart` keeps its distance from the end only while at its start |
-
-## 2. Services and windows
+## 1. Services and windows
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -29,7 +21,7 @@ Sections run in build order: what the components left, then services, the tool, 
 | Window commands | `crates/nsh-core/src/runtime/desktop.rs` | Animated, top-anchored `SetFrame`, window levels, `OrderFront`, an auto-hiding menu bar, native popup menus |
 | App lifecycle | `macos.md` (standalone shutdown) | `nsgo.Run` returns for cleanup; apps quit themselves or outlive their last window; a forced appearance reaches native chrome |
 
-## 3. Testing and the tool
+## 2. Testing and the tool
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -41,7 +33,7 @@ Sections run in build order: what the components left, then services, the tool, 
 | Packages | `embedding.md`, `web.md` | Build numbers, the app's appearance, Linux and Windows archives, IPAs, a cacheable web site with a manifest, `-run` |
 | Store signing | `embedding.md` | `nsgo build` signs an IPA with a provisioning profile, wildcard ones too, and an APK with a keystore |
 
-## 4. Embedding
+## 3. Embedding
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -51,7 +43,7 @@ Sections run in build order: what the components left, then services, the tool, 
 | Host channel | `embedding.md` (the host channel) | The host and the app call each other's functions and send events without a view between them |
 | Component lifetime | `embedding.md` (native components) | Native components are destroyed when their app stops, on Android too |
 
-## 5. Performance
+## 4. Performance
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -63,7 +55,7 @@ Sections run in build order: what the components left, then services, the tool, 
 | Commits that follow changes | `performance.md` (Rust components run once) | A commit resolves styles and emits items only for the nodes that changed, not the whole tree |
 | Windows frames | `windows.md` (frames) | The frame clock follows the compositor with `DwmFlush` |
 
-## 6. Finish the existing platforms
+## 5. Finish the existing platforms
 
 These items wait for community contributions.
 

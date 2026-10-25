@@ -36,7 +36,9 @@ type List struct {
 	Horizontal    bool
 	HideIndicator bool
 	// Inverted puts row 0 at the end (a chat): the list starts scrolled
-	// to the end and keeps its distance from it as content changes.
+	// to the end and keeps its distance from it as content changes. With
+	// OnLoadMoreAtStart it does so only while row 0 shows; scrolled away,
+	// rows arriving at row 0's end keep the visible rows in place.
 	Inverted bool
 	// MaintainVisibleContentPosition, when set, follows the end of a list
 	// that is not inverted while it is within AutoscrollToBottomThreshold
@@ -249,6 +251,7 @@ func (t *Tree) mountList(cx *Scope, parent *node, l List) {
 	st.setSticky(l.StickyHeaderIndices)
 	st.viewability = l.ViewabilityConfig
 	st.parent = l.Viewport == ListViewportParent
+	st.loadsAtStart = l.OnLoadMoreAtStart != nil
 	if !st.parent {
 		st.inverted = l.Inverted
 		if m := l.MaintainVisibleContentPosition; m != nil {

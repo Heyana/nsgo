@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall/js"
 	"time"
 	"unicode/utf16"
@@ -84,6 +85,7 @@ type surface struct {
 	host      js.Value
 	root      *view
 	measure   js.Value      // a hidden element text is measured in
+	parked    js.Value      // a hidden, inert element removed views wait in
 	measuring *preparedText // the text measure holds
 	metrics   js.Value      // a canvas's 2D context, for fonts' metrics
 	engine    *engine.Engine
@@ -248,6 +250,14 @@ func Run(app engine.App, opts Options) {
 		"width": "max-content",
 	})
 	host.Call("appendChild", s.measure)
+	s.parked = doc.Call("createElement", "div")
+	setStyle(s.parked, map[string]string{
+		"position": "absolute", "visibility": "hidden", "left": "-10000px", "top": "0",
+		"width": "0", "height": "0", "overflow": "hidden",
+	})
+	s.parked.Set("inert", true)
+	setAttr(s.parked, "aria-hidden", "true")
+	host.Call("appendChild", s.parked)
 	s.listen()
 	s.watchStart(opts.Mount == "")
 
@@ -848,10 +858,16 @@ func (s *surface) Mount(b *driver.MountBatch) {
 			if parent == nil {
 				continue
 			}
+			ref := js.Null()
 			if before := s.view(it.Before); before != nil && before.outer().Get("parentNode").Equal(parent.content) {
-				parent.content.Call("insertBefore", v.outer(), before.outer())
+				ref = before.outer()
+			}
+			if el := v.outer(); canMove() && el.Get("isConnected").Bool() && parent.content.Get("isConnected").Bool() {
+				// One step keeps what removing it loses: scroll offsets,
+				// an iframe's page, the focus.
+				parent.content.Call("moveBefore", el, ref)
 			} else {
-				parent.content.Call("appendChild", v.outer())
+				parent.content.Call("insertBefore", el, ref)
 			}
 			b := driver.Edges{}
 			if parent.content.Equal(parent.el) {
@@ -872,7 +888,13 @@ func (s *surface) Mount(b *driver.MountBatch) {
 			}
 			s.appear(v, lb, it.Parent)
 		case driver.ItemRemove:
-			v.outer().Call("remove")
+			if el := v.outer(); canMove() && el.Get("isConnected").Bool() {
+				// Parked, not taken out of the page, so its scroll offsets and
+				// an iframe's page are there when it is inserted again.
+				s.parked.Call("moveBefore", el, js.Null())
+			} else {
+				el.Call("remove")
+			}
 		case driver.ItemDelete:
 			// Forgotten first, so events its removal fires are not sent.
 			s.views[it.ID] = nil
@@ -1597,6 +1619,12 @@ func call(el js.Value, methods ...string) {
 		return
 	}
 }
+
+// canMove reports whether the browser moves an element in one step
+// (Element.moveBefore).
+var canMove = sync.OnceValue(func() bool {
+	return js.Global().Get("Element").Get("prototype").Get("moveBefore").Type() == js.TypeFunction
+})
 
 // ignore is a promise rejection handler doing nothing.
 var ignore = js.FuncOf(func(js.Value, []js.Value) any { return nil })

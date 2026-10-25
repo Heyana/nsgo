@@ -10,6 +10,6 @@
 - Add scroll views, virtualized lists that load more at either end, overlays, modals, navigation stacks with measured system headers and collapsing large titles, the system tab bar, web views, videos and the app's own native views.
 - Add pointer, touch, focus, keyboard and gesture input, file drops, accessibility, clipboard, storage and environment signals.
 - Add custom desktop title bars, window controls, application menus, scroll bars and window materials.
-- Add `base`, unstyled buttons, checkboxes, radios, switches, tabs, progress bars, collapsible regions, menus and context menus that become sheets on touch screens, popovers, tooltips, dialogs, sheets that follow drags, alerts and action sheets, safe areas, resizable panels, a dock that reads and writes gpui-base's layouts, and a Markdown and HTML `TextView` that streams with a caret.
+- Add `base`, unstyled buttons, checkboxes, radios, switches, tabs, progress bars, collapsible regions, menus and context menus that become sheets on touch screens, popovers, tooltips, dialogs, sheets that follow drags, alerts and action sheets, safe areas, resizable panels, a dock whose panels keep their state as they move and that reads and writes gpui-base's layouts, and a Markdown and HTML `TextView` that streams with a caret.
 - Add `nsgotest` for headless app tests.
 - Add the `nsgo` tool, which creates apps, runs them with hot reload and a performance monitor, and packages them from `nsgo.yaml`.

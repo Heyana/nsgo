@@ -36,6 +36,7 @@ type Tree struct {
 	changed     bool
 	deleted     []NodeID
 	commands    []driver.MountItem
+	moves       []move
 	items       []driver.MountItem
 	laidOut     []*node
 	reports     []report
@@ -121,6 +122,9 @@ type node struct {
 	part       PartStates     // the states it is styled in as a control's part
 	isStack    bool
 	ref        *Ref
+	// place is the holder a place region shows; held the holder whose
+	// content this region is.
+	place, held *Holder
 
 	frame       Bounds
 	layoutDirty bool
@@ -418,6 +422,10 @@ type sent struct {
 	children  []*node
 	layout    Bounds
 	overflow  Bounds // the area ItemOverflow last gave
+	// parent is the view the view was last inserted into, nil once
+	// removed; removed is set from then until it is inserted again.
+	parent  *node
+	removed bool
 }
 
 // NewTree returns an empty tree under root, laying text out with text.
@@ -542,6 +550,10 @@ func (t *Tree) discard(n *node) {
 		return
 	}
 	n.deleted = true
+	if n.place != nil {
+		// What it shows is the holder's, which keeps it.
+		n.place.unplace(n)
+	}
 	delete(t.sticky, n)
 	if n.ref != nil && n.ref.n == n {
 		n.ref.n = nil
@@ -816,7 +828,7 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 		important: v.ImportantForAccessibility})
 	_, panClaim := v.Responder.panClaim()
 	if v.OnPan != nil || v.PanValues != (AnimatedXY{}) || panClaim {
-		n.props.PanActivation = v.PanActivation
+		n.props.PanActivation, n.props.PanScrollHandoff = v.PanActivation, v.PanScrollHandoff
 		n.panning = true
 	}
 	t.setRef(n, v.Ref)

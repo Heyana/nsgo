@@ -240,6 +240,8 @@ func (l sheetLayer) node() core.Node {
 		if l.swipe {
 			panel.PanValues = core.AnimatedXY{Y: m.drag}
 			panel.PanActivation = core.PanActivation{ActiveOffsetY: 8, FailOffsetX: 12}
+			// On iOS a scroll view inside at its top hands the drag on.
+			panel.PanScrollHandoff = true
 			panel.OnPan = func(e core.PanEvent) {
 				if e.Phase != core.GestureEnded && e.Phase != core.GestureCancelled {
 					return

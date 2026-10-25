@@ -108,7 +108,8 @@ func dockPage(cx *core.Scope, t *theme) core.Node {
 	}
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
 		t.demo("Dock area", "base.DockArea: drag tabs between groups and docks, resize the splits and docks, zoom into a group. "+
-			"Its layout is saved as gpui-base's file; below 600 points one group shows at a time and the docks are drawers.",
+			"Its layout is saved as gpui-base's file; below 600 points one group shows at a time and the docks are drawers. "+
+			"A panel keeps what it holds wherever it moves.",
 			flow(
 				t.plain("Files", func() { ref.ToggleDock(base.DockLeft) }),
 				t.plain("Terminal", func() { ref.ToggleDock(base.DockBottom) }),
@@ -132,6 +133,7 @@ func dockPage(cx *core.Scope, t *theme) core.Node {
 					return core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(12), Gap: 6}, Children: []core.Node{
 						core.Text{Content: strings.ToUpper(key[:1]) + key[1:], Style: core.Style{FontWeight: core.FontWeightSemibold}},
 						t.note(dockPanels[key]),
+						core.Input{Placeholder: "Notes", Label: key + " notes", Style: t.field()},
 					}}
 				},
 				RenderTab: tab,

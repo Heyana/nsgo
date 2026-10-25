@@ -79,6 +79,12 @@ type View struct {
 	// an active pan takes the touch from presses and scroll views.
 	OnPan         func(PanEvent)
 	PanActivation PanActivation
+	// PanScrollHandoff lets a vertical pan share a drag with the scroll
+	// view inside the view where it starts, on iOS, as a bottom sheet's
+	// does: the drag scrolls it back to its top first, and only what goes
+	// on past that moves the pan. Other platforms leave the drag to the
+	// scroll view.
+	PanScrollHandoff bool
 	// OnPinch follows a two-finger pinch (a trackpad's on desktops);
 	// OnRotation a two-finger rotation.
 	OnPinch    func(GestureEvent)

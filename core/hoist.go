@@ -201,10 +201,11 @@ func (t *Tree) modalEvent(n *node, ev driver.Event) {
 	}
 }
 
-// hiddenIn reports whether DisplayNone hides n or a shadow ancestor.
+// hiddenIn reports whether DisplayNone hides n or a shadow ancestor, or
+// n is in a holder's content that no place shows.
 func hiddenIn(n *node) bool {
 	for ; n != nil; n = n.parent {
-		if n.style.Display == DisplayNone {
+		if n.style.Display == DisplayNone || n.parent == nil && n.held != nil {
 			return true
 		}
 	}

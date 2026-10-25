@@ -496,6 +496,9 @@ type ViewProps struct {
 	// thread.
 	WindowDrag    WindowDrag
 	PanActivation PanActivation
+	// PanScrollHandoff: the view's pan shares a drag with the scroll view
+	// inside it where the drag starts, on iOS (View.PanScrollHandoff).
+	PanScrollHandoff bool
 	// SelectionArea is a view's, Selectable and SelectionColor a text's.
 	SelectionArea  bool
 	Selectable     Selectable

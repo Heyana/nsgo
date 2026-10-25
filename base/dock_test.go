@@ -140,3 +140,90 @@ func TestDockAreaIsCompactWhenNarrow(t *testing.T) {
 		}
 	}
 }
+
+func TestDockPanelsKeepTheirStateAsTheyMove(t *testing.T) {
+	var layouts []base.DockLayout
+	var events []string
+	app, ref := dockApp(t, 1000, &layouts, &events)
+	app.Type("id:input-editor", "kept")
+	editor := app.Find("id:panel-editor").ID
+	kept := func(when string) {
+		t.Helper()
+		if v := app.Find("id:panel-editor"); v.ID != editor || app.Find("id:input-editor").Text != "kept" {
+			t.Errorf("%s: the editor was made again (%v) or lost its text %q", when, v.ID != editor, app.Find("id:input-editor").Text)
+		}
+	}
+	// Merged into the other group.
+	from := center(surface(app.Find("label:editor")))
+	to := center(surface(app.Find("id:panel-preview")))
+	app.Drag("label:editor", core.Point{X: 10}, core.Point{X: to.X - from.X, Y: to.Y - from.Y})
+	kept("merged into another group")
+	// Split off into the left dock.
+	from = center(surface(app.Find("label:editor")))
+	files := surface(app.Find("id:panel-files"))
+	to = core.Point{X: files.Origin.X + files.Size.Width/2, Y: files.Origin.Y + files.Size.Height - 10}
+	app.Drag("label:editor", core.Point{X: 10}, core.Point{X: to.X - from.X, Y: to.Y - from.Y})
+	if last := layouts[len(layouts)-1]; last.Left.Root.Tabs {
+		t.Fatalf("the editor did not move into the dock: %+v", last.Left.Root)
+	}
+	kept("moved into a dock")
+	ref.ToggleZoom()
+	app.Settle()
+	ref.ToggleZoom()
+	app.Settle()
+	kept("zoomed and back")
+
+	// A closed panel goes for good.
+	ref.ClosePanel("notes")
+	app.Settle()
+	ref.AddPanel("notes", base.DockCenter)
+	app.Settle()
+	ref.ActivatePanel("notes")
+	app.Settle()
+	if app.Find("id:input-notes").Text != "" {
+		t.Error("a panel added again kept the state of the one closed")
+	}
+}
+
+func TestDockPanelsKeepTheirStateAcrossTheCompactPresentation(t *testing.T) {
+	ref := new(base.DockAreaRef)
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return base.DockArea{Ref: ref, TestID: "dock", Style: core.Style{FlexGrow: 1},
+			DefaultLayout: base.DockLayout{
+				Center: base.DockTabs("editor"),
+				Left:   &base.DockRegion{Root: base.DockTabs("files"), Size: 200},
+			},
+			RenderPanel: func(cx *core.Scope, key string) core.Node {
+				return core.View{TestID: "panel-" + key, Style: core.Style{FlexGrow: 1},
+					Children: []core.Node{core.Input{TestID: "input-" + key}}}
+			},
+		}
+	}, nsgotest.Size(1000, 600), nsgotest.Environment(core.Environment{Idiom: core.IdiomDesktop}))
+	app.Type("id:input-files", "kept")
+	files := app.Find("id:panel-files").ID
+	kept := func(when string) {
+		t.Helper()
+		if v := app.Find("id:panel-files"); v.ID != files || app.Find("id:input-files").Text != "kept" {
+			t.Errorf("%s: the dock's panel was made again (%v) or lost its text %q", when, v.ID != files, app.Find("id:input-files").Text)
+		}
+	}
+	app.Resize(390, 600)
+	app.Settle()
+	if app.Exists("id:panel-files") {
+		t.Fatal("the dock shows at compact width")
+	}
+	ref.ToggleDock(base.DockLeft)
+	app.Settle()
+	app.Advance(300 * time.Millisecond)
+	kept("in the drawer")
+	ref.ToggleDock(base.DockLeft)
+	app.Settle()
+	app.Advance(300 * time.Millisecond)
+	ref.ToggleDock(base.DockLeft)
+	app.Settle()
+	app.Advance(300 * time.Millisecond)
+	kept("in the drawer again")
+	app.Resize(1000, 600)
+	app.Settle()
+	kept("back at full width")
+}

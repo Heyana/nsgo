@@ -72,6 +72,7 @@ type view struct {
 	video      *apple.Video       // a video's
 
 	activation           driver.PanActivation
+	handoff              bool    // its pan hands off from the scroll views inside it
 	pan, pinch, rotation objc.ID // the recognizers of the gestures it follows
 
 	// A text's content and selection, whether a view is an area, and the
@@ -743,7 +744,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemViewProps:
 			v.setProps(it.ViewProps)
 			p := it.ViewProps
-			v.activation, v.area, v.selectable = p.PanActivation, p.SelectionArea, p.Selectable
+			v.activation, v.handoff, v.area, v.selectable = p.PanActivation, p.PanScrollHandoff, p.SelectionArea, p.Selectable
 			if v.selColor != p.SelectionColor {
 				v.selColor = p.SelectionColor
 				v.redraw()
@@ -1199,6 +1200,10 @@ func surfaceApply(self objc.ID, _ objc.SEL, _ objc.ID) {
 func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
 	v := views[self]
 	if v == nil {
+		return
+	}
+	// Pinning it scrolls it again, which reports the pinned offset.
+	if at := objc.Send[apple.CGPoint](self, selContentOffset); pinTop(self) && objc.Send[apple.CGPoint](self, selContentOffset) != at {
 		return
 	}
 	o := objc.Send[apple.CGPoint](self, selContentOffset)

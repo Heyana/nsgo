@@ -132,6 +132,34 @@ func TestInvertedListStartsAtTheEndAndKeepsItsDistanceFromIt(t *testing.T) {
 	}
 }
 
+func TestInvertedListLoadingAtItsStartKeepsTheVisibleRowsAwayFromIt(t *testing.T) {
+	var ids *core.Signal[[]int]
+	a := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		ids = core.NewSignalFunc(cx, makeIDs(100, 0), nil)
+		return core.List{TestID: "list", Style: core.Style{Height: core.Pt(400)}, Inverted: true,
+			Count: func() int { return len(ids.Get()) }, Key: func(i int) any { return ids.Get()[i] },
+			EstimatedSize: 50, OnLoadMoreAtStart: func() {},
+			Row: func(cx *core.Scope, r core.ListRow) core.Node {
+				return core.Text{ContentFunc: func() string { return rowText(ids.Get()[r.Index()]) }, Style: core.Style{Height: core.Pt(50)}}
+			}}
+	})
+	list := a.Find("id:list")
+	// At its start, a newer row shows at the bottom.
+	ids.Set(append(makeIDs(1, 1000), ids.Get()...))
+	a.Settle()
+	if got := onScreen(t, a, list, 1000); got != 350 {
+		t.Errorf("the newest row at %v on screen, want at the bottom", got)
+	}
+	// Scrolled away from it, newer rows arrive out of sight.
+	a.Scroll("id:list", core.Point{Y: list.Offset.Y - 300})
+	before := onScreen(t, a, list, 10)
+	ids.Set(append(makeIDs(4, 2000), ids.Get()...))
+	a.Settle()
+	if got := onScreen(t, a, list, 10); got != before {
+		t.Errorf("row 10 moved from %v to %v on screen as newer rows arrived", before, got)
+	}
+}
+
 func TestListFollowsItsEndWithinTheThreshold(t *testing.T) {
 	var last *core.Signal[core.Points]
 	a := nsgotest.Start(t, func(cx *core.Scope) core.Node {

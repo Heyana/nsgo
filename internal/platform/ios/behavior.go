@@ -351,6 +351,12 @@ func scrollWillDrag(self objc.ID, _ objc.SEL, _ objc.ID) {
 // scrollWillEndDrag snaps a fling to SnapToInterval, SnapToOffsets or
 // pages; UIKit's velocity is in points per millisecond.
 func scrollWillEndDrag(self objc.ID, _ objc.SEL, _ objc.ID, velocity apple.CGPoint, target unsafe.Pointer) {
+	if g := handoffs[self]; g != nil && g.consuming && target != nil {
+		// The drag moved the view around it: no glide from the top.
+		to := (*apple.CGPoint)(target)
+		to.Y = -objc.Send[edgeInsets](self, sel("adjustedContentInset")).Top
+		return
+	}
 	v := scrollView(self)
 	if v == nil || !v.sc.config.Behavior.Snaps() || target == nil {
 		return

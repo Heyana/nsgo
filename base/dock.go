@@ -212,8 +212,11 @@ type dockArea struct {
 	live [4]*core.Signal[core.Points]
 	// groups are the mounted tab groups, by ID, for a drag to measure.
 	groups map[uint64]*dockGroup
-	drag   *core.Signal[*dockDrag]
-	armed  string
+	// held is each panel's content, by key, which the group showing the
+	// panel places.
+	held  map[string]*core.Holder
+	drag  *core.Signal[*dockDrag]
+	armed string
 }
 
 // dockGroup is a mounted tab group's measurable parts.
@@ -238,7 +241,7 @@ func layoutEqual(a, b *DockLayout) bool { return reflect.DeepEqual(a, b) }
 
 // Render implements core.Node.
 func (d DockArea) Render(cx *core.Scope) core.Node {
-	a := &dockArea{cx: cx, p: d, ref: new(core.Ref), groups: map[uint64]*dockGroup{},
+	a := &dockArea{cx: cx, p: d, ref: new(core.Ref), groups: map[uint64]*dockGroup{}, held: map[string]*core.Holder{},
 		size: core.NewSignal(cx, core.Size{}), zoom: core.NewSignal(cx, uint64(0)),
 		current: core.NewSignal(cx, uint64(0)), presented: core.NewSignal(cx, DockCenter),
 		drag: core.NewSignalFunc[*dockDrag](cx, nil, func(a, b *dockDrag) bool { return a == b })}
@@ -390,9 +393,15 @@ func (a *dockArea) follow() {
 			if z := a.zoom.GetUntracked(); z != 0 && findGroup(&l, z) == nil {
 				a.setZoom(0)
 			}
+			present := allPanels(&l)
+			for k, h := range a.held {
+				if !present[k] {
+					h.Dispose()
+					delete(a.held, k)
+				}
+			}
 			if was != nil {
 				before, after := displayed(was), displayed(&l)
-				present := allPanels(&l)
 				if f := a.p.OnPanelActiveChange; f != nil {
 					for _, k := range sortedKeys(before) {
 						if !after[k] && present[k] {
@@ -829,10 +838,6 @@ func (a *dockArea) group(cx *core.Scope, region DockPlacement, id uint64) core.N
 		Children: []core.Node{core.Each(panels.Get, func(k string) string { return k },
 			func(cx *core.Scope, key func() string, _ func() int) core.Node {
 				k := key()
-				var body core.Node
-				if a.p.RenderPanel != nil {
-					body = a.p.RenderPanel(cx, k)
-				}
 				return core.View{
 					StyleFunc: func() core.Style {
 						if shownPanel() != k {
@@ -840,10 +845,26 @@ func (a *dockArea) group(cx *core.Scope, region DockPlacement, id uint64) core.N
 						}
 						return core.Style{FlexGrow: 1, MinWidth: core.Pt(0), MinHeight: core.Pt(0)}
 					},
-					Children: []core.Node{body}}
+					Children: []core.Node{a.panel(k).Place()}}
 			})}}
 	return core.View{Style: core.Style{FlexGrow: 1, MinWidth: core.Pt(0), MinHeight: core.Pt(0)}.Merge(a.p.GroupStyle),
 		Children: []core.Node{bar, content}}
+}
+
+// panel is panel key's content, kept while the layout lists the panel,
+// so it moves with its state to whichever group shows it.
+func (a *dockArea) panel(key string) *core.Holder {
+	if h := a.held[key]; h != nil {
+		return h
+	}
+	h := core.NewHolder(a.cx, func(cx *core.Scope) core.Node {
+		if a.p.RenderPanel != nil {
+			return a.p.RenderPanel(cx, key)
+		}
+		return nil
+	})
+	a.held[key] = h
+	return h
 }
 
 // tabBar is a tab bar: a row with the tab list role.

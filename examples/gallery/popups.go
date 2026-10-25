@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
 )
@@ -132,8 +134,10 @@ func popupsPage(cx *core.Scope, t *theme) core.Node {
 			BackdropStyle: t.backdrop(), CloseOnSwipe: true,
 			PopupStyle: core.Style{Background: t.surface, Color: t.ink, Padding: core.All(20), Gap: 12, CornerRadius: dialogRadius, Height: core.Pct(40),
 				BorderWidth: 1, BorderColor: t.line, ShadowColor: core.RGBA(0, 0.12), ShadowRadius: 24, ShadowOffset: core.Point{Y: 8}},
-			Label: "Sheet", Children: []core.Node{base.SafeAreaView{Edges: base.Bottom, Style: core.Style{Gap: 12},
-				Children: panel("A sheet from the bottom", "It slides in over a fading backdrop; drag it down to close it.", func() { sheet.Set(false) })}}},
+			Label: "Sheet", Children: []core.Node{base.SafeAreaView{Edges: base.Bottom, Style: core.Style{Gap: 12, FlexGrow: 1, MinHeight: core.Pt(0)},
+				Children: sheetPanel(t, panel("A sheet from the bottom",
+					"It slides in over a fading backdrop; drag it down to close it, on iOS from its list too once the list is at its top.",
+					func() { sheet.Set(false) }))}}},
 		base.Sheet{Open: side.Get, OnOpenChange: func(open bool, _ base.Reason) { side.Set(open) }, BackdropStyle: t.backdrop(),
 			Side: core.PlaceRight, Label: "Side sheet",
 			PopupStyle: core.Style{Background: t.surface, Color: t.ink, Padding: core.All(20), Gap: 12, Width: core.Pt(300),
@@ -141,4 +145,16 @@ func popupsPage(cx *core.Scope, t *theme) core.Node {
 			Children: []core.Node{base.SafeAreaView{Edges: base.Top | base.Bottom, Style: core.Style{Gap: 12},
 				Children: panel("A side sheet", "Side picks the edge: this one sits on the right.", func() { side.Set(false) })}}},
 	}}
+}
+
+// sheetPanel puts a list that scrolls between a sheet panel's text and
+// its button.
+func sheetPanel(t *theme, nodes []core.Node) []core.Node {
+	rows := make([]core.Node, 12)
+	for i := range rows {
+		rows[i] = core.Text{Content: fmt.Sprintf("Row %d", i+1),
+			Style: core.Style{Padding: core.Symmetric(8, 0), Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: t.line}}}
+	}
+	list := core.Scroll{Style: core.Style{FlexGrow: 1, FlexShrink: 1, FlexBasis: core.Pt(0), MinHeight: core.Pt(0)}, Children: rows}
+	return append(nodes[:len(nodes)-1:len(nodes)-1], list, nodes[len(nodes)-1])
 }
