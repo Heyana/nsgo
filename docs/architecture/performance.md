@@ -1,6 +1,6 @@
 # Performance
 
-The performance monitor measures what a surface's frames and commits cost while it runs, for a panel over the app (`nsgo dev -fps` or `nsgo.FPS`). It follows NSH's `nsh_engine::perf` and macOS HUD. Read this before changing `internal/engine/perf.go`, `internal/platform/macos/perf.go`, a backend's frame clock or anything that runs every frame.
+The performance monitor measures what a surface's frames and commits cost while it runs, for a panel over the app (`nsgo dev` or `nsgo.FPS`). It follows NSH's `nsh_engine::perf` and macOS HUD. Read this before changing `internal/engine/perf.go`, `internal/platform/macos/perf.go`, a backend's frame clock or anything that runs every frame.
 
 ## Measuring
 
@@ -17,7 +17,7 @@ The performance monitor measures what a surface's frames and commits cost while 
 
 ## The panel
 
-`nsgo dev -fps` passes `-X github.com/oneo-me/nsgo.fps=1` to the app's build; `nsgo.Run` turns that into the backend's monitor. `nsgo.FPS(true)` does the same from an app, for `go run` or embedding. The flag exists only for the native macOS target: other targets have no monitor yet and the tool refuses `-fps` for them.
+`nsgo dev` passes `-X github.com/oneo-me/nsgo.fps=1` to every development build; `nsgo build` never passes it. `nsgo.Run` turns the flag into the backend's monitor, and `nsgo.FPS(true)` does the same from an app, for `go run` or embedding. Only the native macOS target has a monitor; the others accept the option and ignore it.
 
 The macOS panel sits at the top right of the surface, lets the mouse through, fades out while the pointer is over it, and is redrawn every 500 ms:
 

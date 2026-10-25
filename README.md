@@ -12,7 +12,9 @@ NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the
 
 ## Status
 
-NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, the app's own fonts, animated and vector images, canvas, GPU shaders written in Go, SVG icons with the bundled Lucide pack, web views, videos, the app's own native views, animated values and layout animations, CSS-like gradients, shadows, filters and 3D transforms, file drops, Markdown and HTML text views, overlays, dialogs, navigation and unstyled base components, running on macOS, iOS, Windows, Linux, the web and Android devices and x86_64 emulators. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
+NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, the app's own fonts, animated and vector images, canvas, GPU shaders written in Go, SVG icons with the bundled Lucide pack, web views, videos, the app's own native views, animated values and layout animations, CSS-like gradients, shadows, filters and 3D transforms.
+
+File drops, Markdown and HTML text views, overlays, dialogs, navigation and unstyled base components run on macOS, iOS, Windows, Linux, the web and Android devices and x86_64 emulators. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
 
 ## Goals
 
@@ -89,9 +91,11 @@ Add the tool to your module once; `go tool nsgo` then runs it without installing
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` runs the app once and exits when the app does. Set `dev.hot_reload` to `true` to rebuild and restart it when a source file changes. Its builds show the app's icon with a DEV badge; to show other files, name them in `dev.icon`, which takes `apple` and `png` as `icon` does, or put `AppIcon-dev.icon`, `AppIcon-dev.icns` or `Icon-dev.png` in `assets/`. `go tool nsgo build` writes a stripped release package per target; set `build.open` to `true` to open the output directory when it finishes. `build.targets` and `-target` accept `all` for every platform that needs only Go and Xcode; add `android_x64` when an NDK is installed.
+`go tool nsgo dev` runs the app once and exits when the app does. Set `dev.hot_reload` to `true` to rebuild and restart it when a source file changes. Its builds show the app's icon with a DEV badge; to show other files, name them in `dev.icon`, which takes `apple` and `png` as `icon` does, or put `AppIcon-dev.icon`, `AppIcon-dev.icns` or `Icon-dev.png` in `assets/`. On macOS, a development run also shows the performance monitor over the app; release builds leave it out.
 
-Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `-version`, `-width` and `-height` on both, `-target` and `-hot-reload` on `dev`, and `-target`, `-output` and `-open` on `build`. `dev` also takes `-fps` to show the performance monitor on macOS, `-device` to choose an iPhone and `-team` to choose the Apple developer team. `-h` lists every flag.
+`go tool nsgo build` writes a stripped release package per target; set `build.open` to `true` to open the output directory when it finishes. `build.targets` and `-target` accept `all` for every platform that needs only Go and Xcode; add `android_x64` when an NDK is installed.
+
+Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `-version`, `-width` and `-height` on both, `-target` and `-hot-reload` on `dev`, and `-target`, `-output` and `-open` on `build`. `dev` also takes `-device` to choose an iPhone and `-team` to choose the Apple developer team. `-h` lists every flag.
 
 ## Development
 
@@ -105,7 +109,6 @@ Run the gallery from the repository root; it shows every element, `base` compone
 
 ```sh
 go tool nsgo dev examples/gallery                   # nsgo.yaml's dev target, exiting with the app
-go tool nsgo dev -fps examples/gallery              # with the performance monitor (macOS)
 go tool nsgo dev -target web examples/gallery       # in the browser, serving until interrupted
 go tool nsgo dev -target ios_simulator examples/gallery
 go tool nsgo dev -target ios examples/gallery       # on the connected iPhone, signed by Xcode

@@ -15,8 +15,8 @@ type project struct {
 	// Release strips symbols and debug information for the smallest
 	// binaries; nsgo build sets it, nsgo dev does not.
 	Release bool `yaml:"-"`
-	// Perf shows the performance monitor in the development build
-	// (nsgo dev -fps).
+	// Perf shows the performance monitor in development builds; nsgo dev
+	// always sets it and nsgo build never does.
 	Perf bool `yaml:"-"`
 	// idDefault records that nsgo.yaml gave no id, so it follows the name.
 	idDefault bool

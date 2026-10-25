@@ -290,7 +290,7 @@ func Root(cx *core.Scope) core.Node {
 
 	// The title changes every frame, so its post-commit layout report runs
 	// once per commit that carries those changes. It adds no work when
-	// stats are off. Presented frames are what nsgo dev -fps counts on
+	// stats are off. Presented frames are what nsgo dev counts on
 	// macOS; this report is only the engine's commit.
 	var reportTitle func([]core.TextLine)
 	if statsOn {

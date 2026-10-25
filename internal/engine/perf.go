@@ -1,5 +1,5 @@
 // Performance monitoring: what a surface's frames and commits cost while it
-// runs, for an on-screen monitor (`nsgo dev -fps`) or the app's own tooling.
+// runs, for an on-screen monitor (`nsgo dev`) or the app's own tooling.
 //
 // A PerfMonitor is shared by the two threads of a surface:
 //

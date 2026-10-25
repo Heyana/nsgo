@@ -14,7 +14,7 @@ import (
 	"github.com/oneo-me/nsgo/internal/platform/apple"
 )
 
-// The performance monitor's HUD (`nsgo dev -fps`): a panel at the top right
+// The performance monitor's HUD (`nsgo dev`): a panel at the top right
 // of the surface that shows what its frames and commits cost (engine/perf.go),
 // redrawn twice a second. It follows NSH's macOS HUD.
 //

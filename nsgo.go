@@ -49,8 +49,8 @@ type options struct {
 }
 
 // FPS shows (or hides) the performance monitor over the app: frame rate,
-// frame and commit costs, CPU, GPU and memory. `nsgo dev -fps` turns it on
-// for a development run.
+// frame and commit costs, CPU, GPU and memory. `nsgo dev` turns it on for
+// development runs; `nsgo build` never does.
 func FPS(on bool) Option {
 	return func(o *options) { o.monitor = on }
 }

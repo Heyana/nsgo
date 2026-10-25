@@ -3,7 +3,7 @@ tasks:
   - label: Run
     group: run
     command: go
-    args: [tool, nsgo, dev, -fps, examples/gallery]
+    args: [tool, nsgo, dev, examples/gallery]
   - label: Build
     group: build
     command: go

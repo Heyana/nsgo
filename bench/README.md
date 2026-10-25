@@ -10,7 +10,7 @@ As nsh does from `requestAnimationFrame`, it drives the tick from
 `Scope.RequestAnimationFrame`. A callback writes signals; the engine turns
 the changes into a commit. One wake-up can run several callbacks before
 one commit when frames queue, and a commit is not a presented frame.
-`nsgo dev -fps` counts presented frames on macOS; this runner does not.
+`nsgo dev` counts presented frames on macOS; this runner does not.
 
 ## Running it
 
@@ -43,7 +43,7 @@ The script builds a release binary, runs it on its own, and prints:
 
 `fps=N` is gone. It counted animation-frame callbacks, so it could stay at
 the display rate while a slow commit halved the real frame rate. Presented
-frames are what `nsgo dev -fps` counts on macOS; `commits` is what this
+frames are what `nsgo dev` counts on macOS; `commits` is what this
 runner can count on every target.
 
 ## Reading the numbers
@@ -83,7 +83,7 @@ not only the text that changed.
 
 ## What it does not measure
 
-- Presented frames (see `nsgo dev -fps` on macOS), compositor or GPU time,
+- Presented frames (see `nsgo dev` on macOS), compositor or GPU time,
   and WindowServer CPU.
 - Input latency, memory or energy.
 - A slow main thread that applies commits late while the engine keeps

@@ -39,7 +39,6 @@ type devOptions struct {
 	open   bool   // whether to open the web target in the browser
 	device string // the iPhone the iOS target runs on, by name, UDID, serial or ECID
 	team   string // the Apple developer team the iOS target signs with
-	fps    bool   // whether the performance monitor shows over the app
 }
 
 // dev builds and runs the app. By default it runs the app once and exits
@@ -47,10 +46,8 @@ type devOptions struct {
 // the app whenever a Go file it compiles from, go.mod or nsgo.yaml changes,
 // and keeps the running app when a build fails.
 func dev(ctx context.Context, p *project, opts devOptions) error {
-	if opts.fps && (runtime.GOOS != "darwin" || p.Dev.Target != "native") {
-		return fmt.Errorf("-fps needs the native target on macOS (the other hosts have no performance monitor yet)")
-	}
-	p.Perf = opts.fps
+	// Development builds always carry the monitor; only native macOS shows it.
+	p.Perf = true
 	if err := p.useDevIcons(); err != nil {
 		return err
 	}
@@ -115,7 +112,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		}
 		// The flags and the rest of nsgo.yaml may have changed too.
 		if next, err := load(p.Dir); err == nil {
-			next.Perf = opts.fps
+			next.Perf = true
 			opts.apply(next)
 			if err := next.useDevIcons(); err != nil {
 				step("%v", err)

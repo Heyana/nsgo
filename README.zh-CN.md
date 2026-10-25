@@ -12,7 +12,9 @@ NSGo 参考 [Native Shell（NSH）](https://nsh.dev) 的设计，NSH 用 Rust �
 
 ## 状态
 
-NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、应用自带字体、动图与矢量图片、画布、用 Go 编写的 GPU 着色器、自带 Lucide 图标包的 SVG 图标、网页视图、视频、应用自己的原生视图、动画值与布局动画、类 CSS 的渐变、阴影、滤镜与 3D 变换、文件拖放、Markdown 和 HTML 文本视图、浮层、对话框、导航和无样式基础组件，可在 macOS、iOS、Windows、Linux、Web 和 Android 设备及 x86_64 模拟器上运行。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
+NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、应用自带字体、动图与矢量图片、画布、用 Go 编写的 GPU 着色器、自带 Lucide 图标包的 SVG 图标、网页视图、视频、应用自己的原生视图、动画值与布局动画、类 CSS 的渐变、阴影、滤镜与 3D 变换。
+
+文件拖放、Markdown 和 HTML 文本视图、浮层、对话框、导航和无样式基础组件可在 macOS、iOS、Windows、Linux、Web 和 Android 设备及 x86_64 模拟器上运行。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
 
 ## 目标
 
@@ -89,9 +91,11 @@ build:
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` 运行一次应用，应用退出后随之退出。将 `dev.hot_reload` 设为 `true`，源文件变化时会重新编译并重启。它构建的应用图标带有 DEV 标签；要改用其他文件，可在 `dev.icon` 中指定（与 `icon` 一样接受 `apple` 和 `png`），或在 `assets/` 中放入 `AppIcon-dev.icon`、`AppIcon-dev.icns` 或 `Icon-dev.png`。`go tool nsgo build` 为每个目标输出一个去除符号的发布包；将 `build.open` 设为 `true`，构建完成后会打开输出目录。`build.targets` 和 `-target` 都接受 `all`，表示仅需 Go 和 Xcode 的所有平台；安装 NDK 后可再加上 `android_x64`。
+`go tool nsgo dev` 运行一次应用，应用退出后随之退出。将 `dev.hot_reload` 设为 `true`，源文件变化时会重新编译并重启。它构建的应用图标带有 DEV 标签；要改用其他文件，可在 `dev.icon` 中指定（与 `icon` 一样接受 `apple` 和 `png`），或在 `assets/` 中放入 `AppIcon-dev.icon`、`AppIcon-dev.icns` 或 `Icon-dev.png`。在 macOS 上，开发运行还会在应用上方显示性能监视器；发布构建不包含它。
 
-dev 和 build 命令的参数会覆盖它们所对应的 `nsgo.yaml` 值：两者都接受 `-name`、`-id`、`-version`、`-width` 和 `-height`；dev 另有 `-target` 和 `-hot-reload`，build 另有 `-target`、`-output` 和 `-open`。dev 还接受 `-fps` 在 macOS 上显示性能监视器，`-device` 以选择 iPhone，以及 `-team` 以选择 Apple 开发者团队。`-h` 会列出全部参数。
+`go tool nsgo build` 为每个目标输出一个去除符号的发布包；将 `build.open` 设为 `true`，构建完成后会打开输出目录。`build.targets` 和 `-target` 都接受 `all`，表示仅需 Go 和 Xcode 的所有平台；安装 NDK 后可再加上 `android_x64`。
+
+dev 和 build 命令的参数会覆盖它们所对应的 `nsgo.yaml` 值：两者都接受 `-name`、`-id`、`-version`、`-width` 和 `-height`；dev 另有 `-target` 和 `-hot-reload`，build 另有 `-target`、`-output` 和 `-open`。dev 还接受 `-device` 以选择 iPhone，以及 `-team` 以选择 Apple 开发者团队。`-h` 会列出全部参数。
 
 ## 开发
 
@@ -105,7 +109,6 @@ x86_64 模拟器目标 `android_x64` 还需要 Android NDK：Go 只能通过 cgo
 
 ```sh
 go tool nsgo dev examples/gallery                   # nsgo.yaml 的 dev 目标，应用退出后随之退出
-go tool nsgo dev -fps examples/gallery              # 显示性能监视器（macOS）
 go tool nsgo dev -target web examples/gallery       # 在浏览器中运行，直到中断
 go tool nsgo dev -target ios_simulator examples/gallery
 go tool nsgo dev -target ios examples/gallery       # 在已连接的 iPhone 上运行，由 Xcode 签名
