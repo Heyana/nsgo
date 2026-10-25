@@ -319,6 +319,7 @@ type window struct {
 	keys             []driver.KeyBinding // the keyboard shortcuts
 	animating        []*view
 	ticking          bool
+	clock            *frameClock // made as it first ticks
 	// frameWanted is set while the app waits for a display frame.
 	frameWanted bool
 	chrome      chrome
@@ -1538,10 +1539,11 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			}
 		}
 		return 0
+	case wmTick:
+		w.ticked()
+		return 0
 	case wmTimer:
 		switch wParam {
-		case animationTimer:
-			w.tick()
 		case pinchTimer:
 			w.wheelPinchEnded()
 		case caretTimer:
@@ -1628,6 +1630,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		// The host's loop goes on: the view's app ends with its window,
 		// and its timers.
 		w.ticking = false
+		if w.clock != nil {
+			w.clock.close()
+			w.clock = nil
+		}
 		if w.engine != nil {
 			w.engine.Close()
 		}

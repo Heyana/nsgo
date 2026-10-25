@@ -57,10 +57,12 @@ func (t *Tree) hoist(n *node, h *hoistNode) {
 	h.host = t.hostOf(n.parent)
 	n.hoist = h
 	h.host.hosted = append(h.host.hosted, n)
-	h.host.childrenDirty = true
+	t.reorder(h.host)
 	if p := n.parent; p != nil {
 		t.childrenChanged(p)
 	}
+	// The root's layout places it, whatever boundary holds it.
+	t.markLayout(n)
 }
 
 func (t *Tree) mountOverlay(cx *Scope, parent *node, o Overlay) {
@@ -72,7 +74,7 @@ func (t *Tree) mountOverlay(cx *Scope, parent *node, o Overlay) {
 		cx.renderEffect(func() {
 			b := o.AnchorBounds()
 			h.anchorBounds = &b
-			t.view.markLayout()
+			t.markLayout(t.view)
 			t.changed = true
 		})
 	}
@@ -128,19 +130,23 @@ func (t *Tree) placeHoisted(host *node) {
 				size.Height = max(size.Height-top, 0)
 			}
 			t.layoutRoot(n, size, true)
-			n.frame = Bounds{Origin: Point{Y: top}, Size: size}
+			t.setFrame(n, Bounds{Origin: Point{Y: top}, Size: size})
 		} else if n.hoist.fixed {
 			t.layoutRoot(n, size, false)
 			l := &n.lstate.Rounded
 			box := Size{Width: Points(l.Size.Width), Height: Points(l.Size.Height)}
-			n.frame = Bounds{Origin: insetOrigin(&n.style, box, size, n.rtl), Size: box}
+			t.setFrame(n, Bounds{Origin: insetOrigin(&n.style, box, size, n.rtl), Size: box})
 		} else {
 			t.placeOverlay(n, host, size)
 		}
 		// Its native view is its host's child, so a hidden shadow ancestor
 		// hides it only through the core; so does a sheet swiped away.
-		if n.hidden = hiddenIn(n) || n.hoist.dismissed; n.hidden {
-			n.frame = Bounds{}
+		if hidden := hiddenIn(n) || n.hoist.dismissed; hidden != n.hidden {
+			n.hidden = hidden
+			t.mark(n)
+		}
+		if n.hidden {
+			t.setFrame(n, Bounds{})
 		}
 		t.syncFrames(n)
 		t.placeHoisted(n)
@@ -258,7 +264,7 @@ func (t *Tree) placeOverlay(n *node, host *node, hostSize Size) {
 		}
 		n.hoist.placed = side
 	}
-	n.frame = Bounds{Origin: origin, Size: size}
+	t.setFrame(n, Bounds{Origin: origin, Size: size})
 }
 
 // insetOrigin places a box of size in a host of hostSize by s's insets,
@@ -311,8 +317,8 @@ func (t *Tree) syncPosition(n *node) {
 	case !fixed && n.hoist != nil && n.hoist.fixed:
 		host := n.hoist.host
 		host.hosted = slices.DeleteFunc(host.hosted, func(h *node) bool { return h == n })
-		host.childrenDirty = true
-		host.markLayout()
+		t.reorder(host)
+		t.markLayout(host)
 		n.hoist, n.isRoot, n.fill, n.lstyleOK = nil, false, nil, false
 		n.lstate.Invalidate()
 		t.childrenChanged(n.parent)

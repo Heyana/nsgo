@@ -39,13 +39,35 @@ macOS reads memory with `proc_pid_rusage`'s physical footprint and GPU time from
 
 ## Keeping frames cheap
 
-Every frame runs the commit on the engine goroutine and, on the main thread, the batch, the tick and the drawing of what changed. `bench/quotes` measures these paths ([benchmarks](../../bench/README.md)); compare its `CPU per commit`, and the panel's `MAIN` and `CORE`, before and after changing them.
+Every frame runs the commit on the engine goroutine and, on the main thread, the batch, the tick and the drawing of what changed. `bench/quotes` measures these paths ([benchmarks](../../bench/README.md)); compare its `CPU per commit`, and the panel's `MAIN` and `CORE`, before and after changing them. The core's own benchmarks (`go test ./core -run '^$' -bench .`) time commits on the approximate text engine, as NSH's `bench_view_tick` and `bench_high_frequency` do:
+
+| Benchmark | Per commit, M1 Max | Items |
+| --- | --- | --- |
+| `ViewTick`: 300 static rows and a counter | 4 µs (572 µs when commits walked the whole tree) | 1 |
+| `Board/fixed`: 961 views, 40 values of fixed cells a tick | 52 µs (766 µs) | 40 |
+| `Board/content`: the same in cells of their text's size | 51 µs (889 µs) | 40 |
+| `Board/widening`: values that change width every tick | 486 µs (877 µs), nearly all of it flex layout | 280 |
+| `ListScroll`: 1000 rows, 10 points a commit | 12 µs (121 µs) | 2.5 |
+
+- A commit visits only what changed, lays out only what changes reach, and skips texts that measure as before ([commit](core.md#commit)). Text sizes are cached per engine ([text](text.md#text-and-drawing)) and lists pace their binds ([lists](scrolling.md#lists)).
 
 - The engine's OS thread has the main thread's quality of service on Apple platforms (`engine.Options.Thread`, `apple.RaiseThread`), as NSH's does: at the default class macOS may run it on efficiency cores. Raised, `bench/quotes` commits about 15% faster, and steadily under load.
 - The cores clock down between frames, so a commit in the app takes longer than the same work in a Go benchmark; measure a change both ways.
 - A commit allocates only what it sends: compare a node's values on the stack and copy them into an item once they changed. Flex layout reuses its item buffers.
 - macOS draws only content that changed and can be seen ([text and drawing](text.md#text-and-drawing)), and decides what can be seen from the batches' state rather than by asking AppKit.
 - The main thread never waits for the GPU: Metal shader views take drawables and present on goroutines of their own ([shaders](shaders.md#platforms)).
+
+## Frame clocks
+
+macOS follows NSH's surface:
+
+- While something animates on the frame clock (the animation graph, a layout animation, a scroll view's drag, momentum, scroller drag or snap), batches wait for the start of the next frame. A frame the app asked for alone holds nothing back.
+- A frame applies them for at most 4 ms (`frameBatches`), at least one whole batch, and carries the rest: a scroll's frames are not delayed by batches landing between them, and a burst spreads over frames.
+- A resize applies what waited, then waits, at most 16 ms, for the commit at the new size (`engine.ResizeAndWait`) and applies it before AppKit draws the window: the one place the main thread waits for the engine.
+- An engine that missed that deadline is not waited for again until its commit lands, so a busy app resizes as before.
+- The display link does not fire while the window is occluded or minimized or the screen is locked: while frames are wanted and it has not ticked for 100 ms, a 60 Hz timer ticks in its place, so animations still end.
+
+Windows follows the compositor: a goroutine waits for each composition with `DwmFlush` and posts `wmTick`, one at a time, while something animates, and parks while nothing does. It sleeps a frame's 16 ms where `DwmFlush` fails, and ticks at most every 3 ms should it return at once.
 
 purego prices each foreign call by what its Go signature asks of reflection (Apple M1 Max):
 

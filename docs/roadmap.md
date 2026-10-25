@@ -6,19 +6,13 @@ References are files in `nsh/docs/dev/` unless they name a crate, with the bulle
 
 ## Order
 
-Performance comes next. The last section waits for community contributions, and nothing above it depends on it.
+macOS scrolls come next. The last section waits for community contributions, and nothing above it depends on it.
 
 ## 1. Performance
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
-| Incremental layout | `pitfalls.md` (relayout boundaries), `performance.md` | Changes stop at fixed-size flex items, and a text that measures as before lays nothing out |
-| Measure cache | `architecture.md` (data flow and threads) | Text measurements are cached by content and width per engine, so identical texts and list rows measure once |
-| Paced list binds | `scrolling-and-lists.md` (paced binding) | A list binds its viewport first and its overscan over later frames |
-| macOS frames | `macos.md` (architecture) | Scrolls move the container layer and commit at rest; batches take at most 4 ms a frame; resizes wait for layout; a timer covers a stalled display link |
-| macOS canvas redraws | `canvas.md` (partial redraws) | A canvas redraws only the area that changed |
-| Commits that follow changes | `performance.md` (Rust components run once) | A commit resolves styles and emits items only for the nodes that changed, not the whole tree |
-| Windows frames | `windows.md` (frames) | The frame clock follows the compositor with `DwmFlush` |
+| macOS scrolls | `macos.md` (architecture), `crates/nsh-platform-macos/src/scroll.rs` | Scroll views keep offsets of their own in place of `NSScrollView`'s clip view, shown by the container layer's `sublayerTransform` while they move and committed to its bounds origin at rest, with the system's trackpad phases and momentum, rubber banding and the indicator checked by hand on a trackpad |
 
 ## 2. Finish the existing platforms
 

@@ -108,6 +108,7 @@ type view struct {
 	presented bool                  // whether a modal was inserted yet
 	transform driver.Transform      // AppKit drops it when the frame changes
 	drawing   *driver.Drawing       // a canvas's
+	played    []driver.DrawOp       // the ops it last drew, its bound arguments' values in place
 	shader    *apple.ShaderLayer    // a shader view's (shader.go)
 	web       *apple.Web            // a web view's
 	video     *apple.Video          // a video's
@@ -198,6 +199,17 @@ type surface struct {
 	link     objc.ID // the frame clock's CADisplayLink, made once
 	timer    objc.ID // or its NSTimer while ticking, before macOS 14
 	ticking  bool
+	// watcher checks that the link ticks, stall ticks in its place while
+	// it does not; ticked is when a frame last ticked.
+	watcher, stall objc.ID
+	ticked         time.Time
+	// waiting are the batches a frame did not get to; live the scroll
+	// views moving on their own or under the user's input.
+	waiting []*driver.MountBatch
+	live    map[*view]bool
+	// resized is the commit at a new size the main thread stopped waiting
+	// for, until it lands.
+	resized <-chan struct{}
 	// frameWanted is set while the app waits for a display frame.
 	frameWanted bool
 	motions     map[*view]*motion
@@ -358,6 +370,8 @@ func loadAppKit() {
 		objc.MethodDef{Cmd: sel("copy:"), Fn: surfaceCopy},
 		objc.MethodDef{Cmd: sel("selectAll:"), Fn: surfaceSelectAll},
 		objc.MethodDef{Cmd: selTick, Fn: surfaceTick},
+		objc.MethodDef{Cmd: selWatch, Fn: surfaceWatch},
+		objc.MethodDef{Cmd: selStallTick, Fn: surfaceStallTick},
 		objc.MethodDef{Cmd: sel("draggingEntered:"), Fn: draggingEntered},
 		objc.MethodDef{Cmd: sel("draggingUpdated:"), Fn: draggingUpdated},
 		objc.MethodDef{Cmd: sel("draggingExited:"), Fn: draggingExited},
@@ -1317,6 +1331,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemCanvas:
 			v.drawing = it.Drawing
+			v.played = v.played[:0] // drawn whole first
 			s.animator.BindCanvas(v.id, it.Drawing.Slots)
 			v.setCanvasNodes(it.Drawing.Nodes)
 			v.redraw()
@@ -1483,6 +1498,7 @@ func (s *surface) delete(v *view, kept bool) {
 	}
 	s.animator.Forget(v.id)
 	delete(s.motions, v)
+	delete(s.live, v)
 	if s.dragTarget == v {
 		s.dragTarget = nil
 	}
@@ -2007,24 +2023,60 @@ func mouseExited(self objc.ID, _ objc.SEL, _ objc.ID) {
 	}
 }
 
+// resizeWait is the longest the main thread waits for the layout at a new
+// size, the one place it waits for the engine, as NSH's macOS backend
+// does: AppKit draws the window as soon as its frame changes, around the
+// old content otherwise.
+const resizeWait = 16 * time.Millisecond
+
 func surfaceSetFrameSize(self objc.ID, cmd objc.SEL, size apple.CGSize) {
 	v := views[self]
-	if v != nil && v.surface != nil {
+	var s *surface
+	if v != nil {
+		s = v.surface
+	}
+	if s != nil {
+		// What waited goes first, as the resize's own commit follows it.
 		// An animated resize, such as zooming from the title bar, steps the
 		// frame in a loop that runs no run loop sources until it ends, so
-		// nsgoApply: waits. Each step applies the commits that came in
-		// since the last one instead: the content trails a step behind.
-		v.surface.applyQueued()
+		// nsgoApply: waits: each step applies what came in since.
+		s.applyBatches(0, true)
 	}
-	if v != nil && v.surface != nil && v.surface.perf != nil {
-		defer v.surface.measuring(false)()
+	if s != nil && s.perf != nil {
+		defer s.measuring(false)()
 	}
 	apple.Super(self, cmd, size)
-	if v != nil && v.surface != nil && v.surface.engine != nil {
-		v.surface.engine.Resize(driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)})
+	if s != nil && s.engine != nil {
+		s.resize(driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)})
 	}
-	if v != nil && v.surface != nil && v.surface.hud != nil {
-		v.surface.hud.layout()
+	if s != nil && s.hud != nil {
+		s.hud.layout()
+	}
+}
+
+// resize tells the engine the surface's new size and waits, at most
+// resizeWait, for the commit laid out at it, which it applies before
+// AppKit draws. An engine that missed the deadline is not waited for
+// again until that commit lands, so a busy app resizes as before.
+func (s *surface) resize(size driver.Size) {
+	if s.resized != nil {
+		select {
+		case <-s.resized:
+			s.resized = nil
+		default:
+		}
+	}
+	done := s.engine.ResizeAndWait(size)
+	if s.resized != nil || s.applying {
+		return
+	}
+	t := time.NewTimer(resizeWait)
+	defer t.Stop()
+	select {
+	case <-done:
+		s.applyBatches(0, true)
+	case <-t.C:
+		s.resized = done
 	}
 }
 
@@ -2032,38 +2084,59 @@ func surfaceApply(self objc.ID, _ objc.SEL, _ objc.ID) {
 	views[self].surface.applyQueued()
 }
 
-// applyQueued applies the batches the engine has sent, unless a batch is
-// being applied: one can resize the surface, and batches apply in order.
+// applyQueued applies the batches the engine has sent as they land,
+// unless something animates: then they wait for the start of the next
+// frame, which applies them first.
 func (s *surface) applyQueued() {
+	if s.animating() {
+		s.startTicking()
+		return
+	}
+	s.applyBatches(0, true)
+}
+
+// applyBatches applies the batches waiting, in order, for at most budget
+// (0: all of them) and at least one, unless a batch is being applied: one
+// can resize the surface. alone records the work as the main thread's
+// own, outside a frame's.
+func (s *surface) applyBatches(budget time.Duration, alone bool) {
 	if s.applying {
 		return
 	}
-	batches := s.batches.Drain()
-	if len(batches) == 0 {
+	s.waiting = append(s.waiting, s.batches.Drain()...)
+	if len(s.waiting) == 0 {
 		return
 	}
 	s.applying = true
 	defer func() { s.applying = false }()
-	if s.perf == nil {
-		for _, b := range batches {
-			s.apply(b)
+	start := time.Now()
+	n := 0
+	for n < len(s.waiting) {
+		b := s.waiting[n]
+		n++
+		if s.perf != nil && !b.Sent.IsZero() {
+			s.perf.RecordLatency(time.Since(b.Sent))
 		}
-	} else {
-		start := time.Now()
-		for _, b := range batches {
-			if !b.Sent.IsZero() {
-				s.perf.RecordLatency(time.Since(b.Sent))
-			}
-			s.apply(b)
+		s.apply(b)
+		if budget > 0 && time.Since(start) >= budget {
+			break
 		}
-		s.perf.RecordWork(time.Since(start), true)
+	}
+	rest := copy(s.waiting, s.waiting[n:])
+	clear(s.waiting[rest:])
+	s.waiting = s.waiting[:rest]
+	if s.perf != nil {
+		if alone {
+			s.perf.RecordWork(time.Since(start), true)
+		}
 		if s.hud != nil {
 			s.hud.raise()
 		}
 	}
 	// A frame requested before the view was in a window starts the clock
-	// here: a display link needs the view mounted.
-	if s.frameWanted && !s.ticking {
+	// here, a display link needs the view mounted; the next frame applies
+	// what is left.
+	if s.frameWanted && !s.ticking || len(s.waiting) > 0 {
 		s.startTicking()
 	}
 }

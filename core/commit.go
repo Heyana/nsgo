@@ -1,10 +1,12 @@
 package core
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/oneo-me/nsgo/internal/driver"
+	"github.com/oneo-me/nsgo/internal/layout"
 )
 
 // maxRounds bounds the commits OnLayout handlers may cause in one batch.
@@ -18,8 +20,14 @@ func (t *Tree) Commit() *driver.MountBatch {
 		return nil
 	}
 	t.items = t.items[:0]
+	t.commits++
+	t.commitStart = t.rt.clock.Now()
 	for round := 0; t.changed && round < maxRounds; round++ {
 		t.commitRound()
+	}
+	t.paceLater()
+	if driver.CheckCommits && !t.changed {
+		t.checkCommit()
 	}
 	if len(t.items) == 0 {
 		return nil
@@ -29,9 +37,44 @@ func (t *Tree) Commit() *driver.MountBatch {
 	return b
 }
 
+// checkCommit commits again, laying every node out anew and comparing
+// every node, and panics if that finds what the commit's marks missed.
+func (t *Tree) checkCommit() {
+	sent := len(t.items)
+	frames := map[NodeID]Bounds{}
+	for _, n := range t.nodes {
+		if n != nil {
+			frames[n.id] = n.sent.frame
+		}
+	}
+	for _, n := range t.nodes {
+		if n != nil && !n.deleted {
+			n.lstyleOK = false
+			t.markLayout(n)
+		}
+	}
+	t.full = true
+	t.commitRound()
+	if missed := t.items[sent:]; len(missed) > 0 {
+		var b strings.Builder
+		for _, it := range missed {
+			fmt.Fprintf(&b, " kind %d of view %d", it.Kind, it.ID)
+			if it.Kind == driver.ItemFrame {
+				fmt.Fprintf(&b, " (%v, sent %v)", it.Frame, frames[it.ID])
+			}
+			b.WriteString(";")
+		}
+		panic("core: a commit missed changes it should have sent:" + b.String())
+	}
+}
+
 func (t *Tree) commitRound() {
 	t.changed = false
-	t.fontScale = t.root.Env().fontScale.GetUntracked()
+	t.fullRound, t.full = t.full, false
+	if scale := t.root.Env().fontScale.GetUntracked(); scale != t.fontScale {
+		t.fontScale = scale
+		t.fullRound = true
+	}
 	if rtl := t.root.Env().rtl.GetUntracked(); rtl != t.rtl {
 		t.setRTL(rtl)
 	}
@@ -39,18 +82,19 @@ func (t *Tree) commitRound() {
 	for _, s := range t.stacks {
 		if !s.deleted {
 			t.showTop(s)
+			t.markScreens(s)
 			live = append(live, s)
 		}
 	}
 	t.stacks = live
-	t.resolve(t.view, Style{})
+	t.resolve(t.view, textFields{}, false)
 	t.layout()
 	// Lists fill their windows from the layout, which may need another.
 	for range 4 {
 		if !t.updateLists() {
 			break
 		}
-		t.resolve(t.view, Style{})
+		t.resolve(t.view, textFields{}, false)
 		t.layout()
 	}
 	// System headers cover what the stacks' places decide.
@@ -60,15 +104,9 @@ func (t *Tree) commitRound() {
 		}
 		t.layout()
 	}
+	t.markHeaderScrolls()
 	t.sendSticky()
-	t.sizeCanvases(t.view)
-	for _, roots := range [][]*node{t.accessories, t.headerViews} {
-		for _, n := range roots {
-			if !n.deleted {
-				t.sizeCanvases(n)
-			}
-		}
-	}
+	t.sizeCanvases()
 	t.laidOut = t.laidOut[:0]
 	t.emitAccessories()
 	t.emitHeaderViews()
@@ -104,10 +142,34 @@ func (t *Tree) commitRound() {
 }
 
 // resolve inherits text styles and directions down the tree and prepares
-// changed text.
-func (t *Tree) resolve(n *node, inherited Style) {
+// changed text: in the nodes marked for it, and in every node inside one
+// whose inherited fields changed, or everywhere when force is set.
+func (t *Tree) resolve(n *node, inherited textFields, force bool) {
+	force = force || t.fullRound
+	// A text resolves its attachments itself.
+	self := force || n.unresolved || n.resolveKids && n.text != nil
+	if !self && !n.resolveKids {
+		return
+	}
+	n.unresolved, n.resolveKids = false, false
+	// A region resolves anew only as it is made or moves, with what it
+	// holds.
+	kids := force || self && n.kind == 0
 	if n.kind != 0 {
 		inherited = n.style.inherit(inherited)
+		if self && inherited != n.passed {
+			n.passed = inherited
+			kids = true
+		}
+	}
+	if !self {
+		for _, c := range n.children {
+			t.resolve(c, inherited, kids)
+		}
+		return
+	}
+	t.mark(n)
+	if n.kind != 0 {
 		n.color = inherited.Color
 		if n.color == 0 {
 			n.color = RGB(0x000000)
@@ -119,7 +181,7 @@ func (t *Tree) resolve(n *node, inherited Style) {
 		if rtl != n.rtl {
 			n.rtl = rtl
 			n.lstyleOK = false
-			n.markLayout()
+			t.markLayout(n)
 		}
 	}
 	switch {
@@ -143,9 +205,9 @@ func (t *Tree) resolve(n *node, inherited Style) {
 		if noWrap := inherited.WhiteSpace == WhiteSpaceNoWrap; noWrap != tn.noWrap {
 			tn.noWrap = noWrap
 			tn.resent = true
-			n.markLayout()
+			t.markLayout(n)
 		}
-		tn.engine = t.text
+		tn.engine, tn.measures = t.text, &t.measures
 		if inherited.TextAlignVertical != tn.alignV {
 			tn.alignV = inherited.TextAlignVertical
 			tn.resent = true
@@ -153,7 +215,7 @@ func (t *Tree) resolve(n *node, inherited Style) {
 		scale := tn.fontMultiplier(t.fontScale)
 		ts := scaleText(inherited.textStyle(), scale)
 		ts.RTL = n.textRTL(inherited, tn.content)
-		sized := tn.attachments > 0 && t.sizeAttachments(n, inherited)
+		sized := tn.attachments > 0 && t.sizeAttachments(n, inherited, kids)
 		shadow := inherited.textShadow()
 		if tn.stale || sized || tn.prepared == nil || ts != tn.style || shadow != tn.text.Shadow {
 			at := driver.AttributedText{Text: inherited.TextTransform.Apply(tn.content), Style: ts, MaxLines: tn.maxLines,
@@ -188,11 +250,18 @@ func (t *Tree) resolve(n *node, inherited Style) {
 				if tn.prepared != nil {
 					tn.prepared.Release()
 				}
-				tn.text = at
+				// A text that lays out as before, its colors aside, or
+				// that measures as before, lays nothing out: only its own
+				// lines change. Attachments are placed by them.
+				h := t.measures.hash(&at)
+				same := tn.prepared != nil && h == tn.hash
+				tn.text, tn.hash = at, h
 				tn.prepared = t.text.Prepare(&at)
 				tn.minWidth = -1
 				tn.resent = true
-				n.markLayout()
+				if tn.attachments > 0 || !same && !layout.MeasuresAsBefore(n) {
+					t.markLayout(n)
+				}
 			}
 		}
 	case n.input != nil:
@@ -205,7 +274,7 @@ func (t *Tree) resolve(n *node, inherited Style) {
 			p := t.text.Prepare(&driver.AttributedText{Text: "Ag", Style: ts})
 			in.lineH = p.Measure(Auto).Height
 			p.Release()
-			n.markLayout()
+			t.markLayout(n)
 		}
 		t.prepareInput(n)
 	}
@@ -213,13 +282,13 @@ func (t *Tree) resolve(n *node, inherited Style) {
 		return // its children are attachments, which it resolved
 	}
 	for _, c := range n.children {
-		t.resolve(c, inherited)
+		t.resolve(c, inherited, kids)
 	}
 }
 
 // textRTL reports whether text node n, styled inherited, writes content
 // right to left.
-func (n *node) textRTL(inherited Style, content string) bool {
+func (n *node) textRTL(inherited textFields, content string) bool {
 	switch inherited.WritingDirection {
 	case WritingLTR:
 		return false
@@ -244,14 +313,14 @@ const attachmentSpace = 1 << 20
 
 // sizeAttachments resolves and lays out the attachments of text n, each a
 // layout root at its content size, and reports whether a size changed.
-func (t *Tree) sizeAttachments(n *node, inherited Style) bool {
+func (t *Tree) sizeAttachments(n *node, inherited textFields, force bool) bool {
 	changed := false
 	for _, sp := range n.text.spans {
 		w := sp.attach
 		if w == nil {
 			continue
 		}
-		t.resolve(w, inherited)
+		t.resolve(w, inherited, force)
 		if !w.layoutDirty {
 			continue
 		}
@@ -280,7 +349,7 @@ func (w *node) verticalAlign() VerticalAlign {
 
 // placeAttachments puts the views of text n's attachments where layout
 // put their placeholders, hiding those its line limit cut off.
-func (n *node) placeAttachments(l driver.TextLayout) {
+func (t *Tree) placeAttachments(n *node, l driver.TextLayout) {
 	al, _ := l.(AttachmentLayout)
 	i := 0
 	for _, sp := range n.text.spans {
@@ -294,25 +363,34 @@ func (n *node) placeAttachments(l driver.TextLayout) {
 			b, ok = al.Attachment(i)
 		}
 		i++
-		w.attach.cut = !ok
+		if w.attach.cut != !ok {
+			w.attach.cut = !ok
+			t.mark(w)
+		}
 		if ok {
 			b.Origin.X += n.text.shownBox.Origin.X
 			b.Origin.Y += n.text.shownBox.Origin.Y
-			w.frame = Bounds{Origin: b.Origin, Size: w.attach.size}
+			t.setFrame(w, Bounds{Origin: b.Origin, Size: w.attach.size})
 		}
 	}
 }
 
 // sizeCanvases tells canvases their laid-out size, which draws those
 // that changed.
-func (t *Tree) sizeCanvases(n *node) {
-	if n.canvas != nil && n.canvas.size.GetUntracked() != n.frame.Size {
-		size := n.frame.Size
-		t.within(n.owner, func() { n.canvas.size.Set(size) })
+func (t *Tree) sizeCanvases() {
+	live := t.canvases[:0]
+	for _, n := range t.canvases {
+		if n.deleted {
+			continue
+		}
+		live = append(live, n)
+		if n.canvas.size.GetUntracked() != n.frame.Size {
+			size := n.frame.Size
+			t.within(n.owner, func() { n.canvas.size.Set(size) })
+		}
 	}
-	for _, c := range n.nativeChildren() {
-		t.sizeCanvases(c)
-	}
+	clear(t.canvases[len(live):])
+	t.canvases = live
 }
 
 // within2 runs fn under n's owner and returns its result.
@@ -333,15 +411,56 @@ func scaleText(ts driver.TextStyle, scale float32) driver.TextStyle {
 	return ts
 }
 
-func (t *Tree) emit(n *node) {
-	if n.kind == 0 {
-		for _, c := range n.children {
-			t.emit(c)
-		}
-		return
+// emit sends what changed of view n and the views inside it, visiting
+// only those marked, and reports whether n moved, resized or changed how
+// it shows, which its parent's overflow area follows.
+func (t *Tree) emit(n *node) bool {
+	self := n.dirty || t.fullRound
+	if !self && !n.dirtyKids {
+		return false
 	}
+	n.dirty, n.dirtyKids = false, false
+	first := !n.created
+	moved := false
+	if self {
+		moved = t.emitParts(n)
+	}
+	kids := n.nativeChildren()
+	kidsMoved := false
+	for _, c := range kids {
+		if t.emit(c) {
+			kidsMoved = true
+		}
+	}
+	if n.childrenDirty {
+		t.syncChildren(n, kids)
+		n.childrenDirty = false
+		kidsMoved = true
+	}
+	if n != t.view && (self || kidsMoved) {
+		if area := n.overflowArea(kids); area != n.sent.overflow {
+			n.sent.overflow = area
+			t.items = append(t.items, driver.MountItem{Kind: driver.ItemOverflow, ID: n.id, Frame: area})
+			moved = true
+		}
+	}
+	if self && (first || n.frame != n.sent.frame) {
+		n.sent.frame = n.frame
+		t.items = append(t.items, driver.MountItem{Kind: driver.ItemFrame, ID: n.id, Frame: n.frame})
+		if n.h.layout != nil {
+			t.laidOut = append(t.laidOut, n)
+		}
+		moved = true
+	}
+	return moved
+}
+
+// emitParts sends what changed of n's own parts, creating its view the
+// first time, and reports whether its view style changed.
+func (t *Tree) emitParts(n *node) bool {
 	add := func(it driver.MountItem) { t.items = append(t.items, it) }
 	first := !n.created
+	styled := false
 	if first {
 		add(driver.MountItem{Kind: driver.ItemCreate, ID: n.id, View: n.kind})
 		n.created = true
@@ -353,6 +472,7 @@ func (t *Tree) emit(n *node) {
 		n.sent.viewStyle = vs
 		sent := vs
 		add(driver.MountItem{Kind: driver.ItemViewStyle, ID: n.id, ViewStyle: &sent})
+		styled = true
 	}
 	if p := n.sentProps(); first || p != n.sent.props {
 		// A label changing alone goes alone: it is the one that follows
@@ -462,27 +582,7 @@ func (t *Tree) emit(n *node) {
 	if sc := n.screen; sc != nil && sc.native {
 		t.emitScreen(n)
 	}
-	kids := n.nativeChildren()
-	for _, c := range kids {
-		t.emit(c)
-	}
-	if n.childrenDirty {
-		t.syncChildren(n, kids)
-		n.childrenDirty = false
-	}
-	if n != t.view {
-		if area := n.overflowArea(kids); area != n.sent.overflow {
-			n.sent.overflow = area
-			add(driver.MountItem{Kind: driver.ItemOverflow, ID: n.id, Frame: area})
-		}
-	}
-	if first || n.frame != n.sent.frame {
-		n.sent.frame = n.frame
-		add(driver.MountItem{Kind: driver.ItemFrame, ID: n.id, Frame: n.frame})
-		if n.h.layout != nil {
-			t.laidOut = append(t.laidOut, n)
-		}
-	}
+	return styled
 }
 
 // emitText lays text n out in its box and sends it: moved down by its
@@ -492,7 +592,7 @@ func (t *Tree) emitText(n *node) {
 	tn := n.text
 	box := tn.box
 	if f := tn.alignV.fraction(); f > 0 {
-		if h := tn.prepared.Measure(box.Size.Width).Height; h < box.Size.Height {
+		if h := tn.size(box.Size.Width).Height; h < box.Size.Height {
 			box.Origin.Y += f * (box.Size.Height - h)
 			box.Size.Height = h
 		}
@@ -515,7 +615,7 @@ func (t *Tree) emitText(n *node) {
 	}
 	l := prepared.Layout(box.Size)
 	if tn.attachments > 0 {
-		n.placeAttachments(l)
+		t.placeAttachments(n, l)
 	}
 	if tn.lines != nil {
 		if ll, ok := l.(LineLayout); ok {

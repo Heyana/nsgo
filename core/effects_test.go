@@ -278,12 +278,12 @@ func TestMinContentFitsTheLongestWord(t *testing.T) {
 	})
 	h.commit()
 	box, maxBox := h.find("box"), h.find("max")
-	word := h.tree.text.Prepare(&driver.AttributedText{Text: "bbbbbb", Style: Style{}.textStyle()})
+	word := h.tree.text.Prepare(&driver.AttributedText{Text: "bbbbbb", Style: new(textFields).textStyle()})
 	want := ceil(word.Measure(Auto).Width)
 	if box.frame.Size.Width != want {
 		t.Errorf("min-content width = %v, want the longest word's %v", box.frame.Size.Width, want)
 	}
-	line := h.tree.text.Prepare(&driver.AttributedText{Text: "aa bbbbbb cc", Style: Style{}.textStyle()})
+	line := h.tree.text.Prepare(&driver.AttributedText{Text: "aa bbbbbb cc", Style: new(textFields).textStyle()})
 	if w := ceil(line.Measure(Auto).Width); maxBox.frame.Size.Width != w {
 		t.Errorf("max-content width = %v, want the whole line's %v", maxBox.frame.Size.Width, w)
 	}

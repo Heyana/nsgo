@@ -75,11 +75,11 @@ func (t *Tree) prepareInput(n *node) {
 			s = c.Placeholder
 		}
 		if in.measured.set(t.text, inputText(s, c)) {
-			n.markLayout()
+			t.markLayout(n)
 		}
 	} else if in.measured.prepared != nil {
 		in.measured.release()
-		n.markLayout()
+		t.markLayout(n)
 	}
 	if in.contentSize != nil && in.value != "" {
 		in.sized.set(t.text, inputText(in.value, c))

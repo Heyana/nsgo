@@ -212,7 +212,55 @@ type listNode struct {
 	// viewable is the range reported last; latest the one found last.
 	viewable, latest [2]int
 	viewStop         func() bool
+	// waiting are the rows of the window not bound yet, in the order they
+	// bind; paced counts those bound in commit pacedIn.
+	waiting        []int
+	paced, pacedIn int
 }
+
+// Paced binding, as NSH's: a fast scroll or a jump asks for a screen of
+// cells at once, and each bind builds or rebinds a cell's subtree. What
+// shows binds in the commit that asks for it; a list binds paceCells more
+// of its window in a commit, at least one, while the commit has run less
+// than paceTime, and the rest on the next display frames.
+const (
+	paceCells = 4
+	paceTime  = 2 * time.Millisecond
+)
+
+// pace reports whether the commit may bind another of ln's waiting rows,
+// counting it.
+func (t *Tree) pace(ln *listNode) bool {
+	if ln.pacedIn != t.commits {
+		ln.pacedIn, ln.paced = t.commits, 0
+	}
+	if ln.paced >= paceCells || ln.paced > 0 && t.rt.clock.Now().Sub(t.commitStart) > paceTime {
+		return false
+	}
+	ln.paced++
+	return true
+}
+
+// paceLater has the next display frame commit again while lists wait to
+// bind rows.
+func (t *Tree) paceLater() {
+	if t.paceStop != nil {
+		return
+	}
+	for _, l := range t.lists {
+		if !l.deleted && len(l.list.waiting) > 0 {
+			t.paceStop = t.root.RequestAnimationFrame(func(time.Time) {
+				t.paceStop = nil
+				t.changed = true
+			})
+			return
+		}
+	}
+}
+
+// Pacing reports whether lists wait for display frames to bind the rest
+// of their windows.
+func (t *Tree) Pacing() bool { return t.paceStop != nil }
 
 type listCell struct {
 	scope *Scope
@@ -294,11 +342,11 @@ func (t *Tree) mountList(cx *Scope, parent *node, l List) {
 	ln.count = NewSignal(cx, 0)
 	ln.spacer = t.newNode(driver.KindView, v, cx)
 	ln.spacer.base = Style{FlexShrink: 0}
-	ln.spacer.restyle()
+	t.restyle(ln.spacer)
 	extra := func(kind int, content Node) {
 		c := t.newNode(driver.KindView, v, cx)
 		c.base = Style{Position: Absolute}
-		c.restyle()
+		t.restyle(c)
 		t.mount(cx, c, content)
 		ln.extras[kind] = c
 		st.extras[kind].present = true
@@ -613,13 +661,37 @@ func (t *Tree) updateList(v *node) bool {
 		c.index = i
 		ln.byIndex[i] = c
 	}
+	// What shows binds now: the viewport, just ahead of it and the sticky
+	// rows. The rest of the window waits, and binds nearest the leading
+	// edge first as the commit's pace allows, then on the next frames.
+	ln.waiting = ln.waiting[:0]
 	if ok {
+		start, end := st.urgentSpan()
 		for i := first; i <= last; i++ {
-			bind(i)
+			if _, has := ln.byIndex[i]; has || i >= count {
+				continue
+			}
+			if st.overlaps(i, start, end) {
+				bind(i)
+			} else {
+				ln.waiting = append(ln.waiting, i)
+			}
 		}
 	}
 	for _, i := range stickies {
 		bind(i)
+	}
+	if len(ln.waiting) > 0 {
+		st.paceOrder(ln.waiting)
+		bound := 0
+		for _, i := range ln.waiting {
+			if !t.pace(ln) {
+				break
+			}
+			bind(i)
+			bound++
+		}
+		ln.waiting = append(ln.waiting[:0], ln.waiting[bound:]...)
 	}
 	t.loadMore(ln, v)
 	t.reportViewable(ln)
@@ -628,8 +700,9 @@ func (t *Tree) updateList(v *node) bool {
 	for _, c := range ln.free {
 		if c.node.base.Display != DisplayNone {
 			c.node.base.Display = DisplayNone
-			c.node.restyle()
-			t.relayout(c.node)
+			if t.restyle(c.node) {
+				t.markLayout(c.node)
+			}
 		}
 		t.restick(ln, c, false)
 	}
@@ -640,7 +713,7 @@ func (t *Tree) updateList(v *node) bool {
 		size := max(st.rowExtent(i), ln.main(c.node.frame.Size))
 		at := st.toContent(st.itemAt(i), size)
 		x, w := st.column(cross, st.columnOf(i))
-		if ln.place(c.node, at, x, w) {
+		if t.placeCell(ln, c.node, at, x, w) {
 			changed = true
 		}
 		isSticky := sticky && slices.Contains(st.sticky, i)
@@ -656,7 +729,7 @@ func (t *Tree) updateList(v *node) bool {
 			continue
 		}
 		at := [...]Points{blocks.header, blocks.footer, blocks.body}[kind]
-		if ln.place(c, st.toContent(at, ln.main(c.frame.Size)), x, w) {
+		if t.placeCell(ln, c, st.toContent(at, ln.main(c.frame.Size)), x, w) {
 			changed = true
 		}
 	}
@@ -665,7 +738,7 @@ func (t *Tree) updateList(v *node) bool {
 
 	total := st.contentLen() - st.padStart - st.padEnd
 	if ln.main(Size{Width: ln.spacerLen(), Height: ln.spacerLen()}) != total {
-		ln.setSpacer(total)
+		t.setSpacer(ln, total)
 		t.relayout(ln.spacer)
 		changed = true
 	}
@@ -676,24 +749,27 @@ func (t *Tree) updateList(v *node) bool {
 		if sc := outer.view.scroll; sc != nil {
 			if outerTo != nil {
 				sc.to = outerTo
+				t.mark(outer.view)
 			}
 			if anchor != 0 {
 				d := ln.along(anchor)
 				sc.by.X += d.X
 				sc.by.Y += d.Y
+				t.mark(outer.view)
 			}
 		}
 	} else if anchor != 0 {
 		d := ln.along(anchor)
 		v.scroll.by.X += d.X
 		v.scroll.by.Y += d.Y
+		t.mark(v)
 	}
 	return changed
 }
 
-// place moves cell c to at along the list and x across it, w wide, and
+// placeCell moves cell c to at along the list and x across it, w wide, and
 // shows it; it reports whether that changed its layout.
-func (ln *listNode) place(c *node, at, x, w Points) bool {
+func (t *Tree) placeCell(ln *listNode, c *node, at, x, w Points) bool {
 	s := &c.base
 	type placed struct {
 		display          Display
@@ -713,8 +789,9 @@ func (ln *listNode) place(c *node, at, x, w Points) bool {
 	if (placed{s.Display, s.Position, s.Left, s.Top, s.Width, s.Height, s.Bottom, s.Right}) == at0 {
 		return false
 	}
-	c.restyle()
-	c.markLayout()
+	if t.restyle(c) {
+		t.markLayout(c)
+	}
 	return true
 }
 
@@ -731,6 +808,7 @@ func (t *Tree) restick(ln *listNode, c *listCell, sticky bool) {
 	from.children = slices.DeleteFunc(from.children, func(n *node) bool { return n == c.node })
 	to.children = append(to.children, c.node)
 	c.node.parent = to
+	t.carry(c.node)
 	t.childrenChanged(from)
 }
 
@@ -814,14 +892,14 @@ func (ln *listNode) spacerLen() Points {
 	return p
 }
 
-func (ln *listNode) setSpacer(total Points) {
+func (t *Tree) setSpacer(ln *listNode, total Points) {
 	total = max(total, 0)
 	if ln.spec.Horizontal {
 		ln.spacer.base.Width = Pt(total)
 	} else {
 		ln.spacer.base.Height = Pt(total)
 	}
-	ln.spacer.restyle()
+	t.restyle(ln.spacer)
 }
 
 func (t *Tree) newCell(ln *listNode, i int) *listCell {
@@ -834,7 +912,7 @@ func (t *Tree) newCell(ln *listNode, i int) *listCell {
 		if ln.spec.Horizontal {
 			c.node.base.Direction = Row
 		}
-		c.node.restyle()
+		t.restyle(c.node)
 		row := ln.spec.Row(c.scope, c.pos)
 		var sep Node
 		if f := ln.spec.Separator; f != nil {

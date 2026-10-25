@@ -712,3 +712,22 @@ func Tint(ctx uintptr, r CGRect, c driver.Color) {
 	cgContextFillRect(ctx, r)
 	cgContextRestoreGState(ctx)
 }
+
+// Damaged is the area of a canvas to draw again after its animated
+// arguments played before now play after (driver.CanvasDamage), 2 points
+// wider for anti-aliasing and rounded out to whole points; whole is set
+// where only drawing all of it is right. An empty area draws nothing.
+func Damaged(before, after []driver.DrawOp) (area CGRect, whole bool) {
+	d, ok := driver.CanvasDamage(before, after)
+	if !ok {
+		return CGRect{}, true
+	}
+	if d.Size.Width <= 0 || d.Size.Height <= 0 {
+		return CGRect{}, false
+	}
+	const aa = 2
+	x0, y0 := math.Floor(float64(d.Origin.X)-aa), math.Floor(float64(d.Origin.Y)-aa)
+	x1 := math.Ceil(float64(d.Origin.X+d.Size.Width) + aa)
+	y1 := math.Ceil(float64(d.Origin.Y+d.Size.Height) + aa)
+	return Rect(x0, y0, x1-x0, y1-y0), false
+}

@@ -121,7 +121,7 @@ func (s *surface) applyAnimated() {
 	})
 	s.animator.ChangedCanvases(func(id driver.NodeID) {
 		if int(id) < len(s.views) && s.views[id] != nil {
-			s.views[id].redraw()
+			s.views[id].redrawAnimated()
 		}
 	})
 	s.repinBound()

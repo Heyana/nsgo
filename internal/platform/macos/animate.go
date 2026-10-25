@@ -14,7 +14,24 @@ import (
 // The surface's frame clock steps the native animation graph and the
 // layout animations once a frame while either runs.
 
-var selTick = sel("nsgoTick:")
+var (
+	selTick      = sel("nsgoTick:")
+	selWatch     = sel("nsgoWatch:")
+	selStallTick = sel("nsgoStallTick:")
+)
+
+const (
+	// frameBatches is how long a frame applies batches for while something
+	// animates, at least one whole batch, as NSH's FRAME_BATCHES: a
+	// scroll's frames are not delayed by batches landing between them,
+	// and a burst of batches spreads over frames.
+	frameBatches = 4 * time.Millisecond
+	// stallAfter is how long the display link may go without a frame
+	// while frames are wanted before a 60 Hz timer ticks in its place: the
+	// link stops while the window is occluded or minimized or the screen
+	// is locked, and animations must still end.
+	stallAfter = 100 * time.Millisecond
+)
 
 // motion is a view's part of a layout animation: its frame moving, or
 // the view appearing.
@@ -70,9 +87,9 @@ func (s *surface) startTicking() {
 		// The window may have moved to another screen meanwhile.
 		s.link.Send(sel("setPreferredFrameRateRange:"), s.frameRateRange())
 		s.link.Send(sel("setPaused:"), false)
+		s.watch()
 		return
 	}
-	loop := objc.ID(objc.GetClass("NSRunLoop")).Send(sel("mainRunLoop"))
 	if objc.Send[bool](s.native, sel("respondsToSelector:"), sel("displayLinkWithTarget:selector:")) {
 		// A link needs the view in a window: without one, the next mount
 		// asks again.
@@ -83,12 +100,38 @@ func (s *surface) startTicking() {
 		}
 		s.link = link.Send(sel("retain"))
 		s.link.Send(sel("setPreferredFrameRateRange:"), s.frameRateRange())
-		s.link.Send(sel("addToRunLoop:forMode:"), loop, apple.CommonModes())
+		s.link.Send(sel("addToRunLoop:forMode:"), mainLoop(), apple.CommonModes())
+		s.watch()
 		return
 	}
-	s.timer = objc.ID(objc.GetClass("NSTimer")).Send(sel("timerWithTimeInterval:target:selector:userInfo:repeats:"),
-		1.0/60, s.native, selTick, objc.ID(0), true).Send(sel("retain"))
-	loop.Send(sel("addTimer:forMode:"), s.timer, apple.CommonModes())
+	s.timer = repeating(1.0/60, s.native, selTick)
+}
+
+// repeating returns a retained timer that sends action to target every
+// interval seconds in the main run loop's common modes.
+func repeating(interval float64, target objc.ID, action objc.SEL) objc.ID {
+	t := objc.ID(objc.GetClass("NSTimer")).Send(sel("timerWithTimeInterval:target:selector:userInfo:repeats:"),
+		interval, target, action, objc.ID(0), true).Send(sel("retain"))
+	mainLoop().Send(sel("addTimer:forMode:"), t, apple.CommonModes())
+	return t
+}
+
+func mainLoop() objc.ID { return objc.ID(objc.GetClass("NSRunLoop")).Send(sel("mainRunLoop")) }
+
+func invalidate(t *objc.ID) {
+	if *t != 0 {
+		t.Send(sel("invalidate"))
+		t.Send(selRelease)
+		*t = 0
+	}
+}
+
+// watch starts the timer that checks, while the link runs, that it ticks.
+func (s *surface) watch() {
+	s.ticked = time.Now()
+	if s.watcher == 0 {
+		s.watcher = repeating(stallAfter.Seconds(), s.native, selWatch)
+	}
 }
 
 func (s *surface) stopTicking() {
@@ -96,22 +139,40 @@ func (s *surface) stopTicking() {
 		return
 	}
 	s.ticking = false
+	invalidate(&s.watcher)
+	invalidate(&s.stall)
 	if s.link != 0 {
 		s.link.Send(sel("setPaused:"), true)
 		return
 	}
-	s.timer.Send(sel("invalidate"))
-	s.timer.Send(selRelease)
-	s.timer = 0
+	invalidate(&s.timer)
 }
 
 func surfaceTick(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v := views[self]; v != nil {
+		s := v.surface
+		// The link is back.
+		invalidate(&s.stall)
 		var period time.Duration
-		if v.surface.perf != nil {
-			period = v.surface.framePeriod()
+		if s.perf != nil {
+			period = s.framePeriod()
 		}
-		v.surface.tick(period)
+		s.tick(period)
+	}
+}
+
+// surfaceWatch ticks with a timer once the display link stalled.
+func surfaceWatch(self objc.ID, _ objc.SEL, _ objc.ID) {
+	if v := views[self]; v != nil {
+		if s := v.surface; s.ticking && s.stall == 0 && time.Since(s.ticked) >= stallAfter {
+			s.stall = repeating(1.0/60, s.native, selStallTick)
+		}
+	}
+}
+
+func surfaceStallTick(self objc.ID, _ objc.SEL, _ objc.ID) {
+	if v := views[self]; v != nil {
+		v.surface.tick(time.Second / 60)
 	}
 }
 
@@ -130,10 +191,16 @@ func (s *surface) framePeriod() time.Duration {
 // tick steps one frame: the native animations first, then the frame the
 // app waits for.
 func (s *surface) tick(period time.Duration) {
+	s.ticked = time.Now()
 	dirty := s.animator.Running() || len(s.motions) > 0 || len(s.ghosts) > 0 || len(s.images) > 0
 	var start time.Time
 	if s.perf != nil {
 		start = time.Now()
+	}
+	// The batches that waited for this frame, before it steps.
+	if s.held() {
+		s.applyBatches(frameBatches, false)
+		dirty = true
 	}
 	now := s.clock()
 	if s.animator.Running() {
@@ -158,10 +225,21 @@ func (s *surface) tick(period time.Duration) {
 		s.perf.RecordWork(time.Since(start), dirty)
 		s.perf.Vsync(time.Now(), period)
 	}
-	if !s.animator.Running() && len(s.motions) == 0 && len(s.ghosts) == 0 && !s.frameWanted && s.perf == nil {
+	if !s.animating() && !s.frameWanted && !s.held() && s.perf == nil {
 		s.stopTicking()
 	}
 }
+
+// animating reports whether something moves on the frame clock: the
+// animation graph, a layout animation, or a scroll view under the user's
+// fingers, its momentum, a scroller drag or a snap. Batches wait for the
+// start of a frame meanwhile.
+func (s *surface) animating() bool {
+	return s.animator.Running() || len(s.motions) > 0 || len(s.ghosts) > 0 || len(s.live) > 0
+}
+
+// held reports whether batches wait for a frame.
+func (s *surface) held() bool { return len(s.waiting) > 0 || s.batches.Len() > 0 }
 
 // applyAnimated draws the animated values that changed.
 func (s *surface) applyAnimated() {
@@ -180,7 +258,7 @@ func (s *surface) applyAnimated() {
 	})
 	s.animator.ChangedCanvases(func(id driver.NodeID) {
 		if int(id) < len(s.views) && s.views[id] != nil {
-			s.views[id].redraw()
+			s.views[id].redrawAnimated()
 		}
 	})
 	s.repinBound()

@@ -30,6 +30,7 @@ var (
 	selContentsAreFlipped       = sel("contentsAreFlipped")
 	selSetContentsScale         = sel("setContentsScale:")
 	selSetNeedsDisplayLayer     = sel("setNeedsDisplay")
+	selSetNeedsDisplayInRect    = sel("setNeedsDisplayInRect:")
 	selSetNeedsDisplayOnResize  = sel("setNeedsDisplayOnBoundsChange:")
 	selSetZPosition, selActions = sel("setZPosition:"), sel("setActions:")
 )
@@ -65,8 +66,10 @@ func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 	h := float64(v.frame.Size.Height)
 	apple.DrawTopDown(ctx, h, !apple.MsgBool(layer, selContentsAreFlipped), func() {
 		if v.drawing != nil {
-			apple.Play(ctx, v.surface.animator.CanvasOps(v.id, v.drawing), apple.CanvasHost{
+			ops := v.surface.animator.CanvasOps(v.id, v.drawing)
+			apple.Play(ctx, ops, apple.CanvasHost{
 				Ratio: float64(v.surface.env.PixelRatio), Redraw: v.redraw, Owner: v})
+			v.played = append(v.played[:0], ops...)
 			return
 		}
 		box := v.box
@@ -95,6 +98,25 @@ func (v *view) redraw() {
 	if !v.stale {
 		v.stale = true
 		v.surface.stale = append(v.surface.stale, v)
+	}
+}
+
+// redrawAnimated draws again what a canvas's animated arguments changed,
+// as NSH's partial redraws: the area they cover in the ops it last drew
+// and in those it plays now (apple.Damaged), or all of it where that
+// cannot tell. Core Animation clips the replay of the whole drawing to
+// the area, so the pixels are a full redraw's.
+func (v *view) redrawAnimated() {
+	if v.drawing == nil || len(v.played) == 0 || !v.shown() {
+		v.redraw()
+		return
+	}
+	area, whole := apple.Damaged(v.played, v.surface.animator.CanvasOps(v.id, v.drawing))
+	switch {
+	case whole:
+		v.display()
+	case area.Size.Width > 0:
+		v.drawLayer().Send(selSetNeedsDisplayInRect, area)
 	}
 }
 

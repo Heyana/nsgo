@@ -66,7 +66,7 @@ func (n *node) Measure(known layout.Size[layout.Opt], available layout.Size[layo
 			width = max(width, 0)
 		}
 		if n.text.prepared != nil {
-			m = n.text.prepared.Measure(width)
+			m = n.text.size(width)
 		}
 		m = Size{Width: ceil(m.Width), Height: ceil(m.Height)}
 	case n.input != nil:
@@ -107,13 +107,91 @@ func fitNatural(nat Size, known layout.Size[layout.Opt]) Size {
 }
 
 // markLayout marks n and its ancestors for layout, dropping their cached
-// results. Regions are never laid out themselves, so they pass the mark
-// on.
-func (n *node) markLayout() {
+// results, up to the first relayout boundary on the way, n included,
+// which the next layout lays out on its own. Regions are never laid out
+// themselves, so they pass the mark on. Overlays and modals are placed
+// by the root's layout, and a text sizes its attachments as it resolves,
+// so the mark goes on from them.
+func (t *Tree) markLayout(n *node) {
+	stops := true
 	for p := n; p != nil; p = p.parent {
 		p.layoutDirty = true
 		p.lstate.Invalidate()
+		if p.hoist != nil {
+			stops = false
+		}
+		if p.attach != nil && p.parent != nil {
+			t.markResolve(p.parent)
+		}
+		if stops && t.boundary(p) {
+			if !p.queued {
+				p.queued = true
+				t.boundaries = append(t.boundaries, p)
+			}
+			return
+		}
 	}
+}
+
+// boundary reports whether n is a relayout boundary (layout.Boundary):
+// a view in its parent's flow whose size nothing inside can change. A
+// view whose style changed is none: its own size may have.
+func (t *Tree) boundary(n *node) bool {
+	if n.kind == 0 || n.isRoot || !n.lstyleOK || n.deleted || n.hoist != nil || n.attach != nil || n.accessory != nil ||
+		n.headerView {
+		return false
+	}
+	p := n.nativeParent()
+	return p != nil && p.lstyleOK && !p.deleted && layout.Boundary(n, &p.lstyle)
+}
+
+// relayoutBoundaries lays out again the boundaries a change inside
+// marked, each with what its parent gave it last; one that gives back
+// what it gave before leaves its parent's layout standing and only its
+// subtree's frames change, another marks its parent, as a change of its
+// own would. It reports whether it laid any out.
+func (t *Tree) relayoutBoundaries() bool {
+	relaid := false
+	for len(t.boundaries) > 0 {
+		b := t.boundaries[len(t.boundaries)-1]
+		t.boundaries = t.boundaries[:len(t.boundaries)-1]
+		b.queued = false
+		if b.deleted || !b.layoutDirty {
+			continue
+		}
+		// Moved or restyled since, it is no longer one on its own.
+		origin, ok := t.layoutOrigin(b)
+		if !ok || !t.boundary(b) || !layout.Relayout(b) {
+			if p := b.nativeParent(); p != nil {
+				t.markLayout(p)
+			}
+			continue
+		}
+		layout.RoundFrom(b, origin)
+		t.syncFrames(b)
+		relaid = true
+	}
+	return relaid
+}
+
+// layoutOrigin is where the box n's layout is relative to is in n's
+// layout root, unrounded, as Round carries it down: the sum of its
+// ancestors' locations up to the root. It reports false where an
+// ancestor is out of flow in a parent that does not contain it.
+func (t *Tree) layoutOrigin(n *node) (layout.Point[float32], bool) {
+	var o layout.Point[float32]
+	for a := n.nativeParent(); a != nil; a = a.nativeParent() {
+		l := &a.lstate.Unrounded
+		o.X += l.Location.X
+		o.Y += l.Location.Y
+		if a.isRoot {
+			return o, true
+		}
+		if p := a.nativeParent(); a.style.Position == Absolute && (p == nil || p.style.Position == Static) {
+			return o, false
+		}
+	}
+	return o, false
 }
 
 // layoutStyle maps n's style onto a CSS style with React Native's
@@ -406,13 +484,16 @@ func (j Justify) layout() layout.AlignContent {
 // layout lays the root view out at the surface size, then the overlays
 // and modals it hosts.
 func (t *Tree) layout() {
+	if t.relayoutBoundaries() && !t.view.layoutDirty && anchored(t.view) {
+		t.placeHoisted(t.view) // anchors may have moved
+	}
 	if !t.view.layoutDirty {
 		t.layoutAccessories()
 		t.layoutHeaderViews()
 		return
 	}
 	t.layoutRoot(t.view, t.size, true)
-	t.view.frame = Bounds{Size: t.size}
+	t.setFrame(t.view, Bounds{Size: t.size})
 	t.syncFrames(t.view)
 	t.placeHoisted(t.view)
 	t.layoutAccessories()
@@ -463,11 +544,14 @@ func (t *Tree) syncFrames(n *node) {
 		}
 		// As NSH's frame walk does, a hidden subtree gets empty frames and
 		// content boxes, whatever its layout kept.
-		c.hidden = n.hidden || c.style.Display == DisplayNone
+		if hidden := n.hidden || c.style.Display == DisplayNone; hidden != c.hidden {
+			c.hidden = hidden
+			t.mark(c)
+		}
 		if c.hidden {
 			f = Bounds{}
 		}
-		c.frame = f
+		t.setFrame(c, f)
 		t.syncFrames(c)
 	}
 }
@@ -481,11 +565,28 @@ func (t *Tree) syncContent(n *node) {
 	}
 	switch {
 	case n.text != nil:
-		n.text.box = contentBox(l)
+		if b := contentBox(l); b != n.text.box {
+			n.text.box = b
+			t.mark(n)
+		}
 	case n.input != nil:
-		n.input.config.Content = contentBox(l)
+		if b := contentBox(l); b != n.input.config.Content {
+			n.input.config.Content = b
+			t.mark(n)
+		}
 	case n.scroll != nil:
-		n.scroll.content = Size{Width: Points(l.Size.Width + l.ScrollWidth()), Height: Points(l.Size.Height + l.ScrollHeight())}
+		if c := (Size{Width: Points(l.Size.Width + l.ScrollWidth()), Height: Points(l.Size.Height + l.ScrollHeight())}); c != n.scroll.content {
+			n.scroll.content = c
+			t.mark(n)
+		}
+	}
+}
+
+// setFrame sets n's frame, marking n when it moved or resized.
+func (t *Tree) setFrame(n *node, f Bounds) {
+	if f != n.frame {
+		n.frame = f
+		t.mark(n)
 	}
 }
 
@@ -510,5 +611,6 @@ func (t *Tree) setRTL(rtl bool) {
 			n.lstate.Invalidate()
 		}
 	}
-	t.view.markLayout()
+	t.markLayout(t.view)
+	t.markAll()
 }

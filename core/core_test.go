@@ -13,6 +13,8 @@ import (
 	"github.com/oneo-me/nsgo/internal/driver"
 )
 
+func init() { driver.CheckCommits = true }
+
 // host runs a tree headless: posts queue until drain, text is approximate.
 type host struct {
 	t     *testing.T
@@ -86,6 +88,14 @@ func (h *host) waitPost() {
 			return
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// paced runs the display frames paced lists wait for, committing each.
+func (h *host) paced() {
+	for h.tree.Pacing() {
+		h.frame()
+		h.commit()
 	}
 }
 
@@ -753,6 +763,11 @@ func TestListMountsAWindowAndReusesCells(t *testing.T) {
 	}
 	count.Set(20)
 	h.commit()
+	// The viewport binds at once, its overscan on the next frames.
+	if n, _, _ := mounted(); n < 10 {
+		t.Errorf("after shrinking to 20 rows: %d mounted, want the viewport's 10", n)
+	}
+	h.paced()
 	if n, _, last := mounted(); last != 19 || n != 20 {
 		t.Errorf("after shrinking to 20 rows: %d mounted, last %d", n, last)
 	}

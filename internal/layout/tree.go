@@ -33,13 +33,57 @@ type State struct {
 	// grid is the detailed grid information of a grid container, which
 	// positions its out-of-flow children against grid areas.
 	grid *gridInfo
+
+	// lastIn and lastOut are what the parent's last full layout gave the
+	// node and what it gave back, while hasLast: what Relayout lays it out
+	// with again and compares.
+	lastIn  layoutInput
+	lastOut layoutOutput
+	hasLast bool
+	// asked are a leaf's answers to the inputs layout asked it since its
+	// cache was last cleared, each once: what every layout above it was
+	// computed from (MeasuresAsBefore). askedOver is set once there were
+	// more than maxAsked.
+	asked     []answer
+	askedOver bool
 }
+
+// answer is what a leaf gave back for an input.
+type answer struct {
+	in  layoutInput
+	out layoutOutput
+}
+
+// maxAsked is how many answers a leaf keeps: layout asks a few, its sizes
+// in measuring passes and its final one; more come of layouts at many
+// sizes (a window resized), and are not worth measuring again.
+const maxAsked = 8
 
 // Invalidate drops the node's cached results, as it must be when the node's
 // style, children or content change; its ancestors must be invalidated too.
 // It reports whether there was anything to drop, so that a caller walking up
 // the tree may stop at an ancestor already invalidated.
-func (s *State) Invalidate() bool { return s.cache.clear() }
+func (s *State) Invalidate() bool {
+	s.asked, s.askedOver = s.asked[:0], false
+	return s.cache.clear()
+}
+
+// ask records a leaf's answer to in.
+func (s *State) ask(in *layoutInput, out *layoutOutput) {
+	if s.askedOver {
+		return
+	}
+	for i := range s.asked {
+		if s.asked[i].in == *in {
+			return
+		}
+	}
+	if len(s.asked) == maxAsked {
+		s.asked, s.askedOver = s.asked[:0], true
+		return
+	}
+	s.asked = append(s.asked, answer{*in, *out})
+}
 
 // Hoisted returns the out-of-flow (absolutely or fixed positioned) boxes for
 // which the node was the containing block in the last layout. Their layouts

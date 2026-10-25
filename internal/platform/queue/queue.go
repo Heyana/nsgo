@@ -23,6 +23,13 @@ func (q *Batches) Push(b *driver.MountBatch) (wake bool) {
 	return len(q.pending) == 1
 }
 
+// Len returns the number of queued batches.
+func (q *Batches) Len() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.pending)
+}
+
 // Drain returns and removes every queued batch.
 func (q *Batches) Drain() []*driver.MountBatch {
 	q.mu.Lock()

@@ -94,6 +94,9 @@ func (h *Holder) show() {
 	h.root.parent = at
 	at.children = append(at.children, h.root)
 	t.childrenChanged(at)
+	// It inherits from its new place, and brings its marks.
+	t.carry(h.root)
+	t.markResolve(h.root)
 	// Its overlays and modals go into the host of the new place; out of
 	// the tree they stay hidden in the old one.
 	t.rehost(h.root)
@@ -126,12 +129,12 @@ func (t *Tree) rehost(n *node) {
 			if host := t.hostOf(c.parent); host != hn.host && !t.detached(c) {
 				old := hn.host
 				old.hosted = slices.DeleteFunc(old.hosted, func(x *node) bool { return x == c })
-				old.childrenDirty = true
-				old.markLayout()
+				t.reorder(old)
+				t.markLayout(old)
 				hn.host = host
 				host.hosted = append(host.hosted, c)
-				host.childrenDirty = true
-				host.markLayout()
+				t.reorder(host)
+				t.markLayout(host)
 			}
 		}
 		t.rehost(c)

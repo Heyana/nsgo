@@ -48,6 +48,9 @@ import (
 	"github.com/oneo-me/nsgo/internal/driver"
 )
 
+// Tests check that each commit sends all that changed.
+func init() { driver.CheckCommits = true }
+
 // Option configures Start.
 type Option func(*App)
 
@@ -299,8 +302,9 @@ func (a *App) step(format string, args ...any) {
 }
 
 // done ends a step: it settles, then takes display frames while an
-// animation that ends runs, for at most settleLimit of the clock's time,
-// and has OnAlert answer the alerts shown. Frames the app asks for itself
+// animation that ends runs and lists bind the rows they pace, for at most
+// settleLimit of the clock's time, and has OnAlert answer the alerts
+// shown. Frames the app asks for itself
 // do not hold a step, since its own loops may never end: Advance runs
 // them.
 func (a *App) done() {
@@ -312,7 +316,7 @@ func (a *App) done() {
 	}
 	a.Settle()
 	limit := a.Clock.Now().Add(settleLimit)
-	for !a.manualFrames && a.anim.Ending() && a.Clock.Now().Before(limit) {
+	for !a.manualFrames && (a.anim.Ending() || a.tree.Pacing()) && a.Clock.Now().Before(limit) {
 		a.Clock.Advance(driver.FrameInterval)
 		a.runFrame()
 		a.Settle()

@@ -42,6 +42,7 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 	n.props = driver.ViewProps{Role: RoleImage, Label: c.Label, TestID: c.TestID}
 	cn := &canvasNode{draw: c.Draw, size: NewSignal(cx, Size{})}
 	n.canvas = cn
+	t.canvases = append(t.canvases, n)
 	cx.renderEffect(func() {
 		size := cn.size.Get()
 		if size == (Size{}) || cn.draw == nil {

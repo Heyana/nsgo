@@ -703,11 +703,61 @@ func setSlice[T any](dst *[]T, v []T) {
 	}
 }
 
+// textFields are a style's text fields, which views pass the views inside
+// them: comparable, and small enough to copy down the tree.
+type textFields struct {
+	Color                            Color
+	FontFamily                       string
+	FontSize                         Points
+	FontWeight                       FontWeight
+	FontStyle                        FontStyle
+	LineHeight, LetterSpacing        Points
+	TextAlign                        TextAlign
+	TextDecoration                   TextDecoration
+	SelectionColor                   Color
+	TextDecorationStyle              TextDecorationStyle
+	TextDecorationColor              Color
+	TextTransform                    TextTransform
+	TextShadowColor                  Color
+	TextShadowOffset                 Point
+	TextShadowRadius                 Points
+	TextAlignVertical                TextAlignVertical
+	PlaceholderColor                 Color
+	LineHeightMultiple, LineHeightEm float32
+	WhiteSpace                       WhiteSpace
+	UserSelect                       UserSelect
+	WritingDirection                 WritingDirection
+	LayoutDirection                  LayoutDirection
+}
+
 // inherit returns s's text fields, falling back to parent's. A line
 // height in em becomes a length where it is set.
-func (s Style) inherit(parent Style) Style {
-	t := parent.textOnly()
-	t.mergeText(s)
+func (s *Style) inherit(parent textFields) textFields {
+	t := parent
+	set(&t.Color, s.Color)
+	set(&t.FontFamily, s.FontFamily)
+	set(&t.FontSize, s.FontSize)
+	set(&t.FontWeight, s.FontWeight)
+	set(&t.FontStyle, s.FontStyle)
+	if s.LineHeight != 0 || s.LineHeightMultiple != 0 || s.LineHeightEm != 0 {
+		t.LineHeight, t.LineHeightMultiple, t.LineHeightEm = s.LineHeight, s.LineHeightMultiple, s.LineHeightEm
+	}
+	set(&t.LetterSpacing, s.LetterSpacing)
+	set(&t.TextAlign, s.TextAlign)
+	set(&t.TextDecoration, s.TextDecoration)
+	set(&t.TextDecorationStyle, s.TextDecorationStyle)
+	set(&t.TextDecorationColor, s.TextDecorationColor)
+	set(&t.TextTransform, s.TextTransform)
+	set(&t.TextShadowColor, s.TextShadowColor)
+	set(&t.TextShadowOffset, s.TextShadowOffset)
+	set(&t.TextShadowRadius, s.TextShadowRadius)
+	set(&t.TextAlignVertical, s.TextAlignVertical)
+	set(&t.SelectionColor, s.SelectionColor)
+	set(&t.PlaceholderColor, s.PlaceholderColor)
+	set(&t.WhiteSpace, s.WhiteSpace)
+	set(&t.UserSelect, s.UserSelect)
+	set(&t.WritingDirection, s.WritingDirection)
+	set(&t.LayoutDirection, s.LayoutDirection)
 	if t.LineHeightEm != 0 {
 		size := t.FontSize
 		if size == 0 {
@@ -718,22 +768,8 @@ func (s Style) inherit(parent Style) Style {
 	return t
 }
 
-func (s Style) textOnly() Style {
-	return Style{
-		Color: s.Color, FontFamily: s.FontFamily, FontSize: s.FontSize, FontWeight: s.FontWeight,
-		FontStyle: s.FontStyle, LineHeight: s.LineHeight, LetterSpacing: s.LetterSpacing,
-		TextAlign: s.TextAlign, TextDecoration: s.TextDecoration, SelectionColor: s.SelectionColor,
-		TextDecorationStyle: s.TextDecorationStyle, TextDecorationColor: s.TextDecorationColor,
-		TextTransform: s.TextTransform, TextShadowColor: s.TextShadowColor, TextShadowOffset: s.TextShadowOffset,
-		TextShadowRadius: s.TextShadowRadius, TextAlignVertical: s.TextAlignVertical,
-		PlaceholderColor: s.PlaceholderColor, LineHeightMultiple: s.LineHeightMultiple, LineHeightEm: s.LineHeightEm,
-		WhiteSpace: s.WhiteSpace, UserSelect: s.UserSelect, WritingDirection: s.WritingDirection,
-		LayoutDirection: s.LayoutDirection,
-	}
-}
-
 // textShadow is the shadow the text fields describe, if any.
-func (s Style) textShadow() driver.TextShadow {
+func (s *textFields) textShadow() driver.TextShadow {
 	if s.TextShadowColor == 0 && s.TextShadowOffset == (Point{}) && s.TextShadowRadius == 0 {
 		return driver.TextShadow{}
 	}
@@ -748,7 +784,7 @@ func (s Style) textShadow() driver.TextShadow {
 }
 
 // textStyle resolves inherited text fields into what a text engine needs.
-func (s Style) textStyle() driver.TextStyle {
+func (s *textFields) textStyle() driver.TextStyle {
 	t := driver.TextStyle{
 		Font: Font{
 			Family: s.FontFamily,

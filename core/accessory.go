@@ -35,6 +35,7 @@ func (t *Tree) mountAccessory(cx *Scope, parent *node, a InputAccessoryView) {
 	if p := n.parent; p != nil {
 		t.childrenChanged(p)
 	}
+	t.markAll() // the inputs naming it
 	for _, c := range a.Children {
 		t.mount(cx, n, c)
 	}
@@ -65,14 +66,14 @@ func (t *Tree) layoutAccessories() {
 		if a := n.accessory; a.width != t.size.Width {
 			a.width = t.size.Width
 			n.lstyleOK = false
-			n.markLayout()
+			t.markLayout(n)
 		}
 		if !n.layoutDirty {
 			continue
 		}
 		t.layoutRoot(n, Size{Width: t.size.Width, Height: attachmentSpace}, false)
 		l := &n.lstate.Rounded
-		n.frame = Bounds{Size: Size{Width: t.size.Width, Height: Points(l.Size.Height)}}
+		t.setFrame(n, Bounds{Size: Size{Width: t.size.Width, Height: Points(l.Size.Height)}})
 		t.syncFrames(n)
 	}
 	clear(t.accessories[len(live):])

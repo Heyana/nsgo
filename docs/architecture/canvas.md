@@ -6,8 +6,10 @@
 
 `Canvas.Draw` runs on the engine when a signal it read or the canvas's size changes and records `DrawOp`s into a `Drawing`, which travels in `ItemCanvas` and never changes after. `Icon` and `SVG` record the same way ([icons](icons.md)). The methods follow the web's `CanvasRenderingContext2D`:
 
-- State: `Save` and `Restore`, `Translate`, `Scale`, `Rotate`, `Transform`, `SetTransform` and `ResetTransform`, alpha, `SetComposite` (Porter-Duff operators and blend modes, named as `globalCompositeOperation`), line widths, caps, joins, `SetMiterLimit`, `SetLineDash` (an odd list repeats, as the web's) and its offset, `SetShadow`, `SetTextAlign` and `SetTextBaseline`.
-- Paths: lines, curves, `Arc`, `ArcTo`, `EllipseArc` for rotated ellipses, `RoundRectCorners` for per-corner radii, and `Path` values, which `ParsePath` makes from SVG path data. `FillPath`, `StrokePath` and `ClipPath` use one without touching the current path; `FillEvenOdd` and `ClipEvenOdd` take the even-odd rule.
+- State: `Save` and `Restore`, `Translate`, `Scale`, `Rotate`, `Transform`, `SetTransform` and `ResetTransform`, alpha, and `SetComposite`, Porter-Duff operators and blend modes named as `globalCompositeOperation`.
+- Lines and text: widths, caps, joins, `SetMiterLimit`, `SetLineDash` (an odd list repeats, as the web's) and its offset, `SetShadow`, `SetTextAlign` and `SetTextBaseline`.
+- Paths: lines, curves, `Arc`, `ArcTo`, `EllipseArc` for rotated ellipses, `RoundRectCorners` for per-corner radii, and `Path` values, which `ParsePath` makes from SVG path data.
+- `FillPath`, `StrokePath` and `ClipPath` use a `Path` without touching the current path; `FillEvenOdd` and `ClipEvenOdd` take the even-odd rule.
 - Paints: colors, and `CanvasLinear`, `CanvasRadial` and `CanvasConic` gradients.
 - Text: `FillText` and `StrokeText` in a `Font`.
 - Images: `DrawImage` at the natural size, `DrawImageIn` into a rectangle and `DrawImageFrom` from a part of the image.
@@ -24,7 +26,14 @@ A drawing answers without the platform, during `Draw` and after it, so `OnPress`
 
 ## Animated arguments
 
-`Drawing.Bind(arg, node)` has the platform read argument `arg` (`ArgX` to `ArgColor`) of the last operation from an animated node. The drawing carries the bindings as `DrawSlot`s; the backend registers them with `Animator.BindCanvas` and, when `ChangedCanvases` reports a canvas, plays a copy from `CanvasOps` with the values patched in. The canvas redraws on the frame clock without a commit, the whole of it on every backend. Android's Java animator patches the encoded operations in place by their byte offsets.
+`Drawing.Bind(arg, node)` has the platform read argument `arg` (`ArgX` to `ArgColor`) of the last operation from an animated node. The drawing carries the bindings as `DrawSlot`s; the backend registers them with `Animator.BindCanvas` and, when `ChangedCanvases` reports a canvas, plays a copy from `CanvasOps` with the values patched in. The canvas redraws on the frame clock without a commit. Android's Java animator patches the encoded operations in place by their byte offsets.
+
+macOS and iOS redraw only what the change covers, as NSH's partial redraws; the other backends redraw the whole canvas.
+
+- `driver.CanvasDamage` replays the operations last drawn and those drawn now for their geometry, and adds up the bounds of the painting operations that changed or paint with state that did: transform, path, alpha, paint, line, shadow.
+- The view invalidates that area of its content layer, 2 points wider for anti-aliasing and rounded out (`apple.Damaged`). Core Graphics clips the replay of the whole drawing to it, so the pixels are a full redraw's.
+- Bounds are conservative: curves by their control points, arcs by their circle, strokes by their reach at miter joins and square caps, shadows by twice their blur, text by 1.5 em a character.
+- A changed clip, changed painting under a composite operation other than source-over, an image at its natural size and bounds that are not finite redraw the whole canvas.
 
 ## Nodes
 
@@ -58,6 +67,5 @@ Each backend plays the operations in order on the main thread, macOS on Core Ani
 | NSH | NSGo | Why |
 | --- | --- | --- |
 | Any number or color may be an animated value, bound where it is passed | `Bind` binds the last operation's argument | Go has no union of a number and a node; one method keeps every drawing call plain |
-| iOS and macOS redraw only the area animated values change | Whole redraws everywhere ([roadmap](../roadmap.md)) | Not ported yet |
 | Nodes reach only GPUI's accessibility and the headless driver | Nodes reach each backend's accessibility, except Windows' and Linux's | NSGo has no GPUI backend; native accessibility is where screen readers look |
 | `font` is a CSS shorthand string | A `Font` value | Styles are Go values |

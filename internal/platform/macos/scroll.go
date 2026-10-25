@@ -70,6 +70,25 @@ type scrollState struct {
 	// shown is the offset the clip view last reported, which decides
 	// what of the content can be seen (view.shown).
 	shown driver.Point
+	// dragging and gliding are set between the drag's and the momentum's
+	// start and end events.
+	dragging, gliding bool
+}
+
+// moving records whether scroll view v moves on the frame clock.
+func (s *surface) moving(v *view, on bool) {
+	switch {
+	case on && !s.live[v]:
+		if s.live == nil {
+			s.live = map[*view]bool{}
+		}
+		s.live[v] = true
+		s.startTicking()
+	case !on && s.live[v]:
+		delete(s.live, v)
+		// What waited for the scroll's frames goes now.
+		s.applyQueued()
+	}
 }
 
 // insets returns the content insets the view applies: the app's and the
@@ -165,8 +184,21 @@ func (v *view) showSpinner(on bool) {
 	}
 }
 
-// scrollEvent reports kind on the scroll view at its offset.
+// scrollEvent reports kind on the scroll view at its offset. Between a
+// drag's or a momentum's start and end the view moves on the frame clock,
+// which holds the surface's batches for the start of its frames.
 func (v *view) scrollEvent(kind driver.EventKind) {
+	switch kind {
+	case driver.EventScrollDragStart:
+		v.sc.dragging = true
+	case driver.EventScrollDragEnd:
+		v.sc.dragging = false
+	case driver.EventMomentumStart:
+		v.sc.gliding = true
+	case driver.EventMomentumEnd:
+		v.sc.gliding = false
+	}
+	v.surface.moving(v, v.sc.dragging || v.sc.gliding)
 	if kind == driver.EventScrollDragEnd || kind == driver.EventMomentumEnd {
 		// At rest, unless a glide follows, which scrolls on.
 		s := v.surface

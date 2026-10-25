@@ -289,6 +289,11 @@ func (a *Animator) StickyShift(c StickyCell, offset Points) Points {
 	return c.StickyShift(offset)
 }
 
+// CheckCommits has every commit compare the whole tree again after it and
+// panic if that finds changes its marks missed. Tests set it; it doubles
+// what commits cost.
+var CheckCommits bool
+
 // MountBatch is one commit's changes, applied in order on the main thread.
 // Root is the view the platform shows in its surface.
 type MountBatch struct {

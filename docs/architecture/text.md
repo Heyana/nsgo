@@ -8,7 +8,11 @@ A platform's `TextEngine` runs on the engine goroutine in three phases. `Prepare
 
 The `TextLayout` travels in `ItemText`; the main thread draws it and releases the one it replaces. Apple's engine keeps fonts, style attributes and frame paths in bounded process-wide caches, and a prepared text keeps its measured size per width.
 
-macOS draws a text or canvas view into a content layer of its own, as NSH does: a plain `CALayer` below the view's sublayers, drawn by its delegate's `drawLayer:inContext:`. No view implements `drawRect:`, whose display pass recorded and replayed every changed text, and redrew a scroll view's texts at every scroll step. A content layer draws again when its content or size changes, and only while some of it can be seen; the rest wait until a batch, a scroll or a layout animation shows them. Canvases draw on Core Animation's threads.
+The core keeps what texts measure per engine, as NSH's `MeasureCache` (`measure.go`): sizes keyed by a hash of what lays a text out, colors left out, and the width it wraps at, in two generations of 1024 entries. Identical texts, such as a list's rows or a value that comes back, measure once, and the words a min-content width measures are not prepared again. A text whose hash stays, a new color, lays nothing out ([commit](core.md#commit)).
+
+macOS draws a text or canvas view into a content layer of its own, as NSH does: a plain `CALayer` below the view's sublayers, drawn by its delegate's `drawLayer:inContext:`. No view implements `drawRect:`, whose display pass recorded and replayed every changed text, and redrew a scroll view's texts at every scroll step. A content layer draws again when its content or size changes, and only while some of it can be seen; the rest wait until a batch, a scroll or a layout animation shows them.
+
+Canvases draw on Core Animation's threads, and their animated arguments redraw only what they change ([canvas](canvas.md#animated-arguments)).
 
 The core does what needs no engine, as NSH's does:
 
@@ -21,7 +25,8 @@ The core does what needs no engine, as NSH's does:
 The engines draw the rest:
 
 - `EllipsizeMode`. CoreText truncates the last line's rest at its head, middle or tail, and Pango the same way. Clipping keeps the lines whole and cuts them at the box.
-- DirectWrite and the web trim only tails, and Android's `TruncateAt` a head or middle on one line only, so for those they lay the text out, and `AttributedText.CutRest` keeps the lines above the last and replaces the rest with the most characters around an ellipsis that fit on one line (`CutToFit`). `Origin` maps the attachments kept back to the app's indices.
+- DirectWrite and the web trim only tails, and Android's `TruncateAt` a head or middle on one line only. There `AttributedText.CutRest` replaces the lines past the last kept one with the most characters around an ellipsis that fit a line (`CutToFit`).
+- `AttributedText.Origin` maps the attachments a cut text kept back to the app's indices.
 - `TextAlignJustify` is each engine's justification; Android's needs no newer API than NSGo's minimum.
 - `TextStyle.RTL` is the base direction: CoreText's paragraph writing direction, DirectWrite's reading direction, a Pango context's base direction without auto direction, Android's text direction heuristic and CSS's `direction`. Start and end alignments follow it ([styles](styles.md)).
 - `TextDecorationStyle` and `TextDecorationColor`. CoreText underlines solid, double, dotted and dashed in a color, and the backend draws wavy underlines and every strikethrough itself.

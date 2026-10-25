@@ -213,14 +213,23 @@ func computeChildLayout(n Node, in layoutInput) layoutOutput {
 func computeNodeLayout(n Node, in layoutInput, bctx *blockContext) layoutOutput {
 	// An ancestor is display: none.
 	if in.runMode == performHiddenLayout {
+		n.LayoutState().hasLast = false
 		return computeHiddenLayout(n)
 	}
 
 	st := n.LayoutState()
-	if out, ok := st.cache.get(&in); ok {
-		return out
+	out, ok := st.cache.get(&in)
+	if !ok {
+		out = computeUncachedLayout(n, st, in, bctx)
 	}
+	if in.runMode == performLayout {
+		st.lastIn, st.lastOut, st.hasLast = in, out.clone(), true
+	}
+	return out
+}
 
+// computeUncachedLayout is computeNodeLayout on a cache miss.
+func computeUncachedLayout(n Node, st *State, in layoutInput, bctx *blockContext) layoutOutput {
 	style := n.Style()
 	var out layoutOutput
 	switch {
@@ -228,6 +237,7 @@ func computeNodeLayout(n Node, in layoutInput, bctx *blockContext) layoutOutput 
 		out = computeHiddenLayout(n)
 	case n.ChildCount() == 0:
 		out = computeLeafLayout(in, style, n)
+		st.ask(&in, &out)
 	case style.Display == DisplayBlock:
 		out = computeBlockLayout(n, in, bctx)
 	case style.Display == DisplayFlowRoot:
@@ -255,7 +265,7 @@ func computeNodeLayout(n Node, in layoutInput, bctx *blockContext) layoutOutput 
 // subtree, and drops their caches.
 func computeHiddenLayout(n Node) layoutOutput {
 	st := n.LayoutState()
-	st.cache.clear()
+	st.Invalidate()
 	st.Unrounded = Layout{}
 	for i, count := 0, n.ChildCount(); i < count; i++ {
 		computeChildLayout(n.Child(i), hiddenInput)

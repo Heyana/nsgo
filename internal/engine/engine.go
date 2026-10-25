@@ -180,10 +180,12 @@ type message struct {
 	frame  bool
 	event  driver.Event
 	resize *driver.Size
-	env    *driver.Environment
-	at     *driver.Event // a press to hit test
-	tokens *core.Tokens
-	fn     func()
+	// resized are closed once the commit after the resize is mounted.
+	resized []chan struct{}
+	env     *driver.Environment
+	at      *driver.Event // a press to hit test
+	tokens  *core.Tokens
+	fn      func()
 }
 
 // Start runs app on a new goroutine.
@@ -293,6 +295,7 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 		if perf != nil {
 			start = time.Now()
 		}
+		var resized []chan struct{}
 		for _, m := range e.take() {
 			switch {
 			case m.frame:
@@ -301,6 +304,7 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 				m.fn()
 			case m.resize != nil:
 				tree.Resize(*m.resize)
+				resized = append(resized, m.resized...)
 			case m.env != nil:
 				tree.SetEnvironment(*m.env)
 			case m.at != nil:
@@ -312,6 +316,9 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 			}
 		}
 		commit(start)
+		for _, done := range resized {
+			close(done)
+		}
 	}
 }
 
@@ -325,8 +332,12 @@ func (e *Engine) push(m message) {
 	for i := range e.queue {
 		q := &e.queue[i]
 		switch {
+		case m.resize != nil && q.resize != nil:
+			// The commit at the newest size answers the waits for both.
+			m.resized = append(q.resized, m.resized...)
+			*q = m
+			merged = true
 		case m.frame && q.frame,
-			m.resize != nil && q.resize != nil,
 			m.env != nil && q.env != nil,
 			m.tokens != nil && q.tokens != nil,
 			m.event.Mergeable() && q.event.Mergeable() && q.event.Kind == m.event.Kind && q.event.ID == m.event.ID:
@@ -369,6 +380,15 @@ func (e *Engine) Frame() { e.push(message{frame: true}) }
 
 // Resize sets the surface size.
 func (e *Engine) Resize(size driver.Size) { e.push(message{resize: &size}) }
+
+// ResizeAndWait sets the surface size and returns a channel closed once
+// the commit laid out at it is mounted: a platform that shows a new size
+// at once waits on it, briefly.
+func (e *Engine) ResizeAndWait(size driver.Size) <-chan struct{} {
+	done := make(chan struct{})
+	e.push(message{resize: &size, resized: []chan struct{}{done}})
+	return done
+}
 
 // SetEnvironment reports what the platform knows about where the app
 // runs; only the latest report queued is applied.

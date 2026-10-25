@@ -74,7 +74,7 @@ Packages import only downward; `layering_test.go` checks it on every target:
 - `core`, `base`, `icons`, `nsgotest`, `internal/driver`, `internal/layout`, `internal/testhost`, the shader compiler and `internal/engine` build unchanged for every target: no purego, `syscall` or `unsafe`. No package has cgo files or hand-written C.
 - `base` holds NSGo's built-in unstyled components, each taking styles part by part (`StyleFunc` included). NSGo ships no theme or styled components; apps, or a component library, build them on `base`.
 - A component gets its own package under `base` only when it links dependencies an app without it should not, as `base/textview` links goldmark and `base/textview/highlight` chroma.
-- The platform main thread never waits for the engine, and the engine never touches main-thread-only UI objects.
+- The platform main thread never waits for the engine, but for macOS's 16 ms at most for the layout at a new window size, and the engine never touches main-thread-only UI objects.
 - What animates runs on the platform's frame clock: transitions, animated values and layout animations are data the engine sends once, never a commit per frame. The app's frame callbacks wait for the same clock.
 - The reactive graph belongs to the engine goroutine and never locks; other goroutines reach it through `Scope.Post`.
 - Text is prepared and laid out on the engine side through a platform `TextEngine`; the main thread only draws the result.
@@ -126,7 +126,7 @@ Record a design question here, and confirm the answer with the user before choos
 | [Components](docs/architecture/components.md) | Changing a component in `base`: controls, popups, resizable panels or the dock |
 | [Text view](docs/architecture/textview.md) | Changing `TextView`, its parsers, parts or highlighting |
 | [Icons](docs/architecture/icons.md) | Changing SVG parsing, `core.Icon` or the Lucide pack |
-| [Performance](docs/architecture/performance.md) | Changing the performance monitor or a per-frame path |
+| [Performance](docs/architecture/performance.md) | Changing the performance monitor, a frame clock or a per-frame path |
 | [Embedding](docs/architecture/embedding.md) | Changing `nsgo.NewView`, the host channel or `-embed` packages |
 | [Testing](docs/architecture/testing.md) | Changing `nsgotest`, its steps or a backend's test host |
 | [Tool](docs/architecture/tool.md) | Changing `nsgo`: the dev server, tests on targets, packages or signing |

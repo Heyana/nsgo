@@ -4,6 +4,7 @@ package windows
 
 import (
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/oneo-me/nsgo/internal/driver"
@@ -12,14 +13,15 @@ import (
 var (
 	setTimer  = user32.NewProc("SetTimer")
 	killTimer = user32.NewProc("KillTimer")
+	dwmFlush  = dwmapi.NewProc("DwmFlush")
 )
 
 const (
-	wmTimer        = 0x0113
-	animationTimer = 1
-	// frameMillis asks for about 60 frames a second; the system's timer
-	// granularity may make it fewer.
-	frameMillis    = 16
+	wmTimer = 0x0113
+	// wmTick is a frame of the frame clock.
+	wmTick = 0x8000 + 7
+	// frameInterval is a frame's length where the compositor gives none.
+	frameInterval  = 16 * time.Millisecond
 	scrollDuration = 300 * time.Millisecond
 
 	allProperties = driver.TransitionOpacity | driver.TransitionBackground | driver.TransitionTransform |
@@ -274,13 +276,94 @@ func (w *window) onFrame(fn func(now time.Time) bool) {
 	w.startClock()
 }
 
+// frameClock follows the compositor, as NSH's ticker does: a goroutine
+// waits for each composition (DwmFlush) and posts wmTick, one at a time,
+// while the window animates, and parks while it does not. A timer's
+// ticks fall between the compositor's frames, which the system's timer
+// granularity (15.6 ms by default) makes uneven too.
+type frameClock struct {
+	hwnd uintptr
+	wake chan struct{}
+	done chan struct{}
+	// running is set while ticks are wanted; posted while one waits for
+	// the window.
+	running, posted atomic.Bool
+}
+
+func newFrameClock(hwnd uintptr) *frameClock {
+	c := &frameClock{hwnd: hwnd, wake: make(chan struct{}, 1), done: make(chan struct{})}
+	go c.run()
+	return c
+}
+
+// minTick is the least time between ticks, should DwmFlush return at
+// once (nothing composing yet): faster than any display's frames.
+const minTick = 3 * time.Millisecond
+
+func (c *frameClock) run() {
+	var last time.Time
+	for {
+		if !c.running.Load() {
+			select {
+			case <-c.wake:
+				continue
+			case <-c.done:
+				return
+			}
+		}
+		// It fails where nothing composes (a session without a desktop):
+		// a frame's length then.
+		if hr, _, _ := dwmFlush.Call(); int32(hr) < 0 {
+			time.Sleep(frameInterval)
+		} else if since := time.Since(last); since < minTick {
+			time.Sleep(minTick - since)
+		}
+		last = time.Now()
+		select {
+		case <-c.done:
+			return
+		default:
+		}
+		if c.running.Load() && c.posted.CompareAndSwap(false, true) {
+			postMessageW.Call(c.hwnd, wmTick, 0, 0)
+		}
+	}
+}
+
+func (c *frameClock) start() {
+	c.running.Store(true)
+	select {
+	case c.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (c *frameClock) stop() { c.running.Store(false) }
+
+// close ends the goroutine.
+func (c *frameClock) close() { close(c.done) }
+
 // startClock starts the frame clock, which tick stops when nothing
 // animates: no transition, scroll or layout animation, no animated value
 // running and no frame client.
 func (w *window) startClock() {
-	if !w.ticking {
-		setTimer.Call(w.hwnd, animationTimer, frameMillis, 0)
-		w.ticking = true
+	if w.ticking {
+		return
+	}
+	if w.clock == nil {
+		w.clock = newFrameClock(w.hwnd)
+	}
+	w.clock.start()
+	w.ticking = true
+}
+
+// ticked runs the frame the clock posted.
+func (w *window) ticked() {
+	if w.clock != nil {
+		w.clock.posted.Store(false)
+	}
+	if w.ticking {
+		w.tick()
 	}
 }
 
@@ -367,7 +450,7 @@ func (w *window) tick() {
 		}
 	}
 	if len(live) == 0 && len(w.frames) == 0 && !w.animator.Running() && !w.frameWanted {
-		killTimer.Call(w.hwnd, animationTimer)
+		w.clock.stop()
 		w.ticking = false
 	}
 	invalidateRect.Call(w.hwnd, 0, 0)

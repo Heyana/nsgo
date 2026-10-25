@@ -72,6 +72,7 @@ func (t *Tree) mountIcon(cx *Scope, parent *node, v Icon) {
 	in := &iconNode{svg: NewSignal(cx, v.SVG), color: NewSignal(cx, Color(0))}
 	cn := &canvasNode{size: NewSignal(cx, Size{})}
 	n.icon, n.canvas = in, cn
+	t.canvases = append(t.canvases, n)
 	if v.SVGFunc != nil {
 		cx.renderEffect(func() {
 			svg := v.SVGFunc()

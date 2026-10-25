@@ -3,6 +3,7 @@ package core
 import (
 	"cmp"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -64,6 +65,18 @@ type Tree struct {
 	// views that pinned some at the last commit.
 	sticky  map[*node]bool
 	stuckIn []*node
+	// full has the next commit resolve and compare every node; fullRound
+	// the round running.
+	full, fullRound bool
+	// boundaries are the relayout boundaries a change inside marked.
+	boundaries []*node
+	canvases   []*node
+	measures   measureCache
+	// commits counts commits, the last of which started at commitStart;
+	// paceStop cancels the frame paced lists wait for.
+	commits     int
+	commitStart time.Time
+	paceStop    func()
 }
 
 // report is a handler to run under owner after the commit.
@@ -134,6 +147,7 @@ type node struct {
 	lstate   layout.State
 	lstyle   layout.Style
 	lstyleOK bool
+	queued   bool  // a boundary waiting in Tree.boundaries
 	rtl      bool  // laid out right to left
 	isRoot   bool  // a layout root: the root view, an overlay or a modal
 	fill     *Size // the size a root fills, if it fills one
@@ -143,6 +157,14 @@ type node struct {
 	childrenDirty bool
 	flat          []*node // native children, through regions
 	sent          sent
+
+	// A commit visits only what changed (mark, markResolve): dirty views
+	// compare their parts with what was sent, and dirtyKids leads the walk
+	// to views inside one through the views they are emitted in; resolve
+	// and resolveKids do the same for resolving, through shadow parents.
+	dirty, dirtyKids        bool
+	unresolved, resolveKids bool
+	passed                  textFields // what it passed its children last
 }
 
 type handlers struct {
@@ -200,6 +222,17 @@ type textNode struct {
 	// caches while it is not negative.
 	engine   driver.TextEngine
 	minWidth Points
+	// hash is text's layout hash, which measures keys its sizes by.
+	hash     uint64
+	measures *measureCache
+}
+
+// size returns what the prepared text measures wrapped at width.
+func (tn *textNode) size(width Points) Size {
+	if tn.measures == nil {
+		return tn.prepared.Measure(width)
+	}
+	return tn.measures.size(tn.hash, tn.prepared, width)
 }
 
 // minContent returns the text's min-content width: its widest word,
@@ -218,9 +251,15 @@ func (tn *textNode) minContent() Points {
 			continue
 		}
 		seen[word] = true
-		p := tn.engine.Prepare(&driver.AttributedText{Text: word, Style: tn.text.Style})
-		tn.minWidth = max(tn.minWidth, ceil(p.Measure(Auto).Width))
-		p.Release()
+		var w Points
+		if tn.measures != nil {
+			w = tn.measures.word(tn.engine, word, tn.text.Style)
+		} else {
+			p := tn.engine.Prepare(&driver.AttributedText{Text: word, Style: tn.text.Style})
+			w = p.Measure(Auto).Width
+			p.Release()
+		}
+		tn.minWidth = max(tn.minWidth, ceil(w))
 	}
 	return tn.minWidth
 }
@@ -431,7 +470,7 @@ type sent struct {
 
 // NewTree returns an empty tree under root, laying text out with text.
 func NewTree(root *Scope, text driver.TextEngine) *Tree {
-	t := &Tree{root: root, rt: root.rt, text: text, nodes: []*node{nil}}
+	t := &Tree{root: root, rt: root.rt, text: text, nodes: []*node{nil}, measures: newMeasureCache()}
 	t.anim.t = t
 	root.rt.tree = t
 	t.view = t.newNode(driver.KindView, nil, root)
@@ -450,7 +489,7 @@ func (t *Tree) Mount(app func(cx *Scope) Node) {
 func (t *Tree) Resize(size Size) {
 	if size != t.size {
 		t.size = size
-		t.view.markLayout()
+		t.markLayout(t.view)
 		t.changed = true
 		t.root.Env().window.Set(size)
 	}
@@ -465,9 +504,10 @@ func (t *Tree) SetEnvironment(env Environment) {
 	t.root.Batch(func() { e.set(env) })
 	// Modals and system headers are placed by the safe area.
 	if e.safe.GetUntracked() != safe || e.headers != headers {
-		t.view.markLayout()
+		t.markLayout(t.view)
 	}
-	t.changed = true
+	// Images pick their scales, screens their headers from it.
+	t.markAll()
 }
 
 // Size returns the surface size.
@@ -495,7 +535,7 @@ func (t *Tree) newNode(kind driver.ViewKind, parent *node, owner *Scope) *node {
 		parent.children = append(parent.children, n)
 		t.childrenChanged(parent)
 	}
-	t.changed = true
+	t.markResolve(n)
 	return n
 }
 
@@ -520,20 +560,88 @@ func (t *Tree) childrenChanged(n *node) {
 		n = n.parent
 	}
 	if n != nil {
-		n.childrenDirty = true
 		n.flat = nil
-		n.markLayout()
-		t.changed = true
+		t.reorder(n)
+		t.markLayout(n)
 	}
 }
 
+// reorder records that n's native children may have changed or moved.
+func (t *Tree) reorder(n *node) {
+	n.childrenDirty = true
+	t.mark(n)
+	t.markGroups(n)
+}
+
+// markGroups marks the groups n is in that read their texts for a label
+// (sentProps): what n shows of its own may have changed.
+func (t *Tree) markGroups(n *node) {
+	for p := n.parent; p != nil; p = p.parent {
+		if p.props.Accessible == AccessibleYes && p.props.Label == "" && p.text == nil {
+			t.mark(p)
+		}
+	}
+}
+
+// mark records that n's parts may differ from what was sent, so the next
+// commit compares them. A region marks the view it lays out in.
+func (t *Tree) mark(n *node) {
+	t.changed = true
+	for n != nil && n.kind == 0 {
+		n = n.parent
+	}
+	if n == nil {
+		return
+	}
+	n.dirty = true
+	for p := n.nativeParent(); p != nil && !p.dirtyKids; p = p.nativeParent() {
+		p.dirtyKids = true
+	}
+}
+
+// markResolve records that n's styles or content changed, so the next
+// commit resolves it and sends what changed.
+func (t *Tree) markResolve(n *node) {
+	t.mark(n)
+	t.markGroups(n)
+	n.unresolved = true
+	for p := n.parent; p != nil && !p.resolveKids; p = p.parent {
+		p.resolveKids = true
+	}
+}
+
+// carry marks the chains above n again after n moved to another parent,
+// for the marks inside it.
+func (t *Tree) carry(n *node) {
+	if n.unresolved || n.resolveKids {
+		for p := n.parent; p != nil && !p.resolveKids; p = p.parent {
+			p.resolveKids = true
+		}
+	}
+	if n.dirty || n.dirtyKids {
+		for p := n.nativeParent(); p != nil && !p.dirtyKids; p = p.nativeParent() {
+			p.dirtyKids = true
+		}
+	}
+}
+
+// markAll has the next commit resolve and compare every node, as after a
+// change of the environment they all read.
+func (t *Tree) markAll() {
+	t.full = true
+	t.changed = true
+}
+
 // touch records that n's parts changed without a layout change.
-func (t *Tree) touch(n *node) { t.changed = true }
+func (t *Tree) touch(n *node) {
+	t.mark(n)
+	t.markGroups(n)
+}
 
 // relayout records that n's parts changed its layout.
 func (t *Tree) relayout(n *node) {
-	n.markLayout()
-	t.changed = true
+	t.markLayout(n)
+	t.markResolve(n)
 }
 
 // clear discards a region's children.
@@ -561,8 +669,11 @@ func (t *Tree) discard(n *node) {
 	}
 	if n.hoist != nil {
 		h := n.hoist.host
-		h.childrenDirty = true
-		h.markLayout()
+		t.reorder(h)
+		t.markLayout(h)
+	}
+	if n.accessory != nil {
+		t.markAll() // the inputs naming it
 	}
 	if n.kind != 0 {
 		if n.created {
@@ -700,21 +811,26 @@ type regionMounter interface {
 // bindStyle sets n's style, binding StyleFunc when there is one.
 func (t *Tree) bindStyle(cx *Scope, n *node, base Style, fn func() Style) {
 	n.base = base
-	n.restyle()
+	t.restyle(n)
 	t.syncPosition(n)
 	if fn == nil {
 		return
 	}
 	cx.renderEffect(func() {
 		n.dyn = fn()
-		n.restyle()
+		changed := t.restyle(n)
 		t.syncPosition(n)
-		t.relayout(n)
+		if changed {
+			t.markLayout(n)
+		}
 	})
 }
 
-// restyle merges n's style from its parts and states.
-func (n *node) restyle() {
+// restyle merges n's style from its parts and states, which the next
+// commit resolves and sends, and reports whether what layout reads of it
+// changed: a color does not.
+func (t *Tree) restyle(n *node) bool {
+	t.markResolve(n)
 	p := n.props
 	if n.input != nil && n.input.config.Disabled {
 		p.Disabled = true
@@ -730,15 +846,22 @@ func (n *node) restyle() {
 	}
 	z, sticky := n.stackRank()
 	n.style = merged.withStates(n.states, p, g)
-	n.lstyleOK = false
 	if z2, sticky2 := n.stackRank(); z2 != z || sticky2 != sticky {
 		if parent := n.nativeParent(); parent != nil {
-			parent.childrenDirty = true
+			t.reorder(parent)
 		}
 	}
 	if n.screen != nil && n.screen.hidden {
 		n.style.Display = DisplayNone
 	}
+	// Roots are placed by style the layout leaves out of theirs.
+	if n.lstyleOK && !n.isRoot && n.hoist == nil {
+		if l := n.layoutStyle(); reflect.DeepEqual(&l, &n.lstyle) {
+			return false
+		}
+	}
+	n.lstyleOK = false
+	return true
 }
 
 // groupState returns the states of n's nearest group named name, or of
@@ -768,8 +891,9 @@ func (t *Tree) setState(n *node, state uint8, on bool) {
 		return
 	}
 	if n.style.Hover != nil || n.style.Focus != nil || n.style.Active != nil {
-		n.restyle()
-		t.relayout(n)
+		if t.restyle(n) {
+			t.markLayout(n)
+		}
 	}
 	t.restyleGroup(n)
 }
@@ -783,8 +907,9 @@ func (t *Tree) restyleGroup(n *node) {
 	walk = func(c *node) {
 		for _, k := range c.children {
 			if k.style.GroupStyle != nil {
-				k.restyle()
-				t.relayout(k)
+				if t.restyle(k) {
+					t.markLayout(k)
+				}
 			}
 			walk(k)
 		}
@@ -805,8 +930,9 @@ func (t *Tree) bindBool(cx *Scope, n *node, fn func() bool, dst *bool) {
 	}
 	cx.renderEffect(func() {
 		*dst = fn()
-		n.restyle()
-		t.relayout(n)
+		if t.restyle(n) {
+			t.markLayout(n)
+		}
 		t.restyleGroup(n)
 	})
 }
@@ -840,8 +966,9 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	if v.PartStates != nil {
 		cx.renderEffect(func() {
 			n.part = v.PartStates()
-			n.restyle()
-			t.relayout(n)
+			if t.restyle(n) {
+				t.markLayout(n)
+			}
 			t.restyleGroup(n)
 		})
 	}
@@ -941,7 +1068,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 				if s := sp.ContentFunc(); s != n.text.spans[i].content {
 					n.text.spans[i].content = s
 					n.text.stale = true
-					t.relayout(n)
+					t.markResolve(n) // which lays it out unless it measures as before
 				}
 			})
 		}
@@ -951,7 +1078,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 			if s := v.ContentFunc(); s != n.text.content || n.text.prepared == nil {
 				n.text.content = s
 				n.text.stale = true
-				t.relayout(n)
+				t.markResolve(n) // which lays it out unless it measures as before
 			}
 		})
 	}
@@ -975,7 +1102,7 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 	if v.Value != nil {
 		cx.renderEffect(func() {
 			in.value = v.Value()
-			t.touch(n)
+			t.markResolve(n) // a multiline field measures it
 		})
 	}
 	if v.SelectedRange != nil {
@@ -1226,7 +1353,7 @@ func (t *Tree) Dispatch(ev driver.Event) {
 				in.value = v
 			}
 		}
-		t.touch(n)
+		t.markResolve(n)
 	case driver.EventSubmitEditing:
 		if h.submit != nil {
 			t.within(n.owner, func() { h.submit(ev.Text) })
@@ -1327,7 +1454,7 @@ func (t *Tree) Dispatch(ev driver.Event) {
 				n.scroll.zoom = ev.Value
 			}
 			if anchored(t.view) {
-				t.view.markLayout() // anchored overlays follow the scroll
+				t.markLayout(t.view) // anchored overlays follow the scroll
 				t.changed = true
 			}
 		}

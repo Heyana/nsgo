@@ -77,9 +77,10 @@ Each row is one signal, so a tick settles four text nodes per touched row.
 The title's tick count changes every frame too. The result is the per-commit
 cost of preparing and measuring that text, on top of layout and drawing.
 
-The other 30 rows do not write signals, but each commit still resolves,
-lays out and emits the whole tree. The CPU includes that full-tree work,
-not only the text that changed.
+The other 30 rows do not write signals, and a commit visits only the
+nodes that changed. Each value is as wide as its cell, so one that fits
+it measures as before and lays nothing out: the CPU is preparing the
+changed texts, their lines and their drawing.
 
 ## What it does not measure
 

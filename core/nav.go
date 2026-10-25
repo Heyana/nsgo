@@ -134,7 +134,7 @@ func (t *Tree) layoutHeaderViews() {
 		}
 		t.layoutRoot(n, Size{Width: attachmentSpace, Height: attachmentSpace}, false)
 		l := &n.lstate.Rounded
-		n.frame = Bounds{Size: Size{Width: Points(l.Size.Width), Height: Points(l.Size.Height)}}
+		t.setFrame(n, Bounds{Size: Size{Width: Points(l.Size.Width), Height: Points(l.Size.Height)}})
 		t.syncFrames(n)
 	}
 	clear(t.headerViews[len(live):])
@@ -188,11 +188,11 @@ func (t *Tree) sizeHeaders() bool {
 			if pad != sn.pad {
 				sn.pad = pad
 				n.lstyleOK = false
-				n.markLayout()
+				t.markLayout(n)
 				changed = true
 			}
 			t.within(n.owner, func() { sn.top.Set(header) })
-			t.changed = true
+			t.mark(n)
 		}
 	}
 	return changed
@@ -222,8 +222,8 @@ func (t *Tree) headerInset(n *node) Points {
 func (t *Tree) screenHeader(n *node, h Points) {
 	if sn := n.screen; sn != nil && sn.measured != h {
 		sn.measured = h
-		t.view.markLayout()
-		t.changed = true
+		t.markLayout(t.view)
+		t.mark(n)
 	}
 }
 
@@ -239,8 +239,8 @@ func (t *Tree) topOverlap(n *node) Points {
 	return max(top-y, 0)
 }
 
-// emitScreen sends screen n's header config when it changed.
-func (t *Tree) emitScreen(n *node) {
+// screenConfig is what screen n tells the platform of its system header.
+func (t *Tree) screenConfig(n *node) driver.ScreenConfig {
 	sn := n.screen
 	s := sn.screen
 	c := driver.ScreenConfig{
@@ -275,6 +275,12 @@ func (t *Tree) emitScreen(n *node) {
 			}
 		}
 	}
+	return c
+}
+
+// emitScreen sends screen n's header config when it changed.
+func (t *Tree) emitScreen(n *node) {
+	sn, c := n.screen, t.screenConfig(n)
 	if sn.sentOK && c == sn.sent {
 		return
 	}
@@ -303,8 +309,66 @@ func (t *Tree) showTop(n *node) {
 		}
 		if hidden := c != top; hidden != c.screen.hidden {
 			c.screen.hidden = hidden
-			c.restyle()
-			t.relayout(c)
+			if t.restyle(c) {
+				t.markLayout(c)
+			}
+		}
+	}
+}
+
+// markScreens marks the screens of stack n whose header config changed,
+// which the stack and its other screens decide even where the screen did
+// not change itself.
+func (t *Tree) markScreens(n *node) {
+	for _, c := range n.flatChildren() {
+		sn := c.screen
+		if sn == nil || !sn.native || c.deleted {
+			continue
+		}
+		if !sn.sentOK || t.screenConfig(c) != sn.sent {
+			t.mark(c)
+		}
+	}
+}
+
+// markHeaderScrolls marks the scroll views whose header inset changed:
+// those near the top of a screen that lays its content under its system
+// header.
+func (t *Tree) markHeaderScrolls() {
+	var limit Points
+	// walk goes through n's children whose top, top being where n's
+	// content starts below the screen's top, is above limit.
+	var walk func(n *node, top Points)
+	walk = func(n *node, top Points) {
+		for _, c := range n.children {
+			if c.deleted || c.hoist != nil || c.screen != nil {
+				continue
+			}
+			inner := top
+			if c.kind != 0 {
+				if inner += c.frame.Origin.Y; inner >= limit {
+					if c.scroll != nil && c.sent.scroll.HeaderInset > 0 {
+						t.mark(c)
+					}
+					continue
+				}
+			}
+			if sc := c.scroll; sc != nil {
+				if !sc.config.Horizontal && c.created && t.headerInset(c) != c.sent.scroll.HeaderInset {
+					t.mark(c)
+				}
+				inner -= sc.offset.Y
+			}
+			walk(c, inner)
+		}
+	}
+	for _, s := range t.stacks {
+		for _, c := range s.flatChildren() {
+			if sn := c.screen; sn != nil && sn.native && sn.pad == 0 {
+				if limit = max(sn.header, sn.sent.HeaderHeight); limit > 0 {
+					walk(c, 0)
+				}
+			}
 		}
 	}
 }

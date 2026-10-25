@@ -62,11 +62,21 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 
 ## Commit
 
-`Tree.Commit` runs up to eight rounds. `OnLayout` handlers' changes go into the same batch.
+`Tree.Commit` runs up to eight rounds. `OnLayout` handlers' changes go into the same batch. A commit costs what changed, not what the tree is: each change marks its node, `mark` for its parts and `markResolve` for its styles or content, and the walks below reach the marked nodes only, through the views they are emitted in (`dirtyKids`) and their shadow parents (`resolveKids`). What every node reads (the environment, the layout direction, the font scale, an accessory's ID) marks them all.
 
-1. **Resolve.** Inherit text styles and prepare text whose content or style changed.
+1. **Resolve.** Inherit text styles into the marked nodes, and into every node under one whose inherited fields changed; prepare text whose content or style changed.
 2. **Layout.** CSS block, flexbox and grid from `internal/layout` over each view's native children; overlays and modals are layout roots of their own. Results stay cached until a node changes, and frames are rounded to whole points as Taffy does.
-3. **Emit.** Compare each view's parts with what was sent: view style, props, events, text, input, scroll. Then sync children against the sibling order last sent, reinserting only the views outside the longest run already in order.
+3. **Emit.** Compare each marked view's parts with what was sent: view style, props, events, text, input, scroll; layout marks the views it moved. Then sync children against the sibling order last sent, reinserting only the views outside the longest run already in order.
+
+Layout is incremental, as NSH's layout tree:
+
+- A change stops at a relayout boundary (`layout.Boundary`): an in-flow flex item of fixed points both ways that does not shrink, has an auto basis and is not aligned by its baseline.
+- A boundary is laid out again on its own with what its parent gave it last, and its parent only when what it gives back changed: its size, baselines or overflow past it (`layout.Relayout`).
+- A restyled view is no boundary, and overlays and modals always mark the root's layout, which places them.
+- A text whose content changed lays nothing out when it measures as before for every input layout asked of it since its cache was cleared (`layout.MeasuresAsBefore`), or when only its colors changed.
+- Texts with attachments always lay out. A restyle lays a view out only when the layout style it maps to changed.
+
+Tests keep the marks honest: with `driver.CheckCommits`, which `nsgotest` and the core's tests set, each commit is followed by one that lays every node out anew and compares every node, and panics on what the first missed.
 
 `layout.go` maps styles with React Native's defaults, as NSH does:
 

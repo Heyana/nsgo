@@ -46,6 +46,9 @@ type listState struct {
 	pin          *listPin
 	// moved is set once the user or a scroll command moved the list.
 	moved bool
+	// lead is the last scroll step reported, in natural coordinates:
+	// positive towards the end. Paced binding binds ahead of it first.
+	lead Points
 	// loadsAtStart: the list has OnLoadMoreAtStart, so an inverted one
 	// keeps its visible rows in place while scrolled away from its start,
 	// where the pages it loads arrive (keepsVisibleRows).
@@ -457,6 +460,12 @@ func (s *listState) targetOffset(p *listPin) Points {
 // core issued applied when settled: a pinned target the list is away
 // from then was left by the user.
 func (s *listState) movedTo(at Points, settled bool) {
+	if step := at - s.offset; step != 0 {
+		if s.inverted {
+			step = -step
+		}
+		s.lead = step
+	}
 	if abs32(at-s.offset) > pinSlack {
 		// Not a platform's rounding: the user scrolled.
 		s.moved = true
@@ -569,6 +578,62 @@ func (s *listState) window() (first, last int, ok bool, sticky []int) {
 // listOverscan is how far beyond the viewport cells stay rendered, in
 // viewports.
 const listOverscan = 1
+
+// urgentSpan is the natural span whose rows bind in the commit that shows
+// them: the viewport, and ahead of it in the scroll direction twice the
+// last step, what a fling's next frames show. A step longer than the
+// viewport is a jump: only the viewport. The rest of the window binds
+// paced (Tree.pace).
+func (s *listState) urgentSpan() (start, end Points) {
+	at := s.naturalOffset()
+	step := abs32(s.lead)
+	ahead := Points(0)
+	if step <= s.viewport {
+		ahead = min(2*step, s.viewport*listOverscan)
+	}
+	if s.lead > 0 {
+		return at, at + s.viewport + ahead
+	}
+	return at - ahead, at + s.viewport
+}
+
+// overlaps reports whether item i's row overlaps the natural span start
+// to end.
+func (s *listState) overlaps(i int, start, end Points) bool {
+	top := s.itemAt(i)
+	return top < end && top+s.rowExtent(i) > start
+}
+
+// paceOrder sorts waiting items to bind nearest the viewport first, on
+// the side the list scrolls towards before the other.
+func (s *listState) paceOrder(items []int) {
+	at := s.naturalOffset()
+	top, bottom := at, at+s.viewport
+	forward := s.lead >= 0
+	key := func(i int) (bool, Points) {
+		start := s.itemAt(i)
+		if start >= bottom {
+			return !forward, start - bottom
+		}
+		return forward, max(top-(start+s.rowExtent(i)), 0)
+	}
+	slices.SortFunc(items, func(a, b int) int {
+		behindA, da := key(a)
+		behindB, db := key(b)
+		switch {
+		case behindA != behindB:
+			if behindA {
+				return 1
+			}
+			return -1
+		case da < db:
+			return -1
+		case da > db:
+			return 1
+		}
+		return a - b
+	})
+}
 
 func (s *listState) stickyEnabled() bool {
 	return len(s.sticky) > 0 && s.columns == 1 && !s.inverted

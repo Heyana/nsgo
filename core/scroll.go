@@ -129,7 +129,7 @@ func (t *Tree) dispatchScroll(n *node, ev driver.Event) {
 		// The platform shows its spinner as the pull ends; the next
 		// config tells it whether the app keeps it.
 		sc.resend = true
-		t.changed = true
+		t.mark(n)
 		if sc.on.onRefresh != nil {
 			t.within(n.owner, sc.on.onRefresh)
 		}

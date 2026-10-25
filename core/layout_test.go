@@ -1,6 +1,10 @@
 package core
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/oneo-me/nsgo/internal/driver"
+)
 
 func wantFrames(t *testing.T, h *host, cases map[string]Bounds) {
 	t.Helper()
@@ -143,5 +147,131 @@ func TestGridMeasuresTextAtItsContentWidth(t *testing.T) {
 	// Two 40.8 pt lines of the approximate 17 pt font, in 20 pt of padding.
 	if got := h.find("cell").frame.Size.Height; got != 61 {
 		t.Errorf("cell height = %v, want 61: the text wraps to two lines at its content width", got)
+	}
+}
+
+// A row of cells, the first a fixed size or its content's, holding a
+// text that the signal it returns sets.
+func cellRow(t *testing.T, fixed bool) (*host, *Signal[string]) {
+	var value *Signal[string]
+	h := newHost(t, Size{Width: 400, Height: 300}, func(cx *Scope) Node {
+		value = NewSignal(cx, "9.07")
+		cell := Style{Padding: All(4)}
+		if fixed {
+			cell.Width, cell.Height = Pt(56), Pt(24)
+		}
+		return View{TestID: "row", Style: Style{Direction: Row, Gap: 8}, Children: []Node{
+			View{TestID: "cell", Style: cell, Children: []Node{Text{TestID: "value", ContentFunc: value.Get}}},
+			View{TestID: "next", Style: Style{Width: Pt(40), Height: Pt(20)}},
+		}}
+	})
+	h.commit()
+	return h, value
+}
+
+// resolved resolves what changed, as a commit does first, so the test
+// can see what that marked for layout.
+func (h *host) resolved() { h.tree.resolve(h.tree.view, textFields{}, false) }
+
+func TestAChangeInAFixedCellLaysOutTheCellAlone(t *testing.T) {
+	h, value := cellRow(t, true)
+	value.Set("10.14") // wider, and still inside the cell
+	h.resolved()
+	if h.tree.view.layoutDirty || h.find("row").layoutDirty {
+		t.Fatal("a change inside a fixed cell marked the views around it")
+	}
+	if !h.find("cell").queued {
+		t.Fatal("the cell is not laid out on its own")
+	}
+	// The text keeps the width the cell stretches it to.
+	if got := kinds(h.commit()); got[driver.ItemText] != 1 || len(got) != 1 {
+		t.Errorf("items %v, want the text's alone", got)
+	}
+}
+
+func TestATextThatMeasuresAsBeforeLaysNothingOut(t *testing.T) {
+	h, value := cellRow(t, false)
+	value.Set("9.14") // as wide: the approximate engine's characters are
+	h.resolved()
+	if h.tree.view.layoutDirty || h.find("cell").layoutDirty || h.find("value").layoutDirty {
+		t.Fatal("a text that measures as before marked layout")
+	}
+	if got := kinds(h.commit()); got[driver.ItemText] != 1 || len(got) != 1 {
+		t.Errorf("items %v, want the text's alone", got)
+	}
+	value.Set("+9.14")
+	h.resolved()
+	if !h.tree.view.layoutDirty {
+		t.Fatal("a wider text in a cell of its size laid nothing out")
+	}
+	if w := h.find("cell").frame.Size.Width; h.commit() != nil && h.find("cell").frame.Size.Width <= w {
+		t.Error("the cell did not grow with its text")
+	}
+}
+
+func TestARestyledFixedCellLaysOutItsParent(t *testing.T) {
+	var wide *Signal[bool]
+	h := newHost(t, Size{Width: 400, Height: 300}, func(cx *Scope) Node {
+		wide = NewSignal(cx, false)
+		return View{TestID: "row", Style: Style{Direction: Row}, Children: []Node{
+			View{TestID: "cell", StyleFunc: func() Style {
+				w := Points(56)
+				if wide.Get() {
+					w = 100
+				}
+				return Style{Width: Pt(w), Height: Pt(24)}
+			}},
+			View{TestID: "next", Style: Style{Width: Pt(40), Height: Pt(20)}},
+		}}
+	})
+	h.commit()
+	wide.Set(true)
+	h.commit()
+	if x := h.find("next").frame.Origin.X; x != 100 {
+		t.Errorf("the cell after a resized fixed cell is at %v, want 100", x)
+	}
+}
+
+func TestAFixedCellWhoseOverflowChangesLaysOutItsParent(t *testing.T) {
+	var tall *Signal[bool]
+	h := newHost(t, Size{Width: 400, Height: 300}, func(cx *Scope) Node {
+		tall = NewSignal(cx, false)
+		return Scroll{TestID: "scroll", Children: []Node{
+			View{TestID: "cell", Style: Style{Width: Pt(100), Height: Pt(50)}, Children: []Node{
+				View{StyleFunc: func() Style {
+					h := Points(20)
+					if tall.Get() {
+						h = 900
+					}
+					return Style{Height: Pt(h)}
+				}},
+			}},
+		}}
+	})
+	h.commit()
+	tall.Set(true)
+	h.commit()
+	if c := h.find("scroll").scroll.content.Height; c != 900 {
+		t.Errorf("the scroll view's content is %v tall, want the overflow's 900", c)
+	}
+}
+
+func TestAModalInsideAFixedViewShows(t *testing.T) {
+	var open *Signal[bool]
+	h := newHost(t, Size{Width: 320, Height: 200}, func(cx *Scope) Node {
+		open = NewSignal(cx, false)
+		// The view is a relayout boundary; the root places the modal.
+		return View{Style: Style{Width: Pt(320), Height: Pt(200), Padding: All(10)}, Children: []Node{
+			Input{Style: Style{Width: Pt(300), Height: Pt(40)}},
+			Show{When: open.Get, Then: func(*Scope) Node {
+				return Modal{TestID: "modal", Style: Style{Background: RGB(0xff0000)}}
+			}},
+		}}
+	})
+	h.commit()
+	open.Set(true)
+	h.commit()
+	if f := h.find("modal").frame; f.Size != (Size{Width: 320, Height: 200}) {
+		t.Errorf("the modal is laid out at %v, want the surface's size", f)
 	}
 }

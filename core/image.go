@@ -28,10 +28,10 @@ func (t *Tree) mountImage(cx *Scope, parent *node, v Image) {
 			src := v.SourceFunc()
 			if !src.Same(n.image.config.Source) {
 				if src.Size != n.image.config.Source.Size {
-					n.markLayout()
+					t.markLayout(n)
 				}
 				n.image.config.Source = src
-				t.changed = true
+				t.mark(n)
 			}
 		})
 	}

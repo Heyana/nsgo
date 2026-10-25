@@ -457,7 +457,8 @@ func (t *testSurface) Screenshot() ([]byte, error) {
 func (t *testSurface) Animating() bool {
 	var busy bool
 	onMainSync(func() {
-		busy = t.s.animator.Ending() || len(t.s.motions) > 0 || len(t.s.ghosts) > 0
+		// Batches waiting for a frame have not shown yet.
+		busy = t.s.animator.Ending() || len(t.s.motions) > 0 || len(t.s.ghosts) > 0 || t.s.held()
 	})
 	return busy
 }

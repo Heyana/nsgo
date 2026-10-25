@@ -54,8 +54,10 @@ func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 	h := float64(v.frame.Size.Height)
 	apple.DrawTopDown(ctx, h, !apple.MsgBool(layer, selContentsAreFlipped), func() {
 		if v.drawing != nil {
-			apple.Play(ctx, v.surface.animator.CanvasOps(v.id, v.drawing), apple.CanvasHost{
+			ops := v.surface.animator.CanvasOps(v.id, v.drawing)
+			apple.Play(ctx, ops, apple.CanvasHost{
 				Ratio: float64(v.surface.env.PixelRatio), Redraw: v.redraw, Owner: v})
+			v.played = append(v.played[:0], ops...)
 			return
 		}
 		box := v.box
@@ -85,6 +87,22 @@ func (v *view) newContent() {
 	layer.Send(selRelease)
 	v.contentLayer = layer
 	drawers[layer] = v
+}
+
+// redrawAnimated draws again what a canvas's animated arguments changed,
+// as on macOS: the area apple.Damaged finds, or all of it.
+func (v *view) redrawAnimated() {
+	if v.contentLayer == 0 || v.drawing == nil || len(v.played) == 0 {
+		v.redraw()
+		return
+	}
+	area, whole := apple.Damaged(v.played, v.surface.animator.CanvasOps(v.id, v.drawing))
+	switch {
+	case whole:
+		v.redraw()
+	case area.Size.Width > 0:
+		v.contentLayer.Send(sel("setNeedsDisplayInRect:"), area)
+	}
 }
 
 // redraw draws v's content again.
