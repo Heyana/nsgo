@@ -154,7 +154,7 @@ func (w *window) ask(a *driver.AlertConfig) int {
 	title, instruction, content := optional(w.title), optional(a.Title), optional(a.Message)
 	var c packed
 	c.u32(0) // the size, set below
-	c.ptr(w.hwnd)
+	c.ptr(w.owner())
 	c.ptr(0) // instance
 	flags := uint32(tdfPositionRelativeToWindow)
 	if cancel >= 0 || a.Cancelable || len(a.Actions) == 0 {
@@ -244,7 +244,7 @@ func (w *window) messageBox(a *driver.AlertConfig, cancel int, destructive bool)
 		}
 		text += a.Message
 	}
-	r, _, _ := messageBoxW.Call(w.hwnd, uintptr(unsafe.Pointer(wide(text))), uintptr(unsafe.Pointer(wide(w.title))), style)
+	r, _, _ := messageBoxW.Call(w.owner(), uintptr(unsafe.Pointer(wide(text))), uintptr(unsafe.Pointer(wide(w.title))), style)
 	if i, ok := answers[r]; ok {
 		return i
 	}

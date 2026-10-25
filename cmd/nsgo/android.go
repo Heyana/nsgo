@@ -26,6 +26,31 @@ const androidComponent = "/dev.oneo.nsgo.NsgoActivity"
 // the same API as the runtime.
 const androidAPI = 28
 
+// buildAndroidBinary builds the app's executable for goarch in tmp and
+// returns it with its ABI's name.
+func buildAndroidBinary(ctx context.Context, p *project, tmp, goarch string) ([]byte, string, error) {
+	abi, err := androidABI(goarch)
+	if err != nil {
+		return nil, "", err
+	}
+	binary := filepath.Join(tmp, "libnsgo.so")
+	env := []string{"GOOS=android", "GOARCH=" + goarch}
+	if goarch == "arm64" {
+		env = append(env, "CGO_ENABLED=0")
+	} else {
+		cc, err := androidClang(goarch)
+		if err != nil {
+			return nil, "", err
+		}
+		env = append(env, "CGO_ENABLED=1", "CC="+cc)
+	}
+	if err := goBuild(ctx, p, binary, env); err != nil {
+		return nil, "", err
+	}
+	app, err := os.ReadFile(binary)
+	return app, abi, err
+}
+
 // buildAndroidAPK writes <dir>/<name>.apk for one architecture. The app is
 // a Go executable the runtime starts, and the archive, manifest and
 // signature are written here rather than by the Android SDK's tools. Go
@@ -37,25 +62,7 @@ func buildAndroidAPK(ctx context.Context, p *project, dir, goarch string) (strin
 		return "", err
 	}
 	defer os.RemoveAll(tmp)
-	abi, err := androidABI(goarch)
-	if err != nil {
-		return "", err
-	}
-	binary := filepath.Join(tmp, "libnsgo.so")
-	env := []string{"GOOS=android", "GOARCH=" + goarch}
-	if goarch == "arm64" {
-		env = append(env, "CGO_ENABLED=0")
-	} else {
-		cc, err := androidClang(goarch)
-		if err != nil {
-			return "", err
-		}
-		env = append(env, "CGO_ENABLED=1", "CC="+cc)
-	}
-	if err := goBuild(ctx, p, binary, env); err != nil {
-		return "", err
-	}
-	app, err := os.ReadFile(binary)
+	app, abi, err := buildAndroidBinary(ctx, p, tmp, goarch)
 	if err != nil {
 		return "", err
 	}

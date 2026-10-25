@@ -4,13 +4,17 @@
 
 ## Dev loop
 
-`nsgo dev` (`dev.go`) starts a dev server on `-port` (8080), or the next free port, listening on every interface. Dev builds take the `nsgodev` tag, which links `nsgo`'s dev client (`dev_client.go`): it follows the server's `/_nsgo/events` and shows a failed build's output in an overlay over the running app, as it shows the app's own render failures; Command or Control+R posts `/_nsgo/reload`. The server finds the app through `NSGO_DEV_SERVER`, which the simulator gets as `SIMCTL_CHILD_`; Android and iPhones, which pass no environment, get it with `-ldflags -X`, Android at `127.0.0.1` through `adb reverse`, removed when the run ends, an iPhone at the Mac's LAN address.
+`nsgo dev` (`dev.go`) starts a dev server on `-port` (8080), or the next free port, listening on every interface. Dev builds take the `nsgodev` tag, which links `nsgo`'s dev client (`dev_client.go`): it follows the server's `/_nsgo/events` and shows a failed build's output in an overlay over the running app, as it shows the app's own render failures; Command or Control+R posts `/_nsgo/reload`.
+
+The server finds the app through `NSGO_DEV_SERVER`, which the simulator gets as `SIMCTL_CHILD_`; Android and iPhones, which pass no environment, get it with `-ldflags -X`, Android at `127.0.0.1` through `adb reverse`, removed when the run ends, an iPhone at the Mac's LAN address.
 
 The web target is served from the same server; its page shows the overlay itself and loads each build. `r` and Return in the terminal build again too. Without hot reload, a run ends with the app; a failed first build ends it. `-release` builds as `nsgo build` does, keeping the monitor, for measuring. `-device` picks a simulator by name or UDID, booting it, or an adb serial or an emulator's AVD name.
 
 ## Tests
 
-`nsgo test` (`test.go`) runs `go test -json` and prints a line per test, a failure's output under it, a tally, and with `-junit` a JUnit report, a suite per package. `-run` filters; `-trace` sets `NSGO_TEST_TRACE`, under which `nsgotest` prints each batch under its step with its items and the commit's time. `-target` runs the tests on a platform, a process per test ([testing](testing.md#on-a-platform)): macOS, Windows and Linux on this machine, the web in a headless Chrome, Chromium or Edge it finds (or `NSGO_BROWSER`) over the DevTools protocol (`cdp.go`, on `x/net/websocket`), the simulator through `simctl launch`, and Android through `am start` with the test in an intent extra and its output read back from the device's log.
+`nsgo test` (`test.go`) runs `go test -json` and prints a line per test, a failure's output under it, a tally, and with `-junit` a JUnit report, a suite per package. `-run` filters; `-trace` sets `NSGO_TEST_TRACE`, under which `nsgotest` prints each batch under its step with its items and the commit's time.
+
+`-target` runs the tests on a platform, a process per test ([testing](testing.md#on-a-platform)): macOS, Windows and Linux on this machine, the web in a headless Chrome, Chromium or Edge it finds (or `NSGO_BROWSER`) over the DevTools protocol (`cdp.go`, on `x/net/websocket`), the simulator through `simctl launch`, and Android through `am start` with the test in an intent extra and its output read back from the device's log.
 
 ## Packages
 
@@ -18,6 +22,7 @@ The web target is served from the same server; its page shows the overlay itself
 
 - macOS: `<name>.app`, signed ad hoc. iOS: `<name>.app` and `<name>.ipa`, signed with `sign.profile`, else unsigned. Android: `<name>.apk`, signed with `sign.keystore`, else the project's debug key.
 - Windows and Linux: the executable with `resources/`, and the same as a `.zip` or `.tar.gz` beside the directory.
+- With `-embed`, for apps of their own to embed ([embedding](embedding.md)): iOS's `<module>.xcframework` with `<name>Resources`, Android's `<name>.aar`, and no package for other targets.
 - Web: `index.html`, `manifest.webmanifest` and every other file named by its content (`app.<10 hex>.wasm`, `resources.<hash>/`, which the page tells the runtime as `nsgoResources`), so hosts cache them for good.
 
 `resources/` ships in each package's resource root, which `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` and font paths against. App icons are drawn in Go; `actool` compiles Apple's `.icon` files, and a Windows icon links from a `.syso` in the app's package directory, the only place Go links one from.

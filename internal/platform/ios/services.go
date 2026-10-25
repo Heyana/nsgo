@@ -159,7 +159,7 @@ func (s *surface) pickImages(r driver.PickRequest, id uint32) {
 	delegate := objc.ID(classPicker).Send(selNew)
 	pickerRequests[delegate] = pickRequest{r, id}
 	picker.Send(sel("setDelegate:"), delegate)
-	topController().Send(sel("presentViewController:animated:completion:"), picker, true, objc.ID(0))
+	s.topController().Send(sel("presentViewController:animated:completion:"), picker, true, objc.ID(0))
 }
 
 // picked loads the data of the picker's results and answers with them

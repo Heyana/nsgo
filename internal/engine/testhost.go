@@ -39,6 +39,7 @@ func (o *Options) UseTest(t testhost.Options, pin *TestPin) {
 	pin.Set(t.Environment)
 	o.Pin = pin.apply
 	o.Storage = t.Storage
+	o.Host.Channel = t.Host
 	dir, err := os.MkdirTemp("", "nsgo-test-")
 	if err == nil {
 		o.DataDir, o.CacheDir = dir+"/data", dir+"/cache"

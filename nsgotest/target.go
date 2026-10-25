@@ -90,7 +90,7 @@ func (a *App) startTarget(app func(cx *core.Scope) core.Node) {
 	a.t.Cleanup(a.root.Dispose)
 	a.anim = driver.NewAnimator(func(driver.Event) {})
 	s, err := h.Open(app, testhost.Options{
-		Size: a.size, Environment: a.env, Storage: a.store,
+		Size: a.size, Environment: a.env, Storage: a.store, Host: a.host,
 		Observe: func(b *driver.MountBatch) {
 			t.mu.Lock()
 			t.batches = append(t.batches, b)

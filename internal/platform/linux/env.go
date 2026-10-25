@@ -59,7 +59,7 @@ func (w *window) environment() driver.Environment {
 		OSVersion:    osVersion(),
 		Idiom:        driver.IdiomDesktop,
 		TitleBar:     w.titleBarArea(),
-		Maximized:    gtkWindowIsMaximized(w.win) != 0,
+		Maximized:    w.win != 0 && gtkWindowIsMaximized(w.win) != 0,
 	}
 }
 

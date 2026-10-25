@@ -33,7 +33,9 @@ func registerTouches() {
 	report := func(phase driver.GesturePhase) func(objc.ID, objc.SEL, objc.ID, objc.ID) {
 		return func(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 			apple.Super(self, cmd, touches, event)
-			app.touched(phase, touches)
+			if v := views[self.Send(sel("view"))]; v != nil {
+				v.surface.touched(phase, touches)
+			}
 		}
 	}
 	no := func(objc.ID, objc.SEL, objc.ID) bool { return false }

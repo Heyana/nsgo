@@ -40,7 +40,7 @@ func Run(app App, opts ...Option) {
 	run(devApp(app), o)
 }
 
-// Option configures Run.
+// Option configures Run and NewView.
 type Option func(*options)
 
 type options struct {
@@ -55,6 +55,12 @@ type options struct {
 	appearance core.Appearance
 	// keepAlive keeps the app running when its window closes (macOS).
 	keepAlive bool
+	// What NewView takes: the parent window, the data directory, the
+	// error handler and the host channel.
+	parent  uintptr
+	dataDir string
+	onError func(error)
+	host    *core.Host
 }
 
 // Appearance starts the app in appearance whatever the system's, its

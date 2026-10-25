@@ -113,16 +113,23 @@ func WithoutAnimation(fn func()) {
 	tx.Send(sel("commit"))
 }
 
-// Observe calls fn on the main thread each time center posts name. The
-// observation lasts as long as the process.
-func Observe(center, name objc.ID, fn func(note objc.ID)) {
+// Observe calls fn on the main thread each time center posts name, until
+// stop is called.
+func Observe(center, name objc.ID, fn func(note objc.ID)) (stop func()) {
 	if center == 0 || name == 0 {
-		return
+		return func() {}
 	}
 	block := objc.NewBlock(func(_ objc.Block, note objc.ID) { fn(note) })
 	queue := objc.ID(objc.GetClass("NSOperationQueue")).Send(selMainQueue)
-	center.Send(selAddObserver, name, objc.ID(0), queue, block)
+	token := center.Send(selAddObserver, name, objc.ID(0), queue, block).Send(sel("retain"))
 	block.Release()
+	return func() {
+		if token != 0 {
+			center.Send(sel("removeObserver:"), token)
+			token.Send(sel("release"))
+			token = 0
+		}
+	}
 }
 
 // Global reads the global object, such as an NSString constant, that

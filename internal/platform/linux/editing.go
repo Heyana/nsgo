@@ -515,7 +515,9 @@ func (w *window) focusEntry(v *view) {
 		}
 		return
 	}
-	gtkWindowSetFocus(w.win, 0)
+	if top := w.toplevel(); top != 0 {
+		gtkWindowSetFocus(top, 0)
+	}
 }
 
 // editorOf returns the live input an editor's signal came from.

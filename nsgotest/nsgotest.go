@@ -69,6 +69,12 @@ func Environment(env driver.Environment) Option {
 	return func(a *App) { a.env = &env }
 }
 
+// Host runs the app with h as its channel to an embedding host, so a test
+// sends it events and answers its calls as the host would.
+func Host(h *core.Host) Option {
+	return func(a *App) { a.host = h }
+}
+
 // ManualFrames keeps steps from taking display frames: the animations a
 // step starts move only as Advance moves the clock, so a test can look at
 // them on the way.
@@ -171,6 +177,8 @@ type App struct {
 	target *target
 	// manualFrames keeps steps from waiting for animations.
 	manualFrames bool
+	// host is the embedding host's channel, nil without one.
+	host *core.Host
 }
 
 // Start runs app and settles it; the test's cleanup disposes it. Under
@@ -213,6 +221,7 @@ func Start(t testing.TB, app func(cx *core.Scope) core.Node, opts ...Option) *Ap
 			a.mu.Unlock()
 		},
 		Storage: a.store,
+		Host:    a.host,
 	})
 	t.Cleanup(a.root.Dispose)
 	a.start = a.Clock.Now()

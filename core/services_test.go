@@ -2,7 +2,9 @@ package core
 
 import (
 	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/oneo-me/nsgo/internal/driver"
 )
@@ -115,13 +117,32 @@ func TestOpenURL(t *testing.T) {
 	}
 
 	// An embedding host's handler takes URLs first.
-	root := NewRoot(RootOptions{OpenURL: func(u string) bool { hosted = append(hosted, u); return u == "lb://a" }})
+	host := NewHost()
+	host.HandleOpenURL(func(u string, answer func(bool)) {
+		hosted = append(hosted, u)
+		go answer(u == "lb://a")
+	})
+	var posts []func()
+	var mu sync.Mutex
+	root := NewRoot(RootOptions{Host: host, Post: func(fn func()) { mu.Lock(); posts = append(posts, fn); mu.Unlock() }})
 	tree := NewTree(root, ApproxTextEngine{})
 	tree.Mount(func(c *Scope) Node { cx = c; return View{} })
 	tree.Commit()
 	got = nil
 	cx.OpenURL("lb://a", func(ok bool) { got = append(got, ok) })
 	cx.OpenURL("https://b.example", func(ok bool) { got = append(got, ok) })
+	for deadline := time.Now().Add(time.Second); ; {
+		mu.Lock()
+		n := len(posts)
+		mu.Unlock()
+		if n == 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	for _, fn := range posts {
+		fn()
+	}
 	b := tree.Commit()
 	if !slices.Equal(hosted, []string{"lb://a", "https://b.example"}) || !slices.Equal(got, []bool{true}) ||
 		command(b, driver.ItemOpenURL).Value != "https://b.example" {

@@ -56,6 +56,8 @@ type Options struct {
 	// KeepAlive keeps the app running when its window closes: the window
 	// hides, and the Dock shows it again.
 	KeepAlive bool
+	// Host is what an embedding host gives the view (NewView).
+	Host engine.HostOptions
 }
 
 // longPressDelay is how long a press is held before it is a long press.
@@ -145,12 +147,28 @@ type surface struct {
 	// follow animated values.
 	stickyBound map[*view]bool
 	native      objc.ID
-	window      objc.ID
-	engine      *engine.Engine
-	batches     queue.Batches
-	views       []*view            // index is NodeID
-	movers      map[*view]struct{} // views following mouse moves
-	root        driver.NodeID      // the root view's, which the batches name
+	// window is the window native is in: its own, or for an embedded
+	// surface the host's, 0 while it is in none.
+	window objc.ID
+	// embedded is set for a host's view (NewView): the host owns the
+	// window, its chrome and the menu bar.
+	embedded bool
+	// The app and how an embedded surface starts it once it is in a
+	// window; observed the window its observations follow.
+	app      engine.App
+	opts     Options
+	observed objc.ID
+	// stops end the surface's observations as it closes.
+	stops  []func()
+	closed bool
+	// appearance is the one the app forces, host the one an embedding
+	// host sets, which an embedded surface shows in.
+	appearance, host driver.Appearance
+	engine           *engine.Engine
+	batches          queue.Batches
+	views            []*view            // index is NodeID
+	movers           map[*view]struct{} // views following mouse moves
+	root             driver.NodeID      // the root view's, which the batches name
 	// mouse is finger 0 of the views' touches; touched is the last
 	// NSEvent reported, which AppKit passes up the views.
 	mouse   finger.Mouse
@@ -205,8 +223,13 @@ type surface struct {
 	chrome
 }
 
-// active is the surface observers report to.
-var active *surface
+// surfaces are the surfaces showing; runner is the one Run shows, which
+// the Dock shows again and quitting closes. Only the main thread uses
+// them.
+var (
+	surfaces = map[*surface]bool{}
+	runner   *surface
+)
 
 // views maps native objects (views, fields, clip views) to their Go side.
 // Only the main thread uses it.
@@ -256,7 +279,11 @@ var (
 	classMaterial                       objc.Class
 )
 
+// loadAppKit loads AppKit and registers NSGo's classes, once.
 func loadAppKit() {
+	if classView != 0 {
+		return
+	}
 	if _, err := purego.Dlopen("/System/Library/Frameworks/AppKit.framework/AppKit", purego.RTLD_NOW|purego.RTLD_GLOBAL); err != nil {
 		panic(err)
 	}
@@ -303,6 +330,7 @@ func loadAppKit() {
 	}
 	classSurface = register("NsgoSurface", nsView, nil, append(common,
 		objc.MethodDef{Cmd: sel("setFrameSize:"), Fn: surfaceSetFrameSize},
+		objc.MethodDef{Cmd: sel("viewDidMoveToWindow"), Fn: surfaceMoved},
 		objc.MethodDef{Cmd: selApply, Fn: surfaceApply},
 		objc.MethodDef{Cmd: sel("viewDidChangeEffectiveAppearance"), Fn: refresh},
 		objc.MethodDef{Cmd: sel("viewDidChangeBackingProperties"), Fn: refresh},
@@ -340,7 +368,11 @@ func loadAppKit() {
 	classObserver = register("NsgoObserver", objc.GetClass("NSObject"), nil, []objc.MethodDef{{
 		Cmd: sel("observeValueForKeyPath:ofObject:change:context:"),
 		Fn: func(self objc.ID, _ objc.SEL, path, object, change objc.ID, ctx uintptr) {
-			apple.OnMain(func() { active.refresh() })
+			apple.OnMain(func() {
+				for s := range surfaces {
+					s.refresh()
+				}
+			})
 		},
 	}})
 	// A scroll view shows its scroll bars while the pointer is over it,
@@ -377,11 +409,7 @@ var (
 func makeBackingLayer(self objc.ID, cmd objc.SEL) objc.ID {
 	layer := apple.SendSuper[objc.ID](self, cmd)
 	if classLayer == 0 {
-		libobjc, err := purego.Dlopen("/usr/lib/libobjc.A.dylib", purego.RTLD_NOW|purego.RTLD_GLOBAL)
-		if err != nil {
-			panic(err)
-		}
-		purego.RegisterLibFunc(&objectSetClass, libobjc, "object_setClass")
+		loadSetClass()
 		layerBase = layer.Class()
 		classLayer = register("NsgoLayer", layerBase, nil, apple.HeldTransformMethods())
 	}
@@ -389,6 +417,19 @@ func makeBackingLayer(self objc.ID, cmd objc.SEL) objc.ID {
 		objectSetClass(layer, classLayer)
 	}
 	return layer
+}
+
+// loadSetClass loads object_setClass, which gives AppKit's objects
+// subclasses of NSGo's.
+func loadSetClass() {
+	if objectSetClass != nil {
+		return
+	}
+	libobjc, err := purego.Dlopen("/usr/lib/libobjc.A.dylib", purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	if err != nil {
+		panic(err)
+	}
+	purego.RegisterLibFunc(&objectSetClass, libobjc, "object_setClass")
 }
 
 func register(name string, super objc.Class, protocols []*objc.Protocol, methods []objc.MethodDef) objc.Class {
@@ -402,6 +443,7 @@ func register(name string, super objc.Class, protocols []*objc.Protocol, methods
 func Run(app engine.App, opts Options) {
 	nsApp := startApp(opts)
 	s := openWindow(app, opts, nil)
+	runner = s
 	// Activate once the run loop runs: a request before it can be lost,
 	// and launch activation settles after the app has finished starting.
 	apple.OnMain(func() {
@@ -409,10 +451,72 @@ func Run(app engine.App, opts Options) {
 		s.window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
 	})
 	nsApp.Send(sel("run"))
-	s.stopTicking()
-	s.engine.Close()
+	s.close()
+	runner = nil
 	engine.SyncStorage()
 	nsApp.Send(sel("setDelegate:"), objc.ID(0))
+}
+
+// View is an app in an NSView of an embedding host's window, which the
+// host's own event loop runs (NewView).
+type View struct{ s *surface }
+
+// NewView makes an NSView showing app, for a host that runs AppKit's
+// loop itself. Its engine starts once the view is in a window, so
+// settings made before that are in the app's first frame. Call it on the
+// main thread; several views may show at once, in one window or several.
+func NewView(app engine.App, opts Options) *View {
+	loadAppKit()
+	apple.RegisterFonts(opts.Fonts)
+	if opts.Host.Settings == nil {
+		opts.Host.Settings = &engine.HostSettings{}
+	}
+	s := newSurface(opts, true)
+	s.app, s.opts = app, opts
+	return &View{s}
+}
+
+// Handle returns the NSView, which the host adds to its views and sizes.
+func (v *View) Handle() uintptr { return uintptr(v.s.native) }
+
+// SetHostEnvironment sets what the host sets over the system's
+// environment: its locale, text size and appearance, which AppKit's own
+// chrome in the view takes too.
+func (v *View) SetHostEnvironment(env engine.HostEnvironment) {
+	v.s.opts.Host.Settings.SetEnvironment(env)
+	v.s.host = env.Appearance
+	v.s.applyAppearance()
+}
+
+// SetTokens sets the values the host themes the app with.
+func (v *View) SetTokens(t engine.Tokens) { v.s.opts.Host.Settings.SetTokens(t) }
+
+// Close stops the app and frees the view, which the host removes from
+// its window.
+func (v *View) Close() {
+	v.s.close()
+	delete(views, v.s.native)
+	v.s.native.Send(selRemoveFromSuperview)
+	v.s.native.Send(selRelease)
+}
+
+// surfaceMoved starts an embedded surface's app once the view is in a
+// window, and follows the window it moves to.
+func surfaceMoved(self objc.ID, cmd objc.SEL) {
+	apple.Super(self, cmd)
+	v := views[self]
+	if v == nil || v.surface == nil || !v.surface.embedded || v.surface.closed {
+		return
+	}
+	s := v.surface
+	s.window = self.Send(selWindow)
+	if s.window == 0 {
+		return
+	}
+	if s.engine == nil {
+		s.start(s.app, s.opts, nil)
+	}
+	s.refresh()
 }
 
 // startApp makes the process a regular app with NSGo's menu and
@@ -441,8 +545,8 @@ func startApp(opts Options) objc.ID {
 		// alive.
 		Cmd: sel("applicationShouldHandleReopen:hasVisibleWindows:"),
 		Fn: func(self objc.ID, _ objc.SEL, app objc.ID, visible bool) bool {
-			if active != nil && !finished {
-				active.orderFront()
+			if runner != nil && !finished {
+				runner.orderFront()
 			}
 			return false
 		},
@@ -491,27 +595,50 @@ func openWindow(app engine.App, opts Options, test *testWindow) *surface {
 	// Tab goes through the fields and the views that take presses.
 	window.Send(sel("setAutorecalculatesKeyViewLoop:"), true)
 
-	s := &surface{window: window, epoch: time.Now(), motions: map[*view]*motion{}, movers: map[*view]struct{}{},
-		components: opts.Components}
-	s.defaultMenu, s.appName = defaultMenu, opts.Title
-	active = s
+	s := newSurface(opts, false)
+	s.window = window
 	s.setWindowDelegate()
+	window.Send(sel("setContentView:"), s.native)
+	s.applyMaterial(opts.Material)
+	s.start(app, opts, test)
+	window.Send(sel("center"))
+	if test == nil {
+		window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
+	}
+	return s
+}
+
+// newSurface makes a surface's view at opts' size; embedded is set for a
+// host's view.
+func newSurface(opts Options, embedded bool) *surface {
+	s := &surface{epoch: time.Now(), motions: map[*view]*motion{}, movers: map[*view]struct{}{},
+		components: opts.Components, embedded: embedded, appearance: opts.Appearance}
+	s.defaultMenu, s.appName = defaultMenu, opts.Title
 	s.native = objc.ID(classSurface).Send(selAlloc).Send(sel("initWithFrame:"),
 		apple.Rect(0, 0, float64(opts.Width), float64(opts.Height)))
 	s.native.Send(selSetWantsLayer, true)
 	views[s.native] = &view{surface: s}
-	window.Send(sel("setContentView:"), s.native)
-	s.applyMaterial(opts.Material)
 	s.animator = driver.NewAnimator(func(e driver.Event) { s.engine.Dispatch(e) })
 	s.acceptFiles()
+	surfaces[s] = true
+	if embedded {
+		s.applyAppearance()
+	}
+	return s
+}
+
+// start starts the surface's engine at its view's size; test, when set,
+// is what a test host opens it with.
+func (s *surface) start(app engine.App, opts Options, test *testWindow) {
 	s.env = s.environment()
 	var monitor *engine.PerfMonitor
 	if opts.Perf {
 		monitor = engine.NewPerfMonitor()
 		s.perf = monitor
 	}
-	eopts := engine.Options{Size: driver.Size{Width: opts.Width, Height: opts.Height}, Environment: s.env, Perf: monitor,
-		Thread: apple.RaiseThread, Appearance: opts.Appearance}
+	size := objc.Send[apple.CGRect](s.native, selBounds).Size
+	eopts := engine.Options{Size: driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)},
+		Environment: s.env, Perf: monitor, Thread: apple.RaiseThread, Appearance: opts.Appearance, Host: opts.Host}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
 	if test != nil {
 		eopts.UseTest(test.options, &test.pin)
@@ -524,11 +651,38 @@ func openWindow(app engine.App, opts Options, test *testWindow) *surface {
 		s.hud = newHud(s, monitor)
 		s.startTicking()
 	}
-	window.Send(sel("center"))
-	if test == nil {
-		window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
+}
+
+// close stops the surface's frame clock, its observations and its
+// engine, then destroys the native components still showing.
+func (s *surface) close() {
+	if s.closed {
+		return
 	}
-	return s
+	s.closed = true
+	delete(surfaces, s)
+	s.stopTicking()
+	for _, stop := range s.stops {
+		stop()
+	}
+	s.stops = nil
+	if s.engine != nil {
+		s.engine.Close()
+	}
+	for _, v := range s.views {
+		if v != nil && v.component != nil {
+			v.component.Close()
+			v.component = nil
+		}
+	}
+	s.closePopup()
+	// Its native objects go with it, and their addresses come back.
+	for id, v := range views {
+		if v.surface == s && id != s.native {
+			delete(views, id)
+		}
+	}
+	delete(menuTargets, s.menuTarget)
 }
 
 // keepAlive hides the window instead of closing it; finished is set once
@@ -542,7 +696,7 @@ func finish() {
 		return
 	}
 	finished = true
-	if s := active; s != nil && s.window != 0 {
+	if s := runner; s != nil && s.window != 0 {
 		s.closePopup()
 		// Close without asking the delegate again.
 		s.window.Send(selSetDelegate, objc.ID(0))
@@ -611,15 +765,27 @@ func (s *surface) environment() driver.Environment {
 		ReduceMotion:   objc.Send[bool](ws, sel("accessibilityDisplayShouldReduceMotion")),
 		ScreenReader:   objc.Send[bool](ws, sel("isVoiceOverEnabled")),
 		RTL:            rtl,
-		PixelRatio:     float32(objc.Send[float64](s.window, sel("backingScaleFactor"))),
+		PixelRatio:     s.backingScale(),
 		Locale:         locale,
 		OS:             driver.OSMacOS,
 		Idiom:          driver.IdiomDesktop,
 		OSVersion:      osVersion(),
 		TitleBar:       s.titleBarArea(),
 		WindowMaterial: s.material,
-		Maximized:      objc.Send[bool](s.window, sel("isZoomed")),
+		Maximized:      !s.embedded && objc.Send[bool](s.window, sel("isZoomed")),
 	}
+}
+
+// backingScale is the window's pixels per point, or the main screen's
+// while the surface is in none.
+func (s *surface) backingScale() float32 {
+	if s.window != 0 {
+		return float32(objc.Send[float64](s.window, sel("backingScaleFactor")))
+	}
+	if screen := objc.ID(objc.GetClass("NSScreen")).Send(sel("mainScreen")); screen != 0 {
+		return float32(objc.Send[float64](screen, sel("backingScaleFactor")))
+	}
+	return 2
 }
 
 // refresh lays the title bar out again and reports the environment to the
@@ -643,22 +809,11 @@ func (s *surface) refresh() {
 // events come from: accessibility settings, the locale, and the app's
 // key and mouse events.
 func (s *surface) observe() {
-	const appKit = "/System/Library/Frameworks/AppKit.framework/AppKit"
-	const foundation = "/System/Library/Frameworks/Foundation.framework/Foundation"
-	ws := objc.ID(objc.GetClass("NSWorkspace")).Send(sel("sharedWorkspace"))
-	refresh := func(objc.ID) { s.refresh() }
-	apple.Observe(ws.Send(sel("notificationCenter")),
-		apple.Global(appKit, "NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification"), refresh)
+	observeApp()
 	center := objc.ID(objc.GetClass("NSNotificationCenter")).Send(sel("defaultCenter"))
-	apple.Observe(center, apple.Global(foundation, "NSCurrentLocaleDidChangeNotification"), refresh)
-	apple.Observe(center, apple.Global(appKit, "NSViewBoundsDidChangeNotification"), clipScrolled)
-	apple.Observe(center, apple.Global(appKit, "NSScrollViewWillStartLiveScrollNotification"),
-		func(note objc.ID) { liveScroll(note, true) })
-	apple.Observe(center, apple.Global(appKit, "NSScrollViewDidEndLiveScrollNotification"),
-		func(note objc.ID) { liveScroll(note, false) })
 	for _, name := range []string{"NSWindowDidResizeNotification", "NSWindowDidEnterFullScreenNotification",
 		"NSWindowDidExitFullScreenNotification"} {
-		apple.Observe(center, apple.Global(appKit, name), func(note objc.ID) {
+		s.stops = append(s.stops, apple.Observe(center, apple.Global(appKitPath, name), func(note objc.ID) {
 			if note.Send(sel("object")) != s.window {
 				return
 			}
@@ -668,19 +823,56 @@ func (s *surface) observe() {
 				// after the notification.
 				apple.OnMain(func() { s.layoutTrafficLights(); s.refresh() })
 			}
-		})
+		}))
 	}
-	observer := objc.ID(classObserver).Send(selNew)
-	ws.Send(sel("addObserver:forKeyPath:options:context:"), observer, apple.NSString("voiceOverEnabled"), uint(0), uintptr(0))
-	// The window's appearance lays its title bar out again too.
-	s.window.Send(sel("addObserver:forKeyPath:options:context:"), observer,
-		apple.NSString("effectiveAppearance"), uint(0), uintptr(0))
+	if !s.embedded {
+		// The window's appearance lays its title bar out again too.
+		w := s.window
+		key := apple.NSString("effectiveAppearance")
+		w.Send(sel("addObserver:forKeyPath:options:context:"), appObserver, key, uint(0), uintptr(0))
+		s.stops = append(s.stops, func() { w.Send(sel("removeObserver:forKeyPath:"), appObserver, key) })
+	}
 
 	const keyDown, leftDown, leftUp, leftDragged, rightDown, otherDown = 1 << 10, 1 << 1, 1 << 2, 1 << 6, 1 << 3, 1 << 25
 	handler := objc.NewBlock(func(_ objc.Block, event objc.ID) objc.ID { return s.filter(event) })
-	objc.ID(objc.GetClass("NSEvent")).Send(sel("addLocalMonitorForEventsMatchingMask:handler:"),
-		uint64(keyDown|leftDown|leftUp|leftDragged|rightDown|otherDown), handler)
+	nsEvent := objc.ID(objc.GetClass("NSEvent"))
+	monitor := nsEvent.Send(sel("addLocalMonitorForEventsMatchingMask:handler:"),
+		uint64(keyDown|leftDown|leftUp|leftDragged|rightDown|otherDown), handler).Send(sel("retain"))
 	handler.Release()
+	s.stops = append(s.stops, func() {
+		nsEvent.Send(sel("removeMonitor:"), monitor)
+		monitor.Send(selRelease)
+	})
+}
+
+// appObserver hears the key-value changes every surface follows.
+var appObserver objc.ID
+
+// observeApp watches, once for every surface, what the environment
+// comes from, accessibility settings and the locale, and how the scroll
+// views move.
+func observeApp() {
+	if appObserver != 0 {
+		return
+	}
+	const foundation = "/System/Library/Frameworks/Foundation.framework/Foundation"
+	refresh := func(objc.ID) {
+		for s := range surfaces {
+			s.refresh()
+		}
+	}
+	ws := objc.ID(objc.GetClass("NSWorkspace")).Send(sel("sharedWorkspace"))
+	apple.Observe(ws.Send(sel("notificationCenter")),
+		apple.Global(appKitPath, "NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification"), refresh)
+	center := objc.ID(objc.GetClass("NSNotificationCenter")).Send(sel("defaultCenter"))
+	apple.Observe(center, apple.Global(foundation, "NSCurrentLocaleDidChangeNotification"), refresh)
+	apple.Observe(center, apple.Global(appKitPath, "NSViewBoundsDidChangeNotification"), clipScrolled)
+	apple.Observe(center, apple.Global(appKitPath, "NSScrollViewWillStartLiveScrollNotification"),
+		func(note objc.ID) { liveScroll(note, true) })
+	apple.Observe(center, apple.Global(appKitPath, "NSScrollViewDidEndLiveScrollNotification"),
+		func(note objc.ID) { liveScroll(note, false) })
+	appObserver = objc.ID(classObserver).Send(selNew)
+	ws.Send(sel("addObserver:forKeyPath:options:context:"), appObserver, apple.NSString("voiceOverEnabled"), uint(0), uintptr(0))
 }
 
 // filter sees the app's key and mouse events before their views do, and
@@ -702,12 +894,15 @@ func (s *surface) filter(event objc.ID) objc.ID {
 }
 
 func (s *surface) filterEvent(event objc.ID) objc.ID {
-	if event.Send(selWindow) != s.window {
+	if s.window == 0 || event.Send(selWindow) != s.window || s.engine == nil {
 		return event
 	}
 	const typeLeftDown, typeLeftUp, typeRightDown, typeLeftDragged, typeKeyDown, typeOtherDown = 1, 2, 3, 6, 10, 25
 	switch objc.Send[uint](event, sel("type")) {
 	case typeKeyDown:
+		if !s.hasKeys() {
+			break
+		}
 		if binding, consumed := s.binding(event); consumed {
 			if binding != "" {
 				s.engine.Dispatch(driver.Event{Kind: driver.EventKey, Text: binding})
@@ -735,12 +930,35 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 		s.pressOutside(event)
 	case typeOtherDown:
 		const backButton = 3
-		if objc.Send[int](event, sel("buttonNumber")) == backButton {
+		if objc.Send[int](event, sel("buttonNumber")) == backButton && s.under(event) {
 			s.engine.Dispatch(driver.Event{Kind: driver.EventBack})
 			return 0
 		}
 	}
 	return event
+}
+
+// hasKeys reports whether the window's keys are the surface's: the
+// keyboard focus is in its view, or nothing has it in a window of its
+// own.
+func (s *surface) hasKeys() bool {
+	first := s.window.Send(sel("firstResponder"))
+	if first == 0 || first == s.window {
+		return !s.embedded
+	}
+	return objc.Send[bool](first, sel("isKindOfClass:"), objc.GetClass("NSView")) &&
+		objc.Send[bool](first, sel("isDescendantOf:"), s.native)
+}
+
+// under reports whether a mouse event is over the surface's view.
+func (s *surface) under(event objc.ID) bool {
+	if !s.embedded {
+		return true
+	}
+	loc := objc.Send[apple.CGPoint](event, selLocationInWindow)
+	p := objc.Send[apple.CGPoint](s.native, selConvertPoint, loc, objc.ID(0))
+	b := objc.Send[apple.CGRect](s.native, selBounds)
+	return p.X >= 0 && p.Y >= 0 && p.X < b.Size.Width && p.Y < b.Size.Height
 }
 
 // AppKit key codes of the keys core.NormalizeKey names.
@@ -963,7 +1181,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.alert(it.Alert)
 			continue
 		case driver.ItemDismissKeyboard:
-			s.window.Send(selMakeFirstResponer, objc.ID(0))
+			if s.hasKeys() {
+				s.window.Send(selMakeFirstResponer, objc.ID(0))
+			}
 			continue
 		case driver.ItemSetClipboard:
 			pb := objc.ID(objc.GetClass("NSPasteboard")).Send(sel("generalPasteboard"))
@@ -988,10 +1208,13 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.popupMenu(it.Menu, it.Point, it.Count)
 			continue
 		case driver.ItemAppearance:
-			setAppearance(it.Appearance)
+			s.appearance = it.Appearance
+			s.applyAppearance()
 			continue
 		case driver.ItemQuit:
-			apple.OnMain(finish)
+			if !s.embedded {
+				apple.OnMain(finish)
+			}
 			continue
 		case driver.ItemToast:
 			continue
@@ -1004,15 +1227,11 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemKeymap:
 			s.keys = it.Keys
 			continue
-		case driver.ItemTitle:
-			s.window.Send(sel("setTitle:"), apple.NSString(it.Value))
-			s.layoutTrafficLights()
-			continue
-		case driver.ItemWindow:
-			s.command(it.Window)
-			continue
-		case driver.ItemMenu:
-			s.setMenu(it.Menu)
+		case driver.ItemTitle, driver.ItemWindow, driver.ItemMenu:
+			// An embedding host owns its window and menu bar.
+			if !s.embedded {
+				s.chromeItem(it)
+			}
 			continue
 		case driver.ItemStatusBar, driver.ItemBackUnhandled:
 			continue

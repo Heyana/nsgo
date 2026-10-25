@@ -172,8 +172,46 @@ public class NsgoView extends FrameLayout {
     // node shown above the keyboard.
     private Node focusedInput, accessoryShown;
 
+    /** The channel to the embedding app, and its settings over the system's. */
+    private final Host host = new Host(this);
+    private java.util.Locale hostLocale;
+    private float hostFontScale;
+    private int hostAppearance;
+    private File storage;
+
+    /** The appearances setAppearance takes. */
+    public static final int APPEARANCE_SYSTEM = 0, APPEARANCE_LIGHT = 1, APPEARANCE_DARK = 2;
+
+    /** Answers the app's calls of a name (core.Scope.CallHost), on the UI thread. */
+    public interface HostHandler {
+        /** Answers data, as maps, lists and plain values, with reply: then or later, from any thread. */
+        void call(Object data, HostReply reply);
+    }
+
+    /** The one answer to a call; a post's goes nowhere. */
+    public interface HostReply {
+        void resolve(Object result);
+
+        void reject(String error);
+    }
+
+    /** Sees the URLs the app opens before the system, on the UI thread: true takes one. */
+    public interface OpenUrlHandler {
+        boolean openUrl(String url);
+    }
+
+    /** Hears each failure the app does not catch, on the UI thread. */
+    public interface ErrorListener {
+        void onError(String message);
+    }
+
     public NsgoView(Context context) {
-        super(context);
+        this(context, null);
+    }
+
+    /** The constructor layouts inflate. */
+    public NsgoView(Context context, android.util.AttributeSet attrs) {
+        super(context, attrs);
         density = context.getResources().getDisplayMetrics().density;
         ime = context.getSystemService(InputMethodManager.class);
         accessibility = context.getSystemService(AccessibilityManager.class);
@@ -238,12 +276,105 @@ public class NsgoView extends FrameLayout {
         if (encoded != null && debuggable) test = encoded;
     }
 
+    /**
+     * Sets the launch parameters the app reads (core.Scope.HostParams), as
+     * maps, lists and plain values; before the app starts, as the view
+     * first gets a size.
+     */
+    public void setParams(java.util.Map<String, ?> params) {
+        host.params = params == null ? "" : Host.json(params);
+    }
+
+    /** Keeps the app's data, its storage included, in dir; before the app starts. The app's files directory by default. */
+    public void setStorageDirectory(File dir) {
+        storage = dir;
+    }
+
+    /** Has the app format for locale in place of the system's; null follows the system again. */
+    public void setLocale(java.util.Locale locale) {
+        hostLocale = locale;
+        environment();
+    }
+
+    /** Sets the text size multiplier in place of the system's; 0 follows the system again. */
+    public void setFontScale(float scale) {
+        hostFontScale = scale;
+        environment();
+    }
+
+    /**
+     * Shows the app light or dark in place of the system's appearance
+     * (APPEARANCE_LIGHT, APPEARANCE_DARK); APPEARANCE_SYSTEM follows the
+     * system again. An appearance the app forces still wins.
+     */
+    public void setAppearance(int appearance) {
+        hostAppearance = appearance;
+        environment();
+    }
+
+    /**
+     * Gives the app the values the host themes it with (core.Env.Token):
+     * CSS colors and other strings, tokens in both appearances and
+     * darkTokens over them while the app shows dark.
+     */
+    public void setTokens(java.util.Map<String, String> tokens, java.util.Map<String, String> darkTokens) {
+        host.tokens(tokens, darkTokens);
+    }
+
+    /** Sends the app an event (core.Scope.OnHostEvent), kept until it has a listener. */
+    public void send(String name, Object data) {
+        host.event(name, data);
+    }
+
+    /** Answers the app's calls and posts of name; null removes the handler. */
+    public void handle(String name, HostHandler handler) {
+        host.handle(name, handler);
+    }
+
+    public void removeHandler(String name) {
+        host.handle(name, null);
+    }
+
+    /** Sees the URLs the app opens before the system; null removes the handler. */
+    public void setOpenUrlHandler(OpenUrlHandler handler) {
+        host.openUrl(handler);
+    }
+
+    public void setErrorListener(ErrorListener listener) {
+        host.errors = listener;
+    }
+
+    /**
+     * Registers a component of the host's for this view's app, which shows
+     * it with a Native element of name. Names under nsgo/ are NSGo's own.
+     */
+    public void registerComponent(String name, NsgoComponent.Factory factory) {
+        if (name.startsWith("nsgo/")) {
+            Log.w(TAG, "component names under nsgo/ are NSGo's own: " + name + " is not registered");
+            return;
+        }
+        host.components.put(name, factory);
+    }
+
+    /** The component the host registered as name, or null. */
+    Embedded hostComponent(String name, NsgoComponent.Events events) {
+        NsgoComponent.Factory factory = host.components.get(name);
+        if (factory == null) {
+            Log.w(TAG, "no native component " + name + " is registered: it shows an empty box");
+            return null;
+        }
+        NsgoComponent c = factory.create(getContext(), events);
+        return c == null ? null : Embedded.hosted(c);
+    }
+
     private void start() {
         File exe = new File(getContext().getApplicationInfo().nativeLibraryDir, "libnsgo.so");
         try {
             ProcessBuilder builder = new ProcessBuilder(exe.getAbsolutePath());
-            builder.environment().put("NSGO_DATA_DIR", getContext().getFilesDir().getAbsolutePath());
+            File data = storage != null ? storage : getContext().getFilesDir();
+            builder.environment().put("NSGO_DATA_DIR", data.getAbsolutePath());
             builder.environment().put("NSGO_CACHE_DIR", getContext().getCacheDir().getAbsolutePath());
+            if (!host.params.isEmpty()) builder.environment().put("NSGO_HOST_PARAMS", host.params);
             if (test != null) {
                 agent = new TestAgent(this);
                 TestAgent.apply(test, builder);
@@ -253,6 +384,8 @@ public class NsgoView extends FrameLayout {
             throw new IllegalStateException("cannot start " + exe, e);
         }
         out = new DataOutputStream(new BufferedOutputStream(process.getOutputStream()));
+        // The host's handlers and tokens come before the app starts.
+        host.start();
         Thread reader = new Thread(this::read, "nsgo-reader");
         reader.setDaemon(true);
         reader.start();
@@ -262,13 +395,29 @@ public class NsgoView extends FrameLayout {
         watchNetwork();
     }
 
-    /** Ends the app's process. */
+    /** Ends the app's process and destroys its native components. */
     public void stop() {
         if (network != null) {
             getContext().getSystemService(ConnectivityManager.class).unregisterNetworkCallback(network);
+            network = null;
         }
         decoder.shutdownNow();
         if (process != null) process.destroy();
+        destroyComponents();
+    }
+
+    /**
+     * Destroys the native components still showing: a stopped app sends no
+     * deletes, so this runs as its process ends, on the UI thread.
+     */
+    private void destroyComponents() {
+        for (int i = 0; i < nodes.size(); i++) {
+            Node n = nodes.valueAt(i);
+            if (n.embedded != null) {
+                n.embedded.destroy();
+                n.embedded = null;
+            }
+        }
     }
 
     private void read() {
@@ -294,6 +443,9 @@ public class NsgoView extends FrameLayout {
                     case Protocol.TEST:
                         if (agent != null) agent.handle(message);
                         break;
+                    case Protocol.HOST_CALL:
+                        host.message(message);
+                        break;
                     default:
                         text(kind, message);
                 }
@@ -301,8 +453,10 @@ public class NsgoView extends FrameLayout {
         } catch (IOException e) {
             Log.i(TAG, "app process ended: " + e);
         }
-        // Leave back to the system from now on.
+        // Leave back to the system from now on; the app's components go
+        // with it.
         ui.post(this::unregisterBack);
+        ui.post(this::destroyComponents);
     }
 
     private void log() {
@@ -335,7 +489,7 @@ public class NsgoView extends FrameLayout {
             d.writeFloat(safeBottom / density);
             d.writeFloat(safeLeft / density);
             d.writeFloat(keyboard / density);
-            d.writeFloat(config.fontScale);
+            d.writeFloat(hostFontScale > 0 ? hostFontScale : config.fontScale);
             d.writeFloat(density);
             d.writeByte((dark ? 1 : 0) | (reduceMotion ? 2 : 0) | (reader ? 4 : 0) | (rtl ? 8 : 0));
             int idiom = config.smallestScreenWidthDp >= 600 ? Protocol.IDIOM_TABLET : Protocol.IDIOM_PHONE;
@@ -343,7 +497,8 @@ public class NsgoView extends FrameLayout {
                 idiom = Protocol.IDIOM_TV;
             }
             d.writeByte(idiom);
-            Protocol.writeString(d, config.getLocales().get(0).toLanguageTag());
+            java.util.Locale locale = hostLocale != null ? hostLocale : config.getLocales().get(0);
+            Protocol.writeString(d, locale.toLanguageTag());
             // The system header's heights, without and with a large title.
             d.writeFloat(Header.BAR);
             d.writeFloat(Header.BAR);
@@ -363,9 +518,10 @@ public class NsgoView extends FrameLayout {
     /** The pick the photo picker answers. */
     private Services.Pick pick;
 
-    /** Dark as shown: the app's forced appearance, else the system's. */
+    /** Dark as shown: the app's forced appearance, else the host's, else the system's. */
     private boolean dark() {
         if (appearance != 0) return appearance == Protocol.APPEARANCE_DARK;
+        if (hostAppearance != 0) return hostAppearance == APPEARANCE_DARK;
         int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
         return night == Configuration.UI_MODE_NIGHT_YES;
     }
@@ -613,7 +769,7 @@ public class NsgoView extends FrameLayout {
         write(Protocol.TEXT_LINES, bytes.toByteArray());
     }
 
-    private synchronized void write(int kind, byte[] payload) {
+    synchronized void write(int kind, byte[] payload) {
         if (out == null) return;
         try {
             out.writeByte(kind);
@@ -1075,6 +1231,7 @@ public class NsgoView extends FrameLayout {
                 if (n.web != null) n.web.destroy();
                 if (n.holder != null) detach(n.holder);
                 if (n.video != null) n.video.destroy();
+                if (n.embedded != null) n.embedded.destroy();
                 break;
             case Protocol.ITEM_FRAME:
                 setFrame(n, new float[] {in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat()});
@@ -1700,9 +1857,15 @@ public class NsgoView extends FrameLayout {
         String className = Protocol.readString(in);
         if (!className.isEmpty() && !n.embedTried) {
             n.embedTried = true;
-            n.embedded = Embedded.build(getContext(), className, (name, args) ->
+            Embedded.Emitter emit = (name, args) ->
                     event(Protocol.EVENT_NATIVE, n.id, 0, 0, 0, name, 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, args,
-                            false));
+                            false);
+            if (className.startsWith("host:")) {
+                // A component of the embedding app's own: it emits one value.
+                n.embedded = hostComponent(className.substring(5), (name, data) -> emit.emit(name, Host.json(data)));
+            } else {
+                n.embedded = Embedded.build(getContext(), className, emit);
+            }
             if (n.embedded != null) {
                 n.children.addView(n.embedded.view, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
             }

@@ -11,12 +11,13 @@ import (
 	"github.com/oneo-me/nsgo/internal/platform/apple"
 )
 
-// The caret and pastes of text inputs. A field edits in the window's
-// field editor, which is NSGo's own (NsgoFieldEditor, from the window's
-// delegate) so that it hears pastes, as NSH's FieldEditor does; a text
-// view hears its own. Secure fields keep AppKit's.
+// The caret and pastes of text inputs. A field edits in the surface's
+// field editor, which is NSGo's own (NsgoFieldEditor, from the field's
+// cell, so in a host's window too) so that it hears pastes, as NSH's
+// FieldEditor does; a text view hears its own. Secure fields keep
+// AppKit's.
 
-var classFieldEditor, classWindowDelegate objc.Class
+var classFieldEditor, classFieldCell, classWindowDelegate objc.Class
 
 func registerPaste() {
 	paste := func(self objc.ID, cmd objc.SEL, sender objc.ID) {
@@ -37,24 +38,23 @@ func registerPaste() {
 		{Cmd: sel("pasteAsPlainText:"), Fn: paste},
 		{Cmd: sel("validateUserInterfaceItem:"), Fn: validate},
 	})
+	classFieldCell = register("NsgoFieldCell", objc.GetClass("NSTextFieldCell"), nil, []objc.MethodDef{{
+		Cmd: sel("fieldEditorForView:"),
+		Fn: func(self objc.ID, _ objc.SEL, control objc.ID) objc.ID {
+			v := views[control]
+			if v == nil || v.surface == nil {
+				return 0
+			}
+			s := v.surface
+			if s.fieldEditor == 0 {
+				s.fieldEditor = objc.ID(classFieldEditor).Send(selAlloc).Send(sel("init"))
+				s.fieldEditor.Send(sel("setFieldEditor:"), true)
+			}
+			return s.fieldEditor
+		},
+	}})
 	classWindowDelegate = register("NsgoWindowDelegate", objc.GetClass("NSObject"),
 		[]*objc.Protocol{objc.GetProtocol("NSWindowDelegate")}, []objc.MethodDef{{
-			Cmd: sel("windowWillReturnFieldEditor:toObject:"),
-			Fn: func(self objc.ID, _ objc.SEL, window, client objc.ID) objc.ID {
-				if !objc.Send[bool](client, sel("isKindOfClass:"), objc.GetClass("NsgoField")) {
-					return 0
-				}
-				s := delegates[self]
-				if s == nil {
-					return 0
-				}
-				if s.fieldEditor == 0 {
-					s.fieldEditor = objc.ID(classFieldEditor).Send(selAlloc).Send(sel("init"))
-					s.fieldEditor.Send(sel("setFieldEditor:"), true)
-				}
-				return s.fieldEditor
-			},
-		}, {
 			// A window kept alive hides instead of closing.
 			Cmd: sel("windowShouldClose:"),
 			Fn: func(self objc.ID, _ objc.SEL, window objc.ID) bool {
@@ -71,14 +71,10 @@ func registerPaste() {
 		}})
 }
 
-// delegates are the surfaces of the window delegates.
-var delegates = map[objc.ID]*surface{}
-
-// setWindowDelegate gives s's window the delegate that hands its fields
-// NSGo's field editor.
+// setWindowDelegate gives s's own window the delegate that ends the app
+// with it.
 func (s *surface) setWindowDelegate() {
 	d := objc.ID(classWindowDelegate).Send(selAlloc).Send(sel("init"))
-	delegates[d] = s
 	s.window.Send(selSetDelegate, d)
 }
 

@@ -24,7 +24,6 @@ import (
 )
 
 var (
-	destroyWindow   = user32.NewProc("DestroyWindow")
 	isWindowVisible = user32.NewProc("IsWindowVisible")
 	getParent       = user32.NewProc("GetParent")
 	mapWindowPoints = user32.NewProc("MapWindowPoints")

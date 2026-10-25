@@ -57,6 +57,8 @@ type Options struct {
 	Fonts []string
 	// Appearance is the appearance the app starts in.
 	Appearance driver.Appearance
+	// Host is what an embedding host gives the view (NewView).
+	Host engine.HostOptions
 	// test is what a test host opens the app with.
 	test *testOpen
 }
@@ -71,11 +73,17 @@ type testOpen struct {
 // window is one GTK window and the tree it shows. The engine's goroutine
 // reaches its main-thread half only through Mount and post.
 type window struct {
-	win     uintptr // GtkWindow
+	win     uintptr // GtkWindow, 0 for an embedded surface
 	surface uintptr // the NsgoView holding the root view
-	box     uintptr // the window content: menu bar and surface
-	menuBar uintptr
-	loop    uintptr // GMainLoop
+	// embedded is set for a host's widget (NewView): the host owns the
+	// window, its chrome and the main loop. app and opts start its engine
+	// once GTK first allocates it.
+	embedded bool
+	app      engine.App
+	opts     Options
+	box      uintptr // the window content: menu bar and surface
+	menuBar  uintptr
+	loop     uintptr // GMainLoop
 
 	env driver.Environment
 
@@ -197,6 +205,20 @@ func start(app engine.App, opts Options) (*window, error) {
 	if err := registerViewType(); err != nil {
 		return nil, fmt.Errorf("the Linux backend needs GTK 4: %w", err)
 	}
+	w := newWindow(opts, false)
+	w.createWindow(opts)
+	w.env = w.environment()
+
+	w.setAppearance(opts.Appearance)
+	w.startEngine(app, opts, driver.Size{Width: opts.Width, Height: opts.Height})
+	w.loop = gMainLoopNew(0, 0)
+	w.setupSettings()
+	return w, nil
+}
+
+// newWindow returns the state of a window, or of a host's widget when
+// embedded.
+func newWindow(opts Options, embedded bool) *window {
 	w := &window{
 		entries: map[uintptr]*view{},
 		natives: map[uintptr]*view{},
@@ -206,18 +228,21 @@ func start(app engine.App, opts Options) (*window, error) {
 		env:        driver.Environment{OS: driver.OSLinux, Idiom: driver.IdiomDesktop},
 		components: opts.Components,
 		epoch:      time.Now(),
+		embedded:   embedded,
 	}
 	w.animator = driver.NewAnimator(w.animatorReport)
 	w.handle = registerWindow(w)
 	w.chrome.keys = map[string]menuRef{}
-	w.createWindow(opts)
-	w.env = w.environment()
+	return w
+}
 
-	w.setAppearance(opts.Appearance)
+// startEngine starts app's engine at size.
+func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 	eopts := engine.Options{
-		Size:        driver.Size{Width: opts.Width, Height: opts.Height},
+		Size:        size,
 		Environment: w.env,
 		Appearance:  opts.Appearance,
+		Host:        opts.Host,
 	}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
 	if opts.test != nil {
@@ -225,9 +250,81 @@ func start(app engine.App, opts Options) (*window, error) {
 	}
 	imageload.UseDiskCache(eopts.CacheDir)
 	w.engine = engine.Start(w, app, eopts)
-	w.loop = gMainLoopNew(0, 0)
+}
+
+// View is an app in a GtkWidget of an embedding host's window, which the
+// host's own main loop runs (NewView).
+type View struct{ w *window }
+
+// NewView makes a GtkWidget showing app, for a host that has initialized
+// GTK and runs its main loop itself. Its engine starts once GTK first
+// allocates the widget, so settings made before that are in the app's
+// first frame. Call it on GTK's thread; several views may show at once.
+func NewView(app engine.App, opts Options) (*View, error) {
+	if err := openLibs(); err != nil {
+		return nil, fmt.Errorf("the Linux backend needs GTK 4, Pango and Cairo: %w", err)
+	}
+	runtime.LockOSThread()
+	registerFonts(opts.Fonts)
+	if gtkInitCheck() == 0 {
+		return nil, errors.New("no display")
+	}
+	if err := registerViewType(); err != nil {
+		return nil, fmt.Errorf("the Linux backend needs GTK 4: %w", err)
+	}
+	if opts.Host.Settings == nil {
+		opts.Host.Settings = &engine.HostSettings{}
+	}
+	w := newWindow(opts, true)
+	w.app, w.opts = app, opts
+	w.surface = w.newViewWidget(nil)
+	gtkWidgetSetHexpand(w.surface, 1)
+	gtkWidgetSetVexpand(w.surface, 1)
+	// Keys reach the surface while the focus is in it, which a press
+	// gives it.
+	gtkWidgetSetFocusable(w.surface, 1)
+	w.setupInputs()
 	w.setupSettings()
-	return w, nil
+	return &View{w}, nil
+}
+
+// Handle returns the GtkWidget, which the host adds to its widgets.
+func (v *View) Handle() uintptr { return v.w.surface }
+
+// SetHostEnvironment sets what the host sets over the session's
+// environment: its locale, text size and appearance.
+func (v *View) SetHostEnvironment(env engine.HostEnvironment) {
+	v.w.opts.Host.Settings.SetEnvironment(env)
+}
+
+// SetTokens sets the values the host themes the app with.
+func (v *View) SetTokens(t engine.Tokens) { v.w.opts.Host.Settings.SetTokens(t) }
+
+// Close stops the app, destroys its native components and lets the
+// widget go, which the host removes from its parent.
+func (v *View) Close() {
+	w := v.w
+	w.close()
+	w.closeNatives()
+	gObjectUnref(w.surface)
+}
+
+// closeNatives destroys the native components still showing, once the
+// app has stopped.
+func (w *window) closeNatives() {
+	for _, x := range w.views {
+		if x != nil && x.native != nil {
+			w.closeNative(x)
+		}
+	}
+}
+
+// toplevel is the window the surface is in: its own, or the host's.
+func (w *window) toplevel() uintptr {
+	if w.win != 0 {
+		return w.win
+	}
+	return gtkWidgetGetRoot(w.surface)
 }
 
 // run presents the window and runs GTK's main loop until it closes.
@@ -236,9 +333,11 @@ func (w *window) run() {
 	gMainLoopRun(w.loop)
 }
 
-// stop ends the engine and frees the loop after run returns.
+// stop ends the engine, destroys the native components still showing
+// and frees the loop after run returns.
 func (w *window) stop() {
 	w.engine.Close()
+	w.closeNatives()
 	engine.SyncStorage()
 	for i, m := range w.measureMap {
 		if m != 0 {
@@ -355,6 +454,21 @@ func (w *window) runTasks() {
 	}
 }
 
+// chromeItem applies an item of the window's own: its title, a window
+// command or the menu bar.
+func (w *window) chromeItem(it *driver.MountItem) {
+	switch it.Kind {
+	case driver.ItemTitle:
+		gtkWindowSetTitle(w.win, cstr(it.Value))
+	case driver.ItemWindow:
+		if it.Window != nil {
+			w.windowCommand(it.Window)
+		}
+	case driver.ItemMenu:
+		w.setMenu(it.Menu)
+	}
+}
+
 // close ends the app: the engine stops, and the main loop returns.
 func (w *window) close() {
 	if w.closing {
@@ -428,10 +542,16 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.popupMenu(it.Menu, it.Point, it.Count)
 			continue
 		case driver.ItemAppearance:
-			w.setAppearance(it.Appearance)
+			// The settings are the process's, which a host's widget
+			// leaves to the host.
+			if !w.embedded {
+				w.setAppearance(it.Appearance)
+			}
 			continue
 		case driver.ItemQuit:
-			w.close()
+			if !w.embedded {
+				w.close()
+			}
 			continue
 		case driver.ItemToast:
 			continue
@@ -441,16 +561,11 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemKeymap:
 			w.setKeymap(it.Keys)
 			continue
-		case driver.ItemTitle:
-			gtkWindowSetTitle(w.win, cstr(it.Value))
-			continue
-		case driver.ItemWindow:
-			if it.Window != nil {
-				w.windowCommand(it.Window)
+		case driver.ItemTitle, driver.ItemWindow, driver.ItemMenu:
+			// An embedding host owns its window and menus.
+			if !w.embedded {
+				w.chromeItem(it)
 			}
-			continue
-		case driver.ItemMenu:
-			w.setMenu(it.Menu)
 			continue
 		case driver.ItemAnnounce, driver.ItemStatusBar, driver.ItemBackUnhandled,
 			driver.ItemAccessibilityLabel, driver.ItemAccessibilityFocus:

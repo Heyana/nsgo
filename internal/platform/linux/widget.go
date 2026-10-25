@@ -296,6 +296,10 @@ func (w *window) allocateSurface(width, height int32) {
 		// The surface exists now, so its scale and direction are known.
 		w.started = true
 		w.updateEnvironment()
+		if w.embedded && w.engine == nil {
+			w.lastWidth, w.lastHeight = size.Width, size.Height
+			w.startEngine(w.app, w.opts, size)
+		}
 	}
 	if size.Width != w.lastWidth || size.Height != w.lastHeight {
 		w.lastWidth, w.lastHeight = size.Width, size.Height

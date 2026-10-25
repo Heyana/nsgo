@@ -214,6 +214,10 @@ func (v *view) setEditor(multiline, masked bool) {
 			class = classSecureField
 		}
 		f := objc.ID(class).Send(selNew)
+		if !masked {
+			loadSetClass()
+			objectSetClass(f.Send(sel("cell")), classFieldCell)
+		}
 		f.Send(sel("setBezeled:"), false)
 		f.Send(sel("setBordered:"), false)
 		f.Send(sel("setDrawsBackground:"), false)

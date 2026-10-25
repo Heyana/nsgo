@@ -22,6 +22,7 @@ final class Protocol {
     static final int CANVAS_IMAGE = 8;
     static final int FONTS = 9;
     static final int TEST = 10;
+    static final int HOST_CALL = 11;
 
     // Java to Go.
     static final int START = 1;
@@ -33,6 +34,18 @@ final class Protocol {
     static final int LAID_OUT = 7;
     static final int TEXT_LINES = 8;
     static final int TEST_REPLY = 9;
+    static final int HOST = 10;
+
+    // The parts of a HOST message, and of a HOST_CALL, as host.go has them.
+    static final int HOST_EVENT = 1;
+    static final int HOST_HANDLE = 2;
+    static final int HOST_REPLY = 3;
+    static final int HOST_TOKENS = 4;
+    static final int HOST_URL_HANDLER = 5;
+    static final int HOST_URL_ANSWER = 6;
+    static final int CALL_CALL = 1;
+    static final int CALL_OPEN_URL = 2;
+    static final int CALL_ERROR = 3;
 
     // The parts of an image request an IMAGE message carries.
     static final int IMAGE_PLACEHOLDER = 0;

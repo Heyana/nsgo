@@ -260,7 +260,7 @@ func (s *surface) clearSelection() {
 // controllerCopy is the view controller's copy:, which copies the
 // selection.
 func controllerCopy(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	sl := app.selecting
+	sl := runner.selecting
 	if sl == nil || sl.model.IsEmpty() {
 		return
 	}
@@ -272,7 +272,7 @@ func controllerCopy(_ objc.ID, _ objc.SEL, _ objc.ID) {
 // controllerSelectAll is the view controller's selectAll:, which selects
 // the area and shows the menu again.
 func controllerSelectAll(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	sl := app.selecting
+	sl := runner.selecting
 	if sl == nil {
 		return
 	}
@@ -289,7 +289,7 @@ func controllerSelectAll(_ objc.ID, _ objc.SEL, _ objc.ID) {
 // selection.
 func controllerCanPerform(self objc.ID, cmd objc.SEL, action objc.SEL, sender objc.ID) bool {
 	if action == sel("copy:") || action == sel("selectAll:") {
-		return app.selecting != nil && !app.selecting.model.IsEmpty()
+		return runner.selecting != nil && !runner.selecting.model.IsEmpty()
 	}
 	return apple.SendSuper[bool](self, cmd, action, sender)
 }

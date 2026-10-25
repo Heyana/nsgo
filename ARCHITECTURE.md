@@ -4,9 +4,7 @@ NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longb
 
 ## Reference implementation
 
-NSH is the reference for behavior and naming, not a constraint: NSGo keeps its names and semantics by default and departs where a design is clearer or easier to maintain. Its checkout lives in `nsh/` and is never committed.
-
-Read its `AGENTS.md`, `docs/dev/architecture.md` and the `docs/dev/` page and module docs of the subsystem. Port the design, not the code, and record each deviation in the owning subject.
+NSH is the reference for behavior and naming, not a constraint ([AGENTS.md](AGENTS.md#principles)). Its checkout lives in `nsh/`; read its `docs/dev/` page of a subsystem before changing it, port the design rather than the code, and record each deviation in the owning subject.
 
 ## Code map
 
@@ -14,8 +12,8 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 
 | Package | NSH counterpart | Responsibility |
 | --- | --- | --- |
-| `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags |
-| `core` | `nsh-core` | The app's API: elements, styles, the reactive graph and regions, services; the shadow tree, layout and text preparation; aliases of the driver values apps use |
+| `nsgo` (module root) | `run_app`, `AppView` | `nsgo.Run`, and `nsgo.NewView` in a host's window ([embedding](docs/architecture/embedding.md)): picks the backend by build tags |
+| `core` | `nsh-core` | The app's API: elements, styles, the reactive graph and regions, services; the shadow tree, layout and text preparation |
 | `base` | `nsh-base` | Unstyled base components: controls, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack, resizable panels and a dock ([components](docs/architecture/components.md)) |
 | `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark), HTML (x/net/html) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
 | `base/textview/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma |
@@ -28,8 +26,9 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `internal/engine` | `nsh-engine` | The engine goroutine: a mailbox, one batch per commit to the platform, storage files and the performance monitor |
 | `internal/platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
 | `internal/platform/apple` | Shared Apple code | Layers, images, canvas, Metal shaders, web views, videos and CoreText for macOS and iOS |
-| `internal/platform/*` | Platforms' shared code | Image loading, its disk cache and pure Go decoding ([images](docs/architecture/images.md)), picked photos, font names, field edits, drawn scroll bars, hover and fingers |
+| `internal/platform/*` | Platforms' shared code | Image loading, its disk cache and pure Go decoding ([images](docs/architecture/images.md)), picked photos and other code backends share |
 | `examples/gallery` | `examples/gallery-rs` | Every element, component and service, a page each, with headless tests; its web build is the website |
+| `examples/embedded`, `examples/embed-*` | `examples/embed-*` | An app to embed, and desktop, iOS and Android apps embedding it |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `dev`, `test` and `build` from an app's `nsgo.yaml` ([tool](docs/architecture/tool.md)); `apk` packages and signs Android apps in Go |
 | `tools/lucidegen` | — | Regenerates `icons/lucide` from a pinned Lucide checkout |
 
@@ -40,7 +39,7 @@ Every target builds on macOS with Go; iOS also needs Xcode, and x86_64 Android n
 | Target | Package | Reaches the system through | Status |
 | --- | --- | --- | --- |
 | macOS | `internal/platform/macos` | purego and the Objective-C runtime; `CGO_ENABLED=0` | Runs |
-| iOS | `internal/platform/ios` | The same; cgo only because Go links iOS with Xcode's linker | Runs in the simulator and on devices |
+| iOS | `internal/platform/ios` | The same; cgo only to link with Xcode's linker, and for an embedded framework's one export | Runs in the simulator and on devices |
 | Web | `internal/platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
 | Windows | `internal/platform/windows` | `syscall` and COM: Direct2D, DirectWrite, drawn inputs, WebView2, Media Foundation | Runs |
 | Linux | `internal/platform/linux` | GTK 4, Pango and Cairo loaded with purego; WebKitGTK and GStreamer | Runs |
@@ -48,7 +47,7 @@ Every target builds on macOS with Go; iOS also needs Xcode, and x86_64 Android n
 
 Android runs the app as a second process because Go builds Android shared libraries only with cgo and the NDK, and executables without cgo for arm64 only. iOS forbids child processes, so it links in-process with Xcode.
 
-The Linux backend loads GTK 4 at run time, so building it needs only Go. Each view is a widget drawn with GtkSnapshot that its parent places at the core's frame, so hosted controls stack, clip and transform with the views around them.
+The Linux backend loads GTK 4 at run time, so building it needs only Go.
 
 ## Boundaries
 
@@ -79,7 +78,7 @@ Packages import only downward; `layering_test.go` checks it on every target:
 - What animates runs on the platform's frame clock: transitions, animated values and layout animations are data the engine sends once, never a commit per frame. The app's frame callbacks wait for the same clock.
 - The reactive graph belongs to the engine goroutine and never locks; other goroutines reach it through `Scope.Post`.
 - Text is prepared and laid out on the engine side through a platform `TextEngine`; the main thread only draws the result.
-- One engine is one app with no global state, so a host app can embed several.
+- One engine is one app with no global state, so a host app embeds several.
 - Layout (`internal/layout`) ports Taffy 0.15's block, flexbox and grid algorithms step by step and must pass every Taffy fixture that applies to NSH's features.
 
 ## Tool
@@ -128,5 +127,6 @@ Record a design question here, and confirm the answer with the user before choos
 | [Text view](docs/architecture/textview.md) | Changing `TextView`, its parsers, parts or highlighting |
 | [Icons](docs/architecture/icons.md) | Changing SVG parsing, `core.Icon` or the Lucide pack |
 | [Performance](docs/architecture/performance.md) | Changing the performance monitor or a per-frame path |
+| [Embedding](docs/architecture/embedding.md) | Changing `nsgo.NewView`, the host channel or `-embed` packages |
 | [Testing](docs/architecture/testing.md) | Changing `nsgotest`, its steps or a backend's test host |
 | [Tool](docs/architecture/tool.md) | Changing `nsgo`: the dev server, tests on targets, packages or signing |

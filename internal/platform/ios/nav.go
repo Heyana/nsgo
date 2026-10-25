@@ -97,14 +97,29 @@ func registerNav() {
 				}
 			}},
 			{Cmd: sel("supportedInterfaceOrientations"), Fn: func(self objc.ID, cmd objc.SEL) uint {
-				if m := app.orientations(); m != 0 {
-					return m
+				if v := sheets[self]; v != nil {
+					if m := v.surface.orientations(); m != 0 {
+						return m
+					}
 				}
 				return apple.SendSuper[uint](self, cmd)
 			}},
-			{Cmd: sel("preferredStatusBarStyle"), Fn: func(objc.ID, objc.SEL) int { return app.statusBar }},
-			{Cmd: sel("prefersStatusBarHidden"), Fn: func(objc.ID, objc.SEL) bool { return app.hideBar }},
-			{Cmd: sel("preferredStatusBarUpdateAnimation"), Fn: func(objc.ID, objc.SEL) int { return app.barAnimation() }},
+			{Cmd: sel("preferredStatusBarStyle"), Fn: func(self objc.ID, _ objc.SEL) int {
+				if v := sheets[self]; v != nil {
+					return v.surface.statusBar
+				}
+				return 0
+			}},
+			{Cmd: sel("prefersStatusBarHidden"), Fn: func(self objc.ID, _ objc.SEL) bool {
+				v := sheets[self]
+				return v != nil && v.surface.hideBar
+			}},
+			{Cmd: sel("preferredStatusBarUpdateAnimation"), Fn: func(self objc.ID, _ objc.SEL) int {
+				if v := sheets[self]; v != nil {
+					return v.surface.barAnimation()
+				}
+				return 0
+			}},
 			{Cmd: sel("presentationControllerDidDismiss:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) {
 				if v := sheets[self]; v != nil && v.sheet != nil {
 					v.sheet.gone = true
@@ -515,7 +530,7 @@ func (s *surface) presentSheet(v *view) {
 	ctrl.Send(sel("presentationController")).Send(selSetDeleg, ctrl)
 	v.sheet = &sheet{controller: ctrl}
 	sheets[ctrl] = v
-	topController().Send(sel("presentViewController:animated:completion:"), ctrl, c.Animation != driver.ModalNone, objc.ID(0))
+	s.topController().Send(sel("presentViewController:animated:completion:"), ctrl, c.Animation != driver.ModalNone, objc.ID(0))
 }
 
 // dismissSheet takes modal v's sheet away, unless the user did.
@@ -554,15 +569,6 @@ func (s *surface) sheetLaidOut(v *view) {
 	s.engine.Dispatch(driver.Event{Kind: driver.EventModalSize, ID: v.id, Size: got, Insets: insets})
 }
 
-// topController returns the view controller on top of the window's.
-func topController() objc.ID {
-	top := window.Send(sel("rootViewController"))
-	for p := top.Send(sel("presentedViewController")); p != 0; p = top.Send(sel("presentedViewController")) {
-		top = p
-	}
-	return top
-}
-
 // orientations is the UIInterfaceOrientationMask of the last presented
 // modal that limits them, or 0.
 func (s *surface) orientations() uint {
@@ -591,7 +597,7 @@ func (s *surface) updateOrientations() {
 		}
 	}
 	s.oriented = live
-	for _, c := range []objc.ID{controller, topController()} {
+	for _, c := range []objc.ID{s.viewController(), s.topController()} {
 		if objc.Send[bool](c, sel("respondsToSelector:"), sel("setNeedsUpdateOfSupportedInterfaceOrientations")) {
 			c.Send(sel("setNeedsUpdateOfSupportedInterfaceOrientations"))
 		}
@@ -610,9 +616,13 @@ func (s *surface) setStatusBar(c *driver.StatusBarConfig) {
 	}
 	s.hideBar, s.barAnimated = c.Hidden, c.Animated
 	update := func() {
-		controller.Send(sel("setNeedsStatusBarAppearanceUpdate"))
-		for c := range sheets {
-			c.Send(sel("setNeedsStatusBarAppearanceUpdate"))
+		// An embedding host's controller asks the view (NSGoView's
+		// preferredStatusBarStyle) if it forwards it.
+		s.viewController().Send(sel("setNeedsStatusBarAppearanceUpdate"))
+		for c, v := range sheets {
+			if v.surface == s {
+				c.Send(sel("setNeedsStatusBarAppearanceUpdate"))
+			}
 		}
 	}
 	if !c.Animated {

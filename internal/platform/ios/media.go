@@ -320,6 +320,9 @@ func (s *surface) configureNative(v *view, c *driver.NativeConfig) {
 	if v.component == nil && !v.componentTried {
 		v.componentTried = true
 		factory := s.components[c.Component]
+		if factory == nil {
+			factory = s.hostFactory(c.Component)
+		}
 		if factory == nil && c.Component == driver.TabBarComponent {
 			factory = newTabBar
 		}

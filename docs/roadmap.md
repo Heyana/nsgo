@@ -6,19 +6,9 @@ References are files in `nsh/docs/dev/` unless they name a crate, with the bulle
 
 ## Order
 
-Sections run in build order: embedding, then performance. The last section waits for community contributions, and nothing above it depends on it.
+Performance comes next. The last section waits for community contributions, and nothing above it depends on it.
 
-## 1. Embedding
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| Embedding SDKs | `embedding.md` | iOS, Android and desktop host apps show an NSGo view run by their own loop |
-| Several engines | `architecture.md` | Backends keep no singletons, so one process runs several surfaces |
-| Host settings | `embedding.md` | A host registers components per view, sets locale, text size, appearance and theme tokens, receives app errors and the URLs `RootOptions.OpenURL` takes, and sets the data directory |
-| Host channel | `embedding.md` (the host channel) | The host and the app call each other's functions and send events without a view between them |
-| Component lifetime | `embedding.md` (native components) | Native components are destroyed when their app stops, on Android too |
-
-## 2. Performance
+## 1. Performance
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -30,7 +20,7 @@ Sections run in build order: embedding, then performance. The last section waits
 | Commits that follow changes | `performance.md` (Rust components run once) | A commit resolves styles and emits items only for the nodes that changed, not the whole tree |
 | Windows frames | `windows.md` (frames) | The frame clock follows the compositor with `DwmFlush` |
 
-## 3. Finish the existing platforms
+## 2. Finish the existing platforms
 
 These items wait for community contributions.
 
@@ -46,6 +36,7 @@ These items wait for community contributions.
 | Android frames | `elements.md` (interaction and the environment) | `RequestAnimationFrame` runs on `Choreographer` frames |
 | Web | `web.md` | Browser history and back keys, a focus state for pressables, local time with daylight saving |
 | Real file drags | `file-drop.md` | A real drag from Finder, Explorer and a Linux file manager is checked to reach a view |
+| Embedding | `embedding.md` (the iOS SDK) | iOS frameworks add x86_64 simulator, Catalyst and dynamic slices; a Linux view forces its appearance on its hosted controls; a page shows several web apps |
 | Tests on targets | `tooling.md` (on a real platform) | `nsgo test -target` chooses native menus' items, runs a test's several apps and its manual clock, and keeps the clipboard the test's |
 
 ## Not ported

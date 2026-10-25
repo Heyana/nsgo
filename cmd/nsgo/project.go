@@ -67,8 +67,9 @@ type project struct {
 		// Open shows the output directory once the build finishes; it
 		// defaults to false.
 		Open *bool `yaml:"open"`
-		// run starts the package built for this machine afterwards (-run).
-		run bool
+		// run starts the package built for this machine afterwards (-run);
+		// embed packages the app for host apps of their own (-embed).
+		run, embed bool
 	} `yaml:"build"`
 }
 

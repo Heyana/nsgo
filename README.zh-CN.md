@@ -12,16 +12,14 @@ NSGo 参考 [Native Shell（NSH）](https://nsh.dev) 的设计，NSH 用 Rust �
 
 ## 状态
 
-NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、应用自带字体、动图与矢量图片、画布、用 Go 编写的 GPU 着色器、自带 Lucide 图标包的 SVG 图标、网页视图、视频、应用自己的原生视图、动画值与布局动画、类 CSS 的渐变、阴影、滤镜与 3D 变换。
-
-剪贴板、照片选择器、打开链接、文件拖放、Markdown 和 HTML 文本视图、浮层、对话框、导航和无样式基础组件可在 macOS、iOS、Windows、Linux、Web 和 Android 设备及 x86_64 模拟器上运行。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
+NSGo 处于早期阶段。它已在 macOS、iOS、Windows、Linux、Web 和 Android 上具备 NSH 的响应式模型、布局、文本、图片、画布、着色器、动画、系统服务和无样式基础组件，应用也可嵌入独立的 iOS、Android 和 Go 桌面应用。尚无发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
 
 ## 目标
 
 - 用 Go 编写应用和组件，使用 signal、memo 和 effect。
 - 使用 flexbox 和 grid 布局，并用各平台自己的视图和文本渲染。
 - 与 NSH 一样支持 iOS、Android、macOS、Windows、Linux 和 Web。
-- 可嵌入现有原生应用，也可打包为独立应用。
+- NSGo 应用可嵌入现有原生应用，也可打包为独立应用。
 
 ## 用法
 
@@ -72,25 +70,25 @@ func TestPress(t *testing.T) {
 name: Hello
 id: dev.oneo.nsgo.hello
 version: 0.1.0
-build_number: 1         # CFBundleVersion 和 Android 的 versionCode；省略时取自 version
-# appearance: dark      # 无论系统设置，固定为 light 或 dark；省略时跟随系统
+build_number: 1         # CFBundleVersion 和 Android 的 versionCode；否则取自 version
+# appearance: dark      # 无论系统设置，固定为 light 或 dark
 window: { width: 420, height: 560 }
 icon:
-  apple: assets/AppIcon.icon  # macOS 和 iOS；macOS 也接受 .icns
-  png: assets/Icon.png        # 其他所有目标，以及没有上述图标的 Apple 目标
+  apple: assets/AppIcon.icon  # macOS 和 iOS，或 macOS 的 .icns
+  png: assets/Icon.png        # 其他所有目标
 dev:
-  target: native        # native、web、ios（连接的 iPhone）、ios_simulator 或 android（真机或模拟器）
-  hot_reload: false     # 只运行一次，应用退出后 dev 也随之退出；true 则在保存后重新编译并重启
+  target: native        # native、web、ios、ios_simulator 或 android
+  hot_reload: false     # true 时保存后重新编译并重启
 build:
   output: dist          # 构建产物位于 dist/<name>-<version>-<target>
   open: false           # 设为 true 时在构建后打开输出目录
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, android_arm64, android_x64, web]
 # sign:                 # 商店发布；密码来自 NSGO_KEYSTORE_PASSWORD 和 NSGO_KEY_PASSWORD
-#   profile: assets/AppStore.mobileprovision  # 为 IPA 签名，使用钥匙串中对应的身份或 identity
-#   keystore: assets/release.p12              # 为 APK 签名（PKCS#12 或 JKS），key_alias 指定其中的密钥
+#   profile: assets/AppStore.mobileprovision  # 为 IPA 签名
+#   keystore: assets/release.p12              # 为 APK 签名，配合 key_alias
 ```
 
-`nsgo.yaml` 旁边有两个目录。`resources/` 存放随应用发布的文件：每个包把它们放进自己的资源根目录，`asset:` 图片从这里加载，`nsgo.Fonts` 也从这里注册字体，例如 `nsgo.Run(Root, nsgo.Fonts("fonts/Brand.ttf"))`。资源根目录在 macOS 上是 `Contents/Resources`，在 iOS 上是应用包本身，在 Android 上是 APK 的 assets，其他平台是可执行文件或页面旁的 `resources/`。`assets/` 存放不随应用发布的项目文件，例如 `icon` 默认使用的图标。
+`nsgo.yaml` 旁边的 `resources/` 存放随应用发布的文件，`asset:` 图片从这里加载，`nsgo.Fonts("fonts/Brand.ttf")` 也从这里注册字体；`assets/` 存放不随应用发布的项目文件，例如图标。
 
 在你的模块中添加一次该工具，之后用 `go tool nsgo` 运行，无需安装：
 
@@ -98,13 +96,13 @@ build:
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` 运行一次应用，应用退出后随之退出。将 `dev.hot_reload` 设为 `true`，源文件变化时会重新编译并重启。编译失败会显示在正在运行的应用上方；在应用中按 Command 或 Control+R，或在终端输入 `r` 并回车，会重新编译并启动。它构建的应用图标带有 DEV 标签；要改用其他文件，可在 `dev.icon` 中指定（与 `icon` 一样接受 `apple` 和 `png`），或在 `assets/` 中放入 `AppIcon-dev.icon`、`AppIcon-dev.icns` 或 `Icon-dev.png`。在 macOS 上，开发运行还会在应用上方显示性能监视器；发布构建不包含它。
+`go tool nsgo dev` 运行一次应用，开启 `dev.hot_reload` 后则在每次修改时重新编译并重启。编译失败会显示在正在运行的应用上方；在应用中按 Command 或 Control+R，或在终端输入 `r` 并回车，会重新编译。它构建的应用图标带有 DEV 标签，或显示 `dev.icon` 指定的文件；在 macOS 上还会显示性能监视器。
 
-`go tool nsgo build` 为每个目标输出一个去除符号的发布包：`.app`、`.ipa`、`.apk`，Windows 和 Linux 的目录及其 `.zip` 或 `.tar.gz`，或文件按内容命名并带有 manifest 的网站。将 `build.open` 设为 `true`，构建完成后会打开输出目录；传入 `-run` 则启动为本机构建的包。
+`go tool nsgo build` 为每个目标输出一个去除符号的发布包：`.app`、`.ipa`、`.apk`，Windows 和 Linux 的目录及其 `.zip` 或 `.tar.gz`，或一个网站；`-run` 启动为本机构建的包。`-embed` 则把应用打包给你自己的 iOS 或 Android 应用：一个 XCFramework 或 AAR，由其中的 `NSGoView` 或 `NsgoView` 显示；Go 桌面程序用 `nsgo.NewView` 显示应用。参见 `examples/embed-*`。
 
 `go tool nsgo test` 运行应用的测试，每个测试输出一行；`-run` 筛选测试，`-junit report.xml` 写出 JUnit 报告，`-trace` 打印每一步的挂载项和提交耗时。`-target` 让测试在 `macos`、`windows`、`linux`、`web`（Chrome、Chromium 或 Edge 中）、`ios_simulator` 或 `android` 上运行，每个测试一个进程，截图保存在 `.nsgo/test/screenshots`。`build.targets` 和 `-target` 都接受 `all`，表示仅需 Go 和 Xcode 的所有平台；安装 NDK 后可再加上 `android_x64`。
 
-dev 和 build 命令的参数会覆盖它们所对应的 `nsgo.yaml` 值：两者都接受 `-name`、`-id`、`-version`、`-build-number`、`-width` 和 `-height`；dev 另有 `-target` 和 `-hot-reload`，build 另有 `-target`、`-output`、`-open`、`-sign`、`-profile`、`-keystore` 和 `-key-alias`。dev 还接受 `-device` 以选择 iPhone、按名称选择模拟器或选择 Android 设备，`-team` 以选择 Apple 开发者团队，`-port` 指定其服务器端口（被占用时使用下一个空闲端口；局域网中的手机可在此访问 Web 目标），以及 `-release` 以像 build 一样构建。`-h` 会列出全部参数。
+参数会覆盖它们对应的 `nsgo.yaml` 值，例如 `-target`、`-version` 或 `-output`；dev 还接受 `-device` 选择 iPhone、模拟器或 Android 设备，`-port` 指定其服务器端口。`-h` 会列出全部参数。
 
 ## 开发
 
@@ -127,8 +125,6 @@ go tool nsgo build -target all examples/gallery     # 生成所有平台的发�
 go test ./...
 bench/run.sh                                       # 测量行情表基准（见 bench/README.md）
 ```
-
-在 Windows 上运行 `go test ./internal/platform/windows`，或在 Linux 上运行 `go test ./internal/platform/linux`，会打开真实窗口检查输入和绘制；没有桌面时会跳过。
 
 NSGo 以 NSH 作为参考实现。将它克隆到仓库根目录的 `nsh/`，Git 会忽略该目录：
 

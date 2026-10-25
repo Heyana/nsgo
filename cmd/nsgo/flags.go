@@ -134,6 +134,7 @@ type buildFlags struct {
 	output  *override[string]
 	open    *boolOverride
 	run     bool
+	embed   bool
 	sign    signFlags
 }
 
@@ -143,6 +144,7 @@ func bindBuildFlags(fs *flag.FlagSet) *buildFlags {
 	f.output = stringFlag(fs, "output", "the `output` directory (default: nsgo.yaml's build.output)")
 	f.open = boolFlag(fs, "open", "open the output directory (default: nsgo.yaml's build.open)")
 	fs.BoolVar(&f.run, "run", false, "start the package built for this machine: the app, the simulator's or device's, or the site served")
+	fs.BoolVar(&f.embed, "embed", false, "package the app for iOS and Android apps of their own to embed: an XCFramework and an AAR")
 	f.sign.bind(fs)
 	return f
 }
@@ -158,6 +160,6 @@ func (f *buildFlags) apply(p *project) {
 	if f.open.set {
 		p.Build.Open = &f.open.value
 	}
-	p.Build.run = f.run
+	p.Build.run, p.Build.embed = f.run, f.embed
 	f.sign.apply(p)
 }

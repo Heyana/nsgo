@@ -1,7 +1,9 @@
 #!/bin/sh
-# Rebuilds classes.dex from the Java runtime in ../java after changing it.
+# Rebuilds classes.dex and classes.jar from the Java runtime in ../java
+# after changing it: the dex goes in apps' APKs, the jar in the libraries
+# nsgo build -embed makes for host apps.
 #
-# This is the one artifact NSGo cannot build with Go, so it is committed.
+# These are the artifacts NSGo cannot build with Go, so they are committed.
 # It needs a JDK 17+ and a recent d8: the SDK's cmdline-tools, or
 # build-tools 36+. Set ANDROID_HOME to the SDK that holds them.
 set -eu
@@ -29,4 +31,9 @@ javac -nowarn -Xlint:-options --release 17 -classpath "$jar" \
 "$d8" --lib "$jar" --min-api 28 --output "$tmp" \
 	$(find "$tmp/classes" -name '*.class')
 cp "$tmp/classes.dex" "$dir/classes.dex"
-echo "wrote $dir/classes.dex"
+# A host's build compiles against the jar and dexes it itself; no
+# timestamps, so a rebuild of the same code is the same jar.
+(cd "$tmp/classes" && find . -name '*.class' | LC_ALL=C sort > ../list && \
+	touch -t 200001010000.00 $(cat ../list) && \
+	jar --create --file "$dir/classes.jar" --no-manifest --date=2000-01-01T00:00:02Z @../list)
+echo "wrote $dir/classes.dex and $dir/classes.jar"

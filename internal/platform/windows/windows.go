@@ -23,6 +23,8 @@
 package windows
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"math"
 	"runtime"
@@ -65,6 +67,10 @@ type Options struct {
 	Fonts []string
 	// Appearance is the appearance the app starts in.
 	Appearance driver.Appearance
+	// Host is what an embedding host gives the view (NewView), and Parent
+	// the HWND of the window it is a child window of.
+	Host   engine.HostOptions
+	Parent uintptr
 	// test is what a test host opens the app with.
 	test *testOpen
 }
@@ -84,6 +90,8 @@ var (
 	showWindow        = user32.NewProc("ShowWindow")
 	setFocus          = user32.NewProc("SetFocus")
 	getFocus          = user32.NewProc("GetFocus")
+	getAncestor       = user32.NewProc("GetAncestor")
+	destroyWindow     = user32.NewProc("DestroyWindow")
 	beginPaint        = user32.NewProc("BeginPaint")
 	endPaint          = user32.NewProc("EndPaint")
 	invalidateRect    = user32.NewProc("InvalidateRect")
@@ -125,6 +133,7 @@ const (
 
 	wsOverlappedWindow = 0x00CF0000
 	wsClipChildren     = 0x02000000
+	wsVisible          = 0x10000000
 	wsExNoRedirect     = 0x00200000           // no redirection bitmap, for a composition surface
 	cwUseDefault       = ^uintptr(0x7FFFFFFF) // CW_USEDEFAULT as a uintptr
 	gwlStyle           = ^uintptr(15)         // -16
@@ -271,11 +280,20 @@ func (v *view) detach() {
 }
 
 type window struct {
-	hwnd    uintptr
-	title   string
-	engine  *engine.Engine
-	batches queue.Batches
-	scale   float64 // pixels per point
+	hwnd  uintptr
+	title string
+	// embedded is set for a host's child window (NewView): the host owns
+	// the top-level window, its chrome and the message loop. app and
+	// opts start its engine once it first has a size; skipChar drops the
+	// character of a key a shortcut took, which the host's loop
+	// translated anyway.
+	embedded bool
+	app      engine.App
+	opts     Options
+	skipChar bool
+	engine   *engine.Engine
+	batches  queue.Batches
+	scale    float64 // pixels per point
 
 	// What other goroutines hand the main thread.
 	mu    sync.Mutex
@@ -295,11 +313,12 @@ type window struct {
 	picking       bool
 	popups        []popupRequest
 	popupTracking bool
-	// appearance is the one the app forces, or the system's.
-	appearance driver.Appearance
-	keys       []driver.KeyBinding // the keyboard shortcuts
-	animating  []*view
-	ticking    bool
+	// appearance is the one the app forces, or the system's; host the one
+	// an embedding host sets in place of the system's.
+	appearance, host driver.Appearance
+	keys             []driver.KeyBinding // the keyboard shortcuts
+	animating        []*view
+	ticking          bool
 	// frameWanted is set while the app waits for a display frame.
 	frameWanted bool
 	chrome      chrome
@@ -406,9 +425,7 @@ func Run(app engine.App, opts Options) {
 	const perMonitorAwareV2 = ^uintptr(3) // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 (-4)
 	setDpiAwareness.Call(perMonitorAwareV2)
 	registerFonts(opts.Fonts)
-	w := &window{title: opts.Title, scale: 1, webs: map[*webView]bool{}, touchWebs: map[uint32]*webView{},
-		epoch: time.Now(), components: opts.Components, hosts: map[*component]bool{}, missing: map[string]bool{},
-		drops: map[*view]bool{}}
+	w := newWindow(opts)
 	if opts.Material != driver.WindowMaterialNone {
 		switch {
 		case !systemBackdrops():
@@ -419,27 +436,11 @@ func Run(app engine.App, opts Options) {
 			w.baseComposed, w.backdrop = true, backdropFor(opts.Material)
 		}
 	}
-	w.animator = driver.NewAnimator(func(ev driver.Event) { w.engine.Dispatch(ev) })
 	if dpi, _, _ := getDpiForSystem.Call(); dpi != 0 {
 		w.scale = float64(dpi) / 96
 	}
 
-	instance, _, _ := getModuleHandleW.Call(0)
-	cursor, _, _ := loadCursorW.Call(0, idcArrow)
-	// nsgo links the app's icon as group 1; without one the system's
-	// default stands. Windows picks the small icon from the same group.
-	const appIcon = 1
-	icon, _, _ := loadIconW.Call(instance, appIcon)
-	className := wide("NsgoWindow")
-	wc := wndClassEx{
-		WndProc:   wndProcCallback,
-		Instance:  instance,
-		Icon:      icon,
-		Cursor:    cursor,
-		ClassName: className,
-	}
-	wc.Size = uint32(unsafe.Sizeof(wc))
-	registerClassExW.Call(uintptr(unsafe.Pointer(&wc)))
+	instance, className := registerClass()
 
 	// Size the window so its client area is the app's size.
 	const style = wsOverlappedWindow | wsClipChildren
@@ -470,20 +471,7 @@ func Run(app engine.App, opts Options) {
 	w.darkTitleBar(w.shownDark())
 	darkMenus(w.appearance)
 	// The engine starts once the window exists, so Mount can post to it.
-	eopts := engine.Options{
-		Size:        driver.Size{Width: opts.Width, Height: opts.Height},
-		Environment: w.env,
-		Appearance:  opts.Appearance,
-	}
-	data, cache := engine.AppDirs(opts.ID)
-	eopts.SetDirs(data, cache)
-	if opts.test != nil {
-		eopts.UseTest(opts.test.options, &opts.test.pin)
-		cache = eopts.CacheDir
-	}
-	imageload.UseDiskCache(cache)
-	w.cacheDir = cache
-	w.engine = engine.Start(w, app, eopts)
+	w.startEngine(app, opts, driver.Size{Width: opts.Width, Height: opts.Height})
 	showWindow.Call(hwnd, swShow)
 	if opts.test != nil {
 		opts.test.ready <- w
@@ -506,12 +494,156 @@ func Run(app engine.App, opts Options) {
 	}
 }
 
+// newWindow returns the state of a window showing an app.
+func newWindow(opts Options) *window {
+	w := &window{title: opts.Title, scale: 1, webs: map[*webView]bool{}, touchWebs: map[uint32]*webView{},
+		epoch: time.Now(), components: opts.Components, hosts: map[*component]bool{}, missing: map[string]bool{},
+		drops: map[*view]bool{}}
+	w.animator = driver.NewAnimator(func(ev driver.Event) { w.engine.Dispatch(ev) })
+	return w
+}
+
+// registerClass registers NSGo's window class, once.
+func registerClass() (instance uintptr, className *uint16) {
+	instance, _, _ = getModuleHandleW.Call(0)
+	className = wide("NsgoWindow")
+	if classRegistered {
+		return instance, className
+	}
+	classRegistered = true
+	cursor, _, _ := loadCursorW.Call(0, idcArrow)
+	// nsgo links the app's icon as group 1; without one the system's
+	// default stands. Windows picks the small icon from the same group.
+	const appIcon = 1
+	icon, _, _ := loadIconW.Call(instance, appIcon)
+	wc := wndClassEx{
+		WndProc:   wndProcCallback,
+		Instance:  instance,
+		Icon:      icon,
+		Cursor:    cursor,
+		ClassName: className,
+	}
+	wc.Size = uint32(unsafe.Sizeof(wc))
+	registerClassExW.Call(uintptr(unsafe.Pointer(&wc)))
+	return instance, className
+}
+
+var classRegistered bool
+
+// startEngine starts app's engine at size.
+func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
+	eopts := engine.Options{
+		Size:        size,
+		Environment: w.env,
+		Appearance:  opts.Appearance,
+		Host:        opts.Host,
+	}
+	data, cache := engine.AppDirs(opts.ID)
+	eopts.SetDirs(data, cache)
+	if opts.test != nil {
+		eopts.UseTest(opts.test.options, &opts.test.pin)
+		cache = eopts.CacheDir
+	}
+	imageload.UseDiskCache(cache)
+	w.cacheDir = cache
+	w.engine = engine.Start(w, app, eopts)
+}
+
+// View is an app in a child window of an embedding host's window, which
+// the host's own message loop runs (NewView).
+type View struct{ w *window }
+
+// NewView makes a child window of opts.Parent showing app, for a host
+// that runs the message loop itself on this thread, with COM initialized
+// (OleInitialize, for the clipboard and drops). The host places it
+// (MoveWindow); its engine starts once it first has a size, so settings
+// made before that are in the app's first frame. Several views may show
+// at once.
+func NewView(app engine.App, opts Options) (*View, error) {
+	if opts.Parent == 0 {
+		return nil, errors.New("a view on Windows is a child window: give the HWND of its parent")
+	}
+	registerFonts(opts.Fonts)
+	if opts.Host.Settings == nil {
+		opts.Host.Settings = &engine.HostSettings{}
+	}
+	w := newWindow(opts)
+	w.embedded, w.app, w.opts = true, app, opts
+	if dpi, _, _ := getDpiForWindow.Call(opts.Parent); dpi != 0 {
+		w.scale = float64(dpi) / 96
+	}
+	instance, className := registerClass()
+	const style = wsChild | wsVisible | wsClipChildren | wsClipSiblings
+	hwnd, _, err := createWindowExW.Call(0, uintptr(unsafe.Pointer(className)), 0, style, 0, 0, 0, 0,
+		opts.Parent, 0, instance, 0)
+	if hwnd == 0 {
+		return nil, fmt.Errorf("no child window: %v", err)
+	}
+	w.hwnd = hwnd
+	windows[hwnd] = w
+	w.updateIME()
+	w.configureGestures()
+	w.env = w.environment()
+	w.appearance = opts.Appearance
+	return &View{w}, nil
+}
+
+// Handle returns the child window's HWND, which the host places.
+func (v *View) Handle() uintptr { return v.w.hwnd }
+
+// SetHostEnvironment sets what the host sets over the system's
+// environment: its locale, text size and appearance, which the fields
+// NSGo draws take too.
+func (v *View) SetHostEnvironment(env engine.HostEnvironment) {
+	v.w.opts.Host.Settings.SetEnvironment(env)
+	v.w.host = env.Appearance
+	invalidateRect.Call(v.w.hwnd, 0, 0)
+}
+
+// SetTokens sets the values the host themes the app with.
+func (v *View) SetTokens(t engine.Tokens) { v.w.opts.Host.Settings.SetTokens(t) }
+
+// Close stops the app, destroys its native components and the child
+// window.
+func (v *View) Close() {
+	if v.w.hwnd != 0 {
+		destroyWindow.Call(v.w.hwnd)
+	}
+}
+
 // testOpen is what a test host opens the app with: the test's options,
 // the environment it pins, and where the window goes once it exists.
 type testOpen struct {
 	options testhost.Options
 	pin     engine.TestPin
 	ready   chan *window
+}
+
+// chromeItem applies an item of the window's own: its title, a window
+// command or the menu bar.
+func (w *window) chromeItem(it *driver.MountItem) {
+	switch it.Kind {
+	case driver.ItemTitle:
+		w.title = it.Value
+		setWindowTextW.Call(w.hwnd, uintptr(unsafe.Pointer(wide(it.Value))))
+	case driver.ItemWindow:
+		if it.Window != nil {
+			w.windowCommand(it.Window)
+		}
+	case driver.ItemMenu:
+		w.setMenu(it.Menu)
+	}
+}
+
+// owner is the top-level window the app's dialogs and menus belong to:
+// its own, or the host's.
+func (w *window) owner() uintptr {
+	if !w.embedded {
+		return w.hwnd
+	}
+	const gaRoot = 2
+	r, _, _ := getAncestor.Call(w.hwnd, gaRoot)
+	return r
 }
 
 // Mount implements engine.Platform.
@@ -613,6 +745,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.setAppearance(it.Appearance)
 			continue
 		case driver.ItemQuit:
+			if w.embedded {
+				continue // the host's window stays
+			}
 			if w.popupTracking {
 				endMenu.Call()
 			}
@@ -626,17 +761,11 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemKeymap:
 			w.setKeymap(it.Keys)
 			continue
-		case driver.ItemTitle:
-			w.title = it.Value
-			setWindowTextW.Call(w.hwnd, uintptr(unsafe.Pointer(wide(it.Value))))
-			continue
-		case driver.ItemWindow:
-			if it.Window != nil {
-				w.windowCommand(it.Window)
+		case driver.ItemTitle, driver.ItemWindow, driver.ItemMenu:
+			// An embedding host owns its window and menu bar.
+			if !w.embedded {
+				w.chromeItem(it)
 			}
-			continue
-		case driver.ItemMenu:
-			w.setMenu(it.Menu)
 			continue
 		case driver.ItemAnnounce, driver.ItemStatusBar, driver.ItemBackUnhandled,
 			driver.ItemAccessibilityLabel, driver.ItemAccessibilityFocus:
@@ -1213,7 +1342,8 @@ func repeated(lParam uintptr) bool { return lParam&(1<<30) != 0 }
 
 func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	w := windows[hwnd]
-	if w == nil {
+	// A host's child window has no app until it has a size.
+	if w == nil || w.embedded && w.engine == nil && message != wmSize && message != wmDestroy {
 		r, _, _ := defWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
 		return r
 	}
@@ -1278,7 +1408,15 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if wParam != sizeMinimized {
 			width, height := int32(lParam&0xffff), int32(lParam>>16&0xffff)
 			size := w.point(width, height)
-			w.engine.Resize(driver.Size{Width: size.X, Height: size.Y})
+			switch {
+			case w.engine != nil:
+				w.engine.Resize(driver.Size{Width: size.X, Height: size.Y})
+			case width > 0 && height > 0:
+				w.startEngine(w.app, w.opts, driver.Size{Width: size.X, Height: size.Y})
+			}
+		}
+		if w.engine == nil {
+			return 0
 		}
 		// A maximize or restore changes the environment.
 		w.updateEnvironment()
@@ -1289,6 +1427,12 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.paint()
 		return 0
 	case wmLButtonDown, wmRButtonDown:
+		if w.embedded {
+			// A child window takes the keyboard when pressed.
+			if f, _, _ := getFocus.Call(); f != hwnd {
+				setFocus.Call(hwnd)
+			}
+		}
 		w.hideMenuBar()
 		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
 		if message == wmLButtonDown && w.pressBar(w.point(int32(x), int32(y))) {
@@ -1368,15 +1512,19 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 	case wmNCCalcSize:
-		if r, ok := w.ncCalcSize(wParam, lParam); ok {
+		if r, ok := w.ncCalcSize(wParam, lParam); ok && !w.embedded {
 			return r
 		}
 	case wmNCHitTest:
-		return w.ncHitTest(lParam)
+		if !w.embedded {
+			return w.ncHitTest(lParam)
+		}
 	case wmNCActivate:
-		return w.ncActivate(wParam, lParam)
+		if !w.embedded {
+			return w.ncActivate(wParam, lParam)
+		}
 	case wmNCMouseMove, wmNCMouseLeave, wmNCLButtonDown, wmNCLButtonUp, wmNCLButtonDblClk:
-		if w.ncMouse(message, wParam) {
+		if !w.embedded && w.ncMouse(message, wParam) {
 			return 0
 		}
 	case wmContextMenu:
@@ -1403,6 +1551,12 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case wmKeyDown:
+		// The host's loop translated the key before it came here; Run's
+		// loop asks the shortcuts first.
+		if w.embedded && w.shortcut(wParam, lParam) {
+			w.skipChar = true
+			return 0
+		}
 		// The focused field first, then going back (Escape leaves the
 		// field instead), then Tab between the fields.
 		if w.fieldKey(wParam) {
@@ -1420,6 +1574,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 	case wmChar:
+		if w.skipChar {
+			w.skipChar = false
+			return 0
+		}
 		w.fieldChar(uint16(wParam))
 		return 0
 	case wmSetFocus, wmKillFocus:
@@ -1463,7 +1621,18 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		for c := range w.hosts {
 			w.closeComponent(c)
 		}
-		postQuitMessage.Call(0)
+		if !w.embedded {
+			postQuitMessage.Call(0)
+			return 0
+		}
+		// The host's loop goes on: the view's app ends with its window,
+		// and its timers.
+		w.ticking = false
+		if w.engine != nil {
+			w.engine.Close()
+		}
+		delete(windows, hwnd)
+		w.hwnd = 0
 		return 0
 	case wmMove:
 		for wv := range w.webs {

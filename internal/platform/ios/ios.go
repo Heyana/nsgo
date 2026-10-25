@@ -110,6 +110,15 @@ type view struct {
 }
 
 type surface struct {
+	// embedded is set for a host's NSGoView (embed.go): the host owns the
+	// window and its view controllers. host is what it gives the app, and
+	// embed the settings its view holds; stops end the surface's
+	// observations as it closes.
+	embedded bool
+	host     engine.HostOptions
+	embed    *embedState
+	stops    []func()
+	closed   bool
 	// alerts are the alerts shown, by ID, kept for a test host to answer
 	// them.
 	alerts map[uint32]shownAlert
@@ -177,9 +186,10 @@ type edgeInsets struct {
 // views maps native objects to their Go side. Only the main thread uses it.
 var views = map[objc.ID]*view{}
 
-// app is the surface UIApplicationMain's delegate shows; UIKit makes the
-// delegate, so it cannot be handed one.
-var app *surface
+// runner is the surface a standalone app's scene shows (Run); UIKit makes
+// the scene's delegate, so it cannot be handed one. Embedded surfaces are
+// their hosts' views (NewView).
+var runner *surface
 
 var (
 	sel = objc.RegisterName
@@ -218,6 +228,8 @@ var (
 	selSetContentSize                = sel("setContentSize:")
 
 	classView, classSurface, classInput, classScroll, classWatcher, classController objc.Class
+	// surfaceMethods are the surface's, NsgoSurface's and NSGoView's.
+	surfaceMethods []objc.MethodDef
 
 	uiApplicationMain           func(argc int, argv unsafe.Pointer, principal, delegate uintptr) int
 	uiReduceMotion, uiVoiceOver func() bool
@@ -256,25 +268,30 @@ func loadUIKit() {
 	registerContent()
 	registerCanvasNodes()
 	classView = register("NsgoView", uiView, nil, common)
-	classSurface = register("NsgoSurface", uiView, nil, append(common,
+	surfaceMethods = append(common,
 		objc.MethodDef{Cmd: sel("layoutSubviews"), Fn: surfaceLayout},
 		objc.MethodDef{Cmd: selApply, Fn: surfaceApply},
 		objc.MethodDef{Cmd: selTick, Fn: surfaceTick},
 		objc.MethodDef{Cmd: sel("safeAreaInsetsDidChange"), Fn: func(self objc.ID, cmd objc.SEL) {
 			apple.Super(self, cmd)
-			app.refresh()
+			if v := views[self]; v != nil {
+				v.surface.refresh()
+			}
 		}},
 		objc.MethodDef{Cmd: sel("traitCollectionDidChange:"), Fn: func(self objc.ID, cmd objc.SEL, previous objc.ID) {
 			apple.Super(self, cmd, previous)
-			app.refresh()
+			if v := views[self]; v != nil {
+				v.surface.refresh()
+			}
 		}},
-	))
+	)
+	classSurface = register("NsgoSurface", uiView, nil, surfaceMethods)
 	classController = register("NsgoViewController", objc.GetClass("UIViewController"), nil, []objc.MethodDef{
-		{Cmd: sel("preferredStatusBarStyle"), Fn: func(objc.ID, objc.SEL) int { return app.statusBar }},
-		{Cmd: sel("prefersStatusBarHidden"), Fn: func(objc.ID, objc.SEL) bool { return app.hideBar }},
-		{Cmd: sel("preferredStatusBarUpdateAnimation"), Fn: func(objc.ID, objc.SEL) int { return app.barAnimation() }},
+		{Cmd: sel("preferredStatusBarStyle"), Fn: func(objc.ID, objc.SEL) int { return runner.statusBar }},
+		{Cmd: sel("prefersStatusBarHidden"), Fn: func(objc.ID, objc.SEL) bool { return runner.hideBar }},
+		{Cmd: sel("preferredStatusBarUpdateAnimation"), Fn: func(objc.ID, objc.SEL) int { return runner.barAnimation() }},
 		{Cmd: sel("supportedInterfaceOrientations"), Fn: func(self objc.ID, cmd objc.SEL) uint {
-			if m := app.orientations(); m != 0 {
+			if m := runner.orientations(); m != 0 {
 				return m
 			}
 			return apple.SendSuper[uint](self, cmd)
@@ -332,7 +349,7 @@ type Options struct {
 // Run shows app full screen and runs UIKit's event loop. Call it from
 // main; it does not return.
 func Run(root engine.App, opts Options) {
-	app = newSurface(root, opts)
+	runner = newSurface(root, opts)
 	runUIKit(opts)
 }
 
@@ -353,28 +370,22 @@ func runUIKit(opts Options) {
 	uiApplicationMain(1, unsafe.Pointer(&argv[0]), 0, apple.CFString("NsgoAppDelegate"))
 }
 
-// window keeps the key window alive; controller is its root view
-// controller.
+// window keeps a standalone app's key window alive; controller is its
+// root view controller.
 var window, controller objc.ID
 
 func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID) {
 	window = objc.ID(objc.GetClass("UIWindow")).Send(selAlloc).Send(sel("initWithWindowScene:"), scene)
 	bounds := objc.Send[apple.CGRect](window, selBounds)
 	controller = objc.ID(classController).Send(selNew)
-	s := app
+	s := runner
 	s.native = objc.ID(classSurface).Send(selAlloc).Send(selInitWithFrame, bounds)
 	views[s.native] = &view{surface: s}
 	controller.Send(sel("setView:"), s.native)
 	window.Send(sel("setRootViewController:"), controller)
 	setAppearance(s.appearance)
 	window.Send(sel("makeKeyAndVisible"))
-	watcher := objc.ID(classWatcher).Send(selAlloc).Send(sel("initWithTarget:action:"), objc.ID(0), objc.SEL(0))
-	watcher.Send(sel("setCancelsTouchesInView:"), false)
-	watcher.Send(sel("setDelaysTouchesEnded:"), false)
-	s.native.Send(sel("addGestureRecognizer:"), watcher)
-	watcher.Send(selRelease)
-	s.addTracker()
-	s.headers = headerHeights()
+	s.watch()
 	s.env = s.environment()
 	if s.app == nil {
 		// A test host's: the test opens its app.
@@ -384,18 +395,31 @@ func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID)
 	s.startEngine(nil)
 }
 
+// watch adds what follows the surface's touches: the watcher of presses
+// outside views and the tracker of raw touches.
+func (s *surface) watch() {
+	watcher := objc.ID(classWatcher).Send(selAlloc).Send(sel("initWithTarget:action:"), objc.ID(0), objc.SEL(0))
+	watcher.Send(sel("setCancelsTouchesInView:"), false)
+	watcher.Send(sel("setDelaysTouchesEnded:"), false)
+	s.native.Send(sel("addGestureRecognizer:"), watcher)
+	watcher.Send(selRelease)
+	s.addTracker()
+	s.headers = headerHeights()
+}
+
 // sceneReady is closed once a test host's scene has its window.
 var sceneReady chan struct{}
 
-// startEngine starts s.app's engine; test, when set, is what a test host
-// opens it with.
+// startEngine starts s.app's engine at the surface's size; test, when
+// set, is what a test host opens it with.
 func (s *surface) startEngine(test *testOpen) {
-	bounds := objc.Send[apple.CGRect](window, selBounds)
+	bounds := objc.Send[apple.CGRect](s.native, selBounds)
 	opts := engine.Options{
 		Size:        driver.Size{Width: driver.Points(bounds.Size.Width), Height: driver.Points(bounds.Size.Height)},
 		Environment: s.env,
 		Thread:      apple.RaiseThread,
 		Appearance:  s.appearance,
+		Host:        s.host,
 	}
 	opts.SetDirs(engine.AppDirs(s.id))
 	if test != nil {
@@ -478,20 +502,46 @@ func (s *surface) refresh() {
 	}
 }
 
-// observe watches the notifications parts of the environment change with.
+// observe watches the notifications parts of the environment change with,
+// until the surface closes.
 func (s *surface) observe() {
 	center := objc.ID(objc.GetClass("NSNotificationCenter")).Send(sel("defaultCenter"))
 	refresh := func(objc.ID) { s.refresh() }
+	on := func(name objc.ID, fn func(objc.ID)) { s.stops = append(s.stops, apple.Observe(center, name, fn)) }
 	for _, name := range []string{"UIContentSizeCategoryDidChangeNotification",
 		"UIAccessibilityReduceMotionStatusDidChangeNotification", "UIAccessibilityVoiceOverStatusDidChangeNotification"} {
-		apple.Observe(center, apple.Global(uikitPath, name), refresh)
+		on(apple.Global(uikitPath, name), refresh)
 	}
-	apple.Observe(center, apple.Global("/System/Library/Frameworks/Foundation.framework/Foundation",
-		"NSCurrentLocaleDidChangeNotification"), refresh)
-	apple.Observe(center, apple.Global(uikitPath, "UIKeyboardWillChangeFrameNotification"),
-		func(note objc.ID) { s.keyboardMoved(note, false) })
-	apple.Observe(center, apple.Global(uikitPath, "UIKeyboardWillHideNotification"),
-		func(note objc.ID) { s.keyboardMoved(note, true) })
+	on(apple.Global("/System/Library/Frameworks/Foundation.framework/Foundation", "NSCurrentLocaleDidChangeNotification"), refresh)
+	on(apple.Global(uikitPath, "UIKeyboardWillChangeFrameNotification"), func(note objc.ID) { s.keyboardMoved(note, false) })
+	on(apple.Global(uikitPath, "UIKeyboardWillHideNotification"), func(note objc.ID) { s.keyboardMoved(note, true) })
+}
+
+// uiWindow is the window the surface shows in, 0 while it is in none.
+func (s *surface) uiWindow() objc.ID { return s.native.Send(sel("window")) }
+
+// viewController is the view controller the surface's view belongs to:
+// a standalone app's own, or the host's nearest above an embedded view.
+func (s *surface) viewController() objc.ID {
+	if !s.embedded {
+		return controller
+	}
+	for r := s.native.Send(sel("nextResponder")); r != 0; r = r.Send(sel("nextResponder")) {
+		if objc.Send[bool](r, sel("isKindOfClass:"), objc.GetClass("UIViewController")) {
+			return r
+		}
+	}
+	return 0
+}
+
+// topController returns the view controller on top of the surface's
+// window's.
+func (s *surface) topController() objc.ID {
+	top := s.uiWindow().Send(sel("rootViewController"))
+	for p := top.Send(sel("presentedViewController")); p != 0; p = top.Send(sel("presentedViewController")) {
+		top = p
+	}
+	return top
 }
 
 // keyboardMoved follows the software keyboard: how much of the surface's
@@ -505,7 +555,10 @@ func (s *surface) keyboardMoved(note objc.ID, hiding bool) {
 	s.keyboard = 0
 	if frame := get("UIKeyboardFrameEndUserInfoKey"); !hiding && frame != 0 {
 		end := objc.Send[apple.CGRect](frame, sel("CGRectValue"))
-		space := window.Send(sel("screen")).Send(sel("coordinateSpace"))
+		space := objc.ID(objc.GetClass("UIScreen")).Send(sel("mainScreen")).Send(sel("coordinateSpace"))
+		if w := s.uiWindow(); w != 0 {
+			space = w.Send(sel("screen")).Send(sel("coordinateSpace"))
+		}
 		local := objc.Send[apple.CGRect](s.native, sel("convertRect:fromCoordinateSpace:"), end, space)
 		h := objc.Send[apple.CGRect](s.native, selBounds).Size.Height - local.Origin.Y
 		s.keyboard = driver.Points(max(h, 0))
@@ -572,10 +625,7 @@ func (s *surface) alert(a *driver.AlertConfig) {
 		pop.Send(sel("setSourceRect:"), apple.Rect(b.Size.Width/2, b.Size.Height, 0, 0))
 		pop.Send(sel("setPermittedArrowDirections:"), 0)
 	}
-	top := window.Send(sel("rootViewController"))
-	for p := top.Send(sel("presentedViewController")); p != 0; p = top.Send(sel("presentedViewController")) {
-		top = p
-	}
+	top := s.topController()
 	if s.alerts != nil {
 		s.alerts[id] = shownAlert{ctrl, a.Actions}
 	}
@@ -608,9 +658,10 @@ func (s *surface) pressOutside(touch objc.ID) {
 
 func watcherBegan(self objc.ID, cmd objc.SEL, touches, event objc.ID) {
 	apple.Super(self, cmd, touches, event)
-	if app.engine != nil {
-		apple.ForEach(touches, app.pressOutside)
-		apple.ForEach(touches, app.clearTouched)
+	if v := views[self.Send(sel("view"))]; v != nil && v.surface.engine != nil {
+		s := v.surface
+		apple.ForEach(touches, s.pressOutside)
+		apple.ForEach(touches, s.clearTouched)
 	}
 	// Failing at once keeps the watcher out of every other gesture.
 	const failed = 5
@@ -684,7 +735,11 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemAppearance:
 			s.appearance = it.Appearance
-			setAppearance(it.Appearance)
+			if s.embedded {
+				s.embedStyle()
+			} else {
+				setAppearance(it.Appearance)
+			}
 			continue
 		case driver.ItemToast, driver.ItemQuit, driver.ItemPopupMenu:
 			// iOS has no toasts, apps do not quit themselves, and the core
@@ -950,7 +1005,7 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 	case driver.KindVideo:
 		v.video = apple.NewVideo(v.native)
 		v.video.Dispatch = v.report
-		v.video.Parent = controller
+		v.video.Parent = s.viewController()
 		v.native.Send(sel("setClipsToBounds:"), true)
 	case driver.KindShader:
 		v.newShader()
@@ -1194,8 +1249,9 @@ var keyNames = map[int]string{
 // pressesBegan takes hardware key presses the keymap binds, as EventKey,
 // and passes the rest on.
 func pressesBegan(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
+	app := pressSurface(self)
 	binding, consumed := "", false
-	if len(app.keys) > 0 {
+	if app != nil && app.engine != nil && len(app.keys) > 0 {
 		apple.ForEach(presses, func(press objc.ID) {
 			key := press.Send(sel("key"))
 			if key == 0 || consumed {
@@ -1221,9 +1277,18 @@ func pressesBegan(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
 	}
 }
 
+// pressSurface is the surface hardware keys pressed in self go to: an
+// embedded view's, or a standalone app's from its controller.
+func pressSurface(self objc.ID) *surface {
+	if v := views[self]; v != nil {
+		return v.surface
+	}
+	return runner
+}
+
 // pressesEnded stops repeating a held key's binding.
 func pressesEnded(self objc.ID, cmd objc.SEL, presses, event objc.ID) {
-	if app.heldStop != nil {
+	if app := pressSurface(self); app != nil && app.heldStop != nil {
 		close(app.heldStop)
 		app.heldStop, app.held = nil, ""
 	}

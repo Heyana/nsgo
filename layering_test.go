@@ -43,8 +43,9 @@ var layers = []struct {
 	{"", []string{"core", "internal/engine", "internal/platform/"}},
 	{"base/", []string{"core", "base/"}},
 	{"icons/", []string{"core"}},
-	// Apps use the public packages only.
-	{"examples/", []string{"", "core", "base/", "icons/", "nsgotest"}},
+	// Apps use the public packages only, and the hosts that embed an
+	// example app its package.
+	{"examples/", []string{"", "core", "base/", "icons/", "nsgotest", "examples/"}},
 	{"bench/", []string{"", "core", "base/", "icons/"}},
 	{"cmd/", []string{"core", "cmd/", "internal/platform/android/runtime"}},
 	{"tools/", []string{"core"}},

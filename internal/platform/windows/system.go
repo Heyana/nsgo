@@ -296,7 +296,7 @@ func (w *window) openDialog(r driver.PickRequest) []string {
 	}
 	filter := append(syscall.StringToUTF16("Images"), append(pattern, 0, 0)...)
 	buf := make([]uint16, 64<<10)
-	ofn := openFileName{Owner: w.hwnd, Filter: &filter[0], File: &buf[0], MaxFile: uint32(len(buf)),
+	ofn := openFileName{Owner: w.owner(), Filter: &filter[0], File: &buf[0], MaxFile: uint32(len(buf)),
 		Flags: ofnExplorer | ofnFileMustExist | ofnPathMustExist | ofnNoChangeDir}
 	if r.Limit > 1 {
 		ofn.Flags |= ofnAllowMultiSelect
@@ -380,11 +380,13 @@ func (w *window) showPopup() {
 // shownDark reports whether the app shows dark: as it forces, else as
 // the system is.
 func (w *window) shownDark() bool {
-	switch w.appearance {
-	case driver.AppearanceLight:
-		return false
-	case driver.AppearanceDark:
-		return true
+	for _, a := range []driver.Appearance{w.appearance, w.host} {
+		switch a {
+		case driver.AppearanceLight:
+			return false
+		case driver.AppearanceDark:
+			return true
+		}
 	}
 	return w.env.Dark
 }

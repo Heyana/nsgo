@@ -146,9 +146,7 @@ func (s *surface) pickImages(r driver.PickRequest, id uint32) {
 // AppKit tracks it in a loop of its own, so it opens from the main queue
 // after the batch, which keeps applying batches meanwhile.
 func (s *surface) popupMenu(entries []driver.MenuEntry, p driver.Point, id uint32) {
-	if s.menuTarget == 0 {
-		s.menuTarget = objc.ID(classMenuTarget).Send(selNew)
-	}
+	s.ensureMenuTarget()
 	menu := s.submenu("", entries)
 	// One menu at a time: the one tracking closes first.
 	s.closePopup()
@@ -192,15 +190,32 @@ func (s *surface) closePopup() {
 
 // setAppearance shows the app, AppKit's own chrome and the views it
 // hosts in a, or in the system's appearance.
-func setAppearance(a driver.Appearance) {
-	var appearance objc.ID
+func setAppearance(a driver.Appearance) { nsApp().Send(sel("setAppearance:"), nsAppearance(a)) }
+
+// applyAppearance shows the surface in the appearance the app forces:
+// the whole app when it runs alone, else its view, in the one the host
+// sets where the app forces none.
+func (s *surface) applyAppearance() {
+	if !s.embedded {
+		setAppearance(s.appearance)
+		return
+	}
+	a := s.appearance
+	if a == driver.AppearanceSystem {
+		a = s.host
+	}
+	s.native.Send(sel("setAppearance:"), nsAppearance(a))
+}
+
+// nsAppearance is AppKit's appearance of a, nil for the system's.
+func nsAppearance(a driver.Appearance) objc.ID {
 	switch a {
 	case driver.AppearanceLight:
-		appearance = objc.ID(objc.GetClass("NSAppearance")).Send(sel("appearanceNamed:"), apple.NSString("NSAppearanceNameAqua"))
+		return objc.ID(objc.GetClass("NSAppearance")).Send(sel("appearanceNamed:"), apple.NSString("NSAppearanceNameAqua"))
 	case driver.AppearanceDark:
-		appearance = objc.ID(objc.GetClass("NSAppearance")).Send(sel("appearanceNamed:"), apple.NSString("NSAppearanceNameDarkAqua"))
+		return objc.ID(objc.GetClass("NSAppearance")).Send(sel("appearanceNamed:"), apple.NSString("NSAppearanceNameDarkAqua"))
 	}
-	nsApp().Send(sel("setAppearance:"), appearance)
+	return 0
 }
 
 func nsApp() objc.ID { return objc.ID(objc.GetClass("NSApplication")).Send(sel("sharedApplication")) }

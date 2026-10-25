@@ -58,11 +58,10 @@ type RootOptions struct {
 	// DataDir and CacheDir are the app's directories, "" where the target
 	// has none.
 	DataDir, CacheDir string
-	// OpenURL is an embedding host's handler for the URLs the app opens
-	// (Scope.OpenURL), asked before the platform: it reports whether it
-	// took url, routing it through the host's own router. It runs on the
-	// graph's goroutine, so it must not block.
-	OpenURL func(url string) bool
+	// Host is the channel to the host app that embeds the app: its
+	// parameters, events, handlers and URL handler. The graph attaches to
+	// it until its root is disposed.
+	Host *Host
 }
 
 // NewRoot returns the root scope of a new graph.
@@ -72,8 +71,11 @@ func NewRoot(opts RootOptions) *Scope {
 	}
 	rt := &runtime{post: opts.Post, clock: opts.Clock, report: opts.Report,
 		store: opts.Storage, dataDir: opts.DataDir, cacheDir: opts.CacheDir,
-		requestFrame: opts.RequestFrame, openURL: opts.OpenURL}
+		requestFrame: opts.RequestFrame}
 	rt.root = &Scope{rt: rt}
+	if opts.Host != nil {
+		rt.attachHost(opts.Host)
+	}
 	return rt.root
 }
 
@@ -103,7 +105,7 @@ type runtime struct {
 	storage        *storageWatch
 	dataDir        string
 	cacheDir       string
-	openURL        func(string) bool
+	host           *hostApp
 }
 
 // current is the scope that owns what code using cx creates now.
@@ -145,6 +147,9 @@ func (cx *Scope) Dispose() {
 	}
 	cx.disposeOwned()
 	cx.disposed = true
+	if cx == cx.rt.root {
+		cx.rt.detachHost()
+	}
 	if cx.comp != nil {
 		cx.comp.unlink()
 	}

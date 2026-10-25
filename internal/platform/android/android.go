@@ -66,17 +66,21 @@ const (
 	msgFonts = 9
 	// msgTest is a test host's step for the runtime's test agent.
 	msgTest = 10
+	// msgHostCall is the app's call of an embedding host's handler, a URL
+	// for its handler or a failure (host.go).
+	msgHostCall = 11
 
 	// Java to Go.
 	msgStart       = 1
 	msgResize      = 2
 	msgEvent       = 3
 	msgMeasured    = 4
-	msgEnvironment = 5 // the environment, before msgStart and on change
-	msgDNS         = 6 // the default network's DNS servers
-	msgLaidOut     = 7 // where a msgLayout put a text's attachments
-	msgTextLines   = 8 // a text layout's lines, answering msgLines
-	msgTestReply   = 9 // the test agent's answer to a msgTest
+	msgEnvironment = 5  // the environment, before msgStart and on change
+	msgDNS         = 6  // the default network's DNS servers
+	msgLaidOut     = 7  // where a msgLayout put a text's attachments
+	msgTextLines   = 8  // a text layout's lines, answering msgLines
+	msgTestReply   = 9  // the test agent's answer to a msgTest
+	msgHost        = 10 // the embedding host's part of the channel (host.go)
 )
 
 // The parts of an image view's request msgImage carries.
@@ -120,10 +124,11 @@ type surface struct {
 	cmu        sync.Mutex
 	components driver.NativeComponents
 	natives    map[driver.NodeID]*nativeView
-	unknown    map[string]bool // component names logged as unregistered
 
 	// testReply takes the runtime's answers to a test host's steps.
 	testReply func(r *reader)
+	// host is the channel to the app embedding the view.
+	host *embedHost
 }
 
 // Options configures Run.
@@ -165,7 +170,7 @@ func connect(opts Options) *surface {
 
 		components: opts.Components,
 		natives:    map[driver.NodeID]*nativeView{},
-		unknown:    map[string]bool{},
+		host:       newEmbedHost(),
 	}
 	useDNS()
 	s.sendFonts(opts.Fonts)
@@ -180,7 +185,12 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 	for {
 		kind, payload, err := readMessage(in)
 		if err != nil {
-			return // the runtime is gone
+			// The runtime is gone, and the app with it.
+			if s.engine != nil {
+				s.engine.Close()
+			}
+			s.closeNatives()
+			return
 		}
 		r := reader{payload}
 		switch kind {
@@ -275,6 +285,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			if s.testReply != nil {
 				s.testReply(&r)
 			}
+		case msgHost:
+			s.hostMessage(&r)
 		case msgDNS:
 			servers := make([]string, r.u32())
 			for i := range servers {
@@ -288,7 +300,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 // startEngine starts app's engine at size; test, when set, is what a test
 // host opens it with.
 func (s *surface) startEngine(app engine.App, size driver.Size, appearance driver.Appearance, test *testOpen) {
-	eopts := engine.Options{Size: size, Environment: s.env, Appearance: appearance}
+	eopts := engine.Options{Size: size, Environment: s.env, Appearance: appearance, Host: s.hostOptions()}
 	// The runtime passes the app's own files and cache directories.
 	eopts.SetDirs(os.Getenv("NSGO_DATA_DIR"), os.Getenv("NSGO_CACHE_DIR"))
 	if test != nil {

@@ -91,6 +91,10 @@ func clickPressedCallback(gesture uintptr, n int32, x, y float64, data uintptr) 
 		w.pressConsumed = true
 		return
 	}
+	if w.embedded && w.focus == nil {
+		// A host's widget takes the keys once pressed.
+		gtkWidgetGrabFocus(w.surface)
+	}
 	w.pointerDown(driver.Point{X: driver.Points(x), Y: driver.Points(y)},
 		gtkGestureSingleGetCurrentButton(gesture), gtkGestureGetDevice(gesture),
 		gtkEventControllerGetCurrentEventState(gesture), int(n))
@@ -427,7 +431,13 @@ func (w *window) setupInputs() {
 	gtkEventControllerSetPropagationPhase(keys, propagationPhaseCapture)
 	gSignalConnect(keys, "key-pressed", cbKeyPressed, w.handle)
 	gSignalConnect(keys, "key-released", cbKeyReleased, w.handle)
-	gtkWidgetAddController(w.win, keys)
+	// A window of its own hears every key; a host's widget those pressed
+	// while the focus is in it.
+	if w.embedded {
+		gtkWidgetAddController(w.surface, keys)
+	} else {
+		gtkWidgetAddController(w.win, keys)
+	}
 }
 
 // hitEvent returns the innermost view under p that reports kind.

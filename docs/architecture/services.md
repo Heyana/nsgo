@@ -30,7 +30,7 @@ Android's clipboard holds images only as content URIs, so the runtime declares `
 
 ## Opening URLs
 
-`OpenURL` refuses what `CheckURL` refuses, as NSH's `check_url` does: a URL without a scheme, over 16 KiB, with spaces, a web address without a host, and `javascript:`, `data:`, `blob:`, `file:`, `about:` and `asset:`. An embedding host's handler (`RootOptions.OpenURL`) takes a URL before the platform.
+`OpenURL` refuses what `CheckURL` refuses, as NSH's `check_url` does: a URL without a scheme, over 16 KiB, with spaces, a web address without a host, and `javascript:`, `data:`, `blob:`, `file:`, `about:` and `asset:`. An embedding host's handler (`Host.HandleOpenURL`, [embedding](embedding.md#the-host-channel)) takes a URL before the platform.
 
 | Target | Opens with | Answers false when |
 | --- | --- | --- |

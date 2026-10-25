@@ -23,6 +23,11 @@ func buildAll(ctx context.Context, p *project) error {
 	if err != nil {
 		return err
 	}
+	if p.Build.embed {
+		if buildTargets, err = embedOnly(buildTargets); err != nil {
+			return err
+		}
+	}
 	for _, target := range buildTargets {
 		dir := filepath.Join(p.Build.Output, fmt.Sprintf("%s-%s-%s", p.Name, p.Version, target))
 		if err := os.RemoveAll(dir); err != nil {
@@ -132,6 +137,16 @@ func goAndXcodeTargets() []string {
 
 func buildTarget(ctx context.Context, p *project, target, dir string) error {
 	_, arch, _ := strings.Cut(target, "_")
+	if p.Build.embed {
+		switch target {
+		case "ios", "ios_simulator":
+			// One framework holds both.
+			return buildIOSFramework(ctx, p, dir)
+		case "android_arm64", "android_x64":
+			return buildAndroidAAR(ctx, p, dir, goArch(arch))
+		}
+		return fmt.Errorf("-embed builds for %s; desktop hosts embed apps with nsgo.NewView", strings.Join(embedTargets, ", "))
+	}
 	switch target {
 	case "macos_arm64", "macos_x64":
 		_, err := buildMacApp(ctx, p, dir, goArch(arch))
@@ -171,7 +186,13 @@ func goArch(arch string) string {
 
 // goBuild builds the project's main package to out.
 func goBuild(ctx context.Context, p *project, out string, env []string, ldflags ...string) error {
-	args := []string{"build", "-ldflags", p.ldflags(ldflags...), "-o", out}
+	return goBuildWith(ctx, p, out, env, nil, ldflags...)
+}
+
+// goBuildWith is goBuild with flags of its own for go build.
+func goBuildWith(ctx context.Context, p *project, out string, env, flags []string, ldflags ...string) error {
+	args := append([]string{"build"}, flags...)
+	args = append(args, "-ldflags", p.ldflags(ldflags...), "-o", out)
 	if p.testBinary {
 		// nsgo test -target: the package's tests, with the backend's test
 		// host, in place of the app.

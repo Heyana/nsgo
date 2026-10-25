@@ -15,9 +15,27 @@ import (
 	"github.com/oneo-me/nsgo/internal/platform/imagedecode"
 )
 
-// nativeView is what Go keeps of a native view.
+// nativeView is what Go keeps of a native view: its component, or for
+// one the embedding host registered in Java, host.
 type nativeView struct {
 	component driver.NativeComponent
+	host      bool
+}
+
+// hostClass prefixes the name of a component Go does not know, for Java to
+// look it up among the host's (NsgoView.registerComponent).
+const hostClass = "host:"
+
+// closeNatives closes the components still showing once the app stopped.
+func (s *surface) closeNatives() {
+	s.cmu.Lock()
+	defer s.cmu.Unlock()
+	for id, v := range s.natives {
+		if v.component != nil {
+			v.component.Close()
+		}
+		delete(s.natives, id)
+	}
 }
 
 // nativeItem is what an ItemNative sends Java: the class to build, empty
@@ -67,10 +85,9 @@ func (s *surface) configureNative(id driver.NodeID, c *driver.NativeConfig) nati
 			factory = newTabBar
 		}
 		if factory == nil {
-			if !s.unknown[c.Component] {
-				s.unknown[c.Component] = true
-				log.Printf("nsgo: no native component %q is registered", c.Component)
-			}
+			// The host's, if Java has one of the name.
+			v.host = true
+			item.class = hostClass + c.Component
 		} else {
 			e := s.engine
 			v.component = factory(driver.NewNativeContext(
@@ -87,6 +104,14 @@ func (s *surface) configureNative(id driver.NodeID, c *driver.NativeConfig) nati
 				log.Printf("nsgo: native component %q: View must return a View class name on Android", c.Component)
 			}
 		}
+	}
+	if v.host {
+		// The host's component takes the props as they are.
+		for name, value := range c.Props {
+			item.props = append(item.props, driver.AndroidViewProp{Name: name, Value: value})
+		}
+		sort.Slice(item.props, func(i, j int) bool { return item.props[i].Name < item.props[j].Name })
+		return item
 	}
 	if v.component == nil {
 		return item
@@ -112,12 +137,20 @@ func (s *surface) configureNative(id driver.NodeID, c *driver.NativeConfig) nati
 // nativeEvent hands a listener callback of a native view's View to its
 // component, or emits it.
 func (s *surface) nativeEvent(id driver.NodeID, name, data string) {
+	s.cmu.Lock()
+	v := s.natives[id]
+	if v != nil && v.host {
+		// A host's component emits one value.
+		s.cmu.Unlock()
+		var value any
+		json.Unmarshal([]byte(data), &value)
+		s.engine.Dispatch(driver.Event{Kind: driver.EventNative, ID: id, Text: name, Data: value})
+		return
+	}
 	var args []any
 	if data != "" {
 		json.Unmarshal([]byte(data), &args)
 	}
-	s.cmu.Lock()
-	v := s.natives[id]
 	var mapper driver.AndroidEventMapper
 	if v != nil && v.component != nil {
 		mapper, _ = v.component.(driver.AndroidEventMapper)

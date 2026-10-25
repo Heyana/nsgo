@@ -205,7 +205,7 @@ func CheckURL(u string) error {
 
 // OpenURL opens u outside the app: a web page in the browser, a mailto:
 // or tel: link in its app, any scheme another app registered. An
-// embedding host's handler (RootOptions.OpenURL) takes it first. done,
+// embedding host's handler (Host.HandleOpenURL) takes it first. done,
 // when not nil, learns whether it opened: false for a URL CheckURL
 // refuses, or one no app handles.
 func (cx *Scope) OpenURL(u string, done func(opened bool)) {
@@ -218,16 +218,25 @@ func (cx *Scope) OpenURL(u string, done func(opened bool)) {
 		answer(false)
 		return
 	}
-	if h := cx.rt.openURL; h != nil && h(u) {
-		answer(true)
-		return
+	o := cx.current()
+	platform := func() {
+		t := cx.rt.tree
+		if t == nil || o.disposed {
+			answer(false)
+			return
+		}
+		t.request(o, driver.MountItem{Kind: driver.ItemOpenURL, Value: u}, func(ev driver.Event) { answer(ev.Finished) })
 	}
-	t := cx.rt.tree
-	if t == nil {
-		answer(false)
-		return
+	asked := cx.rt.host.openURL(u, func(handled bool) {
+		if handled {
+			cx.rt.run(o, func() { answer(true) })
+		} else {
+			cx.rt.run(o, platform)
+		}
+	})
+	if !asked {
+		platform()
 	}
-	t.request(cx, driver.MountItem{Kind: driver.ItemOpenURL, Value: u}, func(ev driver.Event) { answer(ev.Finished) })
 }
 
 // PickOptions say how PickImages picks and prepares images.

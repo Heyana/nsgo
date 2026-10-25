@@ -764,3 +764,13 @@ func parseCSSDeclarations(s string) [][2]string {
 	}
 	return out
 }
+
+// ParseColor reads a CSS color: hex, rgb(), rgba(), hsl(), hsla(), a
+// color name or transparent.
+func ParseColor(s string) (Color, error) {
+	c, ok, err := parseSVGColor(s)
+	if err == nil && !ok {
+		err = fmt.Errorf("driver: %q is no CSS color", s)
+	}
+	return c, err
+}

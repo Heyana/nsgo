@@ -131,6 +131,8 @@ var (
 	gtkWidgetQueueAllocate                 func(uintptr)
 	gtkWidgetGetMapped                     func(uintptr) int32
 	gtkWidgetGrabFocus                     func(uintptr)
+	gtkWidgetGetRoot                       func(uintptr) uintptr
+	gtkWidgetSetFocusable                  func(uintptr, int32)
 	gtkWidgetGetWidth                      func(uintptr) int32
 	gtkWidgetGetHeight                     func(uintptr) int32
 	gtkWidgetGetNative                     func(uintptr) uintptr
@@ -438,6 +440,8 @@ func bind() {
 	purego.RegisterLibFunc(&gtkWidgetQueueAllocate, gtkLib, "gtk_widget_queue_allocate")
 	purego.RegisterLibFunc(&gtkWidgetGetMapped, gtkLib, "gtk_widget_get_mapped")
 	purego.RegisterLibFunc(&gtkWidgetGrabFocus, gtkLib, "gtk_widget_grab_focus")
+	purego.RegisterLibFunc(&gtkWidgetGetRoot, gtkLib, "gtk_widget_get_root")
+	purego.RegisterLibFunc(&gtkWidgetSetFocusable, gtkLib, "gtk_widget_set_focusable")
 	purego.RegisterLibFunc(&gtkWidgetGetWidth, gtkLib, "gtk_widget_get_width")
 	purego.RegisterLibFunc(&gtkWidgetGetHeight, gtkLib, "gtk_widget_get_height")
 	purego.RegisterLibFunc(&gtkWidgetGetNative, gtkLib, "gtk_widget_get_native")

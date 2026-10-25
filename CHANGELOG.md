@@ -13,5 +13,6 @@
 - Add clipboard images and files, opening links, the photo picker, forced light or dark appearance, toasts and a disk cache for downloaded images.
 - Add custom title bars, window frames and levels, application and context menus, scroll bars and window materials, and return from `nsgo.Run` on quit.
 - Add `base`: unstyled controls, popups, menus that become sheets on phones, dialogs, sheets, safe areas, resizable panels, a dock and a streaming `TextView`.
+- Add embedding in other apps with `nsgo.NewView` on desktops and `nsgo build -embed` frameworks for iOS and Android, with a channel to the host.
 - Add `nsgotest` for app tests that act as a user does, headless or on every platform with its native input and screenshots.
-- Add the `nsgo` tool, which creates apps, runs them with hot reload, an error overlay and a performance monitor, tests them, and packages and signs them for stores from `nsgo.yaml`.
+- Add the `nsgo` tool, which creates, runs with hot reload, tests, packages and signs apps for stores from `nsgo.yaml`.

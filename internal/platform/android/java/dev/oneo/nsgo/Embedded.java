@@ -43,8 +43,22 @@ final class Embedded {
     /** The size last reported, in pixels. */
     int width = -1, height = -1;
 
-    private Embedded(View view) {
+    /** The embedding app's component, for one it registered; null for a class built by reflection. */
+    private final NsgoComponent hosted;
+
+    private Embedded(View view, NsgoComponent hosted) {
         this.view = view;
+        this.hosted = hosted;
+    }
+
+    /** Wraps a component the embedding app registered (NsgoView.registerComponent). */
+    static Embedded hosted(NsgoComponent c) {
+        return new Embedded(c.view(), c);
+    }
+
+    /** Destroys the embedding app's component; a view built by reflection only goes. */
+    void destroy() {
+        if (hosted != null) hosted.destroy();
     }
 
     /** Builds a view of class name, or returns null for a class that is no View, logged once. */
@@ -59,7 +73,7 @@ final class Embedded {
             return null;
         }
         listen(view, emit);
-        return new Embedded(view);
+        return new Embedded(view, null);
     }
 
     /** Has each listener the view's own class declares report its callbacks. */
@@ -95,6 +109,10 @@ final class Embedded {
 
     /** Calls set<Name> with value, a parsed JSON value. */
     void setProp(String name, Object value) {
+        if (hosted != null) {
+            hosted.setProp(name, Host.plain(value));
+            return;
+        }
         if (name.isEmpty()) return;
         String setter = "set" + name.substring(0, 1).toUpperCase(Locale.ROOT) + name.substring(1);
         if (!call(setter, new Object[] {value})) log("no public method " + setter + " takes " + value);
@@ -102,6 +120,10 @@ final class Embedded {
 
     /** Calls method name with args: a JSON array's elements, nothing for null, else the one value. */
     void command(String name, Object args) {
+        if (hosted != null) {
+            hosted.command(name, Host.plain(args));
+            return;
+        }
         Object[] list;
         if (args instanceof JSONArray) {
             JSONArray a = (JSONArray) args;

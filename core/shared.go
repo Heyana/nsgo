@@ -904,6 +904,11 @@ func RGB(hex uint32) Color { return driver.RGB(hex) }
 // RGBA returns a color from 0xRRGGBB and an alpha from 0 to 1.
 func RGBA(hex uint32, alpha float32) Color { return driver.RGBA(hex, alpha) }
 
+// ParseColor reads a CSS color, as a host's Tokens give them: hex
+// ("#e11d48", "#fff8"), rgb(), rgba(), hsl(), hsla(), a color name or
+// transparent.
+func ParseColor(s string) (Color, error) { return driver.ParseColor(s) }
+
 // AllColors returns edge colors of the same color on every side.
 func AllColors(c Color) EdgeColors { return driver.AllColors(c) }
 

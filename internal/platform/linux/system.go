@@ -208,7 +208,7 @@ func (w *window) openURL(u string, id uint32) {
 		w.engine.Dispatch(driver.Event{Kind: driver.EventOpenURL, Count: id})
 		return
 	}
-	gtkURILauncherLaunch(launcher, w.win, 0, cbAsync, async(func(source, result uintptr) {
+	gtkURILauncherLaunch(launcher, w.toplevel(), 0, cbAsync, async(func(source, result uintptr) {
 		ok := gtkURILauncherLaunchFinish(source, result, 0) != 0
 		gObjectUnref(source)
 		if !w.closing {
@@ -249,7 +249,7 @@ func (w *window) pickImages(r driver.PickRequest, id uint32) {
 		return goString(p)
 	}
 	if r.Limit > 1 {
-		gtkFileDialogOpenMultiple(dialog, w.win, 0, cbAsync, async(func(source, result uintptr) {
+		gtkFileDialogOpenMultiple(dialog, w.toplevel(), 0, cbAsync, async(func(source, result uintptr) {
 			var paths []string
 			if list := gtkFileDialogOpenMultipleFinsh(source, result, 0); list != 0 {
 				for i := range gListModelGetNItems(list) {
@@ -266,7 +266,7 @@ func (w *window) pickImages(r driver.PickRequest, id uint32) {
 		}))
 		return
 	}
-	gtkFileDialogOpen(dialog, w.win, 0, cbAsync, async(func(source, result uintptr) {
+	gtkFileDialogOpen(dialog, w.toplevel(), 0, cbAsync, async(func(source, result uintptr) {
 		var paths []string
 		if file := gtkFileDialogOpenFinish(source, result, 0); file != 0 {
 			if p := path(file); p != "" {
@@ -289,7 +289,7 @@ func (w *window) popupMenu(entries []driver.MenuEntry, p driver.Point, id uint32
 	menu := w.buildSubmenu(entries)
 	w.popupRefs = w.building.refs
 	w.building = menuBuild{}
-	gtkWidgetInsertActionGroup(w.win, cstr("popup"), group)
+	gtkWidgetInsertActionGroup(w.toplevel(), cstr("popup"), group)
 	gObjectUnref(group)
 	if menu == 0 {
 		w.engine.Dispatch(driver.Event{Kind: driver.EventMenuClosed, Count: id})

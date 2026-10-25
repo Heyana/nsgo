@@ -35,6 +35,8 @@ type Options struct {
 	// Neither may block.
 	Observe func(*driver.MountBatch)
 	Event   func(driver.Event)
+	// Host is the channel of the test's embedding host, nil without one.
+	Host *core.Host
 }
 
 // Surface is an app shown on a platform. Its methods act as the user

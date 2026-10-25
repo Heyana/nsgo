@@ -62,6 +62,20 @@ var rawHit bool
 
 var selMenuChosen = sel("nsgoMenuChosen:")
 
+// chromeItem applies an item of the window's own: its title, a window
+// command or the menu bar.
+func (s *surface) chromeItem(it *driver.MountItem) {
+	switch it.Kind {
+	case driver.ItemTitle:
+		s.window.Send(sel("setTitle:"), apple.NSString(it.Value))
+		s.layoutTrafficLights()
+	case driver.ItemWindow:
+		s.command(it.Window)
+	case driver.ItemMenu:
+		s.setMenu(it.Menu)
+	}
+}
+
 func (s *surface) command(c *driver.WindowCommand) {
 	w := s.window
 	switch c.Action {
@@ -273,9 +287,7 @@ func (s *surface) setMenu(entries []driver.MenuEntry) {
 		nsApp.Send(sel("setMainMenu:"), s.defaultMenu)
 		return
 	}
-	if s.menuTarget == 0 {
-		s.menuTarget = objc.ID(classMenuTarget).Send(selNew)
-	}
+	s.ensureMenuTarget()
 	bar := objc.ID(objc.GetClass("NSMenu")).Send(selNew)
 	for _, e := range entries {
 		if e.Separator {
@@ -459,9 +471,21 @@ func keyEquivalent(shortcut string) (string, uint) {
 	return key, mods
 }
 
-// menuChosen reports a chosen menu item's ID.
+// menuTargets are the surfaces of the menu items' targets.
+var menuTargets = map[objc.ID]*surface{}
+
+// ensureMenuTarget makes the target of the surface's menu items.
+func (s *surface) ensureMenuTarget() {
+	if s.menuTarget == 0 {
+		s.menuTarget = objc.ID(classMenuTarget).Send(selNew)
+		menuTargets[s.menuTarget] = s
+	}
+}
+
+// menuChosen reports a chosen menu item's ID to its surface.
 func menuChosen(self objc.ID, _ objc.SEL, item objc.ID) {
-	if id := objc.Send[int](item, sel("tag")); id > 0 && active != nil && active.engine != nil {
-		active.engine.Dispatch(driver.Event{Kind: driver.EventMenu, Count: uint32(id)})
+	s := menuTargets[self]
+	if id := objc.Send[int](item, sel("tag")); id > 0 && s != nil && s.engine != nil && !s.closed {
+		s.engine.Dispatch(driver.Event{Kind: driver.EventMenu, Count: uint32(id)})
 	}
 }

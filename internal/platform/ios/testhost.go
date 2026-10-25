@@ -34,7 +34,7 @@ type host struct{}
 
 func (host) Main(run func() int) {
 	sceneReady = make(chan struct{})
-	app = newSurface(nil, Options{ID: "dev.nsgo.test"})
+	runner = newSurface(nil, Options{ID: "dev.nsgo.test"})
 	go func() { os.Exit(run()) }()
 	runUIKit(Options{})
 }
@@ -47,13 +47,13 @@ func (host) Open(root func(cx *core.Scope) core.Node, o testhost.Options) (testh
 	}
 	test := &testOpen{options: o}
 	onMainSync(func() {
-		app.app = root
-		app.startEngine(test)
+		runner.app = root
+		runner.startEngine(test)
 	})
 	if err := loadHID(); err != nil {
 		return nil, err
 	}
-	return &testSurface{s: app, test: test}, nil
+	return &testSurface{s: runner, test: test}, nil
 }
 
 func onMainSync(fn func()) {

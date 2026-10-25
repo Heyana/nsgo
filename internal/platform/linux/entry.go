@@ -63,7 +63,7 @@ func (w *window) nextAlert() {
 			gtkAlertDialogSetCancelButton(dialog, int32(cancel))
 		}
 	}
-	gtkAlertDialogChoose(dialog, w.win, 0, cbAlertChosen, w.handle)
+	gtkAlertDialogChoose(dialog, w.toplevel(), 0, cbAlertChosen, w.handle)
 }
 
 func alertChosenCallback(dialog uintptr, result uintptr, data uintptr) {
