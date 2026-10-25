@@ -5,6 +5,7 @@ package web
 import (
 	"log"
 	"math"
+	"strconv"
 	"syscall/js"
 
 	"github.com/oneo-me/nsgo/internal/driver"
@@ -34,6 +35,16 @@ type glShader struct {
 	buf     []byte
 	bytes   js.Value // a Uint8Array as large as buf
 	failed  bool
+	// textures are the images' textures in this context, by
+	// ImageSource.Key, and textureCount how many the program reads.
+	textures     map[string]glTexture
+	textureCount int
+}
+
+// glTexture is an image's texture and its size in pixels.
+type glTexture struct {
+	tex  js.Value
+	w, h float64
 }
 
 const glVertex = `#version 300 es
@@ -68,6 +79,38 @@ func (s *surface) setShader(v *view, sh *driver.Shader) {
 	v.gl.shader = sh
 	s.animator.BindShader(v.id, sh.Nodes)
 	s.shadeLater(v)
+}
+
+// texture returns image src's texture in g's context, made the first
+// time it is drawn after the browser loaded it; ok is false until then,
+// and v draws again once it loads.
+func (s *surface) texture(v *view, src driver.ImageSource) (glTexture, bool) {
+	g := v.gl
+	key := src.Key()
+	if t, ok := g.textures[key]; ok {
+		return t, true
+	}
+	im := s.loadImage(src, v)
+	if !im.loaded {
+		return glTexture{}, false
+	}
+	gl := g.gl
+	t := glTexture{tex: gl.Call("createTexture"), w: im.img.Get("naturalWidth").Float(), h: im.img.Get("naturalHeight").Float()}
+	gl.Call("bindTexture", gl.Get("TEXTURE_2D"), t.tex)
+	// Shaders read premultiplied colors, the image's top row first.
+	gl.Call("pixelStorei", gl.Get("UNPACK_PREMULTIPLY_ALPHA_WEBGL"), true)
+	gl.Call("texImage2D", gl.Get("TEXTURE_2D"), 0, gl.Get("RGBA"), gl.Get("RGBA"), gl.Get("UNSIGNED_BYTE"), im.img)
+	for _, p := range []string{"TEXTURE_MIN_FILTER", "TEXTURE_MAG_FILTER"} {
+		gl.Call("texParameteri", gl.Get("TEXTURE_2D"), gl.Get(p), gl.Get("NEAREST"))
+	}
+	for _, p := range []string{"TEXTURE_WRAP_S", "TEXTURE_WRAP_T"} {
+		gl.Call("texParameteri", gl.Get("TEXTURE_2D"), gl.Get(p), gl.Get("CLAMP_TO_EDGE"))
+	}
+	if g.textures == nil {
+		g.textures = map[string]glTexture{}
+	}
+	g.textures[key] = t
+	return t, true
 }
 
 // shadeLater draws v in the next animation frame.
@@ -130,11 +173,26 @@ func (s *surface) drawShader(v *view) {
 		v.inner.Set("height", ph)
 	}
 
-	n := shader.BridgeLanes + len(g.shader.Lanes)
+	bridge := 3 + 2*g.textureCount
+	n := bridge + len(g.shader.Lanes)
 	g.lanes = append(g.lanes[:0], make([]float64, n)...)
-	copy(g.lanes[shader.BridgeLanes:], g.shader.Lanes)
-	s.animator.ShaderLanes(v.id, g.lanes[shader.BridgeLanes:])
+	copy(g.lanes[bridge:], g.shader.Lanes)
+	s.animator.ShaderLanes(v.id, g.lanes[bridge:])
 	g.lanes[0], g.lanes[1], g.lanes[2] = w, h, ratio
+	for i := range g.textureCount {
+		gl.Call("activeTexture", gl.Get("TEXTURE0").Int()+i)
+		var t glTexture
+		if i < len(g.shader.Images) {
+			t, _ = s.texture(v, g.shader.Images[i])
+		}
+		if t.tex.IsUndefined() {
+			// An image not loaded reads as transparent: no texture.
+			gl.Call("bindTexture", gl.Get("TEXTURE_2D"), js.Null())
+			continue
+		}
+		gl.Call("bindTexture", gl.Get("TEXTURE_2D"), t.tex)
+		g.lanes[3+2*i], g.lanes[4+2*i] = t.w, t.h
+	}
 	clear(g.buf)
 	shaderir.PutLanes(g.buf, g.offsets, g.types, g.lanes, 4)
 	js.CopyBytesToJS(g.bytes, g.buf)
@@ -192,6 +250,11 @@ func (g *glShader) link(p *driver.ShaderProgram) bool {
 	}
 	g.prog = prog
 	g.height = gl.Call("getUniformLocation", prog, "nsgoHeight")
+	g.textureCount = ir.TextureCount
+	gl.Call("useProgram", prog)
+	for i := range ir.TextureCount {
+		gl.Call("uniform1i", gl.Call("getUniformLocation", prog, "T"+strconv.Itoa(i)), i)
+	}
 	var size int
 	g.offsets, size = glsl.UniformLanes(ir)
 	g.types = ir.LaneTypes()

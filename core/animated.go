@@ -16,6 +16,9 @@ import (
 // node derived from others.
 type AnimatedNode interface {
 	animated() *animNode
+	// AnimatedNodeID is the node's ID in the platform's graph, which a
+	// Drawing binds arguments to.
+	AnimatedNodeID() uint32
 }
 
 type animNode struct {
@@ -24,6 +27,9 @@ type animNode struct {
 }
 
 func (n *animNode) animated() *animNode { return n }
+
+// AnimatedNodeID implements AnimatedNode.
+func (n *animNode) AnimatedNodeID() uint32 { return n.id }
 
 // AnimatedValue is a number the platform animates. Bind it to a view
 // through Style.Animated, or derive other nodes from it.
@@ -85,10 +91,24 @@ func DiffClamp(in AnimatedNode, min, max float64) AnimatedNode {
 	return src.t.anim.derive(src, driver.AnimationOp{Kind: driver.AnimCreateDiffClamp, Input: src.id, Min: min, Max: max})
 }
 
+// SnappingDiffClamp is DiffClamp that settles at its nearer bound in 200
+// ms, easing out, when the scroll view whose offset its input follows
+// comes to rest, so a header is never left half hidden. It settles at max
+// only once its input reached max; scrolling again ends the settling
+// where it is.
+func SnappingDiffClamp(in AnimatedNode, min, max float64) AnimatedNode {
+	src := in.animated()
+	return src.t.anim.derive(src, driver.AnimationOp{Kind: driver.AnimCreateDiffClamp, Input: src.id, Min: min,
+		Max: max, Snap: true})
+}
+
 // Constant is a fixed operand for Add, Sub, Mul, Div and Mod.
 type Constant float64
 
 func (Constant) animated() *animNode { return nil }
+
+// AnimatedNodeID implements AnimatedNode: a constant is no node.
+func (Constant) AnimatedNodeID() uint32 { return 0 }
 
 func operand(n AnimatedNode) (driver.Operand, *animNode) {
 	if c, ok := n.(Constant); ok {
@@ -131,6 +151,15 @@ type AnimatedStyle struct {
 	// interpolations.
 	Background, BorderColor, ShadowColor AnimatedNode
 	ShadowRadius                         AnimatedNode
+	// ShadowOpacity multiplies the shadow color's alpha.
+	ShadowOpacity AnimatedNode
+	// TextColor colors a text's whole content, its spans included.
+	TextColor AnimatedNode
+	// RotateX and RotateY turn the view out of its plane, in degrees.
+	RotateX, RotateY AnimatedNode
+	// StickyInset is how far a sticky view pins from its scroll view's
+	// start, in place of its Top (Left across).
+	StickyInset AnimatedNode
 }
 
 func (s *AnimatedStyle) nodes() [driver.PropCount]uint32 {
@@ -139,7 +168,8 @@ func (s *AnimatedStyle) nodes() [driver.PropCount]uint32 {
 		return out
 	}
 	for i, n := range [...]AnimatedNode{s.Opacity, s.TranslateX, s.TranslateY, s.Scale, s.ScaleX, s.ScaleY,
-		s.Rotate, s.Background, s.BorderColor, s.ShadowColor, s.ShadowRadius} {
+		s.Rotate, s.Background, s.BorderColor, s.ShadowColor, s.ShadowRadius, s.ShadowOpacity, s.TextColor,
+		s.RotateX, s.RotateY} {
 		if n != nil {
 			if a := n.animated(); a != nil {
 				out[i] = a.id
@@ -162,24 +192,12 @@ func Timing(v *AnimatedValue, to float64, c TimingConfig) *Animation {
 
 // Spring moves v to to on a damped spring.
 func Spring(v *AnimatedValue, to float64, c SpringConfig) *Animation {
-	if c.Stiffness <= 0 {
-		c.Stiffness = 100
-	}
-	if c.Damping <= 0 {
-		c.Damping = 10
-	}
-	if c.Mass <= 0 {
-		c.Mass = 1
-	}
-	return &Animation{Kind: AnimationSpring, Value: v.id, To: to, Spring: c}
+	return &Animation{Kind: AnimationSpring, Value: v.id, To: to, Spring: springDefaults(c)}
 }
 
 // Decay slows v down from a velocity, as a fling.
 func Decay(v *AnimatedValue, c DecayConfig) *Animation {
-	if c.Deceleration <= 0 || c.Deceleration >= 1 {
-		c.Deceleration = 0.998
-	}
-	return &Animation{Kind: AnimationDecay, Value: v.id, Decay: c}
+	return &Animation{Kind: AnimationDecay, Value: v.id, Decay: decayDefaults(c)}
 }
 
 // Sequence runs steps one after another, each starting when the one
@@ -208,28 +226,85 @@ func Loop(a *Animation, iterations int) *Animation {
 	return &Animation{Kind: AnimationLoop, Steps: []*Animation{a}, Iterations: iterations}
 }
 
+// AnimationRun is an animation StartAnimation runs on the platform.
+type AnimationRun struct {
+	t     *Tree
+	id    uint32
+	ended bool
+}
+
+// Stop ends the run where its values are, unfinished.
+func (r *AnimationRun) Stop() {
+	if !r.ended {
+		r.ended = true
+		r.t.anim.add(driver.AnimationOp{Kind: driver.AnimStop, ID: r.id})
+	}
+}
+
+// Reset ends the run, unfinished if it still runs, and puts the values it
+// moves back where they were as it started.
+func (r *AnimationRun) Reset() {
+	r.ended = true
+	r.t.anim.add(driver.AnimationOp{Kind: driver.AnimReset, ID: r.id})
+}
+
 // StartAnimation runs a on the platform and calls done, if not nil,
-// under the current owner with whether it ran to its end. Stopping it, a
-// value's Set or Stop, or another animation of one of its values ends it
-// early. The owner going stops it.
-func (cx *Scope) StartAnimation(a *Animation, done func(finished bool)) (stop func()) {
+// under the current owner with whether it ran to its end, once. Stopping
+// or resetting it, a value's Set or Stop, or another animation of one of
+// its values ends it early. The owner going stops it.
+func (cx *Scope) StartAnimation(a *Animation, done func(finished bool)) *AnimationRun {
 	t := cx.rt.tree
-	ended := false
-	id := t.anim.wait(cx, func(e driver.Event) {
-		ended = true
-		if done != nil {
+	r := &AnimationRun{t: t}
+	reported := false
+	r.id = t.anim.wait(cx, func(e driver.Event) {
+		r.ended = true
+		if done != nil && !reported {
+			reported = true
 			done(e.Finished)
 		}
 	})
-	t.anim.add(driver.AnimationOp{Kind: driver.AnimStart, ID: id, Animation: a})
-	stop = func() {
-		if !ended {
-			ended = true
-			t.anim.add(driver.AnimationOp{Kind: driver.AnimStop, ID: id})
-		}
+	t.anim.add(driver.AnimationOp{Kind: driver.AnimStart, ID: r.id, Animation: a})
+	cx.current().addCleanup(func() {
+		r.Stop()
+		t.anim.add(driver.AnimationOp{Kind: driver.AnimForgetRun, ID: r.id})
+	})
+	return r
+}
+
+// SampleEasing returns e at n evenly spaced fractions from 0 to 1, both
+// included, as the platform evaluates it: for drawing the curve.
+func SampleEasing(e Easing, n int) []float64 { return driver.SampleEasing(e, n) }
+
+// SampleSpring returns where Spring takes a value from from to to, 60
+// times a second until it rests, from the platforms' own code.
+func SampleSpring(from, to float64, c SpringConfig) []float64 {
+	return driver.SampleSpring(from, to, springDefaults(c))
+}
+
+// SampleDecay returns where Decay takes a value from from, as
+// SampleSpring does.
+func SampleDecay(from float64, c DecayConfig) []float64 {
+	return driver.SampleDecay(from, decayDefaults(c))
+}
+
+func springDefaults(c SpringConfig) SpringConfig {
+	if c.Stiffness <= 0 {
+		c.Stiffness = 100
 	}
-	cx.current().addCleanup(stop)
-	return stop
+	if c.Damping <= 0 {
+		c.Damping = 10
+	}
+	if c.Mass <= 0 {
+		c.Mass = 1
+	}
+	return c
+}
+
+func decayDefaults(c DecayConfig) DecayConfig {
+	if c.Deceleration <= 0 || c.Deceleration >= 1 {
+		c.Deceleration = 0.998
+	}
+	return c
 }
 
 // animations is the engine's side of the graph: node and request IDs,

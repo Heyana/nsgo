@@ -18,6 +18,9 @@ import (
 
 // scrollEvent reports kind on scroll view v at its offset, if it listens.
 func (w *window) scrollEvent(v *view, kind driver.EventKind) {
+	if kind == driver.EventScrollDragEnd || kind == driver.EventMomentumEnd {
+		w.restScroll(v)
+	}
 	if v.events.Has(kind) {
 		w.engine.Dispatch(driver.Event{Kind: kind, ID: v.id, Point: v.offset, Count: v.applied})
 	}
@@ -34,9 +37,16 @@ func (w *window) interruptScroll(v *view) {
 // wheelTurned follows a wheel turn that moved snapping view v by d; the
 // frame clock settles it once the wheel rests.
 func (w *window) wheelTurned(v *view, d driver.Points) {
-	if v.scroll.Behavior.Snaps() {
-		v.wheel.Turn(time.Now(), d)
-		w.animate(v)
+	v.wheel.Turn(time.Now(), d)
+	w.animate(v)
+}
+
+// restScroll has the snapping diff clamps that follow v settle, as v
+// comes to rest.
+func (w *window) restScroll(v *view) {
+	w.animator.Settle(v.id)
+	if w.animator.Running() {
+		w.startClock()
 	}
 }
 
@@ -45,6 +55,7 @@ func (w *window) wheelTurned(v *view, d driver.Points) {
 func (w *window) settle(v *view, velocity float32) {
 	to, ok := scrollbar.Settle(&v.scroll, v.frame.Size, v.size, v.offset, velocity)
 	if !ok || to == v.offset {
+		w.restScroll(v)
 		return
 	}
 	w.scrollEvent(v, driver.EventMomentumStart)
@@ -95,6 +106,18 @@ func (w *window) setSticky(v *view, cells []driver.StickyCell) {
 		}
 	}
 	v.sticky = cells
+	bound := false
+	for _, c := range cells {
+		bound = bound || c.Node != 0
+	}
+	if w.stickyBound == nil {
+		w.stickyBound = map[*view]bool{}
+	}
+	if bound {
+		w.stickyBound[v] = true
+	} else {
+		delete(w.stickyBound, v)
+	}
 	w.pinSticky(v)
 }
 
@@ -108,7 +131,7 @@ func (w *window) pinSticky(v *view) {
 	}
 	for _, c := range v.sticky {
 		if cv := w.view(c.Cell); cv != nil {
-			d := c.StickyShift(at)
+			d := w.animator.StickyShift(c, at)
 			shift := driver.Point{Y: d}
 			if v.scroll.Horizontal {
 				shift = driver.Point{X: d}
@@ -129,4 +152,16 @@ func (w *window) stick(v *view, shift driver.Point) {
 	f.Origin.Y += shift.Y
 	v.frame = f
 	w.moved(v)
+}
+
+// repinBound pins again the sticky cells whose insets follow animated
+// values, which may have moved.
+func (w *window) repinBound() {
+	for v := range w.stickyBound {
+		if w.view(v.id) == v {
+			w.pinSticky(v)
+		} else {
+			delete(w.stickyBound, v)
+		}
+	}
 }

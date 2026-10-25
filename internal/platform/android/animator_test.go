@@ -26,7 +26,7 @@ type animatorBatch struct {
 // composite, an interruption and a read.
 func animatorScenario() []animatorBatch {
 	const (
-		a, b, c, d, e, f = 1, 2, 3, 4, 5, 6
+		a, b, c, d, e, f, g = 1, 2, 3, 4, 5, 6, 7
 	)
 	val := func(id uint32, v float64) driver.AnimationOp {
 		return driver.AnimationOp{Kind: driver.AnimCreateValue, Node: id, Value: v}
@@ -49,7 +49,9 @@ func animatorScenario() []animatorBatch {
 	}
 	red, green, blue := driver.Color(0xff0000ff), driver.Color(0x00ff0080), driver.Color(0x0000ffff)
 	first := []driver.AnimationOp{
-		val(a, 0), val(b, 0), val(c, 0), val(d, 0), val(e, 0), val(f, 0),
+		val(a, 0), val(b, 0), val(c, 0), val(d, 0), val(e, 0), val(f, 0), val(g, 0),
+		interp(18, g, driver.Interpolation{Input: []float64{0, 1}, Output: []float64{0, 100},
+			Easing: driver.Easing{Kind: driver.EasingSteps, Param: 4, Steps: driver.JumpStart}}),
 		interp(10, a, driver.Interpolation{Input: []float64{0, 50, 100}, Colors: []driver.Color{red, green, blue}}),
 		interp(11, b, driver.Interpolation{Input: []float64{0, 1}, Output: []float64{0, 300},
 			ExtrapolateRight: driver.ExtrapolateExtend, Easing: driver.Easing{Kind: driver.EasingBack, Mode: driver.EaseModeOut}}),
@@ -66,6 +68,9 @@ func animatorScenario() []animatorBatch {
 		bind(2, driver.PropScale, 11), bind(2, driver.PropRotate, 13), bind(2, driver.PropTranslateY, 14),
 		bind(3, driver.PropTranslateX, d), bind(3, driver.PropScaleX, 16), bind(3, driver.PropScaleY, 17),
 		bind(3, driver.PropShadowRadius, c), bind(3, driver.PropBorderColor, 10), bind(4, driver.PropOpacity, 15),
+		bind(4, driver.PropRotateX, 18), bind(4, driver.PropRotateY, g), bind(4, driver.PropShadowOpacity, 12),
+		bind(4, driver.PropTextColor, 10),
+		start(6, timing(g, 1, 800, driver.Easing{})),
 		start(1, &driver.Animation{Kind: driver.AnimationParallel, Steps: []*driver.Animation{
 			timing(a, 100, 1000, core.BezierEasing(driver.EaseInOut)),
 			{Kind: driver.AnimationSpring, Value: b, To: 1, Spring: driver.SpringConfig{Stiffness: 100, Damping: 10, Mass: 1}},
@@ -93,11 +98,16 @@ func animatorScenario() []animatorBatch {
 			{Kind: driver.AnimSetOffset, Node: a, Value: 5},
 			{Kind: driver.AnimRead, Node: a, ID: 9},
 			start(5, timing(a, 80, 400, driver.Easing{Kind: driver.EasingCubic, Mode: driver.EaseModeOut})),
+			start(7, timing(f, 5, 2000, driver.Easing{Kind: driver.EasingSteps, Param: 3, Steps: driver.JumpNone})),
 		}},
+		// Resets put a finished run's values and a running one's back.
 		{at: 2300 * time.Millisecond, ops: []driver.AnimationOp{
 			{Kind: driver.AnimFlattenOffset, Node: a},
 			{Kind: driver.AnimStop, ID: 3},
 			{Kind: driver.AnimRelease, Node: 13},
+			{Kind: driver.AnimReset, ID: 6},
+			{Kind: driver.AnimReset, ID: 7},
+			{Kind: driver.AnimForgetRun, ID: 6},
 		}},
 	}
 }
@@ -132,9 +142,10 @@ func runCoreAnimator(batches []animatorBatch, steps []time.Duration) []string {
 		reports = reports[:0]
 		for view := driver.NodeID(1); view <= 4; view++ {
 			v, _ := a.Values(view)
-			out = append(out, fmt.Sprintf("view %d %d %v %v %v %v %v %v %v %v %s %s %s", view, v.Set, v.Opacity,
-				v.TranslateX, v.TranslateY, v.Scale, v.ScaleX, v.ScaleY, v.Rotate, v.ShadowRadius,
-				channels(v.Background), channels(v.BorderColor), channels(v.ShadowColor)))
+			out = append(out, fmt.Sprintf("view %d %d %v %v %v %v %v %v %v %v %s %s %s %v %v %v %s", view, v.Set,
+				v.Opacity, v.TranslateX, v.TranslateY, v.Scale, v.ScaleX, v.ScaleY, v.Rotate, v.ShadowRadius,
+				channels(v.Background), channels(v.BorderColor), channels(v.ShadowColor), v.ShadowOpacity, v.RotateX,
+				v.RotateY, channels(v.TextColor)))
 		}
 	}
 	return out
@@ -168,7 +179,8 @@ func TestAnimatorMatchesJava(t *testing.T) {
 	if err := os.WriteFile(input, w.buf, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	build := exec.Command(javac, "-d", dir, "java/dev/oneo/nsgo/Animator.java", "testdata/AnimatorCheck.java")
+	build := exec.Command(javac, "-d", dir, "java/dev/oneo/nsgo/Animator.java", "java/dev/oneo/nsgo/Protocol.java",
+		"testdata/AnimatorCheck.java")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("javac: %v\n%s", err, out)
 	}
@@ -219,5 +231,9 @@ func sameLine(a, b string) bool {
 	return true
 }
 
-// isChannel reports whether word i of a view line is a color channel.
-func isChannel(i int, words []string) bool { return words[0] == "view" && i >= 11 }
+// isChannel reports whether word i of a view line is a color channel:
+// the background, border and shadow colors', then the text color's after
+// the shadow opacity and the rotations.
+func isChannel(i int, words []string) bool {
+	return words[0] == "view" && (i >= 11 && i < 23 || i >= 26)
+}

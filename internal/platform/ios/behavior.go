@@ -52,7 +52,7 @@ func (v *view) pinSticky() {
 	}
 	for _, c := range v.sc.sticky {
 		if cv := v.surface.viewOf(c.Cell); cv != nil {
-			cv.stick(c.StickyShift(at), v.sc.config.Horizontal)
+			cv.stick(v.surface.animator.StickyShift(c, at), v.sc.config.Horizontal)
 		}
 	}
 }
@@ -66,7 +66,31 @@ func (v *view) setSticky(cells []driver.StickyCell) {
 		}
 	}
 	v.sc.sticky = cells
+	bound := false
+	for _, c := range cells {
+		bound = bound || c.Node != 0
+	}
+	if bound {
+		if v.surface.stickyBound == nil {
+			v.surface.stickyBound = map[*view]bool{}
+		}
+		v.surface.stickyBound[v] = true
+	} else {
+		delete(v.surface.stickyBound, v)
+	}
 	v.pinSticky()
+}
+
+// repinBound pins again the sticky cells whose insets follow animated
+// values, which may have moved.
+func (s *surface) repinBound() {
+	for v := range s.stickyBound {
+		if v.sc != nil && s.views[v.id] == v {
+			v.pinSticky()
+		} else {
+			delete(s.stickyBound, v)
+		}
+	}
 }
 
 // stick moves a sticky cell d along its list from its frame.
@@ -290,6 +314,14 @@ func subviews(view objc.ID) []objc.ID {
 
 // scrollEvent reports kind on scroll view v at its offset and zoom.
 func (v *view) scrollEvent(kind driver.EventKind) {
+	if kind == driver.EventScrollDragEnd || kind == driver.EventMomentumEnd {
+		// At rest, unless a glide follows, which scrolls on.
+		s := v.surface
+		s.animator.Settle(v.id)
+		if s.animator.Running() {
+			s.startTicking()
+		}
+	}
 	o := objc.Send[apple.CGPoint](v.native, selContentOffset)
 	e := driver.Event{Kind: kind, Point: driver.Point{X: driver.Points(o.X), Y: driver.Points(o.Y)}, Count: v.sc.applied}
 	if v.sc.zoom != 0 {

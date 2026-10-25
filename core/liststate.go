@@ -34,6 +34,7 @@ type listState struct {
 	followEnd    Points
 	sticky       []int // sorted
 	stickyOffset Points
+	stickyNode   uint32 // the animated node stickyOffset follows, if any
 	viewability  ViewabilityConfig
 	// offset is the main-axis scroll offset in content coordinates;
 	// viewport the viewport's length.
@@ -567,7 +568,7 @@ func (s *listState) stickyRange(index int, cell NodeID, size Points) StickyCell 
 		start += s.outerStart
 		end += s.outerStart
 	}
-	return StickyCell{Cell: cell, Start: start, End: end}
+	return StickyCell{Cell: cell, Start: start, End: end, Node: s.stickyNode, Inset: s.stickyOffset}
 }
 
 // viewableItems are the items viewable under the list's viewability

@@ -72,7 +72,8 @@ func writeAnimation(w *writer, ops []driver.AnimationOp) {
 			w.u32(o.Input)
 			w.f64(o.Min)
 			w.f64(o.Max)
-		case driver.AnimRead, driver.AnimStop:
+			w.flags(o.Snap)
+		case driver.AnimRead, driver.AnimStop, driver.AnimReset, driver.AnimForgetRun:
 			w.u32(o.ID)
 		case driver.AnimStart:
 			w.u32(o.ID)
@@ -121,6 +122,7 @@ func writeEasing(w *writer, e driver.Easing) {
 	w.byte(byte(e.Mode))
 	w.floats(e.Bezier.X1, e.Bezier.Y1, e.Bezier.X2, e.Bezier.Y2)
 	w.f64(e.Param)
+	w.byte(byte(e.Steps))
 }
 
 // writeSpec writes an animation tree as Animator.Spec.read reads it; a
@@ -154,13 +156,21 @@ func writeSpec(w *writer, a *driver.Animation) {
 	}
 }
 
-// writeGradient writes a fill or stroke gradient as CanvasNode reads it.
+// writeGradient writes a fill or stroke gradient as CanvasNode reads it:
+// its kind, 0 linear, 1 radial and 2 conic, first.
 func writeGradient(w *writer, g *driver.CanvasGradient) {
 	if g == nil {
 		g = &driver.CanvasGradient{}
 	}
-	w.flags(g.Radial)
-	w.floats(g.X1, g.Y1, g.R1, g.X2, g.Y2, g.R2)
+	switch {
+	case g.Conic:
+		w.byte(2)
+	case g.Radial:
+		w.byte(1)
+	default:
+		w.byte(0)
+	}
+	w.floats(g.X1, g.Y1, g.R1, g.X2, g.Y2, g.R2, g.Angle)
 	w.floats(g.Transform[:]...)
 	w.byte(byte(g.Spread))
 	w.u32(uint32(len(g.Stops)))

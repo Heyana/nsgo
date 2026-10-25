@@ -58,6 +58,9 @@ type Options struct {
 	// 22H2 or later, where DWM draws system backdrops; earlier Windows
 	// keeps the window opaque.
 	Material driver.WindowMaterial
+	// Fonts are font files under the app's resources, registered before
+	// the first view.
+	Fonts []string
 }
 
 var (
@@ -220,6 +223,8 @@ type view struct {
 
 	// A canvas's drawing.
 	drawing *driver.Drawing
+	// shaderView is a shader view's Direct3D state.
+	shaderView *shaderView
 
 	// A web view's WebView2 controller and portal, a video's media engine.
 	web   *webView
@@ -289,6 +294,11 @@ type window struct {
 	// count from epoch.
 	animator *driver.Animator
 	epoch    time.Time
+	// canvasImages are the images canvases draw, by ImageSource.Key.
+	canvasImages map[string]*imageSlot
+	// stickyBound are the scroll views with sticky cells whose insets
+	// follow animated values.
+	stickyBound map[*view]bool
 	// components are the app's native components, hosts the views showing
 	// them with a window of their own, and missing the unknown names
 	// already logged.
@@ -379,6 +389,7 @@ func Run(app engine.App, opts Options) {
 	}
 	const perMonitorAwareV2 = ^uintptr(3) // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 (-4)
 	setDpiAwareness.Call(perMonitorAwareV2)
+	registerFonts(opts.Fonts)
 	w := &window{title: opts.Title, scale: 1, webs: map[*webView]bool{}, touchWebs: map[uint32]*webView{},
 		epoch: time.Now(), components: opts.Components, hosts: map[*component]bool{}, missing: map[string]bool{},
 		drops: map[*view]bool{}}
@@ -665,6 +676,11 @@ func (w *window) apply(b *driver.MountBatch) {
 			// A modal is a view; it appears without animation.
 		case driver.ItemCanvas:
 			v.drawing = it.Drawing
+			w.animator.BindCanvas(v.id, it.Drawing.Slots)
+		case driver.ItemShader:
+			if it.Shader != nil {
+				w.setShader(v, it.Shader)
+			}
 		case driver.ItemWeb:
 			if v.kind == driver.KindWeb && it.Web != nil {
 				if v.web == nil {
@@ -789,6 +805,8 @@ func (w *window) destroy(v *view) {
 	}
 	v.shadow.release()
 	v.shadow = nil
+	v.shaderView.release()
+	v.shaderView = nil
 	for _, sh := range v.boxShadows {
 		sh.release()
 	}

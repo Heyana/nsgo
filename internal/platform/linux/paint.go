@@ -161,7 +161,7 @@ func (w *window) snapshotContent(v *view, s *driver.ViewStyle, snap uintptr) {
 		w.snapshotImage(v, s.TintColor, snap, width, height)
 	case v.kind == driver.KindCanvas && v.drawing != nil:
 		cr := gtkSnapshotAppendCairo(snap, &box)
-		w.playCanvas(v.drawing, cr, r)
+		w.playCanvas(v, cr, r)
 		cairoDestroy(cr)
 	}
 	if l, ok := v.text.(*textLayout); ok && l != nil && l.text != "" {
@@ -175,7 +175,17 @@ func (w *window) snapshotContent(v *view, s *driver.ViewStyle, snap uintptr) {
 			gtkSnapshotPushShadow(snap, &s, 1)
 		}
 		cr := gtkSnapshotAppendCairo(snap, &grown)
-		l.draw(cr, v.content.Origin.X, v.content.Origin.Y)
+		if a := v.animated; a != nil && a.Has(driver.PropTextColor) {
+			// A bound color paints the whole text: its glyphs as a mask.
+			cairoPushGroup(cr)
+			l.draw(cr, v.content.Origin.X, v.content.Origin.Y)
+			glyphs := cairoPopGroup(cr)
+			setColorAlpha(cr, a.TextColor, 1)
+			cairoMask(cr, glyphs)
+			cairoPatternDestroy(glyphs)
+		} else {
+			l.draw(cr, v.content.Origin.X, v.content.Origin.Y)
+		}
 		cairoDestroy(cr)
 		if l.shadow.Color != 0 {
 			gtkSnapshotPop(snap)

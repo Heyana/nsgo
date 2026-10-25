@@ -59,6 +59,9 @@ var (
 	cbMenuActivate    uintptr
 	cbTick            uintptr
 
+	cbShaderRender    uintptr
+	cbShaderUnrealize uintptr
+
 	cbDropMotion uintptr
 	cbDropLeave  uintptr
 	cbDrop       uintptr
@@ -115,6 +118,9 @@ func init() {
 	cbSettingsChanged = newCallback(settingsChangedCallback)
 	cbMenuActivate = newCallback(menuActivateCallback)
 	cbTick = newCallback(tickCallback)
+
+	cbShaderRender = newCallback(shaderRenderCallback)
+	cbShaderUnrealize = newCallback(shaderUnrealizeCallback)
 
 	cbDropMotion = newCallback(dropMotionCallback)
 	cbDropLeave = newCallback(dropLeaveCallback)

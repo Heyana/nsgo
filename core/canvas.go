@@ -5,6 +5,14 @@ import "github.com/oneo-me/nsgo/internal/driver"
 // Canvas draws what Draw records, at the canvas's size, again whenever a
 // signal Draw read or the size changes. The platform plays the recording
 // on the main thread; Draw itself runs on the engine.
+//
+// The Drawing measures text with the platform's text engine
+// (MeasureText, TextMetrics) and answers hit tests (IsPointInPath,
+// IsPointInStroke) during Draw and after it, so OnPress can test the
+// shapes of the last drawing Draw was given. Arguments bound to animated
+// nodes (Drawing.Bind) redraw on the platform's frame clock without a
+// commit, and Drawing.Node names parts of the drawing for assistive
+// technology and tests.
 type Canvas struct {
 	Draw      func(d *Drawing, size Size)
 	Style     Style
@@ -39,9 +47,21 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 		if size == (Size{}) || cn.draw == nil {
 			return
 		}
-		d := &Drawing{}
+		d := driver.NewDrawing(t.text)
 		cn.draw(d, size)
+		t.pickDrawingScales(d)
 		cn.drawing, cn.fresh = d, true
 		t.touch(n)
 	})
+}
+
+// pickDrawingScales has the images d draws name the variant for the
+// screen, as Image's do.
+func (t *Tree) pickDrawingScales(d *Drawing) {
+	for i := range d.Ops {
+		if op := &d.Ops[i]; op.Kind == driver.DrawImage && op.Image != nil && op.Image.Scales != 0 {
+			src := t.pickScale(*op.Image)
+			op.Image = &src
+		}
+	}
 }

@@ -34,7 +34,7 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `internal/engine` | `nsh-engine` | The engine goroutine: a mailbox, one batch per commit to the platform, storage files and the performance monitor |
 | `internal/platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
 | `internal/platform/apple` | Shared Apple code | Layers, images, canvas, Metal shaders, web views, videos and CoreText for macOS and iOS |
-| `internal/platform/*` | Platforms' shared code | Image loading and pure Go decoding ([images](docs/architecture/images.md)), text field edits, drawn scroll bars, hover and finger tracking |
+| `internal/platform/*` | Platforms' shared code | Image loading and pure Go decoding ([images](docs/architecture/images.md)), font files' names, canvas pixel samples, text field edits, drawn scroll bars, hover and finger tracking |
 | `examples/gallery` | `examples/gallery-rs` | Every element, component and service, a page each, with headless tests; its web build is the website |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `dev` and `build`, driven by an app's `nsgo.yaml`; `apk` packages and signs Android apps in Go |
 | `tools/lucidegen` | — | Regenerates `icons/lucide` from a pinned Lucide checkout |
@@ -48,8 +48,8 @@ Every target builds on macOS with Go; iOS also needs Xcode, and x86_64 Android n
 | macOS | `internal/platform/macos` | purego and the Objective-C runtime; `CGO_ENABLED=0` | Runs |
 | iOS | `internal/platform/ios` | The same; cgo only because Go links iOS with Xcode's linker | Runs in the simulator and on devices |
 | Web | `internal/platform/web` | `syscall/js` in WebAssembly; DOM elements | Runs |
-| Windows | `internal/platform/windows` | `syscall` and COM: Direct2D on a Direct3D 11 swap chain, DirectWrite text, drawn inputs, WebView2 in DirectComposition, Media Foundation videos | Runs; native tests open a real window |
-| Linux | `internal/platform/linux` | GTK 4, Pango and Cairo loaded with purego: a widget per view drawn with GtkSnapshot, hosting GtkEntry inputs, WebKitGTK web views and GStreamer videos | Runs; native tests open a real window |
+| Windows | `internal/platform/windows` | `syscall` and COM: Direct2D on a Direct3D 11 swap chain, DirectWrite text, drawn inputs, WebView2 in DirectComposition, Media Foundation videos | Runs |
+| Linux | `internal/platform/linux` | GTK 4, Pango and Cairo loaded with purego: a widget per view drawn with GtkSnapshot, hosting GtkEntry inputs, WebKitGTK web views and GStreamer videos | Runs |
 | Android | `internal/platform/android` | A Go executable the prebuilt Java runtime starts and talks to over pipes | Runs on arm64 devices and x86_64 emulators; `nsgo` builds, signs and installs the APK |
 
 Android runs the app as a second process because Go builds Android shared libraries only with cgo and the NDK. Without cgo, Go builds Android executables for arm64 only, so 32-bit devices stay out of reach. iOS forbids child processes, so it links in-process with Xcode instead.
@@ -80,9 +80,8 @@ Packages import only downward; `layering_test.go` checks it on every target:
 - `internal/driver` is the protocol and imports nothing else from the module. Backends import it and `internal/engine`, never `core`.
 - `core` imports only `internal/driver`, `internal/layout` and the shader compiler (`internal/shader`, `internal/shaderir`), which backends share too. `internal/engine` runs one app on `core` and defines `engine.Platform`, which backends implement. `nsgotest` is the headless backend, without the engine.
 - `core`, `base`, `icons`, `nsgotest`, `internal/driver`, `internal/layout`, the shader compiler and `internal/engine` build unchanged for every target: no purego, `syscall` or `unsafe`. No package has cgo files or hand-written C.
-- `base` holds NSGo's built-in unstyled components. Each takes styles, including `StyleFunc` for each part, so apps can style it freely.
+- `base` holds NSGo's built-in unstyled components, each taking styles part by part (`StyleFunc` included). NSGo ships no theme or styled components; apps, or a component library, build them on `base`.
 - A component gets its own package under `base` only when it links dependencies an app without it should not, as `base/textview` links goldmark and `base/textview/highlight` chroma.
-- NSGo ships no theme or styled components. Apps, or a component library, build them on `base`.
 - The platform main thread never waits for the engine, and the engine never touches main-thread-only UI objects.
 - What animates runs on the platform's frame clock: transitions, animated values and layout animations are data the engine sends once, never a commit per frame. The app's frame callbacks wait for the same clock.
 - The reactive graph belongs to the engine goroutine and never locks; other goroutines reach it through `Scope.Post`.
@@ -97,7 +96,7 @@ Packages import only downward; `layering_test.go` checks it on every target:
 
 - Targets name an OS and an architecture (`macos_arm64`, `windows_x64`), so each package holds one binary. `nsgo build` strips symbols, paths and VCS stamps; `nsgo dev` keeps symbols.
 - Hot reload watches the directories `go list -deps` reports, NSGo's own included, and keeps the last good build running when a build fails.
-- `resources/` ships in each package's resource root, which `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` paths against.
+- `resources/` ships in each package's resource root, which `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` and font paths against.
 - App icons are written in Go, except that `actool` compiles Apple's `.icon` files. A Windows icon links in from a `.syso` written into the app's package directory, since Go links `.syso` files only from there.
 
 ## Core flows
@@ -131,6 +130,7 @@ Record a design question here, and confirm the answer with the user before choos
 | [Interaction](docs/architecture/interaction.md) | Changing accessibility, pointers, focus, touches, gestures or drops |
 | [Hosted views](docs/architecture/native-views.md) | Changing `WebView`, `Video` or `Native` components |
 | [Images](docs/architecture/images.md) | Changing how backends load, decode or play images |
+| [Canvas](docs/architecture/canvas.md) | Changing `Canvas`, `Drawing` or a backend's canvas player |
 | [Animation](docs/architecture/animation.md) | Changing animated values, layout animations or a backend's frame clock |
 | [Shaders](docs/architecture/shaders.md) | Changing `Shader`, the shader compiler or a backend's shader view |
 | [Text view](docs/architecture/textview.md) | Changing `TextView`, its parsers, parts or highlighting |

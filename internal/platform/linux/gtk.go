@@ -617,6 +617,7 @@ func bind() {
 	purego.RegisterLibFunc(&cairoSetOperator, cairoLib, "cairo_set_operator")
 	purego.RegisterLibFunc(&cairoSetSourceSurface, cairoLib, "cairo_set_source_surface")
 	purego.RegisterLibFunc(&cairoSurfaceWriteToPNG, cairoLib, "cairo_surface_write_to_png")
+	bindCanvas(cairoLib, pangocairoLib)
 	bindNative()
 	bindWidget()
 	bindDecor()

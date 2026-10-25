@@ -31,7 +31,13 @@ final class Box extends GradientDrawable {
         this.look = look;
         setColor(look.background);
         float[] c = corners();
-        setCornerRadii(new float[] {c[0], c[0], c[1], c[1], c[2], c[2], c[3], c[3]});
+        // Equal corners give a round rect outline, which clips before API
+        // 33 as the path outline of per-corner radii does not.
+        if (c[0] == c[1] && c[1] == c[2] && c[2] == c[3]) {
+            setCornerRadius(c[0]);
+        } else {
+            setCornerRadii(new float[] {c[0], c[0], c[1], c[1], c[2], c[2], c[3], c[3]});
+        }
         invalidateSelf();
     }
 

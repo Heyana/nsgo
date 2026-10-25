@@ -244,6 +244,12 @@ final class Look {
         }
         if (v.has(Animator.PROP_SHADOW_COLOR)) l.shadowColor = Text.argb(v.shadowColor);
         if (v.has(Animator.PROP_SHADOW_RADIUS)) l.shadowRadius = v.shadowRadius * density;
+        if (v.has(Animator.PROP_SHADOW_OPACITY)) {
+            int a = Math.round(((l.shadowColor >>> 24) & 0xff) * Math.max(0, Math.min(1, v.shadowOpacity)));
+            l.shadowColor = (l.shadowColor & 0x00ffffff) | (a << 24);
+        }
+        if (v.has(Animator.PROP_ROTATE_X)) l.rotationX = v.rotateX;
+        if (v.has(Animator.PROP_ROTATE_Y)) l.rotationY = v.rotateY;
         return l;
     }
 

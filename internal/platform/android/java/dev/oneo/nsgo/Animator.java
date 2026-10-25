@@ -38,6 +38,8 @@ final class Animator {
     static final int RELEASE = 16;
     static final int BIND_PINCH = 17;
     static final int BIND_ROTATION = 18;
+    static final int RESET = 19;
+    static final int FORGET_RUN = 20;
 
     // Bound properties, as core.AnimatedProp.
     static final int PROP_OPACITY = 0;
@@ -51,7 +53,11 @@ final class Animator {
     static final int PROP_BORDER_COLOR = 8;
     static final int PROP_SHADOW_COLOR = 9;
     static final int PROP_SHADOW_RADIUS = 10;
-    static final int PROP_COUNT = 11;
+    static final int PROP_SHADOW_OPACITY = 11;
+    static final int PROP_TEXT_COLOR = 12;
+    static final int PROP_ROTATE_X = 13;
+    static final int PROP_ROTATE_Y = 14;
+    static final int PROP_COUNT = 15;
 
     // Math ops, as core.MathOp.
     static final int MATH_ADD = 1;
@@ -76,6 +82,12 @@ final class Animator {
     static final int EASING_ELASTIC = 7;
     static final int EASING_BACK = 8;
     static final int EASING_BOUNCE = 9;
+    static final int EASING_STEPS = 10;
+    // Step positions, as core.StepPosition.
+    static final int JUMP_END = 0;
+    static final int JUMP_START = 1;
+    static final int JUMP_NONE = 2;
+    static final int JUMP_BOTH = 3;
     static final int EASE_IN = 0;
     static final int EASE_OUT = 1;
     static final int EASE_IN_OUT = 2;
@@ -104,6 +116,15 @@ final class Animator {
     private final Map<Integer, Integer> pinches = new HashMap<>(), rotations = new HashMap<>();
     private final Map<Integer, double[]> starts = new HashMap<>();
     private final LinkedHashSet<Integer> changed = new LinkedHashSet<>();
+    /** Canvas views' bound drawing arguments, and whether values changed since changedCanvases looked. */
+    private final Map<Integer, ACanvas> canvases = new HashMap<>();
+    private boolean canvasesStale;
+    /** Where the values each run moves were as it started, for a reset: node, value pairs. */
+    private final Map<Integer, double[]> runStarts = new HashMap<>();
+    /** The snapping diff clamps easing to a bound. */
+    private final LinkedHashSet<ANode> settling = new LinkedHashSet<>();
+    /** How long a snapping diff clamp takes to its bound, in seconds. */
+    private static final double SETTLE = 0.2;
     private final Reporter report;
     private long gen; // bumped when any value changes
     private double now; // seconds of the last step
@@ -123,9 +144,24 @@ final class Animator {
         long gen;
         double num;
         int color;
-        // Diff-clamp state.
+        // Diff-clamp state, and a snapping one's settling.
         double last, lastIn;
         boolean primed;
+        double settleFrom, settleTo, settleStarted;
+    }
+
+    /** A canvas's bound nodes and the values changedCanvases last reported. */
+    static final class ACanvas {
+        final int[] nodes;
+        final double[] nums;
+        final int[] colors;
+        boolean sent;
+
+        ACanvas(int[] nodes) {
+            this.nodes = nodes;
+            nums = new double[nodes.length];
+            colors = new int[nodes.length];
+        }
     }
 
     private static final class AView {
@@ -142,6 +178,7 @@ final class Animator {
     static final class Op {
         int kind, node, input, math, id, view, prop, x, y;
         double value, min, max;
+        boolean snap;
         int aNode, bNode;
         double aConst, bConst;
         Interpolation interpolation;
@@ -156,7 +193,8 @@ final class Animator {
     static final class Values {
         int set;
         float opacity, translateX, translateY, scale, scaleX, scaleY, rotate, shadowRadius;
-        int background, borderColor, shadowColor;
+        float shadowOpacity, rotateX, rotateY;
+        int background, borderColor, shadowColor, textColor;
 
         boolean has(int prop) {
             return (set & (1 << prop)) != 0;
@@ -169,7 +207,9 @@ final class Animator {
             return set == v.set && opacity == v.opacity && translateX == v.translateX
                     && translateY == v.translateY && scale == v.scale && scaleX == v.scaleX
                     && scaleY == v.scaleY && rotate == v.rotate && shadowRadius == v.shadowRadius
-                    && background == v.background && borderColor == v.borderColor && shadowColor == v.shadowColor;
+                    && background == v.background && borderColor == v.borderColor && shadowColor == v.shadowColor
+                    && shadowOpacity == v.shadowOpacity && rotateX == v.rotateX && rotateY == v.rotateY
+                    && textColor == v.textColor;
         }
 
         @Override
@@ -180,7 +220,7 @@ final class Animator {
 
     /** An easing, as core.Easing. */
     static final class Easing {
-        int kind, mode;
+        int kind, mode, steps;
         float x1, y1, x2, y2;
         double param;
 
@@ -193,12 +233,14 @@ final class Animator {
             e.x2 = in.readFloat();
             e.y2 = in.readFloat();
             e.param = in.readDouble();
+            e.steps = in.readUnsignedByte();
             return e;
         }
 
         /** The eased progress at time fraction x from 0 to 1. */
         double at(double x) {
             if (kind == EASING_BEZIER) return bezier(x1, y1, x2, y2, x);
+            if (kind == EASING_STEPS) return steps(x);
             switch (mode) {
                 case EASE_OUT:
                     return 1 - in(1 - x);
@@ -208,6 +250,19 @@ final class Animator {
                 default:
                     return in(x);
             }
+        }
+
+        /** CSS's steps(): param steps jumping at the steps' positions. */
+        private double steps(double x) {
+            double n = Math.max(Math.round(param), 1);
+            double step = Math.floor(x * n);
+            if (steps == JUMP_START || steps == JUMP_BOTH) step++;
+            double jumps = n;
+            if (steps == JUMP_BOTH) jumps++;
+            else if (steps == JUMP_NONE) jumps = Math.max(n - 1, 1);
+            if (x >= 0 && step < 0) step = 0;
+            if (x <= 1 && step > jumps) step = jumps;
+            return step / jumps;
         }
 
         /** The curve's "in" form, React Native's Easing functions. */
@@ -433,9 +488,12 @@ final class Animator {
                 o.input = in.readInt();
                 o.min = in.readDouble();
                 o.max = in.readDouble();
+                o.snap = in.readUnsignedByte() != 0;
                 break;
             case READ:
             case STOP:
+            case RESET:
+            case FORGET_RUN:
                 o.id = in.readInt();
                 break;
             case START:
@@ -523,6 +581,17 @@ final class Animator {
             case START: {
                 if (o.animation == null) return;
                 Run r = new Run(o.id, build(o.animation));
+                List<Integer> moved = new ArrayList<>();
+                r.root.values(moved);
+                double[] starts = new double[moved.size() * 2];
+                int k = 0;
+                for (int id : moved) {
+                    ANode n = value(id);
+                    if (n == null) continue;
+                    starts[k++] = id;
+                    starts[k++] = n.value;
+                }
+                runStarts.put(o.id, java.util.Arrays.copyOf(starts, k));
                 runs.put(o.id, r);
                 r.root.bind(r);
                 r.root.start(this, -1);
@@ -533,6 +602,25 @@ final class Animator {
                 if (r != null) end(r, false);
                 break;
             }
+            case RESET: {
+                Run r = runs.get(o.id);
+                if (r != null) end(r, false);
+                double[] starts = runStarts.get(o.id);
+                if (starts != null) {
+                    for (int i = 0; i + 1 < starts.length; i += 2) {
+                        ANode n = value((int) starts[i]);
+                        if (n == null) continue;
+                        interrupt(n);
+                        n.value = starts[i + 1];
+                        n.vel = 0;
+                    }
+                }
+                touch();
+                break;
+            }
+            case FORGET_RUN:
+                runStarts.remove(o.id);
+                break;
             case BIND: {
                 AView v = views.get(o.view);
                 if (v == null) {
@@ -561,6 +649,7 @@ final class Animator {
                 ANode n = nodes.get(o.node);
                 if (n != null) {
                     interrupt(n);
+                    settling.remove(n);
                     nodes.remove(o.node);
                     touch();
                 }
@@ -575,6 +664,39 @@ final class Animator {
     private void touch() {
         gen++;
         changed.addAll(views.keySet());
+        canvasesStale = true;
+    }
+
+    /** Has nodes drive arguments of canvas view's drawing, replacing what it bound. */
+    void bindCanvas(int view, int[] nodes) {
+        if (nodes.length == 0) {
+            canvases.remove(view);
+            return;
+        }
+        canvases.put(view, new ACanvas(nodes));
+        canvasesStale = true;
+    }
+
+    /** Calls fn with each canvas whose bound values changed since the last call, its nodes' numbers and colors. */
+    void changedCanvases(BiConsumer<Integer, ACanvas> fn) {
+        if (!canvasesStale) return;
+        canvasesStale = false;
+        for (Map.Entry<Integer, ACanvas> e : canvases.entrySet()) {
+            ACanvas c = e.getValue();
+            boolean changed = !c.sent;
+            c.sent = true;
+            for (int i = 0; i < c.nodes.length; i++) {
+                ANode n = nodes.get(c.nodes[i]);
+                double num = n != null ? eval(n) : 0;
+                int color = n != null ? n.color : 0;
+                if (num != c.nums[i] || color != c.colors[i]) {
+                    c.nums[i] = num;
+                    c.colors[i] = color;
+                    changed = true;
+                }
+            }
+            if (changed) fn.accept(e.getKey(), c);
+        }
     }
 
     private ANode value(int id) {
@@ -599,9 +721,9 @@ final class Animator {
         report.report(r.id, 0, finished);
     }
 
-    /** Whether an animation runs, so the view keeps its frame callback. */
+    /** Whether an animation runs or a snapping diff clamp settles, so the view keeps its frame callback. */
     boolean running() {
-        return !runs.isEmpty();
+        return !runs.isEmpty() || !settling.isEmpty();
     }
 
     /** Advances the running animations to now, monotonic nanoseconds. */
@@ -611,6 +733,63 @@ final class Animator {
             if (runs.get(r.id) != r) continue;
             if (r.root.step(this, now)) end(r, true);
         }
+        for (ANode n : new ArrayList<>(settling)) {
+            // Settling starts with the first frame after the rest.
+            if (n.settleStarted < 0) n.settleStarted = now;
+            double p = (now - n.settleStarted) / SETTLE;
+            if (p >= 1) {
+                n.last = n.settleTo;
+                settling.remove(n);
+            } else {
+                double e = 1 - Math.pow(1 - Math.max(p, 0), 3);
+                n.last = n.settleFrom + (n.settleTo - n.settleFrom) * e;
+            }
+            touch();
+        }
+    }
+
+    /**
+     * Starts the snapping diff clamps that follow scroll view view's values
+     * toward their nearer bound, as core.Animator.Settle does: the view
+     * calls it where a scroll comes to rest.
+     */
+    void settle(int view) {
+        int[] ids = scrolls.get(view);
+        if (ids == null) return;
+        for (ANode n : nodes.values()) {
+            if (n.kind != CREATE_DIFF_CLAMP || !n.op.snap || !dependsOn(n.op.input, ids)) continue;
+            eval(n);
+            double lo = n.op.min, hi = n.op.max, to = lo;
+            if (n.lastIn >= hi && n.last - lo >= hi - n.last) to = hi;
+            if (n.last == to) continue;
+            n.settleFrom = n.last;
+            n.settleTo = to;
+            n.settleStarted = -1;
+            settling.add(n);
+        }
+    }
+
+    /** Whether node id reads one of the values ids. */
+    private boolean dependsOn(int id, int[] ids) {
+        if (id == 0) return false;
+        if (id == ids[0] || id == ids[1]) return true;
+        ANode n = nodes.get(id);
+        if (n == null) return false;
+        switch (n.kind) {
+            case CREATE_INTERPOLATE:
+            case CREATE_DIFF_CLAMP:
+                return dependsOn(n.op.input, ids);
+            case CREATE_MATH:
+                return dependsOn(n.op.aNode, ids) || dependsOn(n.op.bNode, ids);
+            default:
+                return false;
+        }
+    }
+
+    /** Node id's output now, or NaN without one. */
+    double valueOf(int id) {
+        ANode n = nodes.get(id);
+        return n == null ? Double.NaN : eval(n);
     }
 
     /** Calls fn with each bound view whose values may have changed since the last call, and their values. */
@@ -657,6 +836,10 @@ final class Animator {
                 case PROP_BORDER_COLOR: v.borderColor = col; break;
                 case PROP_SHADOW_COLOR: v.shadowColor = col; break;
                 case PROP_SHADOW_RADIUS: v.shadowRadius = (float) Math.max(num, 0); break;
+                case PROP_SHADOW_OPACITY: v.shadowOpacity = (float) Math.min(Math.max(num, 0), 1); break;
+                case PROP_TEXT_COLOR: v.textColor = col; break;
+                case PROP_ROTATE_X: v.rotateX = (float) num; break;
+                case PROP_ROTATE_Y: v.rotateY = (float) num; break;
                 default: break;
             }
         }
@@ -729,12 +912,15 @@ final class Animator {
                 n.value = p[i];
             }
         }
+        // Scrolling again ends the settling where it is.
+        settling.removeIf(n -> dependsOn(n.op.input, ids));
         touch();
         return true;
     }
 
     /** Drops what is bound to a deleted view. */
     void forget(int view) {
+        canvases.remove(view);
         views.remove(view);
         pans.remove(view);
         scrolls.remove(view);
@@ -779,7 +965,7 @@ final class Animator {
                 if (!n.primed) {
                     n.primed = true;
                     n.last = Math.min(Math.max(in, n.op.min), n.op.max);
-                } else {
+                } else if (!settling.contains(n)) {
                     n.last = Math.min(Math.max(n.last + in - n.lastIn, n.op.min), n.op.max);
                 }
                 n.lastIn = in;

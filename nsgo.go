@@ -40,6 +40,8 @@ type Option func(*options)
 
 type options struct {
 	components core.NativeComponents
+	// fonts are the font files to register, under the app's resources.
+	fonts []string
 	// monitor shows the performance monitor over the app (macOS).
 	monitor bool
 	// material is the material behind the window's content.
@@ -59,6 +61,14 @@ func FPS(on bool) Option {
 // The window keeps it for its life.
 func WindowMaterial(material core.WindowMaterial) Option {
 	return func(o *options) { o.material = material }
+}
+
+// Fonts registers the font files at paths, slash-separated under the
+// app's resources directory (TrueType, OpenType or collections), before
+// the first view: text names them by their families, as Font.Family or a
+// Style's FontFamily.
+func Fonts(paths ...string) Option {
+	return func(o *options) { o.fonts = append(o.fonts, paths...) }
 }
 
 // Component registers a native component the app's Native elements name:

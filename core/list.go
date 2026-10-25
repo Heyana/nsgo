@@ -61,6 +61,10 @@ type List struct {
 	StickyHeaderIndices     []int
 	StickyHeaderIndicesFunc func() []int
 	StickyHeaderOffset      Points
+	// StickyHeaderOffsetValue, when set, is the animated value the
+	// headers' offset follows in place of StickyHeaderOffset, as a header
+	// above the list hides and shows.
+	StickyHeaderOffsetValue AnimatedNode
 	// InitialScrollIndex is the row the list starts scrolled to.
 	InitialScrollIndex int
 	// OnViewableItemsChange receives the viewable rows when they change,
@@ -225,6 +229,9 @@ func (t *Tree) mountList(cx *Scope, parent *node, l List) {
 	st.estimated, st.horizontal, st.gap, st.crossGap = ln.spec.EstimatedSize, l.Horizontal, l.Gap, l.ColumnGap
 	st.columns = max(l.NumColumns, 1)
 	st.stickyOffset = l.StickyHeaderOffset
+	if l.StickyHeaderOffsetValue != nil {
+		st.stickyNode = l.StickyHeaderOffsetValue.AnimatedNodeID()
+	}
 	st.setSticky(l.StickyHeaderIndices)
 	st.viewability = l.ViewabilityConfig
 	st.parent = l.Viewport == ListViewportParent
@@ -950,7 +957,11 @@ func pinRange(n *node) (*node, StickyCell, bool) {
 	start := main(pos) + main(n.frame.Origin)
 	size := main(Point{X: n.frame.Size.Width, Y: n.frame.Size.Height})
 	travel := max(end-start-size, 0)
-	return sv, StickyCell{Cell: n.id, Start: start - at, End: start - at + travel}, true
+	c := StickyCell{Cell: n.id, Start: start - at, End: start - at + travel}
+	if a := n.style.Animated; a != nil && a.StickyInset != nil {
+		c.Node, c.Inset = a.StickyInset.AnimatedNodeID(), at
+	}
+	return sv, c, true
 }
 
 // listCommand queues a scroll for list ln's next update.

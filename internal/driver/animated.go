@@ -67,6 +67,14 @@ const (
 	PropBorderColor
 	PropShadowColor
 	PropShadowRadius
+	// PropShadowOpacity multiplies the shadow color's alpha.
+	PropShadowOpacity
+	// PropTextColor colors a text's whole content, its spans included.
+	PropTextColor
+	// PropRotateX and PropRotateY turn the view out of its plane, in
+	// degrees.
+	PropRotateX
+	PropRotateY
 	// PropCount is the number of animated props.
 	PropCount
 )
@@ -81,9 +89,25 @@ type Easing struct {
 	// Bezier is EasingBezier's curve.
 	Bezier Curve
 	// Param is Poly's exponent, Elastic's bounciness and Back's
-	// overshoot; 0 takes React Native's default.
+	// overshoot; 0 takes React Native's default. It is Steps's count.
 	Param float64
+	// Steps is where EasingSteps jumps, as CSS's steps().
+	Steps StepPosition
 }
+
+// StepPosition is where a steps easing jumps, as CSS's step positions.
+type StepPosition uint8
+
+const (
+	// JumpEnd holds each step to its end: steps(n, end), the default.
+	JumpEnd StepPosition = iota
+	// JumpStart jumps at each step's start.
+	JumpStart
+	// JumpNone holds the first and the last value a step each.
+	JumpNone
+	// JumpBoth jumps at the start and the end.
+	JumpBoth
+)
 
 // EasingKind is an easing's shape.
 type EasingKind uint8
@@ -99,6 +123,8 @@ const (
 	EasingElastic
 	EasingBack
 	EasingBounce
+	// EasingSteps jumps through Param equal steps, as CSS's steps().
+	EasingSteps
 )
 
 // EaseMode applies a curve as is, mirrored, or both halves.
@@ -183,7 +209,8 @@ const (
 	// AnimCreateMath makes Node combine A and B with Math.
 	AnimCreateMath
 	// AnimCreateDiffClamp makes Node follow Input's changes within Min
-	// and Max.
+	// and Max; with Snap it settles at its nearer bound when the scroll
+	// view its input follows comes to rest.
 	AnimCreateDiffClamp
 	// AnimSet, AnimSetOffset, AnimFlattenOffset, AnimExtractOffset and
 	// AnimStopValue change value Node.
@@ -211,6 +238,11 @@ const (
 	// AnimBindRotation has rotations on View turn it, in radians.
 	AnimBindPinch
 	AnimBindRotation
+	// AnimReset ends run ID unfinished, if it runs, and puts the values
+	// it moves back where they were when it started.
+	AnimReset
+	// AnimForgetRun drops what the animator keeps of run ID for a reset.
+	AnimForgetRun
 )
 
 // AnimationOp is one change to the animation graph.
@@ -223,6 +255,9 @@ type AnimationOp struct {
 	Math          MathOp
 	A, B          Operand
 	Min, Max      float64
+	// Snap makes a diff clamp settle at a bound when its scroll view
+	// rests.
+	Snap bool
 	// ID names a run or a read.
 	ID        uint32
 	Animation *Animation

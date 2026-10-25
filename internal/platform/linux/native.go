@@ -33,6 +33,8 @@ func (v *view) hosted() *hosted {
 		return &v.video.hosted
 	case v.native != nil:
 		return &v.native.hosted
+	case v.shader != nil:
+		return &v.shader.hosted
 	}
 	return nil
 }

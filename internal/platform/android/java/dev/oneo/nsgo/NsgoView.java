@@ -265,6 +265,12 @@ public class NsgoView extends FrameLayout {
                     case Protocol.IMAGE:
                         image(message);
                         break;
+                    case Protocol.CANVAS_IMAGE:
+                        canvasImage(message);
+                        break;
+                    case Protocol.FONTS:
+                        fonts(message);
+                        break;
                     default:
                         text(kind, message);
                 }
@@ -434,7 +440,10 @@ public class NsgoView extends FrameLayout {
                 lines(Text.lines(layouts.get(id)));
                 break;
             case Protocol.RELEASE:
+                // A prepared text, or a layout no batch will name.
                 prepared.remove(id);
+                layouts.remove(id);
+                clips.remove(id);
                 break;
             default:
                 Log.w(TAG, "unknown message " + kind);
@@ -446,6 +455,44 @@ public class NsgoView extends FrameLayout {
      * the decoder thread at about the node's size, and dropped once the
      * node has moved on to another request.
      */
+    /** Loads the app's font files from the assets as Typefaces of their families, before any text. */
+    private void fonts(DataInputStream in) throws IOException {
+        for (int i = 0, n = in.readInt(); i < n; i++) {
+            String path = Protocol.readString(in), family = Protocol.readString(in);
+            int weight = in.readUnsignedShort();
+            boolean italic = in.readUnsignedByte() != 0;
+            try {
+                Text.register(family, weight, italic,
+                        android.graphics.Typeface.createFromAsset(getContext().getAssets(), path));
+            } catch (RuntimeException e) {
+                Log.w(TAG, "font " + path + ": " + e);
+            }
+        }
+    }
+
+    /** Decodes an image canvases draw and draws the canvases again. */
+    private void canvasImage(DataInputStream in) throws IOException {
+        String key = Protocol.readString(in);
+        float scale = in.readFloat();
+        byte[] data = new byte[in.readInt()];
+        in.readFully(data);
+        decoder.execute(() -> {
+            android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeByteArray(data, 0, data.length);
+            if (bitmap == null) {
+                Log.w(TAG, "canvas: image " + key + " cannot be decoded");
+                return;
+            }
+            ui.post(() -> {
+                CanvasNode.pictures.put(key, new CanvasNode.Picture(bitmap, scale));
+                for (int i = 0; i < nodes.size(); i++) {
+                    Node n = nodes.valueAt(i);
+                    if (n.canvas != null) n.canvas.invalidate();
+                    if (n.shader != null) n.shader.draw();
+                }
+            });
+        });
+    }
+
     private void image(DataInputStream in) throws IOException {
         int id = in.readInt(), request = in.readInt(), part = in.readUnsignedByte();
         float scale = in.readFloat();
@@ -657,6 +704,39 @@ public class NsgoView extends FrameLayout {
     private static void pressDone(Node n) {
         n.pressX = n.pressY = n.pressPageX = n.pressPageY = 0;
         n.pressMods = n.pressClicks = 0;
+    }
+
+    /**
+     * Presses at a screen point as a tap there would, for a canvas part a
+     * screen reader activates: on the innermost shown view under it that
+     * takes presses.
+     */
+    private boolean pressAtScreen(float rawX, float rawY) {
+        Node best = null;
+        int depth = -1;
+        for (int i = 0; i < nodes.size(); i++) {
+            Node o = nodes.valueAt(i);
+            if (!(o.has(Protocol.EVENT_PRESS) || o.has(Protocol.EVENT_PRESS_DOWN)) || !under(o.view, rawX, rawY)) continue;
+            int d = 0;
+            for (Object p = o.view.getParent(); p instanceof View; p = ((View) p).getParent()) d++;
+            if (d > depth) {
+                best = o;
+                depth = d;
+            }
+        }
+        if (best == null) return false;
+        int[] at = new int[2];
+        best.view.getLocationOnScreen(at);
+        float x = (rawX - at[0]) / density, y = (rawY - at[1]) / density;
+        int[] page = new int[2];
+        getLocationOnScreen(page);
+        for (int kind : new int[] {Protocol.EVENT_PRESS_DOWN, Protocol.EVENT_PRESS_UP, Protocol.EVENT_PRESS}) {
+            if (best.has(kind)) {
+                event(kind, best.id, 1, x, y, "", 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, "", false,
+                        (rawX - page[0]) / density, (rawY - page[1]) / density, 0);
+            }
+        }
+        return true;
     }
 
     /** Where e is in the root view v is in, the modal around it or this surface, in points. */
@@ -1040,14 +1120,20 @@ public class NsgoView extends FrameLayout {
                 break;
             }
             case Protocol.ITEM_STICKY_CELLS: {
-                float[] cells = new float[in.readInt() * 3];
-                for (int i = 0; i < cells.length; i += 3) {
+                // Each cell: its id, start and end, the animated node its
+                // inset follows (0: none) and the inset start counts.
+                float[] cells = new float[in.readInt() * 5];
+                n.stickyBound = false;
+                for (int i = 0; i < cells.length; i += 5) {
                     cells[i] = in.readInt();
                     cells[i + 1] = in.readFloat();
                     cells[i + 2] = in.readFloat();
+                    cells[i + 3] = in.readInt();
+                    cells[i + 4] = in.readFloat();
+                    n.stickyBound |= cells[i + 3] != 0;
                 }
                 if (n.sticky != null) {
-                    for (int i = 0; i < n.sticky.length; i += 3) stick(nodes.get((int) n.sticky[i]), 0, false);
+                    for (int i = 0; i < n.sticky.length; i += 5) stick(nodes.get((int) n.sticky[i]), 0, false);
                 }
                 n.sticky = cells;
                 pinSticky(n);
@@ -1067,9 +1153,32 @@ public class NsgoView extends FrameLayout {
             case Protocol.ITEM_CANVAS: {
                 byte[] ops = new byte[in.readInt()];
                 in.readFully(ops);
-                n.canvas.setOps(ops);
+                int slots = in.readInt();
+                int[] offsets = new int[slots], nodes = new int[slots];
+                boolean[] colors = new boolean[slots];
+                for (int i = 0; i < slots; i++) {
+                    offsets[i] = in.readInt();
+                    colors[i] = in.readUnsignedByte() != 0;
+                    nodes[i] = in.readInt();
+                }
+                CanvasNode.Part[] parts = new CanvasNode.Part[in.readInt()];
+                for (int i = 0; i < parts.length; i++) {
+                    float x = in.readFloat(), y = in.readFloat(), w = in.readFloat(), h = in.readFloat();
+                    int role = in.readUnsignedByte();
+                    String label = Protocol.readString(in), testID = Protocol.readString(in);
+                    boolean selected = in.readUnsignedByte() != 0;
+                    parts[i] = new CanvasNode.Part(x, y, w, h, role, label, testID, selected);
+                }
+                n.canvas.setOps(ops, offsets, colors, parts);
+                animator.bindCanvas(n.id, nodes);
+                applyAnimated();
                 break;
             }
+            case Protocol.ITEM_SHADER:
+                n.shader.set(in);
+                animator.bindCanvas(n.id, n.shader.boundNodes);
+                applyAnimated();
+                break;
             case Protocol.ITEM_SET_CLIPBOARD:
                 clipboard().setPrimaryClip(ClipData.newPlainText("", Protocol.readString(in)));
                 break;
@@ -1226,9 +1335,14 @@ public class NsgoView extends FrameLayout {
         Scrolling.Scroller s = (Scrolling.Scroller) n.scroller;
         boolean horizontal = n.scroller instanceof Scrolling.HScroll;
         float at = horizontal ? s.offsetX() : s.offsetY();
-        for (int i = 0; i < n.sticky.length; i += 3) {
-            float start = n.sticky[i + 1], end = n.sticky[i + 2];
-            stick(nodes.get((int) n.sticky[i]), Math.min(Math.max(at - start, 0), Math.max(end - start, 0)), horizontal);
+        for (int i = 0; i < n.sticky.length; i += 5) {
+            float start = n.sticky[i + 1], end = n.sticky[i + 2], offset = at;
+            if (n.sticky[i + 3] != 0) {
+                // The inset follows its animated value.
+                double v = animator.valueOf((int) n.sticky[i + 3]);
+                if (!Double.isNaN(v)) offset += (float) v - n.sticky[i + 4];
+            }
+            stick(nodes.get((int) n.sticky[i]), Math.min(Math.max(offset - start, 0), Math.max(end - start, 0)), horizontal);
         }
     }
 
@@ -1251,7 +1365,20 @@ public class NsgoView extends FrameLayout {
             Node n = nodes.get(id);
             if (n == null) return;
             n.values = values.set != 0 ? values : null;
+            if (n.view instanceof TextNode) {
+                ((TextNode) n.view).setTint(values.has(Animator.PROP_TEXT_COLOR) ? Text.argb(values.textColor) : 0);
+            }
             paint(n);
+        });
+        for (int i = 0; i < nodes.size(); i++) {
+            Node s = nodes.valueAt(i);
+            if (s.stickyBound) pinSticky(s);
+        }
+        animator.changedCanvases((id, c) -> {
+            Node n = nodes.get(id);
+            if (n == null) return;
+            if (n.canvas != null) n.canvas.patch(c.nums, c.colors);
+            if (n.shader != null) n.shader.patch(c.nums);
         });
     }
 
@@ -1715,6 +1842,7 @@ public class NsgoView extends FrameLayout {
                 : kind == Protocol.KIND_SCROLL ? new FrameLayout(context)
                 : kind == Protocol.KIND_MODAL ? new Layer(context) : new Group(context);
         Node n = new Node(id, view);
+        if (view instanceof CanvasNode) ((CanvasNode) view).presser = this::pressAtScreen;
         byView.put(view, n);
         if (view instanceof Group) ((Group) view).node = n;
         switch (kind) {
@@ -1758,6 +1886,13 @@ public class NsgoView extends FrameLayout {
                 });
                 n.children = (ViewGroup) view;
                 n.children.addView(n.video, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+                break;
+            case Protocol.KIND_SHADER:
+                // A TextureView draws no background, so the shader fills the
+                // node's view, which draws its style.
+                n.shader = new ShaderNode(context);
+                n.children = (ViewGroup) view;
+                n.children.addView(n.shader, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
                 break;
             case Protocol.KIND_SCROLL:
                 n.children = new Content(context);
@@ -2732,6 +2867,11 @@ public class NsgoView extends FrameLayout {
         return new Scrolling.Host() {
             @Override
             public void scrollEvent(int kind, float x, float y, float zoom) {
+                if (kind == Protocol.EVENT_SCROLL_DRAG_END || kind == Protocol.EVENT_MOMENTUM_END) {
+                    // At rest, unless a glide follows, which scrolls on.
+                    animator.settle(n.id);
+                    if (animator.running()) startTicking();
+                }
                 if (n.has(kind)) event(kind, n.id, n.applied, x, y, "", 0, 0, 0, 0, 0, 0, zoom, null);
             }
 
@@ -2832,6 +2972,7 @@ public class NsgoView extends FrameLayout {
         InputField field;
         ImageNode image;
         CanvasNode canvas;
+        ShaderNode shader;
         WebNode web;
         VideoNode video;
         /** The view's background, the look it shows and the transition moving it. */
@@ -2878,6 +3019,8 @@ public class NsgoView extends FrameLayout {
          */
         long applied;
         float[] sticky;
+        // stickyBound says a sticky cell's inset follows an animated value.
+        boolean stickyBound;
         float shift;
         boolean shiftAcross;
         /** A layout animation's move: from and to, its phase and when it began. */

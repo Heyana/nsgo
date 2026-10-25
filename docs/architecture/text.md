@@ -20,8 +20,8 @@ The core does what needs no engine, as NSH's does:
 
 The engines draw the rest:
 
-- `EllipsizeMode`. CoreText truncates the last line's rest at its head, middle or tail, and Pango the same way; Android's `TruncateAt` ellipsizes a head or middle on one line only. Clipping keeps the lines whole and cuts them at the box.
-- DirectWrite and the web trim only tails, so on one line without attachments they search with `AttributedText.CutToFit` for the most characters around an ellipsis.
+- `EllipsizeMode`. CoreText truncates the last line's rest at its head, middle or tail, and Pango the same way. Clipping keeps the lines whole and cuts them at the box.
+- DirectWrite and the web trim only tails, and Android's `TruncateAt` a head or middle on one line only, so for those they lay the text out, and `AttributedText.CutRest` keeps the lines above the last and replaces the rest with the most characters around an ellipsis that fit on one line (`CutToFit`). `Origin` maps the attachments kept back to the app's indices.
 - `TextAlignJustify` is each engine's justification; Android's needs no newer API than NSGo's minimum.
 - `TextStyle.RTL` is the base direction: CoreText's paragraph writing direction, DirectWrite's reading direction, a Pango context's base direction without auto direction, Android's text direction heuristic and CSS's `direction`. Start and end alignments follow it ([styles](styles.md)).
 - `TextDecorationStyle` and `TextDecorationColor`. CoreText underlines solid, double, dotted and dashed in a color, and the backend draws wavy underlines and every strikethrough itself.
@@ -29,6 +29,16 @@ The engines draw the rest:
 - `AttributedText.Shadow`, the block's shadow: a Core Graphics shadow, a CSS `text-shadow`, Direct2D's shadow effect over the recorded glyphs, a GSK shadow node, Android's shadow layer.
 
 The family `FontMonospace` is each platform's fixed-pitch font: CoreText's user fixed-pitch font, CSS's `ui-monospace` stack, Consolas on Windows, Pango's `monospace` on Linux, Android's `monospace`.
+
+`nsgo.Fonts` registers the app's font files, paths under `resources/`, before the first view, and texts name them by family. `internal/platform/fontfile` reads each face's family, weight and slant from its `name` and `OS/2` tables for the engines that take a face without them:
+
+| Platform | Registers with |
+| --- | --- |
+| macOS, iOS | `CTFontManagerRegisterGraphicsFont`, for the process |
+| Web | A `FontFace` each in `document.fonts`, loaded before the engine starts |
+| Windows | A DirectWrite font collection of the system's fonts and the app's, loaded from memory, which text formats take |
+| Linux | fontconfig's `FcConfigAppFontAddFile`, before GTK starts |
+| Android | `Typeface.createFromAsset`, kept by family; a style takes the nearest face and synthesizes the rest |
 
 `Text.Spans` style byte ranges over the text's style; offsets are UTF-8 bytes, Go's own, and platforms convert them. A press on a span with a handler comes back with the byte offset under the point.
 
@@ -38,7 +48,7 @@ The family `FontMonospace` is each platform's fixed-pitch font: CoreText's user 
 - Every engine places an attachment by NSH's rule, `TextAttachment.Ascent` and `Extent` against the placeholder font's `FontExtent`, so a line grows where an attachment reaches past its font.
 - After layout the core asks the `AttachmentLayout` where each attachment went and sends its view as a native child of the text view at that frame. Those cut off by the line limit are hidden.
 
-A `Canvas` records its drawing on the engine into an immutable `Drawing`, again when a signal it read or its size changes, and the platform plays the operations.
+A `Canvas` records its drawing on the engine into an immutable `Drawing` the platform plays ([canvas](canvas.md)).
 
 ## Text inputs
 

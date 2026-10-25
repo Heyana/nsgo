@@ -27,8 +27,10 @@ var layers = []struct {
 	{"internal/engine", []string{"core", "internal/driver"}},
 	{"internal/platform/android/runtime", nil},
 	{"internal/platform/apple", append([]string{"internal/driver"}, platformShared...)},
+	{"internal/platform/canvastest", []string{"internal/driver"}},
 	{"internal/platform/field", []string{"internal/driver"}},
 	{"internal/platform/finger", []string{"internal/driver"}},
+	{"internal/platform/fontfile", nil},
 	{"internal/platform/hover", []string{"internal/driver"}},
 	{"internal/platform/imagedecode", []string{"internal/driver"}},
 	{"internal/platform/imageload", []string{"internal/driver"}},
@@ -49,8 +51,8 @@ var layers = []struct {
 // platformShared is the code several backends share, the shader
 // compiler included.
 var platformShared = []string{
-	"internal/platform/apple", "internal/platform/field", "internal/platform/finger", "internal/platform/hover",
-	"internal/platform/imagedecode", "internal/platform/imageload", "internal/platform/queue", "internal/platform/scrollbar",
+	"internal/platform/apple", "internal/platform/canvastest", "internal/platform/field", "internal/platform/finger",
+	"internal/platform/fontfile", "internal/platform/hover", "internal/platform/imagedecode", "internal/platform/imageload", "internal/platform/queue", "internal/platform/scrollbar",
 	"internal/shader", "internal/shaderir/",
 }
 

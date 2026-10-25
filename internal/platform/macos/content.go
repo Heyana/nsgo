@@ -65,7 +65,8 @@ func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 	h := float64(v.frame.Size.Height)
 	apple.DrawTopDown(ctx, h, !apple.MsgBool(layer, selContentsAreFlipped), func() {
 		if v.drawing != nil {
-			apple.Play(ctx, v.drawing)
+			apple.Play(ctx, v.surface.animator.CanvasOps(v.id, v.drawing), apple.CanvasHost{
+				Ratio: float64(v.surface.env.PixelRatio), Redraw: v.redraw, Owner: v})
 			return
 		}
 		box := v.box
@@ -73,6 +74,10 @@ func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 		v.drawSelection(ctx)
 		v.layout.Draw(ctx, h, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y),
 			float64(box.Size.Width), float64(box.Size.Height)))
+		if v.animated.Has(driver.PropTextColor) {
+			// A bound color paints over the whole text.
+			apple.Tint(ctx, apple.Rect(0, 0, float64(v.frame.Size.Width), h), v.animated.TextColor)
+		}
 	})
 }
 

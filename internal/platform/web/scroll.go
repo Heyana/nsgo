@@ -269,6 +269,13 @@ var clipOverflow = func() func() string {
 
 // scrollEvent reports kind on scroll view v at its offset and zoom.
 func (s *surface) scrollEvent(v *view, kind driver.EventKind) {
+	if kind == driver.EventScrollDragEnd || kind == driver.EventMomentumEnd {
+		// At rest, unless a glide follows, which scrolls on.
+		s.animator.Settle(v.id)
+		if s.animator.Running() {
+			s.startTicking()
+		}
+	}
 	e := driver.Event{Kind: kind, Point: v.offset(), Count: v.sc.applied}
 	if v.sc.config.Zooms() {
 		e.Value = float32(v.sc.zoom)

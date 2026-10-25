@@ -14,7 +14,7 @@ The graph follows NSH's (Solid 1.9's scheduling): signals, memos, render effects
 
 ## Elements and components
 
-Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canvas`, `Shader`, `WebView`, `Video`, `Native`, `Overlay`, `Modal`, `InputAccessoryView`, `Stack`, `Screen`) are structs with exported fields: zero values are defaults, as in `http.Server`. [Hosted views](native-views.md) covers the platform controls and the app's own views inside the tree; [images](images.md) the image pipeline; [shaders](shaders.md) the GPU's fills.
+Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canvas`, `Shader`, `WebView`, `Video`, `Native`, `Overlay`, `Modal`, `InputAccessoryView`, `Stack`, `Screen`) are structs with exported fields: zero values are defaults, as in `http.Server`. [Hosted views](native-views.md) covers the platform controls and the app's own views inside the tree; [images](images.md) the image pipeline; [canvas](canvas.md) recorded drawings; [shaders](shaders.md) the GPU's fills.
 
 - A field that can change takes a function (`StyleFunc`, `ContentFunc`, `Value`, `Disabled`), bound by one render effect per part.
 - Styles compose with `Style.Merge`, and text fields inherit down the tree as in CSS.

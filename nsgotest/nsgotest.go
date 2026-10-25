@@ -150,6 +150,17 @@ type View struct {
 	// has HeaderHeight; Modal a modal's config.
 	Screen driver.ScreenConfig
 	Modal  driver.ModalConfig
+	// Drawing is a canvas's last drawing, and Ops its operations as the
+	// platform plays them now, with the values of the animated nodes its
+	// arguments are bound to.
+	Drawing *driver.Drawing
+	Ops     []driver.DrawOp
+	// Node is the part of a drawing a view of a canvas's names: a canvas
+	// shows each of its drawing's nodes as a child, which selectors find
+	// by its label (label: and text:), test ID and role, and which presses
+	// at its center.
+	Node *driver.CanvasNode
+	anim *driver.Animator
 }
 
 // clamp keeps a scroll view's offset within its content and insets, as
@@ -167,9 +178,9 @@ func (v *View) StickyShift(id driver.NodeID) driver.Points {
 	for _, c := range v.Sticky {
 		if c.Cell == id {
 			if v.Scroll.Horizontal {
-				return c.StickyShift(v.Offset.X)
+				return v.anim.StickyShift(c, v.Offset.X)
 			}
-			return c.StickyShift(v.Offset.Y)
+			return v.anim.StickyShift(c, v.Offset.Y)
 		}
 	}
 	return 0
@@ -383,6 +394,9 @@ func matches(v *View, kind, arg string) bool {
 	case "id":
 		return v.Props.TestID == arg
 	case "text":
+		if v.Node != nil {
+			return strings.Contains(v.Node.Label, arg)
+		}
 		return v.Kind == driver.KindText && strings.Contains(v.Text, arg)
 	case "label":
 		return v.Props.Label == arg
@@ -438,6 +452,16 @@ func walk(v *View, below bool, fn func(*View)) {
 func (a *App) Press(selector string) {
 	a.t.Helper()
 	v := a.Find(selector)
+	if v.Node != nil {
+		// A press on a canvas node is a press at its center: on the view
+		// under that point that takes presses.
+		_, at := v.center()
+		if p := a.pressableAt(at); p != nil {
+			a.pressAt(p, driver.EventPress, at)
+			return
+		}
+		a.t.Fatalf("nsgotest: nothing pressable at %q", selector)
+	}
 	for p := v; p != nil; p = p.Parent {
 		if p.Events.Has(driver.EventPress) || p.Events.Has(driver.EventPressDown) {
 			a.press(p, driver.EventPress)
@@ -451,7 +475,14 @@ func (a *App) Press(selector string) {
 // modifiers: presses outside to the overlays that listen and do not hold
 // v, then down, up and the press itself.
 func (a *App) press(v *View, kind driver.EventKind) {
-	local, center := v.center()
+	_, center := v.center()
+	a.pressAt(v, kind, center)
+}
+
+// pressAt presses v at the surface point at.
+func (a *App) pressAt(v *View, kind driver.EventKind, center driver.Point) {
+	origin := v.surfaceFrame().Origin
+	local := driver.Point{X: center.X - origin.X, Y: center.Y - origin.Y}
 	var outside []driver.NodeID
 	walk(a.views[a.rootID], false, func(o *View) {
 		if o.Events.Has(driver.EventPressOutside) && !v.within(o) {
@@ -466,6 +497,47 @@ func (a *App) press(v *View, kind driver.EventKind) {
 			a.dispatch(driver.Event{Kind: k, ID: v.ID, Point: local, Page: center, Count: 1})
 		}
 	}
+}
+
+// pressableAt returns the topmost visible view at the surface point p
+// that takes presses, following visible overflow until a view that clips
+// stops it, as a pointer there finds it.
+func (a *App) pressableAt(p driver.Point) *View {
+	var found *View
+	var visit func(v *View, origin driver.Point, clip *driver.Bounds)
+	visit = func(v *View, origin driver.Point, clip *driver.Bounds) {
+		if v.Style.Hidden || v.Node != nil {
+			return
+		}
+		f := v.Frame
+		f.Origin.X += origin.X
+		f.Origin.Y += origin.Y
+		in := p.X >= f.Origin.X && p.Y >= f.Origin.Y && p.X < f.Origin.X+f.Size.Width && p.Y < f.Origin.Y+f.Size.Height
+		if clip != nil && !(p.X >= clip.Origin.X && p.Y >= clip.Origin.Y &&
+			p.X < clip.Origin.X+clip.Size.Width && p.Y < clip.Origin.Y+clip.Size.Height) {
+			return
+		}
+		pe := v.Props.PointerEvents
+		if in && pe != driver.PointerEventsNone && pe != driver.PointerEventsBoxNone &&
+			(v.Events.Has(driver.EventPress) || v.Events.Has(driver.EventPressDown)) {
+			found = v
+		}
+		if pe == driver.PointerEventsNone || pe == driver.PointerEventsBoxOnly {
+			return
+		}
+		if v.Style.Clip {
+			c := f
+			clip = &c
+		}
+		inner := driver.Point{X: f.Origin.X - v.Offset.X, Y: f.Origin.Y - v.Offset.Y}
+		for _, c := range v.Children {
+			visit(c, inner, clip)
+		}
+	}
+	if r := a.views[a.rootID]; r != nil {
+		visit(r, driver.Point{}, nil)
+	}
+	return found
 }
 
 // center returns the middle of v in its own and in surface points.
@@ -983,10 +1055,12 @@ func (a *App) DragScroll(selector string, offset driver.Point, velocity float32)
 	if snap, ok := b.SnapTarget(at, to, ms, viewport, content); ok {
 		to = snap
 	} else if ms == 0 {
+		a.settle(v)
 		return
 	}
 	to = min(max(to, lo), max(content-viewport, 0)+hi)
 	if to == at {
+		a.settle(v)
 		return
 	}
 	a.scrollEvent(v, driver.EventMomentumStart)
@@ -998,6 +1072,14 @@ func (a *App) DragScroll(selector string, offset driver.Point, velocity float32)
 	}
 	a.Scroll(selector, end)
 	a.scrollEvent(v, driver.EventMomentumEnd)
+	a.settle(v)
+}
+
+// settle has the snapping diff clamps that follow scroll view v settle,
+// as platforms do when it comes to rest.
+func (a *App) settle(v *View) {
+	a.anim.Settle(v.ID)
+	a.animate()
 }
 
 // PullToRefresh pulls the refreshable scroll view selector matches down
@@ -1062,6 +1144,35 @@ func (a *App) animate() {
 			v.Animated = vals
 		}
 	})
+	a.anim.ChangedCanvases(func(id driver.NodeID) {
+		if v := a.views[id]; v != nil && v.Drawing != nil {
+			v.Ops = slices.Clone(a.anim.CanvasOps(id, v.Drawing))
+		}
+	})
+}
+
+// drawCanvas keeps canvas v's drawing, binds its slots and shows its
+// nodes as children.
+func (a *App) drawCanvas(v *View, d *driver.Drawing) {
+	if v == nil {
+		return
+	}
+	v.Drawing = d
+	a.anim.BindCanvas(v.ID, d.Slots)
+	v.Ops = slices.Clone(a.anim.CanvasOps(v.ID, d))
+	kept := v.Children[:0]
+	for _, c := range v.Children {
+		if c.Node == nil {
+			kept = append(kept, c)
+		}
+	}
+	v.Children = kept
+	for i := range d.Nodes {
+		n := &d.Nodes[i]
+		v.Children = append(v.Children, &View{Kind: driver.KindView, Parent: v, Frame: n.Bounds, Node: n,
+			Style: driver.ViewStyle{Opacity: 1},
+			Props: driver.ViewProps{Role: n.Role, Label: n.Label, TestID: n.TestID, Selected: n.Selected}})
+	}
 }
 
 func (a *App) dispatch(ev driver.Event) {
@@ -1075,7 +1186,7 @@ func (a *App) apply(b *driver.MountBatch) {
 		v := a.views[it.ID]
 		switch it.Kind {
 		case driver.ItemCreate:
-			a.views[it.ID] = &View{ID: it.ID, Kind: it.View, Style: driver.ViewStyle{Opacity: 1}}
+			a.views[it.ID] = &View{ID: it.ID, Kind: it.View, Style: driver.ViewStyle{Opacity: 1}, anim: a.anim}
 		case driver.ItemDelete:
 			if v != nil {
 				v.detach()
@@ -1162,6 +1273,8 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemNativeCommand:
 			v.NativeCommands = append(v.NativeCommands, NativeCommand{it.Value, it.Data})
+		case driver.ItemCanvas:
+			a.drawCanvas(v, it.Drawing)
 		case driver.ItemAnimation:
 			a.anim.Apply(it.Animation)
 		case driver.ItemFocus:

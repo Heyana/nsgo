@@ -20,6 +20,10 @@ type Shader struct {
 	// Nodes are the lanes animated nodes drive over Lanes, which the
 	// platform reads from its Animator each frame they change.
 	Nodes []ShaderNode
+	// Images are what the program's image0At to image3At read, in order.
+	// The platform loads each as an image view does and draws the view
+	// again once it has them; one it lacks reads as transparent.
+	Images []ImageSource
 }
 
 // ShaderNode binds lane Lane of a shader's uniforms to animated node

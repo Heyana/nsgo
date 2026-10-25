@@ -177,14 +177,34 @@ func shaderPage(cx *core.Scope, t *theme) core.Node {
 			t.live(func() string { return fmt.Sprintf("Start pressed %d times", presses.Get()) }),
 		},
 	}
+	// A wave runs through the logo, read as the shader's image.
+	wave := core.NewAnimatedValue(cx, 0)
+	cx.StartAnimation(core.Loop(core.Timing(wave, 2*3.14159265, core.TimingConfig{Duration: 2 * time.Second}), 0), nil)
 	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
 		t.demo("Background", "A Shader runs a fragment shader written in Go's syntax on the GPU. Its clock and ripples are animated values that run with no engine work per frame; the glow is where the pointer is.",
 			field,
 			hstack(t.plain("Scale", cycle(scale, 1, 1.5, 0.75)), t.plain("Intensity", cycle(intensity, 1, 2, 0.5)),
 				t.live(func() string { return fmt.Sprintf("Scale %.2g, intensity %.2g", scale.Get(), intensity.Get()) })),
 		),
+		t.demo("Images", "Shader.Images are what image0At to image3At read, in the image's pixels: here the logo, rippling.",
+			core.Shader{Program: rippleProgram, Images: []core.ImageSource{{Data: logo}}, Uniforms: core.Uniforms{"Phase": wave},
+				Label: "Rippling logo", TestID: "image-shader",
+				Style: core.Style{Width: core.Pt(160), Height: core.Pt(160), CornerRadius: 12, Overflow: core.Hidden}},
+		),
 	}}
 }
+
+// rippleProgram stretches image 0 over the view, its rows waving.
+var rippleProgram = core.MustCompileShader(`package main
+
+var Phase float
+
+func Fragment(dst vec4, pos vec2) vec4 {
+	uv := pos / rectSize()
+	uv.x += 0.03 * sin(uv.y*12 + Phase)
+	return image0At(uv * image0Size())
+}
+`)
 
 // signalSource is Onevra's SignalField shader.
 const signalSource = `package main

@@ -133,6 +133,9 @@ func (w *window) showAnimated() {
 		}
 		w.moved(v)
 	})
+	w.changedCanvases()
+	w.changedShaders()
+	w.repinBound()
 }
 
 // monotonic is the animator's clock: time since the window opened.

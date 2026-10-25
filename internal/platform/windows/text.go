@@ -74,8 +74,12 @@ type faceKey struct {
 var (
 	facesMu sync.Mutex
 	faces   = map[faceKey]faceMetrics{}
-	// systemFonts is the system's font collection, or nil.
+	// systemFonts is the font collection text looks families up in: the
+	// system's, with the app's fonts when it registered any, or nil.
 	systemFonts = sync.OnceValue(func() *comObject {
+		if appFonts != nil {
+			return appFonts
+		}
 		f := dwriteFactory()
 		if f == nil {
 			return nil
@@ -166,7 +170,7 @@ func textFormat(font driver.Font) *comObject {
 		return nil
 	}
 	var format *comObject
-	if failed(f.callF(dwCreateTextFormat, 1<<5, uintptr(unsafe.Pointer(wide(fontName(font.Family)))), 0,
+	if failed(f.callF(dwCreateTextFormat, 1<<5, uintptr(unsafe.Pointer(wide(fontName(font.Family)))), appFonts.ptr(),
 		fontWeight(font.Weight), fontStyle(font.Italic), dwStretchNormal, f32(max(float32(font.Size), 0.1)),
 		uintptr(unsafe.Pointer(wide(""))), uintptr(unsafe.Pointer(&format)))) {
 		return nil
@@ -279,9 +283,11 @@ type preparedText struct {
 	maxLines    int
 	ellipsize   driver.EllipsizeMode
 	shadow      driver.TextShadow
-	// cut is the text, kept when its one line ellipsizes at its head or
-	// middle, which DirectWrite's trimming cannot: Layout cuts it.
-	cut *driver.AttributedText
+	// cut is the text, kept when it ellipsizes at its head or middle,
+	// which DirectWrite's trimming cannot: Layout cuts it, its last line's
+	// rest when it has several (rest).
+	cut  *driver.AttributedText
+	rest bool
 	// step is the uniform line height, 0 for DirectWrite's own, and
 	// baseline where the baseline is in each of its lines.
 	step, baseline float32
@@ -292,10 +298,15 @@ type preparedText struct {
 // Prepare implements core.TextEngine on the engine goroutine.
 func (w *window) Prepare(t *driver.AttributedText) driver.PreparedText {
 	pt := &preparedText{w: w, style: t.Style, maxLines: t.MaxLines, ellipsize: t.Ellipsize, shadow: t.Shadow}
-	if t.MaxLines == 1 && (t.Ellipsize == driver.EllipsizeHead || t.Ellipsize == driver.EllipsizeMiddle) &&
-		len(t.Attachments) == 0 && !strings.ContainsAny(t.Text, "\n\r") {
-		c := *t
-		pt.cut = &c
+	if t.Ellipsize == driver.EllipsizeHead || t.Ellipsize == driver.EllipsizeMiddle {
+		switch {
+		case t.MaxLines == 1 && !strings.ContainsAny(t.Text, "\n\r"):
+			c := *t
+			pt.cut = &c
+		case t.MaxLines > 1:
+			c := *t
+			pt.cut, pt.rest = &c, true
+		}
 	}
 	units16 := func(s string) {
 		for i, r := range s {
@@ -570,18 +581,46 @@ func (pt *preparedText) Measure(maxWidth driver.Points) driver.Size {
 // Layout lays the text out at size in a layout of its own, which the
 // main thread draws and releases.
 func (pt *preparedText) Layout(size driver.Size) driver.TextLayout {
-	if pt.cut != nil && pt.Measure(driver.Auto).Width > size.Width {
-		// The most characters that fit around the ellipsis, as a text of
-		// their own.
-		fits := func(c *driver.AttributedText) bool {
-			p := pt.w.Prepare(c)
-			defer p.Release()
-			return p.Measure(driver.Auto).Width <= size.Width+0.01
+	// The most characters that fit around the ellipsis, as a text of
+	// their own.
+	fits := func(c *driver.AttributedText) bool {
+		p := pt.w.Prepare(c)
+		defer p.Release()
+		return p.Measure(driver.Auto).Width <= size.Width+0.01
+	}
+	var cut driver.AttributedText
+	switch {
+	case pt.cut == nil:
+	case pt.rest:
+		// The lines before the last as they wrap, the rest cut.
+		whole := *pt.cut
+		whole.MaxLines = 0
+		p := pt.w.Prepare(&whole)
+		l := p.Layout(size).(*textLayout)
+		lines := l.TextLines()
+		l.Release()
+		p.Release()
+		if len(lines) > pt.cut.MaxLines {
+			cut = pt.cut.CutRest(lines[pt.cut.MaxLines-1].Start, fits)
 		}
-		cut := pt.cut.CutToFit(fits)
+	case pt.Measure(driver.Auto).Width > size.Width:
+		cut = pt.cut.CutToFit(fits)
+	}
+	if cut.Text != "" {
 		p := pt.w.Prepare(&cut)
 		defer p.Release()
-		return p.Layout(size)
+		l := p.Layout(size).(*textLayout)
+		// Attachments by the app's indices: those cut out are hidden.
+		if len(pt.cut.Attachments) > 0 {
+			boxes := make([]attachmentBox, len(pt.cut.Attachments))
+			for k, o := range cut.Origin {
+				if k < len(l.attachments) && o < len(boxes) {
+					boxes[o] = l.attachments[k]
+				}
+			}
+			l.attachments = boxes
+		}
+		return l
 	}
 	l := &textLayout{color: pt.style.Color, offsets: pt.offsets, attachments: make([]attachmentBox, len(pt.attachments)),
 		shadow: pt.shadow, runs: pt.runs, style: pt.style}

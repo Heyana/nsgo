@@ -251,8 +251,12 @@ func (v *view) updateAccessibility() {
 	if p.Accessible == driver.AccessibleNo || p.Role == driver.RoleTextField {
 		element = false
 	}
-	native.Send(selSetIsAccessibilityElement, element)
 	v.axElement = element
+	if len(v.axNodes) > 0 {
+		// A canvas with named parts is their container.
+		element = false
+	}
+	native.Send(selSetIsAccessibilityElement, element)
 	native.Send(selSetAccessibilityContainerType, noContainer)
 	if !element {
 		return

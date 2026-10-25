@@ -100,9 +100,20 @@ func (s *surface) applyAnimated() {
 			return
 		}
 		v := s.views[id]
+		recolor := (v.animated.Has(driver.PropTextColor) || vals.Has(driver.PropTextColor)) &&
+			(v.animated.TextColor != vals.TextColor || v.animated.Has(driver.PropTextColor) != vals.Has(driver.PropTextColor))
 		v.animated = vals
 		v.restyle()
+		if recolor {
+			v.redraw()
+		}
 	})
+	s.animator.ChangedCanvases(func(id driver.NodeID) {
+		if int(id) < len(s.views) && s.views[id] != nil {
+			s.views[id].redraw()
+		}
+	})
+	s.repinBound()
 }
 
 // restyle draws v's style with its animated values and what a layout

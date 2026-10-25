@@ -73,8 +73,16 @@ func (s *surface) applyAnimated() {
 		if vals.Has(driver.PropBorderColor) {
 			style["border-color"] = cssColor(vs.BorderColor)
 		}
+		// A bound color fills every glyph, the spans' too, which inherit
+		// the fill color over their own.
+		style["-webkit-text-fill-color"] = ""
+		if vals.Has(driver.PropTextColor) {
+			style["-webkit-text-fill-color"] = cssColor(vals.TextColor)
+		}
 		setStyle(v.el, style)
 	})
+	s.changedCanvases()
+	s.replaceBound()
 }
 
 // layoutBatch is what a batch with a layout animation tracks.

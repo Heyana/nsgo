@@ -28,6 +28,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"log"
 	"math"
 	"net"
 	"os"
@@ -41,6 +42,7 @@ import (
 
 	"github.com/oneo-me/nsgo/internal/driver"
 	"github.com/oneo-me/nsgo/internal/engine"
+	"github.com/oneo-me/nsgo/internal/platform/fontfile"
 	"github.com/oneo-me/nsgo/internal/platform/imagedecode"
 	"github.com/oneo-me/nsgo/internal/platform/imageload"
 )
@@ -55,6 +57,11 @@ const (
 	msgRelease = 5 // frees a prepared text
 	msgImage   = 6 // bytes of an image view's source or placeholder
 	msgLines   = 7 // asks a text layout's lines
+	// msgCanvasImage is the bytes of an image canvases draw, by its key.
+	msgCanvasImage = 8
+	// msgFonts lists the app's font files, with each face's family,
+	// weight and slant, before anything else.
+	msgFonts = 9
 
 	// Java to Go.
 	msgStart       = 1
@@ -96,6 +103,12 @@ type surface struct {
 	// On the engine goroutine.
 	images   map[driver.NodeID]*imageView
 	requests uint32 // the last image request number
+	// canvasImages are the images canvases and shaders asked for, by their
+	// key; programs the shader programs translated, numbered from
+	// nextProgram.
+	canvasImages map[string]bool
+	programs     map[*driver.ShaderProgram]*glProgram
+	nextProgram  uint32
 
 	// The native components; cmu guards them, as the reader goroutine
 	// hands them their views' events.
@@ -109,6 +122,9 @@ type surface struct {
 type Options struct {
 	// Components are the native components Native elements name.
 	Components driver.NativeComponents
+	// Fonts are font files under the app's resources, registered before
+	// the first view.
+	Fonts []string
 }
 
 // Run serves app to the Java runtime over standard input and output until
@@ -137,6 +153,7 @@ func Run(app engine.App, opts Options) {
 		unknown:    map[string]bool{},
 	}
 	useDNS()
+	s.sendFonts(opts.Fonts)
 	in := bufio.NewReader(os.Stdin)
 	for {
 		kind, payload, err := readMessage(in)
@@ -302,6 +319,11 @@ func useDNS() {
 // under a new id, so measuring and laying it out send only the id.
 func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
 	p := preparedText{s: s, id: s.ids.Add(1)}
+	if (t.Ellipsize == driver.EllipsizeHead || t.Ellipsize == driver.EllipsizeMiddle) && t.MaxLines > 1 {
+		// StaticLayout ellipsizes a head or a middle on one line only.
+		c := *t
+		p.cut = &c
+	}
 	for _, a := range t.Attachments {
 		p.attachments = append(p.attachments, a.Size)
 	}
@@ -350,6 +372,9 @@ type preparedText struct {
 	s           *surface
 	id          uint32
 	attachments []driver.Size
+	// cut is the text, kept when it ellipsizes at its head or middle on
+	// several lines: Layout cuts its last line's rest.
+	cut *driver.AttributedText
 }
 
 // Measure asks the runtime's StaticLayout and waits for the answer. Only
@@ -366,6 +391,11 @@ func (p preparedText) Measure(maxWidth driver.Points) driver.Size {
 // ItemText to name: Java reads it before the batch. Only a text with
 // attachments waits for an answer, where they went.
 func (p preparedText) Layout(size driver.Size) driver.TextLayout {
+	if p.cut != nil {
+		if l := p.layoutCut(size); l != nil {
+			return l
+		}
+	}
 	l := &textLayout{id: p.s.ids.Add(1), s: p.s}
 	p.s.send(msgLayout, func(w *writer) {
 		w.u32(p.id)
@@ -381,6 +411,42 @@ func (p preparedText) Layout(size driver.Size) driver.TextLayout {
 
 func (p preparedText) Release() {
 	p.s.send(msgRelease, func(w *writer) { w.u32(p.id) })
+}
+
+// layoutCut lays p out with its last line's rest cut at its head or
+// middle, as driver.AttributedText.CutRest does, from where StaticLayout
+// breaks its lines at size's width; nil when the lines fit.
+func (p preparedText) layoutCut(size driver.Size) driver.TextLayout {
+	whole := *p.cut
+	whole.MaxLines = 0
+	q := p.s.Prepare(&whole).(preparedText)
+	ql := q.Layout(size).(*textLayout)
+	lines := ql.TextLines()
+	p.s.send(msgRelease, func(w *writer) { w.u32(ql.id) })
+	q.Release()
+	if len(lines) <= p.cut.MaxLines {
+		return nil
+	}
+	fits := func(c *driver.AttributedText) bool {
+		r := p.s.Prepare(c)
+		defer r.Release()
+		return r.Measure(driver.Auto).Width <= size.Width+0.01
+	}
+	cut := p.cut.CutRest(lines[p.cut.MaxLines-1].Start, fits)
+	r := p.s.Prepare(&cut).(preparedText)
+	defer r.Release()
+	l := r.Layout(size).(*textLayout)
+	// Attachments by the app's indices: those cut out are hidden.
+	if n := len(p.cut.Attachments); n > 0 {
+		boxes, sizes := make([]attachmentBox, n), make([]driver.Size, n)
+		for k, o := range cut.Origin {
+			if k < len(l.attachments) && o < n {
+				boxes[o], sizes[o] = l.attachments[k], l.sizes[k]
+			}
+		}
+		l.attachments, l.sizes = boxes, sizes
+	}
+	return l
 }
 
 // textLayout names a StaticLayout Java built, and where it put the
@@ -455,7 +521,8 @@ func (s *surface) frame() {
 func (s *surface) Mount(b *driver.MountBatch) {
 	requests, loads := s.trackImages(b)
 	natives := s.trackNatives(b)
-	s.send(msgBatch, func(w *writer) { encode(w, b, requests, natives) })
+	shaders := s.trackShaders(b)
+	s.send(msgBatch, func(w *writer) { encode(w, b, requests, natives, shaders) })
 	for _, l := range loads {
 		go s.load(l)
 	}
@@ -520,6 +587,8 @@ func (s *surface) trackImages(b *driver.MountBatch) ([]uint32, []imageLoad) {
 			if v != nil {
 				v.size = it.Frame.Size
 			}
+		case driver.ItemCanvas:
+			s.loadCanvasImages(it.Drawing)
 		case driver.ItemImage:
 			if v == nil {
 				v = &imageView{}
@@ -675,7 +744,7 @@ const webBridge = "(function (n) { if (n) window." + webInterface +
 // send. Kinds it does not know, ItemBackUnhandled and the desktop-only
 // ItemWindow and ItemMenu, which Java ignores, have no fields. The batch's
 // layout animation comes before its items.
-func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []nativeItem) {
+func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []nativeItem, shaders []shaderItem) {
 	w.u32(uint32(b.Root))
 	writeLayoutAnimation(w, b.LayoutAnimation)
 	w.u32(uint32(len(b.Items)))
@@ -763,6 +832,8 @@ func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []native
 				w.u32(uint32(c.Cell))
 				w.points(c.Start)
 				w.points(c.End)
+				w.u32(c.Node)
+				w.points(c.Inset)
 			}
 		case driver.ItemEvents:
 			w.u64(uint64(it.Events))
@@ -869,12 +940,20 @@ func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []native
 			w.points(center.Y)
 			w.flags(it.Animated)
 		case driver.ItemCanvas:
-			// Length first: Java keeps the ops as they are and plays them
-			// on each draw.
-			at := len(w.buf)
-			w.u32(0)
+			// The ops' length first: Java keeps them as they are and plays
+			// them on each draw.
 			writeDrawing(w, it.Drawing)
-			binary.BigEndian.PutUint32(w.buf[at:], uint32(len(w.buf)-at-4))
+		case driver.ItemShader:
+			if it.Shader != nil && len(shaders) > 0 {
+				writeShader(w, it.Shader, shaders[0])
+				shaders = shaders[1:]
+			} else {
+				w.u32(0) // no program
+				w.flags(false)
+				w.u32(0)
+				w.u32(0)
+				w.u32(0)
+			}
 		case driver.ItemSetClipboard, driver.ItemAnnounce, driver.ItemTitle, driver.ItemAccessibilityLabel:
 			w.str(it.Value)
 		case driver.ItemReadClipboard:
@@ -949,52 +1028,254 @@ func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []native
 }
 
 // writeDrawing writes each op as its kind and the fields it uses, in the
-// format CanvasNode plays.
+// format CanvasNode plays, then where the arguments bound to animated
+// nodes are in those bytes, which Java writes their values into, then
+// the drawing's nodes. DrawTextAlign and DrawTextBaseline, which only
+// the recorder reads, are left out.
 func writeDrawing(w *writer, d *driver.Drawing) {
-	if d == nil {
-		return
+	type slot struct {
+		at    int
+		color bool
+		node  uint32
 	}
-	for i := range d.Ops {
-		op := &d.Ops[i]
+	var slots []slot
+	at := len(w.buf)
+	w.u32(0)
+	start := len(w.buf)
+	bound := map[[2]int]uint32{}
+	if d != nil {
+		for _, s := range d.Slots {
+			bound[[2]int{s.Op, int(s.Arg)}] = s.Node
+		}
+	}
+	var i int
+	// arg writes an argument, noting where it is when a node drives it.
+	arg := func(a driver.DrawArg, v float32) {
+		if n, ok := bound[[2]int{i, int(a)}]; ok {
+			slots = append(slots, slot{at: len(w.buf) - start, node: n})
+		}
+		w.float(v)
+	}
+	color := func(c driver.Color) {
+		if n, ok := bound[[2]int{i, int(driver.ArgColor)}]; ok {
+			slots = append(slots, slot{at: len(w.buf) - start, color: true, node: n})
+		}
+		w.u32(uint32(c))
+	}
+	var ops []driver.DrawOp
+	if d != nil {
+		ops = d.Ops
+	}
+	for i = range ops {
+		op := &ops[i]
+		if op.Kind == driver.DrawTextAlign || op.Kind == driver.DrawTextBaseline {
+			continue
+		}
 		w.byte(byte(op.Kind))
 		switch op.Kind {
 		case driver.DrawTranslate, driver.DrawScale, driver.DrawMoveTo, driver.DrawLineTo:
-			w.floats(op.X, op.Y)
+			arg(driver.ArgX, op.X)
+			arg(driver.ArgY, op.Y)
 		case driver.DrawRotate, driver.DrawAlpha:
-			w.float(op.A)
+			arg(driver.ArgA, op.A)
 		case driver.DrawQuadTo:
-			w.floats(op.X1, op.Y1, op.X, op.Y)
+			arg(driver.ArgX1, op.X1)
+			arg(driver.ArgY1, op.Y1)
+			arg(driver.ArgX, op.X)
+			arg(driver.ArgY, op.Y)
 		case driver.DrawCubicTo:
-			w.floats(op.X1, op.Y1, op.X2, op.Y2, op.X, op.Y)
+			arg(driver.ArgX1, op.X1)
+			arg(driver.ArgY1, op.Y1)
+			arg(driver.ArgX2, op.X2)
+			arg(driver.ArgY2, op.Y2)
+			arg(driver.ArgX, op.X)
+			arg(driver.ArgY, op.Y)
+		case driver.DrawTransform, driver.DrawSetTransform:
+			arg(driver.ArgX1, op.X1)
+			arg(driver.ArgY1, op.Y1)
+			arg(driver.ArgX2, op.X2)
+			arg(driver.ArgY2, op.Y2)
+			arg(driver.ArgX, op.X)
+			arg(driver.ArgY, op.Y)
 		case driver.DrawArc:
-			w.floats(op.X, op.Y, op.R, op.A0, op.A1)
+			arg(driver.ArgX, op.X)
+			arg(driver.ArgY, op.Y)
+			arg(driver.ArgR, op.R)
+			arg(driver.ArgA0, op.A0)
+			arg(driver.ArgA1, op.A1)
 			w.flags(op.CCW)
 		case driver.DrawRect, driver.DrawClear:
-			w.floats(op.X, op.Y, op.W, op.H)
+			arg(driver.ArgX, op.X)
+			arg(driver.ArgY, op.Y)
+			arg(driver.ArgW, op.W)
+			arg(driver.ArgH, op.H)
 		case driver.DrawRoundRect:
-			w.floats(op.X, op.Y, op.W, op.H, op.R)
+			arg(driver.ArgX, op.X)
+			arg(driver.ArgY, op.Y)
+			arg(driver.ArgW, op.W)
+			arg(driver.ArgH, op.H)
+			arg(driver.ArgR, op.R)
 		case driver.DrawEllipse:
-			w.floats(op.X, op.Y, op.R, op.RY)
+			arg(driver.ArgX, op.X)
+			arg(driver.ArgY, op.Y)
+			arg(driver.ArgR, op.R)
+			arg(driver.ArgRY, op.RY)
 		case driver.DrawFill, driver.DrawClip:
 			w.flags(op.EvenOdd)
 		case driver.DrawFillColor, driver.DrawStrokeColor:
-			w.u32(uint32(op.Color))
+			color(op.Color)
 		case driver.DrawFillGradient, driver.DrawStrokeGradient:
 			writeGradient(w, op.Gradient)
-		case driver.DrawLineWidth:
-			w.float(op.W)
+		case driver.DrawLineWidth, driver.DrawLineDashOffset, driver.DrawMiterLimit:
+			arg(driver.ArgW, op.W)
 		case driver.DrawLineCap:
 			w.byte(byte(op.Cap))
 		case driver.DrawLineJoin:
 			w.byte(byte(op.Join))
-		case driver.DrawFillText:
+		case driver.DrawComposite:
+			w.byte(byte(op.Composite))
+		case driver.DrawLineDash:
+			var dash []float32
+			if op.Dash != nil {
+				dash = *op.Dash
+			}
+			w.u32(uint32(len(dash)))
+			w.floats(dash...)
+		case driver.DrawShadow:
+			color(op.Color)
+			arg(driver.ArgX, op.X)
+			arg(driver.ArgY, op.Y)
+			arg(driver.ArgR, op.R)
+		case driver.DrawFillText, driver.DrawStrokeText:
 			w.str(op.Text)
-			w.floats(op.X, op.Y)
+			// The point the recorder placed the text at.
+			arg(driver.ArgX, op.X+op.X1)
+			arg(driver.ArgY, op.Y+op.Y1)
 			w.str(op.Font.Family)
 			w.points(op.Font.Size)
 			w.u16(uint16(op.Font.Weight))
 			w.flags(op.Font.Italic)
+		case driver.DrawImage:
+			var key string
+			var density float32 = 1
+			if op.Image != nil {
+				key, density = op.Image.Key(), op.Image.Density()
+			}
+			w.str(key)
+			w.float(density)
+			arg(driver.ArgX, op.X)
+			arg(driver.ArgY, op.Y)
+			arg(driver.ArgW, op.W)
+			arg(driver.ArgH, op.H)
+			arg(driver.ArgX1, op.X1)
+			arg(driver.ArgY1, op.Y1)
+			arg(driver.ArgX2, op.X2)
+			arg(driver.ArgY2, op.Y2)
 		}
+	}
+	binary.BigEndian.PutUint32(w.buf[at:], uint32(len(w.buf)-start))
+	w.u32(uint32(len(slots)))
+	for _, s := range slots {
+		w.u32(uint32(s.at))
+		w.flags(s.color)
+		w.u32(s.node)
+	}
+	var nodes []driver.CanvasNode
+	if d != nil {
+		nodes = d.Nodes
+	}
+	w.u32(uint32(len(nodes)))
+	for _, n := range nodes {
+		w.bounds(n.Bounds)
+		w.byte(byte(n.Role))
+		w.str(n.Label)
+		w.str(n.TestID)
+		w.flags(n.Selected)
+	}
+}
+
+// sendFonts tells Java the app's font files, paths in the APK's assets,
+// with their faces' families, which Java loads as Typefaces before it
+// prepares any text.
+func (s *surface) sendFonts(paths []string) {
+	type font struct {
+		path string
+		face fontfile.Face
+	}
+	var fonts []font
+	for _, p := range paths {
+		data, err := imageload.ReadResource(p)
+		if err != nil {
+			log.Printf("nsgo: font %s: %v", p, err)
+			continue
+		}
+		faces, err := fontfile.Describe(data)
+		if err != nil || len(faces) == 0 {
+			log.Printf("nsgo: font %s: %v", p, err)
+			continue
+		}
+		// Typeface reads a collection's first face.
+		fonts = append(fonts, font{p, faces[0]})
+	}
+	if len(fonts) == 0 {
+		return
+	}
+	s.send(msgFonts, func(w *writer) {
+		w.u32(uint32(len(fonts)))
+		for _, f := range fonts {
+			w.str(f.path)
+			w.str(f.face.Family)
+			w.u16(uint16(f.face.Weight))
+			w.flags(f.face.Italic)
+		}
+	})
+}
+
+// loadCanvasImages loads the images d draws that no canvas asked for
+// yet and hands Java their bytes, which it decodes once for every
+// canvas.
+func (s *surface) loadCanvasImages(d *driver.Drawing) {
+	if d == nil {
+		return
+	}
+	var srcs []driver.ImageSource
+	for i := range d.Ops {
+		if op := &d.Ops[i]; op.Kind == driver.DrawImage && op.Image != nil {
+			srcs = append(srcs, *op.Image)
+		}
+	}
+	s.loadImages(srcs)
+}
+
+// loadImages loads the images canvases and shaders read that none asked
+// for yet and hands Java their bytes, which it decodes once for all.
+func (s *surface) loadImages(srcs []driver.ImageSource) {
+	for _, src := range srcs {
+		key := src.Key()
+		if s.canvasImages[key] {
+			continue
+		}
+		if s.canvasImages == nil {
+			s.canvasImages = map[string]bool{}
+		}
+		s.canvasImages[key] = true
+		go func() {
+			data, err := imageload.Load(context.Background(), src, nil)
+			var img decodedImage
+			if err == nil {
+				img, err = s.prepareImage(data, src.URI, driver.Size{})
+			}
+			if err != nil {
+				log.Printf("nsgo: canvas: image %s: %v", key, err)
+				return
+			}
+			s.send(msgCanvasImage, func(w *writer) {
+				w.str(key)
+				w.float(img.scale)
+				w.u32(uint32(len(img.data)))
+				w.buf = append(w.buf, img.data...)
+			})
+		}()
 	}
 }
 

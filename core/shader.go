@@ -29,7 +29,10 @@ import (
 // smoothstep, dot, ...), functions of its own, if, and for loops.
 // Exported variables at the package level are uniforms, which
 // Shader.Uniforms sets. rectSize returns the view's size in points, and
-// pixelScale the pixels a point.
+// pixelScale the pixels a point. image0At(pos) to image3At(pos) read
+// Shader.Images at a position in their pixels, premultiplied and
+// transparent outside them, and image0Size() to image3Size() give their
+// sizes in pixels.
 //
 // Each platform translates the program for its GPU once, the first time a
 // view shows it.
@@ -57,7 +60,7 @@ func CompileShader(src string) (*ShaderProgram, error) {
 	sp := &ShaderProgram{p: &driver.ShaderProgram{Source: src}, uniforms: map[string]uniformSlot{}}
 	lane := 0
 	for i, name := range p.UniformNames {
-		if name == shader.RectSizeUniform || name == shader.ScaleUniform {
+		if name == shader.RectSizeUniform || name == shader.ScaleUniform || name == shader.ImageSizesUniform {
 			continue
 		}
 		t := p.Uniforms[i]
@@ -106,11 +109,16 @@ type Shader struct {
 	// UniformsFunc's values are set over Uniforms, again when what it
 	// reads changes.
 	UniformsFunc func() Uniforms
-	Style        Style
-	StyleFunc    func() Style
-	OnPress      func(PressEvent)
-	OnLayout     func(Bounds)
-	Ref          *Ref
+	// Images are what the program's image0At to image3At read, in order,
+	// loaded as an Image loads its source; ImagesFunc's replace them,
+	// again when what it reads changes.
+	Images     []ImageSource
+	ImagesFunc func() []ImageSource
+	Style      Style
+	StyleFunc  func() Style
+	OnPress    func(PressEvent)
+	OnLayout   func(Bounds)
+	Ref        *Ref
 	// Label names what the shader shows for assistive technology, which
 	// skips an unlabeled shader as a decoration.
 	Label  string
@@ -140,19 +148,33 @@ func (t *Tree) mountShader(cx *Scope, parent *node, s Shader) {
 	if s.Program == nil {
 		return
 	}
-	set := func(u Uniforms) {
+	set := func(u Uniforms, images []ImageSource) {
 		d := s.Program.values(s.Uniforms, u)
-		if old := sn.sent; old != nil && slices.Equal(old.Lanes, d.Lanes) && slices.Equal(old.Nodes, d.Nodes) {
+		for _, img := range images {
+			d.Images = append(d.Images, t.pickScale(img))
+		}
+		if old := sn.sent; old != nil && slices.Equal(old.Lanes, d.Lanes) && slices.Equal(old.Nodes, d.Nodes) &&
+			slices.EqualFunc(old.Images, d.Images, ImageSource.Same) {
 			return
 		}
 		sn.sent, sn.fresh = d, true
 		t.touch(n)
 	}
-	if s.UniformsFunc == nil {
-		set(nil)
+	if s.UniformsFunc == nil && s.ImagesFunc == nil {
+		set(nil, s.Images)
 		return
 	}
-	cx.renderEffect(func() { set(s.UniformsFunc()) })
+	cx.renderEffect(func() {
+		var u Uniforms
+		if s.UniformsFunc != nil {
+			u = s.UniformsFunc()
+		}
+		images := s.Images
+		if s.ImagesFunc != nil {
+			images = s.ImagesFunc()
+		}
+		set(u, images)
+	})
 }
 
 // values returns what a shader view draws with base's uniforms and over's

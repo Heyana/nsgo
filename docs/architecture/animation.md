@@ -14,13 +14,16 @@ Headless tests run frames as the manual clock advances: `nsgotest.App.Advance` m
 
 ## Animated values
 
-The app builds a graph once: `AnimatedValue`s, nodes derived with `Interpolate` (numbers or colors, with React Native's extrapolation and easings), `Add`, `Sub`, `Mul`, `Div`, `Mod` and `DiffClamp`, and animations that move values. `Style.Animated` binds a view's opacity, translation, scales, rotation, background, border color, shadow color and shadow radius to nodes, over its style.
+The app builds a graph once: `AnimatedValue`s, nodes derived with `Interpolate` (numbers or colors, with React Native's extrapolation and easings), `Add`, `Sub`, `Mul`, `Div`, `Mod`, `DiffClamp` and `SnappingDiffClamp`, and animations that move values. `Style.Animated` binds a view's opacity, translation, scales, rotations about each axis, background, border color, shadow color, shadow radius, shadow opacity and text color to nodes, over its style, and a sticky list header's inset (`StickyInset`). A bound text color tints the whole drawn text, as NSH's does.
 
-- `Timing`, `Spring` and `Decay` move one value; `Sequence`, `Parallel`, `Stagger`, `Delay` and `Loop` compose them. `Scope.StartAnimation` runs one and calls back once with whether it finished. Each step of a composite starts at the exact end of the one before.
-- Drivers are closed-form functions of the time since they started, so dropped frames change nothing: React Native's damped spring, and NSH's decay, which stops at or bounces off its bounds at the exact time it reaches them.
+- `Timing`, `Spring` and `Decay` move one value; `Sequence`, `Parallel`, `Stagger`, `Delay` and `Loop` compose them. `Scope.StartAnimation` runs one, calls back once with whether it finished, and returns an `AnimationRun` whose `Stop` ends it where it is and `Reset` puts its values back where they were as it started. Each step of a composite starts at the exact end of the one before.
+- Drivers are closed-form functions of the time since they started, so dropped frames change nothing: React Native's damped spring, and NSH's decay, which stops at or bounces off its bounds at the exact time it reaches them. `SampleEasing`, `SampleSpring` and `SampleDecay` return their curves from the same code, to draw them.
 - A value's `Set`, `Stop`, or another animation of it ends its run unfinished; so does the owner going. `Read` asks the platform for a value.
+- `ValueKeyframes` plays a value through stops as Web Animations does: offsets spread evenly when missing, an easing per segment, a delay, iterations and directions. It becomes a composite of timings, so the platforms learn nothing new; `StepsEasing` adds CSS's `steps()`.
+- A `Motion` moves a view's opacity, translation, scale and rotation through keyframes together, from a `MotionSpec` or one of NSH's `MotionPreset`s (entrances, exits, attention seekers), landing at once under reduced motion.
+- `SnappingDiffClamp` is a `DiffClamp` that, when the scroll view its input follows comes to rest, eases in 200 ms to whichever end is nearer, so a collapsing header is never left half hidden.
 - `View.PanValues` has drags move values by their translation, `PinchValue` scales a value by a pinch and `RotationValue` turns one by a rotation, each from where the value was as the gesture began, so a gesture grabs a value an animation is moving (`Animator.Gesture`). A pan's start and end report the values in `PanEvent.Values`, to snap from. `Scroll.OffsetValues` follows a scroll view's offset. Each moves in the frame the pointer or the content does.
-- Nodes also drive a `Shader`'s uniform lanes, which the backend draws again when one changes ([shaders](shaders.md)).
+- Nodes also drive a `Shader`'s uniform lanes and a `Canvas`'s drawing arguments, which the backend draws again when one changes ([shaders](shaders.md), [canvas](canvas.md)).
 - Values are released with the owner that made them; derived nodes with the owner running when they were made.
 
 The graph travels as `ItemAnimation`, after the batch's views. Each backend keeps a `driver.Animator`, applies the ops, steps it once a frame while a run is live and draws what `Changed` reports with `AnimatedValues.Apply` over the view's style. Finished runs and reads come back as `EventAnimation`.
@@ -50,5 +53,4 @@ A display link runs only in the run loop mode object it is given: Foundation's `
 | --- | --- | --- |
 | `createAnimatedValue`, nodes as `Copy` handles | `*AnimatedValue` and `AnimatedNode` values, released with their owner | Go's garbage collector and owners |
 | Optional velocities | `Velocity` 0 keeps the value's current velocity | Zero values are defaults |
-| A text's `color` is bindable | Not bindable | Text is drawn by the platform's text engine from a prepared layout |
 | `Easing` as data decoded in Rust | `Easing` values with a `Kind` and `Mode`; zero is linear | Zero values are defaults |

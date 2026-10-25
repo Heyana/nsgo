@@ -1,6 +1,9 @@
 package driver
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -234,12 +237,28 @@ type MountItem struct {
 type StickyCell struct {
 	Cell       NodeID
 	Start, End Points
+	// Node, when set, is the animated node the cell's inset from the
+	// viewport's start follows, in place of Inset, which Start counts.
+	Node  uint32
+	Inset Points
 }
 
 // StickyShift is how far a sticky cell moves from its frame along the
 // main axis at offset.
 func (c StickyCell) StickyShift(offset Points) Points {
 	return min(max(offset-c.Start, 0), max(c.End-c.Start, 0))
+}
+
+// StickyShift is c.StickyShift with the cell's inset the value its node
+// has, as backends place a cell bound to an animated node. A nil
+// animator keeps the inset c was laid out with.
+func (a *Animator) StickyShift(c StickyCell, offset Points) Points {
+	if c.Node != 0 && a != nil {
+		if v, _, ok := a.Value(c.Node); ok {
+			offset += Points(v) - c.Inset
+		}
+	}
+	return c.StickyShift(offset)
 }
 
 // MountBatch is one commit's changes, applied in order on the main thread.
@@ -592,6 +611,36 @@ type ImageSource struct {
 	// a@2x.png, ...): the core mounts the one for the screen's pixel
 	// ratio. Empty for a single file.
 	Scales ImageScales
+}
+
+// Density returns the pixels a point of the image s names has: the
+// density an "asset:" file's name gives (a@2x.png is 2), else 1.
+func (s ImageSource) Density() float32 {
+	if !strings.HasPrefix(s.URI, "asset:") {
+		return 1
+	}
+	name := s.URI[strings.LastIndexByte(s.URI, '/')+1:]
+	if dot := strings.LastIndexByte(name, '.'); dot > 0 {
+		name = name[:dot]
+	}
+	at := strings.LastIndexByte(name, '@')
+	if at < 0 || !strings.HasSuffix(name, "x") {
+		return 1
+	}
+	d, err := strconv.ParseFloat(name[at+1:len(name)-1], 32)
+	if err != nil || d <= 0 {
+		return 1
+	}
+	return float32(d)
+}
+
+// Key returns a string naming the image s loads, for caches: its URI, or
+// where its bytes are.
+func (s ImageSource) Key() string {
+	if len(s.Data) > 0 {
+		return fmt.Sprintf("data:%p:%d", &s.Data[0], len(s.Data))
+	}
+	return s.URI
 }
 
 // Same reports whether s and o load the same image: inline data must

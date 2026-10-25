@@ -32,6 +32,9 @@ type Options struct {
 	ID string
 	// Components are the native components Native elements name.
 	Components driver.NativeComponents
+	// Fonts are font files under the app's resources, registered before
+	// the first view.
+	Fonts []string
 }
 
 const fontFamily = `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
@@ -98,6 +101,11 @@ type surface struct {
 	watch     watch
 	env       driver.Environment // as last sent
 	gestures  gestures
+	// canvasImages are the images canvases draw, by ImageSource.Key.
+	canvasImages map[string]*canvasImage
+	// stickyBound are the sticky cells whose insets follow animated
+	// values.
+	stickyBound map[*view]bool
 	// selectionCSS is whether the ::selection rule is in the page.
 	selectionCSS bool
 	scrollCSS    bool
@@ -223,6 +231,7 @@ type press struct {
 
 // Run fills the page with app. Call it from main; it does not return.
 func Run(app engine.App, opts Options) {
+	registerFonts(opts.Fonts)
 	doc := js.Global().Get("document")
 	host := doc.Get("body")
 	if opts.Mount != "" {
@@ -404,9 +413,11 @@ type span struct {
 type preparedText struct {
 	s *surface
 	richText
-	// cut is the text, kept when its one line ellipsizes at its head or
-	// middle, which CSS cannot: Layout cuts it.
-	cut *driver.AttributedText
+	// cut is the text, kept when it ellipsizes at its head or middle,
+	// which CSS cannot: Layout cuts it, its last line's rest when it has
+	// several (rest).
+	cut  *driver.AttributedText
+	rest bool
 }
 
 // textLayout is what the element that draws text needs; the browser lays
@@ -474,10 +485,15 @@ func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
 	}
 	p := &preparedText{s: s, richText: richText{text: t.Text, style: style, spans: spans,
 		attachments: t.Attachments, drawn: drawn, maxLines: t.MaxLines}}
-	if t.MaxLines == 1 && (t.Ellipsize == driver.EllipsizeHead || t.Ellipsize == driver.EllipsizeMiddle) &&
-		len(t.Attachments) == 0 && !strings.ContainsAny(t.Text, "\n\r") {
-		c := *t
-		p.cut = &c
+	if t.Ellipsize == driver.EllipsizeHead || t.Ellipsize == driver.EllipsizeMiddle {
+		switch {
+		case t.MaxLines == 1 && !strings.ContainsAny(t.Text, "\n\r"):
+			c := *t
+			p.cut = &c
+		case t.MaxLines > 1:
+			c := *t
+			p.cut, p.rest = &c, true
+		}
 	}
 	return p
 }
@@ -682,18 +698,44 @@ func (p *preparedText) hold() js.Value {
 // it lays the text out in the measuring element at size's width, as the
 // element drawing it will, and reads where their placeholders landed.
 func (p *preparedText) Layout(size driver.Size) driver.TextLayout {
-	if p.cut != nil && p.unclamped() > size.Width+0.01 {
-		// The most characters that fit around the ellipsis, as a text of
-		// their own.
-		fits := func(c *driver.AttributedText) bool {
-			q := p.s.Prepare(c).(*preparedText)
-			defer q.Release()
-			return q.unclamped() <= size.Width+0.01
+	// The most characters that fit around the ellipsis, as a text of
+	// their own.
+	fits := func(c *driver.AttributedText) bool {
+		q := p.s.Prepare(c).(*preparedText)
+		defer q.Release()
+		return q.unclamped() <= size.Width+0.01
+	}
+	var cut driver.AttributedText
+	switch {
+	case p.cut == nil:
+	case p.rest:
+		// The lines before the last as they wrap, the rest cut.
+		whole := *p.cut
+		whole.MaxLines = 0
+		q := p.s.Prepare(&whole).(*preparedText)
+		lines := q.Layout(size).(*textLayout).TextLines()
+		q.Release()
+		if len(lines) > p.cut.MaxLines {
+			cut = p.cut.CutRest(lines[p.cut.MaxLines-1].Start, fits)
 		}
-		cut := p.cut.CutToFit(fits)
+	case p.unclamped() > size.Width+0.01:
+		cut = p.cut.CutToFit(fits)
+	}
+	if cut.Text != "" {
 		q := p.s.Prepare(&cut).(*preparedText)
 		defer q.Release()
-		return q.Layout(size)
+		l := q.Layout(size).(*textLayout)
+		// Attachments by the app's indices: those cut out are hidden.
+		if len(p.cut.Attachments) > 0 {
+			boxes := make([]attachmentBox, len(p.cut.Attachments))
+			for k, o := range cut.Origin {
+				if k < len(l.boxes) && o < len(boxes) {
+					boxes[o] = l.boxes[k]
+				}
+			}
+			l.boxes = boxes
+		}
+		return l
 	}
 	l := &textLayout{richText: p.richText, s: p.s, width: size.Width}
 	if len(p.attachments) == 0 {
@@ -930,8 +972,7 @@ func (s *surface) Mount(b *driver.MountBatch) {
 			v.modal = it.Modal.Animation
 		case driver.ItemCanvas:
 			if v.kind == driver.KindCanvas {
-				v.drawing = it.Drawing
-				s.paint(v)
+				s.setDrawing(v, it.Drawing)
 			}
 		case driver.ItemShader:
 			if v.gl != nil {
@@ -1726,6 +1767,9 @@ func (s *surface) pointerUp(e js.Value) {
 func (s *surface) click(e js.Value) {
 	p := s.press
 	s.press = press{}
+	if s.canvasNodePress(e.Get("target")) {
+		return
+	}
 	v := s.target(e.Get("target"))
 	if v == nil || v.kind == driver.KindInput {
 		return

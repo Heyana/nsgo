@@ -12,7 +12,7 @@ NSGo 参考 [Native Shell（NSH）](https://nsh.dev) 的设计，NSH 用 Rust �
 
 ## 状态
 
-NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、动图与矢量图片、画布、用 Go 编写的 GPU 着色器、自带 Lucide 图标包的 SVG 图标、网页视图、视频、应用自己的原生视图、动画值与布局动画、类 CSS 的渐变、阴影、滤镜与 3D 变换、文件拖放、Markdown 和 HTML 文本视图、浮层、对话框、导航和无样式基础组件，可在 macOS、iOS、Windows、Linux、Web 和 Android 设备及 x86_64 模拟器上运行。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
+NSGo 处于早期阶段。引擎已具备 NSH 的响应式模型、block/flexbox/grid 布局、列表、应用自带字体、动图与矢量图片、画布、用 Go 编写的 GPU 着色器、自带 Lucide 图标包的 SVG 图标、网页视图、视频、应用自己的原生视图、动画值与布局动画、类 CSS 的渐变、阴影、滤镜与 3D 变换、文件拖放、Markdown 和 HTML 文本视图、浮层、对话框、导航和无样式基础组件，可在 macOS、iOS、Windows、Linux、Web 和 Android 设备及 x86_64 模拟器上运行。目前还没有发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。
 
 ## 目标
 
@@ -81,7 +81,7 @@ build:
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, android_arm64, android_x64, web]
 ```
 
-`nsgo.yaml` 旁边有两个目录。`resources/` 存放随应用发布的文件：每个包把它们放进自己的资源根目录，`asset:` 图片从这里加载。资源根目录在 macOS 上是 `Contents/Resources`，在 iOS 上是应用包本身，在 Android 上是 APK 的 assets，其他平台是可执行文件或页面旁的 `resources/`。`assets/` 存放不随应用发布的项目文件，例如 `icon` 默认使用的图标。
+`nsgo.yaml` 旁边有两个目录。`resources/` 存放随应用发布的文件：每个包把它们放进自己的资源根目录，`asset:` 图片从这里加载，`nsgo.Fonts` 也从这里注册字体，例如 `nsgo.Run(Root, nsgo.Fonts("fonts/Brand.ttf"))`。资源根目录在 macOS 上是 `Contents/Resources`，在 iOS 上是应用包本身，在 Android 上是 APK 的 assets，其他平台是可执行文件或页面旁的 `resources/`。`assets/` 存放不随应用发布的项目文件，例如 `icon` 默认使用的图标。
 
 在你的模块中添加一次该工具，之后用 `go tool nsgo` 运行，无需安装：
 

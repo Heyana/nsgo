@@ -645,3 +645,86 @@ func TestCaretAndPaste(t *testing.T) {
 		t.Fatalf("paste status = %q", got)
 	}
 }
+
+// TestCanvasNodesAndAnimatedArguments presses a bar the canvas names as a
+// node, which its hit test selects, and checks that bound drawing
+// arguments move with the clock.
+func TestCanvasNodesAndAnimatedArguments(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Canvas")
+	bar := app.Find("label:Bar 2, 80%")
+	if bar.Props.Role != core.RoleButton || bar.Props.Selected {
+		t.Fatalf("bar 2 = %+v", bar.Props)
+	}
+	app.Press("id:bar-2")
+	if !app.Exists("text:Bar 2 selected") || !app.Find("id:bar-2").Props.Selected {
+		t.Fatalf("pressing bar 2 did not select it\n%s", app.Dump())
+	}
+	radius := func() float32 {
+		for _, op := range app.Find("id:animated-drawing").Ops {
+			if op.Kind == core.DrawArc {
+				return op.R
+			}
+		}
+		return -1
+	}
+	app.Advance(16 * time.Millisecond)
+	start := radius()
+	app.Advance(500 * time.Millisecond)
+	if r := radius(); r <= start || r > 60 {
+		t.Fatalf("radius %v after %v: want it growing toward 60", r, start)
+	}
+}
+
+// TestMotionsKeyframesAndSnapping plays a motion preset and keyframes,
+// resets them, and checks that a snapping header settles when its list
+// rests and that the sticky titles follow it.
+func TestMotionsKeyframesAndSnapping(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Animation")
+	app.Press("text:shake")
+	app.Advance(50 * time.Millisecond)
+	if x := app.Find("id:motion-card").Animated.TranslateX; x >= 0 || x < -8 {
+		t.Fatalf("shake at %v after 50 ms, want moving left", x)
+	}
+	app.Advance(time.Second)
+	if x := app.Find("id:motion-card").Animated.TranslateX; x != 0 || !app.Exists("text:shake done") {
+		t.Fatalf("shake ended at %v", x)
+	}
+
+	app.Press("text:Play keyframes")
+	app.Advance(400 * time.Millisecond)
+	if x := app.Find("id:keyframe-dot").Animated.TranslateX; x <= 0 || x >= 140 {
+		t.Fatalf("keyframes at %v after 400 ms", x)
+	}
+	app.Press("text:Reset keyframes")
+	app.Advance(16 * time.Millisecond)
+	if x := app.Find("id:keyframe-dot").Animated.TranslateX; x != 0 {
+		t.Fatalf("reset left the dot at %v", x)
+	}
+
+	if v := app.Find("id:glow-text").Animated; !v.Has(nsgotest.PropTextColor) {
+		t.Fatal("the text color is not bound")
+	}
+
+	header := func() core.Points { return -app.Find("id:snap-header").Animated.TranslateY }
+	app.DragScroll("id:snap-list", core.Point{Y: 30}, 0)
+	if h := header(); h != 30 {
+		t.Fatalf("the header hid %v, want 30", h)
+	}
+	app.Advance(300 * time.Millisecond)
+	if h := header(); h != 0 {
+		t.Fatalf("near the top the header settled at %v, want shown", h)
+	}
+	app.DragScroll("id:snap-list", core.Point{Y: 200}, 0)
+	app.DragScroll("id:snap-list", core.Point{Y: 180}, 0)
+	app.Advance(300 * time.Millisecond)
+	if h := header(); h != 44 {
+		t.Fatalf("further down the header settled at %v, want hidden", h)
+	}
+	list := app.Find("id:snap-list")
+	// Its frame is 44 down the content: it moves to the offset itself.
+	if s := list.StickyShift(app.Find("id:section-0").ID); s != 180-44 {
+		t.Fatalf("the first title shifts %v, want to the top with the header gone", s)
+	}
+}

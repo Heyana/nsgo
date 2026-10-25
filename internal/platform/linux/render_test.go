@@ -21,7 +21,7 @@ func TestCanvasReplaysIntoTheSurface(t *testing.T) {
 	d := &driver.Drawing{}
 	d.SetFillColor(driver.RGB(0x00ff00))
 	d.FillRect(10, 10, 20, 20)
-	(&window{}).playCanvas(d, cr, rect{w: 40, h: 40})
+	(&window{animator: driver.NewAnimator(nil)}).playCanvas(&view{drawing: d}, cr, rect{w: 40, h: 40})
 	cairoSurfaceFlush(surface)
 	data, stride := cairoImageSurfaceGetData(surface), int(cairoImageSurfaceGetStride(surface))
 	if got := pixelAt(data, stride, 20, 20); got[1] != 0xff || got[0] != 0 || got[2] != 0 {

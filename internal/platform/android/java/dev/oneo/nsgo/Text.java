@@ -27,6 +27,57 @@ import java.util.List;
  * here are pixels.
  */
 final class Text {
+    /** A face of the app's fonts. */
+    private static final class Face {
+        final int weight;
+        final boolean italic;
+        final Typeface typeface;
+
+        Face(int weight, boolean italic, Typeface typeface) {
+            this.weight = weight;
+            this.italic = italic;
+            this.typeface = typeface;
+        }
+    }
+
+    /** The app's fonts by family; written before any text, then only read. */
+    private static final java.util.Map<String, java.util.List<Face>> fonts = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Adds a face of the app's fonts under its family. */
+    static void register(String family, int weight, boolean italic, Typeface typeface) {
+        fonts.computeIfAbsent(family, k -> new java.util.concurrent.CopyOnWriteArrayList<>())
+                .add(new Face(weight, italic, typeface));
+    }
+
+    /**
+     * The typeface of a font: its family, the system's when empty, at
+     * weight, italic or not. A family of the app's fonts takes its nearest
+     * face, the slant first, then synthesizes what that face lacks.
+     */
+    static Typeface typeface(String family, int weight, boolean italic) {
+        weight = Math.max(1, Math.min(weight, 1000));
+        java.util.List<Face> faces = fonts.get(family);
+        if (faces != null && !faces.isEmpty()) {
+            Face best = null;
+            for (Face f : faces) {
+                if (best == null) {
+                    best = f;
+                    continue;
+                }
+                boolean slant = f.italic == italic, bestSlant = best.italic == italic;
+                if (slant != bestSlant) {
+                    if (slant) best = f;
+                } else if (Math.abs(f.weight - weight) < Math.abs(best.weight - weight)) {
+                    best = f;
+                }
+            }
+            if (best.weight == weight && best.italic == italic) return best.typeface;
+            return Typeface.create(best.typeface, weight, italic);
+        }
+        Typeface base = family.isEmpty() ? Typeface.DEFAULT : Typeface.create(family, Typeface.NORMAL);
+        return Typeface.create(base, weight, italic);
+    }
+
     private Text() {}
 
     /** A resolved text style, as android.go's writeStyle writes it. */
@@ -72,8 +123,7 @@ final class Text {
         }
 
         Typeface typeface() {
-            Typeface base = family.isEmpty() ? Typeface.DEFAULT : Typeface.create(family, Typeface.NORMAL);
-            return Typeface.create(base, Math.max(1, Math.min(weight, 1000)), italic);
+            return Text.typeface(family, weight, italic);
         }
 
         /** The letter spacing in ems, as Paint takes it. */

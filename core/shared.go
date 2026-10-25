@@ -70,6 +70,8 @@ type (
 	Easing = driver.Easing
 	// EasingKind is an easing's shape.
 	EasingKind = driver.EasingKind
+	// StepPosition is where a steps easing jumps, as CSS's step positions.
+	StepPosition = driver.StepPosition
 	// EdgeColors is a color for each side of a box.
 	EdgeColors = driver.EdgeColors
 	// Edges holds a length per side.
@@ -87,9 +89,34 @@ type (
 	FontWeight = driver.FontWeight
 	// GesturePhase is where a gesture is in its course.
 	GesturePhase = driver.GesturePhase
-	// CanvasGradient is a linear or radial color gradient that DrawFillGradient and
-	// DrawStrokeGradient paint with.
+	// CanvasGradient is a linear, radial or conic color gradient that a
+	// Drawing fills and strokes with.
 	CanvasGradient = driver.CanvasGradient
+	// CanvasNode is a named part of a drawing, which assistive technology
+	// and tests see as a child of the canvas.
+	CanvasNode = driver.CanvasNode
+	// CompositeOp is how drawing mixes with what a canvas holds, as the
+	// web's globalCompositeOperation.
+	CompositeOp = driver.CompositeOp
+	// DrawArg is an argument of a DrawOp that Drawing.Bind binds to an
+	// animated node.
+	DrawArg = driver.DrawArg
+	// DrawSlot binds an argument of a drawing's operation to an animated
+	// node.
+	DrawSlot = driver.DrawSlot
+	// AnimatedArg is an animated node a drawing binds an argument to.
+	AnimatedArg = driver.AnimatedArg
+	// FillRule is how a fill or a clip decides what is inside a path.
+	FillRule = driver.FillRule
+	// LineDash is the lengths of a stroke's dashes and gaps in turn.
+	LineDash = driver.LineDash
+	// Path is a path to fill, stroke or clip with, as the web's Path2D.
+	Path = driver.Path
+	// TextBaseline is the line of a canvas text that the point it is drawn
+	// at sits on.
+	TextBaseline = driver.TextBaseline
+	// TextMetrics are a text's measurements in a font.
+	TextMetrics = driver.TextMetrics
 	// GradientSpread is how a CanvasGradient paints beyond offsets 0 and 1.
 	GradientSpread = driver.GradientSpread
 	// GradientStop is a color at an offset of a Gradient.
@@ -367,6 +394,84 @@ const (
 	DrawClear          = driver.DrawClear
 	DrawFillGradient   = driver.DrawFillGradient
 	DrawStrokeGradient = driver.DrawStrokeGradient
+	DrawTransform      = driver.DrawTransform
+	DrawSetTransform   = driver.DrawSetTransform
+	DrawComposite      = driver.DrawComposite
+	DrawLineDash       = driver.DrawLineDash
+	DrawLineDashOffset = driver.DrawLineDashOffset
+	DrawMiterLimit     = driver.DrawMiterLimit
+	DrawShadow         = driver.DrawShadow
+	DrawStrokeText     = driver.DrawStrokeText
+	DrawImage          = driver.DrawImage
+	DrawTextAlign      = driver.DrawTextAlign
+	DrawTextBaseline   = driver.DrawTextBaseline
+)
+
+const (
+	ArgX     = driver.ArgX
+	ArgY     = driver.ArgY
+	ArgX1    = driver.ArgX1
+	ArgY1    = driver.ArgY1
+	ArgX2    = driver.ArgX2
+	ArgY2    = driver.ArgY2
+	ArgW     = driver.ArgW
+	ArgH     = driver.ArgH
+	ArgR     = driver.ArgR
+	ArgA     = driver.ArgA
+	ArgA0    = driver.ArgA0
+	ArgA1    = driver.ArgA1
+	ArgRY    = driver.ArgRY
+	ArgColor = driver.ArgColor
+)
+
+const (
+	CompositeSourceOver      = driver.CompositeSourceOver
+	CompositeSourceIn        = driver.CompositeSourceIn
+	CompositeSourceOut       = driver.CompositeSourceOut
+	CompositeSourceAtop      = driver.CompositeSourceAtop
+	CompositeDestinationOver = driver.CompositeDestinationOver
+	CompositeDestinationIn   = driver.CompositeDestinationIn
+	CompositeDestinationOut  = driver.CompositeDestinationOut
+	CompositeDestinationAtop = driver.CompositeDestinationAtop
+	CompositeLighter         = driver.CompositeLighter
+	CompositeCopy            = driver.CompositeCopy
+	CompositeXor             = driver.CompositeXor
+	CompositeMultiply        = driver.CompositeMultiply
+	CompositeScreen          = driver.CompositeScreen
+	CompositeOverlay         = driver.CompositeOverlay
+	CompositeDarken          = driver.CompositeDarken
+	CompositeLighten         = driver.CompositeLighten
+	CompositeColorDodge      = driver.CompositeColorDodge
+	CompositeColorBurn       = driver.CompositeColorBurn
+	CompositeHardLight       = driver.CompositeHardLight
+	CompositeSoftLight       = driver.CompositeSoftLight
+	CompositeDifference      = driver.CompositeDifference
+	CompositeExclusion       = driver.CompositeExclusion
+	CompositeHue             = driver.CompositeHue
+	CompositeSaturation      = driver.CompositeSaturation
+	CompositeColor           = driver.CompositeColor
+	CompositeLuminosity      = driver.CompositeLuminosity
+)
+
+const (
+	BaselineAlphabetic  = driver.BaselineAlphabetic
+	BaselineTop         = driver.BaselineTop
+	BaselineHanging     = driver.BaselineHanging
+	BaselineMiddle      = driver.BaselineMiddle
+	BaselineIdeographic = driver.BaselineIdeographic
+	BaselineBottom      = driver.BaselineBottom
+)
+
+const (
+	NonZero = driver.NonZero
+	EvenOdd = driver.EvenOdd
+)
+
+const (
+	JumpEnd   = driver.JumpEnd
+	JumpStart = driver.JumpStart
+	JumpNone  = driver.JumpNone
+	JumpBoth  = driver.JumpBoth
 )
 
 const (
@@ -475,6 +580,7 @@ const (
 	EasingElastic = driver.EasingElastic
 	EasingBack    = driver.EasingBack
 	EasingBounce  = driver.EasingBounce
+	EasingSteps   = driver.EasingSteps
 )
 
 const (
@@ -740,6 +846,30 @@ func RGBA(hex uint32, alpha float32) Color { return driver.RGBA(hex, alpha) }
 
 // AllColors returns edge colors of the same color on every side.
 func AllColors(c Color) EdgeColors { return driver.AllColors(c) }
+
+// CanvasLinear returns a canvas gradient from (x0, y0) to (x1, y1).
+func CanvasLinear(x0, y0, x1, y1 float32, stops ...GradientStop) *CanvasGradient {
+	return driver.CanvasLinear(x0, y0, x1, y1, stops...)
+}
+
+// CanvasRadial returns a canvas gradient from the circle (x0, y0, r0) to
+// the circle (x1, y1, r1).
+func CanvasRadial(x0, y0, r0, x1, y1, r1 float32, stops ...GradientStop) *CanvasGradient {
+	return driver.CanvasRadial(x0, y0, r0, x1, y1, r1, stops...)
+}
+
+// CanvasConic returns a canvas gradient around (x, y) from angle radians,
+// turning clockwise.
+func CanvasConic(angle, x, y float32, stops ...GradientStop) *CanvasGradient {
+	return driver.CanvasConic(angle, x, y, stops...)
+}
+
+// ParsePath reads SVG path data into a Path.
+func ParsePath(data string) (*Path, error) { return driver.ParsePath(data) }
+
+// MustParsePath is ParsePath for path data that is part of the program:
+// it panics when the data is in error.
+func MustParsePath(data string) *Path { return driver.MustParsePath(data) }
 
 // ParseSVG parses an SVG document.
 func ParseSVG(data []byte) (*SVG, error) { return driver.ParseSVG(data) }

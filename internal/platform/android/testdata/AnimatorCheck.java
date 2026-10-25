@@ -49,7 +49,9 @@ final class AnimatorCheck {
                             .append(v.scale).append(' ').append(v.scaleX).append(' ').append(v.scaleY).append(' ')
                             .append(v.rotate).append(' ').append(v.shadowRadius).append(' ')
                             .append(channels(v.background)).append(' ').append(channels(v.borderColor)).append(' ')
-                            .append(channels(v.shadowColor)).append('\n');
+                            .append(channels(v.shadowColor)).append(' ').append(v.shadowOpacity).append(' ')
+                            .append(v.rotateX).append(' ').append(v.rotateY).append(' ')
+                            .append(channels(v.textColor)).append('\n');
                 }
             }
             System.out.print(out);

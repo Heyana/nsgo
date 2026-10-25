@@ -75,7 +75,130 @@ func animationPage(cx *core.Scope, t *theme) core.Node {
 			core.View{Style: core.Style{Gap: 6}, Children: lanes},
 			t.primary("Toggle", func() { moved.Update(func(m bool) bool { return !m }) }),
 		),
-	}, nativeAnimationDemos(cx, t)...)}
+	}, append(nativeAnimationDemos(cx, t), motionDemos(cx, t)...)...)}
+}
+
+// motionDemos are the demos of motions, keyframes, samplers, resets and
+// the newer bindings, all run by the platform's animator.
+func motionDemos(cx *core.Scope, t *theme) []core.Node {
+	// A card each preset plays on.
+	card := core.NewMotion(cx, nil)
+	playing := core.NewSignal(cx, "")
+	var presets []core.Node
+	for _, p := range core.MotionPresets() {
+		if p.Kind() == core.MotionLoop {
+			continue
+		}
+		presets = append(presets, t.plain(p.Name(), func() {
+			playing.Set(p.Name())
+			card.Play(p.Spec(), func(bool) { playing.Set(p.Name() + " done") })
+		}))
+	}
+	cardStyle := core.Style{Width: core.Pt(96), Height: core.Pt(64), CornerRadius: 12, Background: t.accent,
+		AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Animated: card.Style()}
+
+	// Keyframes with steps, played and reset.
+	beat := core.NewAnimatedValue(cx, 0)
+	var run *core.AnimationRun
+	keyframes := core.ValueKeyframes(beat, core.KeyframeTiming{Duration: 1600 * time.Millisecond, Iterations: 2,
+		Direction: core.PlayAlternate, Easing: core.BezierEasing(core.EaseInOut)},
+		core.StopAt(0, 0), core.StopAt(0.5, 140).Eased(core.StepsEasing(4, core.JumpEnd)), core.StopAt(1, 220))
+
+	// Curves drawn from the platforms' own spring and decay code.
+	spring := core.SampleSpring(0, 1, core.SpringConfig{Stiffness: 170, Damping: 12})
+	decay := core.SampleDecay(0, core.DecayConfig{Velocity: 900})
+	curves := func(d *core.Drawing, size core.Size) {
+		w, h := float32(size.Width), float32(size.Height)
+		plot := func(samples []float64, top float64, c core.Color) {
+			d.SetStrokeColor(c).SetLineWidth(2).BeginPath()
+			for i, v := range samples {
+				x := w * float32(i) / float32(max(len(samples)-1, 1))
+				y := h - 12 - float32(v/top)*(h-24)
+				if i == 0 {
+					d.MoveTo(x, y)
+				} else {
+					d.LineTo(x, y)
+				}
+			}
+			d.Stroke()
+		}
+		last := decay[len(decay)-1]
+		plot(spring, 1.4, t.accent)
+		plot(decay, last*1.1, t.success)
+	}
+
+	// A text whose color and a box whose shadow animated values drive.
+	glow := core.NewAnimatedValue(cx, 0)
+	cx.StartAnimation(core.Loop(core.Sequence(
+		core.Timing(glow, 1, core.TimingConfig{Duration: 900 * time.Millisecond}),
+		core.Timing(glow, 0, core.TimingConfig{Duration: 900 * time.Millisecond})), 0), nil)
+
+	// A header that hides as the list scrolls up and shows as it scrolls
+	// down, settling at either end, with the sticky section titles below
+	// it following it.
+	scroll := core.AnimatedXY{Y: core.NewAnimatedValue(cx, 0)}
+	hide := core.SnappingDiffClamp(scroll.Y, 0, 44)
+	inset := core.Sub(core.Constant(44), hide)
+	var rows []core.Node
+	for s := range 4 {
+		rows = append(rows, core.View{TestID: fmt.Sprintf("section-%d", s), Style: core.Style{Position: core.Sticky,
+			Top: core.Pt(44), Background: t.sunken, Padding: core.Symmetric(4, 10), ZIndex: 1,
+			Animated: &core.AnimatedStyle{StickyInset: inset}},
+			Children: []core.Node{core.Text{Content: fmt.Sprintf("Section %d", s+1), Style: t.caption()}}})
+		for r := range 6 {
+			rows = append(rows, core.View{Style: core.Style{Padding: core.Symmetric(10, 10)},
+				Children: []core.Node{core.Text{Content: fmt.Sprintf("Row %d.%d", s+1, r+1)}}})
+		}
+	}
+
+	return []core.Node{
+		t.demo("Motions", "MotionPreset is NSH's ready-made motions as keyframes: entrances, exits and attention seekers on one card.",
+			core.View{Style: core.Style{Height: core.Pt(120), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Perspective: 400}, Children: []core.Node{
+				core.View{TestID: "motion-card", Style: cardStyle, Children: []core.Node{
+					core.Text{Content: "Motion", Style: core.Style{Color: t.onAccent}}}},
+			}},
+			core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, Gap: 6}, Children: presets},
+			t.live(func() string { return playing.Get() }),
+		),
+		t.demo("Keyframes", "ValueKeyframes runs stops with their easings, iterations and directions; Reset puts the value back where the run began.",
+			core.View{Style: core.Style{Height: core.Pt(36), Background: t.sunken, CornerRadius: 18}, Children: []core.Node{
+				core.View{TestID: "keyframe-dot", Style: core.Style{Width: core.Pt(36), Height: core.Pt(36), CornerRadius: 18,
+					Background: t.accent, Animated: &core.AnimatedStyle{TranslateX: beat}}},
+			}},
+			hstack(
+				t.primary("Play keyframes", func() { run = cx.StartAnimation(keyframes, nil) }),
+				t.plain("Reset keyframes", func() {
+					if run != nil {
+						run.Reset()
+					}
+				}),
+			),
+		),
+		t.demo("Samplers", "SampleSpring and SampleDecay return the curves the platforms run, from their own code.",
+			core.Canvas{Draw: curves, Label: "Spring and decay curves", TestID: "samplers",
+				Style: core.Style{Height: core.Pt(120), Background: t.background, CornerRadius: 8}},
+		),
+		t.demo("Text color and shadow opacity", "A text's color and a shadow's opacity follow animated values.",
+			hstack(
+				core.Text{Content: "Glowing text", TestID: "glow-text", Style: core.Style{FontSize: 20, FontWeight: core.FontWeightBold,
+					Animated: &core.AnimatedStyle{TextColor: core.Interpolate(glow, core.Interpolation{Input: []float64{0, 1},
+						Colors: []core.Color{t.ink, t.danger}})}}},
+				core.View{TestID: "glow-box", Style: core.Style{Width: core.Pt(56), Height: core.Pt(56), CornerRadius: 12,
+					Background: t.surface, ShadowColor: t.accent, ShadowRadius: 12,
+					Animated: &core.AnimatedStyle{ShadowOpacity: glow}}},
+			),
+		),
+		t.demo("Snapping header", "SnappingDiffClamp hides the header as the list scrolls up and settles it when the scroll rests; the sticky titles follow it through StickyInset.",
+			core.View{Style: core.Style{Height: core.Pt(240), Overflow: core.Hidden, CornerRadius: 8, Background: t.background}, Children: []core.Node{
+				core.Scroll{TestID: "snap-list", OffsetValues: scroll, Style: core.Style{FlexGrow: 1},
+					Children: []core.Node{core.View{Style: core.Style{Padding: core.Edges{Top: 44}}, Children: rows}}},
+				core.View{TestID: "snap-header", Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(0),
+					Right: core.Pt(0), Height: core.Pt(44), Background: t.accent, JustifyContent: core.JustifyCenter,
+					Padding: core.Symmetric(0, 12), Animated: &core.AnimatedStyle{TranslateY: core.Mul(hide, core.Constant(-1))}},
+					Children: []core.Node{core.Text{Content: "Header", Style: core.Style{Color: t.onAccent}}}},
+			}},
+		),
+	}
 }
 
 // pointerDemo shows what pointer events carry: where the mouse is, the
@@ -229,7 +352,7 @@ func responderDemo(cx *core.Scope, t *theme) core.Node {
 		core.Text{TestID: "responder-status", Style: t.caption(), ContentFunc: func() string {
 			return fmt.Sprintf("%s · %d fingers", status.Get(), touches.Get())
 		}},
-		t.plain("Reset", func() { at.Set(core.Point{}) }),
+		t.plain("Reset keyframes", func() { at.Set(core.Point{}) }),
 	)
 }
 
@@ -342,7 +465,7 @@ func gesturesPage(cx *core.Scope, t *theme) core.Node {
 				return fmt.Sprintf("pinch %.2f (%s) · rotation %.0f° (%s) · zoom %.2f, turned %.0f°",
 					p.Value, phase(p.Phase), degrees(r.Value), phase(r.Phase), zoom.Get(), degrees(turn.Get()))
 			}},
-			t.plain("Reset", func() { zoom.Set(1); turn.Set(0) }),
+			t.plain("Reset keyframes", func() { zoom.Set(1); turn.Set(0) }),
 		),
 	}}
 }

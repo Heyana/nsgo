@@ -46,18 +46,22 @@ type (
 )
 
 const (
-	PropOpacity      = driver.PropOpacity
-	PropTranslateX   = driver.PropTranslateX
-	PropTranslateY   = driver.PropTranslateY
-	PropScale        = driver.PropScale
-	PropScaleX       = driver.PropScaleX
-	PropScaleY       = driver.PropScaleY
-	PropRotate       = driver.PropRotate
-	PropBackground   = driver.PropBackground
-	PropBorderColor  = driver.PropBorderColor
-	PropShadowColor  = driver.PropShadowColor
-	PropShadowRadius = driver.PropShadowRadius
-	PropCount        = driver.PropCount
+	PropOpacity       = driver.PropOpacity
+	PropTranslateX    = driver.PropTranslateX
+	PropTranslateY    = driver.PropTranslateY
+	PropScale         = driver.PropScale
+	PropScaleX        = driver.PropScaleX
+	PropScaleY        = driver.PropScaleY
+	PropRotate        = driver.PropRotate
+	PropBackground    = driver.PropBackground
+	PropBorderColor   = driver.PropBorderColor
+	PropShadowColor   = driver.PropShadowColor
+	PropShadowRadius  = driver.PropShadowRadius
+	PropShadowOpacity = driver.PropShadowOpacity
+	PropTextColor     = driver.PropTextColor
+	PropRotateX       = driver.PropRotateX
+	PropRotateY       = driver.PropRotateY
+	PropCount         = driver.PropCount
 )
 
 const (

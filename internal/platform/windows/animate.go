@@ -201,6 +201,9 @@ func (w *window) animatedChanged() {
 	if changed {
 		invalidateRect.Call(w.hwnd, 0, 0)
 	}
+	w.changedCanvases()
+	w.changedShaders()
+	w.repinBound()
 }
 
 // gestured moves the values bound to a pan, pinch or rotation before

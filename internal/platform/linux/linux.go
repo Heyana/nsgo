@@ -50,6 +50,9 @@ type Options struct {
 	ID string
 	// Components are the native components Native elements name.
 	Components driver.NativeComponents
+	// Fonts are font files under the app's resources, registered before
+	// the first view.
+	Fonts []string
 }
 
 // window is one GTK window and the tree it shows. The engine's goroutine
@@ -85,6 +88,13 @@ type window struct {
 	// frameWanted is set while the app waits for a display frame.
 	frameWanted bool
 	animator    *driver.Animator
+	// canvasImages are the images canvases draw, and canvasWaiting the
+	// canvases to draw again when one loads.
+	canvasImages  canvasImages
+	canvasWaiting map[string][]*view
+	// stickyBound are the scroll views with sticky cells whose insets
+	// follow animated values.
+	stickyBound map[*view]bool
 	epoch       time.Time // the animator's clock starts here
 	layouts     []*view   // views a layout animation moves, shows or retires
 	playing     []*view   // image views whose animated images play
@@ -148,6 +158,7 @@ func start(app engine.App, opts Options) (*window, error) {
 		return nil, fmt.Errorf("the Linux backend needs GTK 4, Pango and Cairo: %w", err)
 	}
 	runtime.LockOSThread()
+	registerFonts(opts.Fonts)
 	if gtkInitCheck() == 0 {
 		return nil, errors.New("no display; run the app in a desktop session or with xvfb-run")
 	}
@@ -489,7 +500,12 @@ func (w *window) apply(b *driver.MountBatch) {
 			// A modal is a view: it shows without a separate window.
 		case driver.ItemCanvas:
 			v.drawing = it.Drawing
+			w.animator.BindCanvas(v.id, it.Drawing.Slots)
 			w.changed(v)
+		case driver.ItemShader:
+			if it.Shader != nil {
+				w.setShader(v, it.Shader)
+			}
 		case driver.ItemWeb:
 			w.configureWeb(v, it.Web)
 		case driver.ItemWebCommand:
@@ -603,6 +619,10 @@ func (w *window) delete(v *view) {
 	}
 	if v.native != nil {
 		w.closeNative(v)
+	}
+	if v.shader != nil {
+		w.unhost(v, &v.shader.hosted)
+		v.shader = nil
 	}
 	v.source.reset(driver.ImageSource{})
 	v.placeholder.reset(driver.ImageSource{})

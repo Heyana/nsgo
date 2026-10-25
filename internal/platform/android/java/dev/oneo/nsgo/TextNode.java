@@ -83,6 +83,8 @@ final class TextNode extends FrameLayout {
     @Override
     protected void onDraw(Canvas canvas) {
         if (layout == null) return;
+        // A bound color paints over the whole text, in a layer of its own.
+        int tinted = tint != 0 ? canvas.saveLayer(null, null) : -1;
         canvas.save();
         canvas.translate(x, y);
         if (clipLines > 0 && layout.getLineCount() > clipLines) {
@@ -92,6 +94,19 @@ final class TextNode extends FrameLayout {
         layout.draw(canvas);
         drawDecorations(canvas);
         canvas.restore();
+        if (tinted >= 0) {
+            canvas.drawColor(tint, android.graphics.PorterDuff.Mode.SRC_IN);
+            canvas.restoreToCount(tinted);
+        }
+    }
+
+    /** The ARGB color an animated value paints the whole text in; 0 for none. */
+    private int tint;
+
+    void setTint(int argb) {
+        if (argb == tint) return;
+        tint = argb;
+        invalidate();
     }
 
     /**

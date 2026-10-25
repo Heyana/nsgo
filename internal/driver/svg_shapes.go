@@ -174,10 +174,17 @@ func (p *svgParser) polygon(a map[string]string, closed bool) error {
 	return nil
 }
 
-// path reads path data and adds its shape. It understands every command of
-// SVG 1.1's path grammar; arcs become cubic curves.
+// path reads path data and adds its shape.
 func (p *svgParser) path(d string) error {
 	p.begin()
+	ops, err := appendPathData(p.local, d)
+	p.local = ops
+	return err
+}
+
+// appendPathData appends the ops of SVG path data to ops. It understands
+// every command of SVG 1.1's path grammar; arcs become cubic curves.
+func appendPathData(ops []DrawOp, d string) ([]DrawOp, error) {
 	sc := svgScanner{s: d}
 	var (
 		x, y   float32 // the current point
@@ -200,7 +207,7 @@ func (p *svgParser) path(d string) error {
 	for {
 		sc.skip()
 		if sc.eof() {
-			return nil
+			return ops, nil
 		}
 		var cmd byte
 		if b := sc.peek(); isPathCommand(b) {
@@ -208,7 +215,7 @@ func (p *svgParser) path(d string) error {
 		} else if last != 0 {
 			cmd = last
 		} else {
-			return fmt.Errorf("svg: path data %q: expected a command", d)
+			return ops, fmt.Errorf("svg: path data %q: expected a command", d)
 		}
 		lower := rel(cmd)
 		toX := func(v float32) float32 {
@@ -227,15 +234,15 @@ func (p *svgParser) path(d string) error {
 		case 'M', 'm':
 			nx, err := num()
 			if err != nil {
-				return err
+				return ops, err
 			}
 			ny, err := num()
 			if err != nil {
-				return err
+				return ops, err
 			}
 			x, y = toX(nx), toY(ny)
 			sx, sy = x, y
-			p.lop(DrawOp{Kind: DrawMoveTo, X: x, Y: y})
+			ops = append(ops, DrawOp{Kind: DrawMoveTo, X: x, Y: y})
 			prev = 'M'
 			last = 'L'
 			if lower {
@@ -244,59 +251,59 @@ func (p *svgParser) path(d string) error {
 			for sc.numberStart() {
 				nx, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				ny, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				x, y = toX(nx), toY(ny)
-				p.lop(DrawOp{Kind: DrawLineTo, X: x, Y: y})
+				ops = append(ops, DrawOp{Kind: DrawLineTo, X: x, Y: y})
 				prev = 'L'
 			}
 		case 'L', 'l':
 			if !sc.numberStart() {
-				return fmt.Errorf("svg: path data %q: L needs a point", d)
+				return ops, fmt.Errorf("svg: path data %q: L needs a point", d)
 			}
 			for sc.numberStart() {
 				nx, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				ny, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				x, y = toX(nx), toY(ny)
-				p.lop(DrawOp{Kind: DrawLineTo, X: x, Y: y})
+				ops = append(ops, DrawOp{Kind: DrawLineTo, X: x, Y: y})
 				prev = 'L'
 			}
 			last = cmd
 		case 'H', 'h':
 			if !sc.numberStart() {
-				return fmt.Errorf("svg: path data %q: H needs a number", d)
+				return ops, fmt.Errorf("svg: path data %q: H needs a number", d)
 			}
 			for sc.numberStart() {
 				nx, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				x = toX(nx)
-				p.lop(DrawOp{Kind: DrawLineTo, X: x, Y: y})
+				ops = append(ops, DrawOp{Kind: DrawLineTo, X: x, Y: y})
 				prev = 'L'
 			}
 			last = cmd
 		case 'V', 'v':
 			if !sc.numberStart() {
-				return fmt.Errorf("svg: path data %q: V needs a number", d)
+				return ops, fmt.Errorf("svg: path data %q: V needs a number", d)
 			}
 			for sc.numberStart() {
 				ny, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				y = toY(ny)
-				p.lop(DrawOp{Kind: DrawLineTo, X: x, Y: y})
+				ops = append(ops, DrawOp{Kind: DrawLineTo, X: x, Y: y})
 				prev = 'L'
 			}
 			last = cmd
@@ -307,31 +314,31 @@ func (p *svgParser) path(d string) error {
 				}
 				x1, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				y1, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				x2, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				y2, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				nx, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				ny, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				x1, y1, x2, y2 = toX(x1), toY(y1), toX(x2), toY(y2)
 				x, y = toX(nx), toY(ny)
-				p.lop(DrawOp{Kind: DrawCubicTo, X1: x1, Y1: y1, X2: x2, Y2: y2, X: x, Y: y})
+				ops = append(ops, DrawOp{Kind: DrawCubicTo, X1: x1, Y1: y1, X2: x2, Y2: y2, X: x, Y: y})
 				ctrlX, ctrlY, prev = x2, y2, 'C'
 			}
 			last = cmd
@@ -342,19 +349,19 @@ func (p *svgParser) path(d string) error {
 				}
 				x2, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				y2, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				nx, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				ny, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				x1, y1 := x, y
 				if prev == 'C' || prev == 'S' {
@@ -362,7 +369,7 @@ func (p *svgParser) path(d string) error {
 				}
 				x2, y2 = toX(x2), toY(y2)
 				x, y = toX(nx), toY(ny)
-				p.lop(DrawOp{Kind: DrawCubicTo, X1: x1, Y1: y1, X2: x2, Y2: y2, X: x, Y: y})
+				ops = append(ops, DrawOp{Kind: DrawCubicTo, X1: x1, Y1: y1, X2: x2, Y2: y2, X: x, Y: y})
 				ctrlX, ctrlY, prev = x2, y2, 'S'
 			}
 			last = cmd
@@ -373,23 +380,23 @@ func (p *svgParser) path(d string) error {
 				}
 				qx, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				qy, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				nx, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				ny, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				qx, qy = toX(qx), toY(qy)
 				x, y = toX(nx), toY(ny)
-				p.lop(DrawOp{Kind: DrawQuadTo, X1: qx, Y1: qy, X: x, Y: y})
+				ops = append(ops, DrawOp{Kind: DrawQuadTo, X1: qx, Y1: qy, X: x, Y: y})
 				quadX, quadY, prev = qx, qy, 'Q'
 			}
 			last = cmd
@@ -400,18 +407,18 @@ func (p *svgParser) path(d string) error {
 				}
 				nx, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				ny, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				qx, qy := x, y
 				if prev == 'Q' || prev == 'T' {
 					qx, qy = 2*x-quadX, 2*y-quadY
 				}
 				x, y = toX(nx), toY(ny)
-				p.lop(DrawOp{Kind: DrawQuadTo, X1: qx, Y1: qy, X: x, Y: y})
+				ops = append(ops, DrawOp{Kind: DrawQuadTo, X1: qx, Y1: qy, X: x, Y: y})
 				quadX, quadY, prev = qx, qy, 'T'
 			}
 			last = cmd
@@ -422,58 +429,57 @@ func (p *svgParser) path(d string) error {
 				}
 				rx, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				ry, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				rotation, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				large, ok := sc.flag()
 				if !ok {
-					return fmt.Errorf("svg: path data %q: expected an arc flag", d)
+					return ops, fmt.Errorf("svg: path data %q: expected an arc flag", d)
 				}
 				sweep, ok := sc.flag()
 				if !ok {
-					return fmt.Errorf("svg: path data %q: expected an arc flag", d)
+					return ops, fmt.Errorf("svg: path data %q: expected an arc flag", d)
 				}
 				nx, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				ny, err := num()
 				if err != nil {
-					return err
+					return ops, err
 				}
 				nx, ny = toX(nx), toY(ny)
-				p.arc(x, y, rx, ry, rotation, large, sweep, nx, ny)
+				ops = appendSVGArc(ops, x, y, rx, ry, rotation, large, sweep, nx, ny)
 				x, y = nx, ny
 				prev = 'A'
 			}
 			last = cmd
 		case 'Z', 'z':
-			p.lop(DrawOp{Kind: DrawClosePath})
+			ops = append(ops, DrawOp{Kind: DrawClosePath})
 			x, y = sx, sy
 			prev = 'Z'
 			last = 0
 		default:
-			return fmt.Errorf("svg: path data %q: unknown command %q", d, cmd)
+			return ops, fmt.Errorf("svg: path data %q: unknown command %q", d, cmd)
 		}
 	}
 }
 
-// arc adds an SVG elliptical arc from (x0, y0) to (x1, y1) as cubic curves,
-// following SVG 1.1's endpoint to center conversion (F.6.5).
-func (p *svgParser) arc(x0, y0, rx, ry, rotation float32, large, sweep bool, x1, y1 float32) {
+// appendSVGArc appends an SVG elliptical arc from (x0, y0) to (x1, y1) as
+// cubic curves, following SVG 1.1's endpoint to center conversion (F.6.5).
+func appendSVGArc(ops []DrawOp, x0, y0, rx, ry, rotation float32, large, sweep bool, x1, y1 float32) []DrawOp {
 	if rx == 0 || ry == 0 {
-		p.lop(DrawOp{Kind: DrawLineTo, X: x1, Y: y1})
-		return
+		return append(ops, DrawOp{Kind: DrawLineTo, X: x1, Y: y1})
 	}
 	if x0 == x1 && y0 == y1 {
-		return
+		return ops
 	}
 	rx, ry = float32(math.Abs(float64(rx))), float32(math.Abs(float64(ry)))
 	phi := float64(rotation) * math.Pi / 180
@@ -528,9 +534,10 @@ func (p *svgParser) arc(x0, y0, rx, ry, rotation float32, large, sweep bool, x1,
 		alpha := 4.0 / 3.0 * math.Tan((t1-t0)/4)
 		sx, sy, d0x, d0y := at(t0)
 		ex, ey, d1x, d1y := at(t1)
-		p.lop(DrawOp{Kind: DrawCubicTo,
+		ops = append(ops, DrawOp{Kind: DrawCubicTo,
 			X1: float32(sx + alpha*d0x), Y1: float32(sy + alpha*d0y),
 			X2: float32(ex - alpha*d1x), Y2: float32(ey - alpha*d1y),
 			X: float32(ex), Y: float32(ey)})
 	}
+	return ops
 }

@@ -13,6 +13,7 @@ Elements carry NSH's accessibility props: `Role`, `Label` (`LabelFunc` when it c
 - The web maps the props to ARIA. A group hides its children with `aria-hidden`, and a focused view's arrow keys, Escape, Enter and Space perform its standard actions; ARIA has no custom actions, so those are not offered.
 - Android sets `importantForAccessibility`, live regions and screen-reader focus on the view, and range info, hint, state description and actions in its `AccessibilityNodeInfo`. It has no escape or magic tap.
 - Windows and Linux keep the props but expose none of them, since neither backend has an accessibility provider yet.
+- A canvas's nodes are elements of their own, children of the canvas ([canvas](canvas.md#nodes)).
 
 ## Pointer events
 

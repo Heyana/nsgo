@@ -19,6 +19,8 @@ final class Protocol {
     static final int RELEASE = 5;
     static final int IMAGE = 6;
     static final int LINES = 7;
+    static final int CANVAS_IMAGE = 8;
+    static final int FONTS = 9;
 
     // Java to Go.
     static final int START = 1;
@@ -81,6 +83,7 @@ final class Protocol {
     static final int ITEM_SCREEN = 45;
     static final int ITEM_OVERFLOW = 46;
     static final int ITEM_BLOCK_NATIVE = 47;
+    static final int ITEM_SHADER = 48;
 
     // View kinds, as in core/mount.go.
     static final int KIND_VIEW = 1;
@@ -93,6 +96,7 @@ final class Protocol {
     static final int KIND_WEB = 8;
     static final int KIND_VIDEO = 9;
     static final int KIND_NATIVE = 10;
+    static final int KIND_SHADER = 11;
 
     // Event kinds, as in core/events.go. An event mask holds 1 << kind.
     static final int EVENT_PRESS = 1;
@@ -250,6 +254,15 @@ final class Protocol {
     static final int DRAW_CLEAR = 26;
     static final int DRAW_FILL_GRADIENT = 27;
     static final int DRAW_STROKE_GRADIENT = 28;
+    static final int DRAW_TRANSFORM = 29;
+    static final int DRAW_SET_TRANSFORM = 30;
+    static final int DRAW_COMPOSITE = 31;
+    static final int DRAW_LINE_DASH = 32;
+    static final int DRAW_LINE_DASH_OFFSET = 33;
+    static final int DRAW_MITER_LIMIT = 34;
+    static final int DRAW_SHADOW = 35;
+    static final int DRAW_STROKE_TEXT = 36;
+    static final int DRAW_IMAGE = 37;
 
     // Gradient spreads, as in core/canvas.go; Pad is 0.
     static final int SPREAD_REFLECT = 1;

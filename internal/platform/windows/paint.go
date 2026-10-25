@@ -654,6 +654,8 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 		if v.drawing != nil {
 			p.canvas(v, width, height)
 		}
+	case driver.KindShader:
+		p.drawShader(v, width, height)
 	case driver.KindWeb:
 		if wv := v.web; wv != nil && wv.composed() {
 			corners := float32(0)
@@ -682,7 +684,12 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 		}
 	}
 	if v.text != nil {
-		v.text.draw(p, float32(v.content.Origin.X), float32(v.content.Origin.Y))
+		x, y := float32(v.content.Origin.X), float32(v.content.Origin.Y)
+		if v.animated.Has(driver.PropTextColor) {
+			p.drawTinted(world, v.animated.TextColor, func() { v.text.draw(p, x, y) })
+		} else {
+			v.text.draw(p, x, y)
+		}
 	}
 	if !clip {
 		p.pop()

@@ -56,6 +56,13 @@ func textPage(cx *core.Scope, t *theme) core.Node {
 				core.Text{Content: "Italic", Style: core.Style{FontStyle: core.FontStyleItalic}},
 			),
 		),
+		t.demo("App fonts", "Font files in resources, which nsgo.Fonts registers before the first view, by their families.",
+			flow(
+				core.Text{Content: "Go Smallcaps", TestID: "app-font", Style: core.Style{FontFamily: "Go Smallcaps", FontSize: 20}},
+				core.Text{Content: "and its italic", Style: core.Style{FontFamily: "Go Smallcaps", FontSize: 20,
+					FontStyle: core.FontStyleItalic}},
+			),
+		),
 		t.demo("Decoration and spacing", "TextDecoration, LetterSpacing and LineHeight.",
 			flow(
 				core.Text{Content: "Underline", Style: core.Style{TextDecoration: core.TextDecorationUnderline}},
@@ -114,6 +121,14 @@ func textPage(cx *core.Scope, t *theme) core.Node {
 			core.Text{Content: "Head: " + lorem, MaxLines: 1, EllipsizeMode: core.EllipsizeHead},
 			core.Text{Content: "Middle: " + lorem, MaxLines: 1, EllipsizeMode: core.EllipsizeMiddle},
 			core.Text{Content: "Clip: " + lorem, MaxLines: 1, EllipsizeMode: core.EllipsizeClip},
+			core.Text{Content: "Head on two lines: " + lorem + " " + lorem, MaxLines: 2, EllipsizeMode: core.EllipsizeHead},
+			core.Text{Content: "Middle on two lines: " + lorem + " " + lorem, MaxLines: 2, EllipsizeMode: core.EllipsizeMiddle},
+			core.Text{MaxLines: 1, EllipsizeMode: core.EllipsizeMiddle, Spans: []core.Span{
+				{Content: "Beside an attachment "},
+				{Style: core.Style{VerticalAlign: core.VerticalAlignMiddle}, Attachment: core.View{TestID: "cut-dot",
+					Style: core.Style{Width: core.Pt(12), Height: core.Pt(12), CornerRadius: 6, Background: t.accent}}},
+				{Content: " the middle goes: " + lorem},
+			}},
 		),
 		t.demo("Fitting and font scaling", "AdjustsFontSizeToFit shrinks the text into its box, down to "+
 			"MinimumFontScale; NoFontScaling and MaxFontSizeMultiplier limit the user's text size. OnTextLayout "+

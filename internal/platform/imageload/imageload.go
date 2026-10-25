@@ -42,6 +42,10 @@ var ResourceRoot = func() string {
 	return filepath.Join(filepath.Dir(exe), "resources")
 }()
 
+// ReadResource reads one of the app's resources by its slash-separated
+// path, as "asset:" sources do.
+func ReadResource(path string) ([]byte, error) { return readResource(path) }
+
 // readResource reads one of the app's resources by its slash-separated
 // path.
 func readResource(path string) ([]byte, error) {

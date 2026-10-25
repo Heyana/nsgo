@@ -41,6 +41,8 @@ type view struct {
 	events  driver.EventMask
 	// contentLayer draws a text's or a canvas's content.
 	contentLayer objc.ID
+	// axNodes are a canvas's named parts, its accessibility elements.
+	axNodes []objc.ID
 	// backdrop is the view's backdrop blur or Liquid Glass.
 	backdrop objc.ID
 	glass    bool
@@ -101,14 +103,17 @@ type view struct {
 }
 
 type surface struct {
-	app     engine.App
-	id      string
-	native  objc.ID
-	engine  *engine.Engine
-	batches queue.Batches
-	views   []*view // index is NodeID
-	fingers fingers // the touches reported
-	env     driver.Environment
+	// stickyBound are the scroll views with sticky cells whose insets
+	// follow animated values.
+	stickyBound map[*view]bool
+	app         engine.App
+	id          string
+	native      objc.ID
+	engine      *engine.Engine
+	batches     queue.Batches
+	views       []*view // index is NodeID
+	fingers     fingers // the touches reported
+	env         driver.Environment
 
 	keyboard         driver.Points
 	keyboardDuration time.Duration
@@ -235,6 +240,7 @@ func loadUIKit() {
 	registerNav()
 	registerSelection()
 	registerContent()
+	registerCanvasNodes()
 	classView = register("NsgoView", uiView, nil, common)
 	classSurface = register("NsgoSurface", uiView, nil, append(common,
 		objc.MethodDef{Cmd: sel("layoutSubviews"), Fn: surfaceLayout},
@@ -302,6 +308,9 @@ type Options struct {
 	ID string
 	// Components are the native components Native elements name.
 	Components driver.NativeComponents
+	// Fonts are font files under the app's resources, registered before
+	// the first view.
+	Fonts []string
 }
 
 // Run shows app full screen and runs UIKit's event loop. Call it from
@@ -311,6 +320,7 @@ func Run(root engine.App, opts Options) {
 		components: opts.Components, unknown: map[string]bool{}, accessories: map[driver.NodeID]*view{}}
 	app.animator = driver.NewAnimator(func(e driver.Event) { app.engine.Dispatch(e) })
 	loadUIKit()
+	apple.RegisterFonts(opts.Fonts)
 	argv := []*byte{&[]byte("nsgo\x00")[0], nil}
 	uiApplicationMain(1, unsafe.Pointer(&argv[0]), 0, apple.CFString("NsgoAppDelegate"))
 }
@@ -675,6 +685,8 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemCanvas:
 			v.drawing = it.Drawing
+			s.animator.BindCanvas(v.id, it.Drawing.Slots)
+			v.setCanvasNodes(it.Drawing.Nodes)
 			v.redraw()
 		case driver.ItemShader:
 			s.setShader(v, it.Shader)
@@ -832,6 +844,7 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 
 // delete releases v; kept leaves its native where it is, going away.
 func (s *surface) delete(v *view, kept bool) {
+	v.releaseCanvasNodes()
 	if v.sheet != nil {
 		s.dismissSheet(v)
 		defer s.updateOrientations()

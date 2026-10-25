@@ -338,7 +338,8 @@ func (g *gallery) index(t *theme) core.Node {
 }
 
 func main() {
-	var opts []nsgo.Option
+	// The Go fonts' small capitals, shipped in resources/fonts.
+	opts := []nsgo.Option{nsgo.Fonts("fonts/Go-Smallcaps.ttf", "fonts/Go-Smallcaps-Italic.ttf")}
 	for name, factory := range components {
 		opts = append(opts, nsgo.Component(name, factory))
 	}

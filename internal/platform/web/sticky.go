@@ -83,6 +83,26 @@ func (s *surface) setSticky(v *view, cells []driver.StickyCell) {
 			sc.tracks[id] = cell
 		}
 		cell.stickyIn, cell.sticky = v, r
+		if r.Node != 0 {
+			if s.stickyBound == nil {
+				s.stickyBound = map[*view]bool{}
+			}
+			s.stickyBound[cell] = true
+		} else {
+			delete(s.stickyBound, cell)
+		}
+		s.placeTrack(cell)
+	}
+}
+
+// replaceBound places again the sticky cells whose insets follow
+// animated values, which may have moved.
+func (s *surface) replaceBound() {
+	for cell := range s.stickyBound {
+		if s.view(cell.id) != cell || !cell.track.Truthy() || cell.sticky.Node == 0 {
+			delete(s.stickyBound, cell)
+			continue
+		}
 		s.placeTrack(cell)
 	}
 }
@@ -149,7 +169,14 @@ func (s *surface) placeTrack(cell *view) {
 		w, h = length, 0
 	}
 	setStyle(cell.track, map[string]string{"left": px(f.Origin.X), "top": px(f.Origin.Y), "width": px(w), "height": px(h)})
-	inset := px(at + origin - r.Start)
+	start := r.Start
+	if r.Node != 0 {
+		// The inset follows its animated value.
+		if v, _, ok := s.animator.Value(r.Node); ok {
+			start += r.Inset - driver.Points(v)
+		}
+	}
+	inset := px(at + origin - start)
 	style := map[string]string{"left": "auto", "top": inset, "width": px(f.Size.Width), "height": px(f.Size.Height)}
 	if horizontal {
 		style["left"], style["top"] = inset, "auto"

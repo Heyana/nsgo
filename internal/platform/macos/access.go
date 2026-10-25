@@ -98,6 +98,10 @@ var roles = map[driver.Role][2]string{
 // axRole returns the AppKit role of v, or none.
 func (v *view) axRole() [2]string {
 	p := &v.props
+	if len(v.axNodes) > 0 {
+		// A canvas with named parts holds them.
+		return [2]string{"AXGroup", ""}
+	}
 	if r, ok := roles[p.Role]; ok {
 		return r
 	}
@@ -206,6 +210,8 @@ func accessibilityLabel(self objc.ID, cmd objc.SEL) objc.ID {
 func accessibilityChildren(self objc.ID, cmd objc.SEL) objc.ID {
 	if v := views[self]; v != nil && v.axGrouped {
 		return nsArray(nil)
+	} else if v != nil && len(v.axNodes) > 0 {
+		return nsArray(v.axNodes)
 	}
 	return apple.SendSuper[objc.ID](self, cmd)
 }

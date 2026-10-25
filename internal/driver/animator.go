@@ -35,6 +35,23 @@ type Animator struct {
 	// values changed since ChangedShaders last looked.
 	shaders      map[NodeID]*ashader
 	shadersStale bool
+
+	// canvases are the canvas views with bound drawing arguments, and
+	// canvasesStale says values changed since ChangedCanvases looked.
+	canvases      map[NodeID]*acanvas
+	canvasesStale bool
+
+	// runStarts are where the values each run moves were as it started,
+	// for a reset; settling are the snapping diff clamps easing to a
+	// bound.
+	runStarts map[uint32][]valueStart
+	settling  map[*anode]bool
+}
+
+// valueStart is a value as a run found it.
+type valueStart struct {
+	node  uint32
+	value float64
 }
 
 // NewAnimator returns an animator that reports finished runs and reads
@@ -43,7 +60,8 @@ func NewAnimator(report func(Event)) *Animator {
 	return &Animator{nodes: map[uint32]*anode{}, runs: map[uint32]*arun{}, views: map[NodeID]*aview{},
 		pans: map[NodeID][2]uint32{}, scrolls: map[NodeID][2]uint32{}, report: report, changed: map[NodeID]bool{},
 		pinches: map[NodeID]uint32{}, rotations: map[NodeID]uint32{}, starts: map[NodeID][4]float64{},
-		shaders: map[NodeID]*ashader{}}
+		shaders: map[NodeID]*ashader{}, canvases: map[NodeID]*acanvas{}, runStarts: map[uint32][]valueStart{},
+		settling: map[*anode]bool{}}
 }
 
 // anode is a node of the graph.
@@ -58,9 +76,13 @@ type anode struct {
 	gen   uint64
 	num   float64
 	color Color
-	// diff-clamp state
-	last, lastIn float64
-	primed       bool
+	// diff-clamp state, and a snapping one's settling: from where to
+	// which bound, since when
+	last, lastIn  float64
+	primed        bool
+	settleFrom    float64
+	settleTo      float64
+	settleStarted float64
 }
 
 type aview struct {
@@ -73,6 +95,16 @@ type aview struct {
 type ashader struct {
 	nodes []ShaderNode
 	sent  []float64
+}
+
+// acanvas is a canvas view's bound arguments, the values ChangedCanvases
+// last reported and the ops CanvasOps last played.
+type acanvas struct {
+	slots []DrawSlot
+	nums  []float64
+	cols  []Color
+	sent  bool
+	ops   []DrawOp
 }
 
 // AnimatedValues are the bound properties of a view, as the animator
@@ -88,6 +120,10 @@ type AnimatedValues struct {
 	BorderColor            Color
 	ShadowColor            Color
 	ShadowRadius           Points
+	ShadowOpacity          float32
+	// TextColor colors a text's whole content.
+	TextColor        Color
+	RotateX, RotateY float32
 }
 
 // Has reports whether p is bound.
@@ -132,6 +168,16 @@ func (v AnimatedValues) Apply(vs ViewStyle) ViewStyle {
 	}
 	if v.Has(PropShadowRadius) {
 		vs.ShadowRadius = v.ShadowRadius
+	}
+	if v.Has(PropShadowOpacity) {
+		a := math.Round(float64(vs.ShadowColor&0xff) * float64(min(max(v.ShadowOpacity, 0), 1)))
+		vs.ShadowColor = vs.ShadowColor&^0xff | Color(a)
+	}
+	if v.Has(PropRotateX) {
+		t.RotateX = v.RotateX
+	}
+	if v.Has(PropRotateY) {
+		t.RotateY = v.RotateY
 	}
 	return vs
 }
@@ -183,6 +229,13 @@ func (a *Animator) apply(o *AnimationOp) {
 			return
 		}
 		r := &arun{id: o.ID, root: a.build(o.Animation)}
+		var starts []valueStart
+		for _, id := range r.root.values(nil) {
+			if n := a.value(id); n != nil {
+				starts = append(starts, valueStart{id, n.value})
+			}
+		}
+		a.runStarts[o.ID] = starts
 		a.runs[o.ID] = r
 		r.root.bind(r)
 		r.root.start(a, -1)
@@ -190,6 +243,19 @@ func (a *Animator) apply(o *AnimationOp) {
 		if r := a.runs[o.ID]; r != nil {
 			a.end(r, false)
 		}
+	case AnimReset:
+		if r := a.runs[o.ID]; r != nil {
+			a.end(r, false)
+		}
+		for _, st := range a.runStarts[o.ID] {
+			if n := a.value(st.node); n != nil {
+				a.interrupt(n)
+				n.value, n.vel = st.value, 0
+			}
+		}
+		a.touch()
+	case AnimForgetRun:
+		delete(a.runStarts, o.ID)
 	case AnimBind:
 		v := a.views[o.View]
 		if v == nil {
@@ -215,6 +281,7 @@ func (a *Animator) apply(o *AnimationOp) {
 	case AnimRelease:
 		if n := a.nodes[o.Node]; n != nil {
 			a.interrupt(n)
+			delete(a.settling, n)
 			delete(a.nodes, o.Node)
 			a.touch()
 		}
@@ -228,6 +295,7 @@ func (a *Animator) touch() {
 		a.changed[id] = true
 	}
 	a.shadersStale = true
+	a.canvasesStale = true
 }
 
 func (a *Animator) value(id uint32) *anode {
@@ -254,9 +322,9 @@ func (a *Animator) end(r *arun, finished bool) {
 	a.report(Event{Kind: EventAnimation, Count: r.id, Finished: finished})
 }
 
-// Running reports whether an animation runs, so the backend keeps its
-// frame callback.
-func (a *Animator) Running() bool { return len(a.runs) > 0 }
+// Running reports whether an animation runs, or a snapping diff clamp
+// settles, so the backend keeps its frame callback.
+func (a *Animator) Running() bool { return len(a.runs) > 0 || len(a.settling) > 0 }
 
 // Step advances the running animations to now, a monotonic time.
 func (a *Animator) Step(now time.Duration) {
@@ -269,6 +337,90 @@ func (a *Animator) Step(now time.Duration) {
 			a.end(r, true)
 		}
 	}
+	for n := range a.settling {
+		if n.settleStarted < 0 {
+			// Settling starts with the first frame after the rest.
+			n.settleStarted = a.now
+		}
+		p := (a.now - n.settleStarted) / settleDuration
+		if p >= 1 {
+			n.last = n.settleTo
+			delete(a.settling, n)
+		} else {
+			// Easing out, as NSH's settle does.
+			e := 1 - math.Pow(1-max(p, 0), 3)
+			n.last = n.settleFrom + (n.settleTo-n.settleFrom)*e
+		}
+		a.touch()
+	}
+}
+
+// settleDuration is how long a snapping diff clamp takes to its bound,
+// in seconds.
+const settleDuration = 0.2
+
+// Settle starts the snapping diff clamps that follow scroll view view's
+// values toward their nearer bound, as the view comes to rest: the
+// platform calls it where it reports a scroll's end. Max is the nearer
+// bound only once the clamp's input reached it, so a header near the top
+// of the content shows.
+func (a *Animator) Settle(view NodeID) {
+	ids, ok := a.scrolls[view]
+	if !ok {
+		return
+	}
+	for _, n := range a.nodes {
+		if n.kind != AnimCreateDiffClamp || !n.op.Snap || !a.dependsOn(n.op.Input, ids) {
+			continue
+		}
+		a.eval(n)
+		lo, hi := n.op.Min, n.op.Max
+		to := lo
+		if n.lastIn >= hi && n.last-lo >= hi-n.last {
+			to = hi
+		}
+		if n.last == to {
+			continue
+		}
+		n.settleFrom, n.settleTo, n.settleStarted = n.last, to, -1
+		a.settling[n] = true
+	}
+}
+
+// dependsOn reports whether node id reads one of the values ids.
+func (a *Animator) dependsOn(id uint32, ids [2]uint32) bool {
+	if id == 0 {
+		return false
+	}
+	if id == ids[0] || id == ids[1] {
+		return true
+	}
+	n := a.nodes[id]
+	if n == nil {
+		return false
+	}
+	switch n.kind {
+	case AnimCreateInterpolate, AnimCreateDiffClamp:
+		return a.dependsOn(n.op.Input, ids)
+	case AnimCreateMath:
+		return a.dependsOn(n.op.A.Node, ids) || a.dependsOn(n.op.B.Node, ids)
+	}
+	return false
+}
+
+// Generation changes whenever a value may have changed, for backends
+// that place what values drive, such as sticky cells, when it does.
+func (a *Animator) Generation() uint64 { return a.gen }
+
+// Value returns node's output now: a number, and a color for a color
+// node; false when there is no such node.
+func (a *Animator) Value(node uint32) (float64, Color, bool) {
+	n := a.nodes[node]
+	if n == nil {
+		return 0, 0, false
+	}
+	num, col := a.eval(n)
+	return num, col, true
 }
 
 // Changed calls fn with each bound view whose values may have changed
@@ -342,6 +494,14 @@ func (a *Animator) evalView(vw *aview) AnimatedValues {
 			v.ShadowColor = col
 		case PropShadowRadius:
 			v.ShadowRadius = Points(max(num, 0))
+		case PropShadowOpacity:
+			v.ShadowOpacity = float32(min(max(num, 0), 1))
+		case PropTextColor:
+			v.TextColor = col
+		case PropRotateX:
+			v.RotateX = float32(num)
+		case PropRotateY:
+			v.RotateY = float32(num)
 		}
 	}
 	return v
@@ -427,6 +587,12 @@ func (a *Animator) drive(m map[NodeID][2]uint32, view NodeID, p Point) bool {
 			n.value = float64(v)
 		}
 	}
+	// Scrolling again ends the settling where it is.
+	for n := range a.settling {
+		if a.dependsOn(n.op.Input, ids) {
+			delete(a.settling, n)
+		}
+	}
 	a.touch()
 	return true
 }
@@ -484,8 +650,76 @@ func (a *Animator) ChangedShaders(fn func(view NodeID)) {
 	}
 }
 
+// BindCanvas has nodes drive the arguments of canvas view's drawing that
+// slots name, replacing what it bound before (Drawing.Slots).
+// ChangedCanvases reports the view next.
+func (a *Animator) BindCanvas(view NodeID, slots []DrawSlot) {
+	if len(slots) == 0 {
+		delete(a.canvases, view)
+		return
+	}
+	a.canvases[view] = &acanvas{slots: slots, nums: make([]float64, len(slots)), cols: make([]Color, len(slots))}
+	a.canvasesStale = true
+}
+
+// CanvasBound reports whether view's drawing has bound arguments.
+func (a *Animator) CanvasBound(view NodeID) bool { return a.canvases[view] != nil }
+
+// ChangedCanvases calls fn with each canvas view whose bound arguments
+// changed since the last call, for the backend to draw again.
+func (a *Animator) ChangedCanvases(fn func(view NodeID)) {
+	if !a.canvasesStale {
+		return
+	}
+	a.canvasesStale = false
+	for id, c := range a.canvases {
+		changed := !c.sent
+		c.sent = true
+		for i, s := range c.slots {
+			var num float64
+			var col Color
+			if n := a.nodes[s.Node]; n != nil {
+				num, col = a.eval(n)
+			}
+			if num != c.nums[i] || col != c.cols[i] {
+				c.nums[i], c.cols[i], changed = num, col, true
+			}
+		}
+		if changed {
+			fn(id)
+		}
+	}
+}
+
+// CanvasOps returns d's ops with the arguments view binds set to their
+// nodes' values, d.Ops itself when it binds none. The slice is reused by
+// the next call for the view.
+func (a *Animator) CanvasOps(view NodeID, d *Drawing) []DrawOp {
+	c := a.canvases[view]
+	if c == nil || d == nil {
+		if d == nil {
+			return nil
+		}
+		return d.Ops
+	}
+	c.ops = append(c.ops[:0], d.Ops...)
+	for _, s := range c.slots {
+		if s.Op < 0 || s.Op >= len(c.ops) {
+			continue
+		}
+		var num float64
+		var col Color
+		if n := a.nodes[s.Node]; n != nil {
+			num, col = a.eval(n)
+		}
+		c.ops[s.Op] = s.Set(c.ops[s.Op], num, col)
+	}
+	return c.ops
+}
+
 // Forget drops what is bound to a deleted view.
 func (a *Animator) Forget(view NodeID) {
+	delete(a.canvases, view)
 	delete(a.shaders, view)
 	delete(a.views, view)
 	delete(a.pans, view)
@@ -536,10 +770,13 @@ func (a *Animator) eval(n *anode) (float64, Color) {
 		if src := a.nodes[n.op.Input]; src != nil {
 			in, _ = a.eval(src)
 		}
-		if !n.primed {
+		switch {
+		case !n.primed:
 			n.primed = true
 			n.last = min(max(in, n.op.Min), n.op.Max)
-		} else {
+		case a.settling[n]:
+			// The settling moves it; Step sets last.
+		default:
 			n.last = min(max(n.last+in-n.lastIn, n.op.Min), n.op.Max)
 		}
 		n.lastIn = in
@@ -623,8 +860,11 @@ func lerpColor(a, b Color, t float64) Color {
 
 // At returns the eased progress at time fraction x from 0 to 1.
 func (e Easing) At(x float64) float64 {
-	if e.Kind == EasingBezier {
+	switch e.Kind {
+	case EasingBezier:
 		return e.Bezier.At(x)
+	case EasingSteps:
+		return e.steps(x)
 	}
 	switch e.Mode {
 	case EaseModeOut:
@@ -636,6 +876,57 @@ func (e Easing) At(x float64) float64 {
 		return 1 - e.in((1-x)*2)/2
 	}
 	return e.in(x)
+}
+
+// steps is CSS's steps(): Param steps jumping at Steps's positions.
+func (e Easing) steps(x float64) float64 {
+	n := max(math.Round(e.Param), 1)
+	step := math.Floor(x * n)
+	if e.Steps == JumpStart || e.Steps == JumpBoth {
+		step++
+	}
+	jumps := n
+	switch e.Steps {
+	case JumpBoth:
+		jumps++
+	case JumpNone:
+		jumps = max(n-1, 1)
+	}
+	if x >= 0 && step < 0 {
+		step = 0
+	}
+	if x <= 1 && step > jumps {
+		step = jumps
+	}
+	return step / jumps
+}
+
+// Reversed returns the easing that runs e backwards in time: its curve
+// mirrored, so x → 1 - e(1 - x).
+func (e Easing) Reversed() Easing {
+	switch e.Kind {
+	case EasingBezier:
+		c := e.Bezier
+		e.Bezier = Curve{1 - c.X2, 1 - c.Y2, 1 - c.X1, 1 - c.Y1}
+		if c == Linear {
+			e.Bezier = Linear
+		}
+	case EasingSteps:
+		switch e.Steps {
+		case JumpStart:
+			e.Steps = JumpEnd
+		case JumpEnd:
+			e.Steps = JumpStart
+		}
+	default:
+		switch e.Mode {
+		case EaseModeIn:
+			e.Mode = EaseModeOut
+		case EaseModeOut:
+			e.Mode = EaseModeIn
+		}
+	}
+	return e
 }
 
 // in is the curve's "in" form, React Native's Easing functions.
@@ -1119,4 +1410,62 @@ func (l *aloop) step(a *Animator, now float64) (bool, float64) {
 		}
 	}
 	return false, now
+}
+
+// SampleRate is how many samples a second the samplers take: the frames
+// of a 60 Hz display.
+const SampleRate = 60
+
+// maxSamples bounds what a sampler returns: 20 seconds.
+const maxSamples = 20 * SampleRate
+
+// SampleEasing returns e at n evenly spaced fractions from 0 to 1, both
+// included, as the platforms evaluate it.
+func SampleEasing(e Easing, n int) []float64 {
+	n = min(max(n, 2), maxSamples)
+	out := make([]float64, n)
+	for i := range out {
+		out[i] = e.At(float64(i) / float64(n-1))
+	}
+	return out
+}
+
+// SampleSpring returns a spring from from to to, as the platforms run
+// it, at SampleRate until it rests: the drivers' own code, stepped like
+// frames.
+func SampleSpring(from, to float64, c SpringConfig) []float64 {
+	return sample(&Animation{Kind: AnimationSpring, To: to, Spring: c}, from)
+}
+
+// SampleDecay returns a decay from from, as SampleSpring does.
+func SampleDecay(from float64, c DecayConfig) []float64 {
+	return sample(&Animation{Kind: AnimationDecay, Decay: c}, from)
+}
+
+func sample(spec *Animation, from float64) []float64 {
+	n := &anode{kind: AnimCreateValue, value: from}
+	l := &aleaf{spec: spec, node: n, from: from, vel: 0, started: true}
+	switch spec.Kind {
+	case AnimationSpring:
+		l.vel = spec.Spring.Velocity
+	case AnimationDecay:
+		l.vel = spec.Decay.Velocity
+	}
+	l.segFrom, l.segVel = l.from, l.vel
+	out := []float64{from}
+	for i := 1; i < maxSamples; i++ {
+		t := float64(i) / SampleRate
+		var v float64
+		var done bool
+		if spec.Kind == AnimationSpring {
+			v, _, done = l.spring(t)
+		} else {
+			v, _, done = l.decay(t)
+		}
+		out = append(out, v)
+		if done {
+			break
+		}
+	}
+	return out
 }

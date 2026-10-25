@@ -184,3 +184,78 @@ func TestAnimatorShaderLanes(t *testing.T) {
 		t.Fatalf("a forgotten view reported %v", got)
 	}
 }
+
+func TestStepsEasingsAndReversal(t *testing.T) {
+	steps := func(n float64, p StepPosition) Easing { return Easing{Kind: EasingSteps, Param: n, Steps: p} }
+	for _, c := range []struct {
+		e    Easing
+		x    float64
+		want float64
+	}{
+		{steps(4, JumpEnd), 0.3, 0.25}, {steps(4, JumpEnd), 1, 1}, {steps(4, JumpStart), 0, 0.25},
+		{steps(4, JumpStart), 0.3, 0.5}, {steps(3, JumpNone), 0.5, 0.5}, {steps(3, JumpBoth), 0, 0.25},
+	} {
+		if got := c.e.At(c.x); math.Abs(got-c.want) > 1e-9 {
+			t.Errorf("%+v at %v = %v, want %v", c.e, c.x, got, c.want)
+		}
+	}
+	in := Easing{Kind: EasingCubic}
+	if r := in.Reversed(); r.Mode != EaseModeOut || math.Abs(r.At(0.3)-(1-in.At(0.7))) > 1e-9 {
+		t.Errorf("reversed cubic = %+v", r)
+	}
+	b := Easing{Bezier: EaseIn}
+	if r := b.Reversed(); math.Abs(r.At(0.25)-(1-b.At(0.75))) > 1e-3 {
+		t.Errorf("reversed ease-in at 0.25 = %v, want %v", r.At(0.25), 1-b.At(0.75))
+	}
+}
+
+func TestResetsAndSnappingClamps(t *testing.T) {
+	a := NewAnimator(func(Event) {})
+	a.Apply([]AnimationOp{{Kind: AnimCreateValue, Node: 1, Value: 5},
+		{Kind: AnimStart, ID: 1, Animation: &Animation{Kind: AnimationTiming, Value: 1, To: 10,
+			Timing: TimingConfig{Duration: time.Second}}}})
+	a.Step(0)
+	a.Step(500 * time.Millisecond)
+	a.Apply([]AnimationOp{{Kind: AnimReset, ID: 1}})
+	if v, _, _ := a.Value(1); v != 5 || a.Running() {
+		t.Fatalf("reset left %v, running %v", v, a.Running())
+	}
+
+	a.Apply([]AnimationOp{{Kind: AnimCreateValue, Node: 2},
+		{Kind: AnimCreateDiffClamp, Node: 3, Input: 2, Min: 0, Max: 40, Snap: true},
+		{Kind: AnimBindScroll, View: 9, Y: 2}})
+	a.Value(3)
+	a.Scroll(9, Point{Y: 25})
+	if v, _, _ := a.Value(3); v != 25 {
+		t.Fatalf("clamp at %v", v)
+	}
+	a.Settle(9)
+	a.Step(time.Second)
+	a.Step(time.Second + 100*time.Millisecond)
+	mid, _, _ := a.Value(3)
+	a.Step(2 * time.Second)
+	if end, _, _ := a.Value(3); mid <= 0 || mid >= 25 || end != 0 || a.Running() {
+		t.Fatalf("settled through %v to %v, want toward 0 short of the max", mid, end)
+	}
+}
+
+func TestSamplersRunTheDrivers(t *testing.T) {
+	s := SampleSpring(0, 1, SpringConfig{Stiffness: 100, Damping: 10, Mass: 1})
+	if s[0] != 0 || s[len(s)-1] != 1 || len(s) < 30 {
+		t.Fatalf("spring samples %d, from %v to %v", len(s), s[0], s[len(s)-1])
+	}
+	over := false
+	for _, v := range s {
+		over = over || v > 1
+	}
+	if !over {
+		t.Fatal("an underdamped spring should overshoot")
+	}
+	d := SampleDecay(0, DecayConfig{Velocity: 1000, Deceleration: 0.998})
+	if last := d[len(d)-1]; math.Abs(last-500) > 5 {
+		t.Fatalf("decay ends at %v, want near 500", last)
+	}
+	if e := SampleEasing(Easing{Bezier: Ease}, 5); len(e) != 5 || e[0] != 0 || e[4] != 1 {
+		t.Fatalf("easing samples %v", e)
+	}
+}

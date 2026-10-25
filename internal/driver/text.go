@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"strings"
 	"unicode/utf8"
 )
 
@@ -21,6 +22,10 @@ type AttributedText struct {
 	// Attachments are views inside the text, in order: each takes the
 	// place of an AttachmentRune of Text, which a span styles.
 	Attachments []TextAttachment
+	// Origin is, for a text an engine cut from another (Cut, CutToFit,
+	// CutRest), the index of each attachment in the text it was cut
+	// from, so the engine reports where they went by the app's indices.
+	Origin []int
 }
 
 // TextSpan styles the bytes from Start to End of an AttributedText.
@@ -234,16 +239,74 @@ func (t *AttributedText) Cut(head bool, front, back int) AttributedText {
 			out.Spans = append(out.Spans, sp)
 		}
 	}
-	out.Attachments = nil
-	for _, at := range t.Attachments {
+	out.Attachments, out.Origin = nil, nil
+	for i, at := range t.Attachments {
 		if at.Offset < a || at.Offset >= b {
 			at.Offset = moved(at.Offset)
 			out.Attachments = append(out.Attachments, at)
+			out.Origin = append(out.Origin, t.origin(i))
 		}
 	}
-	if len(out.Attachments) == 0 {
-		out.Attachments = nil
+	return out
+}
+
+// origin is the index attachment i of t has in the text t was cut from.
+func (t *AttributedText) origin(i int) int {
+	if i < len(t.Origin) {
+		return t.Origin[i]
 	}
+	return i
+}
+
+// slice returns the bytes from a to b of t as a text of their own, its
+// spans and attachments with them.
+func (t *AttributedText) slice(a, b int) AttributedText {
+	out := *t
+	out.Text = t.Text[a:b]
+	out.Spans, out.Attachments, out.Origin = nil, nil, nil
+	for _, sp := range t.Spans {
+		sp.Start, sp.End = max(sp.Start, a)-a, min(sp.End, b)-a
+		if sp.End > sp.Start {
+			out.Spans = append(out.Spans, sp)
+		}
+	}
+	for i, at := range t.Attachments {
+		if at.Offset >= a && at.Offset < b {
+			at.Offset -= a
+			out.Attachments = append(out.Attachments, at)
+			out.Origin = append(out.Origin, t.origin(i))
+		}
+	}
+	return out
+}
+
+// CutRest returns t with its lines before the one starting at byte start
+// as they are, then its rest cut at its head or middle, as Ellipsize
+// says, into the most characters with which fits reports the rest fits
+// on one line: what CoreText does to a several-line text's last line,
+// for engines that ellipsize a head or middle only on one line. A line
+// break joins the two, and the result clips at MaxLines.
+func (t *AttributedText) CutRest(start int, fits func(*AttributedText) bool) AttributedText {
+	start = min(max(start, 0), len(t.Text))
+	head, rest := t.slice(0, start), t.slice(start, len(t.Text))
+	rest.MaxLines = 1
+	cut := rest.CutToFit(fits)
+	out := head
+	if !strings.HasSuffix(out.Text, "\n") {
+		out.Text += "\n"
+	}
+	shift := len(out.Text)
+	out.Text += cut.Text
+	for _, sp := range cut.Spans {
+		sp.Start, sp.End = sp.Start+shift, sp.End+shift
+		out.Spans = append(out.Spans, sp)
+	}
+	for i, at := range cut.Attachments {
+		at.Offset += shift
+		out.Attachments = append(out.Attachments, at)
+		out.Origin = append(out.Origin, cut.origin(i))
+	}
+	out.MaxLines, out.Ellipsize = t.MaxLines, EllipsizeClip
 	return out
 }
 

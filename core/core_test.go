@@ -857,12 +857,19 @@ func TestCanvasDrawsAtItsSizeAndOnChange(t *testing.T) {
 	if d == nil || draws != 1 {
 		t.Fatalf("first commit drew %d times, drawing %v", draws, d)
 	}
-	rect := d.Ops[3]
-	if rect.Kind != DrawRect || rect.W != 100 || rect.H != 40 {
-		t.Fatalf("rect = %+v, want half of 200 by 40", rect)
+	rect := func(d *Drawing) DrawOp {
+		for _, op := range d.Ops {
+			if op.Kind == DrawRect {
+				return op
+			}
+		}
+		return DrawOp{}
+	}
+	if r := rect(d); r.W != 100 || r.H != 40 {
+		t.Fatalf("rect = %+v, want half of 200 by 40", r)
 	}
 	level.Set(1)
-	if d := drawing(h.commit()); d == nil || d.Ops[3].W != 200 {
+	if d := drawing(h.commit()); d == nil || rect(d).W != 200 {
 		t.Fatal("a change did not redraw")
 	}
 }

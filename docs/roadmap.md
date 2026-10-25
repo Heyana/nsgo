@@ -6,22 +6,9 @@ References are files in `nsh/docs/dev/` unless they name a crate, with the bulle
 
 ## Order
 
-Sections run in build order: what apps build on first, then components, services, the tool, embedding and performance. The last section waits for community contributions, and nothing above it depends on it.
+Sections run in build order: components first, then services, the tool, embedding and performance. The last section waits for community contributions, and nothing above it depends on it.
 
-## 1. Text and canvas
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| Fonts | `components.md` (assets) | Apps ship font files that every backend registers before the first view |
-| Ellipses | `text.md` | Head and middle ellipses on several lines, and beside attachments on Windows and the web |
-| Canvas drawing | `canvas.md` | Matrices, composite modes, dashes, miter limits, shadows, text alignment and stroking, `arcTo`, rotated ellipses, per-corner rectangles, conic gradients, SVG paths, images |
-| Canvas queries | `canvas.md` | `MeasureText`, text metrics, point-in-path and point-in-stroke tests |
-| Canvas nodes | `canvas.md` (nodes) | Named parts of a drawing are accessibility and test elements with a role, label and selected state |
-| Animated drawings | `canvas.md`, `animation.md` | Animated values as drawing arguments, redrawn on the frame clock without commits |
-| Shaders everywhere | — ([shaders](architecture/shaders.md)) | Windows draws shaders with Direct3D 11 and the HLSL backend, Linux with GTK's GL, Android with AGSL or GLES; shaders read images |
-| Animation API | `animation.md`, `styles.md` (`position: "sticky"`) | Composite `Reset`, spring and decay samplers, keyframes and motion presets, a snapping `diffClamp`, shadow opacity and text color bindings, a sticky view's animated offset |
-
-## 2. Base components and popups
+## 1. Base components and popups
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -38,7 +25,7 @@ Sections run in build order: what apps build on first, then components, services
 
 `DockArea` needs the resizable panels.
 
-## 3. Services and windows
+## 2. Services and windows
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -51,7 +38,7 @@ Sections run in build order: what apps build on first, then components, services
 | Window commands | `crates/nsh-core/src/runtime/desktop.rs` | Animated, top-anchored `SetFrame`, window levels, `OrderFront`, an auto-hiding menu bar, native popup menus |
 | App lifecycle | `macos.md` (standalone shutdown) | `nsgo.Run` returns for cleanup; apps quit themselves or outlive their last window; a forced appearance reaches native chrome |
 
-## 4. Testing and the tool
+## 3. Testing and the tool
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -63,7 +50,7 @@ Sections run in build order: what apps build on first, then components, services
 | Packages | `embedding.md`, `web.md` | Build numbers, the app's appearance, Linux and Windows archives, IPAs, a cacheable web site with a manifest, `-run` |
 | Store signing | `embedding.md` | `nsgo build` signs an IPA with a provisioning profile, wildcard ones too, and an APK with a keystore |
 
-## 5. Embedding
+## 4. Embedding
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -73,7 +60,7 @@ Sections run in build order: what apps build on first, then components, services
 | Host channel | `embedding.md` (the host channel) | The host and the app call each other's functions and send events without a view between them |
 | Component lifetime | `embedding.md` (native components) | Native components are destroyed when their app stops, on Android too |
 
-## 6. Performance
+## 5. Performance
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -85,7 +72,7 @@ Sections run in build order: what apps build on first, then components, services
 | Commits that follow changes | `performance.md` (Rust components run once) | A commit resolves styles and emits items only for the nodes that changed, not the whole tree |
 | Windows frames | `windows.md` (frames) | The frame clock follows the compositor with `DwmFlush` |
 
-## 7. Finish the existing platforms
+## 6. Finish the existing platforms
 
 These items wait for community contributions.
 
@@ -94,7 +81,7 @@ These items wait for community contributions.
 | iOS touch | `crates/nsh-platform-ios` | Gestures, text input and selection are checked in the simulator; selections have touch handles; hover, swipe back and touches outside the parent work |
 | iOS system UI | `elements.md` (overlays), `pitfalls.md` | VoiceOver's escape gesture goes back and closes popups; inputs in scroll views stay clear of the keyboard |
 | Text selection | `text.md` (selection areas) | Selectable text and selection areas work on Windows, Linux and Android |
-| Desktop accessibility | `windows.md`, `linux.md` | Windows exposes UI Automation and Linux GTK's accessibility, and both announce |
+| Desktop accessibility | `windows.md`, `linux.md` | Windows exposes UI Automation and Linux GTK's accessibility, canvas nodes included, and both announce |
 | Desktop chrome | `windows.md` (alerts), `linux.md` | Windows draws alerts in the surface; Linux animates modals |
 | Effects | `styles.md` (effects) | Windows draws backdrop filters and blend modes, Linux blend modes, and Android drop shadows from Android 12 |
 | Android | `elements.md`, `styles.md` (Android differences) | Ripples, predictive back on screens, and blurred images before Android 12 |

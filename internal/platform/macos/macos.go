@@ -46,6 +46,9 @@ type Options struct {
 	// Perf shows the performance monitor over the app: frame rate, frame
 	// and commit costs, CPU, GPU and memory.
 	Perf bool
+	// Fonts are font files under the app's resources, registered before
+	// the first view.
+	Fonts []string
 }
 
 // longPressDelay is how long a press is held before it is a long press.
@@ -84,7 +87,9 @@ type view struct {
 	// contentLayer is what a text or canvas draws into (content.go);
 	// stale says its content changed while it could not be seen.
 	contentLayer objc.ID
-	stale        bool
+	// axNodes are a canvas's named parts, its accessibility children.
+	axNodes []objc.ID
+	stale   bool
 	// up is the view the batches inserted v in, nil while v is out of
 	// the tree.
 	up *view
@@ -129,13 +134,16 @@ type view struct {
 }
 
 type surface struct {
-	native  objc.ID
-	window  objc.ID
-	engine  *engine.Engine
-	batches queue.Batches
-	views   []*view            // index is NodeID
-	movers  map[*view]struct{} // views following mouse moves
-	root    driver.NodeID      // the root view's, which the batches name
+	// stickyBound are the scroll views with sticky cells whose insets
+	// follow animated values.
+	stickyBound map[*view]bool
+	native      objc.ID
+	window      objc.ID
+	engine      *engine.Engine
+	batches     queue.Batches
+	views       []*view            // index is NodeID
+	movers      map[*view]struct{} // views following mouse moves
+	root        driver.NodeID      // the root view's, which the batches name
 	// mouse is finger 0 of the views' touches; touched is the last
 	// NSEvent reported, which AppKit passes up the views.
 	mouse   finger.Mouse
@@ -342,6 +350,7 @@ func loadAppKit() {
 	))
 	registerInput()
 	registerContent()
+	registerCanvasNodes()
 	classMenuTarget = register("NsgoMenuTarget", objc.GetClass("NSObject"), nil, []objc.MethodDef{
 		{Cmd: selMenuChosen, Fn: menuChosen},
 	})
@@ -383,6 +392,7 @@ func Run(app engine.App, opts Options) {
 		opts.Width, opts.Height = 480, 640
 	}
 	loadAppKit()
+	apple.RegisterFonts(opts.Fonts)
 	nsApp := objc.ID(objc.GetClass("NSApplication")).Send(sel("sharedApplication"))
 	nsApp.Send(sel("setActivationPolicy:"), 0)
 	defaultMenu := mainMenu()
@@ -929,6 +939,8 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemCanvas:
 			v.drawing = it.Drawing
+			s.animator.BindCanvas(v.id, it.Drawing.Slots)
+			v.setCanvasNodes(it.Drawing.Nodes)
 			v.redraw()
 		case driver.ItemShader:
 			s.setShader(v, it.Shader)
@@ -1103,6 +1115,7 @@ func (s *surface) delete(v *view, kept bool) {
 	apple.ForgetTransform(v.native.Send(selLayer))
 	apple.ForgetDecor(v.native.Send(selLayer))
 	v.forgetContent()
+	v.releaseCanvasNodes()
 	if v.shader != nil {
 		v.shader.Release()
 	}

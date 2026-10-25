@@ -66,10 +66,12 @@ type view struct {
 	// A canvas's drawing.
 	drawing *driver.Drawing
 
-	// A web view's page, a video's player and a native component.
+	// A web view's page, a video's player, a native component and a
+	// shader's GL area.
 	web    *web
 	video  *video
 	native *component
+	shader *glShaderView
 
 	// What animates: the style after the first, and the scroll offset.
 	styled     bool
