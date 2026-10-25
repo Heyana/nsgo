@@ -54,7 +54,7 @@ func TestKeyedListKeepsTheVisibleRowsInPlace(t *testing.T) {
 			}}
 	})
 	list := a.Find("id:list")
-	a.Scroll("id:list", core.Point{Y: 1000})
+	a.ScrollTo("id:list", core.Point{Y: 1000})
 	before := onScreen(t, a, list, 30)
 	// Five rows arrive above the viewport.
 	ids.Set(append(makeIDs(5, 1000), ids.Get()...))
@@ -151,7 +151,7 @@ func TestInvertedListLoadingAtItsStartKeepsTheVisibleRowsAwayFromIt(t *testing.T
 		t.Errorf("the newest row at %v on screen, want at the bottom", got)
 	}
 	// Scrolled away from it, newer rows arrive out of sight.
-	a.Scroll("id:list", core.Point{Y: list.Offset.Y - 300})
+	a.ScrollTo("id:list", core.Point{Y: list.Offset.Y - 300})
 	before := onScreen(t, a, list, 10)
 	ids.Set(append(makeIDs(4, 2000), ids.Get()...))
 	a.Settle()
@@ -175,13 +175,13 @@ func TestListFollowsItsEndWithinTheThreshold(t *testing.T) {
 	})
 	a.Find("id:list").Applied = 0
 	ref := a.Find("id:list")
-	a.Scroll("id:list", core.Point{Y: 600})
+	a.ScrollTo("id:list", core.Point{Y: 600})
 	last.Set(90)
 	a.Settle()
 	if ref.Offset.Y != 640 {
 		t.Errorf("at the end, the last row grew and the list is at %v, want 640", ref.Offset.Y)
 	}
-	a.Scroll("id:list", core.Point{Y: 100})
+	a.ScrollTo("id:list", core.Point{Y: 100})
 	last.Set(150)
 	a.Settle()
 	if ref.Offset.Y != 100 {
@@ -202,12 +202,12 @@ func TestStickyHeadersArePinnedNatively(t *testing.T) {
 		t.Fatalf("sticky cells %+v, want row 0 from -20 to 1430", list.Sticky)
 	}
 	// Scrolled far past it, row 0 stays mounted while pinned.
-	a.Scroll("id:list", core.Point{Y: 1000})
+	a.ScrollTo("id:list", core.Point{Y: 1000})
 	if got := onScreen(t, a, list, 0); got != 20 {
 		t.Errorf("row 0 at %v on screen, want pinned 20 below the top", got)
 	}
 	// Row 30 pushes it out and takes its place.
-	a.Scroll("id:list", core.Point{Y: 1600})
+	a.ScrollTo("id:list", core.Point{Y: 1600})
 	if got := onScreen(t, a, list, 30); got != 20 {
 		t.Errorf("row 30 at %v, want pinned", got)
 	}
@@ -279,7 +279,7 @@ func TestListReportsViewableItems(t *testing.T) {
 		t.Fatalf("reports %+v, want rows 0 to 3", got)
 	}
 	// Scrolled by 50: rows 0 and 4 are half visible, under 60%.
-	a.Scroll("id:list", core.Point{Y: 50})
+	a.ScrollTo("id:list", core.Point{Y: 50})
 	a.Advance(100 * time.Millisecond)
 	if len(got) != 2 || got[1].Viewable[0].Index != 1 || len(got[1].Viewable) != 3 ||
 		len(got[1].Changed) != 1 || got[1].Changed[0] != (core.ViewToken{Index: 0, Key: 0}) {
@@ -332,7 +332,7 @@ func TestListInItsParentsViewport(t *testing.T) {
 	if _, ok := cell(a, 40); ok {
 		t.Error("row 40 is mounted at the top of the page")
 	}
-	a.Scroll("id:page", core.Point{Y: 300 + 2000})
+	a.ScrollTo("id:page", core.Point{Y: 300 + 2000})
 	if _, ok := cell(a, 40); !ok {
 		t.Error("row 40 is not mounted after scrolling the page to it")
 	}

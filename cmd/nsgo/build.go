@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,9 +37,25 @@ func buildAll(ctx context.Context, p *project) error {
 			return fmt.Errorf("%s: %w", target, err)
 		}
 		step("  -> %s", rel(dir))
+		// Linux and Windows packages are directories; their archives are
+		// what people download.
+		if ext := map[string]string{"linux": ".tar.gz", "windows": ".zip"}[strings.Split(target, "_")[0]]; ext != "" {
+			if err := archiveDir(dir, dir+ext, p.Name); err != nil {
+				return fmt.Errorf("%s: %w", target, err)
+			}
+			step("  -> %s", rel(dir+ext))
+		}
 	}
 	if p.openOutput() {
 		openDir(p.Build.Output)
+	}
+	if p.Build.run {
+		for _, target := range buildTargets {
+			if runnable(target) {
+				return runPackage(ctx, p, target, filepath.Join(p.Build.Output, fmt.Sprintf("%s-%s-%s", p.Name, p.Version, target)))
+			}
+		}
+		return fmt.Errorf("-run: none of %s runs on this machine", strings.Join(buildTargets, ", "))
 	}
 	return nil
 }
@@ -122,8 +139,14 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 	case "windows_arm64", "windows_x64":
 		return buildWindows(ctx, p, dir, goArch(arch))
 	case "ios":
-		_, err := buildIOSApp(ctx, p, dir, false)
-		return err
+		app, err := buildIOSApp(ctx, p, dir, false)
+		if err != nil {
+			return err
+		}
+		if err := signForStore(ctx, p, app); err != nil {
+			return err
+		}
+		return writeIPA(app, filepath.Join(dir, p.Name+".ipa"))
 	case "ios_simulator":
 		_, err := buildIOSApp(ctx, p, dir, true)
 		return err
@@ -149,13 +172,24 @@ func goArch(arch string) string {
 // goBuild builds the project's main package to out.
 func goBuild(ctx context.Context, p *project, out string, env []string, ldflags ...string) error {
 	args := []string{"build", "-ldflags", p.ldflags(ldflags...), "-o", out}
+	if p.testBinary {
+		// nsgo test -target: the package's tests, with the backend's test
+		// host, in place of the app.
+		args = []string{"test", "-c", "-tags", "nsgotest", "-ldflags", p.ldflags(ldflags...), "-o", out}
+	}
 	if p.Release {
 		args = append(args, "-trimpath", "-buildvcs=false")
+	}
+	if p.Dev.Client {
+		args = append(args, "-tags", "nsgodev")
 	}
 	cmd := exec.CommandContext(ctx, "go", append(args, ".")...)
 	cmd.Dir = p.Dir
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if p.log != nil {
+		cmd.Stdout, cmd.Stderr = io.MultiWriter(os.Stdout, p.log), io.MultiWriter(os.Stderr, p.log)
+	}
 	return cmd.Run()
 }
 
@@ -227,9 +261,13 @@ func buildLinux(ctx context.Context, p *project, dir, arch string) error {
 	return writeLinuxIcon(p, dir)
 }
 
-// buildWeb writes index.html, wasm_exec.js and app.wasm to dir.
-func buildWeb(ctx context.Context, p *project, dir string, reload bool) error {
-	if err := goBuild(ctx, p, filepath.Join(dir, "app.wasm"), []string{"GOOS=js", "GOARCH=wasm"}); err != nil {
+// buildWeb writes the site to dir: index.html, wasm_exec.js, app.wasm
+// and the resources. A release names every file but the page and its
+// manifest.webmanifest by its content, so hosts cache them for good; a
+// dev build keeps the names and follows nsgo dev's server.
+func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
+	wasm := filepath.Join(dir, "app.wasm")
+	if err := goBuild(ctx, p, wasm, []string{"GOOS=js", "GOARCH=wasm"}); err != nil {
 		return err
 	}
 	goroot, err := output(ctx, "go", "env", "GOROOT")
@@ -240,27 +278,72 @@ func buildWeb(ctx context.Context, p *project, dir string, reload bool) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "wasm_exec.js"), js, 0o644); err != nil {
-		return err
-	}
-	if err := copyResources(p, filepath.Join(dir, resourcesDir)); err != nil {
-		return err
-	}
 	img, err := p.iconImage()
 	if err != nil {
 		return err
 	}
-	if img != nil {
-		if err := os.WriteFile(filepath.Join(dir, "icon.png"), scaledPNG(img, 256), 0o644); err != nil {
+	page := map[string]any{"Name": p.Name, "Reload": dev, "Wasm": "app.wasm", "Exec": "wasm_exec.js",
+		"Color": appearanceColor(p.Appearance), "Appearance": p.Appearance}
+	// write puts data in dir, by its content's name in a release, and
+	// returns the name.
+	write := func(name string, data []byte) (string, error) {
+		if !dev {
+			name = hashedName(name, data)
+		}
+		return name, os.WriteFile(filepath.Join(dir, name), data, 0o644)
+	}
+	if page["Exec"], err = write("wasm_exec.js", js); err != nil {
+		return err
+	}
+	if dev {
+		if err := copyResources(p, filepath.Join(dir, resourcesDir)); err != nil {
 			return err
 		}
+	} else {
+		data, err := os.ReadFile(wasm)
+		if err != nil {
+			return err
+		}
+		name := hashedName("app.wasm", data)
+		if err := os.Rename(wasm, filepath.Join(dir, name)); err != nil {
+			return err
+		}
+		page["Wasm"] = name
+		if page["Resources"], err = copyHashedResources(p, dir); err != nil {
+			return err
+		}
+	}
+	if img != nil {
+		if page["Icon"], err = write("icon.png", scaledPNG(img, 256)); err != nil {
+			return err
+		}
+		if page["TouchIcon"], err = write("apple-touch-icon.png", scaledPNG(img, 180)); err != nil {
+			return err
+		}
+	}
+	if !dev {
+		var icons []webIcon
+		for _, size := range []int{192, 512} {
+			if img == nil {
+				break
+			}
+			name, err := write(fmt.Sprintf("icon-%d.png", size), scaledPNG(img, size))
+			if err != nil {
+				return err
+			}
+			icons = append(icons, webIcon{Src: name, Sizes: fmt.Sprintf("%dx%d", size, size), Type: "image/png"})
+		}
+		if err := writeWebManifest(p, dir, icons); err != nil {
+			return err
+		}
+		page["Manifest"] = true
 	}
 	f, err := os.Create(filepath.Join(dir, "index.html"))
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return indexHTML.Execute(f, map[string]any{"Name": p.Name, "Reload": reload, "Icon": img != nil})
+	return indexHTML.Execute(f, page)
 }
 
 var indexHTML = template.Must(template.New("index").Parse(`<!doctype html>
@@ -269,18 +352,54 @@ var indexHTML = template.Must(template.New("index").Parse(`<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{.Name}}</title>
-{{- if .Icon}}
-<link rel="icon" href="icon.png">
+{{- if .Appearance}}
+<meta name="color-scheme" content="{{.Appearance}}">
 {{- end}}
-<style>html, body { margin: 0; height: 100%; }</style>
-<script src="wasm_exec.js"></script>
+{{- if .Color}}
+<meta name="theme-color" content="{{.Color}}">
+{{- end}}
+{{- if .Icon}}
+<link rel="icon" href="{{.Icon}}">
+<link rel="apple-touch-icon" href="{{.TouchIcon}}">
+{{- end}}
+{{- if .Manifest}}
+<link rel="manifest" href="manifest.webmanifest">
+{{- end}}
+<style>html, body { margin: 0; height: 100%;{{if .Color}} background: {{.Color}};{{end}} }</style>
+<script src="{{.Exec}}"></script>
 </head>
 <body>
 <script>
+{{- if .Resources}}
+globalThis.nsgoResources = "{{.Resources}}";
+{{- end}}
 const go = new Go();
-WebAssembly.instantiateStreaming(fetch("app.wasm"), go.importObject).then((r) => go.run(r.instance));
+WebAssembly.instantiateStreaming(fetch("{{.Wasm}}"), go.importObject).then((r) => go.run(r.instance));
 {{- if .Reload}}
-new EventSource("/_nsgo/reload").onmessage = () => location.reload();
+// nsgo dev's server: each new build loads, a failed one shows over the app.
+const events = new EventSource("/_nsgo/events");
+let overlay;
+events.onmessage = (e) => {
+  const [kind, ...rest] = e.data.split(" ");
+  if (kind === "reload") location.reload();
+  if (kind === "ok" && overlay) { overlay.remove(); overlay = null; }
+  if (kind !== "error") return;
+  overlay?.remove();
+  overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;z-index:2147483647;background:rgba(17,17,17,.94);color:#f2f2f2;padding:48px 20px;overflow:auto;font:13px ui-monospace,monospace";
+  const title = document.createElement("div");
+  title.textContent = "Build failed";
+  title.style.cssText = "color:#ff5c5c;font:bold 18px system-ui;margin-bottom:12px";
+  const text = document.createElement("pre");
+  text.textContent = JSON.parse(rest.join(" "));
+  text.style.whiteSpace = "pre-wrap";
+  const copy = document.createElement("button");
+  copy.textContent = "Copy";
+  copy.onclick = (e) => { e.stopPropagation(); navigator.clipboard.writeText(text.textContent); };
+  overlay.append(title, text, copy);
+  overlay.onclick = () => { overlay.remove(); overlay = null; };
+  document.body.append(overlay);
+};
 {{- end}}
 </script>
 </body>
@@ -311,11 +430,14 @@ const plistHead = `<?xml version="1.0" encoding="UTF-8"?>
 	<key>CFBundleName</key><string>{{.Name}}</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>{{.Version}}</string>
-	<key>CFBundleVersion</key><string>{{.Version}}</string>
+	<key>CFBundleVersion</key><string>{{.BundleVersion}}</string>
 `
 
 var macPlist = template.Must(template.New("mac").Parse(plistHead + `	<key>LSMinimumSystemVersion</key><string>11.0</string>
 	<key>NSHighResolutionCapable</key><true/>
+{{- if eq .Appearance "light"}}
+	<key>NSRequiresAquaSystemAppearance</key><true/>
+{{- end}}
 </dict>
 </plist>
 `))

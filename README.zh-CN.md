@@ -54,9 +54,11 @@ func Root(cx *core.Scope) core.Node {
 func main() { nsgo.Run(Root) }
 ```
 
-用 `nsgotest` 无窗口地测试它：
+用 `nsgotest` 无窗口地测试它；`go tool nsgo test -target macos` 会在真实窗口中用原生输入运行同样的测试，并可截图（`app.Screenshot("name")`）：
 
 ```go
+func TestMain(m *testing.M) { nsgotest.Main(m) } // 使用 -target 时把主线程交给平台
+
 func TestPress(t *testing.T) {
 	app := nsgotest.Start(t, Root)
 	app.Press("text:Press me")
@@ -70,6 +72,8 @@ func TestPress(t *testing.T) {
 name: Hello
 id: dev.oneo.nsgo.hello
 version: 0.1.0
+build_number: 1         # CFBundleVersion 和 Android 的 versionCode；省略时取自 version
+# appearance: dark      # 无论系统设置，固定为 light 或 dark；省略时跟随系统
 window: { width: 420, height: 560 }
 icon:
   apple: assets/AppIcon.icon  # macOS 和 iOS；macOS 也接受 .icns
@@ -81,6 +85,9 @@ build:
   output: dist          # 构建产物位于 dist/<name>-<version>-<target>
   open: false           # 设为 true 时在构建后打开输出目录
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, android_arm64, android_x64, web]
+# sign:                 # 商店发布；密码来自 NSGO_KEYSTORE_PASSWORD 和 NSGO_KEY_PASSWORD
+#   profile: assets/AppStore.mobileprovision  # 为 IPA 签名，使用钥匙串中对应的身份或 identity
+#   keystore: assets/release.p12              # 为 APK 签名（PKCS#12 或 JKS），key_alias 指定其中的密钥
 ```
 
 `nsgo.yaml` 旁边有两个目录。`resources/` 存放随应用发布的文件：每个包把它们放进自己的资源根目录，`asset:` 图片从这里加载，`nsgo.Fonts` 也从这里注册字体，例如 `nsgo.Run(Root, nsgo.Fonts("fonts/Brand.ttf"))`。资源根目录在 macOS 上是 `Contents/Resources`，在 iOS 上是应用包本身，在 Android 上是 APK 的 assets，其他平台是可执行文件或页面旁的 `resources/`。`assets/` 存放不随应用发布的项目文件，例如 `icon` 默认使用的图标。
@@ -91,11 +98,13 @@ build:
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` 运行一次应用，应用退出后随之退出。将 `dev.hot_reload` 设为 `true`，源文件变化时会重新编译并重启。它构建的应用图标带有 DEV 标签；要改用其他文件，可在 `dev.icon` 中指定（与 `icon` 一样接受 `apple` 和 `png`），或在 `assets/` 中放入 `AppIcon-dev.icon`、`AppIcon-dev.icns` 或 `Icon-dev.png`。在 macOS 上，开发运行还会在应用上方显示性能监视器；发布构建不包含它。
+`go tool nsgo dev` 运行一次应用，应用退出后随之退出。将 `dev.hot_reload` 设为 `true`，源文件变化时会重新编译并重启。编译失败会显示在正在运行的应用上方；在应用中按 Command 或 Control+R，或在终端输入 `r` 并回车，会重新编译并启动。它构建的应用图标带有 DEV 标签；要改用其他文件，可在 `dev.icon` 中指定（与 `icon` 一样接受 `apple` 和 `png`），或在 `assets/` 中放入 `AppIcon-dev.icon`、`AppIcon-dev.icns` 或 `Icon-dev.png`。在 macOS 上，开发运行还会在应用上方显示性能监视器；发布构建不包含它。
 
-`go tool nsgo build` 为每个目标输出一个去除符号的发布包；将 `build.open` 设为 `true`，构建完成后会打开输出目录。`build.targets` 和 `-target` 都接受 `all`，表示仅需 Go 和 Xcode 的所有平台；安装 NDK 后可再加上 `android_x64`。
+`go tool nsgo build` 为每个目标输出一个去除符号的发布包：`.app`、`.ipa`、`.apk`，Windows 和 Linux 的目录及其 `.zip` 或 `.tar.gz`，或文件按内容命名并带有 manifest 的网站。将 `build.open` 设为 `true`，构建完成后会打开输出目录；传入 `-run` 则启动为本机构建的包。
 
-dev 和 build 命令的参数会覆盖它们所对应的 `nsgo.yaml` 值：两者都接受 `-name`、`-id`、`-version`、`-width` 和 `-height`；dev 另有 `-target` 和 `-hot-reload`，build 另有 `-target`、`-output` 和 `-open`。dev 还接受 `-device` 以选择 iPhone，以及 `-team` 以选择 Apple 开发者团队。`-h` 会列出全部参数。
+`go tool nsgo test` 运行应用的测试，每个测试输出一行；`-run` 筛选测试，`-junit report.xml` 写出 JUnit 报告，`-trace` 打印每一步的挂载项和提交耗时。`-target` 让测试在 `macos`、`windows`、`linux`、`web`（Chrome、Chromium 或 Edge 中）、`ios_simulator` 或 `android` 上运行，每个测试一个进程，截图保存在 `.nsgo/test/screenshots`。`build.targets` 和 `-target` 都接受 `all`，表示仅需 Go 和 Xcode 的所有平台；安装 NDK 后可再加上 `android_x64`。
+
+dev 和 build 命令的参数会覆盖它们所对应的 `nsgo.yaml` 值：两者都接受 `-name`、`-id`、`-version`、`-build-number`、`-width` 和 `-height`；dev 另有 `-target` 和 `-hot-reload`，build 另有 `-target`、`-output`、`-open`、`-sign`、`-profile`、`-keystore` 和 `-key-alias`。dev 还接受 `-device` 以选择 iPhone、按名称选择模拟器或选择 Android 设备，`-team` 以选择 Apple 开发者团队，`-port` 指定其服务器端口（被占用时使用下一个空闲端口；局域网中的手机可在此访问 Web 目标），以及 `-release` 以像 build 一样构建。`-h` 会列出全部参数。
 
 ## 开发
 

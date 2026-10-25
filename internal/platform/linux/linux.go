@@ -41,6 +41,7 @@ import (
 	"github.com/oneo-me/nsgo/internal/platform/imageload"
 	"github.com/oneo-me/nsgo/internal/platform/queue"
 	"github.com/oneo-me/nsgo/internal/platform/scrollbar"
+	"github.com/oneo-me/nsgo/internal/testhost"
 )
 
 // Options configure the window.
@@ -56,6 +57,15 @@ type Options struct {
 	Fonts []string
 	// Appearance is the appearance the app starts in.
 	Appearance driver.Appearance
+	// test is what a test host opens the app with.
+	test *testOpen
+}
+
+// testOpen is what a test host opens the app with: the test's options and
+// the environment it pins.
+type testOpen struct {
+	options testhost.Options
+	pin     engine.TestPin
 }
 
 // window is one GTK window and the tree it shows. The engine's goroutine
@@ -133,6 +143,7 @@ type window struct {
 	alerts        []driver.AlertConfig
 	alerting      bool
 	alertingID    uint32
+	alertShown    driver.AlertConfig // the alert showing, for a test host
 	menuCounter   uint32
 	actionGroup   uintptr
 	actionRefs    map[uintptr]menuRef
@@ -209,6 +220,9 @@ func start(app engine.App, opts Options) (*window, error) {
 		Appearance:  opts.Appearance,
 	}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
+	if opts.test != nil {
+		eopts.UseTest(opts.test.options, &opts.test.pin)
+	}
 	imageload.UseDiskCache(eopts.CacheDir)
 	w.engine = engine.Start(w, app, eopts)
 	w.loop = gMainLoopNew(0, 0)

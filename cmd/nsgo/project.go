@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -20,11 +22,26 @@ type project struct {
 	Perf bool `yaml:"-"`
 	// idDefault records that nsgo.yaml gave no id, so it follows the name.
 	idDefault bool
+	// log, when set, also receives the go tool's output, for the dev
+	// server to show a failed build; devURL is the dev server's address
+	// for targets that pass the app no environment.
+	log    *bytes.Buffer
+	devURL string
+	// testBinary builds the package's tests with the nsgotest tag in
+	// place of the app, for nsgo test -target.
+	testBinary bool
 
 	Name    string `yaml:"name"`
 	ID      string `yaml:"id"`
 	Version string `yaml:"version"`
-	Window  struct {
+	// BuildNumber numbers builds of a version, as stores want each upload
+	// numbered: CFBundleVersion and Android's versionCode. Without it
+	// they come from Version.
+	BuildNumber int `yaml:"build_number"`
+	// Appearance starts the app light or dark whatever the system's, its
+	// launch screen and window included; empty follows the system.
+	Appearance string `yaml:"appearance"`
+	Window     struct {
 		Width  int `yaml:"width"`
 		Height int `yaml:"height"`
 	} `yaml:"window"`
@@ -39,13 +56,19 @@ type project struct {
 		// HotReload rebuilds and restarts the app when a watched file
 		// changes; it defaults to false.
 		HotReload *bool `yaml:"hot_reload"`
+		// Client builds the dev client in, which connects to nsgo dev's
+		// server: nsgo dev sets it.
+		Client bool `yaml:"-"`
 	} `yaml:"dev"`
+	Sign  signing `yaml:"sign"`
 	Build struct {
 		Output  string   `yaml:"output"`
 		Targets []string `yaml:"targets"`
 		// Open shows the output directory once the build finishes; it
 		// defaults to false.
 		Open *bool `yaml:"open"`
+		// run starts the package built for this machine afterwards (-run).
+		run bool
 	} `yaml:"build"`
 }
 
@@ -96,6 +119,11 @@ func load(dir string) (*project, error) {
 	if p.Version == "" {
 		p.Version = "0.0.0"
 	}
+	switch p.Appearance {
+	case "", "light", "dark":
+	default:
+		return nil, fmt.Errorf("nsgo.yaml: appearance is %q; use light, dark or leave it out", p.Appearance)
+	}
 	if p.Window.Width == 0 || p.Window.Height == 0 {
 		p.Window.Width, p.Window.Height = 480, 640
 	}
@@ -106,6 +134,11 @@ func load(dir string) (*project, error) {
 		p.Build.Output = "dist"
 	}
 	p.Build.Output = p.resolve(p.Build.Output)
+	for _, path := range []*string{&p.Sign.Profile, &p.Sign.Keystore} {
+		if *path != "" {
+			*path = p.resolve(*path)
+		}
+	}
 	if len(p.Build.Targets) == 0 {
 		p.Build.Targets = []string{"macos_" + goArchName(runtime.GOARCH)}
 	}
@@ -148,6 +181,12 @@ func (p *project) ldflags(extra ...string) string {
 	if p.Perf {
 		flags += fmt.Sprintf(" -X '%s.fps=1'", pkg)
 	}
+	if p.Appearance != "" {
+		flags += fmt.Sprintf(" -X %s.appearance=%s", pkg, p.Appearance)
+	}
+	if p.devURL != "" {
+		flags += fmt.Sprintf(" -X '%s.devServer=%s'", pkg, p.devURL)
+	}
 	if p.Release {
 		flags += " -s -w"
 	}
@@ -155,6 +194,14 @@ func (p *project) ldflags(extra ...string) string {
 		flags += " " + e
 	}
 	return flags
+}
+
+// BundleVersion is the build's number: BuildNumber, else Version.
+func (p *project) BundleVersion() string {
+	if p.BuildNumber > 0 {
+		return strconv.Itoa(p.BuildNumber)
+	}
+	return p.Version
 }
 
 // goArchName maps Go's amd64 to x64, the name packages use.

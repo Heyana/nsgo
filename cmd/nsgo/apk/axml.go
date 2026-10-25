@@ -21,6 +21,12 @@ type Manifest struct {
 	VersionCode int
 	// Icon is the launcher icon, an IconSize PNG; nil keeps the system's.
 	Icon []byte
+	// Theme replaces the application's theme, a framework style; empty
+	// keeps the runtime's.
+	Theme string
+	// Debuggable marks a test build, whose launch intent may name the test
+	// the runtime runs.
+	Debuggable bool
 }
 
 // The binary XML chunk and value types, from Android's ResourceTypes.h.
@@ -66,6 +72,7 @@ var androidAttrs = map[string]attrSpec{
 	"grantUriPermissions": {0x0101001b, typeBool, parseBool},
 	"theme":               {0x01010000, typeReference, parseStyle},
 	"icon":                {0x01010002, typeReference, parseAppResource},
+	"debuggable":          {0x0101000f, typeBool, parseBool},
 
 	"extractNativeLibs":           {0x010104ea, typeBool, parseBool},
 	"enableOnBackInvokedCallback": {0x0101066c, typeBool, parseBool},
@@ -77,7 +84,8 @@ var androidAttrs = map[string]attrSpec{
 // the framework's resource ID, which the SDK's aapt2 resolves; these stay
 // stable across Android versions.
 var styles = map[string]uint32{
-	"@android:style/Theme.DeviceDefault.NoActionBar": 0x01030129,
+	"@android:style/Theme.DeviceDefault.NoActionBar":       0x01030129,
+	"@android:style/Theme.DeviceDefault.Light.NoActionBar": 0x0103012c,
 }
 
 // configChanges are the ActivityInfo.CONFIG_* names a manifest lists.
@@ -135,6 +143,12 @@ func EncodeManifest(template []byte, m Manifest) ([]byte, error) {
 		return nil, errors.New("manifest: no application element")
 	}
 	setAttr(app, androidNS, "label", m.Label)
+	if m.Theme != "" {
+		setAttr(app, androidNS, "theme", m.Theme)
+	}
+	if m.Debuggable {
+		setAttr(app, androidNS, "debuggable", "true")
+	}
 	if p := child(app, "provider"); p != nil {
 		// Each app's provider needs an authority of its own.
 		setAttr(p, androidNS, "authorities", m.Package+".nsgo.clip")

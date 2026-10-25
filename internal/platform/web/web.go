@@ -22,6 +22,7 @@ import (
 
 	"github.com/oneo-me/nsgo/internal/driver"
 	"github.com/oneo-me/nsgo/internal/engine"
+	"github.com/oneo-me/nsgo/internal/testhost"
 )
 
 // Options configure the page.
@@ -235,6 +236,13 @@ type press struct {
 
 // Run fills the page with app. Call it from main; it does not return.
 func Run(app engine.App, opts Options) {
+	open(app, opts, nil)
+	select {}
+}
+
+// open mounts app in the page and starts its engine; test, when set, is
+// what a test host opens it with.
+func open(app engine.App, opts Options, test *testOpen) *surface {
 	registerFonts(opts.Fonts)
 	doc := js.Global().Get("document")
 	host := doc.Get("body")
@@ -265,10 +273,16 @@ func Run(app engine.App, opts Options) {
 
 	s.env = s.environment()
 	s.setAppearance(opts.Appearance)
-	s.engine = engine.Start(s, app, engine.Options{
+	eopts := engine.Options{
 		Size: s.size(), Environment: s.env, Appearance: opts.Appearance,
 		Storage: engine.NewStorage(newLocalStorage(opts.ID)),
-	})
+	}
+	if test != nil {
+		eopts.UseTest(test.options, &test.pin)
+		// The page's size, which the test sets, is the surface's.
+		eopts.Size = s.size()
+	}
+	s.engine = engine.Start(s, app, eopts)
 	// The host can change size without the window doing so.
 	observer := js.Global().Get("ResizeObserver").New(js.FuncOf(func(js.Value, []js.Value) any {
 		s.engine.Resize(s.size())
@@ -276,7 +290,14 @@ func Run(app engine.App, opts Options) {
 	}))
 	observer.Call("observe", host)
 	s.watchChanges()
-	select {}
+	return s
+}
+
+// testOpen is what a test host opens the app with: the test's options and
+// the environment it pins.
+type testOpen struct {
+	options testhost.Options
+	pin     engine.TestPin
 }
 
 func (s *surface) size() driver.Size {

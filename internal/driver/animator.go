@@ -228,7 +228,7 @@ func (a *Animator) apply(o *AnimationOp) {
 		if o.Animation == nil {
 			return
 		}
-		r := &arun{id: o.ID, root: a.build(o.Animation)}
+		r := &arun{id: o.ID, root: a.build(o.Animation), forever: endless(o.Animation)}
 		var starts []valueStart
 		for _, id := range r.root.values(nil) {
 			if n := a.value(id); n != nil {
@@ -325,6 +325,21 @@ func (a *Animator) end(r *arun, finished bool) {
 // Running reports whether an animation runs, or a snapping diff clamp
 // settles, so the backend keeps its frame callback.
 func (a *Animator) Running() bool { return len(a.runs) > 0 || len(a.settling) > 0 }
+
+// Ending reports whether something runs that ends on its own: an
+// animation without an endless loop, or a settling clamp. Tests wait for
+// it before they look.
+func (a *Animator) Ending() bool {
+	if len(a.settling) > 0 {
+		return true
+	}
+	for _, r := range a.runs {
+		if !r.forever {
+			return true
+		}
+	}
+	return false
+}
 
 // Step advances the running animations to now, a monotonic time.
 func (a *Animator) Step(now time.Duration) {
@@ -990,6 +1005,22 @@ func bounce(t float64) float64 {
 type arun struct {
 	id   uint32
 	root astep
+	// forever is set when a loop in it repeats without end.
+	forever bool
+}
+
+// endless reports whether an repeats forever: it holds a Loop of no
+// count.
+func endless(an *Animation) bool {
+	if an.Kind == AnimationLoop && an.Iterations == 0 {
+		return true
+	}
+	for _, s := range an.Steps {
+		if endless(s) {
+			return true
+		}
+	}
+	return false
 }
 
 // astep is a node of a running animation's tree.

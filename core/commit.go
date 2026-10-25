@@ -529,7 +529,7 @@ func (t *Tree) emitText(n *node) {
 		}
 	}
 	t.items = append(t.items, driver.MountItem{Kind: driver.ItemText, ID: n.id, Text: &driver.TextContent{
-		Text: text.Text, Layout: l, Content: box,
+		Text: text.Text, Layout: l, Content: box, Style: text.Style, Spans: text.Spans,
 	}})
 }
 

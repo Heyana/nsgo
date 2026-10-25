@@ -66,15 +66,17 @@ func boolFlag(fs *flag.FlagSet, name, usage string) *boolOverride {
 type overrides struct {
 	name, id, version *override[string]
 	width, height     *override[int]
+	buildNumber       *override[int]
 }
 
 func bindOverrides(fs *flag.FlagSet) *overrides {
 	return &overrides{
-		name:    stringFlag(fs, "name", "the app `name` (default: nsgo.yaml's name)"),
-		id:      stringFlag(fs, "id", "the bundle `id` (default: nsgo.yaml's id)"),
-		version: stringFlag(fs, "version", "the app `version` (default: nsgo.yaml's version)"),
-		width:   intFlag(fs, "width", "the window `width` (default: nsgo.yaml's window.width)"),
-		height:  intFlag(fs, "height", "the window `height` (default: nsgo.yaml's window.height)"),
+		name:        stringFlag(fs, "name", "the app `name` (default: nsgo.yaml's name)"),
+		id:          stringFlag(fs, "id", "the bundle `id` (default: nsgo.yaml's id)"),
+		version:     stringFlag(fs, "version", "the app `version` (default: nsgo.yaml's version)"),
+		width:       intFlag(fs, "width", "the window `width` (default: nsgo.yaml's window.width)"),
+		height:      intFlag(fs, "height", "the window `height` (default: nsgo.yaml's window.height)"),
+		buildNumber: intFlag(fs, "build-number", "the build's `number`, CFBundleVersion and Android's versionCode (default: nsgo.yaml's build_number)"),
 	}
 }
 
@@ -88,6 +90,7 @@ func (o *overrides) apply(p *project) {
 	o.version.replace(&p.Version)
 	o.width.replace(&p.Window.Width)
 	o.height.replace(&p.Window.Height)
+	o.buildNumber.replace(&p.BuildNumber)
 }
 
 // devFlags are nsgo dev's flags; those that name an nsgo.yaml value replace
@@ -100,15 +103,17 @@ type devFlags struct {
 	open      bool
 	device    string
 	team      string
+	release   bool
 }
 
 func bindDevFlags(fs *flag.FlagSet) *devFlags {
 	f := &devFlags{overrides: bindOverrides(fs)}
 	f.target = stringFlag(fs, "target", "`target` to use: native, web, ios, ios_simulator or android (a device or emulator; default: nsgo.yaml's dev.target)")
 	f.hotReload = boolFlag(fs, "hot-reload", "rebuild and restart on changes (default: nsgo.yaml's dev.hot_reload)")
-	fs.IntVar(&f.port, "port", 8080, "the web target's port")
+	fs.IntVar(&f.port, "port", 8080, "the dev server's `port`, which serves the web target; the next free one when taken")
 	fs.BoolVar(&f.open, "open", true, "open the web target in the browser")
-	fs.StringVar(&f.device, "device", "", "the `device` the iOS target runs on: a connected iPhone's name, UDID, serial or ECID (default: the only one connected)")
+	fs.StringVar(&f.device, "device", "", "the `device` to run on: an iPhone's name, UDID, serial or ECID, a simulator's name or UDID, or an adb serial or emulator's AVD name (default: the only one connected, or the booted simulator)")
+	fs.BoolVar(&f.release, "release", false, "build stripped release binaries, as nsgo build does, keeping the performance monitor")
 	fs.StringVar(&f.team, "team", "", "the Apple developer `team` the iOS target signs with (default: the team Xcode last used)")
 	return f
 }
@@ -128,6 +133,8 @@ type buildFlags struct {
 	targets *override[string]
 	output  *override[string]
 	open    *boolOverride
+	run     bool
+	sign    signFlags
 }
 
 func bindBuildFlags(fs *flag.FlagSet) *buildFlags {
@@ -135,6 +142,8 @@ func bindBuildFlags(fs *flag.FlagSet) *buildFlags {
 	f.targets = stringFlag(fs, "target", "comma-separated `targets`, or all for every platform Go and Xcode build (default: nsgo.yaml's build.targets)")
 	f.output = stringFlag(fs, "output", "the `output` directory (default: nsgo.yaml's build.output)")
 	f.open = boolFlag(fs, "open", "open the output directory (default: nsgo.yaml's build.open)")
+	fs.BoolVar(&f.run, "run", false, "start the package built for this machine: the app, the simulator's or device's, or the site served")
+	f.sign.bind(fs)
 	return f
 }
 
@@ -149,4 +158,6 @@ func (f *buildFlags) apply(p *project) {
 	if f.open.set {
 		p.Build.Open = &f.open.value
 	}
+	p.Build.run = f.run
+	f.sign.apply(p)
 }

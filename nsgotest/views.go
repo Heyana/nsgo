@@ -29,6 +29,10 @@ type (
 	StatusBarConfig = driver.StatusBarConfig
 	// TextStyle is resolved text style: nothing in it is unset.
 	TextStyle = driver.TextStyle
+	// TextSpan styles a byte range of a text over its style.
+	TextSpan = driver.TextSpan
+	// TextBackground is what a span draws behind its characters.
+	TextBackground = driver.TextBackground
 	// VideoConfig is everything a video plays with (ItemVideo), with the
 	// defaults applied: Volume in 0 to 1, Rate above 0, a ResizeMode and
 	// ProgressInterval at least 16 milliseconds.

@@ -3,6 +3,8 @@
 //	nsgo init  [-name N] [-module M] [dir]               write a new app
 //	nsgo dev   [-target T] [-hot-reload] [flags] [dir]   run the app and rebuild it on changes
 //	nsgo build [-target all|T,...] [flags] [dir]         build packages for nsgo.yaml's targets or all platforms
+//	nsgo test  [-run R] [-junit F] [-trace] [-target T] [dir] [-- go test flags]
+//	                                                      run the app's tests headless or on a platform
 //
 // dir is the app's directory, holding nsgo.yaml and its main package; it
 // defaults to the current directory. Flags replace the nsgo.yaml values
@@ -34,7 +36,7 @@ func main() {
 		var p *project
 		if p, err = load(fs.Arg(0)); err == nil {
 			f.apply(p)
-			err = dev(ctx, p, devOptions{apply: f.apply, port: f.port, open: f.open, device: f.device, team: f.team})
+			err = dev(ctx, p, devOptions{apply: f.apply, port: f.port, open: f.open, device: f.device, team: f.team, release: f.release})
 		}
 	case "init":
 		fs := flag.NewFlagSet("init", flag.ExitOnError)
@@ -55,6 +57,28 @@ func main() {
 			f.apply(p)
 			err = buildAll(ctx, p)
 		}
+	case "test":
+		fs := flag.NewFlagSet("test", flag.ExitOnError)
+		var o testOptions
+		fs.StringVar(&o.run, "run", "", "run only the tests matching this `regexp`, as go test's -run")
+		fs.StringVar(&o.junit, "junit", "", "write a JUnit XML report to `file`")
+		fs.BoolVar(&o.trace, "trace", false, "print each step's mount items and commit times")
+		fs.StringVar(&o.target, "target", "", "run on a `platform`: macos, windows, linux, web, ios_simulator or android (default: headless)")
+		fs.StringVar(&o.device, "device", "", "the simulator, by name or UDID, or the adb device the target runs on")
+		fs.Parse(args)
+		rest := fs.Args()
+		dir := ""
+		if len(rest) > 0 && rest[0] != "--" {
+			dir, rest = rest[0], rest[1:]
+		}
+		if len(rest) > 0 && rest[0] == "--" {
+			rest = rest[1:]
+		}
+		o.args = rest
+		var p *project
+		if p, err = loadForTest(dir); err == nil {
+			err = runTests(ctx, p, o)
+		}
 	default:
 		usage()
 	}
@@ -67,8 +91,9 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   nsgo init  [-name N] [-module M] [dir]
-  nsgo dev   [-target native|web|ios|ios_simulator|android] [-hot-reload] [-port N] [-open=false] [dir]
+  nsgo dev   [-target native|web|ios|ios_simulator|android] [-hot-reload] [-release] [-device D] [-port N] [-open=false] [dir]
   nsgo build [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [-output DIR] [-open] [dir]
+  nsgo test  [-run REGEXP] [-junit FILE] [-trace] [-target macos|windows|linux|web|ios_simulator|android] [dir] [-- go test flags]
 
 dev and build take -name, -id, -version, -width and -height, which replace
 nsgo.yaml's values, and -h lists every flag.`)

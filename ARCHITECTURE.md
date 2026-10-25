@@ -6,7 +6,7 @@ NSGo is a Go port of the design of [Native Shell (NSH)](https://github.com/longb
 
 NSH is the reference for behavior and naming, not a constraint: NSGo keeps its names and semantics by default and departs where a design is clearer or easier to maintain. Its checkout lives in `nsh/` and is never committed.
 
-Read its `AGENTS.md` for the crate layout, `docs/dev/architecture.md` for threads and data flow, a `docs/dev/` page per subsystem and the module docs in `crates/*/src`. Port the design, not the code, and record each deviation in the owning subject.
+Read its `AGENTS.md`, `docs/dev/architecture.md` and the `docs/dev/` page and module docs of the subsystem. Port the design, not the code, and record each deviation in the owning subject.
 
 ## Code map
 
@@ -20,16 +20,17 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark), HTML (x/net/html) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
 | `base/textview/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma |
 | `icons/lucide` | — (NSH loads SVG as images) | The bundled Lucide pack: one generated accessor per icon, parsed on first use ([icons](docs/architecture/icons.md)) |
-| `nsgotest` | `nsh-testing` | Headless app tests: approximate text, a manual clock, selectors over a model of the views |
+| `nsgotest` | `nsh-testing` | App tests, headless or on a platform: selectors over a model of the views, steps as a user's input ([testing](docs/architecture/testing.md)) |
+| `internal/testhost` | `nsh-testing`'s agent | A backend's test host for `nsgotest`: the main thread, native input, screenshots |
 | `internal/driver` | `nsh-core`'s mount protocol | Mount items, events, `TextEngine` and the values both sides share; the `Animator`, selection model and edit limits every backend runs |
 | `internal/layout` | Taffy | Block, flexbox and grid layout, checked against Taffy's fixtures |
 | `internal/shader`, `internal/shaderir` | — (MyGo's fork of Ebitengine's Kage) | The shader compiler: Go's syntax checked into an IR, written as MSL, GLSL or HLSL ([shaders](docs/architecture/shaders.md)) |
 | `internal/engine` | `nsh-engine` | The engine goroutine: a mailbox, one batch per commit to the platform, storage files and the performance monitor |
 | `internal/platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
 | `internal/platform/apple` | Shared Apple code | Layers, images, canvas, Metal shaders, web views, videos and CoreText for macOS and iOS |
-| `internal/platform/*` | Platforms' shared code | Image loading, its disk cache and pure Go decoding ([images](docs/architecture/images.md)), picked photos' preparation, font files' names, text field edits, drawn scroll bars, hover and finger tracking |
+| `internal/platform/*` | Platforms' shared code | Image loading, its disk cache and pure Go decoding ([images](docs/architecture/images.md)), picked photos, font names, field edits, drawn scroll bars, hover and fingers |
 | `examples/gallery` | `examples/gallery-rs` | Every element, component and service, a page each, with headless tests; its web build is the website |
-| `cmd/nsgo` | `nsh-cli` | `nsgo init`, `dev` and `build`, driven by an app's `nsgo.yaml`; `apk` packages and signs Android apps in Go |
+| `cmd/nsgo` | `nsh-cli` | `nsgo init`, `dev`, `test` and `build` from an app's `nsgo.yaml` ([tool](docs/architecture/tool.md)); `apk` packages and signs Android apps in Go |
 | `tools/lucidegen` | — | Regenerates `icons/lucide` from a pinned Lucide checkout |
 
 ## Platforms
@@ -70,8 +71,8 @@ Packages import only downward; `layering_test.go` checks it on every target:
 - Apps import `nsgo`, `core`, `base`, `icons` and `nsgotest` only, native components included; `core` and `nsgotest` alias the internal types their API reaches (`TestPublicAPINamesNoInternalType`).
 - `internal/driver` is the protocol and imports nothing else from the module. Backends import it and `internal/engine`, never `core`.
 - `core` imports only `internal/driver`, `internal/layout` and the shader compiler (`internal/shader`, `internal/shaderir`), which backends share too.
-- `internal/engine` runs one app on `core` and defines `engine.Platform`, which backends implement. `nsgotest` is the headless backend, without the engine.
-- `core`, `base`, `icons`, `nsgotest`, `internal/driver`, `internal/layout`, the shader compiler and `internal/engine` build unchanged for every target: no purego, `syscall` or `unsafe`. No package has cgo files or hand-written C.
+- `internal/engine` runs one app on `core` and defines `engine.Platform`, which backends implement. `nsgotest` is the headless backend, without the engine; on a platform it drives the test host a backend registers under the `nsgotest` tag.
+- `core`, `base`, `icons`, `nsgotest`, `internal/driver`, `internal/layout`, `internal/testhost`, the shader compiler and `internal/engine` build unchanged for every target: no purego, `syscall` or `unsafe`. No package has cgo files or hand-written C.
 - `base` holds NSGo's built-in unstyled components, each taking styles part by part (`StyleFunc` included). NSGo ships no theme or styled components; apps, or a component library, build them on `base`.
 - A component gets its own package under `base` only when it links dependencies an app without it should not, as `base/textview` links goldmark and `base/textview/highlight` chroma.
 - The platform main thread never waits for the engine, and the engine never touches main-thread-only UI objects.
@@ -83,12 +84,10 @@ Packages import only downward; `layering_test.go` checks it on every target:
 
 ## Tool
 
-`nsgo` is the only build entry point; it shells out to `go build`, and to Xcode's `xcrun`, `xcodebuild`, `codesign` and `simctl` for Apple targets.
+`nsgo` is the only build entry point; it shells out to `go`, and to Xcode's `xcrun`, `xcodebuild`, `codesign` and `simctl` for Apple targets ([tool](docs/architecture/tool.md)).
 
-- Targets name an OS and an architecture (`macos_arm64`, `windows_x64`), so each package holds one binary. `nsgo build` strips symbols, paths and VCS stamps; `nsgo dev` keeps symbols.
-- Hot reload watches the directories of `go list -deps`, NSGo's included, and keeps the last good build running on a failure.
-- `resources/` ships in each package's resource root, which `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` and font paths against.
-- App icons are drawn in Go; `actool` compiles Apple's `.icon` files, and a Windows icon links from a `.syso` in the app's package directory, the only place Go links one from.
+- Targets name an OS and an architecture (`macos_arm64`, `windows_x64`), so each package holds one binary. `nsgo build` strips symbols, paths and VCS stamps; `nsgo dev` keeps symbols unless `-release`.
+- Hot reload watches the directories of `go list -deps`, NSGo's included, and keeps the last good build running on a failure, which its dev server shows over the app.
 
 ## Core flows
 
@@ -98,7 +97,7 @@ Packages import only downward; `layering_test.go` checks it on every target:
 
 **Input.** Native gestures become engine events, queued without blocking, run the handlers on the engine side and lead to the next commit.
 
-**Frame.** `Scope.RequestAnimationFrame` callbacks wait for the next display frame, and the core asks the host for one when the first waits. The platform's frame clock calls `Engine.Frame`, the engine runs the callbacks with the graph clock's time and commits, and the platform stops its clock when nothing animates or waits ([animation](docs/architecture/animation.md)).
+**Frame.** The app's frame callbacks and what animates run on the platform's frame clock, which stops when nothing animates or waits ([animation](docs/architecture/animation.md)).
 
 ## Open questions
 
@@ -108,7 +107,7 @@ Record a design question here, and confirm the answer with the user before choos
 
 ## Verification
 
-`core`, `internal/driver` and `internal/engine` have headless tests; apps test themselves with `nsgotest`, as `examples/gallery` does. The Windows and Linux backends' tests open a real window and check input, services and pixels. Other backends need a run on their target, with screenshots. `go test ./cmd/nsgo/apk` checks the APK and, when `apksigner` is installed, its signature.
+`core`, `internal/driver` and `internal/engine` have headless tests; apps test themselves with `nsgotest`, as `examples/gallery` does, and `nsgo test -target` runs them on each backend with its native input. The Windows and Linux backends' tests open a real window and check input, services and pixels. `go test ./cmd/nsgo/apk` checks the APK and, when `apksigner` is installed, its signature.
 
 ## Subjects
 
@@ -129,3 +128,5 @@ Record a design question here, and confirm the answer with the user before choos
 | [Text view](docs/architecture/textview.md) | Changing `TextView`, its parsers, parts or highlighting |
 | [Icons](docs/architecture/icons.md) | Changing SVG parsing, `core.Icon` or the Lucide pack |
 | [Performance](docs/architecture/performance.md) | Changing the performance monitor or a per-frame path |
+| [Testing](docs/architecture/testing.md) | Changing `nsgotest`, its steps or a backend's test host |
+| [Tool](docs/architecture/tool.md) | Changing `nsgo`: the dev server, tests on targets, packages or signing |

@@ -46,6 +46,7 @@ import (
 	"github.com/oneo-me/nsgo/internal/platform/fontfile"
 	"github.com/oneo-me/nsgo/internal/platform/imagedecode"
 	"github.com/oneo-me/nsgo/internal/platform/imageload"
+	"github.com/oneo-me/nsgo/internal/testhost"
 )
 
 // Message types, kept in sync with Protocol.java.
@@ -63,6 +64,8 @@ const (
 	// msgFonts lists the app's font files, with each face's family,
 	// weight and slant, before anything else.
 	msgFonts = 9
+	// msgTest is a test host's step for the runtime's test agent.
+	msgTest = 10
 
 	// Java to Go.
 	msgStart       = 1
@@ -73,6 +76,7 @@ const (
 	msgDNS         = 6 // the default network's DNS servers
 	msgLaidOut     = 7 // where a msgLayout put a text's attachments
 	msgTextLines   = 8 // a text layout's lines, answering msgLines
+	msgTestReply   = 9 // the test agent's answer to a msgTest
 )
 
 // The parts of an image view's request msgImage carries.
@@ -117,6 +121,9 @@ type surface struct {
 	components driver.NativeComponents
 	natives    map[driver.NodeID]*nativeView
 	unknown    map[string]bool // component names logged as unregistered
+
+	// testReply takes the runtime's answers to a test host's steps.
+	testReply func(r *reader)
 }
 
 // Options configures Run.
@@ -133,8 +140,13 @@ type Options struct {
 // Run serves app to the Java runtime over standard input and output until
 // the runtime closes them. Call it from main.
 func Run(app engine.App, opts Options) {
-	// Keep the pipe to the runtime to ourselves and send the app's own
-	// prints to standard error, which the runtime logs.
+	s := connect(opts)
+	s.serve(app, opts, nil)
+}
+
+// connect keeps the pipe to the runtime to the surface, and sends the
+// app's own prints to standard error, which the runtime logs.
+func connect(opts Options) *surface {
 	fd, err := syscall.Dup(1)
 	if err != nil {
 		panic(err)
@@ -157,6 +169,13 @@ func Run(app engine.App, opts Options) {
 	}
 	useDNS()
 	s.sendFonts(opts.Fonts)
+	return s
+}
+
+// serve takes the runtime's messages until it closes the pipe. A test
+// host's app is the test's: the runtime's size goes to test, and the
+// test starts the engine.
+func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 	in := bufio.NewReader(os.Stdin)
 	for {
 		kind, payload, err := readMessage(in)
@@ -167,12 +186,12 @@ func Run(app engine.App, opts Options) {
 		switch kind {
 		case msgStart:
 			size := driver.Size{Width: r.points(), Height: r.points()}
-			eopts := engine.Options{Size: size, Environment: s.env, Appearance: opts.Appearance}
-			// The runtime passes the app's own files and cache directories.
-			eopts.SetDirs(os.Getenv("NSGO_DATA_DIR"), os.Getenv("NSGO_CACHE_DIR"))
-			imageload.UseDiskCache(eopts.CacheDir)
-			s.engine = engine.Start(s, app, eopts)
-			close(s.started)
+			if test != nil {
+				test.size <- size
+				<-s.started
+				break
+			}
+			s.startEngine(app, size, opts.Appearance, nil)
 		case msgResize:
 			s.engine.Resize(driver.Size{Width: r.points(), Height: r.points()})
 		case msgEvent:
@@ -252,6 +271,10 @@ func Run(app engine.App, opts Options) {
 			if s.engine != nil {
 				s.engine.SetEnvironment(env)
 			}
+		case msgTestReply:
+			if s.testReply != nil {
+				s.testReply(&r)
+			}
 		case msgDNS:
 			servers := make([]string, r.u32())
 			for i := range servers {
@@ -260,6 +283,30 @@ func Run(app engine.App, opts Options) {
 			dnsServers.Store(&servers)
 		}
 	}
+}
+
+// startEngine starts app's engine at size; test, when set, is what a test
+// host opens it with.
+func (s *surface) startEngine(app engine.App, size driver.Size, appearance driver.Appearance, test *testOpen) {
+	eopts := engine.Options{Size: size, Environment: s.env, Appearance: appearance}
+	// The runtime passes the app's own files and cache directories.
+	eopts.SetDirs(os.Getenv("NSGO_DATA_DIR"), os.Getenv("NSGO_CACHE_DIR"))
+	if test != nil {
+		eopts.UseTest(test.options, &test.pin)
+		// A phone's screen is what it is.
+		eopts.Size = size
+	}
+	imageload.UseDiskCache(eopts.CacheDir)
+	s.engine = engine.Start(s, app, eopts)
+	close(s.started)
+}
+
+// testOpen is what a test host opens the app with: the test's options,
+// the environment it pins and the runtime's size, once it starts.
+type testOpen struct {
+	options testhost.Options
+	pin     engine.TestPin
+	size    chan driver.Size
 }
 
 // readNavigation reads the web view's navigation NsgoView.event writes

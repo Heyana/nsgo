@@ -166,10 +166,10 @@ func TestTextViewRendersFormulasAndInlineNodes(t *testing.T) {
 			Extensions: []textview.Extension{{Name: "mention", Pattern: regexp.MustCompile(`@(\w+)`)}},
 			RenderMath: func(cx *core.Scope, m textview.Math, display bool) core.Node {
 				shown = append(shown, fmt.Sprint(m.TeX, " ", display))
-				return core.View{TestID: "math " + m.TeX}
+				return core.View{TestID: "math " + m.TeX, Style: core.Style{Width: core.Pt(10), Height: core.Pt(10)}}
 			},
 			RenderCustom: func(cx *core.Scope, node textview.Custom) core.Node {
-				return core.View{TestID: "custom " + node.Text}
+				return core.View{TestID: "custom " + node.Text, Style: core.Style{Width: core.Pt(10), Height: core.Pt(10)}}
 			},
 		}
 	})

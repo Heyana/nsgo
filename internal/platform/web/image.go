@@ -135,9 +135,19 @@ func imageURL(src driver.ImageSource) (url string, object bool) {
 		return g.Get("URL").Call("createObjectURL", blob).String(), true
 	}
 	if path, ok := strings.CutPrefix(src.URI, "asset:"); ok {
-		return "resources/" + strings.TrimPrefix(path, "/"), false
+		return resourceDir() + strings.TrimPrefix(path, "/"), false
 	}
 	return src.URI, false
+}
+
+// resourceDir is where the page's resources are: the directory a
+// published site names by its content (globalThis.nsgoResources), else
+// resources/ beside the page.
+func resourceDir() string {
+	if dir := js.Global().Get("nsgoResources"); dir.Type() == js.TypeString {
+		return dir.String()
+	}
+	return "resources/"
 }
 
 // release stops loading and revokes the object URL the picture made.

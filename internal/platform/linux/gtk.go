@@ -180,7 +180,7 @@ var (
 	gtkCssProviderLoadFromString           func(uintptr, *byte)
 	gtkStyleContextAddProvider             func(uintptr, uintptr, uint32)
 	gtkSettingsGetDefault                  func() uintptr
-	gtkAlertDialogNew                      func(uintptr) uintptr
+	gtkAlertDialogNew                      func(format *byte) uintptr
 	gtkAlertDialogSetMessage               func(uintptr, *byte)
 	gtkAlertDialogSetDetail                func(uintptr, *byte)
 	gtkAlertDialogSetButtons               func(uintptr, uintptr)
@@ -366,20 +366,27 @@ func cstr(s string) *byte {
 	return &b[0]
 }
 
-// stringArray returns a NULL-terminated array of C strings. Callers keep
-// it reachable while the C side uses it.
-func stringArray(ss []string) []uintptr {
-	ptrs := make([]uintptr, len(ss)+1)
-	for i, s := range ss {
-		ptrs[i] = uintptr(unsafe.Pointer(cstr(s)))
-	}
-	return ptrs
+// cStrings is a NULL-terminated array of C strings and the Go memory
+// holding them: the array keeps only their addresses, which the collector
+// does not follow, so bufs keeps the strings alive while it is reachable.
+type cStrings struct {
+	ptrs []uintptr
+	bufs [][]byte
 }
 
-// cStringArray returns the address of stringArray's first element.
-func cStringArray(ptrs []uintptr) uintptr {
-	return uintptr(unsafe.Pointer(&ptrs[0]))
+// stringArray returns ss as C strings. Callers keep the result reachable,
+// with runtime.KeepAlive, while the C side reads it.
+func stringArray(ss []string) *cStrings {
+	c := &cStrings{ptrs: make([]uintptr, len(ss)+1), bufs: make([][]byte, len(ss))}
+	for i, s := range ss {
+		c.bufs[i] = append([]byte(s), 0)
+		c.ptrs[i] = uintptr(unsafe.Pointer(&c.bufs[i][0]))
+	}
+	return c
 }
+
+// array is the address of the array's first element.
+func (c *cStrings) array() uintptr { return uintptr(unsafe.Pointer(&c.ptrs[0])) }
 
 // bind registers every symbol once the libraries are open.
 func bind() {

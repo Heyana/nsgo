@@ -12,6 +12,9 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/dlclark/regexp2/v2 v2.2.1 // indirect
+require (
+	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+)
 
 tool github.com/oneo-me/nsgo/cmd/nsgo

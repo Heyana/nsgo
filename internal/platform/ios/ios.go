@@ -23,6 +23,7 @@ import (
 	"github.com/oneo-me/nsgo/internal/platform/apple"
 	"github.com/oneo-me/nsgo/internal/platform/imageload"
 	"github.com/oneo-me/nsgo/internal/platform/queue"
+	"github.com/oneo-me/nsgo/internal/testhost"
 )
 
 func init() {
@@ -109,6 +110,9 @@ type view struct {
 }
 
 type surface struct {
+	// alerts are the alerts shown, by ID, kept for a test host to answer
+	// them.
+	alerts map[uint32]shownAlert
 	// appearance is the one the app forces, or the system's.
 	appearance driver.Appearance
 	// stickyBound are the scroll views with sticky cells whose insets
@@ -328,9 +332,21 @@ type Options struct {
 // Run shows app full screen and runs UIKit's event loop. Call it from
 // main; it does not return.
 func Run(root engine.App, opts Options) {
-	app = &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*motion{}, appearance: opts.Appearance,
+	app = newSurface(root, opts)
+	runUIKit(opts)
+}
+
+// newSurface is the surface the scene shows root in; a test host's has no
+// root until the test opens one.
+func newSurface(root engine.App, opts Options) *surface {
+	s := &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*motion{}, appearance: opts.Appearance,
 		components: opts.Components, unknown: map[string]bool{}, accessories: map[driver.NodeID]*view{}}
-	app.animator = driver.NewAnimator(func(e driver.Event) { app.engine.Dispatch(e) })
+	s.animator = driver.NewAnimator(func(e driver.Event) { s.engine.Dispatch(e) })
+	return s
+}
+
+// runUIKit runs UIKit's loop, which connects the scene, on this thread.
+func runUIKit(opts Options) {
 	loadUIKit()
 	apple.RegisterFonts(opts.Fonts)
 	argv := []*byte{&[]byte("nsgo\x00")[0], nil}
@@ -360,6 +376,21 @@ func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID)
 	s.addTracker()
 	s.headers = headerHeights()
 	s.env = s.environment()
+	if s.app == nil {
+		// A test host's: the test opens its app.
+		close(sceneReady)
+		return
+	}
+	s.startEngine(nil)
+}
+
+// sceneReady is closed once a test host's scene has its window.
+var sceneReady chan struct{}
+
+// startEngine starts s.app's engine; test, when set, is what a test host
+// opens it with.
+func (s *surface) startEngine(test *testOpen) {
+	bounds := objc.Send[apple.CGRect](window, selBounds)
 	opts := engine.Options{
 		Size:        driver.Size{Width: driver.Points(bounds.Size.Width), Height: driver.Points(bounds.Size.Height)},
 		Environment: s.env,
@@ -367,9 +398,29 @@ func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID)
 		Appearance:  s.appearance,
 	}
 	opts.SetDirs(engine.AppDirs(s.id))
+	if test != nil {
+		size := opts.Size
+		opts.UseTest(test.options, &test.pin)
+		// A phone's screen is what it is.
+		opts.Size = size
+		s.alerts = map[uint32]shownAlert{}
+	}
 	imageload.UseDiskCache(opts.CacheDir)
 	s.engine = engine.Start(s, s.app, opts)
 	s.observe()
+}
+
+// testOpen is what a test host opens the app with: the test's options and
+// the environment it pins.
+type testOpen struct {
+	options testhost.Options
+	pin     engine.TestPin
+}
+
+// shownAlert is an alert a test may answer: its controller and actions.
+type shownAlert struct {
+	ctrl    objc.ID
+	actions []driver.AlertAction
 }
 
 // environment returns what UIKit tells about where the app runs.
@@ -475,6 +526,9 @@ func (s *surface) alert(a *driver.AlertConfig) {
 	id := a.ID
 	add := func(label string, style, index int) {
 		handler := objc.NewBlock(func(_ objc.Block, _ objc.ID) {
+			if s.alerts != nil {
+				delete(s.alerts, id)
+			}
 			s.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: id, Index: index})
 		})
 		action := objc.ID(objc.GetClass("UIAlertAction")).Send(sel("actionWithTitle:style:handler:"),
@@ -521,6 +575,9 @@ func (s *surface) alert(a *driver.AlertConfig) {
 	top := window.Send(sel("rootViewController"))
 	for p := top.Send(sel("presentedViewController")); p != 0; p = top.Send(sel("presentedViewController")) {
 		top = p
+	}
+	if s.alerts != nil {
+		s.alerts[id] = shownAlert{ctrl, a.Actions}
 	}
 	top.Send(sel("presentViewController:animated:completion:"), ctrl, true, objc.ID(0))
 }

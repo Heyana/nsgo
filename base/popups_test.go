@@ -106,7 +106,7 @@ func TestContextMenusOpenAtThePointerOrAfterAHold(t *testing.T) {
 			base.ContextMenu{TestID: "area", Style: core.Style{Height: core.Pt(200)},
 				OnOpenChange: func(_ bool, r base.Reason) { reasons = append(reasons, r.String()) },
 				PopupStyle:   core.Style{Width: core.Pt(80)},
-				Children:     []core.Node{base.MenuItem{Label: "Inspect", TestID: "inspect"}}},
+				Children:     []core.Node{base.MenuItem{Label: "Inspect", TestID: "inspect", Style: core.Style{Height: core.Pt(20)}}}},
 		}}
 	}
 	app := startDesktop(t, menu)
@@ -153,7 +153,7 @@ func TestViewTooltipsShowOnHoverOnDesktops(t *testing.T) {
 				Tooltip: core.Text{Content: "a hint", TestID: "hint"}},
 		}}
 	})
-	app.Hover("id:target", true)
+	app.Hover("id:target")
 	if app.Exists("id:hint") {
 		t.Fatal("the tooltip showed at once")
 	}
@@ -165,7 +165,7 @@ func TestViewTooltipsShowOnHoverOnDesktops(t *testing.T) {
 	if hint.Parent.Frame.Origin.Y+hint.Parent.Frame.Size.Height > 40 {
 		t.Errorf("the tooltip at %v is not above its view", hint.Parent.Frame)
 	}
-	app.Hover("id:target", false)
+	app.HoverOut()
 	if app.Exists("id:hint") {
 		t.Error("the tooltip stayed after the pointer left")
 	}
@@ -174,7 +174,7 @@ func TestViewTooltipsShowOnHoverOnDesktops(t *testing.T) {
 func TestAlertDialogsPresentAsActionSheets(t *testing.T) {
 	var chosen = "unset"
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return base.Button{Label: "Share", OnPress: func(core.PressEvent) {
+		return base.Button{Label: "Share", Style: core.Style{Height: core.Pt(20)}, OnPress: func(core.PressEvent) {
 			base.ShowAlertDialog(cx, base.AlertDialog{Title: "Share", Presentation: base.AlertPresentActionSheet,
 				Actions: []core.AlertAction{{Label: "Save"}, {Label: "Cancel", Role: core.AlertCancel}}},
 				func(label string) { chosen = label })

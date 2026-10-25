@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"sync"
 	"time"
 )
@@ -58,6 +59,29 @@ func (c *ManualClock) AfterFunc(d time.Duration, f func()) func() bool {
 		was := t.stopped
 		t.stopped = true
 		return !was
+	}
+}
+
+// Jump moves the clock ahead by d at once, as a machine waking from
+// sleep: each timer due by then runs once, in order, at the end; timers
+// those set run on later moves.
+func (c *ManualClock) Jump(d time.Duration) {
+	c.mu.Lock()
+	c.now = c.now.Add(d)
+	var due []*manualTimer
+	for _, t := range c.timers {
+		if !t.stopped && !t.at.After(c.now) {
+			due = append(due, t)
+		}
+	}
+	slices.SortStableFunc(due, func(a, b *manualTimer) int { return a.at.Compare(b.at) })
+	for _, t := range due {
+		t.stopped = true
+	}
+	c.timers = slicesDeleteStopped(c.timers)
+	c.mu.Unlock()
+	for _, t := range due {
+		t.f()
 	}
 }
 

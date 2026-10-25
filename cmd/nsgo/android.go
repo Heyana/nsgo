@@ -59,7 +59,7 @@ func buildAndroidAPK(ctx context.Context, p *project, dir, goarch string) (strin
 	if err != nil {
 		return "", err
 	}
-	key, err := debugKey(p)
+	key, err := releaseKey(p)
 	if err != nil {
 		return "", err
 	}
@@ -93,13 +93,30 @@ func buildAndroidAPK(ctx context.Context, p *project, dir, goarch string) (strin
 		Package:     p.ID,
 		Label:       p.Name,
 		VersionName: p.Version,
-		VersionCode: apk.VersionCode(p.Version),
+		VersionCode: p.versionCode(),
 		Icon:        icon,
+		Theme:       androidThemes[p.Appearance],
+		Debuggable:  p.testBinary,
 	}, files, key)
 	if err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// androidThemes are the activity's themes, so the window starts in the
+// app's appearance before the first frame.
+var androidThemes = map[string]string{
+	"light": "@android:style/Theme.DeviceDefault.Light.NoActionBar",
+	"dark":  "@android:style/Theme.DeviceDefault.NoActionBar",
+}
+
+// versionCode is Android's integer version: BuildNumber, else Version's.
+func (p *project) versionCode() int {
+	if p.BuildNumber > 0 {
+		return p.BuildNumber
+	}
+	return apk.VersionCode(p.Version)
 }
 
 // debugKey returns the key the project's builds are signed with, making
@@ -161,10 +178,12 @@ func parseKey(data []byte) (*apk.Key, error) {
 // androidSession installs the app on the connected device each build and
 // streams its log here until it exits. It builds for the device's own ABI,
 // so a device and an emulator need no flag.
-func androidSession() session {
+func androidSession(opts devOptions) session {
 	return session{
 		build: func(ctx context.Context, p *project) error {
-			d, err := adbDevice(ctx)
+			// The device reaches the dev server through adb reverse.
+			p.devURL = opts.server.url()
+			d, err := adbDevice(ctx, opts.device)
 			if err != nil {
 				return err
 			}
@@ -181,8 +200,12 @@ func androidSession() session {
 			return err
 		},
 		start: func(ctx context.Context, p *project) (app, error) {
-			d, err := adbDevice(ctx)
+			d, err := adbDevice(ctx, opts.device)
 			if err != nil {
+				return app{}, err
+			}
+			port := fmt.Sprintf("tcp:%d", opts.server.port)
+			if err := d.run(ctx, "reverse", port, port); err != nil {
 				return app{}, err
 			}
 			path := filepath.Join(p.cache("dev", "android"), p.Name+".apk")
@@ -203,6 +226,9 @@ func androidSession() session {
 				stop: func() {
 					stopLog()
 					d.run(context.Background(), "shell", "am", "force-stop", p.ID)
+					// Only this run's rule: another app's dev server may use
+					// another port.
+					d.run(context.Background(), "reverse", "--remove", port)
 				},
 				wait: func(ctx context.Context) error {
 					defer stopLog()
@@ -393,9 +419,10 @@ func (d device) running(ctx context.Context, id string) (bool, error) {
 	return strings.TrimSpace(string(out)) != "", nil
 }
 
-// adbDevice finds adb and the device to run on. ANDROID_SERIAL names one
-// when several are connected.
-func adbDevice(ctx context.Context) (device, error) {
+// adbDevice finds adb and the device to run on: the one wanted names, by
+// serial or, for an emulator, its AVD's name; else ANDROID_SERIAL's, else
+// the only one connected.
+func adbDevice(ctx context.Context, wanted string) (device, error) {
 	adb, err := findAdb()
 	if err != nil {
 		return device{}, err
@@ -410,20 +437,28 @@ func adbDevice(ctx context.Context) (device, error) {
 			serials = append(serials, f[0])
 		}
 	}
-	serial := os.Getenv("ANDROID_SERIAL")
+	serial := wanted
+	if serial == "" {
+		serial = os.Getenv("ANDROID_SERIAL")
+	}
 	switch {
 	case serial != "":
-		found := false
+		if slices.Contains(serials, serial) {
+			break
+		}
 		for _, s := range serials {
-			found = found || s == serial
+			if !strings.HasPrefix(s, "emulator-") {
+				continue
+			}
+			if name, err := output(ctx, adb, "-s", s, "emu", "avd", "name"); err == nil && strings.TrimSpace(strings.Split(name, "\n")[0]) == serial {
+				return device{adb: adb, serial: s}, nil
+			}
 		}
-		if !found {
-			return device{}, fmt.Errorf("ANDROID_SERIAL names %s, which is not connected; adb devices lists %s", serial, list(serials))
-		}
+		return device{}, fmt.Errorf("no connected device is %s; adb devices lists %s", serial, list(serials))
 	case len(serials) == 0:
 		return device{}, errors.New("no Android device: connect one, turn on USB debugging, accept the prompt and run adb devices")
 	case len(serials) > 1:
-		return device{}, fmt.Errorf("several Android devices are connected: set ANDROID_SERIAL to one of %s", list(serials))
+		return device{}, fmt.Errorf("several Android devices are connected: pass -device or set ANDROID_SERIAL to one of %s", list(serials))
 	default:
 		serial = serials[0]
 	}

@@ -54,9 +54,11 @@ func Root(cx *core.Scope) core.Node {
 func main() { nsgo.Run(Root) }
 ```
 
-Test it headless with `nsgotest`, no window needed:
+Test it headless with `nsgotest`, no window needed; `go tool nsgo test -target macos` runs the same tests in a real window, with native input and screenshots (`app.Screenshot("name")`):
 
 ```go
+func TestMain(m *testing.M) { nsgotest.Main(m) } // gives the platform the main thread on -target
+
 func TestPress(t *testing.T) {
 	app := nsgotest.Start(t, Root)
 	app.Press("text:Press me")
@@ -70,6 +72,8 @@ Beside the package, `nsgo.yaml` names the app and its targets:
 name: Hello
 id: dev.oneo.nsgo.hello
 version: 0.1.0
+build_number: 1         # CFBundleVersion and Android's versionCode; version's when left out
+# appearance: dark      # light or dark whatever the system's; left out, the system's
 window: { width: 420, height: 560 }
 icon:
   apple: assets/AppIcon.icon  # macOS and iOS; macOS also takes an .icns
@@ -81,6 +85,9 @@ build:
   output: dist          # packages go to dist/<name>-<version>-<target>
   open: false           # true opens the output directory after building
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, android_arm64, android_x64, web]
+# sign:                 # store releases; passwords come from NSGO_KEYSTORE_PASSWORD and NSGO_KEY_PASSWORD
+#   profile: assets/AppStore.mobileprovision  # signs the IPA, with the keychain's identity for it or identity
+#   keystore: assets/release.p12              # signs APKs (PKCS#12 or JKS), with key_alias naming its key
 ```
 
 Two directories sit beside `nsgo.yaml`. `resources/` holds files the app ships: each package puts them in its resource root, where `asset:` images load from and `nsgo.Fonts` registers fonts from, as in `nsgo.Run(Root, nsgo.Fonts("fonts/Brand.ttf"))`. That root is `Contents/Resources` on macOS, the bundle on iOS, the APK's assets on Android and `resources/` beside the executable or page elsewhere. `assets/` holds project files that do not ship, such as the icons `icon` defaults to.
@@ -91,11 +98,13 @@ Add the tool to your module once; `go tool nsgo` then runs it without installing
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` runs the app once and exits when the app does. Set `dev.hot_reload` to `true` to rebuild and restart it when a source file changes. Its builds show the app's icon with a DEV badge; to show other files, name them in `dev.icon`, which takes `apple` and `png` as `icon` does, or put `AppIcon-dev.icon`, `AppIcon-dev.icns` or `Icon-dev.png` in `assets/`. On macOS, a development run also shows the performance monitor over the app; release builds leave it out.
+`go tool nsgo dev` runs the app once and exits when the app does. Set `dev.hot_reload` to `true` to rebuild and restart it when a source file changes. A failed build shows over the running app; Command or Control+R in the app, or `r` and Return in the terminal, builds and starts it again. Its builds show the app's icon with a DEV badge; to show other files, name them in `dev.icon`, which takes `apple` and `png` as `icon` does, or put `AppIcon-dev.icon`, `AppIcon-dev.icns` or `Icon-dev.png` in `assets/`. On macOS, a development run also shows the performance monitor over the app; release builds leave it out.
 
-`go tool nsgo build` writes a stripped release package per target; set `build.open` to `true` to open the output directory when it finishes. `build.targets` and `-target` accept `all` for every platform that needs only Go and Xcode; add `android_x64` when an NDK is installed.
+`go tool nsgo build` writes a stripped release package per target: an `.app`, an `.ipa`, an `.apk`, Windows' and Linux's directories with a `.zip` or `.tar.gz` of each, or a web site whose files are named by their content, with a manifest. Set `build.open` to `true` to open the output directory when it finishes, or pass `-run` to start the package built for this machine.
 
-Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `-version`, `-width` and `-height` on both, `-target` and `-hot-reload` on `dev`, and `-target`, `-output` and `-open` on `build`. `dev` also takes `-device` to choose an iPhone and `-team` to choose the Apple developer team. `-h` lists every flag.
+`go tool nsgo test` runs the app's tests with a line per test; `-run` filters them, `-junit report.xml` writes a JUnit report and `-trace` prints each step's mount items and commit times. `-target` runs them on `macos`, `windows`, `linux`, `web` (in Chrome, Chromium or Edge), `ios_simulator` or `android`, a process per test, saving screenshots in `.nsgo/test/screenshots`. `build.targets` and `-target` accept `all` for every platform that needs only Go and Xcode; add `android_x64` when an NDK is installed.
+
+Both commands' flags replace the `nsgo.yaml` values they name: `-name`, `-id`, `-version`, `-build-number`, `-width` and `-height` on both, `-target` and `-hot-reload` on `dev`, and `-target`, `-output`, `-open`, `-sign`, `-profile`, `-keystore` and `-key-alias` on `build`. `dev` also takes `-device` to choose an iPhone, a simulator by name or an Android device, `-team` to choose the Apple developer team, `-port` for its server (the next free one when taken; a phone on the LAN reaches the web target there) and `-release` to build as `build` does. `-h` lists every flag.
 
 ## Development
 

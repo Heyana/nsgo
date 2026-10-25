@@ -12,13 +12,27 @@ import (
 	"github.com/oneo-me/nsgo/nsgotest"
 )
 
+// TestMain hands the main thread to the platform under nsgo test -target.
+func TestMain(m *testing.M) { nsgotest.Main(m) }
+
+// headless skips a test that checks what only the headless model shows,
+// such as another platform's environment or the commands a real window
+// would act on, under nsgo test -target.
+func headless(t *testing.T) {
+	if target := nsgotest.Target(); target != "" {
+		t.Skipf("checks the headless model, not %s", target)
+	}
+}
+
 var desktopEnv = core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop, Locale: "en-US"}
 
-// startDesktop runs the gallery in a wide desktop window.
+// startDesktop runs the gallery in a wide desktop window; a phone has
+// none.
 func startDesktop(t *testing.T, opts ...nsgotest.Option) *nsgotest.App {
-	app := nsgotest.Start(t, Root, append([]nsgotest.Option{nsgotest.Size(1100, 760)}, opts...)...)
-	app.SetEnvironment(desktopEnv)
-	return app
+	if target := nsgotest.Target(); target == "ios_simulator" || target == "android" {
+		t.Skipf("needs a desktop window, which %s has not", target)
+	}
+	return nsgotest.Start(t, Root, append([]nsgotest.Option{nsgotest.Size(1100, 760), nsgotest.Environment(desktopEnv)}, opts...)...)
 }
 
 // TestSectionList keeps the list grouped by what the pages show: base's
@@ -80,6 +94,8 @@ func TestListSwitchesSections(t *testing.T) {
 	if got := app.Find("id:blurred").Image.BlurRadius; got != 6 {
 		t.Fatalf("blur radius = %v", got)
 	}
+	// The image's size is the headless platform's answer.
+	headless(t)
 	app.ImageSizes = map[string]core.Size{riverURL: {Width: 600, Height: 300}}
 	app.Press("label:Get size")
 	if got := app.Find("id:image-size").Text; got != "600×300 px" {
@@ -128,6 +144,7 @@ func TestPhoneStack(t *testing.T) {
 }
 
 func TestPhoneSystemHeader(t *testing.T) {
+	headless(t)
 	ios := core.Environment{OS: core.OSIOS, Locale: "en-US", SafeArea: core.Edges{Top: 47, Bottom: 34},
 		HeaderHeight: 44, LargeHeaderHeight: 96}
 	app := nsgotest.Start(t, Root, nsgotest.Environment(ios))
@@ -192,6 +209,7 @@ func TestApplicationMenu(t *testing.T) {
 }
 
 func TestWindowCommands(t *testing.T) {
+	headless(t)
 	app := startDesktop(t)
 	app.Press("id:nav-Window")
 	app.Press("role:button Hide title bar")
@@ -349,6 +367,7 @@ func TestStorageSection(t *testing.T) {
 	app.Press("id:nav-Storage")
 	app.Find(`text:Kept: "kept"`)
 	app.Find("text:opened 3 times")
+	app.Clear("id:draft")
 	app.Type("id:draft", "new")
 	app.Find(`text:Kept: "new"`)
 	// A change from another window shows here too.
@@ -476,7 +495,7 @@ func TestNativeViewAndFileDrop(t *testing.T) {
 }
 
 func TestPlatformAnimations(t *testing.T) {
-	app := startDesktop(t)
+	app := startDesktop(t, nsgotest.ManualFrames())
 	app.Press("id:nav-Animation")
 	app.Press("text:Timing")
 	app.Advance(300 * time.Millisecond)
@@ -508,6 +527,7 @@ func TestPlatformAnimations(t *testing.T) {
 }
 
 func TestKeyboardAccessory(t *testing.T) {
+	headless(t)
 	app := startDesktop(t)
 	app.Press("id:nav-Input")
 	if app.Exists("id:accessory-bar") {
@@ -579,7 +599,7 @@ func TestListProps(t *testing.T) {
 
 	// Rows inserted above the viewport keep the visible ones in place.
 	sections := app.Find("id:sections")
-	app.Scroll("id:sections", core.Point{Y: 600})
+	app.ScrollTo("id:sections", core.Point{Y: 600})
 	row := func(text string) *nsgotest.View { return app.Find("text:" + text).Parent.Parent }
 	first := app.Query("text:Row #")[0]
 	name := first.Text
@@ -664,6 +684,8 @@ func TestCanvasNodesAndAnimatedArguments(t *testing.T) {
 	if !app.Exists("text:Bar 2 selected") || !app.Find("id:bar-2").Props.Selected {
 		t.Fatalf("pressing bar 2 did not select it\n%s", app.Dump())
 	}
+	// The drawing's bound arguments move with the headless clock.
+	headless(t)
 	radius := func() float32 {
 		for _, op := range app.Find("id:animated-drawing").Ops {
 			if op.Kind == core.DrawArc {
@@ -684,7 +706,7 @@ func TestCanvasNodesAndAnimatedArguments(t *testing.T) {
 // resets them, and checks that a snapping header settles when its list
 // rests and that the sticky titles follow it.
 func TestMotionsKeyframesAndSnapping(t *testing.T) {
-	app := startDesktop(t)
+	app := startDesktop(t, nsgotest.ManualFrames())
 	app.Press("id:nav-Animation")
 	app.Press("text:shake")
 	app.Advance(50 * time.Millisecond)
@@ -734,6 +756,7 @@ func TestMotionsKeyframesAndSnapping(t *testing.T) {
 }
 
 func TestServices(t *testing.T) {
+	headless(t)
 	app := startDesktop(t)
 	app.Press("id:nav-Services")
 
@@ -795,6 +818,7 @@ func TestServices(t *testing.T) {
 }
 
 func TestPopupMenu(t *testing.T) {
+	headless(t)
 	app := startDesktop(t)
 	app.Press("id:nav-Window")
 	app.Press("id:popup-area")

@@ -27,6 +27,17 @@ type Platform interface {
 	RequestFrame()
 }
 
+// observed is a platform whose batches a test host sees first.
+type observed struct {
+	Platform
+	observe func(*driver.MountBatch)
+}
+
+func (o observed) Mount(b *driver.MountBatch) {
+	o.observe(b)
+	o.Platform.Mount(b)
+}
+
 // App builds the root's content once.
 type App = func(cx *core.Scope) core.Node
 
@@ -60,6 +71,13 @@ type Options struct {
 	// main thread: a platform whose scheduler would put it on slower
 	// cores raises its priority here.
 	Thread func()
+	// Observe sees each batch before the platform does, and Event each
+	// event the platform reports, as a test host follows the app; Pin
+	// turns each environment the platform reports into the app's. None
+	// may block.
+	Observe func(*driver.MountBatch)
+	Event   func(driver.Event)
+	Pin     func(driver.Environment) driver.Environment
 }
 
 // Engine is one running app: one tree, one reactive graph, one goroutine.
@@ -67,6 +85,9 @@ type Options struct {
 // platform's main thread can call them.
 type Engine struct {
 	mu     sync.Mutex
+	event  func(driver.Event)
+	pin    func(driver.Environment) driver.Environment
+	raw    driver.Environment // the platform's last, before pinning
 	queue  []message
 	wake   chan struct{}
 	done   chan struct{}
@@ -89,6 +110,15 @@ func Start(p Platform, app App, opts Options) *Engine {
 		wake:   make(chan struct{}, 1),
 		done:   make(chan struct{}),
 		exited: make(chan struct{}),
+		event:  opts.Event,
+		pin:    opts.Pin,
+	}
+	e.raw = opts.Environment
+	if e.pin != nil {
+		opts.Environment = e.pin(opts.Environment)
+	}
+	if observe := opts.Observe; observe != nil {
+		p = observed{p, observe}
 	}
 	go e.run(p, app, opts)
 	return e
@@ -230,7 +260,12 @@ func (e *Engine) take() []message {
 }
 
 // Dispatch reports a platform event.
-func (e *Engine) Dispatch(ev driver.Event) { e.push(message{event: ev}) }
+func (e *Engine) Dispatch(ev driver.Event) {
+	if e.event != nil {
+		e.event(ev)
+	}
+	e.push(message{event: ev})
+}
 
 // Frame reports that the display frame the app asked for has begun. The
 // engine runs the callbacks waiting for it on its goroutine, then commits.
@@ -241,7 +276,24 @@ func (e *Engine) Resize(size driver.Size) { e.push(message{resize: &size}) }
 
 // SetEnvironment reports what the platform knows about where the app
 // runs; only the latest report queued is applied.
-func (e *Engine) SetEnvironment(env driver.Environment) { e.push(message{env: &env}) }
+func (e *Engine) SetEnvironment(env driver.Environment) {
+	e.mu.Lock()
+	e.raw = env
+	e.mu.Unlock()
+	if e.pin != nil {
+		env = e.pin(env)
+	}
+	e.push(message{env: &env})
+}
+
+// Repin reports the platform's last environment again, for a pin that
+// changed.
+func (e *Engine) Repin() {
+	e.mu.Lock()
+	env := e.raw
+	e.mu.Unlock()
+	e.SetEnvironment(env)
+}
 
 // PressAt reports a press at ev.Page in surface points, with its
 // Modifiers and click Count, for platforms that draw their own views and

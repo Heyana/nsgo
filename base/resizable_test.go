@@ -24,7 +24,7 @@ func TestResizablePanelsShareTheGroupAndResizeByDragsAndSteps(t *testing.T) {
 				{TestID: "b"},
 				{TestID: "c", Size: func() core.Points { return 120 }, Visible: sidebar.Get},
 			}}
-	})
+	}, nsgotest.Size(700, 400))
 	width := func(id string) core.Points { return app.Find("id:" + id).Frame.Size.Width }
 	if a, b, c := width("a"), width("b"), width("c"); a != 200 || b != 280 || c != 120 {
 		t.Fatalf("panels %v %v %v, want 200, the rest and 120", a, b, c)

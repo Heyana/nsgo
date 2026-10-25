@@ -443,6 +443,10 @@ type TextContent struct {
 	Layout TextLayout
 	// Content is where Layout goes in the view: inside padding and border.
 	Content Bounds
+	// Style and Spans are the text's resolved style and its spans', as
+	// it was prepared, for tests to read; platforms draw Layout.
+	Style TextStyle
+	Spans []TextSpan
 }
 
 // InputConfig is a text field's look and behavior.

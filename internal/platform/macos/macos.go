@@ -26,6 +26,7 @@ import (
 	"github.com/oneo-me/nsgo/internal/platform/finger"
 	"github.com/oneo-me/nsgo/internal/platform/imageload"
 	"github.com/oneo-me/nsgo/internal/platform/queue"
+	"github.com/oneo-me/nsgo/internal/testhost"
 )
 
 func init() {
@@ -197,6 +198,9 @@ type surface struct {
 	// The performance monitor and the panel that shows it.
 	perf *engine.PerfMonitor
 	hud  *hud
+	// alerts are the alerts shown, by ID, kept for a test host to answer
+	// them.
+	alerts map[uint32]shownAlert
 
 	chrome
 }
@@ -396,14 +400,29 @@ func register(name string, super objc.Class, protocols []*objc.Protocol, methods
 // It returns once the app's graph is gone and its storage written,
 // leaving the process to the caller, as NSH's run_app does.
 func Run(app engine.App, opts Options) {
-	if opts.Width == 0 {
-		opts.Width, opts.Height = 480, 640
-	}
+	nsApp := startApp(opts)
+	s := openWindow(app, opts, nil)
+	// Activate once the run loop runs: a request before it can be lost,
+	// and launch activation settles after the app has finished starting.
+	apple.OnMain(func() {
+		activateApp()
+		s.window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
+	})
+	nsApp.Send(sel("run"))
+	s.stopTicking()
+	s.engine.Close()
+	engine.SyncStorage()
+	nsApp.Send(sel("setDelegate:"), objc.ID(0))
+}
+
+// startApp makes the process a regular app with NSGo's menu and
+// delegate, in opts' appearance, and returns NSApp.
+func startApp(opts Options) objc.ID {
 	loadAppKit()
 	apple.RegisterFonts(opts.Fonts)
 	nsApp := objc.ID(objc.GetClass("NSApplication")).Send(sel("sharedApplication"))
 	nsApp.Send(sel("setActivationPolicy:"), 0)
-	defaultMenu := mainMenu()
+	defaultMenu = mainMenu()
 	nsApp.Send(sel("setMainMenu:"), defaultMenu)
 	keepAlive = opts.KeepAlive
 	delegate := objc.ID(register("NsgoAppDelegate", objc.GetClass("NSObject"), nil, []objc.MethodDef{{
@@ -433,7 +452,35 @@ func Run(app engine.App, opts Options) {
 	}})).Send(selNew)
 	nsApp.Send(sel("setDelegate:"), delegate)
 	setAppearance(opts.Appearance)
+	return nsApp
+}
 
+// testWindow is what a test host opens a window with: the test's options
+// and the environment it pins.
+type testWindow struct {
+	options testhost.Options
+	pin     engine.TestPin
+}
+
+// shownAlert is an alert on screen and the action of each of its buttons.
+type shownAlert struct {
+	alert objc.ID
+	order []int
+}
+
+// defaultMenu is the menu bar startApp makes, which a window shows until
+// the app sets its own.
+var defaultMenu objc.ID
+
+// openWindow shows app in a new window at opts' size and starts its
+// engine; test, when set, is what a test host opens it with.
+func openWindow(app engine.App, opts Options, test *testWindow) *surface {
+	if opts.Width == 0 {
+		opts.Width, opts.Height = 480, 640
+	}
+	if test != nil && test.options.Size.Width > 0 {
+		opts.Width, opts.Height = test.options.Size.Width, test.options.Size.Height
+	}
 	const titled, closable, miniaturizable, resizable = 1, 2, 4, 8
 	window := objc.ID(objc.GetClass("NSWindow")).Send(selAlloc).Send(
 		sel("initWithContentRect:styleMask:backing:defer:"),
@@ -466,6 +513,10 @@ func Run(app engine.App, opts Options) {
 	eopts := engine.Options{Size: driver.Size{Width: opts.Width, Height: opts.Height}, Environment: s.env, Perf: monitor,
 		Thread: apple.RaiseThread, Appearance: opts.Appearance}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
+	if test != nil {
+		eopts.UseTest(test.options, &test.pin)
+		s.alerts = map[uint32]shownAlert{}
+	}
 	imageload.UseDiskCache(eopts.CacheDir)
 	s.engine = engine.Start(s, app, eopts)
 	s.observe()
@@ -474,18 +525,10 @@ func Run(app engine.App, opts Options) {
 		s.startTicking()
 	}
 	window.Send(sel("center"))
-	window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
-	// Activate once the run loop runs: a request before it can be lost,
-	// and launch activation settles after the app has finished starting.
-	apple.OnMain(func() {
-		activateApp()
+	if test == nil {
 		window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
-	})
-	nsApp.Send(sel("run"))
-	s.stopTicking()
-	s.engine.Close()
-	engine.SyncStorage()
-	nsApp.Send(sel("setDelegate:"), objc.ID(0))
+	}
+	return s
 }
 
 // keepAlive hides the window instead of closing it; finished is set once
@@ -843,8 +886,14 @@ func (s *surface) alert(a *driver.AlertConfig) {
 			index = order[index]
 		}
 		s.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: id, Index: index})
+		if s.alerts != nil {
+			delete(s.alerts, id)
+		}
 		alert.Send(selRelease)
 	})
+	if s.alerts != nil {
+		s.alerts[id] = shownAlert{alert, order}
+	}
 	alert.Send(sel("beginSheetModalForWindow:completionHandler:"), s.window, done)
 	done.Release()
 }

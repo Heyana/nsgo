@@ -3,6 +3,7 @@
 package linux
 
 import (
+	"runtime"
 	"unsafe"
 
 	"github.com/oneo-me/nsgo/internal/driver"
@@ -33,8 +34,9 @@ func (w *window) nextAlert() {
 	}
 	a := w.alerts[0]
 	w.alerts = w.alerts[1:]
-	w.alerting, w.alertingID = true, a.ID
-	dialog := gtkAlertDialogNew(0)
+	w.alerting, w.alertingID, w.alertShown = true, a.ID, a
+	// The constructor formats its message: a NULL format crashes GTK.
+	dialog := gtkAlertDialogNew(cstr(""))
 	if a.Title != "" {
 		gtkAlertDialogSetMessage(dialog, cstr(a.Title))
 	}
@@ -53,8 +55,9 @@ func (w *window) nextAlert() {
 		}
 	}
 	if len(labels) > 0 {
-		ptrs := stringArray(labels)
-		gtkAlertDialogSetButtons(dialog, cStringArray(ptrs))
+		strs := stringArray(labels)
+		gtkAlertDialogSetButtons(dialog, strs.array())
+		runtime.KeepAlive(strs)
 		gtkAlertDialogSetDefaultButton(dialog, int32(def))
 		if cancel >= 0 {
 			gtkAlertDialogSetCancelButton(dialog, int32(cancel))

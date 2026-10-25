@@ -16,16 +16,16 @@ func TestControlsReportWhatTheyAskForAndStyleTheirParts(t *testing.T) {
 		on := core.NewSignal(cx, false)
 		plan := core.NewSignal(cx, "a")
 		radio := func(name string) core.Node {
-			return base.Radio{Label: name, TestID: "radio-" + name, Checked: func() bool { return plan.Get() == name },
+			return base.Radio{Label: name, TestID: "radio-" + name, Style: core.Style{Height: core.Pt(20)}, Checked: func() bool { return plan.Get() == name },
 				OnChange: func(bool) { plan.Set(name) }}
 		}
 		return core.View{Children: []core.Node{
 			base.Checkbox{Label: "All", TestID: "check", Checked: checked.Get, Indeterminate: mixed.Get,
 				OnChange: func(v bool) { asked = append(asked, v); checked.Set(v); mixed.Set(false) },
-				IndicatorStyle: core.Style{Width: core.Pt(10), Checked: &core.Style{Width: core.Pt(12)},
+				IndicatorStyle: core.Style{Width: core.Pt(10), Height: core.Pt(10), Checked: &core.Style{Width: core.Pt(12)},
 					Indeterminate: &core.Style{Width: core.Pt(14)}}},
 			base.Switch{Label: "Wi-Fi", TestID: "switch", Checked: on.Get, OnChange: on.Set,
-				TrackStyle: core.Style{Width: core.Pt(30), Checked: &core.Style{Width: core.Pt(40)}}},
+				TrackStyle: core.Style{Width: core.Pt(30), Height: core.Pt(10), Checked: &core.Style{Width: core.Pt(40)}}},
 			base.RadioGroup{TestID: "plans", Children: []core.Node{radio("a"), radio("b")}},
 		}}
 	})
@@ -70,15 +70,15 @@ func TestButtonTabsCollapsibleAndProgress(t *testing.T) {
 		tab := core.NewSignal(cx, 0)
 		value := core.NewSignal[float32](cx, 150)
 		return core.View{Style: core.Style{Width: core.Pt(200)}, Children: []core.Node{
-			base.Button{Label: "Toggle", Role: core.RoleLink, Selected: open.Get, Expanded: open.Get,
+			base.Button{Label: "Toggle", Style: core.Style{Height: core.Pt(20)}, Role: core.RoleLink, Selected: open.Get, Expanded: open.Get,
 				OnPressDown: func(core.PressEvent) { log = append(log, "down") },
 				OnPressUp:   func(core.PressEvent) { log = append(log, "up") },
 				OnPress:     func(core.PressEvent) { open.Update(func(o bool) bool { return !o }) }},
 			base.Collapsible{Open: open.Get, TestID: "more",
 				Content: core.Input{TestID: "kept"}},
 			base.Tabs{TestID: "tabs", Children: []core.Node{
-				base.Tab{Label: "One", Selected: func() bool { return tab.Get() == 0 }, OnPress: func(core.PressEvent) { tab.Set(0) }},
-				base.Tab{Label: "Two", Selected: func() bool { return tab.Get() == 1 }, OnPress: func(core.PressEvent) { tab.Set(1) }},
+				base.Tab{Label: "One", Style: core.Style{Height: core.Pt(20)}, Selected: func() bool { return tab.Get() == 0 }, OnPress: func(core.PressEvent) { tab.Set(0) }},
+				base.Tab{Label: "Two", Style: core.Style{Height: core.Pt(20)}, Selected: func() bool { return tab.Get() == 1 }, OnPress: func(core.PressEvent) { tab.Set(1) }},
 			}},
 			base.Progress{Label: "Upload", TestID: "progress", Value: value.Get,
 				TrackStyle: core.Style{Width: core.Pt(100)}, IndicatorStyle: core.Style{Height: core.Pt(4)}},

@@ -41,11 +41,11 @@ func TestPopupsNavAndAlerts(t *testing.T) {
 	app := startDesktop(t, func(cx *core.Scope) core.Node {
 		nav := NewNavHelper(cx)
 		return core.View{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
-			base.Menu{TestID: "menu", Trigger: core.Text{Content: "File"},
+			base.Menu{TestID: "menu", Trigger: core.Text{Content: "File"}, PopupStyle: core.Style{Width: core.Pt(100)},
 				OnOpenChange: func(open bool, r base.Reason) { reasons = append(reasons, r.String()) },
 				Children: []core.Node{
-					base.MenuItem{Label: "Open", OnSelect: func() { nav.Push("detail") }},
-					base.MenuItem{Label: "Quit", OnSelect: func() {
+					base.MenuItem{Label: "Open", Style: core.Style{Height: core.Pt(20)}, OnSelect: func() { nav.Push("detail") }},
+					base.MenuItem{Label: "Quit", Style: core.Style{Height: core.Pt(20)}, OnSelect: func() {
 						base.ShowAlertDialog(cx, base.AlertDialog{Title: "Quit?", Actions: []core.AlertAction{
 							{Label: "Cancel", Role: core.AlertCancel}, {Label: "Quit", Role: core.AlertDestructive}}},
 							func(label string) { chosen = label })
@@ -100,11 +100,12 @@ func TestPopupsReportChangesAndEveryCancel(t *testing.T) {
 				OnOpenChange: func(open bool, r base.Reason) { log = append(log, "tooltip "+r.String()) }},
 			base.Menu{TestID: "menu", Trigger: core.Text{Content: "Menu"}, Style: core.Style{Width: core.Pt(200)},
 				PopupStyle: core.Style{Width: core.Pt(50)},
-				Children:   []core.Node{base.MenuItem{Label: "Item", TestID: "item"}}},
+				Children:   []core.Node{base.MenuItem{Label: "Item", TestID: "item", Style: core.Style{Height: core.Pt(20)}}}},
 		}}
 	})
 	app.Back()
-	app.Hover("id:tip", false)
+	app.Hover("id:tip")
+	app.HoverOut()
 	// Pressing the menu's trigger presses outside the popover.
 	app.Press("text:Menu")
 	if want := []string{"cancel", "cancel"}; !slices.Equal(log, want) {

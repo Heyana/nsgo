@@ -18,6 +18,7 @@ type alert struct {
 	cancelable bool
 	layer      js.Value
 	buttons    []js.Value
+	order      []int    // the action of each button
 	restore    js.Value // what had focus before
 	listeners  listeners
 }
@@ -89,6 +90,7 @@ func (s *surface) showAlert(c *driver.AlertConfig) {
 			order = append(order, i)
 		}
 	}
+	a.order = order
 	focus := -1
 	for at, i := range order {
 		act := actions[i]

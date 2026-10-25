@@ -21,6 +21,7 @@ final class Protocol {
     static final int LINES = 7;
     static final int CANVAS_IMAGE = 8;
     static final int FONTS = 9;
+    static final int TEST = 10;
 
     // Java to Go.
     static final int START = 1;
@@ -31,6 +32,7 @@ final class Protocol {
     static final int DNS = 6;
     static final int LAID_OUT = 7;
     static final int TEXT_LINES = 8;
+    static final int TEST_REPLY = 9;
 
     // The parts of an image request an IMAGE message carries.
     static final int IMAGE_PLACEHOLDER = 0;

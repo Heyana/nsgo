@@ -104,7 +104,7 @@ func (w *window) showAlert() {
 	}
 	a := w.alerts[0]
 	w.alerts = w.alerts[1:]
-	w.alerting = true
+	w.alerting, w.alertShown = true, a
 	index := w.ask(&a)
 	w.alerting = false
 	w.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: a.ID, Index: index})

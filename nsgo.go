@@ -20,6 +20,8 @@ var (
 	width  = "480"
 	height = "640"
 	fps    = "0"
+	// appearance is nsgo.yaml's: "light" or "dark" starts the app in it.
+	appearance = ""
 )
 
 // App builds an app's root element once.
@@ -30,11 +32,12 @@ type App = engine.App
 // closed or core.Scope.Quit called, its storage written, so main can
 // clean up; on iOS, Android and the web it never returns.
 func Run(app App, opts ...Option) {
-	o := options{monitor: fps == "1"}
+	o := options{monitor: fps == "1", appearance: map[string]core.Appearance{
+		"light": core.AppearanceLight, "dark": core.AppearanceDark}[appearance]}
 	for _, fn := range opts {
 		fn(&o)
 	}
-	run(app, o)
+	run(devApp(app), o)
 }
 
 // Option configures Run.

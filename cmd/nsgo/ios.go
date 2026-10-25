@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 )
@@ -62,6 +64,11 @@ var iosPlist = template.Must(template.New("ios").Parse(plistHead + `	<key>Minimu
 	<key>UILaunchScreen</key><dict/>
 	<key>UIRequiresFullScreen</key><true/>
 	<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+{{- if eq .Appearance "light"}}
+	<key>UIUserInterfaceStyle</key><string>Light</string>
+{{- else if eq .Appearance "dark"}}
+	<key>UIUserInterfaceStyle</key><string>Dark</string>
+{{- end}}
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key><false/>
@@ -78,9 +85,9 @@ var iosPlist = template.Must(template.New("ios").Parse(plistHead + `	<key>Minimu
 </plist>
 `))
 
-// iosSession installs the app on the booted simulator, booting one when
-// none is, and streams its output here.
-func iosSession() session {
+// iosSession installs the app on the simulator -device names, or the
+// booted one, booting one when none is, and streams its output here.
+func iosSession(opts devOptions) session {
 	return session{
 		build: func(ctx context.Context, p *project) error {
 			dir := p.cache("dev", "ios_simulator")
@@ -89,21 +96,24 @@ func iosSession() session {
 			return err
 		},
 		start: func(ctx context.Context, p *project) (app, error) {
-			if err := bootSimulator(ctx); err != nil {
+			udid, err := bootSimulator(ctx, opts.device)
+			if err != nil {
 				return app{}, err
 			}
 			bundle := filepath.Join(p.cache("dev", "ios_simulator"), p.Name+".app")
-			if err := run(ctx, "xcrun", "simctl", "install", "booted", bundle); err != nil {
+			if err := run(ctx, "xcrun", "simctl", "install", udid, bundle); err != nil {
 				return app{}, err
 			}
-			stop, wait, err := startProcess("xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process", "booted", p.ID)
+			// The simulator shares this Mac's network.
+			env := []string{"SIMCTL_CHILD_NSGO_DEV_SERVER=" + opts.server.url()}
+			stop, wait, err := startProcessEnv(env, "xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process", udid, p.ID)
 			if err != nil {
 				return app{}, err
 			}
 			return app{
 				stop: func() {
 					stop()
-					exec.Command("xcrun", "simctl", "terminate", "booted", p.ID).Run()
+					exec.Command("xcrun", "simctl", "terminate", udid, p.ID).Run()
 				},
 				wait: wait,
 			}, nil
@@ -118,6 +128,10 @@ func iosDeviceSession(opts devOptions) session {
 		build: func(ctx context.Context, p *project) error {
 			dir := p.cache("dev", "ios")
 			os.RemoveAll(dir)
+			// The iPhone reaches the dev server over the LAN.
+			if lan := opts.server.lanURLs(); len(lan) > 0 {
+				p.devURL = lan[0]
+			}
 			_, err := buildIOSApp(ctx, p, filepath.Join(dir, "app"), false)
 			return err
 		},
@@ -461,38 +475,111 @@ func runXcodebuild(ctx context.Context, args ...string) error {
 	return fmt.Errorf("xcodebuild %s: %w\n%s", strings.Join(args, " "), err, strings.Join(lines, "\n"))
 }
 
-var deviceID = regexp.MustCompile(`\(([0-9A-F-]{36})\)`)
+// simulator is an iOS simulator this Mac has.
+type simulator struct {
+	UDID, Name, State, Runtime string
+}
 
-func bootSimulator(ctx context.Context) error {
-	booted, err := output(ctx, "xcrun", "simctl", "list", "devices", "booted")
+// simulators lists the available simulators, newest runtime first.
+func simulators(ctx context.Context) ([]simulator, error) {
+	out, err := output(ctx, "xcrun", "simctl", "list", "devices", "available", "-j")
 	if err != nil {
-		return fmt.Errorf("the iOS simulator needs Xcode: %w", err)
+		return nil, fmt.Errorf("the iOS simulator needs Xcode: %w", err)
 	}
-	if !strings.Contains(booted, "Booted") {
-		available, err := output(ctx, "xcrun", "simctl", "list", "devices", "available")
-		if err != nil {
-			return err
+	return parseSimulators([]byte(out))
+}
+
+func parseSimulators(data []byte) ([]simulator, error) {
+	var list struct {
+		Devices map[string][]struct {
+			UDID, Name, State string
+		} `json:"devices"`
+	}
+	if err := json.Unmarshal(data, &list); err != nil {
+		return nil, fmt.Errorf("xcrun simctl list devices: %w", err)
+	}
+	var out []simulator
+	for rt, ds := range list.Devices {
+		if !strings.Contains(rt, "iOS") {
+			continue
 		}
-		var device string
-		for _, line := range strings.Split(available, "\n") {
-			if m := deviceID.FindStringSubmatch(line); m != nil && strings.Contains(line, "iPhone") {
-				device = m[1]
-				break
+		for _, d := range ds {
+			out = append(out, simulator{UDID: d.UDID, Name: d.Name, State: d.State, Runtime: rt})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if a, b := runtimeVersion(out[i].Runtime), runtimeVersion(out[j].Runtime); a != b {
+			return a > b
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out, nil
+}
+
+// runtimeVersion orders runtimes such as ...SimRuntime.iOS-18-2.
+func runtimeVersion(rt string) int {
+	_, v, _ := strings.Cut(rt, "iOS-")
+	major, rest, _ := strings.Cut(v, "-")
+	minor, _, _ := strings.Cut(rest, "-")
+	a, _ := strconv.Atoi(major)
+	b, _ := strconv.Atoi(minor)
+	return a*100 + b
+}
+
+// pickSimulator chooses the simulator wanted names, by name or UDID (a
+// booted one of that name first, then the newest runtime's), or without a
+// name the booted one, else the newest iPhone.
+func pickSimulator(sims []simulator, wanted string) (simulator, error) {
+	var match []simulator
+	for _, s := range sims {
+		if wanted == "" || s.UDID == wanted || strings.EqualFold(s.Name, wanted) {
+			match = append(match, s)
+		}
+	}
+	for _, s := range match {
+		if s.State == "Booted" {
+			return s, nil
+		}
+	}
+	for _, s := range match {
+		if wanted != "" || strings.Contains(s.Name, "iPhone") {
+			return s, nil
+		}
+	}
+	if wanted != "" {
+		var names []string
+		for _, s := range sims {
+			if !slices.Contains(names, s.Name) {
+				names = append(names, s.Name)
 			}
 		}
-		if device == "" {
-			return fmt.Errorf("no iPhone simulator is installed; add one in Xcode")
-		}
-		step("boot simulator %s", device)
-		if err := run(ctx, "xcrun", "simctl", "boot", device); err != nil {
-			return err
+		return simulator{}, fmt.Errorf("no simulator named %q; Xcode has %s", wanted, strings.Join(names, ", "))
+	}
+	return simulator{}, fmt.Errorf("no iPhone simulator is installed; add one in Xcode")
+}
+
+// bootSimulator boots the simulator wanted names (or picks one) unless it
+// runs, shows the Simulator app and returns its UDID.
+func bootSimulator(ctx context.Context, wanted string) (string, error) {
+	sims, err := simulators(ctx)
+	if err != nil {
+		return "", err
+	}
+	sim, err := pickSimulator(sims, wanted)
+	if err != nil {
+		return "", err
+	}
+	if sim.State != "Booted" {
+		step("boot simulator %s", sim.Name)
+		if err := run(ctx, "xcrun", "simctl", "boot", sim.UDID); err != nil {
+			return "", err
 		}
 	}
 	// Show the simulator's window; the app runs without it.
 	if xcode, err := output(ctx, "xcode-select", "-p"); err == nil {
 		exec.CommandContext(ctx, "open", filepath.Join(xcode, "Applications", "Simulator.app")).Run()
 	}
-	return nil
+	return sim.UDID, nil
 }
 
 // iosProject is an Xcode project whose app target signs the build product

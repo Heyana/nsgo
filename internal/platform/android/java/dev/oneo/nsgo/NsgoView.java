@@ -120,6 +120,11 @@ public class NsgoView extends FrameLayout {
     private final int[] location = new int[2];
     private Process process;
     private DataOutputStream out;
+    // The test nsgo test -target android runs, and its agent.
+    private String test;
+    private TestAgent agent;
+    // The alerts shown, by their ID, for the test agent to answer.
+    final SparseArray<TestAgent.Alert> alerts = new SparseArray<>();
 
     // The environment, on the UI thread: the insets in pixels and what was last sent.
     private final AccessibilityManager accessibility;
@@ -222,12 +227,27 @@ public class NsgoView extends FrameLayout {
         super.onDetachedFromWindow();
     }
 
+    /**
+     * Runs the test the launch intent names, as nsgo test -target android
+     * starts it: its arguments and environment go to the app's process.
+     * Only a debuggable build takes one, so no other app can set them.
+     */
+    void setTest(String encoded) {
+        boolean debuggable = (getContext().getApplicationInfo().flags
+                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        if (encoded != null && debuggable) test = encoded;
+    }
+
     private void start() {
         File exe = new File(getContext().getApplicationInfo().nativeLibraryDir, "libnsgo.so");
         try {
             ProcessBuilder builder = new ProcessBuilder(exe.getAbsolutePath());
             builder.environment().put("NSGO_DATA_DIR", getContext().getFilesDir().getAbsolutePath());
             builder.environment().put("NSGO_CACHE_DIR", getContext().getCacheDir().getAbsolutePath());
+            if (test != null) {
+                agent = new TestAgent(this);
+                TestAgent.apply(test, builder);
+            }
             process = builder.start();
         } catch (IOException e) {
             throw new IllegalStateException("cannot start " + exe, e);
@@ -270,6 +290,9 @@ public class NsgoView extends FrameLayout {
                         break;
                     case Protocol.FONTS:
                         fonts(message);
+                        break;
+                    case Protocol.TEST:
+                        if (agent != null) agent.handle(message);
                         break;
                     default:
                         text(kind, message);
@@ -600,6 +623,24 @@ public class NsgoView extends FrameLayout {
         } catch (IOException e) {
             Log.w(TAG, "app process unreachable", e);
         }
+    }
+
+    /** Answers the test step id: an error, else the step's data. */
+    void testReply(int id, String error, String data) {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream d = new DataOutputStream(bytes);
+        try {
+            d.writeInt(id);
+            Protocol.writeString(d, error);
+            Protocol.writeString(d, data);
+        } catch (IOException impossible) {
+            throw new AssertionError(impossible);
+        }
+        write(Protocol.TEST_REPLY, bytes.toByteArray());
+    }
+
+    float density() {
+        return density;
     }
 
     private void send(int kind, float a, float b) {
@@ -1853,6 +1894,7 @@ public class NsgoView extends FrameLayout {
         IntConsumer answer = index -> {
             if (answered[0]) return;
             answered[0] = true;
+            alerts.remove(id);
             event(Protocol.EVENT_ALERT, 0, id, 0, 0, "", 0, 0, index);
         };
         AlertDialog.Builder b = new AlertDialog.Builder(getContext(), dark()
@@ -1891,9 +1933,20 @@ public class NsgoView extends FrameLayout {
         b.setCancelable(sheet || cancelable || cancel >= 0);
         b.setOnCancelListener(d -> answer.accept(dismissed));
         AlertDialog dialog = b.show();
+        alerts.put(id, new TestAgent.Alert(dialog, buttons, listIndices(count, sheet, roles)));
         for (int i = 0; buttons != null && i < count; i++) {
             if (roles[i] == Protocol.ALERT_DESTRUCTIVE) dialog.getButton(buttons[i]).setTextColor(DESTRUCTIVE);
         }
+    }
+
+    /** The action of each item of an alert shown as a list. */
+    private static int[] listIndices(int count, boolean sheet, int[] roles) {
+        int[] indices = new int[count];
+        int n = 0;
+        for (int i = 0; i < count; i++) {
+            if (!sheet || roles[i] != Protocol.ALERT_CANCEL) indices[n++] = i;
+        }
+        return java.util.Arrays.copyOf(indices, n);
     }
 
     /**

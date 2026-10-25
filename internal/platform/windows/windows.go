@@ -39,6 +39,7 @@ import (
 	"github.com/oneo-me/nsgo/internal/platform/imageload"
 	"github.com/oneo-me/nsgo/internal/platform/queue"
 	"github.com/oneo-me/nsgo/internal/platform/scrollbar"
+	"github.com/oneo-me/nsgo/internal/testhost"
 )
 
 func init() {
@@ -64,6 +65,8 @@ type Options struct {
 	Fonts []string
 	// Appearance is the appearance the app starts in.
 	Appearance driver.Appearance
+	// test is what a test host opens the app with.
+	test *testOpen
 }
 
 var (
@@ -284,6 +287,8 @@ type window struct {
 	env      driver.Environment // the last reported
 	alerts   []driver.AlertConfig
 	alerting bool
+	// alertShown is the alert showing, for a test host to answer.
+	alertShown driver.AlertConfig
 	// The photo picks and context menus waiting for a message of their
 	// own, and whether one shows.
 	picks         []pickRequest
@@ -472,10 +477,17 @@ func Run(app engine.App, opts Options) {
 	}
 	data, cache := engine.AppDirs(opts.ID)
 	eopts.SetDirs(data, cache)
+	if opts.test != nil {
+		eopts.UseTest(opts.test.options, &opts.test.pin)
+		cache = eopts.CacheDir
+	}
 	imageload.UseDiskCache(cache)
 	w.cacheDir = cache
 	w.engine = engine.Start(w, app, eopts)
 	showWindow.Call(hwnd, swShow)
+	if opts.test != nil {
+		opts.test.ready <- w
+	}
 
 	var m msg
 	for {
@@ -492,6 +504,14 @@ func Run(app engine.App, opts Options) {
 		translateMessage.Call(uintptr(unsafe.Pointer(&m)))
 		dispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
 	}
+}
+
+// testOpen is what a test host opens the app with: the test's options,
+// the environment it pins, and where the window goes once it exists.
+type testOpen struct {
+	options testhost.Options
+	pin     engine.TestPin
+	ready   chan *window
 }
 
 // Mount implements engine.Platform.
