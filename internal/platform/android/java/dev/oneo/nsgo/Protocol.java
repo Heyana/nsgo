@@ -84,6 +84,13 @@ final class Protocol {
     static final int ITEM_OVERFLOW = 46;
     static final int ITEM_BLOCK_NATIVE = 47;
     static final int ITEM_SHADER = 48;
+    static final int ITEM_SET_CLIPBOARD_IMAGE = 49;
+    static final int ITEM_OPEN_URL = 50;
+    static final int ITEM_PICK_IMAGES = 51;
+    static final int ITEM_TOAST = 52;
+    static final int ITEM_APPEARANCE = 53;
+    static final int ITEM_POPUP_MENU = 54;
+    static final int ITEM_QUIT = 55;
 
     // View kinds, as in core/mount.go.
     static final int KIND_VIEW = 1;
@@ -149,6 +156,8 @@ final class Protocol {
     static final int EVENT_CARET_MOVE = 52;
     static final int EVENT_PASTE = 53;
     static final int EVENT_SCREEN_HEADER = 54;
+    static final int EVENT_OPEN_URL = 55;
+    static final int EVENT_PICK = 56;
 
     // core.PointerEvents.
     static final int POINTER_EVENTS_NONE = 1;
@@ -278,6 +287,11 @@ final class Protocol {
     // Device idioms, as in core/env.go.
     static final int IDIOM_PHONE = 0;
     static final int IDIOM_TABLET = 1;
+    static final int IDIOM_TV = 4;
+
+    // Appearances, as driver.Appearance; 0 is the system's.
+    static final int APPEARANCE_LIGHT = 1;
+    static final int APPEARANCE_DARK = 2;
 
     // Text alignment, as in core/style.go.
     static final int ALIGN_CENTER = 2;
@@ -314,6 +328,12 @@ final class Protocol {
     static final int VALIGN_MIDDLE = 4;
 
     private Protocol() {}
+
+    static byte[] readBytes(DataInputStream in) throws IOException {
+        byte[] bytes = new byte[in.readInt()];
+        in.readFully(bytes);
+        return bytes;
+    }
 
     static String readString(DataInputStream in) throws IOException {
         byte[] bytes = new byte[in.readInt()];

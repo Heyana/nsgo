@@ -31,7 +31,6 @@ var (
 	cbEntryChanged  uintptr
 	cbEntryActivate uintptr
 	cbEntryFocus    uintptr
-	cbClipboardText uintptr
 	cbAlertChosen   uintptr
 
 	cbWebLoadChanged uintptr
@@ -91,7 +90,6 @@ func init() {
 	cbEntryChanged = newCallback(entryChangedCallback)
 	cbEntryActivate = newCallback(entryActivateCallback)
 	cbEntryFocus = newCallback(entryFocusCallback)
-	cbClipboardText = newCallback(clipboardTextCallback)
 	cbAlertChosen = newCallback(alertChosenCallback)
 
 	cbWebLoadChanged = newCallback(webLoadChangedCallback)

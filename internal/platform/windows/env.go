@@ -44,6 +44,7 @@ func (w *window) environment() driver.Environment {
 		PixelRatio:     float32(w.scale),
 		Locale:         locale,
 		OS:             driver.OSWindows,
+		OSVersion:      osVersion(),
 		Idiom:          driver.IdiomDesktop,
 		TitleBar:       w.titleBarArea(),
 		WindowMaterial: w.material,
@@ -58,10 +59,11 @@ func (w *window) updateEnvironment() {
 	if env == w.env {
 		return
 	}
-	if env.Dark != w.env.Dark {
-		w.darkTitleBar(env.Dark)
-	}
+	dark := w.shownDark()
 	w.env = env
+	if w.shownDark() != dark {
+		w.darkTitleBar(w.shownDark())
+	}
 	w.engine.SetEnvironment(env)
 }
 

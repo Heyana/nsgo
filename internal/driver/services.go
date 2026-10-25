@@ -112,6 +112,16 @@ const (
 	WindowToggleFullScreen
 	// WindowClose closes the window as its close button does.
 	WindowClose
+	// WindowSetFrame moves and sizes the window (Frame).
+	WindowSetFrame
+	// WindowSetLevel puts the window at Level.
+	WindowSetLevel
+	// WindowOrderFront brings the window to the front of its level,
+	// showing it, and activates the app.
+	WindowOrderFront
+	// WindowSetMenuBar says when Windows and Linux show the menu bar
+	// (MenuBar).
+	WindowSetMenuBar
 )
 
 // WindowCommand is an ItemWindow's request.
@@ -120,7 +130,96 @@ type WindowCommand struct {
 	TitleBar TitleBarStyle
 	// Height is the custom title bar's height, in which the platform
 	// centers its window controls; 0 is the platform's.
-	Height Points
+	Height  Points
+	Frame   WindowFrame
+	Level   WindowLevel
+	MenuBar MenuBarMode
+}
+
+// WindowFrame is where a window moves and how large it becomes, in
+// points. X and Y place its top left corner from the main screen's top
+// left, y growing down, on every platform; without Move the corner stays
+// where it is, so a window that changes height keeps its top edge.
+// Width and Height are its outer size, borders and title bar included
+// (the default size GTK keeps on Linux); 0 keeps the current one.
+type WindowFrame struct {
+	X, Y          Points
+	Move          bool
+	Width, Height Points
+	// Animated animates the change with macOS's resize animation.
+	Animated bool
+}
+
+// WindowLevel is where a window stacks among the others.
+type WindowLevel uint8
+
+const (
+	// WindowLevelNormal is the level of ordinary windows.
+	WindowLevelNormal WindowLevel = iota
+	// WindowLevelFloating stays above normal windows, as a palette does.
+	WindowLevelFloating
+	// WindowLevelDesktop sits with the desktop's icons on macOS, on every
+	// space and out of Mission Control; Windows puts the window at the
+	// bottom of the others, where activating it raises it again.
+	WindowLevelDesktop
+)
+
+// MenuBarMode says when Windows and Linux show the menu bar the window
+// draws for the application menu. macOS's menu bar is the system's and
+// always shows.
+type MenuBarMode uint8
+
+const (
+	// MenuBarShown always shows it, above the app.
+	MenuBarShown MenuBarMode = iota
+	// MenuBarAutoHide shows it once Alt is pressed and released alone,
+	// until Alt alone, a press elsewhere or a chosen item hides it again,
+	// as Windows and GNOME apps do. F10 and Alt with a menu's mnemonic
+	// still open a menu, and the bar shows while it is open.
+	MenuBarAutoHide
+)
+
+// Appearance is the light or dark appearance an app asks for, or the
+// system's.
+type Appearance uint8
+
+const (
+	// AppearanceSystem follows the system's appearance.
+	AppearanceSystem Appearance = iota
+	AppearanceLight
+	AppearanceDark
+)
+
+// ClipboardRead is what an ItemReadClipboard asks of the clipboard.
+type ClipboardRead uint8
+
+const (
+	// ClipboardReadText reads its plain text, "" when it has none.
+	ClipboardReadText ClipboardRead = iota
+	// ClipboardReadHasText reports whether it holds text, without reading it,
+	// so iOS shows no paste notice.
+	ClipboardReadHasText
+	// ClipboardReadImage reads its image as a PNG.
+	ClipboardReadImage
+	// ClipboardReadHasImage reports whether it holds an image, without
+	// reading it.
+	ClipboardReadHasImage
+	// ClipboardReadFiles reads the file: URLs of the local files it holds,
+	// such as files copied in a file manager.
+	ClipboardReadFiles
+)
+
+// MaxClipboardImage is the most bytes of a PNG a clipboard read returns:
+// a larger image reads as none, since the app's memory may not hold it.
+const MaxClipboardImage = 48 << 20
+
+// ClipboardImage is an image read from the clipboard.
+type ClipboardImage struct {
+	// PNG is the image encoded as a PNG, which an ImageSource's Data
+	// shows.
+	PNG []byte
+	// Size is its size in pixels.
+	Size Size
 }
 
 // MenuRole is a standard menu item the platform carries out, labelling it

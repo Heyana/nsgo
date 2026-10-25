@@ -107,6 +107,10 @@ type chrome struct {
 	fullScreen bool
 	menu       []driver.MenuEntry
 	keys       map[string]menuRef
+	// menuBar says when the bar shows; with MenuBarAutoHide, revealed is
+	// set while a key showed it, and altAlone while Alt is down alone.
+	menuBar            driver.MenuBarMode
+	revealed, altAlone bool
 }
 
 // menuRef is a menu item's ID and role.

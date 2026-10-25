@@ -22,7 +22,11 @@ func (w *window) environment() driver.Environment {
 	dark, reduce, dpi := false, false, int32(96*xftDPIUnit)
 	theme := ""
 	if settings := gtkSettingsGetDefault(); settings != 0 {
-		dark = settingBool(settings, "gtk-application-prefer-dark-theme")
+		if colorScheme() {
+			dark = settingInt(settings, "gtk-interface-color-scheme") == schemeDark
+		} else {
+			dark = settingBool(settings, "gtk-application-prefer-dark-theme")
+		}
 		reduce = !settingBool(settings, "gtk-enable-animations")
 		dpi = settingInt(settings, "gtk-xft-dpi")
 		theme = settingString(settings, "gtk-theme-name")
@@ -52,6 +56,7 @@ func (w *window) environment() driver.Environment {
 		PixelRatio:   float32(scale),
 		Locale:       locale,
 		OS:           driver.OSLinux,
+		OSVersion:    osVersion(),
 		Idiom:        driver.IdiomDesktop,
 		TitleBar:     w.titleBarArea(),
 		Maximized:    gtkWindowIsMaximized(w.win) != 0,

@@ -9,5 +9,6 @@ func run(app App, o options) {
 	macos.Run(app, macos.Options{
 		Title: name, Width: w, Height: h, ID: id,
 		Components: o.components, Perf: o.monitor, Material: o.material, Fonts: o.fonts,
+		Appearance: o.appearance, KeepAlive: o.keepAlive,
 	})
 }

@@ -1,6 +1,9 @@
 package driver
 
-import "time"
+import (
+	"strconv"
+	"time"
+)
 
 // Environment is what the platform reports about where the app runs. The
 // surface size is not part of it: Tree.Resize reports that.
@@ -34,7 +37,11 @@ type Environment struct {
 	// Locale is a BCP 47 language tag, such as "en-US".
 	Locale string
 	OS     OS
-	Idiom  Idiom
+	// OSVersion is the system's version: major and minor on Apple
+	// platforms, Windows and Linux (the kernel's), Android's API level
+	// as Major, and zero on the web.
+	OSVersion OSVersion
+	Idiom     Idiom
 	// AppleKeyboard says a browser runs on an Apple platform, where "mod"
 	// is Command as on macOS and iOS.
 	AppleKeyboard bool
@@ -62,5 +69,24 @@ type Idiom uint8
 const (
 	IdiomPhone Idiom = iota
 	IdiomTablet
+	// IdiomDesktop is a desktop window, or a browser with a mouse and a
+	// wide page.
 	IdiomDesktop
+	// IdiomMac is an iPhone or iPad app running on a Mac.
+	IdiomMac
+	// IdiomTV is a television, such as Android TV.
+	IdiomTV
 )
+
+// OSVersion is an operating system's version.
+type OSVersion struct {
+	Major, Minor int
+}
+
+// AtLeast reports whether v is major.minor or later.
+func (v OSVersion) AtLeast(major, minor int) bool {
+	return v.Major > major || v.Major == major && v.Minor >= minor
+}
+
+// String returns v as major.minor.
+func (v OSVersion) String() string { return strconv.Itoa(v.Major) + "." + strconv.Itoa(v.Minor) }

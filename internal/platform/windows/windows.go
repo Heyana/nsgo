@@ -36,6 +36,7 @@ import (
 	"github.com/oneo-me/nsgo/internal/engine"
 	"github.com/oneo-me/nsgo/internal/platform/finger"
 	"github.com/oneo-me/nsgo/internal/platform/hover"
+	"github.com/oneo-me/nsgo/internal/platform/imageload"
 	"github.com/oneo-me/nsgo/internal/platform/queue"
 	"github.com/oneo-me/nsgo/internal/platform/scrollbar"
 )
@@ -61,6 +62,8 @@ type Options struct {
 	// Fonts are font files under the app's resources, registered before
 	// the first view.
 	Fonts []string
+	// Appearance is the appearance the app starts in.
+	Appearance driver.Appearance
 }
 
 var (
@@ -276,14 +279,22 @@ type window struct {
 	tasks []func()
 
 	// The main thread's.
-	views     []*view // index is NodeID
-	root      driver.NodeID
-	env       driver.Environment // the last reported
-	alerts    []driver.AlertConfig
-	alerting  bool
-	keys      []driver.KeyBinding // the keyboard shortcuts
-	animating []*view
-	ticking   bool
+	views    []*view // index is NodeID
+	root     driver.NodeID
+	env      driver.Environment // the last reported
+	alerts   []driver.AlertConfig
+	alerting bool
+	// The photo picks and context menus waiting for a message of their
+	// own, and whether one shows.
+	picks         []pickRequest
+	picking       bool
+	popups        []popupRequest
+	popupTracking bool
+	// appearance is the one the app forces, or the system's.
+	appearance driver.Appearance
+	keys       []driver.KeyBinding // the keyboard shortcuts
+	animating  []*view
+	ticking    bool
 	// frameWanted is set while the app waits for a display frame.
 	frameWanted bool
 	chrome      chrome
@@ -450,14 +461,18 @@ func Run(app engine.App, opts Options) {
 		}
 	}
 	w.env = w.environment()
-	w.darkTitleBar(w.env.Dark)
+	w.appearance = opts.Appearance
+	w.darkTitleBar(w.shownDark())
+	darkMenus(w.appearance)
 	// The engine starts once the window exists, so Mount can post to it.
 	eopts := engine.Options{
 		Size:        driver.Size{Width: opts.Width, Height: opts.Height},
 		Environment: w.env,
+		Appearance:  opts.Appearance,
 	}
 	data, cache := engine.AppDirs(opts.ID)
 	eopts.SetDirs(data, cache)
+	imageload.UseDiskCache(cache)
 	w.cacheDir = cache
 	w.engine = engine.Start(w, app, eopts)
 	showWindow.Call(hwnd, swShow)
@@ -558,7 +573,32 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.setClipboard(it.Value)
 			continue
 		case driver.ItemReadClipboard:
-			w.engine.Dispatch(driver.Event{Kind: driver.EventClipboard, Count: it.Count, Text: w.clipboard()})
+			w.readClipboard(it)
+			continue
+		case driver.ItemSetClipboardImage:
+			if data, ok := it.Data.([]byte); ok {
+				w.setClipboardImage(data)
+			}
+			continue
+		case driver.ItemOpenURL:
+			w.openURL(it.Value, it.Count)
+			continue
+		case driver.ItemPickImages:
+			w.pickImages(*it.Pick, it.Count)
+			continue
+		case driver.ItemPopupMenu:
+			w.popupMenu(it.Menu, it.Point, it.Count)
+			continue
+		case driver.ItemAppearance:
+			w.setAppearance(it.Appearance)
+			continue
+		case driver.ItemQuit:
+			if w.popupTracking {
+				endMenu.Call()
+			}
+			postMessageW.Call(w.hwnd, wmClose, 0, 0)
+			continue
+		case driver.ItemToast:
 			continue
 		case driver.ItemImageInfo:
 			w.imageInfo(it)
@@ -1199,6 +1239,18 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmAlert:
 		w.showAlert()
 		return 0
+	case wmPick:
+		w.showPick()
+		return 0
+	case wmPopup:
+		w.showPopup()
+		return 0
+	case wmSysKeyUp:
+		if w.menuBarKey(message, wParam, lParam) {
+			return 0
+		}
+	case wmEnterMenuLoop, wmExitMenuLoop:
+		w.menuLoop(message == wmEnterMenuLoop, wParam != 0)
 	case wmSettingChange:
 		// Theme ("ImmersiveColorSet"), locale and accessibility changes.
 		w.updateEnvironment()
@@ -1217,6 +1269,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.paint()
 		return 0
 	case wmLButtonDown, wmRButtonDown:
+		w.hideMenuBar()
 		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
 		if message == wmLButtonDown && w.pressBar(w.point(int32(x), int32(y))) {
 			return 0
@@ -1352,6 +1405,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmSetFocus, wmKillFocus:
 		w.windowFocus(message == wmSetFocus)
 	case wmSysKeyDown:
+		w.menuBarKey(message, wParam, lParam)
 		// Alt+Left; DefWindowProc still sees it, or releasing Alt would
 		// open the window menu.
 		if wParam == vkLeft && !repeated(lParam) {

@@ -1,6 +1,8 @@
 # Core
 
-`core` turns Go components into one `MountBatch` per commit. Components run once; signals drive bindings, regions rebuild only what changed, and the commit lays the tree out and sends the differences. The mount protocol, the events and the values `core` shares with backends live in `internal/driver`; `core` aliases the values its app API reaches in `shared.go`, and `TestPublicAPINamesNoInternalType` fails when one is missing. Read this before changing `core`, `internal/engine` or the mount protocol a backend implements; [text](text.md), [scrolling and lists](scrolling.md) and [interaction](interaction.md) cover those parts of `core`.
+`core` turns Go components into one `MountBatch` per commit. Components run once; signals drive bindings, regions rebuild only what changed, and the commit lays the tree out and sends the differences. The mount protocol, the events and the values `core` shares with backends live in `internal/driver`; `core` aliases those its app API reaches in `shared.go`, and `TestPublicAPINamesNoInternalType` fails when one is missing.
+
+Read this before changing `core`, `internal/engine` or the mount protocol a backend implements; [text](text.md), [scrolling and lists](scrolling.md), [interaction](interaction.md) and [services](services.md) cover those parts of `core`.
 
 ## Reactive graph
 
@@ -18,7 +20,8 @@ Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canv
 
 - A field that can change takes a function (`StyleFunc`, `ContentFunc`, `Value`, `Disabled`), bound by one render effect per part.
 - Styles compose with `Style.Merge`, and text fields inherit down the tree as in CSS.
-- State styles merge over the rest in NSH's order: `Checked`, `Indeterminate` and `Selected`, which the app sets, then `Hover`, `Focus` and `Active`, which the engine tracks from the press, hover and focus events it asks the platform to report, then `Disabled` over all; a `GroupStyle` follows its group's states first ([styles](styles.md)). Windows and Linux hit-test hovers themselves (`internal/platform/hover`).
+- State styles merge over the rest in NSH's order: `Checked`, `Indeterminate` and `Selected`, which the app sets, then `Hover`, `Focus` and `Active`, then `Disabled` over all; a `GroupStyle` follows its group's states first ([styles](styles.md)).
+- The engine tracks `Hover`, `Focus` and `Active` from the events it asks the platform to report. Windows and Linux hit-test hovers themselves (`internal/platform/hover`).
 - `PartStates` styles a view in states it does not report, as a control's part, NSH's `project_checked`.
 - A `Ref`, usable at its zero value, names a mounted element for anchoring, focus, scrolling and its bounds.
 
@@ -32,23 +35,30 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - `Each` matches rows by key. A kept row gets its item and index through signals, and only the rows that moved are reinserted.
 - Go methods cannot take type parameters, so `Each` is a generic function rather than a method or struct.
 - Region nodes are never laid out. Layout marks pass through them, so a change inside a branch or row still reaches the root.
-- A `Holder` is NSH's render keys as a value: content built once, owned by the scope given to `NewHolder` rather than the running owner, and shown in the newest place mounted with `Place`. It moves there with its native views, keeping its state; with no place it stays built out of the tree, its overlays hidden.
+- A `Holder` is NSH's render keys as a value: content built once, owned by the scope given to `NewHolder` rather than the running owner, and shown in the newest place mounted with `Place`.
+- A held content moves to its place with its native views, keeping its state; with no place it stays built out of the tree, its overlays hidden.
 
 ## Layers and navigation
 
 `Overlay` and `Modal` stay in the shadow tree where they are built, for their owner, context, inherited text and lifetime. Their native views are hoisted into their host: the nearest modal around them, or the root view. Each is a layout root of its own at the host's size, placed after the main layout.
 
-- An overlay with an anchor goes beside it as NSH's `place` does: the side asked unless only the opposite side fits or has more room, aligned along it, then clamped into the safe area less its margin.
+- An overlay with an anchor goes beside it as NSH's `place` does: the side asked unless only the opposite side fits or has more room, aligned along it, then clamped into the safe area.
 - A modal provides the insets its content keeps clear of; a screen does too, without the top when it has a header. `Insets` reads them.
-- `EventBack` (Escape, the back button) goes to the topmost overlay that listens for cancel, else the topmost modal's `OnRequestClose`, else the `Scope.OnBackPress` handlers newest first until one takes it, else the innermost stack that can pop. A popped screen reports `OnDismiss` and stays hidden until the app removes it; the last screen never pops.
-- Where the environment has `HeaderHeight` (iOS, Android), screens get NSH's system header: the core pads the content below the bar plus the status bar it reaches under, sends `ItemScreen`, and lays `HeaderLeft`, `HeaderRight` and `HeaderTitle` out as roots at their content size that the platform puts in the bar. `Header` is then not mounted; elsewhere it is the screen's first child. iOS gives each screen a `UINavigationBar` of its own with a back item, Android a `Toolbar`; their back buttons and iOS's leading-edge swipe send `EventBack` with the screen's ID.
+- `EventBack` (Escape, the back button) goes to the topmost overlay that listens for cancel, else the topmost modal's `OnRequestClose`, else the `Scope.OnBackPress` handlers newest first, else the innermost stack that can pop.
+- A popped screen reports `OnDismiss` and stays hidden until the app removes it; the last screen never pops.
+- Where the environment has `HeaderHeight` (iOS, Android), screens get NSH's system header: the core pads the content below the bar and the status bar, sends `ItemScreen`, and lays `HeaderLeft`, `HeaderRight` and `HeaderTitle` out as roots the platform puts in the bar.
+- `Header` is then not mounted; elsewhere it is the screen's first child.
+- iOS gives each screen a `UINavigationBar` of its own with a back item, Android a `Toolbar`; their back buttons and iOS's leading-edge swipe send `EventBack` with the screen's ID.
 - Each platform measures its bar with what it holds and reports it (`EventScreenHeader`), which replaces the environment's estimate.
-- A transparent header and a large title lay the content under them: each vertical scroll view whose top they cover gets that part as `ScrollConfig.HeaderInset`, added to its top content inset. iOS collapses a large title into the bar once its scroll view scrolled half the title's row under it, and brings it back above that, as UIKit's navigation controller does.
+- A transparent header and a large title lay the content under them: each vertical scroll view whose top they cover gets that part as `ScrollConfig.HeaderInset`, added to its top content inset.
+- iOS collapses a large title into the bar once its scroll view scrolled half the title's row under it, and brings it back above that, as UIKit's navigation controller does.
 - `TabBar` is the system's tab bar, a native component iOS (`UITabBar`) and Android (a Material 3 navigation bar drawn by the runtime's `TabBar.java`) register themselves; elsewhere it shows nothing.
-- iOS presents a modal with `ModalPageSheet` or `ModalFormSheet` as a sheet view controller, which reports its size (`EventModalSize`) and its swipes (`EventRequestClose`, "swipe"); a swiped sheet stays hidden until the app removes it. `SupportedOrientations` goes to the controllers' `supportedInterfaceOrientations`. On Android a modal over the surface starts below the status bar unless `StatusBarTranslucent`. Other platforms ignore these.
+- iOS presents a modal with `ModalPageSheet` or `ModalFormSheet` as a sheet view controller, which reports its size (`EventModalSize`) and its swipes (`EventRequestClose`, "swipe"); a swiped sheet stays hidden until the app removes it.
+- `SupportedOrientations` goes to the controllers' `supportedInterfaceOrientations`. On Android a modal over the surface starts below the status bar unless `StatusBarTranslucent`. Other platforms ignore these.
 - `EventPressOutside` reports presses outside an overlay, ignoring those on its anchor or on overlays above it.
 - A view's `Tooltip` is a hint overlay above it that the core shows after half a second of hover on desktops; `Overlay.PointerEvents` keeps it from taking the pointer.
-- An `InputAccessoryView` is a layout root as wide as the surface and as tall as its content, which no view holds: its views are sent before the tree's, and an input's `InputConfig.Accessory` names it, resolved from `InputAccessoryViewID`. iOS makes it the field's `inputAccessoryView`; Android shows it above the keyboard while the field has focus; other platforms leave it unmounted.
+- An `InputAccessoryView` is a layout root as wide as the surface and as tall as its content, which no view holds: its views are sent before the tree's, and an input's `InputConfig.Accessory` names it.
+- iOS makes it the field's `inputAccessoryView`; Android shows it above the keyboard while the field has focus; other platforms leave it unmounted.
 
 ## Commit
 
@@ -64,30 +74,9 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - `flex-start` content alignment outside grids.
 - Left and right swapped where the subtree lays out right to left.
 
-## Desktop windows
-
-Window chrome follows NSH's `nsh/desktop`: native controls, an app-drawn title bar.
-
-- `SetTitleBar` hides the system title bar and gives the app's bar its height, in which the platform centers its controls; `Env.TitleBar` then reports the area they keep, and views with `WindowDrag` drag the window. macOS centers the traffic lights in the bar, 16 points in from the left edge, as Onevra does; Windows draws Onevra's rounded caption buttons; Linux reports the bar's height and the app draws its own buttons.
-- `Env.Maximized` reports a maximized or zoomed window, so an app-drawn maximize button can show restore.
-- The platform decides a window drag on the main thread, from the mounted props: the nearest view setting `WindowDrag` decides, and a nearer pressable, input or gesture view keeps the press.
-- `SetApplicationMenu` sends the menu as data, with handlers replaced by IDs that come back in `EventMenu`. Role items are the platform's own and are never reported. The default menu returns when the owner that set the menu goes.
-- `nsgo.WindowMaterial` (a `Run` option) puts a material behind the app's views: an `NSVisualEffectView` material on macOS, and Mica, Acrylic or Mica Alt on Windows 11 22H2 and later, with the closest backdrop for the other macOS names. It shows where the app draws nothing opaque and lasts for the window's life; `Env.WindowMaterial` reports the one the window has. Earlier Windows and the other platforms leave the window opaque.
-
 ## Animation
 
 Style `Transition`s, animated values and layout animations run on the platform, with no engine work per frame and nothing for the engine's garbage collector to pause; [animation](animation.md) covers them. `Scope.RequestAnimationFrame` waits for the display's frames, and `Scope.Animate` steps app values on them for what a platform cannot animate itself; every step commits.
-
-## Services
-
-Native alerts, the clipboard, image sizes and prefetches, announcements, keyboard shortcuts, the status bar, the window title, window commands and the application menu are command items answered by events. Shortcuts are scoped to their owner: the platform matches key presses against the table synchronously and reports only matches.
-
-- An alert's `Sheet` presents its actions as the system's action sheet, and `Cancelable` lets Escape, back and a press outside close it with -1; otherwise Escape and back choose the cancel action ([components](components.md#popups)).
-
-- The status bar is layered as NSH's `status_bar.rs`: `SetStatusBar` patches the app's default, and each screen's or modal's `StatusBar` is over it, in mount order, while it is in the tree and not popped or swiped away. The latest wins field by field, and the commit sends one `ItemStatusBar` when the merged result changes. iOS and Android apply it; Android ignores `Animated`.
-- An input method composing text keeps its keys on macOS and the web, so arrows still choose its candidates.
-- Each `KeyBinding` says whether it fires while a text input or web view has the focus and on a held key's auto-repeats, and `driver.FindKey` decides for every Go backend, Android's Java the same way. By default (`KeyAuto`) a binding leaves an input the keys it uses (`EditsText`) and fires once while its key is held; `OnKeyWith` asks for `KeyAlways`, `KeyNotEditing` and `Repeat`. GTK flags no repeats, so Linux counts a key pressed again before its release; UIKit reports a held key once, so iOS repeats a binding on a timer of its own.
-- iOS and Android match a hardware keyboard's presses too. `KeyLabel` and `Scope.KeyLabel` name a binding as the platform shows it (⇧⌘L, Ctrl+Shift+L), with `Environment.AppleKeyboard` telling the web on Apple platforms.
 
 ## Storage and directories
 
@@ -105,7 +94,10 @@ Native alerts, the clipboard, image sizes and prefetches, announcements, keyboar
 The protocol is defined in `mount.go` and `events.go`. Backends apply items in order on the main thread, in one hop per batch.
 
 - IDs are dense and reused after `ItemDelete`, possibly later in the same batch.
-- `ItemInsert` places a view before a sibling, not at an index, so views a platform adds itself cannot shift positions. A view that changes parents, or comes back after `ItemRemove`, is inserted after the round's other inserts, once its new parent is in place, and backends move it in one step: the web with `moveBefore` where the browser has it, parking removed views in a hidden element, so scroll offsets and iframes' pages stay. Each round's deletes come last.
+- `ItemInsert` places a view before a sibling, not at an index, so views a platform adds itself cannot shift positions.
+- A view that changes parents, or comes back after `ItemRemove`, is inserted after the round's other inserts, once its new parent is in place.
+- Backends move such a view in one step, so scroll offsets and iframes' pages stay: the web with `moveBefore`, parking removed views in a hidden element.
+- Each round's deletes come last.
 - A text field counts the user's edits. `ItemInputValue` carries the edit count the engine had seen, and the field ignores a value older than its last edit.
 - Platforms report only the events in a view's mask, and never wait for the engine. The engine queue is unbounded, merges scroll events per view and keeps only the last resize.
 
@@ -122,7 +114,7 @@ The protocol is defined in `mount.go` and `events.go`. Backends apply items in o
 | `MountItem` enum | One struct with a `Kind` and pointers to large parts | No allocation per item kind; easy to encode across a pipe |
 | `accessibilityActions` as a list in the props | `ViewProps.Actions` points at the element's list, never changed | `ViewProps` stays comparable, so the core diffs it with `!=` |
 | Options with defaults of `true` (`closeOnEscape`) | Negative names (`NoCloseOnEscape`) | The zero value must be the default |
-| Per-platform image loading and caching | One Go loader (`internal/platform/imageload`): `net/http`, shared fetches, an LRU, `context` cancellation | Written once; platforms only decode and draw |
+| Per-platform image loading and caching | One Go loader (`internal/platform/imageload`): `net/http`, shared fetches, an LRU, a disk cache, `context` cancellation | Written once; platforms only decode and draw |
 
 ## TSX entry
 

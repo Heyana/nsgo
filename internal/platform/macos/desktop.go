@@ -31,6 +31,9 @@ type chrome struct {
 	defaultMenu objc.ID // the menu bar the backend builds
 	menu        objc.ID // the app's menu bar
 	menuTarget  objc.ID
+	popup       objc.ID // the context menu shown last
+	tracking    bool    // whether a context menu tracks
+	nextPopups  []func()
 }
 
 // The title bar's height and the traffic lights' width when AppKit
@@ -73,6 +76,12 @@ func (s *surface) command(c *driver.WindowCommand) {
 		w.Send(sel("toggleFullScreen:"), objc.ID(0))
 	case driver.WindowClose:
 		w.Send(sel("performClose:"), objc.ID(0))
+	case driver.WindowSetFrame:
+		s.setWindowFrame(c.Frame)
+	case driver.WindowSetLevel:
+		s.setLevel(c.Level)
+	case driver.WindowOrderFront:
+		s.orderFront()
 	}
 }
 

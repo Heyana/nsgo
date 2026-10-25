@@ -101,7 +101,7 @@ const (
 	ItemCanvas
 	// ItemSetClipboard puts Value on the clipboard.
 	ItemSetClipboard
-	// ItemReadClipboard asks for the clipboard's text; the platform
+	// ItemReadClipboard asks for what Clipboard names; the platform
 	// answers with EventClipboard carrying Count.
 	ItemReadClipboard
 	// ItemAnnounce has the screen reader say Value.
@@ -180,6 +180,28 @@ const (
 	ItemBlockNative
 	// ItemShader sets a shader view's program and uniforms (Shader).
 	ItemShader
+	// ItemSetClipboardImage puts the encoded image Data ([]byte) on the
+	// clipboard.
+	ItemSetClipboardImage
+	// ItemOpenURL opens Value outside the app; the platform answers with
+	// EventOpenURL carrying Count.
+	ItemOpenURL
+	// ItemPickImages shows the system's photo picker for Pick; the
+	// platform answers with EventPick carrying Count.
+	ItemPickImages
+	// ItemToast shows Value as Android's toast, a long one when Count is
+	// 1; others ignore it.
+	ItemToast
+	// ItemAppearance shows the app in Appearance whatever the system's,
+	// native chrome included.
+	ItemAppearance
+	// ItemPopupMenu shows Menu as the platform's context menu at Point,
+	// in the root's points; desktops report a chosen item with EventMenu
+	// and answer with EventMenuClosed carrying Count.
+	ItemPopupMenu
+	// ItemQuit ends the app: desktops close the window and return from
+	// Run, Android finishes its activity; iOS and the web ignore it.
+	ItemQuit
 )
 
 // MountItem is one change to the native views. Kind says which fields
@@ -197,7 +219,11 @@ type MountItem struct {
 	// Point and Animated are ItemScrollTo's.
 	Point    Point
 	Animated bool
-	Events   EventMask
+	// Clipboard is what an ItemReadClipboard reads.
+	Clipboard ClipboardRead
+	// Appearance is ItemAppearance's.
+	Appearance Appearance
+	Events     EventMask
 
 	ViewStyle *ViewStyle
 	Text      *TextContent
@@ -229,6 +255,8 @@ type MountItem struct {
 	Sticky    []StickyCell
 	StatusBar *StatusBarConfig
 	Screen    *ScreenConfig
+	// Pick is ItemPickImages' request.
+	Pick *PickRequest
 }
 
 // StickyCell is a sticky list cell and its travel, in its scroll view's

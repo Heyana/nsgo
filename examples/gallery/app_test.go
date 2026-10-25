@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"slices"
 	"strings"
@@ -729,5 +730,87 @@ func TestMotionsKeyframesAndSnapping(t *testing.T) {
 	// Its frame is 44 down the content: it moves to the offset itself.
 	if s := list.StickyShift(app.Find("id:section-0").ID); s != 180-44 {
 		t.Fatalf("the first title shifts %v, want to the top with the header gone", s)
+	}
+}
+
+func TestServices(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Services")
+
+	app.Press("role:button Copy text")
+	if app.Clipboard != "Hello from NSGo" {
+		t.Fatalf("clipboard = %q", app.Clipboard)
+	}
+	app.Press("role:button Copy logo")
+	if !bytes.Equal(app.ClipboardImage, logo) || app.Clipboard != "" {
+		t.Fatal("the logo was not copied")
+	}
+	app.Press("role:button Paste image")
+	app.Find("id:pasted-image")
+	app.Find("text:Image: 256 × 256 px")
+	app.ClipboardFiles = []string{"file:///tmp/a.txt"}
+	app.Press("role:button Paste files")
+	app.Find("text:Files: file:///tmp/a.txt")
+	app.Press("role:button What is there?")
+	app.Find("text:Text: false, image: true")
+
+	app.Press("role:button Open the website")
+	app.Find("text:Opened https://github.com/oneo-me/nsgo")
+	app.OpenURL = func(string) bool { return false }
+	app.Press("role:button Write an email")
+	app.Find("text:Nothing opened mailto:")
+	app.Press("role:button Refused URL")
+	if want := []string{"https://github.com/oneo-me/nsgo", "mailto:hello@example.com?subject=Hello%20from%20NSGo"}; !slices.Equal(app.OpenedURLs, want) {
+		t.Fatalf("opened %q", app.OpenedURLs)
+	}
+
+	app.Press("role:button Pick a photo")
+	app.Find("text:No photo picked.")
+	app.PickImages = func(r core.PickRequest) []core.PickedFile {
+		return []core.PickedFile{{Name: "IMG_1.HEIC", MIME: "image/jpeg", Data: logo, Size: core.Size{Width: 4, Height: 3}},
+			{Name: "b.png", Data: logo}, {Name: "c.png", Data: logo}}
+	}
+	app.Press("role:button Pick up to 4, 800 px")
+	if r := app.Picks[1]; r.Limit != 4 || r.MaxDimension != 800 {
+		t.Fatalf("pick = %+v", r)
+	}
+	app.Find("id:picked-2")
+	app.Find("text:IMG_1.jpg")
+
+	app.Press("role:button Dark")
+	if app.Appearance != core.AppearanceDark {
+		t.Fatalf("appearance = %v", app.Appearance)
+	}
+	if got := app.Find("id:content").Parent.Style.Background; got != newTheme(true).background {
+		t.Fatalf("a forced dark appearance left the background %x", got)
+	}
+	app.Find("text:Forced: dark; shown: dark.")
+	app.Press("role:button System")
+	app.Find("text:Forced: the system's; shown: light.")
+
+	app.Press("role:button Long toast")
+	if len(app.Toasts) != 1 {
+		t.Fatalf("toasts = %q", app.Toasts)
+	}
+}
+
+func TestPopupMenu(t *testing.T) {
+	app := startDesktop(t)
+	app.Press("id:nav-Window")
+	app.Press("id:popup-area")
+	if len(app.PopupMenu) != 6 || app.PopupMenu[0].Shortcut != "mod+x" || !app.PopupMenu[5].Checked {
+		t.Fatalf("menu = %+v", app.PopupMenu)
+	}
+	app.ChoosePopup("Share", "Messages")
+	app.Find("text:Chose Messages (closed)")
+	if app.PopupMenu != nil {
+		t.Fatal("the menu stayed open")
+	}
+	app.RightClick("id:popup-area")
+	app.ClosePopup()
+	app.Find("text:Chose Messages (closed) (closed)")
+	app.Press("role:button Quit")
+	if app.Quits != 1 {
+		t.Fatalf("quits = %d", app.Quits)
 	}
 }

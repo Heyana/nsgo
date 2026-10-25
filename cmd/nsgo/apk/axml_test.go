@@ -48,6 +48,13 @@ func TestEncodeManifest(t *testing.T) {
 	if got, want := app.value(t, "icon"), uint32(iconResourceID); got != want {
 		t.Fatalf("icon = %#x, want %#x", got, want)
 	}
+	provider := app.child(t, "provider")
+	if got := provider.string(t, "authorities"); got != "dev.oneo.nsgo.test.nsgo.clip" {
+		t.Fatalf("the clipboard provider's authority = %q", got)
+	}
+	if got := provider.value(t, "grantUriPermissions"); got == 0 {
+		t.Fatal("the clipboard provider grants no URI permissions")
+	}
 
 	doc.walk(func(e *xmlNode) {
 		last := uint32(0)

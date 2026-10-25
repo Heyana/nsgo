@@ -1,8 +1,9 @@
-// Package imageload fetches image bytes for the backends that decode
-// images themselves: https and http, file paths and file: URIs, data:
-// URIs, "asset:" paths under the app's resources and bytes the app holds.
-// Requests for the same URI share one fetch, and the bytes stay in a
-// least-recently-used cache.
+// Package imageload fetches image bytes for the native backends: https
+// and http, file paths and file: URIs, data: URIs, "asset:" paths under
+// the app's resources and bytes the app holds. Requests for the same URI
+// share one fetch, the bytes stay in a least-recently-used cache in
+// memory, and downloads in a disk cache under HTTP's caching rules
+// (UseDiskCache).
 package imageload
 
 import (
@@ -196,6 +197,9 @@ func fetch(ctx context.Context, uri string, progress Progress) ([]byte, error) {
 		}
 		return os.ReadFile(filepath.FromSlash(u.Path))
 	case strings.HasPrefix(uri, "http://"), strings.HasPrefix(uri, "https://"):
+		if c := disk.Load(); c != nil {
+			return c.fetch(ctx, uri, progress)
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
 		if err != nil {
 			return nil, err

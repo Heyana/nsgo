@@ -3,9 +3,19 @@
 package web
 
 import (
+	"bytes"
+	stdimage "image"
+	_ "image/gif"
+	_ "image/jpeg"
+	"image/png"
+	"strings"
 	"syscall/js"
+	"time"
+
+	_ "golang.org/x/image/webp"
 
 	"github.com/oneo-me/nsgo/internal/driver"
+	"github.com/oneo-me/nsgo/internal/platform/picked"
 )
 
 // then calls done with what promise resolves to, or fail with why it is
@@ -51,24 +61,178 @@ func (s *surface) copyByCommand(text string) {
 	}
 }
 
-// readClipboard answers read id with the clipboard's text, or "" when
-// the page may not read it.
-func (s *surface) readClipboard(id uint32) {
-	answer := func(text string) {
-		s.engine.Dispatch(driver.Event{Kind: driver.EventClipboard, Count: id, Text: text})
-	}
+// readClipboard answers an ItemReadClipboard. The page reads the text,
+// and the PNG browsers put images on the clipboard as; it has no files.
+// What it may not read reads as nothing.
+func (s *surface) readClipboard(it *driver.MountItem) {
+	ev := driver.Event{Kind: driver.EventClipboard, Count: it.Count}
+	answer := func() { s.engine.Dispatch(ev) }
 	c := js.Global().Get("navigator").Get("clipboard")
-	if !c.Truthy() || !c.Get("readText").Truthy() {
-		answer("")
+	switch it.Clipboard {
+	case driver.ClipboardReadText:
+		if !c.Truthy() || !c.Get("readText").Truthy() {
+			answer()
+			return
+		}
+		then(c.Call("readText"), func(v js.Value) {
+			if v.Type() == js.TypeString {
+				ev.Text = v.String()
+			}
+			answer()
+		}, func(js.Value) { answer() })
+	case driver.ClipboardReadFiles:
+		answer()
+	default:
+		if !c.Truthy() || !c.Get("read").Truthy() {
+			answer()
+			return
+		}
+		then(c.Call("read"), func(items js.Value) {
+			want := "text/plain"
+			if it.Clipboard != driver.ClipboardReadHasText {
+				want = "image/png"
+			}
+			for i := range items.Length() {
+				item := items.Index(i)
+				if !item.Get("types").Call("includes", want).Bool() {
+					continue
+				}
+				if it.Clipboard != driver.ClipboardReadImage {
+					ev.Finished = true
+					break
+				}
+				then(item.Call("getType", want), func(blob js.Value) {
+					then(blob.Call("arrayBuffer"), func(buf js.Value) {
+						data := make([]byte, buf.Get("byteLength").Int())
+						js.CopyBytesToGo(data, js.Global().Get("Uint8Array").New(buf))
+						if c, err := png.DecodeConfig(bytes.NewReader(data)); err == nil && len(data) <= driver.MaxClipboardImage {
+							ev.Data = &driver.ClipboardImage{PNG: data,
+								Size: driver.Size{Width: driver.Points(c.Width), Height: driver.Points(c.Height)}}
+						}
+						answer()
+					}, func(js.Value) { answer() })
+				}, func(js.Value) { answer() })
+				return
+			}
+			answer()
+		}, func(js.Value) { answer() })
+	}
+}
+
+// setClipboardImage puts the image data encodes on the clipboard as the
+// PNG browsers take.
+func (s *surface) setClipboardImage(data []byte) {
+	c := js.Global().Get("navigator").Get("clipboard")
+	item := js.Global().Get("ClipboardItem")
+	if !c.Truthy() || !c.Get("write").Truthy() || !item.Truthy() {
 		return
 	}
-	then(c.Call("readText"), func(v js.Value) {
-		if v.Type() == js.TypeString {
-			answer(v.String())
-		} else {
-			answer("")
+	if driver.SniffImage(data) != "image/png" {
+		m, _, err := stdimage.Decode(bytes.NewReader(data))
+		if err != nil {
+			return
 		}
-	}, func(js.Value) { answer("") })
+		var b bytes.Buffer
+		if png.Encode(&b, m) != nil {
+			return
+		}
+		data = b.Bytes()
+	}
+	then(c.Call("write", []any{item.New(map[string]any{"image/png": blobOf(data, "image/png")})}),
+		func(js.Value) {}, func(js.Value) {})
+}
+
+// blobOf returns a Blob of data of type mime.
+func blobOf(data []byte, mime string) js.Value {
+	arr := js.Global().Get("Uint8Array").New(len(data))
+	js.CopyBytesToJS(arr, data)
+	return js.Global().Get("Blob").New([]any{arr}, map[string]any{"type": mime})
+}
+
+// openURL opens a web page in a new tab, and has the browser hand any
+// other link to the app that handles it. The browser tells only whether
+// a tab opened, and a popup blocker answers no.
+func (s *surface) openURL(u string, id uint32) {
+	opened := true
+	if scheme, _, _ := strings.Cut(u, ":"); scheme == "http" || scheme == "https" {
+		w := js.Global().Call("open", u, "_blank")
+		if opened = w.Truthy(); opened {
+			w.Set("opener", js.Null())
+		}
+	} else {
+		a := s.doc.Call("createElement", "a")
+		a.Set("href", u)
+		a.Call("click")
+	}
+	s.engine.Dispatch(driver.Event{Kind: driver.EventOpenURL, Count: id, Finished: opened})
+}
+
+// pickImages shows the browser's file chooser for images and prepares
+// the ones chosen as r asks; a cancelled chooser answers with none.
+func (s *surface) pickImages(r driver.PickRequest, id uint32) {
+	input := s.doc.Call("createElement", "input")
+	input.Set("type", "file")
+	if r.Format == driver.PickCompatible {
+		input.Set("accept", "image/jpeg,image/png,image/gif,image/webp")
+	} else {
+		input.Set("accept", "image/*")
+	}
+	input.Set("multiple", r.Limit > 1)
+	var change, cancel js.Func
+	answered := false
+	answer := func(files []driver.PickedFile) {
+		if answered {
+			return
+		}
+		answered = true
+		change.Release()
+		cancel.Release()
+		s.engine.Dispatch(driver.Event{Kind: driver.EventPick, Count: id, Data: files})
+	}
+	change = js.FuncOf(func(js.Value, []js.Value) any {
+		list := input.Get("files")
+		n := min(list.Length(), max(r.Limit, 1))
+		files := make([]driver.PickedFile, n)
+		left := n
+		if n == 0 {
+			answer(nil)
+			return nil
+		}
+		for i := range n {
+			f := list.Index(i)
+			files[i] = driver.PickedFile{Name: f.Get("name").String(), MIME: f.Get("type").String(),
+				Modified: time.UnixMilli(int64(f.Get("lastModified").Float()))}
+			then(f.Call("arrayBuffer"), func(buf js.Value) {
+				files[i].Data = make([]byte, buf.Get("byteLength").Int())
+				js.CopyBytesToGo(files[i].Data, js.Global().Get("Uint8Array").New(buf))
+				if left--; left == 0 {
+					answer(picked.Prepare(r, files))
+				}
+			}, func(js.Value) {
+				if left--; left == 0 {
+					answer(picked.Prepare(r, files))
+				}
+			})
+		}
+		return nil
+	})
+	cancel = js.FuncOf(func(js.Value, []js.Value) any { answer(nil); return nil })
+	input.Call("addEventListener", "change", change)
+	input.Call("addEventListener", "cancel", cancel)
+	input.Call("click")
+}
+
+// setAppearance has the browser draw its own parts, such as form
+// controls and scroll bars, in a, or as the system's appearance asks.
+func (s *surface) setAppearance(a driver.Appearance) {
+	scheme := ""
+	switch a {
+	case driver.AppearanceLight:
+		scheme = "light"
+	case driver.AppearanceDark:
+		scheme = "dark"
+	}
+	s.doc.Get("documentElement").Get("style").Set("colorScheme", scheme)
 }
 
 // announce has screen readers say text: each message is a new node of a

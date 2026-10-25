@@ -47,6 +47,12 @@ type Options struct {
 	// DataDir and CacheDir are the app's directories, made when the
 	// engine starts; "" where the target has none.
 	DataDir, CacheDir string
+	// Appearance is the appearance the app starts in, forced as
+	// Scope.SetAppearance forces it; the system's by default.
+	Appearance driver.Appearance
+	// OpenURL is an embedding host's handler for the URLs the app opens,
+	// asked before the platform (core.RootOptions.OpenURL).
+	OpenURL func(url string) bool
 	// Perf collects this app's commit timings; nil measures nothing.
 	Perf *PerfMonitor
 	// Thread runs first on the OS thread the engine keeps, before the
@@ -118,11 +124,13 @@ func (e *Engine) run(p Platform, app App, opts Options) {
 		Storage:      opts.Storage,
 		DataDir:      opts.DataDir,
 		CacheDir:     opts.CacheDir,
+		OpenURL:      opts.OpenURL,
 	})
 	defer root.Dispose()
 	tree := core.NewTree(root, p)
 	tree.Resize(opts.Size)
 	tree.SetEnvironment(opts.Environment)
+	tree.SetAppearance(opts.Appearance)
 	perf := opts.Perf
 	// commit applies what changed and records what it cost when a monitor
 	// measures; start is when the wake-up that led here began.

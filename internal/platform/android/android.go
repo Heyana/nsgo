@@ -25,6 +25,7 @@ package android
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -125,6 +126,8 @@ type Options struct {
 	// Fonts are font files under the app's resources, registered before
 	// the first view.
 	Fonts []string
+	// Appearance is the appearance the app starts in.
+	Appearance driver.Appearance
 }
 
 // Run serves app to the Java runtime over standard input and output until
@@ -164,9 +167,10 @@ func Run(app engine.App, opts Options) {
 		switch kind {
 		case msgStart:
 			size := driver.Size{Width: r.points(), Height: r.points()}
-			eopts := engine.Options{Size: size, Environment: s.env}
+			eopts := engine.Options{Size: size, Environment: s.env, Appearance: opts.Appearance}
 			// The runtime passes the app's own files and cache directories.
 			eopts.SetDirs(os.Getenv("NSGO_DATA_DIR"), os.Getenv("NSGO_CACHE_DIR"))
+			imageload.UseDiskCache(eopts.CacheDir)
 			s.engine = engine.Start(s, app, eopts)
 			close(s.started)
 		case msgResize:
@@ -205,8 +209,13 @@ func Run(app engine.App, opts Options) {
 			if ev.Kind == driver.EventTouch {
 				ev.Touches = readTouches(data)
 			}
-			if ev.Kind == driver.EventPaste {
+			switch ev.Kind {
+			case driver.EventPaste:
 				ev.Data, ev.Text = readPaste(ev.Text, data), ""
+			case driver.EventClipboard:
+				readClipboard(&ev, data)
+			case driver.EventPick:
+				ev.Data = readPicked(data)
 			}
 			if ev.Kind == driver.EventPan {
 				// A pan's start and end carry its bound values as the size.
@@ -269,6 +278,54 @@ func readNavigation(r *reader) *driver.WebNavigation {
 	}
 }
 
+// readClipboard fills in what an EventClipboard carries in its data:
+// "image", the PNG's size and the PNG in base64, or "uri" lines of a
+// file's file: URL.
+func readClipboard(ev *driver.Event, data string) {
+	for _, line := range strings.Split(data, "\n") {
+		kind, rest, _ := strings.Cut(line, "\t")
+		switch kind {
+		case "uri":
+			ev.URIs = append(ev.URIs, rest)
+		case "image":
+			f := strings.SplitN(rest, "\t", 3)
+			if len(f) != 3 {
+				continue
+			}
+			w, _ := strconv.Atoi(f[0])
+			h, _ := strconv.Atoi(f[1])
+			if b, err := base64.StdEncoding.DecodeString(f[2]); err == nil && len(b) <= driver.MaxClipboardImage {
+				ev.Data = &driver.ClipboardImage{PNG: b, Size: driver.Size{Width: driver.Points(w), Height: driver.Points(h)}}
+			}
+		}
+	}
+}
+
+// readPicked reads the files an EventPick carries in its data, one per
+// line: the name, the MIME type, the width, the height, the time it was
+// last changed in milliseconds and the bytes in base64.
+func readPicked(data string) []driver.PickedFile {
+	var files []driver.PickedFile
+	for _, line := range strings.Split(data, "\n") {
+		f := strings.Split(line, "\t")
+		if len(f) != 6 {
+			continue
+		}
+		b, err := base64.StdEncoding.DecodeString(f[5])
+		if err != nil {
+			continue
+		}
+		w, _ := strconv.Atoi(f[2])
+		h, _ := strconv.Atoi(f[3])
+		file := driver.PickedFile{Name: f[0], MIME: f[1], Data: b, Size: driver.Size{Width: driver.Points(w), Height: driver.Points(h)}}
+		if ms, _ := strconv.ParseInt(f[4], 10, 64); ms > 0 {
+			file.Modified = time.UnixMilli(ms)
+		}
+		files = append(files, file)
+	}
+	return files
+}
+
 // readEnvironment reads the environment NsgoView.environment writes.
 func readEnvironment(r *reader) driver.Environment {
 	env := driver.Environment{
@@ -287,6 +344,7 @@ func readEnvironment(r *reader) driver.Environment {
 	env.Locale = r.str()
 	// The toolbar's heights, without and with a large title.
 	env.HeaderHeight, env.LargeHeaderHeight = r.points(), r.points()
+	env.OSVersion.Major = int(r.u32()) // the API level
 	return env
 }
 
@@ -960,6 +1018,28 @@ func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []native
 			w.str(it.Value)
 		case driver.ItemReadClipboard:
 			w.u32(it.Count)
+			w.byte(byte(it.Clipboard))
+		case driver.ItemSetClipboardImage:
+			data, _ := it.Data.([]byte)
+			w.str(string(data))
+		case driver.ItemOpenURL:
+			w.u32(it.Count)
+			w.str(it.Value)
+		case driver.ItemPickImages:
+			// The request, as Picker.java reads it: the limit, the longest
+			// side (0: any), the JPEG quality (0: the default, keeping
+			// JPEGs) and whether the stored format stays.
+			r := it.Pick
+			w.u32(it.Count)
+			w.u32(uint32(r.Limit))
+			w.u32(uint32(r.MaxDimension))
+			w.float(r.Quality)
+			w.flags(r.Format == driver.PickCurrent)
+		case driver.ItemToast:
+			w.str(it.Value)
+			w.flags(it.Count == uint32(1))
+		case driver.ItemAppearance:
+			w.byte(byte(it.Appearance))
 		case driver.ItemKeymap:
 			w.u32(uint32(len(it.Keys)))
 			for _, k := range it.Keys {

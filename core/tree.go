@@ -49,13 +49,14 @@ type Tree struct {
 	layoutAnim  *LayoutAnimation
 	fontScale   float32
 	alerts      map[uint32]alertWait
-	reads       map[uint32]readWait
+	waits       map[uint32]wait
 	imageInfos  map[uint32]imageInfoWait
 	keys        []*keyBinding
 	keysChanged bool
 	backs       []*backHandler
 	alertID     uint32
 	menuActions map[uint32]menuAction
+	popup       popupMenu
 	menuID      uint32
 	menuGen     uint32
 	rtl         bool // the layout direction the nodes were mapped for
@@ -1119,8 +1120,11 @@ func (t *Tree) Dispatch(ev driver.Event) {
 	case driver.EventAlert:
 		t.answerAlert(ev.Count, ev.Index)
 		return
-	case driver.EventClipboard:
-		t.answerRead(ev.Count, ev.Text)
+	case driver.EventClipboard, driver.EventOpenURL, driver.EventPick:
+		t.answer(ev)
+		return
+	case driver.EventMenuClosed:
+		t.popupClosed(ev.Count)
 		return
 	case driver.EventImageInfo:
 		t.answerImageInfo(ev)

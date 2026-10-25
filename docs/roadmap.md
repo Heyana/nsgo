@@ -6,44 +6,31 @@ References are files in `nsh/docs/dev/` unless they name a crate, with the bulle
 
 ## Order
 
-Sections run in build order: services, the tool, embedding and performance. The last section waits for community contributions, and nothing above it depends on it.
+Sections run in build order: testing and the tool, embedding and performance. The last section waits for community contributions, and nothing above it depends on it.
 
-## 1. Services and windows
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| Clipboard | `crates/nsh-core/src/runtime/clipboard.rs` | Images and files besides text |
-| Open URLs | `js-modules.md` (`nsh/device`) | `OpenURL` opens a link outside the app, through the embedding host when there is one |
-| Photo picker | `js-modules.md` (`nsh/picker`) | The system's picker returns the photos a user chose as files |
-| Image disk cache | `images.md` (disk cache) | Downloaded images stay on disk across launches under HTTP's caching rules |
-| Environment | `crates/nsh-core/src/platform.rs` | The OS version and the mac and TV idioms |
-| System toast | `crates/nsh-core/src/runtime/android.rs` | Android shows the platform's toast |
-| Window commands | `crates/nsh-core/src/runtime/desktop.rs` | Animated, top-anchored `SetFrame`, window levels, `OrderFront`, an auto-hiding menu bar, native popup menus |
-| App lifecycle | `macos.md` (standalone shutdown) | `nsgo.Run` returns for cleanup; apps quit themselves or outlive their last window; a forced appearance reaches native chrome |
-
-## 2. Testing and the tool
+## 1. Testing and the tool
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | Test steps | `tooling.md` (headless runs) | Press, type, clear, submit, scroll, drag, hover and long press send what real input sends, move the clock and fail on disabled views |
-| Test queries | `crates/nsh-testing/src/selector.rs`, `tooling.md` | Bare and regex selectors, Playwright's visibility, more waits, `FastForward`, the environment from the first frame, default dialog and picker answers, the URLs opened, a span's resolved style |
+| Test queries | `crates/nsh-testing/src/selector.rs`, `tooling.md` | Bare and regex selectors, Playwright's visibility, more waits, `FastForward`, the environment from the first frame, default dialog answers, a span's resolved style |
 | `nsgo test` | `tooling.md` (`nsh test`) | Runs an app's tests with a filter, JUnit output and per-commit traces |
 | Tests on real targets | `tooling.md` (on a real platform) | `nsgo test -target` drives the steps on each backend with native input and takes screenshots |
 | Dev loop | `tooling.md` (dev server), `macos.md` (measuring) | Release dev builds, a free port, LAN hosts, an error overlay, a reload key and simulators by name |
 | Packages | `embedding.md`, `web.md` | Build numbers, the app's appearance, Linux and Windows archives, IPAs, a cacheable web site with a manifest, `-run` |
 | Store signing | `embedding.md` | `nsgo build` signs an IPA with a provisioning profile, wildcard ones too, and an APK with a keystore |
 
-## 3. Embedding
+## 2. Embedding
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
 | Embedding SDKs | `embedding.md` | iOS, Android and desktop host apps show an NSGo view run by their own loop |
 | Several engines | `architecture.md` | Backends keep no singletons, so one process runs several surfaces |
-| Host settings | `embedding.md` | A host registers components per view, sets locale, text size, appearance and theme tokens, receives app errors and opened URLs and sets the data directory |
+| Host settings | `embedding.md` | A host registers components per view, sets locale, text size, appearance and theme tokens, receives app errors and the URLs `RootOptions.OpenURL` takes, and sets the data directory |
 | Host channel | `embedding.md` (the host channel) | The host and the app call each other's functions and send events without a view between them |
 | Component lifetime | `embedding.md` (native components) | Native components are destroyed when their app stops, on Android too |
 
-## 4. Performance
+## 3. Performance
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
@@ -55,7 +42,7 @@ Sections run in build order: services, the tool, embedding and performance. The 
 | Commits that follow changes | `performance.md` (Rust components run once) | A commit resolves styles and emits items only for the nodes that changed, not the whole tree |
 | Windows frames | `windows.md` (frames) | The frame clock follows the compositor with `DwmFlush` |
 
-## 5. Finish the existing platforms
+## 4. Finish the existing platforms
 
 These items wait for community contributions.
 
@@ -67,7 +54,7 @@ These items wait for community contributions.
 | Desktop accessibility | `windows.md`, `linux.md` | Windows exposes UI Automation and Linux GTK's accessibility, canvas nodes included, and both announce |
 | Desktop chrome | `windows.md` (alerts), `linux.md` | Windows draws alerts in the surface; Linux animates modals |
 | Effects | `styles.md` (effects) | Windows draws backdrop filters and blend modes, Linux blend modes, and Android drop shadows from Android 12 |
-| Android | `elements.md`, `styles.md` (Android differences) | Ripples, predictive back on screens, blurred images before Android 12, and layout animations aligned with the IME's motion (`WindowInsetsAnimation`) |
+| Android | `elements.md`, `styles.md` (Android differences) | Ripples, predictive back on screens, blurred images before Android 12, layout animations aligned with the IME's motion (`WindowInsetsAnimation`), and a forced appearance in the activity's theme and web views |
 | Android frames | `elements.md` (interaction and the environment) | `RequestAnimationFrame` runs on `Choreographer` frames |
 | Web | `web.md` | Browser history and back keys, a focus state for pressables, local time with daylight saving |
 | Real file drags | `file-drop.md` | A real drag from Finder, Explorer and a Linux file manager is checked to reach a view |

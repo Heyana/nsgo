@@ -14,9 +14,13 @@ type Env struct {
 	fontScale, ratio          *Signal[float32]
 	locale                    *Signal[string]
 	os                        *Signal[OS]
+	version                   *Signal[OSVersion]
 	idiom                     *Signal[Idiom]
-	material                  *Signal[WindowMaterial]
-	appleKeys                 *Signal[bool]
+	appearance                *Signal[Appearance]
+	// systemDark is the system's appearance, which a forced one hides.
+	systemDark bool
+	material   *Signal[WindowMaterial]
+	appleKeys  *Signal[bool]
 	// headers are the system header's heights, which only the tree reads.
 	headers [2]Points
 }
@@ -37,7 +41,9 @@ func newEnv(cx *Scope) *Env {
 		ratio:            NewSignal(cx, float32(1)),
 		locale:           NewSignal(cx, ""),
 		os:               NewSignal(cx, OS("")),
+		version:          NewSignal(cx, OSVersion{}),
 		idiom:            NewSignal(cx, IdiomPhone),
+		appearance:       NewSignal(cx, AppearanceSystem),
 		appleKeys:        NewSignal(cx, false),
 		material:         NewSignal(cx, WindowMaterialNone),
 	}
@@ -71,7 +77,8 @@ func (e *Env) set(v Environment) {
 	e.maximized.Set(v.Maximized)
 	e.keyboard.Set(v.KeyboardHeight)
 	e.keyboardDuration.Set(v.KeyboardDuration)
-	e.dark.Set(v.Dark)
+	e.systemDark = v.Dark
+	e.dark.Set(e.shownDark())
 	e.reduce.Set(v.ReduceMotion)
 	e.rtl.Set(v.RTL)
 	e.reader.Set(v.ScreenReader)
@@ -79,6 +86,7 @@ func (e *Env) set(v Environment) {
 	e.ratio.Set(v.PixelRatio)
 	e.locale.Set(v.Locale)
 	e.os.Set(v.OS)
+	e.version.Set(v.OSVersion)
 	e.appleKeys.Set(v.OS == OSMacOS || v.OS == OSIOS || v.AppleKeyboard)
 	e.idiom.Set(v.Idiom)
 	e.material.Set(v.WindowMaterial)
@@ -103,8 +111,25 @@ func (e *Env) Maximized() bool { return e.maximized.Get() }
 // KeyboardDuration returns how long the keyboard takes to move.
 func (e *Env) KeyboardDuration() time.Duration { return e.keyboardDuration.Get() }
 
-// Dark reports whether the system appearance is dark.
+// shownDark is whether the app shows dark: as SetAppearance forces it,
+// else as the system's appearance is.
+func (e *Env) shownDark() bool {
+	switch e.appearance.GetUntracked() {
+	case AppearanceLight:
+		return false
+	case AppearanceDark:
+		return true
+	}
+	return e.systemDark
+}
+
+// Dark reports whether the app shows dark: the appearance Scope.SetAppearance
+// forces, else the system's.
 func (e *Env) Dark() bool { return e.dark.Get() }
+
+// Appearance returns the appearance Scope.SetAppearance forces, or
+// AppearanceSystem.
+func (e *Env) Appearance() Appearance { return e.appearance.Get() }
 
 // FontScale returns the user's text size multiplier.
 func (e *Env) FontScale() float32 { return e.fontScale.Get() }
@@ -126,6 +151,10 @@ func (e *Env) Locale() string { return e.locale.Get() }
 
 // OS returns the operating system.
 func (e *Env) OS() OS { return e.os.Get() }
+
+// OSVersion returns the system's version: Android's API level as its
+// major, zero on the web.
+func (e *Env) OSVersion() OSVersion { return e.version.Get() }
 
 // Idiom returns the kind of device.
 func (e *Env) Idiom() Idiom { return e.idiom.Get() }

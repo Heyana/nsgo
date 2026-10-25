@@ -1,0 +1,174 @@
+//go:build linux && !android
+
+package linux
+
+import (
+	"bytes"
+	"fmt"
+	"image"
+	"image/png"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ebitengine/purego"
+
+	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/internal/driver"
+)
+
+var (
+	gActionActivate     func(action, parameter uintptr)
+	gtkWidgetGetVisible func(widget uintptr) int32
+)
+
+func init() {
+	if openLibs() == nil {
+		purego.RegisterLibFunc(&gActionActivate, gioLib, "g_action_activate")
+		purego.RegisterLibFunc(&gtkWidgetGetVisible, gtkLib, "gtk_widget_get_visible")
+	}
+}
+
+// TestServicesReachGTK puts an image on the clipboard and reads it back,
+// forces the appearance, sizes the window, hides its menu bar until Alt,
+// shows a context menu and quits.
+func TestServicesReachGTK(t *testing.T) {
+	scopes := make(chan *core.Scope, 1)
+	status := make(chan string, 16)
+	app := func(c *core.Scope) core.Node {
+		scopes <- c
+		c.SetApplicationMenu([]core.MenuItem{{Label: "File", Items: []core.MenuItem{{Label: "New", OnSelect: func() {}}}}})
+		return core.View{Style: core.Style{Background: driver.RGB(0xffffff)}}
+	}
+	w := startTestWindow(t, app, Options{Title: "nsgo-services", Width: 360, Height: 240})
+	cx := <-scopes
+	ask := func(fn func(say func(string))) string {
+		t.Helper()
+		cx.Post(func() { fn(func(s string) { status <- s }) })
+		select {
+		case s := <-status:
+			return s
+		case <-time.After(5 * time.Second):
+			t.Fatal("no answer")
+		}
+		return ""
+	}
+	wait := func(what string, ok func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			var done bool
+			w.onLoop(t, func() { done = ok() })
+			if done {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s did not happen", what)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+
+	m := image.NewRGBA(image.Rect(0, 0, 3, 2))
+	for i := range m.Pix {
+		m.Pix[i] = 0xff
+	}
+	var b bytes.Buffer
+	png.Encode(&b, m)
+	cx.Post(func() { cx.SetClipboardImage(b.Bytes()) })
+	if got := ask(func(say func(string)) {
+		cx.HasClipboardImage(func(has bool) {
+			cx.ReadClipboardImage(func(img core.ClipboardImage, ok bool) {
+				cx.HasClipboardText(func(text bool) { say(fmt.Sprintf("%v %v %v %v", has, ok, img.Size, text)) })
+			})
+		})
+	}); got != "true true {3 2} false" {
+		t.Errorf("image = %s", got)
+	}
+	cx.Post(func() { cx.SetClipboard("linux text") })
+	if got := ask(func(say func(string)) {
+		cx.ReadClipboard(func(s string) { cx.HasClipboardImage(func(has bool) { say(fmt.Sprintf("%s %v", s, has)) }) })
+	}); got != "linux text false" {
+		t.Errorf("text = %s", got)
+	}
+
+	// A forced appearance has GTK draw dark, and the system's setting
+	// comes back.
+	dark := func() bool {
+		if colorScheme() {
+			return settingInt(gtkSettingsGetDefault(), "gtk-interface-color-scheme") == schemeDark
+		}
+		return settingBool(gtkSettingsGetDefault(), "gtk-application-prefer-dark-theme")
+	}
+	var before bool
+	w.onLoop(t, func() { before = dark() })
+	cx.Post(func() { cx.SetAppearance(core.AppearanceDark) })
+	wait("a dark appearance", dark)
+	cx.Post(func() { cx.SetAppearance(core.AppearanceSystem) })
+	wait("the system's appearance", func() bool { return dark() == before })
+
+	cx.Post(func() { cx.SetWindowFrame(core.WindowFrame{Width: 500, Height: 300}) })
+	wait("the new size", func() bool {
+		var width, height int32
+		gtkWindowGetDefaultSize(w.win, &width, &height)
+		return width == 500 && height == 300
+	})
+
+	// The menu bar hides until Alt is pressed and released alone.
+	if w.menuBar == 0 {
+		t.Error("no menu bar")
+	}
+	cx.Post(func() { cx.SetMenuBar(core.MenuBarAutoHide) })
+	wait("the menu bar hiding", func() bool { return w.menuBar == 0 })
+	w.onLoop(t, func() {
+		w.menuBarKey(gdkAltL, 0, true)
+		w.menuBarKey(gdkAltL, gdkAlt, false)
+	})
+	wait("Alt showing the menu bar", func() bool { return w.menuBar != 0 })
+	w.onLoop(t, func() {
+		w.menuBarKey(gdkAltL, 0, true)
+		w.menuBarKey(gdkAltL, gdkAlt, false)
+	})
+	wait("Alt hiding the menu bar", func() bool { return w.menuBar == 0 })
+
+	// A context menu pops up, and closing it reports it closed.
+	chose := make(chan string, 2)
+	cx.Post(func() {
+		cx.PopupMenu([]core.MenuItem{{Label: "Copy", OnSelect: func() { chose <- "copy" }}}, core.Point{X: 20, Y: 20},
+			func() { status <- "closed" })
+	})
+	wait("the context menu", func() bool { return w.popover != 0 && gtkWidgetGetVisible(w.popover) != 0 })
+	w.onLoop(t, func() {
+		for action := range w.popupRefs {
+			gActionActivate(action, 0)
+		}
+		gtkPopoverPopdown(w.popover)
+	})
+	select {
+	case s := <-status:
+		if s != "closed" {
+			t.Errorf("status = %s", s)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the context menu did not report closing")
+	}
+	select {
+	case s := <-chose:
+		if s != "copy" {
+			t.Errorf("chose %s", s)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("the item chosen did not run")
+	}
+
+	if got := ask(func(say func(string)) { say(cx.Env().OSVersion().String()) }); got == "0.0" || !strings.Contains(got, ".") {
+		t.Errorf("OS version = %s", got)
+	}
+
+	// Quitting ends the main loop, so nothing runs on it after.
+	cx.Post(cx.Quit)
+	time.Sleep(500 * time.Millisecond)
+	if !w.closing {
+		t.Error("Quit did not close the window")
+	}
+}

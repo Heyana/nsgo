@@ -17,7 +17,9 @@
 package nsgotest
 
 import (
+	"bytes"
 	"fmt"
+	"image/png"
 	"slices"
 	"strings"
 	"sync"
@@ -60,10 +62,32 @@ func (seed) Write(driver.StorageChange)         {}
 type App struct {
 	t    testing.TB
 	size driver.Size
-	// Clipboard is the clipboard's text; Announced what screen readers
-	// were asked to say.
-	Clipboard string
-	Announced []string
+	// Clipboard is the clipboard's text, ClipboardImage its image as the
+	// app last set it or reads it, and ClipboardFiles the file: URLs it
+	// holds; Announced what screen readers were asked to say.
+	Clipboard      string
+	ClipboardImage []byte
+	ClipboardFiles []string
+	Announced      []string
+	// OpenedURLs are the URLs the app opened, oldest first. OpenURL
+	// answers whether each opens; every one does when it is nil.
+	OpenedURLs []string
+	OpenURL    func(url string) bool
+	// Picks are the photo picks the app asked for, oldest first.
+	// PickImages answers each with the files the user picks; with none
+	// the user cancels.
+	Picks      []driver.PickRequest
+	PickImages func(r driver.PickRequest) []driver.PickedFile
+	// Toasts are the toasts the app showed; Appearance the appearance it
+	// last forced; Quits how often it asked to quit.
+	Toasts     []string
+	Appearance driver.Appearance
+	Quits      int
+	// PopupMenu is the context menu the app shows with PopupMenu, at
+	// PopupAt; nil once it closed.
+	PopupMenu []driver.MenuEntry
+	PopupAt   driver.Point
+	popupID   uint32
 	// AccessibilityFocus is the view the app last moved the screen
 	// reader's focus to.
 	AccessibilityFocus *View
@@ -750,6 +774,45 @@ func (a *App) ChooseMenu(path ...string) {
 	}
 }
 
+// ChoosePopup chooses the item at path in the context menu the app shows
+// with PopupMenu, its labels from the menu down, which closes the menu.
+func (a *App) ChoosePopup(path ...string) {
+	a.t.Helper()
+	if a.PopupMenu == nil {
+		a.t.Fatalf("nsgotest: no context menu shows")
+	}
+	items := a.PopupMenu
+	for i, label := range path {
+		var found *driver.MenuEntry
+		for k := range items {
+			if items[k].Label == label {
+				found = &items[k]
+			}
+		}
+		if found == nil || found.Disabled {
+			a.t.Fatalf("nsgotest: no context menu item %q", path[:i+1])
+		}
+		if i == len(path)-1 {
+			if found.ID != 0 {
+				a.post(driver.Event{Kind: driver.EventMenu, Count: found.ID})
+			}
+			a.ClosePopup()
+			return
+		}
+		items = found.Items
+	}
+}
+
+// ClosePopup closes the context menu the app shows without choosing an
+// item, as Escape or a click elsewhere does.
+func (a *App) ClosePopup() {
+	if a.popupID != 0 {
+		a.post(driver.Event{Kind: driver.EventMenuClosed, Count: a.popupID})
+		a.PopupMenu, a.popupID = nil, 0
+	}
+	a.Settle()
+}
+
 // Back presses Escape or the back button.
 func (a *App) Back() { a.dispatch(driver.Event{Kind: driver.EventBack, ID: a.rootID}) }
 
@@ -1310,14 +1373,34 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemStickyCells:
 			v.Sticky = it.Sticky
 		case driver.ItemSetClipboard:
-			a.Clipboard = it.Value
+			a.Clipboard, a.ClipboardImage, a.ClipboardFiles = it.Value, nil, nil
+		case driver.ItemSetClipboardImage:
+			data, _ := it.Data.([]byte)
+			a.Clipboard, a.ClipboardImage, a.ClipboardFiles = "", data, nil
 		case driver.ItemReadClipboard:
-			id, text := it.Count, a.Clipboard
-			a.mu.Lock()
-			a.posts = append(a.posts, func() {
-				a.tree.Dispatch(driver.Event{Kind: driver.EventClipboard, Count: id, Text: text})
-			})
-			a.mu.Unlock()
+			a.readClipboard(&it)
+		case driver.ItemOpenURL:
+			a.OpenedURLs = append(a.OpenedURLs, it.Value)
+			opened := a.OpenURL == nil || a.OpenURL(it.Value)
+			a.post(driver.Event{Kind: driver.EventOpenURL, Count: it.Count, Finished: opened})
+		case driver.ItemPickImages:
+			a.Picks = append(a.Picks, *it.Pick)
+			var files []driver.PickedFile
+			if a.PickImages != nil {
+				files = a.PickImages(*it.Pick)
+			}
+			a.post(driver.Event{Kind: driver.EventPick, Count: it.Count, Data: files})
+		case driver.ItemToast:
+			a.Toasts = append(a.Toasts, it.Value)
+		case driver.ItemAppearance:
+			a.Appearance = it.Appearance
+		case driver.ItemQuit:
+			a.Quits++
+		case driver.ItemPopupMenu:
+			if a.popupID != 0 {
+				a.post(driver.Event{Kind: driver.EventMenuClosed, Count: a.popupID})
+			}
+			a.PopupMenu, a.PopupAt, a.popupID = it.Menu, it.Point, it.Count
 		case driver.ItemImageInfo:
 			ev := driver.Event{Kind: driver.EventImageInfo, Count: it.Count}
 			if size, ok := a.ImageSizes[it.Image.Source.URI]; ok {
@@ -1357,6 +1440,38 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 		}
 	}
+}
+
+// post has ev reach the app when it next settles, as a platform's answer
+// does.
+func (a *App) post(ev driver.Event) {
+	a.mu.Lock()
+	a.posts = append(a.posts, func() { a.tree.Dispatch(ev) })
+	a.mu.Unlock()
+}
+
+// readClipboard answers a clipboard read from the model's clipboard.
+func (a *App) readClipboard(it *driver.MountItem) {
+	ev := driver.Event{Kind: driver.EventClipboard, Count: it.Count}
+	switch it.Clipboard {
+	case driver.ClipboardReadText:
+		ev.Text = a.Clipboard
+	case driver.ClipboardReadHasText:
+		ev.Finished = a.Clipboard != ""
+	case driver.ClipboardReadImage:
+		if len(a.ClipboardImage) > 0 {
+			img := &driver.ClipboardImage{PNG: a.ClipboardImage}
+			if c, err := png.DecodeConfig(bytes.NewReader(a.ClipboardImage)); err == nil {
+				img.Size = driver.Size{Width: driver.Points(c.Width), Height: driver.Points(c.Height)}
+			}
+			ev.Data = img
+		}
+	case driver.ClipboardReadHasImage:
+		ev.Finished = len(a.ClipboardImage) > 0
+	case driver.ClipboardReadFiles:
+		ev.URIs = slices.Clone(a.ClipboardFiles)
+	}
+	a.post(ev)
 }
 
 // setFocus moves focus to or from v and, as a platform does, reports the

@@ -21,6 +21,7 @@ import (
 	"github.com/oneo-me/nsgo/internal/driver"
 	"github.com/oneo-me/nsgo/internal/engine"
 	"github.com/oneo-me/nsgo/internal/platform/apple"
+	"github.com/oneo-me/nsgo/internal/platform/imageload"
 	"github.com/oneo-me/nsgo/internal/platform/queue"
 )
 
@@ -108,6 +109,8 @@ type view struct {
 }
 
 type surface struct {
+	// appearance is the one the app forces, or the system's.
+	appearance driver.Appearance
 	// stickyBound are the scroll views with sticky cells whose insets
 	// follow animated values.
 	stickyBound map[*view]bool
@@ -318,12 +321,14 @@ type Options struct {
 	// Fonts are font files under the app's resources, registered before
 	// the first view.
 	Fonts []string
+	// Appearance is the appearance the app starts in.
+	Appearance driver.Appearance
 }
 
 // Run shows app full screen and runs UIKit's event loop. Call it from
 // main; it does not return.
 func Run(root engine.App, opts Options) {
-	app = &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*motion{},
+	app = &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*motion{}, appearance: opts.Appearance,
 		components: opts.Components, unknown: map[string]bool{}, accessories: map[driver.NodeID]*view{}}
 	app.animator = driver.NewAnimator(func(e driver.Event) { app.engine.Dispatch(e) })
 	loadUIKit()
@@ -345,6 +350,7 @@ func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID)
 	views[s.native] = &view{surface: s}
 	controller.Send(sel("setView:"), s.native)
 	window.Send(sel("setRootViewController:"), controller)
+	setAppearance(s.appearance)
 	window.Send(sel("makeKeyAndVisible"))
 	watcher := objc.ID(classWatcher).Send(selAlloc).Send(sel("initWithTarget:action:"), objc.ID(0), objc.SEL(0))
 	watcher.Send(sel("setCancelsTouchesInView:"), false)
@@ -358,8 +364,10 @@ func sceneWillConnect(self objc.ID, _ objc.SEL, scene, session, options objc.ID)
 		Size:        driver.Size{Width: driver.Points(bounds.Size.Width), Height: driver.Points(bounds.Size.Height)},
 		Environment: s.env,
 		Thread:      apple.RaiseThread,
+		Appearance:  s.appearance,
 	}
 	opts.SetDirs(engine.AppDirs(s.id))
+	imageload.UseDiskCache(opts.CacheDir)
 	s.engine = engine.Start(s, s.app, opts)
 	s.observe()
 }
@@ -381,7 +389,10 @@ func (s *surface) environment() driver.Environment {
 	case pad:
 		idiom = driver.IdiomTablet
 	case mac:
-		idiom = driver.IdiomDesktop
+		idiom = driver.IdiomMac
+	}
+	if onMac() {
+		idiom = driver.IdiomMac
 	}
 	const dark = 2
 	locale, rtl := apple.Locale()
@@ -398,6 +409,7 @@ func (s *surface) environment() driver.Environment {
 		PixelRatio:       float32(scale),
 		Locale:           locale,
 		OS:               driver.OSIOS,
+		OSVersion:        osVersion(),
 		Idiom:            idiom,
 	}
 	env.HeaderHeight, env.LargeHeaderHeight = s.headers[0], s.headers[1]
@@ -600,8 +612,26 @@ func (s *surface) apply(b *driver.MountBatch) {
 			objc.ID(objc.GetClass("UIPasteboard")).Send(sel("generalPasteboard")).Send(sel("setString:"), apple.NSString(it.Value))
 			continue
 		case driver.ItemReadClipboard:
-			text := apple.GoString(objc.ID(objc.GetClass("UIPasteboard")).Send(sel("generalPasteboard")).Send(sel("string")))
-			s.engine.Dispatch(driver.Event{Kind: driver.EventClipboard, Count: it.Count, Text: text})
+			s.readClipboard(it)
+			continue
+		case driver.ItemSetClipboardImage:
+			if data, ok := it.Data.([]byte); ok {
+				setClipboardImage(data)
+			}
+			continue
+		case driver.ItemOpenURL:
+			s.openURL(it.Value, it.Count)
+			continue
+		case driver.ItemPickImages:
+			s.pickImages(*it.Pick, it.Count)
+			continue
+		case driver.ItemAppearance:
+			s.appearance = it.Appearance
+			setAppearance(it.Appearance)
+			continue
+		case driver.ItemToast, driver.ItemQuit, driver.ItemPopupMenu:
+			// iOS has no toasts, apps do not quit themselves, and the core
+			// shows phones no native menus.
 			continue
 		case driver.ItemImageInfo:
 			apple.ImageInfo(it, s.engine.Dispatch)

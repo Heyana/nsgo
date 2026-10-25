@@ -149,6 +149,11 @@ type chrome struct {
 	bar     uintptr
 	entries []menuRef          // the bar's commands; a command's id is its index + 1
 	keys    map[string]menuRef // the menu's shortcuts
+	// menuBar says when the bar shows; with MenuBarAutoHide, revealed is
+	// set while Alt alone showed it, menuOpen while a key opened a menu,
+	// and altAlone while Alt is down with no other key.
+	menuBar                      driver.MenuBarMode
+	revealed, menuOpen, altAlone bool
 }
 
 // menuRef is a menu item's ID and role.
@@ -237,6 +242,14 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 		w.toggleFullScreen()
 	case driver.WindowClose:
 		postMessageW.Call(w.hwnd, wmClose, 0, 0)
+	case driver.WindowSetFrame:
+		w.setWindowFrame(c.Frame)
+	case driver.WindowSetLevel:
+		w.setLevel(c.Level)
+	case driver.WindowOrderFront:
+		w.orderFront()
+	case driver.WindowSetMenuBar:
+		w.setMenuBar(c.MenuBar)
 	}
 }
 
@@ -440,7 +453,7 @@ func (p *painter) drawCaptionButtons(width int32) {
 	p.realize()
 	p.setTransform(scaling(1/w.scale, 1/w.scale))
 	c := &w.chrome
-	dark := w.env.Dark
+	dark := w.shownDark()
 	button, gap, margin := w.px(captionButtonSize), w.px(captionButtonGap), w.px(captionMargin)
 	height := w.px(w.captionHeight())
 	top := (height - button) / 2
@@ -620,12 +633,14 @@ func (w *window) menuKeys(entries []driver.MenuEntry) {
 }
 
 // showMenuBar shows the application menu as the window's menu bar,
-// unless the title bar is hidden or the window is in full screen.
+// unless the title bar is hidden, the window is in full screen or the
+// bar hides until Alt shows it.
 func (w *window) showMenuBar() {
 	c := &w.chrome
 	c.entries = nil
 	var bar uintptr
-	if c.menu != nil && c.titleBar == driver.TitleBarDefault && !c.fullScreen {
+	shown := c.menuBar == driver.MenuBarShown || c.revealed || c.menuOpen
+	if c.menu != nil && c.titleBar == driver.TitleBarDefault && !c.fullScreen && shown {
 		bar, _, _ = createMenu.Call()
 		if bar != 0 {
 			w.appendMenu(bar, c.menu)
@@ -642,8 +657,15 @@ func (w *window) showMenuBar() {
 	drawMenuBar.Call(w.hwnd)
 }
 
-// appendMenu appends entries to menu, numbering their commands.
+// appendMenu appends entries to the menu bar's menu, numbering their
+// commands.
 func (w *window) appendMenu(menu uintptr, entries []driver.MenuEntry) {
+	w.appendMenuTo(menu, entries, &w.chrome.entries)
+}
+
+// appendMenuTo appends entries to menu, numbering their commands by
+// their index in refs plus one.
+func (w *window) appendMenuTo(menu uintptr, entries []driver.MenuEntry, refs *[]menuRef) {
 	lastSeparator := true
 	for i := range entries {
 		e := &entries[i]
@@ -667,7 +689,7 @@ func (w *window) appendMenu(menu uintptr, entries []driver.MenuEntry) {
 			if sub == 0 {
 				continue
 			}
-			w.appendMenu(sub, e.Items)
+			w.appendMenuTo(sub, e.Items, refs)
 			appendMenuW.Call(menu, flags|mfPopup, sub, uintptr(unsafe.Pointer(wide(label))))
 		} else {
 			if k := shortcutOf(e); k != "" {
@@ -676,8 +698,8 @@ func (w *window) appendMenu(menu uintptr, entries []driver.MenuEntry) {
 			if e.Checked {
 				flags |= mfChecked
 			}
-			w.chrome.entries = append(w.chrome.entries, menuRef{e.ID, e.Role})
-			appendMenuW.Call(menu, flags, uintptr(len(w.chrome.entries)), uintptr(unsafe.Pointer(wide(label))))
+			*refs = append(*refs, menuRef{e.ID, e.Role})
+			appendMenuW.Call(menu, flags, uintptr(len(*refs)), uintptr(unsafe.Pointer(wide(label))))
 		}
 		lastSeparator = false
 	}

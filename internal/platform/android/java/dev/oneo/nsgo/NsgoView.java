@@ -315,11 +315,16 @@ public class NsgoView extends FrameLayout {
             d.writeFloat(config.fontScale);
             d.writeFloat(density);
             d.writeByte((dark ? 1 : 0) | (reduceMotion ? 2 : 0) | (reader ? 4 : 0) | (rtl ? 8 : 0));
-            d.writeByte(config.smallestScreenWidthDp >= 600 ? Protocol.IDIOM_TABLET : Protocol.IDIOM_PHONE);
+            int idiom = config.smallestScreenWidthDp >= 600 ? Protocol.IDIOM_TABLET : Protocol.IDIOM_PHONE;
+            if ((config.uiMode & Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION) {
+                idiom = Protocol.IDIOM_TV;
+            }
+            d.writeByte(idiom);
             Protocol.writeString(d, config.getLocales().get(0).toLanguageTag());
             // The system header's heights, without and with a large title.
             d.writeFloat(Header.BAR);
             d.writeFloat(Header.BAR);
+            d.writeInt(Build.VERSION.SDK_INT);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
@@ -329,9 +334,33 @@ public class NsgoView extends FrameLayout {
         write(Protocol.ENVIRONMENT, payload);
     }
 
+    /** The appearance the app forces, as driver.Appearance; 0 follows the system's. */
+    private int appearance;
+
+    /** The pick the photo picker answers. */
+    private Services.Pick pick;
+
+    /** Dark as shown: the app's forced appearance, else the system's. */
     private boolean dark() {
+        if (appearance != 0) return appearance == Protocol.APPEARANCE_DARK;
         int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
         return night == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    /** Hears the activity's results: the photo picker's images. */
+    public void activityResult(int request, int result, android.content.Intent data) {
+        if (request != Services.PICK_REQUEST || pick == null) return;
+        Services.Pick p = pick;
+        pick = null;
+        java.util.List<android.net.Uri> uris = result == Activity.RESULT_OK ? Services.picked(data, p)
+                : new java.util.ArrayList<>();
+        Context context = getContext().getApplicationContext();
+        // Reading and encoding photos takes a while: off the UI thread.
+        new Thread(() -> answerPick(p, Services.prepare(context, uris, p)), "nsgo-pick").start();
+    }
+
+    private void answerPick(Services.Pick p, String files) {
+        event(Protocol.EVENT_PICK, 0, p.count, 0, 0, "", 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, files, false);
     }
 
     /** Reads the safe area and the keyboard's height, in pixels, from the window's insets. */
@@ -1184,13 +1213,54 @@ public class NsgoView extends FrameLayout {
                 break;
             case Protocol.ITEM_READ_CLIPBOARD: {
                 long count = in.readInt() & 0xffffffffL;
+                int what = in.readUnsignedByte();
                 // Android answers null unless the app has focus.
-                ClipData clip = clipboard().getPrimaryClip();
-                CharSequence text = clip != null && clip.getItemCount() > 0
-                        ? clip.getItemAt(0).coerceToText(getContext()) : null;
-                event(Protocol.EVENT_CLIPBOARD, 0, count, 0, 0, text != null ? text.toString() : "");
+                String[] text = {""}, data = {""};
+                boolean[] has = {false};
+                Services.readClipboard(getContext(), clipboard(), what, text, data, has);
+                event(Protocol.EVENT_CLIPBOARD, 0, count, 0, 0, text[0], 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false,
+                        data[0], has[0]);
                 break;
             }
+            case Protocol.ITEM_SET_CLIPBOARD_IMAGE:
+                Services.setClipboardImage(getContext(), clipboard(), Protocol.readBytes(in));
+                break;
+            case Protocol.ITEM_OPEN_URL: {
+                long count = in.readInt() & 0xffffffffL;
+                Context context = activity() != null ? activity() : getContext();
+                boolean opened = Services.openURL(context, Protocol.readString(in));
+                event(Protocol.EVENT_OPEN_URL, 0, count, 0, 0, "", 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, "", opened);
+                break;
+            }
+            case Protocol.ITEM_PICK_IMAGES: {
+                Services.Pick p = new Services.Pick(in.readInt() & 0xffffffffL, in.readInt(), in.readInt(), in.readFloat(),
+                        Protocol.flag(in.readUnsignedByte(), 0));
+                if (pick != null) answerPick(pick, "");
+                Activity activity = activity();
+                if (activity != null && Services.startPick(activity, p)) pick = p;
+                else answerPick(p, "");
+                break;
+            }
+            case Protocol.ITEM_TOAST: {
+                String text = Protocol.readString(in);
+                boolean long_ = Protocol.flag(in.readUnsignedByte(), 0);
+                android.widget.Toast.makeText(getContext(), text,
+                        long_ ? android.widget.Toast.LENGTH_LONG : android.widget.Toast.LENGTH_SHORT).show();
+                break;
+            }
+            case Protocol.ITEM_APPEARANCE:
+                appearance = in.readUnsignedByte();
+                systemBars();
+                environment();
+                break;
+            case Protocol.ITEM_QUIT: {
+                Activity activity = activity();
+                if (activity != null) activity.finishAndRemoveTask();
+                break;
+            }
+            case Protocol.ITEM_POPUP_MENU:
+                // Desktops' only; Go writes no fields.
+                break;
             case Protocol.ITEM_ANNOUNCE:
                 announceForAccessibility(Protocol.readString(in));
                 break;

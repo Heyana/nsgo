@@ -58,6 +58,11 @@ type RootOptions struct {
 	// DataDir and CacheDir are the app's directories, "" where the target
 	// has none.
 	DataDir, CacheDir string
+	// OpenURL is an embedding host's handler for the URLs the app opens
+	// (Scope.OpenURL), asked before the platform: it reports whether it
+	// took url, routing it through the host's own router. It runs on the
+	// graph's goroutine, so it must not block.
+	OpenURL func(url string) bool
 }
 
 // NewRoot returns the root scope of a new graph.
@@ -67,7 +72,7 @@ func NewRoot(opts RootOptions) *Scope {
 	}
 	rt := &runtime{post: opts.Post, clock: opts.Clock, report: opts.Report,
 		store: opts.Storage, dataDir: opts.DataDir, cacheDir: opts.CacheDir,
-		requestFrame: opts.RequestFrame}
+		requestFrame: opts.RequestFrame, openURL: opts.OpenURL}
 	rt.root = &Scope{rt: rt}
 	return rt.root
 }
@@ -98,6 +103,7 @@ type runtime struct {
 	storage        *storageWatch
 	dataDir        string
 	cacheDir       string
+	openURL        func(string) bool
 }
 
 // current is the scope that owns what code using cx creates now.

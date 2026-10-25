@@ -24,6 +24,7 @@ import (
 	"github.com/oneo-me/nsgo/internal/engine"
 	"github.com/oneo-me/nsgo/internal/platform/apple"
 	"github.com/oneo-me/nsgo/internal/platform/finger"
+	"github.com/oneo-me/nsgo/internal/platform/imageload"
 	"github.com/oneo-me/nsgo/internal/platform/queue"
 )
 
@@ -49,6 +50,11 @@ type Options struct {
 	// Fonts are font files under the app's resources, registered before
 	// the first view.
 	Fonts []string
+	// Appearance is the appearance the app starts in.
+	Appearance driver.Appearance
+	// KeepAlive keeps the app running when its window closes: the window
+	// hides, and the Dock shows it again.
+	KeepAlive bool
 }
 
 // longPressDelay is how long a press is held before it is a long press.
@@ -385,8 +391,10 @@ func register(name string, super objc.Class, protocols []*objc.Protocol, methods
 	return apple.RegisterClass(name, super, protocols, methods)
 }
 
-// Run opens a window showing app and runs the event loop. Call it from
-// main; it does not return.
+// Run opens a window showing app and runs the event loop until the app
+// ends: its window closed, unless KeepAlive, or quit. Call it from main.
+// It returns once the app's graph is gone and its storage written,
+// leaving the process to the caller, as NSH's run_app does.
 func Run(app engine.App, opts Options) {
 	if opts.Width == 0 {
 		opts.Width, opts.Height = 480, 640
@@ -397,14 +405,34 @@ func Run(app engine.App, opts Options) {
 	nsApp.Send(sel("setActivationPolicy:"), 0)
 	defaultMenu := mainMenu()
 	nsApp.Send(sel("setMainMenu:"), defaultMenu)
+	keepAlive = opts.KeepAlive
 	delegate := objc.ID(register("NsgoAppDelegate", objc.GetClass("NSObject"), nil, []objc.MethodDef{{
 		Cmd: sel("applicationShouldTerminateAfterLastWindowClosed:"),
-		Fn:  func(self objc.ID, _ objc.SEL, app objc.ID) bool { return true },
+		Fn:  func(self objc.ID, _ objc.SEL, app objc.ID) bool { return false },
+	}, {
+		// Quitting returns from Run instead of ending the process.
+		Cmd: sel("applicationShouldTerminate:"),
+		Fn: func(self objc.ID, _ objc.SEL, app objc.ID) uint {
+			finish()
+			const terminateCancel = 0
+			return terminateCancel
+		},
+	}, {
+		// Clicking the Dock icon shows a window that closed while kept
+		// alive.
+		Cmd: sel("applicationShouldHandleReopen:hasVisibleWindows:"),
+		Fn: func(self objc.ID, _ objc.SEL, app objc.ID, visible bool) bool {
+			if active != nil && !finished {
+				active.orderFront()
+			}
+			return false
+		},
 	}, {
 		Cmd: sel("applicationWillTerminate:"),
 		Fn:  func(self objc.ID, _ objc.SEL, note objc.ID) { engine.SyncStorage() },
 	}})).Send(selNew)
 	nsApp.Send(sel("setDelegate:"), delegate)
+	setAppearance(opts.Appearance)
 
 	const titled, closable, miniaturizable, resizable = 1, 2, 4, 8
 	window := objc.ID(objc.GetClass("NSWindow")).Send(selAlloc).Send(
@@ -436,8 +464,9 @@ func Run(app engine.App, opts Options) {
 		s.perf = monitor
 	}
 	eopts := engine.Options{Size: driver.Size{Width: opts.Width, Height: opts.Height}, Environment: s.env, Perf: monitor,
-		Thread: apple.RaiseThread}
+		Thread: apple.RaiseThread, Appearance: opts.Appearance}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
+	imageload.UseDiskCache(eopts.CacheDir)
 	s.engine = engine.Start(s, app, eopts)
 	s.observe()
 	if monitor != nil {
@@ -453,6 +482,40 @@ func Run(app engine.App, opts Options) {
 		window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
 	})
 	nsApp.Send(sel("run"))
+	s.stopTicking()
+	s.engine.Close()
+	engine.SyncStorage()
+	nsApp.Send(sel("setDelegate:"), objc.ID(0))
+}
+
+// keepAlive hides the window instead of closing it; finished is set once
+// the app ends.
+var keepAlive, finished bool
+
+// finish ends the app: it closes the window, stops AppKit's event loop
+// and wakes it, so Run returns.
+func finish() {
+	if finished {
+		return
+	}
+	finished = true
+	if s := active; s != nil && s.window != 0 {
+		s.closePopup()
+		// Close without asking the delegate again.
+		s.window.Send(selSetDelegate, objc.ID(0))
+		s.window.Send(sel("close"))
+	}
+	app := nsApp()
+	app.Send(sel("stop:"), objc.ID(0))
+	// stop: takes effect after the next event, and a close from the app
+	// or a timer is none: post one.
+	const applicationDefined = 15
+	event := objc.ID(objc.GetClass("NSEvent")).Send(
+		sel("otherEventWithType:location:modifierFlags:timestamp:windowNumber:context:subtype:data1:data2:"),
+		uint(applicationDefined), apple.CGPoint{}, uint(0), float64(0), 0, objc.ID(0), int16(0), 0, 0)
+	if event != 0 {
+		app.Send(sel("postEvent:atStart:"), event, true)
+	}
 }
 
 // activateApp makes the app active. activateIgnoringOtherApps: is
@@ -509,6 +572,7 @@ func (s *surface) environment() driver.Environment {
 		Locale:         locale,
 		OS:             driver.OSMacOS,
 		Idiom:          driver.IdiomDesktop,
+		OSVersion:      osVersion(),
 		TitleBar:       s.titleBarArea(),
 		WindowMaterial: s.material,
 		Maximized:      objc.Send[bool](s.window, sel("isZoomed")),
@@ -858,9 +922,29 @@ func (s *surface) apply(b *driver.MountBatch) {
 			pb.Send(sel("setString:forType:"), apple.NSString(it.Value), apple.NSString(pasteboardText))
 			continue
 		case driver.ItemReadClipboard:
-			pb := objc.ID(objc.GetClass("NSPasteboard")).Send(sel("generalPasteboard"))
-			text := apple.GoString(pb.Send(sel("stringForType:"), apple.NSString(pasteboardText)))
-			s.engine.Dispatch(driver.Event{Kind: driver.EventClipboard, Count: it.Count, Text: text})
+			s.readClipboard(it)
+			continue
+		case driver.ItemSetClipboardImage:
+			if data, ok := it.Data.([]byte); ok {
+				setClipboardImage(data)
+			}
+			continue
+		case driver.ItemOpenURL:
+			s.openURL(it.Value, it.Count)
+			continue
+		case driver.ItemPickImages:
+			s.pickImages(*it.Pick, it.Count)
+			continue
+		case driver.ItemPopupMenu:
+			s.popupMenu(it.Menu, it.Point, it.Count)
+			continue
+		case driver.ItemAppearance:
+			setAppearance(it.Appearance)
+			continue
+		case driver.ItemQuit:
+			apple.OnMain(finish)
+			continue
+		case driver.ItemToast:
 			continue
 		case driver.ItemImageInfo:
 			apple.ImageInfo(it, s.engine.Dispatch)

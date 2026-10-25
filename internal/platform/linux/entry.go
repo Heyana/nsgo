@@ -17,31 +17,6 @@ func (w *window) setClipboard(text string) {
 	gdkClipboardSetText(clip, cstr(text))
 }
 
-// readClipboard asks the clipboard for its text and answers the engine
-// with it.
-func (w *window) readClipboard(count uint32) {
-	clip := gdkDisplayGetClipboard(gdkDisplayGetDefault())
-	if clip == 0 {
-		w.engine.Dispatch(driver.Event{Kind: driver.EventClipboard, Count: count})
-		return
-	}
-	w.clipboardCount = count
-	gdkClipboardReadTextAsync(clip, 0, cbClipboardText, w.handle)
-}
-
-func clipboardTextCallback(clip uintptr, result uintptr, data uintptr) {
-	w := windowOf(data)
-	if w == nil || w.closing {
-		return
-	}
-	p := gdkClipboardReadTextFinish(clip, result, 0)
-	text := goString(p)
-	if p != 0 {
-		gFree(p)
-	}
-	w.engine.Dispatch(driver.Event{Kind: driver.EventClipboard, Count: w.clipboardCount, Text: text})
-}
-
 // showAlert queues a native alert and shows the next one when the last
 // has been answered.
 func (w *window) showAlert(a *driver.AlertConfig) {

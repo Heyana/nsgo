@@ -36,6 +36,8 @@ type Options struct {
 	// Fonts are font files under the app's resources, registered before
 	// the first view.
 	Fonts []string
+	// Appearance is the appearance the app starts in.
+	Appearance driver.Appearance
 }
 
 const fontFamily = `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
@@ -262,8 +264,9 @@ func Run(app engine.App, opts Options) {
 	s.watchStart(opts.Mount == "")
 
 	s.env = s.environment()
+	s.setAppearance(opts.Appearance)
 	s.engine = engine.Start(s, app, engine.Options{
-		Size: s.size(), Environment: s.env,
+		Size: s.size(), Environment: s.env, Appearance: opts.Appearance,
 		Storage: engine.NewStorage(newLocalStorage(opts.ID)),
 	})
 	// The host can change size without the window doing so.
@@ -823,7 +826,25 @@ func (s *surface) Mount(b *driver.MountBatch) {
 			s.setClipboard(it.Value)
 			continue
 		case driver.ItemReadClipboard:
-			s.readClipboard(it.Count)
+			s.readClipboard(it)
+			continue
+		case driver.ItemSetClipboardImage:
+			if data, ok := it.Data.([]byte); ok {
+				s.setClipboardImage(data)
+			}
+			continue
+		case driver.ItemOpenURL:
+			s.openURL(it.Value, it.Count)
+			continue
+		case driver.ItemPickImages:
+			s.pickImages(*it.Pick, it.Count)
+			continue
+		case driver.ItemAppearance:
+			s.setAppearance(it.Appearance)
+			continue
+		case driver.ItemToast, driver.ItemQuit, driver.ItemPopupMenu:
+			// No toasts; a page neither quits nor shows native menus, and
+			// the core never asks it to.
 			continue
 		case driver.ItemImageInfo:
 			s.imageInfo(it)

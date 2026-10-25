@@ -55,15 +55,17 @@ type attrSpec struct {
 // androidAttrs are the attributes the runtime's manifest uses. An
 // attribute missing here fails the build instead of being dropped.
 var androidAttrs = map[string]attrSpec{
-	"versionCode":      {0x0101021b, typeInt, parseInt},
-	"versionName":      {0x0101021c, typeString, nil},
-	"minSdkVersion":    {0x0101020c, typeInt, parseInt},
-	"targetSdkVersion": {0x01010270, typeInt, parseInt},
-	"name":             {0x01010003, typeString, nil},
-	"label":            {0x01010001, typeString, nil},
-	"exported":         {0x01010010, typeBool, parseBool},
-	"theme":            {0x01010000, typeReference, parseStyle},
-	"icon":             {0x01010002, typeReference, parseAppResource},
+	"versionCode":         {0x0101021b, typeInt, parseInt},
+	"versionName":         {0x0101021c, typeString, nil},
+	"minSdkVersion":       {0x0101020c, typeInt, parseInt},
+	"targetSdkVersion":    {0x01010270, typeInt, parseInt},
+	"name":                {0x01010003, typeString, nil},
+	"label":               {0x01010001, typeString, nil},
+	"exported":            {0x01010010, typeBool, parseBool},
+	"authorities":         {0x01010018, typeString, nil},
+	"grantUriPermissions": {0x0101001b, typeBool, parseBool},
+	"theme":               {0x01010000, typeReference, parseStyle},
+	"icon":                {0x01010002, typeReference, parseAppResource},
 
 	"extractNativeLibs":           {0x010104ea, typeBool, parseBool},
 	"enableOnBackInvokedCallback": {0x0101066c, typeBool, parseBool},
@@ -133,6 +135,10 @@ func EncodeManifest(template []byte, m Manifest) ([]byte, error) {
 		return nil, errors.New("manifest: no application element")
 	}
 	setAttr(app, androidNS, "label", m.Label)
+	if p := child(app, "provider"); p != nil {
+		// Each app's provider needs an authority of its own.
+		setAttr(p, androidNS, "authorities", m.Package+".nsgo.clip")
+	}
 	if m.Icon != nil {
 		setAttr(app, androidNS, "icon", iconResource)
 	}

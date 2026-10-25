@@ -623,5 +623,6 @@ func bind() {
 	bindDecor()
 	bindFileDrop()
 	bindPaste()
+	bindSystem()
 	bindEditing()
 }

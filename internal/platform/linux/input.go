@@ -84,6 +84,7 @@ func clickPressedCallback(gesture uintptr, n int32, x, y float64, data uintptr) 
 	if w == nil || w.closing {
 		return
 	}
+	w.hideMenuBar()
 	// Presses on a field, a page or a video's controls are theirs, even
 	// where they bubble up here.
 	if w.nativeAt(gtkWidgetPick(w.surface, x, y, gtkPickDefault)) {
@@ -363,6 +364,7 @@ func keyPressedCallback(controller uintptr, keyval, keycode, state uint32, data 
 		w.held = map[uint32]bool{}
 	}
 	w.held[keycode] = true
+	w.menuBarKey(keyval, state, true)
 	if w.shortcut(keyval, state, repeat) {
 		return 1
 	}
@@ -641,6 +643,7 @@ func (w *window) shortcut(keyval, state uint32, repeat bool) bool {
 func keyReleasedCallback(controller uintptr, keyval, keycode, state uint32, data uintptr) {
 	if w := windowOf(data); w != nil {
 		delete(w.held, keycode)
+		w.menuBarKey(keyval, state, false)
 	}
 }
 

@@ -25,7 +25,6 @@ var (
 	releaseDC              = user32.NewProc("ReleaseDC")
 	getWindowTextW         = user32.NewProc("GetWindowTextW")
 	getWindowTextLength    = user32.NewProc("GetWindowTextLengthW")
-	getWindowRect          = user32.NewProc("GetWindowRect")
 	getWindowRgnBox        = user32.NewProc("GetWindowRgnBox")
 	createCompatibleDC     = gdi32.NewProc("CreateCompatibleDC")
 	createCompatibleBitmap = gdi32.NewProc("CreateCompatibleBitmap")
@@ -895,10 +894,7 @@ func onMain(t *testing.T, hwnd uintptr, fn func(w *window)) {
 	}
 }
 
-var (
-	setForegroundWindow = user32.NewProc("SetForegroundWindow")
-	getWindowDC         = getDC
-)
+var getWindowDC = getDC
 
 // screenPixels reads the window's client area from the screen, where the
 // system composed it with its DirectComposition content: B, G, R, A

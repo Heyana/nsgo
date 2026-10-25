@@ -55,7 +55,10 @@ const (
 	EventBack
 	// EventAlert answers ItemAlert Count with the button at Index, or -1.
 	EventAlert
-	// EventClipboard answers ItemReadClipboard Count with Text.
+	// EventClipboard answers ItemReadClipboard Count with what it read:
+	// the Text, the image in Data (a *ClipboardImage, nil for none), the
+	// files' URIs, or whether the clipboard has text or an image
+	// (Finished).
 	EventClipboard
 	// EventContextMenu is a secondary click (right click, control click)
 	// on ID at Point in the view's coordinates and Page in its root
@@ -155,6 +158,15 @@ const (
 	// (Value), its large title shown, as the platform measured it; the
 	// status bar above it is the core's to add.
 	EventScreenHeader
+	// EventOpenURL answers ItemOpenURL Count with whether the URL opened
+	// (Finished).
+	EventOpenURL
+	// EventPick answers ItemPickImages Count with the files picked (Data,
+	// a []PickedFile), none when the user cancelled.
+	EventPick
+	// EventMenuClosed answers ItemPopupMenu Count once its menu closed,
+	// after the EventMenu of an item chosen.
+	EventMenuClosed
 )
 
 // EventMask is a set of event kinds.

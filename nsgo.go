@@ -25,8 +25,10 @@ var (
 // App builds an app's root element once.
 type App = engine.App
 
-// Run shows app and runs the platform's event loop. Call it from main; it
-// does not return while the app runs.
+// Run shows app and runs the platform's event loop. Call it from main. On
+// macOS, Windows and Linux it returns once the app ends, its window
+// closed or core.Scope.Quit called, its storage written, so main can
+// clean up; on iOS, Android and the web it never returns.
 func Run(app App, opts ...Option) {
 	o := options{monitor: fps == "1"}
 	for _, fn := range opts {
@@ -46,6 +48,26 @@ type options struct {
 	monitor bool
 	// material is the material behind the window's content.
 	material core.WindowMaterial
+	// appearance is the appearance the app starts in.
+	appearance core.Appearance
+	// keepAlive keeps the app running when its window closes (macOS).
+	keepAlive bool
+}
+
+// Appearance starts the app in appearance whatever the system's, its
+// window and native chrome included, as core.Scope.SetAppearance later
+// changes it.
+func Appearance(appearance core.Appearance) Option {
+	return func(o *options) { o.appearance = appearance }
+}
+
+// KeepAliveOnClose keeps the app running when the user closes its
+// window, on macOS: the window hides, keeping its state, and clicking
+// the app in the Dock shows it again. Quitting, from the app menu or
+// with core.Scope.Quit, still ends it. Other platforms end the app with
+// its window.
+func KeepAliveOnClose(on bool) Option {
+	return func(o *options) { o.keepAlive = on }
 }
 
 // FPS shows (or hides) the performance monitor over the app: frame rate,

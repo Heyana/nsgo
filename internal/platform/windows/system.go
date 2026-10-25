@@ -1,0 +1,562 @@
+//go:build windows
+
+package windows
+
+import (
+	"bytes"
+	"encoding/binary"
+	"image"
+	"image/png"
+	"strings"
+	"syscall"
+	"unsafe"
+
+	"golang.org/x/image/bmp"
+
+	"github.com/oneo-me/nsgo/internal/driver"
+	"github.com/oneo-me/nsgo/internal/platform/imagedecode"
+	"github.com/oneo-me/nsgo/internal/platform/picked"
+)
+
+// The services Win32 performs: the clipboard's images and files, opening
+// URLs, the photo picker, context menus, the app's appearance, the
+// window's frame and level, and the menu bar that hides.
+
+var (
+	comdlg32            = syscall.NewLazyDLL("comdlg32.dll")
+	uxtheme             = syscall.NewLazyDLL("uxtheme.dll")
+	getOpenFileNameW    = comdlg32.NewProc("GetOpenFileNameW")
+	shellExecuteExW     = shell32.NewProc("ShellExecuteExW")
+	isIconic            = user32.NewProc("IsIconic")
+	setForegroundWindow = user32.NewProc("SetForegroundWindow")
+	bringWindowToTop    = user32.NewProc("BringWindowToTop")
+	getWindowRect       = user32.NewProc("GetWindowRect")
+	endMenu             = user32.NewProc("EndMenu")
+)
+
+const (
+	swShowNormal = 1
+
+	hwndBottom    = 1
+	hwndTopmost   = ^uintptr(0) // -1
+	hwndNoTopmost = ^uintptr(1) // -2
+
+	ofnAllowMultiSelect = 0x00000200
+	ofnPathMustExist    = 0x00000800
+	ofnFileMustExist    = 0x00001000
+	ofnExplorer         = 0x00080000
+	ofnNoChangeDir      = 0x00000008
+
+	wmPick     = 0x8000 + 5 // a photo pick waits
+	wmPopup    = 0x8000 + 6 // a context menu waits
+	wmSysKeyUp = 0x0105
+
+	wmEnterMenuLoop = 0x0211
+	wmExitMenuLoop  = 0x0212
+	vkF10           = 0x79
+)
+
+// pngFormat is the clipboard format PNG-aware apps share images in.
+func pngFormat() uintptr {
+	name, _ := syscall.UTF16PtrFromString("PNG")
+	f, _, _ := registerClipboardFormatW.Call(uintptr(unsafe.Pointer(name)))
+	return f
+}
+
+func formatAvailable(f uintptr) bool {
+	r, _, _ := isClipboardFormatAvailable.Call(f)
+	return f != 0 && r != 0
+}
+
+// readClipboard answers an ItemReadClipboard.
+func (w *window) readClipboard(it *driver.MountItem) {
+	ev := driver.Event{Kind: driver.EventClipboard, Count: it.Count}
+	switch it.Clipboard {
+	case driver.ClipboardReadText:
+		ev.Text = w.clipboard()
+	case driver.ClipboardReadHasText:
+		ev.Finished = formatAvailable(cfUnicodeText)
+	case driver.ClipboardReadHasImage:
+		ev.Finished = !formatAvailable(cfHDrop) && (formatAvailable(pngFormat()) || formatAvailable(cfDIB))
+	case driver.ClipboardReadFiles, driver.ClipboardReadImage:
+		if r, _, _ := openClipboard.Call(w.hwnd); r == 0 {
+			break
+		}
+		h, _, _ := getClipboardData.Call(cfHDrop)
+		if h != 0 {
+			ev.URIs = hdropFiles(h)
+		}
+		var files []driver.PastedFile
+		if it.Clipboard == driver.ClipboardReadImage && len(ev.URIs) == 0 {
+			files = clipboardImage()
+		}
+		closeClipboard.Call()
+		if it.Clipboard == driver.ClipboardReadImage {
+			ev.URIs = nil
+			if len(files) > 0 {
+				// Converting a large bitmap takes a while: off the thread.
+				data := files[0].Data
+				go func() {
+					ev.Data = pngOf(data)
+					w.engine.Dispatch(ev)
+				}()
+				return
+			}
+		}
+	}
+	w.engine.Dispatch(ev)
+}
+
+// pngOf returns the clipboard's PNG or bitmap as a PNG, nil when it is
+// neither or too large.
+func pngOf(data []byte) *driver.ClipboardImage {
+	if driver.SniffImage(data) != "image/png" {
+		m, err := bmp.Decode(bytes.NewReader(data))
+		if err != nil {
+			return nil
+		}
+		var b bytes.Buffer
+		if png.Encode(&b, m) != nil {
+			return nil
+		}
+		data = b.Bytes()
+	}
+	c, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil || len(data) > driver.MaxClipboardImage {
+		return nil
+	}
+	return &driver.ClipboardImage{PNG: data, Size: driver.Size{Width: driver.Points(c.Width), Height: driver.Points(c.Height)}}
+}
+
+// setClipboardImage puts the image data encodes on the clipboard as a
+// PNG, which keeps its transparency, and a device-independent bitmap
+// over white, which every app reads.
+func (w *window) setClipboardImage(data []byte) {
+	img, err := imagedecode.Decode(data, imagedecode.Options{Layout: imagedecode.RGBA})
+	if err != nil || len(img.Frames) == 0 {
+		return
+	}
+	pix := img.Frames[0].Pix
+	rgba := &image.RGBA{Pix: pix, Stride: img.Width * 4, Rect: image.Rect(0, 0, img.Width, img.Height)}
+	var encoded bytes.Buffer
+	if png.Encode(&encoded, rgba) != nil {
+		return
+	}
+	// BITMAPINFOHEADER, then rows bottom up of blue, green, red and an
+	// unused byte.
+	dib := make([]byte, 40+len(pix))
+	binary.LittleEndian.PutUint32(dib[0:], 40)
+	binary.LittleEndian.PutUint32(dib[4:], uint32(img.Width))
+	binary.LittleEndian.PutUint32(dib[8:], uint32(img.Height))
+	binary.LittleEndian.PutUint16(dib[12:], 1)
+	binary.LittleEndian.PutUint16(dib[14:], 32)
+	binary.LittleEndian.PutUint32(dib[20:], uint32(len(pix)))
+	row := img.Width * 4
+	for y := range img.Height {
+		src := pix[y*row : (y+1)*row]
+		dst := dib[40+(img.Height-1-y)*row:]
+		for x := 0; x < row; x += 4 {
+			white := 255 - src[x+3] // premultiplied over white
+			dst[x], dst[x+1], dst[x+2], dst[x+3] = src[x+2]+white, src[x+1]+white, src[x]+white, 255
+		}
+	}
+	if r, _, _ := openClipboard.Call(w.hwnd); r == 0 {
+		return
+	}
+	defer closeClipboard.Call()
+	emptyClipboard.Call()
+	put := func(format uintptr, b []byte) {
+		h, _, _ := globalAlloc.Call(gmemMoveable, uintptr(len(b)))
+		if h == 0 {
+			return
+		}
+		p, _, _ := globalLock.Call(h)
+		if p == 0 {
+			globalFree.Call(h)
+			return
+		}
+		rtlMoveMemory.Call(p, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))
+		globalUnlock.Call(h)
+		if r, _, _ := setClipboardData.Call(format, h); r == 0 {
+			globalFree.Call(h)
+		}
+	}
+	if f := pngFormat(); f != 0 {
+		put(f, encoded.Bytes())
+	}
+	put(cfDIB, dib)
+}
+
+// shellExecuteInfo is SHELLEXECUTEINFOW.
+type shellExecuteInfo struct {
+	Size       uint32
+	Mask       uint32
+	Hwnd       uintptr
+	Verb       *uint16
+	File       *uint16
+	Parameters *uint16
+	Directory  *uint16
+	Show       int32
+	InstApp    uintptr
+	IDList     uintptr
+	Class      *uint16
+	KeyClass   uintptr
+	HotKey     uint32
+	Icon       uintptr
+	Process    uintptr
+}
+
+// openURL has the shell open u with the app registered for it. A scheme
+// no app handles answers false without the shell asking for an app.
+func (w *window) openURL(u string, id uint32) {
+	// The shell asks the user for an app when none handles the scheme,
+	// even without UI: ask the registry first.
+	scheme, _, _ := strings.Cut(u, ":")
+	var key syscall.Handle
+	if syscall.RegOpenKeyEx(syscall.HKEY_CLASSES_ROOT, wide(scheme), 0, syscall.KEY_READ, &key) != nil {
+		w.engine.Dispatch(driver.Event{Kind: driver.EventOpenURL, Count: id})
+		return
+	}
+	syscall.RegCloseKey(key)
+	const flagNoUI = 0x00000400 // SEE_MASK_FLAG_NO_UI
+	info := shellExecuteInfo{Mask: flagNoUI, Hwnd: w.hwnd, Verb: wide("open"), File: wide(u), Show: swShowNormal}
+	info.Size = uint32(unsafe.Sizeof(info))
+	r, _, _ := shellExecuteExW.Call(uintptr(unsafe.Pointer(&info)))
+	w.engine.Dispatch(driver.Event{Kind: driver.EventOpenURL, Count: id, Finished: r != 0})
+}
+
+// openFileName is OPENFILENAMEW.
+type openFileName struct {
+	StructSize    uint32
+	Owner         uintptr
+	Instance      uintptr
+	Filter        *uint16
+	CustomFilter  *uint16
+	MaxCustFilter uint32
+	FilterIndex   uint32
+	File          *uint16
+	MaxFile       uint32
+	FileTitle     *uint16
+	MaxFileTitle  uint32
+	InitialDir    *uint16
+	Title         *uint16
+	Flags         uint32
+	FileOffset    uint16
+	FileExtension uint16
+	DefExt        *uint16
+	CustData      uintptr
+	Hook          uintptr
+	TemplateName  *uint16
+	Reserved      uintptr
+	ReservedDW    uint32
+	FlagsEx       uint32
+}
+
+type pickRequest struct {
+	r  driver.PickRequest
+	id uint32
+}
+
+// pickImages queues a pick: the open dialog's modal loop must not run in
+// the batch's.
+func (w *window) pickImages(r driver.PickRequest, id uint32) {
+	w.picks = append(w.picks, pickRequest{r, id})
+	postMessageW.Call(w.hwnd, wmPick, 0, 0)
+}
+
+// showPick shows the open dialog for the first pick queued and reads the
+// files chosen, as they are, on a goroutine.
+func (w *window) showPick() {
+	if w.picking || len(w.picks) == 0 {
+		return
+	}
+	p := w.picks[0]
+	w.picks = w.picks[1:]
+	w.picking = true
+	paths := w.openDialog(p.r)
+	w.picking = false
+	go func() {
+		w.engine.Dispatch(driver.Event{Kind: driver.EventPick, Count: p.id, Data: picked.ReadFiles(p.r, paths)})
+	}()
+	if len(w.picks) > 0 {
+		postMessageW.Call(w.hwnd, wmPick, 0, 0)
+	}
+}
+
+// openDialog returns the paths of the images chosen in Windows' open
+// dialog, none when it was cancelled.
+func (w *window) openDialog(r driver.PickRequest) []string {
+	var pattern []uint16
+	for i, ext := range r.DialogExtensions() {
+		if i > 0 {
+			pattern = append(pattern, ';')
+		}
+		pattern = append(pattern, syscall.StringToUTF16("*."+ext)...)
+		pattern = pattern[:len(pattern)-1]
+	}
+	filter := append(syscall.StringToUTF16("Images"), append(pattern, 0, 0)...)
+	buf := make([]uint16, 64<<10)
+	ofn := openFileName{Owner: w.hwnd, Filter: &filter[0], File: &buf[0], MaxFile: uint32(len(buf)),
+		Flags: ofnExplorer | ofnFileMustExist | ofnPathMustExist | ofnNoChangeDir}
+	if r.Limit > 1 {
+		ofn.Flags |= ofnAllowMultiSelect
+	}
+	ofn.StructSize = uint32(unsafe.Sizeof(ofn))
+	if ok, _, _ := getOpenFileNameW.Call(uintptr(unsafe.Pointer(&ofn))); ok == 0 {
+		return nil
+	}
+	// One path, or the directory then each name, NUL-separated.
+	var parts []string
+	for start, i := 0, 0; i < len(buf); i++ {
+		if buf[i] == 0 {
+			if i == start {
+				break
+			}
+			parts = append(parts, syscall.UTF16ToString(buf[start:i]))
+			start = i + 1
+		}
+	}
+	if len(parts) <= 1 {
+		return parts
+	}
+	dir := parts[0]
+	paths := make([]string, 0, len(parts)-1)
+	for _, name := range parts[1:] {
+		paths = append(paths, dir+`\`+name)
+	}
+	return paths
+}
+
+type popupRequest struct {
+	entries []driver.MenuEntry
+	at      driver.Point
+	id      uint32
+}
+
+// popupMenu queues a context menu: TrackPopupMenuEx's loop must not run
+// in the batch's. One shows at a time, so one tracking ends first.
+func (w *window) popupMenu(entries []driver.MenuEntry, at driver.Point, id uint32) {
+	if w.popupTracking {
+		endMenu.Call()
+	}
+	w.popups = append(w.popups, popupRequest{entries, at, id})
+	postMessageW.Call(w.hwnd, wmPopup, 0, 0)
+}
+
+// showPopup tracks the first context menu queued, chooses its item and
+// reports it closed. A later one replaces those queued before it.
+func (w *window) showPopup() {
+	if w.popupTracking || len(w.popups) == 0 {
+		return
+	}
+	p := w.popups[0]
+	w.popups = w.popups[1:]
+	if len(w.popups) > 0 {
+		// Replaced before it showed.
+		w.engine.Dispatch(driver.Event{Kind: driver.EventMenuClosed, Count: p.id})
+		postMessageW.Call(w.hwnd, wmPopup, 0, 0)
+		return
+	}
+	menu, _, _ := createPopupMenu.Call()
+	var refs []menuRef
+	if menu != 0 {
+		w.appendMenuTo(menu, p.entries, &refs)
+		at := point{w.px(p.at.X), w.px(p.at.Y)}
+		clientToScreen.Call(w.hwnd, uintptr(unsafe.Pointer(&at)))
+		w.popupTracking = true
+		chosen, _, _ := trackPopupMenuEx.Call(menu, tpmReturnCmd|tpmRightButton, uintptr(at.X), uintptr(at.Y), w.hwnd, 0)
+		w.popupTracking = false
+		destroyMenu.Call(menu)
+		if i := int(chosen) - 1; i >= 0 && i < len(refs) {
+			w.chooseMenu(refs[i])
+		}
+	}
+	w.engine.Dispatch(driver.Event{Kind: driver.EventMenuClosed, Count: p.id})
+	if len(w.popups) > 0 {
+		postMessageW.Call(w.hwnd, wmPopup, 0, 0)
+	}
+}
+
+// shownDark reports whether the app shows dark: as it forces, else as
+// the system is.
+func (w *window) shownDark() bool {
+	switch w.appearance {
+	case driver.AppearanceLight:
+		return false
+	case driver.AppearanceDark:
+		return true
+	}
+	return w.env.Dark
+}
+
+// setAppearance shows the title bar, the caption buttons and menus in a,
+// or as the system's appearance is.
+func (w *window) setAppearance(a driver.Appearance) {
+	w.appearance = a
+	w.darkTitleBar(w.shownDark())
+	darkMenus(a)
+	invalidateRect.Call(w.hwnd, 0, 0)
+}
+
+// darkMenus has Win32's menus follow a: uxtheme's undocumented
+// SetPreferredAppMode (ordinal 135) and FlushMenuThemes (136), as NSH and
+// Explorer use them.
+func darkMenus(a driver.Appearance) {
+	if uxtheme.Load() != nil {
+		return
+	}
+	mode, err := getProcOrdinal(uxtheme.Handle(), 135)
+	if err != nil {
+		return
+	}
+	const allowDark, forceDark, forceLight = 1, 2, 3
+	m := allowDark
+	switch a {
+	case driver.AppearanceDark:
+		m = forceDark
+	case driver.AppearanceLight:
+		m = forceLight
+	}
+	syscall.SyscallN(mode, uintptr(m))
+	if flush, err := getProcOrdinal(uxtheme.Handle(), 136); err == nil && flush != 0 {
+		syscall.SyscallN(flush)
+	}
+}
+
+// getProcOrdinal returns the function of module exported at ordinal.
+func getProcOrdinal(module uintptr, ordinal uintptr) (uintptr, error) {
+	p, _, err := getProcAddress.Call(module, ordinal)
+	if p == 0 {
+		return 0, err
+	}
+	return p, nil
+}
+
+// setWindowFrame moves and sizes the window: points from the main
+// screen's top left, which is the virtual screen's origin, in the
+// window's pixels.
+func (w *window) setWindowFrame(f driver.WindowFrame) {
+	if w.chrome.fullScreen {
+		return
+	}
+	if w.zoomed() || isIconicWindow(w.hwnd) {
+		showWindow.Call(w.hwnd, swRestore)
+	}
+	var r rect
+	getWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&r)))
+	x, y, cx, cy := r.Left, r.Top, r.Right-r.Left, r.Bottom-r.Top
+	if f.Move {
+		x, y = w.px(f.X), w.px(f.Y)
+	}
+	if f.Width > 0 {
+		cx = w.px(f.Width)
+	}
+	if f.Height > 0 {
+		cy = w.px(f.Height)
+	}
+	setWindowPos.Call(w.hwnd, 0, uintptr(x), uintptr(y), uintptr(cx), uintptr(cy), swpNoZOrder|swpNoActivate)
+}
+
+func isIconicWindow(hwnd uintptr) bool {
+	r, _, _ := isIconic.Call(hwnd)
+	return r != 0
+}
+
+// setLevel puts the window above the others, among them, or at the
+// bottom, where activating it raises it again.
+func (w *window) setLevel(level driver.WindowLevel) {
+	const flags = swpNoMove | swpNoSize | swpNoActivate
+	switch level {
+	case driver.WindowLevelFloating:
+		setWindowPos.Call(w.hwnd, hwndTopmost, 0, 0, 0, 0, flags)
+	case driver.WindowLevelDesktop:
+		setWindowPos.Call(w.hwnd, hwndNoTopmost, 0, 0, 0, 0, flags)
+		setWindowPos.Call(w.hwnd, hwndBottom, 0, 0, 0, 0, flags)
+	default:
+		setWindowPos.Call(w.hwnd, hwndNoTopmost, 0, 0, 0, 0, flags)
+	}
+}
+
+// orderFront shows the window, restored when minimized, in front and
+// focused.
+func (w *window) orderFront() {
+	if isIconicWindow(w.hwnd) {
+		showWindow.Call(w.hwnd, swRestore)
+	} else {
+		showWindow.Call(w.hwnd, swShow)
+	}
+	bringWindowToTop.Call(w.hwnd)
+	setForegroundWindow.Call(w.hwnd)
+}
+
+// setMenuBar says when the menu bar shows.
+func (w *window) setMenuBar(mode driver.MenuBarMode) {
+	w.chrome.menuBar, w.chrome.revealed = mode, false
+	w.showMenuBar()
+}
+
+// menuBarKey follows the keys that show a hidden menu bar: Alt pressed
+// and released alone toggles it, and is kept from DefWindowProc, which
+// would enter menu mode; Alt with a mnemonic and F10 show it for the menu
+// DefWindowProc then opens. It reports whether it took the key.
+func (w *window) menuBarKey(message uint32, vk uintptr, lParam uintptr) bool {
+	c := &w.chrome
+	if c.menuBar != driver.MenuBarAutoHide || c.menu == nil {
+		return false
+	}
+	switch {
+	case message == wmSysKeyDown && vk == vkMenu:
+		if !repeated(lParam) {
+			c.altAlone = true
+		}
+	case message == wmSysKeyUp && vk == vkMenu:
+		alone := c.altAlone
+		c.altAlone = false
+		if alone {
+			c.revealed = !c.revealed
+			w.showMenuBar()
+			return true
+		}
+	case message == wmSysKeyDown:
+		c.altAlone = false
+		if (vk == vkF10 || keyDown(vkMenu)) && !c.revealed && !c.menuOpen {
+			c.menuOpen = true
+			w.showMenuBar()
+		}
+	}
+	return false
+}
+
+// menuLoop follows a menu of the bar opening and closing: the bar shows
+// while it is open, and hides once it closes.
+func (w *window) menuLoop(enter bool, popup bool) {
+	c := &w.chrome
+	if c.menuBar != driver.MenuBarAutoHide || popup {
+		return
+	}
+	if enter {
+		return
+	}
+	if c.menuOpen || c.revealed {
+		c.menuOpen, c.revealed = false, false
+		w.showMenuBar()
+	}
+}
+
+// hideMenuBar hides a shown menu bar again after a press in the window.
+func (w *window) hideMenuBar() {
+	if c := &w.chrome; c.menuBar == driver.MenuBarAutoHide && c.revealed {
+		c.revealed = false
+		w.showMenuBar()
+	}
+}
+
+// osVersion returns Windows' version: 10.0 on Windows 11 too.
+func osVersion() driver.OSVersion {
+	var v osVersionInfo
+	v.Size = uint32(unsafe.Sizeof(v))
+	if r, _, _ := rtlGetVersion.Call(uintptr(unsafe.Pointer(&v))); r != 0 {
+		return driver.OSVersion{}
+	}
+	return driver.OSVersion{Major: int(v.Major), Minor: int(v.Minor)}
+}

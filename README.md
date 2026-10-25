@@ -14,7 +14,7 @@ NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the
 
 NSGo is early. The engine has NSH's reactive model, block, flexbox and grid layout, lists, the app's own fonts, animated and vector images, canvas, GPU shaders written in Go, SVG icons with the bundled Lucide pack, web views, videos, the app's own native views, animated values and layout animations, CSS-like gradients, shadows, filters and 3D transforms.
 
-File drops, Markdown and HTML text views, overlays, dialogs, navigation and unstyled base components run on macOS, iOS, Windows, Linux, the web and Android devices and x86_64 emulators. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
+The clipboard, the photo picker, opening links, file drops, Markdown and HTML text views, overlays, dialogs, navigation and unstyled base components run on macOS, iOS, Windows, Linux, the web and Android devices and x86_64 emulators. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
 
 ## Goals
 

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
@@ -39,6 +40,37 @@ func windowPage(cx *core.Scope, t *theme) core.Node {
 					),
 					t.note("Closing the window ends the gallery."),
 				),
+				t.demo("Frame and level", "SetWindowFrame moves and sizes the window from the main screen's top left; "+
+					"a new height keeps the top edge. SetWindowLevel floats it above other windows or sinks it to the desktop.",
+					flow(
+						t.plain("640 × 480", func() { cx.SetWindowFrame(core.WindowFrame{Width: 640, Height: 480}) }),
+						t.plain("Taller, animated", func() {
+							cx.SetWindowFrame(core.WindowFrame{Height: env.Window().Height + 160, Animated: true})
+						}),
+						t.plain("Move to 80, 80", func() { cx.SetWindowFrame(core.WindowFrame{X: 80, Y: 80, Move: true}) }),
+					),
+					flow(
+						t.plain("Normal level", func() { cx.SetWindowLevel(core.WindowLevelNormal) }),
+						t.plain("Floating", func() { cx.SetWindowLevel(core.WindowLevelFloating) }),
+						t.plain("Desktop", func() { cx.SetWindowLevel(core.WindowLevelDesktop) }),
+					),
+					flow(
+						t.plain("Away for 2 s", func() {
+							cx.MinimizeWindow()
+							cx.AfterFunc(2*time.Second, cx.OrderFront)
+						}),
+					),
+				),
+				t.demo("Menu bar", "SetMenuBar hides the menu bar Windows and Linux draw until Alt is pressed alone; macOS's is the system's.",
+					flow(
+						t.plain("Always shown", func() { cx.SetMenuBar(core.MenuBarShown) }),
+						t.plain("Auto-hide", func() { cx.SetMenuBar(core.MenuBarAutoHide) }),
+					),
+				),
+				popupMenuDemo(cx, t),
+				t.demo("Quit", "Quit ends the app; nsgo.Run then returns for the app's cleanup.",
+					t.destructive("Quit", cx.Quit),
+				),
 				t.demo("Drag handle", "WindowDrag on a view moves the window from it; a double click zooms.",
 					core.View{WindowDrag: core.WindowDragOn, Style: core.Style{Height: core.Pt(56), CornerRadius: radius, Background: t.sunken,
 						Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifySpaceBetween, Padding: core.Symmetric(0, 16)},
@@ -50,6 +82,34 @@ func windowPage(cx *core.Scope, t *theme) core.Node {
 			}}
 		},
 	}
+}
+
+// popupMenuDemo shows the platform's own context menu where the area is
+// right-clicked or pressed.
+func popupMenuDemo(cx *core.Scope, t *theme) core.Node {
+	last := core.NewSignal(cx, "Nothing chosen yet.")
+	items := func() []core.MenuItem {
+		choose := func(s string) func() { return func() { last.Set("Chose " + s) } }
+		return []core.MenuItem{
+			{Label: "Cut", Shortcut: "mod+x", OnSelect: choose("Cut")},
+			{Label: "Copy", Shortcut: "mod+c", OnSelect: choose("Copy")},
+			{Label: "Paste", Disabled: true},
+			{Separator: true},
+			{Label: "Share", Items: []core.MenuItem{{Label: "Mail", OnSelect: choose("Mail")}, {Label: "Messages", OnSelect: choose("Messages")}}},
+			{Label: "Pinned", Checked: true, OnSelect: choose("Pinned")},
+		}
+	}
+	show := func(at core.Point) {
+		cx.PopupMenu(items(), at, func() { last.Update(func(s string) string { return s + " (closed)" }) })
+	}
+	return t.demo("Native context menu", "PopupMenu shows the platform's own menu at a point, here where the area is right-clicked or pressed.",
+		core.View{TestID: "popup-area", Style: core.Style{Height: core.Pt(72), CornerRadius: radius, Background: t.sunken,
+			AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
+			OnPress:       func(e core.PressEvent) { show(e.PagePosition) },
+			OnContextMenu: func(e core.ContextMenuEvent) { show(e.PagePosition) },
+			Children:      []core.Node{t.note("Right-click or press here")}},
+		t.live(last.Get),
+	)
 }
 
 func menuPage(cx *core.Scope, t *theme) core.Node {
@@ -79,14 +139,13 @@ func menuPage(cx *core.Scope, t *theme) core.Node {
 
 func environmentPage(cx *core.Scope, t *theme) core.Node {
 	env := cx.Env()
-	clip := core.NewSignal(cx, "Hello from NSGo")
-	pasted := core.NewSignal(cx, "")
 	keys := core.NewSignal(cx, 0)
 	title := core.NewSignal(cx, "NSGo Base")
 	cx.OnKey("mod+j", func() { keys.Update(func(n int) int { return n + 1 }) })
 
 	edges := func(e core.Edges) string { return fmt.Sprintf("%g %g %g %g", e.Top, e.Right, e.Bottom, e.Left) }
-	idioms := map[core.Idiom]string{core.IdiomPhone: "phone", core.IdiomTablet: "tablet", core.IdiomDesktop: "desktop"}
+	idioms := map[core.Idiom]string{core.IdiomPhone: "phone", core.IdiomTablet: "tablet", core.IdiomDesktop: "desktop",
+		core.IdiomMac: "mac", core.IdiomTV: "tv"}
 	values := []struct {
 		name  string
 		value func() string
@@ -100,6 +159,7 @@ func environmentPage(cx *core.Scope, t *theme) core.Node {
 		{"Pixel ratio", func() string { return fmt.Sprint(env.PixelRatio()) }},
 		{"Locale", env.Locale},
 		{"OS", func() string { return string(env.OS()) }},
+		{"OS version", func() string { return env.OSVersion().String() }},
 		{"Idiom", func() string { return idioms[env.Idiom()] }},
 		{"Reduce motion", func() string { return fmt.Sprint(env.ReduceMotion()) }},
 		{"Screen reader", func() string { return fmt.Sprint(env.ScreenReader()) }},
@@ -116,19 +176,6 @@ func environmentPage(cx *core.Scope, t *theme) core.Node {
 		t.demo("Environment", "Env reports each part as a signal; this table updates as the window, appearance or settings change.",
 			core.View{Style: core.Style{Display: core.DisplayGrid, GridTemplateColumns: "max-content 1fr", ColumnGap: 24, RowGap: 6},
 				Children: table},
-		),
-		t.demo("Clipboard", "SetClipboard writes text; ReadClipboard answers with what it holds.",
-			core.Input{Value: clip.Get, OnChange: clip.Set, Style: t.field(), Label: "Clipboard text"},
-			flow(
-				t.primary("Copy", func() { cx.SetClipboard(clip.GetUntracked()) }),
-				t.plain("Paste", func() { cx.ReadClipboard(pasted.Set) }),
-			),
-			t.live(func() string {
-				if pasted.Get() == "" {
-					return "Nothing pasted yet."
-				}
-				return "Pasted: " + pasted.Get()
-			}),
 		),
 		t.demo("Keyboard shortcuts", "OnKey binds a key while its owner lives; this one only while this section shows.",
 			t.live(func() string { return fmt.Sprintf("Press %s: pressed %d times", cx.KeyLabel("mod+j"), keys.Get()) }),

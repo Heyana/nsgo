@@ -1,0 +1,306 @@
+//go:build windows
+
+package windows
+
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"image"
+	"image/png"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+	"unicode/utf16"
+	"unsafe"
+
+	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/internal/driver"
+)
+
+var (
+	getMenu           = user32.NewProc("GetMenu")
+	getWindowLongProc = user32.NewProc("GetWindowLongPtrW")
+	getWindowProc     = user32.NewProc("GetWindow")
+	setDlgItemTextW   = user32.NewProc("SetDlgItemTextW")
+	getDlgItem        = user32.NewProc("GetDlgItem")
+)
+
+// TestServicesReachTheSystem puts an image and files on the clipboard
+// and reads them back, opens a URL no app handles, moves and floats the
+// window, hides its menu bar until Alt, shows a context menu and quits,
+// which returns from Run.
+func TestServicesReachTheSystem(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-services"
+	var cx *core.Scope
+	status := make(chan string, 16)
+	app := func(c *core.Scope) core.Node {
+		cx = c
+		c.SetApplicationMenu([]core.MenuItem{{Label: "File", Items: []core.MenuItem{{Label: "New", OnSelect: func() {}}}}})
+		return core.View{Style: core.Style{Background: driver.RGB(0xffffff)}}
+	}
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(app, Options{Title: title, Width: 360, Height: 240})
+		status <- "returned"
+	}()
+	hwnd := waitForWindow(t, title, done)
+	if hwnd == 0 {
+		return
+	}
+	ask := func(fn func(say func(string))) string {
+		t.Helper()
+		cx.Post(func() { fn(func(s string) { status <- s }) })
+		select {
+		case s := <-status:
+			return s
+		case <-time.After(5 * time.Second):
+			t.Fatal("no answer")
+		}
+		return ""
+	}
+
+	// An image, PNG and bitmap alike.
+	m := image.NewRGBA(image.Rect(0, 0, 3, 2))
+	for i := range m.Pix {
+		m.Pix[i] = 0xff
+	}
+	var b bytes.Buffer
+	png.Encode(&b, m)
+	cx.Post(func() { cx.SetClipboardImage(b.Bytes()) })
+	got := ask(func(say func(string)) {
+		cx.HasClipboardImage(func(has bool) {
+			cx.ReadClipboardImage(func(img core.ClipboardImage, ok bool) {
+				say(fmt.Sprintf("%v %v %v %d", has, ok, img.Size, len(img.PNG)))
+			})
+		})
+	})
+	if !strings.HasPrefix(got, "true true {3 2}") {
+		t.Errorf("image = %s", got)
+	}
+	onMain(t, hwnd, func(w *window) {
+		// Another app's bitmap without a PNG still reads as one.
+		openClipboard.Call(w.hwnd)
+		emptyClipboard.Call()
+		closeClipboard.Call()
+		dib := make([]byte, 40+4*4)
+		binary.LittleEndian.PutUint32(dib, 40)
+		binary.LittleEndian.PutUint32(dib[4:], 2)
+		binary.LittleEndian.PutUint32(dib[8:], 2)
+		binary.LittleEndian.PutUint16(dib[12:], 1)
+		binary.LittleEndian.PutUint16(dib[14:], 32)
+		putClipboard(w.hwnd, cfDIB, dib)
+	})
+	if got := ask(func(say func(string)) {
+		cx.ReadClipboardImage(func(img core.ClipboardImage, ok bool) { say(fmt.Sprintf("%v %v", ok, img.Size)) })
+	}); got != "true {2 2}" {
+		t.Errorf("bitmap = %s", got)
+	}
+
+	// Files a file manager copied.
+	file := filepath.Join(t.TempDir(), "a.txt")
+	os.WriteFile(file, []byte("x"), 0o644)
+	onMain(t, hwnd, func(w *window) {
+		openClipboard.Call(w.hwnd)
+		emptyClipboard.Call()
+		closeClipboard.Call()
+		units := utf16.Encode([]rune(file + "\x00\x00"))
+		drop := make([]byte, 20+2*len(units))
+		binary.LittleEndian.PutUint32(drop, 20) // DROPFILES.pFiles
+		binary.LittleEndian.PutUint32(drop[16:], 1)
+		for i, u := range units {
+			binary.LittleEndian.PutUint16(drop[20+2*i:], u)
+		}
+		putClipboard(w.hwnd, cfHDrop, drop)
+	})
+	if got := ask(func(say func(string)) {
+		cx.ReadClipboardFiles(func(uris []string) {
+			cx.HasClipboardImage(func(has bool) { say(fmt.Sprintf("%v %v", uris, has)) })
+		})
+	}); !strings.HasSuffix(got, "/a.txt] false") || !strings.HasPrefix(got, "[file:///") {
+		t.Errorf("files = %s", got)
+	}
+	cx.Post(func() { cx.SetClipboard("") })
+
+	if got := ask(func(say func(string)) {
+		cx.OpenURL("nsgo-unhandled-scheme-7f3:x", func(ok bool) { say(fmt.Sprint(ok)) })
+	}); got != "false" {
+		t.Errorf("an unhandled scheme opened: %s", got)
+	}
+
+	// The open dialog picks a PNG, scaled down as asked.
+	shot := filepath.Join(t.TempDir(), "shot.png")
+	big := image.NewRGBA(image.Rect(0, 0, 40, 20))
+	var bb bytes.Buffer
+	png.Encode(&bb, big)
+	os.WriteFile(shot, bb.Bytes(), 0o644)
+	cx.Post(func() {
+		cx.PickImages(core.PickOptions{MaxDimension: 10}, func(files []core.PickedFile) {
+			var parts []string
+			for _, f := range files {
+				parts = append(parts, fmt.Sprintf("%s %s %v", f.Name, f.MIME, f.Size))
+			}
+			status <- strings.Join(parts, ",")
+		})
+	})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		dlg, _, _ := findWindowExW.Call(0, 0, uintptr(unsafe.Pointer(wide("#32770"))), 0)
+		for dlg != 0 {
+			const gwOwner = 4
+			if owner, _, _ := getWindowProc.Call(dlg, gwOwner); owner == hwnd {
+				break
+			}
+			dlg, _, _ = findWindowExW.Call(0, dlg, uintptr(unsafe.Pointer(wide("#32770"))), 0)
+		}
+		const fileName, idOK = 0x47C, 1
+		if item, _, _ := getDlgItem.Call(dlg, fileName); dlg != 0 && item != 0 {
+			time.Sleep(500 * time.Millisecond) // the dialog finishes loading its folder
+			setDlgItemTextW.Call(dlg, fileName, uintptr(unsafe.Pointer(wide(shot))))
+			postMessageW.Call(dlg, wmCommand, idOK, 0)
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no open dialog showed")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	select {
+	case s := <-status:
+		if s != "shot.png image/png {10 5}" {
+			t.Errorf("picked %q", s)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the pick did not answer")
+	}
+
+	// The frame is from the main screen's top left, in the window's
+	// pixels; a new height keeps the top edge.
+	var scale float64
+	onMain(t, hwnd, func(w *window) { scale = w.scale })
+	px := func(p float64) int32 { return int32(p*scale + 0.5) }
+	cx.Post(func() { cx.SetWindowFrame(core.WindowFrame{X: 100, Y: 120, Move: true, Width: 500, Height: 400}) })
+	cx.Post(func() { cx.SetWindowFrame(core.WindowFrame{Height: 300}) })
+	cx.Post(func() { cx.SetWindowLevel(core.WindowLevelFloating) })
+	deadline = time.Now().Add(3 * time.Second)
+	var r rect
+	var ex uintptr
+	for {
+		getWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&r)))
+		const gwlExStyle, wsExTopmost = ^uintptr(19), 0x8
+		ex, _, _ = getWindowLongProc.Call(hwnd, gwlExStyle)
+		if r == (rect{px(100), px(120), px(600), px(420)}) && ex&wsExTopmost != 0 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if r != (rect{px(100), px(120), px(600), px(420)}) || ex&0x8 == 0 {
+		t.Errorf("frame = %+v, ex style %x", r, ex)
+	}
+	cx.Post(func() { cx.SetWindowLevel(core.WindowLevelNormal) })
+
+	// The menu bar hides until Alt is pressed and released alone.
+	menu := func() uintptr {
+		var m uintptr
+		onMain(t, hwnd, func(*window) { m, _, _ = getMenu.Call(hwnd) })
+		return m
+	}
+	if menu() == 0 {
+		t.Error("no menu bar")
+	}
+	cx.Post(func() { cx.SetMenuBar(core.MenuBarAutoHide) })
+	time.Sleep(200 * time.Millisecond)
+	if menu() != 0 {
+		t.Error("an auto-hiding menu bar shows")
+	}
+	postMessageW.Call(hwnd, wmSysKeyDown, vkMenu, 1<<29)
+	postMessageW.Call(hwnd, wmSysKeyUp, vkMenu, 1<<29|1<<30|1<<31)
+	time.Sleep(200 * time.Millisecond)
+	if menu() == 0 {
+		t.Error("Alt did not show the menu bar")
+	}
+	postMessageW.Call(hwnd, wmSysKeyDown, vkMenu, 1<<29)
+	postMessageW.Call(hwnd, wmSysKeyUp, vkMenu, 1<<29|1<<30|1<<31)
+	time.Sleep(200 * time.Millisecond)
+	if menu() != 0 {
+		t.Error("Alt did not hide the menu bar again")
+	}
+
+	// A context menu tracks until it ends, then reports it closed.
+	cx.Post(func() {
+		cx.PopupMenu([]core.MenuItem{{Label: "Copy", OnSelect: func() {}}}, core.Point{X: 20, Y: 20},
+			func() { status <- "closed" })
+	})
+	deadline = time.Now().Add(3 * time.Second)
+	for {
+		if m, _, _ := findWindowExW.Call(0, 0, uintptr(unsafe.Pointer(wide("#32768"))), 0); m != 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no context menu showed")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	onMain(t, hwnd, func(*window) { endMenu.Call() })
+	select {
+	case s := <-status:
+		if s != "closed" {
+			t.Errorf("status = %s", s)
+		}
+	case <-time.After(3 * time.Second):
+		t.Error("the context menu did not report closing")
+	}
+
+	// A forced dark appearance darkens the title bar.
+	darkBar := func() int32 {
+		var on int32
+		onMain(t, hwnd, func(*window) {
+			dwmGetWindowAttribute.Call(hwnd, dwmwaUseImmersiveDarkMode, uintptr(unsafe.Pointer(&on)), 4)
+		})
+		return on
+	}
+	for _, a := range []core.Appearance{core.AppearanceDark, core.AppearanceLight} {
+		cx.Post(func() { cx.SetAppearance(a) })
+		time.Sleep(200 * time.Millisecond)
+		if got, want := darkBar(), int32(boolArg(a == core.AppearanceDark)); got != want {
+			t.Errorf("appearance %v: dark title bar = %d", a, got)
+		}
+	}
+	cx.Post(func() { cx.SetAppearance(core.AppearanceSystem) })
+
+	if got := ask(func(say func(string)) {
+		v := cx.Env().OSVersion()
+		say(fmt.Sprintf("%v", v.Major >= 10))
+	}); got != "true" {
+		t.Errorf("OS version = %s", got)
+	}
+
+	cx.Post(cx.Quit)
+	select {
+	case s := <-status:
+		if s != "returned" {
+			t.Errorf("status = %s", s)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Quit did not return from Run")
+	}
+}
+
+// putClipboard puts b on the open clipboard of hwnd as format.
+func putClipboard(hwnd, format uintptr, b []byte) {
+	openClipboard.Call(hwnd)
+	defer closeClipboard.Call()
+	h, _, _ := globalAlloc.Call(gmemMoveable, uintptr(len(b)))
+	p, _, _ := globalLock.Call(h)
+	rtlMoveMemory.Call(p, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))
+	globalUnlock.Call(h)
+	setClipboardData.Call(format, h)
+}

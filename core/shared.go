@@ -287,6 +287,31 @@ type (
 	WebSource = driver.WebSource
 	// WindowAction is what an ItemWindow asks of the window.
 	WindowAction = driver.WindowAction
+	// WindowFrame is where a window moves and how large it becomes, in
+	// points from the main screen's top left.
+	WindowFrame = driver.WindowFrame
+	// WindowLevel is where a window stacks among the others.
+	WindowLevel = driver.WindowLevel
+	// MenuBarMode says when Windows and Linux show the menu bar.
+	MenuBarMode = driver.MenuBarMode
+	// Appearance is the light or dark appearance an app asks for, or the
+	// system's.
+	Appearance = driver.Appearance
+	// ClipboardImage is an image read from the clipboard: a PNG and its
+	// size in pixels.
+	ClipboardImage = driver.ClipboardImage
+	// OSVersion is an operating system's version.
+	OSVersion = driver.OSVersion
+	// PickFormat says which formats picked images come in.
+	PickFormat = driver.PickFormat
+	// PickRequest is a pick as the platform carries it out, PickOptions
+	// resolved.
+	PickRequest = driver.PickRequest
+	// PickEncoding is what a platform does with one picked image.
+	PickEncoding = driver.PickEncoding
+	// PickedFile is an image the user picked: its name, type, bytes, size
+	// in pixels and modification time.
+	PickedFile = driver.PickedFile
 	// WindowCommand is an ItemWindow's request.
 	WindowCommand = driver.WindowCommand
 	// WindowDrag marks a view as a handle that moves the desktop window, or
@@ -310,7 +335,37 @@ const (
 	IdiomPhone   = driver.IdiomPhone
 	IdiomTablet  = driver.IdiomTablet
 	IdiomDesktop = driver.IdiomDesktop
+	IdiomMac     = driver.IdiomMac
+	IdiomTV      = driver.IdiomTV
 )
+
+const (
+	WindowLevelNormal   = driver.WindowLevelNormal
+	WindowLevelFloating = driver.WindowLevelFloating
+	WindowLevelDesktop  = driver.WindowLevelDesktop
+)
+
+const (
+	MenuBarShown    = driver.MenuBarShown
+	MenuBarAutoHide = driver.MenuBarAutoHide
+)
+
+const (
+	AppearanceSystem = driver.AppearanceSystem
+	AppearanceLight  = driver.AppearanceLight
+	AppearanceDark   = driver.AppearanceDark
+)
+
+const (
+	PickCompatible = driver.PickCompatible
+	PickCurrent    = driver.PickCurrent
+)
+
+// MaxPicked is the most images one PickImages answers with.
+const MaxPicked = driver.MaxPicked
+
+// MaxClipboardImage is the most bytes of a PNG ReadClipboardImage gives.
+const MaxClipboardImage = driver.MaxClipboardImage
 
 const (
 	SubmitBehaviorDefault       = driver.SubmitBehaviorDefault
@@ -658,6 +713,10 @@ const (
 	WindowToggleMaximize   = driver.WindowToggleMaximize
 	WindowToggleFullScreen = driver.WindowToggleFullScreen
 	WindowClose            = driver.WindowClose
+	WindowSetFrame         = driver.WindowSetFrame
+	WindowSetLevel         = driver.WindowSetLevel
+	WindowOrderFront       = driver.WindowOrderFront
+	WindowSetMenuBar       = driver.WindowSetMenuBar
 )
 
 const (

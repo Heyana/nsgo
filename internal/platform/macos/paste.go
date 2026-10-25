@@ -54,6 +54,20 @@ func registerPaste() {
 				}
 				return s.fieldEditor
 			},
+		}, {
+			// A window kept alive hides instead of closing.
+			Cmd: sel("windowShouldClose:"),
+			Fn: func(self objc.ID, _ objc.SEL, window objc.ID) bool {
+				if keepAlive && !finished {
+					window.Send(sel("orderOut:"), objc.ID(0))
+					return false
+				}
+				return true
+			},
+		}, {
+			// The app ends with its window, once AppKit's close returned.
+			Cmd: sel("windowWillClose:"),
+			Fn:  func(self objc.ID, _ objc.SEL, note objc.ID) { apple.OnMain(finish) },
 		}})
 }
 

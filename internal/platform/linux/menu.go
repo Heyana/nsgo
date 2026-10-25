@@ -30,7 +30,9 @@ func (w *window) showMenuBar() {
 		w.menuBar = 0
 	}
 	clear(w.actionRefs)
-	if w.chrome.menu == nil || w.chrome.titleBar != driver.TitleBarDefault || w.chrome.fullScreen {
+	c := &w.chrome
+	if c.menu == nil || c.titleBar != driver.TitleBarDefault || c.fullScreen ||
+		c.menuBar == driver.MenuBarAutoHide && !c.revealed {
 		return
 	}
 	w.actionGroup = gSimpleActionGroupNew()
@@ -127,7 +129,11 @@ func (w *window) buildItem(e *driver.MenuEntry) uintptr {
 	if action == "" {
 		return gMenuItemNew(cstr(label), nil)
 	}
-	return gMenuItemNew(cstr(label), cstr("win."+action))
+	prefix := "win."
+	if w.building.prefix != "" {
+		prefix = w.building.prefix
+	}
+	return gMenuItemNew(cstr(label), cstr(prefix+action))
 }
 
 // addAction registers a menu item's action on the window and returns its
@@ -149,10 +155,14 @@ func (w *window) addAction(id uint32, role driver.MenuRole, disabled, checkable,
 	if disabled {
 		gSimpleActionSetEnabled(action, 0)
 	}
-	w.actionRefs[action] = menuRef{id: id, role: role}
+	group, refs := w.actionGroup, w.actionRefs
+	if w.building.group != 0 {
+		group, refs = w.building.group, w.building.refs
+	}
+	refs[action] = menuRef{id: id, role: role}
 	gSignalConnect(action, "activate", cbMenuActivate, w.handle)
-	if w.actionGroup != 0 {
-		gActionMapAddAction(w.actionGroup, action)
+	if group != 0 {
+		gActionMapAddAction(group, action)
 	}
 	gObjectUnref(action)
 	return name
@@ -165,6 +175,8 @@ func menuActivateCallback(action, parameter, data uintptr) {
 		return
 	}
 	if ref, ok := w.actionRefs[action]; ok {
+		w.menuChosen(ref)
+	} else if ref, ok := w.popupRefs[action]; ok {
 		w.menuChosen(ref)
 	}
 }

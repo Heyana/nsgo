@@ -64,7 +64,8 @@ func init() {
 
 		{"Window", groupSystem, "The desktop window's title bar and commands, and dragging it from a view.", windowPage},
 		{"App Menu", groupSystem, "The application menu: roles, shortcuts and checkable items.", menuPage},
-		{"Environment", groupSystem, "What the platform reports, and the system services.", environmentPage},
+		{"Environment", groupSystem, "What the platform reports: sizes, settings, the OS, shortcuts and the title.", environmentPage},
+		{"Services", groupSystem, "The clipboard, opening links, the photo picker, the app's appearance and toasts.", servicesPage},
 		{"Accessibility", groupSystem, "What screen readers read: hints, values, actions, groups, hidden elements, live regions and focus.", accessibilityPage},
 		{"Storage", groupSystem, "Key-value storage kept on the device, and the app's directories.", storagePage},
 		{"File Drop", groupSystem, "Files dragged in from other apps, on desktops and the web.", filesPage},

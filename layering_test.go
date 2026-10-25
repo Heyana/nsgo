@@ -34,6 +34,7 @@ var layers = []struct {
 	{"internal/platform/hover", []string{"internal/driver"}},
 	{"internal/platform/imagedecode", []string{"internal/driver"}},
 	{"internal/platform/imageload", []string{"internal/driver"}},
+	{"internal/platform/picked", []string{"internal/driver"}},
 	{"internal/platform/queue", []string{"internal/driver"}},
 	{"internal/platform/scrollbar", []string{"internal/driver"}},
 	{"internal/platform/", append([]string{"internal/driver", "internal/engine"}, platformShared...)},
@@ -52,7 +53,7 @@ var layers = []struct {
 // compiler included.
 var platformShared = []string{
 	"internal/platform/apple", "internal/platform/canvastest", "internal/platform/field", "internal/platform/finger",
-	"internal/platform/fontfile", "internal/platform/hover", "internal/platform/imagedecode", "internal/platform/imageload", "internal/platform/queue", "internal/platform/scrollbar",
+	"internal/platform/fontfile", "internal/platform/hover", "internal/platform/imagedecode", "internal/platform/imageload", "internal/platform/picked", "internal/platform/queue", "internal/platform/scrollbar",
 	"internal/shader", "internal/shaderir/",
 }
 

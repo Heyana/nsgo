@@ -1,0 +1,298 @@
+//go:build darwin && !ios
+
+package macos
+
+import (
+	"os"
+	"path/filepath"
+
+	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
+
+	"github.com/oneo-me/nsgo/internal/driver"
+	"github.com/oneo-me/nsgo/internal/platform/apple"
+)
+
+// The services AppKit performs: the clipboard's images and files,
+// opening URLs, the photo picker, context menus, the app's appearance and
+// the window's frame and level.
+
+func generalPasteboard() objc.ID {
+	return objc.ID(objc.GetClass("NSPasteboard")).Send(sel("generalPasteboard"))
+}
+
+// The pasteboard types of images, in the order a read prefers them.
+var imageTypes = []string{"public.png", "public.tiff", "public.jpeg", "public.heic", "com.compuserve.gif"}
+
+// setClipboardImage puts the image data encodes on the pasteboard as a
+// PNG and a TIFF, which every Mac app reads.
+func setClipboardImage(data []byte) {
+	img := objc.ID(objc.GetClass("NSImage")).Send(selAlloc).Send(sel("initWithData:"), apple.NSData(data))
+	if img == 0 {
+		return
+	}
+	defer img.Send(selRelease)
+	pb := generalPasteboard()
+	pb.Send(sel("clearContents"))
+	if png, _, err := apple.PNG(data); err == nil {
+		pb.Send(sel("setData:forType:"), apple.NSData(png), apple.NSString("public.png"))
+	}
+	if tiff := img.Send(sel("TIFFRepresentation")); tiff != 0 {
+		pb.Send(sel("setData:forType:"), tiff, apple.NSString("public.tiff"))
+	}
+}
+
+// availableType returns the first of types the pasteboard holds, "" for
+// none, without reading its data.
+func availableType(pb objc.ID, types []string) string {
+	arr := objc.ID(objc.GetClass("NSMutableArray")).Send(sel("array"))
+	for _, t := range types {
+		arr.Send(sel("addObject:"), apple.NSString(t))
+	}
+	return apple.GoString(pb.Send(sel("availableTypeFromArray:"), arr))
+}
+
+// readClipboard answers an ItemReadClipboard.
+func (s *surface) readClipboard(it *driver.MountItem) {
+	pb := generalPasteboard()
+	ev := driver.Event{Kind: driver.EventClipboard, Count: it.Count}
+	switch it.Clipboard {
+	case driver.ClipboardReadText:
+		ev.Text = apple.GoString(pb.Send(sel("stringForType:"), apple.NSString(pasteboardText)))
+	case driver.ClipboardReadHasText:
+		ev.Finished = availableType(pb, []string{pasteboardText}) != ""
+	case driver.ClipboardReadImage:
+		if len(fileURLs(pb)) > 0 {
+			break // a file's icon is no image of the user's
+		}
+		if t := availableType(pb, imageTypes); t != "" {
+			data := apple.Bytes(pb.Send(sel("dataForType:"), apple.NSString(t)))
+			// Converting is slow for photos: off the main thread.
+			id := it.Count
+			go func() {
+				ev := driver.Event{Kind: driver.EventClipboard, Count: id}
+				if png, size, err := apple.PNG(data); err == nil && len(png) <= driver.MaxClipboardImage {
+					ev.Data = &driver.ClipboardImage{PNG: png, Size: size}
+				}
+				s.engine.Dispatch(ev)
+			}()
+			return
+		}
+	case driver.ClipboardReadHasImage:
+		ev.Finished = len(fileURLs(pb)) == 0 && availableType(pb, imageTypes) != ""
+	case driver.ClipboardReadFiles:
+		ev.URIs = fileURLs(pb)
+	}
+	s.engine.Dispatch(ev)
+}
+
+// openURL opens u with the app the system picks and reports whether one
+// took it.
+func (s *surface) openURL(u string, id uint32) {
+	nsURL := objc.ID(objc.GetClass("NSURL")).Send(sel("URLWithString:"), apple.NSString(u))
+	opened := false
+	if nsURL != 0 {
+		ws := objc.ID(objc.GetClass("NSWorkspace")).Send(sel("sharedWorkspace"))
+		opened = objc.Send[bool](ws, sel("openURL:"), nsURL)
+	}
+	s.engine.Dispatch(driver.Event{Kind: driver.EventOpenURL, Count: id, Finished: opened})
+}
+
+// pickImages shows an open panel as a sheet on the window for the
+// images r asks for, then prepares the ones chosen off the main thread.
+func (s *surface) pickImages(r driver.PickRequest, id uint32) {
+	panel := objc.ID(objc.GetClass("NSOpenPanel")).Send(sel("openPanel"))
+	panel.Send(sel("setCanChooseFiles:"), true)
+	panel.Send(sel("setCanChooseDirectories:"), false)
+	panel.Send(sel("setAllowsMultipleSelection:"), r.Limit > 1)
+	types := objc.ID(objc.GetClass("NSMutableArray")).Send(sel("array"))
+	if r.Format == driver.PickCompatible {
+		// HEIC and the others become JPEG, so any image will do.
+		types.Send(sel("addObject:"), apple.NSString("public.image"))
+	} else {
+		for _, ext := range r.DialogExtensions() {
+			types.Send(sel("addObject:"), apple.NSString(ext))
+		}
+	}
+	panel.Send(sel("setAllowedFileTypes:"), types)
+	panel.Send(sel("retain"))
+	done := objc.NewBlock(func(_ objc.Block, response int) {
+		defer panel.Send(selRelease)
+		var paths []string
+		if response == 1 { // NSModalResponseOK
+			apple.ForEach(panel.Send(sel("URLs")), func(u objc.ID) {
+				paths = append(paths, apple.GoString(u.Send(sel("path"))))
+			})
+		}
+		go func() {
+			var files []driver.PickedFile
+			for _, p := range paths {
+				if len(files) >= max(r.Limit, 1) {
+					break
+				}
+				f, ok := readPicked(p)
+				if ok {
+					files = append(files, apple.PreparePicked(r, f))
+				}
+			}
+			s.engine.Dispatch(driver.Event{Kind: driver.EventPick, Count: id, Data: driver.FinishPick(r, files, nil)})
+		}()
+	})
+	panel.Send(sel("beginSheetModalForWindow:completionHandler:"), s.window, done)
+	done.Release()
+}
+
+// popupMenu shows entries as a context menu at p in the root's points.
+// AppKit tracks it in a loop of its own, so it opens from the main queue
+// after the batch, which keeps applying batches meanwhile.
+func (s *surface) popupMenu(entries []driver.MenuEntry, p driver.Point, id uint32) {
+	if s.menuTarget == 0 {
+		s.menuTarget = objc.ID(classMenuTarget).Send(selNew)
+	}
+	menu := s.submenu("", entries)
+	// One menu at a time: the one tracking closes first.
+	s.closePopup()
+	s.popup = menu
+	apple.OnMain(func() { s.showPopup(menu, p, id) })
+}
+
+// showPopup tracks menu unless another replaced it, once the menu
+// tracking before it has returned, then reports it closed.
+func (s *surface) showPopup(menu objc.ID, p driver.Point, id uint32) {
+	if s.tracking {
+		s.nextPopups = append(s.nextPopups, func() { s.showPopup(menu, p, id) })
+		return
+	}
+	if s.popup == menu && !finished {
+		s.tracking = true
+		menu.Send(sel("popUpMenuPositioningItem:atLocation:inView:"), objc.ID(0),
+			apple.CGPoint{X: float64(p.X), Y: float64(p.Y)}, s.native)
+		s.tracking = false
+	}
+	if s.popup == menu {
+		s.popup = 0
+	}
+	menu.Send(selRelease)
+	// The chosen item's action is sent before the menu returns.
+	s.engine.Dispatch(driver.Event{Kind: driver.EventMenuClosed, Count: id})
+	next := s.nextPopups
+	s.nextPopups = nil
+	for _, fn := range next {
+		apple.OnMain(fn)
+	}
+}
+
+// closePopup closes the context menu that tracks, if any.
+func (s *surface) closePopup() {
+	if s.popup != 0 {
+		s.popup.Send(sel("cancelTrackingWithoutAnimation"))
+		s.popup = 0
+	}
+}
+
+// setAppearance shows the app, AppKit's own chrome and the views it
+// hosts in a, or in the system's appearance.
+func setAppearance(a driver.Appearance) {
+	var appearance objc.ID
+	switch a {
+	case driver.AppearanceLight:
+		appearance = objc.ID(objc.GetClass("NSAppearance")).Send(sel("appearanceNamed:"), apple.NSString("NSAppearanceNameAqua"))
+	case driver.AppearanceDark:
+		appearance = objc.ID(objc.GetClass("NSAppearance")).Send(sel("appearanceNamed:"), apple.NSString("NSAppearanceNameDarkAqua"))
+	}
+	nsApp().Send(sel("setAppearance:"), appearance)
+}
+
+func nsApp() objc.ID { return objc.ID(objc.GetClass("NSApplication")).Send(sel("sharedApplication")) }
+
+// setWindowFrame moves and sizes the window. f's corner is from the main
+// screen's top left, y down, and AppKit's frames from its bottom left, y
+// up, so the top edge stays where it is unless f moves it.
+func (s *surface) setWindowFrame(f driver.WindowFrame) {
+	w := s.window
+	frame := objc.Send[apple.CGRect](w, sel("frame"))
+	top := frame.Origin.Y + frame.Size.Height
+	if f.Width > 0 {
+		frame.Size.Width = float64(f.Width)
+	}
+	if f.Height > 0 {
+		frame.Size.Height = float64(f.Height)
+	}
+	if f.Move {
+		screens := objc.ID(objc.GetClass("NSScreen")).Send(sel("screens"))
+		if objc.Send[uint](screens, sel("count")) > 0 {
+			main := objc.Send[apple.CGRect](screens.Send(sel("objectAtIndex:"), uint(0)), sel("frame"))
+			top = main.Origin.Y + main.Size.Height - float64(f.Y)
+			frame.Origin.X = main.Origin.X + float64(f.X)
+		}
+	}
+	frame.Origin.Y = top - frame.Size.Height
+	w.Send(sel("setFrame:display:animate:"), frame, true, f.Animated)
+}
+
+// The window levels and collection behaviors of setLevel.
+const (
+	levelNormal, levelFloating = 0, 3
+	desktopIconLevelKey        = 18 // kCGDesktopIconWindowLevelKey
+	joinAllSpaces              = 1 << 0
+	stationary                 = 1 << 4
+	ignoresCycle               = 1 << 6
+)
+
+var cgWindowLevelForKey func(key int32) int32
+
+// setLevel puts the window at level. The desktop's level keeps it on
+// every space, out of Mission Control and Cmd-`, as desktop widgets are.
+func (s *surface) setLevel(level driver.WindowLevel) {
+	w := s.window
+	behavior := objc.Send[uint](w, sel("collectionBehavior")) &^ (joinAllSpaces | stationary | ignoresCycle)
+	switch level {
+	case driver.WindowLevelFloating:
+		w.Send(sel("setLevel:"), levelFloating)
+	case driver.WindowLevelDesktop:
+		if cgWindowLevelForKey == nil {
+			cg, err := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_NOW)
+			if err != nil {
+				return
+			}
+			purego.RegisterLibFunc(&cgWindowLevelForKey, cg, "CGWindowLevelForKey")
+		}
+		w.Send(sel("setLevel:"), int(cgWindowLevelForKey(desktopIconLevelKey)))
+		behavior |= joinAllSpaces | stationary | ignoresCycle
+	default:
+		w.Send(sel("setLevel:"), levelNormal)
+	}
+	w.Send(sel("setCollectionBehavior:"), behavior)
+}
+
+// orderFront shows the window, restored when minimized or the app was
+// hidden, at the front of its level, and activates the app.
+func (s *surface) orderFront() {
+	w := s.window
+	if objc.Send[bool](w, sel("isMiniaturized")) {
+		w.Send(sel("deminiaturize:"), objc.ID(0))
+	}
+	nsApp().Send(sel("unhide:"), objc.ID(0))
+	activateApp()
+	w.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
+}
+
+// osVersion returns macOS's version.
+func osVersion() driver.OSVersion {
+	type version struct{ Major, Minor, Patch int }
+	v := objc.Send[version](objc.ID(objc.GetClass("NSProcessInfo")).Send(sel("processInfo")), sel("operatingSystemVersion"))
+	return driver.OSVersion{Major: v.Major, Minor: v.Minor}
+}
+
+// readPicked reads the file at path as a picked file.
+func readPicked(path string) (driver.PickedFile, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return driver.PickedFile{}, false
+	}
+	f := driver.PickedFile{Name: filepath.Base(path), Data: data}
+	if info, err := os.Stat(path); err == nil {
+		f.Modified = info.ModTime()
+	}
+	return f, true
+}

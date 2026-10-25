@@ -38,6 +38,7 @@ import (
 	"github.com/oneo-me/nsgo/internal/engine"
 	"github.com/oneo-me/nsgo/internal/platform/finger"
 	"github.com/oneo-me/nsgo/internal/platform/hover"
+	"github.com/oneo-me/nsgo/internal/platform/imageload"
 	"github.com/oneo-me/nsgo/internal/platform/queue"
 	"github.com/oneo-me/nsgo/internal/platform/scrollbar"
 )
@@ -53,6 +54,8 @@ type Options struct {
 	// Fonts are font files under the app's resources, registered before
 	// the first view.
 	Fonts []string
+	// Appearance is the appearance the app starts in.
+	Appearance driver.Appearance
 }
 
 // window is one GTK window and the tree it shows. The engine's goroutine
@@ -103,37 +106,55 @@ type window struct {
 	components driver.NativeComponents
 	drop       fileDrop
 
-	lastPointer    driver.Point
-	down           driver.Event  // the last press: modifiers and click count
-	mouse          finger.Mouse  // finger 0 of the views' touches
-	paste          *pasting      // the paste whose clipboard is being read
-	pointerIn      bool          // the pointer is over the surface, at lastPointer
-	hovered        hover.Tracker // the views under it that follow hovers
-	shielding      bool          // a press kept from a hosted control goes on
-	panning        *pan
-	bars           []*view  // the scroll views under the pointer, which show their bars
-	barDrag        *barDrag // the bar the pointer drags
-	pinching       *twoFinger
-	rotating       *twoFinger
-	closing        bool
-	lastWidth      driver.Points
-	lastHeight     driver.Points
-	started        bool
-	handle         uintptr
-	measureMap     [2]uintptr                        // the engine thread's Pango contexts, left to right and right to left
-	extents        map[driver.Font]driver.FontExtent // the engine thread's font metrics
-	capHeights     map[driver.Font]driver.Points     // and capital heights
-	pressConsumed  bool
-	longPress      uint64 // counts long presses waited for, to cancel the last
-	focus          *view  // the entry with keyboard focus
-	pinchTimeout   uint32
-	clipboardCount uint32
-	alerts         []driver.AlertConfig
-	alerting       bool
-	alertingID     uint32
-	menuCounter    uint32
-	actionGroup    uintptr
-	actionRefs     map[uintptr]menuRef
+	lastPointer   driver.Point
+	down          driver.Event  // the last press: modifiers and click count
+	mouse         finger.Mouse  // finger 0 of the views' touches
+	paste         *pasting      // the paste whose clipboard is being read
+	pointerIn     bool          // the pointer is over the surface, at lastPointer
+	hovered       hover.Tracker // the views under it that follow hovers
+	shielding     bool          // a press kept from a hosted control goes on
+	panning       *pan
+	bars          []*view  // the scroll views under the pointer, which show their bars
+	barDrag       *barDrag // the bar the pointer drags
+	pinching      *twoFinger
+	rotating      *twoFinger
+	closing       bool
+	lastWidth     driver.Points
+	lastHeight    driver.Points
+	started       bool
+	handle        uintptr
+	measureMap    [2]uintptr                        // the engine thread's Pango contexts, left to right and right to left
+	extents       map[driver.Font]driver.FontExtent // the engine thread's font metrics
+	capHeights    map[driver.Font]driver.Points     // and capital heights
+	pressConsumed bool
+	longPress     uint64 // counts long presses waited for, to cancel the last
+	focus         *view  // the entry with keyboard focus
+	pinchTimeout  uint32
+	alerts        []driver.AlertConfig
+	alerting      bool
+	alertingID    uint32
+	menuCounter   uint32
+	actionGroup   uintptr
+	actionRefs    map[uintptr]menuRef
+	// building names the action group, prefix and refs the menu being
+	// built registers its actions in, when not the menu bar's.
+	building menuBuild
+	// popover is the context menu shown, popoverID its request and
+	// popupRefs its items.
+	popover   uintptr
+	popoverID uint32
+	popupRefs map[uintptr]menuRef
+	// appearance is the one the app forces; preferDark the session's
+	// gtk-application-prefer-dark-theme, read once it is first forced.
+	appearance                  driver.Appearance
+	preferDark, preferDarkKnown bool
+}
+
+// menuBuild is where a menu's actions go.
+type menuBuild struct {
+	group  uintptr
+	prefix string
+	refs   map[uintptr]menuRef
 }
 
 // Run opens a window showing app and runs GTK's main loop. Call it from
@@ -181,11 +202,14 @@ func start(app engine.App, opts Options) (*window, error) {
 	w.createWindow(opts)
 	w.env = w.environment()
 
+	w.setAppearance(opts.Appearance)
 	eopts := engine.Options{
 		Size:        driver.Size{Width: opts.Width, Height: opts.Height},
 		Environment: w.env,
+		Appearance:  opts.Appearance,
 	}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
+	imageload.UseDiskCache(eopts.CacheDir)
 	w.engine = engine.Start(w, app, eopts)
 	w.loop = gMainLoopNew(0, 0)
 	w.setupSettings()
@@ -373,7 +397,29 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.setClipboard(it.Value)
 			continue
 		case driver.ItemReadClipboard:
-			w.readClipboard(it.Count)
+			w.readClipboard(it)
+			continue
+		case driver.ItemSetClipboardImage:
+			if data, ok := it.Data.([]byte); ok {
+				setClipboardImage(data)
+			}
+			continue
+		case driver.ItemOpenURL:
+			w.openURL(it.Value, it.Count)
+			continue
+		case driver.ItemPickImages:
+			w.pickImages(*it.Pick, it.Count)
+			continue
+		case driver.ItemPopupMenu:
+			w.popupMenu(it.Menu, it.Point, it.Count)
+			continue
+		case driver.ItemAppearance:
+			w.setAppearance(it.Appearance)
+			continue
+		case driver.ItemQuit:
+			w.close()
+			continue
+		case driver.ItemToast:
 			continue
 		case driver.ItemImageInfo:
 			w.imageInfo(it)
@@ -662,6 +708,15 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 		w.updateEnvironment()
 	case driver.WindowClose:
 		w.close()
+	case driver.WindowSetFrame:
+		w.setFrame(c.Frame)
+	case driver.WindowOrderFront:
+		gtkWindowPresent(w.win)
+	case driver.WindowSetMenuBar:
+		w.chrome.menuBar, w.chrome.revealed = c.MenuBar, false
+		w.showMenuBar()
+	case driver.WindowSetLevel:
+		// Stacking is the compositor's.
 	}
 }
 

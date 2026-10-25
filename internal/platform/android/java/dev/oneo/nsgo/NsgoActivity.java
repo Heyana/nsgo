@@ -46,6 +46,12 @@ public class NsgoActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int request, int result, android.content.Intent data) {
+        super.onActivityResult(request, result, data);
+        view.activityResult(request, result, data);
+    }
+
+    @Override
     protected void onDestroy() {
         view.stop();
         super.onDestroy();
