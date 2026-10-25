@@ -97,7 +97,11 @@ type view struct {
 	style    driver.ViewStyle
 	animated driver.AnimatedValues
 
-	component      driver.NativeComponent // a native view's
+	component driver.NativeComponent // a native view's
+	// componentView is the component's view, which fills the box: views
+	// such as UITabBar size themselves, so it is placed at each frame
+	// rather than autoresized.
+	componentView  objc.ID
 	componentTried bool
 	accessory      driver.NodeID // an input's InputAccessoryView
 }
@@ -117,6 +121,8 @@ type surface struct {
 
 	keyboard         driver.Points
 	keyboardDuration time.Duration
+	// keyboardStart is when the keyboard last started to move, on clock.
+	keyboardStart time.Duration
 
 	keys []driver.KeyBinding // the keymap's bindings
 	// held is the binding a held key fires again, on a timer of its own:
@@ -431,6 +437,7 @@ func (s *surface) keyboardMoved(note objc.ID, hiding bool) {
 	get := func(key string) objc.ID { return info.Send(sel("objectForKey:"), apple.Global(uikitPath, key)) }
 	seconds := objc.Send[float64](get("UIKeyboardAnimationDurationUserInfoKey"), sel("doubleValue"))
 	s.keyboardDuration = time.Duration(seconds * float64(time.Second))
+	s.keyboardStart = s.clock()
 	s.keyboard = 0
 	if frame := get("UIKeyboardFrameEndUserInfoKey"); !hiding && frame != 0 {
 		end := objc.Send[apple.CGRect](frame, sel("CGRectValue"))
@@ -445,9 +452,13 @@ func (s *surface) keyboardMoved(note objc.ID, hiding bool) {
 // alert presents a over whatever the window shows; the action chosen goes
 // to the engine as EventAlert.
 func (s *surface) alert(a *driver.AlertConfig) {
-	const styleAlert = 1
+	const styleSheet, styleAlert = 0, 1
+	style := styleAlert
+	if a.Sheet {
+		style = styleSheet
+	}
 	ctrl := objc.ID(objc.GetClass("UIAlertController")).Send(sel("alertControllerWithTitle:message:preferredStyle:"),
-		apple.NSString(a.Title), apple.NSString(a.Message), styleAlert)
+		apple.NSString(a.Title), apple.NSString(a.Message), style)
 	id := a.ID
 	add := func(label string, style, index int) {
 		handler := objc.NewBlock(func(_ objc.Block, _ objc.ID) {
@@ -475,6 +486,24 @@ func (s *surface) alert(a *driver.AlertConfig) {
 	}
 	if len(a.Actions) == 0 {
 		add("OK", actionCancel, -1)
+	}
+	if pop := ctrl.Send(sel("popoverPresentationController")); pop != 0 {
+		// iPad: an action sheet is a popover, anchored at the bottom
+		// center without an arrow. It hides its cancel action and runs it
+		// on a tap outside, so one that is never shown closes it.
+		if !cancel {
+			handler := objc.NewBlock(func(_ objc.Block, _ objc.ID) {
+				s.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: id, Index: -1})
+			})
+			action := objc.ID(objc.GetClass("UIAlertAction")).Send(sel("actionWithTitle:style:handler:"),
+				objc.ID(0), actionCancel, handler)
+			handler.Release()
+			ctrl.Send(sel("addAction:"), action)
+		}
+		b := objc.Send[apple.CGRect](s.native, selBounds)
+		pop.Send(sel("setSourceView:"), s.native)
+		pop.Send(sel("setSourceRect:"), apple.Rect(b.Size.Width/2, b.Size.Height, 0, 0))
+		pop.Send(sel("setPermittedArrowDirections:"), 0)
 	}
 	top := window.Send(sel("rootViewController"))
 	for p := top.Send(sel("presentedViewController")); p != 0; p = top.Send(sel("presentedViewController")) {
@@ -1180,5 +1209,6 @@ func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v.sc != nil && len(v.sc.sticky) > 0 {
 		v.pinSticky()
 	}
+	v.surface.followLargeTitle(v, offset.Y)
 	v.scrollEvent(driver.EventScroll)
 }

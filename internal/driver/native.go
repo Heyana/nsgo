@@ -50,7 +50,8 @@ func NewNativeContext(emit func(name string, data any), size func(Size)) *Native
 func (c *NativeContext) Emit(name string, data any) { c.emit(name, data) }
 
 // SetSize asks for a size: the element measures to it where its style
-// leaves a dimension open, as an image does to its natural size.
+// leaves a dimension open, as an image does to its natural size. A
+// dimension of 0 asks for the other alone.
 func (c *NativeContext) SetSize(s Size) { c.size(s) }
 
 // AndroidViewProp is one setter call on a component's view: set<Name>(Value),
@@ -73,3 +74,9 @@ type AndroidPropMapper interface {
 type AndroidEventMapper interface {
 	ViewEvent(name string, args []any)
 }
+
+// TabBarComponent is the native component iOS and Android register for
+// core.TabBar: the system's tab bar. Its props are "items", a list of
+// {"title", "icon"} maps, and "selectedIndex"; it emits "change" with the
+// index the user chose.
+const TabBarComponent = "nsgo/tab-bar"

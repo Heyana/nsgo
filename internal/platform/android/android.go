@@ -924,6 +924,8 @@ func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []native
 				w.str(act.Label)
 				w.byte(byte(act.Role))
 			}
+			w.flags(a.Sheet)
+			w.flags(a.Cancelable)
 		case driver.ItemScrollTo:
 			w.points(it.Point.X)
 			w.points(it.Point.Y)

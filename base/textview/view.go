@@ -3,8 +3,10 @@ package textview
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/oneo-me/nsgo/core"
@@ -27,10 +29,15 @@ type TextView struct {
 	// Markdown nor HTML is given; DocumentFunc replaces it.
 	Document     Document
 	DocumentFunc func() Document
-	Extensions   []Extension
-	// Streaming repairs the syntax the Markdown's last block leaves open
-	// before parsing (RepairStreaming), for a document still arriving.
-	Streaming bool
+	// Extensions go after those Provide gives the views below it.
+	Extensions []Extension
+	// Options say what the Markdown reads, Streaming among them.
+	Options Options
+	// StreamingCaret, as a document streams in, follows its end: inline
+	// after the last text of the last block (into quotes, lists and
+	// custom nodes' content, after a code block's code, in a table's last
+	// cell), else on a line of its own after it.
+	StreamingCaret core.Node
 
 	// Styles style the parts; StyleFunc's result for a part goes under
 	// them, again when what it reads changes.
@@ -60,9 +67,21 @@ type TextView struct {
 	// RenderCodeBlock shows a code block in place of the default: the code
 	// in a horizontal scroll view.
 	RenderCodeBlock func(cx *core.Scope, code CodeBlock) core.Node
-	// CodeBlockActions is content over each code block's top right corner,
-	// such as a copy button, in PartCodeBlockHeader.
-	CodeBlockActions func(cx *core.Scope, code CodeBlock) core.Node
+	// CodeBlockActions are buttons over each code block's top right
+	// corner, in PartCodeBlockHeader, each a PartCodeBlockAction showing
+	// RenderCodeBlockAction (its name as text without it). CopyAction
+	// copies the code, and reports itself done for 1.6 seconds; a press on
+	// any reports OnCodeBlockAction.
+	CodeBlockActions      []string
+	RenderCodeBlockAction func(cx *core.Scope, action CodeBlockAction) core.Node
+	OnCodeBlockAction     func(action string, code CodeBlock)
+	// RenderTableActions shows content above each table, in
+	// PartTableActions.
+	RenderTableActions func(cx *core.Scope, table Table) core.Node
+	// NoTableScroll lets a table shrink past its columns' floors rather
+	// than scroll; NoTableScrollbar and NoCodeBlockScrollbar hide the
+	// scroll bars of tables and code blocks.
+	NoTableScroll, NoTableScrollbar, NoCodeBlockScrollbar bool
 	// RenderImage shows an image in place of the default: alone in a
 	// paragraph, a block; in a line of text, an attachment.
 	RenderImage func(cx *core.Scope, image Image) core.Node
@@ -92,9 +111,33 @@ type rowKey struct {
 	kind  string
 }
 
+// Plugin is an extension a view gives every TextView below it, with
+// what shows its custom nodes: Render comes before a view's
+// RenderCustom, which shows the nodes Render leaves (returning nil).
+type Plugin struct {
+	Extension Extension
+	Render    func(cx *core.Scope, node Custom) core.Node
+}
+
+var pluginsKey = core.NewKey[[]Plugin]("textview plugins", nil)
+
+// Provide gives every TextView below cx's owner plugins, after those of
+// the views around it.
+func Provide(cx *core.Scope, plugins ...Plugin) {
+	pluginsKey.Provide(cx, append(slices.Clip(pluginsKey.Use(cx)), plugins...))
+}
+
 // Render implements core.Node.
 func (tv TextView) Render(cx *core.Scope) core.Node {
-	r := &renderer{tv: tv}
+	plugins := pluginsKey.Use(cx)
+	if len(plugins) > 0 {
+		var ext []Extension
+		for _, p := range plugins {
+			ext = append(ext, p.Extension)
+		}
+		tv.Extensions = append(ext, tv.Extensions...)
+	}
+	r := &renderer{tv: tv, plugins: plugins}
 	doc := core.NewMemoFunc(cx, tv.document, nil)
 	rows := func() []row {
 		blocks := doc.Get().Blocks
@@ -104,6 +147,7 @@ func (tv TextView) Render(cx *core.Scope) core.Node {
 		}
 		return out
 	}
+	count := core.NewMemo(cx, func() int { return len(doc.Get().Blocks) })
 	notes := core.NewMemoFunc(cx, func() []Footnote { return doc.Get().Footnotes }, equal[[]Footnote])
 	return core.View{
 		StyleFunc:     func() core.Style { return r.style(PartRoot) },
@@ -113,10 +157,15 @@ func (tv TextView) Render(cx *core.Scope) core.Node {
 			core.Each(rows, func(r row) rowKey { return rowKey{r.index, r.block.Kind()} },
 				func(cx *core.Scope, item func() row, index func() int) core.Node {
 					block := core.NewMemoFunc(cx, func() Block { return item().block }, equal[Block])
+					// The last row holds the caret, so a row made last
+					// once is made again when another follows it.
+					last := core.NewMemo(cx, func() bool { return tv.StreamingCaret != nil && index() == count.Get()-1 })
 					return core.Dynamic(func(cx *core.Scope) core.Node {
-						return r.block(cx, block.Get(), index() == 0, 0)
+						return r.blockAt(cx, block.Get(), index() == 0, 0, last.Get())
 					})
 				}),
+			core.Show{When: func() bool { return tv.StreamingCaret != nil && count.Get() == 0 },
+				Then: func(*core.Scope) core.Node { return tv.StreamingCaret }},
 			core.Dynamic(func(cx *core.Scope) core.Node { return r.footnotes(cx, notes.Get()) }),
 		},
 	}
@@ -125,9 +174,9 @@ func (tv TextView) Render(cx *core.Scope) core.Node {
 func (tv TextView) document() Document {
 	switch {
 	case tv.MarkdownFunc != nil:
-		return tv.parse(tv.MarkdownFunc())
+		return ParseWith(tv.MarkdownFunc(), tv.Options, tv.Extensions...)
 	case tv.Markdown != "":
-		return tv.parse(tv.Markdown)
+		return ParseWith(tv.Markdown, tv.Options, tv.Extensions...)
 	case tv.HTMLFunc != nil:
 		return ParseHTML(tv.HTMLFunc(), tv.Extensions...)
 	case tv.HTML != "":
@@ -138,17 +187,28 @@ func (tv TextView) document() Document {
 	return tv.Document
 }
 
-func (tv TextView) parse(markdown string) Document {
-	if tv.Streaming {
-		markdown = RepairStreaming(markdown)
-	}
-	return Parse(markdown, tv.Extensions...)
+// CopyAction is the code block action that copies the code.
+const CopyAction = "copy"
+
+// copiedFor is how long the copy action reports itself done.
+const copiedFor = 1600 * time.Millisecond
+
+// CodeBlockAction is what RenderCodeBlockAction gets about an action.
+type CodeBlockAction struct {
+	Name string
+	Code CodeBlock
+	// Done reports, tracked, that the action just ran: the copy action's
+	// check, for 1.6 seconds.
+	Done func() bool
 }
 
 func equal[T any](a, b T) bool { return reflect.DeepEqual(a, b) }
 
 // renderer builds a TextView's blocks with the primitives.
-type renderer struct{ tv TextView }
+type renderer struct {
+	tv      TextView
+	plugins []Plugin
+}
 
 // style merges the parts' styles: StyleFunc's for each, then Styles'.
 func (r *renderer) style(parts ...Part) core.Style {
@@ -165,16 +225,44 @@ func (r *renderer) style(parts ...Part) core.Style {
 }
 
 func (r *renderer) blocks(cx *core.Scope, blocks []Block, depth int) []core.Node {
+	return r.blocksAt(cx, blocks, depth, false)
+}
+
+// blocksAt builds blocks, the caret in the last when caret.
+func (r *renderer) blocksAt(cx *core.Scope, blocks []Block, depth int, caret bool) []core.Node {
 	out := make([]core.Node, len(blocks))
 	for i, b := range blocks {
-		out[i] = r.block(cx, b, i == 0, depth)
+		out[i] = r.blockAt(cx, b, i == 0, depth, caret && i == len(blocks)-1)
+	}
+	if caret && len(blocks) == 0 {
+		out = append(out, r.tv.StreamingCaret)
 	}
 	return out
 }
 
-// block builds b. first drops a heading's top margin; depth is how many
-// lists b is in.
 func (r *renderer) block(cx *core.Scope, b Block, first bool, depth int) core.Node {
+	return r.blockAt(cx, b, first, depth, false)
+}
+
+// caretSpans appends the streaming caret to spans, inline, when caret.
+func (r *renderer) caretSpans(spans []core.Span, caret bool) []core.Span {
+	if !caret {
+		return spans
+	}
+	return append(spans, core.Span{Attachment: r.tv.StreamingCaret})
+}
+
+// blockAt builds b. first drops a heading's top margin; depth is how many
+// lists b is in; caret puts the streaming caret at its end.
+func (r *renderer) blockAt(cx *core.Scope, b Block, first bool, depth int, caret bool) core.Node {
+	// Blocks with no text of their own to end take the caret on a line
+	// after them.
+	after := func(n core.Node) core.Node {
+		if !caret {
+			return n
+		}
+		return core.Group{n, r.tv.StreamingCaret}
+	}
 	switch b := b.(type) {
 	case Paragraph:
 		if images, ok := onlyImages(b.Content); ok {
@@ -182,18 +270,18 @@ func (r *renderer) block(cx *core.Scope, b Block, first bool, depth int) core.No
 			for i, im := range images {
 				nodes[i] = r.image(cx, im.image, im.url)
 			}
-			return core.Group(nodes)
+			return after(core.Group(nodes))
 		}
-		return core.Text{Spans: r.spans(nil, b.Content, core.Style{}, nil), Style: r.style(PartParagraph)}
+		return core.Text{Spans: r.caretSpans(r.spans(nil, b.Content, core.Style{}, nil), caret), Style: r.style(PartParagraph)}
 	case Heading:
 		level := min(max(b.Level, 1), 6)
 		s := r.style(PartHeading, PartHeading1+Part(level-1))
 		if first {
 			s.Margin.Top = 0
 		}
-		return core.Text{Spans: r.spans(nil, b.Content, core.Style{}, nil), Style: s, Role: core.RoleHeader}
+		return core.Text{Spans: r.caretSpans(r.spans(nil, b.Content, core.Style{}, nil), caret), Style: s, Role: core.RoleHeader}
 	case Blockquote:
-		children := r.blocks(cx, b.Children, depth)
+		children := r.blocksAt(cx, b.Children, depth, caret)
 		if b.Alert == AlertNone {
 			return core.View{Style: r.style(PartBlockquote), Children: children}
 		}
@@ -203,31 +291,66 @@ func (r *renderer) block(cx *core.Scope, b Block, first bool, depth int) core.No
 				core.View{Style: r.style(PartAlertContent), Children: children},
 			}}
 	case List:
-		return r.list(cx, b, depth)
+		return r.list(cx, b, depth, caret)
 	case CodeBlock:
-		return r.code(cx, b)
+		if r.tv.RenderCodeBlock != nil {
+			return after(r.tv.RenderCodeBlock(cx, b))
+		}
+		return r.code(cx, b, caret)
 	case Table:
-		return r.table(b)
+		return r.table(cx, b, caret)
 	case Rule:
-		return core.View{Style: r.style(PartRule)}
+		return after(core.View{Style: r.style(PartRule)})
 	case Details:
-		return r.details(cx, b, depth)
+		return after(r.details(cx, b, depth))
 	case Math:
 		if r.tv.RenderMath != nil {
-			return r.tv.RenderMath(cx, b, true)
+			return after(r.tv.RenderMath(cx, b, true))
+		}
+		if caret {
+			return core.Text{Spans: r.caretSpans([]core.Span{{Content: b.TeX}}, true), Style: r.style(PartMathBlock)}
 		}
 		return core.Text{Content: b.TeX, Style: r.style(PartMathBlock)}
 	case Custom:
-		if r.tv.RenderCustom != nil {
-			return r.tv.RenderCustom(cx, b)
+		if n := r.custom(cx, b); n != nil {
+			return after(n)
 		}
 		switch {
 		case len(b.Children) > 0:
-			return core.View{Style: r.style(PartCustom), Children: r.blocks(cx, b.Children, depth)}
+			return core.View{Style: r.style(PartCustom), Children: r.blocksAt(cx, b.Children, depth, caret)}
 		case len(b.Content) > 0:
-			return core.Text{Spans: r.spans(nil, b.Content, core.Style{}, nil), Style: r.style(PartCustom)}
+			return core.Text{Spans: r.caretSpans(r.spans(nil, b.Content, core.Style{}, nil), caret), Style: r.style(PartCustom)}
+		}
+		if caret {
+			return core.Text{Spans: r.caretSpans([]core.Span{{Content: b.Text}}, true), Style: r.style(PartCustom)}
 		}
 		return core.Text{Content: b.Text, Style: r.style(PartCustom)}
+	}
+	return nil
+}
+
+// renders reports whether a plugin renders custom nodes named name.
+func (r *renderer) renders(name string) bool {
+	for _, p := range r.plugins {
+		if p.Render != nil && p.Extension.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// custom shows a custom node through the plugins' renderers, then
+// RenderCustom; nil when neither shows it.
+func (r *renderer) custom(cx *core.Scope, b Custom) core.Node {
+	for _, p := range r.plugins {
+		if p.Render != nil && p.Extension.Name == b.Name {
+			if n := p.Render(cx, b); n != nil {
+				return n
+			}
+		}
+	}
+	if r.tv.RenderCustom != nil {
+		return r.tv.RenderCustom(cx, b)
 	}
 	return nil
 }
@@ -255,7 +378,7 @@ func (r *renderer) details(cx *core.Scope, d Details, depth int) core.Node {
 
 var bullets = [...]string{"•", "◦", "▪"}
 
-func (r *renderer) list(cx *core.Scope, l List, depth int) core.Node {
+func (r *renderer) list(cx *core.Scope, l List, depth int, caret bool) core.Node {
 	kind := PartUnorderedList
 	if l.Ordered {
 		kind = PartOrderedList
@@ -285,30 +408,58 @@ func (r *renderer) list(cx *core.Scope, l List, depth int) core.Node {
 		}
 		items[i] = core.View{Style: r.style(PartListItem), Children: []core.Node{
 			marker,
-			core.View{Style: r.style(content...), Children: r.blocks(cx, it.Children, depth+1)},
+			core.View{Style: r.style(content...), Children: r.blocksAt(cx, it.Children, depth+1, caret && i == len(l.Items)-1)},
 		}}
 	}
 	return core.View{Style: r.style(PartList, kind), Children: items}
 }
 
-func (r *renderer) code(cx *core.Scope, c CodeBlock) core.Node {
-	if r.tv.RenderCodeBlock != nil {
-		return r.tv.RenderCodeBlock(cx, c)
-	}
+func (r *renderer) code(cx *core.Scope, c CodeBlock, caret bool) core.Node {
 	var highlights []Highlight
 	if r.tv.Highlighter != nil {
 		highlights = r.tv.Highlighter(c)
 	}
-	children := []core.Node{core.Scroll{Horizontal: true, Style: r.style(PartCodeBlockScroll), Children: []core.Node{
-		core.Text{Spans: codeSpans(c.Code, highlights), Style: r.style(PartCodeBlockCode)},
-	}}}
-	if r.tv.CodeBlockActions != nil {
+	children := []core.Node{core.Scroll{Horizontal: true, HideIndicator: r.tv.NoCodeBlockScrollbar,
+		Style: r.style(PartCodeBlockScroll), Children: []core.Node{
+			core.Text{Spans: r.caretSpans(codeSpans(c.Code, highlights), caret), Style: r.style(PartCodeBlockCode)},
+		}}}
+	if len(r.tv.CodeBlockActions) > 0 {
+		actions := make([]core.Node, len(r.tv.CodeBlockActions))
+		for i, name := range r.tv.CodeBlockActions {
+			actions[i] = r.codeAction(cx, name, c)
+		}
 		children = append(children, core.View{
-			Style:    core.Style{Position: core.Absolute, Top: core.Pt(0), Right: core.Pt(0)}.Merge(r.style(PartCodeBlockHeader)),
-			Children: []core.Node{r.tv.CodeBlockActions(cx, c)},
+			Style:    core.Style{Position: core.Absolute, Top: core.Pt(0), Right: core.Pt(0), Direction: core.Row}.Merge(r.style(PartCodeBlockHeader)),
+			Children: actions,
 		})
 	}
 	return core.View{Style: r.style(PartCodeBlock), Children: children}
+}
+
+// codeAction is a code block's action button.
+func (r *renderer) codeAction(cx *core.Scope, name string, c CodeBlock) core.Node {
+	done := core.NewSignal(cx, false)
+	var stop func() bool
+	a := CodeBlockAction{Name: name, Code: c, Done: done.Get}
+	var content core.Node = core.Text{Content: name}
+	if r.tv.RenderCodeBlockAction != nil {
+		content = r.tv.RenderCodeBlockAction(cx, a)
+	}
+	return core.View{Style: r.style(PartCodeBlockAction), Role: core.RoleButton, Label: name,
+		OnPress: func(core.PressEvent) {
+			if name == CopyAction {
+				cx.SetClipboard(c.Code)
+				if stop != nil {
+					stop()
+				}
+				done.Set(true)
+				stop = cx.AfterFunc(copiedFor, func() { done.Set(false) })
+			}
+			if r.tv.OnCodeBlockAction != nil {
+				r.tv.OnCodeBlockAction(name, c)
+			}
+		},
+		Children: []core.Node{content}}
 }
 
 // codeSpans splits code into spans at the highlights that are in order,
@@ -337,7 +488,7 @@ func codeSpans(code string, highlights []Highlight) []core.Span {
 // each column fits its content when there is room and shrinks, its cells
 // wrapping, down to a floor estimated from its text; below the floors the
 // grid scrolls.
-func (r *renderer) table(t Table) core.Node {
+func (r *renderer) table(cx *core.Scope, t Table, caret bool) core.Node {
 	cols := t.Columns()
 	cell := r.style(PartTableCell)
 	em := cell.FontSize
@@ -384,16 +535,25 @@ func (r *renderer) table(t Table) core.Node {
 			}
 			s.GridRow = line
 			s.GridColumn = core.GridLines{Start: core.GridLine(col + 1), End: core.GridSpan(c.span())}
-			children = append(children, core.Text{Spans: r.spans(nil, c.Content, core.Style{}, nil), Style: s})
+			lastCell := caret && i == len(rows)-1 && col+c.span() >= cols
+			children = append(children, core.Text{Spans: r.caretSpans(r.spans(nil, c.Content, core.Style{}, nil), lastCell), Style: s})
 			col += c.span()
 		}
 	}
-	return core.View{Style: r.style(PartTable), Children: []core.Node{
-		core.Scroll{Horizontal: true, Style: r.style(PartTableScroll), Children: []core.Node{
-			core.View{Style: core.Style{Display: core.DisplayGrid, GridTemplateColumns: core.GridTracks(tracks.String()),
-				Width: core.Pct(100), MinWidth: core.Pt(core.Points(total))}, Children: children},
-		}},
-	}}
+	grid := core.Style{Display: core.DisplayGrid, GridTemplateColumns: core.GridTracks(tracks.String()), Width: core.Pct(100)}
+	var body core.Node
+	if r.tv.NoTableScroll {
+		body = core.View{Style: grid, Children: children}
+	} else {
+		grid.MinWidth = core.Pt(core.Points(total))
+		body = core.Scroll{Horizontal: true, HideIndicator: r.tv.NoTableScrollbar, Style: r.style(PartTableScroll),
+			Children: []core.Node{core.View{Style: grid, Children: children}}}
+	}
+	nodes := []core.Node{body}
+	if r.tv.RenderTableActions != nil {
+		nodes = []core.Node{core.View{Style: r.style(PartTableActions), Children: []core.Node{r.tv.RenderTableActions(cx, t)}}, body}
+	}
+	return core.View{Style: r.style(PartTable), Children: nodes}
 }
 
 // textWidth estimates the width of text's widest line in ems: wide (East
@@ -484,8 +644,8 @@ func (r *renderer) spans(out []core.Span, content []Inline, style core.Style, li
 				s := r.tv.CustomSpan(in)
 				s.Style = style.Merge(s.Style)
 				out = append(out, s)
-			} else if render := r.tv.RenderCustom; render != nil {
-				out = append(out, core.Span{Attachment: core.Func(func(cx *core.Scope) core.Node { return render(cx, in) })})
+			} else if r.tv.RenderCustom != nil || r.renders(in.Name) {
+				out = append(out, core.Span{Attachment: core.Func(func(cx *core.Scope) core.Node { return r.custom(cx, in) })})
 			} else {
 				var b strings.Builder
 				in.write(&b)

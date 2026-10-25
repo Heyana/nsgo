@@ -194,5 +194,57 @@ func navigationPage(cx *core.Scope, t *theme) core.Node {
 						}}}}
 				}),
 		),
+		headersDemo(cx, t),
+		tabBarDemo(cx, t),
 	}}
+}
+
+// headersDemo shows the system header's large title, which collapses as
+// the list scrolls under it, and a transparent header the content shows
+// through, on iOS and Android.
+func headersDemo(cx *core.Scope, t *theme) core.Node {
+	clear := core.NewSignal(cx, false)
+	rows := func(n int) []core.Node {
+		out := make([]core.Node, n)
+		for i := range out {
+			out[i] = core.View{Style: core.Style{Padding: core.Symmetric(12, 16), Borders: core.Edges{Bottom: 1},
+				BorderColors: core.EdgeColors{Bottom: t.line}},
+				Children: []core.Node{core.Text{Content: fmt.Sprintf("Message %d", i+1)}}}
+		}
+		return out
+	}
+	return t.demo("System header", "A large title collapses into the bar as the content scrolls under it; a transparent "+
+		"header lays the content under it, and the scroll view at the top starts below it. Platforms measure each header.",
+		flow(t.plain("Transparent header", func() { clear.Set(!clear.Get()) })),
+		core.Stack{Style: core.Style{Height: core.Pt(300), CornerRadius: radius, BorderWidth: 1, BorderColor: t.line,
+			Overflow: core.Hidden, Background: t.background}, Children: []core.Node{
+			core.Dynamic(func(cx *core.Scope) core.Node {
+				transparent := clear.Get()
+				return core.Screen{Title: "Inbox", HeaderLargeTitle: !transparent, HeaderTransparent: transparent, TestID: "large-title",
+					Header: core.View{Style: core.Style{Padding: core.Symmetric(10, 12), Background: t.surface},
+						Children: []core.Node{core.Text{Content: "Inbox", Role: core.RoleHeader, Style: core.Style{FontWeight: core.FontWeightSemibold}}}},
+					Children: []core.Node{core.Scroll{Style: core.Style{FlexGrow: 1}, Children: rows(30)}}}
+			}),
+		}},
+	)
+}
+
+// tabBarDemo shows the system's tab bar, which desktops and the web do
+// not have.
+func tabBarDemo(cx *core.Scope, t *theme) core.Node {
+	tab := core.NewSignal(cx, 0)
+	items := []core.TabBarItem{{Title: "Home", Icon: "house"}, {Title: "Search", Icon: "magnifyingglass"}, {Title: "Profile", Icon: "person"}}
+	if cx.Env().OS() == core.OSAndroid {
+		items = []core.TabBarItem{{Title: "Home", Icon: "android:ic_menu_today"}, {Title: "Search", Icon: "android:ic_menu_search"},
+			{Title: "Profile", Icon: "android:ic_menu_myplaces"}}
+	}
+	return t.demo("System tab bar", "core.TabBar is the system's tab bar on iOS and Android; desktops and the web show nothing, "+
+		"where base.Tabs is the app's own.",
+		core.View{Style: core.Style{Height: core.Pt(220), CornerRadius: radius, BorderWidth: 1, BorderColor: t.line,
+			Overflow: core.Hidden, Background: t.background}, Children: []core.Node{
+			core.View{Style: core.Style{FlexGrow: 1, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
+				Children: []core.Node{core.Text{ContentFunc: func() string { return items[tab.Get()].Title + " tab" }}}},
+			core.TabBar{Items: items, Selected: tab.Get, OnChange: tab.Set, TestID: "tab-bar"},
+		}},
+	)
 }

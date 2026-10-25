@@ -28,8 +28,10 @@ type screenNode struct {
 	// the content is laid out below.
 	header, pad Points
 	top         *Signal[Points] // header, for a transparent header's insets
-	sent        driver.ScreenConfig
-	sentOK      bool
+	// measured is the bar the platform measured, 0 before it does.
+	measured Points
+	sent     driver.ScreenConfig
+	sentOK   bool
 }
 
 func (t *Tree) mountStack(cx *Scope, parent *node, s Stack) {
@@ -168,8 +170,14 @@ func (t *Tree) sizeHeaders() bool {
 				if sc.HeaderLargeTitle {
 					bar = heights[1]
 				}
+				if sn.measured > 0 {
+					bar = sn.measured
+				}
 				header = bar + t.topOverlap(n)
-				if !sc.HeaderTransparent {
+				// Content goes under a transparent header, and under a
+				// large title that collapses as it scrolls; the scroll
+				// views at the top are inset by it instead.
+				if !sc.HeaderTransparent && !sc.HeaderLargeTitle {
 					pad = header
 				}
 			}
@@ -188,6 +196,35 @@ func (t *Tree) sizeHeaders() bool {
 		}
 	}
 	return changed
+}
+
+// headerInset is how far the system header of the screen around scroll
+// view n covers its top, where the header lays the content under it.
+func (t *Tree) headerInset(n *node) Points {
+	if n.scroll == nil || n.scroll.config.Horizontal {
+		return 0
+	}
+	var screen *node
+	for a := n.parent; a != nil && a.hoist == nil; a = a.parent {
+		if a.screen != nil {
+			screen = a
+			break
+		}
+	}
+	if screen == nil || !screen.screen.native || screen.screen.pad != 0 || screen.screen.header <= 0 {
+		return 0
+	}
+	top := t.surfaceBounds(n).Origin.Y - t.surfaceBounds(screen).Origin.Y
+	return max(screen.screen.header-top, 0)
+}
+
+// screenHeader records the bar the platform measured for screen n.
+func (t *Tree) screenHeader(n *node, h Points) {
+	if sn := n.screen; sn != nil && sn.measured != h {
+		sn.measured = h
+		t.view.markLayout()
+		t.changed = true
+	}
 }
 
 // topOverlap is how far into n the top inset of its host reaches.

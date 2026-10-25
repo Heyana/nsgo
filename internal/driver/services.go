@@ -5,6 +5,12 @@ type AlertConfig struct {
 	Title   string
 	Message string
 	Actions []AlertAction
+	// Sheet presents the actions as an action sheet from the bottom
+	// (UIAlertController's; a list dialog on Android) instead of an alert.
+	Sheet bool
+	// Cancelable lets Escape, back and a press outside close it without
+	// an action, answered with -1.
+	Cancelable bool
 	// ID numbers the alert; the engine sets it.
 	ID uint32
 }

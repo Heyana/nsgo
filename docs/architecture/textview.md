@@ -11,6 +11,8 @@
 
 Highlighting is its own package because chroma's lexers add about 4.5 MB to a binary, against about 0.3 MB for goldmark. Apps opt in with `Highlighter: highlight.New(cx)`.
 
+`highlight.New` keeps the last 64 blocks' tokens for the process and measures each language's lexing speed: a block is colored from the cache, lexed on the spot when its language should take under 2 ms, and otherwise shown plain, or with the colors of the block it grew from, and lexed on a goroutine whose result colors it again. This keeps lexing off the engine goroutine, as NSH's highlighter does with its blocking thread.
+
 ## Parsing
 
 `Parse` reads Markdown with goldmark's CommonMark parser and its GFM and footnote extensions, then turns goldmark's tree into `Document` values. The model is plain Go values, so apps build documents themselves and compare them with `reflect.DeepEqual`.
@@ -24,7 +26,8 @@ Highlighting is its own package because chroma's lexers add about 4.5 MB to a bi
 - HTML inside reads as `ParseHTML` reads it.
 - An HTML block that opens an element a later block closes (`<details>`, Markdown, `</details>`) holds the Markdown between them. So does a formatting tag in a paragraph (`<b>x *y*</b>`), as gpui-kit pairs them.
 - Other paired tags read as one HTML fragment from the source between them.
-- `RepairStreaming`, which `Streaming` applies before parsing, ports NSH's streaming repair.
+- `ParseWith` takes NSH's `MarkdownOptions` as `Options`, their defaults as zero values: `NoMath`, `NoHTML` and `NoAlerts` turn formulas, HTML and alerts off, `Frontmatter` makes YAML front matter a `Custom` block "frontmatter", and `MDX` makes every element a `Custom` node named by its tag and `{expressions}` ones named "expression".
+- `RepairStreaming`, which `Options.Streaming` applies before parsing, ports NSH's streaming repair.
 - It closes what the last block leaves open (emphasis, strikethrough, inline code, `$` and `$$` formulas, `\(` and `\[`) and shows unfinished links as their text.
 - It drops unfinished images, footnote references and HTML tags, and completes a table's delimiter row. A text ending inside a `$$` block needs nothing.
 - An `Extension` makes `Custom` nodes from a regular expression in text (`Pattern`), a fenced code language (`Language`), a `:::name` container (`Container`) or an HTML element (`Tag`).
@@ -48,6 +51,9 @@ Highlighting is its own package because chroma's lexers add about 4.5 MB to a bi
 - `RenderMath` shows formulas: blocks in place, inline ones as attachments, whose own view's `VerticalAlign` places them. Without it `Math` shows its TeX in `PartMath` or `PartMathBlock`.
 - An inline custom node shows through `CustomSpan` as a span, else through `RenderCustom` as an attachment, else as its content.
 - `Selectable` makes the root a selection area, so one selection runs across the blocks.
+- `StreamingCaret` is placed as an attachment after the last text of the last block, into quotes, lists and custom content, after a code block's code or in a table's last cell, else on a line after the last block. The last row is built again when another follows it.
+- `CodeBlockActions` are buttons in `PartCodeBlockHeader`; `CopyAction` copies the code and reports itself done for 1.6 seconds through `CodeBlockAction.Done`. `RenderTableActions` shows content above each table. `NoTableScroll`, `NoTableScrollbar` and `NoCodeBlockScrollbar` are NSH's scroll switches.
+- `Provide` gives every `TextView` below a scope `Plugin`s: an extension, and what renders its nodes before `RenderCustom`, as NSH's `MarkdownPlugins` context does.
 - A disclosure's summary toggles it on press; its blocks are built each time it opens.
 - Tables are one CSS grid in a horizontal `Scroll`. Each column is `minmax(floor, auto)`, the floor estimated from its text as NSH does. The grid is the scroll view's width and at least the floors' sum, so narrow views wrap cells, then scroll.
 
@@ -68,4 +74,4 @@ Where NSGo departs from NSH:
 
 ## Limits
 
-Each span draws its own background, so nested inline content inside a mark or code (`<mark>x **y**</mark>`) shows a box per span, where NSH joins them into one. Superscripts and subscripts are smaller but sit on the baseline, since spans have no baseline offset. A disclosure's summary reports no expanded state to assistive technology. Anchors are reported, not scrolled to. Highlighting runs on the engine goroutine, with the last 64 blocks' tokens cached for the process.
+Each span draws its own background, so nested inline content inside a mark or code (`<mark>x **y**</mark>`) shows a box per span, where NSH joins them into one. Superscripts and subscripts are smaller but sit on the baseline, since spans have no baseline offset. A disclosure's summary reports no expanded state to assistive technology. Anchors are reported, not scrolled to. Chroma's lexers cannot resume, so a growing block is lexed whole each time.

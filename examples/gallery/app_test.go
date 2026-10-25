@@ -106,8 +106,11 @@ func TestPhoneStack(t *testing.T) {
 	app.Press("id:nav-Popups")
 	app.Find("id:screen-Popups")
 	app.Press("role:button Menu")
+	// On a phone the menu is a sheet, which comes in and goes.
+	app.Advance(300 * time.Millisecond)
 	app.Press("label:Paste")
 	app.Find("text:Picked Paste")
+	app.Advance(300 * time.Millisecond)
 	app.Press("role:button Dialog")
 	app.Find("text:A dialog")
 	app.Back()
@@ -162,16 +165,16 @@ func TestPhoneSystemHeader(t *testing.T) {
 
 func TestApplicationMenu(t *testing.T) {
 	app := startDesktop(t)
-	app.ChooseMenu("View", "Layout")
-	app.Find("id:section-Layout")
+	app.ChooseMenu("View", "Text View")
+	app.Find("id:section-Text View")
 	view := app.Menu[slices.IndexFunc(app.Menu, func(e core.MenuEntry) bool { return e.Label == "View" })]
 	for _, e := range view.Items {
-		if e.Label == "Layout" && (!e.Checked || e.Shortcut != "mod+8") {
-			t.Fatalf("View › Layout = %+v, want checked with mod+8", e)
+		if e.Label == "Text View" && (!e.Checked || e.Shortcut != "mod+8") {
+			t.Fatalf("View › Text View = %+v, want checked with mod+8", e)
 		}
 	}
 	app.ChooseMenu("View", "Next Section")
-	app.Find("id:section-Styles")
+	app.Find("id:section-Text")
 
 	app.Find("id:about")
 	app.ChooseMenu("View", "Show Descriptions")

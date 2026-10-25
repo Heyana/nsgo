@@ -19,6 +19,7 @@ Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canv
 - A field that can change takes a function (`StyleFunc`, `ContentFunc`, `Value`, `Disabled`), bound by one render effect per part.
 - Styles compose with `Style.Merge`, and text fields inherit down the tree as in CSS.
 - State styles merge over the rest in NSH's order: `Checked`, `Indeterminate` and `Selected`, which the app sets, then `Hover`, `Focus` and `Active`, which the engine tracks from the press, hover and focus events it asks the platform to report, then `Disabled` over all; a `GroupStyle` follows its group's states first ([styles](styles.md)). Windows and Linux hit-test hovers themselves (`internal/platform/hover`).
+- `PartStates` styles a view in states it does not report, as a control's part, NSH's `project_checked`.
 - A `Ref`, usable at its zero value, names a mounted element for anchoring, focus, scrolling and its bounds.
 
 A component is any type whose `Render(cx) Node` returns its nodes, like `http.Handler`. Its fields are its props. `Render` runs once under a scope of its own, so `Key.Provide` and cleanups stay inside it. `Func` turns a function into a component.
@@ -39,9 +40,13 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - An overlay with an anchor goes beside it as NSH's `place` does: the side asked unless only the opposite side fits or has more room, aligned along it, then clamped into the safe area less its margin.
 - A modal provides the insets its content keeps clear of; a screen does too, without the top when it has a header. `Insets` reads them.
 - `EventBack` (Escape, the back button) goes to the topmost overlay that listens for cancel, else the topmost modal's `OnRequestClose`, else the `Scope.OnBackPress` handlers newest first until one takes it, else the innermost stack that can pop. A popped screen reports `OnDismiss` and stays hidden until the app removes it; the last screen never pops.
-- Where the environment has `HeaderHeight` (iOS, Android), screens get NSH's system header: the core pads the content below the bar plus the status bar it reaches under, sends `ItemScreen`, and lays `HeaderLeft`, `HeaderRight` and `HeaderTitle` out as roots at their content size that the platform puts in the bar. `Header` is then not mounted; elsewhere it is the screen's first child. iOS gives each screen a `UINavigationBar` of its own with a back item, Android a `Toolbar`; their back buttons and iOS's leading-edge swipe send `EventBack` with the screen's ID. Large titles take the taller bar without collapsing on scroll.
+- Where the environment has `HeaderHeight` (iOS, Android), screens get NSH's system header: the core pads the content below the bar plus the status bar it reaches under, sends `ItemScreen`, and lays `HeaderLeft`, `HeaderRight` and `HeaderTitle` out as roots at their content size that the platform puts in the bar. `Header` is then not mounted; elsewhere it is the screen's first child. iOS gives each screen a `UINavigationBar` of its own with a back item, Android a `Toolbar`; their back buttons and iOS's leading-edge swipe send `EventBack` with the screen's ID.
+- Each platform measures its bar with what it holds and reports it (`EventScreenHeader`), which replaces the environment's estimate.
+- A transparent header and a large title lay the content under them: each vertical scroll view whose top they cover gets that part as `ScrollConfig.HeaderInset`, added to its top content inset. iOS collapses a large title into the bar once its scroll view scrolled half the title's row under it, and brings it back above that, as UIKit's navigation controller does.
+- `TabBar` is the system's tab bar, a native component iOS (`UITabBar`) and Android (a Material 3 navigation bar drawn by the runtime's `TabBar.java`) register themselves; elsewhere it shows nothing.
 - iOS presents a modal with `ModalPageSheet` or `ModalFormSheet` as a sheet view controller, which reports its size (`EventModalSize`) and its swipes (`EventRequestClose`, "swipe"); a swiped sheet stays hidden until the app removes it. `SupportedOrientations` goes to the controllers' `supportedInterfaceOrientations`. On Android a modal over the surface starts below the status bar unless `StatusBarTranslucent`. Other platforms ignore these.
 - `EventPressOutside` reports presses outside an overlay, ignoring those on its anchor or on overlays above it.
+- A view's `Tooltip` is a hint overlay above it that the core shows after half a second of hover on desktops; `Overlay.PointerEvents` keeps it from taking the pointer.
 - An `InputAccessoryView` is a layout root as wide as the surface and as tall as its content, which no view holds: its views are sent before the tree's, and an input's `InputConfig.Accessory` names it, resolved from `InputAccessoryViewID`. iOS makes it the field's `inputAccessoryView`; Android shows it above the keyboard while the field has focus; other platforms leave it unmounted.
 
 ## Commit
@@ -75,6 +80,8 @@ Style `Transition`s, animated values and layout animations run on the platform, 
 ## Services
 
 Native alerts, the clipboard, image sizes and prefetches, announcements, keyboard shortcuts, the status bar, the window title, window commands and the application menu are command items answered by events. Shortcuts are scoped to their owner: the platform matches key presses against the table synchronously and reports only matches.
+
+- An alert's `Sheet` presents its actions as the system's action sheet, and `Cancelable` lets Escape, back and a press outside close it with -1; otherwise Escape and back choose the cancel action ([components](components.md#popups)).
 
 - The status bar is layered as NSH's `status_bar.rs`: `SetStatusBar` patches the app's default, and each screen's or modal's `StatusBar` is over it, in mount order, while it is in the tree and not popped or swiped away. The latest wins field by field, and the commit sends one `ItemStatusBar` when the merged result changes. iOS and Android apply it; Android ignores `Animated`.
 - An input method composing text keeps its keys on macOS and the web, so arrows still choose its candidates.

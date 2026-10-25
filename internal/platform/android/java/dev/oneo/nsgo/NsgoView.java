@@ -1477,6 +1477,15 @@ public class NsgoView extends FrameLayout {
             }
             return item.holder;
         });
+        // The bar as the toolbar lays out what it holds, for the core to
+        // keep the content below.
+        if (n.header.toolbar.getVisibility() == View.VISIBLE) {
+            float bar = n.header.measure(n.frame != null ? px(n.frame[2]) : getWidth());
+            if (bar != n.header.reported) {
+                n.header.reported = bar;
+                event(Protocol.EVENT_SCREEN_HEADER, n.id, 0, 0, 0, "", 0, 0, 0, 0, 0, 0, bar, null);
+            }
+        }
     }
 
     /** Places n's view at frame f in points, rounding its edges to pixels. */
@@ -1769,6 +1778,7 @@ public class NsgoView extends FrameLayout {
             roles[i] = in.readUnsignedByte();
             if (cancel < 0 && roles[i] == Protocol.ALERT_CANCEL) cancel = i;
         }
+        boolean sheet = in.readUnsignedByte() != 0, cancelable = in.readUnsignedByte() != 0;
         boolean[] answered = {false};
         IntConsumer answer = index -> {
             if (answered[0]) return;
@@ -1778,12 +1788,20 @@ public class NsgoView extends FrameLayout {
         AlertDialog.Builder b = new AlertDialog.Builder(getContext(), dark()
                 ? android.R.style.Theme_DeviceDefault_Dialog_Alert
                 : android.R.style.Theme_DeviceDefault_Light_Dialog_Alert);
-        int[] buttons = count <= 3 ? buttons(count, cancel) : null;
+        int[] buttons = count <= 3 && !sheet ? buttons(count, cancel) : null;
         if (buttons == null) {
             // A message hides a list, so the title takes it.
             String heading = title.isEmpty() || message.isEmpty() ? title + message : title + "\n\n" + message;
             if (!heading.isEmpty()) b.setTitle(heading);
-            b.setItems(labels, (d, which) -> answer.accept(which));
+            // An action sheet's cancel action is its dismissal.
+            int[] indices = new int[count];
+            int n = 0;
+            for (int i = 0; i < count; i++) {
+                if (!sheet || roles[i] != Protocol.ALERT_CANCEL) indices[n++] = i;
+            }
+            String[] items = new String[n];
+            for (int i = 0; i < n; i++) items[i] = labels[indices[i]];
+            b.setItems(items, (d, which) -> answer.accept(indices[which]));
         } else {
             if (!title.isEmpty()) b.setTitle(title);
             if (!message.isEmpty()) b.setMessage(message);
@@ -1797,8 +1815,10 @@ public class NsgoView extends FrameLayout {
                 }
             }
         }
-        // Back and touches outside cancel it.
+        // Back and touches outside choose the cancel action, or close it
+        // without one when it is cancelable.
         int dismissed = cancel;
+        b.setCancelable(sheet || cancelable || cancel >= 0);
         b.setOnCancelListener(d -> answer.accept(dismissed));
         AlertDialog dialog = b.show();
         for (int i = 0; buttons != null && i < count; i++) {

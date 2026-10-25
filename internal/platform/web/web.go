@@ -1832,7 +1832,9 @@ func (s *surface) escape(e js.Value) {
 	}
 	if n := len(s.alerts); n > 0 {
 		e.Call("preventDefault")
-		s.answer(s.alerts[n-1], s.alerts[n-1].cancel)
+		if a := s.alerts[n-1]; a.cancel >= 0 || a.cancelable {
+			s.answer(a, a.cancel)
+		}
 		return
 	}
 	if !editing(s.doc.Get("activeElement")) {

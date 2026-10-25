@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/oneo-me/nsgo/core"
 )
@@ -42,7 +43,34 @@ func listsPage(cx *core.Scope, t *theme) core.Node {
 		})
 	}
 
+	pages := core.NewSignal(cx, 1)
+	loading := core.NewSignal(cx, false)
+	loadMore := func() {
+		if loading.Get() || pages.Get() >= 10 {
+			return
+		}
+		loading.Set(true)
+		cx.AfterFunc(400*time.Millisecond, func() {
+			pages.Update(func(n int) int { return n + 1 })
+			loading.Set(false)
+		})
+	}
 	return core.View{Style: core.Style{Gap: 16}, Children: append([]core.Node{
+		t.demo("Loading more", "OnLoadMore asks for the next page as the viewport comes within a viewport of the end, once per count.",
+			core.List{Count: func() int { return pages.Get() * 20 }, EstimatedSize: 40, OnLoadMore: loadMore,
+				Style: core.Style{Height: core.Pt(220), BorderWidth: 1, BorderColor: t.line, CornerRadius: radius, Overflow: core.Hidden},
+				Row: func(cx *core.Scope, r core.ListRow) core.Node {
+					return core.View{Style: core.Style{Height: core.Pt(40), Padding: core.Symmetric(0, 14), JustifyContent: core.JustifyCenter,
+						Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: t.line}},
+						Children: []core.Node{core.Text{ContentFunc: func() string { return fmt.Sprintf("Item %d", r.Index()+1) }}}}
+				}},
+			t.live(func() string {
+				if loading.Get() {
+					return "Loading…"
+				}
+				return fmt.Sprintf("%d pages of 20", pages.Get())
+			}),
+		),
 		t.demo("Virtualized list", fmt.Sprintf("core.List mounts only the rows near its viewport, %d rows in reused cells.", rows),
 			flow(
 				t.plain("Top", func() { list.ScrollToIndex(0, true) }),

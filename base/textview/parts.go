@@ -60,6 +60,8 @@ const (
 	// PartCodeBlockHeader is the row of a code block's actions, absolutely
 	// placed over it.
 	PartCodeBlockHeader
+	// PartCodeBlockAction is each action button in PartCodeBlockHeader.
+	PartCodeBlockAction
 	// PartCodeBlockScroll is the horizontal scroll view of a block's code.
 	PartCodeBlockScroll
 	// PartCodeBlockCode is the text of a block's code.
@@ -83,6 +85,8 @@ const (
 	PartImage
 	// PartTable is a table: the scroll view of its cells.
 	PartTable
+	// PartTableActions holds RenderTableActions' content, above the table.
+	PartTableActions
 	// PartTableScroll is the horizontal scroll view of a table's grid;
 	// it scrolls when the columns cannot shrink further.
 	PartTableScroll

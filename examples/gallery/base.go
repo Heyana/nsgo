@@ -36,26 +36,3 @@ func safeAreaPage(cx *core.Scope, t *theme) core.Node {
 		),
 	}}
 }
-
-func splitPage(cx *core.Scope, t *theme) core.Node {
-	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
-		t.demo("Split", "base.Split resizes its first pane with a drag; a double click restores its default. Sizes are points or percentages.",
-			base.Split{Direction: base.SplitHorizontal, TestID: "base-split", Label: "Resize the example split",
-				DefaultSize: core.Pct(35), Min: core.Pt(120), Max: core.Pct(70),
-				Style:        core.Style{Height: core.Pt(170), CornerRadius: radius, BorderWidth: 1, BorderColor: t.line, Overflow: core.Hidden},
-				DividerStyle: core.Style{Hover: &core.Style{Background: t.hover}, Active: &core.Style{Background: t.accentSoft}},
-				LineStyle:    core.Style{Background: t.line},
-				First: core.View{Style: core.Style{Width: core.Pct(100), Height: core.Pct(100), Padding: core.All(12), Gap: 4,
-					Background: t.quiet}, Children: []core.Node{
-					core.Text{Content: "First pane", Style: core.Style{FontWeight: core.FontWeightSemibold}},
-					t.note("35%, at least 120 points, at most 70%."),
-				}},
-				Second: core.View{Style: core.Style{Width: core.Pct(100), Height: core.Pct(100), Padding: core.All(12), Gap: 4,
-					Background: t.surface}, Children: []core.Node{
-					core.Text{Content: "Second pane", Style: core.Style{FontWeight: core.FontWeightSemibold}},
-					t.note("It takes the rest of the split."),
-				}},
-			},
-		),
-	}}
-}

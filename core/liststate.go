@@ -44,6 +44,8 @@ type listState struct {
 	anchoredEnd  Points
 	spliceAnchor Points
 	pin          *listPin
+	// moved is set once the user or a scroll command moved the list.
+	moved bool
 	// parent: virtualized against the view around the list; outerStart
 	// is where the list's content starts in that view's content (NaN
 	// until placed), limits the list offsets the view scrolls to.
@@ -421,6 +423,10 @@ func (s *listState) targetOffset(p *listPin) Points {
 // core issued applied when settled: a pinned target the list is away
 // from then was left by the user.
 func (s *listState) movedTo(at Points, settled bool) {
+	if abs32(at-s.offset) > pinSlack {
+		// Not a platform's rounding: the user scrolled.
+		s.moved = true
+	}
 	s.offset = at
 	p := s.pin
 	if p == nil || !settled {

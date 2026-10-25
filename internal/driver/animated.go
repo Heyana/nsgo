@@ -296,7 +296,14 @@ const (
 	LayoutEaseInEaseOut
 	// LayoutSpring springs with Damping, settling within the duration.
 	LayoutSpring
+	// LayoutKeyboard is the software keyboard's own curve, timed from
+	// when the keyboard started to move where the platform knows it.
+	LayoutKeyboard
 )
+
+// KeyboardCurve is UIKit's keyboard curve, as near as a cubic Bézier
+// comes; Android's runtime uses the IME's interpolator instead.
+var KeyboardCurve = Curve{0.38, 0.7, 0.125, 1}
 
 // LayoutProperty is what appearing and disappearing views animate.
 type LayoutProperty uint8
@@ -330,6 +337,8 @@ func (tr *LayoutTransition) At(elapsed time.Duration) (float64, bool) {
 		return EaseInOut.At(x), false
 	case LayoutSpring:
 		return layoutSpring(float64(tr.Damping), x), false
+	case LayoutKeyboard:
+		return KeyboardCurve.At(x), false
 	}
 	return x, false
 }

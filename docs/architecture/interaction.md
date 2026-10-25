@@ -56,7 +56,7 @@ On macOS and the web, views that take presses are Tab stops beside the text inpu
 
 ## Cursors
 
-`Style.Cursor` sets the pointer's look over a view. `Auto` leaves it to the nearest ancestor that names one, and the web shows a pointer over pressable views. macOS gives each view cursor rects, Windows answers `WM_SETCURSOR` with the view under the pointer, Linux sets GTK's named cursor, and the web sets CSS `cursor`. Touch platforms ignore it; `Split` asks for the horizontal or vertical resize cursor on its divider.
+`Style.Cursor` sets the pointer's look over a view. `Auto` leaves it to the nearest ancestor that names one, and the web shows a pointer over pressable views. macOS gives each view cursor rects, Windows answers `WM_SETCURSOR` with the view under the pointer, Linux sets GTK's named cursor, and the web sets CSS `cursor`. Touch platforms ignore it; resizable handles ask for the column or row resize cursor. macOS gives a view its cursor rects and tracking areas only within what its parents show, so a handle's band lies inside its group.
 
 ## Gestures
 

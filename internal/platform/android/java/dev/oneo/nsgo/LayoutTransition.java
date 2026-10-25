@@ -14,6 +14,7 @@ final class LayoutTransition {
     static final int EASE_OUT = 2;
     static final int EASE_IN_OUT = 3;
     static final int SPRING = 4;
+    static final int KEYBOARD = 5;
     // What appearing and disappearing views animate, as core.LayoutProperty.
     static final int OPACITY = 0;
     static final int SCALE = 1;
@@ -45,6 +46,8 @@ final class LayoutTransition {
             case EASE_OUT: return Animator.bezier(0, 0, 0.58f, 1, x);
             case EASE_IN_OUT: return Animator.bezier(0.42f, 0, 0.58f, 1, x);
             case SPRING: return spring(damping, x);
+            // The IME's own interpolator (InsetsController's).
+            case KEYBOARD: return Animator.bezier(0.2f, 0, 0, 1, x);
             default: return x;
         }
     }

@@ -12,12 +12,14 @@ import (
 
 // alert is an open alert: a dialog over the whole page, answered once.
 type alert struct {
-	id        uint32
-	cancel    int // the action Escape chooses, or -1
-	layer     js.Value
-	buttons   []js.Value
-	restore   js.Value // what had focus before
-	listeners listeners
+	id     uint32
+	cancel int // the action Escape chooses, or -1
+	// cancelable: Escape and a press outside close it without an action.
+	cancelable bool
+	layer      js.Value
+	buttons    []js.Value
+	restore    js.Value // what had focus before
+	listeners  listeners
 }
 
 // showAlert draws c over the page and its app, which keep running.
@@ -32,10 +34,15 @@ func (s *surface) showAlert(c *driver.AlertConfig) {
 		parent.Call("appendChild", el)
 		return el
 	}
-	a := &alert{id: c.ID, cancel: -1, restore: s.doc.Get("activeElement")}
+	a := &alert{id: c.ID, cancel: -1, cancelable: c.Cancelable, restore: s.doc.Get("activeElement")}
+	// An action sheet rises from the bottom with its actions stacked.
+	align, direction, justify := "center", "row", "flex-end"
+	if c.Sheet {
+		align, direction, justify = "flex-end", "column", "stretch"
+	}
 	a.layer = add("div", s.doc.Get("body"), map[string]string{
 		"position": "fixed", "inset": "0", "z-index": "2147483647", "box-sizing": "border-box",
-		"display": "flex", "align-items": "center", "justify-content": "center", "padding": "24px",
+		"display": "flex", "align-items": align, "justify-content": "center", "padding": "24px",
 		"background": "rgba(0,0,0,0.35)", "font-family": fontFamily, "color": ink,
 	})
 	box := add("div", a.layer, map[string]string{
@@ -60,15 +67,31 @@ func (s *surface) showAlert(c *driver.AlertConfig) {
 		"font-size": "14px", "line-height": "1.4", "color": muted, "white-space": "pre-wrap",
 	})
 	row := add("div", box, map[string]string{
-		"display": "flex", "flex-wrap": "wrap", "justify-content": "flex-end", "gap": "8px", "margin-top": "12px",
+		"display": "flex", "flex-direction": direction, "flex-wrap": "wrap", "justify-content": justify,
+		"gap": "8px", "margin-top": "12px",
 	})
 	// An alert without buttons still needs a way out: a dismissal.
 	actions, dismiss := c.Actions, len(c.Actions) == 0
 	if dismiss {
 		actions = []driver.AlertAction{{Label: "OK"}}
+		a.cancelable = true
+	}
+	// order[i] is the action of button i: an action sheet's cancel
+	// action goes last.
+	order := make([]int, 0, len(actions))
+	for i, act := range actions {
+		if !c.Sheet || act.Role != driver.AlertCancel {
+			order = append(order, i)
+		}
+	}
+	for i, act := range actions {
+		if c.Sheet && act.Role == driver.AlertCancel {
+			order = append(order, i)
+		}
 	}
 	focus := -1
-	for i, act := range actions {
+	for at, i := range order {
+		act := actions[i]
 		b := add("button", row, map[string]string{
 			"font": "inherit", "font-size": "14px", "padding": "8px 16px", "border-radius": "8px",
 			"border": "1px solid " + line, "background": panel, "color": ink, "cursor": "pointer",
@@ -79,11 +102,14 @@ func (s *surface) showAlert(c *driver.AlertConfig) {
 		case driver.AlertDefault:
 			b.Get("style").Call("setProperty", "font-weight", "600")
 			if focus < 0 {
-				focus = i
+				focus = at
 			}
 		case driver.AlertCancel:
 			if a.cancel < 0 {
 				a.cancel = i
+				if focus < 0 {
+					focus = -2 - at
+				}
 			}
 		case driver.AlertDestructive:
 			b.Get("style").Call("setProperty", "color", danger)
@@ -96,13 +122,19 @@ func (s *surface) showAlert(c *driver.AlertConfig) {
 		a.buttons = append(a.buttons, b)
 	}
 	if focus < 0 {
-		focus = max(a.cancel, 0)
+		// The cancel button, else the first.
+		focus = max(-2-focus, 0)
 	}
 	// Presses stay in the alert, and so does focus, which Tab cycles
 	// through its buttons.
 	a.listeners.on(a.layer, "mousedown", func(e js.Value) {
 		if e.Get("target").Get("tagName").String() != "BUTTON" {
 			e.Call("preventDefault")
+		}
+	})
+	a.listeners.on(a.layer, "click", func(e js.Value) {
+		if e.Get("target").Equal(a.layer) && a.cancelable {
+			s.answer(a, a.cancel)
 		}
 	})
 	a.listeners.on(a.layer, "keydown", func(e js.Value) {

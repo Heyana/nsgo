@@ -26,7 +26,8 @@ const (
 	ReasonHover
 	ReasonLongPress
 	ReasonContextMenu
-	// ReasonSwipe is an iOS sheet swiped down.
+	// ReasonSwipe is a sheet swiped down: base.Sheet's, or an iOS
+	// dialog's.
 	ReasonSwipe
 )
 
@@ -51,20 +52,26 @@ func newPopup(cx *core.Scope, open func() bool, def bool, onChange func(bool, Re
 		p.own = core.NewSignal(cx, def)
 		p.open = p.own.Get
 	}
-	if onOpen != nil || onClose != nil {
-		var was bool
-		cx.Effect(func() {
-			is := p.open()
-			switch {
-			case is && !was && onOpen != nil:
-				onOpen()
-			case !is && was && onClose != nil:
-				onClose()
-			}
-			was = is
-		})
-	}
 	return p
+}
+
+// lifecycle reports OnOpen and OnClose as there, tracked, turns: once a
+// popup is all there and once it is all gone, a sheet after its motion.
+func (p *popup) lifecycle(cx *core.Scope, there func() bool) {
+	if p.onOpen == nil && p.onClose == nil {
+		return
+	}
+	var was bool
+	cx.Effect(func() {
+		is := there()
+		switch {
+		case is && !was && p.onOpen != nil:
+			cx.Untrack(p.onOpen)
+		case !is && was && p.onClose != nil:
+			cx.Untrack(p.onClose)
+		}
+		was = is
+	})
 }
 
 // set asks to open or close the popup for reason; a request matching
@@ -93,7 +100,9 @@ func (p *popup) cancel(r Reason, keep bool) {
 }
 
 // Popover shows content beside its trigger: pressing the trigger opens
-// it, pressing outside or Escape closes it.
+// it, pressing outside or Escape closes it. On desktops a press outside
+// goes on to what is under the pointer; on touch screens a transparent
+// backdrop takes it, so it only closes the popover.
 type Popover struct {
 	Open         func() bool
 	DefaultOpen  bool
@@ -123,25 +132,40 @@ type Popover struct {
 func (p Popover) Render(cx *core.Scope) core.Node {
 	st := newPopup(cx, p.Open, p.DefaultOpen, p.OnOpenChange, p.OnOpen, p.OnClose)
 	st.onCancel = p.OnCancel
+	st.lifecycle(cx, st.open)
 	anchor := new(core.Ref)
+	outside := func() { st.cancel(ReasonPressOutside, p.NoCloseOnPressOutside) }
 	return core.Group{
 		core.View{Ref: anchor, Style: p.Style, StyleFunc: p.StyleFunc, Label: p.Label, TestID: p.TestID, Role: core.RoleButton,
 			Expanded: st.open,
 			OnPress:  func(core.PressEvent) { st.set(!st.open(), ReasonTriggerPress) },
 			Children: []core.Node{p.Trigger}},
 		core.Show{When: st.open, Then: func(cx *core.Scope) core.Node {
-			return core.Overlay{
+			popup := core.Overlay{
 				Anchor: anchor, Placement: p.Placement, Align: p.Align, Offset: p.Offset, Margin: p.Margin,
 				Style: p.PopupStyle, StyleFunc: p.PopupStyleFunc, Children: p.Children, Role: core.RoleDialog,
-				OnPressOutside: func(core.Point) { st.cancel(ReasonPressOutside, p.NoCloseOnPressOutside) },
-				OnCancel:       func() { st.cancel(ReasonCancel, p.NoCloseOnEscape) },
+				OnCancel: func() { st.cancel(ReasonCancel, p.NoCloseOnEscape) },
 			}
+			if core.Untracked(cx, cx.Env().Desktop) {
+				popup.OnPressOutside = func(core.Point) { outside() }
+				return popup
+			}
+			return core.Group{touchBackdrop(outside), popup}
 		}},
 	}
 }
 
+// touchBackdrop is a transparent layer over the root view that takes a
+// press outside a popup on a touch screen, so it goes no further.
+func touchBackdrop(press func()) core.Node {
+	return core.Overlay{Style: cover, Children: []core.Node{
+		core.View{Style: fill, NoFocus: true, OnPress: func(core.PressEvent) { press() }}}}
+}
+
 // Tooltip shows a hint beside its trigger while the pointer rests on it
-// (on desktops), or while the app opens it.
+// (on desktops), or while the app opens it, the only way on touch
+// screens. It never takes the pointer. A View's Tooltip is the shorter
+// form, with the defaults.
 type Tooltip struct {
 	Open         func() bool
 	DefaultOpen  bool
@@ -170,6 +194,7 @@ type Tooltip struct {
 // Render implements core.Node.
 func (t Tooltip) Render(cx *core.Scope) core.Node {
 	st := newPopup(cx, t.Open, t.DefaultOpen, t.OnOpenChange, t.OnOpen, t.OnClose)
+	st.lifecycle(cx, st.open)
 	anchor := new(core.Ref)
 	delay := t.Delay
 	if delay == 0 {
@@ -203,7 +228,8 @@ func (t Tooltip) Render(cx *core.Scope) core.Node {
 			Children: []core.Node{t.Trigger}},
 		core.Show{When: st.open, Then: func(cx *core.Scope) core.Node {
 			return core.Overlay{Anchor: anchor, Placement: place, Align: t.Align, Offset: offset, Margin: margin,
-				Style: t.PopupStyle, StyleFunc: t.PopupStyleFunc, Children: t.Children, Role: core.RoleAlert}
+				Style: t.PopupStyle, StyleFunc: t.PopupStyleFunc, Children: t.Children, Role: core.RoleAlert,
+				PointerEvents: core.PointerEventsNone}
 		}},
 	}
 }
@@ -245,6 +271,7 @@ type Dialog struct {
 func (d Dialog) Render(cx *core.Scope) core.Node {
 	st := newPopup(cx, d.Open, d.DefaultOpen, d.OnOpenChange, d.OnOpen, d.OnClose)
 	st.onCancel = d.OnCancel
+	st.lifecycle(cx, st.open)
 	m := core.Modal{Animation: d.Animation, Presentation: d.Presentation, NoCloseOnSwipe: d.NoCloseOnSwipe,
 		SupportedOrientations: d.SupportedOrientations, StatusBarTranslucent: d.StatusBarTranslucent,
 		StatusBar: d.StatusBar, StatusBarFunc: d.StatusBarFunc,
@@ -253,7 +280,14 @@ func (d Dialog) Render(cx *core.Scope) core.Node {
 		d.NoCloseOnEscape, d.PopupStyle, d.PopupStyleFunc, d.Children, d.Label, d.TestID)
 }
 
-// Sheet slides a panel in from a side of the app, over a backdrop.
+// Sheet is a panel at an edge of the app (Side) over a backdrop that
+// covers the rest and takes its presses, on top of everything in its root
+// view, the same on every device. It slides in from its edge as the
+// backdrop fades in, and back out as it closes, at once when the user
+// asked for less motion; OnOpen and OnClose follow the motion's end. A
+// press on the backdrop, Escape and back close it, and with
+// CloseOnSwipe a bottom sheet follows a downward drag and closes on a
+// release past 30% of its height or 800 points a second.
 type Sheet struct {
 	Open         func() bool
 	DefaultOpen  bool
@@ -266,33 +300,43 @@ type Sheet struct {
 	Side                   core.Placement
 	NoCloseOnEscape        bool
 	NoCloseOnBackdropPress bool
-	BackdropStyle          core.Style
-	BackdropStyleFunc      func() core.Style
-	PopupStyle             core.Style
-	PopupStyleFunc         func() core.Style
-	Children               []core.Node
-	Label                  string
-	TestID                 string
+	CloseOnSwipe           bool
+	// BackdropStyle styles the backdrop, which fades with the panel: give
+	// it a translucent background.
+	BackdropStyle     core.Style
+	BackdropStyleFunc func() core.Style
+	PopupStyle        core.Style
+	PopupStyleFunc    func() core.Style
+	// Children are the content, made on each opening.
+	Children []core.Node
+	Label    string
+	TestID   string
 }
 
 // Render implements core.Node.
 func (s Sheet) Render(cx *core.Scope) core.Node {
 	st := newPopup(cx, s.Open, s.DefaultOpen, s.OnOpenChange, s.OnOpen, s.OnClose)
 	st.onCancel = s.OnCancel
-	layer := core.Style{JustifyContent: core.JustifyEnd}
-	switch s.Side {
-	case core.PlaceTop:
-		layer = core.Style{JustifyContent: core.JustifyStart}
-	case core.PlaceLeft:
-		layer = core.Style{Direction: core.Row, JustifyContent: core.JustifyStart}
-	case core.PlaceRight:
-		layer = core.Style{Direction: core.Row, JustifyContent: core.JustifyEnd}
+	side := s.Side
+	if side == core.PlaceDefault {
+		side = core.PlaceBottom
 	}
-	return modalLayer(st, core.Modal{Animation: core.ModalSlide, Style: layer}, s.BackdropStyle, s.BackdropStyleFunc,
-		s.NoCloseOnBackdropPress, s.NoCloseOnEscape, s.PopupStyle, s.PopupStyleFunc, s.Children, s.Label, s.TestID)
+	m := newSheetMotion(cx, st.open, side)
+	st.lifecycle(cx, m.there)
+	return sheetLayer{m: m, side: side, backdrop: s.BackdropStyle, backdropFunc: s.BackdropStyleFunc,
+		backdropPress: func() { st.cancel(ReasonBackdropPress, s.NoCloseOnBackdropPress) },
+		panel:         s.PopupStyle, panelFunc: s.PopupStyleFunc,
+		swipe:  s.CloseOnSwipe && side == core.PlaceBottom,
+		swiped: func() { st.cancel(ReasonSwipe, false) },
+		cancel: func() { st.cancel(ReasonCancel, s.NoCloseOnEscape) },
+		role:   core.RoleDialog, label: s.Label, testID: s.TestID, content: s.Children}.node()
 }
 
 var fill = core.Style{Position: core.Absolute, Top: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0), Left: core.Pt(0)}
+
+// cover is an overlay over its whole root view; overlays are as large as
+// their content otherwise.
+var cover = core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(0), Width: core.Pct(100), Height: core.Pct(100)}
 
 // modalLayer shows m, holding the backdrop and the popup, while st is
 // open.

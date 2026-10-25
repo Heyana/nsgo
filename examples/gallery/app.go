@@ -38,10 +38,13 @@ var sections []section
 func init() {
 	sections = []section{
 		{"Button", groupComponents, "base.Button is a pressable view with the button role; its look is the app's.", buttonPage},
+		{"Controls", groupComponents, "Checkboxes, radios, switches, tabs, progress bars and a collapsible region.", controlsPage},
 		{"Popups", groupComponents, "Tooltips, popovers, menus, context menus, dialogs, sheets and the platform's alerts.", popupsPage},
 		{"Navigation", groupComponents, "base.Nav's stack of routes, with the system header on iOS and Android.", navigationPage},
 		{"Safe Area", groupComponents, "base.SafeAreaView keeps its content clear of the system's UI.", safeAreaPage},
-		{"Split", groupComponents, "base.Split resizes two panes with a divider.", splitPage},
+		{"Resizable", groupComponents, "Resizable panel groups: sizes, limits, handles and screen-reader steps.", resizablePage},
+		{"Dock", groupComponents, "A dockable workspace of splits, tab groups and docks, persisted in gpui-base's format.", dockPage},
+		{"Text View", groupComponents, "Markdown documents, their parts, actions and a streaming reply.", textViewPage},
 
 		{"Text", groupElements, "Fonts, weights, decoration, alignment, line limits, links and selection.", textPage},
 		{"Input", groupElements, "The platform's field: keyboard types, editing props, the caret, pasting and a keyboard accessory.", inputPage},

@@ -115,6 +115,11 @@ type View struct {
 	// Indeterminate is neither checked nor unchecked, as a "select all"
 	// over a partial selection.
 	Indeterminate func() bool
+	// PartStates styles the view in the states it returns without
+	// reporting them, as a part of a control in them: a checkbox's
+	// indicator follows the checkbox. Assistive technology hears the
+	// states from the control alone.
+	PartStates func() PartStates
 	// Expanded makes the element expandable, as a disclosure or a menu
 	// button, and expanded while it returns true.
 	Expanded func() bool
@@ -145,11 +150,21 @@ type View struct {
 	// LiveRegion has screen readers announce changes of the label and
 	// text inside the view.
 	LiveRegion LiveRegion
-	TestID     string
+	// Tooltip shows above the view, 4 points away, once the pointer has
+	// rested on it for half a second on desktops, until the pointer leaves
+	// or presses; it never takes the pointer. Touch screens show none.
+	Tooltip Node
+	TestID  string
 }
 
 // Render implements Node.
 func (v View) Render(*Scope) Node { return v }
+
+// PartStates are the states a part of a control is styled in: its Style's
+// Checked, Indeterminate, Selected and Disabled merge in while they hold.
+type PartStates struct {
+	Checked, Indeterminate, Selected, Disabled bool
+}
 
 // Text is a run of text the engine lays out and the platform draws.
 type Text struct {
@@ -506,6 +521,10 @@ type Overlay struct {
 	Style          Style
 	StyleFunc      func() Style
 	Children       []Node
+	// PointerEvents says which of the overlay and its children take
+	// touches and the pointer: None for a tooltip, BoxNone for a layer
+	// that passes presses through around its content.
+	PointerEvents PointerEvents
 
 	// OnPressOutside receives presses outside the overlay and its anchor.
 	OnPressOutside func(at Point)

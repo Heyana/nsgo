@@ -3,6 +3,7 @@ package base_test
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
@@ -25,12 +26,19 @@ func TestSafeAreaAndKeyboard(t *testing.T) {
 	if got, want := safe.Frame.Size.Height, core.Points(10+44+300+21+10+34); got != want {
 		t.Errorf("height = %v, want %v", got, want)
 	}
+	app.LayoutAnimation = nil
+	app.SetEnvironment(core.Environment{SafeArea: core.Edges{Top: 44, Bottom: 34, Left: 5}, KeyboardHeight: 0,
+		KeyboardDuration: 280 * time.Millisecond})
+	if a := app.LayoutAnimation; a == nil || a.Update == nil || a.Update.Curve != core.LayoutKeyboard ||
+		a.Update.Duration != 280*time.Millisecond {
+		t.Errorf("the keyboard going animates %+v, want its frames on the keyboard's curve and time", a.Update)
+	}
 }
 
 func TestPopupsNavAndAlerts(t *testing.T) {
 	var reasons []string
 	var chosen string
-	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+	app := startDesktop(t, func(cx *core.Scope) core.Node {
 		nav := NewNavHelper(cx)
 		return core.View{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
 			base.Menu{TestID: "menu", Trigger: core.Text{Content: "File"},
@@ -80,7 +88,7 @@ func NewNavHelper(cx *core.Scope) *base.Nav[string] { return base.NewNav(cx, "ho
 
 func TestPopupsReportChangesAndEveryCancel(t *testing.T) {
 	var log []string
-	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+	app := startDesktop(t, func(cx *core.Scope) core.Node {
 		return core.View{Style: core.Style{FlexGrow: 1, AlignItems: core.AlignStart}, Children: []core.Node{
 			base.Popover{TestID: "pop", Trigger: core.Text{Content: "Pop"}, DefaultOpen: true,
 				NoCloseOnEscape: true, NoCloseOnPressOutside: true,
@@ -109,101 +117,7 @@ func TestPopupsReportChangesAndEveryCancel(t *testing.T) {
 	}
 }
 
-func TestSplitResizesInPointsAndResets(t *testing.T) {
-	var sizes []core.Length
-	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return base.Split{Direction: base.SplitHorizontal, TestID: "split",
-			DefaultSize: core.Pt(200), Min: core.Pt(120), Max: core.Pt(300),
-			OnResize: func(size core.Length) { sizes = append(sizes, size) },
-			Style:    core.Style{Height: core.Pt(200)},
-			First:    core.View{TestID: "first"},
-			Second:   core.View{TestID: "second"}}
-	}, nsgotest.Size(600, 400))
-	width := func() core.Points { return app.Find("id:first").Frame.Size.Width }
-	if width() != 200 {
-		t.Fatalf("first pane = %v wide, want its default 200", width())
-	}
-	app.Pan("id:split-divider", core.Point{X: 500})
-	if width() != 300 {
-		t.Fatalf("first pane = %v wide, want the drag stopped at its maximum 300", width())
-	}
-	if v := app.Find("id:split-divider").Props.Value; v != (core.AccessibilityValue{Min: 120, Max: 300, Now: 300}) {
-		t.Fatalf("divider value = %+v", v)
-	}
-	if c := app.Find("id:split-divider").Style.Cursor; c != core.CursorColResize {
-		t.Fatalf("divider cursor = %v, want the horizontal resize cursor", c)
-	}
-	app.Press("id:split-divider")
-	app.Press("id:split-divider")
-	if width() != 200 {
-		t.Fatalf("first pane = %v wide after a double click, want the default 200", width())
-	}
-	if len(sizes) != 2 {
-		t.Fatalf("reported sizes = %v, want the drag and reset", sizes)
-	}
-	if p, ok := sizes[0].Points(); !ok || p != 300 {
-		t.Fatalf("drag reported %v, want 300 points", sizes[0])
-	}
-	if p, ok := sizes[1].Points(); !ok || p != 200 {
-		t.Fatalf("reset reported %v, want 200 points", sizes[1])
-	}
-}
-
-func TestSplitPercentFollowsTheSplitAndVerticalStack(t *testing.T) {
-	var sizes []core.Length
-	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return base.Split{Direction: base.SplitVertical, TestID: "split",
-			DefaultSize: core.Pct(25), Min: core.Pt(80), Max: core.Pct(80),
-			OnResize: func(size core.Length) { sizes = append(sizes, size) },
-			Style:    core.Style{Width: core.Pt(300), Height: core.Pct(100)},
-			First:    core.View{TestID: "first", Style: core.Style{Height: core.Pct(100)}},
-			Second:   core.View{TestID: "second", Style: core.Style{Height: core.Pct(100)}}}
-	}, nsgotest.Size(400, 800))
-	height := func() core.Points { return app.Find("id:first").Frame.Size.Height }
-	if height() != 200 {
-		t.Fatalf("first pane = %v tall, want a quarter of 800", height())
-	}
-	if d := app.Find("id:split-divider").Frame.Size; d != (core.Size{Width: 300, Height: 9}) {
-		t.Fatalf("divider = %v, want the split's width and its band", d)
-	}
-	if l := app.Find("id:split-divider").Children[0].Frame.Size; l != (core.Size{Width: 300, Height: 1}) {
-		t.Fatalf("divider line = %v, want the split's width and one point", l)
-	}
-	if c := app.Find("id:split-divider").Style.Cursor; c != core.CursorRowResize {
-		t.Fatalf("divider cursor = %v, want the vertical resize cursor", c)
-	}
-	app.Pan("id:split-divider", core.Point{Y: 100})
-	if height() != 300 {
-		t.Fatalf("first pane = %v tall after the drag, want 37.5%%", height())
-	}
-	if pct, ok := sizes[len(sizes)-1].Percent(); !ok || pct != 37.5 {
-		t.Fatalf("drag reported %v, want 37.5 percent", sizes[len(sizes)-1])
-	}
-	app.Resize(400, 1200)
-	if height() != 450 {
-		t.Fatalf("first pane = %v tall after growing, want it to keep 37.5%%", height())
-	}
-	app.Press("id:split-divider")
-	app.Press("id:split-divider")
-	if height() != 300 {
-		t.Fatalf("first pane = %v tall after a double click, want a quarter of 1200", height())
-	}
-	if pct, ok := sizes[len(sizes)-1].Percent(); !ok || pct != 25 {
-		t.Fatalf("reset reported %v, want 25 percent", sizes[len(sizes)-1])
-	}
-}
-
-func TestSplitDragsTowardTheDividerInRightToLeft(t *testing.T) {
-	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return base.Split{Direction: base.SplitHorizontal, TestID: "split",
-			DefaultSize: core.Pt(200), Max: core.Pt(300),
-			Style:  core.Style{Height: core.Pt(200)},
-			First:  core.View{TestID: "first", Style: core.Style{Height: core.Pct(100)}},
-			Second: core.View{TestID: "second", Style: core.Style{Height: core.Pct(100)}}}
-	}, nsgotest.Size(600, 400))
-	app.SetEnvironment(core.Environment{RTL: true})
-	app.Pan("id:split-divider", core.Point{X: -100})
-	if got := app.Find("id:first").Frame.Size.Width; got != 300 {
-		t.Fatalf("first pane = %v wide, want a drag toward the left to grow it in RTL", got)
-	}
+// startDesktop runs app as on a desktop, where popups follow the pointer.
+func startDesktop(t *testing.T, app func(cx *core.Scope) core.Node) *nsgotest.App {
+	return nsgotest.Start(t, app, nsgotest.Environment(core.Environment{Idiom: core.IdiomDesktop}))
 }

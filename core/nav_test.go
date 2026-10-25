@@ -109,7 +109,8 @@ func TestScreenHeaderOptions(t *testing.T) {
 		return View{Style: Style{FlexGrow: 1}, Children: []Node{
 			View{Style: Style{Height: Pt(100)}},
 			Stack{Style: Style{FlexGrow: 1}, Children: []Node{
-				Screen{Title: "Large", TestID: "large", HeaderLargeTitle: true, Children: []Node{View{TestID: "large-content"}}},
+				Screen{Title: "Large", TestID: "large", HeaderLargeTitle: true, Children: []Node{
+					Scroll{TestID: "large-content", Style: Style{FlexGrow: 1}, Children: []Node{View{Style: Style{Height: Pt(900)}}}}}},
 			}},
 			Stack{Style: Style{Height: Pt(100)}, Children: []Node{
 				Screen{TestID: "clear", HeaderTransparent: true, Children: []Node{Func(func(cx *Scope) Node {
@@ -128,8 +129,19 @@ func TestScreenHeaderOptions(t *testing.T) {
 	if got := items[h.find("large").id]; !got.LargeTitle || got.HeaderHeight != 96 {
 		t.Errorf("large = %+v", got)
 	}
-	if got := h.find("large-content").frame.Origin.Y; got != 96 {
-		t.Errorf("large title content at %v", got)
+	// A large title lays the content under it, insetting the scroll
+	// view at its top, which it collapses into.
+	if got := h.find("large-content").frame.Origin.Y; got != 0 {
+		t.Errorf("large title content at %v, want under the header", got)
+	}
+	var config *driver.ScrollConfig
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemScrollConfig && it.ID == h.find("large-content").id {
+			config = it.Scroll
+		}
+	}
+	if config == nil || config.HeaderInset != 96 || config.Behavior.ContentInset.Top != 96 {
+		t.Errorf("the scroll view under the large title has %+v", config)
 	}
 	if got := items[h.find("clear").id].HeaderHeight; got != 44 || h.find("clear-content").frame.Origin.Y != 0 {
 		t.Errorf("transparent header %v, content at %v, want the content under it", got, h.find("clear-content").frame.Origin.Y)
@@ -139,6 +151,15 @@ func TestScreenHeaderOptions(t *testing.T) {
 	}
 	if got := items[h.find("bare").id]; !got.HeaderHidden || got.HeaderHeight != 0 || h.find("bare-content").frame.Origin.Y != 0 {
 		t.Errorf("hidden header = %+v", got)
+	} // The platform's measure replaces the estimate.
+	h.tree.Dispatch(driver.Event{Kind: driver.EventScreenHeader, ID: h.find("clear").id, Value: 50})
+	// The clear screen is below the status bar: its header is its bar.
+	b2 := h.commit()
+	if got := screenItems(b2)[h.find("clear").id].HeaderHeight; got != 50 {
+		t.Errorf("measured header %v, want 50", got)
+	}
+	if insets.Top != 50 {
+		t.Errorf("insets after the measure %v", insets)
 	}
 }
 

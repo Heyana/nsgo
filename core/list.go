@@ -71,10 +71,19 @@ type List struct {
 	// by ViewabilityConfig's rules.
 	OnViewableItemsChange func(ViewableItems)
 	ViewabilityConfig     ViewabilityConfig
-	// OnEndReached runs when the last rows come within EndThreshold rows
-	// of the viewport (5 when 0), once per count.
-	OnEndReached func()
-	EndThreshold int
+	// OnLoadMore runs when the viewport comes within LoadMoreThreshold
+	// viewports of the content's end (1 when 0), once per count: also as
+	// the list opens, so a first page shorter than that asks for the next.
+	OnLoadMore        func()
+	LoadMoreThreshold float32
+	// OnLoadMoreAtStart is its counterpart at item 0's end, for a list
+	// opened at an old item that loads what comes before it, within
+	// LoadMoreAtStartThreshold viewports (1 when 0). It runs once per
+	// approach: again after the viewport left that zone, or when the count
+	// changed while it stayed there, and never before the user or a
+	// scroll command moved the list.
+	OnLoadMoreAtStart        func()
+	LoadMoreAtStartThreshold float32
 	// Viewport is what the list scrolls in: a scroll view of its own, or
 	// with ListViewportParent the nearest scroll view around it on its
 	// axis (or its screen, modal or overlay), which scrolls it with what
@@ -190,8 +199,10 @@ type listNode struct {
 	byIndex map[int]*listCell
 	free    []*listCell
 	cmds    []listCommand
-	endAt   int // the count OnEndReached last ran for
-	sticky  []StickyCell
+	// loadAt and loadAtStart are the counts OnLoadMore and
+	// OnLoadMoreAtStart last ran for, -1 for none.
+	loadAt, loadAtStart int
+	sticky              []StickyCell
 	// outer is the view a parent-viewport list scrolls in, depth the
 	// views between them.
 	outer *node
@@ -217,13 +228,16 @@ type listCommand struct {
 }
 
 func (t *Tree) mountList(cx *Scope, parent *node, l List) {
-	ln := &listNode{spec: l, owner: cx, byIndex: map[int]*listCell{}, endAt: -1, st: newListState(),
+	ln := &listNode{spec: l, owner: cx, byIndex: map[int]*listCell{}, loadAt: -1, loadAtStart: -1, st: newListState(),
 		viewable: [2]int{-1, -1}, latest: [2]int{-1, -1}}
 	if ln.spec.EstimatedSize <= 0 {
 		ln.spec.EstimatedSize = 50
 	}
-	if ln.spec.EndThreshold <= 0 {
-		ln.spec.EndThreshold = 5
+	if ln.spec.LoadMoreThreshold <= 0 {
+		ln.spec.LoadMoreThreshold = 1
+	}
+	if ln.spec.LoadMoreAtStartThreshold <= 0 {
+		ln.spec.LoadMoreAtStartThreshold = 1
 	}
 	st := &ln.st
 	st.estimated, st.horizontal, st.gap, st.crossGap = ln.spec.EstimatedSize, l.Horizontal, l.Gap, l.ColumnGap
@@ -343,7 +357,28 @@ func (t *Tree) spliceList(ln *listNode, at, removed, inserted int) {
 			ln.free = append(ln.free, c)
 		}
 	}
-	ln.endAt = -1
+	ln.loadAt = -1
+}
+
+// loadMore runs OnLoadMore and OnLoadMoreAtStart as the viewport nears
+// either end, as NSH's ListState::update_window raises them.
+func (t *Tree) loadMore(ln *listNode, v *node) {
+	st := &ln.st
+	if st.viewport <= 0 {
+		return
+	}
+	at, count := st.naturalOffset(), st.count
+	end := at+st.viewport >= st.blocks().total-st.viewport*Points(ln.spec.LoadMoreThreshold)
+	if f := ln.spec.OnLoadMore; f != nil && end && ln.loadAt != count {
+		ln.loadAt = count
+		t.after(v, f)
+	}
+	if at > st.viewport*Points(ln.spec.LoadMoreAtStartThreshold) {
+		ln.loadAtStart = -1
+	} else if f := ln.spec.OnLoadMoreAtStart; f != nil && st.moved && ln.loadAtStart != count {
+		ln.loadAtStart = count
+		t.after(v, f)
+	}
 }
 
 // freeFrom frees the cells of rows count and after.
@@ -514,6 +549,8 @@ func (t *Tree) updateList(v *node) bool {
 			}
 		}
 		st.pin = nil
+		// Where the app scrolled the list may be near its start.
+		st.moved = true
 		if cmd.pin != nil {
 			p := *cmd.pin
 			p.at, p.animating = offset, cmd.animated
@@ -581,10 +618,7 @@ func (t *Tree) updateList(v *node) bool {
 	for _, i := range stickies {
 		bind(i)
 	}
-	if f := ln.spec.OnEndReached; f != nil && ok && count > 0 && last >= count-ln.spec.EndThreshold && ln.endAt != count {
-		ln.endAt = count
-		t.after(v, f)
-	}
+	t.loadMore(ln, v)
 	t.reportViewable(ln)
 
 	// Spare cells hide until a row needs them.

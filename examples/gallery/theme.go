@@ -178,17 +178,15 @@ func (t *theme) labelled(style core.Style, label string, onPress func()) core.No
 	return base.Button{OnPress: func(core.PressEvent) { onPress() }, Label: label, Style: style, Children: []core.Node{core.Text{Content: label}}}
 }
 
-// toggle is a switch drawn from views: a track whose knob moves to the
-// end while checked, then the label.
+// toggle is base.Switch styled: a track whose knob moves to the end
+// while checked, then the label.
 func (t *theme) toggle(label string, checked func() bool, onChange func(bool)) core.Node {
-	return core.View{Role: core.RoleSwitch, Label: label, Checked: checked, OnPress: func(core.PressEvent) { onChange(!checked()) },
-		Style: row, Children: []core.Node{
-			core.View{Checked: checked, Style: core.Style{Width: core.Pt(36), Height: core.Pt(20), CornerRadius: 10, Padding: core.All(2),
-				Background: t.borderStrong, JustifyContent: core.JustifyCenter, Checked: &core.Style{Background: t.accent}},
-				Children: []core.Node{core.View{Checked: checked, Style: core.Style{Width: core.Pt(16), Height: core.Pt(16), CornerRadius: 8,
-					Background: t.knob, Checked: &core.Style{AlignSelf: core.AlignEnd}}}}},
-			core.Text{Content: label},
-		}}
+	return base.Switch{Label: label, Checked: checked, OnChange: onChange, Style: row,
+		TrackStyle: core.Style{Width: core.Pt(36), Height: core.Pt(20), CornerRadius: 10, Padding: core.All(2),
+			Background: t.borderStrong, JustifyContent: core.JustifyCenter, Checked: &core.Style{Background: t.accent}},
+		ThumbStyle: core.Style{Width: core.Pt(16), Height: core.Pt(16), CornerRadius: 8,
+			Background: t.knob, Checked: &core.Style{AlignSelf: core.AlignEnd}},
+		Children: []core.Node{core.Text{Content: label}}}
 }
 
 // demo is one card of a section: a title, a line saying what it shows

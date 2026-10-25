@@ -25,6 +25,7 @@ var (
 
 const (
 	tdfAllowDialogCancellation   = 0x0008
+	tdfUseCommandLinks           = 0x0010
 	tdfPositionRelativeToWindow  = 0x1000
 	tdcbfOKButton                = 0x0001
 	tdWarningIcon                = 0xFFFF // MAKEINTRESOURCEW(-1)
@@ -155,7 +156,16 @@ func (w *window) ask(a *driver.AlertConfig) int {
 	c.u32(0) // the size, set below
 	c.ptr(w.hwnd)
 	c.ptr(0) // instance
-	c.u32(tdfAllowDialogCancellation | tdfPositionRelativeToWindow)
+	flags := uint32(tdfPositionRelativeToWindow)
+	if cancel >= 0 || a.Cancelable || len(a.Actions) == 0 {
+		// Escape and the close button choose the cancel action, or none.
+		flags |= tdfAllowDialogCancellation
+	}
+	if a.Sheet {
+		// An action sheet's actions stack, one under another.
+		flags |= tdfUseCommandLinks
+	}
+	c.u32(flags)
 	c.u32(common)
 	c.ptr(uintptr(unsafe.Pointer(title)))
 	c.ptr(icon)

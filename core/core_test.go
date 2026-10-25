@@ -697,7 +697,7 @@ func TestListMountsAWindowAndReusesCells(t *testing.T) {
 	h := newHost(t, Size{Width: 200, Height: 300}, func(cx *Scope) Node {
 		count = NewSignal(cx, 10000)
 		return List{Count: count.Get, Style: Style{FlexGrow: 1}, TestID: "list",
-			OnEndReached: func() { ends++ },
+			OnLoadMore: func() { ends++ },
 			Row: func(cx *Scope, row ListRow) Node {
 				return Text{ContentFunc: func() string { return "row " + strconv.Itoa(row.Index()) },
 					Style: Style{Height: Pt(30)}}
@@ -757,7 +757,7 @@ func TestListMountsAWindowAndReusesCells(t *testing.T) {
 		t.Errorf("after shrinking to 20 rows: %d mounted, last %d", n, last)
 	}
 	if ends != 1 {
-		t.Errorf("OnEndReached ran %d times, want once", ends)
+		t.Errorf("OnLoadMore ran %d times, want once", ends)
 	}
 }
 
@@ -1025,5 +1025,53 @@ func TestHiddenSubtreeHidesItsViewsOverlaysAndModals(t *testing.T) {
 	h.commit()
 	if h.find("overlay").frame.Size != (Size{Width: 50, Height: 30}) || h.find("in-modal").frame.Size != (Size{Width: 10, Height: 10}) {
 		t.Error("the overlay and modal do not come back")
+	}
+}
+
+func TestListLoadsMoreAtEitherEnd(t *testing.T) {
+	var count *Signal[int]
+	ends, starts := 0, 0
+	h := newHost(t, Size{Width: 200, Height: 300}, func(cx *Scope) Node {
+		count = NewSignal(cx, 5)
+		return List{Count: count.Get, Style: Style{FlexGrow: 1}, TestID: "list",
+			OnLoadMore:        func() { ends++ },
+			OnLoadMoreAtStart: func() { starts++ },
+			Row: func(cx *Scope, row ListRow) Node {
+				return View{Style: Style{Height: Pt(30)}}
+			}}
+	})
+	h.commit()
+	if ends != 1 || starts != 0 {
+		t.Fatalf("a short first page: %d loads at the end and %d at the start, want one at the end only", ends, starts)
+	}
+	list := h.find("list")
+	scroll := func(y Points) {
+		h.tree.Dispatch(driver.Event{Kind: driver.EventScroll, ID: list.id, Point: Point{Y: y}})
+		h.commit()
+	}
+	count.Set(200)
+	h.commit()
+	scroll(3000)
+	if ends != 1 {
+		t.Errorf("loaded %d times at the end, want once per count", ends)
+	}
+	scroll(200)
+	scroll(150)
+	if starts != 1 {
+		t.Errorf("loaded %d times at the start, want once per approach", starts)
+	}
+	count.Set(220)
+	h.commit()
+	if starts != 2 {
+		t.Errorf("a count change near the start loaded %d times, want again", starts)
+	}
+	scroll(1500)
+	scroll(0)
+	if starts != 3 {
+		t.Errorf("a second approach loaded %d times in all, want 3", starts)
+	}
+	scroll(1e6)
+	if ends != 2 {
+		t.Errorf("reaching the end of 220 rows loaded %d times in all, want 2", ends)
 	}
 }

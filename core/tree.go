@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -117,6 +118,7 @@ type node struct {
 	pinching   bool           // it follows pinches: OnPinch or PinchValue
 	rotating   bool           // it follows rotations: OnRotation or RotationValue
 	anim       *viewAnimation // the animated values bound to the view
+	part       PartStates     // the states it is styled in as a control's part
 	isStack    bool
 	ref        *Ref
 
@@ -450,7 +452,8 @@ func (t *Tree) Resize(size Size) {
 func (t *Tree) SetEnvironment(env Environment) {
 	e := t.root.Env()
 	safe, headers := e.safe.GetUntracked(), e.headers
-	e.set(env)
+	// In one batch, so what reads the environment sees all of it new.
+	t.root.Batch(func() { e.set(env) })
 	// Modals and system headers are placed by the safe area.
 	if e.safe.GetUntracked() != safe || e.headers != headers {
 		t.view.markLayout()
@@ -703,6 +706,10 @@ func (n *node) restyle() {
 	if n.input != nil && n.input.config.Disabled {
 		p.Disabled = true
 	}
+	p.Checked = p.Checked || n.part.Checked
+	p.Indeterminate = p.Indeterminate || n.part.Indeterminate
+	p.Selected = p.Selected || n.part.Selected
+	p.Disabled = p.Disabled || n.part.Disabled
 	merged := n.base.Merge(n.dyn)
 	var g groupState
 	if gs := merged.GroupStyle; gs != nil {
@@ -726,9 +733,10 @@ func (n *node) restyle() {
 func (n *node) groupState(name string) groupState {
 	for a := n.parent; a != nil; a = a.parent {
 		if g := a.style.Group; g != "" && (name == "" || g == name) {
-			disabled := a.props.Disabled || a.input != nil && a.input.config.Disabled
-			return groupState{states: a.states, checked: a.props.Checked, indeterminate: a.props.Indeterminate,
-				selected: a.props.Selected, disabled: disabled}
+			disabled := a.props.Disabled || a.part.Disabled || a.input != nil && a.input.config.Disabled
+			return groupState{states: a.states, checked: a.props.Checked || a.part.Checked,
+				indeterminate: a.props.Indeterminate || a.part.Indeterminate,
+				selected:      a.props.Selected || a.part.Selected, disabled: disabled}
 		}
 	}
 	return groupState{}
@@ -816,6 +824,14 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	t.bindBool(cx, n, v.Selected, &n.props.Selected)
 	t.bindBool(cx, n, v.Checked, &n.props.Checked)
 	t.bindBool(cx, n, v.Indeterminate, &n.props.Indeterminate)
+	if v.PartStates != nil {
+		cx.renderEffect(func() {
+			n.part = v.PartStates()
+			n.restyle()
+			t.relayout(n)
+			t.restyleGroup(n)
+		})
+	}
 	t.bindPan(cx, n, v.PanValues)
 	t.bindGestureValue(n, driver.AnimBindPinch, v.PinchValue)
 	t.bindGestureValue(n, driver.AnimBindRotation, v.RotationValue)
@@ -823,6 +839,59 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	for _, c := range v.Children {
 		t.mount(cx, n, c)
 	}
+	if v.Tooltip != nil {
+		t.mountTooltip(cx, n, v.Tooltip)
+	}
+}
+
+// tooltipDelay is how long the pointer rests on a view before its
+// tooltip shows, as NSH's and GPUI's.
+const tooltipDelay = 500 * time.Millisecond
+
+// mountTooltip shows tip in a hint overlay above n while the pointer
+// rests on it, on desktops.
+func (t *Tree) mountTooltip(cx *Scope, n *node, tip Node) {
+	if n.ref == nil {
+		t.setRef(n, &Ref{})
+	}
+	anchor := n.ref
+	shown := NewSignal(cx, false)
+	var stop func() bool
+	hide := func() {
+		if stop != nil {
+			stop()
+			stop = nil
+		}
+		shown.Set(false)
+	}
+	in, out := n.h.hoverIn, n.h.hoverOut
+	n.h.hoverIn = func() {
+		if in != nil {
+			in()
+		}
+		if cx.Env().Desktop() && stop == nil {
+			stop = cx.AfterFunc(tooltipDelay, func() { stop = nil; shown.Set(true) })
+		}
+	}
+	n.h.hoverOut = func() {
+		if out != nil {
+			out()
+		}
+		hide()
+	}
+	// A press hides it, where the view takes presses already.
+	if down := n.h.pressDown; down != nil || n.h.press != nil {
+		n.h.pressDown = func(e PressEvent) {
+			if down != nil {
+				down(e)
+			}
+			hide()
+		}
+	}
+	t.mount(cx, n, Show{When: shown.Get, Then: func(*Scope) Node {
+		return Overlay{Anchor: anchor, Placement: PlaceTop, Offset: 4, Margin: 4, PointerEvents: PointerEventsNone,
+			Children: []Node{tip}}
+	}})
 }
 
 func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
@@ -1023,6 +1092,11 @@ func (t *Tree) Dispatch(ev driver.Event) {
 			t.backFrom(n)
 		} else {
 			t.back()
+		}
+		return
+	case driver.EventScreenHeader:
+		if n := t.node(ev.ID); n != nil && n.screen != nil {
+			t.screenHeader(n, Points(ev.Value))
 		}
 		return
 	case driver.EventRequestClose, driver.EventModalSize:

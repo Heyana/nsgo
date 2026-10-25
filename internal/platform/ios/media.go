@@ -38,6 +38,17 @@ type ghost struct {
 
 func (s *surface) clock() time.Duration { return time.Since(s.epoch) }
 
+// layoutStart is when a layout change on tr starts: now, or for the
+// keyboard's curve when the keyboard started to move, however late the
+// batch arrived.
+func (s *surface) layoutStart(tr *driver.LayoutTransition) time.Duration {
+	now := s.clock()
+	if tr.Curve == driver.LayoutKeyboard && s.keyboardStart > 0 && now-s.keyboardStart < tr.End() {
+		return s.keyboardStart
+	}
+	return now
+}
+
 func (s *surface) startTicking() {
 	if s.ticking {
 		return
@@ -163,7 +174,7 @@ func (s *surface) setFrame(v *view, f driver.Bounds, lb *layoutBatch) {
 			m = &motion{}
 			s.motions[v] = m
 		}
-		m.from, m.to, m.frame, m.start = v.frame, f, lb.anim.Update, s.clock()
+		m.from, m.to, m.frame, m.start = v.frame, f, lb.anim.Update, s.layoutStart(lb.anim.Update)
 		s.startTicking()
 		return
 	}
@@ -184,6 +195,9 @@ func (v *view) place(f driver.Bounds) {
 	v.native.Send(sel("setCenter:"), apple.CGPoint{X: float64(f.Origin.X + v.shift.X + f.Size.Width/2),
 		Y: float64(f.Origin.Y + v.shift.Y + f.Size.Height/2)})
 	apple.LayoutDecor(v.native.Send(selLayer))
+	if v.componentView != 0 {
+		v.componentView.Send(selSetFrame, apple.Rect(0, 0, float64(f.Size.Width), float64(f.Size.Height)))
+	}
 	v.sizeContent()
 	if v.image != nil {
 		v.image.Layout(apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)})
@@ -306,6 +320,9 @@ func (s *surface) configureNative(v *view, c *driver.NativeConfig) {
 	if v.component == nil && !v.componentTried {
 		v.componentTried = true
 		factory := s.components[c.Component]
+		if factory == nil && c.Component == driver.TabBarComponent {
+			factory = newTabBar
+		}
 		if factory == nil {
 			if !s.unknown[c.Component] {
 				s.unknown[c.Component] = true
@@ -332,10 +349,9 @@ func (s *surface) configureNative(v *view, c *driver.NativeConfig) {
 			native = objc.ID(h)
 		}
 		if native != 0 {
-			const flexibleWidth, flexibleHeight = 2, 16
-			native.Send(sel("setAutoresizingMask:"), uint(flexibleWidth|flexibleHeight))
 			native.Send(selSetFrame, objc.Send[apple.CGRect](v.native, selBounds))
 			v.native.Send(selAddSubview, native)
+			v.componentView = native
 		}
 	}
 	if v.component == nil {

@@ -47,20 +47,26 @@ func popupsPage(cx *core.Scope, t *theme) core.Node {
 				base.Popover{Style: t.secondary(), PopupStyle: t.popup().Merge(core.Style{Padding: core.All(12), MaxWidth: core.Pt(240)}),
 					Offset: 6, Trigger: trigger("Popover"), Label: "Popover",
 					Children: []core.Node{core.Text{Content: "A popover beside its trigger. Press outside or Escape to close it."}}},
+				core.View{Style: t.secondary(), Role: core.RoleButton, Label: "A view's tooltip", OnPress: func(core.PressEvent) {},
+					Tooltip: core.View{Style: t.popup().Merge(core.Style{Padding: core.Symmetric(4, 8)}),
+						Children: []core.Node{core.Text{Content: "Any view takes a tooltip", Style: core.Style{FontSize: 13}}}},
+					Children: []core.Node{core.Text{Content: "View tooltip"}}},
 			),
 		),
-		t.demo("Menus", "A menu opens beside its trigger, a context menu on a secondary click or a long press.",
+		t.demo("Menus", "A menu opens beside its trigger, a context menu at the pointer on a secondary click; "+
+			"on touch screens both are sheets, a context menu opens after a 400 ms hold, and a submenu takes its menu's place.",
 			flow(
-				base.Menu{Style: t.button(), PopupStyle: t.popup(), Offset: 6, Trigger: trigger("Menu"), Label: "Menu", Children: []core.Node{
+				base.Menu{Style: t.button(), PopupStyle: t.popup(), BackdropStyle: t.backdrop(), Offset: 6, Trigger: trigger("Menu"), Label: "Menu", Children: []core.Node{
 					item("Copy"), item("Paste"),
-					base.Submenu{Style: t.menuItem(), PopupStyle: t.popup(), Label: "Share",
+					base.Submenu{Style: t.menuItem(), PopupStyle: t.popup(), Label: "Share", BackStyle: t.menuItem(),
+						Back: core.Text{Content: "‹ Share", Style: core.Style{Color: t.muted}},
 						Trigger: core.View{Style: core.Style{Direction: core.Row, JustifyContent: core.JustifySpaceBetween, Gap: 16},
 							Children: []core.Node{core.Text{Content: "Share"}, core.Text{Content: "›", Style: core.Style{Color: t.muted}}}},
 						Children: []core.Node{item("Mail"), item("Messages")}},
 					separator,
 					deleteItem,
 				}},
-				base.ContextMenu{PopupStyle: t.popup(), TestID: "context",
+				base.ContextMenu{PopupStyle: t.popup(), BackdropStyle: t.backdrop(), TestID: "context",
 					Trigger: core.View{Style: core.Style{Padding: core.Symmetric(18, 24), CornerRadius: radius, BorderWidth: 1,
 						BorderColor: t.line, Background: t.sunken},
 						Children: []core.Node{core.Text{Content: "Right-click or long-press here", Style: t.caption()}}},
@@ -85,6 +91,12 @@ func popupsPage(cx *core.Scope, t *theme) core.Node {
 					base.ShowAlertDialog(cx, base.AlertDialog{Title: "Discard changes?", Description: "A native alert, answered with the label chosen.",
 						Actions: []core.AlertAction{{Label: "Keep", Role: core.AlertCancel}, {Label: "Discard", Role: core.AlertDestructive}}},
 						func(choice string) { picked.Set("alert: " + choice) })
+				}),
+				t.plain("Action sheet", func() {
+					base.ShowAlertDialog(cx, base.AlertDialog{Title: "Share the photo", Presentation: base.AlertPresentActionSheet,
+						Actions: []core.AlertAction{{Label: "Save"}, {Label: "Copy link"}, {Label: "Delete", Role: core.AlertDestructive},
+							{Label: "Cancel", Role: core.AlertCancel}}},
+						func(choice string) { picked.Set("action sheet: " + choice) })
 				}),
 			),
 		),
@@ -116,11 +128,12 @@ func popupsPage(cx *core.Scope, t *theme) core.Node {
 			}
 			return d
 		}),
-		base.Sheet{Open: sheet.Get, OnOpenChange: func(open bool, _ base.Reason) { sheet.Set(open) }, BackdropStyle: t.backdrop(),
+		base.Sheet{Open: sheet.Get, OnOpenChange: func(open bool, r base.Reason) { sheet.Set(open); closedBy.Set(r.String()) },
+			BackdropStyle: t.backdrop(), CloseOnSwipe: true,
 			PopupStyle: core.Style{Background: t.surface, Color: t.ink, Padding: core.All(20), Gap: 12, CornerRadius: dialogRadius, Height: core.Pct(40),
 				BorderWidth: 1, BorderColor: t.line, ShadowColor: core.RGBA(0, 0.12), ShadowRadius: 24, ShadowOffset: core.Point{Y: 8}},
 			Label: "Sheet", Children: []core.Node{base.SafeAreaView{Edges: base.Bottom, Style: core.Style{Gap: 12},
-				Children: panel("A sheet from the bottom", "Sheets slide in from an edge of the app.", func() { sheet.Set(false) })}}},
+				Children: panel("A sheet from the bottom", "It slides in over a fading backdrop; drag it down to close it.", func() { sheet.Set(false) })}}},
 		base.Sheet{Open: side.Get, OnOpenChange: func(open bool, _ base.Reason) { side.Set(open) }, BackdropStyle: t.backdrop(),
 			Side: core.PlaceRight, Label: "Side sheet",
 			PopupStyle: core.Style{Background: t.surface, Color: t.ink, Padding: core.All(20), Gap: 12, Width: core.Pt(300),

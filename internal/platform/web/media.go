@@ -100,7 +100,7 @@ func timing(tr *driver.LayoutTransition) map[string]any {
 		easing = "ease-in"
 	case driver.LayoutEaseOut:
 		easing = "ease-out"
-	case driver.LayoutEaseInEaseOut:
+	case driver.LayoutEaseInEaseOut, driver.LayoutKeyboard:
 		easing = "ease-in-out"
 	case driver.LayoutSpring:
 		curve := *tr

@@ -129,6 +129,17 @@ func closeExtensionTags(source string, ext []Extension) string {
 		return source
 	}
 	for _, e := range ext {
+		if e.Tag == anyTag {
+			// Every element, as MDX writes them, but HTML's void ones.
+			source = anySelfClosing.ReplaceAllStringFunc(source, func(m string) string {
+				sub := anySelfClosing.FindStringSubmatch(m)
+				if voidElements[strings.ToLower(sub[1])] {
+					return m
+				}
+				return "<" + sub[1] + sub[2] + "></" + sub[1] + ">"
+			})
+			continue
+		}
 		if e.Tag == "" || voidElements[strings.ToLower(e.Tag)] {
 			continue
 		}
@@ -137,6 +148,8 @@ func closeExtensionTags(source string, ext []Extension) string {
 	}
 	return source
 }
+
+var anySelfClosing = regexp.MustCompile(`<([A-Za-z][\w.:-]*)((?:\s[^<>]*?)?)\s*/>`)
 
 // htmlReader is one walk of a tree.
 type htmlReader struct {
@@ -569,6 +582,11 @@ func (r *htmlReader) extension(name string) (Extension, bool) {
 	for _, e := range r.ext {
 		if e.Tag != "" && strings.EqualFold(e.Tag, name) {
 			return e, true
+		}
+	}
+	for _, e := range r.ext {
+		if e.Tag == anyTag {
+			return Extension{Name: name, Tag: name}, true
 		}
 	}
 	return Extension{}, false

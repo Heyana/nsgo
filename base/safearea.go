@@ -64,7 +64,10 @@ const (
 	AvoidHeight
 )
 
-// KeyboardAvoidingView keeps its content above the software keyboard.
+// KeyboardAvoidingView keeps its content above the software keyboard,
+// moving with it on the keyboard's own curve. It is for content outside
+// scroll views, as a message bar at the bottom of a screen, and assumes
+// it reaches the bottom of the surface.
 type KeyboardAvoidingView struct {
 	Behavior AvoidBehavior
 	// Offset is how much of the keyboard's height is already covered by
@@ -78,6 +81,17 @@ type KeyboardAvoidingView struct {
 
 // Render implements core.Node.
 func (v KeyboardAvoidingView) Render(cx *core.Scope) core.Node {
+	// The commit that makes room animates its frames natively.
+	shown := core.Points(-1)
+	cx.Effect(func() {
+		h := cx.Env().KeyboardHeight()
+		was := shown
+		shown = h
+		d := core.Untracked(cx, cx.Env().KeyboardDuration)
+		if was >= 0 && was != h && !v.Disabled && d > 0 {
+			cx.AnimateLayout(core.LayoutAnimation{Update: &core.LayoutTransition{Curve: core.LayoutKeyboard, Duration: d}})
+		}
+	})
 	return core.View{
 		Style: v.Style,
 		StyleFunc: func() core.Style {

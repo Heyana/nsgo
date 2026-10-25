@@ -441,9 +441,13 @@ func (t *Tree) emit(n *node) {
 		}
 	case n.scroll != nil:
 		sc := n.scroll
-		if first || sc.resend || !sc.config.Equal(&n.sent.scroll) {
+		c := sc.config
+		if inset := t.headerInset(n); inset > 0 {
+			c.HeaderInset = inset
+			c.Behavior.ContentInset.Top += inset
+		}
+		if first || sc.resend || !c.Equal(&n.sent.scroll) {
 			sc.resend = false
-			c := sc.config
 			c.Behavior.SnapToOffsets = slices.Clone(c.Behavior.SnapToOffsets)
 			n.sent.scroll = c
 			add(driver.MountItem{Kind: driver.ItemScrollConfig, ID: n.id, Scroll: &c})

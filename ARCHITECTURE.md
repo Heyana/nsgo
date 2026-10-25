@@ -23,7 +23,7 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | --- | --- | --- |
 | `nsgo` (module root) | `platform::run_app` | `nsgo.Run`: picks the backend by build tags |
 | `core` | `nsh-core` | The app's API: elements, styles, the reactive graph and regions, services; the shadow tree, layout and text preparation; aliases of the driver values apps use |
-| `base` | `nsh-base` | Unstyled base components: a pressable view, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack, split panes |
+| `base` | `nsh-base` | Unstyled base components: controls, popups, dialogs, sheets, menus, safe area, keyboard, navigation stack, resizable panels and a dock ([components](docs/architecture/components.md)) |
 | `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark), HTML (x/net/html) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
 | `base/textview/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma |
 | `icons/lucide` | — (NSH loads SVG as images) | The bundled Lucide pack: one generated accessor per icon, parsed on first use ([icons](docs/architecture/icons.md)) |
@@ -133,6 +133,7 @@ Record a design question here, and confirm the answer with the user before choos
 | [Canvas](docs/architecture/canvas.md) | Changing `Canvas`, `Drawing` or a backend's canvas player |
 | [Animation](docs/architecture/animation.md) | Changing animated values, layout animations or a backend's frame clock |
 | [Shaders](docs/architecture/shaders.md) | Changing `Shader`, the shader compiler or a backend's shader view |
+| [Components](docs/architecture/components.md) | Changing a component in `base`: controls, popups, resizable panels or the dock |
 | [Text view](docs/architecture/textview.md) | Changing `TextView`, its parsers, parts or highlighting |
 | [Icons](docs/architecture/icons.md) | Changing SVG parsing, `core.Icon` or the Lucide pack |
 | [Performance](docs/architecture/performance.md) | Changing the performance monitor or a per-frame path |

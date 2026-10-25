@@ -736,21 +736,47 @@ func (s *surface) alert(a *driver.AlertConfig) {
 	alert := objc.ID(objc.GetClass("NSAlert")).Send(selNew)
 	alert.Send(sel("setMessageText:"), apple.NSString(a.Title))
 	alert.Send(sel("setInformativeText:"), apple.NSString(a.Message))
-	for _, act := range a.Actions {
+	// order[i] is the action of the alert's button i: an action sheet's
+	// read in order with the cancel action last, as NSH stacks them.
+	order := make([]int, 0, len(a.Actions))
+	cancel := -1
+	for i, act := range a.Actions {
+		if a.Sheet && act.Role == driver.AlertCancel && cancel < 0 {
+			cancel = i
+			continue
+		}
+		order = append(order, i)
+	}
+	if cancel >= 0 {
+		order = append(order, cancel)
+	}
+	escape := false
+	for _, i := range order {
+		act := a.Actions[i]
 		button := alert.Send(sel("addButtonWithTitle:"), apple.NSString(act.Label))
 		switch act.Role {
 		case driver.AlertCancel:
 			button.Send(sel("setKeyEquivalent:"), apple.NSString("\x1b"))
+			escape = true
 		case driver.AlertDestructive:
 			button.Send(sel("setHasDestructiveAction:"), true)
 		}
 	}
-	id, n := a.ID, len(a.Actions)
+	if a.Cancelable && !escape && len(order) > 0 {
+		// Escape closes it without an action: a button that is never
+		// seen takes the key.
+		hidden := alert.Send(sel("addButtonWithTitle:"), apple.NSString(""))
+		hidden.Send(sel("setKeyEquivalent:"), apple.NSString("\x1b"))
+		hidden.Send(sel("setHidden:"), true)
+	}
+	id := a.ID
 	done := objc.NewBlock(func(_ objc.Block, response int) {
 		const firstButton = 1000
 		index := response - firstButton
-		if index < 0 || index >= n {
+		if index < 0 || index >= len(order) {
 			index = -1
+		} else {
+			index = order[index]
 		}
 		s.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: id, Index: index})
 		alert.Send(selRelease)

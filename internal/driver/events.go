@@ -151,6 +151,10 @@ const (
 	// EventPaste is what the user pasted into an input (Data, a
 	// *PasteEvent), before the text it inserts is reported.
 	EventPaste
+	// EventScreenHeader is the height of a screen's system header bar
+	// (Value), its large title shown, as the platform measured it; the
+	// status bar above it is the core's to add.
+	EventScreenHeader
 )
 
 // EventMask is a set of event kinds.

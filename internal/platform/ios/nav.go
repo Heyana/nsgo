@@ -29,6 +29,12 @@ type navBar struct {
 	below           *view   // the screen a swipe back uncovers
 	swipe           float64 // how far the swipe moved the screen
 	itemsSet        bool
+	// collapsed: the large title went into the bar as the content
+	// scrolled under it.
+	collapsed bool
+	// fit is the bar's height as UIKit sizes it, reported the one last
+	// told to the engine.
+	fit, reported driver.Points
 }
 
 // sheet is a modal presented as a UIKit sheet.
@@ -158,13 +164,10 @@ func (s *surface) configureScreen(v *view, c *driver.ScreenConfig) {
 	b.back.Send(sel("setTitle:"), apple.NSString(c.BackTitle))
 	b.item.Send(sel("setHidesBackButton:"), c.BackHidden)
 	b.item.Send(sel("setLeftItemsSupplementBackButton:"), true)
-	const always, never = 1, 2
-	mode := never
-	if c.LargeTitle {
-		mode = always
+	if !c.LargeTitle {
+		b.collapsed = false
 	}
-	b.item.Send(sel("setLargeTitleDisplayMode:"), mode)
-	b.bar.Send(sel("setPrefersLargeTitles:"), c.LargeTitle)
+	s.showLargeTitle(b)
 	b.item.Send(sel("setLeftBarButtonItem:"), s.barItem(c.Left))
 	b.item.Send(sel("setRightBarButtonItem:"), s.barItem(c.Right))
 	b.item.Send(sel("setTitleView:"), s.headerWrap(c.TitleView))
@@ -226,25 +229,94 @@ func (s *surface) styleBar(b *navBar, c *driver.ScreenConfig) {
 	a.Send(selRelease)
 }
 
-// layoutBar places screen v's bar at the bottom of its header area: the
-// part above it is the status bar, which the bar's background reaches
-// under.
-func (s *surface) layoutBar(v *view) {
-	w := objc.Send[apple.CGRect](v.native, selBounds).Size.Width
-	v.bar.bar.Send(selSetFrame, apple.Rect(0, float64(s.barTop(v)), w, float64(s.barHeight(v))))
+// showLargeTitle sets whether bar b shows its large title.
+func (s *surface) showLargeTitle(b *navBar) {
+	const always, never = 1, 2
+	large := b.config.LargeTitle && !b.collapsed
+	mode := never
+	if large {
+		mode = always
+	}
+	b.item.Send(sel("setLargeTitleDisplayMode:"), mode)
+	b.bar.Send(sel("setPrefersLargeTitles:"), large)
 }
 
-// barHeight is screen v's bar's height, barTop how much of the status
-// bar is above it.
-func (s *surface) barHeight(v *view) driver.Points {
-	if v.bar.config.LargeTitle {
+// layoutBar places screen v's bar at the bottom of its header area: the
+// part above it is the status bar, which the bar's background reaches
+// under. It tells the engine the bar's height as UIKit sizes it, with
+// its items and title view.
+func (s *surface) layoutBar(v *view) {
+	b := v.bar
+	w := objc.Send[apple.CGRect](v.native, selBounds).Size.Width
+	if !b.config.LargeTitle {
+		if fit := objc.Send[apple.CGSize](b.bar, sel("sizeThatFits:"), apple.CGSize{Width: w}); fit.Height > 0 {
+			b.fit = driver.Points(fit.Height)
+		}
+	}
+	top := s.barTop(v)
+	b.bar.Send(selSetFrame, apple.Rect(0, float64(top), w, float64(s.barHeight(v))))
+	if bar := s.expandedBar(v); !b.config.HeaderHidden && bar != b.reported {
+		b.reported = bar
+		s.engine.Dispatch(driver.Event{Kind: driver.EventScreenHeader, ID: v.id, Value: float32(bar)})
+	}
+}
+
+// expandedBar is screen v's bar's height with its large title shown.
+func (s *surface) expandedBar(v *view) driver.Points {
+	switch {
+	case v.bar.config.LargeTitle:
 		return s.headers[1]
+	case v.bar.fit > 0:
+		return v.bar.fit
 	}
 	return s.headers[0]
 }
 
+// barHeight is screen v's bar's height now, barTop how much of the
+// status bar is above it.
+func (s *surface) barHeight(v *view) driver.Points {
+	if v.bar.collapsed {
+		return s.headers[0]
+	}
+	return s.expandedBar(v)
+}
+
 func (s *surface) barTop(v *view) driver.Points {
-	return max(v.bar.config.HeaderHeight-s.barHeight(v), 0)
+	return max(v.bar.config.HeaderHeight-s.expandedBar(v), 0)
+}
+
+// followLargeTitle collapses the large title of the screen around scroll
+// view sv into its bar once the content scrolled half the title's row
+// under the header, and brings it back nearer the top, as UIKit's
+// navigation controller does.
+func (s *surface) followLargeTitle(sv *view, offset driver.Points) {
+	if sv.sc == nil || sv.sc.config.HeaderInset <= 0 {
+		return
+	}
+	var screen *view
+	for n := sv.native.Send(selSuperview); n != 0; n = n.Send(selSuperview) {
+		if v := views[n]; v != nil && v.bar != nil {
+			screen = v
+			break
+		}
+	}
+	if screen == nil || !screen.bar.config.LargeTitle {
+		return
+	}
+	scrolled := offset + sv.sc.config.Behavior.ContentInset.Top
+	collapsed := scrolled > (s.headers[1]-s.headers[0])/2
+	b := screen.bar
+	if collapsed == b.collapsed {
+		return
+	}
+	b.collapsed = collapsed
+	animations := objc.NewBlock(func(objc.Block) {
+		s.showLargeTitle(b)
+		s.layoutBar(screen)
+		b.bar.Send(sel("layoutIfNeeded"))
+	})
+	objc.ID(objc.GetClass("UIView")).Send(sel("animateWithDuration:animations:"), 0.25, animations)
+	animations.Release()
 }
 
 // barItem returns a bar button item showing header view id, or nil.

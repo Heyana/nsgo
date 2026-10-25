@@ -92,6 +92,12 @@ func fitNatural(nat Size, known layout.Size[layout.Opt]) Size {
 	switch {
 	case !w.Valid && !h.Valid:
 		return nat
+	// A size with one dimension 0 asks for the other alone, as a bar as
+	// wide as it is placed.
+	case !h.Valid && nat.Width <= 0:
+		return Size{Height: nat.Height}
+	case !w.Valid && nat.Height <= 0:
+		return Size{Width: nat.Width}
 	case !w.Valid && nat.Height > 0:
 		return Size{Width: Points(h.Value) * nat.Width / nat.Height}
 	case !h.Valid && nat.Width > 0:

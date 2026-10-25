@@ -543,6 +543,10 @@ type ScrollConfig struct {
 	// HideIndicator hides the scroll bar.
 	HideIndicator bool
 	Behavior      ScrollBehavior
+	// HeaderInset is the part of Behavior.ContentInset's top that a
+	// transparent or large system header covers, which a large title
+	// collapses into as the content scrolls under it.
+	HeaderInset Points
 	// Refreshable says the app listens for EventRefresh: pulling the
 	// content down past its top refreshes. Refreshing shows the spinner;
 	// a config after EventRefresh says whether the app keeps it.

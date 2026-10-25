@@ -84,6 +84,9 @@ type App struct {
 
 	// StatusBar is the status bar the app last set.
 	StatusBar driver.StatusBarConfig
+	// LayoutAnimation is the layout animation the last batch to carry
+	// one asked the platform for.
+	LayoutAnimation *driver.LayoutAnimation
 
 	mu    sync.Mutex
 	posts []func()
@@ -1182,6 +1185,9 @@ func (a *App) dispatch(ev driver.Event) {
 
 func (a *App) apply(b *driver.MountBatch) {
 	a.rootID = b.Root
+	if b.LayoutAnimation != nil {
+		a.LayoutAnimation = b.LayoutAnimation
+	}
 	for _, it := range b.Items {
 		v := a.views[it.ID]
 		switch it.Kind {

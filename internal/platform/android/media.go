@@ -62,7 +62,11 @@ func (s *surface) configureNative(id driver.NodeID, c *driver.NativeConfig) nati
 	if v == nil {
 		v = &nativeView{}
 		s.natives[id] = v
-		if factory := s.components[c.Component]; factory == nil {
+		factory := s.components[c.Component]
+		if factory == nil && c.Component == driver.TabBarComponent {
+			factory = newTabBar
+		}
+		if factory == nil {
 			if !s.unknown[c.Component] {
 				s.unknown[c.Component] = true
 				log.Printf("nsgo: no native component %q is registered", c.Component)

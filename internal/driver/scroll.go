@@ -217,6 +217,7 @@ func (c *ScrollConfig) Zooms() bool { return c.MaxZoomScale > c.MinZoomScale }
 // Equal reports whether c and o configure a scroll view the same.
 func (c *ScrollConfig) Equal(o *ScrollConfig) bool {
 	return c.Horizontal == o.Horizontal && c.HideIndicator == o.HideIndicator && c.Behavior.Equal(&o.Behavior) &&
+		c.HeaderInset == o.HeaderInset &&
 		c.Refreshable == o.Refreshable && c.Refreshing == o.Refreshing &&
 		c.MinZoomScale == o.MinZoomScale && c.MaxZoomScale == o.MaxZoomScale && c.ZoomScale == o.ZoomScale &&
 		c.NoBouncesZoom == o.NoBouncesZoom && c.NoPinchZoom == o.NoPinchZoom && c.CenterContent == o.CenterContent

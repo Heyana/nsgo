@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/oneo-me/nsgo/base/textview"
 	"github.com/oneo-me/nsgo/core"
@@ -26,9 +27,16 @@ func TestTextViewBuildsBlocks(t *testing.T) {
 			RenderCustom: func(cx *core.Scope, node textview.Custom) core.Node {
 				return core.Text{Content: "custom " + node.Name, TestID: "custom"}
 			},
-			CodeBlockActions: func(cx *core.Scope, code textview.CodeBlock) core.Node {
-				return core.View{OnPress: func(core.PressEvent) { pressed = append(pressed, "copy "+code.Code) }, TestID: "copy"}
+			CodeBlockActions: []string{textview.CopyAction},
+			RenderCodeBlockAction: func(cx *core.Scope, a textview.CodeBlockAction) core.Node {
+				return core.Text{ContentFunc: func() string {
+					if a.Done() {
+						return "copied"
+					}
+					return a.Name
+				}}
 			},
+			OnCodeBlockAction: func(name string, code textview.CodeBlock) { pressed = append(pressed, name+" "+code.Code) },
 		}
 	})
 	if !app.Find("id:doc").Props.SelectionArea {
@@ -42,10 +50,75 @@ func TestTextViewBuildsBlocks(t *testing.T) {
 		t.Error("the done task is not checked")
 	}
 	app.Press("text:Docs and bold.")
-	app.Press("id:copy")
+	app.Press("label:copy")
 	if want := []string{"https://nsgo.dev", "copy x := 1"}; strings.Join(pressed, "|") != strings.Join(want, "|") {
 		t.Errorf("pressed %q, want %q", pressed, want)
 	}
+	if app.Clipboard != "x := 1" || !app.Exists("text:copied") {
+		t.Errorf("clipboard %q, copied shown %v", app.Clipboard, app.Exists("text:copied"))
+	}
+	app.Advance(2 * time.Second)
+	if app.Exists("text:copied") {
+		t.Error("the copy action stays done")
+	}
+}
+
+func TestTextViewStreamsWithACaret(t *testing.T) {
+	var md *core.Signal[string]
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		md = core.NewSignal(cx, "")
+		return textview.TextView{MarkdownFunc: md.Get, Options: textview.Options{Streaming: true},
+			StreamingCaret: core.View{TestID: "caret", Style: core.Style{Width: core.Pt(6), Height: core.Pt(12)}}}
+	})
+	app.Find("id:caret")
+	md.Set("Some **bold")
+	app.Settle()
+	if p := app.Find("id:caret").Parent.Parent; p.Kind != nsgotest.KindText {
+		t.Errorf("the caret is not in the paragraph's text: %v", p.Kind)
+	}
+	app.Find("text:Some bold")
+	md.Set("Some **bold**\n\n- one\n- two")
+	app.Settle()
+	if n := len(app.Query("id:caret")); n != 1 {
+		t.Fatalf("%d carets", n)
+	}
+	if !strings.Contains(app.Find("id:caret").Parent.Parent.Text, "two") {
+		t.Error("the caret is not at the end of the last item")
+	}
+	md.Set("Done\n\n---")
+	app.Settle()
+	if p := app.Find("id:caret").Parent.Parent; p != nil && p.Kind == nsgotest.KindText {
+		t.Error("after a rule the caret is not on a line of its own")
+	}
+}
+
+func TestTextViewOptionsAndPlugins(t *testing.T) {
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		textview.Provide(cx, textview.Plugin{
+			Extension: textview.Extension{Name: "mention", Pattern: regexp.MustCompile(`@\w+`)},
+			Render:    func(cx *core.Scope, n textview.Custom) core.Node { return core.Text{Content: "user " + n.Text} },
+		})
+		return core.View{Children: []core.Node{
+			textview.TextView{Markdown: "---\ntitle: x\n---\nHi @ada, $5 is <b>cheap</b>.\n\n> [!NOTE]\n> Plain.",
+				Options:    textview.Options{Frontmatter: true, NoHTML: true, NoAlerts: true, NoMath: true},
+				CustomSpan: func(n textview.Custom) core.Span { return core.Span{Content: "user " + n.Text} },
+				RenderCustom: func(cx *core.Scope, n textview.Custom) core.Node {
+					return core.Text{Content: n.Name + ": " + n.Text, TestID: n.Name}
+				}},
+			textview.TextView{Markdown: "<Chart kind=\"bar\" />\n\nIt is {1 + 2}.", Options: textview.Options{MDX: true},
+				CustomSpan: func(n textview.Custom) core.Span { return core.Span{Content: "[" + n.Name + ":" + n.Text + "]"} },
+				RenderCustom: func(cx *core.Scope, n textview.Custom) core.Node {
+					return core.Text{Content: n.Name + " " + n.Attributes["kind"], TestID: "mdx-" + n.Name}
+				}},
+		}}
+	})
+	if got := app.Find("id:frontmatter").Text; got != "frontmatter: title: x" {
+		t.Errorf("front matter %q", got)
+	}
+	app.Find("text:Hi user @ada, $5 is <b>cheap</b>.")
+	app.Find("text:[!NOTE]")
+	app.Find("text:chart bar")
+	app.Find("text:It is [expression:1 + 2].")
 }
 
 func TestTextViewRebuildsOnlyChangedBlocks(t *testing.T) {

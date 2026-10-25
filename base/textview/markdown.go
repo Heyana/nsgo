@@ -3,6 +3,7 @@ package textview
 import (
 	"bytes"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -56,9 +57,64 @@ type Extension struct {
 // digit are prose ("costs $5 and $10"). TeX's own \(x\) and \[x\] are
 // formulas too.
 func Parse(markdown string, extensions ...Extension) Document {
-	src := []byte(rewriteTeX(markdown))
-	root := markdownFor(extensions).Parser().Parse(text.NewReader(src))
-	r := reader{src: src, ext: extensions, labels: map[int]string{}, slugs: slugs{}}
+	return ParseWith(markdown, Options{}, extensions...)
+}
+
+// Options say what a Markdown document reads beyond CommonMark and
+// GitHub's syntax, as NSH's MarkdownOptions; the zero value is NSH's
+// default.
+type Options struct {
+	// NoMath reads dollars and \( \[ as text and math fences as code.
+	NoMath bool
+	// NoHTML shows HTML in the Markdown as text.
+	NoHTML bool
+	// NoAlerts reads > [!NOTE] and its kin as plain quotations.
+	NoAlerts bool
+	// Frontmatter reads YAML front matter (--- … --- first) as a Custom
+	// block "frontmatter" whose Text is the YAML, rather than a rule and
+	// text.
+	Frontmatter bool
+	// MDX reads JSX elements as Custom nodes named by their tag, with
+	// their attributes and content, and {expressions} as Custom nodes
+	// "expression" whose Text is the expression; HTML is then read as
+	// elements too.
+	MDX bool
+	// Streaming repairs the syntax the last block leaves open before
+	// parsing (RepairStreaming), for a document still arriving.
+	Streaming bool
+}
+
+// mdxExtensions are the extensions MDX adds: every element, and braces
+// in text (mdxExpression).
+var (
+	mdxExpression = regexp.MustCompile(`\{([^{}\n]*)\}`)
+	mdxExtensions = []Extension{{Tag: anyTag}, {Name: "expression", Pattern: mdxExpression}}
+)
+
+// anyTag is the Tag of an extension that takes every element, named by
+// its tag.
+const anyTag = "*"
+
+// ParseWith is Parse with options.
+func ParseWith(markdown string, o Options, extensions ...Extension) Document {
+	if o.Streaming {
+		markdown = RepairStreaming(markdown)
+	}
+	var front *Custom
+	if o.Frontmatter {
+		if yaml, rest, ok := frontmatter(markdown); ok {
+			front, markdown = &Custom{Name: "frontmatter", Text: yaml}, rest
+		}
+	}
+	if o.MDX {
+		extensions = append(slices.Clip(extensions), mdxExtensions...)
+	}
+	if !o.NoMath {
+		markdown = rewriteTeX(markdown)
+	}
+	src := []byte(markdown)
+	root := markdownFor(extensions, o.NoMath).Parser().Parse(text.NewReader(src))
+	r := reader{src: src, ext: extensions, labels: map[int]string{}, slugs: slugs{}, opts: o}
 	var doc Document
 	for n := root.FirstChild(); n != nil; n = n.NextSibling() {
 		if list, ok := n.(*east.FootnoteList); ok {
@@ -80,17 +136,45 @@ func Parse(markdown string, extensions ...Extension) Document {
 		}
 	}
 	doc.Blocks = r.blockRun(root.FirstChild(), nil)
+	if front != nil {
+		doc.Blocks = append([]Block{*front}, doc.Blocks...)
+	}
 	return doc
 }
 
+// frontmatter splits YAML front matter off the start of markdown: a ---
+// line, the YAML, and a --- or ... line.
+func frontmatter(markdown string) (yaml, rest string, ok bool) {
+	first, body, found := strings.Cut(markdown, "\n")
+	if !found || strings.TrimRight(first, " \t\r") != "---" {
+		return "", markdown, false
+	}
+	at := 0
+	for at <= len(body) {
+		line, next, more := strings.Cut(body[at:], "\n")
+		if l := strings.TrimRight(line, " \t\r"); l == "---" || l == "..." {
+			yaml = strings.TrimSuffix(body[:at], "\n")
+			if !more {
+				return yaml, "", true
+			}
+			return yaml, next, true
+		}
+		if !more {
+			break
+		}
+		at += len(line) + 1
+	}
+	return "", markdown, false
+}
+
 var (
-	plainMarkdown     goldmark.Markdown
-	plainMarkdownOnce sync.Once
+	plainMarkdown     [2]goldmark.Markdown
+	plainMarkdownOnce [2]sync.Once
 )
 
-// markdownFor returns the parser for extensions' containers, shared when
-// there are none.
-func markdownFor(extensions []Extension) goldmark.Markdown {
+// markdownFor returns the parser for extensions' containers, with or
+// without formulas, shared when there are none.
+func markdownFor(extensions []Extension, noMath bool) goldmark.Markdown {
 	names := map[string]string{}
 	for _, e := range extensions {
 		if e.Container != "" {
@@ -98,14 +182,22 @@ func markdownFor(extensions []Extension) goldmark.Markdown {
 		}
 	}
 	if len(names) == 0 {
-		plainMarkdownOnce.Do(func() { plainMarkdown = newMarkdown(nil) })
-		return plainMarkdown
+		i := 0
+		if noMath {
+			i = 1
+		}
+		plainMarkdownOnce[i].Do(func() { plainMarkdown[i] = newMarkdown(nil, noMath) })
+		return plainMarkdown[i]
 	}
-	return newMarkdown(names)
+	return newMarkdown(names, noMath)
 }
 
-func newMarkdown(containers map[string]string) goldmark.Markdown {
-	blocks := []util.PrioritizedValue{util.Prioritized(&mathBlockParser{}, 650)}
+func newMarkdown(containers map[string]string, noMath bool) goldmark.Markdown {
+	var blocks, inlines []util.PrioritizedValue
+	if !noMath {
+		blocks = append(blocks, util.Prioritized(&mathBlockParser{}, 650))
+		inlines = append(inlines, util.Prioritized(&mathInlineParser{}, 150))
+	}
 	if len(containers) > 0 {
 		blocks = append(blocks, util.Prioritized(&containerParser{names: containers}, 50))
 	}
@@ -113,7 +205,7 @@ func newMarkdown(containers map[string]string) goldmark.Markdown {
 		goldmark.WithExtensions(extension.GFM, extension.Footnote),
 		goldmark.WithParserOptions(
 			parser.WithBlockParsers(blocks...),
-			parser.WithInlineParsers(util.Prioritized(&mathInlineParser{}, 150)),
+			parser.WithInlineParsers(inlines...),
 		),
 	)
 }
@@ -124,6 +216,7 @@ type reader struct {
 	ext    []Extension
 	labels map[int]string // footnote labels by number
 	slugs  slugs
+	opts   Options
 }
 
 func (r *reader) blocks(parent ast.Node) []Block {
@@ -141,6 +234,11 @@ func (r *reader) blockRun(n, stop ast.Node) []Block {
 			if b := r.block(n); b != nil {
 				out = append(out, b)
 			}
+			continue
+		}
+		if r.opts.NoHTML {
+			// Shown as written.
+			out = append(out, Paragraph{Content: []Inline{Text{strings.TrimRight(r.html(h), "\n")}}})
 			continue
 		}
 		if close := r.htmlElement(h, &out); close != nil {
@@ -238,7 +336,7 @@ func (r *reader) block(n ast.Node) Block {
 				return c
 			}
 		}
-		if strings.EqualFold(lang, "math") {
+		if strings.EqualFold(lang, "math") && !r.opts.NoMath {
 			return Math{TeX: code}
 		}
 		return CodeBlock{Language: lang, Meta: meta, Code: code}
@@ -293,7 +391,7 @@ func (r *reader) quote(n *ast.Blockquote) Block {
 	}
 	line := first.Lines().At(0)
 	alert := alertKind(strings.TrimSpace(string(line.Value(r.src))))
-	if alert == AlertNone {
+	if alert == AlertNone || r.opts.NoAlerts {
 		return Blockquote{Children: r.blocks(n)}
 	}
 	q := Blockquote{Alert: alert}
@@ -348,7 +446,7 @@ func (r *reader) content(n ast.Node) []Inline {
 func (r *reader) inlineRun(out []Inline, n, stop ast.Node) []Inline {
 	for ; n != nil && n != stop; n = n.NextSibling() {
 		open, ok := n.(*ast.RawHTML)
-		if !ok {
+		if !ok || r.opts.NoHTML {
 			out = r.inline(out, n)
 			continue
 		}
@@ -554,6 +652,10 @@ func (r *reader) inline(out []Inline, n ast.Node) []Inline {
 	case *ast.Image:
 		out = append(out, Image{Src: string(n.Destination), Alt: r.text(n), Title: string(n.Title)})
 	case *ast.RawHTML:
+		if r.opts.NoHTML {
+			out = append(out, Text{r.raw(n)})
+			break
+		}
 		out = append(out, htmlInlines(r.raw(n), r.ext)...)
 	case *east.FootnoteLink:
 		out = append(out, FootnoteReference{Label: r.labels[n.Index], Index: n.Index})
@@ -698,6 +800,9 @@ func splitText(s string, patterns []Extension) []Inline {
 		}
 		p := patterns[which]
 		c := Custom{Name: p.Name, Text: s[at:end]}
+		if p.Pattern == mdxExpression {
+			c.Text = s[groups[2]:groups[3]]
+		}
 		names := p.Pattern.SubexpNames()
 		for g := 1; g*2 < len(groups); g++ {
 			if groups[g*2] < 0 {

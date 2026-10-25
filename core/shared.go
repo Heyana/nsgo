@@ -801,6 +801,7 @@ const (
 	LayoutEaseOut       = driver.LayoutEaseOut
 	LayoutEaseInEaseOut = driver.LayoutEaseInEaseOut
 	LayoutSpring        = driver.LayoutSpring
+	LayoutKeyboard      = driver.LayoutKeyboard
 )
 
 const (

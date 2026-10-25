@@ -148,6 +148,7 @@ final class Protocol {
     static final int EVENT_TOUCH = 51;
     static final int EVENT_CARET_MOVE = 52;
     static final int EVENT_PASTE = 53;
+    static final int EVENT_SCREEN_HEADER = 54;
 
     // core.PointerEvents.
     static final int POINTER_EVENTS_NONE = 1;

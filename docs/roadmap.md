@@ -6,24 +6,15 @@ References are files in `nsh/docs/dev/` unless they name a crate, with the bulle
 
 ## Order
 
-Sections run in build order: components first, then services, the tool, embedding and performance. The last section waits for community contributions, and nothing above it depends on it.
+Sections run in build order: what the components left, then services, the tool, embedding and performance. The last section waits for community contributions, and nothing above it depends on it.
 
-## 1. Base components and popups
+## 1. Component leftovers
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
-| Collapsible and Progress | `crates/nsh-base/src/collapsible.rs`, `progress.rs` | `base.Collapsible` keeps its content while closed; `base.Progress` reports its role and value |
-| Control details | `crates/nsh-base/src/button.rs`, `radio.rs`, `keyboard.rs`, `alert_dialog.rs` | Buttons take selected, role and press down and up; radios report selected; `KeyboardAvoidingView` animates; alerts present as action sheets |
-| Resizable panels | `dock.md` (layers) | `ResizablePanelGroup`, `ResizablePanel` and `ResizeHandle` with sizes, limits, handle parts and screen-reader steps |
-| Dock area | `dock.md` | `DockArea` reads and writes gpui-base's layout format, drags tabs between groups and docks, and shows one group at a time below 600 pt |
-| Touch-screen popups | `components.md` (popups) | Phones give popovers a backdrop and menus a bottom sheet with submenu levels; context menus open at the pointer or after a 400 ms hold |
-| System headers | `elements.md` (`<NavStack>`) | Large titles collapse on scroll, transparent headers inset scroll views, platforms measure each screen's header, and `base.Dialog` takes the modal props |
-| Sheets and tooltips | `crates/nsh-base/src/sheet.rs`, `tooltip.rs` | Sheets slide from their side over a fading backdrop, bottom ones follow downward drags, and they report after the motion; any element takes a tooltip that never takes the pointer |
-| System tab bar | `js-modules.md` (`nsh/mobile`) | iOS and Android show the system's tab bar for an app's top-level sections |
-| Text view | `text-view.md` | A streaming caret, table and code block actions, scroll bar switches, Markdown options, extensions for a subtree, highlighting off the engine goroutine |
-| List loading | `scrolling-and-lists.md` (loading at either end) | `OnLoadMore` and `OnLoadMoreAtStart` replace `OnEndReached`, with thresholds in viewports, once per approach of either end |
-
-`DockArea` needs the resizable panels.
+| Kept panel state | `dock.md` (render keys) | A dock's panel moved to another group or dock, or across the compact presentation, keeps its content's state, as a core that moves a mounted subtree allows |
+| Sheet scroll handoff | `components.md` (popups) | On iOS a scroll view inside a bottom sheet hands a downward drag at its top to the sheet |
+| Inverted lists loading at the start | `scrolling-and-lists.md` (loading at either end) | An inverted list with `OnLoadMoreAtStart` keeps its distance from the end only while at its start |
 
 ## 2. Services and windows
 
@@ -84,7 +75,7 @@ These items wait for community contributions.
 | Desktop accessibility | `windows.md`, `linux.md` | Windows exposes UI Automation and Linux GTK's accessibility, canvas nodes included, and both announce |
 | Desktop chrome | `windows.md` (alerts), `linux.md` | Windows draws alerts in the surface; Linux animates modals |
 | Effects | `styles.md` (effects) | Windows draws backdrop filters and blend modes, Linux blend modes, and Android drop shadows from Android 12 |
-| Android | `elements.md`, `styles.md` (Android differences) | Ripples, predictive back on screens, and blurred images before Android 12 |
+| Android | `elements.md`, `styles.md` (Android differences) | Ripples, predictive back on screens, blurred images before Android 12, and layout animations aligned with the IME's motion (`WindowInsetsAnimation`) |
 | Android frames | `elements.md` (interaction and the environment) | `RequestAnimationFrame` runs on `Choreographer` frames |
 | Web | `web.md` | Browser history and back keys, a focus state for pressables, local time with daylight saving |
 | Real file drags | `file-drop.md` | A real drag from Finder, Explorer and a Linux file manager is checked to reach a view |

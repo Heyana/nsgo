@@ -30,6 +30,8 @@ final class Header {
     final Toolbar toolbar;
     private final BackArrow arrow;
     private final float density;
+    /** The bar's height last reported to the engine, in points. */
+    float reported;
 
     Header(Context context, float density, Runnable back) {
         this.density = density;
@@ -77,6 +79,17 @@ final class Header {
         add(wrap, left, Gravity.START);
         add(wrap, titleView, Gravity.START);
         add(wrap, right, Gravity.END);
+    }
+
+    /**
+     * The bar's height as the toolbar lays its title and header views out
+     * across width pixels, in points: at least BAR.
+     */
+    float measure(int width) {
+        int top = toolbar.getPaddingTop();
+        toolbar.measure(View.MeasureSpec.makeMeasureSpec(Math.max(width, 1), View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        return Math.max(BAR, Math.round((toolbar.getMeasuredHeight() - top) / density));
     }
 
     private void add(IntFunction<View> wrap, int id, int gravity) {
