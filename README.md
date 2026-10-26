@@ -129,10 +129,11 @@ go test ./...
 bench/run.sh                                       # measure the quotes benchmark (bench/README.md)
 ```
 
-NSGo uses NSH as its reference implementation. Clone it into `nsh/` at the repository root; Git ignores that directory:
+NSGo uses NSH as its reference implementation, and aligns with its releases. Clone it into `nsh/` at the repository root and check out its latest release tag, never `main`; Git ignores that directory:
 
 ```sh
 git clone https://github.com/longbridge/nsh.git nsh
+git -C nsh checkout "$(git -C nsh describe --tags --abbrev=0)"
 ```
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) and [AGENTS.md](AGENTS.md) before changing code.

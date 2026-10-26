@@ -129,10 +129,11 @@ go test ./...
 bench/run.sh                                       # 测量行情表基准（见 bench/README.md）
 ```
 
-NSGo 以 NSH 作为参考实现。将它克隆到仓库根目录的 `nsh/`，Git 会忽略该目录：
+NSGo 以 NSH 作为参考实现，并只对齐 NSH 的各个发行版。将它克隆到仓库根目录的 `nsh/`，并检出它的最新发行版标签，不要用 `main`；Git 会忽略该目录：
 
 ```sh
 git clone https://github.com/longbridge/nsh.git nsh
+git -C nsh checkout "$(git -C nsh describe --tags --abbrev=0)"
 ```
 
 修改代码前请先阅读 [ARCHITECTURE.md](ARCHITECTURE.md) 和 [AGENTS.md](AGENTS.md)。
