@@ -126,3 +126,31 @@ func TestTextDefaultsToFourteenPoints(t *testing.T) {
 		t.Errorf("font size = %v, want 14", got)
 	}
 }
+
+func TestSpansFuncRestylesTheText(t *testing.T) {
+	var color *Signal[Color]
+	h := newHost(t, Size{Width: 400, Height: 100}, func(cx *Scope) Node {
+		color = NewSignal(cx, RGB(0xff0000))
+		return Text{SpansFunc: func() []Span {
+			return []Span{{Content: "func"}, {Content: " main", Style: Style{Color: color.Get()}}}
+		}}
+	})
+	sent := func() *driver.TextContent {
+		for _, it := range h.commit().Items {
+			if it.Kind == driver.ItemText {
+				return it.Text
+			}
+		}
+		return nil
+	}
+	if text := sent(); text == nil || text.Text != "func main" || text.Spans[1].Style.Color != RGB(0xff0000) {
+		t.Fatalf("text %+v, want the spans", text)
+	}
+	color.Set(RGB(0x00ff00))
+	if text := sent(); text == nil || text.Spans[1].Style.Color != RGB(0x00ff00) {
+		t.Fatalf("restyled %+v", text)
+	}
+	if text := sent(); text != nil {
+		t.Fatal("unchanged spans sent the text again")
+	}
+}

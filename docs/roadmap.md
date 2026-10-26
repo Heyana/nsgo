@@ -6,15 +6,12 @@ References are files in `nsh/docs/dev/` unless they give a path from `nsh/`, wit
 
 ## Code and data components
 
-Each item includes the component's demo in the gallery, from NSH's gallery or, for `Table`, its website.
+The components are ported; these parts of NSH's are not yet.
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
-| Charts | `api-naming.md` (Plot), `website/elements/plot.md`, `canvas.md` (the view's background) | `Plot` with `Line`, `Area` and `Grid` marks draws the app's rows natively, a canvas per mark, with scales, hover parts moved on the frame clock, motion and one accessible image; a drawing fills a shape with its canvas view's background |
-| Table | `components.md` (`nsh/base`) | `Table` and its parts give the app's rows a table's accessibility roles |
-| DataTable | `data-table.md` | `base` has a table with no look of its own that scrolls both ways over any number of rows and columns, with selection, sorting, resizing, moving and fixed columns, loading more and keyboard |
-| Editor | `editor.md` | `base` has a controlled code editor: display rows over a rope, input and keys, virtualized rows, incremental highlighting off the engine goroutine, search, diagnostics, folds, completion, definitions, touch handles and parts, fast at 200 000 lines |
-| DiffView | `diff.md` | `base` shows the changes between two texts or a patch: pairing and inline changes, collapsed separators, the editor's highlighting and parts |
+| Editor's remaining features | `editor.md`, `website/elements/editor.md` | Inline completion, block selection, expanding and shrinking selections, the selection history, whitespace marks, rulers, indent guides, `minRows` and `maxRows`, scrolling while a drag is past the edges, and the app's highlighters |
+| DiffView's review | `diff.md` (line selection, annotations) | Line selection on the numbers, annotations and their add control, soft wrap, and split sides that scroll sideways on their own |
 
 ## Rendering costs
 

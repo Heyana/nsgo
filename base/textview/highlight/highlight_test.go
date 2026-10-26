@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oneo-me/nsgo/base/internal/syntax"
 	"github.com/oneo-me/nsgo/base/textview"
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/nsgotest"
@@ -11,11 +12,11 @@ import (
 
 func TestTokens(t *testing.T) {
 	code := "// hi\nfunc main() { x := \"s\" + 42 }"
-	got := map[string]kind{}
+	got := map[string]syntax.Kind{}
 	for _, tk := range tokens("go", code) {
 		got[code[tk.start:tk.end]] = tk.kind
 	}
-	for text, want := range map[string]kind{"// hi": comment, "func": keyword, "main": title, `"s"`: str, "42": number} {
+	for text, want := range map[string]syntax.Kind{"// hi": syntax.Comment, "func": syntax.Keyword, "main": syntax.Title, `"s"`: syntax.String, "42": syntax.Number} {
 		if got[text] != want {
 			t.Errorf("%q is %d, want %d (all: %v)", text, got[text], want, got)
 		}

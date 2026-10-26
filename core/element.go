@@ -210,6 +210,10 @@ type Text struct {
 	// Spans, when set, are the text: runs in order, each styled over the
 	// Text's style. A span with OnPress is a link.
 	Spans []Span
+	// SpansFunc replaces Spans, again when what it reads changes: runs of
+	// text and style only, as a code editor's rows recolor as their
+	// highlighting comes.
+	SpansFunc func() []Span
 	// Selectable lets the user select and copy the text; the highlight is
 	// the style's SelectionColor.
 	Selectable Selectable

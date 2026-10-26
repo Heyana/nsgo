@@ -213,6 +213,12 @@ final class Protocol {
     static final int ROLE_ALERT = 16;
     static final int ROLE_ADJUSTABLE = 17;
     static final int ROLE_PROGRESS_BAR = 18;
+    static final int ROLE_TABLE = 19;
+    static final int ROLE_GRID = 20;
+    static final int ROLE_ROW_GROUP = 21;
+    static final int ROLE_ROW = 22;
+    static final int ROLE_COLUMN_HEADER = 23;
+    static final int ROLE_CELL = 24;
 
     // How a view is an accessibility element, as core.Accessible.
     static final int ACCESSIBLE_YES = 1;

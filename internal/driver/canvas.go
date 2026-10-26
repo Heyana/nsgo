@@ -681,6 +681,18 @@ func (d *Drawing) LineDashFromView() *Drawing {
 	return d.SetLineDash()
 }
 
+// FillBackgroundFromView fills the current path with the canvas view's
+// background, Background and Gradients, placed over area as over a box of
+// that size, as CSS's clip-path shows a box's background. The view then
+// draws no background of its own, so a canvas that takes it draws it once,
+// inside its shapes; one with nothing to fill yet records this over an
+// empty path, so its view never shows the background as a box.
+func (d *Drawing) FillBackgroundFromView(area Bounds) *Drawing {
+	d.Save().SetFillColor(0)
+	d.ViewPaints = append(d.ViewPaints, ViewPaint{Op: len(d.Ops), Kind: ViewBackground, Area: area})
+	return d.Fill().Restore()
+}
+
 // SetFillGradient fills with g until the next SetFillColor.
 func (d *Drawing) SetFillGradient(g *CanvasGradient) *Drawing {
 	d.SetFillColor(g.first())
@@ -1002,6 +1014,10 @@ type PaintStyle struct {
 	// StrokeDash is the dashes and gaps in turn, repeated when odd; nil is
 	// unset and empty solid, as are lengths adding up to 0.
 	StrokeDash []Points
+	// Background and Gradients are the view's own background, which
+	// FillBackgroundFromView fills with.
+	Background Color
+	Gradients  []Gradient
 }
 
 // ViewPaintKind is the paint property a ViewPaint takes.
@@ -1012,6 +1028,9 @@ const (
 	ViewStroke
 	ViewStrokeWidth
 	ViewStrokeDash
+	// ViewBackground fills with the view's background: a fill the core
+	// expands into one for its color and one for each gradient.
+	ViewBackground
 )
 
 // ViewPaint is an op of a drawing whose value is its view's paint.
@@ -1021,6 +1040,19 @@ type ViewPaint struct {
 	// Initial is what a fill or stroke paints with where no view sets
 	// one.
 	Initial Paint
+	// Area is the box a background is placed over.
+	Area Bounds
+}
+
+// HasBackground reports whether d fills shapes with its view's
+// background, which the view then does not draw.
+func (d *Drawing) HasBackground() bool {
+	for _, v := range d.ViewPaints {
+		if v.Kind == ViewBackground {
+			return true
+		}
+	}
+	return false
 }
 
 // Painted returns d with its view paints set from p, current being the
@@ -1057,7 +1089,69 @@ func (d *Drawing) Painted(p *PaintStyle, current Color) *Drawing {
 			op.Dash = strokeDash(p.StrokeDash)
 		}
 	}
+	if d.HasBackground() {
+		out.Ops, out.Slots = backgroundFills(out.Ops, d.Slots, d.ViewPaints, p)
+	}
 	return out
+}
+
+// backgroundFills replaces each background fill of ops with fills of p's
+// background, its color first and the gradients over it, the first on
+// top, and moves slots past them along.
+func backgroundFills(ops []DrawOp, slots []DrawSlot, paints []ViewPaint, p *PaintStyle) ([]DrawOp, []DrawSlot) {
+	out := make([]DrawOp, 0, len(ops)+2*len(p.Gradients))
+	areas := map[int]Bounds{}
+	for _, v := range paints {
+		if v.Kind == ViewBackground {
+			areas[v.Op] = v.Area
+		}
+	}
+	// at[i] is where op i went.
+	at := make([]int, len(ops))
+	for i, op := range ops {
+		at[i] = len(out)
+		area, ok := areas[i]
+		if !ok {
+			out = append(out, op)
+			continue
+		}
+		if p.Background&0xff != 0 {
+			out = append(out, DrawOp{Kind: DrawFillColor, Color: p.Background}, op)
+		}
+		for g := len(p.Gradients) - 1; g >= 0; g-- {
+			if cg, ok := backgroundGradient(&p.Gradients[g], area); ok {
+				out = append(out, DrawOp{Kind: DrawFillColor, Color: cg.first()}, DrawOp{Kind: DrawFillGradient, Gradient: cg}, op)
+			}
+		}
+	}
+	moved := make([]DrawSlot, len(slots))
+	for i, s := range slots {
+		s.Op = at[s.Op]
+		moved[i] = s
+	}
+	return out, moved
+}
+
+// backgroundGradient is g placed over area, as a view of area's size
+// draws it.
+func backgroundGradient(g *Gradient, area Bounds) (*CanvasGradient, bool) {
+	gp, ok := g.Paint(area.Size)
+	if !ok {
+		return nil, false
+	}
+	x, y := float32(area.Origin.X), float32(area.Origin.Y)
+	w, h := float32(area.Size.Width), float32(area.Size.Height)
+	switch gp.Kind {
+	case GradientRadial:
+		// A unit circle stretched to the ellipse's radii.
+		cg := CanvasRadial(0, 0, 0, 0, 0, 1, gp.Stops...)
+		cg.Transform = [6]float32{max(gp.RX*w, 1e-3), 0, 0, max(gp.RY*h, 1e-3), x + gp.CX*w, y + gp.CY*h}
+		return cg, true
+	case GradientConic:
+		angle := (gp.Angle - 90) * math.Pi / 180
+		return CanvasConic(angle, x+gp.CX*w, y+gp.CY*h, gp.Stops...), true
+	}
+	return CanvasLinear(x+gp.X0*w, y+gp.Y0*h, x+gp.X1*w, y+gp.Y1*h, gp.Stops...), true
 }
 
 // strokeDash is the line dash of dashes, solid for none, a negative

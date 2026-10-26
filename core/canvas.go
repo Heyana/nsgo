@@ -1,6 +1,11 @@
 package core
 
-import "github.com/oneo-me/nsgo/internal/driver"
+import (
+	"reflect"
+	"slices"
+
+	"github.com/oneo-me/nsgo/internal/driver"
+)
 
 // Canvas draws what Draw records, at the canvas's size, again whenever a
 // signal Draw read or the size changes. The platform plays the recording
@@ -13,6 +18,10 @@ import "github.com/oneo-me/nsgo/internal/driver"
 // nodes (Drawing.Bind) redraw on the platform's frame clock without a
 // commit, and Drawing.Node names parts of the drawing for assistive
 // technology and tests.
+//
+// A drawing that fills shapes with its view's background
+// (Drawing.FillBackgroundFromView) takes the canvas's Background and
+// Gradients, which the view then does not draw.
 type Canvas struct {
 	Draw      func(d *Drawing, size Size)
 	Style     Style
@@ -46,21 +55,30 @@ type canvasPaintKey struct {
 	width        Points
 	dash         string
 	color        Color
+	background   Color
 }
 
-// resolvePaint takes the paint properties canvas node n inherits and has
-// its drawing sent again when they change what it paints.
+// resolvePaint takes the paint properties canvas node n inherits, and its
+// own background, and has its drawing sent again when they change what it
+// paints.
 func (t *Tree) resolvePaint(n *node, inherited *textFields) {
 	cn := n.canvas
-	k := canvasPaintKey{inherited.Fill, inherited.Stroke, inherited.StrokeWidth, inherited.StrokeDash, n.color}
-	if k == cn.paintKey {
+	bg := n.style.Background
+	if bg == CurrentColor {
+		bg = n.color
+	}
+	k := canvasPaintKey{inherited.Fill, inherited.Stroke, inherited.StrokeWidth, inherited.StrokeDash, n.color, bg}
+	if k == cn.paintKey && slices.EqualFunc(n.style.Gradients, cn.paint.Gradients, sameGradient) {
 		return
 	}
 	cn.paintKey, cn.paint, cn.color = k, inherited.paint(), n.color
+	cn.paint.Background, cn.paint.Gradients = bg, n.style.Gradients
 	if cn.drawing != nil && len(cn.drawing.ViewPaints) > 0 {
 		cn.fresh = true
 	}
 }
+
+func sameGradient(a, b Gradient) bool { return reflect.DeepEqual(a, b) }
 
 func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 	n := t.newNode(driver.KindCanvas, parent, cx)
@@ -97,4 +115,16 @@ func (t *Tree) pickDrawingScales(d *Drawing) {
 			op.Image = &src
 		}
 	}
+}
+
+// MeasureText returns the advance width and the metrics of text's first
+// line in font, laid out by the platform's text engine as a canvas measures
+// it (Drawing.TextMetrics): a column fitted to its widest text, a
+// monospaced font's character width.
+func (cx *Scope) MeasureText(text string, font Font) TextMetrics {
+	var engine driver.TextEngine
+	if t := cx.rt.tree; t != nil {
+		engine = t.text
+	}
+	return driver.NewDrawing(engine).TextMetrics(text, font)
 }

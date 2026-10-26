@@ -303,10 +303,29 @@ func (a *App) fingerLifted(f *finger) {
 func (a *App) Hover(selector string) {
 	a.t.Helper()
 	a.step("hover(%s)", selector)
+	a.hoverAt(selector, nil)
+}
+
+// HoverAt moves the mouse over what selector names as Hover does, to at in
+// its coordinates: a chart's row under the pointer.
+func (a *App) HoverAt(selector string, at driver.Point) {
+	a.t.Helper()
+	a.step("hoverAt(%s, %v, %v)", selector, at.X, at.Y)
+	a.hoverAt(selector, &at)
+}
+
+func (a *App) hoverAt(selector string, local *driver.Point) {
+	a.t.Helper()
 	v := a.pick(selector, "view", func(m *View) (*View, bool) { return m, true })
-	_, at := v.center()
+	mid, at := v.center()
+	shift := driver.Point{}
+	if local != nil {
+		shift = driver.Point{X: local.X - mid.X, Y: local.Y - mid.Y}
+	}
+	at = driver.Point{X: at.X + shift.X, Y: at.Y + shift.Y}
 	if a.target != nil {
-		a.target.hover(a.target.reveal(v))
+		c := a.target.reveal(v)
+		a.target.hover(driver.Point{X: c.X + shift.X, Y: c.Y + shift.Y})
 		a.done()
 		return
 	}

@@ -209,7 +209,8 @@ func (v *view) updateAccessibility() {
 	pressable := v.events.Has(driver.EventPress) || v.events.Has(driver.EventLongPress)
 	var t uint64
 	switch p.Role {
-	case driver.RoleRadioGroup, driver.RoleTabList, driver.RoleMenu, driver.RoleDialog, driver.RoleAlert:
+	case driver.RoleRadioGroup, driver.RoleTabList, driver.RoleMenu, driver.RoleDialog, driver.RoleAlert,
+		driver.RoleTable, driver.RoleGrid, driver.RoleRowGroup, driver.RoleRow:
 		// Groups are containers, so their children stay accessible.
 		native.Send(selSetIsAccessibilityElement, false)
 		v.axElement = false
@@ -226,7 +227,7 @@ func (v *view) updateAccessibility() {
 		t = traits["Button"]
 	case driver.RoleLink:
 		t = traits["Link"]
-	case driver.RoleHeader:
+	case driver.RoleHeader, driver.RoleColumnHeader:
 		t = traits["Header"]
 	case driver.RoleImage:
 		t = traits["Image"]

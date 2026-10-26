@@ -2,6 +2,7 @@ package core
 
 import (
 	"math"
+	"slices"
 
 	"github.com/oneo-me/nsgo/internal/layout"
 )
@@ -152,6 +153,19 @@ func (t *Tree) boundary(n *node) bool {
 // own would. It reports whether it laid any out.
 func (t *Tree) relayoutBoundaries() bool {
 	relaid := false
+	// The deepest first, popped from the end: an outer boundary laid out
+	// from its caches leaves an inner one's subtree as it was, and its
+	// frames would clear the inner one's mark unlaid.
+	if len(t.boundaries) > 1 {
+		depth := func(n *node) int {
+			d := 0
+			for p := n.parent; p != nil; p = p.parent {
+				d++
+			}
+			return d
+		}
+		slices.SortStableFunc(t.boundaries, func(a, b *node) int { return depth(a) - depth(b) })
+	}
 	for len(t.boundaries) > 0 {
 		b := t.boundaries[len(t.boundaries)-1]
 		t.boundaries = t.boundaries[:len(t.boundaries)-1]

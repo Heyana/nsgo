@@ -275,3 +275,26 @@ func TestAModalInsideAFixedViewShows(t *testing.T) {
 		t.Errorf("the modal is laid out at %v, want the surface's size", f)
 	}
 }
+
+func TestNestedRelayoutBoundariesBothLayOut(t *testing.T) {
+	var a, x *Signal[Points]
+	h := newHost(t, Size{Width: 400, Height: 400}, func(cx *Scope) Node {
+		a, x = NewSignal(cx, Points(10)), NewSignal(cx, Points(0))
+		inner := View{Style: Style{Width: Pt(100), Height: Pt(100)}, Children: []Node{
+			View{TestID: "dot", StyleFunc: func() Style {
+				return Style{Position: Absolute, Left: Pt(x.Get()), Width: Pt(1), Height: Pt(1)}
+			}},
+		}}
+		return View{Style: Style{Width: Pt(300), Height: Pt(300)}, Children: []Node{
+			View{Style: Style{Width: Pt(200), Height: Pt(200)}, Children: []Node{inner}},
+			View{StyleFunc: func() Style { return Style{Width: Pt(a.Get()), Height: Pt(10)} }},
+		}}
+	})
+	h.commit()
+	h.root.Batch(func() {
+		x.Set(50)
+		a.Set(20)
+	})
+	// The commit checks itself against a full layout (CheckCommits).
+	h.commit()
+}

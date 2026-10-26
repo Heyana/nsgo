@@ -705,6 +705,18 @@ func fitStyle(ts driver.TextStyle, scale float32) driver.TextStyle {
 func (n *node) viewStyle() driver.ViewStyle {
 	vs := n.style.viewStyle(n.frame.Size, n.color, n.rtl)
 	vs.Material = n.material
+	if n.canvas != nil && n.canvas.drawing != nil && n.canvas.drawing.HasBackground() {
+		// Its drawing fills its shapes with the background.
+		vs.Background = 0
+		if vs.Effects != nil && len(vs.Effects.Gradients) > 0 {
+			e := *vs.Effects
+			e.Gradients = nil
+			vs.Effects = &e
+			if e.Empty() {
+				vs.Effects = nil
+			}
+		}
+	}
 	vs.Hidden = vs.Hidden || n.style.Display == DisplayNone || (n.hoist != nil && n.hidden) || (n.attach != nil && n.attach.cut)
 	// Effects that draw as before keep the pointer that was sent, so the
 	// comparison finds nothing to send.

@@ -379,3 +379,83 @@ func TestCollapsingHeader(t *testing.T) {
 	app.Find("text:Week 20")
 	app.Find("id:footer >> text:That's all 160 entries")
 }
+
+// TestCharts hovers the week's plot, switches weeks and finds the
+// sparklines, a plot per row of a list.
+func TestCharts(t *testing.T) {
+	app := startDesktop(t)
+	open(app, "Charts")
+	app.Find("text:Sun, the last day")
+	plot := "role:image Visitors per day, from 1,820 on Monday to 1,180 on Sunday"
+	app.Find(plot)
+	// The pointer at the middle: Thursday, the fourth of seven days.
+	app.Hover(plot)
+	app.Find("text:Plot: Thu, 2,480")
+	app.Find("text:2,480 visitors")
+	app.Press("role:button Show this week")
+	app.Find("text:Plot: this week")
+	app.Find("text:1,330 visitors")
+	if len(app.Query("text:NSHL")) == 0 {
+		t.Fatal("no sparkline rows")
+	}
+	if n := len(app.Query("role:image")); n < 5 {
+		t.Fatalf("%d images, want the week's plot and a sparkline per row", n)
+	}
+}
+
+// TestDataTable selects a row of the million stocks, sorts by ID and
+// jumps far down.
+func TestDataTable(t *testing.T) {
+	app := startDesktop(t)
+	open(app, "DataTable")
+	app.Find("text:rows 1–")
+	app.Press("text:Apple 1 >> nth=0")
+	app.Find("text:Row 1 >> nth=0")
+	// Ascending, then descending: the last stock first.
+	app.Press("id:sort:id")
+	app.Press("id:sort:id")
+	app.Find("text:1000000 >> nth=0")
+	app.Press("id:sort:id")
+	app.Press("role:button Go to row 500000")
+	app.Find("text:Tesla 500000")
+	app.Press("text:Cells")
+	app.Press("text:Tesla 500000")
+	app.Find("text:Cell row 500000, Name")
+}
+
+// TestTable finds the invoices' table and its roles on Controls.
+func TestTable(t *testing.T) {
+	app := startDesktop(t)
+	open(app, "Controls")
+	app.Find("role:table Recent invoices")
+	if n := len(app.Query("role:columnheader")); n < 4 {
+		t.Fatalf("%d column headers, want the invoices' 4 and the total", n)
+	}
+}
+
+// TestEditor types in the editor, finds a word and opens the large file.
+func TestEditor(t *testing.T) {
+	app := startDesktop(t)
+	open(app, "Editor")
+	app.Find("text:type Greeter struct {")
+	app.Find("text:2 problems")
+	app.Press("role:button Find and replace")
+	app.Type("label:Find", "Greet")
+	app.Find("text:results")
+	app.Press("text:200k lines")
+	app.Find("text:func step0(x int) int")
+	app.Find("text:0 problems")
+}
+
+// TestDiff counts the changes, reverts one and shows the patch.
+func TestDiff(t *testing.T) {
+	app := startDesktop(t)
+	open(app, "Diff")
+	app.Find("text:var ErrNotFound")
+	app.Find("text:· 7 changes")
+	app.Press("role:button Revert >> nth=0")
+	app.Find("text:· 6 changes")
+	app.Press("role:button Show a patch")
+	app.Find("text:store.go")
+	app.Find("text:old_test.go → store_test.go")
+}

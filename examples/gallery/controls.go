@@ -553,7 +553,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 		)
 	}
 
-	return demoPage(cx, pageProps{}, settings, filter, plansCard, sections, disclosure, transfers, lastEventCard(last))
+	return demoPage(cx, pageProps{}, settings, filter, plansCard, sections, disclosure, transfers, tableCard, lastEventCard(last))
 }
 
 // onOff is a setting's state in words.

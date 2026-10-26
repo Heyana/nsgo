@@ -1,0 +1,962 @@
+package base
+
+import (
+	"fmt"
+	"math"
+	"slices"
+	"time"
+
+	"github.com/oneo-me/nsgo/core"
+)
+
+// The table's view, in layers:
+//
+//   - the hit layer: a vertical scroll view of a horizontal one of an empty
+//     box of the content's size, scaled past a few million points. The
+//     platforms scroll it, and its box takes presses, hovers and the
+//     context menu;
+//   - the body over it, taking no pointer: the cells of the rows and
+//     columns in view and a reach around them, placed where the table last
+//     scrolled to, in three regions: the row numbers, the fixed columns
+//     (which move with the rows only) and the scrolling columns;
+//   - the header above it: group labels and titles in the same regions,
+//     the columns' resize handles and the drop line of a column moved;
+//   - on desktops, a horizontal scroll bar over the body's bottom edge
+//     that moves the table's horizontal scroll view, whose own bar lies at
+//     the end of a content as tall as all the rows.
+
+const (
+	// stripHeight is the desktops' horizontal scroll bar's band.
+	stripHeight = 12
+	// dropLine is the drop line's width.
+	dropLine = 2
+	// stripEcho is how long after a move of one of the two horizontal
+	// scroll views the other's moves are its echoes.
+	stripEcho = 250 * time.Millisecond
+)
+
+// Render implements core.Node.
+func (p DataTable) Render(cx *core.Scope) core.Node {
+	t := newDataTable(cx, p)
+	font := t.font()
+	root := core.Style{Overflow: core.Hidden, FontSize: font.Size, FontFamily: font.Family}.Merge(p.Style)
+	return core.View{
+		Role: core.RoleGrid, Label: p.Label, TestID: p.TestID, Style: root, StyleFunc: p.StyleFunc,
+		Children: []core.Node{core.View{
+			// The frame is the padding box: the layers lie in it, and its
+			// size is the viewport's.
+			Style:    fill0(),
+			OnLayout: func(b core.Bounds) { t.viewport.Set(b.Size) },
+			Children: []core.Node{
+				t.hitLayer(),
+				t.body(),
+				t.header(),
+				t.strip(),
+				t.overlays(),
+				core.Show{When: t.focused.Get, Then: func(cx *core.Scope) core.Node {
+					t.keys(cx)
+					return core.Group{}
+				}},
+			},
+		}},
+	}
+}
+
+// fill0 is an absolute view over its parent.
+func fill0() core.Style {
+	z := core.Pt(0)
+	return core.Style{Position: core.Absolute, Left: z, Top: z, Right: z, Bottom: z}
+}
+
+// px is a length of v points.
+func px[T float32 | float64 | int](v T) core.Length { return core.Pt(core.Points(v)) }
+
+// merge merges styles in order, later ones winning.
+func merge(styles ...core.Style) core.Style {
+	var out core.Style
+	for _, s := range styles {
+		if !s.IsZero() {
+			out = out.Merge(s)
+		}
+	}
+	return out
+}
+
+// contentWidth is the hit layer's box width, whole columns included.
+func (t *dataTable) contentWidth() float32 {
+	g := t.geo()
+	return g.lead + g.fixed + float32(g.x.extent())
+}
+
+// below is an absolute view under the header.
+func (t *dataTable) below() core.Style {
+	z := core.Pt(0)
+	return core.Style{Position: core.Absolute, Left: z, Right: z, Bottom: z, Top: px(t.geo().header)}
+}
+
+func (t *dataTable) hitLayer() core.Node {
+	p := t.p
+	behavior := core.ScrollBehavior{NoBounces: p.NoBounce}
+	pressed := func(e core.PressEvent) { t.press(t.hitAt(e.Position), e.Clicks, e.Modifiers) }
+	box := core.View{
+		StyleFunc: func() core.Style {
+			return core.Style{MinWidth: core.Pct(100), Width: px(t.contentWidth()), Height: px(t.geo().y.extent())}
+		},
+		OnPress: pressed,
+		// Tab stops at the table here: its keys follow.
+		OnFocus:       func() { t.focused.Set(true) },
+		OnBlur:        func() { t.focused.Set(false) },
+		OnHoverMove:   func(e core.HoverEvent) { t.hoverAt(e.Position) },
+		OnHoverOut:    func() { t.hover.Set(-1) },
+		OnContextMenu: func(e core.ContextMenuEvent) { t.contextMenu(t.hitAt(e.Position), e.PagePosition) },
+		TestID:        "data-table-hit",
+	}
+	return core.Scroll{
+		Ref: t.vscroll, TestID: "data-table-scroll", HideIndicator: p.NoScrollbar || p.NoVerticalScrollbar, Behavior: behavior,
+		StyleFunc: t.below,
+		OnScroll:  func(e core.ScrollEvent) { t.scrollY.Set(e.Offset.Y) },
+		Children: []core.Node{core.View{
+			Style:     core.Style{Direction: core.Row, AlignItems: core.AlignStretch},
+			StyleFunc: func() core.Style { return core.Style{Height: px(t.geo().y.extent())} },
+			Children: []core.Node{core.Scroll{
+				Horizontal: true, Ref: t.hscroll, HideIndicator: true, Behavior: behavior,
+				Style: core.Style{FlexGrow: 1},
+				OnScroll: func(e core.ScrollEvent) {
+					t.scrollX.Set(e.Offset.X)
+					// The desktops' bar follows, unless it leads.
+					if t.lead(false) {
+						t.stripRef.ScrollTo(core.Point{X: e.Offset.X}, false)
+					}
+				},
+				Children: []core.Node{box},
+			}},
+		}},
+	}
+}
+
+// lead reports whether a scroll of the strip (or of the table's
+// horizontal scroll view) leads, so the other follows it: the follower's
+// scroll events, which come after the moves that caused them, are echoes
+// for a moment after each of the leader's moves and are not sent back.
+func (t *dataTable) lead(strip bool) bool {
+	now := time.Now()
+	if t.leader != nil && *t.leader != strip && now.Sub(t.leaderAt) < stripEcho {
+		return false
+	}
+	t.leader, t.leaderAt = &strip, now
+	return true
+}
+
+// strip is the desktops' horizontal scroll bar: a band over the body's
+// bottom edge whose own scroll view the bar belongs to, moving the
+// table's.
+func (t *dataTable) strip() core.Node {
+	p := t.p
+	return core.Show{
+		When: func() bool {
+			g := t.geo()
+			return t.cx.Env().Desktop() && !p.NoScrollbar && !p.NoHorizontalScrollbar && g.x.extent() > g.x.viewport
+		},
+		Then: func(cx *core.Scope) core.Node {
+			z := core.Pt(0)
+			return core.Scroll{
+				Horizontal: true, Ref: t.stripRef, TestID: "data-table-scrollbar",
+				Style: core.Style{Position: core.Absolute, Left: z, Right: z, Bottom: z, Height: px(stripHeight)},
+				OnScroll: func(e core.ScrollEvent) {
+					if t.lead(true) && math.Abs(float64(e.Offset.X-t.scrollX.GetUntracked())) > 0.5 {
+						t.hscroll.ScrollTo(core.Point{X: e.Offset.X}, false)
+					}
+				},
+				Children: []core.Node{core.View{StyleFunc: func() core.Style {
+					return core.Style{Height: px(1), Width: px(t.contentWidth())}
+				}}},
+			}
+		},
+	}
+}
+
+// tableSlots are views made once and kept while the table scrolls, each
+// showing the item of the window whose index leaves its slot number when
+// divided by their count, the most the window has held.
+type tableSlots struct {
+	count  *core.Memo[int]
+	window *core.Memo[[2]int]
+}
+
+func newTableSlots(cx *core.Scope, window func() [2]int) tableSlots {
+	w := core.NewMemo(cx, window)
+	most := 0
+	count := core.NewMemo(cx, func() int {
+		r := w.Get()
+		most = max(most, r[1]-r[0])
+		return most
+	})
+	return tableSlots{count: count, window: w}
+}
+
+func (s tableSlots) list() []int {
+	out := make([]int, s.count.Get())
+	for i := range out {
+		out[i] = i
+	}
+	return out
+}
+
+func (s tableSlots) item(cx *core.Scope, slot int) *core.Memo[int] {
+	return core.NewMemo(cx, func() int {
+		w := s.window.Get()
+		return slotItem(slot, s.count.Get(), w[0], w[1])
+	})
+}
+
+// tableWindows are what the body's and the header's regions share: the
+// windows of rows and columns made and where they are placed from.
+type tableWindows struct {
+	rowSlots, colSlots tableSlots
+	// scrollCols and fixedCols are the defs of the scrolling columns made
+	// and of the fixed ones.
+	scrollCols, fixedCols *core.Memo[[]int]
+	// rowOrigin is the first row of the chunk rows are placed from;
+	// colOrigin the display index of the first scrolling column of its
+	// chunk, whence the scrolling columns are placed; span how far the made
+	// scrolling columns reach from it.
+	rowOrigin, colOrigin *core.Memo[int]
+	span                 *core.Memo[float32]
+}
+
+func (t *dataTable) windows(cx *core.Scope) tableWindows {
+	w := tableWindows{}
+	w.rowSlots = newTableSlots(cx, func() [2]int {
+		vs, ve := t.visibleRows()
+		s, e := t.rowsWin.Span(vs, ve, t.rowCount())
+		return [2]int{s, e}
+	})
+	w.scrollCols = core.NewMemoFunc(cx, func() []int {
+		vs, ve := t.visibleCols()
+		c := t.st.columns
+		if vs >= ve {
+			return nil
+		}
+		s, e := t.colsWin.Span(vs, ve, c.len())
+		var out []int
+		for d := max(s, c.fixed); d < e; d++ {
+			out = append(out, c.def(d))
+		}
+		return out
+	}, slices.Equal)
+	w.colSlots = newTableSlots(cx, func() [2]int {
+		defs := w.scrollCols.Get()
+		if len(defs) == 0 {
+			return [2]int{}
+		}
+		first := t.st.columns.displayOf(defs[0])
+		return [2]int{first, first + len(defs)}
+	})
+	w.fixedCols = core.NewMemoFunc(cx, func() []int {
+		t.layoutRev.Get()
+		return slices.Clone(t.st.columns.order[:t.st.columns.fixed])
+	}, slices.Equal)
+	w.rowOrigin = core.NewMemo(cx, func() int {
+		vs, _ := t.visibleRows()
+		return vs / rowChunk * rowChunk
+	})
+	w.colOrigin = core.NewMemo(cx, func() int {
+		vs, _ := t.visibleCols()
+		return max(vs/columnChunk*columnChunk, t.st.columns.fixed)
+	})
+	w.span = core.NewMemo(cx, func() float32 {
+		t.layoutRev.Get()
+		c := t.st.columns
+		from := c.startOf(w.colOrigin.Get())
+		end := 0.0
+		for _, def := range w.scrollCols.Get() {
+			d := c.displayOf(def)
+			end = math.Max(end, c.start(d)+float64(c.displayWidth(d)))
+		}
+		return float32(math.Max(end-from, 0))
+	})
+	return w
+}
+
+// tableRegion is which of the body's regions a row or a title is in.
+type tableRegion uint8
+
+const (
+	regionLead tableRegion = iota
+	regionFixed
+	regionScroll
+)
+
+func (t *dataTable) body() core.Node {
+	return core.Func(func(cx *core.Scope) core.Node {
+		w := t.windows(cx)
+		return core.View{
+			StyleFunc:     func() core.Style { return t.below().Merge(core.Style{Overflow: core.Hidden}) },
+			PointerEvents: core.PointerEventsNone,
+			Children: []core.Node{
+				t.region(regionScroll, w),
+				t.edge(false),
+				t.region(regionFixed, w),
+				t.region(regionLead, w),
+			},
+		}
+	})
+}
+
+// edge is the line at the fixed columns' trailing edge.
+func (t *dataTable) edge(inRow bool) core.Node {
+	return core.Show{
+		When: func() bool { return t.layoutRev.Get() > 0 && t.st.columns.fixed > 0 },
+		Then: func(cx *core.Scope) core.Node {
+			z := core.Pt(0)
+			return core.View{StyleFunc: func() core.Style {
+				g := t.geo()
+				x := g.lead + g.fixed - 1
+				if inRow {
+					x = g.fixed - 1
+				}
+				return core.Style{Position: core.Absolute, Top: z, Bottom: z, Width: px(1), Left: px(x)}.Merge(t.p.Styles.FixedEdge)
+			}}
+		},
+	}
+}
+
+// regionBox is a region's clipped box, from its left edge.
+func (t *dataTable) regionBox(which tableRegion) core.Style {
+	g := t.geo()
+	z := core.Pt(0)
+	s := core.Style{Position: core.Absolute, Top: z, Bottom: z, Overflow: core.Hidden}
+	switch which {
+	case regionLead:
+		s.Left, s.Width = z, px(g.lead)
+	case regionFixed:
+		s.Left, s.Width = px(g.lead), px(g.fixed)
+	default:
+		s.Left, s.Right = px(g.lead+g.fixed), z
+	}
+	return s
+}
+
+// scrollOrigin is where the scrolling region's columns are placed from,
+// scrolled, in whole points as layout rounds frames: at a fraction the
+// cells' texts would round to another point as it changes, and every
+// cell's frame would be sent again at each scroll frame.
+func (t *dataTable) scrollOrigin(w tableWindows) float32 {
+	g := t.geo()
+	return float32(math.Round(t.scrollStart(w.colOrigin.Get()) - g.cx))
+}
+
+func (t *dataTable) region(which tableRegion, w tableWindows) core.Node {
+	shown := func() bool {
+		switch which {
+		case regionLead:
+			return t.rowHeaderShown()
+		case regionFixed:
+			return t.layoutRev.Get() > 0 && t.st.columns.fixed > 0
+		}
+		return true
+	}
+	return core.Show{When: shown, Then: func(cx *core.Scope) core.Node {
+		return core.View{
+			StyleFunc: func() core.Style { return t.regionBox(which) },
+			Children: []core.Node{core.View{
+				StyleFunc: func() core.Style {
+					g := t.geo()
+					top := math.Round(float64(w.rowOrigin.Get())*float64(g.rowHeight) - g.cy)
+					s := core.Style{Position: core.Absolute, Top: px(top), Left: px(0)}
+					if which == regionScroll {
+						s.Left = px(t.scrollOrigin(w))
+					}
+					return s
+				},
+				Children: []core.Node{core.Each(w.rowSlots.list, func(slot int) int { return slot },
+					func(cx *core.Scope, slot func() int, _ func() int) core.Node {
+						return t.bodyRow(cx, w.rowSlots.item(cx, core.Untracked(cx, slot)), which, w)
+					})},
+			}},
+		}
+	}}
+}
+
+// rowParts is a row's style from its parts and its own RowStyle.
+func (t *dataTable) rowParts(cx *core.Scope, row *core.Memo[int]) func() core.Style {
+	s := &t.p.Styles
+	hovered := core.NewMemo(cx, func() bool { r := row.Get(); return r >= 0 && t.hover.Get() == r })
+	selected := core.NewMemo(cx, func() bool { return t.selection() == tableSel{kind: selRow, row: row.Get()} })
+	active := core.NewMemo(cx, func() bool {
+		t.dataRev.Get()
+		r := row.Get()
+		return r >= 0 && t.st.active && t.st.activeRow == r && t.st.activeCol < 0
+	})
+	return func() core.Style {
+		r := row.Get()
+		out := s.Row
+		if t.p.Stripe != nil && t.p.Stripe() && r%2 == 1 {
+			out = merge(out, s.RowOdd)
+		}
+		if hovered.Get() {
+			out = merge(out, s.RowHover)
+		}
+		if selected.Get() {
+			out = merge(out, s.RowSelected)
+		}
+		if active.Get() {
+			out = merge(out, s.RowActive)
+		}
+		if r >= 0 && t.p.RowStyle != nil {
+			out = merge(out, t.p.RowStyle(r))
+		}
+		return out
+	}
+}
+
+// pressRegion is the hit a press at x in a row of which region names.
+func (t *dataTable) rowHit(row int, which tableRegion, x core.Points, w tableWindows) tableHit {
+	h := tableHit{row: row, col: -1, lead: which == regionLead}
+	c := t.st.columns
+	d := -1
+	switch which {
+	case regionFixed:
+		d = c.displayAtTable(float64(x))
+	case regionScroll:
+		d = c.displayAtTable(c.startOf(w.colOrigin.GetUntracked()) + float64(x))
+	}
+	if d >= 0 {
+		h.col = c.def(d)
+	}
+	return h
+}
+
+func (t *dataTable) bodyRow(cx *core.Scope, row *core.Memo[int], which tableRegion, w tableWindows) core.Node {
+	parts := t.rowParts(cx, row)
+	selected := core.NewMemo(cx, func() bool { return t.selection() == tableSel{kind: selRow, row: row.Get()} })
+	var children []core.Node
+	switch which {
+	case regionLead:
+		children = []core.Node{t.rowNumber(row)}
+	case regionFixed:
+		// Above the row's background, below its cells: a selected cell's
+		// trailing border covers the fixed columns' edge.
+		children = []core.Node{t.edge(true), core.Each(w.fixedCols.Get, func(def int) int { return def },
+			func(cx *core.Scope, def func() int, _ func() int) core.Node {
+				d := core.Untracked(cx, def)
+				return t.cell(cx, row, core.NewMemo(cx, func() int { return d }), which, w)
+			})}
+	default:
+		children = []core.Node{core.Each(w.colSlots.list, func(slot int) int { return slot },
+			func(cx *core.Scope, slot func() int, _ func() int) core.Node {
+				display := w.colSlots.item(cx, core.Untracked(cx, slot))
+				def := core.NewMemo(cx, func() int {
+					d := display.Get()
+					t.layoutRev.Get()
+					if d < 0 || d >= t.st.columns.len() {
+						return -1
+					}
+					return t.st.columns.def(d)
+				})
+				return t.cell(cx, row, def, which, w)
+			})}
+	}
+	return core.View{
+		StyleFunc: func() core.Style {
+			r := row.Get()
+			s := core.Style{Position: core.Absolute, Left: px(0), Height: px(t.rowHeight()),
+				Top: px(float32(r-w.rowOrigin.Get()) * t.rowHeight())}
+			if r < 0 {
+				s.Display = core.DisplayNone
+			}
+			switch which {
+			case regionLead:
+				s.Width = px(t.geo().lead)
+			case regionFixed:
+				s.Width = px(t.geo().fixed)
+			default:
+				s.Width = px(w.span.Get())
+			}
+			return s.Merge(parts())
+		},
+		Role:     core.RoleRow,
+		Selected: selected.Get,
+		// The table is one stop of Tab, its hit layer.
+		NoFocus: true,
+		// The views of the cells take presses from assistive technology
+		// and tests; a pointer reaches the hit layer.
+		OnPress: func(e core.PressEvent) {
+			if r := row.GetUntracked(); r >= 0 {
+				t.press(t.rowHit(r, which, e.Position.X, w), max(e.Clicks, 1), e.Modifiers)
+			}
+		},
+		// A row's cells ask for their own menus.
+		OnContextMenu: func(e core.ContextMenuEvent) {
+			if r := row.GetUntracked(); r >= 0 {
+				t.contextMenu(tableHit{row: r, col: -1, lead: which == regionLead}, e.PagePosition)
+			}
+		},
+		Children: children,
+	}
+}
+
+// rowNumber is a row's number, in the row numbers' column.
+func (t *dataTable) rowNumber(row *core.Memo[int]) core.Node {
+	return core.View{
+		Style: fill0().Merge(core.Style{Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}).
+			Merge(t.p.Styles.RowHeader),
+		Children: []core.Node{core.Text{MaxLines: 1, ContentFunc: func() string {
+			if r := row.Get(); r >= 0 {
+				return fmt.Sprint(r + 1)
+			}
+			return ""
+		}}},
+	}
+}
+
+// column is def's definition, the zero column for none.
+func (t *dataTable) column(def int) DataTableColumn {
+	if def < 0 || def >= len(t.st.defs) {
+		return DataTableColumn{}
+	}
+	return t.st.defs[def]
+}
+
+func justify(a DataTableAlign) core.Justify {
+	switch a {
+	case AlignCenterColumn:
+		return core.JustifyCenter
+	case AlignEndColumn:
+		return core.JustifyEnd
+	}
+	return core.JustifyStart
+}
+
+func (t *dataTable) cell(cx *core.Scope, row, def *core.Memo[int], which tableRegion, w tableWindows) core.Node {
+	s := &t.p.Styles
+	type flags struct{ selected, columnSelected, active bool }
+	marks := core.NewMemo(cx, func() flags {
+		t.dataRev.Get()
+		r, d := row.Get(), def.Get()
+		if r < 0 || d < 0 {
+			return flags{}
+		}
+		sel := t.st.sel
+		return flags{selected: sel == tableSel{kind: selCell, row: r, col: d},
+			columnSelected: sel == tableSel{kind: selColumn, col: d},
+			active:         t.st.active && t.st.activeRow == r && t.st.activeCol == d}
+	})
+	text := func() string {
+		r, d := row.Get(), def.Get()
+		if r < 0 || d < 0 {
+			return ""
+		}
+		return t.cellText(r, d)
+	}
+	var content core.Node = core.Text{ContentFunc: text, MaxLines: 1, Style: core.Style{FlexShrink: 1, MinWidth: px(0)}}
+	if t.p.RenderCell != nil {
+		content = core.View{Style: core.Style{FlexGrow: 1, MinWidth: px(0)}, Children: []core.Node{t.p.RenderCell(cx, func() DataTableCell {
+			r, d := row.Get(), def.Get()
+			t.dataRev.Get()
+			sel := t.st.sel
+			return DataTableCell{Row: r, Column: d, Key: t.column(d).Key, Text: text(),
+				Selected: sel == tableSel{kind: selRow, row: r} || sel == tableSel{kind: selCell, row: r, col: d}}
+		})}}
+	}
+	return core.View{
+		OnContextMenu: func(e core.ContextMenuEvent) {
+			if r, d := row.GetUntracked(), def.GetUntracked(); r >= 0 && d >= 0 {
+				t.contextMenu(tableHit{row: r, col: d}, e.PagePosition)
+			}
+		},
+		Role:     core.RoleCell,
+		Selected: func() bool { f := marks.Get(); return f.selected || f.columnSelected },
+		StyleFunc: func() core.Style {
+			t.layoutRev.Get()
+			d := def.Get()
+			c := t.st.columns
+			z := core.Pt(0)
+			st := core.Style{Position: core.Absolute, Top: z, Bottom: z, Direction: core.Row, AlignItems: core.AlignCenter,
+				Overflow: core.Hidden}
+			if d < 0 || !c.hasDef(d) {
+				st.Display = core.DisplayNone
+				return st
+			}
+			origin := 0.0
+			if which == regionScroll {
+				origin = c.startOf(w.colOrigin.Get())
+			}
+			col := t.column(d)
+			st.Left, st.Width = px(c.start(c.displayOf(d))-origin), px(c.width(d))
+			st.JustifyContent = justify(col.Align)
+			f := marks.Get()
+			st = merge(st, s.Cell)
+			if f.columnSelected {
+				st = merge(st, s.CellColumnSelected)
+			}
+			if f.selected {
+				st = merge(st, s.CellSelected)
+			}
+			if f.active {
+				st = merge(st, s.CellActive)
+			}
+			st = merge(st, col.CellStyle)
+			if !col.PositiveStyle.IsZero() || !col.NegativeStyle.IsZero() {
+				switch cellSign(text()) {
+				case 1:
+					st = merge(st, col.PositiveStyle)
+				case -1:
+					st = merge(st, col.NegativeStyle)
+				}
+			}
+			return st
+		},
+		Children: []core.Node{content},
+	}
+}
+
+// groupCell is a label over the columns from to to, placed by display
+// index.
+type groupCell struct {
+	level    int
+	label    string
+	from, to int
+}
+
+// groupCells are the groups of every level the region shows: in the fixed
+// region those starting among the fixed columns, in the scrolling one
+// those overlapping the made columns.
+func (t *dataTable) groupCells(scroll bool, window []int, origin int) []groupCell {
+	if t.p.Groups == nil {
+		return nil
+	}
+	c := t.st.columns
+	fixed, n := c.fixed, c.len()
+	first, last := -1, -1
+	for _, def := range window {
+		d := c.displayOf(def)
+		if first < 0 {
+			first = d
+		}
+		last = max(last, d)
+	}
+	var out []groupCell
+	for level, groups := range t.p.Groups() {
+		at := 0
+		for _, g := range groups {
+			from, to := at, min(at+max(g.Span, 1), n)
+			at = to
+			if from >= n {
+				break
+			}
+			keep := from < fixed
+			if scroll {
+				low := origin
+				if first >= 0 {
+					low = min(first, origin)
+				}
+				keep = to > max(fixed, low) && last >= 0 && from <= last
+			}
+			if keep {
+				out = append(out, groupCell{level, g.Label, from, to})
+			}
+		}
+	}
+	return out
+}
+
+func (t *dataTable) header() core.Node {
+	return core.Func(func(cx *core.Scope) core.Node {
+		w := t.windows(cx)
+		z := core.Pt(0)
+		return core.View{
+			StyleFunc: func() core.Style {
+				return merge(core.Style{Position: core.Absolute, Top: z, Left: z, Right: z, Height: px(t.geo().header),
+					Overflow: core.Hidden}, t.p.Styles.Header)
+			},
+			Children: []core.Node{
+				t.headerRegion(regionScroll, w),
+				t.headerRegion(regionFixed, w),
+				core.Show{When: t.rowHeaderShown, Then: func(cx *core.Scope) core.Node {
+					return core.View{StyleFunc: func() core.Style {
+						return merge(core.Style{Position: core.Absolute, Top: z, Bottom: z, Left: z, Width: px(t.geo().lead)},
+							t.p.Styles.RowHeaderCorner)
+					}}
+				}},
+				t.moveLine(),
+			},
+		}
+	})
+}
+
+func (t *dataTable) headerRowHeightNow() float32 { return t.geo().header / float32(t.headerLevels()) }
+
+func (t *dataTable) headerRegion(which tableRegion, w tableWindows) core.Node {
+	shown := func() bool { return which != regionFixed || t.layoutRev.Get() > 0 && t.st.columns.fixed > 0 }
+	return core.Show{When: shown, Then: func(cx *core.Scope) core.Node {
+		groups := core.NewMemoFunc(cx, func() []groupCell {
+			t.layoutRev.Get()
+			return t.groupCells(which == regionScroll, w.scrollCols.Get(), w.colOrigin.Get())
+		}, slices.Equal)
+		list := w.scrollCols
+		if which == regionFixed {
+			list = w.fixedCols
+		}
+		z := core.Pt(0)
+		return core.View{
+			StyleFunc: func() core.Style {
+				g := t.geo()
+				s := core.Style{Position: core.Absolute, Top: z, Bottom: z, Overflow: core.Hidden, Left: px(g.lead)}
+				if which == regionScroll {
+					s.Left, s.Right = px(g.lead+g.fixed), z
+				} else {
+					s.Width = px(g.fixed)
+				}
+				return s
+			},
+			Children: []core.Node{core.View{
+				StyleFunc: func() core.Style {
+					s := core.Style{Position: core.Absolute, Top: z, Bottom: z, Left: z}
+					if which == regionScroll {
+						s.Left = px(t.scrollOrigin(w))
+					}
+					return s
+				},
+				Children: []core.Node{
+					core.Each(groups.Get, func(g groupCell) [2]int { return [2]int{g.level, g.from} },
+						func(cx *core.Scope, g func() groupCell, _ func() int) core.Node {
+							return t.groupCell(core.Untracked(cx, g), which, w)
+						}),
+					core.Each(list.Get, func(def int) int { return def },
+						func(cx *core.Scope, def func() int, _ func() int) core.Node {
+							return t.titleCell(cx, core.Untracked(cx, def), which, w)
+						}),
+				},
+			}},
+		}
+	}}
+}
+
+func (t *dataTable) groupCell(g groupCell, which tableRegion, w tableWindows) core.Node {
+	return core.View{
+		StyleFunc: func() core.Style {
+			t.layoutRev.Get()
+			levels := t.headerLevels()
+			h := t.headerRowHeightNow()
+			c := t.st.columns
+			origin := 0.0
+			if which == regionScroll {
+				origin = c.startOf(w.colOrigin.Get())
+			}
+			// The lowest level first: it is the one above the titles.
+			top := h * float32(levels-2-min(g.level, levels-2))
+			return merge(core.Style{Position: core.Absolute, Top: px(top), Height: px(h),
+				Left: px(c.startOf(g.from) - origin), Width: px(c.startOf(g.to) - c.startOf(g.from)),
+				Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
+				Overflow: core.Hidden}, t.p.Styles.GroupCell)
+		},
+		Children: []core.Node{core.Text{Content: g.label, MaxLines: 1}},
+	}
+}
+
+func (t *dataTable) titleCell(cx *core.Scope, def int, which tableRegion, w tableWindows) core.Node {
+	s := &t.p.Styles
+	col := t.column(def)
+	sorted := core.NewMemo(cx, func() DataTableSort {
+		if t.p.Sort == nil {
+			return DataTableSort{}
+		}
+		if sort := t.p.Sort(); sort.Key == col.Key && col.Key != "" {
+			return sort
+		}
+		return DataTableSort{}
+	})
+	selected := core.NewMemo(cx, func() bool { return t.selection() == tableSel{kind: selColumn, col: def} })
+	dragging := core.NewMemo(cx, func() bool {
+		d := t.drag.Get()
+		return d.moving && t.st.columns.hasDef(def) && t.st.columns.displayOf(def) == d.from
+	})
+	moved := false
+	responder := &core.Responder{
+		Keep: true,
+		Claims: []core.TouchClaim{{OnMove: true, Ask: func(e core.ResponderEvent) bool {
+			dx, dy := math.Abs(float64(e.Gesture.Delta.X)), math.Abs(float64(e.Gesture.Delta.Y))
+			// A drag from the resize handle's band resizes.
+			start := float32(e.Position.X - e.Gesture.Delta.X)
+			if t.resizing == def || t.resizable(def) && start > t.st.columns.width(def)-float32(handleBand) {
+				return false
+			}
+			return dx > moveSlop && dx > dy && t.movable(def)
+		}}},
+		OnGrant: func(core.ResponderEvent) {
+			moved = true
+			if t.st.columns.hasDef(def) {
+				t.moveStart(t.st.columns.displayOf(def))
+			}
+		},
+		OnMove: func(e core.ResponderEvent) {
+			g := t.untrackedGeo()
+			c := t.st.columns
+			d := c.displayOf(def)
+			at := g.lead + float32(c.start(d))
+			if d >= c.fixed {
+				at -= float32(g.cx)
+			}
+			t.moveTo(at+float32(e.Position.X), float32(e.Gesture.Delta.X))
+		},
+		OnRelease:   func(core.ResponderEvent) { t.moveEnd(true) },
+		OnTerminate: func(core.ResponderEvent) { t.moveEnd(false) },
+	}
+	var label core.Node
+	if t.p.RenderHeaderCell != nil {
+		label = core.View{Style: core.Style{FlexGrow: 1, MinWidth: px(0)}, Children: []core.Node{t.p.RenderHeaderCell(cx, func() DataTableHeaderCell {
+			sort := sorted.Get()
+			return DataTableHeaderCell{Column: def, Key: col.Key, Title: t.title(def), Sorted: sort.Key != "",
+				Descending: sort.Descending, Selected: selected.Get()}
+		})}}
+	} else {
+		align := core.TextAlignStart
+		switch col.Align {
+		case AlignCenterColumn:
+			align = core.TextAlignCenter
+		case AlignEndColumn:
+			align = core.TextAlignEnd
+		}
+		// The title takes the room the sort button leaves, aligned as the
+		// column's cells.
+		label = core.Text{Content: col.title(), MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: px(0), TextAlign: align}}
+	}
+	content := []core.Node{label}
+	if col.Sortable {
+		content = append(content, t.sortButton(def, sorted))
+	}
+	children := []core.Node{core.View{
+		Style:    merge(core.Style{FlexGrow: 1, Direction: core.Row, AlignItems: core.AlignCenter, MinWidth: px(0)}, s.HeaderContent),
+		Children: content,
+	}}
+	if t.resizable(def) {
+		children = append(children, ResizeHandle{
+			Axis: Horizontal, Edge: HandleTrailing, TestID: "resize:" + col.Key,
+			OnDragStart: func() { t.resizeStart(def) },
+			OnDragMove:  t.resizeMove,
+			OnDragEnd:   t.resizeEnd,
+			Style:       merge(core.Style{Width: px(1)}, s.ResizeHandle),
+		})
+	}
+	return core.View{
+		Role:     core.RoleColumnHeader,
+		Selected: selected.Get,
+		NoFocus:  true,
+		StyleFunc: func() core.Style {
+			t.layoutRev.Get()
+			c := t.st.columns
+			if !c.hasDef(def) {
+				return core.Style{Display: core.DisplayNone}
+			}
+			levels := t.headerLevels()
+			h := t.headerRowHeightNow()
+			origin := 0.0
+			if which == regionScroll {
+				origin = c.startOf(w.colOrigin.Get())
+			}
+			st := core.Style{Position: core.Absolute, Top: px(h * float32(levels-1)), Height: px(h),
+				Left: px(c.start(c.displayOf(def)) - origin), Width: px(c.width(def)), Direction: core.Row,
+				AlignItems: core.AlignCenter, Overflow: core.Hidden, JustifyContent: justify(col.Align)}
+			st = merge(st, s.HeaderCell)
+			if sorted.Get().Key != "" {
+				st = merge(st, s.HeaderCellSorted)
+			}
+			if selected.Get() {
+				st = merge(st, s.HeaderCellSelected)
+			}
+			if dragging.Get() {
+				st = merge(st, s.HeaderCellDragging)
+			}
+			return merge(st, col.HeaderStyle)
+		},
+		OnPress: func(e core.PressEvent) {
+			// A drag that moved the column is not a press.
+			if moved {
+				moved = false
+				return
+			}
+			t.headerPress(def, max(e.Clicks, 1))
+		},
+		OnContextMenu: func(e core.ContextMenuEvent) { t.contextMenu(tableHit{row: -1, col: def}, e.PagePosition) },
+		Responder:     responder,
+		Children:      children,
+	}
+}
+
+// sortButton is the button at the end of a sortable title, which asks for
+// the next sort; the app styles it and its two chevrons.
+func (t *dataTable) sortButton(def int, sorted *core.Memo[DataTableSort]) core.Node {
+	s := &t.p.Styles
+	const k = float32(12.0 / 24.0)
+	chevron := func(pts [6]float32, descending bool, style core.Style) core.Node {
+		return core.View{
+			Style: merge(fill0(), style),
+			Selected: func() bool {
+				sort := sorted.Get()
+				return sort.Key != "" && sort.Descending == descending
+			},
+			PointerEvents:             core.PointerEventsNone,
+			ImportantForAccessibility: core.ImportantNoHideDescendants,
+			Children: []core.Node{core.Canvas{Style: fill0(), Draw: func(d *core.Drawing, _ core.Size) {
+				d.StrokeFromView(core.PaintCurrentColor).SetLineWidth(2*k).SetLineCap(core.CapRound).SetLineJoin(core.JoinRound).
+					BeginPath().MoveTo(pts[0]*k, pts[1]*k).LineTo(pts[2]*k, pts[3]*k).LineTo(pts[4]*k, pts[5]*k).Stroke()
+			}}},
+		}
+	}
+	return core.View{
+		Role: core.RoleButton, Label: "Sort by " + t.title(def), TestID: "sort:" + t.column(def).Key, NoFocus: true,
+		Style: merge(core.Style{FlexShrink: 0, Width: px(sortWidth), Height: px(sortWidth), AlignItems: core.AlignCenter,
+			JustifyContent: core.JustifyCenter, Cursor: core.CursorPointer}, s.SortIndicator),
+		OnPress: func(core.PressEvent) { t.sortNext(def) },
+		Children: []core.Node{core.View{Style: core.Style{Width: px(12), Height: px(12)}, Children: []core.Node{
+			chevron([6]float32{7, 9, 12, 4, 17, 9}, false, s.SortAscending),
+			chevron([6]float32{7, 15, 12, 20, 17, 15}, true, s.SortDescending),
+		}}},
+	}
+}
+
+// moveLine is the line where a dragged column will drop.
+func (t *dataTable) moveLine() core.Node {
+	return core.Show{When: func() bool { return t.drag.Get().moving }, Then: func(cx *core.Scope) core.Node {
+		z := core.Pt(0)
+		return core.View{StyleFunc: func() core.Style {
+			d := t.drag.Get()
+			t.layoutRev.Get()
+			g := t.geo()
+			c := t.st.columns
+			// At the target's trailing edge when moving right.
+			display := d.to
+			if d.to > d.from {
+				display++
+			}
+			at := float32(c.startOf(display))
+			x := g.lead + at
+			if display > c.fixed {
+				x = max(g.lead+at-float32(g.cx), g.lead+g.fixed)
+			}
+			return merge(core.Style{Position: core.Absolute, Top: z, Bottom: z, Width: px(dropLine), Left: px(x - dropLine/2)},
+				t.p.Styles.MoveIndicator)
+		}}
+	}}
+}
+
+// overlays are Empty while there are no rows and LoadingView while
+// loading, over the rows.
+func (t *dataTable) overlays() core.Node {
+	loading := func() bool { return t.p.Loading != nil && t.p.Loading() }
+	var children []core.Node
+	if t.p.Empty != nil {
+		children = append(children, core.Show{When: func() bool { return t.rowCount() == 0 && !loading() },
+			Then: func(cx *core.Scope) core.Node {
+				return core.View{Style: merge(fill0(), core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
+					t.p.Styles.Empty), Children: []core.Node{t.p.Empty}}
+			}})
+	}
+	if t.p.LoadingView != nil {
+		children = append(children, core.Show{When: loading, Then: func(cx *core.Scope) core.Node {
+			return core.View{Style: fill0(), Children: []core.Node{t.p.LoadingView}}
+		}})
+	}
+	return core.View{StyleFunc: t.below, PointerEvents: core.PointerEventsBoxNone, Children: children}
+}

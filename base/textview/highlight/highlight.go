@@ -13,6 +13,7 @@ import (
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 
+	"github.com/oneo-me/nsgo/base/internal/syntax"
 	"github.com/oneo-me/nsgo/base/textview"
 	"github.com/oneo-me/nsgo/core"
 )
@@ -32,9 +33,9 @@ func New(cx *core.Scope) textview.Highlighter {
 	ready := core.NewSignal(cx, 0)
 	var pending sync.Map
 	return func(c textview.CodeBlock) []textview.Highlight {
-		palette := &light
+		palette := &syntax.Light
 		if env.Dark() {
-			palette = &dark
+			palette = &syntax.Dark
 		}
 		ready.Get()
 		toks, ok := cached(c.Language, c.Code)
@@ -77,87 +78,10 @@ func cheap(language string, size int) bool {
 	return ok && time.Duration(float64(v.(time.Duration))*float64(size)) < budget
 }
 
-// kind is a kind of token in code, as NSH's palette names them.
-type kind uint8
-
-const (
-	plain kind = iota
-	comment
-	keyword
-	str
-	number
-	title
-	attr
-	built
-	deletion
-	bold
-	italic
-	kinds
-)
-
-func color(c uint32) core.Style { return core.Style{Color: core.RGB(c)} }
-
-var (
-	light = [kinds]core.Style{
-		comment: {Color: core.RGB(0x6e7781), FontStyle: core.FontStyleItalic},
-		keyword: color(0x8250df), str: color(0x116329), number: color(0x953800), title: color(0x0550ae),
-		attr: color(0x7d4e00), built: color(0x0a7285), deletion: color(0xcf222e),
-		bold: {FontWeight: core.FontWeightBold}, italic: {FontStyle: core.FontStyleItalic},
-	}
-	dark = [kinds]core.Style{
-		comment: {Color: core.RGB(0x7d7a72), FontStyle: core.FontStyleItalic},
-		keyword: color(0xc4a7ff), str: color(0x9fd68a), number: color(0xf5b27a), title: color(0x82b8ff),
-		attr: color(0xf0c674), built: color(0x6fd3d8), deletion: color(0xf87171),
-		bold: {FontWeight: core.FontWeightBold}, italic: {FontStyle: core.FontStyleItalic},
-	}
-)
-
-// kindOf maps chroma's token types to the palette's kinds.
-func kindOf(t chroma.TokenType) kind {
-	switch t {
-	case chroma.KeywordType, chroma.NameBuiltin, chroma.NameTag:
-		return built
-	case chroma.KeywordConstant, chroma.NameConstant:
-		return number
-	case chroma.OperatorWord, chroma.GenericHeading, chroma.GenericSubheading:
-		return keyword
-	case chroma.NameFunction, chroma.NameClass, chroma.NameException, chroma.NameDecorator, chroma.NameNamespace:
-		return title
-	case chroma.NameAttribute, chroma.NameProperty, chroma.NameBuiltinPseudo, chroma.NameVariable,
-		chroma.NameVariableInstance, chroma.NameVariableGlobal, chroma.NameVariableClass, chroma.NameLabel:
-		return attr
-	case chroma.GenericDeleted:
-		return deletion
-	case chroma.GenericInserted:
-		return str
-	case chroma.GenericStrong:
-		return bold
-	case chroma.GenericEmph:
-		return italic
-	}
-	switch t.Category() {
-	case chroma.Comment:
-		return comment
-	case chroma.Keyword:
-		return keyword
-	case chroma.LiteralString:
-		return str
-	case chroma.LiteralNumber:
-		return number
-	}
-	if t.SubCategory() == chroma.LiteralString {
-		return str
-	}
-	if t.SubCategory() == chroma.LiteralNumber {
-		return number
-	}
-	return plain
-}
-
 // token is a run of code of one kind, in bytes.
 type token struct {
 	start, end int
-	kind       kind
+	kind       syntax.Kind
 }
 
 // cache keeps the tokens of the last blocks lexed, for every view in the
@@ -231,7 +155,7 @@ func lex(language, code string) []token {
 	at := 0
 	for t := it(); t != chroma.EOF; t = it() {
 		end := at + len(t.Value)
-		if k := kindOf(t.Type); k != plain && end <= len(code) {
+		if k := syntax.KindOf(t.Type); k != syntax.Plain && end <= len(code) {
 			if n := len(out); n > 0 && out[n-1].kind == k && out[n-1].end == at {
 				out[n-1].end = end
 			} else {

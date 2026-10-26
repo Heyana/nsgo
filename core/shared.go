@@ -601,6 +601,14 @@ const (
 	RoleAlert       = driver.RoleAlert
 	RoleAdjustable  = driver.RoleAdjustable
 	RoleProgressBar = driver.RoleProgressBar
+	// RoleTable and RoleGrid are a table and an interactive one, around
+	// RoleRowGroup, RoleRow, RoleColumnHeader and RoleCell.
+	RoleTable        = driver.RoleTable
+	RoleGrid         = driver.RoleGrid
+	RoleRowGroup     = driver.RoleRowGroup
+	RoleRow          = driver.RoleRow
+	RoleColumnHeader = driver.RoleColumnHeader
+	RoleCell         = driver.RoleCell
 )
 
 const (

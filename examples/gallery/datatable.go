@@ -1,0 +1,424 @@
+package main
+
+import (
+	"fmt"
+	"math"
+	"math/rand/v2"
+	"time"
+
+	"github.com/oneo-me/nsgo/base"
+	"github.com/oneo-me/nsgo/core"
+)
+
+// base's DataTable over a million stocks of sixty columns the app does
+// not hold, with live quotes as gpui-component's data table story: a tick
+// every 33 ms moves a third of the quotes in view. The table reports the
+// rows in view (OnVisibleRowsChange), the app formats those and a reach
+// around them, and Text reads them, so a scroll or a tick costs what is on
+// screen, whatever the number of rows. Rises and falls take their colors
+// from the columns' PositiveStyle and NegativeStyle. Sorting is the app's:
+// the table reports the next sort, the app orders what it serves and sets
+// Sort.
+
+const (
+	stockRows = 1_000_000
+	stockTick = 33 * time.Millisecond
+	// stockPage is the rows formatted and held; a scroll serves another
+	// page when the rows in view come within stockMargin of its edge.
+	stockPage   = 120
+	stockMargin = 10
+	indicators  = 39
+)
+
+var counters = [][3]string{
+	{"AAPL", "Apple", "US"}, {"MSFT", "Microsoft", "US"}, {"NVDA", "NVIDIA", "US"}, {"TSLA", "Tesla", "US"},
+	{"AMZN", "Amazon", "US"}, {"GOOG", "Alphabet", "US"}, {"META", "Meta", "US"}, {"0700.HK", "Tencent", "HK"},
+	{"9988.HK", "Alibaba", "HK"}, {"3690.HK", "Meituan", "HK"}, {"1810.HK", "Xiaomi", "HK"},
+	{"600519.SH", "Moutai", "CN"}, {"300750.SZ", "CATL", "CN"}, {"D05.SI", "DBS", "SG"},
+}
+
+// stockQuote is a stock's numbers.
+type stockQuote struct {
+	price, change, percent, volume, turnover, cap, ttm, bid, bidVolume, ask, askVolume,
+	open, prevClose, high, low, shares, ratio, ranking float64
+}
+
+func compactQuote(v float64) string {
+	a := math.Abs(v)
+	switch {
+	case a >= 1e12:
+		return fmt.Sprintf("%.2fT", v/1e12)
+	case a >= 1e9:
+		return fmt.Sprintf("%.2fB", v/1e9)
+	case a >= 1e6:
+		return fmt.Sprintf("%.2fM", v/1e6)
+	case a >= 1e3:
+		return fmt.Sprintf("%.2fK", v/1e3)
+	}
+	return fmt.Sprintf("%.2f", v)
+}
+
+func signedQuote(v float64, unit string) string {
+	s := fmt.Sprintf("%.2f%s", v, unit)
+	if v > 0 {
+		return "+" + s
+	}
+	return s
+}
+
+// stockHash is a number in [0, 1) fixed by id and k: a stock's quote
+// before it ticks.
+func stockHash(id, k int) float64 {
+	x := uint32(id+1)*0x9e3779b1 ^ uint32(k+1)*0x85ebca6b
+	x = (x ^ x>>16) * 0x45d9f3b
+	x = (x ^ x>>16) * 0x45d9f3b
+	return float64(x^x>>16) / 4294967296
+}
+
+// requote sets q from r, random numbers in [0, 1) by field.
+func (q *stockQuote) requote(r func(k int) float64) {
+	q.percent = (r(0) - 0.5) * 0.2
+	q.price = 5 + r(1)*994
+	q.change = q.price * q.percent
+	q.prevClose = q.price - q.change
+	q.volume = 1e4 + r(2)*5e7
+	q.turnover = q.volume * q.price
+	q.cap = q.price * q.shares
+	q.ttm = 5 + r(3)*75
+	q.bid = q.price * (1 - r(4)*0.01)
+	q.bidVolume = 100 + r(5)*5e4
+	q.ask = q.price * (1 + r(6)*0.01)
+	q.askVolume = 100 + r(7)*5e4
+	q.ratio = q.bidVolume / q.askVolume
+	q.high = q.price * (1 + r(8)*0.08)
+	q.low = q.price * (1 - r(9)*0.08)
+	q.ranking = 1 + r(10)*100
+}
+
+// openingQuote is stock id's quote as it opened: the same every time.
+func openingQuote(id int) *stockQuote {
+	q := &stockQuote{shares: 1e8 + stockHash(id, 20)*1e10, open: 5 + stockHash(id, 21)*994}
+	q.requote(func(k int) float64 { return stockHash(id, k) })
+	return q
+}
+
+var stockColumns = func() []base.DataTableColumn {
+	right := func(key, title string) base.DataTableColumn {
+		return base.DataTableColumn{Key: key, Title: title, Width: 110, Align: base.AlignEndColumn}
+	}
+	cols := []base.DataTableColumn{
+		{Key: "id", Title: "ID", Width: 90, Align: base.AlignEndColumn, Fixed: true, Sortable: true},
+		{Key: "symbol", Title: "Symbol", Width: 110, Fixed: true},
+		{Key: "name", Title: "Name", Width: 150},
+		{Key: "market", Title: "Market", Width: 80},
+		right("price", "Price"), right("change", "Chg"), right("percent", "Chg%"), right("volume", "Volume"),
+		right("turnover", "Turnover"), right("cap", "Market Cap"), right("ttm", "TTM"), right("bid", "Bid"),
+		right("bidVolume", "Bid Vol"), right("ask", "Ask"), right("askVolume", "Ask Vol"), right("open", "Open"),
+		right("prevClose", "Prev Close"), right("high", "High"), right("low", "Low"), right("ratio", "Bid/Ask"),
+		right("ranking", "5m Ranking"),
+	}
+	for i := range indicators {
+		cols = append(cols, right(fmt.Sprint("x", i+1), fmt.Sprint("Indicator ", i+1)))
+	}
+	return cols
+}()
+
+// toned are the columns whose rises and falls take colors.
+func toned(key string) bool {
+	return key == "change" || key == "percent" || len(key) > 1 && key[0] == 'x'
+}
+
+// quoteRow is the cells of stock id's row with quote q, in the columns'
+// order.
+func quoteRow(id int, q *stockQuote) []string {
+	c := counters[id%len(counters)]
+	f := func(v float64) string { return fmt.Sprintf("%.2f", v) }
+	out := []string{itoa(id + 1), c[0], fmt.Sprint(c[1], " ", id+1), c[2], f(q.price), signedQuote(q.change, ""),
+		signedQuote(q.percent*100, "%"), compactQuote(q.volume), compactQuote(q.turnover), compactQuote(q.cap), f(q.ttm),
+		f(q.bid), compactQuote(q.bidVolume), f(q.ask), compactQuote(q.askVolume), f(q.open), f(q.prevClose),
+		f(q.high), f(q.low), f(q.ratio), fmt.Sprintf("%.1f", q.ranking)}
+	// Indicators move with the change, each by a share of its own.
+	for i := range indicators {
+		sign := -1.0
+		if i%2 == 1 {
+			sign = 1
+		}
+		out = append(out, signedQuote(q.percent*100*sign*(0.25+float64(i%7)*0.2), "%"))
+	}
+	return out
+}
+
+// stockPageRows is the rows formatted and held, from start.
+type stockPageRows struct {
+	start int
+	rows  [][]string
+}
+
+// tableStyles is the gallery's table look; base has none.
+func tableStyles() base.DataTableStyles {
+	selected := &core.Style{Color: colors.text, Opacity: core.Alpha(1)}
+	chevron := core.Style{Color: colors.muted, Opacity: core.Alpha(0.6), Selected: selected}
+	return base.DataTableStyles{
+		Header:             core.Style{Background: alpha(colors.inset, 0.5), Color: colors.muted, Borders: core.Edges{Bottom: 1}, BorderColor: colors.border},
+		HeaderCell:         core.Style{Padding: core.Edges{Left: 8, Right: 4}},
+		HeaderContent:      core.Style{Gap: 4},
+		HeaderCellSelected: core.Style{Background: alpha(colors.accent, 0.10)},
+		HeaderCellDragging: core.Style{Opacity: core.Alpha(0.5)},
+		GroupCell:          core.Style{Borders: core.Edges{Bottom: 1, Right: 1}, BorderColor: colors.border, Padding: core.Symmetric(0, 8)},
+		SortIndicator:      core.Style{CornerRadius: 4, Color: colors.muted, Hover: &core.Style{Background: alpha(colors.text, 0.10)}},
+		SortAscending:      chevron,
+		SortDescending:     chevron,
+		ResizeHandle:       core.Style{Background: colors.border},
+		MoveIndicator:      core.Style{Background: colors.accent},
+		Row:                core.Style{Borders: core.Edges{Bottom: 1}, BorderColor: alpha(colors.border, 0.6)},
+		RowOdd:             core.Style{Background: alpha(colors.inset, 0.35)},
+		RowHover:           core.Style{Background: alpha(colors.inset, 0.6)},
+		RowSelected:        core.Style{Background: alpha(colors.accent, 0.12)},
+		RowActive:          core.Style{Background: alpha(colors.inset, 0.6)},
+		Cell:               core.Style{Padding: core.Symmetric(0, 8)},
+		CellSelected:       core.Style{BorderWidth: 1, BorderColor: colors.accent},
+		CellColumnSelected: core.Style{Background: alpha(colors.accent, 0.08)},
+		CellActive:         core.Style{BorderWidth: 1, BorderColor: alpha(colors.accent, 0.5)},
+		RowHeader:          core.Style{Color: colors.muted},
+		FixedEdge:          core.Style{Background: colors.border},
+	}
+}
+
+// dataTableDemo is a million stocks of sixty columns whose quotes in view
+// tick every 33 ms, the ID and Symbol columns fixed at the left, the ID
+// column sortable, rows, cells or columns selected, columns resized and
+// moved.
+func dataTableDemo(cx *core.Scope) core.Node {
+	mode := core.NewSignal(cx, "row")
+	sort := core.NewSignal(cx, base.DataTableSort{})
+	page := core.NewSignalFunc(cx, stockPageRows{}, func(a, b stockPageRows) bool { return false })
+	selection := core.NewSignal(cx, base.NoTableSelection)
+	visible := core.NewSignal(cx, [2]int{})
+	stripe, live, ticks := core.NewSignal(cx, true), core.NewSignal(cx, true), core.NewSignal(cx, 0)
+	table := &base.DataTableRef{}
+	around := [2]int{0, 40}
+	// The quotes that ticked, by stock: those of the page held. The others
+	// show how they opened.
+	quotes := map[int]*stockQuote{}
+	descending := func() bool { s := sort.GetUntracked(); return s.Key == "id" && s.Descending }
+	stockAt := func(at int) int {
+		if descending() {
+			return stockRows - 1 - at
+		}
+		return at
+	}
+	quoteOf := func(id int) *stockQuote {
+		if q, ok := quotes[id]; ok {
+			return q
+		}
+		return openingQuote(id)
+	}
+	// serve formats the page around the rows in view: the rows the page
+	// held keep their cells, the others are formatted (all when fresh, the
+	// order changed).
+	serve := func(fresh bool) {
+		span := around[1] - around[0]
+		start := max(0, min(stockRows-stockPage, around[0]-(stockPage-span)/2))
+		held := page.GetUntracked()
+		rows := make([][]string, 0, stockPage)
+		for at := start; at < min(stockRows, start+stockPage); at++ {
+			if i := at - held.start; !fresh && i >= 0 && i < len(held.rows) {
+				rows = append(rows, held.rows[i])
+				continue
+			}
+			id := stockAt(at)
+			rows = append(rows, quoteRow(id, quoteOf(id)))
+		}
+		page.Set(stockPageRows{start, rows})
+		// Quotes off the page go back to how they opened, so the app holds
+		// what is near the view only.
+		for id := range quotes {
+			at := id
+			if descending() {
+				at = stockRows - 1 - id
+			}
+			if at < start || at >= start+stockPage {
+				delete(quotes, id)
+			}
+		}
+	}
+	follow := func() {
+		held := page.GetUntracked()
+		end := held.start + len(held.rows)
+		nearStart := held.start > 0 && around[0] < held.start+stockMargin
+		nearEnd := end < stockRows && around[1] > end-stockMargin
+		if nearStart || nearEnd || around[0] < held.start || around[1] > end {
+			serve(false)
+		}
+	}
+	// A third of the rows held move, as in gpui-component's story, and
+	// only those are formatted again.
+	stop := every(cx, stockTick, func() {
+		if !live.GetUntracked() {
+			return
+		}
+		held := page.GetUntracked()
+		rows := append([][]string(nil), held.rows...)
+		for i := range rows {
+			at := held.start + i
+			if at%(3+rand.IntN(7)) != 0 {
+				continue
+			}
+			id := stockAt(at)
+			q, ok := quotes[id]
+			if !ok {
+				q = openingQuote(id)
+				quotes[id] = q
+			}
+			q.requote(func(int) float64 { return rand.Float64() })
+			rows[i] = quoteRow(id, q)
+		}
+		page.Set(stockPageRows{held.start, rows})
+		ticks.Update(func(n int) int { return n + 1 })
+	})
+	cx.Cleanup(func() { stop() })
+	serve(false)
+
+	columns := make([]base.DataTableColumn, len(stockColumns))
+	for i, c := range stockColumns {
+		c.FitPadding = 16
+		if toned(c.Key) {
+			c.PositiveStyle, c.NegativeStyle = core.Style{Color: colors.up}, core.Style{Color: colors.down}
+		}
+		columns[i] = c
+	}
+	describe := func() string {
+		s := selection.Get()
+		switch {
+		case s.Row >= 0 && s.Column >= 0:
+			return fmt.Sprintf("Cell row %d, %s", s.Row+1, columns[s.Column].Title)
+		case s.Row >= 0:
+			return fmt.Sprintf("Row %d", s.Row+1)
+		case s.Column >= 0:
+			return "Column " + columns[s.Column].Title
+		}
+		return "Nothing selected"
+	}
+	status := func(fn func() string, c core.Color) core.Node {
+		return core.Text{ContentFunc: fn, Style: core.Style{FontFamily: mono, FontSize: 12, Color: c}}
+	}
+	pad := core.Points(16)
+	if shell.desktop() {
+		pad = 24
+	}
+	onOff := func(name string, on *core.Signal[bool]) func() string {
+		return func() string {
+			if on.Get() {
+				return name + " on"
+			}
+			return name + " off"
+		}
+	}
+	toggle := func(s *core.Signal[bool]) func() { return func() { s.Set(!s.GetUntracked()) } }
+	return core.View{Style: fillPage.Merge(core.Style{Background: colors.background, Padding: core.All(pad), Gap: 12}), Children: []core.Node{
+		core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, AlignItems: core.AlignCenter, Gap: 12}, Children: []core.Node{
+			core.View{Style: core.Style{Width: core.Pt(260)}, Children: []core.Node{
+				segmented([]option[string]{{value: "row", label: "Rows"}, {value: "cell", label: "Cells"}}, mode.Get,
+					func(v string) { mode.Set(v); selection.Set(base.NoTableSelection) }, true),
+			}},
+			core.Dynamic(func(cx *core.Scope) core.Node {
+				return tool("Toggle live updates", onOff("Live", live)(), nil, toggle(live))
+			}),
+			core.Dynamic(func(cx *core.Scope) core.Node {
+				return tool("Toggle stripes", onOff("Stripes", stripe)(), nil, toggle(stripe))
+			}),
+			tool("Go to row 500000", "Row 500,000", nil, func() { table.ScrollToRow(499_999, false) }),
+			tool("Go to Indicator 30", "Indicator 30", nil, func() { table.ScrollToColumn("x30", false) }),
+		}},
+		core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, AlignItems: core.AlignCenter, Gap: 12}, Children: []core.Node{
+			status(describe, colors.text),
+			status(func() string {
+				v := visible.Get()
+				return fmt.Sprintf("rows %d–%d of %s", v[0]+1, v[1], visitors(stockRows))
+			}, colors.muted),
+			status(func() string { return fmt.Sprintf("%d columns · tick %d", len(columns), ticks.Get()) }, colors.muted),
+		}},
+		base.DataTable{
+			Ref: table, TestID: "table", Label: "Stocks",
+			Columns:  func() []base.DataTableColumn { return columns },
+			RowCount: func() int { return stockRows },
+			Text: func(row, col int) string {
+				p := page.Get()
+				if i := row - p.start; i >= 0 && i < len(p.rows) && col < len(p.rows[i]) {
+					return p.rows[i][col]
+				}
+				return ""
+			},
+			RowHeight: 28, FontSize: 13, NoRowHeader: true,
+			Stripe:     stripe.Get,
+			CellSelect: func() bool { return mode.Get() == "cell" },
+			Sort:       sort.Get,
+			Styles:     tableStyles(),
+			Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0), CornerRadius: 8, BorderWidth: 1,
+				BorderColor: colors.border, Background: colors.background, Color: colors.text},
+			OnSortChange: func(next base.DataTableSort) {
+				sort.Set(next)
+				clear(quotes)
+				serve(true)
+			},
+			OnSelectionChange: selection.Set,
+			OnVisibleRowsChange: func(start, end int) {
+				visible.Set([2]int{start, end})
+				around = [2]int{start, end}
+				follow()
+			},
+		},
+	}}
+}
+
+// tableCard is base's Table around a few rows the app writes out, as NSH's
+// website shows it: the parts give screen readers a table, the styles its
+// look.
+func tableCard(cx *core.Scope) core.Node {
+	invoices := [][4]string{{"INV001", "Paid", "Card", "$250.00"}, {"INV002", "Pending", "Transfer", "$150.00"},
+		{"INV003", "Unpaid", "Card", "$350.00"}, {"INV004", "Paid", "Cash", "$450.00"}}
+	widths := []core.Length{core.Pt(84), {}, core.Pt(84), core.Pt(84)}
+	line := core.Style{Borders: core.Edges{Bottom: 1}, BorderColor: colors.line}
+	cell := func(i int, head, end bool, s string) core.Node {
+		st := core.Style{Padding: core.Symmetric(10, 12)}
+		if i == 1 {
+			st.FlexGrow, st.FlexShrink = 1, 1
+		} else {
+			st.Width = widths[i]
+		}
+		align := core.TextAlignStart
+		if end {
+			align = core.TextAlignEnd
+		}
+		c, w := colors.text, regular
+		if head {
+			c, w = colors.muted, medium
+		}
+		content := []core.Node{core.Text{Content: s, Style: core.Style{FontSize: 14, Color: c, FontWeight: w, TextAlign: align}}}
+		if head {
+			return base.TableHead{Style: st, Children: content}
+		}
+		return base.TableCell{Style: st, Children: content}
+	}
+	var body []core.Node
+	for _, inv := range invoices {
+		body = append(body, base.TableRow{Style: line, Children: []core.Node{
+			cell(0, false, false, inv[0]), cell(1, false, false, inv[1]), cell(2, false, false, inv[2]), cell(3, false, true, inv[3]),
+		}})
+	}
+	var head []core.Node
+	for i, title := range []string{"Invoice", "Status", "Method", "Amount"} {
+		head = append(head, cell(i, true, i == 3, title))
+	}
+	return card(cardProps{icon: iconLists, title: "Table", subtitle: "A few rows the app writes out, with a table's roles"},
+		base.Table{Label: "Recent invoices", Children: []core.Node{
+			base.TableHeader{Children: []core.Node{base.TableRow{Style: line, Children: head}}},
+			base.TableBody{Children: body},
+			base.TableFooter{Children: []core.Node{base.TableRow{Children: []core.Node{
+				cell(0, true, false, "Total"), cell(1, false, false, ""), cell(2, false, false, ""), cell(3, false, true, "$1,200.00"),
+			}}}},
+			base.TableCaption{Style: core.Style{Padding: core.Symmetric(8, 12)}, Children: []core.Node{
+				core.Text{Content: "A list of your recent invoices.", Style: core.Style{FontSize: 13, Color: colors.muted}},
+			}},
+		}})
+}

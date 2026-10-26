@@ -12,7 +12,7 @@
 - Add pointer, touch, focus, keyboard and gesture input, file drops, accessibility, storage and environment signals.
 - Add clipboard images and files, opening links, the photo picker, forced light or dark appearance and a disk cache for downloaded images.
 - Add custom title bars with placed or hidden window controls, window frames, levels and materials, and application and context menus in `desktop`, with scroll bars and a return from `nsgo.Run` on quit.
-- Add `base`: unstyled controls, popups, menus that become sheets on phones, dialogs, sheets, swipeable toasts, resizable panels, a dock and a streaming `TextView`.
+- Add `base`: unstyled controls, popups, menus that become sheets on phones, dialogs, sheets, swipeable toasts, resizable panels, a dock, charts, tables, a `DataTable` over a million rows, a streaming `TextView`, a code `Editor` and a `DiffView`.
 - Add embedding in other apps with `nsgo.NewView` on desktops and `nsgo build -embed` frameworks for iOS and Android, with a channel to the host.
 - Add `nsgotest` for app tests that act as a user does, headless or on every platform with its native input and screenshots.
 - Add the `nsgo` tool, which creates, runs with hot reload, tests, packages and signs apps for stores from `nsgo.yaml`, reporting each step and each package's build time and size.

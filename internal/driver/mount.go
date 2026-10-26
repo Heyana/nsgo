@@ -572,6 +572,16 @@ const (
 	RoleAdjustable
 	// RoleProgressBar shows progress, its Value a range.
 	RoleProgressBar
+	// RoleTable is a table of the app's rows; RoleGrid one whose cells
+	// the user selects and moves between. RoleRowGroup holds a header's,
+	// a body's or a footer's rows, RoleRow a row's cells, and
+	// RoleColumnHeader and RoleCell are a row's cells.
+	RoleTable
+	RoleGrid
+	RoleRowGroup
+	RoleRow
+	RoleColumnHeader
+	RoleCell
 )
 
 // ScrollConfig configures a scroll view.

@@ -1095,6 +1095,24 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 			})
 		}
 	}
+	if v.SpansFunc != nil {
+		cx.renderEffect(func() {
+			spans := v.SpansFunc()
+			same := len(spans) == len(n.text.spans) && n.text.prepared != nil
+			for i := 0; same && i < len(spans); i++ {
+				same = spans[i].Content == n.text.spans[i].content && reflect.DeepEqual(spans[i].Style, n.text.spans[i].style)
+			}
+			if same {
+				return
+			}
+			n.text.spans = n.text.spans[:0]
+			for _, sp := range spans {
+				n.text.spans = append(n.text.spans, spanNode{content: sp.Content, style: sp.Style})
+			}
+			n.text.stale = true
+			t.markResolve(n)
+		})
+	}
 	if v.ContentFunc != nil {
 		cx.renderEffect(func() {
 			if s := v.ContentFunc(); s != n.text.content || n.text.prepared == nil {

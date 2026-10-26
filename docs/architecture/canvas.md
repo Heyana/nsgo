@@ -28,6 +28,8 @@ A drawing answers without the platform, during `Draw` and after it, so `OnPress`
 
 `FillFromView`, `StrokeFromView`, `LineWidthFromView` and `LineDashFromView` record an operation whose value is the canvas view's SVG paint style ([styles](styles.md)), noted in `Drawing.ViewPaints` with the initial paint where no view sets one. The core resolves the inherited `Fill`, `Stroke`, `StrokeWidth` and `StrokeDash`, with `PaintCurrentColor` the view's text color, and sends `Drawing.Painted`: a change of them sends the drawing again without drawing it again, and no platform knows of them. A canvas that has drawn nothing sends no empty first drawing.
 
+`FillBackgroundFromView(area)` fills the current path with the view's own `Background` and `Gradients`, placed over `area` as over a box of that size, as CSS's `clip-path` shows a box's background: a chart's wash under its line. The recorder leaves a transparent fill the core expands into a fill per paint, the gradients turned into `CanvasGradient`s, and moves the slots after it along. The view is then sent without its background, so it is drawn once, inside the shape; a drawing with nothing to fill yet records the fill over an empty path so the box never shows.
+
 ## Animated arguments
 
 `Drawing.Bind(arg, node)` has the platform read argument `arg` (`ArgX` to `ArgColor`) of the last operation from an animated node. The drawing carries the bindings as `DrawSlot`s; the backend registers them with `Animator.BindCanvas` and, when `ChangedCanvases` reports a canvas, plays a copy from `CanvasOps` with the values patched in. The canvas redraws on the frame clock without a commit. Android's Java animator patches the encoded operations in place by their byte offsets.

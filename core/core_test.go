@@ -6,6 +6,7 @@ import (
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -961,6 +962,64 @@ func TestDrawingsPaintWithTheirViewsStyle(t *testing.T) {
 	}
 	if d.Ops[0].Color != 0 {
 		t.Fatalf("an unset fill painted %08x, want the initial none", d.Ops[0].Color)
+	}
+}
+
+func TestCanvasFillsShapesWithItsBackground(t *testing.T) {
+	var bg *Signal[Color]
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
+		bg = NewSignal(cx, RGB(0x00ff00))
+		return Canvas{
+			Style:     Style{Height: Pt(40), Gradients: []Gradient{{Angle: 180, Stops: []ColorStop{{Color: RGB(0xff0000)}, {Color: RGB(0x0000ff)}}}}},
+			StyleFunc: func() Style { return Style{Background: bg.Get()} },
+			Draw: func(d *Drawing, size Size) {
+				d.BeginPath().Rect(0, 0, 10, 10)
+				d.FillBackgroundFromView(Bounds{Origin: Point{X: 10, Y: 20}, Size: Size{Width: 40, Height: 20}})
+			},
+		}
+	})
+	b := h.commit()
+	var d *Drawing
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemCanvas {
+			d = it.Drawing
+		}
+	}
+	if d == nil {
+		t.Fatal("no drawing sent")
+	}
+	for _, vs := range viewStyles(b) {
+		if vs.Background != 0 || !vs.Effects.Empty() {
+			t.Fatalf("the view draws its background %08x %v, want it only inside the drawing's shapes", vs.Background, vs.Effects)
+		}
+	}
+	var fills []string
+	for _, op := range d.Ops {
+		switch op.Kind {
+		case driver.DrawFillGradient:
+			g := op.Gradient
+			fills = append(fills, fmt.Sprintf("gradient %v,%v-%v,%v", g.X1, g.Y1, g.X2, g.Y2))
+		case driver.DrawFill:
+			fills = append(fills, "fill")
+		case driver.DrawFillColor:
+			fills = append(fills, fmt.Sprintf("%08x", uint32(op.Color)))
+		}
+	}
+	want := "00000000 00ff00ff fill ff0000ff gradient 30,20-30,40 fill"
+	if got := strings.Join(fills, " "); got != want {
+		t.Fatalf("fills %q, want the color then the gradient over the area: %q", got, want)
+	}
+	bg.Set(0)
+	b = h.commit()
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemCanvas {
+			d = it.Drawing
+		}
+	}
+	for _, op := range d.Ops {
+		if op.Kind == driver.DrawFillColor && op.Color == RGB(0x00ff00) {
+			t.Fatal("a cleared background still fills")
+		}
 	}
 }
 

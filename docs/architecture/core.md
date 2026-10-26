@@ -73,7 +73,7 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 Layout is incremental, as NSH's layout tree:
 
 - A change stops at a relayout boundary (`layout.Boundary`): an in-flow flex item of fixed points both ways that does not shrink, has an auto basis and is not aligned by its baseline.
-- A boundary is laid out again on its own with what its parent gave it last, and its parent only when what it gives back changed: its size, baselines or overflow past it (`layout.Relayout`).
+- A boundary is laid out again on its own with what its parent gave it last, and its parent only when what it gives back changed: its size, baselines or overflow past it (`layout.Relayout`). The deepest boundaries go first: an outer one laid out from its caches would leave an inner one's subtree as it was and clear its mark.
 - A restyled view is no boundary, and overlays and modals always mark the root's layout, which places them.
 - A text whose content changed lays nothing out when it measures as before for every input layout asked of it since its cache was cleared (`layout.MeasuresAsBefore`), or when only its colors changed.
 - Texts with attachments always lay out. A restyle lays a view out only when the layout style it maps to changed.

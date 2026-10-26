@@ -14,10 +14,12 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | --- | --- | --- |
 | `nsgo` (module root) | `run_app`, `AppView` | `nsgo.Run`, and `nsgo.NewView` in a host's window ([embedding](docs/architecture/embedding.md)): picks the backend by build tags |
 | `core` | `nsh-core` | The app's API: elements, styles, the reactive graph and regions, services; the shadow tree, layout and text preparation |
-| `base` | `nsh-base` | Unstyled components: controls, `Input` among them, popups, dialogs, menus, toasts, navigation pages, resizable panels and a dock ([components](docs/architecture/components.md)) |
+| `base` | `nsh-base` | Unstyled components: controls, `Input` among them, popups, dialogs, menus, toasts, navigation pages, resizable panels, a dock, charts and tables ([components](docs/architecture/components.md)) |
 | `mobile`, `desktop` | `nsh/mobile`, `nsh/desktop` | What only phones have (the tab bar, a bar above the keyboard) and only desktops (the window, its title bar, menus) |
 | `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark), HTML (x/net/html) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
 | `base/textview/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma |
+| `base/editor`, `base/diff` | `nsh-base`'s `editor`, `diff` | `Editor`, a code editor, and `DiffView`, the changes between texts or of a patch ([editor](docs/architecture/editor.md)) |
+| `base/internal/*` | `nsh-base`'s `syntax`, `window` | What `base`'s packages share: the highlighting palette and chroma's lexing, the window of rows a virtualized view makes |
 | `icons/lucide` | — (NSH loads SVG as images) | The bundled Lucide pack: one generated accessor per icon, parsed on first use ([icons](docs/architecture/icons.md)) |
 | `nsgotest` | `nsh-testing` | App tests, headless or on a platform: selectors over a model of the views, steps as a user's input ([testing](docs/architecture/testing.md)) |
 | `internal/testhost` | `nsh-testing`'s agent | A backend's test host for `nsgotest`: the main thread, native input, screenshots |
@@ -123,6 +125,7 @@ Record a design question here, and confirm the answer with the user before choos
 | [Shaders](docs/architecture/shaders.md) | Changing `Shader`, the shader compiler or a backend's shader view |
 | [Components](docs/architecture/components.md) | Changing a component in `base`: controls, popups, resizable panels or the dock |
 | [Text view](docs/architecture/textview.md) | Changing `TextView`, its parsers, parts or highlighting |
+| [Editor](docs/architecture/editor.md) | Changing `Editor`, `DiffView` or their highlighting |
 | [Icons](docs/architecture/icons.md) | Changing SVG parsing, `core.Icon` or the Lucide pack |
 | [Performance](docs/architecture/performance.md) | Changing the performance monitor, a frame clock or a per-frame path |
 | [Embedding](docs/architecture/embedding.md) | Changing `nsgo.NewView`, the host channel or `-embed` packages |

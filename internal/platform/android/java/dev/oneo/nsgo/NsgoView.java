@@ -2726,6 +2726,11 @@ public class NsgoView extends FrameLayout {
             case Protocol.ROLE_MENU_ITEM: role = "menu item"; break;
             case Protocol.ROLE_DIALOG: role = "dialog"; break;
             case Protocol.ROLE_ALERT: role = "alert"; break;
+            case Protocol.ROLE_TABLE: role = "table"; break;
+            case Protocol.ROLE_GRID: role = "grid"; break;
+            case Protocol.ROLE_ROW: role = "row"; break;
+            case Protocol.ROLE_COLUMN_HEADER: role = "column header"; info.setHeading(true); break;
+            case Protocol.ROLE_CELL: role = "cell"; break;
             default: break;
         }
         if (className != null) info.setClassName(className);
