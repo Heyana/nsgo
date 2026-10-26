@@ -21,7 +21,7 @@ The web target is served from the same server; its page shows the overlay itself
 `nsgo build` strips symbols, paths and VCS stamps (`nsgo dev` keeps symbols unless `-release`) and writes a directory per target under `build.output`:
 
 - macOS: `<name>.app`, signed ad hoc. iOS: `<name>.app` and `<name>.ipa`, signed with `sign.profile`, else unsigned. Android: `<name>.apk`, signed with `sign.keystore`, else the project's debug key.
-- Windows and Linux: the executable with `resources/`, and the same as a `.zip` or `.tar.gz` beside the directory.
+- Windows and Linux: the executable with `resources/`.
 - With `-embed`, for apps of their own to embed ([embedding](embedding.md)): iOS's `<module>.xcframework` with `<name>Resources`, Android's `<name>.aar`, and no package for other targets.
 - Web: `index.html`, `manifest.webmanifest` and every other file named by its content (`app.<10 hex>.wasm`, `resources.<hash>/`, which the page tells the runtime as `nsgoResources`), so hosts cache them for good.
 

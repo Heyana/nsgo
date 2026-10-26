@@ -41,14 +41,6 @@ func buildAll(ctx context.Context, p *project) error {
 			return fmt.Errorf("%s: %w", target, err)
 		}
 		step("  -> %s", rel(dir))
-		// Linux and Windows packages are directories; their archives are
-		// what people download.
-		if ext := map[string]string{"linux": ".tar.gz", "windows": ".zip"}[strings.Split(target, "_")[0]]; ext != "" {
-			if err := archiveDir(dir, dir+ext, p.Name); err != nil {
-				return fmt.Errorf("%s: %w", target, err)
-			}
-			step("  -> %s", rel(dir+ext))
-		}
 	}
 	if p.openOutput() {
 		openDir(p.Build.Output)

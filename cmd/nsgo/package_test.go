@@ -1,14 +1,9 @@
 package main
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"compress/gzip"
-	"io"
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"testing"
 )
 
@@ -74,53 +69,6 @@ func TestWebReleasesNameFilesByContent(t *testing.T) {
 	}
 	if hashed.MatchString("/index.html") || hashed.MatchString("/manifest.webmanifest") {
 		t.Fatal("the page or manifest would be cached for good")
-	}
-}
-
-func TestArchivesHoldTheAppUnderItsName(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "pkg")
-	os.MkdirAll(filepath.Join(src, "resources"), 0o755)
-	os.WriteFile(filepath.Join(src, "App"), []byte("bin"), 0o755)
-	os.WriteFile(filepath.Join(src, "resources", "a.txt"), []byte("a"), 0o644)
-	if err := archiveDir(src, filepath.Join(dir, "a.tar.gz"), "App"); err != nil {
-		t.Fatal(err)
-	}
-	f, _ := os.Open(filepath.Join(dir, "a.tar.gz"))
-	defer f.Close()
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tr := tar.NewReader(gz)
-	var names []string
-	for {
-		h, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		names = append(names, h.Name)
-		if h.Name == "App/App" && h.Mode&0o111 == 0 {
-			t.Error("the executable lost its mode")
-		}
-	}
-	slices.Sort(names)
-	if !slices.Equal(names, []string{"App/App", "App/resources/a.txt"}) {
-		t.Fatalf("tar holds %v", names)
-	}
-	if err := archiveDir(src, filepath.Join(dir, "a.zip"), "App"); err != nil {
-		t.Fatal(err)
-	}
-	zr, err := zip.OpenReader(filepath.Join(dir, "a.zip"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer zr.Close()
-	if len(zr.File) != 2 || zr.File[0].Name[:4] != "App/" {
-		t.Fatalf("zip holds %v", zr.File)
 	}
 }
 

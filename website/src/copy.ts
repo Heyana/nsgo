@@ -230,7 +230,7 @@ const en = {
       {
         n: '03',
         title: 'Ship',
-        body: 'Writes a signed .app, .ipa or .apk, Windows and Linux archives, or a static site. -embed builds a framework or AAR.',
+        body: 'Writes a signed .app, .ipa or .apk, Windows and Linux packages, or a static site. -embed builds a framework or AAR.',
         api: 'nsgo build',
       },
     ],
@@ -500,7 +500,7 @@ const zh: Copy = {
       {
         n: '03',
         title: '发布',
-        body: '写出签名的 .app、.ipa、.apk，Windows 和 Linux 压缩包，或一个静态网站；-embed 打包框架或 AAR。',
+        body: '写出签名的 .app、.ipa、.apk，Windows 和 Linux 的包目录，或一个静态网站；-embed 打包框架或 AAR。',
         api: 'nsgo build',
       },
     ],

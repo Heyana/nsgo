@@ -1,9 +1,7 @@
 package main
 
 import (
-	"archive/tar"
 	"archive/zip"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -21,79 +19,6 @@ import (
 	"sort"
 	"strings"
 )
-
-// archiveDir writes dir as an archive at dst, its files under a top
-// directory named top: a .tar.gz keeps the executable bit, as Linux
-// needs, and a .zip is what Windows opens.
-func archiveDir(dir, dst, top string) error {
-	f, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	var add func(rel string, info fs.FileInfo, data []byte) error
-	var finish func() error
-	if strings.HasSuffix(dst, ".zip") {
-		zw := zip.NewWriter(f)
-		add = func(rel string, info fs.FileInfo, data []byte) error {
-			h, err := zip.FileInfoHeader(info)
-			if err != nil {
-				return err
-			}
-			h.Name, h.Method = top+"/"+rel, zip.Deflate
-			w, err := zw.CreateHeader(h)
-			if err != nil {
-				return err
-			}
-			_, err = w.Write(data)
-			return err
-		}
-		finish = zw.Close
-	} else {
-		gz := gzip.NewWriter(f)
-		tw := tar.NewWriter(gz)
-		add = func(rel string, info fs.FileInfo, data []byte) error {
-			h, err := tar.FileInfoHeader(info, "")
-			if err != nil {
-				return err
-			}
-			h.Name, h.Uname, h.Gname, h.Uid, h.Gid = top+"/"+rel, "", "", 0, 0
-			if err := tw.WriteHeader(h); err != nil {
-				return err
-			}
-			_, err = tw.Write(data)
-			return err
-		}
-		finish = func() error {
-			if err := tw.Close(); err != nil {
-				return err
-			}
-			return gz.Close()
-		}
-	}
-	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(dir, p)
-		return add(filepath.ToSlash(rel), info, data)
-	})
-	if err != nil {
-		return err
-	}
-	if err := finish(); err != nil {
-		return err
-	}
-	return f.Close()
-}
 
 // writeIPA packs app, a built .app, as the IPA at dst: its bundle under
 // Payload/, as App Store Connect and installers take it.
