@@ -86,10 +86,11 @@ func FPS(on bool) Option {
 	return func(o *options) { o.monitor = on }
 }
 
-// WindowMaterial sets the material behind the window's content, where the
-// app draws nothing opaque: a system vibrancy material on macOS and a
-// system backdrop on Windows 11 22H2 or later. Other targets ignore it.
-// The window keeps it for its life.
+// WindowMaterial starts the window with material behind its content,
+// where the app draws nothing opaque: a system vibrancy material on
+// macOS and a system backdrop on Windows 11 22H2 or later. Other targets
+// ignore it. desktop.SetWindowMaterial changes it later, which on
+// Windows needs a window started with one.
 func WindowMaterial(material core.WindowMaterial) Option {
 	return func(o *options) { o.material = material }
 }

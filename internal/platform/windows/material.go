@@ -13,8 +13,11 @@ import (
 // A window's material is a DWM system backdrop, drawn behind the window's
 // content where the content is transparent. Windows 11 22H2 (build 22621)
 // and later draw Mica, Acrylic and Mica Alt; earlier Windows keeps the
-// window opaque. The window draws through DirectComposition when it has a
-// material, since only a surface with alpha shows what DWM draws behind it.
+// window opaque. The window draws through DirectComposition when it starts
+// with a material, since only a surface with alpha shows what DWM draws
+// behind it, and WS_EX_NOREDIRECTIONBITMAP, which that needs, holds only
+// from the window's creation: such a window changes its backdrop any
+// time, and one started without stays opaque.
 
 var (
 	ntdll                        = syscall.NewLazyDLL("ntdll.dll")
@@ -112,4 +115,24 @@ func (w *window) applyMaterial() bool {
 		return false
 	}
 	return true
+}
+
+// setMaterial changes the backdrop of a window started with a material,
+// WindowMaterialNone making it opaque; other windows stay opaque.
+func (w *window) setMaterial(m driver.WindowMaterial) {
+	if !w.baseComposed || m == w.material {
+		return
+	}
+	w.backdrop, w.material = backdropFor(m), driver.WindowMaterialNone
+	switch {
+	case m == driver.WindowMaterialNone:
+		backdrop := w.backdrop
+		dwmSetWindowAttribute.Call(w.hwnd, dwmwaSystemBackdropType, uintptr(unsafe.Pointer(&backdrop)), 4)
+	case w.applyMaterial():
+		w.material = m
+	default:
+		w.backdrop = backdropNone
+	}
+	w.updateEnvironment()
+	invalidateRect.Call(w.hwnd, 0, 0)
 }

@@ -459,6 +459,26 @@ func windowCard(cx *core.Scope) core.Node {
 			small("Hide title bar", func() { desktop.SetTitleBar(cx, desktop.TitleBarHidden, 40) }),
 			small("Show title bar", func() { desktop.SetTitleBar(cx, desktop.TitleBarDefault, 0) }),
 		),
+		caption("Window controls", nil),
+		wrap(
+			small("Default", func() { desktop.SetWindowControls(cx, desktop.WindowControls{}) }),
+			small("Traffic lights at 24, 10", func() {
+				desktop.SetWindowControls(cx, desktop.WindowControls{TrafficLights: core.Point{X: 24, Y: 10}})
+			}),
+			small("Hidden", func() { desktop.SetWindowControls(cx, desktop.WindowControls{Hidden: true}) }),
+		),
+		caption("Material", func() string {
+			if desktop.ShowsMaterial(cx) {
+				return "shows behind the sidebar"
+			}
+			return "none"
+		}),
+		wrap(
+			small("None", func() { desktop.SetWindowMaterial(cx, desktop.WindowMaterialNone) }),
+			small("Sidebar", func() { desktop.SetWindowMaterial(cx, desktop.WindowMaterialSidebar) }),
+			small("Under window", func() { desktop.SetWindowMaterial(cx, desktop.WindowMaterialUnderWindow) }),
+			small("HUD", func() { desktop.SetWindowMaterial(cx, desktop.WindowMaterialHUD) }),
+		),
 		caption("Commands", nil),
 		wrap(small("Minimize", cx.MinimizeWindow), small("Zoom", cx.ToggleMaximize), small("Full screen", cx.ToggleFullScreen),
 			small("Away for 2 s", func() { desktop.MinimizeWindow(cx); cx.AfterFunc(2*time.Second, func() { desktop.OrderFront(cx) }) })),

@@ -225,7 +225,9 @@ func Root(cx *core.Scope) core.Node {
 				children = append(children, g.titleBar(cx, wide))
 			}
 			children = append(children, body)
-			return core.View{Style: fillPage.Merge(core.Style{Background: colors.inset, Color: colors.text}), Children: children}
+			return core.View{StyleFunc: func() core.Style {
+				return fillPage.Merge(core.Style{Background: chromeFill(cx), Color: colors.text})
+			}, Children: children}
 		})
 	})
 }
@@ -283,10 +285,19 @@ func (g *gallery) titleBar(cx *core.Scope, wide bool) core.Node {
 		StyleFunc: func() core.Style {
 			tb := desktop.TitleBar(cx)
 			return core.Style{Height: core.Pt(max(tb.Top, 40)), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8,
-				Padding: core.Edges{Left: tb.Left + 12, Right: tb.Right + 12}, Background: colors.inset,
+				Padding: core.Edges{Left: tb.Left + 12, Right: tb.Right + 12}, Background: chromeFill(cx),
 				Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.line}}
 		},
 		Children: children}
+}
+
+// chromeFill is the background of the window's chrome, the title bar
+// and the sidebar: none while a window material shows through them.
+func chromeFill(cx *core.Scope) core.Color {
+	if desktop.ShowsMaterial(cx) {
+		return 0
+	}
+	return colors.inset
 }
 
 // toggleSidebar hides or shows the desktop layout's sidebar.
@@ -388,7 +399,9 @@ func (g *gallery) desktopLayout(cx *core.Scope) core.Node {
 	if !desktop.IsAvailable(cx) {
 		cx.OnKey("mod+b", g.toggleSidebar)
 	}
-	return core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0), Direction: core.Row, Background: colors.inset}, Children: []core.Node{
+	return core.View{StyleFunc: func() core.Style {
+		return core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0), Direction: core.Row, Background: chromeFill(cx)}
+	}, Children: []core.Node{
 		g.sidebar(cx),
 		g.nav.Stack(core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, func(cx *core.Scope, r route, _ func() int) base.NavPage {
 			if r.page != nil {
@@ -408,6 +421,7 @@ func (g *gallery) sidebar(cx *core.Scope) core.Node {
 		start = float64(-sidebarWidth)
 	}
 	slide := core.NewAnimatedValue(cx, start)
+	animated := &core.AnimatedStyle{TranslateX: slide}
 	first := true
 	cx.Effect(func() {
 		open := g.sidebarOpen.Get()
@@ -437,9 +451,11 @@ func (g *gallery) sidebar(cx *core.Scope) core.Node {
 			w = sidebarWidth
 		}
 		return core.Style{Width: core.Pt(w), ZIndex: 1}
-	}, Children: []core.Node{core.View{TestID: "sidebar", Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Bottom: core.Pt(0), Left: core.Pt(0),
-		Width: core.Pt(sidebarWidth), Background: colors.inset, Borders: core.Edges{Right: 1}, BorderColors: core.EdgeColors{Right: colors.line},
-		Animated: &core.AnimatedStyle{TranslateX: slide}}, Children: []core.Node{
+	}, Children: []core.Node{core.View{TestID: "sidebar", StyleFunc: func() core.Style {
+		return core.Style{Position: core.Absolute, Top: core.Pt(0), Bottom: core.Pt(0), Left: core.Pt(0),
+			Width: core.Pt(sidebarWidth), Background: chromeFill(cx), Borders: core.Edges{Right: 1}, BorderColors: core.EdgeColors{Right: colors.line},
+			Animated: animated}
+	}, Children: []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Edges{Top: 20, Right: 20, Bottom: 12, Left: 20}}, Children: []core.Node{
 			logo(32),
 			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 1}, Children: []core.Node{

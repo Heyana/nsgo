@@ -49,6 +49,16 @@ func (cx *Scope) SetMenuBar(mode MenuBarMode) {
 	cx.window(WindowCommand{Action: WindowSetMenuBar, MenuBar: mode})
 }
 
+// SetWindowControls is the core's part of desktop.SetWindowControls, which apps use.
+func (cx *Scope) SetWindowControls(c WindowControls) {
+	cx.window(WindowCommand{Action: WindowSetControls, Controls: c})
+}
+
+// SetWindowMaterial is the core's part of desktop.SetWindowMaterial, which apps use.
+func (cx *Scope) SetWindowMaterial(m WindowMaterial) {
+	cx.window(WindowCommand{Action: WindowSetMaterial, Material: m})
+}
+
 // MenuItem is one item of a menu: an action, a submenu when it has
 // Items, or a line between groups when Separator. Apps name it
 // desktop.MenuItem.

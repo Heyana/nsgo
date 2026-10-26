@@ -14,18 +14,23 @@ import (
 // The window's chrome, as NSH's macOS chrome.rs does it. A hidden title
 // bar gives the window a full-size content view under a transparent,
 // untitled title bar, with the traffic lights centered in the app's bar,
-// where Onevra puts them: 16 points in from the left edge. Env.TitleBar
-// reports the bar's height and the traffic lights' width, nothing in
-// full screen. A left press on a window drag handle moves the window
-// with AppKit's own drag, and a double click does what the user chose in
-// System Settings. The application menu is an NSMenu bar: role items
-// send AppKit's standard actions down the responder chain, the others
-// report their ID with EventMenu.
+// where Onevra puts them: 16 points in from the left edge, or where the
+// app's WindowControls put them, as MyGo's TrafficLightPosition does.
+// Env.TitleBar reports the bar's height and the traffic lights' width,
+// nothing in full screen. A left press on a window drag handle moves the
+// window with AppKit's own drag, and a double click does what the user
+// chose in System Settings. The application menu is an NSMenu bar: role
+// items send AppKit's standard actions down the responder chain, the
+// others report their ID with EventMenu.
 
 // chrome is a surface's window state.
 type chrome struct {
 	titleBar    driver.TitleBarStyle
 	titleHeight driver.Points
+	controls    driver.WindowControls
+	// placed is set while the traffic lights are where layoutTrafficLights
+	// put them rather than where AppKit does.
+	placed bool
 
 	appName     string
 	defaultMenu objc.ID // the menu bar the backend builds
@@ -96,6 +101,12 @@ func (s *surface) command(c *driver.WindowCommand) {
 		s.setLevel(c.Level)
 	case driver.WindowOrderFront:
 		s.orderFront()
+	case driver.WindowSetControls:
+		s.controls = c.Controls
+		s.applyTitleBar()
+	case driver.WindowSetMaterial:
+		s.setMaterial(c.Material)
+		s.refresh()
 	}
 }
 
@@ -115,6 +126,11 @@ func (s *surface) applyTitleBar() {
 		visibility = titleHidden
 	}
 	w.Send(sel("setTitleVisibility:"), visibility)
+	for i := 0; i < 3; i++ {
+		if b := w.Send(selStandardButton, i); b != 0 {
+			b.Send(sel("setHidden:"), hidden && s.controls.Hidden)
+		}
+	}
 	s.layoutTrafficLights()
 	s.refresh()
 	// AppKit can restore the old content size after setStyleMask:.
@@ -129,14 +145,20 @@ func (s *surface) applyTitleBar() {
 	})
 }
 
-// layoutTrafficLights centers the traffic lights in the app's bar, 16
-// points in from the window's left edge as Onevra places them. AppKit
-// lays the title bar out again when the window resizes, its title or
-// appearance changes, or it leaves full screen, so this runs after each.
+// layoutTrafficLights puts the traffic lights in the app's bar: the
+// close button's top left corner at the app's TrafficLights, by default
+// 16 points in from the window's left edge as Onevra places them and
+// centered in the bar. Without a bar height or a position of the app's
+// they stay where AppKit lays them out. AppKit puts them back whenever it
+// lays the title bar out, so this runs after each of the window's layout
+// passes (NsgoWindow), and changes only what moved.
 func (s *surface) layoutTrafficLights() {
 	w := s.window
+	at := s.controls.TrafficLights
 	// An embedding host's toolbar lays the title bar out itself.
-	if w == 0 || s.titleBar != driver.TitleBarHidden || s.titleHeight <= 0 || w.Send(sel("toolbar")) != 0 {
+	if w == 0 || s.titleBar != driver.TitleBarHidden || s.titleHeight <= 0 && at == (driver.Point{}) ||
+		w.Send(sel("toolbar")) != 0 {
+		s.restoreTrafficLights()
 		return
 	}
 	if objc.Send[uint](w, selStyleMask)&maskFullScreen != 0 {
@@ -146,64 +168,105 @@ func (s *surface) layoutTrafficLights() {
 	if close == 0 {
 		return
 	}
-	container := close.Send(selSuperview).Send(selSuperview)
+	bar := close.Send(selSuperview)
+	container := bar.Send(selSuperview)
 	if container == 0 {
 		return
 	}
 	button := objc.Send[apple.CGRect](close, sel("frame"))
-	height := float64(s.titleHeight)
-	top := max((height-button.Size.Height)/2, 0)
+	height := float64(s.barHeight())
 	frame := objc.Send[apple.CGRect](container, sel("frame"))
-	frame.Size.Height = height
-	frame.Origin.Y = objc.Send[apple.CGRect](w, sel("frame")).Size.Height - height
-	container.Send(selSetFrame, frame)
+	if y := objc.Send[apple.CGRect](w, sel("frame")).Size.Height - height; frame.Size.Height != height || frame.Origin.Y != y {
+		frame.Size.Height, frame.Origin.Y = height, y
+		container.Send(selSetFrame, frame)
+	}
+	left, top := float64(at.X), float64(at.Y)
+	if left <= 0 {
+		left = trafficLightsLeft
+	}
+	if top <= 0 {
+		top = max((height-button.Size.Height)/2, 0)
+	}
+	if !objc.Send[bool](bar, sel("isFlipped")) {
+		top = objc.Send[apple.CGRect](bar, selBounds).Size.Height - top - button.Size.Height
+	}
 	mini := w.Send(selStandardButton, 1)
 	gap := objc.Send[apple.CGRect](mini, sel("frame")).Origin.X - button.Origin.X
 	for i := 0; i < 3; i++ {
 		b := w.Send(selStandardButton, i)
-		if b != 0 {
-			b.Send(selSetFrameOrigin, apple.CGPoint{X: trafficLightsLeft + float64(i)*gap, Y: top})
+		origin := apple.CGPoint{X: left + float64(i)*gap, Y: top}
+		if b != 0 && objc.Send[apple.CGRect](b, sel("frame")).Origin != origin {
+			b.Send(selSetFrameOrigin, origin)
+		}
+	}
+	s.placed = true
+}
+
+// restoreTrafficLights gives the traffic lights back to AppKit after
+// layoutTrafficLights placed them. A layout pass of the window leaves
+// them where they are; hiding and showing them again makes AppKit lay
+// the title bar out, as Electron's window_buttons_proxy.mm notes.
+func (s *surface) restoreTrafficLights() {
+	if !s.placed || s.window == 0 {
+		return
+	}
+	s.placed = false
+	for i := 0; i < 3; i++ {
+		if b := s.window.Send(selStandardButton, i); b != 0 {
+			hidden := objc.Send[bool](b, sel("isHidden"))
+			b.Send(sel("setHidden:"), !hidden)
+			b.Send(sel("setHidden:"), hidden)
 		}
 	}
 }
 
+// barHeight is the hidden title bar's height: the app's, or the one
+// AppKit gives the window's own title bar.
+func (s *surface) barHeight() driver.Points {
+	if s.titleHeight > 0 {
+		return s.titleHeight
+	}
+	w := s.window
+	mask := objc.Send[uint](w, selStyleMask)
+	frame := objc.Send[apple.CGRect](w, sel("frame"))
+	content := objc.Send[apple.CGRect](objc.ID(objc.GetClass("NSWindow")), selContentRectForFrame,
+		frame, mask&^maskFullSize)
+	if h := frame.Size.Height - content.Size.Height; h > 0 {
+		return driver.Points(h)
+	}
+	return titleBarHeight
+}
+
 // titleBarArea is what a hidden title bar covers: its height on top and
-// the traffic lights on the left.
+// the traffic lights on the left, unless the app hid them.
 func (s *surface) titleBarArea() driver.Edges {
 	w := s.window
 	if w == 0 || s.titleBar != driver.TitleBarHidden {
 		return driver.Edges{}
 	}
-	mask := objc.Send[uint](w, selStyleMask)
-	if mask&maskFullScreen != 0 {
+	if objc.Send[uint](w, selStyleMask)&maskFullScreen != 0 {
 		return driver.Edges{}
 	}
-	height := float64(s.titleHeight)
-	if height <= 0 || w.Send(sel("toolbar")) != 0 {
-		// Measure the default bar, or the toolbar an embedding host put
-		// there, as AppKit laid it out.
+	height := s.barHeight()
+	if w.Send(sel("toolbar")) != 0 {
+		// The toolbar an embedding host put there, as AppKit laid it out.
 		frame := objc.Send[apple.CGRect](w, sel("frame"))
-		content := objc.Send[apple.CGRect](objc.ID(objc.GetClass("NSWindow")), selContentRectForFrame,
-			frame, mask&^maskFullSize)
-		height = frame.Size.Height - content.Size.Height
-		if w.Send(sel("toolbar")) != 0 {
-			layout := objc.Send[apple.CGRect](w, sel("contentLayoutRect"))
-			if h := frame.Size.Height - (layout.Origin.Y + layout.Size.Height); h > 0 {
-				height = h
-			}
+		layout := objc.Send[apple.CGRect](w, sel("contentLayoutRect"))
+		if h := frame.Size.Height - (layout.Origin.Y + layout.Size.Height); h > 0 {
+			height = driver.Points(h)
 		}
 	}
-	if height <= 0 {
-		height = titleBarHeight
+	if s.controls.Hidden {
+		return driver.Edges{Top: height}
 	}
-	left := float64(trafficLightsWidth)
+	left := driver.Points(trafficLightsWidth)
 	if zoom := w.Send(selStandardButton, zoomButton); zoom != 0 {
 		f := objc.Send[apple.CGRect](zoom, sel("frame"))
 		if r := f.Origin.X + f.Size.Width + 8; r > 8 {
-			left = r
+			left = driver.Points(r)
 		}
 	}
-	return driver.Edges{Top: driver.Points(height), Left: driver.Points(left)}
+	return driver.Edges{Top: height, Left: left}
 }
 
 // takePress moves the window from a drag handle, or starts or extends a

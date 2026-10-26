@@ -181,7 +181,8 @@ func (e *Env) Idiom() Idiom { return e.idiom.Get() }
 func (e *Env) AppleKeys() bool { return e.appleKeys.Get() }
 
 // WindowMaterial returns the material behind the window's content, or
-// WindowMaterialNone when the window is opaque.
+// WindowMaterialNone when the window is opaque: the core's part of
+// desktop.ShowsMaterial, which apps use.
 func (e *Env) WindowMaterial() WindowMaterial { return e.material.Get() }
 
 // Desktop reports whether the device is a desktop.

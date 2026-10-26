@@ -12,7 +12,8 @@ import (
 // The window's background material is an NSVisualEffectView behind the
 // app's views, blending with what is behind the window. The window itself
 // gives up its opaque background so the material shows where the app draws
-// nothing opaque. NSVisualEffectMaterial values follow AppKit's.
+// nothing opaque, and takes it back without one. NSVisualEffectMaterial
+// values follow AppKit's.
 
 var (
 	selSetMaterial         = sel("setMaterial:")
@@ -71,24 +72,33 @@ func materialCode(m driver.WindowMaterial) (int, bool) {
 	return 0, false
 }
 
-// applyMaterial puts the window's material behind the app's views. It
-// does nothing without a material.
-func (s *surface) applyMaterial(m driver.WindowMaterial) {
+// setMaterial puts m behind the app's views, or takes the material away
+// and makes the window opaque again for WindowMaterialNone.
+func (s *surface) setMaterial(m driver.WindowMaterial) {
 	code, ok := materialCode(m)
 	if !ok {
+		if s.effect != 0 {
+			s.effect.Send(sel("removeFromSuperview"))
+			s.effect = 0
+			s.window.Send(selSetOpaque, true)
+			s.window.Send(selSetBackgroundColor, objc.ID(objc.GetClass("NSColor")).Send(sel("windowBackgroundColor")))
+		}
+		s.material = driver.WindowMaterialNone
 		return
 	}
+	if s.effect == 0 {
+		s.effect = objc.ID(classMaterial).Send(selAlloc).Send(sel("initWithFrame:"),
+			objc.Send[apple.CGRect](s.native, selBounds))
+		s.effect.Send(selSetBlendingMode, blendingBehindWindow)
+		s.effect.Send(selSetState, effectStateActive)
+		s.effect.Send(selSetAutoresizingMask, widthHeightSizable)
+		s.native.Send(selAddSubviewPositioned, s.effect, viewBelow, objc.ID(0))
+		s.effect.Send(selRelease)
+		s.window.Send(selSetOpaque, false)
+		s.window.Send(selSetBackgroundColor, objc.ID(objc.GetClass("NSColor")).Send(selClearColor))
+	}
+	s.effect.Send(selSetMaterial, code)
 	s.material = m
-	effect := objc.ID(classMaterial).Send(selAlloc).Send(sel("initWithFrame:"),
-		objc.Send[apple.CGRect](s.native, selBounds))
-	effect.Send(selSetMaterial, code)
-	effect.Send(selSetBlendingMode, blendingBehindWindow)
-	effect.Send(selSetState, effectStateActive)
-	effect.Send(selSetAutoresizingMask, widthHeightSizable)
-	s.native.Send(selAddSubviewPositioned, effect, viewBelow, objc.ID(0))
-	effect.Send(selRelease)
-	s.window.Send(selSetOpaque, false)
-	s.window.Send(selSetBackgroundColor, objc.ID(objc.GetClass("NSColor")).Send(selClearColor))
 }
 
 // A view's backdrop blur is an NSVisualEffectView under its children that

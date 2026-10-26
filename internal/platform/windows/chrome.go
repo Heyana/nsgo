@@ -136,6 +136,8 @@ type monitorInfo struct {
 type chrome struct {
 	titleBar driver.TitleBarStyle
 	height   driver.Points // the app's title bar height; 0 for the default
+	// noButtons is set while the app draws its own caption buttons.
+	noButtons bool
 	hover    uint32        // the caption button under the mouse (HT*), 0 for none
 	pressed  uint32
 	tracking bool // the mouse is tracked for WM_NCMOUSELEAVE
@@ -178,8 +180,15 @@ func (w *window) titleBarArea() driver.Edges {
 	if !w.hidden() {
 		return driver.Edges{}
 	}
+	if w.chrome.noButtons {
+		return driver.Edges{Top: w.captionHeight()}
+	}
 	return driver.Edges{Top: w.captionHeight(), Right: captionRight}
 }
+
+// buttons reports whether the caption buttons show: in a hidden title
+// bar the app did not take them from.
+func (w *window) buttons() bool { return w.hidden() && !w.chrome.noButtons }
 
 func (w *window) zoomed() bool {
 	r, _, _ := isZoomed.Call(w.hwnd)
@@ -250,6 +259,14 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 		w.orderFront()
 	case driver.WindowSetMenuBar:
 		w.setMenuBar(c.MenuBar)
+	case driver.WindowSetControls:
+		if c.Controls.Hidden != w.chrome.noButtons {
+			w.chrome.noButtons = c.Controls.Hidden
+			w.chrome.hover, w.chrome.pressed = 0, 0
+			w.chromeChanged()
+		}
+	case driver.WindowSetMaterial:
+		w.setMaterial(c.Material)
 	}
 }
 
@@ -320,7 +337,7 @@ func (w *window) ncCalcSize(wParam, lParam uintptr) (uintptr, bool) {
 func (w *window) captionAt(p driver.Point) uint32 {
 	height := w.captionHeight()
 	top := (height - captionButtonSize) / 2
-	if !w.hidden() || p.Y < top || p.Y >= top+captionButtonSize {
+	if !w.buttons() || p.Y < top || p.Y >= top+captionButtonSize {
 		return 0
 	}
 	var client rect
@@ -446,7 +463,7 @@ func (w *window) ncActivate(wParam, lParam uintptr) uintptr {
 // whole ones.
 func (p *painter) drawCaptionButtons(width int32) {
 	w := p.w
-	if !w.hidden() {
+	if !w.buttons() {
 		return
 	}
 	// In the topmost layer, above web views.

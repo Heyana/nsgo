@@ -179,8 +179,10 @@ type surface struct {
 		time  float64
 	}
 	env driver.Environment
-	// material is the material behind the app's views.
+	// material is the material behind the app's views, effect the view
+	// that shows it.
 	material driver.WindowMaterial
+	effect   objc.ID
 	keys     []driver.KeyBinding // the keymap's bindings
 
 	// What a batch touched, finished once its frames are set.
@@ -295,7 +297,7 @@ var (
 	classScroll, classContainer         objc.Class
 	classOverlay                        objc.Class
 	classObserver, classMenuTarget      objc.Class
-	classMaterial                       objc.Class
+	classMaterial, classWindow          objc.Class
 )
 
 // loadAppKit loads AppKit and registers NSGo's classes, once.
@@ -336,6 +338,18 @@ func loadAppKit() {
 	}
 	common = append(common, accessMethods()...)
 	classView = register("NsgoView", nsView, nil, append(common, focusMethods()...))
+	// NSGo's own windows place the traffic lights again after each layout
+	// pass: macOS 27's AppKit puts them back whenever it lays the title
+	// bar out, which no notification tells.
+	classWindow = register("NsgoWindow", objc.GetClass("NSWindow"), nil, []objc.MethodDef{{
+		Cmd: sel("layoutIfNeeded"),
+		Fn: func(self objc.ID, cmd objc.SEL) {
+			apple.Super(self, cmd)
+			if v := views[self.Send(sel("contentView"))]; v != nil {
+				v.surface.layoutTrafficLights()
+			}
+		},
+	}})
 	// The material sits behind the app's views and takes no press.
 	classMaterial = register("NsgoMaterialView", objc.GetClass("NSVisualEffectView"), nil, []objc.MethodDef{{
 		Cmd: sel("hitTest:"),
@@ -610,7 +624,7 @@ func openWindow(app engine.App, opts Options, test *testWindow) *surface {
 		opts.Width, opts.Height = test.options.Size.Width, test.options.Size.Height
 	}
 	const titled, closable, miniaturizable, resizable = 1, 2, 4, 8
-	window := objc.ID(objc.GetClass("NSWindow")).Send(selAlloc).Send(
+	window := objc.ID(classWindow).Send(selAlloc).Send(
 		sel("initWithContentRect:styleMask:backing:defer:"),
 		apple.Rect(0, 0, float64(opts.Width), float64(opts.Height)),
 		uint(titled|closable|miniaturizable|resizable), uint(2), false)
@@ -623,7 +637,7 @@ func openWindow(app engine.App, opts Options, test *testWindow) *surface {
 	s.window = window
 	s.setWindowDelegate()
 	window.Send(sel("setContentView:"), s.native)
-	s.applyMaterial(opts.Material)
+	s.setMaterial(opts.Material)
 	s.start(app, opts, test)
 	window.Send(sel("center"))
 	if test == nil {

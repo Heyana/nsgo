@@ -5,7 +5,9 @@
 //
 // A title bar of the app's own calls SetTitleBar once, marks its
 // background with core.View's WindowDrag and keeps clear of the edges
-// TitleBar reports.
+// TitleBar reports; SetWindowControls moves or hides the system's
+// controls in it. A window over a material leaves transparent what
+// should show it while ShowsMaterial.
 package desktop
 
 import "github.com/oneo-me/nsgo/core"
@@ -20,6 +22,14 @@ type (
 	WindowLevel = core.WindowLevel
 	// MenuBarMode says when Windows and Linux show the menu bar.
 	MenuBarMode = core.MenuBarMode
+	// WindowControls is how a hidden title bar shows the system's window
+	// controls: hidden for the app to draw its own, or macOS's traffic
+	// lights moved.
+	WindowControls = core.WindowControls
+	// WindowMaterial is a translucent material behind the window's
+	// content: one of macOS's vibrancy materials, or of Windows 11's
+	// system backdrops, each platform showing its closest.
+	WindowMaterial = core.WindowMaterial
 )
 
 const (
@@ -36,6 +46,30 @@ const (
 const (
 	MenuBarShown    = core.MenuBarShown
 	MenuBarAutoHide = core.MenuBarAutoHide
+)
+
+const (
+	WindowMaterialNone = core.WindowMaterialNone
+	// The materials of window areas.
+	WindowMaterialWindow      = core.WindowMaterialWindow
+	WindowMaterialContent     = core.WindowMaterialContent
+	WindowMaterialSidebar     = core.WindowMaterialSidebar
+	WindowMaterialHeader      = core.WindowMaterialHeader
+	WindowMaterialTitlebar    = core.WindowMaterialTitlebar
+	WindowMaterialUnderWindow = core.WindowMaterialUnderWindow
+	WindowMaterialUnderPage   = core.WindowMaterialUnderPage
+	// The materials of transient surfaces, Acrylic on Windows.
+	WindowMaterialMenu         = core.WindowMaterialMenu
+	WindowMaterialPopover      = core.WindowMaterialPopover
+	WindowMaterialHUD          = core.WindowMaterialHUD
+	WindowMaterialSheet        = core.WindowMaterialSheet
+	WindowMaterialTooltip      = core.WindowMaterialTooltip
+	WindowMaterialSelection    = core.WindowMaterialSelection
+	WindowMaterialFullScreenUI = core.WindowMaterialFullScreenUI
+	// Windows 11's system backdrops: Mica, Acrylic and Mica Alt.
+	WindowMaterialMica    = core.WindowMaterialMica
+	WindowMaterialAcrylic = core.WindowMaterialAcrylic
+	WindowMaterialTabbed  = core.WindowMaterialTabbed
 )
 
 // IsAvailable reports whether the app runs on macOS, Windows or Linux,
@@ -64,6 +98,29 @@ func SetTitleBar(cx *core.Scope, style TitleBarStyle, height core.Points) {
 // ends. It is zero while the system draws the title bar, in full screen
 // and off desktops.
 func TitleBar(cx *core.Scope) core.Edges { return cx.Env().TitleBar() }
+
+// SetWindowControls hides the system's window controls in a hidden
+// title bar, or moves macOS's traffic lights in it, from any time on:
+//
+//	desktop.SetWindowControls(cx, desktop.WindowControls{TrafficLights: core.Point{X: 20, Y: 18}})
+//
+// TitleBar follows where they are. The zero WindowControls restores the
+// platform's.
+func SetWindowControls(cx *core.Scope, c WindowControls) { cx.SetWindowControls(c) }
+
+// SetWindowMaterial puts m behind the window's content, or makes the
+// window opaque again with WindowMaterialNone; nsgo.WindowMaterial
+// starts the window with one. macOS changes it any time; Windows 11 22H2
+// and later only in a window started with a material, others staying
+// opaque.
+func SetWindowMaterial(cx *core.Scope, m WindowMaterial) { cx.SetWindowMaterial(m) }
+
+// ShowsMaterial reports whether a material shows behind the window's
+// content, where the app leaves it transparent. Where it is false, give
+// those parts a background of their own.
+func ShowsMaterial(cx *core.Scope) bool {
+	return cx.Env().WindowMaterial() != core.WindowMaterialNone
+}
 
 // Maximized reports whether the window is maximized or zoomed, so a
 // maximize button of the app's own can show restore.

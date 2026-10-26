@@ -308,6 +308,9 @@ type (
 	WindowFrame = driver.WindowFrame
 	// WindowLevel is where a window stacks among the others.
 	WindowLevel = driver.WindowLevel
+	// WindowControls is how a hidden title bar shows the system's window
+	// controls: hidden, or macOS's traffic lights moved.
+	WindowControls = driver.WindowControls
 	// MenuBarMode says when Windows and Linux show the menu bar.
 	MenuBarMode = driver.MenuBarMode
 	// Appearance is the light or dark appearance an app asks for, or the
@@ -733,6 +736,8 @@ const (
 	WindowSetLevel         = driver.WindowSetLevel
 	WindowOrderFront       = driver.WindowOrderFront
 	WindowSetMenuBar       = driver.WindowSetMenuBar
+	WindowSetControls      = driver.WindowSetControls
+	WindowSetMaterial      = driver.WindowSetMaterial
 )
 
 const (

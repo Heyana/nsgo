@@ -294,6 +294,86 @@ func TestServicesReachTheSystem(t *testing.T) {
 	}
 }
 
+// TestCaptionButtonsAndMaterialFollowTheApp hides the caption buttons of
+// a hidden title bar and shows them again, and changes the backdrop of a
+// window started with a material, where Windows draws one.
+func TestCaptionButtonsAndMaterialFollowTheApp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-chrome"
+	var cx *core.Scope
+	app := func(c *core.Scope) core.Node {
+		cx = c
+		c.SetTitleBar(core.TitleBarHidden, 40)
+		return core.View{}
+	}
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(app, Options{Title: title, Width: 360, Height: 240, Material: driver.WindowMaterialMica})
+	}()
+	hwnd := waitForWindow(t, title, done)
+	if hwnd == 0 {
+		return
+	}
+	// until polls the window's thread until check holds.
+	until := func(what string, check func(w *window) bool) {
+		t.Helper()
+		for deadline := time.Now().Add(3 * time.Second); ; {
+			ok := false
+			onMain(t, hwnd, func(w *window) { ok = check(w) })
+			if ok {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s did not happen", what)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	var width driver.Points
+	onMain(t, hwnd, func(w *window) {
+		var client rect
+		getClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&client)))
+		width = w.point(client.Right, 0).X
+	})
+	closeButton := driver.Point{X: width - captionMargin - captionButtonSize/2, Y: 20}
+	until("the hidden title bar", func(w *window) bool {
+		return w.titleBarArea() == driver.Edges{Top: 40, Right: captionRight} && w.captionAt(closeButton) == htClose
+	})
+	cx.Post(func() { cx.SetWindowControls(core.WindowControls{Hidden: true}) })
+	until("hiding the caption buttons", func(w *window) bool {
+		return w.titleBarArea() == driver.Edges{Top: 40} && w.captionAt(closeButton) == 0 && w.env.TitleBar.Right == 0
+	})
+	cx.Post(func() { cx.SetWindowControls(core.WindowControls{}) })
+	until("showing them again", func(w *window) bool { return w.captionAt(closeButton) == htClose })
+
+	backdrops := false
+	onMain(t, hwnd, func(w *window) { backdrops = w.material == driver.WindowMaterialMica })
+	if !backdrops {
+		t.Log("no system backdrop on this Windows: the material stays off")
+	} else {
+		cx.Post(func() { cx.SetWindowMaterial(core.WindowMaterialAcrylic) })
+		until("Acrylic", func(w *window) bool {
+			return w.backdrop == backdropAcrylic && w.env.WindowMaterial == driver.WindowMaterialAcrylic
+		})
+		cx.Post(func() { cx.SetWindowMaterial(core.WindowMaterialNone) })
+		until("an opaque window", func(w *window) bool {
+			return w.backdrop == backdropNone && w.env.WindowMaterial == driver.WindowMaterialNone
+		})
+		cx.Post(func() { cx.SetWindowMaterial(core.WindowMaterialTabbed) })
+		until("Mica Alt", func(w *window) bool { return w.backdrop == backdropMicaAlt })
+	}
+	cx.Post(cx.Quit)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Quit did not return from Run")
+	}
+}
+
 // putClipboard puts b on the open clipboard of hwnd as format.
 func putClipboard(hwnd, format uintptr, b []byte) {
 	openClipboard.Call(hwnd)

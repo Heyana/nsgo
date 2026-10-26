@@ -66,11 +66,12 @@ const (
 // Alt, choosing the closest backdrop for the other names. Other platforms
 // keep the window opaque.
 //
-// The app chooses a material when it starts (nsgo.WindowMaterial) and the
-// window keeps it for its life; Env.WindowMaterial reports the one the
-// window actually shows. What it draws over the material decides how much
-// shows: a view with an opaque background hides it, and one with no
-// background, or a translucent one, lets it through.
+// The window starts with nsgo.WindowMaterial's and changes it with
+// WindowSetMaterial; Windows shows one only in a window started with
+// one. Env.WindowMaterial reports the one the window actually shows.
+// What the app draws over the material decides how much shows: a view
+// with an opaque background hides it, and one with no background, or a
+// translucent one, lets it through.
 type WindowMaterial uint8
 
 const (
@@ -122,6 +123,11 @@ const (
 	// WindowSetMenuBar says when Windows and Linux show the menu bar
 	// (MenuBar).
 	WindowSetMenuBar
+	// WindowSetControls places or hides the window controls of a hidden
+	// title bar (Controls).
+	WindowSetControls
+	// WindowSetMaterial puts Material behind the window's content.
+	WindowSetMaterial
 )
 
 // WindowCommand is an ItemWindow's request.
@@ -130,10 +136,27 @@ type WindowCommand struct {
 	TitleBar TitleBarStyle
 	// Height is the custom title bar's height, in which the platform
 	// centers its window controls; 0 is the platform's.
-	Height  Points
-	Frame   WindowFrame
-	Level   WindowLevel
-	MenuBar MenuBarMode
+	Height   Points
+	Frame    WindowFrame
+	Level    WindowLevel
+	MenuBar  MenuBarMode
+	Controls WindowControls
+	Material WindowMaterial
+}
+
+// WindowControls is how a hidden title bar shows the system's window
+// controls: macOS's traffic lights and the caption buttons NSGo draws on
+// Windows. Linux draws none.
+type WindowControls struct {
+	// Hidden takes the controls away for the app to draw its own, which
+	// call MinimizeWindow, ToggleMaximize and CloseWindow; Env.TitleBar
+	// then reports no width at its ends.
+	Hidden bool
+	// TrafficLights puts the top left corner of macOS's close button
+	// this far from the window's top left corner, in points, the other
+	// two after it. A zero X keeps them 16 points in, and a zero Y
+	// centers them in the title bar.
+	TrafficLights Point
 }
 
 // WindowFrame is where a window moves and how large it becomes, in

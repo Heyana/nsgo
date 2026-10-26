@@ -87,9 +87,12 @@ Package `desktop` is NSH's `nsh/desktop`: native controls, an app-drawn title ba
 
 - `SetTitleBar` hides the system title bar and gives the app's bar its height, in which the platform centers its controls. `TitleBar` then reports the area they keep, and views with `WindowDrag` drag the window.
 - macOS centers the traffic lights in the bar, 16 points from the left, as Onevra does; Windows draws Onevra's rounded caption buttons; Linux reports the bar's height and the app draws its buttons.
+- `SetWindowControls` hides those controls for the app's own, or moves the traffic lights, as MyGo's `TrafficLightPosition` does: the close button's top left from the window's, zero X or Y keeping the default.
+- macOS 27's AppKit puts the traffic lights back whenever it lays the title bar out, without a notification, so NSGo's `NSWindow` subclass places them after each `layoutIfNeeded`. Hiding and showing them makes AppKit place them again once the app's position goes, as Electron's `window_buttons_proxy.mm` notes.
 - `Maximized` reports a maximized or zoomed window, so an app-drawn maximize button can show restore.
 - The platform decides a window drag on the main thread from the mounted props: the nearest view setting `WindowDrag` decides, and a nearer pressable, input or gesture view keeps the press.
-- `nsgo.WindowMaterial` puts a material behind the app's views for the window's life: an `NSVisualEffectView` on macOS, Mica, Acrylic or Mica Alt on Windows 11 22H2 and later. `Env.WindowMaterial` reports it; elsewhere the window stays opaque.
+- `nsgo.WindowMaterial` starts the window with a material behind the app's views and `SetWindowMaterial` changes it: an `NSVisualEffectView` on macOS, Mica, Acrylic or Mica Alt on Windows 11 22H2 and later. `ShowsMaterial` reports whether one shows; elsewhere the window stays opaque.
+- Windows shows a material only in a window started with one: its content needs DirectComposition and `WS_EX_NOREDIRECTIONBITMAP`, which holds from the window's creation. Such a window changes its backdrop, or turns it off, any time.
 - `SetWindowFrame` moves and sizes the window in points from the main screen's top left, keeping the top edge without a move.
 - macOS converts the frame to its bottom-left one and animates it; Windows takes the window's pixels; Linux sets GTK's default size and leaves placement to the compositor.
 - `SetWindowLevel` floats a window (`NSFloatingWindowLevel`, `HWND_TOPMOST`) or sinks it to the desktop's icons on macOS, on every space, or to the bottom of the z-order on Windows. `OrderFront` restores, raises and activates.
@@ -119,10 +122,12 @@ Shortcuts are scoped to their owner: the platform matches key presses against th
 | NSH | NSGo | Why |
 | --- | --- | --- |
 | `setFrame`'s `x` and `y` are the bottom left on macOS, with `anchorTop` | The top left from the main screen everywhere | One coordinate system; the top edge stays without an option |
+| A bar height picks an `NSToolbar` style, and AppKit places the traffic lights | NSGo places them in the app's bar, where `SetWindowControls` says | Any bar height and position, as MyGo and Electron allow |
+| No window material | `nsgo.WindowMaterial` and `SetWindowMaterial`, after MyGo's `Vibrancy` | Desktop apps show the system's materials behind sidebars |
 | `openUrl` throws for a refused URL | `OpenURL` answers false; `CheckURL` says why | A callback has no exception to throw |
 | No images written on Android | `ClipProvider` serves them | The clipboard holds images only as content URIs |
 | Picked images become `File`s whose bytes stay native | `PickedFile` holds the bytes | Go apps hold bytes directly |
 
 ## Verification
 
-`core` tests each request and answer; `examples/gallery` checks its System page with `nsgotest`. The Windows and Linux native tests drive the clipboard, frames, levels, the hiding menu bar, a context menu, the appearance and `Quit` in a window, and Windows' open dialog. `internal/platform/apple` checks HEIC and scaled picks; `picked` checks orientation and scaling. macOS, iOS, Android and the web were checked by running each service.
+`core` tests each request and answer; `examples/gallery` checks its System page with `nsgotest`. The Windows and Linux native tests drive the clipboard, frames, levels, the hiding menu bar, a context menu, the appearance and `Quit` in a window, and Windows' open dialog, hidden caption buttons and backdrops. `internal/platform/apple` checks HEIC and scaled picks; `picked` checks orientation and scaling. macOS, iOS, Android and the web were checked by running each service.

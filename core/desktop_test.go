@@ -60,19 +60,26 @@ func TestPanActivationDecides(t *testing.T) {
 }
 
 func TestWindowCommands(t *testing.T) {
+	lights := WindowControls{TrafficLights: Point{X: 20, Y: 18}}
 	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
 		cx.SetTitleBar(TitleBarHidden, 40)
+		cx.SetWindowControls(lights)
+		cx.SetWindowMaterial(WindowMaterialSidebar)
 		return View{TestID: "bar", WindowDrag: WindowDragOn}
 	})
 	b := h.commit()
-	var cmd *WindowCommand
+	var cmds []WindowCommand
 	for _, it := range b.Items {
 		if it.Kind == driver.ItemWindow {
-			cmd = it.Window
+			cmds = append(cmds, *it.Window)
 		}
 	}
-	if cmd == nil || *cmd != (WindowCommand{Action: WindowSetTitleBar, TitleBar: TitleBarHidden, Height: 40}) {
-		t.Fatalf("window command = %+v", cmd)
+	if want := []WindowCommand{
+		{Action: WindowSetTitleBar, TitleBar: TitleBarHidden, Height: 40},
+		{Action: WindowSetControls, Controls: lights},
+		{Action: WindowSetMaterial, Material: WindowMaterialSidebar},
+	}; !slices.Equal(cmds, want) {
+		t.Fatalf("window commands = %+v, want %+v", cmds, want)
 	}
 	if p := h.find("bar").props; p.WindowDrag != WindowDragOn {
 		t.Fatalf("props = %+v", p)
