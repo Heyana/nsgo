@@ -1,16 +1,17 @@
 name: Website
 
+# Automatic runs are temporarily disabled: restore the push trigger to run again.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "**/*.go"
-      - "go.mod"
-      - "go.sum"
-      - "examples/gallery/**"
-      - "website/**"
-      - ".github/workflows/website.yml"
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "**/*.go"
+  #     - "go.mod"
+  #     - "go.sum"
+  #     - "examples/gallery/**"
+  #     - "website/**"
+  #     - ".github/workflows/website.yml"
   workflow_dispatch:
 
 permissions:
