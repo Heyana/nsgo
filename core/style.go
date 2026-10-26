@@ -1,6 +1,8 @@
 package core
 
 import (
+	"encoding/binary"
+	"math"
 	"reflect"
 	"strings"
 	"unicode"
@@ -204,6 +206,15 @@ type Style struct {
 	SelectionColor Color
 	// PlaceholderColor colors an input's placeholder; 0 is the platform's.
 	PlaceholderColor Color
+	// Fill, Stroke, StrokeWidth and StrokeDash are SVG's paint properties,
+	// inherited as CSS inherits them. Views draw nothing with them; a
+	// canvas's drawing paints with them where it takes its view's paint
+	// (Drawing.FillFromView and the like), so a component's shapes follow
+	// the app's styles. A StrokeWidth of 0 is unset; a StrokeDash that is
+	// empty but not nil is solid.
+	Fill, Stroke Paint
+	StrokeWidth  Points
+	StrokeDash   []Points
 	// WhiteSpace NoWrap keeps text on one line per paragraph, overflowing
 	// its box.
 	WhiteSpace WhiteSpace
@@ -682,6 +693,10 @@ func (s *Style) mergeText(o Style) {
 	set(&s.TextAlignVertical, o.TextAlignVertical)
 	set(&s.SelectionColor, o.SelectionColor)
 	set(&s.PlaceholderColor, o.PlaceholderColor)
+	set(&s.Fill, o.Fill)
+	set(&s.Stroke, o.Stroke)
+	set(&s.StrokeWidth, o.StrokeWidth)
+	setSlice(&s.StrokeDash, o.StrokeDash)
 	set(&s.WhiteSpace, o.WhiteSpace)
 	set(&s.UserSelect, o.UserSelect)
 	set(&s.WritingDirection, o.WritingDirection)
@@ -728,6 +743,11 @@ type textFields struct {
 	UserSelect                       UserSelect
 	WritingDirection                 WritingDirection
 	LayoutDirection                  LayoutDirection
+	Fill, Stroke                     Paint
+	StrokeWidth                      Points
+	// StrokeDash holds the dashes' bits, so the fields stay comparable;
+	// empty is unset.
+	StrokeDash string
 }
 
 // inherit returns s's text fields, falling back to parent's. A line
@@ -754,6 +774,12 @@ func (s *Style) inherit(parent textFields) textFields {
 	set(&t.TextAlignVertical, s.TextAlignVertical)
 	set(&t.SelectionColor, s.SelectionColor)
 	set(&t.PlaceholderColor, s.PlaceholderColor)
+	set(&t.Fill, s.Fill)
+	set(&t.Stroke, s.Stroke)
+	set(&t.StrokeWidth, s.StrokeWidth)
+	if s.StrokeDash != nil {
+		t.StrokeDash = dashKey(s.StrokeDash)
+	}
 	set(&t.WhiteSpace, s.WhiteSpace)
 	set(&t.UserSelect, s.UserSelect)
 	set(&t.WritingDirection, s.WritingDirection)
@@ -766,6 +792,29 @@ func (s *Style) inherit(parent textFields) textFields {
 		t.LineHeight, t.LineHeightEm = Points(t.LineHeightEm)*size, 0
 	}
 	return t
+}
+
+// dashKey encodes dashes as a comparable string: "d" and the bits of
+// each length.
+func dashKey(dashes []Points) string {
+	b := make([]byte, 1, 1+4*len(dashes))
+	b[0] = 'd'
+	for _, l := range dashes {
+		b = binary.LittleEndian.AppendUint32(b, math.Float32bits(float32(l)))
+	}
+	return string(b)
+}
+
+// paint returns the SVG paint properties the text fields carry.
+func (s *textFields) paint() driver.PaintStyle {
+	p := driver.PaintStyle{Fill: s.Fill, Stroke: s.Stroke, StrokeWidth: s.StrokeWidth}
+	if k := s.StrokeDash; k != "" {
+		p.StrokeDash = make([]Points, 0, (len(k)-1)/4)
+		for i := 1; i+4 <= len(k); i += 4 {
+			p.StrokeDash = append(p.StrokeDash, Points(math.Float32frombits(binary.LittleEndian.Uint32([]byte(k[i:i+4])))))
+		}
+	}
+	return p
 }
 
 // textShadow is the shadow the text fields describe, if any.

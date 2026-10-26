@@ -190,6 +190,8 @@ func (t *Tree) resolve(n *node, inherited textFields, force bool) {
 		in := n.icon
 		in.text = t.scaled(inherited.textStyle())
 		t.within(n.owner, func() { in.color.Set(in.text.Color) })
+	case n.canvas != nil:
+		t.resolvePaint(n, &inherited)
 	case n.text != nil:
 		n.props.SelectionColor = inherited.SelectionColor
 		tn := n.text
@@ -537,7 +539,7 @@ func (t *Tree) emitParts(n *node) bool {
 	case n.canvas != nil:
 		if cn := n.canvas; cn.fresh && cn.drawing != nil {
 			cn.fresh = false
-			add(driver.MountItem{Kind: driver.ItemCanvas, ID: n.id, Drawing: cn.drawing})
+			add(driver.MountItem{Kind: driver.ItemCanvas, ID: n.id, Drawing: cn.drawing.Painted(&cn.paint, cn.color)})
 		}
 	case n.shader != nil:
 		if sn := n.shader; sn.fresh {

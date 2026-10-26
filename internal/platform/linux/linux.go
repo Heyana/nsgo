@@ -141,7 +141,9 @@ type window struct {
 	lastHeight    driver.Points
 	started       bool
 	handle        uintptr
-	measureMap    [2]uintptr                        // the engine thread's Pango contexts, left to right and right to left
+	measureMap    [2]uintptr // the engine thread's Pango contexts, left to right and right to left
+	hitMap        [2]uintptr // hit testing's, used under hitMu from either thread
+	hitMu         sync.Mutex
 	extents       map[driver.Font]driver.FontExtent // the engine thread's font metrics
 	capHeights    map[driver.Font]driver.Points     // and capital heights
 	pressConsumed bool
@@ -345,6 +347,14 @@ func (w *window) stop() {
 			w.measureMap[i] = 0
 		}
 	}
+	w.hitMu.Lock()
+	for i, m := range w.hitMap {
+		if m != 0 {
+			gObjectUnref(m)
+			w.hitMap[i] = 0
+		}
+	}
+	w.hitMu.Unlock()
 	if w.loop != 0 {
 		gMainLoopUnref(w.loop)
 		w.loop = 0

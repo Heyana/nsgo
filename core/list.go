@@ -92,9 +92,9 @@ type List struct {
 	// else it holds. Fixed when the list mounts.
 	Viewport ListViewport
 
-	// Behavior, ContentOffset, the scroll events, OnRefresh and
-	// Refreshing, and OffsetValues are Scroll's, for the list's scroll
-	// view. In its parent's viewport they are ignored, as are Inverted
+	// Behavior, ContentOffset, the scroll events, OnRefresh,
+	// Refreshing, PullValue and OffsetValues are Scroll's, for the list's
+	// scroll view. In its parent's viewport they are ignored, as are Inverted
 	// and MaintainVisibleContentPosition.
 	Behavior          ScrollBehavior
 	BehaviorFunc      func() ScrollBehavior
@@ -106,6 +106,7 @@ type List struct {
 	OnMomentumEnd     func(ScrollEvent)
 	OnRefresh         func()
 	Refreshing        func() bool
+	PullValue         *AnimatedValue
 	OffsetValues      AnimatedXY
 	OnLayout          func(Bounds)
 	Style             Style
@@ -330,7 +331,7 @@ func (t *Tree) mountList(cx *Scope, parent *node, l List) {
 			refreshing: l.Refreshing, onRefresh: l.OnRefresh, onScroll: l.OnScroll,
 			onDragStart: l.OnScrollDragStart, onDragEnd: l.OnScrollDragEnd,
 			onMomentum: l.OnMomentumStart, onMomentumEnd: l.OnMomentumEnd})
-		t.bindScroll(cx, v, l.OffsetValues)
+		t.bindScroll(cx, v, l.OffsetValues, l.PullValue)
 	}
 	if l.ContentOffset != (Point{}) {
 		ln.cmds = append(ln.cmds, listCommand{to: l.ContentOffset})

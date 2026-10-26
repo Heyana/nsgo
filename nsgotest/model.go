@@ -239,6 +239,7 @@ func (a *App) apply(b *driver.MountBatch) {
 				v.ZoomScale = it.Scroll.ZoomScale
 			}
 			v.Scroll = *it.Scroll
+			a.pullValue(v)
 		case driver.ItemZoomTo:
 			v.ZoomScale = it.Zoom.Scale
 			id, at, z := it.ID, v.Offset, v.ZoomScale

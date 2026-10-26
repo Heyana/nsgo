@@ -4,6 +4,7 @@ package apple
 
 import (
 	"math"
+	"slices"
 	"structs"
 	"unicode/utf8"
 	"unsafe"
@@ -53,6 +54,11 @@ var (
 	cfAttributedStringMutable   func(alloc uintptr, max int, str uintptr) uintptr
 	cfAttributedStringSetAttrs  func(str uintptr, loc, length int, attrs uintptr, clear bool)
 	ctLineGetGlyphRuns          func(line uintptr) uintptr
+	ctRunGetGlyphCount          func(run uintptr) int
+	ctRunGetStringIndices       func(run uintptr, r cfRange, buffer *int)
+	ctRunGetPositions           func(run uintptr, r cfRange, buffer *CGPoint)
+	ctRunGetAdvances            func(run uintptr, r cfRange, buffer *CGSize)
+	ctRunGetStatus              func(run uintptr) uint32
 	ctRunGetAttributes          func(run uintptr) uintptr
 	ctFontGetCapHeight          func(uintptr) float64
 	cgContextSetShadowWithColor func(ctx uintptr, offset CGSize, blur float64, color uintptr)
@@ -109,6 +115,11 @@ func loadText(cf, cg uintptr) {
 	reg(&cfAttributedStringMutable, cf, "CFAttributedStringCreateMutableCopy")
 	reg(&cfAttributedStringSetAttrs, cf, "CFAttributedStringSetAttributes")
 	reg(&ctLineGetGlyphRuns, ct, "CTLineGetGlyphRuns")
+	reg(&ctRunGetGlyphCount, ct, "CTRunGetGlyphCount")
+	reg(&ctRunGetStringIndices, ct, "CTRunGetStringIndices")
+	reg(&ctRunGetPositions, ct, "CTRunGetPositions")
+	reg(&ctRunGetAdvances, ct, "CTRunGetAdvances")
+	reg(&ctRunGetStatus, ct, "CTRunGetStatus")
 	reg(&ctRunGetAttributes, ct, "CTRunGetAttributes")
 	reg(&ctFontGetCapHeight, ct, "CTFontGetCapHeight")
 	reg(&cgContextSetShadowWithColor, cg, "CGContextSetShadowWithColor")
@@ -579,6 +590,7 @@ func rectPath(size CGSize) uintptr {
 // Layout implements core.PreparedText: the CTFrame the main thread draws.
 func (p *prepared) Layout(size driver.Size) driver.TextLayout {
 	l := p.layout(size)
+	l.carets.Set(l.caretLines)
 	if len(p.decos) > 0 || len(p.atts) > 0 {
 		l.place(p.decos, p.atts, p.fonts, p.toUTF16)
 	}
@@ -685,6 +697,104 @@ type Layout struct {
 	// box's top left.
 	under, over []box
 	attachments []attachmentBox
+
+	// carets hit-tests the lines, read from them when first asked.
+	carets driver.LazyCarets
+}
+
+// HitTest implements driver.TextHitTester.
+func (l *Layout) HitTest(p driver.Point) driver.Caret { return l.carets.HitTest(p) }
+
+// CaretRect implements driver.TextHitTester.
+func (l *Layout) CaretRect(c driver.Caret) (driver.Bounds, bool) { return l.carets.CaretRect(c) }
+
+// RangeRects implements driver.TextHitTester.
+func (l *Layout) RangeRects(start, end int, out []driver.Bounds) []driver.Bounds {
+	return l.carets.RangeRects(start, end, out)
+}
+
+// caretLines reads where the lines' characters are from their glyph runs:
+// each run's glyphs grouped by the characters they show, its direction
+// from the run's status. The truncation token's run is left out.
+func (l *Layout) caretLines() driver.CaretLayout {
+	if l.frame == 0 && l.truncated == 0 {
+		// An empty text: one empty line, as high as the box.
+		return driver.CaretLayout{{Box: driver.Bounds{Size: driver.Size{Height: driver.Points(l.height)}}}}
+	}
+	lines, baselines, bases := l.placed()
+	units := len(l.toUTF8) - 1
+	out := make(driver.CaretLayout, 0, len(lines))
+	for i, line := range lines {
+		var ascent, descent, leading float64
+		width := ctLineGetTypographicBounds(line, &ascent, &descent, &leading)
+		if line == l.truncated && l.clip > 0 {
+			width = min(width, l.clip)
+		}
+		r := ctLineGetStringRange(line)
+		from, to := r.Location+bases[i], r.Location+r.Length+bases[i]
+		origin := baselines[i]
+		cl := driver.CaretLine{Start: from, End: min(to, units),
+			Box: driver.Bounds{Origin: driver.Point{X: driver.Points(origin.X), Y: driver.Points(origin.Y - ascent)},
+				Size: driver.Size{Width: driver.Points(width), Height: driver.Points(ascent + descent + leading)}}}
+		runs := ctLineGetGlyphRuns(line)
+		for k := range cfArrayGetCount(runs) {
+			cl.Clusters = runClusters(cfArrayGetValueAtIndex(runs, k), r, bases[i], origin.X, cl.Clusters)
+		}
+		// Logical order, without the line's break.
+		slices.SortFunc(cl.Clusters, func(a, b driver.CaretCluster) int { return a.Start - b.Start })
+		for n := len(cl.Clusters); n > 0 && l.breaksAt(cl.Clusters[n-1].Start); n-- {
+			cl.Clusters = cl.Clusters[:n-1]
+		}
+		cl.RTL = len(cl.Clusters) > 0 && cl.Clusters[0].RTL
+		out = append(out, cl)
+	}
+	return out
+}
+
+// runClusters appends the clusters of run, of a line whose string range
+// is line, its offsets based at base, drawn at x: its glyphs grouped by
+// the first character each shows, every group reaching to the next
+// character a glyph shows.
+func runClusters(run uintptr, line cfRange, base int, x float64, out []driver.CaretCluster) []driver.CaretCluster {
+	n := ctRunGetGlyphCount(run)
+	if n == 0 {
+		return out
+	}
+	indices := make([]int, n)
+	positions := make([]CGPoint, n)
+	advances := make([]CGSize, n)
+	ctRunGetStringIndices(run, cfRange{}, &indices[0])
+	ctRunGetPositions(run, cfRange{}, &positions[0])
+	ctRunGetAdvances(run, cfRange{}, &advances[0])
+	const rightToLeft = 1 // kCTRunStatusRightToLeft
+	rtl := ctRunGetStatus(run)&rightToLeft != 0
+	starts := slices.Clone(indices)
+	slices.Sort(starts)
+	starts = slices.Compact(starts)
+	lineEnd := line.Location + line.Length
+	if starts[0] < line.Location || starts[len(starts)-1] >= lineEnd {
+		return out // the truncation token's
+	}
+	first := len(out)
+	for k, s := range starts {
+		end := lineEnd
+		if k+1 < len(starts) {
+			end = starts[k+1]
+		}
+		out = append(out, driver.CaretCluster{Start: s + base, End: end + base, Left: math.MaxFloat32,
+			Right: -math.MaxFloat32, RTL: rtl})
+	}
+	for g := range n {
+		k, _ := slices.BinarySearch(starts, indices[g])
+		c := &out[first+k]
+		left := driver.Points(x + positions[g].X)
+		c.Left, c.Right = min(c.Left, left), max(c.Right, left+driver.Points(advances[g].Width))
+	}
+	// A run's last character reaches to the next run's first.
+	if end := out[len(out)-1].End - base; end > lineEnd {
+		out[len(out)-1].End = lineEnd + base
+	}
+	return out
 }
 
 // Release implements core.TextLayout.
@@ -692,12 +802,14 @@ func (l *Layout) Release() {
 	if l == nil {
 		return
 	}
+	l.carets.Drop()
 	Release(l.frame)
 	for _, line := range l.lines {
 		Release(line)
 	}
 	Release(l.truncated)
-	*l = Layout{}
+	l.frame, l.lines, l.truncated, l.origins = 0, nil, 0, nil
+	l.under, l.over, l.attachments = nil, nil, nil
 }
 
 // placed returns l's lines, their baselines from the box's top and the
@@ -801,28 +913,7 @@ func (l *Layout) OffsetAt(p CGPoint, box CGRect) int {
 	if l == nil {
 		return 0
 	}
-	lines, baselines, bases := l.placed()
-	if len(lines) == 0 {
-		return 0
-	}
-	y := p.Y - box.Origin.Y
-	i := len(lines) - 1
-	for k, line := range lines {
-		var ascent, descent, leading float64
-		ctLineGetTypographicBounds(line, &ascent, &descent, &leading)
-		if y <= baselines[k].Y+descent+leading/2 {
-			i = k
-			break
-		}
-	}
-	line := lines[i]
-	r := ctLineGetStringRange(line)
-	idx := ctLineIndexForPosition(line, CGPoint{X: p.X - box.Origin.X - baselines[i].X})
-	end := r.Location + r.Length
-	if end > r.Location && l.breaksAt(end-1+bases[i]) {
-		end--
-	}
-	return min(max(idx, r.Location), end) + bases[i]
+	return l.HitTest(driver.Point{X: driver.Points(p.X - box.Origin.X), Y: driver.Points(p.Y - box.Origin.Y)}).Offset
 }
 
 // breaksAt reports whether UTF-16 offset i is a line break.
@@ -835,34 +926,16 @@ func (l *Layout) breaksAt(i int) bool {
 }
 
 // SelectionRects returns the boxes of the UTF-16 range from start to end
-// in the view Draw draws l in at box, a box per line it covers. A range
-// that goes on past a line covers the rest of it.
+// in the view Draw draws l in at box: per line, a box per run of adjacent
+// characters. A range that goes on past a line covers the rest of it.
 func (l *Layout) SelectionRects(start, end int, box CGRect) []CGRect {
 	if l == nil || end <= start {
 		return nil
 	}
 	var out []CGRect
-	lines, baselines, bases := l.placed()
-	for i, line := range lines {
-		r := ctLineGetStringRange(line)
-		from, to := r.Location+bases[i], r.Location+r.Length+bases[i]
-		a, b := max(start, from), min(end, to)
-		if a >= b {
-			continue
-		}
-		var ascent, descent, leading float64
-		width := ctLineGetTypographicBounds(line, &ascent, &descent, &leading)
-		x0 := ctLineOffsetForIndex(line, a-bases[i], nil)
-		x1 := ctLineOffsetForIndex(line, b-bases[i], nil)
-		if end >= to {
-			x1 = width
-		}
-		if x1 < x0 {
-			x0, x1 = x1, x0
-		}
-		o := baselines[i]
-		top := o.Y - ascent - leading/2
-		out = append(out, Rect(box.Origin.X+o.X+x0, box.Origin.Y+top, x1-x0, ascent+descent+leading))
+	for _, b := range l.RangeRects(start, end, nil) {
+		out = append(out, Rect(box.Origin.X+float64(b.Origin.X), box.Origin.Y+float64(b.Origin.Y),
+			float64(b.Size.Width), float64(b.Size.Height)))
 	}
 	return out
 }

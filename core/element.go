@@ -63,6 +63,11 @@ type View struct {
 	// focus's Tab stops on macOS and the web: a backdrop that closes a
 	// popover, rows a list moves through with the arrow keys.
 	NoFocus bool
+	// OnFocus and OnBlur follow the keyboard focus to and from a view that
+	// takes presses, on macOS and the web; a click presses without
+	// focusing.
+	OnFocus func()
+	OnBlur  func()
 	// PointerEvents says which of the view and its children take
 	// touches and the pointer.
 	PointerEvents PointerEvents
@@ -347,8 +352,15 @@ type Scroll struct {
 	// OnRefresh makes it refreshable: pulling the content down past its
 	// top calls it and shows the platform's spinner while Refreshing
 	// returns true. Set Refreshing in OnRefresh, clear it when done.
+	// Behavior.RefreshIndicator replaces the spinner with the app's own
+	// indicator, which PullValue animates.
 	OnRefresh  func()
 	Refreshing func() bool
+	// PullValue follows how far the content is pulled past its top on
+	// the platform's main thread: 0 at rest, the indicator's room while
+	// it refreshes. Draw an indicator of the app's own over the top of
+	// the scroll view with styles bound to it.
+	PullValue *AnimatedValue
 	// MaxZoomScale above MinZoomScale (both 1 when 0) lets pinches zoom
 	// the content, which then scrolls both ways. ZoomScale is the scale
 	// it starts at, and ZoomScaleFunc zooms to its value when it

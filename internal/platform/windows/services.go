@@ -37,6 +37,7 @@ const (
 	vkMenu         = 0x12
 	vkLWin         = 0x5B
 	vkRWin         = 0x5C
+	vkLButton      = 0x01
 	wmContextMenu  = 0x007B
 	contextFromKey = ^uintptr(0) // lParam -1: Shift+F10 or the menu key
 )

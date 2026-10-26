@@ -944,7 +944,8 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, hoverMove: v.OnHoverMove, mouseMove: v.OnMouseMove,
 		layout: v.OnLayout, contextMenu: v.OnContextMenu, touch: v.OnTouch,
 		pan: v.OnPan, pinch: v.OnPinch, rotation: v.OnRotation,
-		fileEnter: v.OnFileDragEnter, fileLeave: v.OnFileDragLeave, fileDrop: v.OnFileDrop}
+		fileEnter: v.OnFileDragEnter, fileLeave: v.OnFileDragLeave, fileDrop: v.OnFileDrop,
+		focus: v.OnFocus, blur: v.OnBlur}
 	n.h.action = v.OnAccessibilityAction
 	n.responder = v.Responder
 	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
@@ -1135,7 +1136,7 @@ func (t *Tree) mountScroll(cx *Scope, parent *node, v Scroll) {
 		onMomentum: v.OnMomentumStart, onMomentumEnd: v.OnMomentumEnd,
 		minZoom: v.MinZoomScale, maxZoom: v.MaxZoomScale, zoom: v.ZoomScale, zoomFunc: v.ZoomScaleFunc,
 		noBouncesZoom: v.NoBouncesZoom, noPinch: v.NoPinchZoom, centerContent: v.CenterContent})
-	t.bindScroll(cx, n, v.OffsetValues)
+	t.bindScroll(cx, n, v.OffsetValues, v.PullValue)
 	for _, c := range v.Children {
 		t.mount(cx, n, c)
 	}

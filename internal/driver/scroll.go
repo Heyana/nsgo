@@ -37,6 +37,37 @@ type ScrollBehavior struct {
 	// KeyboardShouldPersistTaps is whether a tap while the software
 	// keyboard shows dismisses it.
 	KeyboardShouldPersistTaps KeyboardTaps
+	// RefreshIndicator is the height of the app's own pull-to-refresh
+	// indicator, drawn from a pull value, which replaces the platform's
+	// spinner: a pull refreshes once it reaches it, and refreshing keeps
+	// it above the content. 0 shows the platform's spinner.
+	RefreshIndicator Points
+}
+
+// RefreshPull is how far past its top a released pull refreshes with the
+// platform's spinner, and RefreshSpace the room the spinner keeps above
+// the content while refreshing.
+const (
+	RefreshPull  Points = 64
+	RefreshSpace Points = 56
+)
+
+// RefreshThreshold is how far past the top a released pull refreshes:
+// the app's indicator's height, or the spinner's distance.
+func (b *ScrollBehavior) RefreshThreshold() Points {
+	if b.RefreshIndicator > 0 {
+		return b.RefreshIndicator
+	}
+	return RefreshPull
+}
+
+// RefreshInset is the room kept above the content while it refreshes:
+// the app's indicator's height, or the spinner's.
+func (b *ScrollBehavior) RefreshInset() Points {
+	if b.RefreshIndicator > 0 {
+		return b.RefreshIndicator
+	}
+	return RefreshSpace
 }
 
 // Deceleration rates, as UIKit's.
@@ -199,7 +230,8 @@ func (b *ScrollBehavior) Equal(o *ScrollBehavior) bool {
 		slices.Equal(b.SnapToOffsets, o.SnapToOffsets) && b.SnapToAlignment == o.SnapToAlignment &&
 		b.DisableIntervalMomentum == o.DisableIntervalMomentum && b.DecelerationRate == o.DecelerationRate &&
 		b.NoScroll == o.NoScroll && b.NoBounces == o.NoBounces && b.ContentInset == o.ContentInset &&
-		b.KeyboardDismissMode == o.KeyboardDismissMode && b.KeyboardShouldPersistTaps == o.KeyboardShouldPersistTaps
+		b.KeyboardDismissMode == o.KeyboardDismissMode && b.KeyboardShouldPersistTaps == o.KeyboardShouldPersistTaps &&
+		b.RefreshIndicator == o.RefreshIndicator
 }
 
 // ZoomRequest is ItemZoomTo's: the scale to zoom to, and the content

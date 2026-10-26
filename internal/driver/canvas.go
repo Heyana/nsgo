@@ -1,8 +1,11 @@
 package driver
 
 import (
+	"cmp"
 	"math"
 	"slices"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Drawing is a recording of 2D drawing operations, modeled on the web's
@@ -22,6 +25,10 @@ type Drawing struct {
 	// Nodes are named parts of what it draws, which assistive technology
 	// and tests see as the canvas's children.
 	Nodes []CanvasNode
+	// ViewPaints name the ops whose value is their canvas view's paint
+	// (FillFromView and the like), which the core sets before the platform
+	// plays the drawing.
+	ViewPaints []ViewPaint
 
 	text     TextEngine // measures text; nil approximates it
 	measured map[textKey]TextMetrics
@@ -602,6 +609,34 @@ func (d *Drawing) SetStrokeColor(c Color) *Drawing {
 	return d.op(DrawOp{Kind: DrawStrokeColor, Color: c})
 }
 
+// FillFromView fills with the canvas view's Fill style, inherited as CSS
+// inherits it, or with initial where no view sets one.
+func (d *Drawing) FillFromView(initial Paint) *Drawing {
+	d.ViewPaints = append(d.ViewPaints, ViewPaint{Op: len(d.Ops), Kind: ViewFill, Initial: initial})
+	return d.SetFillColor(initial.Color(0))
+}
+
+// StrokeFromView strokes with the canvas view's Stroke style, or with
+// initial where no view sets one.
+func (d *Drawing) StrokeFromView(initial Paint) *Drawing {
+	d.ViewPaints = append(d.ViewPaints, ViewPaint{Op: len(d.Ops), Kind: ViewStroke, Initial: initial})
+	return d.SetStrokeColor(initial.Color(0))
+}
+
+// LineWidthFromView sets the line width to the canvas view's
+// StrokeWidth style, 1 where no view sets one.
+func (d *Drawing) LineWidthFromView() *Drawing {
+	d.ViewPaints = append(d.ViewPaints, ViewPaint{Op: len(d.Ops), Kind: ViewStrokeWidth})
+	return d.SetLineWidth(1)
+}
+
+// LineDashFromView dashes lines as the canvas view's StrokeDash style
+// says, solid where no view sets one.
+func (d *Drawing) LineDashFromView() *Drawing {
+	d.ViewPaints = append(d.ViewPaints, ViewPaint{Op: len(d.Ops), Kind: ViewStrokeDash})
+	return d.SetLineDash()
+}
+
 // SetFillGradient fills with g until the next SetFillColor.
 func (d *Drawing) SetFillGradient(g *CanvasGradient) *Drawing {
 	d.SetFillColor(g.first())
@@ -736,7 +771,8 @@ type textKey struct {
 	font Font
 }
 
-// MeasureText returns the advance width of text in font.
+// MeasureText returns the advance width of text in font, its trailing
+// white space included, as a browser's measureText counts it.
 func (d *Drawing) MeasureText(text string, font Font) float32 {
 	return d.TextMetrics(text, font).Width
 }
@@ -755,26 +791,64 @@ func (d *Drawing) TextMetrics(text string, font Font) TextMetrics {
 	m := TextMetrics{Width: 0.6 * size * float32(len([]rune(text))), Ascent: 0.8 * size, Descent: 0.2 * size,
 		LineHeight: 1.2 * size}
 	if d.text != nil {
-		p := d.text.Prepare(&AttributedText{Text: text, Style: TextStyle{Font: font, Color: RGB(0x000000),
-			Align: TextAlignStart}})
-		fit := p.Measure(Auto)
-		m.Width, m.LineHeight = float32(fit.Width), float32(fit.Height)
-		l := p.Layout(fit)
-		if ll, ok := l.(interface{ TextLines() []TextLine }); ok {
-			if lines := ll.TextLines(); len(lines) > 0 {
-				m.Width = float32(lines[0].Bounds.Size.Width)
-				m.Ascent, m.Descent = float32(lines[0].Ascender), float32(lines[0].Descender)
-				m.LineHeight = float32(lines[0].Bounds.Size.Height)
-			}
-		}
-		l.Release()
-		p.Release()
+		// An empty line still has the font's extent.
+		line := d.firstLine(cmp.Or(text, " "), font)
+		m.Ascent, m.Descent, m.LineHeight = float32(line.Ascender), float32(line.Descender),
+			float32(line.Bounds.Size.Height)
+		m.Width = d.advance(text, font)
 	}
 	if d.measured == nil {
 		d.measured = map[textKey]TextMetrics{}
 	}
 	d.measured[key] = m
 	return m
+}
+
+// widthMark closes a text ending in white space while it is measured.
+const widthMark = "x"
+
+// advance returns how far text advances on its first line in font, its
+// trailing white space included. Engines lay a line out without the white
+// space at its end, which hangs past the line as in CSS, so a text ending
+// in it is measured with a mark after it, less the mark.
+func (d *Drawing) advance(text string, font Font) float32 {
+	if text == "" {
+		return 0
+	}
+	last, _ := utf8.DecodeLastRuneInString(text)
+	if !unicode.IsSpace(last) || lineBreak(last) {
+		return float32(d.firstLine(text, font).Bounds.Size.Width)
+	}
+	w := d.firstLine(text+widthMark, font).Bounds.Size.Width - d.firstLine(widthMark, font).Bounds.Size.Width
+	return float32(max(w, 0))
+}
+
+// lineBreak says whether r is one of Unicode's mandatory line breaks.
+func lineBreak(r rune) bool {
+	switch r {
+	case '\n', '\r', '\v', '\f', 0x85, 0x2028, 0x2029:
+		return true
+	}
+	return false
+}
+
+// firstLine lays text out unwrapped in font and returns its first line;
+// an engine that reports no lines gives its measured size, the em box's
+// split of the font size and no width past the box.
+func (d *Drawing) firstLine(text string, font Font) TextLine {
+	p := d.text.Prepare(&AttributedText{Text: text, Style: TextStyle{Font: font, Color: RGB(0x000000),
+		Align: TextAlignStart}})
+	defer p.Release()
+	fit := p.Measure(Auto)
+	l := p.Layout(fit)
+	defer l.Release()
+	if ll, ok := l.(interface{ TextLines() []TextLine }); ok {
+		if lines := ll.TextLines(); len(lines) > 0 {
+			return lines[0]
+		}
+	}
+	size := float32(font.Size)
+	return TextLine{Bounds: Bounds{Size: fit}, Ascender: Points(0.8 * size), Descender: Points(0.2 * size)}
 }
 
 // FillRect fills a rectangle with the fill paint, leaving the current
@@ -832,4 +906,135 @@ func (d *Drawing) Bind(arg DrawArg, node AnimatedArg) *Drawing {
 func (d *Drawing) Node(n CanvasNode) *Drawing {
 	d.Nodes = append(d.Nodes, n)
 	return d
+}
+
+// Paint is what SVG's paint properties, Fill and Stroke, paint with: a
+// color, nothing or the text color. The zero Paint is unset, so the
+// property inherits.
+type Paint struct {
+	kind  viewPaintKind
+	color Color
+}
+
+type viewPaintKind uint8
+
+const (
+	unsetPaint viewPaintKind = iota
+	noPaint
+	currentPaint
+	colorPaint
+)
+
+var (
+	// PaintNone paints nothing.
+	PaintNone = Paint{kind: noPaint}
+	// PaintCurrentColor paints with the text color, CSS's currentColor.
+	PaintCurrentColor = Paint{kind: currentPaint}
+)
+
+// PaintColor paints with c.
+func PaintColor(c Color) Paint { return Paint{kind: colorPaint, color: c} }
+
+// IsSet reports whether p is set.
+func (p Paint) IsSet() bool { return p.kind != unsetPaint }
+
+// Color returns the color p paints with, current being the text color;
+// nothing is transparent.
+func (p Paint) Color(current Color) Color {
+	switch p.kind {
+	case currentPaint:
+		return current
+	case colorPaint:
+		return p.color
+	}
+	return 0
+}
+
+// PaintStyle is the SVG paint properties a canvas view inherits.
+type PaintStyle struct {
+	Fill, Stroke Paint
+	// StrokeWidth is the line width; 0 is unset, CSS's initial 1.
+	StrokeWidth Points
+	// StrokeDash is the dashes and gaps in turn, repeated when odd; nil is
+	// unset and empty solid, as are lengths adding up to 0.
+	StrokeDash []Points
+}
+
+// ViewPaintKind is the paint property a ViewPaint takes.
+type ViewPaintKind uint8
+
+const (
+	ViewFill ViewPaintKind = iota
+	ViewStroke
+	ViewStrokeWidth
+	ViewStrokeDash
+)
+
+// ViewPaint is an op of a drawing whose value is its view's paint.
+type ViewPaint struct {
+	Op   int
+	Kind ViewPaintKind
+	// Initial is what a fill or stroke paints with where no view sets
+	// one.
+	Initial Paint
+}
+
+// Painted returns d with its view paints set from p, current being the
+// view's text color, or d itself when it takes none.
+func (d *Drawing) Painted(p *PaintStyle, current Color) *Drawing {
+	if len(d.ViewPaints) == 0 {
+		return d
+	}
+	out := &Drawing{Ops: slices.Clone(d.Ops), Slots: d.Slots, Nodes: d.Nodes, ViewPaints: d.ViewPaints, text: d.text}
+	for _, v := range d.ViewPaints {
+		if v.Op >= len(out.Ops) {
+			continue
+		}
+		op := &out.Ops[v.Op]
+		switch v.Kind {
+		case ViewFill:
+			paint := v.Initial
+			if p.Fill.IsSet() {
+				paint = p.Fill
+			}
+			op.Color = paint.Color(current)
+		case ViewStroke:
+			paint := v.Initial
+			if p.Stroke.IsSet() {
+				paint = p.Stroke
+			}
+			op.Color = paint.Color(current)
+		case ViewStrokeWidth:
+			op.W = 1
+			if p.StrokeWidth != 0 {
+				op.W = float32(p.StrokeWidth)
+			}
+		case ViewStrokeDash:
+			op.Dash = strokeDash(p.StrokeDash)
+		}
+	}
+	return out
+}
+
+// strokeDash is the line dash of dashes, solid for none, a negative
+// length or lengths adding up to 0.
+func strokeDash(dashes []Points) *LineDash {
+	var sum Points
+	for _, l := range dashes {
+		if l < 0 || l != l {
+			sum = 0
+			break
+		}
+		sum += l
+	}
+	dash := LineDash{}
+	if sum > 0 {
+		for _, l := range dashes {
+			dash = append(dash, float32(l))
+		}
+		if len(dash)%2 == 1 {
+			dash = append(dash, dash...)
+		}
+	}
+	return &dash
 }

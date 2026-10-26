@@ -415,7 +415,10 @@ func (t *Tree) bindGestureValue(n *node, kind driver.AnimationOpKind, v *Animate
 	}
 }
 
-func (t *Tree) bindScroll(cx *Scope, n *node, xy AnimatedXY) {
+func (t *Tree) bindScroll(cx *Scope, n *node, xy AnimatedXY, pull *AnimatedValue) {
+	if pull != nil {
+		t.anim.add(driver.AnimationOp{Kind: driver.AnimBindPull, View: n.id, Node: pull.id})
+	}
 	if xy.X == nil && xy.Y == nil {
 		return
 	}

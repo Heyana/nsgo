@@ -32,6 +32,34 @@ type canvasNode struct {
 	size    *Signal[Size]
 	drawing *Drawing
 	fresh   bool
+	// paint and color are the paint properties and text color the
+	// canvas inherits, which its drawing's view paints take.
+	paint driver.PaintStyle
+	color Color
+	// paintKey is what paint was resolved from.
+	paintKey canvasPaintKey
+}
+
+// canvasPaintKey is what a canvas's view paints are resolved from.
+type canvasPaintKey struct {
+	fill, stroke Paint
+	width        Points
+	dash         string
+	color        Color
+}
+
+// resolvePaint takes the paint properties canvas node n inherits and has
+// its drawing sent again when they change what it paints.
+func (t *Tree) resolvePaint(n *node, inherited *textFields) {
+	cn := n.canvas
+	k := canvasPaintKey{inherited.Fill, inherited.Stroke, inherited.StrokeWidth, inherited.StrokeDash, n.color}
+	if k == cn.paintKey {
+		return
+	}
+	cn.paintKey, cn.paint, cn.color = k, inherited.paint(), n.color
+	if cn.drawing != nil && len(cn.drawing.ViewPaints) > 0 {
+		cn.fresh = true
+	}
 }
 
 func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
@@ -50,6 +78,10 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 		}
 		d := driver.NewDrawing(t.text)
 		cn.draw(d, size)
+		// A canvas that has drawn nothing has nothing to clear.
+		if cn.drawing == nil && len(d.Ops) == 0 && len(d.Nodes) == 0 {
+			return
+		}
 		t.pickDrawingScales(d)
 		cn.drawing, cn.fresh = d, true
 		t.touch(n)

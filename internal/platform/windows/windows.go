@@ -117,6 +117,7 @@ const (
 	wmEraseBkgnd    = 0x0014
 	wmSettingChange = 0x001A
 	wmKeyDown       = 0x0100
+	wmKeyUp         = 0x0101
 	wmChar          = 0x0102
 	wmSysKeyDown    = 0x0104
 	wmCommand       = 0x0111
@@ -1299,6 +1300,29 @@ func (w *window) mouseMoved(button bool) {
 	}
 }
 
+// modifierKey reports a modifier key pressed or released while the mouse
+// rests over the window as a hover move to where it is with the new
+// modifiers, so a view hears Control come and go under a still mouse.
+func (w *window) modifierKey(vk uintptr) {
+	switch vk {
+	case vkShift, vkControl, vkMenu, vkLWin, vkRWin:
+	default:
+		return
+	}
+	root := w.view(w.root)
+	if root == nil || !w.pointerIn || keyDown(vkLButton) {
+		return
+	}
+	under := viewsAt(root, w.pointer, func(v *view) bool { return v.events.Has(driver.EventHoverMove) }, nil)
+	mods := modifiers()
+	for i := len(under) - 1; i >= 0; i-- {
+		v := under[i]
+		b, _ := w.surfaceBounds(v)
+		local := driver.Point{X: w.pointer.X - b.Origin.X, Y: w.pointer.Y - b.Origin.Y}
+		w.engine.Dispatch(driver.Event{Kind: driver.EventHoverMove, ID: v.id, Point: local, Page: w.pointer, Modifiers: mods})
+	}
+}
+
 // background is the color behind v: its own or its nearest ancestor's.
 func background(v *view) driver.Color {
 	for ; v != nil; v = v.parent {
@@ -1396,7 +1420,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmPopup:
 		w.showPopup()
 		return 0
+	case wmKeyUp:
+		w.modifierKey(wParam)
 	case wmSysKeyUp:
+		w.modifierKey(wParam)
 		if w.menuBarKey(message, wParam, lParam) {
 			return 0
 		}
@@ -1553,6 +1580,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case wmKeyDown:
+		if !repeated(lParam) {
+			w.modifierKey(wParam)
+		}
 		// The host's loop translated the key before it came here; Run's
 		// loop asks the shortcuts first.
 		if w.embedded && w.shortcut(wParam, lParam) {
@@ -1585,6 +1615,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmSetFocus, wmKillFocus:
 		w.windowFocus(message == wmSetFocus)
 	case wmSysKeyDown:
+		if !repeated(lParam) {
+			w.modifierKey(wParam)
+		}
 		w.menuBarKey(message, wParam, lParam)
 		// Alt+Left; DefWindowProc still sees it, or releasing Alt would
 		// open the window menu.

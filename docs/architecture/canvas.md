@@ -20,9 +20,13 @@ The recorder resolves what needs the engine, so players stay plain: text alignme
 
 A drawing answers without the platform, during `Draw` and after it, so `OnPress` can test the last drawing's shapes:
 
-- `MeasureText` and `TextMetrics` lay text out with the platform's `TextEngine` and report the first line's width, ascent, descent and line height. Without an engine, as in some tests, they approximate: 0.6 em a character, 0.8 em up and 0.2 em down.
+- `MeasureText` and `TextMetrics` lay text out with the platform's `TextEngine` and report the first line's width, ascent, descent and line height. Trailing white space counts, as in a browser: engines leave it out of a line, so such a text is measured with a mark after it, less the mark. Without an engine, as in some tests, they approximate: 0.6 em a character, 0.8 em up and 0.2 em down.
 - `IsPointInPath` and `IsPointInStroke` replay what was recorded for its transform, current path and line style and test the flattened path; `PathContains` and `StrokeContains` test a `Path`. Strokes take joins as round and dashes as solid.
 - Bound arguments count as recorded.
+
+## View paints
+
+`FillFromView`, `StrokeFromView`, `LineWidthFromView` and `LineDashFromView` record an operation whose value is the canvas view's SVG paint style ([styles](styles.md)), noted in `Drawing.ViewPaints` with the initial paint where no view sets one. The core resolves the inherited `Fill`, `Stroke`, `StrokeWidth` and `StrokeDash`, with `PaintCurrentColor` the view's text color, and sends `Drawing.Painted`: a change of them sends the drawing again without drawing it again, and no platform knows of them. A canvas that has drawn nothing sends no empty first drawing.
 
 ## Animated arguments
 

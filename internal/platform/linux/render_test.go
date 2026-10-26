@@ -307,3 +307,34 @@ func TestTextEllipsizesJustifiesAndReportsLines(t *testing.T) {
 		t.Errorf("justified first line %v wide, want stretched to 120", w)
 	}
 }
+
+func TestTextLayoutsHitTestTheirCharacters(t *testing.T) {
+	if err := openLibs(); err != nil {
+		t.Skip(err)
+	}
+	w := &window{}
+	l := layoutText(t, w, &driver.AttributedText{Text: "abc def\nghi", Style: textStyle}, 400)
+	lines := l.TextLines()
+	if len(lines) != 2 {
+		t.Fatalf("%d lines, want 2", len(lines))
+	}
+	first := lines[0].Bounds
+	if c := l.HitTest(driver.Point{X: first.Size.Width + 50, Y: first.Origin.Y + 2}); c.Offset != 7 {
+		t.Fatalf("past the first line: %+v, want 7", c)
+	}
+	if c := l.HitTest(driver.Point{X: -5, Y: first.Size.Height + 4}); c.Offset != 8 {
+		t.Fatalf("the second line's start: %+v, want 8", c)
+	}
+	a, ok := l.CaretRect(driver.Caret{Offset: 1})
+	b, _ := l.CaretRect(driver.Caret{Offset: 2})
+	if !ok || a.Origin.X <= 0 || b.Origin.X <= a.Origin.X {
+		t.Fatalf("carets %v and %v should step right", a, b)
+	}
+	if rects := l.RangeRects(5, 9, nil); len(rects) != 2 || rects[1].Origin.Y <= rects[0].Origin.Y {
+		t.Fatalf("a range across the break covers %v", rects)
+	}
+	mixed := layoutText(t, w, &driver.AttributedText{Text: "ab אבג cd", Style: textStyle}, 400)
+	if r := mixed.RangeRects(1, 5, nil); len(r) != 2 {
+		t.Fatalf("a range from b into the Hebrew covers %v, want two boxes", r)
+	}
+}

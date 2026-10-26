@@ -68,6 +68,10 @@ final class InputField extends EditText {
         this.listener = listener;
         setBackground(null);
         setPadding(0, 0, 0, 0);
+        // The line's height from its own font, as Text's StaticLayout has it:
+        // fallback fonts' taller metrics (HyperOS's sans-serif has them) would
+        // put the centered text above the middle of the field.
+        if (android.os.Build.VERSION.SDK_INT >= 28) setFallbackLineSpacing(false);
         setSingleLine(true);
         setInputType(InputType.TYPE_CLASS_TEXT);
         setImeOptions(EditorInfo.IME_ACTION_DONE);

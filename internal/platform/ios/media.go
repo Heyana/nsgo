@@ -63,6 +63,11 @@ func (s *surface) startTicking() {
 			return
 		}
 		s.link = link.Send(sel("retain"))
+		// A link left at its default runs at 60 Hz on a ProMotion iPhone.
+		screen := objc.ID(objc.GetClass("UIScreen")).Send(sel("mainScreen"))
+		if fps := objc.Send[int](screen, sel("maximumFramesPerSecond")); fps > 0 {
+			s.link.Send(sel("setPreferredFramesPerSecond:"), fps)
+		}
 		s.link.Send(sel("addToRunLoop:forMode:"), objc.ID(objc.GetClass("NSRunLoop")).Send(sel("mainRunLoop")),
 			apple.CommonModes())
 		return

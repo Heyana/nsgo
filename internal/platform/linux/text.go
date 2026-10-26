@@ -4,6 +4,8 @@ package linux
 
 import (
 	"math"
+	"slices"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/oneo-me/nsgo/internal/driver"
@@ -72,6 +74,8 @@ type textLayout struct {
 
 	// lines are the lines OnTextLayout reports.
 	lines []driver.TextLine
+	// carets hit-tests the lines, read when first asked.
+	carets driver.LazyCarets
 
 	// The main thread's PangoLayout, made when first drawn and freed by
 	// Release.
@@ -394,7 +398,105 @@ func (p *preparedText) Layout(size driver.Size) driver.TextLayout {
 	p.placeBackgrounds(l)
 	p.placeAttachments(l)
 	p.placeLines(l)
+	w := p.w
+	l.carets.Set(func() driver.CaretLayout { return l.caretLines(w) })
 	return l
+}
+
+// HitTest implements driver.TextHitTester.
+func (l *textLayout) HitTest(p driver.Point) driver.Caret { return l.carets.HitTest(p) }
+
+// CaretRect implements driver.TextHitTester.
+func (l *textLayout) CaretRect(c driver.Caret) (driver.Bounds, bool) { return l.carets.CaretRect(c) }
+
+// RangeRects implements driver.TextHitTester.
+func (l *textLayout) RangeRects(start, end int, out []driver.Bounds) []driver.Bounds {
+	return l.carets.RangeRects(start, end, out)
+}
+
+// caretLines reads where the lines' characters are from a PangoLayout of
+// the text as the main thread draws it, made on a context of hit
+// testing's own so either thread may ask: each cluster's logical extents,
+// its direction from the sign of its position's width.
+func (l *textLayout) caretLines(w *window) driver.CaretLayout {
+	w.hitMu.Lock()
+	defer w.hitMu.Unlock()
+	i := 0
+	if l.style.RTL {
+		i = 1
+	}
+	if w.hitMap[i] == 0 {
+		w.hitMap[i] = pangoFontMapCreateContext(pangoCairoFontMapNew())
+		pangoContextSetBaseDir(w.hitMap[i], textDirection(l.style.RTL))
+	}
+	pl := pangoLayoutNew(w.hitMap[i])
+	defer gObjectUnref(pl)
+	applyLayout(pl, &l.textSource, l.width, true)
+	text := l.text
+	units := make([]int, len(text)+1) // UTF-16 offsets by byte offset
+	for k, r := range text {
+		n := 1
+		if r >= 0x10000 {
+			n = 2
+		}
+		for b := k + 1; b <= k+utf8.RuneLen(r) && b <= len(text); b++ {
+			units[b] = units[k] + n
+		}
+	}
+	unit := func(b int) int { return units[min(max(b, 0), len(text))] }
+	var out driver.CaretLayout
+	iter := pangoLayoutGetIter(pl)
+	defer pangoLayoutIterFree(iter)
+	var line, lineTo uintptr
+	for {
+		if at := pangoLayoutIterGetLine(iter); at != line {
+			line = at
+			from := int(*(*int32)(unsafe.Add(cPointer(at), 8)))
+			to := from + int(*(*int32)(unsafe.Add(cPointer(at), 12)))
+			lineTo = uintptr(to)
+			var ink, logical pangoRectangle
+			pangoLayoutIterGetLineExtents(iter, &ink, &logical)
+			out = append(out, driver.CaretLine{Start: unit(from), End: unit(to), RTL: l.style.RTL,
+				Box: driver.Bounds{Origin: driver.Point{X: fromPango(logical.X), Y: fromPango(logical.Y)},
+					Size: driver.Size{Width: fromPango(logical.Width), Height: fromPango(logical.Height)}}})
+		}
+		if pangoLayoutIterGetRun(iter) != 0 && text != "" {
+			idx := pangoLayoutIterGetIndex(iter)
+			var ink, logical pangoRectangle
+			pangoLayoutIterGetClusterExt(iter, &ink, &logical)
+			var pos pangoRectangle
+			pangoLayoutIndexToPos(pl, idx, &pos)
+			cl := &out[len(out)-1]
+			cl.Clusters = append(cl.Clusters, driver.CaretCluster{Start: int(idx), End: int(lineTo),
+				Left: fromPango(logical.X), Right: fromPango(logical.X + logical.Width), RTL: pos.Width < 0})
+		}
+		if pangoLayoutIterNextCluster(iter) == 0 {
+			break
+		}
+	}
+	// The clusters came in visual order: each reaches to the next in
+	// logical order, the last to the line's break.
+	for k := range out {
+		cl := &out[k]
+		cs := cl.Clusters
+		slices.SortFunc(cs, func(a, b driver.CaretCluster) int { return a.Start - b.Start })
+		for j := range cs {
+			if j+1 < len(cs) {
+				cs[j].End = cs[j+1].Start
+			}
+			end := min(cs[j].End, len(text))
+			for end > cs[j].Start && (text[end-1] == '\n' || text[end-1] == '\r') {
+				end--
+			}
+			cs[j].Start, cs[j].End = unit(cs[j].Start), unit(end)
+		}
+		// The break itself takes no caret.
+		for n := len(cs); n > 0 && cs[n-1].End <= cs[n-1].Start; n = len(cs) {
+			cs = cs[:n-1]
+		}
+		cl.Clusters = cs
+	}
+	return out
 }
 
 // placeLines lists the layout's lines for OnTextLayout, with the metrics

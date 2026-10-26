@@ -34,15 +34,12 @@ import (
 // momentum until they end, wheel notches while they come within 200 ms.
 // Mouse drags never scroll; the mouse drags the indicator as a scroll
 // bar. Pulling a refreshable view past its top refreshes it, and a
-// spinner keeps room above the content while it refreshes.
+// spinner, or the app's own indicator, keeps room above the content while
+// it refreshes.
 // DecelerationRate shapes only snaps; the keyboard props and zooming do
 // nothing on the Mac, as in NSH.
 
 const (
-	// refreshPull is how far past the top a release refreshes, and
-	// refreshSpace the room the spinner keeps above the content.
-	refreshPull  = 64
-	refreshSpace = 56
 	// wheelLine is how far a mouse wheel's line scrolls, and wheelLatch
 	// how long its notches stay on the view they began on.
 	wheelLine  = 10
@@ -214,7 +211,7 @@ func (v *view) restLimits() (lo, hi driver.Points) {
 func (v *view) limits() (lo, hi driver.Points) {
 	lo, hi = v.restLimits()
 	if v.sc.refreshing && !v.sc.config.Horizontal {
-		lo -= refreshSpace
+		lo -= v.sc.config.Behavior.RefreshInset()
 	}
 	return lo, hi
 }
@@ -253,8 +250,12 @@ func (v *view) moveTo(pos driver.Points) {
 		v.updateOverlay()
 	})
 	sf := v.surface
+	scrolled := sf.animator.Scroll(v.id, v.reported())
+	if !s.config.Horizontal && sf.animator.Pull(v.id, max(-v.lead()-pos, 0)) {
+		scrolled = true
+	}
 	// While a batch applies, the animated values are drawn after it.
-	if sf.animator.Scroll(v.id, v.reported()) && !sf.applying {
+	if scrolled && !sf.applying {
 		apple.WithoutAnimation(sf.applyAnimated)
 	}
 	sf.revisit()
@@ -504,7 +505,7 @@ func (v *view) tickScroll(t time.Duration) bool {
 		}
 		busy = busy || s.alpha > 0
 	}
-	if !s.config.Horizontal && s.refreshing && v.pos() < -v.lead() {
+	if !s.config.Horizontal && s.refreshing && v.pos() < -v.lead() && s.config.Behavior.RefreshIndicator == 0 {
 		s.spin = math.Mod(t.Seconds()*2*math.Pi, 2*math.Pi)
 		overlays, busy = true, true
 	}
@@ -636,6 +637,7 @@ func (v *view) release(velocity, snapVelocity float32) {
 func (v *view) configureScroll(c *driver.ScrollConfig) {
 	s := v.sc
 	old := s.config.Behavior.ContentInset
+	indicator := s.config.Behavior.RefreshIndicator
 	s.config = *c
 	if !v.indicates() {
 		s.alpha = 0
@@ -657,6 +659,11 @@ func (v *view) configureScroll(c *driver.ScrollConfig) {
 	s.report = s.report || in != old
 	apple.WithoutAnimation(v.applyOffset)
 	v.setRefreshing(c.Refreshing && !c.Horizontal)
+	// A refresh in progress keeps the room of the indicator now showing.
+	if c.Behavior.RefreshIndicator != indicator && s.refreshing && !c.Horizontal && !(s.phase.kind == wheeling && s.phase.gesture) &&
+		v.pos() < -v.lead() {
+		v.animateTo(-v.lead()-c.Behavior.RefreshInset(), scrollbar.Animation, false, false)
+	}
 	v.updateOverlay()
 	if s.phase.kind == atRest && !s.ticking {
 		v.commit() // nothing moves: AppKit may as well know
@@ -689,7 +696,7 @@ func (v *view) setRefreshing(on bool) {
 	}
 	switch start := -v.lead(); {
 	case on && v.pos() <= start+0.5:
-		v.animateTo(start-refreshSpace, scrollbar.Animation, false, false)
+		v.animateTo(start-s.config.Behavior.RefreshInset(), scrollbar.Animation, false, false)
 	case !on && v.pos() < start:
 		v.animateTo(start, scrollbar.Animation, false, false)
 	}
@@ -700,7 +707,7 @@ func (v *view) setRefreshing(on bool) {
 // right away, and the next config says whether the app keeps it.
 func (v *view) pulledToRefresh() {
 	s := v.sc
-	if c := &s.config; !c.Refreshable || c.Horizontal || s.refreshing || v.pos() > -v.lead()-refreshPull {
+	if c := &s.config; !c.Refreshable || c.Horizontal || s.refreshing || v.pos() > -v.lead()-c.Behavior.RefreshThreshold() {
 		return
 	}
 	s.refreshing = true
@@ -1215,11 +1222,12 @@ func (v *view) updateOverlay() {
 
 // updateSpinner shows the refresh spinner as an activity indicator's
 // eight spokes: while pulling, as many as the pull is far, and turning in
-// whole spokes while it refreshes.
+// whole spokes while it refreshes. The app's own indicator replaces it.
 func (v *view) updateSpinner() {
 	s := v.sc
 	pos, start := v.pos(), -v.lead()
-	if s.config.Horizontal || pos >= start || !s.refreshing && !s.config.Refreshable {
+	b := &s.config.Behavior
+	if s.config.Horizontal || pos >= start || !s.refreshing && !s.config.Refreshable || b.RefreshIndicator > 0 {
 		if s.spinner != 0 {
 			s.spinner.Send(selSetHidden, true)
 		}
@@ -1242,10 +1250,10 @@ func (v *view) updateSpinner() {
 	}
 	progress := 1.0
 	if !s.refreshing {
-		progress = min(float64(start-pos)/refreshPull, 1)
+		progress = min(float64(start-pos)/float64(b.RefreshThreshold()), 1)
 	}
 	s.spinner.Send(selSetHidden, false)
-	s.spinner.Send(sel("setPosition:"), apple.CGPoint{X: float64(v.frame.Size.Width) / 2, Y: float64(-pos - refreshSpace/2)})
+	s.spinner.Send(sel("setPosition:"), apple.CGPoint{X: float64(v.frame.Size.Width) / 2, Y: float64(-pos - b.RefreshInset()/2)})
 	shown := min(int(math.Ceil(progress*refreshSpokes)), refreshSpokes)
 	step := 2 * math.Pi / refreshSpokes
 	lead := int(s.spin/step) % refreshSpokes

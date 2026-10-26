@@ -42,6 +42,14 @@ func scrollingPage(cx *core.Scope, t *theme) core.Node {
 	refreshes := core.NewSignal(cx, 0)
 	noScroll := core.NewSignal(cx, false)
 	noBounces := core.NewSignal(cx, false)
+	// An indicator of the app's own, drawn from the pull: it fades in,
+	// turns its arrow once a release refreshes, and spins while refreshing.
+	own := core.NewSignal(cx, false)
+	pull := core.NewAnimatedValue(cx, 0)
+	const indicator = 64
+	clamped := func(in, out []float64) core.AnimatedNode {
+		return core.Interpolate(pull, core.Interpolation{Input: in, Output: out, Extrapolate: core.ExtrapolateClamp})
+	}
 	report := func(name string) func(core.ScrollEvent) {
 		return func(e core.ScrollEvent) {
 			events.Set(fmt.Sprintf("%s at %.0f · content %.0f × %.0f in %.0f × %.0f", name, e.Offset.Y,
@@ -110,20 +118,53 @@ func scrollingPage(cx *core.Scope, t *theme) core.Node {
 				t.plain("Refresh", refresh),
 				t.plain("Scrolling on or off", func() { noScroll.Set(!noScroll.Get()) }),
 				t.plain("Bounces on or off", func() { noBounces.Set(!noBounces.Get()) }),
+				t.plain("Own indicator on or off", func() { own.Set(!own.Get()) }),
 			),
-			core.Scroll{TestID: "feed",
-				BehaviorFunc: func() core.ScrollBehavior {
-					return core.ScrollBehavior{NoScroll: noScroll.Get(), NoBounces: noBounces.Get(),
-						ContentInset: core.Edges{Top: 8, Bottom: 8}, DecelerationRate: core.DecelerationFast}
-				},
-				Refreshing:        refreshing.Get,
-				OnRefresh:         refresh,
-				OnScrollDragStart: report("Drag start"),
-				OnScrollDragEnd:   report("Drag end"),
-				OnMomentumStart:   report("Momentum start"),
-				OnMomentumEnd:     report("Momentum end"),
-				Style:             frame.Merge(core.Style{Height: core.Pt(220)}),
-				Children:          rows},
+			core.View{Style: core.Style{Height: core.Pt(220)}, Children: []core.Node{
+				core.Scroll{TestID: "feed",
+					BehaviorFunc: func() core.ScrollBehavior {
+						b := core.ScrollBehavior{NoScroll: noScroll.Get(), NoBounces: noBounces.Get(),
+							ContentInset: core.Edges{Top: 8, Bottom: 8}, DecelerationRate: core.DecelerationFast}
+						if own.Get() {
+							b.RefreshIndicator = indicator
+						}
+						return b
+					},
+					Refreshing:        refreshing.Get,
+					OnRefresh:         refresh,
+					PullValue:         pull,
+					OnScrollDragStart: report("Drag start"),
+					OnScrollDragEnd:   report("Drag end"),
+					OnMomentumStart:   report("Momentum start"),
+					OnMomentumEnd:     report("Momentum end"),
+					Style:             frame.Merge(core.Style{FlexGrow: 1}),
+					Children:          rows},
+				core.Show{When: own.Get, Then: func(cx *core.Scope) core.Node {
+					return core.View{TestID: "pull-indicator", PointerEvents: core.PointerEventsNone,
+						Style: core.Style{Position: core.Absolute, Top: core.Pt(8), Left: core.Pt(0), Right: core.Pt(0),
+							Height: core.Pt(indicator), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
+						Children: []core.Node{core.View{
+							StyleFunc: func() core.Style {
+								return core.Style{Width: core.Pt(36), Height: core.Pt(36), CornerRadius: 18, Background: t.surface,
+									BorderWidth: 1, BorderColor: t.line, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
+									Animated: &core.AnimatedStyle{Opacity: clamped([]float64{0, 24}, []float64{0, 1}),
+										TranslateY: clamped([]float64{0, indicator}, []float64{-24, 0})}}
+							},
+							Children: []core.Node{core.Text{
+								ContentFunc: func() string {
+									if refreshing.Get() {
+										return "…"
+									}
+									return "↓"
+								},
+								StyleFunc: func() core.Style {
+									return core.Style{Color: t.accent, FontSize: 18,
+										Animated: &core.AnimatedStyle{Rotate: clamped([]float64{indicator / 2, indicator}, []float64{0, 180})}}
+								}}},
+						}},
+					}
+				}},
+			}},
 			t.live(events.Get),
 			t.live(func() string {
 				switch {

@@ -243,6 +243,10 @@ const (
 	AnimReset
 	// AnimForgetRun drops what the animator keeps of run ID for a reset.
 	AnimForgetRun
+	// AnimBindPull has vertical scroll view View set value Node to how
+	// far it is pulled past its top: 0 at rest, the room kept above the
+	// content while it refreshes.
+	AnimBindPull
 )
 
 // AnimationOp is one change to the animation graph.

@@ -889,6 +889,81 @@ func TestCanvasDrawsAtItsSizeAndOnChange(t *testing.T) {
 	}
 }
 
+func TestAnEmptyFirstDrawingSendsNothing(t *testing.T) {
+	var on *Signal[bool]
+	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
+		on = NewSignal(cx, false)
+		return Canvas{Style: Style{Height: Pt(40)}, Draw: func(d *Drawing, size Size) {
+			if on.Get() {
+				d.FillRect(0, 0, 10, 10)
+			}
+		}}
+	})
+	count := func(b *driver.MountBatch) (n int) {
+		for _, it := range b.Items {
+			if it.Kind == driver.ItemCanvas {
+				n++
+			}
+		}
+		return n
+	}
+	if n := count(h.commit()); n != 0 {
+		t.Fatalf("an empty first drawing sent %d canvas items", n)
+	}
+	on.Set(true)
+	if n := count(h.commit()); n != 1 {
+		t.Fatalf("the first real drawing sent %d canvas items", n)
+	}
+	on.Set(false)
+	if n := count(h.commit()); n != 1 {
+		t.Fatal("an empty drawing after one that drew should clear the canvas")
+	}
+}
+
+func TestDrawingsPaintWithTheirViewsStyle(t *testing.T) {
+	var fill *Signal[Paint]
+	draws := 0
+	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
+		fill = NewSignal(cx, PaintColor(RGB(0x0000ff)))
+		return View{
+			StyleFunc: func() Style {
+				return Style{Color: RGB(0xff0000), Fill: fill.Get(), StrokeWidth: 3, StrokeDash: []Points{4}}
+			},
+			Children: []Node{Canvas{Style: Style{Height: Pt(40)}, Draw: func(d *Drawing, size Size) {
+				draws++
+				d.FillFromView(PaintNone).StrokeFromView(PaintCurrentColor).LineWidthFromView().LineDashFromView()
+				d.FillRect(0, 0, 10, 10)
+			}}},
+		}
+	})
+	sent := func(b *driver.MountBatch) *Drawing {
+		for _, it := range b.Items {
+			if it.Kind == driver.ItemCanvas {
+				return it.Drawing
+			}
+		}
+		return nil
+	}
+	d := sent(h.commit())
+	if d == nil {
+		t.Fatal("no drawing sent")
+	}
+	if fill, stroke := d.Ops[0].Color, d.Ops[1].Color; fill != RGB(0x0000ff) || stroke != RGB(0xff0000) {
+		t.Fatalf("fill %08x, stroke %08x: want the view's blue and its text color", fill, stroke)
+	}
+	if w, dash := d.Ops[2].W, d.Ops[3].Dash; w != 3 || dash == nil || len(*dash) != 2 || (*dash)[1] != 4 {
+		t.Fatalf("width %v, dash %v: want 3 and 4 4", w, dash)
+	}
+	fill.Set(Paint{})
+	d = sent(h.commit())
+	if d == nil || draws != 1 {
+		t.Fatalf("a paint change sent %v after %d draws: want the drawing again, not drawn again", d, draws)
+	}
+	if d.Ops[0].Color != 0 {
+		t.Fatalf("an unset fill painted %08x, want the initial none", d.Ops[0].Color)
+	}
+}
+
 func TestKeyBindingsFollowOwners(t *testing.T) {
 	var log []string
 	var open *Signal[bool]

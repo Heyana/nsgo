@@ -84,3 +84,22 @@ func TestTheMeasureCacheIsBounded(t *testing.T) {
 		t.Errorf("the cache holds %d sizes", n)
 	}
 }
+
+func TestApproxLayoutsHitTest(t *testing.T) {
+	p := ApproxTextEngine{}.Prepare(&driver.AttributedText{Text: "ab😀 cd", Style: driver.TextStyle{Font: Font{Size: 10}}})
+	l := p.Layout(Size{Width: 24, Height: 24}).(*ApproxLayout)
+	// "ab😀" on the first line, 6 points a character; the emoji is two
+	// UTF-16 units.
+	if c := l.HitTest(Point{X: 17, Y: 2}); c.Offset != 4 || c.Affinity != Downstream {
+		t.Fatalf("hit %+v, want after the emoji", c)
+	}
+	if r, ok := l.CaretRect(Caret{Offset: 2}); !ok || r.Origin.X != 12 {
+		t.Fatalf("caret %v %v, want 12", r, ok)
+	}
+	if c := l.HitTest(Point{X: 1, Y: 15}); c.Offset != 5 {
+		t.Fatalf("second line hit %+v, want cd's start", c)
+	}
+	if got := l.RangeRects(1, 6, nil); len(got) != 2 || got[0].Origin.X != 6 || got[1].Size.Width != 6 {
+		t.Fatalf("range boxes %v", got)
+	}
+}

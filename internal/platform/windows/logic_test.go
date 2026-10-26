@@ -890,3 +890,38 @@ func TestLayoutAnimationKeepsRemovedViewsDrawnApartFromTheirIDs(t *testing.T) {
 		t.Fatal("a batch without a layout animation animated")
 	}
 }
+
+func TestTextLayoutsHitTestTheirCharacters(t *testing.T) {
+	w := testWindow()
+	style := driver.TextStyle{Font: driver.Font{Family: "Segoe UI", Size: 16}, Color: driver.RGB(0)}
+	layout := func(text string) *textLayout {
+		p := w.Prepare(&driver.AttributedText{Text: text, Style: style})
+		t.Cleanup(p.Release)
+		l := p.Layout(p.Measure(driver.Auto)).(*textLayout)
+		t.Cleanup(l.Release)
+		return l
+	}
+	l := layout("abc def\nghi")
+	lines := l.TextLines()
+	if len(lines) != 2 {
+		t.Fatalf("%d lines, want 2", len(lines))
+	}
+	first := lines[0].Bounds
+	if c := l.HitTest(driver.Point{X: first.Size.Width + 50, Y: first.Origin.Y + 2}); c.Offset != 7 {
+		t.Fatalf("past the first line: %+v, want 7", c)
+	}
+	if c := l.HitTest(driver.Point{X: -5, Y: first.Size.Height + 4}); c.Offset != 8 {
+		t.Fatalf("the second line's start: %+v, want 8", c)
+	}
+	a, ok := l.CaretRect(driver.Caret{Offset: 1})
+	b, _ := l.CaretRect(driver.Caret{Offset: 2})
+	if !ok || a.Origin.X <= 0 || b.Origin.X <= a.Origin.X {
+		t.Fatalf("carets %v and %v should step right", a, b)
+	}
+	if rects := l.RangeRects(5, 9, nil); len(rects) != 2 || rects[1].Origin.Y <= rects[0].Origin.Y {
+		t.Fatalf("a range across the break covers %v", rects)
+	}
+	if r := layout("ab \u05d0\u05d1\u05d2 cd").RangeRects(1, 5, nil); len(r) != 2 {
+		t.Fatalf("a range from b into the Hebrew covers %v, want two boxes", r)
+	}
+}

@@ -59,8 +59,10 @@ func buildIOSApp(ctx context.Context, p *project, dir string, simulator bool) (s
 }
 
 // The SDK requires the scene life cycle; platform/ios registers
-// NsgoSceneDelegate.
+// NsgoSceneDelegate. An iPhone grants display links more than 60 Hz only
+// to apps that set CADisableMinimumFrameDurationOnPhone.
 var iosPlist = template.Must(template.New("ios").Parse(plistHead + `	<key>MinimumOSVersion</key><string>15.0</string>
+	<key>CADisableMinimumFrameDurationOnPhone</key><true/>
 	<key>UILaunchScreen</key><dict/>
 	<key>UIRequiresFullScreen</key><true/>
 	<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>

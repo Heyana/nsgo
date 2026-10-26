@@ -55,6 +55,14 @@ The family `FontMonospace` is each platform's fixed-pitch font: CoreText's user 
 
 A `Canvas` records its drawing on the engine into an immutable `Drawing` the platform plays ([canvas](canvas.md)).
 
+## Hit testing
+
+A final layout answers where its carets are, as NSH's `TextEngine` hit testing does (`internal/driver/hittest.go`): `HitTest` gives the `Caret` nearest a point, `CaretRect` a line-high box of no width, and `RangeRects` the boxes a range covers, a box per run of one direction. Points are in the content box and offsets UTF-16. A point past the end of a wrapped line gives its end with `Upstream` affinity, so the caret stays on that line.
+
+- Every engine's layout implements `driver.TextHitTester` through `driver.LazyCarets`: on first use it reads each line's box and its clusters (the characters one caret stops around, with their edges and direction) into a `CaretLayout`, and plain Go answers from then on, on either thread. Releasing the layout keeps what was read.
+- The engines read clusters from their own layouts: CoreText's glyph runs, Pango's cluster iterator on a context of hit testing's own (Pango objects belong to one thread at a time), DirectWrite's `HitTestTextPosition`, the browser's character ranges in the measuring element, and Android's carets by grapheme in Java, sent over the pipe. The headless engine gives each character its approximate width.
+- macOS and iOS selections hit-test and highlight through it.
+
 ## Text inputs
 
 `Input` follows NSH's `<Input>`: one line, or several with `Multiline` in each platform's multi-line control (NSTextView, UITextView, `<textarea>`, GtkTextView, a multi-line EditText, and Windows' drawn editor wrapping its lines).

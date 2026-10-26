@@ -1362,7 +1362,11 @@ func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
 	}
 	o := objc.Send[apple.CGPoint](self, selContentOffset)
 	offset := driver.Point{X: driver.Points(o.X), Y: driver.Points(o.Y)}
-	if v.surface.animator.Scroll(v.id, offset) {
+	scrolled := v.surface.animator.Scroll(v.id, offset)
+	if v.sc != nil && v.surface.animator.Pulls(v.id) && v.surface.animator.Pull(v.id, v.pulled()) {
+		scrolled = true
+	}
+	if scrolled {
 		apple.WithoutAnimation(v.surface.applyAnimated)
 	}
 	if v.sc != nil && len(v.sc.sticky) > 0 {

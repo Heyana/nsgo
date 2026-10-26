@@ -431,6 +431,7 @@ func (w *window) setupInputs() {
 	gtkEventControllerSetPropagationPhase(keys, propagationPhaseCapture)
 	gSignalConnect(keys, "key-pressed", cbKeyPressed, w.handle)
 	gSignalConnect(keys, "key-released", cbKeyReleased, w.handle)
+	gSignalConnect(keys, "modifiers", cbModifiers, w.handle)
 	// A window of its own hears every key; a host's widget those pressed
 	// while the focus is in it.
 	if w.embedded {
@@ -655,6 +656,29 @@ func keyReleasedCallback(controller uintptr, keyval, keycode, state uint32, data
 		delete(w.held, keycode)
 		w.menuBarKey(keyval, state, false)
 	}
+}
+
+// modifiersCallback reports a modifier key pressed or released while the
+// pointer rests over the window as a hover move to where it is with the
+// new modifiers, so a view hears Control come and go under a still mouse.
+func modifiersCallback(controller uintptr, state uint32, data uintptr) int32 {
+	w := windowOf(data)
+	if w == nil || !w.pointerIn || state&gdkButtonsMask != 0 {
+		return 0
+	}
+	root := w.view(w.root)
+	if root == nil {
+		return 0
+	}
+	under := viewsAt(root, w.lastPointer, func(v *view) bool { return v.events.Has(driver.EventHoverMove) }, nil)
+	for i := len(under) - 1; i >= 0; i-- {
+		v := under[i]
+		b, _ := w.surfaceBounds(v)
+		local := driver.Point{X: w.lastPointer.X - b.Origin.X, Y: w.lastPointer.Y - b.Origin.Y}
+		w.engine.Dispatch(driver.Event{Kind: driver.EventHoverMove, ID: v.id, Point: local, Page: w.lastPointer,
+			Modifiers: modifiers(state)})
+	}
+	return 0
 }
 
 // keyName names a keyval as core.NormalizeKey does, or "" for a key it

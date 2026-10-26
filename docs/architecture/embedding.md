@@ -53,7 +53,7 @@ NSGo has no theme, so the host's theme overrides become `core.Tokens`: CSS strin
 
 - `NSGoView` is registered on `UIView` with the surface's methods, not as a subclass of NSGo's surface class: `apple.Super` finds the superclass from the nearest of NSGo's classes, so one may not inherit another's.
 - Foundation's JSON objects cross through `NSJSONSerialization`; the host's blocks are called through their function pointer (`apple.CallBlock`), since purego invokes only blocks it made, and copied while kept.
-- The display link holds its view, so a view leaving its window lets the link go.
+- The display link holds its view, so a view leaving its window lets the link go. It asks for the screen's top rate, which an iPhone grants only when the host's `Info.plist` sets `CADisableMinimumFrameDurationOnPhone`.
 - purego returns no floats from methods, so the text size is a setter, `setFontScale:`.
 
 Not built yet: the x86_64 simulator, Catalyst and a dynamic framework.

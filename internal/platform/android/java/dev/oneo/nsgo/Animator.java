@@ -40,6 +40,7 @@ final class Animator {
     static final int BIND_ROTATION = 18;
     static final int RESET = 19;
     static final int FORGET_RUN = 20;
+    static final int BIND_PULL = 21;
 
     // Bound properties, as core.AnimatedProp.
     static final int PROP_OPACITY = 0;
@@ -114,6 +115,8 @@ final class Animator {
     private final Map<Integer, int[]> scrolls = new HashMap<>();
     /** The values pinches and rotations on a view move, and where a gesture's values were as it began: pan x, y, pinch, rotation. */
     private final Map<Integer, Integer> pinches = new HashMap<>(), rotations = new HashMap<>();
+    /** The values scroll views' pulls past their tops set. */
+    private final Map<Integer, Integer> pulls = new HashMap<>();
     private final Map<Integer, double[]> starts = new HashMap<>();
     private final LinkedHashSet<Integer> changed = new LinkedHashSet<>();
     /** Canvas views' bound drawing arguments, and whether values changed since changedCanvases looked. */
@@ -512,6 +515,7 @@ final class Animator {
                 break;
             case BIND_PINCH:
             case BIND_ROTATION:
+            case BIND_PULL:
                 o.view = in.readInt();
                 o.node = in.readInt();
                 break;
@@ -644,6 +648,9 @@ final class Animator {
                 break;
             case BIND_ROTATION:
                 rotations.put(o.view, o.node);
+                break;
+            case BIND_PULL:
+                pulls.put(o.view, o.node);
                 break;
             case RELEASE: {
                 ANode n = nodes.get(o.node);
@@ -918,8 +925,25 @@ final class Animator {
         return true;
     }
 
+    /** Whether a value follows view's pull. */
+    boolean pulls(int view) {
+        return pulls.containsKey(view);
+    }
+
+    /** Sets the value bound to scroll view view's pull to how far it is pulled past its top, in points. */
+    boolean pull(int view, float distance) {
+        Integer id = pulls.get(view);
+        ANode n = id == null ? null : value(id);
+        if (n == null || n.value == distance) return false;
+        interrupt(n);
+        n.value = distance;
+        touch();
+        return true;
+    }
+
     /** Drops what is bound to a deleted view. */
     void forget(int view) {
+        pulls.remove(view);
         canvases.remove(view);
         views.remove(view);
         pans.remove(view);

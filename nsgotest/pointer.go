@@ -15,9 +15,6 @@ const (
 	landing = 100 * time.Millisecond
 	// pressSlop is how far a finger may move and still press.
 	pressSlop = 8
-	// refreshPull is how far past its top a refreshable scroll view is
-	// pulled to refresh when the finger lifts.
-	refreshPull = 64
 )
 
 // dragMode is what a drag turned into.
@@ -244,7 +241,29 @@ func (a *App) dragScroll(f *finger) {
 func (a *App) scrollView(v *View, off driver.Point) {
 	v.Offset = off
 	a.anim.Scroll(v.ID, off)
+	a.pullValue(v)
 	a.dispatch(driver.Event{Kind: driver.EventScroll, ID: v.ID, Point: off, Value: v.ZoomScale, Count: v.Applied})
+}
+
+// pulled is how far vertical scroll view v is pulled past its top.
+func (v *View) pulled() driver.Points {
+	if v.Scroll.Horizontal {
+		return 0
+	}
+	return max(-v.Offset.Y-v.Scroll.Behavior.ContentInset.Top, 0)
+}
+
+// pullValue sets the value bound to v's pull, as a platform does: how far
+// it is pulled, and at least the room it keeps while refreshing.
+func (a *App) pullValue(v *View) {
+	if v.Scroll.Horizontal || !a.anim.Pulls(v.ID) {
+		return
+	}
+	pull := v.pulled()
+	if v.Scroll.Refreshing {
+		pull = max(pull, v.Scroll.Behavior.RefreshInset())
+	}
+	a.anim.Pull(v.ID, pull)
 }
 
 func (a *App) fingerLifted(f *finger) {
@@ -258,7 +277,7 @@ func (a *App) fingerLifted(f *finger) {
 		v := f.view
 		a.scrollEvent(v, driver.EventScrollDragEnd)
 		if !v.Scroll.Horizontal && v.Offset.Y < -v.Scroll.Behavior.ContentInset.Top {
-			if v.Offset.Y <= -refreshPull && v.Scroll.Refreshable && !v.Scroll.Refreshing {
+			if v.pulled() >= v.Scroll.Behavior.RefreshThreshold() && v.Scroll.Refreshable && !v.Scroll.Refreshing {
 				a.dispatch(driver.Event{Kind: driver.EventRefresh, ID: v.ID, Point: v.Offset, Count: v.Applied})
 			}
 			// It springs back to its top.

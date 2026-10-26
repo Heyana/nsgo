@@ -241,6 +241,10 @@ var (
 	pangoLayoutGetLineCount        func(uintptr) int32
 	pangoLayoutGetBaseline         func(uintptr) int32
 	pangoLayoutXyToIndex           func(uintptr, int32, int32, *int32, *int32) int32
+	pangoLayoutIndexToPos          func(uintptr, int32, *pangoRectangle)
+	pangoLayoutIterNextCluster     func(uintptr) int32
+	pangoLayoutIterGetIndex        func(uintptr) int32
+	pangoLayoutIterGetClusterExt   func(uintptr, *pangoRectangle, *pangoRectangle)
 	pangoFontDescriptionFromString func(*byte) uintptr
 	pangoFontDescriptionNew        func() uintptr
 	pangoFontDescriptionFree       func(uintptr)
@@ -549,6 +553,10 @@ func bind() {
 	purego.RegisterLibFunc(&pangoLayoutGetLineCount, pangoLib, "pango_layout_get_line_count")
 	purego.RegisterLibFunc(&pangoLayoutGetBaseline, pangoLib, "pango_layout_get_baseline")
 	purego.RegisterLibFunc(&pangoLayoutXyToIndex, pangoLib, "pango_layout_xy_to_index")
+	purego.RegisterLibFunc(&pangoLayoutIndexToPos, pangoLib, "pango_layout_index_to_pos")
+	purego.RegisterLibFunc(&pangoLayoutIterNextCluster, pangoLib, "pango_layout_iter_next_cluster")
+	purego.RegisterLibFunc(&pangoLayoutIterGetIndex, pangoLib, "pango_layout_iter_get_index")
+	purego.RegisterLibFunc(&pangoLayoutIterGetClusterExt, pangoLib, "pango_layout_iter_get_cluster_extents")
 	purego.RegisterLibFunc(&pangoFontDescriptionFromString, pangoLib, "pango_font_description_from_string")
 	purego.RegisterLibFunc(&pangoFontDescriptionNew, pangoLib, "pango_font_description_new")
 	purego.RegisterLibFunc(&pangoFontDescriptionFree, pangoLib, "pango_font_description_free")

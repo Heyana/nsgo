@@ -107,6 +107,8 @@ public class NsgoView extends FrameLayout {
     private final SparseArray<Text.Prepared> prepared = new SparseArray<>();
     /** Laid-out text by ID: the reader thread adds it, the batch that draws it takes it. */
     private final ConcurrentHashMap<Integer, StaticLayout> layouts = new ConcurrentHashMap<>();
+    /** Laid-out text a text view shows, by layout id, for hit testing on the reader thread. */
+    private final ConcurrentHashMap<Integer, StaticLayout> shown = new ConcurrentHashMap<>();
     /** The lines a clipped layout shows, by layout id, until its ITEM_TEXT. */
     private final ConcurrentHashMap<Integer, Integer> clips = new ConcurrentHashMap<>();
     /** Decodes images off the UI thread, one at a time. */
@@ -647,6 +649,12 @@ public class NsgoView extends FrameLayout {
             case Protocol.LINES:
                 lines(Text.lines(layouts.get(id)));
                 break;
+            case Protocol.CARETS: {
+                StaticLayout l = layouts.get(id);
+                if (l == null) l = shown.get(id);
+                write(Protocol.CARET_LINES, Text.carets(l, density));
+                break;
+            }
             case Protocol.RELEASE:
                 // A prepared text, or a layout no batch will name.
                 prepared.remove(id);
@@ -1218,6 +1226,7 @@ public class NsgoView extends FrameLayout {
                 if (!vanish(n) && !inGhost(n.view)) detach(n.view);
                 nodes.remove(n.id);
                 byView.remove(n.view);
+                if (n.laid != 0) shown.remove(n.laid);
                 outside.remove(n);
                 moving.remove(n);
                 animator.forget(n.id);
@@ -1248,6 +1257,9 @@ public class NsgoView extends FrameLayout {
                 n.text = Protocol.readString(in);
                 int laid = in.readInt();
                 StaticLayout layout = layouts.remove(laid);
+                if (n.laid != 0) shown.remove(n.laid);
+                n.laid = laid;
+                if (layout != null) shown.put(laid, layout);
                 Integer clip = clips.remove(laid);
                 int x = px(in.readFloat()), y = px(in.readFloat());
                 ((TextNode) n.view).setLayout(layout, x, y, clip != null ? clip : 0);
@@ -3185,7 +3197,12 @@ public class NsgoView extends FrameLayout {
             public void scrolled(float x, float y, float zoom) {
                 // Values following the offset move in the same frame, and
                 // so do sticky cells.
-                if (animator.scroll(n.id, x, y)) applyAnimated();
+                boolean moved = animator.scroll(n.id, x, y);
+                if (animator.pulls(n.id) && n.scroller instanceof Scrolling.Scroller
+                        && animator.pull(n.id, ((Scrolling.Scroller) n.scroller).pulled())) {
+                    moved = true;
+                }
+                if (moved) applyAnimated();
                 if (n.sticky != null) pinSticky(n);
                 scrollEvent(Protocol.EVENT_SCROLL, x, y, zoom);
             }
@@ -3275,6 +3292,8 @@ public class NsgoView extends FrameLayout {
         /** Where children go: the view, or a scroll view's content. */
         ViewGroup children;
         FrameLayout scroller;
+        /** The id of the text layout a text node shows. */
+        int laid;
         InputField field;
         ImageNode image;
         CanvasNode canvas;

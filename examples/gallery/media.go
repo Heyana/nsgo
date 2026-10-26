@@ -183,9 +183,48 @@ func canvasPage(cx *core.Scope, t *theme) core.Node {
 			core.Canvas{Draw: composites(t), Style: core.Style{Height: core.Pt(300), Background: t.background, CornerRadius: radius},
 				Label: "Composite modes", TestID: "composites"},
 		),
+		viewPaints(cx, t, box),
 		hitTests(cx, t, box),
 		animatedDrawing(cx, t, box),
 	}}
+}
+
+// viewPaints draws a sparkline that paints with its view's SVG paint
+// styles: switching them sends the drawing again, never draws it again.
+func viewPaints(cx *core.Scope, t *theme, box core.Style) core.Node {
+	dashed := core.NewSignal(cx, false)
+	warm := core.NewSignal(cx, false)
+	values := []float32{3, 5, 4, 7, 6, 9, 7, 11, 9, 12, 10, 14}
+	line := func(d *core.Drawing, size core.Size) {
+		w, h := float32(size.Width)-32, float32(size.Height)-32
+		d.FillFromView(core.PaintNone).StrokeFromView(core.PaintCurrentColor).LineWidthFromView().LineDashFromView().
+			SetLineJoin(core.JoinRound).SetLineCap(core.CapRound).BeginPath()
+		for i, v := range values {
+			x, y := 16+w*float32(i)/float32(len(values)-1), 16+h*(1-v/15)
+			if i == 0 {
+				d.MoveTo(x, y)
+			} else {
+				d.LineTo(x, y)
+			}
+		}
+		d.Stroke()
+	}
+	return t.demo("View paints", "Drawing.StrokeFromView and the like paint with the inherited Fill, Stroke, StrokeWidth and StrokeDash styles.",
+		core.View{StyleFunc: func() core.Style {
+			s := core.Style{Color: t.accent, StrokeWidth: 3}
+			if warm.Get() {
+				s.Stroke = core.PaintColor(t.warning)
+			}
+			if dashed.Get() {
+				s.StrokeDash = []core.Points{8, 6}
+			}
+			return s
+		}, Children: []core.Node{core.Canvas{Draw: line, Style: box, Label: "Sparkline", TestID: "view-paints"}}},
+		flow(
+			t.plain("Warm stroke", func() { warm.Set(!warm.Get()) }),
+			t.plain("Dashed", func() { dashed.Set(!dashed.Get()) }),
+		),
+	)
 }
 
 // strokes draws lines with dashes, caps, joins and miter limits.

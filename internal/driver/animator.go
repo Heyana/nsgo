@@ -24,12 +24,14 @@ type Animator struct {
 	// starts where a gesture's values were as it began: pan x, y, pinch
 	// and rotation.
 	pinches, rotations map[NodeID]uint32
-	starts             map[NodeID][4]float64
-	report             func(Event)
-	gen                uint64 // bumped when any value changes
-	changed            map[NodeID]bool
-	now                float64 // seconds of the last step
-	finished           []Event
+	// pulls are the values scroll views' pulls past their tops set.
+	pulls    map[NodeID]uint32
+	starts   map[NodeID][4]float64
+	report   func(Event)
+	gen      uint64 // bumped when any value changes
+	changed  map[NodeID]bool
+	now      float64 // seconds of the last step
+	finished []Event
 
 	// shaders are the shader views with bound lanes; shadersStale says
 	// values changed since ChangedShaders last looked.
@@ -59,7 +61,7 @@ type valueStart struct {
 func NewAnimator(report func(Event)) *Animator {
 	return &Animator{nodes: map[uint32]*anode{}, runs: map[uint32]*arun{}, views: map[NodeID]*aview{},
 		pans: map[NodeID][2]uint32{}, scrolls: map[NodeID][2]uint32{}, report: report, changed: map[NodeID]bool{},
-		pinches: map[NodeID]uint32{}, rotations: map[NodeID]uint32{}, starts: map[NodeID][4]float64{},
+		pinches: map[NodeID]uint32{}, rotations: map[NodeID]uint32{}, pulls: map[NodeID]uint32{}, starts: map[NodeID][4]float64{},
 		shaders: map[NodeID]*ashader{}, canvases: map[NodeID]*acanvas{}, runStarts: map[uint32][]valueStart{},
 		settling: map[*anode]bool{}}
 }
@@ -278,6 +280,8 @@ func (a *Animator) apply(o *AnimationOp) {
 		a.pinches[o.View] = o.Node
 	case AnimBindRotation:
 		a.rotations[o.View] = o.Node
+	case AnimBindPull:
+		a.pulls[o.View] = o.Node
 	case AnimRelease:
 		if n := a.nodes[o.Node]; n != nil {
 			a.interrupt(n)
@@ -588,6 +592,22 @@ func (a *Animator) Scroll(view NodeID, offset Point) bool {
 	return a.drive(a.scrolls, view, offset)
 }
 
+// Pull sets the value bound to scroll view view's pull to distance, how
+// far it is pulled past its top.
+func (a *Animator) Pull(view NodeID, distance Points) bool {
+	n := a.value(a.pulls[view])
+	if n == nil || n.value == float64(distance) {
+		return false
+	}
+	a.interrupt(n)
+	n.value = float64(distance)
+	a.touch()
+	return true
+}
+
+// Pulls reports whether a value follows view's pull.
+func (a *Animator) Pulls(view NodeID) bool { return a.pulls[view] != 0 }
+
 // PanBound reports whether drags on view move values.
 func (a *Animator) PanBound(view NodeID) bool { _, ok := a.pans[view]; return ok }
 
@@ -739,6 +759,7 @@ func (a *Animator) Forget(view NodeID) {
 	delete(a.views, view)
 	delete(a.pans, view)
 	delete(a.scrolls, view)
+	delete(a.pulls, view)
 	delete(a.pinches, view)
 	delete(a.rotations, view)
 	delete(a.starts, view)

@@ -69,6 +69,9 @@ const (
 	// msgHostCall is the app's call of an embedding host's handler, a URL
 	// for its handler or a failure (host.go).
 	msgHostCall = 11
+	// msgCarets asks where a text layout's characters are, for hit
+	// testing.
+	msgCarets = 12
 
 	// Java to Go.
 	msgStart       = 1
@@ -81,6 +84,7 @@ const (
 	msgTextLines   = 8  // a text layout's lines, answering msgLines
 	msgTestReply   = 9  // the test agent's answer to a msgTest
 	msgHost        = 10 // the embedding host's part of the channel (host.go)
+	msgCaretLines  = 11 // a text layout's lines and clusters, answering msgCarets
 )
 
 // The parts of an image view's request msgImage carries.
@@ -97,6 +101,7 @@ type surface struct {
 	measured chan driver.Size
 	laidOut  chan []attachmentBox
 	lines    chan []driver.TextLine
+	carets   chan driver.CaretLayout
 	engine   *engine.Engine
 	started  chan struct{}      // closed once engine is set
 	env      driver.Environment // the last reported, on the reader goroutine
@@ -164,6 +169,7 @@ func connect(opts Options) *surface {
 		measured: make(chan driver.Size, 1),
 		laidOut:  make(chan []attachmentBox, 1),
 		lines:    make(chan []driver.TextLine, 1),
+		carets:   make(chan driver.CaretLayout, 1),
 		started:  make(chan struct{}),
 		env:      driver.Environment{OS: driver.OSAndroid},
 		images:   map[driver.NodeID]*imageView{},
@@ -271,6 +277,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 				l.Ascender, l.Descender, l.CapHeight, l.XHeight = r.points(), r.points(), r.points(), r.points()
 			}
 			s.lines <- lines
+		case msgCaretLines:
+			s.carets <- readCarets(&r)
 		case msgEnvironment:
 			env := readEnvironment(&r)
 			if env == s.env {
@@ -514,6 +522,7 @@ func (p preparedText) Layout(size driver.Size) driver.TextLayout {
 		}
 	}
 	l := &textLayout{id: p.s.ids.Add(1), s: p.s}
+	l.carets.Set(l.caretLines)
 	p.s.send(msgLayout, func(w *writer) {
 		w.u32(p.id)
 		w.u32(l.id)
@@ -574,6 +583,47 @@ type textLayout struct {
 	s           *surface
 	attachments []attachmentBox
 	sizes       []driver.Size
+	// carets hit-tests the lines, which Java reads when first asked.
+	carets driver.LazyCarets
+}
+
+// HitTest implements driver.TextHitTester.
+func (l *textLayout) HitTest(p driver.Point) driver.Caret { return l.carets.HitTest(p) }
+
+// CaretRect implements driver.TextHitTester.
+func (l *textLayout) CaretRect(c driver.Caret) (driver.Bounds, bool) { return l.carets.CaretRect(c) }
+
+// RangeRects implements driver.TextHitTester.
+func (l *textLayout) RangeRects(start, end int, out []driver.Bounds) []driver.Bounds {
+	return l.carets.RangeRects(start, end, out)
+}
+
+// caretLines asks Java where the StaticLayout's characters are, which it
+// keeps while a text view shows it, and waits for the answer.
+func (l *textLayout) caretLines() driver.CaretLayout {
+	l.s.send(msgCarets, func(w *writer) { w.u32(l.id) })
+	return <-l.s.carets
+}
+
+// readCarets reads a msgCaretLines: each line's UTF-16 range, box and
+// direction, then its clusters'.
+func readCarets(r *reader) driver.CaretLayout {
+	out := make(driver.CaretLayout, r.u32())
+	for i := range out {
+		l := &out[i]
+		l.Start, l.End = int(r.u32()), int(r.u32())
+		l.Box = driver.Bounds{Origin: driver.Point{X: r.points(), Y: r.points()},
+			Size: driver.Size{Width: r.points(), Height: r.points()}}
+		l.RTL = r.byte() != 0
+		l.Clusters = make([]driver.CaretCluster, r.u32())
+		for k := range l.Clusters {
+			c := &l.Clusters[k]
+			c.Start, c.End = int(r.u32()), int(r.u32())
+			c.Left, c.Right = r.points(), r.points()
+			c.RTL = r.byte() != 0
+		}
+	}
+	return out
 }
 
 // TextLines implements core.LineLayout: Java answers with the lines of
@@ -1012,6 +1062,7 @@ func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []native
 			w.float(c.MinZoomScale)
 			w.float(c.MaxZoomScale)
 			w.float(c.ZoomScale)
+			w.points(b.RefreshIndicator)
 		case driver.ItemScrollContent:
 			w.points(it.Size.Width)
 			w.points(it.Size.Height)

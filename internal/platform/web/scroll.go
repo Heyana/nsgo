@@ -16,15 +16,13 @@ import (
 // around the content. Touch drags bracket the drag events, and the
 // browser's glide or snap after a drag the momentum events; a scroll bar
 // drag is a drag too. A touch pulling a refreshable view down past its top
-// refreshes it, and a spinner keeps room above the content while it
-// refreshes. A zoomable view scales its content element, pinched with two
+// refreshes it, and a spinner, or the app's own indicator, keeps room
+// above the content while it refreshes. A zoomable view scales its content element, pinched with two
 // fingers or Ctrl and the wheel. DecelerationRate and the keyboard props
 // are the browser's, so they do nothing here.
 
 const (
-	refreshPull  = 64.0 // how far past the top a pull refreshes
-	refreshSpace = 56.0 // the room the spinner keeps
-	momentumWait = 150  // ms after a drag a scroll is its glide
+	momentumWait = 150 // ms after a drag a scroll is its glide
 )
 
 const scrollCSS = `@keyframes nsgo-spin { to { transform: rotate(360deg) } }
@@ -168,7 +166,7 @@ func (v *view) placeContent() {
 		"height": px(driver.Points(h+oy+sc.pull) + in.Top + in.Bottom - b.Top),
 	})
 	if sc.spinner.Truthy() {
-		setStyle(sc.spinner, map[string]string{"top": px(driver.Points((refreshSpace-22)/2) - b.Top)})
+		setStyle(sc.spinner, map[string]string{"top": px((driver.RefreshSpace-22)/2 - b.Top)})
 	}
 	v.snapMarkers()
 }
@@ -286,7 +284,8 @@ func (s *surface) scrollEvent(v *view, kind driver.EventKind) {
 func (s *surface) scrolled(v *view) {
 	sc := v.sc
 	offset := v.offset()
-	if s.animator.Scroll(v.id, offset) {
+	scrolled := s.animator.Scroll(v.id, offset)
+	if s.pulled(v) || scrolled {
 		s.applyAnimated()
 	}
 	if sc.touching && !sc.dragging {
@@ -393,7 +392,21 @@ func (s *surface) scrollTouchMove(v *view, e js.Value) {
 		s.scrollEvent(v, driver.EventScrollDragStart)
 	}
 	v.placeContent()
+	if s.pulled(v) {
+		s.applyAnimated()
+	}
 	s.scrollEvent(v, driver.EventScroll)
+}
+
+// pulled sets the value bound to v's pull to how far its content is
+// pulled past its top, the room it keeps while refreshing included, and
+// reports whether it changed.
+func (s *surface) pulled(v *view) bool {
+	if v.sc.config.Horizontal || !s.animator.Pulls(v.id) {
+		return false
+	}
+	pull := max(v.sc.pull-v.el.Get("scrollTop").Float(), 0)
+	return s.animator.Pull(v.id, driver.Points(pull))
 }
 
 func (s *surface) scrollTouchEnd(v *view, e js.Value) {
@@ -416,7 +429,7 @@ func (s *surface) scrollTouchEnd(v *view, e js.Value) {
 	}
 	if sc.pulling {
 		sc.pulling = false
-		if sc.pull >= refreshPull && sc.config.Refreshable {
+		if sc.pull >= float64(sc.config.Behavior.RefreshThreshold()) && sc.config.Refreshable {
 			// Shown right away; the next config says whether the app
 			// keeps it.
 			s.scrollEvent(v, driver.EventRefresh)
@@ -424,27 +437,36 @@ func (s *surface) scrollTouchEnd(v *view, e js.Value) {
 		} else {
 			sc.pull = 0
 			v.placeContent()
+			if s.pulled(v) {
+				s.applyAnimated()
+			}
 			s.scrollEvent(v, driver.EventScroll)
 		}
 	}
 }
 
-// setRefreshing shows the spinner and its room above the content, or
-// takes them away.
+// setRefreshing shows the spinner, or the app's indicator, and its room
+// above the content, or takes them away.
 func (s *surface) setRefreshing(v *view, on bool) {
 	sc := v.sc
-	if on == sc.refreshing && !(on && sc.pull != refreshSpace) {
+	room := float64(sc.config.Behavior.RefreshInset())
+	own := sc.config.Behavior.RefreshIndicator > 0
+	if on == sc.refreshing && !(on && (sc.pull != room || own == sc.spinner.Truthy())) {
 		return
 	}
 	sc.refreshing = on
+	if on && own && sc.spinner.Truthy() {
+		sc.spinner.Call("remove")
+		sc.spinner = js.Value{}
+	}
 	if on {
-		if !sc.spinner.Truthy() {
+		if !own && !sc.spinner.Truthy() {
 			sc.spinner = s.doc.Call("createElement", "div")
 			sc.spinner.Set("className", "nsgo-spinner")
 			v.el.Call("insertBefore", sc.spinner, v.el.Get("firstChild"))
 		}
 		atTop := v.el.Get("scrollTop").Float() <= 0.5
-		sc.pull = refreshSpace
+		sc.pull = room
 		v.placeContent()
 		if atTop {
 			v.el.Set("scrollTop", 0)
@@ -456,6 +478,9 @@ func (s *surface) setRefreshing(v *view, on bool) {
 		}
 		sc.pull = 0
 		v.placeContent()
+	}
+	if s.pulled(v) {
+		s.applyAnimated()
 	}
 	s.scrollEvent(v, driver.EventScroll)
 }

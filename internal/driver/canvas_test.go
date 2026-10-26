@@ -2,6 +2,7 @@ package driver
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"unicode/utf8"
 )
@@ -211,5 +212,33 @@ func TestCutRestCutsTheLastLine(t *testing.T) {
 	}
 	if len(cut.Spans) != 2 || cut.Spans[1].End != len(cut.Text) {
 		t.Fatalf("spans = %+v", cut.Spans)
+	}
+}
+
+// hangingEngine lays texts out 6 points a character, without the white
+// space ending their line, as engines do.
+type hangingEngine struct{}
+
+type hangingText struct{ text string }
+
+func (hangingEngine) Prepare(t *AttributedText) PreparedText { return hangingText{t.Text} }
+
+func (p hangingText) Measure(Points) Size {
+	return Size{Width: Points(6 * len(strings.TrimRight(p.text, " \n"))), Height: 12}
+}
+
+func (p hangingText) Layout(Size) TextLayout { return p }
+func (hangingText) Release()                 {}
+
+func TestMeasuredTextCountsTrailingWhiteSpace(t *testing.T) {
+	d := NewDrawing(hangingEngine{})
+	font := Font{Size: 10}
+	for text, want := range map[string]float32{"ab": 12, "ab ": 18, "  ": 12, "": 0, "ab\n": 12} {
+		if w := d.MeasureText(text, font); w != want {
+			t.Errorf("width of %q = %v, want %v", text, w, want)
+		}
+	}
+	if m := d.TextMetrics("", font); m.LineHeight != 12 {
+		t.Errorf("an empty text's line = %v, want the font's 12", m.LineHeight)
 	}
 }

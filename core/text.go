@@ -2,6 +2,7 @@ package core
 
 import (
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/oneo-me/nsgo/internal/driver"
@@ -48,6 +49,8 @@ type ApproxLayout struct {
 	// attachments are the boxes of the text's attachments, cut off
 	// unless shown.
 	attachments []approxBox
+	// carets hit-tests the lines, read when first asked.
+	carets driver.LazyCarets
 }
 
 type approxBox struct {
@@ -60,6 +63,18 @@ func (*ApproxLayout) Release() {}
 
 // TextLines implements LineLayout.
 func (l *ApproxLayout) TextLines() []TextLine { return l.lines }
+
+// HitTest returns the caret nearest p in the layout's content box.
+func (l *ApproxLayout) HitTest(p Point) Caret { return l.carets.HitTest(p) }
+
+// CaretRect returns the caret at c, as high as its line.
+func (l *ApproxLayout) CaretRect(c Caret) (Bounds, bool) { return l.carets.CaretRect(c) }
+
+// RangeRects appends to out the boxes covering UTF-16 offsets start to
+// end.
+func (l *ApproxLayout) RangeRects(start, end int, out []Bounds) []Bounds {
+	return l.carets.RangeRects(start, end, out)
+}
 
 // Attachment implements AttachmentLayout.
 func (l *ApproxLayout) Attachment(i int) (Bounds, bool) {
@@ -239,7 +254,46 @@ func (a approxText) Layout(size Size) driver.TextLayout {
 		}
 		y += line.height
 	}
+	l.carets.Set(func() driver.CaretLayout { return a.carets(lines, l.lines) })
 	return l
+}
+
+// carets reads the caret lines of lines, laid out at boxes: each
+// character is a cluster as wide as it measures, the spaces between two
+// words one character together.
+func (a approxText) carets(lines []approxLine, boxes []TextLine) driver.CaretLayout {
+	text := a.t.Text
+	units := func(byteOffset int) int { return driver.UTF16Len(text[:min(byteOffset, len(text))]) }
+	out := make(driver.CaretLayout, len(lines))
+	for i, line := range lines {
+		end := len(text)
+		if i+1 < len(lines) {
+			end = lines[i+1].start
+		}
+		cl := driver.CaretLine{Start: units(line.start), End: units(end), Box: boxes[i].Bounds}
+		if i == 0 {
+			cl.Start = 0
+		}
+		x, unit, space := Points(0), cl.Start, false
+		if i == 0 {
+			unit = units(line.start)
+		}
+		for k, r := range text[line.start:line.end] {
+			w := a.charWidth()
+			if n := a.attachmentAt(line.start + k); r == driver.AttachmentRune && n >= 0 {
+				w = a.t.Attachments[n].Size.Width
+			} else if r == ' ' && space {
+				w = 0 // spaces collapse into one
+			}
+			space = r == ' '
+			n := len(utf16.Encode([]rune{r}))
+			cl.Clusters = append(cl.Clusters, driver.CaretCluster{Start: unit, End: unit + n, Left: x, Right: x + w})
+			x += w
+			unit += n
+		}
+		out[i] = cl
+	}
+	return out
 }
 
 func (approxText) Release() {}

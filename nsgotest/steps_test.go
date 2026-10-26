@@ -284,3 +284,72 @@ func TestSpanStylesAreRead(t *testing.T) {
 		t.Fatalf("plain's style %+v", s)
 	}
 }
+
+func TestTabMovesTheFocusBetweenPressablesAndFields(t *testing.T) {
+	var log []string
+	button := func(name string, noFocus bool) core.Node {
+		return core.View{TestID: name, NoFocus: noFocus, Style: core.Style{Height: core.Pt(20)},
+			OnPress: func(p core.PressEvent) { log = append(log, fmt.Sprintf("press %s %d", name, p.Clicks)) },
+			OnFocus: func() { log = append(log, "focus "+name) },
+			OnBlur:  func() { log = append(log, "blur "+name) }}
+	}
+	a := Start(t, func(cx *core.Scope) core.Node {
+		return core.View{Children: []core.Node{
+			button("a", false),
+			button("skipped", true),
+			core.Input{TestID: "field", Style: core.Style{Height: core.Pt(20)}},
+			button("b", false),
+		}}
+	}, Environment(driver.Environment{OS: driver.OSMacOS}))
+	a.Key("Tab")
+	a.Key("Tab")
+	if f := a.Find("field"); !f.Focused {
+		t.Fatalf("the second Tab should focus the field\n%s", a.Dump())
+	}
+	a.Key("Tab")
+	a.Key("Space")
+	a.Key("shift+Tab")
+	a.Key("shift+Tab")
+	a.Press("a")
+	a.Press("a")
+	want := []string{"focus a", "blur a", "focus b", "press b 0", "blur b", "focus a", "blur a", "press a 1", "press a 2"}
+	if !slices.Equal(log, want) {
+		t.Fatalf("log = %q\nwant  %q", log, want)
+	}
+}
+
+func TestAnAppsRefreshIndicatorFollowsThePull(t *testing.T) {
+	var refreshing *core.Signal[bool]
+	var pull *core.AnimatedValue
+	refreshes := 0
+	a := Start(t, func(cx *core.Scope) core.Node {
+		refreshing = core.NewSignal(cx, false)
+		pull = core.NewAnimatedValue(cx, 0)
+		return core.View{Style: core.Style{Height: core.Pt(600)}, Children: []core.Node{
+			core.Scroll{TestID: "page", Style: core.Style{FlexGrow: 1},
+				Behavior:   core.ScrollBehavior{RefreshIndicator: 72},
+				Refreshing: refreshing.Get, PullValue: pull,
+				OnRefresh: func() { refreshes++; refreshing.Set(true) },
+				Children:  []core.Node{core.View{Style: core.Style{Height: core.Pt(2000)}}}},
+			core.View{TestID: "indicator", Style: core.Style{Position: core.Absolute, Width: core.Pt(390), Height: core.Pt(72),
+				Animated: &core.AnimatedStyle{TranslateY: pull}}},
+		}}
+	})
+	at := func() driver.Points { return driver.Points(a.Find("indicator").Animated.TranslateY) }
+	a.Drag("page", driver.Point{Y: 60})
+	if refreshes != 0 {
+		t.Fatal("a pull short of the indicator's height refreshed")
+	}
+	if got := at(); got != 0 {
+		t.Fatalf("the pull is %v after it sprang back, want 0", got)
+	}
+	a.Drag("page", driver.Point{Y: 100})
+	if refreshes != 1 || at() != 72 {
+		t.Fatalf("refreshes %d, pull %v: want one refresh keeping the indicator's 72", refreshes, at())
+	}
+	refreshing.Set(false)
+	a.Settle()
+	if at() != 0 {
+		t.Fatalf("the pull is %v once refreshed, want 0", at())
+	}
+}

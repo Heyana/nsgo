@@ -13,7 +13,10 @@ import (
 
 // How scroll views scroll, as NSH's iOS backend does: UIScrollView's own
 // paging, deceleration, bounces, insets, keyboard dismissal and
-// UIRefreshControl; snapping decided by core.ScrollBehavior.SnapTarget as
+// UIRefreshControl, which cannot give way to an indicator of the app's
+// own: then the backend detects the pull as a drag ends and keeps the
+// indicator's room with the top inset. Snapping is decided by
+// core.ScrollBehavior.SnapTarget as
 // a drag ends; the drag and momentum events from the delegate; and a tap
 // recognizer that dismisses the keyboard as KeyboardShouldPersistTaps
 // says. A zoomable view moves its children into a zoom view UIKit
@@ -27,6 +30,9 @@ type scrollState struct {
 	zoom    objc.ID     // the zoom view, while it zooms
 	refresh objc.ID     // the UIRefreshControl, while refreshable
 	tap     objc.ID     // the keyboard's tap recognizer
+	// room is the top inset kept for the app's own refresh indicator
+	// while it refreshes.
+	room driver.Points
 	// applied counts the core's ItemScrollTo and ItemScrollBy items,
 	// reported with each offset; sticky are its sticky cells.
 	applied uint32
@@ -172,10 +178,9 @@ func (v *view) configureScroll(c *driver.ScrollConfig) {
 	if in, was := b.ContentInset, old.Behavior.ContentInset; in != was {
 		// A view resting at its start stays there, showing the inset.
 		at := objc.Send[apple.CGPoint](n, selContentOffset)
-		n.Send(sel("setContentInset:"), edgeInsets{Top: float64(in.Top), Left: float64(in.Left),
-			Bottom: float64(in.Bottom), Right: float64(in.Right)})
-		if at.Y <= float64(-was.Top)+0.5 {
-			at.Y = float64(-in.Top)
+		v.setInset(in)
+		if at.Y <= float64(-was.Top-s.room)+0.5 {
+			at.Y = float64(-in.Top - s.room)
 		}
 		if at.X <= float64(-was.Left)+0.5 {
 			at.X = float64(-in.Left)
@@ -183,7 +188,9 @@ func (v *view) configureScroll(c *driver.ScrollConfig) {
 		n.Send(sel("setContentOffset:"), at)
 	}
 	n.Send(sel("setKeyboardDismissMode:"), int(b.KeyboardDismissMode))
-	v.setRefreshable(c.Refreshable && !c.Horizontal, c.Refreshing)
+	own := b.RefreshIndicator > 0
+	v.setRefreshable(c.Refreshable && !c.Horizontal && !own, c.Refreshing)
+	v.setRoom(c.Refreshing && !c.Horizontal && own, false)
 	// Zooming.
 	n.Send(sel("setMinimumZoomScale:"), float64(c.MinZoomScale))
 	n.Send(sel("setMaximumZoomScale:"), float64(c.MaxZoomScale))
@@ -198,6 +205,71 @@ func (v *view) configureScroll(c *driver.ScrollConfig) {
 		}
 		v.layoutZoom()
 	}
+}
+
+// setInset sets the view's content inset to in, with the refresh room
+// above it.
+func (v *view) setInset(in driver.Edges) {
+	v.native.Send(sel("setContentInset:"), edgeInsets{Top: float64(in.Top + v.sc.room), Left: float64(in.Left),
+		Bottom: float64(in.Bottom), Right: float64(in.Right)})
+}
+
+// setRoom keeps the room of the app's own refresh indicator above the
+// content while on, scrolling to it from the top, or gives it back; a
+// finger still on the view holds it where it is, unless it just lifted.
+func (v *view) setRoom(on, lifted bool) {
+	s := v.sc
+	room := driver.Points(0)
+	if on {
+		room = s.config.Behavior.RefreshInset()
+	}
+	if room == s.room {
+		return
+	}
+	n := v.native
+	start := -objc.Send[edgeInsets](n, sel("adjustedContentInset")).Top + float64(s.room)
+	at := objc.Send[apple.CGPoint](n, selContentOffset)
+	s.room = room
+	v.setInset(s.config.Behavior.ContentInset)
+	if !lifted && objc.Send[bool](n, sel("isDragging")) {
+		return // the finger holds it
+	}
+	switch {
+	case room > 0 && at.Y <= start+0.5:
+		// UIKit's bounce already aims at the old inset as a drag ends, so
+		// the room is scrolled to on the next turn.
+		apple.OnMain(func() {
+			if v.sc != nil && v.sc.room > 0 {
+				n.Send(sel("setContentOffset:animated:"), apple.CGPoint{X: at.X, Y: start - float64(v.sc.room)}, true)
+			}
+		})
+	case room == 0 && at.Y < start:
+		n.Send(sel("setContentOffset:animated:"), apple.CGPoint{X: at.X, Y: start}, true)
+	}
+}
+
+// pulled is how far the view is pulled past its top, its refresh room
+// included.
+func (v *view) pulled() driver.Points {
+	if v.sc.config.Horizontal {
+		return 0
+	}
+	n := v.native
+	start := -objc.Send[edgeInsets](n, sel("adjustedContentInset")).Top + float64(v.sc.room)
+	return driver.Points(max(start-objc.Send[apple.CGPoint](n, selContentOffset).Y, 0))
+}
+
+// pulledToRefresh starts a refresh of the app's own indicator when a drag
+// ends pulled far enough past the top: the room shows right away, and the
+// next config says whether the app keeps it.
+func (v *view) pulledToRefresh() {
+	c := &v.sc.config
+	if !c.Refreshable || c.Horizontal || c.Behavior.RefreshIndicator <= 0 || v.sc.room > 0 ||
+		v.pulled() < c.Behavior.RefreshThreshold() {
+		return
+	}
+	v.scrollEvent(driver.EventRefresh)
+	v.setRoom(true, true)
 }
 
 // setRefreshable gives the view a UIRefreshControl, or takes it away,
@@ -387,6 +459,7 @@ func scrollWillEndDrag(self objc.ID, _ objc.SEL, _ objc.ID, velocity apple.CGPoi
 
 func scrollDidEndDrag(self objc.ID, _ objc.SEL, _ objc.ID, decelerate bool) {
 	if v := scrollView(self); v != nil {
+		v.pulledToRefresh()
 		v.scrollEvent(driver.EventScrollDragEnd)
 		if decelerate {
 			v.scrollEvent(driver.EventMomentumStart)

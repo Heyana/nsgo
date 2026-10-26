@@ -112,6 +112,22 @@ type (
 	LineDash = driver.LineDash
 	// Path is a path to fill, stroke or clip with, as the web's Path2D.
 	Path = driver.Path
+	// Paint is what Fill and Stroke paint with: a color, nothing or the
+	// text color. The zero Paint is unset, so the property inherits.
+	Paint = driver.Paint
+	// PaintStyle is the SVG paint properties a canvas view inherits.
+	PaintStyle = driver.PaintStyle
+	// ViewPaint is an op of a drawing whose value is its view's paint.
+	ViewPaint = driver.ViewPaint
+	// ViewPaintKind is the paint property a ViewPaint takes.
+	ViewPaintKind = driver.ViewPaintKind
+	// Caret is a caret position in a text: a UTF-16 offset and the side it
+	// is on.
+	Caret = driver.Caret
+	// Affinity says which line a caret offset is on where one offset is two
+	// places on screen: the end of a wrapped line and the start of the
+	// next.
+	Affinity = driver.Affinity
 	// TextBaseline is the line of a canvas text that the point it is drawn
 	// at sits on.
 	TextBaseline = driver.TextBaseline
@@ -869,6 +885,11 @@ const (
 )
 
 const (
+	Downstream = driver.Downstream
+	Upstream   = driver.Upstream
+)
+
+const (
 	StorageSet    = driver.StorageSet
 	StorageRemove = driver.StorageRemove
 	StorageClear  = driver.StorageClear
@@ -881,7 +902,14 @@ var (
 	EaseOut   = driver.EaseOut
 	EaseInOut = driver.EaseInOut
 	Auto      = driver.Auto
+	// PaintNone paints nothing; PaintCurrentColor paints with the text
+	// color.
+	PaintNone         = driver.PaintNone
+	PaintCurrentColor = driver.PaintCurrentColor
 )
+
+// PaintColor paints with c.
+func PaintColor(c Color) Paint { return driver.PaintColor(c) }
 
 // UTF16Len is the length of s in UTF-16 units.
 func UTF16Len(s string) int { return driver.UTF16Len(s) }

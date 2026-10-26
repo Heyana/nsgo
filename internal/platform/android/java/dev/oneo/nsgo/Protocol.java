@@ -23,6 +23,7 @@ final class Protocol {
     static final int FONTS = 9;
     static final int TEST = 10;
     static final int HOST_CALL = 11;
+    static final int CARETS = 12;
 
     // Java to Go.
     static final int START = 1;
@@ -35,6 +36,7 @@ final class Protocol {
     static final int TEXT_LINES = 8;
     static final int TEST_REPLY = 9;
     static final int HOST = 10;
+    static final int CARET_LINES = 11;
 
     // The parts of a HOST message, and of a HOST_CALL, as host.go has them.
     static final int HOST_EVENT = 1;

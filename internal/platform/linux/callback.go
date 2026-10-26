@@ -26,6 +26,7 @@ var (
 	cbScroll        uintptr
 	cbKeyPressed    uintptr
 	cbKeyReleased   uintptr
+	cbModifiers     uintptr
 	cbPinchTimeout  uintptr
 
 	cbEntryChanged  uintptr
@@ -85,6 +86,7 @@ func init() {
 	cbScroll = newCallback(scrollCallback)
 	cbKeyPressed = newCallback(keyPressedCallback)
 	cbKeyReleased = newCallback(keyReleasedCallback)
+	cbModifiers = newCallback(modifiersCallback)
 	cbPinchTimeout = newCallback(pinchTimeoutCallback)
 
 	cbEntryChanged = newCallback(entryChangedCallback)

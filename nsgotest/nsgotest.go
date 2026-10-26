@@ -182,6 +182,11 @@ type App struct {
 	manualFrames bool
 	// host is the embedding host's channel, nil without one.
 	host *core.Host
+	// lastPress and lastPressAt are the view pressed last and when;
+	// clicks counts the presses of it in a row.
+	lastPress   driver.NodeID
+	lastPressAt time.Time
+	clicks      uint32
 }
 
 // Start runs app and settles it; the test's cleanup disposes it. Under

@@ -46,9 +46,11 @@ func (a *App) pressTarget(selector string) (v *View, at driver.Point, index int)
 		match = m
 		return t, !m.disabled(t)
 	})
-	_, at = v.center()
+	// The press lands on the match, as a finger on a text in a button
+	// does.
+	_, at = match.center()
 	if a.target != nil {
-		at = a.target.reveal(v)
+		at = a.target.reveal(match)
 	}
 	if v == match && v.Kind == driver.KindText && len(v.Spans) > 0 {
 		index = a.charsAt(selector, v)
@@ -91,11 +93,19 @@ func (a *App) Press(selector string) {
 		a.done()
 		return
 	}
+	a.countClick(v)
 	a.touchAt(driver.GestureBegan, at, 0)
 	a.pressOutside(v, at)
+	// A pointer's press takes the keyboard focus off pressable views.
+	for _, o := range a.views {
+		if o.Focused && o.Kind != driver.KindInput {
+			a.setFocus(o, false)
+			a.Settle()
+		}
+	}
 	for _, k := range []driver.EventKind{driver.EventPressDown, driver.EventPressUp, driver.EventPress} {
 		ev := a.pressEvent(v, at)
-		ev.Kind, ev.Index = k, index
+		ev.Kind, ev.Index, ev.Count = k, index, a.clicks
 		a.send(v, ev)
 	}
 	a.touchAt(driver.GestureEnded, at, 0)
@@ -107,6 +117,22 @@ func (a *App) Press(selector string) {
 func (a *App) pressEvent(v *View, at driver.Point) driver.Event {
 	o := v.surfaceFrame().Origin
 	return driver.Event{ID: v.ID, Point: driver.Point{X: at.X - o.X, Y: at.Y - o.Y}, Page: at, Count: 1}
+}
+
+// clickInterval is how soon a press follows the last one to count up.
+const clickInterval = 500 * time.Millisecond
+
+// countClick counts a press of v: a press of the view pressed last,
+// within clickInterval of the clock, counts up, as platforms count double
+// clicks.
+func (a *App) countClick(v *View) {
+	now := a.Clock.Now()
+	if v.ID == a.lastPress && now.Sub(a.lastPressAt) <= clickInterval {
+		a.clicks++
+	} else {
+		a.clicks = 1
+	}
+	a.lastPress, a.lastPressAt = v.ID, now
 }
 
 // pressOutside reports a press at at to the overlays that listen and do
@@ -537,9 +563,11 @@ func (a *App) Compose(selector, text string) {
 }
 
 // Key presses a key on a hardware keyboard, as the app's keymap reads it
-// ("mod+s", "Escape", "a"): a binding of the keymap fires; else the
-// focused field takes a character, Backspace or Enter; else Escape goes
-// back.
+// ("mod+s", "Escape", "a"): a binding of the keymap fires; else, in a
+// macOS or web environment, Tab and Shift+Tab move the keyboard focus
+// between fields and pressable views, and Return or Space press the
+// pressable view it is on; else the focused field takes a character,
+// Backspace or Enter; else Escape goes back.
 func (a *App) Key(key string) {
 	a.t.Helper()
 	a.step("key(%s)", key)
@@ -556,6 +584,25 @@ func (a *App) Key(key string) {
 			return
 		}
 	}
+	if a.tabs() {
+		switch k {
+		case "tab", "shift+tab":
+			a.moveFocus(k == "shift+tab")
+			a.done()
+			return
+		case "enter", "space":
+			// Return or Space press the pressable the keyboard focus is on.
+			for _, v := range a.shown() {
+				if v.Focused && v.Kind != driver.KindInput && pressable(v) {
+					for _, kind := range []driver.EventKind{driver.EventPressDown, driver.EventPressUp, driver.EventPress} {
+						a.send(v, driver.Event{Kind: kind})
+					}
+					a.done()
+					return
+				}
+			}
+		}
+	}
 	for _, v := range a.views {
 		if v.Focused && v.Kind == driver.KindInput && !v.Input.Readonly && !v.Input.Disabled &&
 			(key == "Enter" || key == "Backspace" || utf8.RuneCountInString(key) == 1) {
@@ -570,6 +617,49 @@ func (a *App) Key(key string) {
 		return
 	}
 	a.t.Fatalf("nsgotest: nothing takes the key %q; the keymap binds %v", key, a.Keymap)
+}
+
+// tabs says whether Tab moves the keyboard focus between pressable views
+// and fields, as on macOS and the web.
+func (a *App) tabs() bool {
+	return a.env != nil && (a.env.OS == driver.OSMacOS || a.env.OS == driver.OSWeb)
+}
+
+// moveFocus moves the keyboard focus to the next Tab stop, or the
+// previous one, around: editable fields and the pressable views not
+// NoFocus, disabled or out of sight, in tree order.
+func (a *App) moveFocus(back bool) {
+	var stops []*View
+	at := -1
+	for _, v := range a.shown() {
+		stop := v.Kind == driver.KindInput && !v.Input.Readonly ||
+			v.Kind != driver.KindInput && pressable(v) && !v.Props.NoFocus
+		if !stop || v.disabled(nil) {
+			continue
+		}
+		if v.Focused {
+			at = len(stops)
+		}
+		stops = append(stops, v)
+	}
+	if len(stops) == 0 {
+		return
+	}
+	next := 0
+	switch {
+	case at >= 0 && back:
+		next = (at + len(stops) - 1) % len(stops)
+	case at >= 0:
+		next = (at + 1) % len(stops)
+	case back:
+		next = len(stops) - 1
+	}
+	for _, v := range a.views {
+		if v != stops[next] {
+			a.setFocus(v, false)
+		}
+	}
+	a.setFocus(stops[next], true)
 }
 
 // Back goes back as Escape, the back button or the back gesture does.

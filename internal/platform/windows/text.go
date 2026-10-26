@@ -629,6 +629,7 @@ func (pt *preparedText) Layout(size driver.Size) driver.TextLayout {
 		return l
 	}
 	l.layout = layout
+	l.carets.Set(l.caretLines)
 	// A little over the width, so that rounding does not wrap what fit.
 	layout.callF(layoutSetMaxWidth, 1, f32(max(float32(size.Width), 0)+0.01))
 	boxes := pt.stack(lineMetricsOf(layout))
@@ -831,6 +832,45 @@ type textLayout struct {
 	// The brushes of colors, set as drawing effects in generation.
 	brushes    []*comObject
 	generation uint64
+	// carets hit-tests the lines, read from the layout when first asked.
+	carets driver.LazyCarets
+}
+
+// HitTest implements driver.TextHitTester.
+func (l *textLayout) HitTest(p driver.Point) driver.Caret { return l.carets.HitTest(p) }
+
+// CaretRect implements driver.TextHitTester.
+func (l *textLayout) CaretRect(c driver.Caret) (driver.Bounds, bool) { return l.carets.CaretRect(c) }
+
+// RangeRects implements driver.TextHitTester.
+func (l *textLayout) RangeRects(start, end int, out []driver.Bounds) []driver.Bounds {
+	return l.carets.RangeRects(start, end, out)
+}
+
+// caretLines reads where the lines' clusters are from DirectWrite: each
+// cluster's box and bidi level at its first unit, line by line, without
+// the line's break, its y the line's box.
+func (l *textLayout) caretLines() driver.CaretLayout {
+	out := make(driver.CaretLayout, 0, len(l.lines))
+	for _, b := range l.lines {
+		cl := driver.CaretLine{Start: int(b.start), End: int(b.end),
+			Box: driver.Bounds{Origin: driver.Point{Y: driver.Points(b.top)}, Size: driver.Size{Height: driver.Points(b.height)}}}
+		left, right := spanEdges(l.layout, b.start, b.end-b.trailing-b.newline)
+		cl.Box.Origin.X, cl.Box.Size.Width = driver.Points(left), driver.Points(right-left)
+		for pos := b.start; pos < b.end-b.newline; {
+			var x, y float32
+			var m hitTestMetrics
+			l.layout.call(layoutHitTestTextPosition, uintptr(pos), 0, uintptr(unsafe.Pointer(&x)), uintptr(unsafe.Pointer(&y)),
+				uintptr(unsafe.Pointer(&m)))
+			end := max(m.position+m.length, pos+1)
+			cl.Clusters = append(cl.Clusters, driver.CaretCluster{Start: int(pos), End: int(end),
+				Left: driver.Points(m.left), Right: driver.Points(m.left + m.width), RTL: m.bidiLevel&1 != 0})
+			pos = end
+		}
+		cl.RTL = l.style.RTL
+		out = append(out, cl)
+	}
+	return out
 }
 
 // Attachment implements core.AttachmentLayout.
@@ -843,6 +883,7 @@ func (l *textLayout) Attachment(i int) (driver.Bounds, bool) {
 
 // Release implements core.TextLayout on the main thread.
 func (l *textLayout) Release() {
+	l.carets.Drop()
 	releaseAll(&l.layout, &l.shadowImage, &l.shadowEffect, &l.shadowList)
 	for i := range l.brushes {
 		releaseAll(&l.brushes[i])

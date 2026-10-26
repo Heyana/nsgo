@@ -18,6 +18,7 @@ import (
 	"sync"
 	"syscall/js"
 	"time"
+	"unicode"
 	"unicode/utf16"
 
 	"github.com/oneo-me/nsgo/internal/driver"
@@ -131,6 +132,10 @@ type surface struct {
 	// shading are the shader views to draw once the batch or the frame
 	// is applied.
 	shading []*view
+	// mouse is where the mouse last moved over the host, in client
+	// coordinates, while mouseIn.
+	mouse   driver.Point
+	mouseIn bool
 }
 
 // view is the element of one NodeID.
@@ -463,6 +468,112 @@ type textLayout struct {
 	boxes []attachmentBox
 	s     *surface
 	width driver.Points
+	// carets hit-tests the lines, measured when first asked.
+	carets driver.LazyCarets
+}
+
+// HitTest implements driver.TextHitTester.
+func (l *textLayout) HitTest(p driver.Point) driver.Caret { return l.carets.HitTest(p) }
+
+// CaretRect implements driver.TextHitTester.
+func (l *textLayout) CaretRect(c driver.Caret) (driver.Bounds, bool) { return l.carets.CaretRect(c) }
+
+// RangeRects implements driver.TextHitTester.
+func (l *textLayout) RangeRects(start, end int, out []driver.Bounds) []driver.Bounds {
+	return l.carets.RangeRects(start, end, out)
+}
+
+// caretLines lays the text out again in the measuring element at its
+// width and reads each character's box with a range: its rows are the
+// lines, the boxes their clusters, right to left in the scripts written
+// so (neutral characters take the direction of the text).
+func (l *textLayout) caretLines() driver.CaretLayout {
+	p := &preparedText{s: l.s, richText: l.richText}
+	m := p.hold()
+	defer p.Release()
+	setStyle(m, map[string]string{"width": px(l.width), "max-width": "none"})
+	defer setStyle(m, map[string]string{"width": "max-content"})
+	origin := m.Call("getBoundingClientRect")
+	left, top := origin.Get("left").Float(), origin.Get("top").Float()
+	rtl := js.Global().Call("getComputedStyle", m).Get("direction").String() == "rtl"
+	r := l.s.doc.Call("createRange")
+	var out driver.CaretLayout
+	var bottom float64
+	unit := 0 // the UTF-16 offset of the node walked
+	add := func(start, end int, b js.Value, right bool) {
+		x0, y0 := b.Get("left").Float()-left, b.Get("top").Float()-top
+		x1, y1 := x0+b.Get("width").Float(), y0+b.Get("height").Float()
+		if y1 <= y0 {
+			return
+		}
+		if k := len(out); k == 0 || y0 >= bottom-0.5 {
+			if k > 0 {
+				out[k-1].End = start
+			}
+			out = append(out, driver.CaretLine{Start: start, RTL: rtl,
+				Box: driver.Bounds{Origin: driver.Point{X: driver.Points(x0), Y: driver.Points(y0)},
+					Size: driver.Size{Width: driver.Points(x1 - x0), Height: driver.Points(y1 - y0)}}})
+			bottom = y1
+		}
+		cl := &out[len(out)-1]
+		x := min(float64(cl.Box.Origin.X), x0)
+		cl.Box.Size.Width = driver.Points(max(float64(cl.Box.Origin.X+cl.Box.Size.Width), x1) - x)
+		cl.Box.Origin.X = driver.Points(x)
+		cl.Clusters = append(cl.Clusters, driver.CaretCluster{Start: start, End: end, Left: driver.Points(x0),
+			Right: driver.Points(x1), RTL: right})
+		bottom = max(bottom, y1)
+	}
+	var walk func(n js.Value)
+	walk = func(n js.Value) {
+		switch n.Get("nodeType").Int() {
+		case 3: // text
+			u := 0
+			for _, c := range n.Get("data").String() {
+				units := len(utf16.Encode([]rune{c}))
+				if c != '\n' && c != '\r' {
+					r.Call("setStart", n, u)
+					r.Call("setEnd", n, u+units)
+					add(unit+u, unit+u+units, r.Call("getBoundingClientRect"), writtenRTL(c, rtl))
+				}
+				u += units
+			}
+			unit += u
+		case 1: // element
+			if n.Call("hasAttribute", "data-attachment").Bool() {
+				add(unit, unit+1, n.Call("getBoundingClientRect"), rtl)
+				unit++
+				return
+			}
+			for c := n.Get("firstChild"); !c.IsNull(); c = c.Get("nextSibling") {
+				walk(c)
+			}
+		}
+	}
+	if l.text != "" {
+		walk(m)
+	}
+	if len(out) == 0 {
+		out = append(out, driver.CaretLine{Box: driver.Bounds{Size: driver.Size{
+			Height: driver.Points(origin.Get("height").Float())}}})
+	}
+	out[len(out)-1].End = unit
+	if l.maxLines > 0 && len(out) > l.maxLines {
+		out = out[:l.maxLines]
+		out[len(out)-1].End = unit
+	}
+	return out
+}
+
+// writtenRTL says whether c runs right to left: a letter of a script
+// written so, or a character of no direction in a text that is.
+func writtenRTL(c rune, rtl bool) bool {
+	switch {
+	case unicode.In(c, unicode.Hebrew, unicode.Arabic, unicode.Syriac, unicode.Thaana, unicode.Nko):
+		return true
+	case unicode.IsLetter(c) || unicode.IsDigit(c):
+		return false
+	}
+	return rtl
 }
 
 type attachmentBox struct {
@@ -772,6 +883,7 @@ func (p *preparedText) Layout(size driver.Size) driver.TextLayout {
 		return l
 	}
 	l := &textLayout{richText: p.richText, s: p.s, width: size.Width}
+	l.carets.Set(l.caretLines)
 	if len(p.attachments) == 0 {
 		return l
 	}
@@ -1589,10 +1701,51 @@ func (s *surface) setEvents(v *view, m driver.EventMask) {
 	}
 }
 
+// listenModifiers follows the mouse over the host and reports a modifier
+// key pressed or released while it rests as a hover move to where it is
+// with the new modifiers, so a view hears Control come and go under a
+// still mouse.
+func (s *surface) listenModifiers(ls *listeners) {
+	ls.on(s.host, "pointermove", func(e js.Value) {
+		if e.Get("pointerType").String() == "mouse" {
+			s.mouse = driver.Point{X: driver.Points(e.Get("clientX").Float()), Y: driver.Points(e.Get("clientY").Float())}
+			s.mouseIn = true
+		}
+	})
+	ls.on(s.host, "pointerleave", func(e js.Value) {
+		if e.Get("pointerType").String() == "mouse" {
+			s.mouseIn = false
+		}
+	})
+	changed := func(e js.Value) {
+		switch e.Get("key").String() {
+		case "Control", "Alt", "Shift", "Meta":
+		default:
+			return
+		}
+		if !s.mouseIn || e.Get("repeat").Bool() {
+			return
+		}
+		el := s.doc.Call("elementFromPoint", float64(s.mouse.X), float64(s.mouse.Y))
+		for ; el.Truthy() && !el.Equal(s.host); el = el.Get("parentElement") {
+			if v := s.viewOf(el); v != nil && v.el.Equal(el) && v.events.Has(driver.EventHoverMove) {
+				s.send(v, s.pointerAt(v, driver.EventHoverMove, float64(s.mouse.X), float64(s.mouse.Y), e))
+			}
+		}
+	}
+	ls.on(s.doc, "keydown", changed)
+	ls.on(s.doc, "keyup", changed)
+}
+
 // pointer returns where e's pointer is in v and in v's root view, the
 // modal around it or the surface, and the modifier keys held.
 func (s *surface) pointer(v *view, kind driver.EventKind, e js.Value) driver.Event {
-	x, y := e.Get("clientX").Float(), e.Get("clientY").Float()
+	return s.pointerAt(v, kind, e.Get("clientX").Float(), e.Get("clientY").Float(), e)
+}
+
+// pointerAt is pointer for the client point (x, y), with the modifier keys
+// e holds.
+func (s *surface) pointerAt(v *view, kind driver.EventKind, x, y float64, e js.Value) driver.Event {
 	r := v.el.Call("getBoundingClientRect")
 	root := s.host
 	for el := v.el; el.Truthy() && !el.Equal(s.host); el = el.Get("parentElement") {
@@ -1684,6 +1837,7 @@ func (s *surface) listen() {
 	ls.on(s.host, "contextmenu", s.contextMenu)
 	ls.on(s.doc, "copy", s.copySelection)
 	ls.on(s.doc, "keydown", s.escape)
+	s.listenModifiers(&ls)
 	s.listenGestures(&ls)
 	s.listenTouches(&ls)
 	s.listenFocus(&ls)

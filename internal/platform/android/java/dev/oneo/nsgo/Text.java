@@ -387,6 +387,116 @@ final class Text {
     }
 
     /**
+     * Where a final layout's characters are, as internal/platform/android
+     * readCarets reads it: per line its UTF-16 range, box (left, top, width,
+     * height) and direction, then its grapheme clusters' ranges, left and
+     * right edges and directions, in logical order, without its break or
+     * what an ellipsis replaced. Lengths in units of {@code density}.
+     */
+    static byte[] carets(Layout l, float density) {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        java.io.DataOutputStream d = new java.io.DataOutputStream(bytes);
+        try {
+            int count = l == null ? 0 : l.getLineCount();
+            d.writeInt(count);
+            if (count == 0) return bytes.toByteArray();
+            CharSequence text = l.getText();
+            java.text.BreakIterator chars = java.text.BreakIterator.getCharacterInstance();
+            chars.setText(text.toString());
+            for (int line = 0; line < count; line++) {
+                int start = l.getLineStart(line), end = l.getLineEnd(line);
+                float top = l.getLineTop(line), bottom = l.getLineBottom(line);
+                d.writeInt(start);
+                d.writeInt(end);
+                d.writeFloat(l.getLineLeft(line) / density);
+                d.writeFloat(top / density);
+                d.writeFloat(l.getLineWidth(line) / density);
+                d.writeFloat((bottom - top) / density);
+                d.writeByte(l.getParagraphDirection(line) == Layout.DIR_RIGHT_TO_LEFT ? 1 : 0);
+                int stop = breakStart(l, line);
+                int ellipsis = l.getEllipsisCount(line) > 0 ? start + l.getEllipsisStart(line) : -1;
+                int resume = ellipsis >= 0 ? ellipsis + l.getEllipsisCount(line) : -1;
+                java.util.List<float[]> clusters = new java.util.ArrayList<>();
+                for (int i = start; i < stop; ) {
+                    int j = chars.following(i);
+                    if (j == java.text.BreakIterator.DONE || j > stop) j = stop;
+                    if (ellipsis < 0 || i < ellipsis || i >= resume) {
+                        boolean rtl = l.isRtlCharAt(i);
+                        float[] before = edges(l, line, i), after = edges(l, line, j);
+                        float[] box = narrowest(rtl ? after : before, rtl ? before : after);
+                        if (box == null) box = narrowest(concat(before, after), concat(before, after));
+                        if (box != null) clusters.add(new float[] {i, j, box[0], box[1], rtl ? 1 : 0});
+                    }
+                    i = j;
+                }
+                d.writeInt(clusters.size());
+                for (float[] c : clusters) {
+                    d.writeInt((int) c[0]);
+                    d.writeInt((int) c[1]);
+                    d.writeFloat(c[2] / density);
+                    d.writeFloat(c[3] / density);
+                    d.writeByte((int) c[4]);
+                }
+            }
+        } catch (java.io.IOException impossible) {
+            throw new AssertionError(impossible);
+        }
+        return bytes.toByteArray();
+    }
+
+    /**
+     * Where a line's break begins: its end, or before the character that
+     * ends it ("\r\n" as one). Carets stay before it.
+     */
+    private static int breakStart(Layout l, int line) {
+        int start = l.getLineStart(line), end = l.getLineEnd(line);
+        if (end <= start) return end;
+        CharSequence text = l.getText();
+        char c = text.charAt(end - 1);
+        if (c != '\n' && c != '\r' && c != '\u0085' && c != '\u2028' && c != '\u2029') return end;
+        return c == '\n' && end - 1 > start && text.charAt(end - 2) == '\r' ? end - 2 : end - 1;
+    }
+
+    /**
+     * The x of the end of a line that wrapped: the far edge of the line in
+     * its paragraph's direction, as far from where it starts as it is wide.
+     */
+    private static float wrappedEndX(Layout l, int line) {
+        float width = l.getLineWidth(line);
+        float start = l.getPrimaryHorizontal(l.getLineStart(line));
+        return l.getParagraphDirection(line) == Layout.DIR_RIGHT_TO_LEFT ? start - width : start + width;
+    }
+
+    /**
+     * The carets of offset on a line: Android's primary and secondary ones,
+     * which differ where the direction changes. A wrapped line's end is one
+     * of its own: getOffsetForHorizontal and the carets stop before it.
+     */
+    private static float[] edges(Layout l, int line, int offset) {
+        if (offset == l.getLineEnd(line) && line < l.getLineCount() - 1) return new float[] {wrappedEndX(l, line)};
+        float primary = l.getPrimaryHorizontal(offset), secondary = l.getSecondaryHorizontal(offset);
+        return primary == secondary ? new float[] {primary} : new float[] {primary, secondary};
+    }
+
+    /** The narrowest box from one of lefts to one of rights, or null when none has width. */
+    private static float[] narrowest(float[] lefts, float[] rights) {
+        float[] best = null;
+        for (float lo : lefts) {
+            for (float hi : rights) {
+                if (hi > lo && (best == null || hi - lo < best[1] - best[0])) best = new float[] {lo, hi};
+            }
+        }
+        return best;
+    }
+
+    private static float[] concat(float[] a, float[] b) {
+        float[] out = new float[a.length + b.length];
+        System.arraycopy(a, 0, out, 0, a.length);
+        System.arraycopy(b, 0, out, a.length, b.length);
+        return out;
+    }
+
+    /**
      * The lines of a final layout, for OnTextLayout: per line its UTF-8
      * start and end, left, top, width and height, ascent and descent, and
      * the cap and x heights of the font it starts in, in pixels.

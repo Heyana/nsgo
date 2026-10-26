@@ -23,7 +23,8 @@ import java.io.IOException;
  * deceleration or end at the snap point snapTarget (a port of
  * core.ScrollBehavior.SnapTarget) picks; drag and momentum events; the
  * content inset as padding; keyboard dismissal on drags and taps; pull to
- * refresh with a spinner above the content; and ZoomScroll, which a
+ * refresh with a spinner, or the app's own indicator, above the content;
+ * and ZoomScroll, which a
  * zoomable view switches to: it scales the content around its top left and
  * scrolls both ways itself.
  */
@@ -48,6 +49,8 @@ final class Scrolling {
         float[] offsets = new float[0];
         float insetTop, insetRight, insetBottom, insetLeft;
         float minZoom = 1, maxZoom = 1, zoom = 1;
+        /** The height of the app's own refresh indicator; 0 shows the spinner. */
+        float refreshIndicator;
 
         boolean snaps() {
             return paging || interval > 0 || offsets.length > 0;
@@ -55,6 +58,16 @@ final class Scrolling {
 
         boolean zooms() {
             return maxZoom > minZoom;
+        }
+
+        /** How far past the top a released pull refreshes, in points. */
+        float refreshPull() {
+            return refreshIndicator > 0 ? refreshIndicator : REFRESH_PULL;
+        }
+
+        /** The room kept above the content while it refreshes, in points. */
+        float refreshSpace() {
+            return refreshIndicator > 0 ? refreshIndicator : REFRESH_SPACE;
         }
 
         /** Reads ItemScrollConfig as internal/platform/android/android.go writes it. */
@@ -88,6 +101,7 @@ final class Scrolling {
             c.minZoom = in.readFloat();
             c.maxZoom = in.readFloat();
             c.zoom = in.readFloat();
+            c.refreshIndicator = in.readFloat();
             return c;
         }
     }
@@ -197,6 +211,9 @@ final class Scrolling {
         float offsetX();
 
         float offsetY();
+
+        /** How far the view is pulled past its top, its refresh room included, in points. */
+        float pulled();
     }
 
     /**
@@ -221,7 +238,7 @@ final class Scrolling {
         // What ItemScrollBy moved the motion running by, in pixels.
         private int carry;
         // The pull to refresh, in pixels, and its spinner.
-        private float pull;
+        private float pull, pullTarget;
         private boolean pulling, refreshing;
         private ProgressBar spinner;
 
@@ -251,6 +268,10 @@ final class Scrolling {
 
         float offsetY() {
             return (view.getScrollY() - pull) / density - config.insetTop;
+        }
+
+        float pulled() {
+            return horizontal ? 0 : Math.max(pull - view.getScrollY(), 0) / density;
         }
 
         void configure(Config c) {
@@ -352,7 +373,7 @@ final class Scrolling {
                     pulling = touching = false;
                     dragging = false;
                     event(Protocol.EVENT_SCROLL_DRAG_END);
-                    if (pull >= REFRESH_PULL * density && e.getActionMasked() == MotionEvent.ACTION_UP) {
+                    if (pull >= config.refreshPull() * density && e.getActionMasked() == MotionEvent.ACTION_UP) {
                         // Shown right away; the next config says whether the app keeps it.
                         event(Protocol.EVENT_REFRESH);
                         refreshing = false;
@@ -487,15 +508,17 @@ final class Scrolling {
             }
         }
 
-        /** Shows the spinner and its room above the content, or takes them away. */
+        /** Shows the spinner, or the app's indicator, and its room above the content, or takes them away. */
         void setRefreshing(boolean on) {
-            if (on == refreshing) return;
+            float room = config.refreshSpace() * density;
+            if (on == refreshing && !(on && !pulling && pullTarget != room)) return;
             refreshing = on;
             if (pulling) return;
-            settlePull(on ? REFRESH_SPACE * density : 0);
+            settlePull(on ? room : 0);
         }
 
         private void settlePull(float to) {
+            pullTarget = to;
             showSpinner(to > 0 || pull > 0);
             content.animate().translationY(to).setDuration(ANIMATION).setUpdateListener(a -> {
                 pull = content.getTranslationY();
@@ -508,12 +531,13 @@ final class Scrolling {
         }
 
         private void showSpinner(boolean on) {
+            on = on && config.refreshIndicator <= 0;
             if (on && spinner == null) {
                 spinner = new ProgressBar(view.getContext());
                 spinner.setIndeterminate(true);
                 int side = Math.round(28 * density);
                 FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(side, side, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-                lp.topMargin = Math.round((REFRESH_SPACE * density - side) / 2 + config.insetTop * density);
+                lp.topMargin = Math.round((config.refreshSpace() * density - side) / 2 + config.insetTop * density);
                 frame.addView(spinner, lp);
             } else if (!on && spinner != null) {
                 frame.removeView(spinner);
@@ -576,6 +600,11 @@ final class Scrolling {
         public float offsetY() {
             return d.offsetY();
         }
+
+        @Override
+        public float pulled() {
+            return d.pulled();
+        }
     }
 
     /** A horizontal scroll view. */
@@ -631,6 +660,11 @@ final class Scrolling {
         @Override
         public float offsetY() {
             return d.offsetY();
+        }
+
+        @Override
+        public float pulled() {
+            return 0;
         }
     }
 
@@ -931,6 +965,11 @@ final class Scrolling {
         @Override
         public float offsetY() {
             return getScrollY() / density - config.insetTop;
+        }
+
+        @Override
+        public float pulled() {
+            return 0;
         }
     }
 }

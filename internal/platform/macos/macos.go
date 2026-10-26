@@ -70,6 +70,9 @@ type view struct {
 	native  objc.ID
 	content objc.ID // where children go: native, or a scroll view's container
 	events  driver.EventMask
+	// mouseIn says the mouse is over the view, as its tracking area last
+	// told.
+	mouseIn bool
 	// backdrop is the view's backdrop blur, Liquid Glass when glass.
 	backdrop objc.ID
 	glass    bool
@@ -854,11 +857,11 @@ func (s *surface) observe() {
 		s.stops = append(s.stops, func() { w.Send(sel("removeObserver:forKeyPath:"), appObserver, key) })
 	}
 
-	const keyDown, leftDown, leftUp, leftDragged, rightDown, otherDown, wheel = 1 << 10, 1 << 1, 1 << 2, 1 << 6, 1 << 3, 1 << 25, 1 << 22
+	const keyDown, leftDown, leftUp, leftDragged, rightDown, otherDown, wheel, flags = 1 << 10, 1 << 1, 1 << 2, 1 << 6, 1 << 3, 1 << 25, 1 << 22, 1 << 12
 	handler := objc.NewBlock(func(_ objc.Block, event objc.ID) objc.ID { return s.filter(event) })
 	nsEvent := objc.ID(objc.GetClass("NSEvent"))
 	monitor := nsEvent.Send(sel("addLocalMonitorForEventsMatchingMask:handler:"),
-		uint64(keyDown|leftDown|leftUp|leftDragged|rightDown|otherDown|wheel), handler).Send(sel("retain"))
+		uint64(keyDown|leftDown|leftUp|leftDragged|rightDown|otherDown|wheel|flags), handler).Send(sel("retain"))
 	handler.Release()
 	s.stops = append(s.stops, func() {
 		nsEvent.Send(sel("removeMonitor:"), monitor)
@@ -915,8 +918,10 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 	if s.window == 0 || event.Send(selWindow) != s.window || s.engine == nil {
 		return event
 	}
-	const typeLeftDown, typeLeftUp, typeRightDown, typeLeftDragged, typeKeyDown, typeScrollWheel, typeOtherDown = 1, 2, 3, 6, 10, 22, 25
+	const typeLeftDown, typeLeftUp, typeRightDown, typeLeftDragged, typeKeyDown, typeFlagsChanged, typeScrollWheel, typeOtherDown = 1, 2, 3, 6, 10, 12, 22, 25
 	switch objc.Send[uint](event, sel("type")) {
+	case typeFlagsChanged:
+		s.modifiersChanged(event)
 	case typeScrollWheel:
 		if len(s.armed) > 0 && s.wheelStarts(event) {
 			s.commitPending()
@@ -1877,10 +1882,30 @@ func invisibleCursor() objc.ID {
 func mouseEntered(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v := views[self]; v != nil {
 		defer v.surface.measuring(false)()
+		if v.native == self {
+			v.mouseIn = true
+		}
 		if v.sc != nil && v.native == self {
 			v.hovered()
 		}
 		v.dispatch(driver.EventHoverIn)
+	}
+}
+
+// modifiersChanged reports a modifier key pressed or released while the
+// mouse rests as a move to where it is with the new modifiers, to the
+// views under it that hear hover moves: a link that shows while Command
+// is down.
+func (s *surface) modifiersChanged(event objc.ID) {
+	mods := apple.Modifiers(objc.Send[uint](event, sel("modifierFlags")))
+	loc := objc.Send[apple.CGPoint](s.window, sel("mouseLocationOutsideOfEventStream"))
+	for v := range s.movers {
+		if !v.mouseIn || !v.events.Has(driver.EventHoverMove) {
+			continue
+		}
+		p := objc.Send[apple.CGPoint](v.native, selConvertPoint, loc, objc.ID(0))
+		v.report(driver.Event{Kind: driver.EventHoverMove, Point: driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)},
+			Page: v.page(loc), Modifiers: mods})
 	}
 }
 
@@ -1943,6 +1968,9 @@ func (s *surface) dragMoved(event objc.ID) {
 func mouseExited(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v := views[self]; v != nil {
 		defer v.surface.measuring(false)()
+		if v.native == self {
+			v.mouseIn = false
+		}
 		v.dispatch(driver.EventHoverOut)
 	}
 }

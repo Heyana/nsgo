@@ -20,14 +20,14 @@ A view shows when it has an area that nothing hides or clips: `Style.Clip`, a sc
 
 Steps (`steps.go`, `pointer.go`) act as a user does and send what a platform sends, to the views that report it. A step whose selector matches no view, more than one it would act on, or a disabled one, fails the test. Before a step, alerts the last one left unanswered get their default answer: the cancel button, else dismissed when cancelable, else the step fails; `App.OnAlert` answers them instead.
 
-- `Press`: a touch down and up when a view listens to touches, presses outside the overlays it is not in, then PressDown, PressUp and Press; a canvas node presses the view under its middle, and a text's span takes `Index`.
+- `Press`: a touch down and up when a view listens to touches, presses outside the overlays it is not in, then PressDown, PressUp and Press, on the match's middle (a text in a button is pressed on the text, also on targets); a canvas node presses the view under its middle, and a text's span takes `Index`. Presses of one view within 500 ms of clock time count up in `Clicks`, and a press takes the keyboard focus off pressable views.
 - `LongPress`: PressDown, the view's `DelayLongPress` (500 ms) of clock time, LongPress and PressUp.
 - `Type`, `Clear`, `Submit`, `KeyPress`: the field takes the focus, then a key and an edit per character within `MaxLength`; a line break in a single line is the return key, as `SubmitBehavior` resolves it.
 - `Drag`: a finger lands, rests 100 ms, moves 10 points a frame through its path and lifts; the press under it is cancelled once it moves 8 points.
 - Past the slop the innermost pan a drag activates takes it, else the scroll view it runs along that can move that way, unless the touch responder blocked native drags.
 - `Scroll`: drags a scroll view by a distance, 10 points a frame. `ScrollTo`, `DragScroll`, `Pan`, `Pinch` and `Rotate` report a platform's own gestures.
 - `Hover` and `HoverOut`: the views from the match out with hover events replace those hovered before.
-- `Key`: a keymap binding, else the focused field's key, else Escape goes back.
+- `Key`: a keymap binding; else, in a macOS or web environment, Tab and Shift+Tab move the keyboard focus between editable fields and pressable views not `NoFocus`, in tree order, and Return or Space press the pressable it is on; else the focused field's key, else Escape goes back.
 
 Each step then takes frames while an animation that ends runs or a list binds the rows it paces ([lists](scrolling.md#lists)), for at most 2 seconds of clock time. Frames the app requests itself do not hold a step, since its own loops may never end; `ManualFrames` keeps steps from taking frames at all, for tests that look at animations on the way. `Advance` moves the clock a frame at a time; `FastForward` jumps it, running each due timer once.
 

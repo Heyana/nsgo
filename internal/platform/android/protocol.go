@@ -88,7 +88,7 @@ func writeAnimation(w *writer, ops []driver.AnimationOp) {
 			w.u32(uint32(o.View))
 			w.u32(o.X)
 			w.u32(o.Y)
-		case driver.AnimBindPinch, driver.AnimBindRotation:
+		case driver.AnimBindPinch, driver.AnimBindRotation, driver.AnimBindPull:
 			w.u32(uint32(o.View))
 			w.u32(o.Node)
 		}

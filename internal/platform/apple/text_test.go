@@ -132,3 +132,57 @@ func TestTextJustified(t *testing.T) {
 		t.Errorf("lines %+v do not follow each other", lines[:2])
 	}
 }
+
+func TestLayoutsHitTestTheirCharacters(t *testing.T) {
+	style := driver.TextStyle{Font: driver.Font{Size: 20}, Color: driver.RGB(0), Align: driver.TextAlignStart}
+	text := &driver.AttributedText{Text: "abc def\nghi", Style: style}
+	p := TextEngine{}.Prepare(text)
+	defer p.Release()
+	size := p.Measure(driver.Auto)
+	l := p.Layout(size).(*Layout)
+	defer l.Release()
+	lines := l.TextLines()
+	if len(lines) != 2 {
+		t.Fatalf("%d lines, want 2", len(lines))
+	}
+	first := lines[0].Bounds
+	// Past the first line's end: before its break, on that line.
+	if c := l.HitTest(driver.Point{X: first.Size.Width + 50, Y: first.Origin.Y + 2}); c.Offset != 7 {
+		t.Fatalf("past the first line: %+v, want 7", c)
+	}
+	if c := l.HitTest(driver.Point{X: -5, Y: first.Size.Height + 4}); c.Offset != 8 {
+		t.Fatalf("the second line's start: %+v, want 8", c)
+	}
+	a, ok := l.CaretRect(driver.Caret{Offset: 1})
+	b, _ := l.CaretRect(driver.Caret{Offset: 2})
+	if !ok || a.Origin.X <= 0 || b.Origin.X <= a.Origin.X || a.Size.Height < 20 {
+		t.Fatalf("carets %v and %v should step right, line high", a, b)
+	}
+	if c := l.HitTest(driver.Point{X: (a.Origin.X+b.Origin.X)/2 + 1, Y: 2}); c.Offset != 2 {
+		t.Fatalf("right of the middle of b: %+v, want 2", c)
+	}
+	rects := l.RangeRects(5, 9, nil)
+	if len(rects) != 2 || rects[1].Origin.Y <= rects[0].Origin.Y || rects[0].Origin.X+rects[0].Size.Width < first.Size.Width-0.5 {
+		t.Fatalf("a range across the break covers %v, want the rest of the first line and the second's start", rects)
+	}
+	// Mixed directions: the Hebrew is drawn right to left after "ab".
+	mixed := TextEngine{}.Prepare(&driver.AttributedText{Text: "ab אבג cd", Style: style})
+	defer mixed.Release()
+	ml := mixed.Layout(mixed.Measure(driver.Auto)).(*Layout)
+	defer ml.Release()
+	if r := ml.RangeRects(1, 5, nil); len(r) != 2 {
+		t.Fatalf("a range from b into the Hebrew covers %v, want two boxes", r)
+	}
+	empty := TextEngine{}.Prepare(&driver.AttributedText{Style: style})
+	defer empty.Release()
+	el := empty.Layout(empty.Measure(driver.Auto)).(*Layout)
+	if r, ok := el.CaretRect(driver.Caret{}); !ok || r.Size.Height <= 0 || el.HitTest(driver.Point{X: 5, Y: 5}).Offset != 0 {
+		t.Fatalf("an empty text's caret %v %v", r, ok)
+	}
+	el.Release()
+	unread := p.Layout(size).(*Layout)
+	unread.Release()
+	if c := unread.HitTest(driver.Point{X: 10, Y: 2}); c != (driver.Caret{}) {
+		t.Fatalf("a layout released unread answered %+v", c)
+	}
+}

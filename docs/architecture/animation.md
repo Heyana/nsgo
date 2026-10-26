@@ -31,12 +31,12 @@ The graph travels as `ItemAnimation`, after the batch's views. Each backend keep
 | Target | Frame clock | Draws bound values with |
 | --- | --- | --- |
 | macOS | AppKit's `CADisplayLink` (macOS 14), else a 60 Hz timer | The layer's properties, without implicit animation |
-| iOS | `CADisplayLink` | The layer's properties |
+| iOS | `CADisplayLink` at the screen's `maximumFramesPerSecond` | The layer's properties |
 | Web | `requestAnimationFrame` | Inline styles |
 | Windows, Linux | The backend's 16 ms frame timer | The next paint |
 | Android | `Choreographer` | A Java port of the animator on the UI thread |
 
-A display link runs only in the run loop mode object it is given: Foundation's `NSRunLoopCommonModes` (`apple.CommonModes`), not an equal string.
+A display link runs only in the run loop mode object it is given: Foundation's `NSRunLoopCommonModes` (`apple.CommonModes`), not an equal string. A ProMotion iPhone grants links more than 60 Hz only to apps whose `Info.plist` sets `CADisableMinimumFrameDurationOnPhone`, which `nsgo` writes; iPads ignore it.
 
 ## Layout animation
 
