@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Gallery · NSGo</title>
+    <link rel="icon" href="__ICON__" />
+    <style>
+      :root {
+        --bg: #1a1816;
+        --line: #2e2b27;
+        --text: #eeeae2;
+        --muted: #a39c90;
+        --faint: #6a645b;
+        --accent: #ed986e;
+        --danger: #e58f95;
+        color-scheme: dark;
+      }
+      html[data-theme='light'] {
+        --bg: #f5f3ef;
+        --line: #e5e1d9;
+        --text: #2d2b27;
+        --muted: #72726a;
+        --faint: #a29e95;
+        --accent: #bd481b;
+        --danger: #b4444c;
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+      }
+      body {
+        overflow: hidden;
+        color: var(--text);
+        font:
+          15px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          'SF Pro Text',
+          'Segoe UI',
+          Roboto,
+          'PingFang SC',
+          'Microsoft YaHei',
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      html[data-embed] .boot {
+        display: none;
+      }
+      .boot__card {
+        display: grid;
+        justify-items: center;
+        gap: 14px;
+        width: min(320px, 100%);
+        text-align: center;
+      }
+      .boot__name {
+        color: var(--accent);
+        font: 600 10px/1 ui-monospace, 'SF Mono', Menlo, monospace;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .boot__title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .boot__bar {
+        width: 100%;
+        height: 3px;
+        border-radius: 99px;
+        background: var(--line);
+        overflow: hidden;
+      }
+      .boot__fill {
+        width: 0;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--accent);
+        transition: width 0.18s linear;
+      }
+      .boot__meta {
+        margin: 0;
+        min-height: 1.5em;
+        color: var(--faint);
+        font: 11px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
+      }
+      .boot__error {
+        max-width: 38ch;
+        color: var(--danger);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .boot__fill {
+          transition: none;
+        }
+      }
+    </style>
+    <script>
+      // Embedding and theme come from the parent, so the page never paints
+      // in the wrong appearance before the app starts.
+      (function () {
+        var params = new URLSearchParams(location.search);
+        var theme = params.get('theme') === 'light' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+        if (params.get('embed') === '1') document.documentElement.setAttribute('data-embed', '');
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="boot" role="status" aria-live="polite">
+      <div class="boot__card">
+        <span class="boot__name">NSGo</span>
+        <h1 class="boot__title">Loading the gallery</h1>
+        <div class="boot__bar"><div class="boot__fill" id="boot-fill"></div></div>
+        <p class="boot__meta" id="boot-meta">Preparing WebAssembly…</p>
+      </div>
+    </div>
+
+    <script src="__EXEC__"></script>
+    <script>
+      (function () {
+        'use strict';
+
+        var params = new URLSearchParams(location.search);
+        var embedded = params.get('embed') === '1';
+        var fill = document.getElementById('boot-fill');
+        var meta = document.getElementById('boot-meta');
+        var title = document.querySelector('.boot__title');
+        var theme = document.documentElement.dataset.theme;
+
+        // The gallery reads the appearance from prefers-color-scheme. The
+        // site's switch is not the system's, so the loader answers that one
+        // query with the page's appearance and tells the app when it changes.
+        var listeners = new Set();
+        var media = {
+          media: '(prefers-color-scheme: dark)',
+          matches: theme === 'dark',
+          onchange: null,
+          addEventListener: function (type, listener) {
+            if (type === 'change') listeners.add(listener);
+          },
+          removeEventListener: function (type, listener) {
+            if (type === 'change') listeners.delete(listener);
+          },
+          addListener: function (listener) {
+            listeners.add(listener);
+          },
+          removeListener: function (listener) {
+            listeners.delete(listener);
+          },
+          dispatchEvent: function () {
+            return false;
+          },
+        };
+        var nativeMatchMedia = window.matchMedia.bind(window);
+        window.matchMedia = function (query) {
+          return query === media.media ? media : nativeMatchMedia(query);
+        };
+
+        function applyTheme(next) {
+          theme = next === 'light' ? 'light' : 'dark';
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+          media.matches = theme === 'dark';
+          listeners.forEach(function (listener) {
+            try {
+              listener({ matches: media.matches, media: media.media });
+            } catch (error) {
+              console.error(error);
+            }
+          });
+        }
+
+        function send(event, data) {
+          if (!embedded) return;
+          parent.postMessage(Object.assign({ type: 'nsgo-gallery', event: event }, data), location.origin);
+        }
+
+        function setProgress(phase, percent, loaded, total, message) {
+          var value = Math.max(0, Math.min(100, Math.round(percent)));
+          if (fill) fill.style.width = value + '%';
+          if (meta) {
+            meta.className = 'boot__meta';
+            meta.textContent = message;
+          }
+          send('progress', { phase: phase, percent: value, loaded: loaded, total: total });
+        }
+
+        function formatBytes(bytes) {
+          if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
+          if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+          return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function fail(error) {
+          var message = String((error && error.message) || error || 'Unknown error');
+          console.error(error);
+          if (title) title.textContent = 'The gallery could not start';
+          if (meta) {
+            meta.className = 'boot__meta boot__error';
+            meta.textContent = message;
+          }
+          send('error', { message: message });
+        }
+
+        window.addEventListener('message', function (event) {
+          if (event.origin !== location.origin) return;
+          if (event.data && event.data.type === 'nsgo-gallery-theme') applyTheme(event.data.theme);
+        });
+
+        function readWithProgress(response, total, onProgress) {
+          if (!response.body) {
+            return response.arrayBuffer().then(function (buffer) {
+              onProgress(buffer.byteLength);
+              return buffer;
+            });
+          }
+          var reader = response.body.getReader();
+          var chunks = [];
+          var loaded = 0;
+          function pump() {
+            return reader.read().then(function (result) {
+              if (result.done) {
+                var bytes = new Uint8Array(loaded);
+                var offset = 0;
+                for (var i = 0; i < chunks.length; i++) {
+                  bytes.set(chunks[i], offset);
+                  offset += chunks[i].length;
+                }
+                return bytes.buffer;
+              }
+              chunks.push(result.value);
+              loaded += result.value.length;
+              onProgress(loaded);
+              return pump();
+            });
+          }
+          return pump();
+        }
+
+        function decompress(buffer) {
+          var head = new Uint8Array(buffer, 0, Math.min(2, buffer.byteLength));
+          // A host may already have decoded the file. Decompress only when
+          // the gzip magic is still there.
+          if (head[0] !== 0x1f || head[1] !== 0x8b) return Promise.resolve(buffer);
+          var stream = new Blob([buffer]).stream().pipeThrough(new DecompressionStream('gzip'));
+          return new Response(stream).arrayBuffer();
+        }
+
+        function waitUntilMounted() {
+          return new Promise(function (resolve) {
+            var started = performance.now();
+            function tick() {
+              var views = 0;
+              for (var i = 0; i < document.body.children.length; i++) {
+                var child = document.body.children[i];
+                if (child.tagName === 'DIV' && child !== document.querySelector('.boot')) views++;
+              }
+              if (views >= 4 || performance.now() - started > 4000) {
+                requestAnimationFrame(function () {
+                  requestAnimationFrame(resolve);
+                });
+                return;
+              }
+              requestAnimationFrame(tick);
+            }
+            requestAnimationFrame(tick);
+          });
+        }
+
+        function start() {
+          var canGzip = typeof DecompressionStream !== 'undefined';
+          var url = canGzip ? '__GZIP__' : '__WASM__';
+          var expected = canGzip ? __GZIP_SIZE__ : __WASM_SIZE__;
+
+          if (typeof WebAssembly === 'undefined' || typeof Go === 'undefined') {
+            return Promise.reject(new Error('This browser cannot run WebAssembly.'));
+          }
+
+          setProgress('prepare', 2, 0, expected, 'Preparing WebAssembly…');
+
+          return fetch(url, { cache: 'force-cache' })
+            .then(function (response) {
+              if (!response.ok) throw new Error('The WebAssembly download failed (' + response.status + ').');
+              // Content-Length can be missing on a streamed response; the
+              // build knows the size either way.
+              var total = Number(response.headers.get('Content-Length')) || expected;
+              return readWithProgress(response, total, function (loaded) {
+                var percent = 2 + 63 * Math.min(1, loaded / total);
+                var detail =
+                  loaded <= total
+                    ? formatBytes(loaded) + ' of ' + formatBytes(total) + ' downloaded'
+                    : formatBytes(loaded) + ' downloaded';
+                setProgress('download', percent, loaded, total, detail);
+              }).then(function (buffer) {
+                return { buffer: buffer, total: total };
+              });
+            })
+            .then(function (download) {
+              if (!canGzip) return download;
+              setProgress('decompress', 67, download.total, download.total, 'Decompressing the engine…');
+              return decompress(download.buffer).then(function (raw) {
+                setProgress(
+                  'decompress',
+                  77,
+                  download.total,
+                  download.total,
+                  'Decompressed ' + formatBytes(raw.byteLength),
+                );
+                return { buffer: raw, total: download.total };
+              });
+            })
+            .then(function (engine) {
+              setProgress(
+                'compile',
+                79,
+                engine.total,
+                engine.total,
+                'Compiling ' + formatBytes(engine.buffer.byteLength) + ' of WebAssembly…',
+              );
+              return WebAssembly.compile(engine.buffer).then(function (module) {
+                return { module: module, total: engine.total };
+              });
+            })
+            .then(function (compiled) {
+              setProgress('start', 94, compiled.total, compiled.total, 'Starting the Go runtime…');
+              var go = new Go();
+              return WebAssembly.instantiate(compiled.module, go.importObject).then(function (instance) {
+                globalThis.nsgoResources = '__RESOURCES__';
+                // Let the loader paint before Go's first commit takes the thread.
+                return new Promise(function (resolve) {
+                  requestAnimationFrame(function () {
+                    setTimeout(resolve, 0);
+                  });
+                }).then(function () {
+                  setProgress('start', 96, compiled.total, compiled.total, 'Starting the gallery…');
+                  var failed = false;
+                  var running = go.run(instance);
+                  if (running && typeof running.catch === 'function') {
+                    running.catch(function (error) {
+                      failed = true;
+                      fail(error);
+                    });
+                  }
+                  return waitUntilMounted().then(function () {
+                    if (!failed) return { ready: true };
+                    return { ready: false };
+                  });
+                });
+              });
+            })
+            .then(function (result) {
+              if (!result || !result.ready) return;
+              setProgress('ready', 100, 0, 0, 'Ready');
+              send('ready', {});
+              var boot = document.querySelector('.boot');
+              if (boot) boot.remove();
+            })
+            .catch(fail);
+        }
+
+        start();
+      })();
+    </script>
+  </body>
+</html>

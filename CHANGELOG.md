@@ -16,4 +16,5 @@
 - Add embedding in other apps with `nsgo.NewView` on desktops and `nsgo build -embed` frameworks for iOS and Android, with a channel to the host.
 - Add `nsgotest` for app tests that act as a user does, headless or on every platform with its native input and screenshots.
 - Add the `nsgo` tool, which creates, runs with hot reload, tests, packages and signs apps for stores from `nsgo.yaml`.
-- Add NSH's gallery translated to Go, with a demo of every element, component and service; its web build is the website.
+- Add NSH's gallery translated to Go, with a demo of every element, component and service.
+- Add a React home page whose live gallery runs the gallery's WebAssembly build, reporting its download, compilation and start progress.

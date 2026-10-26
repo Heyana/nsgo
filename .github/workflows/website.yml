@@ -1,16 +1,16 @@
 name: Website
 
-# Auto-deploy is temporarily disabled: restore the push trigger to publish on main again.
 on:
-  # push:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - "**/*.go"
-  #     - "go.mod"
-  #     - "go.sum"
-  #     - "examples/gallery/**"
-  #     - ".github/workflows/website.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "examples/gallery/**"
+      - "website/**"
+      - ".github/workflows/website.yml"
   workflow_dispatch:
 
 permissions:
@@ -35,13 +35,18 @@ jobs:
           go-version: "1.25.x"
           cache: true
 
-      - name: Build the gallery for the web
-        run: go tool nsgo build -target web -name NSGo -open=false -output dist examples/gallery
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
 
-      - name: Collect the site
-        run: |
-          mkdir site
-          cp -R examples/gallery/dist/*-web/. site/
+      - name: Install the website's dependencies
+        working-directory: website
+        run: bun install --frozen-lockfile
+
+      - name: Build the home page and its gallery
+        working-directory: website
+        run: bun run build
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -49,7 +54,7 @@ jobs:
       - name: Upload the Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: website/dist
 
   deploy:
     needs: build
@@ -59,5 +64,5 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
-        id: deploy
+        id: deployment
         uses: actions/deploy-pages@v4

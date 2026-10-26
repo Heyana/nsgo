@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.gallery-build/
+public/gallery/

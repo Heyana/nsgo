@@ -134,7 +134,7 @@ git clone https://github.com/longbridge/nsh.git nsh
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) and [AGENTS.md](AGENTS.md) before changing code.
 
-The website is the gallery compiled to the web at <https://oneo-me.github.io/nsgo/>. Run it with `go tool nsgo dev -target web examples/gallery`; the [Website workflow](.github/workflows/website.yml) publishes it to GitHub Pages.
+The website at <https://oneo-me.github.io/nsgo/> is a React home page whose live gallery runs the gallery's WebAssembly build. Run it from `website/` with `bun install` and `bun run dev`, or build it with `bun run build`; the [Website workflow](.github/workflows/website.yml) publishes `website/dist` to GitHub Pages. The website needs [Bun](https://bun.com) 1.4 or later.
 
 ## License
 

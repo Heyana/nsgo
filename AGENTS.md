@@ -33,7 +33,7 @@ NSGo is a cross-platform native UI engine with a Go backend, ported from the des
 
 Run `go vet ./...` and `go test ./...` from the repository root once Go code exists. The development setup lives in [README.md](README.md#development).
 
-Run `go tool nsgo build -target web -open=false examples/gallery` when changing the website; the website is the gallery's web build.
+Run `bun run build` in `website/` when changing the website; it type-checks the React home page and rebuilds the gallery's web build it embeds. `bun run dev` serves the page while you work.
 
 ## Documentation
 

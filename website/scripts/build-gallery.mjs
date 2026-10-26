@@ -1,0 +1,119 @@
+// Builds the gallery for the web and puts it in public/gallery/ for the
+// home page's live stage.
+//
+// The nsgo tool writes index.html, wasm_exec.js, resources and a
+// content-named wasm. This script adds:
+//
+//   loader.html    the same app behind a progress-reporting loader; the
+//                  page embeds it in an iframe
+//   app.wasm.gzip  the engine compressed, because Go's wasm is large.
+//                  The extension is .gzip, not .gz: static servers send a
+//                  .gz with Content-Encoding: gzip, and the loader wants
+//                  the compressed bytes themselves.
+//   manifest.json  the file names and sizes the stage shows before loading
+//
+// public/gallery/ is generated: do not edit it.
+import { execFileSync } from 'node:child_process';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const website = path.resolve(here, '..');
+const repo = path.resolve(website, '..');
+const galleryDir = path.join(website, 'public', 'gallery');
+const buildDir = path.join(website, '.gallery-build');
+
+function findSite(dir) {
+  const entries = readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const candidate = path.join(dir, entry.name);
+    if (existsSync(path.join(candidate, 'index.html'))) return candidate;
+  }
+  throw new Error(`No web build found under ${dir}`);
+}
+
+function one(html, pattern, label) {
+  const match = html.match(pattern);
+  if (!match) throw new Error(`The gallery build has no ${label}`);
+  return match[1];
+}
+
+console.log('Building the gallery for the web...');
+rmSync(buildDir, { recursive: true, force: true });
+rmSync(galleryDir, { recursive: true, force: true });
+mkdirSync(buildDir, { recursive: true });
+
+try {
+  execFileSync(
+    'go',
+    [
+      'tool',
+      'nsgo',
+      'build',
+      '-target',
+      'web',
+      '-name',
+      'Gallery',
+      '-open=false',
+      '-output',
+      buildDir,
+      'examples/gallery',
+    ],
+    { cwd: repo, stdio: 'inherit' },
+  );
+
+  const site = findSite(buildDir);
+  mkdirSync(galleryDir, { recursive: true });
+  cpSync(site, galleryDir, { recursive: true });
+
+  const index = readFileSync(path.join(galleryDir, 'index.html'), 'utf8');
+  const exec = one(index, /<script src="([^"]*wasm_exec[^"]*\.js)"><\/script>/, 'wasm_exec.js');
+  const wasm = one(index, /fetch\("([^"]+\.wasm)"\)/, 'wasm file');
+  const resources = one(index, /globalThis\.nsgoResources = "([^"]*)";/, 'resources directory');
+  const icon = index.match(/<link rel="icon" href="([^"]+)">/)?.[1] ?? '';
+
+  const wasmPath = path.join(galleryDir, wasm);
+  const wasmBytes = statSync(wasmPath).size;
+  const gzip = `${wasm}.gzip`;
+  const compressed = gzipSync(readFileSync(wasmPath), { level: 9 });
+  writeFileSync(path.join(galleryDir, gzip), compressed);
+
+  const manifest = {
+    name: 'Gallery',
+    wasm,
+    gzip,
+    exec,
+    resources,
+    icon,
+    wasmBytes,
+    gzipBytes: compressed.length,
+  };
+  writeFileSync(path.join(galleryDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+
+  const loader = readFileSync(path.join(here, 'gallery-loader.html'), 'utf8')
+    .replaceAll('__EXEC__', exec)
+    .replaceAll('__WASM__', wasm)
+    .replaceAll('__GZIP__', gzip)
+    .replaceAll('__RESOURCES__', resources)
+    .replaceAll('__WASM_SIZE__', String(wasmBytes))
+    .replaceAll('__GZIP_SIZE__', String(compressed.length))
+    .replaceAll('__ICON__', icon);
+  writeFileSync(path.join(galleryDir, 'loader.html'), loader);
+
+  const mb = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  console.log(`Gallery ready: ${wasm} ${mb(wasmBytes)} (${mb(compressed.length)} gzip)`);
+} finally {
+  rmSync(buildDir, { recursive: true, force: true });
+}

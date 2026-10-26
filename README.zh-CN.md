@@ -134,7 +134,7 @@ git clone https://github.com/longbridge/nsh.git nsh
 
 修改代码前请先阅读 [ARCHITECTURE.md](ARCHITECTURE.md) 和 [AGENTS.md](AGENTS.md)。
 
-官方网站就是编译到 web 的 gallery，地址为 <https://oneo-me.github.io/nsgo/>。运行方式为 `go tool nsgo dev -target web examples/gallery`；[Website 工作流](.github/workflows/website.yml) 将它发布到 GitHub Pages。
+位于 <https://oneo-me.github.io/nsgo/> 的官方网站是一个 React 首页，其中的在线 Gallery 运行 gallery 的 WebAssembly 构建。在 `website/` 中运行 `bun install` 和 `bun run dev`，或用 `bun run build` 构建；[Website 工作流](.github/workflows/website.yml) 将 `website/dist` 发布到 GitHub Pages。网站需要 [Bun](https://bun.com) 1.4 或更新版本。
 
 ## 许可证
 
