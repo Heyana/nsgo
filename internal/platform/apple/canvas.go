@@ -142,15 +142,27 @@ func loadCanvas(cg uintptr) {
 
 // DrawTopDown runs draw with ctx's state saved and its y axis pointing
 // down over a layer height tall; flip turns a y-up context, which Core
-// Animation gives a layer whose contents are not flipped, top down.
-func DrawTopDown(ctx uintptr, height float64, flip bool, draw func()) {
+// Animation gives a layer whose contents are not flipped, top down. Core
+// Graphics offsets shadows in the context's base space, which points down
+// when Core Animation flipped the context and up when flip did: draw
+// learns which as baseUp.
+func DrawTopDown(ctx uintptr, height float64, flip bool, draw func(baseUp bool)) {
 	cgContextSaveGState(ctx)
 	defer cgContextRestoreGState(ctx)
 	if flip {
 		cgContextTranslateCTM(ctx, 0, height)
 		cgContextScaleCTM(ctx, 1, -1)
 	}
-	draw()
+	draw(flip)
+}
+
+// shadowOffset is a top-down offset in a base space that points up when
+// baseUp is set.
+func shadowOffset(x, y float64, baseUp bool) CGSize {
+	if baseUp {
+		y = -y
+	}
+	return CGSize{Width: x, Height: y}
 }
 
 // CGBlendMode of each CompositeOp.
@@ -203,12 +215,14 @@ type canvasState struct {
 }
 
 // CanvasHost is the view a drawing plays in: the screen's pixels a point,
-// and what draws it again once an image it waits for loads, which Owner
-// names so it waits once.
+// what draws it again once an image it waits for loads, which Owner
+// names so it waits once, and whether the context's base space points up
+// (DrawTopDown).
 type CanvasHost struct {
 	Ratio  float64
 	Redraw func()
 	Owner  any
+	BaseUp bool
 }
 
 // Play draws ops into ctx, a view's context with its y axis pointing
@@ -478,9 +492,7 @@ func (p *player) play(at int) {
 			cgContextSetBlendMode(ctx, blendModes[op.Composite])
 		}
 	case driver.DrawShadow:
-		// Shadow offsets are in the base space, y up under the flipped
-		// context: a positive offset must still go down.
-		cgContextSetShadowWithColor(ctx, CGSize{Width: f(op.X), Height: -f(op.Y)}, f(op.R), p.cgColor(op.Color))
+		cgContextSetShadowWithColor(ctx, shadowOffset(f(op.X), f(op.Y), p.host.BaseUp), f(op.R), p.cgColor(op.Color))
 		p.st().shadow = op.Color&0xff != 0
 	case driver.DrawClear:
 		cgContextClearRect(ctx, Rect(f(op.X), f(op.Y), f(op.W), f(op.H)))

@@ -822,7 +822,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			if v.animatesStyle() {
 				v.restyle()
 			} else {
-				apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, false)
+				apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, 0)
 			}
 			v.setBackdrop(it.ViewStyle)
 			v.native.Send(selSetHidden, it.ViewStyle.Hidden)

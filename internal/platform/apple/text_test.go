@@ -45,7 +45,7 @@ func render(t *testing.T, text *driver.AttributedText, size driver.Size) (*image
 	cgContextTranslateCTM(ctx, 0, float64(h))
 	cgContextScaleCTM(ctx, 1, -1)
 	l.DrawBackgrounds(ctx, Rect(0, 0, 0, 0))
-	l.Draw(ctx, float64(h), Rect(0, 0, float64(w), float64(h)))
+	l.Draw(ctx, float64(h), Rect(0, 0, float64(w), float64(h)), true)
 	if dir := os.Getenv("NSGO_TEXT_PNG"); dir != "" {
 		f, err := os.Create(dir + "/" + strings.ReplaceAll(t.Name(), "/", "-") + ".png")
 		if err == nil {

@@ -32,8 +32,7 @@ const (
 
 // decor is the extra layers of one view's layer.
 type decor struct {
-	vs     driver.ViewStyle
-	upward bool
+	vs driver.ViewStyle
 	// shaped draws the fill and the clip with shapes: the corners differ
 	// or ease into the edges.
 	shaped bool
@@ -169,7 +168,7 @@ func needsShape(vs *driver.ViewStyle, radii driver.Corners) bool {
 
 // applyDecor draws what vs needs beyond the layer's own properties, for
 // the layer's bounds.
-func applyDecor(layer objc.ID, vs *driver.ViewStyle, upward bool) {
+func applyDecor(layer objc.ID, vs *driver.ViewStyle) {
 	d := decors[layer]
 	e := vs.Effects
 	if d == nil {
@@ -182,7 +181,7 @@ func applyDecor(layer objc.ID, vs *driver.ViewStyle, upward bool) {
 		d = &decor{}
 		decors[layer] = d
 	}
-	d.vs, d.upward = *vs, upward
+	d.vs = *vs
 	d.layout(layer)
 	d.setKeyframes(layer, vs.Animation)
 }
@@ -335,11 +334,7 @@ func (d *decor) layoutShadows(layer objc.ID, shadows []driver.BoxShadow, w, h fl
 		Release(c)
 		l.Send(selSetShadowOpacity, float32(1))
 		l.Send(selSetShadowRadius, float64(sh.Blur)/2)
-		dy := float64(sh.Offset.Y)
-		if d.upward {
-			dy = -dy
-		}
-		l.Send(selSetShadowOffset, CGSize{Width: float64(sh.Offset.X), Height: dy})
+		l.Send(selSetShadowOffset, CGSize{Width: float64(sh.Offset.X), Height: float64(sh.Offset.Y)})
 		// Far enough out that the blur never reaches the edge. Masks draw
 		// only inside their frames, so the outer mask's covers that far.
 		far := float64(sh.Blur+abs32(sh.Spread)) + math.Abs(float64(sh.Offset.X)) + math.Abs(float64(sh.Offset.Y)) + 1
@@ -578,29 +573,10 @@ func (d *decor) layoutMask(layer objc.ID, p *driver.GradientPaint, w, h float64)
 
 // layoutFilters gives the layer Core Image filters: Core Animation draws
 // them on macOS only, where the view must use Core Image filters
-// (UsesFilters). A drop shadow is the layer's own shadow, without a
-// path, so it follows what the layer draws.
+// (UsesFilters). A drop shadow is the layer's own shadow (layerShadow),
+// without a path, so it follows what the layer draws.
 func (d *decor) layoutFilters(layer objc.ID, filters []driver.Filter) {
-	m, color, blur, shadows := driver.SplitFilters(filters)
-	if len(shadows) > 0 {
-		// One shadow: the widest, as NSH's Apple backends draw.
-		sh := shadows[0]
-		for _, s := range shadows[1:] {
-			if s.Blur >= sh.Blur {
-				sh = s
-			}
-		}
-		c := CGColor(sh.Color)
-		layer.Send(selSetShadowColor, c)
-		Release(c)
-		dy := float64(sh.Offset.Y)
-		if d.upward {
-			dy = -dy
-		}
-		layer.Send(selSetShadowOffset, CGSize{Width: float64(sh.Offset.X), Height: dy})
-		layer.Send(selSetShadowRadius, float64(sh.Blur)/2)
-		layer.Send(selSetShadowOpacity, float32(1))
-	}
+	m, color, blur, _ := driver.SplitFilters(filters)
 	if runtime.GOOS == "ios" {
 		// UIKit's layers take no Core Image filters; opacity is what
 		// they can do.

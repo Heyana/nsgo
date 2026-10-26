@@ -954,18 +954,17 @@ func FillRects(ctx uintptr, rects []CGRect, color uintptr) {
 	cgContextRestoreGState(ctx)
 }
 
-// Draw draws l in box of a flipped context of a view viewHeight tall.
-func (l *Layout) Draw(ctx uintptr, viewHeight float64, box CGRect) {
+// Draw draws l in box of a flipped context of a view viewHeight tall,
+// whose base space points up when baseUp is set (DrawTopDown).
+func (l *Layout) Draw(ctx uintptr, viewHeight float64, box CGRect, baseUp bool) {
 	if l == nil || ctx == 0 || (l.frame == 0 && l.truncated == 0) {
 		return
 	}
 	cgContextSaveGState(ctx)
 	defer cgContextRestoreGState(ctx)
 	if s := l.shadow; s.Color != 0 {
-		// Shadow offsets are in the base space, y up under the flipped
-		// context: a positive offset must still go down.
 		c := CGColor(s.Color)
-		cgContextSetShadowWithColor(ctx, CGSize{Width: float64(s.Offset.X), Height: -float64(s.Offset.Y)},
+		cgContextSetShadowWithColor(ctx, shadowOffset(float64(s.Offset.X), float64(s.Offset.Y), baseUp),
 			float64(s.Radius), c)
 		Release(c)
 	}

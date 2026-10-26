@@ -283,7 +283,7 @@ func (v *view) restyle() {
 		}
 	}
 	layer := v.native.Send(selLayer)
-	apple.StyleLayer(layer, &vs, true)
+	apple.StyleLayer(layer, &vs, v.native)
 	v.transform = vs.Transform
 }
 

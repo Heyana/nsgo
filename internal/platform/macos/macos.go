@@ -1313,7 +1313,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			if v.animatesStyle() {
 				v.restyle()
 			} else {
-				apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, true)
+				apple.StyleLayer(v.native.Send(selLayer), it.ViewStyle, v.native)
 				v.transform = it.ViewStyle.Transform
 			}
 			v.setBackdrop(it.ViewStyle)

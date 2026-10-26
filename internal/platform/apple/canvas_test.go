@@ -3,6 +3,7 @@
 package apple
 
 import (
+	"fmt"
 	"image"
 	"image/png"
 	"math"
@@ -13,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
 
 	"github.com/oneo-me/nsgo/internal/driver"
 	"github.com/oneo-me/nsgo/internal/platform/canvastest"
@@ -43,16 +45,48 @@ func bitmap(w, h int) (uintptr, *image.RGBA) {
 	return ctx, img
 }
 
-// play draws d into a white w by h bitmap at canvastest.Scale, top down
-// as a canvas view's content layer is drawn. NSGO_CANVAS_PNG names a
-// directory to write it to.
-func play(t *testing.T, name string, d *driver.Drawing, w, h int) *image.RGBA {
+var (
+	// layerDrawer is the delegate of the layers play displays, which
+	// draws them with layerDraw as a view's content layer's does.
+	layerDrawer objc.ID
+	layerDraw   func(ctx uintptr)
+)
+
+// play draws d top down into a w by h content layer at canvastest.Scale
+// as a canvas view does, and renders the layer into a white bitmap. Core
+// Animation flips the context of a flipped layer, DrawTopDown that of
+// another, and shadows offset differently in each. NSGO_CANVAS_PNG names
+// a directory to write the bitmap to.
+func play(t *testing.T, name string, d *driver.Drawing, w, h int, flipped bool) *image.RGBA {
 	t.Helper()
 	ctx, img := bitmap(w, h)
 	defer Release(ctx)
-	DrawTopDown(ctx, float64(h), true, func() { Play(ctx, d.Ops, CanvasHost{Ratio: canvastest.Scale}) })
+	if layerDrawer == 0 {
+		layerDrawer = objc.ID(RegisterClass("NsgoTestDrawer", objc.GetClass("NSObject"), nil, []objc.MethodDef{{
+			Cmd: sel("drawLayer:inContext:"),
+			Fn:  func(_ objc.ID, _ objc.SEL, _ objc.ID, ctx uintptr) { layerDraw(ctx) },
+		}})).Send(selNew)
+	}
+	layer := objc.ID(objc.GetClass("CALayer")).Send(selNew)
+	defer layer.Send(selRelease)
+	layer.Send(sel("setBounds:"), Rect(0, 0, float64(w), float64(h)))
+	layer.Send(sel("setContentsScale:"), float64(canvastest.Scale))
+	layer.Send(sel("setGeometryFlipped:"), flipped)
+	layer.Send(sel("setDelegate:"), layerDrawer)
+	layerDraw = func(lctx uintptr) {
+		DrawTopDown(lctx, float64(h), !MsgBool(layer, sel("contentsAreFlipped")), func(baseUp bool) {
+			Play(lctx, d.Ops, CanvasHost{Ratio: canvastest.Scale, BaseUp: baseUp})
+		})
+	}
+	layer.Send(sel("display"))
+	if flipped {
+		// As in a flipped view, whose layers' parents are flipped.
+		cgContextTranslateCTM(ctx, 0, float64(h))
+		cgContextScaleCTM(ctx, 1, -1)
+	}
+	layer.Send(sel("renderInContext:"), ctx)
 	if dir := os.Getenv("NSGO_CANVAS_PNG"); dir != "" {
-		if f, err := os.Create(dir + "/apple-" + name + ".png"); err == nil {
+		if f, err := os.Create(fmt.Sprintf("%s/apple-%s-flipped-%v.png", dir, name, flipped)); err == nil {
 			png.Encode(f, img)
 			f.Close()
 		}
@@ -85,8 +119,10 @@ func TestCanvasSamples(t *testing.T) {
 					op.Image = &driver.ImageSource{Data: logo}
 				}
 			}
-			for _, f := range s.Check(play(t, s.Name, s.Drawing, s.Width, s.Height)) {
-				t.Error(f)
+			for _, flipped := range []bool{false, true} {
+				for _, f := range s.Check(play(t, s.Name, s.Drawing, s.Width, s.Height, flipped)) {
+					t.Errorf("flipped %v: %s", flipped, f)
+				}
 			}
 		})
 	}

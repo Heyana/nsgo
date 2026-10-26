@@ -64,11 +64,11 @@ func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 	}
 	// The layer is as large as the view (sizeContent).
 	h := float64(v.frame.Size.Height)
-	apple.DrawTopDown(ctx, h, !apple.MsgBool(layer, selContentsAreFlipped), func() {
+	apple.DrawTopDown(ctx, h, !apple.MsgBool(layer, selContentsAreFlipped), func(baseUp bool) {
 		if v.drawing != nil {
 			ops := v.surface.animator.CanvasOps(v.id, v.drawing)
 			apple.Play(ctx, ops, apple.CanvasHost{
-				Ratio: float64(v.surface.env.PixelRatio), Redraw: v.redraw, Owner: v})
+				Ratio: float64(v.surface.env.PixelRatio), Redraw: v.redraw, Owner: v, BaseUp: baseUp})
 			v.played = append(v.played[:0], ops...)
 			return
 		}
@@ -76,7 +76,7 @@ func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 		v.layout.DrawBackgrounds(ctx, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y), 0, 0))
 		v.drawSelection(ctx)
 		v.layout.Draw(ctx, h, apple.Rect(float64(box.Origin.X), float64(box.Origin.Y),
-			float64(box.Size.Width), float64(box.Size.Height)))
+			float64(box.Size.Width), float64(box.Size.Height)), baseUp)
 		if v.animated.Has(driver.PropTextColor) {
 			// A bound color paints over the whole text.
 			apple.Tint(ctx, apple.Rect(0, 0, float64(v.frame.Size.Width), h), v.animated.TextColor)

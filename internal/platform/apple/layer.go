@@ -26,16 +26,18 @@ var (
 	selSetShadowOffset    = sel("setShadowOffset:")
 	selSetShadowRadius    = sel("setShadowRadius:")
 	selSetShadowOpacity   = sel("setShadowOpacity:")
+	selSetShadow          = sel("setShadow:")
 	selValueForKey        = sel("valueForKey:")
 	selBounds             = sel("bounds")
 
 	caCurrentMediaTime func() float64
 )
 
-// StyleLayer draws vs with a view's CALayer. upward says the layer's y
-// axis points up, as AppKit's do, so shadows offset the other way. A
-// style with a transition animates what it lists from the values shown.
-func StyleLayer(layer objc.ID, vs *driver.ViewStyle, upward bool) {
+// StyleLayer draws vs with a view's CALayer. An NSView whose layer it
+// is takes the layer's shadow, as AppKit copies a view's shadow onto its
+// layer. A style with a transition animates what it lists from the
+// values shown.
+func StyleLayer(layer objc.ID, vs *driver.ViewStyle, view objc.ID) {
 	tr := vs.Transition
 	var keys []string
 	var from []objc.ID
@@ -64,20 +66,20 @@ func StyleLayer(layer objc.ID, vs *driver.ViewStyle, upward bool) {
 	color(selSetBorderColor, vs.BorderColor)
 	layer.Send(selSetOpacity, vs.Opacity)
 	layer.Send(selSetMasksToBounds, vs.Clip)
-	if vs.ShadowColor == 0 {
+	sh := layerShadow(vs)
+	switch {
+	case view != 0:
+		setViewShadow(view, sh)
+	case sh.Color == 0:
 		layer.Send(selSetShadowOpacity, float32(0))
-	} else {
-		color(selSetShadowColor, vs.ShadowColor)
-		dy := float64(vs.ShadowOffset.Y)
-		if upward {
-			dy = -dy
-		}
-		layer.Send(selSetShadowOffset, CGSize{Width: float64(vs.ShadowOffset.X), Height: dy})
-		layer.Send(selSetShadowRadius, float64(vs.ShadowRadius))
+	default:
+		color(selSetShadowColor, sh.Color)
+		layer.Send(selSetShadowOffset, CGSize{Width: float64(sh.Offset.X), Height: float64(sh.Offset.Y)})
+		layer.Send(selSetShadowRadius, float64(sh.Blur)/2)
 		layer.Send(selSetShadowOpacity, float32(1))
 	}
 	setBorders(layer, vs, &tr)
-	applyDecor(layer, vs, upward)
+	applyDecor(layer, vs)
 	SetTransform(layer, vs.Transform)
 	for i, k := range keys {
 		to := layer.Send(selValueForKey, NSString(k))
@@ -99,6 +101,43 @@ func StyleLayer(layer objc.ID, vs *driver.ViewStyle, upward bool) {
 		}
 		layer.Send(selAddAnimation, anim, NSString("nsgo."+k))
 	}
+}
+
+// layerShadow returns the shadow a view's layer casts of what it draws:
+// its widest drop shadow, as NSH's Apple backends draw, else its React
+// Native shadow, whose radius is half a box shadow's blur.
+func layerShadow(vs *driver.ViewStyle) driver.BoxShadow {
+	if vs.Effects != nil {
+		if _, _, _, shadows := driver.SplitFilters(vs.Effects.Filters); len(shadows) > 0 {
+			sh := shadows[0]
+			for _, s := range shadows[1:] {
+				if s.Blur >= sh.Blur {
+					sh = s
+				}
+			}
+			return sh
+		}
+	}
+	return driver.BoxShadow{Offset: vs.ShadowOffset, Blur: 2 * vs.ShadowRadius, Color: vs.ShadowColor}
+}
+
+// setViewShadow gives an NSView sh. AppKit owns the shadow of a view's
+// layer and resets what is set on the layer to the view's shadow, which
+// it copies there unchanged: the offset as the layer's, the blur radius
+// as its shadow radius.
+func setViewShadow(view objc.ID, sh driver.BoxShadow) {
+	if sh.Color == 0 {
+		view.Send(selSetShadow, objc.ID(0))
+		return
+	}
+	ns := objc.ID(objc.GetClass("NSShadow")).Send(selNew)
+	ref := CGColor(sh.Color)
+	ns.Send(sel("setShadowColor:"), objc.ID(objc.GetClass("NSColor")).Send(sel("colorWithCGColor:"), ref))
+	Release(ref)
+	ns.Send(sel("setShadowOffset:"), CGSize{Width: float64(sh.Offset.X), Height: float64(sh.Offset.Y)})
+	ns.Send(sel("setShadowBlurRadius:"), float64(sh.Blur)/2)
+	view.Send(selSetShadow, ns)
+	ns.Send(selRelease)
 }
 
 // transitionKeys returns the CALayer keys of the properties a transition

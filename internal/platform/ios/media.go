@@ -146,7 +146,7 @@ func (v *view) restyle() {
 			vs.Opacity *= float32(p)
 		}
 	}
-	apple.StyleLayer(v.native.Send(selLayer), &vs, false)
+	apple.StyleLayer(v.native.Send(selLayer), &vs, 0)
 }
 
 func (v *view) animatesStyle() bool {
