@@ -72,9 +72,11 @@ type project struct {
 		// FPS shows the performance monitor over the packages; it
 		// defaults to false.
 		FPS bool `yaml:"fps"`
-		// run starts the package built for this machine afterwards (-run);
+		// run starts the package built for this machine afterwards (-run),
+		// on device (-device), an iPhone signed for team (-team);
 		// embed packages the app for host apps of their own (-embed).
-		run, embed bool
+		run, embed   bool
+		device, team string
 	} `yaml:"build"`
 }
 

@@ -272,8 +272,10 @@ func serveSite(ctx context.Context, dir string) error {
 func runnable(target string) bool {
 	arch := goArchName(runtime.GOARCH)
 	switch target {
-	case "web", "ios_simulator", "android_arm64", "android_x64":
-		return target != "ios_simulator" || runtime.GOOS == "darwin"
+	case "web", "android_arm64", "android_x64":
+		return true
+	case "ios", "ios_simulator":
+		return runtime.GOOS == "darwin"
 	case "macos_" + arch:
 		return runtime.GOOS == "darwin"
 	case "linux_" + arch:
@@ -285,8 +287,10 @@ func runnable(target string) bool {
 }
 
 // runPackage starts the package built for target in dir, as -run asks:
-// the app opens here, in the simulator or on the connected device, or
-// the site is served.
+// the app opens here, in the simulator or on the device -device names
+// or the only one connected, or the site is served. An iPhone's package
+// is signed again by Xcode, as nsgo dev signs it, since devices run only
+// development builds.
 func runPackage(ctx context.Context, p *project, target, dir string) error {
 	step("run %s", target)
 	switch {
@@ -294,8 +298,21 @@ func runPackage(ctx context.Context, p *project, target, dir string) error {
 		return serveSite(ctx, dir)
 	case strings.HasPrefix(target, "macos_"):
 		return run(ctx, "open", "-n", filepath.Join(dir, p.Name+".app"))
+	case target == "ios":
+		device, err := selectIOSDevice(ctx, p.Build.device)
+		if err != nil {
+			return err
+		}
+		team, err := iosTeam(ctx, p.Build.team)
+		if err != nil {
+			return err
+		}
+		if err := installOnIOSDevice(ctx, p, filepath.Join(dir, p.Name+".app"), p.cache("run", "ios"), team, device); err != nil {
+			return err
+		}
+		return run(ctx, "xcrun", "devicectl", "device", "process", "launch", "--terminate-existing", "--device", device.UDID, p.ID)
 	case target == "ios_simulator":
-		udid, err := bootSimulator(ctx, "")
+		udid, err := bootSimulator(ctx, p.Build.device)
 		if err != nil {
 			return err
 		}
@@ -304,7 +321,7 @@ func runPackage(ctx context.Context, p *project, target, dir string) error {
 		}
 		return run(ctx, "xcrun", "simctl", "launch", "--terminate-running-process", udid, p.ID)
 	case strings.HasPrefix(target, "android_"):
-		d, err := adbDevice(ctx, "")
+		d, err := adbDevice(ctx, p.Build.device)
 		if err != nil {
 			return err
 		}

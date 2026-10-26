@@ -27,7 +27,7 @@ The web target is served from the same server; its page shows the overlay itself
 
 `resources/` ships in each package's resource root, which `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` and font paths against. App icons are drawn in Go; `actool` compiles Apple's `.icon` files, and a Windows icon links from a `.syso` in the app's package directory, the only place Go links one from.
 
-`build_number` sets `CFBundleVersion` and `versionCode`, else they follow `version`. `appearance` starts the app light or dark through `-X`, and sets `UIUserInterfaceStyle`, macOS's Aqua appearance, Android's activity theme and the page's `color-scheme`. `-run` starts the package of the first target this machine runs: the app, the simulator's, the device's, or the site served with a CDN's cache headers.
+`build_number` sets `CFBundleVersion` and `versionCode`, else they follow `version`. `appearance` starts the app light or dark through `-X`, and sets `UIUserInterfaceStyle`, macOS's Aqua appearance, Android's activity theme and the page's `color-scheme`. `-run` starts the package of the first target this machine runs: the app, the iPhone's, the simulator's, the Android device's, or the site served with a CDN's cache headers. `-device` picks the device as `nsgo dev`'s does; Xcode signs the iPhone's package again for `-team`, as in the dev loop, since devices install only development builds.
 
 ## Store signing
 

@@ -147,13 +147,7 @@ func iosDeviceSession(opts devOptions) session {
 				return app{}, err
 			}
 			dir := p.cache("dev", "ios")
-			unsigned := filepath.Join(dir, "app", p.Name+".app")
-			signed, err := signIOSApp(ctx, p, unsigned, filepath.Join(dir, "sign"), team, device)
-			if err != nil {
-				return app{}, err
-			}
-			step("install on %s", device.Name)
-			if err := run(ctx, "xcrun", "devicectl", "device", "install", "app", "--device", device.UDID, signed); err != nil {
+			if err := installOnIOSDevice(ctx, p, filepath.Join(dir, "app", p.Name+".app"), filepath.Join(dir, "sign"), team, device); err != nil {
 				return app{}, err
 			}
 			step("launch %s on %s", p.ID, device.Name)
@@ -165,6 +159,17 @@ func iosDeviceSession(opts devOptions) session {
 			return app{stop: stop, wait: wait}, nil
 		},
 	}
+}
+
+// installOnIOSDevice signs app for device with Xcode, working in work,
+// and installs it there.
+func installOnIOSDevice(ctx context.Context, p *project, app, work, team string, device iosDevice) error {
+	signed, err := signIOSApp(ctx, p, app, work, team, device)
+	if err != nil {
+		return err
+	}
+	step("install on %s", device.Name)
+	return run(ctx, "xcrun", "devicectl", "device", "install", "app", "--device", device.UDID, signed)
 }
 
 // signIOSApp signs a device build by handing it to Xcode, whose automatic

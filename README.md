@@ -101,11 +101,11 @@ go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 
 `go tool nsgo dev` runs the app once, or with `dev.hot_reload` rebuilds and restarts it on each change. A failed build shows over the running app; Command or Control+R in the app, or `r` and Return in the terminal, builds it again.
 
-`go tool nsgo build` writes a stripped release package per target: an `.app`, an `.ipa`, an `.apk`, Windows' and Linux's directories with a `.zip` or `.tar.gz` of each, or a web site; `-run` starts the one built for this machine. `-embed` packages the app for an iOS or Android app of your own instead, an XCFramework or an AAR whose `NSGoView` or `NsgoView` shows it, and Go desktop programs show apps with `nsgo.NewView`: see `examples/embed-*`.
+`go tool nsgo build` writes a stripped release package per target: an `.app`, an `.ipa`, an `.apk`, Windows' and Linux's directories with a `.zip` or `.tar.gz` of each, or a web site; `-run` starts the one built for this machine, or installs it on an iPhone, simulator or Android device, which `-device` picks. `-embed` packages the app for an iOS or Android app of your own instead, an XCFramework or an AAR whose `NSGoView` or `NsgoView` shows it, and Go desktop programs show apps with `nsgo.NewView`: see `examples/embed-*`.
 
 `go tool nsgo test` runs the app's tests with a line per test; `-run` filters them, `-junit report.xml` writes a JUnit report and `-trace` prints each step's mount items and commit times. `-target` runs them on `macos`, `windows`, `linux`, `web` (in Chrome, Chromium or Edge), `ios_simulator` or `android`, a process per test, saving screenshots in `.nsgo/test/screenshots`. `build.targets` and `-target` accept `all` for every platform that needs only Go and Xcode; add `android_x64` when an NDK is installed.
 
-Flags replace the `nsgo.yaml` values they name, such as `-target`, `-version` or `-output`; `dev` also takes `-device` for an iPhone, simulator or Android device and `-port` for its server. `-h` lists every flag.
+Flags replace the `nsgo.yaml` values they name, such as `-target`, `-version` or `-output`; `dev` and `build` take `-device` for an iPhone, simulator or Android device, `build` `-team` to sign the iPhone's package, and `dev` `-port` for its server. `-h` lists every flag.
 
 ## Development
 

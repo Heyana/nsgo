@@ -139,6 +139,8 @@ type buildFlags struct {
 	fps     *boolOverride
 	run     bool
 	embed   bool
+	device  string
+	team    string
 	sign    signFlags
 }
 
@@ -148,7 +150,9 @@ func bindBuildFlags(fs *flag.FlagSet) *buildFlags {
 	f.output = stringFlag(fs, "output", "the `output` directory (default: nsgo.yaml's build.output)")
 	f.open = boolFlag(fs, "open", "open the output directory (default: nsgo.yaml's build.open)")
 	f.fps = boolFlag(fs, "fps", "show the performance monitor (default: nsgo.yaml's build.fps)")
-	fs.BoolVar(&f.run, "run", false, "start the package built for this machine: the app, the simulator's or device's, or the site served")
+	fs.BoolVar(&f.run, "run", false, "start the package built for this machine: the app, the iPhone's, simulator's or Android device's, or the site served")
+	fs.StringVar(&f.device, "device", "", "the `device` -run starts the package on: an iPhone's name, UDID, serial or ECID, a simulator's name or UDID, or an adb serial or emulator's AVD name (default: the only one connected, or the booted simulator)")
+	fs.StringVar(&f.team, "team", "", "the Apple developer `team` -run signs the iPhone's package with (default: the team Xcode last used)")
 	fs.BoolVar(&f.embed, "embed", false, "package the app for iOS and Android apps of their own to embed: an XCFramework and an AAR")
 	f.sign.bind(fs)
 	return f
@@ -167,5 +171,6 @@ func (f *buildFlags) apply(p *project) {
 	}
 	f.fps.replace(&p.Build.FPS)
 	p.Build.run, p.Build.embed = f.run, f.embed
+	p.Build.device, p.Build.team = f.device, f.team
 	f.sign.apply(p)
 }

@@ -92,7 +92,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   nsgo init  [-name N] [-module M] [dir]
   nsgo dev   [-target native|web|ios|ios_simulator|android] [-hot-reload] [-release] [-device D] [-port N] [-open=false] [dir]
-  nsgo build [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [-output DIR] [-open] [dir]
+  nsgo build [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [-output DIR] [-open] [-run [-device D]] [dir]
   nsgo test  [-run REGEXP] [-junit FILE] [-trace] [-target macos|windows|linux|web|ios_simulator|android] [dir] [-- go test flags]
 
 dev and build take -name, -id, -version, -width and -height, which replace
