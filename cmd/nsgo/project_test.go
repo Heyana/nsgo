@@ -111,15 +111,13 @@ func TestIcons(t *testing.T) {
 		t.Error("a PNG loaded as icon.apple")
 	}
 
-	// nsgo dev takes the -dev defaults and dev.icon over the badge.
+	// nsgo dev takes the -dev defaults and dev.icon over icon.
 	write("assets/AppIcon-dev.icon/icon.json")
 	p, err = load("dev:\n  icon:\n    png: art/app.png\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := p.useDevIcons(); err != nil {
-		t.Fatal(err)
-	}
+	p.useDevIcons()
 	if want := filepath.Join(dir, "assets", "AppIcon-dev.icon"); p.Icon.Apple != want {
 		t.Errorf("default dev Apple icon: got %s, want %s", p.Icon.Apple, want)
 	}

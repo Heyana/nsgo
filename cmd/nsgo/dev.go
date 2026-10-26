@@ -53,9 +53,7 @@ type devOptions struct {
 // and restarts the app whenever a Go file it compiles from, go.mod or
 // nsgo.yaml changes, and keeps the running app when a build fails.
 func dev(ctx context.Context, p *project, opts devOptions) error {
-	if err := p.prepareDev(opts); err != nil {
-		return err
-	}
+	p.prepareDev(opts)
 	srv, err := startDevServer(opts.port)
 	if err != nil {
 		return err
@@ -115,9 +113,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		// The flags and the rest of nsgo.yaml may have changed too.
 		if next, err := load(p.Dir); err == nil {
 			opts.apply(next)
-			if err := next.prepareDev(opts); err != nil {
-				step("%v", err)
-			}
+			next.prepareDev(opts)
 			*p = *next
 		} else {
 			step("%v", err)
@@ -128,9 +124,9 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 // prepareDev sets what dev's builds carry: the monitor dev.fps asks for,
 // the dev client and the dev icons; -release strips them as nsgo build
 // does, keeping the monitor for measuring.
-func (p *project) prepareDev(opts devOptions) error {
+func (p *project) prepareDev(opts devOptions) {
 	p.Perf, p.Release, p.Dev.Client = p.Dev.FPS, opts.release, true
-	return p.useDevIcons()
+	p.useDevIcons()
 }
 
 // waitForChange returns nil once dev should build again: a reload asked

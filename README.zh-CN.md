@@ -80,6 +80,7 @@ dev:
   target: native        # native、web、ios、ios_simulator 或 android
   hot_reload: false     # true 时保存后重新编译并重启
   fps: false            # true 时显示性能监视器（macOS）；-fps 可覆盖
+  # icon: { png: assets/Icon-dev.png }  # 在 dev 构建中替换 icon 的文件；默认取 assets/*-dev.*
 build:
   output: dist          # 构建产物位于 dist/<name>-<version>-<target>
   open: false           # 设为 true 时在构建后打开输出目录
@@ -98,7 +99,7 @@ build:
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` 运行一次应用，开启 `dev.hot_reload` 后则在每次修改时重新编译并重启。编译失败会显示在正在运行的应用上方；在应用中按 Command 或 Control+R，或在终端输入 `r` 并回车，会重新编译。它构建的应用图标带有 DEV 标签，或显示 `dev.icon` 指定的文件。
+`go tool nsgo dev` 运行一次应用，开启 `dev.hot_reload` 后则在每次修改时重新编译并重启。编译失败会显示在正在运行的应用上方；在应用中按 Command 或 Control+R，或在终端输入 `r` 并回车，会重新编译。
 
 `go tool nsgo build` 为每个目标输出一个去除符号的发布包：`.app`、`.ipa`、`.apk`，Windows 和 Linux 的目录及其 `.zip` 或 `.tar.gz`，或一个网站；`-run` 启动为本机构建的包。`-embed` 则把应用打包给你自己的 iOS 或 Android 应用：一个 XCFramework 或 AAR，由其中的 `NSGoView` 或 `NsgoView` 显示；Go 桌面程序用 `nsgo.NewView` 显示应用。参见 `examples/embed-*`。
 

@@ -20,8 +20,7 @@ const assetsDir = "assets"
 
 // resolveIcons makes nsgo.yaml's icon paths absolute, or finds the
 // defaults in assets: AppIcon.icon, AppIcon.icns and Icon.png, and for
-// nsgo dev the same names ending in -dev, which replace the badge it
-// otherwise puts on icon's files. A path nsgo.yaml names must
+// dev.icon the same names ending in -dev. A path nsgo.yaml names must
 // exist; a missing default only leaves the app without that icon.
 func (p *project) resolveIcons() error {
 	if err := p.resolveIconSet(&p.Icon, "icon", ""); err != nil {
@@ -59,33 +58,15 @@ func (p *project) iconPath(key, path string, defaults ...string) (string, error)
 	return "", nil
 }
 
-// useDevIcons points icon at the files nsgo dev's builds show: dev.icon's
-// where it has them, else icon's with the dev badge, written into the dev
-// cache.
-func (p *project) useDevIcons() error {
-	dir := p.cache("dev", "icon")
-	if err := os.RemoveAll(dir); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	var err error
-	switch {
-	case p.Dev.Icon.Apple != "":
+// useDevIcons points icon at the files dev.icon has, for nsgo dev's
+// builds.
+func (p *project) useDevIcons() {
+	if p.Dev.Icon.Apple != "" {
 		p.Icon.Apple = p.Dev.Icon.Apple
-	case p.Icon.Apple != "":
-		if p.Icon.Apple, err = badgeApple(p.Icon.Apple, dir); err != nil {
-			return err
-		}
 	}
-	switch {
-	case p.Dev.Icon.PNG != "":
+	if p.Dev.Icon.PNG != "" {
 		p.Icon.PNG = p.Dev.Icon.PNG
-	case p.Icon.PNG != "":
-		p.Icon.PNG, err = badgePNG(p.Icon.PNG, dir)
 	}
-	return err
 }
 
 // iconImage decodes the project's PNG icon, nil when it has none.

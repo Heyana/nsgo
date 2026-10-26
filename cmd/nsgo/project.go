@@ -50,8 +50,7 @@ type project struct {
 	Icon icons `yaml:"icon"`
 	Dev  struct {
 		Target string `yaml:"target"`
-		// Icon replaces Icon in nsgo dev's builds, field by field;
-		// without it they show Icon with a dev badge.
+		// Icon replaces Icon in nsgo dev's builds, field by field.
 		Icon icons `yaml:"icon"`
 		// HotReload rebuilds and restarts the app when a watched file
 		// changes; it defaults to false.
