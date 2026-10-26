@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -68,39 +67,51 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 
 	stop := func() {}
 	defer func() { stop() }()
+	header(p.Name, p.Version, "dev "+p.Dev.Target)
 	var exited chan error
-	first := true
+	first, hinted := true, false
 	for {
 		dirs, err := sourceDirs(ctx, p.Dir)
 		if err != nil {
 			return err
 		}
 		fingerprint := scan(dirs)
-		step("build %s", p.Dev.Target)
-		started := time.Now()
-		var log bytes.Buffer
-		p.log = &log
+		progress := begin("building %s", p.Dev.Target)
 		err = s.build(ctx, p)
-		p.log = nil
 		switch {
 		case ctx.Err() != nil:
+			progress.fail()
 			return nil
 		case err != nil && first && !p.hotReload():
+			progress.fail()
 			return err
 		case err != nil:
-			srv.send("error", strings.TrimSpace(log.String()+"\n"+err.Error()))
-			step("build failed; waiting for changes (r and Return builds again)")
+			progress.fail()
+			srv.send("error", strings.TrimSpace(err.Error()))
+			report(err)
+			detail("waiting for changes (r and Return builds again)")
 		default:
+			progress.done(fmt.Sprintf("built %s", p.Dev.Target), "")
 			stop()
 			stop, exited = func() {}, nil
-			step("run (built in %s)", time.Since(started).Round(time.Millisecond))
 			if next, err := s.start(ctx, p); err != nil {
-				step("run failed: %v", err)
+				fail("run failed: %v", err)
 			} else {
 				stop = next.stop
 				if next.wait != nil {
 					exited = make(chan error, 1)
 					go func(wait func(context.Context) error, done chan error) { done <- wait(ctx) }(next.wait, exited)
+				}
+				if p.Dev.Target != "web" {
+					event("running")
+				}
+				if !hinted {
+					if p.hotReload() {
+						detail("watching for changes (r and Return builds again)")
+					} else {
+						detail("r and Return builds again")
+					}
+					hinted = true
 				}
 			}
 			srv.send("ok", "")
@@ -116,7 +127,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 			next.prepareDev(opts)
 			*p = *next
 		} else {
-			step("%v", err)
+			warn("%v", err)
 		}
 	}
 }
@@ -142,7 +153,6 @@ func waitForChange(ctx context.Context, p *project, srv *devServer, dirs []strin
 			var none error
 			return &none
 		case <-srv.reloads:
-			step("reload")
 			return nil
 		case err := <-exited:
 			if !p.hotReload() {
@@ -464,9 +474,9 @@ func webSession(opts devOptions) session {
 			once.Do(func() {
 				opts.server.serve(p.cache("dev", "web"))
 				url := fmt.Sprintf("http://localhost:%d/", opts.server.port)
-				step("serving %s", url)
+				note("%s", link(url))
 				for _, lan := range opts.server.lanURLs() {
-					step("        %s/", lan)
+					detail("%s", link(lan+"/"))
 				}
 				if opts.open {
 					name, args := openCommand(url)
@@ -478,9 +488,9 @@ func webSession(opts devOptions) session {
 	}
 }
 
-// startProcess runs a command with this terminal's output. stop ends the
-// process; wait returns its error once it exits, or nil when stop or ctx
-// ended it.
+// startProcess runs a command with its output above the tool's lines. stop
+// ends the process; wait returns its error once it exits, or nil when stop
+// or ctx ended it.
 func startProcess(name string, args ...string) (stop func(), wait func(context.Context) error, err error) {
 	return startProcessEnv(nil, name, args...)
 }
@@ -488,7 +498,7 @@ func startProcess(name string, args ...string) (stop func(), wait func(context.C
 // startProcessEnv is startProcess with env added to this process's.
 func startProcessEnv(env []string, name string, args ...string) (stop func(), wait func(context.Context) error, err error) {
 	cmd := exec.Command(name, args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.Stdout, cmd.Stderr = &appConsole, &appConsole
 	if env != nil {
 		cmd.Env = append(os.Environ(), env...)
 	}

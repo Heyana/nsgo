@@ -225,7 +225,7 @@ func (r *testRun) finish(opts testOptions, waitErr error) error {
 		if err := writeJUnit(opts.junit, r.results, r.packages); err != nil {
 			return err
 		}
-		step("→ %s", rel(opts.junit))
+		note("%s", rel(opts.junit))
 	}
 	switch {
 	case failed > 0:

@@ -1,0 +1,332 @@
+package main
+
+// The tool's terminal output follows NSH's CLI
+// (nsh/crates/nsh-cli/src/ui.rs, nsh/docs/dev/tooling.md "Output"): one
+// line per step, and the details only when a step fails.
+//
+//   - ✓ a step that finished, → where to find something, • what a server
+//     or device did, warn and error for problems; plain lines are the app's
+//     own output.
+//   - A step that takes a while shows a spinner in its line on a terminal,
+//     replaced by its ✓ line, or cleared when it fails and the error
+//     follows.
+//   - Colors on terminals unless NO_COLOR is set; redirected, only the
+//     result lines appear.
+//   - All of it is stderr, so stdout stays free for what a command prints.
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"runtime/debug"
+	"strings"
+	"sync"
+	"time"
+)
+
+// terminal says how much stderr can be decorated, decided once.
+type terminal struct{ tty, color bool }
+
+var terminalOf = sync.OnceValue(func() terminal {
+	enableVT()
+	info, err := os.Stderr.Stat()
+	tty := err == nil && info.Mode()&os.ModeCharDevice != 0
+	return terminal{tty: tty, color: tty && os.Getenv("NO_COLOR") == ""}
+})
+
+func paint(code, text string) string {
+	if !terminalOf().color {
+		return text
+	}
+	return "\x1b[" + code + "m" + text + "\x1b[0m"
+}
+
+// dim is secondary text: timings, sizes, hints.
+func dim(text string) string { return paint("2", text) }
+
+func bold(text string) string   { return paint("1", text) }
+func green(text string) string  { return paint("32", text) }
+func cyan(text string) string   { return paint("36", text) }
+func yellow(text string) string { return paint("33", text) }
+func red(text string) string    { return paint("31", text) }
+
+// link is url, clickable in terminals that support hyperlinks (OSC 8).
+func link(url string) string {
+	if !terminalOf().color {
+		return url
+	}
+	return "\x1b]8;;" + url + "\x1b\\" + cyan(url) + "\x1b]8;;\x1b\\"
+}
+
+// formatSize is how large a package is, as its line says: 500 B, 3.2 KB
+// or 1.4 MB.
+func formatSize(n int64) string {
+	const k = 1024
+	switch {
+	case n < k:
+		return fmt.Sprintf("%d B", n)
+	case n < k*k:
+		return fmt.Sprintf("%.1f KB", float64(n)/k)
+	default:
+		return fmt.Sprintf("%.1f MB", float64(n)/(k*k))
+	}
+}
+
+// formatDuration is how long a step took: 21ms, 1.2s or 1m 3s.
+func formatDuration(d time.Duration) string {
+	ms := d.Milliseconds()
+	switch {
+	case ms < 1000:
+		return fmt.Sprintf("%dms", ms)
+	case ms < 60_000:
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	default:
+		return fmt.Sprintf("%dm %ds", ms/60_000, ms%60_000/1000)
+	}
+}
+
+// toolVersion is the nsgo module's version as the tool was built: its
+// release tag, the pseudo-version of a commit, or nothing when the build
+// records none.
+func toolVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	const module = "github.com/oneo-me/nsgo"
+	if info.Main.Path == module {
+		return builtVersion(info.Main.Version)
+	}
+	for _, dep := range info.Deps {
+		if dep.Path != module {
+			continue
+		}
+		if dep.Replace != nil {
+			return builtVersion(dep.Replace.Version)
+		}
+		return builtVersion(dep.Version)
+	}
+	return ""
+}
+
+// builtVersion is a version worth showing; a checkout's "(devel)" is not.
+func builtVersion(v string) string {
+	if v == "(devel)" {
+		return ""
+	}
+	return v
+}
+
+// header titles a command's output: which NSGo built it, the app's name
+// and version, then what it builds.
+func header(name, version, what string) {
+	emit(headerLine(toolVersion(), name, version, what))
+}
+
+func headerLine(tool, name, version, what string) string {
+	line := bold("NSGo")
+	if tool != "" {
+		line += " " + dim(tool)
+	}
+	line += " " + dim("·") + " " + bold(name) + " " + dim(version)
+	if what != "" {
+		line += " " + dim("· "+what)
+	}
+	return line
+}
+
+// done prints "✓ message": a step that finished.
+func done(format string, args ...any) {
+	emit(green("✓") + " " + fmt.Sprintf(format, args...))
+}
+
+// note prints "→ message": where to find something.
+func note(format string, args ...any) {
+	emit(cyan("→") + " " + fmt.Sprintf(format, args...))
+}
+
+// event prints "• message": what a server or device did.
+func event(format string, args ...any) {
+	emit(cyan("•") + " " + fmt.Sprintf(format, args...))
+}
+
+// detail prints a line under the one above, dimmed.
+func detail(format string, args ...any) {
+	emit("  " + dim(fmt.Sprintf(format, args...)))
+}
+
+// warn prints "warn message": a problem that does not end the command.
+func warn(format string, args ...any) {
+	emit(yellow("warn") + " " + fmt.Sprintf(format, args...))
+}
+
+// fail prints "error message": why the command ends.
+func fail(format string, args ...any) {
+	emit(red("error") + " " + fmt.Sprintf(format, args...))
+}
+
+// plain prints a line as it is: an app's or a test's own output.
+func plain(format string, args ...any) {
+	emit(fmt.Sprintf(format, args...))
+}
+
+// report prints a command's error: "error message", then the lines it
+// carries after the first, such as a tool's output, indented.
+func report(err error) {
+	message, rest, _ := strings.Cut(err.Error(), "\n")
+	fail("%s", message)
+	if rest = strings.TrimRight(rest, "\n"); rest == "" {
+		return
+	}
+	for _, line := range strings.Split(rest, "\n") {
+		emit("  " + line)
+	}
+}
+
+// screen is what is printed and the step whose spinner is drawn below it.
+type screen struct {
+	sync.Mutex
+	steps []*Step
+	drawn bool
+	frame int
+}
+
+var out screen
+
+// console is where a running app's output goes: each of its lines is
+// printed above a step's spinner, so the app's log and the tool's lines
+// never tear each other.
+type console struct {
+	mu  sync.Mutex
+	buf []byte
+}
+
+var appConsole console
+
+func (c *console) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.buf = append(c.buf, p...)
+	for {
+		i := bytes.IndexByte(c.buf, '\n')
+		if i < 0 {
+			break
+		}
+		line := strings.TrimSuffix(string(c.buf[:i]), "\r")
+		c.buf = c.buf[i+1:]
+		emit(line)
+	}
+	return len(p), nil
+}
+
+// emit writes a whole line above the running step's spinner.
+func emit(text string) {
+	out.Lock()
+	defer out.Unlock()
+	out.clear()
+	fmt.Fprint(os.Stderr, text)
+	if !strings.HasSuffix(text, "\n") {
+		fmt.Fprintln(os.Stderr)
+	}
+	out.draw()
+}
+
+// clear removes the spinner line. The caller holds out's lock.
+func (o *screen) clear() {
+	if o.drawn {
+		fmt.Fprint(os.Stderr, "\r\x1b[2K")
+		o.drawn = false
+	}
+}
+
+// draw shows the last running step's spinner, or clears the line when none
+// runs. The caller holds out's lock.
+func (o *screen) draw() {
+	if len(o.steps) == 0 {
+		o.clear()
+		return
+	}
+	s := o.steps[len(o.steps)-1]
+	label := []rune(s.label)
+	if len(label) > 64 {
+		label = append(label[:63], '…')
+	}
+	line := fmt.Sprintf("%s %s", cyan(spinnerFrames[o.frame%len(spinnerFrames)]), string(label))
+	if elapsed := time.Since(s.start); elapsed >= time.Second {
+		line += " " + dim(fmt.Sprintf("%ds", int(elapsed.Seconds())))
+	}
+	// Clear the line and leave the cursor at its start: the next line
+	// replaces it.
+	fmt.Fprintf(os.Stderr, "\r\x1b[2K%s", line)
+	o.drawn = true
+}
+
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+var spinnerOnce sync.Once
+
+// spin animates the spinner, once.
+func spin() {
+	spinnerOnce.Do(func() {
+		go func() {
+			tick := time.NewTicker(80 * time.Millisecond)
+			defer tick.Stop()
+			for range tick.C {
+				out.Lock()
+				if len(out.steps) > 0 {
+					out.frame++
+					out.draw()
+				}
+				out.Unlock()
+			}
+		}()
+	})
+}
+
+// Step is a step that takes a while. On a terminal its spinner line is
+// shown while it runs, and done replaces it with the step's ✓ line; fail
+// clears it, since the error printed next says what went wrong.
+type Step struct {
+	label string
+	start time.Time
+}
+
+// begin starts the step label names, such as "building web".
+func begin(format string, args ...any) *Step {
+	s := &Step{label: fmt.Sprintf(format, args...), start: time.Now()}
+	if terminalOf().tty {
+		out.Lock()
+		out.steps = append(out.steps, s)
+		out.draw()
+		out.Unlock()
+		spin()
+	}
+	return s
+}
+
+// done ends the step with "✓ message (time, note)", without the note when
+// it is empty.
+func (s *Step) done(message, extra string) {
+	s.remove()
+	elapsed := formatDuration(time.Since(s.start))
+	if extra != "" {
+		elapsed += ", " + extra
+	}
+	done("%s %s", message, dim("("+elapsed+")"))
+}
+
+// fail ends a step that failed, without a line of its own.
+func (s *Step) fail() { s.remove() }
+
+// remove takes the step's spinner away, if it had one.
+func (s *Step) remove() {
+	out.Lock()
+	defer out.Unlock()
+	for i, step := range out.steps {
+		if step == s {
+			out.steps = append(out.steps[:i], out.steps[i+1:]...)
+			out.draw()
+			return
+		}
+	}
+}

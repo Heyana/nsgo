@@ -150,7 +150,7 @@ func iosDeviceSession(opts devOptions) session {
 			if err := installOnIOSDevice(ctx, p, filepath.Join(dir, "app", p.Name+".app"), filepath.Join(dir, "sign"), team, device); err != nil {
 				return app{}, err
 			}
-			step("launch %s on %s", p.ID, device.Name)
+			event("launch %s on %s", p.ID, device.Name)
 			stop, wait, err := startProcess("xcrun", "devicectl", "device", "process", "launch",
 				"--console", "--terminate-existing", "--device", device.UDID, p.ID)
 			if err != nil {
@@ -168,7 +168,7 @@ func installOnIOSDevice(ctx context.Context, p *project, app, work, team string,
 	if err != nil {
 		return err
 	}
-	step("install on %s", device.Name)
+	event("install on %s", device.Name)
 	return run(ctx, "xcrun", "devicectl", "device", "install", "app", "--device", device.UDID, signed)
 }
 
@@ -213,7 +213,7 @@ func signIOSApp(ctx context.Context, p *project, app, work, team string, device 
 		return "", err
 	}
 	products := filepath.Join(work, "products")
-	step("sign for %s with Xcode", device.Name)
+	event("sign for %s with Xcode", device.Name)
 	if err := runXcodebuild(ctx,
 		"-project", project,
 		"-target", "Nsgo",
@@ -577,7 +577,7 @@ func bootSimulator(ctx context.Context, wanted string) (string, error) {
 		return "", err
 	}
 	if sim.State != "Booted" {
-		step("boot simulator %s", sim.Name)
+		event("boot simulator %s", sim.Name)
 		if err := run(ctx, "xcrun", "simctl", "boot", sim.UDID); err != nil {
 			return "", err
 		}

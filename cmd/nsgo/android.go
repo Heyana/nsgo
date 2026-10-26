@@ -216,7 +216,7 @@ func androidSession(opts devOptions) session {
 				return app{}, err
 			}
 			path := filepath.Join(p.cache("dev", "android"), p.Name+".apk")
-			step("install on %s", d.serial)
+			event("install on %s", d.serial)
 			if err := d.run(ctx, "install", "-r", path); err != nil {
 				return app{}, err
 			}

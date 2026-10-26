@@ -37,15 +37,17 @@ func runTargetTests(ctx context.Context, p *project, opts testOptions) error {
 		return err
 	}
 	if len(names) == 0 {
-		step("no tests match")
+		plain("no tests match")
 		return nil
 	}
 	p.testBinary = true
-	step("build the tests for %s", opts.target)
+	progress := begin("building the tests for %s", opts.target)
 	runner, err := targetFor(ctx, p, opts)
 	if err != nil {
+		progress.fail()
 		return err
 	}
+	progress.done(fmt.Sprintf("built the tests for %s", opts.target), "")
 	defer runner.close()
 	shots := filepath.Join(p.Dir, ".nsgo", "test", "screenshots", opts.target)
 	r := &testRun{running: map[string]*testResult{}, packages: map[string]*testResult{}, trace: opts.trace, out: os.Stderr}

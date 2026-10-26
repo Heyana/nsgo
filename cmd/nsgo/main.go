@@ -83,7 +83,7 @@ func main() {
 		usage()
 	}
 	if err != nil && ctx.Err() == nil {
-		fmt.Fprintln(os.Stderr, "nsgo:", err)
+		report(err)
 		os.Exit(1)
 	}
 }

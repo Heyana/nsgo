@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"text/template"
+	"time"
 )
 
 // buildAll writes one directory per target: <output>/<name>-<version>-<target>.
@@ -28,6 +29,9 @@ func buildAll(ctx context.Context, p *project) error {
 			return err
 		}
 	}
+	var total int64
+	started := time.Now()
+	header(p.Name, p.Version, strings.Join(buildTargets, ", "))
 	for _, target := range buildTargets {
 		dir := filepath.Join(p.Build.Output, fmt.Sprintf("%s-%s-%s", p.Name, p.Version, target))
 		if err := os.RemoveAll(dir); err != nil {
@@ -36,13 +40,18 @@ func buildAll(ctx context.Context, p *project) error {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
-		step("build %s", target)
+		progress := begin("building %s", target)
 		if err := buildTarget(ctx, p, target, dir); err != nil {
+			progress.fail()
 			os.RemoveAll(dir)
 			return fmt.Errorf("%s: %w", target, err)
 		}
-		step("  -> %s", rel(dir))
+		size := dirSize(dir)
+		total += size
+		progress.done(fmt.Sprintf("built %s", target), formatSize(size))
+		note("%s", rel(dir))
 	}
+	buildSummary(p, len(buildTargets), total, time.Since(started))
 	if p.openOutput() {
 		openDir(p.Build.Output)
 	}
@@ -57,10 +66,33 @@ func buildAll(ctx context.Context, p *project) error {
 	return nil
 }
 
+// buildSummary closes a build of several targets with their number, time
+// and space; one target's line already says its own.
+func buildSummary(p *project, targets int, size int64, took time.Duration) {
+	if targets < 2 {
+		return
+	}
+	done("built %d targets in %s (%s, %s)", targets, rel(p.Build.Output), formatDuration(took), formatSize(size))
+}
+
+// dirSize is how much space the files under dir take.
+func dirSize(dir string) int64 {
+	var total int64
+	filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			if info, err := d.Info(); err == nil {
+				total += info.Size()
+			}
+		}
+		return nil
+	})
+	return total
+}
+
 // openDir shows dir in the host's file manager. A build is complete
 // without it, so failing to open is only a warning.
 func openDir(dir string) {
-	step("open %s", rel(dir))
+	note("open %s", rel(dir))
 	opener := "xdg-open"
 	switch runtime.GOOS {
 	case "darwin":
@@ -69,7 +101,7 @@ func openDir(dir string) {
 		opener = "explorer"
 	}
 	if err := exec.Command(opener, dir).Start(); err != nil {
-		step("could not open %s: %v", rel(dir), err)
+		warn("could not open %s: %v", rel(dir), err)
 	}
 }
 
@@ -199,11 +231,14 @@ func goBuildWith(ctx context.Context, p *project, out string, env, flags []strin
 	cmd := exec.CommandContext(ctx, "go", append(args, ".")...)
 	cmd.Dir = p.Dir
 	cmd.Env = append(os.Environ(), env...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if p.log != nil {
-		cmd.Stdout, cmd.Stderr = io.MultiWriter(os.Stdout, p.log), io.MultiWriter(os.Stderr, p.log)
+	// The tool's chatter only matters when it fails: the step's line says
+	// what it did, and a failure shows the whole output under its error.
+	var output bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &output, &output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("go %s failed\n%s", args[0], strings.TrimSpace(output.String()))
 	}
-	return cmd.Run()
+	return nil
 }
 
 func run(ctx context.Context, name string, args ...string) error {
@@ -463,8 +498,6 @@ var macPlist = template.Must(template.New("mac").Parse(plistHead + `	<key>LSMini
 </dict>
 </plist>
 `))
-
-func step(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...) }
 
 func rel(path string) string {
 	if wd, err := os.Getwd(); err == nil {

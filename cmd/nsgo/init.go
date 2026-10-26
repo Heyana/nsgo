@@ -40,12 +40,12 @@ func initApp(dir, name, module string) error {
 		if err != nil {
 			return err
 		}
-		step("create %s", rel(filepath.Join(dir, file)))
+		done("create %s", rel(filepath.Join(dir, file)))
 	}
 	if module != "" {
-		step("next: cd %s && go get github.com/oneo-me/nsgo && go get -tool github.com/oneo-me/nsgo/cmd/nsgo && go tool nsgo dev", rel(dir))
+		detail("next: cd %s && go get github.com/oneo-me/nsgo && go get -tool github.com/oneo-me/nsgo/cmd/nsgo && go tool nsgo dev", rel(dir))
 	} else {
-		step("next: go tool nsgo dev %s", rel(dir))
+		detail("next: go tool nsgo dev %s", rel(dir))
 	}
 	return nil
 }

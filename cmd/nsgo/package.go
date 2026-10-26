@@ -167,7 +167,7 @@ func serveSite(ctx context.Context, dir string) error {
 		srv.Close()
 	}()
 	url := fmt.Sprintf("http://%s/", ln.Addr())
-	step("serving %s (interrupt to stop)", url)
+	note("%s (interrupt to stop)", link(url))
 	name, args := openCommand(url)
 	exec.Command(name, args...).Start()
 	if err := srv.Serve(ln); err != http.ErrServerClosed {
@@ -200,7 +200,7 @@ func runnable(target string) bool {
 // is signed again by Xcode, as nsgo dev signs it, since devices run only
 // development builds.
 func runPackage(ctx context.Context, p *project, target, dir string) error {
-	step("run %s", target)
+	event("run %s", target)
 	switch {
 	case target == "web":
 		return serveSite(ctx, dir)

@@ -67,7 +67,7 @@ func (f *signFlags) apply(p *project) {
 func releaseKey(p *project) (*apk.Key, error) {
 	if p.Sign.Keystore == "" || !p.Release {
 		if p.Release {
-			step("  signed with the debug key: set sign.keystore for store releases")
+			detail("signed with the debug key: set sign.keystore for store releases")
 		}
 		return debugKey(p)
 	}
@@ -90,7 +90,7 @@ func signForStore(ctx context.Context, p *project, app string) error {
 		if p.Sign.Identity != "" {
 			return errors.New("sign.identity needs sign.profile, the provisioning profile to sign with")
 		}
-		step("  unsigned: set sign.profile to install it on devices or upload it")
+		detail("unsigned: set sign.profile to install it on devices or upload it")
 		return nil
 	}
 	data, err := os.ReadFile(p.Sign.Profile)
@@ -126,7 +126,7 @@ func signForStore(ctx context.Context, p *project, app string) error {
 		return err
 	}
 	defer os.Remove(ents)
-	step("  sign with %s", identity)
+	detail("sign with %s", identity)
 	return run(ctx, "codesign", "--force", "--sign", identity, "--entitlements", ents, "--generate-entitlement-der", app)
 }
 

@@ -2,6 +2,12 @@
 
 `cmd/nsgo` builds, runs, tests and packages apps from their `nsgo.yaml`, shelling out to `go` and, for Apple targets, Xcode's tools. It follows NSH's `nsh-cli` (`nsh/docs/dev/tooling.md` and `embedding.md`). Read this before changing `cmd/nsgo`.
 
+## Output
+
+Every command prints one line per step and the details only when a step fails, as NSH's CLI does (`nsh/crates/nsh-cli/src/ui.rs`, `nsh/docs/dev/tooling.md` "Output"): `✓` a step that finished, `→` where to find something, `•` what a device or server did, `warn` and `error` for problems. On a terminal a step that takes a while shows a spinner in its line, and colors are used unless `NO_COLOR` is set; redirected, only the result lines appear. All of it is stderr.
+
+`nsgo build` and `nsgo dev` start with the NSGo version the tool was built from, the app's name and version and the targets, then what they do. `nsgo build` times each package and measures its directory, so each target's line reads `✓ built macos_arm64 (1.4s, 23.4 MB)`, and a build of several targets ends with their number, time and total size. `nsgo dev` reports each build's time, what it started and whether it watches for changes. A tool's output, Go's or Xcode's, appears indented under `error` only when it fails.
+
 ## Dev loop
 
 `nsgo dev` (`dev.go`) starts a dev server on `-port` (8080), or the next free port, listening on every interface. Dev builds take the `nsgodev` tag, which links `nsgo`'s dev client (`dev_client.go`): it follows the server's `/_nsgo/events` and shows a failed build's output in an overlay over the running app, as it shows the app's own render failures; Command or Control+R posts `/_nsgo/reload`.

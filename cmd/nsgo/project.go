@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,10 +21,8 @@ type project struct {
 	Perf bool `yaml:"-"`
 	// idDefault records that nsgo.yaml gave no id, so it follows the name.
 	idDefault bool
-	// log, when set, also receives the go tool's output, for the dev
-	// server to show a failed build; devURL is the dev server's address
-	// for targets that pass the app no environment.
-	log    *bytes.Buffer
+	// devURL is the dev server's address for targets that pass the app no
+	// environment.
 	devURL string
 	// testBinary builds the package's tests with the nsgotest tag in
 	// place of the app, for nsgo test -target.
