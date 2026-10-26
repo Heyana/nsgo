@@ -150,52 +150,75 @@ func (f signalField) Render(cx *core.Scope) core.Node {
 	}
 }
 
-func shaderPage(cx *core.Scope, t *theme) core.Node {
-	presses := core.NewSignal(cx, 0)
-	scale := core.NewSignal(cx, 1.0)
-	intensity := core.NewSignal(cx, 1.0)
-	cycle := func(s *core.Signal[float64], values ...float64) func() {
-		return func() {
-			cur := s.GetUntracked()
-			for i, v := range values {
-				if v == cur {
-					s.Set(values[(i+1)%len(values)])
-					return
+// shaderDemo is core.Shader: fragment shaders written in Go's syntax,
+// compiled for each platform's GPU, their uniforms animated values the
+// platform moves. NSH's gallery has no shaders; this page is NSGo's.
+func shaderDemo(cx *core.Scope) core.Node {
+	background := func(cx *core.Scope) core.Node {
+		presses := core.NewSignal(cx, 0)
+		scale, intensity := core.NewSignal(cx, 1.0), core.NewSignal(cx, 1.0)
+		cycle := func(s *core.Signal[float64], values ...float64) func() {
+			return func() {
+				cur := s.GetUntracked()
+				for i, v := range values {
+					if v == cur {
+						s.Set(values[(i+1)%len(values)])
+						return
+					}
 				}
+				s.Set(values[0])
 			}
-			s.Set(values[0])
 		}
-	}
-	field := signalField{
-		Tint: t.muted, Accent: t.accent, Scale: scale.Get, Intensity: intensity.Get,
-		Style: core.Style{Height: core.Pt(320), CornerRadius: radius, Background: t.background, BorderWidth: 1, BorderColor: t.line,
-			AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 12},
-		Children: []core.Node{
-			core.Text{Content: "Signal field", Role: core.RoleHeader, Style: core.Style{FontSize: 22, FontWeight: core.FontWeightSemibold}},
-			core.Text{Content: "Move the pointer over the field and press anywhere.", Style: t.caption()},
-			hstack(t.primary("Start", func() { presses.Set(presses.GetUntracked() + 1) })),
-			t.live(func() string { return fmt.Sprintf("Start pressed %d times", presses.Get()) }),
-		},
-	}
-	// A wave runs through the logo, read as the shader's image.
-	wave := core.NewAnimatedValue(cx, 0)
-	cx.StartAnimation(core.Loop(core.Timing(wave, 2*3.14159265, core.TimingConfig{Duration: 2 * time.Second}), 0), nil)
-	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
-		t.demo("Background", "A Shader runs a fragment shader written in Go's syntax on the GPU. Its clock and ripples are animated values that run with no engine work per frame; the glow is where the pointer is.",
+		field := signalField{
+			Tint: colors.muted, Accent: colors.accent, Scale: scale.Get, Intensity: intensity.Get,
+			Style: core.Style{Height: core.Pt(320), CornerRadius: radiusControl, Background: colors.background, BorderWidth: 1, BorderColor: colors.line,
+				AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 12, Padding: core.All(16)},
+			Children: []core.Node{
+				core.Text{Content: "Signal field", Role: core.RoleHeader, Style: core.Style{FontSize: 22, FontWeight: semibold, Color: colors.text}},
+				core.Text{Content: hint(cx, "Press anywhere on the field.", "Move the pointer over the field and press anywhere."),
+					Style: core.Style{FontSize: 13, Color: colors.muted, TextAlign: core.TextAlignCenter}},
+				button(buttonProps{label: "Start", variant: accentButton}, func() { presses.Update(func(n int) int { return n + 1 }) }),
+				textf(func() string { return fmt.Sprintf("Start pressed %d times", presses.Get()) }, 13, regular, colors.faint),
+			},
+		}
+		return card(cardProps{icon: iconShader, title: "Background", subtitle: "A clock and ripples the platform runs; a glow at the pointer"},
 			field,
-			hstack(t.plain("Scale", cycle(scale, 1, 1.5, 0.75)), t.plain("Intensity", cycle(intensity, 1, 2, 0.5)),
-				t.live(func() string { return fmt.Sprintf("Scale %.2g, intensity %.2g", scale.Get(), intensity.Get()) })),
-		),
-		t.demo("Images", "Shader.Images are what image0At to image3At read, in the image's pixels: here the logo, rippling.",
-			core.Shader{Program: rippleProgram, Images: []core.ImageSource{{Data: logo}}, Uniforms: core.Uniforms{"Phase": wave},
-				Label: "Rippling logo", TestID: "image-shader",
-				Style: core.Style{Width: core.Pt(160), Height: core.Pt(160), CornerRadius: 12, Overflow: core.Hidden}},
-		),
-	}}
+			core.View{Style: core.Style{Direction: core.Row, Gap: 8}, Children: []core.Node{
+				cell(button(buttonProps{label: "Scale", variant: secondary}, cycle(scale, 1, 1.5, 0.75))),
+				cell(button(buttonProps{label: "Intensity", variant: secondary}, cycle(intensity, 1, 2, 0.5))),
+			}},
+			caption("Uniforms", func() string { return fmt.Sprintf("Scale %.2g · Intensity %.2g", scale.Get(), intensity.Get()) }),
+		)
+	}
+	images := func(cx *core.Scope) core.Node {
+		// A wave runs through the logo, read as the shader's image.
+		wave := core.NewAnimatedValue(cx, 0)
+		run := cx.StartAnimation(core.Loop(core.Timing(wave, 2*3.14159265, core.TimingConfig{Duration: 2 * time.Second}), 0), nil)
+		cx.Cleanup(run.Stop)
+		return card(cardProps{icon: iconImage, title: "Images", subtitle: "What image0At to image3At read, in the image's pixels"},
+			core.View{Style: core.Style{AlignItems: core.AlignCenter, Padding: core.Symmetric(8, 0)}, Children: []core.Node{
+				core.Shader{Program: rippleProgram, Images: []core.ImageSource{{Data: logoPNG}}, Uniforms: core.Uniforms{"Phase": wave},
+					Label: "Rippling logo", TestID: "image-shader",
+					Style: core.Style{Width: core.Pt(160), Height: core.Pt(160), CornerRadius: 12, Overflow: core.Hidden}},
+			}},
+			apiLine("Its rows wave with a phase the platform turns", "Shader.Images"),
+		)
+	}
+	source := func(cx *core.Scope) core.Node {
+		return card(cardProps{icon: iconTerminal, title: "The source", subtitle: "Go's syntax, checked and written as MSL, GLSL or HLSL"},
+			core.Scroll{Horizontal: true, Children: []core.Node{core.Text{Content: rippleSource,
+				Style: core.Style{FontFamily: mono, FontSize: 12, LineHeight: 18, Color: colors.code}}}},
+			apiLine("Compiled once, as the program loads", "MustCompileShader"),
+		)
+	}
+	return demoPage(cx, pageProps{}, background, images, source)
 }
 
 // rippleProgram stretches image 0 over the view, its rows waving.
-var rippleProgram = core.MustCompileShader(`package main
+var rippleProgram = core.MustCompileShader(rippleSource)
+
+// rippleSource is the image shader's source.
+const rippleSource = `package main
 
 var Phase float
 
@@ -204,7 +227,7 @@ func Fragment(dst vec4, pos vec2) vec4 {
 	uv.x += 0.03 * sin(uv.y*12 + Phase)
 	return image0At(uv * image0Size())
 }
-`)
+`
 
 // signalSource is Onevra's SignalField shader.
 const signalSource = `package main

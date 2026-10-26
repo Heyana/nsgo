@@ -1,117 +1,321 @@
 package main
 
 import (
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
+	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/base/textview"
+	"github.com/oneo-me/nsgo/base/textview/highlight"
 	"github.com/oneo-me/nsgo/core"
 )
 
-const sampleDoc = `## A document
-
-TextView shows **Markdown**, HTML or blocks with *texts*, views and scroll views. Links report presses: [NSGo](https://github.com/oneo-me/nsgo).
-
-> [!TIP]
-> Alerts, task lists and @mentions, an extension of this page's.
-
-- [x] Code blocks with actions
-- [ ] Tables with their own
-
-` + "```go\nfunc main() {\n\tnsgo.Run(app)\n}\n```" + `
-
-| Part | Styled by |
-|------|-----------|
-| Heading | PartHeading |
-| Table cell | PartTableCell |
-`
-
-// reply is what the streaming demo writes, a few characters at a time.
-const reply = "Sure. A **TextView** follows a reply as it streams: the syntax its end leaves open shows as if closed, " +
-	"and the caret stays at its end.\n\n1. Parse the text again\n2. Rebuild only the last block\n\n" +
-	"```sh\ngo run ./examples/gallery\n```"
-
-// textStyles is the gallery's reading typography: base has none.
-func (t *theme) textStyles() textview.Styles {
-	code := core.Style{FontFamily: core.FontMonospace, FontSize: 13}
+// readingStyles is the gallery's reading typography for every part of a
+// TextView: base has none.
+func readingStyles() textview.Styles {
+	codeFont := core.Style{FontFamily: mono, FontSize: 13}
+	alert := func(c core.Color) core.Style {
+		return core.Style{Gap: 4, Padding: core.Symmetric(8, 12), Borders: core.Edges{Left: 3}, BorderColors: core.EdgeColors{Left: c}, CornerRadius: 4, Background: alpha(c, 0.08)}
+	}
 	return textview.Styles{
-		textview.PartRoot:              {Gap: 10, Color: t.ink, FontSize: 15, LineHeight: 22},
-		textview.PartHeading:           {FontWeight: core.FontWeightSemibold, Margin: core.Edges{Top: 6}},
-		textview.PartHeading2:          {FontSize: 20, LineHeight: 26},
-		textview.PartLink:              {Color: t.accent, TextDecoration: core.TextDecorationUnderline},
-		textview.PartStrong:            {FontWeight: core.FontWeightSemibold},
+		textview.PartRoot:              {Gap: 12, Color: colors.text, FontSize: 15, LineHeight: 23},
+		textview.PartHeading:           {FontWeight: semibold, Margin: core.Edges{Top: 6}, Color: colors.text},
+		textview.PartHeading1:          {FontSize: 26, LineHeight: 32, LetterSpacing: -0.4},
+		textview.PartHeading2:          {FontSize: 20, LineHeight: 26, Padding: core.Edges{Bottom: 6}, Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.line}},
+		textview.PartHeading3:          {FontSize: 17, LineHeight: 23},
+		textview.PartHeading4:          {FontSize: 15, LineHeight: 21},
+		textview.PartLink:              {Color: colors.accent, TextDecoration: core.TextDecorationUnderline, TextDecorationColor: alpha(colors.accent, 0.4)},
+		textview.PartStrong:            {FontWeight: semibold},
 		textview.PartEmphasis:          {FontStyle: core.FontStyleItalic},
-		textview.PartCode:              code.Merge(core.Style{Background: t.sunken}),
-		textview.PartBlockquote:        {Gap: 4, Padding: core.Edges{Left: 12}, Borders: core.Edges{Left: 3}, BorderColors: core.EdgeColors{Left: t.line}},
-		textview.PartAlertTitle:        {FontWeight: core.FontWeightSemibold, Color: t.success},
+		textview.PartStrikethrough:     {TextDecoration: core.TextDecorationLineThrough, Color: colors.muted},
+		textview.PartUnderline:         {TextDecoration: core.TextDecorationUnderline},
+		textview.PartMark:              {Background: alpha(colors.warn, 0.25)},
+		textview.PartSmall:             {FontSize: 12, Color: colors.muted},
+		textview.PartSuperscript:       {FontSize: 11},
+		textview.PartSubscript:         {FontSize: 11},
+		textview.PartCode:              codeFont.Merge(core.Style{Background: colors.raised, CornerRadius: 4, Color: colors.code}),
+		textview.PartKeyboard:          codeFont.Merge(core.Style{FontSize: 12, Background: colors.raised, CornerRadius: 4, Color: colors.text}),
+		textview.PartBlockquote:        {Gap: 4, Padding: core.Edges{Left: 12}, Borders: core.Edges{Left: 3}, BorderColors: core.EdgeColors{Left: colors.border}, Color: colors.muted},
+		textview.PartAlert:             alert(colors.info),
+		textview.PartAlertNote:         alert(colors.info),
+		textview.PartAlertTip:          alert(colors.up),
+		textview.PartAlertImportant:    alert(core.RGB(0x8b5cf6)),
+		textview.PartAlertWarning:      alert(colors.warn),
+		textview.PartAlertCaution:      alert(colors.danger),
+		textview.PartAlertTitle:        {FontWeight: semibold},
+		textview.PartAlertContent:      {Gap: 4},
 		textview.PartList:              {Gap: 4},
 		textview.PartListItem:          {Direction: core.Row, Gap: 8},
-		textview.PartListMarker:        {Color: t.muted},
-		textview.PartTaskMarker:        {Width: core.Pt(16), Height: core.Pt(16), CornerRadius: 4, BorderWidth: 1, BorderColor: t.borderStrong, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Margin: core.Edges{Top: 3}},
-		textview.PartTaskMarkerChecked: {Background: t.accent, BorderColor: t.accent, Color: t.onAccent, FontSize: 11},
+		textview.PartListMarker:        {Color: colors.muted, MinWidth: core.Pt(14)},
+		textview.PartTaskMarker:        {Width: core.Pt(16), Height: core.Pt(16), CornerRadius: 4, BorderWidth: 1, BorderColor: colors.fieldBorder, Background: colors.field, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Margin: core.Edges{Top: 3}},
+		textview.PartTaskMarkerChecked: {Background: colors.accentFill, BorderColor: colors.accentFill, Color: colors.onAccent, FontSize: 11},
+		textview.PartTaskDone:          {Color: colors.muted},
 		textview.PartListItemContent:   {FlexGrow: 1, FlexShrink: 1, Gap: 4},
-		textview.PartCodeBlock:         {Background: t.sunken, CornerRadius: radius, BorderWidth: 1, BorderColor: t.line},
+		textview.PartCodeBlock:         {Background: colors.inset, CornerRadius: radiusControl, BorderWidth: 1, BorderColor: colors.line},
 		textview.PartCodeBlockScroll:   {Padding: core.Symmetric(10, 12)},
-		textview.PartCodeBlockCode:     code.Merge(core.Style{LineHeight: 19}),
+		textview.PartCodeBlockCode:     codeFont.Merge(core.Style{LineHeight: 19, Color: colors.code}),
 		textview.PartCodeBlockHeader:   {Padding: core.All(4)},
-		textview.PartCodeBlockAction:   {Padding: core.Symmetric(2, 8), CornerRadius: 6, Background: t.surface, BorderWidth: 1, BorderColor: t.line, Hover: &core.Style{Background: t.hover}},
+		textview.PartCodeBlockAction:   {Padding: core.Symmetric(2, 8), CornerRadius: 6, Background: colors.raised, BorderWidth: 1, BorderColor: colors.border, FontSize: 12, Color: colors.muted, Hover: &core.Style{Color: colors.text}},
+		textview.PartImage:             {CornerRadius: radiusControl},
 		textview.PartTable:             {Gap: 6},
 		textview.PartTableActions:      {Direction: core.Row, JustifyContent: core.JustifyEnd},
-		textview.PartTableRow:          {Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: t.line}},
+		textview.PartTableScroll:       {CornerRadius: 8, BorderWidth: 1, BorderColor: colors.line},
+		textview.PartTableRow:          {Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.line}},
+		textview.PartTableHead:         {Background: colors.raised},
 		textview.PartTableCell:         {Padding: core.Symmetric(6, 10)},
-		textview.PartTableHeaderCell:   {FontWeight: core.FontWeightSemibold},
-		textview.PartCustom:            {Color: t.accent, FontWeight: core.FontWeightMedium},
+		textview.PartTableHeaderCell:   {FontWeight: semibold},
+		textview.PartRule:              {Height: core.Pt(1), Background: colors.line, Margin: core.Symmetric(4, 0)},
+		textview.PartMath:              codeFont.Merge(core.Style{Color: core.RGB(0x8b5cf6)}),
+		textview.PartMathBlock:         codeFont.Merge(core.Style{Color: core.RGB(0x8b5cf6), Background: core.RGBA(0x8b5cf6, 0.1), CornerRadius: 8, Padding: core.Symmetric(8, 12), AlignItems: core.AlignCenter}),
+		textview.PartDetails:           {Gap: 6, Padding: core.All(10), CornerRadius: radiusControl, BorderWidth: 1, BorderColor: colors.line},
+		textview.PartSummary:           {FontWeight: semibold, Direction: core.Row, Gap: 6},
+		textview.PartSummaryMarker:     {Color: colors.muted},
+		textview.PartFootnotes:         {Gap: 4, Padding: core.Edges{Top: 8}, Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.line}, FontSize: 13, Color: colors.muted},
+		textview.PartFootnote:          {Direction: core.Row, Gap: 6},
+		textview.PartFootnoteLabel:     {Color: colors.faint},
+		textview.PartFootnoteReference: {Color: colors.accent, FontSize: 11},
 	}
 }
 
-func textViewPage(cx *core.Scope, t *theme) core.Node {
-	pressed := core.NewSignal(cx, "nothing yet")
+// copyAction labels a code block's copy button, Copied while it is done.
+func copyAction(cx *core.Scope, a textview.CodeBlockAction) core.Node {
+	return core.Text{ContentFunc: func() string {
+		if a.Done() {
+			return "Copied"
+		}
+		return "Copy code"
+	}}
+}
+
+// imageViewer is a full-screen viewer for an image a TextView shows: the
+// image fitted over a dark scrim, zoomed by pinches up to 4× on the
+// platform. A press on the close button, Escape and back close it.
+func imageViewer(cx *core.Scope, image func() textview.Image, onClose func()) core.Node {
+	env := cx.Env()
+	return base.Dialog{Open: func() bool { return image().Src != "" }, Animation: core.ModalFade, Label: "Image",
+		OnOpenChange: func(o bool, _ base.Reason) {
+			if !o {
+				onClose()
+			}
+		},
+		PopupStyle: core.Style{FlexGrow: 1, AlignSelf: core.AlignStretch},
+		Children: []core.Node{core.View{Style: core.Style{FlexGrow: 1, Background: black(0.92)}, Children: []core.Node{
+			core.Scroll{Style: core.Style{FlexGrow: 1}, MaxZoomScale: 4, MinZoomScale: 1, CenterContent: true, TestID: "image-viewer",
+				Children: []core.Node{core.View{StyleFunc: func() core.Style {
+					w := env.Window()
+					return core.Style{Width: core.Pt(w.Width), Height: core.Pt(w.Height), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Padding: core.All(16)}
+				}, Children: []core.Node{core.Image{SourceFunc: func() core.ImageSource { return core.Src(image().Src) }, ResizeMode: core.Contain,
+					Style: core.Style{Width: core.Pct(100), Height: core.Pct(100)}}}}}},
+			core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(16), Right: core.Pt(16), Bottom: core.Pt(24), AlignItems: core.AlignCenter}, Children: []core.Node{
+				core.Text{ContentFunc: func() string { return image().Alt }, Style: core.Style{FontSize: 14, Color: white(0.85), TextAlign: core.TextAlignCenter}},
+			}},
+			core.View{StyleFunc: func() core.Style {
+				return core.Style{Position: core.Absolute, Top: core.Pt(env.SafeArea().Top + 12), Right: core.Pt(16)}
+			}, Children: []core.Node{press(pressProps{onPress: onClose, label: "Close", scale: 0.9},
+				core.View{Style: core.Style{Width: core.Pt(36), Height: core.Pt(36), CornerRadius: 18, Background: white(0.16), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
+					Children: []core.Node{icon(iconClose, 18, core.RGB(0xffffff))}})}},
+		}}},
+	}
+}
+
+// pressableImages shows a document's images pressable, opening viewing.
+func pressableImages(viewing *core.Signal[textview.Image]) func(cx *core.Scope, img textview.Image) core.Node {
+	return func(cx *core.Scope, img textview.Image) core.Node {
+		s := core.Style{CornerRadius: radiusControl, Width: img.Width, Height: img.Height}
+		if img.Width == (core.Length{}) && img.Height == (core.Length{}) {
+			s.Width, s.AspectRatio = core.Pct(100), 16.0/10
+		}
+		return core.Image{Source: core.Src(img.Src), Label: img.Alt, Style: s, OnPress: func(core.PressEvent) { viewing.Set(img) }}
+	}
+}
+
+// streamTokens splits a reply into the chunks a model would send: words
+// of up to four characters with the space before them.
+func streamTokens(s string) []string {
+	var out []string
+	r := []rune(s)
+	for i := 0; i < len(r); {
+		j := i
+		for j < len(r) && unicode.IsSpace(r[j]) {
+			j++
+		}
+		k := j
+		for k < len(r) && !unicode.IsSpace(r[k]) && k-j < 4 {
+			k++
+		}
+		if k == i {
+			k = i + 1
+		}
+		out = append(out, string(r[i:k]))
+		i = k
+	}
+	return out
+}
+
+func streamingCard(cx *core.Scope) core.Node {
 	streamed := core.NewSignal(cx, "")
-	var stop func() bool
-	stream := func() {
+	streaming := core.NewSignal(cx, false)
+	var stop func()
+	halt := func() {
 		if stop != nil {
 			stop()
+			stop = nil
 		}
+		streaming.Set(false)
+	}
+	cx.Cleanup(halt)
+	play := func() {
+		halt()
+		tokens := streamTokens(tvReply)
+		i := 0
 		streamed.Set("")
-		var step func()
-		step = func() {
-			n := min(len(streamed.GetUntracked())+5, len(reply))
-			streamed.Set(reply[:n])
-			if n < len(reply) {
-				stop = cx.AfterFunc(40*time.Millisecond, step)
+		streaming.Set(true)
+		stop = every(cx, 40*time.Millisecond, func() {
+			if i >= len(tokens) {
+				halt()
+				return
+			}
+			streamed.Set(streamed.GetUntracked() + tokens[i])
+			i++
+		})
+	}
+	return card(cardProps{icon: iconChat, title: "Streaming", subtitle: "A reply as an AI model writes it, with a caret"},
+		core.Dynamic(func(cx *core.Scope) core.Node {
+			on := streaming.Get()
+			var caret core.Node
+			if on {
+				caret = core.View{Style: core.Style{Margin: core.Edges{Left: 2}, Width: core.Pt(8), Height: core.Pt(16), CornerRadius: 2, Background: colors.accent,
+					Animation: core.KeyframeAnimation{Keyframes: core.KeyframesPulse}}}
+			}
+			return textview.TextView{MarkdownFunc: streamed.Get, Styles: readingStyles(), Options: textview.Options{Streaming: on}, StreamingCaret: caret,
+				Selectable: true, Highlighter: highlight.New(cx), CodeBlockActions: []string{textview.CopyAction}, RenderCodeBlockAction: copyAction, TestID: "streamed"}
+		}),
+		core.Dynamic(func(*core.Scope) core.Node {
+			l := "Stream it"
+			if streaming.Get() {
+				l = "Streaming…"
+			}
+			return button(buttonProps{label: l, icon: iconPlay, variant: secondary, disabled: streaming.Get}, play)
+		}),
+	)
+}
+
+func markdownCard(cx *core.Scope) core.Node {
+	pressed := core.NewSignal(cx, "nothing yet")
+	viewing := core.NewSignal(cx, textview.Image{})
+	return card(cardProps{icon: iconText, title: "Markdown", subtitle: "CommonMark and GitHub's: tables, tasks, alerts, footnotes, math, HTML"},
+		textview.TextView{Markdown: tvMarkdown, Styles: readingStyles(), Selectable: true, TestID: "document", Highlighter: highlight.New(cx),
+			CodeBlockActions: []string{textview.CopyAction}, RenderCodeBlockAction: copyAction,
+			OnLinkPress: pressed.Set, RenderImage: pressableImages(viewing)},
+		caption("Link pressed", pressed.Get),
+		imageViewer(cx, viewing.Get, func() { viewing.Set(textview.Image{}) }),
+	)
+}
+
+func htmlCard(cx *core.Scope) core.Node {
+	viewing := core.NewSignal(cx, textview.Image{})
+	return card(cardProps{icon: iconText, title: "HTML", subtitle: "An article page: sections, figures, lists, tables, code"},
+		textview.TextView{HTML: tvHTML, Styles: readingStyles(), Selectable: true, Highlighter: highlight.New(cx), RenderImage: pressableImages(viewing), TestID: "html"},
+		imageViewer(cx, viewing.Get, func() { viewing.Set(textview.Image{}) }),
+	)
+}
+
+// chartBlock is a tiny bar chart of a ```chart block's lines ("Mon 12").
+func chartBlock(source string) core.Node {
+	type bar struct {
+		label string
+		value float64
+	}
+	var bars []bar
+	most := 1.0
+	for _, line := range strings.Split(source, "\n") {
+		f := strings.Fields(line)
+		if len(f) != 2 {
+			continue
+		}
+		var v float64
+		for _, c := range f[1] {
+			if c >= '0' && c <= '9' {
+				v = v*10 + float64(c-'0')
 			}
 		}
-		step()
+		bars = append(bars, bar{f[0], v})
+		most = max(most, v)
 	}
-	// The page's extension, given to every text view on it.
-	textview.Provide(cx, textview.Plugin{
-		Extension: textview.Extension{Name: "mention", Pattern: regexp.MustCompile(`@\w+`)},
-	})
-	action := func(cx *core.Scope, a textview.CodeBlockAction) core.Node {
-		return core.Text{Style: core.Style{FontSize: 12}, ContentFunc: func() string {
-			if a.Done() {
-				return "Copied"
-			}
-			return "Copy"
-		}}
+	var cols []core.Node
+	for _, b := range bars {
+		cols = append(cols, core.View{Style: core.Style{FlexGrow: 1, FlexBasis: core.Pt(0), AlignItems: core.AlignCenter, Gap: 4}, Children: []core.Node{
+			core.View{Style: core.Style{Width: core.Pct(100), CornerRadius: 6, Background: colors.accent, Height: core.Pt(core.Points(b.value / most * 64))}},
+			text(b.label, 11, regular, colors.muted),
+		}})
 	}
-	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
-		t.demo("Markdown", "base/textview's TextView: blocks the app styles part by part, a copy action on code and actions above tables.",
-			textview.TextView{Markdown: sampleDoc, Styles: t.textStyles(), Selectable: true, TestID: "document",
-				CodeBlockActions: []string{textview.CopyAction}, RenderCodeBlockAction: action,
-				OnLinkPress: pressed.Set,
-				RenderTableActions: func(cx *core.Scope, table textview.Table) core.Node {
-					return core.Text{Content: strings.Repeat("·", 3) + " " + strconv.Itoa(len(table.Rows)) + " rows", Style: t.caption()}
-				}},
-			t.live(func() string { return "Pressed " + pressed.Get() }),
-		),
-		t.demo("Streaming", "A reply arriving chunk by chunk, repaired as it streams, with a caret at its end.",
-			flow(t.primary("Stream a reply", stream)),
-			textview.TextView{MarkdownFunc: streamed.Get, Styles: t.textStyles(), Options: textview.Options{Streaming: true},
-				StreamingCaret: core.View{Style: core.Style{Width: core.Pt(8), Height: core.Pt(16), CornerRadius: 2, Background: t.accent,
-					Animation: core.KeyframeAnimation{Keyframes: core.KeyframesPulse}}}},
-		),
-	}}
+	return core.View{Style: core.Style{Height: core.Pt(112), Direction: core.Row, AlignItems: core.AlignEnd, Gap: 8, CornerRadius: 12, BorderWidth: 1, BorderColor: colors.border,
+		Background: colors.inset, Padding: core.All(12)}, Children: cols}
+}
+
+func extensionsCard(cx *core.Scope) core.Node {
+	sky := core.RGB(0x0284c7)
+	emerald := core.RGB(0x059669)
+	if isDark {
+		sky, emerald = core.RGB(0x7dd3fc), core.RGB(0x34d399)
+	}
+	return card(cardProps{icon: iconComponents, title: "Extensions", subtitle: "Mentions, a chart block, a <Callout> tag, a :::note container"},
+		textview.TextView{Markdown: tvExtended, Styles: readingStyles(),
+			Extensions: []textview.Extension{
+				{Name: "mention", Pattern: mentionPattern},
+				{Name: "chart", Language: "chart"},
+				{Name: "callout", Tag: "callout"},
+				{Name: "note", Container: "note"},
+			},
+			RenderCustom: func(cx *core.Scope, node textview.Custom) core.Node {
+				switch node.Name {
+				case "mention":
+					return core.View{Style: core.Style{CornerRadius: 10, Background: alpha(sky, 0.15), Padding: core.Symmetric(0, 8), Transform: core.Transform{TranslateY: 4}},
+						Children: []core.Node{text("@"+node.Attributes["1"], 14, medium, sky)}}
+				case "chart":
+					return chartBlock(node.Text)
+				case "callout":
+					return core.View{Style: core.Style{Direction: core.Row, Gap: 12, CornerRadius: 12, Background: alpha(emerald, 0.1), Padding: core.All(12)}, Children: []core.Node{
+						text("✦", 15, regular, emerald),
+						core.View{Style: fill, Children: []core.Node{textview.TextView{Document: textview.Document{Blocks: node.Children}, Styles: readingStyles()}}},
+					}}
+				}
+				lbl := node.Attributes["label"]
+				if lbl == "" {
+					lbl = node.Name
+				}
+				return core.View{Style: core.Style{Gap: 4, CornerRadius: 12, BorderWidth: 1, BorderColor: alpha(sky, 0.4), Padding: core.All(12)}, Children: []core.Node{
+					core.Text{Content: lbl, Style: core.Style{FontSize: 12, FontWeight: semibold, TextTransform: core.TextTransformUppercase, LetterSpacing: 0.6, Color: sky}},
+					textview.TextView{Document: textview.Document{Blocks: node.Children}, Styles: readingStyles()},
+				}}
+			}},
+	)
+}
+
+const (
+	tvQuestion = "Which **platforms** does NSGo run on?"
+	tvAnswer   = "Every one with a native backend:\n\n- iOS and Android: UIKit and Android views\n- macOS, Windows and Linux: AppKit, Direct2D and GTK 4\n- the web: DOM elements"
+)
+
+// selectionAreaCard is two documents and a plain text that select as one,
+// around a label that stays out.
+func selectionAreaCard(cx *core.Scope) core.Node {
+	return card(cardProps{icon: iconText, title: "SelectionArea", subtitle: "One selection across texts and TextViews"},
+		base.SelectionArea{Style: core.Style{Gap: 12}, Children: []core.Node{
+			textview.TextView{Markdown: tvQuestion, Styles: readingStyles()},
+			textview.TextView{Markdown: tvAnswer, Styles: readingStyles()},
+			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignBaseline, Gap: 8}, Children: []core.Node{
+				core.Text{Content: "Not selectable", Selectable: core.SelectableOff, Style: core.Style{FontSize: 13, Color: colors.faint}},
+				core.Text{Content: "A plain Text joins the selection too.", Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15, Color: colors.text}},
+			}},
+		}},
+		caption(hint(cx, "Long press, then move the handles from the question into the answer", "Drag from the question into the answer"), nil),
+	)
+}
+
+// textViewDemo is base/textview's TextView: Markdown and HTML documents,
+// the app's own syntax, a streaming reply and selection across documents.
+func textViewDemo(cx *core.Scope) core.Node {
+	return demoPage(cx, pageProps{}, streamingCard, markdownCard, selectionAreaCard, extensionsCard, htmlCard)
 }

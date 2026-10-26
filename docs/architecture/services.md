@@ -125,4 +125,4 @@ Shortcuts are scoped to their owner: the platform matches key presses against th
 
 ## Verification
 
-`core` tests each request and answer; `examples/gallery` checks its Services and Window pages with `nsgotest`. The Windows and Linux native tests drive the clipboard, frames, levels, the hiding menu bar, a context menu, the appearance and `Quit` in a window, and Windows' open dialog. `internal/platform/apple` checks HEIC and scaled picks; `picked` checks orientation and scaling. macOS, iOS, Android and the web were checked by running each service.
+`core` tests each request and answer; `examples/gallery` checks its System page with `nsgotest`. The Windows and Linux native tests drive the clipboard, frames, levels, the hiding menu bar, a context menu, the appearance and `Quit` in a window, and Windows' open dialog. `internal/platform/apple` checks HEIC and scaled picks; `picked` checks orientation and scaling. macOS, iOS, Android and the web were checked by running each service.

@@ -27,7 +27,7 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `internal/platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
 | `internal/platform/apple` | Shared Apple code | Layers, images, canvas, Metal shaders, web views, videos and CoreText for macOS and iOS |
 | `internal/platform/*` | Platforms' shared code | Image loading, its disk cache and pure Go decoding ([images](docs/architecture/images.md)), picked photos and other code backends share |
-| `examples/gallery` | `examples/gallery-rs` | Every element, component and service, a page each, with headless tests; its web build is the website |
+| `examples/gallery` | `examples/gallery` | NSH's gallery in Go: a demo of each element, component and service in its design, by group, with headless tests; its web build is the website |
 | `examples/embedded`, `examples/embed-*` | `examples/embed-*` | An app to embed, and desktop, iOS and Android apps embedding it |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `dev`, `test` and `build` from an app's `nsgo.yaml` ([tool](docs/architecture/tool.md)); `apk` packages and signs Android apps in Go |
 | `tools/lucidegen` | — | Regenerates `icons/lucide` from a pinned Lucide checkout |

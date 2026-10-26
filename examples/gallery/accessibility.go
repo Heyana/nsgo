@@ -7,101 +7,121 @@ import (
 	"github.com/oneo-me/nsgo/core"
 )
 
-// accessibilityPage shows what screen readers read beyond roles and
-// labels. Turn on VoiceOver or TalkBack to hear it.
-func accessibilityPage(cx *core.Scope, t *theme) core.Node {
-	count := core.NewSignal(cx, 2)
-	open := core.NewSignal(cx, false)
-	lastAction := core.NewSignal(cx, "none yet")
-	price := core.NewSignal(cx, 120)
-	hidden := core.NewSignal(cx, true)
-	added := core.NewSignal(cx, 0)
-	var result core.Ref
+func always() bool { return true }
 
-	adjust := func(by int) {
-		count.Update(func(n int) int { return min(max(n+by, 0), 10) })
-	}
-	quantity := core.View{Style: row, Role: core.RoleAdjustable, Label: "Quantity", Hint: "Swipe up or down to adjust",
-		TestID: "a11y-quantity",
-		AccessibilityValue: func() core.AccessibilityValue {
-			return core.AccessibilityValue{Max: 10, Now: float32(count.Get()), Text: fmt.Sprintf("%d items", count.Get())}
-		},
-		AccessibilityActions: []core.AccessibilityAction{{Name: core.ActionIncrement}, {Name: core.ActionDecrement}},
-		OnAccessibilityAction: func(name string) {
-			if name == core.ActionIncrement {
-				adjust(1)
-			} else {
-				adjust(-1)
-			}
-		},
-		Children: []core.Node{
+// accessibilityDemo is what screen readers read beyond roles and labels:
+// values and hints, expanded states, actions, groups, hidden elements,
+// live regions and focus. Turn on VoiceOver or TalkBack to hear it. NSH's
+// gallery shows accessibility within its other demos; NSGo gives it a page.
+func accessibilityDemo(cx *core.Scope) core.Node {
+	values := func(cx *core.Scope) core.Node {
+		n := core.NewSignal(cx, 2)
+		adjust := func(by int) { n.Update(func(v int) int { return min(max(v+by, 0), 10) }) }
+		step := func(name iconName, by int, label string) core.Node {
 			// The buttons are for the pointer; the screen reader adjusts
 			// the quantity itself.
-			core.View{AccessibilityElementsHidden: always, Children: []core.Node{t.plain("−", func() { adjust(-1) })}},
-			core.Text{ContentFunc: func() string { return fmt.Sprintf("%d items", count.Get()) },
-				Style: core.Style{FontFamily: core.FontMonospace, MinWidth: core.Pt(64), TextAlign: core.TextAlignCenter}},
-			core.View{AccessibilityElementsHidden: always, Children: []core.Node{t.plain("+", func() { adjust(1) })}},
-		}}
+			return core.View{AccessibilityElementsHidden: always, Children: []core.Node{roundButton(name, label, secondary, 36, func() { adjust(by) })}}
+		}
+		return card(cardProps{icon: iconAccess, title: "Values and hints", subtitle: "An adjustable element: swipe up or down"},
+			core.View{Role: core.RoleAdjustable, Label: "Quantity", Hint: "Swipe up or down to adjust", TestID: "a11y-quantity",
+				AccessibilityValue: func() core.AccessibilityValue {
+					return core.AccessibilityValue{Max: 10, Now: float32(n.Get()), Text: fmt.Sprintf("%d items", n.Get())}
+				},
+				AccessibilityActions: []core.AccessibilityAction{{Name: core.ActionIncrement}, {Name: core.ActionDecrement}},
+				OnAccessibilityAction: func(name string) {
+					if name == core.ActionIncrement {
+						adjust(1)
+					} else {
+						adjust(-1)
+					}
+				},
+				Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 16},
+				Children: []core.Node{
+					step(iconMinus, -1, "Fewer"),
+					figure(func() string { return itoa(n.Get()) }, "items", nil, toneNeutral),
+					step(iconPlus, 1, "More"),
+				}},
+			meter(func() float64 { return float64(n.Get()) / 10 }, toneAccent, -1),
+			apiLine("A range value and the increment and decrement actions", "RoleAdjustable"),
+		)
+	}
 
-	disclosure := core.View{Style: core.Style{Gap: 8}, Children: []core.Node{
-		base.Button{Style: t.secondary(), Label: "Shipping details", Expanded: open.Get, TestID: "a11y-disclosure",
-			OnPress: func(core.PressEvent) { open.Update(func(o bool) bool { return !o }) },
-			Children: []core.Node{core.Text{ContentFunc: func() string {
-				if open.Get() {
-					return "Shipping details ▾"
-				}
-				return "Shipping details ▸"
-			}}}},
-		core.Show{When: open.Get, Then: func(*core.Scope) core.Node {
-			return t.note("Ships in two days from Lisbon.")
-		}},
-	}}
+	expanded := func(cx *core.Scope) core.Node {
+		open := core.NewSignal(cx, false)
+		return card(cardProps{icon: iconAccess, title: "Expanded state", subtitle: "Screen readers say whether it is expanded"},
+			base.Button{Label: "Shipping details", Expanded: open.Get, TestID: "a11y-disclosure", OnPress: func(core.PressEvent) { toggled(open) },
+				Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, MinHeight: core.Pt(44), Active: &core.Style{Opacity: core.Alpha(0.7)}},
+				Children: []core.Node{
+					core.Text{Content: "Shipping details", Style: core.Style{FlexGrow: 1, FontSize: 15, Color: colors.text}},
+					core.View{StyleFunc: func() core.Style {
+						s := core.Style{Transition: core.Transition{Duration: ms(150), Properties: core.TransitionTransform}}
+						if open.Get() {
+							s.Transform.Rotate = 90
+						}
+						return s
+					}, Children: []core.Node{icon(iconChevron, 16, colors.muted)}},
+				}},
+			core.Show{When: open.Get, Then: func(*core.Scope) core.Node { return note("Ships in two days from Lisbon.") }},
+			apiLine("A disclosure", "Expanded"),
+		)
+	}
 
-	message := core.View{Style: core.Style{Background: t.sunken, CornerRadius: radius, Padding: core.All(12), Gap: 4},
-		Accessible: true, TestID: "a11y-message",
-		AccessibilityActions: []core.AccessibilityAction{
-			{Name: "archive", Label: "Archive"}, {Name: "flag", Label: "Flag"},
-			{Name: core.ActionActivate}, {Name: core.ActionEscape}, {Name: core.ActionMagicTap},
-		},
-		OnAccessibilityAction: lastAction.Set,
-		Children: []core.Node{
-			core.Text{Content: "Ana", Style: core.Style{FontWeight: core.FontWeightSemibold}},
-			core.Text{Content: "Lunch on Friday?"},
-		}}
+	actions := func(cx *core.Scope) core.Node {
+		last := core.NewSignal(cx, "none yet")
+		return card(cardProps{icon: iconAccess, title: "Actions", subtitle: "In the screen reader's actions menu"},
+			core.View{Accessible: true, TestID: "a11y-message",
+				AccessibilityActions: []core.AccessibilityAction{
+					{Name: "archive", Label: "Archive"}, {Name: "flag", Label: "Flag"},
+					{Name: core.ActionActivate}, {Name: core.ActionEscape}, {Name: core.ActionMagicTap},
+				},
+				OnAccessibilityAction: last.Set,
+				Style:                 fin.raised.over(core.Style{Background: colors.raised, CornerRadius: radiusControl, BorderWidth: 1, BorderColor: colors.border, Padding: core.All(12), Gap: 4}),
+				Children:              []core.Node{text("Ana", 15, semibold, colors.text), text("Lunch on Friday?", 15, regular, colors.muted)}},
+			caption("Last action", last.Get),
+			apiLine("Custom ones, activate, escape and magic tap", "AccessibilityActions"),
+		)
+	}
 
-	card := core.View{Style: core.Style{Background: t.sunken, CornerRadius: radius, Padding: core.All(12), Gap: 4},
-		Accessible: true, TestID: "a11y-card", Children: []core.Node{
-			core.Text{Content: "Apples", Style: core.Style{FontWeight: core.FontWeightSemibold}},
-			core.Text{ContentFunc: func() string { return fmt.Sprintf("$%d.%02d a kilo", price.Get()/100, price.Get()%100) }},
-		}}
+	grouped := func(cx *core.Scope) core.Node {
+		price := core.NewSignal(cx, 120)
+		return card(cardProps{icon: iconAccess, title: "Grouped elements", subtitle: "One element, labelled with the text inside"},
+			core.View{Accessible: true, TestID: "a11y-card",
+				Style: fin.raised.over(core.Style{Background: colors.raised, CornerRadius: radiusControl, BorderWidth: 1, BorderColor: colors.border, Padding: core.All(12), Gap: 4}),
+				Children: []core.Node{
+					text("Apples", 15, semibold, colors.text),
+					textf(func() string { return fmt.Sprintf("$%d.%02d a kilo", price.Get()/100, price.Get()%100) }, 15, regular, colors.muted),
+				}},
+			button(buttonProps{label: "Change the price", variant: secondary}, func() { price.Update(func(p int) int { return p + 15 }) }),
+		)
+	}
 
-	return core.View{Style: core.Style{Gap: 16}, Children: []core.Node{
-		t.demo("Values and hints", "An adjustable element with a range value and a hint; the screen reader's swipes or volume keys perform its increment and decrement actions.",
-			quantity),
-		t.demo("Expanded state", "Expanded makes an element expandable; screen readers say whether it is expanded.",
-			disclosure),
-		t.demo("Actions", "Custom actions show in the screen reader's actions menu; activate, escape and magic tap replace its own gestures. Accessible makes the message one element.",
-			message,
-			t.live(func() string { return "Last action: " + lastAction.Get() }),
-		),
-		t.demo("Grouped elements", "Accessible reads the card as one element, labelled with the text inside, which follows the price.",
-			card,
-			t.plain("Change the price", func() { price.Update(func(p int) int { return p + 15 }) }),
-		),
-		t.demo("Hidden elements", "AccessibilityElementsHidden hides decoration from screen readers while it shows.",
-			core.View{AccessibilityElementsHidden: hidden.Get, TestID: "a11y-hidden",
-				Children: []core.Node{t.note("✦ ✦ ✦ decoration ✦ ✦ ✦")}},
-			t.toggle("Hide the decoration", hidden.Get, hidden.Set),
-		),
-		t.demo("Live regions", "A live region's changes are announced as they happen, without moving focus.",
-			core.Text{LiveRegion: core.LiveRegionPolite, TestID: "a11y-live",
-				ContentFunc: func() string { return fmt.Sprintf("%d in the basket", added.Get()) }},
-			t.plain("Add to basket", func() { added.Update(func(n int) int { return n + 1 }) }),
-		),
-		t.demo("Focus", "Ref.SetAccessibilityFocus moves the screen reader to an element, as after a search.",
-			base.Button{Style: t.secondary(), Label: "Search apples", TestID: "a11y-search", OnPress: func(core.PressEvent) { result.SetAccessibilityFocus() },
-				Children: []core.Node{core.Text{Content: "Search apples"}}},
-			core.Text{Ref: &result, Content: "3 results for “apples”", TestID: "a11y-result"},
-		),
-	}}
+	hidden := func(cx *core.Scope) core.Node {
+		h := core.NewSignal(cx, true)
+		return card(cardProps{icon: iconAccess, title: "Hidden elements", subtitle: "Decoration screen readers skip"},
+			core.View{AccessibilityElementsHidden: h.Get, TestID: "a11y-hidden", Style: core.Style{AlignItems: core.AlignCenter},
+				Children: []core.Node{text("✦ ✦ ✦  decoration  ✦ ✦ ✦", 15, regular, colors.faint)}},
+			switchRow("Hide the decoration", "AccessibilityElementsHidden", "", h.Get, h.Set),
+		)
+	}
+
+	live := func(cx *core.Scope) core.Node {
+		added := core.NewSignal(cx, 0)
+		return card(cardProps{icon: iconAccess, title: "Live regions", subtitle: "Changes announced without moving focus"},
+			core.Text{LiveRegion: core.LiveRegionPolite, TestID: "a11y-live", ContentFunc: func() string { return fmt.Sprintf("%d in the basket", added.Get()) },
+				Style: core.Style{FontSize: 17, FontWeight: medium, Color: colors.text}},
+			button(buttonProps{label: "Add to basket", icon: iconPlus}, func() { added.Update(func(n int) int { return n + 1 }) }),
+			apiLine("Announced as it changes", "LiveRegionPolite"),
+		)
+	}
+
+	focus := func(cx *core.Scope) core.Node {
+		result := &core.Ref{}
+		return card(cardProps{icon: iconAccess, title: "Focus", subtitle: "Moving the screen reader, as after a search"},
+			button(buttonProps{label: "Search apples", variant: secondary, testID: "a11y-search"}, result.SetAccessibilityFocus),
+			core.Text{Ref: result, Content: "3 results for “apples”", TestID: "a11y-result", Style: core.Style{FontSize: 15, Color: colors.text}},
+			apiLine("Moves the reader here", "Ref.SetAccessibilityFocus"),
+		)
+	}
+
+	return demoPage(cx, pageProps{}, values, expanded, actions, grouped, hidden, live, focus)
 }
