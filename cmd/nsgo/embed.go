@@ -58,6 +58,12 @@ void NSGoStart(void);
 /// nil when the prop goes.
 - (void)setProp:(NSString *)name value:(nullable id)value;
 @optional
+/// Sets a prop the app animates, on the frames it changes; without it
+/// setProp receives the number.
+- (void)setAnimatedNumber:(NSString *)name value:(double)value;
+/// Sets a color prop the app animates, as 0xAARRGGBB, on the frames it
+/// changes; without it setProp receives the number.
+- (void)setAnimatedColor:(NSString *)name argb:(uint32_t)argb;
 /// Runs a command the app sent (core.Ref.Command).
 - (void)command:(NSString *)name args:(nullable id)args;
 /// Releases what the component holds, once its element or app is gone.

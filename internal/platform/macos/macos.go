@@ -1247,8 +1247,6 @@ func (s *surface) apply(b *driver.MountBatch) {
 				apple.OnMain(finish)
 			}
 			continue
-		case driver.ItemToast:
-			continue
 		case driver.ItemImageInfo:
 			apple.ImageInfo(it, s.engine.Dispatch)
 			continue

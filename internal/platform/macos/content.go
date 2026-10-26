@@ -133,7 +133,7 @@ func (v *view) drawLayer() objc.ID {
 	// and gradients cost more than glyphs.
 	layer.Send(sel("setDrawsAsynchronously:"), v.drawing != nil)
 	layer.Send(selSetContentsScale, float64(v.surface.env.PixelRatio))
-	layer.Send(selSetZPosition, float64(contentZ))
+	layer.Send(selSetZPosition, apple.Z(contentZ))
 	layer.Send(selSetFrame, apple.Rect(0, 0, float64(v.frame.Size.Width), float64(v.frame.Size.Height)))
 	v.native.Send(selLayer).Send(sel("addSublayer:"), layer)
 	layer.Send(selRelease) // its host keeps it

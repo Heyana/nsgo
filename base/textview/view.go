@@ -43,9 +43,9 @@ type TextView struct {
 	// them, again when what it reads changes.
 	Styles    Styles
 	StyleFunc func(Part) core.Style
-	// Selectable makes the view a selection area: one selection runs
+	// Selectable makes the view a selectable view: one selection runs
 	// across its blocks, and on into the texts around inside an outer
-	// area.
+	// selectable view.
 	Selectable bool
 	// Highlighter colors code blocks; without one their code is plain.
 	Highlighter Highlighter
@@ -150,9 +150,9 @@ func (tv TextView) Render(cx *core.Scope) core.Node {
 	count := core.NewMemo(cx, func() int { return len(doc.Get().Blocks) })
 	notes := core.NewMemoFunc(cx, func() []Footnote { return doc.Get().Footnotes }, equal[[]Footnote])
 	return core.View{
-		StyleFunc:     func() core.Style { return r.style(PartRoot) },
-		SelectionArea: tv.Selectable,
-		TestID:        tv.TestID,
+		StyleFunc:  func() core.Style { return r.style(PartRoot) },
+		Selectable: tv.Selectable,
+		TestID:     tv.TestID,
 		Children: []core.Node{
 			core.Each(rows, func(r row) rowKey { return rowKey{r.index, r.block.Kind()} },
 				func(cx *core.Scope, item func() row, index func() int) core.Node {

@@ -121,3 +121,7 @@ func slicesDeleteStopped(ts []*manualTimer) []*manualTimer {
 	}
 	return out
 }
+
+// Now returns the time on the graph's clock: the system's, or a test's
+// manual clock.
+func (cx *Scope) Now() time.Time { return cx.rt.clock.Now() }

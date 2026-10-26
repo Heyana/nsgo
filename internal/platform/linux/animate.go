@@ -134,6 +134,7 @@ func (w *window) showAnimated() {
 		w.moved(v)
 	})
 	w.changedCanvases()
+	w.changedNatives()
 	w.changedShaders()
 	w.repinBound()
 }

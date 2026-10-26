@@ -204,6 +204,7 @@ func (w *window) animatedChanged() {
 		invalidateRect.Call(w.hwnd, 0, 0)
 	}
 	w.changedCanvases()
+	w.changedNatives()
 	w.changedShaders()
 	w.repinBound()
 }

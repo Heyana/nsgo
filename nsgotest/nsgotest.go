@@ -120,10 +120,9 @@ type App struct {
 	// default answer: its cancel button, else dismissed when cancelable,
 	// else the step fails.
 	OnAlert func(driver.AlertConfig) int
-	// Toasts are the toasts the app showed; Appearance the appearance it
-	// last forced; Quits how often it asked to quit; BackUnhandled how
-	// many backs nothing took, which leave an Android app.
-	Toasts        []string
+	// Appearance is the appearance the app last forced; Quits how often
+	// it asked to quit; BackUnhandled how many backs nothing took, which
+	// leave an Android app.
 	Appearance    driver.Appearance
 	Quits         int
 	BackUnhandled int

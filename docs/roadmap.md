@@ -4,20 +4,6 @@ This plan lists what NSGo still lacks compared with NSH's 0.3.0 release (tag `v0
 
 References are files in `nsh/docs/dev/` unless they give a path from `nsh/`, with the bullet or section to read in brackets. To refresh the plan for NSH's next release, check out its tag in `nsh/`, then read `git log v0.3.0..HEAD` there and the documents it changed.
 
-## NSH 0.3.0's API
-
-NSH 0.3.0 replaced wrapper components with styles and props, and the system's toast with `nsh/base`'s.
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| Platform props | `js-modules.md` (platform-only props) | Props only iOS, only Android or only the desktops have are grouped in a field of their own, as NSH's `ios`, `android` and `desktop` objects; what two of them have stays top-level |
-| Environment insets | `styles.md` (environment variables), `website/elements/keyboard.md` | Padding and margin take the safe area's and the software keyboard's insets as terms that follow them, the keyboard's moving with it natively; `SafeAreaView` and `KeyboardAvoidingView` leave `base` |
-| Selectable views | `text.md` (selectable views) | `View.Selectable` makes the texts inside select together, replacing `View.SelectionArea` and `base.SelectionArea` |
-| Toasts | `components.md` (toasts), `website/elements/toast.md` | `base` has `Toast`, `ToastStack` and `ToastManager`, `gpui-base`'s toasts, and `Scope.ShowToast` and the platforms' toasts are gone |
-| Animated native props | `embedding.md` (native components) | A `Native` component's props take animated values, which the platform's frame clock hands Go, Swift and Java components as numbers or colors on the frames they change |
-| Video sound | `website/modules/nsh-video.md` (sound and other apps) | `Video` can play speech in iOS's silent mode, pausing other apps' audio or mixing with it, and hold Android's audio focus while it plays |
-| Gallery | `examples/gallery` | The gallery has NSH's changes since `b2af2f21`, the commit it was translated from, that need none of the components below: the Collapsing header demo, toasts on the Overlays page and the other pages' changes |
-
 ## Code and data components
 
 Each item includes the component's demo in the gallery, from NSH's gallery or, for `Table`, its website.

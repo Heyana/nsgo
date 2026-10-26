@@ -46,7 +46,7 @@ A display link runs only in the run loop mode object it is given: Foundation's `
 - Create: the top view of each subtree the batch inserts fades in, or grows from its center.
 - Delete: the top view of each subtree the batch deletes keeps drawing where it was while it fades or shrinks away, its ID already free for reuse. Views it holds go with it.
 - Reduced motion turns layout animations off. Web Animations play them on the web, springs sampled into CSS `linear()`.
-- `LayoutKeyboard` is the software keyboard's curve, which `KeyboardAvoidingView` animates on: UIKit's as a Bézier, timed from the keyboard notification on iOS however late the batch arrives, and the IME's interpolator on Android. NSH's alignment with Android's `WindowInsetsAnimation` is not ported.
+- `LayoutKeyboard` is the software keyboard's curve, which a style's `EnvKeyboard` terms animate on: UIKit's as a Bézier, timed from the keyboard notification on iOS however late the batch arrives, and the IME's interpolator on Android. NSH's alignment with Android's `WindowInsetsAnimation` is not ported.
 
 ## Where Go departs from NSH
 

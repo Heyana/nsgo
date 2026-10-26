@@ -43,6 +43,11 @@ type Animator struct {
 	canvases      map[NodeID]*acanvas
 	canvasesStale bool
 
+	// natives are the native views with bound props, and nativesStale
+	// says values changed since ChangedNatives looked.
+	natives      map[NodeID]*anative
+	nativesStale bool
+
 	// runStarts are where the values each run moves were as it started,
 	// for a reset; settling are the snapping diff clamps easing to a
 	// bound.
@@ -62,7 +67,7 @@ func NewAnimator(report func(Event)) *Animator {
 	return &Animator{nodes: map[uint32]*anode{}, runs: map[uint32]*arun{}, views: map[NodeID]*aview{},
 		pans: map[NodeID][2]uint32{}, scrolls: map[NodeID][2]uint32{}, report: report, changed: map[NodeID]bool{},
 		pinches: map[NodeID]uint32{}, rotations: map[NodeID]uint32{}, pulls: map[NodeID]uint32{}, starts: map[NodeID][4]float64{},
-		shaders: map[NodeID]*ashader{}, canvases: map[NodeID]*acanvas{}, runStarts: map[uint32][]valueStart{},
+		shaders: map[NodeID]*ashader{}, canvases: map[NodeID]*acanvas{}, natives: map[NodeID]*anative{}, runStarts: map[uint32][]valueStart{},
 		settling: map[*anode]bool{}}
 }
 
@@ -107,6 +112,15 @@ type acanvas struct {
 	cols  []Color
 	sent  bool
 	ops   []DrawOp
+}
+
+// anative is a native view's bound props and the values ChangedNatives
+// last handed over, unset before the first.
+type anative struct {
+	bindings []NativeBinding
+	nums     []float64
+	cols     []Color
+	sent     []bool
 }
 
 // AnimatedValues are the bound properties of a view, as the animator
@@ -300,6 +314,7 @@ func (a *Animator) touch() {
 	}
 	a.shadersStale = true
 	a.canvasesStale = true
+	a.nativesStale = true
 }
 
 func (a *Animator) value(id uint32) *anode {
@@ -752,10 +767,48 @@ func (a *Animator) CanvasOps(view NodeID, d *Drawing) []DrawOp {
 	return c.ops
 }
 
+// BindNative has animated nodes drive props of native view's component,
+// replacing what it bound before (NativeConfig.Bindings). ChangedNatives
+// hands every bound value over next.
+func (a *Animator) BindNative(view NodeID, bindings []NativeBinding) {
+	if len(bindings) == 0 {
+		delete(a.natives, view)
+		return
+	}
+	n := len(bindings)
+	a.natives[view] = &anative{bindings: bindings, nums: make([]float64, n), cols: make([]Color, n), sent: make([]bool, n)}
+	a.nativesStale = true
+}
+
+// ChangedNatives calls fn with each bound prop of a native view whose
+// value changed since it last handed it over: a number, or a color when
+// the binding's node outputs one. Backends pass them to SetAnimatedProp.
+func (a *Animator) ChangedNatives(fn func(view NodeID, b NativeBinding, num float64, col Color)) {
+	if !a.nativesStale {
+		return
+	}
+	a.nativesStale = false
+	for id, nv := range a.natives {
+		for i, b := range nv.bindings {
+			var num float64
+			var col Color
+			if n := a.nodes[b.Node]; n != nil {
+				num, col = a.eval(n)
+			}
+			if nv.sent[i] && num == nv.nums[i] && col == nv.cols[i] {
+				continue
+			}
+			nv.sent[i], nv.nums[i], nv.cols[i] = true, num, col
+			fn(id, b, num, col)
+		}
+	}
+}
+
 // Forget drops what is bound to a deleted view.
 func (a *Animator) Forget(view NodeID) {
 	delete(a.canvases, view)
 	delete(a.shaders, view)
+	delete(a.natives, view)
 	delete(a.views, view)
 	delete(a.pans, view)
 	delete(a.scrolls, view)

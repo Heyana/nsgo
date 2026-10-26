@@ -3,37 +3,11 @@ package base_test
 import (
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/nsgotest"
 )
-
-func TestSafeAreaAndKeyboard(t *testing.T) {
-	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return base.SafeAreaView{Edges: base.Top | base.Bottom, Style: core.Style{Padding: core.All(10)}, TestID: "safe",
-			Children: []core.Node{
-				base.KeyboardAvoidingView{TestID: "avoid", Children: []core.Node{core.Text{Content: "x", Style: core.Style{FontSize: 17}}}},
-			}}
-	})
-	app.SetEnvironment(core.Environment{SafeArea: core.Edges{Top: 44, Bottom: 34, Left: 5}, KeyboardHeight: 300})
-	safe, avoid := app.Find("id:safe"), app.Find("id:avoid")
-	if got := avoid.Frame.Origin; got != (core.Point{X: 10, Y: 54}) {
-		t.Errorf("content origin = %v, want insets added to padding on top only", got)
-	}
-	// Text 17 points tall is 20.4, rounded up to 21.
-	if got, want := safe.Frame.Size.Height, core.Points(10+44+300+21+10+34); got != want {
-		t.Errorf("height = %v, want %v", got, want)
-	}
-	app.LayoutAnimation = nil
-	app.SetEnvironment(core.Environment{SafeArea: core.Edges{Top: 44, Bottom: 34, Left: 5}, KeyboardHeight: 0,
-		KeyboardDuration: 280 * time.Millisecond})
-	if a := app.LayoutAnimation; a == nil || a.Update == nil || a.Update.Curve != core.LayoutKeyboard ||
-		a.Update.Duration != 280*time.Millisecond {
-		t.Errorf("the keyboard going animates %+v, want its frames on the keyboard's curve and time", a.Update)
-	}
-}
 
 func TestPopupsNavAndAlerts(t *testing.T) {
 	var reasons []string

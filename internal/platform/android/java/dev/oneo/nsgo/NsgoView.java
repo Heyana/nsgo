@@ -1044,7 +1044,10 @@ public class NsgoView extends FrameLayout {
         }
         boolean handled = super.dispatchTouchEvent(e);
         if (down) gestures.down(e);
-        return handled;
+        // While a node listens, the surface keeps the fingers though no
+        // view took the down: a responder that claims on a move, as a
+        // toast's swipe, hears the moves only then.
+        return handled || touching;
     }
 
     /** Whether the fingers are reported as EventTouch: from a first finger down while a node listens. */
@@ -1451,13 +1454,6 @@ public class NsgoView extends FrameLayout {
                 else answerPick(p, "");
                 break;
             }
-            case Protocol.ITEM_TOAST: {
-                String text = Protocol.readString(in);
-                boolean long_ = Protocol.flag(in.readUnsignedByte(), 0);
-                android.widget.Toast.makeText(getContext(), text,
-                        long_ ? android.widget.Toast.LENGTH_LONG : android.widget.Toast.LENGTH_SHORT).show();
-                break;
-            }
             case Protocol.ITEM_APPEARANCE:
                 appearance = in.readUnsignedByte();
                 systemBars();
@@ -1659,6 +1655,7 @@ public class NsgoView extends FrameLayout {
             if (n == null) return;
             if (n.canvas != null) n.canvas.patch(c.nums, c.colors);
             if (n.shader != null) n.shader.patch(c.nums);
+            if (n.bound != null && n.embedded != null) n.embedded.animate(n.bound, c.nums, c.colors);
         });
     }
 
@@ -1886,6 +1883,19 @@ public class NsgoView extends FrameLayout {
             String name = Protocol.readString(in);
             Object value = Embedded.parse(Protocol.readString(in));
             if (n.embedded != null) n.embedded.setProp(name, value);
+        }
+        if (Protocol.flag(in.readUnsignedByte(), 0)) {
+            // Animated props, driven as a canvas's arguments are.
+            int count = in.readInt();
+            n.bound = new Embedded.Bound(count);
+            int[] nodes = new int[count];
+            for (int i = 0; i < count; i++) {
+                n.bound.names[i] = Protocol.readString(in);
+                nodes[i] = in.readInt();
+                n.bound.colors[i] = Protocol.flag(in.readUnsignedByte(), 0);
+            }
+            animator.bindCanvas(n.id, nodes);
+            applyAnimated();
         }
         nativeSize(n);
     }
@@ -3362,6 +3372,8 @@ public class NsgoView extends FrameLayout {
         /** A native view's component view, and whether one was asked for. */
         Embedded embedded;
         boolean embedTried;
+        /** A native view's animated props. */
+        Embedded.Bound bound;
         /** A screen's system header, and the holder of a header view in one. */
         Header header;
         Header.Holder holder;

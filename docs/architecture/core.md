@@ -23,6 +23,7 @@ Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canv
 - State styles merge over the rest in NSH's order: `Checked`, `Indeterminate` and `Selected`, which the app sets, then `Hover`, `Focus` and `Active`, then `Disabled` over all; a `GroupStyle` follows its group's states first ([styles](styles.md)).
 - The engine tracks `Hover`, `Focus` and `Active` from the events it asks the platform to report. Windows and Linux hit-test hovers themselves (`internal/platform/hover`).
 - `PartStates` styles a view in states it does not report, as a control's part, NSH's `project_checked`.
+- Props only one platform has sit in a field named after it, as NSH's `ios`, `android` and `desktop` objects: `View.IOS.BackdropMaterial`, `View.Desktop.WindowDrag`, `Input.IOS.KeyboardAppearance`, `Modal.IOS.SupportedOrientations`, `Modal.Android.StatusBarTranslucent`. What two platforms have stays top-level, so `InputAccessoryViewID` and `LiveRegion`, which NSH keeps for iOS or Android only, are top-level because NSGo implements them on more.
 - A `Ref`, usable at its zero value, names a mounted element for anchoring, focus, scrolling and its bounds.
 
 A component is any type whose `Render(cx) Node` returns its nodes, like `http.Handler`. Its fields are its props. `Render` runs once under a scope of its own, so `Key.Provide` and cleanups stay inside it. `Func` turns a function into a component.
@@ -55,7 +56,7 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - iOS collapses a large title into the bar once its scroll view scrolled half the title's row under it, and brings it back above that, as UIKit's navigation controller does.
 - `mobile.TabBar` is the system's tab bar, a native component iOS (`UITabBar`) and Android (a Material 3 navigation bar drawn by the runtime's `TabBar.java`) register themselves; elsewhere it shows nothing.
 - iOS presents a modal with `ModalPageSheet` or `ModalFormSheet` as a sheet view controller, which reports its size (`EventModalSize`) and its swipes (`EventRequestClose`, "swipe"); a swiped sheet stays hidden until the app removes it.
-- `SupportedOrientations` goes to the controllers' `supportedInterfaceOrientations`. On Android a modal over the surface starts below the status bar unless `StatusBarTranslucent`. Other platforms ignore these.
+- `IOS.SupportedOrientations` goes to the controllers' `supportedInterfaceOrientations`. On Android a modal over the surface starts below the status bar unless `Android.StatusBarTranslucent`.
 - `EventPressOutside` reports presses outside an overlay, ignoring those on its anchor or on overlays above it.
 - A view's `Tooltip` is a hint overlay above it that the core shows after half a second of hover on desktops; `Overlay.PointerEvents` keeps it from taking the pointer.
 - A `mobile.InputAccessoryView` is a layout root as wide as the surface and as tall as its content, which no view holds: its views are sent before the tree's, and an input's `InputConfig.Accessory` names it.

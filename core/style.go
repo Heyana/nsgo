@@ -62,6 +62,9 @@ type Style struct {
 	// space, centering a node between two of them.
 	AutoMargin Sides
 	Padding    Edges
+	// PaddingEnv and MarginEnv add the safe area's insets or the software
+	// keyboard's height to the padding and margin on their edges.
+	PaddingEnv, MarginEnv EnvEdges
 	// Gap separates children; RowGap and ColumnGap override it per axis.
 	Gap, RowGap, ColumnGap Points
 
@@ -124,13 +127,11 @@ type Style struct {
 	// Filters change what the node and its children draw, in order.
 	Filters []Filter
 	// BackdropFilters change what is behind the node, seen through its
-	// background: Blur frosts it. iOS draws the blur with
-	// BackdropMaterial's system material, and GlassEffect draws Liquid
-	// Glass in its place on iOS and macOS 26; give a glass view a blur to
-	// fall back to.
-	BackdropFilters  []Filter
-	BackdropMaterial BackdropMaterial
-	GlassEffect      GlassEffect
+	// background: Blur frosts it, with a view's IOS.BackdropMaterial on
+	// iOS. GlassEffect draws Liquid Glass in its place on iOS and macOS
+	// 26; give a glass view a blur to fall back to.
+	BackdropFilters []Filter
+	GlassEffect     GlassEffect
 	// Mask draws the node, backdrop included, as much as the gradient's
 	// alpha says.
 	Mask *Gradient
@@ -559,6 +560,8 @@ func (s Style) Merge(o Style) Style {
 	set(&s.Margin, o.Margin)
 	set(&s.AutoMargin, o.AutoMargin)
 	set(&s.Padding, o.Padding)
+	set(&s.PaddingEnv, o.PaddingEnv)
+	set(&s.MarginEnv, o.MarginEnv)
 	set(&s.Gap, o.Gap)
 	set(&s.RowGap, o.RowGap)
 	set(&s.ColumnGap, o.ColumnGap)
@@ -594,7 +597,6 @@ func (s Style) Merge(o Style) Style {
 	setSlice(&s.Shadows, o.Shadows)
 	setSlice(&s.Filters, o.Filters)
 	setSlice(&s.BackdropFilters, o.BackdropFilters)
-	set(&s.BackdropMaterial, o.BackdropMaterial)
 	set(&s.GlassEffect, o.GlassEffect)
 	set(&s.Mask, o.Mask)
 	set(&s.BlendMode, o.BlendMode)
@@ -897,7 +899,6 @@ func (s *Style) viewStyle(size Size, color Color, rtl bool) driver.ViewStyle {
 		BackfaceHidden:    s.BackfaceHidden,
 		ChildPerspective:  max(s.Perspective, 0),
 		BlendMode:         s.BlendMode,
-		Material:          s.BackdropMaterial,
 		Glass:             s.GlassEffect,
 		Transition:        s.Transition,
 		Animation:         s.Animation,

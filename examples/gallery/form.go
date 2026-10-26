@@ -326,7 +326,7 @@ func formDemo(cx *core.Scope) core.Node {
 					base.Input{Ref: refs[6], KeyboardType: core.KeyboardDecimal, Placeholder: "0.00"}),
 			),
 			formField(fieldProps{label: "Offset", hint: label("dark keyboard (iOS)")},
-				base.Input{KeyboardAppearance: core.KeyboardAppearanceDark, Placeholder: "-12.5"}),
+				base.Input{IOS: core.IOSInputProps{KeyboardAppearance: core.KeyboardAppearanceDark}, Placeholder: "-12.5"}),
 			formField(fieldProps{label: "Verification code", hint: func() string { return fmt.Sprintf("%d/6", len(code.Get())) }, next: refs[8]},
 				base.Input{Ref: refs[7], TestID: "code", Value: code.Get, OnChange: code.Set, KeyboardType: core.KeyboardNumber, MaxLength: 6, Placeholder: "······",
 					Style: core.Style{LetterSpacing: 10, FontSize: 22, FontWeight: medium, TextAlign: core.TextAlignCenter}}),
@@ -402,7 +402,7 @@ func formDemo(cx *core.Scope) core.Node {
 		return card(cardProps{title: "More keyboards", subtitle: "Sheets and bars that ride on the keyboard", flush: true},
 			inset(insetProps{exact: true},
 				linkRowFirst(true, iconComponents, "Inputs in a sheet", "Presentation: ModalPageSheet", func() { sheetOpen.Set(true) }),
-				linkRowFirst(false, iconText, "A message bar at the bottom", "KeyboardAvoidingView", func() { shell.push(messageBar) }),
+				linkRowFirst(false, iconText, "A message bar at the bottom", "PaddingEnv: EnvKeyboard", func() { shell.push(messageBar) }),
 			))
 	}
 
@@ -412,7 +412,7 @@ func formDemo(cx *core.Scope) core.Node {
 	}
 	dialog := base.Dialog{Open: sheetOpen.Get, Presentation: core.ModalPageSheet, OnOpenChange: func(o bool, _ base.Reason) { sheetOpen.Set(o) },
 		PopupStyle: core.Style{FlexGrow: 1, AlignSelf: core.AlignStretch}, Label: "A sheet",
-		Children: []core.Node{base.SafeAreaView{Edges: base.Top | base.Bottom | base.Left | base.Right, Style: core.Style{FlexGrow: 1, Background: colors.background}, Children: []core.Node{
+		Children: []core.Node{core.View{Style: core.Style{PaddingEnv: core.EnvAll(core.EnvSafeArea), FlexGrow: 1, Background: colors.background}, Children: []core.Node{
 			core.Scroll{Style: core.Style{FlexGrow: 1}, Behavior: core.ScrollBehavior{KeyboardDismissMode: core.KeyboardDismissInteractive}, Children: []core.Node{
 				core.View{Style: core.Style{Padding: core.Edges{Top: 16, Right: 16, Bottom: 40, Left: 16}, Gap: 16}, Children: []core.Node{
 					core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Edges{Top: 8, Left: 4}}, Children: []core.Node{
@@ -458,7 +458,7 @@ func messageBar(cx *core.Scope) base.NavPage {
 	env := cx.Env()
 	messages := core.NewSignalFunc(cx, []message{
 		{false, "The bar below sits outside the scroll view."},
-		{false, "KeyboardAvoidingView lifts it with the keyboard. Say something."},
+		{false, "Bottom padding of EnvKeyboard lifts it with the keyboard. Say something."},
 	}, slices.Equal)
 	draft := core.NewSignal(cx, "")
 	send := func() {
@@ -469,7 +469,7 @@ func messageBar(cx *core.Scope) base.NavPage {
 		messages.Update(func(m []message) []message { return append(slices.Clone(m), message{true, d}) })
 		draft.Set("")
 	}
-	return screen("Message bar", nil, base.KeyboardAvoidingView{Style: core.Style{FlexGrow: 1, Background: colors.background}, Children: []core.Node{
+	return screen("Message bar", nil, core.View{Style: core.Style{FlexGrow: 1, Background: colors.background, PaddingEnv: core.EnvEdges{Bottom: core.EnvKeyboard}}, Children: []core.Node{
 		core.Scroll{Style: core.Style{FlexGrow: 1}, Behavior: core.ScrollBehavior{KeyboardDismissMode: core.KeyboardDismissInteractive}, Children: []core.Node{
 			core.View{Style: core.Style{Padding: core.All(16), Gap: 8}, Children: []core.Node{
 				core.Text{Content: "Today", Style: core.Style{AlignSelf: core.AlignCenter, FontSize: 12, FontWeight: medium, Color: colors.faint, Padding: core.Edges{Bottom: 8}}},

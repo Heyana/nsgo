@@ -102,15 +102,18 @@ type node struct {
 	style  Style  // base and dyn merged, with the states' styles
 	states uint8
 	// color is the text color the node has, for CurrentColor.
-	color  Color
-	h      handlers
-	props  driver.ViewProps
-	text   *textNode
-	input  *inputNode
-	scroll *scrollNode
-	image  *imageNode
-	hoist  *hoistNode // an overlay's or a modal's
-	hosted []*node    // the overlays and modals this root view or modal hosts
+	color Color
+	h     handlers
+	props driver.ViewProps
+	// material is a view's IOS.BackdropMaterial.
+	material driver.BackdropMaterial
+	env      *envValues // what its padding's and margin's terms come to
+	text     *textNode
+	input    *inputNode
+	scroll   *scrollNode
+	image    *imageNode
+	hoist    *hoistNode // an overlay's or a modal's
+	hosted   []*node    // the overlays and modals this root view or modal hosts
 	// hidden is set, as the last layout found, for a node DisplayNone
 	// hides: its own or a shadow ancestor's, across hoisting too.
 	hidden bool
@@ -814,6 +817,14 @@ func (t *Tree) bindStyle(cx *Scope, n *node, base Style, fn func() Style) {
 	t.restyle(n)
 	t.syncPosition(n)
 	if fn == nil {
+		if safe, keyboard := base.envUses(); safe || keyboard {
+			cx.renderEffect(func() {
+				t.readEnv(cx, n, &n.base)
+				if t.restyle(n) {
+					t.markLayout(n)
+				}
+			})
+		}
 		return
 	}
 	cx.renderEffect(func() {
@@ -821,6 +832,7 @@ func (t *Tree) bindStyle(cx *Scope, n *node, base Style, fn func() Style) {
 			n.dyn = new(Style)
 		}
 		*n.dyn = fn()
+		t.readEnv(cx, n, &n.base, n.dyn)
 		changed := t.restyle(n)
 		t.syncPosition(n)
 		if changed {
@@ -853,6 +865,7 @@ func (t *Tree) restyle(n *node) bool {
 	}
 	z, sticky := n.stackRank()
 	n.style = merged.withStates(n.states, p, g)
+	n.applyEnv()
 	if z2, sticky2 := n.stackRank(); z2 != z || sticky2 != sticky {
 		if parent := n.nativeParent(); parent != nil {
 			t.reorder(parent)
@@ -956,8 +969,9 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	n.h.action = v.OnAccessibilityAction
 	n.responder = v.Responder
 	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
-		WindowDrag: v.WindowDrag, SelectionArea: v.SelectionArea, PointerEvents: v.PointerEvents, HitSlop: v.HitSlop,
+		WindowDrag: v.Desktop.WindowDrag, SelectionArea: v.Selectable, PointerEvents: v.PointerEvents, HitSlop: v.HitSlop,
 		DelayLongPress: v.DelayLongPress, NoFocus: v.NoFocus}
+	n.material = v.IOS.BackdropMaterial
 	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, value: v.AccessibilityValue, expanded: v.Expanded,
 		hidden: v.AccessibilityElementsHidden, actions: v.AccessibilityActions, accessible: v.Accessible,
 		important: v.ImportantForAccessibility})
@@ -1104,7 +1118,7 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 	in.config = driver.InputConfig{Placeholder: v.Placeholder, Masked: v.Masked, Readonly: v.Readonly, KeyboardType: v.KeyboardType,
 		Multiline: v.Multiline, MaxLength: max(v.MaxLength, 0), SubmitBehavior: v.SubmitBehavior, ReturnKey: v.ReturnKeyType,
 		AutoCapitalize: v.AutoCapitalize, NoAutoCorrect: v.NoAutoCorrect, AutoComplete: v.AutoComplete,
-		KeyboardAppearance: v.KeyboardAppearance, HideCaret: v.HideCaret, PasteBehavior: v.PasteBehavior}
+		KeyboardAppearance: v.IOS.KeyboardAppearance, HideCaret: v.HideCaret, PasteBehavior: v.PasteBehavior}
 	n.input = in
 	t.bindBool(cx, n, v.Disabled, &in.config.Disabled)
 	if v.Value != nil {

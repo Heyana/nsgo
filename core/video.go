@@ -33,8 +33,15 @@ type Video struct {
 	// ProgressInterval is the time between OnProgress calls while the
 	// video plays: 250 milliseconds when 0, and at least 16.
 	ProgressInterval time.Duration
-	Style            Style
-	StyleFunc        func() Style
+	// AudioSession is what the sound does to other apps' audio while it
+	// plays: by default the app's settings decide, and on iOS the
+	// device's silent mode silences it; a video of speech, as an
+	// audiobook's, plays in silent mode with AudioSessionPlayback or
+	// AudioSessionMixWithOthers. Changing it on Android opens the source
+	// again.
+	AudioSession AudioSession
+	Style        Style
+	StyleFunc    func() Style
 
 	// OnLoadStart is called when a source starts opening, and OnLoad once
 	// its duration and size are known.
@@ -86,7 +93,7 @@ func (t *Tree) mountVideo(cx *Scope, parent *node, v Video) {
 	vn := &videoNode{
 		config: driver.VideoConfig{Source: v.Source, Paused: v.Paused, Muted: v.Muted, Volume: videoVolume(v.Volume),
 			Rate: videoRate(v.Rate), Repeat: v.Repeat, ResizeMode: resolveMode(v.ResizeMode, Contain), Controls: v.Controls,
-			ProgressInterval: videoInterval(v.ProgressInterval)},
+			ProgressInterval: videoInterval(v.ProgressInterval), AudioSession: v.AudioSession},
 		loadStart: v.OnLoadStart, load: v.OnLoad, progress: v.OnProgress, end: v.OnEnd,
 		buffer: v.OnBuffer, loadError: v.OnError,
 	}

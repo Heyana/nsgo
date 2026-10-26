@@ -50,7 +50,7 @@ func chatDemo(cx *core.Scope) core.Node {
 	var cancelLocal func()
 	draft := core.NewSignal(cx, "")
 	inputHeight := core.NewSignal(cx, core.Points(20))
-	attachment := core.NewSignal(cx, false)
+	attachment := core.NewSignalFunc(cx, (*chatAttachment)(nil), func(a, b *chatAttachment) bool { return a == b })
 	menuOpen := core.NewSignal(cx, false)
 	bannerOn := core.NewSignal(cx, false)
 	bannerKind := core.NewSignal(cx, "offline")
@@ -293,7 +293,7 @@ func chatDemo(cx *core.Scope) core.Node {
 	})
 
 	// submit sends the user's message for a scenario, then its reply.
-	submit := func(s scenario, text, image string, file *fileRef) {
+	submit := func(s scenario, text string, image core.ImageSource, file *fileRef) {
 		if run != nil {
 			return
 		}
@@ -318,7 +318,7 @@ func chatDemo(cx *core.Scope) core.Node {
 				return append(ms, user)
 			})
 			draft.Set("")
-			attachment.Set(false)
+			attachment.Set(nil)
 			model.Set(s.model)
 		})
 		toEnd(true)
@@ -348,10 +348,11 @@ func chatDemo(cx *core.Scope) core.Node {
 	}
 	send := func() {
 		text := strings.TrimSpace(draft.GetUntracked())
-		if text == "" && !attachment.GetUntracked() {
+		a := attachment.GetUntracked()
+		if text == "" && a == nil {
 			return
 		}
-		if attachment.GetUntracked() {
+		if a != nil {
 			v, _ := findScenario("vision")
 			if m := model.GetUntracked(); m != "Swift" {
 				v.model = m
@@ -359,10 +360,10 @@ func chatDemo(cx *core.Scope) core.Node {
 			if text == "" {
 				text = v.prompt
 			}
-			submit(v, text, chatPhoto, &fileRef{"trip-notes.pdf", "2.4 MB"})
+			submit(v, text, a.image, &a.file)
 			return
 		}
-		submit(freeform(text, model.GetUntracked()), text, "", nil)
+		submit(freeform(text, model.GetUntracked()), text, core.ImageSource{}, nil)
 	}
 	play := func(id string) {
 		if id == "history" {
@@ -455,11 +456,11 @@ func chatDemo(cx *core.Scope) core.Node {
 	bannerValue := springTo(bannerOn.Get)
 
 	streaming := func() bool { return liveID.Get() != "" }
-	canSend := func() bool { return strings.TrimSpace(draft.Get()) != "" || attachment.Get() }
+	canSend := func() bool { return strings.TrimSpace(draft.Get()) != "" || attachment.Get() != nil }
 
 	userRow := func(m func() msg) core.Node {
 		return core.View{Style: core.Style{AlignItems: core.AlignEnd, Padding: core.Symmetric(8, 16), Gap: 8}, Children: []core.Node{
-			core.Show{When: func() bool { return m().image != "" }, Then: func(*core.Scope) core.Node { return attachedPhoto(m().image, 220, 165) }},
+			core.Show{When: func() bool { return m().image.URI != "" || m().image.Data != nil }, Then: func(*core.Scope) core.Node { return attachedPhoto(m().image, 220, 165) }},
 			core.Show{When: func() bool { return m().file != nil }, Then: func(*core.Scope) core.Node { return fileChip(*m().file, nil) }},
 			core.Show{When: func() bool { return m().text != "" }, Then: func(*core.Scope) core.Node {
 				// A message is read, not pressed: flat, a hairline around it.
@@ -647,9 +648,30 @@ func chatDemo(cx *core.Scope) core.Node {
 	chips = append(chips, chip{"history", "Load a long conversation"})
 
 	var menuRows []core.Node
-	menuRows = append(menuRows, core.View{OnPress: func(core.PressEvent) { menuOpen.Set(false); attachment.Set(true) }, Role: core.RoleButton, Label: "Attach a photo and a file",
-		Style:    core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Height: core.Pt(48), Padding: core.Symmetric(0, 16), Active: &core.Style{Background: alpha(colors.text, 0.06)}},
-		Children: []core.Node{icon(iconAttach, 16, colors.accent), core.Text{Content: "Attach a photo and a file", Style: core.Style{FlexGrow: 1, FontSize: 15, Color: colors.text}}}})
+	// choosePhoto attaches a photo from the system's picker.
+	choosePhoto := func() {
+		cx.PickImages(core.PickOptions{MaxDimension: 2048, Quality: 0.85}, func(files []core.PickedFile) {
+			if len(files) == 0 {
+				return
+			}
+			f := files[0]
+			size := fmt.Sprintf("%d KB", max(1, (len(f.Data)+512)/1024))
+			if len(f.Data) >= 1024*1024 {
+				size = fmt.Sprintf("%.1f MB", float64(len(f.Data))/1024/1024)
+			}
+			attachment.Set(&chatAttachment{image: core.ImageSource{Data: f.Data, Size: f.Size}, file: fileRef{f.Name, size}})
+		})
+	}
+	attachRow := func(label string, onPress func()) core.Node {
+		return core.View{OnPress: func(core.PressEvent) { menuOpen.Set(false); onPress() }, Role: core.RoleButton, Label: label,
+			Style:    core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Height: core.Pt(48), Padding: core.Symmetric(0, 16), Active: &core.Style{Background: alpha(colors.text, 0.06)}},
+			Children: []core.Node{icon(iconAttach, 16, colors.accent), core.Text{Content: label, Style: core.Style{FlexGrow: 1, FontSize: 15, Color: colors.text}}}}
+	}
+	menuRows = append(menuRows,
+		attachRow("Choose a photo", choosePhoto),
+		attachRow("Attach a photo and a file", func() {
+			attachment.Set(&chatAttachment{image: core.Src(chatPhoto), file: fileRef{"trip-notes.pdf", "2.4 MB"}})
+		}))
 	for _, c := range chips {
 		menuRows = append(menuRows, core.View{OnPress: func(core.PressEvent) { menuOpen.Set(false); play(c.id) }, Role: core.RoleButton, Label: c.label,
 			Style:    core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Height: core.Pt(48), Padding: core.Symmetric(0, 16), Active: &core.Style{Background: alpha(colors.text, 0.06)}},
@@ -659,7 +681,7 @@ func chatDemo(cx *core.Scope) core.Node {
 	conversation := func(*core.Scope) core.Node {
 		// One selection across messages: in the list, over the rows that
 		// are mounted.
-		return base.SelectionArea{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
+		return core.View{Selectable: true, Style: core.Style{FlexGrow: 1}, Children: []core.Node{
 			core.List{Ref: list, TestID: "messages", Count: func() int { return len(messages.Get()) }, Key: func(i int) any { return messages.GetUntracked()[i].id },
 				EstimatedSize: 140, InitialScrollIndex: max(0, len(messages.GetUntracked())-1), Style: core.Style{FlexGrow: 1, Padding: core.Edges{Top: 8, Bottom: 16}},
 				Behavior:                       core.ScrollBehavior{KeyboardDismissMode: core.KeyboardDismissInteractive},
@@ -722,7 +744,7 @@ func chatDemo(cx *core.Scope) core.Node {
 	menuFinish.backdrop = nil
 
 	pane := core.View{Style: fillPage.Merge(core.Style{Background: colors.background}), Children: []core.Node{
-		base.KeyboardAvoidingView{Style: fillPage, Children: []core.Node{
+		core.View{Style: fillPage.Merge(core.Style{PaddingEnv: core.EnvEdges{Bottom: core.EnvKeyboard}}), Children: []core.Node{
 			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1}, Children: []core.Node{
 				core.Show{When: func() bool { return len(messages.Get()) > 0 }, Then: conversation, Else: empty},
 				// Jump to the latest message: shown while scrolled up.
@@ -792,12 +814,16 @@ func chatDemo(cx *core.Scope) core.Node {
 				}
 				return column.Merge(core.Style{Padding: core.Edges{Top: 8, Right: 16, Bottom: bottom, Left: 16}, Gap: 8})
 			}, Children: []core.Node{
-				core.Show{When: attachment.Get, Then: func(*core.Scope) core.Node {
+				core.Dynamic(func(*core.Scope) core.Node {
+					a := attachment.Get()
+					if a == nil {
+						return nil
+					}
 					return appear(0, false, core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
-						attachedPhoto(chatPhoto, 48, 48),
-						core.View{Style: core.Style{FlexGrow: 1, AlignItems: core.AlignStart}, Children: []core.Node{fileChip(fileRef{"trip-notes.pdf", "2.4 MB"}, func() { attachment.Set(false) })}},
+						attachedPhoto(a.image, 48, 48),
+						core.View{Style: core.Style{FlexGrow: 1, AlignItems: core.AlignStart}, Children: []core.Node{fileChip(a.file, func() { attachment.Set(nil) })}},
 					}})
-				}},
+				}),
 				// Glass like the menu above it, without the blur: nothing
 				// scrolls under it.
 				core.View{Style: menuFinish.over(core.Style{CornerRadius: 24, BorderCurve: core.BorderCurveContinuous, BorderWidth: 1, Padding: core.All(6), Gap: 4}), Children: []core.Node{
@@ -852,7 +878,7 @@ func chatDemo(cx *core.Scope) core.Node {
 		stop()
 		cx.Batch(func() {
 			messages.Set(nil)
-			attachment.Set(false)
+			attachment.Set(nil)
 			menuOpen.Set(false)
 			current.Set("")
 		})

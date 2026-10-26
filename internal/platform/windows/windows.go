@@ -755,8 +755,6 @@ func (w *window) apply(b *driver.MountBatch) {
 			}
 			postMessageW.Call(w.hwnd, wmClose, 0, 0)
 			continue
-		case driver.ItemToast:
-			continue
 		case driver.ItemImageInfo:
 			w.imageInfo(it)
 			continue

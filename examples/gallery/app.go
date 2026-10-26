@@ -53,6 +53,7 @@ func init() {
 		{"Layout and lists", []demo{
 			{"Lists", "Columns, sticky sections, a chat, horizontal lists", iconLists, listsDemo},
 			{"Scrolling", "Paging, snapping, zoom, scroll events, prepending, keyboard taps", iconScroll, scrollingDemo},
+			{"Collapsing header", "A header that shrinks to a bar as the page scrolls, headings sticking below it", iconScroll, collapsingDemo},
 			{"Layout", "Flexbox, wrapping, positioning, grid and block layout, direction", iconLayout, layoutDemo},
 			{"Navigation", "Header options, modals, the back button, safe areas", iconNav, navigationDemo},
 			{"Form", "Inputs, keyboard types, the keyboard over the content", iconForm, formDemo},
@@ -74,7 +75,7 @@ func init() {
 		}},
 		{"Platform", []demo{
 			{"Components", "Press feedback, a sheet, layout animation, input accessory, dialog options", iconComponents, componentsDemo},
-			{"Overlays", "Overlay, popovers, tooltips, sheets", iconOverlays, overlaysDemo},
+			{"Overlays", "Overlay, popovers, tooltips, sheets, toasts", iconOverlays, overlaysDemo},
 			{"Menus", "A menu bar, submenus, checkable items, context menus on rows", iconMenu, menusDemo},
 			{"Controls", "Switches in settings, a filter with select all, a plan picker, tabs, collapsible sections, progress bars", iconControls, controlsDemo},
 			{"Web and video", "Web views, video players and the app's own native views", iconMedia, mediaDemo},
@@ -138,6 +139,7 @@ type gallery struct {
 	wasDesktop bool
 	desktop    func() bool
 	env        *core.Env
+	toasts     *toaster
 }
 
 // shell is the running gallery's state, which demos reach for the layout
@@ -192,6 +194,7 @@ func Root(cx *core.Scope) core.Node {
 		sidebarOpen: core.NewSignal(cx, true),
 		chosen:      core.NewSignal(cx, "nothing yet"),
 		env:         env,
+		toasts:      newToaster(cx),
 	}
 	desktopLayout := core.NewMemo(cx, func() bool {
 		limit := tabletWidth
@@ -224,7 +227,7 @@ func Root(cx *core.Scope) core.Node {
 			if hasWindow {
 				children = append(children, g.titleBar(cx, wide))
 			}
-			children = append(children, body)
+			children = append(children, body, g.toasts.view(wide))
 			return core.View{StyleFunc: func() core.Style {
 				return fillPage.Merge(core.Style{Background: chromeFill(cx), Color: colors.text})
 			}, Children: children}
@@ -281,7 +284,7 @@ func (g *gallery) titleBar(cx *core.Scope, wide bool) core.Node {
 		core.Text{Content: "Gallery", MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13, FontWeight: semibold, Color: colors.text}},
 		text("NSGo", 11, regular, colors.muted),
 	)
-	return core.View{WindowDrag: core.WindowDragOn, TestID: "title-bar",
+	return core.View{Desktop: core.DesktopViewProps{WindowDrag: core.WindowDragOn}, TestID: "title-bar",
 		StyleFunc: func() core.Style {
 			tb := desktop.TitleBar(cx)
 			return core.Style{Height: core.Pt(max(tb.Top, 40)), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8,
@@ -307,7 +310,7 @@ func (g *gallery) toggleSidebar() { g.sidebarOpen.Update(func(open bool) bool { 
 // sidebar, where desktop apps put it: after the logo.
 func (g *gallery) sidebarToggle() core.Node {
 	return core.View{OnPress: func(core.PressEvent) { g.toggleSidebar() }, Role: core.RoleButton, Label: "Toggle sidebar",
-		Selected: g.sidebarOpen.Get, WindowDrag: core.WindowDragOff,
+		Selected: g.sidebarOpen.Get, Desktop: core.DesktopViewProps{WindowDrag: core.WindowDragOff},
 		Style: core.Style{Width: core.Pt(28), Height: core.Pt(28), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
 			CornerRadius: radiusControl, Cursor: core.CursorPointer, Hover: &core.Style{Background: colors.hover}, Active: &core.Style{Background: colors.pressed}},
 		Children: []core.Node{icon(iconSidebar, 18, colors.muted)}}
@@ -332,8 +335,7 @@ func (g *gallery) phone(cx *core.Scope) core.Node {
 				Children: []core.Node{core.View{Style: fillPage.Merge(core.Style{Background: colors.background}),
 					Children: []core.Node{core.Func(func(cx *core.Scope) core.Node { return d.screen(cx) })}}}}
 		}
-		right := themeToggle(cx)
-		return base.NavPage{Title: "Gallery", TestID: "index", HeaderStyle: headerStyle(), HeaderRight: right,
+		return base.NavPage{Title: "Gallery", TestID: "index", HeaderStyle: headerStyle(), HeaderRight: barThemeToggle(cx),
 			Header:   pageHeader(pageHeaderProps{title: "Gallery", root: true, right: themeToggle(cx)}),
 			Children: []core.Node{g.home()}}
 	})
@@ -358,7 +360,7 @@ func (g *gallery) home() core.Node {
 		}}))
 	}
 	return core.Scroll{TestID: "home", Style: core.Style{FlexGrow: 1, Background: colors.background}, Children: []core.Node{
-		base.SafeAreaView{Edges: base.Bottom, Style: core.Style{Padding: core.Edges{Top: 16, Right: 16, Bottom: 40, Left: 16}, Gap: 20}, Children: nodes},
+		core.View{Style: core.Style{Padding: core.Edges{Top: 16, Right: 16, Bottom: 40, Left: 16}, PaddingEnv: core.EnvEdges{Bottom: core.EnvSafeArea}, Gap: 20}, Children: nodes},
 	}}
 }
 

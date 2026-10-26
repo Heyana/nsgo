@@ -22,6 +22,10 @@ import (
 // content and outlines above everything. A layer that clips its children
 // clips these too, as it clips its own shadow.
 
+// Z are those orders scaled down, so a child perspective (a sublayer
+// transform that projects by depth) leaves these layers their size.
+func Z(order float64) float64 { return order * 1e-5 }
+
 const (
 	zShadow  = -1030
 	zFill    = -1020
@@ -116,7 +120,7 @@ func boxPath(x, y, w, h float64, corners driver.Corners, continuous bool) uintpt
 // of higher z; host keeps it.
 func newLayer(host objc.ID, class string, z float64) objc.ID {
 	l := objc.ID(objc.GetClass(class)).Send(selNew)
-	l.Send(selSetZPos, z)
+	l.Send(selSetZPos, Z(z))
 	host.Send(selInsertSublayer, l, uint32(0))
 	l.Send(selRelease)
 	return l
@@ -327,7 +331,7 @@ func (d *decor) layoutShadows(layer objc.ID, shadows []driver.BoxShadow, w, h fl
 			d.shadows = append(d.shadows, newLayer(layer, "CALayer", z))
 		}
 		l := d.shadows[i]
-		l.Send(selSetZPos, z)
+		l.Send(selSetZPos, Z(z))
 		l.Send(selSetFrame, CGRect{Size: CGSize{Width: w, Height: h}})
 		c := CGColor(sh.Color)
 		l.Send(selSetShadowColor, c)

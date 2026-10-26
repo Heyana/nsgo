@@ -124,6 +124,15 @@ func (w *window) changedCanvases() {
 	})
 }
 
+// changedNatives hands components the animated props that changed.
+func (w *window) changedNatives() {
+	w.animator.ChangedNatives(func(id driver.NodeID, b driver.NativeBinding, num float64, col driver.Color) {
+		if v := w.view(id); v != nil && v.component != nil {
+			driver.SetAnimatedProp(v.component.c, b, num, col)
+		}
+	})
+}
+
 // canvas plays v's drawing into its width by height points.
 func (p *painter) canvas(v *view, width, height float32) {
 	ops := p.w.animator.CanvasOps(v.id, v.drawing)

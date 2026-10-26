@@ -22,8 +22,9 @@ type AnimatedNode interface {
 }
 
 type animNode struct {
-	t  *Tree
-	id uint32
+	t     *Tree
+	id    uint32
+	color bool // it outputs a color
 }
 
 func (n *animNode) animated() *animNode { return n }
@@ -81,7 +82,9 @@ func (v *AnimatedValue) op(o driver.AnimationOp) {
 // color when r has Colors.
 func Interpolate(in AnimatedNode, r Interpolation) AnimatedNode {
 	src := in.animated()
-	return src.t.anim.derive(src, driver.AnimationOp{Kind: driver.AnimCreateInterpolate, Input: src.id, Interpolation: &r})
+	n := src.t.anim.derive(src, driver.AnimationOp{Kind: driver.AnimCreateInterpolate, Input: src.id, Interpolation: &r})
+	n.animated().color = len(r.Colors) > 0
+	return n
 }
 
 // DiffClamp follows the changes of in but stays within min and max, as a

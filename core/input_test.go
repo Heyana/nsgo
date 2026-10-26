@@ -31,7 +31,7 @@ func TestInputConfigCarriesProps(t *testing.T) {
 		return View{Style: Style{SelectionColor: RGB(0x00ff00)}, Children: []Node{
 			Input{TestID: "in", Multiline: true, MaxLength: 5, ReturnKeyType: ReturnKeySend,
 				SubmitBehavior: SubmitBehaviorSubmit, AutoCapitalize: AutoCapitalizeWords, NoAutoCorrect: true,
-				AutoComplete: AutoCompleteEmail, KeyboardAppearance: KeyboardAppearanceDark, HideCaret: true,
+				AutoComplete: AutoCompleteEmail, IOS: IOSInputProps{KeyboardAppearance: KeyboardAppearanceDark}, HideCaret: true,
 				Style: Style{PlaceholderColor: RGB(0xff0000)}},
 		}}
 	})

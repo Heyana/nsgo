@@ -349,3 +349,33 @@ func TestAccessibility(t *testing.T) {
 		t.Fatalf("focus = %+v", f)
 	}
 }
+
+func TestToasts(t *testing.T) {
+	app := startDesktop(t)
+	open(app, "Overlays")
+	app.Press("role:button Delete the draft")
+	app.Find("id:draft >> text:Draft deleted")
+	app.Press("role:button Undo")
+	app.Advance(time.Second)
+	app.WaitForGone("id:draft", 2*time.Second)
+	if got := app.Find("id:last-event").Text; got != "toast: undone" {
+		t.Fatalf("last event = %q, want the action that closed the toast", got)
+	}
+	app.Press("role:button Copy the link")
+	app.Find("text:The link is on the clipboard (1)")
+	app.Advance(6 * time.Second)
+	app.WaitForGone("text:The link is on the clipboard (1)", 2*time.Second)
+}
+
+func TestCollapsingHeader(t *testing.T) {
+	app := startDesktop(t)
+	open(app, "Collapsing header")
+	app.Find("id:header >> text:Recent")
+	app.Find("text:Week 1")
+	if app.Exists("text:Week 20") {
+		t.Fatal("the list built rows far off the screen")
+	}
+	app.Scroll("id:page", 8000)
+	app.Find("text:Week 20")
+	app.Find("id:footer >> text:That's all 160 entries")
+}

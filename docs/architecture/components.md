@@ -33,6 +33,14 @@ Items reach their menu through a context key (`menuContext`), so the app arrange
 - `View.Tooltip` is the short form: the core shows the node above the view, 4 points away, after half a second of hover on desktops. Tooltips never take the pointer (`Overlay.PointerEvents`).
 - `Dialog` stays a `core.Modal` the platform presents; `AlertDialog` is the system's alert, or with `AlertPresentActionSheet` its action sheet: `UIAlertController`'s (a popover anchored at the bottom on iPad, with an unshown cancel action for a tap outside), a list dialog on Android, stacked buttons with the cancel one last on macOS, the web and Windows (command links).
 
+## Toasts
+
+`Toast`, `ToastStack` and `ToastManager` are NSH's, which are `gpui-base`'s three pieces with its names; a `toast(...)` shown from anywhere is the app's, as the gallery's `toast.go` is. NSH removed the system toast for them, and so `Scope.ShowToast` is gone.
+
+- `ToastManager[K, V]` is plain data with no timer, generic over the app's ids and values: the app calls `Advance` on its own timer while toasts show, with `Scope.Now`, so a test's manual clock moves it. Its zero value has Sonner's motion, and `Push` takes the timeout directly, where NSH has `new(motion)` and `ToastOptions`.
+- `ToastStack[T, K]` takes the toasts as `Toasts`, `Key` and `Toast`, an `Each`, in place of NSH's children each wrapped as an item. Each item is an absolute view at the placement's edge whose `TranslateY`, `ScaleX` and `Opacity` are animated values moved by critically damped springs on the frame clock; the items' measured heights give the distances and the stack's height, so its hover area follows. A finger down (observed with `OnTouch`) expands it as hover does, and a zero-size overlay hears Escape and back while it holds toasts.
+- `Toast` is the alert role, announces its `Label` as it mounts, and takes a swipe through the touch responder, claimed once the pointer moved 10 points along `SwipeDirection`. `StartingStyle` applies until the next display frame (or 50 ms), so the app's `Transition` runs the entry; `EndingStyle` and `SwipingStyle` merge over its style as NSH's important state classes do.
+
 ## Resizable panels
 
 `ResizablePanelGroup` ports `gpui-base`'s sizing (`resizeState`, tested as NSH tests it): a drag grows the panel before its handle by taking from the panels after it, nearest first, as far as their minimums allow, and shrinking below a minimum takes from the panels before.

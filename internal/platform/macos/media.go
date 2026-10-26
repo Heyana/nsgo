@@ -15,6 +15,9 @@ import (
 // configureNative makes a native view's component on its first item and
 // passes it the props that changed.
 func (s *surface) configureNative(v *view, c *driver.NativeConfig) {
+	if c.Bind {
+		s.animator.BindNative(v.id, c.Bindings)
+	}
 	if v.component == nil && v.componentView == 0 {
 		factory := s.components[c.Component]
 		if factory == nil {

@@ -186,6 +186,9 @@ func (t *Tree) resolve(n *node, inherited textFields, force bool) {
 		}
 		if rtl != n.rtl {
 			n.rtl = rtl
+			if n.env != nil {
+				t.restyle(n)
+			}
 			n.lstyleOK = false
 			t.markLayout(n)
 		}
@@ -540,7 +543,7 @@ func (t *Tree) emitParts(n *node) bool {
 		if first {
 			m := n.hoist.modal
 			add(driver.MountItem{Kind: driver.ItemModal, ID: n.id, Modal: &driver.ModalConfig{Animation: m.Animation, Presentation: m.Presentation,
-				NoCloseOnSwipe: m.NoCloseOnSwipe, Orientations: m.SupportedOrientations}})
+				NoCloseOnSwipe: m.NoCloseOnSwipe, Orientations: m.IOS.SupportedOrientations}})
 		}
 	case n.canvas != nil:
 		if cn := n.canvas; cn.fresh && cn.drawing != nil {
@@ -701,6 +704,7 @@ func fitStyle(ts driver.TextStyle, scale float32) driver.TextStyle {
 
 func (n *node) viewStyle() driver.ViewStyle {
 	vs := n.style.viewStyle(n.frame.Size, n.color, n.rtl)
+	vs.Material = n.material
 	vs.Hidden = vs.Hidden || n.style.Display == DisplayNone || (n.hoist != nil && n.hidden) || (n.attach != nil && n.attach.cut)
 	// Effects that draw as before keep the pointer that was sent, so the
 	// comparison finds nothing to send.

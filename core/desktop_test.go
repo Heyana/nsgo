@@ -65,7 +65,7 @@ func TestWindowCommands(t *testing.T) {
 		cx.SetTitleBar(TitleBarHidden, 40)
 		cx.SetWindowControls(lights)
 		cx.SetWindowMaterial(WindowMaterialSidebar)
-		return View{TestID: "bar", WindowDrag: WindowDragOn}
+		return View{TestID: "bar", Desktop: DesktopViewProps{WindowDrag: WindowDragOn}}
 	})
 	b := h.commit()
 	var cmds []WindowCommand

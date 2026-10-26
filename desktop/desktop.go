@@ -4,7 +4,7 @@
 // nothing, and IsAvailable says whether they act.
 //
 // A title bar of the app's own calls SetTitleBar once, marks its
-// background with core.View's WindowDrag and keeps clear of the edges
+// background with core.View's Desktop.WindowDrag and keeps clear of the edges
 // TitleBar reports; SetWindowControls moves or hides the system's
 // controls in it. A window over a material leaves transparent what
 // should show it while ShowsMaterial.

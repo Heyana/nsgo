@@ -290,25 +290,6 @@ func (cx *Scope) PickImages(o PickOptions, done func(files []PickedFile)) {
 	})
 }
 
-// ToastDuration is how long a toast shows.
-type ToastDuration uint8
-
-const (
-	// ToastShort shows it for about two seconds.
-	ToastShort ToastDuration = iota
-	// ToastLong shows it for about three and a half.
-	ToastLong
-)
-
-// ShowToast shows message briefly at the bottom of the screen with
-// Android's toast; other platforms have none and ignore it.
-func (cx *Scope) ShowToast(message string, d ToastDuration) {
-	if t := cx.rt.tree; t != nil {
-		t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemToast, Value: message, Count: uint32(d)})
-		t.changed = true
-	}
-}
-
 // SetAppearance shows the app light or dark whatever the system's
 // appearance, or follows it again with AppearanceSystem: Env.Dark
 // reports the one shown, and the platform's own chrome, such as title

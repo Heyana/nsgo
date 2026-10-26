@@ -6,6 +6,49 @@ package driver
 type NativeConfig struct {
 	Component string
 	Props     map[string]any
+	// Bindings, when Bind is set, replace the props animated nodes drive,
+	// which the platform's Animator hands the component on the frames
+	// they change.
+	Bind     bool
+	Bindings []NativeBinding
+}
+
+// NativeBinding binds a component's prop Name to animated node Node;
+// Color says the node outputs a color.
+type NativeBinding struct {
+	Name  string
+	Node  uint32
+	Color bool
+}
+
+// AnimatedPropSetter is implemented by a component that takes its
+// animated props as numbers and colors, on the main thread on the frames
+// they change; without it SetProp receives them, a number as a float64
+// and a color as a Color.
+type AnimatedPropSetter interface {
+	SetAnimatedNumber(name string, v float64)
+	SetAnimatedColor(name string, c Color)
+}
+
+// SetAnimatedProp hands component c an animated prop's value, as
+// ChangedNatives reports it.
+func SetAnimatedProp(c NativeComponent, b NativeBinding, num float64, col Color) {
+	if c == nil {
+		return
+	}
+	if s, ok := c.(AnimatedPropSetter); ok {
+		if b.Color {
+			s.SetAnimatedColor(b.Name, col)
+		} else {
+			s.SetAnimatedNumber(b.Name, num)
+		}
+		return
+	}
+	if b.Color {
+		c.SetProp(b.Name, col)
+	} else {
+		c.SetProp(b.Name, num)
+	}
 }
 
 // NativeComponents are the components an app registers with its

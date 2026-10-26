@@ -163,13 +163,13 @@ type modalPlace struct {
 // modalArea places modal n, unless the platform sized it, in the safe
 // area safe on os: over its whole host, except that on Android the
 // status bar stays above a modal over the surface that is not
-// StatusBarTranslucent, as above NSH's dialog windows. A modal in a
+// Android.StatusBarTranslucent, as above NSH's dialog windows. A modal in a
 // modal keeps clear of its host's insets.
 func (t *Tree) modalArea(n *node, safe Edges, os OS) modalPlace {
 	if host := n.hoist.host; host.kind == driver.KindModal {
 		return modalPlace{insets: t.modalInsets(host)}
 	}
-	if os == OSAndroid && !n.hoist.modal.StatusBarTranslucent {
+	if os == OSAndroid && !n.hoist.modal.Android.StatusBarTranslucent {
 		top := safe.Top
 		safe.Top = 0
 		return modalPlace{top, safe}

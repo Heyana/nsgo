@@ -88,14 +88,14 @@ A final layout answers where its carets are, as NSH's `TextEngine` hit testing d
 - `OnPaste` reports what the user pasted, read as they paste: the text, local files as `file:` URLs, else an image's bytes. `PasteBehavior` `PasteReport` keeps the text out; images and files never go in.
 - Pastes are caught where each platform pastes. macOS gives its fields a field editor of NSGo's own (the window's delegate hands it out) and its text views their own `paste:`; iOS overrides `paste:`, Android `onTextContextMenuItem`.
 - Linux hears `paste-clipboard` and reads GDK's clipboard asynchronously, so its report comes after the text it inserts, as on the web for files, whose bytes are read first.
-- What a platform lacks is a no-op there. Return keys, capitalization and the keyboard's appearance belong to software keyboards: iOS, Android, the web's `enterkeyhint` and `autocapitalize`; Linux passes GTK input hints. `KeyboardAppearance` is iOS's only.
+- What a platform lacks is a no-op there. Return keys, capitalization and the keyboard's appearance belong to software keyboards: iOS, Android, the web's `enterkeyhint` and `autocapitalize`; Linux passes GTK input hints. `IOS.KeyboardAppearance` is iOS's only.
 - `AutoComplete` maps to iOS's `textContentType`, Android's autofill hints, the web's `autocomplete`, GTK's input purpose and macOS's content types for accounts, passwords and codes. Windows has no autofill or autocorrection.
 
 ## Text selection
 
-Selection follows NSH's: one selection runs across the texts of a selection area (a `View` with `SelectionArea`, which `base.SelectionArea` sets), in document order, as a web page's does. A `Text` with `SelectableOn` outside any area is an area of its own; one with `SelectableOff` stays out. The highlight is the inherited `SelectionColor`, else the platform's.
+Selection follows NSH's: one selection runs across the texts of a selection area (a `View` with `Selectable`, NSH's selectable views), in document order, as a web page's does. A `Text` with `SelectableOn` outside any area is an area of its own; one with `SelectableOff` stays out. The highlight is the inherited `SelectionColor`, else the platform's.
 
-- `ViewProps` carries `SelectionArea`, `Selectable` and `SelectionColor`, so a selection never waits for the engine.
+- `ViewProps` carries `SelectionArea` (the view's `Selectable`), `Selectable` and `SelectionColor`, so a selection never waits for the engine.
 - `SelectionModel` in `selection.go` is the platform-independent model macOS and iOS drive on their main thread. Windows does not select text yet.
 - A backend lists an area's texts as `SelectionTexts`, with content, frames, hit test and NodeIDs, then feeds it presses, drags and long presses and draws its `Ranges`.
 - Offsets are UTF-16. `Text` joins texts on one row with a tab and others with a line break, leaving attachments out.

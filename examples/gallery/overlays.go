@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
 )
@@ -130,7 +133,31 @@ func overlaysDemo(cx *core.Scope) core.Node {
 		)
 	}
 
-	return demoPage(cx, pageProps{}, primitive, popovers, tooltips, sheets, lastEventCard(last))
+	toasts := func(cx *core.Scope) core.Node {
+		count := 0
+		return card(cardProps{icon: iconSystem, title: "Toast", subtitle: "The gallery's toasts, on ToastManager, ToastStack and Toast"},
+			core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, Gap: 8}, Children: []core.Node{
+				button(buttonProps{label: "Copy the link", variant: secondary}, func() {
+					count++
+					toast(toastContent{title: "Copied", description: fmt.Sprintf("The link is on the clipboard (%d)", count)})
+				}),
+				button(buttonProps{label: "Delete the draft", variant: secondary}, func() {
+					toast(toastContent{id: "draft", title: "Draft deleted", action: "Undo", close: "×", duration: 8 * time.Second,
+						done: func(answer string) {
+							if answer == "Undo" {
+								last.Set("toast: undone")
+							} else {
+								last.Set("toast: gone")
+							}
+						}})
+				}),
+				button(buttonProps{label: "Dismiss all", variant: secondary}, func() { shell.toasts.dismiss("") }),
+			}},
+			text("Swipe one away; the pointer on one stops its time", 13, regular, colors.muted),
+		)
+	}
+
+	return demoPage(cx, pageProps{}, primitive, popovers, tooltips, sheets, toasts, lastEventCard(last))
 }
 
 // lastEventCard shows the last thing a demo reported.

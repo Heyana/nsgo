@@ -28,6 +28,9 @@ func (w *window) configureNative(v *view, c *driver.NativeConfig) {
 	if c == nil {
 		return
 	}
+	if c.Bind {
+		w.animator.BindNative(v.id, c.Bindings)
+	}
 	if v.native == nil {
 		v.native = &component{}
 		w.makeComponent(v, c.Component)

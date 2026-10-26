@@ -82,6 +82,7 @@ func (s *surface) applyAnimated() {
 		setStyle(v.el, style)
 	})
 	s.changedCanvases()
+	s.changedNatives()
 	s.replaceBound()
 }
 
@@ -180,6 +181,9 @@ func (s *surface) vanish(v *view, lb *layoutBatch) bool {
 // Native components fill their view with a DOM element the app makes.
 
 func (s *surface) configureNative(v *view, c *driver.NativeConfig) {
+	if c.Bind {
+		s.animator.BindNative(v.id, c.Bindings)
+	}
 	if v.component == nil && !v.componentTried {
 		v.componentTried = true
 		factory := s.components[c.Component]

@@ -112,11 +112,20 @@ type View struct {
 	OnFileDrop      func(uris []string)
 	OnFileDragEnter func()
 	OnFileDragLeave func()
-	// WindowDrag makes the view a handle that moves the desktop window.
-	WindowDrag WindowDrag
-	// SelectionArea makes the texts inside select together, as a web
-	// page's do. base.SelectionArea sets it.
-	SelectionArea bool
+	// IOS and Desktop hold the props only iOS, or only the desktops,
+	// have; other platforms ignore them.
+	IOS     IOSViewProps
+	Desktop DesktopViewProps
+	// Selectable makes the texts inside select together, as a web page's
+	// do: one selection runs from a place in one text to a place in
+	// another, across views. On desktops it is made by dragging, a double
+	// click (a word) or a triple click (a whole text), and extended by
+	// Shift-clicks; on touch screens by a long press. Cmd or Ctrl+A
+	// selects the view's texts, Cmd or Ctrl+C copies and Escape clears.
+	// Texts with SelectableOff stay out, and a selectable view inside
+	// another is part of the outer one. The highlight is each text's
+	// SelectionColor.
+	Selectable bool
 
 	Ref *Ref
 	// Disabled stops presses and is reported to assistive technology.
@@ -272,8 +281,8 @@ type Input struct {
 	NoAutoCorrect bool
 	// AutoComplete says what the field holds, for the system's autofill.
 	AutoComplete AutoComplete
-	// KeyboardAppearance picks iOS's light or dark keyboard.
-	KeyboardAppearance KeyboardAppearance
+	// IOS holds the props only iOS has.
+	IOS IOSInputProps
 	// HideCaret draws no caret.
 	HideCaret bool
 	// SelectedRange, when set, selects its range whenever it changes.
@@ -582,12 +591,9 @@ type Modal struct {
 	// NoCloseOnSwipe keeps an iOS sheet from being swiped away; the swipe
 	// still asks to close it ("swipe").
 	NoCloseOnSwipe bool
-	// SupportedOrientations are the orientations iOS allows while the
-	// modal shows; 0 keeps the app's.
-	SupportedOrientations Orientation
-	// StatusBarTranslucent lets the content reach under Android's status
-	// bar; otherwise the modal starts below it.
-	StatusBarTranslucent bool
+	// IOS and Android hold the props only iOS, or only Android, has.
+	IOS     IOSModalProps
+	Android AndroidModalProps
 	// StatusBar, or StatusBarFunc, is set over the app's status bar while
 	// the modal is in the tree.
 	StatusBar     StatusBarSetting

@@ -265,6 +265,11 @@ func (s *surface) applyAnimated() {
 			s.views[id].redrawAnimated()
 		}
 	})
+	s.animator.ChangedNatives(func(id driver.NodeID, b driver.NativeBinding, num float64, col driver.Color) {
+		if int(id) < len(s.views) && s.views[id] != nil {
+			driver.SetAnimatedProp(s.views[id].component, b, num, col)
+		}
+	})
 	s.repinBound()
 }
 

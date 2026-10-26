@@ -675,52 +675,10 @@ func transitions(cx *core.Scope) core.Node {
 	)
 }
 
-// motions are NSH's ready-made motions as keyframes: entrances, exits and
-// attention seekers, and keyframes of the app's own.
-func motions(cx *core.Scope) core.Node {
-	m := core.NewMotion(cx, nil)
-	playing := core.NewSignal(cx, "—")
-	var chips []core.Node
-	for _, p := range core.MotionPresets() {
-		if p.Kind() == core.MotionLoop {
-			continue
-		}
-		chips = append(chips, chipTab(p.Name(), func() bool { return playing.Get() == p.Name() }, func() {
-			playing.Set(p.Name())
-			m.Play(p.Spec(), nil)
-		}))
-	}
-	beat := core.NewAnimatedValue(cx, 0)
-	var run *core.AnimationRun
-	keyframes := core.ValueKeyframes(beat, core.KeyframeTiming{Duration: ms(1600), Iterations: 2, Direction: core.PlayAlternate, Easing: core.BezierEasing(core.EaseInOut)},
-		core.StopAt(0, 0), core.StopAt(0.5, 140).Eased(core.StepsEasing(4, core.JumpEnd)), core.StopAt(1, 220))
-	return card(cardProps{icon: iconSpark, title: "Motions and keyframes", subtitle: "Ready-made motions; stops with easings of their own", right: badge("NSGo", toneNeutral)},
-		core.View{Style: core.Style{Height: core.Pt(120), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Perspective: 400}, Children: []core.Node{
-			core.View{TestID: "motion-card", Style: fin.accent.over(core.Style{Width: core.Pt(96), Height: core.Pt(64), CornerRadius: 14, Background: colors.accentFill,
-				AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Animated: m.Style()}),
-				Children: []core.Node{text("Motion", 15, semibold, colors.onAccent)}},
-		}},
-		core.Scroll{Horizontal: true, HideIndicator: true, Children: []core.Node{
-			base.Tabs{Label: "Motions", Style: core.Style{Direction: core.Row, Gap: 8, Padding: core.Symmetric(4, 4)}, Children: chips}}},
-		core.View{Style: core.Style{Height: core.Pt(28), CornerRadius: 14, Background: colors.background, Shadows: fin.track.shadows}, Children: []core.Node{
-			core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(2), Top: core.Pt(2), Width: core.Pt(24), Height: core.Pt(24), CornerRadius: 12,
-				Background: colors.accent, Shadows: fin.knob.shadows, Animated: &core.AnimatedStyle{TranslateX: beat}}},
-		}},
-		apiLine("Two runs, alternating, a stepped stop", "ValueKeyframes"),
-		core.View{Style: core.Style{Direction: core.Row, Gap: 8}, Children: []core.Node{
-			cell(button(buttonProps{label: "Play keyframes", variant: secondary}, func() { run = cx.StartAnimation(keyframes, nil) })),
-			cell(button(buttonProps{label: "Reset", variant: ghost}, func() {
-				if run != nil {
-					run.Reset()
-				}
-			})),
-		}},
-	)
-}
-
-// animationsDemo is the platform's animation graph: loops and groups,
-// easing curves, springs, interpolation, DiffClamp, layout animation,
-// style transitions, motions and keyframes.
+// animationsDemo is the platform's animation graph: loops, ready-made
+// motions and keyframes, groups, easing curves, springs, interpolation,
+// DiffClamp, layout animation and style transitions.
 func animationsDemo(cx *core.Scope) core.Node {
-	return demoPage(cx, pageProps{}, hero, easingPlot, easingRace, composition, springs, interpolations, hidingHeader, layoutAnimation, transitions, motions)
+	return demoPage(cx, pageProps{}, hero, motionPresets, staggeredEntrance, keyframesMotions, aurora, easingPlot, easingRace, composition, springs, interpolations,
+		hidingHeader, layoutAnimation, transitions)
 }

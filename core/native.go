@@ -1,7 +1,10 @@
 package core
 
 import (
+	"maps"
 	"reflect"
+	"slices"
+	"strings"
 
 	"github.com/oneo-me/nsgo/internal/driver"
 )
@@ -16,7 +19,10 @@ type Native struct {
 	Component string
 	// Props are the component's own props; PropsFunc, when set, replaces
 	// them, again when what it reads changes. A prop that goes away is
-	// set to nil. Values cross to Android as JSON.
+	// set to nil. Values cross to Android as JSON. A prop whose value is
+	// an AnimatedNode is bound to it instead: the platform's frame clock
+	// hands the component its number or color on the frames it changes,
+	// with no work for the engine (driver.AnimatedPropSetter).
 	Props     map[string]any
 	PropsFunc func() map[string]any
 	Style     Style
@@ -38,8 +44,9 @@ type nativeNode struct {
 	component string
 	props     map[string]any
 	sent      map[string]any
-	named     bool // the component's name was sent
-	size      Size // what the component asked for
+	bound     []driver.NativeBinding // the bindings sent
+	named     bool                   // the component's name was sent
+	size      Size                   // what the component asked for
 	event     func(name string, data any)
 }
 
@@ -71,7 +78,10 @@ func (nn *nativeNode) changes() map[string]any {
 	}
 	for k, v := range nn.props {
 		if old, ok := nn.sent[k]; !ok || !reflect.DeepEqual(old, v) {
-			set(k, v)
+			// A bound prop is not sent; a value replacing a node is.
+			if !isBound(v) {
+				set(k, v)
+			}
 		}
 	}
 	for k := range nn.sent {
@@ -79,7 +89,7 @@ func (nn *nativeNode) changes() map[string]any {
 			set(k, nil)
 		}
 	}
-	if out != nil {
+	if out != nil || !maps.EqualFunc(nn.props, nn.sent, func(a, b any) bool { return reflect.DeepEqual(a, b) }) {
 		nn.sent = make(map[string]any, len(nn.props))
 		for k, v := range nn.props {
 			nn.sent[k] = v
@@ -88,16 +98,39 @@ func (nn *nativeNode) changes() map[string]any {
 	return out
 }
 
+// isBound reports whether a prop's value is a node of the animation
+// graph, which drives the prop rather than being sent.
+func isBound(v any) bool {
+	a, ok := v.(AnimatedNode)
+	return ok && a.animated() != nil
+}
+
+// bindings returns the props animated nodes drive, by name.
+func (nn *nativeNode) bindings() []driver.NativeBinding {
+	var out []driver.NativeBinding
+	for k, v := range nn.props {
+		if isBound(v) {
+			n := v.(AnimatedNode).animated()
+			out = append(out, driver.NativeBinding{Name: k, Node: n.id, Color: n.color})
+		}
+	}
+	slices.SortFunc(out, func(a, b driver.NativeBinding) int { return strings.Compare(a.Name, b.Name) })
+	return out
+}
+
 // emitNative adds n's ItemNative when its component or props changed.
 func (t *Tree) emitNative(n *node) {
 	nn := n.native
 	props := nn.changes()
-	if nn.named && props == nil {
+	bindings := nn.bindings()
+	bind := !slices.Equal(bindings, nn.bound)
+	if nn.named && props == nil && !bind {
 		return
 	}
 	nn.named = true
+	nn.bound = bindings
 	t.items = append(t.items, driver.MountItem{Kind: driver.ItemNative, ID: n.id,
-		Native: &driver.NativeConfig{Component: nn.component, Props: props}})
+		Native: &driver.NativeConfig{Component: nn.component, Props: props, Bind: bind, Bindings: bindings}})
 }
 
 // dispatchNative handles a native view's events.

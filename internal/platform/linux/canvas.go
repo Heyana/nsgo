@@ -145,6 +145,15 @@ func (w *window) changedCanvases() {
 	})
 }
 
+// changedNatives hands components the animated props that changed.
+func (w *window) changedNatives() {
+	w.animator.ChangedNatives(func(id driver.NodeID, b driver.NativeBinding, num float64, col driver.Color) {
+		if v := w.view(id); v != nil && v.native != nil {
+			driver.SetAnimatedProp(v.native.comp, b, num, col)
+		}
+	})
+}
+
 // playCanvas replays v's drawing into cr at r, as the web's 2D context
 // does.
 func (w *window) playCanvas(v *view, cr uintptr, r rect) {

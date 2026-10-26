@@ -226,19 +226,20 @@ func accessory(cx *core.Scope) core.Node {
 // avoidingPage is a screen whose field at the bottom stays above the
 // keyboard.
 func avoidingPage(cx *core.Scope) base.NavPage {
-	behavior := core.NewSignal(cx, base.AvoidPadding)
-	names := map[base.AvoidBehavior]string{base.AvoidPadding: "padding", base.AvoidHeight: "height"}
-	notes := map[base.AvoidBehavior]string{
-		base.AvoidPadding: "The bottom pads: the tinted background stays under the keyboard.",
-		base.AvoidHeight:  "The view shrinks: its background ends at the keyboard.",
-	}
-	return screen("KeyboardAvoidingView", nil, core.Dynamic(func(cx *core.Scope) core.Node {
-		b := behavior.Get()
-		return base.KeyboardAvoidingView{Behavior: b, Style: core.Style{FlexGrow: 1, Background: tints.info}, Children: []core.Node{
+	margin := core.NewSignal(cx, false)
+	return screen("Keyboard inset", nil, core.Dynamic(func(cx *core.Scope) core.Node {
+		m := margin.Get()
+		style := core.Style{FlexGrow: 1, Background: tints.info, PaddingEnv: core.EnvEdges{Bottom: core.EnvKeyboard}}
+		title, note := "padding", "PaddingEnv: EnvKeyboard. The tinted background stays under the keyboard."
+		if m {
+			style.PaddingEnv, style.MarginEnv = core.EnvEdges{}, core.EnvEdges{Bottom: core.EnvKeyboard}
+			title, note = "margin", "MarginEnv: EnvKeyboard. The view shrinks: its background ends at the keyboard."
+		}
+		return core.View{Style: style, Children: []core.Node{
 			core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(16), Gap: 16}, Children: []core.Node{
-				card(cardProps{icon: iconForm, title: fmt.Sprintf("Behavior: %s", names[b]), subtitle: "Focus the field at the bottom"},
-					segmented([]option[base.AvoidBehavior]{{value: base.AvoidPadding, label: "padding"}, {value: base.AvoidHeight, label: "height"}}, behavior.Get, behavior.Set, false),
-					core.Text{Content: notes[b], Style: core.Style{FontSize: 14, LineHeight: 20, Color: colors.muted}},
+				card(cardProps{icon: iconForm, title: "Room: " + title, subtitle: "Focus the field at the bottom"},
+					segmented([]option[bool]{{value: false, label: "padding"}, {value: true, label: "margin"}}, margin.Get, margin.Set, false),
+					core.Text{Content: note, Style: core.Style{FontSize: 14, LineHeight: 20, Color: colors.muted}},
 				),
 				spacer(),
 				darkField(base.Input{Placeholder: "Type here"}),
@@ -261,12 +262,13 @@ func modalOptions(cx *core.Scope) core.Node {
 		button(buttonProps{label: "Open the dialog", variant: secondary}, func() { visible.Set(true) }),
 		core.Dynamic(func(*core.Scope) core.Node {
 			t := translucent.Get()
-			return base.Dialog{Open: visible.Get, Animation: core.ModalSlide, StatusBarTranslucent: t, Label: "A dialog",
-				SupportedOrientations: core.OrientationPortrait | core.OrientationLandscape,
-				OnOpenChange:          func(o bool, _ base.Reason) { visible.Set(o) },
-				PopupStyle:            core.Style{FlexGrow: 1, AlignSelf: core.AlignStretch},
+			return base.Dialog{Open: visible.Get, Animation: core.ModalSlide, Label: "A dialog",
+				Android:      core.AndroidModalProps{StatusBarTranslucent: t},
+				IOS:          core.IOSModalProps{SupportedOrientations: core.OrientationPortrait | core.OrientationLandscape},
+				OnOpenChange: func(o bool, _ base.Reason) { visible.Set(o) },
+				PopupStyle:   core.Style{FlexGrow: 1, AlignSelf: core.AlignStretch},
 				Children: []core.Node{core.View{Style: core.Style{FlexGrow: 1, Background: bg}, Children: []core.Node{
-					base.SafeAreaView{Edges: base.Top | base.Bottom | base.Left | base.Right, Style: core.Style{FlexGrow: 1, Padding: core.All(16), Gap: 12}, Children: []core.Node{
+					core.View{Style: core.Style{PaddingEnv: core.EnvAll(core.EnvSafeArea), FlexGrow: 1, Padding: core.All(16), Gap: 12}, Children: []core.Node{
 						core.View{Style: core.Style{Direction: core.Row, Padding: core.Edges{Top: 8}}, Children: []core.Node{
 							badge(map[bool]string{true: "translucent", false: "opaque bar"}[t], toneAccent)}},
 						core.Text{Content: "A dialog", Style: core.Style{FontSize: 28, FontWeight: bold, LetterSpacing: -0.5, Color: colors.text}},
@@ -345,7 +347,7 @@ func componentsDemo(cx *core.Scope) core.Node {
 		pressFeedback, pressableSheet, layoutAnimations, accessory,
 		func(cx *core.Scope) core.Node {
 			return card(cardProps{title: "Keyboard avoidance", subtitle: "Content outside scroll views", flush: true},
-				inset(insetProps{exact: true}, linkRow(iconForm, "KeyboardAvoidingView", "padding / height", func() { shell.push(avoidingPage) })))
+				inset(insetProps{exact: true}, linkRow(iconForm, "Keyboard inset", "EnvKeyboard", func() { shell.push(avoidingPage) })))
 		},
 		modalOptions, platformInfo)
 }

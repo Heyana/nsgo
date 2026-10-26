@@ -742,7 +742,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 				setAppearance(it.Appearance)
 			}
 			continue
-		case driver.ItemToast, driver.ItemQuit, driver.ItemPopupMenu:
+		case driver.ItemQuit, driver.ItemPopupMenu:
 			// iOS has no toasts, apps do not quit themselves, and the core
 			// shows phones no native menus.
 			continue

@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 
-	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
 )
 
@@ -197,9 +196,9 @@ func selectionCard(cx *core.Scope) core.Node {
 	b.SelectionColor = alpha(colors.accent, 0.35)
 	return card(cardProps{icon: iconText, title: "Selection", subtitle: hint(cx, "Long press to select", "Drag, or double or triple click"), right: badge("NSGo", toneNeutral)},
 		specimenRow("On its own", "SelectableOn", true, core.Text{Content: "This text selects on its own.", Selectable: core.SelectableOn, Style: b}),
-		specimenRow("Across texts", "base.SelectionArea", false,
-			base.SelectionArea{Style: core.Style{Gap: 8}, Children: []core.Node{
-				core.Text{Content: "A selection area selects across its texts, as a web page does.", Style: b},
+		specimenRow("Across texts", "View.Selectable", false,
+			core.View{Selectable: true, Style: core.Style{Gap: 8}, Children: []core.Node{
+				core.Text{Content: "A selectable view selects across its texts, as a web page does.", Style: b},
 				core.Text{Content: "Start in one, end in another; copy them as one.", Style: b},
 				core.Text{Content: "This one stays out of the selection.", Selectable: core.SelectableOff, Style: b.Merge(core.Style{Color: colors.faint})},
 			}}),

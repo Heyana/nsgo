@@ -724,6 +724,19 @@ func themeToggle(cx *core.Scope) core.Node {
 	return roundButton(name, label, secondary, 34, func() { cx.SetAppearance(next) })
 }
 
+// barThemeToggle is the theme toggle in the system's bar (iOS, Android),
+// where the system draws the button (iOS's Liquid Glass): the item is the
+// icon alone.
+func barThemeToggle(cx *core.Scope) core.Node {
+	name, label, next := iconSun, "Light appearance", core.AppearanceLight
+	if !isDark {
+		name, label, next = iconMoon, "Dark appearance", core.AppearanceDark
+	}
+	return press(pressProps{onPress: func() { cx.SetAppearance(next) }, scale: 0.92, label: label},
+		core.View{Style: core.Style{Width: core.Pt(34), Height: core.Pt(34), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
+			Children: []core.Node{icon(name, 18, colors.text)}})
+}
+
 //go:embed assets/logo-dark.svg
 var logoDark []byte
 

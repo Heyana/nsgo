@@ -434,6 +434,26 @@ func (c *hostComponent) SetProp(name string, value any) {
 	c.obj.Send(sel("setProp:value:"), apple.NSString(name), apple.JSONObject(value))
 }
 
+// SetAnimatedNumber implements driver.AnimatedPropSetter.
+func (c *hostComponent) SetAnimatedNumber(name string, v float64) {
+	if objc.Send[bool](c.obj, sel("respondsToSelector:"), sel("setAnimatedNumber:value:")) {
+		c.obj.Send(sel("setAnimatedNumber:value:"), apple.NSString(name), v)
+		return
+	}
+	c.SetProp(name, v)
+}
+
+// SetAnimatedColor implements driver.AnimatedPropSetter, handing the host
+// 0xAARRGGBB as NSH does.
+func (c *hostComponent) SetAnimatedColor(name string, col driver.Color) {
+	argb := uint32(col)>>8 | uint32(col)<<24
+	if objc.Send[bool](c.obj, sel("respondsToSelector:"), sel("setAnimatedColor:argb:")) {
+		c.obj.Send(sel("setAnimatedColor:argb:"), apple.NSString(name), argb)
+		return
+	}
+	c.SetProp(name, float64(argb))
+}
+
 func (c *hostComponent) Command(name string, args any) {
 	if objc.Send[bool](c.obj, sel("respondsToSelector:"), sel("command:args:")) {
 		c.obj.Send(sel("command:args:"), apple.NSString(name), apple.JSONObject(args))

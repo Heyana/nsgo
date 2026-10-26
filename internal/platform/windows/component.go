@@ -72,6 +72,9 @@ type placedComponent struct {
 // setNative makes v's component with its first item, then sets the props
 // that changed, in the order of their names.
 func (w *window) setNative(v *view, c *driver.NativeConfig) {
+	if c.Bind {
+		w.animator.BindNative(v.id, c.Bindings)
+	}
 	if v.component == nil {
 		v.component = w.makeComponent(v.id, c.Component)
 	}

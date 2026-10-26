@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/oneo-me/nsgo/core"
+)
 
 // The chat's fictional models: the picker changes the voice and whether
 // the reply thinks first.
@@ -54,7 +58,7 @@ type msg struct {
 	label string
 	// user
 	text    string
-	image   string
+	image   core.ImageSource
 	file    *fileRef
 	waiting bool
 	// assistant
@@ -82,9 +86,16 @@ type chatStep struct {
 type scenario struct {
 	id, chip, prompt string
 	model            chatModel
-	image            string
+	image            core.ImageSource
 	file             *fileRef
 	steps            []chatStep
+}
+
+// chatAttachment is what the composer attaches to the next message: a
+// photo, and a file.
+type chatAttachment struct {
+	image core.ImageSource
+	file  fileRef
 }
 
 const chatPhoto = "https://picsum.photos/seed/harbor/640/480"
@@ -147,7 +158,7 @@ var scenarios = []scenario{
 		{tool: &chatTool{id: "code", kind: "code", state: toolPending, lang: "go", code: "n := 10_000\nsieve := make([]bool, n)\ncount := 0\nfor i := 2; i < n; i++ {\n\tif !sieve[i] {\n\t\tcount++\n\t\tfor j := i * i; j < n; j += i {\n\t\t\tsieve[j] = true\n\t\t}\n\t}\n}\nfmt.Println(count)", output: "1229", ms: 38}, ms: 1800},
 		{say: "There are **1,229** primes below 10,000. I counted them with a sieve of Eratosthenes, which runs in a few milliseconds."},
 	}},
-	{id: "vision", chip: "Describe a photo", prompt: "What's in this photo? And summarize the attached notes.", model: "Vision", image: chatPhoto, file: &fileRef{"trip-notes.pdf", "2.4 MB"}, steps: []chatStep{
+	{id: "vision", chip: "Describe a photo", prompt: "What's in this photo? And summarize the attached notes.", model: "Vision", image: core.Src(chatPhoto), file: &fileRef{"trip-notes.pdf", "2.4 MB"}, steps: []chatStep{
 		{say: "**The photo** shows a harbor at dusk: a few moored boats, low warm light on the water and a line of buildings along the far shore.\n\n**trip-notes.pdf** (4 pages) is an itinerary:\n- Day 1: arrive, walk the old town.\n- Day 2: boat tour of the harbor, the one in your photo.\n- Day 3: museum, then the evening train back."},
 	}},
 	{id: "error", chip: "Fail a reply", prompt: "Summarize this week's meeting notes.", model: "Swift", steps: []chatStep{

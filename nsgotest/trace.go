@@ -42,7 +42,7 @@ var itemNames = map[driver.ItemKind]string{
 	driver.ItemScrollBy: "scroll-by", driver.ItemStickyCells: "sticky-cells", driver.ItemAccessibilityLabel: "label",
 	driver.ItemAccessibilityFocus: "accessibility-focus", driver.ItemScreen: "screen", driver.ItemOverflow: "overflow",
 	driver.ItemBlockNative: "block-native", driver.ItemShader: "shader", driver.ItemSetClipboardImage: "set-clipboard-image",
-	driver.ItemOpenURL: "open-url", driver.ItemPickImages: "pick-images", driver.ItemToast: "toast",
+	driver.ItemOpenURL: "open-url", driver.ItemPickImages: "pick-images",
 	driver.ItemAppearance: "appearance", driver.ItemPopupMenu: "popup-menu", driver.ItemQuit: "quit",
 }
 
@@ -68,7 +68,7 @@ func itemLine(it *driver.MountItem) string {
 		fmt.Fprintf(&b, " %g,%g %gx%g", f.Origin.X, f.Origin.Y, f.Size.Width, f.Size.Height)
 	case driver.ItemText:
 		fmt.Fprintf(&b, " %q", it.Text.Text)
-	case driver.ItemInputValue, driver.ItemTitle, driver.ItemToast, driver.ItemAnnounce, driver.ItemAccessibilityLabel,
+	case driver.ItemInputValue, driver.ItemTitle, driver.ItemAnnounce, driver.ItemAccessibilityLabel,
 		driver.ItemSetClipboard, driver.ItemOpenURL:
 		fmt.Fprintf(&b, " %q", it.Value)
 	case driver.ItemViewProps:

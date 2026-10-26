@@ -563,8 +563,6 @@ func (w *window) apply(b *driver.MountBatch) {
 				w.close()
 			}
 			continue
-		case driver.ItemToast:
-			continue
 		case driver.ItemImageInfo:
 			w.imageInfo(it)
 			continue

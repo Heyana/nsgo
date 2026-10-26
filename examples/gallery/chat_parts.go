@@ -58,6 +58,14 @@ func dateSeparator(lbl func() string) core.Node {
 	}}
 }
 
+// fileKind is the extension of a file's name, "file" without one.
+func fileKind(name string) string {
+	if i := strings.LastIndexByte(name, '.'); i >= 0 && i < len(name)-1 {
+		return name[i+1:]
+	}
+	return "file"
+}
+
 // fileChip is a file as a chip: an icon, the name and the size.
 func fileChip(f fileRef, onRemove func()) core.Node {
 	right := core.Points(14)
@@ -69,7 +77,7 @@ func fileChip(f fileRef, onRemove func()) core.Node {
 			Children: []core.Node{icon(glyphFileText, 16, colors.danger)}},
 		core.View{Style: core.Style{Gap: 1}, Children: []core.Node{
 			core.Text{Content: f.name, MaxLines: 1, Style: core.Style{FontSize: 14, Color: colors.text, MaxWidth: core.Pt(170)}},
-			text("PDF · "+f.size, 12, regular, colors.muted),
+			text(strings.ToUpper(fileKind(f.name))+" · "+f.size, 12, regular, colors.muted),
 		}},
 	}
 	if onRemove != nil {
@@ -81,10 +89,10 @@ func fileChip(f fileRef, onRemove func()) core.Node {
 }
 
 // attachedPhoto is an attached image, rounded.
-func attachedPhoto(src string, w, h core.Points) core.Node {
+func attachedPhoto(src core.ImageSource, w, h core.Points) core.Node {
 	return core.View{Style: core.Style{Width: core.Pt(w), Height: core.Pt(h), CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous, Overflow: core.Hidden,
 		Background: colors.raised, BorderWidth: 1, BorderColor: colors.border}, Children: []core.Node{
-		core.Image{Source: core.Src(src), ResizeMode: core.Cover, Style: core.Style{Width: core.Pt(w), Height: core.Pt(h)}},
+		core.Image{Source: src, ResizeMode: core.Cover, Style: core.Style{Width: core.Pt(w), Height: core.Pt(h)}},
 	}}
 }
 

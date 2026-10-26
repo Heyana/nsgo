@@ -5,6 +5,9 @@ import android.content.Context;
 import android.content.res.AssetFileDescriptor;
 import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.view.MotionEvent;
@@ -45,6 +48,11 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
     private float volume = 1, rate = 1;
     private int resizeMode = Protocol.RESIZE_CONTAIN;
     private long progressInterval = 250;
+    /** Protocol's audio session: 0 default, 1 playback, 2 mix with others. */
+    private int audioSession;
+    /** Audio focus while a playback video plays (updateFocus). */
+    private AudioFocusRequest focusRequest;
+    private boolean hasFocus;
     private int videoWidth, videoHeight;
     private MediaController controller;
     private final Runnable progress = this::progress;
@@ -62,6 +70,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         float volume = in.readFloat(), rate = in.readFloat();
         int resizeMode = in.readUnsignedByte();
         long interval = in.readInt() & 0xffffffffL;
+        int audioSession = in.readUnsignedByte();
         paused = Protocol.flag(flags, 0);
         muted = Protocol.flag(flags, 1);
         repeat = Protocol.flag(flags, 2);
@@ -69,6 +78,16 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         this.volume = volume;
         this.rate = rate;
         progressInterval = interval;
+        // A player takes its audio attributes before it prepares: another
+        // session opens the source again.
+        boolean reopen = audioSession != this.audioSession && player != null;
+        if (audioSession != this.audioSession) {
+            this.audioSession = audioSession;
+            if (focusRequest != null) {
+                abandonFocus();
+                focusRequest = null;
+            }
+        }
         if (resizeMode != this.resizeMode) {
             this.resizeMode = resizeMode;
             fit();
@@ -83,7 +102,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         }
         // Go sends no source as an empty one.
         if (source.isEmpty()) source = null;
-        if (!Objects.equals(source, this.source)) {
+        if (!Objects.equals(source, this.source) || reopen) {
             this.source = source;
             open();
         } else {
@@ -116,6 +135,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
                 mp.seekTo(0);
                 mp.start();
             }
+            updateFocus();
         });
         p.setOnInfoListener((mp, what, extra) -> {
             if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START || what == MediaPlayer.MEDIA_INFO_BUFFERING_END) {
@@ -128,6 +148,8 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
             return true;
         });
         if (surface != null) p.setSurface(surface);
+        AudioAttributes attributes = audioAttributes();
+        if (attributes != null) p.setAudioAttributes(attributes);
         report(Protocol.EVENT_LOAD_START, "", 0, 0, 0, 0, false);
         try {
             setMediaSource(p, source);
@@ -190,6 +212,63 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         }
         removeCallbacks(progress);
         if (!paused) postDelayed(progress, progressInterval);
+        updateFocus();
+    }
+
+    /** The sound of a playback or mix-with-others video is speech; a default one keeps the player's own. */
+    private AudioAttributes audioAttributes() {
+        if (audioSession == 0) return null;
+        return new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build();
+    }
+
+    /**
+     * Holds audio focus while a playback video plays, and only then: other apps pause while it plays and
+     * resume once it pauses, ends or goes. Speech pauses rather than ducks when another app takes the focus,
+     * and plays on when it comes back.
+     */
+    private void updateFocus() {
+        MediaPlayer p = player;
+        boolean wanted = audioSession == 1 && p != null && prepared && p.isPlaying();
+        if (wanted == hasFocus) return;
+        if (!wanted) {
+            abandonFocus();
+            return;
+        }
+        AudioManager manager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+        if (manager == null) return;
+        if (focusRequest == null) {
+            focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(audioAttributes())
+                    .setWillPauseWhenDucked(true)
+                    .setOnAudioFocusChangeListener(this::focusChanged)
+                    .build();
+        }
+        hasFocus = manager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+    }
+
+    private void focusChanged(int change) {
+        MediaPlayer p = player;
+        if (change == AudioManager.AUDIOFOCUS_GAIN) {
+            hasFocus = true;
+            if (p != null && prepared && !paused && !p.isPlaying()) p.start();
+        } else if (change == AudioManager.AUDIOFOCUS_LOSS) {
+            // Gone for good: the app plays it again by its props.
+            hasFocus = false;
+            if (p != null && prepared && p.isPlaying()) p.pause();
+        } else if (p != null && prepared && p.isPlaying()) {
+            // Lost for a while (a call, a navigation prompt): back on gain.
+            p.pause();
+        }
+    }
+
+    private void abandonFocus() {
+        if (focusRequest == null || !hasFocus) return;
+        hasFocus = false;
+        AudioManager manager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+        if (manager != null) manager.abandonAudioFocusRequest(focusRequest);
     }
 
     private void progress() {
@@ -244,6 +323,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
             player.release();
             player = null;
         }
+        abandonFocus();
     }
 
     /** Stops the player and frees it and the surface. */
@@ -294,6 +374,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
             paused = false;
             removeCallbacks(progress);
             post(progress);
+            updateFocus();
         }
     }
 
@@ -301,6 +382,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
     public void pause() {
         if (player != null && prepared) player.pause();
         paused = true;
+        updateFocus();
     }
 
     @Override

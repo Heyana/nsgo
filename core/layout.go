@@ -607,6 +607,9 @@ func (t *Tree) setRTL(rtl bool) {
 	for _, n := range t.nodes {
 		if n != nil {
 			n.rtl = rtl
+			if n.env != nil {
+				t.restyle(n)
+			}
 			n.lstyleOK = false
 			n.lstate.Invalidate()
 		}

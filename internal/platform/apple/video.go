@@ -142,6 +142,12 @@ func (v *Video) Configure(c *driver.VideoConfig) {
 			v.player.Send(sel("setRate:"), c.Rate)
 		}
 	}
+	// The audio session follows what plays, not what is mounted.
+	if v.player != 0 && !c.Paused {
+		audioPlaying(v, c.AudioSession)
+	} else {
+		audioPlaying(v, driver.AudioSessionDefault)
+	}
 	gravity := NSString("AVLayerVideoGravityResizeAspect")
 	switch c.ResizeMode {
 	case driver.Cover:
@@ -210,6 +216,10 @@ func (v *Video) open() {
 			return
 		}
 		v.Dispatch(driver.Event{Kind: driver.EventEnd})
+		if !v.config.Repeat {
+			// It stopped: the other apps' audio may play again.
+			audioPlaying(v, driver.AudioSessionDefault)
+		}
 		if v.config.Repeat {
 			v.player.Send(sel("seekToTime:"), cmTimeOf(0))
 			v.player.Send(sel("play"))
@@ -226,6 +236,7 @@ func (v *Video) open() {
 // close stops the player and stops observing it. A macOS view keeps the
 // last frame; an iOS one lets the player's layer or controller go.
 func (v *Video) close() {
+	audioPlaying(v, driver.AudioSessionDefault)
 	if v.player != 0 && v.timeToken != 0 {
 		v.player.Send(sel("removeTimeObserver:"), v.timeToken)
 	}

@@ -129,6 +129,11 @@ func (s *surface) applyAnimated() {
 			s.views[id].redrawAnimated()
 		}
 	})
+	s.animator.ChangedNatives(func(id driver.NodeID, b driver.NativeBinding, num float64, col driver.Color) {
+		if int(id) < len(s.views) && s.views[id] != nil {
+			driver.SetAnimatedProp(s.views[id].component, b, num, col)
+		}
+	})
 	s.repinBound()
 }
 
@@ -322,6 +327,9 @@ func (s *surface) stepMotions(now time.Duration) {
 // configureNative makes a native view's component on its first item and
 // passes it the props that changed.
 func (s *surface) configureNative(v *view, c *driver.NativeConfig) {
+	if c.Bind {
+		s.animator.BindNative(v.id, c.Bindings)
+	}
 	if v.component == nil && !v.componentTried {
 		v.componentTried = true
 		factory := s.components[c.Component]

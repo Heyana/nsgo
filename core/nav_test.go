@@ -250,7 +250,7 @@ func TestModalSheetSizeAndSwipe(t *testing.T) {
 	h := newPhone(t, phone, func(cx *Scope) Node {
 		return View{Style: Style{FlexGrow: 1}, Children: []Node{
 			Modal{TestID: "under"},
-			Modal{TestID: "sheet", Presentation: ModalPageSheet, SupportedOrientations: OrientationPortrait,
+			Modal{TestID: "sheet", Presentation: ModalPageSheet, IOS: IOSModalProps{SupportedOrientations: OrientationPortrait},
 				OnRequestClose: func(r string) { reasons = append(reasons, r) },
 				Children: []Node{Func(func(cx *Scope) Node {
 					cx.Effect(func() { insets = Insets(cx) })
@@ -296,7 +296,7 @@ func TestAndroidModalStartsBelowTheStatusBar(t *testing.T) {
 		}
 		return View{Children: []Node{
 			Modal{TestID: "below", Children: []Node{probe(&below)}},
-			Modal{TestID: "under", StatusBarTranslucent: true, Children: []Node{probe(&under)}},
+			Modal{TestID: "under", Android: AndroidModalProps{StatusBarTranslucent: true}, Children: []Node{probe(&under)}},
 		}}
 	})
 	h.commit()

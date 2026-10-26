@@ -18,7 +18,7 @@ func (v *view) newShader() {
 	if sl == nil {
 		return
 	}
-	sl.Layer.Send(sel("setZPosition:"), float64(-1))
+	sl.Layer.Send(sel("setZPosition:"), apple.Z(contentZ))
 	sl.Ready = func() { v.surface.shadeLater(v) }
 	v.native.Send(selLayer).Send(sel("addSublayer:"), sl.Layer)
 	v.shader = sl

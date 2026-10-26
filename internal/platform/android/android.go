@@ -1145,9 +1145,6 @@ func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []native
 			w.u32(uint32(r.MaxDimension))
 			w.float(r.Quality)
 			w.flags(r.Format == driver.PickCurrent)
-		case driver.ItemToast:
-			w.str(it.Value)
-			w.flags(it.Count == uint32(1))
 		case driver.ItemAppearance:
 			w.byte(byte(it.Appearance))
 		case driver.ItemKeymap:
@@ -1192,6 +1189,7 @@ func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []native
 			w.float(c.Rate)
 			w.byte(byte(c.ResizeMode - driver.Cover)) // Java's are 0-based
 			w.u32(uint32(c.ProgressInterval.Milliseconds()))
+			w.byte(byte(c.AudioSession))
 		case driver.ItemVideoSeek:
 			w.u64(uint64(it.Time.Milliseconds()))
 		case driver.ItemNative:
@@ -1202,6 +1200,17 @@ func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []native
 			for _, p := range n.props {
 				w.str(p.Name)
 				w.str(jsonValue(p.Value))
+			}
+			// The props animated nodes drive, when they changed: Java
+			// hands the view their values on the frames they change.
+			w.flags(it.Native.Bind)
+			if it.Native.Bind {
+				w.u32(uint32(len(it.Native.Bindings)))
+				for _, b := range it.Native.Bindings {
+					w.str(b.Name)
+					w.u32(b.Node)
+					w.flags(b.Color)
+				}
 			}
 		case driver.ItemNativeCommand:
 			w.str(it.Value)

@@ -118,6 +118,45 @@ final class Embedded {
         if (!call(setter, new Object[] {value})) log("no public method " + setter + " takes " + value);
     }
 
+    /** A component's animated props: their names, whether each is a color, and what was handed over. */
+    static final class Bound {
+        final String[] names;
+        final boolean[] colors;
+        final double[] nums;
+        final int[] cols;
+        final boolean[] sent;
+
+        Bound(int count) {
+            names = new String[count];
+            colors = new boolean[count];
+            nums = new double[count];
+            cols = new int[count];
+            sent = new boolean[count];
+        }
+    }
+
+    /**
+     * Hands the view the animated props whose values changed: a registered component through setAnimatedNumber
+     * and setAnimatedColor, a view built by reflection through its setters, a color as an ARGB int.
+     */
+    void animate(Bound b, double[] nums, int[] colors) {
+        for (int i = 0; i < b.names.length && i < nums.length; i++) {
+            if (b.sent[i] && nums[i] == b.nums[i] && colors[i] == b.cols[i]) continue;
+            b.sent[i] = true;
+            b.nums[i] = nums[i];
+            b.cols[i] = colors[i];
+            if (b.colors[i]) {
+                int argb = Text.argb(colors[i]);
+                if (hosted != null) hosted.setAnimatedColor(b.names[i], argb);
+                else setProp(b.names[i], argb);
+            } else if (hosted != null) {
+                hosted.setAnimatedNumber(b.names[i], nums[i]);
+            } else {
+                setProp(b.names[i], nums[i]);
+            }
+        }
+    }
+
     /** Calls method name with args: a JSON array's elements, nothing for null, else the one value. */
     void command(String name, Object args) {
         if (hosted != null) {

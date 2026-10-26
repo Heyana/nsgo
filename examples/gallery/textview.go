@@ -301,8 +301,8 @@ const (
 // selectionAreaCard is two documents and a plain text that select as one,
 // around a label that stays out.
 func selectionAreaCard(cx *core.Scope) core.Node {
-	return card(cardProps{icon: iconText, title: "SelectionArea", subtitle: "One selection across texts and TextViews"},
-		base.SelectionArea{Style: core.Style{Gap: 12}, Children: []core.Node{
+	return card(cardProps{icon: iconText, title: "Selectable view", subtitle: "One selection across texts and TextViews"},
+		core.View{Selectable: true, Style: core.Style{Gap: 12}, Children: []core.Node{
 			textview.TextView{Markdown: tvQuestion, Styles: readingStyles()},
 			textview.TextView{Markdown: tvAnswer, Styles: readingStyles()},
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignBaseline, Gap: 8}, Children: []core.Node{

@@ -176,7 +176,7 @@ func dialogsCard(cx *core.Scope) core.Node {
 		}
 		return l
 	}
-	return card(cardProps{icon: iconBell, title: "Alerts and sheets", subtitle: "ShowAlertDialog · ShowToast", flush: true},
+	return card(cardProps{icon: iconBell, title: "Alerts and sheets", subtitle: "AlertDialog · Toast", flush: true},
 		inset(insetProps{padding: 12, exact: true},
 			actionRow(true, iconCheck, colors.up, "Alert", "One button", func() {
 				base.ShowAlertDialog(cx, base.AlertDialog{Title: "Saved", Description: "Your changes were saved.", Actions: []core.AlertAction{{Label: "OK"}}},
@@ -216,7 +216,9 @@ func dialogsCard(cx *core.Scope) core.Node {
 						show(or(l), t)
 					})
 			}),
-			actionRow(false, iconSpark, colors.warn, "Toast", "Android only", func() { cx.ShowToast("Hello from a toast", core.ToastLong) }),
+			actionRow(false, iconSpark, colors.warn, "Toast", "base, every platform", func() {
+				toast(toastContent{title: "Hello from a toast", description: "base's ToastManager, styled by the gallery"})
+			}),
 		),
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10, Padding: core.Edges{Top: 12, Right: 11, Bottom: 11, Left: 11}, MinHeight: core.Pt(44)}, Children: []core.Node{
 			core.Text{Content: "Answer", Style: core.Style{FlexGrow: 1, FontSize: 13, Color: colors.muted}},
@@ -495,10 +497,10 @@ func windowCard(cx *core.Scope) core.Node {
 			small("Floating", func() { desktop.SetWindowLevel(cx, desktop.WindowLevelFloating) }),
 			small("Desktop", func() { desktop.SetWindowLevel(cx, desktop.WindowLevelDesktop) }),
 		),
-		core.View{WindowDrag: core.WindowDragOn, Style: core.Style{Height: core.Pt(52), CornerRadius: radiusControl, Background: colors.raised, BorderWidth: 1, BorderColor: colors.border,
+		core.View{Desktop: core.DesktopViewProps{WindowDrag: core.WindowDragOn}, Style: core.Style{Height: core.Pt(52), CornerRadius: radiusControl, Background: colors.raised, BorderWidth: 1, BorderColor: colors.border,
 			Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifySpaceBetween, Padding: core.Symmetric(0, 14)}, Children: []core.Node{
 			text("Drag the window from here", 14, regular, colors.muted),
-			core.View{WindowDrag: core.WindowDragOff, Children: []core.Node{small("Still pressable", func() {})}},
+			core.View{Desktop: core.DesktopViewProps{WindowDrag: core.WindowDragOff}, Children: []core.Node{small("Still pressable", func() {})}},
 		}},
 		button(buttonProps{label: "Quit", variant: secondary, color: colors.danger}, cx.Quit),
 	)

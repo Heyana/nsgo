@@ -161,20 +161,19 @@ func unsavedPage(cx *core.Scope) base.NavPage {
 }
 
 func headerlessPage(cx *core.Scope) base.NavPage {
-	return base.NavPage{HeaderHidden: true, Children: []core.Node{base.SafeAreaView{Edges: base.Top | base.Bottom | base.Left | base.Right,
-		Style: core.Style{FlexGrow: 1, Background: colors.background}, Children: []core.Node{
-			core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(16), Gap: 16}, Children: []core.Node{
-				appear(0, false, core.View{Style: core.Style{Gap: 8, Padding: core.Edges{Top: 12, Right: 4, Left: 4}}, Children: []core.Node{
-					core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{badge("HeaderHidden", toneAccent)}},
-					core.Text{Content: "No header", Style: core.Style{FontSize: 30, FontWeight: bold, LetterSpacing: -0.5, Color: colors.text}},
-					core.Text{Content: "The screen owns the whole surface; a SafeAreaView keeps it clear of the status bar and the home indicator.",
-						Style: core.Style{FontSize: 15, LineHeight: 21, Color: colors.muted}},
-				}}),
-				appear(1, false, section("Safe area", "SafeAreaView", insetsRow(cx))),
-				spacer(),
-				button(buttonProps{label: "Back"}, func() { shell.nav.Pop(1) }),
-			}},
-		}}}}
+	return base.NavPage{HeaderHidden: true, Children: []core.Node{core.View{Style: core.Style{PaddingEnv: core.EnvAll(core.EnvSafeArea), FlexGrow: 1, Background: colors.background}, Children: []core.Node{
+		core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(16), Gap: 16}, Children: []core.Node{
+			appear(0, false, core.View{Style: core.Style{Gap: 8, Padding: core.Edges{Top: 12, Right: 4, Left: 4}}, Children: []core.Node{
+				core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{badge("HeaderHidden", toneAccent)}},
+				core.Text{Content: "No header", Style: core.Style{FontSize: 30, FontWeight: bold, LetterSpacing: -0.5, Color: colors.text}},
+				core.Text{Content: "The screen owns the whole surface; padding of EnvSafeArea keeps it clear of the status bar and the home indicator.",
+					Style: core.Style{FontSize: 15, LineHeight: 21, Color: colors.muted}},
+			}}),
+			appear(1, false, section("Safe area", "PaddingEnv: EnvSafeArea", insetsRow(cx))),
+			spacer(),
+			button(buttonProps{label: "Back"}, func() { shell.nav.Pop(1) }),
+		}},
+	}}}}
 }
 
 func deepPage(depth int) func(cx *core.Scope) base.NavPage {
@@ -213,7 +212,7 @@ type modalKind struct {
 // modalBody is a modal's content: what it is, its safe area and a close
 // button.
 func modalBody(cx *core.Scope, title, noteText func() string, body func() string, onClose func()) core.Node {
-	return base.SafeAreaView{Edges: base.Top | base.Bottom | base.Left | base.Right, Style: core.Style{FlexGrow: 1, Background: colors.background}, Children: []core.Node{
+	return core.View{Style: core.Style{PaddingEnv: core.EnvAll(core.EnvSafeArea), FlexGrow: 1, Background: colors.background}, Children: []core.Node{
 		core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(16), Gap: 16}, Children: []core.Node{
 			core.View{Style: core.Style{Gap: 8, Padding: core.Edges{Top: 8, Right: 4, Left: 4}}, Children: []core.Node{
 				core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{badgef(noteText, toneAccent, false)}},

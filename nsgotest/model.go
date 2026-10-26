@@ -48,7 +48,8 @@ type View struct {
 	// Seeks are the positions the app asked a video to jump to, oldest
 	// first.
 	Seeks []time.Duration
-	// Component and NativeProps are a native view's component and props;
+	// Component and NativeProps are a native view's component and props,
+	// an animated one at the value the frame clock last handed over;
 	// NativeCommands what Ref.Command sent it, oldest first.
 	Component      string
 	NativeProps    map[string]any
@@ -130,6 +131,18 @@ func (a *App) animate() {
 	a.anim.ChangedCanvases(func(id driver.NodeID) {
 		if v := a.views[id]; v != nil && v.Drawing != nil {
 			v.Ops = slices.Clone(a.anim.CanvasOps(id, v.Drawing))
+		}
+	})
+	a.anim.ChangedNatives(func(id driver.NodeID, b driver.NativeBinding, num float64, col driver.Color) {
+		if v := a.views[id]; v != nil {
+			if v.NativeProps == nil {
+				v.NativeProps = map[string]any{}
+			}
+			if b.Color {
+				v.NativeProps[b.Name] = col
+			} else {
+				v.NativeProps[b.Name] = num
+			}
 		}
 	})
 }
@@ -266,6 +279,9 @@ func (a *App) apply(b *driver.MountBatch) {
 					v.NativeProps[k] = p
 				}
 			}
+			if it.Native.Bind {
+				a.anim.BindNative(it.ID, it.Native.Bindings)
+			}
 		case driver.ItemNativeCommand:
 			v.NativeCommands = append(v.NativeCommands, NativeCommand{it.Value, it.Data})
 		case driver.ItemCanvas:
@@ -312,8 +328,6 @@ func (a *App) apply(b *driver.MountBatch) {
 				files = a.PickImages(*it.Pick)
 			}
 			a.post(driver.Event{Kind: driver.EventPick, Count: it.Count, Data: files})
-		case driver.ItemToast:
-			a.Toasts = append(a.Toasts, it.Value)
 		case driver.ItemAppearance:
 			a.Appearance = it.Appearance
 		case driver.ItemQuit:

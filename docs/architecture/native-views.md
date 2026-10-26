@@ -32,6 +32,7 @@
 - `EventLoad` carries the duration and the picture's size in points; `EventProgress` comes every `ProgressInterval` while playing.
 - `EventEnd` follows the platform: AVFoundation and Android report every end, then a repeating video starts over; a looping Media Foundation engine, `<video>` or GTK stream never ends.
 - `Controls` shows the platform's controls. Windows has none, so it draws NSH's bar.
+- `AudioSession` is NSH's `audioSession`. On iOS, while a video with one plays, the shared `AVAudioSession` is the playback category in the spoken-audio mode (mixing with others for `AudioSessionMixWithOthers`), and goes back to what it was, deactivated to let other apps play, once none plays (`apple/audiosession_ios.go`). On Android the sound is speech, and a playback video holds `AUDIOFOCUS_GAIN_TRANSIENT` while it plays, pausing for another app's focus and playing on when it returns; a change opens the source again. The desktops and the web ignore it.
 
 | Target | Player |
 | --- | --- |
@@ -47,6 +48,7 @@ An app registers its own platform views by name, as NSH's embedding apps do (`ns
 
 - `Native` names the component; its `Props` cross only when they change, a removed one as nil, and `Ref.Command` reaches the component's `Command`.
 - The first `ItemNative` makes the component with a `NativeContext`, whose `Emit` reaches `OnEvent` and whose `SetSize` gives the element a natural size, as an image's; a width of 0 asks for its height alone, as a bar as wide as it is placed.
+- A prop whose value is an `AnimatedNode` is bound rather than sent, as NSH 0.3.0's are: `NativeConfig.Bindings` names each bound prop's node and whether it outputs a color, and the backend's `Animator` (`BindNative`, `ChangedNatives`) hands the component each value that changed on the frame clock, through `driver.AnimatedPropSetter` or else `SetProp` with a `float64` or a `Color`. A plain value replacing a node is sent; a removed prop is sent as nil. Android binds them in Java as a canvas's arguments are and calls the view's setters, or a registered `NsgoComponent`'s `setAnimatedNumber` and `setAnimatedColor`, never an `AndroidPropMapper`; iOS hosts' components take the optional `setAnimatedNumber:value:` and `setAnimatedColor:argb:`.
 - iOS and Android register `driver.TabBarComponent` themselves, for `mobile.TabBar`; Android's measures itself 80 points tall plus the system navigation bar it reaches under.
 - Factories run on the main thread and may return nil; an unknown name leaves an empty box and is logged once.
 - Registering differs per platform only in what `View` returns, so an app registers a target's components in files built for it, as the gallery's `components_*.go` do.

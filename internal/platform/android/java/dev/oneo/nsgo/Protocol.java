@@ -104,10 +104,9 @@ final class Protocol {
     static final int ITEM_SET_CLIPBOARD_IMAGE = 49;
     static final int ITEM_OPEN_URL = 50;
     static final int ITEM_PICK_IMAGES = 51;
-    static final int ITEM_TOAST = 52;
-    static final int ITEM_APPEARANCE = 53;
-    static final int ITEM_POPUP_MENU = 54;
-    static final int ITEM_QUIT = 55;
+    static final int ITEM_APPEARANCE = 52;
+    static final int ITEM_POPUP_MENU = 53;
+    static final int ITEM_QUIT = 54;
 
     // View kinds, as in core/mount.go.
     static final int KIND_VIEW = 1;

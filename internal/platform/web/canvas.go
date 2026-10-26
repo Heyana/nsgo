@@ -35,6 +35,15 @@ func (s *surface) changedCanvases() {
 	})
 }
 
+// changedNatives hands components the animated props that changed.
+func (s *surface) changedNatives() {
+	s.animator.ChangedNatives(func(id driver.NodeID, b driver.NativeBinding, num float64, col driver.Color) {
+		if v := s.view(id); v != nil {
+			driver.SetAnimatedProp(v.component, b, num, col)
+		}
+	})
+}
+
 // paint plays a canvas view's drawing into its <canvas>, whose pixels
 // follow the pixel ratio. The drawing's origin is inside the border.
 func (s *surface) paint(v *view) {

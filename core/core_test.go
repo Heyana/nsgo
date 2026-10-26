@@ -1027,7 +1027,7 @@ func TestSelectionProps(t *testing.T) {
 	var color *Signal[Color]
 	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
 		color = NewSignal(cx, RGB(0x00ff00))
-		return View{SelectionArea: true, StyleFunc: func() Style { return Style{SelectionColor: color.Get()} },
+		return View{Selectable: true, StyleFunc: func() Style { return Style{SelectionColor: color.Get()} },
 			TestID: "area", Children: []Node{
 				Text{Content: "in", TestID: "in"},
 				Text{Content: "out", Selectable: SelectableOff, TestID: "out"},

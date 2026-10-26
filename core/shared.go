@@ -42,6 +42,12 @@ type (
 	// suggestions: React Native's autoComplete, which iOS maps to its
 	// textContentType.
 	AutoComplete = driver.AutoComplete
+	// AudioSession is what a video's sound does to the rest of the
+	// device's audio while it plays.
+	AudioSession = driver.AudioSession
+	// AnimatedPropSetter is implemented by a native component that takes
+	// its animated props as numbers and colors.
+	AnimatedPropSetter = driver.AnimatedPropSetter
 	// Bounds is a rectangle: its origin relative to the parent's and its size.
 	Bounds = driver.Bounds
 	// Color is an sRGB color packed as 0xRRGGBBAA, the wire form of mount
@@ -763,6 +769,12 @@ const (
 	SelectableAuto = driver.SelectableAuto
 	SelectableOn   = driver.SelectableOn
 	SelectableOff  = driver.SelectableOff
+)
+
+const (
+	AudioSessionDefault       = driver.AudioSessionDefault
+	AudioSessionPlayback      = driver.AudioSessionPlayback
+	AudioSessionMixWithOthers = driver.AudioSessionMixWithOthers
 )
 
 const (

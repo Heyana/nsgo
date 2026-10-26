@@ -82,7 +82,7 @@ func (v *view) newContent() {
 	// cost more than glyphs.
 	layer.Send(sel("setDrawsAsynchronously:"), v.kind == driver.KindCanvas)
 	layer.Send(sel("setContentsScale:"), float64(v.surface.env.PixelRatio))
-	layer.Send(sel("setZPosition:"), float64(contentZ))
+	layer.Send(sel("setZPosition:"), apple.Z(contentZ))
 	v.native.Send(selLayer).Send(sel("addSublayer:"), layer)
 	layer.Send(selRelease)
 	v.contentLayer = layer

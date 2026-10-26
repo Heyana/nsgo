@@ -247,15 +247,15 @@ type Dialog struct {
 	Animation              core.ModalAnimation
 	NoCloseOnEscape        bool
 	NoCloseOnBackdropPress bool
-	// Presentation, NoCloseOnSwipe and SupportedOrientations are iOS's,
-	// StatusBarTranslucent is Android's, and StatusBar is set over the
-	// app's while the dialog is open, as core.Modal's are.
-	Presentation          core.ModalPresentation
-	NoCloseOnSwipe        bool
-	SupportedOrientations core.Orientation
-	StatusBarTranslucent  bool
-	StatusBar             core.StatusBarSetting
-	StatusBarFunc         func() core.StatusBarSetting
+	// Presentation and NoCloseOnSwipe are iOS's, IOS and Android hold the
+	// props only one of them has, and StatusBar is set over the app's
+	// while the dialog is open, as core.Modal's are.
+	Presentation   core.ModalPresentation
+	NoCloseOnSwipe bool
+	IOS            core.IOSModalProps
+	Android        core.AndroidModalProps
+	StatusBar      core.StatusBarSetting
+	StatusBarFunc  func() core.StatusBarSetting
 	// BackdropStyle or BackdropStyleFunc, when set, draws a backdrop whose
 	// press asks to close.
 	BackdropStyle     core.Style
@@ -273,8 +273,7 @@ func (d Dialog) Render(cx *core.Scope) core.Node {
 	st.onCancel = d.OnCancel
 	st.lifecycle(cx, st.open)
 	m := core.Modal{Animation: d.Animation, Presentation: d.Presentation, NoCloseOnSwipe: d.NoCloseOnSwipe,
-		SupportedOrientations: d.SupportedOrientations, StatusBarTranslucent: d.StatusBarTranslucent,
-		StatusBar: d.StatusBar, StatusBarFunc: d.StatusBarFunc,
+		IOS: d.IOS, Android: d.Android, StatusBar: d.StatusBar, StatusBarFunc: d.StatusBarFunc,
 		Style: core.Style{JustifyContent: core.JustifyCenter, AlignItems: core.AlignCenter}}
 	return modalLayer(st, m, d.BackdropStyle, d.BackdropStyleFunc, d.NoCloseOnBackdropPress,
 		d.NoCloseOnEscape, d.PopupStyle, d.PopupStyleFunc, d.Children, d.Label, d.TestID)

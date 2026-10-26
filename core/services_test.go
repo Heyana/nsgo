@@ -313,14 +313,13 @@ func TestAppearanceForcesDark(t *testing.T) {
 	}
 }
 
-func TestToastAndQuit(t *testing.T) {
+func TestQuit(t *testing.T) {
 	var cx *Scope
 	h := newHost(t, Size{Width: 100, Height: 100}, func(c *Scope) Node { cx = c; return View{} })
 	h.commit()
-	cx.ShowToast("Saved", ToastLong)
 	cx.Quit()
 	b := h.commit()
-	if it := command(b, driver.ItemToast); it == nil || it.Value != "Saved" || it.Count != 1 || command(b, driver.ItemQuit) == nil {
+	if command(b, driver.ItemQuit) == nil {
 		t.Fatalf("items = %+v", b.Items)
 	}
 }

@@ -17,6 +17,16 @@ public interface NsgoComponent {
     /** Sets one of the element's props; null when the prop goes. */
     void setProp(String name, Object value);
 
+    /** Sets an animated prop to its value on a frame it changed; setProp by default. */
+    default void setAnimatedNumber(String name, double value) {
+        setProp(name, value);
+    }
+
+    /** Sets an animated color prop, as an ARGB int, on a frame it changed; setProp by default. */
+    default void setAnimatedColor(String name, int argb) {
+        setProp(name, argb);
+    }
+
     /** Runs a command the app sent (core.Ref.Command). */
     default void command(String name, Object args) {}
 

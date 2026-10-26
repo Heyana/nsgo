@@ -189,9 +189,6 @@ const (
 	// ItemPickImages shows the system's photo picker for Pick; the
 	// platform answers with EventPick carrying Count.
 	ItemPickImages
-	// ItemToast shows Value as Android's toast, a long one when Count is
-	// 1; others ignore it.
-	ItemToast
 	// ItemAppearance shows the app in Appearance whatever the system's,
 	// native chrome included.
 	ItemAppearance
@@ -879,4 +876,22 @@ type VideoConfig struct {
 	ResizeMode       ResizeMode
 	Controls         bool
 	ProgressInterval time.Duration
+	AudioSession     AudioSession
 }
+
+// AudioSession is what a video's sound does to the rest of the device's
+// audio while it plays, as NSH's audioSession.
+type AudioSession uint8
+
+const (
+	// AudioSessionDefault leaves the app's audio settings to decide: on
+	// iOS the device's silent mode silences it.
+	AudioSessionDefault AudioSession = iota
+	// AudioSessionPlayback plays in iOS's silent mode as speech, pausing
+	// other apps' audio until it pauses, ends or goes; Android holds the
+	// audio focus while it plays.
+	AudioSessionPlayback
+	// AudioSessionMixWithOthers plays in iOS's silent mode as speech, with
+	// other apps' audio going on.
+	AudioSessionMixWithOthers
+)
