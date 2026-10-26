@@ -119,7 +119,7 @@ func sameSource(a, b driver.ImageSource) bool {
 }
 
 // imageURL returns where the browser loads src from: an object URL for
-// bytes, and "asset:" paths in the resources beside the page.
+// bytes, and "asset:" paths beside the page.
 func imageURL(src driver.ImageSource) (url string, object bool) {
 	if len(src.Data) > 0 {
 		g := js.Global()
@@ -135,19 +135,23 @@ func imageURL(src driver.ImageSource) (url string, object bool) {
 		return g.Get("URL").Call("createObjectURL", blob).String(), true
 	}
 	if path, ok := strings.CutPrefix(src.URI, "asset:"); ok {
-		return resourceDir() + strings.TrimPrefix(path, "/"), false
+		return resourceURL(path), false
 	}
 	return src.URI, false
 }
 
-// resourceDir is where the page's resources are: the directory a
-// published site names by its content (globalThis.nsgoResources), else
-// resources/ beside the page.
-func resourceDir() string {
-	if dir := js.Global().Get("nsgoResources"); dir.Type() == js.TypeString {
-		return dir.String()
+// resourceURL returns where the browser fetches the app's resource path:
+// the page's resources, which a published site names by their content
+// (globalThis.nsgoResources maps each path to its name) and a dev build
+// serves under the paths themselves.
+func resourceURL(path string) string {
+	path = strings.TrimPrefix(path, "/")
+	if names := js.Global().Get("nsgoResources"); names.Type() == js.TypeObject {
+		if name := names.Get(path); name.Type() == js.TypeString {
+			return name.String()
+		}
 	}
-	return "resources/"
+	return path
 }
 
 // release stops loading and revokes the object URL the picture made.

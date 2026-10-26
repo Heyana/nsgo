@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 )
 
-// resourcesDir is the directory beside nsgo.yaml that packages carry.
-// Files the project keeps but does not ship, such as its icons, go in
-// assets instead.
+// resourcesDir is the directory beside nsgo.yaml whose files packages
+// carry. Files the project keeps but does not ship, such as its icons, go
+// in assets instead.
 const resourcesDir = "resources"
 
 // copyResources copies the app's resources directory into root, the

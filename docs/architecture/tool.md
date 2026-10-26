@@ -21,11 +21,11 @@ The web target is served from the same server; its page shows the overlay itself
 `nsgo build` strips symbols, paths and VCS stamps (`nsgo dev` keeps symbols unless `-release`) and writes a directory per target under `build.output`:
 
 - macOS: `<name>.app`, signed ad hoc. iOS: `<name>.app` and `<name>.ipa`, signed with `sign.profile`, else unsigned. Android: `<name>.apk`, signed with `sign.keystore`, else the project's debug key.
-- Windows and Linux: the executable with `resources/`.
+- Windows and Linux: the executable with the resources beside it.
 - With `-embed`, for apps of their own to embed ([embedding](embedding.md)): iOS's `<module>.xcframework` with `<name>Resources`, Android's `<name>.aar`, and no package for other targets.
-- Web: `index.html`, `manifest.webmanifest` and every other file named by its content (`app.<10 hex>.wasm`, `resources.<hash>/`, which the page tells the runtime as `nsgoResources`), so hosts cache them for good.
+- Web: `index.html`, `manifest.webmanifest` and every other file named by its content (`app.<10 hex>.wasm` and each resource, whose names the page tells the runtime as `nsgoResources`), so hosts cache them for good.
 
-`resources/` ships in each package's resource root, which `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` and font paths against. App icons are drawn in Go; `actool` compiles Apple's `.icon` files, and a Windows icon links from a `.syso` in the app's package directory, the only place Go links one from.
+`resources/` ships at each package's resource root: beside the executable on Windows and Linux, beside the page on the web, in the bundle's `Contents/Resources` on macOS, at the bundle's root on iOS and in the APK's assets on Android. `imageload.ResourceRoot`, the web backend and Android's APK reader resolve `asset:` and font paths against it. App icons are drawn in Go; `actool` compiles Apple's `.icon` files, and a Windows icon links from a `.syso` in the app's package directory, the only place Go links one from.
 
 `build_number` sets `CFBundleVersion` and `versionCode`, else they follow `version`. `appearance` starts the app light or dark through `-X`, and sets `UIUserInterfaceStyle`, macOS's Aqua appearance, Android's activity theme and the page's `color-scheme`. `-run` starts the package of the first target this machine runs: the app, the iPhone's, the simulator's, the Android device's, or the site served with a CDN's cache headers. `-device` picks the device as `nsgo dev`'s does; Xcode signs the iPhone's package again for `-team`, as in the dev loop, since devices install only development builds.
 

@@ -81,7 +81,7 @@ try {
   const index = readFileSync(path.join(galleryDir, 'index.html'), 'utf8');
   const exec = one(index, /<script src="([^"]*wasm_exec[^"]*\.js)"><\/script>/, 'wasm_exec.js');
   const wasm = one(index, /fetch\("([^"]+\.wasm)"\)/, 'wasm file');
-  const resources = one(index, /globalThis\.nsgoResources = "([^"]*)";/, 'resources directory');
+  const resources = one(index, /globalThis\.nsgoResources = (.+);/, 'resource names');
   const icon = index.match(/<link rel="icon" href="([^"]+)">/)?.[1] ?? '';
 
   const wasmPath = path.join(galleryDir, wasm);
@@ -95,7 +95,7 @@ try {
     wasm,
     gzip,
     exec,
-    resources,
+    resources: JSON.parse(resources),
     icon,
     wasmBytes,
     gzipBytes: compressed.length,

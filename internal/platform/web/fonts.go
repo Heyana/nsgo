@@ -62,7 +62,7 @@ func registerFonts(paths []string) {
 			}), failed)
 			return nil
 		})
-		g.Call("fetch", resourceDir()+p).Call("then", fn(func(r js.Value) any {
+		g.Call("fetch", resourceURL(p)).Call("then", fn(func(r js.Value) any {
 			if !r.Get("ok").Bool() {
 				return g.Get("Promise").Call("reject", g.Get("Error").New("HTTP "+strconv.Itoa(r.Get("status").Int())))
 			}

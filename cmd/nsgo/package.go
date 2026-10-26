@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"sort"
 	"strings"
 )
 
@@ -80,9 +79,9 @@ func hashedName(name string, data []byte) string {
 	return strings.TrimSuffix(name, ext) + "." + hex.EncodeToString(sum[:])[:10] + ext
 }
 
-// hashed matches the names hashedName gives, and the directory a site's
-// resources go in.
-var hashed = regexp.MustCompile(`\.[0-9a-f]{10}(\.[A-Za-z0-9]+|/)`)
+// hashed matches the names hashedName gives: a content hash before the
+// extension, or at the end of a name without one.
+var hashed = regexp.MustCompile(`\.[0-9a-f]{10}(\.[A-Za-z0-9]+)?(/|$)`)
 
 // webManifest is a site's manifest.webmanifest, which lets browsers
 // install it as an app.
@@ -126,40 +125,24 @@ func writeWebManifest(p *project, dir string, icons []webIcon) error {
 	return os.WriteFile(filepath.Join(dir, "manifest.webmanifest"), append(data, '\n'), 0o644)
 }
 
-// copyHashedResources copies the project's resources into dir under a
-// directory named by their content, and returns its name with a slash.
-func copyHashedResources(p *project, dir string) (string, error) {
-	type file struct {
-		rel  string
-		data []byte
-	}
-	var files []file
-	if err := walkResources(p, func(rel string, data []byte) error {
-		files = append(files, file{rel, data})
-		return nil
-	}); err != nil {
-		return "", err
-	}
-	if len(files) == 0 {
-		return "", nil
-	}
-	sort.Slice(files, func(i, j int) bool { return files[i].rel < files[j].rel })
-	h := sha256.New()
-	for _, f := range files {
-		fmt.Fprintf(h, "%s\x00%d\x00", f.rel, len(f.data))
-		h.Write(f.data)
-	}
-	name := resourcesDir + "." + hex.EncodeToString(h.Sum(nil))[:10]
-	for _, f := range files {
-		dst := filepath.Join(dir, name, filepath.FromSlash(f.rel))
+// copyHashedResources copies the project's resources beside the page in
+// dir, each file named by its content, and returns the name each got by
+// its path in the project.
+func copyHashedResources(p *project, dir string) (map[string]string, error) {
+	names := make(map[string]string)
+	err := walkResources(p, func(rel string, data []byte) error {
+		name := hashedName(rel, data)
+		dst := filepath.Join(dir, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return "", err
+			return err
 		}
-		if err := os.WriteFile(dst, f.data, 0o644); err != nil {
-			return "", err
+		if err := os.WriteFile(dst, data, 0o644); err != nil {
+			return err
 		}
-	}
-	return name + "/", nil
+		names[rel] = name
+		return nil
+	})
+	return names, err
 }
 
 // serveSite serves a published site from dir on this machine, with the

@@ -57,15 +57,19 @@ func TestWebReleasesNameFilesByContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !hashed.MatchString("/" + got) {
+	name, ok := got["fonts/a.ttf"]
+	if !ok || !hashed.MatchString("/"+name) {
 		t.Fatalf("resources went to %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "out", got, "fonts", "a.ttf")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "out", filepath.FromSlash(name))); err != nil {
 		t.Fatal(err)
 	}
-	name := hashedName("app.wasm", []byte("wasm"))
-	if !hashed.MatchString("/"+name) || hashedName("app.wasm", []byte("wasm2")) == name {
-		t.Fatalf("hashed name %q", name)
+	if _, err := os.Stat(filepath.Join(dir, "out", resourcesDir)); !os.IsNotExist(err) {
+		t.Fatal("the site still has a resources directory")
+	}
+	wasm := hashedName("app.wasm", []byte("wasm"))
+	if !hashed.MatchString("/"+wasm) || hashedName("app.wasm", []byte("wasm2")) == wasm {
+		t.Fatalf("hashed name %q", wasm)
 	}
 	if hashed.MatchString("/index.html") || hashed.MatchString("/manifest.webmanifest") {
 		t.Fatal("the page or manifest would be cached for good")

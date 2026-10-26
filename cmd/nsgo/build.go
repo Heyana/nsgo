@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -258,7 +259,7 @@ func buildWindows(ctx context.Context, p *project, dir, arch string) error {
 	if err != nil {
 		return err
 	}
-	return copyResources(p, filepath.Join(dir, resourcesDir))
+	return copyResources(p, dir)
 }
 
 // buildLinux writes <dir>/<name> with the resources and icon beside it.
@@ -267,16 +268,17 @@ func buildLinux(ctx context.Context, p *project, dir, arch string) error {
 		[]string{"GOOS=linux", "GOARCH=" + arch, "CGO_ENABLED=0"}); err != nil {
 		return err
 	}
-	if err := copyResources(p, filepath.Join(dir, resourcesDir)); err != nil {
+	if err := copyResources(p, dir); err != nil {
 		return err
 	}
 	return writeLinuxIcon(p, dir)
 }
 
 // buildWeb writes the site to dir: index.html, wasm_exec.js, app.wasm
-// and the resources. A release names every file but the page and its
-// manifest.webmanifest by its content, so hosts cache them for good; a
-// dev build keeps the names and follows nsgo dev's server.
+// and the resources beside them. A release names every file but the page
+// and its manifest.webmanifest by its content, so hosts cache them for
+// good, and the page tells the runtime the name each resource got; a dev
+// build keeps the names and follows nsgo dev's server.
 func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 	wasm := filepath.Join(dir, "app.wasm")
 	if err := goBuild(ctx, p, wasm, []string{"GOOS=js", "GOARCH=wasm"}); err != nil {
@@ -308,7 +310,7 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 		return err
 	}
 	if dev {
-		if err := copyResources(p, filepath.Join(dir, resourcesDir)); err != nil {
+		if err := copyResources(p, dir); err != nil {
 			return err
 		}
 	} else {
@@ -321,8 +323,16 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 			return err
 		}
 		page["Wasm"] = name
-		if page["Resources"], err = copyHashedResources(p, dir); err != nil {
+		names, err := copyHashedResources(p, dir)
+		if err != nil {
 			return err
+		}
+		if len(names) > 0 {
+			data, err := json.Marshal(names)
+			if err != nil {
+				return err
+			}
+			page["Resources"] = string(data)
 		}
 	}
 	if img != nil {
@@ -383,7 +393,7 @@ var indexHTML = template.Must(template.New("index").Parse(`<!doctype html>
 <body>
 <script>
 {{- if .Resources}}
-globalThis.nsgoResources = "{{.Resources}}";
+globalThis.nsgoResources = {{.Resources}};
 {{- end}}
 const go = new Go();
 WebAssembly.instantiateStreaming(fetch("{{.Wasm}}"), go.importObject).then((r) => go.run(r.instance));

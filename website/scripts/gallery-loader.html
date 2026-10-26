@@ -340,7 +340,7 @@
               setProgress('start', 94, compiled.total, compiled.total, 'Starting the Go runtime…');
               var go = new Go();
               return WebAssembly.instantiate(compiled.module, go.importObject).then(function (instance) {
-                globalThis.nsgoResources = '__RESOURCES__';
+                globalThis.nsgoResources = __RESOURCES__;
                 // Let the loader paint before Go's first commit takes the thread.
                 return new Promise(function (resolve) {
                   requestAnimationFrame(function () {

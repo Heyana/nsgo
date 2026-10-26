@@ -26,21 +26,18 @@ import (
 )
 
 // ResourceRoot is the directory "asset:" paths resolve against: the
-// package's resource root, Contents/Resources in a macOS bundle, an iOS
-// bundle's root and "resources" beside the executable elsewhere. Android
-// reads them from its APK instead.
+// package's resource root, Contents/Resources in a macOS bundle and the
+// executable's directory elsewhere, where Windows and Linux packages put
+// their resources. Android reads them from its APK instead.
 var ResourceRoot = func() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return "resources"
+		return "."
 	}
-	switch runtime.GOOS {
-	case "darwin":
+	if runtime.GOOS == "darwin" {
 		return filepath.Join(filepath.Dir(exe), "..", "Resources")
-	case "ios":
-		return filepath.Dir(exe)
 	}
-	return filepath.Join(filepath.Dir(exe), "resources")
+	return filepath.Dir(exe)
 }()
 
 // ReadResource reads one of the app's resources by its slash-separated

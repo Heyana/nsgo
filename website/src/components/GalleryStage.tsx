@@ -18,7 +18,7 @@ interface Manifest {
   wasm: string;
   gzip: string;
   exec: string;
-  resources: string;
+  resources: Record<string, string>;
   wasmBytes: number;
   gzipBytes: number;
 }
