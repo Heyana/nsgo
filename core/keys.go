@@ -190,7 +190,7 @@ func (cx *Scope) KeyLabel(key string) string {
 	return KeyLabel(key, os, apple)
 }
 
-// SetTitle sets the window's title on desktops and the page's on the web.
+// SetTitle is the core's part of desktop.SetTitle, which apps use.
 func (cx *Scope) SetTitle(title string) {
 	if t := cx.rt.tree; t != nil {
 		t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemTitle, Value: title})

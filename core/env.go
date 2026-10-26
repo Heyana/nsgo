@@ -104,10 +104,12 @@ func (e *Env) SafeArea() Edges { return e.safe.Get() }
 // KeyboardHeight returns how much of the bottom the keyboard covers.
 func (e *Env) KeyboardHeight() Points { return e.keyboard.Get() }
 
-// TitleBar returns what a hidden desktop title bar covers.
+// TitleBar returns what a hidden desktop title bar covers: the core's
+// part of desktop.TitleBar, which apps use.
 func (e *Env) TitleBar() Edges { return e.titleBar.Get() }
 
-// Maximized reports whether the window is maximized or zoomed.
+// Maximized reports whether the window is maximized or zoomed: the
+// core's part of desktop.Maximized, which apps use.
 func (e *Env) Maximized() bool { return e.maximized.Get() }
 
 // KeyboardDuration returns how long the keyboard takes to move.

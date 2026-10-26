@@ -6,6 +6,8 @@
 
 `Button`, `Checkbox`, `Radio` in a `RadioGroup`, `Switch`, `Tab` in `Tabs`, `Collapsible` and `Progress` hold no value: the app passes it and sets it from `OnChange` or `OnPress`, as NSH's controlled props do.
 
+`Input` is the core's text field under a name in `base`, as NSH's `nsh/base` names its core's, so apps take it with the other controls; `NavPage` is `core.Screen` for a `Nav`'s pages the same way.
+
 - A control's parts (a checkbox's indicator, a switch's track and thumb) follow its states through `View.PartStates`, which styles a view by states it does not report, so assistive technology hears them from the control alone. Content the app puts inside follows them with a `GroupStyle` under the control's `Style.Group`.
 - A radio reports checked and selected both, as `gpui-base`'s does, since screen readers read one or the other.
 - `Collapsible` makes its content the first time it opens and keeps it, hidden, while closed.

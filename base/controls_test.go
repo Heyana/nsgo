@@ -75,7 +75,7 @@ func TestButtonTabsCollapsibleAndProgress(t *testing.T) {
 				OnPressUp:   func(core.PressEvent) { log = append(log, "up") },
 				OnPress:     func(core.PressEvent) { open.Update(func(o bool) bool { return !o }) }},
 			base.Collapsible{Open: open.Get, TestID: "more",
-				Content: core.Input{TestID: "kept"}},
+				Content: base.Input{TestID: "kept"}},
 			base.Tabs{TestID: "tabs", Children: []core.Node{
 				base.Tab{Label: "One", Style: core.Style{Height: core.Pt(20)}, Selected: func() bool { return tab.Get() == 0 }, OnPress: func(core.PressEvent) { tab.Set(0) }},
 				base.Tab{Label: "Two", Style: core.Style{Height: core.Pt(20)}, Selected: func() bool { return tab.Get() == 1 }, OnPress: func(core.PressEvent) { tab.Set(1) }},

@@ -8,6 +8,7 @@ import (
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/mobile"
 )
 
 // hairline is one device pixel, in points.
@@ -21,7 +22,7 @@ func hairline(env *core.Env) core.Points {
 
 // darkField is an input on its own, 48 pt tall, its rim the accent while
 // it has the focus.
-func darkField(in core.Input) core.Node {
+func darkField(in base.Input) core.Node {
 	return core.Func(func(cx *core.Scope) core.Node {
 		focused := core.NewSignal(cx, false)
 		onFocus, onBlur := in.OnFocus, in.OnBlur
@@ -209,9 +210,9 @@ func accessory(cx *core.Scope) core.Node {
 		captionText = "Desktops have no software keyboard"
 	}
 	return card(cardProps{icon: iconText, title: "Input accessory", subtitle: "A bar over the software keyboard", right: badge("iOS · Android", toneNeutral)},
-		darkField(core.Input{Ref: input, Value: value.Get, OnChange: value.Set, Placeholder: "Focus me", InputAccessoryViewID: "counter", TestID: "accessory-field"}),
+		darkField(base.Input{Ref: input, Value: value.Get, OnChange: value.Set, Placeholder: "Focus me", InputAccessoryViewID: "counter", TestID: "accessory-field"}),
 		caption(captionText, func() string { return `InputAccessoryViewID: "counter"` }),
-		core.InputAccessoryView{ID: "counter", TestID: "accessory-bar", Style: core.Style{Background: colors.surface}, Children: []core.Node{
+		mobile.InputAccessoryView{ID: "counter", TestID: "accessory-bar", Style: core.Style{Background: colors.surface}, Children: []core.Node{
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Symmetric(8, 16),
 				Borders: core.Edges{Top: hairline(env)}, BorderColors: core.EdgeColors{Top: colors.border}}, Children: []core.Node{
 				core.Text{ContentFunc: func() string { return fmt.Sprintf("%d characters", len([]rune(value.Get()))) }, Style: core.Style{FlexGrow: 1, FontSize: 13, Color: colors.muted}},
@@ -224,7 +225,7 @@ func accessory(cx *core.Scope) core.Node {
 
 // avoidingPage is a screen whose field at the bottom stays above the
 // keyboard.
-func avoidingPage(cx *core.Scope) core.Screen {
+func avoidingPage(cx *core.Scope) base.NavPage {
 	behavior := core.NewSignal(cx, base.AvoidPadding)
 	names := map[base.AvoidBehavior]string{base.AvoidPadding: "padding", base.AvoidHeight: "height"}
 	notes := map[base.AvoidBehavior]string{
@@ -240,7 +241,7 @@ func avoidingPage(cx *core.Scope) core.Screen {
 					core.Text{Content: notes[b], Style: core.Style{FontSize: 14, LineHeight: 20, Color: colors.muted}},
 				),
 				spacer(),
-				darkField(core.Input{Placeholder: "Type here"}),
+				darkField(base.Input{Placeholder: "Type here"}),
 			}},
 		}}
 	}))

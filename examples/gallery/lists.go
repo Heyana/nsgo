@@ -314,7 +314,7 @@ func listChat(cx *core.Scope) core.Node {
 			return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Edges{Top: 8, Right: 16, Bottom: bottom, Left: 16},
 				Background: colors.surface, Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.border}}
 		}, Children: []core.Node{
-			core.Input{Value: draft.Get, OnChange: draft.Set, OnSubmit: func(string) { send() }, SubmitBehavior: core.SubmitBehaviorSubmit, Placeholder: "Message",
+			base.Input{Value: draft.Get, OnChange: draft.Set, OnSubmit: func(string) { send() }, SubmitBehavior: core.SubmitBehaviorSubmit, Placeholder: "Message",
 				ReturnKeyType: core.ReturnKeySend, TestID: "chat-draft",
 				Style: fin.field.over(core.Style{PlaceholderColor: colors.faint, SelectionColor: colors.accent, FlexGrow: 1, FlexShrink: 1, Height: core.Pt(44), FontSize: 15,
 					Color: colors.text, Background: colors.field, BorderWidth: 1, BorderColor: colors.fieldBorder, CornerRadius: 22, Padding: core.Symmetric(0, 16)})},

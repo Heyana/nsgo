@@ -16,7 +16,7 @@ The graph follows NSH's (Solid 1.9's scheduling): signals, memos, render effects
 
 ## Elements and components
 
-Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canvas`, `Shader`, `WebView`, `Video`, `Native`, `Overlay`, `Modal`, `InputAccessoryView`, `Stack`, `Screen`) are structs with exported fields: zero values are defaults, as in `http.Server`. [Hosted views](native-views.md) covers the platform controls and the app's own views inside the tree; [images](images.md) the image pipeline; [canvas](canvas.md) recorded drawings; [shaders](shaders.md) the GPU's fills.
+Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canvas`, `Shader`, `WebView`, `Video`, `Native`, `Overlay`, `Modal`, `InputAccessoryView`, `Stack`, `Screen`) are structs with exported fields: zero values are defaults, as in `http.Server`. Apps take `Input`, `Screen` and `InputAccessoryView` from the packages NSH's apps do, as `base.Input`, `base.NavPage` and `mobile.InputAccessoryView`, and `Modal` through `base.Dialog`; the core's types name those in their comments. [Hosted views](native-views.md) covers the platform controls and the app's own views inside the tree; [images](images.md) the image pipeline; [canvas](canvas.md) recorded drawings; [shaders](shaders.md) the GPU's fills.
 
 - A field that can change takes a function (`StyleFunc`, `ContentFunc`, `Value`, `Disabled`), bound by one render effect per part.
 - Styles compose with `Style.Merge`, and text fields inherit down the tree as in CSS.
@@ -45,6 +45,7 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - An overlay with an anchor goes beside it as NSH's `place` does: the side asked unless only the opposite side fits or has more room, aligned along it, then clamped into the safe area.
 - A modal provides the insets its content keeps clear of; a screen does too, without the top when it has a header. `Insets` reads them.
 - `EventBack` (Escape, the back button) goes to the topmost overlay that listens for cancel, else the topmost modal's `OnRequestClose`, else the `Scope.OnBackPress` handlers newest first, else the innermost stack that can pop.
+- `OnBackPress` stays in `core`, where NSH's apps take it from `nsh/mobile`, because it also hears Escape and the browser's back.
 - A popped screen reports `OnDismiss` and stays hidden until the app removes it; the last screen never pops.
 - Where the environment has `HeaderHeight` (iOS, Android), screens get NSH's system header: the core pads the content below the bar and the status bar, sends `ItemScreen`, and lays `HeaderLeft`, `HeaderRight` and `HeaderTitle` out as roots the platform puts in the bar.
 - `Header` is then not mounted; elsewhere it is the screen's first child.
@@ -52,12 +53,12 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - Each platform measures its bar with what it holds and reports it (`EventScreenHeader`), which replaces the environment's estimate.
 - A transparent header and a large title lay the content under them: each vertical scroll view whose top they cover gets that part as `ScrollConfig.HeaderInset`, added to its top content inset.
 - iOS collapses a large title into the bar once its scroll view scrolled half the title's row under it, and brings it back above that, as UIKit's navigation controller does.
-- `TabBar` is the system's tab bar, a native component iOS (`UITabBar`) and Android (a Material 3 navigation bar drawn by the runtime's `TabBar.java`) register themselves; elsewhere it shows nothing.
+- `mobile.TabBar` is the system's tab bar, a native component iOS (`UITabBar`) and Android (a Material 3 navigation bar drawn by the runtime's `TabBar.java`) register themselves; elsewhere it shows nothing.
 - iOS presents a modal with `ModalPageSheet` or `ModalFormSheet` as a sheet view controller, which reports its size (`EventModalSize`) and its swipes (`EventRequestClose`, "swipe"); a swiped sheet stays hidden until the app removes it.
 - `SupportedOrientations` goes to the controllers' `supportedInterfaceOrientations`. On Android a modal over the surface starts below the status bar unless `StatusBarTranslucent`. Other platforms ignore these.
 - `EventPressOutside` reports presses outside an overlay, ignoring those on its anchor or on overlays above it.
 - A view's `Tooltip` is a hint overlay above it that the core shows after half a second of hover on desktops; `Overlay.PointerEvents` keeps it from taking the pointer.
-- An `InputAccessoryView` is a layout root as wide as the surface and as tall as its content, which no view holds: its views are sent before the tree's, and an input's `InputConfig.Accessory` names it.
+- A `mobile.InputAccessoryView` is a layout root as wide as the surface and as tall as its content, which no view holds: its views are sent before the tree's, and an input's `InputConfig.Accessory` names it.
 - iOS makes it the field's `inputAccessoryView`; Android shows it above the keyboard while the field has focus; other platforms leave it unmounted.
 
 ## Commit

@@ -83,11 +83,11 @@ Windows checks the registry first because the shell asks the user for an app for
 
 ## Desktop windows
 
-Window chrome follows NSH's `nsh/desktop`: native controls, an app-drawn title bar.
+Package `desktop` is NSH's `nsh/desktop`: native controls, an app-drawn title bar, and the menus below. Its functions call the `Scope` methods of the same names, the core's part.
 
-- `SetTitleBar` hides the system title bar and gives the app's bar its height, in which the platform centers its controls. `Env.TitleBar` then reports the area they keep, and views with `WindowDrag` drag the window.
+- `SetTitleBar` hides the system title bar and gives the app's bar its height, in which the platform centers its controls. `TitleBar` then reports the area they keep, and views with `WindowDrag` drag the window.
 - macOS centers the traffic lights in the bar, 16 points from the left, as Onevra does; Windows draws Onevra's rounded caption buttons; Linux reports the bar's height and the app draws its buttons.
-- `Env.Maximized` reports a maximized or zoomed window, so an app-drawn maximize button can show restore.
+- `Maximized` reports a maximized or zoomed window, so an app-drawn maximize button can show restore.
 - The platform decides a window drag on the main thread from the mounted props: the nearest view setting `WindowDrag` decides, and a nearer pressable, input or gesture view keeps the press.
 - `nsgo.WindowMaterial` puts a material behind the app's views for the window's life: an `NSVisualEffectView` on macOS, Mica, Acrylic or Mica Alt on Windows 11 22H2 and later. `Env.WindowMaterial` reports it; elsewhere the window stays opaque.
 - `SetWindowFrame` moves and sizes the window in points from the main screen's top left, keeping the top edge without a move.

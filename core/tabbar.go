@@ -2,14 +2,8 @@ package core
 
 import "github.com/oneo-me/nsgo/internal/driver"
 
-// TabBar is the system's tab bar for an app's top-level sections, as
-// NSH's nsh/mobile TabBar: UITabBar on iOS (Liquid Glass from iOS 26), a
-// Material 3 navigation bar on Android, each in the system's look. The app
-// gives the tabs, says which is selected, hears the user's choice with
-// OnChange and shows the selected tab's content; it places the bar with
-// its style, whose height is the system's where the style leaves it open.
-// Desktops and the web have no system tab bar: there it takes no room and
-// shows nothing, and the app shows its tabs with base.Tabs.
+// TabBar is the core's part of mobile.TabBar, which apps use: the
+// system's tab bar, a native component iOS and Android register.
 type TabBar struct {
 	Items []TabBarItem
 	// ItemsFunc replaces Items, again when what it reads changes.
@@ -22,7 +16,7 @@ type TabBar struct {
 	TestID   string
 }
 
-// TabBarItem is one tab of a TabBar.
+// TabBarItem is one tab of a TabBar. Apps name it mobile.TabBarItem.
 type TabBarItem struct {
 	Title string
 	// Icon is the platform's name for an icon: an SF Symbol on iOS

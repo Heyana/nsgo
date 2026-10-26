@@ -242,8 +242,9 @@ type Span struct {
 	Attachment Node
 }
 
-// Input is the platform's text field, a single line unless Multiline.
-// With Value it is controlled: the app updates the value in OnChange.
+// Input is the platform's text field, a single line unless Multiline:
+// the core's part of base.Input, which apps use. With Value it is
+// controlled: the app updates the value in OnChange.
 // Its style's PlaceholderColor colors the placeholder and SelectionColor
 // the caret and the selection.
 type Input struct {
@@ -571,8 +572,8 @@ const (
 )
 
 // Modal covers its host, the surface or an outer modal, with a layer of
-// its own laid out at the host's size. Mounting it presents it, and
-// removing it dismisses it.
+// its own laid out at the host's size: the core's part of base.Dialog,
+// which apps use. Mounting it presents it, and removing it dismisses it.
 type Modal struct {
 	Animation ModalAnimation
 	// Presentation is how it covers the screen on iOS; other platforms
@@ -607,9 +608,10 @@ type Modal struct {
 // Render implements Node.
 func (m Modal) Render(*Scope) Node { return m }
 
-// Stack shows the last of its screens: pushing is adding a screen,
-// popping is removing it. Back pops the top screen, which reports
-// OnDismiss and stays hidden until the app removes it.
+// Stack shows the last of its screens: the core's part of base.Nav's
+// Stack, which apps use. Pushing is adding a screen, popping is removing
+// it. Back pops the top screen, which reports OnDismiss and stays hidden
+// until the app removes it.
 type Stack struct {
 	Style    Style
 	Children []Node
@@ -619,7 +621,8 @@ type Stack struct {
 // Render implements Node.
 func (s Stack) Render(*Scope) Node { return s }
 
-// Screen is one page of a Stack, filling it.
+// Screen is one page of a Stack, filling it: the core's part of
+// base.NavPage, which apps use.
 //
 // On iOS and Android the platform draws the system header, a navigation
 // bar or a toolbar: Title, the header views, a back button to the screen

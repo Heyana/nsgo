@@ -9,6 +9,7 @@ import (
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/desktop"
 )
 
 var featured = []struct {
@@ -44,7 +45,7 @@ func chatDemo(cx *core.Scope) core.Node {
 
 	messages := core.NewSignalFunc(cx, []msg(nil), func(a, b []msg) bool { return false })
 	model := core.NewSignal(cx, chatModel("Swift"))
-	native := env.Desktop() && env.OS() != core.OSWeb
+	native := desktop.IsAvailable(cx)
 	provider := core.NewSignal(cx, "Codex")
 	var cancelLocal func()
 	draft := core.NewSignal(cx, "")
@@ -800,7 +801,7 @@ func chatDemo(cx *core.Scope) core.Node {
 				// Glass like the menu above it, without the blur: nothing
 				// scrolls under it.
 				core.View{Style: menuFinish.over(core.Style{CornerRadius: 24, BorderCurve: core.BorderCurveContinuous, BorderWidth: 1, Padding: core.All(6), Gap: 4}), Children: []core.Node{
-					core.Input{Value: draft.Get, OnChange: draft.Set, Multiline: true, SubmitBehavior: submitBehavior, TestID: "composer",
+					base.Input{Value: draft.Get, OnChange: draft.Set, Multiline: true, SubmitBehavior: submitBehavior, TestID: "composer",
 						OnSubmit: func(string) {
 							if !core.Untracked(cx, streaming) {
 								send()

@@ -47,7 +47,3 @@ func ShowAlertDialog(cx *core.Scope, d AlertDialog, done func(label string)) {
 		done(d.Actions[i].Label)
 	})
 }
-
-// DismissKeyboard hides the software keyboard, taking focus away from
-// the focused text field.
-func DismissKeyboard(cx *core.Scope) { cx.DismissKeyboard() }

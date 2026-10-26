@@ -8,10 +8,10 @@
 - Add CSS-like styles: corners, borders, outlines, shadows, gradients, filters, backdrop blur, masks, blend modes, 3D transforms, state styles and the SVG paint canvases draw with.
 - Add transitions, keyframes, animated values, motion presets and layout animations that run on each platform's frame clock.
 - Add selectable, hit-testable rich text with the app's fonts, inputs, GIF, WebP and SVG images, Canvas 2D drawing, GPU shaders written in Go and Lucide icons.
-- Add scroll views with pull to refresh and the app's own refresh indicators, virtualized lists, overlays, modals, navigation stacks with system headers, the system tab bar, web views, videos and native views.
+- Add scroll views with pull to refresh and the app's own refresh indicators, virtualized lists, overlays, modals, navigation stacks with system headers, the system tab bar in `mobile`, web views, videos and native views.
 - Add pointer, touch, focus, keyboard and gesture input, file drops, accessibility, storage and environment signals.
 - Add clipboard images and files, opening links, the photo picker, forced light or dark appearance, toasts and a disk cache for downloaded images.
-- Add custom title bars, window frames and levels, application and context menus, scroll bars and window materials, and return from `nsgo.Run` on quit.
+- Add custom title bars, window frames and levels, and application and context menus in `desktop`, with scroll bars, window materials and a return from `nsgo.Run` on quit.
 - Add `base`: unstyled controls, popups, menus that become sheets on phones, dialogs, sheets, safe areas, resizable panels, a dock and a streaming `TextView`.
 - Add embedding in other apps with `nsgo.NewView` on desktops and `nsgo build -embed` frameworks for iOS and Android, with a channel to the host.
 - Add `nsgotest` for app tests that act as a user does, headless or on every platform with its native input and screenshots.

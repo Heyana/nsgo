@@ -78,7 +78,7 @@ func storageDemo(cx *core.Scope) core.Node {
 
 	noteCard := func(cx *core.Scope) core.Node {
 		return card(cardProps{icon: iconForm, title: "Note", subtitle: "Saved as you type, back when the demo opens again"},
-			field(core.Input{Multiline: true, Value: note, OnChange: write, Placeholder: "Write something, then come back to it",
+			field(base.Input{Multiline: true, Value: note, OnChange: write, Placeholder: "Write something, then come back to it",
 				Label: "Note", TestID: "note", Style: core.Style{Height: core.Pt(120), Padding: core.Edges{Top: 12, Right: 14, Bottom: 12, Left: 14}}}),
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6, MinHeight: core.Pt(16)}, Children: []core.Node{
 				core.Show{When: func() bool { return saved.Get() == "saved" }, Then: func(*core.Scope) core.Node { return icon(iconCheck, 14, colors.up) }},

@@ -35,7 +35,7 @@ func dockApp(t *testing.T, width core.Points, layouts *[]base.DockLayout, events
 			Panels: map[string]base.DockPanelOptions{"notes": {Closable: true}},
 			RenderPanel: func(cx *core.Scope, key string) core.Node {
 				return core.View{TestID: "panel-" + key, Style: core.Style{FlexGrow: 1},
-					Children: []core.Node{core.Input{TestID: "input-" + key}}}
+					Children: []core.Node{base.Input{TestID: "input-" + key}}}
 			},
 			OnLayoutChange:      func(l base.DockLayout) { *layouts = append(*layouts, l) },
 			OnPanelActiveChange: func(k string, on bool) { *events = append(*events, k+map[bool]string{true: "+", false: "-"}[on]) },
@@ -195,7 +195,7 @@ func TestDockPanelsKeepTheirStateAcrossTheCompactPresentation(t *testing.T) {
 			},
 			RenderPanel: func(cx *core.Scope, key string) core.Node {
 				return core.View{TestID: "panel-" + key, Style: core.Style{FlexGrow: 1},
-					Children: []core.Node{core.Input{TestID: "input-" + key}}}
+					Children: []core.Node{base.Input{TestID: "input-" + key}}}
 			},
 		}
 	}, nsgotest.Size(1000, 600), nsgotest.Environment(core.Environment{Idiom: core.IdiomDesktop}))

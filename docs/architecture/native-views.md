@@ -47,7 +47,7 @@ An app registers its own platform views by name, as NSH's embedding apps do (`ns
 
 - `Native` names the component; its `Props` cross only when they change, a removed one as nil, and `Ref.Command` reaches the component's `Command`.
 - The first `ItemNative` makes the component with a `NativeContext`, whose `Emit` reaches `OnEvent` and whose `SetSize` gives the element a natural size, as an image's; a width of 0 asks for its height alone, as a bar as wide as it is placed.
-- iOS and Android register `driver.TabBarComponent` themselves, for `core.TabBar`; Android's measures itself 80 points tall plus the system navigation bar it reaches under.
+- iOS and Android register `driver.TabBarComponent` themselves, for `mobile.TabBar`; Android's measures itself 80 points tall plus the system navigation bar it reaches under.
 - Factories run on the main thread and may return nil; an unknown name leaves an empty box and is logged once.
 - Registering differs per platform only in what `View` returns, so an app registers a target's components in files built for it, as the gallery's `components_*.go` do.
 

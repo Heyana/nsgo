@@ -51,8 +51,8 @@ func TestPopupsNavAndAlerts(t *testing.T) {
 							func(label string) { chosen = label })
 					}},
 				}},
-			nav.Stack(core.Style{FlexGrow: 1}, func(cx *core.Scope, route string, _ func() int) core.Screen {
-				return core.Screen{Title: route, TestID: "page-" + route,
+			nav.Stack(core.Style{FlexGrow: 1}, func(cx *core.Scope, route string, _ func() int) base.NavPage {
+				return base.NavPage{Title: route, TestID: "page-" + route,
 					Children: []core.Node{core.Text{Content: "page " + route}}}
 			}),
 		}}

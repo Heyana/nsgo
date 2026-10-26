@@ -10,6 +10,7 @@ import (
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/desktop"
 )
 
 // safeAreaDiagram is the window drawn to scale, with the safe area and
@@ -442,35 +443,37 @@ func windowCard(cx *core.Scope) core.Node {
 	small := func(l string, fn func()) core.Node {
 		return button(buttonProps{label: l, variant: secondary, small: true}, fn)
 	}
-	if !env.Desktop() || env.OS() == core.OSWeb {
+	if !desktop.IsAvailable(cx) {
 		return card(cardProps{icon: iconDock, title: "Window", subtitle: "Title bar, commands, frame and level", right: badge("Desktop", toneNeutral)},
 			note("Window commands need a desktop window: run the gallery on macOS, Windows or Linux to try them."))
 	}
 	return card(cardProps{icon: iconDock, title: "Window", subtitle: "Title bar, commands, frame and level", right: badge("NSGo", toneNeutral)},
 		caption("Title bar", func() string {
-			tb := env.TitleBar()
+			tb := desktop.TitleBar(cx)
 			if tb == (core.Edges{}) {
 				return "the system's"
 			}
 			return fmt.Sprintf("%.0f pt, controls keep %.0f / %.0f pt", tb.Top, tb.Left, tb.Right)
 		}),
 		wrap(
-			small("Hide title bar", func() { cx.SetTitleBar(core.TitleBarHidden, 40) }),
-			small("Show title bar", func() { cx.SetTitleBar(core.TitleBarDefault, 0) }),
+			small("Hide title bar", func() { desktop.SetTitleBar(cx, desktop.TitleBarHidden, 40) }),
+			small("Show title bar", func() { desktop.SetTitleBar(cx, desktop.TitleBarDefault, 0) }),
 		),
 		caption("Commands", nil),
 		wrap(small("Minimize", cx.MinimizeWindow), small("Zoom", cx.ToggleMaximize), small("Full screen", cx.ToggleFullScreen),
-			small("Away for 2 s", func() { cx.MinimizeWindow(); cx.AfterFunc(2*time.Second, cx.OrderFront) })),
+			small("Away for 2 s", func() { desktop.MinimizeWindow(cx); cx.AfterFunc(2*time.Second, func() { desktop.OrderFront(cx) }) })),
 		caption("Frame and level", nil),
 		wrap(
-			small("640 × 480", func() { cx.SetWindowFrame(core.WindowFrame{Width: 640, Height: 480}) }),
-			small("Taller, animated", func() { cx.SetWindowFrame(core.WindowFrame{Height: env.Window().Height + 160, Animated: true}) }),
-			small("Move to 80, 80", func() { cx.SetWindowFrame(core.WindowFrame{X: 80, Y: 80, Move: true}) }),
+			small("640 × 480", func() { desktop.SetWindowFrame(cx, desktop.WindowFrame{Width: 640, Height: 480}) }),
+			small("Taller, animated", func() {
+				desktop.SetWindowFrame(cx, desktop.WindowFrame{Height: env.Window().Height + 160, Animated: true})
+			}),
+			small("Move to 80, 80", func() { desktop.SetWindowFrame(cx, desktop.WindowFrame{X: 80, Y: 80, Move: true}) }),
 		),
 		wrap(
-			small("Normal", func() { cx.SetWindowLevel(core.WindowLevelNormal) }),
-			small("Floating", func() { cx.SetWindowLevel(core.WindowLevelFloating) }),
-			small("Desktop", func() { cx.SetWindowLevel(core.WindowLevelDesktop) }),
+			small("Normal", func() { desktop.SetWindowLevel(cx, desktop.WindowLevelNormal) }),
+			small("Floating", func() { desktop.SetWindowLevel(cx, desktop.WindowLevelFloating) }),
+			small("Desktop", func() { desktop.SetWindowLevel(cx, desktop.WindowLevelDesktop) }),
 		),
 		core.View{WindowDrag: core.WindowDragOn, Style: core.Style{Height: core.Pt(52), CornerRadius: radiusControl, Background: colors.raised, BorderWidth: 1, BorderColor: colors.border,
 			Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifySpaceBetween, Padding: core.Symmetric(0, 14)}, Children: []core.Node{
@@ -490,7 +493,7 @@ func clipboardCard(cx *core.Scope) core.Node {
 		return button(buttonProps{label: l, variant: secondary, small: true}, fn)
 	}
 	return card(cardProps{icon: iconCopy, title: "Clipboard", subtitle: "Text, images and the files a file manager copied", right: badge("NSGo", toneNeutral)},
-		darkField(core.Input{Value: clip.Get, OnChange: clip.Set, Label: "Clipboard text"}),
+		darkField(base.Input{Value: clip.Get, OnChange: clip.Set, Label: "Clipboard text"}),
 		wrap(
 			button(buttonProps{label: "Copy text", small: true}, func() { cx.SetClipboard(clip.GetUntracked()) }),
 			small("Paste text", func() { cx.ReadClipboard(func(s string) { status.Set("Text: " + s) }) }),

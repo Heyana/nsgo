@@ -1,0 +1,104 @@
+// Package desktop holds what only desktops have: the window, its title
+// bar and the menus, as NSH's nsh/desktop. It builds on every platform,
+// so one app runs everywhere: on phones and tablets its functions do
+// nothing, and IsAvailable says whether they act.
+//
+// A title bar of the app's own calls SetTitleBar once, marks its
+// background with core.View's WindowDrag and keeps clear of the edges
+// TitleBar reports.
+package desktop
+
+import "github.com/oneo-me/nsgo/core"
+
+type (
+	// TitleBarStyle is whether the system draws the window's title bar.
+	TitleBarStyle = core.TitleBarStyle
+	// WindowFrame is where a window moves and how large it becomes, in
+	// points from the main screen's top left.
+	WindowFrame = core.WindowFrame
+	// WindowLevel is where a window stacks among the others.
+	WindowLevel = core.WindowLevel
+	// MenuBarMode says when Windows and Linux show the menu bar.
+	MenuBarMode = core.MenuBarMode
+)
+
+const (
+	TitleBarDefault = core.TitleBarDefault
+	TitleBarHidden  = core.TitleBarHidden
+)
+
+const (
+	WindowLevelNormal   = core.WindowLevelNormal
+	WindowLevelFloating = core.WindowLevelFloating
+	WindowLevelDesktop  = core.WindowLevelDesktop
+)
+
+const (
+	MenuBarShown    = core.MenuBarShown
+	MenuBarAutoHide = core.MenuBarAutoHide
+)
+
+// IsAvailable reports whether the app runs on macOS, Windows or Linux,
+// where this package's functions act.
+func IsAvailable(cx *core.Scope) bool {
+	switch cx.Env().OS() {
+	case core.OSMacOS, core.OSWindows, core.OSLinux:
+		return true
+	}
+	return false
+}
+
+// SetTitle sets the window's title on desktops and the page's on the web.
+func SetTitle(cx *core.Scope, title string) { cx.SetTitle(title) }
+
+// SetTitleBar hides the system's title bar so the app can draw its own
+// height points tall (0: the platform's height), or restores it. The
+// platform centers its window controls in that height. TitleBar then
+// reports the area they keep.
+func SetTitleBar(cx *core.Scope, style TitleBarStyle, height core.Points) {
+	cx.SetTitleBar(style, height)
+}
+
+// TitleBar returns what a hidden title bar covers: Top is its height,
+// Left and Right the widths the system's window controls take at its
+// ends. It is zero while the system draws the title bar, in full screen
+// and off desktops.
+func TitleBar(cx *core.Scope) core.Edges { return cx.Env().TitleBar() }
+
+// Maximized reports whether the window is maximized or zoomed, so a
+// maximize button of the app's own can show restore.
+func Maximized(cx *core.Scope) bool { return cx.Env().Maximized() }
+
+// MinimizeWindow minimizes the window.
+func MinimizeWindow(cx *core.Scope) { cx.MinimizeWindow() }
+
+// ToggleMaximize maximizes (zooms) the window, or restores it.
+func ToggleMaximize(cx *core.Scope) { cx.ToggleMaximize() }
+
+// ToggleFullScreen enters or leaves full screen.
+func ToggleFullScreen(cx *core.Scope) { cx.ToggleFullScreen() }
+
+// CloseWindow closes the window as its close button does; the app ends
+// with it, unless nsgo.KeepAliveOnClose keeps it running on macOS.
+func CloseWindow(cx *core.Scope) { cx.CloseWindow() }
+
+// SetWindowFrame moves and sizes the window: f's top left corner is in
+// points from the main screen's top left on every platform, and fields
+// it leaves out keep their values, so a window given only a new height
+// keeps its top edge. macOS animates the change when f asks. Linux sets
+// the size GTK keeps for the window, and leaves its position to the
+// compositor.
+func SetWindowFrame(cx *core.Scope, f WindowFrame) { cx.SetWindowFrame(f) }
+
+// SetWindowLevel puts the window at level among the others, on macOS
+// and Windows; Linux leaves stacking to the compositor.
+func SetWindowLevel(cx *core.Scope, level WindowLevel) { cx.SetWindowLevel(level) }
+
+// OrderFront shows the window, restoring it when minimized or hidden,
+// brings it to the front of its level and activates the app.
+func OrderFront(cx *core.Scope) { cx.OrderFront() }
+
+// SetMenuBar says when Windows and Linux show the menu bar the window
+// draws for the application menu; macOS's is the system's and always
+// shows.
+func SetMenuBar(cx *core.Scope, mode MenuBarMode) { cx.SetMenuBar(mode) }

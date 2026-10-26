@@ -1,17 +1,33 @@
 # Roadmap
 
-This plan lists what NSGo still lacks compared with NSH's `main` at `0384424f`, in the order to build it. Each item names its NSH reference and the result that finishes it. What exists today is in [ARCHITECTURE.md](../ARCHITECTURE.md); design questions that block an item are in its [Open questions](../ARCHITECTURE.md#open-questions).
+This plan lists what NSGo still lacks compared with NSH's `main` at `76fa8a7f`, its 0.3.0 release, in the order to build it. Each item names its NSH reference and the result that finishes it. What exists today is in [ARCHITECTURE.md](../ARCHITECTURE.md); design questions that block an item are in its [Open questions](../ARCHITECTURE.md#open-questions).
 
-References are files in `nsh/docs/dev/` unless they name a crate, with the bullet or section to read in brackets. To refresh the plan, read `git log 0384424f..` in `nsh/` and the documents it changed.
+References are files in `nsh/docs/dev/` unless they give a path from `nsh/`, with the bullet or section to read in brackets. To refresh the plan, read `git log 76fa8a7f..` in `nsh/` and the documents it changed.
 
-## Code and data components
+## NSH 0.3.0's API
+
+NSH 0.3.0 replaced wrapper components with styles and props, and the system's toast with `nsh/base`'s.
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |
-| Editor | `editor.md` | `base` has a controlled code editor: display rows over a rope, input and keys, virtualized rows, incremental highlighting off the engine goroutine, search, diagnostics, folds, completion, definitions, touch handles and parts, fast at 200 000 lines |
-| DiffView | `diff.md` | `base` shows the changes between two texts or a patch: pairing and inline changes, collapsed separators, highlighting and parts |
-| DataTable | `data-table.md` | `base` has a table that scrolls both ways over any number of rows and columns, with selection, sorting, resizing, moving and fixed columns, loading more and keyboard |
+| Platform props | `js-modules.md` (platform-only props) | Props only iOS, only Android or only the desktops have are grouped in a field of their own, as NSH's `ios`, `android` and `desktop` objects; what two of them have stays top-level |
+| Environment insets | `styles.md` (environment variables), `website/elements/keyboard.md` | Padding and margin take the safe area's and the software keyboard's insets as terms that follow them, the keyboard's moving with it natively; `SafeAreaView` and `KeyboardAvoidingView` leave `base` |
+| Selectable views | `text.md` (selectable views) | `View.Selectable` makes the texts inside select together, replacing `View.SelectionArea` and `base.SelectionArea` |
+| Toasts | `components.md` (toasts), `website/elements/toast.md` | `base` has `Toast`, `ToastStack` and `ToastManager`, `gpui-base`'s toasts, and `Scope.ShowToast` and the platforms' toasts are gone |
+| Animated native props | `embedding.md` (native components) | A `Native` component's props take animated values, which the platform's frame clock hands Go, Swift and Java components as numbers or colors on the frames they change |
+| Gallery | `examples/gallery` | The gallery has NSH's changes since `b2af2f21`, the commit it was translated from, except those that need the components below: the Collapsing header demo, toasts on the Overlays page and the other pages' changes |
+
+## Code and data components
+
+Each item includes the component's demo in the gallery, from NSH's gallery or, for `Table`, its website.
+
+| Item | NSH reference | Done when |
+| --- | --- | --- |
+| Charts | `api-naming.md` (Plot), `website/elements/plot.md`, `canvas.md` (the view's background) | `Plot` with `Line`, `Area` and `Grid` marks draws the app's rows natively, a canvas per mark, with scales, hover parts moved on the frame clock, motion and one accessible image; a drawing fills a shape with its canvas view's background |
 | Table | `components.md` (`nsh/base`) | `Table` and its parts give the app's rows a table's accessibility roles |
+| DataTable | `data-table.md` | `base` has a table with no look of its own that scrolls both ways over any number of rows and columns, with selection, sorting, resizing, moving and fixed columns, loading more and keyboard |
+| Editor | `editor.md` | `base` has a controlled code editor: display rows over a rope, input and keys, virtualized rows, incremental highlighting off the engine goroutine, search, diagnostics, folds, completion, definitions, touch handles and parts, fast at 200 000 lines |
+| DiffView | `diff.md` | `base` shows the changes between two texts or a patch: pairing and inline changes, collapsed separators, the editor's highlighting and parts |
 
 ## Rendering costs
 
@@ -30,7 +46,7 @@ These items wait for community contributions.
 | --- | --- | --- |
 | iOS touch | `crates/nsh-platform-ios` | Gestures, text input and selection are checked in the simulator; selections have touch handles; hover, swipe back and touches outside the parent work |
 | iOS system UI | `elements.md` (overlays), `pitfalls.md` | VoiceOver's escape gesture goes back and closes popups; inputs in scroll views stay clear of the keyboard |
-| Text selection | `text.md` (selection areas) | Selectable text and selection areas work on Windows, Linux and Android |
+| Text selection | `text.md` (selectable views) | Selectable text and selectable views work on Windows, Linux and Android |
 | Desktop accessibility | `windows.md`, `linux.md` | Windows exposes UI Automation and Linux GTK's accessibility, canvas nodes included, and both announce |
 | Desktop chrome | `windows.md` (alerts), `linux.md` | Windows draws alerts in the surface; Linux animates modals |
 | Effects | `styles.md` (effects) | Windows draws backdrop filters and blend modes, Linux blend modes, and Android drop shadows from Android 12 |

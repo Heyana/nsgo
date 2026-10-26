@@ -18,7 +18,7 @@ The web target is served from the same server; its page shows the overlay itself
 
 ## Packages
 
-`nsgo build` writes a directory per target under `build.output`:
+`nsgo build` strips symbols, paths and VCS stamps (`nsgo dev` keeps symbols unless `-release`) and writes a directory per target under `build.output`:
 
 - macOS: `<name>.app`, signed ad hoc. iOS: `<name>.app` and `<name>.ipa`, signed with `sign.profile`, else unsigned. Android: `<name>.apk`, signed with `sign.keystore`, else the project's debug key.
 - Windows and Linux: the executable with `resources/`, and the same as a `.zip` or `.tar.gz` beside the directory.
@@ -34,3 +34,7 @@ The web target is served from the same server; its page shows the overlay itself
 `sign.profile` signs the iOS package: `security cms` opens the profile, whose `application-identifier` must cover the bundle ID; a wildcard profile signs the app's own ID, which devices require. The profile goes in as `embedded.mobileprovision`, and `codesign` signs with `sign.identity`, else the keychain's identity for one of the profile's certificates.
 
 `sign.keystore` signs release APKs (`apk/keystore.go`): PKCS#12, with PBES2 (PBKDF2 and AES or 3DES) as keytool and OpenSSL 3 write it or PKCS#12's SHA-1 schemes with 3DES and 40-bit RC2 as older tools do, or JKS, whose key protector is a SHA-1 stream of the password. `NSGO_KEYSTORE_PASSWORD` and `NSGO_KEY_PASSWORD` give the passwords, never `nsgo.yaml`; `sign.key_alias` picks a key. APKs sign with RSA keys only.
+
+## Verification
+
+`go test ./cmd/nsgo/apk` checks the APK and, when `apksigner` is installed, its signature.

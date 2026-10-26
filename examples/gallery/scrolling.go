@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
 )
 
@@ -421,7 +422,7 @@ func scrollingDemo(cx *core.Scope) core.Node {
 					}
 					return "A tap outside the input only hides the keyboard; the button does not get it."
 				}, Style: core.Style{Color: colors.muted, FontSize: 13, LineHeight: 18}},
-				core.Input{Placeholder: hint(cx, "Type here, then tap the button", "Type here, then click the button"),
+				base.Input{Placeholder: hint(cx, "Type here, then tap the button", "Type here, then click the button"),
 					Style: fin.field.over(core.Style{PlaceholderColor: colors.faint, SelectionColor: colors.accent, Height: core.Pt(44), FontSize: 15, Color: colors.text,
 						Background: colors.field, BorderWidth: 1, BorderColor: colors.fieldBorder, CornerRadius: radiusControl, Padding: core.Symmetric(0, 14)})},
 				press(pressProps{onPress: func() { presses.Update(func(n int) int { return n + 1 }) }, label: "Count a tap"},

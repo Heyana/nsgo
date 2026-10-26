@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/desktop"
 	"github.com/oneo-me/nsgo/nsgotest"
 )
 
@@ -124,7 +125,7 @@ func TestApplicationMenu(t *testing.T) {
 	app := startDesktop(t)
 	app.ChooseMenu("View", "Menus")
 	app.Find("id:demo-Menus")
-	if app.Menu[0].Items[0].Role != core.MenuAbout {
+	if app.Menu[0].Items[0].Role != desktop.MenuAbout {
 		t.Fatalf("app menu starts with %+v", app.Menu[0].Items[0])
 	}
 }

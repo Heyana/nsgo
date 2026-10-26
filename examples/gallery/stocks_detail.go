@@ -220,8 +220,8 @@ func pauseButton(m *market) core.Node {
 
 // stockScreen is a stock, pushed: its view under a header with the
 // pause button.
-func stockScreen(m *market, s *stock) func(cx *core.Scope) core.Screen {
-	return func(cx *core.Scope) core.Screen {
+func stockScreen(m *market, s *stock) func(cx *core.Scope) base.NavPage {
+	return func(cx *core.Scope) base.NavPage {
 		return screen(s.code, pauseButton(m), stockView(cx, m, s, false, nil))
 	}
 }

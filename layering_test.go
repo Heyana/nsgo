@@ -42,11 +42,13 @@ var layers = []struct {
 	{"nsgotest", []string{"core", "internal/driver", "internal/testhost"}},
 	{"", []string{"core", "internal/engine", "internal/platform/"}},
 	{"base/", []string{"core", "base/"}},
+	{"mobile", []string{"core"}},
+	{"desktop", []string{"core"}},
 	{"icons/", []string{"core"}},
 	// Apps use the public packages only, and the hosts that embed an
 	// example app its package.
-	{"examples/", []string{"", "core", "base/", "icons/", "nsgotest", "examples/"}},
-	{"bench/", []string{"", "core", "base/", "icons/"}},
+	{"examples/", []string{"", "core", "base/", "mobile", "desktop", "icons/", "nsgotest", "examples/"}},
+	{"bench/", []string{"", "core", "base/", "mobile", "desktop", "icons/"}},
 	{"cmd/", []string{"core", "cmd/", "internal/platform/android/runtime"}},
 	{"tools/", []string{"core"}},
 }
@@ -62,7 +64,7 @@ var platformShared = []string{
 // portable lists the packages that build unchanged for every target: no
 // purego, syscall or unsafe.
 var portable = []string{"core", "internal/driver", "internal/layout", "internal/shader", "internal/shaderir/", "internal/engine",
-	"internal/testhost", "base/", "icons/", "nsgotest"}
+	"internal/testhost", "base/", "mobile", "desktop", "icons/", "nsgotest"}
 
 // layerTargets are the GOOS/GOARCH pairs the nsgo tool builds for.
 var layerTargets = [][2]string{

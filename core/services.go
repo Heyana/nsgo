@@ -13,8 +13,9 @@ import (
 // Services the platform performs for the app, asked for with command
 // items and answered with events.
 
-// ShowAlert shows a native alert and calls done with the index of the
-// button chosen, or -1 when it was dismissed without one. done runs even
+// ShowAlert is the core's part of base.ShowAlertDialog, which apps use:
+// it shows a native alert and calls done with the index of the button
+// chosen, or -1 when it was dismissed without one. done runs even
 // when the owner that showed the alert is gone, such as a closed menu.
 func (cx *Scope) ShowAlert(a AlertConfig, done func(index int)) {
 	t := cx.rt.tree

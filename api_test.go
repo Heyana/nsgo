@@ -12,7 +12,7 @@ import (
 
 // publicPackages are what apps import; everything under internal/ is the
 // implementation.
-var publicPackages = []string{"", "core", "base", "base/textview", "base/textview/highlight", "icons/lucide", "nsgotest"}
+var publicPackages = []string{"", "core", "base", "base/textview", "base/textview/highlight", "mobile", "desktop", "icons/lucide", "nsgotest"}
 
 // runtimeAPI is what the engine and nsgotest drive core's tree with. Apps
 // never call it, so the internal types it takes need no alias.

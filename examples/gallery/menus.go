@@ -7,6 +7,7 @@ import (
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/desktop"
 )
 
 // The look of every menu here is the gallery's: base draws none.
@@ -464,18 +465,18 @@ func menusDemo(cx *core.Scope) core.Node {
 
 	native := func(cx *core.Scope) core.Node {
 		chosen := core.NewSignal(cx, "Nothing chosen yet")
-		items := func() []core.MenuItem {
+		items := func() []desktop.MenuItem {
 			choose := func(s string) func() { return func() { chosen.Set("Chose " + s); log("native " + s) } }
-			return []core.MenuItem{
+			return []desktop.MenuItem{
 				{Label: "Cut", Shortcut: "mod+x", OnSelect: choose("Cut")},
 				{Label: "Copy", Shortcut: "mod+c", OnSelect: choose("Copy")},
 				{Label: "Paste", Disabled: true},
 				{Separator: true},
-				{Label: "Share", Items: []core.MenuItem{{Label: "Mail", OnSelect: choose("Mail")}, {Label: "Messages", OnSelect: choose("Messages")}}},
+				{Label: "Share", Items: []desktop.MenuItem{{Label: "Mail", OnSelect: choose("Mail")}, {Label: "Messages", OnSelect: choose("Messages")}}},
 				{Label: "Pinned", Checkable: true, Checked: true, OnSelect: choose("Pinned")},
 			}
 		}
-		show := func(at core.Point) { cx.PopupMenu(items(), at, nil) }
+		show := func(at core.Point) { desktop.PopupMenu(cx, items(), at, nil) }
 		return card(cardProps{icon: iconMenu, title: "The platform's menu", subtitle: "PopupMenu shows the system's own at a point", right: badge("Native", toneInfo)},
 			core.View{TestID: "popup-area", Role: core.RoleButton, Label: "Show the native menu",
 				Style: core.Style{Height: core.Pt(72), CornerRadius: radiusInset, Background: colors.raised, BorderWidth: 1, BorderColor: colors.border,
@@ -495,8 +496,8 @@ func menusDemo(cx *core.Scope) core.Node {
 		if env := cx.Env(); env.Desktop() && env.OS() != core.OSMacOS && env.OS() != core.OSWeb {
 			children = append(children, note("SetMenuBar hides the bar Windows and Linux draw until Alt is pressed alone."),
 				hrow(8,
-					button(buttonProps{label: "Always shown", variant: secondary, small: true}, func() { cx.SetMenuBar(core.MenuBarShown) }),
-					button(buttonProps{label: "Auto-hide", variant: secondary, small: true}, func() { cx.SetMenuBar(core.MenuBarAutoHide) }),
+					button(buttonProps{label: "Always shown", variant: secondary, small: true}, func() { desktop.SetMenuBar(cx, desktop.MenuBarShown) }),
+					button(buttonProps{label: "Auto-hide", variant: secondary, small: true}, func() { desktop.SetMenuBar(cx, desktop.MenuBarAutoHide) }),
 				))
 		}
 		return card(cardProps{icon: iconMenu, title: "The application menu", subtitle: "The system's menu bar, set by the app", right: badge("Native", toneInfo)}, children...)

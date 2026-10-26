@@ -9,6 +9,7 @@ import (
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/desktop"
 )
 
 // The gallery's look, Onevra's palette: a warm charcoal page (or a warm
@@ -314,8 +315,7 @@ func hint(cx *core.Scope, touch, pointer string) string {
 // key to reload the page. It returns the key's label, or "" where it is
 // not bound.
 func bindRefresh(cx *core.Scope, refresh func()) string {
-	env := cx.Env()
-	if !env.Desktop() || env.OS() == core.OSWeb {
+	if !desktop.IsAvailable(cx) {
 		return ""
 	}
 	cx.OnKey("mod+r", refresh)
@@ -1078,8 +1078,8 @@ func headerStyle() core.Style {
 
 // screen is a page a demo pushes: the system header on phones, the app's
 // own elsewhere.
-func screen(title string, right core.Node, children ...core.Node) core.Screen {
-	return core.Screen{Title: title, HeaderStyle: headerStyle(), HeaderRight: right,
+func screen(title string, right core.Node, children ...core.Node) base.NavPage {
+	return base.NavPage{Title: title, HeaderStyle: headerStyle(), HeaderRight: right,
 		Header:   pageHeader(pageHeaderProps{title: title, right: right}),
 		Style:    core.Style{Background: colors.background},
 		Children: children}
@@ -1090,7 +1090,7 @@ func itoa(n int) string { return strconv.Itoa(n) }
 
 // field is an input in its well: the field's color, a rim and an inner
 // shadow; the input's own style sets its size and padding.
-func field(in core.Input) core.Node {
+func field(in base.Input) core.Node {
 	in.Style = core.Style{FontSize: 15, Color: colors.text, PlaceholderColor: colors.faint, SelectionColor: colors.accent}.Merge(in.Style)
 	return core.View{Style: fin.field.over(core.Style{CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous,
 		BorderWidth: 1, BorderColor: colors.fieldBorder, Background: colors.field}), Children: []core.Node{in}}

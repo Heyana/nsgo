@@ -36,7 +36,7 @@ func navPage(cx *core.Scope, intro string, children ...core.Node) core.Node {
 	}}
 }
 
-func largeTitlePage(cx *core.Scope) core.Screen {
+func largeTitlePage(cx *core.Scope) base.NavPage {
 	var rows []core.Node
 	for i := 1; i <= 20; i++ {
 		s := core.Style{Height: core.Pt(48), Direction: core.Row, AlignItems: core.AlignCenter, Padding: core.Symmetric(0, 10)}
@@ -54,12 +54,12 @@ func largeTitlePage(cx *core.Scope) core.Screen {
 	return s
 }
 
-func transparentPage(cx *core.Scope) core.Screen {
+func transparentPage(cx *core.Scope) base.NavPage {
 	bg := core.RGB(0xf8ece3)
 	if isDark {
 		bg = core.RGB(0x21160f)
 	}
-	return core.Screen{Title: "Transparent", HeaderTransparent: true, HeaderStyle: core.Style{TintColor: colors.text, Color: colors.text},
+	return base.NavPage{Title: "Transparent", HeaderTransparent: true, HeaderStyle: core.Style{TintColor: colors.text, Color: colors.text},
 		Header: pageHeader(pageHeaderProps{title: "Transparent", transparent: true, tint: colors.text}),
 		Children: []core.Node{core.View{Style: core.Style{FlexGrow: 1, Background: bg, Overflow: core.Hidden, Padding: core.Edges{Top: 16, Right: 16, Bottom: 56, Left: 16},
 			JustifyContent: core.JustifyEnd, Gap: 16}, Children: []core.Node{
@@ -74,7 +74,7 @@ func transparentPage(cx *core.Scope) core.Screen {
 		}}}}
 }
 
-func customHeaderPage(cx *core.Scope) core.Screen {
+func customHeaderPage(cx *core.Scope) base.NavPage {
 	likes := core.NewSignal(cx, 0)
 	// Each call makes the elements anew: the system header (phones) and
 	// the app's (desktops, the web) each mount their own.
@@ -94,7 +94,7 @@ func customHeaderPage(cx *core.Scope) core.Screen {
 				textf(func() string { return itoa(likes.Get()) }, 17, semibold, colors.onAccent),
 			}}
 	}
-	return core.Screen{Title: "Custom", HeaderStyle: core.Style{TintColor: colors.onAccent, Background: colors.accentFill, Color: colors.onAccent},
+	return base.NavPage{Title: "Custom", HeaderStyle: core.Style{TintColor: colors.onAccent, Background: colors.accentFill, Color: colors.onAccent},
 		HeaderBackHidden: true, HeaderLeft: left(), HeaderTitle: center(), HeaderRight: right(),
 		Header: pageHeader(pageHeaderProps{title: "Custom", background: colors.accentFill, left: left(), center: center(), right: right()}),
 		Children: []core.Node{navPage(cx, "The header's items are views: the star on the right counts presses and updates the header.",
@@ -106,7 +106,7 @@ func customHeaderPage(cx *core.Scope) core.Screen {
 			}, toneNeutral)))}}
 }
 
-func lockedPage(cx *core.Scope) core.Screen {
+func lockedPage(cx *core.Scope) base.NavPage {
 	s := screen("No swipe back", nil, navPage(cx, hint(cx,
 		"The back gesture is off on this screen: no swipe on iOS. The back buttons still work.",
 		"The back gesture is off on this screen (touch screens only). The back button and Escape still work."),
@@ -119,7 +119,7 @@ func lockedPage(cx *core.Scope) core.Screen {
 }
 
 // unsavedPage asks before leaving with unsaved text.
-func unsavedPage(cx *core.Scope) core.Screen {
+func unsavedPage(cx *core.Scope) base.NavPage {
 	draft := core.NewSignal(cx, "")
 	confirm := func() {
 		base.ShowAlertDialog(cx, base.AlertDialog{Title: "Discard your changes?", Actions: []core.AlertAction{
@@ -138,7 +138,7 @@ func unsavedPage(cx *core.Scope) core.Screen {
 			shell.nav.Pop(1)
 		}
 	}
-	s := core.Screen{Title: "Unsaved changes", HeaderStyle: headerStyle(), NoPopOnBack: true, OnBackPress: back,
+	s := base.NavPage{Title: "Unsaved changes", HeaderStyle: headerStyle(), NoPopOnBack: true, OnBackPress: back,
 		Header: pageHeader(pageHeaderProps{title: "Unsaved changes", onBack: back}),
 		Children: []core.Node{navPage(cx, hint(cx,
 			"Type something, then go back (header button, swipe, Android back): the screen asks first.",
@@ -149,7 +149,7 @@ func unsavedPage(cx *core.Scope) core.Screen {
 				}
 				return badge("Empty", toneNeutral)
 			})},
-				darkField(core.Input{Value: draft.Get, OnChange: draft.Set, Placeholder: "A draft", TestID: "draft"}),
+				darkField(base.Input{Value: draft.Get, OnChange: draft.Set, Placeholder: "A draft", TestID: "draft"}),
 				notef(func() string {
 					if n := len([]rune(draft.Get())); n > 0 {
 						return fmt.Sprintf("%d characters would be lost: back asks first", n)
@@ -160,8 +160,8 @@ func unsavedPage(cx *core.Scope) core.Screen {
 	return s
 }
 
-func headerlessPage(cx *core.Scope) core.Screen {
-	return core.Screen{HeaderHidden: true, Children: []core.Node{base.SafeAreaView{Edges: base.Top | base.Bottom | base.Left | base.Right,
+func headerlessPage(cx *core.Scope) base.NavPage {
+	return base.NavPage{HeaderHidden: true, Children: []core.Node{base.SafeAreaView{Edges: base.Top | base.Bottom | base.Left | base.Right,
 		Style: core.Style{FlexGrow: 1, Background: colors.background}, Children: []core.Node{
 			core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(16), Gap: 16}, Children: []core.Node{
 				appear(0, false, core.View{Style: core.Style{Gap: 8, Padding: core.Edges{Top: 12, Right: 4, Left: 4}}, Children: []core.Node{
@@ -177,8 +177,8 @@ func headerlessPage(cx *core.Scope) core.Screen {
 		}}}}
 }
 
-func deepPage(depth int) func(cx *core.Scope) core.Screen {
-	return func(cx *core.Scope) core.Screen {
+func deepPage(depth int) func(cx *core.Scope) base.NavPage {
+	return func(cx *core.Scope) base.NavPage {
 		var levels []core.Node
 		for level := 1; level <= depth; level++ {
 			on := level == depth

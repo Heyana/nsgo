@@ -25,7 +25,7 @@ type fieldProps struct {
 // formField is a labelled input: the border glows accent while focused
 // (a ring fading in on the platform), an error turns it red, slides a
 // message in (layout animation) and shakes the field.
-func formField(p fieldProps, in core.Input) core.Node {
+func formField(p fieldProps, in base.Input) core.Node {
 	return core.Func(func(cx *core.Scope) core.Node {
 		focus := core.NewAnimatedValue(cx, 0)
 		shake := core.NewAnimatedValue(cx, 0)
@@ -283,14 +283,14 @@ func formDemo(cx *core.Scope) core.Node {
 	account := func(cx *core.Scope) core.Node {
 		return section("Account", "AutoComplete",
 			formField(fieldProps{label: "Name", next: refs[1], err: nameError},
-				core.Input{Ref: refs[0], Value: name.Get, OnChange: name.Set, OnBlur: touch("name"), AutoCapitalize: core.AutoCapitalizeWords,
+				base.Input{Ref: refs[0], Value: name.Get, OnChange: name.Set, OnBlur: touch("name"), AutoCapitalize: core.AutoCapitalizeWords,
 					AutoComplete: core.AutoCompleteName, Placeholder: "Ada Lovelace", TestID: "name"}),
 			formField(fieldProps{label: "E-mail", api: "KeyboardEmail", next: refs[2], err: emailError},
-				core.Input{Ref: refs[1], Value: email.Get, OnChange: email.Set, OnBlur: touch("email"), KeyboardType: core.KeyboardEmail,
+				base.Input{Ref: refs[1], Value: email.Get, OnChange: email.Set, OnBlur: touch("email"), KeyboardType: core.KeyboardEmail,
 					AutoCapitalize: core.AutoCapitalizeNone, NoAutoCorrect: true, AutoComplete: core.AutoCompleteEmail, Placeholder: "ada@example.com", TestID: "email"}),
 			core.View{Style: core.Style{Gap: 8}, Children: []core.Node{
 				formField(fieldProps{label: "Password", api: "Masked", next: refs[3], err: passwordError},
-					core.Input{Ref: refs[2], Value: password.Get, OnChange: func(v string) {
+					base.Input{Ref: refs[2], Value: password.Get, OnChange: func(v string) {
 						if strength(v) != core.Untracked(cx, score) {
 							cx.AnimateLayout(core.LayoutEaseInEaseOutPreset)
 						}
@@ -311,9 +311,9 @@ func formDemo(cx *core.Scope) core.Node {
 				}},
 			}},
 			formField(fieldProps{label: "Phone", api: "KeyboardPhone", next: refs[4]},
-				core.Input{Ref: refs[3], KeyboardType: core.KeyboardPhone, AutoComplete: core.AutoCompleteTel, Placeholder: "+1 555 0100"}),
+				base.Input{Ref: refs[3], KeyboardType: core.KeyboardPhone, AutoComplete: core.AutoCompleteTel, Placeholder: "+1 555 0100"}),
 			formField(fieldProps{label: "Website", api: "KeyboardURL", next: refs[5]},
-				core.Input{Ref: refs[4], KeyboardType: core.KeyboardURL, AutoCapitalize: core.AutoCapitalizeNone, NoAutoCorrect: true, Placeholder: "https://"}),
+				base.Input{Ref: refs[4], KeyboardType: core.KeyboardURL, AutoCapitalize: core.AutoCapitalizeNone, NoAutoCorrect: true, Placeholder: "https://"}),
 		)
 	}
 
@@ -321,27 +321,27 @@ func formDemo(cx *core.Scope) core.Node {
 		return section("Numbers", "KeyboardType",
 			pair(
 				formField(fieldProps{label: "Age", hint: label("3 digits"), next: refs[6]},
-					core.Input{Ref: refs[5], KeyboardType: core.KeyboardNumber, MaxLength: 3, Placeholder: "36"}),
+					base.Input{Ref: refs[5], KeyboardType: core.KeyboardNumber, MaxLength: 3, Placeholder: "36"}),
 				formField(fieldProps{label: "Amount", api: "KeyboardDecimal", prefix: "$", next: refs[7]},
-					core.Input{Ref: refs[6], KeyboardType: core.KeyboardDecimal, Placeholder: "0.00"}),
+					base.Input{Ref: refs[6], KeyboardType: core.KeyboardDecimal, Placeholder: "0.00"}),
 			),
 			formField(fieldProps{label: "Offset", hint: label("dark keyboard (iOS)")},
-				core.Input{KeyboardAppearance: core.KeyboardAppearanceDark, Placeholder: "-12.5"}),
+				base.Input{KeyboardAppearance: core.KeyboardAppearanceDark, Placeholder: "-12.5"}),
 			formField(fieldProps{label: "Verification code", hint: func() string { return fmt.Sprintf("%d/6", len(code.Get())) }, next: refs[8]},
-				core.Input{Ref: refs[7], TestID: "code", Value: code.Get, OnChange: code.Set, KeyboardType: core.KeyboardNumber, MaxLength: 6, Placeholder: "······",
+				base.Input{Ref: refs[7], TestID: "code", Value: code.Get, OnChange: code.Set, KeyboardType: core.KeyboardNumber, MaxLength: 6, Placeholder: "······",
 					Style: core.Style{LetterSpacing: 10, FontSize: 22, FontWeight: medium, TextAlign: core.TextAlignCenter}}),
 		)
 	}
 
 	shipping := func(cx *core.Scope) core.Node {
 		return section("Shipping address", "scrolls into view",
-			formField(fieldProps{label: "Street", next: refs[9]}, core.Input{Ref: refs[8], AutoComplete: core.AutoCompleteStreetAddress, Placeholder: "12 Analytical Way"}),
+			formField(fieldProps{label: "Street", next: refs[9]}, base.Input{Ref: refs[8], AutoComplete: core.AutoCompleteStreetAddress, Placeholder: "12 Analytical Way"}),
 			pair(
-				formField(fieldProps{label: "City", next: refs[10]}, core.Input{Ref: refs[9], AutoComplete: core.AutoCompleteCity, Placeholder: "London"}),
-				formField(fieldProps{label: "Postal code", next: refs[11]}, core.Input{Ref: refs[10], AutoCapitalize: core.AutoCapitalizeCharacters,
+				formField(fieldProps{label: "City", next: refs[10]}, base.Input{Ref: refs[9], AutoComplete: core.AutoCompleteCity, Placeholder: "London"}),
+				formField(fieldProps{label: "Postal code", next: refs[11]}, base.Input{Ref: refs[10], AutoCapitalize: core.AutoCapitalizeCharacters,
 					AutoComplete: core.AutoCompletePostalCode, Placeholder: "SW1A 1AA"}),
 			),
-			formField(fieldProps{label: "Country", next: refs[12]}, core.Input{Ref: refs[11], AutoComplete: core.AutoCompleteCountry, Placeholder: "United Kingdom"}),
+			formField(fieldProps{label: "Country", next: refs[12]}, base.Input{Ref: refs[11], AutoComplete: core.AutoCompleteCountry, Placeholder: "United Kingdom"}),
 		)
 	}
 
@@ -352,19 +352,19 @@ func formDemo(cx *core.Scope) core.Node {
 	textCard := func(cx *core.Scope) core.Node {
 		return section("Text", "Input options",
 			formField(fieldProps{label: "Controlled", hint: label("Uppercased as you type"), next: refs[13]},
-				core.Input{Ref: refs[12], TestID: "shout", Value: shout.Get, OnChange: func(t string) { shout.Set(strings.ToUpper(t)) }, Placeholder: "TYPE IN LOWER CASE"}),
-			formField(fieldProps{label: "Read only", api: "Readonly"}, core.Input{Value: label("Not editable"), Readonly: true}),
+				base.Input{Ref: refs[12], TestID: "shout", Value: shout.Get, OnChange: func(t string) { shout.Set(strings.ToUpper(t)) }, Placeholder: "TYPE IN LOWER CASE"}),
+			formField(fieldProps{label: "Read only", api: "Readonly"}, base.Input{Value: label("Not editable"), Readonly: true}),
 			formField(fieldProps{label: "Custom colors", api: "PlaceholderColor, SelectionColor", next: refs[14]},
-				core.Input{Ref: refs[13], Placeholder: "A blue placeholder, an amber selection",
+				base.Input{Ref: refs[13], Placeholder: "A blue placeholder, an amber selection",
 					Style: core.Style{PlaceholderColor: colors.info, SelectionColor: colors.warn}}),
 			core.View{Style: core.Style{Gap: 8}, Children: []core.Node{
 				formField(fieldProps{label: "Notes", hint: func() string { return fmt.Sprintf("%d/280", len([]rune(notes.Get()))) }},
-					core.Input{Ref: refs[14], Multiline: true, MaxLength: 280, Value: notes.Get, OnChange: notes.Set, Placeholder: "Return adds a line",
+					base.Input{Ref: refs[14], Multiline: true, MaxLength: 280, Value: notes.Get, OnChange: notes.Set, Placeholder: "Return adds a line",
 						Style: core.Style{MinHeight: core.Pt(100)}}),
 				meter(func() float64 { return float64(len([]rune(notes.Get()))) / 280 }, toneAccent, -1),
 			}},
 			autoGrow(),
-			formField(fieldProps{label: "No caret", api: "HideCaret"}, core.Input{HideCaret: true, DefaultValue: "No caret here"}),
+			formField(fieldProps{label: "No caret", api: "HideCaret"}, base.Input{HideCaret: true, DefaultValue: "No caret here"}),
 		)
 	}
 
@@ -408,7 +408,7 @@ func formDemo(cx *core.Scope) core.Node {
 
 	var fields []core.Node
 	for _, l := range []string{"First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh"} {
-		fields = append(fields, formField(fieldProps{label: l}, core.Input{Placeholder: l + " field"}))
+		fields = append(fields, formField(fieldProps{label: l}, base.Input{Placeholder: l + " field"}))
 	}
 	dialog := base.Dialog{Open: sheetOpen.Get, Presentation: core.ModalPageSheet, OnOpenChange: func(o bool, _ base.Reason) { sheetOpen.Set(o) },
 		PopupStyle: core.Style{FlexGrow: 1, AlignSelf: core.AlignStretch}, Label: "A sheet",
@@ -438,7 +438,7 @@ func autoGrow() core.Node {
 		height := core.NewSignal(cx, core.Points(0))
 		size := core.NewSignal(cx, "–")
 		return formField(fieldProps{label: "Grows with its text", hint: size.Get},
-			core.Input{Multiline: true, Placeholder: "Type several lines",
+			base.Input{Multiline: true, Placeholder: "Type several lines",
 				OnContentSizeChange: func(s core.Size) {
 					size.Set(fmt.Sprintf("%d×%d", int(s.Width+0.5), int(s.Height+0.5)))
 					height.Set(min(s.Height, 110))
@@ -454,7 +454,7 @@ type message struct {
 
 // messageBar is an input pinned to the bottom, outside any scroll view:
 // it rides on the keyboard.
-func messageBar(cx *core.Scope) core.Screen {
+func messageBar(cx *core.Scope) base.NavPage {
 	env := cx.Env()
 	messages := core.NewSignalFunc(cx, []message{
 		{false, "The bar below sits outside the scroll view."},
@@ -488,7 +488,7 @@ func messageBar(cx *core.Scope) core.Screen {
 			return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Edges{Top: 8, Right: 16, Bottom: bottom, Left: 16},
 				Background: colors.surface, Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.border}}
 		}, Children: []core.Node{
-			core.Input{Value: draft.Get, OnChange: draft.Set, OnSubmit: func(string) { send() }, SubmitBehavior: core.SubmitBehaviorSubmit,
+			base.Input{Value: draft.Get, OnChange: draft.Set, OnSubmit: func(string) { send() }, SubmitBehavior: core.SubmitBehaviorSubmit,
 				Placeholder: "Message", ReturnKeyType: core.ReturnKeySend, TestID: "message",
 				Style: fin.inset.over(core.Style{PlaceholderColor: colors.faint, SelectionColor: colors.accent, FlexGrow: 1, FlexShrink: 1, Height: core.Pt(44),
 					Padding: core.Symmetric(0, 16), FontSize: 15, Color: colors.text, Background: colors.inset, BorderWidth: 1, BorderColor: colors.border, CornerRadius: 22})},
@@ -534,7 +534,7 @@ func selectionDemo() core.Node {
 		}
 		return core.View{Style: core.Style{Gap: 12}, Children: []core.Node{
 			formField(fieldProps{label: "Text", hint: func() string { r := rng.Get(); return fmt.Sprintf("%d–%d", r.Start, r.End) }},
-				core.Input{Ref: input, Value: value.Get, OnChange: value.Set, SelectedRange: sel.Get, OnSelectionChange: rng.Set, TestID: "selection",
+				base.Input{Ref: input, Value: value.Get, OnChange: value.Set, SelectedRange: sel.Get, OnSelectionChange: rng.Set, TestID: "selection",
 					OnKeyPress: func(k string) {
 						keys.Update(func(ks []string) []string {
 							ks = append(slices.Clone(ks), k)
@@ -565,7 +565,7 @@ func selectionDemo() core.Node {
 				button(buttonProps{label: "Caret to start", variant: secondary}, func() { input.SetSelection(0, 0) }),
 			),
 			formField(fieldProps{label: "One-time code", api: "AutoCompleteOneTimeCode"},
-				core.Input{KeyboardType: core.KeyboardNumber, AutoComplete: core.AutoCompleteOneTimeCode, MaxLength: 6, Placeholder: "123456"}),
+				base.Input{KeyboardType: core.KeyboardNumber, AutoComplete: core.AutoCompleteOneTimeCode, MaxLength: 6, Placeholder: "123456"}),
 		}}
 	})
 }

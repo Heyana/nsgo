@@ -2,6 +2,12 @@ package base
 
 import "github.com/oneo-me/nsgo/core"
 
+// NavPage is one page of a Nav's stack, filling it. On iOS and Android the
+// platform draws the system header, a navigation bar or a toolbar, from
+// its title and header options; elsewhere its Header, when set, is drawn
+// at the top.
+type NavPage = core.Screen
+
 // Nav is a navigation stack of routes of type R: pushing a route adds a
 // screen, popping removes it. The same route pushed twice is two pages.
 type Nav[R any] struct {
@@ -71,9 +77,9 @@ func (n *Nav[R]) Replace(route R) {
 // SetRoutes replaces every route.
 func (n *Nav[R]) SetRoutes(routes ...R) { n.entries.Set(n.wrap(routes)) }
 
-// Stack renders the routes as a core.Stack, a screen each. A screen the
+// Stack renders the routes as a stack of pages, one each. A page the
 // user pops goes from the routes before its OnDismiss runs.
-func (n *Nav[R]) Stack(style core.Style, page func(cx *core.Scope, route R, depth func() int) core.Screen) core.Node {
+func (n *Nav[R]) Stack(style core.Style, page func(cx *core.Scope, route R, depth func() int) NavPage) core.Node {
 	return core.Stack{Style: style, Children: []core.Node{
 		core.Each(n.entries.Get, func(e navEntry[R]) int { return e.key },
 			func(cx *core.Scope, e func() navEntry[R], depth func() int) core.Node {

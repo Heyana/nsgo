@@ -20,6 +20,7 @@ import (
 	"github.com/oneo-me/nsgo"
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/desktop"
 )
 
 //go:embed logo.png
@@ -119,7 +120,7 @@ func groupOf(name string) string {
 // page), a demo, or a page a demo pushes.
 type route struct {
 	demo string
-	page func(cx *core.Scope) core.Screen
+	page func(cx *core.Scope) base.NavPage
 }
 
 // gallery is the state the layouts share, so switching between them (a
@@ -154,7 +155,7 @@ func (g *gallery) paneWidth() core.Points {
 }
 
 // push shows a page over the demo.
-func (g *gallery) push(page func(cx *core.Scope) core.Screen) { g.nav.Push(route{page: page}) }
+func (g *gallery) push(page func(cx *core.Scope) base.NavPage) { g.nav.Push(route{page: page}) }
 
 // selectDemo shows a demo in the desktop layout, closing what it had
 // pushed.
@@ -192,26 +193,26 @@ func Root(cx *core.Scope) core.Node {
 		chosen:      core.NewSignal(cx, "nothing yet"),
 		env:         env,
 	}
-	desktop := core.NewMemo(cx, func() bool {
+	desktopLayout := core.NewMemo(cx, func() bool {
 		limit := tabletWidth
 		if env.Desktop() {
 			limit = desktopWidth
 		}
 		return env.Window().Width >= limit
 	})
-	g.desktop = desktop.Get
+	g.desktop = desktopLayout.Get
 	shell = g
 
-	hasWindow := env.Desktop() && env.OS() != core.OSWeb
+	hasWindow := desktop.IsAvailable(cx)
 	if hasWindow {
-		cx.SetTitle("Gallery")
-		cx.SetTitleBar(core.TitleBarHidden, 40)
+		desktop.SetTitle(cx, "Gallery")
+		desktop.SetTitleBar(cx, desktop.TitleBarHidden, 40)
 	}
 	rememberDemo(cx, g)
-	cx.Effect(func() { cx.SetApplicationMenu(g.menu()) })
+	cx.Effect(func() { desktop.SetApplicationMenu(cx, g.menu()) })
 
 	return core.Dynamic(func(cx *core.Scope) core.Node {
-		wide, dark := desktop.Get(), env.Dark()
+		wide, dark := desktopLayout.Get(), env.Dark()
 		// What the layout builds mounts untracked, outside this function.
 		return core.Func(func(cx *core.Scope) core.Node {
 			useAppearance(dark)
@@ -270,7 +271,6 @@ func rememberDemo(cx *core.Scope, g *gallery) {
 // window controls. The sidebar's toggle follows the logo in the desktop
 // layout.
 func (g *gallery) titleBar(cx *core.Scope, wide bool) core.Node {
-	env := cx.Env()
 	children := []core.Node{logo(20)}
 	if wide {
 		children = append(children, g.sidebarToggle())
@@ -281,7 +281,7 @@ func (g *gallery) titleBar(cx *core.Scope, wide bool) core.Node {
 	)
 	return core.View{WindowDrag: core.WindowDragOn, TestID: "title-bar",
 		StyleFunc: func() core.Style {
-			tb := env.TitleBar()
+			tb := desktop.TitleBar(cx)
 			return core.Style{Height: core.Pt(max(tb.Top, 40)), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8,
 				Padding: core.Edges{Left: tb.Left + 12, Right: tb.Right + 12}, Background: colors.inset,
 				Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.line}}
@@ -309,20 +309,20 @@ func (g *gallery) phone(cx *core.Scope) core.Node {
 		g.nav.SetRoutes(route{}, route{demo: g.selected.GetUntracked()})
 	}
 	g.wasDesktop = false
-	return g.nav.Stack(core.Style{FlexGrow: 1}, func(cx *core.Scope, r route, _ func() int) core.Screen {
+	return g.nav.Stack(core.Style{FlexGrow: 1}, func(cx *core.Scope, r route, _ func() int) base.NavPage {
 		switch {
 		case r.page != nil:
 			return r.page(cx)
 		case r.demo != "":
 			d, _ := findDemo(r.demo)
-			return core.Screen{Title: d.name, TestID: "screen-" + d.name, HeaderStyle: headerStyle(),
+			return base.NavPage{Title: d.name, TestID: "screen-" + d.name, HeaderStyle: headerStyle(),
 				Header: pageHeader(pageHeaderProps{title: d.name}),
 				Style:  core.Style{Background: colors.background},
 				Children: []core.Node{core.View{Style: fillPage.Merge(core.Style{Background: colors.background}),
 					Children: []core.Node{core.Func(func(cx *core.Scope) core.Node { return d.screen(cx) })}}}}
 		}
 		right := themeToggle(cx)
-		return core.Screen{Title: "Gallery", TestID: "index", HeaderStyle: headerStyle(), HeaderRight: right,
+		return base.NavPage{Title: "Gallery", TestID: "index", HeaderStyle: headerStyle(), HeaderRight: right,
 			Header:   pageHeader(pageHeaderProps{title: "Gallery", root: true, right: themeToggle(cx)}),
 			Children: []core.Node{g.home()}}
 	})
@@ -385,16 +385,16 @@ func (g *gallery) desktopLayout(cx *core.Scope) core.Node {
 	g.wasDesktop = true
 	// The application menu's View › Show Sidebar takes the key where
 	// there is a menu bar.
-	if env := cx.Env(); !env.Desktop() || env.OS() == core.OSWeb {
+	if !desktop.IsAvailable(cx) {
 		cx.OnKey("mod+b", g.toggleSidebar)
 	}
 	return core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0), Direction: core.Row, Background: colors.inset}, Children: []core.Node{
 		g.sidebar(cx),
-		g.nav.Stack(core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, func(cx *core.Scope, r route, _ func() int) core.Screen {
+		g.nav.Stack(core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, func(cx *core.Scope, r route, _ func() int) base.NavPage {
 			if r.page != nil {
 				return r.page(cx)
 			}
-			return core.Screen{HeaderHidden: true, Children: []core.Node{g.demoPane()}}
+			return base.NavPage{HeaderHidden: true, Children: []core.Node{g.demoPane()}}
 		}),
 	}}
 }
@@ -518,36 +518,36 @@ func (g *gallery) demoPane() core.Node {
 
 // menu is the application menu: the app menu and Edit of roles, View
 // (the sidebar and a demo each, with shortcuts) and Window.
-func (g *gallery) menu() []core.MenuItem {
+func (g *gallery) menu() []desktop.MenuItem {
 	selected := g.selected.Get()
 	choose := func(label string, fn func()) func() {
 		return func() { g.chosen.Set(label); fn() }
 	}
-	view := []core.MenuItem{
+	view := []desktop.MenuItem{
 		{Label: "Show Sidebar", Shortcut: "mod+b", Checkable: true, Checked: g.sidebarOpen.Get(), OnSelect: choose("Show Sidebar", g.toggleSidebar)},
 		{Separator: true},
 	}
 	for i, d := range allDemos() {
-		item := core.MenuItem{Label: d.name, Checkable: true, Checked: d.name == selected, OnSelect: choose(d.name, func() { g.open(d.name) })}
+		item := desktop.MenuItem{Label: d.name, Checkable: true, Checked: d.name == selected, OnSelect: choose(d.name, func() { g.open(d.name) })}
 		if i < 9 {
 			item.Shortcut = "mod+" + itoa(i+1)
 		}
 		view = append(view, item)
 	}
-	return []core.MenuItem{
-		{Label: "Gallery", Items: []core.MenuItem{
-			{Role: core.MenuAbout}, {Separator: true},
-			{Role: core.MenuHide}, {Role: core.MenuHideOthers}, {Role: core.MenuShowAll}, {Separator: true},
-			{Role: core.MenuQuit},
+	return []desktop.MenuItem{
+		{Label: "Gallery", Items: []desktop.MenuItem{
+			{Role: desktop.MenuAbout}, {Separator: true},
+			{Role: desktop.MenuHide}, {Role: desktop.MenuHideOthers}, {Role: desktop.MenuShowAll}, {Separator: true},
+			{Role: desktop.MenuQuit},
 		}},
-		{Label: "Edit", Items: []core.MenuItem{
-			{Role: core.MenuUndo}, {Role: core.MenuRedo}, {Separator: true},
-			{Role: core.MenuCut}, {Role: core.MenuCopy}, {Role: core.MenuPaste}, {Role: core.MenuSelectAll},
+		{Label: "Edit", Items: []desktop.MenuItem{
+			{Role: desktop.MenuUndo}, {Role: desktop.MenuRedo}, {Separator: true},
+			{Role: desktop.MenuCut}, {Role: desktop.MenuCopy}, {Role: desktop.MenuPaste}, {Role: desktop.MenuSelectAll},
 		}},
 		{Label: "View", Items: view},
-		{Label: "Window", Items: []core.MenuItem{
-			{Role: core.MenuMinimize}, {Role: core.MenuZoom}, {Role: core.MenuToggleFullScreen}, {Separator: true},
-			{Role: core.MenuClose},
+		{Label: "Window", Items: []desktop.MenuItem{
+			{Role: desktop.MenuMinimize}, {Role: desktop.MenuZoom}, {Role: desktop.MenuToggleFullScreen}, {Separator: true},
+			{Role: desktop.MenuClose},
 		}},
 	}
 }

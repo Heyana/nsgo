@@ -2,10 +2,9 @@ package core
 
 import "github.com/oneo-me/nsgo/internal/driver"
 
-// InputAccessoryView is a bar that rides above the software keyboard on
-// iOS and Android while an Input naming its ID has focus, as React
-// Native's does. It is as wide as the surface and as tall as its content;
-// other platforms have no software keyboard and show nothing.
+// InputAccessoryView is the core's part of mobile.InputAccessoryView,
+// which apps use: a bar iOS and Android show above the software keyboard,
+// as React Native's.
 type InputAccessoryView struct {
 	// ID is what inputs name in InputAccessoryViewID.
 	ID        string
