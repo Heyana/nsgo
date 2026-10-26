@@ -73,11 +73,15 @@ dev:
   target: native
   # false, the default, runs once and exits with the app; true rebuilds on save.
   hot_reload: false
+  # true shows the performance monitor (macOS).
+  fps: false
 
 build:
   output: dist
   # true opens the output directory after building.
   open: false
+  # true shows the performance monitor (macOS).
+  fps: false
   targets: [macos_arm64, windows_x64, ios_simulator, android_arm64, web]
 `))
 

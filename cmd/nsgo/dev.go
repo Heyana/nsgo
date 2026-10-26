@@ -125,11 +125,11 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 	}
 }
 
-// prepareDev sets what dev's builds carry: the monitor, the dev client
-// and the dev icons; -release strips them as nsgo build does, keeping
-// the monitor for measuring.
+// prepareDev sets what dev's builds carry: the monitor dev.fps asks for,
+// the dev client and the dev icons; -release strips them as nsgo build
+// does, keeping the monitor for measuring.
 func (p *project) prepareDev(opts devOptions) error {
-	p.Perf, p.Release, p.Dev.Client = true, opts.release, true
+	p.Perf, p.Release, p.Dev.Client = p.Dev.FPS, opts.release, true
 	return p.useDevIcons()
 }
 

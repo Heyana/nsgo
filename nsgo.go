@@ -80,8 +80,8 @@ func KeepAliveOnClose(on bool) Option {
 }
 
 // FPS shows (or hides) the performance monitor over the app: frame rate,
-// frame and commit costs, CPU, GPU and memory. `nsgo dev` turns it on for
-// development runs; `nsgo build` never does.
+// frame and commit costs, CPU, GPU and memory. nsgo.yaml's dev.fps and
+// build.fps, or the nsgo tool's -fps flag, turn it on.
 func FPS(on bool) Option {
 	return func(o *options) { o.monitor = on }
 }

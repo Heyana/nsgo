@@ -99,6 +99,7 @@ type devFlags struct {
 	*overrides
 	target    *override[string]
 	hotReload *boolOverride
+	fps       *boolOverride
 	port      int
 	open      bool
 	device    string
@@ -110,10 +111,11 @@ func bindDevFlags(fs *flag.FlagSet) *devFlags {
 	f := &devFlags{overrides: bindOverrides(fs)}
 	f.target = stringFlag(fs, "target", "`target` to use: native, web, ios, ios_simulator or android (a device or emulator; default: nsgo.yaml's dev.target)")
 	f.hotReload = boolFlag(fs, "hot-reload", "rebuild and restart on changes (default: nsgo.yaml's dev.hot_reload)")
+	f.fps = boolFlag(fs, "fps", "show the performance monitor (default: nsgo.yaml's dev.fps)")
 	fs.IntVar(&f.port, "port", 8080, "the dev server's `port`, which serves the web target; the next free one when taken")
 	fs.BoolVar(&f.open, "open", true, "open the web target in the browser")
 	fs.StringVar(&f.device, "device", "", "the `device` to run on: an iPhone's name, UDID, serial or ECID, a simulator's name or UDID, or an adb serial or emulator's AVD name (default: the only one connected, or the booted simulator)")
-	fs.BoolVar(&f.release, "release", false, "build stripped release binaries, as nsgo build does, keeping the performance monitor")
+	fs.BoolVar(&f.release, "release", false, "build stripped release binaries, as nsgo build does, keeping dev's performance monitor")
 	fs.StringVar(&f.team, "team", "", "the Apple developer `team` the iOS target signs with (default: the team Xcode last used)")
 	return f
 }
@@ -124,6 +126,7 @@ func (f *devFlags) apply(p *project) {
 	if f.hotReload.set {
 		p.Dev.HotReload = &f.hotReload.value
 	}
+	f.fps.replace(&p.Dev.FPS)
 }
 
 // buildFlags are nsgo build's flags; those that name an nsgo.yaml value
@@ -133,6 +136,7 @@ type buildFlags struct {
 	targets *override[string]
 	output  *override[string]
 	open    *boolOverride
+	fps     *boolOverride
 	run     bool
 	embed   bool
 	sign    signFlags
@@ -143,6 +147,7 @@ func bindBuildFlags(fs *flag.FlagSet) *buildFlags {
 	f.targets = stringFlag(fs, "target", "comma-separated `targets`, or all for every platform Go and Xcode build (default: nsgo.yaml's build.targets)")
 	f.output = stringFlag(fs, "output", "the `output` directory (default: nsgo.yaml's build.output)")
 	f.open = boolFlag(fs, "open", "open the output directory (default: nsgo.yaml's build.open)")
+	f.fps = boolFlag(fs, "fps", "show the performance monitor (default: nsgo.yaml's build.fps)")
 	fs.BoolVar(&f.run, "run", false, "start the package built for this machine: the app, the simulator's or device's, or the site served")
 	fs.BoolVar(&f.embed, "embed", false, "package the app for iOS and Android apps of their own to embed: an XCFramework and an AAR")
 	f.sign.bind(fs)
@@ -160,6 +165,7 @@ func (f *buildFlags) apply(p *project) {
 	if f.open.set {
 		p.Build.Open = &f.open.value
 	}
+	f.fps.replace(&p.Build.FPS)
 	p.Build.run, p.Build.embed = f.run, f.embed
 	f.sign.apply(p)
 }

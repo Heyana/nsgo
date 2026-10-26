@@ -79,9 +79,11 @@ icon:
 dev:
   target: native        # native, web, ios, ios_simulator or android
   hot_reload: false     # true rebuilds and restarts on save
+  fps: false            # true shows the performance monitor (macOS); -fps overrides it
 build:
   output: dist          # packages go to dist/<name>-<version>-<target>
   open: false           # true opens the output directory after building
+  fps: false            # as dev.fps, for packages
   targets: [macos_arm64, macos_x64, windows_arm64, windows_x64, linux_arm64, linux_x64, ios, ios_simulator, android_arm64, android_x64, web]
 # sign:                 # store releases; passwords come from NSGO_KEYSTORE_PASSWORD and NSGO_KEY_PASSWORD
 #   profile: assets/AppStore.mobileprovision  # signs the IPA
@@ -96,7 +98,7 @@ Add the tool to your module once; `go tool nsgo` then runs it without installing
 go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 ```
 
-`go tool nsgo dev` runs the app once, or with `dev.hot_reload` rebuilds and restarts it on each change. A failed build shows over the running app; Command or Control+R in the app, or `r` and Return in the terminal, builds it again. Its builds badge the icon DEV, or show `dev.icon`'s files, and on macOS the performance monitor.
+`go tool nsgo dev` runs the app once, or with `dev.hot_reload` rebuilds and restarts it on each change. A failed build shows over the running app; Command or Control+R in the app, or `r` and Return in the terminal, builds it again. Its builds badge the icon DEV, or show `dev.icon`'s files.
 
 `go tool nsgo build` writes a stripped release package per target: an `.app`, an `.ipa`, an `.apk`, Windows' and Linux's directories with a `.zip` or `.tar.gz` of each, or a web site; `-run` starts the one built for this machine. `-embed` packages the app for an iOS or Android app of your own instead, an XCFramework or an AAR whose `NSGoView` or `NsgoView` shows it, and Go desktop programs show apps with `nsgo.NewView`: see `examples/embed-*`.
 

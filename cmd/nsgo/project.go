@@ -17,8 +17,8 @@ type project struct {
 	// Release strips symbols and debug information for the smallest
 	// binaries; nsgo build sets it, nsgo dev does not.
 	Release bool `yaml:"-"`
-	// Perf shows the performance monitor in development builds; nsgo dev
-	// always sets it and nsgo build never does.
+	// Perf shows the performance monitor: nsgo dev sets it from Dev.FPS
+	// and nsgo build from Build.FPS.
 	Perf bool `yaml:"-"`
 	// idDefault records that nsgo.yaml gave no id, so it follows the name.
 	idDefault bool
@@ -56,6 +56,9 @@ type project struct {
 		// HotReload rebuilds and restarts the app when a watched file
 		// changes; it defaults to false.
 		HotReload *bool `yaml:"hot_reload"`
+		// FPS shows the performance monitor over dev's builds; it
+		// defaults to false.
+		FPS bool `yaml:"fps"`
 		// Client builds the dev client in, which connects to nsgo dev's
 		// server: nsgo dev sets it.
 		Client bool `yaml:"-"`
@@ -67,6 +70,9 @@ type project struct {
 		// Open shows the output directory once the build finishes; it
 		// defaults to false.
 		Open *bool `yaml:"open"`
+		// FPS shows the performance monitor over the packages; it
+		// defaults to false.
+		FPS bool `yaml:"fps"`
 		// run starts the package built for this machine afterwards (-run);
 		// embed packages the app for host apps of their own (-embed).
 		run, embed bool
@@ -173,7 +179,7 @@ func (p *project) cache(parts ...string) string {
 	return filepath.Join(append([]string{p.Dir, ".nsgo"}, parts...)...)
 }
 
-// ldflags passes nsgo.yaml's name, ID and window size, and the development
+// ldflags passes nsgo.yaml's name, ID and window size, and the performance
 // monitor, to nsgo.Run.
 func (p *project) ldflags(extra ...string) string {
 	const pkg = "github.com/oneo-me/nsgo"

@@ -213,14 +213,62 @@ func TestBuildFlagsAbsoluteOutput(t *testing.T) {
 	}
 }
 
-func TestPerfLDFlag(t *testing.T) {
-	p := &project{Name: "App", ID: "com.example.app"}
-	p.Perf = true
+func TestFPS(t *testing.T) {
+	dir := t.TempDir()
+	write := func(yaml string) {
+		if err := os.WriteFile(filepath.Join(dir, "nsgo.yaml"), []byte(yaml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	devFPS := func(args ...string) bool {
+		p, err := load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fs := flag.NewFlagSet("dev", flag.ContinueOnError)
+		f := bindDevFlags(fs)
+		if err := fs.Parse(args); err != nil {
+			t.Fatal(err)
+		}
+		f.apply(p)
+		return p.Dev.FPS
+	}
+	buildFPS := func(args ...string) bool {
+		p, err := load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fs := flag.NewFlagSet("build", flag.ContinueOnError)
+		f := bindBuildFlags(fs)
+		if err := fs.Parse(args); err != nil {
+			t.Fatal(err)
+		}
+		f.apply(p)
+		return p.Build.FPS
+	}
+
+	write("name: App\n")
+	if devFPS() || buildFPS() {
+		t.Error("fps is on by default")
+	}
+	if !devFPS("-fps") || !buildFPS("-fps") {
+		t.Error("-fps did not turn the monitor on")
+	}
+
+	write("name: App\ndev: { fps: true }\nbuild: { fps: true }\n")
+	if !devFPS() || !buildFPS() {
+		t.Error("dev.fps or build.fps did not turn the monitor on")
+	}
+	if devFPS("-fps=false") || buildFPS("-fps=false") {
+		t.Error("-fps=false did not turn the monitor off")
+	}
+
+	p := &project{Name: "App", ID: "com.example.app", Perf: true}
 	if !strings.Contains(p.ldflags(), "github.com/oneo-me/nsgo.fps=1") {
-		t.Errorf("development ldflags = %q", p.ldflags())
+		t.Errorf("ldflags with the monitor = %q", p.ldflags())
 	}
 	p.Perf = false
 	if strings.Contains(p.ldflags(), "fps=1") {
-		t.Errorf("build ldflags = %q", p.ldflags())
+		t.Errorf("ldflags without the monitor = %q", p.ldflags())
 	}
 }
