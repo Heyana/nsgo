@@ -14,7 +14,7 @@
 - Text: `FillText` and `StrokeText` in a `Font`.
 - Images: `DrawImage` at the natural size, `DrawImageIn` into a rectangle and `DrawImageFrom` from a part of the image.
 
-The recorder resolves what needs the engine, so players stay plain: text alignment and baselines become an offset from the text's metrics, an `ArcTo` becomes an arc from the current point, and a `Path` is replayed under its own transform inside a `Save` and `Restore`. Players keep only a transform, a clip and the paint state.
+The recorder resolves what needs the engine, so players stay plain: text alignment and baselines become an offset from the text's metrics, and an `ArcTo` becomes an arc from the current point. A `FillPath`, `StrokePath` or `ClipPath` (`FillRect` and `StrokeRect` among them) begins a path for its `Path` and another after it; the current path it leaves is recorded again, under the transforms it was built in and inside a `Save` and `Restore`, before the next op that builds on it or uses it (`DrawKind.UsesPath`). A run of `FillRect`s after a long line, as a chart's bars after its line, records each rectangle alone. Players keep only a transform, a clip and the paint state.
 
 ## Queries
 
@@ -54,7 +54,7 @@ macOS and iOS redraw only what the change covers, as NSH's partial redraws; the 
 
 ## Players
 
-Each backend plays the operations in order on the main thread, macOS on Core Animation's threads ([text](text.md#text-and-drawing)). Images load as image views' do, cached by `ImageSource.Key` (Apple keeps the 64 drawn last); a canvas draws again when one arrives and draws nothing in its place until then. Android's Go side reads each image once and sends its bytes for Java to decode.
+Each backend plays the operations in order on the main thread; on macOS into a context Core Animation draws on its own threads ([text](text.md#text-and-drawing)). Images load as image views' do, cached by `ImageSource.Key` (Apple keeps the 64 drawn last); a canvas draws again when one arrives and draws nothing in its place until then. Android's Go side reads each image once and sends its bytes for Java to decode.
 
 | Target | Plays into | Composites | Shadows | Conic gradients | Stroked text |
 | --- | --- | --- | --- | --- | --- |
@@ -63,6 +63,8 @@ Each backend plays the operations in order on the main thread, macOS on Core Ani
 | Windows | Direct2D, through an offscreen bitmap when the drawing composites or clears | Direct2D's composite and blend effects | A command list through the shadow effect | A bitmap brush of the sweep | DirectWrite outlines, through a text renderer written in Go |
 | Linux | Cairo | Cairo's operators | An alpha mask blurred with a box blur | A mesh pattern | Pango's layout path |
 | Android | `android.graphics.Canvas` | `BlendMode`, or Porter-Duff modes before Android 10, in a layer for operators that clear outside the shape | The paint's shadow layer | `SweepGradient` | The paint's stroke style |
+
+A call into the platform can cost more than the op it plays draws ([performance](performance.md#keeping-frames-cheap)). Apple's player calls the Core Graphics functions of pointers and integers through `purego.SyscallN` (`registerSyscall`), adds a `MoveTo` and the `LineTo`s after it in one `CGContextAddLines`, makes each color once a drawing, tracks whether the path is empty and asks Core Graphics only after shapes that may add nothing, and copies the path that a fill, stroke or clip keeps only when a later op uses it.
 
 `internal/platform/canvastest` holds sample drawings, one for each group of features, and the pixels they must produce; the Apple, Windows and Linux players check them in their tests. The web and Android are checked by screenshots of the gallery's Canvas page.
 

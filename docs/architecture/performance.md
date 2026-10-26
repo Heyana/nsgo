@@ -55,6 +55,8 @@ Every frame runs the commit on the engine goroutine and, on the main thread, the
 - The cores clock down between frames, so a commit in the app takes longer than the same work in a Go benchmark; measure a change both ways.
 - A commit allocates only what it sends: compare a node's values on the stack and copy them into an item once they changed. Flex layout reuses its item buffers.
 - macOS draws only content that changed and can be seen ([text and drawing](text.md#text-and-drawing)), and decides what can be seen from the batches' state rather than by asking AppKit.
+- A canvas plays all of its drawing each time it draws, also for the small area an animated argument changes. `go test ./internal/platform/apple -run '^$' -bench PlayChart` plays the Stocks demo's chart five hours into its session that way: 2,418 ops in 0.39 ms (93,018 ops in 44 ms when each `FillRect` recorded the line before it again and every op was a registered call). Record a path once ([recording](canvas.md#recording)) and cross into the platform as few times as an op allows ([players](canvas.md#players)).
+- On an M1 Max at 60 Hz in a 1200×800 window, the gallery's Stocks demo costs 35–40% of a core, early in its session and five hours into it, and Animations 13%, as NSH's build of its gallery does on the same machine (its `examples/gallery/tools/perf.py`).
 - The main thread never waits for the GPU: Metal shader views take drawables and present on goroutines of their own ([shaders](shaders.md#platforms)).
 
 ## Frame clocks
@@ -74,12 +76,12 @@ purego prices each foreign call by what its Go signature asks of reflection (App
 
 | Call | Cost |
 | --- | --- |
-| `purego.SyscallN`, `apple.Msg` | Under 0.15 µs |
-| A registered function or `ID.Send` with scalar arguments | 0.25–0.5 µs |
+| `purego.SyscallN`, `apple.Msg`, a function set by `registerSyscall` | Under 0.15 µs |
+| A registered function or `ID.Send` with scalar arguments | 0.2–0.5 µs, and allocations for the collector |
 | `objc.Send[T]`, which registers a function on every call | 0.4 µs |
-| A struct argument or result | About 2 µs |
+| A struct argument or result | About 2.5 µs |
 
-On per-frame paths, send messages whose arguments and result are objects, integers or booleans with `apple.Msg`. Declare a 16-byte struct argument (`CFRange`, `CGSize`, `CGPoint`) as its two fields, which arm64 and x86-64 both pass in two registers; larger structs pass differently on the two, so they stay structs. Keep immutable CoreFoundation objects, such as fonts, attributes and frame paths, in bounded caches.
+On per-frame paths, send messages whose arguments and result are objects, integers or booleans with `apple.Msg`, and set C functions of pointers and integers with `registerSyscall` instead of `purego.RegisterLibFunc`. Pass runs by pointer, as `CGContextAddLines` takes a polyline's points and `CGContextAddRects` a rectangle, rather than a call for each. Declare a 16-byte struct argument (`CFRange`, `CGSize`, `CGPoint`) as its two fields, which arm64 and x86-64 both pass in two registers; larger structs pass differently on the two, so they stay structs. Keep immutable CoreFoundation objects, such as fonts, attributes and frame paths, in bounded caches.
 
 ## Where Go departs from NSH
 

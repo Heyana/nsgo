@@ -139,6 +139,23 @@ func Samples(text driver.TextEngine, logo []byte) []*Sample {
 	}})
 
 	d = driver.NewDrawing(text)
+	d.SetStrokeColor(driver.RGB(0)).SetLineWidth(2)
+	d.BeginPath().LineTo(10, 10).LineTo(90, 10).Stroke()
+	d.BeginPath().MoveTo(10, 40).QuadTo(50, 80, 90, 40).Stroke()
+	d.SetFillColor(driver.RGB(0x00ff00)).BeginPath().Rect(110, 10, 40, 30).Fill().LineTo(190, 10).Stroke()
+	d.BeginPath().MoveTo(110, 70).LineTo(190, 70)
+	d.SetFillColor(driver.RGB(0xff0000)).FillRect(110, 80, 20, 20)
+	d.LineTo(190, 110).Stroke()
+	out = append(out, &Sample{Name: "paths", Width: 200, Height: 120, Drawing: d, Probes: []Probe{
+		pt(5, 10, "before a LineTo that starts the path", white), pt(50, 10, "the line from it", dark),
+		pt(50, 60, "a curve from a lone MoveTo", dark),
+		pt(130, 25, "a filled rectangle", green), pt(130, 40, "its outline, stroked from the path the fill kept", dark),
+		pt(170, 10, "the line on from the rectangle", dark),
+		pt(120, 90, "a FillRect", red), pt(150, 70, "the line it left as the current path", dark),
+		pt(190, 90, "the line on from it", dark),
+	}})
+
+	d = driver.NewDrawing(text)
 	font := driver.Font{Size: 40, Weight: 700}
 	d.SetFillGradient(driver.CanvasLinear(0, 0, 200, 0, stops...)).FillText("MMMM", 0, 40, font)
 	d.SetStrokeColor(driver.RGB(0x00aa00)).SetLineWidth(2).StrokeText("O", 10, 100, font)

@@ -33,6 +33,9 @@ type Drawing struct {
 	text     TextEngine // measures text; nil approximates it
 	measured map[textKey]TextMetrics
 	track    *drawTrack
+	// pathAside is set while the current path is only the track's,
+	// after a FillPath, StrokePath or ClipPath (restorePath).
+	pathAside bool
 }
 
 // NewDrawing returns an empty drawing that measures text with text, as
@@ -118,6 +121,17 @@ const (
 	DrawTextAlign
 	DrawTextBaseline
 )
+
+// UsesPath reports whether an op of kind k builds on the current path or
+// closes, fills, strokes or clips with it.
+func (k DrawKind) UsesPath() bool {
+	switch k {
+	case DrawMoveTo, DrawLineTo, DrawQuadTo, DrawCubicTo, DrawArc, DrawRect, DrawRoundRect, DrawEllipse,
+		DrawClosePath, DrawFill, DrawStroke, DrawClip:
+		return true
+	}
+	return false
+}
 
 // DrawOp is one operation; Kind says which fields it uses.
 type DrawOp struct {
@@ -440,7 +454,18 @@ const (
 	JoinBevel
 )
 
-func (d *Drawing) op(o DrawOp) *Drawing { d.Ops = append(d.Ops, o); return d }
+// op records o, after the current path a FillPath left aside when o
+// builds on it or uses it.
+func (d *Drawing) op(o DrawOp) *Drawing {
+	switch {
+	case o.Kind == DrawBeginPath:
+		d.pathAside = false
+	case o.Kind.UsesPath():
+		d.restorePath()
+	}
+	d.Ops = append(d.Ops, o)
+	return d
+}
 
 func (d *Drawing) Save() *Drawing { return d.op(DrawOp{Kind: DrawSave}) }
 
@@ -520,6 +545,7 @@ func (d *Drawing) ArcTo(x1, y1, x2, y2, r float32) *Drawing {
 		return d
 	}
 	p0 := inv.apply(t.cur)
+	d.restorePath()
 	d.Ops = appendArcTo(d.Ops, p0, x1, y1, x2, y2, r)
 	return d
 }
@@ -528,7 +554,9 @@ func (d *Drawing) ArcTo(x1, y1, x2, y2, r float32) *Drawing {
 // ry turned by rotation, from angle a0 to a1, joined to the path by a
 // line, as the web's ellipse. Its curves are cubic Béziers.
 func (d *Drawing) EllipseArc(x, y, rx, ry, rotation, a0, a1 float32, ccw bool) *Drawing {
-	d.Ops = appendEllipseArc(d.Ops, d.tracked().has, x, y, rx, ry, rotation, a0, a1, ccw)
+	has := d.tracked().has
+	d.restorePath()
+	d.Ops = appendEllipseArc(d.Ops, has, x, y, rx, ry, rotation, a0, a1, ccw)
 	return d
 }
 
@@ -545,6 +573,7 @@ func (d *Drawing) RoundRect(x, y, w, h, r float32) *Drawing {
 // the top left one clockwise, scaled down together where they overlap,
 // as the web's roundRect.
 func (d *Drawing) RoundRectCorners(x, y, w, h, topLeft, topRight, bottomRight, bottomLeft float32) *Drawing {
+	d.restorePath()
 	d.Ops = appendRoundRect(d.Ops, x, y, w, h, [4]float32{topLeft, topRight, bottomRight, bottomLeft})
 	return d
 }
@@ -569,20 +598,35 @@ func (d *Drawing) ClipPath(p *Path, rule FillRule) *Drawing {
 	return d.withPath(p, DrawOp{Kind: DrawClip, EvenOdd: rule == EvenOdd})
 }
 
-// withPath runs use on p as the path, then builds the current path again
-// where it was built, under the transforms it was built in.
+// withPath runs use on p as the path. The current path stays the track's
+// and leaves the recording until an op builds on it or uses it
+// (restorePath), so a run of FillRects after a long line records each
+// rectangle alone.
 func (d *Drawing) withPath(p *Path, use DrawOp) *Drawing {
 	t := d.tracked()
-	saved := slices.Clone(t.pathOps)
-	d.BeginPath()
+	d.Ops = append(d.Ops, DrawOp{Kind: DrawBeginPath})
 	if p != nil {
 		d.Ops = append(d.Ops, p.ops...)
 	}
-	d.op(use)
-	d.BeginPath()
-	if len(saved) == 0 {
-		return d
+	d.Ops = append(d.Ops, use, DrawOp{Kind: DrawBeginPath})
+	// The track skips them: a path's ops change neither the transform
+	// nor the current path.
+	t.at = len(d.Ops)
+	d.pathAside = len(t.pathOps) > 0
+	return d
+}
+
+// restorePath records the current path a FillPath left aside again
+// where it was built, under the transforms it was built in.
+func (d *Drawing) restorePath() {
+	if !d.pathAside {
+		return
 	}
+	d.pathAside = false
+	t := d.tracked()
+	saved := t.pathOps
+	// What follows builds the path again, in the track too.
+	t.segs, t.pathOps, t.has = t.segs[:0], nil, false
 	d.Save()
 	m := t.st.m
 	for _, po := range saved {
@@ -600,7 +644,7 @@ func (d *Drawing) withPath(p *Path, use DrawOp) *Drawing {
 			}
 		}
 	}
-	return d.Restore()
+	d.Restore()
 }
 
 func (d *Drawing) SetFillColor(c Color) *Drawing { return d.op(DrawOp{Kind: DrawFillColor, Color: c}) }

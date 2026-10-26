@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"structs"
+	"unsafe"
 
 	"github.com/ebitengine/purego"
 
@@ -51,12 +52,20 @@ var (
 	cgContextBeginTransparency   func(ctx, aux uintptr)
 	cgContextEndTransparency     func(ctx uintptr)
 	cgContextDrawImage           func(ctx uintptr, r CGRect, image uintptr)
-	cgContextDrawLinearGradient  func(ctx, gradient uintptr, start, end CGPoint, options uint32)
-	cgContextDrawRadialGradient  func(ctx, gradient uintptr, start CGPoint, r0 float64, end CGPoint, r1 float64, options uint32)
-	cgContextDrawConicGradient   func(ctx, gradient uintptr, center CGPoint, angle float64)
 	cgGradientCreate             func(space uintptr, components, locations *float64, count uintptr) uintptr
 	cgImageCreateWithImageInRect func(image uintptr, r CGRect) uintptr
 	cgPathCreateWithRoundedRect  func(r CGRect, rw, rh float64, transform uintptr) uintptr
+)
+
+// Runs of points and rectangles go by pointer, in one call. The
+// gradients' CGPoints are their two fields, which arm64 and x86-64 pass
+// as two floats, without the cost of a struct argument.
+var (
+	cgContextAddLines           func(ctx uintptr, points []CGPoint)
+	cgContextAddRects           func(ctx uintptr, rects []CGRect)
+	cgContextDrawLinearGradient func(ctx, gradient uintptr, x0, y0, x1, y1 float64, options uint32)
+	cgContextDrawRadialGradient func(ctx, gradient uintptr, x0, y0, r0, x1, y1, r1 float64, options uint32)
+	cgContextDrawConicGradient  func(ctx, gradient uintptr, x, y, angle float64)
 )
 
 // affine is CGAffineTransform.
@@ -79,7 +88,7 @@ func loadCanvas(cg uintptr) {
 	reg(&cgContextRotateCTM, cg, "CGContextRotateCTM")
 	reg(&cgContextConcatCTM, cg, "CGContextConcatCTM")
 	reg(&cgContextGetCTM, cg, "CGContextGetCTM")
-	reg(&cgContextBeginPath, cg, "CGContextBeginPath")
+	registerSyscall(&cgContextBeginPath, cg, "CGContextBeginPath")
 	reg(&cgContextMoveToPoint, cg, "CGContextMoveToPoint")
 	reg(&cgContextAddLineToPoint, cg, "CGContextAddLineToPoint")
 	reg(&cgContextAddQuadCurve, cg, "CGContextAddQuadCurveToPoint")
@@ -87,30 +96,37 @@ func loadCanvas(cg uintptr) {
 	reg(&cgContextAddArc, cg, "CGContextAddArc")
 	reg(&cgContextAddRect, cg, "CGContextAddRect")
 	reg(&cgContextAddEllipseInRect, cg, "CGContextAddEllipseInRect")
-	reg(&cgContextAddPath, cg, "CGContextAddPath")
-	reg(&cgContextCopyPath, cg, "CGContextCopyPath")
-	reg(&cgContextIsPathEmpty, cg, "CGContextIsPathEmpty")
-	reg(&cgContextClosePath, cg, "CGContextClosePath")
-	reg(&cgContextFillPath, cg, "CGContextFillPath")
-	reg(&cgContextEOFillPath, cg, "CGContextEOFillPath")
-	reg(&cgContextStrokePath, cg, "CGContextStrokePath")
-	reg(&cgContextClip, cg, "CGContextClip")
-	reg(&cgContextEOClip, cg, "CGContextEOClip")
-	reg(&cgContextReplacePathStroked, cg, "CGContextReplacePathWithStrokedPath")
-	reg(&cgContextSetFillColor, cg, "CGContextSetFillColorWithColor")
-	reg(&cgContextSetStrokeColor, cg, "CGContextSetStrokeColorWithColor")
+	registerSyscall(&cgContextAddPath, cg, "CGContextAddPath")
+	registerSyscall(&cgContextCopyPath, cg, "CGContextCopyPath")
+	registerSyscall(&cgContextIsPathEmpty, cg, "CGContextIsPathEmpty")
+	registerSyscall(&cgContextClosePath, cg, "CGContextClosePath")
+	registerSyscall(&cgContextFillPath, cg, "CGContextFillPath")
+	registerSyscall(&cgContextEOFillPath, cg, "CGContextEOFillPath")
+	registerSyscall(&cgContextStrokePath, cg, "CGContextStrokePath")
+	registerSyscall(&cgContextClip, cg, "CGContextClip")
+	registerSyscall(&cgContextEOClip, cg, "CGContextEOClip")
+	registerSyscall(&cgContextReplacePathStroked, cg, "CGContextReplacePathWithStrokedPath")
+	registerSyscall(&cgContextSetFillColor, cg, "CGContextSetFillColorWithColor")
+	registerSyscall(&cgContextSetStrokeColor, cg, "CGContextSetStrokeColorWithColor")
 	reg(&cgContextSetLineWidth, cg, "CGContextSetLineWidth")
-	reg(&cgContextSetLineCap, cg, "CGContextSetLineCap")
-	reg(&cgContextSetLineJoin, cg, "CGContextSetLineJoin")
+	registerSyscall(&cgContextSetLineCap, cg, "CGContextSetLineCap")
+	registerSyscall(&cgContextSetLineJoin, cg, "CGContextSetLineJoin")
 	reg(&cgContextSetMiterLimit, cg, "CGContextSetMiterLimit")
 	reg(&cgContextSetAlpha, cg, "CGContextSetAlpha")
-	reg(&cgContextSetBlendMode, cg, "CGContextSetBlendMode")
+	registerSyscall(&cgContextSetBlendMode, cg, "CGContextSetBlendMode")
 	reg(&cgContextClearRect, cg, "CGContextClearRect")
 	reg(&cgContextFillRect, cg, "CGContextFillRect")
 	reg(&cgContextSetTextMatrix, cg, "CGContextSetTextMatrix")
-	reg(&cgContextSetTextDrawingMode, cg, "CGContextSetTextDrawingMode")
-	reg(&cgContextBeginTransparency, cg, "CGContextBeginTransparencyLayer")
-	reg(&cgContextEndTransparency, cg, "CGContextEndTransparencyLayer")
+	registerSyscall(&cgContextSetTextDrawingMode, cg, "CGContextSetTextDrawingMode")
+	registerSyscall(&cgContextBeginTransparency, cg, "CGContextBeginTransparencyLayer")
+	registerSyscall(&cgContextEndTransparency, cg, "CGContextEndTransparencyLayer")
+	addLines, addRects := symbol(cg, "CGContextAddLines"), symbol(cg, "CGContextAddRects")
+	cgContextAddLines = func(ctx uintptr, points []CGPoint) {
+		purego.SyscallN(addLines, ctx, uintptr(unsafe.Pointer(unsafe.SliceData(points))), uintptr(len(points)))
+	}
+	cgContextAddRects = func(ctx uintptr, rects []CGRect) {
+		purego.SyscallN(addRects, ctx, uintptr(unsafe.Pointer(unsafe.SliceData(rects))), uintptr(len(rects)))
+	}
 	reg(&cgContextDrawImage, cg, "CGContextDrawImage")
 	reg(&cgContextDrawLinearGradient, cg, "CGContextDrawLinearGradient")
 	reg(&cgContextDrawRadialGradient, cg, "CGContextDrawRadialGradient")
@@ -205,13 +221,18 @@ func Play(ctx uintptr, ops []driver.DrawOp, host CanvasHost) {
 	}
 	cgContextSaveGState(ctx)
 	defer cgContextRestoreGState(ctx)
-	p := &player{ctx: ctx, base: cgContextGetCTM(ctx), host: host,
+	p := &player{ctx: ctx, ops: ops, base: cgContextGetCTM(ctx), host: host,
 		stack: []canvasState{{fill: 0x000000ff, stroke: 0x000000ff}}}
+	defer p.releaseColors()
 	cgContextBeginPath(ctx)
 	p.color(cgContextSetFillColor, 0x000000ff)
 	p.color(cgContextSetStrokeColor, 0x000000ff)
-	for i := range ops {
-		p.play(&ops[i])
+	for i := 0; i < len(ops); i++ {
+		if n := p.lines(i); n > 0 {
+			i += n - 1
+			continue
+		}
+		p.play(i)
 	}
 	// What the drawing saved and never restored.
 	for range len(p.stack) - 1 {
@@ -219,24 +240,87 @@ func Play(ctx uintptr, ops []driver.DrawOp, host CanvasHost) {
 	}
 }
 
+// A player calls Core Graphics as few times as it can, as a call can
+// cost more than the op it plays draws: a run of lines in one call
+// (lines), each color made once (cgColor), whether the path is empty
+// asked only where the ops cannot tell (open), and the path the web's
+// fill, stroke and clip keep copied only when a later op uses it (keep).
 type player struct {
 	ctx   uintptr
+	ops   []driver.DrawOp
 	base  affine // the canvas's own coordinates
 	host  CanvasHost
 	stack []canvasState
+	path  pathState
+	// colors are the CGColors made for the drawing, released at its end.
+	colors map[driver.Color]uintptr
+	// points and rects hold what one call adds.
+	points []CGPoint
+	rects  []CGRect
+}
+
+// pathState is what the player knows of the current path.
+type pathState uint8
+
+const (
+	pathEmpty pathState = iota
+	pathOpen
+	// pathUnknown follows ops that may add nothing, such as an arc or a
+	// rounded rectangle of no size: Core Graphics is asked.
+	pathUnknown
+)
+
+// open reports whether the current path holds anything.
+func (p *player) open() bool {
+	if p.path == pathUnknown {
+		p.path = pathEmpty
+		if !cgContextIsPathEmpty(p.ctx) {
+			p.path = pathOpen
+		}
+	}
+	return p.path == pathOpen
 }
 
 func (p *player) st() *canvasState { return &p.stack[len(p.stack)-1] }
 
-func (p *player) color(set func(ctx, color uintptr), c driver.Color) {
-	ref := CGColor(c)
-	set(p.ctx, ref)
-	Release(ref)
+func (p *player) color(set func(ctx, color uintptr), c driver.Color) { set(p.ctx, p.cgColor(c)) }
+
+// cgColor returns c's CGColor, made once for the drawing. The context
+// keeps the colors it is given.
+func (p *player) cgColor(c driver.Color) uintptr {
+	ref, ok := p.colors[c]
+	if !ok {
+		if p.colors == nil {
+			p.colors = map[driver.Color]uintptr{}
+		}
+		ref = CGColor(c)
+		p.colors[c] = ref
+	}
+	return ref
 }
 
-// keep runs a path-consuming call and adds the path back.
-func (p *player) keep(fn func()) {
-	if cgContextIsPathEmpty(p.ctx) {
+func (p *player) releaseColors() {
+	for _, ref := range p.colors {
+		Release(ref)
+	}
+}
+
+// keep runs fn, a call that uses up the path, at op at, and adds the path
+// back when a later op builds on it or uses it.
+func (p *player) keep(at int, fn func()) {
+	if !p.open() {
+		return
+	}
+	later := false
+	for i := at + 1; i < len(p.ops) && p.ops[i].Kind != driver.DrawBeginPath; i++ {
+		if p.ops[i].Kind.UsesPath() {
+			later = true
+			break
+		}
+	}
+	if !later {
+		fn()
+		p.path = pathEmpty
 		return
 	}
 	path := cgContextCopyPath(p.ctx)
@@ -245,7 +329,37 @@ func (p *player) keep(fn func()) {
 	Release(path)
 }
 
-func (p *player) play(op *driver.DrawOp) {
+// lines adds the run of lines starting at op at in one call and returns
+// how many ops it took, or 0: a MoveTo and the LineTos after it, or
+// LineTos from one that starts the path, which moves there. Every
+// MoveTo goes this way.
+func (p *player) lines(at int) int {
+	op := &p.ops[at]
+	if op.Kind != driver.DrawMoveTo && (op.Kind != driver.DrawLineTo || p.open()) {
+		return 0
+	}
+	pts := append(p.points[:0], CGPoint{X: float64(op.X), Y: float64(op.Y)})
+	n := 1
+	for ; at+n < len(p.ops) && p.ops[at+n].Kind == driver.DrawLineTo; n++ {
+		o := &p.ops[at+n]
+		pts = append(pts, CGPoint{X: float64(o.X), Y: float64(o.Y)})
+	}
+	cgContextAddLines(p.ctx, pts)
+	p.points, p.path = pts, pathOpen
+	return n
+}
+
+// moveTo starts a subpath at (x, y) without a registered call.
+func (p *player) moveTo(x, y float64) {
+	p.points = append(p.points[:0], CGPoint{X: x, Y: y})
+	cgContextAddLines(p.ctx, p.points)
+	p.path = pathOpen
+}
+
+// play plays op at; lines takes MoveTos and the LineTos that start a
+// path.
+func (p *player) play(at int) {
+	op := &p.ops[at]
 	ctx := p.ctx
 	f := func(v float32) float64 { return float64(v) }
 	switch op.Kind {
@@ -271,22 +385,18 @@ func (p *player) play(op *driver.DrawOp) {
 		cgContextConcatCTM(ctx, affine{A: f(op.X1), B: f(op.Y1), C: f(op.X2), D: f(op.Y2), X: f(op.X), Y: f(op.Y)})
 	case driver.DrawBeginPath:
 		cgContextBeginPath(ctx)
-	case driver.DrawMoveTo:
-		cgContextMoveToPoint(ctx, f(op.X), f(op.Y))
+		p.path = pathEmpty
 	case driver.DrawLineTo:
-		if cgContextIsPathEmpty(ctx) {
-			cgContextMoveToPoint(ctx, f(op.X), f(op.Y))
-		} else {
-			cgContextAddLineToPoint(ctx, f(op.X), f(op.Y))
-		}
+		// The path holds points, or lines would have taken the op.
+		cgContextAddLineToPoint(ctx, f(op.X), f(op.Y))
 	case driver.DrawQuadTo:
-		if cgContextIsPathEmpty(ctx) {
-			cgContextMoveToPoint(ctx, f(op.X1), f(op.Y1))
+		if !p.open() {
+			p.moveTo(f(op.X1), f(op.Y1))
 		}
 		cgContextAddQuadCurve(ctx, f(op.X1), f(op.Y1), f(op.X), f(op.Y))
 	case driver.DrawCubicTo:
-		if cgContextIsPathEmpty(ctx) {
-			cgContextMoveToPoint(ctx, f(op.X1), f(op.Y1))
+		if !p.open() {
+			p.moveTo(f(op.X1), f(op.Y1))
 		}
 		cgContextAddCurve(ctx, f(op.X1), f(op.Y1), f(op.X2), f(op.Y2), f(op.X), f(op.Y))
 	case driver.DrawArc:
@@ -297,27 +407,31 @@ func (p *player) play(op *driver.DrawOp) {
 			clockwise = 1
 		}
 		cgContextAddArc(ctx, f(op.X), f(op.Y), max(f(op.R), 0), f(op.A0), f(op.A1), clockwise)
+		p.path = pathUnknown
 	case driver.DrawRect:
-		cgContextAddRect(ctx, Rect(f(op.X), f(op.Y), f(op.W), f(op.H)))
-		cgContextMoveToPoint(ctx, f(op.X), f(op.Y))
+		p.rects = append(p.rects[:0], Rect(f(op.X), f(op.Y), f(op.W), f(op.H)))
+		cgContextAddRects(ctx, p.rects)
+		p.moveTo(f(op.X), f(op.Y))
 	case driver.DrawRoundRect:
 		w, h := max(f(op.W), 0), max(f(op.H), 0)
 		r := min(max(f(op.R), 0), w/2, h/2)
 		path := cgPathCreateWithRoundedRect(Rect(f(op.X), f(op.Y), w, h), r, r, 0)
 		cgContextAddPath(ctx, path)
 		Release(path)
+		p.path = pathUnknown
 	case driver.DrawEllipse:
 		cgContextAddEllipseInRect(ctx, Rect(f(op.X-op.R), f(op.Y-op.RY), 2*f(op.R), 2*f(op.RY)))
+		p.path = pathUnknown
 	case driver.DrawClosePath:
-		if !cgContextIsPathEmpty(ctx) {
+		if p.open() {
 			cgContextClosePath(ctx)
 		}
 	case driver.DrawFill:
-		p.keep(func() { p.fillPath(op.EvenOdd) })
+		p.keep(at, func() { p.fillPath(op.EvenOdd) })
 	case driver.DrawStroke:
-		p.keep(p.strokePath)
+		p.keep(at, p.strokePath)
 	case driver.DrawClip:
-		p.keep(func() {
+		p.keep(at, func() {
 			if op.EvenOdd {
 				cgContextEOClip(ctx)
 			} else {
@@ -366,9 +480,7 @@ func (p *player) play(op *driver.DrawOp) {
 	case driver.DrawShadow:
 		// Shadow offsets are in the base space, y up under the flipped
 		// context: a positive offset must still go down.
-		c := CGColor(op.Color)
-		cgContextSetShadowWithColor(ctx, CGSize{Width: f(op.X), Height: -f(op.Y)}, f(op.R), c)
-		Release(c)
+		cgContextSetShadowWithColor(ctx, CGSize{Width: f(op.X), Height: -f(op.Y)}, f(op.R), p.cgColor(op.Color))
 		p.st().shadow = op.Color&0xff != 0
 	case driver.DrawClear:
 		cgContextClearRect(ctx, Rect(f(op.X), f(op.Y), f(op.W), f(op.H)))
@@ -486,14 +598,14 @@ func (p *player) gradient(g *driver.CanvasGradient) {
 	switch {
 	case g.Conic:
 		if cgContextDrawConicGradient != nil {
-			cgContextDrawConicGradient(p.ctx, grad, CGPoint{X: x1, Y: y1}, float64(g.Angle))
+			cgContextDrawConicGradient(p.ctx, grad, x1, y1, float64(g.Angle))
 		} else {
 			p.conicWedges(g)
 		}
 	case g.Radial:
-		cgContextDrawRadialGradient(p.ctx, grad, CGPoint{X: x1, Y: y1}, r1, CGPoint{X: x2, Y: y2}, r2, padEnds)
+		cgContextDrawRadialGradient(p.ctx, grad, x1, y1, r1, x2, y2, r2, padEnds)
 	default:
-		cgContextDrawLinearGradient(p.ctx, grad, CGPoint{X: x1, Y: y1}, CGPoint{X: x2, Y: y2}, padEnds)
+		cgContextDrawLinearGradient(p.ctx, grad, x1, y1, x2, y2, padEnds)
 	}
 }
 

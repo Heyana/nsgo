@@ -78,6 +78,31 @@ func symbol(lib uintptr, name string) uintptr {
 	return addr
 }
 
+// registerSyscall sets fn, a pointer to a func variable of one of the
+// types below, to call lib's function name through purego.SyscallN, as
+// purego.RegisterLibFunc would through reflection. Only functions whose
+// arguments and result are pointers and integers can go this way;
+// RegisterLibFunc builds every call's arguments with reflection and
+// allocates, at twice the cost of the call or more, and canvases make
+// thousands of these calls a frame.
+func registerSyscall(fn any, lib uintptr, name string) {
+	sym := symbol(lib, name)
+	switch fn := fn.(type) {
+	case *func(uintptr):
+		*fn = func(a uintptr) { purego.SyscallN(sym, a) }
+	case *func(uintptr) uintptr:
+		*fn = func(a uintptr) uintptr { r, _, _ := purego.SyscallN(sym, a); return r }
+	case *func(uintptr) bool:
+		*fn = func(a uintptr) bool { r, _, _ := purego.SyscallN(sym, a); return byte(r) != 0 }
+	case *func(uintptr, uintptr):
+		*fn = func(a, b uintptr) { purego.SyscallN(sym, a, b) }
+	case *func(uintptr, int32):
+		*fn = func(a uintptr, v int32) { purego.SyscallN(sym, a, uintptr(v)) }
+	default:
+		panic("apple: registerSyscall of an unknown function type")
+	}
+}
+
 // constant reads a global CFStringRef constant of lib.
 func constant(lib uintptr, name string) uintptr {
 	addr := symbol(lib, name)
@@ -87,7 +112,7 @@ func constant(lib uintptr, name string) uintptr {
 func init() {
 	cf := load("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
 	cg := load("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
-	purego.RegisterLibFunc(&cfRelease, cf, "CFRelease")
+	registerSyscall(&cfRelease, cf, "CFRelease")
 	purego.RegisterLibFunc(&cfStringCreateWithBytes, cf, "CFStringCreateWithBytes")
 	purego.RegisterLibFunc(&cfDictionaryCreate, cf, "CFDictionaryCreate")
 	purego.RegisterLibFunc(&cfNumberCreate, cf, "CFNumberCreate")

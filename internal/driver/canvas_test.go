@@ -87,6 +87,69 @@ func TestPathsKeepTheCurrentPath(t *testing.T) {
 	}
 }
 
+func countOps(d *Drawing, kind DrawKind) int {
+	n := 0
+	for _, op := range d.Ops {
+		if op.Kind == kind {
+			n++
+		}
+	}
+	return n
+}
+
+func TestFillRectsLeaveTheCurrentPathAside(t *testing.T) {
+	d := &Drawing{}
+	d.BeginPath().MoveTo(0, 0)
+	for i := 1; i <= 100; i++ {
+		d.LineTo(float32(i), 0)
+	}
+	for i := range 100 {
+		d.FillRect(float32(i), 10, 1, 1)
+	}
+	// Each rectangle on its own: a path begun, the rectangle, the fill
+	// and a path begun again.
+	const want = 102 + 100*4
+	if n := len(d.Ops); n != want {
+		t.Fatalf("%d ops, want %d", n, want)
+	}
+	if !d.IsPointInStroke(50, 0) || len(d.Ops) != want {
+		t.Fatal("a query should see the line as the current path and record nothing")
+	}
+	d.LineTo(100, 50).Stroke()
+	// The line is recorded again once, before the line that extends it.
+	if n := countOps(d, DrawLineTo); n != 100+100+1 {
+		t.Fatalf("%d lines, want the line twice and the new one", n)
+	}
+	if !d.IsPointInStroke(50, 0) || !d.IsPointInStroke(100, 25) {
+		t.Fatal("the stroke should follow the line and its extension")
+	}
+}
+
+func TestBeginPathDropsAPathLeftAside(t *testing.T) {
+	d := &Drawing{}
+	d.BeginPath().MoveTo(0, 0).LineTo(10, 0).FillRect(0, 10, 5, 5).
+		BeginPath().MoveTo(0, 20).LineTo(10, 20).Stroke()
+	if n := countOps(d, DrawLineTo); n != 2 {
+		t.Fatalf("%d lines, want each line once", n)
+	}
+	if d.IsPointInStroke(5, 0) || !d.IsPointInStroke(5, 20) {
+		t.Fatal("the first line should be gone from the current path")
+	}
+}
+
+func TestArcsJoinAPathLeftAside(t *testing.T) {
+	d := &Drawing{}
+	d.BeginPath().MoveTo(0, 0).LineTo(50, 0).FillRect(0, 10, 5, 5)
+	n := len(d.Ops)
+	d.ArcTo(100, 0, 100, 50, 20)
+	if d.Ops[n].Kind != DrawSave || d.Ops[n+2].Kind != DrawLineTo {
+		t.Fatalf("ops after the rectangle = %v, want the line recorded again before the arc", d.Ops[n:n+3])
+	}
+	if !d.IsPointInStroke(25, 0) {
+		t.Fatal("the line should still be part of the current path")
+	}
+}
+
 func TestPointInPathRulesAndStrokes(t *testing.T) {
 	d := &Drawing{}
 	d.BeginPath().Rect(0, 0, 100, 100).Rect(25, 25, 50, 50)
