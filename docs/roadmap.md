@@ -4,17 +4,7 @@ This plan lists what NSGo still lacks compared with NSH's `main` at `2c2a1767`, 
 
 References are files in `nsh/docs/dev/` unless they name a crate, with the bullet or section to read in brackets. To refresh the plan, read `git log 2c2a1767..` in `nsh/` and the documents it changed.
 
-## Order
-
-macOS scrolls come next. The last section waits for community contributions, and nothing above it depends on it.
-
-## 1. Performance
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| macOS scrolls | `macos.md` (architecture), `crates/nsh-platform-macos/src/scroll.rs` | Scroll views keep offsets of their own in place of `NSScrollView`'s clip view, shown by the container layer's `sublayerTransform` while they move and committed to its bounds origin at rest, with the system's trackpad phases and momentum, rubber banding and the indicator checked by hand on a trackpad |
-
-## 2. Finish the existing platforms
+## Finish the existing platforms
 
 These items wait for community contributions.
 

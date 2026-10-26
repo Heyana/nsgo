@@ -3,6 +3,8 @@
 package macos
 
 import (
+	"time"
+
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/oneo-me/nsgo/internal/driver"
@@ -15,6 +17,8 @@ import (
 // surface takes the focus while an area has a selection, for Copy and
 // Select All (the Edit menu, Cmd-C and Cmd-A) and Escape, which clears
 // it; a press anywhere else clears it, so the window shows one selection.
+// A drag past the edge of the scroll view around the area scrolls it on
+// the frame clock, held still too, as NSH's does.
 
 // selection is the surface's selection: an area's model over its texts.
 type selection struct {
@@ -23,7 +27,17 @@ type selection struct {
 	frames   []driver.Bounds // the texts' content boxes in the area
 	model    driver.SelectionModel
 	dragging bool
+	// at is where the drag is, in the window.
+	at apple.CGPoint
 }
+
+const (
+	// selectionScroll is how far a drag past a scroll view's edge scrolls
+	// it a 60 Hz frame, per point past the edge, and selectionScrollMax
+	// the most.
+	selectionScroll    = 0.4
+	selectionScrollMax = 40
+)
 
 // Len implements core.SelectionTexts.
 func (s *selection) Len() int { return len(s.texts) }
@@ -48,8 +62,10 @@ func boxRect(b driver.Bounds) apple.CGRect {
 	return apple.Rect(float64(b.Origin.X), float64(b.Origin.Y), float64(b.Size.Width), float64(b.Size.Height))
 }
 
-// list finds the area's texts again, in document order, with their frames.
+// list finds the area's texts again, in document order, with their frames,
+// which AppKit converts once the scroll offsets are committed.
 func (s *selection) list() {
+	s.area.surface.commitPending()
 	s.texts, s.frames = s.texts[:0], s.frames[:0]
 	var walk func(n objc.ID)
 	walk = func(n objc.ID) {
@@ -75,8 +91,31 @@ func (s *selection) list() {
 
 // point returns event's location in the area.
 func (s *selection) point(event objc.ID) driver.Point {
-	p := objc.Send[apple.CGPoint](s.area.native, selConvertPoint, objc.Send[apple.CGPoint](event, selLocationInWindow), objc.ID(0))
+	return s.pointAt(objc.Send[apple.CGPoint](event, selLocationInWindow))
+}
+
+// pointAt returns a point of the window in the area.
+func (s *selection) pointAt(loc apple.CGPoint) driver.Point {
+	p := objc.Send[apple.CGPoint](s.area.native, selConvertPoint, loc, objc.ID(0))
 	return driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)}
+}
+
+// drag extends the selection to where the drag is.
+func (s *selection) drag() {
+	old := s.texts
+	s.list()
+	s.model.Drag(s, s.pointAt(s.at))
+	s.show(old)
+}
+
+// scroller returns the scroll view around the area, if any.
+func (s *selection) scroller() *view {
+	for n := s.area; n != nil; n = n.up {
+		if n.surface.alive(n) {
+			return n
+		}
+	}
+	return nil
 }
 
 // show has each text draw its part of the selection.
@@ -158,18 +197,57 @@ func (s *surface) selectPress(event objc.ID) bool {
 	return true
 }
 
-// selectDrag follows a drag of the press that started a selection,
-// scrolling a scroll view around the area when it leaves its edge.
+// selectDrag follows a drag of the press that started a selection; the
+// frame clock scrolls the scroll view around the area while the drag is
+// past its edge (autoscrollSelection).
 func (s *surface) selectDrag(event objc.ID) bool {
 	sl := s.selecting
 	if sl == nil || !sl.dragging {
 		return false
 	}
-	sl.area.native.Send(sel("autoscroll:"), event)
-	old := sl.texts
-	sl.list()
-	sl.model.Drag(sl, sl.point(event))
-	sl.show(old)
+	sl.at = objc.Send[apple.CGPoint](event, selLocationInWindow)
+	sl.drag()
+	if sl.scroller() != nil {
+		s.startTicking()
+	}
+	return true
+}
+
+// autoscrollSelection scrolls the scroll view around a selection's area
+// for a frame of dt while the drag is past its edge, extending the
+// selection, and reports whether it does.
+func (s *surface) autoscrollSelection(dt time.Duration) bool {
+	sl := s.selecting
+	if sl == nil || !sl.dragging {
+		return false
+	}
+	v := sl.scroller()
+	if v == nil || v.sc.phase.kind != atRest {
+		return false
+	}
+	p := objc.Send[apple.CGPoint](v.native, selConvertPoint, sl.at, objc.ID(0))
+	along, length := p.Y, float64(v.frame.Size.Height)
+	if v.sc.config.Horizontal {
+		along, length = p.X, float64(v.frame.Size.Width)
+	}
+	var over float64
+	switch {
+	case along < 0:
+		over = along
+	case along > length:
+		over = along - length
+	default:
+		return false
+	}
+	step := min(max(over*selectionScroll, -selectionScrollMax), selectionScrollMax) * dt.Seconds() * 60
+	lo, hi := v.restLimits()
+	to := min(max(v.pos()+driver.Points(step), lo), hi)
+	if to == v.pos() {
+		return false
+	}
+	v.moveTo(to)
+	v.commit()
+	sl.drag()
 	return true
 }
 

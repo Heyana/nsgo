@@ -167,7 +167,7 @@ func (v *view) shown() bool {
 		}
 		if p.sc != nil {
 			// The content shows from the offset, as large as the view.
-			o, size := p.sc.shown, p.frame.Size
+			o, size := p.sc.at, p.frame.Size
 			x0, y0 := max(r.Origin.X, o.X), max(r.Origin.Y, o.Y)
 			x1 := min(r.Origin.X+r.Size.Width, o.X+size.Width)
 			y1 := min(r.Origin.Y+r.Size.Height, o.Y+size.Height)

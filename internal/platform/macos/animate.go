@@ -11,8 +11,8 @@ import (
 	"github.com/oneo-me/nsgo/internal/platform/apple"
 )
 
-// The surface's frame clock steps the native animation graph and the
-// layout animations once a frame while either runs.
+// The surface's frame clock steps the native animation graph, the layout
+// animations and the scroll views once a frame while one runs.
 
 var (
 	selTick      = sel("nsgoTick:")
@@ -191,8 +191,9 @@ func (s *surface) framePeriod() time.Duration {
 // tick steps one frame: the native animations first, then the frame the
 // app waits for.
 func (s *surface) tick(period time.Duration) {
+	last := s.ticked
 	s.ticked = time.Now()
-	dirty := s.animator.Running() || len(s.motions) > 0 || len(s.ghosts) > 0 || len(s.images) > 0
+	dirty := s.animator.Running() || len(s.motions) > 0 || len(s.ghosts) > 0 || len(s.images) > 0 || len(s.live) > 0
 	var start time.Time
 	if s.perf != nil {
 		start = time.Now()
@@ -202,6 +203,10 @@ func (s *surface) tick(period time.Duration) {
 		s.applyBatches(frameBatches, false)
 		dirty = true
 	}
+	if len(s.live) > 0 {
+		s.tickScrolls(mediaTime())
+	}
+	selecting := s.autoscrollSelection(min(max(s.ticked.Sub(last), time.Second/240), time.Second/30))
 	now := s.clock()
 	if s.animator.Running() {
 		s.animator.Step(now)
@@ -225,15 +230,14 @@ func (s *surface) tick(period time.Duration) {
 		s.perf.RecordWork(time.Since(start), dirty)
 		s.perf.Vsync(time.Now(), period)
 	}
-	if !s.animating() && !s.frameWanted && !s.held() && s.perf == nil {
+	if !s.animating() && !s.frameWanted && !s.held() && !selecting && s.perf == nil {
 		s.stopTicking()
 	}
 }
 
 // animating reports whether something moves on the frame clock: the
-// animation graph, a layout animation, or a scroll view under the user's
-// fingers, its momentum, a scroller drag or a snap. Batches wait for the
-// start of a frame meanwhile.
+// animation graph, a layout animation, or a scroll view moving or fading
+// its indicator. Batches wait for the start of a frame meanwhile.
 func (s *surface) animating() bool {
 	return s.animator.Running() || len(s.motions) > 0 || len(s.ghosts) > 0 || len(s.live) > 0
 }
@@ -344,6 +348,9 @@ func (v *view) place(f driver.Bounds) {
 	}
 	if resized {
 		v.sizeContent()
+		if v.sc != nil {
+			v.sizeScroll()
+		}
 	}
 	if v.image != nil {
 		v.image.Layout(apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)})

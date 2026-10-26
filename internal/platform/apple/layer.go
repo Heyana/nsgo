@@ -3,8 +3,10 @@
 package apple
 
 import (
+	"math"
 	"strings"
 	"structs"
+	"time"
 
 	"github.com/ebitengine/purego/objc"
 
@@ -188,3 +190,19 @@ func HeldTransformMethods() []objc.MethodDef {
 // ForgetTransform forgets the transform SetTransform gave a layer that is
 // going away.
 func ForgetTransform(layer objc.ID) { delete(held, layer) }
+
+// SetSublayerTranslation moves layer's sublayers by (dx, dy) points, as a
+// scroll view shows an offset its bounds do not have yet.
+func SetSublayerTranslation(layer objc.ID, dx, dy float64) {
+	layer.Send(sel("setSublayerTransform:"), transform3D{M11: 1, M22: 1, M33: 1, M44: 1, M41: dx, M42: dy})
+}
+
+// RotateLayer turns layer by radians around its anchor point.
+func RotateLayer(layer objc.ID, radians float64) {
+	c, s := math.Cos(radians), math.Sin(radians)
+	layer.Send(sel("setTransform:"), transform3D{M11: c, M12: s, M21: -s, M22: c, M33: 1, M44: 1})
+}
+
+// MediaTime returns Core Animation's clock: the time since the system
+// started, on which display links and NSEvent timestamps count too.
+func MediaTime() time.Duration { return time.Duration(caCurrentMediaTime() * float64(time.Second)) }

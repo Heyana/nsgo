@@ -61,7 +61,8 @@ Every frame runs the commit on the engine goroutine and, on the main thread, the
 
 macOS follows NSH's surface:
 
-- While something animates on the frame clock (the animation graph, a layout animation, a scroll view's drag, momentum, scroller drag or snap), batches wait for the start of the next frame. A frame the app asked for alone holds nothing back.
+- While something animates on the frame clock (the animation graph, a layout animation, a scroll view moving or fading its indicator), batches wait for the start of the next frame. A frame the app asked for alone holds nothing back.
+- A scroll frame moves only a layer's translation, and AppKit learns the offset once the scroll rests ([macOS scroll views](scrolling.md#macos-scroll-views)).
 - A frame applies them for at most 4 ms (`frameBatches`), at least one whole batch, and carries the rest: a scroll's frames are not delayed by batches landing between them, and a burst spreads over frames.
 - A resize applies what waited, then waits, at most 16 ms, for the commit at the new size (`engine.ResizeAndWait`) and applies it before AppKit draws the window: the one place the main thread waits for the engine.
 - An engine that missed that deadline is not waited for again until its commit lands, so a busy app resizes as before.

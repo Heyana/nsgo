@@ -254,7 +254,7 @@ func dragsWindow(hit, stop objc.ID) bool {
 			continue
 		}
 		if v.native != n {
-			return false // an input's field or a scroll view's clip view
+			return false // an input's field
 		}
 		switch v.windowDrag {
 		case driver.WindowDragOn:

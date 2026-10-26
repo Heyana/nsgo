@@ -9,10 +9,10 @@ import (
 // WheelIdle is how long after its last turn a mouse wheel has settled.
 const WheelIdle = 150 * time.Millisecond
 
-// wheelSnap is the speed (points per millisecond) a settled wheel snaps
+// WheelSnap is the speed (points per millisecond) a settled wheel snaps
 // with: fast enough to move on to the next snap point that way, as NSH's
 // desktops do.
-const wheelSnap = 0.6
+const WheelSnap = 0.6
 
 // Clamp returns offset within the offsets a scroll view of size frame
 // showing content takes: from minus its leading content inset to the end
@@ -64,9 +64,9 @@ func (w *Wheel) Settled(now time.Time) (velocity float32, ok bool) {
 	w.last = time.Time{}
 	switch {
 	case w.total >= 1:
-		return wheelSnap, true
+		return WheelSnap, true
 	case w.total <= -1:
-		return -wheelSnap, true
+		return -WheelSnap, true
 	}
 	return 0, true
 }

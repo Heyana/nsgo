@@ -430,6 +430,8 @@ func (in *input) focusChanged(focused bool) {
 	in.focused = focused
 	v := views[in.field]
 	if focused {
+		// The scroll views around show the field, as on phones.
+		v.reveal()
 		v.dispatch(driver.EventFocus)
 		in.selectionChanged()
 		in.caretMoved()

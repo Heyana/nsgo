@@ -10,9 +10,22 @@ A scroll view follows NSH's `scrolling-and-lists.md`: `ScrollBehavior` holds pag
 - `ScrollBehavior.SnapTarget` decides where a release snaps, as NSH's `snap_target`. iOS and macOS call it, Windows and Linux through `internal/platform/scrollbar`'s `Settle`; Android's `Scrolling.java` ports it, and the web marks `SnapPoints` for CSS scroll snapping.
 - Every scroll view reports its offset as it moves, so the core's hit tests and touches find what shows under a point; a scroll lays out again only while an overlay is placed beside an anchor.
 - Platforms report drags, momentum and refreshes with the offset and the zoom scale (`Event.Value`); the core adds the content and viewport sizes for `ScrollEvent`. After `EventRefresh` the config goes out again, so a spinner the app did not keep stops.
-- iOS uses UIScrollView's own props and UIRefreshControl, macOS NSScrollView's elasticity and insets with a spinner of its own, Android its scroll views with its own glides and pull, and the web CSS. macOS ignores deceleration (the system glides) and the keyboard props.
+- iOS uses UIScrollView's own props and UIRefreshControl, Android its scroll views with its own glides and pull, and the web CSS. macOS keeps [offsets of its own](#macos-scroll-views) and ignores the keyboard props.
 - Windows and Linux scroll with the wheel and the bar only, so they settle snapping views when the wheel rests and leave bounces, deceleration, refreshing and the keyboard props alone.
 - Zooming (`MaxZoomScale` above `MinZoomScale`, `Ref.ZoomTo`) is iOS's zoom view, Android's `ZoomScroll` and a scaled content element on the web; the desktops ignore it, as NSH's do. Mouse drags never scroll content.
+
+### macOS scroll views
+
+macOS follows NSH's `scroll.rs` (`internal/platform/macos/scroll.go`, `wheel.go`); the rubber band, the indicator's geometry and fade, the trackpad's resampling and revealing are `internal/platform/scrollbar`'s.
+
+- A scroll view is a plain view whose container holds and clips its children. A moving offset is the container layer's `sublayerTransform`, one layer write a frame. The container's bounds origin takes it 140 ms after the last move, once the frame clock rests or the view has rested for a second, since `setBoundsOrigin:` walks the whole subtree.
+- AppKit's hit testing and conversions follow the bounds, so presses, a scroll gesture's start, selections, a focused field and the test host commit first. Tracking areas and accessibility frames catch up at the commit.
+- Trackpad gestures rubber-band past the edges unless `NoBounces` and spring back; the system's momentum follows and stops at the edges. Their events are shown in step with the display, one event interval back, so no frame moves twice or not at all.
+- Snapping views snap from the release, with `DecelerationRate` projecting it, instead of taking the system's momentum. Mouse wheels move 10 points a line, and snapping views settle once the notches stop.
+- A gesture and its momentum stay on the view they began on, and wheel notches for 200 ms. Views along the wheel's axis take it, and at the edges a gesture stretches the innermost view along it.
+- The indicator shows while the view moves and while the pointer is over it (unless the system shows scroll bars only while scrolling), fades after 700 ms, shrinks past the edges, and the mouse drags it as a scroll bar. A press that stops a snap is no press.
+- Pulling a refreshable view past its top shows the spinner's spokes as it goes. A field that gets the focus scrolls into view, and a selection dragged past the edge scrolls on the frame clock.
+- Offsets are reported within the content, as NSH's, once a frame.
 
 ## Lists
 

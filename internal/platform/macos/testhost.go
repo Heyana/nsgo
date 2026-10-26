@@ -171,13 +171,6 @@ func steps(a, b driver.Point, step driver.Points) []driver.Point {
 	return out
 }
 
-func abs(v driver.Points) driver.Points {
-	if v < 0 {
-		return -v
-	}
-	return v
-}
-
 var (
 	cgEventCreateScrollWheelEvent2 func(source uintptr, units uint32, count uint32, w1, w2, w3 int32) uintptr
 	cgEventSetIntegerValueField    func(event uintptr, field uint32, value int64)
@@ -205,6 +198,9 @@ func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 	// A trackpad's deltas are continuous, in points.
 	const continuous = 88
 	n := int(max(abs(delta.X), abs(delta.Y))/20) + 1
+	// The gesture finds its view with AppKit's geometry, as the window's
+	// monitor has it do.
+	onMainSync(t.s.commitPending)
 	send := func(phase int64, dx, dy driver.Points) {
 		onMainSync(func() {
 			// The wheel's deltas are the content's way: positive shows what
@@ -255,6 +251,7 @@ func (t *testSurface) hit(at driver.Point) objc.ID {
 // report.
 func (t *testSurface) Hover(at driver.Point) error {
 	onMainSync(func() {
+		t.s.commitPending()
 		var under []objc.ID
 		root := t.s.native
 		if at.X >= 0 && at.Y >= 0 {
@@ -457,8 +454,9 @@ func (t *testSurface) Screenshot() ([]byte, error) {
 func (t *testSurface) Animating() bool {
 	var busy bool
 	onMainSync(func() {
-		// Batches waiting for a frame have not shown yet.
-		busy = t.s.animator.Ending() || len(t.s.motions) > 0 || len(t.s.ghosts) > 0 || t.s.held()
+		// Batches waiting for a frame have not shown yet, nor scrolls
+		// their offsets.
+		busy = t.s.animator.Ending() || len(t.s.motions) > 0 || len(t.s.ghosts) > 0 || t.s.held() || t.s.scrollsMoving()
 	})
 	return busy
 }

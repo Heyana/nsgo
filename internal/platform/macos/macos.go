@@ -10,7 +10,6 @@
 package macos
 
 import (
-	"math"
 	"runtime"
 	"slices"
 	"strings"
@@ -69,7 +68,7 @@ type view struct {
 	id      driver.NodeID
 	kind    driver.ViewKind
 	native  objc.ID
-	content objc.ID // where children go: native, or a scroll view's document
+	content objc.ID // where children go: native, or a scroll view's container
 	events  driver.EventMask
 	// backdrop is the view's backdrop blur, Liquid Glass when glass.
 	backdrop objc.ID
@@ -89,8 +88,6 @@ type view struct {
 
 	sc    *scrollState // a scroll view's
 	input *input       // an input's editor
-	clip  objc.ID      // a scroll view's NSClipView
-	wheel wheelOwner
 	inset driver.Bounds
 
 	// contentLayer is what a text or canvas draws into (content.go);
@@ -204,9 +201,16 @@ type surface struct {
 	watcher, stall objc.ID
 	ticked         time.Time
 	// waiting are the batches a frame did not get to; live the scroll
-	// views moving on their own or under the user's input.
+	// views on the frame clock, armed those whose offsets wait to be
+	// committed to their bounds.
 	waiting []*driver.MountBatch
 	live    map[*view]bool
+	armed   map[*view]struct{}
+	// What the wheel and the trackpad scroll, the indicator the mouse
+	// drags, and whether a press caught a snap.
+	wheels wheels
+	thumb  *thumbDrag
+	caught bool
 	// resized is the commit at a new size the main thread stopped waiting
 	// for, until it lands.
 	resized <-chan struct{}
@@ -243,7 +247,7 @@ var (
 	runner   *surface
 )
 
-// views maps native objects (views, fields, clip views) to their Go side.
+// views maps native objects (views and fields) to their Go side.
 // Only the main thread uses it.
 var views = map[objc.ID]*view{}
 
@@ -273,7 +277,6 @@ var (
 	selApply                        = sel("nsgoApply:")
 	selPerformOnMain                = sel("performSelectorOnMainThread:withObject:waitUntilDone:")
 	selWindow, selMakeFirstResponer = sel("window"), sel("makeFirstResponder:")
-	selDocumentView                 = sel("documentView")
 	selSetAccessibilityElement      = sel("setAccessibilityElement:")
 	selSetAccessibilityRole         = sel("setAccessibilityRole:")
 	selSetAccessibilitySubrole      = sel("setAccessibilitySubrole:")
@@ -286,7 +289,8 @@ var (
 	selIsEqualToString              = sel("isEqualToString:")
 
 	classView, classSurface, classInput objc.Class
-	classScroll                         objc.Class
+	classScroll, classContainer         objc.Class
+	classOverlay                        objc.Class
 	classObserver, classMenuTarget      objc.Class
 	classMaterial                       objc.Class
 )
@@ -378,6 +382,7 @@ func loadAppKit() {
 		objc.MethodDef{Cmd: sel("draggingEnded:"), Fn: draggingExited},
 		objc.MethodDef{Cmd: sel("prepareForDragOperation:"), Fn: prepareForDrag},
 		objc.MethodDef{Cmd: sel("performDragOperation:"), Fn: performDrag},
+		objc.MethodDef{Cmd: sel("scrollWheel:"), Fn: scrollWheel},
 	))
 	classObserver = register("NsgoObserver", objc.GetClass("NSObject"), nil, []objc.MethodDef{{
 		Cmd: sel("observeValueForKeyPath:ofObject:change:context:"),
@@ -389,17 +394,19 @@ func loadAppKit() {
 			})
 		},
 	}})
-	// A scroll view shows its scroll bars while the pointer is over it,
-	// so they can be dragged, and reports hovers itself.
-	classScroll = register("NsgoScrollView", objc.GetClass("NSScrollView"), nil, []objc.MethodDef{
-		{Cmd: sel("mouseEntered:"), Fn: scrollEntered},
-		{Cmd: sel("mouseMoved:"), Fn: func(self objc.ID, cmd objc.SEL, event objc.ID) {
-			self.Send(sel("flashScrollers"))
-			mouseMoved(self, cmd, event)
-		}},
-		{Cmd: sel("mouseExited:"), Fn: mouseExited},
-		{Cmd: sel("scrollWheel:"), Fn: scrollWheel},
-		{Cmd: sel("resetCursorRects"), Fn: resetCursorRects},
+	// A scroll view is a view that takes the wheel events of the views in
+	// it. Its container holds the children at its offset, and its overlay
+	// the indicator and the refresh spinner, letting the mouse through.
+	classScroll = register("NsgoScrollView", nsView, nil, append(append(common, focusMethods()...),
+		objc.MethodDef{Cmd: sel("scrollWheel:"), Fn: scrollWheel}))
+	flipped := objc.MethodDef{Cmd: sel("isFlipped"), Fn: func(objc.ID, objc.SEL) bool { return true }}
+	classContainer = register("NsgoContainer", nsView, nil, []objc.MethodDef{flipped,
+		{Cmd: sel("clipsToBounds"), Fn: func(objc.ID, objc.SEL) bool { return true }},
+		{Cmd: sel("acceptsFirstMouse:"), Fn: func(objc.ID, objc.SEL, objc.ID) bool { return true }},
+		{Cmd: sel("mouseDownCanMoveWindow"), Fn: func(objc.ID, objc.SEL) bool { return false }},
+	})
+	classOverlay = register("NsgoScrollOverlay", nsView, nil, []objc.MethodDef{flipped,
+		{Cmd: sel("hitTest:"), Fn: func(objc.ID, objc.SEL, apple.CGPoint) objc.ID { return 0 }},
 	})
 	classInput = register("NsgoInput", nsView, nil, append(common,
 		objc.MethodDef{Cmd: sel("layout"), Fn: inputLayout},
@@ -847,11 +854,11 @@ func (s *surface) observe() {
 		s.stops = append(s.stops, func() { w.Send(sel("removeObserver:forKeyPath:"), appObserver, key) })
 	}
 
-	const keyDown, leftDown, leftUp, leftDragged, rightDown, otherDown = 1 << 10, 1 << 1, 1 << 2, 1 << 6, 1 << 3, 1 << 25
+	const keyDown, leftDown, leftUp, leftDragged, rightDown, otherDown, wheel = 1 << 10, 1 << 1, 1 << 2, 1 << 6, 1 << 3, 1 << 25, 1 << 22
 	handler := objc.NewBlock(func(_ objc.Block, event objc.ID) objc.ID { return s.filter(event) })
 	nsEvent := objc.ID(objc.GetClass("NSEvent"))
 	monitor := nsEvent.Send(sel("addLocalMonitorForEventsMatchingMask:handler:"),
-		uint64(keyDown|leftDown|leftUp|leftDragged|rightDown|otherDown), handler).Send(sel("retain"))
+		uint64(keyDown|leftDown|leftUp|leftDragged|rightDown|otherDown|wheel), handler).Send(sel("retain"))
 	handler.Release()
 	s.stops = append(s.stops, func() {
 		nsEvent.Send(sel("removeMonitor:"), monitor)
@@ -863,8 +870,7 @@ func (s *surface) observe() {
 var appObserver objc.ID
 
 // observeApp watches, once for every surface, what the environment
-// comes from, accessibility settings and the locale, and how the scroll
-// views move.
+// comes from: accessibility settings and the locale.
 func observeApp() {
 	if appObserver != 0 {
 		return
@@ -880,20 +886,18 @@ func observeApp() {
 		apple.Global(appKitPath, "NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification"), refresh)
 	center := objc.ID(objc.GetClass("NSNotificationCenter")).Send(sel("defaultCenter"))
 	apple.Observe(center, apple.Global(foundation, "NSCurrentLocaleDidChangeNotification"), refresh)
-	apple.Observe(center, apple.Global(appKitPath, "NSViewBoundsDidChangeNotification"), clipScrolled)
-	apple.Observe(center, apple.Global(appKitPath, "NSScrollViewWillStartLiveScrollNotification"),
-		func(note objc.ID) { liveScroll(note, true) })
-	apple.Observe(center, apple.Global(appKitPath, "NSScrollViewDidEndLiveScrollNotification"),
-		func(note objc.ID) { liveScroll(note, false) })
 	appObserver = objc.ID(classObserver).Send(selNew)
 	ws.Send(sel("addObserver:forKeyPath:options:context:"), appObserver, apple.NSString("voiceOverEnabled"), uint(0), uintptr(0))
 }
 
-// filter sees the app's key and mouse events before their views do, and
-// measures them when a performance monitor does. It turns back keys and the
-// back button into EventBack, which it takes, reports presses outside to the
-// views that listen, and follows a selection's drag. Down presses are never
-// taken: AppKit activates the window and hands them to the views that hit,
+// filter sees the app's key, mouse and wheel events before their views
+// do, and measures them when a performance monitor does. It turns back
+// keys and the back button into EventBack, which it takes, reports presses
+// outside to the views that listen, and follows a selection's drag.
+// Presses and scrolls that look for their views commit the scroll offsets
+// first, as AppKit's hit testing follows the bounds. Down presses are
+// taken only by scroll views, to drag their indicators or catch a snap:
+// AppKit activates the window and hands the others to the views that hit,
 // which move the window or select text before their own handling.
 func (s *surface) filter(event objc.ID) objc.ID {
 	if s.perf == nil || event.Send(selWindow) != s.window {
@@ -911,8 +915,12 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 	if s.window == 0 || event.Send(selWindow) != s.window || s.engine == nil {
 		return event
 	}
-	const typeLeftDown, typeLeftUp, typeRightDown, typeLeftDragged, typeKeyDown, typeOtherDown = 1, 2, 3, 6, 10, 25
+	const typeLeftDown, typeLeftUp, typeRightDown, typeLeftDragged, typeKeyDown, typeScrollWheel, typeOtherDown = 1, 2, 3, 6, 10, 22, 25
 	switch objc.Send[uint](event, sel("type")) {
+	case typeScrollWheel:
+		if len(s.armed) > 0 && s.wheelStarts(event) {
+			s.commitPending()
+		}
 	case typeKeyDown:
 		if !s.hasKeys() {
 			break
@@ -931,18 +939,24 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 			return 0
 		}
 	case typeLeftDown:
+		s.commitPending()
 		s.pressOutside(event)
+		if s.pressScrolls(event) {
+			return 0
+		}
 	case typeLeftDragged:
-		if s.selectDrag(event) {
+		if s.dragScrolls(event) || s.selectDrag(event) {
 			return 0
 		}
 	case typeLeftUp:
-		if s.selectUp() {
+		if s.releaseScrolls() || s.selectUp() {
 			return 0
 		}
 	case typeRightDown:
+		s.commitPending()
 		s.pressOutside(event)
 	case typeOtherDown:
+		s.commitPending()
 		const backButton = 3
 		if objc.Send[int](event, sel("buttonNumber")) == backButton && s.under(event) {
 			s.engine.Dispatch(driver.Event{Kind: driver.EventBack})
@@ -1132,22 +1146,6 @@ func (s *surface) alert(a *driver.AlertConfig) {
 
 // pasteboardText is NSPasteboardTypeString.
 const pasteboardText = "public.utf8-plain-text"
-
-// scrollTo scrolls a scroll view's content to p, clamped to what it can
-// show; the clip view reports the offset as it moves.
-func (v *view) scrollTo(p driver.Point, animated bool) {
-	if v.clip == 0 {
-		return
-	}
-	lo, hi := v.limits()
-	to := apple.CGPoint{X: float64(min(max(p.X, lo.X), hi.X)), Y: float64(min(max(p.Y, lo.Y), hi.Y))}
-	clip := v.clip
-	if animated {
-		clip = clip.Send(sel("animator"))
-	}
-	clip.Send(sel("setBoundsOrigin:"), to)
-	v.native.Send(sel("reflectScrolledClipView:"), v.clip)
-}
 
 // Prepare implements core.TextEngine with CoreText.
 func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
@@ -1339,13 +1337,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.setShader(v, it.Shader)
 		case driver.ItemScrollTo:
 			if v.sc != nil {
-				v.sc.applied++
-				v.interruptSnap()
 				v.scrollTo(it.Point, it.Animated)
 			}
 		case driver.ItemScrollBy:
 			if v.sc != nil {
-				v.sc.applied++
 				v.scrollBy(it.Point)
 			}
 		case driver.ItemStickyCells:
@@ -1385,7 +1380,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemScrollConfig:
 			v.configureScroll(it.Scroll)
 		case driver.ItemScrollContent:
-			v.content.Send(selSetFrameSize, apple.CGSize{Width: float64(it.Size.Width), Height: float64(it.Size.Height)})
+			v.setContent(it.Size)
 		case driver.ItemFocus:
 			if v.input != nil {
 				v.input.focus()
@@ -1446,24 +1441,8 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 	switch kind {
 	case driver.KindScroll:
 		v.native = objc.ID(classScroll).Send(selNew)
-		v.native.Send(sel("setDrawsBackground:"), false)
-		v.native.Send(sel("setAutohidesScrollers:"), true)
-		v.native.Send(sel("setAutomaticallyAdjustsContentInsets:"), false)
-		v.sc = &scrollState{}
-		v.hover = trackingArea(v.native, true)
-		// The clip view posts its scrolling, which observe follows; an
-		// override would recurse once animator's KVO subclasses it.
-		clip := objc.ID(objc.GetClass("NSClipView")).Send(selNew)
-		clip.Send(sel("setPostsBoundsChangedNotifications:"), true)
-		clip.Send(sel("setDrawsBackground:"), false)
-		v.native.Send(sel("setContentView:"), clip)
-		clip.Send(selRelease)
-		v.content = objc.ID(classView).Send(selNew)
-		v.content.Send(selSetWantsLayer, true)
-		v.native.Send(sel("setDocumentView:"), v.content)
-		v.content.Send(selRelease)
-		v.clip = clip
-		views[clip] = v
+		v.native.Send(selSetWantsLayer, true)
+		v.newScroll()
 	case driver.KindInput:
 		v.native = objc.ID(classInput).Send(selNew)
 		v.newInput()
@@ -1499,6 +1478,9 @@ func (s *surface) delete(v *view, kept bool) {
 	s.animator.Forget(v.id)
 	delete(s.motions, v)
 	delete(s.live, v)
+	if v.sc != nil {
+		s.forgetScroll(v)
+	}
 	if s.dragTarget == v {
 		s.dragTarget = nil
 	}
@@ -1533,7 +1515,6 @@ func (s *surface) delete(v *view, kept bool) {
 		delete(views, in.field)
 		delete(views, in.host)
 	}
-	delete(views, v.clip)
 	v.native.Send(selRelease)
 	delete(s.movers, v)
 	s.views[v.id] = nil
@@ -1896,71 +1877,11 @@ func invisibleCursor() objc.ID {
 func mouseEntered(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v := views[self]; v != nil {
 		defer v.surface.measuring(false)()
+		if v.sc != nil && v.native == self {
+			v.hovered()
+		}
 		v.dispatch(driver.EventHoverIn)
 	}
-}
-
-// wheelOwner is who takes a scroll view's wheel events: the view itself
-// or the scroll views around it.
-type wheelOwner uint8
-
-const (
-	wheelUndecided wheelOwner = iota
-	wheelOwn
-	wheelPass
-)
-
-// scrollWheel scrolls the view unless it is at its edge in the wheel's
-// direction, when the scroll views around it scroll instead. A trackpad
-// gesture and its momentum keep the choice made as it began; a mouse
-// wheel makes it on each turn.
-func scrollWheel(self objc.ID, cmd objc.SEL, event objc.ID) {
-	const began, mayBegin = 1, 32
-	v := views[self]
-	if v == nil {
-		apple.Super(self, cmd, event)
-		return
-	}
-	defer v.surface.measuring(true)()
-	phase, momentum := objc.Send[uint](event, sel("phase")), objc.Send[uint](event, sel("momentumPhase"))
-	if phase&(began|mayBegin) != 0 || phase == 0 && momentum == 0 {
-		v.wheel = wheelUndecided
-	}
-	dx, dy := objc.Send[float64](event, sel("scrollingDeltaX")), objc.Send[float64](event, sel("scrollingDeltaY"))
-	if v.wheel == wheelUndecided && (dx != 0 || dy != 0) {
-		v.wheel = wheelPass
-		if v.canScroll(dx, dy) {
-			v.wheel = wheelOwn
-		}
-	}
-	if next := self.Send(sel("nextResponder")); v.wheel == wheelPass && next != 0 {
-		next.Send(cmd, event)
-		return
-	}
-	if v.scrollWheelOwn(event, phase, momentum, dx, dy) {
-		return
-	}
-	apple.Super(self, cmd, event)
-}
-
-// canScroll reports whether a scroll view's content can move by a wheel's
-// deltas along their main axis: positive ones show what is above or left.
-func (v *view) canScroll(dx, dy float64) bool {
-	if v.sc.config.Behavior.NoScroll {
-		return false
-	}
-	at := v.offset()
-	lo, hi := v.limits()
-	if math.Abs(dx) > math.Abs(dy) {
-		return canScrollAxis(dx, float64(at.X), float64(lo.X), float64(hi.X))
-	}
-	return canScrollAxis(dy, float64(at.Y), float64(lo.Y), float64(hi.Y))
-}
-
-// scrollEntered shows a scroll view's scroll bars as the pointer enters.
-func scrollEntered(self objc.ID, cmd objc.SEL, event objc.ID) {
-	self.Send(sel("flashScrollers"))
-	mouseEntered(self, cmd, event)
 }
 
 // mouseMoved reports a move with no button down to the view whose
@@ -1972,6 +1893,9 @@ func mouseMoved(self objc.ID, _ objc.SEL, event objc.ID) {
 		return
 	}
 	defer v.surface.measuring(false)()
+	if v.sc != nil {
+		v.hovered()
+	}
 	if v.events.Has(driver.EventHoverMove) {
 		v.report(v.pointer(driver.EventHoverMove, event))
 	}
@@ -2138,27 +2062,5 @@ func (s *surface) applyBatches(budget time.Duration, alone bool) {
 	// what is left.
 	if s.frameWanted && !s.ticking || len(s.waiting) > 0 {
 		s.startTicking()
-	}
-}
-
-// clipScrolled reports a scroll view's offset when its clip view moves.
-func clipScrolled(note objc.ID) {
-	clip := note.Send(sel("object"))
-	v := views[clip]
-	if v == nil || v.clip != clip {
-		return
-	}
-	o := objc.Send[apple.CGRect](clip, selBounds).Origin
-	offset := driver.Point{X: driver.Points(o.X), Y: driver.Points(o.Y)}
-	v.sc.shown = offset
-	if v.surface.animator.Scroll(v.id, offset) {
-		apple.WithoutAnimation(v.surface.applyAnimated)
-	}
-	if len(v.sc.sticky) > 0 {
-		v.pinSticky()
-	}
-	v.surface.revisit()
-	if v.events.Has(driver.EventScroll) {
-		v.surface.engine.Dispatch(driver.Event{Kind: driver.EventScroll, ID: v.id, Point: offset, Count: v.sc.applied})
 	}
 }

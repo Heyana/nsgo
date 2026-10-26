@@ -1,9 +1,11 @@
-// Package scrollbar is the scroll logic of the backends that paint their
-// own views: where a scroll view's thumb is, whether a point is on its
-// bar, and where dragging the thumb scrolls to; the offsets its content
-// inset allows; and where a snapping view settles after a wheel or a
-// thumb drag. The backends show a bar while the pointer is over its
-// scroll view or drags its thumb.
+// Package scrollbar is the scroll logic of the backends that keep scroll
+// offsets of their own: where a scroll view's thumb is, whether a point is
+// on its bar, and where dragging the thumb scrolls to; the offsets its
+// content inset allows; and where a snapping view settles after a wheel
+// or a thumb drag. The backends show a bar while the pointer is over its
+// scroll view or drags its thumb. macOS takes the motion too (motion.go):
+// the rubber band, eased snaps, the indicator's geometry and fade, and
+// trackpad events shown in step with the display.
 package scrollbar
 
 import (
