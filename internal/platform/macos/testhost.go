@@ -270,7 +270,8 @@ func (t *testSurface) Hover(at driver.Point) error {
 			return false
 		}
 		for _, n := range t.hovered {
-			if !in(under, n) {
+			// A view the app removed since is gone with its events.
+			if v := views[n]; v != nil && v.native == n && !in(under, n) {
 				n.Send(sel("mouseExited:"), objc.ID(0))
 			}
 		}

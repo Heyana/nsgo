@@ -1678,6 +1678,23 @@ func stacked(kids []*node) []*node {
 	return out
 }
 
+// takesPresses reports whether n's handlers hear presses.
+func (n *node) takesPresses() bool {
+	h := &n.h
+	return h.press != nil || h.longPress != nil || h.pressDown != nil || h.pressUp != nil
+}
+
+// insidePressable reports whether a view around n in its layer takes
+// presses.
+func (n *node) insidePressable() bool {
+	for p := n.parent; p != nil && n.hoist == nil; n, p = p, p.parent {
+		if p.takesPresses() {
+			return true
+		}
+	}
+	return false
+}
+
 func (n *node) events() driver.EventMask {
 	var m driver.EventMask
 	bit := func(k driver.EventKind, on bool) {
@@ -1688,10 +1705,13 @@ func (n *node) events() driver.EventMask {
 	h, s := &n.h, &n.style
 	// A group reports the states the styles inside it follow.
 	group := s.Group != ""
+	// Presses a view follows only for its styles go to a view around it
+	// that takes them, as a press on a button's face is the button's.
+	pressStyled := (s.Active != nil || group) && !n.insidePressable()
 	bit(driver.EventPress, h.press != nil)
 	bit(driver.EventLongPress, h.longPress != nil)
-	bit(driver.EventPressDown, h.pressDown != nil || s.Active != nil || group)
-	bit(driver.EventPressUp, h.pressUp != nil || s.Active != nil || group)
+	bit(driver.EventPressDown, h.pressDown != nil || pressStyled)
+	bit(driver.EventPressUp, h.pressUp != nil || pressStyled)
 	bit(driver.EventHoverIn, h.hoverIn != nil || s.Hover != nil || group)
 	bit(driver.EventHoverOut, h.hoverOut != nil || s.Hover != nil || group)
 	bit(driver.EventHoverMove, h.hoverMove != nil)

@@ -608,6 +608,26 @@ func TestStateStyles(t *testing.T) {
 	}
 }
 
+// TestActiveStyleInsideAButton keeps a press on a button's face the
+// button's: a view inside it whose Active style alone follows presses
+// would take them on the platforms that press the innermost such view.
+func TestActiveStyleInsideAButton(t *testing.T) {
+	face := View{Style: Style{Active: &Style{Opacity: Alpha(0.5)}}, TestID: "face"}
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
+		return View{Children: []Node{
+			View{OnPress: func(PressEvent) {}, Children: []Node{face}},
+			View{Children: []Node{View{Style: face.Style, TestID: "alone"}}},
+		}}
+	})
+	h.commit()
+	if m := h.find("face").events(); m.Has(driver.EventPressDown) || m.Has(driver.EventPressUp) {
+		t.Errorf("the face inside the button follows presses: %b", m)
+	}
+	if m := h.find("alone").events(); !m.Has(driver.EventPressDown) {
+		t.Errorf("a view outside any button does not follow presses for its Active style: %b", m)
+	}
+}
+
 func TestEnvironment(t *testing.T) {
 	var widths []Points
 	var darks []bool

@@ -196,7 +196,8 @@ func TestStorage(t *testing.T) {
 func TestMenus(t *testing.T) {
 	app := startDesktop(t)
 	open(app, "Menus")
-	app.Press("label:File")
+	// On the chip's text, as a pointer presses it.
+	app.Press("text:File")
 	app.Press("text:New document")
 	app.Find("text:Done: New document")
 	app.Find("text:chose New document")
