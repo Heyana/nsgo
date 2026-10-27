@@ -3,6 +3,7 @@
 package macos
 
 import (
+	"slices"
 	"time"
 
 	"github.com/ebitengine/purego/objc"
@@ -12,11 +13,12 @@ import (
 	"github.com/oneo-me/nsgo/internal/platform/scrollbar"
 )
 
-// Wheel and trackpad events reach the innermost scroll view under the
-// pointer through the responder chain, which hands them to the surface:
-// it picks the view they scroll, as NSH's macOS input does, and keeps a
-// scroll on its view. Presses on a scroll view's indicator drag it, and a
-// press that stops a snap is no press.
+// Wheel and trackpad events reach the surface through the responder
+// chain. AppKit latches them to the view a scroll began on, past where
+// the pointer moved since, so the surface finds the scroll views under
+// the pointer itself, picks the one they scroll, as NSH's macOS input
+// does, and keeps a scroll on its view. Presses on a scroll view's
+// indicator drag it, and a press that stops a snap is no press.
 
 // wheelGesture is a trackpad scroll gesture under way.
 type wheelGesture struct {
@@ -36,7 +38,7 @@ type wheels struct {
 	// momentum is the view the system's momentum after a gesture goes to.
 	momentum *view
 	// latch is the view mouse wheel notches go to while they come within
-	// wheelLatch of last along the same axis.
+	// wheelLatch of last along the same axis and the pointer is over it.
 	latch      *view
 	horizontal bool
 	last       time.Duration
@@ -49,9 +51,8 @@ func (s *surface) alive(v *view) bool {
 	return v != nil && v.sc != nil && int(v.id) < len(s.views) && s.views[v.id] == v
 }
 
-// scrollWheel routes a wheel or trackpad event to the scroll views. It
-// reaches the innermost scroll view under the pointer, or the surface
-// outside them, through the responder chain.
+// scrollWheel routes a wheel or trackpad event, which reaches any of
+// the surface's views, to the scroll views under the pointer.
 func scrollWheel(self objc.ID, cmd objc.SEL, event objc.ID) {
 	v := views[self]
 	if v == nil || v.surface == nil || v.surface.engine == nil {
@@ -60,13 +61,7 @@ func scrollWheel(self objc.ID, cmd objc.SEL, event objc.ID) {
 	}
 	s := v.surface
 	defer s.measuring(true)()
-	w := &s.wheels
-	w.chain = w.chain[:0]
-	for n := v; n != nil; n = n.up {
-		if s.alive(n) {
-			w.chain = append(w.chain, n)
-		}
-	}
+	s.wheels.chain = s.scrollsAt(event)
 	if !s.wheelEvent(event) {
 		// What no view takes goes to the host's views around the surface.
 		if next := s.native.Send(sel("nextResponder")); next != 0 {
@@ -77,7 +72,7 @@ func scrollWheel(self objc.ID, cmd objc.SEL, event objc.ID) {
 
 // wheelStarts reports whether a wheel event looks for a view to scroll,
 // which AppKit's hit testing finds: a gesture beginning or a wheel no
-// view latches.
+// view under the pointer latches.
 func (s *surface) wheelStarts(event objc.ID) bool {
 	phase, momentum := objc.Send[uint](event, sel("phase")), objc.Send[uint](event, sel("momentumPhase"))
 	switch {
@@ -86,7 +81,8 @@ func (s *surface) wheelStarts(event objc.ID) bool {
 	case phase != 0:
 		return phase&(phaseBegan|phaseMayBegin) != 0
 	}
-	return !s.alive(s.wheels.latch) || eventTime(event)-s.wheels.last >= wheelLatch
+	latch := s.wheels.latch
+	return !s.alive(latch) || eventTime(event)-s.wheels.last >= wheelLatch || !slices.Contains(s.scrollsAt(event), latch)
 }
 
 // wheelEvent follows a wheel or trackpad event over the chain's views,
@@ -147,9 +143,9 @@ func (s *surface) gestureTarget(dx, dy driver.Points) *view {
 
 // wheelStep follows a mouse wheel's notch, or a precise scroll outside a
 // gesture, of (dx, dy) points, and reports whether a view took it. One
-// scroll stays on its view, as in browsers: an inner view passing under
-// the pointer does not take it over, and its view reaching an edge does
-// not hand the rest to an outer one.
+// scroll stays on its view while the pointer is over it, as in browsers:
+// an inner view passing under the pointer does not take it over, and its
+// view reaching an edge does not hand the rest to an outer one.
 func (s *surface) wheelStep(dx, dy driver.Points, at time.Duration) bool {
 	if dx == 0 && dy == 0 {
 		return true
@@ -157,7 +153,7 @@ func (s *surface) wheelStep(dx, dy driver.Points, at time.Duration) bool {
 	w := &s.wheels
 	horizontal := abs(dx) > abs(dy)
 	v := w.latch
-	if !s.alive(v) || w.horizontal != horizontal || at-w.last >= wheelLatch {
+	if !s.alive(v) || w.horizontal != horizontal || at-w.last >= wheelLatch || !slices.Contains(w.chain, v) {
 		v = s.scrollTarget(dx, dy)
 	}
 	if v == nil {
@@ -294,7 +290,12 @@ func (s *surface) scrollsAt(event objc.ID) []*view {
 	if up == 0 {
 		return nil
 	}
-	p := objc.Send[apple.CGPoint](up, selConvertPoint, objc.Send[apple.CGPoint](event, selLocationInWindow), objc.ID(0))
+	loc := objc.Send[apple.CGPoint](event, selLocationInWindow)
+	if event.Send(selWindow) == 0 {
+		// A test's wheel event, made in no window, is on the screen.
+		loc = objc.Send[apple.CGPoint](s.window, sel("convertPointFromScreen:"), loc)
+	}
+	p := objc.Send[apple.CGPoint](up, selConvertPoint, loc, objc.ID(0))
 	rawHit = true
 	hit := s.native.Send(sel("hitTest:"), p)
 	rawHit = false

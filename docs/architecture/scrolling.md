@@ -25,7 +25,7 @@ macOS follows NSH's `scroll.rs` (`internal/platform/macos/scroll.go`, `wheel.go`
 - AppKit's hit testing, conversions and tracking areas follow the bounds, so presses, mouse moves, a scroll gesture's start, selections, a focused field and the test host commit first. Accessibility frames catch up at the commit.
 - Trackpad gestures rubber-band past the edges unless `NoBounces` and spring back; the system's momentum follows and stops at the edges. Their events are shown in step with the display, one event interval back, so no frame moves twice or not at all.
 - Snapping views snap from the release, with `DecelerationRate` projecting it, instead of taking the system's momentum. Mouse wheels move 10 points a line, and snapping views settle once the notches stop.
-- A gesture and its momentum stay on the view they began on, and wheel notches for 200 ms. Views along the wheel's axis take it, and at the edges a gesture stretches the innermost view along it.
+- A gesture and its momentum stay on the view they began on, and wheel notches while they come within 200 ms and the pointer stays over it. Views along the wheel's axis take it, and at the edges a gesture stretches the innermost view along it.
 - The indicator shows while the view moves and while the pointer is over it (unless the system shows scroll bars only while scrolling), fades after 700 ms, shrinks past the edges, and the mouse drags it as a scroll bar. A press that stops a snap is no press.
 - Pulling a refreshable view past its top shows the spinner's spokes as it goes. A field that gets the focus scrolls into view, and a selection dragged past the edge scrolls on the frame clock.
 - Offsets are reported within the content, as NSH's, once a frame.
