@@ -498,15 +498,15 @@ type dataTable struct {
 	sizes            *core.Memo[tableGeo]
 	vscroll, hscroll *core.Ref
 	stripRef         *core.Ref
+	vstripRef        *core.Ref
 	rowsWin, colsWin *window.Rows
 	resizing         int
 	resizeFrom       float32
 	handleTap        int
 	handleTapAt      time.Time
-	// leader is which of the strip (true) and the horizontal scroll view
-	// moved last, at leaderAt.
-	leader   *bool
-	leaderAt time.Time
+	// hlead is which of the horizontal strip (true) and the horizontal
+	// scroll view moved last; vlead the vertical pair's.
+	hlead, vlead tableLead
 }
 
 func newDataTable(cx *core.Scope, p DataTable) *dataTable {
@@ -514,7 +514,8 @@ func newDataTable(cx *core.Scope, p DataTable) *dataTable {
 		layoutRev: core.NewSignal(cx, 0), dataRev: core.NewSignal(cx, 0),
 		scrollX: core.NewSignal(cx, core.Points(0)), scrollY: core.NewSignal(cx, core.Points(0)),
 		viewport: core.NewSignal(cx, core.Size{}), hover: core.NewSignal(cx, -1), focused: core.NewSignal(cx, false),
-		drag: core.NewSignal(cx, tableDrag{from: -1}), vscroll: &core.Ref{}, hscroll: &core.Ref{}, stripRef: &core.Ref{},
+		drag: core.NewSignal(cx, tableDrag{from: -1}), vscroll: &core.Ref{}, hscroll: &core.Ref{},
+		stripRef: &core.Ref{}, vstripRef: &core.Ref{},
 		rowsWin: window.New(4, 16), colsWin: window.New(1, 3), resizing: -1, handleTap: -1}
 	if p.Ref != nil {
 		p.Ref.t = t

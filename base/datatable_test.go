@@ -168,3 +168,28 @@ func TestDataTableReadsTheCellsInView(t *testing.T) {
 	}
 	app.Find(fmt.Sprintf("text:R%dC1·1", rows[0]+1))
 }
+
+// TestDataTableScrollsByDrag scrolls the table's own scroll view, under
+// the body, which takes no pointer.
+func TestDataTableScrollsByDrag(t *testing.T) {
+	var ref base.DataTableRef
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return base.DataTable{
+			TestID:   "table",
+			Ref:      &ref,
+			Columns:  func() []base.DataTableColumn { return tableColumns(20) },
+			RowCount: func() int { return 10_000 },
+			Text:     func(row, col int) string { return fmt.Sprintf("R%dC%d", row, col) },
+			Style:    core.Style{Width: core.Pt(400), Height: core.Pt(332)},
+		}
+	}, nsgotest.Size(400, 400), nsgotest.Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
+	if got := app.Find("id:data-table-vscrollbar").Frame.Size.Width; got != 12 {
+		t.Fatalf("the vertical bar band is %v wide, want 12", got)
+	}
+	from, _ := ref.VisibleRows()
+	app.Scroll("id:data-table-scroll", 120)
+	app.Settle()
+	if to, _ := ref.VisibleRows(); to <= from {
+		t.Fatalf("visible rows %v after scrolling, want past %v", to, from)
+	}
+}

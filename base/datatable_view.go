@@ -23,11 +23,13 @@ import (
 //     the columns' resize handles and the drop line of a column moved;
 //   - on desktops, a horizontal scroll bar over the body's bottom edge
 //     that moves the table's horizontal scroll view, whose own bar lies at
-//     the end of a content as tall as all the rows.
+//     the end of a content as tall as all the rows, and a vertical one
+//     over its right edge that moves the table's vertical one.
 
 const (
-	// stripHeight is the desktops' horizontal scroll bar's band.
+	// stripHeight and stripWidth are the desktops' scroll bar bands.
 	stripHeight = 12
+	stripWidth  = 12
 	// dropLine is the drop line's width.
 	dropLine = 2
 	// stripEcho is how long after a move of one of the two horizontal
@@ -51,6 +53,7 @@ func (p DataTable) Render(cx *core.Scope) core.Node {
 				t.hitLayer(),
 				t.body(),
 				t.header(),
+				t.vstrip(),
 				t.strip(),
 				t.overlays(),
 				core.Show{When: t.focused.Get, Then: func(cx *core.Scope) core.Node {
@@ -110,9 +113,15 @@ func (t *dataTable) hitLayer() core.Node {
 		TestID:        "data-table-hit",
 	}
 	return core.Scroll{
-		Ref: t.vscroll, TestID: "data-table-scroll", HideIndicator: p.NoScrollbar || p.NoVerticalScrollbar, Behavior: behavior,
-		StyleFunc: t.below,
-		OnScroll:  func(e core.ScrollEvent) { t.scrollY.Set(e.Offset.Y) },
+		Ref: t.vscroll, TestID: "data-table-scroll", Behavior: behavior,
+		HideIndicator: p.NoScrollbar || p.NoVerticalScrollbar || t.cx.Env().Desktop(),
+		StyleFunc:     t.below,
+		OnScroll: func(e core.ScrollEvent) {
+			t.scrollY.Set(e.Offset.Y)
+			if t.vlead.take(false) {
+				t.vstripRef.ScrollTo(core.Point{Y: e.Offset.Y}, false)
+			}
+		},
 		Children: []core.Node{core.View{
 			Style:     core.Style{Direction: core.Row, AlignItems: core.AlignStretch},
 			StyleFunc: func() core.Style { return core.Style{Height: px(t.sizes.Get().y.extent())} },
@@ -122,7 +131,7 @@ func (t *dataTable) hitLayer() core.Node {
 				OnScroll: func(e core.ScrollEvent) {
 					t.scrollX.Set(e.Offset.X)
 					// The desktops' bar follows, unless it leads.
-					if t.lead(false) {
+					if t.hlead.take(false) {
 						t.stripRef.ScrollTo(core.Point{X: e.Offset.X}, false)
 					}
 				},
@@ -132,17 +141,53 @@ func (t *dataTable) hitLayer() core.Node {
 	}
 }
 
-// lead reports whether a scroll of the strip (or of the table's
-// horizontal scroll view) leads, so the other follows it: the follower's
+// tableLead is which side of one axis moved last, so its follower's
 // scroll events, which come after the moves that caused them, are echoes
 // for a moment after each of the leader's moves and are not sent back.
-func (t *dataTable) lead(strip bool) bool {
+type tableLead struct {
+	side *bool
+	at   time.Time
+}
+
+// take reports whether side leads: it moved last, or the other side has
+// not moved for stripEcho.
+func (l *tableLead) take(side bool) bool {
 	now := time.Now()
-	if t.leader != nil && *t.leader != strip && now.Sub(t.leaderAt) < stripEcho {
+	if l.side != nil && *l.side != side && now.Sub(l.at) < stripEcho {
 		return false
 	}
-	t.leader, t.leaderAt = &strip, now
+	l.side, l.at = &side, now
 	return true
+}
+
+// vstrip is the desktops' vertical scroll bar: a band over the body's
+// right edge whose own scroll view the bar belongs to, moving the
+// table's.
+func (t *dataTable) vstrip() core.Node {
+	p := t.p
+	return core.Show{
+		When: func() bool {
+			g := t.sizes.Get()
+			return t.cx.Env().Desktop() && !p.NoScrollbar && !p.NoVerticalScrollbar && g.y.extent() > g.y.viewport
+		},
+		Then: func(cx *core.Scope) core.Node {
+			z := core.Pt(0)
+			return core.Scroll{
+				Ref: t.vstripRef, TestID: "data-table-vscrollbar",
+				StyleFunc: func() core.Style {
+					return core.Style{Position: core.Absolute, Top: px(t.sizes.Get().header), Right: z, Bottom: z, Width: px(stripWidth)}
+				},
+				OnScroll: func(e core.ScrollEvent) {
+					if t.vlead.take(true) && math.Abs(float64(e.Offset.Y-t.scrollY.GetUntracked())) > 0.5 {
+						t.vscroll.ScrollTo(core.Point{Y: e.Offset.Y}, false)
+					}
+				},
+				Children: []core.Node{core.View{StyleFunc: func() core.Style {
+					return core.Style{Width: px(1), Height: px(t.sizes.Get().y.extent())}
+				}}},
+			}
+		},
+	}
 }
 
 // strip is the desktops' horizontal scroll bar: a band over the body's
@@ -161,7 +206,7 @@ func (t *dataTable) strip() core.Node {
 				Horizontal: true, Ref: t.stripRef, TestID: "data-table-scrollbar",
 				Style: core.Style{Position: core.Absolute, Left: z, Right: z, Bottom: z, Height: px(stripHeight)},
 				OnScroll: func(e core.ScrollEvent) {
-					if t.lead(true) && math.Abs(float64(e.Offset.X-t.scrollX.GetUntracked())) > 0.5 {
+					if t.hlead.take(true) && math.Abs(float64(e.Offset.X-t.scrollX.GetUntracked())) > 0.5 {
 						t.hscroll.ScrollTo(core.Point{X: e.Offset.X}, false)
 					}
 				},
