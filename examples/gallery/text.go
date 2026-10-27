@@ -8,15 +8,20 @@ import (
 
 const lorem = "Native text, typeset once on the engine with the platform's text engine and drawn on the main thread without any layout work."
 
-func bodyStyle() core.Style { return core.Style{FontSize: 15, LineHeight: 22, Color: colors.text} }
+func bodyStyle(cx *core.Scope) core.Style {
+	colors := colorsOf(cx)
+	return core.Style{FontSize: 15, LineHeight: 22, Color: colors.text}
+}
 
-func linkStyle() core.Style {
+func linkStyle(cx *core.Scope) core.Style {
+	colors := colorsOf(cx)
 	return core.Style{Color: colors.accent, TextDecoration: core.TextDecorationUnderline, TextDecorationColor: alpha(colors.accent, 0.5)}
 }
 
 // specimenRow is a labeled specimen: a quiet label (and the property it
 // shows, in code) above the text.
-func specimenRow(lbl, codeText string, first bool, children ...core.Node) core.Node {
+func specimenRow(cx *core.Scope, lbl, codeText string, first bool, children ...core.Node) core.Node {
+	colors := colorsOf(cx)
 	s := core.Style{Gap: 8}
 	if !first {
 		s.Padding, s.Borders, s.BorderColors = core.Edges{Top: 12}, core.Edges{Top: 1}, core.EdgeColors{Top: colors.line}
@@ -31,29 +36,32 @@ func specimenRow(lbl, codeText string, first bool, children ...core.Node) core.N
 func linksCard(cx *core.Scope) core.Node {
 	tapped := core.NewSignal(cx, "nothing yet")
 	set := func(s string) func(core.PressEvent) { return func(core.PressEvent) { tapped.Set(s) } }
-	b := bodyStyle()
+	b := bodyStyle(cx)
 	b.FontSize, b.LineHeight = 16, 25
-	return card(cardProps{icon: iconText, title: "Spans and links", subtitle: "Spans with presses of their own"},
+	return card(cx, cardProps{icon: iconText, title: "Spans and links", subtitle: "Spans with presses of their own"},
 		core.Text{OnPress: set("the sentence (not a link)"), Style: b, TestID: "links", Spans: []core.Span{
 			{Content: "By continuing you agree to the "},
-			{Content: "Terms of service", Style: linkStyle(), OnPress: set("Terms of service")},
+			{Content: "Terms of service", Style: linkStyle(cx), OnPress: set("Terms of service")},
 			{Content: " and the "},
-			{Content: "Privacy policy", Style: linkStyle(), OnPress: set("Privacy policy")},
+			{Content: "Privacy policy", Style: linkStyle(cx), OnPress: set("Privacy policy")},
 			{Content: ", which mention "},
 			{Content: "bold ", Style: core.Style{FontWeight: bold}},
-			{Content: "links", Style: linkStyle().Merge(core.Style{FontWeight: bold}), OnPress: set("a link inside bold text")},
+			{Content: "links", Style: linkStyle(cx).Merge(core.Style{FontWeight: bold}), OnPress: set("a link inside bold text")},
 			{Content: " too", Style: core.Style{FontWeight: bold}},
 			{Content: "."},
 		}},
-		caption("Pressed", tapped.Get),
+		caption(cx, "Pressed", tapped.Get),
 	)
 }
 
 func inlineCard(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	tints := tintsOf(cx)
+	fin := finOf(cx)
 	likes := core.NewSignal(cx, 3)
-	b := bodyStyle()
+	b := bodyStyle(cx)
 	b.FontSize, b.LineHeight = 16, 28
-	return card(cardProps{icon: iconImage, title: "Inline views and images", subtitle: "They wrap with the line"},
+	return card(cx, cardProps{icon: iconImage, title: "Inline views and images", subtitle: "They wrap with the line"},
 		core.Text{Style: b, Spans: []core.Span{
 			{Content: "Made with "},
 			{Attachment: core.Image{Source: core.ImageSource{Data: logoPNG}, Style: core.Style{Width: core.Pt(18), Height: core.Pt(18), CornerRadius: 5}}},
@@ -74,18 +82,21 @@ func inlineCard(cx *core.Scope) core.Node {
 }
 
 func fontsCard(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
+	isDark := cx.Dark()
 	glow := alpha(colors.accent, 0.3)
 	drop := paper(0.22)
 	if isDark {
 		glow, drop = alpha(colors.accent, 0.6), black(0.9)
 	}
-	return card(cardProps{icon: iconStyles, title: "Type", subtitle: "Custom fonts, weights, styles, spacing"},
-		specimenRow("Custom fonts", "nsgo.Fonts", true,
+	return card(cx, cardProps{icon: iconStyles, title: "Type", subtitle: "Custom fonts, weights, styles, spacing"},
+		specimenRow(cx, "Custom fonts", "nsgo.Fonts", true,
 			core.Text{Content: "Custom fonts", Style: core.Style{FontFamily: "Pacifico", FontSize: 34, Color: colors.accent, LineHeight: 52}},
 			core.Text{Spans: []core.Span{{Content: "Go Smallcaps "}, {Content: "and its italic", Style: core.Style{FontStyle: core.FontStyleItalic}}},
 				TestID: "app-font", Style: core.Style{FontFamily: "Go Smallcaps", FontSize: 20, Color: colors.text}},
 		),
-		specimenRow("Weight, style, spacing", "FontWeight, FontStyle", false,
+		specimenRow(cx, "Weight, style, spacing", "FontWeight, FontStyle", false,
 			core.Text{Style: core.Style{FontSize: 17, Color: colors.text}, Spans: []core.Span{
 				{Content: "Light ", Style: core.Style{FontWeight: core.FontWeightLight}},
 				{Content: "Bold ", Style: core.Style{FontWeight: bold}},
@@ -93,7 +104,7 @@ func fontsCard(cx *core.Scope) core.Node {
 				{Content: "Both ", Style: core.Style{FontWeight: bold, FontStyle: core.FontStyleItalic}},
 				{Content: "Spaced", Style: core.Style{LetterSpacing: 4, Color: colors.muted}},
 			}}),
-		specimenRow("Decorations", "TextDecoration", false,
+		specimenRow(cx, "Decorations", "TextDecoration", false,
 			core.Text{Style: core.Style{FontSize: 17, Color: colors.text}, Spans: []core.Span{
 				{Content: "Underline", Style: core.Style{TextDecoration: core.TextDecorationUnderline}},
 				{Content: " "},
@@ -101,12 +112,12 @@ func fontsCard(cx *core.Scope) core.Node {
 				{Content: " "},
 				{Content: "Wavy", Style: core.Style{TextDecoration: core.TextDecorationUnderline, TextDecorationStyle: core.DecorationWavy, TextDecorationColor: colors.info, Color: colors.info}},
 			}}),
-		specimenRow("Transforms", "TextTransform", false,
+		specimenRow(cx, "Transforms", "TextTransform", false,
 			core.Text{Style: core.Style{FontSize: 17, Color: colors.text}, Spans: []core.Span{
 				{Content: "uppercase ", Style: core.Style{TextTransform: core.TextTransformUppercase}},
 				{Content: "capitalized words here", Style: core.Style{TextTransform: core.TextTransformCapitalize, Color: colors.muted}},
 			}}),
-		specimenRow("Shadows", "TextShadow…", false,
+		specimenRow(cx, "Shadows", "TextShadow…", false,
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12}, Children: []core.Node{
 				core.Text{Content: "Glow", Style: core.Style{FontSize: 26, FontWeight: core.FontWeight(800), Color: colors.accent, TextShadowColor: glow, TextShadowRadius: 5}},
 				core.View{Style: fin.raised.over(core.Style{Height: core.Pt(48), Padding: core.Symmetric(0, 14), JustifyContent: core.JustifyCenter, CornerRadius: radiusControl,
@@ -119,10 +130,11 @@ func fontsCard(cx *core.Scope) core.Node {
 }
 
 func scalingCard(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	env := cx.Env()
-	b := bodyStyle()
+	b := bodyStyle(cx)
 	b.FontSize = 17
-	return card(cardProps{icon: iconSearch, title: "System text size", subtitle: "Env.FontScale and its limits",
+	return card(cx, cardProps{icon: iconSearch, title: "System text size", subtitle: "Env.FontScale and its limits",
 		right: textf(func() string {
 			s := env.FontScale()
 			if s == 0 {
@@ -130,22 +142,23 @@ func scalingCard(cx *core.Scope) core.Node {
 			}
 			return fmt.Sprintf("%.2f×", s)
 		}, 15, medium, colors.accent)},
-		specimenRow("Default", "", true, core.Text{Content: "Scales with the system setting", Style: b}),
-		specimenRow("Fixed", "NoFontScaling", false, core.Text{Content: "Fixed size", NoFontScaling: true, Style: b}),
-		specimenRow("Capped", "MaxFontSizeMultiplier: 1.2", false, core.Text{Content: "At most 1.2×", MaxFontSizeMultiplier: 1.2, Style: b}),
+		specimenRow(cx, "Default", "", true, core.Text{Content: "Scales with the system setting", Style: b}),
+		specimenRow(cx, "Fixed", "NoFontScaling", false, core.Text{Content: "Fixed size", NoFontScaling: true, Style: b}),
+		specimenRow(cx, "Capped", "MaxFontSizeMultiplier: 1.2", false, core.Text{Content: "At most 1.2×", MaxFontSizeMultiplier: 1.2, Style: b}),
 	)
 }
 
 func truncationCard(cx *core.Scope) core.Node {
-	b := bodyStyle()
+	colors := colorsOf(cx)
+	b := bodyStyle(cx)
 	centered := b
 	centered.TextAlign, centered.Color = core.TextAlignCenter, colors.muted
-	return card(cardProps{icon: iconLists, title: "Truncation", subtitle: "MaxLines and EllipsizeMode"},
-		specimenRow("Two lines, tail", "MaxLines: 2", true, core.Text{Content: lorem, MaxLines: 2, Style: b}),
-		specimenRow("One line, head", "EllipsizeHead", false, core.Text{Content: lorem, MaxLines: 1, EllipsizeMode: core.EllipsizeHead, Style: b}),
-		specimenRow("One line, middle", "EllipsizeMiddle", false, core.Text{Content: lorem, MaxLines: 1, EllipsizeMode: core.EllipsizeMiddle, Style: b}),
-		specimenRow("One line, clip", "EllipsizeClip", false, core.Text{Content: lorem, MaxLines: 1, EllipsizeMode: core.EllipsizeClip, Style: b}),
-		specimenRow("Centered, three lines", "TextAlignCenter", false, core.Text{Content: lorem + " " + lorem, MaxLines: 3, Style: centered}),
+	return card(cx, cardProps{icon: iconLists, title: "Truncation", subtitle: "MaxLines and EllipsizeMode"},
+		specimenRow(cx, "Two lines, tail", "MaxLines: 2", true, core.Text{Content: lorem, MaxLines: 2, Style: b}),
+		specimenRow(cx, "One line, head", "EllipsizeHead", false, core.Text{Content: lorem, MaxLines: 1, EllipsizeMode: core.EllipsizeHead, Style: b}),
+		specimenRow(cx, "One line, middle", "EllipsizeMiddle", false, core.Text{Content: lorem, MaxLines: 1, EllipsizeMode: core.EllipsizeMiddle, Style: b}),
+		specimenRow(cx, "One line, clip", "EllipsizeClip", false, core.Text{Content: lorem, MaxLines: 1, EllipsizeMode: core.EllipsizeClip, Style: b}),
+		specimenRow(cx, "Centered, three lines", "TextAlignCenter", false, core.Text{Content: lorem + " " + lorem, MaxLines: 3, Style: centered}),
 	)
 }
 
@@ -156,47 +169,48 @@ const (
 )
 
 func cjkCard(cx *core.Scope) core.Node {
-	b := bodyStyle()
-	return card(cardProps{icon: iconText, title: "Chinese and Japanese", subtitle: "Lines break between characters, never before closing punctuation"},
-		specimenRow("Chinese paragraph", "", true, core.Text{Content: chineseText, Style: b}),
-		specimenRow("Japanese: kana, kanji and Latin", "", false, core.Text{Content: japaneseText, Style: b}),
-		specimenRow("Two lines, tail", "MaxLines: 2", false, core.Text{Content: chineseText, MaxLines: 2, Style: b}),
-		specimenRow("One line, middle", "EllipsizeMiddle", false, core.Text{Content: japaneseText, MaxLines: 1, EllipsizeMode: core.EllipsizeMiddle, Style: b}),
+	b := bodyStyle(cx)
+	return card(cx, cardProps{icon: iconText, title: "Chinese and Japanese", subtitle: "Lines break between characters, never before closing punctuation"},
+		specimenRow(cx, "Chinese paragraph", "", true, core.Text{Content: chineseText, Style: b}),
+		specimenRow(cx, "Japanese: kana, kanji and Latin", "", false, core.Text{Content: japaneseText, Style: b}),
+		specimenRow(cx, "Two lines, tail", "MaxLines: 2", false, core.Text{Content: chineseText, MaxLines: 2, Style: b}),
+		specimenRow(cx, "One line, middle", "EllipsizeMiddle", false, core.Text{Content: japaneseText, MaxLines: 1, EllipsizeMode: core.EllipsizeMiddle, Style: b}),
 	)
 }
 
 func rtlTextCard(cx *core.Scope) core.Node {
-	b := bodyStyle()
+	b := bodyStyle(cx)
 	rtl := b
 	rtl.WritingDirection = core.WritingRTL
-	return card(cardProps{icon: iconText, title: "Right to left", subtitle: "Arabic and Hebrew, mixed with Latin text and numbers"},
-		specimenRow("Arabic paragraph", "WritingRTL", true, core.Text{Content: arabicText, Style: rtl}),
-		specimenRow("Arabic, English and numbers in one line", "", false, core.Text{Content: "تم شحن الطلب رقم 4521 عبر DHL في 12 مارس، والتسليم خلال 3 أيام.", Style: b}),
-		specimenRow("Hebrew", "", false, core.Text{Content: "שלום! הגרסה 2.0 של NSGo זמינה עכשיו (גם ב-Linux).", Style: b}),
-		specimenRow("One line, tail", "MaxLines: 1", false, core.Text{Content: arabicText, MaxLines: 1, Style: b}),
+	return card(cx, cardProps{icon: iconText, title: "Right to left", subtitle: "Arabic and Hebrew, mixed with Latin text and numbers"},
+		specimenRow(cx, "Arabic paragraph", "WritingRTL", true, core.Text{Content: arabicText, Style: rtl}),
+		specimenRow(cx, "Arabic, English and numbers in one line", "", false, core.Text{Content: "تم شحن الطلب رقم 4521 عبر DHL في 12 مارس، والتسليم خلال 3 أيام.", Style: b}),
+		specimenRow(cx, "Hebrew", "", false, core.Text{Content: "שלום! הגרסה 2.0 של NSGo זמינה עכשיו (גם ב-Linux).", Style: b}),
+		specimenRow(cx, "One line, tail", "MaxLines: 1", false, core.Text{Content: arabicText, MaxLines: 1, Style: b}),
 	)
 }
 
 func alignmentCard(cx *core.Scope) core.Node {
 	const sentence = "Short, aligned in its box"
 	const paragraph = "Justified text spreads the spaces of every line across the box, except on the last line of a paragraph, which stays at its start."
-	aligned := func(a core.TextAlign) core.Style { s := bodyStyle(); s.TextAlign = a; return s }
-	return card(cardProps{icon: iconLists, title: "Alignment", subtitle: "TextAlign in left-to-right and right-to-left text"},
-		specimenRow("Start", "TextAlignStart", true, core.Text{Content: sentence, Style: aligned(core.TextAlignStart)}),
-		specimenRow("Center", "TextAlignCenter", false, core.Text{Content: sentence, Style: aligned(core.TextAlignCenter)}),
-		specimenRow("End", "TextAlignEnd", false, core.Text{Content: sentence, Style: aligned(core.TextAlignEnd)}),
-		specimenRow("Justify", "TextAlignJustify", false, core.Text{Content: paragraph, Style: aligned(core.TextAlignJustify)}),
-		specimenRow("Justify, Chinese", "TextAlignJustify", false, core.Text{Content: chineseText, Style: aligned(core.TextAlignJustify)}),
-		specimenRow("Start, in Arabic", "TextAlignStart", false, core.Text{Content: arabicText, Style: aligned(core.TextAlignStart)}),
+	aligned := func(a core.TextAlign) core.Style { s := bodyStyle(cx); s.TextAlign = a; return s }
+	return card(cx, cardProps{icon: iconLists, title: "Alignment", subtitle: "TextAlign in left-to-right and right-to-left text"},
+		specimenRow(cx, "Start", "TextAlignStart", true, core.Text{Content: sentence, Style: aligned(core.TextAlignStart)}),
+		specimenRow(cx, "Center", "TextAlignCenter", false, core.Text{Content: sentence, Style: aligned(core.TextAlignCenter)}),
+		specimenRow(cx, "End", "TextAlignEnd", false, core.Text{Content: sentence, Style: aligned(core.TextAlignEnd)}),
+		specimenRow(cx, "Justify", "TextAlignJustify", false, core.Text{Content: paragraph, Style: aligned(core.TextAlignJustify)}),
+		specimenRow(cx, "Justify, Chinese", "TextAlignJustify", false, core.Text{Content: chineseText, Style: aligned(core.TextAlignJustify)}),
+		specimenRow(cx, "Start, in Arabic", "TextAlignStart", false, core.Text{Content: arabicText, Style: aligned(core.TextAlignStart)}),
 	)
 }
 
 func selectionCard(cx *core.Scope) core.Node {
-	b := bodyStyle()
+	colors := colorsOf(cx)
+	b := bodyStyle(cx)
 	b.SelectionColor = alpha(colors.accent, 0.35)
-	return card(cardProps{icon: iconText, title: "Selection", subtitle: hint(cx, "Long press to select", "Drag, or double or triple click"), right: badge("NSGo", toneNeutral)},
-		specimenRow("On its own", "SelectableOn", true, core.Text{Content: "This text selects on its own.", Selectable: core.SelectableOn, Style: b}),
-		specimenRow("Across texts", "View.Selectable", false,
+	return card(cx, cardProps{icon: iconText, title: "Selection", subtitle: hint(cx, "Long press to select", "Drag, or double or triple click"), right: badge(cx, "NSGo", toneNeutral)},
+		specimenRow(cx, "On its own", "SelectableOn", true, core.Text{Content: "This text selects on its own.", Selectable: core.SelectableOn, Style: b}),
+		specimenRow(cx, "Across texts", "View.Selectable", false,
 			core.View{Selectable: true, Style: core.Style{Gap: 8}, Children: []core.Node{
 				core.Text{Content: "A selectable view selects across its texts, as a web page does.", Style: b},
 				core.Text{Content: "Start in one, end in another; copy them as one.", Style: b},

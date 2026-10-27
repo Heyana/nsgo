@@ -75,18 +75,20 @@ func visitors(n float64) string {
 
 // seriesKey is a series' key, as its mark: a short line, dashed for the
 // other week.
-func seriesKey(dashed bool) core.Node {
+func seriesKey(cx *core.Scope, dashed bool) core.Node {
+	colors := colorsOf(cx)
 	if dashed {
 		dash := core.View{Style: core.Style{Width: core.Pt(4), Height: core.Pt(1.5), Background: colors.muted}}
 		return core.View{Style: core.Style{Width: core.Pt(10), Direction: core.Row, Gap: 2}, Children: []core.Node{dash, dash}}
 	}
-	return core.View{Style: core.Style{Width: core.Pt(10), Height: core.Pt(2), CornerRadius: 1, Background: toneAccent.color()}}
+	return core.View{Style: core.Style{Width: core.Pt(10), Height: core.Pt(2), CornerRadius: 1, Background: toneAccent.color(cx)}}
 }
 
 // legendItem is the key, then the series' name.
-func legendItem(label func() string, dashed bool) core.Node {
+func legendItem(cx *core.Scope, label func() string, dashed bool) core.Node {
+	colors := colorsOf(cx)
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6}, Children: []core.Node{
-		seriesKey(dashed), core.Text{ContentFunc: label, Style: core.Style{FontSize: 12, Color: colors.muted}},
+		seriesKey(cx, dashed), core.Text{ContentFunc: label, Style: core.Style{FontSize: 12, Color: colors.muted}},
 	}}
 }
 
@@ -97,13 +99,14 @@ func wash(c core.Color) core.Style {
 }
 
 // tipValue is a value in the tooltip, after its series' key.
-func tipValue(value func() string, dashed bool) core.Node {
+func tipValue(cx *core.Scope, value func() string, dashed bool) core.Node {
+	colors := colorsOf(cx)
 	c := colors.text
 	if dashed {
 		c = colors.muted
 	}
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6}, Children: []core.Node{
-		seriesKey(dashed), core.Text{ContentFunc: value, Style: core.Style{FontSize: 12, Color: c}},
+		seriesKey(cx, dashed), core.Text{ContentFunc: value, Style: core.Style{FontSize: 12, Color: c}},
 	}}
 }
 
@@ -127,6 +130,8 @@ func chartsDemo(cx *core.Scope) core.Node {
 	}
 
 	visitorsCard := func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
+		fin := finOf(cx)
 		week := core.NewSignal(cx, 0)
 		hover := core.NewSignal(cx, -1)
 		// The last day hovered: the tooltip keeps it while it fades out.
@@ -162,18 +167,18 @@ func chartsDemo(cx *core.Scope) core.Node {
 			}
 			return "Show last week"
 		}
-		return card(cardProps{icon: iconStocks, title: "Visitors", subtitle: "A week over the other, with hover, grid lines and motion"},
+		return card(cx, cardProps{icon: iconStocks, title: "Visitors", subtitle: "A week over the other, with hover, grid lines and motion"},
 			core.Dynamic(func(cx *core.Scope) core.Node {
 				day := chartDays[shown()]
 				if hover.Get() < 0 {
 					day += ", the last day"
 				}
-				return caption(day, func() string { return visitors(rows()[shown()]) + " visitors" })
+				return caption(cx, day, func() string { return visitors(rows()[shown()]) + " visitors" })
 			}),
 			// The key of each series mirrors its mark: a solid line, a dashed one.
 			core.View{Style: core.Style{Direction: core.Row, Gap: 16}, Children: []core.Node{
-				legendItem(func() string { return chartWeekNames[week.Get()] }, false),
-				legendItem(func() string { return chartWeekNames[1-week.Get()] }, true),
+				legendItem(cx, func() string { return chartWeekNames[week.Get()] }, false),
+				legendItem(cx, func() string { return chartWeekNames[1-week.Get()] }, true),
 			}},
 			core.View{Style: core.Style{Direction: core.Row, Gap: 8}, Children: []core.Node{
 				base.Plot{
@@ -207,8 +212,8 @@ func chartsDemo(cx *core.Scope) core.Node {
 					Tooltip: core.View{Style: fin.menu.over(core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10,
 						Padding: core.Symmetric(0, 8), Height: core.Pt(26), CornerRadius: 8, BorderWidth: 1}),
 						Children: []core.Node{
-							tipValue(func() string { return visitors(rows()[tip.Get()]) }, false),
-							tipValue(func() string { return visitors(other()[tip.Get()]) }, true),
+							tipValue(cx, func() string { return visitors(rows()[tip.Get()]) }, false),
+							tipValue(cx, func() string { return visitors(other()[tip.Get()]) }, true),
 						}},
 					OnHoverChange: func(i int) {
 						hover.Set(i)
@@ -223,14 +228,14 @@ func chartsDemo(cx *core.Scope) core.Node {
 					Children: []core.Node{
 						base.PlotGrid{Y: func() []float64 { return []float64{1000, 2000, 3000} }, Style: core.Style{Stroke: core.PaintColor(colors.line)}},
 						// The line over it has the dot.
-						base.PlotArea{BackgroundStyle: wash(toneAccent.color()), HoverDotStyle: core.Style{Display: core.DisplayNone}},
+						base.PlotArea{BackgroundStyle: wash(toneAccent.color(cx)), HoverDotStyle: core.Style{Display: core.DisplayNone}},
 						base.PlotGrid{Y: func() []float64 { return []float64{0} }, Style: core.Style{Stroke: core.PaintColor(colors.border)}},
 						// Each week's dot in its line's color, ringed in the
 						// card's, so it cuts out of the line.
 						base.PlotLine{Y: other, Style: core.Style{Stroke: core.PaintColor(colors.muted), StrokeWidth: 1.5, StrokeDash: []core.Points{4, 4}},
 							HoverDotStyle: core.Style{Background: colors.muted, BorderColor: colors.surface}},
-						base.PlotLine{Style: core.Style{Stroke: core.PaintColor(toneAccent.color()), StrokeWidth: 2},
-							HoverDotStyle: core.Style{Background: toneAccent.color(), BorderColor: colors.surface}},
+						base.PlotLine{Style: core.Style{Stroke: core.PaintColor(toneAccent.color(cx)), StrokeWidth: 2},
+							HoverDotStyle: core.Style{Background: toneAccent.color(cx), BorderColor: colors.surface}},
 					},
 				},
 				// The y axis' labels at the grid's values, compact.
@@ -258,10 +263,11 @@ func chartsDemo(cx *core.Scope) core.Node {
 	}
 
 	sparklines := func(cx *core.Scope) core.Node {
-		return card(cardProps{icon: iconStocks, title: "Sparklines", subtitle: "A plot per row of a list, drawn in as the row comes"},
+		return card(cx, cardProps{icon: iconStocks, title: "Sparklines", subtitle: "A plot per row of a list, drawn in as the row comes"},
 			core.List{TestID: "sparklines", Count: func() int { return len(tickers) }, Key: func(i int) any { return tickers[i].id },
 				EstimatedSize: 44, Style: core.Style{Height: core.Pt(44 * 6)},
 				Row: func(cx *core.Scope, r core.ListRow) core.Node {
+					colors := colorsOf(cx)
 					t := func() ticker { return tickers[r.Index()] }
 					first := func() float64 { return t().prices[0] }
 					closing := func() float64 { p := t().prices; return p[len(p)-1] }
@@ -297,21 +303,22 @@ func chartsDemo(cx *core.Scope) core.Node {
 							Style: core.Style{FlexGrow: 1, Height: core.Pt(28)},
 							Children: []core.Node{
 								// A wash under the line, in its tone, fading out.
-								base.PlotArea{BackgroundStyleFunc: func() core.Style { return wash(tn().color()) }},
-								base.PlotLine{StyleFunc: func() core.Style { return core.Style{Stroke: core.PaintColor(tn().color()), StrokeWidth: 1.5} }},
+								base.PlotArea{BackgroundStyleFunc: func() core.Style { return wash(tn().color(cx)) }},
+								base.PlotLine{StyleFunc: func() core.Style { return core.Style{Stroke: core.PaintColor(tn().color(cx)), StrokeWidth: 1.5} }},
 							},
 						},
 						// The close over its change: an explicit plus, a true minus.
 						core.View{Style: core.Style{Width: core.Pt(72), AlignItems: core.AlignEnd, Gap: 2}, Children: []core.Node{
 							core.Text{ContentFunc: func() string { return fmt.Sprintf("%.2f", closing()) }, Style: core.Style{FontSize: label, Color: colors.text}},
-							core.Text{ContentFunc: changeText, StyleFunc: func() core.Style { return core.Style{FontSize: detail, Color: tn().color()} }},
+							core.Text{ContentFunc: changeText, StyleFunc: func() core.Style { return core.Style{FontSize: detail, Color: tn().color(cx)} }},
 						}},
 					}}
 				}})
 	}
 
 	lastCard := func(cx *core.Scope) core.Node {
-		return card(cardProps{icon: iconSystem, title: "Last event"},
+		colors := colorsOf(cx)
+		return card(cx, cardProps{icon: iconSystem, title: "Last event"},
 			core.Text{ContentFunc: last.Get, Style: core.Style{FontSize: 13, Color: colors.text, FontFamily: mono}})
 	}
 

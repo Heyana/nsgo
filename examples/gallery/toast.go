@@ -120,6 +120,8 @@ func toast(c toastContent) { shell.toasts.show(c) }
 
 // item is one toast, the gallery's look.
 func (t *toaster) item(cx *core.Scope, e func() toastEntry) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	first := core.Untracked(cx, e)
 	id, c := first.ID, first.Value
 	label := strings.Join(slices.DeleteFunc([]string{c.title, c.description}, func(s string) bool { return s == "" }), ". ")

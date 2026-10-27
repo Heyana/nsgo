@@ -29,12 +29,11 @@ import (
 // streams in), and are lexed on a goroutine of their own; the result
 // colors them again.
 func New(cx *core.Scope) textview.Highlighter {
-	env := cx.Env()
 	ready := core.NewSignal(cx, 0)
 	var pending sync.Map
 	return func(c textview.CodeBlock) []textview.Highlight {
 		palette := &syntax.Light
-		if env.Dark() {
+		if cx.Dark() {
 			palette = &syntax.Dark
 		}
 		ready.Get()

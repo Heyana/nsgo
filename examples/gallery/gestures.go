@@ -13,7 +13,8 @@ import (
 )
 
 // dots is a dot matrix behind a stage, drawn once.
-func dots() core.Node {
+func dots(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	c := colors.line
 	return core.Canvas{Style: core.Style{Position: core.Absolute, Left: core.Pt(0), Top: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0)},
 		Draw: func(d *core.Drawing, size core.Size) {
@@ -27,13 +28,17 @@ func dots() core.Node {
 }
 
 // stage is the darker surface a demo plays on.
-func stage(height core.Points) core.Style {
+func stage(cx *core.Scope, height core.Points) core.Style {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	return core.Style{Height: core.Pt(height), CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous, Overflow: core.Hidden,
 		Background: colors.background, BorderWidth: 1, BorderColor: colors.line, Shadows: fin.track.shadows}
 }
 
 // knobShadows are the highlight and shadow of a small colored knob.
-func knobShadows() []core.BoxShadow {
+func knobShadows(cx *core.Scope) []core.BoxShadow {
+	fin := finOf(cx)
+	isDark := cx.Dark()
 	if isDark {
 		return []core.BoxShadow{inner(0, 1, 0, white(0.35)), shadow(0, 3, 10, 0, black(0.45))}
 	}
@@ -41,7 +46,8 @@ func knobShadows() []core.BoxShadow {
 }
 
 // apiLine is a plain label with the API it uses, in code type.
-func apiLine(label, names string) core.Node {
+func apiLine(cx *core.Scope, label, names string) core.Node {
+	colors := colorsOf(cx)
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignBaseline, Gap: 8}, Children: []core.Node{
 		core.Text{Content: label, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13, Color: colors.muted}},
 		core.Text{Content: names, Style: core.Style{FontSize: 12, FontFamily: mono, Color: colors.faint}},
@@ -51,6 +57,7 @@ func apiLine(label, names string) core.Node {
 // transformable is one photo dragged, pinched and rotated at the same
 // time, all on the platform's main thread.
 func transformable(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	x, y := core.NewAnimatedValue(cx, 0), core.NewAnimatedValue(cx, 0)
 	scale, angle := core.NewAnimatedValue(cx, 1), core.NewAnimatedValue(cx, 0)
 	type result struct {
@@ -64,9 +71,9 @@ func transformable(cx *core.Scope) core.Node {
 		last.Set(result{scale: 1})
 	}
 	degrees := core.Mul(angle, core.Constant(180/math.Pi))
-	return card(cardProps{icon: iconGestures, title: "Pan, pinch and rotation", subtitle: "Three recognizers on one view, driven natively"},
-		core.View{Style: stage(260).Merge(core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}), Children: []core.Node{
-			dots(),
+	return card(cx, cardProps{icon: iconGestures, title: "Pan, pinch and rotation", subtitle: "Three recognizers on one view, driven natively"},
+		core.View{Style: stage(cx, 260).Merge(core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}), Children: []core.Node{
+			dots(cx),
 			core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute, Width: core.Pt(200), Height: core.Pt(150), CornerRadius: 18,
 				BorderWidth: 1, BorderColor: colors.faint, BorderStyle: core.BorderDashed}},
 			core.View{TestID: "photo", PanValues: core.AnimatedXY{X: x, Y: y}, PinchValue: scale, RotationValue: angle,
@@ -97,11 +104,11 @@ func transformable(cx *core.Scope) core.Node {
 				Children: []core.Node{core.Image{Source: core.Src("https://picsum.photos/seed/nsh-card/400/300"), Style: core.Style{FlexGrow: 1}}}},
 		}},
 		core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{
-			stat("Drag", func() string { return fmt.Sprintf("%d pt", last.Get().drag) }, toneNeutral, core.Pct(33)),
-			stat("Scale", func() string { return fmt.Sprintf("%.2f×", last.Get().scale) }, toneAccent, core.Pct(33)),
-			stat("Angle", func() string { return fmt.Sprintf("%d°", int(math.Round(float64(last.Get().angle)))) }, toneInfo, core.Pct(34)),
+			stat(cx, "Drag", func() string { return fmt.Sprintf("%d pt", last.Get().drag) }, toneNeutral, core.Pct(33)),
+			stat(cx, "Scale", func() string { return fmt.Sprintf("%.2f×", last.Get().scale) }, toneAccent, core.Pct(33)),
+			stat(cx, "Angle", func() string { return fmt.Sprintf("%d°", int(math.Round(float64(last.Get().angle)))) }, toneInfo, core.Pct(34)),
 		}},
-		note(hint(cx, "Pinch and rotate with two fingers (Option-drag in the simulator).", "Drag with the mouse; pinch and rotate on a touchpad or a touch screen.")),
+		note(cx, hint(cx, "Pinch and rotate with two fingers (Option-drag in the simulator).", "Drag with the mouse; pinch and rotate on a touchpad or a touch screen.")),
 		button(buttonProps{label: "Reset", variant: secondary}, reset),
 	)
 }
@@ -110,6 +117,7 @@ func transformable(cx *core.Scope) core.Node {
 // engine). Its responder keeps the page from scrolling while it is
 // dragged.
 func ball(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	pos := core.NewSignal(cx, core.Point{})
 	type state struct {
 		label string
@@ -118,10 +126,10 @@ func ball(cx *core.Scope) core.Node {
 	st := core.NewSignal(cx, state{"Idle", toneNeutral})
 	grab := core.NewAnimatedValue(cx, 0)
 	var start core.Point
-	return card(cardProps{icon: iconScroll, title: "Touch responder", subtitle: "Positions go through the engine; the page does not scroll",
-		right: core.Dynamic(func(*core.Scope) core.Node { s := st.Get(); return badge(s.label, s.tone) })},
-		core.View{Style: stage(200), Children: []core.Node{
-			dots(),
+	return card(cx, cardProps{icon: iconScroll, title: "Touch responder", subtitle: "Positions go through the engine; the page does not scroll",
+		right: core.Dynamic(func(*core.Scope) core.Node { s := st.Get(); return badge(cx, s.label, s.tone) })},
+		core.View{Style: stage(cx, 200), Children: []core.Node{
+			dots(cx),
 			core.View{TestID: "ball", Responder: &core.Responder{
 				Claims: []core.TouchClaim{{}},
 				OnGrant: func(core.ResponderEvent) {
@@ -144,7 +152,7 @@ func ball(cx *core.Scope) core.Node {
 			}, StyleFunc: func() core.Style {
 				p := pos.Get()
 				return core.Style{Position: core.Absolute, Left: core.Pct(50), Top: core.Pt(70), Margin: core.Edges{Left: -30}, Width: core.Pt(60), Height: core.Pt(60),
-					CornerRadius: 30, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Background: colors.info, Shadows: knobShadows(),
+					CornerRadius: 30, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Background: colors.info, Shadows: knobShadows(cx),
 					Transform: core.Transform{TranslateX: p.X, TranslateY: p.Y},
 					Animated: &core.AnimatedStyle{
 						Background: core.Interpolate(grab, core.Interpolation{Input: []float64{0, 1}, Colors: []core.Color{colors.info, colors.accentFill}}),
@@ -152,7 +160,7 @@ func ball(cx *core.Scope) core.Node {
 					}}
 			}, Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(18), Height: core.Pt(18), CornerRadius: 9, Background: core.RGBA(0x1e1408, 0.35)}}}},
 		}},
-		caption("Position", func() string { p := pos.Get(); return fmt.Sprintf("%.0f, %.0f", p.X, p.Y) }),
+		caption(cx, "Position", func() string { p := pos.Get(); return fmt.Sprintf("%.0f, %.0f", p.X, p.Y) }),
 		button(buttonProps{label: "Center", variant: secondary}, func() { pos.Set(core.Point{}) }),
 	)
 }
@@ -164,18 +172,19 @@ type finger struct {
 
 // touchPad is the raw touch events, every finger drawn where it is.
 func touchPad(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	type entry struct{ name, text string }
 	log := core.NewSignalFunc(cx, []entry(nil), slices.Equal)
 	fingers := core.NewSignalFunc(cx, []finger(nil), slices.Equal)
 	names := map[core.TouchPhase]string{core.TouchStart: "start", core.TouchMove: "move", core.TouchEnd: "end", core.TouchCancel: "cancel"}
-	return card(cardProps{icon: iconSystem, title: "Touch events", subtitle: hint(cx, "Start, move, end and cancel, for every finger", "Start, move, end and cancel, for the mouse and every finger"),
+	return card(cx, cardProps{icon: iconSystem, title: "Touch events", subtitle: hint(cx, "Start, move, end and cancel, for every finger", "Start, move, end and cancel, for the mouse and every finger"),
 		right: core.Dynamic(func(*core.Scope) core.Node {
 			n := len(fingers.Get())
 			t := toneNeutral
 			if n > 0 {
 				t = toneAccent
 			}
-			return badge(fmt.Sprintf("%d down", n), t)
+			return badge(cx, fmt.Sprintf("%d down", n), t)
 		})},
 		core.View{TestID: "touch-pad", OnTouch: func(e core.TouchEvent) {
 			var down []finger
@@ -194,12 +203,14 @@ func touchPad(cx *core.Scope) core.Node {
 				out := append([]entry{{names[e.Phase], fmt.Sprintf("%.0f, %.0f · page %.0f, %.0f · %d down", at.Position.X, at.Position.Y, at.PagePosition.X, at.PagePosition.Y, len(down))}}, l...)
 				return out[:min(len(out), 4)]
 			})
-		}, Style: stage(150).Merge(core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}), Children: []core.Node{
-			dots(),
+		}, Style: stage(cx, 150).Merge(core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}), Children: []core.Node{
+			dots(cx),
 			core.Show{When: func() bool { return len(fingers.Get()) == 0 }, Then: func(*core.Scope) core.Node {
 				return text(hint(cx, "Touch here, try two fingers", "Press and drag here with the mouse"), 14, regular, colors.muted)
 			}},
 			core.Each(fingers.Get, func(f finger) int { return f.id }, func(cx *core.Scope, f func() finger, _ func() int) core.Node {
+				colors := colorsOf(cx)
+				tints := tintsOf(cx)
 				return core.View{PointerEvents: core.PointerEventsNone, StyleFunc: func() core.Style {
 					return core.Style{Position: core.Absolute, Left: core.Pt(f().x - 26), Top: core.Pt(f().y - 26), Width: core.Pt(52), Height: core.Pt(52), CornerRadius: 26,
 						BorderWidth: 2, BorderColor: colors.accent, Background: tints.accent}
@@ -229,6 +240,8 @@ func touchPad(cx *core.Scope) core.Node {
 
 // pressEvents lights each press event's chip as it arrives.
 func pressEvents(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	names := []string{"pressIn", "press", "longPress", "pressOut"}
 	flashes := make([]*core.AnimatedValue, len(names))
 	for i := range flashes {
@@ -254,8 +267,8 @@ func pressEvents(cx *core.Scope) core.Node {
 			Animated: &core.AnimatedStyle{Background: core.Interpolate(flashes[i], core.Interpolation{Input: []float64{0, 1}, Colors: []core.Color{colors.raised, colors.accentFill}})}},
 			Children: []core.Node{core.Text{Content: name, Style: core.Style{FontSize: 11, FontFamily: mono, Color: colors.text}}}})
 	}
-	return card(cardProps{icon: iconComponents, title: "Press events", subtitle: "In, press, long press and out; native feedback",
-		right: badgef(func() string { return itoa(n.Get()) }, toneNeutral, false)},
+	return card(cx, cardProps{icon: iconComponents, title: "Press events", subtitle: "In, press, long press and out; native feedback",
+		right: badgef(cx, func() string { return itoa(n.Get()) }, toneNeutral, false)},
 		core.View{Role: core.RoleButton, Label: "Press events", TestID: "press-pad",
 			OnPressDown: func(core.PressEvent) { fire("pressIn") }, OnPressUp: func(core.PressEvent) { fire("pressOut") },
 			OnPress: func(core.PressEvent) { fire("press") }, OnLongPress: func(core.PressEvent) { fire("longPress") },
@@ -287,6 +300,8 @@ func pressEvents(cx *core.Scope) core.Node {
 // hitSlop is a tiny dot with a ring showing the 30 pt around it that
 // also takes taps.
 func hitSlop(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	tints := tintsOf(cx)
 	taps := core.NewSignal(cx, 0)
 	ring := core.NewAnimatedValue(cx, 0)
 	sine := core.Easing{Kind: core.EasingSin, Mode: core.EaseModeInOut}
@@ -295,33 +310,35 @@ func hitSlop(cx *core.Scope) core.Node {
 		core.Timing(ring, 0, core.TimingConfig{Duration: 1400 * time.Millisecond, Easing: sine}),
 	), 0), nil)
 	cx.Cleanup(run.Stop)
-	return card(cardProps{icon: iconSearch, title: "Hit slop", subtitle: hint(cx, "A 12 pt dot that takes taps 30 pt around it", "A 12 pt dot that takes clicks 30 pt around it"),
+	return card(cx, cardProps{icon: iconSearch, title: "Hit slop", subtitle: hint(cx, "A 12 pt dot that takes taps 30 pt around it", "A 12 pt dot that takes clicks 30 pt around it"),
 		right: core.Dynamic(func(*core.Scope) core.Node {
 			t := toneNeutral
 			if taps.Get() > 0 {
 				t = toneAccent
 			}
-			return badge(fmt.Sprintf("%d taps", taps.Get()), t)
+			return badge(cx, fmt.Sprintf("%d taps", taps.Get()), t)
 		})},
-		core.View{Style: stage(140).Merge(core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}), Children: []core.Node{
-			dots(),
+		core.View{Style: stage(cx, 140).Merge(core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}), Children: []core.Node{
+			dots(cx),
 			core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute, Width: core.Pt(72), Height: core.Pt(72), CornerRadius: 36,
 				BorderWidth: 1, BorderStyle: core.BorderDashed, BorderColor: colors.danger, Background: tints.danger,
 				Animated: &core.AnimatedStyle{Opacity: lerp(ring, 0.45, 1), Scale: lerp(ring, 0.96, 1.04)}}},
 			press(pressProps{hitSlop: 30, scale: 0.8, onPress: func() { taps.Update(func(n int) int { return n + 1 }) }, label: "Tiny dot"},
-				core.View{Style: core.Style{Width: core.Pt(12), Height: core.Pt(12), CornerRadius: 6, Background: colors.danger, Shadows: knobShadows()}}),
+				core.View{Style: core.Style{Width: core.Pt(12), Height: core.Pt(12), CornerRadius: 6, Background: colors.danger, Shadows: knobShadows(cx)}}),
 		}},
-		apiLine(hint(cx, "The dashed ring is the touch area", "The dashed ring is the click area"), "HitSlop: All(30)"),
+		apiLine(cx, hint(cx, "The dashed ring is the touch area", "The dashed ring is the click area"), "HitSlop: All(30)"),
 	)
 }
 
 // pointerEventsCard is an overlay that lets taps through to the button
 // under it.
 func pointerEventsCard(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	tints := tintsOf(cx)
 	through := core.NewSignal(cx, 0)
 	warn, hatch := colors.warn, alpha(colors.warn, 0.28)
-	return card(cardProps{icon: iconNav, title: "Pointer events", subtitle: hint(cx, "An overlay that lets taps through", "An overlay that lets clicks through"),
-		right: badgef(func() string { return itoa(through.Get()) }, toneUp, false)},
+	return card(cx, cardProps{icon: iconNav, title: "Pointer events", subtitle: hint(cx, "An overlay that lets taps through", "An overlay that lets clicks through"),
+		right: badgef(cx, func() string { return itoa(through.Get()) }, toneUp, false)},
 		core.View{Style: core.Style{Height: core.Pt(88)}, Children: []core.Node{
 			press(pressProps{onPress: func() { through.Update(func(n int) int { return n + 1 }) }, scale: 0.98, label: "Button under an overlay", style: core.Style{FlexGrow: 1}},
 				core.View{Style: core.Style{FlexGrow: 1, CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous, Background: tints.up, BorderWidth: 1, BorderColor: colors.up,
@@ -339,24 +356,25 @@ func pointerEventsCard(cx *core.Scope) core.Node {
 					d.SetLineDash(4, 4).SetStrokeColor(warn).BeginPath().RoundRect(w*0.18+0.5, 0.5, w*0.64-1, h-1, 10).Stroke()
 				}}}},
 		}},
-		apiLine(hint(cx, "Taps on the hatched band reach the button", "Clicks on the hatched band reach the button"), "PointerEventsNone"),
+		apiLine(cx, hint(cx, "Taps on the hatched band reach the button", "Clicks on the hatched band reach the button"), "PointerEventsNone"),
 	)
 }
 
 // hover is the mouse over a view: it comes in, moves and leaves.
 func hover(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	over := core.NewSignal(cx, false)
 	at := core.NewSignal(cx, core.Point{})
-	return card(cardProps{icon: iconGestures, title: "Hover", subtitle: hint(cx, "A pointer over a view: iPad, desktops", "The mouse over a view"),
+	return card(cx, cardProps{icon: iconGestures, title: "Hover", subtitle: hint(cx, "A pointer over a view: iPad, desktops", "The mouse over a view"),
 		right: core.Dynamic(func(*core.Scope) core.Node {
 			if over.Get() {
-				return badge("Over", toneAccent)
+				return badge(cx, "Over", toneAccent)
 			}
-			return badge("Away", toneNeutral)
+			return badge(cx, "Away", toneNeutral)
 		})},
 		core.View{TestID: "hover-pad", OnHoverIn: func() { over.Set(true) }, OnHoverOut: func() { over.Set(false) },
 			OnHoverMove: func(e core.HoverEvent) { at.Set(e.Position) },
-			Style:       stage(100).Merge(core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Hover: &core.Style{Background: colors.surface}}),
+			Style:       stage(cx, 100).Merge(core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Hover: &core.Style{Background: colors.surface}}),
 			Children: []core.Node{textf(func() string {
 				if !over.Get() {
 					return "Pointer away"
@@ -364,21 +382,23 @@ func hover(cx *core.Scope) core.Node {
 				p := at.Get()
 				return fmt.Sprintf("Pointer at %.0f, %.0f", p.X, p.Y)
 			}, 14, regular, colors.muted)}},
-		apiLine("In, move and out", "OnHoverIn · OnHoverMove · OnHoverOut"),
+		apiLine(cx, "In, move and out", "OnHoverIn · OnHoverMove · OnHoverOut"),
 	)
 }
 
 // fileDrop is files dragged in from other apps, on desktops and the web.
 func fileDrop(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	tints := tintsOf(cx)
 	over := core.NewSignal(cx, false)
 	dropped := core.NewSignalFunc(cx, []string(nil), slices.Equal)
-	return card(cardProps{icon: iconFile, title: "Dropped files", subtitle: "Files dragged in from other apps, as file: URLs",
-		right: badgef(func() string { return count(len(dropped.Get()), "file") }, toneNeutral, false)},
+	return card(cx, cardProps{icon: iconFile, title: "Dropped files", subtitle: "Files dragged in from other apps, as file: URLs",
+		right: badgef(cx, func() string { return count(len(dropped.Get()), "file") }, toneNeutral, false)},
 		core.View{TestID: "drop-zone", Label: "Drop files here",
 			OnFileDragEnter: func() { over.Set(true) }, OnFileDragLeave: func() { over.Set(false) },
 			OnFileDrop: func(uris []string) { over.Set(false); dropped.Set(uris) },
 			StyleFunc: func() core.Style {
-				s := stage(120).Merge(core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, BorderWidth: 2, BorderStyle: core.BorderDashed})
+				s := stage(cx, 120).Merge(core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, BorderWidth: 2, BorderStyle: core.BorderDashed})
 				if over.Get() {
 					s.BorderColor, s.Background = colors.accent, tints.accent
 				}
@@ -401,7 +421,7 @@ func fileDrop(cx *core.Scope) core.Node {
 			}
 			return strings.Join(names, ", ")
 		}, Style: core.Style{FontSize: 13, Color: colors.muted}},
-		apiLine("On the web, blob: URLs named by their fragment", "OnFileDrop"),
+		apiLine(cx, "On the web, blob: URLs named by their fragment", "OnFileDrop"),
 	)
 }
 
@@ -419,6 +439,8 @@ func fileName(uri string) string {
 
 // accessibleRows are elements labelled for VoiceOver and TalkBack.
 func accessibleRows(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	last := core.NewSignal(cx, "")
 	items := []struct {
 		label, hint string
@@ -427,22 +449,22 @@ func accessibleRows(cx *core.Scope) core.Node {
 	var rows []core.Node
 	for i, it := range items {
 		rows = append(rows, core.View{Accessible: true, Role: core.RoleButton, Label: it.label, Hint: it.hint, OnPress: func(core.PressEvent) { last.Set(it.label) },
-			Children: []core.Node{listRow(i == 0, nil,
+			Children: []core.Node{listRow(cx, i == 0, nil,
 				core.Dynamic(func(*core.Scope) core.Node {
 					if last.Get() == it.label {
 						return core.View{Style: fin.raised.over(core.Style{Width: core.Pt(34), Height: core.Pt(34), CornerRadius: 10, BorderWidth: 1, BorderColor: colors.border,
 							Background: colors.raised, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}), Children: []core.Node{icon(it.icon, 17, colors.accent)}}
 					}
-					return iconTile(it.icon, 34)
+					return iconTile(cx, it.icon, 34)
 				}),
 				core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 1}, Children: []core.Node{text(it.label, 15, regular, colors.text), text(it.hint, 12, regular, colors.muted)}},
 				core.Text{Content: "button", Style: core.Style{FontSize: 11, FontFamily: mono, Color: colors.faint}},
 			)}})
 	}
-	return card(cardProps{icon: iconText, title: "Accessibility", subtitle: "Roles, labels and hints for screen readers",
+	return card(cx, cardProps{icon: iconText, title: "Accessibility", subtitle: "Roles, labels and hints for screen readers",
 		right: core.Dynamic(func(*core.Scope) core.Node {
 			if l := last.Get(); l != "" {
-				return badge(l, toneInfo)
+				return badge(cx, l, toneInfo)
 			}
 			return core.Group{}
 		})}, rows...)

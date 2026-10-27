@@ -20,6 +20,8 @@ var motionKinds = []struct {
 // presetTile is one preset on a little card of its own: a tap plays it.
 // Exits come back after a moment; loops play until tapped again.
 func presetTile(cx *core.Scope, p core.MotionPreset, tone core.Color, onPlay func(string)) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	m := core.NewMotion(cx, nil)
 	looping := core.NewSignal(cx, false)
 	var run *core.AnimationRun
@@ -70,7 +72,7 @@ func presetTile(cx *core.Scope, p core.MotionPreset, tone core.Color, onPlay fun
 		}, Children: []core.Node{
 			core.View{Style: fin.knob.over(core.Style{Width: core.Pt(32), Height: core.Pt(32), CornerRadius: 9, BorderCurve: core.BorderCurveContinuous,
 				AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Background: tone, Perspective: 300, Animated: m.Style()}),
-				Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(10), Height: core.Pt(10), CornerRadius: 5, Background: onTone(), Opacity: core.Alpha(0.85)}}}},
+				Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(10), Height: core.Pt(10), CornerRadius: 5, Background: onTone(cx), Opacity: core.Alpha(0.85)}}}},
 			core.Text{Content: p.Name(), MaxLines: 1, StyleFunc: func() core.Style {
 				c := colors.muted
 				if looping.Get() {
@@ -100,28 +102,28 @@ func motionPresets(cx *core.Scope) core.Node {
 	status := core.NewSignal(cx, "tap a tile")
 	var chips []core.Node
 	for _, k := range motionKinds {
-		chips = append(chips, chipTab(k.label, func() bool { return kind.Get() == k.kind }, func() {
+		chips = append(chips, chipTab(cx, k.label, func() bool { return kind.Get() == k.kind }, func() {
 			kind.Set(k.kind)
 			status.Set("tap a tile")
 		}))
 	}
-	return card(cardProps{icon: iconSpark, title: "Motion presets", subtitle: fmt.Sprintf("%d ready-made motions, played natively", len(core.MotionPresets())),
-		right: badgef(status.Get, toneAccent, false)},
+	return card(cx, cardProps{icon: iconSpark, title: "Motion presets", subtitle: fmt.Sprintf("%d ready-made motions, played natively", len(core.MotionPresets())),
+		right: badgef(cx, status.Get, toneAccent, false)},
 		core.Scroll{Horizontal: true, HideIndicator: true, Children: []core.Node{
 			base.Tabs{Label: "Kinds", Style: core.Style{Direction: core.Row, Gap: 8, Padding: core.Symmetric(4, 4)}, Children: chips}}},
 		core.Dynamic(func(cx *core.Scope) core.Node {
 			var tiles []core.Node
 			for _, p := range core.MotionPresets() {
 				if p.Kind() == kind.Get() {
-					tones := motionTones()
+					tones := motionTones(cx)
 					tiles = append(tiles, presetTile(cx, p, tones[len(tiles)%len(tones)], status.Set))
 				}
 			}
 			return core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, Gap: 8}, Children: tiles}
 		}),
 		core.View{Style: core.Style{Gap: 8}, Children: []core.Node{
-			apiLine("Channels for a view", "NewMotion"),
-			apiLine("A preset", "Motion.Play(Shake.Spec())"),
+			apiLine(cx, "Channels for a view", "NewMotion"),
+			apiLine(cx, "A preset", "Motion.Play(Shake.Spec())"),
 		}},
 	)
 }
@@ -164,12 +166,12 @@ func staggeredEntrance(cx *core.Scope) core.Node {
 		from.Set(origin)
 		wave.Update(func(w int) int { return w + 1 })
 	}
-	return card(cardProps{icon: iconLists, title: "Staggered entrance", subtitle: "NewMotion(enter with a delay) per item", right: badge("70 ms apart", toneNeutral)},
+	return card(cx, cardProps{icon: iconLists, title: "Staggered entrance", subtitle: "NewMotion(enter with a delay) per item", right: badge(cx, "70 ms apart", toneNeutral)},
 		// A new wave makes new items: each enters with a motion of its own.
 		core.Dynamic(func(cx *core.Scope) core.Node {
 			wave.Get()
 			origin := from.Get()
-			tones := motionTones()
+			tones := motionTones(cx)
 			var bars []core.Node
 			for i, h := range staggerBars {
 				bars = append(bars, staggerBar(cx, h, tones[i%len(tones)], staggerSteps(i, len(staggerBars), origin)*70))
@@ -177,9 +179,9 @@ func staggeredEntrance(cx *core.Scope) core.Node {
 			return core.View{Style: core.Style{Height: core.Pt(140), Direction: core.Row, AlignItems: core.AlignEnd, Gap: 8}, Children: bars}
 		}),
 		base.Tabs{Label: "Origin", Style: core.Style{Direction: core.Row, Gap: 8}, Children: []core.Node{
-			chipTab("From first", func() bool { return from.Get() == 0 }, func() { replay(0) }),
-			chipTab("Center", func() bool { return from.Get() == 1 }, func() { replay(1) }),
-			chipTab("Last", func() bool { return from.Get() == 2 }, func() { replay(2) }),
+			chipTab(cx, "From first", func() bool { return from.Get() == 0 }, func() { replay(0) }),
+			chipTab(cx, "Center", func() bool { return from.Get() == 1 }, func() { replay(1) }),
+			chipTab(cx, "Last", func() bool { return from.Get() == 2 }, func() { replay(2) }),
 		}},
 		button(buttonProps{label: "Replay", variant: secondary, icon: iconPlay}, func() { replay(from.GetUntracked()) }),
 	)
@@ -202,6 +204,9 @@ func shadowAt(k int) core.Points {
 // keyframesMotions is sprites and ticks with steps, and a like made of
 // chained motions.
 func keyframesMotions(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	tints := tintsOf(cx)
+	fin := finOf(cx)
 	sprite, tick := core.NewAnimatedValue(cx, 0), core.NewAnimatedValue(cx, 0)
 	cx.StartAnimation(core.Parallel(
 		core.ValueKeyframes(sprite, core.KeyframeTiming{Duration: ms(1600), Easing: core.StepsEasing(phases, core.JumpEnd), Iterations: core.Forever},
@@ -281,7 +286,7 @@ func keyframesMotions(cx *core.Scope) core.Node {
 		segments = append(segments, core.View{Style: s})
 	}
 
-	return card(cardProps{icon: iconAnimation, title: "Keyframes", subtitle: "Steps, keyframes with easings of their own, chained motions"},
+	return card(cx, cardProps{icon: iconAnimation, title: "Keyframes", subtitle: "Steps, keyframes with easings of their own, chained motions"},
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignStart, JustifyContent: core.JustifySpaceAround}, Children: []core.Node{
 			core.View{Style: core.Style{AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
 				core.View{Style: core.Style{Width: core.Pt(moon), Height: core.Pt(moon), CornerRadius: moon / 2, Overflow: core.Hidden, Background: colors.raised}, Children: []core.Node{
@@ -335,10 +340,10 @@ func keyframesMotions(cx *core.Scope) core.Node {
 			button(buttonProps{label: "Charge", small: true, variant: secondary}, charging),
 		}},
 		core.View{Style: core.Style{Gap: 8}, Children: []core.Node{
-			apiLine("A sprite sheet, frame by frame", "StepsEasing(8)"),
-			apiLine("+1: three stops, one with its easing", "StopAt(…).Eased(…)"),
-			apiLine("Like: pop in, then a heartbeat", "Play(…, done)"),
-			apiLine("Charge in five jumps", "ValueKeyframes"),
+			apiLine(cx, "A sprite sheet, frame by frame", "StepsEasing(8)"),
+			apiLine(cx, "+1: three stops, one with its easing", "StopAt(…).Eased(…)"),
+			apiLine(cx, "Like: pop in, then a heartbeat", "Play(…, done)"),
+			apiLine(cx, "Charge in five jumps", "ValueKeyframes"),
 		}},
 	)
 }
@@ -368,6 +373,7 @@ var auroraBlobs = []auroraBlob{
 // aurora is a getgradients-style background: blurred radial gradients,
 // each drifting on a looping motion of its own, clipped in a card.
 func aurora(cx *core.Scope) core.Node {
+	isDark := cx.Dark()
 	ink, bg, blend := core.RGB(0x1b1035), core.RGB(0xfff8f3), core.BlendMultiply
 	if isDark {
 		ink, bg, blend = core.RGB(0xffffff), core.RGB(0x0a0716), core.BlendScreen
@@ -399,7 +405,7 @@ func aurora(cx *core.Scope) core.Node {
 		core.Text{Content: "Aurora", Style: core.Style{FontSize: 34, FontWeight: bold, LetterSpacing: -0.8, Color: ink}},
 		core.Text{Content: "Each light drifts on its own loop, there and back", Style: core.Style{FontSize: 14, Color: alpha(ink, 0.7)}},
 	}})
-	return card(cardProps{icon: iconStyles, title: "Aurora", subtitle: "Blurred gradients on looping motions", flush: true},
+	return card(cx, cardProps{icon: iconStyles, title: "Aurora", subtitle: "Blurred gradients on looping motions", flush: true},
 		core.View{Style: core.Style{Height: core.Pt(260), CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous, Overflow: core.Hidden, Background: bg},
 			Children: blobs})
 }

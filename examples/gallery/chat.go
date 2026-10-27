@@ -34,6 +34,8 @@ type chatRun struct {
 // desktop layout adds a list of conversations on the left and keeps the
 // messages and the composer in a readable column.
 func chatDemo(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	env := cx.Env()
 	wide := shell.desktop()
 	column := core.Style{}
@@ -460,8 +462,8 @@ func chatDemo(cx *core.Scope) core.Node {
 
 	userRow := func(m func() msg) core.Node {
 		return core.View{Style: core.Style{AlignItems: core.AlignEnd, Padding: core.Symmetric(8, 16), Gap: 8}, Children: []core.Node{
-			core.Show{When: func() bool { return m().image.URI != "" || m().image.Data != nil }, Then: func(*core.Scope) core.Node { return attachedPhoto(m().image, 220, 165) }},
-			core.Show{When: func() bool { return m().file != nil }, Then: func(*core.Scope) core.Node { return fileChip(*m().file, nil) }},
+			core.Show{When: func() bool { return m().image.URI != "" || m().image.Data != nil }, Then: func(*core.Scope) core.Node { return attachedPhoto(cx, m().image, 220, 165) }},
+			core.Show{When: func() bool { return m().file != nil }, Then: func(*core.Scope) core.Node { return fileChip(cx, *m().file, nil) }},
 			core.Show{When: func() bool { return m().text != "" }, Then: func(*core.Scope) core.Node {
 				// A message is read, not pressed: flat, a hairline around it.
 				return core.View{Style: core.Style{MaxWidth: core.Pct(82), Padding: core.Symmetric(10, 14), CornerRadii: core.Corners{TopLeft: 20, TopRight: 20, BottomRight: 6, BottomLeft: 20},
@@ -470,7 +472,7 @@ func chatDemo(cx *core.Scope) core.Node {
 				}}
 			}},
 			core.Show{When: func() bool { return m().waiting }, Then: func(*core.Scope) core.Node {
-				return hrow(6, spinner(12, colors.warn), text("Waiting for a connection", 12, regular, colors.muted))
+				return hrow(6, spinner(cx, 12, colors.warn), text("Waiting for a connection", 12, regular, colors.muted))
 			}},
 		}}
 	}
@@ -515,14 +517,14 @@ func chatDemo(cx *core.Scope) core.Node {
 		done := func() bool { return !live() }
 		return core.View{Style: core.Style{Padding: core.Edges{Top: 8, Right: 16, Bottom: 4, Left: 16}, Gap: 12}, Children: []core.Node{
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Height: core.Pt(26)}, Children: []core.Node{
-				avatar(),
+				avatar(cx),
 				core.Text{ContentFunc: func() string {
 					if s, ok := strings.CutPrefix(m().script, "local:"); ok {
 						return s
 					}
 					return string(m().model)
 				}, Style: core.Style{FlexGrow: 1, FontSize: 13, FontWeight: semibold, Color: colors.muted}},
-				core.Show{When: func() bool { return done() && m().status == "stopped" }, Then: func(*core.Scope) core.Node { return badge("Stopped", toneWarn) }},
+				core.Show{When: func() bool { return done() && m().status == "stopped" }, Then: func(*core.Scope) core.Node { return badge(cx, "Stopped", toneWarn) }},
 			}},
 			core.Show{When: func() bool { _, ok, _ := reason(); return ok }, Then: func(*core.Scope) core.Node {
 				return core.View{Style: core.Style{Gap: 8}, Children: []core.Node{
@@ -542,7 +544,7 @@ func chatDemo(cx *core.Scope) core.Node {
 					}}, core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Height: core.Pt(32), AlignSelf: core.AlignStart}, Children: []core.Node{
 						core.Dynamic(func(*core.Scope) core.Node {
 							if live() && thinking.Get() {
-								return spinner(14, colors.muted)
+								return spinner(cx, 14, colors.muted)
 							}
 							return icon(glyphBrain, 16, colors.muted)
 						}),
@@ -564,13 +566,13 @@ func chatDemo(cx *core.Scope) core.Node {
 					}},
 				}}
 			}},
-			core.Each(tools, func(t chatTool) string { return t.id }, func(cx *core.Scope, t func() chatTool, _ func() int) core.Node { return toolCard(t) }),
+			core.Each(tools, func(t chatTool) string { return t.id }, func(cx *core.Scope, t func() chatTool, _ func() int) core.Node { return toolCard(cx, t) }),
 			core.Show{When: waitingForWords, Then: func(*core.Scope) core.Node {
-				return core.View{Style: core.Style{Direction: core.Row, Height: core.Pt(22), AlignItems: core.AlignCenter}, Children: []core.Node{caret()}}
+				return core.View{Style: core.Style{Direction: core.Row, Height: core.Pt(22), AlignItems: core.AlignCenter}, Children: []core.Node{caret(cx)}}
 			}},
 			chatMarkdown(md, live),
 			core.Show{When: func() bool { return done() && m().status == "error" }, Then: func(*core.Scope) core.Node {
-				return errorRow(func() string {
+				return errorRow(cx, func() string {
 					if e := m().err; e != "" {
 						return e
 					}
@@ -582,14 +584,14 @@ func chatDemo(cx *core.Scope) core.Node {
 			}},
 			core.Show{When: func() bool { return done() && m().status != "error" }, Then: func(*core.Scope) core.Node {
 				return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Margin: core.Edges{Left: -8, Top: -6}}, Children: []core.Node{
-					actionButton(func() iconName {
+					actionButton(cx, func() iconName {
 						if copied.Get() == m().id {
 							return iconCheck
 						}
 						return iconCopy
 					}, "Copy", func() bool { return copied.Get() == m().id }, toneUp, func() { mm := core.Untracked(cx, m); copyText(mm.id, mm.md) }),
-					actionButton(func() iconName { return glyphRegenerate }, "Regenerate", func() bool { return false }, toneAccent, func() { regenerate(core.Untracked(cx, m)) }),
-					actionButton(func() iconName { return glyphThumbUp }, "Good reply", func() bool { return m().rating == "up" }, toneAccent, func() {
+					actionButton(cx, func() iconName { return glyphRegenerate }, "Regenerate", func() bool { return false }, toneAccent, func() { regenerate(core.Untracked(cx, m)) }),
+					actionButton(cx, func() iconName { return glyphThumbUp }, "Good reply", func() bool { return m().rating == "up" }, toneAccent, func() {
 						update(core.Untracked(cx, m).id, func(x msg) msg {
 							if x.rating == "up" {
 								x.rating = ""
@@ -599,7 +601,7 @@ func chatDemo(cx *core.Scope) core.Node {
 							return x
 						})
 					}),
-					actionButton(func() iconName { return glyphThumbDown }, "Bad reply", func() bool { return m().rating == "down" }, toneDanger, func() {
+					actionButton(cx, func() iconName { return glyphThumbDown }, "Bad reply", func() bool { return m().rating == "down" }, toneDanger, func() {
 						update(core.Untracked(cx, m).id, func(x msg) msg {
 							if x.rating == "down" {
 								x.rating = ""
@@ -632,7 +634,7 @@ func chatDemo(cx *core.Scope) core.Node {
 	empty := func(*core.Scope) core.Node {
 		return core.View{Style: column.Merge(core.Style{FlexGrow: 1, JustifyContent: core.JustifyCenter, Padding: core.Symmetric(24, 16), Gap: 24}), Children: []core.Node{
 			appear(0, false, core.View{Style: core.Style{AlignItems: core.AlignCenter, Gap: 12}, Children: []core.Node{
-				iconTile(iconSpark, 56),
+				iconTile(cx, iconSpark, 56),
 				text("How can I help?", 22, semibold, colors.text),
 				core.Text{Content: emptyText, Style: core.Style{FontSize: 15, LineHeight: 21, Color: colors.muted, TextAlign: core.TextAlignCenter}},
 			}}),
@@ -706,7 +708,7 @@ func chatDemo(cx *core.Scope) core.Node {
 					return core.View{Style: column, Children: []core.Node{core.Dynamic(func(cx *core.Scope) core.Node {
 						switch kind.Get() {
 						case "date":
-							return dateSeparator(func() string { return item().label })
+							return dateSeparator(cx, func() string { return item().label })
 						case "user":
 							return userRow(item)
 						case "assistant":
@@ -751,7 +753,7 @@ func chatDemo(cx *core.Scope) core.Node {
 				core.View{PointerEvents: core.PointerEventsBoxNone, Style: core.Style{Position: core.Absolute, Right: core.Pt(16), Bottom: core.Pt(12), Opacity: core.Alpha(0.001),
 					Animated: &core.AnimatedStyle{Opacity: jump, Scale: lerp(jump, 0.7, 1)}}, Children: []core.Node{
 					core.Show{When: func() bool { return !following.Get() }, Then: func(*core.Scope) core.Node {
-						return roundButton(iconArrowDown, "Jump to the latest message", secondary, 0, func() { toEnd(true) })
+						return roundButton(cx, iconArrowDown, "Jump to the latest message", secondary, 0, func() { toEnd(true) })
 					}},
 					core.Show{When: streaming, Then: func(*core.Scope) core.Node {
 						return core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(2), Right: core.Pt(2), Width: core.Pt(10), Height: core.Pt(10), CornerRadius: 5,
@@ -768,9 +770,9 @@ func chatDemo(cx *core.Scope) core.Node {
 							t, name, title, detail = toneWarn, glyphOffline, "You're offline", "Your message sends when the connection returns."
 						}
 						return core.View{Style: fin.menu.over(core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, MinHeight: core.Pt(48), Padding: core.Symmetric(0, 14),
-							CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous, BorderWidth: 1, BorderColor: alpha(t.color(), 0.35)}), Children: []core.Node{
-							core.View{Style: core.Style{Width: core.Pt(28), Height: core.Pt(28), CornerRadius: 14, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Background: t.tint()},
-								Children: []core.Node{icon(name, 15, t.color())}},
+							CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous, BorderWidth: 1, BorderColor: alpha(t.color(cx), 0.35)}), Children: []core.Node{
+							core.View{Style: core.Style{Width: core.Pt(28), Height: core.Pt(28), CornerRadius: 14, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Background: t.tint(cx)},
+								Children: []core.Node{icon(name, 15, t.color(cx))}},
 							core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 1}, Children: []core.Node{text(title, 14, semibold, colors.text), text(detail, 13, regular, colors.muted)}},
 						}}
 					}),
@@ -820,8 +822,8 @@ func chatDemo(cx *core.Scope) core.Node {
 						return nil
 					}
 					return appear(0, false, core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
-						attachedPhoto(a.image, 48, 48),
-						core.View{Style: core.Style{FlexGrow: 1, AlignItems: core.AlignStart}, Children: []core.Node{fileChip(a.file, func() { attachment.Set(nil) })}},
+						attachedPhoto(cx, a.image, 48, 48),
+						core.View{Style: core.Style{FlexGrow: 1, AlignItems: core.AlignStart}, Children: []core.Node{fileChip(cx, a.file, func() { attachment.Set(nil) })}},
 					}})
 				}),
 				// Glass like the menu above it, without the blur: nothing
@@ -846,7 +848,7 @@ func chatDemo(cx *core.Scope) core.Node {
 								s.Transform.Rotate = 45
 							}
 							return s
-						}, Children: []core.Node{roundButton(iconPlus, "Add", secondary, 0, func() { toggled(menuOpen) })}},
+						}, Children: []core.Node{roundButton(cx, iconPlus, "Add", secondary, 0, func() { toggled(menuOpen) })}},
 						core.View{Style: fill, Children: []core.Node{picker}},
 						core.Dynamic(func(*core.Scope) core.Node {
 							if streaming() {

@@ -86,6 +86,7 @@ func (t *Tree) bindAccessibility(cx *Scope, n *node, a a11y) {
 // own reads the text inside it.
 func (n *node) sentProps() driver.ViewProps {
 	p := n.props
+	p.Appearance = n.appearance
 	if p.Accessible == AccessibleYes && p.Label == "" && n.text == nil {
 		var b strings.Builder
 		n.appendText(&b)

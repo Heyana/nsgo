@@ -539,6 +539,9 @@ type ViewProps struct {
 	SelectionColor Color
 	// NoFocus keeps a pressable view out of the Tab stops.
 	NoFocus bool
+	// Appearance is the one its subtree forces (Scope.SetSubtreeAppearance),
+	// for the platform's views in it; AppearanceSystem follows the window.
+	Appearance Appearance
 	// PointerEvents, HitSlop and DelayLongPress are the view's; a zero
 	// DelayLongPress is the platform's 500 ms.
 	PointerEvents  PointerEvents

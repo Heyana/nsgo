@@ -10,7 +10,8 @@ import (
 )
 
 // sectorBar is a sector's mean change as a bar diverging from the middle.
-func sectorBar(lbl string, change func() float64, scale func() float64) core.Node {
+func sectorBar(cx *core.Scope, lbl string, change func() float64, scale func() float64) core.Node {
+	colors := colorsOf(cx)
 	share := func() float64 { return math.Min(1, math.Abs(change())/scale()) }
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10, Height: core.Pt(22)}, Children: []core.Node{
 		core.Text{Content: lbl, MaxLines: 1, Style: core.Style{Width: core.Pt(84), FontSize: 13, Color: colors.muted}},
@@ -30,7 +31,7 @@ func sectorBar(lbl string, change func() float64, scale func() float64) core.Nod
 			}, colors.up, false, 8, 2)}},
 		}},
 		core.Text{ContentFunc: func() string { return signed(change(), 2) + "%" }, StyleFunc: func() core.Style {
-			return core.Style{Width: core.Pt(56), TextAlign: core.TextAlignEnd, FontSize: 12, Color: toneOf(change())}
+			return core.Style{Width: core.Pt(56), TextAlign: core.TextAlignEnd, FontSize: 12, Color: toneOf(cx, change())}
 		}},
 	}}
 }
@@ -38,6 +39,7 @@ func sectorBar(lbl string, change func() float64, scale func() float64) core.Nod
 // breadthPanel is advancers against decliners across the composite and
 // the sectors' moves: what the strip opens to.
 func breadthPanel(cx *core.Scope, m *market) core.Node {
+	colors := colorsOf(cx)
 	b := m.breadth.Get
 	means := core.NewMemoFunc(cx, func() []float64 {
 		m.pulse.Get()
@@ -63,7 +65,7 @@ func breadthPanel(cx *core.Scope, m *market) core.Node {
 	}
 	var bars []core.Node
 	for i, sc := range sectors {
-		bars = append(bars, sectorBar(sc.label, func() float64 { return means.Get()[i] }, scale))
+		bars = append(bars, sectorBar(cx, sc.label, func() float64 { return means.Get()[i] }, scale))
 	}
 	segment := func(n func() int, c core.Color) core.Node {
 		return core.View{StyleFunc: func() core.Style { return core.Style{FlexGrow: float32(n()), Background: c} }}
@@ -87,6 +89,7 @@ func breadthPanel(cx *core.Scope, m *market) core.Node {
 // composite and its change, the clock and pause. A press opens breadth
 // and sectors with a layout animation; the chevron turns on the platform.
 func marketStrip(cx *core.Scope, m *market) core.Node {
+	colors := colorsOf(cx)
 	opened := core.NewSignal(cx, false)
 	turn := core.NewAnimatedValue(cx, 0)
 	change := func() float64 { return (m.composite.Get() - indexBase) / indexBase * 100 }
@@ -106,12 +109,12 @@ func marketStrip(cx *core.Scope, m *market) core.Node {
 					core.Text{Content: "Composite", MaxLines: 1, Style: core.Style{FontSize: 13, Color: colors.muted}},
 					core.Text{ContentFunc: func() string { return grouped(m.composite.Get(), 2) }, MaxLines: 1, Style: core.Style{FontSize: 15, FontWeight: semibold, Color: colors.text}},
 					core.Text{ContentFunc: func() string { return signed(change(), 2) + "%" }, StyleFunc: func() core.Style {
-						return core.Style{FontSize: 13, FontWeight: medium, Color: toneOf(change())}
+						return core.Style{FontSize: 13, FontWeight: medium, Color: toneOf(cx, change())}
 					}},
 					core.View{Style: core.Style{Animated: &core.AnimatedStyle{Rotate: lerp(turn, 90, -90)}}, Children: []core.Node{icon(iconChevron, 12, colors.faint)}},
 				}},
 			textf(func() string { return marketTime(float64(m.clock.Get()), true) }, 12, regular, colors.faint),
-			pauseButton(m),
+			pauseButton(cx, m),
 		}},
 		core.Show{When: opened.Get, Then: func(cx *core.Scope) core.Node { return breadthPanel(cx, m) }},
 	}}
@@ -138,6 +141,7 @@ const (
 // dot at the newest point that rings on each change. The y range eases
 // instead of jumping.
 func sparkline(cx *core.Scope, s *stock) core.Node {
+	colors := colorsOf(cx)
 	scale := &calmRange{rate: 0.1}
 	rv := core.NewAnimatedValue(cx, 1)
 	ringRadius, haloAlpha, strokeAlpha := lerp(rv, 3, ring), lerp(rv, 0.35, 0), lerp(rv, 0.9, 0)
@@ -194,7 +198,7 @@ func sparkline(cx *core.Scope, s *stock) core.Node {
 			return ring + 2 + float32((rhi-v)/span)*(bottom-ring-4)
 		}
 		X := func(k int) float32 { return left + float32(k)/float32(max(1, n-1))*(right-left) }
-		tone := toneOf(q.last - q.prevClose)
+		tone := toneOf(cx, q.last-q.prevClose)
 		// A smooth curve: quadratic segments through the midpoints.
 		curve := func() {
 			d.MoveTo(X(0), Y(ys[0]))
@@ -237,6 +241,7 @@ func sparkline(cx *core.Scope, s *stock) core.Node {
 // price and its change. In the desktop layout the row shown beside the
 // list is active, and the others light up under the pointer.
 func stockRow(cx *core.Scope, s *stock, first func() bool, onPress func(), wide bool, active func() bool) core.Node {
+	colors := colorsOf(cx)
 	q := s.quote.Get
 	change := func() float64 { return percentOf(q()) }
 	st := core.Style{Height: core.Pt(64), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(0, 16), Active: &core.Style{Background: colors.surface}}
@@ -260,7 +265,7 @@ func stockRow(cx *core.Scope, s *stock, first func() bool, onPress func(), wide 
 		core.View{Style: core.Style{Width: core.Pt(84), AlignItems: core.AlignEnd, Gap: 3}, Children: []core.Node{
 			core.Text{ContentFunc: func() string { return priceText(q().last, s) }, MaxLines: 1, Style: core.Style{FontSize: 16, FontWeight: semibold, Color: colors.text}},
 			core.Text{ContentFunc: func() string { return signed(change(), 2) + "%" }, MaxLines: 1, StyleFunc: func() core.Style {
-				return core.Style{FontSize: 13, FontWeight: medium, Color: toneOf(change())}
+				return core.Style{FontSize: 13, FontWeight: medium, Color: toneOf(cx, change())}
 			}},
 		}},
 	}}
@@ -275,6 +280,7 @@ const watchlistWidth = 380
 // layout animation. A stock opens its details, pushed on phones, beside
 // the list on desktops; leaving the demo stops the market.
 func stocksDemo(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	wide := shell.desktop()
 	m := newMarket(cx)
 	m.start()

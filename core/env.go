@@ -21,7 +21,7 @@ type Env struct {
 	systemDark bool
 	material   *Signal[WindowMaterial]
 	appleKeys  *Signal[bool]
-	tokens     *Signal[Tokens]
+	tokens     *Signal[hostColors]
 	// headers are the system header's heights, which only the tree reads.
 	headers [2]Points
 }
@@ -47,7 +47,7 @@ func newEnv(cx *Scope) *Env {
 		appearance:       NewSignal(cx, AppearanceSystem),
 		appleKeys:        NewSignal(cx, false),
 		material:         NewSignal(cx, WindowMaterialNone),
-		tokens:           NewSignalFunc[Tokens](cx, Tokens{}, nil),
+		tokens:           NewSignalFunc(cx, hostColors{}, nil),
 	}
 }
 
@@ -134,19 +134,6 @@ func (e *Env) Dark() bool { return e.dark.Get() }
 // Appearance returns the appearance Scope.SetAppearance forces, or
 // AppearanceSystem.
 func (e *Env) Appearance() Appearance { return e.appearance.Get() }
-
-// Token returns the value an embedding host gives token name (Tokens) in
-// the appearance the app shows, and whether it gives one.
-func (e *Env) Token(name string) (string, bool) {
-	t := e.tokens.Get()
-	if e.dark.Get() {
-		if v, ok := t.Dark[name]; ok {
-			return v, true
-		}
-	}
-	v, ok := t.Values[name]
-	return v, ok
-}
 
 // FontScale returns the user's text size multiplier.
 func (e *Env) FontScale() float32 { return e.fontScale.Get() }

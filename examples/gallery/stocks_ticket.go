@@ -22,6 +22,8 @@ type banner struct {
 }
 
 func newBanner(cx *core.Scope) banner {
+	colors := colorsOf(cx)
+	isDark := cx.Dark()
 	t := core.NewAnimatedValue(cx, 0)
 	type msg struct {
 		title, detail string
@@ -62,7 +64,8 @@ func newBanner(cx *core.Scope) banner {
 }
 
 // ticketLine is a line of the review: a label and a value.
-func ticketLine(lbl string, value func() string, strong bool) core.Node {
+func ticketLine(cx *core.Scope, lbl string, value func() string, strong bool) core.Node {
+	colors := colorsOf(cx)
 	size, weight := core.Points(14), regular
 	if strong {
 		size, weight = 17, semibold
@@ -77,6 +80,9 @@ func ticketLine(lbl string, value func() string, strong bool) core.Node {
 // price stepper, quantity chips and the estimated cost; reviewing expands
 // the ticket and placing calls onPlaced. Nothing is sent anywhere.
 func ticket(cx *core.Scope, open func() bool, s *stock, sd *core.Signal[side], onPlaced func(title, detail string, s side)) core.Node {
+	colors := colorsOf(cx)
+	tints := tintsOf(cx)
+	fin := finOf(cx)
 	limit := core.NewSignal(cx, core.Untracked(cx, s.quote.Get).last)
 	quantity := core.NewSignal(cx, 500.0)
 	review := core.NewSignal(cx, false)
@@ -206,13 +212,15 @@ func ticket(cx *core.Scope, open func() bool, s *stock, sd *core.Signal[side], o
 				}, Children: []core.Node{
 					core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
 						core.Text{ContentFunc: func() string { return fmt.Sprintf("%s %s %s", verb(), grouped(quantity.Get(), 0), s.code) },
-							StyleFunc: func() core.Style { return core.Style{FlexGrow: 1, FontSize: 15, FontWeight: semibold, Color: tone()} }},
+							StyleFunc: func() core.Style {
+								return core.Style{FlexGrow: 1, FontSize: 15, FontWeight: semibold, Color: tone()}
+							}},
 						text("LIMIT · DAY", 12, regular, colors.muted),
 					}},
 					core.View{Style: core.Style{Gap: 2}, Children: []core.Node{
-						ticketLine("Limit", func() string { return p(limit.Get()) }, false),
-						ticketLine("Fees (est.)", func() string { return grouped(fee(), 2) }, false),
-						ticketLine("Total", func() string {
+						ticketLine(cx, "Limit", func() string { return p(limit.Get()) }, false),
+						ticketLine(cx, "Fees (est.)", func() string { return grouped(fee(), 2) }, false),
+						ticketLine(cx, "Total", func() string {
 							if sd.Get() == "buy" {
 								return grouped(cost()+fee(), 2)
 							}

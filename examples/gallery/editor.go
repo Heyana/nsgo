@@ -93,7 +93,9 @@ var goKeywords = []string{"break", "case", "chan", "const", "continue", "default
 var identifier = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
 
 // editorStyles is the gallery's editor look; base has none.
-func editorStyles() editor.Styles {
+func editorStyles(cx *core.Scope) editor.Styles {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	popup := fin.menu.over(core.Style{CornerRadius: 8, BorderWidth: 1, BorderColor: colors.border, Padding: core.All(4)})
 	return editor.Styles{
 		Gutter:                 core.Style{Color: colors.faint, FontSize: 12},
@@ -161,6 +163,8 @@ func bigFile() string {
 // diagnostics, completion from the text's words and go to definition,
 // and 200 000 lines that open and scroll as a short file does.
 func editorDemo(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	language := core.NewSignal(cx, "go")
 	text := core.NewSignal(cx, editorSources["go"])
 	softWrap, numbers, finding := core.NewSignal(cx, false), core.NewSignal(cx, true), core.NewSignal(cx, false)
@@ -245,14 +249,15 @@ func editorDemo(cx *core.Scope) core.Node {
 				BorderColor: colors.fieldBorder, Background: colors.field, Padding: core.Symmetric(0, 8), FontSize: 13, Color: colors.text})}
 	}
 	findBar := core.Show{When: finding.Get, Then: func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
 		return core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
 			field("Find", query),
-			tool("Use a regular expression", ".*", regex.Get, toggle(regex)),
-			tool("Previous match", "↑", nil, func() { ref.Run(editor.FindPrevious) }),
-			tool("Next match", "↓", nil, func() { ref.Run(editor.FindNext) }),
+			tool(cx, "Use a regular expression", ".*", regex.Get, toggle(regex)),
+			tool(cx, "Previous match", "↑", nil, func() { ref.Run(editor.FindPrevious) }),
+			tool(cx, "Next match", "↓", nil, func() { ref.Run(editor.FindNext) }),
 			field("Replace", replacement),
-			tool("Replace the match", "Replace", nil, func() { ref.Replace(replacement.GetUntracked()) }),
-			tool("Replace every match", "All", nil, func() {
+			tool(cx, "Replace the match", "Replace", nil, func() { ref.Replace(replacement.GetUntracked()) }),
+			tool(cx, "Replace every match", "All", nil, func() {
 				n := ref.ReplaceAll(replacement.GetUntracked())
 				last.Set(fmt.Sprintf("Replaced %d", n))
 			}),
@@ -275,17 +280,18 @@ func editorDemo(cx *core.Scope) core.Node {
 	return core.View{Style: fillPage.Merge(core.Style{Background: colors.background, Padding: core.All(pad), Gap: 12}), Children: []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
 			core.View{Style: core.Style{Width: core.Pt(420)}, Children: []core.Node{segmented(langs, language.Get, open, true)}},
-			tool("Find and replace", "Find", finding.Get, toggle(finding)),
-			tool("Soft wrap", "Wrap", softWrap.Get, toggle(softWrap)),
-			tool("Line numbers", "Numbers", numbers.Get, toggle(numbers)),
-			tool("Fold everything", "Fold all", nil, func() { ref.Run(editor.FoldAll) }),
-			tool("Unfold everything", "Unfold all", nil, func() { ref.Run(editor.UnfoldAll) }),
+			tool(cx, "Find and replace", "Find", finding.Get, toggle(finding)),
+			tool(cx, "Soft wrap", "Wrap", softWrap.Get, toggle(softWrap)),
+			tool(cx, "Line numbers", "Numbers", numbers.Get, toggle(numbers)),
+			tool(cx, "Fold everything", "Fold all", nil, func() { ref.Run(editor.FoldAll) }),
+			tool(cx, "Unfold everything", "Unfold all", nil, func() { ref.Run(editor.UnfoldAll) }),
 		}},
 		findBar,
 		core.View{Style: fin.card.over(core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0), CornerRadius: radiusInset,
 			BorderWidth: 1, BorderColor: colors.border, Background: colors.surface, Overflow: core.Hidden}), Children: []core.Node{
 			// The props the editor reads once make another editor.
 			core.Dynamic(func(cx *core.Scope) core.Node {
+				colors := colorsOf(cx)
 				lang, wrap, nums := language.Get(), softWrap.Get(), numbers.Get()
 				if lang == "big" {
 					lang = "go"
@@ -337,7 +343,7 @@ func editorDemo(cx *core.Scope) core.Node {
 						caretAt.Set(s)
 					},
 					OnLineNumberPress: func(line int) { last.Set(fmt.Sprintf("Line %d pressed", line+1)) },
-					Styles:            editorStyles(),
+					Styles:            editorStyles(cx),
 					Style:             core.Style{FlexGrow: 1, Color: colors.text},
 				}
 			}),

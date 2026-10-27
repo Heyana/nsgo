@@ -29,6 +29,9 @@ var feels = map[string]core.SpringConfig{
 // drag's velocity. A canvas draws a tether to it from the same animated
 // values, with no engine work per frame.
 func physicsDemo(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	tints := tintsOf(cx)
+	fin := finOf(cx)
 	env := cx.Env()
 	x, y := core.NewAnimatedValue(cx, 0), core.NewAnimatedValue(cx, 0)
 	pressed, lift := core.NewAnimatedValue(cx, 0), core.NewAnimatedValue(cx, 0)
@@ -143,12 +146,12 @@ func physicsDemo(cx *core.Scope) core.Node {
 		}
 		return core.View{Style: outer, Children: []core.Node{
 			appear(0, false, core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12}, Children: []core.Node{
-				iconTile(iconPhysics, 40),
+				iconTile(cx, iconPhysics, 40),
 				core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: []core.Node{
 					text("Drag and release", 17, semibold, colors.text),
 					core.Text{Content: hint(cx, "Tap to pulse, long press to reset", "Click to pulse, press and hold to reset"), MaxLines: 1, Style: core.Style{FontSize: 13, Color: colors.muted}},
 				}},
-				badge("UI thread", toneAccent),
+				badge(cx, "UI thread", toneAccent),
 			}}),
 			core.View{OnLayout: func(b core.Bounds) { stageSize.Set(b.Size) }, Style: st, Children: []core.Node{
 				tether,
@@ -177,23 +180,23 @@ func physicsDemo(cx *core.Scope) core.Node {
 						}},
 					Children: []core.Node{icon(iconGestures, 28, colors.onAccent), text("Drag me", 15, bold, colors.onAccent)}},
 			}},
-			core.View{Style: cardStyle().Merge(core.Style{Padding: core.All(12), Gap: 12}), Children: []core.Node{
+			core.View{Style: cardStyle(cx).Merge(core.Style{Padding: core.All(12), Gap: 12}), Children: []core.Node{
 				segmented([]option[string]{{value: "spring", label: "Spring"}, {value: "coast", label: "Coast"}, {value: "snap", label: "Snap"}}, mode.Get, mode.Set, false),
 				segmented([]option[string]{{value: "soft", label: "Soft"}, {value: "bouncy", label: "Bouncy"}, {value: "firm", label: "Firm"}}, feel.Get, feel.Set, true),
 				core.View{Style: core.Style{Direction: core.Row, Padding: core.Symmetric(0, 4)}, Children: []core.Node{
-					stat("Releases", func() string { return itoa(releases.Get()) }, toneNeutral, core.Pct(30)),
+					stat(cx, "Releases", func() string { return itoa(releases.Get()) }, toneNeutral, core.Pct(30)),
 					core.Dynamic(func(*core.Scope) core.Node {
 						t := toneNeutral
 						if speed.Get() > 1500 {
 							t = toneWarn
 						}
-						return stat("Speed", func() string { return fmt.Sprintf("%d pt/s", speed.Get()) }, t, core.Pct(34))
+						return stat(cx, "Speed", func() string { return fmt.Sprintf("%d pt/s", speed.Get()) }, t, core.Pct(34))
 					}),
 					core.Dynamic(func(*core.Scope) core.Node {
 						if mode.Get() == "snap" {
-							return stat("Corner", corner.Get, toneNeutral, core.Pct(36))
+							return stat(cx, "Corner", corner.Get, toneNeutral, core.Pct(36))
 						}
-						return stat("Spring", func() string { f := feels[feel.Get()]; return fmt.Sprintf("%.0f / %.0f", f.Stiffness, f.Damping) }, toneNeutral, core.Pct(36))
+						return stat(cx, "Spring", func() string { f := feels[feel.Get()]; return fmt.Sprintf("%.0f / %.0f", f.Stiffness, f.Damping) }, toneNeutral, core.Pct(36))
 					}),
 				}},
 				core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignBaseline, Gap: 8, Padding: core.Symmetric(0, 4)}, Children: []core.Node{
@@ -219,6 +222,7 @@ func physicsDemo(cx *core.Scope) core.Node {
 	// Short windows scroll, with a stage of fixed height; the rest fills.
 	short := core.NewMemo(cx, func() bool { return env.Window().Height < shortWindow })
 	return core.Dynamic(func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
 		if short.Get() {
 			return core.Scroll{Style: core.Style{FlexGrow: 1, Background: colors.background}, Children: []core.Node{body(true)}}
 		}

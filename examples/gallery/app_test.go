@@ -76,7 +76,7 @@ func TestEveryDemoBuilds(t *testing.T) {
 	env.Dark = true
 	wide.SetEnvironment(env)
 	wide.Find("id:demo-" + allDemos()[len(allDemos())-1].name)
-	if got := wide.Find("id:sidebar").Style.Background; got != darkPalette.inset {
+	if got := wide.Find("id:sidebar").Style.Background; got != galleryTheme().Dark.Colors["inset"] {
 		t.Fatalf("sidebar = %x, want the dark inset", got)
 	}
 }

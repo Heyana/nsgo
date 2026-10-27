@@ -10,7 +10,8 @@ import (
 )
 
 // spinner is a ring that spins on the platform: the Spin keyframes.
-func spinner(size core.Points, tint core.Color) core.Node {
+func spinner(cx *core.Scope, size core.Points, tint core.Color) core.Node {
+	colors := colorsOf(cx)
 	if size == 0 {
 		size = 14
 	}
@@ -24,26 +25,28 @@ func spinner(size core.Points, tint core.Color) core.Node {
 
 // caret is the streaming caret: an inline block that pulses on the
 // platform.
-func caret() core.Node {
+func caret(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	return core.View{Style: core.Style{Width: core.Pt(8), Height: core.Pt(16), Margin: core.Edges{Left: 2}, CornerRadius: 2, Background: colors.accent,
 		Animation: core.KeyframeAnimation{Keyframes: core.KeyframesPulse, Duration: ms(900)}}}
 }
 
 // actionButton is a small icon button under a reply, a 44 pt target.
-func actionButton(name func() iconName, lbl string, active func() bool, t tone, onPress func()) core.Node {
+func actionButton(cx *core.Scope, name func() iconName, lbl string, active func() bool, t tone, onPress func()) core.Node {
+	colors := colorsOf(cx)
 	return press(pressProps{onPress: onPress, scale: 0.86, label: lbl, selected: active},
 		core.View{Style: core.Style{Width: core.Pt(36), Height: core.Pt(36), CornerRadius: 18, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Margin: core.All(4)}, Children: []core.Node{
 			core.View{StyleFunc: func() core.Style {
 				bg := transparent
 				if active() {
-					bg = t.tint()
+					bg = t.tint(cx)
 				}
 				return core.Style{Position: core.Absolute, Width: core.Pt(32), Height: core.Pt(32), CornerRadius: 16, Background: bg, Transition: core.Transition{Duration: ms(180)}}
 			}},
 			core.Dynamic(func(*core.Scope) core.Node {
 				c := colors.muted
 				if active() {
-					c = t.color()
+					c = t.color(cx)
 				}
 				return icon(name(), 17, c)
 			}),
@@ -51,7 +54,8 @@ func actionButton(name func() iconName, lbl string, active func() bool, t tone, 
 }
 
 // dateSeparator is a row between days.
-func dateSeparator(lbl func() string) core.Node {
+func dateSeparator(cx *core.Scope, lbl func() string) core.Node {
+	colors := colorsOf(cx)
 	line := core.View{Style: core.Style{FlexGrow: 1, Height: core.Pt(1), Background: colors.line}}
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(12, 16)}, Children: []core.Node{
 		line, textf(lbl, 12, medium, colors.faint), line,
@@ -67,13 +71,15 @@ func fileKind(name string) string {
 }
 
 // fileChip is a file as a chip: an icon, the name and the size.
-func fileChip(f fileRef, onRemove func()) core.Node {
+func fileChip(cx *core.Scope, f fileRef, onRemove func()) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	right := core.Points(14)
 	if onRemove != nil {
 		right = 4
 	}
 	children := []core.Node{
-		core.View{Style: core.Style{Width: core.Pt(30), Height: core.Pt(30), CornerRadius: 8, Background: toneDanger.tint(), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
+		core.View{Style: core.Style{Width: core.Pt(30), Height: core.Pt(30), CornerRadius: 8, Background: toneDanger.tint(cx), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
 			Children: []core.Node{icon(glyphFileText, 16, colors.danger)}},
 		core.View{Style: core.Style{Gap: 1}, Children: []core.Node{
 			core.Text{Content: f.name, MaxLines: 1, Style: core.Style{FontSize: 14, Color: colors.text, MaxWidth: core.Pt(170)}},
@@ -89,7 +95,8 @@ func fileChip(f fileRef, onRemove func()) core.Node {
 }
 
 // attachedPhoto is an attached image, rounded.
-func attachedPhoto(src core.ImageSource, w, h core.Points) core.Node {
+func attachedPhoto(cx *core.Scope, src core.ImageSource, w, h core.Points) core.Node {
+	colors := colorsOf(cx)
 	return core.View{Style: core.Style{Width: core.Pt(w), Height: core.Pt(h), CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous, Overflow: core.Hidden,
 		Background: colors.raised, BorderWidth: 1, BorderColor: colors.border}, Children: []core.Node{
 		core.Image{Source: src, ResizeMode: core.Cover, Style: core.Style{Width: core.Pt(w), Height: core.Pt(h)}},
@@ -101,7 +108,10 @@ var toolStateTone = map[toolState]tone{toolPending: toneNeutral, toolRunning: to
 
 // toolCard is a tool call: a header with its state, then its result once
 // done.
-func toolCard(t func() chatTool) core.Node {
+func toolCard(cx *core.Scope, t func() chatTool) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
+	isDark := cx.Dark()
 	first := t()
 	name, title, detail := iconTerminal, "Run code", first.lang+", sandboxed"
 	switch first.kind {
@@ -136,16 +146,18 @@ func toolCard(t func() chatTool) core.Node {
 					if st == toolPending {
 						tint = colors.faint
 					}
-					return hrow(8, spinner(14, tint), text(toolStateLabel[st], 13, regular, colors.muted))
+					return hrow(8, spinner(cx, 14, tint), text(toolStateLabel[st], 13, regular, colors.muted))
 				}
-				return badge(toolStateLabel[st], toolStateTone[st])
+				return badge(cx, toolStateLabel[st], toolStateTone[st])
 			}),
 		}},
-		toolBody(t),
+		toolBody(cx, t),
 	}}
 }
 
-func toolBody(t func() chatTool) core.Node {
+func toolBody(cx *core.Scope, t func() chatTool) core.Node {
+	colors := colorsOf(cx)
+	isDark := cx.Dark()
 	top := core.Style{Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.line}}
 	done := func() bool { return t().state == toolDone }
 	switch t().kind {
@@ -154,8 +166,8 @@ func toolBody(t func() chatTool) core.Node {
 			var rows []core.Node
 			for i, s := range t().sources {
 				rows = append(rows, core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Height: core.Pt(48), Padding: core.Symmetric(0, 12)}, Children: []core.Node{
-					core.View{Style: core.Style{Width: core.Pt(24), Height: core.Pt(24), CornerRadius: 6, Background: s.tone.tint(), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
-						Children: []core.Node{text(strings.ToUpper(s.site[:1]), 12, bold, s.tone.color())}},
+					core.View{Style: core.Style{Width: core.Pt(24), Height: core.Pt(24), CornerRadius: 6, Background: s.tone.tint(cx), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
+						Children: []core.Node{text(strings.ToUpper(s.site[:1]), 12, bold, s.tone.color(cx))}},
 					core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 1}, Children: []core.Node{
 						core.Text{Content: s.title, MaxLines: 1, Style: core.Style{FontSize: 14, Color: colors.text}},
 						text(s.site, 12, regular, colors.faint),
@@ -212,9 +224,11 @@ func toolBody(t func() chatTool) core.Node {
 }
 
 // errorRow is the reply's error: what went wrong and a Retry button.
-func errorRow(message func() string, onRetry func()) core.Node {
+func errorRow(cx *core.Scope, message func() string, onRetry func()) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.All(12), CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous,
-		Background: toneDanger.tint(), BorderWidth: 1, BorderColor: alpha(colors.danger, 0.32)}, Children: []core.Node{
+		Background: toneDanger.tint(cx), BorderWidth: 1, BorderColor: alpha(colors.danger, 0.32)}, Children: []core.Node{
 		icon(glyphAlert, 18, colors.danger),
 		core.Text{ContentFunc: message, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, LineHeight: 19, Color: colors.text}},
 		press(pressProps{onPress: onRetry, label: "Retry"}, core.View{Style: fin.light.over(core.Style{Height: core.Pt(36), Padding: core.Symmetric(0, 14), CornerRadius: 18,
@@ -225,15 +239,18 @@ func errorRow(message func() string, onRetry func()) core.Node {
 }
 
 // avatar is the assistant's: a small tile with the spark.
-func avatar() core.Node {
+func avatar(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	return core.View{Style: fin.raised.over(core.Style{Width: core.Pt(26), Height: core.Pt(26), CornerRadius: 8, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
 		Background: colors.raised, BorderWidth: 1, BorderColor: colors.border}), Children: []core.Node{icon(iconSpark, 14, colors.accent)}}
 }
 
 // chatStyles is a reply's typography at a chat's scale: tighter than a
 // document's.
-func chatStyles() textview.Styles {
-	s := readingStyles()
+func chatStyles(cx *core.Scope) textview.Styles {
+	colors := colorsOf(cx)
+	s := readingStyles(cx)
 	s[textview.PartRoot] = core.Style{Gap: 12, FontSize: 15, LineHeight: 22, Color: colors.text}
 	s[textview.PartHeading1] = core.Style{FontSize: 20, LineHeight: 26}
 	s[textview.PartHeading2] = core.Style{FontSize: 17, LineHeight: 22}
@@ -254,10 +271,10 @@ func chatMarkdown(md func() string, streaming func() bool) core.Node {
 				on := streaming()
 				var c core.Node
 				if on {
-					c = caret()
+					c = caret(cx)
 				}
 				return textview.TextView{MarkdownFunc: md, Options: textview.Options{Streaming: on}, StreamingCaret: c, Selectable: true, NoCodeBlockScrollbar: true,
-					Styles: chatStyles(), Highlighter: hl, CodeBlockActions: []string{textview.CopyAction}, RenderCodeBlockAction: copyAction, RenderImage: pressableImages(viewing)}
+					Styles: chatStyles(cx), Highlighter: hl, CodeBlockActions: []string{textview.CopyAction}, RenderCodeBlockAction: copyAction, RenderImage: pressableImages(viewing)}
 			}),
 			imageViewer(cx, viewing.Get, func() { viewing.Set(textview.Image{}) }),
 		}}

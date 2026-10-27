@@ -155,7 +155,8 @@ type stockPageRows struct {
 }
 
 // tableStyles is the gallery's table look; base has none.
-func tableStyles() base.DataTableStyles {
+func tableStyles(cx *core.Scope) base.DataTableStyles {
+	colors := colorsOf(cx)
 	selected := &core.Style{Color: colors.text, Opacity: core.Alpha(1)}
 	chevron := core.Style{Color: colors.muted, Opacity: core.Alpha(0.6), Selected: selected}
 	return base.DataTableStyles{
@@ -189,6 +190,7 @@ func tableStyles() base.DataTableStyles {
 // column sortable, rows, cells or columns selected, columns resized and
 // moved.
 func dataTableDemo(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	mode := core.NewSignal(cx, "row")
 	sort := core.NewSignal(cx, base.DataTableSort{})
 	page := core.NewSignalFunc(cx, stockPageRows{}, func(a, b stockPageRows) bool { return false })
@@ -322,13 +324,13 @@ func dataTableDemo(cx *core.Scope) core.Node {
 					func(v string) { mode.Set(v); selection.Set(base.NoTableSelection) }, true),
 			}},
 			core.Dynamic(func(cx *core.Scope) core.Node {
-				return tool("Toggle live updates", onOff("Live", live)(), nil, toggle(live))
+				return tool(cx, "Toggle live updates", onOff("Live", live)(), nil, toggle(live))
 			}),
 			core.Dynamic(func(cx *core.Scope) core.Node {
-				return tool("Toggle stripes", onOff("Stripes", stripe)(), nil, toggle(stripe))
+				return tool(cx, "Toggle stripes", onOff("Stripes", stripe)(), nil, toggle(stripe))
 			}),
-			tool("Go to row 500000", "Row 500,000", nil, func() { table.ScrollToRow(499_999, false) }),
-			tool("Go to Indicator 30", "Indicator 30", nil, func() { table.ScrollToColumn("x30", false) }),
+			tool(cx, "Go to row 500000", "Row 500,000", nil, func() { table.ScrollToRow(499_999, false) }),
+			tool(cx, "Go to Indicator 30", "Indicator 30", nil, func() { table.ScrollToColumn("x30", false) }),
 		}},
 		core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, AlignItems: core.AlignCenter, Gap: 12}, Children: []core.Node{
 			status(describe, colors.text),
@@ -353,7 +355,7 @@ func dataTableDemo(cx *core.Scope) core.Node {
 			Stripe:     stripe.Get,
 			CellSelect: func() bool { return mode.Get() == "cell" },
 			Sort:       sort.Get,
-			Styles:     tableStyles(),
+			Styles:     tableStyles(cx),
 			Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0), CornerRadius: 8, BorderWidth: 1,
 				BorderColor: colors.border, Background: colors.background, Color: colors.text},
 			OnSortChange: func(next base.DataTableSort) {
@@ -375,6 +377,7 @@ func dataTableDemo(cx *core.Scope) core.Node {
 // website shows it: the parts give screen readers a table, the styles its
 // look.
 func tableCard(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	invoices := [][4]string{{"INV001", "Paid", "Card", "$250.00"}, {"INV002", "Pending", "Transfer", "$150.00"},
 		{"INV003", "Unpaid", "Card", "$350.00"}, {"INV004", "Paid", "Cash", "$450.00"}}
 	widths := []core.Length{core.Pt(84), {}, core.Pt(84), core.Pt(84)}
@@ -410,7 +413,7 @@ func tableCard(cx *core.Scope) core.Node {
 	for i, title := range []string{"Invoice", "Status", "Method", "Amount"} {
 		head = append(head, cell(i, true, i == 3, title))
 	}
-	return card(cardProps{icon: iconLists, title: "Table", subtitle: "A few rows the app writes out, with a table's roles"},
+	return card(cx, cardProps{icon: iconLists, title: "Table", subtitle: "A few rows the app writes out, with a table's roles"},
 		base.Table{Label: "Recent invoices", Children: []core.Node{
 			base.TableHeader{Children: []core.Node{base.TableRow{Style: line, Children: head}}},
 			base.TableBody{Children: body},

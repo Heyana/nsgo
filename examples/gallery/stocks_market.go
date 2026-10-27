@@ -617,7 +617,8 @@ func signed(v float64, decimals int) string {
 func percentOf(q quote) float64 { return (q.last - q.prevClose) / q.prevClose * 100 }
 
 // toneOf is the rising, falling or flat color.
-func toneOf(v float64) core.Color {
+func toneOf(cx *core.Scope, v float64) core.Color {
+	colors := colorsOf(cx)
 	switch {
 	case v > 0:
 		return colors.up

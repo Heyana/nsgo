@@ -107,13 +107,15 @@ type node struct {
 	props driver.ViewProps
 	// material is a view's IOS.BackdropMaterial.
 	material driver.BackdropMaterial
-	env      *envValues // what its padding's and margin's terms come to
-	text     *textNode
-	input    *inputNode
-	scroll   *scrollNode
-	image    *imageNode
-	hoist    *hoistNode // an overlay's or a modal's
-	hosted   []*node    // the overlays and modals this root view or modal hosts
+	// appearance is what its subtree forces (Scope.SetSubtreeAppearance).
+	appearance Appearance
+	env        *envValues // what its padding's and margin's terms come to
+	text       *textNode
+	input      *inputNode
+	scroll     *scrollNode
+	image      *imageNode
+	hoist      *hoistNode // an overlay's or a modal's
+	hosted     []*node    // the overlays and modals this root view or modal hosts
 	// hidden is set, as the last layout found, for a node DisplayNone
 	// hides: its own or a shadow ancestor's, across hoisting too.
 	hidden bool
@@ -539,6 +541,14 @@ func (t *Tree) newNode(kind driver.ViewKind, parent *node, owner *Scope) *node {
 		t.childrenChanged(parent)
 	}
 	t.markResolve(n)
+	if kind != 0 && owner != nil && owner.rt.subtreeAppearance {
+		owner.renderEffect(func() {
+			if a := subtreeAppearance(owner); a != n.appearance {
+				n.appearance = a
+				t.mark(n)
+			}
+		})
+	}
 	return n
 }
 

@@ -33,7 +33,8 @@ const bleed core.Points = 8
 
 // controlRow is a control's row: the control and its label, the whole row
 // pressable.
-func (z controlSizes) controlRow(first bool) core.Style {
+func (z controlSizes) controlRow(cx *core.Scope, first bool) core.Style {
+	colors := colorsOf(cx)
 	s := core.Style{MinHeight: core.Pt(z.row), Direction: core.Row, AlignItems: core.AlignCenter, Gap: z.gap, Padding: core.Symmetric(z.padding, 0)}
 	if !first {
 		s.Borders, s.BorderColors = core.Edges{Top: 1}, core.EdgeColors{Top: colors.line}
@@ -45,8 +46,8 @@ func (z controlSizes) controlRow(first bool) core.Style {
 // bleed past the content on both sides with rounded corners, and the
 // content where it was (start: more room before it). The hairline above
 // it is a divider, so nothing moves.
-func (z controlSizes) hoverRow(first bool, start core.Points, disabled bool) core.Style {
-	s := z.controlRow(true)
+func (z controlSizes) hoverRow(cx *core.Scope, first bool, start core.Points, disabled bool) core.Style {
+	s := z.controlRow(cx, true)
 	s.Margin = core.Edges{Left: -bleed, Right: -bleed}
 	top := z.padding
 	if !first {
@@ -55,16 +56,17 @@ func (z controlSizes) hoverRow(first bool, start core.Points, disabled bool) cor
 	s.Padding = core.Edges{Left: bleed + start, Right: bleed, Top: top, Bottom: z.padding}
 	s.CornerRadius = bleed
 	s.Active = &core.Style{Opacity: core.Alpha(0.7)}
-	s.Focus = focusRing(-2)
+	s.Focus = focusRing(cx, -2)
 	s.Disabled = &core.Style{Opacity: core.Alpha(0.4)}
 	if !disabled {
-		s.Hover = hovered()
+		s.Hover = hovered(cx)
 	}
 	return s
 }
 
 // divider is the hairline above a hover row that is not the first.
-func divider(show bool) core.Node {
+func divider(cx *core.Scope, show bool) core.Node {
+	colors := colorsOf(cx)
 	if !show {
 		return core.Group{}
 	}
@@ -72,7 +74,9 @@ func divider(show bool) core.Node {
 }
 
 // onFill is the fill of a box or ring that is on, and of one that is off.
-func onFill(on bool, s core.Style) core.Style {
+func onFill(cx *core.Scope, on bool, s core.Style) core.Style {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	if on {
 		s.Background, s.BorderColor, s.Shadows = colors.accentFill, colors.accentFill, fin.chip.shadows
 	} else {
@@ -91,13 +95,14 @@ const (
 )
 
 // box is a checkbox's box: empty, or orange with a check or a dash.
-func (z controlSizes) box(m mark) core.Style {
-	return onFill(m != markNone, core.Style{Width: core.Pt(z.control), Height: core.Pt(z.control), CornerRadius: z.corner,
+func (z controlSizes) box(cx *core.Scope, m mark) core.Style {
+	return onFill(cx, m != markNone, core.Style{Width: core.Pt(z.control), Height: core.Pt(z.control), CornerRadius: z.corner,
 		AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, BorderWidth: 1})
 }
 
 // boxMark is the mark inside a checkbox's box.
-func (z controlSizes) boxMark(m func() mark) core.Node {
+func (z controlSizes) boxMark(cx *core.Scope, m func() mark) core.Node {
+	colors := colorsOf(cx)
 	return core.Dynamic(func(*core.Scope) core.Node {
 		switch m() {
 		case markCheck:
@@ -110,9 +115,10 @@ func (z controlSizes) boxMark(m func() mark) core.Node {
 }
 
 // ring is a radio's ring: empty, or orange with a dot.
-func (z controlSizes) ring(on func() bool) core.Node {
+func (z controlSizes) ring(cx *core.Scope, on func() bool) core.Node {
+	colors := colorsOf(cx)
 	return core.View{StyleFunc: func() core.Style {
-		return onFill(on(), core.Style{Width: core.Pt(z.control), Height: core.Pt(z.control), CornerRadius: z.control / 2,
+		return onFill(cx, on(), core.Style{Width: core.Pt(z.control), Height: core.Pt(z.control), CornerRadius: z.control / 2,
 			AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, BorderWidth: 1})
 	}, Children: []core.Node{core.Show{When: on, Then: func(*core.Scope) core.Node {
 		return core.View{Style: core.Style{Width: core.Pt(z.dot), Height: core.Pt(z.dot), CornerRadius: z.dot / 2, Background: colors.onAccent}}
@@ -120,7 +126,8 @@ func (z controlSizes) ring(on func() bool) core.Node {
 }
 
 // label is a label and a quieter line under it.
-func (z controlSizes) labelled(label string, detail func() string) core.Node {
+func (z controlSizes) labelled(cx *core.Scope, label string, detail func() string) core.Node {
+	colors := colorsOf(cx)
 	children := []core.Node{text(label, z.label, regular, colors.text)}
 	if detail != nil {
 		children = append(children, textf(detail, z.detail, regular, colors.muted))
@@ -175,7 +182,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 
 	setting := func(cx *core.Scope, label string, detail func() string, on *core.Signal[bool], disabled func() bool, first bool) core.Node {
 		look := newSwitchLook(cx, on.Get, z.small)
-		s := z.hoverRow(first, 0, false)
+		s := z.hoverRow(cx, first, 0, false)
 		// The track at the trailing edge, after the label.
 		s.Direction = core.RowReverse
 		return base.Switch{Checked: on.Get, Disabled: disabled, Label: label,
@@ -184,13 +191,13 @@ func controlsDemo(cx *core.Scope) core.Node {
 				last.Set(fmt.Sprintf("%s: %s", label, onOff(v)))
 			},
 			Style: s, TrackStyle: look.track, ThumbStyleFunc: look.thumb,
-			Children: []core.Node{divider(!first), z.labelled(label, detail)}}
+			Children: []core.Node{divider(cx, !first), z.labelled(cx, label, detail)}}
 	}
 
 	settings := func(cx *core.Scope) core.Node {
 		notifications, badges := core.NewSignal(cx, true), core.NewSignal(cx, true)
 		haptics, lowData := core.NewSignal(cx, false), core.NewSignal(cx, false)
-		return card(cardProps{icon: iconControls, title: "Switch", subtitle: "Settings that take effect at once"},
+		return card(cx, cardProps{icon: iconControls, title: "Switch", subtitle: "Settings that take effect at once"},
 			core.View{Children: []core.Node{
 				setting(cx, "Notifications", func() string {
 					if notifications.Get() {
@@ -215,6 +222,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 	}
 
 	filter := func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
 		shown := core.NewSignalFunc(cx, []string{"Photos", "Videos", "Live Photos"}, slices.Equal)
 		has := func(name string) bool { return slices.Contains(shown.Get(), name) }
 		all := func() bool { return len(shown.Get()) == len(kinds) }
@@ -238,7 +246,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 				shown.Set(names)
 				last.Set(fmt.Sprintf("Select all: %v", on))
 			},
-			Style: z.hoverRow(true, 0, false), IndicatorStyleFunc: func() core.Style { return z.box(boxMark()) }, Indicator: z.boxMark(boxMark),
+			Style: z.hoverRow(cx, true, 0, false), IndicatorStyleFunc: func() core.Style { return z.box(cx, boxMark()) }, Indicator: z.boxMark(cx, boxMark),
 			Children: []core.Node{core.Text{Content: "Select all", Style: core.Style{FlexGrow: 1, FontSize: z.label, FontWeight: semibold, Color: colors.text}}}}}
 		for _, k := range kinds {
 			m := func() mark {
@@ -259,8 +267,8 @@ func controlsDemo(cx *core.Scope) core.Node {
 					last.Set(fmt.Sprintf("%s: %v", k.name, on))
 				},
 				// One level under "Select all": the boxes line up with its label.
-				Style: z.hoverRow(false, z.control+z.gap, false), IndicatorStyleFunc: func() core.Style { return z.box(m()) }, Indicator: z.boxMark(m),
-				Children: []core.Node{divider(true),
+				Style: z.hoverRow(cx, false, z.control+z.gap, false), IndicatorStyleFunc: func() core.Style { return z.box(cx, m()) }, Indicator: z.boxMark(cx, m),
+				Children: []core.Node{divider(cx, true),
 					core.Text{Content: k.name, Style: core.Style{FlexGrow: 1, FontSize: z.label, Color: colors.text}},
 					text(thousands(k.count), z.detail, regular, colors.faint)}})
 		}
@@ -273,8 +281,8 @@ func controlsDemo(cx *core.Scope) core.Node {
 			}
 			return n
 		}
-		return card(cardProps{icon: iconControls, title: "Checkbox", subtitle: "A filter: “Select all” shows a partial selection",
-			right: badgef(func() string { return fmt.Sprintf("%d of %d", len(shown.Get()), len(kinds)) }, toneNeutral, false)},
+		return card(cx, cardProps{icon: iconControls, title: "Checkbox", subtitle: "A filter: “Select all” shows a partial selection",
+			right: badgef(cx, func() string { return fmt.Sprintf("%d of %d", len(shown.Get()), len(kinds)) }, toneNeutral, false)},
 			core.View{Children: rows},
 			core.Text{ContentFunc: func() string {
 				if len(shown.Get()) == 0 {
@@ -286,14 +294,15 @@ func controlsDemo(cx *core.Scope) core.Node {
 	}
 
 	plansCard := func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
 		chosen := core.NewSignal(cx, "Plus")
 		var radios []core.Node
 		for i, p := range plans {
 			on := func() bool { return chosen.Get() == p.name }
 			radios = append(radios, base.Radio{Checked: on, Disabled: func() bool { return p.disabled }, Label: p.name,
 				OnChange: func(bool) { chosen.Set(p.name); last.Set("Plan: " + p.name) },
-				Style:    z.hoverRow(i == 0, 0, p.disabled),
-				Children: []core.Node{divider(i != 0), z.ring(on), z.labelled(p.name, func() string { return p.detail }),
+				Style:    z.hoverRow(cx, i == 0, 0, p.disabled),
+				Children: []core.Node{divider(cx, i != 0), z.ring(cx, on), z.labelled(cx, p.name, func() string { return p.detail }),
 					core.Text{Content: p.price, StyleFunc: func() core.Style {
 						c := colors.muted
 						if on() {
@@ -308,7 +317,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 		}
 		// The commit of the picker: under it on a phone, at its trailing
 		// edge with a pointer.
-		return card(cardProps{icon: iconControls, title: "Radio", subtitle: "A plan picker: one of a small set, all in view"},
+		return card(cx, cardProps{icon: iconControls, title: "Radio", subtitle: "A plan picker: one of a small set, all in view"},
 			base.RadioGroup{Label: "Plan", Children: radios},
 			core.View{Style: core.Style{AlignItems: align}, Children: []core.Node{core.Dynamic(func(*core.Scope) core.Node {
 				name := chosen.Get()
@@ -324,6 +333,8 @@ func controlsDemo(cx *core.Scope) core.Node {
 	}
 
 	sections := func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
+		fin := finOf(cx)
 		current := core.NewSignal(cx, "Overview")
 		// The track's padding and border: a tab is a pill inside them.
 		pill := z.tabs - 2*(3+1)
@@ -335,12 +346,12 @@ func controlsDemo(cx *core.Scope) core.Node {
 				StyleFunc: func() core.Style {
 					st := core.Style{FlexGrow: 1, FlexBasis: core.Pt(0), CornerRadius: pill / 2, BorderWidth: 1, BorderColor: transparent,
 						AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
-						Focus: focusRing(-2), Disabled: &core.Style{Opacity: core.Alpha(0.4)}}
+						Focus: focusRing(cx, -2), Disabled: &core.Style{Opacity: core.Alpha(0.4)}}
 					if selected() {
 						st = fin.pill.over(st)
 						st.BorderColor = fin.pill.border
 					} else if !s.disabled {
-						st.Hover = hovered()
+						st.Hover = hovered(cx)
 					}
 					return st
 				},
@@ -352,7 +363,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 					return core.Style{FontSize: 13, FontWeight: medium, Color: c}
 				}}}})
 		}
-		return card(cardProps{icon: iconControls, title: "Tabs", subtitle: "A section switcher: the app shows the selected one"},
+		return card(cx, cardProps{icon: iconControls, title: "Tabs", subtitle: "A section switcher: the app shows the selected one"},
 			base.Tabs{Label: "Sections", Style: core.Style{Height: core.Pt(z.tabs), Direction: core.Row, Gap: 2, Padding: core.All(3), CornerRadius: z.tabs / 2,
 				BorderWidth: 1, BorderColor: colors.border, Background: colors.inset, Shadows: fin.track.shadows}, Children: tabs},
 			core.Dynamic(func(*core.Scope) core.Node {
@@ -362,7 +373,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 						continue
 					}
 					for i, r := range s.rows {
-						st := z.controlRow(i == 0)
+						st := z.controlRow(cx, i == 0)
 						st.MinHeight, st.Padding = core.Pt(z.line), core.Edges{}
 						rows = append(rows, core.View{Style: st, Children: []core.Node{
 							core.Text{Content: r[0], Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: z.label, Color: colors.text}},
@@ -376,6 +387,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 	}
 
 	disclosure := func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
 		storage, advanced, originals := core.NewSignal(cx, false), core.NewSignal(cx, false), core.NewSignal(cx, false)
 		look := newSwitchLook(cx, originals.Get, z.small)
 		reduce := cx.Env().ReduceMotion
@@ -392,8 +404,8 @@ func controlsDemo(cx *core.Scope) core.Node {
 					}
 					last.Set(label + ": " + state)
 				},
-				Style: z.hoverRow(first, 0, false),
-				Children: []core.Node{divider(!first), z.labelled(label, func() string { return detail }),
+				Style: z.hoverRow(cx, first, 0, false),
+				Children: []core.Node{divider(cx, !first), z.labelled(cx, label, func() string { return detail }),
 					// A lane as wide as the chevron's stroke, so the chevron
 					// ends where the values below it end.
 					core.View{StyleFunc: func() core.Style {
@@ -415,9 +427,9 @@ func controlsDemo(cx *core.Scope) core.Node {
 				text(u[1], z.label, regular, colors.muted),
 			}})
 		}
-		keep := z.hoverRow(false, z.gap, false)
+		keep := z.hoverRow(cx, false, z.gap, false)
 		keep.Direction = core.RowReverse
-		return card(cardProps{icon: iconControls, title: "Collapsible", subtitle: "Details under a summary, kept while collapsed"},
+		return card(cx, cardProps{icon: iconControls, title: "Collapsible", subtitle: "Details under a summary, kept while collapsed"},
 			core.View{Children: []core.Node{
 				base.Collapsible{Open: storage.Get,
 					Content:  core.View{Style: core.Style{Padding: core.Edges{Left: z.gap, Bottom: z.padding}}, Children: used},
@@ -426,7 +438,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 					Content: base.Switch{Checked: originals.Get, Label: "Keep originals",
 						OnChange: func(on bool) { originals.Set(on); last.Set("Keep originals: " + onOff(on)) },
 						Style:    keep, TrackStyle: look.track, ThumbStyleFunc: look.thumb,
-						Children: []core.Node{divider(true), z.labelled("Keep originals", func() string {
+						Children: []core.Node{divider(cx, true), z.labelled(cx, "Keep originals", func() string {
 							if originals.Get() {
 								return "Edits are saved as copies"
 							}
@@ -437,6 +449,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 	}
 
 	transfers := func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
 		sent, running := core.NewSignal(cx, 0), core.NewSignal(cx, false)
 		var timer func()
 		stop := func() {
@@ -474,7 +487,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 		// trailing edge.
 		transfer := func(label string, detail func() string, value func() int, indeterminate, first bool) core.Node {
 			// The label row first: the children follow the track.
-			st := z.controlRow(first)
+			st := z.controlRow(cx, first)
 			st.Direction, st.AlignItems, st.Gap = core.ColumnReverse, core.AlignStretch, z.padding
 			return base.Progress{Value: func() float32 { return float32(value()) }, Indeterminate: func() bool { return indeterminate }, Label: label,
 				Style:      st,
@@ -497,7 +510,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 					return s
 				},
 				Children: []core.Node{core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: z.gap}, Children: []core.Node{
-					z.labelled(label, detail),
+					z.labelled(cx, label, detail),
 					core.Text{ContentFunc: func() string {
 						if indeterminate {
 							return "—"
@@ -511,7 +524,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 		if pointer {
 			flex, align = 0, core.AlignStart
 		}
-		return card(cardProps{icon: iconControls, title: "Progress", subtitle: "Transfers: the app owns the value"},
+		return card(cx, cardProps{icon: iconControls, title: "Progress", subtitle: "Transfers: the app owns the value"},
 			core.View{Children: []core.Node{
 				transfer("Upload", func() string {
 					switch {

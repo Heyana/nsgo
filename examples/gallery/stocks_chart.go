@@ -12,10 +12,11 @@ type period string
 var periods = []option[period]{{value: "intraday", label: "Intraday"}, {value: "1m", label: "1m"}, {value: "5m", label: "5m"}, {value: "15m", label: "15m"}, {value: "1D", label: "1D"}}
 
 // averages are the moving averages the candles show.
-func averages() []struct {
+func averages(cx *core.Scope) []struct {
 	n int
 	c core.Color
 } {
+	colors := colorsOf(cx)
 	return []struct {
 		n int
 		c core.Color
@@ -96,6 +97,7 @@ type chartFrame struct {
 // sideways for the crosshair; its lines move on the platform and the
 // readout floats beside it.
 func stockChart(cx *core.Scope, s *stock, running func() bool, height core.Points) core.Node {
+	colors := colorsOf(cx)
 	if height == 0 {
 		height = chartHeight
 	}
@@ -192,7 +194,7 @@ func stockChart(cx *core.Scope, s *stock, running func() bool, height core.Point
 
 	draw := func(d *core.Drawing, size core.Size) {
 		c := *colors
-		grid := gridColor()
+		grid := gridColor(cx)
 		dd := data.Get()
 		first, n := view()
 		end := min(len(dd), first+n)
@@ -243,7 +245,7 @@ func stockChart(cx *core.Scope, s *stock, running func() bool, height core.Point
 		if intraday() {
 			now := X(len(dd) - 1)
 			last := dd[len(dd)-1].c
-			tone := toneOf(last - prevClose())
+			tone := toneOf(cx, last-prevClose())
 			stockHatch(d, now+4, chartTop, pw-now-4, mainH, grid, 7)
 			hline(d, 0, pw, Y(prevClose()), c.faint)
 			// The price area and line.
@@ -329,7 +331,7 @@ func stockChart(cx *core.Scope, s *stock, running func() bool, height core.Point
 				d.SetFillColor(alpha(col, 0.5)).FillRect(x-body/2, volTop+volH-vh, body, vh)
 			}
 			d.SetLineWidth(1.2).SetLineJoin(core.JoinRound)
-			for _, a := range averages() {
+			for _, a := range averages(cx) {
 				d.SetStrokeColor(a.c).BeginPath()
 				started := false
 				for i := first; i < end; i++ {
@@ -363,7 +365,7 @@ func stockChart(cx *core.Scope, s *stock, running func() bool, height core.Point
 		if intraday() {
 			ref = prevClose()
 		}
-		tone := toneOf(last - ref)
+		tone := toneOf(cx, last-ref)
 		if !intraday() {
 			hline(d, 0, pw, ly, alpha(tone, 0.7), 3, 3)
 		}
@@ -375,15 +377,15 @@ func stockChart(cx *core.Scope, s *stock, running func() bool, height core.Point
 		if intraday() {
 			return core.Group{
 				core.Dynamic(func(*core.Scope) core.Node {
-					return legend(toneOf(focus().c-prevClose()), "Price", func() string { return p(focus().c) })
+					return legend(cx, toneOf(cx, focus().c-prevClose()), "Price", func() string { return p(focus().c) })
 				}),
-				legend(colors.warn, "Avg", func() string { return p(focus().a) }),
-				legend(colors.faint, "Vol", func() string { return compactNumber(focus().v) }),
+				legend(cx, colors.warn, "Avg", func() string { return p(focus().a) }),
+				legend(cx, colors.faint, "Vol", func() string { return compactNumber(focus().v) }),
 			}
 		}
 		var out core.Group
-		for _, a := range averages() {
-			out = append(out, legend(a.c, fmt.Sprintf("MA%d", a.n), func() string {
+		for _, a := range averages(cx) {
+			out = append(out, legend(cx, a.c, fmt.Sprintf("MA%d", a.n), func() string {
 				i := cursor.Get()
 				if i < 0 {
 					i = len(data.Get()) - 1

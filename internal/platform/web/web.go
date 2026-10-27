@@ -1494,6 +1494,10 @@ var roles = map[driver.Role]string{
 	driver.RoleCell:         "cell",
 }
 
+// colorSchemes are CSS's color-scheme of each appearance, inherited for
+// the system's.
+var colorSchemes = [...]string{driver.AppearanceLight: "light", driver.AppearanceDark: "dark"}
+
 var liveRegions = [...]string{driver.LiveRegionPolite: "polite", driver.LiveRegionAssertive: "assertive"}
 
 // actionKeys are the keys that perform a focused view's standard actions,
@@ -1556,6 +1560,7 @@ func setViewProps(v *view, p *driver.ViewProps) {
 	setAttr(el, "aria-live", liveRegions[p.LiveRegion])
 	setAttr(el, "aria-hidden", flag(p.ElementsHidden))
 	setAttr(el, "data-testid", p.TestID)
+	v.el.Get("style").Set("colorScheme", colorSchemes[p.Appearance])
 	if grouped != v.grouped {
 		// A group's children are read through its label alone.
 		v.grouped = grouped

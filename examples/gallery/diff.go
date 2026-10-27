@@ -140,7 +140,8 @@ rename to store_test.go
 `
 
 // diffStyles is the gallery's diff look; base has none.
-func diffStyles() diff.Styles {
+func diffStyles(cx *core.Scope) diff.Styles {
+	colors := colorsOf(cx)
 	added, deleted := colors.up, colors.down
 	return diff.Styles{
 		Side:             core.Style{Borders: core.Edges{Right: 1}, BorderColor: colors.line},
@@ -166,6 +167,8 @@ func diffStyles() diff.Styles {
 // the words changed marked, unchanged lines collapsed, changes navigated,
 // reverted and kept, and a patch of several files.
 func diffDemo(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	oldText, newText := core.NewSignal(cx, diffOld), core.NewSignal(cx, diffNew)
 	unified, patch, wrap := core.NewSignal(cx, false), core.NewSignal(cx, false), core.NewSignal(cx, false)
 	// The review's comments, under the lines they are on.
@@ -190,19 +193,20 @@ func diffDemo(cx *core.Scope) core.Node {
 		{value: diff.InlineChar, label: "Characters"}, {value: diff.InlineNone, label: "None"}}
 	return core.View{Style: fillPage.Merge(core.Style{Background: colors.background, Padding: core.All(pad), Gap: 12}), Children: []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
-			tool("Show a patch", "Patch", patch.Get, toggle(patch)),
-			tool("One column", "Unified", unified.Get, toggle(unified)),
-			tool("Soft wrap", "Wrap", wrap.Get, toggle(wrap)),
+			tool(cx, "Show a patch", "Patch", patch.Get, toggle(patch)),
+			tool(cx, "One column", "Unified", unified.Get, toggle(unified)),
+			tool(cx, "Soft wrap", "Wrap", wrap.Get, toggle(wrap)),
 			core.View{Style: core.Style{Width: core.Pt(360)}, Children: []core.Node{segmented(modes, inline.Get, inline.Set, true)}},
-			tool("Previous change", "↑", nil, func() { last.Set(fmt.Sprintf("Change %d", ref.PreviousHunk()+1)) }),
-			tool("Next change", "↓", nil, func() { last.Set(fmt.Sprintf("Change %d", ref.NextHunk()+1)) }),
-			tool("Expand every line", "Expand", nil, ref.ExpandAll),
-			tool("Collapse unchanged lines", "Collapse", nil, ref.CollapseAll),
-			tool("Start again", "Reset", nil, func() { oldText.Set(diffOld); newText.Set(diffNew) }),
+			tool(cx, "Previous change", "↑", nil, func() { last.Set(fmt.Sprintf("Change %d", ref.PreviousHunk()+1)) }),
+			tool(cx, "Next change", "↓", nil, func() { last.Set(fmt.Sprintf("Change %d", ref.NextHunk()+1)) }),
+			tool(cx, "Expand every line", "Expand", nil, ref.ExpandAll),
+			tool(cx, "Collapse unchanged lines", "Collapse", nil, ref.CollapseAll),
+			tool(cx, "Start again", "Reset", nil, func() { oldText.Set(diffOld); newText.Set(diffNew) }),
 		}},
 		core.View{Style: fin.card.over(core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0), CornerRadius: radiusInset,
 			BorderWidth: 1, BorderColor: colors.border, Background: colors.surface, Overflow: core.Hidden}), Children: []core.Node{
 			core.Dynamic(func(cx *core.Scope) core.Node {
+				colors := colorsOf(cx)
 				d := diff.DiffView{
 					Ref: ref, TestID: "diff", Language: "go", Unified: unified.Get(), Inline: inline.Get(), SoftWrap: wrap.Get(),
 					Annotations: func() []diff.Annotation {
@@ -213,6 +217,8 @@ func diffDemo(cx *core.Scope) core.Node {
 						return out
 					},
 					RenderAnnotation: func(cx *core.Scope, a diff.Annotation) core.Node {
+						colors := colorsOf(cx)
+						fin := finOf(cx)
 						var c comment
 						for _, x := range comments.GetUntracked() {
 							if x.ID == a.ID {
@@ -232,6 +238,7 @@ func diffDemo(cx *core.Scope) core.Node {
 						}}
 					},
 					RenderAddAnnotation: func(cx *core.Scope, lines diff.LineRange) core.Node {
+						colors := colorsOf(cx)
 						return core.View{Role: core.RoleButton, Label: "Add a comment", Style: core.Style{Width: core.Pt(16), Height: core.Pt(16),
 							CornerRadius: 4, Background: colors.accent, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Cursor: core.CursorPointer},
 							OnPress: func(core.PressEvent) {
@@ -259,7 +266,7 @@ func diffDemo(cx *core.Scope) core.Node {
 							small("Keep", func() { ref.AcceptHunk(h.Index); last.Set(fmt.Sprintf("Kept change %d", h.Index+1)) }),
 						}}
 					},
-					Styles: diffStyles(),
+					Styles: diffStyles(cx),
 					Style:  core.Style{FlexGrow: 1, Color: colors.text},
 				}
 				if patch.Get() {

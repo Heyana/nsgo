@@ -106,6 +106,10 @@ type runtime struct {
 	dataDir        string
 	cacheDir       string
 	host           *hostApp
+	// theme is DefaultTheme's, made on first use; subtreeAppearance
+	// whether any scope has forced one.
+	theme             *Theme
+	subtreeAppearance bool
 }
 
 // current is the scope that owns what code using cx creates now.

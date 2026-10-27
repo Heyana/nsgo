@@ -13,7 +13,7 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | Package | NSH counterpart | Responsibility |
 | --- | --- | --- |
 | `nsgo` (module root) | `run_app`, `AppView` | `nsgo.Run`, and `nsgo.NewView` in a host's window ([embedding](docs/architecture/embedding.md)): picks the backend by build tags |
-| `core` | `nsh-core` | The app's API: elements, styles, the reactive graph and regions, services; the shadow tree, layout and text preparation |
+| `core` | `nsh-core` | The app's API: elements, styles, themes, the reactive graph and regions, services; the shadow tree, layout and text preparation |
 | `base` | `nsh-base` | Unstyled components: controls, `Input` among them, popups, dialogs, menus, toasts, navigation pages, resizable panels, a dock, charts and tables ([components](docs/architecture/components.md)) |
 | `mobile`, `desktop` | `nsh/mobile`, `nsh/desktop` | What only phones have (the tab bar, a bar above the keyboard) and only desktops (the window, its title bar, menus) |
 | `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown (goldmark), HTML (x/net/html) or the app's blocks shown with the primitives ([text view](docs/architecture/textview.md)) |
@@ -114,6 +114,7 @@ Record a design question here, and confirm the answer with the user before choos
 | --- | --- |
 | [Core](docs/architecture/core.md) | Changing the graph, elements, regions, layers, commit, storage or the mount protocol |
 | [Styles](docs/architecture/styles.md) | Changing `Style` or how a backend draws a view |
+| [Themes](docs/architecture/themes.md) | Changing themes, theme files or the gallery's look |
 | [Text](docs/architecture/text.md) | Changing text, a `TextEngine`, `Input` or selection |
 | [Scrolling](docs/architecture/scrolling.md) | Changing `Scroll`, `List` or a scroll view |
 | [Interaction](docs/architecture/interaction.md) | Changing accessibility, pointers, focus, touches, gestures or drops |

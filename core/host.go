@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"maps"
 	"sync"
 	"time"
 )
@@ -30,11 +29,11 @@ type Host struct {
 	app   *hostApp
 }
 
-// Tokens are named values an embedding host themes the app with, such as
-// brand colors, radii and font families, written as CSS writes them. NSGo
-// has no theme, so the app reads them with Env.Token and maps them onto
-// its own; ParseColor reads colors. Values hold in both appearances, and
-// Dark's win over them while the app shows dark.
+// Tokens are colors an embedding host themes the app with, by the role
+// names of Palette.Color ("accent", "inset"), written as CSS writes them.
+// They go over every theme's palette (Scope.Palette): Values in both
+// appearances, and Dark's over them where a subtree shows dark. A value
+// that is no color is dropped.
 type Tokens struct {
 	Values, Dark map[string]string
 }
@@ -42,8 +41,7 @@ type Tokens struct {
 // SetTokens gives the app the host's tokens, from now on: what reads
 // Env.Token runs again.
 func (t *Tree) SetTokens(tokens Tokens) {
-	tokens.Values, tokens.Dark = maps.Clone(tokens.Values), maps.Clone(tokens.Dark)
-	t.root.Env().tokens.Set(tokens)
+	t.root.Env().tokens.Set(parseTokens(tokens))
 }
 
 // HostInbox is how many events a Host or an app keeps for later: those

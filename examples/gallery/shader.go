@@ -155,6 +155,7 @@ func (f signalField) Render(cx *core.Scope) core.Node {
 // platform moves. NSH's gallery has no shaders; this page is NSGo's.
 func shaderDemo(cx *core.Scope) core.Node {
 	background := func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
 		presses := core.NewSignal(cx, 0)
 		scale, intensity := core.NewSignal(cx, 1.0), core.NewSignal(cx, 1.0)
 		cycle := func(s *core.Signal[float64], values ...float64) func() {
@@ -181,13 +182,13 @@ func shaderDemo(cx *core.Scope) core.Node {
 				textf(func() string { return fmt.Sprintf("Start pressed %d times", presses.Get()) }, 13, regular, colors.faint),
 			},
 		}
-		return card(cardProps{icon: iconShader, title: "Background", subtitle: "A clock and ripples the platform runs; a glow at the pointer"},
+		return card(cx, cardProps{icon: iconShader, title: "Background", subtitle: "A clock and ripples the platform runs; a glow at the pointer"},
 			field,
 			core.View{Style: core.Style{Direction: core.Row, Gap: 8}, Children: []core.Node{
 				cell(button(buttonProps{label: "Scale", variant: secondary}, cycle(scale, 1, 1.5, 0.75))),
 				cell(button(buttonProps{label: "Intensity", variant: secondary}, cycle(intensity, 1, 2, 0.5))),
 			}},
-			caption("Uniforms", func() string { return fmt.Sprintf("Scale %.2g · Intensity %.2g", scale.Get(), intensity.Get()) }),
+			caption(cx, "Uniforms", func() string { return fmt.Sprintf("Scale %.2g · Intensity %.2g", scale.Get(), intensity.Get()) }),
 		)
 	}
 	images := func(cx *core.Scope) core.Node {
@@ -195,20 +196,21 @@ func shaderDemo(cx *core.Scope) core.Node {
 		wave := core.NewAnimatedValue(cx, 0)
 		run := cx.StartAnimation(core.Loop(core.Timing(wave, 2*3.14159265, core.TimingConfig{Duration: 2 * time.Second}), 0), nil)
 		cx.Cleanup(run.Stop)
-		return card(cardProps{icon: iconImage, title: "Images", subtitle: "What image0At to image3At read, in the image's pixels"},
+		return card(cx, cardProps{icon: iconImage, title: "Images", subtitle: "What image0At to image3At read, in the image's pixels"},
 			core.View{Style: core.Style{AlignItems: core.AlignCenter, Padding: core.Symmetric(8, 0)}, Children: []core.Node{
 				core.Shader{Program: rippleProgram, Images: []core.ImageSource{{Data: logoPNG}}, Uniforms: core.Uniforms{"Phase": wave},
 					Label: "Rippling logo", TestID: "image-shader",
 					Style: core.Style{Width: core.Pt(160), Height: core.Pt(160), CornerRadius: 12, Overflow: core.Hidden}},
 			}},
-			apiLine("Its rows wave with a phase the platform turns", "Shader.Images"),
+			apiLine(cx, "Its rows wave with a phase the platform turns", "Shader.Images"),
 		)
 	}
 	source := func(cx *core.Scope) core.Node {
-		return card(cardProps{icon: iconTerminal, title: "The source", subtitle: "Go's syntax, checked and written as MSL, GLSL or HLSL"},
+		colors := colorsOf(cx)
+		return card(cx, cardProps{icon: iconTerminal, title: "The source", subtitle: "Go's syntax, checked and written as MSL, GLSL or HLSL"},
 			core.Scroll{Horizontal: true, Children: []core.Node{core.Text{Content: rippleSource,
 				Style: core.Style{FontFamily: mono, FontSize: 12, LineHeight: 18, Color: colors.code}}}},
-			apiLine("Compiled once, as the program loads", "MustCompileShader"),
+			apiLine(cx, "Compiled once, as the program loads", "MustCompileShader"),
 		)
 	}
 	return demoPage(cx, pageProps{}, background, images, source)

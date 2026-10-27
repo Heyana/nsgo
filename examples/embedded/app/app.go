@@ -43,21 +43,16 @@ func Root(cx *core.Scope) core.Node {
 		}
 	})
 
-	// The host's tokens, or the app's own colors where it gives none.
-	color := func(name string, light, dark core.Color) core.Color {
-		if v, ok := env.Token(name); ok {
-			if c, err := core.ParseColor(v); err == nil {
-				return c
-			}
-		}
-		if env.Dark() {
-			return dark
-		}
-		return light
-	}
-	ink := func() core.Color { return color("foreground", core.RGB(0x1f2328), core.RGB(0xe6edf3)) }
-	muted := func() core.Color { return color("muted", core.RGB(0x656d76), core.RGB(0x8d96a0)) }
-	accent := func() core.Color { return color("accent", core.RGB(0x0969da), core.RGB(0x4493f8)) }
+	// The app's colors; a host's tokens go over them by the same names.
+	theme := core.DefaultTheme()
+	theme.Light.Background, theme.Dark.Background = core.RGB(0xffffff), core.RGB(0x0d1117)
+	theme.Light.Text, theme.Dark.Text = core.RGB(0x1f2328), core.RGB(0xe6edf3)
+	theme.Light.TextMuted, theme.Dark.TextMuted = core.RGB(0x656d76), core.RGB(0x8d96a0)
+	theme.Light.Accent, theme.Dark.Accent = core.RGB(0x0969da), core.RGB(0x4493f8)
+	cx.SetTheme(theme)
+	ink := func() core.Color { return cx.Palette().Text }
+	muted := func() core.Color { return cx.Palette().TextMuted }
+	accent := func() core.Color { return cx.Palette().Accent }
 	text := func(content func() string, size core.Points, tone func() core.Color, id string) core.Node {
 		return core.Text{ContentFunc: content, TestID: id,
 			StyleFunc: func() core.Style { return core.Style{FontSize: size, Color: tone()} }}
@@ -74,7 +69,7 @@ func Root(cx *core.Scope) core.Node {
 	return core.View{
 		StyleFunc: func() core.Style {
 			return core.Style{FlexGrow: 1, Padding: core.All(20), Gap: 12,
-				Background: color("background", core.RGB(0xffffff), core.RGB(0x0d1117))}
+				Background: cx.Palette().Background}
 		},
 		Children: []core.Node{
 			text(func() string { return "Hello, " + user }, 22, ink, "greeting"),

@@ -201,14 +201,18 @@ func setAppearance(a driver.Appearance) {
 	if window == 0 {
 		return
 	}
-	style := 0 // UIUserInterfaceStyleUnspecified
+	window.Send(sel("setOverrideUserInterfaceStyle:"), uiStyle(a))
+}
+
+// uiStyle is UIKit's interface style of a, unspecified for the system's.
+func uiStyle(a driver.Appearance) int {
 	switch a {
 	case driver.AppearanceLight:
-		style = 1
+		return 1
 	case driver.AppearanceDark:
-		style = 2
+		return 2
 	}
-	window.Send(sel("setOverrideUserInterfaceStyle:"), style)
+	return 0
 }
 
 // osVersion returns iOS's version.

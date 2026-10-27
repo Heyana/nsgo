@@ -64,7 +64,7 @@ Windows checks the registry first because the shell asks the user for an app for
 
 ## Appearance and quitting
 
-`SetAppearance` forces light or dark, and `nsgo.Appearance` starts the app in it. The core keeps the system's appearance beside the forced one and reports the one shown as `Env.Dark`, so platforms may report either.
+`SetAppearance` forces light or dark, and `nsgo.Appearance` starts the app in it. The core keeps the system's appearance beside the forced one and reports the one shown as `Env.Dark`, so platforms may report either. A subtree forces its own with `SetSubtreeAppearance` ([themes](themes.md#scope)).
 
 | Target | Native chrome that follows |
 | --- | --- |

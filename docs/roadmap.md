@@ -34,5 +34,4 @@ NSGo leaves out these NSH parts:
 - The machinery that carries a Rust component's refs, slots, render props and typed rows across JS, since a Go component takes them as fields: content as `core.Node` (`Button.Children`, `Popover.Trigger`, `Checkbox.Indicator`), rows and callbacks as functions.
 - `EngineContext`, since a host gives each engine's app function its values directly.
 - The GPUI backend and the LayerFS trial.
-- The theme and styled components, which apps or a component library build on `base`.
 - 32-bit Android (`armeabi-v7a`), since Go links android/arm only with cgo and an NDK.

@@ -13,7 +13,8 @@ import (
 
 // readingStyles is the gallery's reading typography for every part of a
 // TextView: base has none.
-func readingStyles() textview.Styles {
+func readingStyles(cx *core.Scope) textview.Styles {
+	colors := colorsOf(cx)
 	codeFont := core.Style{FontFamily: mono, FontSize: 13}
 	alert := func(c core.Color) core.Style {
 		return core.Style{Gap: 4, Padding: core.Symmetric(8, 12), Borders: core.Edges{Left: 3}, BorderColors: core.EdgeColors{Left: c}, CornerRadius: 4, Background: alpha(c, 0.08)}
@@ -180,15 +181,16 @@ func streamingCard(cx *core.Scope) core.Node {
 			i++
 		})
 	}
-	return card(cardProps{icon: iconChat, title: "Streaming", subtitle: "A reply as an AI model writes it, with a caret"},
+	return card(cx, cardProps{icon: iconChat, title: "Streaming", subtitle: "A reply as an AI model writes it, with a caret"},
 		core.Dynamic(func(cx *core.Scope) core.Node {
+			colors := colorsOf(cx)
 			on := streaming.Get()
 			var caret core.Node
 			if on {
 				caret = core.View{Style: core.Style{Margin: core.Edges{Left: 2}, Width: core.Pt(8), Height: core.Pt(16), CornerRadius: 2, Background: colors.accent,
 					Animation: core.KeyframeAnimation{Keyframes: core.KeyframesPulse}}}
 			}
-			return textview.TextView{MarkdownFunc: streamed.Get, Styles: readingStyles(), Options: textview.Options{Streaming: on}, StreamingCaret: caret,
+			return textview.TextView{MarkdownFunc: streamed.Get, Styles: readingStyles(cx), Options: textview.Options{Streaming: on}, StreamingCaret: caret,
 				Selectable: true, Highlighter: highlight.New(cx), CodeBlockActions: []string{textview.CopyAction}, RenderCodeBlockAction: copyAction, TestID: "streamed"}
 		}),
 		core.Dynamic(func(*core.Scope) core.Node {
@@ -204,25 +206,26 @@ func streamingCard(cx *core.Scope) core.Node {
 func markdownCard(cx *core.Scope) core.Node {
 	pressed := core.NewSignal(cx, "nothing yet")
 	viewing := core.NewSignal(cx, textview.Image{})
-	return card(cardProps{icon: iconText, title: "Markdown", subtitle: "CommonMark and GitHub's: tables, tasks, alerts, footnotes, math, HTML"},
-		textview.TextView{Markdown: tvMarkdown, Styles: readingStyles(), Selectable: true, TestID: "document", Highlighter: highlight.New(cx),
+	return card(cx, cardProps{icon: iconText, title: "Markdown", subtitle: "CommonMark and GitHub's: tables, tasks, alerts, footnotes, math, HTML"},
+		textview.TextView{Markdown: tvMarkdown, Styles: readingStyles(cx), Selectable: true, TestID: "document", Highlighter: highlight.New(cx),
 			CodeBlockActions: []string{textview.CopyAction}, RenderCodeBlockAction: copyAction,
 			OnLinkPress: pressed.Set, RenderImage: pressableImages(viewing)},
-		caption("Link pressed", pressed.Get),
+		caption(cx, "Link pressed", pressed.Get),
 		imageViewer(cx, viewing.Get, func() { viewing.Set(textview.Image{}) }),
 	)
 }
 
 func htmlCard(cx *core.Scope) core.Node {
 	viewing := core.NewSignal(cx, textview.Image{})
-	return card(cardProps{icon: iconText, title: "HTML", subtitle: "An article page: sections, figures, lists, tables, code"},
-		textview.TextView{HTML: tvHTML, Styles: readingStyles(), Selectable: true, Highlighter: highlight.New(cx), RenderImage: pressableImages(viewing), TestID: "html"},
+	return card(cx, cardProps{icon: iconText, title: "HTML", subtitle: "An article page: sections, figures, lists, tables, code"},
+		textview.TextView{HTML: tvHTML, Styles: readingStyles(cx), Selectable: true, Highlighter: highlight.New(cx), RenderImage: pressableImages(viewing), TestID: "html"},
 		imageViewer(cx, viewing.Get, func() { viewing.Set(textview.Image{}) }),
 	)
 }
 
 // chartBlock is a tiny bar chart of a ```chart block's lines ("Mon 12").
-func chartBlock(source string) core.Node {
+func chartBlock(cx *core.Scope, source string) core.Node {
+	colors := colorsOf(cx)
 	type bar struct {
 		label string
 		value float64
@@ -255,13 +258,14 @@ func chartBlock(source string) core.Node {
 }
 
 func extensionsCard(cx *core.Scope) core.Node {
+	isDark := cx.Dark()
 	sky := core.RGB(0x0284c7)
 	emerald := core.RGB(0x059669)
 	if isDark {
 		sky, emerald = core.RGB(0x7dd3fc), core.RGB(0x34d399)
 	}
-	return card(cardProps{icon: iconComponents, title: "Extensions", subtitle: "Mentions, a chart block, a <Callout> tag, a :::note container"},
-		textview.TextView{Markdown: tvExtended, Styles: readingStyles(),
+	return card(cx, cardProps{icon: iconComponents, title: "Extensions", subtitle: "Mentions, a chart block, a <Callout> tag, a :::note container"},
+		textview.TextView{Markdown: tvExtended, Styles: readingStyles(cx),
 			Extensions: []textview.Extension{
 				{Name: "mention", Pattern: mentionPattern},
 				{Name: "chart", Language: "chart"},
@@ -274,11 +278,11 @@ func extensionsCard(cx *core.Scope) core.Node {
 					return core.View{Style: core.Style{CornerRadius: 10, Background: alpha(sky, 0.15), Padding: core.Symmetric(0, 8), Transform: core.Transform{TranslateY: 4}},
 						Children: []core.Node{text("@"+node.Attributes["1"], 14, medium, sky)}}
 				case "chart":
-					return chartBlock(node.Text)
+					return chartBlock(cx, node.Text)
 				case "callout":
 					return core.View{Style: core.Style{Direction: core.Row, Gap: 12, CornerRadius: 12, Background: alpha(emerald, 0.1), Padding: core.All(12)}, Children: []core.Node{
 						text("✦", 15, regular, emerald),
-						core.View{Style: fill, Children: []core.Node{textview.TextView{Document: textview.Document{Blocks: node.Children}, Styles: readingStyles()}}},
+						core.View{Style: fill, Children: []core.Node{textview.TextView{Document: textview.Document{Blocks: node.Children}, Styles: readingStyles(cx)}}},
 					}}
 				}
 				lbl := node.Attributes["label"]
@@ -287,7 +291,7 @@ func extensionsCard(cx *core.Scope) core.Node {
 				}
 				return core.View{Style: core.Style{Gap: 4, CornerRadius: 12, BorderWidth: 1, BorderColor: alpha(sky, 0.4), Padding: core.All(12)}, Children: []core.Node{
 					core.Text{Content: lbl, Style: core.Style{FontSize: 12, FontWeight: semibold, TextTransform: core.TextTransformUppercase, LetterSpacing: 0.6, Color: sky}},
-					textview.TextView{Document: textview.Document{Blocks: node.Children}, Styles: readingStyles()},
+					textview.TextView{Document: textview.Document{Blocks: node.Children}, Styles: readingStyles(cx)},
 				}}
 			}},
 	)
@@ -301,16 +305,17 @@ const (
 // selectionAreaCard is two documents and a plain text that select as one,
 // around a label that stays out.
 func selectionAreaCard(cx *core.Scope) core.Node {
-	return card(cardProps{icon: iconText, title: "Selectable view", subtitle: "One selection across texts and TextViews"},
+	colors := colorsOf(cx)
+	return card(cx, cardProps{icon: iconText, title: "Selectable view", subtitle: "One selection across texts and TextViews"},
 		core.View{Selectable: true, Style: core.Style{Gap: 12}, Children: []core.Node{
-			textview.TextView{Markdown: tvQuestion, Styles: readingStyles()},
-			textview.TextView{Markdown: tvAnswer, Styles: readingStyles()},
+			textview.TextView{Markdown: tvQuestion, Styles: readingStyles(cx)},
+			textview.TextView{Markdown: tvAnswer, Styles: readingStyles(cx)},
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignBaseline, Gap: 8}, Children: []core.Node{
 				core.Text{Content: "Not selectable", Selectable: core.SelectableOff, Style: core.Style{FontSize: 13, Color: colors.faint}},
 				core.Text{Content: "A plain Text joins the selection too.", Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15, Color: colors.text}},
 			}},
 		}},
-		caption(hint(cx, "Long press, then move the handles from the question into the answer", "Drag from the question into the answer"), nil),
+		caption(cx, hint(cx, "Long press, then move the handles from the question into the answer", "Drag from the question into the answer"), nil),
 	)
 }
 

@@ -1,15 +1,16 @@
 // Command gallery shows what NSGo apps are made of: core's elements and
 // services and base's unstyled components, a demo each, in NSH's gallery's
 // design. A wide window shows a sidebar of the demos beside the selected
-// one; a narrow one is a phone's index with demos pushed over it. Every
-// look is the app's own (ui.go).
+// one; a narrow one is a phone's index with demos pushed over it. Its
+// look and components are its own (look.go, kit.go).
 //
 // It translates NSH's examples/gallery demo by demo, and departs from it
 // where NSGo differs: icons are Lucide's (core.Icon) rather than glyphs
-// drawn in canvases; the tree is built again when the appearance changes,
-// as colors are plain values rather than theme tokens; NSH's Tailwind and
-// standard-module demos have no NSGo counterpart, while Layout, Shader and
-// Accessibility show what NSGo has beyond NSH's gallery.
+// drawn in canvases; the tree is built again when the theme or the
+// appearance changes, as components read their colors when built; NSH's
+// Tailwind and standard-module demos have no NSGo counterpart, while
+// Layout, Shader and Accessibility show what NSGo has beyond NSH's
+// gallery.
 package main
 
 import (
@@ -187,9 +188,10 @@ func (g *gallery) open(name string) {
 const lastDemo = "lastDemo"
 
 // Root builds the gallery again when the window's width calls for the
-// other layout or the appearance changes, keeping its state in shell.
+// other layout or its colors change, keeping its state in shell.
 // NSGO_GALLERY_OPEN names a demo to open at start, for screenshots.
 func Root(cx *core.Scope) core.Node {
+	cx.SetTheme(galleryTheme())
 	env := cx.Env()
 	first := groups[0].demos[0].name
 	g := &gallery{
@@ -219,10 +221,11 @@ func Root(cx *core.Scope) core.Node {
 	cx.Effect(func() { desktop.SetApplicationMenu(cx, g.menu()) })
 
 	return core.Dynamic(func(cx *core.Scope) core.Node {
-		wide, dark := desktopLayout.Get(), env.Dark()
+		wide := desktopLayout.Get()
+		cx.Palette()
 		// What the layout builds mounts untracked, outside this function.
 		return core.Func(func(cx *core.Scope) core.Node {
-			useAppearance(dark)
+			colors := colorsOf(cx)
 			body := g.phone(cx)
 			if wide {
 				body = g.desktopLayout(cx)
@@ -280,9 +283,10 @@ func rememberDemo(cx *core.Scope, g *gallery) {
 // window controls. The sidebar's toggle follows the logo in the desktop
 // layout.
 func (g *gallery) titleBar(cx *core.Scope, wide bool) core.Node {
-	children := []core.Node{logo(20)}
+	colors := colorsOf(cx)
+	children := []core.Node{logo(cx, 20)}
 	if wide {
-		children = append(children, g.sidebarToggle())
+		children = append(children, g.sidebarToggle(cx))
 	}
 	children = append(children,
 		core.Text{Content: "Gallery", MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13, FontWeight: semibold, Color: colors.text}},
@@ -301,6 +305,7 @@ func (g *gallery) titleBar(cx *core.Scope, wide bool) core.Node {
 // chromeFill is the background of the window's chrome, the title bar
 // and the sidebar: none while a window material shows through them.
 func chromeFill(cx *core.Scope) core.Color {
+	colors := colorsOf(cx)
 	if desktop.ShowsMaterial(cx) {
 		return 0
 	}
@@ -312,7 +317,8 @@ func (g *gallery) toggleSidebar() { g.sidebarOpen.Update(func(open bool) bool { 
 
 // sidebarToggle is the title bar's button that hides and shows the
 // sidebar, where desktop apps put it: after the logo.
-func (g *gallery) sidebarToggle() core.Node {
+func (g *gallery) sidebarToggle(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	return core.View{OnPress: func(core.PressEvent) { g.toggleSidebar() }, Role: core.RoleButton, Label: "Toggle sidebar",
 		Selected: g.sidebarOpen.Get, Desktop: core.DesktopViewProps{WindowDrag: core.WindowDragOff},
 		Style: core.Style{Width: core.Pt(28), Height: core.Pt(28), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
@@ -328,30 +334,32 @@ func (g *gallery) phone(cx *core.Scope) core.Node {
 	}
 	g.wasDesktop = false
 	return g.nav.Stack(core.Style{FlexGrow: 1}, func(cx *core.Scope, r route, _ func() int) base.NavPage {
+		colors := colorsOf(cx)
 		switch {
 		case r.page != nil:
 			return r.page(cx)
 		case r.demo != "":
 			d, _ := findDemo(r.demo)
-			return base.NavPage{Title: d.name, TestID: "screen-" + d.name, HeaderStyle: headerStyle(),
-				Header: pageHeader(pageHeaderProps{title: d.name}),
+			return base.NavPage{Title: d.name, TestID: "screen-" + d.name, HeaderStyle: headerStyle(cx),
+				Header: pageHeader(cx, pageHeaderProps{title: d.name}),
 				Style:  core.Style{Background: colors.background},
 				Children: []core.Node{core.View{Style: fillPage.Merge(core.Style{Background: colors.background}),
 					Children: []core.Node{core.Func(func(cx *core.Scope) core.Node { return d.screen(cx) })}}}}
 		}
-		return base.NavPage{Title: "Gallery", TestID: "index", HeaderStyle: headerStyle(), HeaderRight: barThemeToggle(cx),
-			Header:   pageHeader(pageHeaderProps{title: "Gallery", root: true, right: themeToggle(cx)}),
-			Children: []core.Node{g.home()}}
+		return base.NavPage{Title: "Gallery", TestID: "index", HeaderStyle: headerStyle(cx), HeaderRight: barThemeToggle(cx),
+			Header:   pageHeader(cx, pageHeaderProps{title: "Gallery", root: true, right: themeToggle(cx)}),
+			Children: []core.Node{g.home(cx)}}
 	})
 }
 
 // home is the phone layout's index of the demos by group.
-func (g *gallery) home() core.Node {
+func (g *gallery) home(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	var nodes []core.Node
 	for i, grp := range groups {
 		var rows []core.Node
 		for j, d := range grp.demos {
-			rows = append(rows, demoRow(d, j == 0, func() { g.nav.Push(route{demo: d.name}) }))
+			rows = append(rows, demoRow(cx, d, j == 0, func() { g.nav.Push(route{demo: d.name}) }))
 		}
 		nodes = append(nodes, appear(i+1, false, core.View{TestID: "group-" + grp.title, Style: core.Style{Gap: 8}, Children: []core.Node{
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignBaseline, Padding: core.Symmetric(0, 4)}, Children: []core.Node{
@@ -369,14 +377,15 @@ func (g *gallery) home() core.Node {
 }
 
 // demoRow is a demo in the phone layout's index.
-func demoRow(d demo, first bool, open func()) core.Node {
+func demoRow(cx *core.Scope, d demo, first bool, open func()) core.Node {
+	colors := colorsOf(cx)
 	s := core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 14, Padding: core.All(12)}
 	if !first {
 		s.Borders, s.BorderColors = core.Edges{Top: 1}, core.EdgeColors{Top: colors.line}
 	}
 	return press(pressProps{onPress: open, scale: 0.98, label: d.name, testID: "nav-" + d.name},
 		core.View{Style: s, Children: []core.Node{
-			iconTile(d.icon, 38),
+			iconTile(cx, d.icon, 38),
 			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: []core.Node{
 				text(d.name, 16, medium, colors.text),
 				core.Text{Content: d.detail, MaxLines: 2, Style: core.Style{FontSize: 13, LineHeight: 18, Color: colors.muted}},
@@ -422,6 +431,7 @@ func (g *gallery) desktopLayout(cx *core.Scope) core.Node {
 // in the row changes at once (0 pt collapsed); the panel slides on the
 // platform, over the content pane.
 func (g *gallery) sidebar(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	start := 0.0
 	if !g.sidebarOpen.GetUntracked() {
 		start = float64(-sidebarWidth)
@@ -447,7 +457,7 @@ func (g *gallery) sidebar(cx *core.Scope) core.Node {
 		items := []core.Node{core.Text{Content: grp.title, Role: core.RoleHeader, Style: core.Style{FontSize: 11, FontWeight: semibold, Color: colors.faint,
 			LetterSpacing: 0.6, TextTransform: core.TextTransformUppercase, Padding: core.Edges{Top: 16, Right: 10, Bottom: 6, Left: 10}}}}
 		for _, d := range grp.demos {
-			items = append(items, g.sidebarRow(d))
+			items = append(items, g.sidebarRow(cx, d))
 		}
 		list = append(list, core.View{TestID: "nav-group-" + grp.title, Style: core.Style{Gap: 2}, Children: items})
 	}
@@ -463,7 +473,7 @@ func (g *gallery) sidebar(cx *core.Scope) core.Node {
 			Animated: animated}
 	}, Children: []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Edges{Top: 20, Right: 20, Bottom: 12, Left: 20}}, Children: []core.Node{
-			logo(32),
+			logo(cx, 32),
 			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 1}, Children: []core.Node{
 				text("Gallery", 16, semibold, colors.text),
 				textf(func() string { return "NSGo · " + osName(env.OS()) }, 12, regular, colors.muted),
@@ -485,7 +495,8 @@ func (g *gallery) sidebar(cx *core.Scope) core.Node {
 
 // sidebarRow is a demo in the sidebar: an accent bar and a raised fill
 // when selected, a fill under the pointer otherwise.
-func (g *gallery) sidebarRow(d demo) core.Node {
+func (g *gallery) sidebarRow(cx *core.Scope, d demo) core.Node {
+	colors := colorsOf(cx)
 	active := func() bool { return g.selected.Get() == d.name }
 	return core.View{OnPress: func(core.PressEvent) { g.selectDemo(d.name) }, Role: core.RoleButton, Label: d.name, TestID: "nav-" + d.name,
 		Selected: active,
@@ -522,15 +533,16 @@ func (g *gallery) demoPane() core.Node {
 	return core.Dynamic(func(cx *core.Scope) core.Node {
 		d, _ := findDemo(g.selected.Get())
 		return core.Func(func(cx *core.Scope) core.Node {
+			colors := colorsOf(cx)
 			return core.View{TestID: "demo-" + d.name, Style: fillPage.Merge(core.Style{Background: colors.background}), Children: []core.Node{
 				core.View{Style: core.Style{Height: core.Pt(64), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 14, Padding: core.Symmetric(0, 24),
 					Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.line}}, Children: []core.Node{
-					iconTile(d.icon, 36),
+					iconTile(cx, d.icon, 36),
 					core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: []core.Node{
 						core.Text{Content: d.name, MaxLines: 1, Role: core.RoleHeader, TestID: "title", Style: core.Style{FontSize: 18, FontWeight: semibold, Color: colors.text}},
 						core.Text{Content: d.detail, MaxLines: 1, Style: core.Style{FontSize: 13, Color: colors.muted}},
 					}},
-					badge(groupOf(d.name), toneNeutral),
+					badge(cx, groupOf(d.name), toneNeutral),
 				}},
 				core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)}, Children: []core.Node{d.screen(cx)}},
 			}}

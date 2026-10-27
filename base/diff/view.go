@@ -1092,7 +1092,7 @@ func (v *dv) number(side Side, at int) int {
 // state, tabs as four spaces.
 func (v *dv) spans(r row, isOld bool, line, from, to int) []core.Span {
 	v.hlRev.Get()
-	dark := v.cx.Env().Dark()
+	dark := v.cx.Dark()
 	palette := &syntax.Light
 	if dark {
 		palette = &syntax.Dark

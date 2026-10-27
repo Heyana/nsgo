@@ -36,6 +36,7 @@ func cumulative(levels []level) []float64 {
 // around the mid, and the size axis widens at once but narrows over about
 // a second.
 func depthBlock(cx *core.Scope, m *market, s *stock) core.Node {
+	colors := colorsOf(cx)
 	frame := core.NewSignalFunc(cx, 0, func(a, b int) bool { return false })
 	cx.Effect(func() {
 		if m.ticks.Get()%5 == 0 {
@@ -77,7 +78,7 @@ func depthBlock(cx *core.Scope, m *market, s *stock) core.Node {
 		h := h0 - padTop - padBottom
 		X := func(p float64) float32 { return float32((p-lo)/(hi-lo)) * w }
 		Y := func(v float64) float32 { return padTop + h - float32(v/ymax)*h }
-		d.SetStrokeColor(gridColor()).SetLineWidth(1)
+		d.SetStrokeColor(gridColor(cx)).SetLineWidth(1)
 		for k := 1; k <= 3; k++ {
 			y := padTop + h*float32(k)/4
 			d.BeginPath().MoveTo(0, y).LineTo(w, y).Stroke()
@@ -108,19 +109,20 @@ func depthBlock(cx *core.Scope, m *market, s *stock) core.Node {
 		d.SetTextAlign(core.TextAlignEnd).FillText(priceText(hi, s), w, padTop+h+5, f)
 		d.SetTextAlign(core.TextAlignCenter).SetFillColor(c.text).FillText("mid "+priceText(mid, s), w/2, padTop+h+5, f)
 	}
-	return block("Depth", label(fmt.Sprintf("±%d ticks · cumulative", depthSpan)), nil, false,
+	return block(cx, "Depth", label(fmt.Sprintf("±%d ticks · cumulative", depthSpan)), nil, false,
 		core.Canvas{Style: core.Style{Height: core.Pt(120)}, Draw: draw, Label: "Depth chart"},
 		core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, ColumnGap: 16, RowGap: 6}, Children: []core.Node{
-			legend(colors.up, "Bids", func() string { b, _, _ := totals(); return compactNumber(b) }),
-			legend(colors.down, "Asks", func() string { _, a, _ := totals(); return compactNumber(a) }),
-			legend(colors.border, "Imbalance", func() string { _, _, i := totals(); return signed(i*100, 0) + "%" }),
+			legend(cx, colors.up, "Bids", func() string { b, _, _ := totals(); return compactNumber(b) }),
+			legend(cx, colors.down, "Asks", func() string { _, a, _ := totals(); return compactNumber(a) }),
+			legend(cx, colors.border, "Imbalance", func() string { _, _, i := totals(); return signed(i*100, 0) + "%" }),
 		}},
 	)
 }
 
 // levelRow is one level: its label, price, size and running total, over
 // a bar of the running total from the right edge (a depth ladder).
-func levelRow(s *stock, lvl func() (level, bool), total func() float64, bid bool, n func() int, most func() float64) core.Node {
+func levelRow(cx *core.Scope, s *stock, lvl func() (level, bool), total func() float64, bid bool, n func() int, most func() float64) core.Node {
+	colors := colorsOf(cx)
 	tint := alpha(colors.down, 0.1)
 	if bid {
 		tint = alpha(colors.up, 0.1)
@@ -143,7 +145,7 @@ func levelRow(s *stock, lvl func() (level, bool), total func() float64, bid bool
 			return "–"
 		}, StyleFunc: func() core.Style {
 			l, _ := lvl()
-			return core.Style{FlexGrow: 1, FontSize: 14, Color: toneOf(l.price - s.quote.Get().prevClose)}
+			return core.Style{FlexGrow: 1, FontSize: 14, Color: toneOf(cx, l.price-s.quote.Get().prevClose)}
 		}},
 		core.Text{ContentFunc: func() string {
 			if l, ok := lvl(); ok {
@@ -158,6 +160,7 @@ func levelRow(s *stock, lvl func() (level, bool), total func() float64, bid bool
 // orderBookBlock is asks above bids, five levels or ten (the change
 // animates the layout), the bid and ask balance springing on top.
 func orderBookBlock(cx *core.Scope, m *market, s *stock) core.Node {
+	colors := colorsOf(cx)
 	depth := core.NewSignal(cx, 5)
 	type sums struct{ bids, asks []float64 }
 	sm := core.NewMemoFunc(cx, func() sums { b := m.book.Get(); return sums{cumulative(b.bids), cumulative(b.asks)} }, func(a, b sums) bool { return false })
@@ -215,7 +218,7 @@ func orderBookBlock(cx *core.Scope, m *market, s *stock) core.Node {
 		}
 		return out
 	}
-	return block("Order book", nil, press(pressProps{onPress: toggle, hitSlop: 8, label: "Levels"},
+	return block(cx, "Order book", nil, press(pressProps{onPress: toggle, hitSlop: 8, label: "Levels"},
 		core.View{Style: core.Style{Height: core.Pt(30), Padding: core.Symmetric(0, 12), CornerRadius: radiusControl, JustifyContent: core.JustifyCenter, Background: colors.raised},
 			Children: []core.Node{textf(func() string {
 				if depth.Get() == 5 {
@@ -233,16 +236,16 @@ func orderBookBlock(cx *core.Scope, m *market, s *stock) core.Node {
 		}},
 		core.View{Children: []core.Node{
 			core.View{Style: core.Style{Direction: core.Row, Gap: 10, Padding: core.Edges{Bottom: 4}}, Children: []core.Node{
-				head("LVL", 28, 0, core.TextAlignStart), head("PRICE", 0, 1, core.TextAlignStart), head("SIZE", 64, 0, core.TextAlignEnd), head("TOTAL", 64, 0, core.TextAlignEnd),
+				head(cx, "LVL", 28, 0, core.TextAlignStart), head(cx, "PRICE", 0, 1, core.TextAlignStart), head(cx, "SIZE", 64, 0, core.TextAlignEnd), head(cx, "TOTAL", 64, 0, core.TextAlignEnd),
 			}},
 			core.Each(indices, func(i int) int { return i }, func(cx *core.Scope, i func() int, _ func() int) core.Node {
 				k := func() int { return depth.Get() - 1 - i() }
-				return levelRow(s, lvl(func() []level { return m.book.Get().asks }, k), func() float64 { return at(sm.Get().asks, k()) }, false,
+				return levelRow(cx, s, lvl(func() []level { return m.book.Get().asks }, k), func() float64 { return at(sm.Get().asks, k()) }, false,
 					func() int { return depth.Get() - i() }, most.Get)
 			}),
 			core.View{Style: core.Style{Height: core.Pt(1), Margin: core.Symmetric(3, 0), Background: colors.border}},
 			core.Each(indices, func(i int) int { return i }, func(cx *core.Scope, i func() int, _ func() int) core.Node {
-				return levelRow(s, lvl(func() []level { return m.book.Get().bids }, i), func() float64 { return at(sm.Get().bids, i()) }, true,
+				return levelRow(cx, s, lvl(func() []level { return m.book.Get().bids }, i), func() float64 { return at(sm.Get().bids, i()) }, true,
 					func() int { return i() + 1 }, most.Get)
 			}),
 		}},
@@ -253,6 +256,8 @@ func orderBookBlock(cx *core.Scope, m *market, s *stock) core.Node {
 // redrawn four times a second, the new rows sliding in by an offset the
 // platform animates.
 func tapeBlock(cx *core.Scope, m *market, s *stock) core.Node {
+	colors := colorsOf(cx)
+	tints := tintsOf(cx)
 	shown := core.NewSignalFunc(cx, []trade(nil), func(a, b []trade) bool { return false })
 	offset := core.NewAnimatedValue(cx, 0)
 	top := -1
@@ -316,7 +321,7 @@ func tapeBlock(cx *core.Scope, m *market, s *stock) core.Node {
 			if isBlock {
 				d.SetFillColor(tints.accent).BeginPath().RoundRect(0, float32(i)*tapeRow+2, w, tapeRow-4, 8).Fill()
 			} else if i > 0 {
-				d.SetStrokeColor(gridColor()).SetLineWidth(1).BeginPath().MoveTo(0, float32(i)*tapeRow).LineTo(w, float32(i)*tapeRow).Stroke()
+				d.SetStrokeColor(gridColor(cx)).SetLineWidth(1).BeginPath().MoveTo(0, float32(i)*tapeRow).LineTo(w, float32(i)*tapeRow).Stroke()
 			}
 			d.SetTextAlign(core.TextAlignStart).SetFillColor(c.faint).FillText(marketTime(t.t, true), 8, y, sans(12, regular))
 			d.SetFillColor(col).BeginPath().Arc(84, y, 3, 0, tau, false).Fill()
@@ -332,14 +337,14 @@ func tapeBlock(cx *core.Scope, m *market, s *stock) core.Node {
 		}
 		d.Restore()
 	}
-	return block("Time & sales", label("blocks ≥ "+compactNumber(blockSize)), nil, false,
+	return block(cx, "Time & sales", label("blocks ≥ "+compactNumber(blockSize)), nil, false,
 		core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, ColumnGap: 16, RowGap: 6}, Children: []core.Node{
-			legend(colors.up, "At ask", func() string { b, _, _ := stats(); return compactNumber(b) }),
-			legend(colors.down, "At bid", func() string { _, sl, _ := stats(); return compactNumber(sl) }),
-			legend(colors.accent, "Blocks", func() string { _, _, n := stats(); return itoa(n) }),
+			legend(cx, colors.up, "At ask", func() string { b, _, _ := stats(); return compactNumber(b) }),
+			legend(cx, colors.down, "At bid", func() string { _, sl, _ := stats(); return compactNumber(sl) }),
+			legend(cx, colors.accent, "Blocks", func() string { _, _, n := stats(); return itoa(n) }),
 		}},
 		core.View{Style: core.Style{Direction: core.Row, Gap: 10, Padding: core.Symmetric(0, 8)}, Children: []core.Node{
-			head("TIME", 80, 0, core.TextAlignStart), head("PRICE", 0, 1, core.TextAlignStart), head("SIZE", 0, 0, core.TextAlignEnd),
+			head(cx, "TIME", 80, 0, core.TextAlignStart), head(cx, "PRICE", 0, 1, core.TextAlignStart), head(cx, "SIZE", 0, 0, core.TextAlignEnd),
 		}},
 		core.Canvas{Style: core.Style{Height: core.Pt(tapeShown * tapeRow)}, Draw: draw, Label: "Recent trades", TestID: "tape"},
 	)
@@ -348,6 +353,7 @@ func tapeBlock(cx *core.Scope, m *market, s *stock) core.Node {
 // flowBlock is bought against sold volume by order size: who is moving
 // the price.
 func flowBlock(cx *core.Scope, m *market) core.Node {
+	colors := colorsOf(cx)
 	sum := func(xs [4]float64) float64 { return xs[0] + xs[1] + xs[2] + xs[3] }
 	most := func() float64 {
 		f := m.flow.Get()
@@ -384,7 +390,7 @@ func flowBlock(cx *core.Scope, m *market) core.Node {
 			}},
 		}})
 	}
-	return block("Trade flow", label("sold ← · → bought"), nil, false,
+	return block(cx, "Trade flow", label("sold ← · → bought"), nil, false,
 		core.Dynamic(func(*core.Scope) core.Node {
 			c := colors.up
 			if big() < 0 {

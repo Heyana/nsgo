@@ -466,7 +466,7 @@ func (e *ed) rowSpans(row int) []core.Span {
 	e.textRev.Get()
 	e.hlRev.Get()
 	e.marksRev.Get()
-	dark := e.cx.Env().Dark()
+	dark := e.cx.Dark()
 	r := e.st.r()
 	if row >= e.st.disp.count() {
 		return nil

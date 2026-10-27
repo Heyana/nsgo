@@ -154,6 +154,9 @@ func (v *view) setProps(p *driver.ViewProps) {
 	if p.TestID != old.TestID {
 		v.native.Send(selSetAccessibilityIdentifier, nsOrNil(p.TestID))
 	}
+	if p.Appearance != old.Appearance {
+		v.native.Send(sel("setAppearance:"), nsAppearance(p.Appearance))
+	}
 	v.updateAccessibility()
 	if v.propsSet && p.Label != old.Label {
 		v.announceLive(p.Label)

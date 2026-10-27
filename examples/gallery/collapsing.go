@@ -31,6 +31,7 @@ type collapsingRow struct {
 // below the bar; only the rows near the screen exist, and the footer
 // after it lies past its full length.
 func collapsingDemo(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
 	var rows []collapsingRow
 	var weeks []int
 	for week := 1; week <= 20; week++ {
@@ -86,6 +87,7 @@ func collapsingDemo(cx *core.Scope) core.Node {
 	list := core.List{Viewport: core.ListViewportParent, Count: func() int { return len(rows) }, EstimatedSize: 52,
 		StickyHeaderIndices: weeks, StickyHeaderOffset: collapsingBar,
 		Row: func(cx *core.Scope, r core.ListRow) core.Node {
+			colors := colorsOf(cx)
 			row := func() collapsingRow { return rows[r.Index()] }
 			// A cell shows a heading now and an entry later: Show switches
 			// with the row it shows.

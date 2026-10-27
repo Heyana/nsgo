@@ -1,0 +1,61 @@
+# Themes
+
+How an app, a component library and an embedding host give the UI its colors in both appearances, and how a subtree takes another theme or appearance. Read this before changing `core/theme.go` or the gallery's look.
+
+## Model
+
+A `core.Theme` is one look in both appearances: a `Palette` for light and one for dark, a corner radius and font families. Its roles are Onevra's (its `theme` package, on MyGo's `ui.Theme`), and `DefaultTheme` holds Onevra's values:
+
+| Role | What it colors |
+| --- | --- |
+| `Background` | The page |
+| `Surface`, `SurfaceHover`, `SurfacePressed` | A card or control, under the pointer, held down |
+| `Border` | Edges and separators |
+| `Text`, `TextMuted` | Text and secondary text |
+| `Accent`, `AccentHover`, `AccentPressed`, `AccentText` | The accent fill, its states, what is drawn on it |
+| `Danger`, `Warning`, `Success` | Semantic colors |
+| `Selection`, `Focus`, `Scrollbar` | Selected text, focus rings, scroll indicators |
+
+`Palette.Colors` holds roles a library or app adds by name (`inset`, `info`), which `Palette.Color` and `SetColor` reach as they reach the fields, by their names in lower camel case. Gradients, shadows and other finishes are not colors and stay in the library's code, chosen by `Dark`.
+
+## Scope
+
+- `cx.SetTheme(t)` gives `cx` and what it builds from then on `t`; at the root it is the app's. A deeper call wins for its subtree, so a sidebar can carry another theme. Calling it again changes it.
+- `cx.SetSubtreeAppearance(a)` forces light or dark for `cx` and what it builds from then on; `AppearanceSystem` follows the appearance above. `cx.SetAppearance` keeps forcing the app's, with its window chrome.
+- `cx.Theme()`, `cx.Palette()` and `cx.Dark()` read the nearest theme, its palette in the appearance its subtree shows, and that appearance. They are tracked, so a `StyleFunc` that reads them follows every change without a rebuild.
+- Both setters keep a signal in the scope's values, as `core.Key` does; a node made under a forced subtree binds the nearest one, so lookups cost nothing until an app forces one.
+- `base` components read no theme. `Editor`, `DiffView` and highlighting follow `cx.Dark()`, so they match their subtree.
+
+Native views follow a subtree's forced appearance through `ViewProps.Appearance`, which each node carries: `NSView.appearance` on macOS, `overrideUserInterfaceStyle` on iOS, `color-scheme` on the web. Windows, Linux and Android scope appearance per window only, so their native parts keep the app's.
+
+## Theme files
+
+`core.ParseTheme` reads a theme file over `DefaultTheme`, which an app embeds with `go:embed` and gives to `SetTheme`:
+
+```yaml
+radius: 8
+light:
+  background: "#fcfbf9"
+  inset: "#f2efea" # a role of Palette.Colors
+dark:
+  background: "#211f1c"
+```
+
+Values are CSS colors. JSON is YAML, so a theme exported as JSON reads too.
+
+## Hosts
+
+An embedding host's `core.Tokens` go over every theme's palette by the same role names: `Values` in both appearances, `Dark` over them where a subtree shows dark. A value that is no color is dropped.
+
+## Gallery
+
+`examples/gallery` styles `base` and `core` with its own components (`look.go`, `kit.go`): `galleryTheme`, Onevra's with the gallery's roles in `Palette.Colors`, and buttons, cards, insets, badges, switches, segmented controls, meters, sheets and fields. They take the scope they are built in and read `colorsOf`, `tintsOf` and `finOf` there when built, so a subtree's theme reaches them; the root rebuilds when its palette changes.
+
+## Departures from NSH
+
+| NSH | NSGo | Why |
+| --- | --- | --- |
+| shadcn's roles from `nsh.json`, as Tailwind tokens | Onevra's roles as typed fields of a Go value, plus named ones | Apps write Go, not classes; the user picked Onevra's palette |
+| One theme per engine | A theme and an appearance per subtree | Apps can theme a sidebar or panel apart |
+| `examples/nsh-gallery-ui`, a layer apart | The gallery's own files | Only the gallery uses it |
+| A theme file in `nsh.json` | `ParseTheme` over an embedded file | Go embeds files itself; the tool stays out of it |

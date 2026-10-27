@@ -146,22 +146,20 @@ func TestHostCalls(t *testing.T) {
 }
 
 func TestHostTokens(t *testing.T) {
-	var accent string
+	var accent, inset Color
 	h := newEmbedded(t, NewHost(), func(c *Scope) Node {
-		c.Effect(func() { accent, _ = c.Env().Token("accent") })
+		c.Effect(func() { p := c.Palette(); accent, inset = p.Accent, p.Colors["inset"] })
 		return View{}
 	})
-	h.tree.SetTokens(Tokens{Values: map[string]string{"accent": "#e11d48"}, Dark: map[string]string{"accent": "#fb7185"}})
+	h.tree.SetTokens(Tokens{Values: map[string]string{"accent": "#e11d48", "inset": "#eeeeee", "bad": "nope"},
+		Dark: map[string]string{"accent": "#fb7185"}})
 	h.drain()
-	if accent != "#e11d48" {
-		t.Fatalf("accent = %q", accent)
+	if accent != RGB(0xe11d48) || inset != RGB(0xeeeeee) {
+		t.Fatalf("accent = %v, inset = %v", accent, inset)
 	}
 	h.tree.SetEnvironment(Environment{Dark: true})
 	h.drain()
-	if accent != "#fb7185" {
-		t.Fatalf("dark accent = %q", accent)
-	}
-	if c, err := ParseColor(accent); err != nil || c != RGB(0xfb7185) {
-		t.Fatalf("ParseColor = %v %v", c, err)
+	if accent != RGB(0xfb7185) {
+		t.Fatalf("dark accent = %v", accent)
 	}
 }

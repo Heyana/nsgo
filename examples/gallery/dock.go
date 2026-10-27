@@ -95,6 +95,8 @@ var dockSources = map[string][]string{
 // editorPanel is an editor: a count of its edits, which survives every
 // move, over its file's lines.
 func editorPanel(cx *core.Scope, panel string) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	edits := core.NewSignal(cx, 0)
 	var lines []core.Node
 	for i, l := range dockSources[panel] {
@@ -123,6 +125,7 @@ var dockFiles = []struct {
 
 // dockPanel is what a panel shows, by key.
 func dockPanel(cx *core.Scope, panel string) core.Node {
+	colors := colorsOf(cx)
 	switch panel {
 	case "readme", "main":
 		return editorPanel(cx, panel)
@@ -142,7 +145,7 @@ func dockPanel(cx *core.Scope, panel string) core.Node {
 		return core.View{Style: core.Style{FlexGrow: 1, Gap: 2, Padding: core.All(8)}, Children: rows}
 	case "preview":
 		return core.View{Style: core.Style{FlexGrow: 1, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 12, Padding: core.All(16)}, Children: []core.Node{
-			iconTile(iconSpark, 40),
+			iconTile(cx, iconSpark, 40),
 			core.View{Style: core.Style{AlignItems: core.AlignCenter, Gap: 2}, Children: []core.Node{
 				text("Live preview", 14, semibold, colors.text), text("Follows the editor beside it", 12, regular, colors.muted)}},
 		}}
@@ -157,7 +160,9 @@ func dockPanel(cx *core.Scope, panel string) core.Node {
 
 // tool is a toolbar control in the gallery's look: a raised 32 pt button
 // whose dot lights while what it toggles is on.
-func tool(label, name string, on func() bool, onPress func()) core.Node {
+func tool(cx *core.Scope, label, name string, on func() bool, onPress func()) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	children := []core.Node{}
 	if on != nil {
 		children = append(children, core.View{StyleFunc: func() core.Style {
@@ -181,6 +186,8 @@ func tool(label, name string, on func() bool, onPress func()) core.Node {
 // than 600 pt it shows one group at a time and presents a dock at a time,
 // as a drawer or a sheet over the editors.
 func dockDemo(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	layout := core.NewSignalFunc(cx, initialDock(), func(a, b base.DockLayout) bool { return false })
 	locked, closing := core.NewSignal(cx, false), core.NewSignal(cx, true)
 	last, zoomed := core.NewSignal(cx, "—"), core.NewSignal(cx, "")
@@ -201,12 +208,12 @@ func dockDemo(cx *core.Scope) core.Node {
 	}
 	return core.View{Style: fillPage.Merge(core.Style{Background: colors.background, Padding: core.All(pad), Gap: gap}), Children: []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
-			tool("Toggle files", "Files", showLeft.Get, func() { area.ToggleDock(base.DockLeft) }),
-			tool("Toggle terminal", "Terminal", showBottom.Get, func() { area.ToggleDock(base.DockBottom) }),
-			tool("Lock the layout", "Lock", locked.Get, func() { toggled(locked) }),
-			tool("Show close buttons", "Close", closing.Get, func() { toggled(closing) }),
-			tool("Zoom the group", "Zoom", func() bool { return zoomed.Get() != "" }, area.ToggleZoom),
-			tool("Reset the layout", "Reset", nil, func() { layout.Set(initialDock()) }),
+			tool(cx, "Toggle files", "Files", showLeft.Get, func() { area.ToggleDock(base.DockLeft) }),
+			tool(cx, "Toggle terminal", "Terminal", showBottom.Get, func() { area.ToggleDock(base.DockBottom) }),
+			tool(cx, "Lock the layout", "Lock", locked.Get, func() { toggled(locked) }),
+			tool(cx, "Show close buttons", "Close", closing.Get, func() { toggled(closing) }),
+			tool(cx, "Zoom the group", "Zoom", func() bool { return zoomed.Get() != "" }, area.ToggleZoom),
+			tool(cx, "Reset the layout", "Reset", nil, func() { layout.Set(initialDock()) }),
 			core.Text{Content: hint(cx, "Hold a tab to reorder it", "Drag a tab onto another group, or to a group's edge to split it"),
 				Style: core.Style{MinWidth: core.Pt(160), FlexGrow: 1, FlexShrink: 1, TextAlign: core.TextAlignEnd, FontSize: 13, Color: colors.faint}},
 		}},
@@ -256,6 +263,8 @@ func dockDemo(cx *core.Scope) core.Node {
 
 func dockArea(cx *core.Scope, area *base.DockAreaRef, layout *core.Signal[base.DockLayout], locked *core.Signal[bool], last, zoomed *core.Signal[string],
 	showLeft, showBottom *core.Signal[bool], panels map[string]base.DockPanelOptions, pointer bool) core.Node {
+	colors := colorsOf(cx)
+	tints := tintsOf(cx)
 	return base.DockArea{Ref: area, TestID: "dock", Layout: layout.Get, OnLayoutChange: layout.Set, Locked: locked.Get, Panels: panels,
 		OnPanelRemove: func(p string) { last.Set("Closed " + dockTitle(p)) },
 		OnPanelActiveChange: func(p string, active bool) {
@@ -281,7 +290,7 @@ func dockArea(cx *core.Scope, area *base.DockAreaRef, layout *core.Signal[base.D
 		// A hairline that stays as it is; the thumb, a pill on it, grows
 		// in under the pointer and further while dragged.
 		HandleStyle:        core.Style{Background: colors.line},
-		HandleThumbStyle:   handleThumb(),
+		HandleThumbStyle:   handleThumb(cx),
 		DockStyle:          core.Style{Background: colors.inset},
 		DropIndicatorStyle: core.Style{CornerRadius: 8, BorderWidth: 2, BorderColor: colors.accent, Background: tints.accent},
 		DrawerStyle:        core.Style{Width: core.Pt(260), Borders: core.Edges{Right: 1}, BorderColors: core.EdgeColors{Right: colors.border}, Background: colors.surface},
@@ -293,6 +302,7 @@ func dockArea(cx *core.Scope, area *base.DockAreaRef, layout *core.Signal[base.D
 		// button fades in over the tab's end while the pointer is on it;
 		// a touch screen keeps it beside the shown tab's title.
 		RenderTab: func(cx *core.Scope, tab base.DockTab) core.Node {
+			colors := colorsOf(cx)
 			children := []core.Node{core.Text{Content: dockTitle(tab.Key), MaxLines: 1, StyleFunc: func() core.Style {
 				s := core.Style{MaxWidth: core.Pt(160), FontSize: 13, FontWeight: medium, Color: colors.muted, Transition: core.Transition{Duration: 150e6}}
 				if tab.Selected() {
@@ -324,6 +334,7 @@ func dockArea(cx *core.Scope, area *base.DockAreaRef, layout *core.Signal[base.D
 				Children: children}
 		},
 		RenderDock: func(cx *core.Scope, d base.DockInfo) core.Node {
+			colors := colorsOf(cx)
 			name := dockNames[d.Placement]
 			return core.View{Style: core.Style{Height: core.Pt(32), Direction: core.Row, AlignItems: core.AlignCenter, Borders: core.Edges{Bottom: 1},
 				BorderColors: core.EdgeColors{Bottom: colors.line}, Padding: core.Edges{Left: 12, Right: 4}}, Children: []core.Node{
@@ -336,11 +347,14 @@ func dockArea(cx *core.Scope, area *base.DockAreaRef, layout *core.Signal[base.D
 			}}
 		},
 		RenderDragPreview: func(cx *core.Scope, tab base.DockTab) core.Node {
+			colors := colorsOf(cx)
+			fin := finOf(cx)
 			return core.View{Style: fin.raised.over(core.Style{CornerRadius: 8, BorderWidth: 1, BorderColor: colors.border, Padding: core.Symmetric(6, 12), Background: colors.raised}),
 				Children: []core.Node{text(dockTitle(tab.Key), 13, medium, colors.text)}}
 		},
 		RenderPanel: dockPanel,
 		RenderEmpty: func(cx *core.Scope) core.Node {
+			colors := colorsOf(cx)
 			return core.View{Style: core.Style{FlexGrow: 1, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 4}, Children: []core.Node{
 				text("Every editor is closed", 14, semibold, colors.text), text("Reset brings them back", 12, regular, colors.muted)}}
 		},

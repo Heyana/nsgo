@@ -64,8 +64,9 @@ func storageDemo(cx *core.Scope) core.Node {
 	}
 
 	launchesCard := func(cx *core.Scope) core.Node {
-		return card(cardProps{icon: iconStorage, title: "Launches", subtitle: "Counted each time this demo opens", right: badge("Kept", toneUp)},
-			figure(func() string { return strconv.Itoa(shown.Get()) }, "", func() string {
+		colors := colorsOf(cx)
+		return card(cx, cardProps{icon: iconStorage, title: "Launches", subtitle: "Counted each time this demo opens", right: badge(cx, "Kept", toneUp)},
+			figure(cx, func() string { return strconv.Itoa(shown.Get()) }, "", func() string {
 				if shown.Get() == 1 {
 					return "opening"
 				}
@@ -77,8 +78,9 @@ func storageDemo(cx *core.Scope) core.Node {
 	}
 
 	noteCard := func(cx *core.Scope) core.Node {
-		return card(cardProps{icon: iconForm, title: "Note", subtitle: "Saved as you type, back when the demo opens again"},
-			field(base.Input{Multiline: true, Value: note, OnChange: write, Placeholder: "Write something, then come back to it",
+		colors := colorsOf(cx)
+		return card(cx, cardProps{icon: iconForm, title: "Note", subtitle: "Saved as you type, back when the demo opens again"},
+			field(cx, base.Input{Multiline: true, Value: note, OnChange: write, Placeholder: "Write something, then come back to it",
 				Label: "Note", TestID: "note", Style: core.Style{Height: core.Pt(120), Padding: core.Edges{Top: 12, Right: 14, Bottom: 12, Left: 14}}}),
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6, MinHeight: core.Pt(16)}, Children: []core.Node{
 				core.Show{When: func() bool { return saved.Get() == "saved" }, Then: func(*core.Scope) core.Node { return icon(iconCheck, 14, colors.up) }},
@@ -112,6 +114,7 @@ func storageDemo(cx *core.Scope) core.Node {
 		return out
 	}
 	keysCard := func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
 		total := func() int {
 			n := 0
 			for _, e := range entries() {
@@ -119,13 +122,14 @@ func storageDemo(cx *core.Scope) core.Node {
 			}
 			return n
 		}
-		return card(cardProps{icon: iconLists, title: "Stored keys", subtitle: "Keys and each value's length"},
-			core.Show{When: func() bool { return len(store.Keys()) > 0 }, Else: func(*core.Scope) core.Node { return caption("Nothing stored", nil) },
+		return card(cx, cardProps{icon: iconLists, title: "Stored keys", subtitle: "Keys and each value's length"},
+			core.Show{When: func() bool { return len(store.Keys()) > 0 }, Else: func(*core.Scope) core.Node { return caption(cx, "Nothing stored", nil) },
 				Then: func(*core.Scope) core.Node {
 					return core.View{Children: []core.Node{core.Each(entries, func(e entry) string { return e.key },
 						func(cx *core.Scope, e func() entry, i func() int) core.Node {
+							colors := colorsOf(cx)
 							return core.Dynamic(func(*core.Scope) core.Node {
-								return listRow(i() == 0, nil,
+								return listRow(cx, i() == 0, nil,
 									core.Text{ContentFunc: func() string { return e().key }, MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, Color: colors.text, FontFamily: mono}},
 									core.Text{ContentFunc: func() string { return fmt.Sprintf("%d chars", e().length) }, Style: core.Style{FontSize: 13, Color: colors.muted}},
 								)
@@ -146,9 +150,9 @@ func storageDemo(cx *core.Scope) core.Node {
 			}
 			return d
 		}
-		return card(cardProps{icon: iconFile, title: "App directories", subtitle: "DataDir and CacheDir, named by the app's id"},
-			caption("Data", nil), code(dir(cx.DataDir())),
-			caption("Cache", nil), code(dir(cx.CacheDir())),
+		return card(cx, cardProps{icon: iconFile, title: "App directories", subtitle: "DataDir and CacheDir, named by the app's id"},
+			caption(cx, "Data", nil), code(cx, dir(cx.DataDir())),
+			caption(cx, "Cache", nil), code(cx, dir(cx.CacheDir())),
 		)
 	}
 

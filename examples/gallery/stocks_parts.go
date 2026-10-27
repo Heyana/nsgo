@@ -27,6 +27,7 @@ func livePulse(cx *core.Scope, running func() bool) *core.AnimatedValue {
 
 // liveDot is a dot with a ring that pulses while the market runs.
 func liveDot(cx *core.Scope, running func() bool, size core.Points) core.Node {
+	colors := colorsOf(cx)
 	p := livePulse(cx, running)
 	return core.View{Style: core.Style{Width: core.Pt(size * 2.5), Height: core.Pt(size * 2.5), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}, Children: []core.Node{
 		core.View{Style: core.Style{Position: core.Absolute, Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size / 2, Background: colors.accent,
@@ -80,7 +81,9 @@ func hline(d *core.Drawing, x0, x1, y float32, c core.Color, dash ...float32) {
 
 // gridColor is the charts' grid lines: the hairline color, a step darker
 // on the light page.
-func gridColor() core.Color {
+func gridColor(cx *core.Scope) core.Color {
+	colors := colorsOf(cx)
+	isDark := cx.Dark()
 	if isDark {
 		return colors.line
 	}
@@ -158,7 +161,8 @@ func (c *calmRange) reset() { c.set = false }
 // block is a flat section of a screen: a title with a faint note (or a
 // control) on the right, the content below, a hairline above all but the
 // first.
-func block(title string, noteFn func() string, right core.Node, first bool, children ...core.Node) core.Node {
+func block(cx *core.Scope, title string, noteFn func() string, right core.Node, first bool, children ...core.Node) core.Node {
+	colors := colorsOf(cx)
 	s := core.Style{Padding: core.Symmetric(14, 16), Gap: 10}
 	if !first {
 		s.Borders, s.BorderColors = core.Edges{Top: 1}, core.EdgeColors{Top: colors.line}
@@ -178,7 +182,8 @@ func block(title string, noteFn func() string, right core.Node, first bool, chil
 }
 
 // head is a quiet header for columns: SYMBOL, LAST.
-func head(label string, width core.Points, grow float32, align core.TextAlign) core.Node {
+func head(cx *core.Scope, label string, width core.Points, grow float32, align core.TextAlign) core.Node {
+	colors := colorsOf(cx)
 	s := core.Style{FlexGrow: grow, FlexShrink: grow, TextAlign: align, FontSize: 11, Color: colors.faint, LetterSpacing: 0.6}
 	if width > 0 {
 		s.Width = core.Pt(width)

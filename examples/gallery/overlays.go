@@ -9,13 +9,17 @@ import (
 )
 
 // popupStyle is the popups' look: the gallery's, as base draws none.
-func popupStyle() core.Style {
+func popupStyle(cx *core.Scope) core.Style {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	return fin.raised.over(core.Style{Background: colors.raised, CornerRadius: radiusInset, BorderWidth: 1, BorderColor: colors.border,
 		Padding: core.All(6), MinWidth: core.Pt(180)})
 }
 
 // trigger is a pressable chip that opens a popup.
-func trigger(label func() string) core.Node {
+func trigger(cx *core.Scope, label func() string) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	return core.View{Style: fin.raised.over(core.Style{AlignSelf: core.AlignStart, Padding: core.Symmetric(0, 14), Height: core.Pt(36),
 		JustifyContent: core.JustifyCenter, CornerRadius: radiusControl, Background: colors.raised, Active: &core.Style{Background: colors.border}}),
 		Children: []core.Node{textf(label, 14, medium, colors.text)}}
@@ -34,13 +38,14 @@ func overlaysDemo(cx *core.Scope) core.Node {
 	last := core.NewSignal(cx, "—")
 
 	primitive := func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
 		open := core.NewSignal(cx, false)
 		anchor := &core.Ref{}
-		return card(cardProps{icon: iconOverlays, title: "Overlay", subtitle: "A box that clips its content, with an overlay anchored inside it", right: badge("core", toneNeutral)},
+		return card(cx, cardProps{icon: iconOverlays, title: "Overlay", subtitle: "A box that clips its content, with an overlay anchored inside it", right: badge(cx, "core", toneNeutral)},
 			core.View{Style: core.Style{Height: core.Pt(56), Overflow: core.Hidden, CornerRadius: radiusInset, Background: colors.inset,
 				JustifyContent: core.JustifyCenter, Padding: core.Symmetric(0, 12)}, Children: []core.Node{
 				core.View{Ref: anchor, OnPress: func(core.PressEvent) { toggled(open) }, Role: core.RoleButton, Style: core.Style{AlignSelf: core.AlignStart},
-					Children: []core.Node{trigger(func() string {
+					Children: []core.Node{trigger(cx, func() string {
 						if open.Get() {
 							return "Close"
 						}
@@ -50,18 +55,19 @@ func overlaysDemo(cx *core.Scope) core.Node {
 					return core.Overlay{Anchor: anchor, Placement: core.PlaceBottom, Align: core.AlignStart, Offset: 6, Margin: 8,
 						OnPressOutside: func(core.Point) { open.Set(false) }, OnCancel: func() { open.Set(false) },
 						OnPosition: func(p core.Placement) { last.Set("overlay at " + placementName(p)) },
-						Style:      popupStyle(), TestID: "overlay",
+						Style:      popupStyle(cx), TestID: "overlay",
 						Children: []core.Node{core.Text{Content: "Outside the clipped box, on top of the page.",
 							Style: core.Style{FontSize: 14, Color: colors.text, Padding: core.All(6)}}}}
 				}},
 			}},
-			caption("Scroll the page: it follows its anchor", nil),
+			caption(cx, "Scroll the page: it follows its anchor", nil),
 		)
 	}
 
 	popovers := func(cx *core.Scope) core.Node {
-		return card(cardProps{icon: iconOverlays, title: "Popover", subtitle: "Anchored to its trigger on every device"},
-			base.Popover{Offset: 6, Margin: 8, PopupStyle: popupStyle(), Label: "Show the popover",
+		colors := colorsOf(cx)
+		return card(cx, cardProps{icon: iconOverlays, title: "Popover", subtitle: "Anchored to its trigger on every device"},
+			base.Popover{Offset: 6, Margin: 8, PopupStyle: popupStyle(cx), Label: "Show the popover",
 				OnOpenChange: func(open bool, reason base.Reason) {
 					state := "closed"
 					if open {
@@ -69,7 +75,7 @@ func overlaysDemo(cx *core.Scope) core.Node {
 					}
 					last.Set("popover " + state + " (" + reason.String() + ")")
 				},
-				Trigger: trigger(func() string { return "Show the popover" }),
+				Trigger: trigger(cx, func() string { return "Show the popover" }),
 				Children: []core.Node{core.View{Style: core.Style{Padding: core.All(8), Gap: 4, MaxWidth: core.Pt(260)}, Children: []core.Node{
 					text("Popover", 15, semibold, colors.text),
 					text("A press outside, Escape or back closes it.", 13, regular, colors.muted),
@@ -78,8 +84,9 @@ func overlaysDemo(cx *core.Scope) core.Node {
 	}
 
 	tooltips := func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
 		hoveredOpen, pinned := core.NewSignal(cx, false), core.NewSignal(cx, false)
-		return card(cardProps{icon: iconText, title: "Tooltip", subtitle: hint(cx, "Tooltips follow a pointer: pin one to see it", "Rest the pointer on a button")},
+		return card(cx, cardProps{icon: iconText, title: "Tooltip", subtitle: hint(cx, "Tooltips follow a pointer: pin one to see it", "Rest the pointer on a button")},
 			core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, Gap: 8}, Children: []core.Node{
 				// A view's Tooltip: the platform's bubble with the defaults.
 				core.View{Tooltip: core.Text{Content: "Saves the document", Style: core.Style{FontSize: 12, Color: colors.background,
@@ -110,8 +117,9 @@ func overlaysDemo(cx *core.Scope) core.Node {
 	}
 
 	sheets := func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
 		open := core.NewSignal(cx, false)
-		return card(cardProps{icon: iconOverlays, title: "Sheet", subtitle: "A panel at the bottom, over a backdrop"},
+		return card(cx, cardProps{icon: iconOverlays, title: "Sheet", subtitle: "A panel at the bottom, over a backdrop"},
 			button(buttonProps{label: "Show the sheet", variant: secondary}, func() { open.Set(true) }),
 			base.Sheet{Open: open.Get, Label: "Sheet",
 				OnOpenChange: func(next bool, reason base.Reason) {
@@ -134,8 +142,9 @@ func overlaysDemo(cx *core.Scope) core.Node {
 	}
 
 	toasts := func(cx *core.Scope) core.Node {
+		colors := colorsOf(cx)
 		count := 0
-		return card(cardProps{icon: iconSystem, title: "Toast", subtitle: "The gallery's toasts, on ToastManager, ToastStack and Toast"},
+		return card(cx, cardProps{icon: iconSystem, title: "Toast", subtitle: "The gallery's toasts, on ToastManager, ToastStack and Toast"},
 			core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, Gap: 8}, Children: []core.Node{
 				button(buttonProps{label: "Copy the link", variant: secondary}, func() {
 					count++
@@ -163,7 +172,8 @@ func overlaysDemo(cx *core.Scope) core.Node {
 // lastEventCard shows the last thing a demo reported.
 func lastEventCard(last *core.Signal[string]) cardFunc {
 	return func(cx *core.Scope) core.Node {
-		return card(cardProps{icon: iconSystem, title: "Last event"},
+		colors := colorsOf(cx)
+		return card(cx, cardProps{icon: iconSystem, title: "Last event"},
 			core.Text{ContentFunc: last.Get, TestID: "last-event", Style: core.Style{FontSize: 13, Color: colors.text, FontFamily: mono}})
 	}
 }

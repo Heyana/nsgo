@@ -43,7 +43,7 @@ The web runs one app per page; a page embeds more through frames.
 
 `engine.HostEnvironment` (a locale, a text size, light or dark) stands in for the platform's values: the engine applies it over each environment the platform reports, before a test's pin. The layout direction stays the system's, and an appearance the app forces still wins. Android writes the three into the environment its runtime reports instead.
 
-NSGo has no theme, so the host's theme overrides become `core.Tokens`: CSS strings by name, `Values` in both appearances and `Dark` over them, which the app reads with `Env.Token` and maps onto its own look (`ParseColor` reads colors). `OnError` hears each failure `RootOptions.Report` does, and `DataDir` moves the app's data and storage.
+The host's theme overrides are `core.Tokens`: CSS colors by role name, `Values` in both appearances and `Dark` over them, which go over every theme's palette ([themes](themes.md#hosts)). `OnError` hears each failure `RootOptions.Report` does, and `DataDir` moves the app's data and storage.
 
 ## iOS
 
@@ -70,7 +70,6 @@ Each `NsgoView` starts a process of the app, so views are apart by nature. The p
 | --- | --- | --- |
 | A runtime library loads apps' bundles (`AppView.load`) | The framework, library or Go program is the app; a view runs the one app built with it | Go apps are native code, compiled with the engine |
 | A Swift module and a C ABI | A header declaring classes Go registers, and one cgo export | NSGo writes no C or Swift; purego reaches the runtime |
-| Theme overrides of `nsh.json`'s theme | `core.Tokens` the app reads | NSGo ships no theme |
 | A dropped `HostReply` rejects the call | An unanswered call fails at its timeout | Go has no destructors |
 | One engine thread per Android view, over JNI | A process per view, over pipes | Android runs NSGo apps as processes |
 | Native modules, `EngineContext`, limits, cache options, dev server sessions | Not ported | Go hosts call the app's Go directly and give each view its values |

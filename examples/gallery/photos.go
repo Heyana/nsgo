@@ -42,7 +42,9 @@ func compact(n int) string {
 }
 
 // photoRow is a photo in the phone layout's list.
-func photoRow(p func() photo) core.Node {
+func photoRow(cx *core.Scope, p func() photo) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	return press(pressProps{scale: 0.985, label: "Photo"},
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(0, 16), Height: core.Pt(76)}, Children: []core.Node{
 			core.Image{SourceFunc: func() core.ImageSource { return core.Src(fmt.Sprintf("https://picsum.photos/seed/%d/112/112", p().id)) },
@@ -51,17 +53,18 @@ func photoRow(p func() photo) core.Node {
 			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 4, AlignSelf: core.AlignStretch, JustifyContent: core.JustifyCenter,
 				Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.line}}, Children: []core.Node{
 				core.Text{ContentFunc: func() string { return p().title }, MaxLines: 1, Style: core.Style{FontSize: 15, FontWeight: semibold, Color: colors.text}},
-				photoByline(p, 13),
+				photoByline(cx, p, 13),
 			}},
 			textf(func() string { return fmt.Sprintf("#%d", p().id) }, 13, regular, colors.faint),
 		}})
 }
 
 // photoByline is a photo's tone dot, author and views.
-func photoByline(p func() photo, size core.Points) core.Node {
+func photoByline(cx *core.Scope, p func() photo, size core.Points) core.Node {
+	colors := colorsOf(cx)
 	return hrow(6,
 		core.View{StyleFunc: func() core.Style {
-			return core.Style{Width: core.Pt(6), Height: core.Pt(6), CornerRadius: 3, Background: p().tone.color()}
+			return core.Style{Width: core.Pt(6), Height: core.Pt(6), CornerRadius: 3, Background: p().tone.color(cx)}
 		}},
 		core.Text{ContentFunc: func() string { return p().author }, Style: core.Style{FontSize: size, Color: colors.muted}},
 		core.Text{ContentFunc: func() string { return fmt.Sprintf("· %s views", compact(p().views)) }, Style: core.Style{FontSize: size, Color: colors.faint}},
@@ -70,7 +73,9 @@ func photoByline(p func() photo, size core.Points) core.Node {
 
 // photoTile is a photo in the desktop layout's grid: the picture over its
 // title and author, a fill under the pointer.
-func photoTile(p func() photo) core.Node {
+func photoTile(cx *core.Scope, p func() photo) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	return press(pressProps{scale: 0.97, label: "Photo"},
 		core.View{Style: core.Style{Padding: core.All(6), Gap: 8, CornerRadius: radiusCard, BorderCurve: core.BorderCurveContinuous, Cursor: core.CursorPointer,
 			Hover: &core.Style{Background: colors.surface}}, Children: []core.Node{
@@ -82,7 +87,7 @@ func photoTile(p func() photo) core.Node {
 					core.Text{ContentFunc: func() string { return p().title }, MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, FontWeight: semibold, Color: colors.text}},
 					textf(func() string { return fmt.Sprintf("#%d", p().id) }, 12, regular, colors.faint),
 				}},
-				photoByline(p, 12),
+				photoByline(cx, p, 12),
 			}},
 		}})
 }
@@ -91,6 +96,8 @@ func photoTile(p func() photo) core.Node {
 // fit (at least 200 pt each) in the desktop layout, a list that recycles
 // its cells, pulls to refresh and loads pages as it nears its end.
 func photosDemo(cx *core.Scope) core.Node {
+	colors := colorsOf(cx)
+	fin := finOf(cx)
 	wide := shell.desktop()
 	photos := core.NewSignalFunc(cx, makePhotos(1, 1000), func(a, b []photo) bool { return false })
 	refreshing := core.NewSignal(cx, false)
@@ -144,28 +151,28 @@ func photosDemo(cx *core.Scope) core.Node {
 			// Moves at half speed: the list slides over it.
 			TranslateY: core.Interpolate(scrollY, core.Interpolation{Input: []float64{-200, 0, 300}, Output: []float64{0, 0, 150}}),
 		}}, Children: []core.Node{
-			core.View{Style: cardStyle().Merge(core.Style{Padding: core.All(16), Gap: 12}), Children: []core.Node{
+			core.View{Style: cardStyle(cx).Merge(core.Style{Padding: core.All(16), Gap: 12}), Children: []core.Node{
 				core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12}, Children: []core.Node{
 					core.View{Style: fin.raised.over(core.Style{Width: core.Pt(40), Height: core.Pt(40), CornerRadius: 12, BorderCurve: core.BorderCurveContinuous,
 						Background: colors.raised, BorderWidth: 1, BorderColor: colors.border, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}),
-						Children: []core.Node{logo(24)}},
+						Children: []core.Node{logo(cx, 24)}},
 					core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: []core.Node{
 						text("Photo stream", 17, semibold, colors.text), text("A recycled list of remote images", 13, regular, colors.muted)}},
-					badge("Remote", toneInfo),
+					badge(cx, "Remote", toneInfo),
 				}},
 				core.Text{Spans: []core.Span{
 					{ContentFunc: func() string { return thousands(len(photos.Get())) }},
 					{Content: " photos", Style: core.Style{FontSize: 15, FontWeight: medium, Color: colors.accent}},
 				}, Style: core.Style{FontSize: 40, FontWeight: semibold, Color: colors.text, LetterSpacing: -1}},
 				core.View{Style: core.Style{Direction: core.Row, Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.line}, Padding: core.Edges{Top: 10}}, Children: []core.Node{
-					stat("Pages", func() string { return itoa((len(photos.Get()) + photoPage - 1) / photoPage) }, toneNeutral, core.Pct(33)),
-					stat("Per page", label(itoa(photoPage)), toneNeutral, core.Pct(33)),
+					stat(cx, "Pages", func() string { return itoa((len(photos.Get()) + photoPage - 1) / photoPage) }, toneNeutral, core.Pct(33)),
+					stat(cx, "Per page", label(itoa(photoPage)), toneNeutral, core.Pct(33)),
 					core.Dynamic(func(*core.Scope) core.Node {
 						t := toneNeutral
 						if refreshes.Get() > 0 {
 							t = toneAccent
 						}
-						return stat("Refreshes", func() string { return itoa(refreshes.Get()) }, t, core.Pct(33))
+						return stat(cx, "Refreshes", func() string { return itoa(refreshes.Get()) }, t, core.Pct(33))
 					}),
 				}},
 			}},
@@ -191,7 +198,7 @@ func photosDemo(cx *core.Scope) core.Node {
 		list.EstimatedSize = 76
 		list.Style.Padding = core.Edges{Bottom: 24}
 		list.Header, list.Footer = hero(), footer()
-		list.Row = func(cx *core.Scope, r core.ListRow) core.Node { return photoRow(at(r)) }
+		list.Row = func(cx *core.Scope, r core.ListRow) core.Node { return photoRow(cx, at(r)) }
 		body = list
 	} else {
 		columns := core.NewMemo(cx, func() int { return columnsFor(200, 8, shell.paneWidth(), 16) })
@@ -204,7 +211,7 @@ func photosDemo(cx *core.Scope) core.Node {
 				l.EstimatedSize = core.Untracked(cx, func() core.Points { return (shell.paneWidth()-48)/core.Points(n)*0.75 + 60 })
 				l.Style.Padding, l.Gap, l.ColumnGap = core.All(24), 16, 16
 				l.Header, l.Footer = hero(), footer()
-				l.Row = func(cx *core.Scope, r core.ListRow) core.Node { return photoTile(at(r)) }
+				l.Row = func(cx *core.Scope, r core.ListRow) core.Node { return photoTile(cx, at(r)) }
 				return l
 			})
 		})
