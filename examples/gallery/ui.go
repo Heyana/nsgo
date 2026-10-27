@@ -178,6 +178,12 @@ func demoPage(cx *core.Scope, p pageProps, cards ...cardFunc) core.Node {
 		}
 		body = core.View{Style: core.Style{Padding: core.Edges{Top: 16, Right: 16, Bottom: bottom, Left: 16}, Gap: 16}, Children: nodes}
 	} else {
+		// The cards are built once and move between the columns, which
+		// are built again when their number changes.
+		held := make([]*core.Holder, len(cards))
+		for i, c := range cards {
+			held[i] = core.NewHolder(cx, func(*core.Scope) core.Node { return build(i, c) })
+		}
 		columns := core.NewMemo(cx, func() int { return columnsFor(380, most, shell.paneWidth(), 20) })
 		body = core.Dynamic(func(cx *core.Scope) core.Node {
 			n := columns.Get()
@@ -185,9 +191,9 @@ func demoPage(cx *core.Scope, p pageProps, cards ...cardFunc) core.Node {
 				var cols []core.Node
 				for column := range n {
 					var nodes []core.Node
-					for i, c := range cards {
+					for i, h := range held {
 						if i%n == column {
-							nodes = append(nodes, build(i, c))
+							nodes = append(nodes, h.Place())
 						}
 					}
 					cols = append(cols, core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, FlexBasis: core.Pt(0), MinWidth: core.Pt(0), Gap: 20}, Children: nodes})

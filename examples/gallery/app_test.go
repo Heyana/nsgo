@@ -98,6 +98,18 @@ func TestLayoutsKeepTheDemo(t *testing.T) {
 	}
 }
 
+// TestResizeKeepsTheCards moves the cards between columns, keeping what
+// they show, when the pane narrows to one column.
+func TestResizeKeepsTheCards(t *testing.T) {
+	app := startDesktop(t)
+	open(app, "Controls")
+	app.Press("role:switch Notifications")
+	app.Resize(900, 800)
+	if !app.Find("role:switch Badges").Props.Disabled {
+		t.Fatal("the switches were built again")
+	}
+}
+
 func TestPhoneRestoresDemo(t *testing.T) {
 	app := nsgotest.Start(t, Root, nsgotest.Size(390, 844), nsgotest.Storage(map[string]string{lastDemo: "Controls"}))
 	app.Find("id:screen-Controls")
