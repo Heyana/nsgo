@@ -24,7 +24,7 @@ Host elements (`View`, `Text`, `Input`, `Scroll`, `List`, `Image`, `Icon`, `Canv
 - State styles merge over the rest in NSH's order: `Checked`, `Indeterminate` and `Selected`, which the app sets, then `Hover`, `Focus` and `Active`, then `Disabled` over all; a `GroupStyle` follows its group's states first ([styles](styles.md)).
 - The engine tracks `Hover`, `Focus` and `Active` from the events it asks the platform to report. Windows and Linux hit-test hovers themselves (`internal/platform/hover`).
 - `PartStates` styles a view in states it does not report, as a control's part, NSH's `project_checked`.
-- Props only one platform has sit in a field named after it, as NSH's `ios`, `android` and `desktop` objects: `View.IOS.BackdropMaterial`, `View.Desktop.WindowDrag`, `Input.IOS.KeyboardAppearance`, `Modal.IOS.SupportedOrientations`, `Modal.Android.StatusBarTranslucent`. What two platforms have stays top-level, so `InputAccessoryViewID` and `LiveRegion`, which NSH keeps for iOS or Android only, are top-level because NSGo implements them on more.
+- Props only one platform has sit in a field named after it, as NSH's `ios`, `android` and `desktop` objects: `View.IOS.BackdropMaterial`, `View.Android.Ripple`, `View.Desktop.WindowDrag`, `Input.IOS.KeyboardAppearance`, `Modal.IOS.SupportedOrientations`, `Modal.Android.StatusBarTranslucent`. What two platforms have stays top-level, so `InputAccessoryViewID` and `LiveRegion`, which NSH keeps for iOS or Android only, are top-level because NSGo implements them on more.
 - A `Ref`, usable at its zero value, names a mounted element for anchoring, focus, scrolling and its bounds.
 
 A component is any type whose `Render(cx) Node` returns its nodes, like `http.Handler`. Its fields are its props. `Render` runs once under a scope of its own, so `Key.Provide` and cleanups stay inside it. `Func` turns a function into a component.
@@ -47,6 +47,8 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - An overlay with an anchor goes beside it as NSH's `place` does: the side asked unless only the opposite side fits or has more room, aligned along it, then clamped into the safe area.
 - A modal provides the insets its content keeps clear of; a screen does too, without the top when it has a header. `Insets` reads them.
 - `EventBack` (Escape, the back button) goes to the topmost overlay that listens for cancel, else the topmost modal's `OnRequestClose`, else the `Scope.OnBackPress` handlers newest first, else the innermost stack that can pop.
+- A back gesture that begins (Android's predictive back, iOS's swipe) sends `EventBackStarted`; the core answers `ItemBackPreview` with the screen a back would pop and shows the one below it, so the platform moves the top screen off it with the finger. `EventBackCancelled` hides it again.
+- `ItemHistory` counts the backs the app can take: screens above each stack's first and modals shown. The web keeps that many browser history entries when the app is the whole page, so the browser's back goes back in the app.
 - `OnBackPress` stays in `core`, where NSH's apps take it from `nsh/mobile`, because it also hears Escape and the browser's back.
 - A popped screen reports `OnDismiss` and stays hidden until the app removes it; the last screen never pops.
 - Where the environment has `HeaderHeight` (iOS, Android), screens get NSH's system header: the core pads the content below the bar and the status bar, sends `ItemScreen`, and lays `HeaderLeft`, `HeaderRight` and `HeaderTitle` out as roots the platform puts in the bar.

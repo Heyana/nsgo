@@ -67,6 +67,36 @@ func (v *view) layoutScale() float32 {
 	return 1
 }
 
+// Modals come in as on the web and macOS: sliding up from below the
+// surface over 300 ms or fading in over 200 ms, easing out; with reduced
+// motion what slides fades.
+var (
+	modalSlide = driver.LayoutTransition{Curve: driver.LayoutEaseOut, Duration: 300 * time.Millisecond}
+	modalFade  = driver.LayoutTransition{Curve: driver.LayoutEaseOut, Property: driver.LayoutOpacity, Duration: 200 * time.Millisecond}
+)
+
+// present brings modal v in.
+func (w *window) present(v *view) {
+	anim := v.modal
+	if anim == driver.ModalSlide && w.env.ReduceMotion {
+		anim = driver.ModalFade
+	}
+	now := time.Now()
+	switch anim {
+	case driver.ModalSlide:
+		l := w.layoutOf(v)
+		from := v.frame
+		from.Origin.Y += max(v.frame.Size.Height, 1)
+		l.move, l.moveStart, l.from, l.shown = &modalSlide, now, from, from
+	case driver.ModalFade:
+		l := w.layoutOf(v)
+		l.fade, l.fadeStart, l.out, l.shownPart = &modalFade, now, false, 0
+	default:
+		return
+	}
+	w.moved(v)
+}
+
 // animatesLayout reports whether a commit's layout animation may move v:
 // modals come and go on their own.
 func animatesLayout(v *view) bool { return v.kind != driver.KindModal }

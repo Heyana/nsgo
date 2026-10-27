@@ -1,5 +1,10 @@
 package driver
 
+import (
+	"bytes"
+	"image/png"
+)
+
 // AlertConfig is a native alert: a title, a message and its buttons.
 type AlertConfig struct {
 	Title   string
@@ -367,4 +372,50 @@ type StorageBackend interface {
 	// Write keeps change. It is called in order, on the goroutine of the
 	// graph that made the change; a backend that blocks writes elsewhere.
 	Write(change StorageChange)
+}
+
+// MemoryClipboard is a clipboard of a test's own: it takes the clipboard
+// items an app sends and answers its reads, so the machine's clipboard
+// is never touched.
+type MemoryClipboard struct {
+	Text  string
+	Image []byte // PNG
+	Files []string
+}
+
+// Take applies it when it is a clipboard item and reports whether it is:
+// a write changes the clipboard, and a read returns the event that
+// answers it, with answer true.
+func (c *MemoryClipboard) Take(it *MountItem) (ev Event, answer, taken bool) {
+	switch it.Kind {
+	case ItemSetClipboard:
+		c.Text, c.Image, c.Files = it.Value, nil, nil
+	case ItemSetClipboardImage:
+		data, _ := it.Data.([]byte)
+		c.Text, c.Image, c.Files = "", data, nil
+	case ItemReadClipboard:
+		ev = Event{Kind: EventClipboard, Count: it.Count}
+		switch it.Clipboard {
+		case ClipboardReadText:
+			ev.Text = c.Text
+		case ClipboardReadHasText:
+			ev.Finished = c.Text != ""
+		case ClipboardReadImage:
+			if len(c.Image) > 0 {
+				img := &ClipboardImage{PNG: c.Image}
+				if cfg, err := png.DecodeConfig(bytes.NewReader(c.Image)); err == nil {
+					img.Size = Size{Width: Points(cfg.Width), Height: Points(cfg.Height)}
+				}
+				ev.Data = img
+			}
+		case ClipboardReadHasImage:
+			ev.Finished = len(c.Image) > 0
+		case ClipboardReadFiles:
+			ev.URIs = append([]string(nil), c.Files...)
+		}
+		return ev, true, true
+	default:
+		return Event{}, false, false
+	}
+	return Event{}, false, true
 }

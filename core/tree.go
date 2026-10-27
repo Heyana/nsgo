@@ -55,12 +55,18 @@ type Tree struct {
 	keys        []*keyBinding
 	keysChanged bool
 	backs       []*backHandler
-	alertID     uint32
-	menuActions map[uint32]menuAction
-	popup       popupMenu
-	menuID      uint32
-	menuGen     uint32
-	rtl         bool // the layout direction the nodes were mapped for
+	// peeking is the screen a back gesture may uncover (Tree.peek).
+	peeking *node
+	// history is the depth ItemHistory last sent, which historyAgain
+	// sends again.
+	history      int
+	historyAgain bool
+	alertID      uint32
+	menuActions  map[uint32]menuAction
+	popup        popupMenu
+	menuID       uint32
+	menuGen      uint32
+	rtl          bool // the layout direction the nodes were mapped for
 	// sticky are the views whose position is Sticky; stuckIn the scroll
 	// views that pinned some at the last commit.
 	sticky  map[*node]bool
@@ -980,7 +986,7 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	n.responder = v.Responder
 	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
 		WindowDrag: v.Desktop.WindowDrag, SelectionArea: v.Selectable, PointerEvents: v.PointerEvents, HitSlop: v.HitSlop,
-		DelayLongPress: v.DelayLongPress, NoFocus: v.NoFocus}
+		DelayLongPress: v.DelayLongPress, NoFocus: v.NoFocus, Ripple: v.Android.Ripple}
 	n.material = v.IOS.BackdropMaterial
 	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, value: v.AccessibilityValue, expanded: v.Expanded,
 		hidden: v.AccessibilityElementsHidden, actions: v.AccessibilityActions, accessible: v.Accessible,
@@ -1283,6 +1289,18 @@ func (t *Tree) Dispatch(ev driver.Event) {
 		} else {
 			t.back()
 		}
+		t.peek(nil, nil)
+		// The browser took an entry back for it, which a back the app
+		// refused gets again.
+		t.historyAgain = true
+		t.changed = true
+		return
+	case driver.EventBackCancelled:
+		t.peek(nil, nil)
+		return
+	case driver.EventBackStarted:
+		t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemBackPreview, ID: t.backPreview()})
+		t.changed = true
 		return
 	case driver.EventScreenHeader:
 		if n := t.node(ev.ID); n != nil && n.screen != nil {

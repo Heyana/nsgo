@@ -39,6 +39,17 @@ final class ImageNode extends FrameLayout {
     private int mode = Protocol.RESIZE_COVER;
     /** The position on each axis: a fraction of the free space plus pixels. */
     private float xFraction = 0.5f, x, yFraction = 0.5f, y;
+    /**
+     * Before Android 12: the blur radius in pixels, and each view's sharp
+     * bitmap with the scale and radius its blurred copy was made at.
+     */
+    private float blur;
+    private final Sharp placeholderSharp = new Sharp(), sourceSharp = new Sharp();
+
+    private static final class Sharp {
+        Drawable image;
+        float scale, radius;
+    }
 
     ImageNode(Context context) {
         super(context);
@@ -63,11 +74,13 @@ final class ImageNode extends FrameLayout {
     void configure(int request, int mode, float blur, int fadeMillis) {
         this.mode = mode;
         fade = fadeMillis > 0 ? fadeMillis : DEFAULT_FADE;
-        // Blurring a view needs API 31; older systems show it sharp.
+        // Blurring a view needs API 31; before it fit blurs the bitmaps.
         if (Build.VERSION.SDK_INT >= 31) {
             RenderEffect effect = blur > 0 ? RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.CLAMP) : null;
             placeholder.setRenderEffect(effect);
             source.setRenderEffect(effect);
+        } else {
+            this.blur = blur;
         }
         fit(placeholder);
         fit(source);
@@ -110,6 +123,7 @@ final class ImageNode extends FrameLayout {
         float nw = d.getIntrinsicWidth(), nh = d.getIntrinsicHeight();
         if (mode == Protocol.RESIZE_STRETCH || nw <= 0 || nh <= 0) {
             view.setScaleType(ImageView.ScaleType.FIT_XY);
+            if (nw > 0 && nh > 0) blurOld(view, (w / nw + h / nh) / 2);
             return;
         }
         float contain = Math.min(w / nw, h / nh);
@@ -126,6 +140,49 @@ final class ImageNode extends FrameLayout {
         m.postTranslate(xFraction * freeX + x, yFraction * freeY + y);
         view.setScaleType(ImageView.ScaleType.MATRIX);
         view.setImageMatrix(m);
+        blurOld(view, s);
+    }
+
+    /**
+     * Before Android 12, shows view's bitmap blurred as RenderEffect would
+     * blur it drawn at scale: shrunk to that scale first, which costs less
+     * and loses only what the blur hides, and drawn at the sharp one's size.
+     */
+    private void blurOld(ImageView view, float scale) {
+        if (Build.VERSION.SDK_INT >= 31) return;
+        Sharp sharp = view == placeholder ? placeholderSharp : sourceSharp;
+        if (!(sharp.image instanceof BitmapDrawable)) return;
+        if (blur <= 0) {
+            if (view.getDrawable() != sharp.image) view.setImageDrawable(sharp.image);
+            sharp.radius = 0;
+            return;
+        }
+        if (sharp.radius == blur && sharp.scale == scale) return;
+        sharp.radius = blur;
+        sharp.scale = scale;
+        BitmapDrawable image = (BitmapDrawable) sharp.image;
+        Bitmap bitmap = image.getBitmap();
+        int bw = bitmap.getWidth(), bh = bitmap.getHeight();
+        int iw = image.getIntrinsicWidth(), ih = image.getIntrinsicHeight();
+        // The pixels a bitmap pixel covers on screen: the drawable's
+        // intrinsic size may differ from the bitmap's by their densities.
+        float drawn = scale * iw / Math.max(bw, 1);
+        float shrink = Math.min(drawn, 1);
+        Bitmap small = shrink < 1
+                ? Bitmap.createScaledBitmap(bitmap, Math.max(1, Math.round(bw * shrink)), Math.max(1, Math.round(bh * shrink)), true)
+                : bitmap;
+        Bitmap blurred = Blur.blurred(small, Blur.stackRadius(blur * shrink / drawn));
+        view.setImageDrawable(new BitmapDrawable(getResources(), blurred) {
+            @Override
+            public int getIntrinsicWidth() {
+                return iw;
+            }
+
+            @Override
+            public int getIntrinsicHeight() {
+                return ih;
+            }
+        });
     }
 
     /** Recolors the opaque pixels with argb, or keeps their colors for 0. */
@@ -151,6 +208,8 @@ final class ImageNode extends FrameLayout {
     private void show(ImageView view, Drawable image) {
         Drawable old = view.getDrawable();
         if (old instanceof AnimatedImageDrawable && old != image) ((AnimatedImageDrawable) old).stop();
+        (view == placeholder ? placeholderSharp : sourceSharp).image = image;
+        (view == placeholder ? placeholderSharp : sourceSharp).radius = 0;
         view.setImageDrawable(image);
         fit(view);
         if (image instanceof AnimatedImageDrawable) ((AnimatedImageDrawable) image).start();

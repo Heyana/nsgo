@@ -127,7 +127,12 @@ func registerViewType() error {
 			cbViewClassInit, widget.instanceSize, 0, 0)
 		if viewType == 0 {
 			viewTypeErr = fmt.Errorf("GLib did not register NsgoView")
+			return
 		}
+		// Range roles expose their value to AT-SPI only on widgets that
+		// are GtkAccessibleRange; its one method keeps its default.
+		var info gInterfaceInfo
+		gTypeAddInterfaceStatic(viewType, gtkAccessibleRangeGetType(), &info)
 	})
 	return viewTypeErr
 }
@@ -205,7 +210,13 @@ func viewContainsCallback(widget uintptr, x, y float64) int32 {
 // newViewWidget makes an NsgoView for v (nil: the surface) and keeps a
 // reference to it, which dropWidget releases.
 func (w *window) newViewWidget(v *view) uintptr {
-	widget := gObjectNew(viewType, nil)
+	role := int32(-1)
+	if v != nil {
+		if r, ok := w.roles[v.id]; ok {
+			role = r
+		}
+	}
+	widget := newAccessibleWidget(viewType, role)
 	gObjectRefSink(widget)
 	setWidget(widget, widgetRef{w, v})
 	return widget
@@ -325,6 +336,10 @@ func (w *window) allocateView(v *view) {
 			}
 			continue
 		}
+		if part := v.part(c); part != nil {
+			allocateNative(c, part.bounds)
+			continue
+		}
 		switch {
 		case c == v.entry, c == v.hint:
 			allocateNative(c, v.input.Content)
@@ -433,6 +448,8 @@ var (
 	gtkSnapshotPushBlur          func(uintptr, float64)
 	gtkSnapshotPushShadow        func(uintptr, *gskShadow, uintptr)
 	gtkSnapshotPop               func(uintptr)
+	gtkSnapshotPushBlend         func(uintptr, int32)
+	gtkSnapshotAppendNode        func(uintptr, uintptr)
 	gskRenderNodeDraw            func(uintptr, uintptr)
 	gskRenderNodeUnref           func(uintptr)
 	gskTransformTranslate        func(uintptr, *graphenePoint) uintptr
@@ -483,6 +500,8 @@ func bindWidget() {
 	gtk(&gtkSnapshotPushBlur, "gtk_snapshot_push_blur")
 	gtk(&gtkSnapshotPushShadow, "gtk_snapshot_push_shadow")
 	gtk(&gtkSnapshotPop, "gtk_snapshot_pop")
+	gtk(&gtkSnapshotPushBlend, "gtk_snapshot_push_blend")
+	gtk(&gtkSnapshotAppendNode, "gtk_snapshot_append_node")
 	gtk(&gskRenderNodeDraw, "gsk_render_node_draw")
 	gtk(&gskRenderNodeUnref, "gsk_render_node_unref")
 	gtk(&gskTransformTranslate, "gsk_transform_translate")

@@ -18,6 +18,9 @@ type screenNode struct {
 	stack  *node // the stack it is in, if any
 	popped bool
 	hidden bool
+	// peek lays the screen out under the top one while a back gesture
+	// may uncover it (EventBackStarted, until it pops or is cancelled).
+	peek bool
 
 	// native is set where the platform draws the header.
 	native            bool
@@ -307,13 +310,39 @@ func (t *Tree) showTop(n *node) {
 		if c.screen == nil {
 			continue
 		}
-		if hidden := c != top; hidden != c.screen.hidden {
+		if hidden := c != top && !c.screen.peek; hidden != c.screen.hidden {
 			c.screen.hidden = hidden
 			if t.restyle(c) {
 				t.markLayout(c)
 			}
 		}
 	}
+}
+
+// emitHistory sends ItemHistory when the screens above the stacks' first
+// and the modals shown changed in number, or after a back.
+func (t *Tree) emitHistory() {
+	depth := 0
+	for _, s := range t.stacks {
+		if !s.hidden {
+			depth += max(len(s.screens())-1, 0)
+		}
+	}
+	var modals func(host *node)
+	modals = func(host *node) {
+		for _, n := range host.hosted {
+			if !n.deleted && n.kind == driver.KindModal && !n.hoist.dismissed && !n.hidden {
+				depth++
+				modals(n)
+			}
+		}
+	}
+	modals(t.view)
+	if depth == t.history && !t.historyAgain {
+		return
+	}
+	t.history, t.historyAgain = depth, false
+	t.items = append(t.items, driver.MountItem{Kind: driver.ItemHistory, Count: uint32(depth)})
 }
 
 // markScreens marks the screens of stack n whose header config changed,

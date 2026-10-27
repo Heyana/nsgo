@@ -431,6 +431,8 @@ func edgeSwiped(self objc.ID, _ objc.SEL, r objc.ID) {
 	}
 	switch objc.Send[int](r, selState) {
 	case stateBegan:
+		// The core lays the screen below out for the swipe to uncover.
+		s.engine.Dispatch(driver.Event{Kind: driver.EventBackStarted})
 		b.below = s.screenBelow(v)
 		if b.below != nil {
 			b.below.native.Send(selSetHidden, false)
@@ -493,6 +495,8 @@ func (s *surface) endSwipe(v *view, pop bool) {
 				// Until the core hides it, as it pops it.
 				v.native.Send(selSetHidden, true)
 				s.engine.Dispatch(driver.Event{Kind: driver.EventBack, ID: v.id})
+			} else {
+				s.engine.Dispatch(driver.Event{Kind: driver.EventBackCancelled})
 			}
 		})
 	})

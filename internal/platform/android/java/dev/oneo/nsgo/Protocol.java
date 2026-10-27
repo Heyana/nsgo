@@ -24,6 +24,7 @@ final class Protocol {
     static final int TEST = 10;
     static final int HOST_CALL = 11;
     static final int CARETS = 12;
+    static final int WANT_FRAME = 13;
 
     // Java to Go.
     static final int START = 1;
@@ -37,6 +38,7 @@ final class Protocol {
     static final int TEST_REPLY = 9;
     static final int HOST = 10;
     static final int CARET_LINES = 11;
+    static final int FRAME = 12;
 
     // The parts of a HOST message, and of a HOST_CALL, as host.go has them.
     static final int HOST_EVENT = 1;
@@ -107,6 +109,8 @@ final class Protocol {
     static final int ITEM_APPEARANCE = 52;
     static final int ITEM_POPUP_MENU = 53;
     static final int ITEM_QUIT = 54;
+    static final int ITEM_BACK_PREVIEW = 55;
+    static final int ITEM_HISTORY = 56;
 
     // View kinds, as in core/mount.go.
     static final int KIND_VIEW = 1;
@@ -174,6 +178,8 @@ final class Protocol {
     static final int EVENT_SCREEN_HEADER = 54;
     static final int EVENT_OPEN_URL = 55;
     static final int EVENT_PICK = 56;
+    static final int EVENT_BACK_STARTED = 58;
+    static final int EVENT_BACK_CANCELLED = 59;
 
     // core.PointerEvents.
     static final int POINTER_EVENTS_NONE = 1;
@@ -310,6 +316,10 @@ final class Protocol {
     static final int IDIOM_PHONE = 0;
     static final int IDIOM_TABLET = 1;
     static final int IDIOM_TV = 4;
+
+    // driver.Selectable's off.
+    static final int SELECTABLE_ON = 1;
+    static final int SELECTABLE_OFF = 2;
 
     // Appearances, as driver.Appearance; 0 is the system's.
     static final int APPEARANCE_LIGHT = 1;

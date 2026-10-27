@@ -164,3 +164,36 @@ func TestFramesFollowThePlatform(t *testing.T) {
 		t.Fatal("the callback waiting for the next frame did not ask for it")
 	}
 }
+
+// TestATestsClipboardIsItsOwn sets and reads the clipboard of an app a
+// test observes: its own memory answers, and the platform sees nothing.
+func TestATestsClipboardIsItsOwn(t *testing.T) {
+	p := &recorder{mounted: make(chan struct{}, 1)}
+	read := make(chan string, 1)
+	var opts Options
+	opts.UseTest(testhostOptions(func(*driver.MountBatch) {}), &TestPin{})
+	opts.Size = driver.Size{Width: 100, Height: 100}
+	e := Start(p, func(cx *core.Scope) core.Node {
+		cx.SetClipboard("secret")
+		cx.Post(func() { cx.ReadClipboard(func(s string) { read <- s }) })
+		return core.View{}
+	}, opts)
+	defer e.Close()
+	select {
+	case s := <-read:
+		if s != "secret" {
+			t.Errorf("read %q, want the text set", s)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the read was not answered")
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, b := range p.batches {
+		for _, it := range b.Items {
+			if it.Kind == driver.ItemSetClipboard || it.Kind == driver.ItemReadClipboard {
+				t.Errorf("the platform got %v", it.Kind)
+			}
+		}
+	}
+}

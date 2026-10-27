@@ -33,6 +33,9 @@ type scrollState struct {
 	// room is the top inset kept for the app's own refresh indicator
 	// while it refreshes.
 	room driver.Points
+	// keyboard is what the software keyboard covers of the view, added to
+	// its bottom inset while an input in it has the focus (keyboard.go).
+	keyboard driver.Points
 	// applied counts the core's ItemScrollTo and ItemScrollBy items,
 	// reported with each offset; sticky are its sticky cells.
 	applied uint32
@@ -211,7 +214,7 @@ func (v *view) configureScroll(c *driver.ScrollConfig) {
 // above it.
 func (v *view) setInset(in driver.Edges) {
 	v.native.Send(sel("setContentInset:"), edgeInsets{Top: float64(in.Top + v.sc.room), Left: float64(in.Left),
-		Bottom: float64(in.Bottom), Right: float64(in.Right)})
+		Bottom: float64(in.Bottom + v.sc.keyboard), Right: float64(in.Right)})
 }
 
 // setRoom keeps the room of the app's own refresh indicator above the

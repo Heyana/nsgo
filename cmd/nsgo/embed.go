@@ -164,10 +164,43 @@ func embedModule(p *project) string {
 	return name
 }
 
-// buildIOSFramework writes <dir>/<module>.xcframework, the app as a
-// static library for devices and for the simulator with NSGo.h, and
-// <dir>/<name>Resources, the app's resources, which the host adds to its
-// bundle as a folder.
+// iosSlice is one platform of the iOS framework: its SDK, GOOS, the
+// architectures it holds and their clang targets.
+type iosSlice struct {
+	sdk, goos string
+	archs     []string // Go's
+	target    string   // clang's, with %s for the architecture
+	catalyst  bool
+}
+
+// iosSlices are the framework's platforms: devices, the simulator on
+// Apple silicon and Intel Macs, and Mac Catalyst, which runs on macOS:
+// its Go code is GOOS=darwin built with the ios tag, so NSGo's iOS
+// backend serves it, as gomobile builds it.
+var iosSlices = []iosSlice{
+	{sdk: "iphoneos", goos: "ios", archs: []string{"arm64"}, target: "%s-apple-ios15.0"},
+	{sdk: "iphonesimulator", goos: "ios", archs: []string{"arm64", "amd64"}, target: "%s-apple-ios15.0-simulator"},
+	{sdk: "macosx", goos: "darwin", archs: []string{"arm64", "amd64"}, target: "%s-apple-ios15.0-macabi", catalyst: true},
+}
+
+// clangArch is clang's name of Go's architecture.
+func clangArch(goarch string) string {
+	if goarch == "amd64" {
+		return "x86_64"
+	}
+	return goarch
+}
+
+// iosLinked are what Go's runtime and net link.
+var iosLinked = []string{"UIKit", "Foundation", "CoreFoundation", "Security"}
+
+// buildIOSFramework writes <dir>/<module>.xcframework, the app for
+// devices, the simulator (arm64 and x86_64) and Mac Catalyst (arm64 and
+// x86_64) with NSGo.h, and <dir>/<name>Resources, the app's resources,
+// which the host adds to its bundle as a folder. Each platform is a
+// static library, or with -dynamic a dynamic framework the host embeds:
+// iOS forbids Go's c-shared, so the static library is linked into one,
+// which exports only NSGoStart.
 func buildIOSFramework(ctx context.Context, p *project, dir string) error {
 	tmp, err := os.MkdirTemp("", "nsgo-embed-")
 	if err != nil {
@@ -184,47 +217,90 @@ func buildIOSFramework(ctx context.Context, p *project, dir string) error {
 		return err
 	}
 	module := embedModule(p)
+	header := strings.ReplaceAll(embedHeader, "{{name}}", p.Name)
 	args := []string{"-create-xcframework"}
-	for _, simulator := range []bool{false, true} {
-		sdkName, triple := "iphoneos", "arm64-apple-ios15.0"
-		if simulator {
-			sdkName, triple = "iphonesimulator", "arm64-apple-ios15.0-simulator"
-		}
-		sdk, err := output(ctx, "xcrun", "--sdk", sdkName, "--show-sdk-path")
+	for _, sl := range iosSlices {
+		sdk, err := output(ctx, "xcrun", "--sdk", sl.sdk, "--show-sdk-path")
 		if err != nil {
 			return fmt.Errorf("the iOS SDK needs Xcode: %w", err)
 		}
-		clang, err := output(ctx, "xcrun", "--sdk", sdkName, "-f", "clang")
+		clang, err := output(ctx, "xcrun", "--sdk", sl.sdk, "-f", "clang")
 		if err != nil {
 			return err
 		}
-		flags := "-isysroot " + sdk + " -target " + triple
-		slice := filepath.Join(tmp, sdkName)
-		lib := filepath.Join(slice, "lib"+module+".a")
-		env := []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1",
-			"CC=" + clang + " " + flags, "CGO_CFLAGS=" + flags, "CGO_LDFLAGS=" + flags}
-		if err := goBuildWith(ctx, p, lib, env, []string{"-buildmode=c-archive", "-overlay", overlay, "-tags", "nsgoembed"}); err != nil {
+		slice := filepath.Join(tmp, sl.sdk)
+		var libs, dylibs []string
+		for _, arch := range sl.archs {
+			flags := "-isysroot " + sdk + " -target " + fmt.Sprintf(sl.target, clangArch(arch))
+			if sl.catalyst {
+				// UIKit for Mac Catalyst lives in the macOS SDK's iOSSupport.
+				support := filepath.Join(sdk, "System/iOSSupport")
+				flags += " -iframework " + filepath.Join(support, "System/Library/Frameworks") +
+					" -isystem " + filepath.Join(support, "usr/include")
+			}
+			lib := filepath.Join(slice, arch, "lib"+module+".a")
+			env := []string{"GOOS=" + sl.goos, "GOARCH=" + arch, "CGO_ENABLED=1",
+				"CC=" + clang + " " + flags, "CGO_CFLAGS=" + flags, "CGO_LDFLAGS=" + flags}
+			tags, ldflags := "nsgoembed", []string(nil)
+			if sl.catalyst {
+				// AppKit's threads drop the signal stack Go's preemption
+				// signal needs, so goroutines are preempted only where
+				// they yield, as GODEBUG=asyncpreemptoff=1 has it.
+				tags, ldflags = "ios,nsgoembed", []string{"-X=runtime.godebugDefault=asyncpreemptoff=1"}
+			}
+			if err := goBuildWith(ctx, p, lib, env, []string{"-buildmode=c-archive", "-overlay", overlay, "-tags", tags}, ldflags...); err != nil {
+				return err
+			}
+			// cgo's header declares Go's types too; the host needs only ours.
+			os.Remove(strings.TrimSuffix(lib, ".a") + ".h")
+			libs = append(libs, lib)
+			if p.Build.dynamic {
+				dylib := filepath.Join(slice, arch, module)
+				install := "@rpath/" + module + ".framework/" + module
+				if sl.catalyst {
+					install = "@rpath/" + module + ".framework/Versions/A/" + module
+				}
+				link := append(strings.Fields(flags), "-dynamiclib", "-o", dylib, "-Wl,-all_load", lib,
+					"-lresolv", "-install_name", install, "-Wl,-exported_symbol,_NSGoStart", "-Wl,-dead_strip")
+				if sl.catalyst {
+					link = append(link, "-F", filepath.Join(sdk, "System/iOSSupport/System/Library/Frameworks"))
+				}
+				for _, f := range iosLinked {
+					link = append(link, "-framework", f)
+				}
+				if err := run(ctx, clang, link...); err != nil {
+					return err
+				}
+				dylibs = append(dylibs, dylib)
+			}
+		}
+		if !p.Build.dynamic {
+			lib := filepath.Join(slice, "lib"+module+".a")
+			if err := run(ctx, "lipo", append([]string{"-create", "-output", lib}, libs...)...); err != nil {
+				return err
+			}
+			headers := filepath.Join(slice, "Headers")
+			if err := writeIOSHeaders(headers, header, fmt.Sprintf("module %s {\n\theader \"NSGo.h\"\n%s\texport *\n}\n", module, iosLinks())); err != nil {
+				return err
+			}
+			args = append(args, "-library", lib, "-headers", headers)
+			continue
+		}
+		fw, err := writeIOSFramework(slice, module, p.ID, header, sl.catalyst)
+		if err != nil {
 			return err
 		}
-		headers := filepath.Join(slice, "Headers")
-		if err := os.MkdirAll(headers, 0o755); err != nil {
+		binary := filepath.Join(fw, module)
+		if sl.catalyst {
+			binary = filepath.Join(fw, "Versions/A", module)
+		}
+		if err := run(ctx, "lipo", append([]string{"-create", "-output", binary}, dylibs...)...); err != nil {
 			return err
 		}
-		// cgo's header declares Go's types too; the host needs only ours.
-		os.Remove(strings.TrimSuffix(lib, ".a") + ".h")
-		header := strings.ReplaceAll(embedHeader, "{{name}}", p.Name)
-		if err := os.WriteFile(filepath.Join(headers, "NSGo.h"), []byte(header), 0o644); err != nil {
-			return err
-		}
-		// What Go's runtime and net link, autolinked by the module.
-		modulemap := fmt.Sprintf("module %s {\n\theader \"NSGo.h\"\n\tlink framework \"UIKit\"\n"+
-			"\tlink framework \"Security\"\n\tlink \"resolv\"\n\texport *\n}\n", module)
-		if err := os.WriteFile(filepath.Join(headers, "module.modulemap"), []byte(modulemap), 0o644); err != nil {
-			return err
-		}
-		args = append(args, "-library", lib, "-headers", headers)
+		args = append(args, "-framework", fw)
 	}
 	framework := filepath.Join(dir, module+".xcframework")
+	os.RemoveAll(framework)
 	if err := run(ctx, "xcodebuild", append(args, "-output", framework)...); err != nil {
 		return err
 	}
@@ -233,6 +309,83 @@ func buildIOSFramework(ctx context.Context, p *project, dir string) error {
 		return err
 	}
 	return copyResources(p, resources)
+}
+
+// iosLinks are a static library's module map's link lines: what Go's
+// runtime and net link, autolinked by the module.
+func iosLinks() string {
+	var b strings.Builder
+	for _, f := range iosLinked {
+		fmt.Fprintf(&b, "\tlink framework %q\n", f)
+	}
+	b.WriteString("\tlink \"resolv\"\n")
+	return b.String()
+}
+
+// writeIOSHeaders writes NSGo.h and modulemap into dir.
+func writeIOSHeaders(dir, header, modulemap string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "NSGo.h"), []byte(header), 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "module.modulemap"), []byte(modulemap), 0o644)
+}
+
+// writeIOSFramework makes the bundle of a dynamic framework in slice,
+// its binary left to the caller: iOS's flat, Mac Catalyst's in macOS's
+// versioned layout. It returns the bundle's path.
+func writeIOSFramework(slice, module, id, header string, catalyst bool) (string, error) {
+	fw := filepath.Join(slice, module+".framework")
+	root := fw
+	if catalyst {
+		root = filepath.Join(fw, "Versions/A")
+	}
+	modulemap := fmt.Sprintf("framework module %s {\n\tumbrella header \"NSGo.h\"\n\texport *\n}\n", module)
+	if err := writeIOSHeaders(filepath.Join(root, "Headers"), header, ""); err != nil {
+		return "", err
+	}
+	os.Remove(filepath.Join(root, "Headers", "module.modulemap"))
+	if err := os.MkdirAll(filepath.Join(root, "Modules"), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(root, "Modules", "module.modulemap"), []byte(modulemap), 0o644); err != nil {
+		return "", err
+	}
+	plistDir := root
+	if catalyst {
+		plistDir = filepath.Join(root, "Resources")
+	}
+	if err := os.MkdirAll(plistDir, 0o755); err != nil {
+		return "", err
+	}
+	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key><string>%[1]s</string>
+	<key>CFBundleIdentifier</key><string>%[2]s</string>
+	<key>CFBundleName</key><string>%[1]s</string>
+	<key>CFBundlePackageType</key><string>FMWK</string>
+	<key>CFBundleShortVersionString</key><string>1.0</string>
+	<key>CFBundleVersion</key><string>1</string>
+	<key>MinimumOSVersion</key><string>15.0</string>
+</dict>
+</plist>
+`, module, id+".framework")
+	if err := os.WriteFile(filepath.Join(plistDir, "Info.plist"), []byte(plist), 0o644); err != nil {
+		return "", err
+	}
+	if catalyst {
+		for link, to := range map[string]string{"Versions/Current": "A", module: "Versions/Current/" + module,
+			"Headers": "Versions/Current/Headers", "Modules": "Versions/Current/Modules", "Resources": "Versions/Current/Resources"} {
+			if err := os.Symlink(to, filepath.Join(fw, link)); err != nil {
+				return "", err
+			}
+		}
+	}
+	return fw, nil
 }
 
 // aarManifest is the library's manifest, which a host's build merges into

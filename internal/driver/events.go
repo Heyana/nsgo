@@ -167,6 +167,13 @@ const (
 	// EventMenuClosed answers ItemPopupMenu Count once its menu closed,
 	// after the EventMenu of an item chosen.
 	EventMenuClosed
+	// EventBackStarted says a back gesture began, before its EventBack or
+	// EventBackCancelled: the engine answers with ItemBackPreview and lays
+	// the screen it would uncover out under the one it pops.
+	EventBackStarted
+	// EventBackCancelled says the back gesture EventBackStarted announced
+	// was given up.
+	EventBackCancelled
 )
 
 // EventMask is a set of event kinds.

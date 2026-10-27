@@ -72,6 +72,8 @@ const (
 	// msgCarets asks where a text layout's characters are, for hit
 	// testing.
 	msgCarets = 12
+	// msgWantFrame asks for msgFrame at the next Choreographer frame.
+	msgWantFrame = 13
 
 	// Java to Go.
 	msgStart       = 1
@@ -85,6 +87,7 @@ const (
 	msgTestReply   = 9  // the test agent's answer to a msgTest
 	msgHost        = 10 // the embedding host's part of the channel (host.go)
 	msgCaretLines  = 11 // a text layout's lines and clusters, answering msgCarets
+	msgFrame       = 12 // a Choreographer frame began, answering msgWantFrame
 )
 
 // The parts of an image view's request msgImage carries.
@@ -105,12 +108,6 @@ type surface struct {
 	engine   *engine.Engine
 	started  chan struct{}      // closed once engine is set
 	env      driver.Environment // the last reported, on the reader goroutine
-
-	// Frames. The Java runtime cannot report a display frame yet, so a
-	// 60 Hz timer stands in while the app waits for one.
-	frameMu     sync.Mutex
-	frameWanted bool
-	frameTimer  *time.Timer
 
 	ratio atomic.Uint32 // the pixel ratio's float32 bits, for rasterizing SVG
 
@@ -208,6 +205,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 				break
 			}
 			s.startEngine(app, size, opts.Appearance, nil)
+		case msgFrame:
+			s.engine.Frame()
 		case msgResize:
 			s.engine.Resize(driver.Size{Width: r.points(), Height: r.points()})
 		case msgEvent:
@@ -649,39 +648,10 @@ func (l *textLayout) Attachment(i int) (driver.Bounds, bool) {
 	return driver.Bounds{Origin: l.attachments[i].origin, Size: l.sizes[i]}, true
 }
 
-// RequestFrame implements engine.Platform. The Java runtime runs the
-// native animations on Choreographer frames but cannot report one to the
-// app yet, so a 60 Hz timer stands in; the roadmap's Android item covers
-// reporting Choreographer's frames instead.
-func (s *surface) RequestFrame() {
-	s.frameMu.Lock()
-	defer s.frameMu.Unlock()
-	s.frameWanted = true
-	if s.frameTimer == nil {
-		s.frameTimer = time.AfterFunc(driver.FrameInterval, s.frame)
-	}
-}
-
-// frame delivers the frame the timer stood in for, and arms it again
-// while another waits.
-func (s *surface) frame() {
-	s.frameMu.Lock()
-	s.frameTimer = nil
-	if !s.frameWanted {
-		s.frameMu.Unlock()
-		return
-	}
-	s.frameWanted = false
-	s.frameMu.Unlock()
-	if s.engine != nil {
-		s.engine.Frame()
-	}
-	s.frameMu.Lock()
-	if s.frameWanted && s.frameTimer == nil {
-		s.frameTimer = time.AfterFunc(driver.FrameInterval, s.frame)
-	}
-	s.frameMu.Unlock()
-}
+// RequestFrame implements engine.Platform: Java answers with msgFrame
+// when its next Choreographer frame begins, before it steps the native
+// animations.
+func (s *surface) RequestFrame() { s.send(msgWantFrame, func(*writer) {}) }
 
 // Mount implements engine.Platform: one message per commit, then the
 // loads of the image sources it changed.
@@ -1038,6 +1008,17 @@ func encode(w *writer, b *driver.MountBatch, requests []uint32, natives []native
 			w.points(p.HitSlop.Bottom)
 			w.points(p.HitSlop.Left)
 			w.u32(uint32(max(p.DelayLongPress.Milliseconds(), 0)))
+			if r := p.Ripple; r != nil {
+				w.flags(true, r.Borderless, r.Foreground)
+				w.u32(uint32(r.Color))
+				w.points(r.Radius)
+			} else {
+				w.byte(0)
+			}
+			// Selections run on the UI thread (Selection.java).
+			w.flags(p.SelectionArea)
+			w.byte(byte(p.Selectable))
+			w.u32(uint32(p.SelectionColor))
 		case driver.ItemScrollConfig:
 			c := it.Scroll
 			b := &c.Behavior
@@ -1524,13 +1505,27 @@ func writeDecor(w *writer, v *driver.ViewStyle) {
 			w.u32(uint32(s.Color))
 		}
 	}
-	// Filters: their color matrix and blur, which Android draws.
-	m, color, blur, _ := driver.SplitFilters(e.Filters)
+	// Filters: their color matrix, blur and widest drop shadow, the last
+	// of equals, which Android draws from Android 12.
+	m, color, blur, shadows := driver.SplitFilters(e.Filters)
 	w.flags(color)
 	if color {
 		w.floats(m[:]...)
 	}
 	w.points(blur)
+	w.byte(byte(min(len(shadows), 1)))
+	if len(shadows) > 0 {
+		sh := shadows[0]
+		for _, s := range shadows[1:] {
+			if s.Blur >= sh.Blur {
+				sh = s
+			}
+		}
+		w.points(sh.Offset.X)
+		w.points(sh.Offset.Y)
+		w.points(sh.Blur)
+		w.u32(uint32(sh.Color))
+	}
 	// The keyframes' steps, which Java eases between.
 	a := v.Animation
 	d, frames := a.Cycle()

@@ -42,6 +42,7 @@ import (
 	"github.com/oneo-me/nsgo/internal/platform/imageload"
 	"github.com/oneo-me/nsgo/internal/platform/queue"
 	"github.com/oneo-me/nsgo/internal/platform/scrollbar"
+	"github.com/oneo-me/nsgo/internal/platform/textselect"
 	"github.com/oneo-me/nsgo/internal/testhost"
 )
 
@@ -154,16 +155,31 @@ type window struct {
 	extents       map[driver.Font]driver.FontExtent // the engine thread's font metrics
 	capHeights    map[driver.Font]driver.Points     // and capital heights
 	pressConsumed bool
-	longPress     uint64 // counts long presses waited for, to cancel the last
-	focus         *view  // the entry with keyboard focus
-	pinchTimeout  uint32
-	alerts        []driver.AlertConfig
-	alerting      bool
-	alertingID    uint32
-	alertShown    driver.AlertConfig // the alert showing, for a test host
-	menuCounter   uint32
-	actionGroup   uintptr
-	actionRefs    map[uintptr]menuRef
+	// selecting is the selection of an area, and selected the texts
+	// that highlight a part of it (selection.go).
+	selecting *textselect.Selection
+	selected  []*view
+	// forced is the appearance an embedded view's app forces, scoped the
+	// one its controls show in, by schemeProvider under the surface's
+	// name (scheme.go).
+	forced, scoped driver.Appearance
+	schemeProvider uintptr
+	surfaceName    string
+	// touching is the touch that may drag a scroll view (touchscroll.go).
+	touching *touchScroll
+	// roles are the accessible roles of the views the batch being applied
+	// creates (access.go).
+	roles        map[driver.NodeID]int32
+	longPress    uint64 // counts long presses waited for, to cancel the last
+	focus        *view  // the entry with keyboard focus
+	pinchTimeout uint32
+	alerts       []driver.AlertConfig
+	alerting     bool
+	alertingID   uint32
+	alertShown   driver.AlertConfig // the alert showing, for a test host
+	menuCounter  uint32
+	actionGroup  uintptr
+	actionRefs   map[uintptr]menuRef
 	// building names the action group, prefix and refs the menu being
 	// built registers its actions in, when not the menu bar's.
 	building menuBuild
@@ -313,6 +329,8 @@ func NewView(app engine.App, opts Options) (*View, error) {
 	gtkWidgetSetFocusable(w.surface, 1)
 	w.setupInputs()
 	w.setupSettings()
+	w.forced = opts.Appearance
+	w.scopeAppearance(w.shownAppearance())
 	return &View{w}, nil
 }
 
@@ -323,6 +341,7 @@ func (v *View) Handle() uintptr { return v.w.surface }
 // environment: its locale, text size and appearance.
 func (v *View) SetHostEnvironment(env engine.HostEnvironment) {
 	v.w.opts.Host.Settings.SetEnvironment(env)
+	v.w.scopeAppearance(v.w.shownAppearance())
 }
 
 // SetTokens sets the values the host themes the app with.
@@ -332,6 +351,7 @@ func (v *View) SetTokens(t engine.Tokens) { v.w.opts.Host.Settings.SetTokens(t) 
 // widget go, which the host removes from its parent.
 func (v *View) Close() {
 	w := v.w
+	w.scopeAppearance(driver.AppearanceSystem)
 	w.close()
 	w.closeNatives()
 	gObjectUnref(w.surface)
@@ -396,6 +416,11 @@ func (w *window) createWindow(opts Options) {
 	gtkWindowSetTitle(w.win, cstr(title))
 	gtkWindowSetDefaultSize(w.win, int32(opts.Width), int32(opts.Height))
 	w.lastWidth, w.lastHeight = opts.Width, opts.Height
+	if opts.test != nil {
+		// A fixed size has tiling compositors float a test's window at the
+		// test's size instead of resizing it as another opens.
+		gtkWindowSetResizable(w.win, 0)
+	}
 
 	w.box = gtkBoxNew(1, 0) // vertical
 	w.surface = w.newViewWidget(nil)
@@ -545,6 +570,7 @@ func (w *window) apply(b *driver.MountBatch) {
 	}
 	var focus []focusChange
 	lb := w.newLayoutBatch(b)
+	w.prepareRoles(b)
 	for i := range b.Items {
 		it := &b.Items[i]
 		switch it.Kind {
@@ -585,8 +611,11 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemAppearance:
 			// The settings are the process's, which a host's widget
-			// leaves to the host.
-			if !w.embedded {
+			// leaves to the host: its controls follow in its scope.
+			if w.embedded {
+				w.forced = it.Appearance
+				w.scopeAppearance(w.shownAppearance())
+			} else {
 				w.setAppearance(it.Appearance)
 			}
 			continue
@@ -607,9 +636,22 @@ func (w *window) apply(b *driver.MountBatch) {
 				w.chromeItem(it)
 			}
 			continue
-		case driver.ItemAnnounce, driver.ItemStatusBar, driver.ItemBackUnhandled,
-			driver.ItemAccessibilityLabel, driver.ItemAccessibilityFocus:
-			// No accessibility without GTK's; no status bar.
+		case driver.ItemAnnounce:
+			w.announce(it.Value, false)
+			continue
+		case driver.ItemAccessibilityLabel:
+			if v := w.view(it.ID); v != nil {
+				v.props.Label = it.Value
+				w.accessChanged(v)
+			}
+			continue
+		case driver.ItemAccessibilityFocus:
+			if v := w.view(it.ID); v != nil && v.widget != 0 {
+				gtkWidgetGrabFocus(v.widget)
+			}
+			continue
+		case driver.ItemStatusBar, driver.ItemBackUnhandled, driver.ItemBackPreview, driver.ItemHistory:
+			// No status bar; Escape is back.
 			continue
 		}
 		v := w.view(it.ID)
@@ -633,6 +675,10 @@ func (w *window) apply(b *driver.MountBatch) {
 				v.parent = p
 				w.insertWidget(p, v, before)
 				w.inserted(v, p, lb)
+				if v.kind == driver.KindModal && !v.presented {
+					v.presented = true
+					w.present(v)
+				}
 			}
 		case driver.ItemRemove:
 			v.detach()
@@ -661,7 +707,11 @@ func (w *window) apply(b *driver.MountBatch) {
 				rescroll = append(rescroll, v)
 			}
 		case driver.ItemViewStyle:
+			hidden := v.style.Hidden
 			w.setStyle(v, it.ViewStyle)
+			if v.style.Hidden != hidden {
+				w.accessChanged(v)
+			}
 			w.showWidget(v)
 			w.moved(v)
 			if v.entry != 0 {
@@ -677,6 +727,8 @@ func (w *window) apply(b *driver.MountBatch) {
 			}
 			v.text = it.Text.Layout
 			v.content = it.Text.Content
+			v.plain = it.Text.Text
+			w.accessChanged(v)
 			w.changed(v)
 		case driver.ItemInput:
 			w.configure(v, it.Input)
@@ -686,12 +738,14 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.selectRange(v, it.Selection)
 		case driver.ItemEvents:
 			w.setEvents(v, it.Events)
+			w.accessChanged(v)
 		case driver.ItemViewProps:
 			if it.ViewProps != nil {
 				v.props = *it.ViewProps
 				if v.props.Disabled && w.drop.over == v {
 					w.setDropOver(nil)
 				}
+				w.accessChanged(v)
 			}
 		case driver.ItemScrollConfig:
 			to := scrollbar.KeepStart(v.scroll.Behavior.ContentInset, it.Scroll.Behavior.ContentInset, v.offset)
@@ -699,6 +753,7 @@ func (w *window) apply(b *driver.MountBatch) {
 			if to != v.offset {
 				w.scrollTo(v, to)
 			}
+			w.refreshChanged(v)
 			rescroll = append(rescroll, v) // insets change the offsets
 		case driver.ItemScrollContent:
 			v.size = it.Size
@@ -712,9 +767,12 @@ func (w *window) apply(b *driver.MountBatch) {
 			}
 			w.changed(v)
 		case driver.ItemModal:
-			// A modal is a view: it shows without a separate window.
+			// A modal is a view: it shows without a separate window, and
+			// comes in as it is first inserted (present).
+			v.modal = it.Modal.Animation
 		case driver.ItemCanvas:
 			w.setCanvas(v, it.Drawing)
+			w.setCanvasParts(v, it.Drawing.Nodes)
 		case driver.ItemShader:
 			if it.Shader != nil {
 				w.setShader(v, it.Shader)
@@ -782,6 +840,7 @@ func (w *window) apply(b *driver.MountBatch) {
 	}
 	// Views that moved, appeared or went under a still pointer.
 	w.hoverViews()
+	w.refreshSelection()
 }
 
 func (w *window) create(id driver.NodeID, kind driver.ViewKind) {
@@ -819,6 +878,7 @@ func (w *window) delete(v *view) {
 		c.parent = nil
 	}
 	v.children = nil
+	v.releaseCanvasParts()
 	if v.text != nil {
 		v.text.Release()
 		v.text = nil
@@ -917,8 +977,13 @@ func (w *window) moveOffset(v *view, offset driver.Point) {
 	if w.animator.Scroll(v.id, offset) {
 		w.showAnimated()
 	}
+	if w.animator.Pulls(v.id) && w.animator.Pull(v.id, scrollbar.Pulled(&v.scroll, offset)) {
+		w.showAnimated()
+	}
 	w.pinSticky(v)
-	w.engine.Dispatch(driver.Event{Kind: driver.EventScroll, ID: v.id, Point: offset, Count: v.applied})
+	// The engine sees the offset within the content and its insets, as a
+	// touch pulls it past.
+	w.engine.Dispatch(driver.Event{Kind: driver.EventScroll, ID: v.id, Point: scrollbar.Clamp(&v.scroll, v.frame.Size, v.size, offset), Count: v.applied})
 }
 
 // wheel scrolls the innermost scroll view under at that can move in the

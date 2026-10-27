@@ -60,6 +60,7 @@ var (
 	selView               = sel("view")
 	selPinchAction        = sel("nsgoPinch:")
 	selRotateAction       = sel("nsgoRotate:")
+	selHoverAction        = sel("nsgoHover:")
 	classPanGate          objc.Class
 )
 
@@ -161,6 +162,7 @@ func gestureMethods() []objc.MethodDef {
 		{Cmd: selRotateAction, Fn: func(self objc.ID, _ objc.SEL, r objc.ID) {
 			transformed(self, r, driver.EventRotation, sel("rotation"))
 		}},
+		{Cmd: selHoverAction, Fn: hovered},
 		{Cmd: sel("gestureRecognizer:shouldRecognizeSimultaneouslyWithGestureRecognizer:"),
 			Fn: func(self objc.ID, _ objc.SEL, r, other objc.ID) bool { return other.Send(selView) == self }},
 	}
@@ -204,6 +206,32 @@ func (v *view) setGestures(m driver.EventMask) {
 		r.Send(selSetDeleg, v.native)
 		return r
 	})
+	hover := m.Has(driver.EventHoverIn) || m.Has(driver.EventHoverOut) || m.Has(driver.EventHoverMove)
+	toggle(hover, &v.hover, func() objc.ID {
+		return newRecognizer(objc.GetClass("UIHoverGestureRecognizer"), selHoverAction)
+	})
+}
+
+// hovered follows a pointer over a view, an iPad's trackpad or mouse or a
+// pencil held above the screen, as the desktops' hovers: it comes in,
+// moves and goes out.
+func hovered(self objc.ID, _ objc.SEL, r objc.ID) {
+	v := views[self]
+	if v == nil {
+		return
+	}
+	at := objc.Send[apple.CGPoint](r, selLocationInView, self)
+	page := objc.Send[apple.CGPoint](r, selLocationInView, v.surface.native)
+	p := driver.Point{X: driver.Points(at.X), Y: driver.Points(at.Y)}
+	switch objc.Send[int](r, selState) {
+	case stateBegan:
+		v.report(driver.Event{Kind: driver.EventHoverIn})
+		fallthrough
+	case stateChanged:
+		v.report(driver.Event{Kind: driver.EventHoverMove, Point: p, Page: driver.Point{X: driver.Points(page.X), Y: driver.Points(page.Y)}})
+	case stateEnded, stateCancelled:
+		v.report(driver.Event{Kind: driver.EventHoverOut})
+	}
 }
 
 func gateBegan(self objc.ID, _ objc.SEL, touches, _ objc.ID) {

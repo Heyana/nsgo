@@ -2,6 +2,7 @@ package nsgotest
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -68,8 +69,8 @@ func (a *App) startTarget(app func(cx *core.Scope) core.Node) {
 		a.t.Fatal("nsgotest: no test host is linked: test the app's main package, which imports github.com/oneo-me/nsgo, with nsgo test -target")
 	case !mainRan:
 		a.t.Fatal("nsgotest: a platform needs the main thread: add func TestMain(m *testing.M) { nsgotest.Main(m) }")
-	case opened:
-		a.t.Skip("nsgotest: the test opens a second app; on a platform each test shows one")
+	case opened && !h.Several():
+		a.t.Skip("nsgotest: the test opens a second app, which only a desktop shows beside the first")
 	}
 	opened = true
 	if a.store == nil {
@@ -90,7 +91,7 @@ func (a *App) startTarget(app func(cx *core.Scope) core.Node) {
 	a.t.Cleanup(a.root.Dispose)
 	a.anim = driver.NewAnimator(func(driver.Event) {})
 	s, err := h.Open(app, testhost.Options{
-		Size: a.size, Environment: a.env, Storage: a.store, Host: a.host,
+		Size: a.size, Environment: a.env, Storage: a.store, Host: a.host, Clock: a.Clock,
 		Observe: func(b *driver.MountBatch) {
 			t.mu.Lock()
 			t.batches = append(t.batches, b)
@@ -209,22 +210,35 @@ func (t *target) reveal(v *View) driver.Point {
 	return at
 }
 
-// headlessOnly skips the test on a platform, which step cannot take
-// there: native menus, which the platform's own loops track, are chosen
-// headless only.
-func (a *App) headlessOnly(step string) {
-	a.t.Helper()
-	if a.target != nil {
-		a.t.Skipf("nsgotest: %s runs headless only", step)
-	}
-}
-
 func (t *target) storage() core.Storage { return t.a.root.Storage() }
 
-// advance waits d of real time: on a platform the app runs on the
-// system's clock.
+// menu takes a menu step with the platform's own menus: a platform that
+// shows none skips the test.
+func (t *target) menu(step func(testhost.Surface) error) {
+	t.a.t.Helper()
+	if err := step(t.surface); errors.Is(err, testhost.ErrNoMenu) {
+		t.a.t.Skipf("nsgotest: %s: %v", t.a.stepName, err)
+	} else {
+		t.check(err)
+	}
+	t.settle()
+}
+
+// advance moves the test's clock, which the app's timers run on, by d:
+// a frame at a time, settling between, when run, else at once. The
+// platform's own animations run in real time.
 func (t *target) advance(d time.Duration, run bool) {
-	time.Sleep(d)
+	if !run {
+		t.a.Clock.Jump(d)
+		t.settle()
+		return
+	}
+	for d > 0 {
+		step := min(d, driver.FrameInterval)
+		t.a.Clock.Advance(step)
+		d -= step
+		t.drain()
+	}
 	t.settle()
 }
 

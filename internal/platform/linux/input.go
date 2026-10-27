@@ -104,7 +104,13 @@ func clickPressedCallback(gesture uintptr, n int32, x, y float64, data uintptr) 
 // press in a row, with modifiers state.
 func (w *window) pointerDown(at driver.Point, button uint32, device uintptr, state uint32, clicks int) {
 	w.lastPointer, w.pressConsumed = at, false
-	w.down = driver.Event{Modifiers: modifiers(state), Count: uint32(max(clicks, 1))}
+	w.down = driver.Event{Modifiers: modifiers(state), Count: uint32(max(clicks, 1)), Page: at}
+	touch := button == 1 && isTouch(device)
+	if touch {
+		w.touchDown(at)
+	} else {
+		w.touching = nil
+	}
 	if button == 1 {
 		w.touch(w.mouse.Down(w.listensTouches(), at))
 	}
@@ -121,6 +127,11 @@ func (w *window) pointerDown(at driver.Point, button uint32, device uintptr, sta
 	if button == 3 {
 		w.contextMenu(at)
 		w.pressConsumed = true
+		return
+	}
+	if button == 1 && !touch && w.selectPress(at, w.down.Modifiers, clicks) {
+		w.pressConsumed = true
+		w.panning = nil
 		return
 	}
 	if w.beginWindowDrag(device, at) {
@@ -142,6 +153,7 @@ func clickReleasedCallback(gesture uintptr, n int32, x, y float64, data uintptr)
 
 // pointerUp follows the release of a press at surface point at.
 func (w *window) pointerUp(at driver.Point) {
+	w.selectUp()
 	w.touch(w.mouse.Up(at))
 	w.cancelLongPress()
 	if w.pressConsumed || w.panning != nil && w.panning.active {
@@ -190,6 +202,12 @@ func dragUpdateCallback(gesture uintptr, offsetX, offsetY float64, data uintptr)
 	if w != nil && math.Hypot(offsetX, offsetY) > longPressSlop {
 		w.cancelLongPress()
 	}
+	if w != nil && w.selectDrag(driver.Point{X: w.down.Page.X + driver.Points(offsetX), Y: w.down.Page.Y + driver.Points(offsetY)}) {
+		return
+	}
+	if w != nil && w.touchMove(driver.Point{X: w.down.Page.X + driver.Points(offsetX), Y: w.down.Page.Y + driver.Points(offsetY)}) {
+		return
+	}
 	if w != nil && w.barDrag != nil {
 		d := w.barDrag
 		w.dragBar(driver.Point{X: d.from.X + driver.Points(offsetX), Y: d.from.Y + driver.Points(offsetY)})
@@ -229,6 +247,9 @@ func dragUpdateCallback(gesture uintptr, offsetX, offsetY float64, data uintptr)
 
 func dragEndCallback(gesture uintptr, offsetX, offsetY float64, data uintptr) {
 	w := windowOf(data)
+	if w != nil && w.touchUp() {
+		return
+	}
 	if w != nil && w.barDrag != nil {
 		w.releaseBar()
 		w.hoverBars(w.lastPointer)
@@ -369,6 +390,9 @@ func keyPressedCallback(controller uintptr, keyval, keycode, state uint32, data 
 	}
 	w.held[keycode] = true
 	w.menuBarKey(keyval, state, true)
+	if w.selectKey(keyval, state) {
+		return 1
+	}
 	if w.shortcut(keyval, state, repeat) {
 		return 1
 	}

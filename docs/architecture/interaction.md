@@ -9,10 +9,11 @@ Elements carry NSH's accessibility props: `Role`, `Label` (`LabelFunc` when it c
 - The props go in `ViewProps`, except a label changing alone on mounted props, which goes as `ItemAccessibilityLabel`.
 - An `Accessible` view is one element. Without a label of its own, the core labels it with the text inside it, so every platform reads the same words, and the label follows the text.
 - Standard actions (`activate`, `increment`, `decrement`, `longpress`, `expand`, `collapse`, `escape`, `magicTap`) take the screen reader's own gestures; others are listed as custom actions. A disabled view's actions are dropped.
-- macOS sets NSAccessibility attributes: AXIncrement, AXDecrement and AXCancel are the standard actions, the others `NSAccessibilityCustomAction`s. iOS sets UIAccessibility properties: the adjustable trait's swipes, `accessibilityPerformEscape` and `accessibilityPerformMagicTap`, and `UIAccessibilityCustomAction`s. Both read an unlabelled element's texts, and announce live regions themselves when a label or a text inside one changes.
+- macOS sets NSAccessibility attributes: AXIncrement, AXDecrement and AXCancel are the standard actions, the others `NSAccessibilityCustomAction`s. iOS sets UIAccessibility properties: the adjustable trait's swipes, `accessibilityPerformEscape` and `accessibilityPerformMagicTap`, and `UIAccessibilityCustomAction`s; an escape no element takes goes back, closing the newest popup or screen. Both read an unlabelled element's texts, and announce live regions themselves when a label or a text inside one changes.
 - The web maps the props to ARIA. A group hides its children with `aria-hidden`, and a focused view's arrow keys, Escape, Enter and Space perform its standard actions; ARIA has no custom actions, so those are not offered.
 - Android sets `importantForAccessibility`, live regions and screen-reader focus on the view, and range info, hint, state description and actions in its `AccessibilityNodeInfo`. It has no escape or magic tap.
-- Windows and Linux keep the props but expose none of them, since neither backend has an accessibility provider yet.
+- Windows answers `WM_GETOBJECT` with a UI Automation provider per element, made on demand: a control type, the hint as help text and the Invoke, Toggle, ExpandCollapse, SelectionItem, RangeValue and Value patterns the role and state call for. Views that are no elements are flattened, and controls group the texts inside them as on iOS and Android. Live regions raise `LiveRegionChanged`, and announcements are notifications.
+- Linux gives each view's widget a role from its construction (GTK keeps it), its label, hint, value and states through `GtkAccessible`, which AT-SPI exposes, and ranges through `GtkAccessibleRange`. Live regions and announcements go through `gtk_accessible_announce`; GTK has no custom actions.
 - A canvas's nodes are elements of their own, children of the canvas ([canvas](canvas.md#nodes)).
 
 ## Pointer events
@@ -24,7 +25,7 @@ Presses, hovers and secondary clicks carry where they happened, as NSH's `PressE
 - macOS reads the `NSEvent`: `clickCount`, `modifierFlags`, and moves from a tracking area with `NSTrackingMouseMoved`. A drag goes only to the view it began in, so the surface reports drag moves to the views under the pointer itself.
 - Windows counts clicks against the system's double-click time and distance, and reads the keys with `GetKeyState`; Linux takes GTK's press count and the controller's modifier state. Both route moves through the views they hit-test.
 - The web counts clicks itself, since pointer events carry none: 500 ms and 4 points apart at most. Moves are mouse `pointermove`s.
-- iOS reads the touch's `tapCount` and the event's `modifierFlags`; it has no hover yet. Android reads `MotionEvent`'s meta state and hover moves, counts every press as one click, and sends the page position and keys after the rest of an event.
+- iOS reads the touch's `tapCount` and the event's `modifierFlags`, and hovers with a `UIHoverGestureRecognizer` (a pointer or a hovering Pencil). Android reads `MotionEvent`'s meta state and hover moves, counts every press as one click, and sends the page position and keys after the rest of an event.
 
 ## Keyboard focus
 

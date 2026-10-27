@@ -595,6 +595,7 @@ func (w *window) setFocus(in *textInput) {
 		in.wakeCaret()
 		in.reveal()
 		w.report(in.v, driver.Event{Kind: driver.EventFocus, ID: in.v.id})
+		w.uiaFocusChanged(in.v)
 		// The scroll views around bring the field into view.
 		w.revealView(in.v)
 	}

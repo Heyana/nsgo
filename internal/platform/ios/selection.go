@@ -15,7 +15,9 @@ import (
 // the edit menu: Copy and Select All, which the view controller answers
 // as the first responder, hardware keyboards' Cmd-C and Cmd-A included.
 // A touch outside the area clears it, so the surface shows one selection.
-// Touch handles are not drawn yet.
+// Two handles, drawn as UIKit's text views draw theirs (a bar in the tint
+// color with a knob above the start and below the end, as UIKit keeps its
+// own private), move the ends; the menu comes back as one is let go.
 
 // selection is the surface's selection: an area's model over its texts.
 type selection struct {
@@ -24,6 +26,10 @@ type selection struct {
 	frames []driver.Bounds // the texts' content boxes in the area
 	model  driver.SelectionModel
 	menu   objc.ID // the area's UIEditMenuInteraction, iOS 16 on
+	// handles are the start's and the end's, in the area; grab is where
+	// the finger holds the one it drags from its caret's middle.
+	handles [2]objc.ID
+	grab    driver.Point
 }
 
 // Len implements core.SelectionTexts.
@@ -84,6 +90,120 @@ func (s *selection) show(old []*view) {
 	for _, r := range s.model.Ranges(s) {
 		s.texts[r.Text].setSelected(r.Start, r.End)
 	}
+	s.placeHandles()
+}
+
+const (
+	handleBar  = 2  // the bar's width, in points
+	handleKnob = 10 // the knob's diameter
+	handleGrab = 22 // the width a finger takes a handle in
+)
+
+// caret returns the caret at end h of the selection in the area: its x,
+// its line's top and its height; false without a selection.
+func (s *selection) caret(h driver.SelectionHandle) (x, top, height float64, ok bool) {
+	start, end, ok := s.model.Bounds()
+	if !ok || start.Text >= len(s.texts) || end.Text >= len(s.texts) {
+		return 0, 0, 0, false
+	}
+	p := start
+	if h == driver.HandleEnd {
+		p = end
+	}
+	r, ok := s.texts[p.Text].layout.CaretRect(driver.Caret{Offset: p.Offset, Affinity: driver.Upstream * driver.Affinity(h)})
+	if !ok {
+		return 0, 0, 0, false
+	}
+	f := s.frames[p.Text]
+	return float64(f.Origin.X + r.Origin.X), float64(f.Origin.Y + r.Origin.Y), float64(r.Size.Height), true
+}
+
+// placeHandles puts the handles at the ends, or takes them away while
+// nothing is selected.
+func (s *selection) placeHandles() {
+	for h := range s.handles {
+		x, top, height, ok := s.caret(driver.SelectionHandle(h))
+		if !ok || s.model.IsEmpty() {
+			if s.handles[h] != 0 {
+				s.handles[h].Send(sel("removeFromSuperview"))
+				s.handles[h] = 0
+			}
+			continue
+		}
+		if s.handles[h] == 0 {
+			s.handles[h] = s.newHandle(h)
+		}
+		knob := s.handles[h].Send(sel("subviews")).Send(sel("lastObject"))
+		bar := s.handles[h].Send(sel("subviews")).Send(sel("firstObject"))
+		// The handle's view runs from the knob's top above the start, or
+		// to its bottom below the end, handleGrab wide around the caret.
+		frame := apple.Rect(x-handleGrab/2, top-handleKnob, handleGrab, height+handleKnob)
+		barY, knobY := float64(handleKnob), 0.0
+		if h == int(driver.HandleEnd) {
+			frame.Origin.Y = top
+			barY, knobY = 0, height
+		}
+		s.handles[h].Send(selSetFrame, frame)
+		bar.Send(selSetFrame, apple.Rect((handleGrab-handleBar)/2, barY, handleBar, height))
+		knob.Send(selSetFrame, apple.Rect((handleGrab-handleKnob)/2, knobY, handleKnob, handleKnob))
+		s.area.native.Send(sel("bringSubviewToFront:"), s.handles[h])
+	}
+}
+
+// newHandle makes handle h's view in the area: a bar and a knob in the
+// tint color, which a pan drags.
+func (s *selection) newHandle(h int) objc.ID {
+	view := func() objc.ID { return objc.ID(objc.GetClass("UIView")).Send(selNew) }
+	handle := view()
+	handle.Send(sel("setTag:"), h)
+	tint := s.area.native.Send(sel("tintColor"))
+	for _, round := range []bool{false, true} {
+		part := view()
+		part.Send(sel("setBackgroundColor:"), tint)
+		if round {
+			part.Send(sel("layer")).Send(sel("setCornerRadius:"), float64(handleKnob)/2)
+		}
+		handle.Send(selAddSubview, part)
+		part.Send(selRelease)
+	}
+	pan := objc.ID(objc.GetClass("UIPanGestureRecognizer")).Send(selAlloc).Send(
+		sel("initWithTarget:action:"), selector, selHandleAction)
+	handle.Send(sel("addGestureRecognizer:"), pan)
+	pan.Send(selRelease)
+	s.area.native.Send(selAddSubview, handle)
+	handle.Send(selRelease)
+	return handle
+}
+
+// selectHandle follows a handle's drag: its end follows the finger, and
+// the menu comes back as it lifts.
+func selectHandle(_ objc.ID, _ objc.SEL, r objc.ID) {
+	sl := runner.selecting
+	if sl == nil {
+		return
+	}
+	h := driver.SelectionHandle(objc.Send[int](r.Send(selView), sel("tag")))
+	p := sl.point(r)
+	switch objc.Send[int](r, selState) {
+	case stateBegan:
+		x, top, height, ok := sl.caret(h)
+		if !ok {
+			return
+		}
+		sl.grab = driver.Point{X: p.X - driver.Points(x), Y: p.Y - driver.Points(top+height/2)}
+		if sl.menu != 0 {
+			sl.menu.Send(sel("dismissMenu"))
+		}
+	case stateChanged:
+		old := sl.texts
+		sl.list()
+		sl.model.MoveHandle(sl, h, driver.Point{X: p.X - sl.grab.X, Y: p.Y - sl.grab.Y})
+		sl.show(old)
+	case stateEnded, stateCancelled:
+		if x, top, _, ok := sl.caret(h); ok && !sl.model.IsEmpty() {
+			sl.showMenu(driver.Point{X: driver.Points(x), Y: driver.Points(top)})
+		}
+	}
 }
 
 // setSelected sets the UTF-16 range a text highlights.
@@ -99,6 +219,7 @@ func (v *view) setSelected(start, end int) {
 
 var (
 	selSelectAction = sel("nsgoSelect:")
+	selHandleAction = sel("nsgoHandle:")
 	classSelector   objc.Class
 	selector        objc.ID // the long presses' target and delegate
 )
@@ -106,6 +227,7 @@ var (
 func registerSelection() {
 	classSelector = register("NsgoSelector", objc.GetClass("NSObject"), nil, []objc.MethodDef{
 		{Cmd: selSelectAction, Fn: selectLongPress},
+		{Cmd: selHandleAction, Fn: selectHandle},
 		{Cmd: sel("gestureRecognizer:shouldReceiveTouch:"), Fn: selectReceives},
 	})
 	selector = objc.ID(classSelector).Send(selNew)
@@ -249,6 +371,11 @@ func (s *surface) clearSelection() {
 	}
 	for _, v := range sl.texts {
 		v.setSelected(0, 0)
+	}
+	for _, h := range sl.handles {
+		if h != 0 {
+			h.Send(sel("removeFromSuperview"))
+		}
 	}
 	if sl.menu != 0 && s.views[sl.area.id] == sl.area {
 		sl.menu.Send(sel("dismissMenu"))

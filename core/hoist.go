@@ -454,6 +454,53 @@ func (t *Tree) back() {
 	t.changed = true
 }
 
+// backPreview returns the screen back pops, as back routes it, when
+// nothing takes it first: no overlay listening for cancel, no modal's
+// OnRequestClose, no Scope.OnBackPress handler and no NoPopOnBack.
+func (t *Tree) backPreview() driver.NodeID {
+	host := t.view
+	for top := topModal(host); top != nil; top = topModal(host) {
+		host = top
+	}
+	if topOverlay(host) != nil {
+		return 0
+	}
+	if host.kind != driver.KindModal {
+		for _, b := range t.backs {
+			if !b.owner.disposed {
+				return 0
+			}
+		}
+	}
+	stack := t.innerStack(host)
+	if stack == nil {
+		return 0
+	}
+	screens := stack.screens()
+	top := screens[len(screens)-1]
+	if s := top.screen.screen; s.NoPopOnBack || s.NoPopOnSwipe {
+		return 0
+	}
+	t.peek(stack, screens[len(screens)-2])
+	return top.id
+}
+
+// peek lays screen below out under stack's top one for a back gesture, or
+// stops when below is nil.
+func (t *Tree) peek(stack, below *node) {
+	if t.peeking != nil && t.peeking != below {
+		t.peeking.screen.peek = false
+		if s := t.peeking.screen.stack; s != nil {
+			t.showTop(s)
+		}
+	}
+	t.peeking = below
+	if below != nil {
+		below.screen.peek = true
+		t.showTop(stack)
+	}
+}
+
 func topModal(host *node) *node {
 	for i := len(host.hosted) - 1; i >= 0; i-- {
 		if n := host.hosted[i]; !n.deleted && n.kind == driver.KindModal && !n.hoist.dismissed && !hiddenIn(n) {

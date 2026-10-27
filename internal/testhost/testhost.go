@@ -5,6 +5,7 @@
 package testhost
 
 import (
+	"errors"
 	"time"
 
 	"github.com/oneo-me/nsgo/core"
@@ -17,8 +18,11 @@ type Host interface {
 	// thread, and run on another; it ends the process with run's code.
 	Main(run func() int)
 	// Open shows app on a new surface as the backend's Run does, with
-	// o's size and what it observes. A process opens one surface.
+	// o's size and what it observes.
 	Open(app func(cx *core.Scope) core.Node, o Options) (Surface, error)
+	// Several reports whether a process opens several surfaces: a
+	// desktop's windows; a phone and a page show one.
+	Several() bool
 }
 
 // Options are what a test opens an app with.
@@ -37,6 +41,9 @@ type Options struct {
 	Event   func(driver.Event)
 	// Host is the channel of the test's embedding host, nil without one.
 	Host *core.Host
+	// Clock is the test's, which the app's timers run on in place of the
+	// system's: they fire as the test moves it.
+	Clock core.Clock
 }
 
 // Surface is an app shown on a platform. Its methods act as the user
@@ -66,6 +73,12 @@ type Surface interface {
 	// Answer presses the button at index of the alert id shows, or
 	// dismisses it with -1.
 	Answer(id uint32, index int) error
+	// ChooseMenu chooses the application menu's item id, as its menu bar
+	// does; ErrNoMenu where the platform shows none.
+	ChooseMenu(id uint32) error
+	// ChoosePopup chooses item id of the context menu showing, or closes
+	// it for 0; ErrNoMenu where the platform shows none.
+	ChoosePopup(id uint32) error
 	// Screenshot returns the surface as a PNG.
 	Screenshot() ([]byte, error)
 	// Animating reports whether the platform animates anything that ends:
@@ -78,6 +91,10 @@ type Surface interface {
 }
 
 var host Host
+
+// ErrNoMenu is a platform's answer to a menu step where it shows no
+// native menus: a phone's, or the web's.
+var ErrNoMenu = errors.New("the platform shows no native menus")
 
 // Register makes h the test host; a backend's init calls it.
 func Register(h Host) { host = h }

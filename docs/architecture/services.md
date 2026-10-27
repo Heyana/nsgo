@@ -70,8 +70,8 @@ Windows checks the registry first because the shell asks the user for an app for
 | --- | --- |
 | macOS | `NSApp.appearance`: title bar, menus, alerts and hosted controls |
 | iOS | The window's `overrideUserInterfaceStyle` |
-| Android | System bar icons and alerts; the activity's theme and web views keep the launch appearance |
-| Windows | DWM's dark title bar and uxtheme's menu mode (ordinals 135 and 136); task dialogs stay light |
+| Android | System bar icons, alerts, the activity's theme, system headers and web views (forced dark from Android 10) |
+| Windows | DWM's dark title bar and uxtheme's menu mode (ordinals 135 and 136); alerts are drawn in the appearance shown |
 | Linux | `gtk-interface-color-scheme` from GTK 4.20, `gtk-application-prefer-dark-theme` before |
 | Web | The page's `color-scheme` |
 
@@ -128,4 +128,4 @@ Shortcuts are scoped to their owner: the platform matches key presses against th
 
 ## Verification
 
-`core` tests each request and answer; `examples/gallery` checks its System page with `nsgotest`. The Windows and Linux native tests drive the clipboard, frames, levels, the hiding menu bar, a context menu, the appearance and `Quit` in a window, and Windows' open dialog, hidden caption buttons and backdrops. `internal/platform/apple` checks HEIC and scaled picks; `picked` checks orientation and scaling. macOS, iOS, Android and the web were checked by running each service.
+`core` tests each request and answer; `examples/gallery` checks its System page with `nsgotest`. The Windows and Linux native tests drive the clipboard, frames, levels, the hiding menu bar, a context menu, the appearance and `Quit` in a window, and Windows' open dialog, drawn alerts, hidden caption buttons and backdrops. `internal/platform/apple` checks HEIC and scaled picks; `picked` checks orientation and scaling. macOS, iOS, Android and the web were checked by running each service.

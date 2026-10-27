@@ -43,7 +43,7 @@ var itemNames = map[driver.ItemKind]string{
 	driver.ItemAccessibilityFocus: "accessibility-focus", driver.ItemScreen: "screen", driver.ItemOverflow: "overflow",
 	driver.ItemBlockNative: "block-native", driver.ItemShader: "shader", driver.ItemSetClipboardImage: "set-clipboard-image",
 	driver.ItemOpenURL: "open-url", driver.ItemPickImages: "pick-images",
-	driver.ItemAppearance: "appearance", driver.ItemPopupMenu: "popup-menu", driver.ItemQuit: "quit",
+	driver.ItemAppearance: "appearance", driver.ItemPopupMenu: "popup-menu", driver.ItemQuit: "quit", driver.ItemBackPreview: "back-preview", driver.ItemHistory: "history",
 }
 
 // itemLine is one item as traces print it: its kind, its view and what

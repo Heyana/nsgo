@@ -29,6 +29,13 @@ final class TextNode extends FrameLayout {
     private final RectF backgroundRect = new RectF();
     private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path wave = new Path();
+    /** Whether the text selects, as driver.Selectable, and its highlight's color, 0 for the theme's. */
+    int selectable;
+    private int selectionColor;
+    /** The UTF-16 range a selection highlights, and its outline. */
+    private int selStart, selEnd;
+    private final Path selection = new Path();
+    private final Paint selectionPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     TextNode(Context context) {
         super(context);
@@ -45,6 +52,32 @@ final class TextNode extends FrameLayout {
         this.x = x;
         this.y = y;
         this.clipLines = clipLines;
+        invalidate();
+    }
+
+    StaticLayout layout() {
+        return layout;
+    }
+
+    /** Where the layout is drawn in the view, in pixels. */
+    int textX() {
+        return x;
+    }
+
+    int textY() {
+        return y;
+    }
+
+    void selectable(int selectable, int color) {
+        this.selectable = selectable;
+        selectionColor = color;
+    }
+
+    /** Highlights the UTF-16 range from start to end; none when they are equal. */
+    void select(int start, int end) {
+        if (start == selStart && end == selEnd) return;
+        selStart = start;
+        selEnd = end;
         invalidate();
     }
 
@@ -91,6 +124,17 @@ final class TextNode extends FrameLayout {
             canvas.clipRect(0, 0, layout.getWidth(), layout.getLineTop(clipLines));
         }
         drawBackgrounds(canvas);
+        if (selEnd > selStart) {
+            int color = selectionColor;
+            if (color == 0) {
+                android.util.TypedValue v = new android.util.TypedValue();
+                color = !getContext().getTheme().resolveAttribute(android.R.attr.textColorHighlight, v, true) ? 0x6633b5e5
+                        : v.resourceId != 0 ? getContext().getColor(v.resourceId) : v.data;
+            }
+            selectionPaint.setColor(color);
+            layout.getSelectionPath(selStart, Math.min(selEnd, layout.getText().length()), selection);
+            canvas.drawPath(selection, selectionPaint);
+        }
         layout.draw(canvas);
         drawDecorations(canvas);
         canvas.restore();

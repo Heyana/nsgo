@@ -39,6 +39,7 @@ var layers = []struct {
 	{"internal/platform/picked", []string{"internal/driver"}},
 	{"internal/platform/queue", []string{"internal/driver"}},
 	{"internal/platform/scrollbar", []string{"internal/driver"}},
+	{"internal/platform/textselect", []string{"internal/driver"}},
 	{"internal/platform/", append([]string{"internal/driver", "internal/engine", "internal/testhost", "core"}, platformShared...)},
 	{"nsgotest", []string{"core", "internal/driver", "internal/testhost"}},
 	{"", []string{"core", "internal/engine", "internal/platform/"}},
@@ -59,7 +60,7 @@ var layers = []struct {
 var platformShared = []string{
 	"internal/platform/apple", "internal/platform/canvastest", "internal/platform/field", "internal/platform/finger",
 	"internal/platform/fontfile", "internal/platform/hover", "internal/platform/imagedecode", "internal/platform/imageload", "internal/platform/perfhud", "internal/platform/picked", "internal/platform/queue", "internal/platform/scrollbar",
-	"internal/shader", "internal/shaderir/",
+	"internal/platform/textselect", "internal/shader", "internal/shaderir/",
 }
 
 // portable lists the packages that build unchanged for every target: no

@@ -172,3 +172,13 @@ func (t *testSurface) SetEnvironment(env driver.Environment) error {
 	t.s.engine.Repin()
 	return nil
 }
+
+// ChooseMenu implements testhost.Surface: no native menu bar shows here.
+func (t *testSurface) ChooseMenu(uint32) error { return testhost.ErrNoMenu }
+
+// ChoosePopup implements testhost.Surface: the core shows no native
+// context menus here.
+func (t *testSurface) ChoosePopup(uint32) error { return testhost.ErrNoMenu }
+
+// Several implements testhost.Host: it shows one app at a time.
+func (*host) Several() bool { return false }

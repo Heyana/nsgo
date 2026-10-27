@@ -11,6 +11,13 @@ type IOSViewProps struct {
 	BackdropMaterial BackdropMaterial
 }
 
+// AndroidViewProps are a View's props only Android has.
+type AndroidViewProps struct {
+	// Ripple spreads from the touch while the view is pressed; it shows
+	// on views that take presses. Keep one value for the view's life.
+	Ripple *Ripple
+}
+
 // DesktopViewProps are a View's props only the desktops have.
 type DesktopViewProps struct {
 	// WindowDrag makes the view a handle that moves the desktop window.

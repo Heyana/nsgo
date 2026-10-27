@@ -3,8 +3,10 @@ package dev.oneo.nsgo;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.ContextThemeWrapper;
 import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
@@ -57,9 +59,13 @@ final class WebNode {
     private String injected = "", injectedBefore = "", userAgent = "";
     private boolean noScroll;
 
+    /** The theme the page's prefers-color-scheme follows from Android 13. */
+    private final ContextThemeWrapper themed;
+
     WebNode(Context context, Reporter reporter) {
         this.reporter = reporter;
-        view = new WebView(context);
+        themed = new ContextThemeWrapper(context, android.R.style.Theme_DeviceDefault_NoActionBar);
+        view = new WebView(themed);
         view.getSettings().setDomStorageEnabled(true);
         view.addJavascriptInterface(new Bridge(), INTERFACE);
         view.setWebViewClient(new Client());
@@ -71,6 +77,25 @@ final class WebNode {
             // Without moves the page cannot scroll; taps still reach it.
             return noScroll && e.getActionMasked() == MotionEvent.ACTION_MOVE;
         });
+    }
+
+    /**
+     * Shows pages in the app's appearance: from Android 13 they take it
+     * from the view's theme as prefers-color-scheme; before it a forced
+     * appearance darkens them, or not, as the system's dark theme would.
+     */
+    @SuppressWarnings("deprecation")
+    void appearance(boolean dark, boolean forced) {
+        int theme = dark ? android.R.style.Theme_DeviceDefault_NoActionBar
+                : android.R.style.Theme_DeviceDefault_Light_NoActionBar;
+        themed.getTheme().applyStyle(theme, true);
+        if (Build.VERSION.SDK_INT >= 33) {
+            // The page reads the theme again as the configuration changes.
+            view.dispatchConfigurationChanged(view.getResources().getConfiguration());
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            view.getSettings().setForceDark(!forced ? WebSettings.FORCE_DARK_AUTO
+                    : dark ? WebSettings.FORCE_DARK_ON : WebSettings.FORCE_DARK_OFF);
+        }
     }
 
     /** Called from the page on a binder thread. */

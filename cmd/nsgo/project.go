@@ -73,6 +73,7 @@ type project struct {
 		// on device (-device), an iPhone signed for team (-team);
 		// embed packages the app for host apps of their own (-embed).
 		run, embed   bool
+		dynamic      bool
 		device, team string
 	} `yaml:"build"`
 }

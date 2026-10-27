@@ -49,6 +49,18 @@ func (h *host) Main(run func() int) {
 	if err != nil {
 		select {}
 	}
+	// A test's later apps open their windows on the first one's loop.
+	go func() {
+		for req := range h.opens {
+			w.post(func() {
+				o, err := start(req.app, req.opts)
+				if err == nil {
+					gtkWindowPresent(o.win)
+				}
+				req.reply <- openReply{o, err}
+			})
+		}
+	}()
 	w.run()
 	select {}
 }
@@ -458,3 +470,50 @@ func (t *testSurface) SetEnvironment(env driver.Environment) error {
 	t.w.engine.Repin()
 	return nil
 }
+
+// ChooseMenu implements testhost.Surface: the menu bar's item's action
+// is activated, as GTK's menu bar does.
+func (t *testSurface) ChooseMenu(id uint32) error {
+	var err error
+	t.onLoop(func() {
+		if t.w.menuBar == 0 {
+			// The window shows none: its title bar is the app's.
+			err = testhost.ErrNoMenu
+			return
+		}
+		for action, r := range t.w.actionRefs {
+			if r.id == id {
+				gActionActivate(action, 0)
+				return
+			}
+		}
+		err = fmt.Errorf("the menu bar has no item %d", id)
+	})
+	return err
+}
+
+// ChoosePopup implements testhost.Surface: the context menu's item's
+// action is activated and the popover pops down, as a click on the item
+// does.
+func (t *testSurface) ChoosePopup(id uint32) error {
+	var err error
+	t.onLoop(func() {
+		w := t.w
+		if w.popover == 0 {
+			err = fmt.Errorf("no context menu shows")
+			return
+		}
+		if id != 0 {
+			for action, r := range w.popupRefs {
+				if r.id == id {
+					gActionActivate(action, 0)
+				}
+			}
+		}
+		gtkPopoverPopdown(w.popover)
+	})
+	return err
+}
+
+// Several implements testhost.Host: a desktop shows several windows.
+func (*host) Several() bool { return true }

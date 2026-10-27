@@ -1263,7 +1263,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 				s.chromeItem(it)
 			}
 			continue
-		case driver.ItemStatusBar, driver.ItemBackUnhandled:
+		case driver.ItemStatusBar, driver.ItemBackUnhandled, driver.ItemBackPreview, driver.ItemHistory:
 			continue
 		}
 		v := s.views[it.ID]

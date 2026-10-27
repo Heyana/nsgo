@@ -82,7 +82,7 @@ func accessMethods() []objc.MethodDef {
 				v.action(driver.ActionDecrement)
 			}
 		}},
-		{Cmd: sel("accessibilityPerformEscape"), Fn: standard(driver.ActionEscape)},
+		{Cmd: sel("accessibilityPerformEscape"), Fn: accessibilityEscape},
 		{Cmd: sel("accessibilityPerformMagicTap"), Fn: standard(driver.ActionMagicTap)},
 		{Cmd: selCustomAction, Fn: accessibilityCustom},
 		{Cmd: sel("accessibilityLabel"), Fn: accessibilityLabel},
@@ -334,6 +334,26 @@ func (v *view) action(name string) bool {
 		return false
 	}
 	v.report(driver.Event{Kind: driver.EventAccessibilityAction, Text: name})
+	return true
+}
+
+// accessibilityEscape answers VoiceOver's escape, the two-finger scrub,
+// which UIKit asks of the focused element and then of the views around
+// it: a view with the escape action takes it, and the outermost view of
+// the surface, the root or a modal UIKit presents apart, goes back as
+// Escape and the back button do, closing popups and popping screens.
+func accessibilityEscape(self objc.ID, _ objc.SEL) bool {
+	v := views[self]
+	if v == nil {
+		return false
+	}
+	if v.action(driver.ActionEscape) {
+		return true
+	}
+	if up := views[self.Send(selSuperview)]; up != nil && up.surface == v.surface && up.id != 0 {
+		return false
+	}
+	v.surface.engine.Dispatch(driver.Event{Kind: driver.EventBack})
 	return true
 }
 

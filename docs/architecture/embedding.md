@@ -19,11 +19,11 @@ The engine waits for its place so that the host's settings made before are in th
 The host owns the window around a view:
 
 - Title, window commands, the menu bar and quitting are ignored. Dialogs and pickers belong to the top-level window.
-- A forced appearance shows in the view (an `NSView`'s appearance, `overrideUserInterfaceStyle`, Windows' drawn fields), except on Linux, where GTK's settings are the process's and only the app's own drawing follows.
+- A forced appearance shows in the view: an `NSView`'s appearance, `overrideUserInterfaceStyle`, Windows' drawn fields, and on Linux, where GTK's settings are the process's, a CSS provider scoped to the view's widget name that draws its fields, scroll bars and menus in it.
 - A view takes the keyboard while the focus is in it, which a press gives it, and keymaps fire only then. On Windows the host's loop translates keys before NSGo sees them, so a shortcut drops the character that follows.
 - macOS fields get NSGo's field editor from their cell (`fieldEditorForView:`) rather than from the window's delegate, which is the host's.
 
-The web runs one app per page; a page embeds more through frames.
+On the web each app is a Go program of its own, and a page shows several: `nsgo build -target web` writes `nsgo.json` beside the app, naming its WebAssembly, `wasm_exec.js` and resources, and the page runs each with `NSGO_MOUNT` (a CSS selector of the element it fills), `NSGO_BASE` and `NSGO_RESOURCES` in its environment. An app in an element of a page, or in a frame, leaves the browser's history and title to the page.
 
 ## The host channel
 
@@ -47,7 +47,7 @@ The host's theme overrides are `core.Tokens`: CSS colors by role name, `Values` 
 
 ## iOS
 
-`nsgo build -embed -target ios` builds a static library per slice (devices and the arm64 simulator) with the `nsgoembed` tag and `-buildmode=c-archive`, and makes `<module>.xcframework` of them, the module named after the app. A static library starts Go's runtime on a thread of its own, and only a function cgo exports waits for it, so the tool overlays one file on the app's main package: `NSGoStart`, the one C function, which runs the app's `main` on a goroutine until its `Run`, then loads UIKit's classes and registers NSGo's. Packages keep no cgo files; the overlay is generated.
+`nsgo build -embed -target ios` builds a static library per platform with the `nsgoembed` tag and `-buildmode=c-archive` (devices; the simulator and Mac Catalyst, each arm64 and x86_64 joined with `lipo`), and makes `<module>.xcframework` of them, the module named after the app. `-dynamic` links each into a dynamic framework instead, which exports only `NSGoStart`, since iOS has no Go `c-shared`. A static library starts Go's runtime on a thread of its own, and only a function cgo exports waits for it, so the tool overlays one file on the app's main package: `NSGoStart`, the one C function, which runs the app's `main` on a goroutine until its `Run`, then loads UIKit's classes and registers NSGo's. Packages keep no cgo files; the overlay is generated.
 
 `NSGo.h` declares `NSGoView` and `NSGoComponentContext` with `objc_runtime_visible`: Go registers them at run time, so they have no symbols, and Swift looks them up by name. The header only declares; its module map autolinks UIKit, Security and libresolv, which Go's runtime needs. The app's resources go beside the framework as `<name>Resources`, which the host copies into its bundle.
 
@@ -55,8 +55,7 @@ The host's theme overrides are `core.Tokens`: CSS colors by role name, `Values` 
 - Foundation's JSON objects cross through `NSJSONSerialization`; the host's blocks are called through their function pointer (`apple.CallBlock`), since purego invokes only blocks it made, and copied while kept.
 - The display link holds its view, so a view leaving its window lets the link go. It asks for the screen's top rate, which an iPhone grants only when the host's `Info.plist` sets `CADisableMinimumFrameDurationOnPhone`.
 - purego returns no floats from methods, so the text size is a setter, `setFontScale:`.
-
-Not built yet: the x86_64 simulator, Catalyst and a dynamic framework.
+- Catalyst is GOOS=darwin built with the `ios` tag, as gomobile builds it, so the iOS backend serves it. AppKit's threads drop the signal stack Go's preemption signal needs, so its slices link with `asyncpreemptoff=1`.
 
 ## Android
 

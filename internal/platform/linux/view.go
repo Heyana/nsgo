@@ -30,9 +30,26 @@ type view struct {
 	overflow  driver.Bounds // where its children reach outside it (ItemOverflow)
 	deleted   bool
 
-	// A text view's layout and where it goes in the view.
-	text    driver.TextLayout
-	content driver.Bounds
+	// A text view's layout and where it goes in the view, its content
+	// and the UTF-16 range of it a selection highlights.
+	text             driver.TextLayout
+	content          driver.Bounds
+	plain            string
+	selStart, selEnd int
+
+	// glide is how a scroll view a finger let go comes to rest, and
+	// refreshing whether it keeps the refresh room (touchscroll.go).
+	glide      *scrollbar.Motion
+	refreshing bool
+
+	// modal is a modal's way in, and presented whether it came in yet.
+	modal     driver.ModalAnimation
+	presented bool
+
+	// access is what GTK was last told of the view, and parts a canvas's
+	// named parts (access.go).
+	access accessState
+	parts  []canvasPart
 
 	// A scroll view's configuration, content size and offset.
 	scroll driver.ScrollConfig

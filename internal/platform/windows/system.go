@@ -363,10 +363,19 @@ func (w *window) showPopup() {
 		w.appendMenuTo(menu, p.entries, &refs)
 		at := point{w.px(p.at.X), w.px(p.at.Y)}
 		clientToScreen.Call(w.hwnd, uintptr(unsafe.Pointer(&at)))
-		w.popupTracking = true
+		w.popupTracking, w.popupShown = true, p.entries
 		chosen, _, _ := trackPopupMenuEx.Call(menu, tpmReturnCmd|tpmRightButton, uintptr(at.X), uintptr(at.Y), w.hwnd, 0)
-		w.popupTracking = false
+		w.popupTracking, w.popupShown = false, nil
 		destroyMenu.Call(menu)
+		if c := w.popupChoice; c != nil {
+			// A test chose, which ended the tracking.
+			w.popupChoice, chosen = nil, 0
+			for i, r := range refs {
+				if *c != 0 && r.id == *c {
+					chosen = uintptr(i + 1)
+				}
+			}
+		}
 		if i := int(chosen) - 1; i >= 0 && i < len(refs) {
 			w.chooseMenu(refs[i])
 		}

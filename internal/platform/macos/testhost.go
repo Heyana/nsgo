@@ -473,3 +473,74 @@ func (t *testSurface) SetEnvironment(env driver.Environment) error {
 	t.s.engine.Repin()
 	return nil
 }
+
+// menuItem returns the item tagged id in menu or its submenus, and the
+// menu it is in.
+func menuItem(menu objc.ID, id uint32) (item, in objc.ID) {
+	if menu == 0 {
+		return 0, 0
+	}
+	n := objc.Send[int](menu, sel("numberOfItems"))
+	for i := range n {
+		it := menu.Send(sel("itemAtIndex:"), i)
+		if objc.Send[int](it, sel("tag")) == int(id) && it.Send(sel("action")) != 0 {
+			return it, menu
+		}
+		if sub := it.Send(sel("submenu")); sub != 0 {
+			if found, at := menuItem(sub, id); found != 0 {
+				return found, at
+			}
+		}
+	}
+	return 0, 0
+}
+
+// ChooseMenu implements testhost.Surface: the main menu's item sends its
+// action, as a click on it does.
+func (t *testSurface) ChooseMenu(id uint32) error {
+	var err error
+	onMainSync(func() {
+		main := objc.ID(objc.GetClass("NSApplication")).Send(sel("sharedApplication")).Send(sel("mainMenu"))
+		item, menu := menuItem(main, id)
+		if item == 0 {
+			err = fmt.Errorf("the main menu has no item %d", id)
+			return
+		}
+		menu.Send(sel("performActionForItemAtIndex:"), objc.Send[int](menu, sel("indexOfItem:"), item))
+	})
+	return err
+}
+
+// ChoosePopup implements testhost.Surface: the tracking context menu's
+// item sends its action and the menu closes, as a click on it does.
+func (t *testSurface) ChoosePopup(id uint32) error {
+	var err error
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		shown := false
+		onMainSync(func() {
+			s := t.s
+			if shown = s.popup != 0 && s.tracking; !shown {
+				return
+			}
+			if id != 0 {
+				if item, menu := menuItem(s.popup, id); item != 0 {
+					menu.Send(sel("performActionForItemAtIndex:"), objc.Send[int](menu, sel("indexOfItem:"), item))
+				} else {
+					err = fmt.Errorf("the context menu has no item %d", id)
+				}
+			}
+			s.closePopup()
+		})
+		if shown || time.Now().After(deadline) {
+			if !shown {
+				return fmt.Errorf("no context menu shows")
+			}
+			return err
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// Several implements testhost.Host: a desktop shows several windows.
+func (host) Several() bool { return true }

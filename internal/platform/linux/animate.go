@@ -183,6 +183,12 @@ func (w *window) step(v *view, now time.Time) bool {
 	} else if v.wheel.Turning() && v.scrolling == nil {
 		keep = true
 	}
+	if w.stepGlide(v, now) {
+		keep = true
+		if v.refreshing {
+			gtkWidgetQueueDraw(v.widget)
+		}
+	}
 	if s := v.scrolling; s != nil {
 		elapsed := now.Sub(s.start)
 		if elapsed >= scrollDuration {

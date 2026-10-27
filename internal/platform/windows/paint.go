@@ -480,6 +480,7 @@ func (w *window) frame() {
 		f := frameOf(root)
 		p.draw(root, identity, f.Origin.X, f.Origin.Y)
 	}
+	p.drawAlert(driver.Size{Width: driver.Points(float64(client.Right) / w.scale), Height: driver.Points(float64(client.Bottom) / w.scale)})
 	p.drawCaptionButtons(client.Right)
 	p.drawPerf()
 	p.release()
@@ -647,7 +648,15 @@ func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
 	}
 	alpha := p.alpha
 	p.alpha *= opacity
-	p.drawContent(v, s, world)
+	size := frameOf(v).Size
+	area := rectF{float32(v.overflow.Origin.X), float32(v.overflow.Origin.Y),
+		float32(v.overflow.Origin.X + v.overflow.Size.Width), float32(v.overflow.Origin.Y + v.overflow.Size.Height)}
+	if area.empty() {
+		area = rectF{0, 0, float32(size.Width), float32(size.Height)}
+	}
+	if s.BlendMode == driver.BlendNormal || !p.drawBlended(s.BlendMode, world, area, func() { p.drawContent(v, s, world) }) {
+		p.drawContent(v, s, world)
+	}
 	p.alpha = alpha
 	if opacity < 1 {
 		p.pop()
@@ -684,6 +693,7 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 		p.drawShadow(v, s, width, height, radius)
 	}
 	p.drawBoxShadows(v, s, &b, e.Shadows, false)
+	p.drawBackdrop(e, &b, world)
 	p.fillBox(&b, s.Background, nil)
 	p.drawGradients(&b, e.Gradients)
 	p.drawBoxShadows(v, s, &b, e.Shadows, true)
@@ -734,6 +744,7 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	}
 	if v.text != nil {
 		x, y := float32(v.content.Origin.X), float32(v.content.Origin.Y)
+		p.drawSelection(v, x, y)
 		if v.animated.Has(driver.PropTextColor) {
 			p.drawTinted(world, v.animated.TextColor, func() { v.text.draw(p, x, y) })
 		} else {
@@ -767,6 +778,9 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 		p.realize()
 	}
 	p.setTransform(world)
+	if v.kind == driver.KindScroll {
+		p.drawSpinner(v, world)
+	}
 	if indicator {
 		p.drawIndicator(v)
 	}

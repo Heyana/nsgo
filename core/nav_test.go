@@ -307,3 +307,52 @@ func TestAndroidModalStartsBelowTheStatusBar(t *testing.T) {
 		t.Errorf("translucent modal = %v with insets %v, want under the status bar", got, under)
 	}
 }
+
+func TestBackPreviewNamesTheScreenBackPops(t *testing.T) {
+	var cx0 *Scope
+	var open *Signal[bool]
+	h := newPhone(t, phone, func(cx *Scope) Node {
+		cx0 = cx
+		open = NewSignal(cx, false)
+		return View{Style: Style{FlexGrow: 1}, Children: []Node{
+			Stack{Style: Style{FlexGrow: 1}, Children: []Node{
+				Screen{TestID: "home"},
+				Screen{TestID: "detail"},
+			}},
+			Show{When: open.Get, Then: func(*Scope) Node {
+				return Overlay{OnCancel: func() {}, Children: []Node{View{}}}
+			}},
+		}}
+	})
+	h.commit()
+	preview := func() NodeID {
+		h.tree.Dispatch(driver.Event{Kind: driver.EventBackStarted})
+		for _, it := range h.commit().Items {
+			if it.Kind == driver.ItemBackPreview {
+				return it.ID
+			}
+		}
+		t.Fatal("no ItemBackPreview")
+		return 0
+	}
+	if got := preview(); got != h.find("detail").id {
+		t.Errorf("preview = %v, want the top screen", got)
+	}
+	if f := h.find("home").frame; f.Size.Width == 0 {
+		t.Errorf("home's frame = %v while a back gesture may uncover it", f)
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventBackCancelled})
+	h.commit()
+	if f := h.find("home").frame; f.Size.Width != 0 {
+		t.Errorf("home's frame = %v after the gesture was cancelled", f)
+	}
+	open.Set(true)
+	if got := preview(); got != 0 {
+		t.Errorf("preview = %v under an overlay hearing cancel, want none", got)
+	}
+	open.Set(false)
+	cx0.OnBackPress(func() bool { return false })
+	if got := preview(); got != 0 {
+		t.Errorf("preview = %v with a back handler, want none", got)
+	}
+}

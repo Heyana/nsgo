@@ -76,8 +76,6 @@ const (
 	hostLButtonUp   = 0x0202
 	hostRButtonUp   = 0x0205
 	hostKeyUp       = 0x0101
-	gwEnabledPopup  = 6
-	tdmClickButton  = 0x0400 + 102
 	pwRenderContent = 1 | 2
 )
 
@@ -273,34 +271,44 @@ func (t *testSurface) Back() error {
 	return t.Key("escape")
 }
 
-// Answer clicks the task dialog's button, as TDM_CLICK_BUTTON does: the
-// dialog runs a loop of its own, which still runs the window's messages.
+// Answer clicks the button at index of the alert the window draws, or
+// presses Escape for -1, as a user would.
 func (t *testSurface) Answer(id uint32, index int) error {
 	var err error
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		var dialog uintptr
+		drawn := false
 		t.onMain(func() {
-			if !t.w.alerting || t.w.alertShown.ID != id {
+			w := t.w
+			if !w.alerting || w.alertShown.ID != id {
 				err = fmt.Errorf("no alert %d shows", id)
 				return
 			}
-			dialog, _, _ = hostGetWindow.Call(t.w.hwnd, gwEnabledPopup)
-			if dialog == 0 || dialog == t.w.hwnd {
-				dialog = 0
+			s := w.alert
+			if s == nil || len(s.buttons) == 0 {
+				return // not drawn yet
+			}
+			drawn = true
+			if index < 0 {
+				postMessageW.Call(w.hwnd, wmKeyDown, vkEscape, 1)
 				return
 			}
-			button := uintptr(idCancel)
-			if index >= 0 {
-				button = uintptr(alertButton + index)
+			if index >= len(s.buttons) {
+				err = fmt.Errorf("alert %d has no button %d", id, index)
+				return
 			}
-			hostSendMessage.Call(dialog, tdmClickButton, button, 0)
+			r := s.buttons[index]
+			x := int32(float64((r.left+r.right)/2) * w.scale)
+			y := int32(float64((r.top+r.bottom)/2) * w.scale)
+			at := uintptr(uint32(y)<<16 | uint32(x)&0xffff)
+			postMessageW.Call(w.hwnd, wmLButtonDown, mkLButton, at)
+			postMessageW.Call(w.hwnd, wmLButtonUp, 0, at)
 		})
-		if err != nil || dialog != 0 {
+		if err != nil || drawn {
 			return err
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("the alert %d shows no dialog", id)
+			return fmt.Errorf("the alert %d is not drawn", id)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -385,3 +393,44 @@ func (t *testSurface) SetEnvironment(env driver.Environment) error {
 	t.w.engine.Repin()
 	return nil
 }
+
+// ChooseMenu implements testhost.Surface: the menu bar's command, as
+// WM_COMMAND brings it.
+func (t *testSurface) ChooseMenu(id uint32) error {
+	var err error
+	t.onMain(func() {
+		for i, r := range t.w.chrome.entries {
+			if r.id == id {
+				postMessageW.Call(t.w.hwnd, wmCommand, uintptr(i+1), 0)
+				return
+			}
+		}
+		err = fmt.Errorf("the menu bar has no item %d", id)
+	})
+	return err
+}
+
+// ChoosePopup implements testhost.Surface: the context menu tracking
+// ends, and its item id is carried out after, as a click on it would.
+func (t *testSurface) ChoosePopup(id uint32) error {
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		tracking := false
+		t.onMain(func() {
+			if tracking = t.w.popupTracking; tracking {
+				t.w.popupChoice = &id
+				endMenu.Call()
+			}
+		})
+		if tracking {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("no context menu shows")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// Several implements testhost.Host: a desktop shows several windows.
+func (host) Several() bool { return true }

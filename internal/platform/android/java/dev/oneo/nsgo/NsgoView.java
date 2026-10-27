@@ -8,10 +8,19 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.DialogInterface;
+import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.database.ContentObserver;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.ColorFilter;
 import android.graphics.Insets;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.PixelFormat;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.LayerDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.net.ConnectivityManager;
 import android.net.LinkProperties;
 import android.net.Network;
@@ -42,6 +51,7 @@ import android.view.ViewConfiguration;
 import android.view.ViewParent;
 import android.view.ViewTreeObserver;
 import android.view.WindowInsets;
+import android.view.WindowInsetsAnimation;
 import android.view.WindowInsetsController;
 import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -140,6 +150,17 @@ public class NsgoView extends FrameLayout {
     private int safeTop, safeRight, safeBottom, safeLeft, keyboard;
     private byte[] environment;
     private ConnectivityManager.NetworkCallback network;
+    /**
+     * The predictive back gesture, on the UI thread: whether one runs, its
+     * progress, the screen following it and the one it uncovers, their
+     * translations and visibility before it, how far off the screen is and
+     * the animation settling it.
+     */
+    private boolean backGesture;
+    private float backProgress, backBase, backBelowBase, backAt;
+    private Node backScreen, backBelow;
+    private int backBelowVisibility;
+    private ValueAnimator backMove;
     /** The OnBackInvokedDispatcher and OnBackInvokedCallback of back on API 33 and later. */
     private Object backDispatcher, backCallback;
     /** The keymap's bindings, oldest first: each key with its flags (1 fires in text, 2 repeats). */
@@ -154,13 +175,13 @@ public class NsgoView extends FrameLayout {
     private View rootView;
 
     // Animation, on the UI thread: the graph, whether a frame callback is
-    // posted, the nodes whose frames move or which appear, and the views
+    // posted and the app waits for it, the nodes whose frames move or which appear, and the views
     // deleted views leave fading out in their parents' overlays.
     private final Animator animator = new Animator((id, value, finished) ->
             event(Protocol.EVENT_ANIMATION, 0, id, 0, 0, "", 0, 0, 0, 0, 0, 0, value, null, 0, 0, false, "",
                     finished));
     private final Choreographer.FrameCallback tick = this::tick;
-    private boolean ticking;
+    private boolean ticking, frameWanted;
     private final LinkedHashSet<Node> moving = new LinkedHashSet<>();
     private final ArrayList<Ghost> ghosts = new ArrayList<>();
     private final Set<View> ghostViews = new HashSet<>();
@@ -168,6 +189,8 @@ public class NsgoView extends FrameLayout {
     // was applied and the nodes it created.
     private LayoutTransition layoutCreate, layoutUpdate, layoutDelete;
     private long batchTime;
+    /** The keyboard's last motion, from its WindowInsetsAnimation (API 30). */
+    private final LayoutTransition.Keyboard keyboardMotion = new LayoutTransition.Keyboard();
     private final Set<Integer> created = new HashSet<>();
 
     // The input accessory bar: the input with focus, and the accessory
@@ -224,6 +247,26 @@ public class NsgoView extends FrameLayout {
             updateAccessory();
             return insets;
         });
+        // The keyboard's curve, duration and start as it begins to move,
+        // before its insets arrive: layout animations on its curve keep
+        // pace with it however late their batch comes.
+        if (Build.VERSION.SDK_INT >= 30) {
+            setWindowInsetsAnimationCallback(new WindowInsetsAnimation.Callback(
+                    WindowInsetsAnimation.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+                @Override
+                public void onPrepare(WindowInsetsAnimation animation) {
+                    if ((animation.getTypeMask() & WindowInsets.Type.ime()) == 0) return;
+                    keyboardMotion.interpolator = animation.getInterpolator();
+                    keyboardMotion.duration = animation.getDurationMillis() * 1_000_000;
+                    keyboardMotion.start = System.nanoTime();
+                }
+
+                @Override
+                public WindowInsets onProgress(WindowInsets insets, List<WindowInsetsAnimation> running) {
+                    return insets;
+                }
+            });
+        }
     }
 
     @Override
@@ -448,6 +491,12 @@ public class NsgoView extends FrameLayout {
                     case Protocol.HOST_CALL:
                         host.message(message);
                         break;
+                    case Protocol.WANT_FRAME:
+                        ui.post(() -> {
+                            frameWanted = true;
+                            startTicking();
+                        });
+                        break;
                     default:
                         text(kind, message);
                 }
@@ -478,6 +527,7 @@ public class NsgoView extends FrameLayout {
         if (process == null) return;
         Configuration config = getResources().getConfiguration();
         boolean dark = dark();
+        followAppearance(dark);
         // Android's reduce-motion setting turns animations off.
         boolean reduceMotion = Settings.Global.getFloat(getContext().getContentResolver(),
                 Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
@@ -526,6 +576,25 @@ public class NsgoView extends FrameLayout {
         if (hostAppearance != 0) return hostAppearance == APPEARANCE_DARK;
         int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
         return night == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    /** The appearance the theme and the web views follow; null before the first. */
+    private Boolean themed;
+
+    /**
+     * Gives the standalone activity's theme and the web views the
+     * appearance shown, as it changes: a host's activity keeps its own.
+     */
+    private void followAppearance(boolean dark) {
+        if (themed != null && themed == dark) return;
+        themed = dark;
+        if (activity() instanceof NsgoActivity) ((NsgoActivity) activity()).followAppearance(dark);
+        boolean forced = appearance != 0 || hostAppearance != 0;
+        for (int i = 0; i < nodes.size(); i++) {
+            Node n = nodes.valueAt(i);
+            if (n.web != null) n.web.appearance(dark, forced);
+            if (n.header != null) n.header.colors(dark);
+        }
     }
 
     /** Hears the activity's results: the photo picker's images. */
@@ -1012,10 +1081,111 @@ public class NsgoView extends FrameLayout {
     private void registerBack() {
         OnBackInvokedDispatcher dispatcher = findOnBackInvokedDispatcher();
         if (dispatcher == null) return;
-        OnBackInvokedCallback callback = this::back;
+        OnBackInvokedCallback callback = Build.VERSION.SDK_INT >= 34 ? new BackGesture(this) : this::back;
         dispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback);
         backDispatcher = dispatcher;
         backCallback = callback;
+    }
+
+    /**
+     * A predictive back gesture began: the engine answers which screen it
+     * pops (ITEM_BACK_PREVIEW), which then follows the gesture.
+     */
+    void backStarted(float progress) {
+        backGesture = true;
+        backProgress = progress;
+        event(Protocol.EVENT_BACK_STARTED, 0, 0, 0, 0, "");
+    }
+
+    void backProgressed(float progress) {
+        backProgress = progress;
+        if (backScreen != null) placeBack(backDrag(progress));
+    }
+
+    void backCancelled() {
+        backGesture = false;
+        if (backScreen != null) settleBack(false);
+        event(Protocol.EVENT_BACK_CANCELLED, 0, 0, 0, 0, "");
+    }
+
+    /** The gesture went through: the screen leaves, then the engine pops it. */
+    void backInvoked() {
+        backGesture = false;
+        if (backScreen != null) {
+            settleBack(true);
+        } else {
+            back();
+        }
+    }
+
+    /** How far off its screen the gesture's progress moves: part of the way, as Android's own does. */
+    private static float backDrag(float progress) {
+        return progress * 0.4f;
+    }
+
+    /** Answers backStarted with screen n, or null when back goes elsewhere first. */
+    private void previewBack(Node n) {
+        if (!backGesture || n == null || n.view.getParent() == null || backScreen != null || backMove != null) return;
+        ViewGroup up = (ViewGroup) n.view.getParent();
+        Node below = null;
+        for (int i = up.indexOfChild(n.view) - 1; i >= 0 && below == null; i--) {
+            View v = up.getChildAt(i);
+            for (int j = 0; j < nodes.size(); j++) {
+                Node o = nodes.valueAt(j);
+                if (o.view == v && o.header != null) {
+                    below = o;
+                    break;
+                }
+            }
+        }
+        backScreen = n;
+        backBelow = below;
+        backBase = n.view.getTranslationX();
+        if (below != null) {
+            backBelowBase = below.view.getTranslationX();
+            backBelowVisibility = below.view.getVisibility();
+            below.view.setVisibility(VISIBLE);
+        }
+        placeBack(backDrag(backProgress));
+    }
+
+    /** Moves the screen a fraction t of the way off, and the one below from a quarter of the way in. */
+    private void placeBack(float t) {
+        backAt = t;
+        float w = backScreen.view.getWidth();
+        if (getLayoutDirection() == LAYOUT_DIRECTION_RTL) w = -w;
+        backScreen.view.setTranslationX(backBase + t * w);
+        if (backBelow != null) backBelow.view.setTranslationX(backBelowBase - (1 - t) * w * 0.25f);
+    }
+
+    /** Ends the gesture's motion: off, reporting the back, or back in place. */
+    private void settleBack(boolean pop) {
+        Node screen = backScreen, below = backBelow;
+        float base = backBase, belowBase = backBelowBase;
+        int belowVisibility = backBelowVisibility;
+        ValueAnimator a = ValueAnimator.ofFloat(backAt, pop ? 1 : 0);
+        a.setDuration(Math.round((pop ? 300 : 200) * Math.max(Math.abs((pop ? 1 : 0) - backAt), 0.2f)));
+        a.setInterpolator(new DecelerateInterpolator(1.5f));
+        a.addUpdateListener(x -> placeBack((float) x.getAnimatedValue()));
+        a.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(android.animation.Animator animation) {
+                backMove = null;
+                backScreen = backBelow = null;
+                screen.view.setTranslationX(base);
+                if (below != null) {
+                    below.view.setTranslationX(belowBase);
+                    if (!pop) below.view.setVisibility(belowVisibility);
+                }
+                if (pop) {
+                    // Until the engine hides it, as it pops it.
+                    screen.view.setVisibility(GONE);
+                    event(Protocol.EVENT_BACK, screen.id, 0, 0, 0, "");
+                }
+            }
+        });
+        backMove = a;
+        a.start();
     }
 
     private void unregisterBack() {
@@ -1035,6 +1205,7 @@ public class NsgoView extends FrameLayout {
     @Override
     public boolean dispatchTouchEvent(MotionEvent e) {
         boolean down = e.getActionMasked() == MotionEvent.ACTION_DOWN;
+        if (selectTouch(e)) return true;
         touches(e);
         if (down) {
             pressOutside(e);
@@ -1048,6 +1219,148 @@ public class NsgoView extends FrameLayout {
         // view took the down: a responder that claims on a move, as a
         // toast's swipe, hears the moves only then.
         return handled || touching;
+    }
+
+    /**
+     * The selection of an area, and its touch: a long press waited for at
+     * the down, and whether the touch made the selection and now moves its
+     * end (Selection.java).
+     */
+    private Selection selection;
+    private Runnable selectLater;
+    private boolean selectingTouch, selectMoved;
+    private float selectDownX, selectDownY;
+    private final ViewTreeObserver.OnScrollChangedListener selectionScrolled = this::refreshSelection;
+
+    /**
+     * Follows a touch for selections: a down elsewhere clears the
+     * selection, and one held on an area selects the word there, then
+     * takes the rest of the touch, which moves the selection's end, from
+     * the views. It reports whether it took the event.
+     */
+    private boolean selectTouch(MotionEvent e) {
+        float x = e.getX(), y = e.getY();
+        switch (e.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN: {
+                if (selection != null && !selection.onHandle(x, y)) clearSelection();
+                View area = selection == null ? areaAt(x, y) : null;
+                if (area == null) return false;
+                selectDownX = x;
+                selectDownY = y;
+                long downTime = e.getDownTime();
+                selectLater = () -> {
+                    selectLater = null;
+                    Selection s = new Selection(this, area);
+                    if (!s.selectWordAt(selectDownX, selectDownY)) return;
+                    selection = s;
+                    selectingTouch = true;
+                    selectMoved = false;
+                    getViewTreeObserver().addOnScrollChangedListener(selectionScrolled);
+                    performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                    // The views lose the touch the selection took.
+                    MotionEvent cancel = MotionEvent.obtain(downTime, android.os.SystemClock.uptimeMillis(),
+                            MotionEvent.ACTION_CANCEL, selectDownX, selectDownY, 0);
+                    super.dispatchTouchEvent(cancel);
+                    cancel.recycle();
+                };
+                postDelayed(selectLater, ViewConfiguration.getLongPressTimeout());
+                return false;
+            }
+            case MotionEvent.ACTION_MOVE:
+                if (selectingTouch) {
+                    // The word stays until the finger moves on from it.
+                    if (selectMoved || Math.hypot(x - selectDownX, y - selectDownY)
+                            > ViewConfiguration.get(getContext()).getScaledTouchSlop()) {
+                        selectMoved = true;
+                        selection.moveHandle(1, x, y);
+                    }
+                    return true;
+                }
+                if (selectLater != null && Math.hypot(x - selectDownX, y - selectDownY)
+                        > ViewConfiguration.get(getContext()).getScaledTouchSlop()) {
+                    removeCallbacks(selectLater);
+                    selectLater = null;
+                }
+                return false;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                if (selectLater != null) {
+                    removeCallbacks(selectLater);
+                    selectLater = null;
+                }
+                if (selectingTouch) {
+                    selectingTouch = false;
+                    if (selection != null) selection.showToolbar();
+                    return true;
+                }
+                return false;
+            default:
+                return selectingTouch;
+        }
+    }
+
+    /**
+     * The selection area a touch at x, y goes to: the outermost area around
+     * the view hit, or the selectable text hit, unless a field, a page, a
+     * native view, a pressable view or one that follows pans keeps it.
+     */
+    private View areaAt(float x, float y) {
+        if (rootView == null) return null;
+        List<View> under = new ArrayList<>();
+        int[] at = new int[2], self = new int[2];
+        getLocationInWindow(self);
+        View v = rootView;
+        while (v != null) {
+            under.add(v);
+            View next = null;
+            if (v instanceof ViewGroup) {
+                ViewGroup g = (ViewGroup) v;
+                for (int i = g.getChildCount() - 1; i >= 0; i--) {
+                    View c = g.getChildAt(i);
+                    if (c.getVisibility() != VISIBLE) continue;
+                    c.getLocationInWindow(at);
+                    float cx = x + self[0] - at[0], cy = y + self[1] - at[1];
+                    if (cx >= 0 && cy >= 0 && cx < c.getWidth() && cy < c.getHeight()) {
+                        next = c;
+                        break;
+                    }
+                }
+            }
+            v = next;
+        }
+        View area = null;
+        boolean taken = false;
+        for (int i = under.size() - 1; i >= 0; i--) {
+            View u = under.get(i);
+            Node n = byView.get(u);
+            if (u instanceof EditText || u instanceof android.webkit.WebView) {
+                taken = true;
+                continue;
+            }
+            if (n == null) continue;
+            boolean keeps = n.embedded != null || n.has(Protocol.EVENT_PRESS) || n.has(Protocol.EVENT_LONG_PRESS)
+                    || n.has(Protocol.EVENT_PRESS_DOWN) || n.has(Protocol.EVENT_PAN);
+            if (keeps) {
+                if (area == null) taken = true;
+            } else if (n.selectionArea) {
+                if (area != null || !taken) area = u;
+            } else if (u instanceof TextNode && ((TextNode) u).selectable == Protocol.SELECTABLE_ON && !taken && area == null) {
+                area = u;
+            }
+        }
+        return area;
+    }
+
+    /** Follows the selection's texts after a batch or a scroll. */
+    private void refreshSelection() {
+        if (selection != null && !selection.refresh()) clearSelection();
+    }
+
+    private void clearSelection() {
+        if (selection == null) return;
+        selection.clear();
+        selection = null;
+        getViewTreeObserver().removeOnScrollChangedListener(selectionScrolled);
     }
 
     /** Whether the fingers are reported as EventTouch: from a first finger down while a node listens. */
@@ -1157,6 +1470,9 @@ public class NsgoView extends FrameLayout {
                     layoutUpdate = update;
                     layoutDelete = delete;
                     batchTime = System.nanoTime();
+                    for (LayoutTransition t : new LayoutTransition[] {create, update, delete}) {
+                        if (t != null) t.alignToKeyboard(keyboardMotion, batchTime);
+                    }
                 }
             }
             for (int i = 0, count = in.readInt(); i < count; i++) {
@@ -1180,6 +1496,8 @@ public class NsgoView extends FrameLayout {
         // Bindings and values change in batches too.
         applyAnimated();
         if (animator.running()) startTicking();
+        // The selection keeps to its texts, and goes with its area.
+        if (selection != null) post(this::refreshSelection);
     }
 
     private void show(View root) {
@@ -1546,7 +1864,12 @@ public class NsgoView extends FrameLayout {
                 break;
             case Protocol.ITEM_WINDOW:
             case Protocol.ITEM_MENU:
-                // Desktop windows' and menus'; Go writes no fields.
+            case Protocol.ITEM_HISTORY:
+                // Desktop windows' and menus', and the web's history; Go
+                // writes no fields.
+                break;
+            case Protocol.ITEM_BACK_PREVIEW:
+                previewBack(n);
                 break;
             case Protocol.ITEM_BACK_UNHANDLED: {
                 // As the system's back does from API 31: a task's root
@@ -1665,9 +1988,16 @@ public class NsgoView extends FrameLayout {
         Choreographer.getInstance().postFrameCallback(tick);
     }
 
-    /** Steps every animation once a frame, and stops when none runs. */
+    /**
+     * Tells the app a frame began if it waits for one, steps every animation
+     * once a frame, and stops when none runs.
+     */
     private void tick(long now) {
         ticking = false;
+        if (frameWanted) {
+            frameWanted = false;
+            write(Protocol.FRAME, new byte[0]);
+        }
         if (animator.running()) animator.step(now);
         applyAnimated();
         boolean more = animator.running();
@@ -1740,6 +2070,7 @@ public class NsgoView extends FrameLayout {
     private void screen(Node n, DataInputStream in) throws IOException {
         if (n.header == null) {
             n.header = new Header(getContext(), density, () -> event(Protocol.EVENT_BACK, n.id, 0, 0, 0, ""));
+            n.header.colors(dark());
             n.children.addView(n.header.toolbar);
         }
         n.header.configure(in, id -> {
@@ -1840,12 +2171,38 @@ public class NsgoView extends FrameLayout {
             removeView(accessoryShown.view);
         }
         accessoryShown = bar;
+        keepFocusedClear();
         if (bar == null) return;
         if (bar.view.getParent() != this) {
             detach(bar.view);
             addView(bar.view);
         }
         placeAccessory();
+    }
+
+    /** The scroll view keeping the focused field clear of the keyboard. */
+    private Scrolling.VScroll keyboardScroll;
+
+    /**
+     * Keeps the focused field clear of the keyboard and the accessory bar
+     * above it, through the innermost vertical scroll view around it.
+     */
+    private void keepFocusedClear() {
+        View field = focusedInput != null && keyboard > 0 ? focusedInput.field : null;
+        Scrolling.VScroll scroll = null;
+        for (android.view.ViewParent p = field != null ? field.getParent() : null; p != null; p = p.getParent()) {
+            if (p instanceof Scrolling.VScroll) {
+                scroll = (Scrolling.VScroll) p;
+                break;
+            }
+        }
+        if (keyboardScroll != null && keyboardScroll != scroll) keyboardScroll.d.keepClear(null, 0);
+        keyboardScroll = scroll;
+        if (scroll == null) return;
+        int[] at = new int[2];
+        getLocationInWindow(at);
+        int bar = accessoryShown != null && accessoryShown.frame != null ? px(accessoryShown.frame[3]) : 0;
+        scroll.d.keepClear(field, at[1] + getHeight() - keyboard - bar);
     }
 
     /** Places the accessory bar on the keyboard: its top keyboard pixels plus its height above the bottom. */
@@ -2193,6 +2550,7 @@ public class NsgoView extends FrameLayout {
                 n.web = new WebNode(context, (k, text, nav) -> {
                     if (n.has(k)) event(k, n.id, 0, 0, 0, text, 0, 0, 0, 0, 0, 0, 0, nav);
                 });
+                n.web.appearance(dark(), appearance != 0 || hostAppearance != 0);
                 n.children = (ViewGroup) view;
                 n.children.addView(n.web.view, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
                 break;
@@ -2453,6 +2811,13 @@ public class NsgoView extends FrameLayout {
             for (int i = 0; i < 20; i++) look.colorMatrix[i] = in.readFloat();
         }
         look.blur = in.readFloat() * density;
+        if (in.readUnsignedByte() != 0) {
+            look.dropShadow = new Look.Shadow();
+            look.dropShadow.dx = in.readFloat() * density;
+            look.dropShadow.dy = in.readFloat() * density;
+            look.dropShadow.blur = in.readFloat() * density;
+            look.dropShadow.color = Text.argb(in.readInt());
+        }
     }
 
     /** Runs keyframes over n's look, or stops what ran when they change. */
@@ -2646,6 +3011,13 @@ public class NsgoView extends FrameLayout {
         n.pointerEvents = in.readUnsignedByte();
         n.slop = new float[] {in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat()};
         n.delayLongPress = in.readInt();
+        int ripple = in.readUnsignedByte();
+        int rippleColor = ripple != 0 ? in.readInt() : 0;
+        float rippleRadius = ripple != 0 ? in.readFloat() : 0;
+        ripple(n, ripple, rippleColor, rippleRadius);
+        n.selectionArea = in.readUnsignedByte() != 0;
+        int selectable = in.readUnsignedByte(), selectionColor = in.readInt();
+        if (n.view instanceof TextNode) ((TextNode) n.view).selectable(selectable, Text.argb(selectionColor));
         View view = n.accessible();
         // A text field's ItemInput enables it.
         if (n.field == null) view.setEnabled(!n.disabled);
@@ -2668,6 +3040,64 @@ public class NsgoView extends FrameLayout {
         // A group is one stop for TalkBack, which reads its label.
         view.setScreenReaderFocusable(n.accessibleMode == Protocol.ACCESSIBLE_YES);
         describe(n);
+    }
+
+    /**
+     * Shows n's ripple, flags 1 set, 2 borderless and 4 foreground, as
+     * Android's own press handling of a clickable view drives it: behind
+     * the content in a layer over the background, or over it.
+     */
+    private void ripple(Node n, int flags, int color, float radius) {
+        if (flags == n.rippleFlags && color == n.rippleColor && radius == n.rippleRadius) return;
+        n.rippleFlags = flags;
+        n.rippleColor = color;
+        n.rippleRadius = radius;
+        if (n.background == null) {
+            n.background = new Box();
+            n.view.setBackground(n.background);
+        }
+        if (n.view.getForeground() instanceof RippleDrawable) n.view.setForeground(null);
+        if (!(n.view.getBackground() instanceof Box)) n.view.setBackground(n.background);
+        if ((flags & 1) == 0) return;
+        Box box = n.background;
+        Drawable mask = (flags & 2) != 0 ? null : new Drawable() {
+            private final Path path = new Path();
+            private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+            @Override
+            public void draw(Canvas canvas) {
+                paint.setColor(0xffffffff);
+                canvas.drawPath(box.shape(getBounds(), path), paint);
+            }
+
+            @Override
+            public void setAlpha(int alpha) {}
+
+            @Override
+            public void setColorFilter(ColorFilter filter) {}
+
+            @Override
+            public int getOpacity() {
+                return PixelFormat.TRANSLUCENT;
+            }
+        };
+        RippleDrawable drawable = new RippleDrawable(
+                ColorStateList.valueOf(color != 0 ? Text.argb(color) : themeHighlight()), null, mask);
+        if (radius > 0) drawable.setRadius(px(radius));
+        if ((flags & 4) != 0) {
+            n.view.setForeground(drawable);
+        } else {
+            n.view.setBackground(new LayerDrawable(new Drawable[] {box, drawable}));
+        }
+    }
+
+    /** The theme's ripple color. */
+    private int themeHighlight() {
+        TypedValue value = new TypedValue();
+        if (getContext().getTheme().resolveAttribute(android.R.attr.colorControlHighlight, value, true)) {
+            return value.resourceId != 0 ? getContext().getColor(value.resourceId) : value.data;
+        }
+        return 0x1f000000;
     }
 
     /** The standard action a TalkBack action is, if any. */
@@ -3318,6 +3748,11 @@ public class NsgoView extends FrameLayout {
         /** The view's background, the look it shows and the transition moving it. */
         Box background;
         Look shown;
+        /** Whether the node is a selection area (driver.ViewProps.SelectionArea). */
+        boolean selectionArea;
+        /** The ripple's flags, color and radius, as ripple() takes them. */
+        int rippleFlags, rippleColor;
+        float rippleRadius;
         ValueAnimator animator;
         /** The keyframe animation running over the look, and what it runs. */
         Keyframes keyframes;

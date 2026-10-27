@@ -243,6 +243,8 @@ type (
 	ResizeMode = driver.ResizeMode
 	// ReturnKeyType labels the software keyboard's return key.
 	ReturnKeyType = driver.ReturnKeyType
+	// Ripple is Android's ripple over a pressed view (AndroidViewProps).
+	Ripple = driver.Ripple
 	// Role is a view's accessibility role.
 	Role = driver.Role
 	// SVG is a parsed SVG document: vector shapes that stay sharp at any size.

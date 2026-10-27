@@ -40,6 +40,20 @@ public class NsgoActivity extends Activity {
         setContentView(view);
     }
 
+    /**
+     * Restyles the window in the appearance the app shows: the theme the
+     * views it makes from now on read, and the window's background.
+     */
+    void followAppearance(boolean dark) {
+        int theme = dark ? android.R.style.Theme_DeviceDefault_NoActionBar
+                : android.R.style.Theme_DeviceDefault_Light_NoActionBar;
+        setTheme(theme);
+        getTheme().applyStyle(theme, true);
+        android.content.res.TypedArray a = getTheme().obtainStyledAttributes(new int[] {android.R.attr.windowBackground});
+        getWindow().setBackgroundDrawable(a.getDrawable(0));
+        a.recycle();
+    }
+
     @Override
     public void onBackPressed() {
         // Back arrives here before API 33, or without predictive back.

@@ -33,9 +33,9 @@ Each step then takes frames while an animation that ends runs or a list binds th
 
 ## On a platform
 
-`nsgo test -target <t>` builds the package's tests with the `nsgotest` tag as the target's package and runs each test in a process of its own (`cmd/nsgo/testtarget.go`): one app per test, as a phone shows one. The test's `TestMain` calls `nsgotest.Main`, which gives the main thread to the backend's test host (`internal/testhost`) and runs the tests beside it.
+`nsgo test -target <t>` builds the package's tests with the `nsgotest` tag as the target's package and runs each test in a process of its own (`cmd/nsgo/testtarget.go`). Each `Start` of a test opens another window on a desktop; a phone and a page show one app, so a test's second `Start` skips there. The test's `TestMain` calls `nsgotest.Main`, which gives the main thread to the backend's test host (`internal/testhost`) and runs the tests beside it.
 
-`nsgotest.Start` then has the host open the app as its `Run` would, with the engine's `Observe`, `Event` and `Pin` options: the model follows the batches the real engine sends and the scroll, focus and text events the platform reports, and the test's environment pins the appearance, locale, text size and reduced motion.
+`nsgotest.Start` then has the host open the app as its `Run` would, with the engine's `Observe`, `Event` and `Pin` options, the test's clock and a clipboard of its own: the model follows the batches the real engine sends and the scroll, focus and text events the platform reports, and the test's environment pins the appearance, locale, text size and reduced motion.
 
 Steps resolve on the model, scroll the view into view a gesture at a time, and act through the host's native input; a step ends once no batch came and nothing animated for 100 ms, 5 seconds at most. Storage is a memory store in a temporary data directory, which the test reads through a graph of its own. Screenshots go to the tool as base64 lines in chunks, which it saves under `.nsgo/test/screenshots/<target>`.
 
@@ -48,6 +48,6 @@ Steps resolve on the model, scroll the view into view a gesture at a time, and a
 | Linux | The backend's pointer, wheel and key callbacks; the focused field's own signals | Cairo offscreen | Transitions, layout animations |
 | Android | `TestAgent.java`: `MotionEvent`s and `KeyEvent`s on the UI thread, asked over the pipe | The window drawn to a bitmap | A signature of every view's place, scroll and opacity |
 
-Alerts are answered at their buttons: an `NSAlert`'s, a `UIAlertController`'s label, the web's DOM button, `TDM_CLICK_BUTTON`, GTK's button, the `AlertDialog`'s. The app's clock is the system's: `Advance` waits real time. What the test reports for a platform (`Load`, `Navigate`, `ChoosePopup`, `ImageSizes` and the like) and `ManualFrames` skip the test on a platform; `nsgotest.Target` names it, for tests that check only the headless model.
+Alerts are answered at their buttons: an `NSAlert`'s, a `UIAlertController`'s label, the web's DOM button, Windows' drawn button, GTK's button, the `AlertDialog`'s. `ChooseMenu` and `ChoosePopup` choose the native menus' items: the main menu's on macOS, the menu bar's on Windows and Linux, and the context menu showing; phones and the web, which show no native menus, skip the test. `Advance` moves the test's clock without waiting, and the app's timers and frames follow it. What the test reports for a platform (`Load`, `Navigate`, `ImageSizes` and the like) and `ManualFrames` skip the test on a platform; `nsgotest.Target` names it, for tests that check only the headless model.
 
 The test agent's Java ships in every APK, but the runtime takes a test from the launch intent only in a debuggable build, which `nsgo test` makes, so no other app sets the process's arguments or environment.

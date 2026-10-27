@@ -5,6 +5,7 @@ import (
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/internal/driver"
+	"github.com/oneo-me/nsgo/internal/testhost"
 )
 
 // The platform's reports: what a platform tells the app about its media,
@@ -90,7 +91,6 @@ func (a *App) gesture(v *View, kind driver.EventKind, n int, step func(*driver.E
 // the menu bar down, such as "File", "New".
 func (a *App) ChooseMenu(path ...string) {
 	a.t.Helper()
-	a.headlessOnly("ChooseMenu")
 	items := a.Menu
 	for i, label := range path {
 		var found *driver.MenuEntry
@@ -106,6 +106,12 @@ func (a *App) ChooseMenu(path ...string) {
 			if found.ID == 0 {
 				a.t.Fatalf("nsgotest: menu item %q does nothing", path)
 			}
+			if a.target != nil {
+				a.step("chooseMenu(%q)", path)
+				a.target.menu(func(s testhost.Surface) error { return s.ChooseMenu(found.ID) })
+				a.done()
+				return
+			}
 			a.dispatch(driver.Event{Kind: driver.EventMenu, Count: found.ID})
 			return
 		}
@@ -117,7 +123,6 @@ func (a *App) ChooseMenu(path ...string) {
 // with PopupMenu, its labels from the menu down, which closes the menu.
 func (a *App) ChoosePopup(path ...string) {
 	a.t.Helper()
-	a.headlessOnly("ChoosePopup")
 	if a.PopupMenu == nil {
 		a.t.Fatalf("nsgotest: no context menu shows")
 	}
@@ -133,6 +138,13 @@ func (a *App) ChoosePopup(path ...string) {
 			a.t.Fatalf("nsgotest: no context menu item %q", path[:i+1])
 		}
 		if i == len(path)-1 {
+			if a.target != nil {
+				a.step("choosePopup(%q)", path)
+				a.target.menu(func(s testhost.Surface) error { return s.ChoosePopup(found.ID) })
+				a.PopupMenu, a.popupID = nil, 0
+				a.done()
+				return
+			}
 			if found.ID != 0 {
 				a.post(driver.Event{Kind: driver.EventMenu, Count: found.ID})
 			}
@@ -147,7 +159,13 @@ func (a *App) ChoosePopup(path ...string) {
 // item, as Escape or a click elsewhere does.
 func (a *App) ClosePopup() {
 	a.t.Helper()
-	a.headlessOnly("ClosePopup")
+	if a.target != nil {
+		a.step("closePopup()")
+		a.target.menu(func(s testhost.Surface) error { return s.ChoosePopup(0) })
+		a.PopupMenu, a.popupID = nil, 0
+		a.done()
+		return
+	}
 	if a.popupID != 0 {
 		a.post(driver.Event{Kind: driver.EventMenuClosed, Count: a.popupID})
 		a.PopupMenu, a.popupID = nil, 0

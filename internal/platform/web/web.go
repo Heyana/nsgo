@@ -97,16 +97,22 @@ type surface struct {
 	press     press
 	touch     fingers
 	covers    []covered // what the modals made inert, oldest first
-	clicks    clicks
-	timer     js.Value // the pending long press
-	longPress js.Func
-	outside   []*view // views that report presses outside them
-	alerts    []*alert
-	keys      []driver.KeyBinding // the keymap
-	live      js.Value            // the region announcements are read from
-	watch     watch
-	env       driver.Environment // as last sent
-	gestures  gestures
+	history   history
+	// whole is set when the app fills the page; an app in an element of
+	// it takes the page's keys only after a press in it, pressedIn, or
+	// while the focus is in it, as another app on the page has them
+	// otherwise.
+	whole, pressedIn bool
+	clicks           clicks
+	timer            js.Value // the pending long press
+	longPress        js.Func
+	outside          []*view // views that report presses outside them
+	alerts           []*alert
+	keys             []driver.KeyBinding // the keymap
+	live             js.Value            // the region announcements are read from
+	watch            watch
+	env              driver.Environment // as last sent
+	gestures         gestures
 	// canvasImages are the images canvases draw, by ImageSource.Key.
 	canvasImages map[string]*canvasImage
 	// stickyBound are the sticky cells whose insets follow animated
@@ -248,6 +254,7 @@ func Run(app engine.App, opts Options) {
 // open mounts app in the page and starts its engine; test, when set, is
 // what a test host opens it with.
 func open(app engine.App, opts Options, test *testOpen) *surface {
+	loadResourceNames()
 	registerFonts(opts.Fonts)
 	doc := js.Global().Get("document")
 	host := doc.Get("body")
@@ -274,6 +281,9 @@ func open(app engine.App, opts Options, test *testOpen) *surface {
 	setAttr(s.parked, "aria-hidden", "true")
 	host.Call("appendChild", s.parked)
 	s.listen()
+	s.whole = opts.Mount == ""
+	var ls listeners // for the page's life, as listen's
+	s.listenHistory(&ls, opts.Mount == "" && test == nil)
 	s.watchStart(opts.Mount == "")
 
 	s.env = s.environment()
@@ -989,11 +999,16 @@ func (s *surface) Mount(b *driver.MountBatch) {
 			s.setKeymap(it.Keys)
 			continue
 		case driver.ItemTitle:
-			s.doc.Set("title", it.Value)
+			if s.whole {
+				s.doc.Set("title", it.Value)
+			}
 			continue
-		case driver.ItemStatusBar, driver.ItemBackUnhandled, driver.ItemMenu:
+		case driver.ItemStatusBar, driver.ItemBackUnhandled, driver.ItemBackPreview, driver.ItemMenu:
 			// A page has no status bar nor menu bar, and the browser's
 			// back is its own.
+			continue
+		case driver.ItemHistory:
+			s.setHistory(int(it.Count))
 			continue
 		case driver.ItemWindow:
 			s.windowCommand(it.Window)
@@ -1855,11 +1870,14 @@ func (s *surface) listen() {
 	s.listenFiles(&ls)
 	// Captured, so shortcuts come before what has focus.
 	s.doc.Call("addEventListener", "keydown", js.FuncOf(func(_ js.Value, args []js.Value) any {
-		s.shortcut(args[0])
+		if s.owns() {
+			s.shortcut(args[0])
+		}
 		return nil
 	}), true)
 	// Captured, so it sees presses that views stop from bubbling.
 	s.doc.Call("addEventListener", "pointerdown", js.FuncOf(func(_ js.Value, args []js.Value) any {
+		s.pressedIn = s.host.Call("contains", args[0].Get("target")).Bool()
 		s.pressOutside(args[0])
 		return nil
 	}), true)
@@ -2059,6 +2077,9 @@ func (s *surface) pressOutside(e js.Value) {
 // reports back unless a text field takes Escape. It also gives Select All
 // to text selections.
 func (s *surface) escape(e js.Value) {
+	if !s.owns() {
+		return
+	}
 	if len(s.alerts) == 0 && s.selectKey(e) {
 		return
 	}
@@ -2075,6 +2096,12 @@ func (s *surface) escape(e js.Value) {
 	if !editing(s.doc.Get("activeElement")) {
 		s.engine.Dispatch(driver.Event{Kind: driver.EventBack})
 	}
+}
+
+// owns reports whether the page's keys are the app's: it fills the page,
+// or the last press or the focus is in its element.
+func (s *surface) owns() bool {
+	return s.whole || s.pressedIn || s.host.Call("contains", s.doc.Get("activeElement")).Bool()
 }
 
 // editing reports whether el takes typed text.

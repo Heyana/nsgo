@@ -17,14 +17,10 @@ import (
 	"github.com/oneo-me/nsgo/internal/driver"
 )
 
-var (
-	gActionActivate     func(action, parameter uintptr)
-	gtkWidgetGetVisible func(widget uintptr) int32
-)
+var gtkWidgetGetVisible func(widget uintptr) int32
 
 func init() {
 	if openLibs() == nil {
-		purego.RegisterLibFunc(&gActionActivate, gioLib, "g_action_activate")
 		purego.RegisterLibFunc(&gtkWidgetGetVisible, gtkLib, "gtk_widget_get_visible")
 	}
 }

@@ -292,6 +292,7 @@ func (in *input) focusChanged(focused bool) {
 	if focused {
 		v.dispatch(driver.EventFocus)
 		in.selectionMoved()
+		v.surface.keepFocusedClear()
 	} else {
 		in.compose(false, "")
 		v.dispatch(driver.EventBlur)

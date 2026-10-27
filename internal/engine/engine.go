@@ -27,14 +27,37 @@ type Platform interface {
 	RequestFrame()
 }
 
-// observed is a platform whose batches a test host sees first.
+// observed is a platform whose batches a test host sees first. With a
+// clipboard of the test's, the app's clipboard items go to it instead:
+// reads are answered there, and the platform never sees them.
 type observed struct {
 	Platform
-	observe func(*driver.MountBatch)
+	observe   func(*driver.MountBatch)
+	clipboard *driver.MemoryClipboard
+	dispatch  func(driver.Event)
 }
 
 func (o observed) Mount(b *driver.MountBatch) {
 	o.observe(b)
+	if o.clipboard != nil {
+		var kept []driver.MountItem
+		for i := range b.Items {
+			ev, answer, taken := o.clipboard.Take(&b.Items[i])
+			switch {
+			case answer:
+				o.dispatch(ev)
+			case !taken:
+				kept = append(kept, b.Items[i])
+			}
+		}
+		if len(kept) != len(b.Items) {
+			// The test reads the batch it observed: the platform gets a
+			// copy.
+			c := *b
+			c.Items = kept
+			b = &c
+		}
+	}
 	o.Platform.Mount(b)
 }
 
@@ -77,6 +100,9 @@ type Options struct {
 	Observe func(*driver.MountBatch)
 	Event   func(driver.Event)
 	Pin     func(driver.Environment) driver.Environment
+	// Clipboard, with Observe, is the clipboard of a test's own, which
+	// the app's clipboard commands use instead of the platform's.
+	Clipboard *driver.MemoryClipboard
 }
 
 // Host and Tokens are core's, for backends.
@@ -209,7 +235,7 @@ func Start(p Platform, app App, opts Options) *Engine {
 	e.raw = opts.Environment
 	opts.Environment = e.effective(opts.Environment)
 	if observe := opts.Observe; observe != nil {
-		p = observed{p, observe}
+		p = observed{p, observe, opts.Clipboard, e.Dispatch}
 	}
 	go e.run(p, app, opts, tokens)
 	return e

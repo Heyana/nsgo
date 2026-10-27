@@ -3,101 +3,55 @@
 package windows
 
 import (
-	"encoding/binary"
-	"runtime"
-	"sync"
 	"syscall"
 	"unsafe"
 
 	"github.com/oneo-me/nsgo/internal/driver"
 )
 
+// Alerts are drawn in the surface, as NSH's Windows backend draws them,
+// in the style of Windows 11's content dialog: a rounded card over a
+// scrim, its title and message, and its buttons in a band at its foot,
+// the default one in the system's accent color; an action sheet's stack.
+// They are items the window draws over the views rather than a task
+// dialog, so they stay with an embedded surface and never run a message
+// loop of their own. While one shows, the pointer and the keys are its:
+// Tab and the arrows move between the buttons, Return and Space press
+// the focused one, and Escape cancels when the alert can be cancelled.
+
 var (
-	messageBoxW         = user32.NewProc("MessageBoxW")
-	getSystemDirectoryW = kernel32.NewProc("GetSystemDirectoryW")
-	loadLibraryW        = kernel32.NewProc("LoadLibraryW")
-	getProcAddress      = kernel32.NewProc("GetProcAddress")
-	createActCtxW       = kernel32.NewProc("CreateActCtxW")
-	activateActCtx      = kernel32.NewProc("ActivateActCtx")
-	deactivateActCtx    = kernel32.NewProc("DeactivateActCtx")
-	releaseActCtx       = kernel32.NewProc("ReleaseActCtx")
+	mbGetString    = user32.NewProc("MB_GetString")
+	getProcAddress = kernel32.NewProc("GetProcAddress")
 )
 
 const (
-	tdfAllowDialogCancellation   = 0x0008
-	tdfUseCommandLinks           = 0x0010
-	tdfPositionRelativeToWindow  = 0x1000
-	tdcbfOKButton                = 0x0001
-	tdWarningIcon                = 0xFFFF // MAKEINTRESOURCEW(-1)
-	actCtxAssemblyDirectoryValid = 0x0004
-	actCtxResourceNameValid      = 0x0008
-	invalidHandle                = ^uintptr(0)
+	alertPad     = 24
+	alertGap     = 12
+	alertButtonH = 32
+	alertSpacing = 8
+	alertRadius  = 8
+	alertMaxW    = 448
+	alertMinW    = 320
 
-	mbOK          = 0x00
-	mbOKCancel    = 0x01
-	mbYesNoCancel = 0x03
-	mbYesNo       = 0x04
-	mbIconWarning = 0x30
-	idOK          = 1
-	idCancel      = 2
-	idYes         = 6
-	idNo          = 7
-
-	// alertButton numbers an alert's buttons from their index.
-	alertButton = 100
+	vkSpace = 0x20
 )
 
-type actCtx struct {
-	Size                  uint32
-	Flags                 uint32
-	Source                *uint16
-	ProcessorArchitecture uint16
-	LangID                uint16
-	AssemblyDirectory     *uint16
-	ResourceName          uintptr
-	ApplicationName       *uint16
-	Module                uintptr
+// shownAlert is the alert showing: its config, its texts' layouts and
+// where each part went in the last frame, in points.
+type shownAlert struct {
+	config                driver.AlertConfig
+	labels                []string // the buttons'
+	title, message        *comObject
+	titleH, messageH      float32
+	buttonLayouts         []*comObject
+	card, band            rectF
+	buttons               []rectF
+	hover, pressed, focus int // a button's index, -1 for none
+	cancel                int // the cancel action's index, -1 for none
+	cancelable            bool
 }
 
-// taskDialog is TaskDialogIndirect and the activation context it needs:
-// it lives only in version 6 of comctl32, which a process without a
-// manifest reaches through the manifest shell32.dll carries as resource
-// 124. Both are 0 where that fails.
-var taskDialog = sync.OnceValues(func() (proc, actx uintptr) {
-	var dir [syscall.MAX_PATH]uint16
-	if n, _, _ := getSystemDirectoryW.Call(uintptr(unsafe.Pointer(&dir[0])), uintptr(len(dir))); n == 0 || n >= uintptr(len(dir)) {
-		return 0, 0
-	}
-	ac := actCtx{
-		Flags:             actCtxAssemblyDirectoryValid | actCtxResourceNameValid,
-		Source:            wide("shell32.dll"),
-		AssemblyDirectory: &dir[0],
-		ResourceName:      124,
-	}
-	ac.Size = uint32(unsafe.Sizeof(ac))
-	actx, _, _ = createActCtxW.Call(uintptr(unsafe.Pointer(&ac)))
-	if actx == invalidHandle {
-		return 0, 0
-	}
-	var cookie uintptr
-	if r, _, _ := activateActCtx.Call(actx, uintptr(unsafe.Pointer(&cookie))); r != 0 {
-		module, _, _ := loadLibraryW.Call(uintptr(unsafe.Pointer(wide("comctl32.dll"))))
-		deactivateActCtx.Call(0, cookie)
-		name, _ := syscall.BytePtrFromString("TaskDialogIndirect")
-		if module != 0 {
-			proc, _, _ = getProcAddress.Call(module, uintptr(unsafe.Pointer(name)))
-		}
-	}
-	if proc == 0 {
-		releaseActCtx.Call(actx)
-		return 0, 0
-	}
-	return proc, actx
-})
-
-// showAlert shows the first queued alert, unless one is showing, and
-// answers it. The dialog runs a message loop of its own, so the window
-// keeps applying batches meanwhile.
+// showAlert shows the first queued alert unless one is showing.
 func (w *window) showAlert() {
 	if w.alerting || len(w.alerts) == 0 {
 		return
@@ -105,176 +59,286 @@ func (w *window) showAlert() {
 	a := w.alerts[0]
 	w.alerts = w.alerts[1:]
 	w.alerting, w.alertShown = true, a
-	index := w.ask(&a)
-	w.alerting = false
-	w.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: a.ID, Index: index})
+	s := &shownAlert{config: a, hover: -1, pressed: -1, focus: -1, cancel: -1}
+	for i, act := range a.Actions {
+		s.labels = append(s.labels, act.Label)
+		if act.Role == driver.AlertCancel && s.cancel < 0 {
+			s.cancel = i
+		}
+		if act.Role == driver.AlertDefault && s.focus < 0 {
+			s.focus = i
+		}
+	}
+	if len(s.labels) == 0 {
+		// The system's own OK, in the user's language.
+		ok := "OK"
+		if r, _, _ := mbGetString.Call(0); r != 0 {
+			p := *(**uint16)(unsafe.Pointer(&r))
+			ok = syscall.UTF16ToString(unsafe.Slice(p, wcslen(p)))
+		}
+		s.labels = []string{ok}
+	}
+	if s.focus < 0 {
+		s.focus = 0
+	}
+	s.cancelable = s.cancel >= 0 || a.Cancelable || len(a.Actions) == 0
+	w.alert = s
+	// The keys are the alert's; the field gets the focus back after.
+	if in := w.focusedField(); in != nil {
+		w.alertRestore = in
+		w.blurAll()
+	}
+	w.redrawAll()
+}
+
+// answerAlert closes the alert with the action at index, -1 for none.
+func (w *window) answerAlert(index int) {
+	s := w.alert
+	if s == nil {
+		return
+	}
+	if len(s.config.Actions) == 0 {
+		index = -1
+	}
+	releaseAll(&s.title, &s.message)
+	for i := range s.buttonLayouts {
+		releaseAll(&s.buttonLayouts[i])
+	}
+	w.alert, w.alerting = nil, false
+	w.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: s.config.ID, Index: index})
+	if in := w.alertRestore; in != nil {
+		w.alertRestore = nil
+		if !in.v.deleted {
+			w.setFocus(in)
+		}
+	}
+	w.redrawAll()
 	if len(w.alerts) > 0 {
 		postMessageW.Call(w.hwnd, wmAlert, 0, 0)
 	}
 }
 
-// ask shows a and returns the index of the action chosen, or -1.
-func (w *window) ask(a *driver.AlertConfig) int {
-	cancel := -1
-	destructive := false
-	for i, act := range a.Actions {
-		if act.Role == driver.AlertCancel && cancel < 0 {
-			cancel = i
-		}
-		destructive = destructive || act.Role == driver.AlertDestructive
+// alertText makes a layout of text in font, wrapped at width.
+func alertText(text string, font driver.Font, width float32) (*comObject, float32) {
+	format := textFormat(font)
+	if format == nil || text == "" {
+		releaseAll(&format)
+		return nil, 0
 	}
-	proc, actx := taskDialog()
-	if proc == 0 {
-		return w.messageBox(a, cancel, destructive)
+	defer releaseAll(&format)
+	units := syscall.StringToUTF16(text)
+	units = units[:len(units)-1]
+	var layout *comObject
+	if failed(dwriteFactory().callF(dwCreateTextLayout, 0b11000, uintptr(unsafe.Pointer(&units[0])), uintptr(len(units)),
+		format.ptr(), f32(width), f32(1e6), uintptr(unsafe.Pointer(&layout)))) {
+		return nil, 0
 	}
+	layout.call(formatSetWordWrapping, dwWrap)
+	var m textMetrics
+	layout.call(layoutGetMetrics, uintptr(unsafe.Pointer(&m)))
+	return layout, m.height
+}
 
-	// TASKDIALOG_BUTTON and TASKDIALOGCONFIG are packed to single bytes,
-	// which Go structs cannot express.
-	var buttons packed
-	var labels []*uint16
-	defaultButton := 0
-	for i, act := range a.Actions {
-		label := wide(act.Label)
-		labels = append(labels, label)
-		buttons.u32(uint32(alertButton + i))
-		buttons.ptr(uintptr(unsafe.Pointer(label)))
-		if defaultButton == 0 && act.Role == driver.AlertDefault {
-			defaultButton = alertButton + i
+// layoutAlert places the alert's parts in a surface of size, making its
+// texts' layouts at the card's width.
+func (s *shownAlert) layout(size driver.Size) {
+	width := float32(min(max(float64(size.Width)-32, alertMinW), alertMaxW))
+	inner := width - 2*alertPad
+	if s.title == nil && s.message == nil && s.buttonLayouts == nil {
+		s.title, s.titleH = alertText(s.config.Title, driver.Font{Size: 20, Weight: driver.FontWeightSemibold}, inner)
+		s.message, s.messageH = alertText(s.config.Message, driver.Font{Size: 14}, inner)
+		for _, l := range s.labels {
+			b, _ := alertText(l, driver.Font{Size: 14}, 1e4)
+			if b != nil {
+				b.call(formatSetTextAlignment, dwAlignCenter)
+				b.call(formatSetParagraphAlignment, dwParagraphCenter)
+			}
+			s.buttonLayouts = append(s.buttonLayouts, b)
 		}
 	}
-	var common uint32
-	if len(a.Actions) == 0 {
-		common = tdcbfOKButton
+	body := float32(alertPad) + s.titleH
+	if s.message != nil {
+		if s.title != nil {
+			body += alertGap
+		}
+		body += s.messageH
 	}
-	var icon uintptr
-	if destructive {
-		icon = tdWarningIcon
+	body += alertPad
+	n := len(s.labels)
+	stacked := s.config.Sheet && n > 1
+	band := float32(2*alertPad + alertButtonH)
+	if stacked {
+		band = float32(2*alertPad + n*alertButtonH + (n-1)*alertSpacing)
 	}
-	// Without a title the dialog shows the executable's name.
-	title, instruction, content := optional(w.title), optional(a.Title), optional(a.Message)
-	var c packed
-	c.u32(0) // the size, set below
-	c.ptr(w.owner())
-	c.ptr(0) // instance
-	flags := uint32(tdfPositionRelativeToWindow)
-	if cancel >= 0 || a.Cancelable || len(a.Actions) == 0 {
-		// Escape and the close button choose the cancel action, or none.
-		flags |= tdfAllowDialogCancellation
+	left := (float32(size.Width) - width) / 2
+	top := max((float32(size.Height)-body-band)/2, 0)
+	s.card = rectF{left, top, left + width, top + body + band}
+	s.band = rectF{left, top + body, left + width, top + body + band}
+	s.buttons = s.buttons[:0]
+	for i := range n {
+		if stacked {
+			y := s.band.top + alertPad + float32(i*(alertButtonH+alertSpacing))
+			s.buttons = append(s.buttons, rectF{left + alertPad, y, left + width - alertPad, y + alertButtonH})
+			continue
+		}
+		bw := (inner - float32((n-1)*alertSpacing)) / float32(n)
+		x := left + alertPad + float32(i)*(bw+alertSpacing)
+		s.buttons = append(s.buttons, rectF{x, s.band.top + alertPad, x + bw, s.band.top + alertPad + alertButtonH})
 	}
-	if a.Sheet {
-		// An action sheet's actions stack, one under another.
-		flags |= tdfUseCommandLinks
+	for i, l := range s.buttonLayouts {
+		if l != nil {
+			b := s.buttons[i]
+			l.callF(layoutSetMaxWidth, 1, f32(b.right-b.left))
+			l.callF(layoutSetMaxHeight, 1, f32(alertButtonH))
+		}
 	}
-	c.u32(flags)
-	c.u32(common)
-	c.ptr(uintptr(unsafe.Pointer(title)))
-	c.ptr(icon)
-	c.ptr(uintptr(unsafe.Pointer(instruction)))
-	c.ptr(uintptr(unsafe.Pointer(content)))
-	c.u32(uint32(len(a.Actions)))
-	c.ptr(buttons.addr())
-	c.u32(uint32(defaultButton))
-	c.u32(0) // radio buttons
-	c.ptr(0)
-	c.u32(0)
-	for range 6 { // verification, expanded and collapsed texts, footer icon, footer
-		c.ptr(0)
-	}
-	c.ptr(0) // callback
-	c.ptr(0)
-	c.u32(0) // width
-	binary.LittleEndian.PutUint32(c.b, uint32(len(c.b)))
+}
 
-	var cookie uintptr
-	active, _, _ := activateActCtx.Call(actx, uintptr(unsafe.Pointer(&cookie)))
-	var chosen int32
-	hr, _, _ := syscall.SyscallN(proc, c.addr(), uintptr(unsafe.Pointer(&chosen)), 0, 0)
-	if active != 0 {
-		deactivateActCtx.Call(0, cookie)
+// accentColor is the system's accent, the default button's fill.
+func accentColor() driver.Color {
+	abgr := regDWORD(`Software\Microsoft\Windows\CurrentVersion\Explorer\Accent`, "AccentColorMenu", 0xffb85f00)
+	return driver.RGB(abgr&0xff<<16 | abgr>>8&0xff<<8 | abgr>>16&0xff)
+}
+
+// drawAlert draws the alert showing over the views.
+func (p *painter) drawAlert(size driver.Size) {
+	s := p.w.alert
+	if s == nil {
+		return
 	}
-	runtime.KeepAlive(labels)
-	runtime.KeepAlive(buttons.b)
-	runtime.KeepAlive(title)
-	runtime.KeepAlive(instruction)
-	runtime.KeepAlive(content)
-	switch i := int(chosen) - alertButton; {
-	case int32(hr) < 0:
-		return w.messageBox(a, cancel, destructive)
-	case i >= 0 && i < len(a.Actions):
-		return i
-	case chosen == idCancel:
-		return cancel
+	s.layout(size)
+	dark := p.w.env.Dark
+	text, card, band, button, border := driver.RGB(0x1a1a1a), driver.RGB(0xffffff), driver.RGB(0xf3f3f3),
+		driver.RGB(0xfbfbfb), driver.RGBA(0x000000, 0.08)
+	if dark {
+		text, card, band, button, border = driver.RGB(0xffffff), driver.RGB(0x2b2b2b), driver.RGB(0x202020),
+			driver.RGB(0x373737), driver.RGBA(0xffffff, 0.08)
+	}
+	p.setTransform(identity)
+	p.fillRect(rectF{0, 0, float32(size.Width), float32(size.Height)}, driver.RGBA(0x000000, 0.3))
+	// A hairline border, then the card and its band.
+	p.fillRounded(rectF{s.card.left - 1, s.card.top - 1, s.card.right + 1, s.card.bottom + 1}, alertRadius+1, border)
+	p.fillRounded(s.card, alertRadius, band)
+	// The body's rounded bottom goes under the band.
+	p.fillRounded(rectF{s.card.left, s.card.top, s.card.right, s.band.top + alertRadius}, alertRadius, card)
+	p.fillRect(rectF{s.card.left, s.band.top, s.card.right, s.band.top + alertRadius}, band)
+	p.fillRect(rectF{s.card.left, s.band.top, s.card.right, s.band.top + 1}, border)
+	y := s.card.top + alertPad
+	if s.title != nil {
+		p.dc.callPoint(rtDrawTextLayout, s.card.left+alertPad, y, s.title.ptr(), p.solid(text).ptr(), d2dDrawTextEnableColorFont)
+		y += s.titleH + alertGap
+	}
+	if s.message != nil {
+		p.dc.callPoint(rtDrawTextLayout, s.card.left+alertPad, y, s.message.ptr(), p.solid(text).ptr(), d2dDrawTextEnableColorFont)
+	}
+	accent := accentColor()
+	for i, r := range s.buttons {
+		fill, label := button, text
+		primary := i < len(s.config.Actions) && s.config.Actions[i].Role == driver.AlertDefault || len(s.config.Actions) == 0
+		if primary {
+			fill, label = accent, driver.RGB(0xffffff)
+		}
+		if i < len(s.config.Actions) && s.config.Actions[i].Role == driver.AlertDestructive {
+			label = driver.RGB(0xc42b1c)
+			if dark {
+				label = driver.RGB(0xff99a4)
+			}
+		}
+		switch {
+		case i == s.pressed && i == s.hover:
+			fill = fill&^0xff | fill&0xff*8/10
+		case i == s.hover:
+			fill = fill&^0xff | fill&0xff*9/10
+		}
+		if !primary {
+			p.fillRounded(rectF{r.left - 1, r.top - 1, r.right + 1, r.bottom + 1}, 5, border)
+		}
+		p.fillRounded(r, 4, fill)
+		if i == s.focus {
+			focus := driver.RGB(0x000000)
+			if dark {
+				focus = driver.RGB(0xffffff)
+			}
+			p.strokeRounded(rectF{r.left - 3, r.top - 3, r.right + 3, r.bottom + 3}, 7, 2, focus)
+		}
+		if l := s.buttonLayouts[i]; l != nil {
+			p.dc.callPoint(rtDrawTextLayout, r.left, r.top, l.ptr(), p.solid(label).ptr(), d2dDrawTextEnableColorFont)
+		}
+	}
+}
+
+// strokeRounded strokes r's rounded outline width wide.
+func (p *painter) strokeRounded(r rectF, radius, width float32, c driver.Color) {
+	rr := roundedRect{rect: r, radiusX: radius, radiusY: radius}
+	p.dc.callF(rtDrawRoundedRectangle, 0b100, uintptr(unsafe.Pointer(&rr)), p.solid(c).ptr(), f32(width), 0)
+}
+
+// alertButtonAt returns the button under p, -1 for none.
+func (s *shownAlert) buttonAt(p driver.Point) int {
+	for i, r := range s.buttons {
+		if float32(p.X) >= r.left && float32(p.X) < r.right && float32(p.Y) >= r.top && float32(p.Y) < r.bottom {
+			return i
+		}
 	}
 	return -1
 }
 
-// messageBox shows a with the button set closest to its actions: Yes,
-// No and Cancel cannot carry their labels.
-func (w *window) messageBox(a *driver.AlertConfig, cancel int, destructive bool) int {
-	var others []int
-	for i := range a.Actions {
-		if i != cancel {
-			others = append(others, i)
+// alertMouse takes the pointer while an alert shows; it reports whether
+// one does.
+func (w *window) alertMouse(message uint32, at driver.Point) bool {
+	s := w.alert
+	if s == nil {
+		return false
+	}
+	hover := s.buttonAt(at)
+	switch message {
+	case wmLButtonDown:
+		s.pressed = hover
+		setCapture.Call(w.hwnd)
+	case wmLButtonUp:
+		pressed := s.pressed
+		s.pressed = -1
+		releaseCapture.Call()
+		if pressed >= 0 && pressed == hover {
+			w.answerAlert(pressed)
+			return true
 		}
 	}
-	answers := map[uintptr]int{}
-	var style uintptr
-	switch {
-	case len(others) == 0:
-		style, answers[idOK] = mbOK, cancel
-	case len(others) == 1 && cancel < 0:
-		style, answers[idOK] = mbOK, others[0]
-	case len(others) == 1:
-		style, answers[idOK], answers[idCancel] = mbOKCancel, others[0], cancel
-	case len(others) == 2 && cancel < 0:
-		style, answers[idYes], answers[idNo] = mbYesNo, others[0], others[1]
-	default:
-		style, answers[idYes], answers[idNo], answers[idCancel] = mbYesNoCancel, others[0], others[1], cancel
-		if cancel < 0 {
-			answers[idCancel] = others[2]
+	if hover != s.hover || message != wmMouseMove {
+		s.hover = hover
+		w.redrawAll()
+	}
+	return true
+}
+
+// alertKey takes the keys while an alert shows; it reports whether one
+// does.
+func (w *window) alertKey(vk uintptr) bool {
+	s := w.alert
+	if s == nil {
+		return false
+	}
+	n := len(s.labels)
+	switch vk {
+	case vkEscape:
+		if s.cancelable {
+			w.answerAlert(s.cancel)
+			return true
 		}
-	}
-	if destructive {
-		style |= mbIconWarning
-	}
-	text := a.Title
-	if a.Message != "" {
-		if text != "" {
-			text += "\n\n"
+	case vkReturn, vkSpace:
+		w.answerAlert(s.focus)
+		return true
+	case vkTab:
+		if keyDown(vkShift) {
+			s.focus = (s.focus + n - 1) % n
+		} else {
+			s.focus = (s.focus + 1) % n
 		}
-		text += a.Message
+	case vkLeft, vkUp:
+		s.focus = max(s.focus-1, 0)
+	case vkRight, vkDown:
+		s.focus = min(s.focus+1, n-1)
 	}
-	r, _, _ := messageBoxW.Call(w.owner(), uintptr(unsafe.Pointer(wide(text))), uintptr(unsafe.Pointer(wide(w.title))), style)
-	if i, ok := answers[r]; ok {
-		return i
-	}
-	return -1
-}
-
-// optional returns s as UTF-16, or nil when empty.
-func optional(s string) *uint16 {
-	if s == "" {
-		return nil
-	}
-	return wide(s)
-}
-
-// packed lays fields out one after another, without padding.
-type packed struct{ b []byte }
-
-func (p *packed) u32(v uint32) { p.b = binary.LittleEndian.AppendUint32(p.b, v) }
-
-func (p *packed) ptr(v uintptr) {
-	if unsafe.Sizeof(v) == 8 {
-		p.b = binary.LittleEndian.AppendUint64(p.b, uint64(v))
-	} else {
-		p.u32(uint32(v))
-	}
-}
-
-func (p *packed) addr() uintptr {
-	if len(p.b) == 0 {
-		return 0
-	}
-	return uintptr(unsafe.Pointer(&p.b[0]))
+	w.redrawAll()
+	return true
 }

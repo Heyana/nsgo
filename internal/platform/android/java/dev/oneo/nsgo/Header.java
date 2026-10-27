@@ -8,6 +8,7 @@ import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.Drawable;
 import android.util.TypedValue;
+import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -44,6 +45,24 @@ final class Header {
         toolbar.setNavigationOnClickListener(v -> back.run());
     }
 
+    /** The colors the core set, 0 for the theme's, and whether the bar is transparent. */
+    private int background, titleColor, tint;
+    private boolean transparent;
+    /** Whether the theme's colors are the dark theme's. */
+    private boolean dark;
+
+    /** Colors the bar: the core's colors, else the light or dark theme's, as the app shows. */
+    void colors(boolean dark) {
+        this.dark = dark;
+        Context context = new ContextThemeWrapper(toolbar.getContext(), dark
+                ? android.R.style.Theme_DeviceDefault_NoActionBar : android.R.style.Theme_DeviceDefault_Light_NoActionBar);
+        int text = themeColor(context, android.R.attr.textColorPrimary, dark ? 0xffffffff : 0xff1f2328);
+        toolbar.setTitleTextColor(titleColor != 0 ? Text.argb(titleColor) : text);
+        int fill = background != 0 ? Text.argb(background) : themeColor(context, android.R.attr.colorBackground, dark ? 0xff000000 : 0xffffffff);
+        toolbar.setBackgroundColor(transparent ? 0 : fill);
+        arrow.setColor(tint != 0 ? Text.argb(tint) : text);
+    }
+
     /**
      * Applies an ItemScreen as android.go writes it; wrap returns the
      * holder of a header view, or null.
@@ -58,17 +77,16 @@ final class Header {
         int left = in.readInt(), right = in.readInt(), titleView = in.readInt();
         float height = in.readFloat();
 
-        Context context = toolbar.getContext();
+        this.background = background;
+        this.titleColor = titleColor;
+        this.tint = tint;
+        this.transparent = transparent;
+        colors(dark);
         toolbar.setVisibility(hidden ? View.GONE : View.VISIBLE);
         toolbar.setTitle(titleView != 0 ? null : title);
         int h = Math.round(height * density);
         toolbar.setPadding(0, Math.max(0, h - Math.round(BAR * density)), 0, 0);
         toolbar.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, h, Gravity.TOP));
-        int text = themeColor(context, android.R.attr.textColorPrimary, 0xff1f2328);
-        toolbar.setTitleTextColor(titleColor != 0 ? Text.argb(titleColor) : text);
-        int fill = background != 0 ? Text.argb(background) : themeColor(context, android.R.attr.colorBackground, 0xffffffff);
-        toolbar.setBackgroundColor(transparent ? 0 : fill);
-        arrow.setColor(tint != 0 ? Text.argb(tint) : text);
         boolean back = canGoBack && !backHidden;
         toolbar.setNavigationIcon(back ? arrow : null);
         toolbar.setNavigationContentDescription(back ? upDescription(backTitle) : null);

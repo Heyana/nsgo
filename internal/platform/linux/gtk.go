@@ -110,6 +110,7 @@ var (
 	gtkWindowSetTitle                      func(uintptr, *byte)
 	gtkWindowGetTitle                      func(uintptr) uintptr
 	gtkWindowSetDefaultSize                func(uintptr, int32, int32)
+	gtkWindowSetResizable                  func(uintptr, int32)
 	gtkWindowSetChild                      func(uintptr, uintptr)
 	gtkWindowSetFocus                      func(uintptr, uintptr)
 	gtkWindowGetFocus                      func(uintptr) uintptr
@@ -422,6 +423,7 @@ func bind() {
 	purego.RegisterLibFunc(&gtkWindowSetTitle, gtkLib, "gtk_window_set_title")
 	purego.RegisterLibFunc(&gtkWindowGetTitle, gtkLib, "gtk_window_get_title")
 	purego.RegisterLibFunc(&gtkWindowSetDefaultSize, gtkLib, "gtk_window_set_default_size")
+	purego.RegisterLibFunc(&gtkWindowSetResizable, gtkLib, "gtk_window_set_resizable")
 	purego.RegisterLibFunc(&gtkWindowGetDefaultSize, gtkLib, "gtk_window_get_default_size")
 	purego.RegisterLibFunc(&gtkWindowSetChild, gtkLib, "gtk_window_set_child")
 	purego.RegisterLibFunc(&gtkWindowSetFocus, gtkLib, "gtk_window_set_focus")
@@ -644,4 +646,6 @@ func bind() {
 	bindPaste()
 	bindSystem()
 	bindEditing()
+	bindAccess()
+	bindTouchScroll()
 }

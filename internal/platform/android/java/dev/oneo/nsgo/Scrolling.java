@@ -274,15 +274,51 @@ final class Scrolling {
             return horizontal ? 0 : Math.max(pull - view.getScrollY(), 0) / density;
         }
 
+        /** What the keyboard covers of the view, added to its bottom inset, in pixels. */
+        private int keyboardPad;
+
         void configure(Config c) {
             config = c;
-            view.setPadding(Math.round(c.insetLeft * density), Math.round(c.insetTop * density),
-                    Math.round(c.insetRight * density), Math.round(c.insetBottom * density));
+            pad();
             view.setClipToPadding(false);
             view.setOverScrollMode(c.noBounces ? View.OVER_SCROLL_NEVER : View.OVER_SCROLL_IF_CONTENT_SCROLLS);
             view.setVerticalScrollBarEnabled(!c.hideIndicator && !horizontal);
             view.setHorizontalScrollBarEnabled(!c.hideIndicator && horizontal);
             setRefreshing(c.refreshing && !horizontal);
+        }
+
+        private void pad() {
+            Config c = config;
+            view.setPadding(Math.round(c.insetLeft * density), Math.round(c.insetTop * density),
+                    Math.round(c.insetRight * density), Math.round(c.insetBottom * density) + keyboardPad);
+        }
+
+        /**
+         * Keeps field clear of the keyboard whose top is at keyboardTop in
+         * the window: what it covers of the view adds to the bottom inset,
+         * and the view scrolls the field above it. A null field gives the
+         * inset back.
+         */
+        void keepClear(View field, int keyboardTop) {
+            int[] at = new int[2];
+            int covered = 0;
+            if (field != null) {
+                view.getLocationInWindow(at);
+                covered = Math.max(0, at[1] + view.getHeight() - keyboardTop);
+            }
+            if (covered != keyboardPad) {
+                keyboardPad = covered;
+                pad();
+            }
+            if (field == null || horizontal) return;
+            field.getLocationInWindow(at);
+            int margin = Math.round(8 * density);
+            int over = at[1] + field.getHeight() + margin - keyboardTop;
+            if (over > 0) {
+                stop();
+                // The new inset takes a layout pass to widen the range.
+                view.post(() -> ease(Math.min(pos() + over, range()), ANIMATION, false));
+            }
         }
 
         void scrollTo(float x, float y, boolean animated) {

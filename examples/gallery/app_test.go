@@ -121,7 +121,6 @@ func TestSidebarToggles(t *testing.T) {
 }
 
 func TestApplicationMenu(t *testing.T) {
-	headless(t)
 	app := startDesktop(t)
 	app.ChooseMenu("View", "Menus")
 	app.Find("id:demo-Menus")
@@ -196,6 +195,16 @@ func TestMenus(t *testing.T) {
 	}
 	app.Key("mod+shift+p")
 	app.Find("text:New note")
+}
+
+// TestNativePopupMenu right-clicks the area that shows the platform's own
+// context menu and chooses an item of its submenu there.
+func TestNativePopupMenu(t *testing.T) {
+	app := startDesktop(t)
+	open(app, "Menus")
+	app.RightClick("id:popup-area")
+	app.ChoosePopup("Share", "Mail")
+	app.Find("text:Chose Mail")
 }
 
 func TestStocks(t *testing.T) {

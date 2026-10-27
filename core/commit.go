@@ -124,6 +124,7 @@ func (t *Tree) commitRound() {
 		t.items = append(t.items, driver.MountItem{Kind: driver.ItemKeymap, Keys: t.keymap()})
 	}
 	t.emitStatusBar()
+	t.emitHistory()
 	t.items = append(t.items, t.commands...)
 	t.commands = t.commands[:0]
 	t.emitDeletes()

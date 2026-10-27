@@ -4,6 +4,8 @@ import android.graphics.BlendMode;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.RenderEffect;
 import android.graphics.Shader;
 import android.os.Build;
@@ -45,6 +47,8 @@ final class Look {
     /** A color matrix of the filters (4×5, offsets from 0 to 1), null for none, and their blur. */
     float[] colorMatrix;
     float blur;
+    /** The filters' drop shadow, in pixels, null for none: drawn from Android 12. */
+    Shadow dropShadow;
     /** The blend mode, as driver.BlendMode numbers them. */
     int blend;
 
@@ -96,6 +100,7 @@ final class Look {
         l.childPerspective = childPerspective;
         l.colorMatrix = colorMatrix;
         l.blur = blur;
+        l.dropShadow = dropShadow;
         l.blend = blend;
         return l;
     }
@@ -185,6 +190,7 @@ final class Look {
                 RenderEffect b = RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.DECAL);
                 effect = effect == null ? b : RenderEffect.createChainEffect(b, effect);
             }
+            if (dropShadow != null && (dropShadow.color >>> 24) != 0) effect = dropShadow(effect, dropShadow);
             view.setRenderEffect(effect);
             filter = null;
         }
@@ -196,6 +202,22 @@ final class Look {
         paint.setColorFilter(filter);
         if (blend != 0 && Build.VERSION.SDK_INT >= 29) paint.setBlendMode(BLENDS[Math.min(blend, BLENDS.length - 1)]);
         view.setLayerType(View.LAYER_TYPE_HARDWARE, paint);
+    }
+
+    /**
+     * The view's drawing through effect, then under it its shadow s: what
+     * it draws in s's color, blurred as a box shadow's blur, offset.
+     */
+    private static RenderEffect dropShadow(RenderEffect effect, Shadow s) {
+        RenderEffect drawn = effect != null ? effect : RenderEffect.createOffsetEffect(0, 0);
+        RenderEffect shadow = RenderEffect.createColorFilterEffect(
+                new PorterDuffColorFilter(s.color, PorterDuff.Mode.SRC_IN), drawn);
+        // A box shadow's blur is twice its sigma; RenderEffect's radius
+        // has a sigma of 0.577 radius + 0.5.
+        float radius = Math.max(0, (s.blur / 2 - 0.5f) / 0.57735f);
+        if (radius > 0) shadow = RenderEffect.createBlurEffect(radius, radius, shadow, Shader.TileMode.DECAL);
+        shadow = RenderEffect.createOffsetEffect(s.dx, s.dy, shadow);
+        return RenderEffect.createBlendModeEffect(shadow, drawn, BlendMode.SRC_OVER);
     }
 
     /** Android's blend modes in driver.BlendMode's order, normal first. */

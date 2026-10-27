@@ -41,6 +41,7 @@ import (
 	"github.com/oneo-me/nsgo/internal/platform/imageload"
 	"github.com/oneo-me/nsgo/internal/platform/queue"
 	"github.com/oneo-me/nsgo/internal/platform/scrollbar"
+	"github.com/oneo-me/nsgo/internal/platform/textselect"
 	"github.com/oneo-me/nsgo/internal/testhost"
 )
 
@@ -206,9 +207,12 @@ type view struct {
 	overflow driver.Bounds // where its children reach outside it (ItemOverflow)
 	deleted  bool
 
-	// A text view's layout and where it goes in the view.
-	text    drawnText
-	content driver.Bounds
+	// A text view's layout and where it goes in the view, its content
+	// and the UTF-16 range of it a selection highlights.
+	text             drawnText
+	content          driver.Bounds
+	plain            string
+	selStart, selEnd int
 
 	// The shadow drawn under the background, and the box shadows, by
 	// what each depends on; shadowsUsed are those the last pass drew.
@@ -231,6 +235,11 @@ type view struct {
 	laid    driver.Bounds
 	shift   driver.Point
 	wheel   scrollbar.Wheel // a snapping view's wheel turns
+	// glide is how a scroll view a finger let go comes to rest,
+	// refreshing whether it keeps the refresh room and spinning whether
+	// its spinner turns (touchscroll.go).
+	glide                *scrollbar.Motion
+	refreshing, spinning bool
 
 	// An input's editor.
 	field *textInput
@@ -319,14 +328,23 @@ type window struct {
 	env      driver.Environment // the last reported
 	alerts   []driver.AlertConfig
 	alerting bool
-	// alertShown is the alert showing, for a test host to answer.
-	alertShown driver.AlertConfig
+	// alertShown is the alert showing, for a test host to answer; alert
+	// is how it is drawn, and alertRestore the field it took the focus
+	// from (alert.go).
+	alertShown   driver.AlertConfig
+	alert        *shownAlert
+	alertRestore *textInput
 	// The photo picks and context menus waiting for a message of their
 	// own, and whether one shows.
 	picks         []pickRequest
 	picking       bool
 	popups        []popupRequest
 	popupTracking bool
+	// popupChoice is the item a test chose in the menu tracking, which
+	// ends its tracking (testhost.go).
+	popupChoice *uint32
+	// popupShown are the items of the context menu tracking.
+	popupShown []driver.MenuEntry
 	// appearance is the one the app forces, or the system's; host the one
 	// an embedding host sets in place of the system's.
 	appearance, host driver.Appearance
@@ -400,8 +418,16 @@ type window struct {
 	// keyboard. blinking is set while the caret's timer runs; surrogate
 	// holds the first half of a character typed in two WM_CHARs.
 	focus, restore, selecting *textInput
-	inactive, blinking        bool
-	surrogate                 uint16
+	// textSelection is the selection of an area, and selected the texts
+	// that highlight a part of it (selection.go).
+	textSelection *textselect.Selection
+	selected      []*view
+	// touching is the touch that may drag a scroll view (touchscroll.go).
+	touching *touchScroll
+	// uia are the UI Automation elements made for the views (uia.go).
+	uia                map[uint64]*uiaElement
+	inactive, blinking bool
+	surrogate          uint16
 	// The last press, for counting double and triple clicks.
 	clicks struct {
 		time  uint32
@@ -712,6 +738,7 @@ func (w *window) view(id driver.NodeID) *view {
 
 func (w *window) apply(b *driver.MountBatch) {
 	var rescroll, loads []*view
+	structure := false // views came or went, for UI Automation
 	lb := w.layoutBatch(b)
 	type focusChange struct {
 		v     *view // nil dismisses the keyboard
@@ -722,6 +749,7 @@ func (w *window) apply(b *driver.MountBatch) {
 		it := &b.Items[i]
 		switch it.Kind {
 		case driver.ItemCreate:
+			structure = true
 			w.create(it.ID, it.View)
 			if lb != nil {
 				lb.created[w.views[it.ID]] = true
@@ -783,10 +811,22 @@ func (w *window) apply(b *driver.MountBatch) {
 				w.chromeItem(it)
 			}
 			continue
-		case driver.ItemAnnounce, driver.ItemStatusBar, driver.ItemBackUnhandled,
-			driver.ItemAccessibilityLabel, driver.ItemAccessibilityFocus:
-			// No announcements or accessibility without UI Automation; no
-			// status bar.
+		case driver.ItemAnnounce:
+			w.uiaAnnounce(it.Value)
+			continue
+		case driver.ItemAccessibilityLabel:
+			if v := w.view(it.ID); v != nil {
+				v.props.Label = it.Value
+				w.accessChanged(v, true)
+			}
+			continue
+		case driver.ItemAccessibilityFocus:
+			if v := w.view(it.ID); v != nil && v.field != nil {
+				w.setFocus(v.field)
+			}
+			continue
+		case driver.ItemStatusBar, driver.ItemBackUnhandled, driver.ItemBackPreview, driver.ItemHistory:
+			// No status bar; Escape is back.
 			continue
 		}
 		v := w.view(it.ID)
@@ -820,6 +860,8 @@ func (w *window) apply(b *driver.MountBatch) {
 			v.detach()
 		case driver.ItemDelete:
 			w.animator.Forget(v.id)
+			w.forgetElements(v)
+			structure = true
 			if !w.leave(v, lb) {
 				w.destroy(v)
 			}
@@ -846,6 +888,10 @@ func (w *window) apply(b *driver.MountBatch) {
 			}
 			v.text, _ = it.Text.Layout.(drawnText)
 			v.content = it.Text.Content
+			if v.plain != it.Text.Text {
+				v.plain = it.Text.Text
+				w.accessChanged(v, true)
+			}
 		case driver.ItemInput:
 			if v.field != nil && it.Input != nil {
 				v.field.configure(it.Input)
@@ -874,6 +920,7 @@ func (w *window) apply(b *driver.MountBatch) {
 			if to != v.offset {
 				w.scrollTo(v, to)
 			}
+			w.refreshChanged(v)
 			rescroll = append(rescroll, v) // insets change the offsets
 		case driver.ItemScrollContent:
 			v.size = it.Size
@@ -975,6 +1022,10 @@ func (w *window) apply(b *driver.MountBatch) {
 	w.placeIME()
 	// Views that moved, appeared or went under a still pointer.
 	w.hoverViews()
+	w.refreshSelection()
+	if structure {
+		w.structureChanged()
+	}
 }
 
 func (w *window) create(id driver.NodeID, kind driver.ViewKind) {
@@ -1102,8 +1153,13 @@ func (w *window) moveOffset(v *view, offset driver.Point) {
 	if w.animator.Scroll(v.id, offset) {
 		w.animatedChanged()
 	}
+	if w.animator.Pulls(v.id) && w.animator.Pull(v.id, scrollbar.Pulled(&v.scroll, offset)) {
+		w.animatedChanged()
+	}
 	w.pinSticky(v)
-	w.engine.Dispatch(driver.Event{Kind: driver.EventScroll, ID: v.id, Point: offset, Count: v.applied})
+	// The engine sees the offset within the content and its insets, as a
+	// touch pulls it past.
+	w.engine.Dispatch(driver.Event{Kind: driver.EventScroll, ID: v.id, Point: scrollbar.Clamp(&v.scroll, v.frame.Size, v.size, offset), Count: v.applied})
 }
 
 // wheel scrolls the innermost scroll view under at that can still move
@@ -1403,6 +1459,21 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		r, _, _ := defWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
 		return r
 	}
+	// An alert takes the pointer and the keys while it shows.
+	if w.alert != nil {
+		switch message {
+		case wmMouseMove, wmLButtonDown, wmLButtonUp:
+			x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
+			w.alertMouse(message, w.point(int32(x), int32(y)))
+			return 0
+		case wmRButtonDown, wmRButtonUp, wmMButtonDown, wmMButtonUp, wmMouseWheel, wmChar:
+			return 0
+		case wmKeyDown:
+			if w.alertKey(wParam) {
+				return 0
+			}
+		}
+	}
 	if message == wmMouseMove {
 		w.pointerMoved(int32(int16(lParam&0xffff)), int32(int16(lParam>>16&0xffff)))
 		w.mouseMoved(wParam&(mkLButton|mkRButton|mkMButton) != 0)
@@ -1414,7 +1485,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 	case wmPointerDown, wmPointerUpdate, wmPointerUp, wmPointerLeave:
-		if w.hostedPointer(message, wParam, lParam) {
+		if w.hostedPointer(message, wParam, lParam) || w.touchPointer(message, wParam, lParam) {
 			return 0
 		}
 	case wmMouseLeave:
@@ -1511,6 +1582,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			clicks := w.countClicks(lParam)
 			w.down = driver.Event{Modifiers: modifiers(), Count: uint32(clicks)}
 			if w.fieldDown(at, clicks, wParam&mkShift != 0) {
+				w.clearSelection()
+				return 0
+			}
+			if w.selectPress(at, clicks, wParam&mkShift != 0) {
 				return 0
 			}
 			w.pressDown(at)
@@ -1529,6 +1604,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			w.fieldMove(at)
 			return 0
 		}
+		if w.selectDrag(at) {
+			return 0
+		}
 		w.hoverBars(at)
 		if wParam&mkLButton != 0 {
 			w.pressMoved(at)
@@ -1541,7 +1619,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
 		at := w.point(int32(x), int32(y))
 		w.touch(w.mouse.Up(at))
-		if w.fieldUp() {
+		if w.fieldUp() || w.selectUp() {
 			return 0
 		}
 		if w.barDrag != nil {
@@ -1560,6 +1638,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if lParam != hwnd && w.selecting != nil {
 			w.selecting.drag = dragNone
 			w.selecting = nil
+		}
+		if lParam != hwnd && w.textSelection != nil {
+			w.textSelection.Dragging = false
 		}
 		w.releaseBar()
 		w.captureLost(lParam)
@@ -1627,7 +1708,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		// The focused field first, then going back (Escape leaves the
 		// field instead), then Tab between the fields.
-		if w.fieldKey(wParam) {
+		if w.fieldKey(wParam) || w.selectKey(wParam) {
 			return 0
 		}
 		if wParam == vkEscape && !repeated(lParam) {
@@ -1684,7 +1765,15 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			w.menuCommand(uint16(wParam))
 		}
 		return 0
+	case wmGetObject:
+		if r, ok := w.getObject(wParam, lParam); ok {
+			return r
+		}
 	case wmDestroy:
+		// Clients let the window's providers go.
+		if uiaReturnRawElementProvider.Find() == nil {
+			uiaReturnRawElementProvider.Call(hwnd, 0, 0, 0)
+		}
 		for wv := range w.webs {
 			wv.close()
 		}

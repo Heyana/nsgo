@@ -395,6 +395,18 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 		}
 		page["Manifest"] = true
 	}
+	// What another page needs to show the app in an element of its own.
+	app := map[string]any{"wasm": page["Wasm"], "exec": page["Exec"]}
+	if r, ok := page["Resources"].(string); ok {
+		app["resources"] = json.RawMessage(r)
+	}
+	data, err := json.MarshalIndent(app, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "nsgo.json"), append(data, '\n'), 0o644); err != nil {
+		return err
+	}
 	f, err := os.Create(filepath.Join(dir, "index.html"))
 	if err != nil {
 		return err
@@ -427,10 +439,10 @@ var indexHTML = template.Must(template.New("index").Parse(`<!doctype html>
 </head>
 <body>
 <script>
-{{- if .Resources}}
-globalThis.nsgoResources = {{.Resources}};
-{{- end}}
 const go = new Go();
+{{- if .Resources}}
+go.env = { NSGO_RESOURCES: JSON.stringify({{.Resources}}) };
+{{- end}}
 WebAssembly.instantiateStreaming(fetch("{{.Wasm}}"), go.importObject).then((r) => go.run(r.instance));
 {{- if .Reload}}
 // nsgo dev's server: each new build loads, a failed one shows over the app.

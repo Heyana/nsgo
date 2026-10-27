@@ -283,12 +283,13 @@ func pressEvents(cx *core.Scope) core.Node {
 			return "No events yet"
 		}, MaxLines: 1, Style: core.Style{FontSize: 12, FontFamily: mono, Color: colors.faint}},
 		core.View{Style: core.Style{Direction: core.Row, Gap: 10}, Children: []core.Node{
-			core.View{Role: core.RoleButton, Label: "Fast long press", OnPress: func(core.PressEvent) { fire("press") }, OnLongPress: func(core.PressEvent) { fire("fast long press") },
-				DelayLongPress: 250 * time.Millisecond,
+			core.View{Role: core.RoleButton, Label: "Ripple", OnPress: func(core.PressEvent) { fire("ripple") }, OnLongPress: func(core.PressEvent) { fire("fast long press") },
+				DelayLongPress: 250 * time.Millisecond, Android: core.AndroidViewProps{Ripple: &core.Ripple{Color: alpha(colors.accentFill, 0.25)}},
 				Style: fin.raised.over(core.Style{FlexGrow: 1, Height: core.Pt(56), CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous, Background: colors.raised,
 					BorderWidth: 1, BorderColor: colors.border, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 2, Active: &core.Style{Background: colors.border}}),
-				Children: []core.Node{text("Fast long press", 14, regular, colors.text), text("Long press after 250 ms", 12, regular, colors.faint)}},
-			core.View{Role: core.RoleButton, Label: "Star", OnPress: func(core.PressEvent) { fire("icon") },
+				Children: []core.Node{text("Ripple", 14, regular, colors.text), text("Long press after 250 ms", 12, regular, colors.faint)}},
+			core.View{Role: core.RoleButton, Label: "Star", OnPress: func(core.PressEvent) { fire("borderless") },
+				Android: core.AndroidViewProps{Ripple: &core.Ripple{Borderless: true, Radius: 40}},
 				Style:    core.Style{Width: core.Pt(56), Height: core.Pt(56), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Active: &core.Style{Opacity: core.Alpha(0.4)}},
 				Children: []core.Node{icon(iconStar, 24, colors.warn)}},
 		}},

@@ -61,7 +61,8 @@ What the ops before the first bound one paint is the same whatever the nodes hol
 | iOS | `UIAccessibilityElement`s in place of the canvas |
 | Web | ARIA elements inside the `<canvas>`, which browsers expose at their bounds and never draw |
 | Android | Virtual views of the canvas's `AccessibilityNodeProvider` |
-| Windows, Linux | Nothing yet, as these backends expose no accessibility ([roadmap](../roadmap.md)) |
+| Windows | UI Automation providers, the canvas element's children |
+| Linux | Empty `GtkLabel`s of the node's role at its bounds, which take no pointer |
 | `nsgotest` | Views of the model: selectors find them by label, text and test ID, and a press presses the pressable view under their center |
 
 ## Players

@@ -8,7 +8,7 @@ Style transitions, animated values and layout animations run on the platform's m
 
 The core holds the callbacks waiting for the next frame and tells the host when the first one appears (`RootOptions.RequestFrame`), once: the host calls `Scope.RunFrame` when that frame begins, and asks again when a callback waits for the next. The engine forwards the request to its platform (`engine.Platform.RequestFrame`) and runs the frame when the platform reports it (`Engine.Frame`), before committing what the callbacks changed.
 
-Each target's frame source is its frame clock (below): macOS and iOS share their surface's display link with the native animations, the web uses `requestAnimationFrame`, and Windows and Linux their frame timer. Android has no way to report `Choreographer` frames yet, so a 60 Hz timer stands in ([roadmap](../roadmap.md)).
+Each target's frame source is its frame clock (below): macOS and iOS share their surface's display link with the native animations, the web uses `requestAnimationFrame`, Windows and Linux their frame timer, and Android the runtime's `Choreographer`, which reports each frame over the pipe while the engine waits for one.
 
 Headless tests run frames as the manual clock advances: `nsgotest.App.Advance` moves the clock a frame at a time and runs a waiting frame at each, as NSH's clock with frames does.
 
@@ -46,7 +46,7 @@ A display link runs only in the run loop mode object it is given: Foundation's `
 - Create: the top view of each subtree the batch inserts fades in, or grows from its center.
 - Delete: the top view of each subtree the batch deletes keeps drawing where it was while it fades or shrinks away, its ID already free for reuse. Views it holds go with it.
 - Reduced motion turns layout animations off. Web Animations play them on the web, springs sampled into CSS `linear()`.
-- `LayoutKeyboard` is the software keyboard's curve, which a style's `EnvKeyboard` terms animate on: UIKit's as a Bézier, timed from the keyboard notification on iOS however late the batch arrives, and the IME's interpolator on Android. NSH's alignment with Android's `WindowInsetsAnimation` is not ported.
+- `LayoutKeyboard` is the software keyboard's curve, which a style's `EnvKeyboard` terms animate on: UIKit's as a Bézier, timed from the keyboard notification on iOS however late the batch arrives, and on Android the IME's `WindowInsetsAnimation`: its interpolator and duration, from where its motion already is.
 
 ## Where Go departs from NSH
 

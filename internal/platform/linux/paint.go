@@ -3,6 +3,8 @@
 package linux
 
 import (
+	"time"
+
 	"math"
 
 	"github.com/oneo-me/nsgo/internal/driver"
@@ -67,36 +69,44 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 		gtkSnapshotPushShadow(snap, &shadow, 1)
 		pops++
 	}
+	// A child that blends mixes with what its parent drew under it: a
+	// view with one draws into a snapshot of its own, which each blending
+	// child closes into its blend's bottom (snapshotChild).
+	cur := snap
+	blends := blendingChild(v)
+	if blends {
+		cur = gtkSnapshotNew()
+	}
 	if width > 0 && height > 0 {
 		if shadowed && filled {
 			c := rgba(s.ShadowColor)
-			gtkSnapshotAppendOutset(snap, &sh.rect, &c, float32(s.ShadowOffset.X), float32(s.ShadowOffset.Y),
+			gtkSnapshotAppendOutset(cur, &sh.rect, &c, float32(s.ShadowOffset.X), float32(s.ShadowOffset.Y),
 				0, float32(s.ShadowRadius)*shadowBlurPerUnit)
 		}
 		// The first shadow is on top.
 		for i := len(e.Shadows) - 1; i >= 0; i-- {
 			if b := e.Shadows[i]; !b.Inset {
 				c := rgba(b.Color)
-				gtkSnapshotAppendOutset(snap, &sh.rect, &c, float32(b.Offset.X), float32(b.Offset.Y), float32(b.Spread), float32(b.Blur))
+				gtkSnapshotAppendOutset(cur, &sh.rect, &c, float32(b.Offset.X), float32(b.Offset.Y), float32(b.Spread), float32(b.Blur))
 			}
 		}
 		if s.Background&0xff != 0 {
-			sh.fill(snap, s.Background)
+			sh.fill(cur, s.Background)
 		}
 		if len(e.Gradients) > 0 {
-			sh.pushClip(snap)
+			sh.pushClip(cur)
 			for i := len(e.Gradients) - 1; i >= 0; i-- {
-				appendGradient(snap, &e.Gradients[i], width, height)
+				appendGradient(cur, &e.Gradients[i], width, height)
 			}
-			gtkSnapshotPop(snap)
+			gtkSnapshotPop(cur)
 		}
-		w.snapshotInsets(snap, s, &sh, e.Shadows)
+		w.snapshotInsets(cur, s, &sh, e.Shadows)
 	}
 	clip := s.Clip || v.kind == driver.KindScroll || v.kind == driver.KindImage || v.kind == driver.KindInput
 	if clip {
-		sh.pushClip(snap)
+		sh.pushClip(cur)
 	}
-	w.snapshotContent(v, s, snap)
+	w.snapshotContent(v, s, cur)
 	for c := gtkWidgetGetFirstChild(v.widget); c != 0; c = gtkWidgetGetNextSibling(c) {
 		// A view inserted since the last layout has no allocation until
 		// the next frame's; a snapshot taken between skips it.
@@ -104,21 +114,96 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 			r.v.frame.Size.Width >= 1 && r.v.frame.Size.Height >= 1 {
 			continue
 		}
-		gtkWidgetSnapshotChild(v.widget, c, snap)
+		cur = w.snapshotChild(v, c, cur, clip, &sh)
 	}
-	if v.kind == driver.KindScroll && w.showsBar(v) {
-		snapshotIndicator(v, snap)
+	if v.kind == driver.KindScroll {
+		snapshotSpinner(v, cur, time.Now())
+		if w.showsBar(v) {
+			snapshotIndicator(v, cur)
+		}
 	}
 	if clip {
-		gtkSnapshotPop(snap)
+		gtkSnapshotPop(cur)
 	}
-	snapshotBorder(snap, &sh, s)
+	snapshotBorder(cur, &sh, s)
 	if o := s.Outline; o.Visible() && width > 0 && height > 0 {
-		sh.stroke(snap, -(o.Offset + o.Width/2), o.Width, o.Color, o.Style)
+		sh.stroke(cur, -(o.Offset + o.Width/2), o.Width, o.Color, o.Style)
+	}
+	if blends {
+		if node := gtkSnapshotFreeToNode(cur); node != 0 {
+			gtkSnapshotAppendNode(snap, node)
+			gskRenderNodeUnref(node)
+		}
 	}
 	for range pops {
 		gtkSnapshotPop(snap)
 	}
+}
+
+// gskBlends are GSK's blend modes in driver.BlendMode's order, normal
+// first; GSK has no plus-lighter, which stays normal.
+var gskBlends = [...]int32{
+	driver.BlendMultiply: 1, driver.BlendScreen: 2, driver.BlendOverlay: 3, driver.BlendDarken: 4,
+	driver.BlendLighten: 5, driver.BlendColorDodge: 6, driver.BlendColorBurn: 7, driver.BlendHardLight: 8,
+	driver.BlendSoftLight: 9, driver.BlendDifference: 10, driver.BlendExclusion: 11, driver.BlendColor: 12,
+	driver.BlendHue: 13, driver.BlendSaturation: 14, driver.BlendLuminosity: 15, driver.BlendPlusLighter: 0,
+}
+
+// blendOf returns the GSK blend mode child widget c draws with, 0 for
+// none.
+func (w *window) blendOf(c uintptr) int32 {
+	r, ok := lookupWidget(c)
+	if !ok || r.v == nil {
+		return 0
+	}
+	if b := w.styleOf(r.v).BlendMode; int(b) < len(gskBlends) {
+		return gskBlends[b]
+	}
+	return 0
+}
+
+// blendingChild reports whether a child of v blends.
+func blendingChild(v *view) bool {
+	for _, c := range v.children {
+		if c.style.BlendMode != driver.BlendNormal {
+			return true
+		}
+	}
+	return false
+}
+
+// snapshotChild draws child widget c of v into cur, its content clip
+// pushed when clip; a child that blends closes cur, what v drew so far,
+// into its blend's bottom and goes on in a new snapshot it returns.
+func (w *window) snapshotChild(v *view, c, cur uintptr, clip bool, sh *shape) uintptr {
+	mode := w.blendOf(c)
+	if mode == 0 {
+		gtkWidgetSnapshotChild(v.widget, c, cur)
+		return cur
+	}
+	if clip {
+		gtkSnapshotPop(cur)
+	}
+	below := gtkSnapshotFreeToNode(cur)
+	cur = gtkSnapshotNew()
+	gtkSnapshotPushBlend(cur, mode)
+	if below != 0 {
+		gtkSnapshotAppendNode(cur, below)
+		gskRenderNodeUnref(below)
+	}
+	gtkSnapshotPop(cur)
+	if clip {
+		sh.pushClip(cur)
+	}
+	gtkWidgetSnapshotChild(v.widget, c, cur)
+	if clip {
+		gtkSnapshotPop(cur)
+	}
+	gtkSnapshotPop(cur)
+	if clip {
+		sh.pushClip(cur)
+	}
+	return cur
 }
 
 // snapshotInsets draws the inset shadows inside the padding box, the
@@ -171,6 +256,7 @@ func (w *window) snapshotContent(v *view, s *driver.ViewStyle, snap uintptr) {
 			s := gskShadow{rgba(sh.Color), float32(sh.Offset.X), float32(sh.Offset.Y), float32(sh.Radius) * shadowBlurPerUnit}
 			gtkSnapshotPushShadow(snap, &s, 1)
 		}
+		snapshotSelection(v, l, snap, v.content.Origin.X, v.content.Origin.Y)
 		cr := gtkSnapshotAppendCairo(snap, &grown)
 		if a := v.animated; a != nil && a.Has(driver.PropTextColor) {
 			// A bound color paints the whole text: its glyphs as a mask.

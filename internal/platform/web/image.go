@@ -4,6 +4,8 @@ package web
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
 	"strconv"
 	"strings"
 	"syscall/js"
@@ -146,12 +148,33 @@ func imageURL(src driver.ImageSource) (url string, object bool) {
 // serves under the paths themselves.
 func resourceURL(path string) string {
 	path = strings.TrimPrefix(path, "/")
-	if names := js.Global().Get("nsgoResources"); names.Type() == js.TypeObject {
-		if name := names.Get(path); name.Type() == js.TypeString {
-			return name.String()
-		}
+	if name, ok := resourceNames[path]; ok {
+		return resourceBase + name
 	}
-	return path
+	return resourceBase + path
+}
+
+// resourceBase is where the app's files are from the page, and
+// resourceNames the names a published site gave its resources. Each app
+// on a page is a Go program of its own, so they are its: the page sets
+// them in its environment (NSGO_BASE, NSGO_RESOURCES), or a page of the
+// app's own in globalThis.nsgoResources.
+var (
+	resourceBase  string
+	resourceNames map[string]string
+)
+
+// loadResourceNames reads where the app's files are.
+func loadResourceNames() {
+	resourceBase = os.Getenv("NSGO_BASE")
+	if s := os.Getenv("NSGO_RESOURCES"); s != "" {
+		json.Unmarshal([]byte(s), &resourceNames)
+		return
+	}
+	if names := js.Global().Get("nsgoResources"); names.Type() == js.TypeObject {
+		s := js.Global().Get("JSON").Call("stringify", names).String()
+		json.Unmarshal([]byte(s), &resourceNames)
+	}
 }
 
 // release stops loading and revokes the object URL the picture made.

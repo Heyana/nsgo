@@ -199,6 +199,14 @@ const (
 	// ItemQuit ends the app: desktops close the window and return from
 	// Run, Android finishes its activity; iOS and the web ignore it.
 	ItemQuit
+	// ItemBackPreview answers EventBackStarted with the screen a back now
+	// pops (ID), for the platform to move it with the gesture; 0 when back
+	// goes elsewhere first or nothing pops.
+	ItemBackPreview
+	// ItemHistory is how many entries back can go through (Count): the
+	// screens above each stack's first and the modals shown. The web
+	// keeps that many browser history entries; others ignore it.
+	ItemHistory
 )
 
 // MountItem is one change to the native views. Kind says which fields
@@ -547,6 +555,21 @@ type ViewProps struct {
 	PointerEvents  PointerEvents
 	HitSlop        Edges
 	DelayLongPress time.Duration
+	// Ripple is Android's press ripple, nil for none. It is shared and
+	// never changed, as Actions is.
+	Ripple *Ripple
+}
+
+// Ripple is Android's ripple over a view while it is pressed.
+type Ripple struct {
+	// Color is the ripple's; 0 takes the theme's.
+	Color Color
+	// Borderless spreads it past the view's shape.
+	Borderless bool
+	// Radius is 0 for the platform's.
+	Radius Points
+	// Foreground draws it over the view's content, else behind it.
+	Foreground bool
 }
 
 // Role is a view's accessibility role.

@@ -41,6 +41,13 @@ final class Box extends GradientDrawable {
         invalidateSelf();
     }
 
+    /** Writes the box's rounded shape in bounds b to path, in pixels, and returns it. */
+    Path shape(Rect b, Path path) {
+        path.reset();
+        box(path, b.left, b.top, b.width(), b.height(), Shape.fit(corners(), b.width(), b.height()), look.continuous);
+        return path;
+    }
+
     /** Each corner's radius: top left, top right, bottom right, bottom left. */
     private float[] corners() {
         if (look.corners != null) return look.corners;

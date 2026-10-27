@@ -77,6 +77,7 @@ type view struct {
 	activation           driver.PanActivation
 	handoff              bool    // its pan hands off from the scroll views inside it
 	pan, pinch, rotation objc.ID // the recognizers of the gestures it follows
+	hover                objc.ID // its UIHoverGestureRecognizer while it follows hovers
 
 	// A text's content and selection, whether a view is an area, and the
 	// long press that selects in it.
@@ -142,7 +143,10 @@ type surface struct {
 	fingers     fingers // the touches reported
 	env         driver.Environment
 
-	keyboard         driver.Points
+	keyboard driver.Points
+	// keyboardScroll is the scroll view keeping the focused input clear
+	// of the keyboard (keyboard.go).
+	keyboardScroll   *view
 	keyboardDuration time.Duration
 	// keyboardStart is when the keyboard last started to move, on clock.
 	keyboardStart time.Duration
@@ -579,6 +583,7 @@ func (s *surface) keyboardMoved(note objc.ID, hiding bool) {
 		s.keyboard = driver.Points(max(h, 0))
 	}
 	s.refresh()
+	s.keepFocusedClear()
 }
 
 // alert presents a over whatever the window shows; the action chosen goes
@@ -779,7 +784,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemStatusBar:
 			s.setStatusBar(it.StatusBar)
 			continue
-		case driver.ItemTitle, driver.ItemBackUnhandled, driver.ItemWindow, driver.ItemMenu:
+		case driver.ItemTitle, driver.ItemBackUnhandled, driver.ItemBackPreview, driver.ItemHistory, driver.ItemWindow, driver.ItemMenu:
 			continue
 		}
 		v := s.views[it.ID]

@@ -9,7 +9,7 @@
 - The natural size is the size the source declares, an SVG's intrinsic size, or the pixels over a name's `@2x` density. Android takes its drawable's intrinsic size and ignores a declared size.
 - The position is the image's, not the view's: it travels in `ImageConfig.Position`, and a change sends `ItemImage` again, never `ItemViewStyle`. Android receives each axis as a fraction of the free space plus points, which any position resolves to.
 - Apple frames a picture layer at the fitted rectangle inside the clipping layer, the tint and its mask inside it; the web sets the background's or mask's size and position in pixels.
-- `BlurRadius` is in points: Core Image on Apple, CSS's `blur()` on the web, `RenderEffect` on Android 12 and newer (older Android shows the image sharp), a Direct2D Gaussian blur on Windows and a GSK blur on Linux.
+- `BlurRadius` is in points: Core Image on Apple, CSS's `blur()` on the web, `RenderEffect` on Android 12 and newer, before it a stack blur of the image shrunk to its drawn size, a Direct2D Gaussian blur on Windows and a GSK blur on Linux.
 - Windows and Linux draw a blurred image enlarged under a clip to its own rectangle, so its edges stay opaque.
 - A source that loads fades in over its placeholder for `FadeDuration`: 0 by default, as NSH's iOS, except Android's 300 ms. Windows and Linux fade on their frame clocks, even when the bytes came from the cache.
 - Videos fit with `Fit` on Windows and Android; Apple's `AVPlayerLayer` and GTK's `GtkPicture` have no natural-size fit, so `Center` there shrinks as `ScaleDown` does, and Android's video shows both as `Contain`.

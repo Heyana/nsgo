@@ -112,9 +112,10 @@ type View struct {
 	OnFileDrop      func(uris []string)
 	OnFileDragEnter func()
 	OnFileDragLeave func()
-	// IOS and Desktop hold the props only iOS, or only the desktops,
-	// have; other platforms ignore them.
+	// IOS, Android and Desktop hold the props only iOS, Android or the
+	// desktops have; other platforms ignore them.
 	IOS     IOSViewProps
+	Android AndroidViewProps
 	Desktop DesktopViewProps
 	// Selectable makes the texts inside select together, as a web page's
 	// do: one selection runs from a place in one text to a place in
