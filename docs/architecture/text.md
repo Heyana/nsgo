@@ -89,7 +89,7 @@ A final layout answers where its carets are, as NSH's `TextEngine` hit testing d
 - Pastes are caught where each platform pastes. macOS gives its fields a field editor of NSGo's own (the window's delegate hands it out) and its text views their own `paste:`; iOS overrides `paste:`, Android `onTextContextMenuItem`.
 - Linux hears `paste-clipboard` and reads GDK's clipboard asynchronously, so its report comes after the text it inserts, as on the web for files, whose bytes are read first.
 - What a platform lacks is a no-op there. Return keys, capitalization and the keyboard's appearance belong to software keyboards: iOS, Android, the web's `enterkeyhint` and `autocapitalize`; Linux passes GTK input hints. `IOS.KeyboardAppearance` is iOS's only.
-- `AutoComplete` maps to iOS's `textContentType`, Android's autofill hints, the web's `autocomplete`, GTK's input purpose and macOS's content types for accounts, passwords and codes. Windows has no autofill or autocorrection.
+- `AutoComplete` maps to iOS's `textContentType`, Android's autofill hints, the web's `autocomplete`, GTK's input purpose and macOS's content types for accounts, passwords and codes. macOS keeps AutoFill's guesses to masked fields without `AutoComplete`: a guess at a plain field can flash an empty panel over it. Windows has no autofill or autocorrection.
 
 ## Text selection
 

@@ -636,7 +636,7 @@ func (v *view) configure(c *driver.InputConfig) {
 			e.Send(selSetTextColor, nsColor(c.Style.Color))
 			e.Send(selSetAlignment, align)
 		}
-		setContentType(in.field, c.AutoComplete)
+		setContentType(in.field, c.AutoComplete, in.masked)
 	}
 	apple.Release(font)
 	if in.focused {
@@ -682,8 +682,13 @@ func setPlaceholder(f objc.ID, text string, font objc.ID, color driver.Color) {
 }
 
 // setContentType gives a field the content type AppKit's autofill knows
-// (macOS 11): accounts, passwords and one-time codes.
-func setContentType(f objc.ID, a driver.AutoComplete) {
+// (macOS 11): accounts, passwords and one-time codes. A field without one
+// has AutoFill guess on each focus, and the first guess after AutoFill
+// starts flashes an empty panel over the field. So a plain field with no
+// autocomplete, or with autocomplete off, gets a type AutoFill does not
+// know, which it leaves alone; a masked one is a password AutoFill may
+// guess.
+func setContentType(f objc.ID, a driver.AutoComplete, masked bool) {
 	if !objc.Send[bool](f, sel("respondsToSelector:"), sel("setContentType:")) {
 		return
 	}
@@ -697,8 +702,11 @@ func setContentType(f objc.ID, a driver.AutoComplete) {
 		name = "NSTextContentTypeOneTimeCode"
 	}
 	var t objc.ID
-	if name != "" {
+	switch {
+	case name != "":
 		t = apple.Global("/System/Library/Frameworks/AppKit.framework/AppKit", name)
+	case a == driver.AutoCompleteOff, a == driver.AutoCompleteDefault && !masked:
+		t = apple.NSString("none")
 	}
 	f.Send(sel("setContentType:"), t)
 }
