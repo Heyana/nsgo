@@ -429,8 +429,13 @@ func handleBandNode(h handleBandSpec) core.Node {
 	band := core.Style{Group: handleGroup, ZIndex: 1, FlexShrink: 0,
 		AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}
 	line := core.Style{}
-	thumb := core.Style{Position: core.Absolute, Left: core.Pct(50), Top: core.Pct(50),
-		Transform: core.Transform{TranslateXPercent: -50, TranslateYPercent: -50}}
+	// The thumb is centered by alignment on a point of the line in its
+	// middle, which holds the quarter turn, so the app's thumb keeps its
+	// own Transform. The point is the line's width square, so the thumb
+	// lies on the line's pixels when its width is odd too.
+	over := core.Style{Position: core.Absolute, Width: core.Pt(1), Height: core.Pt(1),
+		AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}
+	thumb := core.Style{Position: core.Absolute}
 	switch h.edge {
 	case HandleLeading:
 		band.Position = core.Absolute
@@ -449,25 +454,33 @@ func handleBandNode(h handleBandSpec) core.Node {
 		switch h.edge {
 		case HandleLeading:
 			band.Top, band.Bottom, band.Left = zero, zero, zero
+			over.Left = zero
 		case HandleTrailing:
 			band.Top, band.Bottom, band.Right = zero, zero, zero
+			over.Right = zero
 		default:
 			band.Margin = core.Edges{Left: -before, Right: -after}
+			over.Left = core.Pt(before)
 		}
 		line.Width, line.Height = core.Pt(1), core.Pct(100)
+		over.Top = core.Pct(50)
 		activation = core.PanActivation{ActiveOffsetX: 2, FailOffsetY: 12}
 	} else {
 		band.Height, band.Cursor = core.Pt(handleBand), core.CursorRowResize
 		switch h.edge {
 		case HandleLeading:
 			band.Left, band.Right, band.Top = zero, zero, zero
+			over.Top = zero
 		case HandleTrailing:
 			band.Left, band.Right, band.Bottom = zero, zero, zero
+			over.Bottom = zero
 		default:
 			band.Margin = core.Edges{Top: -before, Bottom: -after}
+			over.Top = core.Pt(before)
 		}
 		line.Height, line.Width = core.Pt(1), core.Pct(100)
-		thumb.Transform.Rotate = 90
+		over.Left = core.Pct(50)
+		over.Transform.Rotate = 90
 		activation = core.PanActivation{ActiveOffsetY: 2, FailOffsetX: 12}
 	}
 	var slop core.Edges
@@ -480,7 +493,7 @@ func handleBandNode(h handleBandSpec) core.Node {
 	}
 	parts := []core.Node{core.View{Style: line.Merge(h.line), StyleFunc: h.lineFunc}}
 	if !h.thumb.IsZero() {
-		parts = append(parts, core.View{Style: thumb.Merge(h.thumb)})
+		parts = append(parts, core.View{Style: over, Children: []core.Node{core.View{Style: thumb.Merge(h.thumb)}}})
 	}
 	return core.View{
 		Style: band, Disabled: h.disabled, HitSlop: slop,

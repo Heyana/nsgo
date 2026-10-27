@@ -122,3 +122,35 @@ func TestVerticalPanelsHaveRowResizeHandles(t *testing.T) {
 		t.Errorf("after a drag of 40: %v and %v", a, b)
 	}
 }
+
+func TestHandleThumbsCenterOnTheLineAndKeepTheirTransform(t *testing.T) {
+	thumb := core.Style{Width: core.Pt(3), Height: core.Pt(44), Transform: core.Transform{ScaleY: 0.5}}
+	for _, axis := range []base.Axis{base.Horizontal, base.Vertical} {
+		app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+			return base.ResizablePanelGroup{TestID: "group", Axis: axis, HandleThumbStyle: thumb,
+				Style:  core.Style{Width: core.Pt(300), Height: core.Pt(400)},
+				Panels: []base.ResizablePanel{{TestID: "a"}, {TestID: "b"}}}
+		})
+		h := app.Find("id:group-handle-0")
+		line, over := h.Children[0].Frame, h.Children[1]
+		turn := float32(0)
+		if axis == base.Vertical {
+			turn = 90
+		}
+		mid := core.Point{X: line.Origin.X + line.Size.Width/2, Y: line.Origin.Y + line.Size.Height/2}
+		at := core.Point{X: over.Frame.Origin.X + 0.5, Y: over.Frame.Origin.Y + 0.5}
+		across, along := at.X-mid.X, at.Y-mid.Y
+		if axis == base.Vertical {
+			across, along = along, across
+		}
+		if across != 0 || along < -0.5 || along > 0.5 || over.Style.Transform.Rotate != turn {
+			t.Errorf("axis %v: the thumb's point at %v turned %v, want the line's middle %v turned %v",
+				axis, at, over.Style.Transform.Rotate, mid, turn)
+		}
+		// Upright, before any turn, the thumb straddles the point exactly.
+		f, s := over.Children[0].Frame, over.Children[0].Style
+		if f.Origin.X+f.Size.Width/2 != 0.5 || s.Transform.ScaleY != 0.5 {
+			t.Errorf("axis %v: the thumb at %v with %+v, want centered on the line keeping the app's transform", axis, f, s.Transform)
+		}
+	}
+}
