@@ -19,7 +19,6 @@ import (
 	"github.com/alecthomas/chroma/v2"
 
 	"github.com/oneo-me/nsgo/base/internal/syntax"
-	"github.com/oneo-me/nsgo/base/internal/window"
 	"github.com/oneo-me/nsgo/core"
 )
 
@@ -211,7 +210,7 @@ type dv struct {
 	scrollY      *core.Signal[core.Points]
 	viewport     *core.Signal[core.Size]
 	vs           *core.Ref
-	win          *window.Rows
+	window       *core.Memo[[2]int]
 	font         core.Font
 	charW, lh    float32
 	widest       int
@@ -244,7 +243,7 @@ type dv struct {
 func (p DiffView) Render(cx *core.Scope) core.Node {
 	v := &dv{p: p, cx: cx, rev: core.NewSignal(cx, 0), hlRev: core.NewSignal(cx, 0),
 		scrollY: core.NewSignal(cx, core.Points(0)), viewport: core.NewSignal(cx, core.Size{}), vs: &core.Ref{},
-		win: window.New(8, 16), expand: map[int][2]int{}, collapsed: map[string]bool{}, current: -1, m: &model{},
+		expand: map[int][2]int{}, collapsed: map[string]bool{}, current: -1, m: &model{},
 		geo: core.NewSignal(cx, 0), selRev: core.NewSignal(cx, 0), hovered: core.NewSignal(cx, LineRange{Start: -1, End: -1}),
 		annH: map[string]float32{}}
 	v.font = core.Font{Family: p.FontFamily, Size: p.FontSize}
@@ -262,6 +261,7 @@ func (p DiffView) Render(cx *core.Scope) core.Node {
 	if p.Ref != nil {
 		p.Ref.v = v
 	}
+	v.window = core.NewMemo(cx, v.measureWindow)
 	v.followWidth()
 	if p.Annotations != nil {
 		cx.Effect(func() {
@@ -304,9 +304,7 @@ func (p DiffView) Render(cx *core.Scope) core.Node {
 func merge(styles ...core.Style) core.Style {
 	var out core.Style
 	for _, s := range styles {
-		if !s.IsZero() {
-			out = out.Merge(s)
-		}
+		out = out.Merge(s)
 	}
 	return out
 }
@@ -638,17 +636,30 @@ func (v *dv) inlineOf(o, n int) [2][][2]int {
 
 // windowRows is the rows made (tracked).
 func (v *dv) windowRows() (int, int) {
+	w := v.window.Get()
+	return w[0], w[1]
+}
+
+// measureWindow is the rows in view and half a viewport each way, at
+// least 8: the window slides with the view, so a scroll makes only the
+// rows coming into it, a few a frame, where a window moved a page ahead
+// at a time would make them all in one. Rows are kept by index, not
+// reused as a table's slots are, since each kind of row has parts of its
+// own. None until the view has its size, so the first rows are made once,
+// wrapped at its width.
+func (v *dv) measureWindow() [2]int {
 	v.rev.Get()
 	v.geo.Get()
 	vp := v.viewport.Get()
-	y := float32(v.scrollY.Get())
 	n := len(v.rows)
-	if n == 0 {
-		return 0, 0
+	if n == 0 || vp.Width <= 0 || vp.Height <= 0 {
+		return [2]int{}
 	}
+	y := float32(v.scrollY.Get())
 	first := v.rowAt(y)
-	last := min(v.rowAt(y+max(float32(vp.Height), 40*v.lh))+1, n)
-	return v.win.Span(first, max(last, first), n)
+	last := min(v.rowAt(y+float32(vp.Height))+1, n)
+	reach := max((last-first)/2, 8)
+	return [2]int{max(first-reach, 0), min(last+reach, n)}
 }
 
 // numberWidth is a number column's width.
@@ -711,6 +722,9 @@ func (v *dv) followWidth() {
 		return
 	}
 	v.cx.Effect(func() {
+		if v.viewWidth() <= 0 {
+			return
+		}
 		w := v.sideWidth() - v.gutterWidth() - 16
 		v.cx.Untrack(func() {
 			cols := max(int(w/v.charW), 8)

@@ -164,6 +164,41 @@ func TestSignalFuncNotifiesSlices(t *testing.T) {
 	}
 }
 
+// TestReadersUnlinkInAnyOrder has readers of the same sources leave in
+// orders other than they came, each move of a reader into a freed slot
+// keeping its place in the others' lists.
+func TestReadersUnlinkInAnyOrder(t *testing.T) {
+	cx := NewRoot(RootOptions{})
+	a, b, gate := NewSignal(cx, 0), NewSignal(cx, 0), NewSignal(cx, true)
+	runs := make([]int, 6)
+	for i := range runs {
+		cx.Effect(func() {
+			runs[i]++
+			// Odd readers read the sources the other way round, and the
+			// first two stop reading a once the gate closes.
+			if i%2 == 1 {
+				b.Get()
+			}
+			if i >= 2 || gate.Get() {
+				a.Get()
+			}
+			if i%2 == 0 {
+				b.Get()
+			}
+		})
+	}
+	gate.Set(false)
+	a.Set(1)
+	b.Set(1)
+	if want := []int{3, 3, 3, 3, 3, 3}; !slices.Equal(runs, want) {
+		t.Fatalf("runs after the gate = %v, want %v", runs, want)
+	}
+	a.Set(2)
+	if want := []int{3, 3, 4, 4, 4, 4}; !slices.Equal(runs, want) {
+		t.Errorf("runs = %v, want %v: readers that left a ran", runs, want)
+	}
+}
+
 func TestOwnersDisposeAndCleanUp(t *testing.T) {
 	cx := NewRoot(RootOptions{})
 	on := NewSignal(cx, true)
@@ -405,6 +440,40 @@ func TestShowAndEachMountAndUnmount(t *testing.T) {
 	// c moved before a: one insert for c, one for the new d.
 	if k[driver.ItemInsert] != 2 {
 		t.Errorf("inserts = %d, want 2", k[driver.ItemInsert])
+	}
+}
+
+// TestEachKeepsRowsOfEqualItems reads plain items again unchanged, which
+// leaves their rows as they are; items that may point elsewhere update
+// their rows every time.
+func TestEachKeepsRowsOfEqualItems(t *testing.T) {
+	type pos struct{ x, y int }
+	var ints *Signal[[]pos]
+	var ptrs *Signal[[]*pos]
+	intRuns, ptrRuns := 0, 0
+	h := newHost(t, Size{Width: 100, Height: 200}, func(cx *Scope) Node {
+		ints = NewSignalFunc(cx, []pos{{1, 2}, {3, 4}}, nil)
+		ptrs = NewSignalFunc(cx, []*pos{{5, 6}}, nil)
+		return View{Children: []Node{
+			Each(ints.Get, func(p pos) int { return p.x }, func(cx *Scope, item func() pos, _ func() int) Node {
+				return Dynamic(func(cx *Scope) Node { intRuns++; return Text{Content: fmt.Sprint(item())} })
+			}),
+			Each(ptrs.Get, func(p *pos) int { return p.x }, func(cx *Scope, item func() *pos, _ func() int) Node {
+				return Dynamic(func(cx *Scope) Node { ptrRuns++; return Text{Content: fmt.Sprint(*item())} })
+			}),
+		}}
+	})
+	h.commit()
+	ints.Set([]pos{{1, 2}, {3, 4}})
+	ptrs.Set(ptrs.GetUntracked())
+	h.commit()
+	if intRuns != 2 || ptrRuns != 2 {
+		t.Errorf("rows built %d and %d times, want plain items' 2 and a pointer's 2", intRuns, ptrRuns)
+	}
+	ints.Set([]pos{{1, 2}, {3, 5}})
+	h.commit()
+	if intRuns != 3 {
+		t.Errorf("rows built %d times, want 3 once an item changed", intRuns)
 	}
 }
 

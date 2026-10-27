@@ -1633,10 +1633,10 @@ func nsColor(c driver.Color) objc.ID {
 // hitTest lets presses on text and plain containers through to the
 // nearest pressable ancestor; text fields keep theirs.
 func hitTest(self objc.ID, cmd objc.SEL, p apple.CGPoint) objc.ID {
-	if rawHit {
-		return apple.SendSuper[objc.ID](self, cmd, p)
-	}
 	hit := reach(self, cmd, p)
+	if rawHit {
+		return hit
+	}
 	stop := self.Send(selSuperview)
 	for n := hit; n != 0 && n != stop; n = n.Send(selSuperview) {
 		if v := views[n]; v != nil {

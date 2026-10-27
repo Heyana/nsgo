@@ -61,8 +61,10 @@ var (
 	selContentRectForFrame = sel("contentRectForFrameRect:styleMask:")
 )
 
-// rawHit makes the views' hitTest: return the deepest view, for the
-// window drag's decision.
+// rawHit makes the views' hitTest: return the deepest view that takes
+// the pointer, by its pointer events, rather than the pressable ancestor a
+// press goes to: for the window drag's decision, drops, selections and the
+// scroll views under the mouse.
 var rawHit bool
 
 var selMenuChosen = sel("nsgoMenuChosen:")

@@ -1,5 +1,7 @@
 package core
 
+import "reflect"
+
 // Regions are spans of their parent's children that change: each owns
 // the scope its nodes were built under and disposes it when they go.
 
@@ -32,7 +34,10 @@ func (c Catch) Render(*Scope) Node { return c }
 
 // Each builds a row per item, matched to items by key: a row whose key
 // stays is kept and moved, its item and index updated; rows are built for
-// new keys and disposed for keys gone. Go methods cannot take type
+// new keys and disposed for keys gone. An item of plain values (numbers,
+// strings, and arrays and structs of them) updates its row only when it
+// changes; any other item, which may point at what changed, every time
+// the items are read again. Go methods cannot take type
 // parameters, so Each is a function.
 func Each[T any, K comparable](items func() []T, key func(T) K,
 	row func(cx *Scope, item func() T, index func() int) Node) Node {
@@ -58,6 +63,10 @@ type eachRow[T any] struct {
 // mount implements regionMounter: one render effect matches rows to keys.
 // Rows belong to owner, not to the effect, so they outlive its runs.
 func (e *each[T, K]) mount(t *Tree, region *node, owner *Scope) {
+	var same func(a, b T) bool
+	if plainValue(reflect.TypeFor[T]()) {
+		same = func(a, b T) bool { return any(a) == any(b) }
+	}
 	rows := map[K]*eachRow[T]{}
 	var extra []*eachRow[T] // rows of duplicate keys, built again each run
 	owner.renderEffect(func() {
@@ -76,7 +85,7 @@ func (e *each[T, K]) mount(t *Tree, region *node, owner *Scope) {
 				} else {
 					r = &eachRow[T]{scope: &Scope{}}
 					owner.adopt(r.scope)
-					r.item = NewSignalFunc(r.scope, it, nil)
+					r.item = NewSignalFunc(r.scope, it, same)
 					r.index = NewSignal(r.scope, i)
 					r.node = t.newRegion(region, r.scope)
 					item, index := r.item.Get, r.index.Get
@@ -101,4 +110,26 @@ func (e *each[T, K]) mount(t *Tree, region *node, owner *Scope) {
 			t.setChildren(region, order)
 		})
 	})
+}
+
+// plainValue reports whether values of t are all of what they hold, so ==
+// tells whether one changed: no pointers, interfaces, slices, maps,
+// functions or channels.
+func plainValue(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Array:
+		return plainValue(t.Elem())
+	case reflect.Struct:
+		for i := range t.NumField() {
+			if !plainValue(t.Field(i).Type) {
+				return false
+			}
+		}
+		return true
+	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8,
+		reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32, reflect.Float64, reflect.Complex64,
+		reflect.Complex128, reflect.String:
+		return true
+	}
+	return false
 }

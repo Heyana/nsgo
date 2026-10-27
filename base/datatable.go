@@ -493,13 +493,16 @@ type dataTable struct {
 	hover              *core.Signal[int]
 	focused            *core.Signal[bool]
 	drag               *core.Signal[tableDrag]
-	vscroll, hscroll   *core.Ref
-	stripRef           *core.Ref
-	rowsWin, colsWin   *window.Rows
-	resizing           int
-	resizeFrom         float32
-	handleTap          int
-	handleTapAt        time.Time
+	// sizes is the geometry without the offsets, so what reads only sizes
+	// does not run again at each scroll.
+	sizes            *core.Memo[tableGeo]
+	vscroll, hscroll *core.Ref
+	stripRef         *core.Ref
+	rowsWin, colsWin *window.Rows
+	resizing         int
+	resizeFrom       float32
+	handleTap        int
+	handleTapAt      time.Time
 	// leader is which of the strip (true) and the horizontal scroll view
 	// moved last, at leaderAt.
 	leader   *bool
@@ -517,6 +520,7 @@ func newDataTable(cx *core.Scope, p DataTable) *dataTable {
 		p.Ref.t = t
 	}
 	t.syncColumns()
+	t.sizes = core.NewMemo(cx, t.measureSizes)
 	t.syncSelection()
 	t.report()
 	return t
@@ -701,6 +705,14 @@ func (t *dataTable) leadWidth() float32 {
 
 // geo is the sizes and offsets now (tracked).
 func (t *dataTable) geo() tableGeo {
+	g := t.sizes.Get()
+	g.cx = g.x.contentOffset(float64(t.scrollX.Get()))
+	g.cy = g.y.contentOffset(float64(t.scrollY.Get()))
+	return g
+}
+
+// measureSizes is the geometry without the offsets.
+func (t *dataTable) measureSizes() tableGeo {
 	t.layoutRev.Get()
 	size := t.viewport.Get()
 	w, h := max(float32(size.Width), 0), max(float32(size.Height), 0)
@@ -709,8 +721,6 @@ func (t *dataTable) geo() tableGeo {
 		fixed: float32(t.st.columns.fixedWidth())}
 	g.y = tableAxis{float64(t.rowCount()) * float64(rh), float64(max(h-g.header, 0))}
 	g.x = tableAxis{t.st.columns.scrollWidth(), float64(max(w-g.lead-g.fixed, 0))}
-	g.cx = g.x.contentOffset(float64(t.scrollX.Get()))
-	g.cy = g.y.contentOffset(float64(t.scrollY.Get()))
 	return g
 }
 

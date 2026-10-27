@@ -130,3 +130,41 @@ func TestDataTableSelectsCellsMovesColumnsAndCopies(t *testing.T) {
 		t.Errorf("menus %+v, want c4's", menus)
 	}
 }
+
+// TestDataTableReadsTheCellsInView ticks a table whose texts change: the
+// cells made around the view keep theirs, so a tick reads the cells in
+// view only, and a cell coming into view reads its row's.
+func TestDataTableReadsTheCellsInView(t *testing.T) {
+	var (
+		tick  *core.Signal[int]
+		reads int
+		rows  [2]int
+	)
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		tick = core.NewSignal(cx, 0)
+		return base.DataTable{
+			TestID:   "table",
+			Columns:  func() []base.DataTableColumn { return tableColumns(60) },
+			RowCount: func() int { return 1_000_000 },
+			Text: func(row, col int) string {
+				reads++
+				return fmt.Sprintf("R%dC%d·%d", row, col, tick.Get())
+			},
+			Style:               core.Style{Width: core.Pt(400), Height: core.Pt(332)},
+			OnVisibleRowsChange: func(s, e int) { rows = [2]int{s, e} },
+		}
+	}, nsgotest.Size(400, 400))
+	reads = 0
+	tick.Set(1)
+	app.Settle()
+	// 10 rows of 4 or 5 columns in view, one more each way.
+	if reads == 0 || reads > 12*7 {
+		t.Errorf("a tick read %d texts, want those in view", reads)
+	}
+	app.Find("text:R9C1·1")
+	app.Scroll("id:data-table-scroll", 300)
+	if rows[0] < 10 {
+		t.Fatalf("visible rows %v after scrolling", rows)
+	}
+	app.Find(fmt.Sprintf("text:R%dC1·1", rows[0]+1))
+}

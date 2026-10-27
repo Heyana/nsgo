@@ -404,7 +404,7 @@ const (
 )
 
 type source interface {
-	unsubscribe(c *computation)
+	readers() *subscribers
 	refresh() // brings a memo up to date
 }
 
@@ -415,7 +415,10 @@ type computation struct {
 	state   compState
 	queued  bool
 	sources []source
-	subs    *subscribers // a memo's readers
+	// slots are c's index in each source's readers, so unlinking takes
+	// constant time however many read the source.
+	slots []int
+	subs  *subscribers // a memo's readers
 }
 
 func newComputation(owner *Scope, kind compKind, fn func() bool) *computation {
@@ -426,10 +429,11 @@ func newComputation(owner *Scope, kind compKind, fn func() bool) *computation {
 }
 
 func (c *computation) unlink() {
-	for _, s := range c.sources {
-		s.unsubscribe(c)
+	for i, s := range c.sources {
+		s.readers().remove(c.slots[i])
 	}
-	c.sources = c.sources[:0]
+	clear(c.sources)
+	c.sources, c.slots = c.sources[:0], c.slots[:0]
 }
 
 func (c *computation) mark(s compState) {
@@ -551,20 +555,23 @@ func (c *computation) runTop() {
 	c.update()
 }
 
-type subscribers struct{ list []*computation }
+// subscribers are a source's readers; slots are the source's index in
+// each reader's sources.
+type subscribers struct {
+	list  []*computation
+	slots []int
+}
 
-func (s *subscribers) add(c *computation) { s.list = append(s.list, c) }
-
-func (s *subscribers) remove(c *computation) {
-	for i, r := range s.list {
-		if r == c {
-			last := len(s.list) - 1
-			s.list[i] = s.list[last]
-			s.list[last] = nil
-			s.list = s.list[:last]
-			return
-		}
+// remove takes out the reader at i, moving the last one into its place.
+func (s *subscribers) remove(i int) {
+	last := len(s.list) - 1
+	if i != last {
+		moved := s.list[last]
+		s.list[i], s.slots[i] = moved, s.slots[last]
+		moved.slots[s.slots[i]] = i
 	}
+	s.list[last] = nil
+	s.list, s.slots = s.list[:last], s.slots[:last]
 }
 
 func (rt *runtime) track(src source, subs *subscribers) {
@@ -578,7 +585,9 @@ func (rt *runtime) track(src source, subs *subscribers) {
 		}
 	}
 	c.sources = append(c.sources, src)
-	subs.add(c)
+	c.slots = append(c.slots, len(subs.list))
+	subs.list = append(subs.list, c)
+	subs.slots = append(subs.slots, len(c.sources)-1)
 }
 
 // Signal is a value computations subscribe to by reading it.
@@ -628,8 +637,8 @@ func (s *Signal[T]) Set(v T) {
 // Update sets the value fn returns for the current one.
 func (s *Signal[T]) Update(fn func(T) T) { s.Set(fn(s.value)) }
 
-func (s *Signal[T]) unsubscribe(c *computation) { s.subs.remove(c) }
-func (s *Signal[T]) refresh()                   {}
+func (s *Signal[T]) readers() *subscribers { return &s.subs }
+func (s *Signal[T]) refresh()              {}
 
 // Memo caches a computed value and notifies its readers only when the
 // value changes.
@@ -682,7 +691,7 @@ func (m *Memo[T]) GetUntracked() T {
 	return m.value
 }
 
-func (m *Memo[T]) unsubscribe(c *computation) { m.c.subs.remove(c) }
+func (m *Memo[T]) readers() *subscribers { return m.c.subs }
 func (m *Memo[T]) refresh() {
 	if m.c.state != clean {
 		m.c.update()

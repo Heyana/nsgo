@@ -75,23 +75,21 @@ func px[T float32 | float64 | int](v T) core.Length { return core.Pt(core.Points
 func merge(styles ...core.Style) core.Style {
 	var out core.Style
 	for _, s := range styles {
-		if !s.IsZero() {
-			out = out.Merge(s)
-		}
+		out = out.Merge(s)
 	}
 	return out
 }
 
 // contentWidth is the hit layer's box width, whole columns included.
 func (t *dataTable) contentWidth() float32 {
-	g := t.geo()
+	g := t.sizes.Get()
 	return g.lead + g.fixed + float32(g.x.extent())
 }
 
 // below is an absolute view under the header.
 func (t *dataTable) below() core.Style {
 	z := core.Pt(0)
-	return core.Style{Position: core.Absolute, Left: z, Right: z, Bottom: z, Top: px(t.geo().header)}
+	return core.Style{Position: core.Absolute, Left: z, Right: z, Bottom: z, Top: px(t.sizes.Get().header)}
 }
 
 func (t *dataTable) hitLayer() core.Node {
@@ -100,7 +98,7 @@ func (t *dataTable) hitLayer() core.Node {
 	pressed := func(e core.PressEvent) { t.press(t.hitAt(e.Position), e.Clicks, e.Modifiers) }
 	box := core.View{
 		StyleFunc: func() core.Style {
-			return core.Style{MinWidth: core.Pct(100), Width: px(t.contentWidth()), Height: px(t.geo().y.extent())}
+			return core.Style{MinWidth: core.Pct(100), Width: px(t.contentWidth()), Height: px(t.sizes.Get().y.extent())}
 		},
 		OnPress: pressed,
 		// Tab stops at the table here: its keys follow.
@@ -117,7 +115,7 @@ func (t *dataTable) hitLayer() core.Node {
 		OnScroll:  func(e core.ScrollEvent) { t.scrollY.Set(e.Offset.Y) },
 		Children: []core.Node{core.View{
 			Style:     core.Style{Direction: core.Row, AlignItems: core.AlignStretch},
-			StyleFunc: func() core.Style { return core.Style{Height: px(t.geo().y.extent())} },
+			StyleFunc: func() core.Style { return core.Style{Height: px(t.sizes.Get().y.extent())} },
 			Children: []core.Node{core.Scroll{
 				Horizontal: true, Ref: t.hscroll, HideIndicator: true, Behavior: behavior,
 				Style: core.Style{FlexGrow: 1},
@@ -154,7 +152,7 @@ func (t *dataTable) strip() core.Node {
 	p := t.p
 	return core.Show{
 		When: func() bool {
-			g := t.geo()
+			g := t.sizes.Get()
 			return t.cx.Env().Desktop() && !p.NoScrollbar && !p.NoHorizontalScrollbar && g.x.extent() > g.x.viewport
 		},
 		Then: func(cx *core.Scope) core.Node {
@@ -222,6 +220,9 @@ type tableWindows struct {
 	// scrolling columns reach from it.
 	rowOrigin, colOrigin *core.Memo[int]
 	span                 *core.Memo[float32]
+	// shownRows and shownCols are the rows and the scrolling columns' display
+	// indexes in view, one more each way: only their cells read the texts.
+	shownRows, shownCols *core.Memo[[2]int]
 }
 
 func (t *dataTable) windows(cx *core.Scope) tableWindows {
@@ -263,6 +264,14 @@ func (t *dataTable) windows(cx *core.Scope) tableWindows {
 	w.colOrigin = core.NewMemo(cx, func() int {
 		vs, _ := t.visibleCols()
 		return max(vs/columnChunk*columnChunk, t.st.columns.fixed)
+	})
+	w.shownRows = core.NewMemo(cx, func() [2]int {
+		vs, ve := t.visibleRows()
+		return [2]int{vs - 1, ve + 1}
+	})
+	w.shownCols = core.NewMemo(cx, func() [2]int {
+		vs, ve := t.visibleCols()
+		return [2]int{vs - 1, ve + 1}
 	})
 	w.span = core.NewMemo(cx, func() float32 {
 		t.layoutRev.Get()
@@ -310,7 +319,7 @@ func (t *dataTable) edge(inRow bool) core.Node {
 		Then: func(cx *core.Scope) core.Node {
 			z := core.Pt(0)
 			return core.View{StyleFunc: func() core.Style {
-				g := t.geo()
+				g := t.sizes.Get()
 				x := g.lead + g.fixed - 1
 				if inRow {
 					x = g.fixed - 1
@@ -323,7 +332,7 @@ func (t *dataTable) edge(inRow bool) core.Node {
 
 // regionBox is a region's clipped box, from its left edge.
 func (t *dataTable) regionBox(which tableRegion) core.Style {
-	g := t.geo()
+	g := t.sizes.Get()
 	z := core.Pt(0)
 	s := core.Style{Position: core.Absolute, Top: z, Bottom: z, Overflow: core.Hidden}
 	switch which {
@@ -430,6 +439,10 @@ func (t *dataTable) rowHit(row int, which tableRegion, x core.Points, w tableWin
 func (t *dataTable) bodyRow(cx *core.Scope, row *core.Memo[int], which tableRegion, w tableWindows) core.Node {
 	parts := t.rowParts(cx, row)
 	selected := core.NewMemo(cx, func() bool { return t.selection() == tableSel{kind: selRow, row: row.Get()} })
+	shown := core.NewMemo(cx, func() bool {
+		r, v := row.Get(), w.shownRows.Get()
+		return r >= v[0] && r < v[1]
+	})
 	var children []core.Node
 	switch which {
 	case regionLead:
@@ -440,7 +453,7 @@ func (t *dataTable) bodyRow(cx *core.Scope, row *core.Memo[int], which tableRegi
 		children = []core.Node{t.edge(true), core.Each(w.fixedCols.Get, func(def int) int { return def },
 			func(cx *core.Scope, def func() int, _ func() int) core.Node {
 				d := core.Untracked(cx, def)
-				return t.cell(cx, row, core.NewMemo(cx, func() int { return d }), which, w)
+				return t.cell(cx, row, core.NewMemo(cx, func() int { return d }), shown, which, w)
 			})}
 	default:
 		children = []core.Node{core.Each(w.colSlots.list, func(slot int) int { return slot },
@@ -454,7 +467,7 @@ func (t *dataTable) bodyRow(cx *core.Scope, row *core.Memo[int], which tableRegi
 					}
 					return t.st.columns.def(d)
 				})
-				return t.cell(cx, row, def, which, w)
+				return t.cell(cx, row, def, shown, which, w)
 			})}
 	}
 	return core.View{
@@ -467,9 +480,9 @@ func (t *dataTable) bodyRow(cx *core.Scope, row *core.Memo[int], which tableRegi
 			}
 			switch which {
 			case regionLead:
-				s.Width = px(t.geo().lead)
+				s.Width = px(t.sizes.Get().lead)
 			case regionFixed:
-				s.Width = px(t.geo().fixed)
+				s.Width = px(t.sizes.Get().fixed)
 			default:
 				s.Width = px(w.span.Get())
 			}
@@ -528,7 +541,11 @@ func justify(a DataTableAlign) core.Justify {
 	return core.JustifyStart
 }
 
-func (t *dataTable) cell(cx *core.Scope, row, def *core.Memo[int], which tableRegion, w tableWindows) core.Node {
+// cell is a cell of row and column def, reading its text while shown
+// (its row in view) and its column in view, so a tick costs the cells on
+// screen: a cell made around the view keeps the last text of its row and
+// column, or none once its slot shows another, until it comes into view.
+func (t *dataTable) cell(cx *core.Scope, row, def *core.Memo[int], shown *core.Memo[bool], which tableRegion, w tableWindows) core.Node {
 	s := &t.p.Styles
 	type flags struct{ selected, columnSelected, active bool }
 	marks := core.NewMemo(cx, func() flags {
@@ -542,13 +559,34 @@ func (t *dataTable) cell(cx *core.Scope, row, def *core.Memo[int], which tableRe
 			columnSelected: sel == tableSel{kind: selColumn, col: d},
 			active:         t.st.active && t.st.activeRow == r && t.st.activeCol == d}
 	})
-	text := func() string {
+	// The text and its sign are memos: a tick that changes some texts
+	// restyles only the cells whose sign changed.
+	var last string
+	lastAt := [2]int{-1, -1}
+	text := core.NewMemo(cx, func() string {
 		r, d := row.Get(), def.Get()
-		if r < 0 || d < 0 {
-			return ""
+		at := [2]int{r, d}
+		inView := r >= 0 && d >= 0 && shown.Get()
+		if inView && which == regionScroll {
+			t.layoutRev.Get()
+			v, c := w.shownCols.Get(), t.st.columns
+			inView = c.hasDef(d) && c.displayOf(d) >= v[0] && c.displayOf(d) < v[1]
 		}
-		return t.cellText(r, d)
-	}
+		switch {
+		case inView:
+			last, lastAt = t.cellText(r, d), at
+		case at != lastAt:
+			last, lastAt = "", at
+		}
+		return last
+	}).Get
+	sign := core.NewMemo(cx, func() int {
+		t.layoutRev.Get()
+		if col := t.column(def.Get()); col.PositiveStyle.IsZero() && col.NegativeStyle.IsZero() {
+			return 0
+		}
+		return cellSign(text())
+	})
 	var content core.Node = core.Text{ContentFunc: text, MaxLines: 1, Style: core.Style{FlexShrink: 1, MinWidth: px(0)}}
 	if t.p.RenderCell != nil {
 		content = core.View{Style: core.Style{FlexGrow: 1, MinWidth: px(0)}, Children: []core.Node{t.p.RenderCell(cx, func() DataTableCell {
@@ -597,13 +635,11 @@ func (t *dataTable) cell(cx *core.Scope, row, def *core.Memo[int], which tableRe
 				st = merge(st, s.CellActive)
 			}
 			st = merge(st, col.CellStyle)
-			if !col.PositiveStyle.IsZero() || !col.NegativeStyle.IsZero() {
-				switch cellSign(text()) {
-				case 1:
-					st = merge(st, col.PositiveStyle)
-				case -1:
-					st = merge(st, col.NegativeStyle)
-				}
+			switch sign.Get() {
+			case 1:
+				st = merge(st, col.PositiveStyle)
+			case -1:
+				st = merge(st, col.NegativeStyle)
 			}
 			return st
 		},
@@ -667,7 +703,7 @@ func (t *dataTable) header() core.Node {
 		z := core.Pt(0)
 		return core.View{
 			StyleFunc: func() core.Style {
-				return merge(core.Style{Position: core.Absolute, Top: z, Left: z, Right: z, Height: px(t.geo().header),
+				return merge(core.Style{Position: core.Absolute, Top: z, Left: z, Right: z, Height: px(t.sizes.Get().header),
 					Overflow: core.Hidden}, t.p.Styles.Header)
 			},
 			Children: []core.Node{
@@ -675,7 +711,7 @@ func (t *dataTable) header() core.Node {
 				t.headerRegion(regionFixed, w),
 				core.Show{When: t.rowHeaderShown, Then: func(cx *core.Scope) core.Node {
 					return core.View{StyleFunc: func() core.Style {
-						return merge(core.Style{Position: core.Absolute, Top: z, Bottom: z, Left: z, Width: px(t.geo().lead)},
+						return merge(core.Style{Position: core.Absolute, Top: z, Bottom: z, Left: z, Width: px(t.sizes.Get().lead)},
 							t.p.Styles.RowHeaderCorner)
 					}}
 				}},
@@ -685,7 +721,9 @@ func (t *dataTable) header() core.Node {
 	})
 }
 
-func (t *dataTable) headerRowHeightNow() float32 { return t.geo().header / float32(t.headerLevels()) }
+func (t *dataTable) headerRowHeightNow() float32 {
+	return t.sizes.Get().header / float32(t.headerLevels())
+}
 
 func (t *dataTable) headerRegion(which tableRegion, w tableWindows) core.Node {
 	shown := func() bool { return which != regionFixed || t.layoutRev.Get() > 0 && t.st.columns.fixed > 0 }
@@ -701,7 +739,7 @@ func (t *dataTable) headerRegion(which tableRegion, w tableWindows) core.Node {
 		z := core.Pt(0)
 		return core.View{
 			StyleFunc: func() core.Style {
-				g := t.geo()
+				g := t.sizes.Get()
 				s := core.Style{Position: core.Absolute, Top: z, Bottom: z, Overflow: core.Hidden, Left: px(g.lead)}
 				if which == regionScroll {
 					s.Left, s.Right = px(g.lead+g.fixed), z

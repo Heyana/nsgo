@@ -66,7 +66,7 @@ Items reach their menu through a context key (`menuContext`), so the app arrange
 
 - A vertical `Scroll` of a horizontal one of an empty box is the hit layer the platform scrolls; the body over it takes no pointer and places the rows and columns in view from the offsets the scroll events report, in whole points; the header above it is interactive. Desktops get a horizontal scroll bar band over the body's bottom, following the table's horizontal scroll view without echoing its moves back.
 - Rows and scrolling columns are slots made once (`slotItem`): a scroll gives slots other rows, so no view is made while scrolling. Rows are placed relative to a chunk of 1024, columns of 256, so places stay small at any offset.
-- `Text` is read where the cells in view show it, so a change of what it reads updates those cells only; the gallery's million ticking stocks cost the cells in view.
+- `Text` is read by the cells in view and one row and column around: the cells made further out keep their row's last text (none once their slot shows another row) until they come into view, so a change of what it reads costs the cells on screen, however large the screen and the reach. A cell restyles for `PositiveStyle` and `NegativeStyle` only when its sign changes, and what reads only sizes does not follow the scroll offsets.
 - Cells take presses and context menus from assistive technology and tests; a pointer reaches the hit layer. A title's drag moves its column unless it starts in the resize handle's band or a resize is under way.
 
 | NSH | NSGo | Why |

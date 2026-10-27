@@ -11,6 +11,7 @@ The graph follows NSH's (Solid 1.9's scheduling): signals, memos, render effects
 - Every computation and scope is an owner. Disposing an owner disposes what it created and runs its cleanups, last first, as `testing.T.Cleanup` does.
 - Go has no goroutine-local state, so code finds its graph through `cx *Scope`. While the graph runs code, what that code creates belongs to the innermost running owner, whichever `cx` it captured. Handlers run under the owner their element was built in.
 - The graph belongs to the engine goroutine and never locks. Other goroutines reach it with `Scope.Post`. `Scope.Context` is cancelled when the owner goes, so work started for a screen stops with it.
+- A reader and each source it read keep each other's index in their lists, so a computation that runs again unlinks in constant time however many read the same source: a table's thousand cells reading one signal.
 - Timers go through the `Clock` interface. Tests inject a `ManualClock`.
 - A panic in app code is recovered and sent to the nearest `Catch` above the owner it happened under. With no `Catch`, the host reports it and the app keeps running.
 
@@ -33,7 +34,7 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 `Show`, `Each`, `Dynamic` and `Catch` mount as regions. A region is a node with no native view, laid out as part of its parent's children, and owned by one render effect that rebuilds its span.
 
 - Branches and rows belong to the region's owner, not to its effect, so they outlive the effect's runs and go only when replaced.
-- `Each` matches rows by key. A kept row gets its item and index through signals, and only the rows that moved are reinserted.
+- `Each` matches rows by key. A kept row gets its item and index through signals, and only the rows that moved are reinserted. An item of plain values (numbers, strings, arrays and structs of them) notifies its row only when it changes, so a list read again on every scroll frame rebuilds nothing; an item holding pointers, slices or interfaces notifies every time, as what it points at may have changed.
 - Go methods cannot take type parameters, so `Each` is a generic function rather than a method or struct.
 - Region nodes are never laid out. Layout marks pass through them, so a change inside a branch or row still reaches the root.
 - A `Holder` is NSH's render keys as a value: content built once, owned by the scope given to `NewHolder` rather than the running owner, and shown in the newest place mounted with `Place`.
