@@ -796,11 +796,11 @@ func (d *decor) setKeyframes(layer objc.ID, a driver.KeyframeAnimation) {
 	if dur <= 0 {
 		return
 	}
-	frames = splitTurns(frames)
 	b := objc.Send[CGRect](layer, selBounds)
 	d.keyframedAt = b.Size
 	anchor := objc.Send[CGPoint](layer, sel("anchorPoint"))
 	cx, cy := (0.5-anchor.X)*b.Size.Width, (0.5-anchor.Y)*b.Size.Height
+	frames = splitTurns(frames, math.Hypot(cx, cy))
 	moves := objc.ID(objc.GetClass("NSMutableArray")).Send(sel("array"))
 	var fades, times []float64
 	timings := objc.ID(objc.GetClass("NSMutableArray")).Send(sel("array"))
@@ -837,16 +837,23 @@ func (d *decor) setKeyframes(layer objc.ID, a driver.KeyframeAnimation) {
 	}
 }
 
-// splitTurns adds steps to linear steps that turn more than a quarter
-// turn, since Core Animation tweens matrices, which a whole turn leaves
-// unchanged.
-func splitTurns(frames []driver.Keyframe) []driver.Keyframe {
+// splitTurns adds steps to linear steps that turn too far for Core
+// Animation, which tweens matrices: a whole turn leaves one unchanged, so
+// a step turns at most a quarter turn. It also tweens their translation
+// in a straight line, so a center radius points away from the anchor
+// (AppKit keeps it at the corner) cuts across the arc it turns along:
+// steps stay short enough to keep it within a tenth of a point.
+func splitTurns(frames []driver.Keyframe, radius float64) []driver.Keyframe {
+	step := 90.0
+	if radius > 0.1 {
+		step = min(step, 2*math.Acos(1-0.1/radius)*180/math.Pi)
+	}
 	var out []driver.Keyframe
 	for i, k := range frames {
 		if i > 0 {
 			prev := frames[i-1]
 			turn := k.Rotate - prev.Rotate
-			if n := int(math.Ceil(math.Abs(float64(turn)) / 90)); n > 1 && prev.Easing == (driver.Curve{}) {
+			if n := int(math.Ceil(math.Abs(float64(turn)) / step)); n > 1 && prev.Easing == (driver.Curve{}) {
 				for j := 1; j < n; j++ {
 					f := float32(j) / float32(n)
 					lerp := func(a, b float32) float32 { return a + (b-a)*f }
