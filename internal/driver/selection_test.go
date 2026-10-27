@@ -373,3 +373,23 @@ func TestSelectionFollowsTextsByKey(t *testing.T) {
 		t.Fatal("the selection stays")
 	}
 }
+
+func TestTextPressesOnlyOnLinks(t *testing.T) {
+	links := []TextSpan{{Start: 0, End: 4}, {Start: 4, End: 9, Link: true}}
+	for _, c := range []struct {
+		spans []TextSpan
+		at    int
+		want  bool
+	}{
+		{nil, -1, true},
+		{links[:1], 2, true},
+		{links, 5, true},
+		{links, 2, false},
+		{links, 9, false},
+		{links, -1, false},
+	} {
+		if got := PressesAt(c.spans, c.at); got != c.want {
+			t.Errorf("PressesAt(%v, %d) = %v, want %v", c.spans, c.at, got, c.want)
+		}
+	}
+}

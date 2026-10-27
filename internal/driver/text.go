@@ -41,6 +41,22 @@ type TextSpan struct {
 	Background TextBackground
 }
 
+// PressesAt reports whether a pressable text takes a press on byte
+// offset i (-1 off its glyphs): a text with links takes only those on a
+// link, as the core gives it no press of its own then.
+func PressesAt(spans []TextSpan, i int) bool {
+	linked := false
+	for _, sp := range spans {
+		if sp.Link {
+			if i >= sp.Start && i < sp.End {
+				return true
+			}
+			linked = true
+		}
+	}
+	return !linked
+}
+
 // TextBackground is the background of a span, from its style's
 // Background and CornerRadius. It is drawing only: it changes no line.
 type TextBackground struct {

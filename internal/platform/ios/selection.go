@@ -262,12 +262,14 @@ func outermost(v *view) *view {
 	return area
 }
 
-// selectReceives keeps a long press from touches a field, a pressable
-// view or a gesture inside the area takes.
+// selectReceives keeps a long press from touches a field, a page or a
+// gesture inside the area takes, or a view's own long press; a long press
+// on a button or a link selects, as NSH's does.
 func selectReceives(_ objc.ID, _ objc.SEL, r, touch objc.ID) bool {
 	stop := r.Send(selView)
 	for n := touch.Send(selView); n != 0 && n != stop; n = n.Send(selSuperview) {
-		if v := views[n]; v != nil && v.native == n && (v.kind == driver.KindInput || v.kind == driver.KindWeb || v.pressable() || v.pan != 0) {
+		if v := views[n]; v != nil && v.native == n && (v.kind == driver.KindInput || v.kind == driver.KindWeb || v.pan != 0 ||
+			v.events.Has(driver.EventLongPress)) {
 			return false
 		}
 	}

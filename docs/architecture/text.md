@@ -99,8 +99,8 @@ Selection follows NSH's: one selection runs across the texts of a selection area
 - `SelectionModel` in `selection.go` is the platform-independent model the Go backends drive on their main thread; `internal/platform/textselect` holds what Windows and Linux share of it. Android's `Selection.java` follows it on the UI thread.
 - A backend lists an area's texts as `SelectionTexts`, with content, frames, hit test and NodeIDs, then feeds it presses, drags and long presses and draws its `Ranges`.
 - Offsets are UTF-16. `Text` joins texts on one row with a tab and others with a line break, leaving attachments out.
-- macOS takes mouse presses in its event monitor before views see them; pressables, fields and gestures inside an area keep theirs. The surface becomes first responder for Copy, Select All and Escape.
+- macOS takes mouse presses in an area before its views see them and shows the I-beam over its texts; fields and gestures keep theirs. A press on a button or a link presses it unless it drags 10 points first, then selects, as NSH's does. The surface becomes first responder for Copy, Select All and Escape.
 - Windows and Linux select as macOS does, with drags, double clicks for words, triple clicks for a text and Shift to extend, and answer Ctrl+C, Ctrl+A and Escape; each draws the highlight under the glyphs.
-- iOS selects with a long press, then by words as the finger drags, and shows the edit menu; the view controller answers Copy and Select All. Handles drawn as UIKit's move the ends.
+- iOS selects with a long press anywhere in an area, buttons and links too, but on fields, gestures and views with a long press of their own, then by words as the finger drags, and shows the edit menu; the view controller answers Copy and Select All. Handles drawn as UIKit's move the ends.
 - Android selects a word with a long press, as its text views do, with the system's handles and a floating toolbar for Copy and Select all.
 - The web uses the browser's own selection through `user-select`, and a `copy` handler joins texts as the model does.

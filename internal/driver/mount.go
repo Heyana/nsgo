@@ -454,7 +454,8 @@ type TextContent struct {
 	// Content is where Layout goes in the view: inside padding and border.
 	Content Bounds
 	// Style and Spans are the text's resolved style and its spans', as
-	// it was prepared, for tests to read; platforms draw Layout.
+	// it was prepared, for tests to read; platforms draw Layout and read
+	// Spans' links for presses.
 	Style TextStyle
 	Spans []TextSpan
 }

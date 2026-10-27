@@ -136,8 +136,10 @@ type view struct {
 	windowDrag driver.WindowDrag
 	activation driver.PanActivation
 
-	// A text's content and selection, and whether a view is an area.
+	// A text's content, links and selection, and whether a view is an
+	// area.
 	plain            string
+	spans            []driver.TextSpan
 	selectable       driver.Selectable
 	selColor         driver.Color
 	selStart, selEnd int // UTF-16
@@ -1291,7 +1293,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 				const below = -1
 				parent.Send(selAddSubviewPositioned, v.native, below, s.views[it.Before].native)
 			}
-			if v.style.Cursor != driver.CursorAuto {
+			if v.kind == driver.KindText {
+				invalidateTextCursor(v)
+			} else if v.style.Cursor != driver.CursorAuto {
 				invalidateCursor(v)
 			}
 			if v.kind == driver.KindModal && !v.presented {
@@ -1302,6 +1306,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.appear(v, lb, it.Parent)
 		case driver.ItemFrame:
 			s.setFrame(v, it.Frame, lb)
+			if v.kind == driver.KindText {
+				invalidateTextCursor(v)
+			}
 		case driver.ItemOverflow:
 			v.overflow = it.Frame
 		case driver.ItemViewStyle:
@@ -1375,6 +1382,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			p := it.ViewProps
 			v.windowDrag, v.activation, v.area, v.selectable = p.WindowDrag, p.PanActivation, p.SelectionArea, p.Selectable
 			v.disabled = p.Disabled
+			if v.kind == driver.KindText {
+				invalidateTextCursor(v)
+			}
 			if v.selColor != p.SelectionColor {
 				v.selColor = p.SelectionColor
 				v.redraw()
@@ -1382,6 +1392,11 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemEvents:
 			v.setEvents(it.Events)
 			v.updateAccessibility()
+			if v.kind == driver.KindText {
+				invalidateTextCursor(v)
+			} else {
+				invalidateCursor(v)
+			}
 		case driver.ItemAccessibilityLabel:
 			v.setLabel(it.Value)
 		case driver.ItemAccessibilityFocus:
@@ -1390,6 +1405,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			v.layout.Release()
 			v.layout, _ = it.Text.Layout.(*apple.Layout)
 			v.box = it.Text.Content
+			v.spans = it.Text.Spans
 			v.textChanged(it.Text.Text)
 			v.redraw()
 		case driver.ItemInput:
@@ -1745,6 +1761,12 @@ func (v *view) pressable() bool {
 		v.events.Has(driver.EventPressDown) || v.events.Has(driver.EventPressUp)
 }
 
+// pressableAt reports whether the view takes a press at p, in its
+// coordinates: a text with links only on one.
+func (v *view) pressableAt(p apple.CGPoint) bool {
+	return v.pressable() && (v.kind != driver.KindText || driver.PressesAt(v.spans, v.indexAt(p)))
+}
+
 func mouseDown(self objc.ID, cmd objc.SEL, event objc.ID) {
 	v := views[self]
 	// Control-click is a secondary click.
@@ -1837,21 +1859,84 @@ func rightMouseDown(self objc.ID, cmd objc.SEL, event objc.ID) {
 	v.report(v.pointer(driver.EventContextMenu, event))
 }
 
-// resetCursorRects gives the view its style's cursor, or none to inherit
-// its parent's.
+// resetCursorRects gives the view its style's cursor, the I-beam over a
+// text a press selects, or none to inherit its parent's.
 func resetCursorRects(self objc.ID, cmd objc.SEL) {
 	apple.Super(self, cmd)
 	v := views[self]
-	if v == nil || v.style.Cursor == driver.CursorAuto {
+	if v == nil {
 		return
 	}
-	self.Send(sel("addCursorRect:cursor:"), objc.Send[apple.CGRect](self, selBounds), nsCursor(v.style.Cursor))
+	cursor := v.style.Cursor
+	if cursor == driver.CursorAuto && v.selects() {
+		cursor = driver.CursorText
+	}
+	if cursor != driver.CursorAuto {
+		self.Send(sel("addCursorRect:cursor:"), objc.Send[apple.CGRect](self, selBounds), nsCursor(cursor))
+	}
+	// AppKit takes the cursor from the view hitTest: returns, which for a
+	// text in a pressable view is the pressable: it shows their I-beams.
+	if v.native == self && v.kind != driver.KindText && v.pressable() {
+		v.textCursors(self)
+	}
+}
+
+// textCursors adds the I-beams of the selecting texts in n to pressable
+// v's cursor rects, down to the views hitTest: returns themselves.
+func (v *view) textCursors(n objc.ID) {
+	for _, c := range apple.Subviews(n) {
+		w := views[c]
+		if w == nil || w.native != c {
+			v.textCursors(c)
+			continue
+		}
+		switch {
+		case w.pressable() || w.kind == driver.KindScroll || w.events.Has(driver.EventPan):
+		case w.kind == driver.KindText:
+			if w.style.Cursor == driver.CursorAuto && w.selects() {
+				r := objc.Send[apple.CGRect](v.native, sel("convertRect:fromView:"), objc.Send[apple.CGRect](c, selBounds), c)
+				v.native.Send(sel("addCursorRect:cursor:"), r, nsCursor(driver.CursorText))
+			}
+		default:
+			v.textCursors(c)
+		}
+	}
+}
+
+// selects reports whether a press on text v selects, as areaAt finds:
+// it is in an area, or selectable on its own, with no gesture between.
+// Its ancestors are in place by the time AppKit asks for cursor rects.
+func (v *view) selects() bool {
+	if v.kind != driver.KindText || v.selectable == driver.SelectableOff {
+		return false
+	}
+	for n := v.up; n != nil; n = n.up {
+		if n.area {
+			return true
+		}
+		if n.events.Has(driver.EventPan) {
+			return false
+		}
+	}
+	return v.selectable == driver.SelectableOn
 }
 
 // invalidateCursor makes the window ask for the view's cursor rects again.
 func invalidateCursor(v *view) {
 	if w := v.native.Send(selWindow); w != 0 {
 		w.Send(sel("invalidateCursorRectsForView:"), v.native)
+	}
+}
+
+// invalidateTextCursor makes the window ask again for a text's cursor
+// rects and those of the pressable view showing its I-beam.
+func invalidateTextCursor(v *view) {
+	invalidateCursor(v)
+	for n := v.up; n != nil; n = n.up {
+		if n.pressable() {
+			invalidateCursor(n)
+			return
+		}
 	}
 }
 

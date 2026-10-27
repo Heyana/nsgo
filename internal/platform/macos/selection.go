@@ -3,6 +3,7 @@
 package macos
 
 import (
+	"math"
 	"time"
 
 	"github.com/ebitengine/purego/objc"
@@ -22,11 +23,17 @@ import (
 
 // selection is the surface's selection: an area's model over its texts.
 type selection struct {
-	area     *view
-	texts    []*view
-	frames   []driver.Bounds // the texts' content boxes in the area
-	model    driver.SelectionModel
-	dragging bool
+	area   *view
+	texts  []*view
+	frames []driver.Bounds // the texts' content boxes in the area
+	model  driver.SelectionModel
+	// down says the button pressed in the area is down, and dragging that
+	// its drag selects; a press on a press target in the area (a button,
+	// a link) goes to it as well, until the drag passes selectPressSlop
+	// from where it went down, from.
+	down, dragging bool
+	press          *view
+	from           apple.CGPoint
 	// at is where the drag is, in the window.
 	at apple.CGPoint
 }
@@ -37,6 +44,9 @@ const (
 	// the most.
 	selectionScroll    = 0.4
 	selectionScrollMax = 40
+	// selectPressSlop is how far a press on a press target in an area
+	// drags before it selects instead, as NSH's does.
+	selectPressSlop = 10
 )
 
 // Len implements core.SelectionTexts.
@@ -139,29 +149,34 @@ func (v *view) setSelected(start, end int) {
 	}
 }
 
-// areaAt returns the selection area a mouse press at event goes to: the
-// outermost area around the view hit, or the selectable text hit, unless
-// a field, a pressable view or a gesture inside it keeps the press.
-func (s *surface) areaAt(event objc.ID) *view {
+// areaAt returns the selection area a mouse press at event goes to, the
+// outermost area around the view hit or the selectable text hit, and the
+// press target it hit in the area, if any: a pressable view, or a text's
+// link. A field or a gesture inside the area keeps the press.
+func (s *surface) areaAt(event objc.ID) (area, press *view) {
 	up := s.native.Send(selSuperview)
 	if up == 0 {
-		return nil
+		return nil, nil
 	}
-	p := objc.Send[apple.CGPoint](up, selConvertPoint, objc.Send[apple.CGPoint](event, selLocationInWindow), objc.ID(0))
+	at := objc.Send[apple.CGPoint](event, selLocationInWindow)
+	p := objc.Send[apple.CGPoint](up, selConvertPoint, at, objc.ID(0))
 	rawHit = true
 	hit := s.native.Send(sel("hitTest:"), p)
 	rawHit = false
-	var area *view
 	taken := false
 	for n := hit; n != 0 && n != s.native; n = n.Send(selSuperview) {
 		v := views[n]
 		if v == nil || v.native != n && !v.isEditor(n) {
 			continue
 		}
+		if area == nil && press == nil && !taken && v.native == n &&
+			v.pressableAt(objc.Send[apple.CGPoint](n, selConvertPoint, at, objc.ID(0))) {
+			press = v
+		}
 		switch {
 		case v.isEditor(n) || v.kind == driver.KindInput || v.kind == driver.KindWeb:
 			taken = true
-		case area == nil && (v.pressable() || v.events.Has(driver.EventPan)):
+		case area == nil && v.events.Has(driver.EventPan):
 			taken = true
 		case v.area && (area != nil || !taken):
 			area = v
@@ -169,14 +184,14 @@ func (s *surface) areaAt(event objc.ID) *view {
 			area = v
 		}
 	}
-	return area
+	return area, press
 }
 
 // selectPress starts or extends a selection on a mouse press, or clears
 // the selection a press elsewhere leaves. It reports whether it took the
-// press.
+// press: one on a press target goes on to it.
 func (s *surface) selectPress(event objc.ID) bool {
-	area := s.areaAt(event)
+	area, press := s.areaAt(event)
 	if area == nil {
 		s.clearSelection()
 		return false
@@ -191,10 +206,11 @@ func (s *surface) selectPress(event objc.ID) bool {
 	const shift = 1 << 17
 	extend := objc.Send[uint](event, sel("modifierFlags"))&shift != 0
 	sl.model.Press(sl, sl.point(event), objc.Send[int](event, sel("clickCount")), extend)
-	sl.dragging = true
+	sl.down, sl.dragging, sl.press = true, press == nil, press
+	sl.from = objc.Send[apple.CGPoint](event, selLocationInWindow)
 	sl.show(old)
 	s.window.Send(selMakeFirstResponer, s.native)
-	return true
+	return press == nil
 }
 
 // selectDrag follows a drag of the press that started a selection; the
@@ -202,10 +218,21 @@ func (s *surface) selectPress(event objc.ID) bool {
 // past its edge (autoscrollSelection).
 func (s *surface) selectDrag(event objc.ID) bool {
 	sl := s.selecting
-	if sl == nil || !sl.dragging {
+	if sl == nil || !sl.down {
 		return false
 	}
 	sl.at = objc.Send[apple.CGPoint](event, selLocationInWindow)
+	if !sl.dragging {
+		if math.Hypot(sl.at.X-sl.from.X, sl.at.Y-sl.from.Y) <= selectPressSlop {
+			return false
+		}
+		// The drag selects: the press target's press is no press.
+		sl.dragging = true
+		if p := sl.press; p != nil && p.pressing.Swap(false) {
+			p.longFired.Store(true)
+			p.pressed(driver.EventPressUp)
+		}
+	}
 	sl.drag()
 	if sl.scroller() != nil {
 		s.startTicking()
@@ -251,13 +278,16 @@ func (s *surface) autoscrollSelection(dt time.Duration) bool {
 	return true
 }
 
-// selectUp ends a selection's drag.
+// selectUp ends a selection's drag; the release of a press that never
+// dragged goes on to its press target.
 func (s *surface) selectUp() bool {
-	if s.selecting == nil || !s.selecting.dragging {
+	sl := s.selecting
+	if sl == nil || !sl.down {
 		return false
 	}
-	s.selecting.dragging = false
-	return true
+	took := sl.dragging
+	sl.down, sl.dragging, sl.press = false, false, nil
+	return took
 }
 
 // selectKey answers the keys of a selection while the surface holds it:
