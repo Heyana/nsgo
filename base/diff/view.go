@@ -34,6 +34,13 @@ const (
 	IndicatorNone
 )
 
+// Highlighter is the app's highlighting of a language, in place of the
+// built-in one, as the Editor takes it.
+type Highlighter = syntax.Highlighter
+
+// Token is a run of a line a Highlighter colors.
+type Token = syntax.Token
+
 // Side is a side of a diff.
 type Side uint8
 
@@ -81,6 +88,10 @@ type Styles struct {
 	// header; HunkActions the box of the app's actions on a change;
 	// FileHeader a patch's file's header.
 	Separator, HunkActions, FileHeader core.Style
+	// LineSelected is over the selected lines' rows of their side, gutter
+	// and text; Annotation the box of an annotation; AddAnnotation the box
+	// of the add control, the gutter's width and a line tall.
+	LineSelected, Annotation, AddAnnotation core.Style
 }
 
 // DiffView shows the changes between OldValue and NewValue, or the files
@@ -94,6 +105,9 @@ type DiffView struct {
 	// Language colors the text; a patch's files by their paths without
 	// it.
 	Language string
+	// Highlighter gives the app's highlighter for a language's name or a
+	// file's path, nil for the built-in one.
+	Highlighter func(language string) Highlighter
 	// Unified shows one column, the deleted lines over the added ones,
 	// rather than two sides.
 	Unified    bool
@@ -103,8 +117,9 @@ type DiffView struct {
 	// 0, none when negative. ExpandAll shows every one.
 	ContextLines int
 	ExpandAll    bool
-	// NoLineNumbers hides the numbers.
-	NoLineNumbers bool
+	// NoLineNumbers hides the numbers; SoftWrap wraps long lines at the
+	// side's width.
+	NoLineNumbers, SoftWrap bool
 	// FontFamily (the monospaced font when empty), FontSize (13) and
 	// LineHeight (20).
 	FontFamily           string
@@ -112,15 +127,27 @@ type DiffView struct {
 	// RenderHunkActions draws the app's actions on a change (revert,
 	// keep), at its first row's right.
 	RenderHunkActions func(cx *core.Scope, h Hunk) core.Node
-	Styles            Styles
-	Style             core.Style
-	StyleFunc         func() core.Style
-	Ref               *Ref
-	TestID            string
+	// Annotations are the app's content under lines, each drawn by
+	// RenderAnnotation across its line's side (the view unified).
+	Annotations      func() []Annotation
+	RenderAnnotation func(cx *core.Scope, a Annotation) core.Node
+	// RenderAddAnnotation draws the app's control to add an annotation,
+	// beside the line the pointer is over and the last selected one: lines
+	// are the selected ones when its line is one of them, else its line.
+	RenderAddAnnotation func(cx *core.Scope, lines LineRange) core.Node
+	Styles              Styles
+	Style               core.Style
+	StyleFunc           func() core.Style
+	Ref                 *Ref
+	TestID              string
 
 	// OnChange receives the texts after a change was reverted or kept.
 	OnChange          func(old, new string)
 	OnLineNumberPress func(side Side, line int)
+	// OnLineSelectionChange receives the lines selected on the numbers, nil
+	// for none: a press selects a line, a Shift-press extends to it, and a
+	// mouse drag over the numbers selects those it goes over.
+	OnLineSelectionChange func(lines *LineRange)
 	// OnStatsChange receives the counts once and whenever a diff counts
 	// otherwise.
 	OnStatsChange func(Stats)
@@ -166,6 +193,7 @@ type segment struct {
 	starts           [][2]int // a patch's hunks' first lines, file-local
 	headers          []string
 	lexer            chroma.Lexer
+	app              Highlighter
 	patch            bool
 }
 
@@ -191,13 +219,34 @@ type dv struct {
 	reported     bool
 	current      int
 	job          int
+	// tops is every row's top, and the rows' height last; geo counts
+	// moves of the rows; wrapCols is the columns lines wrap at.
+	tops     []float32
+	geo      *core.Signal[int]
+	wrapCols int
+	// oldRow and newRow are the row showing each line, -1 for none.
+	oldRow, newRow []int
+	// The split sides' horizontal scroll views and where they are.
+	hs      []*core.Ref
+	scrollX float32
+	// The lines selected on the numbers and the press they extend from.
+	sel     *LineRange
+	anchor  int
+	selRev  *core.Signal[int]
+	hovered *core.Signal[LineRange]
+	// hoverStop ends the hover a moment after the pointer left.
+	hoverStop   func() bool
+	annotations []Annotation
+	annH        map[string]float32
 }
 
 // Render implements core.Node.
 func (p DiffView) Render(cx *core.Scope) core.Node {
 	v := &dv{p: p, cx: cx, rev: core.NewSignal(cx, 0), hlRev: core.NewSignal(cx, 0),
 		scrollY: core.NewSignal(cx, core.Points(0)), viewport: core.NewSignal(cx, core.Size{}), vs: &core.Ref{},
-		win: window.New(8, 16), expand: map[int][2]int{}, collapsed: map[string]bool{}, current: -1, m: &model{}}
+		win: window.New(8, 16), expand: map[int][2]int{}, collapsed: map[string]bool{}, current: -1, m: &model{},
+		geo: core.NewSignal(cx, 0), selRev: core.NewSignal(cx, 0), hovered: core.NewSignal(cx, LineRange{Start: -1, End: -1}),
+		annH: map[string]float32{}}
 	v.font = core.Font{Family: p.FontFamily, Size: p.FontSize}
 	if v.font.Family == "" {
 		v.font.Family = core.FontMonospace
@@ -212,6 +261,18 @@ func (p DiffView) Render(cx *core.Scope) core.Node {
 	v.charW = max(cx.MeasureText("0000000000", v.font).Width/10, 1)
 	if p.Ref != nil {
 		p.Ref.v = v
+	}
+	v.followWidth()
+	if p.Annotations != nil {
+		cx.Effect(func() {
+			list := p.Annotations()
+			cx.Untrack(func() {
+				v.annotations = list
+				if v.rows != nil {
+					v.relayout()
+				}
+			})
+		})
 	}
 	cx.Effect(func() {
 		var oldText, newText, patch string
@@ -235,7 +296,7 @@ func (p DiffView) Render(cx *core.Scope) core.Node {
 			Style:    core.Style{Position: core.Absolute, Left: core.Pt(0), Top: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0)},
 			OnScroll: func(e core.ScrollEvent) { v.scrollY.Set(e.Offset.Y) },
 			OnLayout: func(b core.Bounds) { v.viewport.Set(b.Size) },
-			Children: []core.Node{core.Scroll{Horizontal: true, Children: []core.Node{v.box()}}},
+			Children: []core.Node{v.box()},
 		}},
 	}
 }
@@ -252,6 +313,8 @@ func merge(styles ...core.Style) core.Style {
 
 // load diffs the texts, or the patch's files, joined into two texts.
 func (v *dv) load(oldText, newText, patch string) {
+	// Other texts clear the selected lines.
+	v.setSelection(nil, true)
 	v.segs = nil
 	v.expand = map[int][2]int{}
 	v.current = -1
@@ -289,7 +352,7 @@ func (v *dv) load(oldText, newText, patch string) {
 	}
 	if patch == "" {
 		old, new := splitLines(oldText), splitLines(newText)
-		add(segment{lexer: syntax.Lexer(v.p.Language)}, old, new, myers(old, new, maxSteps))
+		add(segment{lexer: syntax.Lexer(v.p.Language), app: v.appHighlighter(v.p.Language)}, old, new, myers(old, new, maxSteps))
 	} else {
 		files, err := parsePatch(patch)
 		if err != nil && v.p.OnError != nil {
@@ -328,7 +391,7 @@ func (v *dv) load(oldText, newText, patch string) {
 			}
 			_ = i
 			add(segment{file: file, oldNums: on, newNums: nn, starts: starts, headers: headers, patch: true,
-				lexer: syntax.Lexer(lang)}, splitLines(oldT), splitLines(newT), ops)
+				lexer: syntax.Lexer(lang), app: v.appHighlighter(lang)}, splitLines(oldT), splitLines(newT), ops)
 		}
 		for path := range v.collapsed {
 			if !slices.ContainsFunc(v.segs, func(s segment) bool { return s.file.Path == path }) {
@@ -353,6 +416,14 @@ func (v *dv) load(oldText, newText, patch string) {
 		v.p.OnStatsChange(st)
 	}
 	v.stats, v.reported = st, true
+}
+
+// appHighlighter is the app's highlighter for lang, nil for none.
+func (v *dv) appHighlighter(lang string) Highlighter {
+	if v.p.Highlighter == nil {
+		return nil
+	}
+	return v.p.Highlighter(lang)
 }
 
 // columns is a line's width in columns, tabs as 4.
@@ -398,7 +469,23 @@ func (v *dv) build() {
 		rows = v.textRows(rows, s, &gap)
 	}
 	v.rows = rows
-	v.rev.Update(func(n int) int { return n + 1 })
+	v.oldRow, v.newRow = lineRows(v.oldRow, len(v.m.old)), lineRows(v.newRow, len(v.m.new))
+	for i, r := range rows {
+		if r.kind == rowSeparator || r.kind == rowFile {
+			continue
+		}
+		if r.old >= 0 {
+			v.oldRow[r.old] = i
+		}
+		if r.new >= 0 {
+			v.newRow[r.new] = i
+		}
+	}
+	v.layoutRows()
+	v.cx.Batch(func() {
+		v.rev.Update(func(n int) int { return n + 1 })
+		v.geo.Update(func(n int) int { return n + 1 })
+	})
 }
 
 // hunkRows are a change's rows: side by side in pairs, or the deleted
@@ -506,7 +593,7 @@ func (v *dv) highlight() {
 	v.job++
 	job := v.job
 	for _, s := range v.segs {
-		if s.lexer == nil {
+		if s.lexer == nil && s.app == nil {
 			continue
 		}
 		strip := func(lines []string) []string {
@@ -518,9 +605,14 @@ func (v *dv) highlight() {
 		}
 		old := strip(v.m.old[s.oldAt : s.oldAt+s.oldLen])
 		new := strip(v.m.new[s.newAt : s.newAt+s.newLen])
-		lexer, at := s.lexer, [2]int{s.oldAt, s.newAt}
+		lexer, app, at := s.lexer, s.app, [2]int{s.oldAt, s.newAt}
 		go func() {
-			o, n := syntax.LexLines(lexer, old), syntax.LexLines(lexer, new)
+			var o, n [][]syntax.Tok
+			if app != nil {
+				o, n = syntax.HighlightLines(app, old, 0, len(old)), syntax.HighlightLines(app, new, 0, len(new))
+			} else {
+				o, n = syntax.LexLines(lexer, old), syntax.LexLines(lexer, new)
+			}
 			v.cx.Post(func() {
 				if v.job != job {
 					return
@@ -547,11 +639,15 @@ func (v *dv) inlineOf(o, n int) [2][][2]int {
 // windowRows is the rows made (tracked).
 func (v *dv) windowRows() (int, int) {
 	v.rev.Get()
+	v.geo.Get()
 	vp := v.viewport.Get()
 	y := float32(v.scrollY.Get())
 	n := len(v.rows)
-	first := min(max(int(y/v.lh), 0), n)
-	last := min(int((y+max(float32(vp.Height), 40*v.lh))/v.lh)+1, n)
+	if n == 0 {
+		return 0, 0
+	}
+	first := v.rowAt(y)
+	last := min(v.rowAt(y+max(float32(vp.Height), 40*v.lh))+1, n)
 	return v.win.Span(first, max(last, first), n)
 }
 
@@ -585,62 +681,360 @@ func (v *dv) gutterWidth() float32 {
 	return w
 }
 
-// sideWidth is a side's width.
+// viewWidth is the view's width; halfWidth a split side's.
+func (v *dv) viewWidth() float32 { return float32(v.viewport.Get().Width) }
+
+func (v *dv) halfWidth() float32 { return float32(math.Floor(float64(v.viewWidth() / 2))) }
+
+// sideWidth is a side's width: half the view split, all of it unified.
 func (v *dv) sideWidth() float32 {
-	v.rev.Get()
-	vp := v.viewport.Get()
-	text := float32(v.widest)*v.charW + 16
-	room := float32(vp.Width)
-	if !v.p.Unified {
-		room = float32(math.Floor(float64(room / 2)))
+	if v.p.Unified {
+		return v.viewWidth()
 	}
-	return max(v.gutterWidth()+text, room)
+	return v.halfWidth()
 }
 
-// boxWidth is the rows' width: a side, or two.
-func (v *dv) boxWidth() float32 {
-	w := v.sideWidth()
-	if !v.p.Unified {
-		w *= 2
+// textWidth is a side's text's width, past the gutter: the widest line's
+// without soft wrap, at least the room the side leaves.
+func (v *dv) textWidth() float32 {
+	v.rev.Get()
+	room := v.sideWidth() - v.gutterWidth()
+	if v.p.SoftWrap {
+		return room
 	}
-	return w
+	return max(float32(v.widest)*v.charW+16, room)
+}
+
+// followWidth wraps the lines at the text's width with SoftWrap.
+func (v *dv) followWidth() {
+	if !v.p.SoftWrap {
+		return
+	}
+	v.cx.Effect(func() {
+		w := v.sideWidth() - v.gutterWidth() - 16
+		v.cx.Untrack(func() {
+			cols := max(int(w/v.charW), 8)
+			if cols != v.wrapCols {
+				v.wrapCols = cols
+				v.relayout()
+			}
+		})
+	})
+}
+
+// relayout places the rows again: wrapping or an annotation's height
+// moved them.
+func (v *dv) relayout() {
+	v.layoutRows()
+	v.geo.Update(func(n int) int { return n + 1 })
 }
 
 func (v *dv) box() core.Node {
+	var sides []core.Node
+	if v.p.Unified {
+		sides = []core.Node{v.side(-1)}
+	} else {
+		sides = []core.Node{v.side(int(Old)), v.side(int(New))}
+	}
 	return core.View{
 		StyleFunc: func() core.Style {
 			v.rev.Get()
-			return core.Style{Width: core.Pt(core.Points(v.boxWidth())), Height: core.Pt(core.Points(float32(len(v.rows)) * v.lh))}
+			v.geo.Get()
+			return core.Style{Width: core.Pt(core.Points(v.viewWidth())), Height: core.Pt(core.Points(v.height())), Direction: core.Row}
 		},
-		Children: []core.Node{
-			core.Each(func() []int {
-				s, e := v.windowRows()
-				out := make([]int, e-s)
-				for i := range out {
-					out[i] = s + i
-				}
-				return out
-			}, func(i int) int { return i }, func(cx *core.Scope, i func() int, _ func() int) core.Node {
-				return core.Dynamic(func(cx *core.Scope) core.Node {
-					v.rev.Get()
-					if i() >= len(v.rows) {
-						return core.Group{}
-					}
-					return v.rowView(i(), v.rows[i()])
-				})
-			}),
-			v.actions(),
-		},
+		Children: append(sides, v.bands(), v.actions(), v.annotationsView(), v.addControls()),
 	}
 }
 
-// rowView is row r at index i.
-func (v *dv) rowView(i int, r row) core.Node {
+// rowsOf is the rows in the window, made by piece in a column of a side.
+func (v *dv) rowsOf(piece func(i int, r row) core.Node) core.Node {
+	return core.Each(func() []int {
+		s, e := v.windowRows()
+		out := make([]int, e-s)
+		for i := range out {
+			out[i] = s + i
+		}
+		return out
+	}, func(i int) int { return i }, func(cx *core.Scope, i func() int, _ func() int) core.Node {
+		return core.Dynamic(func(cx *core.Scope) core.Node {
+			v.rev.Get()
+			v.geo.Get()
+			if i() >= len(v.rows) || v.rows[i()].kind == rowSeparator || v.rows[i()].kind == rowFile {
+				return core.Group{}
+			}
+			return piece(i(), v.rows[i()])
+		})
+	})
+}
+
+// place is row i's box in a column: its top and its lines' height.
+func (v *dv) place(i int, r row) core.Style {
+	return core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0), Top: core.Pt(core.Points(v.tops[i])),
+		Height: core.Pt(core.Points(float32(v.lineCount(r)) * v.lh))}
+}
+
+// side is a side's column: its gutter beside its text, the text scrolling
+// sideways on its own (side -1: unified's one column).
+func (v *dv) side(side int) core.Node {
+	desktop := core.Untracked(v.cx, v.cx.Env().Desktop)
+	gutter := core.View{
+		StyleFunc: func() core.Style {
+			v.rev.Get()
+			return merge(core.Style{Width: core.Pt(core.Points(v.gutterWidth())), FlexShrink: 0}, v.p.Styles.Gutter)
+		},
+		Children: []core.Node{v.rowsOf(func(i int, r row) core.Node { return v.gutterPiece(i, r, side) })},
+	}
+	if desktop {
+		// A drag over the numbers selects the lines it goes over.
+		gutter.Responder = &core.Responder{Claims: []core.TouchClaim{{OnMove: true}},
+			OnMove: func(ev core.ResponderEvent) { v.dragLines(float32(ev.Position.Y)) }}
+	}
+	rows := core.View{
+		StyleFunc: func() core.Style {
+			v.geo.Get()
+			return core.Style{Width: core.Pt(core.Points(v.textWidth())), Height: core.Pt(core.Points(v.height()))}
+		},
+		Children: []core.Node{v.rowsOf(func(i int, r row) core.Node { return v.textPiece(i, r, side) })},
+	}
+	var text core.Node
+	if v.p.SoftWrap {
+		text = core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1}, Children: []core.Node{rows}}
+	} else {
+		ref := &core.Ref{}
+		v.hs = append(v.hs, ref)
+		text = core.Scroll{Horizontal: true, Ref: ref, Style: core.Style{FlexGrow: 1, FlexShrink: 1},
+			OnScroll: func(e core.ScrollEvent) { v.scrolledX(ref, float32(e.Offset.X)) }, Children: []core.Node{rows}}
+	}
+	return core.View{
+		StyleFunc: func() core.Style {
+			v.geo.Get()
+			return merge(core.Style{Width: core.Pt(core.Points(v.sideWidth())), Height: core.Pt(core.Points(v.height())),
+				Direction: core.Row}, v.p.Styles.Side)
+		},
+		Children: []core.Node{gutter, text},
+	}
+}
+
+// scrolledX keeps the split sides scrolled sideways together: a side's
+// scroll scrolls the other, a move under half a point ending the echo.
+func (v *dv) scrolledX(from *core.Ref, x float32) {
+	if math.Abs(float64(x-v.scrollX)) < 0.5 {
+		return
+	}
+	v.scrollX = x
+	for _, r := range v.hs {
+		if r != from {
+			r.ScrollTo(core.Point{X: core.Points(x)}, false)
+		}
+	}
+}
+
+// pieceSide is the side row r's piece in column side shows: the column's,
+// or unified the row's.
+func (r row) pieceSide(side int) (Side, int) {
+	switch {
+	case side == int(Old), side < 0 && r.kind == rowDeleted:
+		return Old, r.old
+	}
+	return New, r.new
+}
+
+// rowSelected reports whether row r is selected in column side (tracked).
+func (v *dv) rowSelected(r row, side int) bool {
+	if side >= 0 {
+		return v.selected(Side(side), r.lineOf(Side(side)))
+	}
+	return v.selected(Old, r.old) || v.selected(New, r.new)
+}
+
+// tints are the row's changed state in column side.
+func (v *dv) tints(r row, side int) (added, deleted bool) {
+	isOld := side == int(Old) || side < 0 && r.kind == rowDeleted
+	added = r.kind == rowAdded || r.kind == rowModified && !isOld
+	deleted = r.kind == rowDeleted || r.kind == rowModified && isOld
+	if side < 0 && r.kind == rowModified {
+		added, deleted = false, false
+	}
+	return added, deleted
+}
+
+// hoverable sets the handlers that show the add control over row r.
+func (v *dv) hoverable(view *core.View, r row, side int) {
+	if v.p.RenderAddAnnotation == nil {
+		return
+	}
+	sd, line := r.pieceSide(side)
+	view.OnHoverIn = func() { v.hover(sd, line) }
+	view.OnHoverOut = func() { v.hover(sd, -1) }
+}
+
+// gutterPiece is row r's numbers and indicator in column side.
+func (v *dv) gutterPiece(i int, r row, side int) core.Node {
 	s := &v.p.Styles
-	place := core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0), Top: core.Pt(core.Points(float32(i) * v.lh)),
-		Height: core.Pt(core.Points(v.lh)), Direction: core.Row, AlignItems: core.AlignCenter}
-	switch r.kind {
-	case rowFile:
+	added, deleted := v.tints(r, side)
+	numStyle := merge(core.Style{Width: core.Pt(core.Points(v.numberWidth())), TextAlign: core.TextAlignEnd,
+		Padding: core.Edges{Right: 8}, LineHeight: core.Points(v.lh)}, s.LineNumber)
+	if added {
+		numStyle = merge(numStyle, s.LineNumberAdded)
+	} else if deleted {
+		numStyle = merge(numStyle, s.LineNumberDeleted)
+	}
+	number := func(sd Side, at int) core.Node {
+		if v.p.NoLineNumbers {
+			return core.Group{}
+		}
+		text := ""
+		if at >= 0 {
+			text = fmt.Sprint(v.number(sd, at))
+		}
+		return core.Text{Content: text, MaxLines: 1, Style: numStyle}
+	}
+	var children []core.Node
+	switch {
+	case side < 0:
+		children = append(children, number(Old, r.old), number(New, r.new))
+	case side == int(Old):
+		children = append(children, number(Old, r.old))
+	default:
+		children = append(children, number(New, r.new))
+	}
+	switch v.p.Indicators {
+	case IndicatorBars:
+		var st core.Style
+		if added {
+			st = s.IndicatorAdded
+		} else if deleted {
+			st = s.IndicatorDeleted
+		}
+		children = append(children, core.View{Style: core.Style{Width: core.Pt(core.Points(v.charW + 4))},
+			Children: []core.Node{core.View{Style: merge(core.Style{Width: core.Pt(3), FlexGrow: 1}, st)}}})
+	case IndicatorClassic:
+		mark, st := " ", core.Style{}
+		if added {
+			mark, st = "+", s.IndicatorAdded
+		} else if deleted {
+			mark, st = "−", s.IndicatorDeleted
+		}
+		children = append(children, core.Text{Content: mark, Style: merge(core.Style{Width: core.Pt(core.Points(v.charW + 4)),
+			LineHeight: core.Points(v.lh)}, st)})
+	}
+	desktop := core.Untracked(v.cx, v.cx.Env().Desktop)
+	press := func(ev core.PressEvent) {
+		sd := v.gutterSide(r, side, float32(ev.Position.X))
+		v.selectLine(sd, r.lineOf(sd), ev.Modifiers.Shift)
+	}
+	view := core.View{
+		StyleFunc: func() core.Style {
+			st := merge(v.place(i, r), core.Style{Direction: core.Row})
+			if v.rowSelected(r, side) {
+				st = merge(st, s.LineSelected)
+			}
+			return st
+		},
+		NoFocus:  true,
+		Children: children,
+		OnPress: func(ev core.PressEvent) {
+			sd := v.gutterSide(r, side, float32(ev.Position.X))
+			if !desktop {
+				press(ev)
+			}
+			if line := r.lineOf(sd); line >= 0 && v.p.OnLineNumberPress != nil {
+				v.p.OnLineNumberPress(sd, v.number(sd, line))
+			}
+		},
+	}
+	if desktop {
+		view.OnPressDown = press
+	}
+	v.hoverable(&view, r, side)
+	return view
+}
+
+// textPiece is row r's text in column side: a Text per wrapped line.
+func (v *dv) textPiece(i int, r row, side int) core.Node {
+	s := &v.p.Styles
+	sd, line := r.pieceSide(side)
+	added, deleted := v.tints(r, side)
+	lineStyle := s.Line
+	switch {
+	case line < 0:
+		lineStyle = merge(lineStyle, s.Filler)
+	case added:
+		lineStyle = merge(lineStyle, s.LineAdded)
+	case deleted:
+		lineStyle = merge(lineStyle, s.LineDeleted)
+	}
+	var texts []core.Node
+	if line >= 0 {
+		isOld := sd == Old
+		starts := []int{0}
+		if v.p.SoftWrap {
+			starts = v.wrapped(isOld, line)
+		}
+		full := len(strings.TrimSuffix(v.lineText(isOld, line), "\n"))
+		for k, a := range starts {
+			b := full
+			if k+1 < len(starts) {
+				b = starts[k+1]
+			}
+			texts = append(texts, core.Text{MaxLines: 1, Style: core.Style{WhiteSpace: core.WhiteSpaceNoWrap, LineHeight: core.Points(v.lh),
+				Height: core.Pt(core.Points(v.lh))},
+				SpansFunc: func() []core.Span { return v.spans(r, isOld, line, a, b) }})
+		}
+	}
+	view := core.View{
+		StyleFunc: func() core.Style {
+			st := merge(v.place(i, r), core.Style{Padding: core.Edges{Left: 8, Right: 8}}, lineStyle, s.Content)
+			if v.rowSelected(r, side) {
+				st = merge(st, s.LineSelected)
+			}
+			return st
+		},
+		Children: texts,
+	}
+	v.hoverable(&view, r, side)
+	return view
+}
+
+// lineText is a line of a side.
+func (v *dv) lineText(isOld bool, line int) string {
+	if isOld {
+		return v.m.old[line]
+	}
+	return v.m.new[line]
+}
+
+// bands are the rows across the view in the window: separators of
+// collapsed lines or a patch's hunk headers, and files' headers.
+func (v *dv) bands() core.Node {
+	return core.Each(func() []int {
+		s, e := v.windowRows()
+		var out []int
+		for i := s; i < e && i < len(v.rows); i++ {
+			if k := v.rows[i].kind; k == rowSeparator || k == rowFile {
+				out = append(out, i)
+			}
+		}
+		return out
+	}, func(i int) int { return i }, func(cx *core.Scope, i func() int, _ func() int) core.Node {
+		return core.Dynamic(func(cx *core.Scope) core.Node {
+			v.rev.Get()
+			v.geo.Get()
+			v.viewport.Get()
+			if i() >= len(v.rows) {
+				return core.Group{}
+			}
+			return v.band(i(), v.rows[i()])
+		})
+	})
+}
+
+// band is separator or file header row r at index i.
+func (v *dv) band(i int, r row) core.Node {
+	s := &v.p.Styles
+	place := core.Style{Position: core.Absolute, Left: core.Pt(0), Width: core.Pt(core.Points(core.Untracked(v.cx, v.viewWidth))),
+		Top: core.Pt(core.Points(v.tops[i])), Height: core.Pt(core.Points(v.lh)), Direction: core.Row, AlignItems: core.AlignCenter}
+	if r.kind == rowFile {
 		seg := v.segs[r.file]
 		f := seg.file
 		name := f.Path
@@ -656,118 +1050,22 @@ func (v *dv) rowView(i int, r row) core.Node {
 			Children: []core.Node{core.Text{MaxLines: 1, Spans: []core.Span{{Content: mark + name + "  "},
 				{Content: fmt.Sprintf("+%d", f.Added), Style: core.Style{Color: s.IndicatorAdded.Color}}, {Content: " "},
 				{Content: fmt.Sprintf("−%d", f.Deleted), Style: core.Style{Color: s.IndicatorDeleted.Color}}}}}}
-	case rowSeparator:
-		label := r.header
-		if label == "" {
-			label = fmt.Sprintf("⋯ %d unchanged lines", r.hidden)
-			if r.hidden == 1 {
-				label = "⋯ 1 unchanged line"
+	}
+	label := r.header
+	if label == "" {
+		label = fmt.Sprintf("⋯ %d unchanged lines", r.hidden)
+		if r.hidden == 1 {
+			label = "⋯ 1 unchanged line"
+		}
+	}
+	gap := r.gap
+	return core.View{Style: merge(place, s.Separator), Role: core.RoleButton, Label: label,
+		OnPress: func(core.PressEvent) {
+			if r.header == "" {
+				v.expandGap(gap, math.MaxInt32, math.MaxInt32)
 			}
-		}
-		gap := r.gap
-		return core.View{Style: merge(place, s.Separator), Role: core.RoleButton, Label: label,
-			OnPress: func(core.PressEvent) {
-				if r.header == "" {
-					v.expandGap(gap, math.MaxInt32, math.MaxInt32)
-				}
-			},
-			Children: []core.Node{core.Text{Content: label, MaxLines: 1}}}
-	}
-	if v.p.Unified {
-		return core.View{Style: merge(place, s.Side), Children: v.sideView(r, -1)}
-	}
-	half := core.Style{Width: core.Pt(core.Points(v.sideWidth())), Height: core.Pt(core.Points(v.lh)), Direction: core.Row,
-		AlignItems: core.AlignCenter}
-	return core.View{Style: place, Children: []core.Node{
-		core.View{Style: merge(half, s.Side), Children: v.sideView(r, int(Old))},
-		core.View{Style: merge(half, s.Side), Children: v.sideView(r, int(New))},
-	}}
-}
-
-// sideView is a row's gutter and text on side (-1: unified).
-func (v *dv) sideView(r row, side int) []core.Node {
-	s := &v.p.Styles
-	line, isOld := r.new, false
-	switch {
-	case side == int(Old):
-		line, isOld = r.old, true
-	case side < 0 && r.kind == rowDeleted:
-		line, isOld = r.old, true
-	}
-	added := r.kind == rowAdded || r.kind == rowModified && !isOld
-	deleted := r.kind == rowDeleted || r.kind == rowModified && isOld
-	if side < 0 && r.kind == rowModified {
-		added, deleted = false, false
-	}
-	lineStyle := s.Line
-	switch {
-	case line < 0:
-		lineStyle = merge(lineStyle, s.Filler)
-	case added:
-		lineStyle = merge(lineStyle, s.LineAdded)
-	case deleted:
-		lineStyle = merge(lineStyle, s.LineDeleted)
-	}
-	numStyle := merge(core.Style{Width: core.Pt(core.Points(v.numberWidth())), TextAlign: core.TextAlignEnd,
-		Padding: core.Edges{Right: 8}}, s.LineNumber)
-	if added {
-		numStyle = merge(numStyle, s.LineNumberAdded)
-	} else if deleted {
-		numStyle = merge(numStyle, s.LineNumberDeleted)
-	}
-	number := func(sd Side, at int) core.Node {
-		if v.p.NoLineNumbers {
-			return core.Group{}
-		}
-		text := ""
-		if at >= 0 {
-			text = fmt.Sprint(v.number(sd, at))
-		}
-		return core.Text{Content: text, MaxLines: 1, Style: numStyle,
-			OnPress: func(core.PressEvent) {
-				if at >= 0 && v.p.OnLineNumberPress != nil {
-					v.p.OnLineNumberPress(sd, v.number(sd, at))
-				}
-			}}
-	}
-	var gutter []core.Node
-	if side < 0 {
-		gutter = append(gutter, number(Old, r.old), number(New, r.new))
-	} else if isOld {
-		gutter = append(gutter, number(Old, line))
-	} else {
-		gutter = append(gutter, number(New, line))
-	}
-	switch v.p.Indicators {
-	case IndicatorBars:
-		var st core.Style
-		if added {
-			st = s.IndicatorAdded
-		} else if deleted {
-			st = s.IndicatorDeleted
-		}
-		gutter = append(gutter, core.View{Style: core.Style{Width: core.Pt(core.Points(v.charW + 4)), Height: core.Pt(core.Points(v.lh))},
-			Children: []core.Node{core.View{Style: merge(core.Style{Width: core.Pt(3), Height: core.Pt(core.Points(v.lh))}, st)}}})
-	case IndicatorClassic:
-		mark, st := " ", core.Style{}
-		if added {
-			mark, st = "+", s.IndicatorAdded
-		} else if deleted {
-			mark, st = "−", s.IndicatorDeleted
-		}
-		gutter = append(gutter, core.Text{Content: mark, Style: merge(core.Style{Width: core.Pt(core.Points(v.charW + 4))}, st)})
-	}
-	var text core.Node = core.Group{}
-	if line >= 0 {
-		text = core.Text{MaxLines: 1, Style: core.Style{WhiteSpace: core.WhiteSpaceNoWrap, LineHeight: core.Points(v.lh)},
-			SpansFunc: func() []core.Span { return v.spans(r, isOld, line) }}
-	}
-	return []core.Node{
-		core.View{Style: merge(core.Style{Direction: core.Row, Height: core.Pt(core.Points(v.lh)), AlignItems: core.AlignCenter},
-			s.Gutter), Children: gutter},
-		core.View{Style: merge(core.Style{FlexGrow: 1, Height: core.Pt(core.Points(v.lh)), Direction: core.Row,
-			AlignItems: core.AlignCenter, Padding: core.Edges{Left: 8, Right: 8}}, lineStyle, s.Content), Children: []core.Node{text}},
-	}
+		},
+		Children: []core.Node{core.Text{Content: label, MaxLines: 1}}}
 }
 
 // number is line at's number on side: as in the file for a patch,
@@ -790,9 +1088,9 @@ func (v *dv) number(side Side, at int) int {
 	return at + 1
 }
 
-// spans is a line's text in runs of one token and one inline state, tabs
-// as four spaces.
-func (v *dv) spans(r row, isOld bool, line int) []core.Span {
+// spans is bytes from to to of a line in runs of one token and one inline
+// state, tabs as four spaces.
+func (v *dv) spans(r row, isOld bool, line, from, to int) []core.Span {
 	v.hlRev.Get()
 	dark := v.cx.Env().Dark()
 	palette := &syntax.Light
@@ -806,6 +1104,7 @@ func (v *dv) spans(r row, isOld bool, line int) []core.Span {
 		text, toks, word = v.m.old[line], v.hlOld[line], v.p.Styles.WordDeleted
 	}
 	text = strings.TrimSuffix(text, "\n")
+	to = min(to, len(text))
 	var marks [][2]int
 	if r.kind == rowModified {
 		in := v.inlineOf(r.old, r.new)
@@ -814,7 +1113,7 @@ func (v *dv) spans(r row, isOld bool, line int) []core.Span {
 			marks = in[0]
 		}
 	}
-	cuts := []int{0, len(text)}
+	cuts := []int{from, to}
 	for _, t := range toks {
 		cuts = append(cuts, t.Start, t.End)
 	}
@@ -826,7 +1125,7 @@ func (v *dv) spans(r row, isOld bool, line int) []core.Span {
 	var out []core.Span
 	for i := 0; i+1 < len(cuts); i++ {
 		a, b := cuts[i], cuts[i+1]
-		if b > len(text) || a >= b {
+		if a < from || b > to || a >= b {
 			continue
 		}
 		var st core.Style
@@ -871,17 +1170,15 @@ func (v *dv) actions() core.Node {
 			PointerEvents: core.PointerEventsBoxNone,
 			StyleFunc: func() core.Style {
 				v.rev.Get()
+				v.geo.Get()
 				top := float32(0)
 				for i, r := range v.rows {
 					if r.hunk == h() {
-						top = float32(i) * v.lh
+						top = v.tops[i]
 						break
 					}
 				}
-				// At the right of the view, not of the box, which is as wide
-				// as the longest line.
-				right := min(v.boxWidth(), float32(v.viewport.Get().Width)) - 8
-				return merge(core.Style{Position: core.Absolute, Left: core.Pt(0), Width: core.Pt(core.Points(right)),
+				return merge(core.Style{Position: core.Absolute, Left: core.Pt(0), Width: core.Pt(core.Points(v.viewWidth() - 8)),
 					Top: core.Pt(core.Points(top)), Direction: core.Row, JustifyContent: core.JustifyEnd}, v.p.Styles.HunkActions)
 			},
 			Children: []core.Node{v.p.RenderHunkActions(cx, hk)},
@@ -899,6 +1196,18 @@ func (v *dv) publicHunk(i int) Hunk {
 	}
 	return Hunk{Index: i, File: file, OldStart: v.number(Old, min(h.oldStart, max(len(v.m.old)-1, 0))), OldLines: h.oldEnd - h.oldStart,
 		NewStart: v.number(New, min(h.newStart, max(len(v.m.new)-1, 0))), NewLines: h.newEnd - h.newStart}
+}
+
+// lineRows is a slice of n rows, every one -1.
+func lineRows(buf []int, n int) []int {
+	if cap(buf) < n {
+		buf = make([]int, n)
+	}
+	buf = buf[:n]
+	for i := range buf {
+		buf[i] = -1
+	}
+	return buf
 }
 
 func (v *dv) expandGap(gap, up, down int) {
@@ -922,7 +1231,7 @@ func (v *dv) toggleFile(path string) {
 
 // goTo scrolls row i to the top.
 func (v *dv) goTo(i int) {
-	y := float32(i) * v.lh
+	y := v.tops[i]
 	v.vs.ScrollTo(core.Point{Y: core.Points(y)}, false)
 	v.scrollY.Set(core.Points(y))
 }

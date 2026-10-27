@@ -161,3 +161,70 @@ func TestDiffViewShowsAPatchByFile(t *testing.T) {
 		t.Error("the other file's lines are gone")
 	}
 }
+
+func TestDiffViewSelectsLinesAndAnnotates(t *testing.T) {
+	var selections []*LineRange
+	ref := &Ref{}
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		notes := core.NewSignalFunc(cx, []Annotation(nil), slices.Equal)
+		return DiffView{
+			Ref: ref, OldValue: func() string { return oldGo }, NewValue: func() string { return newGo },
+			Annotations:           notes.Get,
+			OnLineSelectionChange: func(r *LineRange) { selections = append(selections, r) },
+			RenderAnnotation: func(cx *core.Scope, a Annotation) core.Node {
+				return core.Text{Content: "Note on " + a.ID, Style: core.Style{Height: core.Pt(30)}}
+			},
+			RenderAddAnnotation: func(cx *core.Scope, lines LineRange) core.Node {
+				return core.View{Role: core.RoleButton, Label: "Add note", Style: core.Style{Width: core.Pt(12), Height: core.Pt(12)}, OnPress: func(core.PressEvent) {
+					notes.Set(append(notes.Get(), Annotation{ID: "n1", Side: lines.Side, Line: lines.End}))
+				}}
+			},
+			Style: core.Style{Width: core.Pt(800), Height: core.Pt(400)},
+		}
+	})
+	// The new side's number 7 is `y := 2`.
+	app.Press("text:7 >> nth=1")
+	if len(selections) != 1 || *selections[0] != (LineRange{Side: New, Start: 6, End: 6}) {
+		t.Fatalf("selections %+v", selections)
+	}
+	ref.v.selectLine(New, 7, true)
+	app.Settle()
+	if got := ref.SelectedText(); got != "\ty := 2\n\tfmt.Println(y)" {
+		t.Fatalf("selected %q", got)
+	}
+	top := func() float32 { return ref.v.tops[ref.v.rowOfLine(New, 8)] }
+	below := top()
+	app.Press("label:Add note")
+	app.Find("text:Note on n1")
+	if moved := top(); moved != below+30 {
+		t.Errorf("the row under the note at %v, was %v", moved, below)
+	}
+	ref.SetSelectedLines(nil)
+	if _, ok := ref.SelectedLines(); ok || len(selections) != 2 {
+		t.Errorf("cleared silently: %+v", selections)
+	}
+}
+
+func TestDiffViewWrapsLongLines(t *testing.T) {
+	long := strings.Repeat("word ", 40)
+	ref := &Ref{}
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return DiffView{Ref: ref, OldValue: func() string { return "a\n" }, NewValue: func() string { return "a\n" + long + "\nb\n" },
+			SoftWrap: true, Unified: true, Style: core.Style{Width: core.Pt(400), Height: core.Pt(400)}}
+	})
+	if n := len(app.Query("text:word word")); n < 3 {
+		t.Errorf("the long line in %d rows", n)
+	}
+	if y := ref.v.tops[ref.v.rowOfLine(New, 2)]; y < 80 {
+		t.Errorf("the line after the wrapped one at %v", y)
+	}
+}
+
+func TestWrapStartsBreakAfterSpaces(t *testing.T) {
+	if got := wrapStarts("aaa bbb ccc", 5); !slices.Equal(got, []int{0, 4, 8}) {
+		t.Errorf("starts %v", got)
+	}
+	if got := wrapStarts("abcdefghij", 4); !slices.Equal(got, []int{0, 4, 8}) {
+		t.Errorf("hard breaks %v", got)
+	}
+}

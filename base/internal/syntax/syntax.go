@@ -4,6 +4,7 @@
 package syntax
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/alecthomas/chroma/v2"
@@ -143,6 +144,71 @@ func LexLines(lexer chroma.Lexer, lines []string) [][]Tok {
 			}
 			line, col, v = line+1, 0, v[i+1:]
 		}
+	}
+	return out
+}
+
+// Highlighter is an app's highlighting of a language, in place of
+// chroma's, for the Editor and the DiffView alike. It runs off the engine
+// goroutine.
+type Highlighter interface {
+	// Highlight returns the tokens of lines from to to (exclusive) of
+	// lines, a snapshot of the whole text without line breaks: one slice
+	// per line, its tokens in bytes of the line.
+	Highlight(lines []string, from, to int) [][]Token
+}
+
+// Token is a run of a line an app's highlighter colors: from byte Start
+// to End, as the kind Kind names (comment, keyword, string, number,
+// title, attr, built, deletion).
+type Token struct {
+	Start, End int
+	Kind       string
+}
+
+// KindNamed is the Kind a name gives, Plain for none: a decoration's or
+// an app's token's.
+func KindNamed(name string) Kind {
+	switch name {
+	case "comment":
+		return Comment
+	case "keyword":
+		return Keyword
+	case "string":
+		return String
+	case "number":
+		return Number
+	case "title", "function", "type":
+		return Title
+	case "attr", "property", "variable":
+		return Attr
+	case "built", "builtin":
+		return Built
+	case "deletion":
+		return Deletion
+	}
+	return Plain
+}
+
+// HighlightLines runs h over lines from to to and returns their runs as
+// Toks, sorted and clipped to each line.
+func HighlightLines(h Highlighter, lines []string, from, to int) [][]Tok {
+	got := h.Highlight(lines, from, to)
+	out := make([][]Tok, to-from)
+	for i := range out {
+		if i >= len(got) {
+			break
+		}
+		n := len(lines[from+i])
+		for _, t := range got[i] {
+			k := KindNamed(t.Kind)
+			s, e := max(t.Start, 0), min(t.End, n)
+			if k == Plain || s >= e {
+				continue
+			}
+			out[i] = append(out[i], Tok{Start: s, End: e, Kind: k})
+		}
+		sort.Slice(out[i], func(a, b int) bool { return out[i][a].Start < out[i][b].Start })
 	}
 	return out
 }

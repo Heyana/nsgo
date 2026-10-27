@@ -48,9 +48,21 @@ func (p Editor) Render(cx *core.Scope) core.Node {
 	} else {
 		text = core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1}, Children: []core.Node{text}}
 	}
+	styleFunc := p.StyleFunc
+	if e.autoHeight() {
+		// The editor grows with its text.
+		styleFunc = func() core.Style {
+			e.textRev.Get()
+			st := core.Style{Height: core.Pt(core.Points(e.rootHeight()))}
+			if p.StyleFunc != nil {
+				st = merge(st, p.StyleFunc())
+			}
+			return st
+		}
+	}
 	return core.View{
 		Style:     merge(core.Style{Overflow: core.Hidden, FontFamily: e.font.Family, FontSize: e.font.Size}, p.Style),
-		StyleFunc: p.StyleFunc,
+		StyleFunc: styleFunc,
 		TestID:    p.TestID,
 		Children: []core.Node{
 			core.Scroll{
@@ -72,6 +84,13 @@ func (p Editor) Render(cx *core.Scope) core.Node {
 			e.completionList(),
 			core.Show{When: func() bool { return e.focused.Get() && e.composing.Get() == "" }, Then: func(cx *core.Scope) core.Node {
 				e.keys(cx)
+				return core.Group{}
+			}},
+			// Tab takes an inline completion and Escape drops it, over the
+			// editor's keys.
+			core.Show{When: func() bool { return e.focused.Get() && e.inline.Get() != "" }, Then: func(cx *core.Scope) core.Node {
+				cx.OnKeyWith("tab", core.KeyOptions{When: core.KeyAlways}, e.acceptInline)
+				cx.OnKeyWith("escape", core.KeyOptions{When: core.KeyAlways}, e.hideInline)
 				return core.Group{}
 			}},
 		},
@@ -220,13 +239,18 @@ func (e *ed) textArea() core.Node {
 			e.sinkRef.Focus()
 		}
 		// A drag extends what the press selected.
-		box.Responder = &core.Responder{Claims: []core.TouchClaim{{OnMove: true}}, OnMove: func(ev core.ResponderEvent) { e.dragTo(ev.Position) }}
+		box.Responder = &core.Responder{Claims: []core.TouchClaim{{OnMove: true}},
+			OnMove:      func(ev core.ResponderEvent) { e.dragMove(ev.Position) },
+			OnRelease:   func(core.ResponderEvent) { e.dragEnd() },
+			OnTerminate: func(core.ResponderEvent) { e.dragEnd() }}
 	} else {
 		box.OnPress = func(ev core.PressEvent) { e.tap(ev.Position, ev.PagePosition) }
 		box.OnLongPress = func(ev core.PressEvent) { e.longPress(ev.Position, ev.PagePosition) }
 	}
 	box.Children = []core.Node{
 		e.layer(func() []rect { return e.lineRects() }),
+		e.layer(func() []rect { return e.rulerRects() }),
+		e.layer(func() []rect { return e.guideRects() }),
 		e.layer(func() []rect { return e.matchRects() }),
 		e.layer(func() []rect { return e.selectionRects() }),
 		e.layer(func() []rect { return e.bracketRects() }),
@@ -244,8 +268,10 @@ func (e *ed) textArea() core.Node {
 				}},
 			}
 		}),
+		e.glyphs(),
 		e.layer(func() []rect { return e.linkRects() }),
 		e.layer(func() []rect { return e.caretRects() }),
+		e.inlineView(),
 		core.Show{When: func() bool {
 			e.textRev.Get()
 			return e.p.Placeholder != "" && e.st.r().lines() == 1 && e.st.line(0) == ""
@@ -499,7 +525,7 @@ func (e *ed) rowSpans(row int) []core.Span {
 			if (from.line < d.line || from.col <= a) && (to.line > d.line || b <= to.col) {
 				switch {
 				case m.deco != nil:
-					if k := kindNamed(m.deco.Kind); k != syntax.Plain {
+					if k := syntax.KindNamed(m.deco.Kind); k != syntax.Plain {
 						style = palette[k]
 					}
 					style = merge(style, m.deco.Style)
@@ -552,27 +578,6 @@ func (e *ed) diagStyle(d *Diagnostic) core.Style {
 		st = merge(st, s.DeprecatedText)
 	}
 	return st
-}
-
-// kindNamed is the highlighting kind of a decoration's Kind.
-func kindNamed(name string) syntax.Kind {
-	switch name {
-	case "comment":
-		return syntax.Comment
-	case "keyword":
-		return syntax.Keyword
-	case "string":
-		return syntax.String
-	case "number":
-		return syntax.Number
-	case "title", "function", "type":
-		return syntax.Title
-	case "attr", "property", "variable":
-		return syntax.Attr
-	case "built", "builtin":
-		return syntax.Built
-	}
-	return syntax.Plain
 }
 
 // caretPage is the primary caret's box in the root view.
@@ -1076,6 +1081,9 @@ func (r *Ref) PresentCompletions(id int, items []CompletionItem, incomplete bool
 		return
 	}
 	r.e.comp.items, r.e.comp.shown, r.e.comp.partial = items, len(items) > 0, incomplete
+	if r.e.comp.shown {
+		r.e.hideInline()
+	}
 	r.e.compSel = 0
 	r.e.compRev.Update(inc)
 }

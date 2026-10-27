@@ -24,6 +24,16 @@ const (
 	measureAll = 20_000
 	// pad is the room before the text, after the gutter.
 	pad = 4
+	// inlineDelay is how long typing pauses before an inline completion
+	// is asked for.
+	inlineDelay = 300 * time.Millisecond
+	// edgeInner is how far inside the viewport's edges a drag starts
+	// scrolling; edgeTick how often it scrolls, from edgeMin to edgeMax
+	// points a tick over edgeRamp points past the edge.
+	edgeInner        = 16
+	edgeTick         = 16 * time.Millisecond
+	edgeMin, edgeMax = 12, 64
+	edgeRamp         = 80
 )
 
 // mark is a diagnostic or decoration resolved to the text and carried
@@ -89,6 +99,25 @@ type ed struct {
 	lastTap   time.Time
 	touchSel  *selection
 	hlRunning bool
+	// block is a block drag's press: its row and x in the rows' box.
+	block   bool
+	blockAt core.Point
+	// The selections moves left, for undoSelection, and expandSelection's
+	// steps, for shrinkSelection.
+	selHist              [][]selection
+	selAt                int
+	restoring, keepGrown bool
+	grown                []grownSels
+	// The inline completion: the request out, its text and the pause it
+	// waits for.
+	inlineID   int
+	inlineStop func() bool
+	inline     *core.Signal[string]
+	// The drag's pointer in the viewport and the timer scrolling past an
+	// edge.
+	dragAt   core.Point
+	dragStop func() bool
+	dragging bool
 }
 
 func newEd(cx *core.Scope, p Editor) *ed {
@@ -103,6 +132,7 @@ func newEd(cx *core.Scope, p Editor) *ed {
 		viewport: core.NewSignal(cx, core.Size{}), focused: core.NewSignal(cx, false),
 		composing: core.NewSignal(cx, ""), sink: core.NewSignal(cx, ""),
 		link: core.NewSignalFunc(cx, span{}, func(a, b span) bool { return a == b }), hasLink: core.NewSignal(cx, false),
+		inline:  core.NewSignal(cx, ""),
 		sinkRef: &core.Ref{}, vs: &core.Ref{}, hs: &core.Ref{}, box: &core.Ref{}, win: window.New(4, 16)}
 	lang := languageOf(p.Language)
 	e.st.lang = lang
@@ -126,13 +156,19 @@ func newEd(cx *core.Scope, p Editor) *ed {
 		e.lh = 20
 	}
 	e.charW = max(cx.MeasureText("0000000000", e.font).Width/10, 1)
-	if !p.NoHighlighting {
+	if p.Highlighter != nil {
+		if app := p.Highlighter(p.Language); app != nil {
+			e.hl = &highlighter{app: app, tokens: make([][]tok, e.st.r().lines()), fresh: make([]bool, e.st.r().lines())}
+		}
+	}
+	if e.hl == nil && !p.NoHighlighting {
 		e.hl = newHighlighter(lang, e.st.r().lines())
 	}
 	if p.Ref != nil {
 		p.Ref.e = e
 	}
 	e.measure()
+	e.recordSelections()
 	e.follow()
 	return e
 }
@@ -235,6 +271,9 @@ func (e *ed) changed(changes []change, report bool) {
 	if e.hl != nil {
 		e.hl.edited(changes)
 	}
+	e.selHist, e.selAt, e.grown = nil, 0, nil
+	e.recordSelections()
+	e.hideInline()
 	for i := 0; i < len(e.marks); i++ {
 		m := &e.marks[i]
 		m.from, m.to = mapThrough(changes, m.from, true), mapThrough(changes, m.to, false)
@@ -279,10 +318,23 @@ func (e *ed) selections() []Selection {
 // moved follows a move of the selections: the caret into view, the
 // completion and the touch selection.
 func (e *ed) moved() {
-	e.selRev.Update(inc)
 	e.reveal(e.st.primary().head, false)
+	e.selMoved()
+}
+
+// selMoved follows a move of the selections that leaves the scrolling
+// alone, as a drag's does.
+func (e *ed) selMoved() {
+	e.selRev.Update(inc)
 	e.checkCompletion()
 	e.touchSel = nil
+	e.hideInline()
+	if !e.restoring {
+		e.recordSelections()
+	}
+	if !e.keepGrown {
+		e.grown = nil
+	}
 	e.reportSelection()
 }
 
@@ -332,6 +384,7 @@ func (e *ed) typeText(text string) {
 	e.changed(e.st.insert(text, true), true)
 	e.reveal(e.st.primary().head, false)
 	e.touchSel = nil
+	e.waitInline()
 	r, _ := utf8.DecodeLastRuneInString(text)
 	switch {
 	case e.p.OnCompletionRequest == nil:
@@ -572,6 +625,17 @@ func (e *ed) run(c Command) {
 			p := s.primary()
 			e.p.OnCodeActionRequest(e.rangeOf(span{p.start(), p.end()}))
 		}
+	case ExpandSelection:
+		e.expandSelections()
+	case ShrinkSelection:
+		e.shrinkSelections()
+	case UndoSelection:
+		e.stepSelections(-1)
+	case RedoSelection:
+		e.stepSelections(1)
+	case SplitSelectionIntoLines:
+		s.splitLines()
+		e.moved()
 	}
 }
 
@@ -641,6 +705,7 @@ func (e *ed) keys(cx *core.Scope) {
 	bind(ShowCodeActions, mod+"+.")
 	bind(Copy, mod+"+c")
 	bind(Cut, mod+"+x")
+	bind(SplitSelectionIntoLines, "shift+alt+i")
 	if apple {
 		bind(MoveLineStart, "cmd+left", "home", "ctrl+a")
 		bind(MoveLineEnd, "cmd+right", "end", "ctrl+e")
@@ -662,6 +727,10 @@ func (e *ed) keys(cx *core.Scope) {
 		bind(FindWithSelection, "cmd+e")
 		bind(Fold, "cmd+alt+[")
 		bind(Unfold, "cmd+alt+]")
+		bind(UndoSelection, "cmd+u")
+		bind(RedoSelection, "cmd+shift+u")
+		bind(ExpandSelection, "ctrl+shift+cmd+right")
+		bind(ShrinkSelection, "ctrl+shift+cmd+left")
 	} else {
 		bind(MoveLineStart, "home")
 		bind(MoveLineEnd, "end")
@@ -676,6 +745,10 @@ func (e *ed) keys(cx *core.Scope) {
 		bind(Redo, "ctrl+y")
 		bind(Fold, "ctrl+shift+[")
 		bind(Unfold, "ctrl+shift+]")
+		bind(UndoSelection, "ctrl+u")
+		bind(RedoSelection, "ctrl+shift+u")
+		bind(ExpandSelection, "shift+alt+right")
+		bind(ShrinkSelection, "shift+alt+left")
 	}
 }
 
@@ -690,7 +763,11 @@ func (e *ed) reveal(p pos, center bool) {
 	top := float32(row) * e.lh
 	y := float32(e.scrollY.GetUntracked())
 	h := float32(vp.Height)
-	margin := min(e.lh, h/4)
+	around := e.p.CursorSurroundingLines
+	if around <= 0 {
+		around = 1
+	}
+	margin := min(float32(around)*e.lh, h/4)
 	to := y
 	switch {
 	case center:
@@ -766,8 +843,31 @@ func (e *ed) gutterWidth() float32 {
 }
 
 func (e *ed) contentHeight() float32 {
+	rows := float32(e.st.disp.count()) * e.lh
+	switch {
+	case e.autoHeight() || e.p.ScrollBeyondLastLine < 0:
+		return rows
+	case e.p.ScrollBeyondLastLine > 0:
+		return rows + float32(e.p.ScrollBeyondLastLine)*e.lh
+	}
 	h := float32(e.viewport.GetUntracked().Height)
-	return float32(e.st.disp.count())*e.lh + max(h-2*e.lh, 0)
+	return rows + max(h-2*e.lh, 0)
+}
+
+// autoHeight reports whether the editor grows with its text.
+func (e *ed) autoHeight() bool { return e.p.MinRows > 0 || e.p.MaxRows > 0 }
+
+// rootHeight is the height of an editor growing with its text: its rows
+// within MinRows and MaxRows.
+func (e *ed) rootHeight() float32 {
+	n := e.st.disp.count()
+	if e.p.MinRows > 0 {
+		n = max(n, e.p.MinRows)
+	}
+	if e.p.MaxRows > 0 {
+		n = min(n, e.p.MaxRows)
+	}
+	return float32(n) * e.lh
 }
 
 // windowRows is the rows made (tracked).
@@ -793,15 +893,29 @@ func (e *ed) highlight(from, to int) {
 	if !ok {
 		return
 	}
-	lines := make([]string, end-start)
-	for i := range lines {
-		lines[i] = r.line(start + i)
-	}
 	version := e.st.buf.version
-	lexer := e.hl.lexer
+	lexer, app := e.hl.lexer, e.hl.app
+	var lines []string
+	if app != nil {
+		// The app's highlighter sees the whole text.
+		lines = make([]string, r.lines())
+		for i := range lines {
+			lines[i] = r.line(i)
+		}
+	} else {
+		lines = make([]string, end-start)
+		for i := range lines {
+			lines[i] = r.line(start + i)
+		}
+	}
 	e.hlRunning = true
 	go func() {
-		toks := syntax.LexLines(lexer, lines)
+		var toks [][]tok
+		if app != nil {
+			toks = syntax.HighlightLines(app, lines, start, end)
+		} else {
+			toks = syntax.LexLines(lexer, lines)
+		}
 		e.cx.Post(func() {
 			e.hlRunning = false
 			if e.st.buf.version == version {
@@ -1275,6 +1389,14 @@ func (e *ed) pressDown(pt core.Point, clicks int, mods core.Modifiers) {
 		sel = selection{anchor: pos{p.line, 0}, head: end, goal: -1}
 	}
 	e.pressAt = sel
+	e.block = mods.Alt && mods.Shift || mods.Control && mods.Alt && core.Untracked(e.cx, e.cx.Env().OS) == core.OSLinux
+	if e.block {
+		// A block from the press's x, as the pointer drags it.
+		e.blockAt = pt
+		e.st.setSels(e.blockSels(pt))
+		e.moved()
+		return
+	}
 	switch {
 	case mods.Shift:
 		pr := e.st.primary()
@@ -1297,6 +1419,11 @@ func (e *ed) pressDown(pt core.Point, clicks int, mods core.Modifiers) {
 
 // dragTo extends the press's selection to pt, by its unit.
 func (e *ed) dragTo(pt core.Point) {
+	if e.block {
+		e.st.setSels(e.blockSels(pt))
+		e.selMoved()
+		return
+	}
 	p := e.posAt(pt)
 	a := e.pressAt
 	head := p
@@ -1323,7 +1450,80 @@ func (e *ed) dragTo(pt core.Point) {
 	sels := slices.Clone(e.st.sels)
 	sels[len(sels)-1] = selection{anchor: anchor, head: head, goal: -1}
 	e.st.setSels(sels)
-	e.moved()
+	e.selMoved()
+}
+
+// dragMove is a drag's move to pt in the rows' box: it extends the
+// selection there and, while the pointer is near or past the viewport's
+// edges, scrolls on and extends it again, faster the farther out.
+func (e *ed) dragMove(pt core.Point) {
+	e.dragging = true
+	e.dragAt = core.Point{X: pt.X - e.scrollX.GetUntracked(), Y: pt.Y - e.scrollY.GetUntracked()}
+	e.dragTo(pt)
+	if e.dragStop == nil {
+		e.edgeScroll()
+	}
+}
+
+func (e *ed) dragEnd() {
+	e.dragging = false
+	e.recordSelections()
+	if e.dragStop != nil {
+		e.dragStop()
+		e.dragStop = nil
+	}
+}
+
+// edgeScroll scrolls a tick while the drag is near an edge.
+func (e *ed) edgeScroll() {
+	e.dragStop = nil
+	if !e.dragging {
+		return
+	}
+	vp := e.viewport.GetUntracked()
+	dy := edgeSpeed(float32(e.dragAt.Y), float32(vp.Height))
+	dx := float32(0)
+	if !e.p.SoftWrap {
+		dx = edgeSpeed(float32(e.dragAt.X), float32(vp.Width)-e.gutterWidth())
+	}
+	if dx == 0 && dy == 0 {
+		return
+	}
+	y := float32(e.scrollY.GetUntracked())
+	toY := max(min(y+dy, e.contentHeight()-float32(vp.Height)), 0)
+	x := float32(e.scrollX.GetUntracked())
+	toX := max(min(x+dx, core.Untracked(e.cx, e.boxWidth)-(float32(vp.Width)-e.gutterWidth())), 0)
+	if toY != y {
+		e.vs.ScrollTo(core.Point{Y: core.Points(toY)}, false)
+		e.scrollY.Set(core.Points(toY))
+	}
+	if toX != x {
+		e.hs.ScrollTo(core.Point{X: core.Points(toX)}, false)
+		e.scrollX.Set(core.Points(toX))
+	}
+	e.dragTo(core.Point{X: e.dragAt.X + core.Points(toX), Y: e.dragAt.Y + core.Points(toY)})
+	e.dragStop = e.cx.AfterFunc(edgeTick, e.edgeScroll)
+}
+
+// edgeSpeed is how far a tick scrolls with the pointer at at along a
+// viewport length long: from edgeMin inside the edge's band to edgeMax
+// far past it, negative toward the start.
+func edgeSpeed(at, length float32) float32 {
+	if length <= 0 {
+		return 0
+	}
+	inner := min(float32(edgeInner), length/4)
+	ramp := func(past float32) float32 {
+		t := min(past/(inner+edgeRamp), 1)
+		return edgeMin + t*(edgeMax-edgeMin)
+	}
+	switch {
+	case at > length-inner:
+		return ramp(at - (length - inner))
+	case at < inner:
+		return -ramp(inner - at)
+	}
+	return 0
 }
 
 func itoa(n int) string {
@@ -1341,3 +1541,63 @@ func itoa(n int) string {
 }
 
 func isWordStart(r rune) bool { return unicode.IsLetter(r) || r == '_' }
+
+// waitInline asks for an inline completion once typing pauses: one wait,
+// whatever the number of keystrokes.
+func (e *ed) waitInline() {
+	if e.p.OnInlineCompletionRequest == nil {
+		return
+	}
+	if e.inlineStop != nil {
+		e.inlineStop()
+	}
+	d := e.p.InlineCompletionDelay
+	if d <= 0 {
+		d = inlineDelay
+	}
+	e.inlineStop = e.cx.AfterFunc(d, func() {
+		e.inlineStop = nil
+		if e.comp.shown && e.comp.id != 0 {
+			return
+		}
+		e.nextID++
+		e.inlineID = e.nextID
+		h := e.st.primary().head
+		e.p.OnInlineCompletionRequest(InlineCompletionRequest{ID: e.inlineID, Offset: e.offset(h), Position: e.position(h)})
+	})
+}
+
+// hideInline clears the inline completion and drops its request.
+func (e *ed) hideInline() {
+	e.inlineID = 0
+	if e.inlineStop != nil {
+		e.inlineStop()
+		e.inlineStop = nil
+	}
+	if e.inline.GetUntracked() != "" {
+		e.inline.Set("")
+	}
+}
+
+// acceptInline inserts the inline completion at the caret as one undo
+// step.
+func (e *ed) acceptInline() {
+	text := e.inline.GetUntracked()
+	e.hideInline()
+	if text == "" || e.p.ReadOnly {
+		return
+	}
+	e.st.buf.open = false
+	e.edit(func() []change { return e.st.insert(text, false) })
+	e.st.buf.open = false
+}
+
+// offset is p in UTF-16 units of the text.
+func (e *ed) offset(p pos) int {
+	r := e.st.r()
+	n := 0
+	for i := range p.line {
+		n += utf16Col(r.line(i), len(r.line(i))) + 1
+	}
+	return n + utf16Col(r.line(p.line), p.col)
+}

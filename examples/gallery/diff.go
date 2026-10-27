@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/oneo-me/nsgo/base/diff"
 	"github.com/oneo-me/nsgo/core"
@@ -155,6 +156,9 @@ func diffStyles() diff.Styles {
 		Separator:        core.Style{Background: colors.inset, Color: colors.muted, Padding: core.Symmetric(0, 12), Cursor: core.CursorPointer},
 		FileHeader: core.Style{Background: colors.raised, Color: colors.text, Padding: core.Symmetric(0, 12), Borders: core.Edges{Bottom: 1},
 			BorderColor: colors.border, Cursor: core.CursorPointer},
+		LineSelected:  core.Style{Background: alpha(colors.accent, 0.18)},
+		Annotation:    core.Style{Padding: core.Symmetric(6, 12)},
+		AddAnnotation: core.Style{Padding: core.Edges{Right: 2}},
 	}
 }
 
@@ -163,7 +167,13 @@ func diffStyles() diff.Styles {
 // reverted and kept, and a patch of several files.
 func diffDemo(cx *core.Scope) core.Node {
 	oldText, newText := core.NewSignal(cx, diffOld), core.NewSignal(cx, diffNew)
-	unified, patch := core.NewSignal(cx, false), core.NewSignal(cx, false)
+	unified, patch, wrap := core.NewSignal(cx, false), core.NewSignal(cx, false), core.NewSignal(cx, false)
+	// The review's comments, under the lines they are on.
+	type comment struct {
+		diff.Annotation
+		lines diff.LineRange
+	}
+	comments := core.NewSignalFunc(cx, []comment(nil), slices.Equal)
 	inline := core.NewSignal(cx, diff.InlineWordAlt)
 	stats := core.NewSignal(cx, diff.Stats{})
 	last := core.NewSignal(cx, "—")
@@ -182,6 +192,7 @@ func diffDemo(cx *core.Scope) core.Node {
 		core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
 			tool("Show a patch", "Patch", patch.Get, toggle(patch)),
 			tool("One column", "Unified", unified.Get, toggle(unified)),
+			tool("Soft wrap", "Wrap", wrap.Get, toggle(wrap)),
 			core.View{Style: core.Style{Width: core.Pt(360)}, Children: []core.Node{segmented(modes, inline.Get, inline.Set, true)}},
 			tool("Previous change", "↑", nil, func() { last.Set(fmt.Sprintf("Change %d", ref.PreviousHunk()+1)) }),
 			tool("Next change", "↓", nil, func() { last.Set(fmt.Sprintf("Change %d", ref.NextHunk()+1)) }),
@@ -193,7 +204,49 @@ func diffDemo(cx *core.Scope) core.Node {
 			BorderWidth: 1, BorderColor: colors.border, Background: colors.surface, Overflow: core.Hidden}), Children: []core.Node{
 			core.Dynamic(func(cx *core.Scope) core.Node {
 				d := diff.DiffView{
-					Ref: ref, TestID: "diff", Language: "go", Unified: unified.Get(), Inline: inline.Get(),
+					Ref: ref, TestID: "diff", Language: "go", Unified: unified.Get(), Inline: inline.Get(), SoftWrap: wrap.Get(),
+					Annotations: func() []diff.Annotation {
+						var out []diff.Annotation
+						for _, c := range comments.Get() {
+							out = append(out, c.Annotation)
+						}
+						return out
+					},
+					RenderAnnotation: func(cx *core.Scope, a diff.Annotation) core.Node {
+						var c comment
+						for _, x := range comments.GetUntracked() {
+							if x.ID == a.ID {
+								c = x
+							}
+						}
+						text := fmt.Sprintf("Comment on line %d", c.lines.Start+1)
+						if c.lines.End > c.lines.Start {
+							text = fmt.Sprintf("Comment on lines %d to %d", c.lines.Start+1, c.lines.End+1)
+						}
+						return core.View{Style: fin.raised.over(core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.All(8),
+							CornerRadius: 6, BorderWidth: 1, BorderColor: colors.border, Background: colors.raised}), Children: []core.Node{
+							core.Text{Content: text, Style: core.Style{FlexGrow: 1, FontSize: 13, Color: colors.text}},
+							small("Resolve", func() {
+								comments.Set(slices.DeleteFunc(slices.Clone(comments.GetUntracked()), func(x comment) bool { return x.ID == a.ID }))
+							}),
+						}}
+					},
+					RenderAddAnnotation: func(cx *core.Scope, lines diff.LineRange) core.Node {
+						return core.View{Role: core.RoleButton, Label: "Add a comment", Style: core.Style{Width: core.Pt(16), Height: core.Pt(16),
+							CornerRadius: 4, Background: colors.accent, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Cursor: core.CursorPointer},
+							OnPress: func(core.PressEvent) {
+								list := comments.GetUntracked()
+								id := fmt.Sprint("c", len(list)+1)
+								comments.Set(append(slices.Clone(list), comment{diff.Annotation{ID: id, Side: lines.Side, Line: lines.End}, lines}))
+								last.Set("Commented")
+							},
+							Children: []core.Node{core.Text{Content: "+", Style: core.Style{FontSize: 12, FontWeight: semibold, Color: colors.onAccent}}}}
+					},
+					OnLineSelectionChange: func(r *diff.LineRange) {
+						if r != nil {
+							last.Set(fmt.Sprintf("Lines %d to %d selected", r.Start+1, r.End+1))
+						}
+					},
 					OnStatsChange: stats.Set,
 					OnChange:      func(o, n string) { oldText.Set(o); newText.Set(n) },
 					OnLineNumberPress: func(side diff.Side, line int) {

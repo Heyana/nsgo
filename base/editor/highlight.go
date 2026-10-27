@@ -33,7 +33,9 @@ type tok = syntax.Tok
 // the lines it touched until a job gives them theirs again, so colors do
 // not flicker.
 type highlighter struct {
-	lexer  chroma.Lexer
+	lexer chroma.Lexer
+	// app is the app's highlighter, in place of the lexer.
+	app    syntax.Highlighter
 	tokens [][]tok
 	fresh  []bool
 	// running is a job out; version the text's version it lexes.

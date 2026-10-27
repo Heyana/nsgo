@@ -12,7 +12,12 @@
 // lexers.
 package editor
 
-import "github.com/oneo-me/nsgo/core"
+import (
+	"time"
+
+	"github.com/oneo-me/nsgo/base/internal/syntax"
+	"github.com/oneo-me/nsgo/core"
+)
 
 // Position is a place in the text: a line from 0 and a column in UTF-16
 // units, as a language server's.
@@ -73,6 +78,26 @@ type Decoration struct {
 	Style     core.Style
 	LineStyle core.Style
 	Kind      string
+}
+
+// Highlighter is the app's highlighting of a language, in place of the
+// built-in one: a tree-sitter grammar, a parser of the app's. It runs off
+// the engine goroutine; the editor keeps its tokens, moves them with the
+// text as it is edited and asks again for the lines in view.
+type Highlighter = syntax.Highlighter
+
+// Token is a run of a line a Highlighter colors: from byte Start to End,
+// as the highlighting's kind Kind names (comment, keyword, string,
+// number, title, attr, built, deletion).
+type Token = syntax.Token
+
+// InlineCompletionRequest asks the app for text to show at the caret
+// once typing pauses: Offset is the caret's in UTF-16 units of the text.
+// The app answers with Ref.PresentInlineCompletion and ID.
+type InlineCompletionRequest struct {
+	ID       int
+	Offset   int
+	Position Position
 }
 
 // FoldRange is lines StartLine to EndLine: a fold shows the first and
@@ -192,6 +217,9 @@ const (
 	FindNext, FindPrevious, FindWithSelection          Command = "findNext", "findPrevious", "findWithSelection"
 	Copy, Cut                                          Command = "copy", "cut"
 	ShowCompletions, GoToDefinition, ShowCodeActions   Command = "showCompletions", "goToDefinition", "showCodeActions"
+	ExpandSelection, ShrinkSelection                   Command = "expandSelection", "shrinkSelection"
+	UndoSelection, RedoSelection                       Command = "undoSelection", "redoSelection"
+	SplitSelectionIntoLines                            Command = "splitSelectionIntoLines"
 )
 
 // Styles are the styles of the editor's parts, its whole look. A state's
@@ -229,6 +257,12 @@ type Styles struct {
 	CompletionDocumentation                                core.Style
 	// DefinitionLink is the line under a definition link's text.
 	DefinitionLink core.Style
+	// InlineCompletion is the text of an inline completion at the caret.
+	InlineCompletion core.Style
+	// Whitespace is the · of each space and → of each tab with
+	// ShowWhitespaces; Ruler the line at each of Rulers' columns, 1 point
+	// wide unless it gives a width.
+	Whitespace, Ruler core.Style
 }
 
 // Editor is a code editor ([package editor]). The text is the app's with
@@ -255,6 +289,9 @@ type Editor struct {
 	// the folds by indentation with the app's.
 	NoFolding  bool
 	FoldRanges func() []FoldRange
+	// Highlighter gives the app's highlighter for a language's name, nil
+	// for the built-in one; it is asked for Language.
+	Highlighter func(language string) Highlighter
 	// NoHighlighting drops the built-in highlighting; NoAutoClose and
 	// NoAutoIndent the closing of brackets and the indentation of new
 	// lines; NoActiveLine and NoIndentGuides those parts.
@@ -264,19 +301,36 @@ type Editor struct {
 	// LineHeight (20): the editor measures its text in them.
 	FontFamily           string
 	FontSize, LineHeight core.Points
-	Search               func() Search
-	Diagnostics          func() []Diagnostic
-	Decorations          func() []Decoration
+	// ShowWhitespaces marks spaces and tabs; Rulers draws a line at each
+	// of its columns.
+	ShowWhitespaces bool
+	Rulers          []int
+	// MinRows and MaxRows make the editor as tall as its rows, at least
+	// MinRows and at most MaxRows of them, past which the text scrolls;
+	// without them the app sizes it.
+	MinRows, MaxRows int
+	// ScrollBeyondLastLine is the rows the text scrolls on past its last
+	// line: a screen when 0, none when negative.
+	ScrollBeyondLastLine int
+	// CursorSurroundingLines is the rows kept in view around the caret as
+	// it moves: 1 when 0.
+	CursorSurroundingLines int
+	Search                 func() Search
+	Diagnostics            func() []Diagnostic
+	Decorations            func() []Decoration
 	// CompletionTriggerCharacters ask for completions as they are typed
 	// ("." for members); a word character at a word's end does too while
 	// OnCompletionRequest is set.
 	CompletionTriggerCharacters string
-	Styles                      Styles
-	Label                       string
-	Style                       core.Style
-	StyleFunc                   func() core.Style
-	Ref                         *Ref
-	TestID                      string
+	// InlineCompletionDelay is how long typing pauses before
+	// OnInlineCompletionRequest asks: 300 ms when 0.
+	InlineCompletionDelay time.Duration
+	Styles                Styles
+	Label                 string
+	Style                 core.Style
+	StyleFunc             func() core.Style
+	Ref                   *Ref
+	TestID                string
 
 	OnSelectionChange   func([]Selection)
 	OnSearchChange      func(SearchResult)
@@ -284,7 +338,10 @@ type Editor struct {
 	OnFocus, OnBlur     func()
 	OnCompletionRequest func(CompletionRequest)
 	OnCompletionAccept  func(CompletionItem)
-	OnDefinitionRequest func(DefinitionRequest)
+	// OnInlineCompletionRequest asks for an inline completion once typing
+	// pauses with no completion list showing.
+	OnInlineCompletionRequest func(InlineCompletionRequest)
+	OnDefinitionRequest       func(DefinitionRequest)
 	// OnCodeActionRequest receives the primary selection, for the app's
 	// menu of a language server's code actions.
 	OnCodeActionRequest func(Range)

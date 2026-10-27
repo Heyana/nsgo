@@ -4,15 +4,6 @@ This plan lists what NSGo still lacks compared with NSH's 0.3.0 release (tag `v0
 
 References are files in `nsh/docs/dev/` unless they give a path from `nsh/`, with the bullet or section to read in brackets. To refresh the plan for NSH's next release, check out its tag in `nsh/`, then read `git log v0.3.0..HEAD` there and the documents it changed.
 
-## Code and data components
-
-The components are ported; these parts of NSH's are not yet.
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| Editor's remaining features | `editor.md`, `website/elements/editor.md` | Inline completion, block selection, expanding and shrinking selections, the selection history, whitespace marks, rulers, indent guides, `minRows` and `maxRows`, scrolling while a drag is past the edges, and the app's highlighters |
-| DiffView's review | `diff.md` (line selection, annotations) | Line selection on the numbers, annotations and their add control, soft wrap, and split sides that scroll sideways on their own |
-
 ## Rendering costs
 
 | Item | NSH reference | Done when |

@@ -143,3 +143,103 @@ func TestEditorHighlightsOffTheEngine(t *testing.T) {
 		return app.SpanStyle("text:func f1() int >> nth=0").Color != 0
 	})
 }
+
+// words colors every word that starts with a capital letter as a title.
+type words struct{}
+
+func (words) Highlight(lines []string, from, to int) [][]editor.Token {
+	out := make([][]editor.Token, to-from)
+	for i := range out {
+		l := lines[from+i]
+		for at := 0; at < len(l); {
+			end := strings.IndexByte(l[at:], ' ')
+			if end < 0 {
+				end = len(l) - at
+			}
+			if end > 0 && l[at] >= 'A' && l[at] <= 'Z' {
+				out[i] = append(out[i], editor.Token{Start: at, End: at + end, Kind: "title"})
+			}
+			at += end + 1
+		}
+	}
+	return out
+}
+
+func TestEditorInlineCompletionAndSelections(t *testing.T) {
+	var value string
+	var asked []editor.InlineCompletionRequest
+	ref := &editor.Ref{}
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		text := core.NewSignal(cx, "say(\"hi\")\n")
+		return editor.Editor{
+			Ref: ref, Language: "go", Label: "Code",
+			Value:    text.Get,
+			OnChange: func(s string) { value = s; text.Set(s) },
+			OnInlineCompletionRequest: func(r editor.InlineCompletionRequest) {
+				asked = append(asked, r)
+				ref.PresentInlineCompletion(r.ID, "lo()")
+			},
+			Style: core.Style{Width: core.Pt(400), Height: core.Pt(300)},
+		}
+	})
+	ref.SetSelections([]editor.Selection{{Anchor: editor.Position{Line: 1}, Head: editor.Position{Line: 1}}})
+	ref.Focus()
+	app.Settle()
+	app.Type("label:Code", "hel")
+	app.Advance(100 * time.Millisecond)
+	if len(asked) != 0 {
+		t.Fatal("asked before typing paused")
+	}
+	app.Advance(400 * time.Millisecond)
+	if len(asked) != 1 || asked[0].Offset != 13 || asked[0].Position != (editor.Position{Line: 1, Column: 3}) {
+		t.Fatalf("requests %+v", asked)
+	}
+	app.Find("text:lo()")
+	app.Key("tab")
+	if !strings.HasSuffix(value, "hello()") || len(app.Query("text:lo()")) != 1 {
+		t.Fatalf("tab took %q", value)
+	}
+	// Expanding and shrinking, then back through the moves.
+	ref.SetSelections([]editor.Selection{{Anchor: editor.Position{Line: 0, Column: 5}, Head: editor.Position{Line: 0, Column: 5}}})
+	ref.Run(editor.ExpandSelection)
+	ref.Run(editor.ExpandSelection)
+	if got := ref.SelectedText(); got != `"hi"` {
+		t.Fatalf("expanded to %q", got)
+	}
+	ref.Run(editor.ShrinkSelection)
+	if got := ref.SelectedText(); got != "hi" {
+		t.Fatalf("shrank to %q", got)
+	}
+	ref.Run(editor.UndoSelection)
+	if got := ref.SelectedText(); got != `"hi"` {
+		t.Fatalf("undoSelection went to %q", got)
+	}
+	ref.Run(editor.RedoSelection)
+	if got := ref.SelectedText(); got != "hi" {
+		t.Fatalf("redoSelection went to %q", got)
+	}
+}
+
+func TestEditorGrowsAndDrawsGuides(t *testing.T) {
+	ref := &editor.Ref{}
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return editor.Editor{
+			Ref: ref, TestID: "editor", DefaultValue: "a  b\tc", MinRows: 2, MaxRows: 4,
+			ShowWhitespaces: true, Rulers: []int{10},
+			Highlighter: func(string) editor.Highlighter { return words{} },
+			Styles:      editor.Styles{Ruler: core.Style{Background: core.RGB(0xff0000)}, Whitespace: core.Style{Color: core.RGB(0x888888)}},
+			Style:       core.Style{Width: core.Pt(400)},
+		}
+	})
+	if h := app.Find("id:editor").Frame.Size.Height; h != 40 {
+		t.Errorf("one line in at least two rows: %v tall", h)
+	}
+	app.Find("text:··")
+	app.Find("text:→")
+	ref.SetValue("One\ntwo\nthree\nfour\nfive\nsix")
+	app.Settle()
+	if h := app.Find("id:editor").Frame.Size.Height; h != 80 {
+		t.Errorf("six lines in at most four rows: %v tall", h)
+	}
+	app.WaitUntil(5*time.Second, func() bool { return app.SpanStyle("text:One").Color != 0 })
+}

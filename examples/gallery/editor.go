@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/oneo-me/nsgo/base/editor"
 	"github.com/oneo-me/nsgo/core"
@@ -119,7 +120,9 @@ func editorStyles() editor.Styles {
 		CompletionKind:         core.Style{Color: colors.faint, FontSize: 11, Width: core.Pt(30)},
 		CompletionDocumentation: fin.menu.over(core.Style{CornerRadius: 8, BorderWidth: 1, BorderColor: colors.border,
 			Padding: core.Symmetric(6, 8), Color: colors.text, FontSize: 12}),
-		DefinitionLink: core.Style{Background: colors.accent},
+		DefinitionLink:   core.Style{Background: colors.accent},
+		IndentGuide:      core.Style{Background: colors.border},
+		InlineCompletion: core.Style{Color: colors.faint, Background: colors.surface},
 	}
 }
 
@@ -202,6 +205,29 @@ func editorDemo(cx *core.Scope) core.Node {
 		ref.PresentCompletions(r.ID, items, false)
 		last.Set(fmt.Sprintf("Completion for %q", r.Query))
 	}
+	// suggest is the rest of the longest word of the text the word before
+	// the caret starts, the gallery's inline completion.
+	suggest := func(r editor.InlineCompletionRequest) {
+		lines := strings.Split(text.GetUntracked(), "\n")
+		if r.Position.Line >= len(lines) {
+			return
+		}
+		before := lines[r.Position.Line][:min(r.Position.Column, len(lines[r.Position.Line]))]
+		words := identifier.FindAllString(before, -1)
+		if len(words) == 0 || !strings.HasSuffix(before, words[len(words)-1]) {
+			return
+		}
+		typed := words[len(words)-1]
+		best := ""
+		for _, w := range identifier.FindAllString(text.GetUntracked(), 5000) {
+			if len(w) > len(best) && len(w) > len(typed) && strings.HasPrefix(w, typed) {
+				best = w
+			}
+		}
+		if best != "" {
+			ref.PresentInlineCompletion(r.ID, best[len(typed):])
+		}
+	}
 	// definitionOf is where name is declared: a func, type or var line.
 	definitionOf := func(name string) (int, int, bool) {
 		decl := regexp.MustCompile(`^\s*(?:func(?:\s*\([^)]*\))?|type|var|const|class|def|export class)\s+` + regexp.QuoteMeta(name) + `\b`)
@@ -278,6 +304,8 @@ func editorDemo(cx *core.Scope) core.Node {
 					CompletionTriggerCharacters: ".",
 					OnCompletionRequest:         complete,
 					OnCompletionAccept:          func(it editor.CompletionItem) { last.Set("Accepted " + it.Label) },
+					InlineCompletionDelay:       150 * time.Millisecond,
+					OnInlineCompletionRequest:   suggest,
 					OnDefinitionRequest: func(r editor.DefinitionRequest) {
 						lines := strings.Split(text.GetUntracked(), "\n")
 						name := lines[r.Word.Start.Line][r.Word.Start.Column:r.Word.End.Column]

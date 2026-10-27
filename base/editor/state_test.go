@@ -152,3 +152,36 @@ func TestReplaceTextKeepsWhatStays(t *testing.T) {
 		t.Fatalf("%q, caret %v", s.r().text(), s.primary().head)
 	}
 }
+
+func TestExpandGrowsByUnits(t *testing.T) {
+	s := goState("func f() {\n\tcall(\"a word\", b)\n}")
+	s.setSels([]selection{caret(pos{1, 9})}) // in "word"
+	sel := func() string { p := s.primary(); return s.r().slice(p.start(), p.end()) }
+	want := []string{"word", "a word", `"a word"`, `"a word", b`, `("a word", b)`, `call("a word", b)`,
+		"\tcall(\"a word\", b)\n", "\n\tcall(\"a word\", b)\n", "{\n\tcall(\"a word\", b)\n}", "func f() {\n\tcall(\"a word\", b)\n}"}
+	for i, w := range want {
+		s.expand()
+		if got := sel(); got != w {
+			t.Fatalf("step %d: %q, want %q", i, got, w)
+		}
+	}
+}
+
+func TestSplitSelectionIntoLines(t *testing.T) {
+	s := goState("one\ntwo\nthree")
+	s.setSels([]selection{{anchor: pos{0, 1}, head: pos{2, 2}, goal: -1}})
+	s.splitLines()
+	if len(s.sels) != 3 || s.sels[0].span() != (span{pos{0, 1}, pos{0, 3}}) || s.sels[2].span() != (span{pos{2, 0}, pos{2, 2}}) {
+		t.Fatalf("split: %+v", s.sels)
+	}
+}
+
+func TestEdgeSpeedRamps(t *testing.T) {
+	if edgeSpeed(200, 400) != 0 {
+		t.Error("the middle scrolls")
+	}
+	near, far := edgeSpeed(390, 400), edgeSpeed(450, 400)
+	if near < edgeMin || far <= near || edgeSpeed(2000, 400) != edgeMax || edgeSpeed(-2000, 400) != -edgeMax {
+		t.Errorf("speeds %v %v", near, far)
+	}
+}
