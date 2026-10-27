@@ -1,8 +1,8 @@
 // Builds the gallery for the web and puts it in public/gallery/ for the
 // home page's live stage.
 //
-// The nsgo tool writes index.html, wasm_exec.js, resources and a
-// content-named wasm. This script adds:
+// The nsgo tool writes index.html, wasm_exec.js, resources, a
+// content-named wasm and nsgo.json, which names them. This script adds:
 //
 //   loader.html    the same app behind a progress-reporting loader; the
 //                  page embeds it in an iframe
@@ -44,12 +44,6 @@ function findSite(dir) {
   throw new Error(`No web build found under ${dir}`);
 }
 
-function one(html, pattern, label) {
-  const match = html.match(pattern);
-  if (!match) throw new Error(`The gallery build has no ${label}`);
-  return match[1];
-}
-
 console.log('Building the gallery for the web...');
 rmSync(buildDir, { recursive: true, force: true });
 rmSync(galleryDir, { recursive: true, force: true });
@@ -78,10 +72,13 @@ try {
   mkdirSync(galleryDir, { recursive: true });
   cpSync(site, galleryDir, { recursive: true });
 
+  // nsgo.json is what the tool writes for a page showing the app: its
+  // wasm, wasm_exec.js and resources, named by their content.
+  const app = JSON.parse(readFileSync(path.join(galleryDir, 'nsgo.json'), 'utf8'));
+  const exec = app.exec;
+  const wasm = app.wasm;
+  const resources = JSON.stringify(app.resources ?? {});
   const index = readFileSync(path.join(galleryDir, 'index.html'), 'utf8');
-  const exec = one(index, /<script src="([^"]*wasm_exec[^"]*\.js)"><\/script>/, 'wasm_exec.js');
-  const wasm = one(index, /fetch\("([^"]+\.wasm)"\)/, 'wasm file');
-  const resources = one(index, /globalThis\.nsgoResources = (.+);/, 'resource names');
   const icon = index.match(/<link rel="icon" href="([^"]+)">/)?.[1] ?? '';
 
   const wasmPath = path.join(galleryDir, wasm);
