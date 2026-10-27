@@ -219,3 +219,23 @@ func TestMixStylesFadeThroughTheVisibleColor(t *testing.T) {
 		t.Errorf("box shadow blur = %v halfway", mid.Effects.Shadows[0].Blur)
 	}
 }
+
+// TestMixStylesScalesFromUnsetAsOne moves a view that sets no scale to one
+// that does, as a button's pressed style: the transition shrinks it from
+// its shown size, not from nothing.
+func TestMixStylesScalesFromUnsetAsOne(t *testing.T) {
+	from, to := ViewStyle{}, ViewStyle{Transform: Transform{Scale: 0.97, ScaleX: 0.5}}
+	mid := MixStyles(from, to, 0.5, TransitionTransform)
+	if sx, sy := mid.Transform.Scales(); sx != 0.75 || sy != 0.985 {
+		t.Fatalf("halfway scales = %v, %v; want 0.75, 0.985", sx, sy)
+	}
+	// And one that stops setting a scale grows back to its shown size.
+	mid = MixStyles(to, ViewStyle{}, 0.5, TransitionTransform)
+	if sx, sy := mid.Transform.Scales(); sx != 0.75 || sy != 0.985 {
+		t.Fatalf("halfway scales back = %v, %v; want 0.75, 0.985", sx, sy)
+	}
+	// Two styles that set none keep none.
+	if got := MixStyles(from, from, 0.5, TransitionTransform).Transform; got.Scale != 0 || got.ScaleX != 0 || got.ScaleY != 0 {
+		t.Fatalf("unset scales = %+v", got)
+	}
+}

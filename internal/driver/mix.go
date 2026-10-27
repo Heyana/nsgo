@@ -17,7 +17,7 @@ func MixStyles(from, to ViewStyle, t float64, props TransitionProperty) ViewStyl
 		a, b := from.Transform, to.Transform
 		out.Transform = Transform{
 			TranslateX: mixPoints(a.TranslateX, b.TranslateX, t), TranslateY: mixPoints(a.TranslateY, b.TranslateY, t),
-			Scale: mixFloat(a.Scale, b.Scale, t), ScaleX: mixFloat(a.ScaleX, b.ScaleX, t), ScaleY: mixFloat(a.ScaleY, b.ScaleY, t),
+			Scale: mixScale(a.Scale, b.Scale, t), ScaleX: mixScale(a.ScaleX, b.ScaleX, t), ScaleY: mixScale(a.ScaleY, b.ScaleY, t),
 			Rotate: mixFloat(a.Rotate, b.Rotate, t), RotateX: mixFloat(a.RotateX, b.RotateX, t), RotateY: mixFloat(a.RotateY, b.RotateY, t),
 			SkewX: mixFloat(a.SkewX, b.SkewX, t), SkewY: mixFloat(a.SkewY, b.SkewY, t),
 			Perspective: mixPoints(a.Perspective, b.Perspective, t),
@@ -78,6 +78,22 @@ func MixStyles(from, to ViewStyle, t float64, props TransitionProperty) ViewStyl
 func mixPoints(a, b Points, t float64) Points { return a + (b-a)*Points(t) }
 
 func mixFloat(a, b float32, t float64) float32 { return a + (b-a)*float32(t) }
+
+// mixScale mixes two scales, whose zero is unset and so 1: moving to or
+// from a style that sets one shrinks or grows from the shown size, not
+// from nothing.
+func mixScale(a, b float32, t float64) float32 {
+	if a == b {
+		return a
+	}
+	if a == 0 {
+		a = 1
+	}
+	if b == 0 {
+		b = 1
+	}
+	return mixFloat(a, b, t)
+}
 
 func mixEdges(a, b Edges, t float64) Edges {
 	return Edges{Top: mixPoints(a.Top, b.Top, t), Right: mixPoints(a.Right, b.Right, t),
