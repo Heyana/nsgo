@@ -10,11 +10,11 @@ tasks:
     args: [tool, nsgo, build, examples/gallery]
   - label: Website dev
     type: shell
-    command: "cd website && bun run dev"
+    command: "cd website && bun install && bun run dev"
   - label: Website build
     group: build
     type: shell
-    command: "cd website && bun run build"
+    command: "cd website && bun install && bun run build"
 worktree:
   copy:
     - nsh
