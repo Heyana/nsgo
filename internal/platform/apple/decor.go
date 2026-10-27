@@ -5,6 +5,7 @@ package apple
 import (
 	"math"
 	"runtime"
+	"slices"
 
 	"github.com/ebitengine/purego/objc"
 
@@ -12,15 +13,24 @@ import (
 )
 
 // What a CALayer's own properties cannot draw goes into sublayers made on
-// demand, as NSH's decor does: corners of different radii and continuous
-// corners take a shape layer for the fill and a mask for clipping;
-// dashed borders and outlines a stroked shape; each shadow a layer of its
-// own with a shadow path, masked to outside the box (or inside the padding
-// box when inset); each gradient a CAGradientLayer. Fills, gradients and
-// inset shadows sit below the view's content (a content layer's zPosition
-// is -1) and its children, outer shadows below them, borders above the
-// content and outlines above everything. A layer that clips its children
-// clips these too, as it clips its own shadow.
+// demand, as NSH's decor does: corners of different radii take a shape
+// layer for the fill and a mask for clipping, while one radius, circular
+// or continuous, is the layer's own corner radius and curve; dashed
+// borders and outlines a stroked shape; each shadow a layer of its own
+// with a shadow path; each gradient a CAGradientLayer. Fills, gradients
+// and inset shadows sit below the view's content (a content layer's
+// zPosition is -1) and its children, outer shadows below them, borders
+// above the content and outlines above everything. A layer that clips its
+// children clips these too, as it clips its own shadow.
+//
+// Masks are what the window server pays for on every frame a view moves,
+// as NSH found: masked shadows on the gallery's cards and tiles dropped
+// most frames of a scroll. So an opaque background or gradient, drawn
+// above the outer shadows, hides them inside the box and they need no
+// mask (an opaque background moves to a fill layer for that); otherwise
+// they are masked to outside the box. Inset shadows go in a holder
+// clipped to the padding box by its rounded bounds, masked only when its
+// corners differ.
 
 // Z are those orders scaled down, so a child perspective (a sublayer
 // transform that projects by depth) leaves these layers their size.
@@ -41,6 +51,12 @@ type decor struct {
 	// or ease into the edges.
 	shaped bool
 	fill   objc.ID
+	// covered says an opaque fill or gradient hides the outer shadows
+	// inside the box; cover is the fill layer of an unshaped one.
+	covered bool
+	cover   objc.ID
+	// insets holds the inset shadows, clipped to the padding box.
+	insets objc.ID
 	// clip and mask are the layer's masks, which d owns: the clip shape,
 	// and a gradient mask over it.
 	clip      objc.ID
@@ -67,6 +83,7 @@ var (
 	selSetZPos           = sel("setZPosition:")
 	selSetShadowPath     = sel("setShadowPath:")
 	selRemoveFromSuper   = sel("removeFromSuperlayer")
+	selSuperlayer        = sel("superlayer")
 	selInsertSublayer    = sel("insertSublayer:atIndex:")
 	selAddSublayer       = sel("addSublayer:")
 	selSetCornerCurve    = sel("setCornerCurve:")
@@ -150,13 +167,10 @@ func numbers(vs ...float64) objc.ID {
 }
 
 // needsShape reports whether vs's corners need shape layers: radii that
-// differ, or continuous ones.
+// differ. One radius, circular or continuous, is the layer's own.
 func needsShape(vs *driver.ViewStyle, radii driver.Corners) bool {
 	if !vs.Rounded() {
 		return false
-	}
-	if vs.ContinuousCorners {
-		return true
 	}
 	var r driver.Points
 	for _, c := range radii.Array() {
@@ -230,6 +244,7 @@ func (d *decor) layout(layer objc.ID) {
 	}
 	WithoutAnimation(func() {
 		d.shaped = needsShape(vs, radii)
+		d.covered = coversShadows(vs, e)
 		d.layoutShape(layer, w, h, radii)
 		d.layoutShadows(layer, e.Shadows, w, h, radii)
 		d.layoutGradients(layer, e.Gradients, w, h, radii)
@@ -248,6 +263,55 @@ func (d *decor) layout(layer objc.ID) {
 	}
 }
 
+// setCorners gives layer radius r on the masked corners, continuous ones
+// where they fit: Core Animation's need about 1.53 times their radius of
+// straight edge, and a circle or a pill is circular anyway, as in NSH.
+func setCorners(layer objc.ID, r driver.Points, masked uint, continuous bool, w, h float64) {
+	layer.Send(selSetCornerRadius, float64(r))
+	if r > 0 {
+		layer.Send(selSetMaskedCorners, masked)
+	}
+	curve := "circular"
+	if continuous && float64(r)*1.528 <= min(w, h)/2 {
+		curve = "continuous"
+	}
+	layer.Send(selSetCornerCurve, NSString(curve))
+}
+
+// cornersOf returns the radius radii share and the corners it rounds.
+func cornersOf(radii driver.Corners) (driver.Points, uint) {
+	var r driver.Points
+	var masked uint
+	for i, c := range radii.Array() {
+		if c > 0 {
+			r = c
+			// Top left, top right, bottom right, bottom left, in the
+			// layer's own corners (y down).
+			masked |= [4]uint{1, 2, 8, 4}[i]
+		}
+	}
+	return r, masked
+}
+
+// coversShadows reports whether an opaque background or gradient hides
+// vs's outer shadows inside the box. A background a Core Animation
+// transition animates stays the layer's own.
+func coversShadows(vs *driver.ViewStyle, e *driver.Effects) bool {
+	outer := false
+	for _, sh := range e.Shadows {
+		outer = outer || !sh.Inset
+	}
+	if !outer {
+		return false
+	}
+	if opaqueGradient(e) {
+		return true
+	}
+	tr := vs.Transition
+	animated := tr.Duration > 0 && (tr.Properties == 0 || tr.Properties&driver.TransitionBackground != 0)
+	return vs.Background&0xff == 0xff && !animated
+}
+
 // layoutShape gives layer its corners: its own corner radius where one
 // radius covers them, else a fill shape and a clip mask.
 func (d *decor) layoutShape(layer objc.ID, w, h float64, radii driver.Corners) {
@@ -260,22 +324,25 @@ func (d *decor) layoutShape(layer objc.ID, w, h float64, radii driver.Corners) {
 			}
 			release(&d.clip)
 		}
-		var r driver.Points
-		var masked uint
-		for i, c := range radii.Array() {
-			if c > 0 {
-				r = c
-				// Top left, top right, bottom right, bottom left, in the
-				// layer's own corners (y down).
-				masked |= [4]uint{1, 2, 8, 4}[i]
+		r, masked := cornersOf(radii)
+		setCorners(layer, r, masked, vs.ContinuousCorners, w, h)
+		if d.covered && (vs.Effects == nil || !opaqueGradient(vs.Effects)) {
+			// Above the outer shadows, so they need no mask.
+			if d.cover == 0 {
+				d.cover = newLayer(layer, "CALayer", zFill)
 			}
-		}
-		layer.Send(selSetCornerRadius, float64(r))
-		if r > 0 {
-			layer.Send(selSetMaskedCorners, masked)
+			d.cover.Send(selSetFrame, CGRect{Size: CGSize{Width: w, Height: h}})
+			setCorners(d.cover, r, masked, vs.ContinuousCorners, w, h)
+			c := CGColor(vs.Background)
+			d.cover.Send(selSetBackgroundColor, c)
+			Release(c)
+			layer.Send(selSetBackgroundColor, uintptr(0))
+		} else {
+			drop(&d.cover)
 		}
 		return
 	}
+	drop(&d.cover)
 	// Shapes draw the corners: the layer's own background and border
 	// would show square corners.
 	layer.Send(selSetCornerRadius, 0.0)
@@ -312,8 +379,9 @@ func (d *decor) layoutShape(layer objc.ID, w, h float64, radii driver.Corners) {
 	}
 }
 
-// layoutShadows draws the box shadows, outer ones under the box masked
-// to outside it, inset ones inside the padding box.
+// layoutShadows draws the box shadows: outer ones under the box, masked
+// to outside it unless the box is covered, inset ones inside the padding
+// box.
 func (d *decor) layoutShadows(layer objc.ID, shadows []driver.BoxShadow, w, h float64, radii driver.Corners) {
 	vs := &d.vs
 	for len(d.shadows) > len(shadows) {
@@ -321,18 +389,41 @@ func (d *decor) layoutShadows(layer objc.ID, shadows []driver.BoxShadow, w, h fl
 		d.shadows = d.shadows[:len(d.shadows)-1]
 	}
 	widths := borderWidths(vs)
+	x, y := float64(widths.Left), float64(widths.Top)
+	iw, ih := w-x-float64(widths.Right), h-y-float64(widths.Bottom)
+	inner := driver.InnerRadii(radii, widths)
+	// The holder clips inset shadows by its rounded bounds where the
+	// padding box's corners share a radius.
+	r, masked, held := sharedRadius(inner)
+	held = held && slices.ContainsFunc(shadows, func(sh driver.BoxShadow) bool { return sh.Inset })
+	if held {
+		if d.insets == 0 {
+			d.insets = newLayer(layer, "CALayer", zInset)
+		}
+		d.insets.Send(selSetFrame, CGRect{Origin: CGPoint{X: x, Y: y}, Size: CGSize{Width: iw, Height: ih}})
+		setCorners(d.insets, driver.Points(r), masked, vs.ContinuousCorners, iw, ih)
+		d.insets.Send(selSetMasksToBounds, true)
+	}
 	for i, sh := range shadows {
 		// CSS paints the first shadow on top.
 		z := float64(zShadow - i)
+		parent, frame := layer, CGRect{Size: CGSize{Width: w, Height: h}}
 		if sh.Inset {
 			z = float64(zInset - i)
+			if held {
+				// In the box's coordinates still.
+				z, parent, frame.Origin = float64(-i), d.insets, CGPoint{X: -x, Y: -y}
+			}
 		}
 		if i == len(d.shadows) {
-			d.shadows = append(d.shadows, newLayer(layer, "CALayer", z))
+			d.shadows = append(d.shadows, newLayer(parent, "CALayer", z))
 		}
 		l := d.shadows[i]
+		if l.Send(selSuperlayer) != parent {
+			parent.Send(selInsertSublayer, l, uint32(0))
+		}
 		l.Send(selSetZPos, Z(z))
-		l.Send(selSetFrame, CGRect{Size: CGSize{Width: w, Height: h}})
+		l.Send(selSetFrame, frame)
 		c := CGColor(sh.Color)
 		l.Send(selSetShadowColor, c)
 		Release(c)
@@ -343,30 +434,37 @@ func (d *decor) layoutShadows(layer objc.ID, shadows []driver.BoxShadow, w, h fl
 		// only inside their frames, so the outer mask's covers that far.
 		far := float64(sh.Blur+abs32(sh.Spread)) + math.Abs(float64(sh.Offset.X)) + math.Abs(float64(sh.Offset.Y)) + 1
 		maskFrame := CGRect{Size: CGSize{Width: w, Height: h}}
-		maskPath := cgPathCreateMutable()
+		var maskPath uintptr
 		shadowPath := cgPathCreateMutable()
 		if sh.Inset {
 			// The padding box casts the shadow inwards from a ring around
 			// a hole shrunk by the spread.
-			x, y := float64(widths.Left), float64(widths.Top)
-			iw, ih := w-x-float64(widths.Right), h-y-float64(widths.Bottom)
-			inner := driver.InnerRadii(radii, widths)
-			appendPath(maskPath, driver.EllipticRect(nil, x, y, iw, ih, inner, vs.ContinuousCorners, false))
+			if !held {
+				maskPath = cgPathCreateMutable()
+				appendPath(maskPath, driver.EllipticRect(nil, x, y, iw, ih, inner, vs.ContinuousCorners, false))
+			}
 			s := float64(sh.Spread)
 			appendPath(shadowPath, driver.RoundedRect(nil, -far-w, -far-h, 3*w+2*far, 3*h+2*far, driver.Corners{}, false, false))
 			hole := shrinkRadii(inner, s)
 			appendPath(shadowPath, driver.EllipticRect(nil, x+s, y+s, max(iw-2*s, 0), max(ih-2*s, 0), hole, vs.ContinuousCorners, true))
 		} else {
 			// Under the box only where it is not: the box is a hole.
-			maskFrame = CGRect{Origin: CGPoint{X: -far, Y: -far}, Size: CGSize{Width: w + 2*far, Height: h + 2*far}}
-			appendPath(maskPath, driver.RoundedRect(nil, 0, 0, w+2*far, h+2*far, driver.Corners{}, false, false))
-			appendPath(maskPath, driver.RoundedRect(nil, far, far, w, h, radii, vs.ContinuousCorners, true))
+			if !d.covered {
+				maskFrame = CGRect{Origin: CGPoint{X: -far, Y: -far}, Size: CGSize{Width: w + 2*far, Height: h + 2*far}}
+				maskPath = cgPathCreateMutable()
+				appendPath(maskPath, driver.RoundedRect(nil, 0, 0, w+2*far, h+2*far, driver.Corners{}, false, false))
+				appendPath(maskPath, driver.RoundedRect(nil, far, far, w, h, radii, vs.ContinuousCorners, true))
+			}
 			s := float64(sh.Spread)
 			appendPath(shadowPath, driver.RoundedRect(nil, -s, -s, max(w+2*s, 0), max(h+2*s, 0), radii.Inset(-sh.Spread),
 				vs.ContinuousCorners, false))
 		}
 		l.Send(selSetShadowPath, shadowPath)
 		Release(shadowPath)
+		if maskPath == 0 {
+			l.Send(selSetMask, objc.ID(0))
+			continue
+		}
 		mask := l.Send(sel("mask"))
 		if mask == 0 {
 			mask = objc.ID(objc.GetClass("CAShapeLayer")).Send(selNew)
@@ -377,6 +475,28 @@ func (d *decor) layoutShadows(layer objc.ID, shadows []driver.BoxShadow, w, h fl
 		mask.Send(selSetPath, maskPath)
 		Release(maskPath)
 	}
+	// The shadows have left the holder by now, so dropping it frees only
+	// the holder.
+	if !held {
+		drop(&d.insets)
+	}
+}
+
+// sharedRadius returns the radius elliptic radii share where they are
+// circular, the corners it rounds, and whether they do share one.
+func sharedRadius(radii [4][2]float64) (float64, uint, bool) {
+	var r float64
+	var masked uint
+	for i, c := range radii {
+		if c[0] != c[1] || c[0] > 0 && r > 0 && c[0] != r {
+			return 0, 0, false
+		}
+		if c[0] > 0 {
+			r = c[0]
+			masked |= [4]uint{1, 2, 8, 4}[i]
+		}
+	}
+	return r, masked, true
 }
 
 func abs32(p driver.Points) driver.Points {
@@ -440,16 +560,8 @@ func (d *decor) shape(l objc.ID, w, h float64, radii driver.Corners) {
 		Release(path)
 		return
 	}
-	var r driver.Points
-	var masked uint
-	for i, c := range radii.Array() {
-		if c > 0 {
-			r = c
-			masked |= [4]uint{1, 2, 8, 4}[i]
-		}
-	}
-	l.Send(selSetCornerRadius, float64(r))
-	l.Send(selSetMaskedCorners, masked)
+	r, masked := cornersOf(radii)
+	setCorners(l, r, masked, d.vs.ContinuousCorners, w, h)
 	l.Send(selSetMasksToBounds, r > 0)
 }
 
@@ -746,4 +858,19 @@ func splitTurns(frames []driver.Keyframe) []driver.Keyframe {
 		out = append(out, k)
 	}
 	return out
+}
+
+// opaqueGradient reports whether e paints an opaque gradient, which
+// covers the box.
+func opaqueGradient(e *driver.Effects) bool {
+	for _, g := range e.Gradients {
+		opaque := len(g.Stops) > 0
+		for _, st := range g.Stops {
+			opaque = opaque && st.Color&0xff == 0xff
+		}
+		if opaque {
+			return true
+		}
+	}
+	return false
 }

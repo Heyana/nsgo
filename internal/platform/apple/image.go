@@ -410,6 +410,7 @@ type ImageView struct {
 	layer, picture, mask objc.ID
 	config               driver.ImageConfig
 	tint                 driver.Color
+	corners              driver.ViewStyle // its corners: CornerRadius, Corners, ContinuousCorners
 	bounds               CGSize
 	ratio                float64
 
@@ -453,17 +454,31 @@ func (iv *ImageView) Configure(c *driver.ImageConfig) {
 // SetStyle applies what of a view's style the image layer draws: the
 // tint and the corners.
 func (iv *ImageView) SetStyle(vs *driver.ViewStyle) {
-	WithoutAnimation(func() { iv.layer.Send(selSetCornerRadius, float64(vs.CornerRadius)) })
+	iv.corners = driver.ViewStyle{CornerRadius: vs.CornerRadius, Corners: vs.Corners, ContinuousCorners: vs.ContinuousCorners}
+	iv.setCorners()
 	if vs.TintColor != iv.tint {
 		iv.tint = vs.TintColor
 		iv.render(0)
 	}
 }
 
+// setCorners clips the image to the view's corners where they share a
+// radius, as the view's layer clips them.
+func (iv *ImageView) setCorners() {
+	w, h := iv.bounds.Width, iv.bounds.Height
+	var r driver.Points
+	var masked uint
+	if radii := iv.corners.Radii(driver.Size{Width: driver.Points(w), Height: driver.Points(h)}); radii.Uniform() {
+		r, masked = cornersOf(radii)
+	}
+	WithoutAnimation(func() { setCorners(iv.layer, r, masked, iv.corners.ContinuousCorners, w, h) })
+}
+
 // Layout fits the image to the view's new size, decoding the source
 // again when the view outgrows the size it was decoded at.
 func (iv *ImageView) Layout(size CGSize) {
 	iv.bounds = size
+	iv.setCorners()
 	iv.render(0)
 	if !iv.source || !iv.reduced || iv.pending {
 		return
