@@ -872,11 +872,11 @@ func (s *surface) observe() {
 		s.stops = append(s.stops, func() { w.Send(sel("removeObserver:forKeyPath:"), appObserver, key) })
 	}
 
-	const keyDown, leftDown, leftUp, leftDragged, rightDown, otherDown, wheel, flags = 1 << 10, 1 << 1, 1 << 2, 1 << 6, 1 << 3, 1 << 25, 1 << 22, 1 << 12
+	const keyDown, leftDown, leftUp, mouseMoved, leftDragged, rightDown, otherDown, wheel, flags = 1 << 10, 1 << 1, 1 << 2, 1 << 5, 1 << 6, 1 << 3, 1 << 25, 1 << 22, 1 << 12
 	handler := objc.NewBlock(func(_ objc.Block, event objc.ID) objc.ID { return s.filter(event) })
 	nsEvent := objc.ID(objc.GetClass("NSEvent"))
 	monitor := nsEvent.Send(sel("addLocalMonitorForEventsMatchingMask:handler:"),
-		uint64(keyDown|leftDown|leftUp|leftDragged|rightDown|otherDown|wheel|flags), handler).Send(sel("retain"))
+		uint64(keyDown|leftDown|leftUp|mouseMoved|leftDragged|rightDown|otherDown|wheel|flags), handler).Send(sel("retain"))
 	handler.Release()
 	s.stops = append(s.stops, func() {
 		nsEvent.Send(sel("removeMonitor:"), monitor)
@@ -912,11 +912,12 @@ func observeApp() {
 // do, and measures them when a performance monitor does. It turns back
 // keys and the back button into EventBack, which it takes, reports presses
 // outside to the views that listen, and follows a selection's drag.
-// Presses and scrolls that look for their views commit the scroll offsets
-// first, as AppKit's hit testing follows the bounds. Down presses are
-// taken only by scroll views, to drag their indicators or catch a snap:
-// AppKit activates the window and hands the others to the views that hit,
-// which move the window or select text before their own handling.
+// Presses, scrolls and moves that look for their views commit the scroll
+// offsets first, as AppKit's hit testing and tracking areas follow the
+// bounds. Down presses are taken only by scroll views, to drag their
+// indicators or catch a snap: AppKit activates the window and hands the
+// others to the views that hit, which move the window or select text
+// before their own handling.
 func (s *surface) filter(event objc.ID) objc.ID {
 	if s.perf == nil || event.Send(selWindow) != s.window {
 		return s.filterEvent(event)
@@ -933,10 +934,13 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 	if s.window == 0 || event.Send(selWindow) != s.window || s.engine == nil {
 		return event
 	}
-	const typeLeftDown, typeLeftUp, typeRightDown, typeLeftDragged, typeKeyDown, typeFlagsChanged, typeScrollWheel, typeOtherDown = 1, 2, 3, 6, 10, 12, 22, 25
+	const typeLeftDown, typeLeftUp, typeRightDown, typeMouseMoved, typeLeftDragged, typeKeyDown, typeFlagsChanged, typeScrollWheel, typeOtherDown = 1, 2, 3, 5, 6, 10, 12, 22, 25
 	switch objc.Send[uint](event, sel("type")) {
 	case typeFlagsChanged:
 		s.modifiersChanged(event)
+	case typeMouseMoved:
+		// The hovers the move reports follow where the content shows.
+		s.commitPending()
 	case typeScrollWheel:
 		if len(s.armed) > 0 && s.wheelStarts(event) {
 			s.commitPending()

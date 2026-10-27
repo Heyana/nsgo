@@ -22,7 +22,8 @@ import (
 // (commitDue): setBoundsOrigin: walks the whole subtree, which drops
 // frames of a long list. AppKit's geometry (hit tests, conversions,
 // tracking areas) follows the bounds, so what asks it first commits
-// (commitPending): a press, a scroll gesture's start, a selection.
+// (commitPending): a press, a mouse move, a scroll gesture's start, a
+// selection.
 //
 // A scroll view moves along its main axis only. Trackpads follow the
 // system: a gesture rubber-bands past the edges unless NoBounces and

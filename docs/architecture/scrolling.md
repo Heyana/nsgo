@@ -22,7 +22,7 @@ A scroll view follows NSH's `scrolling-and-lists.md`: `ScrollBehavior` holds pag
 macOS follows NSH's `scroll.rs` (`internal/platform/macos/scroll.go`, `wheel.go`); the rubber band, the indicator's geometry and fade, the trackpad's resampling and revealing are `internal/platform/scrollbar`'s.
 
 - A scroll view is a plain view whose container holds and clips its children. A moving offset is the container layer's `sublayerTransform`, one layer write a frame. The container's bounds origin takes it 140 ms after the last move, once the frame clock rests or the view has rested for a second, since `setBoundsOrigin:` walks the whole subtree.
-- AppKit's hit testing and conversions follow the bounds, so presses, a scroll gesture's start, selections, a focused field and the test host commit first. Tracking areas and accessibility frames catch up at the commit.
+- AppKit's hit testing, conversions and tracking areas follow the bounds, so presses, mouse moves, a scroll gesture's start, selections, a focused field and the test host commit first. Accessibility frames catch up at the commit.
 - Trackpad gestures rubber-band past the edges unless `NoBounces` and spring back; the system's momentum follows and stops at the edges. Their events are shown in step with the display, one event interval back, so no frame moves twice or not at all.
 - Snapping views snap from the release, with `DecelerationRate` projecting it, instead of taking the system's momentum. Mouse wheels move 10 points a line, and snapping views settle once the notches stop.
 - A gesture and its momentum stay on the view they began on, and wheel notches for 200 ms. Views along the wheel's axis take it, and at the edges a gesture stretches the innermost view along it.
