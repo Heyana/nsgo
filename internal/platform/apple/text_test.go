@@ -173,6 +173,18 @@ func TestLayoutsHitTestTheirCharacters(t *testing.T) {
 	if r := ml.RangeRects(1, 5, nil); len(r) != 2 {
 		t.Fatalf("a range from b into the Hebrew covers %v, want two boxes", r)
 	}
+	// A run's last character ends where the next run starts.
+	bold := style
+	bold.Font.Weight = 700
+	styled := TextEngine{}.Prepare(&driver.AttributedText{Text: "NSGo runs apps", Style: style,
+		Spans: []driver.TextSpan{{Start: 0, End: 4, Style: bold}}})
+	defer styled.Release()
+	sl := styled.Layout(styled.Measure(driver.Auto)).(*Layout)
+	defer sl.Release()
+	apps, _ := sl.CaretRect(driver.Caret{Offset: 10})
+	if r := sl.RangeRects(10, 14, nil); len(r) != 1 || r[0].Origin.X < apps.Origin.X-0.5 {
+		t.Fatalf("the range of apps covers %v, want one box from x %v", r, apps.Origin.X)
+	}
 	empty := TextEngine{}.Prepare(&driver.AttributedText{Style: style})
 	defer empty.Release()
 	el := empty.Layout(empty.Measure(driver.Auto)).(*Layout)

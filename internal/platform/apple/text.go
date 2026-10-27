@@ -740,8 +740,12 @@ func (l *Layout) caretLines() driver.CaretLayout {
 		for k := range cfArrayGetCount(runs) {
 			cl.Clusters = runClusters(cfArrayGetValueAtIndex(runs, k), r, bases[i], origin.X, cl.Clusters)
 		}
-		// Logical order, without the line's break.
+		// Logical order, each run's last character reaching to the next
+		// run's first, without the line's break.
 		slices.SortFunc(cl.Clusters, func(a, b driver.CaretCluster) int { return a.Start - b.Start })
+		for k := 1; k < len(cl.Clusters); k++ {
+			cl.Clusters[k-1].End = min(cl.Clusters[k-1].End, cl.Clusters[k].Start)
+		}
 		for n := len(cl.Clusters); n > 0 && l.breaksAt(cl.Clusters[n-1].Start); n-- {
 			cl.Clusters = cl.Clusters[:n-1]
 		}
@@ -754,7 +758,7 @@ func (l *Layout) caretLines() driver.CaretLayout {
 // runClusters appends the clusters of run, of a line whose string range
 // is line, its offsets based at base, drawn at x: its glyphs grouped by
 // the first character each shows, every group reaching to the next
-// character a glyph shows.
+// character a glyph of the run shows, the last to the line's end.
 func runClusters(run uintptr, line cfRange, base int, x float64, out []driver.CaretCluster) []driver.CaretCluster {
 	n := ctRunGetGlyphCount(run)
 	if n == 0 {
@@ -789,10 +793,6 @@ func runClusters(run uintptr, line cfRange, base int, x float64, out []driver.Ca
 		c := &out[first+k]
 		left := driver.Points(x + positions[g].X)
 		c.Left, c.Right = min(c.Left, left), max(c.Right, left+driver.Points(advances[g].Width))
-	}
-	// A run's last character reaches to the next run's first.
-	if end := out[len(out)-1].End - base; end > lineEnd {
-		out[len(out)-1].End = lineEnd + base
 	}
 	return out
 }
