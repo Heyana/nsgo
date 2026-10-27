@@ -397,7 +397,7 @@ func (w *window) setAppearance(a driver.Appearance) {
 	w.appearance = a
 	w.darkTitleBar(w.shownDark())
 	darkMenus(a)
-	invalidateRect.Call(w.hwnd, 0, 0)
+	w.redrawAll()
 }
 
 // darkMenus has Win32's menus follow a: uxtheme's undocumented

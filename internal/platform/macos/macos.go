@@ -109,6 +109,7 @@ type view struct {
 	transform driver.Transform      // AppKit drops it when the frame changes
 	drawing   *driver.Drawing       // a canvas's
 	played    []driver.DrawOp       // the ops it last drew, its bound arguments' values in place
+	canvas    canvasPaint           // how it paints (content.go)
 	shader    *apple.ShaderLayer    // a shader view's (shader.go)
 	web       *apple.Web            // a web view's
 	video     *apple.Video          // a video's
@@ -1347,6 +1348,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemCanvas:
 			v.drawing = it.Drawing
 			v.played = v.played[:0] // drawn whole first
+			v.canvas.set(it.Drawing)
 			s.animator.BindCanvas(v.id, it.Drawing.Slots)
 			v.setCanvasNodes(it.Drawing.Nodes)
 			v.redraw()

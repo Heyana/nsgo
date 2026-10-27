@@ -111,6 +111,11 @@ type view struct {
 }
 
 type surface struct {
+	// perf measures the surface while its panel, hud, shows; perfOn says
+	// the app asked for them.
+	perf   *engine.PerfMonitor
+	hud    *hud
+	perfOn bool
 	// embedded is set for a host's NSGoView (embed.go): the host owns the
 	// window and its view controllers. host is what it gives the app, and
 	// embed the settings its view holds; stops end the surface's
@@ -345,6 +350,8 @@ type Options struct {
 	Fonts []string
 	// Appearance is the appearance the app starts in.
 	Appearance driver.Appearance
+	// Perf shows the performance monitor over the app (perf.go).
+	Perf bool
 }
 
 // Run shows app full screen and runs UIKit's event loop. Call it from
@@ -358,7 +365,8 @@ func Run(root engine.App, opts Options) {
 // root until the test opens one.
 func newSurface(root engine.App, opts Options) *surface {
 	s := &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*motion{}, appearance: opts.Appearance,
-		components: opts.Components, unknown: map[string]bool{}, accessories: map[driver.NodeID]*view{}}
+		components: opts.Components, unknown: map[string]bool{}, accessories: map[driver.NodeID]*view{},
+		perfOn: opts.Perf}
 	s.animator = driver.NewAnimator(func(e driver.Event) { s.engine.Dispatch(e) })
 	return s
 }
@@ -431,6 +439,12 @@ func (s *surface) startEngine(test *testOpen) {
 		s.alerts = map[uint32]shownAlert{}
 	}
 	imageload.UseDiskCache(opts.CacheDir)
+	if s.perfOn && test == nil {
+		s.perf = engine.NewPerfMonitor()
+		opts.Perf = s.perf
+		s.hud = newHud(s, s.perf)
+		s.startTicking()
+	}
 	s.engine = engine.Start(s, s.app, opts)
 	s.observe()
 }
@@ -1336,13 +1350,24 @@ func surfaceLayout(self objc.ID, cmd objc.SEL) {
 	if v := views[self]; v != nil && v.surface.engine != nil {
 		b := objc.Send[apple.CGRect](self, selBounds)
 		v.surface.engine.Resize(driver.Size{Width: driver.Points(b.Size.Width), Height: driver.Points(b.Size.Height)})
+		if h := v.surface.hud; h != nil {
+			h.layout()
+		}
 	}
 }
 
 func surfaceApply(self objc.ID, _ objc.SEL, _ objc.ID) {
 	s := views[self].surface
+	done := s.measuring(true)
 	for _, b := range s.batches.Drain() {
+		if s.perf != nil && !b.Sent.IsZero() {
+			s.perf.RecordLatency(time.Since(b.Sent))
+		}
 		s.apply(b)
+	}
+	done()
+	if s.hud != nil {
+		s.native.Send(sel("bringSubviewToFront:"), s.hud.panel)
 	}
 	// A frame requested before the view was in a window starts the clock
 	// here: a display link needs the view mounted.

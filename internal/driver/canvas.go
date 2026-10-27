@@ -125,12 +125,7 @@ const (
 // UsesPath reports whether an op of kind k builds on the current path or
 // closes, fills, strokes or clips with it.
 func (k DrawKind) UsesPath() bool {
-	switch k {
-	case DrawMoveTo, DrawLineTo, DrawQuadTo, DrawCubicTo, DrawArc, DrawRect, DrawRoundRect, DrawEllipse,
-		DrawClosePath, DrawFill, DrawStroke, DrawClip:
-		return true
-	}
-	return false
+	return k.BuildsPath() || k == DrawFill || k == DrawStroke || k == DrawClip
 }
 
 // DrawOp is one operation; Kind says which fields it uses.

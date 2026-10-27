@@ -113,13 +113,17 @@ type canvasPlayer struct {
 	strokes map[string]*comObject
 	// off is the bitmap the canvas plays into when it mixes.
 	off *comObject
+	// split is what a list played over the static part leaves out
+	// (canvascache.go).
+	split driver.CanvasSplit
 }
 
 // changedCanvases draws again the canvases whose bound arguments changed.
 func (w *window) changedCanvases() {
 	w.animator.ChangedCanvases(func(id driver.NodeID) {
-		if w.view(id) != nil {
-			invalidateRect.Call(w.hwnd, 0, 0)
+		if v := w.view(id); v != nil {
+			v.canvasCache.argsChanged()
+			w.redrawView(v)
 		}
 	})
 }
@@ -133,23 +137,6 @@ func (w *window) changedNatives() {
 	})
 }
 
-// canvas plays v's drawing into its width by height points.
-func (p *painter) canvas(v *view, width, height float32) {
-	ops := p.w.animator.CanvasOps(v.id, v.drawing)
-	mixes := false
-	for i := range ops {
-		if op := &ops[i]; op.Kind == driver.DrawClear || op.Kind == driver.DrawComposite && op.Composite != 0 {
-			mixes = true
-			break
-		}
-	}
-	if mixes && p.canvasOffscreen(v, ops, width, height) {
-		return
-	}
-	c := p.newCanvasPlayer(v, p.m, width, height)
-	c.playAll(ops)
-}
-
 func (p *painter) newCanvasPlayer(v *view, world matrix, width, height float32) *canvasPlayer {
 	return &canvasPlayer{p: p, v: v, world: world, width: width, height: height,
 		st:      canvasState{ctm: identity, fill: 0x000000ff, stroke: 0x000000ff, width: 1, miter: 10, alpha: 1},
@@ -158,7 +145,9 @@ func (p *painter) newCanvasPlayer(v *view, world matrix, width, height float32) 
 
 func (c *canvasPlayer) playAll(ops []driver.DrawOp) {
 	for i := range ops {
-		c.play(&ops[i])
+		if !c.split.Skips(i, &ops[i]) {
+			c.play(&ops[i])
+		}
 	}
 	for _, s := range append(c.stack, c.st) {
 		for _, cl := range s.clips {
@@ -1033,13 +1022,16 @@ func (w *window) canvasImage(src driver.ImageSource) *imageSlot {
 				return
 			}
 			s.pic = pic
-			// Shaders reading it draw again; canvases play again anyway.
+			// Shaders and canvases that may draw it draw again.
 			for _, v := range w.views {
 				if v != nil && v.shaderView != nil {
 					v.shaderView.dirty = true
 				}
+				if v != nil && v.drawing != nil {
+					v.canvasCache.release()
+				}
 			}
-			invalidateRect.Call(w.hwnd, 0, 0)
+			w.redrawAll()
 		})
 	}()
 	return s

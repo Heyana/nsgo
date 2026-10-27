@@ -51,6 +51,7 @@ const (
 	swapPresent       = 8
 	swapGetBuffer     = 9
 	swapResizeBuffers = 13
+	swapPresent1      = 22
 
 	// ID2D1Factory, ID2D1Factory1
 	d2dFactoryCreateRoundedRectangleGeometry = 6

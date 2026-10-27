@@ -29,7 +29,7 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `internal/engine` | `nsh-engine` | The engine goroutine: a mailbox, one batch per commit to the platform, storage files and the performance monitor |
 | `internal/platform/<target>` | `nsh-platform-*` | Native view mounting, text engine and input for one target |
 | `internal/platform/apple` | Shared Apple code | Layers, images, canvas, Metal shaders, web views, videos and CoreText for macOS and iOS |
-| `internal/platform/*` | Platforms' shared code | Code backends share: image loading, caching and decoding ([images](docs/architecture/images.md)), picked photos |
+| `internal/platform/*` | Platforms' shared code | Code backends share: image loading, caching and decoding ([images](docs/architecture/images.md)), picked photos, the performance panel's process readings |
 | `examples/gallery` | `examples/gallery` | NSH's gallery in Go, a demo of each element, component and service, with headless tests; the website runs its web build |
 | `examples/embedded`, `examples/embed-*` | `examples/embed-*` | An app to embed, and desktop, iOS and Android apps embedding it |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `dev`, `test` and `build` from an app's `nsgo.yaml` ([tool](docs/architecture/tool.md)); `apk` packages and signs Android apps in Go |

@@ -4,15 +4,6 @@ This plan lists what NSGo still lacks compared with NSH's 0.3.0 release (tag `v0
 
 References are files in `nsh/docs/dev/` unless they give a path from `nsh/`, with the bullet or section to read in brackets. To refresh the plan for NSH's next release, check out its tag in `nsh/`, then read `git log v0.3.0..HEAD` there and the documents it changed.
 
-## Rendering costs
-
-| Item | NSH reference | Done when |
-| --- | --- | --- |
-| Linux canvases | `canvas.md` (partial redraws), `linux.md` (performance) | Canvases rasterize into tiles, animations redraw their damage over the kept static part, canvases out of sight wait, and GSK uses its GL renderer under NVIDIA |
-| macOS canvases | `macos.md` (canvases) | A canvas draws at once unless it paints ten times a second, and a long static part painted unchanged is kept as a `CGLayer` |
-| Windows frames | `windows.md` (partial frames) | Frames draw and present only what changed, canvases record only their animated tail, and children outside a clip are not drawn |
-| Performance monitors | `linux.md`, `windows.md` (performance) | Linux, Windows and iOS report the monitor's readings as macOS does |
-
 ## Finish the existing platforms
 
 These items wait for community contributions.

@@ -418,7 +418,7 @@ func (p *portal) release() {
 	releaseAll(&p.corners, &p.inner, &p.outer)
 	if c.users--; c.users == 0 && !c.w.baseComposed {
 		c.release()
-		invalidateRect.Call(c.w.hwnd, 0, 0)
+		c.w.redrawAll()
 	}
 }
 

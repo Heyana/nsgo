@@ -63,8 +63,9 @@ type view struct {
 	image               driver.ImageConfig
 	source, placeholder imageSlot
 
-	// A canvas's drawing.
+	// A canvas's drawing, and what of it must be drawn again.
 	drawing *driver.Drawing
+	canvas  canvasDraw
 
 	// A web view's page, a video's player, a native component and a
 	// shader's GL area.

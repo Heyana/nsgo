@@ -1,6 +1,6 @@
 # Performance
 
-The performance monitor measures what a surface's frames and commits cost while it runs, for a panel over the app (`dev.fps`, `build.fps` or `nsgo.FPS`). It follows NSH's `nsh_engine::perf` and macOS HUD. Read this before changing `internal/engine/perf.go`, `internal/platform/macos/perf.go`, a backend's frame clock or anything that runs every frame.
+The performance monitor measures what a surface's frames and commits cost while it runs, for a panel over the app (`dev.fps`, `build.fps` or `nsgo.FPS`). It follows NSH's `nsh_engine::perf` and macOS HUD. Read this before changing `internal/engine/perf.go`, a backend's `perf.go`, its frame clock or anything that runs every frame.
 
 ## Measuring
 
@@ -17,25 +17,31 @@ The performance monitor measures what a surface's frames and commits cost while 
 
 ## The panel
 
-`nsgo dev` passes `-X github.com/oneo-me/nsgo.fps=1` when `dev.fps` is true and `nsgo build` when `build.fps` is; both default to false and `-fps` or `-fps=false` overrides them. `nsgo.Run` turns the flag into the backend's monitor, and `nsgo.FPS(true)` does the same from an app run with `go run`; embedded views have none. Only the native macOS target has a monitor; the others accept the option and ignore it.
+`nsgo dev` passes `-X github.com/oneo-me/nsgo.fps=1` when `dev.fps` is true and `nsgo build` when `build.fps` is; both default to false and `-fps` or `-fps=false` overrides them. `nsgo.Run` turns the flag into the backend's monitor, and `nsgo.FPS(true)` does the same from an app run with `go run`; embedded views and target tests have none. macOS, iOS, Windows and Linux show one; Android and the web accept the option and ignore it.
 
-The macOS panel sits at the top right of the surface, lets the mouse through, fades out while the pointer is over it, and is redrawn every 500 ms:
+The panel sits at the top right of the surface (below the safe area on iOS), lets the pointer through, and is redrawn every 500 ms; on macOS it fades out while the pointer is over it. Its sizes, colors and trace are `engine`'s (`perfpanel.go`), and `internal/platform/perfhud` reads the process' CPU and memory for every backend:
 
 - `FPS` counts frames shown over the last second; `max` is what the main thread could keep up with, capped at the display's rate.
 - `TICK` is the gaps between refreshes and the 95th-percentile gap between shown frames.
 - `MAIN` is main-thread time per frame, its 95th percentile, and `drop`, the share of frames that took longer than one refresh.
 - `APP` and `CORE` are the app's and the core's time per commit, commits per second and mount items per commit.
 - `HOP` is how long batches waited between the threads, and how busy the engine goroutine was.
-- `CPU` is percent of one core, `GPU` this process' share, `MEM` its physical footprint.
+- `CPU` is percent of one core, `GPU` this process' share (macOS only), `MEM` its physical footprint (Apple), working set (Windows) or resident set (Linux).
 - The trace is the last 120 frames' main-thread cost against one refresh (the line): green within half of it, amber within it, red over.
 
-While a monitor measures, macOS runs its display link on every refresh, so an idle app still reports the display's tick rate. Its `FPS` reads low when the app is idle; that is not slowness. Measure release builds: a debug build's text and layout costs are not the app's.
+While a monitor measures, the frame clock runs on every refresh, so an idle app still reports the display's tick rate. Its `FPS` reads low when the app is idle; that is not slowness. Measure release builds: a debug build's text and layout costs are not the app's.
 
 ## Adding a backend
 
-A backend calls `RecordWork` around its main-thread work, `Vsync` from its frame clock with the display link's period, `RecordLatency` on the main thread when a batch with `Sent` applies, and `SetProcess` from its process sampler. The panel draws `PerfSnapshot.Readings()`; its look is the platform's.
+A backend calls `RecordWork` around its main-thread work, `Vsync` from its frame clock with the refresh period, `RecordLatency` on the main thread when a batch with `Sent` applies, and `SetProcess` from a `perfhud.Sampler`. The panel draws `PerfSnapshot.Readings()` and `engine.PerfTrace`.
 
-macOS reads memory with `proc_pid_rusage`'s physical footprint and GPU time from the `accumulatedGPUTime` of the process' accelerator clients in the IO registry (`internal/platform/apple/perf.go`), both through purego.
+| Target | Frames close at | Main-thread work |
+| --- | --- | --- |
+| macOS, iOS | The display link, at its period | Batches, ticks and input |
+| Windows | Each `DwmFlush`, at DWM's composition rate (`DwmGetCompositionTimingInfo`) | Batches, ticks and drawing a frame, less `Present`, which waits for the display |
+| Linux | A tick callback of the surface's frame clock, at its refresh interval | Batches, ticks, and each frame from the clock's `layout` signal to `after-paint` |
+
+Apple platforms read memory with `proc_pid_rusage`'s physical footprint; macOS reads GPU time from the `accumulatedGPUTime` of the process' accelerator clients in the IO registry (`internal/platform/apple/perf.go`), through purego.
 
 ## Keeping frames cheap
 
@@ -55,9 +61,27 @@ Every frame runs the commit on the engine goroutine and, on the main thread, the
 - The cores clock down between frames, so a commit in the app takes longer than the same work in a Go benchmark; measure a change both ways.
 - A commit allocates only what it sends: compare a node's values on the stack and copy them into an item once they changed. Flex layout reuses its item buffers.
 - macOS draws only content that changed and can be seen ([text and drawing](text.md#text-and-drawing)), and decides what can be seen from the batches' state rather than by asking AppKit.
-- A canvas plays all of its drawing each time it draws, also for the small area an animated argument changes. `go test ./internal/platform/apple -run '^$' -bench PlayChart` plays the Stocks demo's chart five hours into its session that way: 2,418 ops in 0.39 ms (93,018 ops in 44 ms when each `FillRect` recorded the line before it again and every op was a registered call). Record a path once ([recording](canvas.md#recording)) and cross into the platform as few times as an op allows ([players](canvas.md#players)).
+- Windows draws and presents only what changed ([partial frames](#partial-frames-on-windows)).
+- Canvases keep the static part under their animated arguments, and macOS, iOS and Linux draw only the area a change covers ([canvas](canvas.md#animated-arguments)). A canvas still plays all of the rest each time it draws. `go test ./internal/platform/apple -run '^$' -bench PlayChart` plays the Stocks demo's chart five hours into its session that way: 2,418 ops in 0.39 ms (93,018 ops in 44 ms when each `FillRect` recorded the line before it again and every op was a registered call). Record a path once ([recording](canvas.md#recording)) and cross into the platform as few times as an op allows ([players](canvas.md#players)).
 - On an M1 Max at 60 Hz in a 1200×800 window, the gallery's Stocks demo costs 35–40% of a core, early in its session and five hours into it, and Animations 13%, as NSH's build of its gallery does on the same machine (its `examples/gallery/tools/perf.py`).
+- Keeping canvases' static parts and drawing partial frames, the gallery's process CPU over 15 s, two interleaved runs each against the commit before:
+
+  | Machine | Stocks | Canvas |
+  | --- | --- | --- |
+  | Windows 11, RTX 5080, 260 Hz | 95–98% → 34–36% | 84–85% → 25–29% |
+  | Linux, Hyprland, Radeon 680M, 60 Hz | 70% → 61–62% | 36% → 23–24% |
 - The main thread never waits for the GPU: Metal shader views take drawables and present on goroutines of their own ([shaders](shaders.md#platforms)).
+
+## Partial frames on Windows
+
+As NSH's, a frame draws only what changed since its back buffer was drawn and presents only what changed since the last frame (`internal/platform/windows/damage.go`):
+
+- A change of a view queues it with `redrawView`, noting where the last frame painted its subtree; `redrawAll` draws everything, for the environment, the chrome, a size and what is not tied to a view. Applied items queue their views; a removed view is queued before it goes, an inserted one after.
+- At the frame, a walk down the paths to the queued views records where each now paints (`measure`, placed as `painter.draw` places them, clipped by the ancestors that clip), and their subtrees' new areas join the old ones.
+- The swap chain is `FLIP_SEQUENTIAL` with two buffers, so a frame draws its own areas and the last frame's, merged to at most 24, cleared and clipped to, and presents its own with `Present1`. Views whose subtree meets no area, or shows nowhere, are left out, in every frame.
+- A window with web views, a material or native components' windows, a change under a filter or a 3D transform, a new or resized swap chain, and the frame after a whole one draw everything. A paint the system asks for with nothing queued draws nothing: DWM keeps what was presented.
+
+`TestPartialFramesDrawWhatAWholeOneDoes` checks the window's pixels after partial frames against a whole frame.
 
 ## Frame clocks
 
@@ -90,3 +114,5 @@ On per-frame paths, send messages whose arguments and result are objects, intege
 | `JS` per commit | `APP` per commit | Apps are Go |
 | `ops` and mount items in a commit | Mount items | NSGo's commit does not count ops |
 | `--fps --trace` logs the readings once a second | Not ported | `nsgo dev` has no trace flag |
+| Linux and Windows log one line of readings a second | Every native target shows macOS's panel | One monitor, read the same way on every target |
+| Windows draws the whole window for a paint the system asks for with nothing queued | It draws nothing | The flip model's last frame is still on screen; PrintWindow's captures asked for such paints |

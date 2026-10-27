@@ -165,9 +165,11 @@ func viewSizeAllocateCallback(widget uintptr, width, height, baseline int32) {
 	}
 	if r.v == nil {
 		r.w.allocateSurface(width, height)
+		r.w.revealCanvases()
 		return
 	}
 	r.w.allocateView(r.v)
+	r.w.revealCanvases()
 }
 
 func viewSnapshotCallback(widget, snapshot uintptr) {
@@ -379,6 +381,7 @@ func (w *window) snapshotSurface(snap uintptr) {
 	if root != nil && root.widget != 0 && gtkWidgetGetParent(root.widget) == w.surface {
 		gtkWidgetSnapshotChild(w.surface, root.widget, snap)
 	}
+	w.snapshotPerf(snap, rect.w)
 }
 
 // rgba is c as GDK's color.

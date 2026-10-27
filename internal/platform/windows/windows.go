@@ -67,6 +67,8 @@ type Options struct {
 	Fonts []string
 	// Appearance is the appearance the app starts in.
 	Appearance driver.Appearance
+	// Perf shows the performance monitor over the app (perf.go).
+	Perf bool
 	// Host is what an embedding host gives the view (NewView), and Parent
 	// the HWND of the window it is a child window of.
 	Host   engine.HostOptions
@@ -237,8 +239,9 @@ type view struct {
 	image               driver.ImageConfig
 	source, placeholder imageSlot
 
-	// A canvas's drawing.
-	drawing *driver.Drawing
+	// A canvas's drawing, and the command lists it plays into.
+	drawing     *driver.Drawing
+	canvasCache canvasCache
 	// shaderView is a shader view's Direct3D state.
 	shaderView *shaderView
 
@@ -268,6 +271,12 @@ type view struct {
 	leaving  []leaving
 	leftFrom *view
 	retired  bool
+
+	// area and tree are where the last frame painted the view and its
+	// subtree, in the window's points; queued says the next frame draws
+	// them again, below that it measures a view under it (damage.go).
+	area, tree    rectF
+	queued, below bool
 }
 
 // detach takes v out of its parent's children.
@@ -283,6 +292,10 @@ func (v *view) detach() {
 type window struct {
 	hwnd  uintptr
 	title string
+	// damage is what the next frame draws again (damage.go).
+	damage damage
+	// hud is the performance panel, when the app shows one (perf.go).
+	hud *hud
 	// embedded is set for a host's child window (NewView): the host owns
 	// the top-level window, its chrome and the message loop. app and
 	// opts start its engine once it first has a size; skipChar drops the
@@ -548,6 +561,9 @@ func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 	}
 	imageload.UseDiskCache(cache)
 	w.cacheDir = cache
+	if opts.Perf && opts.test == nil {
+		eopts.Perf = w.startPerf()
+	}
 	w.engine = engine.Start(w, app, eopts)
 }
 
@@ -599,7 +615,7 @@ func (v *View) Handle() uintptr { return v.w.hwnd }
 func (v *View) SetHostEnvironment(env engine.HostEnvironment) {
 	v.w.opts.Host.Settings.SetEnvironment(env)
 	v.w.host = env.Appearance
-	invalidateRect.Call(v.w.hwnd, 0, 0)
+	v.w.redrawAll()
 }
 
 // SetTokens sets the values the host themes the app with.
@@ -778,6 +794,13 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		}
 		switch it.Kind {
+		case driver.ItemEvents, driver.ItemViewProps, driver.ItemNativeCommand, driver.ItemWebCommand,
+			driver.ItemOverflow:
+		default:
+			// Where it was, where it goes, or what it draws.
+			w.redrawView(v)
+		}
+		switch it.Kind {
 		case driver.ItemInsert:
 			if p := w.view(it.Parent); p != nil {
 				v.detach()
@@ -915,6 +938,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			}
 		}
 	}
+	if w.root != b.Root {
+		w.redrawAll()
+	}
 	w.root = b.Root
 	w.appear(lb)
 	// Bindings change with the batch's views.
@@ -949,7 +975,6 @@ func (w *window) apply(b *driver.MountBatch) {
 	w.placeIME()
 	// Views that moved, appeared or went under a still pointer.
 	w.hoverViews()
-	invalidateRect.Call(w.hwnd, 0, 0)
 }
 
 func (w *window) create(id driver.NodeID, kind driver.ViewKind) {
@@ -996,6 +1021,7 @@ func (w *window) destroy(v *view) {
 	v.shadow = nil
 	v.shaderView.release()
 	v.shaderView = nil
+	v.canvasCache.release()
 	for _, sh := range v.boxShadows {
 		sh.release()
 	}
@@ -1071,6 +1097,7 @@ func (w *window) scrollTo(v *view, offset driver.Point) bool {
 // moveOffset puts v's content at offset, unclamped, and reports it.
 func (w *window) moveOffset(v *view, offset driver.Point) {
 	v.offset = offset
+	w.redrawView(v)
 	// Values bound to the offset move in the frame that shows it.
 	if w.animator.Scroll(v.id, offset) {
 		w.animatedChanged()
@@ -1107,7 +1134,6 @@ func (w *window) wheel(at driver.Point, notches driver.Points, tilt bool) {
 		w.interruptScroll(v) // the wheel takes over
 		if w.scrollTo(v, offset) {
 			w.wheelTurned(v, v.offset.X-from.X+v.offset.Y-from.Y)
-			invalidateRect.Call(w.hwnd, 0, 0)
 			return
 		}
 	}
@@ -1134,8 +1160,17 @@ func (w *window) hoverBars(at driver.Point) {
 		under = scrollsAt(root, at, nil)
 	}
 	if !slices.Equal(under, w.bars) {
+		for _, v := range w.bars {
+			if !slices.Contains(under, v) {
+				w.redrawView(v)
+			}
+		}
+		for _, v := range under {
+			if !slices.Contains(w.bars, v) {
+				w.redrawView(v)
+			}
+		}
 		w.bars = under
-		invalidateRect.Call(w.hwnd, 0, 0)
 	}
 }
 
@@ -1171,9 +1206,7 @@ func (w *window) dragBar(at driver.Point) {
 		return
 	}
 	w.interruptScroll(d.v) // the bar takes over
-	if w.scrollTo(d.v, d.drag.Offset(driver.Point{X: at.X - d.origin.X, Y: at.Y - d.origin.Y})) {
-		invalidateRect.Call(w.hwnd, 0, 0)
-	}
+	w.scrollTo(d.v, d.drag.Offset(driver.Point{X: at.X - d.origin.X, Y: at.Y - d.origin.Y}))
 }
 
 // barAt returns the innermost scroll view whose bar is under p, and p in
@@ -1398,9 +1431,14 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	}
 	switch message {
 	case wmApply:
+		done := w.measuring(true)
 		for _, b := range w.batches.Drain() {
+			if w.hud != nil && !b.Sent.IsZero() {
+				w.hud.monitor.RecordLatency(time.Since(b.Sent))
+			}
 			w.apply(b)
 		}
+		done()
 		return 0
 	case wmRun:
 		w.runTasks()
@@ -1510,7 +1548,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			w.releaseBar()
 			releaseCapture.Call()
 			w.hoverBars(at)
-			invalidateRect.Call(w.hwnd, 0, 0)
+			w.redrawAll()
 			return 0
 		}
 		long := w.pressUp()
@@ -1668,6 +1706,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if w.engine != nil {
 			w.engine.Close()
 		}
+		w.stopPerf()
 		delete(windows, hwnd)
 		w.hwnd = 0
 		return 0

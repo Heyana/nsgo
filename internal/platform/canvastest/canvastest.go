@@ -187,3 +187,72 @@ func Logo(root string) []byte {
 	}
 	return data
 }
+
+// node is an animated node for Bind.
+type node uint32
+
+func (n node) AnimatedNodeID() uint32 { return uint32(n) }
+
+// Split returns drawings whose static part (driver.CanvasSplit) is
+// long, each with a bound argument: a chart's area, line and bars under
+// a clip and a shadow, then a ring, which keeps the path it builds, and
+// a bar filled with the path the static part left. A backend that keeps
+// a static part checks that playing the ops after it over the part's
+// pixels draws what a full replay does.
+func Split(text driver.TextEngine) []*Sample {
+	chart := func(name string, tail func(d *driver.Drawing)) *Sample {
+		d := driver.NewDrawing(text)
+		d.SetFillColor(driver.RGB(0xeeeeff)).FillRect(0, 0, 160, 100)
+		d.Save().BeginPath().RoundRect(4, 4, 152, 92, 8).Clip()
+		d.SetShadow(driver.RGBA(0x000000, 0.5), 2, 2, 3)
+		d.SetFillColor(driver.RGBA(0x2266cc, 0.4)).BeginPath().MoveTo(0, 90)
+		for i := 0; i <= 80; i++ {
+			d.LineTo(float32(i)*2, 60+20*float32(math.Sin(float64(i)/7)))
+		}
+		d.LineTo(160, 90).ClosePath().Fill()
+		d.SetShadow(0, 0, 0, 0)
+		d.SetStrokeColor(driver.RGB(0x2266cc)).SetLineWidth(2).BeginPath()
+		for i := 0; i <= 80; i++ {
+			d.LineTo(float32(i)*2, 60+20*float32(math.Sin(float64(i)/7)))
+		}
+		d.Stroke()
+		for i := range 40 {
+			d.SetFillColor(driver.RGB(0x888888)).FillRect(float32(i)*4, 92, 2, -float32(i%7))
+		}
+		d.FillText("Chart", 10, 20, driver.Font{Size: 12})
+		d.Restore()
+		tail(d)
+		return &Sample{Name: name, Width: 160, Height: 100, Drawing: d}
+	}
+	return []*Sample{
+		chart("ring", func(d *driver.Drawing) {
+			d.SetFillColor(driver.RGB(0xff0000)).BeginPath().Arc(120, 40, 8, 0, 2*math.Pi, false).
+				Bind(driver.ArgX, node(1))
+			d.Fill().SetStrokeColor(driver.RGB(0x00aa00)).Stroke()
+		}),
+		chart("path", func(d *driver.Drawing) {
+			d.BeginPath().Rect(20, 30, 50, 20)
+			d.SetFillColor(driver.RGB(0x00aa00)).Bind(driver.ArgColor, node(1)).Fill()
+		}),
+	}
+}
+
+// Differ counts the pixels of a and b that differ by more than
+// anti-aliasing may, and returns the first.
+func Differ(a, b *image.RGBA) (int, image.Point) {
+	n, first := 0, image.Point{}
+	for y := a.Rect.Min.Y; y < a.Rect.Max.Y; y++ {
+		for x := a.Rect.Min.X; x < a.Rect.Max.X; x++ {
+			c, d := a.RGBAAt(x, y), b.RGBAAt(x, y)
+			if far(c.R, d.R) || far(c.G, d.G) || far(c.B, d.B) || far(c.A, d.A) {
+				if n == 0 {
+					first = image.Pt(x, y)
+				}
+				n++
+			}
+		}
+	}
+	return n, first
+}
+
+func far(a, b uint8) bool { return int(a) > int(b)+3 || int(b) > int(a)+3 }

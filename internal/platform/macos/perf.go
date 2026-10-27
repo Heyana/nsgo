@@ -4,14 +4,13 @@ package macos
 
 import (
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/ebitengine/purego/objc"
 
-	"github.com/oneo-me/nsgo/internal/driver"
 	"github.com/oneo-me/nsgo/internal/engine"
 	"github.com/oneo-me/nsgo/internal/platform/apple"
+	"github.com/oneo-me/nsgo/internal/platform/perfhud"
 )
 
 // The performance monitor's HUD (`nsgo dev`): a panel at the top right
@@ -39,15 +38,13 @@ import (
 // it, so what it covers stays visible. It measures nothing while hidden: the
 // monitor is removed with it.
 
-// How often the readings are redrawn.
-const perfInterval = 500 * time.Millisecond
-
-// The panel's width and its distance from the surface's edges (points).
+// The panel's sizes and colors are engine's (perfpanel.go).
 const (
-	perfWidth       = 262.0
-	perfMargin      = 10.0
-	perfPadding     = 8.0
-	perfGraphHeight = 36.0
+	perfInterval    = engine.PerfInterval
+	perfWidth       = engine.PerfWidth
+	perfMargin      = engine.PerfMargin
+	perfPadding     = engine.PerfPadding
+	perfGraphHeight = engine.PerfGraphHeight
 )
 
 var (
@@ -58,18 +55,6 @@ var (
 	selPreferredMaxLayoutWidth = sel("setPreferredMaxLayoutWidth:")
 	selSubviews                = sel("subviews")
 	selLastObject              = sel("lastObject")
-)
-
-// The panel's colors: a dark translucent fill with light text, and the
-// trace's four levels.
-var (
-	perfPanelColor  = driver.RGBA(0x121214, 0.86)
-	perfTextColor   = driver.RGB(0xebedf2)
-	perfTraceFill   = driver.RGBA(0xffffff, 0.08)
-	perfTraceBudget = driver.RGBA(0xffffff, 0.45)
-	perfTraceGood   = driver.RGBA(0x4dd973, 0.9)
-	perfTraceWarn   = driver.RGBA(0xfabf40, 0.9)
-	perfTraceBad    = driver.RGBA(0xfa5954, 0.9)
 )
 
 // measuring starts timing main-thread work when a monitor measures, and
@@ -90,13 +75,12 @@ type hud struct {
 	panel   objc.ID
 	label   objc.ID
 	trace   objc.ID
-	sampler processSampler
+	sampler perfhud.Sampler
 	gpu     *apple.GPUProbe
-	// The trace's frames (milliseconds) and the budget (milliseconds).
-	frames []float64
-	budget float64
-	done   chan struct{}
-	once   sync.Once
+	// snapshot is what the panel shows.
+	snapshot engine.PerfSnapshot
+	done     chan struct{}
+	once     sync.Once
 }
 
 // The HUDs by their trace views, for the view's drawRect.
@@ -114,7 +98,7 @@ func newHud(s *surface, monitor *engine.PerfMonitor) *hud {
 	panel.Send(selSetAccessibilityElement, false)
 	panel.Send(selSetAccessibilityHidden, true)
 	layer := panel.Send(selLayer)
-	fill := apple.CGColor(perfPanelColor)
+	fill := apple.CGColor(engine.PerfPanelColor)
 	layer.Send(selSetBackgroundColor, fill)
 	apple.Release(fill)
 	layer.Send(selSetCornerRadius, 8.0)
@@ -123,7 +107,7 @@ func newHud(s *surface, monitor *engine.PerfMonitor) *hud {
 	label := objc.ID(objc.GetClass("NSTextField")).Send(sel("labelWithString:"), apple.NSString(""))
 	font := objc.ID(objc.GetClass("NSFont")).Send(sel("monospacedSystemFontOfSize:weight:"), 10.5, 0.0)
 	label.Send(selSetFont, font)
-	label.Send(selSetTextColor, nsColor(perfTextColor))
+	label.Send(selSetTextColor, nsColor(engine.PerfTextColor))
 	label.Send(selSetAccessibilityElement, false)
 	label.Send(selSetAccessibilityHidden, true)
 	label.Send(sel("cell")).Send(sel("setWraps:"), true)
@@ -159,7 +143,7 @@ func (h *hud) run() {
 	for {
 		select {
 		case <-ticker.C:
-			sample := h.sampler.sample()
+			sample := h.sampler.Sample()
 			if h.gpu != nil {
 				sample.GPU = h.gpu.Sample()
 			}
@@ -178,17 +162,8 @@ func (h *hud) update() {
 		return
 	default:
 	}
-	snapshot := h.monitor.Snapshot()
-	h.label.Send(selSetString, apple.NSString(snapshot.Readings()))
-	budget := 1000.0 / 60.0
-	if snapshot.RefreshRate != nil {
-		budget = 1000.0 / float64(*snapshot.RefreshRate)
-	}
-	frames := make([]float64, len(snapshot.Frames))
-	for i, d := range snapshot.Frames {
-		frames[i] = float64(d) / float64(time.Millisecond)
-	}
-	h.frames, h.budget = frames, budget
+	h.snapshot = h.monitor.Snapshot()
+	h.label.Send(selSetString, apple.NSString(h.snapshot.Readings()))
 	h.layout()
 	h.trace.Send(selSetNeedsDisplay, true)
 }
@@ -278,79 +253,5 @@ func drawPerfTrace(self objc.ID, _ objc.SEL, _ apple.CGRect) {
 		return
 	}
 	bounds := objc.Send[apple.CGRect](self, selBounds)
-	drawTrace(ctx, bounds, h.frames, h.budget)
-}
-
-// drawTrace draws bars of the frames' cost, newest at the right; the scale is
-// twice the budget, its line at half height.
-func drawTrace(ctx uintptr, bounds apple.CGRect, frames []float64, budget float64) {
-	w, h := bounds.Size.Width, bounds.Size.Height
-	fillColor := apple.CGColor(perfTraceFill)
-	apple.FillRects(ctx, []apple.CGRect{apple.Rect(0, 0, w, h)}, fillColor)
-	apple.Release(fillColor)
-	if budget < 0.1 {
-		budget = 0.1
-	}
-	scale := h / (2 * budget)
-	const slots = 120
-	bar := w / slots
-	start := slots - min(len(frames), slots)
-	var good, warn, bad []apple.CGRect
-	for i, ms := range frames[max(0, len(frames)-slots):] {
-		height := min(max(ms*scale, 1), h)
-		x := float64(start+i) * bar
-		rect := apple.Rect(x, 0, max(bar-0.5, 0.5), height)
-		switch {
-		case ms <= budget/2:
-			good = append(good, rect)
-		case ms <= budget:
-			warn = append(warn, rect)
-		default:
-			bad = append(bad, rect)
-		}
-	}
-	fillRects(ctx, good, perfTraceGood)
-	fillRects(ctx, warn, perfTraceWarn)
-	fillRects(ctx, bad, perfTraceBad)
-	lineColor := apple.CGColor(perfTraceBudget)
-	apple.FillRects(ctx, []apple.CGRect{apple.Rect(0, float64(int(h/2)), w, 1)}, lineColor)
-	apple.Release(lineColor)
-}
-
-func fillRects(ctx uintptr, rects []apple.CGRect, c driver.Color) {
-	if len(rects) == 0 {
-		return
-	}
-	color := apple.CGColor(c)
-	apple.FillRects(ctx, rects, color)
-	apple.Release(color)
-}
-
-// processSampler reads the process' CPU and memory use. CPU use is a rate:
-// each sample reports the CPU time since the previous one over the wall time
-// between them (the first reports none).
-type processSampler struct {
-	at  time.Time
-	cpu time.Duration
-	has bool
-}
-
-func (p *processSampler) sample() engine.ProcessSample {
-	now := time.Now()
-	var out engine.ProcessSample
-	var usage syscall.Rusage
-	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &usage); err == nil {
-		used := time.Duration(usage.Utime.Nano() + usage.Stime.Nano())
-		if p.has {
-			if wall := now.Sub(p.at); wall > 0 {
-				percent := float32(float64(used-p.cpu) / float64(wall) * 100)
-				out.CPU = &percent
-			}
-		}
-		p.at, p.cpu, p.has = now, used, true
-	}
-	if memory, ok := apple.ProcessMemory(); ok {
-		out.Memory = &memory
-	}
-	return out
+	perfhud.DrawTrace(ctx, h.snapshot, bounds.Size.Width, bounds.Size.Height, false)
 }

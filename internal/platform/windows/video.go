@@ -207,7 +207,7 @@ func (vd *video) configure(c *driver.VideoConfig) {
 			vd.pump()
 		}
 	}
-	invalidateRect.Call(vd.w.hwnd, 0, 0)
+	vd.w.redrawAll()
 }
 
 // open opens the source, or nothing.
@@ -349,12 +349,12 @@ func (vd *video) notified(serial uint64, event uint32, param1 uintptr, param2 ui
 		vd.wantFrame = time.Now().Add(videoFrameWait)
 		vd.pump()
 	case mediaPause:
-		invalidateRect.Call(vd.w.hwnd, 0, 0)
+		vd.w.redrawAll()
 	case mediaEnded:
 		if !vd.config.Repeat {
 			vd.report(driver.Event{Kind: driver.EventEnd})
 		}
-		invalidateRect.Call(vd.w.hwnd, 0, 0)
+		vd.w.redrawAll()
 	case mediaError:
 		if vd.failed {
 			return
@@ -400,7 +400,7 @@ func (vd *video) tick(now time.Time) bool {
 	// S_FALSE, no new frame, is a success code too.
 	if fresh := uint32(e.call(meOnVideoStreamTick, uintptr(unsafe.Pointer(&pts)))) == 0; fresh && vd.transfer() {
 		vd.wantFrame = time.Time{}
-		invalidateRect.Call(vd.w.hwnd, 0, 0)
+		vd.w.redrawAll()
 	}
 	playing := uint32(e.call(meIsPaused)) == 0 && uint32(e.call(meIsEnded)) == 0
 	if playing && vd.loaded && now.Sub(vd.progressAt) >= vd.config.ProgressInterval {
@@ -408,7 +408,7 @@ func (vd *video) tick(now time.Time) bool {
 		vd.progress()
 		// The control bar's time and scrubber move with it.
 		if vd.config.Controls {
-			invalidateRect.Call(vd.w.hwnd, 0, 0)
+			vd.w.redrawAll()
 		}
 	}
 	return playing || !vd.wantFrame.IsZero() && now.Before(vd.wantFrame)
@@ -482,20 +482,20 @@ func (vd *video) press(x, width float32) {
 		vd.scrubbing = true
 		vd.scrub(x, width)
 	}
-	invalidateRect.Call(vd.w.hwnd, 0, 0)
+	vd.w.redrawAll()
 }
 
 // drag follows a drag on the bar to x.
 func (vd *video) drag(x, width float32) {
 	if vd.scrubbing {
 		vd.scrub(x, width)
-		invalidateRect.Call(vd.w.hwnd, 0, 0)
+		vd.w.redrawAll()
 	}
 }
 
 func (vd *video) released() {
 	vd.scrubbing = false
-	invalidateRect.Call(vd.w.hwnd, 0, 0)
+	vd.w.redrawAll()
 }
 
 // scrub seeks to where x falls on the scrubber of a bar width wide.

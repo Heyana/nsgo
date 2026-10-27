@@ -29,6 +29,7 @@ package linux
 import (
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"slices"
 	"sync"
@@ -57,6 +58,8 @@ type Options struct {
 	Fonts []string
 	// Appearance is the appearance the app starts in.
 	Appearance driver.Appearance
+	// Perf shows the performance monitor over the app (perf.go).
+	Perf bool
 	// Host is what an embedding host gives the view (NewView).
 	Host engine.HostOptions
 	// test is what a test host opens the app with.
@@ -113,6 +116,10 @@ type window struct {
 	// canvases to draw again when one loads.
 	canvasImages  canvasImages
 	canvasWaiting map[string][]*view
+	// hiddenCanvases wait out of sight to be drawn (raster.go).
+	hiddenCanvases []*view
+	// hud is the performance panel, when the app shows one (perf.go).
+	hud *hud
 	// stickyBound are the scroll views with sticky cells whose insets
 	// follow animated values.
 	stickyBound map[*view]bool
@@ -201,6 +208,7 @@ func start(app engine.App, opts Options) (*window, error) {
 	}
 	runtime.LockOSThread()
 	registerFonts(opts.Fonts)
+	preferGLOnNvidia()
 	if gtkInitCheck() == 0 {
 		return nil, errors.New("no display; run the app in a desktop session or with xvfb-run")
 	}
@@ -251,12 +259,30 @@ func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 		eopts.UseTest(opts.test.options, &opts.test.pin)
 	}
 	imageload.UseDiskCache(eopts.CacheDir)
+	if opts.Perf && opts.test == nil {
+		eopts.Perf = w.startPerf()
+	}
 	w.engine = engine.Start(w, app, eopts)
 }
 
 // View is an app in a GtkWidget of an embedding host's window, which the
 // host's own main loop runs (NewView).
 type View struct{ w *window }
+
+// preferGLOnNvidia has GSK draw with its GL renderer instead of its
+// Vulkan one (GTK's default since 4.16) under NVIDIA's driver, as NSH
+// does, unless GSK_RENDERER chooses: there GSK's Vulkan frames cost the
+// main thread several times as much (NSH measured ~9.5 ms of paint per
+// frame at 75 fps against ~1 ms at 120 fps with GL). A host embedding a
+// view chooses for itself.
+func preferGLOnNvidia() {
+	if _, set := os.LookupEnv("GSK_RENDERER"); set {
+		return
+	}
+	if _, err := os.Stat("/proc/driver/nvidia/version"); err == nil {
+		os.Setenv("GSK_RENDERER", "ngl")
+	}
+}
 
 // NewView makes a GtkWidget showing app, for a host that has initialized
 // GTK and runs its main loop itself. Its engine starts once GTK first
@@ -440,9 +466,14 @@ func applyCallback(data uintptr) int32 {
 	if w == nil {
 		return 0
 	}
+	done := w.measuring(true)
 	for _, b := range w.batches.Drain() {
+		if w.hud != nil && !b.Sent.IsZero() {
+			w.hud.monitor.RecordLatency(time.Since(b.Sent))
+		}
 		w.apply(b)
 	}
+	done()
 	return 0
 }
 
@@ -492,6 +523,7 @@ func (w *window) close() {
 	if w.engine != nil {
 		w.engine.Close()
 	}
+	w.stopPerf()
 	if w.loop != 0 {
 		gMainLoopQuit(w.loop)
 	}
@@ -682,9 +714,7 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemModal:
 			// A modal is a view: it shows without a separate window.
 		case driver.ItemCanvas:
-			v.drawing = it.Drawing
-			w.animator.BindCanvas(v.id, it.Drawing.Slots)
-			w.changed(v)
+			w.setCanvas(v, it.Drawing)
 		case driver.ItemShader:
 			if it.Shader != nil {
 				w.setShader(v, it.Shader)
@@ -810,6 +840,8 @@ func (w *window) delete(v *view) {
 	v.source.reset(driver.ImageSource{})
 	v.placeholder.reset(driver.ImageSource{})
 	w.dropWidget(v)
+	v.canvas.raster.release()
+	v.canvas.raster = nil
 	v.deleted, v.dying, v.layout, v.animated = true, false, nil, nil
 	if w.views[v.id] == v {
 		w.views[v.id] = nil

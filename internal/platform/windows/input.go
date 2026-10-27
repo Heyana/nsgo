@@ -1519,8 +1519,4 @@ func (w *window) fieldContextMenu(at *driver.Point) bool {
 }
 
 // invalidate has the window drawn again.
-func (w *window) invalidate() {
-	if w.hwnd != 0 {
-		invalidateRect.Call(w.hwnd, 0, 0)
-	}
-}
+func (w *window) invalidate() { w.redrawAll() }

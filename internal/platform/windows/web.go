@@ -141,7 +141,7 @@ func (wv *webView) unavailable() {
 		wv.portal.release()
 		wv.portal = nil
 	}
-	invalidateRect.Call(wv.w.hwnd, 0, 0)
+	wv.w.redrawAll()
 }
 
 func (wv *webView) report(e driver.Event) {
@@ -242,7 +242,7 @@ func (wv *webView) controllerReady(comp *comObject) {
 	}
 	// The root visual target shows once the composition commits: the
 	// next frame does.
-	invalidateRect.Call(wv.w.hwnd, 0, 0)
+	wv.w.redrawAll()
 }
 
 // listen reports the page's navigations and messages.
@@ -390,7 +390,7 @@ func (wv *webView) configure(c *driver.WebConfig) {
 		wv.paintBackground()
 		wv.apply()
 	}
-	invalidateRect.Call(wv.w.hwnd, 0, 0)
+	wv.w.redrawAll()
 }
 
 // apply sets the configuration, loading the source again when it or the
@@ -779,7 +779,7 @@ func (wv *webView) close() {
 	}
 	delete(wv.w.webs, wv)
 	wv.w.forget(wv)
-	invalidateRect.Call(wv.w.hwnd, 0, 0)
+	wv.w.redrawAll()
 }
 
 // The mouse event kinds of SendMouseInput.

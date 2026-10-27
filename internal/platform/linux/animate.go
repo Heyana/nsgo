@@ -148,7 +148,9 @@ func tickCallback(data uintptr) int32 {
 	if w == nil || w.closing {
 		return 0
 	}
+	done := w.measuring(true)
 	w.tick()
+	done()
 	// The timer repeats while something animates.
 	return boolInt(w.ticking)
 }

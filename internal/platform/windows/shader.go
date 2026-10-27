@@ -131,7 +131,7 @@ func (w *window) setShader(v *view, sh *driver.Shader) {
 	}
 	v.shaderView.shader, v.shaderView.dirty = sh, true
 	w.animator.BindShader(v.id, sh.Nodes)
-	invalidateRect.Call(w.hwnd, 0, 0)
+	w.redrawView(v)
 }
 
 // changedShaders marks the shader views whose animated lanes changed.
@@ -139,7 +139,7 @@ func (w *window) changedShaders() {
 	w.animator.ChangedShaders(func(id driver.NodeID) {
 		if v := w.view(id); v != nil && v.shaderView != nil {
 			v.shaderView.dirty = true
-			invalidateRect.Call(w.hwnd, 0, 0)
+			w.redrawView(v)
 		}
 	})
 }

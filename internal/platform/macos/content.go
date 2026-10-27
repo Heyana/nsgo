@@ -3,6 +3,9 @@
 package macos
 
 import (
+	"math"
+	"time"
+
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/oneo-me/nsgo/internal/driver"
@@ -66,10 +69,7 @@ func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 	h := float64(v.frame.Size.Height)
 	apple.DrawTopDown(ctx, h, !apple.MsgBool(layer, selContentsAreFlipped), func(baseUp bool) {
 		if v.drawing != nil {
-			ops := v.surface.animator.CanvasOps(v.id, v.drawing)
-			apple.Play(ctx, ops, apple.CanvasHost{
-				Ratio: float64(v.surface.env.PixelRatio), Redraw: v.redraw, Owner: v, BaseUp: baseUp})
-			v.played = append(v.played[:0], ops...)
+			v.paintCanvas(ctx, layer, baseUp)
 			return
 		}
 		box := v.box
@@ -129,9 +129,6 @@ func (v *view) drawLayer() objc.ID {
 	layer.Send(selActions, contentActions)
 	layer.Send(selSetDelegate, contentDrawer)
 	layer.Send(selSetNeedsDisplayOnResize, true)
-	// Canvases are drawn on Core Animation's threads, as NSH's are: paths
-	// and gradients cost more than glyphs.
-	layer.Send(sel("setDrawsAsynchronously:"), v.drawing != nil)
 	layer.Send(selSetContentsScale, float64(v.surface.env.PixelRatio))
 	layer.Send(selSetZPosition, apple.Z(contentZ))
 	layer.Send(selSetFrame, apple.Rect(0, 0, float64(v.frame.Size.Width), float64(v.frame.Size.Height)))
@@ -248,4 +245,119 @@ func (v *view) forgetContent() {
 	if v.contentLayer != 0 {
 		delete(drawers, v.contentLayer)
 	}
+	v.canvas.set(nil)
+}
+
+// A canvas draws at once on the main thread, as NSH's does, unless it
+// paints often (frequentPaints a second or more: an animation, live
+// data) and keeps no layer, when Core Animation replays it on its
+// threads (drawsAsynchronously) and the main thread stays free. Drawing
+// there holds graphics memory while any canvas does (tens of MB for the
+// process) and Metal work per layer, which a canvas redrawn now and then
+// gains nothing from. A drawing painted unchanged stablePaints times
+// whose static part (driver.CanvasSplit) is long keeps that part as a
+// CGLayer, and each paint draws the layer and plays only the ops after
+// it: a frame of a pulsing dot over a chart plays the dot, not the
+// chart. Short or changing drawings replay whole: drawing a layer costs
+// about what playing a sparkline does, and making one runs on the main
+// thread.
+const (
+	frequentPaints = 10
+	stablePaints   = 30
+	minStaticOps   = 128
+)
+
+// canvasPaint is how a canvas view paints: its static part, the layer
+// kept of it, and how often it paints.
+type canvasPaint struct {
+	split   driver.CanvasSplit // At is 0 when no part is kept
+	layer   *apple.CanvasLayer
+	painted int // paints of the drawing without a layer
+	async   bool
+
+	// The paints in the second that began at since, and whether that
+	// second or the one before it had frequentPaints.
+	since    time.Time
+	paints   int
+	frequent bool
+}
+
+// set takes a new drawing, nil when the view goes.
+func (c *canvasPaint) set(d *driver.Drawing) {
+	c.layer.Release()
+	c.layer, c.painted, c.split = nil, 0, driver.CanvasSplit{}
+	if d == nil {
+		return
+	}
+	// Short static parts play faster than a layer draws.
+	if s := driver.SplitCanvas(d); s.At >= minStaticOps && s.Static(d) {
+		c.split = s
+	}
+}
+
+// count counts a paint at now.
+func (c *canvasPaint) count(now time.Time) {
+	if !c.since.IsZero() && now.Sub(c.since) < time.Second {
+		c.paints++
+		if c.paints >= frequentPaints {
+			c.frequent = true
+		}
+		return
+	}
+	// A new second: the last one was slow, or a quiet second came
+	// between.
+	if !c.since.IsZero() && (c.paints < frequentPaints || now.Sub(c.since) >= 2*time.Second) {
+		c.frequent = false
+	}
+	c.since, c.paints = now, 1
+}
+
+// keeps reports whether the static part is or is about to be kept as a
+// layer; such a canvas draws at once, where its layer is made.
+func (c *canvasPaint) keeps() bool { return c.split.At > 0 && c.painted >= stablePaints }
+
+// paintCanvas plays v's drawing into ctx, its content layer's top-down
+// context, over the layer of its static part where it keeps one, and
+// sets where the next paint happens.
+func (v *view) paintCanvas(ctx uintptr, layer objc.ID, baseUp bool) {
+	c := &v.canvas
+	c.count(time.Now())
+	ops := v.surface.animator.CanvasOps(v.id, v.drawing)
+	host := apple.CanvasHost{Ratio: float64(v.surface.env.PixelRatio), Redraw: v.redraw, Owner: v, BaseUp: baseUp}
+	w, h := float64(v.frame.Size.Width), float64(v.frame.Size.Height)
+	if kept := v.staticLayer(ctx, ops, w, h, host); kept != nil {
+		kept.Draw(ctx, w, h)
+		apple.PlayOver(ctx, ops, c.split, host)
+	} else {
+		apple.Play(ctx, ops, host)
+	}
+	v.played = append(v.played[:0], ops...)
+	if async := c.frequent && !c.keeps(); async != c.async {
+		c.async = async
+		layer.Send(sel("setDrawsAsynchronously:"), async)
+	}
+}
+
+// staticLayer returns the layer of v's static part at its size, made
+// once the drawing was painted stablePaints times, or nil.
+func (v *view) staticLayer(ctx uintptr, ops []driver.DrawOp, w, h float64, host apple.CanvasHost) *apple.CanvasLayer {
+	c := &v.canvas
+	if c.split.At == 0 || c.split.At >= len(ops) {
+		return nil
+	}
+	scale := float64(v.surface.env.PixelRatio)
+	pw, ph := int(math.Ceil(w*scale)), int(math.Ceil(h*scale))
+	if l := c.layer; l != nil && l.Drawing == v.drawing && l.Width == pw && l.Height == ph {
+		return l
+	}
+	c.layer.Release()
+	c.layer = nil
+	c.painted++
+	// A layer is made for the context it draws into: once the canvas
+	// draws at once.
+	if c.painted <= stablePaints || c.async {
+		return nil
+	}
+	c.layer = apple.NewCanvasLayer(ctx, v.drawing, ops, c.split, w, h, scale, host)
+	return c.layer
 }

@@ -138,10 +138,10 @@ type chrome struct {
 	height   driver.Points // the app's title bar height; 0 for the default
 	// noButtons is set while the app draws its own caption buttons.
 	noButtons bool
-	hover    uint32        // the caption button under the mouse (HT*), 0 for none
-	pressed  uint32
-	tracking bool // the mouse is tracked for WM_NCMOUSELEAVE
-	inactive bool
+	hover     uint32 // the caption button under the mouse (HT*), 0 for none
+	pressed   uint32
+	tracking  bool // the mouse is tracked for WM_NCMOUSELEAVE
+	inactive  bool
 
 	fullScreen bool
 	savedStyle uintptr
@@ -231,7 +231,7 @@ func (w *window) frameChanged() {
 func (w *window) chromeChanged() {
 	w.showMenuBar()
 	w.updateEnvironment()
-	invalidateRect.Call(w.hwnd, 0, 0)
+	w.redrawAll()
 }
 
 // windowCommand carries out an ItemWindow.
@@ -389,7 +389,7 @@ func isButton(code uint32) bool { return code == htMinButton || code == htMaxBut
 func (w *window) setHover(code uint32) {
 	if w.chrome.hover != code {
 		w.chrome.hover = code
-		invalidateRect.Call(w.hwnd, 0, 0)
+		w.redrawAll()
 	}
 }
 
@@ -418,7 +418,7 @@ func (w *window) ncMouse(message uint32, wParam uintptr) bool {
 	case wmNCLButtonDown, wmNCLButtonDblClk:
 		if isButton(code) && w.hidden() {
 			c.pressed = code
-			invalidateRect.Call(w.hwnd, 0, 0)
+			w.redrawAll()
 			return true
 		}
 	case wmNCLButtonUp:
@@ -436,7 +436,7 @@ func (w *window) ncMouse(message uint32, wParam uintptr) bool {
 					postMessageW.Call(w.hwnd, wmClose, 0, 0)
 				}
 			}
-			invalidateRect.Call(w.hwnd, 0, 0)
+			w.redrawAll()
 			return true
 		}
 	}
@@ -448,7 +448,7 @@ func (w *window) ncMouse(message uint32, wParam uintptr) bool {
 // must not paint the old caption over the app (lParam -1).
 func (w *window) ncActivate(wParam, lParam uintptr) uintptr {
 	w.chrome.inactive = wParam == 0
-	invalidateRect.Call(w.hwnd, 0, 0)
+	w.redrawAll()
 	if w.hidden() {
 		lParam = ^uintptr(0)
 	}

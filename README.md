@@ -79,7 +79,7 @@ icon:
 dev:
   target: native        # native, web, ios, ios_simulator or android
   hot_reload: false     # true rebuilds and restarts on save
-  fps: false            # true shows the performance monitor (macOS); -fps overrides it
+  fps: false            # true shows the performance monitor (macOS, iOS, Windows, Linux); -fps overrides it
   # icon: { png: assets/Icon-dev.png }  # replaces icon's files in dev's builds; defaults to assets/*-dev.*
 build:
   output: dist          # packages go to dist/<name>-<version>-<target>

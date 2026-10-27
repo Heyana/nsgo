@@ -12,7 +12,7 @@ The core keeps what texts measure per engine, as NSH's `MeasureCache` (`measure.
 
 macOS draws a text or canvas view into a content layer of its own, as NSH does: a plain `CALayer` below the view's sublayers, drawn by its delegate's `drawLayer:inContext:`. No view implements `drawRect:`, whose display pass recorded and replayed every changed text, and redrew a scroll view's texts at every scroll step. A content layer draws again when its content or size changes, and only while some of it can be seen; the rest wait until a batch, a scroll or a layout animation shows them.
 
-Canvases draw on Core Animation's threads, and their animated arguments redraw only what they change ([canvas](canvas.md#animated-arguments)).
+Canvases that paint often draw on Core Animation's threads, and their animated arguments redraw only what they change ([canvas](canvas.md#animated-arguments)).
 
 The core does what needs no engine, as NSH's does:
 

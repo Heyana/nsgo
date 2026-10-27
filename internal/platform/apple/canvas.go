@@ -230,18 +230,36 @@ type CanvasHost struct {
 // transform current when they are added, as the canvas does, and a fill,
 // stroke or clip keeps the path.
 func Play(ctx uintptr, ops []driver.DrawOp, host CanvasHost) {
+	PlayOver(ctx, ops, driver.CanvasSplit{}, host)
+}
+
+// PlayOver plays ops as Play does, but over their static part drawn
+// already (a CanvasLayer): the ops before split.At that split skips set
+// only the state.
+func PlayOver(ctx uintptr, ops []driver.DrawOp, split driver.CanvasSplit, host CanvasHost) {
 	if ctx == 0 {
 		return
 	}
+	newPlayer(ctx, ops, split, host).run()
+}
+
+func newPlayer(ctx uintptr, ops []driver.DrawOp, split driver.CanvasSplit, host CanvasHost) *player {
+	return &player{ctx: ctx, ops: ops, split: split, base: cgContextGetCTM(ctx), host: host,
+		stack: []canvasState{{fill: 0x000000ff, stroke: 0x000000ff}}}
+}
+
+func (p *player) run() {
+	ctx, ops := p.ctx, p.ops
 	cgContextSaveGState(ctx)
 	defer cgContextRestoreGState(ctx)
-	p := &player{ctx: ctx, ops: ops, base: cgContextGetCTM(ctx), host: host,
-		stack: []canvasState{{fill: 0x000000ff, stroke: 0x000000ff}}}
 	defer p.releaseColors()
 	cgContextBeginPath(ctx)
 	p.color(cgContextSetFillColor, 0x000000ff)
 	p.color(cgContextSetStrokeColor, 0x000000ff)
 	for i := 0; i < len(ops); i++ {
+		if p.split.Skips(i, &ops[i]) {
+			continue
+		}
 		if n := p.lines(i); n > 0 {
 			i += n - 1
 			continue
@@ -262,10 +280,13 @@ func Play(ctx uintptr, ops []driver.DrawOp, host CanvasHost) {
 type player struct {
 	ctx   uintptr
 	ops   []driver.DrawOp
-	base  affine // the canvas's own coordinates
-	host  CanvasHost
-	stack []canvasState
-	path  pathState
+	split driver.CanvasSplit // what PlayOver leaves out
+	// waited is set when an image the ops draw had not loaded.
+	waited bool
+	base   affine // the canvas's own coordinates
+	host   CanvasHost
+	stack  []canvasState
+	path   pathState
 	// colors are the CGColors made for the drawing, released at its end.
 	colors map[driver.Color]uintptr
 	// points and rects hold what one call adds.
@@ -723,6 +744,7 @@ func (p *player) image(op *driver.DrawOp) {
 	}
 	img := canvasImage(*op.Image, p.host)
 	if img == nil || img.image == 0 {
+		p.waited = p.waited || img == nil || !img.failed
 		return
 	}
 	f := func(v float32) float64 { return float64(v) }

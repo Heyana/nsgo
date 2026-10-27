@@ -89,6 +89,10 @@ func surfaceTick(self objc.ID, _ objc.SEL, _ objc.ID) {
 }
 
 func (s *surface) tick() {
+	if s.perf != nil {
+		s.perf.Vsync(time.Now(), time.Duration(objc.Send[float64](s.link, sel("duration"))*float64(time.Second)))
+		defer s.measuring(s.animator.Running() || len(s.motions) > 0 || len(s.ghosts) > 0 || s.frameWanted)()
+	}
 	now := s.clock()
 	if s.animator.Running() {
 		s.animator.Step(now)
@@ -105,7 +109,8 @@ func (s *surface) tick() {
 			s.engine.Frame()
 		}
 	}
-	if !s.animator.Running() && len(s.motions) == 0 && len(s.ghosts) == 0 && !s.frameWanted {
+	// A monitor closes a frame at every refresh.
+	if !s.animator.Running() && len(s.motions) == 0 && len(s.ghosts) == 0 && !s.frameWanted && s.perf == nil {
 		s.stopTicking()
 	}
 }

@@ -96,6 +96,7 @@ func bindCanvas(cairoLib, pangocairoLib uintptr) {
 	reg(&cairoPopGroup, cairoLib, "cairo_pop_group")
 	reg(&cairoImageSurfaceCreateFor, cairoLib, "cairo_image_surface_create_for_data")
 	reg(&pangoCairoLayoutPath, pangocairoLib, "pango_cairo_layout_path")
+	bindRaster(cairoLib)
 }
 
 // Cairo's operators of each CompositeOp.
@@ -136,15 +137,6 @@ type canvasPlayer struct {
 	stack []canvasState
 }
 
-// changedCanvases draws again the canvases whose bound arguments changed.
-func (w *window) changedCanvases() {
-	w.animator.ChangedCanvases(func(id driver.NodeID) {
-		if v := w.view(id); v != nil {
-			w.changed(v)
-		}
-	})
-}
-
 // changedNatives hands components the animated props that changed.
 func (w *window) changedNatives() {
 	w.animator.ChangedNatives(func(id driver.NodeID, b driver.NativeBinding, num float64, col driver.Color) {
@@ -157,6 +149,13 @@ func (w *window) changedNatives() {
 // playCanvas replays v's drawing into cr at r, as the web's 2D context
 // does.
 func (w *window) playCanvas(v *view, cr uintptr, r rect) {
+	w.playCanvasFrom(v, cr, r, w.animator.CanvasOps(v.id, v.drawing), driver.CanvasSplit{}, nil)
+}
+
+// playCanvasFrom replays ops into cr at r, leaving out what split skips
+// (raster.go) and calling before, when set, with each op's index first.
+func (w *window) playCanvasFrom(v *view, cr uintptr, r rect, ops []driver.DrawOp, split driver.CanvasSplit,
+	before func(at int)) {
 	cairoSave(cr)
 	cairoRectangle(cr, r.x, r.y, r.w, r.h)
 	cairoClip(cr)
@@ -165,8 +164,13 @@ func (w *window) playCanvas(v *view, cr uintptr, r rect) {
 		st: canvasState{fill: driver.RGB(0x000000), stroke: driver.RGB(0x000000), width: 1, miter: 10, alpha: 1}}
 	cairoGetMatrix(cr, &p.base)
 	cairoNewPath(cr)
-	ops := w.animator.CanvasOps(v.id, v.drawing)
 	for i := range ops {
+		if before != nil {
+			before(i)
+		}
+		if split.Skips(i, &ops[i]) {
+			continue
+		}
 		p.play(&ops[i])
 	}
 	for range p.stack {
@@ -680,7 +684,8 @@ func (w *window) canvasImage(src driver.ImageSource, v *view) *imageSlot {
 				case v.shader != nil:
 					gtkGLAreaQueueRender(v.shader.area)
 				default:
-					w.changed(v)
+					v.canvas.whole = true
+					w.redrawCanvas(v)
 				}
 			}
 			delete(w.canvasWaiting, key)

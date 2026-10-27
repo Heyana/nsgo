@@ -34,12 +34,22 @@ A drawing answers without the platform, during `Draw` and after it, so `OnPress`
 
 `Drawing.Bind(arg, node)` has the platform read argument `arg` (`ArgX` to `ArgColor`) of the last operation from an animated node. The drawing carries the bindings as `DrawSlot`s; the backend registers them with `Animator.BindCanvas` and, when `ChangedCanvases` reports a canvas, plays a copy from `CanvasOps` with the values patched in. The canvas redraws on the frame clock without a commit. Android's Java animator patches the encoded operations in place by their byte offsets.
 
-macOS and iOS redraw only what the change covers, as NSH's partial redraws; the other backends redraw the whole canvas.
+macOS, iOS and Linux redraw only what the change covers, as NSH's partial redraws; Windows records the changed part again; Android and the web redraw the whole canvas.
 
 - `driver.CanvasDamage` replays the operations last drawn and those drawn now for their geometry, and adds up the bounds of the painting operations that changed or paint with state that did: transform, path, alpha, paint, line, shadow.
 - The view invalidates that area of its content layer, 2 points wider for anti-aliasing and rounded out (`apple.Damaged`). Core Graphics clips the replay of the whole drawing to it, so the pixels are a full redraw's.
 - Bounds are conservative: curves by their control points, arcs by their circle, strokes by their reach at miter joins and square caps, shadows by twice their blur, text by 1.5 em a character.
 - A changed clip, changed painting under a composite operation other than source-over, an image at its natural size and bounds that are not finite redraw the whole canvas.
+
+What the ops before the first bound one paint is the same whatever the nodes hold: its static part (`driver.SplitCanvas`, NSH's `first_animated`). A backend keeps its pixels and plays only the painting after it over them; the ops before it still set the state, and `CanvasSplit.Skips` leaves out their painting and the path no later op uses.
+
+| Target | Keeps the static part as | How a canvas draws |
+| --- | --- | --- |
+| macOS | A `CGLayer`, once a drawing of 128 ops or more before its first bound one was painted unchanged 30 times | At once on the main thread, or on Core Animation's threads (`drawsAsynchronously`) while it paints 10 times a second or more and keeps no layer |
+| Linux | The pixels a full play left at the split | Into an image surface at the surface's scale, shown as 256-pixel textures: a change draws its area again over the kept pixels, and only the tiles it touches become new textures. A canvas outside a clipping ancestor or the window waits until a layout shows it |
+| Windows | A Direct2D command list, played once | From command lists: the static part's and the rest's, played again when a bound node changes, or the whole drawing's. A rest that composites with what came before or clears plays whole |
+
+`internal/platform/canvastest`'s `Split` drawings check that playing over a kept part draws what a full play does, on each of the three.
 
 ## Nodes
 
@@ -56,7 +66,7 @@ macOS and iOS redraw only what the change covers, as NSH's partial redraws; the 
 
 ## Players
 
-Each backend plays the operations in order on the main thread; on macOS into a context Core Animation draws on its own threads ([text](text.md#text-and-drawing)). Images load as image views' do, cached by `ImageSource.Key` (Apple keeps the 64 drawn last); a canvas draws again when one arrives and draws nothing in its place until then. Android's Go side reads each image once and sends its bytes for Java to decode.
+Each backend plays the operations in order on the main thread; on macOS into a context Core Animation may draw on its own threads ([animated arguments](#animated-arguments)). Images load as image views' do, cached by `ImageSource.Key` (Apple keeps the 64 drawn last); a canvas draws again when one arrives and draws nothing in its place until then. Android's Go side reads each image once and sends its bytes for Java to decode.
 
 | Target | Plays into | Composites | Shadows | Conic gradients | Stroked text |
 | --- | --- | --- | --- | --- | --- |

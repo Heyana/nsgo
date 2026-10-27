@@ -16,8 +16,9 @@ type painter struct {
 }
 
 const (
-	operatorSourceOver = 2
 	operatorClear      = 0
+	operatorSource     = 1
+	operatorSourceOver = 2
 )
 
 // snapshotView draws v into its widget's snapshot, as NSH's NshView
@@ -153,16 +154,12 @@ func (w *window) snapshotInsets(snap uintptr, s *driver.ViewStyle, sh *shape, sh
 func (w *window) snapshotContent(v *view, s *driver.ViewStyle, snap uintptr) {
 	size := v.shownFrame().Size
 	width, height := float64(size.Width), float64(size.Height)
-	r := rect{w: width, h: height, r: float64(s.CornerRadius)}
-	box := grapheneRect{0, 0, float32(width), float32(height)}
 	switch {
 	case width <= 0 || height <= 0:
 	case v.kind == driver.KindImage && (v.source.pic != nil || v.placeholder.pic != nil):
 		w.snapshotImage(v, s.TintColor, snap, width, height)
 	case v.kind == driver.KindCanvas && v.drawing != nil:
-		cr := gtkSnapshotAppendCairo(snap, &box)
-		w.playCanvas(v, cr, r)
-		cairoDestroy(cr)
+		w.snapshotCanvas(v, snap, width, height)
 	}
 	if l, ok := v.text.(*textLayout); ok && l != nil && l.text != "" {
 		// Glyphs may paint a little outside their view, as before.

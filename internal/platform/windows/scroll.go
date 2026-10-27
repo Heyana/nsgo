@@ -107,7 +107,6 @@ func (w *window) scrollBy(v *view, d driver.Point) {
 		}
 	}
 	w.moveOffset(v, driver.Point{X: v.offset.X + d.X, Y: v.offset.Y + d.Y})
-	invalidateRect.Call(w.hwnd, 0, 0)
 }
 
 // setSticky replaces scroll view v's sticky cells; cells no longer
@@ -132,7 +131,7 @@ func (w *window) setSticky(v *view, cells []driver.StickyCell) {
 		delete(w.stickyBound, v)
 	}
 	w.pinSticky(v)
-	invalidateRect.Call(w.hwnd, 0, 0)
+	w.redrawView(v)
 }
 
 // pinSticky moves scroll view v's sticky cells for its offset, as NSH's
@@ -160,6 +159,7 @@ func (w *window) stick(v *view, shift driver.Point) {
 	if shift == v.shift {
 		return
 	}
+	w.redrawView(v)
 	v.shift = shift
 	f := v.laid
 	f.Origin.X += shift.X

@@ -134,5 +134,5 @@ func (w *window) setMaterial(m driver.WindowMaterial) {
 		w.backdrop = backdropNone
 	}
 	w.updateEnvironment()
-	invalidateRect.Call(w.hwnd, 0, 0)
+	w.redrawAll()
 }

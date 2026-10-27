@@ -158,8 +158,8 @@ func (w *window) leave(v *view, lb *layoutBatch) bool {
 
 // finishLeaving destroys v, done going, and its subtree.
 func (w *window) finishLeaving(v *view) {
+	w.redrawView(v)
 	w.destroy(v)
-	invalidateRect.Call(w.hwnd, 0, 0)
 }
 
 // baseStyle returns v's style before animated values: mid transition, or
@@ -193,16 +193,12 @@ func (w *window) applyAnimations(ops []driver.AnimationOp) {
 // animatedChanged gives the views whose bound values changed their new
 // ones, to draw in the next frame.
 func (w *window) animatedChanged() {
-	changed := false
 	w.animator.Changed(func(id driver.NodeID, vals driver.AnimatedValues) {
 		if v := w.view(id); v != nil {
+			w.redrawView(v)
 			v.animated = vals
-			changed = true
 		}
 	})
-	if changed {
-		invalidateRect.Call(w.hwnd, 0, 0)
-	}
 	w.changedCanvases()
 	w.changedNatives()
 	w.changedShaders()
@@ -363,8 +359,11 @@ func (w *window) ticked() {
 	if w.clock != nil {
 		w.clock.posted.Store(false)
 	}
+	w.vsync()
 	if w.ticking {
+		done := w.measuring(true)
 		w.tick()
+		done()
 	}
 }
 
@@ -384,6 +383,7 @@ func (w *window) tick() {
 		if v.deleted && !v.retired {
 			continue
 		}
+		w.redrawView(v)
 		if mv := v.moving; mv != nil {
 			p, done := mv.tr.At(now.Sub(mv.start))
 			mv.shown = driver.LerpBounds(mv.from, v.frame, p)
@@ -450,11 +450,11 @@ func (w *window) tick() {
 			w.engine.Frame()
 		}
 	}
-	if len(live) == 0 && len(w.frames) == 0 && !w.animator.Running() && !w.frameWanted {
+	// A monitor closes a frame at every composition.
+	if len(live) == 0 && len(w.frames) == 0 && !w.animator.Running() && !w.frameWanted && w.hud == nil {
 		w.clock.stop()
 		w.ticking = false
 	}
-	invalidateRect.Call(w.hwnd, 0, 0)
 }
 
 // keyframe returns the step of v's keyframe animation now, and whether

@@ -196,7 +196,7 @@ func (w *window) load(v *view, s *imageSlot, report bool) {
 				w.report(v, driver.Event{Kind: driver.EventLoadEnd, ID: v.id})
 				w.fadeIn(v, s)
 			}
-			invalidateRect.Call(w.hwnd, 0, 0)
+			w.redrawView(v)
 		})
 	}()
 }
@@ -238,13 +238,13 @@ func (w *window) play(v *view, s *imageSlot) {
 		if visible(v.style.TintColor) {
 			// Tinted, it shows its first frame until the tint goes.
 			s.frame, s.playing = 0, false
-			invalidateRect.Call(w.hwnd, 0, 0)
+			w.redrawView(v)
 			return false
 		}
 		frame, more := pic.frameAt(now.Sub(s.start))
 		if frame != s.frame {
 			s.frame = frame
-			invalidateRect.Call(w.hwnd, 0, 0)
+			w.redrawView(v)
 		}
 		s.playing, s.ended = more, !more
 		return more
@@ -306,7 +306,7 @@ func (w *window) fadeIn(v *view, s *imageSlot) {
 		if v.deleted || s.pic != pic || s.fade <= 0 {
 			return false
 		}
-		invalidateRect.Call(w.hwnd, 0, 0)
+		w.redrawView(v)
 		if s.alpha(now) >= 1 {
 			s.fade = 0
 			return false

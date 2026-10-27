@@ -79,7 +79,7 @@ icon:
 dev:
   target: native        # native、web、ios、ios_simulator 或 android
   hot_reload: false     # true 时保存后重新编译并重启
-  fps: false            # true 时显示性能监视器（macOS）；-fps 可覆盖
+  fps: false            # true 时显示性能监视器（macOS、iOS、Windows、Linux）；-fps 可覆盖
   # icon: { png: assets/Icon-dev.png }  # 在 dev 构建中替换 icon 的文件；默认取 assets/*-dev.*
 build:
   output: dist          # 构建产物位于 dist/<name>-<version>-<target>

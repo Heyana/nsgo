@@ -90,7 +90,7 @@ func (w *window) setNative(v *view, c *driver.NativeConfig) {
 	for _, name := range names {
 		nc.SetProp(name, c.Props[name])
 	}
-	invalidateRect.Call(w.hwnd, 0, 0)
+	w.redrawAll()
 }
 
 // makeComponent makes the component name registers for view id; an

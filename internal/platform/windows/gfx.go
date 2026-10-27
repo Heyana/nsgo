@@ -26,8 +26,9 @@ type gfx struct {
 	device  *comObject // ID2D1Device
 	dc      *comObject // ID2D1DeviceContext every frame draws with
 	// bake is a second context, for what is recorded apart from the
-	// frame: shadows' command lists.
-	bake *comObject
+	// frame: shadows' command lists. record is a third, for canvases'
+	// lists, whose shadows bake records.
+	bake, record *comObject
 }
 
 var (
@@ -54,7 +55,7 @@ func devices() (*gfx, error) {
 func deviceLost() {
 	if mainGfx != nil {
 		g := mainGfx
-		releaseAll(&g.bake, &g.dc, &g.device, &g.factory, &g.d3d)
+		releaseAll(&g.record, &g.bake, &g.dc, &g.device, &g.factory, &g.d3d)
 		mainGfx = nil
 	}
 	gfxGeneration++
@@ -100,11 +101,15 @@ func newGfx() (*gfx, error) {
 		g.release()
 		return nil, hresultError("no Direct2D device context", hr)
 	}
+	if hr := g.device.call(d2dDeviceCreateDeviceContext, optionsNone, uintptr(unsafe.Pointer(&g.record))); failed(hr) {
+		g.release()
+		return nil, hresultError("no Direct2D device context", hr)
+	}
 	return g, nil
 }
 
 func (g *gfx) release() {
-	releaseAll(&g.bake, &g.dc, &g.device, &g.factory, &g.d3d)
+	releaseAll(&g.record, &g.bake, &g.dc, &g.device, &g.factory, &g.d3d)
 }
 
 // createD3D makes a Direct3D 11 device of driver with BGRA support, for
@@ -156,6 +161,8 @@ type swapChain struct {
 	width, height uint32
 	generation    uint64
 	composed      bool
+	// drawn is set once a frame was presented.
+	drawn bool
 }
 
 // newSwapChain makes the window's swap chain of width by height pixels:
@@ -177,16 +184,13 @@ func newSwapChain(g *gfx, hwnd uintptr, width, height uint32, composed bool) (*s
 	}
 	defer factory.release()
 	width, height = max(width, 1), max(height, 1)
+	// Sequential: the back buffer keeps the frame of two presents ago,
+	// which a partial frame draws over (damage.go).
 	desc := swapChainDesc1{width: width, height: height, format: dxgiFormatBGRA, sampleCount: 1,
-		bufferUsage: dxgiUsageTarget, bufferCount: 2, swapEffect: dxgiFlipDiscard, alphaMode: dxgiAlphaIgnore}
+		bufferUsage: dxgiUsageTarget, bufferCount: 2, swapEffect: dxgiFlipSequential, alphaMode: dxgiAlphaIgnore}
 	var swap *comObject
 	hr := factory.call(dxgiFactoryCreateSwapChainForHwnd, g.d3d.ptr(), hwnd, uintptr(unsafe.Pointer(&desc)), 0, 0,
 		uintptr(unsafe.Pointer(&swap)))
-	if failed(hr) {
-		desc.swapEffect = dxgiFlipSequential
-		hr = factory.call(dxgiFactoryCreateSwapChainForHwnd, g.d3d.ptr(), hwnd, uintptr(unsafe.Pointer(&desc)), 0, 0,
-			uintptr(unsafe.Pointer(&swap)))
-	}
 	if failed(hr) {
 		return nil, hresultError("no swap chain", hr)
 	}
@@ -263,11 +267,26 @@ func (s *swapChain) targetBitmap(g *gfx, scale float32) (*comObject, error) {
 	return s.target, nil
 }
 
+// presentParameters is DXGI_PRESENT_PARAMETERS.
+type presentParameters struct {
+	dirtyRects   uint32
+	rects        *rect
+	scrollRect   *rect
+	scrollOffset uintptr
+}
+
 // present shows the frame drawn, at the next vertical blank, or at the
-// compositor's next frame for a composition swap chain.
-func (s *swapChain) present() uintptr {
+// compositor's next frame for a composition swap chain; changed are the
+// areas that differ from the last frame unless all did.
+func (s *swapChain) present(changed []rect, all bool) uintptr {
 	if s.composed {
 		return s.swap.call(swapPresent, 0, 0)
 	}
-	return s.swap.call(swapPresent, 1, 0)
+	if all || len(changed) == 0 {
+		hr := s.swap.call(swapPresent, 1, 0)
+		s.drawn = s.drawn || !failed(hr)
+		return hr
+	}
+	params := presentParameters{dirtyRects: uint32(len(changed)), rects: &changed[0]}
+	return s.swap.call(swapPresent1, 1, 0, uintptr(unsafe.Pointer(&params)))
 }

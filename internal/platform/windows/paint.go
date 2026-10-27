@@ -130,6 +130,11 @@ type painter struct {
 	// center of perspectiveOf, their parent's size; 0 is none.
 	perspective   driver.Points
 	perspectiveOf driver.Size
+	// areas are what a partial frame draws, in the window's points, nil
+	// for all of it; areaClip says how pushAreas clipped to them
+	// (damage.go).
+	areas    []rectF
+	areaClip int
 }
 
 // composed is a web view a pass reached.
@@ -163,6 +168,7 @@ func (p *painter) release() {
 	for len(p.pushed) > 0 {
 		p.pop()
 	}
+	p.popAreas()
 	releaseAll(&p.brush)
 }
 
@@ -427,8 +433,15 @@ func (w *window) frame() {
 	if w.baseComposed {
 		w.composition.setBase(w.swap.swap)
 	}
+	// A new or resized chain's buffers hold nothing drawn.
+	fresh := w.swap.width != uint32(max(client.Right, 1)) || w.swap.height != uint32(max(client.Bottom, 1)) ||
+		!w.swap.drawn
 	if err := w.swap.resize(uint32(client.Right), uint32(client.Bottom)); err != nil {
 		w.lost()
+		return
+	}
+	if w.damage.idle() && !fresh && w.composition == nil && !w.swap.composed && len(w.hosts) == 0 {
+		// The system's paint: DWM has what was presented.
 		return
 	}
 	scale := float32(w.scale)
@@ -437,6 +450,8 @@ func (w *window) frame() {
 		w.lost()
 		return
 	}
+	// Presenting waits for the display, which is not the frame's work.
+	measured := w.measuring(true)
 	dc := g.dc
 	dc.call(dcSetTarget, target.ptr())
 	dc.callF(rtSetDpi, 0b11, f32(96*scale), f32(96*scale))
@@ -449,17 +464,24 @@ func (w *window) frame() {
 	if c != nil {
 		p.split = &split{c: c, width: uint32(client.Right), height: uint32(client.Bottom)}
 	}
-	p.setTransform(identity)
 	clear := colorF{1, 1, 1, 1}
 	if w.baseComposed && w.backdrop != backdropNone {
 		clear = colorF{}
 	}
-	dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
+	whole := fresh || c != nil || w.swap.composed || len(w.hosts) > 0
+	changed, drawn, changedAll, all := w.frameDamage(client, whole)
+	if all {
+		p.setTransform(identity)
+		dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
+	} else {
+		p.pushAreas(drawn, clear)
+	}
 	if root := w.view(w.root); root != nil {
 		f := frameOf(root)
 		p.draw(root, identity, f.Origin.X, f.Origin.Y)
 	}
 	p.drawCaptionButtons(client.Right)
+	p.drawPerf()
 	p.release()
 	hr := dc.call(rtEndDraw, 0, 0)
 	dc.call(dcSetTarget, 0)
@@ -470,6 +492,7 @@ func (w *window) frame() {
 			hr = p.split.ended
 		}
 	}
+	measured()
 	if hr == d2dErrRecreateTarget {
 		w.lost()
 		return
@@ -480,7 +503,7 @@ func (w *window) frame() {
 			return
 		}
 	}
-	if hr := w.swap.present(); hr == dxgiErrDeviceRemoved || hr == dxgiErrDeviceReset {
+	if hr := w.swap.present(changed, changedAll); hr == dxgiErrDeviceRemoved || hr == dxgiErrDeviceReset {
 		w.lost()
 		return
 	}
@@ -528,14 +551,26 @@ func (w *window) lost() {
 		w.composition.deviceLost()
 	}
 	deviceLost()
-	invalidateRect.Call(w.hwnd, 0, 0)
+	w.redrawAll()
 }
 
-// draw paints v and its subtree; parent is the world transform of v's
-// parent's coordinates, and x, y where v's origin goes in them. A view
-// with filters or turned out of its plane is drawn through effects.
-func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
-	s := p.w.styleOf(v)
+// placing is where a view draws in a pass: its style, its opacity and
+// its transform. world is the world transform of its points when flat,
+// else its parent's moved to its origin, under local.
+type placing struct {
+	s             *driver.ViewStyle
+	opacity       float32
+	local         driver.Matrix3D
+	world         matrix
+	flat, filters bool
+}
+
+// place returns where v draws; parent is the world transform of v's
+// parent's coordinates, x, y where v's origin goes in them, and
+// perspective and of the depth its parent's children are seen from at
+// the center of that size. It reports false when v draws nothing.
+func (w *window) place(v *view, parent matrix, x, y, perspective driver.Points, of driver.Size) (placing, bool) {
+	s := w.styleOf(v)
 	opacity := s.Opacity
 	size := frameOf(v).Size
 	local := s.Matrix(size)
@@ -543,14 +578,14 @@ func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
 		local = k.Matrix(size).Mul(local)
 		opacity *= k.Opacity
 	}
-	if d := p.perspective; d > 0 {
-		local = driver.ChildPerspective(d, p.perspectiveOf, driver.Point{X: x, Y: y}).Mul(local)
+	if perspective > 0 {
+		local = driver.ChildPerspective(perspective, of, driver.Point{X: x, Y: y}).Mul(local)
 	}
 	if fd := v.fading; fd != nil {
 		// Appearing or going: faded, or scaled about its center first.
 		if fd.tr.Property == driver.LayoutScale {
 			if fd.shown <= 0 {
-				return
+				return placing{}, false
 			}
 			cx, cy := float64(size.Width)/2, float64(size.Height)/2
 			local = local.Mul(driver.Translate3D(cx, cy, 0)).Mul(driver.Matrix3D{fd.shown, 0, 0, 0, 0, fd.shown, 0, 0,
@@ -560,18 +595,33 @@ func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
 		}
 	}
 	if s.Hidden || opacity <= 0 || s.BackfaceHidden && facingAway(local) {
-		return
+		return placing{}, false
 	}
 	at := translation(float64(x), float64(y)).then(parent)
-	filters := s.Effects != nil && len(s.Effects.Filters) > 0
+	pl := placing{s: s, opacity: opacity, local: local, world: at,
+		filters: s.Effects != nil && len(s.Effects.Filters) > 0}
 	a, b, c, d, e, f, flat := local.Affine()
-	if filters || !flat {
+	if pl.flat = flat; flat {
+		pl.world = matrix{a, b, c, d, e, f}.then(at)
+		pl.local = driver.Identity3D
+	}
+	return pl, true
+}
+
+// draw paints v and its subtree; parent is the world transform of v's
+// parent's coordinates, and x, y where v's origin goes in them. A view
+// with filters or turned out of its plane is drawn through effects.
+func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
+	if p.skips(v) {
+		return
+	}
+	pl, ok := p.w.place(v, parent, x, y, p.perspective, p.perspectiveOf)
+	if !ok {
+		return
+	}
+	s, opacity, world := pl.s, pl.opacity, pl.world
+	if pl.filters || !pl.flat {
 		p.realize()
-		world := at
-		if flat {
-			world = matrix{a, b, c, d, e, f}.then(at)
-			local = driver.Identity3D
-		}
 		p.setTransform(world)
 		if opacity < 1 {
 			p.pushLayer(opacity, nil)
@@ -579,17 +629,16 @@ func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
 		alpha := p.alpha
 		p.alpha *= opacity
 		var list []driver.Filter
-		if filters {
+		if pl.filters {
 			list = s.Effects.Filters
 		}
-		p.drawFiltered(world, local, list, func() { p.drawContent(v, s, identity) })
+		p.drawFiltered(world, pl.local, list, func() { p.drawContent(v, s, identity) })
 		p.alpha = alpha
 		if opacity < 1 {
 			p.pop()
 		}
 		return
 	}
-	world := matrix{a, b, c, d, e, f}.then(at)
 	// Drawn above a web view reached before it, if any.
 	p.realize()
 	p.setTransform(world)
