@@ -45,8 +45,10 @@ func TestPartialFramesDrawWhatAWholeOneDoes(t *testing.T) {
 						Width: driver.Pt(40), Height: driver.Pt(40), Background: colors[n%len(colors)], CornerRadius: 8,
 						ShadowColor: driver.RGBA(0, 0.4), ShadowRadius: 6, ShadowOffset: driver.Point{X: 2, Y: 3}}
 				}},
+				// A layer, as a partial frame's areas are, so its text antialiases
+				// the same there as in a whole frame.
 				core.Text{ContentFunc: func() string { return fmt.Sprintf("step %d", step.Get()) },
-					Style: core.Style{Position: core.Absolute, Left: driver.Pt(20), Top: driver.Pt(90)}},
+					Style: core.Style{Position: core.Absolute, Left: driver.Pt(20), Top: driver.Pt(90), Opacity: core.Alpha(0.999)}},
 				core.View{StyleFunc: func() core.Style {
 					s := core.Style{Position: core.Absolute, Left: driver.Pt(200), Top: driver.Pt(90), Width: driver.Pt(60),
 						Height: driver.Pt(30), Background: driver.RGB(0x222222)}

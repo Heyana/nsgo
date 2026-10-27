@@ -15,6 +15,21 @@ import (
 
 func closeTo(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
 
+// TestRedrawAllDrawsTheWholeWindow checks that the frame after redrawAll
+// draws every area, even with nothing queued: a window that lost its web
+// views must redraw what the composition showed over it.
+func TestRedrawAllDrawsTheWholeWindow(t *testing.T) {
+	w := &window{}
+	w.redrawAll()
+	_, _, changedAll, drawAll := w.frameDamage(rect{0, 0, 100, 100}, false)
+	if !changedAll || !drawAll {
+		t.Fatalf("redrawAll's frame drew parts: changedAll %v, drawAll %v", changedAll, drawAll)
+	}
+	if w.damage.whole {
+		t.Fatal("the whole-window mark survived its frame")
+	}
+}
+
 func TestMatrixComposesAndInverts(t *testing.T) {
 	// Points go through the first matrix, then the second.
 	m := translation(10, 0).then(scaling(2, 3))

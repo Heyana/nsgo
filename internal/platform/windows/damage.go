@@ -234,7 +234,7 @@ func (d *damage) idle() bool { return !d.whole && len(d.queued) == 0 && len(d.ol
 // says the frame draws all of the window anyway.
 func (w *window) frameDamage(client rect, whole bool) (changed, drawn []rect, changedAll, drawAll bool) {
 	d := &w.damage
-	changedAll = whole || d.idle()
+	changedAll = whole || d.whole || d.idle()
 	// The paths down to the queued views, where they are now, are
 	// measured again.
 	for _, v := range d.queued {
