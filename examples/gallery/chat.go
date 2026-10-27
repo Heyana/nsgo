@@ -683,7 +683,7 @@ func chatDemo(cx *core.Scope) core.Node {
 	conversation := func(*core.Scope) core.Node {
 		// One selection across messages: in the list, over the rows that
 		// are mounted.
-		return core.View{Selectable: true, Style: core.Style{FlexGrow: 1}, Children: []core.Node{
+		return core.View{Selectable: true, Style: fillPage, Children: []core.Node{
 			core.List{Ref: list, TestID: "messages", Count: func() int { return len(messages.Get()) }, Key: func(i int) any { return messages.GetUntracked()[i].id },
 				EstimatedSize: 140, InitialScrollIndex: max(0, len(messages.GetUntracked())-1), Style: core.Style{FlexGrow: 1, Padding: core.Edges{Top: 8, Bottom: 16}},
 				Behavior:                       core.ScrollBehavior{KeyboardDismissMode: core.KeyboardDismissInteractive},
@@ -747,7 +747,7 @@ func chatDemo(cx *core.Scope) core.Node {
 
 	pane := core.View{Style: fillPage.Merge(core.Style{Background: colors.background}), Children: []core.Node{
 		core.View{Style: fillPage.Merge(core.Style{PaddingEnv: core.EnvEdges{Bottom: core.EnvKeyboard}}), Children: []core.Node{
-			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1}, Children: []core.Node{
+			core.View{Style: fillPage, Children: []core.Node{
 				core.Show{When: func() bool { return len(messages.Get()) > 0 }, Then: conversation, Else: empty},
 				// Jump to the latest message: shown while scrolled up.
 				core.View{PointerEvents: core.PointerEventsBoxNone, Style: core.Style{Position: core.Absolute, Right: core.Pt(16), Bottom: core.Pt(12), Opacity: core.Alpha(0.001),
