@@ -507,7 +507,7 @@ func listMore(cx *core.Scope) core.Node {
 				),
 			}},
 		}}
-	return core.View{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
+	return core.View{Style: fillPage, Children: []core.Node{
 		page,
 		core.Show{When: custom.Get, Then: func(cx *core.Scope) core.Node { return customIndicator(cx, pull, refreshing.Get) }},
 	}}
@@ -688,7 +688,7 @@ func listPage(cx *core.Scope) core.Node {
 		core.Text{Content: "Recent and archived", Style: core.Style{FlexGrow: 1, FontSize: 15, FontWeight: semibold, Color: colors.text}},
 		text("hides as you scroll down", 13, regular, colors.faint),
 	}}
-	return core.View{Style: core.Style{FlexGrow: 1, Overflow: core.Hidden}, Children: []core.Node{page, bar}}
+	return core.View{Style: fillPage.Merge(core.Style{Overflow: core.Hidden}), Children: []core.Node{page, bar}}
 }
 
 // listsDemo is core.List: columns, sticky sections, an inverted chat, two
