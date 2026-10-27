@@ -56,7 +56,7 @@ func TestWheelsSettleOnSnapPoints(t *testing.T) {
 func TestThumbFollowsTheOffset(t *testing.T) {
 	b := Bar{Frame: driver.Size{Width: 100, Height: 200}, Content: driver.Size{Width: 100, Height: 800}}
 	thumb, ok := b.Thumb()
-	want := driver.Bounds{Origin: driver.Point{X: 92}, Size: driver.Size{Width: Thickness, Height: 50}}
+	want := driver.Bounds{Origin: driver.Point{X: 90}, Size: driver.Size{Width: Thickness, Height: 50}}
 	if !ok || thumb != want {
 		t.Fatalf("thumb = %v %v, want %v", thumb, ok, want)
 	}
@@ -90,5 +90,48 @@ func TestDragMovesTheContentByTheThumb(t *testing.T) {
 	d = b.Press(driver.Point{X: 95, Y: 100})
 	if got := d.Offset(driver.Point{X: 95, Y: 100}); got.Y != 300 {
 		t.Fatalf("pressing the middle scrolls to %v, want 300", got.Y)
+	}
+}
+
+func TestIndicatorIsMacOSs(t *testing.T) {
+	b := Bar{Frame: driver.Size{Width: 100, Height: 300}, Content: driver.Size{Width: 100, Height: 600}}
+	rect, travel, ok := b.Indicator()
+	// The track is 296 long, the thumb 148, and it starts a margin in.
+	want := driver.Bounds{Origin: driver.Point{X: 90, Y: 2}, Size: driver.Size{Width: Thickness, Height: 148}}
+	if !ok || rect != want || travel != 148 {
+		t.Fatalf("indicator = %v %v %v, want %v and 148", rect, travel, ok, want)
+	}
+	b.Offset.Y = 300
+	if rect, _, _ := b.Indicator(); rect.Origin.Y != 150 {
+		t.Fatalf("indicator at the end starts at %v, want 150", rect.Origin.Y)
+	}
+	// Pulled past the start, it shrinks; long content stops at the minimum.
+	b.Offset.Y = -40
+	if rect, _, _ := b.Indicator(); rect.Size.Height >= 148 {
+		t.Fatalf("pulled indicator is %v long, want shorter than 148", rect.Size.Height)
+	}
+	long := Bar{Frame: b.Frame, Content: driver.Size{Width: 100, Height: 1e6}}
+	if rect, _, _ := long.Indicator(); rect.Size.Height != indicatorMin {
+		t.Fatalf("indicator on long content is %v long, want %v", rect.Size.Height, indicatorMin)
+	}
+	if _, _, ok := (Bar{Frame: b.Frame, Content: b.Frame}).Indicator(); ok {
+		t.Fatal("content that fits has an indicator")
+	}
+}
+
+func TestIndicatorDragMovesTheContentByTheThumb(t *testing.T) {
+	b := Bar{Frame: driver.Size{Width: 100, Height: 300}, Content: driver.Size{Width: 100, Height: 600}}
+	d := b.PressIndicator(driver.Point{X: 95, Y: 10}) // on the thumb, 2 to 150
+	// The thumb travels 148 for 300 of content.
+	if got := d.Offset(driver.Point{X: 95, Y: 84}); got.Y != 150 {
+		t.Fatalf("dragging 74 scrolls to %v, want 150", got.Y)
+	}
+	if got := d.Offset(driver.Point{X: 95, Y: 1000}); got.Y != 300 {
+		t.Fatalf("dragging past the end scrolls to %v, want 300", got.Y)
+	}
+	// Off the thumb, it centers under the pointer, margin aside.
+	d = b.PressIndicator(driver.Point{X: 95, Y: 150})
+	if got := d.Offset(driver.Point{X: 95, Y: 150}); got.Y != 150 {
+		t.Fatalf("pressing the middle scrolls to %v, want 150", got.Y)
 	}
 }

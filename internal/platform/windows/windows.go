@@ -240,6 +240,11 @@ type view struct {
 	// its spinner turns (touchscroll.go).
 	glide                *scrollbar.Motion
 	refreshing, spinning bool
+	// The bar: when it last showed, its opacity, and whether its fade
+	// runs on the frame clock.
+	barShown   time.Time
+	barAlpha   float32
+	barTicking bool
 
 	// An input's editor.
 	field *textInput
@@ -917,6 +922,10 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemScrollConfig:
 			to := scrollbar.KeepStart(v.scroll.Behavior.ContentInset, it.Scroll.Behavior.ContentInset, v.offset)
 			v.scroll = *it.Scroll
+			if v.scroll.HideIndicator {
+				v.barAlpha = 0
+				w.redrawView(v)
+			}
 			if to != v.offset {
 				w.scrollTo(v, to)
 			}
@@ -1148,6 +1157,7 @@ func (w *window) scrollTo(v *view, offset driver.Point) bool {
 // moveOffset puts v's content at offset, unclamped, and reports it.
 func (w *window) moveOffset(v *view, offset driver.Point) {
 	v.offset = offset
+	w.showBar(v)
 	w.redrawView(v)
 	// Values bound to the offset move in the frame that shows it.
 	if w.animator.Scroll(v.id, offset) {
@@ -1228,12 +1238,17 @@ func (w *window) hoverBars(at driver.Point) {
 		}
 		w.bars = under
 	}
+	// The pointer over a view keeps its bar up, as its move does.
+	for _, v := range under {
+		if !v.scroll.Behavior.NoScroll {
+			w.showBar(v)
+		}
+	}
 }
 
-// showsBar reports whether v's scroll bar shows: while the pointer is
-// over v or drags the bar.
+// showsBar reports whether v's bar is visible: its opacity is above zero.
 func (w *window) showsBar(v *view) bool {
-	return !v.scroll.HideIndicator && (w.barDrag != nil && w.barDrag.v == v || slices.Contains(w.bars, v))
+	return !v.scroll.HideIndicator && v.barAlpha > 0
 }
 
 // pressBar starts dragging the scroll bar under at, if there is one.
@@ -1246,7 +1261,8 @@ func (w *window) pressBar(at driver.Point) bool {
 	if v == nil {
 		return false
 	}
-	w.barDrag = &barDrag{v: v, origin: driver.Point{X: at.X - local.X, Y: at.Y - local.Y}, drag: v.bar().Press(local)}
+	w.barDrag = &barDrag{v: v, origin: driver.Point{X: at.X - local.X, Y: at.Y - local.Y}, drag: v.bar().PressIndicator(local)}
+	w.showBar(v)
 	w.interruptScroll(v)
 	w.scrollEvent(v, driver.EventScrollDragStart)
 	setCapture.Call(w.hwnd)

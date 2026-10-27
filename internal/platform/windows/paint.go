@@ -848,16 +848,21 @@ func (p *painter) drawShapedBorder(s *driver.ViewStyle, b *box) {
 	}
 }
 
-// drawIndicator paints a scroll bar's thumb while the pointer is over
-// the scroll view or drags the thumb.
+// drawIndicator paints a scroll bar's thumb while the scroll view moves,
+// while the pointer is over it, or while the thumb is dragged.
 func (p *painter) drawIndicator(v *view) {
-	thumb, ok := v.bar().Thumb()
+	thumb, _, ok := v.bar().Indicator()
 	if !ok || !p.w.showsBar(v) {
 		return
 	}
 	bar := rectF{float32(thumb.Origin.X), float32(thumb.Origin.Y),
 		float32(thumb.Origin.X + thumb.Size.Width), float32(thumb.Origin.Y + thumb.Size.Height)}
-	p.fillRect(bar, driver.RGB(0x8c8c8c))
+	radius := min(thumb.Size.Width, thumb.Size.Height) / 2
+	c := driver.RGBA(0x000000, 0.45*v.barAlpha)
+	if p.w.shownDark() {
+		c = driver.RGBA(0xffffff, 0.55*v.barAlpha)
+	}
+	p.fillRounded(bar, float32(radius), c)
 }
 
 // shadowKey is what a shadow's drawing depends on.

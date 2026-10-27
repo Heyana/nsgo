@@ -87,8 +87,46 @@ func (w *window) releaseBar() {
 	if d == nil || d.v.deleted {
 		return
 	}
+	d.v.barShown = time.Now()
 	w.scrollEvent(d.v, driver.EventScrollDragEnd)
 	w.settle(d.v, 0)
+}
+
+// showBar shows v's scroll bar now and fades it out once v stops moving
+// and the pointer leaves it, as macOS's does: IndicatorHold at full, then
+// IndicatorFade to nothing. A held thumb stays until it is let go.
+func (w *window) showBar(v *view) {
+	if v.deleted || v.scroll.HideIndicator {
+		return
+	}
+	if _, _, ok := v.bar().Indicator(); !ok {
+		return // nothing to scroll: no bar to show
+	}
+	v.barShown = time.Now()
+	if !v.barTicking {
+		v.barTicking = true
+		w.onFrame(func(now time.Time) bool {
+			if v.deleted {
+				v.barTicking = false
+				return false
+			}
+			if w.barDrag != nil && w.barDrag.v == v {
+				v.barShown = now
+			} else if a := scrollbar.IndicatorAlpha(now.Sub(v.barShown)); a != v.barAlpha {
+				v.barAlpha = a
+				w.redrawView(v)
+			}
+			if v.barAlpha <= 0 {
+				v.barTicking = false
+				return false
+			}
+			return true
+		})
+	}
+	if v.barAlpha != 1 {
+		v.barAlpha = 1
+		w.redrawView(v)
+	}
 }
 
 // scrollBy moves v's offset by d unclamped, carrying a snap or a bar

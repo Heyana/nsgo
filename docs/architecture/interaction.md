@@ -67,7 +67,7 @@ On macOS and the web, views that take presses are Tab stops beside the text inpu
 - The platform decides on the main thread when a drag becomes a pan, from the view's `PanActivation`. Until it does, a scroll view around may still take the touch.
 - An active pan takes the touch from presses and scroll views.
 - A drag or wheel turn scrolls the innermost scroll view under it that can move its content that way, so an inner one passes on only at its edge. A touch or trackpad gesture keeps the scroll view it began with. Android still uses its scroll views' own handling.
-- Desktop scroll bars show while the pointer is over their scroll view and can be dragged: the scroll view's own indicator on macOS ([scrolling](scrolling.md#macos-scroll-views)), the browser's on the web, and `internal/platform/scrollbar`'s on Windows and Linux.
+- Desktop scroll bars show while their scroll view moves and while the pointer is over it, and can be dragged: the view's own indicator on macOS, `internal/platform/scrollbar`'s on Windows and Linux (Windows fades it as macOS does), and the browser's on the web.
 - `View.PanValues` binds a drag to animated values: the platform moves them before it reports each move, so the view follows on the main thread, as NSH's bound values do. A drag through `OnPan` and a signal costs a commit per turn.
 
 ## File drops

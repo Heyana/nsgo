@@ -54,13 +54,11 @@ const (
 	// nothing draws, while an endless animation holds it back briefly.
 	commitDelay = 140 * time.Millisecond
 	restWait    = time.Second
-	// The indicator is indicatorThick thick, indicatorEdge from its
-	// edge; a press within thumbGrab of the edge and thumbSlop of its ends
-	// grabs it, as it is thinner than a pointer is precise.
-	indicatorThick driver.Points = 6
-	indicatorEdge  driver.Points = 2
-	thumbGrab      driver.Points = 12
-	thumbSlop      driver.Points = 4
+	// A press within thumbGrab of the edge and thumbSlop of the
+	// indicator's ends grabs it, as it is thinner than a pointer is
+	// precise. Its thickness, inset and margins are scrollbar's.
+	thumbGrab driver.Points = 12
+	thumbSlop driver.Points = 4
 )
 
 // phaseMayBegin is the NSEvent phase of fingers resting on the trackpad
@@ -1026,24 +1024,13 @@ func (v *view) catch() bool {
 // thumbRect returns the indicator's frame in the view and how far it
 // travels along its track, or false when the content fits.
 func (v *view) thumbRect() (driver.Bounds, driver.Points, bool) {
-	s := v.sc
-	in := s.config.Behavior.ContentInset
-	w, h := v.frame.Size.Width, v.frame.Size.Height
-	dim, total, offset := h, s.content.Height+in.Top+in.Bottom, s.at.Y+in.Top
-	if s.config.Horizontal {
-		dim, total, offset = w, s.content.Width+in.Left+in.Right, s.at.X+in.Left
-	}
-	start, length, ok := scrollbar.Indicator(dim, total, offset)
-	if !ok {
-		return driver.Bounds{}, 0, false
-	}
-	r := driver.Bounds{Origin: driver.Point{X: w - indicatorThick - indicatorEdge, Y: start},
-		Size: driver.Size{Width: indicatorThick, Height: length}}
-	if s.config.Horizontal {
-		r = driver.Bounds{Origin: driver.Point{X: start, Y: h - indicatorThick - indicatorEdge},
-			Size: driver.Size{Width: length, Height: indicatorThick}}
-	}
-	return r, dim - 2*scrollbar.IndicatorMargin - length, true
+	return v.bar().Indicator()
+}
+
+// bar returns the view's scroll bar, as the shared geometry lays it out.
+func (v *view) bar() scrollbar.Bar {
+	return scrollbar.Bar{Horizontal: v.sc.config.Horizontal, Frame: v.frame.Size,
+		Content: v.sc.content, Offset: v.sc.at, Inset: v.sc.config.Behavior.ContentInset}
 }
 
 // grabsThumb reports whether a mouse press at p, in the view, grabs the
@@ -1189,7 +1176,7 @@ func (v *view) updateOverlay() {
 			old := s.drawn
 			if s.thumb == 0 {
 				s.thumb = v.overlayLayer()
-				s.thumb.Send(sel("setCornerRadius:"), float64(indicatorThick)/2)
+				s.thumb.Send(sel("setCornerRadius:"), float64(scrollbar.Thickness)/2)
 				old = indicatorLook{alpha: -1, dark: !look.dark, hidden: true}
 			}
 			f := look.frame
