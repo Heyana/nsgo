@@ -34,7 +34,7 @@ References are files in `nsh/docs/dev/` unless they give a path from `nsh/`, wit
 
 ## Finish the existing platforms
 
-This item waits for community contributions.
+These items wait for community contributions, and a change to one backend records the gaps it leaves here.
 
 | Item | NSH reference | Done when |
 | --- | --- | --- |

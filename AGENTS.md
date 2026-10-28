@@ -11,6 +11,7 @@ NSGo is a cross-platform native UI engine with a Go backend, ported from the des
 - The `android_x64` target is the one exception: Go links android/amd64 only with cgo, so it needs an NDK.
 - Never hand-write C. Reach system APIs through purego or `syscall`, and use cgo only where Go itself demands it: linking for iOS and x86_64 Android, and the one function an embedded iOS framework exports, which the tool generates.
 - Prebuild what users cannot build with Go and Xcode, such as the Android runtime's `classes.dex` and `classes.jar`, and commit it with the command that rebuilds it (`internal/platform/android/runtime/build.sh`).
+- Each target has its own backend. When implementing, fixing or optimizing anything, check whether the other backends need the same change, and make it or record the gap in the [roadmap](docs/roadmap.md).
 - Keep each package's imports within the [dependency graph](ARCHITECTURE.md#boundaries); `layering_test.go` checks it.
 - Give each API one home, as NSH's modules do: `core` for elements and the environment, `base` for controls and navigation, `mobile` and `desktop` for what only phones or only desktops have. When `core` implements another package's API, its exported part names that package in its comment.
 - Write configuration files people edit by hand in YAML, never JSON, including ones ported from NSH's JSON files.
