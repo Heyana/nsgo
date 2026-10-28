@@ -220,29 +220,40 @@ func (v *view) under(p driver.Point) bool {
 // scrollsAt appends the scroll views under p, outermost first; p is in
 // the coordinates of v's parent's content.
 func scrollsAt(v *view, p driver.Point, out []*view) []*view {
-	return viewsAt(v, p, func(v *view) bool { return v.kind == driver.KindScroll }, out)
+	out, _ = viewsAt(v, p, func(v *view) bool { return v.kind == driver.KindScroll }, out)
+	return out
 }
 
 // viewsAt appends the views under p that match, outermost first: v and
-// the child drawn on top at p, down to the innermost.
-func viewsAt(v *view, p driver.Point, match func(*view) bool, out []*view) []*view {
+// the child drawn on top at p, down to the innermost. It also reports
+// whether anything under p takes the pointer: a view that takes none, or
+// whose children take none, passes it to the views below it, so an
+// overlay that lets presses through does not keep the wheel, a hover or
+// touch from what it covers.
+func viewsAt(v *view, p driver.Point, match func(*view) bool, out []*view) ([]*view, bool) {
 	self, children := v.reach(p)
 	if v.style.Hidden || v.style.Opacity <= 0 || !self && !children {
-		return out
+		return out, false
 	}
 	if self && match(v) {
 		out = append(out, v)
 	}
-	if !children {
-		return out
-	}
-	p = driver.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
-	for i := len(v.children) - 1; i >= 0; i-- {
-		if c := v.children[i]; c.under(p) {
-			return viewsAt(c, p, match, out)
+	took := self
+	if children {
+		local := driver.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
+		for i := len(v.children) - 1; i >= 0; i-- {
+			c := v.children[i]
+			if !c.under(local) {
+				continue
+			}
+			var childTook bool
+			out, childTook = viewsAt(c, local, match, out)
+			if childTook {
+				return out, true
+			}
 		}
 	}
-	return out
+	return out, took
 }
 
 // movePointer follows the pointer to surface point at, with modifiers
@@ -282,7 +293,7 @@ func (w *window) mouseMoved(state uint32) {
 		return
 	}
 	button := state&gdkButtonsMask != 0
-	under := viewsAt(root, w.lastPointer, func(v *view) bool {
+	under, _ := viewsAt(root, w.lastPointer, func(v *view) bool {
 		return v.events.Has(driver.EventMouseMove) || !button && v.events.Has(driver.EventHoverMove)
 	}, nil)
 	for i := len(under) - 1; i >= 0; i-- {
@@ -304,7 +315,8 @@ func (w *window) mouseMoved(state uint32) {
 func (w *window) hoverViews() {
 	var under []driver.NodeID
 	if root := w.view(w.root); root != nil && w.pointerIn {
-		for _, v := range viewsAt(root, w.lastPointer, func(v *view) bool { return hover.Follows(v.events) }, nil) {
+		views, _ := viewsAt(root, w.lastPointer, func(v *view) bool { return hover.Follows(v.events) }, nil)
+		for _, v := range views {
 			under = append(under, v.id)
 		}
 	}
@@ -377,23 +389,43 @@ func (w *window) dragBar(at driver.Point) {
 // barAt returns the innermost scroll view whose bar is under p, and p in
 // that view; p is in the coordinates of v's parent's content.
 func barAt(v *view, p driver.Point) (*view, driver.Point) {
-	if v.style.Hidden || v.style.Opacity <= 0 || !v.frame.Contains(p) {
-		return nil, p
+	hit, at, _ := barIn(v, p)
+	return hit, at
+}
+
+// barIn is barAt, which also reports whether anything under p takes the
+// pointer, which a view that takes none passes to the views below it.
+func barIn(v *view, p driver.Point) (*view, driver.Point, bool) {
+	if v.style.Hidden || v.style.Opacity <= 0 {
+		return nil, p, false
+	}
+	self, children := v.reach(p)
+	if !self && !children {
+		return nil, p, false
 	}
 	local := driver.Point{X: p.X - v.frame.Origin.X, Y: p.Y - v.frame.Origin.Y}
-	inner := driver.Point{X: local.X + v.offset.X, Y: local.Y + v.offset.Y}
-	for i := len(v.children) - 1; i >= 0; i-- {
-		if c := v.children[i]; !c.style.Hidden && c.frame.Contains(inner) {
-			if hit, at := barAt(c, inner); hit != nil {
-				return hit, at
+	took := self
+	if children {
+		inner := driver.Point{X: local.X + v.offset.X, Y: local.Y + v.offset.Y}
+		for i := len(v.children) - 1; i >= 0; i-- {
+			c := v.children[i]
+			if !c.under(inner) {
+				continue
 			}
-			break
+			hit, at, childTook := barIn(c, inner)
+			if hit != nil {
+				return hit, at, true
+			}
+			if childTook {
+				took = true
+				break
+			}
 		}
 	}
-	if v.kind == driver.KindScroll && !v.scroll.HideIndicator && !v.scroll.Behavior.NoScroll && v.bar().Contains(local) {
-		return v, local
+	if self && v.kind == driver.KindScroll && !v.scroll.HideIndicator && !v.scroll.Behavior.NoScroll && v.bar().Contains(local) {
+		return v, local, true
 	}
-	return nil, p
+	return nil, p, took
 }
 
 // press reports a click at p in the surface, with the modifiers and

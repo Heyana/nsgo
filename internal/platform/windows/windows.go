@@ -1173,16 +1173,37 @@ func (w *window) moveOffset(v *view, offset driver.Point) {
 }
 
 // wheel scrolls the innermost scroll view under at that can still move
-// in the wheel's direction. Tilting scrolls horizontal views only.
+// in the wheel's direction. A wheel goes to the views along its axis, as
+// a browser's does, so a vertical wheel scrolls the page around a
+// horizontal row; horizontal views take a vertical wheel only where none
+// under it is vertical. Tilting scrolls horizontal views only.
 func (w *window) wheel(at driver.Point, notches driver.Points, tilt bool) {
 	root := w.view(w.root)
 	if root == nil {
 		return
 	}
-	under := scrollsAt(root, at, nil)
+	v, to := wheelTurn(scrollsAt(root, at, nil), notches, tilt)
+	if v == nil {
+		return
+	}
+	from := v.offset
+	w.interruptScroll(v) // the wheel takes over
+	if w.scrollTo(v, to) {
+		w.wheelTurned(v, v.offset.X-from.X+v.offset.Y-from.Y)
+	}
+}
+
+// wheelTurn returns the scroll view a wheel of notches at under turns,
+// and where it goes: the innermost view along the wheel's axis that can
+// move its way, else the innermost of any axis where none is along it.
+func wheelTurn(under []*view, notches driver.Points, tilt bool) (*view, driver.Point) {
+	along := false
+	for _, v := range under {
+		along = along || v.scroll.Horizontal == tilt
+	}
 	for i := len(under) - 1; i >= 0; i-- {
 		v := under[i]
-		if v.scroll.Behavior.NoScroll {
+		if v.scroll.Behavior.NoScroll || along && v.scroll.Horizontal != tilt {
 			continue
 		}
 		offset := v.offset
@@ -1196,13 +1217,11 @@ func (w *window) wheel(at driver.Point, notches driver.Points, tilt bool) {
 		default:
 			offset.Y -= notches * wheelStep
 		}
-		from := v.offset
-		w.interruptScroll(v) // the wheel takes over
-		if w.scrollTo(v, offset) {
-			w.wheelTurned(v, v.offset.X-from.X+v.offset.Y-from.Y)
-			return
+		if to := scrollbar.Clamp(&v.scroll, v.frame.Size, v.size, offset); to != v.offset {
+			return v, to
 		}
 	}
+	return nil, driver.Point{}
 }
 
 // barDrag is the pointer dragging a scroll bar: origin is the scroll
@@ -1284,51 +1303,82 @@ func (w *window) dragBar(at driver.Point) {
 // barAt returns the innermost scroll view whose bar is under p, and p in
 // that view; p is in the coordinates of v's parent's content.
 func barAt(v *view, p driver.Point) (*view, driver.Point) {
-	if v.style.Hidden || v.style.Opacity <= 0 || !v.frame.Contains(p) {
-		return nil, p
+	hit, at, _ := barIn(v, p)
+	return hit, at
+}
+
+// barIn is barAt, which also reports whether anything under p takes the
+// pointer, which a view that takes none passes to the views below it.
+func barIn(v *view, p driver.Point) (*view, driver.Point, bool) {
+	if v.style.Hidden || v.style.Opacity <= 0 {
+		return nil, p, false
+	}
+	self, children := v.reach(p)
+	if !self && !children {
+		return nil, p, false
 	}
 	local := driver.Point{X: p.X - v.frame.Origin.X, Y: p.Y - v.frame.Origin.Y}
-	inner := driver.Point{X: local.X + v.offset.X, Y: local.Y + v.offset.Y}
-	for i := len(v.children) - 1; i >= 0; i-- {
-		if c := v.children[i]; !c.style.Hidden && c.frame.Contains(inner) {
-			if hit, at := barAt(c, inner); hit != nil {
-				return hit, at
+	took := self
+	if children {
+		inner := driver.Point{X: local.X + v.offset.X, Y: local.Y + v.offset.Y}
+		for i := len(v.children) - 1; i >= 0; i-- {
+			c := v.children[i]
+			if !c.under(inner) {
+				continue
 			}
-			break
+			hit, at, childTook := barIn(c, inner)
+			if hit != nil {
+				return hit, at, true
+			}
+			if childTook {
+				took = true
+				break
+			}
 		}
 	}
-	if v.kind == driver.KindScroll && !v.scroll.HideIndicator && !v.scroll.Behavior.NoScroll && v.bar().Contains(local) {
-		return v, local
+	if self && v.kind == driver.KindScroll && !v.scroll.HideIndicator && !v.scroll.Behavior.NoScroll && v.bar().Contains(local) {
+		return v, local, true
 	}
-	return nil, p
+	return nil, p, took
 }
 
 // scrollsAt appends the scroll views under p, outermost first; p is in
 // the coordinates of v's parent's content.
 func scrollsAt(v *view, p driver.Point, out []*view) []*view {
-	return viewsAt(v, p, func(v *view) bool { return v.kind == driver.KindScroll }, out)
+	out, _ = viewsAt(v, p, func(v *view) bool { return v.kind == driver.KindScroll }, out)
+	return out
 }
 
 // viewsAt appends the views under p that match, outermost first: v and
-// the child drawn on top at p, down to the innermost.
-func viewsAt(v *view, p driver.Point, match func(*view) bool, out []*view) []*view {
+// the child drawn on top at p, down to the innermost. It also reports
+// whether anything under p takes the pointer: a view that takes none, or
+// whose children take none, passes it to the views below it, so an
+// overlay that lets presses through does not keep the wheel, a hover or
+// touch from what it covers.
+func viewsAt(v *view, p driver.Point, match func(*view) bool, out []*view) ([]*view, bool) {
 	self, children := v.reach(p)
 	if v.style.Hidden || v.style.Opacity <= 0 || !self && !children {
-		return out
+		return out, false
 	}
 	if self && match(v) {
 		out = append(out, v)
 	}
-	if !children {
-		return out
-	}
-	p = driver.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
-	for i := len(v.children) - 1; i >= 0; i-- {
-		if c := v.children[i]; c.under(p) {
-			return viewsAt(c, p, match, out)
+	took := self
+	if children {
+		local := driver.Point{X: p.X - v.frame.Origin.X + v.offset.X, Y: p.Y - v.frame.Origin.Y + v.offset.Y}
+		for i := len(v.children) - 1; i >= 0; i-- {
+			c := v.children[i]
+			if !c.under(local) {
+				continue
+			}
+			var childTook bool
+			out, childTook = viewsAt(c, local, match, out)
+			if childTook {
+				return out, true
+			}
 		}
 	}
-	return out
+	return out, took
 }
 
 // hoverViews reports the pointer entering and leaving the views that
@@ -1336,7 +1386,8 @@ func viewsAt(v *view, p driver.Point, match func(*view) bool, out []*view) []*vi
 func (w *window) hoverViews() {
 	var under []driver.NodeID
 	if root := w.view(w.root); root != nil && w.pointerIn {
-		for _, v := range viewsAt(root, w.pointer, func(v *view) bool { return hover.Follows(v.events) }, nil) {
+		views, _ := viewsAt(root, w.pointer, func(v *view) bool { return hover.Follows(v.events) }, nil)
+		for _, v := range views {
 			under = append(under, v.id)
 		}
 	}
@@ -1383,7 +1434,7 @@ func (w *window) mouseMoved(button bool) {
 	if root == nil || !w.pointerIn {
 		return
 	}
-	under := viewsAt(root, w.pointer, func(v *view) bool {
+	under, _ := viewsAt(root, w.pointer, func(v *view) bool {
 		return v.events.Has(driver.EventMouseMove) || !button && v.events.Has(driver.EventHoverMove)
 	}, nil)
 	if len(under) == 0 {
@@ -1416,7 +1467,7 @@ func (w *window) modifierKey(vk uintptr) {
 	if root == nil || !w.pointerIn || keyDown(vkLButton) {
 		return
 	}
-	under := viewsAt(root, w.pointer, func(v *view) bool { return v.events.Has(driver.EventHoverMove) }, nil)
+	under, _ := viewsAt(root, w.pointer, func(v *view) bool { return v.events.Has(driver.EventHoverMove) }, nil)
 	mods := modifiers()
 	for i := len(under) - 1; i >= 0; i-- {
 		v := under[i]

@@ -214,6 +214,51 @@ func TestScrollsAtReturnsTheScrollViewsAroundAPoint(t *testing.T) {
 	}
 }
 
+// TestScrollsAtPassesThroughViewsThatTakeNoPointer turns the wheel over
+// views that let the pointer through, as a DataTable's body and overlays
+// do: the scroll view they cover is still the one under it.
+func TestScrollsAtPassesThroughViewsThatTakeNoPointer(t *testing.T) {
+	visible := driver.ViewStyle{Opacity: 1}
+	area := driver.Bounds{Size: driver.Size{Width: 100, Height: 100}}
+	at := driver.Point{X: 30, Y: 30}
+	scroll := &view{id: 2, kind: driver.KindScroll, style: visible, frame: area}
+	body := &view{id: 3, kind: driver.KindView, style: visible, frame: area,
+		props: driver.ViewProps{PointerEvents: driver.PointerEventsNone}}
+	overlay := &view{id: 4, kind: driver.KindView, style: visible, frame: area,
+		props: driver.ViewProps{PointerEvents: driver.PointerEventsBoxNone}}
+	root := &view{id: 1, kind: driver.KindView, style: visible, frame: area, children: []*view{scroll, body, overlay}}
+	if got := scrollsAt(root, at, nil); len(got) != 1 || got[0] != scroll {
+		t.Fatalf("scrollsAt through views that take no pointer = %v, want the scroll view", got)
+	}
+	// A view that takes the pointer keeps the wheel from what it covers.
+	overlay.props.PointerEvents = driver.PointerEventsAuto
+	if got := scrollsAt(root, at, nil); len(got) != 0 {
+		t.Fatalf("scrollsAt under a view that takes the pointer = %v", got)
+	}
+}
+
+// TestBarAtPassesThroughViewsThatTakeNoPointer grabs the bar of a scroll
+// view under the views that let the pointer through.
+func TestBarAtPassesThroughViewsThatTakeNoPointer(t *testing.T) {
+	visible := driver.ViewStyle{Opacity: 1}
+	area := driver.Bounds{Size: driver.Size{Width: 100, Height: 100}}
+	scroll := &view{id: 2, kind: driver.KindScroll, style: visible, frame: area,
+		size: driver.Size{Width: 100, Height: 300}}
+	body := &view{id: 3, kind: driver.KindView, style: visible, frame: area,
+		props: driver.ViewProps{PointerEvents: driver.PointerEventsNone}}
+	overlay := &view{id: 4, kind: driver.KindView, style: visible, frame: area,
+		props: driver.ViewProps{PointerEvents: driver.PointerEventsBoxNone}}
+	root := &view{id: 1, kind: driver.KindView, style: visible, frame: area, children: []*view{scroll, body, overlay}}
+	at := driver.Point{X: 95, Y: 40}
+	if got, local := barAt(root, at); got != scroll || local != at {
+		t.Fatalf("barAt = %v at %v, want the scroll view at %v", got, local, at)
+	}
+	overlay.props.PointerEvents = driver.PointerEventsAuto
+	if got, _ := barAt(root, at); got != nil {
+		t.Fatalf("barAt under a view that takes the pointer = %v", got)
+	}
+}
+
 func TestBackgroundIsTheNearestOpaqueAncestor(t *testing.T) {
 	root := &view{id: 1, style: driver.ViewStyle{Background: driver.RGB(0x112233)}}
 	clear := &view{id: 2, parent: root}

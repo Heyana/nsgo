@@ -27,7 +27,7 @@ func (w *window) areaAt(p driver.Point) *view {
 	if root == nil {
 		return nil
 	}
-	under := viewsAt(root, p, func(*view) bool { return true }, nil)
+	under, _ := viewsAt(root, p, func(*view) bool { return true }, nil)
 	slices.Reverse(under)
 	area, _ := textselect.AreaAt(under, func(v *view) textselect.Taker {
 		switch {

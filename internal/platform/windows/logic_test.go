@@ -270,6 +270,80 @@ func TestScrollsAtReturnsTheScrollViewsAroundAPoint(t *testing.T) {
 	}
 }
 
+// TestScrollsAtPassesThroughViewsThatTakeNoPointer turns the wheel over
+// views that let the pointer through, as a DataTable's body and overlays
+// do: the scroll view they cover is still the one under it.
+func TestScrollsAtPassesThroughViewsThatTakeNoPointer(t *testing.T) {
+	visible := driver.ViewStyle{Opacity: 1}
+	area := driver.Bounds{Size: driver.Size{Width: 100, Height: 100}}
+	at := driver.Point{X: 30, Y: 30}
+	scroll := &view{id: 2, kind: driver.KindScroll, style: visible, frame: area}
+	body := &view{id: 3, kind: driver.KindView, style: visible, frame: area,
+		props: driver.ViewProps{PointerEvents: driver.PointerEventsNone}}
+	overlay := &view{id: 4, kind: driver.KindView, style: visible, frame: area,
+		props: driver.ViewProps{PointerEvents: driver.PointerEventsBoxNone}}
+	root := &view{id: 1, kind: driver.KindView, style: visible, frame: area, children: []*view{scroll, body, overlay}}
+	if got := scrollsAt(root, at, nil); len(got) != 1 || got[0] != scroll {
+		t.Fatalf("scrollsAt through views that take no pointer = %v, want the scroll view", got)
+	}
+	// A view that takes the pointer keeps the wheel from what it covers.
+	overlay.props.PointerEvents = driver.PointerEventsAuto
+	if got := scrollsAt(root, at, nil); len(got) != 0 {
+		t.Fatalf("scrollsAt under a view that takes the pointer = %v", got)
+	}
+}
+
+// TestBarAtPassesThroughViewsThatTakeNoPointer grabs the bar of a scroll
+// view under the views that let the pointer through.
+func TestBarAtPassesThroughViewsThatTakeNoPointer(t *testing.T) {
+	visible := driver.ViewStyle{Opacity: 1}
+	area := driver.Bounds{Size: driver.Size{Width: 100, Height: 100}}
+	scroll := &view{id: 2, kind: driver.KindScroll, style: visible, frame: area,
+		size: driver.Size{Width: 100, Height: 300}}
+	body := &view{id: 3, kind: driver.KindView, style: visible, frame: area,
+		props: driver.ViewProps{PointerEvents: driver.PointerEventsNone}}
+	overlay := &view{id: 4, kind: driver.KindView, style: visible, frame: area,
+		props: driver.ViewProps{PointerEvents: driver.PointerEventsBoxNone}}
+	root := &view{id: 1, kind: driver.KindView, style: visible, frame: area, children: []*view{scroll, body, overlay}}
+	at := driver.Point{X: 95, Y: 40}
+	if got, local := barAt(root, at); got != scroll || local != at {
+		t.Fatalf("barAt = %v at %v, want the scroll view at %v", got, local, at)
+	}
+	overlay.props.PointerEvents = driver.PointerEventsAuto
+	if got, _ := barAt(root, at); got != nil {
+		t.Fatalf("barAt under a view that takes the pointer = %v", got)
+	}
+}
+
+// TestWheelTurnsTheViewsAlongItsAxis turns a vertical wheel over a
+// vertical scroll view holding a horizontal one, as a DataTable's is: the
+// page scrolls, the row inside it only on a tilt, and a row alone takes a
+// vertical wheel too.
+func TestWheelTurnsTheViewsAlongItsAxis(t *testing.T) {
+	visible := driver.ViewStyle{Opacity: 1}
+	vertical := &view{id: 2, kind: driver.KindScroll, style: visible,
+		frame: driver.Bounds{Size: driver.Size{Width: 100, Height: 100}}, size: driver.Size{Width: 100, Height: 300}}
+	horizontal := &view{id: 3, kind: driver.KindScroll, style: visible, scroll: driver.ScrollConfig{Horizontal: true},
+		frame: driver.Bounds{Origin: driver.Point{X: 10, Y: 10}, Size: driver.Size{Width: 80, Height: 80}},
+		size:  driver.Size{Width: 300, Height: 80}}
+	under := []*view{vertical, horizontal}
+	if v, to := wheelTurn(under, -1, false); v != vertical || to.Y != 48 || to.X != 0 {
+		t.Fatalf("vertical wheel = %v at %v, want the vertical view at Y 48", v, to)
+	}
+	if v, to := wheelTurn(under, 1, true); v != horizontal || to.X != 48 || to.Y != 0 {
+		t.Fatalf("tilt = %v at %v, want the horizontal view at X 48", v, to)
+	}
+	// A horizontal view takes a vertical wheel where none is vertical.
+	if v, to := wheelTurn([]*view{horizontal}, -1, false); v != horizontal || to.X != 48 {
+		t.Fatalf("vertical wheel over a row = %v at %v, want the horizontal view at X 48", v, to)
+	}
+	// At the vertical view's end, the wheel does not go to the row inside.
+	vertical.offset.Y = 200
+	if v, _ := wheelTurn(under, -1, false); v != nil {
+		t.Fatalf("vertical wheel at the end = %v, want none", v)
+	}
+}
+
 func TestBackgroundIsTheNearestOpaqueAncestor(t *testing.T) {
 	root := &view{id: 1, style: driver.ViewStyle{Background: driver.RGB(0x112233)}}
 	clear := &view{id: 2, parent: root}

@@ -694,7 +694,7 @@ func modifiersCallback(controller uintptr, state uint32, data uintptr) int32 {
 	if root == nil {
 		return 0
 	}
-	under := viewsAt(root, w.lastPointer, func(v *view) bool { return v.events.Has(driver.EventHoverMove) }, nil)
+	under, _ := viewsAt(root, w.lastPointer, func(v *view) bool { return v.events.Has(driver.EventHoverMove) }, nil)
 	for i := len(under) - 1; i >= 0; i-- {
 		v := under[i]
 		b, _ := w.surfaceBounds(v)

@@ -996,6 +996,54 @@ func TestWheelSettlesOnPagesWithinInsets(t *testing.T) {
 	wait(100, 1)
 }
 
+// TestWheelScrollsThroughAnOverlay turns the wheel over a vertical scroll
+// view holding a horizontal one, under an overlay that lets the pointer
+// through, as a DataTable's layers do: the wheel scrolls the vertical view
+// and leaves the row inside it to a tilt.
+func TestWheelScrollsThroughAnOverlay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	title := "nsgo-native-" + t.Name()
+	var vertical, horizontal atomic.Int64
+	app := func(cx *core.Scope) core.Node {
+		row := core.Scroll{
+			Horizontal: true, HideIndicator: true,
+			OnScroll: func(e core.ScrollEvent) { horizontal.Store(int64(e.Offset.X)) },
+			Style:    core.Style{Width: driver.Pt(300), Height: driver.Pt(180)},
+			Children: []core.Node{core.View{Style: core.Style{Width: driver.Pt(900), Height: driver.Pt(180),
+				Background: driver.RGB(0x0000ff)}}},
+		}
+		page := core.Scroll{
+			HideIndicator: true,
+			OnScroll:      func(e core.ScrollEvent) { vertical.Store(int64(e.Offset.Y)) },
+			Style:         core.Style{Position: core.Absolute, Left: driver.Pt(0), Top: driver.Pt(0), Width: driver.Pt(300), Height: driver.Pt(180)},
+			Children:      []core.Node{core.View{Style: core.Style{Width: driver.Pt(300), Height: driver.Pt(600)}, Children: []core.Node{row}}},
+		}
+		overlay := core.View{
+			PointerEvents: driver.PointerEventsBoxNone,
+			Style:         core.Style{Position: core.Absolute, Left: driver.Pt(0), Top: driver.Pt(0), Width: driver.Pt(300), Height: driver.Pt(180)},
+		}
+		return core.View{Style: core.Style{Width: driver.Pt(300), Height: driver.Pt(200), Background: driver.RGB(0xffffff)},
+			Children: []core.Node{page, overlay}}
+	}
+	hwnd := startApp(t, title, app, 300, 200)
+	time.Sleep(300 * time.Millisecond)
+	at := point{px(30), px(30)}
+	clientToScreen.Call(hwnd, uintptr(unsafe.Pointer(&at)))
+	postMessageW.Call(hwnd, wmMouseWheel, uintptr(uint32(uint16(0xff88))<<16), uintptr(uint32(at.Y)<<16|uint32(at.X)&0xffff))
+	deadline := time.Now().Add(5 * time.Second)
+	for vertical.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("the vertical scroll view did not move: vertical %d, horizontal %d", vertical.Load(), horizontal.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if horizontal.Load() != 0 {
+		t.Fatalf("the wheel moved the row inside the page: horizontal %d", horizontal.Load())
+	}
+}
+
 // startApp runs app in a window titled title and returns it, closed when
 // the test ends.
 func startApp(t *testing.T, title string, app engine.App, width, height driver.Points) uintptr {
