@@ -9,9 +9,10 @@ import (
 )
 
 // inlinePage is an inline page in the gallery's colors, for the
-// appearance shown.
+// appearance shown; as in NSH, a page source that reads it loads again
+// when they change.
 func inlinePage(cx *core.Scope) string {
-	colors := colorsOf(cx)
+	colors := colorsOf(cx).now()
 	isDark := cx.Dark()
 	hex := func(c core.Color) string {
 		r, g, b, a := c.Components()
@@ -39,9 +40,9 @@ func inlinePage(cx *core.Scope) string {
 </body></html>`
 }
 
+// mediaFrame is a media view's frame, for a StyleFunc.
 func mediaFrame(cx *core.Scope, height core.Points, bg core.Color) core.Style {
-	colors := colorsOf(cx)
-	return core.Style{Height: core.Pt(height), CornerRadius: radiusControl, Overflow: core.Hidden, BorderWidth: 1, BorderColor: colors.border, Background: bg}
+	return core.Style{Height: core.Pt(height), CornerRadius: radiusControl, Overflow: core.Hidden, BorderWidth: 1, BorderColor: colorsOf(cx).border(), Background: bg}
 }
 
 func messaging(cx *core.Scope) core.Node {
@@ -56,7 +57,7 @@ func messaging(cx *core.Scope) core.Node {
 		return s
 	}
 	return card(cx, cardProps{icon: iconMedia, title: "Web view", subtitle: "Inline HTML, with messages both ways"},
-		core.WebView{Ref: web, Source: core.WebHTML(inlinePage(cx), ""), TestID: "bridge", Style: mediaFrame(cx, 210, colors.inset), OnMessage: message.Set},
+		core.WebView{Ref: web, SourceFunc: func() core.WebSource { return core.WebHTML(inlinePage(cx), "") }, TestID: "bridge", StyleFunc: func() core.Style { return mediaFrame(cx, 210, colors.inset()) }, OnMessage: message.Set},
 		caption(cx, "From the page", func() string { return or(message.Get()) }),
 		caption(cx, "To the page", func() string {
 			if sent.Get() == 0 {
@@ -75,13 +76,16 @@ func messaging(cx *core.Scope) core.Node {
 func navButton(cx *core.Scope, flip bool, enabled func() bool, label string, onPress func()) core.Node {
 	colors := colorsOf(cx)
 	fin := finOf(cx)
-	s := fin.raised.over(core.Style{Width: core.Pt(44), Height: core.Pt(44), CornerRadius: 22, Background: colors.raised, BorderWidth: 1, BorderColor: colors.border,
-		AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter})
-	if flip {
-		s.Transform.Rotate = 180
+	s := func() core.Style {
+		s := fin.raised().over(core.Style{Width: core.Pt(44), Height: core.Pt(44), CornerRadius: 22, Background: colors.raised(), BorderWidth: 1, BorderColor: colors.border(),
+			AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter})
+		if flip {
+			s.Transform.Rotate = 180
+		}
+		return s
 	}
 	return press(pressProps{onPress: onPress, disabled: func() bool { return !enabled() }, label: label, hitSlop: 4},
-		core.View{Style: s, Children: []core.Node{icon(iconChevron, 18, colors.text)}})
+		core.View{StyleFunc: s, Children: []core.Node{icon(iconChevron, 18, colors.text)}})
 }
 
 func site(cx *core.Scope) core.Node {
@@ -107,18 +111,20 @@ func site(cx *core.Scope) core.Node {
 			}
 			return badge(cx, "Loaded", toneUp)
 		})},
-		core.View{Style: fin.track.over(core.Style{Height: core.Pt(40), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Symmetric(0, 14),
-			CornerRadius: 20, Background: colors.inset, BorderWidth: 1, BorderColor: colors.border}), Children: []core.Node{
+		core.View{StyleFunc: func() core.Style {
+			return fin.track().over(core.Style{Height: core.Pt(40), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Symmetric(0, 14),
+				CornerRadius: 20, Background: colors.inset(), BorderWidth: 1, BorderColor: colors.border()})
+		}, Children: []core.Node{
 			core.View{StyleFunc: func() core.Style {
 				c := colors.up
 				if state.Get().Loading {
 					c = colors.warn
 				}
-				return core.Style{Width: core.Pt(7), Height: core.Pt(7), CornerRadius: 3.5, Background: c}
+				return core.Style{Width: core.Pt(7), Height: core.Pt(7), CornerRadius: 3.5, Background: c()}
 			}},
-			core.Text{ContentFunc: host, MaxLines: 1, EllipsizeMode: core.EllipsizeMiddle, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15, Color: colors.muted}},
+			core.Text{ContentFunc: host, MaxLines: 1, EllipsizeMode: core.EllipsizeMiddle, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15}, StyleFunc: colored(colors.muted)},
 		}},
-		core.WebView{Ref: ref, Source: core.WebSrc("https://go.dev"), TestID: "site", Style: mediaFrame(cx, 340, colors.inset), OnNavigationStateChange: state.Set},
+		core.WebView{Ref: ref, Source: core.WebSrc("https://go.dev"), TestID: "site", StyleFunc: func() core.Style { return mediaFrame(cx, 340, colors.inset()) }, OnNavigationStateChange: state.Set},
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10}, Children: []core.Node{
 			navButton(cx, true, func() bool { return state.Get().CanGoBack }, "Back", ref.GoBack),
 			navButton(cx, false, func() bool { return state.Get().CanGoForward }, "Forward", ref.GoForward),
@@ -160,7 +166,7 @@ func player(cx *core.Scope) core.Node {
 			// The platform's controls are fixed as the player mounts.
 			sys := controls.Get() == "system"
 			return core.Video{Ref: ref, Source: flowerClip, PausedFunc: paused.Get, Muted: true, Repeat: true, Controls: sys, ResizeModeFunc: fit.Get, TestID: "player",
-				Style:      mediaFrame(cx, 200, core.RGB(0x000000)),
+				StyleFunc:  func() core.Style { return mediaFrame(cx, 200, core.RGB(0x000000)) },
 				OnLoad:     func(i core.VideoInfo) { dur.Set(i.Duration) },
 				OnError:    func(error) { failed.Set(true) },
 				OnBuffer:   buffering.Set,
@@ -182,7 +188,7 @@ func player(cx *core.Scope) core.Node {
 						return 0
 					}, toneAccent, -1),
 					core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{
-						core.Text{ContentFunc: func() string { return clockText(pos.Get()) }, Style: core.Style{FlexGrow: 1, FontSize: 13, Color: colors.muted}},
+						core.Text{ContentFunc: func() string { return clockText(pos.Get()) }, Style: core.Style{FlexGrow: 1, FontSize: 13}, StyleFunc: colored(colors.muted)},
 						textf(func() string { return clockText(dur.Get()) }, 13, regular, colors.faint),
 					}},
 				}},
@@ -218,7 +224,7 @@ func nativeView(cx *core.Scope) core.Node {
 			Style: core.Style{AlignSelf: core.AlignStretch, MinWidth: core.Pt(200), MinHeight: core.Pt(28)}},
 		note(cx, noteText),
 		caption(cx, "Value", func() string { return fmt.Sprintf("%.2f", value.Get()) }),
-		core.Text{TestID: "native-value", ContentFunc: func() string { return "Last event: " + events.Get() }, Style: core.Style{FontSize: 12, FontFamily: mono, Color: colors.muted}},
+		core.Text{TestID: "native-value", ContentFunc: func() string { return "Last event: " + events.Get() }, Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.muted)},
 		core.View{Style: core.Style{Direction: core.Row, Gap: 8}, Children: []core.Node{
 			cell(button(buttonProps{label: "Set 0.8", variant: secondary}, func() { value.Set(0.8) })),
 			cell(button(buttonProps{label: "Reset command", variant: secondary}, func() { slider.Command("reset", nil) })),

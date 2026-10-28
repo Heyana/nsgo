@@ -19,7 +19,7 @@ var motionKinds = []struct {
 
 // presetTile is one preset on a little card of its own: a tap plays it.
 // Exits come back after a moment; loops play until tapped again.
-func presetTile(cx *core.Scope, p core.MotionPreset, tone core.Color, onPlay func(string)) core.Node {
+func presetTile(cx *core.Scope, p core.MotionPreset, tone func() core.Color, onPlay func(string)) core.Node {
 	colors := colorsOf(cx)
 	fin := finOf(cx)
 	m := core.NewMotion(cx, nil)
@@ -63,20 +63,22 @@ func presetTile(cx *core.Scope, p core.MotionPreset, tone core.Color, onPlay fun
 	return base.Button{OnPress: func(core.PressEvent) { press() }, Label: p.Name(),
 		Style: core.Style{FlexBasis: core.Pct(30), FlexGrow: 1, CornerRadius: 14, Active: &core.Style{Transform: core.Transform{Scale: 0.97}}},
 		Children: []core.Node{core.View{StyleFunc: func() core.Style {
-			border := colors.border
+			border := colors.border()
 			if looping.Get() {
-				border = tone
+				border = tone()
 			}
-			return fin.raised.over(core.Style{Height: core.Pt(92), CornerRadius: 14, BorderCurve: core.BorderCurveContinuous, AlignItems: core.AlignCenter,
-				JustifyContent: core.JustifyCenter, Gap: 12, Background: colors.raised, BorderWidth: 1, BorderColor: border})
+			return fin.raised().over(core.Style{Height: core.Pt(92), CornerRadius: 14, BorderCurve: core.BorderCurveContinuous, AlignItems: core.AlignCenter,
+				JustifyContent: core.JustifyCenter, Gap: 12, Background: colors.raised(), BorderWidth: 1, BorderColor: border})
 		}, Children: []core.Node{
-			core.View{Style: fin.knob.over(core.Style{Width: core.Pt(32), Height: core.Pt(32), CornerRadius: 9, BorderCurve: core.BorderCurveContinuous,
-				AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Background: tone, Perspective: 300, Animated: m.Style()}),
-				Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(10), Height: core.Pt(10), CornerRadius: 5, Background: onTone(cx), Opacity: core.Alpha(0.85)}}}},
+			core.View{StyleFunc: func() core.Style {
+				return fin.knob().over(core.Style{Width: core.Pt(32), Height: core.Pt(32), CornerRadius: 9, BorderCurve: core.BorderCurveContinuous,
+					AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Background: tone(), Perspective: 300, Animated: m.Style()})
+			},
+				Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(10), Height: core.Pt(10), CornerRadius: 5, Opacity: core.Alpha(0.85)}, StyleFunc: filled(onTone(cx))}}},
 			core.Text{Content: p.Name(), MaxLines: 1, StyleFunc: func() core.Style {
-				c := colors.muted
+				c := colors.muted()
 				if looping.Get() {
-					c = colors.text
+					c = colors.text()
 				}
 				return core.Style{FontSize: 12, FontFamily: mono, Color: c}
 			}},
@@ -144,16 +146,18 @@ func staggerSteps(i, count, from int) int {
 }
 
 // staggerBar is a bar and its cap, entering delay in.
-func staggerBar(cx *core.Scope, height float32, tone core.Color, delay int) core.Node {
+func staggerBar(cx *core.Scope, height float32, tone func() core.Color, delay int) core.Node {
 	barSpec := core.FadeInUp.Spec()
 	barSpec.Timing.Delay, barSpec.Timing.Duration = ms(delay), ms(520)
 	capSpec := core.PopIn.Spec()
 	capSpec.Timing.Delay = ms(delay + 220)
 	bar, capm := core.NewMotion(cx, &barSpec), core.NewMotion(cx, &capSpec)
 	return core.View{Style: core.Style{FlexGrow: 1, Height: core.Pct(100), JustifyContent: core.JustifyEnd, AlignItems: core.AlignCenter, Gap: 6}, Children: []core.Node{
-		core.View{Style: core.Style{Width: core.Pt(10), Height: core.Pt(10), CornerRadius: 5, Background: tone, Animated: capm.Style()}},
+		core.View{Style: core.Style{Width: core.Pt(10), Height: core.Pt(10), CornerRadius: 5, Animated: capm.Style()}, StyleFunc: filled(tone)},
 		core.View{Style: core.Style{AlignSelf: core.AlignStretch, Height: core.Pct(height * 78), CornerRadius: 10, BorderCurve: core.BorderCurveContinuous,
-			Gradients: []core.Gradient{core.LinearGradient(180, tone, alpha(tone, 0.35))}, Animated: bar.Style()}},
+			Animated: bar.Style()}, StyleFunc: func() core.Style {
+			return core.Style{Gradients: []core.Gradient{core.LinearGradient(180, tone(), alpha(tone(), 0.35))}}
+		}},
 	}}
 }
 
@@ -253,14 +257,14 @@ func keyframesMotions(cx *core.Scope) core.Node {
 		cx.StartAnimation(core.ValueKeyframes(charge, core.KeyframeTiming{Duration: ms(1500), Easing: core.StepsEasing(5, core.JumpEnd)}, core.Stops(0, 1)...), nil)
 	}
 	caption := func(s string) core.Node {
-		return core.Text{Content: s, Style: core.Style{FontSize: 11, FontFamily: mono, Color: colors.faint}}
+		return core.Text{Content: s, Style: core.Style{FontSize: 11, FontFamily: mono}, StyleFunc: colored(colors.faint)}
 	}
 
 	var frames []core.Node
 	for k := range phases {
-		frames = append(frames, core.View{Style: core.Style{Width: core.Pt(moon), Height: core.Pt(moon), CornerRadius: moon / 2, Overflow: core.Hidden, Background: colors.warn},
+		frames = append(frames, core.View{Style: core.Style{Width: core.Pt(moon), Height: core.Pt(moon), CornerRadius: moon / 2, Overflow: core.Hidden}, StyleFunc: filled(colors.warn),
 			Children: []core.Node{core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(shadowAt(k)), Top: core.Pt(0), Width: core.Pt(moon), Height: core.Pt(moon),
-				CornerRadius: moon / 2, Background: colors.raised}}}})
+				CornerRadius: moon / 2}, StyleFunc: filled(colors.raised)}}})
 	}
 	dial := []core.Node{}
 	for k := range 12 {
@@ -271,68 +275,75 @@ func keyframesMotions(cx *core.Scope) core.Node {
 		dial = append(dial, core.View{PointerEvents: core.PointerEventsNone,
 			Style: core.Style{Position: core.Absolute, Left: core.Pt(moon/2 - 2.25), Top: core.Pt(2), Width: core.Pt(1.5), Height: core.Pt(moon - 7),
 				Transform: core.Transform{Rotate: float32(k * 30)}},
-			Children: []core.Node{core.View{Style: core.Style{Height: core.Pt(mark), Background: colors.faint}}}})
+			Children: []core.Node{core.View{Style: core.Style{Height: core.Pt(mark)}, StyleFunc: filled(colors.faint)}}})
 	}
 	dial = append(dial, core.View{PointerEvents: core.PointerEventsNone,
 		Style: core.Style{Position: core.Absolute, Left: core.Pt(moon/2 - 2.75), Top: core.Pt(7), Width: core.Pt(2.5), Height: core.Pt(moon - 17),
 			Animated: &core.AnimatedStyle{Rotate: tick}},
-		Children: []core.Node{core.View{Style: core.Style{Height: core.Pt((moon - 17) / 2), CornerRadius: 1.25, Background: colors.accent}}}})
+		Children: []core.Node{core.View{Style: core.Style{Height: core.Pt((moon - 17) / 2), CornerRadius: 1.25}, StyleFunc: filled(colors.accent)}}})
 	var segments []core.Node
 	for k := range 5 {
 		s := core.Style{FlexGrow: 1}
+		var sf func() core.Style
 		if k > 0 {
-			s.Borders, s.BorderColors = core.Edges{Left: 2}, core.EdgeColors{Left: colors.surface}
+			s.Borders = core.Edges{Left: 2}
+			sf = func() core.Style { return core.Style{BorderColors: core.EdgeColors{Left: colors.surface()}} }
 		}
-		segments = append(segments, core.View{Style: s})
+		segments = append(segments, core.View{Style: s, StyleFunc: sf})
 	}
 
 	return card(cx, cardProps{icon: iconAnimation, title: "Keyframes", subtitle: "Steps, keyframes with easings of their own, chained motions"},
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignStart, JustifyContent: core.JustifySpaceAround}, Children: []core.Node{
 			core.View{Style: core.Style{AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
-				core.View{Style: core.Style{Width: core.Pt(moon), Height: core.Pt(moon), CornerRadius: moon / 2, Overflow: core.Hidden, Background: colors.raised}, Children: []core.Node{
+				core.View{Style: core.Style{Width: core.Pt(moon), Height: core.Pt(moon), CornerRadius: moon / 2, Overflow: core.Hidden}, StyleFunc: filled(colors.raised), Children: []core.Node{
 					core.View{Style: core.Style{Direction: core.Row, Width: core.Pt(moon * phases), Animated: &core.AnimatedStyle{TranslateX: sprite}}, Children: frames},
 				}},
 				caption("steps(8)"),
 			}},
 			core.View{Style: core.Style{AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
-				core.View{Style: core.Style{Width: core.Pt(moon), Height: core.Pt(moon), CornerRadius: moon / 2, BorderWidth: 1.5, BorderColor: colors.border, Background: colors.raised},
+				core.View{StyleFunc: func() core.Style {
+					return core.Style{Width: core.Pt(moon), Height: core.Pt(moon), CornerRadius: moon / 2, BorderWidth: 1.5, BorderColor: colors.border(), Background: colors.raised()}
+				},
 					Children: dial},
 				caption("steps(12)"),
 			}},
 			core.View{Style: core.Style{AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
 				base.Button{OnPress: func(core.PressEvent) { like() }, Label: "Like", Selected: liked.Get, Style: core.Style{CornerRadius: moon / 2}, Children: []core.Node{
 					core.View{StyleFunc: func() core.Style {
-						bg, border := colors.raised, colors.border
+						bg, border := colors.raised(), colors.border()
 						if liked.Get() {
-							bg, border = tints.warn, colors.warn
+							bg, border = tints.warn(), colors.warn()
 						}
 						return core.Style{Width: core.Pt(moon), Height: core.Pt(moon), CornerRadius: moon / 2, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
 							Background: bg, BorderWidth: 1, BorderColor: border}
 					}, Children: []core.Node{
-						core.View{Style: core.Style{Animated: heart.Style()}, Children: []core.Node{core.Dynamic(func(*core.Scope) core.Node {
-							tint := colors.muted
+						core.View{Style: core.Style{Animated: heart.Style()}, Children: []core.Node{icon(iconStar, 24, func() core.Color {
 							if liked.Get() {
-								tint = colors.warn
+								return colors.warn()
 							}
-							return icon(iconStar, 24, tint)
+							return colors.muted()
 						})}},
 					}},
 				}},
 				core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute, Top: core.Pt(-4), Right: core.Pt(-10), Animated: bubble.Style()},
 					Children: []core.Node{text("+1", 13, bold, colors.warn)}},
 				core.Text{ContentFunc: func() string { return strconv.Itoa(count.Get()) + " likes" },
-					Style: core.Style{FontSize: 11, FontFamily: mono, Color: colors.faint}},
+					Style: core.Style{FontSize: 11, FontFamily: mono}, StyleFunc: colored(colors.faint)},
 			}},
 		}},
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10}, Children: []core.Node{
 			core.View{OnLayout: func(b core.Bounds) { width.Set(b.Size.Width) },
-				Style: core.Style{FlexGrow: 1, Height: core.Pt(22), CornerRadius: 7, Overflow: core.Hidden, Background: colors.background, Shadows: fin.track.shadows},
+				StyleFunc: func() core.Style {
+					return core.Style{FlexGrow: 1, Height: core.Pt(22), CornerRadius: 7, Overflow: core.Hidden, Background: colors.background(), Shadows: fin.track().shadows}
+				},
 				Children: []core.Node{
 					core.Dynamic(func(*core.Scope) core.Node {
 						w := float64(width.Get())
-						return core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(0), Top: core.Pt(0), Bottom: core.Pt(0), Width: core.Pt(core.Points(w)),
-							Gradients: []core.Gradient{core.LinearGradient(90, colors.up, colors.accent)},
-							Animated:  &core.AnimatedStyle{TranslateX: core.Add(core.Mul(charge, core.Constant(w)), core.Constant(-w))}}}
+						return core.View{StyleFunc: func() core.Style {
+							return core.Style{Position: core.Absolute, Left: core.Pt(0), Top: core.Pt(0), Bottom: core.Pt(0), Width: core.Pt(core.Points(w)),
+								Gradients: []core.Gradient{core.LinearGradient(90, colors.up(), colors.accent())},
+								Animated:  &core.AnimatedStyle{TranslateX: core.Add(core.Mul(charge, core.Constant(w)), core.Constant(-w))}}
+						}}
 					}),
 					core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0), Top: core.Pt(0), Bottom: core.Pt(0),
 						Direction: core.Row}, Children: segments},
@@ -373,39 +384,50 @@ var auroraBlobs = []auroraBlob{
 // aurora is a getgradients-style background: blurred radial gradients,
 // each drifting on a looping motion of its own, clipped in a card.
 func aurora(cx *core.Scope) core.Node {
-	isDark := cx.Dark()
-	ink, bg, blend := core.RGB(0x1b1035), core.RGB(0xfff8f3), core.BlendMultiply
-	if isDark {
-		ink, bg, blend = core.RGB(0xffffff), core.RGB(0x0a0716), core.BlendScreen
-	}
-	glass := alpha(core.RGB(0xffffff), 0.55)
-	if isDark {
-		glass = alpha(core.RGB(0xffffff), 0.12)
+	ink := func() core.Color {
+		if cx.Dark() {
+			return core.RGB(0xffffff)
+		}
+		return core.RGB(0x1b1035)
 	}
 	var blobs []core.Node
 	for _, b := range auroraBlobs {
 		m := core.NewMotion(cx, nil)
 		m.Play(core.MotionSpec{Tracks: b.tracks, Timing: core.KeyframeTiming{Duration: ms(b.duration), Easing: ease(core.EasingSin, core.EaseModeInOut),
 			Iterations: core.Forever, Direction: core.PlayAlternate}}, nil)
-		c := core.RGB(b.light)
-		if isDark {
-			c = core.RGB(b.dark)
-		}
-		g := core.Gradient{Kind: core.GradientRadial, Circle: true, Stops: []core.ColorStop{
-			{Color: alpha(c, 0.9), At: core.Pct(0)}, {Color: alpha(c, 0.5), At: core.Pct(40)}, {Color: alpha(c, 0), At: core.Pct(70)}}}
 		blobs = append(blobs, core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute, Left: core.Pct(b.left), Top: core.Pt(b.top),
-			Width: core.Pt(b.size), Height: core.Pt(b.size), CornerRadius: b.size / 2, Gradients: []core.Gradient{g}, Filters: []core.Filter{core.Blur(28)},
-			BlendMode: blend, Animated: m.Style()}})
+			Width: core.Pt(b.size), Height: core.Pt(b.size), CornerRadius: b.size / 2, Filters: []core.Filter{core.Blur(28)}, Animated: m.Style()},
+			StyleFunc: func() core.Style {
+				c, blend := core.RGB(b.light), core.BlendMultiply
+				if cx.Dark() {
+					c, blend = core.RGB(b.dark), core.BlendScreen
+				}
+				g := core.Gradient{Kind: core.GradientRadial, Circle: true, Stops: []core.ColorStop{
+					{Color: alpha(c, 0.9), At: core.Pct(0)}, {Color: alpha(c, 0.5), At: core.Pct(40)}, {Color: alpha(c, 0), At: core.Pct(70)}}}
+				return core.Style{Gradients: []core.Gradient{g}, BlendMode: blend}
+			}})
 	}
 	blobs = append(blobs, core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0), Top: core.Pt(0), Bottom: core.Pt(0),
 		Padding: core.All(20), JustifyContent: core.JustifyEnd, Gap: 6}, Children: []core.Node{
 		core.View{Style: core.Style{AlignSelf: core.AlignStart, Padding: core.Symmetric(0, 10), Height: core.Pt(24), CornerRadius: 12, JustifyContent: core.JustifyCenter,
-			Background: glass, BorderWidth: 1, BorderColor: alpha(ink, 0.12)}, Children: []core.Node{
-			core.Text{Content: "4 × NewMotion", Style: core.Style{FontSize: 11, FontFamily: mono, Color: ink}}}},
-		core.Text{Content: "Aurora", Style: core.Style{FontSize: 34, FontWeight: bold, LetterSpacing: -0.8, Color: ink}},
-		core.Text{Content: "Each light drifts on its own loop, there and back", Style: core.Style{FontSize: 14, Color: alpha(ink, 0.7)}},
+			BorderWidth: 1}, StyleFunc: func() core.Style {
+			glass := alpha(core.RGB(0xffffff), 0.55)
+			if cx.Dark() {
+				glass = alpha(core.RGB(0xffffff), 0.12)
+			}
+			return core.Style{Background: glass, BorderColor: alpha(ink(), 0.12)}
+		}, Children: []core.Node{
+			core.Text{Content: "4 × NewMotion", Style: core.Style{FontSize: 11, FontFamily: mono}, StyleFunc: colored(ink)}}},
+		core.Text{Content: "Aurora", Style: core.Style{FontSize: 34, FontWeight: bold, LetterSpacing: -0.8}, StyleFunc: colored(ink)},
+		core.Text{Content: "Each light drifts on its own loop, there and back", Style: core.Style{FontSize: 14},
+			StyleFunc: colored(func() core.Color { return alpha(ink(), 0.7) })},
 	}})
 	return card(cx, cardProps{icon: iconStyles, title: "Aurora", subtitle: "Blurred gradients on looping motions", flush: true},
-		core.View{Style: core.Style{Height: core.Pt(260), CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous, Overflow: core.Hidden, Background: bg},
-			Children: blobs})
+		core.View{Style: core.Style{Height: core.Pt(260), CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous, Overflow: core.Hidden},
+			StyleFunc: func() core.Style {
+				if cx.Dark() {
+					return core.Style{Background: core.RGB(0x0a0716)}
+				}
+				return core.Style{Background: core.RGB(0xfff8f3)}
+			}, Children: blobs})
 }

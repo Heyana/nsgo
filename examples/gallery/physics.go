@@ -108,16 +108,16 @@ func physicsDemo(cx *core.Scope) core.Node {
 		Draw: func(d *core.Drawing, size core.Size) {
 			w, h := float32(size.Width), float32(size.Height)
 			cxp, cyp := w/2, h/2
-			d.SetFillColor(line)
+			d.SetFillColor(line())
 			for gx := float32(10); gx < w; gx += 16 {
 				for gy := float32(10); gy < h; gy += 16 {
 					d.FillRect(gx, gy, 1.5, 1.5)
 				}
 			}
-			d.SetLineDash(3, 5).SetStrokeColor(border).SetLineWidth(1).BeginPath().MoveTo(cxp, 0).LineTo(cxp, h).MoveTo(0, cyp).LineTo(w, cyp).Stroke()
+			d.SetLineDash(3, 5).SetStrokeColor(border()).SetLineWidth(1).BeginPath().MoveTo(cxp, 0).LineTo(cxp, h).MoveTo(0, cyp).LineTo(w, cyp).Stroke()
 			if mode.Get() == "snap" {
 				c := corners()
-				d.SetStrokeColor(faint)
+				d.SetStrokeColor(faint())
 				for _, sx := range []float32{-1, 1} {
 					for _, sy := range []float32{-1, 1} {
 						d.BeginPath().RoundRect(cxp+sx*float32(c.X)-float32(physicsCard)/2, cyp+sy*float32(c.Y)-float32(physicsCard)/2, float32(physicsCard), float32(physicsCard), 26).Stroke()
@@ -126,37 +126,43 @@ func physicsDemo(cx *core.Scope) core.Node {
 			}
 			// The tether, from animated values: it follows drags and
 			// springs with no engine work.
-			d.SetLineDash().SetStrokeColor(accent).SetAlpha(0.45).SetLineWidth(1.5).BeginPath().MoveTo(cxp, cyp).
+			d.SetLineDash().SetStrokeColor(accent()).SetAlpha(0.45).SetLineWidth(1.5).BeginPath().MoveTo(cxp, cyp).
 				LineTo(cxp, cyp).Bind(core.ArgX, core.Add(x, core.Constant(cxp))).Bind(core.ArgY, core.Add(y, core.Constant(cyp))).Stroke()
-			d.SetAlpha(1).SetFillColor(accent).BeginPath().Arc(cxp, cyp, 4, 0, 2*math.Pi, false).Fill()
+			d.SetAlpha(1).SetFillColor(accent()).BeginPath().Arc(cxp, cyp, 4, 0, 2*math.Pi, false).Fill()
 		}}
 
 	body := func(short bool) core.Node {
-		st := fin.inset.over(core.Style{Overflow: core.Hidden, CornerRadius: radiusCard, BorderCurve: core.BorderCurveContinuous, BorderWidth: 1, BorderColor: colors.border,
-			Background: colors.inset, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter})
-		if short {
-			st.Height = core.Pt(shortStage)
-		} else {
-			st.FlexGrow, st.FlexShrink, st.MinHeight = 1, 1, core.Pt(0)
+		st := func() core.Style {
+			st := fin.inset().over(core.Style{Overflow: core.Hidden, CornerRadius: radiusCard, BorderCurve: core.BorderCurveContinuous, BorderWidth: 1, BorderColor: colors.border(),
+				Background: colors.inset(), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter})
+			if short {
+				st.Height = core.Pt(shortStage)
+			} else {
+				st.FlexGrow, st.FlexShrink, st.MinHeight = 1, 1, core.Pt(0)
+			}
+			return st
 		}
 		outer := core.Style{Padding: core.All(16), Gap: 12}
+		var page func() core.Style
 		if !short {
 			outer = fillPage.Merge(outer)
-			outer.Background = colors.background
+			page = pageStyle(cx)
 		}
-		return core.View{Style: outer, Children: []core.Node{
+		return core.View{Style: outer, StyleFunc: page, Children: []core.Node{
 			appear(0, false, core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12}, Children: []core.Node{
 				iconTile(cx, iconPhysics, 40),
 				core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: []core.Node{
 					text("Drag and release", 17, semibold, colors.text),
-					core.Text{Content: hint(cx, "Tap to pulse, long press to reset", "Click to pulse, press and hold to reset"), MaxLines: 1, Style: core.Style{FontSize: 13, Color: colors.muted}},
+					core.Text{Content: hint(cx, "Tap to pulse, long press to reset", "Click to pulse, press and hold to reset"), MaxLines: 1, Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.muted)},
 				}},
 				badge(cx, "UI thread", toneAccent),
 			}}),
-			core.View{OnLayout: func(b core.Bounds) { stageSize.Set(b.Size) }, Style: st, Children: []core.Node{
+			core.View{OnLayout: func(b core.Bounds) { stageSize.Set(b.Size) }, StyleFunc: st, Children: []core.Node{
 				tether,
-				core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute, Width: core.Pt(physicsCard), Height: core.Pt(physicsCard), CornerRadius: 30,
-					Background: tints.accent, Animated: &core.AnimatedStyle{Opacity: lift, TranslateX: x, TranslateY: y, Scale: lerp(lift, 1, 1.32)}}},
+				core.View{PointerEvents: core.PointerEventsNone, StyleFunc: func() core.Style {
+					return core.Style{Position: core.Absolute, Width: core.Pt(physicsCard), Height: core.Pt(physicsCard), CornerRadius: 30,
+						Background: tints.accent(), Animated: &core.AnimatedStyle{Opacity: lift, TranslateX: x, TranslateY: y, Scale: lerp(lift, 1, 1.32)}}
+				}},
 				core.View{PanValues: core.AnimatedXY{X: x, Y: y}, TestID: "physics-card",
 					OnPan: func(e core.PanEvent) {
 						switch e.Phase {
@@ -167,20 +173,22 @@ func physicsDemo(cx *core.Scope) core.Node {
 						}
 					},
 					OnPress: func(core.PressEvent) { pulse() }, OnLongPress: func(core.PressEvent) { reset() }, Role: core.RoleButton, Label: "Draggable card",
-					Style: core.Style{Width: core.Pt(physicsCard), Height: core.Pt(physicsCard), CornerRadius: 30, BorderCurve: core.BorderCurveContinuous,
-						AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 8, Background: colors.accentFill,
-						// The accent's highlight and glow; the color itself
-						// animates.
-						Shadows: fin.accent.shadows,
-						Animated: &core.AnimatedStyle{
-							Background: core.Interpolate(pressed, core.Interpolation{Input: []float64{0, 1}, Colors: []core.Color{colors.accentFill, colors.info}}),
-							TranslateX: x, TranslateY: y,
-							Scale:  core.Mul(lerp(pressed, 1, 1.12), lerp(lift, 1, 1.06)),
-							Rotate: core.Interpolate(x, core.Interpolation{Input: []float64{-200, 200}, Output: []float64{-14, 14}}),
-						}},
+					StyleFunc: func() core.Style {
+						return core.Style{Width: core.Pt(physicsCard), Height: core.Pt(physicsCard), CornerRadius: 30, BorderCurve: core.BorderCurveContinuous,
+							AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 8, Background: colors.accentFill(),
+							// The accent's highlight and glow; the color itself
+							// animates.
+							Shadows: fin.accent().shadows,
+							Animated: &core.AnimatedStyle{
+								Background: core.Interpolate(pressed, core.Interpolation{Input: []float64{0, 1}, Colors: []core.Color{colors.accentFill(), colors.info()}}),
+								TranslateX: x, TranslateY: y,
+								Scale:  core.Mul(lerp(pressed, 1, 1.12), lerp(lift, 1, 1.06)),
+								Rotate: core.Interpolate(x, core.Interpolation{Input: []float64{-200, 200}, Output: []float64{-14, 14}}),
+							}}
+					},
 					Children: []core.Node{icon(iconGestures, 28, colors.onAccent), text("Drag me", 15, bold, colors.onAccent)}},
 			}},
-			core.View{Style: cardStyle(cx).Merge(core.Style{Padding: core.All(12), Gap: 12}), Children: []core.Node{
+			core.View{StyleFunc: func() core.Style { return cardStyle(cx).Merge(core.Style{Padding: core.All(12), Gap: 12}) }, Children: []core.Node{
 				segmented([]option[string]{{value: "spring", label: "Spring"}, {value: "coast", label: "Coast"}, {value: "snap", label: "Snap"}}, mode.Get, mode.Set, false),
 				segmented([]option[string]{{value: "soft", label: "Soft"}, {value: "bouncy", label: "Bouncy"}, {value: "firm", label: "Firm"}}, feel.Get, feel.Set, true),
 				core.View{Style: core.Style{Direction: core.Row, Padding: core.Symmetric(0, 4)}, Children: []core.Node{
@@ -208,13 +216,13 @@ func physicsDemo(cx *core.Scope) core.Node {
 							return "Springs to the corner the fling points at"
 						}
 						return "Springs home with the release velocity"
-					}, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13, Color: colors.muted}},
+					}, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13}, StyleFunc: colored(colors.muted)},
 					core.Text{ContentFunc: func() string {
 						if mode.Get() == "coast" {
 							return "Decay"
 						}
 						return "Spring"
-					}, Style: core.Style{FontSize: 12, FontFamily: mono, Color: colors.faint}},
+					}, Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.faint)},
 				}},
 			}},
 		}}
@@ -224,7 +232,7 @@ func physicsDemo(cx *core.Scope) core.Node {
 	return core.Dynamic(func(cx *core.Scope) core.Node {
 		colors := colorsOf(cx)
 		if short.Get() {
-			return core.Scroll{Style: core.Style{FlexGrow: 1, Background: colors.background}, Children: []core.Node{body(true)}}
+			return core.Scroll{Style: core.Style{FlexGrow: 1}, StyleFunc: filled(colors.background), Children: []core.Node{body(true)}}
 		}
 		return body(false)
 	})

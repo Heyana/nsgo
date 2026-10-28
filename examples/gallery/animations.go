@@ -12,19 +12,19 @@ import (
 )
 
 // motionTones are the tones of the demos' dots and tiles.
-func motionTones(cx *core.Scope) []core.Color {
+func motionTones(cx *core.Scope) []func() core.Color {
 	colors := colorsOf(cx)
-	return []core.Color{colors.accent, colors.info, colors.warn, colors.danger, colors.up}
+	return []func() core.Color{colors.accent, colors.info, colors.warn, colors.danger, colors.up}
 }
 
 // onTone is text on a tone's fill.
-func onTone(cx *core.Scope) core.Color {
-	colors := colorsOf(cx)
-	isDark := cx.Dark()
-	if isDark {
-		return colors.onAccent
+func onTone(cx *core.Scope) func() core.Color {
+	return func() core.Color {
+		if cx.Dark() {
+			return colorsOf(cx).onAccent()
+		}
+		return core.RGB(0xffffff)
 	}
-	return core.RGB(0xffffff)
 }
 
 func ms(n int) time.Duration { return time.Duration(n) * time.Millisecond }
@@ -57,30 +57,38 @@ func hero(cx *core.Scope) core.Node {
 	cx.Cleanup(run.Stop)
 
 	const s core.Points = 188
-	orbit := func(size core.Points, angle core.AnimatedNode, c core.Color, dot core.Points) core.Node {
-		return core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute, Left: core.Pt((s - size) / 2), Top: core.Pt((s - size) / 2),
-			Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size / 2, BorderWidth: 1, BorderColor: colors.line, Animated: &core.AnimatedStyle{Rotate: angle}},
-			Children: []core.Node{core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(size/2 - dot/2), Top: core.Pt(-dot / 2), Width: core.Pt(dot), Height: core.Pt(dot),
-				CornerRadius: dot / 2, Background: c, Shadows: fin.knob.shadows}}}}
+	orbit := func(size core.Points, angle core.AnimatedNode, c func() core.Color, dot core.Points) core.Node {
+		return core.View{PointerEvents: core.PointerEventsNone, StyleFunc: func() core.Style {
+			return core.Style{Position: core.Absolute, Left: core.Pt((s - size) / 2), Top: core.Pt((s - size) / 2),
+				Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size / 2, BorderWidth: 1, BorderColor: colors.line(), Animated: &core.AnimatedStyle{Rotate: angle}}
+		},
+			Children: []core.Node{core.View{StyleFunc: func() core.Style {
+				return core.Style{Position: core.Absolute, Left: core.Pt(size/2 - dot/2), Top: core.Pt(-dot / 2), Width: core.Pt(dot), Height: core.Pt(dot),
+					CornerRadius: dot / 2, Background: c(), Shadows: fin.knob().shadows}
+			}}}}
 	}
 	var stage []core.Node
 	for _, r := range rings {
-		stage = append(stage, core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute, Left: core.Pt(34), Top: core.Pt(34),
-			Width: core.Pt(s - 68), Height: core.Pt(s - 68), CornerRadius: (s - 68) / 2, BorderWidth: 1.5, BorderColor: colors.accent,
-			Animated: &core.AnimatedStyle{
-				Opacity: core.Interpolate(r, core.Interpolation{Input: []float64{0, 0.15, 1}, Output: []float64{0, 0.6, 0}}),
-				Scale:   lerp(r, 0.35, 1.45),
-			}}})
+		stage = append(stage, core.View{PointerEvents: core.PointerEventsNone, StyleFunc: func() core.Style {
+			return core.Style{Position: core.Absolute, Left: core.Pt(34), Top: core.Pt(34),
+				Width: core.Pt(s - 68), Height: core.Pt(s - 68), CornerRadius: (s - 68) / 2, BorderWidth: 1.5, BorderColor: colors.accent(),
+				Animated: &core.AnimatedStyle{
+					Opacity: core.Interpolate(r, core.Interpolation{Input: []float64{0, 0.15, 1}, Output: []float64{0, 0.6, 0}}),
+					Scale:   lerp(r, 0.35, 1.45),
+				}}
+		}})
 	}
 	stage = append(stage,
 		orbit(s-12, spin, colors.accent, 10),
 		orbit(s-64, core.Mul(spin, core.Constant(-1.6)), colors.info, 8),
-		core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(s/2 - 26), Top: core.Pt(s/2 - 26), Width: core.Pt(52), Height: core.Pt(52), CornerRadius: 26,
-			AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Background: colors.accentFill, Shadows: fin.accent.shadows,
-			Animated: &core.AnimatedStyle{
-				Background: core.Interpolate(breathe, core.Interpolation{Input: []float64{0, 1}, Colors: []core.Color{colors.accentFill, colors.up}}),
-				Scale:      lerp(breathe, 0.9, 1.08),
-			}}, Children: []core.Node{icon(iconAnimation, 22, colors.onAccent)}},
+		core.View{StyleFunc: func() core.Style {
+			return core.Style{Position: core.Absolute, Left: core.Pt(s/2 - 26), Top: core.Pt(s/2 - 26), Width: core.Pt(52), Height: core.Pt(52), CornerRadius: 26,
+				AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Background: colors.accentFill(), Shadows: fin.accent().shadows,
+				Animated: &core.AnimatedStyle{
+					Background: core.Interpolate(breathe, core.Interpolation{Input: []float64{0, 1}, Colors: []core.Color{colors.accentFill(), colors.up()}}),
+					Scale:      lerp(breathe, 0.9, 1.08),
+				}}
+		}, Children: []core.Node{icon(iconAnimation, 22, colors.onAccent)}},
 	)
 	return card(cx, cardProps{icon: iconAnimation, title: "Native motion", subtitle: "Three loops, started once, run on the UI thread"},
 		core.View{Style: core.Style{Height: core.Pt(s + 8), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}, Children: []core.Node{
@@ -135,11 +143,11 @@ func chipTab(cx *core.Scope, label string, active func() bool, onPress func()) c
 		Children: []core.Node{core.View{StyleFunc: func() core.Style {
 			s := core.Style{Height: core.Pt(36), Padding: core.Symmetric(0, 14), CornerRadius: 18, JustifyContent: core.JustifyCenter}
 			if active() {
-				s = fin.light.over(s)
-				s.Background = colors.light
+				s = fin.light().over(s)
+				s.Background = colors.light()
 			} else {
-				s = fin.raised.over(s)
-				s.Background, s.BorderWidth, s.BorderColor = colors.raised, 1, colors.border
+				s = fin.raised().over(s)
+				s.Background, s.BorderWidth, s.BorderColor = colors.raised(), 1, colors.border()
 			}
 			return s
 		}, Children: []core.Node{core.Text{Content: label, StyleFunc: func() core.Style {
@@ -147,7 +155,7 @@ func chipTab(cx *core.Scope, label string, active func() bool, onPress func()) c
 			if active() {
 				c = colors.onLight
 			}
-			return core.Style{FontSize: 13, FontWeight: medium, Color: c}
+			return core.Style{FontSize: 13, FontWeight: medium, Color: c()}
 		}}}}}}
 }
 
@@ -179,19 +187,19 @@ func easingPlot(cx *core.Scope) core.Node {
 		y := func(v float64) float32 { return b - float32((v-lo)/(hi-lo))*(b-t) }
 		x := func(v float64) float32 { return l + float32(v)*(r-l) }
 		// Zones outside 0 to 1: where a curve overshoots.
-		hatch(d, alpha(textC, 0.06), l, t, r-l, y(1)-t)
-		hatch(d, alpha(textC, 0.06), l, y(0), r-l, b-y(0))
-		d.SetStrokeColor(lineC).SetLineWidth(1)
+		hatch(d, alpha(textC(), 0.06), l, t, r-l, y(1)-t)
+		hatch(d, alpha(textC(), 0.06), l, y(0), r-l, b-y(0))
+		d.SetStrokeColor(lineC()).SetLineWidth(1)
 		for _, q := range []float64{0.25, 0.5, 0.75} {
 			d.BeginPath().MoveTo(x(q), t).LineTo(x(q), b).Stroke()
 		}
-		d.SetLineDash(3, 4).SetStrokeColor(faintC)
+		d.SetLineDash(3, 4).SetStrokeColor(faintC())
 		for _, v := range []float64{0, 1} {
 			d.BeginPath().MoveTo(l, y(v)).LineTo(r, y(v)).Stroke()
 		}
 		d.SetLineDash()
 		font := core.Font{Size: 11}
-		d.SetFillColor(faintC).SetTextBaseline(core.BaselineMiddle).FillText("1.0", 2, y(1), font).FillText("0", 2, y(0), font)
+		d.SetFillColor(faintC()).SetTextBaseline(core.BaselineMiddle).FillText("1.0", 2, y(1), font).FillText("0", 2, y(0), font)
 		// The curve, filled faintly beneath.
 		e := easingCurves[selected.Get()].easing
 		const n = 96
@@ -200,22 +208,22 @@ func easingPlot(cx *core.Scope) core.Node {
 			p := float64(i) / n
 			d.LineTo(x(p), y(e.At(p)))
 		}
-		d.LineTo(x(1), y(0)).ClosePath().SetFillColor(tint).SetAlpha(0.6).Fill().SetAlpha(1)
+		d.LineTo(x(1), y(0)).ClosePath().SetFillColor(tint()).SetAlpha(0.6).Fill().SetAlpha(1)
 		d.BeginPath().MoveTo(x(0), y(e.At(0)))
 		for i := 1; i <= n; i++ {
 			p := float64(i) / n
 			d.LineTo(x(p), y(e.At(p)))
 		}
-		d.SetStrokeColor(accentC).SetLineWidth(2).SetLineJoin(core.JoinRound).Stroke()
+		d.SetStrokeColor(accentC()).SetLineWidth(2).SetLineJoin(core.JoinRound).Stroke()
 		// The playhead and the dot, from animated values.
 		hx := core.Add(core.Mul(px, core.Constant(r-l)), core.Constant(l))
 		hy := core.Add(core.Mul(py, core.Constant(-(b-t)/(hi-lo))), core.Constant(b+lo*(b-t)/(hi-lo)))
-		d.SetStrokeColor(alpha(textC, 0.22)).SetLineWidth(1)
+		d.SetStrokeColor(alpha(textC(), 0.22)).SetLineWidth(1)
 		d.BeginPath().MoveTo(l, t).Bind(core.ArgX, hx).LineTo(l, b).Bind(core.ArgX, hx).Stroke()
 		d.SetLineDash(2, 3).BeginPath().MoveTo(l, b).Bind(core.ArgY, hy).LineTo(l, b).Bind(core.ArgX, hx).Bind(core.ArgY, hy).Stroke().SetLineDash()
-		d.SetFillColor(lightC).BeginPath().Arc(l, b, 5, 0, 2*math.Pi, false).Bind(core.ArgX, hx).Bind(core.ArgY, hy).Fill()
-		d.SetStrokeColor(accentC).BeginPath().Arc(l, b, 9, 0, 2*math.Pi, false).Bind(core.ArgX, hx).Bind(core.ArgY, hy).Stroke()
-		d.SetFillColor(accentC).BeginPath().Arc(l, b, 3.5, 0, 2*math.Pi, false).Bind(core.ArgY, hy).Fill()
+		d.SetFillColor(lightC()).BeginPath().Arc(l, b, 5, 0, 2*math.Pi, false).Bind(core.ArgX, hx).Bind(core.ArgY, hy).Fill()
+		d.SetStrokeColor(accentC()).BeginPath().Arc(l, b, 9, 0, 2*math.Pi, false).Bind(core.ArgX, hx).Bind(core.ArgY, hy).Stroke()
+		d.SetFillColor(accentC()).BeginPath().Arc(l, b, 3.5, 0, 2*math.Pi, false).Bind(core.ArgY, hy).Fill()
 	}
 	var chips []core.Node
 	for i, c := range easingCurves {
@@ -255,10 +263,10 @@ func easingRace(cx *core.Scope) core.Node {
 	var rows []core.Node
 	for i, c := range easingCurves {
 		lane := core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Height: core.Pt(12), JustifyContent: core.JustifyCenter}, Children: []core.Node{
-			core.View{Style: core.Style{Height: core.Pt(2), CornerRadius: 1, Background: colors.raised}},
+			core.View{Style: core.Style{Height: core.Pt(2), CornerRadius: 1}, StyleFunc: filled(colors.raised)},
 			core.View{StyleFunc: func() core.Style {
 				return core.Style{Position: core.Absolute, Left: core.Pt(0), Top: core.Pt(0), Width: core.Pt(12), Height: core.Pt(12), CornerRadius: 6,
-					Background: tones[i%len(tones)], Shadows: fin.knob.shadows,
+					Background: tones[i%len(tones)](), Shadows: fin.knob().shadows,
 					Animated: &core.AnimatedStyle{TranslateX: core.Mul(dots[i], core.Constant(max(0, width.Get()-12)))}}
 			}},
 		}}
@@ -266,7 +274,7 @@ func easingRace(cx *core.Scope) core.Node {
 			lane.OnLayout = func(b core.Bounds) { width.Set(b.Size.Width) }
 		}
 		rows = append(rows, core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Height: core.Pt(26), Gap: 10}, Children: []core.Node{
-			core.Text{Content: c.name, MaxLines: 1, Style: core.Style{Width: core.Pt(84), FontSize: 13, Color: colors.muted}},
+			core.Text{Content: c.name, MaxLines: 1, Style: core.Style{Width: core.Pt(84), FontSize: 13}, StyleFunc: colored(colors.muted)},
 			lane,
 		}})
 	}
@@ -341,14 +349,18 @@ func composition(cx *core.Scope) core.Node {
 	}
 	var tiles []core.Node
 	for i, c := range tones {
-		tiles = append(tiles, core.View{Style: core.Style{Width: core.Pt(40), Height: core.Pt(40), CornerRadius: 12, BorderCurve: core.BorderCurveContinuous, Background: c,
-			Shadows: fin.knob.shadows, Animated: &core.AnimatedStyle{Opacity: fade, TranslateY: ys[i], Rotate: lerp(spin, 0, float64(i+1)*36)}}})
+		tiles = append(tiles, core.View{StyleFunc: func() core.Style {
+			return core.Style{Width: core.Pt(40), Height: core.Pt(40), CornerRadius: 12, BorderCurve: core.BorderCurveContinuous, Background: c(),
+				Shadows: fin.knob().shadows, Animated: &core.AnimatedStyle{Opacity: fade, TranslateY: ys[i], Rotate: lerp(spin, 0, float64(i+1)*36)}}
+		}})
 	}
 	return card(cx, cardProps{icon: iconComponents, title: "Composition", subtitle: "Each step starts as the last one ends",
 		right: core.Dynamic(func(*core.Scope) core.Node { s := st.Get(); return badge(cx, s.label, s.tone) })},
 		core.View{Style: core.Style{Height: core.Pt(116), Direction: core.Row, JustifyContent: core.JustifyCenter, AlignItems: core.AlignEnd, Gap: 12, Padding: core.Edges{Bottom: 14}},
-			Children: append([]core.Node{core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(14),
-				Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.border}, BorderStyle: core.BorderDashed}}}, tiles...)},
+			Children: append([]core.Node{core.View{PointerEvents: core.PointerEventsNone, StyleFunc: func() core.Style {
+				return core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(14),
+					Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.border()}, BorderStyle: core.BorderDashed}
+			}}}, tiles...)},
 		core.View{Style: core.Style{Direction: core.Row, Gap: 8}, Children: []core.Node{
 			cell(button(buttonProps{label: "Stagger", variant: secondary}, run("stagger", stagger))),
 			cell(button(buttonProps{label: "Sequence", variant: secondary}, run("sequence", sequence))),
@@ -419,13 +431,13 @@ func springs(cx *core.Scope) core.Node {
 		l, r, t, b := float32(4), cw-4, float32(10), h-10
 		y := func(v float64) float32 { return b - float32(v/1.5)*(b-t) }
 		// A dot matrix behind, then the target.
-		d.SetFillColor(lineC)
+		d.SetFillColor(lineC())
 		for gx := l; gx <= r; gx += 12 {
 			for gy := t; gy <= b; gy += 12 {
 				d.FillRect(gx, gy, 1.5, 1.5)
 			}
 		}
-		d.SetLineDash(3, 4).SetStrokeColor(faintC).BeginPath().MoveTo(l, y(1)).LineTo(r, y(1)).Stroke().SetLineDash()
+		d.SetLineDash(3, 4).SetStrokeColor(faintC()).BeginPath().MoveTo(l, y(1)).LineTo(r, y(1)).Stroke().SetLineDash()
 		w := float64(max(1, width.Get()-28))
 		fromEnd := !there.Get()
 		for i, s := range springKinds {
@@ -456,10 +468,14 @@ func springs(cx *core.Scope) core.Node {
 	}
 	var legends, tracks []core.Node
 	for i, s := range springKinds {
-		legends = append(legends, legend(cx, s.tone.color(cx), s.label, label(fmt.Sprintf("%.0f / %.0f", s.stiffness, s.damping))))
-		track := core.View{Style: core.Style{Height: core.Pt(28), JustifyContent: core.JustifyCenter, CornerRadius: 14, Background: colors.background, Shadows: fin.track.shadows},
-			Children: []core.Node{core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(2), Top: core.Pt(2), Width: core.Pt(24), Height: core.Pt(24), CornerRadius: 12,
-				Background: s.tone.color(cx), Shadows: fin.knob.shadows, Animated: &core.AnimatedStyle{TranslateX: xs[i]}}}}}
+		legends = append(legends, legend(cx, s.tone.shade(cx), s.label, label(fmt.Sprintf("%.0f / %.0f", s.stiffness, s.damping))))
+		track := core.View{StyleFunc: func() core.Style {
+			return core.Style{Height: core.Pt(28), JustifyContent: core.JustifyCenter, CornerRadius: 14, Background: colors.background(), Shadows: fin.track().shadows}
+		},
+			Children: []core.Node{core.View{StyleFunc: func() core.Style {
+				return core.Style{Position: core.Absolute, Left: core.Pt(2), Top: core.Pt(2), Width: core.Pt(24), Height: core.Pt(24), CornerRadius: 12,
+					Background: s.tone.color(cx), Shadows: fin.knob().shadows, Animated: &core.AnimatedStyle{TranslateX: xs[i]}}
+			}}}}
 		if i == 0 {
 			track.OnLayout = func(b core.Bounds) { width.Set(b.Size.Width) }
 		}
@@ -488,9 +504,9 @@ func dialFace(cx *core.Scope, size core.Points) core.Node {
 				r0, col, w = c-12, muted, 1.5
 			}
 			cos, sin := float32(math.Cos(a)), float32(math.Sin(a))
-			d.SetStrokeColor(col).SetLineWidth(w).BeginPath().MoveTo(c+cos*r0, c+sin*r0).LineTo(c+cos*(c-2), c+sin*(c-2)).Stroke()
+			d.SetStrokeColor(col()).SetLineWidth(w).BeginPath().MoveTo(c+cos*r0, c+sin*r0).LineTo(c+cos*(c-2), c+sin*(c-2)).Stroke()
 		}
-		d.SetFillColor(faint).SetTextAlign(core.TextAlignCenter).SetTextBaseline(core.BaselineMiddle)
+		d.SetFillColor(faint()).SetTextAlign(core.TextAlignCenter).SetTextBaseline(core.BaselineMiddle)
 		for i, l := range []string{"0", "1", "2"} {
 			a := float64(-120+i*120)*math.Pi/180 - math.Pi/2
 			d.FillText(l, c+float32(math.Cos(a))*(c-24), c+float32(math.Sin(a))*(c-24), core.Font{Size: 11})
@@ -517,24 +533,28 @@ func interpolations(cx *core.Scope) core.Node {
 				dialFace(cx, d),
 				core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute, Left: core.Pt(d/2 - 1.5), Top: core.Pt(14), Width: core.Pt(3), Height: core.Pt(d - 28),
 					Animated: &core.AnimatedStyle{Rotate: core.Interpolate(t, core.Interpolation{Input: []float64{0, 2}, Output: []float64{-120, 120}, Extrapolate: core.ExtrapolateExtend})}},
-					Children: []core.Node{core.View{Style: core.Style{Height: core.Pt(d/2 - 22), CornerRadius: 1.5, Background: colors.accent}}}},
-				core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(d/2 - 6), Top: core.Pt(d/2 - 6), Width: core.Pt(12), Height: core.Pt(12), CornerRadius: 6,
-					Background: colors.light, Shadows: fin.light.shadows}},
+					Children: []core.Node{core.View{Style: core.Style{Height: core.Pt(d/2 - 22), CornerRadius: 1.5}, StyleFunc: filled(colors.accent)}}},
+				core.View{StyleFunc: func() core.Style {
+					return core.Style{Position: core.Absolute, Left: core.Pt(d/2 - 6), Top: core.Pt(d/2 - 6), Width: core.Pt(12), Height: core.Pt(12), CornerRadius: 6,
+						Background: colors.light(), Shadows: fin.light().shadows}
+				}},
 			}},
 			core.View{Style: core.Style{AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
-				core.View{Style: core.Style{Width: core.Pt(64), Height: core.Pt(64), CornerRadius: 16, BorderCurve: core.BorderCurveContinuous, Background: colors.info,
-					Animated: &core.AnimatedStyle{
-						Background: core.Interpolate(t, core.Interpolation{Input: []float64{0, 1, 2}, Colors: []core.Color{colors.info, colors.accent, colors.danger}}),
-						Rotate:     core.Interpolate(t, core.Interpolation{Input: []float64{0, 1}, Output: []float64{0, 180}, ExtrapolateRight: core.ExtrapolateExtend}),
-					}}},
-				core.Text{Content: "extend", Style: core.Style{FontSize: 11, FontFamily: mono, Color: colors.faint}},
+				core.View{StyleFunc: func() core.Style {
+					return core.Style{Width: core.Pt(64), Height: core.Pt(64), CornerRadius: 16, BorderCurve: core.BorderCurveContinuous, Background: colors.info(),
+						Animated: &core.AnimatedStyle{
+							Background: core.Interpolate(t, core.Interpolation{Input: []float64{0, 1, 2}, Colors: []core.Color{colors.info(), colors.accent(), colors.danger()}}),
+							Rotate:     core.Interpolate(t, core.Interpolation{Input: []float64{0, 1}, Output: []float64{0, 180}, ExtrapolateRight: core.ExtrapolateExtend}),
+						}}
+				}},
+				core.Text{Content: "extend", Style: core.Style{FontSize: 11, FontFamily: mono}, StyleFunc: colored(colors.faint)},
 			}},
 			core.View{Style: core.Style{AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
 				core.View{Style: core.Style{Width: core.Pt(64), Height: core.Pt(64), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}, Children: []core.Node{
-					core.View{Style: core.Style{Width: core.Pt(52), Height: core.Pt(52), CornerRadius: 26, Background: colors.up,
-						Animated: &core.AnimatedStyle{Scale: core.Interpolate(t, core.Interpolation{Input: []float64{0, 1}, Output: []float64{0.6, 1.2}, Extrapolate: core.ExtrapolateClamp})}}},
+					core.View{Style: core.Style{Width: core.Pt(52), Height: core.Pt(52), CornerRadius: 26,
+						Animated: &core.AnimatedStyle{Scale: core.Interpolate(t, core.Interpolation{Input: []float64{0, 1}, Output: []float64{0.6, 1.2}, Extrapolate: core.ExtrapolateClamp})}}, StyleFunc: filled(colors.up)},
 				}},
-				core.Text{Content: "clamp", Style: core.Style{FontSize: 11, FontFamily: mono, Color: colors.faint}},
+				core.Text{Content: "clamp", Style: core.Style{FontSize: 11, FontFamily: mono}, StyleFunc: colored(colors.faint)},
 			}},
 		}},
 		segmented([]option[int]{{value: 0, label: "t = 0"}, {value: 1, label: "t = 1"}, {value: 2, label: "t = 2"}}, at.Get, goTo, false),
@@ -561,27 +581,33 @@ func hidingHeader(cx *core.Scope) core.Node {
 		if n%3 == 0 {
 			bar = colors.accent
 		}
-		rows = append(rows, core.View{Style: core.Style{Height: core.Pt(48), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(0, 12),
-			CornerRadius: 12, Background: colors.surface, BorderWidth: 1, BorderColor: colors.line}, Children: []core.Node{
-			core.Text{Content: fmt.Sprintf("%02d", n), Style: core.Style{Width: core.Pt(24), FontSize: 13, Color: colors.faint}},
-			core.Text{Content: fmt.Sprintf("Row %d", n), Style: core.Style{FlexGrow: 1, FontSize: 15, Color: colors.text}},
-			core.View{Style: core.Style{Width: core.Pt(core.Points(40 + (n*37)%50)), Height: core.Pt(4), CornerRadius: 2, Background: bar}},
+		rows = append(rows, core.View{StyleFunc: func() core.Style {
+			return core.Style{Height: core.Pt(48), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(0, 12),
+				CornerRadius: 12, Background: colors.surface(), BorderWidth: 1, BorderColor: colors.line()}
+		}, Children: []core.Node{
+			core.Text{Content: fmt.Sprintf("%02d", n), Style: core.Style{Width: core.Pt(24), FontSize: 13}, StyleFunc: colored(colors.faint)},
+			core.Text{Content: fmt.Sprintf("Row %d", n), Style: core.Style{FlexGrow: 1, FontSize: 15}, StyleFunc: colored(colors.text)},
+			core.View{Style: core.Style{Width: core.Pt(core.Points(40 + (n*37)%50)), Height: core.Pt(4), CornerRadius: 2}, StyleFunc: filled(bar)},
 		}})
 	}
 	return card(cx, cardProps{icon: iconScroll, title: "Hiding header", subtitle: "Hides as the list scrolls up, returns as it scrolls down"},
-		core.View{Style: core.Style{Height: core.Pt(300), CornerRadius: radiusControl, Overflow: core.Hidden, Background: colors.background, Shadows: fin.track.shadows}, Children: []core.Node{
+		core.View{StyleFunc: func() core.Style {
+			return core.Style{Height: core.Pt(300), CornerRadius: radiusControl, Overflow: core.Hidden, Background: colors.background(), Shadows: fin.track().shadows}
+		}, Children: []core.Node{
 			core.Scroll{Style: core.Style{FlexGrow: 1}, OffsetValues: core.AnimatedXY{Y: scroll}, TestID: "hiding-list", Children: []core.Node{
 				core.View{Style: core.Style{Padding: core.Edges{Top: h + 8, Right: 8, Bottom: 8, Left: 8}, Gap: 6}, Children: rows},
 			}},
-			core.View{Style: fin.raised.over(core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0), Top: core.Pt(0), Height: core.Pt(h), Direction: core.Row,
-				AlignItems: core.AlignCenter, Gap: 10, Padding: core.Symmetric(0, 14), Background: colors.raised, Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.border},
-				Animated: &core.AnimatedStyle{
-					TranslateY: core.Mul(header, core.Constant(-1)),
-					Opacity:    core.Interpolate(header, core.Interpolation{Input: []float64{0, float64(h)}, Output: []float64{1, 0}, Easing: ease(core.EasingQuad, core.EaseModeIn)}),
-				}}), Children: []core.Node{
+			core.View{StyleFunc: func() core.Style {
+				return fin.raised().over(core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0), Top: core.Pt(0), Height: core.Pt(h), Direction: core.Row,
+					AlignItems: core.AlignCenter, Gap: 10, Padding: core.Symmetric(0, 14), Background: colors.raised(), Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.border()},
+					Animated: &core.AnimatedStyle{
+						TranslateY: core.Mul(header, core.Constant(-1)),
+						Opacity:    core.Interpolate(header, core.Interpolation{Input: []float64{0, float64(h)}, Output: []float64{1, 0}, Easing: ease(core.EasingQuad, core.EaseModeIn)}),
+					}})
+			}, Children: []core.Node{
 				icon(iconSearch, 16, colors.muted),
-				core.Text{Content: "Search", Style: core.Style{FlexGrow: 1, FontSize: 15, FontWeight: semibold, Color: colors.text}},
-				core.Text{Content: fmt.Sprintf("DiffClamp(0, %.0f)", h), Style: core.Style{FontSize: 12, FontFamily: mono, Color: colors.faint}},
+				core.Text{Content: "Search", Style: core.Style{FlexGrow: 1, FontSize: 15, FontWeight: semibold}, StyleFunc: colored(colors.text)},
+				core.Text{Content: fmt.Sprintf("DiffClamp(0, %.0f)", h), Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.faint)},
 			}},
 		}},
 	)
@@ -614,7 +640,7 @@ func layoutAnimation(cx *core.Scope) core.Node {
 			n := core.Untracked(cx, id)
 			return core.View{StyleFunc: func() core.Style {
 				s := core.Style{CornerRadius: 12, BorderCurve: core.BorderCurveContinuous, Padding: core.Symmetric(0, 10), JustifyContent: core.JustifyCenter,
-					Background: tones[n%len(tones)], Shadows: fin.knob.shadows}
+					Background: tones[n%len(tones)](), Shadows: fin.knob().shadows}
 				if column.Get() {
 					s.Height = core.Pt(30)
 				} else {
@@ -665,12 +691,12 @@ func transitions(cx *core.Scope) core.Node {
 	var lanes []core.Node
 	for _, c := range curves {
 		lanes = append(lanes, core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10, Height: core.Pt(24)}, Children: []core.Node{
-			core.Text{Content: c.name, Style: core.Style{Width: core.Pt(76), FontSize: 13, Color: colors.muted}},
+			core.Text{Content: c.name, Style: core.Style{Width: core.Pt(76), FontSize: 13}, StyleFunc: colored(colors.muted)},
 			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Height: core.Pt(12), JustifyContent: core.JustifyCenter}, Children: []core.Node{
-				core.View{Style: core.Style{Height: core.Pt(2), CornerRadius: 1, Background: colors.raised}},
+				core.View{Style: core.Style{Height: core.Pt(2), CornerRadius: 1}, StyleFunc: filled(colors.raised)},
 				core.View{StyleFunc: func() core.Style {
-					s := core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(0), Width: core.Pt(12), Height: core.Pt(12), CornerRadius: 6, Background: colors.accent,
-						Shadows: fin.knob.shadows, Transition: core.Transition{Duration: ms(900), Easing: c.curve}}
+					s := core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(0), Width: core.Pt(12), Height: core.Pt(12), CornerRadius: 6, Background: colors.accent(),
+						Shadows: fin.knob().shadows, Transition: core.Transition{Duration: ms(900), Easing: c.curve}}
 					if moved.Get() {
 						s.Left = core.Pct(90)
 					}
@@ -682,10 +708,10 @@ func transitions(cx *core.Scope) core.Node {
 	return card(cx, cardProps{icon: iconStyles, title: "Transitions", subtitle: "A style's Transition animates its changes", right: badge(cx, "NSGo", toneNeutral)},
 		core.View{Style: core.Style{Height: core.Pt(96), AlignItems: core.AlignStart, JustifyContent: core.JustifyCenter}, Children: []core.Node{
 			core.View{StyleFunc: func() core.Style {
-				s := core.Style{Width: core.Pt(64), Height: core.Pt(64), CornerRadius: 14, Background: colors.accentFill, Shadows: fin.accent.shadows,
+				s := core.Style{Width: core.Pt(64), Height: core.Pt(64), CornerRadius: 14, Background: colors.accentFill(), Shadows: fin.accent().shadows,
 					Transition: core.Transition{Duration: ms(450), Easing: core.EaseInOut}}
 				if moved.Get() {
-					s.Background, s.CornerRadius = colors.info, 32
+					s.Background, s.CornerRadius = colors.info(), 32
 					s.Transform = core.Transform{TranslateX: 140, Rotate: 180, Scale: 0.8}
 					s.Opacity = core.Alpha(0.75)
 				}

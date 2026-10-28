@@ -288,6 +288,8 @@ type DataTable struct {
 	// Empty shows when there are no rows; LoadingView while Loading.
 	Empty, LoadingView core.Node
 	Styles             DataTableStyles
+	// StylesFunc replaces Styles, again when what it reads changes.
+	StylesFunc func() DataTableStyles
 	// Label is what screen readers call the table, a grid of column
 	// headers and cells.
 	Label     string
@@ -525,6 +527,15 @@ func newDataTable(cx *core.Scope, p DataTable) *dataTable {
 	t.syncSelection()
 	t.report()
 	return t
+}
+
+// styles are the parts' styles, read where they are applied.
+func (t *dataTable) styles() *DataTableStyles {
+	if t.p.StylesFunc != nil {
+		s := t.p.StylesFunc()
+		return &s
+	}
+	return &t.p.Styles
 }
 
 func (t *dataTable) bumpLayout() { t.layoutRev.Update(func(r int) int { return r + 1 }) }

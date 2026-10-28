@@ -117,16 +117,21 @@ var glyphs = map[iconName]func() *core.SVG{
 	iconTerminal:   lucide.Terminal,
 }
 
-// icon draws a glyph size points square in the tint.
-func icon(name iconName, size core.Points, tint core.Color) core.Node {
-	return core.Icon{SVG: glyphs[name](), Style: core.Style{Width: core.Pt(size), Height: core.Pt(size), Color: tint}}
+// icon draws a glyph size points square in the tint, which it follows.
+func icon(name iconName, size core.Points, tint func() core.Color) core.Node {
+	var svg *core.SVG
+	if name != "" {
+		svg = glyphs[name]()
+	}
+	return core.Icon{SVG: svg, Style: core.Style{Width: core.Pt(size), Height: core.Pt(size)},
+		StyleFunc: func() core.Style { return core.Style{Color: tint()} }}
 }
 
-// iconf draws a glyph whose tint follows fn.
-func iconf(name iconName, size core.Points, tint func() core.Color) core.Node {
-	return core.Icon{SVG: glyphs[name](), StyleFunc: func() core.Style {
-		return core.Style{Width: core.Pt(size), Height: core.Pt(size), Color: tint()}
-	}}
+// iconOf draws the glyph name returns, which it follows.
+func iconOf(name func() iconName, size core.Points, tint func() core.Color) core.Node {
+	ic := icon("", size, tint).(core.Icon)
+	ic.SVGFunc = func() *core.SVG { return glyphs[name()]() }
+	return ic
 }
 
 // The chat's glyphs.

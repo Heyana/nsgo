@@ -1091,7 +1091,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 		if sp.Attachment != nil {
 			w := t.newNode(driver.KindView, n, cx)
 			w.attach = &attachNode{}
-			t.bindStyle(cx, w, sp.Style, nil)
+			t.bindStyle(cx, w, sp.Style, sp.StyleFunc)
 			t.mount(cx, w, sp.Attachment)
 			n.text.spans = append(n.text.spans, spanNode{attach: w})
 			n.text.attachments++
@@ -1110,10 +1110,24 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 				}
 			})
 		}
+		if sp.StyleFunc != nil {
+			cx.renderEffect(func() {
+				if s := sp.Style.Merge(sp.StyleFunc()); !reflect.DeepEqual(s, n.text.spans[i].style) {
+					n.text.spans[i].style = s
+					n.text.stale = true
+					t.markResolve(n)
+				}
+			})
+		}
 	}
 	if v.SpansFunc != nil {
 		cx.renderEffect(func() {
 			spans := v.SpansFunc()
+			for i, sp := range spans {
+				if sp.StyleFunc != nil {
+					spans[i].Style = sp.Style.Merge(sp.StyleFunc())
+				}
+			}
 			same := len(spans) == len(n.text.spans) && n.text.prepared != nil
 			for i := 0; same && i < len(spans); i++ {
 				same = spans[i].Content == n.text.spans[i].content && reflect.DeepEqual(spans[i].Style, n.text.spans[i].style)

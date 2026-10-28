@@ -50,16 +50,16 @@ func collapsingDemo(cx *core.Scope) core.Node {
 	}
 	fill := func(top, left, size core.Points, right bool, opacity float32) core.Node {
 		s := core.Style{Position: core.Absolute, Top: core.Pt(top), Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size / 2,
-			Background: colors.onAccent, Opacity: core.Alpha(opacity)}
+			Opacity: core.Alpha(opacity)}
 		if right {
 			s.Right = core.Pt(left)
 		} else {
 			s.Left = core.Pt(left)
 		}
-		return core.View{Style: s}
+		return core.View{Style: s, StyleFunc: filled(colors.onAccent)}
 	}
 	header := core.View{TestID: "header", Style: core.Style{Position: core.Sticky, Top: core.Pt(-collapsingRange), Height: core.Pt(collapsingOpen),
-		Overflow: core.Hidden, Background: colors.accentFill}, Children: []core.Node{
+		Overflow: core.Hidden}, StyleFunc: filled(colors.accentFill), Children: []core.Node{
 		core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(0), Right: core.Pt(0), Height: core.Pt(collapsingOpen),
 			TransformOrigin: core.ObjectPosition{X: core.PositionCenter, Y: core.PositionEnd},
 			Animated: &core.AnimatedStyle{
@@ -69,19 +69,17 @@ func collapsingDemo(cx *core.Scope) core.Node {
 			fill(24, 36, 120, false, 0.14),
 			fill(70, 48, 72, true, 0.1),
 		}},
-		core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0),
-			Background: colors.accentFill, Animated: &core.AnimatedStyle{Opacity: collapsed}}},
+		core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0), Animated: &core.AnimatedStyle{Opacity: collapsed}}, StyleFunc: filled(colors.accentFill)},
 		// Shown while open, above the bar's strip: it fades as the header
 		// collapses.
-		core.Text{Content: "160 entries, by week", Style: core.Style{Position: core.Absolute, Left: core.Pt(16), Bottom: core.Pt(collapsingBar - 4),
-			Color: colors.onAccent, FontSize: 15, Animated: &core.AnimatedStyle{Opacity: lerp(collapsed, [2]float64{0, 0.5}, [2]float64{0.8, 0})}}},
+		core.Text{Content: "160 entries, by week", Style: core.Style{Position: core.Absolute, Left: core.Pt(16), Bottom: core.Pt(collapsingBar - 4), FontSize: 15, Animated: &core.AnimatedStyle{Opacity: lerp(collapsed, [2]float64{0, 0.5}, [2]float64{0.8, 0})}}, StyleFunc: colored(colors.onAccent)},
 		// The title, centered in the header's last bar's height: the bar it
 		// collapses to. It shrinks to the bar's size around its left edge.
 		core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(16), Right: core.Pt(16), Bottom: core.Pt(0), Height: core.Pt(collapsingBar),
 			JustifyContent: core.JustifyCenter}, Children: []core.Node{
-			core.Text{Content: "Recent", Style: core.Style{AlignSelf: core.AlignStart, Color: colors.onAccent, FontSize: 30, FontWeight: bold,
+			core.Text{Content: "Recent", Style: core.Style{AlignSelf: core.AlignStart, FontSize: 30, FontWeight: bold,
 				TransformOrigin: core.ObjectPosition{X: core.PositionStart, Y: core.PositionCenter},
-				Animated:        &core.AnimatedStyle{Scale: lerp(collapsed, [2]float64{0, 1}, [2]float64{1, 0.62})}}},
+				Animated:        &core.AnimatedStyle{Scale: lerp(collapsed, [2]float64{0, 1}, [2]float64{1, 0.62})}}, StyleFunc: colored(colors.onAccent)},
 		}},
 	}}
 	list := core.List{Viewport: core.ListViewportParent, Count: func() int { return len(rows) }, EstimatedSize: 52,
@@ -93,14 +91,16 @@ func collapsingDemo(cx *core.Scope) core.Node {
 			// with the row it shows.
 			return core.Show{When: func() bool { return row().week > 0 },
 				Then: func(*core.Scope) core.Node {
-					return core.View{Style: core.Style{Height: core.Pt(34), JustifyContent: core.JustifyCenter, Padding: core.Symmetric(0, 16), Background: colors.inset},
+					return core.View{Style: core.Style{Height: core.Pt(34), JustifyContent: core.JustifyCenter, Padding: core.Symmetric(0, 16)}, StyleFunc: filled(colors.inset),
 						Children: []core.Node{textf(func() string { return fmt.Sprintf("Week %d", row().week) }, 13, bold, colors.accent)}}
 				},
 				Else: func(*core.Scope) core.Node {
-					return core.View{Style: core.Style{Height: core.Pt(52), Direction: core.Row, AlignItems: core.AlignCenter, Padding: core.Symmetric(0, 16),
-						Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.line}}, Children: []core.Node{
-						core.Text{ContentFunc: func() string { return row().title }, Style: core.Style{FlexGrow: 1, FontSize: 15, Color: colors.text}},
-						core.Text{ContentFunc: func() string { return row().detail }, Style: core.Style{FontSize: 13, Color: colors.muted}},
+					return core.View{StyleFunc: func() core.Style {
+						return core.Style{Height: core.Pt(52), Direction: core.Row, AlignItems: core.AlignCenter, Padding: core.Symmetric(0, 16),
+							Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.line()}}
+					}, Children: []core.Node{
+						core.Text{ContentFunc: func() string { return row().title }, Style: core.Style{FlexGrow: 1, FontSize: 15}, StyleFunc: colored(colors.text)},
+						core.Text{ContentFunc: func() string { return row().detail }, Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.muted)},
 					}}
 				}}
 		}}
@@ -108,8 +108,8 @@ func collapsingDemo(cx *core.Scope) core.Node {
 		Children: []core.Node{
 			text("That's all 160 entries", 15, semibold, colors.text),
 			core.Text{Content: "A footer after the list: the list keeps only the rows near the screen, at its full length in the page.",
-				Style: core.Style{FontSize: 13, Color: colors.muted, TextAlign: core.TextAlignCenter}},
+				Style: core.Style{FontSize: 13, TextAlign: core.TextAlignCenter}, StyleFunc: colored(colors.muted)},
 		}}
-	return core.Scroll{TestID: "page", OffsetValues: core.AnimatedXY{Y: scroll}, Style: core.Style{FlexGrow: 1, Background: colors.background},
+	return core.Scroll{TestID: "page", OffsetValues: core.AnimatedXY{Y: scroll}, Style: core.Style{FlexGrow: 1}, StyleFunc: filled(colors.background),
 		Children: []core.Node{header, list, footer}}
 }

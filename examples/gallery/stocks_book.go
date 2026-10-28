@@ -64,7 +64,7 @@ func depthBlock(cx *core.Scope, m *market, s *stock) core.Node {
 	}
 	top := &calmRange{rate: 0.25}
 	draw := func(d *core.Drawing, size core.Size) {
-		c := *colors
+		c := colors.now()
 		b := book()
 		if len(b.bids) == 0 {
 			return
@@ -123,21 +123,23 @@ func depthBlock(cx *core.Scope, m *market, s *stock) core.Node {
 // a bar of the running total from the right edge (a depth ladder).
 func levelRow(cx *core.Scope, s *stock, lvl func() (level, bool), total func() float64, bid bool, n func() int, most func() float64) core.Node {
 	colors := colorsOf(cx)
-	tint := alpha(colors.down, 0.1)
-	if bid {
-		tint = alpha(colors.up, 0.1)
+	tint := func() core.Color {
+		if bid {
+			return alpha(colors.up(), 0.1)
+		}
+		return alpha(colors.down(), 0.1)
 	}
 	return core.View{Style: core.Style{Height: core.Pt(bookRow), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10}, Children: []core.Node{
 		core.View{StyleFunc: func() core.Style {
 			share := math.Min(1, total()/most())
-			return core.Style{Position: core.Absolute, Right: core.Pt(0), Top: core.Pt(1), Bottom: core.Pt(1), Width: core.Pct(float32(share * 100)), Background: tint}
+			return core.Style{Position: core.Absolute, Right: core.Pt(0), Top: core.Pt(1), Bottom: core.Pt(1), Width: core.Pct(float32(share * 100)), Background: tint()}
 		}},
 		core.Text{ContentFunc: func() string {
 			if bid {
 				return fmt.Sprintf("B%d", n())
 			}
 			return fmt.Sprintf("A%d", n())
-		}, Style: core.Style{Width: core.Pt(28), FontSize: 12, Color: colors.faint}},
+		}, Style: core.Style{Width: core.Pt(28), FontSize: 12}, StyleFunc: colored(colors.faint)},
 		core.Text{ContentFunc: func() string {
 			if l, ok := lvl(); ok {
 				return priceText(l.price, s)
@@ -152,8 +154,8 @@ func levelRow(cx *core.Scope, s *stock, lvl func() (level, bool), total func() f
 				return compactNumber(l.size)
 			}
 			return ""
-		}, Style: core.Style{Width: core.Pt(64), TextAlign: core.TextAlignEnd, FontSize: 14, Color: colors.text}},
-		core.Text{ContentFunc: func() string { return compactNumber(total()) }, Style: core.Style{Width: core.Pt(64), Padding: core.Edges{Right: 6}, TextAlign: core.TextAlignEnd, FontSize: 12, Color: colors.faint}},
+		}, Style: core.Style{Width: core.Pt(64), TextAlign: core.TextAlignEnd, FontSize: 14}, StyleFunc: colored(colors.text)},
+		core.Text{ContentFunc: func() string { return compactNumber(total()) }, Style: core.Style{Width: core.Pt(64), Padding: core.Edges{Right: 6}, TextAlign: core.TextAlignEnd, FontSize: 12}, StyleFunc: colored(colors.faint)},
 	}}
 }
 
@@ -219,7 +221,7 @@ func orderBookBlock(cx *core.Scope, m *market, s *stock) core.Node {
 		return out
 	}
 	return block(cx, "Order book", nil, press(pressProps{onPress: toggle, hitSlop: 8, label: "Levels"},
-		core.View{Style: core.Style{Height: core.Pt(30), Padding: core.Symmetric(0, 12), CornerRadius: radiusControl, JustifyContent: core.JustifyCenter, Background: colors.raised},
+		core.View{Style: core.Style{Height: core.Pt(30), Padding: core.Symmetric(0, 12), CornerRadius: radiusControl, JustifyContent: core.JustifyCenter}, StyleFunc: filled(colors.raised),
 			Children: []core.Node{textf(func() string {
 				if depth.Get() == 5 {
 					return "5 → 10"
@@ -227,11 +229,11 @@ func orderBookBlock(cx *core.Scope, m *market, s *stock) core.Node {
 				return "10 → 5"
 			}, 12, semibold, colors.text)}}), false,
 		core.View{Style: core.Style{Gap: 5}, Children: []core.Node{
-			core.View{Style: core.Style{Height: core.Pt(6), CornerRadius: 3, Overflow: core.Hidden, Background: colors.down}, Children: []core.Node{springBar(share, colors.up, false, 6, 0)}},
+			core.View{Style: core.Style{Height: core.Pt(6), CornerRadius: 3, Overflow: core.Hidden}, StyleFunc: filled(colors.down), Children: []core.Node{springBar(share, colors.up, false, 6, 0)}},
 			core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{
-				core.Text{ContentFunc: func() string { return fmt.Sprintf("BID %.0f%%", share()*100) }, Style: core.Style{FlexGrow: 1, FontSize: 12, Color: colors.up}},
+				core.Text{ContentFunc: func() string { return fmt.Sprintf("BID %.0f%%", share()*100) }, Style: core.Style{FlexGrow: 1, FontSize: 12}, StyleFunc: colored(colors.up)},
 				textf(func() string { return "spread " + priceText(spread(), s) }, 12, regular, colors.faint),
-				core.Text{ContentFunc: func() string { return fmt.Sprintf("%.0f%% ASK", (1-share())*100) }, Style: core.Style{FlexGrow: 1, TextAlign: core.TextAlignEnd, FontSize: 12, Color: colors.down}},
+				core.Text{ContentFunc: func() string { return fmt.Sprintf("%.0f%% ASK", (1-share())*100) }, Style: core.Style{FlexGrow: 1, TextAlign: core.TextAlignEnd, FontSize: 12}, StyleFunc: colored(colors.down)},
 			}},
 		}},
 		core.View{Children: []core.Node{
@@ -243,7 +245,7 @@ func orderBookBlock(cx *core.Scope, m *market, s *stock) core.Node {
 				return levelRow(cx, s, lvl(func() []level { return m.book.Get().asks }, k), func() float64 { return at(sm.Get().asks, k()) }, false,
 					func() int { return depth.Get() - i() }, most.Get)
 			}),
-			core.View{Style: core.Style{Height: core.Pt(1), Margin: core.Symmetric(3, 0), Background: colors.border}},
+			core.View{Style: core.Style{Height: core.Pt(1), Margin: core.Symmetric(3, 0)}, StyleFunc: filled(colors.border)},
 			core.Each(indices, func(i int) int { return i }, func(cx *core.Scope, i func() int, _ func() int) core.Node {
 				return levelRow(cx, s, lvl(func() []level { return m.book.Get().bids }, i), func() float64 { return at(sm.Get().bids, i()) }, true,
 					func() int { return i() + 1 }, most.Get)
@@ -308,7 +310,7 @@ func tapeBlock(cx *core.Scope, m *market, s *stock) core.Node {
 		return buys, sells, blocks
 	}
 	draw := func(d *core.Drawing, size core.Size) {
-		c := *colors
+		c := colors.now()
 		w, h := float32(size.Width), float32(size.Height)
 		d.Save().BeginPath().Rect(0, 0, w, h).Clip().Translate(0, 0).Bind(core.ArgY, offset).SetTextBaseline(core.BaselineMiddle)
 		for i, t := range shown.Get() {
@@ -319,7 +321,7 @@ func tapeBlock(cx *core.Scope, m *market, s *stock) core.Node {
 				col = c.up
 			}
 			if isBlock {
-				d.SetFillColor(tints.accent).BeginPath().RoundRect(0, float32(i)*tapeRow+2, w, tapeRow-4, 8).Fill()
+				d.SetFillColor(tints.accent()).BeginPath().RoundRect(0, float32(i)*tapeRow+2, w, tapeRow-4, 8).Fill()
 			} else if i > 0 {
 				d.SetStrokeColor(gridColor(cx)).SetLineWidth(1).BeginPath().MoveTo(0, float32(i)*tapeRow).LineTo(w, float32(i)*tapeRow).Stroke()
 			}
@@ -377,30 +379,30 @@ func flowBlock(cx *core.Scope, m *market) core.Node {
 		sell := func() float64 { return m.flow.Get().sell[i] }
 		rows = append(rows, core.View{Style: core.Style{Gap: 4}, Children: []core.Node{
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignBaseline, Gap: 8}, Children: []core.Node{
-				core.Text{Spans: []core.Span{{Content: b.label}, {Content: " " + b.note, Style: core.Style{FontSize: 12, Color: colors.faint}}},
-					Style: core.Style{FlexGrow: 1, FontSize: 13, Color: colors.text}},
+				core.Text{Spans: []core.Span{{Content: b.label}, {Content: " " + b.note, Style: core.Style{FontSize: 12}, StyleFunc: colored(colors.faint)}},
+					Style: core.Style{FlexGrow: 1, FontSize: 13}, StyleFunc: colored(colors.text)},
 				textf(func() string { return compactNumber(sell()) }, 12, regular, colors.down),
 				text("/", 12, regular, colors.faint),
 				textf(func() string { return compactNumber(buy()) }, 12, regular, colors.up),
 			}},
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter}, Children: []core.Node{
 				core.View{Style: fill, Children: []core.Node{springBar(func() float64 { return sell() / most() }, colors.down, true, 10, 3)}},
-				core.View{Style: core.Style{Width: core.Pt(2), Height: core.Pt(18), Margin: core.Symmetric(0, 2), CornerRadius: 1, Background: colors.border}},
+				core.View{Style: core.Style{Width: core.Pt(2), Height: core.Pt(18), Margin: core.Symmetric(0, 2), CornerRadius: 1}, StyleFunc: filled(colors.border)},
 				core.View{Style: fill, Children: []core.Node{springBar(func() float64 { return buy() / most() }, colors.up, false, 10, 3)}},
 			}},
 		}})
 	}
 	return block(cx, "Trade flow", label("sold ← · → bought"), nil, false,
-		core.Dynamic(func(*core.Scope) core.Node {
-			c := colors.up
-			if big() < 0 {
-				c = colors.down
-			}
-			return core.Text{Spans: []core.Span{
-				{ContentFunc: func() string { return plus(net()) }},
-				{ContentFunc: func() string { return " net · " + plus(big()) + " large orders" }, Style: core.Style{FontSize: 13, FontWeight: regular, Color: c}},
-			}, Style: core.Style{FontSize: 22, FontWeight: semibold, Color: colors.text}}
-		}),
+		core.Text{Spans: []core.Span{
+			{ContentFunc: func() string { return plus(net()) }},
+			{ContentFunc: func() string { return " net · " + plus(big()) + " large orders" }, Style: core.Style{FontSize: 13, FontWeight: regular},
+				StyleFunc: colored(func() core.Color {
+					if big() < 0 {
+						return colors.down()
+					}
+					return colors.up()
+				})},
+		}, Style: core.Style{FontSize: 22, FontWeight: semibold}, StyleFunc: colored(colors.text)},
 		core.View{Style: core.Style{Gap: 10}, Children: rows},
 	)
 }

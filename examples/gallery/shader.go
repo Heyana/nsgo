@@ -20,11 +20,12 @@ import (
 type signalField struct {
 	// Tint is the dots' resting color, Accent what the pointer and
 	// ripples light.
-	Tint, Accent core.Color
+	Tint, Accent func() core.Color
 	// Intensity scales the pattern's contrast and Scale its spacing; zero
 	// means 1.
 	Intensity, Scale func() float64
 	Style            core.Style
+	StyleFunc        func() core.Style
 	Children         []core.Node
 }
 
@@ -116,8 +117,6 @@ func (f signalField) Render(cx *core.Scope) core.Node {
 		Uniforms: core.Uniforms{
 			"Time":    drift,
 			"Pointer": []core.AnimatedNode{px, py, presence},
-			"Tint":    f.Tint,
-			"Accent":  f.Accent,
 		},
 		UniformsFunc: func() core.Uniforms {
 			rs := slots.Get()
@@ -129,10 +128,11 @@ func (f signalField) Render(cx *core.Scope) core.Node {
 				}
 				lanes = append(lanes, r.x, r.y, ages[i], w)
 			}
-			return core.Uniforms{"Ripples": lanes, "Intensity": positive(f.Intensity), "Scale": positive(f.Scale)}
+			return core.Uniforms{"Ripples": lanes, "Intensity": positive(f.Intensity), "Scale": positive(f.Scale),
+				"Tint": f.Tint(), "Accent": f.Accent()}
 		},
 	}
-	return core.View{Style: style,
+	return core.View{Style: style, StyleFunc: f.StyleFunc,
 		// The field only listens: presses still reach its children.
 		OnMouseMove: follow,
 		OnHoverOut:  leave,
@@ -172,12 +172,14 @@ func shaderDemo(cx *core.Scope) core.Node {
 		}
 		field := signalField{
 			Tint: colors.muted, Accent: colors.accent, Scale: scale.Get, Intensity: intensity.Get,
-			Style: core.Style{Height: core.Pt(320), CornerRadius: radiusControl, Background: colors.background, BorderWidth: 1, BorderColor: colors.line,
-				AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 12, Padding: core.All(16)},
+			StyleFunc: func() core.Style {
+				return core.Style{Height: core.Pt(320), CornerRadius: radiusControl, Background: colors.background(), BorderWidth: 1, BorderColor: colors.line(),
+					AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 12, Padding: core.All(16)}
+			},
 			Children: []core.Node{
-				core.Text{Content: "Signal field", Role: core.RoleHeader, Style: core.Style{FontSize: 22, FontWeight: semibold, Color: colors.text}},
+				core.Text{Content: "Signal field", Role: core.RoleHeader, Style: core.Style{FontSize: 22, FontWeight: semibold}, StyleFunc: colored(colors.text)},
 				core.Text{Content: hint(cx, "Press anywhere on the field.", "Move the pointer over the field and press anywhere."),
-					Style: core.Style{FontSize: 13, Color: colors.muted, TextAlign: core.TextAlignCenter}},
+					Style: core.Style{FontSize: 13, TextAlign: core.TextAlignCenter}, StyleFunc: colored(colors.muted)},
 				button(buttonProps{label: "Start", variant: accentButton}, func() { presses.Update(func(n int) int { return n + 1 }) }),
 				textf(func() string { return fmt.Sprintf("Start pressed %d times", presses.Get()) }, 13, regular, colors.faint),
 			},
@@ -209,7 +211,7 @@ func shaderDemo(cx *core.Scope) core.Node {
 		colors := colorsOf(cx)
 		return card(cx, cardProps{icon: iconTerminal, title: "The source", subtitle: "Go's syntax, checked and written as MSL, GLSL or HLSL"},
 			core.Scroll{Horizontal: true, Children: []core.Node{core.Text{Content: rippleSource,
-				Style: core.Style{FontFamily: mono, FontSize: 12, LineHeight: 18, Color: colors.code}}}},
+				Style: core.Style{FontFamily: mono, FontSize: 12, LineHeight: 18}, StyleFunc: colored(colors.code)}}},
 			apiLine(cx, "Compiled once, as the program loads", "MustCompileShader"),
 		)
 	}

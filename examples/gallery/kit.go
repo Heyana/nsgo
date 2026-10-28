@@ -8,14 +8,18 @@ import (
 	"github.com/oneo-me/nsgo/core"
 )
 
-// text is a line in the gallery's type: size, weight and color.
-func text(content string, size core.Points, weight core.FontWeight, c core.Color) core.Text {
-	return core.Text{Content: content, Style: core.Style{FontSize: size, FontWeight: weight, Color: c}}
+// text is a line in the gallery's type: size, weight and a color it
+// follows.
+func text(content string, size core.Points, weight core.FontWeight, c func() core.Color) core.Text {
+	return core.Text{Content: content, Style: core.Style{FontSize: size, FontWeight: weight},
+		StyleFunc: func() core.Style { return core.Style{Color: c()} }}
 }
 
 // textf is a line whose content follows fn.
-func textf(fn func() string, size core.Points, weight core.FontWeight, c core.Color) core.Text {
-	return core.Text{ContentFunc: fn, Style: core.Style{FontSize: size, FontWeight: weight, Color: c}}
+func textf(fn func() string, size core.Points, weight core.FontWeight, c func() core.Color) core.Text {
+	t := text("", size, weight, c)
+	t.ContentFunc = fn
+	return t
 }
 
 // Weights, short.
@@ -28,20 +32,21 @@ const (
 
 // note is a quiet line of explanation under a demo.
 func note(cx *core.Scope, content string) core.Node {
-	colors := colorsOf(cx)
-	return core.Text{Content: content, Style: core.Style{FontSize: 13, LineHeight: 18, Color: colors.muted}}
+	return notef(cx, func() string { return content })
 }
 
 // notef is a quiet line that follows fn.
 func notef(cx *core.Scope, fn func() string) core.Node {
-	colors := colorsOf(cx)
-	return core.Text{ContentFunc: fn, Style: core.Style{FontSize: 13, LineHeight: 18, Color: colors.muted}}
+	t := textf(fn, 13, regular, colorsOf(cx).muted)
+	t.Style.LineHeight = 18
+	return t
 }
 
 // code is a monospaced line, for API names and values.
 func code(cx *core.Scope, content string) core.Node {
-	colors := colorsOf(cx)
-	return core.Text{Content: content, Style: core.Style{FontSize: 12, FontFamily: mono, Color: colors.code}}
+	t := text(content, 12, regular, colorsOf(cx).code)
+	t.Style.FontFamily = mono
+	return t
 }
 
 // pressProps are a Press's options.
@@ -49,13 +54,17 @@ type pressProps struct {
 	onPress, onLongPress func()
 	disabled             func() bool
 	// scale is how far it shrinks (default 0.97).
-	scale    float64
-	style    core.Style
-	role     core.Role
-	label    string
-	selected func() bool
-	hitSlop  core.Points
-	testID   string
+	scale float64
+	// styleFunc merges over style, as a View's StyleFunc does.
+	style     core.Style
+	styleFunc func() core.Style
+	role      core.Role
+	// labelFunc replaces label, as a View's LabelFunc does.
+	label     string
+	labelFunc func() string
+	selected  func() bool
+	hitSlop   core.Points
+	testID    string
 }
 
 // press is a pressable that sinks a little under the finger and springs
@@ -85,8 +94,8 @@ func press(p pressProps, children ...core.Node) core.Node {
 		return core.View{OnPress: onPress, OnLongPress: onLongPress, Disabled: p.disabled, Selected: p.selected,
 			OnPressDown: func(core.PressEvent) { spring(cx, s, scale, pressSpring) },
 			OnPressUp:   func(core.PressEvent) { spring(cx, s, 1, pressSpring) },
-			Role:        role, Label: p.label, HitSlop: core.All(p.hitSlop), TestID: p.testID,
-			Style: style, Children: children}
+			Role:        role, Label: p.label, LabelFunc: p.labelFunc, HitSlop: core.All(p.hitSlop), TestID: p.testID,
+			Style: style, StyleFunc: p.styleFunc, Children: children}
 	})
 }
 
@@ -109,12 +118,13 @@ func appear(index int, flex bool, children ...core.Node) core.Node {
 // iconTile is a rounded tile around an icon.
 func iconTile(cx *core.Scope, name iconName, size core.Points) core.Node {
 	colors := colorsOf(cx)
-	fin := finOf(cx)
-	return core.View{Style: fin.raised.over(core.Style{
-		Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size * 0.3, BorderCurve: core.BorderCurveContinuous,
-		BorderWidth: 1, BorderColor: colors.border, Background: colors.raised,
-		AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
-	}), Children: []core.Node{icon(name, size*0.5, colors.text)}}
+	return core.View{StyleFunc: func() core.Style {
+		return finOf(cx).raised().over(core.Style{
+			Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size * 0.3, BorderCurve: core.BorderCurveContinuous,
+			BorderWidth: 1, BorderColor: colors.border(), Background: colors.raised(),
+			AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
+		})
+	}, Children: []core.Node{icon(name, size*0.5, colors.text)}}
 }
 
 // cardProps are a card's header: an optional icon, a title, a subtitle
@@ -129,11 +139,11 @@ type cardProps struct {
 	style core.Style
 }
 
+// cardStyle is a card's style, read in a StyleFunc.
 func cardStyle(cx *core.Scope) core.Style {
 	colors := colorsOf(cx)
-	fin := finOf(cx)
-	return fin.card.over(core.Style{Background: colors.surface, CornerRadius: radiusCard, BorderCurve: core.BorderCurveContinuous,
-		BorderWidth: 1, BorderColor: colors.border, Padding: core.All(5)})
+	return finOf(cx).card().over(core.Style{Background: colors.surface(), CornerRadius: radiusCard, BorderCurve: core.BorderCurveContinuous,
+		BorderWidth: 1, BorderColor: colors.border(), Padding: core.All(5)})
 }
 
 // card is a card: its header, then the content on an inset surface.
@@ -147,7 +157,9 @@ func card(cx *core.Scope, p cardProps, children ...core.Node) core.Node {
 		}
 		titles := []core.Node{text(p.title, 17, semibold, colors.text)}
 		if p.subtitle != "" {
-			titles = append(titles, core.Text{Content: p.subtitle, MaxLines: 2, Style: core.Style{FontSize: 13, Color: colors.muted}})
+			subtitle := text(p.subtitle, 13, regular, colors.muted)
+			subtitle.MaxLines = 2
+			titles = append(titles, subtitle)
 		}
 		head = append(head, core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: titles})
 		if p.right != nil {
@@ -161,7 +173,7 @@ func card(cx *core.Scope, p cardProps, children ...core.Node) core.Node {
 	} else {
 		nodes = append(nodes, inset(cx, insetProps{}, children...))
 	}
-	return core.View{Style: cardStyle(cx).Merge(p.style), Children: nodes}
+	return core.View{StyleFunc: func() core.Style { return cardStyle(cx).Merge(p.style) }, Children: nodes}
 }
 
 // insetProps are an inset's spacing; zero values take 12 pt gaps and
@@ -175,7 +187,6 @@ type insetProps struct {
 // inset is the darker surface inside a card.
 func inset(cx *core.Scope, p insetProps, children ...core.Node) core.Node {
 	colors := colorsOf(cx)
-	fin := finOf(cx)
 	gap, padding := p.gap, p.padding
 	if !p.exact {
 		if gap == 0 {
@@ -185,8 +196,10 @@ func inset(cx *core.Scope, p insetProps, children ...core.Node) core.Node {
 			padding = 14
 		}
 	}
-	return core.View{Style: fin.inset.over(core.Style{Background: colors.inset, CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous,
-		BorderWidth: 1, BorderColor: colors.line, Padding: core.All(padding), Gap: gap}), Children: children}
+	return core.View{StyleFunc: func() core.Style {
+		return finOf(cx).inset().over(core.Style{Background: colors.inset(), CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous,
+			BorderWidth: 1, BorderColor: colors.line(), Padding: core.All(padding), Gap: gap})
+	}, Children: children}
 }
 
 // section is a titled card of controls: the demos' sections.
@@ -197,12 +210,11 @@ func section(cx *core.Scope, title, noteText string, children ...core.Node) core
 // sectionf is a section whose note follows fn.
 func sectionf(cx *core.Scope, title string, noteFn func() string, children ...core.Node) core.Node {
 	colors := colorsOf(cx)
-	return core.View{TestID: "section-" + title, Style: cardStyle(cx), Children: []core.Node{
+	heading := text(title, 15, semibold, colors.text)
+	heading.Role, heading.Style.FlexGrow, heading.Style.FlexShrink = core.RoleHeader, 1, 1
+	return core.View{TestID: "section-" + title, StyleFunc: func() core.Style { return cardStyle(cx) }, Children: []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignBaseline, Gap: 8, Padding: core.Edges{Top: 10, Right: 11, Bottom: 10, Left: 11}},
-			Children: []core.Node{
-				core.Text{Content: title, Role: core.RoleHeader, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15, FontWeight: semibold, Color: colors.text}},
-				core.Text{ContentFunc: noteFn, Style: core.Style{FontSize: 13, Color: colors.faint}},
-			}},
+			Children: []core.Node{heading, textf(noteFn, 13, regular, colors.faint)}},
 		inset(cx, insetProps{}, children...),
 	}}
 }
@@ -210,9 +222,11 @@ func sectionf(cx *core.Scope, title string, noteFn func() string, children ...co
 // caption is a label on the left and a quieter note on the right.
 func caption(cx *core.Scope, label string, noteFn func() string) core.Node {
 	colors := colorsOf(cx)
-	children := []core.Node{core.Text{Content: label, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, Color: colors.muted}}}
+	l := text(label, 14, regular, colors.muted)
+	l.Style.FlexGrow, l.Style.FlexShrink = 1, 1
+	children := []core.Node{l}
 	if noteFn != nil {
-		children = append(children, core.Text{ContentFunc: noteFn, Style: core.Style{FontSize: 13, Color: colors.faint}})
+		children = append(children, textf(noteFn, 13, regular, colors.faint))
 	}
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignBaseline, Gap: 8}, Children: children}
 }
@@ -222,12 +236,14 @@ func figure(cx *core.Scope, value func() string, unit string, noteFn func() stri
 	colors := colorsOf(cx)
 	spans := []core.Span{{ContentFunc: value}}
 	if unit != "" {
-		spans = append(spans, core.Span{Content: " " + unit, Style: core.Style{FontSize: 17, FontWeight: regular, Color: colors.muted}})
+		spans = append(spans, core.Span{Content: " " + unit, Style: core.Style{FontSize: 17, FontWeight: regular}, StyleFunc: colored(colors.muted)})
 	}
 	if noteFn != nil {
-		spans = append(spans, core.Span{ContentFunc: func() string { return " " + noteFn() }, Style: core.Style{FontSize: 15, FontWeight: medium, Color: t.color(cx)}})
+		spans = append(spans, core.Span{ContentFunc: func() string { return " " + noteFn() }, Style: core.Style{FontSize: 15, FontWeight: medium},
+			StyleFunc: colored(t.shade(cx))})
 	}
-	return core.Text{Spans: spans, Style: core.Style{FontSize: 32, FontWeight: semibold, Color: colors.text, LetterSpacing: -0.5}}
+	return core.Text{Spans: spans, Style: core.Style{FontSize: 32, FontWeight: semibold, LetterSpacing: -0.5},
+		StyleFunc: func() core.Style { return core.Style{Color: colors.text()} }}
 }
 
 // badge is a small label in a tinted capsule.
@@ -237,44 +253,39 @@ func badge(cx *core.Scope, label string, t tone) core.Node {
 
 // badgef is a badge whose label follows fn; outline draws only its rim.
 func badgef(cx *core.Scope, label func() string, t tone, outline bool) core.Node {
-	colors := colorsOf(cx)
-	fin := finOf(cx)
-	s := core.Style{Padding: core.Symmetric(0, 10), Height: core.Pt(26), CornerRadius: 13, JustifyContent: core.JustifyCenter, BorderWidth: 1}
-	fg := colors.text
-	if t != toneNeutral {
-		fg = t.color(cx)
-	}
-	if outline {
-		s.BorderColor = t.color(cx)
-	} else {
-		s.Background, s.Shadows, s.BorderColor = t.tint(cx), fin.chip.shadows, alpha(fg, 0.1)
-	}
-	return core.View{Style: s, Children: []core.Node{core.Text{ContentFunc: label, Style: core.Style{FontSize: 12, FontWeight: medium, Color: fg}}}}
+	return toneBadge(cx, label, func() tone { return t }, outline)
+}
+
+// toneBadge is a badge whose label and tone follow label and t.
+func toneBadge(cx *core.Scope, label func() string, t func() tone, outline bool) core.Node {
+	fg := func() core.Color { return t().foreground(cx)() }
+	return core.View{Style: core.Style{Padding: core.Symmetric(0, 10), Height: core.Pt(26), CornerRadius: 13, JustifyContent: core.JustifyCenter, BorderWidth: 1},
+		StyleFunc: func() core.Style {
+			if outline {
+				return core.Style{BorderColor: t().color(cx)}
+			}
+			return core.Style{Background: t().tint(cx), Shadows: finOf(cx).chip().shadows, BorderColor: alpha(fg(), 0.1)}
+		}, Children: []core.Node{textf(label, 12, medium, fg)}}
 }
 
 // stat is a label above a value, for grids of figures.
 func stat(cx *core.Scope, label string, value func() string, t tone, width core.Length) core.Node {
-	colors := colorsOf(cx)
-	fg := colors.text
-	if t != toneNeutral {
-		fg = t.color(cx)
-	}
 	return core.View{Style: core.Style{Width: width, Gap: 3, Padding: core.Symmetric(4, 0)}, Children: []core.Node{
-		text(label, 12, regular, colors.muted),
-		textf(value, 15, regular, fg),
+		text(label, 12, regular, colorsOf(cx).muted),
+		textf(value, 15, regular, t.foreground(cx)),
 	}}
 }
 
 // legend is a colored square and a label, for chart legends.
-func legend(cx *core.Scope, c core.Color, label string, value func() string) core.Node {
+func legend(cx *core.Scope, c func() core.Color, label string, value func() string) core.Node {
 	colors := colorsOf(cx)
 	spans := []core.Span{{Content: label}}
 	if value != nil {
-		spans = append(spans, core.Span{ContentFunc: func() string { return " " + value() }, Style: core.Style{Color: colors.text}})
+		spans = append(spans, core.Span{ContentFunc: func() string { return " " + value() }, StyleFunc: colored(colors.text)})
 	}
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6}, Children: []core.Node{
-		core.View{Style: core.Style{Width: core.Pt(9), Height: core.Pt(9), CornerRadius: 2.5, Background: c}},
-		core.Text{Spans: spans, Style: core.Style{FontSize: 13, Color: colors.muted}},
+		core.View{Style: core.Style{Width: core.Pt(9), Height: core.Pt(9), CornerRadius: 2.5}, StyleFunc: func() core.Style { return core.Style{Background: c()} }},
+		core.Text{Spans: spans, Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.muted)},
 	}}
 }
 
@@ -282,14 +293,19 @@ func legend(cx *core.Scope, c core.Color, label string, value func() string) cor
 // first.
 func listRow(cx *core.Scope, first bool, onPress func(), children ...core.Node) core.Node {
 	colors := colorsOf(cx)
-	s := core.Style{MinHeight: core.Pt(48), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12}
-	if !first {
-		s.Borders, s.BorderColors = core.Edges{Top: 1}, core.EdgeColors{Top: colors.line}
-	}
-	v := core.View{Style: s, Children: children}
+	v := core.View{Style: core.Style{MinHeight: core.Pt(48), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12},
+		StyleFunc: func() core.Style {
+			var s core.Style
+			if !first {
+				s.Borders, s.BorderColors = core.Edges{Top: 1}, core.EdgeColors{Top: colors.line()}
+			}
+			if onPress != nil {
+				s.Active = &core.Style{Background: colors.raised()}
+			}
+			return s
+		}, Children: children}
 	if onPress != nil {
 		v.OnPress = func(core.PressEvent) { onPress() }
-		v.Style.Active = &core.Style{Background: colors.raised}
 	}
 	return v
 }
@@ -309,8 +325,8 @@ const (
 type buttonProps struct {
 	label   string
 	variant buttonVariant
-	// Color fills it with that color instead.
-	color    core.Color
+	// color fills it with that color instead.
+	color    func() core.Color
 	icon     iconName
 	disabled func() bool
 	// flex grows it to share a row with its siblings.
@@ -324,34 +340,40 @@ type buttonProps struct {
 func button(p buttonProps, onPress func()) core.Node {
 	return core.Func(func(cx *core.Scope) core.Node {
 		colors := colorsOf(cx)
-		fin := finOf(cx)
 		scale := core.NewAnimatedValue(cx, 1)
 		r := radiusControl
 		height, padding, gap, font, iconSize := core.Points(44), core.Points(18), core.Points(8), core.Points(15), core.Points(16)
 		if p.small {
 			r, height, padding, gap, font, iconSize = 8, 32, 12, 6, 13, 14
 		}
-		bg, fg := colors.raised, colors.text
-		var f finish
+		fg := colors.text
 		switch {
-		case p.color != 0:
-			bg, fg = p.color, core.RGB(0xffffff)
+		case p.color != nil:
+			fg = fixed(core.RGB(0xffffff))
 		case p.variant == primary:
-			bg, fg, f = colors.light, colors.onLight, fin.light
+			fg = colors.onLight
 		case p.variant == accentButton:
-			bg, fg, f = colors.accentFill, colors.onAccent, fin.accent
-		case p.variant == ghost:
-			bg = 0
-		default:
-			f = fin.raised
+			fg = colors.onAccent
 		}
-		if p.color != 0 {
-			f = finish{}
-		}
-		face := f.over(core.Style{Height: core.Pt(height), Padding: core.Symmetric(0, padding), CornerRadius: r, BorderCurve: core.BorderCurveContinuous,
-			Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: gap, Background: bg})
-		if p.variant == secondary || p.variant == ghost {
-			face.BorderWidth, face.BorderColor = 1, colors.border
+		face := func() core.Style {
+			fin := finOf(cx)
+			bg, f := colors.raised(), fin.raised()
+			switch {
+			case p.color != nil:
+				bg, f = p.color(), finish{}
+			case p.variant == primary:
+				bg, f = colors.light(), fin.light()
+			case p.variant == accentButton:
+				bg, f = colors.accentFill(), fin.accent()
+			case p.variant == ghost:
+				bg, f = 0, finish{}
+			}
+			s := f.over(core.Style{Height: core.Pt(height), Padding: core.Symmetric(0, padding), CornerRadius: r, BorderCurve: core.BorderCurveContinuous,
+				Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: gap, Background: bg})
+			if p.variant == secondary || p.variant == ghost {
+				s.BorderWidth, s.BorderColor = 1, colors.border()
+			}
+			return s
 		}
 		var children []core.Node
 		if p.icon != "" {
@@ -364,8 +386,9 @@ func button(p buttonProps, onPress func()) core.Node {
 			OnPressUp:   func(core.PressEvent) { spring(cx, scale, 1, pressSpring) },
 			Disabled:    p.disabled, Label: p.label, TestID: p.testID,
 			Style: core.Style{FlexGrow: p.flex, FlexShrink: p.flex, CornerRadius: r, Animated: &core.AnimatedStyle{Scale: scale},
-				Hover: &core.Style{Opacity: core.Alpha(0.88)}, Focus: focusRing(cx, 2), Disabled: &core.Style{Opacity: core.Alpha(0.4)}},
-			Children: []core.Node{core.View{Style: face, Children: children}},
+				Hover: &core.Style{Opacity: core.Alpha(0.88)}, Disabled: &core.Style{Opacity: core.Alpha(0.4)}},
+			StyleFunc: func() core.Style { return core.Style{Focus: focusRing(cx, 2)} },
+			Children:  []core.Node{core.View{StyleFunc: face, Children: children}},
 		}
 	})
 }
@@ -373,23 +396,34 @@ func button(p buttonProps, onPress func()) core.Node {
 // roundButton is a round icon button (44 pt): light by default,
 // secondary dark.
 func roundButton(cx *core.Scope, name iconName, label string, variant buttonVariant, size core.Points, onPress func()) core.Node {
+	return roundButtonf(cx, func() iconName { return name }, func() string { return label }, variant, size, onPress)
+}
+
+// roundButtonf is a round button whose icon and label follow name and
+// label.
+func roundButtonf(cx *core.Scope, name func() iconName, label func() string, variant buttonVariant, size core.Points, onPress func()) core.Node {
 	colors := colorsOf(cx)
-	fin := finOf(cx)
 	if size == 0 {
 		size = 44
 	}
 	isPrimary := variant == primary
-	s := core.Style{Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size / 2, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}
 	fg := colors.text
 	if isPrimary {
-		s, fg = fin.light.over(s), colors.onLight
-		s.Background = colors.light
-	} else {
-		s = fin.pill.over(s)
-		s.BorderWidth = 1
+		fg = colors.onLight
 	}
-	return press(pressProps{onPress: onPress, scale: 0.92, label: label},
-		core.View{Style: s, Children: []core.Node{icon(name, size*0.42, fg)}})
+	face := func() core.Style {
+		s := core.Style{Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size / 2, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}
+		if isPrimary {
+			s = finOf(cx).light().over(s)
+			s.Background = colors.light()
+		} else {
+			s = finOf(cx).pill().over(s)
+			s.BorderWidth = 1
+		}
+		return s
+	}
+	return press(pressProps{onPress: onPress, scale: 0.92, labelFunc: label},
+		core.View{StyleFunc: face, Children: []core.Node{iconOf(name, size*0.42, fg)}})
 }
 
 // toggle is an on and off switch in the gallery's look: base.Switch, the
@@ -399,8 +433,8 @@ func toggle(value func() bool, onChange func(bool), label string) core.Node {
 		look := newSwitchLook(cx, value, false)
 		// 8 pt more to press on every side, without taking more room.
 		return base.Switch{Checked: value, OnChange: onChange, Label: label,
-			Style:      core.Style{Margin: core.All(-8), Padding: core.All(8)},
-			TrackStyle: look.track, ThumbStyleFunc: look.thumb}
+			Style:          core.Style{Margin: core.All(-8), Padding: core.All(8)},
+			TrackStyleFunc: look.track, ThumbStyleFunc: look.thumb}
 	})
 }
 
@@ -408,16 +442,13 @@ func toggle(value func() bool, onChange func(bool), label string) core.Node {
 // parts: a track that turns orange and a knob that springs across, both
 // on the platform. on is the value the app owns; the knob follows it.
 type switchLook struct {
-	track core.Style
-	thumb func() core.Style
+	track, thumb func() core.Style
 }
 
 // newSwitchLook makes a switch's look, 50 × 30 or, small, 38 × 22 for
 // pointer-sized rows.
 func newSwitchLook(cx *core.Scope, on func() bool, small bool) switchLook {
 	colors := colorsOf(cx)
-	fin := finOf(cx)
-	isDark := cx.Dark()
 	width, height, pad, knob := core.Points(50), core.Points(30), core.Points(3), core.Points(22)
 	if small {
 		width, height, pad, knob = 38, 22, 2, 16
@@ -447,17 +478,19 @@ func newSwitchLook(cx *core.Scope, on func() bool, small bool) switchLook {
 			spring(cx, t, to, settleSpring)
 		}
 	})
-	track := fin.track.over(core.Style{Width: core.Pt(width), Height: core.Pt(height), CornerRadius: height / 2, Padding: core.All(pad),
-		BorderWidth: 1, BorderColor: colors.border, Background: colors.track,
-		Animated: &core.AnimatedStyle{Background: core.Interpolate(t, core.Interpolation{Input: []float64{0, 1}, Colors: []core.Color{colors.track, colors.accentFill}})}})
-	knobShadows := fin.knob.shadows
-	if isDark {
-		knobShadows = []core.BoxShadow{inner(0, 1, 0, white(0.2)), shadow(0, 1, 3, 0, black(0.4))}
+	track := func() core.Style {
+		return finOf(cx).track().over(core.Style{Width: core.Pt(width), Height: core.Pt(height), CornerRadius: height / 2, Padding: core.All(pad),
+			BorderWidth: 1, BorderColor: colors.border(), Background: colors.track(),
+			Animated: &core.AnimatedStyle{Background: core.Interpolate(t, core.Interpolation{Input: []float64{0, 1}, Colors: []core.Color{colors.track(), colors.accentFill()}})}})
 	}
 	return switchLook{track: track, thumb: func() core.Style {
-		bg := colors.knob
+		knobShadows := finOf(cx).knob().shadows
+		if cx.Dark() {
+			knobShadows = []core.BoxShadow{inner(0, 1, 0, white(0.2)), shadow(0, 1, 3, 0, black(0.4))}
+		}
+		bg := colors.knob()
 		if on() {
-			bg = colors.onAccent
+			bg = colors.onAccent()
 		}
 		return core.Style{Width: core.Pt(knob), Height: core.Pt(knob), CornerRadius: knob / 2, Background: bg,
 			// A drop of glass: a specular top over the knob's color.
@@ -479,7 +512,6 @@ type option[T comparable] struct {
 func segmented[T comparable](options []option[T], value func() T, onChange func(T), small bool) core.Node {
 	return core.Func(func(cx *core.Scope) core.Node {
 		colors := colorsOf(cx)
-		fin := finOf(cx)
 		width := core.NewSignal(cx, core.Points(0))
 		x := core.NewAnimatedValue(cx, 0)
 		index := func() int {
@@ -519,7 +551,7 @@ func segmented[T comparable](options []option[T], value func() T, onChange func(
 			font = 13
 		}
 		children := []core.Node{core.View{PointerEvents: core.PointerEventsNone, StyleFunc: func() core.Style {
-			s := fin.pill.over(core.Style{Position: core.Absolute, Top: core.Pt(pad), Left: core.Pt(pad), Bottom: core.Pt(pad),
+			s := finOf(cx).pill().over(core.Style{Position: core.Absolute, Top: core.Pt(pad), Left: core.Pt(pad), Bottom: core.Pt(pad),
 				Width: core.Pt(max(0, segment())), CornerRadius: (height - 2*(border+pad)) / 2, BorderWidth: 1,
 				Animated: &core.AnimatedStyle{TranslateX: x}})
 			return s
@@ -527,22 +559,24 @@ func segmented[T comparable](options []option[T], value func() T, onChange func(
 		for _, o := range options {
 			selected := func() bool { return value() == o.value }
 			label := []core.Node{core.Text{Content: o.label, MaxLines: 1, StyleFunc: func() core.Style {
-				c := colors.muted
+				c := colors.muted()
 				if selected() {
-					c = colors.text
+					c = colors.text()
 				}
 				return core.Style{FontSize: font, FontWeight: medium, Color: c}
 			}}}
 			if o.count != nil {
-				label = append(label, core.Text{ContentFunc: func() string { return fmt.Sprint(o.count()) }, Style: core.Style{FontSize: 12, Color: colors.faint}})
+				label = append(label, textf(func() string { return fmt.Sprint(o.count()) }, 12, regular, colors.faint))
 			}
 			children = append(children, base.Tab{Selected: selected, OnPress: func(core.PressEvent) { onChange(o.value) }, Label: o.label,
 				Style:    core.Style{FlexGrow: 1, FlexBasis: core.Pt(0), Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 5},
 				Children: label})
 		}
 		return core.View{OnLayout: func(b core.Bounds) { width.Set(b.Size.Width) }, Children: []core.Node{base.Tabs{
-			Style: core.Style{Height: core.Pt(height), Direction: core.Row, Padding: core.All(pad), CornerRadius: height / 2,
-				Background: colors.inset, Shadows: fin.track.shadows, BorderWidth: border, BorderColor: colors.border},
+			Style: core.Style{Height: core.Pt(height), Direction: core.Row, Padding: core.All(pad), CornerRadius: height / 2, BorderWidth: border},
+			StyleFunc: func() core.Style {
+				return core.Style{Background: colors.inset(), Shadows: finOf(cx).track().shadows, BorderColor: colors.border()}
+			},
 			Children: children,
 		}}}
 	})
@@ -557,9 +591,10 @@ func meter(cx *core.Scope, value func() float64, t tone, marker float64) core.No
 	}}}
 	if marker >= 0 {
 		children = append(children, core.View{Style: core.Style{Position: core.Absolute, Left: core.Pct(float32(marker * 100)), Top: core.Pt(-3),
-			Width: core.Pt(2), Height: core.Pt(12), CornerRadius: 1, Background: colors.text}})
+			Width: core.Pt(2), Height: core.Pt(12), CornerRadius: 1}, StyleFunc: func() core.Style { return core.Style{Background: colors.text()} }})
 	}
-	return core.View{Style: core.Style{Height: core.Pt(6), CornerRadius: 3, Background: colors.raised}, Children: children}
+	return core.View{Style: core.Style{Height: core.Pt(6), CornerRadius: 3}, StyleFunc: func() core.Style { return core.Style{Background: colors.raised()} },
+		Children: children}
 }
 
 // sheet is a panel at the bottom over a dimmed backdrop while open
@@ -578,10 +613,10 @@ func sheet(cx *core.Scope, open func() bool, onClose func(), children ...core.No
 		BackdropStyle: core.Style{Background: black(0.4)},
 		PopupStyleFunc: func() core.Style {
 			return core.Style{Gap: 12, Padding: core.Edges{Top: 8, Right: 16, Bottom: env.SafeArea().Bottom + 16, Left: 16},
-				CornerRadii: core.Corners{TopLeft: 16, TopRight: 16}, Background: colors.surface}
+				CornerRadii: core.Corners{TopLeft: 16, TopRight: 16}, Background: colors.surface()}
 		},
-		Children: append([]core.Node{core.View{Style: core.Style{Width: core.Pt(36), Height: core.Pt(5), CornerRadius: 3,
-			AlignSelf: core.AlignCenter, Background: colors.raised}}}, children...),
+		Children: append([]core.Node{core.View{Style: core.Style{Width: core.Pt(36), Height: core.Pt(5), CornerRadius: 3, AlignSelf: core.AlignCenter},
+			StyleFunc: func() core.Style { return core.Style{Background: colors.raised()} }}}, children...),
 	}
 }
 
@@ -589,14 +624,22 @@ func sheet(cx *core.Scope, open func() bool, onClose func(), children ...core.No
 // shadow; the input's own style sets its size and padding.
 func field(cx *core.Scope, in base.Input) core.Node {
 	colors := colorsOf(cx)
-	fin := finOf(cx)
-	in.Style = core.Style{FontSize: 15, Color: colors.text, PlaceholderColor: colors.faint, SelectionColor: colors.accent}.Merge(in.Style)
-	return core.View{Style: fin.field.over(core.Style{CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous,
-		BorderWidth: 1, BorderColor: colors.fieldBorder, Background: colors.field}), Children: []core.Node{in}}
+	in.Style = core.Style{FontSize: 15}.Merge(in.Style)
+	own := in.StyleFunc
+	in.StyleFunc = func() core.Style {
+		s := core.Style{Color: colors.text(), PlaceholderColor: colors.faint(), SelectionColor: colors.accent()}
+		if own != nil {
+			s = s.Merge(own())
+		}
+		return s
+	}
+	return core.View{StyleFunc: func() core.Style {
+		return finOf(cx).field().over(core.Style{CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous,
+			BorderWidth: 1, BorderColor: colors.fieldBorder(), Background: colors.field()})
+	}, Children: []core.Node{in}}
 }
 
 // captionf is a caption whose label follows fn.
 func captionf(cx *core.Scope, fn func() string) core.Node {
-	colors := colorsOf(cx)
-	return core.Text{ContentFunc: fn, Style: core.Style{FontSize: 14, Color: colors.muted}}
+	return textf(fn, 14, regular, colorsOf(cx).muted)
 }

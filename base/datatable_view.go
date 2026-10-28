@@ -369,7 +369,7 @@ func (t *dataTable) edge(inRow bool) core.Node {
 				if inRow {
 					x = g.fixed - 1
 				}
-				return core.Style{Position: core.Absolute, Top: z, Bottom: z, Width: px(1), Left: px(x)}.Merge(t.p.Styles.FixedEdge)
+				return core.Style{Position: core.Absolute, Top: z, Bottom: z, Width: px(1), Left: px(x)}.Merge(t.styles().FixedEdge)
 			}}
 		},
 	}
@@ -434,7 +434,6 @@ func (t *dataTable) region(which tableRegion, w tableWindows) core.Node {
 
 // rowParts is a row's style from its parts and its own RowStyle.
 func (t *dataTable) rowParts(cx *core.Scope, row *core.Memo[int]) func() core.Style {
-	s := &t.p.Styles
 	hovered := core.NewMemo(cx, func() bool { r := row.Get(); return r >= 0 && t.hover.Get() == r })
 	selected := core.NewMemo(cx, func() bool { return t.selection() == tableSel{kind: selRow, row: row.Get()} })
 	active := core.NewMemo(cx, func() bool {
@@ -444,18 +443,19 @@ func (t *dataTable) rowParts(cx *core.Scope, row *core.Memo[int]) func() core.St
 	})
 	return func() core.Style {
 		r := row.Get()
-		out := s.Row
+		ts := t.styles()
+		out := ts.Row
 		if t.p.Stripe != nil && t.p.Stripe() && r%2 == 1 {
-			out = merge(out, s.RowOdd)
+			out = merge(out, ts.RowOdd)
 		}
 		if hovered.Get() {
-			out = merge(out, s.RowHover)
+			out = merge(out, ts.RowHover)
 		}
 		if selected.Get() {
-			out = merge(out, s.RowSelected)
+			out = merge(out, ts.RowSelected)
 		}
 		if active.Get() {
-			out = merge(out, s.RowActive)
+			out = merge(out, ts.RowActive)
 		}
 		if r >= 0 && t.p.RowStyle != nil {
 			out = merge(out, t.p.RowStyle(r))
@@ -557,8 +557,8 @@ func (t *dataTable) bodyRow(cx *core.Scope, row *core.Memo[int], which tableRegi
 // rowNumber is a row's number, in the row numbers' column.
 func (t *dataTable) rowNumber(row *core.Memo[int]) core.Node {
 	return core.View{
-		Style: fill0().Merge(core.Style{Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}).
-			Merge(t.p.Styles.RowHeader),
+		Style:     fill0().Merge(core.Style{Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}),
+		StyleFunc: func() core.Style { return t.styles().RowHeader },
 		Children: []core.Node{core.Text{MaxLines: 1, ContentFunc: func() string {
 			if r := row.Get(); r >= 0 {
 				return fmt.Sprint(r + 1)
@@ -591,7 +591,6 @@ func justify(a DataTableAlign) core.Justify {
 // screen: a cell made around the view keeps the last text of its row and
 // column, or none once its slot shows another, until it comes into view.
 func (t *dataTable) cell(cx *core.Scope, row, def *core.Memo[int], shown *core.Memo[bool], which tableRegion, w tableWindows) core.Node {
-	s := &t.p.Styles
 	type flags struct{ selected, columnSelected, active bool }
 	marks := core.NewMemo(cx, func() flags {
 		t.dataRev.Get()
@@ -669,15 +668,16 @@ func (t *dataTable) cell(cx *core.Scope, row, def *core.Memo[int], shown *core.M
 			st.Left, st.Width = px(c.start(c.displayOf(d))-origin), px(c.width(d))
 			st.JustifyContent = justify(col.Align)
 			f := marks.Get()
-			st = merge(st, s.Cell)
+			ts := t.styles()
+			st = merge(st, ts.Cell)
 			if f.columnSelected {
-				st = merge(st, s.CellColumnSelected)
+				st = merge(st, ts.CellColumnSelected)
 			}
 			if f.selected {
-				st = merge(st, s.CellSelected)
+				st = merge(st, ts.CellSelected)
 			}
 			if f.active {
-				st = merge(st, s.CellActive)
+				st = merge(st, ts.CellActive)
 			}
 			st = merge(st, col.CellStyle)
 			switch sign.Get() {
@@ -749,7 +749,7 @@ func (t *dataTable) header() core.Node {
 		return core.View{
 			StyleFunc: func() core.Style {
 				return merge(core.Style{Position: core.Absolute, Top: z, Left: z, Right: z, Height: px(t.sizes.Get().header),
-					Overflow: core.Hidden}, t.p.Styles.Header)
+					Overflow: core.Hidden}, t.styles().Header)
 			},
 			Children: []core.Node{
 				t.headerRegion(regionScroll, w),
@@ -757,7 +757,7 @@ func (t *dataTable) header() core.Node {
 				core.Show{When: t.rowHeaderShown, Then: func(cx *core.Scope) core.Node {
 					return core.View{StyleFunc: func() core.Style {
 						return merge(core.Style{Position: core.Absolute, Top: z, Bottom: z, Left: z, Width: px(t.sizes.Get().lead)},
-							t.p.Styles.RowHeaderCorner)
+							t.styles().RowHeaderCorner)
 					}}
 				}},
 				t.moveLine(),
@@ -832,14 +832,13 @@ func (t *dataTable) groupCell(g groupCell, which tableRegion, w tableWindows) co
 			return merge(core.Style{Position: core.Absolute, Top: px(top), Height: px(h),
 				Left: px(c.startOf(g.from) - origin), Width: px(c.startOf(g.to) - c.startOf(g.from)),
 				Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
-				Overflow: core.Hidden}, t.p.Styles.GroupCell)
+				Overflow: core.Hidden}, t.styles().GroupCell)
 		},
 		Children: []core.Node{core.Text{Content: g.label, MaxLines: 1}},
 	}
 }
 
 func (t *dataTable) titleCell(cx *core.Scope, def int, which tableRegion, w tableWindows) core.Node {
-	s := &t.p.Styles
 	col := t.column(def)
 	sorted := core.NewMemo(cx, func() DataTableSort {
 		if t.p.Sort == nil {
@@ -910,8 +909,9 @@ func (t *dataTable) titleCell(cx *core.Scope, def int, which tableRegion, w tabl
 		content = append(content, t.sortButton(def, sorted))
 	}
 	children := []core.Node{core.View{
-		Style:    merge(core.Style{FlexGrow: 1, Direction: core.Row, AlignItems: core.AlignCenter, MinWidth: px(0)}, s.HeaderContent),
-		Children: content,
+		Style:     core.Style{FlexGrow: 1, Direction: core.Row, AlignItems: core.AlignCenter, MinWidth: px(0)},
+		StyleFunc: func() core.Style { return t.styles().HeaderContent },
+		Children:  content,
 	}}
 	if t.resizable(def) {
 		children = append(children, ResizeHandle{
@@ -919,7 +919,8 @@ func (t *dataTable) titleCell(cx *core.Scope, def int, which tableRegion, w tabl
 			OnDragStart: func() { t.resizeStart(def) },
 			OnDragMove:  t.resizeMove,
 			OnDragEnd:   t.resizeEnd,
-			Style:       merge(core.Style{Width: px(1)}, s.ResizeHandle),
+			Style:       core.Style{Width: px(1)},
+			StyleFunc:   func() core.Style { return t.styles().ResizeHandle },
 		})
 	}
 	return core.View{
@@ -941,15 +942,16 @@ func (t *dataTable) titleCell(cx *core.Scope, def int, which tableRegion, w tabl
 			st := core.Style{Position: core.Absolute, Top: px(h * float32(levels-1)), Height: px(h),
 				Left: px(c.start(c.displayOf(def)) - origin), Width: px(c.width(def)), Direction: core.Row,
 				AlignItems: core.AlignCenter, Overflow: core.Hidden, JustifyContent: justify(col.Align)}
-			st = merge(st, s.HeaderCell)
+			ts := t.styles()
+			st = merge(st, ts.HeaderCell)
 			if sorted.Get().Key != "" {
-				st = merge(st, s.HeaderCellSorted)
+				st = merge(st, ts.HeaderCellSorted)
 			}
 			if selected.Get() {
-				st = merge(st, s.HeaderCellSelected)
+				st = merge(st, ts.HeaderCellSelected)
 			}
 			if dragging.Get() {
-				st = merge(st, s.HeaderCellDragging)
+				st = merge(st, ts.HeaderCellDragging)
 			}
 			return merge(st, col.HeaderStyle)
 		},
@@ -970,11 +972,10 @@ func (t *dataTable) titleCell(cx *core.Scope, def int, which tableRegion, w tabl
 // sortButton is the button at the end of a sortable title, which asks for
 // the next sort; the app styles it and its two chevrons.
 func (t *dataTable) sortButton(def int, sorted *core.Memo[DataTableSort]) core.Node {
-	s := &t.p.Styles
 	const k = float32(12.0 / 24.0)
-	chevron := func(pts [6]float32, descending bool, style core.Style) core.Node {
+	chevron := func(pts [6]float32, descending bool, style func() core.Style) core.Node {
 		return core.View{
-			Style: merge(fill0(), style),
+			Style: fill0(), StyleFunc: style,
 			Selected: func() bool {
 				sort := sorted.Get()
 				return sort.Key != "" && sort.Descending == descending
@@ -989,12 +990,13 @@ func (t *dataTable) sortButton(def int, sorted *core.Memo[DataTableSort]) core.N
 	}
 	return core.View{
 		Role: core.RoleButton, Label: "Sort by " + t.title(def), TestID: "sort:" + t.column(def).Key, NoFocus: true,
-		Style: merge(core.Style{FlexShrink: 0, Width: px(sortWidth), Height: px(sortWidth), AlignItems: core.AlignCenter,
-			JustifyContent: core.JustifyCenter, Cursor: core.CursorPointer}, s.SortIndicator),
-		OnPress: func(core.PressEvent) { t.sortNext(def) },
+		Style: core.Style{FlexShrink: 0, Width: px(sortWidth), Height: px(sortWidth), AlignItems: core.AlignCenter,
+			JustifyContent: core.JustifyCenter, Cursor: core.CursorPointer},
+		StyleFunc: func() core.Style { return t.styles().SortIndicator },
+		OnPress:   func(core.PressEvent) { t.sortNext(def) },
 		Children: []core.Node{core.View{Style: core.Style{Width: px(12), Height: px(12)}, Children: []core.Node{
-			chevron([6]float32{7, 9, 12, 4, 17, 9}, false, s.SortAscending),
-			chevron([6]float32{7, 15, 12, 20, 17, 15}, true, s.SortDescending),
+			chevron([6]float32{7, 9, 12, 4, 17, 9}, false, func() core.Style { return t.styles().SortAscending }),
+			chevron([6]float32{7, 15, 12, 20, 17, 15}, true, func() core.Style { return t.styles().SortDescending }),
 		}}},
 	}
 }
@@ -1019,7 +1021,7 @@ func (t *dataTable) moveLine() core.Node {
 				x = max(g.lead+at-float32(g.cx), g.lead+g.fixed)
 			}
 			return merge(core.Style{Position: core.Absolute, Top: z, Bottom: z, Width: px(dropLine), Left: px(x - dropLine/2)},
-				t.p.Styles.MoveIndicator)
+				t.styles().MoveIndicator)
 		}}
 	}}
 }
@@ -1032,8 +1034,8 @@ func (t *dataTable) overlays() core.Node {
 	if t.p.Empty != nil {
 		children = append(children, core.Show{When: func() bool { return t.rowCount() == 0 && !loading() },
 			Then: func(cx *core.Scope) core.Node {
-				return core.View{Style: merge(fill0(), core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
-					t.p.Styles.Empty), Children: []core.Node{t.p.Empty}}
+				return core.View{Style: merge(fill0(), core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}),
+					StyleFunc: func() core.Style { return t.styles().Empty }, Children: []core.Node{t.p.Empty}}
 			}})
 	}
 	if t.p.LoadingView != nil {

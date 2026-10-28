@@ -44,17 +44,17 @@ func dayRange(cx *core.Scope, s *stock) core.Node {
 		textf(func() string { return "L " + p(q().low) }, 12, regular, colors.muted),
 		core.View{OnLayout: func(b core.Bounds) { width = b.Size.Width; place() }, LabelFunc: func() string { return fmt.Sprintf("Day range %s to %s", p(q().low), p(q().high)) },
 			Style: core.Style{FlexGrow: 1, FlexShrink: 1, Height: core.Pt(16), JustifyContent: core.JustifyCenter}, Children: []core.Node{
-				core.View{Style: core.Style{Height: core.Pt(4), CornerRadius: 2, Background: colors.raised}},
+				core.View{Style: core.Style{Height: core.Pt(4), CornerRadius: 2}, StyleFunc: filled(colors.raised)},
 				core.View{StyleFunc: func() core.Style {
 					l, h := at(q().low), at(q().high)
-					return core.Style{Position: core.Absolute, Left: core.Pct(float32(l * 100)), Width: core.Pct(float32((h - l) * 100)), Height: core.Pt(4), CornerRadius: 2, Background: colors.border}
+					return core.Style{Position: core.Absolute, Left: core.Pct(float32(l * 100)), Width: core.Pct(float32((h - l) * 100)), Height: core.Pt(4), CornerRadius: 2, Background: colors.border()}
 				}},
 				core.View{StyleFunc: func() core.Style {
 					return core.Style{Position: core.Absolute, Left: core.Pct(float32(at(q().prevClose) * 100)), Width: core.Pt(2), Height: core.Pt(12), Margin: core.Edges{Left: -1},
-						CornerRadius: 1, Background: colors.muted}
+						CornerRadius: 1, Background: colors.muted()}
 				}},
 				core.View{StyleFunc: func() core.Style {
-					return core.Style{Position: core.Absolute, Left: core.Pt(-7), Width: core.Pt(14), Height: core.Pt(14), CornerRadius: 7, BorderWidth: 3, BorderColor: colors.background,
+					return core.Style{Position: core.Absolute, Left: core.Pt(-7), Width: core.Pt(14), Height: core.Pt(14), CornerRadius: 7, BorderWidth: 3, BorderColor: colors.background(),
 						Background: toneOf(cx, q().last-q().prevClose), Animated: &core.AnimatedStyle{TranslateX: x}}
 				}},
 			}},
@@ -108,7 +108,7 @@ func quoteBlock(cx *core.Scope, m *market, s *stock) core.Node {
 	w := core.Pct(25)
 	return core.View{Style: core.Style{Padding: core.Edges{Top: 12, Right: 16, Bottom: 14, Left: 16}, Gap: 10}, Children: []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
-			core.Text{Content: s.name, MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15, Color: colors.muted}},
+			core.Text{Content: s.name, MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15}, StyleFunc: colored(colors.muted)},
 			text(sectorName, 13, regular, colors.faint),
 			liveDot(cx, m.running.Get, 6),
 			textf(func() string { return marketTime(float64(m.clock.Get()), true) }, 12, regular, colors.muted),
@@ -117,7 +117,7 @@ func quoteBlock(cx *core.Scope, m *market, s *stock) core.Node {
 			core.Text{ContentFunc: func() string { return p(q().last) }, TestID: "stock-price", StyleFunc: func() core.Style {
 				return core.Style{FontSize: 36, FontWeight: semibold, LetterSpacing: -1, Color: toneOf(cx, change())}
 			}},
-			core.View{Style: core.Style{Animated: &core.AnimatedStyle{Rotate: lerp(turn, 0, 180)}}, Children: []core.Node{iconf(iconArrowUp, 20, func() core.Color { return toneOf(cx, change()) })}},
+			core.View{Style: core.Style{Animated: &core.AnimatedStyle{Rotate: lerp(turn, 0, 180)}}, Children: []core.Node{icon(iconArrowUp, 20, func() core.Color { return toneOf(cx, change()) })}},
 			core.View{Style: core.Style{FlexGrow: 1, AlignItems: core.AlignEnd, Gap: 1}, Children: []core.Node{
 				core.Text{ContentFunc: func() string { return signed(percentOf(q()), 2) + "%" }, StyleFunc: toneStyle(15, semibold)},
 				core.Text{ContentFunc: func() string { return signed(change(), decimals) + " today" }, StyleFunc: toneStyle(12, regular)},
@@ -161,7 +161,7 @@ func rangesBlock(cx *core.Scope, m *market, s *stock) core.Node {
 		return out
 	}, func(a, b []rng) bool { return false })
 	draw := func(d *core.Drawing, size core.Size) {
-		c := *colors
+		c := colors.now()
 		r := rows.Get()
 		q := s.quote.GetUntracked()
 		lo, hi := math.Inf(1), math.Inf(-1)
@@ -203,15 +203,20 @@ func pauseButton(cx *core.Scope, m *market) core.Node {
 	fin := finOf(cx)
 	return core.Dynamic(func(*core.Scope) core.Node {
 		run := m.running.Get()
-		s := core.Style{Width: core.Pt(32), Height: core.Pt(32), CornerRadius: 16, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}
+		face := func() core.Style {
+			s := core.Style{Width: core.Pt(32), Height: core.Pt(32), CornerRadius: 16, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}
+			if run {
+				s = fin.pill().over(s)
+				s.BorderWidth = 1
+			} else {
+				s = fin.accent().over(s)
+				s.Background = colors.accentFill()
+			}
+			return s
+		}
 		name, tint, lbl := iconPlay, colors.onAccent, "Resume the market"
 		if run {
-			s = fin.pill.over(s)
-			s.BorderWidth = 1
 			name, tint, lbl = iconPause, colors.muted, "Pause the market"
-		} else {
-			s = fin.accent.over(s)
-			s.Background = colors.accentFill
 		}
 		return press(pressProps{onPress: func() {
 			if m.running.GetUntracked() {
@@ -219,7 +224,7 @@ func pauseButton(cx *core.Scope, m *market) core.Node {
 			} else {
 				m.start()
 			}
-		}, hitSlop: 6, label: lbl}, core.View{Style: s, Children: []core.Node{icon(name, 13, tint)}})
+		}, hitSlop: 6, label: lbl}, core.View{StyleFunc: face, Children: []core.Node{icon(name, 13, tint)}})
 	})
 }
 
@@ -252,7 +257,7 @@ func stockView(cx *core.Scope, m *market, s *stock, wide bool, split func() bool
 			st := m.stats.Get()
 			return fmt.Sprintf("simulated · %.2f ms engine/tick · %.0f quotes/s", st[0], st[1])
 		}, StyleFunc: func() core.Style {
-			return core.Style{Padding: core.Edges{Top: 8, Right: 16, Bottom: 96 + env.SafeArea().Bottom, Left: 16}, FontSize: 12, Color: colors.faint}
+			return core.Style{Padding: core.Edges{Top: 8, Right: 16, Bottom: 96 + env.SafeArea().Bottom, Left: 16}, FontSize: 12, Color: colors.faint()}
 		}}
 	}
 	if split == nil {
@@ -278,7 +283,7 @@ func stockView(cx *core.Scope, m *market, s *stock, wide bool, split func() bool
 		}}
 	} else {
 		body = core.Scroll{Style: core.Style{FlexGrow: 1}, TestID: "stock-scroll", Children: []core.Node{
-			core.Text{Content: s.code, Style: core.Style{Padding: core.Edges{Top: 14, Right: 16, Left: 16}, FontSize: 22, FontWeight: bold, LetterSpacing: -0.3, Color: colors.text}},
+			core.Text{Content: s.code, Style: core.Style{Padding: core.Edges{Top: 14, Right: 16, Left: 16}, FontSize: 22, FontWeight: bold, LetterSpacing: -0.3}, StyleFunc: colored(colors.text)},
 			core.View{StyleFunc: func() core.Style {
 				if split() {
 					return core.Style{Direction: core.Row, AlignItems: core.AlignStart}
@@ -297,7 +302,7 @@ func stockView(cx *core.Scope, m *market, s *stock, wide bool, split func() bool
 				}},
 				core.View{StyleFunc: func() core.Style {
 					if split() {
-						return core.Style{Width: core.Pt(380), Borders: core.Edges{Left: 1}, BorderColors: core.EdgeColors{Left: colors.line}}
+						return core.Style{Width: core.Pt(380), Borders: core.Edges{Left: 1}, BorderColors: core.EdgeColors{Left: colors.line()}}
 					}
 					return core.Style{}
 				}, Children: []core.Node{orderBookBlock(cx, m, s), tapeBlock(cx, m, s), depthBlock(cx, m, s), flowBlock(cx, m)}},
@@ -311,18 +316,20 @@ func stockView(cx *core.Scope, m *market, s *stock, wide bool, split func() bool
 		// closes it.
 		sheetNode = base.Dialog{Open: open.Get, Presentation: core.ModalFormSheet, OnOpenChange: func(o bool, _ base.Reason) { open.Set(o) }, Label: "Order ticket",
 			BackdropStyle: core.Style{Background: black(0.4)},
-			PopupStyle:    core.Style{Width: core.Pt(420), MaxWidth: core.Pct(100), Padding: core.All(20), CornerRadius: radiusCard, Background: colors.surface, Shadows: fin.menu.shadows},
-			Children:      []core.Node{core.Func(ticketView)}}
+			PopupStyleFunc: func() core.Style {
+				return core.Style{Width: core.Pt(420), MaxWidth: core.Pct(100), Padding: core.All(20), CornerRadius: radiusCard, Background: colors.surface(), Shadows: fin.menu().shadows}
+			},
+			Children: []core.Node{core.Func(ticketView)}}
 	} else {
 		sheetNode = sheet(cx, open.Get, func() { open.Set(false) }, core.Func(ticketView))
 	}
-	return core.View{Style: fillPage.Merge(core.Style{Background: colors.background}), Children: []core.Node{
+	return core.View{StyleFunc: func() core.Style { return fillPage.Merge(core.Style{Background: colors.background()}) }, Children: []core.Node{
 		body,
 		// The trade bar, over the content: glass, the page showing through
 		// blurred as it scrolls under.
 		core.View{StyleFunc: func() core.Style {
-			return fin.glass.over(core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10,
-				Padding: core.Edges{Top: 10, Right: 16, Bottom: 10 + env.SafeArea().Bottom, Left: 16}, Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: fin.glass.border}})
+			return fin.glass().over(core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10,
+				Padding: core.Edges{Top: 10, Right: 16, Bottom: 10 + env.SafeArea().Bottom, Left: 16}, Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: fin.glass().border}})
 		}, Children: []core.Node{
 			core.View{Style: core.Style{Width: core.Pt(92), Gap: 1}, Children: []core.Node{
 				textf(func() string { return priceText(s.quote.Get().last, s) }, 15, semibold, colors.text),

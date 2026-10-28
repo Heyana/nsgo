@@ -14,7 +14,7 @@ func sectorBar(cx *core.Scope, lbl string, change func() float64, scale func() f
 	colors := colorsOf(cx)
 	share := func() float64 { return math.Min(1, math.Abs(change())/scale()) }
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10, Height: core.Pt(22)}, Children: []core.Node{
-		core.Text{Content: lbl, MaxLines: 1, Style: core.Style{Width: core.Pt(84), FontSize: 13, Color: colors.muted}},
+		core.Text{Content: lbl, MaxLines: 1, Style: core.Style{Width: core.Pt(84), FontSize: 13}, StyleFunc: colored(colors.muted)},
 		core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Direction: core.Row, AlignItems: core.AlignCenter}, Children: []core.Node{
 			core.View{Style: fill, Children: []core.Node{springBar(func() float64 {
 				if change() < 0 {
@@ -22,7 +22,7 @@ func sectorBar(cx *core.Scope, lbl string, change func() float64, scale func() f
 				}
 				return 0
 			}, colors.down, true, 8, 2)}},
-			core.View{Style: core.Style{Width: core.Pt(1), Height: core.Pt(14), Background: colors.border}},
+			core.View{Style: core.Style{Width: core.Pt(1), Height: core.Pt(14)}, StyleFunc: filled(colors.border)},
 			core.View{Style: fill, Children: []core.Node{springBar(func() float64 {
 				if change() > 0 {
 					return share()
@@ -67,8 +67,8 @@ func breadthPanel(cx *core.Scope, m *market) core.Node {
 	for i, sc := range sectors {
 		bars = append(bars, sectorBar(cx, sc.label, func() float64 { return means.Get()[i] }, scale))
 	}
-	segment := func(n func() int, c core.Color) core.Node {
-		return core.View{StyleFunc: func() core.Style { return core.Style{FlexGrow: float32(n()), Background: c} }}
+	segment := func(n func() int, c func() core.Color) core.Node {
+		return core.View{StyleFunc: func() core.Style { return core.Style{FlexGrow: float32(n()), Background: c()} }}
 	}
 	return core.View{Style: core.Style{Padding: core.Edges{Right: 16, Bottom: 14, Left: 16}, Gap: 10}, Children: []core.Node{
 		core.View{Style: core.Style{Gap: 6}, Children: []core.Node{
@@ -76,9 +76,9 @@ func breadthPanel(cx *core.Scope, m *market) core.Node {
 				segment(func() int { return b().up }, colors.up), segment(func() int { return b().flat }, colors.faint), segment(func() int { return b().down }, colors.down),
 			}},
 			core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{
-				core.Text{ContentFunc: func() string { return fmt.Sprintf("%d up", b().up) }, Style: core.Style{FlexGrow: 1, FontSize: 12, Color: colors.up}},
+				core.Text{ContentFunc: func() string { return fmt.Sprintf("%d up", b().up) }, Style: core.Style{FlexGrow: 1, FontSize: 12}, StyleFunc: colored(colors.up)},
 				textf(func() string { return fmt.Sprintf("%d flat · %d issues", b().flat, issues) }, 12, regular, colors.faint),
-				core.Text{ContentFunc: func() string { return fmt.Sprintf("%d down", b().down) }, Style: core.Style{FlexGrow: 1, TextAlign: core.TextAlignEnd, FontSize: 12, Color: colors.down}},
+				core.Text{ContentFunc: func() string { return fmt.Sprintf("%d down", b().down) }, Style: core.Style{FlexGrow: 1, TextAlign: core.TextAlignEnd, FontSize: 12}, StyleFunc: colored(colors.down)},
 			}},
 		}},
 		core.View{Style: core.Style{Gap: 2}, Children: bars},
@@ -106,8 +106,8 @@ func marketStrip(cx *core.Scope, m *market) core.Node {
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(0, 16), Height: core.Pt(56)}, Children: []core.Node{
 			core.View{OnPress: func(core.PressEvent) { toggle() }, Role: core.RoleButton, Label: "Breadth", Expanded: opened.Get,
 				Style: core.Style{FlexGrow: 1, FlexShrink: 1, Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Height: core.Pt(56)}, Children: []core.Node{
-					core.Text{Content: "Composite", MaxLines: 1, Style: core.Style{FontSize: 13, Color: colors.muted}},
-					core.Text{ContentFunc: func() string { return grouped(m.composite.Get(), 2) }, MaxLines: 1, Style: core.Style{FontSize: 15, FontWeight: semibold, Color: colors.text}},
+					core.Text{Content: "Composite", MaxLines: 1, Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.muted)},
+					core.Text{ContentFunc: func() string { return grouped(m.composite.Get(), 2) }, MaxLines: 1, Style: core.Style{FontSize: 15, FontWeight: semibold}, StyleFunc: colored(colors.text)},
 					core.Text{ContentFunc: func() string { return signed(change(), 2) + "%" }, StyleFunc: func() core.Style {
 						return core.Style{FontSize: 13, FontWeight: medium, Color: toneOf(cx, change())}
 					}},
@@ -222,7 +222,7 @@ func sparkline(cx *core.Scope, s *stock) core.Node {
 			SetFillGradient(core.CanvasLinear(left, 0, fadeTo, 0, core.GradientStop{Offset: 0, Color: core.RGBA(0, 1)}, core.GradientStop{Offset: 1, Color: core.RGBA(0, 0)})).
 			FillRect(0, 0, fadeTo, h).SetComposite(core.CompositeSourceOver)
 		// The previous close, dotted.
-		d.SetStrokeColor(alpha(muted, 0.4)).SetLineWidth(1).SetLineDash(1, 3).BeginPath().MoveTo(left, Y(q.prevClose)).LineTo(right, Y(q.prevClose)).Stroke().SetLineDash()
+		d.SetStrokeColor(alpha(muted(), 0.4)).SetLineWidth(1).SetLineDash(1, 3).BeginPath().MoveTo(left, Y(q.prevClose)).LineTo(right, Y(q.prevClose)).Stroke().SetLineDash()
 		d.BeginPath()
 		curve()
 		d.SetStrokeColor(tone).SetLineWidth(1.75).SetLineJoin(core.JoinRound).SetLineCap(core.CapRound).Stroke()
@@ -244,31 +244,37 @@ func stockRow(cx *core.Scope, s *stock, first func() bool, onPress func(), wide 
 	colors := colorsOf(cx)
 	q := s.quote.Get
 	change := func() float64 { return percentOf(q()) }
-	st := core.Style{Height: core.Pt(64), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(0, 16), Active: &core.Style{Background: colors.surface}}
+	st := core.Style{Height: core.Pt(64), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(0, 16)}
 	if wide {
 		st.Cursor = core.CursorPointer
-		st.Hover = &core.Style{Background: colors.surface}
-		st.Selected = &core.Style{Background: colors.pressed}
 	}
-	return core.View{OnPress: func(core.PressEvent) { onPress() }, Role: core.RoleButton, Label: s.name, Selected: active, TestID: "stock-" + s.code, Style: st, Children: []core.Node{
-		core.Show{When: active, Then: func(*core.Scope) core.Node {
-			return core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(14), Bottom: core.Pt(14), Left: core.Pt(0), Width: core.Pt(3), CornerRadius: 1.5, Background: colors.accent}}
-		}},
-		core.Show{When: func() bool { return !first() }, Then: func(*core.Scope) core.Node {
-			return core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(16), Right: core.Pt(0), Height: core.Pt(1), Background: colors.line}}
-		}},
-		core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 3}, Children: []core.Node{
-			core.Text{Content: s.code, MaxLines: 1, Style: core.Style{FontSize: 16, FontWeight: semibold, Color: colors.text}},
-			core.Text{Content: s.name, MaxLines: 1, Style: core.Style{FontSize: 13, Color: colors.muted}},
-		}},
-		sparkline(cx, s),
-		core.View{Style: core.Style{Width: core.Pt(84), AlignItems: core.AlignEnd, Gap: 3}, Children: []core.Node{
-			core.Text{ContentFunc: func() string { return priceText(q().last, s) }, MaxLines: 1, Style: core.Style{FontSize: 16, FontWeight: semibold, Color: colors.text}},
-			core.Text{ContentFunc: func() string { return signed(change(), 2) + "%" }, MaxLines: 1, StyleFunc: func() core.Style {
-				return core.Style{FontSize: 13, FontWeight: medium, Color: toneOf(cx, change())}
+	states := func() core.Style {
+		s := core.Style{Active: &core.Style{Background: colors.surface()}}
+		if wide {
+			s.Hover, s.Selected = &core.Style{Background: colors.surface()}, &core.Style{Background: colors.pressed()}
+		}
+		return s
+	}
+	return core.View{OnPress: func(core.PressEvent) { onPress() }, Role: core.RoleButton, Label: s.name, Selected: active, TestID: "stock-" + s.code,
+		Style: st, StyleFunc: states, Children: []core.Node{
+			core.Show{When: active, Then: func(*core.Scope) core.Node {
+				return core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(14), Bottom: core.Pt(14), Left: core.Pt(0), Width: core.Pt(3), CornerRadius: 1.5}, StyleFunc: filled(colors.accent)}
 			}},
-		}},
-	}}
+			core.Show{When: func() bool { return !first() }, Then: func(*core.Scope) core.Node {
+				return core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(16), Right: core.Pt(0), Height: core.Pt(1)}, StyleFunc: filled(colors.line)}
+			}},
+			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 3}, Children: []core.Node{
+				core.Text{Content: s.code, MaxLines: 1, Style: core.Style{FontSize: 16, FontWeight: semibold}, StyleFunc: colored(colors.text)},
+				core.Text{Content: s.name, MaxLines: 1, Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.muted)},
+			}},
+			sparkline(cx, s),
+			core.View{Style: core.Style{Width: core.Pt(84), AlignItems: core.AlignEnd, Gap: 3}, Children: []core.Node{
+				core.Text{ContentFunc: func() string { return priceText(q().last, s) }, MaxLines: 1, Style: core.Style{FontSize: 16, FontWeight: semibold}, StyleFunc: colored(colors.text)},
+				core.Text{ContentFunc: func() string { return signed(change(), 2) + "%" }, MaxLines: 1, StyleFunc: func() core.Style {
+					return core.Style{FontSize: 13, FontWeight: medium, Color: toneOf(cx, change())}
+				}},
+			}},
+		}}
 }
 
 // watchlistWidth is the watchlist's width beside the stock in the
@@ -350,7 +356,7 @@ func stocksDemo(cx *core.Scope) core.Node {
 	}
 	// Desktop: the stock beside the list.
 	shown := core.NewSignal(cx, m.stocks[0])
-	watchlist := core.View{Style: fillPage.Merge(core.Style{Background: colors.background}), Children: []core.Node{
+	watchlist := core.View{StyleFunc: func() core.Style { return fillPage.Merge(core.Style{Background: colors.background()}) }, Children: []core.Node{
 		marketStrip(cx, m),
 		core.View{Style: core.Style{Padding: core.Edges{Right: 16, Bottom: 6, Left: 16}}, Children: []core.Node{segmented(options, filter.Get, filter.Set, true)}},
 		core.Scroll{Style: core.Style{FlexGrow: 1}, TestID: "watchlist", Children: []core.Node{
@@ -366,13 +372,13 @@ func stocksDemo(cx *core.Scope) core.Node {
 					}, wide, func() bool { return wide && shown.Get() == st })
 				}),
 				core.Show{When: func() bool { return len(rows.Get()) == 0 }, Then: func(*core.Scope) core.Node {
-					return core.Text{Content: "Nothing here right now", Style: core.Style{Padding: core.Symmetric(32, 0), TextAlign: core.TextAlignCenter, FontSize: 14, Color: colors.muted}}
+					return core.Text{Content: "Nothing here right now", Style: core.Style{Padding: core.Symmetric(32, 0), TextAlign: core.TextAlignCenter, FontSize: 14}, StyleFunc: colored(colors.muted)}
 				}},
 			}},
 			core.Text{ContentFunc: func() string {
 				st := m.stats.Get()
 				return fmt.Sprintf("Simulated, fictional companies · tick 50 ms · %.2f ms engine/tick · %.0f quotes/s", st[0], st[1])
-			}, Style: core.Style{Padding: core.Edges{Top: 16, Right: 16, Bottom: 40, Left: 16}, FontSize: 12, LineHeight: 17, Color: colors.faint}},
+			}, Style: core.Style{Padding: core.Edges{Top: 16, Right: 16, Bottom: 40, Left: 16}, FontSize: 12, LineHeight: 17}, StyleFunc: colored(colors.faint)},
 		}},
 	}}
 	if !wide {
@@ -381,8 +387,12 @@ func stocksDemo(cx *core.Scope) core.Node {
 	// The book and the tape go beside the chart when the stock has the
 	// room.
 	split := core.NewMemo(cx, func() bool { return shell.paneWidth()-watchlistWidth >= 860 })
-	return core.View{Style: fillPage.Merge(core.Style{Direction: core.Row, Background: colors.background}), Children: []core.Node{
-		core.View{Style: core.Style{Width: core.Pt(watchlistWidth), Borders: core.Edges{Right: 1}, BorderColors: core.EdgeColors{Right: colors.line}}, Children: []core.Node{watchlist}},
+	return core.View{StyleFunc: func() core.Style {
+		return fillPage.Merge(core.Style{Direction: core.Row, Background: colors.background()})
+	}, Children: []core.Node{
+		core.View{StyleFunc: func() core.Style {
+			return core.Style{Width: core.Pt(watchlistWidth), Borders: core.Edges{Right: 1}, BorderColors: core.EdgeColors{Right: colors.line()}}
+		}, Children: []core.Node{watchlist}},
 		core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, Children: []core.Node{core.Dynamic(func(cx *core.Scope) core.Node {
 			st := shown.Get()
 			return core.Func(func(cx *core.Scope) core.Node { return stockView(cx, m, st, true, split.Get) })

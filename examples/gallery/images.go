@@ -34,20 +34,25 @@ func logoSource() core.ImageSource {
 }
 
 // imageFrame is every photo's frame: rounded, a hairline border, a raised
-// fill while it loads.
+// fill while it loads, frameInk's colors.
 func imageFrame(cx *core.Scope, s core.Style) core.Style {
+	return core.Style{CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous, BorderWidth: 1}.Merge(s)
+}
+
+// frameInk is an image frame's colors, for its StyleFunc.
+func frameInk(cx *core.Scope) func() core.Style {
 	colors := colorsOf(cx)
-	return core.Style{CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous, BorderWidth: 1, BorderColor: colors.border, Background: colors.raised}.Merge(s)
+	return func() core.Style { return core.Style{BorderColor: colors.border(), Background: colors.raised()} }
 }
 
 // imageNote is a quiet label under a tile, code for API values.
 func imageNote(cx *core.Scope, s string, isCode bool) core.Node {
 	colors := colorsOf(cx)
-	st := core.Style{FontSize: 13, Color: colors.muted, TextAlign: core.TextAlignCenter}
+	st := core.Style{FontSize: 13, TextAlign: core.TextAlignCenter}
 	if isCode {
 		st.FontFamily = mono
 	}
-	return core.Text{Content: s, MaxLines: 1, Style: st}
+	return core.Text{Content: s, MaxLines: 1, Style: st, StyleFunc: colored(colors.muted)}
 }
 
 // imageTile is something centered on a raised square, a note below.
@@ -58,8 +63,10 @@ func imageTile(cx *core.Scope, noteText string, isCode bool, height core.Points,
 		height = 76
 	}
 	return core.View{Style: core.Style{FlexGrow: 1, FlexBasis: core.Pt(0), Gap: 8}, Children: []core.Node{
-		core.View{Style: fin.raised.over(core.Style{Height: core.Pt(height), CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous, Background: colors.raised,
-			BorderWidth: 1, BorderColor: colors.border, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Overflow: core.Hidden}), Children: []core.Node{child}},
+		core.View{StyleFunc: func() core.Style {
+			return fin.raised().over(core.Style{Height: core.Pt(height), CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous, Background: colors.raised(),
+				BorderWidth: 1, BorderColor: colors.border(), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Overflow: core.Hidden})
+		}, Children: []core.Node{child}},
 		imageNote(cx, noteText, isCode),
 	}}
 }
@@ -74,7 +81,7 @@ func resizeModes(cx *core.Scope) core.Node {
 		var cells []core.Node
 		for _, m := range modes[i : i+2] {
 			cells = append(cells, core.View{Style: core.Style{FlexGrow: 1, FlexBasis: core.Pt(0), Gap: 8}, Children: []core.Node{
-				core.Image{Source: core.Src(widePhoto), ResizeMode: m.mode, Label: m.name, Style: imageFrame(cx, core.Style{Height: core.Pt(140)})},
+				core.Image{Source: core.Src(widePhoto), ResizeMode: m.mode, Label: m.name, Style: imageFrame(cx, core.Style{Height: core.Pt(140)}), StyleFunc: frameInk(cx)},
 				imageNote(cx, m.name, true),
 			}})
 		}
@@ -86,25 +93,30 @@ func resizeModes(cx *core.Scope) core.Node {
 func imageCorners(cx *core.Scope) core.Node {
 	colors := colorsOf(cx)
 	sq := imageFrame(cx, core.Style{Width: core.Pt(88), Height: core.Pt(88)})
-	item := func(s core.Style, name string) core.Node {
-		return core.View{Style: core.Style{AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{core.Image{Source: core.Src(widePhoto), Style: sq.Merge(s)}, imageNote(cx, name, false)}}
+	item := func(s core.Style, ink func() core.Style, name string) core.Node {
+		return core.View{Style: core.Style{AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
+			core.Image{Source: core.Src(widePhoto), Style: sq.Merge(s), StyleFunc: ink}, imageNote(cx, name, false)}}
 	}
 	return card(cx, cardProps{icon: iconStyles, title: "Corners and borders", subtitle: "Radii per corner, borders on the image"},
 		core.View{Style: core.Style{Direction: core.Row, JustifyContent: core.JustifySpaceBetween}, Children: []core.Node{
-			item(core.Style{CornerRadius: 44}, "Circle"),
-			item(core.Style{CornerRadius: 18, BorderWidth: 2, BorderColor: colors.accent}, "Border"),
-			item(core.Style{CornerRadii: core.Corners{TopLeft: 40, BottomRight: 40}}, "Two corners"),
+			item(core.Style{CornerRadius: 44}, frameInk(cx), "Circle"),
+			item(core.Style{CornerRadius: 18, BorderWidth: 2}, func() core.Style { return frameInk(cx)().Merge(core.Style{BorderColor: colors.accent()}) }, "Border"),
+			item(core.Style{CornerRadii: core.Corners{TopLeft: 40, BottomRight: 40}}, frameInk(cx), "Two corners"),
 		}})
 }
 
 func assetsCard(cx *core.Scope) core.Node {
 	colors := colorsOf(cx)
-	tile := func(name string, tint core.Color) core.Node {
-		return imageTile(cx, name, false, 0, core.Image{Source: logoSource(), Style: core.Style{TintColor: tint, Width: core.Pt(56), Height: core.Pt(56)}})
+	tile := func(name string, tint func() core.Color) core.Node {
+		var ink func() core.Style
+		if tint != nil {
+			ink = func() core.Style { return core.Style{TintColor: tint()} }
+		}
+		return imageTile(cx, name, false, 0, core.Image{Source: logoSource(), Style: core.Style{Width: core.Pt(56), Height: core.Pt(56)}, StyleFunc: ink})
 	}
 	return card(cx, cardProps{icon: iconStar, title: "Embedded images and tint", subtitle: "logo.png from go:embed, tinted natively"},
 		core.View{Style: core.Style{Direction: core.Row, Gap: 12}, Children: []core.Node{
-			tile("Original", 0), tile("Accent", colors.accent), tile("Info", colors.info), tile("Danger", colors.danger),
+			tile("Original", nil), tile("Accent", colors.accent), tile("Info", colors.info), tile("Danger", colors.danger),
 		}})
 }
 
@@ -117,7 +129,9 @@ func svgCard(cx *core.Scope) core.Node {
 	var sizes []core.Node
 	for _, s := range []core.Points{18, 36, 72} {
 		sizes = append(sizes, imageTile(cx, fmt.Sprintf("%.0f pt", s), false, 96, core.Image{Source: star, TestID: fmt.Sprintf("svg-star-%.0f", s),
-			Style: core.Style{Width: core.Pt(s), Height: core.Pt(s), TintColor: colors.accent}}))
+			StyleFunc: func() core.Style {
+				return core.Style{Width: core.Pt(s), Height: core.Pt(s), TintColor: colors.accent()}
+			}}))
 	}
 	sizes = append(sizes, imageTile(cx, "As drawn", false, 96, core.Image{Source: star, TestID: "svg-star-plain", Style: core.Style{Width: core.Pt(36), Height: core.Pt(36)}}))
 	cell := func(child core.Node, n string, isCode bool) core.Node {
@@ -126,9 +140,9 @@ func svgCard(cx *core.Scope) core.Node {
 	return card(cx, cardProps{icon: iconStar, title: "SVG images", subtitle: "star.svg, mark.svg and a remote SVG, sharp at every size"},
 		core.View{Style: core.Style{Direction: core.Row, Gap: 12}, Children: sizes},
 		core.View{Style: core.Style{Direction: core.Row, Gap: 12}, Children: []core.Node{
-			cell(core.Image{Source: mark, ResizeMode: core.Contain, TestID: "svg-mark-contain", Style: imageFrame(cx, core.Style{Height: core.Pt(96)})}, "Contain", true),
-			cell(core.Image{Source: mark, ResizeMode: core.Cover, TestID: "svg-mark-cover", Style: imageFrame(cx, core.Style{Height: core.Pt(96)})}, "Cover", true),
-			cell(core.Image{Source: core.Src(remoteSVG), ResizeMode: core.Contain, TestID: "svg-remote", Style: imageFrame(cx, core.Style{Height: core.Pt(96)})}, "Remote", false),
+			cell(core.Image{Source: mark, ResizeMode: core.Contain, TestID: "svg-mark-contain", Style: imageFrame(cx, core.Style{Height: core.Pt(96)}), StyleFunc: frameInk(cx)}, "Contain", true),
+			cell(core.Image{Source: mark, ResizeMode: core.Cover, TestID: "svg-mark-cover", Style: imageFrame(cx, core.Style{Height: core.Pt(96)}), StyleFunc: frameInk(cx)}, "Cover", true),
+			cell(core.Image{Source: core.Src(remoteSVG), ResizeMode: core.Contain, TestID: "svg-remote", Style: imageFrame(cx, core.Style{Height: core.Pt(96)}), StyleFunc: frameInk(cx)}, "Remote", false),
 		}},
 	)
 }
@@ -155,7 +169,7 @@ func placeholders(cx *core.Scope) core.Node {
 			// A new size per reload: a URL not in the cache yet. A
 			// FadeDuration of 0 is the platform's; a nanosecond is none.
 			core.Image{SourceFunc: func() core.ImageSource { return core.Src(photoURL(f.id, 600+seed.Get(), 600+seed.Get())) },
-				Placeholder: logoSource(), FadeDuration: ms(f.ms) + 1, ResizeMode: core.Cover, Style: imageFrame(cx, core.Style{Height: core.Pt(100)})},
+				Placeholder: logoSource(), FadeDuration: ms(f.ms) + 1, ResizeMode: core.Cover, Style: imageFrame(cx, core.Style{Height: core.Pt(100)}), StyleFunc: frameInk(cx)},
 			imageNote(cx, fmt.Sprintf("%d ms", f.ms), false),
 		}})
 	}
@@ -174,7 +188,7 @@ func blurCard(cx *core.Scope) core.Node {
 			n = fmt.Sprintf("%.0f pt", r)
 		}
 		cells = append(cells, core.View{Style: core.Style{FlexGrow: 1, FlexBasis: core.Pt(0), Gap: 8}, Children: []core.Node{
-			core.Image{Source: core.Src(widePhoto), BlurRadius: r, Style: imageFrame(cx, core.Style{Height: core.Pt(76)})}, imageNote(cx, n, false),
+			core.Image{Source: core.Src(widePhoto), BlurRadius: r, Style: imageFrame(cx, core.Style{Height: core.Pt(76)}), StyleFunc: frameInk(cx)}, imageNote(cx, n, false),
 		}})
 	}
 	return card(cx, cardProps{icon: iconSpark, title: "Blur radius", subtitle: "BlurRadius, applied while decoding"},
@@ -231,7 +245,7 @@ func imageInfo(cx *core.Scope) core.Node {
 			return imageNote(cx, "Prefetch, then show: no download, no progress", false)
 		},
 			Then: func(*core.Scope) core.Node {
-				return appear(0, false, core.Image{Source: core.Src(big), Style: imageFrame(cx, core.Style{Height: core.Pt(170)}),
+				return appear(0, false, core.Image{Source: core.Src(big), Style: imageFrame(cx, core.Style{Height: core.Pt(170)}), StyleFunc: frameInk(cx),
 					OnLoadStart: func() { status.Set("loading") },
 					OnProgress: func(loaded, total int64) {
 						progress.Set(float64(loaded) / float64(max(1, total)))
@@ -256,7 +270,7 @@ func imageEvents(cx *core.Scope) core.Node {
 	thumb := imageFrame(cx, core.Style{Width: core.Pt(96), Height: core.Pt(64)})
 	return card(cx, cardProps{icon: iconBell, title: "Events", subtitle: "Load start, load, error, load end"},
 		core.View{Style: core.Style{Direction: core.Row, Gap: 12, AlignItems: core.AlignCenter}, Children: []core.Node{
-			core.Image{Source: core.Src(photoURL(1084, 600, 400)), Style: thumb,
+			core.Image{Source: core.Src(photoURL(1084, 600, 400)), Style: thumb, StyleFunc: frameInk(cx),
 				OnLoadStart: func() { log("OnLoadStart") },
 				OnLoad:      func(px core.Size) { log("OnLoad"); loaded.Set(fmt.Sprintf("%.0f×%.0f", px.Width, px.Height)) },
 				OnError:     func(err error) { loaded.Set(err.Error()) },
@@ -266,15 +280,20 @@ func imageEvents(cx *core.Scope) core.Node {
 				textf(func() string { return "Loaded, " + loaded.Get() + " px" }, 13, regular, colors.up),
 			}},
 		}},
-		core.View{Style: core.Style{Direction: core.Row, Gap: 12, AlignItems: core.AlignCenter, Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.line}, Padding: core.Edges{Top: 12}}, Children: []core.Node{
-			core.View{Style: thumb.Merge(core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, BorderColor: alpha(colors.danger, 0.4)}), Children: []core.Node{
+		core.View{StyleFunc: func() core.Style {
+			return core.Style{Direction: core.Row, Gap: 12, AlignItems: core.AlignCenter, Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.line()}, Padding: core.Edges{Top: 12}}
+		}, Children: []core.Node{
+			core.View{StyleFunc: func() core.Style {
+				return thumb.Merge(frameInk(cx)()).Merge(core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, BorderColor: alpha(colors.danger(), 0.4)})
+			}, Children: []core.Node{
 				core.Image{Source: core.Src("https://example.invalid/missing.png"), OnError: func(err error) { failed.Set(err.Error()) },
-					Style: thumb.Merge(core.Style{Position: core.Absolute, Left: core.Pt(-1), Top: core.Pt(-1), BorderWidth: 0, Background: transparent})},
+					Style:     thumb.Merge(core.Style{Position: core.Absolute, Left: core.Pt(-1), Top: core.Pt(-1), BorderWidth: 0, Background: transparent}),
+					StyleFunc: func() core.Style { return core.Style{BorderColor: colors.border()} }},
 				text("×", 20, regular, colors.danger),
 			}},
 			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 4}, Children: []core.Node{
 				text("example.invalid", 15, regular, colors.text),
-				core.Text{ContentFunc: failed.Get, MaxLines: 3, Style: core.Style{FontSize: 13, Color: colors.danger}},
+				core.Text{ContentFunc: failed.Get, MaxLines: 3, Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.danger)},
 			}},
 		}},
 		core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, Gap: 8, AlignItems: core.AlignCenter}, Children: []core.Node{core.Dynamic(func(*core.Scope) core.Node {

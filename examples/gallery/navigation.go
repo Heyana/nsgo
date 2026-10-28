@@ -28,9 +28,9 @@ func insetsRow(cx *core.Scope) core.Node {
 // safe area is.
 func navPage(cx *core.Scope, intro string, children ...core.Node) core.Node {
 	colors := colorsOf(cx)
-	return core.Scroll{Style: core.Style{FlexGrow: 1, Background: colors.background}, Children: []core.Node{
+	return core.Scroll{Style: core.Style{FlexGrow: 1}, StyleFunc: filled(colors.background), Children: []core.Node{
 		core.View{Style: core.Style{Padding: core.Edges{Top: 16, Right: 16, Bottom: 40, Left: 16}, Gap: 16}, Children: []core.Node{
-			appear(0, false, core.Text{Content: intro, Style: core.Style{FontSize: 15, LineHeight: 21, Color: colors.muted, Padding: core.Symmetric(0, 4)}}),
+			appear(0, false, core.Text{Content: intro, Style: core.Style{FontSize: 15, LineHeight: 21, Padding: core.Symmetric(0, 4)}, StyleFunc: colored(colors.muted)}),
 			appear(1, false, section(cx, "Safe area", "Insets", insetsRow(cx))),
 			appear(2, false, core.View{Style: core.Style{Gap: 16}, Children: children}),
 		}},
@@ -43,10 +43,10 @@ func largeTitlePage(cx *core.Scope) base.NavPage {
 	for i := 1; i <= 20; i++ {
 		s := core.Style{Height: core.Pt(48), Direction: core.Row, AlignItems: core.AlignCenter, Padding: core.Symmetric(0, 10)}
 		if i > 1 {
-			s.Borders, s.BorderColors = core.Edges{Top: 1}, core.EdgeColors{Top: colors.line}
+			s.Borders = core.Edges{Top: 1}
 		}
-		rows = append(rows, core.View{Style: s, Children: []core.Node{
-			core.Text{Content: fmt.Sprintf("Row %d", i), Style: core.Style{FlexGrow: 1, FontSize: 15, Color: colors.text}},
+		rows = append(rows, core.View{Style: s, StyleFunc: func() core.Style { return core.Style{BorderColors: core.EdgeColors{Top: colors.line()}} }, Children: []core.Node{
+			core.Text{Content: fmt.Sprintf("Row %d", i), Style: core.Style{FlexGrow: 1, FontSize: 15}, StyleFunc: colored(colors.text)},
 			text(fmt.Sprintf("%d pt", i*48), 13, regular, colors.faint),
 		}})
 	}
@@ -59,21 +59,26 @@ func largeTitlePage(cx *core.Scope) base.NavPage {
 func transparentPage(cx *core.Scope) base.NavPage {
 	colors := colorsOf(cx)
 	tints := tintsOf(cx)
-	isDark := cx.Dark()
-	bg := core.RGB(0xf8ece3)
-	if isDark {
-		bg = core.RGB(0x21160f)
+	bg := func() core.Color {
+		if cx.Dark() {
+			return core.RGB(0x21160f)
+		}
+		return core.RGB(0xf8ece3)
 	}
-	return base.NavPage{Title: "Transparent", HeaderTransparent: true, HeaderStyle: core.Style{TintColor: colors.text, Color: colors.text},
+	return base.NavPage{Title: "Transparent", HeaderTransparent: true, HeaderStyleFunc: func() core.Style { return core.Style{TintColor: colors.text(), Color: colors.text()} },
 		Header: pageHeader(cx, pageHeaderProps{title: "Transparent", transparent: true, tint: colors.text}),
-		Children: []core.Node{core.View{Style: core.Style{FlexGrow: 1, Background: bg, Overflow: core.Hidden, Padding: core.Edges{Top: 16, Right: 16, Bottom: 56, Left: 16},
-			JustifyContent: core.JustifyEnd, Gap: 16}, Children: []core.Node{
-			core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(-90), Right: core.Pt(-70), Width: core.Pt(320), Height: core.Pt(320), CornerRadius: 160, Background: tints.accent}},
-			core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(150), Left: core.Pt(-110), Width: core.Pt(260), Height: core.Pt(260), CornerRadius: 130, Background: tints.info}},
+		Children: []core.Node{core.View{Style: core.Style{FlexGrow: 1, Overflow: core.Hidden, Padding: core.Edges{Top: 16, Right: 16, Bottom: 56, Left: 16},
+			JustifyContent: core.JustifyEnd, Gap: 16}, StyleFunc: filled(bg), Children: []core.Node{
+			core.View{StyleFunc: func() core.Style {
+				return core.Style{Position: core.Absolute, Top: core.Pt(-90), Right: core.Pt(-70), Width: core.Pt(320), Height: core.Pt(320), CornerRadius: 160, Background: tints.accent()}
+			}},
+			core.View{StyleFunc: func() core.Style {
+				return core.Style{Position: core.Absolute, Top: core.Pt(150), Left: core.Pt(-110), Width: core.Pt(260), Height: core.Pt(260), CornerRadius: 130, Background: tints.info()}
+			}},
 			appear(0, false, core.View{Style: core.Style{Gap: 12}, Children: []core.Node{
 				core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{badge(cx, "HeaderTransparent", toneAccent)}},
-				core.Text{Content: "Content under the header", Style: core.Style{FontSize: 30, FontWeight: bold, LetterSpacing: -0.5, Color: colors.text}},
-				core.Text{Content: "The circles start at the top of the screen; the bar and its back button float over them.", Style: core.Style{FontSize: 15, LineHeight: 21, Color: colors.muted}},
+				core.Text{Content: "Content under the header", Style: core.Style{FontSize: 30, FontWeight: bold, LetterSpacing: -0.5}, StyleFunc: colored(colors.text)},
+				core.Text{Content: "The circles start at the top of the screen; the bar and its back button float over them.", Style: core.Style{FontSize: 15, LineHeight: 21}, StyleFunc: colored(colors.muted)},
 			}}),
 			appear(1, false, inset(cx, insetProps{}, insetsRow(cx))),
 		}}}}
@@ -86,11 +91,11 @@ func customHeaderPage(cx *core.Scope) base.NavPage {
 	// the app's (desktops, the web) each mount their own.
 	left := func() core.Node {
 		return core.Text{Content: "Close", OnPress: func(core.PressEvent) { shell.nav.Pop(1) }, Role: core.RoleButton,
-			Style: core.Style{Color: colors.onAccent, FontSize: 17, FontWeight: medium}}
+			Style: core.Style{FontSize: 17, FontWeight: medium}, StyleFunc: colored(colors.onAccent)}
 	}
 	center := func() core.Node {
 		return hrow(7,
-			core.View{Style: core.Style{Width: core.Pt(10), Height: core.Pt(10), CornerRadius: 5, Background: colors.onAccent}},
+			core.View{Style: core.Style{Width: core.Pt(10), Height: core.Pt(10), CornerRadius: 5}, StyleFunc: filled(colors.onAccent)},
 			text("Custom title", 17, bold, colors.onAccent))
 	}
 	right := func() core.Node {
@@ -100,7 +105,9 @@ func customHeaderPage(cx *core.Scope) base.NavPage {
 				textf(func() string { return itoa(likes.Get()) }, 17, semibold, colors.onAccent),
 			}}
 	}
-	return base.NavPage{Title: "Custom", HeaderStyle: core.Style{TintColor: colors.onAccent, Background: colors.accentFill, Color: colors.onAccent},
+	return base.NavPage{Title: "Custom", HeaderStyleFunc: func() core.Style {
+		return core.Style{TintColor: colors.onAccent(), Background: colors.accentFill(), Color: colors.onAccent()}
+	},
 		HeaderBackHidden: true, HeaderLeft: left(), HeaderTitle: center(), HeaderRight: right(),
 		Header: pageHeader(cx, pageHeaderProps{title: "Custom", background: colors.accentFill, left: left(), center: center(), right: right()}),
 		Children: []core.Node{navPage(cx, "The header's items are views: the star on the right counts presses and updates the header.",
@@ -144,7 +151,7 @@ func unsavedPage(cx *core.Scope) base.NavPage {
 			shell.nav.Pop(1)
 		}
 	}
-	s := base.NavPage{Title: "Unsaved changes", HeaderStyle: headerStyle(cx), NoPopOnBack: true, OnBackPress: back,
+	s := base.NavPage{Title: "Unsaved changes", HeaderStyleFunc: headerStyle(cx), NoPopOnBack: true, OnBackPress: back,
 		Header: pageHeader(cx, pageHeaderProps{title: "Unsaved changes", onBack: back}),
 		Children: []core.Node{navPage(cx, hint(cx,
 			"Type something, then go back (header button, swipe, Android back): the screen asks first.",
@@ -168,13 +175,13 @@ func unsavedPage(cx *core.Scope) base.NavPage {
 
 func headerlessPage(cx *core.Scope) base.NavPage {
 	colors := colorsOf(cx)
-	return base.NavPage{HeaderHidden: true, Children: []core.Node{core.View{Style: core.Style{PaddingEnv: core.EnvAll(core.EnvSafeArea), FlexGrow: 1, Background: colors.background}, Children: []core.Node{
+	return base.NavPage{HeaderHidden: true, Children: []core.Node{core.View{Style: core.Style{PaddingEnv: core.EnvAll(core.EnvSafeArea), FlexGrow: 1}, StyleFunc: filled(colors.background), Children: []core.Node{
 		core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(16), Gap: 16}, Children: []core.Node{
 			appear(0, false, core.View{Style: core.Style{Gap: 8, Padding: core.Edges{Top: 12, Right: 4, Left: 4}}, Children: []core.Node{
 				core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{badge(cx, "HeaderHidden", toneAccent)}},
-				core.Text{Content: "No header", Style: core.Style{FontSize: 30, FontWeight: bold, LetterSpacing: -0.5, Color: colors.text}},
+				core.Text{Content: "No header", Style: core.Style{FontSize: 30, FontWeight: bold, LetterSpacing: -0.5}, StyleFunc: colored(colors.text)},
 				core.Text{Content: "The screen owns the whole surface; padding of EnvSafeArea keeps it clear of the status bar and the home indicator.",
-					Style: core.Style{FontSize: 15, LineHeight: 21, Color: colors.muted}},
+					Style: core.Style{FontSize: 15, LineHeight: 21}, StyleFunc: colored(colors.muted)},
 			}}),
 			appear(1, false, section(cx, "Safe area", "PaddingEnv: EnvSafeArea", insetsRow(cx))),
 			spacer(),
@@ -190,16 +197,22 @@ func deepPage(depth int) func(cx *core.Scope) base.NavPage {
 		var levels []core.Node
 		for level := 1; level <= depth; level++ {
 			on := level == depth
-			s := core.Style{Width: core.Pt(32), Height: core.Pt(32), CornerRadius: 8, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}
 			fg := colors.muted
 			if on {
-				s = fin.accent.over(s)
-				s.Background, fg = colors.accentFill, colors.onAccent
-			} else {
-				s = fin.raised.over(s)
-				s.BorderWidth, s.BorderColor, s.Background = 1, colors.border, colors.raised
+				fg = colors.onAccent
 			}
-			levels = append(levels, core.View{Style: s, Children: []core.Node{text(itoa(level), 13, semibold, fg)}})
+			face := func() core.Style {
+				s := core.Style{Width: core.Pt(32), Height: core.Pt(32), CornerRadius: 8, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}
+				if on {
+					s = fin.accent().over(s)
+					s.Background = colors.accentFill()
+				} else {
+					s = fin.raised().over(s)
+					s.BorderWidth, s.BorderColor, s.Background = 1, colors.border(), colors.raised()
+				}
+				return s
+			}
+			levels = append(levels, core.View{StyleFunc: face, Children: []core.Node{text(itoa(level), 13, semibold, fg)}})
 		}
 		title := fmt.Sprintf("Level %d", depth)
 		return screen(cx, title, nil, navPage(cx, "Every push is a native screen; PopToRoot unwinds them all at once.",
@@ -222,12 +235,12 @@ type modalKind struct {
 // button.
 func modalBody(cx *core.Scope, title, noteText func() string, body func() string, onClose func()) core.Node {
 	colors := colorsOf(cx)
-	return core.View{Style: core.Style{PaddingEnv: core.EnvAll(core.EnvSafeArea), FlexGrow: 1, Background: colors.background}, Children: []core.Node{
+	return core.View{Style: core.Style{PaddingEnv: core.EnvAll(core.EnvSafeArea), FlexGrow: 1}, StyleFunc: filled(colors.background), Children: []core.Node{
 		core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(16), Gap: 16}, Children: []core.Node{
 			core.View{Style: core.Style{Gap: 8, Padding: core.Edges{Top: 8, Right: 4, Left: 4}}, Children: []core.Node{
 				core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{badgef(cx, noteText, toneAccent, false)}},
-				core.Text{ContentFunc: title, Style: core.Style{FontSize: 28, FontWeight: bold, LetterSpacing: -0.5, Color: colors.text}},
-				core.Text{ContentFunc: body, Style: core.Style{FontSize: 15, LineHeight: 21, Color: colors.muted}},
+				core.Text{ContentFunc: title, Style: core.Style{FontSize: 28, FontWeight: bold, LetterSpacing: -0.5}, StyleFunc: colored(colors.text)},
+				core.Text{ContentFunc: body, Style: core.Style{FontSize: 15, LineHeight: 21}, StyleFunc: colored(colors.muted)},
 			}},
 			section(cx, "Safe area", "the modal's", insetsRow(cx)),
 			spacer(),
@@ -312,8 +325,10 @@ func navigationDemo(cx *core.Scope) core.Node {
 		var tiles []core.Node
 		for _, m := range modals {
 			tiles = append(tiles, press(pressProps{onPress: func() { open.Set(m.key) }, label: m.title, style: core.Style{Width: core.Pct(48.5)}},
-				core.View{Style: fin.inset.over(core.Style{MinHeight: core.Pt(100), Padding: core.All(12), Gap: 12, CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous,
-					Background: colors.inset, BorderWidth: 1, BorderColor: colors.line}), Children: []core.Node{
+				core.View{StyleFunc: func() core.Style {
+					return fin.inset().over(core.Style{MinHeight: core.Pt(100), Padding: core.All(12), Gap: 12, CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous,
+						Background: colors.inset(), BorderWidth: 1, BorderColor: colors.line()})
+				}, Children: []core.Node{
 					iconTile(cx, m.icon, 32),
 					core.View{Style: core.Style{Gap: 2}, Children: []core.Node{text(m.title, 15, medium, colors.text), text(m.note, 13, regular, colors.faint)}},
 				}}))
@@ -393,7 +408,7 @@ func navigationDemo(cx *core.Scope) core.Node {
 				Children: []core.Node{core.View{Style: core.Style{AlignSelf: core.AlignStretch, MaxWidth: core.Pt(480), Animated: &core.AnimatedStyle{Opacity: pop, Scale: lerp(pop, 0.9, 1)}},
 					Children: []core.Node{card(cx, cardProps{icon: iconBell, title: "A dialog", subtitle: "Animation: ModalFade"},
 						core.Text{Content: "A dialog owns no look: what is behind it shows through, and the card springs in on the platform.",
-							Style: core.Style{FontSize: 15, LineHeight: 21, Color: colors.muted}},
+							Style: core.Style{FontSize: 15, LineHeight: 21}, StyleFunc: colored(colors.muted)},
 						core.View{Style: core.Style{Direction: core.Row, Gap: 8}, Children: []core.Node{
 							button(buttonProps{label: "Cancel", variant: secondary, flex: 1}, closeModal),
 							button(buttonProps{label: "OK", flex: 1}, closeModal),

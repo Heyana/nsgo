@@ -66,7 +66,6 @@ var dialPresets = []struct {
 // platform's main thread.
 func dial(cx *core.Scope) core.Node {
 	colors := colorsOf(cx)
-	isDark := cx.Dark()
 	preset := core.NewSignal(cx, "cruise")
 	load := func() float64 {
 		for _, p := range dialPresets {
@@ -93,12 +92,12 @@ func dial(cx *core.Scope) core.Node {
 		}
 		return toneUp
 	}
-	c := *colors
-	shade := paper(0.3)
-	if isDark {
-		shade = black(0.6)
-	}
 	draw := func(d *core.Drawing, size core.Size) {
+		c := colors.now()
+		shade := paper(0.3)
+		if cx.Dark() {
+			shade = black(0.6)
+		}
 		w, h := float32(size.Width), float32(size.Height)
 		cxp, cy := w/2, h*0.54
 		r := min(w/2-8, h*0.5) - 6
@@ -188,8 +187,8 @@ func areaChart(cx *core.Scope) core.Node {
 		}
 		return int(math.Round(float64(sum) / float64(len(data.Get()))))
 	}
-	c := *colors
 	draw := func(d *core.Drawing, size core.Size) {
+		c := colors.now()
 		values := data.Get()
 		w0, h0 := float32(size.Width), float32(size.Height)
 		f := sans(11, regular)
@@ -306,8 +305,8 @@ var ridges = func() [][]float64 {
 func ridgeline(cx *core.Scope) core.Node {
 	colors := colorsOf(cx)
 	sweep, replay := reveal(cx, 1400*time.Millisecond)
-	c := *colors
 	draw := func(d *core.Drawing, size core.Size) {
+		c := colors.now()
 		width, height := float32(size.Width), float32(size.Height)
 		f := sans(11, regular)
 		left := d.MeasureText("Mon", f) + 10
@@ -355,10 +354,11 @@ func ridgeline(cx *core.Scope) core.Node {
 	)
 }
 
-// levels are the dot levels, from none to full.
+// levels are the dot levels, from none to full, read where colorsOf's
+// colors are.
 func levels(cx *core.Scope) []core.Color {
-	colors := colorsOf(cx)
-	return []core.Color{colors.raised, alpha(colors.accent, 0.22), alpha(colors.accent, 0.45), alpha(colors.accent, 0.7), colors.accent}
+	c := colorsOf(cx).now()
+	return []core.Color{c.raised, alpha(c.accent, 0.22), alpha(c.accent, 0.45), alpha(c.accent, 0.7), c.accent}
 }
 
 // dotMatrix is uptime per hour block, a pulse on the newest dot (a loop
@@ -368,8 +368,8 @@ func dotMatrix(cx *core.Scope) core.Node {
 	pulse := core.NewAnimatedValue(cx, 0)
 	run := cx.StartAnimation(core.Loop(core.Timing(pulse, 1, core.TimingConfig{Duration: ms(1400), Easing: ease(core.EasingQuad, core.EaseModeOut)}), 0), nil)
 	cx.Cleanup(run.Stop)
-	c, lv := *colors, levels(cx)
 	draw := func(d *core.Drawing, size core.Size) {
+		c, lv := colors.now(), levels(cx)
 		width, height := float32(size.Width), float32(size.Height)
 		const rows, gap = 7, 12.5
 		cols := int(width / gap)
@@ -393,14 +393,15 @@ func dotMatrix(cx *core.Scope) core.Node {
 			BeginPath().Arc(lastX, lastY, 4, 0, tau, false).Bind(core.ArgR, lerp(pulse, 4, 11)).Stroke().Restore()
 	}
 	var swatches []core.Node
-	for _, l := range lv {
-		swatches = append(swatches, core.View{Style: core.Style{Width: core.Pt(9), Height: core.Pt(9), CornerRadius: 2.5, Background: l}})
+	for i := range len(levels(cx)) {
+		swatches = append(swatches, core.View{Style: core.Style{Width: core.Pt(9), Height: core.Pt(9), CornerRadius: 2.5},
+			StyleFunc: filled(func() core.Color { return levels(cx)[i] })})
 	}
 	return card(cx, cardProps{icon: iconBell, title: "Beacon uptime", subtitle: "Dot matrix, one column a day"},
 		figure(cx, label("99.94"), "%", label("3 incidents"), toneDanger),
 		core.Canvas{Style: core.Style{Height: core.Pt(96)}, Draw: draw, Label: "Uptime matrix"},
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6}, Children: append(append([]core.Node{text("Less", 13, regular, colors.muted)}, swatches...),
-			core.Text{Content: "More", Style: core.Style{FlexGrow: 1, FontSize: 13, Color: colors.muted}}, legend(cx, colors.danger, "Incident", nil))},
+			core.Text{Content: "More", Style: core.Style{FlexGrow: 1, FontSize: 13}, StyleFunc: colored(colors.muted)}, legend(cx, colors.danger, "Incident", nil))},
 	)
 }
 
@@ -414,8 +415,8 @@ var routesLatency = []struct {
 func dumbbell(cx *core.Scope) core.Node {
 	colors := colorsOf(cx)
 	t, replay := reveal(cx, 1500*time.Millisecond)
-	c := *colors
 	draw := func(d *core.Drawing, size core.Size) {
+		c := colors.now()
 		width, height := float32(size.Width), float32(size.Height)
 		f13, f11 := sans(13, regular), sans(11, regular)
 		var left float32
@@ -469,8 +470,8 @@ func clock(cx *core.Scope) core.Node {
 	seconds := core.NewAnimatedValue(cx, 0)
 	run := cx.StartAnimation(core.Loop(core.Timing(seconds, 60, core.TimingConfig{Duration: time.Minute}), 0), nil)
 	cx.Cleanup(run.Stop)
-	c := *colors
 	draw := func(d *core.Drawing, size core.Size) {
+		c := colors.now()
 		r := float32(size.Width) / 2
 		d.Translate(r, r)
 		d.SetFillColor(c.surface).SetStrokeColor(c.border).SetLineWidth(1.5).BeginPath().Arc(0, 0, r-2, 0, tau, false).Fill().Stroke()
@@ -518,11 +519,13 @@ func paths(cx *core.Scope) core.Node {
 	var tiles []core.Node
 	for _, g := range pathGlyphs {
 		p := core.MustParsePath(g.d)
-		c := g.tone.color(cx)
 		tiles = append(tiles, core.View{Style: core.Style{AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
-			core.View{Style: fin.raised.over(core.Style{Width: core.Pt(60), Height: core.Pt(60), CornerRadius: 18, BorderCurve: core.BorderCurveContinuous, Background: colors.raised,
-				BorderWidth: 1, BorderColor: colors.border, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}), Children: []core.Node{
+			core.View{StyleFunc: func() core.Style {
+				return fin.raised().over(core.Style{Width: core.Pt(60), Height: core.Pt(60), CornerRadius: 18, BorderCurve: core.BorderCurveContinuous, Background: colors.raised(),
+					BorderWidth: 1, BorderColor: colors.border(), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter})
+			}, Children: []core.Node{
 				core.Canvas{Style: core.Style{Width: core.Pt(30), Height: core.Pt(30)}, Label: g.name, Draw: func(d *core.Drawing, _ core.Size) {
+					c := g.tone.color(cx)
 					d.Scale(30.0/24, 30.0/24)
 					if g.stroke {
 						d.SetStrokeColor(c).SetLineWidth(2.5).SetLineCap(core.CapRound).SetLineJoin(core.JoinRound).StrokePath(p)
@@ -542,14 +545,13 @@ func paths(cx *core.Scope) core.Node {
 // gradients.
 func compositing(cx *core.Scope) core.Node {
 	colors := colorsOf(cx)
-	isDark := cx.Dark()
-	c := *colors
-	shade := paper(0.25)
-	if isDark {
-		shade = black(0.7)
-	}
 	img := core.ImageSource{Data: logoPNG}
 	draw := func(d *core.Drawing, size core.Size) {
+		c := colors.now()
+		shade := paper(0.25)
+		if cx.Dark() {
+			shade = black(0.7)
+		}
 		width, height := float32(size.Width), float32(size.Height)
 		cy := height / 2
 		// An image clipped to a circle, with a ring.
@@ -580,8 +582,8 @@ func compositing(cx *core.Scope) core.Node {
 func sketch(cx *core.Scope) core.Node {
 	colors := colorsOf(cx)
 	strokes := core.NewSignalFunc(cx, [][]core.Point(nil), func(a, b [][]core.Point) bool { return false })
-	c := *colors
 	draw := func(d *core.Drawing, size core.Size) {
+		c := colors.now()
 		width, height := float32(size.Width), float32(size.Height)
 		// A dot grid to draw on.
 		d.SetFillColor(c.border)
@@ -653,7 +655,7 @@ func hitTests(cx *core.Scope) core.Node {
 			if selected.Get() == i {
 				fillC = accentC
 			}
-			d.SetFillColor(fillC).FillPath(shapes[i], core.NonZero)
+			d.SetFillColor(fillC()).FillPath(shapes[i], core.NonZero)
 			d.Node(core.CanvasNode{Bounds: core.Bounds{Origin: core.Point{X: core.Points(x), Y: core.Points(h - 12 - bh)}, Size: core.Size{Width: core.Points(slot * 0.7), Height: core.Points(bh)}},
 				Role: core.RoleButton, Label: fmt.Sprintf("Bar %d, %.0f%%", i+1, v*100), TestID: fmt.Sprintf("bar-%d", i+1), Selected: selected.Get() == i})
 		}

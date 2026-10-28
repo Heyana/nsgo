@@ -33,13 +33,22 @@ const bleed core.Points = 8
 
 // controlRow is a control's row: the control and its label, the whole row
 // pressable.
+// Its hairline's color is rowLine's.
 func (z controlSizes) controlRow(cx *core.Scope, first bool) core.Style {
-	colors := colorsOf(cx)
 	s := core.Style{MinHeight: core.Pt(z.row), Direction: core.Row, AlignItems: core.AlignCenter, Gap: z.gap, Padding: core.Symmetric(z.padding, 0)}
 	if !first {
-		s.Borders, s.BorderColors = core.Edges{Top: 1}, core.EdgeColors{Top: colors.line}
+		s.Borders = core.Edges{Top: 1}
 	}
 	return s
+}
+
+// rowLine is the color of a control row's hairline, for its StyleFunc;
+// the first row has none.
+func rowLine(cx *core.Scope, first bool) func() core.Style {
+	if first {
+		return nil
+	}
+	return func() core.Style { return core.Style{BorderColors: core.EdgeColors{Top: colorsOf(cx).line()}} }
 }
 
 // hoverRow is a row that takes the pointer's hover: its fill reaching
@@ -56,12 +65,20 @@ func (z controlSizes) hoverRow(cx *core.Scope, first bool, start core.Points, di
 	s.Padding = core.Edges{Left: bleed + start, Right: bleed, Top: top, Bottom: z.padding}
 	s.CornerRadius = bleed
 	s.Active = &core.Style{Opacity: core.Alpha(0.7)}
-	s.Focus = focusRing(cx, -2)
 	s.Disabled = &core.Style{Opacity: core.Alpha(0.4)}
-	if !disabled {
-		s.Hover = hovered(cx)
-	}
 	return s
+}
+
+// hoverPaint is a hover row's focus ring and hover fill, for its
+// StyleFunc.
+func hoverPaint(cx *core.Scope, disabled bool) func() core.Style {
+	return func() core.Style {
+		s := core.Style{Focus: focusRing(cx, -2)}
+		if !disabled {
+			s.Hover = hovered(cx)
+		}
+		return s
+	}
 }
 
 // divider is the hairline above a hover row that is not the first.
@@ -70,7 +87,7 @@ func divider(cx *core.Scope, show bool) core.Node {
 	if !show {
 		return core.Group{}
 	}
-	return core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(bleed), Right: core.Pt(bleed), Height: core.Pt(1), Background: colors.line}}
+	return core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(bleed), Right: core.Pt(bleed), Height: core.Pt(1)}, StyleFunc: filled(colors.line)}
 }
 
 // onFill is the fill of a box or ring that is on, and of one that is off.
@@ -78,9 +95,9 @@ func onFill(cx *core.Scope, on bool, s core.Style) core.Style {
 	colors := colorsOf(cx)
 	fin := finOf(cx)
 	if on {
-		s.Background, s.BorderColor, s.Shadows = colors.accentFill, colors.accentFill, fin.chip.shadows
+		s.Background, s.BorderColor, s.Shadows = colors.accentFill(), colors.accentFill(), fin.chip().shadows
 	} else {
-		s.Background, s.BorderColor, s.Shadows = colors.field, colors.fieldBorder, fin.field.shadows
+		s.Background, s.BorderColor, s.Shadows = colors.field(), colors.fieldBorder(), fin.field().shadows
 	}
 	return s
 }
@@ -108,7 +125,7 @@ func (z controlSizes) boxMark(cx *core.Scope, m func() mark) core.Node {
 		case markCheck:
 			return icon(iconCheck, z.check, colors.onAccent)
 		case markDash:
-			return core.View{Style: core.Style{Width: core.Pt(z.dash), Height: core.Pt(2), CornerRadius: 1, Background: colors.onAccent}}
+			return core.View{Style: core.Style{Width: core.Pt(z.dash), Height: core.Pt(2), CornerRadius: 1}, StyleFunc: filled(colors.onAccent)}
 		}
 		return core.Group{}
 	})
@@ -121,7 +138,7 @@ func (z controlSizes) ring(cx *core.Scope, on func() bool) core.Node {
 		return onFill(cx, on(), core.Style{Width: core.Pt(z.control), Height: core.Pt(z.control), CornerRadius: z.control / 2,
 			AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, BorderWidth: 1})
 	}, Children: []core.Node{core.Show{When: on, Then: func(*core.Scope) core.Node {
-		return core.View{Style: core.Style{Width: core.Pt(z.dot), Height: core.Pt(z.dot), CornerRadius: z.dot / 2, Background: colors.onAccent}}
+		return core.View{Style: core.Style{Width: core.Pt(z.dot), Height: core.Pt(z.dot), CornerRadius: z.dot / 2}, StyleFunc: filled(colors.onAccent)}
 	}}}}
 }
 
@@ -190,7 +207,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 				on.Set(v)
 				last.Set(fmt.Sprintf("%s: %s", label, onOff(v)))
 			},
-			Style: s, TrackStyle: look.track, ThumbStyleFunc: look.thumb,
+			Style: s, StyleFunc: hoverPaint(cx, false), TrackStyleFunc: look.track, ThumbStyleFunc: look.thumb,
 			Children: []core.Node{divider(cx, !first), z.labelled(cx, label, detail)}}
 	}
 
@@ -246,8 +263,8 @@ func controlsDemo(cx *core.Scope) core.Node {
 				shown.Set(names)
 				last.Set(fmt.Sprintf("Select all: %v", on))
 			},
-			Style: z.hoverRow(cx, true, 0, false), IndicatorStyleFunc: func() core.Style { return z.box(cx, boxMark()) }, Indicator: z.boxMark(cx, boxMark),
-			Children: []core.Node{core.Text{Content: "Select all", Style: core.Style{FlexGrow: 1, FontSize: z.label, FontWeight: semibold, Color: colors.text}}}}}
+			Style: z.hoverRow(cx, true, 0, false), StyleFunc: hoverPaint(cx, false), IndicatorStyleFunc: func() core.Style { return z.box(cx, boxMark()) }, Indicator: z.boxMark(cx, boxMark),
+			Children: []core.Node{core.Text{Content: "Select all", Style: core.Style{FlexGrow: 1, FontSize: z.label, FontWeight: semibold}, StyleFunc: colored(colors.text)}}}}
 		for _, k := range kinds {
 			m := func() mark {
 				if has(k.name) {
@@ -267,9 +284,9 @@ func controlsDemo(cx *core.Scope) core.Node {
 					last.Set(fmt.Sprintf("%s: %v", k.name, on))
 				},
 				// One level under "Select all": the boxes line up with its label.
-				Style: z.hoverRow(cx, false, z.control+z.gap, false), IndicatorStyleFunc: func() core.Style { return z.box(cx, m()) }, Indicator: z.boxMark(cx, m),
+				Style: z.hoverRow(cx, false, z.control+z.gap, false), StyleFunc: hoverPaint(cx, false), IndicatorStyleFunc: func() core.Style { return z.box(cx, m()) }, Indicator: z.boxMark(cx, m),
 				Children: []core.Node{divider(cx, true),
-					core.Text{Content: k.name, Style: core.Style{FlexGrow: 1, FontSize: z.label, Color: colors.text}},
+					core.Text{Content: k.name, Style: core.Style{FlexGrow: 1, FontSize: z.label}, StyleFunc: colored(colors.text)},
 					text(thousands(k.count), z.detail, regular, colors.faint)}})
 		}
 		total := func() int {
@@ -289,7 +306,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 					return "Nothing to show"
 				}
 				return fmt.Sprintf("Showing %s items", thousands(total()))
-			}, Style: core.Style{FontSize: 14, Color: colors.muted}},
+			}, Style: core.Style{FontSize: 14}, StyleFunc: colored(colors.muted)},
 		)
 	}
 
@@ -301,14 +318,14 @@ func controlsDemo(cx *core.Scope) core.Node {
 			on := func() bool { return chosen.Get() == p.name }
 			radios = append(radios, base.Radio{Checked: on, Disabled: func() bool { return p.disabled }, Label: p.name,
 				OnChange: func(bool) { chosen.Set(p.name); last.Set("Plan: " + p.name) },
-				Style:    z.hoverRow(cx, i == 0, 0, p.disabled),
+				Style:    z.hoverRow(cx, i == 0, 0, p.disabled), StyleFunc: hoverPaint(cx, p.disabled),
 				Children: []core.Node{divider(cx, i != 0), z.ring(cx, on), z.labelled(cx, p.name, func() string { return p.detail }),
 					core.Text{Content: p.price, StyleFunc: func() core.Style {
 						c := colors.muted
 						if on() {
 							c = colors.text
 						}
-						return core.Style{FontSize: z.label, Color: c}
+						return core.Style{FontSize: z.label, Color: c()}
 					}}}})
 		}
 		align := core.AlignStretch
@@ -348,8 +365,8 @@ func controlsDemo(cx *core.Scope) core.Node {
 						AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
 						Focus: focusRing(cx, -2), Disabled: &core.Style{Opacity: core.Alpha(0.4)}}
 					if selected() {
-						st = fin.pill.over(st)
-						st.BorderColor = fin.pill.border
+						st = fin.pill().over(st)
+						st.BorderColor = fin.pill().border
 					} else if !s.disabled {
 						st.Hover = hovered(cx)
 					}
@@ -360,12 +377,14 @@ func controlsDemo(cx *core.Scope) core.Node {
 					if selected() {
 						c = colors.text
 					}
-					return core.Style{FontSize: 13, FontWeight: medium, Color: c}
+					return core.Style{FontSize: 13, FontWeight: medium, Color: c()}
 				}}}})
 		}
 		return card(cx, cardProps{icon: iconControls, title: "Tabs", subtitle: "A section switcher: the app shows the selected one"},
-			base.Tabs{Label: "Sections", Style: core.Style{Height: core.Pt(z.tabs), Direction: core.Row, Gap: 2, Padding: core.All(3), CornerRadius: z.tabs / 2,
-				BorderWidth: 1, BorderColor: colors.border, Background: colors.inset, Shadows: fin.track.shadows}, Children: tabs},
+			base.Tabs{Label: "Sections", StyleFunc: func() core.Style {
+				return core.Style{Height: core.Pt(z.tabs), Direction: core.Row, Gap: 2, Padding: core.All(3), CornerRadius: z.tabs / 2,
+					BorderWidth: 1, BorderColor: colors.border(), Background: colors.inset(), Shadows: fin.track().shadows}
+			}, Children: tabs},
 			core.Dynamic(func(*core.Scope) core.Node {
 				var rows []core.Node
 				for _, s := range tabSections {
@@ -375,8 +394,8 @@ func controlsDemo(cx *core.Scope) core.Node {
 					for i, r := range s.rows {
 						st := z.controlRow(cx, i == 0)
 						st.MinHeight, st.Padding = core.Pt(z.line), core.Edges{}
-						rows = append(rows, core.View{Style: st, Children: []core.Node{
-							core.Text{Content: r[0], Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: z.label, Color: colors.text}},
+						rows = append(rows, core.View{Style: st, StyleFunc: rowLine(cx, i == 0), Children: []core.Node{
+							core.Text{Content: r[0], Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: z.label}, StyleFunc: colored(colors.text)},
 							text(r[1], z.label, regular, colors.muted),
 						}})
 					}
@@ -404,7 +423,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 					}
 					last.Set(label + ": " + state)
 				},
-				Style: z.hoverRow(cx, first, 0, false),
+				Style: z.hoverRow(cx, first, 0, false), StyleFunc: hoverPaint(cx, false),
 				Children: []core.Node{divider(cx, !first), z.labelled(cx, label, func() string { return detail }),
 					// A lane as wide as the chevron's stroke, so the chevron
 					// ends where the values below it end.
@@ -423,7 +442,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 		var used []core.Node
 		for _, u := range usage {
 			used = append(used, core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, MinHeight: core.Pt(z.line)}, Children: []core.Node{
-				core.Text{Content: u[0], Style: core.Style{FlexGrow: 1, FontSize: z.label, Color: colors.muted}},
+				core.Text{Content: u[0], Style: core.Style{FlexGrow: 1, FontSize: z.label}, StyleFunc: colored(colors.muted)},
 				text(u[1], z.label, regular, colors.muted),
 			}})
 		}
@@ -437,7 +456,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 				base.Collapsible{Open: advanced.Get,
 					Content: base.Switch{Checked: originals.Get, Label: "Keep originals",
 						OnChange: func(on bool) { originals.Set(on); last.Set("Keep originals: " + onOff(on)) },
-						Style:    keep, TrackStyle: look.track, ThumbStyleFunc: look.thumb,
+						Style:    keep, StyleFunc: hoverPaint(cx, false), TrackStyleFunc: look.track, ThumbStyleFunc: look.thumb,
 						Children: []core.Node{divider(cx, true), z.labelled(cx, "Keep originals", func() string {
 							if originals.Get() {
 								return "Edits are saved as copies"
@@ -490,10 +509,10 @@ func controlsDemo(cx *core.Scope) core.Node {
 			st := z.controlRow(cx, first)
 			st.Direction, st.AlignItems, st.Gap = core.ColumnReverse, core.AlignStretch, z.padding
 			return base.Progress{Value: func() float32 { return float32(value()) }, Indeterminate: func() bool { return indeterminate }, Label: label,
-				Style:      st,
-				TrackStyle: core.Style{Height: core.Pt(6), CornerRadius: 3, Overflow: core.Hidden, Background: colors.raised},
+				Style: st, StyleFunc: rowLine(cx, first),
+				TrackStyle: core.Style{Height: core.Pt(6), CornerRadius: 3, Overflow: core.Hidden}, TrackStyleFunc: filled(colors.raised),
 				IndicatorStyleFunc: func() core.Style {
-					s := core.Style{Height: core.Pt(6), CornerRadius: 3, Background: colors.accent}
+					s := core.Style{Height: core.Pt(6), CornerRadius: 3, Background: colors.accent()}
 					if !indeterminate {
 						return s
 					}
@@ -516,7 +535,7 @@ func controlsDemo(cx *core.Scope) core.Node {
 							return "—"
 						}
 						return fmt.Sprintf("%d%%", value())
-					}, Style: core.Style{FontSize: z.label, Color: colors.muted, TextAlign: core.TextAlignEnd}},
+					}, Style: core.Style{FontSize: z.label, TextAlign: core.TextAlignEnd}, StyleFunc: colored(colors.muted)},
 				}}}}
 		}
 		var flex float32 = 1

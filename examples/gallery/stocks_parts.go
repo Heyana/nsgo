@@ -30,14 +30,14 @@ func liveDot(cx *core.Scope, running func() bool, size core.Points) core.Node {
 	colors := colorsOf(cx)
 	p := livePulse(cx, running)
 	return core.View{Style: core.Style{Width: core.Pt(size * 2.5), Height: core.Pt(size * 2.5), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}, Children: []core.Node{
-		core.View{Style: core.Style{Position: core.Absolute, Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size / 2, Background: colors.accent,
-			Animated: &core.AnimatedStyle{Opacity: lerp(p, 0.55, 0), Scale: lerp(p, 1, 2.5)}}},
+		core.View{Style: core.Style{Position: core.Absolute, Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size / 2,
+			Animated: &core.AnimatedStyle{Opacity: lerp(p, 0.55, 0), Scale: lerp(p, 1, 2.5)}}, StyleFunc: filled(colors.accent)},
 		core.View{StyleFunc: func() core.Style {
 			c := colors.faint
 			if running() {
 				c = colors.accent
 			}
-			return core.Style{Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size / 2, Background: c}
+			return core.Style{Width: core.Pt(size), Height: core.Pt(size), CornerRadius: size / 2, Background: c()}
 		}},
 	}}
 }
@@ -80,20 +80,18 @@ func hline(d *core.Drawing, x0, x1, y float32, c core.Color, dash ...float32) {
 }
 
 // gridColor is the charts' grid lines: the hairline color, a step darker
-// on the light page.
+// on the light page. Read it where colorsOf's colors are.
 func gridColor(cx *core.Scope) core.Color {
-	colors := colorsOf(cx)
-	isDark := cx.Dark()
-	if isDark {
-		return colors.line
+	if cx.Dark() {
+		return colorsOf(cx).line()
 	}
-	return colors.border
+	return colorsOf(cx).border()
 }
 
 // springBar is a bar that grows from one edge of its track to share
 // (0 to 1) with a spring on the platform: the bar is the track's width
 // and slides in, clipped.
-func springBar(share func() float64, c core.Color, fromRight bool, height, radius core.Points) core.Node {
+func springBar(share func() float64, c func() core.Color, fromRight bool, height, radius core.Points) core.Node {
 	return core.Func(func(cx *core.Scope) core.Node {
 		x := core.NewAnimatedValue(cx, 0)
 		var width core.Points
@@ -125,7 +123,7 @@ func springBar(share func() float64, c core.Color, fromRight bool, height, radiu
 		return core.View{OnLayout: func(b core.Bounds) { width = b.Size.Width; place() },
 			Style: core.Style{Height: core.Pt(height), Overflow: core.Hidden, CornerRadius: radius}, Children: []core.Node{
 				core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Bottom: core.Pt(0), Left: core.Pt(0), Right: core.Pt(0), CornerRadius: radius,
-					Background: c, Animated: &core.AnimatedStyle{TranslateX: x}}},
+					Animated: &core.AnimatedStyle{TranslateX: x}}, StyleFunc: filled(c)},
 			}}
 	})
 }
@@ -165,11 +163,11 @@ func block(cx *core.Scope, title string, noteFn func() string, right core.Node, 
 	colors := colorsOf(cx)
 	s := core.Style{Padding: core.Symmetric(14, 16), Gap: 10}
 	if !first {
-		s.Borders, s.BorderColors = core.Edges{Top: 1}, core.EdgeColors{Top: colors.line}
+		s.Borders = core.Edges{Top: 1}
 	}
 	var nodes []core.Node
 	if title != "" {
-		head := []core.Node{core.Text{Content: title, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15, FontWeight: semibold, Color: colors.text}}}
+		head := []core.Node{core.Text{Content: title, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15, FontWeight: semibold}, StyleFunc: colored(colors.text)}}
 		if noteFn != nil {
 			head = append(head, textf(noteFn, 12, regular, colors.faint))
 		}
@@ -178,15 +176,16 @@ func block(cx *core.Scope, title string, noteFn func() string, right core.Node, 
 		}
 		nodes = append(nodes, core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, MinHeight: core.Pt(22)}, Children: head})
 	}
-	return core.View{Style: s, Children: append(nodes, children...)}
+	return core.View{Style: s, StyleFunc: func() core.Style { return core.Style{BorderColors: core.EdgeColors{Top: colors.line()}} },
+		Children: append(nodes, children...)}
 }
 
 // head is a quiet header for columns: SYMBOL, LAST.
 func head(cx *core.Scope, label string, width core.Points, grow float32, align core.TextAlign) core.Node {
 	colors := colorsOf(cx)
-	s := core.Style{FlexGrow: grow, FlexShrink: grow, TextAlign: align, FontSize: 11, Color: colors.faint, LetterSpacing: 0.6}
+	s := core.Style{FlexGrow: grow, FlexShrink: grow, TextAlign: align, FontSize: 11, LetterSpacing: 0.6}
 	if width > 0 {
 		s.Width = core.Pt(width)
 	}
-	return core.Text{Content: label, Style: s}
+	return core.Text{Content: label, Style: s, StyleFunc: colored(colors.faint)}
 }

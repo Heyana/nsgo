@@ -14,12 +14,12 @@ var periods = []option[period]{{value: "intraday", label: "Intraday"}, {value: "
 // averages are the moving averages the candles show.
 func averages(cx *core.Scope) []struct {
 	n int
-	c core.Color
+	c func() core.Color
 } {
 	colors := colorsOf(cx)
 	return []struct {
 		n int
-		c core.Color
+		c func() core.Color
 	}{{5, colors.accent}, {10, colors.info}, {20, colors.warn}}
 }
 
@@ -193,7 +193,7 @@ func stockChart(cx *core.Scope, s *stock, running func() bool, height core.Point
 	}
 
 	draw := func(d *core.Drawing, size core.Size) {
-		c := *colors
+		c := colors.now()
 		grid := gridColor(cx)
 		dd := data.Get()
 		first, n := view()
@@ -332,7 +332,7 @@ func stockChart(cx *core.Scope, s *stock, running func() bool, height core.Point
 			}
 			d.SetLineWidth(1.2).SetLineJoin(core.JoinRound)
 			for _, a := range averages(cx) {
-				d.SetStrokeColor(a.c).BeginPath()
+				d.SetStrokeColor(a.c()).BeginPath()
 				started := false
 				for i := first; i < end; i++ {
 					v, ok := average(dd, i, a.n)
@@ -377,7 +377,7 @@ func stockChart(cx *core.Scope, s *stock, running func() bool, height core.Point
 		if intraday() {
 			return core.Group{
 				core.Dynamic(func(*core.Scope) core.Node {
-					return legend(cx, toneOf(cx, focus().c-prevClose()), "Price", func() string { return p(focus().c) })
+					return legend(cx, func() core.Color { return toneOf(cx, focus().c-prevClose()) }, "Price", func() string { return p(focus().c) })
 				}),
 				legend(cx, colors.warn, "Avg", func() string { return p(focus().a) }),
 				legend(cx, colors.faint, "Vol", func() string { return compactNumber(focus().v) }),
@@ -410,29 +410,33 @@ func stockChart(cx *core.Scope, s *stock, running func() bool, height core.Point
 			// The crosshair over the canvas, moved by animated values.
 			core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0),
 				Animated: &core.AnimatedStyle{Opacity: shown}}, Children: []core.Node{
-				core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(chartTop), Bottom: core.Pt(chartBottom), Left: core.Pt(0), Width: core.Pt(1), Background: colors.muted,
-					Animated: &core.AnimatedStyle{TranslateX: cxv}}},
-				core.View{Style: core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(chartRight), Top: core.Pt(0), Height: core.Pt(1), Background: alpha(colors.muted, 0.6),
-					Animated: &core.AnimatedStyle{TranslateY: cyv}}},
-				core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(-4), Left: core.Pt(-4), Width: core.Pt(9), Height: core.Pt(9), CornerRadius: 4.5, Background: colors.text,
-					BorderWidth: 2, BorderColor: colors.inset, Animated: &core.AnimatedStyle{TranslateX: cxv, TranslateY: cyv}}},
+				core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(chartTop), Bottom: core.Pt(chartBottom), Left: core.Pt(0), Width: core.Pt(1),
+					Animated: &core.AnimatedStyle{TranslateX: cxv}}, StyleFunc: filled(colors.muted)},
+				core.View{StyleFunc: func() core.Style {
+					return core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(chartRight), Top: core.Pt(0), Height: core.Pt(1), Background: alpha(colors.muted(), 0.6),
+						Animated: &core.AnimatedStyle{TranslateY: cyv}}
+				}},
+				core.View{StyleFunc: func() core.Style {
+					return core.Style{Position: core.Absolute, Top: core.Pt(-4), Left: core.Pt(-4), Width: core.Pt(9), Height: core.Pt(9), CornerRadius: 4.5, Background: colors.text(),
+						BorderWidth: 2, BorderColor: colors.inset(), Animated: &core.AnimatedStyle{TranslateX: cxv, TranslateY: cyv}}
+				}},
 				core.Show{When: func() bool { return cursor.Get() >= 0 }, Then: func(*core.Scope) core.Node {
 					return core.View{StyleFunc: func() core.Style {
 						return core.Style{Position: core.Absolute, Top: core.Pt(chartTop + 2), Left: core.Pt(readoutLeft()), Width: core.Pt(140), Padding: core.All(10), Gap: 3,
-							CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous, Background: alpha(colors.surface, 0.94), BorderWidth: 1, BorderColor: colors.border}
+							CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous, Background: alpha(colors.surface(), 0.94), BorderWidth: 1, BorderColor: colors.border()}
 					}, Children: []core.Node{
 						textf(func() string { return candleLabel(focus(), per.Get()) }, 12, regular, colors.muted),
 						core.Text{Spans: []core.Span{
 							{ContentFunc: func() string { return p(focus().c) }},
 							{ContentFunc: func() string { return " " + signed((focus().c-prevClose())/prevClose()*100, 2) + "%" }, Style: core.Style{FontSize: 12, FontWeight: regular}},
-						}, Style: core.Style{FontSize: 17, FontWeight: semibold, Color: colors.text}},
+						}, Style: core.Style{FontSize: 17, FontWeight: semibold}, StyleFunc: colored(colors.text)},
 						core.Text{ContentFunc: func() string {
 							f := focus()
 							if intraday() {
 								return fmt.Sprintf("avg %s · vol %s", p(f.a), compactNumber(f.v))
 							}
 							return fmt.Sprintf("O %s H %s\nL %s V %s", p(f.o), p(f.h), p(f.l), compactNumber(f.v))
-						}, Style: core.Style{FontSize: 11, LineHeight: 15, Color: colors.muted}},
+						}, Style: core.Style{FontSize: 11, LineHeight: 15}, StyleFunc: colored(colors.muted)},
 					}}
 				}},
 			}},

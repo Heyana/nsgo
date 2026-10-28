@@ -92,10 +92,16 @@ var goKeywords = []string{"break", "case", "chan", "const", "continue", "default
 
 var identifier = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
 
-// editorStyles is the gallery's editor look; base has none.
-func editorStyles(cx *core.Scope) editor.Styles {
-	colors := colorsOf(cx)
-	fin := finOf(cx)
+// editorStyles is the gallery's editor look, base having none, for its
+// StylesFunc.
+func editorStyles(cx *core.Scope) func() editor.Styles {
+	return themed(cx, func() editor.Styles { return editorParts(cx) })
+}
+
+// editorParts are the editor's styles, read where colorsOf's colors are.
+func editorParts(cx *core.Scope) editor.Styles {
+	colors := colorsOf(cx).now()
+	fin := finOf(cx).shown()
 	popup := fin.menu.over(core.Style{CornerRadius: 8, BorderWidth: 1, BorderColor: colors.border, Padding: core.All(4)})
 	return editor.Styles{
 		Gutter:                 core.Style{Color: colors.faint, FontSize: 12},
@@ -245,8 +251,10 @@ func editorDemo(cx *core.Scope) core.Node {
 	toggle := func(s *core.Signal[bool]) func() { return func() { s.Set(!s.GetUntracked()) } }
 	field := func(label string, value *core.Signal[string]) core.Node {
 		return core.Input{Label: label, Placeholder: label, Value: value.Get, OnChange: value.Set,
-			Style: fin.field.over(core.Style{Height: core.Pt(30), Width: core.Pt(180), CornerRadius: 6, BorderWidth: 1,
-				BorderColor: colors.fieldBorder, Background: colors.field, Padding: core.Symmetric(0, 8), FontSize: 13, Color: colors.text})}
+			StyleFunc: func() core.Style {
+				return fin.field().over(core.Style{Height: core.Pt(30), Width: core.Pt(180), CornerRadius: 6, BorderWidth: 1,
+					BorderColor: colors.fieldBorder(), Background: colors.field(), Padding: core.Symmetric(0, 8), FontSize: 13, Color: colors.text()})
+			}}
 	}
 	findBar := core.Show{When: finding.Get, Then: func(cx *core.Scope) core.Node {
 		colors := colorsOf(cx)
@@ -272,12 +280,14 @@ func editorDemo(cx *core.Scope) core.Node {
 					return fmt.Sprintf("%d results", r.Count)
 				}
 				return fmt.Sprintf("%d of %d", r.Current+1, r.Count)
-			}, Style: core.Style{FontSize: 12, Color: colors.muted, FontFamily: mono}},
+			}, Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.muted)},
 		}}
 	}}
 	langs := []option[string]{{value: "go", label: "Go"}, {value: "ts", label: "TypeScript"}, {value: "python", label: "Python"},
 		{value: "markdown", label: "Markdown"}, {value: "big", label: "200k lines"}}
-	return core.View{Style: fillPage.Merge(core.Style{Background: colors.background, Padding: core.All(pad), Gap: 12}), Children: []core.Node{
+	return core.View{StyleFunc: func() core.Style {
+		return fillPage.Merge(core.Style{Background: colors.background(), Padding: core.All(pad), Gap: 12})
+	}, Children: []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
 			core.View{Style: core.Style{Width: core.Pt(420)}, Children: []core.Node{segmented(langs, language.Get, open, true)}},
 			tool(cx, "Find and replace", "Find", finding.Get, toggle(finding)),
@@ -287,8 +297,10 @@ func editorDemo(cx *core.Scope) core.Node {
 			tool(cx, "Unfold everything", "Unfold all", nil, func() { ref.Run(editor.UnfoldAll) }),
 		}},
 		findBar,
-		core.View{Style: fin.card.over(core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0), CornerRadius: radiusInset,
-			BorderWidth: 1, BorderColor: colors.border, Background: colors.surface, Overflow: core.Hidden}), Children: []core.Node{
+		core.View{StyleFunc: func() core.Style {
+			return fin.card().over(core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0), CornerRadius: radiusInset,
+				BorderWidth: 1, BorderColor: colors.border(), Background: colors.surface(), Overflow: core.Hidden})
+		}, Children: []core.Node{
 			// The props the editor reads once make another editor.
 			core.Dynamic(func(cx *core.Scope) core.Node {
 				colors := colorsOf(cx)
@@ -343,18 +355,18 @@ func editorDemo(cx *core.Scope) core.Node {
 						caretAt.Set(s)
 					},
 					OnLineNumberPress: func(line int) { last.Set(fmt.Sprintf("Line %d pressed", line+1)) },
-					Styles:            editorStyles(cx),
-					Style:             core.Style{FlexGrow: 1, Color: colors.text},
+					StylesFunc:        editorStyles(cx),
+					StyleFunc:         func() core.Style { return core.Style{FlexGrow: 1, Color: colors.text()} },
 				}
 			}),
 		}},
 		core.View{Style: core.Style{Direction: core.Row, Gap: 16, AlignItems: core.AlignCenter}, Children: []core.Node{
-			core.Text{ContentFunc: caretAt.Get, Style: core.Style{FontSize: 12, FontFamily: mono, Color: colors.text}},
+			core.Text{ContentFunc: caretAt.Get, Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.text)},
 			core.Text{ContentFunc: func() string {
 				p := problems.Get()
 				return fmt.Sprintf("%d problems", len(p))
-			}, Style: core.Style{FontSize: 12, FontFamily: mono, Color: colors.muted}},
-			core.Text{ContentFunc: last.Get, MaxLines: 1, Style: core.Style{FlexShrink: 1, FontSize: 12, FontFamily: mono, Color: colors.muted}},
+			}, Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.muted)},
+			core.Text{ContentFunc: last.Get, MaxLines: 1, Style: core.Style{FlexShrink: 1, FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.muted)},
 		}},
 	}}
 }

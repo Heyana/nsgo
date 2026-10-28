@@ -64,11 +64,14 @@ type DockArea struct {
 	// groups of a split and at each dock's edge; a GroupStyle follows the
 	// handle's hover and press), each dock's frame, and in the compact
 	// presentation the side docks' drawers, the bottom dock's sheet and
-	// the backdrop behind them.
-	Style, GroupStyle, TabBarStyle, TabStyle, ContentStyle core.Style
-	StyleFunc                                              func() core.Style
-	DropIndicatorStyle, HandleStyle, HandleThumbStyle      core.Style
-	DockStyle, DrawerStyle, SheetStyle, BackdropStyle      core.Style
+	// the backdrop behind them. Each part's Func, when set, merges over
+	// its style, again when what it reads changes.
+	Style, GroupStyle, TabBarStyle, TabStyle, ContentStyle                     core.Style
+	StyleFunc, GroupStyleFunc, TabBarStyleFunc, TabStyleFunc, ContentStyleFunc func() core.Style
+	DropIndicatorStyle, HandleStyle, HandleThumbStyle                          core.Style
+	DropIndicatorStyleFunc, HandleStyleFunc, HandleThumbStyleFunc              func() core.Style
+	DockStyle, DrawerStyle, SheetStyle, BackdropStyle                          core.Style
+	DockStyleFunc, DrawerStyleFunc, SheetStyleFunc, BackdropStyleFunc          func() core.Style
 	// HandleLabel says what dragging a handle resizes, for assistive
 	// technology.
 	HandleLabel string
@@ -771,7 +774,8 @@ func (a *dockArea) split(region DockPlacement, id uint64, s dockShape) core.Node
 	}
 	return ResizablePanelGroup{Axis: s.dir, Panels: panels,
 		Style:       core.Style{FlexGrow: 1, MinWidth: core.Pt(0), MinHeight: core.Pt(0)},
-		HandleStyle: a.p.HandleStyle, HandleThumbStyle: a.p.HandleThumbStyle, HandleLabel: a.p.HandleLabel,
+		HandleStyle: a.p.HandleStyle, HandleStyleFunc: a.p.HandleStyleFunc,
+		HandleThumbStyle: a.p.HandleThumbStyle, HandleThumbStyleFunc: a.p.HandleThumbStyleFunc, HandleLabel: a.p.HandleLabel,
 		OnResize: func(sizes []core.Points) {
 			a.edit(func(l *DockLayout) bool {
 				n := l.tree(region).find(id)
@@ -830,11 +834,12 @@ func (a *dockArea) group(cx *core.Scope, region DockPlacement, id uint64) core.N
 		}
 		return n.Panels[n.Active]
 	}
-	bar := tabBar(a.p.TabBarStyle, g.bar, core.Each(tabs.Get, func(k string) string { return k },
+	bar := tabBar(a.p.TabBarStyle, a.p.TabBarStyleFunc, g.bar, core.Each(tabs.Get, func(k string) string { return k },
 		func(cx *core.Scope, key func() string, _ func() int) core.Node { return a.tab(cx, g, id, key()) }))
 	content := core.View{Ref: g.content,
 		Style: core.Style{FlexGrow: 1, FlexShrink: 1, FlexBasis: core.Pt(0), MinWidth: core.Pt(0), MinHeight: core.Pt(0),
 			Overflow: core.Hidden}.Merge(a.p.ContentStyle),
+		StyleFunc: a.p.ContentStyleFunc,
 		Children: []core.Node{core.Each(panels.Get, func(k string) string { return k },
 			func(cx *core.Scope, key func() string, _ func() int) core.Node {
 				k := key()
@@ -848,7 +853,7 @@ func (a *dockArea) group(cx *core.Scope, region DockPlacement, id uint64) core.N
 					Children: []core.Node{a.panel(k).Place()}}
 			})}}
 	return core.View{Style: core.Style{FlexGrow: 1, MinWidth: core.Pt(0), MinHeight: core.Pt(0)}.Merge(a.p.GroupStyle),
-		Children: []core.Node{bar, content}}
+		StyleFunc: a.p.GroupStyleFunc, Children: []core.Node{bar, content}}
 }
 
 // panel is panel key's content, kept while the layout lists the panel,
@@ -868,8 +873,8 @@ func (a *dockArea) panel(key string) *core.Holder {
 }
 
 // tabBar is a tab bar: a row with the tab list role.
-func tabBar(style core.Style, ref *core.Ref, tabs core.Node) core.Node {
-	return core.View{Ref: ref, Role: core.RoleTabList, Style: core.Style{Direction: core.Row}.Merge(style),
+func tabBar(style core.Style, styleFunc func() core.Style, ref *core.Ref, tabs core.Node) core.Node {
+	return core.View{Ref: ref, Role: core.RoleTabList, Style: core.Style{Direction: core.Row}.Merge(style), StyleFunc: styleFunc,
 		Children: []core.Node{tabs}}
 }
 
@@ -903,7 +908,7 @@ func (a *dockArea) tab(cx *core.Scope, g *dockGroup, group uint64, key string) c
 		label = a.p.RenderTab(cx, info)
 	}
 	desktop := core.Untracked(cx, cx.Env().Desktop)
-	return core.View{Ref: ref, Role: core.RoleTab, Label: key, Style: a.p.TabStyle, Selected: selected,
+	return core.View{Ref: ref, Role: core.RoleTab, Label: key, Style: a.p.TabStyle, StyleFunc: a.p.TabStyleFunc, Selected: selected,
 		OnPress: func(core.PressEvent) { a.activate(key) },
 		OnLongPress: func(core.PressEvent) {
 			if !desktop {
@@ -1136,7 +1141,7 @@ func (a *dockArea) indicator() core.Node {
 				Width: core.Pt(b.Size.Width), Height: core.Pt(b.Size.Height)}
 		}
 		drop := core.Show{When: func() bool { return d().target != nil }, Then: func(cx *core.Scope) core.Node {
-			var mark core.Node = core.View{Style: core.Style{FlexGrow: 1}.Merge(a.p.DropIndicatorStyle)}
+			var mark core.Node = core.View{Style: core.Style{FlexGrow: 1}.Merge(a.p.DropIndicatorStyle), StyleFunc: a.p.DropIndicatorStyleFunc}
 			if f := a.p.RenderDropIndicator; f != nil {
 				t := d().target
 				mark = f(cx, DockDropIndicator{Group: t.node, Side: t.side})
@@ -1263,7 +1268,8 @@ func (a *dockArea) dock(cx *core.Scope, p DockPlacement) core.Node {
 		case DockBottom:
 			edge, dir, grow = HandleLeading, Vertical, -1
 		}
-		handle := ResizeHandle{Axis: dir, Edge: edge, Style: a.p.HandleStyle, ThumbStyle: a.p.HandleThumbStyle,
+		handle := ResizeHandle{Axis: dir, Edge: edge, Style: a.p.HandleStyle, StyleFunc: a.p.HandleStyleFunc,
+			ThumbStyle: a.p.HandleThumbStyle, ThumbStyleFunc: a.p.HandleThumbStyleFunc,
 			Label:       a.p.HandleLabel,
 			OnDragStart: func() { start = core.Untracked(cx, func() core.Points { return a.dockSize(p) }) },
 			OnDragMove:  func(d core.Points) { a.live[p].Set(max(start+grow*d, 1)) },
@@ -1296,7 +1302,14 @@ func (a *dockArea) dock(cx *core.Scope, p DockPlacement) core.Node {
 		if a.p.RenderDock != nil {
 			chrome = a.p.RenderDock(cx, a.dockInfo(p))
 		}
-		return core.View{Style: a.p.DockStyle, StyleFunc: style, Children: []core.Node{
+		own := a.p.DockStyleFunc
+		return core.View{Style: a.p.DockStyle, StyleFunc: func() core.Style {
+			var s core.Style
+			if own != nil {
+				s = own()
+			}
+			return s.Merge(style())
+		}, Children: []core.Node{
 			chrome,
 			core.View{Style: core.Style{FlexGrow: 1, MinWidth: core.Pt(0), MinHeight: core.Pt(0)},
 				Children: []core.Node{a.root(p)}},
@@ -1308,12 +1321,12 @@ func (a *dockArea) dock(cx *core.Scope, p DockPlacement) core.Node {
 // drawer is dock p in the compact presentation: a drawer from its edge,
 // or a sheet at the bottom, over a backdrop, presented one at a time.
 func (a *dockArea) drawer(cx *core.Scope, p DockPlacement) core.Node {
-	side, style := core.PlaceLeft, a.p.DrawerStyle
+	side, style, styleFunc := core.PlaceLeft, a.p.DrawerStyle, a.p.DrawerStyleFunc
 	switch p {
 	case DockRight:
 		side = core.PlaceRight
 	case DockBottom:
-		side, style = core.PlaceBottom, a.p.SheetStyle
+		side, style, styleFunc = core.PlaceBottom, a.p.SheetStyle, a.p.SheetStyleFunc
 	}
 	m := newSheetMotion(cx, func() bool {
 		l := a.layout()
@@ -1328,8 +1341,8 @@ func (a *dockArea) drawer(cx *core.Scope, p DockPlacement) core.Node {
 	if a.p.RenderDock != nil {
 		chrome = a.p.RenderDock(cx, a.dockInfo(p))
 	}
-	return sheetLayer{m: m, side: side, backdrop: a.p.BackdropStyle, backdropPress: dismiss, cancel: dismiss,
-		panel: style, role: core.RoleDialog,
+	return sheetLayer{m: m, side: side, backdrop: a.p.BackdropStyle, backdropFunc: a.p.BackdropStyleFunc, backdropPress: dismiss, cancel: dismiss,
+		panel: style, panelFunc: styleFunc, role: core.RoleDialog,
 		content: []core.Node{chrome, core.View{Style: core.Style{FlexGrow: 1, MinHeight: core.Pt(0)},
 			Children: []core.Node{a.root(p)}}}}.node()
 }

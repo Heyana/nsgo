@@ -12,9 +12,22 @@ import (
 )
 
 // readingStyles is the gallery's reading typography for every part of a
-// TextView: base has none.
-func readingStyles(cx *core.Scope) textview.Styles {
-	colors := colorsOf(cx)
+// TextView, base having none, as its StyleFunc.
+func readingStyles(cx *core.Scope) func(textview.Part) core.Style {
+	return partStyles(cx, func() textview.Styles { return readingParts(cx) })
+}
+
+// partStyles is a TextView's StyleFunc from styles by part, built again
+// when what build reads (the palette) changes.
+func partStyles(cx *core.Scope, build func() textview.Styles) func(textview.Part) core.Style {
+	styles := themed(cx, build)
+	return func(p textview.Part) core.Style { return styles()[p] }
+}
+
+// readingParts are the reading typography's styles by part, read where
+// colorsOf's colors are.
+func readingParts(cx *core.Scope) textview.Styles {
+	colors := colorsOf(cx).now()
 	codeFont := core.Style{FontFamily: mono, FontSize: 13}
 	alert := func(c core.Color) core.Style {
 		return core.Style{Gap: 4, Padding: core.Symmetric(8, 12), Borders: core.Edges{Left: 3}, BorderColors: core.EdgeColors{Left: c}, CornerRadius: 4, Background: alpha(c, 0.08)}
@@ -115,7 +128,7 @@ func imageViewer(cx *core.Scope, image func() textview.Image, onClose func()) co
 				return core.Style{Position: core.Absolute, Top: core.Pt(env.SafeArea().Top + 12), Right: core.Pt(16)}
 			}, Children: []core.Node{press(pressProps{onPress: onClose, label: "Close", scale: 0.9},
 				core.View{Style: core.Style{Width: core.Pt(36), Height: core.Pt(36), CornerRadius: 18, Background: white(0.16), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
-					Children: []core.Node{icon(iconClose, 18, core.RGB(0xffffff))}})}},
+					Children: []core.Node{icon(iconClose, 18, fixed(core.RGB(0xffffff)))}})}},
 		}}},
 	}
 }
@@ -187,10 +200,10 @@ func streamingCard(cx *core.Scope) core.Node {
 			on := streaming.Get()
 			var caret core.Node
 			if on {
-				caret = core.View{Style: core.Style{Margin: core.Edges{Left: 2}, Width: core.Pt(8), Height: core.Pt(16), CornerRadius: 2, Background: colors.accent,
-					Animation: core.KeyframeAnimation{Keyframes: core.KeyframesPulse}}}
+				caret = core.View{Style: core.Style{Margin: core.Edges{Left: 2}, Width: core.Pt(8), Height: core.Pt(16), CornerRadius: 2,
+					Animation: core.KeyframeAnimation{Keyframes: core.KeyframesPulse}}, StyleFunc: filled(colors.accent)}
 			}
-			return textview.TextView{MarkdownFunc: streamed.Get, Styles: readingStyles(cx), Options: textview.Options{Streaming: on}, StreamingCaret: caret,
+			return textview.TextView{MarkdownFunc: streamed.Get, StyleFunc: readingStyles(cx), Options: textview.Options{Streaming: on}, StreamingCaret: caret,
 				Selectable: true, Highlighter: highlight.New(cx), CodeBlockActions: []string{textview.CopyAction}, RenderCodeBlockAction: copyAction, TestID: "streamed"}
 		}),
 		core.Dynamic(func(*core.Scope) core.Node {
@@ -207,7 +220,7 @@ func markdownCard(cx *core.Scope) core.Node {
 	pressed := core.NewSignal(cx, "nothing yet")
 	viewing := core.NewSignal(cx, textview.Image{})
 	return card(cx, cardProps{icon: iconText, title: "Markdown", subtitle: "CommonMark and GitHub's: tables, tasks, alerts, footnotes, math, HTML"},
-		textview.TextView{Markdown: tvMarkdown, Styles: readingStyles(cx), Selectable: true, TestID: "document", Highlighter: highlight.New(cx),
+		textview.TextView{Markdown: tvMarkdown, StyleFunc: readingStyles(cx), Selectable: true, TestID: "document", Highlighter: highlight.New(cx),
 			CodeBlockActions: []string{textview.CopyAction}, RenderCodeBlockAction: copyAction,
 			OnLinkPress: pressed.Set, RenderImage: pressableImages(viewing)},
 		caption(cx, "Link pressed", pressed.Get),
@@ -218,7 +231,7 @@ func markdownCard(cx *core.Scope) core.Node {
 func htmlCard(cx *core.Scope) core.Node {
 	viewing := core.NewSignal(cx, textview.Image{})
 	return card(cx, cardProps{icon: iconText, title: "HTML", subtitle: "An article page: sections, figures, lists, tables, code"},
-		textview.TextView{HTML: tvHTML, Styles: readingStyles(cx), Selectable: true, Highlighter: highlight.New(cx), RenderImage: pressableImages(viewing), TestID: "html"},
+		textview.TextView{HTML: tvHTML, StyleFunc: readingStyles(cx), Selectable: true, Highlighter: highlight.New(cx), RenderImage: pressableImages(viewing), TestID: "html"},
 		imageViewer(cx, viewing.Get, func() { viewing.Set(textview.Image{}) }),
 	)
 }
@@ -249,23 +262,31 @@ func chartBlock(cx *core.Scope, source string) core.Node {
 	var cols []core.Node
 	for _, b := range bars {
 		cols = append(cols, core.View{Style: core.Style{FlexGrow: 1, FlexBasis: core.Pt(0), AlignItems: core.AlignCenter, Gap: 4}, Children: []core.Node{
-			core.View{Style: core.Style{Width: core.Pct(100), CornerRadius: 6, Background: colors.accent, Height: core.Pt(core.Points(b.value / most * 64))}},
+			core.View{Style: core.Style{Width: core.Pct(100), CornerRadius: 6, Height: core.Pt(core.Points(b.value / most * 64))}, StyleFunc: filled(colors.accent)},
 			text(b.label, 11, regular, colors.muted),
 		}})
 	}
-	return core.View{Style: core.Style{Height: core.Pt(112), Direction: core.Row, AlignItems: core.AlignEnd, Gap: 8, CornerRadius: 12, BorderWidth: 1, BorderColor: colors.border,
-		Background: colors.inset, Padding: core.All(12)}, Children: cols}
+	return core.View{StyleFunc: func() core.Style {
+		return core.Style{Height: core.Pt(112), Direction: core.Row, AlignItems: core.AlignEnd, Gap: 8, CornerRadius: 12, BorderWidth: 1, BorderColor: colors.border(),
+			Background: colors.inset(), Padding: core.All(12)}
+	}, Children: cols}
 }
 
 func extensionsCard(cx *core.Scope) core.Node {
-	isDark := cx.Dark()
-	sky := core.RGB(0x0284c7)
-	emerald := core.RGB(0x059669)
-	if isDark {
-		sky, emerald = core.RGB(0x7dd3fc), core.RGB(0x34d399)
+	sky := func() core.Color {
+		if cx.Dark() {
+			return core.RGB(0x7dd3fc)
+		}
+		return core.RGB(0x0284c7)
+	}
+	emerald := func() core.Color {
+		if cx.Dark() {
+			return core.RGB(0x34d399)
+		}
+		return core.RGB(0x059669)
 	}
 	return card(cx, cardProps{icon: iconComponents, title: "Extensions", subtitle: "Mentions, a chart block, a <Callout> tag, a :::note container"},
-		textview.TextView{Markdown: tvExtended, Styles: readingStyles(cx),
+		textview.TextView{Markdown: tvExtended, StyleFunc: readingStyles(cx),
 			Extensions: []textview.Extension{
 				{Name: "mention", Pattern: mentionPattern},
 				{Name: "chart", Language: "chart"},
@@ -275,24 +296,26 @@ func extensionsCard(cx *core.Scope) core.Node {
 			RenderCustom: func(cx *core.Scope, node textview.Custom) core.Node {
 				switch node.Name {
 				case "mention":
-					return core.View{Style: core.Style{CornerRadius: 10, Background: alpha(sky, 0.15), Padding: core.Symmetric(0, 8), Transform: core.Transform{TranslateY: 4}},
-						Children: []core.Node{text("@"+node.Attributes["1"], 14, medium, sky)}}
+					return core.View{Style: core.Style{CornerRadius: 10, Padding: core.Symmetric(0, 8), Transform: core.Transform{TranslateY: 4}},
+						StyleFunc: filled(func() core.Color { return alpha(sky(), 0.15) }), Children: []core.Node{text("@"+node.Attributes["1"], 14, medium, sky)}}
 				case "chart":
 					return chartBlock(cx, node.Text)
 				case "callout":
-					return core.View{Style: core.Style{Direction: core.Row, Gap: 12, CornerRadius: 12, Background: alpha(emerald, 0.1), Padding: core.All(12)}, Children: []core.Node{
-						text("✦", 15, regular, emerald),
-						core.View{Style: fill, Children: []core.Node{textview.TextView{Document: textview.Document{Blocks: node.Children}, Styles: readingStyles(cx)}}},
-					}}
+					return core.View{Style: core.Style{Direction: core.Row, Gap: 12, CornerRadius: 12, Padding: core.All(12)},
+						StyleFunc: filled(func() core.Color { return alpha(emerald(), 0.1) }), Children: []core.Node{
+							text("✦", 15, regular, emerald),
+							core.View{Style: fill, Children: []core.Node{textview.TextView{Document: textview.Document{Blocks: node.Children}, StyleFunc: readingStyles(cx)}}},
+						}}
 				}
 				lbl := node.Attributes["label"]
 				if lbl == "" {
 					lbl = node.Name
 				}
-				return core.View{Style: core.Style{Gap: 4, CornerRadius: 12, BorderWidth: 1, BorderColor: alpha(sky, 0.4), Padding: core.All(12)}, Children: []core.Node{
-					core.Text{Content: lbl, Style: core.Style{FontSize: 12, FontWeight: semibold, TextTransform: core.TextTransformUppercase, LetterSpacing: 0.6, Color: sky}},
-					textview.TextView{Document: textview.Document{Blocks: node.Children}, Styles: readingStyles(cx)},
-				}}
+				return core.View{Style: core.Style{Gap: 4, CornerRadius: 12, BorderWidth: 1, Padding: core.All(12)},
+					StyleFunc: func() core.Style { return core.Style{BorderColor: alpha(sky(), 0.4)} }, Children: []core.Node{
+						core.Text{Content: lbl, Style: core.Style{FontSize: 12, FontWeight: semibold, TextTransform: core.TextTransformUppercase, LetterSpacing: 0.6}, StyleFunc: colored(sky)},
+						textview.TextView{Document: textview.Document{Blocks: node.Children}, StyleFunc: readingStyles(cx)},
+					}}
 			}},
 	)
 }
@@ -308,11 +331,11 @@ func selectionAreaCard(cx *core.Scope) core.Node {
 	colors := colorsOf(cx)
 	return card(cx, cardProps{icon: iconText, title: "Selectable view", subtitle: "One selection across texts and TextViews"},
 		core.View{Selectable: true, Style: core.Style{Gap: 12}, Children: []core.Node{
-			textview.TextView{Markdown: tvQuestion, Styles: readingStyles(cx)},
-			textview.TextView{Markdown: tvAnswer, Styles: readingStyles(cx)},
+			textview.TextView{Markdown: tvQuestion, StyleFunc: readingStyles(cx)},
+			textview.TextView{Markdown: tvAnswer, StyleFunc: readingStyles(cx)},
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignBaseline, Gap: 8}, Children: []core.Node{
-				core.Text{Content: "Not selectable", Selectable: core.SelectableOff, Style: core.Style{FontSize: 13, Color: colors.faint}},
-				core.Text{Content: "A plain Text joins the selection too.", Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15, Color: colors.text}},
+				core.Text{Content: "Not selectable", Selectable: core.SelectableOff, Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.faint)},
+				core.Text{Content: "A plain Text joins the selection too.", Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15}, StyleFunc: colored(colors.text)},
 			}},
 		}},
 		caption(cx, hint(cx, "Long press, then move the handles from the question into the answer", "Drag from the question into the answer"), nil),

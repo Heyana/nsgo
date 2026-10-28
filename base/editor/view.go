@@ -111,11 +111,11 @@ func (e *ed) gutter() core.Node {
 	if e.p.NoLineNumbers && e.p.NoFolding {
 		return core.Group{}
 	}
-	s := &e.p.Styles
+	s := e.styles
 	return core.View{
 		StyleFunc: func() core.Style {
 			e.textRev.Get()
-			return merge(core.Style{Width: core.Pt(core.Points(e.gutterWidth())), FlexShrink: 0}, s.Gutter)
+			return merge(core.Style{Width: core.Pt(core.Points(e.gutterWidth())), FlexShrink: 0}, s().Gutter)
 		},
 		Children: []core.Node{core.Each(e.rows, func(r int) int { return r }, func(cx *core.Scope, row func() int, _ func() int) core.Node {
 			line := func() int {
@@ -150,9 +150,9 @@ func (e *ed) gutter() core.Node {
 						return ""
 					},
 					StyleFunc: func() core.Style {
-						st := merge(core.Style{FlexGrow: 1, TextAlign: core.TextAlignEnd, LineHeight: core.Points(e.lh)}, s.LineNumber)
+						st := merge(core.Style{FlexGrow: 1, TextAlign: core.TextAlignEnd, LineHeight: core.Points(e.lh)}, s().LineNumber)
 						if active() {
-							st = merge(st, s.ActiveLineNumber)
+							st = merge(st, s().ActiveLineNumber)
 						}
 						return st
 					},
@@ -170,7 +170,8 @@ func (e *ed) gutter() core.Node {
 					return slices.ContainsFunc(e.st.folded, func(f foldRange) bool { return f.start == l })
 				}
 				children = append(children, core.View{
-					Style: merge(core.Style{Width: core.Pt(core.Points(e.lh)), AlignItems: core.AlignCenter}, s.FoldMarker),
+					Style:     core.Style{Width: core.Pt(core.Points(e.lh)), AlignItems: core.AlignCenter},
+					StyleFunc: func() core.Style { return s().FoldMarker },
 					OnPress: func(core.PressEvent) {
 						if l := line(); l >= 0 {
 							e.fold(l, !folded())
@@ -214,14 +215,14 @@ func (e *ed) boxWidth() float32 {
 }
 
 func (e *ed) textArea() core.Node {
-	s := &e.p.Styles
+	s := e.styles
 	desktop := core.Untracked(e.cx, e.cx.Env().Desktop)
 	box := core.View{
 		Ref: e.box,
 		StyleFunc: func() core.Style {
 			e.textRev.Get()
 			return merge(core.Style{Width: core.Pt(core.Points(e.boxWidth())), Height: core.Pt(core.Points(e.contentHeight())),
-				Cursor: core.CursorText}, s.Content)
+				Cursor: core.CursorText}, s().Content)
 		},
 		OnHoverMove: func(ev core.HoverEvent) { e.pointer(ev.Position, ev.PagePosition, ev.Modifiers) },
 		OnHoverOut:  e.pointerLeft,
@@ -258,7 +259,7 @@ func (e *ed) textArea() core.Node {
 			return core.View{
 				StyleFunc: func() core.Style {
 					return merge(core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0),
-						Top: core.Pt(core.Points(float32(row()) * e.lh)), Height: core.Pt(core.Points(e.lh))}, s.Line)
+						Top: core.Pt(core.Points(float32(row()) * e.lh)), Height: core.Pt(core.Points(e.lh))}, s().Line)
 				},
 				Children: []core.Node{core.Text{
 					MaxLines:  1,
@@ -277,8 +278,8 @@ func (e *ed) textArea() core.Node {
 			return e.p.Placeholder != "" && e.st.r().lines() == 1 && e.st.line(0) == ""
 		},
 			Then: func(cx *core.Scope) core.Node {
-				return core.Text{Content: e.p.Placeholder, MaxLines: 1, Style: merge(core.Style{Position: core.Absolute, Left: core.Pt(pad),
-					Top: core.Pt(0), LineHeight: core.Points(e.lh)}, s.Placeholder)}
+				return core.Text{Content: e.p.Placeholder, MaxLines: 1, Style: core.Style{Position: core.Absolute, Left: core.Pt(pad),
+					Top: core.Pt(0), LineHeight: core.Points(e.lh)}, StyleFunc: func() core.Style { return s().Placeholder }}
 			}},
 		e.handles(),
 	}
@@ -352,7 +353,7 @@ func (e *ed) lineRects() []rect {
 			seen[sel.head.line] = true
 			row := e.st.disp.lineRow(sel.head.line)
 			if row >= s && row < end {
-				out = append(out, rect{0, float32(row) * e.lh, w, e.lh, &e.p.Styles.ActiveLine})
+				out = append(out, rect{0, float32(row) * e.lh, w, e.lh, &e.styles().ActiveLine})
 			}
 		}
 	}
@@ -390,9 +391,9 @@ func (e *ed) matchRects() []rect {
 	}
 	var out []rect
 	for ; i < len(e.matches) && e.matches[i].from.line <= to; i++ {
-		style := &e.p.Styles.SearchMatch
+		style := &e.styles().SearchMatch
 		if i == current {
-			cur := merge(e.p.Styles.SearchMatch, e.p.Styles.CurrentSearchMatch)
+			cur := merge(e.styles().SearchMatch, e.styles().CurrentSearchMatch)
 			style = &cur
 		}
 		out = e.spanRects(e.matches[i].from, e.matches[i].to, style, out)
@@ -405,7 +406,7 @@ func (e *ed) selectionRects() []rect {
 	var out []rect
 	for _, sel := range e.st.sels {
 		if !sel.empty() {
-			out = e.spanRects(sel.start(), sel.end(), &e.p.Styles.Selection, out)
+			out = e.spanRects(sel.start(), sel.end(), &e.styles().Selection, out)
 		}
 	}
 	return out
@@ -413,7 +414,7 @@ func (e *ed) selectionRects() []rect {
 
 func (e *ed) bracketRects() []rect {
 	e.selRev.Get()
-	if !e.focused.Get() || e.p.Styles.MatchingBracket.IsZero() {
+	if !e.focused.Get() || e.styles().MatchingBracket.IsZero() {
 		return nil
 	}
 	p := e.st.primary()
@@ -426,7 +427,7 @@ func (e *ed) bracketRects() []rect {
 	}
 	var out []rect
 	for _, x := range []pos{a, b} {
-		out = e.spanRects(x, pos{x.line, x.col + 1}, &e.p.Styles.MatchingBracket, out)
+		out = e.spanRects(x, pos{x.line, x.col + 1}, &e.styles().MatchingBracket, out)
 	}
 	return out
 }
@@ -437,7 +438,7 @@ func (e *ed) linkRects() []rect {
 	}
 	l := e.link.Get()
 	var out []rect
-	for _, r := range e.spanRects(l.from, l.to, &e.p.Styles.DefinitionLink, nil) {
+	for _, r := range e.spanRects(l.from, l.to, &e.styles().DefinitionLink, nil) {
 		out = append(out, rect{r.x, r.y + e.lh - 2, r.w, 1, r.style})
 	}
 	return out
@@ -455,7 +456,7 @@ func (e *ed) caretRects() []rect {
 		if row < s || row >= end {
 			continue
 		}
-		out = append(out, rect{e.xOf(sel.head), float32(row) * e.lh, 1, e.lh, &e.p.Styles.Caret})
+		out = append(out, rect{e.xOf(sel.head), float32(row) * e.lh, 1, e.lh, &e.styles().Caret})
 	}
 	return out
 }
@@ -550,7 +551,7 @@ func (e *ed) rowSpans(row int) []core.Span {
 	}
 	if folded := slices.ContainsFunc(e.st.folded, func(f foldRange) bool { return f.start == d.line && f.end > f.start }) &&
 		d.end == len(l); folded {
-		out = append(out, core.Span{Content: " ⋯ ", Style: e.p.Styles.FoldPlaceholder})
+		out = append(out, core.Span{Content: " ⋯ ", Style: e.styles().FoldPlaceholder})
 	}
 	if len(out) == 0 {
 		out = append(out, core.Span{Content: ""})
@@ -559,23 +560,23 @@ func (e *ed) rowSpans(row int) []core.Span {
 }
 
 func (e *ed) diagStyle(d *Diagnostic) core.Style {
-	s := &e.p.Styles
+	s := e.styles
 	var st core.Style
 	switch d.Severity {
 	case SeverityError:
-		st = s.DiagnosticError
+		st = s().DiagnosticError
 	case SeverityWarning:
-		st = s.DiagnosticWarning
+		st = s().DiagnosticWarning
 	case SeverityInfo:
-		st = s.DiagnosticInfo
+		st = s().DiagnosticInfo
 	default:
-		st = s.DiagnosticHint
+		st = s().DiagnosticHint
 	}
 	if d.Unnecessary {
-		st = merge(st, s.UnnecessaryText)
+		st = merge(st, s().UnnecessaryText)
 	}
 	if d.Deprecated {
-		st = merge(st, s.DeprecatedText)
+		st = merge(st, s().DeprecatedText)
 	}
 	return st
 }
@@ -648,7 +649,7 @@ func (e *ed) sinkView() core.Node {
 // completionList is the list of completions, below the query's start or
 // above it without room, with the selected item's documentation beside.
 func (e *ed) completionList() core.Node {
-	s := &e.p.Styles
+	s := e.styles
 	shown := func() bool {
 		e.compRev.Get()
 		e.selRev.Get()
@@ -708,9 +709,9 @@ func (e *ed) completionList() core.Node {
 				Role: core.RoleMenuItem,
 				StyleFunc: func() core.Style {
 					e.compRev.Get()
-					st := merge(core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Height: core.Pt(core.Points(e.lh))}, s.CompletionItem)
+					st := merge(core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Height: core.Pt(core.Points(e.lh))}, s().CompletionItem)
 					if i() == e.compSel {
-						st = merge(st, s.SelectedCompletionItem)
+						st = merge(st, s().SelectedCompletionItem)
 					}
 					return st
 				},
@@ -719,13 +720,13 @@ func (e *ed) completionList() core.Node {
 				OnPressDown: func(core.PressEvent) { it, _ := item(); e.accept(it) },
 				NoFocus:     true,
 				Children: []core.Node{
-					core.Text{ContentFunc: func() string { it, _ := item(); return it.Kind }, MaxLines: 1, Style: s.CompletionKind},
+					core.Text{ContentFunc: func() string { it, _ := item(); return it.Kind }, MaxLines: 1, StyleFunc: func() core.Style { return s().CompletionKind }},
 					core.Text{MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1}, SpansFunc: func() []core.Span {
 						it, hits := item()
-						return matchSpans(it.Label, hits, s.CompletionMatch)
+						return matchSpans(it.Label, hits, s().CompletionMatch)
 					}},
 					core.Text{ContentFunc: func() string { it, _ := item(); return it.Detail }, MaxLines: 1,
-						Style: merge(core.Style{TextAlign: core.TextAlignEnd}, s.CompletionDetail)},
+						Style: core.Style{TextAlign: core.TextAlignEnd}, StyleFunc: func() core.Style { return s().CompletionDetail }},
 				},
 			}
 		}
@@ -747,10 +748,11 @@ func (e *ed) completionList() core.Node {
 			},
 			Placement: core.PlaceBottom, Align: core.AlignStart, Offset: 2, Margin: 4,
 			Children: []core.Node{core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignStart, Gap: 4}, Children: []core.Node{
-				core.Scroll{Style: merge(core.Style{MaxHeight: core.Pt(core.Points(10 * e.lh)), MinWidth: core.Pt(160), MaxWidth: core.Pt(480)}, s.CompletionMenu),
-					Children: []core.Node{core.Each(list.Get, func(i int) int { return i }, row)}},
+				core.Scroll{Style: core.Style{MaxHeight: core.Pt(core.Points(10 * e.lh)), MinWidth: core.Pt(160), MaxWidth: core.Pt(480)},
+					StyleFunc: func() core.Style { return s().CompletionMenu },
+					Children:  []core.Node{core.Each(list.Get, func(i int) int { return i }, row)}},
 				core.Show{When: func() bool { return doc() != "" }, Then: func(cx *core.Scope) core.Node {
-					return core.View{Style: merge(core.Style{MaxWidth: core.Pt(320)}, s.CompletionDocumentation),
+					return core.View{Style: core.Style{MaxWidth: core.Pt(320)}, StyleFunc: func() core.Style { return s().CompletionDocumentation },
 						Children: []core.Node{core.Text{ContentFunc: doc}}}
 				}},
 			}}},
@@ -827,7 +829,7 @@ func (e *ed) contextMenuAt(page core.Point) {
 		return
 	}
 	box, _ := e.box.Bounds()
-	rs := e.spanRects(e.touchSel.start(), e.touchSel.end(), &e.p.Styles.Selection, nil)
+	rs := e.spanRects(e.touchSel.start(), e.touchSel.end(), &e.styles().Selection, nil)
 	var b core.Bounds
 	for i, r := range rs {
 		rb := core.Bounds{Origin: core.Point{X: box.Origin.X + core.Points(r.x), Y: box.Origin.Y + core.Points(r.y)},
@@ -892,7 +894,7 @@ func (e *ed) handles() core.Node {
 					e.touchSel = &next
 					e.selRev.Update(inc)
 				}, OnRelease: func(ev core.ResponderEvent) { e.contextMenuAt(ev.PagePosition) }},
-				Children: []core.Node{core.View{Style: merge(core.Style{Width: core.Pt(10), Height: core.Pt(10)}, e.p.Styles.SelectionHandle)}},
+				Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(10), Height: core.Pt(10)}, StyleFunc: func() core.Style { return e.styles().SelectionHandle }}},
 			}
 		}
 		return core.Group{handle(true), handle(false)}

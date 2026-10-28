@@ -59,8 +59,10 @@ type completion struct {
 type ed struct {
 	p  Editor
 	cx *core.Scope
-	st *state
-	hl *highlighter
+	// looks are the parts' styles, Styles or what StylesFunc returns.
+	looks *core.Memo[*Styles]
+	st    *state
+	hl    *highlighter
 	// textRev counts changes of the text or its layout, selRev of the
 	// selections, hlRev of highlighting, marksRev of diagnostics,
 	// decorations and matches, compRev of the completion list.
@@ -125,7 +127,7 @@ func newEd(cx *core.Scope, p Editor) *ed {
 	if p.Value != nil {
 		text = core.Untracked(cx, p.Value)
 	}
-	e := &ed{p: p, cx: cx, st: newState(text), reported: text,
+	e := &ed{p: p, cx: cx, st: newState(text), reported: text, looks: stylesMemo(cx, p.Styles, p.StylesFunc),
 		textRev: core.NewSignal(cx, 0), selRev: core.NewSignal(cx, 0), hlRev: core.NewSignal(cx, 0),
 		marksRev: core.NewSignal(cx, 0), compRev: core.NewSignal(cx, 0),
 		scrollX: core.NewSignal(cx, core.Points(0)), scrollY: core.NewSignal(cx, core.Points(0)),
@@ -1601,3 +1603,18 @@ func (e *ed) offset(p pos) int {
 	}
 	return n + utf16Col(r.line(p.line), p.col)
 }
+
+// stylesMemo holds the parts' styles: styles, or what fn returns as it
+// changes. Reading it is tracked, so a part's style follows.
+func stylesMemo(cx *core.Scope, styles Styles, fn func() Styles) *core.Memo[*Styles] {
+	return core.NewMemoFunc(cx, func() *Styles {
+		if fn == nil {
+			return &styles
+		}
+		s := fn()
+		return &s
+	}, nil)
+}
+
+// styles are the parts' styles, read where a part is styled.
+func (e *ed) styles() *Styles { return e.looks.Get() }

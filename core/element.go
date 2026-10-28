@@ -245,8 +245,11 @@ type Span struct {
 	ContentFunc func() string
 	// Style's text fields merge over the Text's. Its Background and
 	// CornerRadius draw behind the span's characters, a box per line.
-	Style   Style
-	OnPress func(PressEvent)
+	// StyleFunc's result merges over Style, again when what it reads
+	// changes.
+	Style     Style
+	StyleFunc func() Style
+	OnPress   func(PressEvent)
 	// Attachment, when set, is a view in the text's lines in place of
 	// Content: laid out at its content size, it wraps with the words
 	// around it and takes its own presses. Style is then its view's
@@ -667,6 +670,7 @@ type Screen struct {
 	StatusBar     StatusBarSetting
 	StatusBarFunc func() StatusBarSetting
 	Style         Style
+	StyleFunc     func() Style
 	Children      []Node
 	// NoPopOnBack keeps the screen when back is pressed.
 	NoPopOnBack bool

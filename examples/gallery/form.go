@@ -79,24 +79,33 @@ func formField(p fieldProps, in base.Input) core.Node {
 			box = core.Style{MinHeight: core.Pt(46), Padding: core.Edges{Top: 13, Bottom: 13}}
 		}
 		own, ownFunc := in.Style, in.StyleFunc
-		in.Style = core.Style{FlexGrow: 1, FlexShrink: 1, Padding: core.Symmetric(0, 14), FontSize: 15, Color: fg,
-			PlaceholderColor: colors.faint, SelectionColor: colors.accent}.Merge(box)
+		in.Style = core.Style{FlexGrow: 1, FlexShrink: 1, Padding: core.Symmetric(0, 14), FontSize: 15}.Merge(box)
 		if in.Multiline {
 			in.Style.Padding = core.Edges{Top: 13, Right: 14, Bottom: 13, Left: 14}
 		}
 		in.Style = in.Style.Merge(own)
-		in.StyleFunc = ownFunc
+		// The field's colors, under what the app's own StyleFunc gives.
+		in.StyleFunc = func() core.Style {
+			s := core.Style{Color: fg(), PlaceholderColor: colors.faint(), SelectionColor: colors.accent()}
+			if ownColor := own; ownColor.Color != 0 {
+				s.Color = ownColor.Color
+			}
+			if ownFunc != nil {
+				s = s.Merge(ownFunc())
+			}
+			return s
+		}
 
-		head := []core.Node{core.Text{Content: p.label, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13, FontWeight: medium, Color: colors.muted}}}
+		head := []core.Node{core.Text{Content: p.label, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13, FontWeight: medium}, StyleFunc: colored(colors.muted)}}
 		if p.api != "" {
-			head = append(head, core.Text{Content: p.api, Style: core.Style{FontSize: 12, Color: colors.faint, FontFamily: mono}})
+			head = append(head, core.Text{Content: p.api, Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.faint)})
 		}
 		if p.hint != nil {
 			head = append(head, textf(p.hint, 13, regular, colors.faint))
 		}
 		var well []core.Node
 		if p.prefix != "" {
-			well = append(well, core.Text{Content: p.prefix, Style: core.Style{Padding: core.Edges{Left: 14}, FontSize: 15, Color: colors.muted}})
+			well = append(well, core.Text{Content: p.prefix, Style: core.Style{Padding: core.Edges{Left: 14}, FontSize: 15}, StyleFunc: colored(colors.muted)})
 		}
 		well = append(well, in, core.View{PointerEvents: core.PointerEventsNone, StyleFunc: func() core.Style {
 			c := colors.accent
@@ -106,7 +115,7 @@ func formField(p fieldProps, in base.Input) core.Node {
 			// Around the field's border: its radius plus the 1 pt it
 			// reaches out.
 			return core.Style{Position: core.Absolute, Top: core.Pt(-1), Left: core.Pt(-1), Right: core.Pt(-1), Bottom: core.Pt(-1),
-				CornerRadius: radiusControl + 1, BorderCurve: core.BorderCurveContinuous, BorderWidth: 2, BorderColor: c,
+				CornerRadius: radiusControl + 1, BorderCurve: core.BorderCurveContinuous, BorderWidth: 2, BorderColor: c(),
 				Animated: &core.AnimatedStyle{Opacity: focus}}
 		}})
 		align := core.AlignCenter
@@ -125,17 +134,17 @@ func formField(p fieldProps, in base.Input) core.Node {
 					border = colors.line
 				}
 				s := core.Style{Direction: core.Row, AlignItems: align, CornerRadius: radiusControl, BorderCurve: core.BorderCurveContinuous,
-					BorderWidth: 1, BorderColor: border, Background: colors.field}
+					BorderWidth: 1, BorderColor: border(), Background: colors.field()}
 				// Recessed while editable; a read-only field lies flat.
 				if !readonly {
-					s.Shadows = fin.field.shadows
+					s.Shadows = fin.field().shadows
 				}
 				return s
 			}, Children: well},
 			core.Show{When: func() bool { return errText() != "" }, Then: func(*core.Scope) core.Node {
 				return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 7}, Children: []core.Node{
-					core.View{Style: core.Style{Width: core.Pt(6), Height: core.Pt(6), CornerRadius: 3, Background: colors.danger}},
-					core.Text{ContentFunc: errText, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13, Color: colors.danger}},
+					core.View{Style: core.Style{Width: core.Pt(6), Height: core.Pt(6), CornerRadius: 3}, StyleFunc: filled(colors.danger)},
+					core.Text{ContentFunc: errText, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13}, StyleFunc: colored(colors.danger)},
 				}}
 			}},
 		}}
@@ -153,7 +162,9 @@ func linkRowFirst(cx *core.Scope, first bool, name iconName, title, noteText str
 	if first {
 		return linkRow(cx, name, title, noteText, onPress)
 	}
-	return core.View{Style: core.Style{Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.line}},
+	return core.View{StyleFunc: func() core.Style {
+		return core.Style{Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.line()}}
+	},
 		Children: []core.Node{linkRow(cx, name, title, noteText, onPress)}}
 }
 
@@ -307,7 +318,7 @@ func formDemo(cx *core.Scope) core.Node {
 						return meter(cx, func() float64 { return float64(s) / 4 }, strengthTone[s], -1)
 					})}},
 					core.Text{ContentFunc: func() string { return strengthLabel[score()] }, StyleFunc: func() core.Style {
-						c := colors.faint
+						c := colors.faint()
 						if s := score(); s > 0 {
 							c = strengthTone[s].color(cx)
 						}
@@ -362,7 +373,7 @@ func formDemo(cx *core.Scope) core.Node {
 			formField(fieldProps{label: "Read only", api: "Readonly"}, base.Input{Value: label("Not editable"), Readonly: true}),
 			formField(fieldProps{label: "Custom colors", api: "PlaceholderColor, SelectionColor", next: refs[14]},
 				base.Input{Ref: refs[13], Placeholder: "A blue placeholder, an amber selection",
-					Style: core.Style{PlaceholderColor: colors.info, SelectionColor: colors.warn}}),
+					StyleFunc: func() core.Style { return core.Style{PlaceholderColor: colors.info(), SelectionColor: colors.warn()} }}),
 			core.View{Style: core.Style{Gap: 8}, Children: []core.Node{
 				formField(fieldProps{label: "Notes", hint: func() string { return fmt.Sprintf("%d/280", len([]rune(notes.Get()))) }},
 					base.Input{Ref: refs[14], Multiline: true, MaxLength: 280, Value: notes.Get, OnChange: notes.Set, Placeholder: "Return adds a line",
@@ -396,9 +407,9 @@ func formDemo(cx *core.Scope) core.Node {
 						fg, bg, name = colors.up, tints.up, iconCheck
 					}
 					return core.View{TestID: "form-status", Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.All(12),
-						CornerRadius: radiusControl, Background: bg}, Children: []core.Node{
+						CornerRadius: radiusControl}, StyleFunc: filled(bg), Children: []core.Node{
 						icon(name, 16, fg),
-						core.Text{Content: r.text, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, LineHeight: 19, Color: fg}},
+						core.Text{Content: r.text, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, LineHeight: 19}, StyleFunc: colored(fg)},
 					}}
 				})
 			}},
@@ -420,12 +431,12 @@ func formDemo(cx *core.Scope) core.Node {
 	}
 	dialog := base.Dialog{Open: sheetOpen.Get, Presentation: core.ModalPageSheet, OnOpenChange: func(o bool, _ base.Reason) { sheetOpen.Set(o) },
 		PopupStyle: core.Style{FlexGrow: 1, AlignSelf: core.AlignStretch}, Label: "A sheet",
-		Children: []core.Node{core.View{Style: core.Style{PaddingEnv: core.EnvAll(core.EnvSafeArea), FlexGrow: 1, Background: colors.background}, Children: []core.Node{
+		Children: []core.Node{core.View{Style: core.Style{PaddingEnv: core.EnvAll(core.EnvSafeArea), FlexGrow: 1}, StyleFunc: filled(colors.background), Children: []core.Node{
 			core.Scroll{Style: core.Style{FlexGrow: 1}, Behavior: core.ScrollBehavior{KeyboardDismissMode: core.KeyboardDismissInteractive}, Children: []core.Node{
 				core.View{Style: core.Style{Padding: core.Edges{Top: 16, Right: 16, Bottom: 40, Left: 16}, Gap: 16}, Children: []core.Node{
 					core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Edges{Top: 8, Left: 4}}, Children: []core.Node{
 						core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: []core.Node{
-							core.Text{Content: "A sheet", Style: core.Style{FontSize: 24, FontWeight: bold, LetterSpacing: -0.4, Color: colors.text}},
+							core.Text{Content: "A sheet", Style: core.Style{FontSize: 24, FontWeight: bold, LetterSpacing: -0.4}, StyleFunc: colored(colors.text)},
 							text("Its inputs stay above the keyboard too", 13, regular, colors.muted),
 						}},
 						button(buttonProps{label: "Done", variant: secondary}, func() { sheetOpen.Set(false) }),
@@ -479,10 +490,10 @@ func messageBar(cx *core.Scope) base.NavPage {
 		messages.Update(func(m []message) []message { return append(slices.Clone(m), message{true, d}) })
 		draft.Set("")
 	}
-	return screen(cx, "Message bar", nil, core.View{Style: core.Style{FlexGrow: 1, Background: colors.background, PaddingEnv: core.EnvEdges{Bottom: core.EnvKeyboard}}, Children: []core.Node{
+	return screen(cx, "Message bar", nil, core.View{Style: core.Style{FlexGrow: 1, PaddingEnv: core.EnvEdges{Bottom: core.EnvKeyboard}}, StyleFunc: filled(colors.background), Children: []core.Node{
 		core.Scroll{Style: core.Style{FlexGrow: 1}, Behavior: core.ScrollBehavior{KeyboardDismissMode: core.KeyboardDismissInteractive}, Children: []core.Node{
 			core.View{Style: core.Style{Padding: core.All(16), Gap: 8}, Children: []core.Node{
-				core.Text{Content: "Today", Style: core.Style{AlignSelf: core.AlignCenter, FontSize: 12, FontWeight: medium, Color: colors.faint, Padding: core.Edges{Bottom: 8}}},
+				core.Text{Content: "Today", Style: core.Style{AlignSelf: core.AlignCenter, FontSize: 12, FontWeight: medium, Padding: core.Edges{Bottom: 8}}, StyleFunc: colored(colors.faint)},
 				core.Each(messages.Get, func(m message) message { return m }, func(cx *core.Scope, m func() message, _ func() int) core.Node {
 					msg := core.Untracked(cx, m)
 					return appear(0, false, bubble(cx, msg))
@@ -496,12 +507,14 @@ func messageBar(cx *core.Scope) base.NavPage {
 				bottom += env.SafeArea().Bottom
 			}
 			return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Edges{Top: 8, Right: 16, Bottom: bottom, Left: 16},
-				Background: colors.surface, Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.border}}
+				Background: colors.surface(), Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.border()}}
 		}, Children: []core.Node{
 			base.Input{Value: draft.Get, OnChange: draft.Set, OnSubmit: func(string) { send() }, SubmitBehavior: core.SubmitBehaviorSubmit,
 				Placeholder: "Message", ReturnKeyType: core.ReturnKeySend, TestID: "message",
-				Style: fin.inset.over(core.Style{PlaceholderColor: colors.faint, SelectionColor: colors.accent, FlexGrow: 1, FlexShrink: 1, Height: core.Pt(44),
-					Padding: core.Symmetric(0, 16), FontSize: 15, Color: colors.text, Background: colors.inset, BorderWidth: 1, BorderColor: colors.border, CornerRadius: 22})},
+				StyleFunc: func() core.Style {
+					return fin.inset().over(core.Style{PlaceholderColor: colors.faint(), SelectionColor: colors.accent(), FlexGrow: 1, FlexShrink: 1, Height: core.Pt(44),
+						Padding: core.Symmetric(0, 16), FontSize: 15, Color: colors.text(), Background: colors.inset(), BorderWidth: 1, BorderColor: colors.border(), CornerRadius: 22})
+				}},
 			roundButton(cx, iconArrowUp, "Send", primary, 0, send),
 		}},
 	}})
@@ -512,17 +525,21 @@ func messageBar(cx *core.Scope) base.NavPage {
 func bubble(cx *core.Scope, m message) core.Node {
 	colors := colorsOf(cx)
 	fin := finOf(cx)
-	s := core.Style{AlignSelf: core.AlignStart, MaxWidth: core.Pct(80), Padding: core.Symmetric(10, 14), CornerRadii: core.Corners{TopLeft: 18, TopRight: 18, BottomRight: 18, BottomLeft: 6},
-		BorderCurve: core.BorderCurveContinuous, Background: colors.raised}
 	fg := colors.text
 	if m.mine {
-		s = fin.accent.over(s)
-		s.AlignSelf, s.Background, s.CornerRadii = core.AlignEnd, colors.accentFill, core.Corners{TopLeft: 18, TopRight: 18, BottomRight: 6, BottomLeft: 18}
 		fg = colors.onAccent
-	} else {
-		s = fin.raised.over(s)
 	}
-	return core.View{Style: s, Children: []core.Node{core.Text{Content: m.text, Style: core.Style{FontSize: 15, LineHeight: 20, Color: fg}}}}
+	return core.View{StyleFunc: func() core.Style {
+		s := core.Style{AlignSelf: core.AlignStart, MaxWidth: core.Pct(80), Padding: core.Symmetric(10, 14), CornerRadii: core.Corners{TopLeft: 18, TopRight: 18, BottomRight: 18, BottomLeft: 6},
+			BorderCurve: core.BorderCurveContinuous, Background: colors.raised()}
+		if m.mine {
+			s = fin.accent().over(s)
+			s.AlignSelf, s.Background, s.CornerRadii = core.AlignEnd, colors.accentFill(), core.Corners{TopLeft: 18, TopRight: 18, BottomRight: 6, BottomLeft: 18}
+		} else {
+			s = fin.raised().over(s)
+		}
+		return s
+	}, Children: []core.Node{core.Text{Content: m.text, Style: core.Style{FontSize: 15, LineHeight: 20}, StyleFunc: colored(fg)}}}
 }
 
 // selectionDemo is OnSelectionChange, OnKeyPress, SelectedRange and
@@ -567,8 +584,10 @@ func selectionDemo() core.Node {
 						if k == " " {
 							k = "␣"
 						}
-						chips = append(chips, core.View{Style: fin.raised.over(core.Style{MinWidth: core.Pt(28), Height: core.Pt(28), Padding: core.Symmetric(0, 8), CornerRadius: 7,
-							AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Background: colors.raised, BorderWidth: 1, BorderColor: colors.border}),
+						chips = append(chips, core.View{StyleFunc: func() core.Style {
+							return fin.raised().over(core.Style{MinWidth: core.Pt(28), Height: core.Pt(28), Padding: core.Symmetric(0, 8), CornerRadius: 7,
+								AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Background: colors.raised(), BorderWidth: 1, BorderColor: colors.border()})
+						},
 							Children: []core.Node{text(k, 13, regular, colors.text)}})
 					}
 					return core.Group(chips)

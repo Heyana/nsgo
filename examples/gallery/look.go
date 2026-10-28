@@ -12,39 +12,110 @@ import (
 // them and puts more side by side. base has no look, so every color and
 // finish here is the gallery's own. Components take the scope they are
 // built in and read their colors there (colorsOf, tintsOf, finOf), so a
-// subtree's theme or forced appearance reaches them; the root rebuilds
-// when its palette changes.
+// subtree's theme or forced appearance reaches them. They read them in
+// StyleFuncs, Draws and the like, which follow a change of theme or
+// appearance in place, as NSH's styles do: nothing is built again.
 
-// palette is the gallery's colors in one appearance: the theme's roles
-// under the gallery's names, and the ones galleryTheme adds.
-type palette struct {
-	// background is the page behind the cards; surface a card; inset a
-	// surface inside a card; raised a control on a card.
-	background, surface, inset, raised core.Color
-	// field is an input's well, below the card and the insets it sits on;
-	// fieldBorder its edge.
-	field, fieldBorder core.Color
-	border             core.Color
-	// line is the hairlines inside insets.
-	line               core.Color
-	text, muted, faint core.Color
-	// accent is the accent as a foreground: text, icons, lines, small
-	// marks. accentFill is the accent as a fill, with onAccent on it.
-	accent, accentFill, onAccent core.Color
-	// light is the main action's button, light on the dark page and dark
-	// on the light one, with onLight on it.
-	light, onLight core.Color
-	// track and knob are a switch's when off.
-	track, knob core.Color
-	// hover is a row under the pointer, pressed one held down.
-	hover, pressed core.Color
-	// code is code inside insets.
-	code                         core.Color
-	info, warn, danger, up, down core.Color
+// look is the gallery's colors where a scope is: each method reads its
+// color from the palette shown there, the theme's roles under the
+// gallery's names and the ones galleryTheme adds. A StyleFunc or Draw
+// that calls one follows the palette; a method value (colors.muted) is a
+// color to hand to what reads it so.
+type look struct{ cx *core.Scope }
+
+// colorsOf is the gallery's colors where cx is.
+func colorsOf(cx *core.Scope) look { return look{cx} }
+
+func (l look) role(name string) core.Color { return l.cx.Palette().Colors[name] }
+
+// background is the page behind the cards; surface a card; inset a
+// surface inside a card; raised a control on a card.
+func (l look) background() core.Color { return l.cx.Palette().Background }
+func (l look) surface() core.Color    { return l.cx.Palette().Surface }
+func (l look) inset() core.Color      { return l.role("inset") }
+func (l look) raised() core.Color     { return l.role("raised") }
+
+// field is an input's well, below the card and the insets it sits on;
+// fieldBorder its edge.
+func (l look) field() core.Color       { return l.role("field") }
+func (l look) fieldBorder() core.Color { return l.role("fieldBorder") }
+func (l look) border() core.Color      { return l.cx.Palette().Border }
+
+// line is the hairlines inside insets.
+func (l look) line() core.Color  { return l.role("line") }
+func (l look) text() core.Color  { return l.cx.Palette().Text }
+func (l look) muted() core.Color { return l.cx.Palette().TextMuted }
+func (l look) faint() core.Color { return l.role("faint") }
+
+// accent is the accent as a foreground: text, icons, lines, small marks.
+// accentFill is the accent as a fill, with onAccent on it.
+func (l look) accent() core.Color     { return l.cx.Palette().Accent }
+func (l look) accentFill() core.Color { return l.role("accentFill") }
+func (l look) onAccent() core.Color   { return l.cx.Palette().AccentText }
+
+// light is the main action's button, light on the dark page and dark on
+// the light one, with onLight on it.
+func (l look) light() core.Color   { return l.role("light") }
+func (l look) onLight() core.Color { return l.role("onLight") }
+
+// track and knob are a switch's when off.
+func (l look) track() core.Color { return l.role("track") }
+func (l look) knob() core.Color  { return l.role("knob") }
+
+// hover is a row under the pointer, pressed one held down.
+func (l look) hover() core.Color   { return l.cx.Palette().SurfaceHover }
+func (l look) pressed() core.Color { return l.cx.Palette().SurfacePressed }
+
+// code is code inside insets.
+func (l look) code() core.Color   { return l.role("code") }
+func (l look) info() core.Color   { return l.role("info") }
+func (l look) warn() core.Color   { return l.cx.Palette().Warning }
+func (l look) danger() core.Color { return l.cx.Palette().Danger }
+func (l look) up() core.Color     { return l.cx.Palette().Success }
+func (l look) down() core.Color   { return l.role("down") }
+
+// colored is a StyleFunc that colors text and icons c.
+func colored(c func() core.Color) func() core.Style {
+	return func() core.Style { return core.Style{Color: c()} }
 }
 
-// tintSet is translucent tints of the tones, for fills behind text.
-type tintSet struct{ accent, info, warn, danger, up, down core.Color }
+// filled is a StyleFunc that fills a view with c.
+func filled(c func() core.Color) func() core.Style {
+	return func() core.Style { return core.Style{Background: c()} }
+}
+
+// palette is the gallery's colors at one moment, for code that reads
+// many at once, such as a Draw.
+type palette struct {
+	background, surface, inset, raised, field, fieldBorder, border, line core.Color
+	text, muted, faint, accent, accentFill, onAccent, light, onLight     core.Color
+	track, knob, hover, pressed, code, info, warn, danger, up, down      core.Color
+}
+
+// now is the colors where l is as they are now; a Draw that calls it
+// draws again when they change.
+func (l look) now() palette {
+	p := l.cx.Palette()
+	c := p.Colors
+	return palette{
+		background: p.Background, surface: p.Surface, inset: c["inset"], raised: c["raised"],
+		field: c["field"], fieldBorder: c["fieldBorder"], border: p.Border, line: c["line"],
+		text: p.Text, muted: p.TextMuted, faint: c["faint"],
+		accent: p.Accent, accentFill: c["accentFill"], onAccent: p.AccentText,
+		light: c["light"], onLight: c["onLight"], track: c["track"], knob: c["knob"],
+		hover: p.SurfaceHover, pressed: p.SurfacePressed, code: c["code"],
+		info: c["info"], warn: p.Warning, danger: p.Danger, up: p.Success, down: c["down"],
+	}
+}
+
+// themed is what build returns, built again when what it reads (the
+// palette) changes: a component's styles by part, for its StylesFunc.
+func themed[T any](cx *core.Scope, build func() T) func() T {
+	return core.NewMemoFunc(cx, build, nil).Get
+}
+
+// fixed is c as a color to hand to what takes one that may change.
+func fixed(c core.Color) func() core.Color { return func() core.Color { return c } }
 
 // galleryTheme returns the gallery's theme: Onevra's (core.DefaultTheme), with
 // the roles the gallery adds in Palette.Colors.
@@ -65,40 +136,61 @@ func galleryTheme() *core.Theme {
 	return t
 }
 
-// colorsOf is the gallery's colors where cx is: its theme's palette in the
-// appearance shown there.
-func colorsOf(cx *core.Scope) *palette {
-	p := cx.Palette()
-	c := p.Colors
-	return &palette{
-		background: p.Background, surface: p.Surface, inset: c["inset"], raised: c["raised"],
-		field: c["field"], fieldBorder: c["fieldBorder"], border: p.Border, line: c["line"],
-		text: p.Text, muted: p.TextMuted, faint: c["faint"],
-		accent: p.Accent, accentFill: c["accentFill"], onAccent: p.AccentText,
-		light: c["light"], onLight: c["onLight"], track: c["track"], knob: c["knob"],
-		hover: p.SurfaceHover, pressed: p.SurfacePressed, code: c["code"],
-		info: c["info"], warn: p.Warning, danger: p.Danger, up: p.Success, down: c["down"],
-	}
-}
+// tints are translucent tints of the tones where a scope is, for fills
+// behind text, read as colorsOf's are.
+type tints struct{ cx *core.Scope }
 
 // tintsOf is the tones' tints where cx is.
-func tintsOf(cx *core.Scope) tintSet {
-	c := colorsOf(cx)
-	if cx.Dark() {
-		return tintSet{alpha(c.accent, 0.14), alpha(c.info, 0.16), alpha(c.warn, 0.16),
-			alpha(c.danger, 0.16), alpha(c.up, 0.16), alpha(c.down, 0.16)}
+func tintsOf(cx *core.Scope) tints { return tints{cx} }
+
+// tint is c at the opacity of a tint in the appearance shown.
+func (t tints) tint(c core.Color, light, dark float32) core.Color {
+	if t.cx.Dark() {
+		return alpha(c, dark)
 	}
-	return tintSet{alpha(c.accentFill, 0.12), alpha(c.info, 0.10), alpha(c.warn, 0.11),
-		alpha(c.danger, 0.10), alpha(c.up, 0.10), alpha(c.down, 0.10)}
+	return alpha(c, light)
 }
 
-// finOf is the finishes of the appearance shown where cx is.
-func finOf(cx *core.Scope) *finishes {
-	if cx.Dark() {
+func (t tints) accent() core.Color {
+	colors := colorsOf(t.cx)
+	if t.cx.Dark() {
+		return alpha(colors.accent(), 0.14)
+	}
+	return alpha(colors.accentFill(), 0.12)
+}
+func (t tints) info() core.Color   { return t.tint(colorsOf(t.cx).info(), 0.10, 0.16) }
+func (t tints) warn() core.Color   { return t.tint(colorsOf(t.cx).warn(), 0.11, 0.16) }
+func (t tints) danger() core.Color { return t.tint(colorsOf(t.cx).danger(), 0.10, 0.16) }
+func (t tints) up() core.Color     { return t.tint(colorsOf(t.cx).up(), 0.10, 0.16) }
+func (t tints) down() core.Color   { return t.tint(colorsOf(t.cx).down(), 0.10, 0.16) }
+
+// fins are the finishes where a scope is, read as colorsOf's colors
+// are.
+type fins struct{ cx *core.Scope }
+
+// finOf is the finishes where cx is.
+func finOf(cx *core.Scope) fins { return fins{cx} }
+
+// shown is the finishes of the appearance shown.
+func (f fins) shown() *finishes {
+	if f.cx.Dark() {
 		return &darkFinishes
 	}
 	return &lightFinishes
 }
+
+func (f fins) card() finish   { return f.shown().card }
+func (f fins) inset() finish  { return f.shown().inset }
+func (f fins) field() finish  { return f.shown().field }
+func (f fins) raised() finish { return f.shown().raised }
+func (f fins) light() finish  { return f.shown().light }
+func (f fins) accent() finish { return f.shown().accent }
+func (f fins) track() finish  { return f.shown().track }
+func (f fins) knob() finish   { return f.shown().knob }
+func (f fins) pill() finish   { return f.shown().pill }
+func (f fins) chip() finish   { return f.shown().chip }
+func (f fins) glass() finish  { return f.shown().glass }
+func (f fins) menu() finish   { return f.shown().menu }
 
 // alpha returns c at opacity a.
 func alpha(c core.Color, a float32) core.Color {
@@ -217,45 +309,60 @@ const (
 	toneDown
 )
 
-// color is the tone's foreground.
+// color is the tone's foreground, read where colorsOf's colors are.
 func (t tone) color(cx *core.Scope) core.Color {
 	colors := colorsOf(cx)
 	switch t {
 	case toneAccent:
-		return colors.accent
+		return colors.accent()
 	case toneInfo:
-		return colors.info
+		return colors.info()
 	case toneWarn:
-		return colors.warn
+		return colors.warn()
 	case toneDanger:
-		return colors.danger
+		return colors.danger()
 	case toneUp:
-		return colors.up
+		return colors.up()
 	case toneDown:
-		return colors.down
+		return colors.down()
 	}
-	return colors.muted
+	return colors.muted()
 }
 
-// tint is the tone's translucent fill.
+// shade is the tone's color, for what takes one that may change.
+func (t tone) shade(cx *core.Scope) func() core.Color {
+	return func() core.Color { return t.color(cx) }
+}
+
+// foreground is the tone's color for text and icons: the text's when
+// neutral.
+func (t tone) foreground(cx *core.Scope) func() core.Color {
+	return func() core.Color {
+		if t == toneNeutral {
+			return colorsOf(cx).text()
+		}
+		return t.color(cx)
+	}
+}
+
+// tint is the tone's translucent fill, read where colorsOf's colors are.
 func (t tone) tint(cx *core.Scope) core.Color {
-	colors := colorsOf(cx)
 	tints := tintsOf(cx)
 	switch t {
 	case toneAccent:
-		return tints.accent
+		return tints.accent()
 	case toneInfo:
-		return tints.info
+		return tints.info()
 	case toneWarn:
-		return tints.warn
+		return tints.warn()
 	case toneDanger:
-		return tints.danger
+		return tints.danger()
 	case toneUp:
-		return tints.up
+		return tints.up()
 	case toneDown:
-		return tints.down
+		return tints.down()
 	}
-	return colors.raised
+	return colorsOf(cx).raised()
 }
 
 // mono is the monospaced family, for code (API names, identifiers).
@@ -291,15 +398,15 @@ func lerp(v core.AnimatedNode, from, to float64) core.AnimatedNode {
 }
 
 // hovered is a pressable under the pointer: a whisper of the text color
-// over its surface, quieter than pressed and than selected.
+// over its surface, quieter than pressed and than selected. Like the
+// rest of a style, read it in a StyleFunc.
 func hovered(cx *core.Scope) *core.Style {
-	colors := colorsOf(cx)
-	return &core.Style{Background: alpha(colors.text, 0.05)}
+	return &core.Style{Background: alpha(colorsOf(cx).text(), 0.05)}
 }
 
 // focusRing is the keyboard focus: a 2-point ring of info inside the
-// view's edge (offset 2 puts it outside, around a filled button).
+// view's edge (offset 2 puts it outside, around a filled button), read
+// in a StyleFunc.
 func focusRing(cx *core.Scope, offset core.Points) *core.Style {
-	colors := colorsOf(cx)
-	return &core.Style{OutlineWidth: 2, OutlineColor: colors.info, OutlineOffset: offset}
+	return &core.Style{OutlineWidth: 2, OutlineColor: colorsOf(cx).info(), OutlineOffset: offset}
 }

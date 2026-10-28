@@ -9,19 +9,22 @@ import (
 )
 
 // popupStyle is the popups' look: the gallery's, as base draws none.
-func popupStyle(cx *core.Scope) core.Style {
+func popupStyle(cx *core.Scope) func() core.Style {
 	colors := colorsOf(cx)
-	fin := finOf(cx)
-	return fin.raised.over(core.Style{Background: colors.raised, CornerRadius: radiusInset, BorderWidth: 1, BorderColor: colors.border,
-		Padding: core.All(6), MinWidth: core.Pt(180)})
+	return func() core.Style {
+		return finOf(cx).raised().over(core.Style{Background: colors.raised(), CornerRadius: radiusInset, BorderWidth: 1, BorderColor: colors.border(),
+			Padding: core.All(6), MinWidth: core.Pt(180)})
+	}
 }
 
 // trigger is a pressable chip that opens a popup.
 func trigger(cx *core.Scope, label func() string) core.Node {
 	colors := colorsOf(cx)
 	fin := finOf(cx)
-	return core.View{Style: fin.raised.over(core.Style{AlignSelf: core.AlignStart, Padding: core.Symmetric(0, 14), Height: core.Pt(36),
-		JustifyContent: core.JustifyCenter, CornerRadius: radiusControl, Background: colors.raised, Active: &core.Style{Background: colors.border}}),
+	return core.View{StyleFunc: func() core.Style {
+		return fin.raised().over(core.Style{AlignSelf: core.AlignStart, Padding: core.Symmetric(0, 14), Height: core.Pt(36),
+			JustifyContent: core.JustifyCenter, CornerRadius: radiusControl, Background: colors.raised(), Active: &core.Style{Background: colors.border()}})
+	},
 		Children: []core.Node{textf(label, 14, medium, colors.text)}}
 }
 
@@ -42,8 +45,8 @@ func overlaysDemo(cx *core.Scope) core.Node {
 		open := core.NewSignal(cx, false)
 		anchor := &core.Ref{}
 		return card(cx, cardProps{icon: iconOverlays, title: "Overlay", subtitle: "A box that clips its content, with an overlay anchored inside it", right: badge(cx, "core", toneNeutral)},
-			core.View{Style: core.Style{Height: core.Pt(56), Overflow: core.Hidden, CornerRadius: radiusInset, Background: colors.inset,
-				JustifyContent: core.JustifyCenter, Padding: core.Symmetric(0, 12)}, Children: []core.Node{
+			core.View{Style: core.Style{Height: core.Pt(56), Overflow: core.Hidden, CornerRadius: radiusInset,
+				JustifyContent: core.JustifyCenter, Padding: core.Symmetric(0, 12)}, StyleFunc: filled(colors.inset), Children: []core.Node{
 				core.View{Ref: anchor, OnPress: func(core.PressEvent) { toggled(open) }, Role: core.RoleButton, Style: core.Style{AlignSelf: core.AlignStart},
 					Children: []core.Node{trigger(cx, func() string {
 						if open.Get() {
@@ -55,9 +58,9 @@ func overlaysDemo(cx *core.Scope) core.Node {
 					return core.Overlay{Anchor: anchor, Placement: core.PlaceBottom, Align: core.AlignStart, Offset: 6, Margin: 8,
 						OnPressOutside: func(core.Point) { open.Set(false) }, OnCancel: func() { open.Set(false) },
 						OnPosition: func(p core.Placement) { last.Set("overlay at " + placementName(p)) },
-						Style:      popupStyle(cx), TestID: "overlay",
+						StyleFunc:  popupStyle(cx), TestID: "overlay",
 						Children: []core.Node{core.Text{Content: "Outside the clipped box, on top of the page.",
-							Style: core.Style{FontSize: 14, Color: colors.text, Padding: core.All(6)}}}}
+							Style: core.Style{FontSize: 14, Padding: core.All(6)}, StyleFunc: colored(colors.text)}}}
 				}},
 			}},
 			caption(cx, "Scroll the page: it follows its anchor", nil),
@@ -67,7 +70,7 @@ func overlaysDemo(cx *core.Scope) core.Node {
 	popovers := func(cx *core.Scope) core.Node {
 		colors := colorsOf(cx)
 		return card(cx, cardProps{icon: iconOverlays, title: "Popover", subtitle: "Anchored to its trigger on every device"},
-			base.Popover{Offset: 6, Margin: 8, PopupStyle: popupStyle(cx), Label: "Show the popover",
+			base.Popover{Offset: 6, Margin: 8, PopupStyleFunc: popupStyle(cx), Label: "Show the popover",
 				OnOpenChange: func(open bool, reason base.Reason) {
 					state := "closed"
 					if open {
@@ -89,8 +92,10 @@ func overlaysDemo(cx *core.Scope) core.Node {
 		return card(cx, cardProps{icon: iconText, title: "Tooltip", subtitle: hint(cx, "Tooltips follow a pointer: pin one to see it", "Rest the pointer on a button")},
 			core.View{Style: core.Style{Direction: core.Row, Wrap: core.Wrap, Gap: 8}, Children: []core.Node{
 				// A view's Tooltip: the platform's bubble with the defaults.
-				core.View{Tooltip: core.Text{Content: "Saves the document", Style: core.Style{FontSize: 12, Color: colors.background,
-					Background: colors.text, CornerRadius: 6, Padding: core.Symmetric(4, 8)}},
+				core.View{Tooltip: core.Text{Content: "Saves the document", StyleFunc: func() core.Style {
+					return core.Style{FontSize: 12, Color: colors.background(),
+						Background: colors.text(), CornerRadius: 6, Padding: core.Symmetric(4, 8)}
+				}},
 					Children: []core.Node{button(buttonProps{label: "Save", variant: secondary}, func() { last.Set("pressed Save") })}},
 				// base.Tooltip: the bubble is the app's, and it reports.
 				base.Tooltip{Open: func() bool { return pinned.Get() || hoveredOpen.Get() },
@@ -103,7 +108,7 @@ func overlaysDemo(cx *core.Scope) core.Node {
 						last.Set("tooltip " + state + " (" + reason.String() + ")")
 					},
 					Placement: core.PlaceBottom, Delay: 300e6,
-					PopupStyle: core.Style{Background: colors.text, CornerRadius: 6, Padding: core.Symmetric(4, 8)},
+					PopupStyle: core.Style{CornerRadius: 6, Padding: core.Symmetric(4, 8)}, PopupStyleFunc: filled(colors.text),
 					Trigger: core.Dynamic(func(*core.Scope) core.Node {
 						label := "Pin the tooltip"
 						if pinned.Get() {
@@ -130,8 +135,8 @@ func overlaysDemo(cx *core.Scope) core.Node {
 					}
 					last.Set("sheet " + state + " (" + reason.String() + ")")
 				},
-				PopupStyle: core.Style{Background: colors.surface, CornerRadii: core.Corners{TopLeft: 20, TopRight: 20},
-					Padding: core.Edges{Top: 12, Right: 12, Bottom: 32, Left: 12}, Gap: 2},
+				PopupStyle: core.Style{CornerRadii: core.Corners{TopLeft: 20, TopRight: 20},
+					Padding: core.Edges{Top: 12, Right: 12, Bottom: 32, Left: 12}, Gap: 2}, PopupStyleFunc: filled(colors.surface),
 				BackdropStyle: core.Style{Background: black(0.45)},
 				Children: []core.Node{core.View{Style: core.Style{Padding: core.All(12), Gap: 12}, Children: []core.Node{
 					text("Sheet", 17, semibold, colors.text),
@@ -174,6 +179,6 @@ func lastEventCard(last *core.Signal[string]) cardFunc {
 	return func(cx *core.Scope) core.Node {
 		colors := colorsOf(cx)
 		return card(cx, cardProps{icon: iconSystem, title: "Last event"},
-			core.Text{ContentFunc: last.Get, TestID: "last-event", Style: core.Style{FontSize: 13, Color: colors.text, FontFamily: mono}})
+			core.Text{ContentFunc: last.Get, TestID: "last-event", Style: core.Style{FontSize: 13, FontFamily: mono}, StyleFunc: colored(colors.text)})
 	}
 }

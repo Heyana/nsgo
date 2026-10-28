@@ -19,23 +19,24 @@ func safeAreaDiagram(cx *core.Scope) core.Node {
 	colors := colorsOf(cx)
 	tints := tintsOf(cx)
 	fin := finOf(cx)
-	isDark := cx.Dark()
 	env := cx.Env()
 	const width = 76
 	scale := func() core.Points { return width / max(1, env.Window().Width) }
 	band := func(pt core.Points) core.Length { return core.Pt(max(0, core.Points(int(pt*scale()+0.5)))) }
-	hl := inner(0, 1, 0, core.RGB(0xffffff))
-	if isDark {
-		hl = inner(0, 1, 0, white(0.06))
-	}
 	return core.View{StyleFunc: func() core.Style {
+		hl := inner(0, 1, 0, core.RGB(0xffffff))
+		if cx.Dark() {
+			hl = inner(0, 1, 0, white(0.06))
+		}
 		return core.Style{Width: core.Pt(width), Height: core.Pt(core.Points(int(env.Window().Height*scale() + 0.5))), CornerRadius: 14, BorderCurve: core.BorderCurveContinuous,
-			BorderWidth: 1.5, BorderColor: colors.border, Background: colors.surface, Gradients: fin.card.gradients, Shadows: []core.BoxShadow{hl}, Overflow: core.Hidden}
+			BorderWidth: 1.5, BorderColor: colors.border(), Background: colors.surface(), Gradients: fin.card().gradients, Shadows: []core.BoxShadow{hl}, Overflow: core.Hidden}
 	}, Children: []core.Node{
-		core.View{StyleFunc: func() core.Style { return core.Style{Height: band(env.SafeArea().Top), Background: tints.info} }},
-		core.View{Style: core.Style{FlexGrow: 1, Margin: core.All(6), CornerRadius: 6, BorderWidth: 1, BorderColor: colors.line, BorderStyle: core.BorderDashed}},
-		core.View{StyleFunc: func() core.Style { return core.Style{Height: band(env.KeyboardHeight()), Background: tints.warn} }},
-		core.View{StyleFunc: func() core.Style { return core.Style{Height: band(env.SafeArea().Bottom), Background: tints.info} }},
+		core.View{StyleFunc: func() core.Style { return core.Style{Height: band(env.SafeArea().Top), Background: tints.info()} }},
+		core.View{StyleFunc: func() core.Style {
+			return core.Style{FlexGrow: 1, Margin: core.All(6), CornerRadius: 6, BorderWidth: 1, BorderColor: colors.line(), BorderStyle: core.BorderDashed}
+		}},
+		core.View{StyleFunc: func() core.Style { return core.Style{Height: band(env.KeyboardHeight()), Background: tints.warn()} }},
+		core.View{StyleFunc: func() core.Style { return core.Style{Height: band(env.SafeArea().Bottom), Background: tints.info()} }},
 	}}
 }
 
@@ -71,7 +72,7 @@ func environmentCard(cx *core.Scope) core.Node {
 			}},
 			safeAreaDiagram(cx),
 		}},
-		core.View{Style: core.Style{Height: core.Pt(1), Background: colors.line}},
+		core.View{Style: core.Style{Height: core.Pt(1)}, StyleFunc: filled(colors.line)},
 		core.View{Style: core.Style{Gap: 4}, Children: []core.Node{
 			caption(cx, "Safe area insets", label("pt")),
 			core.View{Style: core.Style{Direction: core.Row}, Children: []core.Node{
@@ -81,38 +82,48 @@ func environmentCard(cx *core.Scope) core.Node {
 				stat(cx, "Left", inset(func(e core.Edges) core.Points { return e.Left }), toneNeutral, core.Pct(25)),
 			}},
 		}},
-		core.View{Style: core.Style{Height: core.Pt(1), Background: colors.line}},
+		core.View{Style: core.Style{Height: core.Pt(1)}, StyleFunc: filled(colors.line)},
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 16}, Children: []core.Node{
 			legend(cx, colors.info, "Safe area", nil), legend(cx, colors.warn, "Keyboard", nil), spacer(),
-			core.Dynamic(func(*core.Scope) core.Node {
+			toneBadge(cx, func() string {
 				if env.Dark() {
-					return badgef(cx, label("Dark scheme"), toneInfo, true)
+					return "Dark scheme"
 				}
-				return badgef(cx, label("Light scheme"), toneWarn, true)
-			}),
+				return "Light scheme"
+			}, func() tone {
+				if env.Dark() {
+					return toneInfo
+				}
+				return toneWarn
+			}, true),
 		}},
 	)
 }
 
 func statusBarCard(cx *core.Scope) core.Node {
 	colors := colorsOf(cx)
-	isDark := cx.Dark()
 	// Until one is picked, the content follows the appearance: light
 	// content on the dark page.
-	start := core.StatusBarDark
-	if isDark {
-		start = core.StatusBarLight
+	picked, chosen := core.NewSignal(cx, false), core.NewSignal(cx, core.StatusBarDark)
+	foreground := func() core.StatusBarStyle {
+		switch {
+		case picked.Get():
+			return chosen.Get()
+		case cx.Dark():
+			return core.StatusBarLight
+		}
+		return core.StatusBarDark
 	}
-	foreground := core.NewSignal(cx, start)
+	pick := func(s core.StatusBarStyle) { picked.Set(true); chosen.Set(s) }
 	hidden, open := core.NewSignal(cx, false), core.NewSignal(cx, false)
 	names := map[core.StatusBarStyle]string{core.StatusBarLight: "light", core.StatusBarDark: "dark", core.StatusBarAuto: "auto"}
 	return card(cx, cardProps{icon: iconMobile, title: "Status bar", subtitle: "A dialog's StatusBar: over the page's while it is open"},
 		segmented([]option[core.StatusBarStyle]{{value: core.StatusBarLight, label: "Light"}, {value: core.StatusBarDark, label: "Dark"}, {value: core.StatusBarAuto, label: "Auto"}},
-			foreground.Get, foreground.Set, false),
+			foreground, pick, false),
 		listRow(cx, false, nil,
 			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: []core.Node{
 				text("Hidden", 15, regular, colors.text),
-				core.Text{ContentFunc: func() string { return fmt.Sprintf("Foreground: %s", names[foreground.Get()]) }, Style: core.Style{FontSize: 12, Color: colors.muted, FontFamily: mono}},
+				core.Text{ContentFunc: func() string { return fmt.Sprintf("Foreground: %s", names[foreground()]) }, Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.muted)},
 			}},
 			toggle(hidden.Get, hidden.Set, "Hide the status bar"),
 		),
@@ -123,13 +134,13 @@ func statusBarCard(cx *core.Scope) core.Node {
 				if hidden.Get() {
 					h = core.ToggleOn
 				}
-				return core.StatusBarSetting{Foreground: foreground.Get(), Hidden: h, Animated: core.ToggleOn}
+				return core.StatusBarSetting{Foreground: foreground(), Hidden: h, Animated: core.ToggleOn}
 			},
 			PopupStyle: core.Style{FlexGrow: 1, AlignSelf: core.AlignStretch},
 			Children: []core.Node{core.View{StyleFunc: func() core.Style {
 				// The preview's background: the one its content is for.
-				bg := colors.background
-				switch foreground.Get() {
+				bg := colors.background()
+				switch foreground() {
 				case core.StatusBarLight:
 					bg = galleryTheme().Dark.Background
 				case core.StatusBarDark:
@@ -138,10 +149,10 @@ func statusBarCard(cx *core.Scope) core.Node {
 				return core.Style{FlexGrow: 1, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 16, Background: bg}
 			}, Children: []core.Node{
 				core.Text{ContentFunc: func() string {
-					return fmt.Sprintf("StatusBar: {Foreground: %s, Hidden: %v}", names[foreground.Get()], hidden.Get())
+					return fmt.Sprintf("StatusBar: {Foreground: %s, Hidden: %v}", names[foreground()], hidden.Get())
 				}, StyleFunc: func() core.Style {
 					c := galleryTheme().Light.Text
-					if foreground.Get() == core.StatusBarLight {
+					if foreground() == core.StatusBarLight {
 						c = core.RGB(0xffffff)
 					}
 					return core.Style{FontSize: 13, Color: c, FontFamily: mono}
@@ -153,13 +164,15 @@ func statusBarCard(cx *core.Scope) core.Node {
 
 // actionRow is a pressable row with an icon tile, a title, a detail and
 // a chevron.
-func actionRow(cx *core.Scope, first bool, name iconName, tint core.Color, title, detail string, onPress func()) core.Node {
+func actionRow(cx *core.Scope, first bool, name iconName, tint func() core.Color, title, detail string, onPress func()) core.Node {
 	colors := colorsOf(cx)
 	fin := finOf(cx)
 	return press(pressProps{onPress: onPress, scale: 0.98, label: title},
 		listRow(cx, first, nil,
-			core.View{Style: fin.raised.over(core.Style{Width: core.Pt(34), Height: core.Pt(34), CornerRadius: 10, BorderWidth: 1, BorderColor: colors.border, Background: colors.raised,
-				AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}), Children: []core.Node{icon(name, 17, tint)}},
+			core.View{StyleFunc: func() core.Style {
+				return fin.raised().over(core.Style{Width: core.Pt(34), Height: core.Pt(34), CornerRadius: 10, BorderWidth: 1, BorderColor: colors.border(), Background: colors.raised(),
+					AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter})
+			}, Children: []core.Node{icon(name, 17, tint)}},
 			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 1, Padding: core.Symmetric(8, 0)}, Children: []core.Node{
 				text(title, 15, regular, colors.text), text(detail, 12, regular, colors.muted)}},
 			icon(iconChevron, 14, colors.faint),
@@ -231,7 +244,7 @@ func dialogsCard(cx *core.Scope) core.Node {
 			}),
 		),
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10, Padding: core.Edges{Top: 12, Right: 11, Bottom: 11, Left: 11}, MinHeight: core.Pt(44)}, Children: []core.Node{
-			core.Text{Content: "Answer", Style: core.Style{FlexGrow: 1, FontSize: 13, Color: colors.muted}},
+			core.Text{Content: "Answer", Style: core.Style{FlexGrow: 1, FontSize: 13}, StyleFunc: colored(colors.muted)},
 			core.Dynamic(func(*core.Scope) core.Node {
 				a := ans.Get()
 				if a.text == "" {
@@ -293,12 +306,12 @@ func framesAndTimers(cx *core.Scope) core.Node {
 					return figure(cx, label("–"), "fps", label("stopped"), toneNeutral)
 				}),
 			}},
-			core.View{Style: core.Style{Width: core.Pt(1), Background: colors.line}},
+			core.View{Style: core.Style{Width: core.Pt(1)}, StyleFunc: filled(colors.line)},
 			core.View{Style: core.Style{FlexGrow: 1, FlexBasis: core.Pt(0), Gap: 2}, Children: []core.Node{
 				core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6}, Children: []core.Node{
 					text("Interval ticks", 12, regular, colors.muted),
-					core.View{Style: core.Style{Width: core.Pt(7), Height: core.Pt(7), CornerRadius: 3.5, Background: colors.accent,
-						Animated: &core.AnimatedStyle{Opacity: lerp(beat, 0.25, 1), Scale: lerp(beat, 1, 1.6)}}},
+					core.View{Style: core.Style{Width: core.Pt(7), Height: core.Pt(7), CornerRadius: 3.5,
+						Animated: &core.AnimatedStyle{Opacity: lerp(beat, 0.25, 1), Scale: lerp(beat, 1, 1.6)}}, StyleFunc: filled(colors.accent)},
 				}},
 				figure(cx, func() string { return itoa(ticks.Get()) }, "", label("every 1 s"), toneAccent),
 			}},
@@ -337,8 +350,8 @@ func shortcuts(cx *core.Scope) core.Node {
 	var rows []core.Node
 	for i, k := range keys {
 		rows = append(rows, listRow(cx, i == 0, nil,
-			core.Text{Content: k[0], Style: core.Style{Width: core.Pt(120), FontSize: 14, Color: colors.accent, FontFamily: mono}},
-			core.Text{Content: k[1], Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15, Color: colors.text}}))
+			core.Text{Content: k[0], Style: core.Style{Width: core.Pt(120), FontSize: 14, FontFamily: mono}, StyleFunc: colored(colors.accent)},
+			core.Text{Content: k[1], Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15}, StyleFunc: colored(colors.text)}))
 	}
 	return card(cx, cardProps{icon: iconBell, title: "Keyboard shortcuts", subtitle: "Scope.OnKey · desktops and hardware keyboards"},
 		core.View{Children: rows},
@@ -418,7 +431,7 @@ func networkCard(cx *core.Scope) core.Node {
 			for i, p := range ps {
 				rows = append(rows, appear(i, false, listRow(cx, i == 0, nil,
 					text(fmt.Sprintf("#%d", p.ID), 13, regular, colors.accent),
-					core.Text{Content: p.Title, MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15, Color: colors.text}})))
+					core.Text{Content: p.Title, MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 15}, StyleFunc: colored(colors.text)})))
 			}
 			return core.View{Children: rows}
 		}),
@@ -431,8 +444,8 @@ func networkCard(cx *core.Scope) core.Node {
 				return core.Group{}
 			}
 			return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
-				core.View{Style: core.Style{Width: core.Pt(7), Height: core.Pt(7), CornerRadius: 3.5, Background: t.color(cx)}},
-				core.Text{Content: line, MaxLines: 2, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13, Color: t.color(cx)}},
+				core.View{Style: core.Style{Width: core.Pt(7), Height: core.Pt(7), CornerRadius: 3.5}, StyleFunc: filled(t.shade(cx))},
+				core.Text{Content: line, MaxLines: 2, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13}, StyleFunc: colored(t.shade(cx))},
 			}}
 		}),
 		core.View{Style: core.Style{Direction: core.Row, Gap: 8}, Children: []core.Node{
@@ -511,8 +524,10 @@ func windowCard(cx *core.Scope) core.Node {
 			small("Floating", func() { desktop.SetWindowLevel(cx, desktop.WindowLevelFloating) }),
 			small("Desktop", func() { desktop.SetWindowLevel(cx, desktop.WindowLevelDesktop) }),
 		),
-		core.View{Desktop: core.DesktopViewProps{WindowDrag: core.WindowDragOn}, Style: core.Style{Height: core.Pt(52), CornerRadius: radiusControl, Background: colors.raised, BorderWidth: 1, BorderColor: colors.border,
-			Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifySpaceBetween, Padding: core.Symmetric(0, 14)}, Children: []core.Node{
+		core.View{Desktop: core.DesktopViewProps{WindowDrag: core.WindowDragOn}, StyleFunc: func() core.Style {
+			return core.Style{Height: core.Pt(52), CornerRadius: radiusControl, Background: colors.raised(), BorderWidth: 1, BorderColor: colors.border(),
+				Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifySpaceBetween, Padding: core.Symmetric(0, 14)}
+		}, Children: []core.Node{
 			text("Drag the window from here", 14, regular, colors.muted),
 			core.View{Desktop: core.DesktopViewProps{WindowDrag: core.WindowDragOff}, Children: []core.Node{small("Still pressable", func() {})}},
 		}},
@@ -561,10 +576,10 @@ func clipboardCard(cx *core.Scope) core.Node {
 				})
 			}),
 		),
-		core.Text{ContentFunc: status.Get, TestID: "clipboard-status", Style: core.Style{FontSize: 13, Color: colors.muted}},
+		core.Text{ContentFunc: status.Get, TestID: "clipboard-status", Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.muted)},
 		core.Show{When: func() bool { return image.Get() != nil }, Then: func(*core.Scope) core.Node {
 			return core.Image{SourceFunc: func() core.ImageSource { return core.ImageSource{Data: image.Get().PNG} }, ResizeMode: core.Contain, Label: "Pasted image", TestID: "pasted-image",
-				Style: imageFrame(cx, core.Style{Width: core.Pt(120), Height: core.Pt(120)})}
+				Style: imageFrame(cx, core.Style{Width: core.Pt(120), Height: core.Pt(120)}), StyleFunc: frameInk(cx)}
 		}},
 	)
 }
@@ -599,8 +614,8 @@ func servicesCard(cx *core.Scope) core.Node {
 		caption(cx, "OpenURL", nil),
 		wrap(small("The website", open("https://github.com/oneo-me/nsgo")), small("An email", open("mailto:hello@example.com?subject=Hello%20from%20NSGo")),
 			small("Refused URL", open("javascript:alert(1)"))),
-		core.Text{ContentFunc: opened.Get, Style: core.Style{FontSize: 13, Color: colors.muted}},
-		core.View{Style: core.Style{Height: core.Pt(1), Background: colors.line}},
+		core.Text{ContentFunc: opened.Get, Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.muted)},
+		core.View{Style: core.Style{Height: core.Pt(1)}, StyleFunc: filled(colors.line)},
 		caption(cx, "PickImages", nil),
 		wrap(small("Pick a photo", pick(core.PickOptions{})), small("Up to 4, 800 px", pick(core.PickOptions{Multiple: true, Limit: 4, MaxDimension: 800}))),
 		core.Dynamic(func(cx *core.Scope) core.Node {
@@ -616,14 +631,14 @@ func servicesCard(cx *core.Scope) core.Node {
 			for i, f := range files {
 				tiles = append(tiles, core.View{Style: core.Style{Gap: 4, Width: core.Pt(100)}, Children: []core.Node{
 					core.Image{Source: core.ImageSource{Data: f.Data}, ResizeMode: core.Cover, Label: f.Name, TestID: fmt.Sprintf("picked-%d", i),
-						Style: imageFrame(cx, core.Style{Width: core.Pt(100), Height: core.Pt(76)})},
-					core.Text{Content: f.Name, MaxLines: 1, Style: core.Style{FontSize: 12, Color: colors.text}},
+						Style: imageFrame(cx, core.Style{Width: core.Pt(100), Height: core.Pt(76)}), StyleFunc: frameInk(cx)},
+					core.Text{Content: f.Name, MaxLines: 1, Style: core.Style{FontSize: 12}, StyleFunc: colored(colors.text)},
 					text(fmt.Sprintf("%.0f × %.0f, %d KB", f.Size.Width, f.Size.Height, (len(f.Data)+512)/1024), 12, regular, colors.muted),
 				}})
 			}
 			return wrap(tiles...)
 		}),
-		core.View{Style: core.Style{Height: core.Pt(1), Background: colors.line}},
+		core.View{Style: core.Style{Height: core.Pt(1)}, StyleFunc: filled(colors.line)},
 		caption(cx, "SetAppearance", func() string { return "forced: " + names[env.Appearance()] }),
 		wrap(small("System", func() { cx.SetAppearance(core.AppearanceSystem) }), small("Light", func() { cx.SetAppearance(core.AppearanceLight) }),
 			small("Dark", func() { cx.SetAppearance(core.AppearanceDark) })),

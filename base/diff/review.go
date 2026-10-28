@@ -228,7 +228,7 @@ func (v *dv) annotationsView() core.Node {
 					}
 				}
 				return merge(core.Style{Position: core.Absolute, Top: core.Pt(core.Points(top)), Left: core.Pt(core.Points(left)),
-					Width: core.Pt(core.Points(width))}, v.p.Styles.Annotation)
+					Width: core.Pt(core.Points(width))}, v.styles().Annotation)
 			},
 			OnLayout: func(b core.Bounds) {
 				key := id()
@@ -281,7 +281,7 @@ func (v *dv) addControls() core.Node {
 				}
 				return merge(core.Style{Position: core.Absolute, Top: core.Pt(core.Points(v.tops[row])), Left: core.Pt(core.Points(left)),
 					Width: core.Pt(core.Points(v.gutterWidth())), Height: core.Pt(core.Points(v.lh)), Direction: core.Row,
-					AlignItems: core.AlignCenter, JustifyContent: core.JustifyEnd}, v.p.Styles.AddAnnotation)
+					AlignItems: core.AlignCenter, JustifyContent: core.JustifyEnd}, v.styles().AddAnnotation)
 			},
 			OnHoverIn:  func() { v.hover(place.Side, place.Start) },
 			OnHoverOut: func() { v.hover(place.Side, -1) },

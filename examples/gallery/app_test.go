@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/desktop"
+	"github.com/oneo-me/nsgo/internal/driver"
 	"github.com/oneo-me/nsgo/nsgotest"
 )
 
@@ -483,4 +486,202 @@ func TestDiff(t *testing.T) {
 	app.Press("role:button Show a patch")
 	app.Find("text:store.go")
 	app.Find("text:old_test.go → store_test.go")
+}
+
+// TestAppearanceRestylesInPlace switches each demo to dark: every view
+// stays (nothing is built again) and takes the colors a fresh dark build
+// shows.
+func TestAppearanceRestylesInPlace(t *testing.T) {
+	headless(t)
+	dark := desktopEnv
+	dark.Dark = true
+	for _, d := range allDemos() {
+		t.Run(d.name, func(t *testing.T) {
+			// The market's random prices color its charts.
+			drawings := d.name != "Stocks"
+			shown := "id:demo-" + d.name
+			app := startDesktop(t)
+			open(app, d.name)
+			app.FastForward(2 * time.Second)
+			before := viewIDs(rootOf(app.Find(shown)))
+			app.Press("role:button Dark appearance")
+			got := snapshot(app, shown, drawings)
+			checkKept(t, before, got)
+			// The gallery keeps its state in a global: the fresh build
+			// starts after the switched one is read.
+			fresh := startDesktop(t, nsgotest.Environment(dark))
+			open(fresh, d.name)
+			fresh.FastForward(2 * time.Second)
+			checkLooks(t, got, snapshot(fresh, shown, drawings))
+		})
+	}
+}
+
+// TestPhoneAppearanceRestylesInPlace switches the phone layout to dark:
+// with the index's toggle, and as the system turns dark under a pushed
+// demo.
+func TestPhoneAppearanceRestylesInPlace(t *testing.T) {
+	headless(t)
+	phone := core.Environment{OS: core.OSIOS, Idiom: core.IdiomPhone, Locale: "en-US"}
+	dark := phone
+	dark.Dark = true
+	for _, demo := range []string{"", "Controls"} {
+		start := func(env core.Environment) (*nsgotest.App, string) {
+			app := nsgotest.Start(t, Root, nsgotest.Size(390, 844), nsgotest.Environment(env))
+			if demo == "" {
+				return app, "id:home"
+			}
+			app.Press("id:nav-" + demo)
+			return app, "id:screen-" + demo
+		}
+		app, shown := start(phone)
+		app.FastForward(2 * time.Second)
+		before := viewIDs(rootOf(app.Find(shown)))
+		if demo == "" {
+			app.Press("role:button Dark appearance")
+		} else {
+			app.SetEnvironment(dark)
+		}
+		got := snapshot(app, shown, true)
+		checkKept(t, before, got)
+		fresh, _ := start(dark)
+		fresh.FastForward(2 * time.Second)
+		checkLooks(t, got, snapshot(fresh, shown, true))
+	}
+}
+
+// shot is the views from a root down: where each is, what it shows, how
+// it looks, and which have no size (a hidden screen's canvases draw when
+// shown).
+type shot struct {
+	ids          map[uint64]string
+	where, texts []string
+	looks        []string
+	unsized      []bool
+}
+
+// snapshot reads the views of the window showing selector.
+func snapshot(app *nsgotest.App, selector string, drawings bool) shot {
+	root := rootOf(app.Find(selector))
+	s := shot{ids: viewIDs(root), looks: looks(root, drawings)}
+	for _, v := range views(root) {
+		s.where = append(s.where, where(v))
+		s.texts = append(s.texts, v.Text)
+		s.unsized = append(s.unsized, v.Frame.Size == driver.Size{})
+	}
+	return s
+}
+
+// checkKept fails when a view of before is gone from after.
+func checkKept(t *testing.T, before map[uint64]string, after shot) {
+	t.Helper()
+	for id, where := range before {
+		if _, ok := after.ids[id]; !ok {
+			t.Fatalf("%s was built again", where)
+		}
+	}
+}
+
+// checkLooks fails when a view looks other than in a fresh build, unless
+// it shows other data (live prices) or has no size.
+func checkLooks(t *testing.T, got, want shot) {
+	t.Helper()
+	if len(got.looks) != len(want.looks) {
+		t.Fatalf("%d views after the switch, %d in a dark build", len(got.looks), len(want.looks))
+	}
+	for i := range got.looks {
+		if got.looks[i] != want.looks[i] && got.texts[i] == want.texts[i] && !got.unsized[i] {
+			a, b := differ(got.looks[i], want.looks[i])
+			t.Fatalf("%s after the switch: …%s…\nin a dark build: …%s…", got.where[i], a, b)
+		}
+	}
+}
+
+// differ is where a and b first differ, with some context.
+func differ(a, b string) (string, string) {
+	i := 0
+	for i < len(a) && i < len(b) && a[i] == b[i] {
+		i++
+	}
+	from := max(0, i-80)
+	return a[from:min(len(a), i+80)], b[from:min(len(b), i+80)]
+}
+
+// rootOf is the root view above v.
+func rootOf(v *nsgotest.View) *nsgotest.View {
+	for v.Parent != nil {
+		v = v.Parent
+	}
+	return v
+}
+
+// viewIDs are the views from v down, with where each is.
+func viewIDs(v *nsgotest.View) map[uint64]string {
+	ids := map[uint64]string{}
+	for _, v := range views(v) {
+		ids[uint64(v.ID)] = where(v)
+	}
+	return ids
+}
+
+// views are the views from v down, in order.
+func views(v *nsgotest.View) []*nsgotest.View {
+	out := []*nsgotest.View{v}
+	for _, c := range v.Children {
+		out = append(out, views(c)...)
+	}
+	return out
+}
+
+// where names a view for a failure: its kind, text and the nearest test
+// ID above it.
+func where(v *nsgotest.View) string {
+	id := ""
+	for a := v; a != nil && id == ""; a = a.Parent {
+		id = a.Props.TestID
+	}
+	return fmt.Sprintf("view %d (kind %d, %q, in %q)", v.ID, v.Kind, v.Text, id)
+}
+
+// looks are the colors and styles each view from v down shows, in order,
+// and its drawing's colors with drawings.
+func looks(v *nsgotest.View, drawings bool) []string {
+	var out []string
+	var walk func(*nsgotest.View, string)
+	walk = func(v *nsgotest.View, path string) {
+		// A drawing's colors; where it draws follows its data.
+		type paint struct {
+			Kind  driver.DrawKind
+			Color driver.Color
+			Stops any
+		}
+		var ops []paint
+		for _, op := range v.Ops {
+			if !drawings {
+				break
+			}
+			p := paint{Kind: op.Kind, Color: op.Color}
+			if op.Gradient != nil {
+				p.Stops = op.Gradient.Stops
+			}
+			ops = append(ops, p)
+		}
+		// JSON follows the pointers in the styles.
+		look, err := json.Marshal(struct {
+			Kind  driver.ViewKind
+			Style driver.ViewStyle
+			Text  driver.TextStyle
+			Spans []driver.TextSpan
+			Ops   []paint
+		}{v.Kind, v.Style, v.TextStyle, v.Spans, ops})
+		if err != nil {
+			panic(err)
+		}
+		out = append(out, path+" "+string(look))
+		for i, c := range v.Children {
+			walk(c, fmt.Sprintf("%s/%d", path, i))
+		}
+	}
+	walk(v, "")
+	return out
 }

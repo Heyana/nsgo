@@ -53,7 +53,7 @@ func accessibilityDemo(cx *core.Scope) core.Node {
 			base.Button{Label: "Shipping details", Expanded: open.Get, TestID: "a11y-disclosure", OnPress: func(core.PressEvent) { toggled(open) },
 				Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, MinHeight: core.Pt(44), Active: &core.Style{Opacity: core.Alpha(0.7)}},
 				Children: []core.Node{
-					core.Text{Content: "Shipping details", Style: core.Style{FlexGrow: 1, FontSize: 15, Color: colors.text}},
+					core.Text{Content: "Shipping details", Style: core.Style{FlexGrow: 1, FontSize: 15}, StyleFunc: colored(colors.text)},
 					core.View{StyleFunc: func() core.Style {
 						s := core.Style{Transition: core.Transition{Duration: ms(150), Properties: core.TransitionTransform}}
 						if open.Get() {
@@ -78,8 +78,10 @@ func accessibilityDemo(cx *core.Scope) core.Node {
 					{Name: core.ActionActivate}, {Name: core.ActionEscape}, {Name: core.ActionMagicTap},
 				},
 				OnAccessibilityAction: last.Set,
-				Style:                 fin.raised.over(core.Style{Background: colors.raised, CornerRadius: radiusControl, BorderWidth: 1, BorderColor: colors.border, Padding: core.All(12), Gap: 4}),
-				Children:              []core.Node{text("Ana", 15, semibold, colors.text), text("Lunch on Friday?", 15, regular, colors.muted)}},
+				StyleFunc: func() core.Style {
+					return fin.raised().over(core.Style{Background: colors.raised(), CornerRadius: radiusControl, BorderWidth: 1, BorderColor: colors.border(), Padding: core.All(12), Gap: 4})
+				},
+				Children: []core.Node{text("Ana", 15, semibold, colors.text), text("Lunch on Friday?", 15, regular, colors.muted)}},
 			caption(cx, "Last action", last.Get),
 			apiLine(cx, "Custom ones, activate, escape and magic tap", "AccessibilityActions"),
 		)
@@ -91,7 +93,9 @@ func accessibilityDemo(cx *core.Scope) core.Node {
 		price := core.NewSignal(cx, 120)
 		return card(cx, cardProps{icon: iconAccess, title: "Grouped elements", subtitle: "One element, labelled with the text inside"},
 			core.View{Accessible: true, TestID: "a11y-card",
-				Style: fin.raised.over(core.Style{Background: colors.raised, CornerRadius: radiusControl, BorderWidth: 1, BorderColor: colors.border, Padding: core.All(12), Gap: 4}),
+				StyleFunc: func() core.Style {
+					return fin.raised().over(core.Style{Background: colors.raised(), CornerRadius: radiusControl, BorderWidth: 1, BorderColor: colors.border(), Padding: core.All(12), Gap: 4})
+				},
 				Children: []core.Node{
 					text("Apples", 15, semibold, colors.text),
 					textf(func() string { return fmt.Sprintf("$%d.%02d a kilo", price.Get()/100, price.Get()%100) }, 15, regular, colors.muted),
@@ -115,7 +119,7 @@ func accessibilityDemo(cx *core.Scope) core.Node {
 		added := core.NewSignal(cx, 0)
 		return card(cx, cardProps{icon: iconAccess, title: "Live regions", subtitle: "Changes announced without moving focus"},
 			core.Text{LiveRegion: core.LiveRegionPolite, TestID: "a11y-live", ContentFunc: func() string { return fmt.Sprintf("%d in the basket", added.Get()) },
-				Style: core.Style{FontSize: 17, FontWeight: medium, Color: colors.text}},
+				Style: core.Style{FontSize: 17, FontWeight: medium}, StyleFunc: colored(colors.text)},
 			button(buttonProps{label: "Add to basket", icon: iconPlus}, func() { added.Update(func(n int) int { return n + 1 }) }),
 			apiLine(cx, "Announced as it changes", "LiveRegionPolite"),
 		)
@@ -126,7 +130,7 @@ func accessibilityDemo(cx *core.Scope) core.Node {
 		result := &core.Ref{}
 		return card(cx, cardProps{icon: iconAccess, title: "Focus", subtitle: "Moving the screen reader, as after a search"},
 			button(buttonProps{label: "Search apples", variant: secondary, testID: "a11y-search"}, result.SetAccessibilityFocus),
-			core.Text{Ref: result, Content: "3 results for “apples”", TestID: "a11y-result", Style: core.Style{FontSize: 15, Color: colors.text}},
+			core.Text{Ref: result, Content: "3 results for “apples”", TestID: "a11y-result", Style: core.Style{FontSize: 15}, StyleFunc: colored(colors.text)},
 			apiLine(cx, "Moves the reader here", "Ref.SetAccessibilityFocus"),
 		)
 	}

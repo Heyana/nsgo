@@ -26,8 +26,10 @@ func action(cx *core.Scope, label string, name iconName, onPress func()) core.No
 	}
 	children = append(children, text(label, 13, semibold, colors.text))
 	return press(pressProps{onPress: onPress, label: label, hitSlop: 4},
-		core.View{Style: fin.raised.over(core.Style{Height: core.Pt(36), Padding: core.Symmetric(0, 14), CornerRadius: 18, Direction: core.Row, AlignItems: core.AlignCenter,
-			Gap: 6, Background: colors.raised, BorderWidth: 1, BorderColor: colors.border}), Children: children})
+		core.View{StyleFunc: func() core.Style {
+			return fin.raised().over(core.Style{Height: core.Pt(36), Padding: core.Symmetric(0, 14), CornerRadius: 18, Direction: core.Row, AlignItems: core.AlignCenter,
+				Gap: 6, Background: colors.raised(), BorderWidth: 1, BorderColor: colors.border()})
+		}, Children: children})
 }
 
 type gridItem struct {
@@ -64,7 +66,9 @@ func listGrid(cx *core.Scope) core.Node {
 				first.Set(v.Viewable[0].Index)
 				last.Set(v.Viewable[len(v.Viewable)-1].Index)
 			},
-			Header: core.View{Style: cardStyle(cx).Merge(core.Style{Padding: core.All(16), Gap: 12, Margin: core.Edges{Bottom: 4}}), Children: []core.Node{
+			Header: core.View{StyleFunc: func() core.Style {
+				return cardStyle(cx).Merge(core.Style{Padding: core.All(16), Gap: 12, Margin: core.Edges{Bottom: 4}})
+			}, Children: []core.Node{
 				core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignEnd, Gap: 8}, Children: []core.Node{
 					core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: []core.Node{
 						text("Viewable items (at least half shown)", 13, regular, colors.muted),
@@ -80,10 +84,10 @@ func listGrid(cx *core.Scope) core.Node {
 									return ""
 								}
 								return fmt.Sprintf("  %d visible", last.Get()-first.Get()+1)
-							}, Style: core.Style{FontSize: 15, FontWeight: medium, Color: colors.accent}},
-						}, Style: core.Style{FontSize: 30, FontWeight: semibold, Color: colors.text, LetterSpacing: -0.5}},
+							}, Style: core.Style{FontSize: 15, FontWeight: medium}, StyleFunc: colored(colors.accent)},
+						}, Style: core.Style{FontSize: 30, FontWeight: semibold, LetterSpacing: -0.5}, StyleFunc: colored(colors.text)},
 					}},
-					core.Text{Content: fmt.Sprintf("90 items, %d columns", columns), Style: core.Style{FontSize: 13, Color: colors.faint, Padding: core.Edges{Bottom: 6}}},
+					core.Text{Content: fmt.Sprintf("90 items, %d columns", columns), Style: core.Style{FontSize: 13, Padding: core.Edges{Bottom: 6}}, StyleFunc: colored(colors.faint)},
 				}},
 				meter(cx, func() float64 {
 					if last.Get() < 0 {
@@ -96,7 +100,7 @@ func listGrid(cx *core.Scope) core.Node {
 					action(cx, "End", "", func() { ref.ScrollToEnd(true) }),
 				}},
 			}},
-			Footer: core.Text{Content: "End of the list", Style: core.Style{TextAlign: core.TextAlignCenter, Color: colors.faint, FontSize: 13, Padding: core.All(16)}},
+			Footer: core.Text{Content: "End of the list", Style: core.Style{TextAlign: core.TextAlignCenter, FontSize: 13, Padding: core.All(16)}, StyleFunc: colored(colors.faint)},
 			Row: func(cx *core.Scope, r core.ListRow) core.Node {
 				colors := colorsOf(cx)
 				fin := finOf(cx)
@@ -106,8 +110,8 @@ func listGrid(cx *core.Scope) core.Node {
 					if item().id == 60 {
 						border = colors.accent
 					}
-					return fin.raised.over(core.Style{Height: core.Pt(item().height), CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous,
-						BorderWidth: 1, BorderColor: border, Background: colors.raised, Padding: core.All(12), JustifyContent: core.JustifySpaceBetween})
+					return fin.raised().over(core.Style{Height: core.Pt(item().height), CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous,
+						BorderWidth: 1, BorderColor: border(), Background: colors.raised(), Padding: core.All(12), JustifyContent: core.JustifySpaceBetween})
 				}, Children: []core.Node{
 					core.View{StyleFunc: func() core.Style {
 						return core.Style{Width: core.Pt(18), Height: core.Pt(4), CornerRadius: 2, Background: item().tone.color(cx)}
@@ -183,17 +187,21 @@ func listContacts(cx *core.Scope) core.Node {
 			row := func() contactRow { return rows[r.Index()] }
 			return core.Show{When: func() bool { return row().header != "" },
 				Then: func(*core.Scope) core.Node {
-					return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Height: core.Pt(34), Padding: core.Symmetric(0, 16), Gap: 10,
-						// Opaque: rows scroll under it while it sticks.
-						Background: colors.background, Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.border}}, Children: []core.Node{
+					return core.View{StyleFunc: func() core.Style {
+						return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Height: core.Pt(34), Padding: core.Symmetric(0, 16), Gap: 10,
+							// Opaque: rows scroll under it while it sticks.
+							Background: colors.background(), Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.border()}}
+					}, Children: []core.Node{
 						textf(func() string { return row().header }, 13, bold, colors.accent),
-						core.View{Style: core.Style{FlexGrow: 1, Height: core.Pt(1), Background: colors.line}},
+						core.View{Style: core.Style{FlexGrow: 1, Height: core.Pt(1)}, StyleFunc: filled(colors.line)},
 						textf(func() string { return itoa(row().count) }, 13, regular, colors.faint),
 					}}
 				},
 				Else: func(*core.Scope) core.Node {
 					return core.View{OnPress: func(core.PressEvent) {}, Role: core.RoleButton,
-						Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Edges{Left: 16}, Height: core.Pt(60), Active: &core.Style{Background: colors.raised}},
+						StyleFunc: func() core.Style {
+							return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Edges{Left: 16}, Height: core.Pt(60), Active: &core.Style{Background: colors.raised()}}
+						},
 						Children: []core.Node{
 							core.View{StyleFunc: func() core.Style {
 								return core.Style{Width: core.Pt(38), Height: core.Pt(38), CornerRadius: 19, Background: row().tone.tint(cx), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}
@@ -203,13 +211,13 @@ func listContacts(cx *core.Scope) core.Node {
 							core.View{StyleFunc: func() core.Style {
 								s := core.Style{FlexGrow: 1, FlexShrink: 1, AlignSelf: core.AlignStretch, JustifyContent: core.JustifyCenter, Gap: 2, Padding: core.Edges{Right: 16}}
 								if !row().end {
-									s.Borders, s.BorderColors = core.Edges{Bottom: 1}, core.EdgeColors{Bottom: colors.line}
+									s.Borders, s.BorderColors = core.Edges{Bottom: 1}, core.EdgeColors{Bottom: colors.line()}
 								}
 								return s
 							}, Children: []core.Node{
 								core.Text{Spans: []core.Span{{ContentFunc: func() string { return row().first + " " }}, {ContentFunc: func() string { return row().last }, Style: core.Style{FontWeight: semibold}}},
-									Style: core.Style{FontSize: 15, Color: colors.text}},
-								core.Text{ContentFunc: func() string { return row().note }, MaxLines: 1, Style: core.Style{FontSize: 13, Color: colors.muted}},
+									Style: core.Style{FontSize: 15}, StyleFunc: colored(colors.text)},
+								core.Text{ContentFunc: func() string { return row().note }, MaxLines: 1, Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.muted)},
 							}},
 						}}
 				}}
@@ -278,8 +286,8 @@ func listChat(cx *core.Scope) core.Node {
 	}
 	return core.View{Style: fillPage.Merge(core.Style{PaddingEnv: core.EnvEdges{Bottom: core.EnvKeyboard}}), Children: []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Edges{Right: 16, Bottom: 8, Left: 16}}, Children: []core.Node{
-			core.View{Style: core.Style{Width: core.Pt(8), Height: core.Pt(8), CornerRadius: 4, Background: colors.up}},
-			core.Text{Content: "Release room", Style: core.Style{FlexGrow: 1, FontSize: 13, Color: colors.muted}},
+			core.View{Style: core.Style{Width: core.Pt(8), Height: core.Pt(8), CornerRadius: 4}, StyleFunc: filled(colors.up)},
+			core.Text{Content: "Release room", Style: core.Style{FlexGrow: 1, FontSize: 13}, StyleFunc: colored(colors.muted)},
 			textf(func() string { return fmt.Sprintf("%d messages, %d older pages", len(messages.Get()), older.Get()) }, 13, regular, colors.faint),
 		}},
 		core.List{TestID: "chat", Count: func() int { return len(messages.Get()) }, Key: func(i int) any { return messages.GetUntracked()[i].id },
@@ -299,11 +307,11 @@ func listChat(cx *core.Scope) core.Node {
 					core.View{StyleFunc: func() core.Style {
 						s := core.Style{Padding: core.Symmetric(9, 14), BorderCurve: core.BorderCurveContinuous}
 						if m().mine {
-							s = fin.accent.over(s)
-							s.Background, s.CornerRadii = colors.accentFill, core.Corners{TopLeft: 18, TopRight: 18, BottomRight: 6, BottomLeft: 18}
+							s = fin.accent().over(s)
+							s.Background, s.CornerRadii = colors.accentFill(), core.Corners{TopLeft: 18, TopRight: 18, BottomRight: 6, BottomLeft: 18}
 						} else {
-							s = fin.raised.over(s)
-							s.Background, s.CornerRadii, s.BorderWidth, s.BorderColor = colors.raised, core.Corners{TopLeft: 18, TopRight: 18, BottomRight: 18, BottomLeft: 6}, 1, colors.border
+							s = fin.raised().over(s)
+							s.Background, s.CornerRadii, s.BorderWidth, s.BorderColor = colors.raised(), core.Corners{TopLeft: 18, TopRight: 18, BottomRight: 18, BottomLeft: 6}, 1, colors.border()
 						}
 						return s
 					}, Children: []core.Node{core.Text{ContentFunc: func() string { return m().text }, StyleFunc: func() core.Style {
@@ -311,9 +319,9 @@ func listChat(cx *core.Scope) core.Node {
 						if m().mine {
 							c = colors.onAccent
 						}
-						return core.Style{Color: c, FontSize: 15}
+						return core.Style{Color: c(), FontSize: 15}
 					}}}},
-					core.Text{ContentFunc: func() string { return m().time }, Style: core.Style{FontSize: 11, Color: colors.faint, Padding: core.Symmetric(0, 4)}},
+					core.Text{ContentFunc: func() string { return m().time }, Style: core.Style{FontSize: 11, Padding: core.Symmetric(0, 4)}, StyleFunc: colored(colors.faint)},
 				}}
 			}},
 		core.View{StyleFunc: func() core.Style {
@@ -322,12 +330,14 @@ func listChat(cx *core.Scope) core.Node {
 				bottom += env.SafeArea().Bottom
 			}
 			return core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Edges{Top: 8, Right: 16, Bottom: bottom, Left: 16},
-				Background: colors.surface, Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.border}}
+				Background: colors.surface(), Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.border()}}
 		}, Children: []core.Node{
 			base.Input{Value: draft.Get, OnChange: draft.Set, OnSubmit: func(string) { send() }, SubmitBehavior: core.SubmitBehaviorSubmit, Placeholder: "Message",
 				ReturnKeyType: core.ReturnKeySend, TestID: "chat-draft",
-				Style: fin.field.over(core.Style{PlaceholderColor: colors.faint, SelectionColor: colors.accent, FlexGrow: 1, FlexShrink: 1, Height: core.Pt(44), FontSize: 15,
-					Color: colors.text, Background: colors.field, BorderWidth: 1, BorderColor: colors.fieldBorder, CornerRadius: 22, Padding: core.Symmetric(0, 16)})},
+				StyleFunc: func() core.Style {
+					return fin.field().over(core.Style{PlaceholderColor: colors.faint(), SelectionColor: colors.accent(), FlexGrow: 1, FlexShrink: 1, Height: core.Pt(44), FontSize: 15,
+						Color: colors.text(), Background: colors.field(), BorderWidth: 1, BorderColor: colors.fieldBorder(), CornerRadius: 22, Padding: core.Symmetric(0, 16)})
+				}},
 			roundButton(cx, iconArrowUp, "Send", primary, 0, send),
 		}},
 	}}
@@ -364,7 +374,7 @@ func listMore(cx *core.Scope) core.Node {
 		change()
 	}
 	codeSpan := func(s string) core.Span {
-		return core.Span{Content: s, Style: core.Style{FontFamily: mono, Color: colors.text}}
+		return core.Span{Content: s, Style: core.Style{FontFamily: mono}, StyleFunc: colored(colors.text)}
 	}
 	var chips []core.Node
 	for _, l := range ranges {
@@ -375,11 +385,11 @@ func listMore(cx *core.Scope) core.Node {
 			Children: []core.Node{core.View{StyleFunc: func() core.Style {
 				s := core.Style{Height: core.Pt(36), Padding: core.Symmetric(0, 14), CornerRadius: 18, JustifyContent: core.JustifyCenter}
 				if on() {
-					s = fin.light.over(s)
-					s.Background = colors.light
+					s = fin.light().over(s)
+					s.Background = colors.light()
 				} else {
-					s = fin.raised.over(s)
-					s.Background, s.BorderWidth, s.BorderColor = colors.raised, 1, colors.border
+					s = fin.raised().over(s)
+					s.Background, s.BorderWidth, s.BorderColor = colors.raised(), 1, colors.border()
 				}
 				return s
 			}, Children: []core.Node{core.Text{Content: l, StyleFunc: func() core.Style {
@@ -387,15 +397,17 @@ func listMore(cx *core.Scope) core.Node {
 				if on() {
 					c = colors.onLight
 				}
-				return core.Style{FontSize: 13, FontWeight: semibold, Color: c}
+				return core.Style{FontSize: 13, FontWeight: semibold, Color: c()}
 			}}}}}})
 	}
 	pullChildren := []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12}, Children: []core.Node{
 			core.Dynamic(func(*core.Scope) core.Node {
 				if refreshing.Get() {
-					return core.View{Style: fin.raised.over(core.Style{Width: core.Pt(40), Height: core.Pt(40), CornerRadius: 12, BorderWidth: 1, BorderColor: colors.border,
-						Background: colors.raised, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}), Children: []core.Node{icon(iconArrowDown, 20, colors.accent)}}
+					return core.View{StyleFunc: func() core.Style {
+						return fin.raised().over(core.Style{Width: core.Pt(40), Height: core.Pt(40), CornerRadius: 12, BorderWidth: 1, BorderColor: colors.border(),
+							Background: colors.raised(), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter})
+					}, Children: []core.Node{icon(iconArrowDown, 20, colors.accent)}}
 				}
 				return iconTile(cx, iconArrowDown, 40)
 			}),
@@ -438,11 +450,13 @@ func listMore(cx *core.Scope) core.Node {
 			core.View{Style: core.Style{Padding: core.All(16), Gap: 16}, Children: []core.Node{
 				// Sticky: in the flow, then at the top while the page scrolls
 				// under it.
-				core.View{Style: core.Style{Position: core.Sticky, Top: core.Pt(0), Direction: core.Row, AlignItems: core.AlignBaseline, Gap: 8,
-					Margin: core.Edges{Left: -16, Right: -16, Top: -8}, Padding: core.Symmetric(8, 16), Background: colors.background,
-					Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.border}}, Children: []core.Node{
-					core.Text{Content: "More list features", Style: core.Style{FlexGrow: 1, FontSize: 15, FontWeight: semibold, Color: colors.text}},
-					core.Text{Content: "Position: Sticky", Style: core.Style{FontSize: 13, Color: colors.faint, FontFamily: mono}},
+				core.View{StyleFunc: func() core.Style {
+					return core.Style{Position: core.Sticky, Top: core.Pt(0), Direction: core.Row, AlignItems: core.AlignBaseline, Gap: 8,
+						Margin: core.Edges{Left: -16, Right: -16, Top: -8}, Padding: core.Symmetric(8, 16), Background: colors.background(),
+						Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.border()}}
+				}, Children: []core.Node{
+					core.Text{Content: "More list features", Style: core.Style{FlexGrow: 1, FontSize: 15, FontWeight: semibold}, StyleFunc: colored(colors.text)},
+					core.Text{Content: "Position: Sticky", Style: core.Style{FontSize: 13, FontFamily: mono}, StyleFunc: colored(colors.faint)},
 				}},
 				section(cx, "Pull to refresh", "", pullChildren...),
 				sectionf(cx, "Horizontal scroll view", rng.Get, core.View{Style: core.Style{Margin: core.Edges{Left: -14, Right: -14}}, Children: []core.Node{
@@ -458,13 +472,15 @@ func listMore(cx *core.Scope) core.Node {
 							fin := finOf(cx)
 							t := func() tone { return listTones[r.Index()%(len(listTones)-1)] }
 							load := func() float64 { return float64((r.Index()*37)%100) / 100 }
-							return core.View{Style: fin.raised.over(core.Style{Width: core.Pt(120), Height: core.Pt(124), CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous,
-								Background: colors.raised, BorderWidth: 1, BorderColor: colors.border, Padding: core.All(12), JustifyContent: core.JustifySpaceBetween}), Children: []core.Node{
+							return core.View{StyleFunc: func() core.Style {
+								return fin.raised().over(core.Style{Width: core.Pt(120), Height: core.Pt(124), CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous,
+									Background: colors.raised(), BorderWidth: 1, BorderColor: colors.border(), Padding: core.All(12), JustifyContent: core.JustifySpaceBetween})
+							}, Children: []core.Node{
 								textf(func() string { return fmt.Sprintf("Card %d", r.Index()+1) }, 12, regular, colors.muted),
 								core.Text{Spans: []core.Span{
 									{ContentFunc: func() string { return itoa(int(load()*100 + 0.5)) }},
 									{Content: " %", Style: core.Style{FontSize: 15, FontWeight: medium}},
-								}, Style: core.Style{FontSize: 26, FontWeight: semibold, Color: colors.text}},
+								}, Style: core.Style{FontSize: 26, FontWeight: semibold}, StyleFunc: colored(colors.text)},
 								core.Dynamic(func(*core.Scope) core.Node { return meter(cx, load, t(), -1) }),
 							}}
 						}},
@@ -481,13 +497,15 @@ func listMore(cx *core.Scope) core.Node {
 						cell(button(buttonProps{label: "Clear", variant: secondary, disabled: func() bool { return len(items.Get()) == 0 }}, func() { edit(func() { items.Set(nil) }) })),
 					}},
 					core.List{Viewport: core.ListViewportParent, TestID: "empty-list", Count: func() int { return len(items.Get()) }, EstimatedSize: 48,
-						Style: core.Style{CornerRadius: radiusControl, Background: colors.surface, Shadows: fin.card.shadows, BorderWidth: 1, BorderColor: colors.line},
+						StyleFunc: func() core.Style {
+							return core.Style{CornerRadius: radiusControl, Background: colors.surface(), Shadows: fin.card().shadows, BorderWidth: 1, BorderColor: colors.line()}
+						},
 						Empty: core.View{Style: core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 10, Height: core.Pt(194)}, Children: []core.Node{
 							iconTile(cx, iconLists, 40),
 							text(hint(cx, "Nothing here yet: tap Add", "Nothing here yet: click Add"), 13, regular, colors.muted),
 						}},
 						Separator: func(*core.Scope) core.Node {
-							return core.View{Style: core.Style{Height: core.Pt(1), Margin: core.Edges{Left: 14}, Background: colors.line}}
+							return core.View{Style: core.Style{Height: core.Pt(1), Margin: core.Edges{Left: 14}}, StyleFunc: filled(colors.line)}
 						},
 						Row: func(cx *core.Scope, r core.ListRow) core.Node {
 							colors := colorsOf(cx)
@@ -496,14 +514,14 @@ func listMore(cx *core.Scope) core.Node {
 								core.View{StyleFunc: func() core.Style {
 									return core.Style{Width: core.Pt(8), Height: core.Pt(8), CornerRadius: 2.5, Background: e().tone.color(cx)}
 								}},
-								core.Text{ContentFunc: func() string { return fmt.Sprintf("Item %d", e().n) }, Style: core.Style{FlexGrow: 1, FontSize: 15, Color: colors.text}},
+								core.Text{ContentFunc: func() string { return fmt.Sprintf("Item %d", e().n) }, Style: core.Style{FlexGrow: 1, FontSize: 15}, StyleFunc: colored(colors.text)},
 								core.Dynamic(func(*core.Scope) core.Node { t := e().tone; return badge(cx, toneNames[t], t) }),
 							}}
 						}},
 					core.Text{Spans: []core.Span{
 						codeSpan("Empty"), {Content: " while empty, separators between rows; changes animate with "}, codeSpan("AnimateLayout"),
 						{Content: ". In the page ("}, codeSpan("ListViewportParent"), {Content: "), the list is as tall as its rows."},
-					}, Style: core.Style{FontSize: 13, Color: colors.muted}},
+					}, Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.muted)},
 				),
 			}},
 		}}
@@ -548,12 +566,14 @@ func customIndicator(cx *core.Scope, pull *core.AnimatedValue, refreshing func()
 	}
 	return core.View{PointerEvents: core.PointerEventsNone, Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(0), Right: core.Pt(0),
 		Height: core.Pt(pullIndicator), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}, Children: []core.Node{
-		core.View{Style: fin.raised.over(core.Style{Width: core.Pt(40), Height: core.Pt(40), CornerRadius: 20, BorderWidth: 1, BorderColor: colors.border,
-			Background: colors.raised, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Animated: &core.AnimatedStyle{
-				Opacity:    lerp(pull, [2]float64{0, 24}, [2]float64{0, 1}),
-				TranslateY: lerp(pull, [2]float64{0, pullIndicator}, [2]float64{-28, 0}),
-				Scale:      lerp(pull, [2]float64{0, pullIndicator}, [2]float64{0.6, 1}),
-			}}), Children: []core.Node{
+		core.View{StyleFunc: func() core.Style {
+			return fin.raised().over(core.Style{Width: core.Pt(40), Height: core.Pt(40), CornerRadius: 20, BorderWidth: 1, BorderColor: colors.border(),
+				Background: colors.raised(), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Animated: &core.AnimatedStyle{
+					Opacity:    lerp(pull, [2]float64{0, 24}, [2]float64{0, 1}),
+					TranslateY: lerp(pull, [2]float64{0, pullIndicator}, [2]float64{-28, 0}),
+					Scale:      lerp(pull, [2]float64{0, pullIndicator}, [2]float64{0.6, 1}),
+				}})
+		}, Children: []core.Node{
 			// The arrow points down while pulling and turns up once
 			// releasing refreshes.
 			core.View{StyleFunc: func() core.Style {
@@ -562,7 +582,7 @@ func customIndicator(cx *core.Scope, pull *core.AnimatedValue, refreshing func()
 			}, Children: []core.Node{icon(iconArrowDown, 18, colors.accent)}},
 			core.View{StyleFunc: func() core.Style {
 				return shown(refreshing()).Merge(core.Style{Position: core.Absolute, Width: core.Pt(20), Height: core.Pt(20), CornerRadius: 10,
-					BorderWidth: 2, BorderColor: alpha(colors.accent, 0.25), BorderColors: core.EdgeColors{Top: colors.accent},
+					BorderWidth: 2, BorderColor: alpha(colors.accent(), 0.25), BorderColors: core.EdgeColors{Top: colors.accent()},
 					Animated: &core.AnimatedStyle{Rotate: lerp(turn, [2]float64{0, 1}, [2]float64{0, 360})}})
 			}},
 		}},
@@ -588,12 +608,14 @@ func pageEntries(from, n int) []pageRow {
 func entryRow(cx *core.Scope, e func() pageRow, label string) core.Node {
 	colors := colorsOf(cx)
 	fin := finOf(cx)
-	return core.View{Style: fin.raised.over(core.Style{Height: core.Pt(56), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(0, 14),
-		CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous, Background: colors.raised, BorderWidth: 1, BorderColor: colors.border}), Children: []core.Node{
+	return core.View{StyleFunc: func() core.Style {
+		return fin.raised().over(core.Style{Height: core.Pt(56), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Symmetric(0, 14),
+			CornerRadius: radiusInset, BorderCurve: core.BorderCurveContinuous, Background: colors.raised(), BorderWidth: 1, BorderColor: colors.border()})
+	}, Children: []core.Node{
 		core.View{StyleFunc: func() core.Style {
 			return core.Style{Width: core.Pt(8), Height: core.Pt(8), CornerRadius: 2.5, Background: e().tone.color(cx)}
 		}},
-		core.Text{ContentFunc: func() string { return fmt.Sprintf("%s %d", label, e().id+1) }, Style: core.Style{FlexGrow: 1, FontSize: 15, Color: colors.text}},
+		core.Text{ContentFunc: func() string { return fmt.Sprintf("%s %d", label, e().id+1) }, Style: core.Style{FlexGrow: 1, FontSize: 15}, StyleFunc: colored(colors.text)},
 		core.Dynamic(func(*core.Scope) core.Node { t := e().tone; return badge(cx, toneNames[t], t) }),
 	}}
 }
@@ -637,7 +659,7 @@ func listPage(cx *core.Scope) core.Node {
 	}
 	heading := func(title string, noteFn func() string) core.Node {
 		return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignBaseline, Gap: 8, Padding: core.Edges{Top: 8, Right: 4, Left: 4}}, Children: []core.Node{
-			core.Text{Content: title, Style: core.Style{FlexGrow: 1, FontSize: 17, FontWeight: semibold, Color: colors.text}},
+			core.Text{Content: title, Style: core.Style{FlexGrow: 1, FontSize: 17, FontWeight: semibold}, StyleFunc: colored(colors.text)},
 			textf(noteFn, 13, regular, colors.faint),
 		}}
 	}
@@ -661,10 +683,9 @@ func listPage(cx *core.Scope) core.Node {
 						// A week's heading: it sticks to the top of the page
 						// while its rows scroll under it.
 						Then: func(*core.Scope) core.Node {
-							return core.View{Style: core.Style{Height: core.Pt(34), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10, Padding: core.Symmetric(0, 4),
-								Background: colors.background}, Children: []core.Node{
+							return core.View{Style: core.Style{Height: core.Pt(34), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10, Padding: core.Symmetric(0, 4)}, StyleFunc: filled(colors.background), Children: []core.Node{
 								textf(func() string { return fmt.Sprintf("Week %d", row().week) }, 13, bold, colors.accent),
-								core.View{Style: core.Style{FlexGrow: 1, Height: core.Pt(1), Background: colors.line}},
+								core.View{Style: core.Style{FlexGrow: 1, Height: core.Pt(1)}, StyleFunc: filled(colors.line)},
 							}}
 						}}
 				}},
@@ -675,17 +696,19 @@ func listPage(cx *core.Scope) core.Node {
 						return "Loading more…"
 					}
 					return "End of the archive"
-				}, Style: core.Style{TextAlign: core.TextAlignCenter, Color: colors.faint, FontSize: 13, Padding: core.All(16)}},
+				}, Style: core.Style{TextAlign: core.TextAlignCenter, FontSize: 13, Padding: core.All(16)}, StyleFunc: colored(colors.faint)},
 				Row: func(cx *core.Scope, r core.ListRow) core.Node {
 					return entryRow(cx, func() pageRow { return archive.Get()[r.Index()] }, "Archived")
 				}},
 		}},
 	}}
-	bar := core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(0), Right: core.Pt(0), Height: core.Pt(pageBar),
-		Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Symmetric(0, 20), Background: colors.background,
-		Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.border},
-		Animated: &core.AnimatedStyle{TranslateY: core.Mul(hidden, core.Constant(-1))}}, Children: []core.Node{
-		core.Text{Content: "Recent and archived", Style: core.Style{FlexGrow: 1, FontSize: 15, FontWeight: semibold, Color: colors.text}},
+	bar := core.View{StyleFunc: func() core.Style {
+		return core.Style{Position: core.Absolute, Top: core.Pt(0), Left: core.Pt(0), Right: core.Pt(0), Height: core.Pt(pageBar),
+			Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Symmetric(0, 20), Background: colors.background(),
+			Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.border()},
+			Animated: &core.AnimatedStyle{TranslateY: core.Mul(hidden, core.Constant(-1))}}
+	}, Children: []core.Node{
+		core.Text{Content: "Recent and archived", Style: core.Style{FlexGrow: 1, FontSize: 15, FontWeight: semibold}, StyleFunc: colored(colors.text)},
 		text("hides as you scroll down", 13, regular, colors.faint),
 	}}
 	return core.View{Style: fillPage.Merge(core.Style{Overflow: core.Hidden}), Children: []core.Node{page, bar}}
@@ -701,7 +724,7 @@ func listsDemo(cx *core.Scope) core.Node {
 		head = core.Style{Padding: core.Edges{Top: 16, Right: 24, Bottom: 4, Left: 24}, Width: core.Pct(100), MaxWidth: core.Pt(600)}
 	}
 	views := map[string]func(*core.Scope) core.Node{"grid": listGrid, "sections": listContacts, "chat": listChat, "page": listPage, "more": listMore}
-	return core.View{Style: fillPage.Merge(core.Style{Background: colors.background}), Children: []core.Node{
+	return core.View{StyleFunc: func() core.Style { return fillPage.Merge(core.Style{Background: colors.background()}) }, Children: []core.Node{
 		core.View{Style: head, Children: []core.Node{segmented([]option[string]{
 			{value: "grid", label: "Grid"}, {value: "sections", label: "Sections"}, {value: "chat", label: "Chat"}, {value: "page", label: "Page"}, {value: "more", label: "More"},
 		}, tab.Get, tab.Set, false)}},

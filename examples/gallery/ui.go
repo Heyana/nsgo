@@ -88,27 +88,45 @@ func spacer() core.Node { return core.View{Style: core.Style{FlexGrow: 1}} }
 // themeToggle switches the app between light and dark, whatever the
 // system shows.
 func themeToggle(cx *core.Scope) core.Node {
-	isDark := cx.Dark()
-	name, label, next := iconSun, "Light appearance", core.AppearanceLight
-	if !isDark {
-		name, label, next = iconMoon, "Dark appearance", core.AppearanceDark
-	}
-	return roundButton(cx, name, label, secondary, 34, func() { cx.SetAppearance(next) })
+	name, label := toggleFace(cx)
+	return roundButtonf(cx, name, label, secondary, 34, func() { flipAppearance(cx) })
 }
 
 // barThemeToggle is the theme toggle in the system's bar (iOS, Android),
 // where the system draws the button (iOS's Liquid Glass): the item is the
 // icon alone.
 func barThemeToggle(cx *core.Scope) core.Node {
-	colors := colorsOf(cx)
-	isDark := cx.Dark()
-	name, label, next := iconSun, "Light appearance", core.AppearanceLight
-	if !isDark {
-		name, label, next = iconMoon, "Dark appearance", core.AppearanceDark
-	}
-	return press(pressProps{onPress: func() { cx.SetAppearance(next) }, scale: 0.92, label: label},
+	name, label := toggleFace(cx)
+	return press(pressProps{onPress: func() { flipAppearance(cx) }, scale: 0.92, labelFunc: label},
 		core.View{Style: core.Style{Width: core.Pt(34), Height: core.Pt(34), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
-			Children: []core.Node{icon(name, 18, colors.text)}})
+			Children: []core.Node{iconOf(name, 18, colorsOf(cx).text)}})
+}
+
+// toggleFace is a theme toggle's icon and label: the appearance it
+// switches to.
+func toggleFace(cx *core.Scope) (name func() iconName, label func() string) {
+	name = func() iconName {
+		if cx.Dark() {
+			return iconSun
+		}
+		return iconMoon
+	}
+	label = func() string {
+		if cx.Dark() {
+			return "Light appearance"
+		}
+		return "Dark appearance"
+	}
+	return name, label
+}
+
+// flipAppearance forces the appearance other than the one shown.
+func flipAppearance(cx *core.Scope) {
+	next := core.AppearanceDark
+	if cx.Dark() {
+		next = core.AppearanceLight
+	}
+	cx.SetAppearance(next)
 }
 
 //go:embed assets/logo-dark.svg
@@ -120,13 +138,13 @@ var logoLight []byte
 // logo is the gallery's mark in the appearance shown (deeper oranges on
 // light backgrounds).
 func logo(cx *core.Scope, size core.Points) core.Node {
-	isDark := cx.Dark()
-	data := logoLight
-	if isDark {
-		data = logoDark
-	}
-	return core.Image{Source: core.ImageSource{Data: data, Size: core.Size{Width: 100, Height: 100}},
-		Style: core.Style{Width: core.Pt(size), Height: core.Pt(size)}}
+	return core.Image{SourceFunc: func() core.ImageSource {
+		data := logoLight
+		if cx.Dark() {
+			data = logoDark
+		}
+		return core.ImageSource{Data: data, Size: core.Size{Width: 100, Height: 100}}
+	}, Style: core.Style{Width: core.Pt(size), Height: core.Pt(size)}}
 }
 
 // card builders take the demo's scope, so a demo page lists its cards as
@@ -204,8 +222,9 @@ func demoPage(cx *core.Scope, p pageProps, cards ...cardFunc) core.Node {
 			})
 		})
 	}
-	return core.Scroll{Ref: p.ref, TestID: "demo-scroll", Behavior: p.behavior, BehaviorFunc: p.behaviorFunc, Style: core.Style{FlexGrow: 1, FlexShrink: 1, Background: colors.background},
-		Children: append([]core.Node{body}, p.after...)}
+	return core.Scroll{Ref: p.ref, TestID: "demo-scroll", Behavior: p.behavior, BehaviorFunc: p.behaviorFunc, Style: core.Style{FlexGrow: 1, FlexShrink: 1},
+		StyleFunc: func() core.Style { return core.Style{Background: colors.background()} },
+		Children:  append([]core.Node{body}, p.after...)}
 }
 
 // pageHeaderProps are a page header's options.
@@ -218,9 +237,9 @@ type pageHeaderProps struct {
 	// left replaces the back button, center the title.
 	left, center, right core.Node
 	// background is the bar's fill (default the page's background).
-	background core.Color
+	background func() core.Color
 	// tint is the back button's color (default the accent).
-	tint core.Color
+	tint func() core.Color
 	// transparent lays it over the content: no fill, no hairline.
 	transparent bool
 }
@@ -231,17 +250,20 @@ type pageHeaderProps struct {
 func pageHeader(cx *core.Scope, p pageHeaderProps) core.Node {
 	colors := colorsOf(cx)
 	tint := p.tint
-	if tint == 0 {
+	if tint == nil {
 		tint = colors.accent
 	}
 	back := func() bool { return p.left == nil && !p.root && shell.nav.Depth() > 0 }
-	s := core.Style{Height: core.Pt(52), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Symmetric(0, 12)}
-	switch {
-	case p.transparent:
-	case p.background != 0:
-		s.Background = p.background
-	default:
-		s.Background, s.Borders, s.BorderColors = colors.background, core.Edges{Bottom: 1}, core.EdgeColors{Bottom: colors.line}
+	style := func() core.Style {
+		s := core.Style{Height: core.Pt(52), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8, Padding: core.Symmetric(0, 12)}
+		switch {
+		case p.transparent:
+		case p.background != nil:
+			s.Background = p.background()
+		default:
+			s.Background, s.Borders, s.BorderColors = colors.background(), core.Edges{Bottom: 1}, core.EdgeColors{Bottom: colors.line()}
+		}
+		return s
 	}
 	var children []core.Node
 	if p.left != nil {
@@ -258,14 +280,18 @@ func pageHeader(cx *core.Scope, p pageHeaderProps) core.Node {
 			},
 			Role: core.RoleButton, Label: "Back", HitSlop: core.All(6),
 			Style: core.Style{Height: core.Pt(32), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 2,
-				Padding: core.Edges{Left: 4, Right: 10}, CornerRadius: radiusControl, Cursor: core.CursorPointer,
-				Hover: &core.Style{Background: colors.hover}, Active: &core.Style{Background: colors.pressed}},
+				Padding: core.Edges{Left: 4, Right: 10}, CornerRadius: radiusControl, Cursor: core.CursorPointer},
+			StyleFunc: func() core.Style {
+				return core.Style{Hover: &core.Style{Background: colors.hover()}, Active: &core.Style{Background: colors.pressed()}}
+			},
 			Children: []core.Node{icon(iconBack, 18, tint), text("Back", 14, medium, tint)},
 		}
 	}})
 	center := p.center
 	if center == nil {
-		center = core.Text{Content: p.title, MaxLines: 1, Role: core.RoleHeader, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 17, FontWeight: semibold, Color: colors.text}}
+		title := text(p.title, 17, semibold, colors.text)
+		title.MaxLines, title.Role, title.Style.FlexGrow, title.Style.FlexShrink = 1, core.RoleHeader, 1, 1
+		center = title
 	}
 	children = append(children, core.View{StyleFunc: func() core.Style {
 		var pad core.Points = 4
@@ -277,24 +303,30 @@ func pageHeader(cx *core.Scope, p pageHeaderProps) core.Node {
 	if p.right != nil {
 		children = append(children, p.right)
 	}
-	return core.View{Style: s, Children: children}
+	return core.View{StyleFunc: style, Children: children}
 }
 
 // headerStyle is the system header's colors on every page (iOS,
-// Android).
-func headerStyle(cx *core.Scope) core.Style {
+// Android), for a HeaderStyleFunc.
+func headerStyle(cx *core.Scope) func() core.Style {
 	colors := colorsOf(cx)
-	return core.Style{Background: colors.background, Color: colors.text, TintColor: colors.accent}
+	return func() core.Style {
+		return core.Style{Background: colors.background(), Color: colors.text(), TintColor: colors.accent()}
+	}
+}
+
+// pageStyle is a page's background, for a StyleFunc.
+func pageStyle(cx *core.Scope) func() core.Style {
+	return func() core.Style { return core.Style{Background: colorsOf(cx).background()} }
 }
 
 // screen is a page a demo pushes: the system header on phones, the app's
 // own elsewhere.
 func screen(cx *core.Scope, title string, right core.Node, children ...core.Node) base.NavPage {
-	colors := colorsOf(cx)
-	return base.NavPage{Title: title, HeaderStyle: headerStyle(cx), HeaderRight: right,
-		Header:   pageHeader(cx, pageHeaderProps{title: title, right: right}),
-		Style:    core.Style{Background: colors.background},
-		Children: children}
+	return base.NavPage{Title: title, HeaderStyleFunc: headerStyle(cx), HeaderRight: right,
+		Header:    pageHeader(cx, pageHeaderProps{title: title, right: right}),
+		StyleFunc: pageStyle(cx),
+		Children:  children}
 }
 
 // itoa formats an integer.

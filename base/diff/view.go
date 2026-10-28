@@ -134,11 +134,13 @@ type DiffView struct {
 	// beside the line the pointer is over and the last selected one: lines
 	// are the selected ones when its line is one of them, else its line.
 	RenderAddAnnotation func(cx *core.Scope, lines LineRange) core.Node
-	Styles              Styles
-	Style               core.Style
-	StyleFunc           func() core.Style
-	Ref                 *Ref
-	TestID              string
+	// StylesFunc replaces Styles, again when what it reads changes.
+	Styles     Styles
+	StylesFunc func() Styles
+	Style      core.Style
+	StyleFunc  func() core.Style
+	Ref        *Ref
+	TestID     string
 
 	// OnChange receives the texts after a change was reverted or kept.
 	OnChange          func(old, new string)
@@ -197,6 +199,8 @@ type segment struct {
 }
 
 type dv struct {
+	// looks are the parts' styles, Styles or what StylesFunc returns.
+	looks        *core.Memo[*Styles]
 	p            DiffView
 	cx           *core.Scope
 	m            *model
@@ -241,7 +245,7 @@ type dv struct {
 
 // Render implements core.Node.
 func (p DiffView) Render(cx *core.Scope) core.Node {
-	v := &dv{p: p, cx: cx, rev: core.NewSignal(cx, 0), hlRev: core.NewSignal(cx, 0),
+	v := &dv{p: p, cx: cx, looks: stylesMemo(cx, p.Styles, p.StylesFunc), rev: core.NewSignal(cx, 0), hlRev: core.NewSignal(cx, 0),
 		scrollY: core.NewSignal(cx, core.Points(0)), viewport: core.NewSignal(cx, core.Size{}), vs: &core.Ref{},
 		expand: map[int][2]int{}, collapsed: map[string]bool{}, current: -1, m: &model{},
 		geo: core.NewSignal(cx, 0), selRev: core.NewSignal(cx, 0), hovered: core.NewSignal(cx, LineRange{Start: -1, End: -1}),
@@ -794,7 +798,7 @@ func (v *dv) side(side int) core.Node {
 	gutter := core.View{
 		StyleFunc: func() core.Style {
 			v.rev.Get()
-			return merge(core.Style{Width: core.Pt(core.Points(v.gutterWidth())), FlexShrink: 0}, v.p.Styles.Gutter)
+			return merge(core.Style{Width: core.Pt(core.Points(v.gutterWidth())), FlexShrink: 0}, v.styles().Gutter)
 		},
 		Children: []core.Node{v.rowsOf(func(i int, r row) core.Node { return v.gutterPiece(i, r, side) })},
 	}
@@ -823,7 +827,7 @@ func (v *dv) side(side int) core.Node {
 		StyleFunc: func() core.Style {
 			v.geo.Get()
 			return merge(core.Style{Width: core.Pt(core.Points(v.sideWidth())), Height: core.Pt(core.Points(v.height())),
-				Direction: core.Row}, v.p.Styles.Side)
+				Direction: core.Row}, v.styles().Side)
 		},
 		Children: []core.Node{gutter, text},
 	}
@@ -884,14 +888,18 @@ func (v *dv) hoverable(view *core.View, r row, side int) {
 
 // gutterPiece is row r's numbers and indicator in column side.
 func (v *dv) gutterPiece(i int, r row, side int) core.Node {
-	s := &v.p.Styles
+	s := v.styles
 	added, deleted := v.tints(r, side)
-	numStyle := merge(core.Style{Width: core.Pt(core.Points(v.numberWidth())), TextAlign: core.TextAlignEnd,
-		Padding: core.Edges{Right: 8}, LineHeight: core.Points(v.lh)}, s.LineNumber)
-	if added {
-		numStyle = merge(numStyle, s.LineNumberAdded)
-	} else if deleted {
-		numStyle = merge(numStyle, s.LineNumberDeleted)
+	numPlace := core.Style{Width: core.Pt(core.Points(v.numberWidth())), TextAlign: core.TextAlignEnd,
+		Padding: core.Edges{Right: 8}, LineHeight: core.Points(v.lh)}
+	numStyle := func() core.Style {
+		st := s().LineNumber
+		if added {
+			st = merge(st, s().LineNumberAdded)
+		} else if deleted {
+			st = merge(st, s().LineNumberDeleted)
+		}
+		return st
 	}
 	number := func(sd Side, at int) core.Node {
 		if v.p.NoLineNumbers {
@@ -901,7 +909,7 @@ func (v *dv) gutterPiece(i int, r row, side int) core.Node {
 		if at >= 0 {
 			text = fmt.Sprint(v.number(sd, at))
 		}
-		return core.Text{Content: text, MaxLines: 1, Style: numStyle}
+		return core.Text{Content: text, MaxLines: 1, Style: numPlace, StyleFunc: numStyle}
 	}
 	var children []core.Node
 	switch {
@@ -914,23 +922,35 @@ func (v *dv) gutterPiece(i int, r row, side int) core.Node {
 	}
 	switch v.p.Indicators {
 	case IndicatorBars:
-		var st core.Style
-		if added {
-			st = s.IndicatorAdded
-		} else if deleted {
-			st = s.IndicatorDeleted
+		st := func() core.Style {
+			switch {
+			case added:
+				return s().IndicatorAdded
+			case deleted:
+				return s().IndicatorDeleted
+			}
+			return core.Style{}
 		}
 		children = append(children, core.View{Style: core.Style{Width: core.Pt(core.Points(v.charW + 4))},
-			Children: []core.Node{core.View{Style: merge(core.Style{Width: core.Pt(3), FlexGrow: 1}, st)}}})
+			Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(3), FlexGrow: 1}, StyleFunc: st}}})
 	case IndicatorClassic:
-		mark, st := " ", core.Style{}
+		mark := " "
 		if added {
-			mark, st = "+", s.IndicatorAdded
+			mark = "+"
 		} else if deleted {
-			mark, st = "−", s.IndicatorDeleted
+			mark = "−"
 		}
-		children = append(children, core.Text{Content: mark, Style: merge(core.Style{Width: core.Pt(core.Points(v.charW + 4)),
-			LineHeight: core.Points(v.lh)}, st)})
+		st := func() core.Style {
+			switch {
+			case added:
+				return s().IndicatorAdded
+			case deleted:
+				return s().IndicatorDeleted
+			}
+			return core.Style{}
+		}
+		children = append(children, core.Text{Content: mark, Style: core.Style{Width: core.Pt(core.Points(v.charW + 4)),
+			LineHeight: core.Points(v.lh)}, StyleFunc: st})
 	}
 	desktop := core.Untracked(v.cx, v.cx.Env().Desktop)
 	press := func(ev core.PressEvent) {
@@ -941,7 +961,7 @@ func (v *dv) gutterPiece(i int, r row, side int) core.Node {
 		StyleFunc: func() core.Style {
 			st := merge(v.place(i, r), core.Style{Direction: core.Row})
 			if v.rowSelected(r, side) {
-				st = merge(st, s.LineSelected)
+				st = merge(st, s().LineSelected)
 			}
 			return st
 		},
@@ -966,17 +986,20 @@ func (v *dv) gutterPiece(i int, r row, side int) core.Node {
 
 // textPiece is row r's text in column side: a Text per wrapped line.
 func (v *dv) textPiece(i int, r row, side int) core.Node {
-	s := &v.p.Styles
+	s := v.styles
 	sd, line := r.pieceSide(side)
 	added, deleted := v.tints(r, side)
-	lineStyle := s.Line
-	switch {
-	case line < 0:
-		lineStyle = merge(lineStyle, s.Filler)
-	case added:
-		lineStyle = merge(lineStyle, s.LineAdded)
-	case deleted:
-		lineStyle = merge(lineStyle, s.LineDeleted)
+	lineStyle := func() core.Style {
+		st := s().Line
+		switch {
+		case line < 0:
+			st = merge(st, s().Filler)
+		case added:
+			st = merge(st, s().LineAdded)
+		case deleted:
+			st = merge(st, s().LineDeleted)
+		}
+		return st
 	}
 	var texts []core.Node
 	if line >= 0 {
@@ -998,9 +1021,9 @@ func (v *dv) textPiece(i int, r row, side int) core.Node {
 	}
 	view := core.View{
 		StyleFunc: func() core.Style {
-			st := merge(v.place(i, r), core.Style{Padding: core.Edges{Left: 8, Right: 8}}, lineStyle, s.Content)
+			st := merge(v.place(i, r), core.Style{Padding: core.Edges{Left: 8, Right: 8}}, lineStyle(), s().Content)
 			if v.rowSelected(r, side) {
-				st = merge(st, s.LineSelected)
+				st = merge(st, s().LineSelected)
 			}
 			return st
 		},
@@ -1045,7 +1068,7 @@ func (v *dv) bands() core.Node {
 
 // band is separator or file header row r at index i.
 func (v *dv) band(i int, r row) core.Node {
-	s := &v.p.Styles
+	s := v.styles
 	place := core.Style{Position: core.Absolute, Left: core.Pt(0), Width: core.Pt(core.Points(core.Untracked(v.cx, v.viewWidth))),
 		Top: core.Pt(core.Points(v.tops[i])), Height: core.Pt(core.Points(v.lh)), Direction: core.Row, AlignItems: core.AlignCenter}
 	if r.kind == rowFile {
@@ -1059,11 +1082,11 @@ func (v *dv) band(i int, r row) core.Node {
 		if f.Collapsed {
 			mark = "▸ "
 		}
-		return core.View{Style: merge(place, s.FileHeader), Role: core.RoleButton, Label: name,
+		return core.View{Style: place, StyleFunc: func() core.Style { return s().FileHeader }, Role: core.RoleButton, Label: name,
 			OnPress: func(core.PressEvent) { v.toggleFile(f.Path) },
 			Children: []core.Node{core.Text{MaxLines: 1, Spans: []core.Span{{Content: mark + name + "  "},
-				{Content: fmt.Sprintf("+%d", f.Added), Style: core.Style{Color: s.IndicatorAdded.Color}}, {Content: " "},
-				{Content: fmt.Sprintf("−%d", f.Deleted), Style: core.Style{Color: s.IndicatorDeleted.Color}}}}}}
+				{Content: fmt.Sprintf("+%d", f.Added), StyleFunc: func() core.Style { return core.Style{Color: s().IndicatorAdded.Color} }}, {Content: " "},
+				{Content: fmt.Sprintf("−%d", f.Deleted), StyleFunc: func() core.Style { return core.Style{Color: s().IndicatorDeleted.Color} }}}}}}
 	}
 	label := r.header
 	if label == "" {
@@ -1073,7 +1096,7 @@ func (v *dv) band(i int, r row) core.Node {
 		}
 	}
 	gap := r.gap
-	return core.View{Style: merge(place, s.Separator), Role: core.RoleButton, Label: label,
+	return core.View{Style: place, StyleFunc: func() core.Style { return s().Separator }, Role: core.RoleButton, Label: label,
 		OnPress: func(core.PressEvent) {
 			if r.header == "" {
 				v.expandGap(gap, math.MaxInt32, math.MaxInt32)
@@ -1113,9 +1136,9 @@ func (v *dv) spans(r row, isOld bool, line, from, to int) []core.Span {
 	}
 	text := v.m.new[line]
 	toks := v.hlNew[line]
-	word := v.p.Styles.WordAdded
+	word := v.styles().WordAdded
 	if isOld {
-		text, toks, word = v.m.old[line], v.hlOld[line], v.p.Styles.WordDeleted
+		text, toks, word = v.m.old[line], v.hlOld[line], v.styles().WordDeleted
 	}
 	text = strings.TrimSuffix(text, "\n")
 	to = min(to, len(text))
@@ -1193,7 +1216,7 @@ func (v *dv) actions() core.Node {
 					}
 				}
 				return merge(core.Style{Position: core.Absolute, Left: core.Pt(0), Width: core.Pt(core.Points(v.viewWidth() - 8)),
-					Top: core.Pt(core.Points(top)), Direction: core.Row, JustifyContent: core.JustifyEnd}, v.p.Styles.HunkActions)
+					Top: core.Pt(core.Points(top)), Direction: core.Row, JustifyContent: core.JustifyEnd}, v.styles().HunkActions)
 			},
 			Children: []core.Node{v.p.RenderHunkActions(cx, hk)},
 		}
@@ -1384,3 +1407,18 @@ func (r *Ref) ScrollToFile(path string) {
 		}
 	}
 }
+
+// stylesMemo holds the parts' styles: styles, or what fn returns as it
+// changes. Reading it is tracked, so a part's style follows.
+func stylesMemo(cx *core.Scope, styles Styles, fn func() Styles) *core.Memo[*Styles] {
+	return core.NewMemoFunc(cx, func() *Styles {
+		if fn == nil {
+			return &styles
+		}
+		s := fn()
+		return &s
+	}, nil)
+}
+
+// styles are the parts' styles, read where a part is styled.
+func (v *dv) styles() *Styles { return v.looks.Get() }

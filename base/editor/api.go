@@ -325,12 +325,14 @@ type Editor struct {
 	// InlineCompletionDelay is how long typing pauses before
 	// OnInlineCompletionRequest asks: 300 ms when 0.
 	InlineCompletionDelay time.Duration
-	Styles                Styles
-	Label                 string
-	Style                 core.Style
-	StyleFunc             func() core.Style
-	Ref                   *Ref
-	TestID                string
+	// StylesFunc replaces Styles, again when what it reads changes.
+	Styles     Styles
+	StylesFunc func() Styles
+	Label      string
+	Style      core.Style
+	StyleFunc  func() core.Style
+	Ref        *Ref
+	TestID     string
 
 	OnSelectionChange   func([]Selection)
 	OnSearchChange      func(SearchResult)

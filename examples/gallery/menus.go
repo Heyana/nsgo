@@ -28,33 +28,32 @@ func newMenuLook(cx *core.Scope) menuLook {
 }
 
 // surface is the popup on desktops, the sheet at the bottom on touch
-// screens.
-func (l menuLook) surface(cx *core.Scope) core.Style {
+// screens, for a PopupStyleFunc.
+func (l menuLook) surface(cx *core.Scope) func() core.Style {
 	colors := colorsOf(cx)
-	fin := finOf(cx)
-	if l.desktop {
-		return fin.raised.over(core.Style{Background: colors.raised, CornerRadius: radiusInset, BorderWidth: 1, BorderColor: colors.border,
-			Padding: core.All(6), MinWidth: core.Pt(220)})
+	return func() core.Style {
+		if l.desktop {
+			return finOf(cx).raised().over(core.Style{Background: colors.raised(), CornerRadius: radiusInset, BorderWidth: 1, BorderColor: colors.border(),
+				Padding: core.All(6), MinWidth: core.Pt(220)})
+		}
+		return core.Style{Background: colors.surface(), CornerRadii: core.Corners{TopLeft: 20, TopRight: 20},
+			Padding: core.Edges{Top: 10, Right: 10, Bottom: 34, Left: 10}}
 	}
-	return core.Style{Background: colors.surface, CornerRadii: core.Corners{TopLeft: 20, TopRight: 20},
-		Padding: core.Edges{Top: 10, Right: 10, Bottom: 34, Left: 10}}
 }
 
 func (menuLook) backdrop() core.Style { return core.Style{Background: black(0.45)} }
 
 // itemHovered and itemPressed are an item under the pointer and pressed:
-// an orange tint with a hairline of it.
+// an orange tint with a hairline of it, read in a StyleFunc.
 func itemHovered(cx *core.Scope) *core.Style {
-	isDark := cx.Dark()
-	if isDark {
+	if cx.Dark() {
 		return &core.Style{Background: core.RGBA(0xed986e, 0.08), BorderColor: core.RGBA(0xed986e, 0.22)}
 	}
 	return &core.Style{Background: core.RGBA(0xd4581b, 0.08), BorderColor: core.RGBA(0xd4581b, 0.24)}
 }
 
 func itemPressed(cx *core.Scope) *core.Style {
-	isDark := cx.Dark()
-	if isDark {
+	if cx.Dark() {
 		return &core.Style{Background: core.RGBA(0xed986e, 0.14), BorderColor: core.RGBA(0xed986e, 0.32)}
 	}
 	return &core.Style{Background: core.RGBA(0xd4581b, 0.14), BorderColor: core.RGBA(0xd4581b, 0.34)}
@@ -87,10 +86,11 @@ func (l menuLook) item(cx *core.Scope, p itemProps) core.Node {
 		fg = colors.danger
 	}
 	s := l.rowStyle()
-	s.Hover, s.Active, s.Disabled = itemHovered(cx), itemPressed(cx), &core.Style{Opacity: core.Alpha(0.35)}
-	children := []core.Node{core.Text{ContentFunc: p.label, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, Color: fg}}}
+	s.Disabled = &core.Style{Opacity: core.Alpha(0.35)}
+	states := func() core.Style { return core.Style{Hover: itemHovered(cx), Active: itemPressed(cx)} }
+	children := []core.Node{core.Text{ContentFunc: p.label, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14}, StyleFunc: colored(fg)}}
 	if p.note != "" {
-		children = append(children, core.Text{Content: p.note, Style: core.Style{FontSize: 12, Color: colors.faint, FontFamily: mono}})
+		children = append(children, core.Text{Content: p.note, Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.faint)})
 	}
 	if p.mark != nil {
 		children = append(children, core.View{Style: core.Style{Width: core.Pt(16), AlignItems: core.AlignCenter}, Children: []core.Node{
@@ -99,13 +99,13 @@ func (l menuLook) item(cx *core.Scope, p itemProps) core.Node {
 				case markCheck:
 					return icon(iconCheck, 14, colors.accent)
 				case markDot:
-					return core.View{Style: core.Style{Width: core.Pt(7), Height: core.Pt(7), CornerRadius: 4, Background: colors.accent}}
+					return core.View{Style: core.Style{Width: core.Pt(7), Height: core.Pt(7), CornerRadius: 4}, StyleFunc: filled(colors.accent)}
 				}
 				return core.Group{}
 			}),
 		}})
 	}
-	return base.MenuItem{OnSelect: p.onSelect, Disabled: p.disabled, NoCloseOnSelect: p.keepOpen, Style: s, Children: children}
+	return base.MenuItem{OnSelect: p.onSelect, Disabled: p.disabled, NoCloseOnSelect: p.keepOpen, Style: s, StyleFunc: states, Children: children}
 }
 
 // label is a static item label.
@@ -117,32 +117,30 @@ func (l menuLook) submenu(cx *core.Scope, name string, disabled bool, children .
 	colors := colorsOf(cx)
 	row := l.rowStyle()
 	row.Gap = 0
-	row.Hover, row.Active = itemHovered(cx), itemPressed(cx)
 	if disabled {
 		row.Opacity = core.Alpha(0.35)
 	}
 	back := l.rowStyle()
 	back.Gap = 6
-	back.Active = itemPressed(cx)
 	return base.Submenu{Disabled: func() bool { return disabled }, Label: name,
-		Trigger: core.View{Style: row, Children: []core.Node{
-			core.Text{Content: name, Style: core.Style{FlexGrow: 1, FontSize: 14, Color: colors.text}},
+		Trigger: core.View{Style: row, StyleFunc: func() core.Style { return core.Style{Hover: itemHovered(cx), Active: itemPressed(cx)} }, Children: []core.Node{
+			core.Text{Content: name, Style: core.Style{FlexGrow: 1, FontSize: 14}, StyleFunc: colored(colors.text)},
 			icon(iconChevron, 14, colors.faint),
 		}},
-		Back:     core.View{Style: back, Children: []core.Node{icon(iconBack, 14, colors.accent), text(name, 14, semibold, colors.accent)}},
+		Back:     core.View{Style: back, StyleFunc: func() core.Style { return core.Style{Active: itemPressed(cx)} }, Children: []core.Node{icon(iconBack, 14, colors.accent), text(name, 14, semibold, colors.accent)}},
 		Children: children}
 }
 
 // groupTitle is a group's title: not an item, nothing to press.
 func groupTitle(cx *core.Scope, s string) core.Node {
 	colors := colorsOf(cx)
-	return core.Text{Content: s, Style: core.Style{FontSize: 11, FontWeight: semibold, LetterSpacing: 0.6, Color: colors.faint,
-		TextTransform: core.TextTransformUppercase, Padding: core.Edges{Top: 8, Right: 8, Bottom: 4, Left: 8}}}
+	return core.Text{Content: s, Style: core.Style{FontSize: 11, FontWeight: semibold, LetterSpacing: 0.6,
+		TextTransform: core.TextTransformUppercase, Padding: core.Edges{Top: 8, Right: 8, Bottom: 4, Left: 8}}, StyleFunc: colored(colors.faint)}
 }
 
 func separator(cx *core.Scope) core.Node {
 	colors := colorsOf(cx)
-	return base.MenuSeparator{Style: core.Style{Height: core.Pt(1), Margin: core.Symmetric(4, 4), Background: colors.line}}
+	return base.MenuSeparator{Style: core.Style{Height: core.Pt(1), Margin: core.Symmetric(4, 4)}, StyleFunc: filled(colors.line)}
 }
 
 // chip is a pressable that opens a menu.
@@ -154,9 +152,11 @@ func chip(cx *core.Scope, label func() string, name iconName) core.Node {
 		children = append(children, icon(name, 14, colors.muted))
 	}
 	children = append(children, textf(label, 14, medium, colors.text))
-	return core.View{Style: fin.raised.over(core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6, AlignSelf: core.AlignStart,
-		Padding: core.Symmetric(0, 12), Height: core.Pt(34), JustifyContent: core.JustifyCenter, CornerRadius: radiusControl, Background: colors.raised,
-		Active: &core.Style{Background: colors.border}, Hover: &core.Style{Background: colors.border}}), Children: children}
+	return core.View{StyleFunc: func() core.Style {
+		return fin.raised().over(core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6, AlignSelf: core.AlignStart,
+			Padding: core.Symmetric(0, 12), Height: core.Pt(34), JustifyContent: core.JustifyCenter, CornerRadius: radiusControl, Background: colors.raised(),
+			Active: &core.Style{Background: colors.border()}, Hover: &core.Style{Background: colors.border()}})
+	}, Children: children}
 }
 
 var zones = []string{
@@ -200,7 +200,7 @@ func menusDemo(cx *core.Scope) core.Node {
 		return ""
 	}
 	menu := func(name string, trigger core.Node, children ...core.Node) base.Menu {
-		return base.Menu{Offset: 4, Margin: 8, PopupStyle: l.surface(cx), BackdropStyle: l.backdrop(), OnOpenChange: changed(name),
+		return base.Menu{Offset: 4, Margin: 8, PopupStyleFunc: l.surface(cx), BackdropStyle: l.backdrop(), OnOpenChange: changed(name),
 			Label: name, Trigger: trigger, Children: children}
 	}
 
@@ -378,11 +378,11 @@ func menusDemo(cx *core.Scope) core.Node {
 							colors := colorsOf(cx)
 							id := core.Untracked(cx, file).id
 							starred := func() bool { return file().starred }
-							return base.ContextMenu{Margin: 8, PopupStyle: l.surface(cx), BackdropStyle: l.backdrop(), OnOpenChange: changed(core.Untracked(cx, file).name),
+							return base.ContextMenu{Margin: 8, PopupStyleFunc: l.surface(cx), BackdropStyle: l.backdrop(), OnOpenChange: changed(core.Untracked(cx, file).name),
 								Trigger: core.View{StyleFunc: func() core.Style {
 									s := core.Style{MinHeight: core.Pt(48), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12}
 									if i() != 0 {
-										s.Borders, s.BorderColors = core.Edges{Top: 1}, core.EdgeColors{Top: colors.line}
+										s.Borders, s.BorderColors = core.Edges{Top: 1}, core.EdgeColors{Top: colors.line()}
 									}
 									return s
 								}, Children: []core.Node{
@@ -392,8 +392,8 @@ func menusDemo(cx *core.Scope) core.Node {
 										}
 										return icon(iconText, 16, colors.muted)
 									}),
-									core.Text{ContentFunc: func() string { return file().name }, MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, Color: colors.text}},
-									base.Menu{Align: core.AlignEnd, Offset: 4, Margin: 8, PopupStyle: l.surface(cx), BackdropStyle: l.backdrop(),
+									core.Text{ContentFunc: func() string { return file().name }, MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14}, StyleFunc: colored(colors.text)},
+									base.Menu{Align: core.AlignEnd, Offset: 4, Margin: 8, PopupStyleFunc: l.surface(cx), BackdropStyle: l.backdrop(),
 										Label: "Actions for " + core.Untracked(cx, file).name,
 										Trigger: core.View{Tooltip: core.Text{Content: "More actions"}, HitSlop: core.All(8),
 											Style:    core.Style{Padding: core.Symmetric(0, 8), Height: core.Pt(28), JustifyContent: core.JustifyCenter, Active: &core.Style{Opacity: core.Alpha(0.5)}},
@@ -491,8 +491,10 @@ func menusDemo(cx *core.Scope) core.Node {
 		show := func(at core.Point) { desktop.PopupMenu(cx, items(), at, nil) }
 		return card(cx, cardProps{icon: iconMenu, title: "The platform's menu", subtitle: "PopupMenu shows the system's own at a point", right: badge(cx, "Native", toneInfo)},
 			core.View{TestID: "popup-area", Role: core.RoleButton, Label: "Show the native menu",
-				Style: core.Style{Height: core.Pt(72), CornerRadius: radiusInset, Background: colors.raised, BorderWidth: 1, BorderColor: colors.border,
-					AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Active: &core.Style{Background: colors.pressed}},
+				StyleFunc: func() core.Style {
+					return core.Style{Height: core.Pt(72), CornerRadius: radiusInset, Background: colors.raised(), BorderWidth: 1, BorderColor: colors.border(),
+						AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Active: &core.Style{Background: colors.pressed()}}
+				},
 				OnPress:       func(e core.PressEvent) { show(e.PagePosition) },
 				OnContextMenu: func(e core.ContextMenuEvent) { show(e.PagePosition) },
 				Children:      []core.Node{text(hint(cx, "Press here", "Right click or press here"), 14, regular, colors.muted)}},
@@ -527,7 +529,7 @@ func menusDemo(cx *core.Scope) core.Node {
 							if i == 0 {
 								c = colors.text
 							}
-							lines = append(lines, core.Text{Content: e, Style: core.Style{FontSize: 12, FontFamily: mono, Color: c}})
+							lines = append(lines, core.Text{Content: e, Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(c)})
 						}
 						return core.View{Style: core.Style{Gap: 4}, Children: lines}
 					})}}

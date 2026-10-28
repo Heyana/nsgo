@@ -73,7 +73,7 @@ func storageDemo(cx *core.Scope) core.Node {
 				return "openings"
 			}, toneNeutral),
 			core.Text{ContentFunc: func() string { return fmt.Sprintf("SetItem(%q, %q)", launchesKey, strconv.Itoa(shown.Get())) },
-				Style: core.Style{FontSize: 12, Color: colors.muted, FontFamily: mono}},
+				Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.muted)},
 		)
 	}
 
@@ -87,16 +87,16 @@ func storageDemo(cx *core.Scope) core.Node {
 				core.Text{ContentFunc: func() string {
 					return map[string]string{"": "", "saved": "Saved", "failed": "Not saved"}[saved.Get()]
 				}, StyleFunc: func() core.Style {
-					c := colors.faint
+					c := colors.faint()
 					switch saved.Get() {
 					case "failed":
-						c = colors.danger
+						c = colors.danger()
 					case "saved":
-						c = colors.up
+						c = colors.up()
 					}
 					return core.Style{FlexGrow: 1, FontSize: 12, Color: c}
 				}},
-				core.Text{ContentFunc: func() string { return fmt.Sprintf("%d chars", len([]rune(note()))) }, Style: core.Style{FontSize: 12, Color: colors.faint}},
+				core.Text{ContentFunc: func() string { return fmt.Sprintf("%d chars", len([]rune(note()))) }, Style: core.Style{FontSize: 12}, StyleFunc: colored(colors.faint)},
 			}},
 		)
 	}
@@ -130,14 +130,14 @@ func storageDemo(cx *core.Scope) core.Node {
 							colors := colorsOf(cx)
 							return core.Dynamic(func(*core.Scope) core.Node {
 								return listRow(cx, i() == 0, nil,
-									core.Text{ContentFunc: func() string { return e().key }, MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, Color: colors.text, FontFamily: mono}},
-									core.Text{ContentFunc: func() string { return fmt.Sprintf("%d chars", e().length) }, Style: core.Style{FontSize: 13, Color: colors.muted}},
+									core.Text{ContentFunc: func() string { return e().key }, MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, FontFamily: mono}, StyleFunc: colored(colors.text)},
+									core.Text{ContentFunc: func() string { return fmt.Sprintf("%d chars", e().length) }, Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.muted)},
 								)
 							})
 						})}}
 				}},
 			core.Text{ContentFunc: func() string { return fmt.Sprintf("%s · %d chars of 5 MB", count(len(store.Keys()), "key"), total()) },
-				Style: core.Style{FontSize: 13, Color: colors.faint}},
+				Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.faint)},
 			button(buttonProps{label: "Clear all", variant: secondary, disabled: func() bool { return len(store.Keys()) == 0 }}, clearAll),
 			text("The data stays on this device and survives restarts, under the app's id from nsgo.yaml.", 12, regular, colors.faint),
 		)

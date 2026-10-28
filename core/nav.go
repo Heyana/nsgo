@@ -61,7 +61,7 @@ func (t *Tree) mountScreen(cx *Scope, parent *node, s Screen) {
 		}
 	}
 	n.screen = sn
-	t.bindStyle(cx, n, fill.Merge(s.Style), nil)
+	t.bindStyle(cx, n, fill.Merge(s.Style), s.StyleFunc)
 	n.props = driver.ViewProps{Label: s.Title, TestID: s.TestID}
 	if s.TitleFunc != nil {
 		cx.renderEffect(func() {

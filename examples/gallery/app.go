@@ -6,9 +6,7 @@
 //
 // It translates NSH's examples/gallery demo by demo, and departs from it
 // where NSGo differs: icons are Lucide's (core.Icon) rather than glyphs
-// drawn in canvases; the tree is built again when the theme or the
-// appearance changes, as components read their colors when built; NSH's
-// Tailwind and standard-module demos have no NSGo counterpart, while
+// drawn in canvases; NSH's Tailwind and standard-module demos have no NSGo counterpart, while
 // Layout, Shader and Accessibility show what NSGo has beyond NSH's
 // gallery.
 package main
@@ -188,7 +186,8 @@ func (g *gallery) open(name string) {
 const lastDemo = "lastDemo"
 
 // Root builds the gallery again when the window's width calls for the
-// other layout or its colors change, keeping its state in shell.
+// other layout, keeping its state in shell; a change of theme or
+// appearance restyles it in place.
 // NSGO_GALLERY_OPEN names a demo to open at start, for screenshots.
 func Root(cx *core.Scope) core.Node {
 	cx.SetTheme(galleryTheme())
@@ -222,7 +221,6 @@ func Root(cx *core.Scope) core.Node {
 
 	return core.Dynamic(func(cx *core.Scope) core.Node {
 		wide := desktopLayout.Get()
-		cx.Palette()
 		// What the layout builds mounts untracked, outside this function.
 		return core.Func(func(cx *core.Scope) core.Node {
 			colors := colorsOf(cx)
@@ -236,7 +234,7 @@ func Root(cx *core.Scope) core.Node {
 			}
 			children = append(children, body, g.toasts.view(wide))
 			return core.View{StyleFunc: func() core.Style {
-				return fillPage.Merge(core.Style{Background: chromeFill(cx), Color: colors.text})
+				return fillPage.Merge(core.Style{Background: chromeFill(cx), Color: colors.text()})
 			}, Children: children}
 		})
 	})
@@ -289,7 +287,7 @@ func (g *gallery) titleBar(cx *core.Scope, wide bool) core.Node {
 		children = append(children, g.sidebarToggle(cx))
 	}
 	children = append(children,
-		core.Text{Content: "Gallery", MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13, FontWeight: semibold, Color: colors.text}},
+		core.Text{Content: "Gallery", MaxLines: 1, Style: core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 13, FontWeight: semibold}, StyleFunc: colored(colors.text)},
 		text("NSGo", 11, regular, colors.muted),
 	)
 	return core.View{Desktop: core.DesktopViewProps{WindowDrag: core.WindowDragOn}, TestID: "title-bar",
@@ -297,7 +295,7 @@ func (g *gallery) titleBar(cx *core.Scope, wide bool) core.Node {
 			tb := desktop.TitleBar(cx)
 			return core.Style{Height: core.Pt(max(tb.Top, 40)), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8,
 				Padding: core.Edges{Left: tb.Left + 12, Right: tb.Right + 12}, Background: chromeFill(cx),
-				Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.line}}
+				Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.line()}}
 		},
 		Children: children}
 }
@@ -305,11 +303,10 @@ func (g *gallery) titleBar(cx *core.Scope, wide bool) core.Node {
 // chromeFill is the background of the window's chrome, the title bar
 // and the sidebar: none while a window material shows through them.
 func chromeFill(cx *core.Scope) core.Color {
-	colors := colorsOf(cx)
 	if desktop.ShowsMaterial(cx) {
 		return 0
 	}
-	return colors.inset
+	return colorsOf(cx).inset()
 }
 
 // toggleSidebar hides or shows the desktop layout's sidebar.
@@ -322,7 +319,10 @@ func (g *gallery) sidebarToggle(cx *core.Scope) core.Node {
 	return core.View{OnPress: func(core.PressEvent) { g.toggleSidebar() }, Role: core.RoleButton, Label: "Toggle sidebar",
 		Selected: g.sidebarOpen.Get, Desktop: core.DesktopViewProps{WindowDrag: core.WindowDragOff},
 		Style: core.Style{Width: core.Pt(28), Height: core.Pt(28), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
-			CornerRadius: radiusControl, Cursor: core.CursorPointer, Hover: &core.Style{Background: colors.hover}, Active: &core.Style{Background: colors.pressed}},
+			CornerRadius: radiusControl, Cursor: core.CursorPointer},
+		StyleFunc: func() core.Style {
+			return core.Style{Hover: &core.Style{Background: colors.hover()}, Active: &core.Style{Background: colors.pressed()}}
+		},
 		Children: []core.Node{icon(iconSidebar, 18, colors.muted)}}
 }
 
@@ -334,19 +334,18 @@ func (g *gallery) phone(cx *core.Scope) core.Node {
 	}
 	g.wasDesktop = false
 	return g.nav.Stack(core.Style{FlexGrow: 1}, func(cx *core.Scope, r route, _ func() int) base.NavPage {
-		colors := colorsOf(cx)
 		switch {
 		case r.page != nil:
 			return r.page(cx)
 		case r.demo != "":
 			d, _ := findDemo(r.demo)
-			return base.NavPage{Title: d.name, TestID: "screen-" + d.name, HeaderStyle: headerStyle(cx),
-				Header: pageHeader(cx, pageHeaderProps{title: d.name}),
-				Style:  core.Style{Background: colors.background},
-				Children: []core.Node{core.View{Style: fillPage.Merge(core.Style{Background: colors.background}),
+			return base.NavPage{Title: d.name, TestID: "screen-" + d.name, HeaderStyleFunc: headerStyle(cx),
+				Header:    pageHeader(cx, pageHeaderProps{title: d.name}),
+				StyleFunc: pageStyle(cx),
+				Children: []core.Node{core.View{Style: fillPage, StyleFunc: pageStyle(cx),
 					Children: []core.Node{core.Func(func(cx *core.Scope) core.Node { return d.screen(cx) })}}}}
 		}
-		return base.NavPage{Title: "Gallery", TestID: "index", HeaderStyle: headerStyle(cx), HeaderRight: barThemeToggle(cx),
+		return base.NavPage{Title: "Gallery", TestID: "index", HeaderStyleFunc: headerStyle(cx), HeaderRight: barThemeToggle(cx),
 			Header:   pageHeader(cx, pageHeaderProps{title: "Gallery", root: true, right: themeToggle(cx)}),
 			Children: []core.Node{g.home(cx)}}
 	})
@@ -363,15 +362,15 @@ func (g *gallery) home(cx *core.Scope) core.Node {
 		}
 		nodes = append(nodes, appear(i+1, false, core.View{TestID: "group-" + grp.title, Style: core.Style{Gap: 8}, Children: []core.Node{
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignBaseline, Padding: core.Symmetric(0, 4)}, Children: []core.Node{
-				core.Text{Content: grp.title, Role: core.RoleHeader, Style: core.Style{FlexGrow: 1, FontSize: 13, FontWeight: semibold, Color: colors.muted,
-					LetterSpacing: 0.4, TextTransform: core.TextTransformUppercase}},
-				core.Text{Content: itoa(len(grp.demos)), Style: core.Style{FontSize: 12, Color: colors.faint, FontFamily: mono}},
+				core.Text{Content: grp.title, Role: core.RoleHeader, Style: core.Style{FlexGrow: 1, FontSize: 13, FontWeight: semibold,
+					LetterSpacing: 0.4, TextTransform: core.TextTransformUppercase}, StyleFunc: colored(colors.muted)},
+				core.Text{Content: itoa(len(grp.demos)), Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.faint)},
 			}},
-			core.View{Style: core.Style{Background: colors.surface, CornerRadius: radiusCard, BorderCurve: core.BorderCurveContinuous,
-				BorderWidth: 1, BorderColor: colors.border, Overflow: core.Hidden}, Children: rows},
+			core.View{Style: core.Style{CornerRadius: radiusCard, BorderCurve: core.BorderCurveContinuous, BorderWidth: 1, Overflow: core.Hidden},
+				StyleFunc: func() core.Style { return core.Style{Background: colors.surface(), BorderColor: colors.border()} }, Children: rows},
 		}}))
 	}
-	return core.Scroll{TestID: "home", Style: core.Style{FlexGrow: 1, Background: colors.background}, Children: []core.Node{
+	return core.Scroll{TestID: "home", Style: core.Style{FlexGrow: 1}, StyleFunc: pageStyle(cx), Children: []core.Node{
 		core.View{Style: core.Style{Padding: core.Edges{Top: 16, Right: 16, Bottom: 40, Left: 16}, PaddingEnv: core.EnvEdges{Bottom: core.EnvSafeArea}, Gap: 20}, Children: nodes},
 	}}
 }
@@ -381,14 +380,19 @@ func demoRow(cx *core.Scope, d demo, first bool, open func()) core.Node {
 	colors := colorsOf(cx)
 	s := core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 14, Padding: core.All(12)}
 	if !first {
-		s.Borders, s.BorderColors = core.Edges{Top: 1}, core.EdgeColors{Top: colors.line}
+		s.Borders = core.Edges{Top: 1}
 	}
 	return press(pressProps{onPress: open, scale: 0.98, label: d.name, testID: "nav-" + d.name},
-		core.View{Style: s, Children: []core.Node{
+		core.View{Style: s, StyleFunc: func() core.Style {
+			if first {
+				return core.Style{}
+			}
+			return core.Style{BorderColors: core.EdgeColors{Top: colors.line()}}
+		}, Children: []core.Node{
 			iconTile(cx, d.icon, 38),
 			core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: []core.Node{
 				text(d.name, 16, medium, colors.text),
-				core.Text{Content: d.detail, MaxLines: 2, Style: core.Style{FontSize: 13, LineHeight: 18, Color: colors.muted}},
+				core.Text{Content: d.detail, MaxLines: 2, Style: core.Style{FontSize: 13, LineHeight: 18}, StyleFunc: colored(colors.muted)},
 			}},
 			icon(iconChevron, 16, colors.faint),
 		}})
@@ -454,8 +458,9 @@ func (g *gallery) sidebar(cx *core.Scope) core.Node {
 	env := cx.Env()
 	var list []core.Node
 	for _, grp := range groups {
-		items := []core.Node{core.Text{Content: grp.title, Role: core.RoleHeader, Style: core.Style{FontSize: 11, FontWeight: semibold, Color: colors.faint,
-			LetterSpacing: 0.6, TextTransform: core.TextTransformUppercase, Padding: core.Edges{Top: 16, Right: 10, Bottom: 6, Left: 10}}}}
+		items := []core.Node{core.Text{Content: grp.title, Role: core.RoleHeader, Style: core.Style{FontSize: 11, FontWeight: semibold,
+			LetterSpacing: 0.6, TextTransform: core.TextTransformUppercase, Padding: core.Edges{Top: 16, Right: 10, Bottom: 6, Left: 10}},
+			StyleFunc: colored(colors.faint)}}
 		for _, d := range grp.demos {
 			items = append(items, g.sidebarRow(cx, d))
 		}
@@ -469,7 +474,7 @@ func (g *gallery) sidebar(cx *core.Scope) core.Node {
 		return core.Style{Width: core.Pt(w), ZIndex: 1}
 	}, Children: []core.Node{core.View{TestID: "sidebar", StyleFunc: func() core.Style {
 		return core.Style{Position: core.Absolute, Top: core.Pt(0), Bottom: core.Pt(0), Left: core.Pt(0),
-			Width: core.Pt(sidebarWidth), Background: chromeFill(cx), Borders: core.Edges{Right: 1}, BorderColors: core.EdgeColors{Right: colors.line},
+			Width: core.Pt(sidebarWidth), Background: chromeFill(cx), Borders: core.Edges{Right: 1}, BorderColors: core.EdgeColors{Right: colors.line()},
 			Animated: animated}
 	}, Children: []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, Padding: core.Edges{Top: 20, Right: 20, Bottom: 12, Left: 20}}, Children: []core.Node{
@@ -483,13 +488,14 @@ func (g *gallery) sidebar(cx *core.Scope) core.Node {
 		core.Scroll{TestID: "nav-sections", Style: core.Style{FlexGrow: 1, FlexShrink: 1}, Children: []core.Node{
 			core.View{Style: core.Style{Padding: core.Edges{Right: 12, Bottom: 16, Left: 12}}, Children: list},
 		}},
-		core.View{Style: core.Style{Padding: core.Symmetric(12, 20), Borders: core.Edges{Top: 1}, BorderColors: core.EdgeColors{Top: colors.line}, Gap: 2}, Children: []core.Node{
-			core.Text{ContentFunc: func() string {
-				w := env.Window()
-				return itoa(int(w.Width+0.5)) + " × " + itoa(int(w.Height+0.5)) + " pt"
-			}, Style: core.Style{FontSize: 12, Color: colors.muted, FontFamily: mono}},
-			text("Narrower than 700 pt: the phone layout", 11, regular, colors.faint),
-		}},
+		core.View{Style: core.Style{Padding: core.Symmetric(12, 20), Borders: core.Edges{Top: 1}, Gap: 2},
+			StyleFunc: func() core.Style { return core.Style{BorderColors: core.EdgeColors{Top: colors.line()}} }, Children: []core.Node{
+				core.Text{ContentFunc: func() string {
+					w := env.Window()
+					return itoa(int(w.Width+0.5)) + " × " + itoa(int(w.Height+0.5)) + " pt"
+				}, Style: core.Style{FontSize: 12, FontFamily: mono}, StyleFunc: colored(colors.muted)},
+				text("Narrower than 700 pt: the phone layout", 11, regular, colors.faint),
+			}},
 	}}}}
 }
 
@@ -501,8 +507,10 @@ func (g *gallery) sidebarRow(cx *core.Scope, d demo) core.Node {
 	return core.View{OnPress: func(core.PressEvent) { g.selectDemo(d.name) }, Role: core.RoleButton, Label: d.name, TestID: "nav-" + d.name,
 		Selected: active,
 		Style: core.Style{Height: core.Pt(36), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10, Padding: core.Symmetric(0, 10),
-			CornerRadius: radiusControl, Cursor: core.CursorPointer,
-			Hover: &core.Style{Background: colors.hover}, Active: &core.Style{Background: colors.pressed}, Selected: &core.Style{Background: colors.pressed}},
+			CornerRadius: radiusControl, Cursor: core.CursorPointer},
+		StyleFunc: func() core.Style {
+			return core.Style{Hover: &core.Style{Background: colors.hover()}, Active: &core.Style{Background: colors.pressed()}, Selected: &core.Style{Background: colors.pressed()}}
+		},
 		Children: []core.Node{
 			core.View{StyleFunc: func() core.Style {
 				o := float32(0)
@@ -510,19 +518,19 @@ func (g *gallery) sidebarRow(cx *core.Scope, d demo) core.Node {
 					o = 1
 				}
 				return core.Style{Position: core.Absolute, Left: core.Pt(0), Top: core.Pt(9), Width: core.Pt(3), Height: core.Pt(18), CornerRadius: 1.5,
-					Background: colors.accent, Opacity: core.Alpha(o)}
+					Background: colors.accent(), Opacity: core.Alpha(o)}
 			}},
-			iconf(d.icon, 17, func() core.Color {
+			icon(d.icon, 17, func() core.Color {
 				if active() {
-					return colors.accent
+					return colors.accent()
 				}
-				return colors.muted
+				return colors.muted()
 			}),
 			core.Text{Content: d.name, MaxLines: 1, StyleFunc: func() core.Style {
 				if active() {
-					return core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, FontWeight: semibold, Color: colors.text}
+					return core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, FontWeight: semibold, Color: colors.text()}
 				}
-				return core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, FontWeight: regular, Color: colors.muted}
+				return core.Style{FlexGrow: 1, FlexShrink: 1, FontSize: 14, FontWeight: regular, Color: colors.muted()}
 			}},
 		}}
 }
@@ -534,16 +542,17 @@ func (g *gallery) demoPane() core.Node {
 		d, _ := findDemo(g.selected.Get())
 		return core.Func(func(cx *core.Scope) core.Node {
 			colors := colorsOf(cx)
-			return core.View{TestID: "demo-" + d.name, Style: fillPage.Merge(core.Style{Background: colors.background}), Children: []core.Node{
+			return core.View{TestID: "demo-" + d.name, Style: fillPage, StyleFunc: pageStyle(cx), Children: []core.Node{
 				core.View{Style: core.Style{Height: core.Pt(64), Direction: core.Row, AlignItems: core.AlignCenter, Gap: 14, Padding: core.Symmetric(0, 24),
-					Borders: core.Edges{Bottom: 1}, BorderColors: core.EdgeColors{Bottom: colors.line}}, Children: []core.Node{
-					iconTile(cx, d.icon, 36),
-					core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: []core.Node{
-						core.Text{Content: d.name, MaxLines: 1, Role: core.RoleHeader, TestID: "title", Style: core.Style{FontSize: 18, FontWeight: semibold, Color: colors.text}},
-						core.Text{Content: d.detail, MaxLines: 1, Style: core.Style{FontSize: 13, Color: colors.muted}},
+					Borders: core.Edges{Bottom: 1}}, StyleFunc: func() core.Style { return core.Style{BorderColors: core.EdgeColors{Bottom: colors.line()}} },
+					Children: []core.Node{
+						iconTile(cx, d.icon, 36),
+						core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, Gap: 2}, Children: []core.Node{
+							core.Text{Content: d.name, MaxLines: 1, Role: core.RoleHeader, TestID: "title", Style: core.Style{FontSize: 18, FontWeight: semibold}, StyleFunc: colored(colors.text)},
+							core.Text{Content: d.detail, MaxLines: 1, Style: core.Style{FontSize: 13}, StyleFunc: colored(colors.muted)},
+						}},
+						badge(cx, groupOf(d.name), toneNeutral),
 					}},
-					badge(cx, groupOf(d.name), toneNeutral),
-				}},
 				core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)}, Children: []core.Node{d.screen(cx)}},
 			}}
 		})
