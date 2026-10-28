@@ -70,6 +70,9 @@ type decor struct {
 	keyframes   driver.KeyframeAnimation
 	keyframed   bool
 	keyframedAt CGSize
+	// at is the bounds origin the layers sit at: a scroll view's is its
+	// offset, and the layers stay with the box, not the content.
+	at CGPoint
 }
 
 // decors are the layers with decor.
@@ -81,6 +84,8 @@ var (
 	selSetLineDash       = sel("setLineDashPattern:")
 	selSetLineCap        = sel("setLineCap:")
 	selSetZPos           = sel("setZPosition:")
+	selPosition          = sel("position")
+	selSetPosition       = sel("setPosition:")
 	selSetShadowPath     = sel("setShadowPath:")
 	selRemoveFromSuper   = sel("removeFromSuperlayer")
 	selSuperlayer        = sel("superlayer")
@@ -213,6 +218,24 @@ func LayoutDecor(layer objc.ID) {
 	LayoutBorders(layer)
 }
 
+// FollowBounds keeps a layer's decoration on its box after its bounds
+// origin moved, as a scroll view's does when it scrolls.
+func FollowBounds(layer objc.ID) {
+	b := objc.Send[CGRect](layer, selBounds)
+	if d := decors[layer]; d != nil && d.at != b.Origin {
+		WithoutAnimation(func() { d.follow(b.Origin) })
+	}
+	if r := rings[layer]; r != nil {
+		WithoutAnimation(func() {
+			for _, side := range r.sides {
+				if side != 0 {
+					side.Send(selSetFrame, b)
+				}
+			}
+		})
+	}
+}
+
 // ForgetDecor forgets the decoration of a layer that is going away.
 func ForgetDecor(layer objc.ID) {
 	if d := decors[layer]; d != nil {
@@ -255,11 +278,41 @@ func (d *decor) layout(layer objc.ID) {
 		layer.Send(selSetDoubleSided, !vs.BackfaceHidden)
 		layer.Send(selSetCompositing, blendFilter(vs.BlendMode))
 		d.layoutPerspective(layer, w, h)
+		// Laid out at the origin; then on the box.
+		d.at = CGPoint{}
+		d.follow(b.Origin)
 	})
 	if d.keyframed && d.keyframedAt != b.Size {
 		// Its steps turn around the center of the old size.
 		d.keyframed = false
 		d.setKeyframes(layer, d.keyframes)
+	}
+}
+
+// follow moves d's layers in the layer's coordinates from d.at to at.
+func (d *decor) follow(at CGPoint) {
+	dx, dy := at.X-d.at.X, at.Y-d.at.Y
+	d.at = at
+	if dx == 0 && dy == 0 {
+		return
+	}
+	// The clip is in the gradient mask's coordinates when there is one.
+	m := d.mask
+	if m == 0 {
+		m = d.clip
+	}
+	ls := append([]objc.ID{d.fill, d.cover, d.insets, d.stroke, d.outline, m}, d.gradients...)
+	for _, l := range d.shadows {
+		// Inset shadows in the holder move with it.
+		if l.Send(selSuperlayer) != d.insets {
+			ls = append(ls, l)
+		}
+	}
+	for _, l := range ls {
+		if l != 0 {
+			p := objc.Send[CGPoint](l, selPosition)
+			l.Send(selSetPosition, CGPoint{X: p.X + dx, Y: p.Y + dy})
+		}
 	}
 }
 

@@ -1410,6 +1410,7 @@ func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v == nil {
 		return
 	}
+	apple.FollowBounds(self.Send(selLayer))
 	// Pinning it scrolls it again, which reports the pinned offset.
 	if at := objc.Send[apple.CGPoint](self, selContentOffset); pinTop(self) && objc.Send[apple.CGPoint](self, selContentOffset) != at {
 		return
