@@ -1373,6 +1373,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 			if v.sc != nil {
 				v.scrollBy(it.Point)
 			}
+		case driver.ItemZoomTo:
+			if v.sc != nil {
+				v.zoomTo(it.Zoom, it.Animated)
+			}
 		case driver.ItemStickyCells:
 			if v.sc != nil {
 				v.setSticky(it.Sticky)

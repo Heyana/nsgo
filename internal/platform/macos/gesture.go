@@ -130,6 +130,10 @@ func magnify(self objc.ID, cmd objc.SEL, event objc.ID) {
 		defer v.surface.measuring(true)()
 	}
 	m := objc.Send[float64](event, sel("magnification"))
+	if v := pinchZoomView(self); v != nil {
+		v.pinchBy(event, m)
+		return
+	}
 	if !trackpad(self, event, driver.EventPinch, 1, m) {
 		apple.Super(self, cmd, event)
 	}

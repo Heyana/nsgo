@@ -16,7 +16,7 @@ A scroll view follows NSH's `scrolling-and-lists.md`: `ScrollBehavior` holds pag
 - Windows and Linux scroll with the wheel, the bar and touchscreen fingers (`scrollbar.TouchDrag`): a finger past the slop drags the innermost scroll view that moves its way, rubber-banding past the edges unless `NoBounces`, then glides by the deceleration, snaps or springs back, and a pull past the top refreshes with the spinner or the app's indicator. A wheel settles snapping views when it rests. Windows routes a wheel to the views along its axis, a vertical one to horizontal views only where none is vertical, as macOS does. They leave the keyboard props alone.
 - Windows draws macOS's overlay indicator (`scrollbar.Bar.Indicator`): 6 points thick, rounded, 4 from the edge, fading 700 ms after the view or the pointer last moved and shrinking past the edges. Linux keeps its own bar, shown while the pointer is over the view.
 - iOS and Android keep a focused field in a scroll view clear of the software keyboard: the keyboard's height joins the bottom inset while it shows, and the field scrolls into view with the keyboard's motion.
-- Zooming (`MaxZoomScale` above `MinZoomScale`, `Ref.ZoomTo`) is iOS's zoom view, Android's `ZoomScroll` and a scaled content element on the web; the desktops ignore it, as NSH's do. Mouse drags never scroll content.
+- Zooming (`MaxZoomScale` above `MinZoomScale`, `Ref.ZoomTo`) is iOS's zoom view, Android's `ZoomScroll`, a scaled content element on the web and the container's bounds on macOS; Windows and Linux ignore it, as NSH's desktops do. Mouse drags never scroll content.
 
 ### macOS scroll views
 
@@ -30,6 +30,7 @@ macOS follows NSH's `scroll.rs` (`internal/platform/macos/scroll.go`, `wheel.go`
 - The indicator shows while the view moves and while the pointer is over it (unless the system shows scroll bars only while scrolling), fades after 700 ms, shrinks past the edges, and the mouse drags it as a scroll bar. A press that stops a snap is no press.
 - Pulling a refreshable view past its top shows the spinner's spokes as it goes. A field that gets the focus scrolls into view, and a selection dragged past the edge scrolls on the frame clock.
 - Offsets are reported within the content, as NSH's, once a frame.
+- A zooming view (`zoom.go`) departs from NSH's, which ignores zooming: the container's bounds hold the zoom, so AppKit scales the content and hit tests it where it shows, and a new zoom commits at once. It moves along both axes, without resampling; trackpad pinches zoom around the pointer, past the limits unless `NoBouncesZoom`, and spring back.
 
 ## Lists
 

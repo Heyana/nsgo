@@ -36,8 +36,8 @@ import (
 // Mouse drags never scroll; the mouse drags the indicator as a scroll
 // bar. Pulling a refreshable view past its top refreshes it, and a
 // spinner, or the app's own indicator, keeps room above the content while
-// it refreshes.
-// DecelerationRate shapes only snaps; the keyboard props and zooming do
+// it refreshes. A view that zooms moves along both axes instead
+// (zoom.go). DecelerationRate shapes only snaps; the keyboard props do
 // nothing on the Mac, as in NSH.
 
 const (
@@ -83,8 +83,10 @@ const (
 	inMomentum
 	// easing: an eased move from from to to, from start for duration;
 	// momentum for a snap after a release, settles to let the values that
-	// snap settle as it arrives.
+	// snap settle as it arrives. A zooming view eases its zoom too.
 	easing
+	// pinching: a trackpad pinch zooms the view.
+	pinching
 )
 
 type scrollPhase struct {
@@ -92,6 +94,12 @@ type scrollPhase struct {
 	from, to, raw, total       driver.Points
 	last, start, duration      time.Duration
 	gesture, momentum, settles bool
+	// A zooming view's: rawAt and rawZoom are where a gesture's deltas
+	// and a pinch's put the offset and the zoom before the rubber band,
+	// and zoom is an easing (zoom.go).
+	rawAt   driver.Point
+	rawZoom float64
+	zoom    zoomEase
 }
 
 // scrollState is a scroll view's offset and what moves it.
@@ -101,7 +109,10 @@ type scrollState struct {
 	// at is the offset, which shows as the container layer's translation
 	// shift until the container's bounds origin takes it: committed.
 	at, committed, shift driver.Point
-	phase                scrollPhase
+	// zoom is the content's scale, which the container's bounds take at
+	// once, as zoomed.
+	zoom, zoomed float64
+	phase        scrollPhase
 	// resampled holds where trackpad events put the offset until frames
 	// show it.
 	resampled scrollbar.Resampler
@@ -151,7 +162,7 @@ func eventTime(event objc.ID) time.Duration {
 // container clips them, as NSClipView does: the view's own layer clips as
 // its style says.
 func (v *view) newScroll() {
-	v.sc = &scrollState{}
+	v.sc = &scrollState{zoom: 1, zoomed: 1}
 	v.hover = trackingArea(v.native, true)
 	v.content = objc.ID(classContainer).Send(selNew)
 	v.content.Send(selSetWantsLayer, true)
@@ -197,12 +208,29 @@ func (v *view) trail() driver.Points {
 	return v.main(driver.Point{X: in.Right, Y: in.Bottom})
 }
 
-// restLimits are the offsets the view rests within: from the start of the
-// content inset to the end of the content and its trailing inset.
+// restLimits are the offsets the view rests within along its axis.
 func (v *view) restLimits() (lo, hi driver.Points) {
-	lo = -v.lead()
-	length := v.main(driver.Point{X: v.sc.content.Width, Y: v.sc.content.Height})
-	return lo, max(length+v.trail()-v.viewport(), lo)
+	return v.axisLimits(v.sc.config.Horizontal, v.sc.zoom)
+}
+
+// axisLimits are the offsets the view rests within along an axis at zoom
+// z: from the start of the content inset to the end of the content and
+// its trailing inset. A zooming view with CenterContent centers content
+// smaller than the viewport.
+func (v *view) axisLimits(horizontal bool, z float64) (lo, hi driver.Points) {
+	c := &v.sc.config
+	in := c.Behavior.ContentInset
+	lead, trail, length, viewport := in.Top, in.Bottom, v.sc.content.Height, v.frame.Size.Height
+	if horizontal {
+		lead, trail, length, viewport = in.Left, in.Right, v.sc.content.Width, v.frame.Size.Width
+	}
+	length *= driver.Points(z)
+	lo = -lead
+	if c.CenterContent && c.Zooms() && lead+length+trail < viewport {
+		lo -= (viewport - lead - length - trail) / 2
+		return lo, lo
+	}
+	return lo, max(length+trail-viewport, lo)
 }
 
 // limits are restLimits with the spinner's room above the content while
@@ -219,6 +247,9 @@ func (v *view) limits() (lo, hi driver.Points) {
 // and its insets, as NSH's.
 func (v *view) reported() driver.Point {
 	p := v.sc.at
+	if v.zooms() {
+		return v.clampAt(p, v.sc.zoom)
+	}
 	lo, hi := v.restLimits()
 	v.setMain(&p, min(max(v.pos(), lo), hi))
 	return p
@@ -234,11 +265,19 @@ func (v *view) indicates() bool { return !v.sc.config.HideIndicator }
 // the indicator, the values bound to the offset and what comes into view.
 // The frame clock reports it.
 func (v *view) moveTo(pos driver.Points) {
+	at := v.sc.at
+	v.setMain(&at, pos)
+	v.moveZoom(at, v.sc.zoom)
+}
+
+// moveZoom is moveTo of an offset along both axes at zoom z.
+func (v *view) moveZoom(at driver.Point, z float64) {
 	s := v.sc
-	if v.pos() == pos {
+	if s.at == at && s.zoom == z {
 		return
 	}
-	v.setMain(&s.at, pos)
+	pos := v.main(at)
+	s.at, s.zoom = at, z
 	if v.indicates() {
 		s.shown, s.alpha, s.dark = mediaTime(), 1, v.surface.env.Dark
 	}
@@ -267,10 +306,16 @@ func (v *view) moveTo(pos driver.Points) {
 
 // applyOffset shows the offset as the container layer's translation from
 // its bounds: the pixels move without AppKit's geometry changing, which
-// commit then catches up with.
+// commit then catches up with. A new zoom commits at once.
 func (v *view) applyOffset() {
 	s := v.sc
-	shift := driver.Point{X: s.committed.X - s.at.X, Y: s.committed.Y - s.at.Y}
+	if s.zoom != s.zoomed {
+		v.commit()
+		return
+	}
+	// The translation is in the content's points, which the bounds scale.
+	z := driver.Points(s.zoomed)
+	shift := driver.Point{X: (s.committed.X - s.at.X) / z, Y: (s.committed.Y - s.at.Y) / z}
 	if shift != s.shift {
 		s.shift = shift
 		apple.SetSublayerTranslation(v.content.Send(selLayer), float64(shift.X), float64(shift.Y))
@@ -346,15 +391,24 @@ func (v *view) commit() {
 	s.armed, s.restedAt = false, 0
 	delete(v.surface.armed, v)
 	apple.WithoutAnimation(func() {
-		if s.committed != s.at {
-			s.committed = s.at
-			v.content.Send(sel("setBoundsOrigin:"), apple.CGPoint{X: float64(s.at.X), Y: float64(s.at.Y)})
+		if s.committed != s.at || s.zoomed != s.zoom {
+			s.committed, s.zoomed = s.at, s.zoom
+			v.content.Send(sel("setBounds:"), v.contentBounds())
 		}
 		if s.shift != (driver.Point{}) {
 			s.shift = driver.Point{}
 			apple.SetSublayerTranslation(v.content.Send(selLayer), 0, 0)
 		}
 	})
+}
+
+// contentBounds are the container's bounds for the committed offset and
+// zoom: AppKit scales what bounds smaller than its frame hold.
+func (v *view) contentBounds() apple.CGRect {
+	s := v.sc
+	z := s.zoomed
+	return apple.Rect(float64(s.committed.X)/z, float64(s.committed.Y)/z,
+		float64(v.frame.Size.Width)/z, float64(v.frame.Size.Height)/z)
 }
 
 // commitPending commits the offsets still shown as translations, before
@@ -372,8 +426,8 @@ func (v *view) sizeScroll() {
 	w, h := float64(v.frame.Size.Width), float64(v.frame.Size.Height)
 	apple.WithoutAnimation(func() {
 		v.content.Send(selSetFrame, apple.Rect(0, 0, w, h))
-		if objc.Send[apple.CGRect](v.content, selBounds).Origin != (apple.CGPoint{X: float64(s.committed.X), Y: float64(s.committed.Y)}) {
-			v.content.Send(sel("setBoundsOrigin:"), apple.CGPoint{X: float64(s.committed.X), Y: float64(s.committed.Y)})
+		if b := v.contentBounds(); objc.Send[apple.CGRect](v.content, selBounds) != b {
+			v.content.Send(sel("setBounds:"), b)
 		}
 		// AppKit lays the layer out again.
 		apple.SetSublayerTranslation(v.content.Send(selLayer), float64(s.shift.X), float64(s.shift.Y))
@@ -382,7 +436,9 @@ func (v *view) sizeScroll() {
 		}
 	})
 	v.updateOverlay()
-	if _, hi := v.limits(); v.pos() > hi+0.5 {
+	if v.zooms() {
+		v.clampZoom()
+	} else if _, hi := v.limits(); v.pos() > hi+0.5 {
 		v.tickOn() // the frame pulls it back
 	}
 }
@@ -459,7 +515,11 @@ func (v *view) tickScroll(t time.Duration) bool {
 	switch p = s.phase; {
 	case p.kind == easing:
 		k := float64(t-p.start) / float64(p.duration)
-		v.moveTo(p.from + (p.to-p.from)*driver.Points(scrollbar.EaseOut(k)))
+		if v.zooms() {
+			v.easeZoom(&p.zoom, scrollbar.EaseOut(min(k, 1)))
+		} else {
+			v.moveTo(p.from + (p.to-p.from)*driver.Points(scrollbar.EaseOut(k)))
+		}
 		if k >= 1 {
 			s.phase = scrollPhase{}
 			if p.momentum {
@@ -488,6 +548,8 @@ func (v *view) tickScroll(t time.Duration) bool {
 	case p.kind == awaitingMomentum && t-p.last > momentumWait:
 		s.phase = scrollPhase{}
 		v.scrollEnded()
+	case p.kind == atRest && v.zooms():
+		v.clampZoom()
 	case p.kind == atRest && v.pos() > hi+0.5:
 		v.moveTo(hi) // the content shrank
 	}
@@ -522,13 +584,13 @@ func (v *view) reportScroll() {
 	}
 	s.report = false
 	if v.events.Has(driver.EventScroll) {
-		v.surface.engine.Dispatch(driver.Event{Kind: driver.EventScroll, ID: v.id, Point: v.reported(), Count: s.applied})
+		v.surface.engine.Dispatch(driver.Event{Kind: driver.EventScroll, ID: v.id, Point: v.reported(), Value: v.zoomValue(), Count: s.applied})
 	}
 }
 
 // emit reports kind on the scroll view at its offset.
 func (v *view) emit(kind driver.EventKind) {
-	v.report(driver.Event{Kind: kind, Point: v.reported(), Count: v.sc.applied})
+	v.report(driver.Event{Kind: kind, Point: v.reported(), Value: v.zoomValue(), Count: v.sc.applied})
 }
 
 // scrollEnded follows the view coming to rest: the values that snap as a
@@ -637,6 +699,7 @@ func (v *view) configureScroll(c *driver.ScrollConfig) {
 	s := v.sc
 	old := s.config.Behavior.ContentInset
 	indicator := s.config.Behavior.RefreshIndicator
+	zoomed, scale := s.config.Zooms(), s.config.ZoomScale
 	s.config = *c
 	if !v.indicates() {
 		s.alpha = 0
@@ -649,13 +712,21 @@ func (v *view) configureScroll(c *driver.ScrollConfig) {
 		// A view resting at its start stays there.
 		s.at = scrollbar.KeepStart(old, in, s.at)
 	}
-	// It shows the cross axis's inset.
-	if c.Horizontal {
-		s.at.Y = -in.Top
-	} else {
-		s.at.X = -in.Left
+	switch {
+	case c.Zooms() && !zoomed:
+		s.zoom = float64(c.ClampZoom(c.ZoomScale))
+	case c.Zooms() && s.phase.kind != pinching:
+		s.zoom = v.limitZoom(s.zoom, false)
+	case c.Horizontal:
+		// It shows the cross axis's inset.
+		s.zoom, s.at.Y = 1, -in.Top
+	default:
+		s.zoom, s.at.X = 1, -in.Left
 	}
-	s.report = s.report || in != old
+	if c.Zooms() && s.phase.kind == atRest {
+		s.at = v.clampAt(s.at, s.zoom)
+	}
+	s.report = s.report || in != old || c.Zooms() != zoomed
 	apple.WithoutAnimation(v.applyOffset)
 	v.setRefreshing(c.Refreshing && !c.Horizontal)
 	// A refresh in progress keeps the room of the indicator now showing.
@@ -668,6 +739,9 @@ func (v *view) configureScroll(c *driver.ScrollConfig) {
 		v.commit() // nothing moves: AppKit may as well know
 	}
 	v.reportScroll()
+	if c.Zooms() && zoomed && c.ZoomScale != scale {
+		v.zoomTo(&driver.ZoomRequest{Scale: c.ZoomScale}, true)
+	}
 }
 
 // setContent follows the content's new size: content that shrank below
@@ -675,7 +749,9 @@ func (v *view) configureScroll(c *driver.ScrollConfig) {
 // (the ItemScrollBy keeping the visible content in place) is applied.
 func (v *view) setContent(size driver.Size) {
 	v.sc.content = size
-	if _, hi := v.limits(); v.pos() > hi+0.5 {
+	if v.zooms() {
+		v.clampZoom()
+	} else if _, hi := v.limits(); v.pos() > hi+0.5 {
 		v.tickOn()
 	}
 	v.updateOverlay()
@@ -723,7 +799,9 @@ func (v *view) scrollTo(p driver.Point, animated bool) {
 	s.applied++
 	s.report = true
 	v.interrupt()
-	if animated {
+	if v.zooms() {
+		v.panTo(v.clampAt(p, s.zoom), animated)
+	} else if animated {
 		v.animateTo(to, scrollbar.Animation, false, true)
 	} else {
 		v.moveTo(to)
@@ -750,7 +828,10 @@ func (v *view) scrollBy(d driver.Point) {
 		p.to += by
 	}
 	s.resampled.Shift(by)
-	if by != 0 {
+	if v.zooms() {
+		s.phase.rawAt.X, s.phase.rawAt.Y = s.phase.rawAt.X+d.X, s.phase.rawAt.Y+d.Y
+		v.moveZoom(driver.Point{X: s.at.X + d.X, Y: s.at.Y + d.Y}, s.zoom)
+	} else if by != 0 {
 		v.moveTo(v.pos() + by)
 	}
 	v.reportScroll()
@@ -803,6 +884,9 @@ func (v *view) canScroll(dx, dy driver.Points) bool {
 	if v.sc.config.Behavior.NoScroll {
 		return false
 	}
+	if v.zooms() {
+		return v.zoomCanScroll(dx, dy)
+	}
 	lo, hi := v.limits()
 	if hi <= lo {
 		return false
@@ -815,7 +899,13 @@ func (v *view) canScroll(dx, dy driver.Points) bool {
 // the view past its edge: it scrolls, bounces and lies along the gesture.
 func (v *view) canBounce(dx, dy driver.Points) bool {
 	b := &v.sc.config.Behavior
-	return !b.NoScroll && !b.NoBounces && v.sc.config.Horizontal == (abs(dx) > abs(dy))
+	return !b.NoScroll && !b.NoBounces && v.along(abs(dx) > abs(dy))
+}
+
+// along reports whether the view scrolls along the horizontal axis or
+// the vertical one: a zooming view moves along both.
+func (v *view) along(horizontal bool) bool {
+	return v.sc.config.Horizontal == horizontal || v.zooms()
 }
 
 // wheelDelta is the share of wheel deltas (dx, dy) along the axis.
@@ -905,7 +995,7 @@ func (v *view) wheelBegin() {
 		return
 	}
 	v.interrupt()
-	v.sc.phase = scrollPhase{kind: wheeling, last: mediaTime(), gesture: true, raw: v.pos()}
+	v.sc.phase = scrollPhase{kind: wheeling, last: mediaTime(), gesture: true, raw: v.pos(), rawAt: v.sc.at}
 	v.emit(driver.EventScrollDragStart)
 }
 
@@ -918,9 +1008,13 @@ func (v *view) wheelBy(dx, dy driver.Points, at time.Duration) {
 	}
 	if s.phase.kind != wheeling {
 		v.interrupt()
-		s.phase = scrollPhase{kind: wheeling, raw: v.pos()}
+		s.phase = scrollPhase{kind: wheeling, raw: v.pos(), rawAt: s.at}
 	}
 	p := &s.phase
+	if v.zooms() {
+		v.zoomWheelBy(dx, dy)
+		return
+	}
 	lo, hi := v.limits()
 	d, pos := v.wheelDelta(dx, dy), v.pos()
 	var to driver.Points
@@ -958,6 +1052,10 @@ func (v *view) wheelEnd(vx, vy float32) {
 		v.emit(driver.EventScrollDragEnd)
 		v.pulledToRefresh()
 	}
+	if v.zooms() {
+		v.zoomWheelEnd(p.gesture)
+		return
+	}
 	// After the refresh: refreshing lowers the top limit.
 	pos := v.goal()
 	lo, hi := v.limits()
@@ -991,6 +1089,10 @@ func (v *view) momentumBegin() bool {
 // edges.
 func (v *view) momentumBy(dx, dy driver.Points, at time.Duration) {
 	if v.sc.phase.kind != inMomentum {
+		return
+	}
+	if v.zooms() {
+		v.moveZoom(v.zoomWheelTo(dx, dy), v.sc.zoom)
 		return
 	}
 	lo, hi := v.limits()
@@ -1029,8 +1131,10 @@ func (v *view) thumbRect() (driver.Bounds, driver.Points, bool) {
 
 // bar returns the view's scroll bar, as the shared geometry lays it out.
 func (v *view) bar() scrollbar.Bar {
-	return scrollbar.Bar{Horizontal: v.sc.config.Horizontal, Frame: v.frame.Size,
-		Content: v.sc.content, Offset: v.sc.at, Inset: v.sc.config.Behavior.ContentInset}
+	s := v.sc
+	z := driver.Points(s.zoom)
+	return scrollbar.Bar{Horizontal: s.config.Horizontal, Frame: v.frame.Size,
+		Content: driver.Size{Width: s.content.Width * z, Height: s.content.Height * z}, Offset: s.at, Inset: s.config.Behavior.ContentInset}
 }
 
 // grabsThumb reports whether a mouse press at p, in the view, grabs the

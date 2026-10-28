@@ -116,10 +116,10 @@ func (s *surface) scrollTarget(dx, dy driver.Points) *view {
 	horizontal := abs(dx) > abs(dy)
 	along := false
 	for _, v := range s.wheels.chain {
-		along = along || v.sc.config.Horizontal == horizontal
+		along = along || v.along(horizontal)
 	}
 	for _, v := range s.wheels.chain {
-		if (!along || v.sc.config.Horizontal == horizontal) && v.canScroll(dx, dy) {
+		if (!along || v.along(horizontal)) && v.canScroll(dx, dy) {
 			return v
 		}
 	}
