@@ -355,9 +355,11 @@ func sessionFor(p *project, opts devOptions) (session, error) {
 }
 
 // sourceDirs lists the project's directory and those of every non-standard
-// package it compiles, NSGo's own included.
+// package it compiles, NSGo's own included, and the files they embed: a
+// TSX app's sources.
 func sourceDirs(ctx context.Context, dir string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}", ".")
+	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-f",
+		"{{if not .Standard}}{{.Dir}}{{range .EmbedFiles}} {{$.Dir}}/{{.}}{{end}}{{end}}", ".")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
@@ -371,10 +373,15 @@ func sourceDirs(ctx context.Context, dir string) ([]string, error) {
 	return dirs, nil
 }
 
-// scan returns a fingerprint of the watched files' names, sizes and times.
+// scan returns a fingerprint of the watched files' names, sizes and times:
+// the Go files of each directory, and each file listed.
 func scan(dirs []string) string {
 	var b strings.Builder
 	for _, dir := range dirs {
+		if info, err := os.Stat(dir); err == nil && !info.IsDir() {
+			fmt.Fprintf(&b, "%s %d %d\n", dir, info.Size(), info.ModTime().UnixNano())
+			continue
+		}
 		entries, _ := os.ReadDir(dir)
 		for _, e := range entries {
 			name := e.Name()

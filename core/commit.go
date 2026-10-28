@@ -230,8 +230,9 @@ func (t *Tree) resolve(n *node, inherited textFields, force bool) {
 		sized := tn.attachments > 0 && t.sizeAttachments(n, inherited, kids)
 		shadow := inherited.textShadow()
 		if tn.stale || sized || tn.prepared == nil || ts != tn.style || shadow != tn.text.Shadow {
-			at := driver.AttributedText{Text: inherited.TextTransform.Apply(tn.content), Style: ts, MaxLines: tn.maxLines,
-				Ellipsize: tn.ellipsize, Shadow: shadow}
+			lines, ellipsize := n.textLimits()
+			at := driver.AttributedText{Text: inherited.TextTransform.Apply(tn.content), Style: ts, MaxLines: lines,
+				Ellipsize: ellipsize, Shadow: shadow}
 			if at.Ellipsize == 0 {
 				at.Ellipsize = EllipsizeTail
 			}

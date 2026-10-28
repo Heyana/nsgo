@@ -5,7 +5,8 @@
 - Add a reactive Go engine with owners, memos, effects and regions that lays out and sends only what each update changed, to native views in one batch, with a performance monitor over the app on macOS, iOS, Windows and Linux.
 - Add native backends for macOS, iOS, Windows, Linux, Android and the web, every one built from a Mac with Go and Xcode.
 - Add block, flexbox and grid layout with static, sticky and fixed positions, intrinsic sizes, stacking order, right-to-left subtrees and paddings and margins that follow the safe area and the software keyboard.
-- Add CSS-like styles: corners, borders, outlines, shadows, gradients, filters, backdrop blur, masks, blend modes, 3D transforms, state styles and the SVG paint canvases draw with.
+- Add CSS-like styles: corners, borders, outlines, shadows, gradients, filters, backdrop blur, masks, blend modes, 3D transforms, state styles, the SVG paint canvases draw with, and Tailwind CSS classes with their variants.
+- Add TSX apps importing `nsgo`, compiled by `tsx/compiler` with no Node and run on goja with NSH's reactive API, elements, Tailwind classes and error boundaries.
 - Add transitions, keyframes, animated values, motion presets and layout animations that run on each platform's frame clock.
 - Add selectable, hit-testable rich text with the app's fonts, inputs, GIF, WebP and SVG images, Canvas 2D drawing, GPU shaders written in Go and Lucide icons.
 - Add scroll views with overlay scroll bars, touch scrolling, pull to refresh and the app's own refresh indicators, virtualized lists, overlays, modals, navigation stacks with system headers, iOS's sliding pushes and pops, predictive back and browser history, the system tab bar in `mobile`, web views, videos and native views.

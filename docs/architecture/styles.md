@@ -14,6 +14,19 @@ Styles follow NSH's `styles.md` with Go values in place of CSS strings: construc
 - `viewStyle` resolves what depends on the frame, so a resize sends it again: percentages of `Transform` and `TransformOrigin`, and each `Gradient` as a `GradientPaint`. A paint's geometry is in fractions of the box, its stops placed as CSS places them, repeats laid out, and pairs sampled in their `ColorSpace` (Oklab unless set) until blending in sRGB stays within an 8-bit step. Platforms draw paints without knowing CSS.
 - `Effects` travel behind a pointer the core keeps while they compare equal, so `ViewStyle` stays comparable and unchanged effects send nothing.
 
+## Classes
+
+`Class` on `View`, `Text`, `Span`, `Scroll`, `Input` and `Image` takes Tailwind CSS classes, a port of NSH's `tailwind` module and `core/classes.rs` (`core/tailwind*.go`, `core/classes.go`). Utilities and variants mean what they mean in Tailwind CSS 4, on its default theme and palette; one with no native meaning is unknown and logged once.
+
+- Each distinct class string is parsed once into rules ordered as Tailwind orders them: plain utilities first in the string's order, then variants by Tailwind's variant order, then important ones (`!p-4`, `p-4!`).
+- A node resolves its rules for its environment: `dark:` follows `Scope.Dark`, breakpoints and `portrait:` the window, `rtl:`, `motion-reduce:` and `ios:`, `android:` and `web:` theirs. A node whose rules read any of them follows them in a render effect, so only those nodes resolve again.
+- State variants become the style's state styles (`hover:` its `Hover`, `group-hover/item:` a `GroupStyle` named `item`); `group` and `group/item` name the view's `Group`. `first:`, `last:`, `odd:`, `even:` and `only:` follow the node's place among its parent's native children, resolved again as they change.
+- Classes merge under `Style`, their state styles merging with the style's rather than replaced by them, and important ones over it. `space-x-*` and `space-y-*` give a view's children but the last the margin on that side, under their own.
+- Shadows and rings, filters, gradients (`bg-linear-to-*` with `from-*`, `via-*`, `to-*`) and `tracking-*` are composed once a style's rules are applied, as Tailwind composes its CSS variables.
+- `line-clamp-*`, `truncate`, `text-ellipsis` and `pointer-events-*` are props: an explicit one wins over them.
+- A color the palette lacks names a `Palette` role in kebab case (`bg-accent`, `text-text-muted/70`), read from the node's theme in the appearance it shows.
+- `bg-transparent` is a color of alpha 0 that is not the zero `Color`, so it sets the field.
+
 ## Layout
 
 - `Static` is Taffy's static position: an absolute view inside is placed in its nearest positioned ancestor, and `syncFrames` takes the static ancestors' offsets off its frame. `Fixed` hoists the view into its host (the root view or its modal) as an overlay without an anchor is, placed by its insets; it returns to its parent when it stops being fixed.

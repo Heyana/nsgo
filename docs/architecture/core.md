@@ -138,4 +138,4 @@ The protocol is defined in `mount.go` and `events.go`. Backends apply items in o
 
 ## TSX
 
-Go is the only app language today. [TSX](tsx.md) plans a runtime that builds the element values a Go app writes, so `core` needs no entry of its own for it.
+`core.Element` is nsh-core's operations for the TSX runtime: an element made detached from an element value, its props replaced, its children placed one at a time, and released ([TSX](tsx.md#cores-part)).

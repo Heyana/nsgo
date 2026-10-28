@@ -1,111 +1,105 @@
 # TSX and dynamic delivery
 
-NSGo apps are Go today. This subject plans NSH's main feature for NSGo: screens written in TSX, and TSX modules a host app downloads, verifies and runs in a sandbox it configures. Nothing here exists yet; the [roadmap](../roadmap.md#tsx-and-dynamic-delivery) orders the steps, and the [open questions](../../ARCHITECTURE.md#open-questions) list what waits for a decision.
+NSGo runs TSX apps on NSH's design: they import `nsgo`, `nsgo/base`, `nsgo/mobile` and `nsgo/desktop`, have NSH's props, events, style keys, Tailwind classes and behavior, and compile with `tsx/compiler`. Each part is a Go port of its NSH counterpart, so what NSH adds ports the same way (decided by the user, 2026-10-28); an NSH app runs once its imports name `nsgo` in place of `nsh`. The [roadmap](../roadmap.md#tsx-and-dynamic-delivery) orders what is left.
 
-## How NSH does it
+An app embeds its sources and compiles them as it starts, so `go run`, `go test` and `nsgo dev`, which watches embedded files, need nothing else:
 
-| Part | NSH | Reference |
-| --- | --- | --- |
-| Compile | Oxc strips types, NSH's JSX compiler turns JSX into calls to a native renderer, rolldown bundles one ES module holding only the app's code; imports of NSH's modules stay imports | `native-pipeline.md`, `nsh/crates/nsh-bundler/src/jsx.rs` |
-| Run | One QuickJS VM per surface. The reactive graph, the renderer, every module and the Rust components' JS face are native; JSX pushes ops into a queue the core commits once per turn | `architecture.md`, `js-modules.md`, `nsh/crates/nsh-js/src/dom.rs` |
-| Types | `.nsh/types` generated from the Rust specs; `nsh check` runs TypeScript 7's native `tsc` | `tooling.md` (TypeScript) |
-| Develop | The dev server sends a patch of the changed modules; the runtime runs them again, keeping signals and mounts | `tooling.md` (Dev server) |
-| Deliver | `.nshpkg`: a JSON header, the source, bytecode, a source map and assets, signed with Ed25519 by a release key a root key certified; revocation lists; rollback protection | `signed-packages.md`, `nsh/crates/nsh-package/src/lib.rs` |
-| Sandbox | Heap, stack and time limits per VM; no `eval` or `Function`; capabilities the app declares and the host narrows, checked in Rust | `sandbox.md` |
-| Compatibility | A package is never rebuilt, so nothing a release shipped is removed or renamed | `compatibility.md` |
+```go
+//go:embed *.tsx *.ts
+var src embed.FS
 
-References are in `nsh/docs/dev/` unless they start with `nsh/`.
-
-## Design
-
-TSX builds the element values a Go app writes, so `core` runs a TSX screen as it runs a Go one: components run once, signals drive bindings, regions rebuild their span.
-
-```text
-App.tsx ─ nsgo build ─▶ esbuild: types stripped, JSX → __jsx(tag, props, ...children)
-                        lowering: dynamic props → getters, dynamic children → thunks
-                        esbuild: one script; imports of nsgo modules → require
-        ─▶ bundle.js and its source map ─ nsgo publish ─▶ app.nsgopkg, signed
-
-host app ─ tsx: a goja VM per engine ─ __jsx builds core and base values ─▶ core, as for Go
+func main() { nsgo.Run(compiler.App(src, "App.tsx")) }
 ```
 
-- A package `tsx` holds the runtime and imports `core`, `base`, `mobile` and `desktop`, so only apps that run TSX link goja. Its API names no goja type, so the engine can change.
-- One VM per engine, on the engine goroutine. JS reaches the graph through the root scope; `core` already gives what JS creates to the innermost running owner.
-- Everything is Go memory, which Go's collector sees whole. NSH makes nodes and signals QuickJS objects of native classes so QuickJS's collector sees their cycles; here nothing is needed.
+`examples/tsx` is such an app: its modules, components, signals, inputs, lists and timers, styled with classes in light and dark, one column on phones and two from `md:`.
+
+## The ports
+
+| NSH | NSGo | Part |
+| --- | --- | --- |
+| `nsh-bundler`: Oxc, `jsx.rs`, rolldown | `tsx/compiler`: esbuild and `jsx.go` | TSX to one script of the app's code |
+| `nsh-js` `reactive.rs` | `tsx/reactive.go`, on `core`'s graph | `signal`, `computed`, `effect`, `batch`, `untracked`, `cleanup` |
+| `nsh-js` `dom.rs` | `tsx/dom.go`, `tsx/components.go` | `nsgo:rt`, what compiled JSX calls; `mount`, `context`, `ErrorBoundary`, the primitives as components |
+| `nsh-js` `protocol.rs` | `tsx/protocol.go` | Props and style objects decoded into `core`'s values |
+| `nsh-js` `env.rs` | `tsx/env.go` | The environment's accessors and `platform` |
+| `nsh-js` `modules.rs` | `tsx/modules.go` | The modules and their exports |
+| `nsh-testing` | `nsgotest` | Headless and platform tests of a TSX app, as of a Go one |
+| `nsh-js` `components.rs` | `tsx` (planned) | The JS face of Go components |
+| `nsh-core`'s `Op` | `core.Element` | Elements built one change at a time |
+| `nsh-core` `tailwind/`, `core/classes.rs` | `core/tailwind*.go`, `core/classes.go` | Tailwind classes ([styles](styles.md#classes)) |
+| `nsh-package`, `sandbox.rs` | `tsx` (planned) | Signed packages and limits |
+
+Read the NSH file before changing its port, and keep the port's names and order where Go allows, so NSH's next change maps onto it.
 
 ## The engine
 
-goja runs the JS. The alternatives fail a [principle](../../AGENTS.md#principles) or a target:
+goja runs the JS: pure Go, so it builds for every target, `js/wasm` included. The alternatives fail a [principle](../../AGENTS.md#principles) or a target:
 
 | Engine | Verdict |
 | --- | --- |
-| goja (pure Go) | Builds for every target, `js/wasm` included: ES2022 classes and private fields, async/await, generators, `for await`, Proxy, BigInt. On an M1 Max a Go function called from JS costs about 110 ns, a JS loop step 7 ns, compiling 100 KB of JS 2.6 ms |
-| QuickJS through cgo | cgo and hand-written C on every target |
+| QuickJS through cgo, NSH's | cgo and C on every target |
 | `modernc.org/quickjs` (QuickJS translated to Go) | Linux only |
-| QuickJS in WebAssembly on wazero (`fastschema/qjs`) | iOS forbids generated code, so wazero interprets an interpreter there |
-| QuickJS through `wasm2go` | Young (v0.4), and QuickJS's API needs a C shim |
-| The system's (JavaScriptCore, the browser's) | A bridge per platform, and Android's runs only out of process |
+| QuickJS in WebAssembly on wazero | iOS forbids generated code, so wazero interprets an interpreter there |
+| The system's (JavaScriptCore, the browser's) | A bridge per platform; Android's runs only out of process |
 
 What goja lacks, and the answer:
 
-- **ES modules**: esbuild bundles to one script, and native imports become `require` of modules the runtime makes.
-- **Bytecode**: none to save, so bundles and packages carry source, compiled as they load. NSH's rule that bytecode is trusted input has nothing to guard.
-- **A heap limit**: JS allocates from the process's heap. Time (`Runtime.Interrupt`), stack (`SetMaxCallStackSize`) and NSGo's quotas are enforceable; memory is not ([sandbox](#sandbox)).
-- **Speed**: slower than QuickJS on pure JS. NSH's first performance rule holds: only the app's code is JS; the graph, layout, text and components are Go.
+- **ES modules**: the compiler bundles one script, and imports of `nsgo` modules become `require` of the modules the runtime makes.
+- **Bytecode**: none to save, so bundles and packages carry source, compiled as they load.
+- **A heap limit**: JS allocates from Go's heap. Time (`Runtime.Interrupt`), stack (`SetMaxCallStackSize`) and NSH's quotas are enforceable; memory is not ([sandbox](#sandbox)).
+- **Speed**: slower than QuickJS on pure JS, so NSH's first performance rule matters more: only the app's code is JS.
 
-## Compiling TSX
+## Compiling
 
-`nsgo` compiles with esbuild's Go API (`github.com/evanw/esbuild/pkg/api`), so no Node is needed. esbuild strips TypeScript, applies React's JSX whitespace rules (NSH's), lowers syntax to what goja runs, bundles, minifies and writes source maps. Its classic JSX transform makes `<View a={x()}>{y.z}</View>` into `__jsx(View, { a: x() }, y.z)`, evaluated at once, which loses reactivity.
+`tsx/compiler` compiles with esbuild's Go API, so no Node is needed:
 
-A lowering pass between esbuild's transform and its bundling restores NSH's semantics. It parses the transform's output with goja's own parser, so it reads exactly the syntax the runtime runs, and inserts text at the nodes' offsets:
-
-- A part is dynamic when it calls, constructs or reads a member outside nested functions, as NSH's `is_dynamic`. A nested `__jsx` call and a member of a module namespace (`import_nsgo.View`) do not count.
-- A dynamic prop becomes a getter (`get a() { return x(); }`) and a dynamic child a thunk (`() => y.z`). Static parts stay values.
-- A spread becomes `merge(...)`, which keeps getters as Solid's `mergeProps` does; an object spread would read them once.
-- A conditional child (`c() ? <A/> : <B/>`, `c() && <A/>`) becomes a region whose condition is a memo, so the branch is built again only when its truth changes.
-- `ref` takes a signal or a function. NSH also assigns a `let` variable, which needs scope analysis the pass does not have.
-
-The pass only inserts text, so it shifts columns on the lines it touches; it updates the transform's source map to match, keeping stacks pointed at `.tsx` lines.
+- Each module goes through esbuild's transform: TypeScript stripped, syntax lowered to ES2020, JSX in its classic form (`__jsx(tag, props, ...children)`, with React's whitespace rules, NSH's), as CommonJS, since goja's parser reads no ES modules.
+- `jsx.go`, a port of `jsx.rs`, reads that with goja's parser and writes each call as NSH's compiler does: host elements made in place (`element`, `prop`, `bindProp`, `append`, `insert`), components called with getters for what changes, `If` and `Each` as `cond` and `each`. The expressions are copied as they are; the chunks keep where they came from, and its source map is composed with esbuild's.
+- Tags and refs resolve through the module's scopes (`scope.go`), TypeScript's `declare`d names among them, as Oxc's scopes resolve them for NSH. The names NSH's source writes directly are module members in CommonJS (`import_nsh.View`); they count as names, not member reads.
+- esbuild then bundles the modules from an `fs.FS` into one script with its source map inline, which goja reads, so stacks point at `.tsx` lines. Imports of `nsgo`, `nsgo/*` and `nsgo:rt` stay `require` calls the runtime answers; an app imports its own files and JSON, not npm packages yet.
+- NSH's compiler tests are its tests, on this output (`jsx_test.go`), with its errors: lowercase tags, unknown tags with the import to write, text outside `<Text>`.
 
 ## The runtime
 
-`__jsx(tag, props, ...children)` returns a `core.Node`:
+`tsx.App(name, bundle)` returns the app function `nsgo.Run` and `nsgotest.Start` take: it runs the bundle in a goja VM on the engine goroutine, and what `mount` renders is the app. JS reaches the graph through the root scope; `core` gives what JS creates to the innermost running owner, as NSH's graph does.
 
-| Tag | Becomes |
-| --- | --- |
-| A host element or Go component (`View`, `Text`, `base.Button`, the app's) | Its struct, filled by reflection: prop `label` sets `Label`; a getter sets `LabelFunc`, or a field typed `func() T` such as `Disabled` |
-| A JS function | `core.Func` calling it untracked with the props object, `children` a getter |
-| `If`, `Each`, `ErrorBoundary`, a fragment | `core.Show`, `core.Each`, `core.Catch`, `core.Group` |
-| A thunk child | `core.Dynamic`; inside a `Text`, its `ContentFunc` or `SpansFunc` |
+It runs `View`, `Text`, `Scroll`, `Image` and `nsgo/base`'s `Input` with their common props, `class`, `classList`, `style` and the state styles (`activeStyle`, ...), and `nsgo`'s reactive API, `mount`, `context`, `split`, `ErrorBoundary`, the environment and the primitives as components. Its tests and `examples/tsx`'s run apps headless; `TestControlFlow` expects the texts NSH showed for the same app.
 
-- Fields map by name, lowerCamelCase in JS. Event fields wrap the JS function and convert the event struct to an object. `core.Node` fields take elements, and `func(T) core.Node` fields render functions.
-- A getter for a field with no function form builds the element again in a `core.Dynamic` when it changes, losing native state; a dev build warns once, naming the field to give a `Func` form.
-- `Each` keys rows by the `key` prop or the item, and compares items with `===`. `core.Each` notifies rows of non-plain items on every read, so it needs an equality, as `NewSignalFunc` takes.
-- One registration per Go type makes its JS face, so `base`, `mobile`, `desktop` and an app's components need no code each. Modules: `nsgo`, `nsgo/base`, `nsgo/mobile`, `nsgo/desktop`, and the app's (`app/native`).
-- `signal` is a callable over `core.Signal[goja.Value]` comparing with `===`, with `set` and `update`; `computed`, `effect`, `batch`, `untracked`, `cleanup` and `context` map to `core`'s memos, effects, `Untrack`, `Cleanup` and `Key`.
-- The entry calls `mount(() => <App />)`, which gives `tsx.Run` or `tsx.View` the root.
-- `style` objects decode into `core.Style`: lowerCamelCase fields, colors through `core.ParseColor`, numbers as points, strings such as `"50%"` as lengths. Tailwind classes come later, as a port of `nsh/crates/nsh-core/src/tailwind/` (about 6,900 lines of Rust) to `core.Style`.
-- An exception is a panic `core` recovers: a `Catch` above shows its fallback, else the host reports it with the stack mapped to `.tsx` lines.
-- goja runs promise jobs as the outermost call returns; timers go through `Scope.AfterFunc`.
-- `host` reaches the embedding app through the [host channel](embedding.md#the-host-channel), so a delivered screen gets the app's data from functions the app names. `fetch` runs on `net/http`, the network capability checked first.
+- A node is a JS object over a `core.Element`. Host elements are made detached, their props set one at a time, and dynamic children kept by a render effect reconciling the nodes it inserted with Solid's `reconcileArrays`, as `dom.rs` does.
+- Props decode into `core`'s element structs (`protocol.go`, NSH's `decode_prop`): an NSH prop sets the field of the same meaning. A prop `core` lacks is added to `core`, so Go apps gain it too; one not decoded yet is logged once.
+- Style objects decode into `core.Style`: NSH's keys, colors through `core.ParseColor`, numbers as points. Classes go to `core` as they are, which resolves them.
+- `core.Text` takes spans, not children, so the runtime merges a `<Text>`'s raw text and nested `<Text>`s, with their styles and classes, into its spans, and makes other elements attachments, as NSH's core merges text.
+- A node is released with the owner it was made under. NSH releases one when QuickJS collects it; Go's collector cannot see that only the tree's handler closures still hold it.
+- An exception is a panic `core` recovers: an `ErrorBoundary` above shows its fallback, which gets what was thrown, else the host reports it with the stack mapped to `.tsx` lines.
+- goja runs promise jobs as the outermost call returns; `setTimeout`, `setInterval` and `queueMicrotask` run on the engine goroutine through `Scope.AfterFunc`, and `console` writes to the log (`timers.go`).
+- `host` reaches the embedding app through the [host channel](embedding.md#the-host-channel); `fetch` runs on `net/http`, the network capability checked first (planned).
 
-## Types and checking
+## Core's part
 
-`nsgo` writes `.nsgo/types` from the runtime's reflection, with doc comments `go/doc` reads from NSGo's sources in the module cache, and a `tsconfig.json` mapping the modules there. `nsgo check` runs TypeScript 7's checker built from its Go sources: `go run github.com/microsoft/typescript-go/cmd/tsgo@<pinned>` builds once (about 70 s) and is cached, so checking needs only Go.
+`core.Element` is nsh-core's `Op` entry on `core`'s tree, the part of `core` only `tsx` uses:
+
+- `NewElement` makes one detached from an element value (`View`, `Text`, `Scroll`, `Input`, `Image`), its props, whose functions it reads; `Set` replaces them, `Insert` and `Remove` place children, and `Release` frees it.
+- An element is a `Node`: mounted where Go code puts a node, it shows there, so Go components take TSX children.
+- A region element (`NewElement` with no value) lays its children out as its parent's, and `Mount` shows Go nodes in it, so TSX shows Go components and `ErrorBoundary` is a `Catch`.
+- `Scope.RenderEffect` runs bindings as `core`'s own do, and `Scope.Run` runs code under an owner, as Solid's `runWithOwner`.
+
+## Types and checking (planned)
+
+`nsgo` writes `.nsgo/types` from the runtime's tables, as NSH's `declarations.rs` does, with a `tsconfig.json` mapping the modules there. `nsgo check` runs TypeScript 7's checker built from its Go sources: `go run github.com/microsoft/typescript-go/cmd/tsgo@<pinned>` builds once (about 70 s) and is cached, so checking needs only Go.
 
 ## Developing
 
-A TSX entry in `nsgo.yaml` makes `nsgo dev` build the Go host once, with a generated `main` calling `tsx.Run`, then only the bundle on each save, which esbuild does in milliseconds. The dev server sends it over `/_nsgo/events`, and the app starts a new VM with it; failed builds use the existing overlay. Keeping state across an edit, as NSH's hot runtime does (`nsh/crates/nsh-bundler/src/hot.rs`), is a later step.
+`nsgo dev` watches the files a package embeds, so a save rebuilds and restarts a TSX app as it does a Go one. Rebuilding only the bundle (planned): the Go host built once, then the bundle on each save, which esbuild does in milliseconds. The dev server sends it over `/_nsgo/events`, and the app starts a new VM with it; failed builds use the existing overlay. Keeping state across an edit, as NSH's hot runtime does (`nsh/crates/nsh-bundler/src/hot.rs`), is a later step.
 
-## Delivering
+## Delivering (planned)
 
-- A host places `tsx.View` where a feature goes, given a verified package or a bundle of its own; `tsx.Run` is an app made only of TSX. The iOS and Android faces gain the same loading call.
-- `.nsgopkg` follows `.nshpkg`: a header (app ID, version, build, capabilities, minimum runtime, signing time, certificate, file table with SHA-256s), the files (source, source map, assets) and an Ed25519 signature over both.
+- A host places `tsx.View` where a feature goes, given a verified package or a bundle of its own. The iOS and Android faces gain the same loading call.
+- Packages follow `.nshpkg`: a header (app ID, version, build, capabilities, minimum runtime, signing time, certificate, file table with SHA-256s), the files (source, source map, assets) and an Ed25519 signature over both.
 - Keys, certificates, revocation lists with sequence numbers, the trust store and rollback protection port as NSH has them, on `crypto/ed25519` and `crypto/sha256`. A host verifies off the main thread and accepts a build once it ran healthy.
 - `nsgo keygen`, `certify`, `publish`, `verify` and `revoke` are NSH's commands. Where packages come from is the host's business, as in NSH.
-- A package runs on every later runtime, so once TSX ships every name its face exposes is frozen. The face comes from Go's field names, so renaming a field of `core` or `base` then needs an alias kept for good.
+- A package runs on every later runtime, so once TSX ships nothing its modules expose is removed or renamed, as NSH's `compatibility.md` rules.
 
-## Sandbox
+## Sandbox (planned)
 
 Limits and checks are Go's, never JS's, since a bundle holds only the app's code.
 
@@ -128,11 +122,12 @@ Limits and checks are Go's, never JS's, since a bundle holds only the app's code
 | NSH | NSGo | Why |
 | --- | --- | --- |
 | QuickJS | goja | No C and no cgo, on every target |
-| Oxc, NSH's JSX compiler, rolldown | esbuild and a lowering pass on goja's parser | Go libraries, no Node |
-| A renderer of ops | `__jsx` builds `core`'s element values | Go and JS call each other as Go calls, and `core` already binds what changes |
+| Oxc, `jsx.rs`, rolldown | esbuild and a port of `jsx.rs` on goja's parser, over CommonJS | Go libraries, no Node; goja's parser reads no ES modules |
+| `nsh build` writes the bundle | The app compiles its embedded sources as it starts | Plain `go run` and `go test`; `nsgo build` compiling ahead is planned |
 | Bytecode in packages | Source only | goja saves no bytecode |
 | A heap limit | Time, stack and quotas | goja allocates from Go's heap |
-| `ref` assigns variables | Signals and functions | No scope analysis |
+| Nodes released when collected | Released with their owner | Go's collector cannot tell the tree's handler closures from the app's references |
+| The core merges a text's children | The runtime merges them into `core.Text`'s spans | `core.Text` takes spans |
+| `nsh.json` | `nsgo.yaml` | Configuration is YAML |
 | `nsh check` downloads `tsc` from npm | `go run` builds it | Only Go is assumed |
-| Tailwind classes first | `style` objects first | The Tailwind port is large |
-| NSH's TSX names | Names from NSGo's Go fields | One API, generated rather than mapped; an open question |
+| The modules `nsh`, `nsh/base`, `nsh:rt` | `nsgo`, `nsgo/base`, `nsgo:rt` | The product's name (decided by the user, 2026-10-28) |

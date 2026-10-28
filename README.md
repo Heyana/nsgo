@@ -68,6 +68,30 @@ func TestPress(t *testing.T) {
 }
 ```
 
+An app can also be written in TSX and styled with Tailwind CSS classes: the package embeds its sources, which `tsx/compiler` compiles as the app starts, with no Node. `examples/tsx` is one.
+
+```go
+//go:embed *.tsx
+var src embed.FS
+
+func main() { nsgo.Run(compiler.App(src, "App.tsx")) }
+```
+
+```tsx
+import { mount, signal, Text, View } from "nsgo";
+
+function App() {
+  const count = signal(0);
+  return (
+    <View class="gap-3 p-6" onPress={() => count.update((n) => n + 1)}>
+      <Text class="text-lg font-bold">Pressed {count()} times</Text>
+    </View>
+  );
+}
+
+mount(App);
+```
+
 Beside the package, `nsgo.yaml` names the app and its targets:
 
 ```yaml
@@ -113,11 +137,11 @@ Flags replace the `nsgo.yaml` values they name, such as `-target`, `-version` or
 
 ## Development
 
-Requirements: macOS with Xcode and Go 1.25 or later. Nothing else is needed to build every target for arm64, Android's APK included.
+Requirements: macOS with Xcode and Go 1.26 or later. Nothing else is needed to build every target for arm64, Android's APK included.
 
 Android device and emulator development additionally needs `adb` from the Android SDK's platform-tools, and iOS device development needs an Apple ID in Xcode's Accounts, a trusted iPhone and Developer Mode on it.
 
-The x86_64 emulator target, `android_x64`, also needs an Android NDK: Go links android/amd64 only with cgo. On Windows, Go 1.25 or later runs the native app and builds the Windows and web packages. On Linux, Go runs the native app once GTK 4.14 or newer, Pango and Cairo are installed, WebKitGTK 6.0 for web views and GStreamer plug-ins for videos.
+The x86_64 emulator target, `android_x64`, also needs an Android NDK: Go links android/amd64 only with cgo. On Windows, Go 1.26 or later runs the native app and builds the Windows and web packages. On Linux, Go runs the native app once GTK 4.14 or newer, Pango and Cairo are installed, WebKitGTK 6.0 for web views and GStreamer plug-ins for videos.
 
 Run the gallery from the repository root: NSH's gallery in Go, a demo of each element, `base` component and service. A wide window shows the demos in a sidebar; a narrow one is a phone's index.
 

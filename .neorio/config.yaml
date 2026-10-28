@@ -1,18 +1,18 @@
 icon: examples/gallery/assets/Icon.png
 tasks:
   - label: Run
-    group: run
     command: go
     args: [tool, nsgo, dev, examples/gallery]
   - label: Build
-    group: build
     command: go
     args: [tool, nsgo, build, examples/gallery]
+  - label: TSX
+    command: go
+    args: [tool, nsgo, dev, examples/tsx]
   - label: Website dev
     type: shell
     command: "cd website && bun install && bun run dev"
   - label: Website build
-    group: build
     type: shell
     command: "cd website && bun install && bun run build"
 worktree:

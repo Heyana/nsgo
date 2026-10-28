@@ -68,6 +68,30 @@ func TestPress(t *testing.T) {
 }
 ```
 
+应用也可以用 TSX 编写，并用 Tailwind CSS 类名设置样式：包内嵌入源码，由 `tsx/compiler` 在应用启动时编译，不需要 Node。`examples/tsx` 就是这样一个应用。
+
+```go
+//go:embed *.tsx
+var src embed.FS
+
+func main() { nsgo.Run(compiler.App(src, "App.tsx")) }
+```
+
+```tsx
+import { mount, signal, Text, View } from "nsgo";
+
+function App() {
+  const count = signal(0);
+  return (
+    <View class="gap-3 p-6" onPress={() => count.update((n) => n + 1)}>
+      <Text class="text-lg font-bold">Pressed {count()} times</Text>
+    </View>
+  );
+}
+
+mount(App);
+```
+
 在包旁边放一个 `nsgo.yaml`，写明应用名称和目标平台：
 
 ```yaml
@@ -113,11 +137,11 @@ go get -tool github.com/oneo-me/nsgo/cmd/nsgo
 
 ## 开发
 
-要求：装有 Xcode 的 macOS，以及 Go 1.25 或更高版本。构建 arm64 的所有目标（包括 Android 的 APK）都不需要其他工具。
+要求：装有 Xcode 的 macOS，以及 Go 1.26 或更高版本。构建 arm64 的所有目标（包括 Android 的 APK）都不需要其他工具。
 
 Android 真机和模拟器开发还需要 Android SDK platform-tools 中的 `adb`；iOS 真机开发需要在 Xcode 的 Accounts 中登录 Apple ID，并连接一台已信任、已开启开发者模式的 iPhone。
 
-x86_64 模拟器目标 `android_x64` 还需要 Android NDK：Go 只能通过 cgo 链接 android/amd64。在 Windows 上，只需 Go 1.25 或更高版本即可运行原生应用，并构建 Windows 和 Web 包。在 Linux 上，安装 GTK 4.14 或更高版本、Pango 和 Cairo 后即可用 Go 运行原生应用；网页视图还需要 WebKitGTK 6.0，视频还需要 GStreamer 插件。
+x86_64 模拟器目标 `android_x64` 还需要 Android NDK：Go 只能通过 cgo 链接 android/amd64。在 Windows 上，只需 Go 1.26 或更高版本即可运行原生应用，并构建 Windows 和 Web 包。在 Linux 上，安装 GTK 4.14 或更高版本、Pango 和 Cairo 后即可用 Go 运行原生应用；网页视图还需要 WebKitGTK 6.0，视频还需要 GStreamer 插件。
 
 在仓库根目录运行 gallery：用 Go 翻译的 NSH gallery，为每个元素、`base` 组件和服务各提供一个演示。宽窗口在侧边栏列出演示，窄窗口则是手机的索引页。
 

@@ -13,13 +13,15 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | Package | NSH counterpart | Responsibility |
 | --- | --- | --- |
 | `nsgo` (module root) | `run_app`, `AppView` | `nsgo.Run`, and `nsgo.NewView` in a host's window ([embedding](docs/architecture/embedding.md)): picks the backend by build tags |
-| `core` | `nsh-core` | The app's API: elements, styles, themes, the reactive graph and regions, services; the shadow tree, layout and text preparation |
+| `core` | `nsh-core` | The app's API: elements, styles, Tailwind classes, themes, the reactive graph and regions, services; the shadow tree, layout and text preparation |
 | `base` | `nsh-base` | Unstyled components: controls, popups, navigation, panels, a dock, charts and tables ([components](docs/architecture/components.md)) |
 | `mobile`, `desktop` | `nsh/mobile`, `nsh/desktop` | What only phones have (the tab bar) and only desktops (the window, menus) |
 | `base/textview` | `nsh-base`'s `text_view` | `TextView`: Markdown, HTML or the app's blocks ([text view](docs/architecture/textview.md)) |
 | `base/textview/highlight` | `nsh-base`'s `highlight` feature | Code highlighting for `TextView` with chroma |
 | `base/editor`, `base/diff` | `nsh-base`'s `editor`, `diff` | `Editor`, a code editor, and `DiffView`, the changes between texts or of a patch ([editor](docs/architecture/editor.md)) |
 | `base/internal/*` | `nsh-base`'s `syntax`, `window` | What `base`'s packages share: highlighting and the rows a virtualized view makes |
+| `tsx` | `nsh-js` | TSX apps on goja: the `nsgo` module's reactive API and the renderer of compiled JSX on `core.Element` ([TSX](docs/architecture/tsx.md)) |
+| `tsx/compiler` | `nsh-bundler` | TSX to one script with esbuild and a port of NSH's JSX compiler; `compiler.App` compiles an app's embedded sources as it starts |
 | `icons/lucide` | — (NSH loads SVG as images) | The bundled Lucide pack, an accessor per icon ([icons](docs/architecture/icons.md)) |
 | `nsgotest` | `nsh-testing` | App tests, headless or on a platform ([testing](docs/architecture/testing.md)) |
 | `internal/testhost` | `nsh-testing`'s agent | A backend's test host for `nsgotest`: the main thread, native input, screenshots |
@@ -32,6 +34,7 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `internal/platform/*` | Platforms' shared code | What backends share: images ([images](docs/architecture/images.md)), picked photos, process readings |
 | `examples/gallery` | `examples/gallery` | NSH's gallery in Go, with headless tests; the website runs its web build |
 | `examples/embedded`, `examples/embed-*` | `examples/embed-*` | An app to embed, and desktop, iOS and Android apps embedding it |
+| `examples/tsx` | — | An app written in TSX and styled with Tailwind classes, with tests |
 | `cmd/nsgo` | `nsh-cli` | `nsgo init`, `dev`, `test` and `build` from an app's `nsgo.yaml` ([tool](docs/architecture/tool.md)); `apk` packages and signs Android apps in Go |
 | `tools/lucidegen` | — | Regenerates `icons/lucide` from a pinned Lucide checkout |
 
@@ -57,7 +60,7 @@ Packages import only downward; `layering_test.go` checks it on every target:
 ```text
                     apps (examples/*, bench/*)
          ┌───────────────┬───────┴───────┬───────────────┐
-    nsgo (root)       nsgotest base/* mobile desktop  icons/*
+    nsgo (root)       nsgotest base/* mobile desktop  icons/* tsx
          │               │               │               │
  internal/platform/*     │               │               │
          │               │               │               │
@@ -68,11 +71,11 @@ Packages import only downward; `layering_test.go` checks it on every target:
                           internal/driver
 ```
 
-- Apps import `nsgo`, `core`, `base`, `mobile`, `desktop`, `icons` and `nsgotest` only, native components included; `core` and `nsgotest` alias the internal types their API reaches (`TestPublicAPINamesNoInternalType`).
+- Apps import `nsgo`, `core`, `base`, `mobile`, `desktop`, `icons`, `tsx` and `nsgotest` only, native components included; `core` and `nsgotest` alias the internal types their API reaches (`TestPublicAPINamesNoInternalType`).
 - `internal/driver` is the protocol and imports from the module only `internal/shaderir`, for the shader programs it carries. Backends import it and `internal/engine`, never `core`, and never the shader compiler (`internal/shader`), which only `core` links.
 - `core` imports only `internal/driver`, `internal/layout` and the shader compiler (`internal/shader`, `internal/shaderir`).
 - `internal/engine` runs one app on `core` and defines `engine.Platform`, which backends implement. `nsgotest` is the headless backend, without the engine, and on a platform drives a backend's test host.
-- `core`, `base`, `mobile`, `desktop`, `icons`, `nsgotest`, `internal/driver`, `internal/layout`, `internal/testhost`, the shader compiler and `internal/engine` build unchanged for every target: no purego, `syscall` or `unsafe`. No package has cgo files or hand-written C.
+- `core`, `base`, `mobile`, `desktop`, `icons`, `tsx`, `nsgotest`, `internal/driver`, `internal/layout`, `internal/testhost`, the shader compiler and `internal/engine` build unchanged for every target: no purego, `syscall` or `unsafe`. No package has cgo files or hand-written C.
 - `base` holds unstyled components; apps or a component library style them. A component gets a package under `base` only for dependencies other apps should not link, as `base/textview` links goldmark.
 - Each API has one home: `core` elements and the environment, `base` controls and navigation, `mobile` and `desktop` what only phones or desktops have. A part `core` keeps for another package's API names it in its comment.
 - The main thread never waits for the engine, but up to 16 ms on macOS for a resized window's layout; the engine never touches main-thread-only UI objects.
@@ -101,8 +104,6 @@ Packages import only downward; `layering_test.go` checks it on every target:
 
 Record a design question here, and confirm the answer with the user before choosing it.
 
-- **TSX engine.** goja, pure Go on every target but with no heap limit, as [TSX](docs/architecture/tsx.md#the-engine) proposes, or a QuickJS build?
-- **TSX names.** Generate the TSX face from NSGo's Go field names, as [TSX](docs/architecture/tsx.md#the-runtime) proposes, or map NSH's TSX names so its code and documentation carry over?
 - **Signed packages and capabilities.** Port both for TSX modules only, Go code staying trusted, as [TSX](docs/architecture/tsx.md#sandbox) proposes?
 
 ## Verification

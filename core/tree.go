@@ -82,6 +82,9 @@ type Tree struct {
 	commits     int
 	commitStart time.Time
 	paceStop    func()
+	// positional is set once a node has classes that follow its place
+	// among its siblings (first:, odd:).
+	positional bool
 }
 
 // report is a handler to run under owner after the commit.
@@ -149,6 +152,10 @@ type node struct {
 	// place is the holder a place region shows; held the holder whose
 	// content this region is.
 	place, held *Holder
+	// elem is the Element the node is, which its own owner releases.
+	elem *Element
+	// cls are its Tailwind classes.
+	cls *nodeClasses
 
 	frame       Bounds
 	layoutDirty bool
@@ -333,7 +340,8 @@ type spanNode struct {
 	content string
 	style   Style
 	press   func(PressEvent)
-	attach  *node // the view of an attachment
+	attach  *node        // the view of an attachment
+	cls     *spanClasses // its classes, when it has any
 }
 
 // attachNode is the view of a text's attachment: a layout root of its own
@@ -581,6 +589,9 @@ func (t *Tree) childrenChanged(n *node) {
 		n.flat = nil
 		t.reorder(n)
 		t.markLayout(n)
+		if t.positional || n.cls != nil && n.cls.list.spacing {
+			t.classKids(n)
+		}
 	}
 }
 
@@ -674,6 +685,11 @@ func (t *Tree) clear(region *node) {
 // discard deletes n's subtree. Its owner disposes the bindings.
 func (t *Tree) discard(n *node) {
 	if n.deleted {
+		return
+	}
+	if n.elem != nil && !n.elem.released {
+		// An element only leaves; its owner releases it.
+		n.parent = nil
 		return
 	}
 	n.deleted = true
@@ -814,6 +830,10 @@ func (t *Tree) mount(cx *Scope, parent *node, el Node) {
 		t.mountShow(cx, parent, el)
 	case Catch:
 		t.mountCatch(cx, parent, el)
+	case *Element:
+		if el.t == t {
+			t.place(el.n, parent, nil)
+		}
 	case regionMounter:
 		el.mount(t, t.newRegion(parent, cx), cx)
 	default:
@@ -873,7 +893,7 @@ func (t *Tree) restyle(n *node) bool {
 	if n.dyn != nil {
 		dyn = *n.dyn
 	}
-	merged := n.base.Merge(dyn)
+	merged := n.withClasses(n.base.Merge(dyn))
 	var g groupState
 	if gs := merged.GroupStyle; gs != nil {
 		g = n.groupState(gs.Name)
@@ -974,28 +994,12 @@ func (t *Tree) bindBool(cx *Scope, n *node, fn func() bool, dst *bool) {
 
 func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	n := t.newNode(driver.KindView, parent, cx)
+	t.setClasses(n, v.Class)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
-	n.h = handlers{press: v.OnPress, longPress: v.OnLongPress, pressDown: v.OnPressDown, pressUp: v.OnPressUp,
-		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, hoverMove: v.OnHoverMove, mouseMove: v.OnMouseMove,
-		layout: v.OnLayout, contextMenu: v.OnContextMenu, touch: v.OnTouch,
-		pan: v.OnPan, pinch: v.OnPinch, rotation: v.OnRotation,
-		fileEnter: v.OnFileDragEnter, fileLeave: v.OnFileDragLeave, fileDrop: v.OnFileDrop,
-		focus: v.OnFocus, blur: v.OnBlur}
-	n.h.action = v.OnAccessibilityAction
-	n.responder = v.Responder
-	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
-		WindowDrag: v.Desktop.WindowDrag, SelectionArea: v.Selectable, PointerEvents: v.PointerEvents, HitSlop: v.HitSlop,
-		DelayLongPress: v.DelayLongPress, NoFocus: v.NoFocus, Ripple: v.Android.Ripple}
-	n.material = v.IOS.BackdropMaterial
+	t.setViewParts(n, v)
 	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, value: v.AccessibilityValue, expanded: v.Expanded,
 		hidden: v.AccessibilityElementsHidden, actions: v.AccessibilityActions, accessible: v.Accessible,
 		important: v.ImportantForAccessibility})
-	_, panClaim := v.Responder.panClaim()
-	if v.OnPan != nil || v.PanValues != (AnimatedXY{}) || panClaim {
-		n.props.PanActivation, n.props.PanScrollHandoff = v.PanActivation, v.PanScrollHandoff
-		n.panning = true
-	}
-	t.setRef(n, v.Ref)
 	t.bindBool(cx, n, v.Disabled, &n.props.Disabled)
 	t.bindBool(cx, n, v.Selected, &n.props.Selected)
 	t.bindBool(cx, n, v.Checked, &n.props.Checked)
@@ -1012,13 +1016,37 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	t.bindPan(cx, n, v.PanValues)
 	t.bindGestureValue(n, driver.AnimBindPinch, v.PinchValue)
 	t.bindGestureValue(n, driver.AnimBindRotation, v.RotationValue)
-	n.pinching, n.rotating = v.OnPinch != nil || v.PinchValue != nil, v.OnRotation != nil || v.RotationValue != nil
 	for _, c := range v.Children {
 		t.mount(cx, n, c)
 	}
 	if v.Tooltip != nil {
 		t.mountTooltip(cx, n, v.Tooltip)
 	}
+}
+
+// setViewParts sets the parts of view n that v gives as values: its
+// handlers and props, before the accessibility and states bound over
+// them.
+func (t *Tree) setViewParts(n *node, v View) {
+	n.h = handlers{press: v.OnPress, longPress: v.OnLongPress, pressDown: v.OnPressDown, pressUp: v.OnPressUp,
+		hoverIn: v.OnHoverIn, hoverOut: v.OnHoverOut, hoverMove: v.OnHoverMove, mouseMove: v.OnMouseMove,
+		layout: v.OnLayout, contextMenu: v.OnContextMenu, touch: v.OnTouch,
+		pan: v.OnPan, pinch: v.OnPinch, rotation: v.OnRotation,
+		fileEnter: v.OnFileDragEnter, fileLeave: v.OnFileDragLeave, fileDrop: v.OnFileDrop,
+		focus: v.OnFocus, blur: v.OnBlur}
+	n.h.action = v.OnAccessibilityAction
+	n.responder = v.Responder
+	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
+		WindowDrag: v.Desktop.WindowDrag, SelectionArea: v.Selectable, PointerEvents: v.PointerEvents, HitSlop: v.HitSlop,
+		DelayLongPress: v.DelayLongPress, NoFocus: v.NoFocus, Ripple: v.Android.Ripple}
+	n.material = v.IOS.BackdropMaterial
+	_, panClaim := v.Responder.panClaim()
+	n.panning = v.OnPan != nil || v.PanValues != (AnimatedXY{}) || panClaim
+	if n.panning {
+		n.props.PanActivation, n.props.PanScrollHandoff = v.PanActivation, v.PanScrollHandoff
+	}
+	n.pinching, n.rotating = v.OnPinch != nil || v.PinchValue != nil, v.OnRotation != nil || v.RotationValue != nil
+	t.setRef(n, v.Ref)
 }
 
 // tooltipDelay is how long the pointer rests on a view before its
@@ -1073,6 +1101,7 @@ func (t *Tree) mountTooltip(cx *Scope, n *node, tip Node) {
 
 func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 	n := t.newNode(driver.KindText, parent, cx)
+	t.setClasses(n, v.Class)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
 	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: v.LiveRegion, TestID: v.TestID,
@@ -1090,14 +1119,16 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 		if sp.Attachment != nil {
 			w := t.newNode(driver.KindView, n, cx)
 			w.attach = &attachNode{}
+			t.setClasses(w, sp.Class)
 			t.bindStyle(cx, w, sp.Style, sp.StyleFunc)
 			t.mount(cx, w, sp.Attachment)
 			n.text.spans = append(n.text.spans, spanNode{attach: w})
 			n.text.attachments++
 			continue
 		}
-		n.text.spans = append(n.text.spans, spanNode{content: sp.Content, style: sp.Style, press: sp.OnPress})
-		if sp.OnPress != nil {
+		style, cls := t.spanStyle(n, sp.Class, sp.Style)
+		n.text.spans = append(n.text.spans, spanNode{content: sp.Content, style: style, press: sp.OnPress, cls: cls})
+		if sp.OnPress != nil && n.h.press == nil {
 			n.h.press = func(PressEvent) {} // presses come with the offset of the span
 		}
 		if sp.ContentFunc != nil {
@@ -1119,6 +1150,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 			})
 		}
 	}
+	t.followSpanClasses(n)
 	if v.SpansFunc != nil {
 		cx.renderEffect(func() {
 			spans := v.SpansFunc()
@@ -1155,6 +1187,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 
 func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 	n := t.newNode(driver.KindInput, parent, cx)
+	t.setClasses(n, v.Class)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	n.h = handlers{change: v.OnChange, submit: v.OnSubmit, focus: v.OnFocus, blur: v.OnBlur, layout: v.OnLayout}
 	n.props = driver.ViewProps{Role: RoleTextField, Label: v.Label, TestID: v.TestID}
@@ -1190,6 +1223,7 @@ var scrollDefaults = Style{FlexShrink: 1}
 
 func (t *Tree) mountScroll(cx *Scope, parent *node, v Scroll) {
 	n := t.newNode(driver.KindScroll, parent, cx)
+	t.setClasses(n, v.Class)
 	t.bindStyle(cx, n, scrollDefaults.Merge(v.Style), v.StyleFunc)
 	n.h = handlers{layout: v.OnLayout}
 	if on := v.OnScroll; on != nil {
@@ -1378,11 +1412,12 @@ func (t *Tree) Dispatch(ev driver.Event) {
 		if n.props.Disabled {
 			break
 		}
+		// A span's own press, else the text's.
 		if tn := n.text; tn != nil && len(tn.spans) > 0 {
 			if sp := tn.spanAt(ev.Index); sp != nil && sp.press != nil {
 				press(sp.press)
+				break
 			}
-			break
 		}
 		press(h.press)
 	case driver.EventLongPress:

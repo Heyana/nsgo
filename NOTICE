@@ -9,6 +9,10 @@ The Go packages ported from NSH are modified: Rust is translated into Go, names
 follow Go conventions, and behavior differs where ARCHITECTURE.md records it.
 ARCHITECTURE.md's "Code map" names the NSH crate each package comes from.
 
+core/tailwind_palette.go is Tailwind CSS's default palette,
+https://github.com/tailwindlabs/tailwindcss, Copyright (c) Tailwind Labs, Inc.,
+licensed under the MIT License, converted to sRGB as NSH converts it.
+
 The Lucide icon set in icons/lucide comes from
 https://github.com/lucide-icons/lucide, Copyright (c) 2026 Lucide Icons and
 Contributors, licensed under the ISC License, together with Feather's MIT

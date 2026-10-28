@@ -940,6 +940,23 @@ func TestSpansStyleRangesAndLink(t *testing.T) {
 	}
 }
 
+func TestTextPressOutsideItsLinks(t *testing.T) {
+	var link, text int
+	h := newHost(t, Size{Width: 300, Height: 100}, func(cx *Scope) Node {
+		return Text{TestID: "text", OnPress: func(PressEvent) { text++ }, Spans: []Span{
+			{Content: "Read "},
+			{Content: "docs", OnPress: func(PressEvent) { link++ }},
+		}}
+	})
+	h.commit()
+	n := h.find("text")
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPress, ID: n.id, Index: 1})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPress, ID: n.id, Index: 6})
+	if link != 1 || text != 1 {
+		t.Errorf("link pressed %d times and text %d, want once each", link, text)
+	}
+}
+
 func TestCanvasDrawsAtItsSizeAndOnChange(t *testing.T) {
 	var level *Signal[float32]
 	draws := 0

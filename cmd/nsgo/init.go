@@ -86,7 +86,7 @@ build:
 
 var initMod = template.Must(template.New("mod").Parse(`module {{.Module}}
 
-go 1.25.0
+go 1.26.0
 `))
 
 var initApp_ = template.Must(template.New("app").Parse(`// Command {{.Name}} is an NSGo app.

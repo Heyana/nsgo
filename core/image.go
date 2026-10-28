@@ -16,6 +16,7 @@ type imageNode struct {
 
 func (t *Tree) mountImage(cx *Scope, parent *node, v Image) {
 	n := t.newNode(driver.KindImage, parent, cx)
+	t.setClasses(n, v.Class)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	t.setRef(n, v.Ref)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout, loadStart: v.OnLoadStart, loadEnd: v.OnLoadEnd,

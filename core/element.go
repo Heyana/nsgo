@@ -31,6 +31,10 @@ func (g Group) Render(*Scope) Node { return g }
 
 // View is a container. Its look is its style; it has none of its own.
 type View struct {
+	// Class is Tailwind CSS classes ("flex-row gap-4 p-4 bg-white
+	// dark:bg-zinc-900"), meaning what they mean in Tailwind CSS 4, under
+	// Style; an unknown class is logged once.
+	Class string
 	Style Style
 	// StyleFunc's result is merged over Style, again when what it reads
 	// changes.
@@ -189,6 +193,8 @@ type PartStates struct {
 
 // Text is a run of text the engine lays out and the platform draws.
 type Text struct {
+	// Class is Tailwind CSS classes, as View's.
+	Class   string
 	Content string
 	// ContentFunc replaces Content, again when what it reads changes.
 	ContentFunc func() string
@@ -209,7 +215,8 @@ type Text struct {
 	AdjustsFontSizeToFit bool
 	MinimumFontScale     float32
 	// Spans, when set, are the text: runs in order, each styled over the
-	// Text's style. A span with OnPress is a link.
+	// Text's style. A span with OnPress is a link; a press on another
+	// span is the Text's OnPress.
 	Spans []Span
 	// SpansFunc replaces Spans, again when what it reads changes: runs of
 	// text and style only, as a code editor's rows recolor as their
@@ -241,6 +248,8 @@ func (t Text) Render(*Scope) Node { return t }
 
 // Span is a run of a Text with a style of its own.
 type Span struct {
+	// Class is Tailwind CSS classes under Style, as View's.
+	Class       string
 	Content     string
 	ContentFunc func() string
 	// Style's text fields merge over the Text's. Its Background and
@@ -265,6 +274,8 @@ type Span struct {
 // Its style's PlaceholderColor colors the placeholder and SelectionColor
 // the caret and the selection.
 type Input struct {
+	// Class is Tailwind CSS classes, as View's.
+	Class        string
 	Value        func() string
 	DefaultValue string
 	Placeholder  string
@@ -345,6 +356,8 @@ func (i Input) Render(*Scope) Node { return i }
 // Horizontal) as long as they need. Like React Native's ScrollView, it
 // shrinks to fit its parent (FlexShrink 1) unless its style says else.
 type Scroll struct {
+	// Class is Tailwind CSS classes, as View's.
+	Class         string
 	Horizontal    bool
 	HideIndicator bool
 	// Behavior is how it scrolls: paging, snapping, deceleration,
@@ -509,6 +522,8 @@ func (r *Ref) Blur() {
 // knows only the size Source declares: one dimension derives the other,
 // and an image without one is 0 by 0 until its style sizes it.
 type Image struct {
+	// Class is Tailwind CSS classes, as View's.
+	Class        string
 	Source       ImageSource
 	SourceFunc   func() ImageSource
 	Placeholder  ImageSource

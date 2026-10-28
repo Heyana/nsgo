@@ -1,0 +1,155 @@
+package tsx
+
+import (
+	"errors"
+
+	"github.com/dop251/goja"
+
+	"github.com/oneo-me/nsgo/core"
+)
+
+// The rest of NSH's renderer (dom.rs): refs, spreads, the primitives as
+// components, ErrorBoundary and context.
+
+// ref is `ref(target, node, name)`: a signal is set to the node and a
+// function called with it, reporting true; a name means the target is a
+// binding that cannot be assigned, so it must be one of those.
+func (r *runtime) ref(call goja.FunctionCall) goja.Value {
+	target, name := arg(call, 0), arg(call, 2)
+	n := r.mustNode(arg(call, 1))
+	return r.vm.ToValue(r.applyRef(target, n, stringOf(name)))
+}
+
+// applyRef gives target node n: a signal's set, or a call.
+func (r *runtime) applyRef(target goja.Value, n *node, name string) bool {
+	if o, ok := target.(*goja.Object); ok && isFunction(o) {
+		if set := o.Get("set"); isFunction(set) {
+			r.call(set, n.value())
+		} else {
+			r.call(o, n.value())
+		}
+		return true
+	}
+	if name != "" {
+		panic(r.vm.NewTypeError("nsgo: ref={%s}: %s holds no signal or function to give the node", name, name))
+	}
+	return false
+}
+
+// spread is `spread(node, props)`: each prop set, followed as it
+// changes.
+func (r *runtime) spread(call goja.FunctionCall) goja.Value {
+	r.spreadProps(r.mustNode(arg(call, 0)), arg(call, 1), "")
+	return goja.Undefined()
+}
+
+// spreadProps sets props' props on n but skip, again when what they read
+// changes; an unchanged value is not set again.
+func (r *runtime) spreadProps(n *node, props goja.Value, skip string) {
+	o, ok := props.(*goja.Object)
+	if !ok {
+		return
+	}
+	prev := map[string]goja.Value{}
+	r.cx.RenderEffect(func() {
+		for _, k := range o.Keys() {
+			if k == skip {
+				continue
+			}
+			v := o.Get(k)
+			if old, ok := prev[k]; ok && old.StrictEquals(v) {
+				continue
+			}
+			prev[k] = v
+			r.setProp(n, k, v)
+		}
+	})
+}
+
+// hostComponent is a primitive as a component (`const C = c ? View :
+// Text; <C />`): its element with the props spread and the children
+// inserted.
+func (r *runtime) hostComponent(tag string) goja.Value {
+	return r.function(func(call goja.FunctionCall) goja.Value {
+		n := r.newElement(tag)
+		props := arg(call, 0)
+		r.spreadProps(n, props, "children")
+		if o, ok := props.(*goja.Object); ok {
+			r.insertValue(n, r.accessor(func() goja.Value { return o.Get("children") }), nil)
+		}
+		return n.value()
+	})
+}
+
+// errorBoundary is `ErrorBoundary({ fallback, children })`: its children,
+// or the fallback once something under them threw (core's Catch);
+// fallback(error, reset) is called with what was thrown.
+func (r *runtime) errorBoundary(call goja.FunctionCall) goja.Value {
+	props := arg(call, 0).ToObject(r.vm)
+	n := &node{r: r, kind: kindRegion, elem: core.NewElement(r.cx, nil)}
+	region := func(value goja.Value) core.Node {
+		inner := &node{r: r, kind: kindRegion, elem: core.NewElement(r.cx, nil)}
+		r.insertValue(inner, value, nil)
+		return inner.elem
+	}
+	n.elem.Mount(core.Catch{
+		Try: func(*core.Scope) core.Node {
+			return region(r.accessor(func() goja.Value { return props.Get("children") }))
+		},
+		Fallback: func(_ *core.Scope, err error, reset func()) core.Node {
+			fb := props.Get("fallback")
+			if isFunction(fb) {
+				fb = r.call(fb, r.thrown(err), r.function(func(goja.FunctionCall) goja.Value {
+					reset()
+					return goja.Undefined()
+				}))
+			}
+			return region(fb)
+		},
+	})
+	return n.value()
+}
+
+// thrown is what JS threw that err carries, else err's message as an
+// Error.
+func (r *runtime) thrown(err error) goja.Value {
+	var ex *goja.Exception
+	if errors.As(err, &ex) {
+		return ex.Value()
+	}
+	var p *core.PanicError
+	if errors.As(err, &p) {
+		if v, ok := p.Value.(goja.Value); ok {
+			return v
+		}
+	}
+	return r.vm.NewGoError(err)
+}
+
+// context is `context(default)`: a function reading the nearest value
+// provided, with a Provider component (`<Ctx.Provider value>`).
+func (r *runtime) context(call goja.FunctionCall) goja.Value {
+	key := core.NewKey("context", arg(call, 0))
+	ctx := r.function(func(goja.FunctionCall) goja.Value { return key.Use(r.cx) })
+	_ = ctx.Set("Provider", r.function(func(call goja.FunctionCall) goja.Value {
+		props := arg(call, 0).ToObject(r.vm)
+		owner := r.cx.Child()
+		var out goja.Value
+		owner.Run(func() {
+			key.Provide(owner, props.Get("value"))
+			// The children are made under the value, again as they change.
+			m := core.NewMemoFunc(owner, func() goja.Value { return props.Get("children") }, nil)
+			out = r.accessor(m.Get)
+		})
+		return out
+	}))
+	return ctx
+}
+
+// splitSource is `split(props, keys)`: [picked, rest], getters kept.
+const splitSource = `(function (props, keys) {
+	const picked = {}, rest = {};
+	const all = Object.getOwnPropertyDescriptors(props);
+	for (const k of Object.keys(all)) Object.defineProperty(keys.includes(k) ? picked : rest, k, all[k]);
+	return [picked, rest];
+})`
