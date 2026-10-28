@@ -10,6 +10,10 @@ NSGo 是一个以 Go 为后端的跨平台原生 UI 引擎。应用逻辑、响�
 
 NSGo 参考 [Native Shell（NSH）](https://nsh.dev) 的设计，NSH 用 Rust 实现了同样的模型。NSGo 面向想要 NSH 的模型、但不想写 Rust 的团队。
 
+<p align="center">
+  <img alt="macOS 上 gallery 的 Stocks 示例" src="examples/gallery/assets/screenshot.jpg">
+</p>
+
 ## 状态
 
 NSGo 处于早期阶段。它已在 macOS、iOS、Windows、Linux、Web 和 Android 上具备 NSH 的响应式模型、布局、文本、图片、画布、着色器、动画、系统服务和无样式基础组件，应用也可嵌入独立的 iOS、Android 和 Go 桌面应用。尚无发布版本或稳定的 API。各平台进度见 [ARCHITECTURE.md](ARCHITECTURE.md#platforms)。

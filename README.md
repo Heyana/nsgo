@@ -10,6 +10,10 @@ NSGo is a cross-platform native UI engine with a Go backend. App logic, the reac
 
 NSGo follows the design of [Native Shell (NSH)](https://nsh.dev), which does the same in Rust. It exists for teams that want NSH's model without writing Rust.
 
+<p align="center">
+  <img alt="The gallery's Stocks demo on macOS" src="examples/gallery/assets/screenshot.jpg">
+</p>
+
 ## Status
 
 NSGo is early. It has NSH's reactive model, layout, text, images, canvas, shaders, animations, services and unstyled base components on macOS, iOS, Windows, Linux, the web and Android, and apps embed in iOS, Android and Go desktop apps of their own. There is no release or stable API yet. [ARCHITECTURE.md](ARCHITECTURE.md#platforms) tracks each target.
