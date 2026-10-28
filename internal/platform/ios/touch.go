@@ -36,6 +36,9 @@ func registerTouches() {
 			if v := views[self.Send(sel("view"))]; v != nil {
 				v.surface.touched(phase, touches)
 			}
+			if phase == driver.GestureEnded || phase == driver.GestureCancelled {
+				failLifted(self, event)
+			}
 		}
 	}
 	no := func(objc.ID, objc.SEL, objc.ID) bool { return false }
@@ -49,6 +52,29 @@ func registerTouches() {
 		{Cmd: sel("canBePreventedByGestureRecognizer:"), Fn: no},
 	})
 }
+
+// failLifted fails the tracker once the last of its fingers lifts, so
+// UIKit resets it. Left possible, it keeps tracking the touches' event,
+// and iOS 27 then resets none of the recognizers that share a gesture
+// subgraph with it: a scroll view's pan stays failed and never scrolls
+// again.
+func failLifted(tracker, event objc.ID) {
+	down := false
+	apple.ForEach(event.Send(sel("touchesForGestureRecognizer:"), tracker), func(t objc.ID) {
+		if p := objc.Send[int](t, sel("phase")); p != touchEnded && p != touchCancelled {
+			down = true
+		}
+	})
+	if !down {
+		tracker.Send(selSetState, stateFailed)
+	}
+}
+
+// UITouchPhase values.
+const (
+	touchEnded     = 3
+	touchCancelled = 4
+)
 
 // addTracker puts the tracker on the surface.
 func (s *surface) addTracker() {
@@ -69,9 +95,6 @@ func (s *surface) touched(phase driver.GesturePhase, touches objc.ID) {
 	if phase == driver.GestureBegan && len(f.down) == 0 {
 		f.touching = s.listensTouches()
 	}
-	if !f.touching {
-		return
-	}
 	var changed []objc.ID
 	apple.ForEach(touches, func(t objc.ID) {
 		changed = append(changed, t)
@@ -81,13 +104,19 @@ func (s *surface) touched(phase driver.GesturePhase, touches objc.ID) {
 			f.next++
 		}
 	})
-	var out []driver.Touch
-	var at float64
-	for i, t := range f.down {
-		p := objc.Send[apple.CGPoint](t, selLocationInView, s.native)
-		at = objc.Send[float64](t, sel("timestamp"))
-		out = append(out, driver.Touch{ID: f.ids[i], PagePosition: driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)},
-			Changed: slices.Contains(changed, t)})
+	// The fingers are followed while nothing is reported too, after a
+	// scroll view took them, so the next touch asks again.
+	if f.touching {
+		var out []driver.Touch
+		var at float64
+		for i, t := range f.down {
+			p := objc.Send[apple.CGPoint](t, selLocationInView, s.native)
+			at = objc.Send[float64](t, sel("timestamp"))
+			out = append(out, driver.Touch{ID: f.ids[i], PagePosition: driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)},
+				Changed: slices.Contains(changed, t)})
+		}
+		s.engine.Dispatch(driver.Event{Kind: driver.EventTouch, Phase: phase, Touches: out,
+			Time: time.Duration(at * float64(time.Second))})
 	}
 	if phase == driver.GestureEnded || phase == driver.GestureCancelled {
 		for _, t := range changed {
@@ -97,8 +126,6 @@ func (s *surface) touched(phase driver.GesturePhase, touches objc.ID) {
 			}
 		}
 	}
-	s.engine.Dispatch(driver.Event{Kind: driver.EventTouch, Phase: phase, Touches: out,
-		Time: time.Duration(at * float64(time.Second))})
 }
 
 // touchesTaken cancels the touches a scroll view started dragging with.
