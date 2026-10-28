@@ -698,7 +698,9 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	p.drawGradients(&b, e.Gradients)
 	p.drawBoxShadows(v, s, &b, e.Shadows, true)
 	v.pruneShadows()
-	clip := s.Clip || v.kind == driver.KindScroll
+	// An image is clipped to its corners without Clip, as its layer clips
+	// it on Apple and as Linux and the web clip it.
+	clip := s.Clip || v.kind == driver.KindScroll || v.kind == driver.KindImage
 	if clip {
 		p.pushClipBox(&b)
 	} else {

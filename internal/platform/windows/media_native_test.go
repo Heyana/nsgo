@@ -672,3 +672,30 @@ func TestImagesFitAtTheirPositionBlurAndFade(t *testing.T) {
 	}
 	waitForColor(t, hwnd, px(160), px(70), 0xff0000, time.Second)
 }
+
+// TestImageClipsItsRoundedCorners checks an image's content is clipped to
+// its rounded corners without Clip, as Apple, Linux and the web do.
+func TestImageClipsItsRoundedCorners(t *testing.T) {
+	m := image.NewRGBA(image.Rect(0, 0, 20, 10))
+	for y := range 10 {
+		for x := range 20 {
+			m.Set(x, y, color.RGBA{0xff, 0, 0, 0xff})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, m); err != nil {
+		t.Fatal(err)
+	}
+	data := buf.Bytes()
+	title := "nsgo-image-corners"
+	hwnd := startWith(t, func(*core.Scope) core.Node {
+		return core.View{Style: core.Style{Width: driver.Pt(120), Height: driver.Pt(120), Background: driver.RGB(0xffffff)},
+			Children: []core.Node{
+				core.Image{Source: driver.ImageSource{Data: data}, ResizeMode: driver.Stretch,
+					Style: core.Style{Width: driver.Pt(100), Height: driver.Pt(100), CornerRadius: 50}},
+			}}
+	}, Options{Title: title + "|", Width: 120, Height: 120})
+	waitForColor(t, hwnd, px(50), px(50), 0xff0000, 5*time.Second)
+	// The frame's corner is outside the picture's circle.
+	waitForColor(t, hwnd, px(4), px(4), 0xffffff, time.Second)
+}
