@@ -35,7 +35,7 @@ Run `go vet ./...` and `go test ./...` from the repository root once Go code exi
 
 Run `bun run build` in `website/` when changing the website; it type-checks the React home page and rebuilds the gallery's web build it embeds. `bun run dev` serves the page while you work.
 
-Keep workflows on `workflow_dispatch` only until the first release: none triggers on push or pull_request before it. Restore the automatic triggers as part of releasing.
+Keep workflows on `workflow_dispatch` only until the first release, except the website deployment, which runs on every push to `main` that changes the site or the code it embeds. Restore the remaining automatic triggers as part of releasing.
 
 ## Documentation
 
