@@ -3,10 +3,7 @@
 package android
 
 import (
-	"log"
-
 	"github.com/oneo-me/nsgo/internal/driver"
-	"github.com/oneo-me/nsgo/internal/shader"
 	"github.com/oneo-me/nsgo/internal/shaderir"
 	"github.com/oneo-me/nsgo/internal/shaderir/glsl"
 )
@@ -83,17 +80,13 @@ func (s *surface) trackShaders(b *driver.MountBatch) []shaderItem {
 	return out
 }
 
-// translate turns prog into GLSL ES, or logs why it cannot.
+// translate turns prog into GLSL ES.
 func translate(prog *driver.ShaderProgram) *glProgram {
 	p := &glProgram{}
 	if prog == nil {
 		return p
 	}
-	ir, err := shader.CompileFragment([]byte(prog.Source))
-	if err != nil {
-		log.Printf("nsgo: shader: %v", err)
-		return p
-	}
+	ir := prog.IR
 	p.source = "#version 300 es\nprecision highp float;\nprecision highp int;\n\n" +
 		glsl.Fragment(ir, "nsgoShader", glsl.Options{FlipY: "true", Block: "NsgoUniforms"}) + glMain
 	p.lanes, p.size = glsl.UniformLanes(ir)

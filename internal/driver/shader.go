@@ -1,11 +1,14 @@
 package driver
 
-// ShaderProgram is a fragment shader an app compiled: its source in Go's
-// syntax (Kage), which each platform translates for its GPU once and
-// keeps while the program is in use. Once handed to the platform it never
-// changes, so platforms key what they made from it by its pointer.
+import "github.com/oneo-me/nsgo/internal/shaderir"
+
+// ShaderProgram is a fragment shader an app compiled: the program the
+// core checked, so platforms translate it for their GPU without linking
+// the compiler. Each translates it once and keeps the result while the
+// program is in use. Once handed to the platform it never changes, so
+// platforms key what they made from it by its pointer.
 type ShaderProgram struct {
-	Source string
+	IR *shaderir.Program
 }
 
 // Shader is what a shader view draws (ItemShader): Program with the

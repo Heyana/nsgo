@@ -4,7 +4,7 @@
 
 ## Language
 
-Shaders are written in Ebitengine's Kage, Go's syntax with GLSL's types and built-ins, as MyGo's are, so an app keeps one source for every GPU API. `core.CompileShader` parses and checks it once and reports errors with the source's lines; the program travels to the platform as its source.
+Shaders are written in Ebitengine's Kage, Go's syntax with GLSL's types and built-ins, as MyGo's are, so an app keeps one source for every GPU API. `core.CompileShader` parses and checks it once and reports errors with the source's lines; the checked program travels to the platform as `shaderir`, so a backend links only the writer for its GPU, and an app that compiles no shader links no compiler.
 
 - `internal/shader` is the front end and `internal/shaderir` the representation, with a backend each for MSL (`msl`), GLSL ES 3.00 (`glsl`) and HLSL (`hlsl`). Their files keep Ebitengine's notices and MyGo's changes.
 - The bridge (`internal/shader/bridge.go`) appends what platforms set before the app's uniforms: the view's size in points (`rectSize`), its pixels a point (`pixelScale`) and, for a program that reads images, their sizes in pixels. The entry point is `Fragment(dst vec4, pos vec2) vec4`: `dst` in the view's pixels from its top left corner, `pos` the same point in points, and the result premultiplied.

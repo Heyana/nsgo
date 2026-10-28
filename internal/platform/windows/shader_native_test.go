@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/oneo-me/nsgo/internal/driver"
+	"github.com/oneo-me/nsgo/internal/shader"
 )
 
 // TestShadersReadImages draws a shader that reads an image with Direct3D
@@ -41,14 +42,18 @@ func TestShadersReadImages(t *testing.T) {
 	img := driver.ImageSource{Data: encoded.Bytes()}
 	w := &window{scale: 1, animator: driver.NewAnimator(nil)}
 	w.canvasImages = map[string]*imageSlot{img.Key(): {src: img, pic: pic}}
-	prog := &driver.ShaderProgram{Source: `package main
+	ir, err := shader.CompileFragment([]byte(`package main
 
 var Alpha float
 
 func Fragment(dst vec4, pos vec2) vec4 {
 	return image0At(pos*image0Size()/rectSize()) * Alpha
 }
-`}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog := &driver.ShaderProgram{IR: ir}
 	v := &view{id: 1}
 	w.setShader(v, &driver.Shader{Program: prog, Lanes: []float64{0.5}, Images: []driver.ImageSource{img}})
 

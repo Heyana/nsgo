@@ -16,7 +16,6 @@ import (
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/oneo-me/nsgo/internal/driver"
-	"github.com/oneo-me/nsgo/internal/shader"
 	"github.com/oneo-me/nsgo/internal/shaderir"
 	"github.com/oneo-me/nsgo/internal/shaderir/msl"
 )
@@ -432,12 +431,7 @@ func metalStage(n int) string {
 // the layers waiting for it.
 func compileMetal(prog *driver.ShaderProgram) *metalPipeline {
 	p := &metalPipeline{}
-	ir, err := shader.CompileFragment([]byte(prog.Source))
-	if err != nil {
-		log.Printf("nsgo: shader: %v", err)
-		p.ready = true
-		return p
-	}
+	ir := prog.IR
 	p.offsets, p.size = msl.UniformLanes(ir)
 	p.types = ir.LaneTypes()
 	p.textures = ir.TextureCount

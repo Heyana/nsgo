@@ -70,7 +70,7 @@ Packages import only downward; `layering_test.go` checks it on every target:
 ```
 
 - Apps import `nsgo`, `core`, `base`, `mobile`, `desktop`, `icons` and `nsgotest` only, native components included; `core` and `nsgotest` alias the internal types their API reaches (`TestPublicAPINamesNoInternalType`).
-- `internal/driver` is the protocol and imports nothing else from the module. Backends import it and `internal/engine`, never `core`.
+- `internal/driver` is the protocol and imports from the module only `internal/shaderir`, for the shader programs it carries. Backends import it and `internal/engine`, never `core`, and never the shader compiler (`internal/shader`), which only `core` links.
 - `core` imports only `internal/driver`, `internal/layout` and the shader compiler (`internal/shader`, `internal/shaderir`).
 - `internal/engine` runs one app on `core` and defines `engine.Platform`, which backends implement. `nsgotest` is the headless backend, without the engine; on a platform it drives the test host a backend registers under the `nsgotest` tag.
 - `core`, `base`, `mobile`, `desktop`, `icons`, `nsgotest`, `internal/driver`, `internal/layout`, `internal/testhost`, the shader compiler and `internal/engine` build unchanged for every target: no purego, `syscall` or `unsafe`. No package has cgo files or hand-written C.

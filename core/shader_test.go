@@ -47,7 +47,7 @@ func TestShaderSendsLanesAndNodes(t *testing.T) {
 			}}
 	})
 	sh := shaderItem(h.commit())
-	if sh == nil || sh.Program.Source != testShader {
+	if sh == nil || sh.Program != prog.p {
 		t.Fatalf("no shader item: %+v", sh)
 	}
 	// Time, Tint (3 lanes), Spots (8), Count.

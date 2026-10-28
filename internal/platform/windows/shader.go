@@ -9,7 +9,6 @@ import (
 	"unsafe"
 
 	"github.com/oneo-me/nsgo/internal/driver"
-	"github.com/oneo-me/nsgo/internal/shader"
 	"github.com/oneo-me/nsgo/internal/shaderir"
 	"github.com/oneo-me/nsgo/internal/shaderir/hlsl"
 )
@@ -158,11 +157,7 @@ func (g *gfx) program(prog *driver.ShaderProgram) *d3dProgram {
 	}
 	p = &d3dProgram{generation: gfxGeneration, failed: true}
 	d3dPrograms[prog] = p
-	ir, err := shader.CompileFragment([]byte(prog.Source))
-	if err != nil {
-		log.Printf("nsgo: shader: %v", err)
-		return nil
-	}
+	ir := prog.IR
 	src := hlsl.Fragment(ir, "nsgoShader", 0, 0) + shaderStage
 	vs, ok := compileHLSL(src, "nsgoVertex", "vs_5_0")
 	if !ok {

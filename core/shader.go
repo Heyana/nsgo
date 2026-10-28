@@ -57,7 +57,7 @@ func CompileShader(src string) (*ShaderProgram, error) {
 	if err != nil {
 		return nil, err
 	}
-	sp := &ShaderProgram{p: &driver.ShaderProgram{Source: src}, uniforms: map[string]uniformSlot{}}
+	sp := &ShaderProgram{p: &driver.ShaderProgram{IR: p}, uniforms: map[string]uniformSlot{}}
 	lane := 0
 	for i, name := range p.UniformNames {
 		if name == shader.RectSizeUniform || name == shader.ScaleUniform || name == shader.ImageSizesUniform {

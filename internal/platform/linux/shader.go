@@ -10,7 +10,6 @@ import (
 	"github.com/ebitengine/purego"
 
 	"github.com/oneo-me/nsgo/internal/driver"
-	"github.com/oneo-me/nsgo/internal/shader"
 	"github.com/oneo-me/nsgo/internal/shaderir"
 	"github.com/oneo-me/nsgo/internal/shaderir/glsl"
 )
@@ -379,11 +378,7 @@ func (w *window) shaderTexture(v *view, src driver.ImageSource) glTexture {
 func (g *glShaderView) link(p *driver.ShaderProgram) bool {
 	g.deleteGL()
 	g.program, g.failed = p, true
-	ir, err := shader.CompileFragment([]byte(p.Source))
-	if err != nil {
-		log.Printf("nsgo: shader: %v", err)
-		return false
-	}
+	ir := p.IR
 	head := "#version 330 core\n"
 	if g.es {
 		head = "#version 300 es\nprecision highp float;\nprecision highp int;\n"

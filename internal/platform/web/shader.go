@@ -9,7 +9,6 @@ import (
 	"syscall/js"
 
 	"github.com/oneo-me/nsgo/internal/driver"
-	"github.com/oneo-me/nsgo/internal/shader"
 	"github.com/oneo-me/nsgo/internal/shaderir"
 	"github.com/oneo-me/nsgo/internal/shaderir/glsl"
 )
@@ -215,11 +214,7 @@ func (g *glShader) link(p *driver.ShaderProgram) bool {
 		gl.Call("deleteProgram", g.prog)
 		g.prog = js.Undefined()
 	}
-	ir, err := shader.CompileFragment([]byte(p.Source))
-	if err != nil {
-		log.Printf("nsgo: shader: %v", err)
-		return false
-	}
+	ir := p.IR
 	src := "#version 300 es\nprecision highp float;\nprecision highp int;\n\n" +
 		glsl.Fragment(ir, "nsgoShader", glsl.Options{FlipY: "true", Block: "NsgoUniforms"}) + glMain
 	compile := func(kind, src string) js.Value {

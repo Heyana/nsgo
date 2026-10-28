@@ -20,7 +20,7 @@ var layers = []struct {
 	imports []string
 }{
 	{"internal/layout", nil},
-	{"internal/driver", nil},
+	{"internal/driver", []string{"internal/shaderir"}},
 	{"internal/shaderir/", []string{"internal/shaderir"}},
 	{"internal/shader", []string{"internal/shaderir"}},
 	{"core", []string{"internal/driver", "internal/layout", "internal/shader", "internal/shaderir"}},
@@ -55,12 +55,12 @@ var layers = []struct {
 	{"tools/", []string{"core"}},
 }
 
-// platformShared is the code several backends share, the shader
-// compiler included.
+// platformShared is the code several backends share, with the shader
+// writers but not the compiler, which only the core links.
 var platformShared = []string{
 	"internal/platform/apple", "internal/platform/canvastest", "internal/platform/field", "internal/platform/finger",
 	"internal/platform/fontfile", "internal/platform/hover", "internal/platform/imagedecode", "internal/platform/imageload", "internal/platform/perfhud", "internal/platform/picked", "internal/platform/queue", "internal/platform/scrollbar",
-	"internal/platform/textselect", "internal/shader", "internal/shaderir/",
+	"internal/platform/textselect", "internal/shaderir/",
 }
 
 // portable lists the packages that build unchanged for every target: no
