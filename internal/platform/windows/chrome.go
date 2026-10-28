@@ -94,14 +94,15 @@ const (
 )
 
 // The caption buttons after Onevra's: 32 point squares 4 apart, their
-// glyphs 14, centered in the app's bar and 8 points in from the right
-// edge; the bar is 32 tall unless the app says otherwise.
+// glyphs 10, as Windows' own are at 96 DPI, centered in the app's bar
+// and 8 points in from the right edge; the bar is 32 tall unless the app
+// says otherwise.
 const (
 	defaultCaptionHeight driver.Points = 32
 	captionButtonSize    driver.Points = 32
 	captionButtonGap     driver.Points = 4
 	captionMargin        driver.Points = 8
-	captionGlyphSize     driver.Points = 14
+	captionGlyphSize     driver.Points = 10
 	// captionRight is how far the buttons reach in from the right edge.
 	captionRight = captionMargin + 3*captionButtonSize + 2*captionButtonGap
 )
