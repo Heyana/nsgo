@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
+	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -198,7 +198,7 @@ func (f *fileStorage) flush() {
 			err = writeFile(f.path, data)
 		}
 		if err != nil {
-			slog.Error("nsgo: the app's storage could not be written", "path", f.path, "err", err)
+			log.Printf("nsgo: the app's storage could not be written: %v", err)
 		}
 	}
 }

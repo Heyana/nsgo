@@ -2,7 +2,7 @@ package core
 
 import (
 	"fmt"
-	"log/slog"
+	"log"
 	"slices"
 	"sync"
 
@@ -51,7 +51,7 @@ func (s *Store) load() {
 	}
 	entries, err := s.backend.Load()
 	if err != nil {
-		slog.Error("nsgo: the app's storage could not be read", "err", err)
+		log.Printf("nsgo: the app's storage could not be read: %v", err)
 		return
 	}
 	for k, v := range entries {

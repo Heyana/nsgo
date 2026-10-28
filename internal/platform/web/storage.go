@@ -4,7 +4,7 @@ package web
 
 import (
 	"fmt"
-	"log/slog"
+	"log"
 	"syscall/js"
 
 	"github.com/oneo-me/nsgo/internal/driver"
@@ -55,7 +55,7 @@ func (l *localStorage) Write(c driver.StorageChange) {
 		// The browser refuses writes past its own quota or in some
 		// private modes; the entries stay in memory.
 		if r := recover(); r != nil {
-			slog.Error("nsgo: the app's storage could not be written", "err", r)
+			log.Printf("nsgo: the app's storage could not be written: %v", r)
 		}
 	}()
 	ls := js.Global().Get("localStorage")

@@ -3,7 +3,7 @@
 package engine
 
 import (
-	"log/slog"
+	"log"
 	"os"
 	"runtime"
 	"sync"
@@ -72,9 +72,6 @@ type Options struct {
 	Environment driver.Environment
 	// Clock runs the app's timers; the system's when nil.
 	Clock core.Clock
-	// Logger receives failures the app does not catch; slog's default
-	// when nil.
-	Logger *slog.Logger
 	// Storage keeps the app's entries; in memory for the engine's life
 	// when nil. Platforms pass OpenFileStorage in the data directory.
 	Storage *core.Store
@@ -122,8 +119,8 @@ type HostOptions struct {
 	Channel *Host
 	// Settings are the host's settings of the view.
 	Settings *HostSettings
-	// OnError hears each failure the app does not catch, after the
-	// Logger, on the engine goroutine; it must not block.
+	// OnError hears each failure the app does not catch, after the log,
+	// on the engine goroutine; it must not block.
 	OnError func(error)
 	// DataDir is the app's data directory, its storage's, instead of the
 	// system's for the app's ID.
@@ -248,23 +245,19 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 	if opts.Thread != nil {
 		opts.Thread()
 	}
-	logger := opts.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
 	for _, dir := range []string{opts.DataDir, opts.CacheDir} {
 		if dir == "" {
 			continue
 		}
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			logger.Error("nsgo: the app's directory could not be made", "err", err)
+			log.Printf("nsgo: the app's directory could not be made: %v", err)
 		}
 	}
 	root := core.NewRoot(core.RootOptions{
 		Post:  func(fn func()) { e.push(message{fn: fn}) },
 		Clock: opts.Clock,
 		Report: func(err error) {
-			logger.Error("nsgo: the app failed", "err", err)
+			log.Printf("nsgo: the app failed: %v", err)
 			if opts.Host.OnError != nil {
 				opts.Host.OnError(err)
 			}
