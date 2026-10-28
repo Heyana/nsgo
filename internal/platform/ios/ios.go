@@ -163,6 +163,12 @@ type surface struct {
 	// that limit the orientations, in the order they were presented.
 	headers  [2]driver.Points
 	oriented []*view
+	// tops is the screen each stack shows, as the core last said, slides
+	// the stacks whose screens move, and changes the stacks a batch
+	// changes the screens of (nav.go).
+	tops    map[*view]*view
+	slides  map[*view]*slide
+	changes []stackChange
 
 	// What a batch touched, finished once its frames are set.
 	images, presenting []*view
@@ -368,7 +374,7 @@ func Run(root engine.App, opts Options) {
 // newSurface is the surface the scene shows root in; a test host's has no
 // root until the test opens one.
 func newSurface(root engine.App, opts Options) *surface {
-	s := &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*motion{}, appearance: opts.Appearance,
+	s := &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*motion{}, tops: map[*view]*view{}, slides: map[*view]*slide{}, appearance: opts.Appearance,
 		components: opts.Components, unknown: map[string]bool{}, accessories: map[driver.NodeID]*view{},
 		perfOn: opts.Perf}
 	s.animator = driver.NewAnimator(func(e driver.Event) { s.engine.Dispatch(e) })
@@ -790,8 +796,14 @@ func (s *surface) apply(b *driver.MountBatch) {
 		v := s.views[it.ID]
 		switch it.Kind {
 		case driver.ItemDelete:
+			if v.bar != nil {
+				s.touchStack(s.stackOf(v))
+			}
 			s.delete(v, s.vanish(v, lb))
 		case driver.ItemRemove:
+			if v.bar != nil {
+				s.touchStack(s.stackOf(v))
+			}
 			if v.sheet != nil {
 				s.dismissSheet(v)
 				v.presented = false
@@ -807,6 +819,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 					s.updateOrientations()
 				}
 				break
+			}
+			if v.bar != nil {
+				s.touchStack(s.stackOf(v))
+				s.touchStack(s.views[it.Parent])
 			}
 			parent := s.views[it.Parent].children()
 			if it.Before == 0 {
@@ -837,6 +853,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemScreen:
 			s.configureScreen(v, it.Screen)
 		case driver.ItemViewStyle:
+			if v.bar != nil && it.ViewStyle.Hidden != v.style.Hidden {
+				s.touchStack(s.stackOf(v))
+			}
 			v.style = *it.ViewStyle
 			if v.animatesStyle() {
 				v.restyle()
@@ -962,6 +981,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 	if root := s.views[b.Root]; root.native.Send(selSuperview) != s.native {
 		s.native.Send(selAddSubview, root.native)
 	}
+	s.slideStacks()
 	s.finish()
 	s.refreshSelection()
 	apple.WithoutAnimation(func() {
@@ -1042,6 +1062,10 @@ func (s *surface) delete(v *view, kept bool) {
 		s.dismissSheet(v)
 		defer s.updateOrientations()
 	}
+	if sl := s.slides[v]; sl != nil {
+		s.endSlide(sl)
+	}
+	delete(s.tops, v)
 	if b := v.bar; b != nil {
 		delete(bars, b.bar)
 		b.bar.Send(selRelease)

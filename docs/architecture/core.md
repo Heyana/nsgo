@@ -54,6 +54,7 @@ A component is any type whose `Render(cx) Node` returns its nodes, like `http.Ha
 - Where the environment has `HeaderHeight` (iOS, Android), screens get NSH's system header: the core pads the content below the bar and the status bar, sends `ItemScreen`, and lays `HeaderLeft`, `HeaderRight` and `HeaderTitle` out as roots the platform puts in the bar.
 - `Header` is then not mounted; elsewhere it is the screen's first child.
 - iOS gives each screen a `UINavigationBar` of its own with a back item, Android a `Toolbar`; their back buttons and iOS's leading-edge swipe send `EventBack` with the screen's ID.
+- iOS slides the screens, their bars with them, as `UINavigationController` pushes and pops: 0.35 s on the keyboard's curve, the screen below moving 30% of the width under a dimming view. A hidden screen has no layout, so the first item of a batch that changes a stack snapshots the screen it shows, and the slide moves that snapshot; the swipe back moves the screens themselves.
 - Each platform measures its bar with what it holds and reports it (`EventScreenHeader`), which replaces the environment's estimate.
 - A transparent header and a large title lay the content under them: each vertical scroll view whose top they cover gets that part as `ScrollConfig.HeaderInset`, added to its top content inset.
 - iOS collapses a large title into the bar once its scroll view scrolled half the title's row under it, and brings it back above that, as UIKit's navigation controller does.
