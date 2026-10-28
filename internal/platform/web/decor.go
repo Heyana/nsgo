@@ -16,24 +16,32 @@ import (
 // Gradients arrive resolved against the box in fractions, so their CSS is
 // written again when the box changes size.
 
-// decorCSS is the CSS of vs's shape and effects on a box of size.
+// decorCSS is the CSS of vs's shape and effects on a box of size. A
+// property at CSS's initial value is "", which removes the one the view
+// had, so the element keeps only what it draws.
 func decorCSS(vs *driver.ViewStyle, size driver.Size) map[string]string {
 	style := map[string]string{
 		"border-radius":           radiusCSS(vs),
-		"corner-shape":            "round",
-		"outline":                 "none",
-		"outline-offset":          "0px",
-		"background-image":        "none",
-		"filter":                  "none",
-		"backdrop-filter":         "none",
-		"-webkit-backdrop-filter": "none",
-		"mask-image":              "none",
-		"-webkit-mask-image":      "none",
-		"mix-blend-mode":          vs.BlendMode.Name(),
-		"transform-origin":        fmt.Sprintf("calc(50%% + %s) calc(50%% + %s)", px(vs.Origin.X), px(vs.Origin.Y)),
-		"perspective":             "none",
-		"backface-visibility":     "visible",
+		"corner-shape":            "",
+		"outline":                 "",
+		"outline-offset":          "",
+		"background-image":        "",
+		"filter":                  "",
+		"backdrop-filter":         "",
+		"-webkit-backdrop-filter": "",
+		"mask-image":              "",
+		"-webkit-mask-image":      "",
+		"mix-blend-mode":          "",
+		"transform-origin":        "",
+		"perspective":             "",
+		"backface-visibility":     "",
 		"box-shadow":              shadowCSS(vs),
+	}
+	if vs.BlendMode != driver.BlendNormal {
+		style["mix-blend-mode"] = vs.BlendMode.Name()
+	}
+	if o := vs.Origin; o != (driver.Point{}) {
+		style["transform-origin"] = fmt.Sprintf("calc(50%% + %s) calc(50%% + %s)", px(o.X), px(o.Y))
 	}
 	if vs.ContinuousCorners {
 		style["corner-shape"] = "squircle"
@@ -75,6 +83,9 @@ func radiusCSS(vs *driver.ViewStyle) string {
 	if c := vs.Corners; c != (driver.Corners{}) {
 		return fmt.Sprintf("%s %s %s %s", px(c.TopLeft), px(c.TopRight), px(c.BottomRight), px(c.BottomLeft))
 	}
+	if vs.CornerRadius == 0 {
+		return ""
+	}
 	return px(vs.CornerRadius)
 }
 
@@ -107,9 +118,6 @@ func shadowCSS(vs *driver.ViewStyle) string {
 		// CSS's blur radius.
 		layers = append(layers, fmt.Sprintf("%s %s %s %s",
 			px(vs.ShadowOffset.X), px(vs.ShadowOffset.Y), px(2*vs.ShadowRadius), cssColor(vs.ShadowColor)))
-	}
-	if len(layers) == 0 {
-		return "none"
 	}
 	return strings.Join(layers, ", ")
 }

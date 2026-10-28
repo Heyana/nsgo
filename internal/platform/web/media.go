@@ -60,9 +60,9 @@ func (s *surface) applyAnimated() {
 		v.animated = vals
 		vs := vals.Apply(v.style)
 		style := map[string]string{
-			"opacity":          fmt.Sprint(vs.Opacity),
+			"opacity":          opacityCSS(vs.Opacity),
 			"transform":        transformCSS(vs.Transform),
-			"background-color": cssColor(vs.Background),
+			"background-color": fillCSS(vs.Background),
 			"box-shadow":       shadowCSS(&vs),
 		}
 		if vals.Set != 0 {

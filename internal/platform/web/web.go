@@ -262,6 +262,12 @@ func open(app engine.App, opts Options, test *testOpen) *surface {
 		host = doc.Call("querySelector", opts.Mount)
 	}
 	setStyle(host, map[string]string{"position": "relative", "overflow": "hidden"})
+	if doc.Call("getElementById", "nsgo-base").IsNull() {
+		base := doc.Call("createElement", "style")
+		base.Set("id", "nsgo-base")
+		base.Set("textContent", baseCSS)
+		doc.Get("head").Call("appendChild", base)
+	}
 	s := &surface{doc: doc, host: host, components: opts.Components, unknown: map[string]bool{}}
 	s.animator = driver.NewAnimator(func(e driver.Event) { s.engine.Dispatch(e) })
 	// Inside the host, measured text inherits what drawn text does.
@@ -362,6 +368,22 @@ func px(p driver.Points) string { return fmt.Sprintf("%gpx", float32(p)) }
 func cssColor(c driver.Color) string {
 	r, g, b, a := c.Components()
 	return fmt.Sprintf("rgba(%d,%d,%d,%g)", int(r*255+0.5), int(g*255+0.5), int(b*255+0.5), a)
+}
+
+// fillCSS is the CSS of a background or border color, "" for none.
+func fillCSS(c driver.Color) string {
+	if c == 0 {
+		return ""
+	}
+	return cssColor(c)
+}
+
+// opacityCSS is the CSS of an opacity, "" for opaque.
+func opacityCSS(o float32) string {
+	if o == 1 {
+		return ""
+	}
+	return fmt.Sprint(o)
 }
 
 func frameStyle(f driver.Bounds) map[string]string {
@@ -1256,11 +1278,15 @@ func (s *surface) RequestFrame() {
 	s.startTicking()
 }
 
+// baseCSS places the elements the surface makes (nsgo-el) where their
+// frames say, and starts views (nsgo-view) without a border or the
+// browser's focus ring, so their styles only write what they draw.
+const baseCSS = `.nsgo-el { position: absolute; box-sizing: border-box; margin: 0; left: 0; top: 0; }
+.nsgo-view { border: 0 solid transparent; outline: none; }`
+
 func (s *surface) element(tag string) js.Value {
 	el := s.doc.Call("createElement", tag)
-	setStyle(el, map[string]string{
-		"position": "absolute", "box-sizing": "border-box", "margin": "0", "left": "0", "top": "0",
-	})
+	el.Set("className", "nsgo-el")
 	return el
 }
 
@@ -1269,12 +1295,13 @@ func (s *surface) create(id driver.NodeID, kind driver.ViewKind) *view {
 		s.views = append(s.views, nil)
 	}
 	v := &view{id: id, kind: kind, el: s.element("div")}
+	v.el.Get("classList").Call("add", "nsgo-view")
 	v.el.Set("nsgoID", int(id))
 	v.content = v.el
 	switch kind {
 	case driver.KindText:
 		v.inner = s.element("div")
-		v.inner.Set("className", "nsgo-text")
+		v.inner.Get("classList").Call("add", "nsgo-text")
 		setStyle(v.inner, textBase)
 		v.el.Call("appendChild", v.inner)
 	case driver.KindInput:
@@ -1305,9 +1332,9 @@ func (s *surface) create(id driver.NodeID, kind driver.ViewKind) *view {
 
 func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
 	style := decorCSS(vs, v.size)
-	style["background-color"] = cssColor(vs.Background)
-	style["opacity"] = fmt.Sprint(vs.Opacity)
-	style["display"] = "block"
+	style["background-color"] = fillCSS(vs.Background)
+	style["opacity"] = opacityCSS(vs.Opacity)
+	style["display"] = ""
 	style["transform"] = transformCSS(vs.Transform)
 	style["transition"] = transitionCSS(vs.Transition)
 	if vs.Hidden {
@@ -1326,9 +1353,14 @@ func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
 		{"top", border.Top, colors.Top}, {"right", border.Right, colors.Right},
 		{"bottom", border.Bottom, colors.Bottom}, {"left", border.Left, colors.Left},
 	} {
-		style["border-"+side.name+"-style"] = lineStyle(vs.BorderStyle)
-		style["border-"+side.name+"-width"] = px(side.width)
-		style["border-"+side.name+"-color"] = cssColor(side.color)
+		style["border-"+side.name+"-style"], style["border-"+side.name+"-width"] = "", ""
+		if ls := lineStyle(vs.BorderStyle); ls != "solid" {
+			style["border-"+side.name+"-style"] = ls
+		}
+		if side.width != 0 {
+			style["border-"+side.name+"-width"] = px(side.width)
+		}
+		style["border-"+side.name+"-color"] = fillCSS(side.color)
 	}
 	if im := v.image; im != nil && im.tint != vs.TintColor {
 		im.tint = vs.TintColor
@@ -1355,7 +1387,7 @@ func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
 		}
 	}
 	if v.kind != driver.KindScroll {
-		style["overflow"] = "visible"
+		style["overflow"] = ""
 		if vs.Clip {
 			style["overflow"] = clipOverflow()
 		}
@@ -1386,7 +1418,7 @@ func unborder(el js.Value, b driver.Edges) {
 // perspective, translate, rotate, rotateX, rotateY, skew, then scale.
 func transformCSS(t driver.Transform) string {
 	if t == (driver.Transform{}) {
-		return "none"
+		return ""
 	}
 	sx, sy := t.Scales()
 	var b strings.Builder
@@ -1421,7 +1453,7 @@ var transitionProperties = []struct {
 // to what the same style change sets.
 func transitionCSS(t driver.Transition) string {
 	if t.Duration <= 0 {
-		return "none"
+		return ""
 	}
 	easing := "linear"
 	if c := t.Easing; c != (driver.Curve{}) {

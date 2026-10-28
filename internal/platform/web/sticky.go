@@ -68,7 +68,7 @@ func (s *surface) setSticky(v *view, cells []driver.StickyCell) {
 				cell.layoutAnim = js.Undefined()
 			}
 			track := s.element("div")
-			track.Set("className", "nsgo-track")
+			track.Get("classList").Call("add", "nsgo-track")
 			host := cell.el.Get("parentNode")
 			if host.IsNull() || host.IsUndefined() {
 				host = v.content
