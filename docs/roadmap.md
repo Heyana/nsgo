@@ -32,6 +32,23 @@ References are files in `nsh/docs/dev/` unless they give a path from `nsh/`, wit
 | Web host channel | `web.md` (the CLI's web target), `website/docs/web.md` (the host's functions) | A page answers an app's host calls and posts and sends it events, through the loader `nsgo.json` feeds and a host module `nsgo.yaml` names, which the web package copies |
 | Commit traces | `website/docs/dev-server-and-debugging.md` (Logs), `performance.md` | `nsgo dev -trace` prints each commit's time and mount items from the running app on every target |
 
+## TSX and dynamic delivery
+
+These items build [TSX and dynamic delivery](architecture/tsx.md) in order; the [open questions](../ARCHITECTURE.md#open-questions) it raises come first.
+
+| Item | NSH reference | Done when |
+| --- | --- | --- |
+| TSX runtime | `native-pipeline.md` (The renderer), `js-modules.md` (`nsh`) | A `tsx` package runs a bundle on goja: the reactive API, `mount`, the primitives, `If`, `Each` and `ErrorBoundary`, `style` objects; a TSX counter's headless test passes |
+| TSX compiler | `native-pipeline.md` (The compiler) | `nsgo build` takes a TSX entry: esbuild and the lowering pass make one script, and errors point at `.tsx` lines |
+| Go components in TSX | `components.md`, `website/docs/rust.md` (Extending a Rust app with TSX) | `nsgo/base`, `nsgo/mobile`, `nsgo/desktop` and an app's registered types import in TSX; `.nsgo/types` declares them and `nsgo check` passes on the gallery's TSX demo |
+| TSX dev loop | `tooling.md` (Dev server) | A save reloads a TSX app on every target without building Go again |
+| Host calls and fetch | `js-modules.md` (`host`), `architecture.md` (Networking) | TSX calls the embedding app's functions and `fetch`es, each checked against capabilities |
+| Signed packages | `signed-packages.md` | `nsgo keygen`, `certify`, `publish`, `verify` and `revoke` work; a Go, iOS and Android host verifies a package, runs it in `tsx.View`, and refuses tampered, revoked and older builds |
+| Sandbox | `sandbox.md` | A module's calls are cut at their budget, hardening is on outside development, and every request a capability names is refused without it |
+| Tailwind classes | `styles.md`, `nsh/crates/nsh-core/src/tailwind/` | `class` takes Tailwind's utilities and variants, meaning what they mean in Tailwind CSS |
+| Hot updates | `tooling.md` (Hot module replacement) | An edit renders the changed components again and keeps the rest of the app's state |
+| TSX tests | `tooling.md` (`nsh test`) | `nsgo test` runs `*.test.tsx` headless and on a platform |
+
 ## Finish the existing platforms
 
 These items wait for community contributions, and a change to one backend records the gaps it leaves here.
@@ -44,10 +61,7 @@ These items wait for community contributions, and a change to one backend record
 
 NSGo leaves out these NSH parts:
 
-- The JS runtime, bundler, TSX compiler, `nsh check`, compatibility baselines and hot module replacement, since apps are Go and `go vet` checks them.
-- Tailwind classes, since styles are Go values.
-- `fetch`, WebSockets, `resource` and the standard modules, since apps use Go's standard library or other Go libraries with `Scope.Post`.
-- The machinery that carries a Rust component's refs, slots, render props and typed rows across JS, since a Go component takes them as fields: content as `core.Node` (`Button.Children`, `Popover.Trigger`, `Checkbox.Indicator`), rows and callbacks as functions.
+- WebSockets, `resource` and the standard modules (`fs/promises`, `process`, `net`, ...), since Go apps use Go's libraries with `Scope.Post` and TSX modules reach the host app instead.
 - `EngineContext`, since a host gives each engine's app function its values directly.
 - The GPUI backend and the LayerFS trial.
 - 32-bit Android (`armeabi-v7a`), since Go links android/arm only with cgo and an NDK.

@@ -21,7 +21,6 @@ import (
 //
 // The Go element layer builds the tree through a handful of operations:
 // create a node, set its parts, place it among its siblings, discard it.
-// They are the entry a TSX runtime would drive the same way NSH's does.
 
 // Tree is the shadow tree of one surface. Commit turns its changes into a
 // MountBatch. It is not safe for concurrent use: the engine owns it.
