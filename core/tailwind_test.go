@@ -137,7 +137,8 @@ func TestTransformsTransitionsAndAnimations(t *testing.T) {
 	s, _, _ := resolveFor(t, "scale-95 -rotate-45 translate-x-4 -translate-y-1/2 origin-top-left "+
 		"transition-colors duration-300 ease-out animate-spin", narrow)
 	tr := s.Transform
-	if tr.Scale != 0.95 || tr.Rotate != -45 || tr.TranslateX != 16 || tr.TranslateYPercent != -50 {
+	if tr.Scale != 0.95 || tr.Rotate != -45 || tr.TranslateX != 16 || tr.TranslateXPercent != 0 ||
+		tr.TranslateY != 0 || tr.TranslateYPercent != -50 {
 		t.Errorf("transform %+v", tr)
 	}
 	if s.Transition.Duration.Milliseconds() != 300 || s.Transition.Properties != TransitionBackground|TransitionBorder ||
@@ -146,6 +147,10 @@ func TestTransformsTransitionsAndAnimations(t *testing.T) {
 	}
 	if s.Animation.Keyframes != KeyframesSpin {
 		t.Errorf("animation %+v", s.Animation)
+	}
+	s, _, _ = resolveFor(t, "translate-x-[20px] translate-y-full", narrow)
+	if tr := s.Transform; tr.TranslateX != 20 || tr.TranslateXPercent != 0 || tr.TranslateY != 0 || tr.TranslateYPercent != 100 {
+		t.Errorf("translate-x-[20px] translate-y-full: %+v", tr)
 	}
 }
 

@@ -900,8 +900,14 @@ func translate(set func(t *Transform, p Points, pct float32)) func(*tailwindThem
 		if !ok || l == (Length{}) && v != "0" {
 			return nil, false
 		}
-		pct, _ := l.Percent()
-		p, _ := l.Points()
+		pct, isPct := l.Percent()
+		p, isPt := l.Points()
+		if !isPct {
+			pct = 0
+		}
+		if !isPt {
+			p = 0
+		}
 		return set1(func(s *Style) { set(&s.Transform, p, pct) }), false
 	}
 }
