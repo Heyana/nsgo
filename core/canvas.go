@@ -23,7 +23,9 @@ import (
 // (Drawing.FillBackgroundFromView) takes the canvas's Background and
 // Gradients, which the view then does not draw.
 type Canvas struct {
-	Draw      func(d *Drawing, size Size)
+	Draw func(d *Drawing, size Size)
+	// Class is Tailwind CSS classes, as View's.
+	Class     string
 	Style     Style
 	StyleFunc func() Style
 	OnPress   func(PressEvent)
@@ -82,6 +84,7 @@ func sameGradient(a, b Gradient) bool { return reflect.DeepEqual(a, b) }
 
 func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 	n := t.newNode(driver.KindCanvas, parent, cx)
+	t.setClasses(n, c.Class)
 	t.bindStyle(cx, n, c.Style, c.StyleFunc)
 	t.setRef(n, c.Ref)
 	n.h = handlers{press: c.OnPress, layout: c.OnLayout}

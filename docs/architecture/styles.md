@@ -16,11 +16,12 @@ Styles follow NSH's `styles.md` with Go values in place of CSS strings: construc
 
 ## Classes
 
-`Class` on `View`, `Text`, `Span`, `Scroll`, `Input` and `Image` takes Tailwind CSS classes, a port of NSH's `tailwind` module and `core/classes.rs` (`core/tailwind*.go`, `core/classes.go`). Utilities and variants mean what they mean in Tailwind CSS 4, on its default theme and palette; one with no native meaning is unknown and logged once.
+`Class` on `View`, `Text`, `Span`, `Scroll`, `Input`, `Image`, `Overlay` and `Canvas`, and on every part of `base`'s components ([components](components.md)), takes Tailwind CSS classes, a port of NSH's `tailwind` module and `core/classes.rs` (`core/tailwind*.go`, `core/classes.go`). Utilities and variants mean what they mean in Tailwind CSS 4, on its default theme and palette; one with no native meaning is unknown and logged once.
 
 - Each distinct class string is parsed once into rules ordered as Tailwind orders them: plain utilities first in the string's order, then variants by Tailwind's variant order, then important ones (`!p-4`, `p-4!`).
 - A node resolves its rules for its environment: `dark:` follows `Scope.Dark`, breakpoints and `portrait:` the window, `rtl:`, `motion-reduce:` and `ios:`, `android:` and `web:` theirs. A node whose rules read any of them follows them in a render effect, so only those nodes resolve again.
 - State variants become the style's state styles (`hover:` its `Hover`, `group-hover/item:` a `GroupStyle` named `item`); `group` and `group/item` name the view's `Group`. `first:`, `last:`, `odd:`, `even:` and `only:` follow the node's place among its parent's native children, resolved again as they change.
+- `View.ClassFunc`'s classes follow `Class`'s, again when what it reads changes, so a part's state classes come and go without a new node.
 - Classes merge under `Style`, their state styles merging with the style's rather than replaced by them, and important ones over it. `space-x-*` and `space-y-*` give a view's children but the last the margin on that side, under their own.
 - Shadows and rings, filters, gradients (`bg-linear-to-*` with `from-*`, `via-*`, `to-*`) and `tracking-*` are composed once a style's rules are applied, as Tailwind composes its CSS variables.
 - `line-clamp-*`, `truncate`, `text-ellipsis` and `pointer-events-*` are props: an explicit one wins over them.

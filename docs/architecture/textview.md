@@ -65,7 +65,7 @@ Where NSGo departs from NSH:
 
 | NSH | NSGo | Why |
 | --- | --- | --- |
-| `classes` and `styles` props by part | `Styles` map and `StyleFunc` by `Part` | Styles are Go values |
+| `classes` and `styles` props by part | `Styles` map and `StyleFunc` by `Part` | Classes by part are [planned](../roadmap.md#components) |
 | Typography in `nsh/base`'s `TextView` | Typography from the app | `base` has no look |
 | Alert icon | Alert title text, and `PartAlertContent` around its blocks | The title takes the alert's color while the blocks keep the text's |
 | `renderCustom` for inline nodes | `RenderCustom` as an attachment, or `CustomSpan` returning a span | A span keeps a link's press and the text's selection |

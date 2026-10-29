@@ -10,6 +10,7 @@ import "github.com/oneo-me/nsgo/core"
 // sorting, selection and resizing, DataTable is the table.
 type Table struct {
 	Label     string
+	Class     string
 	Style     core.Style
 	StyleFunc func() core.Style
 	Children  []core.Node
@@ -18,12 +19,13 @@ type Table struct {
 
 // Render implements core.Node.
 func (t Table) Render(*core.Scope) core.Node {
-	return core.View{Role: core.RoleTable, Label: t.Label, Style: t.Style, StyleFunc: t.StyleFunc, Children: t.Children, TestID: t.TestID}
+	return core.View{Role: core.RoleTable, Label: t.Label, Class: t.Class, Style: t.Style, StyleFunc: t.StyleFunc, Children: t.Children, TestID: t.TestID}
 }
 
-// TablePart holds a part of a Table: Children, styled by Style and
+// TablePart holds a part of a Table: Children, styled by Class, Style and
 // StyleFunc.
 type TablePart struct {
+	Class     string
 	Style     core.Style
 	StyleFunc func() core.Style
 	Children  []core.Node
@@ -35,7 +37,7 @@ func (p TablePart) view(role core.Role, row bool) core.Node {
 	if row && s.Direction == 0 {
 		s.Direction = core.Row
 	}
-	return core.View{Role: role, Style: s, StyleFunc: p.StyleFunc, Children: p.Children, TestID: p.TestID}
+	return core.View{Role: role, Class: p.Class, Style: s, StyleFunc: p.StyleFunc, Children: p.Children, TestID: p.TestID}
 }
 
 // TableHeader is a Table's header group: the rows of column headers.

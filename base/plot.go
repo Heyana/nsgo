@@ -97,13 +97,16 @@ type Plot struct {
 	LabelFunc          func() string
 	AccessibilityValue func() core.AccessibilityValue
 	// CrossLineStyle styles the cross line, a view as tall as the plot
-	// centered on the row under the pointer; there is none without it.
+	// centered on the row under the pointer; there is none without it or
+	// CrossLineClass.
+	CrossLineClass     string
 	CrossLineStyle     core.Style
 	CrossLineStyleFunc func() core.Style
 	// DotStyle styles the hover's dots, a view per PlotLine and PlotArea
 	// centered on its point at the row under the pointer; a mark's
 	// HoverDotStyle merges over it for its own dot, its color over the
-	// plot's size and ring.
+	// plot's size and ring, and its HoverDotClass follows DotClass.
+	DotClass     string
 	DotStyle     core.Style
 	DotStyleFunc func() core.Style
 	// Tooltip is the app's tooltip, placed by TooltipPlacement
@@ -114,6 +117,7 @@ type Plot struct {
 	// OnHoverChange receives the row under the pointer when another one
 	// is, and -1 once the pointer leaves the plot.
 	OnHoverChange func(index int)
+	Class         string
 	Style         core.Style
 	StyleFunc     func() core.Style
 	Children      []core.Node
@@ -406,8 +410,8 @@ func (p Plot) Render(cx *core.Scope) core.Node {
 		}
 	}
 
-	hasCross := !p.CrossLineStyle.IsZero() || p.CrossLineStyleFunc != nil
-	hasDots := !p.DotStyle.IsZero() || p.DotStyleFunc != nil
+	hasCross := part{p.CrossLineClass, p.CrossLineStyle, p.CrossLineStyleFunc}.set()
+	hasDots := part{p.DotClass, p.DotStyle, p.DotStyleFunc}.set()
 	dotStyle := func() core.Style {
 		if p.DotStyleFunc == nil {
 			return p.DotStyle
@@ -422,8 +426,8 @@ func (p Plot) Render(cx *core.Scope) core.Node {
 					Width: core.Pt(0), AlignItems: core.AlignCenter,
 					Animated: &core.AnimatedStyle{TranslateX: crossX, Opacity: fade}},
 				PointerEvents: core.PointerEventsNone,
-				Children: []core.Node{core.View{Style: core.Style{Height: core.Pct(100)}.Merge(p.CrossLineStyle),
-					StyleFunc: p.CrossLineStyleFunc}},
+				Children: []core.Node{core.View{Class: p.CrossLineClass,
+					Style: core.Style{Height: core.Pct(100)}.Merge(p.CrossLineStyle), StyleFunc: p.CrossLineStyleFunc}},
 			})
 		}
 		// A dot per mark, styled by the mark or else by the plot; none
@@ -434,9 +438,14 @@ func (p Plot) Render(cx *core.Scope) core.Node {
 				if !m.dot.set() && !hasDots {
 					return core.Group{}
 				}
-				return dotAnchor(m.dotX, m.dotY, fade, core.View{StyleFunc: func() core.Style {
-					return dotStyle().Merge(m.dot.style())
-				}})
+				return dotAnchor(m.dotX, m.dotY, fade, core.View{Class: joinClasses(p.DotClass, m.dot.class),
+					StyleFunc: func() core.Style {
+						s := dotStyle().Merge(m.dot.style)
+						if m.dot.fn != nil {
+							s = s.Merge(m.dot.fn())
+						}
+						return s
+					}})
 			}))
 		if p.Tooltip != nil {
 			children = append(children, place.view(fade, p.Tooltip))
@@ -444,6 +453,7 @@ func (p Plot) Render(cx *core.Scope) core.Node {
 	}
 
 	return core.View{
+		Class:              p.Class,
 		Style:              p.Style,
 		StyleFunc:          p.StyleFunc,
 		Accessible:         true,

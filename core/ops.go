@@ -159,7 +159,11 @@ func (t *Tree) setView(n *node, v View) {
 	}
 	n.base = base
 	t.setViewParts(n, v)
-	t.setClasses(n, v.Class)
+	class := v.Class
+	if v.ClassFunc != nil {
+		class = joinClasses(class, v.ClassFunc())
+	}
+	t.setClasses(n, class)
 	t.bindAccessibility(nil, n, a11y{actions: v.AccessibilityActions, accessible: v.Accessible,
 		important: v.ImportantForAccessibility})
 	p := &n.props

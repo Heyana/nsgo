@@ -43,7 +43,7 @@ func (p DataTable) Render(cx *core.Scope) core.Node {
 	font := t.font()
 	root := core.Style{Overflow: core.Hidden, FontSize: font.Size, FontFamily: font.Family}.Merge(p.Style)
 	return core.View{
-		Role: core.RoleGrid, Label: p.Label, TestID: p.TestID, Style: root, StyleFunc: p.StyleFunc,
+		Role: core.RoleGrid, Label: p.Label, TestID: p.TestID, Class: p.Class, Style: root, StyleFunc: p.StyleFunc,
 		Children: []core.Node{core.View{
 			// The frame is the padding box: the layers lie in it, and its
 			// size is the viewport's.
@@ -363,7 +363,7 @@ func (t *dataTable) edge(inRow bool) core.Node {
 		When: func() bool { return t.layoutRev.Get() > 0 && t.st.columns.fixed > 0 },
 		Then: func(cx *core.Scope) core.Node {
 			z := core.Pt(0)
-			return core.View{StyleFunc: func() core.Style {
+			return core.View{Class: t.p.Classes.FixedEdge, StyleFunc: func() core.Style {
 				g := t.sizes.Get()
 				x := g.lead + g.fixed - 1
 				if inRow {
@@ -432,8 +432,9 @@ func (t *dataTable) region(which tableRegion, w tableWindows) core.Node {
 	}}
 }
 
-// rowParts is a row's style from its parts and its own RowStyle.
-func (t *dataTable) rowParts(cx *core.Scope, row *core.Memo[int]) func() core.Style {
+// rowParts is a row's style and classes from its parts and its own
+// RowStyle and RowClass.
+func (t *dataTable) rowParts(cx *core.Scope, row *core.Memo[int]) (func() core.Style, func() string) {
 	hovered := core.NewMemo(cx, func() bool { r := row.Get(); return r >= 0 && t.hover.Get() == r })
 	selected := core.NewMemo(cx, func() bool { return t.selection() == tableSel{kind: selRow, row: row.Get()} })
 	active := core.NewMemo(cx, func() bool {
@@ -441,11 +442,12 @@ func (t *dataTable) rowParts(cx *core.Scope, row *core.Memo[int]) func() core.St
 		r := row.Get()
 		return r >= 0 && t.st.active && t.st.activeRow == r && t.st.activeCol < 0
 	})
-	return func() core.Style {
+	odd := func(r int) bool { return t.p.Stripe != nil && t.p.Stripe() && r%2 == 1 }
+	style := func() core.Style {
 		r := row.Get()
 		ts := t.styles()
 		out := ts.Row
-		if t.p.Stripe != nil && t.p.Stripe() && r%2 == 1 {
+		if odd(r) {
 			out = merge(out, ts.RowOdd)
 		}
 		if hovered.Get() {
@@ -462,6 +464,28 @@ func (t *dataTable) rowParts(cx *core.Scope, row *core.Memo[int]) func() core.St
 		}
 		return out
 	}
+	class := func() string {
+		r := row.Get()
+		tc := &t.p.Classes
+		out := tc.Row
+		if odd(r) {
+			out = joinClasses(out, tc.RowOdd)
+		}
+		if hovered.Get() {
+			out = joinClasses(out, tc.RowHover)
+		}
+		if selected.Get() {
+			out = joinClasses(out, tc.RowSelected)
+		}
+		if active.Get() {
+			out = joinClasses(out, tc.RowActive)
+		}
+		if r >= 0 && t.p.RowClass != nil {
+			out = joinClasses(out, t.p.RowClass(r))
+		}
+		return out
+	}
+	return style, class
 }
 
 // pressRegion is the hit a press at x in a row of which region names.
@@ -482,7 +506,7 @@ func (t *dataTable) rowHit(row int, which tableRegion, x core.Points, w tableWin
 }
 
 func (t *dataTable) bodyRow(cx *core.Scope, row *core.Memo[int], which tableRegion, w tableWindows) core.Node {
-	parts := t.rowParts(cx, row)
+	parts, classes := t.rowParts(cx, row)
 	selected := core.NewMemo(cx, func() bool { return t.selection() == tableSel{kind: selRow, row: row.Get()} })
 	shown := core.NewMemo(cx, func() bool {
 		r, v := row.Get(), w.shownRows.Get()
@@ -516,6 +540,7 @@ func (t *dataTable) bodyRow(cx *core.Scope, row *core.Memo[int], which tableRegi
 			})}
 	}
 	return core.View{
+		ClassFunc: classes,
 		StyleFunc: func() core.Style {
 			r := row.Get()
 			s := core.Style{Position: core.Absolute, Left: px(0), Height: px(t.rowHeight()),
@@ -557,6 +582,7 @@ func (t *dataTable) bodyRow(cx *core.Scope, row *core.Memo[int], which tableRegi
 // rowNumber is a row's number, in the row numbers' column.
 func (t *dataTable) rowNumber(row *core.Memo[int]) core.Node {
 	return core.View{
+		Class:     t.p.Classes.RowHeader,
 		Style:     fill0().Merge(core.Style{Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}),
 		StyleFunc: func() core.Style { return t.styles().RowHeader },
 		Children: []core.Node{core.Text{MaxLines: 1, ContentFunc: func() string {
@@ -626,7 +652,8 @@ func (t *dataTable) cell(cx *core.Scope, row, def *core.Memo[int], shown *core.M
 	}).Get
 	sign := core.NewMemo(cx, func() int {
 		t.layoutRev.Get()
-		if col := t.column(def.Get()); col.PositiveStyle.IsZero() && col.NegativeStyle.IsZero() {
+		if col := t.column(def.Get()); col.PositiveStyle.IsZero() && col.NegativeStyle.IsZero() &&
+			col.PositiveClass == "" && col.NegativeClass == "" {
 			return 0
 		}
 		return cellSign(text())
@@ -649,6 +676,30 @@ func (t *dataTable) cell(cx *core.Scope, row, def *core.Memo[int], shown *core.M
 		},
 		Role:     core.RoleCell,
 		Selected: func() bool { f := marks.Get(); return f.selected || f.columnSelected },
+		ClassFunc: func() string {
+			t.layoutRev.Get()
+			col := t.column(def.Get())
+			f := marks.Get()
+			tc := &t.p.Classes
+			out := tc.Cell
+			if f.columnSelected {
+				out = joinClasses(out, tc.CellColumnSelected)
+			}
+			if f.selected {
+				out = joinClasses(out, tc.CellSelected)
+			}
+			if f.active {
+				out = joinClasses(out, tc.CellActive)
+			}
+			out = joinClasses(out, col.CellClass)
+			switch sign.Get() {
+			case 1:
+				out = joinClasses(out, col.PositiveClass)
+			case -1:
+				out = joinClasses(out, col.NegativeClass)
+			}
+			return out
+		},
 		StyleFunc: func() core.Style {
 			t.layoutRev.Get()
 			d := def.Get()
@@ -747,6 +798,7 @@ func (t *dataTable) header() core.Node {
 		w := t.windows(cx)
 		z := core.Pt(0)
 		return core.View{
+			Class: t.p.Classes.Header,
 			StyleFunc: func() core.Style {
 				return merge(core.Style{Position: core.Absolute, Top: z, Left: z, Right: z, Height: px(t.sizes.Get().header),
 					Overflow: core.Hidden}, t.styles().Header)
@@ -755,7 +807,7 @@ func (t *dataTable) header() core.Node {
 				t.headerRegion(regionScroll, w),
 				t.headerRegion(regionFixed, w),
 				core.Show{When: t.rowHeaderShown, Then: func(cx *core.Scope) core.Node {
-					return core.View{StyleFunc: func() core.Style {
+					return core.View{Class: t.p.Classes.RowHeaderCorner, StyleFunc: func() core.Style {
 						return merge(core.Style{Position: core.Absolute, Top: z, Bottom: z, Left: z, Width: px(t.sizes.Get().lead)},
 							t.styles().RowHeaderCorner)
 					}}
@@ -818,6 +870,7 @@ func (t *dataTable) headerRegion(which tableRegion, w tableWindows) core.Node {
 
 func (t *dataTable) groupCell(g groupCell, which tableRegion, w tableWindows) core.Node {
 	return core.View{
+		Class: t.p.Classes.GroupCell,
 		StyleFunc: func() core.Style {
 			t.layoutRev.Get()
 			levels := t.headerLevels()
@@ -909,6 +962,7 @@ func (t *dataTable) titleCell(cx *core.Scope, def int, which tableRegion, w tabl
 		content = append(content, t.sortButton(def, sorted))
 	}
 	children := []core.Node{core.View{
+		Class:     t.p.Classes.HeaderContent,
 		Style:     core.Style{FlexGrow: 1, Direction: core.Row, AlignItems: core.AlignCenter, MinWidth: px(0)},
 		StyleFunc: func() core.Style { return t.styles().HeaderContent },
 		Children:  content,
@@ -919,6 +973,7 @@ func (t *dataTable) titleCell(cx *core.Scope, def int, which tableRegion, w tabl
 			OnDragStart: func() { t.resizeStart(def) },
 			OnDragMove:  t.resizeMove,
 			OnDragEnd:   t.resizeEnd,
+			Class:       t.p.Classes.ResizeHandle,
 			Style:       core.Style{Width: px(1)},
 			StyleFunc:   func() core.Style { return t.styles().ResizeHandle },
 		})
@@ -927,6 +982,20 @@ func (t *dataTable) titleCell(cx *core.Scope, def int, which tableRegion, w tabl
 		Role:     core.RoleColumnHeader,
 		Selected: selected.Get,
 		NoFocus:  true,
+		ClassFunc: func() string {
+			tc := &t.p.Classes
+			out := tc.HeaderCell
+			if sorted.Get().Key != "" {
+				out = joinClasses(out, tc.HeaderCellSorted)
+			}
+			if selected.Get() {
+				out = joinClasses(out, tc.HeaderCellSelected)
+			}
+			if dragging.Get() {
+				out = joinClasses(out, tc.HeaderCellDragging)
+			}
+			return joinClasses(out, col.HeaderClass)
+		},
 		StyleFunc: func() core.Style {
 			t.layoutRev.Get()
 			c := t.st.columns
@@ -973,9 +1042,9 @@ func (t *dataTable) titleCell(cx *core.Scope, def int, which tableRegion, w tabl
 // the next sort; the app styles it and its two chevrons.
 func (t *dataTable) sortButton(def int, sorted *core.Memo[DataTableSort]) core.Node {
 	const k = float32(12.0 / 24.0)
-	chevron := func(pts [6]float32, descending bool, style func() core.Style) core.Node {
+	chevron := func(pts [6]float32, descending bool, class string, style func() core.Style) core.Node {
 		return core.View{
-			Style: fill0(), StyleFunc: style,
+			Class: class, Style: fill0(), StyleFunc: style,
 			Selected: func() bool {
 				sort := sorted.Get()
 				return sort.Key != "" && sort.Descending == descending
@@ -992,11 +1061,14 @@ func (t *dataTable) sortButton(def int, sorted *core.Memo[DataTableSort]) core.N
 		Role: core.RoleButton, Label: "Sort by " + t.title(def), TestID: "sort:" + t.column(def).Key, NoFocus: true,
 		Style: core.Style{FlexShrink: 0, Width: px(sortWidth), Height: px(sortWidth), AlignItems: core.AlignCenter,
 			JustifyContent: core.JustifyCenter, Cursor: core.CursorPointer},
+		Class:     t.p.Classes.SortIndicator,
 		StyleFunc: func() core.Style { return t.styles().SortIndicator },
 		OnPress:   func(core.PressEvent) { t.sortNext(def) },
 		Children: []core.Node{core.View{Style: core.Style{Width: px(12), Height: px(12)}, Children: []core.Node{
-			chevron([6]float32{7, 9, 12, 4, 17, 9}, false, func() core.Style { return t.styles().SortAscending }),
-			chevron([6]float32{7, 15, 12, 20, 17, 15}, true, func() core.Style { return t.styles().SortDescending }),
+			chevron([6]float32{7, 9, 12, 4, 17, 9}, false, t.p.Classes.SortAscending,
+				func() core.Style { return t.styles().SortAscending }),
+			chevron([6]float32{7, 15, 12, 20, 17, 15}, true, t.p.Classes.SortDescending,
+				func() core.Style { return t.styles().SortDescending }),
 		}}},
 	}
 }
@@ -1005,7 +1077,7 @@ func (t *dataTable) sortButton(def int, sorted *core.Memo[DataTableSort]) core.N
 func (t *dataTable) moveLine() core.Node {
 	return core.Show{When: func() bool { return t.drag.Get().moving }, Then: func(cx *core.Scope) core.Node {
 		z := core.Pt(0)
-		return core.View{StyleFunc: func() core.Style {
+		return core.View{Class: t.p.Classes.MoveIndicator, StyleFunc: func() core.Style {
 			d := t.drag.Get()
 			t.layoutRev.Get()
 			g := t.geo()
@@ -1034,7 +1106,8 @@ func (t *dataTable) overlays() core.Node {
 	if t.p.Empty != nil {
 		children = append(children, core.Show{When: func() bool { return t.rowCount() == 0 && !loading() },
 			Then: func(cx *core.Scope) core.Node {
-				return core.View{Style: merge(fill0(), core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}),
+				return core.View{Class: t.p.Classes.Empty,
+					Style:     merge(fill0(), core.Style{AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}),
 					StyleFunc: func() core.Style { return t.styles().Empty }, Children: []core.Node{t.p.Empty}}
 			}})
 	}

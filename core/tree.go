@@ -994,7 +994,7 @@ func (t *Tree) bindBool(cx *Scope, n *node, fn func() bool, dst *bool) {
 
 func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	n := t.newNode(driver.KindView, parent, cx)
-	t.setClasses(n, v.Class)
+	t.bindClasses(cx, n, v.Class, v.ClassFunc)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	t.setViewParts(n, v)
 	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, value: v.AccessibilityValue, expanded: v.Expanded,

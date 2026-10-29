@@ -69,7 +69,9 @@ type DataTableColumn struct {
 	// CellStyle styles its cells after the Cell part, HeaderStyle its
 	// title after the HeaderCell part, and PositiveStyle and NegativeStyle
 	// its cells that hold a rise or a fall: a number above or below zero,
-	// or a text starting with + or -.
+	// or a text starting with + or -. Their classes go under them.
+	CellClass, HeaderClass       string
+	PositiveClass, NegativeClass string
 	CellStyle, HeaderStyle       core.Style
 	PositiveStyle, NegativeStyle core.Style
 }
@@ -215,6 +217,19 @@ type DataTableStyles struct {
 	RowHeader, RowHeaderCorner, FixedEdge, Empty core.Style
 }
 
+// DataTableClasses are the Tailwind classes of a DataTable's parts, named
+// as DataTableStyles names them, each under its part's style; a state's
+// part follows the part it follows.
+type DataTableClasses struct {
+	Header, GroupCell, HeaderCell, HeaderContent             string
+	HeaderCellDragging, HeaderCellSorted, HeaderCellSelected string
+	SortIndicator, SortAscending, SortDescending             string
+	ResizeHandle, MoveIndicator                              string
+	Row, RowOdd, RowHover, RowSelected, RowActive            string
+	Cell, CellSelected, CellActive, CellColumnSelected       string
+	RowHeader, RowHeaderCorner, FixedEdge, Empty             string
+}
+
 // DataTable shows rows and columns as a spreadsheet does and scrolls both
 // ways over any number of either, as gpui-component's: only the cells in
 // view and a reach around them exist as views, made once and given other
@@ -236,7 +251,9 @@ type DataTable struct {
 	// in a column, by its index in Columns.
 	RowCount func() int
 	Text     func(row, column int) string
-	// RowStyle is a row's own look, after the row's parts.
+	// RowStyle is a row's own look, after the row's parts, and RowClass
+	// its classes, after the row's parts' classes.
+	RowClass func(row int) string
 	RowStyle func(row int) core.Style
 	// RowHeight is a body row's height (32 when 0); HeaderHeight a title
 	// row's (RowHeight when 0).
@@ -287,12 +304,14 @@ type DataTable struct {
 	RenderHeaderCell func(cx *core.Scope, cell func() DataTableHeaderCell) core.Node
 	// Empty shows when there are no rows; LoadingView while Loading.
 	Empty, LoadingView core.Node
+	Classes            DataTableClasses
 	Styles             DataTableStyles
 	// StylesFunc replaces Styles, again when what it reads changes.
 	StylesFunc func() DataTableStyles
 	// Label is what screen readers call the table, a grid of column
 	// headers and cells.
 	Label     string
+	Class     string
 	Style     core.Style
 	StyleFunc func() core.Style
 	Ref       *DataTableRef

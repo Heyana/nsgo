@@ -65,15 +65,18 @@ type ResizablePanelGroup struct {
 	OnResize func(sizes []core.Points)
 	Disabled func() bool
 
+	Class     string
 	Style     core.Style
 	StyleFunc func() core.Style
 	// HandleStyle styles each handle's line: 1 point across and as long
 	// as the boundary unless it says otherwise.
+	HandleClass     string
 	HandleStyle     core.Style
 	HandleStyleFunc func() core.Style
-	// HandleThumbStyle, when set, styles a grip centered on the line,
-	// drawn upright as on a vertical line and turned a quarter on a
-	// horizontal one.
+	// HandleThumbClass or HandleThumbStyle, when set, styles a grip
+	// centered on the line, drawn upright as on a vertical line and
+	// turned a quarter on a horizontal one.
+	HandleThumbClass     string
 	HandleThumbStyle     core.Style
 	HandleThumbStyleFunc func() core.Style
 	// HandleLabel names the handles for assistive technology.
@@ -98,6 +101,7 @@ type ResizablePanel struct {
 	Visible func() bool
 	// OnResize receives its size after a drag or a step changed it.
 	OnResize  func(size core.Points)
+	Class     string
 	Style     core.Style
 	StyleFunc func() core.Style
 	Children  []core.Node
@@ -331,9 +335,9 @@ func (g ResizablePanelGroup) Render(cx *core.Scope) core.Node {
 		if g.TestID != "" {
 			testID = g.TestID + "-handle-" + strconv.Itoa(i-1)
 		}
-		return handleBandNode(handleBandSpec{horizontal: horizontal, line: g.HandleStyle, lineFunc: g.HandleStyleFunc,
-			thumb: g.HandleThumbStyle, thumbFunc: g.HandleThumbStyleFunc, label: g.HandleLabel, testID: testID, disabled: g.Disabled,
-			onPan: pan, onStep: step, value: value, touch: !core.Untracked(cx, cx.Env().Desktop)})
+		return handleBandNode(handleBandSpec{horizontal: horizontal, line: part{g.HandleClass, g.HandleStyle, g.HandleStyleFunc},
+			thumb: part{g.HandleThumbClass, g.HandleThumbStyle, g.HandleThumbStyleFunc}, label: g.HandleLabel, testID: testID,
+			disabled: g.Disabled, onPan: pan, onStep: step, value: value, touch: !core.Untracked(cx, cx.Env().Desktop)})
 	}
 
 	children := make([]core.Node, 0, 2*n)
@@ -345,7 +349,7 @@ func (g ResizablePanelGroup) Render(cx *core.Scope) core.Node {
 			children = append(children, core.Show{When: func() bool { return slices.Index(shown.Get(), i) > 0 },
 				Then: func(*core.Scope) core.Node { return handle(i) }})
 		}
-		children = append(children, core.View{Style: p.Style, StyleFunc: panelStyle(i), TestID: p.TestID,
+		children = append(children, core.View{Class: p.Class, Style: p.Style, StyleFunc: panelStyle(i), TestID: p.TestID,
 			OnLayout: func(b core.Bounds) {
 				if horizontal {
 					measured[i] = b.Size.Width
@@ -365,7 +369,7 @@ func (g ResizablePanelGroup) Render(cx *core.Scope) core.Node {
 		}
 		return out
 	}
-	return core.View{Style: g.Style, StyleFunc: style, TestID: g.TestID,
+	return core.View{Class: g.Class, Style: g.Style, StyleFunc: style, TestID: g.TestID,
 		OnLayout: func(b core.Bounds) {
 			size := b.Size.Width
 			if !horizontal {
@@ -393,18 +397,15 @@ type handleBandSpec struct {
 	horizontal bool
 	// edge places the band hugging its container's edge from inside;
 	// zero centers it on a zero-length slot between two panels.
-	edge      HandleEdge
-	line      core.Style
-	lineFunc  func() core.Style
-	thumb     core.Style
-	thumbFunc func() core.Style
-	label     string
-	testID    string
-	disabled  func() bool
-	onPan     func(core.PanEvent)
-	onStep    func(string)
-	value     func() core.AccessibilityValue
-	touch     bool
+	edge        HandleEdge
+	line, thumb part
+	label       string
+	testID      string
+	disabled    func() bool
+	onPan       func(core.PanEvent)
+	onStep      func(string)
+	value       func() core.AccessibilityValue
+	touch       bool
 }
 
 // HandleEdge is where a ResizeHandle sits on its container.
@@ -493,9 +494,10 @@ func handleBandNode(h handleBandSpec) core.Node {
 			slop = core.Edges{Top: handleSlop, Bottom: handleSlop}
 		}
 	}
-	parts := []core.Node{core.View{Style: line.Merge(h.line), StyleFunc: h.lineFunc}}
-	if !h.thumb.IsZero() || h.thumbFunc != nil {
-		parts = append(parts, core.View{Style: over, Children: []core.Node{core.View{Style: thumb.Merge(h.thumb), StyleFunc: h.thumbFunc}}})
+	parts := []core.Node{core.View{Class: h.line.class, Style: line.Merge(h.line.style), StyleFunc: h.line.fn}}
+	if h.thumb.set() {
+		parts = append(parts, core.View{Style: over, Children: []core.Node{
+			core.View{Class: h.thumb.class, Style: thumb.Merge(h.thumb.style), StyleFunc: h.thumb.fn}}})
 	}
 	return core.View{
 		Style: band, Disabled: h.disabled, HitSlop: slop,
@@ -525,8 +527,10 @@ type ResizeHandle struct {
 	Disabled    func() bool
 	// Value is what assistive technology says the handle is at.
 	Value          func() core.AccessibilityValue
-	Style          core.Style // the line's
+	Class          string // the line's
+	Style          core.Style
 	StyleFunc      func() core.Style
+	ThumbClass     string
 	ThumbStyle     core.Style
 	ThumbStyleFunc func() core.Style
 	Label          string
@@ -587,8 +591,8 @@ func (r ResizeHandle) Render(cx *core.Scope) core.Node {
 			r.OnDragEnd(d)
 		}
 	}
-	return handleBandNode(handleBandSpec{horizontal: horizontal, edge: r.Edge, line: r.Style, lineFunc: r.StyleFunc,
-		thumb: r.ThumbStyle, thumbFunc: r.ThumbStyleFunc, label: r.Label, testID: r.TestID, disabled: r.Disabled, onPan: pan, onStep: step,
+	return handleBandNode(handleBandSpec{horizontal: horizontal, edge: r.Edge, line: part{r.Class, r.Style, r.StyleFunc},
+		thumb: part{r.ThumbClass, r.ThumbStyle, r.ThumbStyleFunc}, label: r.Label, testID: r.TestID, disabled: r.Disabled, onPan: pan, onStep: step,
 		value: r.Value, touch: !core.Untracked(cx, cx.Env().Desktop)})
 }
 

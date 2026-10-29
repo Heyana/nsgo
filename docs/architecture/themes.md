@@ -57,7 +57,7 @@ Every `base` part style has a `…StyleFunc` (`DataTable`, `Editor` and `DiffVie
 
 | NSH | NSGo | Why |
 | --- | --- | --- |
-| shadcn's roles from `nsh.json`, as Tailwind tokens | Onevra's roles as typed fields of a Go value, plus named ones | Apps write Go, not classes; the user picked Onevra's palette |
+| shadcn's roles from `nsh.json`, as Tailwind tokens | Onevra's roles as typed fields of a Go value, plus named ones, which classes name in kebab case | Go code reads the fields; the user picked Onevra's palette |
 | One theme per engine | A theme and an appearance per subtree | Apps can theme a sidebar or panel apart |
 | `examples/nsh-gallery-ui`, a layer apart | The gallery's own files | Only the gallery uses it |
 | A theme file in `nsh.json` | `ParseTheme` over an embedded file | Go embeds files itself; the tool stays out of it |

@@ -69,6 +69,7 @@ func (t *Tree) mountOverlay(cx *Scope, parent *node, o Overlay) {
 	n := t.newNode(driver.KindView, parent, cx)
 	h := &hoistNode{overlay: &o}
 	t.hoist(n, h)
+	t.setClasses(n, o.Class)
 	t.bindStyle(cx, n, o.Style, o.StyleFunc)
 	if o.AnchorBounds != nil && o.Anchor == nil {
 		cx.renderEffect(func() {

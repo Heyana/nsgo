@@ -2,6 +2,7 @@ package base
 
 import (
 	"math"
+	"strings"
 	"time"
 
 	"github.com/oneo-me/nsgo/core"
@@ -66,12 +67,24 @@ func (s SwipeDirection) to(distance core.Points) (x, y float64) {
 
 func (s SwipeDirection) horizontal() bool { return s == SwipeRight || s == SwipeLeft }
 
+// important returns class with every utility important (opacity-0 is
+// opacity-0!), as NSH's toast root does.
+func important(class string) string {
+	tokens := strings.Fields(class)
+	for i, t := range tokens {
+		if u := t[strings.LastIndexByte(t, ':')+1:]; !strings.HasSuffix(t, "!") && !strings.HasPrefix(u, "!") {
+			tokens[i] = t + "!"
+		}
+	}
+	return strings.Join(tokens, " ")
+}
+
 // Toast is an unstyled toast's root, as gpui-base's: the alert role
 // around the app's content. Its look follows Status, a ToastManager's,
 // through StartingStyle in its first frame while starting (so a
 // Transition in its style animates its entry from it), EndingStyle while
 // ending, and SwipingStyle while a pointer swipes it; they merge over
-// Style and StyleFunc. A finger or the mouse dragged toward
+// Style and StyleFunc, and their classes are important, over both. A finger or the mouse dragged toward
 // SwipeDirection moves it once it moved 10 points, so its buttons stay
 // buttons; let go past SwipeThreshold (50 when 0) or flicked, it moves on
 // out and asks to be dismissed with OnDismissRequest, and short of it
@@ -82,13 +95,17 @@ type Toast struct {
 	Status         func() ToastStatus
 	SwipeDirection SwipeDirection
 	SwipeThreshold core.Points
+	StartingClass  string
 	StartingStyle  core.Style
+	EndingClass    string
 	EndingStyle    core.Style
+	SwipingClass   string
 	SwipingStyle   core.Style
 	Label          string
 	// OnDismissRequest: the user swiped it away; dismiss it. It stays
 	// where the swipe took it.
 	OnDismissRequest func()
+	Class            string
 	Style            core.Style
 	StyleFunc        func() core.Style
 	Children         []core.Node
@@ -149,7 +166,22 @@ func (t Toast) Render(cx *core.Scope) core.Node {
 		settle(0, 0)
 	}
 
-	return core.View{Role: core.RoleAlert, Label: t.Label, TestID: t.TestID, Style: t.Style,
+	startingClass, endingClass, swipingClass := important(t.StartingClass), important(t.EndingClass), important(t.SwipingClass)
+	return core.View{Role: core.RoleAlert, Label: t.Label, TestID: t.TestID, Class: t.Class,
+		// The state's classes win over Class and Style, as its styles do
+		// and as CSS's state selectors do by their specificity.
+		ClassFunc: func() string {
+			switch st := status(); {
+			case st == ToastEnding:
+				return endingClass
+			case swiping.Get():
+				return swipingClass
+			case st == ToastStarting && !entered.Get():
+				return startingClass
+			}
+			return ""
+		},
+		Style: t.Style,
 		StyleFunc: func() core.Style {
 			var s core.Style
 			if t.StyleFunc != nil {
@@ -240,6 +272,7 @@ type ToastStack[T any, K comparable] struct {
 	NoCloseOnEscape  bool
 	OnExpandedChange func(expanded bool)
 	OnCancel         func()
+	Class            string
 	Style            core.Style
 	StyleFunc        func() core.Style
 	TestID           string
@@ -359,7 +392,7 @@ func (s ToastStack[T, K]) Render(cx *core.Scope) core.Node {
 			Children: []core.Node{s.Toast(cx, it)}}
 	}
 
-	return core.View{TestID: s.TestID, Style: s.Style,
+	return core.View{TestID: s.TestID, Class: s.Class, Style: s.Style,
 		StyleFunc: func() core.Style {
 			var st core.Style
 			if s.StyleFunc != nil {

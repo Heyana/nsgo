@@ -198,11 +198,9 @@ func panelPlace(side core.Placement) core.Style {
 type sheetLayer struct {
 	m             *sheetMotion
 	side          core.Placement
-	backdrop      core.Style
-	backdropFunc  func() core.Style
+	backdrop      part
 	backdropPress func()
-	panel         core.Style
-	panelFunc     func() core.Style
+	panel         part
 	// swipe lets a finger drag the panel down, and swiped hears a release
 	// that asks it to close.
 	swipe   bool
@@ -224,13 +222,15 @@ func (l sheetLayer) node() core.Node {
 		opacity := core.Interpolate(core.Sub(m.fade, core.Div(down, extent)),
 			core.Interpolation{Input: []float64{0, 1}, Output: []float64{0, 1}})
 		var height core.Points = 1
-		backdrop := core.View{Style: fill.Merge(l.backdrop).Merge(core.Style{Animated: &core.AnimatedStyle{Opacity: opacity}}),
-			StyleFunc: l.backdropFunc, NoFocus: true,
+		backdrop := core.View{Class: l.backdrop.class,
+			Style:     fill.Merge(l.backdrop.style).Merge(core.Style{Animated: &core.AnimatedStyle{Opacity: opacity}}),
+			StyleFunc: l.backdrop.fn, NoFocus: true,
 			OnPress: func(core.PressEvent) { l.backdropPress() }}
 		panel := core.View{
-			Style: panelPlace(l.side).Merge(l.panel).Merge(core.Style{Animated: &core.AnimatedStyle{
+			Class: l.panel.class,
+			Style: panelPlace(l.side).Merge(l.panel.style).Merge(core.Style{Animated: &core.AnimatedStyle{
 				TranslateX: m.x, TranslateY: m.y}}),
-			StyleFunc: l.panelFunc, Role: l.role, Label: l.label, TestID: l.testID, Children: l.content,
+			StyleFunc: l.panel.fn, Role: l.role, Label: l.label, TestID: l.testID, Children: l.content,
 			OnLayout: func(b core.Bounds) {
 				height = max(b.Size.Height, 1)
 				extent.Set(float64(height))

@@ -22,10 +22,13 @@ type nodeClasses struct {
 // setClasses gives n the classes in class, resolved now.
 func (t *Tree) setClasses(n *node, class string) {
 	if class == "" {
-		if n.cls != nil {
+		// A node that follows the environment keeps following it, with
+		// no classes, so classes set again do not follow it twice.
+		if n.cls == nil || !n.cls.bound {
 			n.cls = nil
+			return
 		}
-		return
+		class = " "
 	}
 	l := parseClasses(class)
 	if n.cls != nil && n.cls.list == l {
@@ -51,6 +54,38 @@ func (t *Tree) setClasses(n *node, class string) {
 	}
 }
 
+// bindClasses gives n class and fn's classes after them, again when what
+// fn reads changes.
+func (t *Tree) bindClasses(cx *Scope, n *node, class string, fn func() string) {
+	if fn == nil {
+		t.setClasses(n, class)
+		return
+	}
+	first := true
+	cx.renderEffect(func() {
+		t.setClasses(n, joinClasses(class, fn()))
+		if first {
+			first = false
+			return
+		}
+		if t.restyle(n) {
+			t.markLayout(n)
+		}
+		t.restyleGroup(n)
+	})
+}
+
+// joinClasses returns a's classes then b's.
+func joinClasses(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	return a + " " + b
+}
+
 // followSpanClasses has text n follow the environment for its spans'
 // classes, when they depend on it.
 func (t *Tree) followSpanClasses(n *node) {
@@ -69,26 +104,29 @@ func (t *Tree) followSpanClasses(n *node) {
 
 // followEnv resolves n's classes again whenever the environment they
 // were resolved for changes: the appearance, the window, the direction,
-// the motion setting or the theme.
+// the motion setting or the theme. The effect is the node's owner's, not
+// that of a binding that set the classes, so it lasts as long as n.
 func (t *Tree) followEnv(n *node) {
 	first := true
-	n.owner.renderEffect(func() {
-		env := t.classEnv(n)
-		if first {
-			first = false
-			return
-		}
-		c := n.cls
-		if c == nil || n.deleted {
-			return
-		}
-		c.env = env
-		t.resolveClasses(n)
-		t.resolveSpanClasses(n)
-		if t.restyle(n) {
-			t.markLayout(n)
-		}
-		t.restyleGroup(n)
+	t.within(n.owner, func() {
+		n.owner.renderEffect(func() {
+			env := t.classEnv(n)
+			if first {
+				first = false
+				return
+			}
+			c := n.cls
+			if c == nil || n.deleted {
+				return
+			}
+			c.env = env
+			t.resolveClasses(n)
+			t.resolveSpanClasses(n)
+			if t.restyle(n) {
+				t.markLayout(n)
+			}
+			t.restyleGroup(n)
+		})
 	})
 }
 

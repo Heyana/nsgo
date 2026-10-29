@@ -2,6 +2,8 @@
 
 `base` holds NSGo's built-in unstyled components, after NSH's `nsh-base` (`nsh/docs/dev/components.md`, `dock.md`): they own behavior, state and accessibility and take every style from the app. Read this before changing a component in `base`; [text view](textview.md) covers `base/textview`, and [editor](editor.md) `base/editor` and `base/diff`.
 
+Each part a component styles takes Tailwind classes beside its style, as NSH's `class` and `popupClass` do: `Class` with `Style`, `PopupClass` with `PopupStyle`, `Classes` with `Styles`; `classes_test.go` holds every part to it. A part's class goes under its style and under what the component sets on the part itself (a sheet's place, a handle's 1-point line), as classes go under `Style` in `core`, where NSH puts an app's classes over the latter; important classes (`w-[3px]!`) go over both. Parts whose classes follow a state, a table's rows and cells and a toast's phases, take them through `core.View.ClassFunc`.
+
 ## Controls
 
 `Button`, `Checkbox`, `Radio` in a `RadioGroup`, `Switch`, `Tab` in `Tabs`, `Collapsible` and `Progress` hold no value: the app passes it and sets it from `OnChange` or `OnPress`, as NSH's controlled props do.
@@ -39,7 +41,7 @@ Items reach their menu through a context key (`menuContext`), so the app arrange
 
 - `ToastManager[K, V]` is plain data with no timer, generic over the app's ids and values: the app calls `Advance` on its own timer while toasts show, with `Scope.Now`, so a test's manual clock moves it. Its zero value has Sonner's motion, and `Push` takes the timeout directly, where NSH has `new(motion)` and `ToastOptions`.
 - `ToastStack[T, K]` takes the toasts as `Toasts`, `Key` and `Toast`, an `Each`, in place of NSH's children each wrapped as an item. Each item is an absolute view at the placement's edge whose `TranslateY`, `ScaleX` and `Opacity` are animated values moved by critically damped springs on the frame clock; the items' measured heights give the distances and the stack's height, so its hover area follows. A finger down (observed with `OnTouch`) expands it as hover does, and a zero-size overlay hears Escape and back while it holds toasts.
-- `Toast` is the alert role, announces its `Label` as it mounts, and takes a swipe through the touch responder, claimed once the pointer moved 10 points along `SwipeDirection`. `StartingStyle` applies until the next display frame (or 50 ms), so the app's `Transition` runs the entry; `EndingStyle` and `SwipingStyle` merge over its style as NSH's important state classes do.
+- `Toast` is the alert role, announces its `Label` as it mounts, and takes a swipe through the touch responder, claimed once the pointer moved 10 points along `SwipeDirection`. `StartingStyle` applies until the next display frame (or 50 ms), so the app's `Transition` runs the entry; `EndingStyle` and `SwipingStyle` merge over its style, and the phases' classes are made important, as NSH's are.
 
 ## Charts
 
@@ -56,7 +58,7 @@ Items reach their menu through a context key (`menuContext`), so the app arrange
 | Rows of objects and accessors by key or function | `Y`, `X` and a mark's `Y` as functions returning `[]float64`, NaN skipping a row | Go reads fields with code, so the app gives the column |
 | `Scale` objects | `PointScale()` and `LinearScale(domain...)` | A comparable value; the y axis is always linear |
 | `interactive` | `NoHover` | Go's zero value is the default |
-| `hoverDotClass` replaces `dotClass`, the styles each their own | `HoverDotStyle` merges over `DotStyle` | Styles are values, so the plot's shape and the mark's color combine |
+| `hoverDotClass` replaces `dotClass`, the styles each their own | `HoverDotStyle` merges over `DotStyle`, and `HoverDotClass` follows `DotClass` | The plot's shape and the mark's color combine |
 
 ## Tables
 
@@ -72,9 +74,8 @@ Items reach their menu through a context key (`menuContext`), so the app arrange
 | NSH | NSGo | Why |
 | --- | --- | --- |
 | `data`, `dataStart`, `rowCount` and objects by key | `RowCount` and `Text(row, column)` | Go reads its own data; the table asks for the cells it shows |
-| `classes` and `styles` by part | `Styles`, a `core.Style` per part merged in order | Styles are Go values |
 | A column's `resizable`, `movable` and `selectable` over the table's | `NoResize`, `NoMove`, `NoSelect` | Go's zero value is the default; a column can only opt out |
-| `positiveClass` and `negativeClass` on numbers or signs | `PositiveStyle` and `NegativeStyle` on the text's sign or number | The table holds texts |
+| `positiveClass` and `negativeClass` on numbers or signs | `PositiveClass`, `NegativeClass` and their styles on the text's sign or number | The table holds texts |
 | Selection and targets as objects with optional fields | `DataTableSelection` and `-1` for none | One comparable value |
 
 ## Resizable panels
@@ -99,5 +100,5 @@ Items reach their menu through a context key (`menuContext`), so the app arrange
 
 | NSH | NSGo | Why |
 | --- | --- | --- |
-| `renderHandle` and handle thumbs by class | `HandleStyle` and `HandleThumbStyle`, with `GroupStyle` for hover and press | Styles are Go values |
+| `renderHandle` | Handle and thumb classes and styles, which `group-hover:` classes or a `GroupStyle` restyle | `renderHandle` waits for the resizable panels' ([roadmap](../roadmap.md#components)) |
 | `DockAreaApi` through a ref | `DockAreaRef`, bound as the area mounts | Go has no refs to components |

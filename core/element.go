@@ -35,7 +35,10 @@ type View struct {
 	// dark:bg-zinc-900"), meaning what they mean in Tailwind CSS 4, under
 	// Style; an unknown class is logged once.
 	Class string
-	Style Style
+	// ClassFunc's classes follow Class's, again when what it reads
+	// changes.
+	ClassFunc func() string
+	Style     Style
 	// StyleFunc's result is merged over Style, again when what it reads
 	// changes.
 	StyleFunc func() Style
@@ -569,9 +572,11 @@ type Overlay struct {
 	// Offset is the gap to the anchor; Margin keeps the overlay off the
 	// edges of its host.
 	Offset, Margin Points
-	Style          Style
-	StyleFunc      func() Style
-	Children       []Node
+	// Class is Tailwind CSS classes, as View's.
+	Class     string
+	Style     Style
+	StyleFunc func() Style
+	Children  []Node
 	// PointerEvents says which of the overlay and its children take
 	// touches and the pointer: None for a tooltip, BoxNone for a layer
 	// that passes presses through around its content.

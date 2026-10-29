@@ -38,9 +38,8 @@ type menuContext struct {
 	openSub *core.Signal[int]
 	// next numbers the menu's submenus.
 	next *int
-	// The popup part, for the submenus' popups.
-	popupStyle     core.Style
-	popupStyleFunc func() core.Style
+	// popup is the popup part, for the submenus' popups.
+	popup part
 }
 
 // shown reports, tracked, whether a sheet shows this level's items.
@@ -70,14 +69,11 @@ var menuKey = core.NewKey[*menuContext]("menu", nil)
 
 // menuParts are the placement and the parts both kinds of menus take.
 type menuParts struct {
-	placement      core.Placement
-	align          core.Align
-	offset, margin core.Points
-	popup          core.Style
-	popupFunc      func() core.Style
-	backdrop       core.Style
-	backdropFunc   func() core.Style
-	label, testID  string
+	placement       core.Placement
+	align           core.Align
+	offset, margin  core.Points
+	popup, backdrop part
+	label, testID   string
 }
 
 // menuSurface is a menu while it is open: its popup at anchor, or at
@@ -90,7 +86,7 @@ func menuSurface(cx *core.Scope, st *popup, anchor *core.Ref, point *core.Signal
 	openSub := core.NewSignal(cx, 0)
 	next := 0
 	ctx := &menuContext{close: func(r Reason) { st.set(false, r) }, sheet: sheet, path: path, openSub: openSub,
-		next: &next, popupStyle: parts.popup, popupStyleFunc: parts.popupFunc}
+		next: &next, popup: parts.popup}
 	dismiss := func(r Reason) { st.cancel(r, false) }
 	// Escape and back leave the innermost submenu of a sheet first.
 	cancel := func() {
@@ -111,9 +107,9 @@ func menuSurface(cx *core.Scope, st *popup, anchor *core.Ref, point *core.Signal
 		})
 		return core.Func(func(cx *core.Scope) core.Node {
 			menuKey.Provide(cx, ctx)
-			return sheetLayer{m: m, side: core.PlaceBottom, backdrop: parts.backdrop, backdropFunc: parts.backdropFunc,
+			return sheetLayer{m: m, side: core.PlaceBottom, backdrop: parts.backdrop,
 				backdropPress: func() { dismiss(ReasonBackdropPress) },
-				panel:         parts.popup, panelFunc: parts.popupFunc, cancel: cancel,
+				panel:         parts.popup, cancel: cancel,
 				role: core.RoleMenu, label: parts.label, testID: parts.testID, content: items}.node()
 		})
 	}
@@ -123,7 +119,7 @@ func menuSurface(cx *core.Scope, st *popup, anchor *core.Ref, point *core.Signal
 		menuKey.Provide(cx, ctx)
 		o := core.Overlay{
 			Anchor: anchor, Placement: parts.placement, Align: parts.align, Offset: parts.offset, Margin: parts.margin,
-			Style: parts.popup, StyleFunc: parts.popupFunc, Children: items, Role: core.RoleMenu,
+			Class: parts.popup.class, Style: parts.popup.style, StyleFunc: parts.popup.fn, Children: items, Role: core.RoleMenu,
 			Label: parts.label, TestID: parts.testID,
 			OnPressOutside: func(core.Point) { dismiss(ReasonPressOutside) },
 			OnCancel:       cancel,
@@ -153,13 +149,16 @@ type Menu struct {
 	Align          core.Align
 	Offset, Margin core.Points
 
-	Style     core.Style // the trigger's
+	Class     string // the trigger's
+	Style     core.Style
 	StyleFunc func() core.Style
 	// PopupStyle styles the popup on desktops and the sheet on touch
 	// screens, and its submenus' popups.
+	PopupClass     string
 	PopupStyle     core.Style
 	PopupStyleFunc func() core.Style
 	// BackdropStyle styles the backdrop behind the sheet on touch screens.
+	BackdropClass     string
 	BackdropStyle     core.Style
 	BackdropStyleFunc func() core.Style
 	Trigger           core.Node
@@ -179,13 +178,13 @@ func (m Menu) Render(cx *core.Scope) core.Node {
 		align = core.AlignStart
 	}
 	return core.Group{
-		core.View{Ref: anchor, Style: m.Style, StyleFunc: m.StyleFunc, Label: m.Label, TestID: m.TestID, Role: core.RoleButton,
+		core.View{Ref: anchor, Class: m.Class, Style: m.Style, StyleFunc: m.StyleFunc, Label: m.Label, TestID: m.TestID, Role: core.RoleButton,
 			Expanded: st.open,
 			OnPress:  func(core.PressEvent) { st.set(!st.open(), ReasonTriggerPress) },
 			Children: []core.Node{m.Trigger}},
 		menuSurface(cx, st, anchor, nil, menuParts{placement: m.Placement, align: align, offset: m.Offset, margin: m.Margin,
-			popup: m.PopupStyle, popupFunc: m.PopupStyleFunc, backdrop: m.BackdropStyle, backdropFunc: m.BackdropStyleFunc},
-			m.Children),
+			popup:    part{m.PopupClass, m.PopupStyle, m.PopupStyleFunc},
+			backdrop: part{m.BackdropClass, m.BackdropStyle, m.BackdropStyleFunc}}, m.Children),
 	}
 }
 
@@ -203,10 +202,13 @@ type ContextMenu struct {
 
 	// Offset and Margin place the popup beside the pointer on desktops.
 	Offset, Margin    core.Points
-	Style             core.Style // the content's
+	Class             string // the content's
+	Style             core.Style
 	StyleFunc         func() core.Style
+	PopupClass        string
 	PopupStyle        core.Style
 	PopupStyleFunc    func() core.Style
+	BackdropClass     string
 	BackdropStyle     core.Style
 	BackdropStyleFunc func() core.Style
 	Trigger           core.Node
@@ -235,7 +237,7 @@ func (m ContextMenu) Render(cx *core.Scope) core.Node {
 		}
 	}
 	return core.Group{
-		core.View{Style: m.Style, StyleFunc: m.StyleFunc, TestID: m.TestID,
+		core.View{Class: m.Class, Style: m.Style, StyleFunc: m.StyleFunc, TestID: m.TestID,
 			OnContextMenu: func(e core.ContextMenuEvent) { open(e.PagePosition, ReasonContextMenu) },
 			// Observed, never claimed: the trigger's presses go on.
 			OnTouch: func(e core.TouchEvent) {
@@ -264,8 +266,8 @@ func (m ContextMenu) Render(cx *core.Scope) core.Node {
 			},
 			Children: []core.Node{m.Trigger}},
 		menuSurface(cx, st, nil, point, menuParts{placement: core.PlaceBottom, align: core.AlignStart,
-			offset: m.Offset, margin: m.Margin, popup: m.PopupStyle, popupFunc: m.PopupStyleFunc,
-			backdrop: m.BackdropStyle, backdropFunc: m.BackdropStyleFunc}, m.Children),
+			offset: m.Offset, margin: m.Margin, popup: part{m.PopupClass, m.PopupStyle, m.PopupStyleFunc},
+			backdrop: part{m.BackdropClass, m.BackdropStyle, m.BackdropStyleFunc}}, m.Children),
 	}
 }
 
@@ -275,6 +277,7 @@ type MenuItem struct {
 	OnSelect        func()
 	Disabled        func() bool
 	NoCloseOnSelect bool
+	Class           string
 	Style           core.Style
 	StyleFunc       func() core.Style
 	Children        []core.Node
@@ -291,8 +294,8 @@ func (i MenuItem) Render(cx *core.Scope) core.Node {
 		// and tests too.
 		children = []core.Node{core.Show{When: menu.shown, Then: func(*core.Scope) core.Node { return core.Group(i.Children) }}}
 	}
-	return core.View{Style: i.Style, StyleFunc: merged(i.StyleFunc, menu.hiddenUnlessShown()), Role: core.RoleMenuItem,
-		Label: i.Label, TestID: i.TestID, Disabled: i.Disabled, Children: children,
+	return core.View{Class: i.Class, Style: i.Style, StyleFunc: merged(i.StyleFunc, menu.hiddenUnlessShown()),
+		Role: core.RoleMenuItem, Label: i.Label, TestID: i.TestID, Disabled: i.Disabled, Children: children,
 		// Over another item, a submenu of its level closes.
 		OnHoverIn: func() {
 			if menu != nil && !menu.sheet {
@@ -322,6 +325,7 @@ func merged(a, b func() core.Style) func() core.Style {
 
 // MenuSeparator separates groups of items, shown with its level's.
 type MenuSeparator struct {
+	Class     string
 	Style     core.Style
 	StyleFunc func() core.Style
 }
@@ -329,7 +333,7 @@ type MenuSeparator struct {
 // Render implements core.Node.
 func (s MenuSeparator) Render(cx *core.Scope) core.Node {
 	menu := menuKey.Use(cx)
-	return core.View{Style: s.Style, StyleFunc: merged(s.StyleFunc, menu.hiddenUnlessShown()), NoFocus: true}
+	return core.View{Class: s.Class, Style: s.Style, StyleFunc: merged(s.StyleFunc, menu.hiddenUnlessShown()), NoFocus: true}
 }
 
 // Submenu is an item that opens more items: on desktops a popup beside
@@ -340,9 +344,12 @@ func (s MenuSeparator) Render(cx *core.Scope) core.Node {
 type Submenu struct {
 	Disabled func() bool
 	// Style styles the item that opens it.
+	Class     string
 	Style     core.Style
 	StyleFunc func() core.Style
-	// PopupStyle, when set, styles its popup instead of the menu's.
+	// PopupClass or PopupStyle, when set, styles its popup instead of the
+	// menu's.
+	PopupClass     string
 	PopupStyle     core.Style
 	PopupStyleFunc func() core.Style
 	Trigger        core.Node
@@ -350,6 +357,7 @@ type Submenu struct {
 	// items it is among, as Escape and back do: the app's, as every
 	// label is.
 	Back      core.Node
+	BackClass string
 	BackStyle core.Style
 	Children  []core.Node
 	Label     string
@@ -360,8 +368,8 @@ type Submenu struct {
 func (s Submenu) Render(cx *core.Scope) core.Node {
 	menu := menuKey.Use(cx)
 	trigger := func(press func(), hover func(), expanded func() bool, ref *core.Ref, style func() core.Style) core.View {
-		return core.View{Ref: ref, Style: s.Style, StyleFunc: merged(s.StyleFunc, style), Role: core.RoleMenuItem,
-			Label: s.Label, TestID: s.TestID, Disabled: s.Disabled, Expanded: expanded,
+		return core.View{Ref: ref, Class: s.Class, Style: s.Style, StyleFunc: merged(s.StyleFunc, style),
+			Role: core.RoleMenuItem, Label: s.Label, TestID: s.TestID, Disabled: s.Disabled, Expanded: expanded,
 			OnPress: func(core.PressEvent) {
 				if press != nil {
 					press()
@@ -403,7 +411,7 @@ func (s Submenu) Render(cx *core.Scope) core.Node {
 				nodes := []core.Node{}
 				if s.Back != nil {
 					nodes = append(nodes, core.Show{When: innermost, Then: func(*core.Scope) core.Node {
-						return core.View{Style: s.BackStyle, Role: core.RoleButton,
+						return core.View{Class: s.BackClass, Style: s.BackStyle, Role: core.RoleButton,
 							OnPress: func(core.PressEvent) { back() }, Children: []core.Node{s.Back}}
 					}})
 				}
@@ -418,16 +426,16 @@ func (s Submenu) Render(cx *core.Scope) core.Node {
 		}
 	}
 	isOpen := func() bool { return menu.openSub.Get() == id }
-	popup, popupFunc := menu.popupStyle, menu.popupStyleFunc
-	if !s.PopupStyle.IsZero() || s.PopupStyleFunc != nil {
-		popup, popupFunc = s.PopupStyle, s.PopupStyleFunc
+	popup := menu.popup
+	if own := (part{s.PopupClass, s.PopupStyle, s.PopupStyleFunc}); own.set() {
+		popup = own
 	}
 	return core.Group{
 		trigger(open, open, isOpen, anchor, nil),
 		core.Show{When: isOpen, Then: func(cx *core.Scope) core.Node {
 			menuKey.Provide(cx, &inner)
 			return core.Overlay{Anchor: anchor, Placement: core.PlaceRight, Align: core.AlignStart,
-				Style: popup, StyleFunc: popupFunc, Children: s.Children, Role: core.RoleMenu,
+				Class: popup.class, Style: popup.style, StyleFunc: popup.fn, Children: s.Children, Role: core.RoleMenu,
 				OnCancel: func() { menu.openSub.Set(0) }}
 		}},
 	}

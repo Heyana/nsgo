@@ -198,6 +198,44 @@ func TestViewsTakeClassesUnderTheirStyle(t *testing.T) {
 	}
 }
 
+func TestClassFuncFollowsClassAndChanges(t *testing.T) {
+	var on *Signal[bool]
+	h := newHost(t, Size{Width: 390, Height: 844}, func(cx *Scope) Node {
+		on = NewSignal(cx, false)
+		return View{Children: []Node{
+			View{TestID: "box", Class: "p-4 bg-white dark:bg-zinc-900", ClassFunc: func() string {
+				if on.Get() {
+					return "p-2 bg-black"
+				}
+				return ""
+			}},
+			Overlay{Class: "p-4", Children: []Node{View{TestID: "in"}}},
+			Canvas{TestID: "canvas", Class: "w-8 h-8"},
+		}}
+	})
+	h.commit()
+	if box := h.find("box"); box.style.Padding.Top != 16 || box.style.Background != RGB(0xffffff) {
+		t.Errorf("off: padding %v, background %#x", box.style.Padding.Top, box.style.Background)
+	}
+	on.Set(true)
+	h.commit()
+	if box := h.find("box"); box.style.Padding.Top != 8 || box.style.Background != RGB(0) {
+		t.Errorf("on: padding %v, background %#x", box.style.Padding.Top, box.style.Background)
+	}
+	on.Set(false)
+	h.tree.SetEnvironment(driver.Environment{Dark: true})
+	h.commit()
+	if box := h.find("box"); box.style.Padding.Top != 16 || box.style.Background != tailwindPalette["zinc"][9] {
+		t.Errorf("off again in dark: padding %v, background %#x", box.style.Padding.Top, box.style.Background)
+	}
+	if p := h.find("in").parent.style.Padding.Top; p != 16 {
+		t.Errorf("the overlay's padding is %v", p)
+	}
+	if s := h.find("canvas").style; s.Width != Pt(32) || s.Height != Pt(32) {
+		t.Errorf("the canvas is %v by %v", s.Width, s.Height)
+	}
+}
+
 func TestSpacingAndPositionsFollowTheChildren(t *testing.T) {
 	var items *Signal[[]string]
 	h := newHost(t, Size{Width: 390, Height: 844}, func(cx *Scope) Node {

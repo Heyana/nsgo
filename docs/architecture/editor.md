@@ -46,4 +46,4 @@ Highlighting stays off the engine goroutine: a job lexes a snapshot of up to 200
 | `register_language` and `register_highlighter`, kept per engine | A `Highlighter` prop: a function from a language's name to the app's highlighter | A prop needs no registry, and an engine holds no state beside its app |
 | syntect's state kept every 16 lines | chroma from a line at column 0 before the change, until its tokens meet the old ones | chroma keeps no state to resume from |
 | imara-diff's histogram with git's indent heuristic | Myers after the common prefix and suffix | One algorithm in Go, no dependency |
-| Tailwind classes and `PartStyle`s by part | A `core.Style` per part | Styles are Go values |
+| Tailwind classes and `PartStyle`s by part | A `core.Style` per part | Classes by part are [planned](../roadmap.md#components) |

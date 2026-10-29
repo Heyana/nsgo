@@ -35,7 +35,7 @@ type plotMark struct {
 	extent     *core.Memo[plotExtent]
 	points     *core.Memo[[]core.Point]
 	dotX, dotY *core.AnimatedValue
-	dot        hoverDot
+	dot        part // its own hover dot's
 }
 
 // near is the mark's point nearest to x along the x axis.
@@ -48,21 +48,6 @@ func (m *plotMark) near(x float32) (core.Point, bool) {
 		}
 	}
 	return best, ok
-}
-
-// hoverDot is a mark's own style of its hover dot.
-type hoverDot struct {
-	base core.Style
-	fn   func() core.Style
-}
-
-func (h hoverDot) set() bool { return !h.base.IsZero() || h.fn != nil }
-
-func (h hoverDot) style() core.Style {
-	if h.fn == nil {
-		return h.base
-	}
-	return h.base.Merge(h.fn())
 }
 
 // plotSeries is what a mark draws: its points in the plot's space, the
@@ -107,7 +92,7 @@ func newSeries(cx *core.Scope, plot *plotState, x, y func() []float64) plotSerie
 
 // join adds the series to plot while the mark lives: its values, and
 // also's, in the y domain, and a hover dot.
-func (s plotSeries) join(cx *core.Scope, plot *plotState, also func() (float64, bool), dot hoverDot) {
+func (s plotSeries) join(cx *core.Scope, plot *plotState, also func() (float64, bool), dot part) {
 	extent := core.NewMemo(cx, func() plotExtent {
 		e := extentOf(s.ys())
 		if v, ok := also(); ok {
@@ -176,10 +161,11 @@ func reach(points []core.Point, curve PlotCurve, height float32) float32 {
 
 // markLayer is a mark's view: it fills the plot, takes no pointer (the
 // plot follows it) and holds the mark's paint style.
-func markLayer(style core.Style, fn func() core.Style, children ...core.Node) core.Node {
+func markLayer(p part, children ...core.Node) core.Node {
 	return core.View{
-		Style:         core.Style{Position: core.Absolute, Left: core.Pt(0), Top: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0)}.Merge(style),
-		StyleFunc:     fn,
+		Class:         p.class,
+		Style:         core.Style{Position: core.Absolute, Left: core.Pt(0), Top: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0)}.Merge(p.style),
+		StyleFunc:     p.fn,
 		PointerEvents: core.PointerEventsNone,
 		Children:      children,
 	}
@@ -188,16 +174,17 @@ func markLayer(style core.Style, fn func() core.Style, children ...core.Node) co
 // markCanvas is a mark's canvas: the plot's area and bleed() points around
 // it, for half its strokes and its curves' swing past the plot's edges,
 // its drawing in the plot's coordinates. Before the plot's first layout
-// draw gets a nil plot. style is the canvas's own, over its place.
-func markCanvas(plot *plotState, bleed func() float32, style func() core.Style,
+// draw gets a nil plot. own is the canvas's own part, over its place.
+func markCanvas(plot *plotState, bleed func() float32, own part,
 	draw func(d *core.Drawing, plot *plotState, bleed float32)) core.Node {
 	return core.Canvas{
+		Class: own.class,
 		Style: core.Style{Position: core.Absolute},
 		StyleFunc: func() core.Style {
 			b := core.Pt(core.Points(-bleed()))
-			s := core.Style{Left: b, Top: b, Right: b, Bottom: b}
-			if style != nil {
-				s = s.Merge(style())
+			s := core.Style{Left: b, Top: b, Right: b, Bottom: b}.Merge(own.style)
+			if own.fn != nil {
+				s = s.Merge(own.fn())
 			}
 			return s
 		},
@@ -231,13 +218,16 @@ type PlotLine struct {
 	Curve PlotCurve
 	// Dot shows a view styled by DotStyle centered on every point.
 	Dot          bool
+	DotClass     string
 	DotStyle     core.Style
 	DotStyleFunc func() core.Style
-	// HoverDotStyle merges over the plot's DotStyle for its hover dot; a
-	// DisplayNone shows none.
+	// HoverDotStyle merges over the plot's DotStyle for its hover dot, and
+	// HoverDotClass follows its DotClass; a DisplayNone shows none.
+	HoverDotClass     string
 	HoverDotStyle     core.Style
 	HoverDotStyleFunc func() core.Style
 	// Style is its paint: Stroke, StrokeWidth and StrokeDash.
+	Class     string
 	Style     core.Style
 	StyleFunc func() core.Style
 }
@@ -248,7 +238,7 @@ func (l PlotLine) Render(cx *core.Scope) core.Node {
 	var series plotSeries
 	if plot != nil {
 		series = newSeries(cx, plot, l.X, l.Y)
-		series.join(cx, plot, func() (float64, bool) { return 0, false }, hoverDot{l.HoverDotStyle, l.HoverDotStyleFunc})
+		series.join(cx, plot, func() (float64, bool) { return 0, false }, part{l.HoverDotClass, l.HoverDotStyle, l.HoverDotStyleFunc})
 	}
 	bleed := func() float32 {
 		if plot == nil {
@@ -256,7 +246,7 @@ func (l PlotLine) Render(cx *core.Scope) core.Node {
 		}
 		return strokeRoom + float32(math.Ceil(float64(reach(series.points.Get(), l.Curve, float32(plot.size.Get().Height)))))
 	}
-	children := []core.Node{markCanvas(plot, bleed, nil, func(d *core.Drawing, plot *plotState, b float32) {
+	children := []core.Node{markCanvas(plot, bleed, part{}, func(d *core.Drawing, plot *plotState, b float32) {
 		d.StrokeFromView(core.PaintCurrentColor).LineWidthFromView().LineDashFromView()
 		if plot == nil {
 			return
@@ -290,11 +280,11 @@ func (l PlotLine) Render(cx *core.Scope) core.Node {
 					return core.Style{}
 				},
 				PointerEvents: core.PointerEventsNone,
-				Children:      []core.Node{core.View{Style: l.DotStyle, StyleFunc: l.DotStyleFunc}},
+				Children:      []core.Node{core.View{Class: l.DotClass, Style: l.DotStyle, StyleFunc: l.DotStyleFunc}},
 			}
 		}))
 	}
-	return markLayer(l.Style, l.StyleFunc, children...)
+	return markLayer(part{l.Class, l.Style, l.StyleFunc}, children...)
 }
 
 // PlotArea is a series of a Plot drawn as the region between its line and
@@ -320,14 +310,18 @@ type PlotArea struct {
 	// to its baseline, shown only inside the shape, under its Fill, as
 	// CSS's clip-path shows a box's background: a gradient that fades out
 	// toward the baseline.
+	BackgroundClass     string
 	BackgroundStyle     core.Style
 	BackgroundStyleFunc func() core.Style
-	// HoverDotStyle merges over the plot's DotStyle for its hover dot; a
-	// DisplayNone shows none, as for an area under a line with its own.
+	// HoverDotStyle merges over the plot's DotStyle for its hover dot, and
+	// HoverDotClass follows its DotClass; a DisplayNone shows none, as for
+	// an area under a line with its own.
+	HoverDotClass     string
 	HoverDotStyle     core.Style
 	HoverDotStyleFunc func() core.Style
 	// Style is its paint: Fill, and Stroke, StrokeWidth and StrokeDash for
 	// its top edge.
+	Class     string
 	Style     core.Style
 	StyleFunc func() core.Style
 }
@@ -343,7 +337,7 @@ func (a PlotArea) Render(cx *core.Scope) core.Node {
 				return 0, false
 			}
 			return a.Y0(), true
-		}, hoverDot{a.HoverDotStyle, a.HoverDotStyleFunc})
+		}, part{a.HoverDotClass, a.HoverDotStyle, a.HoverDotStyleFunc})
 	}
 	base := func(plot *plotState) float32 {
 		if a.Y0 != nil {
@@ -369,18 +363,14 @@ func (a PlotArea) Render(cx *core.Scope) core.Node {
 		trace(d, points, a.Curve)
 		d.LineTo(float32(last.X), floor).LineTo(float32(first.X), floor).ClosePath()
 	}
-	hasBackground := !a.BackgroundStyle.IsZero() || a.BackgroundStyleFunc != nil
+	background := part{a.BackgroundClass, a.BackgroundStyle, a.BackgroundStyleFunc}
+	hasBackground := background.set()
 	var children []core.Node
 	if hasBackground {
 		// A canvas whose view takes the app's background and shows it
 		// inside the shape only, from its first drawing on, so its view
 		// never draws the background as a box.
-		children = append(children, markCanvas(plot, bleed, func() core.Style {
-			if a.BackgroundStyleFunc == nil {
-				return a.BackgroundStyle
-			}
-			return a.BackgroundStyle.Merge(a.BackgroundStyleFunc())
-		}, func(d *core.Drawing, plot *plotState, b float32) {
+		children = append(children, markCanvas(plot, bleed, background, func(d *core.Drawing, plot *plotState, b float32) {
 			var points []core.Point
 			if plot != nil {
 				points = series.points.Get()
@@ -402,7 +392,7 @@ func (a PlotArea) Render(cx *core.Scope) core.Node {
 			d.FillBackgroundFromView(area)
 		}))
 	}
-	children = append(children, markCanvas(plot, bleed, nil, func(d *core.Drawing, plot *plotState, b float32) {
+	children = append(children, markCanvas(plot, bleed, part{}, func(d *core.Drawing, plot *plotState, b float32) {
 		initial := core.PaintCurrentColor
 		if hasBackground {
 			initial = core.PaintNone
@@ -423,7 +413,7 @@ func (a PlotArea) Render(cx *core.Scope) core.Node {
 		trace(d, points, a.Curve)
 		d.Stroke()
 	}))
-	return markLayer(a.Style, a.StyleFunc, children...)
+	return markLayer(part{a.Class, a.Style, a.StyleFunc}, children...)
 }
 
 // PlotGrid is lines across a Plot, as gpui-base's Grid: vertical at the
@@ -434,6 +424,7 @@ func (a PlotArea) Render(cx *core.Scope) core.Node {
 // color where none is set. Its values do not count in the domains.
 type PlotGrid struct {
 	X, Y      func() []float64
+	Class     string
 	Style     core.Style
 	StyleFunc func() core.Style
 }
@@ -447,7 +438,7 @@ func (g PlotGrid) Render(cx *core.Scope) core.Node {
 		}
 		return f()
 	}
-	return markLayer(g.Style, g.StyleFunc, markCanvas(plot, func() float32 { return strokeRoom }, nil,
+	return markLayer(part{g.Class, g.Style, g.StyleFunc}, markCanvas(plot, func() float32 { return strokeRoom }, part{},
 		func(d *core.Drawing, plot *plotState, _ float32) {
 			d.StrokeFromView(core.PaintCurrentColor).LineWidthFromView().LineDashFromView().BeginPath()
 			if plot == nil {

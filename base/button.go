@@ -25,7 +25,10 @@ type Button struct {
 	// while it returns true.
 	Expanded func() bool
 	// Role is what it is for assistive technology; RoleButton when 0.
-	Role      core.Role
+	Role core.Role
+	// Class is Tailwind CSS classes under Style, as core.View's, as each
+	// part's class is under its style.
+	Class     string
 	Style     core.Style
 	StyleFunc func() core.Style
 	Label     string
@@ -42,6 +45,7 @@ func (b Button) Render(*core.Scope) core.Node {
 		role = core.RoleButton
 	}
 	return core.View{
+		Class:       b.Class,
 		Style:       b.Style,
 		StyleFunc:   b.StyleFunc,
 		Children:    b.Children,
