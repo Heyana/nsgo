@@ -403,6 +403,73 @@ func sameSource(a, b driver.ImageSource) bool {
 // tint and its mask inside the picture). It loads them with imageload and
 // decodes them with ImageIO on goroutines, at the size the view shows
 // them. Its methods run on the main thread.
+// giveBack hands the allocator's free pages back to the system. Core
+// Animation and ImageIO allocate through malloc, whose zones keep freed
+// pages resident: scrolling past hundreds of pictures leaves tens of
+// megabytes there that nothing else reclaims.
+var (
+	giveBackMu        sync.Mutex
+	giveBackPending   int64
+	mallocZoneRelief  func(uintptr, uintptr) uintptr
+	mallocDefaultZone func() uintptr
+)
+
+// giveBackAfter is how many bytes of closed images go by between
+// give-backs: often enough to keep the pool small, rare enough to be free.
+const giveBackAfter = 64 << 20
+
+// resolveOnFirstUse looks the two up when memory is first given back, not
+// at startup: dlopen in an init runs before the app's own setup and left
+// the window unbuilt in testing.
+var resolveOnFirstUse sync.Once
+
+func giveBack() {
+	resolveOnFirstUse.Do(func() {
+		lib, err := purego.Dlopen("/usr/lib/libSystem.B.dylib", purego.RTLD_NOW|purego.RTLD_GLOBAL)
+		if err != nil {
+			return
+		}
+		if sym, err := purego.Dlsym(lib, "malloc_default_zone"); err == nil {
+			mallocDefaultZone = func() uintptr { r, _, _ := purego.SyscallN(sym); return r }
+		}
+		if sym, err := purego.Dlsym(lib, "malloc_zone_pressure_relief"); err == nil {
+			mallocZoneRelief = func(zone, goal uintptr) uintptr {
+				r, _, _ := purego.SyscallN(sym, zone, goal)
+				return r
+			}
+		}
+	})
+	if mallocZoneRelief == nil || mallocDefaultZone == nil {
+		return
+	}
+	// The default zone alone, never NULL: a NULL zone asks QuartzCore's and
+	// Metal's zones to give pages back too, and doing that inside a Core
+	// Animation transaction has been reported to throw from -[MTLLayer
+	// blitCallback] on macOS 26. A goal of 0 asks for all it can give.
+	mallocZoneRelief(mallocDefaultZone(), 0)
+}
+
+// noteClosed counts an image that stopped showing, giving memory back once
+// enough of them have gone.
+func noteClosed(d decoded) {
+	bytes := int64(d.width) * int64(d.height) * 4
+	if bytes <= 0 {
+		return
+	}
+	giveBackMu.Lock()
+	giveBackPending += bytes
+	over := giveBackPending >= giveBackAfter
+	if over {
+		giveBackPending = 0
+	}
+	giveBackMu.Unlock()
+	if over {
+		// On a goroutine: the first call dlopens, and a dlopen on the main
+		// thread while AppKit draws left the window unbuilt in testing.
+		go giveBack()
+	}
+}
+
 type ImageView struct {
 	// Dispatch reports an event to the engine if the view listens for it.
 	Dispatch func(driver.Event)
@@ -540,7 +607,29 @@ func (iv *ImageView) Start(ratio float64) {
 
 // fetch loads and decodes src on a goroutine of its own, then shows it on
 // the main thread unless a later load replaced this one, numbered n.
+// decodeSlots bounds how many images decode at once. Every ImageView that
+// comes into view starts one of its own, and a source picture is megabytes
+// while it is decoded: a grid scrolled fast started 25 at a time in
+// testing, which is the peak the process pays for.
+var decodeSlots = make(chan struct{}, 6)
+
+// acquireDecodeSlot takes one of the slots a decode may run in, or reports
+// that ctx ended before one came free. The caller releases it.
+func acquireDecodeSlot(ctx context.Context) (release func(), ok bool) {
+	select {
+	case decodeSlots <- struct{}{}:
+		return func() { <-decodeSlots }, true
+	case <-ctx.Done():
+		return nil, false
+	}
+}
+
 func (iv *ImageView) fetch(ctx context.Context, n int, src driver.ImageSource, r request, source, quiet bool) {
+	release, ok := acquireDecodeSlot(ctx)
+	if !ok {
+		return
+	}
+	defer release()
 	var progress imageload.Progress
 	if !quiet {
 		var last time.Time
@@ -660,6 +749,17 @@ func (iv *ImageView) Close() {
 	}
 	iv.load++
 	iv.closed = true
+	// The layer keeps its own retain on the image; dropping ours alone leaves
+	// Core Animation holding the bitmap of a view that no longer exists, and
+	// nothing evicts it. Clear the contents too, so scrolling past a picture
+	// really does give the memory back.
+	WithoutAnimation(func() {
+		iv.picture.Send(selSetContents, uintptr(0))
+		if iv.mask != 0 {
+			iv.mask.Send(selSetContents, uintptr(0))
+		}
+	})
+	noteClosed(iv.shown)
 	iv.shown.release()
 	iv.image, iv.shown = 0, decoded{}
 	if iv.mask != 0 {
