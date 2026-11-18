@@ -35,6 +35,8 @@ type Button struct {
 	// to a button of an icon alone.
 	Label    string
 	Disabled func() bool
+	// Class is Tailwind CSS classes under Style, as base.Button's.
+	Class string
 	// Flex grows it to share a row with its siblings.
 	Flex float32
 	Size Size
@@ -58,6 +60,7 @@ func (b Button) Render(cx *core.Scope) core.Node {
 		press = func(core.PressEvent) { b.OnPress() }
 	}
 	return base.Button{OnPress: press, Disabled: b.Disabled, Label: b.label(), TestID: b.TestID,
+		Class: b.Class,
 		Style: style, StyleFunc: focus, Children: []core.Node{face}}
 }
 

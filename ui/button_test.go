@@ -53,3 +53,17 @@ func TestButton(t *testing.T) {
 		}
 	})
 }
+
+// TestButtonClass passes the Class through to the base button it builds: a
+// class left on the ui button never reaches the view, so the mounted button
+// keeps the default opacity instead of the class's.
+func TestButtonClass(t *testing.T) {
+	each(t, func(t *testing.T, e core.Environment) {
+		app, _ := start(t, e, func(cx *core.Scope) core.Node {
+			return Button{Text: "Class", TestID: "class", Class: "opacity-50"}
+		})
+		if o := app.Find("class").Style.Opacity; o != 0.5 {
+			t.Fatalf("class button opacity = %v, want the class's 0.5", o)
+		}
+	})
+}
