@@ -539,6 +539,45 @@ func (s *surface) pickScreenColor(id uint32) {
 	sampler.Send(sel("showSamplerWithSelectionHandler:"), done)
 }
 
-// displays returns each screen's frame, usable area and scale. The stub
-// reports none; Task 1 fills it from NSScreen.
-func displays() []driver.Monitor { return nil }
+// displays returns each screen's frame, usable area and scale, from the
+// main screen's top left, y down, as usableScreens does.
+func displays() []driver.Monitor {
+	frames, visible, scales := screenFrames("frame"), screenFrames("visibleFrame"), screenScales()
+	out := make([]driver.Monitor, len(frames))
+	if len(frames) == 0 {
+		return out
+	}
+	main := frames[0]
+	top := main.Origin.Y + main.Size.Height
+	for i := range frames {
+		out[i] = driver.Monitor{
+			Frame:        flip(frames[i], main.Origin.X, top),
+			VisibleFrame: flip(visible[i], main.Origin.X, top),
+			Scale:        scales[i],
+		}
+	}
+	return out
+}
+
+// flip converts an AppKit frame, whose y grows up, to the app's, y down
+// from the main screen's top left.
+func flip(f apple.CGRect, mainX, top float64) driver.WindowFrame {
+	return driver.WindowFrame{
+		X:      driver.Points(f.Origin.X - mainX),
+		Y:      driver.Points(top - f.Origin.Y - f.Size.Height),
+		Move:   true,
+		Width:  driver.Points(f.Size.Width),
+		Height: driver.Points(f.Size.Height),
+	}
+}
+
+// screenScales returns each screen's pixels per point.
+func screenScales() []float32 {
+	screens := objc.ID(apple.Class("NSScreen")).Send(sel("screens"))
+	out := make([]float32, objc.Send[uint](screens, sel("count")))
+	for i := range out {
+		sc := screens.Send(sel("objectAtIndex:"), uint(i))
+		out[i] = float32(objc.Send[float64](sc, sel("backingScaleFactor")))
+	}
+	return out
+}

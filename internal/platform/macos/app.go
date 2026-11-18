@@ -175,6 +175,11 @@ func (s *surface) attach(app *engine.Engine) {
 	s.engine.Resize(driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)})
 	s.engine.SetEnvironment(s.env)
 	s.engine.Dispatch(driver.Event{Kind: driver.EventMonitors, Monitors: displays()})
+	center := objc.ID(apple.Class("NSNotificationCenter")).Send(sel("defaultCenter"))
+	s.stops = append(s.stops, apple.Observe(center, apple.Global(appKitPath, "NSApplicationDidChangeScreenParametersNotification"),
+		func(note objc.ID) {
+			s.engine.Dispatch(driver.Event{Kind: driver.EventMonitors, Monitors: displays()})
+		}))
 	if s.kind == driver.SurfaceTrayIcon {
 		observeApp()
 		return
