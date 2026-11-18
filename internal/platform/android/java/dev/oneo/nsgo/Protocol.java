@@ -228,6 +228,7 @@ final class Protocol {
     static final int EVENT_INPUT_MODALITY = 75;
     static final int EVENT_NOTIFICATION = 76;
     static final int EVENT_NOTIFICATION_PRESS = 77;
+    static final int EVENT_MONITORS = 78;
 
     // core.Haptic, what ITEM_HAPTIC plays.
     static final int HAPTIC_SELECTION = 1;

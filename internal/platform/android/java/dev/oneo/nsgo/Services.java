@@ -50,6 +50,8 @@ final class Services {
     static final int CLIPBOARD_IMAGE = 2;
     static final int CLIPBOARD_HAS_IMAGE = 3;
     static final int CLIPBOARD_FILES = 4;
+    static final int CLIPBOARD_CHANGE_COUNT = 5;
+    static final int CLIPBOARD_TYPES = 6;
 
     /** The largest PNG a clipboard read answers with, as driver.MaxClipboardImage. */
     private static final int MAX_CLIPBOARD_IMAGE = 48 << 20;

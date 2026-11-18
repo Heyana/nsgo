@@ -57,9 +57,6 @@ const (
 	EventBack
 	// EventAlert answers ItemAlert Count with the button at Index, or -1.
 	EventAlert
-	// EventMonitors reports the screens and their usable areas, which
-	// move as displays come and go.
-	EventMonitors
 	// EventClipboard answers ItemReadClipboard Count with what it read:
 	// the Text, the image in Data (a *ClipboardImage, nil for none), the
 	// files' URIs, or whether the clipboard has text or an image
@@ -250,6 +247,9 @@ const (
 	// notification whose ID is Text, the one that started the app
 	// included.
 	EventNotificationPress
+	// EventMonitors reports the screens and their usable areas, which
+	// move as displays come and go.
+	EventMonitors
 )
 
 // What EventInputModality reports.
