@@ -44,7 +44,7 @@ import (
 const (
 	// wheelLine is how far a mouse wheel's line scrolls, and wheelLatch
 	// how long its notches stay on the view they began on.
-	wheelLine  = 10
+	wheelLine  = 48
 	wheelLatch = 200 * time.Millisecond
 	// momentumWait is how soon after a gesture the system's momentum
 	// begins, if it does.
