@@ -57,6 +57,9 @@ const (
 	EventBack
 	// EventAlert answers ItemAlert Count with the button at Index, or -1.
 	EventAlert
+	// EventMonitors reports the screens and their usable areas, which
+	// move as displays come and go.
+	EventMonitors
 	// EventClipboard answers ItemReadClipboard Count with what it read:
 	// the Text, the image in Data (a *ClipboardImage, nil for none), the
 	// files' URIs, or whether the clipboard has text or an image
@@ -292,6 +295,12 @@ type Event struct {
 	Buffering      bool
 	// URIs are the file: URLs of dropped files.
 	URIs []string
+	// ChangeCount is the pasteboard's, for ClipboardReadChangeCount.
+	ChangeCount int
+	// Types are the pasteboard's first item's, for ClipboardReadTypes.
+	Types []string
+	// Monitors are the screens, for EventMonitors.
+	Monitors []Monitor
 	// Data is what a native component emitted.
 	Data any
 	// Finished is whether an animation ran to its end, or the platform

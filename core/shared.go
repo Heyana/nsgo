@@ -363,6 +363,8 @@ type (
 	// WindowFrame is where a window moves and how large it becomes, in
 	// points from the main screen's top left.
 	WindowFrame = driver.WindowFrame
+	// Monitor is a screen's frame and the part it leaves windows.
+	Monitor = driver.Monitor
 	// WindowLevel is where a window stacks among the others.
 	WindowLevel = driver.WindowLevel
 	// WindowConstraints limit a window's size and what the user may do

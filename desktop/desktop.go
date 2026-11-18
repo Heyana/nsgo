@@ -18,6 +18,8 @@ type (
 	// WindowFrame is where a window moves and how large it becomes, in
 	// points from the main screen's top left.
 	WindowFrame = core.WindowFrame
+	// Monitor is a screen's frame and the part it leaves windows.
+	Monitor = core.Monitor
 	// WindowLevel is where a window stacks among the others.
 	WindowLevel = core.WindowLevel
 	// WindowConstraints limit a window's size and what the user may do
@@ -140,6 +142,10 @@ func FullScreen(cx *core.Scope) bool { return cx.Env().FullScreen() }
 // only the size GTK keeps, which ignores those states, and Move says no
 // position came; zero without a window.
 func Frame(cx *core.Scope) WindowFrame { return cx.Env().WindowFrame() }
+
+// Monitors returns each screen's frame and the part it leaves windows,
+// empty where the platform reports none, so a panel can sit at an edge.
+func Monitors(cx *core.Scope) []Monitor { return cx.Env().Monitors() }
 
 // MinimizeWindow minimizes the window.
 func MinimizeWindow(cx *core.Scope) { cx.MinimizeWindow() }

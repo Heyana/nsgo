@@ -51,7 +51,7 @@ type Environment struct {
 	// LocaleSettings are how the user reads weeks, times and measures,
 	// apart from the language, where the platform says.
 	LocaleSettings LocaleSettings
-	OS     OS
+	OS             OS
 	// OSVersion is the system's version: major and minor on Apple
 	// platforms, Windows and Linux (the kernel's), Android's API level
 	// as Major, and zero on the web.
@@ -72,6 +72,17 @@ type Environment struct {
 	// link; "" when none did.
 	AppClip   bool
 	OpenedURL string
+}
+
+// Monitor is one screen where the app runs.
+type Monitor struct {
+	// Frame is the whole screen.
+	Frame WindowFrame
+	// VisibleFrame is the part it leaves windows: past its menu bar,
+	// Dock and notch.
+	VisibleFrame WindowFrame
+	// Scale is pixels per point.
+	Scale float32
 }
 
 // LocaleSettings are the regional preferences the user set, in Intl's
