@@ -323,6 +323,10 @@ const (
 	ItemCloseNotification
 	// ItemBadge shows Count on the app's icon; 0 clears it.
 	ItemBadge
+	// ItemCursorPoint asks where the pointer is, in the app's points; the
+	// platform answers with EventCursorPoint carrying Count and Point.
+	// Read-only: it moves nothing and registers no handler.
+	ItemCursorPoint
 )
 
 // Notification is a system notification (ItemShowNotification), as

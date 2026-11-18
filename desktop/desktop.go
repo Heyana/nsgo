@@ -147,6 +147,14 @@ func Frame(cx *core.Scope) WindowFrame { return cx.Env().WindowFrame() }
 // empty where the platform reports none, so a panel can sit at an edge.
 func Monitors(cx *core.Scope) []Monitor { return cx.Env().Monitors() }
 
+// CursorPoint calls done with the pointer's location in points from the
+// main screen's top left, y down, as Monitor frames are: a panel polls it
+// to tell whether the pointer rests on its edge strip, instead of waiting
+// for the pointer to enter the window first. It is read-only: it moves
+// nothing, registers no handler and reports no event. Off desktops done
+// hears the zero Point.
+func CursorPoint(cx *core.Scope, done func(core.Point)) { cx.CursorPoint(done) }
+
 // MinimizeWindow minimizes the window.
 func MinimizeWindow(cx *core.Scope) { cx.MinimizeWindow() }
 

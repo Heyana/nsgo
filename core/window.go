@@ -630,6 +630,26 @@ func (cx *Scope) LaunchAtLogin(done func(on bool)) {
 	})
 }
 
+// CursorPoint is the core's part of desktop.CursorPoint, which apps use:
+// done hears the pointer's location in points from the main screen's top
+// left, y down, as Monitors' frames are. It is a read-only poll: it moves
+// nothing, registers no handler and reports no event of its own. Where the
+// platform opens no windows, done hears the zero Point at once.
+func (cx *Scope) CursorPoint(done func(Point)) {
+	t := cx.rt.tree
+	if cx.rt.windows == nil || t == nil {
+		if done != nil {
+			done(Point{})
+		}
+		return
+	}
+	t.request(cx, driver.MountItem{Kind: driver.ItemCursorPoint}, func(ev driver.Event) {
+		if done != nil {
+			done(ev.Point)
+		}
+	})
+}
+
 // surfaceEvent handles an event about the tree's surface or the app
 // rather than a view, and reports whether ev was one.
 type openFilesHandler struct {

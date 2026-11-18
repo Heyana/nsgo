@@ -250,6 +250,10 @@ const (
 	// EventMonitors reports the screens and their usable areas, which
 	// move as displays come and go.
 	EventMonitors
+	// EventCursorPoint answers ItemCursorPoint Count with the pointer's
+	// Point, in points from the main screen's top left, y down, as the
+	// Monitor frames are.
+	EventCursorPoint
 )
 
 // What EventInputModality reports.

@@ -582,6 +582,25 @@ func flip(f apple.CGRect, mainX, top float64) driver.WindowFrame {
 	}
 }
 
+// flipPoint converts an AppKit point, whose y grows up, to the app's, y
+// down from the main screen's top left, as flip does a frame.
+func flipPoint(p apple.CGPoint, mainX, top float64) driver.Point {
+	return driver.Point{X: driver.Points(p.X - mainX), Y: driver.Points(top - p.Y)}
+}
+
+// cursorPoint returns the pointer's location in the app's coordinates, as
+// displays reports the screens: points from the main screen's top left, y
+// down. The zero Point where no screen reports.
+func cursorPoint() driver.Point {
+	frames := screenFrames("frame")
+	if len(frames) == 0 {
+		return driver.Point{}
+	}
+	main := frames[0]
+	mouse := objc.Send[apple.CGPoint](objc.ID(apple.Class("NSEvent")), sel("mouseLocation"))
+	return flipPoint(mouse, main.Origin.X, main.Origin.Y+main.Size.Height)
+}
+
 // screenScales returns each screen's pixels per point.
 func screenScales() []float32 {
 	screens := objc.ID(apple.Class("NSScreen")).Send(sel("screens"))

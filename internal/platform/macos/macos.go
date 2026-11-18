@@ -1506,6 +1506,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemLaunchAtLogin:
 			s.engine.Dispatch(driver.Event{Kind: driver.EventLaunchAtLogin, Count: it.Count, Finished: launchesAtLogin()})
 			continue
+		case driver.ItemCursorPoint:
+			s.engine.Dispatch(driver.Event{Kind: driver.EventCursorPoint, Count: it.Count, Point: cursorPoint()})
+			continue
 		case driver.ItemImageInfo:
 			apple.ImageInfo(it, s.engine.Dispatch)
 			continue

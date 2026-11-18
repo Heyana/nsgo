@@ -160,7 +160,10 @@ type App struct {
 	// as its change count and its first item's types.
 	ClipboardChangeCount int
 	ClipboardTypes       []string
-	Announced            []string
+	// Cursor is where the pointer reports, what ItemCursorPoint answers;
+	// the zero Point where the platform has no pointer.
+	Cursor    driver.Point
+	Announced []string
 	// InputSource is the keyboard input source the app selected, as a
 	// test sees it; inputSourceWas the one that selection replaced.
 	InputSource    string

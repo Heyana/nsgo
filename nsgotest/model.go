@@ -415,6 +415,8 @@ func (a *App) apply(b *driver.MountBatch) {
 			a.Clipboard, a.ClipboardImage, a.ClipboardFiles = "", data, nil
 		case driver.ItemReadClipboard:
 			a.readClipboard(&it)
+		case driver.ItemCursorPoint:
+			a.post(driver.Event{Kind: driver.EventCursorPoint, Count: it.Count, Point: a.Cursor})
 		case driver.ItemOpenURL:
 			a.OpenedURLs = append(a.OpenedURLs, it.Value)
 			opened := a.OpenURL == nil || a.OpenURL(it.Value)

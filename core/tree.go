@@ -1967,7 +1967,8 @@ func (t *Tree) Dispatch(ev driver.Event) {
 	case driver.EventMonitors:
 		t.root.Env().setMonitors(ev.Monitors)
 		return
-	case driver.EventClipboard, driver.EventOpenURL, driver.EventPick, driver.EventFiles, driver.EventUpdate:
+	case driver.EventClipboard, driver.EventOpenURL, driver.EventPick, driver.EventFiles, driver.EventUpdate,
+		driver.EventCursorPoint:
 		t.answer(ev)
 		return
 	case driver.EventMenuClosed:
