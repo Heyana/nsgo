@@ -171,7 +171,7 @@ func eventTime(event objc.ID) time.Duration {
 // its style says.
 func (v *view) newScroll() {
 	v.sc = &scrollState{zoom: 1, zoomed: 1}
-	v.hover = trackingArea(v.native, true)
+	v.hover = trackingArea(v.native, true, v.trackingAlways())
 	v.content = objc.ID(classContainer).Send(selNew)
 	v.content.Send(selSetWantsLayer, true)
 	v.content.Send(selLayer).Send(sel("setMasksToBounds:"), true)

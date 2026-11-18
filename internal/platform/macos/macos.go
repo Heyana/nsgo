@@ -1869,15 +1869,22 @@ func (v *view) setEvents(m driver.EventMask) {
 		v.hover = 0
 	}
 	if wantHover && v.hover == 0 {
-		v.hover, v.moves = trackingArea(v.native, moves), moves
+		v.hover, v.moves = trackingArea(v.native, moves, v.trackingAlways()), moves
 	}
 }
 
 // trackingArea adds a tracking area over view's visible rect, reporting
 // the pointer entering and leaving it and, if moves, moving within it.
-func trackingArea(view objc.ID, moves bool) objc.ID {
-	const enteredAndExited, mouseMoved, activeInActiveApp, inVisibleRect = 0x01, 0x02, 0x40, 0x200
-	options := uint(enteredAndExited | activeInActiveApp | inVisibleRect)
+// always tracks while the app is inactive too: a panel floats over other
+// apps without becoming the active one, so its hover would else never fire.
+func trackingArea(view objc.ID, moves, always bool) objc.ID {
+	const enteredAndExited, mouseMoved, activeInActiveApp, activeAlways, inVisibleRect = 0x01, 0x02, 0x40, 0x80, 0x200
+	options := uint(enteredAndExited | inVisibleRect)
+	if always {
+		options |= activeAlways
+	} else {
+		options |= activeInActiveApp
+	}
 	if moves {
 		options |= mouseMoved
 	}
@@ -1885,6 +1892,13 @@ func trackingArea(view objc.ID, moves bool) objc.ID {
 		sel("initWithRect:options:owner:userInfo:"), apple.Rect(0, 0, 0, 0), options, view, objc.ID(0))
 	view.Send(sel("addTrackingArea:"), area)
 	return area
+}
+
+// trackingAlways says whether v's tracking areas report while the app is
+// inactive, as a panel's must: a panel shows over other apps without
+// becoming the active one.
+func (v *view) trackingAlways() bool {
+	return v.surface != nil && v.surface.kind == driver.SurfacePanel
 }
 
 func (v *view) dispatch(kind driver.EventKind) {

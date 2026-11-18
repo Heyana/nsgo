@@ -102,7 +102,7 @@ func newHud(s *surface, monitor *engine.PerfMonitor) *hud {
 	layer.Send(selSetBackgroundColor, fill)
 	apple.Release(fill)
 	layer.Send(selSetCornerRadius, 8.0)
-	trackingArea(panel, false).Send(selRelease)
+	trackingArea(panel, false, false).Send(selRelease)
 
 	label := objc.ID(apple.Class("NSTextField")).Send(sel("labelWithString:"), apple.NSString(""))
 	font := objc.ID(apple.Class("NSFont")).Send(sel("monospacedSystemFontOfSize:weight:"), 10.5, 0.0)
