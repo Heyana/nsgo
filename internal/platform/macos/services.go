@@ -83,11 +83,22 @@ func (s *surface) readClipboard(it *driver.MountItem) {
 	case driver.ClipboardReadFiles:
 		ev.URIs = fileURLs(pb)
 	case driver.ClipboardReadChangeCount:
-		ev.ChangeCount = 0 // the stub: the real count is the next wave's
+		ev.ChangeCount = objc.Send[int](pb, sel("changeCount"))
 	case driver.ClipboardReadTypes:
-		ev.Types = nil // the stub
+		ev.Types = pasteboardTypes(pb)
 	}
 	s.engine.Dispatch(ev)
+}
+
+// pasteboardTypes returns the UTIs the pasteboard's first item offers.
+func pasteboardTypes(pb objc.ID) []string {
+	types := pb.Send(sel("types"))
+	n := objc.Send[uint](types, sel("count"))
+	out := make([]string, n)
+	for i := range out {
+		out[i] = apple.GoString(types.Send(sel("objectAtIndex:"), uint(i)))
+	}
+	return out
 }
 
 // notify carries out a notification's item through the notification
