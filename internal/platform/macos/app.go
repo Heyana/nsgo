@@ -174,6 +174,7 @@ func (s *surface) attach(app *engine.Engine) {
 	size := objc.Send[apple.CGRect](s.native, selBounds).Size
 	s.engine.Resize(driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)})
 	s.engine.SetEnvironment(s.env)
+	s.engine.Dispatch(driver.Event{Kind: driver.EventMonitors, Monitors: displays()})
 	if s.kind == driver.SurfaceTrayIcon {
 		observeApp()
 		return

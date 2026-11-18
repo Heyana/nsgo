@@ -156,7 +156,11 @@ type App struct {
 	Clipboard      string
 	ClipboardImage []byte
 	ClipboardFiles []string
-	Announced      []string
+	// ClipboardChangeCount and ClipboardTypes are what the clipboard reports
+	// as its change count and its first item's types.
+	ClipboardChangeCount int
+	ClipboardTypes       []string
+	Announced            []string
 	// InputSource is the keyboard input source the app selected, as a
 	// test sees it; inputSourceWas the one that selection replaced.
 	InputSource    string

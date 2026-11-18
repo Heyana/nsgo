@@ -14,6 +14,7 @@ type Env struct {
 	maximized            *Signal[bool]
 	fullScreen           *Signal[bool]
 	windowFrame          *Signal[WindowFrame]
+	monitors             []Monitor
 	keyboard             *Signal[Points]
 	keyboardDuration     *Signal[time.Duration]
 	dark, reduce, reader *Signal[bool]
@@ -138,6 +139,7 @@ func (e *Env) set(v Environment) {
 	e.maximized.Set(v.Maximized)
 	e.fullScreen.Set(v.FullScreen)
 	e.windowFrame.Set(v.WindowFrame)
+
 	e.keyboard.Set(v.KeyboardHeight)
 	e.keyboardDuration.Set(v.KeyboardDuration)
 	e.systemDark = v.Dark
@@ -187,6 +189,13 @@ func (e *Env) FullScreen() bool { return e.fullScreen.Get() }
 // WindowFrame returns where the window is and how large: the core's part
 // of desktop.Frame, which apps use.
 func (e *Env) WindowFrame() WindowFrame { return e.windowFrame.Get() }
+
+// setMonitors records the screens an EventMonitors reports.
+func (e *Env) setMonitors(m []Monitor) { e.monitors = m }
+
+// Monitors returns each screen's frame and usable area, empty where the
+// platform reports none: where an app places a window of its own.
+func (e *Env) Monitors() []Monitor { return e.monitors }
 
 // KeyboardDuration returns how long the keyboard takes to move.
 func (e *Env) KeyboardDuration() time.Duration { return e.keyboardDuration.Get() }

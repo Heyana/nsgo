@@ -86,6 +86,14 @@ func OnOpenFiles(cx *core.Scope, fn func(paths []string)) { cx.OnOpenFiles(fn) }
 // under it, and a menu its secondary click shows.
 func NewTray(cx *core.Scope, opts TrayOptions) *Tray { return cx.NewTray(opts) }
 
+// ClipboardChangeCount reports the pasteboard's change count, which grows
+// on every copy, so an app polls it instead of the content.
+func ClipboardChangeCount(cx *core.Scope, done func(int)) { cx.ClipboardChangeCount(done) }
+
+// ClipboardTypes reports the types of the pasteboard's first item, so an
+// app can skip what a password manager marks as transient.
+func ClipboardTypes(cx *core.Scope, done func([]string)) { cx.ClipboardTypes(done) }
+
 // RegisterHotKey runs fn when key, in core.Scope.OnKey's form such as
 // "alt+space", is pressed whichever app has the focus, while the current
 // owner lives.

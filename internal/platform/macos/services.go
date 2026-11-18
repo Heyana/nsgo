@@ -82,6 +82,10 @@ func (s *surface) readClipboard(it *driver.MountItem) {
 		ev.Finished = len(fileURLs(pb)) == 0 && availableType(pb, imageTypes) != ""
 	case driver.ClipboardReadFiles:
 		ev.URIs = fileURLs(pb)
+	case driver.ClipboardReadChangeCount:
+		ev.ChangeCount = 0 // the stub: the real count is the next wave's
+	case driver.ClipboardReadTypes:
+		ev.Types = nil // the stub
 	}
 	s.engine.Dispatch(ev)
 }
@@ -534,3 +538,7 @@ func (s *surface) pickScreenColor(id uint32) {
 	})
 	sampler.Send(sel("showSamplerWithSelectionHandler:"), done)
 }
+
+// displays returns each screen's frame, usable area and scale. The stub
+// reports none; Task 1 fills it from NSScreen.
+func displays() []driver.Monitor { return nil }

@@ -663,6 +663,10 @@ func (a *App) readClipboard(it *driver.MountItem) {
 		ev.Finished = len(a.ClipboardImage) > 0
 	case driver.ClipboardReadFiles:
 		ev.URIs = slices.Clone(a.ClipboardFiles)
+	case driver.ClipboardReadChangeCount:
+		ev.ChangeCount = a.ClipboardChangeCount
+	case driver.ClipboardReadTypes:
+		ev.Types = slices.Clone(a.ClipboardTypes)
 	}
 	a.post(ev)
 }

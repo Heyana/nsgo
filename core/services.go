@@ -129,6 +129,21 @@ func (cx *Scope) ReadClipboard(done func(text string)) {
 	cx.readClipboard(driver.ClipboardReadText, func(ev driver.Event) { done(ev.Text) })
 }
 
+// ClipboardChangeCount calls done with the pasteboard's change count, an
+// integer that grows on every copy, so a poller hears of a change without
+// reading the content. 0 where the platform reports none.
+func (cx *Scope) ClipboardChangeCount(done func(n int)) {
+	cx.readClipboard(driver.ClipboardReadChangeCount, func(ev driver.Event) { done(ev.ChangeCount) })
+}
+
+// ClipboardTypes calls done with the types the pasteboard's first item
+// offers, such as "public.utf8-plain-text" and the markers a password
+// manager sets; nil where the platform reports none. An app checks them
+// before reading the content.
+func (cx *Scope) ClipboardTypes(done func(types []string)) {
+	cx.readClipboard(driver.ClipboardReadTypes, func(ev driver.Event) { done(ev.Types) })
+}
+
 // HasClipboardText calls done with whether the clipboard holds text,
 // without reading it, so iOS shows no paste notice.
 func (cx *Scope) HasClipboardText(done func(bool)) {
