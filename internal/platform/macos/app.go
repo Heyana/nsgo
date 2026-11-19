@@ -176,8 +176,9 @@ func newPanel(cfg driver.SurfaceConfig) objc.ID {
 	}
 	if os.Getenv("NSGO_PANEL_DEBUG") != "" {
 		frame := objc.Send[apple.CGRect](p, sel("frame"))
-		fmt.Printf("nsgo-panel: want=%v mask=%v frame=%.1fx%.1f narrow=%v\n",
-			float64(cfg.Width), mask, frame.Size.Width, frame.Size.Height, narrow)
+		appearance := p.Send(sel("effectiveAppearance")).Send(sel("name"))
+		fmt.Printf("nsgo-panel: want=%v mask=%v frame=%.1fx%.1f narrow=%v appearance=%v\n",
+			float64(cfg.Width), mask, frame.Size.Width, frame.Size.Height, narrow, apple.GoString(appearance))
 	}
 	p.Send(sel("setTitlebarAppearsTransparent:"), true)
 	p.Send(sel("setTitleVisibility:"), titleHidden)
