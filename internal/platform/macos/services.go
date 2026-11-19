@@ -417,25 +417,18 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 		}
 	}
 	frame.Origin.Y = top - frame.Size.Height
-	// The panel's frame change eases on the app's curve: the steps are
-	// scheduled here, so the shape of the motion is this side's to say,
-	// while setFrame:display:animate: only offers AppKit's own.
+	// The mask and the radius go on before the motion starts, not after it
+	// is under way: setStyleMask: costs 2.4-5.8 ms (half a 144 Hz frame) and
+	// running it once the steps are scheduled made the first frames arrive
+	// late. Ahead of the animation the same work delays nothing that moves.
 	probe := os.Getenv("NSGO_PANEL_DEBUG") != ""
-	animStart := time.Now()
-	if f.Animated && s.kind == driver.SurfacePanel && !s.env.ReduceMotion {
-		s.animateFrame(w, frame)
-	} else {
-		w.Send(sel("setFrame:display:animate:"), frame, true, f.Animated)
-	}
-	anim := time.Since(animStart)
-	// Resizing the window changes how far the corner radius may reach: a panel
-	// narrowing to a strip must square off, or its corners meet mid-edge and
-	// the window is clipped into a pointed lens.
+	var rad, maskCost time.Duration
+	var width driver.Points
 	if s.kind == driver.SurfacePanel {
-		width := driver.Points(content.Width)
+		width = driver.Points(content.Width)
 		radStart := time.Now()
 		s.native.Send(selLayer).Send(sel("setCornerRadius:"), panelCornerRadius(width))
-		rad := time.Since(radStart)
+		rad = time.Since(radStart)
 		// The title style is what clips a window into AppKit's rounded frame.
 		// Shrunk to the strip's 6pt it would clip the whole window into a
 		// pointed lens, so the strip drops the title style and is borderless
@@ -457,14 +450,25 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 				w.Send(sel("setTitleVisibility:"), titleHidden)
 			}
 		}
-		if probe {
-			if total := time.Since(t0); total >= 2*time.Millisecond {
-				fmt.Printf("nsgo-panel-frame: t=%d width=%.1f total=%.2fms anim=%.2fms radius=%.2fms mask=%.2fms\n",
-					time.Now().UnixMilli()%60000, width, float64(total)/float64(time.Millisecond),
-					float64(anim)/float64(time.Millisecond),
-					float64(rad)/float64(time.Millisecond),
-					float64(time.Since(maskStart))/float64(time.Millisecond))
-			}
+		maskCost = time.Since(maskStart)
+	}
+	// The panel's frame change eases on the app's curve: the steps are
+	// scheduled here, so the shape of the motion is this side's to say,
+	// while setFrame:display:animate: only offers AppKit's own.
+	animStart := time.Now()
+	if f.Animated && s.kind == driver.SurfacePanel && !s.env.ReduceMotion {
+		s.animateFrame(w, frame)
+	} else {
+		w.Send(sel("setFrame:display:animate:"), frame, true, f.Animated)
+	}
+	anim := time.Since(animStart)
+	if probe && s.kind == driver.SurfacePanel {
+		if total := time.Since(t0); total >= 2*time.Millisecond {
+			fmt.Printf("nsgo-panel-frame: t=%d width=%.1f total=%.2fms anim=%.2fms radius=%.2fms mask=%.2fms\n",
+				time.Now().UnixMilli()%60000, width, float64(total)/float64(time.Millisecond),
+				float64(anim)/float64(time.Millisecond),
+				float64(rad)/float64(time.Millisecond),
+				float64(maskCost)/float64(time.Millisecond))
 		}
 	}
 }
