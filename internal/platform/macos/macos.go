@@ -175,9 +175,6 @@ type surface struct {
 	openFrame driver.WindowFrame
 
 	batch uint64 // batches applied
-	// reveal is the expansion whose mask waits for the content laid out
-	// for the panel's new size (see pendingReveal).
-	reveal *pendingReveal
 	// stickyBound are the scroll views with sticky cells whose insets
 	// follow animated values.
 	stickyBound map[*view]bool
@@ -2754,11 +2751,6 @@ func (s *surface) applyBatches(budget time.Duration, alone bool) {
 		if budget > 0 && time.Since(start) >= budget {
 			break
 		}
-	}
-	// Each batch that lands for the new size pushes the reveal back: the mask
-	// moves once the panel has stopped laying itself out.
-	if s.reveal != nil {
-		s.reveal.kick(s)
 	}
 	rest := copy(s.waiting, s.waiting[n:])
 	clear(s.waiting[rest:])
