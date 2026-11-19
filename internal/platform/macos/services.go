@@ -436,13 +436,14 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 		radStart := time.Now()
 		s.native.Send(selLayer).Send(sel("setCornerRadius:"), panelCornerRadius(width))
 		rad := time.Since(radStart)
-		// Panels keep the borderless mask at every width. Flipping it to the
-		// titled one when the panel narrowed back to the strip cost 2.4–5.8 ms
-		// in setStyleMask: — half a 144 Hz frame — and the frame it landed on
-		// dropped, twice per open and close. Comparing the two renders puts the
-		// difference at 0.38% of the pixels (corner antialiasing): the layer's
-		// corner radius already draws the rounded panel.
+		// The title style is what clips a window into AppKit's rounded frame.
+		// Shrunk to the strip's 6pt it would clip the whole window into a
+		// pointed lens, so the strip drops the title style and is borderless
+		// and square; widening puts the rounded frame back.
 		mask := uint(styleNonactivating | maskFullSize)
+		if width >= 2*panelRadius {
+			mask |= styleTitled
+		}
 		maskStart := time.Now()
 		if cur := objc.Send[uint](w, sel("styleMask")); cur != mask {
 			w.Send(sel("setStyleMask:"), mask)
