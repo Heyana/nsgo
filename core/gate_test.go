@@ -74,6 +74,8 @@ var gated = map[string]service{
 	"WatchMotion":                   serviceMotion,
 	"SetWebCookies":                 serviceWebCookies,
 	"FrontmostApp":                  serviceFrontmostApp,
+	"ClipboardChangeCount":          serviceClipboard,
+	"ClipboardTypes":                serviceClipboard,
 	"CanReadFrontmostApp":           serviceFrontmostApp,
 }
 
@@ -97,7 +99,7 @@ var exempt = map[string][]string{
 		"SetShutdownMode", "SetMainWindow", "OnReopen", "NewTray", "RegisterHotKey", "SetDockVisible",
 		"SetLaunchAtLogin", "OnOpenFiles", "OnOpenLinks", "CheckForUpdates", "InstallPackage", "CanInstallPackages",
 		"OpenInstallSettings", "DataDir", "CacheDir", "LogsDir", "OpenFile", "Share", "RevealFile", "TrashFile", "KeepAwake",
-		"SetTaskProgress", "SetDockMenu", "AddRecentFile", "ClearRecentFiles", "LookUp"},
+		"SetTaskProgress", "SetDockMenu", "AddRecentFile", "ClearRecentFiles", "LookUp", "CursorPoint"},
 	"stopping what the code's own requests started, which asked the gate": {"StopSpeaking"},
 }
 

@@ -274,6 +274,10 @@ const (
 	EventPurchaseUpdate
 	// EventWebCookies answers ItemWebCookies Count, Text why it failed (NoWebCookieStore where the platform has no store).
 	EventWebCookies
+	// EventCursorPoint answers ItemCursorPoint Count with Point: where the
+	// pointer is, in points from the primary display's top left, y down, the
+	// coordinates DisplayInfo frames and ShowAt take.
+	EventCursorPoint
 )
 
 // EventVideoPause reports that the platform paused video ID, not the app's Paused: Index is why (VideoPauseInterruption, ...). An EventMask has no room for another kind, so it shares EventImageInfo's, an answer that names no view and is never in a mask; Android's Protocol.java mirrors it.
@@ -366,6 +370,10 @@ type Event struct {
 	// Delta and Precise are a wheel's (EventWheel).
 	Delta   Point
 	Precise bool
+	// ChangeCount is the pasteboard's change count, which grows on every copy.
+	ChangeCount int
+	// Types are the UTIs the pasteboard's first item offers.
+	Types []string
 }
 
 // Mergeable reports whether a later event of the same kind and view

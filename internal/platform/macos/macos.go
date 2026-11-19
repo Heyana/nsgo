@@ -1712,6 +1712,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemLookUp:
 			s.lookUp(it.Value, it.Frame)
 			continue
+		case driver.ItemCursorPoint:
+			s.engine.Dispatch(driver.Event{Kind: driver.EventCursorPoint, Count: it.Count, Point: cursorPoint()})
+			continue
 		case driver.ItemCheckForUpdates:
 			s.checkForUpdates(it.On, it.Count)
 			continue

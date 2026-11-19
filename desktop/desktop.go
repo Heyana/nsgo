@@ -245,3 +245,12 @@ func OrderFront(cx *core.Scope) { cx.OrderFront() }
 
 // SetMenuBar says when Windows and Linux show the menu bar the window draws for the application menu, which a window with a hidden title bar has none of (SetTitleBar); macOS's is the system's and always shows.
 func SetMenuBar(cx *core.Scope, mode MenuBarMode) { cx.SetMenuBar(mode) }
+
+// CursorPoint calls done with where the pointer is, in screen coordinates,
+// from the primary display's top left, y down, as Env.Displays and ShowAt
+// take them: a panel that opens at the edge the pointer hovers asks it on a
+// timer, since the pointer outside the app reports no events.
+func CursorPoint(cx *core.Scope, done func(core.Point)) { cx.CursorPoint(done) }
+
+// Monitors returns the desktop displays, the primary first.
+func Monitors(cx *core.Scope) []core.DisplayInfo { return cx.Env().Displays() }

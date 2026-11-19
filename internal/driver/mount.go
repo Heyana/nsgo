@@ -362,6 +362,10 @@ const (
 	ItemWebCookies
 	// ItemLookUp shows the platform's dictionary panel for Value, drawn over Frame, a box in the surface.
 	ItemLookUp
+	// ItemCursorPoint asks where the pointer is; the platform answers with
+	// EventCursorPoint carrying Count and Point, in points from the primary
+	// display's top left, y down, as DisplayInfo frames are.
+	ItemCursorPoint
 )
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.
