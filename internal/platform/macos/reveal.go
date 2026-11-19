@@ -14,7 +14,7 @@ import (
 )
 
 // revealDuration is how long a panel takes to grow into its open size.
-const revealDuration = 0.18
+const revealDuration = 0.22
 
 // pendingReveal is an expansion whose window already has its open size, and
 // whose mask waits for the content laid out for that size before it starts
@@ -133,12 +133,15 @@ func (s *surface) revealFrame(w objc.ID, to apple.CGRect) bool {
 		return true
 	}
 	// Collapsing: the window keeps its width while the mask narrows, and
-	// takes the strip size once the content is out of sight.
+	// takes the strip size once the content is out of sight. The content
+	// fades out on the same curve, so the frame it is replaced by — the
+	// strip's own skin — appears where nothing was left to notice.
 	animateMask(mask, toW, to.Size.Height, startW, startH, endW, endH)
+	fadeLayer(layer, 1, 0)
 	time.AfterFunc(time.Duration(revealDuration*float64(time.Second)), func() {
 		apple.OnMain(func() {
-			layer.Send(sel("setMask:"), objc.ID(0))
-			w.Send(sel("setFrame:display:animate:"), to, true, false)
+			apple.WithoutAnimation(func() { layer.Send(sel("setOpacity:"), 1.0) })
+			w.Send(sel("setFrame:display:animate:"), to, false, false)
 			s.applyPanelChrome(w)
 			mask.Send(selRelease)
 		})
@@ -197,7 +200,10 @@ func animateMask(mask objc.ID, panelW, panelH, startW, startH, endW, endH float6
 	}
 	setMaskFrame(mask, panelW, panelH, endW, endH)
 	basic := objc.ID(apple.Class("CABasicAnimation"))
-	curve := objc.ID(apple.Class("CAMediaTimingFunction")).Send(sel("functionWithName:"), apple.NSString("easeOut"))
+	// The panel's curve: fast out of the gate, slow into the stop, so the
+	// strip reads as snapping open rather than sliding at a constant rate.
+	curve := objc.ID(apple.Class("CAMediaTimingFunction")).Send(
+		sel("functionWithControlPoints::::"), 0.16, 1.0, 0.3, 1.0)
 	dur := objc.ID(apple.Class("NSNumber")).Send(sel("numberWithDouble:"), revealDuration)
 	number := objc.ID(apple.Class("NSNumber"))
 
@@ -228,6 +234,25 @@ func animateMask(mask objc.ID, panelW, panelH, startW, startH, endW, endH float6
 	positionY.Send(sel("setDuration:"), dur)
 	positionY.Send(sel("setTimingFunction:"), curve)
 	mask.Send(sel("addAnimation:forKey:"), positionY, apple.NSString("nsgoRevealY"))
+}
+
+// fadeLayer eases a layer's opacity from one value to the other, over the
+// same duration and curve as the mask, and leaves the model on to.
+func fadeLayer(layer objc.ID, from, to float64) {
+	if layer == 0 {
+		return
+	}
+	curve := objc.ID(apple.Class("CAMediaTimingFunction")).Send(
+		sel("functionWithControlPoints::::"), 0.16, 1.0, 0.3, 1.0)
+	fade := objc.ID(apple.Class("CABasicAnimation")).Send(sel("animationWithKeyPath:"), apple.NSString("opacity"))
+	number := objc.ID(apple.Class("NSNumber"))
+	fade.Send(sel("setFromValue:"), number.Send(sel("numberWithDouble:"), from))
+	fade.Send(sel("setToValue:"), number.Send(sel("numberWithDouble:"), to))
+	fade.Send(sel("setDuration:"), objc.ID(apple.Class("NSNumber")).Send(sel("numberWithDouble:"), revealDuration))
+	fade.Send(sel("setTimingFunction:"), curve)
+	model := to
+	apple.WithoutAnimation(func() { layer.Send(sel("setOpacity:"), model) })
+	layer.Send(sel("addAnimation:forKey:"), fade, apple.NSString("nsgoRevealFade"))
 }
 
 // applyPanelChrome fits the panel's frame chrome to its current width: the
