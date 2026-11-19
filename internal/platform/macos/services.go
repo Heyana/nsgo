@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/ebitengine/purego"
@@ -415,9 +416,9 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 		}
 	}
 	frame.Origin.Y = top - frame.Size.Height
-	// The panel's frame change eases on the app's curve: the animator runs
-	// inside an animation context, which is what carries a non-linear timing
-	// function, while setFrame:display:animate: only offers AppKit's own.
+	// The panel's frame change eases on the app's curve: the steps are
+	// scheduled here, so the shape of the motion is this side's to say,
+	// while setFrame:display:animate: only offers AppKit's own.
 	if f.Animated && s.kind == driver.SurfacePanel && !s.env.ReduceMotion {
 		s.animateFrame(w, frame)
 	} else {
@@ -464,33 +465,75 @@ const frameDuration = 0.2
 // AppKit's own curve and duration with it; stepping the frame ourselves
 // keeps the shape of the motion on this side, where the app can say it.
 // The curve is a quart-out: quick off the mark, settling at the end.
+//
+// One step per screen refresh, not one per 16 ms: a fixed 16 ms caps the
+// panel at 62 frames a second whatever the display does, which reads as a
+// 60 Hz slide show on a 120 or 144 Hz screen. Each step is scheduled
+// against the animation's own clock, so a late frame is dropped rather
+// than stretching the move — and a step from an older animation that a
+// newer one has replaced stops instead of fighting it for the window.
 func (s *surface) animateFrame(w objc.ID, to apple.CGRect) {
 	from := objc.Send[apple.CGRect](w, sel("frame"))
 	begin := time.Now()
+	gen := atomic.AddUint64(&s.animGen, 1)
+	stepLen := time.Duration(float64(time.Second) / displayFPS(w))
+	tick := 0
+	prev := time.Duration(0)
 	var step func()
 	step = func() {
 		apple.OnMain(func() {
-			t := float64(time.Since(begin)) / float64(frameDuration*float64(time.Second))
+			if atomic.LoadUint64(&s.animGen) != gen {
+				return
+			}
+			elapsed := time.Since(begin)
+			t := float64(elapsed) / float64(frameDuration*float64(time.Second))
 			if t >= 1 {
 				w.Send(sel("setFrame:display:"), to, true)
 				return
 			}
 			eased := 1 - math.Pow(1-t, 4)
 			if os.Getenv("NSGO_PANEL_DEBUG") != "" {
-				fmt.Printf("nsgo-panel-ease: t=%.2f w=%.1f h=%.1f\n", eased,
+				fmt.Printf("nsgo-panel-ease: frame=%d el=%.2fms dt=%.2fms eased=%.2f w=%.1f h=%.1f\n",
+					tick, float64(elapsed)/float64(time.Millisecond),
+					float64(elapsed-prev)/float64(time.Millisecond), eased,
 					from.Size.Width+(to.Size.Width-from.Size.Width)*eased,
 					from.Size.Height+(to.Size.Height-from.Size.Height)*eased)
 			}
+			prev = elapsed
 			w.Send(sel("setFrame:display:"), apple.Rect(
 				from.Origin.X+(to.Origin.X-from.Origin.X)*eased,
 				from.Origin.Y+(to.Origin.Y-from.Origin.Y)*eased,
 				from.Size.Width+(to.Size.Width-from.Size.Width)*eased,
 				from.Size.Height+(to.Size.Height-from.Size.Height)*eased,
 			), true)
-			time.AfterFunc(16*time.Millisecond, step)
+			tick++
+			next := time.Until(begin.Add(time.Duration(tick) * stepLen))
+			if next < 0 {
+				next = 0
+			}
+			time.AfterFunc(next, step)
 		})
 	}
 	step()
+}
+
+// displayFPS is how often the screen the window is on redraws: 60 on an
+// ordinary display, 120 on a ProMotion one, 144 or more on a fast external.
+// Reading it per animation keeps a panel that was dragged between screens
+// following the one it is on now; anything unreadable keeps the old 60.
+func displayFPS(w objc.ID) float64 {
+	screen := w.Send(sel("screen"))
+	if screen == 0 {
+		screen = objc.ID(apple.Class("NSScreen")).Send(sel("mainScreen"))
+	}
+	if screen == 0 || screen.Send(sel("respondsToSelector:"), sel("maximumFramesPerSecond")) == 0 {
+		return 60
+	}
+	fps := objc.Send[float64](screen, sel("maximumFramesPerSecond"))
+	if fps < 30 || fps > 360 {
+		return 60
+	}
+	return fps
 }
 
 // panelCornerRadius is the radius a panel's content layer rounds its corners

@@ -175,6 +175,11 @@ type surface struct {
 	openFrame driver.WindowFrame
 
 	batch uint64 // batches applied
+	// animGen numbers the panel frame animations: a step from an animation
+	// a newer one replaced sees the number has moved and stops, so an
+	// open that turns into a close mid-way is one motion, not two loops
+	// writing frames at once.
+	animGen uint64
 	// stickyBound are the scroll views with sticky cells whose insets
 	// follow animated values.
 	stickyBound map[*view]bool
