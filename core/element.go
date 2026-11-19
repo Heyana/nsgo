@@ -581,6 +581,31 @@ type Ref struct {
 	n *node
 }
 
+// SetStyle replaces the element's own style and restyles it in place. What
+// the element already holds stays mounted: the change costs one style item,
+// where rebuilding the subtree it belongs to would mount every view again.
+func (r *Ref) SetStyle(s Style) {
+	if r == nil || r.n == nil || r.n.deleted {
+		return
+	}
+	r.n.base = s
+	if r.t.restyle(r.n) {
+		r.t.markLayout(r.n)
+	}
+}
+
+// SetClass replaces the element's classes the same way SetStyle replaces its
+// style: in place, with the subtree left as it is.
+func (r *Ref) SetClass(class string) {
+	if r == nil || r.n == nil || r.n.deleted {
+		return
+	}
+	r.t.setClasses(r.n, class)
+	if r.t.restyle(r.n) {
+		r.t.markLayout(r.n)
+	}
+}
+
 // Bounds returns the element's frame in surface points after the last
 // commit, and false while it is not mounted.
 func (r *Ref) Bounds() (Bounds, bool) {

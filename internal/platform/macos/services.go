@@ -507,6 +507,12 @@ func (s *surface) animateFrame(w objc.ID, to apple.CGRect) {
 			t := float64(elapsed) / float64(frameDuration*float64(time.Second))
 			if t >= 1 {
 				w.Send(sel("setFrame:display:"), to, true)
+				// The window grew or shrank under the pointer, and what it
+				// covers has just changed with it: pick again so a view the
+				// pointer never left gets its enter back. Without this the
+				// pick a batch made mid-move leaves a panel that still holds
+				// the pointer looking left, and its hover timer closes it.
+				s.pickHere()
 				return
 			}
 			eased := 1 - math.Pow(1-t, 4)
