@@ -10,6 +10,8 @@
 package macos
 
 import (
+	"fmt"
+	"os"
 	"runtime"
 	"slices"
 	"strings"
@@ -1383,12 +1385,23 @@ func (s *surface) RequestFrame() {
 func (s *surface) apply(b *driver.MountBatch) {
 	defer func() { s.openFrame = driver.WindowFrame{} }()
 	s.batch++
+	prof := os.Getenv("NSGO_PANEL_DEBUG") != ""
+	begin := time.Now()
+	var lastT time.Time
+	var lastK driver.ItemKind
+	hits := map[driver.ItemKind]time.Duration{}
 	var lb *layoutBatch
 	if b.LayoutAnimation != nil && !s.env.ReduceMotion {
 		lb = &layoutBatch{anim: b.LayoutAnimation, created: map[driver.NodeID]bool{}, deleted: map[objc.ID]bool{}}
 	}
 	for i := range b.Items {
 		it := &b.Items[i]
+		if prof {
+			if !lastT.IsZero() {
+				hits[lastK] += time.Since(lastT)
+			}
+			lastT, lastK = time.Now(), it.Kind
+		}
 		switch it.Kind {
 		case driver.ItemCreate:
 			for len(s.views) <= int(it.ID) {
@@ -1709,6 +1722,21 @@ func (s *surface) apply(b *driver.MountBatch) {
 			if w := v.native.Send(selWindow); w != 0 {
 				w.Send(selMakeFirstResponer, objc.ID(0))
 			}
+		}
+	}
+	if prof {
+		if !lastT.IsZero() {
+			hits[lastK] += time.Since(lastT)
+		}
+		if d := time.Since(begin); d >= 4*time.Millisecond {
+			fmt.Printf("nsgo-apply: t=%d items=%d total=%.2fms", time.Now().UnixMilli()%60000,
+				len(b.Items), float64(d)/float64(time.Millisecond))
+			for k, v := range hits {
+				if v >= time.Millisecond {
+					fmt.Printf(" k%d=%.1fms", k, float64(v)/float64(time.Millisecond))
+				}
+			}
+			fmt.Println()
 		}
 	}
 	s.root = b.Root
@@ -2755,6 +2783,12 @@ func (s *surface) applyBatches(budget time.Duration, alone bool) {
 		s.apply(b)
 		if budget > 0 && time.Since(start) >= budget {
 			break
+		}
+	}
+	if os.Getenv("NSGO_PANEL_DEBUG") != "" {
+		if d := time.Since(start); d >= 4*time.Millisecond {
+			fmt.Printf("nsgo-panel-work: t=%d batches=%d work=%.2fms\n",
+				time.Now().UnixMilli()%60000, n, float64(d)/float64(time.Millisecond))
 		}
 	}
 	rest := copy(s.waiting, s.waiting[n:])

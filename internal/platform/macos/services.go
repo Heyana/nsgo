@@ -393,6 +393,7 @@ func nsApp() objc.ID { return objc.ID(apple.Class("NSApplication")).Send(sel("sh
 // up, so the top edge stays where it is unless f moves it.
 func (s *surface) setWindowFrame(f driver.WindowFrame) {
 	w := s.window
+	t0 := time.Now()
 	frame := objc.Send[apple.CGRect](w, sel("frame"))
 	top := frame.Origin.Y + frame.Size.Height
 	if f.Width > 0 {
@@ -419,25 +420,30 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 	// The panel's frame change eases on the app's curve: the steps are
 	// scheduled here, so the shape of the motion is this side's to say,
 	// while setFrame:display:animate: only offers AppKit's own.
+	probe := os.Getenv("NSGO_PANEL_DEBUG") != ""
+	animStart := time.Now()
 	if f.Animated && s.kind == driver.SurfacePanel && !s.env.ReduceMotion {
 		s.animateFrame(w, frame)
 	} else {
 		w.Send(sel("setFrame:display:animate:"), frame, true, f.Animated)
 	}
+	anim := time.Since(animStart)
 	// Resizing the window changes how far the corner radius may reach: a panel
 	// narrowing to a strip must square off, or its corners meet mid-edge and
 	// the window is clipped into a pointed lens.
 	if s.kind == driver.SurfacePanel {
 		width := driver.Points(content.Width)
+		radStart := time.Now()
 		s.native.Send(selLayer).Send(sel("setCornerRadius:"), panelCornerRadius(width))
-		// The title style is what clips a window into AppKit's rounded frame.
-		// Shrunk to the strip's 6pt it would clip the whole window into a
-		// pointed lens, so the strip drops the title style and is borderless
-		// and square; widening puts the rounded frame back.
+		rad := time.Since(radStart)
+		// Panels keep the borderless mask at every width. Flipping it to the
+		// titled one when the panel narrowed back to the strip cost 2.4–5.8 ms
+		// in setStyleMask: — half a 144 Hz frame — and the frame it landed on
+		// dropped, twice per open and close. Comparing the two renders puts the
+		// difference at 0.38% of the pixels (corner antialiasing): the layer's
+		// corner radius already draws the rounded panel.
 		mask := uint(styleNonactivating | maskFullSize)
-		if width >= 2*panelRadius {
-			mask |= styleTitled
-		}
+		maskStart := time.Now()
 		if cur := objc.Send[uint](w, sel("styleMask")); cur != mask {
 			w.Send(sel("setStyleMask:"), mask)
 			// A borderless window gets no shadow of its own, and a style change
@@ -450,9 +456,14 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 				w.Send(sel("setTitleVisibility:"), titleHidden)
 			}
 		}
-		if os.Getenv("NSGO_PANEL_DEBUG") != "" {
-			fmt.Printf("nsgo-panel-frame: width=%.1f mask=%v shadow=%v\n",
-				width, objc.Send[uint](w, sel("styleMask")), objc.Send[bool](w, sel("hasShadow")))
+		if probe {
+			if total := time.Since(t0); total >= 2*time.Millisecond {
+				fmt.Printf("nsgo-panel-frame: t=%d width=%.1f total=%.2fms anim=%.2fms radius=%.2fms mask=%.2fms\n",
+					time.Now().UnixMilli()%60000, width, float64(total)/float64(time.Millisecond),
+					float64(anim)/float64(time.Millisecond),
+					float64(rad)/float64(time.Millisecond),
+					float64(time.Since(maskStart))/float64(time.Millisecond))
+			}
 		}
 	}
 }
@@ -479,12 +490,14 @@ func (s *surface) animateFrame(w objc.ID, to apple.CGRect) {
 	stepLen := time.Duration(float64(time.Second) / displayFPS(w))
 	tick := 0
 	prev := time.Duration(0)
+	due := begin
 	var step func()
 	step = func() {
 		apple.OnMain(func() {
 			if atomic.LoadUint64(&s.animGen) != gen {
 				return
 			}
+			wait := time.Since(due)
 			elapsed := time.Since(begin)
 			t := float64(elapsed) / float64(frameDuration*float64(time.Second))
 			if t >= 1 {
@@ -492,25 +505,29 @@ func (s *surface) animateFrame(w objc.ID, to apple.CGRect) {
 				return
 			}
 			eased := 1 - math.Pow(1-t, 4)
-			if os.Getenv("NSGO_PANEL_DEBUG") != "" {
-				fmt.Printf("nsgo-panel-ease: frame=%d el=%.2fms dt=%.2fms eased=%.2f w=%.1f h=%.1f\n",
-					tick, float64(elapsed)/float64(time.Millisecond),
-					float64(elapsed-prev)/float64(time.Millisecond), eased,
-					from.Size.Width+(to.Size.Width-from.Size.Width)*eased,
-					from.Size.Height+(to.Size.Height-from.Size.Height)*eased)
-			}
-			prev = elapsed
+			setStart := time.Now()
 			w.Send(sel("setFrame:display:"), apple.Rect(
 				from.Origin.X+(to.Origin.X-from.Origin.X)*eased,
 				from.Origin.Y+(to.Origin.Y-from.Origin.Y)*eased,
 				from.Size.Width+(to.Size.Width-from.Size.Width)*eased,
 				from.Size.Height+(to.Size.Height-from.Size.Height)*eased,
 			), true)
+			set := time.Since(setStart)
+			if os.Getenv("NSGO_PANEL_DEBUG") != "" {
+				fmt.Printf("nsgo-panel-ease: t=%d frame=%d el=%.2fms dt=%.2fms wait=%.2fms set=%.2fms eased=%.2f\n",
+					time.Now().UnixMilli()%60000, tick,
+					float64(elapsed)/float64(time.Millisecond),
+					float64(elapsed-prev)/float64(time.Millisecond),
+					float64(wait)/float64(time.Millisecond),
+					float64(set)/float64(time.Millisecond), eased)
+			}
+			prev = elapsed
 			tick++
 			next := time.Until(begin.Add(time.Duration(tick) * stepLen))
 			if next < 0 {
 				next = 0
 			}
+			due = begin.Add(time.Duration(tick) * stepLen)
 			time.AfterFunc(next, step)
 		})
 	}
