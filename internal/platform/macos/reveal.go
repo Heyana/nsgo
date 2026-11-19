@@ -25,9 +25,11 @@ type pendingReveal struct {
 	layer  objc.ID
 	window objc.ID
 	panelW float64
+	panelH float64
 	startW float64
+	startH float64
 	endW   float64
-	h      float64
+	endH   float64
 	start  *time.Timer
 	at     time.Time
 }
@@ -104,11 +106,11 @@ func (s *surface) revealFrame(w objc.ID, to apple.CGRect) bool {
 	// The mask starts at the width the panel had and ends at the width it
 	// has: right-aligned either way, since the panel is anchored to the edge.
 	startW, endW := fromW, toW
-	h := to.Size.Height
+	startH, endH := from.Size.Height, to.Size.Height
 	mask := objc.ID(apple.Class("CALayer")).Send(selNew)
 	mask.Send(sel("setBackgroundColor:"),
 		objc.ID(apple.Class("NSColor")).Send(sel("blackColor")).Send(sel("CGColor")))
-	setMaskFrame(mask, toW, startW, h)
+	setMaskFrame(mask, toW, to.Size.Height, startW, startH)
 	layer.Send(sel("setMask:"), mask)
 
 	// growing: the window is already the full panel, so the content lays out
@@ -123,7 +125,8 @@ func (s *surface) revealFrame(w objc.ID, to apple.CGRect) bool {
 		// The mask moves when that content has been laid out, not now: see
 		// startPendingReveal. A timer is the fallback for an expansion that
 		// brings no new batch.
-		pr := &pendingReveal{mask: mask, layer: layer, window: w, panelW: toW, startW: startW, endW: endW, h: h, at: time.Now()}
+		pr := &pendingReveal{mask: mask, layer: layer, window: w, panelW: toW, panelH: to.Size.Height,
+			startW: startW, startH: startH, endW: endW, endH: endH, at: time.Now()}
 		pr.hideChrome()
 		pr.kick(s)
 		s.reveal = pr
@@ -131,7 +134,7 @@ func (s *surface) revealFrame(w objc.ID, to apple.CGRect) bool {
 	}
 	// Collapsing: the window keeps its width while the mask narrows, and
 	// takes the strip size once the content is out of sight.
-	animateMask(mask, toW, startW, endW, h)
+	animateMask(mask, toW, to.Size.Height, startW, startH, endW, endH)
 	time.AfterFunc(time.Duration(revealDuration*float64(time.Second)), func() {
 		apple.OnMain(func() {
 			layer.Send(sel("setMask:"), objc.ID(0))
@@ -158,7 +161,7 @@ func (s *surface) startPendingReveal() {
 	if os.Getenv("NSGO_PANEL_DEBUG") != "" {
 		fmt.Printf("nsgo-panel-reveal: content settled after %v\n", time.Since(pr.at).Round(time.Millisecond))
 	}
-	animateMask(pr.mask, pr.panelW, pr.startW, pr.endW, pr.h)
+	animateMask(pr.mask, pr.panelW, pr.panelH, pr.startW, pr.startH, pr.endW, pr.endH)
 	time.AfterFunc(time.Duration(revealDuration*float64(time.Second)), func() {
 		apple.OnMain(func() {
 			pr.layer.Send(sel("setMask:"), objc.ID(0))
@@ -168,23 +171,31 @@ func (s *surface) startPendingReveal() {
 	})
 }
 
-// setMaskFrame places the reveal mask: h tall, width wide, flush to the
-// content view's right edge, in its own coordinates.
-func setMaskFrame(mask objc.ID, panelW, width, h float64) {
+// setMaskFrame places the reveal mask: height tall, width wide, flush to the
+// content view's right edge and centred vertically, in its own coordinates.
+// The panel grows from the edge outwards and from its middle upwards and
+// downwards, which is how the strip turns into the panel.
+func setMaskFrame(mask objc.ID, panelW, panelH, width, height float64) {
 	if width < 1 {
 		width = 1
 	}
-	mask.Send(selSetFrame, apple.Rect(panelW-width, 0, width, h))
+	if height < 1 {
+		height = 1
+	}
+	mask.Send(selSetFrame, apple.Rect(panelW-width, (panelH-height)/2, width, height))
 }
 
-// animateMask takes the mask from startW to endW with the panel's easing,
-// leaving the model on the end value so nothing snaps when the animation
-// is removed.
-func animateMask(mask objc.ID, panelW, startW, endW, h float64) {
+// animateMask takes the mask from the strip's box to the panel's, easing
+// both axes. The model stays on the end value so nothing snaps when the
+// animation is removed.
+func animateMask(mask objc.ID, panelW, panelH, startW, startH, endW, endH float64) {
 	if endW < 1 {
 		endW = 1
 	}
-	setMaskFrame(mask, panelW, endW, h)
+	if endH < 1 {
+		endH = 1
+	}
+	setMaskFrame(mask, panelW, panelH, endW, endH)
 	basic := objc.ID(apple.Class("CABasicAnimation"))
 	curve := objc.ID(apple.Class("CAMediaTimingFunction")).Send(sel("functionWithName:"), apple.NSString("easeOut"))
 	dur := objc.ID(apple.Class("NSNumber")).Send(sel("numberWithDouble:"), revealDuration)
@@ -197,12 +208,26 @@ func animateMask(mask objc.ID, panelW, startW, endW, h float64) {
 	width.Send(sel("setTimingFunction:"), curve)
 	mask.Send(sel("addAnimation:forKey:"), width, apple.NSString("nsgoRevealWidth"))
 
+	height := basic.Send(sel("animationWithKeyPath:"), apple.NSString("bounds.size.height"))
+	height.Send(sel("setFromValue:"), number.Send(sel("numberWithDouble:"), startH))
+	height.Send(sel("setToValue:"), number.Send(sel("numberWithDouble:"), endH))
+	height.Send(sel("setDuration:"), dur)
+	height.Send(sel("setTimingFunction:"), curve)
+	mask.Send(sel("addAnimation:forKey:"), height, apple.NSString("nsgoRevealHeight"))
+
 	position := basic.Send(sel("animationWithKeyPath:"), apple.NSString("position.x"))
 	position.Send(sel("setFromValue:"), number.Send(sel("numberWithDouble:"), panelW-startW/2))
 	position.Send(sel("setToValue:"), number.Send(sel("numberWithDouble:"), panelW-endW/2))
 	position.Send(sel("setDuration:"), dur)
 	position.Send(sel("setTimingFunction:"), curve)
 	mask.Send(sel("addAnimation:forKey:"), position, apple.NSString("nsgoRevealX"))
+
+	positionY := basic.Send(sel("animationWithKeyPath:"), apple.NSString("position.y"))
+	positionY.Send(sel("setFromValue:"), number.Send(sel("numberWithDouble:"), panelH/2))
+	positionY.Send(sel("setToValue:"), number.Send(sel("numberWithDouble:"), panelH/2))
+	positionY.Send(sel("setDuration:"), dur)
+	positionY.Send(sel("setTimingFunction:"), curve)
+	mask.Send(sel("addAnimation:forKey:"), positionY, apple.NSString("nsgoRevealY"))
 }
 
 // applyPanelChrome fits the panel's frame chrome to its current width: the
