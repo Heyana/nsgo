@@ -86,8 +86,23 @@ func (s *surface) readClipboard(it *driver.MountItem) {
 		ev.Finished = len(fileURLs(pb)) == 0 && availableType(pb, imageTypes) != ""
 	case driver.ClipboardReadFiles:
 		ev.URIs = fileURLs(pb)
+	case driver.ClipboardReadChangeCount:
+		ev.ChangeCount = objc.Send[int](pb, sel("changeCount"))
+	case driver.ClipboardReadTypes:
+		ev.Types = pasteboardTypes(pb)
 	}
 	s.engine.Dispatch(ev)
+}
+
+// pasteboardTypes returns the UTIs the pasteboard's first item offers.
+func pasteboardTypes(pb objc.ID) []string {
+	types := pb.Send(sel("types"))
+	n := objc.Send[uint](types, sel("count"))
+	out := make([]string, n)
+	for i := range out {
+		out[i] = apple.GoString(types.Send(sel("objectAtIndex:"), uint(i)))
+	}
+	return out
 }
 
 // notify carries out a notification's item through the notification center. The badge is the Dock tile's and never touches the center: it needs no permission until the app uses notifications (apple.NotificationsUsed), after which macOS shows it only while the user allows the app's badges.
@@ -502,6 +517,19 @@ func (s *surface) windowFrame() driver.WindowFrame {
 	return driver.WindowFrame{X: driver.Points(frame.Origin.X - main.Origin.X),
 		Y: driver.Points(main.Origin.Y + main.Size.Height - frame.Origin.Y - frame.Size.Height), Move: true,
 		Width: driver.Points(frame.Size.Width), Height: driver.Points(frame.Size.Height)}
+}
+
+// cursorPoint returns where the pointer is, in the coordinates displays
+// report: from the primary screen's top left, y down. AppKit reports it from
+// its bottom left, y up.
+func cursorPoint() driver.Point {
+	frames := screenFrames("frame")
+	if len(frames) == 0 {
+		return driver.Point{}
+	}
+	primary := frames[0]
+	p := objc.Send[apple.CGPoint](objc.ID(apple.Class("NSEvent")), sel("mouseLocation"))
+	return driver.Point{X: driver.Points(p.X - primary.Origin.X), Y: driver.Points(primary.Origin.Y + primary.Size.Height - p.Y)}
 }
 
 // screenFrames returns each screen's rectangle named by selector, the

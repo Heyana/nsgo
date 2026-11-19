@@ -519,6 +519,13 @@ const (
 	// ClipboardReadFiles reads the file: URLs of the local files it holds,
 	// such as files copied in a file manager.
 	ClipboardReadFiles
+	// ClipboardReadChangeCount reads the pasteboard's change count, an
+	// integer that grows on every copy, so a poller hears of a change
+	// without reading the content.
+	ClipboardReadChangeCount
+	// ClipboardReadTypes reads the UTIs the pasteboard's first item offers,
+	// the markers a reader checks before reading the content.
+	ClipboardReadTypes
 )
 
 // MaxClipboardImage is the most bytes of a PNG a clipboard read returns:

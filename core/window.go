@@ -765,6 +765,27 @@ func (cx *Scope) SetDockVisible(on bool) {
 	}
 }
 
+// CursorPoint is the core's part of desktop.CursorPoint, which apps use:
+// done hears where the pointer is, in screen coordinates, from the primary
+// display's top left, y down, as Env.Displays and ShowAt take them. A
+// window that follows the pointer, a panel that opens at the edge it hovers,
+// asks it on a timer: the platform reports the pointer moving outside the
+// app only to a global event monitor, which needs the user's trust.
+func (cx *Scope) CursorPoint(done func(Point)) {
+	t := cx.tree()
+	if t == nil {
+		if done != nil {
+			done(Point{})
+		}
+		return
+	}
+	t.request(cx, driver.MountItem{Kind: driver.ItemCursorPoint}, func(ev driver.Event) {
+		if done != nil {
+			done(ev.Point)
+		}
+	})
+}
+
 // SetLaunchAtLogin is the core's part of desktop.SetLaunchAtLogin, which
 // apps use: the system starts the app as the user logs in, or no more.
 func (cx *Scope) SetLaunchAtLogin(on bool) {

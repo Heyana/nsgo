@@ -371,6 +371,10 @@ const (
 	ItemScanCode
 	// ItemQuickLook shows the system's file preview panel on QuickLook's Paths, starting at its Index. Sent only where the environment says CanQuickLook.
 	ItemQuickLook
+	// ItemCursorPoint asks where the pointer is; the platform answers with
+	// EventCursorPoint carrying Count and Point, in points from the primary
+	// display's top left, y down, as DisplayInfo frames are.
+	ItemCursorPoint
 )
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.
