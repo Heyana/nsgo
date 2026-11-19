@@ -4,9 +4,11 @@ package macos
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
@@ -455,28 +457,40 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 }
 
 // frameDuration is how long a panel takes to open or close.
-const frameDuration = 0.22
+const frameDuration = 0.2
 
-// animateFrame eases the window into to: fast out of the gate, slow into the
-// stop, so the strip reads as snapping open rather than sliding at a
-// constant rate. The animator proxy is the only path that takes a timing
-// function on a window frame.
+// animateFrame eases the window into to a step at a time. NSWindow only
+// animates a frame change through setFrame:display:animate:, which brings
+// AppKit's own curve and duration with it; stepping the frame ourselves
+// keeps the shape of the motion on this side, where the app can say it.
+// The curve is a quart-out: quick off the mark, settling at the end.
 func (s *surface) animateFrame(w objc.ID, to apple.CGRect) {
-	ctx := objc.ID(apple.Class("NSAnimationContext"))
-	ctx.Send(sel("beginGrouping"))
-	defer ctx.Send(sel("endGrouping"))
-	cur := ctx.Send(sel("currentContext"))
-	duration := objc.ID(apple.Class("NSNumber")).Send(sel("numberWithDouble:"), frameDuration)
-	cur.Send(sel("setDuration:"), duration)
-	curve := objc.ID(apple.Class("CAMediaTimingFunction")).Send(
-		sel("functionWithControlPoints::::"), 0.16, 1.0, 0.3, 1.0)
-	cur.Send(sel("setTimingFunction:"), curve)
-	// The animator's frame change only runs implicitly when the context
-	// allows it; without this the curve is set and nothing moves.
-	if cur.Send(sel("respondsToSelector:"), sel("setAllowsImplicitAnimation:")) != 0 {
-		cur.Send(sel("setAllowsImplicitAnimation:"), true)
+	from := objc.Send[apple.CGRect](w, sel("frame"))
+	begin := time.Now()
+	var step func()
+	step = func() {
+		apple.OnMain(func() {
+			t := float64(time.Since(begin)) / float64(frameDuration*float64(time.Second))
+			if t >= 1 {
+				w.Send(sel("setFrame:display:"), to, true)
+				return
+			}
+			eased := 1 - math.Pow(1-t, 4)
+			if os.Getenv("NSGO_PANEL_DEBUG") != "" {
+				fmt.Printf("nsgo-panel-ease: t=%.2f w=%.1f h=%.1f\n", eased,
+					from.Size.Width+(to.Size.Width-from.Size.Width)*eased,
+					from.Size.Height+(to.Size.Height-from.Size.Height)*eased)
+			}
+			w.Send(sel("setFrame:display:"), apple.Rect(
+				from.Origin.X+(to.Origin.X-from.Origin.X)*eased,
+				from.Origin.Y+(to.Origin.Y-from.Origin.Y)*eased,
+				from.Size.Width+(to.Size.Width-from.Size.Width)*eased,
+				from.Size.Height+(to.Size.Height-from.Size.Height)*eased,
+			), true)
+			time.AfterFunc(16*time.Millisecond, step)
+		})
 	}
-	w.Send(sel("animator")).Send(sel("setFrame:display:"), to, true)
+	step()
 }
 
 // panelCornerRadius is the radius a panel's content layer rounds its corners
