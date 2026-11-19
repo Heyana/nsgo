@@ -592,6 +592,32 @@ func (r *Ref) placed() bool {
 	return r != nil && r.n != nil && !r.n.deleted && !r.t.detached(r.n)
 }
 
+// SetStyle gives the element a style of its own and restyles it in place: what
+// it holds stays mounted, so a panel can change its width without its rows
+// being unmounted and built again. Changes that are only the element's, its
+// padding or its visibility, take this path.
+func (r *Ref) SetStyle(s Style) {
+	if !r.placed() {
+		return
+	}
+	r.n.base = s
+	if r.t.restyle(r.n) {
+		r.t.markLayout(r.n)
+	}
+}
+
+// SetClass gives the element a class of its own and restyles it in place,
+// without rebuilding what it holds.
+func (r *Ref) SetClass(class string) {
+	if !r.placed() {
+		return
+	}
+	r.t.setClasses(r.n, class)
+	if r.t.restyle(r.n) {
+		r.t.markLayout(r.n)
+	}
+}
+
 // Bounds returns the element's frame in surface points after the last
 // commit, and false while it is not mounted.
 func (r *Ref) Bounds() (Bounds, bool) {
