@@ -886,3 +886,25 @@ func TestEnvironmentWindowWorkspaces(t *testing.T) {
 		t.Fatalf("CanSetWindowWorkspaces = %v", seen)
 	}
 }
+
+// TestCursorPointAnswered: where the pointer is comes back to the caller.
+// A poll asks once per tick and acts on the answer, so an answer the tree
+// does not route leaves the asker waiting forever: the event has to be
+// dispatched to the wait it belongs to, like any other read.
+func TestCursorPointAnswered(t *testing.T) {
+	var cx *Scope
+	h := newHost(t, Size{Width: 100, Height: 100}, func(c *Scope) Node { cx = c; return View{} })
+	h.commit()
+	var got Point
+	answered := false
+	cx.CursorPoint(func(p Point) { got, answered = p, true })
+	it := command(h.commit(), driver.ItemCursorPoint)
+	if it == nil {
+		t.Fatal("no ItemCursorPoint in the batch")
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventCursorPoint, Count: it.Count, Point: Point{X: 12, Y: 34}})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventCursorPoint, Count: it.Count, Point: Point{X: 99, Y: 99}})
+	if !answered || got.X != 12 || got.Y != 34 {
+		t.Fatalf("cursor point = %+v answered %v, want 12,34 once", got, answered)
+	}
+}
