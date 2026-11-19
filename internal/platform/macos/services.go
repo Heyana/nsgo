@@ -3,6 +3,7 @@
 package macos
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -413,6 +414,45 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 	}
 	frame.Origin.Y = top - frame.Size.Height
 	w.Send(sel("setFrame:display:animate:"), frame, true, f.Animated)
+	// Resizing the window changes how far the corner radius may reach: a panel
+	// narrowing to a strip must square off, or its corners meet mid-edge and
+	// the window is clipped into a pointed lens.
+	if s.kind == driver.SurfacePanel {
+		width := driver.Points(content.Width)
+		s.native.Send(selLayer).Send(sel("setCornerRadius:"), panelCornerRadius(width))
+		// The title style is what clips a window into AppKit's rounded frame.
+		// Shrunk to the strip's 6pt it would clip the whole window into a
+		// pointed lens, so the strip drops the title style and is borderless
+		// and square; widening puts the rounded frame back.
+		mask := uint(styleNonactivating | maskFullSize)
+		if width >= 2*panelRadius {
+			mask |= styleTitled
+		}
+		if cur := objc.Send[uint](w, sel("styleMask")); cur != mask {
+			w.Send(sel("setStyleMask:"), mask)
+			// The mask change drops the titlebar flags the panel was created
+			// with; put them back while it is titled.
+			if mask&styleTitled != 0 {
+				w.Send(sel("setTitlebarAppearsTransparent:"), true)
+				w.Send(sel("setTitleVisibility:"), titleHidden)
+			}
+		}
+		if os.Getenv("NSGO_PANEL_DEBUG") != "" {
+			fmt.Printf("nsgo-panel-frame: width=%.1f mask=%v\n", width, objc.Send[uint](w, sel("styleMask")))
+		}
+	}
+}
+
+// panelCornerRadius is the radius a panel's content layer rounds its corners
+// by, fitted to the panel's width. A panel narrower than two radii would have
+// its arcs meet in the middle and clip the window into a pointed lens, so any
+// panel thinner than two radii is drawn square: the right-edge strip has to
+// read as a bar, not a spike.
+func panelCornerRadius(width driver.Points) float64 {
+	if float64(width) < 2*panelRadius {
+		return 0
+	}
+	return panelRadius
 }
 
 // windowFrame returns the window's frame from the main screen's top left,

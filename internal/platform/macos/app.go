@@ -3,7 +3,9 @@
 package macos
 
 import (
+	"fmt"
 	"log"
+	"os"
 	"time"
 	"unsafe"
 
@@ -78,6 +80,12 @@ const (
 	joinsAllSpaces, fullScreenAuxiliary                             = 1, 1 << 8
 )
 
+// panelRadius is how far a panel's corners round. The titled frame draws it,
+// the content layer clips to it, and a panel narrower than twice it is
+// borderless and square instead: arcs that wide would meet in the middle and
+// clip the window into a pointed lens.
+const panelRadius = 12.0
+
 // openSurface opens the surface cfg asks for and attaches it to the
 // app's engine.
 func (o *surface) openSurface(cfg driver.SurfaceConfig) {
@@ -115,7 +123,7 @@ func (o *surface) openSurface(cfg driver.SurfaceConfig) {
 	window.Send(sel("setContentView:"), s.native)
 	if cfg.Kind == driver.SurfacePanel {
 		// A panel's content is clipped to its rounded corners.
-		s.native.Send(selLayer).Send(sel("setCornerRadius:"), float64(12))
+		s.native.Send(selLayer).Send(sel("setCornerRadius:"), panelRadius)
 		s.native.Send(selLayer).Send(sel("setMasksToBounds:"), true)
 	}
 	s.setMaterial(cfg.Material)
@@ -138,9 +146,12 @@ func (o *surface) openSurface(cfg driver.SurfaceConfig) {
 	}
 }
 
-// newPanel returns a panel of cfg's size: titled for its rounded corners
-// and shadow, with no title bar or controls, above the windows of every
-// space.
+// newPanel returns a panel of cfg's size, above the windows of every space,
+// taking the keyboard without activating the app. A panel wide enough for
+// corners is titled and gets AppKit's rounded frame and shadow; a strip
+// narrower than two radii must be borderless instead, because a titled
+// window narrower than its own corner radius has its frame clipped into a
+// pointed lens — the edge strip would read as a spike rather than a bar.
 func newPanel(cfg driver.SurfaceConfig) objc.ID {
 	if classPanel == 0 {
 		yes := func(objc.ID, objc.SEL) bool { return true }
@@ -148,9 +159,26 @@ func newPanel(cfg driver.SurfaceConfig) objc.ID {
 			{Cmd: sel("canBecomeKeyWindow"), Fn: yes},
 		})
 	}
+	// A titled window lets AppKit draw the rounded frame and its shadow. Below
+	// two corner radii the frame's arcs would pass the middle of the window and
+	// clip it into a lens, so narrow panels drop the title style and stay
+	// square; setHasShadow keeps the panel's edge visible without it.
+	mask := uint(styleTitled | styleNonactivating | maskFullSize)
+	narrow := float64(cfg.Width) < 2*panelRadius
+	if narrow {
+		mask = uint(styleNonactivating | maskFullSize)
+	}
 	p := objc.ID(classPanel).Send(selAlloc).Send(sel("initWithContentRect:styleMask:backing:defer:"),
 		apple.Rect(0, 0, float64(cfg.Width), float64(cfg.Height)),
-		uint(styleTitled|styleNonactivating|maskFullSize), uint(2), false)
+		mask, uint(2), false)
+	if narrow {
+		p.Send(sel("setHasShadow:"), true)
+	}
+	if os.Getenv("NSGO_PANEL_DEBUG") != "" {
+		frame := objc.Send[apple.CGRect](p, sel("frame"))
+		fmt.Printf("nsgo-panel: want=%v mask=%v frame=%.1fx%.1f narrow=%v\n",
+			float64(cfg.Width), mask, frame.Size.Width, frame.Size.Height, narrow)
+	}
 	p.Send(sel("setTitlebarAppearsTransparent:"), true)
 	p.Send(sel("setTitleVisibility:"), titleHidden)
 	for i := 0; i < 3; i++ {
