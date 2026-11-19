@@ -212,6 +212,10 @@ type surface struct {
 	embedded bool
 	// glassActive is set once the window keeps its glass active.
 	glassActive bool
+	// animGen numbers a panel's frame animations: a step whose number is no
+	// longer the current one belongs to an animation a newer one replaced,
+	// and stops instead of fighting it for the window.
+	animGen uint64
 	// rtl is the app's direction (driver.ItemDirection), which AppKit's
 	// views and the menus the surface shows lay out in once directed.
 	rtl, directed bool
