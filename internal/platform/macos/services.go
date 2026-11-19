@@ -413,7 +413,14 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 		}
 	}
 	frame.Origin.Y = top - frame.Size.Height
-	w.Send(sel("setFrame:display:animate:"), frame, true, f.Animated)
+	// The panel's frame change eases on the app's curve: the animator runs
+	// inside an animation context, which is what carries a non-linear timing
+	// function, while setFrame:display:animate: only offers AppKit's own.
+	if f.Animated && s.kind == driver.SurfacePanel && !s.env.ReduceMotion {
+		s.animateFrame(w, frame)
+	} else {
+		w.Send(sel("setFrame:display:animate:"), frame, true, f.Animated)
+	}
 	// Resizing the window changes how far the corner radius may reach: a panel
 	// narrowing to a strip must square off, or its corners meet mid-edge and
 	// the window is clipped into a pointed lens.
@@ -445,6 +452,31 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 				width, objc.Send[uint](w, sel("styleMask")), objc.Send[bool](w, sel("hasShadow")))
 		}
 	}
+}
+
+// frameDuration is how long a panel takes to open or close.
+const frameDuration = 0.22
+
+// animateFrame eases the window into to: fast out of the gate, slow into the
+// stop, so the strip reads as snapping open rather than sliding at a
+// constant rate. The animator proxy is the only path that takes a timing
+// function on a window frame.
+func (s *surface) animateFrame(w objc.ID, to apple.CGRect) {
+	ctx := objc.ID(apple.Class("NSAnimationContext"))
+	ctx.Send(sel("beginGrouping"))
+	defer ctx.Send(sel("endGrouping"))
+	cur := ctx.Send(sel("currentContext"))
+	duration := objc.ID(apple.Class("NSNumber")).Send(sel("numberWithDouble:"), frameDuration)
+	cur.Send(sel("setDuration:"), duration)
+	curve := objc.ID(apple.Class("CAMediaTimingFunction")).Send(
+		sel("functionWithControlPoints::::"), 0.16, 1.0, 0.3, 1.0)
+	cur.Send(sel("setTimingFunction:"), curve)
+	// The animator's frame change only runs implicitly when the context
+	// allows it; without this the curve is set and nothing moves.
+	if cur.Send(sel("respondsToSelector:"), sel("setAllowsImplicitAnimation:")) != 0 {
+		cur.Send(sel("setAllowsImplicitAnimation:"), true)
+	}
+	w.Send(sel("animator")).Send(sel("setFrame:display:"), to, true)
 }
 
 // panelCornerRadius is the radius a panel's content layer rounds its corners
