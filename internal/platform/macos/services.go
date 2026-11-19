@@ -413,36 +413,23 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 		}
 	}
 	frame.Origin.Y = top - frame.Size.Height
-	w.Send(sel("setFrame:display:animate:"), frame, true, f.Animated)
-	// Resizing the window changes how far the corner radius may reach: a panel
-	// narrowing to a strip must square off, or its corners meet mid-edge and
-	// the window is clipped into a pointed lens.
-	if s.kind == driver.SurfacePanel {
-		width := driver.Points(content.Width)
-		s.native.Send(selLayer).Send(sel("setCornerRadius:"), panelCornerRadius(width))
-		// The title style is what clips a window into AppKit's rounded frame.
-		// Shrunk to the strip's 6pt it would clip the whole window into a
-		// pointed lens, so the strip drops the title style and is borderless
-		// and square; widening puts the rounded frame back.
-		mask := uint(styleNonactivating | maskFullSize)
-		if width >= 2*panelRadius {
-			mask |= styleTitled
-		}
-		if cur := objc.Send[uint](w, sel("styleMask")); cur != mask {
-			w.Send(sel("setStyleMask:"), mask)
-			// A borderless window gets no shadow of its own, and a style change
-			// drops the titled one: keep the edge visible at either width.
-			w.Send(sel("setHasShadow:"), true)
-			// The mask change drops the titlebar flags the panel was created
-			// with; put them back while it is titled.
-			if mask&styleTitled != 0 {
-				w.Send(sel("setTitlebarAppearsTransparent:"), true)
-				w.Send(sel("setTitleVisibility:"), titleHidden)
-			}
-		}
+	// A panel's frame change is a reveal of its content, not an AppKit
+	// resize: the resize re-measures every row on each frame, and the
+	// reveal lays them out once (see revealFrame).
+	if f.Animated && s.kind == driver.SurfacePanel && !s.env.ReduceMotion && s.revealFrame(w, frame) {
 		if os.Getenv("NSGO_PANEL_DEBUG") != "" {
 			fmt.Printf("nsgo-panel-frame: width=%.1f mask=%v shadow=%v\n",
-				width, objc.Send[uint](w, sel("styleMask")), objc.Send[bool](w, sel("hasShadow")))
+				float64(frame.Size.Width), objc.Send[uint](w, sel("styleMask")), objc.Send[bool](w, sel("hasShadow")))
+		}
+		return
+	}
+	w.Send(sel("setFrame:display:animate:"), frame, true, f.Animated)
+	if s.kind == driver.SurfacePanel {
+		s.applyPanelChrome(w)
+		if os.Getenv("NSGO_PANEL_DEBUG") != "" {
+			fmt.Printf("nsgo-panel-frame: width=%.1f mask=%v shadow=%v\n",
+				driver.Points(objc.Send[apple.CGRect](w, sel("contentRectForFrameRect:"), frame).Size.Width),
+				objc.Send[uint](w, sel("styleMask")), objc.Send[bool](w, sel("hasShadow")))
 		}
 	}
 }
