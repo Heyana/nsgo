@@ -3,6 +3,7 @@
 package macos
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -22,11 +23,48 @@ const revealDuration = 0.18
 type pendingReveal struct {
 	mask   objc.ID
 	layer  objc.ID
+	window objc.ID
 	panelW float64
 	startW float64
 	endW   float64
 	h      float64
 	start  *time.Timer
+	at     time.Time
+}
+
+// kick pushes the start of the reveal back by one quiet interval: batches
+// that land while the panel is still laying out for its new size keep
+// arriving, and moving the mask over a half-drawn panel is exactly the
+// content that keeps appearing after the window does.
+func (p *pendingReveal) kick(s *surface) {
+	if p.start != nil {
+		p.start.Stop()
+	}
+	p.start = time.AfterFunc(40*time.Millisecond, func() { apple.OnMain(s.startPendingReveal) })
+}
+
+// hideChrome takes the window's own surface out of the reveal: a titled
+// window's frame draws a background and a shadow across the whole frame at
+// once, outside the app's content, so growing the frame flashes a full-size
+// window with nothing in it. The panel draws its own card, so nothing is
+// lost while these are away; they come back with the content.
+func (p *pendingReveal) hideChrome() {
+	w := p.window
+	if w == 0 {
+		return
+	}
+	w.Send(selSetOpaque, false)
+	w.Send(sel("setBackgroundColor:"), objc.ID(apple.Class("NSColor")).Send(selClearColor))
+	w.Send(sel("setHasShadow:"), false)
+}
+
+// showChrome puts the window's own surface back, at the panel's open size.
+func (p *pendingReveal) showChrome() {
+	w := p.window
+	if w == 0 {
+		return
+	}
+	w.Send(sel("setHasShadow:"), true)
 }
 
 // revealFrame runs a panel's frame change as a reveal of its content rather
@@ -85,8 +123,9 @@ func (s *surface) revealFrame(w objc.ID, to apple.CGRect) bool {
 		// The mask moves when that content has been laid out, not now: see
 		// startPendingReveal. A timer is the fallback for an expansion that
 		// brings no new batch.
-		pr := &pendingReveal{mask: mask, layer: layer, panelW: toW, startW: startW, endW: endW, h: h}
-		pr.start = time.AfterFunc(80*time.Millisecond, func() { apple.OnMain(s.startPendingReveal) })
+		pr := &pendingReveal{mask: mask, layer: layer, window: w, panelW: toW, startW: startW, endW: endW, h: h, at: time.Now()}
+		pr.hideChrome()
+		pr.kick(s)
 		s.reveal = pr
 		return true
 	}
@@ -116,10 +155,14 @@ func (s *surface) startPendingReveal() {
 	if pr.start != nil {
 		pr.start.Stop()
 	}
+	if os.Getenv("NSGO_PANEL_DEBUG") != "" {
+		fmt.Printf("nsgo-panel-reveal: content settled after %v\n", time.Since(pr.at).Round(time.Millisecond))
+	}
 	animateMask(pr.mask, pr.panelW, pr.startW, pr.endW, pr.h)
 	time.AfterFunc(time.Duration(revealDuration*float64(time.Second)), func() {
 		apple.OnMain(func() {
 			pr.layer.Send(sel("setMask:"), objc.ID(0))
+			pr.showChrome()
 			pr.mask.Send(selRelease)
 		})
 	})

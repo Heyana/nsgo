@@ -2755,9 +2755,10 @@ func (s *surface) applyBatches(budget time.Duration, alone bool) {
 			break
 		}
 	}
-	// The content for the frame change is applied: the reveal can move now.
+	// Each batch that lands for the new size pushes the reveal back: the mask
+	// moves once the panel has stopped laying itself out.
 	if s.reveal != nil {
-		s.startPendingReveal()
+		s.reveal.kick(s)
 	}
 	rest := copy(s.waiting, s.waiting[n:])
 	clear(s.waiting[rest:])
