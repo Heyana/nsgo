@@ -3,10 +3,14 @@
 package macos
 
 import (
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -493,7 +497,139 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 		}
 	}
 	frame.Origin.Y = top - frame.Size.Height
-	w.Send(sel("setFrame:display:animate:"), frame, true, f.Animated)
+	// A panel rounds its own content to its width, and the title style is
+	// what clips a window into AppKit's rounded frame: shrunk to the strip's
+	// 6pt both would cut the whole window into a pointed lens. So the radius
+	// follows the width, and a panel thinner than two radii drops the title
+	// style and reads as a square bar; widening puts both back.
+	if s.kind == driver.SurfacePanel {
+		width := driver.Points(frame.Size.Width)
+		s.native.Send(selLayer).Send(sel("setCornerRadius:"), panelCornerRadius(width))
+		mask := uint(styleNonactivating | maskFullSize)
+		if float64(width) >= 2*panelRadius {
+			mask |= styleTitled
+		}
+		if cur := objc.Send[uint](w, sel("styleMask")); cur != mask {
+			w.Send(sel("setStyleMask:"), mask)
+			// A borderless window gets no shadow of its own, and a style
+			// change drops the titled one: keep the edge visible either way.
+			w.Send(sel("setHasShadow:"), true)
+			// The mask change drops the titlebar flags the panel was created
+			// with; put them back while it is titled.
+			if mask&styleTitled != 0 {
+				w.Send(sel("setTitlebarAppearsTransparent:"), true)
+				w.Send(sel("setTitleVisibility:"), titleHidden)
+			}
+		}
+	}
+	// The panel's frame change eases on this side's curve: setFrame:
+	// display:animate: only offers AppKit's own, which a 144 Hz screen
+	// cannot tell from 60.
+	if f.Animated && s.kind == driver.SurfacePanel && !s.env.ReduceMotion {
+		s.animateFrame(w, frame)
+	} else {
+		w.Send(sel("setFrame:display:animate:"), frame, true, f.Animated)
+	}
+}
+
+// frameDuration is how long a panel takes to open or close.
+const frameDuration = 0.2
+
+// panelRadius is the radius a panel's content rounds its corners by.
+const panelRadius = 12
+
+// panelCornerRadius is the radius the content layer rounds by at width: a
+// panel narrower than two radii would have its arcs meet in the middle and
+// clip straight into a pointed lens, so anything thinner than two radii is
+// drawn square.
+func panelCornerRadius(width driver.Points) float64 {
+	if float64(width) < 2*panelRadius {
+		return 0
+	}
+	return panelRadius
+}
+
+// animateFrame eases the window into to a step at a time. NSWindow only
+// animates a frame change through setFrame:display:animate:, which brings
+// AppKit's own curve and duration with it; stepping the frame ourselves
+// keeps the shape of the motion on this side, where the app can say it.
+// The curve is a quart-out: quick off the mark, settling at the end.
+//
+// One step per screen refresh, not one per 16 ms: a fixed 16 ms caps the
+// panel at 62 frames a second whatever the display does, which reads as a
+// 60 Hz slide show on a 120 or 144 Hz screen. Each step is scheduled
+// against the animation's own clock, so a late frame is dropped rather
+// than stretching the move — and a step from an older animation that a
+// newer one has replaced stops instead of fighting it for the window.
+func (s *surface) animateFrame(w objc.ID, to apple.CGRect) {
+	from := objc.Send[apple.CGRect](w, sel("frame"))
+	begin := time.Now()
+	gen := atomic.AddUint64(&s.animGen, 1)
+	stepLen := time.Duration(float64(time.Second) / displayFPS(w))
+	tick := 0
+	prev := time.Duration(0)
+	dur := frameDuration * float64(time.Second)
+	due := begin
+	probe := os.Getenv("NSGO_PANEL_DEBUG") != ""
+	var step func()
+	step = func() {
+		apple.OnMain(func() {
+			if atomic.LoadUint64(&s.animGen) != gen {
+				return
+			}
+			elapsed := time.Since(begin)
+			if elapsed >= time.Duration(dur) {
+				w.Send(sel("setFrame:display:"), to, true)
+				// The window grew or shrank under the pointer, and what it
+				// covers changed with it: pick again, so a panel that still
+				// holds the pointer is not left looking left.
+				s.pickHere()
+				return
+			}
+			eased := 1 - math.Pow(1-float64(elapsed)/dur, 4)
+			w.Send(sel("setFrame:display:"), apple.Rect(
+				from.Origin.X+(to.Origin.X-from.Origin.X)*eased,
+				from.Origin.Y+(to.Origin.Y-from.Origin.Y)*eased,
+				from.Size.Width+(to.Size.Width-from.Size.Width)*eased,
+				from.Size.Height+(to.Size.Height-from.Size.Height)*eased,
+			), true)
+			if probe {
+				fmt.Printf("nsgo-panel-ease: t=%d frame=%d el=%.2fms dt=%.2fms set=%.2fms eased=%.2f\n",
+					time.Now().UnixMilli()%60000, tick,
+					float64(elapsed)/float64(time.Millisecond),
+					float64(elapsed-prev)/float64(time.Millisecond),
+					float64(time.Since(due))/float64(time.Millisecond), eased)
+			}
+			prev = elapsed
+			tick++
+			due = begin.Add(time.Duration(tick) * stepLen)
+			next := time.Until(due)
+			if next < 0 {
+				next = 0
+			}
+			time.AfterFunc(next, step)
+		})
+	}
+	step()
+}
+
+// displayFPS is how often the screen the window is on redraws: 60 on an
+// ordinary display, 120 on a ProMotion one, 144 or more on a fast external.
+// Reading it per animation keeps a panel dragged between screens following
+// the one it is on now; anything unreadable keeps the old 60.
+func displayFPS(w objc.ID) float64 {
+	screen := w.Send(sel("screen"))
+	if screen == 0 {
+		screen = objc.ID(apple.Class("NSScreen")).Send(sel("mainScreen"))
+	}
+	if screen == 0 || screen.Send(sel("respondsToSelector:"), sel("maximumFramesPerSecond")) == 0 {
+		return 60
+	}
+	fps := objc.Send[float64](screen, sel("maximumFramesPerSecond"))
+	if fps < 30 || fps > 360 {
+		return 60
+	}
+	return fps
 }
 
 // windowFrame returns the window's frame from the main screen's top left,
