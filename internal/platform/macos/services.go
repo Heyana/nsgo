@@ -430,6 +430,9 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 		}
 		if cur := objc.Send[uint](w, sel("styleMask")); cur != mask {
 			w.Send(sel("setStyleMask:"), mask)
+			// A borderless window gets no shadow of its own, and a style change
+			// drops the titled one: keep the edge visible at either width.
+			w.Send(sel("setHasShadow:"), true)
 			// The mask change drops the titlebar flags the panel was created
 			// with; put them back while it is titled.
 			if mask&styleTitled != 0 {
@@ -438,7 +441,8 @@ func (s *surface) setWindowFrame(f driver.WindowFrame) {
 			}
 		}
 		if os.Getenv("NSGO_PANEL_DEBUG") != "" {
-			fmt.Printf("nsgo-panel-frame: width=%.1f mask=%v\n", width, objc.Send[uint](w, sel("styleMask")))
+			fmt.Printf("nsgo-panel-frame: width=%.1f mask=%v shadow=%v\n",
+				width, objc.Send[uint](w, sel("styleMask")), objc.Send[bool](w, sel("hasShadow")))
 		}
 	}
 }
