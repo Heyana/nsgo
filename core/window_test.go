@@ -217,6 +217,39 @@ func TestWindowClosingCancels(t *testing.T) {
 	}
 }
 
+// TestWindowOutlivesTheBatchThatOpenedIt: an app opens its windows from
+// code the engine runs inside a batch (a click that opens an editor window),
+// and that batch ends the moment the content it built is rebuilt. A window
+// that belonged to the batch would vanish with it, so it belongs to the
+// scope OpenWindow is called on instead.
+func TestWindowOutlivesTheBatchThatOpenedIt(t *testing.T) {
+	var cx0 *Scope
+	w := newWindows(t, func(cx *Scope) {
+		cx0 = cx
+		cx.SetShutdownMode(ShutdownOnExplicit)
+	})
+	// A batch owner, as a build has while it runs code the app wrote.
+	batch := cx0.Child()
+	cx0.rt.owner = batch
+	win := cx0.OpenWindow(WindowOptions{Key: "editor"}, nil)
+	cx0.rt.owner = nil
+	w.commit()
+	if win == nil || win.Closed() {
+		t.Fatal("the window did not open")
+	}
+	batch.Dispose()
+	w.commit()
+	if win.Closed() {
+		t.Error("the window closed with the batch that opened it, which is what makes a password window go away when a field is clicked")
+	}
+	// It still closes with the scope it was opened on.
+	cx0.Dispose()
+	w.commit()
+	if !win.Closed() {
+		t.Error("the window outlived the scope it was opened on")
+	}
+}
+
 func TestWindowKeyAndOwner(t *testing.T) {
 	var cx0 *Scope
 	var owner *Scope
