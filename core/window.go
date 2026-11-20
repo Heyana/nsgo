@@ -125,9 +125,12 @@ func (c *WindowClosing) Cancel() { c.canceled = true }
 func (c *WindowClosing) Canceled() bool { return c != nil && c.canceled }
 
 // OpenWindow is the core's part of desktop.OpenWindow, which apps use: it
-// opens a window showing content, which belongs to the current owner and
-// closes when that owner goes. It returns nil where the platform opens no
-// windows.
+// opens a window showing content, which belongs to cx and closes when cx
+// goes. The scope a batch owns while it builds content is not cx: a window
+// belongs to the scope the app opened it on, so rebuilding a panel or a
+// page does not close a window opened from that code, and an app closing
+// its window scope still closes its windows. It returns nil where the
+// platform opens no windows.
 func (cx *Scope) OpenWindow(opts WindowOptions, content func(cx *Scope) Node) *Window {
 	rt := cx.rt
 	if rt.windows == nil {
@@ -149,7 +152,7 @@ func (cx *Scope) OpenWindow(opts WindowOptions, content func(cx *Scope) Node) *W
 	}
 	limits := opts.Constraints.Normalized()
 	size := limits.Clamp(Size{Width: opts.Width, Height: opts.Height})
-	w := rt.openSurface(cx.current(), driver.SurfaceConfig{Kind: driver.SurfaceWindow, Title: opts.Title,
+	w := rt.openSurface(cx, driver.SurfaceConfig{Kind: driver.SurfaceWindow, Title: opts.Title,
 		Width: size.Width, Height: size.Height, Frame: opts.Frame, Hidden: opts.Hidden, Material: opts.Material, Constraints: limits,
 		Workspaces: opts.Workspaces, PointerEvents: cx.windowPointer(opts.PointerEvents),
 		Transparent: opts.Transparent, NoShadow: opts.NoShadow, SkipTaskbar: opts.SkipTaskbar}, content)
@@ -165,7 +168,7 @@ func (cx *Scope) OpenWindow(opts WindowOptions, content func(cx *Scope) Node) *W
 
 // OpenPanel is the core's part of desktop.OpenPanel, which apps use: it
 // opens a hidden panel showing content, for Show, Toggle or a tray icon
-// to show. It returns nil where the platform opens no windows.
+// to show. It belongs to cx, as OpenWindow does. It returns nil where the platform opens no windows.
 func (cx *Scope) OpenPanel(opts PanelOptions, content func(cx *Scope) Node) *Window {
 	rt := cx.rt
 	if rt.windows == nil {
@@ -177,7 +180,7 @@ func (cx *Scope) OpenPanel(opts PanelOptions, content func(cx *Scope) Node) *Win
 	cfg := driver.SurfaceConfig{Kind: driver.SurfacePanel, Width: opts.Width, Height: opts.Height, Hidden: true,
 		HideOnBlur: opts.HideOnBlur, NoActivate: opts.NoActivate, Material: opts.Material,
 		PointerEvents: cx.windowPointer(opts.PointerEvents), Transparent: opts.Transparent}
-	w := rt.openSurface(cx.current(), cfg, content)
+	w := rt.openSurface(cx, cfg, content)
 	if opts.FitContent {
 		// Its first commit, which lays it out, sizes it before anything shows it.
 		w.t.fitContent(Size{Width: opts.Width, Height: opts.Height})
