@@ -37,8 +37,9 @@ const (
 	ShutdownOnExplicit        = core.ShutdownOnExplicit
 )
 
-// OpenWindow opens a window showing content, which belongs to the
-// current owner and closes when that owner goes. A window with
+// OpenWindow opens a window showing content, which belongs to cx and closes
+// when cx goes — not the batch a build owns while it runs this code, so a
+// window opened from a click outlives the rebuild that click causes. A window with
 // opts.Key already open shows and takes the focus instead:
 //
 //	settings := desktop.OpenWindow(cx, desktop.WindowOptions{Title: "Settings", Key: "settings"}, Settings)
@@ -100,7 +101,7 @@ func OnOpenFiles(cx *core.Scope, fn func(paths []string)) { cx.OnOpenFiles(fn) }
 // OnOpenLinks runs fn with links of the app's own URL schemes, which nsgo.yaml's url_schemes declares, that the system asks the app to open: clicked in a browser or another app, or opened with the open command. On macOS they reach the running app, and the link the app launched to open waits for the first handler. A link carries whatever the page that made it chose, so treat its contents as untrusted input and confirm with the user before acting on it.
 func OnOpenLinks(cx *core.Scope, fn func(links []string)) { cx.OnOpenLinks(fn) }
 
-// NewTray adds a tray icon, which the current owner keeps: an image, or a
+// NewTray adds a tray icon, which cx keeps: an image, or a
 // view that draws it and may change, a panel its primary click shows
 // under it, and a menu its secondary click shows.
 func NewTray(cx *core.Scope, opts TrayOptions) *Tray { return cx.NewTray(opts) }

@@ -108,7 +108,7 @@ func (cx *Scope) overlays() bool {
 	return cx.Env().os.GetUntracked() == OSAndroid && !cx.denied(serviceOverlay, "")
 }
 
-// OpenOverlay is the core's part of mobile.OpenOverlay, which apps use: it opens an overlay over other apps showing content, a tree of its own that belongs to the current owner and closes as that owner goes. The app has one overlay at a time: it returns nil while another is open, off Android and where Access does not grant AccessOverlay. Without the permission the platform ends it at once (OverlayEndDenied).
+// OpenOverlay is the core's part of mobile.OpenOverlay, which apps use: it opens an overlay over other apps showing content, a tree of its own that belongs to cx and closes as cx goes. The app has one overlay at a time: it returns nil while another is open, off Android and where Access does not grant AccessOverlay. Without the permission the platform ends it at once (OverlayEndDenied).
 func (cx *Scope) OpenOverlay(opts OverlayOptions, content func(cx *Scope) Node) *Window {
 	rt := cx.rt
 	if !cx.overlays() || rt.overlay != nil && !rt.overlay.closed {
@@ -124,7 +124,7 @@ func (cx *Scope) OpenOverlay(opts OverlayOptions, content func(cx *Scope) Node) 
 	}
 	opts.Frame.Width, opts.Frame.Height = opts.Width, opts.Height
 	passive := opts.Passive
-	owner := cx.current()
+	owner := cx
 	w := rt.openSurface(owner, driver.SurfaceConfig{Kind: driver.SurfaceOverlay, Width: opts.Width, Height: opts.Height,
 		Frame: opts.Frame, Hidden: opts.Hidden, Focusable: opts.Focusable && !passive, Passive: passive,
 		Accessible: opts.Accessible}, content)
