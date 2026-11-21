@@ -16,7 +16,7 @@ func TestMain(m *testing.M) { nsgotest.Main(m) }
 
 func TestLoadsTwoHundredSoundsWithRaisedLimits(t *testing.T) {
 	switch nsgotest.Target() {
-	case "macos", "ios_simulator", "ios", "web":
+	case "macos", "ios_simulator", "ios", "web", "linux":
 	default:
 		t.Skip("requires a backend that plays sounds")
 	}

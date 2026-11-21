@@ -3,6 +3,7 @@
 package linux
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
@@ -195,17 +196,16 @@ func pushSoundBuffer(src uintptr, b []byte, start uint64, duration time.Duration
 	return gstAppSrcPushBuffer(src, buffer) == 0
 }
 
-// decodeSound uses a temporary pipeline on a worker, retaining at most
-// limit of the decoded stereo PCM. The app's mixer sees only decoded bytes.
-func decodeSound(ctx context.Context, b []byte, limit time.Duration) (pcm []byte, cut bool, message string) {
+// decodeSound uses a temporary pipeline on a worker, retaining at most limit of the decoded stereo PCM. The app's mixer sees only decoded bytes. A sound whose PCM within limit would exceed maxDecoded bytes reports large and keeps none.
+func decodeSound(ctx context.Context, b []byte, limit time.Duration, maxDecoded int64) (pcm []byte, cut, large bool, message string) {
 	if len(b) == 0 {
-		return nil, false, "the source has no audio bytes"
+		return nil, false, false, "the source has no audio bytes"
 	}
 	desc := "appsrc name=encoded format=bytes ! decodebin ! audio/x-raw ! audioconvert ! audioresample ! " +
 		soundCaps + " ! appsink name=decoded sync=false max-buffers=4"
 	pipeline, message := soundPipeline(desc)
 	if pipeline == 0 {
-		return nil, false, message
+		return nil, false, false, message
 	}
 	defer gstObjectUnref(pipeline)
 	defer gstElementSetState(pipeline, gstStateNull)
@@ -215,7 +215,7 @@ func decodeSound(ctx context.Context, b []byte, limit time.Duration) (pcm []byte
 	bus := gstElementGetBus(pipeline)
 	defer gstObjectUnref(bus)
 	if !pushSound(src, b, 0, 0) || gstElementSetState(pipeline, gstStatePlaying) == 0 {
-		return nil, false, "GStreamer could not start decoding the sound"
+		return nil, false, false, "GStreamer could not start decoding the sound"
 	}
 	maxBytes := int(math.Ceil(limit.Seconds()*soundRate)) * soundFrameBytes
 	deadline := time.Now().Add(10 * time.Second)
@@ -226,6 +226,10 @@ func decodeSound(ctx context.Context, b []byte, limit time.Duration) (pcm []byte
 			if buffer := gstSampleGetBuffer(sample); buffer != 0 {
 				size = int(gstBufferGetSize(buffer))
 				n := min(size, maxBytes-len(pcm))
+				if int64(len(pcm))+int64(n) > maxDecoded {
+					gstMiniObjectUnref(sample)
+					return nil, false, true, ""
+				}
 				if n > 0 {
 					start := len(pcm)
 					pcm = slices.Grow(pcm, n)[:start+n]
@@ -235,21 +239,21 @@ func decodeSound(ctx context.Context, b []byte, limit time.Duration) (pcm []byte
 			}
 			gstMiniObjectUnref(sample)
 			if cut {
-				return pcm, true, ""
+				return pcm, true, false, ""
 			}
 			continue
 		}
 		if message := soundBusError(bus); message != "" {
-			return nil, false, message
+			return nil, false, false, message
 		}
 		if gstAppSinkIsEOS(sink) != 0 {
 			if len(pcm) == 0 {
-				return nil, false, "the source has no decodable audio"
+				return nil, false, false, "the source has no decodable audio"
 			}
-			return pcm, false, ""
+			return pcm, false, false, ""
 		}
 	}
-	return nil, false, "the sound did not decode in time"
+	return nil, false, false, "the sound did not decode in time"
 }
 
 func soundDuration(pcm []byte) time.Duration {
@@ -275,6 +279,9 @@ type soundPlayback struct {
 	loop    bool
 	// skip is how many frames of pcm the first copy of a looping playback leaves out, so that a rate change resumes the loop where it was.
 	skip int
+	// limit is the engine's playback limit, driver.MaxSoundVoices when 0.
+	limit      int
+	restricted bool
 }
 
 // soundLoopAhead is how much of a looping voice stays queued past now.
@@ -309,6 +316,8 @@ func (m *soundMixer) feed(now time.Time) {
 		}
 	}
 }
+
+func (p soundPlayback) voices() int { return max(1, cmp.Or(p.limit, driver.MaxSoundVoices)) }
 
 // soundMixer keeps one live pipeline per engine. A silent input leaves
 // the mixer's clock running between plays and on versions without force-live.
@@ -357,7 +366,7 @@ func soundMixerTo(output string) *soundMixer {
 }
 
 func (m *soundMixer) play(play soundPlayback) {
-	if len(m.pending) == driver.MaxSoundVoices {
+	for len(m.pending) >= play.voices() {
 		m.endPlayback(m.pending[0])
 		m.pending[0] = soundPlayback{}
 		m.pending = m.pending[1:]
@@ -443,7 +452,23 @@ func (m *soundMixer) checkOutput() string {
 
 func (m *soundMixer) startVoice(play soundPlayback) {
 	m.sweep(time.Now(), 0)
-	if len(m.voices) == driver.MaxSoundVoices {
+	if play.restricted {
+		oldest, n := -1, 0
+		for i, v := range m.voices {
+			if v.play.restricted {
+				if n == 0 {
+					oldest = i
+				}
+				n++
+			}
+		}
+		if n >= driver.MaxSoundVoices {
+			m.finishVoice(m.voices[oldest])
+			m.voices = slices.Delete(m.voices, oldest, oldest+1)
+		}
+	}
+	// A limit lowered while voices play stops the oldest until the new playback fits.
+	for len(m.voices) >= play.voices() {
 		m.finishVoice(m.voices[0])
 		m.voices = m.voices[1:]
 	}

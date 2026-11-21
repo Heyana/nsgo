@@ -173,6 +173,14 @@ func TestLinuxAudioSounds(t *testing.T) {
 	if got := load(core.AudioSource{URI: large}); !errors.Is(got.err, core.AudioQuotaExceeded) {
 		t.Fatalf("oversized sound error %v, want %v", got.err, core.AudioQuotaExceeded)
 	}
+	set := make(chan error, 1)
+	cx.Post(func() { set <- cx.SetSoundLimits(core.SoundLimits{MaxDuration: 10 * time.Second}) })
+	if err := awaitAudio(t, set); err != nil {
+		t.Fatal(err)
+	}
+	if got := load(core.AudioSource{Data: audioTestWAV(6 * time.Second)}); got.err != nil || got.sound.Duration() < 6*time.Second-time.Millisecond {
+		t.Fatalf("sound within a raised duration limit: sound=%v error=%v", got.sound, got.err)
+	}
 }
 
 func TestLinuxAudioMixerOutput(t *testing.T) {
@@ -335,6 +343,37 @@ func TestLinuxAudioMixerOutput(t *testing.T) {
 			t.Error("the oldest playback was not retired at the native limit")
 		}
 		mixer.sweep(time.Now(), 4)
+	})
+
+	// A raised limit keeps more voices, restricted playbacks stay within the default cap among themselves, and a lowered limit stops the oldest.
+	const raised = driver.MaxSoundVoices + 8
+	w.onLoop(t, func() {
+		defer mixer.sweep(time.Now(), 3)
+		for range raised {
+			mixer.play(soundPlayback{id: 3, pcm: pcm, volume: 0.01, rate: 1, limit: raised})
+		}
+		if len(mixer.voices) != raised {
+			t.Errorf("voices at a raised limit = %d, want %d", len(mixer.voices), raised)
+			return
+		}
+		for range driver.MaxSoundVoices + 1 {
+			mixer.play(soundPlayback{id: 3, pcm: pcm, volume: 0.01, rate: 1, limit: raised * 2, restricted: true})
+		}
+		restricted := 0
+		for _, v := range mixer.voices {
+			if v.play.restricted {
+				restricted++
+			}
+		}
+		if restricted != driver.MaxSoundVoices || len(mixer.voices) != raised+driver.MaxSoundVoices {
+			t.Errorf("restricted voices = %d of %d, want %d of %d", restricted, len(mixer.voices), driver.MaxSoundVoices, raised+driver.MaxSoundVoices)
+			return
+		}
+		mixer.play(soundPlayback{id: 3, pcm: pcm, volume: 0.01, rate: 1, limit: 4})
+		if len(mixer.voices) != 4 {
+			t.Errorf("voices after lowering the limit = %d, want 4", len(mixer.voices))
+			return
+		}
 	})
 }
 

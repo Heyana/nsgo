@@ -3,8 +3,10 @@
 package linux
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -119,10 +121,13 @@ func (a *linuxAudio) load(w *window, id uint32, req driver.AudioRequest) {
 		defer cancel()
 		b, code, message := readSoundBytes(ctx, req.Source, req.MaxBytes)
 		var pcm []byte
-		var cut bool
+		var cut, large bool
 		if code == "" {
-			pcm, cut, message = decodeSound(ctx, b, req.MaxDuration)
-			if message != "" {
+			pcm, cut, large, message = decodeSound(ctx, b, req.MaxDuration, cmp.Or(req.MaxDecodedBytes, driver.MaxDecodedBytes))
+			switch {
+			case large:
+				code, message = driver.AudioQuotaExceeded, "the sound exceeds its decoded size limit"
+			case message != "":
 				code = driver.AudioDecode
 			}
 		}
@@ -160,7 +165,7 @@ func readSoundBytes(owner context.Context, src driver.ImageSource, maxBytes int6
 	}
 	data, err := soundSourceBytes(ctx, src, maxBytes, progress)
 	if large.Load() || int64(len(data)) > maxBytes {
-		return nil, driver.AudioQuotaExceeded, "the sound has more than 8 MiB"
+		return nil, driver.AudioQuotaExceeded, fmt.Sprintf("the sound exceeds its limit of %d encoded bytes", maxBytes)
 	}
 	if err != nil {
 		code := driver.AudioNotSupported
@@ -209,7 +214,8 @@ func (a *linuxAudio) play(id uint32, req *driver.AudioRequest) {
 		a.mixer = newSoundMixer(a.playbackEnded)
 	}
 	if a.mixer != nil {
-		a.mixer.play(soundPlayback{id: id, playback: req.Playback, pcm: sound.pcm, volume: req.Volume, rate: req.Rate, pan: req.Pan, startAt: req.StartAt, loop: req.Loop})
+		a.mixer.play(soundPlayback{id: id, playback: req.Playback, pcm: sound.pcm, volume: req.Volume, rate: req.Rate, pan: req.Pan, startAt: req.StartAt, loop: req.Loop,
+			limit: req.MaxPlaybacks, restricted: req.Restricted})
 		a.lastPlay = time.Now()
 		a.ensureTick()
 	} else {

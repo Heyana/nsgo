@@ -159,6 +159,11 @@ jobs:
         run: |
           xvfb-run -a go tool nsgo test -target linux ./internal/testhost/testdata/websource
           xvfb-run -a go tool nsgo test -target linux ./internal/testhost/testdata/webhistory
+      - name: Test native raised sound limits
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+        run: xvfb-run -a go tool nsgo test -target linux ./internal/testhost/testdata/soundlimits
       - name: Test headless photo pick answers
         run: go tool nsgo test ./internal/testhost/testdata/pick
       - name: Test headless network state
