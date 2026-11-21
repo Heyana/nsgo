@@ -144,7 +144,7 @@ go tool nsgo dev -target android -profile cpu -profile-duration 10s
 go tool pprof -top .nsgo/profiles/cpu.pprof
 ```
 
-The CPU example also works on a desktop, an iPhone, or an iOS simulator. On an iPhone, allow Local Network access if the system prompts for it. The heap is a snapshot and works on the web too. For scheduler and goroutine events, run `go tool nsgo dev -profile trace` and open `.nsgo/profiles/execution.trace` with `go tool trace`. CPU and execution traces default to 10 seconds. `-profile-output` sets the local file's path. A dev run saves its first complete capture, then continues running the app.
+The CPU example also works on a desktop, an iPhone, or an iOS simulator. On an iPhone, allow Local Network access if the system prompts for it. The heap is a snapshot and works on the web too. For scheduler and goroutine events, run `go tool nsgo dev -profile trace` and open `.nsgo/profiles/execution.trace` with `go tool trace`. CPU and execution traces default to 10 seconds. `-profile-output` sets the local file's path. For component previews, the default and relative paths use the app directory. A dev run saves its first complete capture, then continues running the app.
 
 ```sh
 go tool nsgo dev -target web -profile heap

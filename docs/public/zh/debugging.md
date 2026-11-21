@@ -144,7 +144,7 @@ go tool nsgo dev -target android -profile cpu -profile-duration 10s
 go tool pprof -top .nsgo/profiles/cpu.pprof
 ```
 
-桌面、iPhone 和 iOS 模拟器也可以采集 CPU。iPhone 提示本地网络权限时请允许。也可以用 `go tool nsgo dev -profile trace` 记录调度器和 goroutine 事件，再用 `go tool trace` 打开 `.nsgo/profiles/execution.trace`。CPU 和执行跟踪默认采集 10 秒，`-profile-output` 指定本机输出路径。开发命令保存第一份完整采集结果后，应用会继续运行。
+桌面、iPhone 和 iOS 模拟器也可以采集 CPU。iPhone 提示本地网络权限时请允许。也可以用 `go tool nsgo dev -profile trace` 记录调度器和 goroutine 事件，再用 `go tool trace` 打开 `.nsgo/profiles/execution.trace`。CPU 和执行跟踪默认采集 10 秒，`-profile-output` 指定本机输出路径。组件预览的默认路径和相对路径基于应用目录。开发命令保存第一份完整采集结果后，应用会继续运行。
 
 ```sh
 go tool nsgo dev -target web -profile heap

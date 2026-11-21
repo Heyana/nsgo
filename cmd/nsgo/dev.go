@@ -88,7 +88,13 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 			return err
 		}
 	}
-	profile, err := opts.profile.forProject(p, opts.release)
+	appProject := p
+	if opts.preview != nil {
+		config := *p
+		config.Dir = opts.preview.projectDir
+		appProject = &config
+	}
+	profile, err := opts.profile.forProject(appProject, opts.release)
 	if err != nil {
 		return err
 	}
@@ -104,10 +110,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		return err
 	}
 	defer srv.close()
-	srv.dir = p.Dir
-	if opts.preview != nil {
-		srv.dir = opts.preview.projectDir
-	}
+	srv.dir = appProject.Dir
 	opts.server = srv
 	if profile.kind != "" {
 		srv.mu.Lock()
