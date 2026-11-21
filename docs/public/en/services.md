@@ -170,6 +170,47 @@ Apple builds require `apple.privacy.accessed_apis` in `nsgo.yaml` to declare `NS
 
 Set a test's answer with `nsgotest.DiskSpace(space, err)`.
 
+## Cloud storage
+
+Package `cloud` syncs small key-value entries (`cloud.Get`, `cloud.Set`, `cloud.Delete`, `cloud.Keys`) and larger files or save snapshots (`cloud.ReadFile`, `cloud.WriteFile`, `cloud.DeleteFile`, `cloud.ListFiles`) across devices: iCloud Key-Value Store and ubiquity document containers on macOS and iOS, and Google Play Games Saved Games on Android.
+
+Every operation delivers its callback on the engine goroutine and skips it if `cx` has been disposed. `cx.Env().CanUseCloudStorage()` reports whether cloud storage is available; when the user is signed out, entitlements are absent, or the platform has no native cloud backend (Windows, Linux and the web), every call returns `cloud.ErrUnavailable` and never silently drops writes.
+
+```go
+if cx.Env().CanUseCloudStorage() {
+	cloud.WriteFile(cx, "saves/slot1.sav", saveBytes, func(err error) {
+		if err != nil {
+			status.Set(err.Error())
+		}
+	})
+}
+
+cloud.WatchChanges(cx, func(ev cloud.ChangeEvent) {
+	reload(ev.Keys, ev.Files)
+})
+
+cloud.OnConflict(cx, func(c cloud.Conflict) {
+	_ = c.Resolve(mergeSaves(c.Local, c.Remote))
+})
+```
+
+`cloud.WatchChanges` and `cloud.OnConflict` deliver external multi-device changes and version conflicts on the engine goroutine and clean themselves up automatically when `cx` is disposed. Reading a conflicted file returns a `*cloud.ConflictError` (matching `errors.Is(err, cloud.ErrConflict)`).
+
+To enable Apple iCloud entitlements in `nsgo build`, add a `cloud:` (or `icloud:`) section to `nsgo.yaml`:
+
+```yaml
+cloud:
+  kv_store: true
+  containers:
+    - iCloud.com.example.myapp
+```
+
+The signing profile must grant the iCloud capabilities you ask for. On macOS only Mac App Store builds (`sign.macos_profile`) carry iCloud, since macOS grants it only with a provisioning profile; a Developer ID build leaves it out with a warning. On Android, cloud storage needs the Play Games Services v2 SDK in the app and a signed-in player.
+
+On desktop stores such as Steam, Steam Auto-Cloud syncs `cx.DataDir()` directly with zero extra code — keep writing local save files there and let Steam synchronize the directory.
+
+In tests, `nsgotest` gives each app an isolated in-memory cloud store: toggle availability with `nsgotest.CloudAvailable` or `app.SetCloudAvailable`, simulate external multi-device updates with `app.SimulateCloudChange`, and test conflict resolution with `app.SimulateCloudConflict`.
+
 ## Secrets
 
 `cx.Secrets()` is the app's secure store, for refresh tokens, API keys and passwords: `Get`, `Set` and `Delete` a string by account, which the platform protects. A missing account reads as `("", false, nil)`, and where the platform has no secure store, as on the web, every call returns `core.ErrSecretsUnavailable`; NSGo never falls back to plain storage. The system may make a call wait, as a keychain asking the user does, so call them off the engine's goroutine and hand the result back with `cx.Post`.

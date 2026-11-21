@@ -641,7 +641,7 @@ func iosProjectData(p *project, sys *appleOS, team string) map[string]string {
 	return data
 }
 
-// xcodeEntitlements are the claims Xcode's automatic signing registers: widget or App Clip groups, clip association, Associated Domains and Sign in with Apple.
+// xcodeEntitlements are the claims Xcode's automatic signing registers: widget or App Clip groups, clip association, Associated Domains, Sign in with Apple and iCloud when cloud/icloud asks for it.
 func (p *project) xcodeEntitlements(widgets, clip bool) map[string]any {
 	ents := map[string]any{}
 	if widgets || clip && p.clipStorageGroup() != "" {
@@ -655,6 +655,9 @@ func (p *project) xcodeEntitlements(widgets, clip bool) map[string]any {
 	}
 	if clip {
 		ents["com.apple.developer.associated-appclip-app-identifiers"] = []any{"$(AppIdentifierPrefix)" + p.AppClip.ID}
+	}
+	for k, v := range p.cloudEntitlements("") {
+		ents[k] = v
 	}
 	return ents
 }

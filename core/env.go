@@ -48,6 +48,7 @@ type Env struct {
 	purchases               *Signal[bool]
 	canRequestReview        *Signal[bool]
 	gameServices            *Signal[bool]
+	cloudStorage            *Signal[bool]
 	scheduled               *Signal[bool]
 	transparent, taskbar    *Signal[bool]
 	fontScale, ratio        *Signal[float32]
@@ -145,6 +146,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		purchases:        NewSignal(cx, false),
 		canRequestReview: NewSignal(cx, false),
 		gameServices:     NewSignal(cx, false),
+		cloudStorage:     NewSignal(cx, false),
 		scheduled:        NewSignal(cx, false),
 		transparent:      NewSignal(cx, false),
 		taskbar:          NewSignal(cx, false),
@@ -285,6 +287,7 @@ func (e *Env) set(v Environment) {
 	e.purchases.Set(v.Purchases)
 	e.canRequestReview.Set(v.CanRequestReview)
 	e.gameServices.Set(v.CanUseGameServices)
+	e.cloudStorage.Set(v.CloudStorage)
 	e.scheduled.Set(v.ScheduledNotifications)
 	e.transparent.Set(v.CanMakeWindowsTransparent)
 	e.taskbar.Set(v.CanSkipTaskbar)
@@ -499,6 +502,9 @@ func (e *Env) CanRequestReview() bool { return e.canRequestReview.Get() }
 
 // CanUseGameServices reports whether package gameservices reaches a platform game service here: Game Center on macOS, iOS and tvOS where GameKit loads, and Google Play Games Services on Android where available. Elsewhere gameservices calls answer ErrUnsupported without asking the platform.
 func (e *Env) CanUseGameServices() bool { return e.gameServices.Get() }
+
+// CanUseCloudStorage reports whether package cloud has an available cloud storage backend here: an Apple device signed into iCloud, Android with Google Play Games saved games, or a test app whose in-memory cloud store is enabled.
+func (e *Env) CanUseCloudStorage() bool { return e.cloudStorage.Get() }
 
 // CanScheduleNotifications reports whether a Notification with a later At or a Repeat is scheduled here: natively (also after the app closes) on macOS, iOS and watchOS in an app bundle, Android and Windows, and while the app or page runs on Linux and the web where Notification is available. Elsewhere (tvOS and mini programs) ShowNotification answers false for one without asking the platform.
 func (e *Env) CanScheduleNotifications() bool { return e.scheduled.Get() }

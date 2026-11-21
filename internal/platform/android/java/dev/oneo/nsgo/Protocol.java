@@ -159,6 +159,8 @@ final class Protocol {
                 return true;
             case EXT_BULK:
                 return true;
+            case EXT_CLOUD_STORAGE:
+                return true;
             default:
                 return false;
         }
@@ -243,6 +245,8 @@ final class Protocol {
     static final int EXT_KEY_REPLY = 12;
     /** Asks Google Play to offer an update: surface and request count. */
     static final int EXT_PLAY_UPDATE = 13;
+    /** Carries out a cloud storage command for package cloud: JSON (CloudStorage), answered by CLOUD_STORAGE_REPORT. */
+    static final int EXT_CLOUD_STORAGE = 14;
     static final int CAP_PLAY_UPDATES = 128;
     /** The environment's third capability byte's bit for a device that plays timed vibration patterns (capHapticPatterns in protocol.go). */
     static final int CAP_HAPTIC_PATTERNS = 16;
@@ -342,6 +346,8 @@ final class Protocol {
 
     /** Answers ITEM_CAPTURE with its surface and count, an error ("" for none) and the PNG. */
     static final int CAPTURE_REPLY = 39;
+    /** What CloudStorage reports for package cloud: JSON (CloudStorage). */
+    static final int CLOUD_STORAGE_REPORT = 32;
 
     // TEXT_REQUEST carries a request ID and one of these operations.
     static final int TEXT_PREPARE = 1;

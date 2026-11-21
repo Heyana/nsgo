@@ -864,6 +864,7 @@ func (s *surface) environment() driver.Environment {
 		Idiom:            idiom,
 		Gamepads:         true,
 		CanRequestReview: !onTV() && apple.ReviewAvailable(),
+		CloudStorage:     apple.CloudStorageAvailable(),
 		VerticalBarEdge:  verticalBarEdge(traits),
 		Lifecycle:        appLifecycle(),
 		ThermalState:     thermal,

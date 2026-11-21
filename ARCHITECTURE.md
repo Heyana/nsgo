@@ -40,6 +40,7 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `i18n`, `*/locales`, `internal/cldr` | — | The language the app shows, and what the code `nsgo` writes from a package's catalogs runs on, formatting by CLDR's data; `base`'s own catalogs ([languages](docs/architecture/languages.md)) |
 | `icons/lucide`, `tools/lucidegen` | — (NSH loads SVG as images) | The bundled Lucide pack, an accessor per icon, and its generator ([icons](docs/architecture/icons.md)) |
 | `audio` | `nsh`'s `Sound` and `AudioPlayer` | Overlapping, panned short sounds and streaming players on macOS, iOS, Windows, Linux, Android and the web, with shared state in `core` ([audio playback](docs/architecture/audio.md)) |
+| `cloud` | — | Provider-neutral cloud key-value and file/snapshot storage: iCloud KV store and ubiquity files on macOS and iOS, Google Play Games Saved Games hook on Android, and isolated per-app in-memory testing in `nsgotest` ([cloud storage](docs/architecture/cloud.md)) |
 | `gamepad` | — | Connected game controllers (`Pads`) and per-frame button and axis readings (`State`) in the W3C Standard Gamepad layout on macOS, iOS, Windows, Linux, Android and the web |
 | `microphone` | — | Recording the default input (`Capture`) on macOS, iOS, Windows (WASAPI) and Linux (PulseAudio/ALSA), and WAV files (`RecordWAV`) on macOS, iOS, Windows, Linux and Android (in the runtime's foreground service, [Android recording](docs/architecture/android-recording.md)), reporting `ErrUnsupported` elsewhere |
 | `internal/audiosession` | — | iOS's one `AVAudioSession`, set by the highest level its holders ask for: videos, speech, `microphone` and audio's players and sounds ([sessions](docs/architecture/audio.md#sessions)) |
@@ -153,6 +154,7 @@ Record a design question here, and confirm the answer with the user before choos
 | [Scrolling](docs/architecture/scrolling.md) | `Scroll`, `List` or a scroll view |
 | [Interaction](docs/architecture/interaction.md) | Accessibility, pointers, focus, touches, gestures or drops |
 | [Services](docs/architecture/services.md) | A service, a menu, the desktop window or the app's lifecycle |
+| [Cloud storage](docs/architecture/cloud.md) | `cloud`, iCloud KV/ubiquity files, Play Games saved games, entitlements or `nsgotest` cloud simulation |
 | [Remote push](docs/architecture/remote-push.md) | Remote notification tokens, payload delivery or provider adapters |
 | [Contacts and calendar](docs/architecture/contacts-calendar.md) | Contacts, calendars, events or their permissions, which are designed and not built |
 | [Location and motion](docs/architecture/location-motion.md) | Location fixes, motion samples or sensor permissions |

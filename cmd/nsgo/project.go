@@ -179,9 +179,15 @@ type project struct {
 		SignInWithApple bool `yaml:"sign_in_with_apple"`
 		// Purchases puts StoreKit's library, which in-app purchases go through, into the macOS, iOS and tvOS packages (storekit.go).
 		Purchases bool `yaml:"purchases"`
+		// ICloud configures Apple iCloud key-value store and ubiquity document containers (cloud.go); top-level cloud: is its provider-neutral alias.
+		ICloud cloudConfig `yaml:"icloud"`
 		// Privacy adds the app's required-reason APIs, tracking settings and collected data to PrivacyInfo.xcprivacy.
 		Privacy privacySettings `yaml:"privacy"`
 	} `yaml:"apple"`
+	// Cloud configures cloud storage entitlements, such as Apple iCloud key-value store and ubiquity containers (cloud.go).
+	Cloud cloudConfig `yaml:"cloud"`
+	// ICloud is a top-level alias for Cloud for Apple iCloud entitlements (cloud.go).
+	ICloud cloudConfig `yaml:"icloud"`
 	// FileTypes are the kinds of documents the app opens, which desktop
 	// and full iOS packages register (filetypes.go).
 	FileTypes []fileType `yaml:"file_types"`
@@ -525,6 +531,9 @@ func load(dir string) (*project, error) {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	if err := p.validatePrivacy(); err != nil {
+		return nil, fmt.Errorf("nsgo.yaml: %w", err)
+	}
+	if err := p.validateCloud(); err != nil {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	if err := p.validateUpdates(); err != nil {

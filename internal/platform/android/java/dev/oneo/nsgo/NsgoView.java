@@ -724,6 +724,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
         if (gamepads == null) gamepads = new Gamepads(getContext(), payload -> write(Protocol.GAMEPAD, payload));
         gamepads.start(ui);
+        // Play Games' sign-in, which says whether package cloud is available, is known only asynchronously: the probe reports it to package cloud and resends the environment with it.
+        if (CloudStorage.isSdkPresent()) {
+            CloudStorage.probeState(activity(), report -> {
+                write(Protocol.CLOUD_STORAGE_REPORT, report);
+                ui.post(this::environment);
+            });
+        }
         if (measuring) startTicking();
     }
 
@@ -1497,6 +1504,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             case Protocol.EXT_GAME_SERVICES:
                 gameServicesUnavailable(payload);
                 break;
+            case Protocol.EXT_CLOUD_STORAGE:
+                // The command's JSON follows the kind byte.
+                CloudStorage.handle(activity(), Arrays.copyOfRange(payload, 1, payload.length), report -> write(Protocol.CLOUD_STORAGE_REPORT, report));
+                break;
             case Protocol.EXT_GPU_FRAME: {
                 int to = message.readInt();
                 int viewId = message.readInt();
@@ -1636,7 +1647,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     | (inactive ? 16 : 0) | (background ? 32 : 0) | (Services.hasCamera(getContext()) ? 64 : 0));
             // The first byte's eight bits are taken: what else the device can do follows in a second.
             d.writeByte((Speaker.available(getContext()) ? 1 : 0) | (Scanner.available(getContext()) ? 2 : 0)
-                    | (Services.canRequestReview(activity()) ? 4 : 0) | first.networkFlags);
+                    | (Services.canRequestReview(activity()) ? 4 : 0) | first.networkFlags
+                    | (CloudStorage.signedIn ? 128 : 0));
             int idiom = config.smallestScreenWidthDp >= 600 ? Protocol.IDIOM_TABLET : Protocol.IDIOM_PHONE;
             if ((config.uiMode & Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION) {
                 idiom = Protocol.IDIOM_TV;

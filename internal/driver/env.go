@@ -104,6 +104,8 @@ type Environment struct {
 	Purchases bool
 	// CanRequestReview says ItemRequestReview can ask the platform's store to show an in-app rating prompt.
 	CanRequestReview bool
+	// CloudStorage says package cloud has a cloud storage backend available here: an Apple device signed into iCloud, Android with Google Play Games saved games, or a test app whose in-memory cloud store is enabled.
+	CloudStorage bool
 	// CanUseGameServices says package gameservices reaches a platform game service here: Game Center on macOS, iOS and tvOS where GameKit loads, and Google Play Games Services on Android where available; false on watchOS, Windows, Linux, the web and mini programs.
 	CanUseGameServices bool
 	// ScheduledNotifications says ItemShowNotification schedules a notification for a later At, natively where the platform offers a schedule or while the app runs elsewhere.

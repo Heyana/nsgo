@@ -153,6 +153,9 @@ func signMacApp(ctx context.Context, p *project, app string) error {
 	if p.Apple.SignInWithApple {
 		warnIn(ctx, "Sign in with Apple is left out: macOS grants it only with a provisioning profile, which only store builds (sign.macos_profile) embed")
 	}
+	if p.cloudEnabled() {
+		warnIn(ctx, "iCloud is left out: macOS grants it only with a provisioning profile, which only store builds (sign.macos_profile) embed")
+	}
 	if p.Sign.Identity == "" {
 		return nil
 	}
@@ -313,6 +316,9 @@ func signForStore(ctx context.Context, p *project, sys *appleOS, app string) err
 		return err
 	}
 	if err := p.claimAppLinks(entitlements, entitlements); err != nil {
+		return err
+	}
+	if err := p.claimCloudEntitlements(entitlements, entitlements, teamIDFromEntitlements(entitlements)); err != nil {
 		return err
 	}
 	identity := p.Sign.Identity

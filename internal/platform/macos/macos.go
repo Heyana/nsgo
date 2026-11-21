@@ -1258,6 +1258,7 @@ func (s *surface) environment() driver.Environment {
 		Purchases:          apple.PurchasesAvailable(),
 		CanRequestReview:   apple.ReviewAvailable(),
 		CanUseGameServices: apple.GameServicesAvailable(),
+		CloudStorage:       apple.CloudStorageAvailable(),
 		RTL:                rtl,
 		PixelRatio:         s.backingScale(),
 		Locale:             locale,

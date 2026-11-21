@@ -629,6 +629,8 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte, byte) {
 	}
 	// Play Games Services available through the runtime reflection hook.
 	env.CanUseGameServices = more&64 != 0
+	// Google Play Games Services Snapshots client is present and signed in.
+	env.CloudStorage = more&128 != 0
 	env.Idiom = driver.Idiom(r.byte())
 	env.Locale = r.str()
 	env.DeviceName = r.str()

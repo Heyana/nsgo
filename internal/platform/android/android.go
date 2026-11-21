@@ -123,7 +123,6 @@ const (
 	msgCanvasRequest = 22
 	// msgScanReport is what the code scanner reports: a frame of the camera, its close or its failure (scan.go).
 	msgScanReport = 23
-
 	// msgGamepad reports a game controller connecting, disconnecting or changing buttons and axes (gamepad.go).
 	msgGamepad = 24
 	// msgDiskSpaceReply answers msgDiskSpace, with byte counts or the reason it failed.
@@ -174,6 +173,8 @@ const (
 	extKeyReply = 12
 	// extPlayUpdate asks Google Play to check and offer its immediate update flow.
 	extPlayUpdate = 13
+	// extCloudStorage is a JSON command for package cloud to the runtime's Play Games Saved Games bridge (CloudStorage.java), from driver.SendCloudStorage, answered by msgCloudStorageReport.
+	extCloudStorage = 14
 	// extDownload carries a process-wide background download command as JSON, which NsgoEngine hands to BackgroundDownloadService.
 	extDownload = 5
 	// extGPUFrame submits an off-commit 3D GPU frame to GpuView.java, gpu.go's encoding.
@@ -182,6 +183,8 @@ const (
 	extGeometry = 7
 	// extAudioOutput controls a pull PCM output stream and carries its rendered samples, as audiooutput.go and AudioOutput.java have them.
 	extAudioOutput = 6
+	// msgCloudStorageReport is what the runtime's Play Games Saved Games bridge reports for package cloud, JSON (driver.ReportCloudStorage), answering extCloudStorage or probing the sign-in.
+	msgCloudStorageReport = 32
 )
 
 // The parts of an image view's request msgImage carries.
@@ -371,6 +374,13 @@ func connect(opts Options) *surface {
 			return driver.ErrAudioOutputUnsupported
 		}
 		return err
+	})
+	driver.ConnectCloudStorage(func(msg []byte) {
+		err := s.sendExtended(extCloudStorage, func(w *writer) { w.buf = append(w.buf, msg...) })
+		// A runtime that reads no extended messages has no cloud storage: the command's caller hears it is unavailable rather than waiting for a reply that never comes.
+		if errors.Is(err, errNoExtendedMessages) {
+			driver.ReportCloudStorage(cloudStorageUnavailable(msg))
+		}
 	})
 	return s
 }
@@ -598,6 +608,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.gpuEvent(&r)
 		case msgAudioOutputReport:
 			s.audioOutputReport(&r)
+		case msgCloudStorageReport:
+			driver.ReportCloudStorage(slices.Clone(payload))
 		case msgDNS:
 			servers := make([]string, r.u32())
 			for i := range servers {
@@ -1504,6 +1516,20 @@ func gameServicesUnavailable(command []byte) []byte {
 		ID    uint64 `json:"id"`
 		Error string `json:"error"`
 	}{"result", c.ID, "unavailable"})
+	return report
+}
+
+// cloudStorageUnavailable is the reply to a cloud storage command that cannot reach the runtime, in the JSON CloudStorage.java replies with.
+func cloudStorageUnavailable(command []byte) []byte {
+	var c struct {
+		ID uint64 `json:"id"`
+	}
+	_ = json.Unmarshal(command, &c)
+	report, _ := json.Marshal(struct {
+		Type  string `json:"type"`
+		ID    uint64 `json:"id"`
+		Error string `json:"error"`
+	}{"reply", c.ID, "unavailable"})
 	return report
 }
 
