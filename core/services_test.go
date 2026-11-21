@@ -489,6 +489,54 @@ func TestSaveFile(t *testing.T) {
 	}
 }
 
+func TestSaveFileRepeatedPreflight(t *testing.T) {
+	refused := errors.New("the app owns this name")
+	for _, cancel := range []bool{false, true} {
+		var cx *Scope
+		h := newHost(t, Size{Width: 100, Height: 100}, func(c *Scope) Node { cx = c; return View{} })
+		h.commit()
+		var got []string
+		answers := 0
+		var saved bool
+		var path string
+		var saveErr error
+		cx.SaveFile(SaveOptions{Accept: func(chosen string) error {
+			got = append(got, chosen)
+			if chosen == "/protected.txt" {
+				return refused
+			}
+			return nil
+		}}, func(ok bool, chosen string, err error) {
+			answers++
+			saved, path, saveErr = ok, chosen, err
+		})
+		id := command(h.commit(), driver.ItemSaveFile).Count
+		check := func(path string, attempt uint32, approved bool) {
+			t.Helper()
+			ev := driver.Event{Kind: driver.EventSavePreflight, Count: id, Text: path, Data: attempt}
+			h.tree.Dispatch(ev)
+			h.tree.Dispatch(ev) // a duplicate must not rerun Accept
+			it := command(h.commit(), driver.ItemSavePreflightAnswer)
+			if it == nil || it.Count != id || it.Data != attempt || it.On != approved {
+				t.Fatalf("preflight answer = %+v", it)
+			}
+		}
+		check("/protected.txt", 1, false)
+		if cancel {
+			h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id, Data: "/protected.txt", Text: refused.Error()})
+			if answers != 1 || saved || path != "/protected.txt" || saveErr != refused || !slices.Equal(got, []string{"/protected.txt"}) {
+				t.Fatalf("cancel = %v at %q with %v, %d answers and checks %v", saved, path, saveErr, answers, got)
+			}
+			continue
+		}
+		check("/new.txt", 2, true)
+		h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: id, Data: "/new.txt", Finished: true})
+		if answers != 1 || !saved || path != "/new.txt" || saveErr != nil || !slices.Equal(got, []string{"/protected.txt", "/new.txt"}) {
+			t.Fatalf("retry = %v at %q with %v, %d answers and checks %v", saved, path, saveErr, answers, got)
+		}
+	}
+}
+
 func TestOpenFile(t *testing.T) {
 	var cx *Scope
 	h := newHost(t, Size{Width: 100, Height: 100}, func(c *Scope) Node { cx = c; return View{} })

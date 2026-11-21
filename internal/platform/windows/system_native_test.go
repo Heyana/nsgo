@@ -524,23 +524,51 @@ func TestSaveDialogStartsInFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The shell returns the long path even when TEMP uses an 8.3 name.
-	path := filepath.Join(dir, "report.txt")
+	refused := filepath.Join(dir, "report.txt")
+	path := filepath.Join(dir, "renamed.txt")
+	var attempts int
 	cx.Post(func() {
 		cx.SaveFile(core.SaveOptions{Name: "report.txt", Data: []byte("notes"), Start: start, Accept: func(chosen string) error {
+			attempts++
+			if attempts == 1 {
+				if !strings.EqualFold(chosen, refused) {
+					t.Errorf("first destination %q, want %q", chosen, refused)
+				}
+				return fmt.Errorf("the app keeps this name for its reports")
+			}
 			if !strings.EqualFold(chosen, path) {
-				return fmt.Errorf("preflight destination %q, want %q", chosen, path)
+				return fmt.Errorf("second destination %q, want %q", chosen, path)
 			}
 			return nil
 		}}, func(saved bool, path string, err error) {
-			status <- fmt.Sprintf("%v %q %v", saved, path, err)
+			status <- fmt.Sprintf("%v %q %v (%d attempts)", saved, path, err, attempts)
 		})
 	})
 	dlg, _ := fileDialog(t, hwnd)
 	const idOK = 1
 	postMessageW.Call(dlg, wmCommand, idOK, 0)
+	warning := waitForWindow(t, "report.txt", done)
+	if warning == 0 {
+		return
+	}
+	defer postMessageW.Call(warning, wmCommand, idOK, 0)
+	const gwOwner = 4
+	if owner, _, _ := getWindowProc.Call(warning, gwOwner); owner != dlg {
+		t.Errorf("warning was not owned by the save dialog")
+	}
+	if _, err := os.Stat(refused); !os.IsNotExist(err) {
+		t.Fatalf("refusing %q touched the path: %v", refused, err)
+	}
 	select {
 	case got := <-status:
-		if want := fmt.Sprintf("true %q <nil>", path); !strings.EqualFold(got, want) {
+		t.Fatalf("a refusal completed the save before the dialog closed: %s", got)
+	default:
+	}
+	postMessageW.Call(warning, wmCommand, idOK, 0)
+	answerFileDialog(t, hwnd, path)
+	select {
+	case got := <-status:
+		if want := fmt.Sprintf("true %q <nil> (2 attempts)", path); !strings.EqualFold(got, want) {
 			t.Fatalf("save = %s, want %s", got, want)
 		}
 	case <-time.After(5 * time.Second):

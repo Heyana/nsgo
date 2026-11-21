@@ -142,7 +142,7 @@
 - Hold the starting value of macOS and iOS style and border animations across the update that replaces it, which could crash an app showing a `ui.Select` (#995 by @houko).
 - Stop a disposed computation from subscribing to what it reads, which left links that later crashed `Scope.Dispose` with an index out of range (#997 by @houko).
 - Add `nsgo.StartHidden`, which opens the main window on macOS, Windows and Linux without showing it until the app shows it, for tray apps and launches at login (#670 by @houko).
-- Add starting-folder and destination-check options to `core.SaveFile` (#1086 by @houko).
+- Add starting-folder and destination-check options to `core.SaveFile` and keep the Windows dialog open for another choice when the app refuses a destination (#1086 by @houko).
 - Keep macOS target test windows at the requested `nsgotest.Size` and `Resize` content size instead of silently constraining them to the screen (#697 by @houko).
 - Add `nsgo publish -extra`, which signs a file's bytes into the package as `pkg.Contents.Extra` (#924 by @houko).
 - Add `core.Scroll.NoShrink`, and `noShrink` on TSX scroll views, to keep a scroll view at its requested size when its parent is short (#967 by @houko).

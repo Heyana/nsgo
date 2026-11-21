@@ -550,16 +550,22 @@ func (w *window) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 // file is written where the user chose on a goroutine.
 func (w *window) saveFile(r driver.SaveRequest, id uint32) {
 	w.queueDialog(func() {
-		path, err := w.saveDialog(r.Name, r.Start)
+		var preflight *saveDialogPreflight
+		if r.Preflight {
+			preflight = &saveDialogPreflight{w: w, id: id}
+		}
+		path, err := w.saveDialog(r.Name, r.Start, preflight)
 		if err != nil || path == "" {
 			ev := driver.Event{Kind: driver.EventFiles, Count: id}
 			if err != nil {
 				ev.Text = err.Error()
+			} else if preflight != nil && preflight.refusal.Data != nil {
+				ev = preflight.refusal
 			}
 			w.engine.Dispatch(ev)
 			return
 		}
-		go w.saves.Save(r, id, path, w.engine.Dispatch)
+		go func() { w.engine.Dispatch(driver.SaveResult(r, id, path)) }()
 	})
 }
 
@@ -693,32 +699,31 @@ var (
 	iidShellItem                = parseGUID("43826D1E-E718-42EE-BC55-A1E261C37BFE")
 	shCreateItemFromParsingName = shell32.NewProc("SHCreateItemFromParsingName")
 
-	// folderEventsVtbl is IFileDialogEvents': OnFolderChange answers,
-	// and the rest accept.
-	folderEventsVtbl = [10]uintptr{
-		syscall.NewCallback(folderEventsQueryInterface),
-		syscall.NewCallback(folderEventsAddRef),
-		syscall.NewCallback(folderEventsRelease),
-		syscall.NewCallback(func(e *folderEvents, dialog uintptr) uintptr { return sOK }),                 // OnFileOk
-		syscall.NewCallback(func(e *folderEvents, dialog, folder uintptr) uintptr { return sOK }),         // OnFolderChanging
-		syscall.NewCallback(folderEventsFolderChange),                                                     // OnFolderChange
-		syscall.NewCallback(func(e *folderEvents, dialog uintptr) uintptr { return sOK }),                 // OnSelectionChange
-		syscall.NewCallback(func(e *folderEvents, dialog, item, response uintptr) uintptr { return sOK }), // OnShareViolation
-		syscall.NewCallback(func(e *folderEvents, dialog uintptr) uintptr { return sOK }),                 // OnTypeChange
-		syscall.NewCallback(func(e *folderEvents, dialog, item, response uintptr) uintptr { return sOK }), // OnOverwrite
+	// fileDialogEventsVtbl is the IFileDialogEvents interface.
+	fileDialogEventsVtbl = [10]uintptr{
+		syscall.NewCallback(fileDialogEventsQueryInterface),
+		syscall.NewCallback(fileDialogEventsAddRef),
+		syscall.NewCallback(fileDialogEventsRelease),
+		syscall.NewCallback(fileDialogEventsFileOK),                                                   // OnFileOk
+		syscall.NewCallback(func(e *fileDialogEvents, dialog, folder uintptr) uintptr { return sOK }), // OnFolderChanging
+		syscall.NewCallback(fileDialogEventsFolderChange),                                             // OnFolderChange
+		syscall.NewCallback(func(e *fileDialogEvents, dialog uintptr) uintptr { return sOK }),         // OnSelectionChange
+		syscall.NewCallback(fileDialogEventsDefaultResponse),                                          // OnShareViolation
+		syscall.NewCallback(func(e *fileDialogEvents, dialog uintptr) uintptr { return sOK }),         // OnTypeChange
+		syscall.NewCallback(fileDialogEventsDefaultResponse),                                          // OnOverwrite
 	}
 )
 
-// folderEvents is the folder dialog's IFileDialogEvents, implemented in
-// Go. The dialog calls it on the window's thread, and the window keeps it
-// alive while the dialog shows, so nothing is freed when it is released.
-type folderEvents struct {
-	vtbl *[10]uintptr
-	refs atomic.Int32
-	w    *window
+// fileDialogEvents runs callbacks on the dialog's thread. Go keeps the
+// object alive through the dialog's last use.
+type fileDialogEvents struct {
+	vtbl       *[10]uintptr
+	refs       atomic.Int32
+	fileOK     func(*comObject) uintptr
+	folderOpen func()
 }
 
-func folderEventsQueryInterface(e *folderEvents, iid *guid, out *unsafe.Pointer) uintptr {
+func fileDialogEventsQueryInterface(e *fileDialogEvents, iid *guid, out *unsafe.Pointer) uintptr {
 	if *iid == iidUnknown || *iid == iidFileDialogEvents {
 		*out = unsafe.Pointer(e)
 		e.refs.Add(1)
@@ -728,14 +733,28 @@ func folderEventsQueryInterface(e *folderEvents, iid *guid, out *unsafe.Pointer)
 	return eNoInterface
 }
 
-func folderEventsAddRef(e *folderEvents) uintptr { return uintptr(e.refs.Add(1)) }
+func fileDialogEventsAddRef(e *fileDialogEvents) uintptr { return uintptr(e.refs.Add(1)) }
 
-func folderEventsRelease(e *folderEvents) uintptr { return uintptr(e.refs.Add(-1)) }
+func fileDialogEventsRelease(e *fileDialogEvents) uintptr { return uintptr(e.refs.Add(-1)) }
 
-// folderEventsFolderChange has the window check the folder opened once
-// the dialog has finished opening it, which fills in the name field.
-func folderEventsFolderChange(e *folderEvents, dialog uintptr) uintptr {
-	postMessageW.Call(e.w.hwnd, wmFolderChange, 0, 0)
+func fileDialogEventsFileOK(e *fileDialogEvents, dialog *comObject) uintptr {
+	if e.fileOK != nil {
+		return e.fileOK(dialog)
+	}
+	return sOK
+}
+
+func fileDialogEventsFolderChange(e *fileDialogEvents, _ uintptr) uintptr {
+	if e.folderOpen != nil {
+		e.folderOpen()
+	}
+	return sOK
+}
+
+// fileDialogEventsDefaultResponse lets the shell handle overwrites and
+// sharing violations with its usual prompts.
+func fileDialogEventsDefaultResponse(_ *fileDialogEvents, _, _ uintptr, response *uint32) uintptr {
+	*response = 0 // FDEOR_DEFAULT or FDESVR_DEFAULT
 	return sOK
 }
 
@@ -936,7 +955,10 @@ func (w *window) folderDialog(r driver.DirectoriesRequest) ([]string, error) {
 	}
 	setDialogFolder(dialog, r.Start)
 	dialog.call(fileDialogSetOptions, uintptr(options))
-	events := &folderEvents{vtbl: &folderEventsVtbl, w: w}
+	events := &fileDialogEvents{vtbl: &fileDialogEventsVtbl, folderOpen: func() {
+		// Check the folder once the dialog has finished opening and naming it.
+		postMessageW.Call(w.hwnd, wmFolderChange, 0, 0)
+	}}
 	var cookie uint32
 	advised := !failed(dialog.call(fileDialogAdvise, uintptr(unsafe.Pointer(events)), uintptr(unsafe.Pointer(&cookie))))
 	w.folderPick = dialog
@@ -977,7 +999,7 @@ func (w *window) folderDialog(r driver.DirectoriesRequest) ([]string, error) {
 
 // saveDialog suggests name, opens at start when it exists, and asks
 // before replacing a file. It returns an empty path when cancelled.
-func (w *window) saveDialog(name, start string) (string, error) {
+func (w *window) saveDialog(name, start string, preflight *saveDialogPreflight) (string, error) {
 	if err := initCOM(); err != nil {
 		return "", err
 	}
@@ -1004,6 +1026,18 @@ func (w *window) saveDialog(name, start string) (string, error) {
 		dialog.call(fileDialogSetDefaultExtension, uintptr(unsafe.Pointer(wide(ext))))
 	}
 	setDialogFolder(dialog, start)
+	if preflight != nil {
+		events := &fileDialogEvents{vtbl: &fileDialogEventsVtbl, fileOK: preflight.fileOK}
+		var cookie uint32
+		if hr := dialog.call(fileDialogAdvise, uintptr(unsafe.Pointer(events)), uintptr(unsafe.Pointer(&cookie))); failed(hr) {
+			return "", hresultError("save dialog preflight", hr)
+		}
+		defer func() {
+			preflight.closed = true
+			dialog.call(fileDialogUnadvise, uintptr(cookie))
+			runtime.KeepAlive(events)
+		}()
+	}
 	hr := dialog.call(fileDialogShow, w.owner())
 	if uint32(hr) == hresultCancelled {
 		return "", nil
@@ -1011,6 +1045,17 @@ func (w *window) saveDialog(name, start string) (string, error) {
 	if failed(hr) {
 		return "", hresultError("save dialog", hr)
 	}
+	if preflight != nil {
+		if preflight.approved == "" {
+			return "", fmt.Errorf("%s", driver.NoSavePreflight)
+		}
+		return preflight.approved, nil
+	}
+	return saveDialogPath(dialog)
+}
+
+// saveDialogPath works after Show returns and from an OnFileOk event.
+func saveDialogPath(dialog *comObject) (string, error) {
 	var item *comObject
 	if hr := dialog.call(fileDialogGetResult, uintptr(unsafe.Pointer(&item))); failed(hr) || item == nil {
 		return "", hresultError("no save path chosen", hr)

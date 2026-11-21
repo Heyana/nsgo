@@ -8,41 +8,53 @@ import (
 // SavePreflights holds a desktop surface's pending save decisions. The
 // background worker waits for the engine, leaving the UI thread free.
 type SavePreflights struct {
-	pending sync.Map // request number -> chan MountItem
+	pending sync.Map // savePreflightKey -> chan MountItem
 }
+
+type savePreflightKey struct{ id, attempt uint32 }
 
 // Save finishes a chosen save on a background goroutine. The destination
 // is opened only after an approval if the request needs a preflight check.
 func (p *SavePreflights) Save(r SaveRequest, id uint32, path string, dispatch func(Event)) {
-	if !r.Preflight {
-		dispatch(SaveResult(r, id, path))
-		return
+	if r.Preflight {
+		if approved, reason := p.Check(id, 0, path, dispatch); !approved {
+			dispatch(Event{Kind: EventFiles, Count: id, Data: path, Text: reason})
+			return
+		}
 	}
+	dispatch(SaveResult(r, id, path))
+}
+
+// Check asks the engine about one candidate on a background goroutine. A
+// dialog that can retry numbers its attempts from one. A one-shot chooser
+// uses zero.
+func (p *SavePreflights) Check(id, attempt uint32, path string, dispatch func(Event)) (approved bool, reason string) {
+	key := savePreflightKey{id, attempt}
 	reply := make(chan MountItem, 1)
-	p.pending.Store(id, reply)
-	defer p.pending.Delete(id)
+	p.pending.Store(key, reply)
+	defer p.pending.Delete(key)
 	deadline := time.Now().Add(SavePreflightTimeout)
 	timer := time.NewTimer(SavePreflightTimeout)
 	defer timer.Stop()
-	dispatch(Event{Kind: EventSavePreflight, Count: id, Text: path})
-	failed := Event{Kind: EventFiles, Count: id, Data: path, Text: SavePreflightTimedOut}
+	event := Event{Kind: EventSavePreflight, Count: id, Text: path}
+	if attempt != 0 {
+		event.Data = attempt
+	}
+	dispatch(event)
 	select {
 	case answer := <-reply:
 		if time.Now().Before(deadline) {
-			if answer.On {
-				dispatch(SaveResult(r, id, path))
-				return
-			}
-			failed.Text = answer.Value
+			return answer.On, answer.Value
 		}
 	case <-timer.C:
 	}
-	dispatch(failed)
+	return false, SavePreflightTimedOut
 }
 
-// Answer passes the engine's decision to the waiting save once.
+// Answer passes the engine's decision to the matching attempt once.
 func (p *SavePreflights) Answer(it MountItem) {
-	if reply, ok := p.pending.LoadAndDelete(it.Count); ok {
+	attempt, _ := it.Data.(uint32)
+	if reply, ok := p.pending.LoadAndDelete(savePreflightKey{it.Count, attempt}); ok {
 		reply.(chan MountItem) <- it
 	}
 }

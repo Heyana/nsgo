@@ -95,7 +95,7 @@ cx.PickImages(core.PickOptions{Limit: 1, MaxDimension: 2048}, func(files []core.
 
 在 macOS、Windows、Linux 和 iOS 上，将 `core.SaveOptions.Start` 设为现有文件夹的绝对路径，保存对话框就会从该文件夹打开。路径为空、不可用或在其他平台上时，由系统选择起始文件夹。
 
-设置 `core.SaveOptions.Accept` 可以在写入前校验用户选定的目标。回调在引擎的 goroutine 上运行。返回错误时，保存回调收到 `saved == false`、目标和该错误。桌面对话框在用户选定目标后关闭。Android 让用户选择文件夹，传给校验回调的是树 URI，其中 `name` 查询参数为应用请求的文件名。校验通过后才创建文件，成功时返回新文档的 URI。校验超过五秒未答复，平台会放弃写入。iOS 和 HarmonyOS 对要求校验的保存返回错误。Web 没有目标路径，沿用其常规保存流程。
+设置 `core.SaveOptions.Accept` 可以在写入前校验用户选定的目标。回调在引擎的 goroutine 上运行。返回错误时，所选目标保持原样。Windows 对话框显示拒绝原因，并允许用户选择其他路径。如果用户在拒绝后取消，保存回调会收到 `saved == false`、被拒绝的路径和原始错误。在 macOS、Linux 和 Android 上，拒绝时保存回调直接收到上述结果。Android 让用户选择文件夹，传给校验回调的是树 URI，其中 `name` 查询参数为应用请求的文件名。校验通过后才创建文件，成功时返回新文档的 URI。校验超过五秒未答复，平台会放弃写入。iOS 和 HarmonyOS 对要求校验的保存返回错误。Web 没有目标路径，沿用其常规保存流程。
 
 在无头测试中，`App.PickFiles`、`App.PickDirectories` 和 `App.SaveFile` 分别接收 `nsgotest.FilePick`、`nsgotest.DirectoryPick` 和 `nsgotest.FileSave` 记录。`app.FilePicks`、`app.DirectoryPicks` 和 `app.Saves` 保存这些记录。
 ## 存储

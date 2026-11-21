@@ -60,9 +60,10 @@ func (t *Tree) answerAlert(id uint32, index int) {
 
 // wait is a request the platform answers with an event.
 type wait struct {
-	owner     *Scope
-	done      func(driver.Event)
-	preflight func(string)
+	owner       *Scope
+	done        func(driver.Event)
+	preflight   func(path string, attempt uint32)
+	saveAttempt uint32
 }
 
 // request numbers item, sends it and calls done with the event that
@@ -80,21 +81,28 @@ func (t *Tree) request(cx *Scope, item driver.MountItem, done func(driver.Event)
 	return item.Count
 }
 
-// answerSavePreflight runs the check once and keeps the wait for the save's
-// final result. Like answer, it uses the root if the requesting owner closed.
+// answerSavePreflight checks one chosen destination and keeps the wait for
+// the final result. Like answer, it uses the root if the requesting owner closed.
 func (t *Tree) answerSavePreflight(ev driver.Event) {
 	w := t.waits[ev.Count]
 	if w.preflight == nil {
 		return
 	}
+	attempt, _ := ev.Data.(uint32)
+	if attempt != 0 && attempt <= w.saveAttempt {
+		return
+	}
 	check := w.preflight
-	w.preflight = nil
+	if attempt == 0 {
+		w.preflight = nil
+	}
+	w.saveAttempt = attempt
 	t.waits[ev.Count] = w
 	owner := w.owner
 	if owner.disposed {
 		owner = t.root
 	}
-	t.within(owner, func() { check(ev.Text) })
+	t.within(owner, func() { check(ev.Text, attempt) })
 }
 
 // answer runs the wait ev answers, once.
@@ -636,7 +644,10 @@ type SaveOptions struct {
 	Preflight bool
 	// Accept runs on the engine's goroutine after the user chooses where to
 	// save. A nil return approves the destination. If it returns an error,
-	// SaveFile reports that error and the destination without writing.
+	// SaveFile leaves the destination untouched. On Windows the dialog
+	// stays open for another choice, and cancelling after a refusal
+	// reports the refused destination and error. Elsewhere a refusal
+	// completes the save with that destination and error.
 	// Android passes the chosen tree URI with the app's file name in its
 	// name query parameter. The web has no destination path and skips Accept.
 	Accept func(path string) error
@@ -683,9 +694,10 @@ func (cx *Scope) SaveFile(o SaveOptions, done func(saved bool, path string, err 
 		r.MIME = driver.MIMEForFile(r.Name)
 	}
 	var denied error
+	var deniedPath string
 	id := t.request(cx, driver.MountItem{Kind: driver.ItemSaveFile, Save: &r}, func(ev driver.Event) {
 		path, _ := ev.Data.(string)
-		if denied != nil && !ev.Finished && path != "" && ev.Text == denied.Error() {
+		if denied != nil && !ev.Finished && path == deniedPath && ev.Text == denied.Error() {
 			answer(false, path, denied)
 			return
 		}
@@ -697,10 +709,14 @@ func (cx *Scope) SaveFile(o SaveOptions, done func(saved bool, path string, err 
 	})
 	if r.Preflight {
 		w := t.waits[id]
-		w.preflight = func(path string) {
+		w.preflight = func(path string, attempt uint32) {
+			deniedPath = path
 			denied = errors.New("the save preflight did not finish")
 			defer func() {
 				response := driver.MountItem{Kind: driver.ItemSavePreflightAnswer, Count: id, On: denied == nil}
+				if attempt != 0 {
+					response.Data = attempt
+				}
 				if denied != nil {
 					response.Value = denied.Error()
 				}
