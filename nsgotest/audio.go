@@ -76,7 +76,7 @@ func (a *App) audio(id uint32, r driver.AudioRequest) {
 		s := a.Sounds[i]
 		switch r.Command {
 		case driver.AudioPlay:
-			s.Plays = append(s.Plays, core.SoundVoice{Volume: r.Volume, Rate: r.Rate})
+			s.Plays = append(s.Plays, core.SoundVoice{Volume: r.Volume, Rate: r.Rate, Pan: r.Pan})
 		case driver.AudioStop:
 			s.Stops++
 		default:

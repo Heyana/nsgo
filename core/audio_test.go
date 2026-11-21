@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -83,20 +84,37 @@ func TestSoundsLoadOnceAndPlay(t *testing.T) {
 		t.Fatalf("third load: %d sounds", len(sounds))
 	}
 
-	// Playbacks overlap, each a command in the turn's batch, the voice clamped with 0 as 1.
+	// Playbacks overlap, each a command in the turn's batch, the voice clamped with 0 as 1 for Volume and Rate and 0 centered for Pan.
 	sounds[0].Play(SoundVoice{})
-	sounds[1].Play(SoundVoice{Volume: 0.5, Rate: 1.2})
-	sounds[2].Play(SoundVoice{Volume: 3, Rate: 9})
-	sounds[2].Play(SoundVoice{Volume: -1, Rate: 0.1})
+	sounds[1].Play(SoundVoice{Volume: 0.5, Rate: 1.2, Pan: -0.5})
+	sounds[2].Play(SoundVoice{Volume: 3, Rate: 9, Pan: 2})
+	sounds[2].Play(SoundVoice{Volume: -1, Rate: 0.1, Pan: -2})
+	sounds[2].Play(SoundVoice{Pan: float32(math.NaN())})
+	sounds[2].Play(SoundVoice{Pan: float32(math.Copysign(0, -1))})
+	sounds[2].Play(SoundVoice{Pan: float32(math.Inf(-1))})
+	sounds[2].Play(SoundVoice{Pan: float32(math.Inf(1))})
 	var voices []SoundVoice
 	for _, it := range audioItems(h.commit()) {
 		if it.Count != id || it.Audio.Command != driver.AudioPlay {
 			t.Fatalf("play = %d %v", it.Count, it.Audio.Command)
 		}
-		voices = append(voices, SoundVoice{it.Audio.Volume, it.Audio.Rate})
+		voices = append(voices, SoundVoice{Volume: it.Audio.Volume, Rate: it.Audio.Rate, Pan: it.Audio.Pan})
 	}
-	if want := []SoundVoice{{1, 1}, {0.5, 1.2}, {1, 2}, {0, 0.5}}; !slices.Equal(voices, want) {
+	want := []SoundVoice{
+		{Volume: 1, Rate: 1, Pan: 0},
+		{Volume: 0.5, Rate: 1.2, Pan: -0.5},
+		{Volume: 1, Rate: 2, Pan: 1},
+		{Volume: 0, Rate: 0.5, Pan: -1},
+		{Volume: 1, Rate: 1, Pan: 0},
+		{Volume: 1, Rate: 1, Pan: 0},
+		{Volume: 1, Rate: 1, Pan: -1},
+		{Volume: 1, Rate: 1, Pan: 1},
+	}
+	if !slices.Equal(voices, want) {
 		t.Fatalf("voices %v, want %v", voices, want)
+	}
+	if math.Signbit(float64(voices[5].Pan)) {
+		t.Fatal("-0 pan kept its sign bit")
 	}
 
 	// The decoded sound goes with the last Sound over it.

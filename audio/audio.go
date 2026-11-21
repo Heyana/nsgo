@@ -10,7 +10,7 @@ type (
 	Source = core.AudioSource
 	// Sound is a short sound decoded into memory once. Play starts a playback within a frame, as a command in the batch of the turn that calls it, so nothing is opened, fetched or decoded then; playbacks overlap, at most 32 at once, past which the platform stops the oldest. Stop stops every playback of its source, Duration is its decoded length and Close frees it, as the owner that loaded it does as it goes.
 	Sound = core.Sound
-	// Voice is how a playback of a Sound plays: Volume from 0 to 1 and Rate from 0.5 to 2, with 0 as 1 for both and other values clamped.
+	// Voice is how a playback of a Sound plays: Volume from 0 to 1 and Rate from 0.5 to 2, with 0 as 1 for both, and Pan from -1 (full left) to 1 (full right), with 0 centered; other values are clamped, and NaN takes the default.
 	Voice = core.SoundVoice
 	// Player plays long audio, as a Video without a picture. It loads nothing until Play or Preload; Pause, Seek (clamped to the duration), SetVolume, SetRate and SetLoop are commands in the batch, and a seek while paused or before the duration is known applies once the platform can seek, Play starting from there. Position, Duration (0 until loaded) and State are what core kept from the platform's events, so reading them asks no platform. Close stops it and releases the platform's player, as the owner that made it does as it goes, so a window or an embedded view that closes stops its audio.
 	Player = core.AudioPlayer

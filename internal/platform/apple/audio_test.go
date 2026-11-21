@@ -4,6 +4,7 @@ package apple
 
 import (
 	"encoding/binary"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
@@ -591,4 +593,104 @@ func TestAudioFileURLRefusesWhatNoURLNames(t *testing.T) {
 			t.Error("audioFileURL named no URL for a plain path")
 		}
 	})
+}
+
+// toneWAV is length of a 440 Hz sine wave as 16-bit PCM WAV at rate with channels.
+func toneWAV(length time.Duration, rate, channels int) []byte {
+	b := wavOf(length, rate, channels)
+	frames := (len(b) - 44) / (2 * channels)
+	for i := range frames {
+		sample := int16(math.Sin(2*math.Pi*440*float64(i)/float64(rate)) * 16000)
+		for ch := range channels {
+			off := 44 + (i*channels+ch)*2
+			binary.LittleEndian.PutUint16(b[off:], uint16(sample))
+		}
+	}
+	return b
+}
+
+// TestASoundPansStereo renders a mono and a stereo sound offline through AVAudioEngine at left (-1), center (0) and right (+1) pan and verifies the rendered stereo channels.
+func TestASoundPansStereo(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		channels int
+	}{
+		{"mono", 1},
+		{"stereo", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ta := newTestAudio(t)
+			ta.send(1, driver.AudioRequest{
+				Command:     driver.AudioLoad,
+				Source:      driver.ImageSource{Data: toneWAV(100*time.Millisecond, 44100, tc.channels)},
+				MaxBytes:    driver.MaxSoundBytes,
+				MaxDuration: driver.MaxSoundDuration,
+			})
+			ta.wait(1, driver.AudioLoaded, 5*time.Second, nil)
+
+			renderRMS := func(pan float32) (left, right float64) {
+				onMain(func() {
+					// Put the engine into offline manual rendering mode once.
+					if ta.audio.engine == 0 {
+						ta.audio.engine = objc.ID(Class("AVAudioEngine")).Send(sel("alloc")).Send(sel("init"))
+						outFmt := objc.ID(Class("AVAudioFormat")).Send(sel("alloc")).Send(sel("initStandardFormatWithSampleRate:channels:"), float64(44100), uint32(2))
+						defer outFmt.Send(sel("release"))
+						var nsErr objc.ID
+						const offline = 0 // AVAudioEngineManualRenderingModeOffline
+						if !objc.Send[bool](ta.audio.engine, sel("enableManualRenderingMode:format:maximumFrameCount:error:"), int(offline), outFmt, uint32(4096), unsafe.Pointer(&nsErr)) {
+							t.Fatalf("enableManualRenderingMode: %s", describeError(nsErr, "failed"))
+						}
+						ta.audio.engine.Send(sel("mainMixerNode"))
+					}
+					ta.audio.play(1, 1, 1, pan)
+					if len(ta.audio.voices) == 0 {
+						t.Fatal("no voice")
+					}
+					gotPan := objc.Send[float32](ta.audio.voices[0].mixer, sel("pan"))
+					if gotPan != pan {
+						t.Errorf("mixer pan = %v, want %v", gotPan, pan)
+					}
+					outFmt := ta.audio.engine.Send(sel("manualRenderingFormat"))
+					buf := objc.ID(Class("AVAudioPCMBuffer")).Send(sel("alloc")).Send(sel("initWithPCMFormat:frameCapacity:"), outFmt, uint32(4096))
+					defer buf.Send(sel("release"))
+					var nsErr objc.ID
+					// Render 2048 frames (about 46 ms); measure the second half once the mixer's click-free parameter ramp has settled.
+					status := objc.Send[int](ta.audio.engine, sel("renderOffline:toBuffer:error:"), uint32(2048), buf, unsafe.Pointer(&nsErr))
+					if status != 0 { // AVAudioEngineManualRenderingStatusSuccess
+						t.Fatalf("renderOffline status %d: %s", status, describeError(nsErr, "failed"))
+					}
+					n := int(objc.Send[uint32](buf, sel("frameLength")))
+					chPtrs := objc.Send[*[2]*float32](buf, sel("floatChannelData"))
+					lSamples := unsafe.Slice(chPtrs[0], n)
+					rSamples := unsafe.Slice(chPtrs[1], n)
+					var lSum, rSum float64
+					start := n / 2
+					for i := start; i < n; i++ {
+						lSum += float64(lSamples[i]) * float64(lSamples[i])
+						rSum += float64(rSamples[i]) * float64(rSamples[i])
+					}
+					count := float64(n - start)
+					left = math.Sqrt(lSum / count)
+					right = math.Sqrt(rSum / count)
+					ta.audio.stop(1)
+				})
+				return left, right
+			}
+
+			lLeft, rLeft := renderRMS(-1)
+			lCenter, rCenter := renderRMS(0)
+			lRight, rRight := renderRMS(1)
+			t.Logf("%s RMS: pan=-1 (L=%.4f R=%.4f), pan=0 (L=%.4f R=%.4f), pan=+1 (L=%.4f R=%.4f)",
+				tc.name, lLeft, rLeft, lCenter, rCenter, lRight, rRight)
+			if lLeft <= 0.1 || rLeft >= 0.01 {
+				t.Errorf("%s pan=-1: got L=%.4f R=%.4f, want left audible and right silent", tc.name, lLeft, rLeft)
+			}
+			if lCenter <= 0.1 || rCenter <= 0.1 || math.Abs(lCenter-rCenter) > 0.02 {
+				t.Errorf("%s pan=0: got L=%.4f R=%.4f, want balanced stereo", tc.name, lCenter, rCenter)
+			}
+			if lRight >= 0.01 || rRight <= 0.1 {
+				t.Errorf("%s pan=+1: got L=%.4f R=%.4f, want left silent and right audible", tc.name, lRight, rRight)
+			}
+		})
+	}
 }

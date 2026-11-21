@@ -3,6 +3,7 @@ package audio_test
 import (
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -145,5 +146,45 @@ func TestAudioUnavailable(t *testing.T) {
 	})
 	if !errors.Is(err, audio.Unavailable) || len(app.Sounds) != 0 {
 		t.Fatalf("err %v, %d sounds", err, len(app.Sounds))
+	}
+}
+
+func TestASoundPlaysWithStereoPan(t *testing.T) {
+	var click *audio.Sound
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		audio.LoadSound(cx, audio.Source{URI: "asset:sounds/step.wav"}, func(s *audio.Sound, err error) {
+			if err != nil {
+				t.Errorf("load: %v", err)
+				return
+			}
+			click = s
+		})
+		return core.View{TestID: "trigger", Class: "size-12", OnPress: func(core.PressEvent) {
+			click.Play(audio.Voice{})
+			click.Play(audio.Voice{Pan: -1})
+			click.Play(audio.Voice{Pan: 1})
+			click.Play(audio.Voice{Volume: 0.6, Rate: 1.1, Pan: -0.4})
+			click.Play(audio.Voice{Pan: -2})
+			click.Play(audio.Voice{Pan: 2})
+			click.Play(audio.Voice{Pan: float32(math.NaN())})
+		}}
+	}, playsAudio, func(a *nsgotest.App) {
+		a.AudioDurations = map[string]time.Duration{"asset:sounds/step.wav": 60 * time.Millisecond}
+	})
+	if click == nil {
+		t.Fatal("sound did not load")
+	}
+	app.Press("id:trigger")
+	want := []audio.Voice{
+		{Volume: 1, Rate: 1, Pan: 0},
+		{Volume: 1, Rate: 1, Pan: -1},
+		{Volume: 1, Rate: 1, Pan: 1},
+		{Volume: 0.6, Rate: 1.1, Pan: -0.4},
+		{Volume: 1, Rate: 1, Pan: -1},
+		{Volume: 1, Rate: 1, Pan: 1},
+		{Volume: 1, Rate: 1, Pan: 0},
+	}
+	if !slices.Equal(app.Sounds[0].Plays, want) {
+		t.Fatalf("plays = %+v, want %+v", app.Sounds[0].Plays, want)
 	}
 }

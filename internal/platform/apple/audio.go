@@ -29,7 +29,7 @@ import (
 
 // Audio is one engine's sounds and players, the audio package's on macOS and iOS (docs/architecture/audio.md), as NSH's speaker: a surface makes it with its first ItemAudio and closes it as it closes, so an app that makes no sound never opens the output. Its methods run on the main thread; sounds are read and decoded on goroutines of their own, whose results hop back there.
 //
-// Sounds decode once, at their load, into an AVAudioPCMBuffer, through an AVAudioFile over a temporary file of their bytes as AVAudioFile reads only files, and play from memory on the engine's one AVAudioEngine: each playback is a voice, an AVAudioPlayerNode through an AVAudioUnitVarispeed, which gives the rate, and a mixer of its own, which gives the volume, as an effect between a player and the main mixer keeps the player's own volume from it. Voices are reused once their buffer played, by sounds of their format; past driver.MaxSoundVoices the oldest stops. The engine starts at a playback, again after the system stopped it, as for a device change, and pauses a moment after the last playback ends, so the output is not held open; one that cannot start is silence, never an error.
+// Sounds decode once, at their load, into an AVAudioPCMBuffer, through an AVAudioFile over a temporary file of their bytes as AVAudioFile reads only files, and play from memory on the engine's one AVAudioEngine: each playback is a voice, an AVAudioPlayerNode through an AVAudioUnitVarispeed, which gives the rate, and a mixer of its own, which gives the volume and stereo pan, as an effect between a player and the main mixer keeps the player's own mixing properties from it. Voices are reused once their buffer played, by sounds of their format; past driver.MaxSoundVoices the oldest stops. The engine starts at a playback, again after the system stopped it, as for a device change, and pauses a moment after the last playback ends, so the output is not held open; one that cannot start is silence, never an error.
 //
 // Players are AVPlayers without a layer, as Video's, made at their first preload or play: their load is polled until the item is ready or fails, as a paused player reports no time, their position comes from a periodic time observer, their end from AVPlayerItemDidPlayToEndTimeNotification and a stop no command asked for from AVPlayerRateDidChangeNotification, besides the time observer. On iOS each holds the shared audio session (internal/audiosession) at the level its AudioSession asks for while it plays, and playing sounds hold it ambient; an interruption of the session pauses the players as it begins, and they stay paused as it ends.
 type Audio struct {
@@ -107,7 +107,7 @@ func (a *Audio) Handle(id uint32, r *driver.AudioRequest) {
 	case driver.AudioLoad:
 		a.load(id, r.Source, r.MaxBytes, r.MaxDuration)
 	case driver.AudioPlay:
-		a.play(id, r.Volume, r.Rate)
+		a.play(id, r.Volume, r.Rate, r.Pan)
 	case driver.AudioStop:
 		a.stop(id)
 	case driver.AudioUnload:
@@ -518,8 +518,8 @@ func (a *Audio) voiceFor(engine objc.ID, s *decodedSound, now time.Time) *soundV
 	return a.voices[i]
 }
 
-// play starts a playback of sound id at volume and rate, on the voice voiceFor gives.
-func (a *Audio) play(id uint32, volume, rate float32) {
+// play starts a playback of sound id at volume, rate and pan, on the voice voiceFor gives.
+func (a *Audio) play(id uint32, volume, rate, pan float32) {
 	s := a.sounds[id]
 	if s == nil {
 		return
@@ -537,6 +537,7 @@ func (a *Audio) play(id uint32, volume, rate float32) {
 	}
 	v.varispeed.Send(sel("setRate:"), rate)
 	v.mixer.Send(sel("setOutputVolume:"), volume)
+	v.mixer.Send(sel("setPan:"), pan)
 	const interrupts = 2 // AVAudioPlayerNodeBufferInterrupts: the buffer replaces what the node played
 	v.player.Send(sel("scheduleBuffer:atTime:options:completionHandler:"), s.buffer, objc.ID(0), uint(interrupts), objc.ID(0))
 	v.player.Send(sel("play"))

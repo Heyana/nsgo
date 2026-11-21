@@ -487,6 +487,22 @@ android:
 
 iOS and watchOS give location and motion, macOS location, tvOS one fix at a time and Android both through the framework's own providers, without Google Play services. The web, Windows, Linux and mini programs answer unavailable. In TSX, `Sensors` has `permission`, `requestPermission`, `locate`, `watchLocation` and `watchMotion`, under the package capabilities `location`, `backgroundLocation` and `motion`, in milliseconds.
 
+## Audio
+
+The `audio` package plays short sounds decoded once into memory (`audio.LoadSound`) and long streamed audio (`audio.NewPlayer`) where `cx.Env().CanPlayAudio()` is true; elsewhere calls fail with `audio.Unavailable`.
+
+```go
+audio.LoadSound(cx, audio.Source{URI: "asset:sounds/click.wav"}, func(click *audio.Sound, err error) {
+	if err != nil {
+		return
+	}
+	click.Play(audio.Voice{})                                  // center, full volume, normal rate
+	click.Play(audio.Voice{Volume: 0.5, Rate: 1.2, Pan: -0.5}) // overlaps, panned left
+})
+```
+
+`audio.Voice` sets per-playback `Volume` (0 to 1, 0 as 1), `Rate` (0.5 to 2, 0 as 1) and `Pan` (-1 full left to 1 full right, 0 centered); values outside those ranges are clamped and NaN takes the default. `Sound.Stop` stops all playbacks of the sound and `Close` frees it, as its owning scope does when disposed. `Player` supports `Play`, `Preload`, `Pause`, `Seek`, `SetVolume`, `SetRate`, `SetLoop` and `Close`. macOS and iOS play audio today; Windows, Linux, Android and the web still report `CanPlayAudio` false.
+
 ## Next
 
 - [Notifications](notifications.md): permission, badges and presses.

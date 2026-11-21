@@ -18,9 +18,9 @@ type AudioSource struct {
 	Data []byte
 }
 
-// SoundVoice is how a playback of a sound plays: the core's part of audio.Voice, which apps use. Volume runs from 0 to 1 and Rate from 0.5 to 2; 0 is 1 for both, as Video's, and other values are clamped.
+// SoundVoice is how a playback of a sound plays: the core's part of audio.Voice, which apps use. Volume runs from 0 to 1 and Rate from 0.5 to 2, with 0 as 1 for both, as Video's; Pan runs from -1 (full left) to 1 (full right), with 0 centered. Other values are clamped, and NaN takes the default.
 type SoundVoice struct {
-	Volume, Rate float32
+	Volume, Rate, Pan float32
 }
 
 // AudioError is why a sound or a player failed, named as NSH's codes, which follow the web's MediaError: the core's part of audio.Error, which apps use. A failure that says more is one wrapped with the platform's words, which errors.Is and errors.As find.
@@ -364,7 +364,7 @@ func (s *Sound) Play(v SoundVoice) {
 	if s.closed {
 		return
 	}
-	s.buffer.key.tree.sendAudio(s.buffer.id, driver.AudioRequest{Command: driver.AudioPlay, Volume: audioVolume(v.Volume), Rate: audioRate(v.Rate)})
+	s.buffer.key.tree.sendAudio(s.buffer.id, driver.AudioRequest{Command: driver.AudioPlay, Volume: audioVolume(v.Volume), Rate: audioRate(v.Rate), Pan: audioPan(v.Pan)})
 }
 
 // Stop stops every playback of the sound's source.
@@ -402,6 +402,14 @@ func audioRate(r float32) float32 {
 		return 1
 	}
 	return min(max(r, 0.5), 2)
+}
+
+// audioPan is p from -1 (full left) to 1 (full right), 0 (center) for NaN or -0.
+func audioPan(p float32) float32 {
+	if p == 0 || p != p {
+		return 0
+	}
+	return min(max(p, -1), 1)
 }
 
 // AudioPlayer plays long audio, streamed and decoded as it plays: the core's part of audio.Player, which apps use. Its methods are called on the engine's goroutine, and all but the getters are commands in the batch of the turn that calls them.

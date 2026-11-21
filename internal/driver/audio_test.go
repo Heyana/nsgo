@@ -1,6 +1,9 @@
 package driver
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestAudioType(t *testing.T) {
 	for _, tc := range []struct {
@@ -22,6 +25,31 @@ func TestAudioType(t *testing.T) {
 	} {
 		if got := AudioType([]byte(tc.data)); got != tc.want {
 			t.Errorf("AudioType(%q) = %s, want %s", tc.data, got, tc.want)
+		}
+	}
+}
+
+func TestAudioPanGains(t *testing.T) {
+	half := float32(math.Sqrt2 / 2)
+	for _, tc := range []struct {
+		pan         float32
+		left, right float32
+	}{
+		{0, 1, 1},
+		{float32(math.Copysign(0, -1)), 1, 1},
+		{float32(math.NaN()), 1, 1},
+		{-1, 1, 0},
+		{-2, 1, 0},
+		{float32(math.Inf(-1)), 1, 0},
+		{1, 0, 1},
+		{2, 0, 1},
+		{float32(math.Inf(1)), 0, 1},
+		{-0.5, 1, half},
+		{0.5, half, 1},
+	} {
+		l, r := AudioPanGains(tc.pan)
+		if math.Abs(float64(l-tc.left)) > 1e-6 || math.Abs(float64(r-tc.right)) > 1e-6 {
+			t.Errorf("AudioPanGains(%v) = (%v, %v), want (%v, %v)", tc.pan, l, r, tc.left, tc.right)
 		}
 	}
 }

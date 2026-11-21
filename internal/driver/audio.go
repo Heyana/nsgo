@@ -1,6 +1,9 @@
 package driver
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 // The limits a sound is held to, NSH's: its encoded bytes, which the platform's reader checks before decoding; its decoded length, which the platform decodes no more of; the sounds one engine holds and their decoded bytes, which the core counts; and the playbacks at once, past which the platform stops the oldest.
 const (
@@ -17,7 +20,7 @@ type AudioCommand uint8
 const (
 	// AudioLoad has the platform read sound Count's Source, failing with AudioQuotaExceeded past MaxBytes, and decode at most MaxDuration of it into memory, reporting AudioLoaded or AudioFailure.
 	AudioLoad AudioCommand = iota
-	// AudioPlay starts a playback of sound Count at Volume and Rate over those playing; it reports nothing.
+	// AudioPlay starts a playback of sound Count at Volume, Rate and Pan over those playing; it reports nothing.
 	AudioPlay
 	// AudioStop stops every playback of sound Count.
 	AudioStop
@@ -57,8 +60,8 @@ type AudioRequest struct {
 	// MaxBytes and MaxDuration are AudioLoad's limits.
 	MaxBytes    int64
 	MaxDuration time.Duration
-	// Volume runs from 0 to 1 and Rate from 0.5 to 2; AudioPlay's, AudioOpen's and AudioSet's.
-	Volume, Rate float32
+	// Volume runs from 0 to 1, Rate from 0.5 to 2 and Pan from -1 (full left) to 1 (full right); AudioPlay's, with Volume and Rate AudioOpen's and AudioSet's too.
+	Volume, Rate, Pan float32
 	// Loop has a player start over at its end, with no AudioEnded.
 	Loop bool
 	// Session is a player's: what it does to other apps' audio while it plays. Sounds mix with other apps' audio.
@@ -147,4 +150,20 @@ func AudioType(data []byte) string {
 		}
 	}
 	return "application/octet-stream"
+}
+
+// AudioPanGains splits pan, from -1 (full left) to 1 (full right) with 0 centered, into left and right channel gains from 0 to 1 using a cosine balance curve: (1, 1) at 0, (1, 0) at -1 and (0, 1) at 1, for backends whose stereo voices take per-channel gains.
+func AudioPanGains(pan float32) (left, right float32) {
+	switch {
+	case pan == 0 || pan != pan:
+		return 1, 1
+	case pan <= -1:
+		return 1, 0
+	case pan >= 1:
+		return 0, 1
+	case pan < 0:
+		return 1, float32(math.Cos(float64(-pan) * math.Pi / 2))
+	default:
+		return float32(math.Cos(float64(pan) * math.Pi / 2)), 1
+	}
 }
