@@ -123,9 +123,10 @@ func (o *surface) openSurface(cfg driver.SurfaceConfig) {
 	// A window or a panel opened transparent (look.go, newPanel).
 	s.transparent = cfg.Transparent
 	s.window = window
+	s.windowOwner = o
 	if cfg.Parent != 0 {
 		for parent := range surfaces {
-			if parent.id == cfg.Parent && parent.kind == driver.SurfaceWindow && !parent.embedded && parent.window != 0 {
+			if parent.windowOwner == o && parent.id == cfg.Parent && parent.kind == driver.SurfaceWindow && parent.window != 0 {
 				s.windowParent = parent
 				parent.windowChildren = append(parent.windowChildren, s)
 				break

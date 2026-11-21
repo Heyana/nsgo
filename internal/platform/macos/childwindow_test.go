@@ -9,9 +9,52 @@ import (
 
 	"github.com/ebitengine/purego/objc"
 
+	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/engine"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
+
+func TestChildWindowUsesItsOwnAppParent(t *testing.T) {
+	onMain(func() {
+		loadAppKit()
+		pool := objc.ID(apple.Class("NSAutoreleasePool")).Send(selNew)
+		defer pool.Send(sel("drain"))
+		newApp := func() *surface {
+			s := newSurface(Options{}, false)
+			s.engine = engine.Start(s, func(*core.Scope) core.Node { return core.View{} }, engine.Options{})
+			return s
+		}
+		app, foreign := newApp(), newApp()
+		defer app.destroy()
+		defer foreign.destroy()
+		open := func(owner *surface, title string, id, parent uint32) *surface {
+			title = t.Name() + "/" + title
+			owner.openSurface(driver.SurfaceConfig{ID: id, Parent: parent, Width: 200, Height: 120, Title: title, Hidden: true})
+			for s := range surfaces {
+				if s.id == id && s.window != 0 && apple.GoString(s.window.Send(sel("title"))) == title {
+					return s
+				}
+			}
+			t.Fatalf("surface %d did not open", id)
+			return nil
+		}
+		foreignParent := open(foreign, "foreign", 1, 0)
+		defer foreignParent.destroy()
+		child := open(app, "no parent", 2, 1)
+		defer child.destroy()
+		if child.windowParent != nil {
+			t.Fatal("the child resolved its parent ID in another app")
+		}
+		parent := open(app, "parent", 1, 0)
+		defer parent.destroy()
+		secondChild := open(app, "child", 3, 1)
+		defer secondChild.destroy()
+		if secondChild.windowParent != parent {
+			t.Fatal("the child did not resolve its parent in the same app")
+		}
+	})
+}
 
 func TestChildWindowFollowsParent(t *testing.T) {
 	onMain(func() {

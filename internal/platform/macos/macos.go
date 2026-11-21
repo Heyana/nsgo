@@ -200,6 +200,7 @@ type surface struct {
 	// to show.
 	showFirst bool
 	// Window relationships, all on the AppKit thread (childwindow.go).
+	windowOwner      *surface // the app's first surface, whose window IDs are local to it
 	windowParent     *surface
 	windowChildren   []*surface
 	childShown       bool
