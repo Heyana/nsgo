@@ -14,7 +14,11 @@ func TestMain(m *testing.M) { nsgotest.Main(m) }
 
 // Consecutive scripted presses must take the same double-click path as real input, including a new sequence after moving to another control.
 func TestPressesCountConsecutiveClicks(t *testing.T) {
-	desktopPointer(t)
+	switch nsgotest.Target() {
+	case "ios", "ios_simulator", "android":
+	default:
+		desktopPointer(t)
+	}
 	var got []int
 	app := nsgotest.Start(t, func(*core.Scope) core.Node {
 		button := func(id string) core.Node {
@@ -23,8 +27,7 @@ func TestPressesCountConsecutiveClicks(t *testing.T) {
 		}
 		return core.View{Style: core.Style{Gap: 30}, Children: []core.Node{button("first"), button("second")}}
 	}, nsgotest.Size(300, 300))
-	app.Press("first")
-	app.Press("first")
+	app.DoublePress("first")
 	app.Press("second")
 	if len(got) != 3 || got[0] != 1 || got[1] != 2 || got[2] != 1 {
 		t.Fatalf("press counts = %v, want [1 2 1]", got)

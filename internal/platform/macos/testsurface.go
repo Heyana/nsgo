@@ -354,6 +354,42 @@ func (t *testSurface) Drag(path []driver.Point) error {
 	return nil
 }
 
+// Pinch finds the native view under at and gives its gesture handler
+// the samples AppKit would read from a magnify event.
+func (t *testSurface) Pinch(at driver.Point, scales []float32) error {
+	t.follow()
+	if len(scales) == 0 {
+		return nil
+	}
+	var err error
+	onMainSync(func() {
+		t.s.commitPending()
+		location := t.windowPoint(at)
+		if t.s.testPointer != nil {
+			*t.s.testPointer = location
+		}
+		hit := t.hit(at)
+		for hit != 0 && views[hit] == nil {
+			hit = hit.Send(selSuperview)
+		}
+		now := uptime()
+		send := func(phase uint, delta float64) bool {
+			sample := trackpadSample{phase: phase, time: now, at: location}
+			now += driver.FrameInterval.Seconds()
+			return magnifyAt(hit, sample, delta)
+		}
+		if !send(phaseBegan, float64(scales[0])-1) {
+			err = fmt.Errorf("no native pinch view at %v", at)
+			return
+		}
+		for i := 1; i < len(scales); i++ {
+			send(phaseChanged, float64(scales[i])-float64(scales[i-1]))
+		}
+		send(phaseEnded, 0)
+	})
+	return err
+}
+
 // steps are the points from a (excluded) to b, at most step apart.
 func steps(a, b driver.Point, step driver.Points) []driver.Point {
 	dx, dy := b.X-a.X, b.Y-a.Y

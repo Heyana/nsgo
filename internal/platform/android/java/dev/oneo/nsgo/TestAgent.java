@@ -18,6 +18,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.PixelCopy;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
@@ -256,7 +257,15 @@ final class TestAgent {
                 return;
             }
             case "pinch": {
-                pinch(id, op);
+                // nsgotest's Pinch gives scales; a span from and to, in points, otherwise.
+                JSONArray path = op.optJSONArray("scales");
+                if (path == null) {
+                    pinch(id, op);
+                    return;
+                }
+                float[] scales = new float[path.length()];
+                for (int i = 0; i < scales.length; i++) scales[i] = (float) path.getDouble(i);
+                pinchScales(id, window(op.getDouble("x"), op.getDouble("y")), scales);
                 return;
             }
             case "type":
@@ -591,8 +600,13 @@ final class TestAgent {
         }
         MotionEvent e = MotionEvent.obtain(down, time, action, count, props, coords,
                 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
-        activity().dispatchTouchEvent(e);
-        e.recycle();
+        view.inputGate.enterScripted();
+        try {
+            activity().dispatchTouchEvent(e);
+        } finally {
+            view.inputGate.leaveScripted();
+            e.recycle();
+        }
     }
 
     private static int metaOf(JSONObject mods) {
@@ -604,6 +618,76 @@ final class TestAgent {
             if (mods.optBoolean("Platform")) meta |= KeyEvent.META_META_ON;
         }
         return meta;
+    }
+
+    /** Two fingers, with their distance relative to where they started, for nsgotest's Pinch. */
+    private void pinchScales(int id, float[] center, float[] scales) {
+        if (scales.length == 0) {
+            view.testReply(id, "", "");
+            return;
+        }
+        MotionEvent.PointerProperties[] fingers = new MotionEvent.PointerProperties[2];
+        MotionEvent.PointerCoords[] points = new MotionEvent.PointerCoords[2];
+        for (int i = 0; i < fingers.length; i++) {
+            fingers[i] = new MotionEvent.PointerProperties();
+            fingers[i].id = i;
+            fingers[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+            points[i] = new MotionEvent.PointerCoords();
+            points[i].y = center[1];
+            points[i].pressure = points[i].size = 1;
+        }
+        float minScale = 1;
+        for (float scale : scales) {
+            if (!Float.isFinite(scale) || scale <= 0) {
+                view.testReply(id, "pinch scales must be positive and finite", "");
+                return;
+            }
+            minScale = Math.min(minScale, scale);
+        }
+        // Land near the center so hit testing can find a small target.
+        // Spread past the recognizer's minimum before applying the scales.
+        float landingRadius = 16 * view.density();
+        ViewConfiguration config = ViewConfiguration.get(view.getContext());
+        int minSpan;
+        if (Build.VERSION.SDK_INT >= 29) {
+            minSpan = config.getScaledMinimumScalingSpan();
+        } else {
+            int dimen = view.getResources().getIdentifier("config_minScalingSpan", "dimen", "android");
+            minSpan = dimen == 0 ? 0 : view.getResources().getDimensionPixelSize(dimen);
+        }
+        float baselineRadius = (Math.max(minSpan / 2f, landingRadius) + 2 * config.getScaledTouchSlop()) / minScale;
+        long down = SystemClock.uptimeMillis();
+        class Gesture {
+            void send(int action, int count, float radius) {
+                points[0].x = center[0] - radius;
+                points[1].x = center[0] + radius;
+                MotionEvent e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, count,
+                        fingers, points, 0, 0, 1, 1, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
+                view.inputGate.enterScripted();
+                try {
+                    activity().dispatchTouchEvent(e);
+                } finally {
+                    view.inputGate.leaveScripted();
+                    e.recycle();
+                }
+            }
+        }
+        Gesture gesture = new Gesture();
+        int second = 1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT;
+        gesture.send(MotionEvent.ACTION_DOWN, 1, landingRadius);
+        gesture.send(MotionEvent.ACTION_POINTER_DOWN | second, 2, landingRadius);
+        ui.postDelayed(() -> gesture.send(MotionEvent.ACTION_MOVE, 2, baselineRadius), 32);
+        long delay = 64;
+        for (float scale : scales) {
+            ui.postDelayed(() -> gesture.send(MotionEvent.ACTION_MOVE, 2, baselineRadius * scale), delay);
+            delay += 32;
+        }
+        ui.postDelayed(() -> {
+            float radius = baselineRadius * scales[scales.length - 1];
+            gesture.send(MotionEvent.ACTION_POINTER_UP | second, 2, radius);
+            gesture.send(MotionEvent.ACTION_UP, 1, radius);
+            view.testReply(id, "", "");
+        }, delay);
     }
 
     /** The innermost native scroll view containing a point in the window. */

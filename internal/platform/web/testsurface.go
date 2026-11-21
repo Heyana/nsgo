@@ -126,6 +126,10 @@ func (t *testSurface) Drag(path []driver.Point) error {
 	return t.do(map[string]any{"op": "drag", "path": pts})
 }
 
+func (t *testSurface) Pinch(at driver.Point, scales []float32) error {
+	return t.do(with(t.page(at), "op", "pinch", "scales", scales))
+}
+
 func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 	return t.do(with(t.page(at), "op", "scroll", "dx", delta.X, "dy", delta.Y))
 }

@@ -354,6 +354,19 @@ func TestPressesAndLongPressesSendWhatPlatformsSend(t *testing.T) {
 	}
 }
 
+func TestDoublePressReportsTheSecondClick(t *testing.T) {
+	var clicks []int
+	app := Start(t, func(*core.Scope) core.Node {
+		return core.View{TestID: "button", Style: core.Style{Width: core.Pt(40), Height: core.Pt(20)}, OnPress: func(e core.PressEvent) {
+			clicks = append(clicks, e.Clicks)
+		}}
+	})
+	app.DoublePress("id:button")
+	if !slices.Equal(clicks, []int{1, 2}) {
+		t.Fatalf("clicks = %v, want [1 2]", clicks)
+	}
+}
+
 func TestPressesReachTouchOnlyViewsWithoutKeyboardStops(t *testing.T) {
 	var touches []core.TouchPhase
 	var log []string

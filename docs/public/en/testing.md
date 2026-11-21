@@ -78,6 +78,8 @@ Under `-target`, `app.Select(selector, start, end)` moves the native field's sel
 
 Headless Linux and Android tests can check the package paths passed to the installer in `app.Installs`. Set `app.InstallPackage` to return an error from the simulated installer.
 
+`app.DoublePress(selector)` sends two presses in one step so the platform can count a double click or tap. `app.Pan` uses the target’s drag input, with each offset relative to the starting point. `app.Pinch` works headless and drives the platform gesture path on macOS, the iOS simulator, Android and the web. On the iOS simulator, each scale sets the distance between two touches, and UIKit starts reporting once they pass its recognition threshold. On Android, the touches first spread far enough to start the native recognizer, then move through the requested scales. On a target without pinch input, reaching `Pinch` skips the rest of the test and reports which target lacked support.
+
 `app.Orientation` holds the active `Scope.RequestOrientation` mask. It is zero when the app uses its usual orientation policy.
 
 ## Drawings without a window

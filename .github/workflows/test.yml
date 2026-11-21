@@ -591,6 +591,7 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 1m ./testdata/devtools-geometry
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/audiooutput
           go tool nsgo test -target ios_simulator -timeout 2m ./internal/testhost/testdata/shaderpixels
+          go tool nsgo test -target ios_simulator -timeout 1m -run '^(TestPanEndsAtTheLastOffset|TestPinchReportsScaleAndPhase|TestPressesCountConsecutiveClicks)$' ./internal/testhost/testdata/press
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/platform/watchos
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/testhost/testdata/deviceidentity
           go tool nsgo test -target watchos_simulator -timeout 1m ./testdata/devtools-geometry

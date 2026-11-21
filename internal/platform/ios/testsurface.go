@@ -69,6 +69,9 @@ type testSurface struct {
 	pressID int // last simulator HID press release marker, main thread only
 }
 
+// touchTestSurface adds multi-touch input on iPhone and iPad simulators, whose IOHID digitizer events carry several fingers; a physical device has no such path, so a pinch there skips as on other targets without one.
+type touchTestSurface struct{ *testSurface }
+
 var (
 	// deviceKeys holds synthetic KeyDown/KeyUp state per surface on physical devices,
 	// accessed only on the main thread.
@@ -234,7 +237,15 @@ func touch(w objc.ID, p driver.Point, ph phase) {
 	onMainSync(func() { enqueueTouch(w, p, ph) })
 }
 
-func enqueueTouch(w objc.ID, p driver.Point, ph phase) {
+// touchesAt sends the fingers together in one digitizer event, keeping each finger's index and identity until it lifts.
+func touchesAt(w objc.ID, ph phase, points ...driver.Point) {
+	onMainSync(func() { enqueueTouches(w, ph, points...) })
+}
+
+func enqueueTouch(w objc.ID, p driver.Point, ph phase) { enqueueTouches(w, ph, p) }
+
+// enqueueTouches is touchesAt on the main thread.
+func enqueueTouches(w objc.ID, ph phase, points ...driver.Point) {
 	if w == 0 {
 		return
 	}
@@ -252,13 +263,15 @@ func enqueueTouch(w objc.ID, p driver.Point, ph phase) {
 		return
 	}
 	hidSetInteger(hand, fieldIntegrated, 1)
-	finger := hidFinger(0, now, 1, 2, mask, float64(p.X), float64(p.Y), 0, float64(touching), 0, touching, touching, 0)
-	if finger != 0 {
-		hidSetFloat(finger, fieldMajorRadius, 5)
-		hidSetFloat(finger, fieldMinorRadius, 5)
-		hidSetInteger(finger, fieldIntegrated, 1)
-		hidAppend(hand, finger, 0)
-		apple.Release(finger)
+	for i, p := range points {
+		finger := hidFinger(0, now, uint32(i+1), uint32(i+2), mask, float64(p.X), float64(p.Y), 0, float64(touching), 0, touching, touching, 0)
+		if finger != 0 {
+			hidSetFloat(finger, fieldMajorRadius, 5)
+			hidSetFloat(finger, fieldMinorRadius, 5)
+			hidSetInteger(finger, fieldIntegrated, 1)
+			hidAppend(hand, finger, 0)
+			apple.Release(finger)
+		}
 	}
 	enqueue(w, hand)
 }
@@ -602,6 +615,29 @@ func (t *testSurface) Drag(path []driver.Point) error {
 		return nil
 	}
 	return t.dragDevice(w, path)
+}
+
+func (t *touchTestSurface) Pinch(at driver.Point, scales []float32) error {
+	if len(scales) == 0 {
+		return nil
+	}
+	w, err := t.window()
+	if err != nil {
+		return err
+	}
+	const radius = 16
+	send := func(ph phase, scale float32) {
+		d := radius * driver.Points(scale)
+		touchesAt(w, ph, driver.Point{X: at.X - d, Y: at.Y}, driver.Point{X: at.X + d, Y: at.Y})
+	}
+	send(down, 1)
+	for _, scale := range scales {
+		time.Sleep(32 * time.Millisecond)
+		send(move, scale)
+	}
+	time.Sleep(32 * time.Millisecond)
+	send(up, scales[len(scales)-1])
+	return nil
 }
 
 // dragDevice delivers a drag on a physical iPhone or Apple TV through EventTouch,

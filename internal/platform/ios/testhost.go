@@ -65,7 +65,11 @@ func (host) Open(root func(cx *core.Scope) core.Node, o testhost.Options) (testh
 	if err := awaitActive(); err != nil {
 		return nil, err
 	}
-	return &testSurface{s: runner, test: test}, nil
+	surface := &testSurface{s: runner, test: test}
+	if onTV() || !surface.useSimulatorHID() {
+		return surface, nil
+	}
+	return &touchTestSurface{surface}, nil
 }
 
 // awaitActive waits for an Apple TV app to become active, as it does a

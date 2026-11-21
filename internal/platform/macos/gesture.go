@@ -127,20 +127,39 @@ func (s *surface) endPan(event objc.ID) bool {
 // NSEventPhase's bits.
 const phaseBegan, phaseChanged, phaseEnded, phaseCancelled = 1, 4, 8, 16
 
+// trackpadSample is the AppKit input a pinch or rotation needs.
+type trackpadSample struct {
+	phase uint
+	time  float64
+	at    apple.CGPoint
+}
+
+func readTrackpad(event objc.ID) trackpadSample {
+	return trackpadSample{
+		phase: objc.Send[uint](event, sel("phase")),
+		time:  objc.Send[float64](event, selTimestamp),
+		at:    objc.Send[apple.CGPoint](event, selLocationInWindow),
+	}
+}
+
 // magnify follows a trackpad pinch: its scale is 1 plus the
 // magnification so far.
 func magnify(self objc.ID, cmd objc.SEL, event objc.ID) {
-	if v := views[self]; v != nil {
-		defer v.surface.measuring(true)()
-	}
 	m := objc.Send[float64](event, sel("magnification"))
-	if v := pinchZoomView(self); v != nil {
-		v.pinchBy(event, m)
-		return
-	}
-	if !trackpad(self, event, driver.EventPinch, 1, m) {
+	if !magnifyAt(self, readTrackpad(event), m) {
 		apple.Super(self, cmd, event)
 	}
+}
+
+func magnifyAt(native objc.ID, sample trackpadSample, delta float64) bool {
+	if v := views[native]; v != nil {
+		defer v.surface.measuring(true)()
+	}
+	if v := pinchZoomView(native); v != nil {
+		v.pinchBy(sample, delta)
+		return true
+	}
+	return trackpad(native, sample, driver.EventPinch, 1, delta)
 }
 
 // rotate follows a trackpad rotation; AppKit counts degrees
@@ -150,14 +169,14 @@ func rotate(self objc.ID, cmd objc.SEL, event objc.ID) {
 		defer v.surface.measuring(true)()
 	}
 	r := float64(objc.Send[float32](event, sel("rotation")))
-	if !trackpad(self, event, driver.EventRotation, 0, -r*math.Pi/180) {
+	if !trackpad(self, readTrackpad(event), driver.EventRotation, 0, -r*math.Pi/180) {
 		apple.Super(self, cmd, event)
 	}
 }
 
 // trackpad moves the gesture of kind by delta from its first value
 // initial, reporting whether a view follows it.
-func trackpad(self, event objc.ID, kind driver.EventKind, initial, delta float64) bool {
+func trackpad(self objc.ID, sample trackpadSample, kind driver.EventKind, initial, delta float64) bool {
 	v := views[self]
 	if v == nil {
 		return false
@@ -167,8 +186,7 @@ func trackpad(self, event objc.ID, kind driver.EventKind, initial, delta float64
 	if kind == driver.EventRotation {
 		slot = &s.rotation
 	}
-	phase := objc.Send[uint](event, sel("phase"))
-	now := objc.Send[float64](event, selTimestamp)
+	phase, now := sample.phase, sample.time
 	t := *slot
 	report := driver.GestureChanged
 	if phase&phaseBegan != 0 || t == nil {
@@ -201,7 +219,8 @@ func trackpad(self, event objc.ID, kind driver.EventKind, initial, delta float64
 	ev := driver.Event{Kind: kind, Phase: report, Value: float32(t.value), Velocity: driver.Point{X: driver.Points(t.velocity)}}
 	if kind == driver.EventPinch {
 		// A pinch zooms around the pointer over the trackpad.
-		ev.Point = t.view.pointer(kind, event).Point
+		p := t.view.windowPoint(sample.at)
+		ev.Point = driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)}
 	}
 	t.view.report(ev)
 	return true

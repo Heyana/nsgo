@@ -224,9 +224,8 @@ func pinchZoomView(native objc.ID) *view {
 
 // pinchBy follows a trackpad pinch's event, magnified by m since the
 // last: the view zooms around the pointer.
-func (v *view) pinchBy(event objc.ID, m float64) {
-	s := v.sc
-	phase := objc.Send[uint](event, sel("phase"))
+func (v *view) pinchBy(sample trackpadSample, m float64) {
+	s, phase := v.sc, sample.phase
 	if s.phase.kind != pinching {
 		if phase&(phaseBegan|phaseChanged) == 0 {
 			return
@@ -234,7 +233,7 @@ func (v *view) pinchBy(event objc.ID, m float64) {
 		v.interrupt()
 		s.phase = scrollPhase{kind: pinching, rawZoom: s.zoom}
 	}
-	p := objc.Send[apple.CGPoint](v.native, selConvertPoint, objc.Send[apple.CGPoint](event, selLocationInWindow), objc.ID(0))
+	p := objc.Send[apple.CGPoint](v.native, selConvertPoint, sample.at, objc.ID(0))
 	f := driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)}
 	c := v.contentAt(f)
 	s.phase.rawZoom *= max(1+m, 0.01)

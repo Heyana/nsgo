@@ -177,6 +177,11 @@ type SharedItemsSurface interface {
 	ReceiveShare(items []driver.SharedItem)
 }
 
+// PinchSurface is implemented by test hosts that can drive the platform's gesture path for a pinch at a point in the surface.
+type PinchSurface interface {
+	Pinch(at driver.Point, scales []float32) error
+}
+
 // KeyboardSurface is a surface whose window takes the keyboard only while its app is active, as macOS's does.
 type KeyboardSurface interface {
 	// PrepareKeyboard activates the app and waits for its window to take the keyboard when the run opted in to that (nsgo test -target macos -activate), and does nothing otherwise.

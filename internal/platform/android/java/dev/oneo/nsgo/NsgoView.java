@@ -2637,7 +2637,19 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         n.pressPageX = page[0];
         n.pressPageY = page[1];
         n.pressMods = modifiers(e.getMetaState());
-        n.pressClicks = 1;
+        long now = e.getEventTime();
+        int slop = ViewConfiguration.get(getContext()).getScaledDoubleTapSlop();
+        if (n.id == lastPressID && now - lastPressTime <= ViewConfiguration.getDoubleTapTimeout()
+                && Math.hypot(e.getRawX() - lastPressX, e.getRawY() - lastPressY) <= slop) {
+            n.pressClicks = lastPressCount + 1;
+        } else {
+            n.pressClicks = 1;
+        }
+        lastPressID = n.id;
+        lastPressCount = n.pressClicks;
+        lastPressTime = now;
+        lastPressX = e.getRawX();
+        lastPressY = e.getRawY();
     }
 
     /** Stops timing n's long press. */
@@ -2923,6 +2935,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private Selection selection;
     private Runnable selectLater;
     private boolean selectingTouch, selectMoved;
+    private int lastPressID, lastPressCount;
+    private long lastPressTime;
+    private float lastPressX, lastPressY;
     private float selectDownX, selectDownY;
     private final ViewTreeObserver.OnScrollChangedListener selectionScrolled = this::refreshSelection;
 
@@ -6490,6 +6505,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 n.swallowed = true;
                 return true;
             }
+            lastPressID = 0;
             pressed(n, Protocol.EVENT_LONG_PRESS, pressedIndex(v));
             pressDone(n);
             return true;
@@ -6507,6 +6523,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     n.longTimer = () -> {
                         n.longTimer = null;
                         n.longFired = true;
+                        lastPressID = 0;
                         pressed(n, Protocol.EVENT_LONG_PRESS, pressedIndex(v));
                     };
                     v.postDelayed(n.longTimer, n.delayLongPress);
@@ -6516,6 +6533,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 int slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
                 if (Math.hypot(e.getX() - n.downX, e.getY() - n.downY) > slop) stopLongPress(n);
             } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                if (action == MotionEvent.ACTION_CANCEL) lastPressID = 0;
                 n.touching = false;
                 boolean timing = n.longTimer != null;
                 stopLongPress(n);

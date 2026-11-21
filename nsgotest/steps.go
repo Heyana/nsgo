@@ -134,6 +134,19 @@ func (a *App) Press(selector string) {
 	a.PressWith(selector, driver.Modifiers{})
 }
 
+// DoublePress presses what selector names twice without waiting for animations between the two presses. The platform counts the clicks as it does for a user's double click or tap.
+func (a *App) DoublePress(selector string) {
+	a.t.Helper()
+	a.step("doublePress(%s)", selector)
+	v, at, index := a.pressTarget(selector)
+	a.pressAt(v, at, index, driver.Modifiers{})
+	if a.target == nil {
+		v, at, index = a.pressTarget(selector)
+	}
+	a.pressAt(v, at, index, driver.Modifiers{})
+	a.done()
+}
+
 // PressWith presses as Press does, with the modifier keys held for this press only. A target sends them through its native input.
 func (a *App) PressWith(selector string, mods driver.Modifiers) {
 	a.t.Helper()
@@ -144,6 +157,7 @@ func (a *App) PressWith(selector string, mods driver.Modifiers) {
 	}
 	v, at, index := a.pressTarget(selector)
 	a.pressAt(v, at, index, mods)
+	a.done()
 }
 
 // PressAt presses the view selector matches at a point in it, or what is
@@ -169,6 +183,7 @@ func (a *App) PressAtWith(selector string, at driver.Point, mods driver.Modifier
 		a.t.Fatalf("nsgotest: nothing pressable at %v in %q\n%s", at, selector, a.Dump())
 	}
 	a.pressAt(v, page, 0, mods)
+	a.done()
 }
 
 // modifierNames names the keys mods holds for a step's name, as "Shift+Platform".
@@ -194,7 +209,6 @@ func (a *App) pressAt(v *View, at driver.Point, index int, mods driver.Modifiers
 			a.target.prepareKeyboard()
 		}
 		a.target.press(at, 0, mods)
-		a.done()
 		return
 	}
 	if v.Kind == KindNative && v.Component == driver.SwitchComponent {
@@ -204,7 +218,6 @@ func (a *App) pressAt(v *View, at driver.Point, index int, mods driver.Modifiers
 		}
 		checked, _ := v.NativeProps["checked"].(bool)
 		a.dispatch(driver.Event{Kind: driver.EventNative, ID: v.ID, Text: "change", Data: !checked})
-		a.done()
 		return
 	}
 	a.countClick(v)
@@ -229,7 +242,6 @@ func (a *App) pressAt(v *View, at driver.Point, index int, mods driver.Modifiers
 		a.send(v, ev)
 	}
 	a.touchAt(driver.GestureEnded, at, 0)
-	a.done()
 }
 
 // pressEvent is a press on v at the surface point at, one click with no

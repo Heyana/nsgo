@@ -41,24 +41,42 @@ func (a *App) Report(ev Event) {
 	a.dispatch(ev.driverEvent())
 }
 
-// Pan drags the view selector matches, or the one around it or under its
-// middle with a pan,
-// through each translation in turn, then lets go.
+// Pan drags the view selector matches, or the one around it or under its middle with a pan, through each translation from the starting point.
 func (a *App) Pan(selector string, translations ...driver.Point) {
 	a.t.Helper()
+	if a.target != nil {
+		a.step("pan(%s, %v)", selector, translations)
+		v := a.gestureView(selector, driver.EventPan)
+		if len(translations) == 0 {
+			return
+		}
+		a.drag(v, a.target.reveal(v), translations)
+		return
+	}
 	v := a.gestureView(selector, driver.EventPan)
 	a.gesture(v, driver.EventPan, len(translations), func(ev *driver.Event, i int) {
 		ev.Point = translations[i]
 	})
 }
 
-// Drag puts a finger down at the middle of the view selector matches,
-// moves it there plus each offset in turn, 16 ms apart, and lifts it, as
-// the platform reports touches: OnTouch and the touch responder hear it.
-// Pinch pinches the view selector matches, or the one around it with a
-// pinch, through each scale in turn.
+// Pinch pinches the view selector matches, or the one around it with a pinch, through each scale in turn. Under -target it needs a test host with native pinch input, and skips the test's remaining steps without one.
 func (a *App) Pinch(selector string, scales ...float32) {
 	a.t.Helper()
+	if a.target != nil {
+		a.step("pinch(%s, %v)", selector, scales)
+		v := a.gestureView(selector, driver.EventPinch)
+		if len(scales) == 0 {
+			return
+		}
+		p, ok := a.target.surface.(testhost.PinchSurface)
+		if !ok {
+			a.t.Skipf("nsgotest: skipping remaining steps at %s: native pinch input is unavailable on %s", a.stepName, Target())
+			return
+		}
+		a.target.check(p.Pinch(a.target.reveal(v), scales))
+		a.done()
+		return
+	}
 	v := a.gestureView(selector, driver.EventPinch)
 	at, _ := v.center()
 	a.gesture(v, driver.EventPinch, len(scales), func(ev *driver.Event, i int) { ev.Value, ev.Point = scales[i], at })
