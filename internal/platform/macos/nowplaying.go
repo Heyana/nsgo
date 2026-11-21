@@ -108,7 +108,9 @@ func (s *surface) setNowPlaying(revision uint32, update *driver.NowPlayingUpdate
 		return
 	}
 	first := nowPlaying.owner == nil
-	sameMedia := nowPlaying.owner == s && nowPlaying.update.At == update.At
+	sameOwner := nowPlaying.owner == s
+	sameMedia := sameOwner && nowPlaying.update.At == update.At
+	sameArtwork := sameOwner && sameArtworkSource(nowPlaying.update.Info.Artwork, update.Info.Artwork)
 	if first {
 		apple.SetManualNowPlaying(true)
 		nowPlaying.controls = p.mediaControls()
@@ -130,26 +132,44 @@ func (s *surface) setNowPlaying(revision uint32, update *driver.NowPlayingUpdate
 	if sameMedia {
 		return
 	}
-	nowPlaying.releaseArtwork()
-	p.publish(update, 0)
-	if src := update.Info.Artwork; src != nil {
+	if !sameArtwork {
+		nowPlaying.releaseArtwork()
+	}
+	p.publish(update, nowPlaying.artwork)
+	if src := update.Info.Artwork; src != nil && nowPlaying.artwork == 0 && nowPlaying.cancel == nil {
 		ctx, cancel := context.WithCancel(context.Background())
 		nowPlaying.cancel = cancel
 		go func() {
 			image, size := apple.LoadStillImage(ctx, *src)
-			if image == 0 {
-				return
-			}
 			apple.OnMain(func() {
 				if ctx.Err() != nil {
 					apple.Release(image)
 					return
 				}
-				nowPlaying.artwork = p.newArtwork(image, size)
-				p.publish(nowPlaying.update, nowPlaying.artwork)
+				nowPlaying.cancel = nil
+				cancel()
+				if image != 0 {
+					nowPlaying.artwork = p.newArtwork(image, size)
+					p.publish(nowPlaying.update, nowPlaying.artwork)
+				}
 			})
 		}()
 	}
+}
+
+// The engine copies the artwork on each publication, so compare its content.
+func sameArtworkSource(a, b *driver.ImageSource) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Pixels != nil || b.Pixels != nil {
+		return a.Pixels != nil && b.Pixels != nil &&
+			a.Pixels.Rect == b.Pixels.Rect && slices.Equal(a.Pixels.Pix, b.Pixels.Pix)
+	}
+	return a.URI == b.URI && slices.Equal(a.Data, b.Data)
 }
 
 func (s *surface) clearNowPlaying() {

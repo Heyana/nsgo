@@ -92,6 +92,18 @@ func TestNowPlayingMediaPlayer(t *testing.T) {
 		}
 		art.Send(sel("retain"))
 		defer art.Send(selRelease)
+		paused := *update
+		paused.At = time.Now()
+		paused.Info = driver.CloneNowPlaying(update.Info)
+		paused.Info.Rate = 0
+		paused.Info.Position = 15 * time.Second
+		owner.setNowPlaying(2, &paused)
+		if got := info(p.key.artwork); got != art {
+			t.Errorf("changing playback replaced the artwork: got %v, want %v", got, art)
+		}
+		if got := objc.Send[float64](info(p.key.elapsed), sel("doubleValue")); got != 15 {
+			t.Errorf("updated elapsed time = %v, want 15", got)
+		}
 		changed := *update
 		changed.At = time.Now()
 		changed.Info.Rate, changed.Info.Duration, changed.Info.Artwork = 0, 0, nil
@@ -103,6 +115,9 @@ func TestNowPlayingMediaPlayer(t *testing.T) {
 		}
 		if info(p.key.duration) != 0 || !objc.Send[bool](info(p.key.live), sel("boolValue")) {
 			t.Error("the new publication did not describe a live stream")
+		}
+		if info(p.key.artwork) != 0 {
+			t.Error("a new publication without artwork kept the old image")
 		}
 		for _, control := range nowPlaying.controls {
 			if control.token != 0 || objc.Send[bool](control.command, sel("isEnabled")) {

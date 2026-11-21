@@ -30,7 +30,7 @@ A service is a command item in the batch. One that answers, such as a clipboard 
 
 `Scope.SetNowPlaying` and `ClearNowPlaying` publish one item per app through its first tree, including calls from another window. Each publication carries its playback timestamp. The platform advances the supplied position using the rate. Core copies artwork bytes and pixels and checks the ordinary image-access gate for artwork URIs. Media commands return to the engine with the publication number. The newest live handler takes the listed commands. Disposing it restores the previous handler or disables commands.
 
-macOS publishes through `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`. The latest publishing surface owns the process-wide centers. Closing it removes its metadata and command targets. While it owns the centers, controlled videos in the process suspend automatic publication through `AVPlayerView.updatesNowPlayingInfoCenter`. Artwork loads and decodes off the main thread, and a result can update only its own publication. Other backends report `Env.CanShowNowPlaying` false.
+macOS publishes through `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`. The latest publishing surface owns the process-wide centers. Closing it removes its metadata and command targets. While it owns the centers, controlled videos in the process suspend automatic publication through `AVPlayerView.updatesNowPlayingInfoCenter`. Artwork loads and decodes off the main thread. Updates from the same surface keep its artwork and any pending load when the source is unchanged. Other backends report `Env.CanShowNowPlaying` false.
 
 ## Clipboard
 

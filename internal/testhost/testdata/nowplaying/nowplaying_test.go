@@ -12,6 +12,9 @@ import (
 func TestMain(m *testing.M) { nsgotest.Main(m) }
 
 func TestNowPlayingFromMainWindow(t *testing.T) {
+	if nsgotest.Target() != "macos" {
+		t.Skip("checks the macOS Now Playing capability and command routing")
+	}
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		if !cx.Env().CanShowNowPlaying() {
 			return core.Text{Content: "Unavailable"}
@@ -26,9 +29,9 @@ func TestNowPlayingFromMainWindow(t *testing.T) {
 			Commands: []core.MediaCommandKind{core.MediaSeek},
 		})
 		return core.Text{ContentFunc: func() string { return position.Get().String() }}
-	}, nsgotest.Environment(core.Environment{OS: core.OSMacOS, NowPlaying: true}))
+	})
 	if app.Exists("text:Unavailable") {
-		t.Skip("the platform has no Now Playing support")
+		t.Fatal("macOS did not report Now Playing support")
 	}
 	if got := app.NowPlaying(); got == nil || got.Title != "Test Track" {
 		t.Fatalf("missing Now Playing publication: %+v", got)
