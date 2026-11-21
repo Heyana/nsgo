@@ -5,7 +5,6 @@ package android
 import (
 	"image"
 	"log"
-	"slices"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/shaderir"
@@ -208,6 +207,10 @@ func translate(prog *driver.ShaderProgram) *glProgram {
 func writeShader(w *writer, sh *driver.Shader, it shaderItem) {
 	p := it.prog
 	w.u32(p.id)
+	w.byte(byte(sh.Role))
+	w.byte(byte(sh.Pictures))
+	w.flags(sh.Running, sh.Backwards)
+	w.f64(sh.Overflow)
 	w.flags(it.source)
 	if it.source {
 		w.str(p.source)
@@ -227,6 +230,7 @@ func writeShader(w *writer, sh *driver.Shader, it shaderItem) {
 	for _, n := range sh.Nodes {
 		w.u32(uint32(n.Lane))
 		w.u32(n.Node)
+		w.byte(byte(n.Channel))
 	}
 	w.u32(uint32(len(sh.Images)))
 	for i, img := range sh.Images {
@@ -255,26 +259,4 @@ func writeShader(w *writer, sh *driver.Shader, it shaderItem) {
 			w.buf = append(w.buf, px.Pix[:n]...)
 		}
 	}
-}
-
-// withoutEffects leaves out of b what the Java runtime does not draw yet:
-// effects, transitions and navigation shaders, and their starts and
-// pictures, so their children show as they are and pages and dialogs
-// come with their own motion.
-func withoutEffects(b *driver.MountBatch) *driver.MountBatch {
-	effect := func(it *driver.MountItem) bool {
-		switch it.Kind {
-		case driver.ItemShaderTransition, driver.ItemShaderInput:
-			return true
-		case driver.ItemShader:
-			return it.Shader == nil || it.Shader.Role != driver.ShaderFill
-		}
-		return false
-	}
-	if !slices.ContainsFunc(b.Items, func(it driver.MountItem) bool { return effect(&it) }) {
-		return b
-	}
-	out := *b
-	out.Items = slices.DeleteFunc(slices.Clone(b.Items), func(it driver.MountItem) bool { return effect(&it) })
-	return &out
 }

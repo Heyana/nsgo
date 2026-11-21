@@ -16,8 +16,10 @@ import android.view.InputDevice;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.PixelCopy;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.inputmethod.EditorInfo;
@@ -335,7 +337,7 @@ final class TestAgent {
                 return;
             }
             case "screenshot":
-                view.testReply(id, "", screenshot());
+                screenshot(id, 3);
                 return;
             case "signature":
                 view.testReply(id, "", signature());
@@ -588,15 +590,31 @@ final class TestAgent {
         throw new IllegalArgumentException("the alert has no action " + index);
     }
 
-    /** The window drawn into a bitmap, as a PNG in base64. */
-    private String screenshot() {
-        View root = activity().getWindow().getDecorView();
+    /** The presented window, including shader and other texture-backed views. */
+    private void screenshot(int id, int retries) {
+        Window window = activity().getWindow();
+        View root = window.getDecorView();
         Bitmap bitmap = Bitmap.createBitmap(Math.max(root.getWidth(), 1), Math.max(root.getHeight(), 1), Bitmap.Config.ARGB_8888);
-        root.draw(new Canvas(bitmap));
-        ByteArrayOutputStream png = new ByteArrayOutputStream();
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, png);
-        bitmap.recycle();
-        return Base64.encodeToString(png.toByteArray(), Base64.NO_WRAP);
+        try {
+            PixelCopy.request(window, bitmap, result -> {
+                if (result == PixelCopy.SUCCESS) {
+                    ByteArrayOutputStream png = new ByteArrayOutputStream();
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, png);
+                    bitmap.recycle();
+                    view.testReply(id, "", Base64.encodeToString(png.toByteArray(), Base64.NO_WRAP));
+                } else {
+                    bitmap.recycle();
+                    if (result == PixelCopy.ERROR_SOURCE_NO_DATA && retries > 0) {
+                        root.postOnAnimation(() -> screenshot(id, retries - 1));
+                    } else {
+                        view.testReply(id, "window screenshot failed: PixelCopy " + result, "");
+                    }
+                }
+            }, ui);
+        } catch (IllegalArgumentException e) {
+            bitmap.recycle();
+            view.testReply(id, "window screenshot failed: " + e.getMessage(), "");
+        }
     }
 
     /**

@@ -1063,7 +1063,7 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 		}
 		b = control
 	}
-	b = withoutOffscreenReleases(s.withoutScans(v.id, s.withoutWebCookies(v.id, s.withoutAuthSessions(v.id, s.withoutUpdateChecks(v.id, withoutDesktopItems(withoutEffects(b)))))))
+	b = withoutOffscreenReleases(s.withoutScans(v.id, s.withoutWebCookies(v.id, s.withoutAuthSessions(v.id, s.withoutUpdateChecks(v.id, withoutDesktopItems(b))))))
 	// Disk space and discovery use messages of their own, disk space on a worker. Android has no file manager an app can reveal in or trash through. A test's observer may hold the batch, so filter these items from a copy.
 	outsideBatch := func(it driver.MountItem) bool {
 		return it.Kind == driver.ItemRevealFile || it.Kind == driver.ItemTrashFile ||
@@ -1576,10 +1576,6 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 				shaders = shaders[1:]
 			} else {
 				w.u32(0) // no program
-				w.flags(false)
-				w.u32(0)
-				w.u32(0)
-				w.u32(0)
 			}
 		case driver.ItemSetClipboard, driver.ItemAnnounce, driver.ItemTitle, driver.ItemAccessibilityLabel,
 			driver.ItemKeepImage, driver.ItemReleaseImage:

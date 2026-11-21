@@ -119,7 +119,7 @@ core.Shader{
 
 A Go shader receives the pixel's center in `dst` and the same point in points in `pos`, and has GLSL's built-in functions; `rectSize`, `pixelScale`, `image0At` to `image3At` and their sizes are NSGo's additions. A WGSL program writes `fn shade(uv: vec2f) -> vec4f` and reads `nsh.time` and `nsh.size`; `Paused` stops its clock. A platform without a GPU path for shaders draws nothing there.
 
-`core.ShaderEffect` draws a view, a page or a dialog through a shader, and `core.TransitionShader` uses one for a page's transition. `core.Canvas` and `core.Shader` both take `Label` and their children draw over them.
+`core.ShaderEffect` draws its children through WGSL and `core.ScreenEffect` covers the surface. `core.ShaderTransition` and `core.ScreenTransition` sample the pictures before and after `Value` changes. `core.TransitionShader` does this for navigation and dialogs. On Android, capturing views for effects requires Android 10 or later and OpenGL ES 3.0 with external texture support. `core.Canvas` and `core.Shader` both take `Label` and their children draw over them.
 
 ## Next
 

@@ -350,6 +350,8 @@ final class Protocol {
     static final int ITEM_KEEP_AWAKE = 93;
     static final int ITEM_RELEASE_AWAKE = 94;
     static final int ITEM_AUDIO = 96;
+    static final int ITEM_SHADER_TRANSITION = 75;
+    static final int ITEM_SHADER_INPUT = 76;
     static final int ITEM_SPEAK = 102;
     static final int ITEM_SENSOR = 103;
     static final int ITEM_ORIENTATION = 111;

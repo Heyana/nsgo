@@ -81,11 +81,41 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
     private static EGLDisplay display;
     private static EGLContext context;
     private static EGLConfig config;
+    private static EGLSurface pictureSurface;
+    private static int emptyPicture;
     private static boolean failed;
 
     private Program program;
     private double[] lanes = new double[0], values;
     private int[] nodeLanes = new int[0];
+    private byte[] nodeChannels = new byte[0];
+    // Role and picture slots are as in driver.Shader.
+    static final int FILL = 0, EFFECT = 1, TRANSITION = 2, SCREEN = 3, SCREEN_TRANSITION = 4, NAV = 5;
+    static final int CONTENT = 0, BACKDROP = 1, FROM = 2, TO = 3;
+    int role, reads, margin;
+    boolean running, backwards;
+    private ShaderPicture[] inputs;
+    private int requiredPictures, generation;
+    private volatile int shownGeneration = -1;
+    Runnable pictureShown;
+
+    boolean available() {
+        return program != null && !program.source.isEmpty();
+    }
+
+    boolean effectReady() {
+        return shownGeneration == generation;
+    }
+
+    void resetEffectFrame() {
+        generation++;
+    }
+
+    void inputs(ShaderPicture[] inputs, int required) {
+        this.inputs = inputs != null ? inputs.clone() : null;
+        requiredPictures = required;
+        draw();
+    }
     private String[] images = new String[0];
     /** The latest pixels of the images that are pixels, by their place; null for the others. */
     private Pixels[] pixels = new Pixels[0];
@@ -100,6 +130,8 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
     private Program frameProgram;
     private String[] frameImages;
     private Pixels[] framePixels;
+    private ShaderPicture[] frameInputs;
+    private int frameRequired, frameGeneration;
     private Bitmap[] frameBitmaps;
     private List<CanvasImages<CanvasNode.Picture>.Lease> frameLeases;
     private final CanvasImages<CanvasNode.Picture> pictures;
@@ -114,12 +146,24 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
         this.pictures = pictures;
         density = context.getResources().getDisplayMetrics().density;
         setOpaque(false);
+        setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         setSurfaceTextureListener(this);
     }
 
     /** Reads an ItemShader as shader.go's writeShader writes it, and draws. */
     void set(DataInputStream in) throws IOException {
         int id = in.readInt();
+        if (id == 0) {
+            program = null;
+            boundNodes = new int[0];
+            return;
+        }
+        role = in.readUnsignedByte();
+        reads = in.readUnsignedByte();
+        int flags = in.readUnsignedByte();
+        running = Protocol.flag(flags, 0);
+        backwards = Protocol.flag(flags, 1);
+        margin = Math.round((float) in.readDouble() * density);
         if ((in.readUnsignedByte() & 1) != 0) {
             String source = Protocol.readString(in);
             int n = in.readInt();
@@ -132,15 +176,19 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
             int size = in.readInt(), images = in.readInt();
             programs.put(id, new Program(source, offsets, types, size, images));
         }
-        program = programs.get(id);
+        Program next = programs.get(id);
+        if (program != next) resetEffectFrame();
+        program = next;
         lanes = new double[in.readInt()];
         for (int i = 0; i < lanes.length; i++) lanes[i] = in.readDouble();
         int nodes = in.readInt();
         nodeLanes = new int[nodes];
+        nodeChannels = new byte[nodes];
         int[] nodeIds = new int[nodes];
         for (int i = 0; i < nodes; i++) {
             nodeLanes[i] = in.readInt();
             nodeIds[i] = in.readInt();
+            nodeChannels[i] = in.readByte();
         }
         int count = in.readInt();
         String[] keys = new String[count];
@@ -165,19 +213,23 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
         pixels = px;
         boundNodes = nodeIds;
         values = null;
-        draw();
     }
 
     /** Draws again with the bound nodes' values, in boundNodes' order, in their lanes. */
-    void patch(double[] values) {
-        this.values = values.clone();
+    void patch(double[] numbers, int[] colors) {
+        values = numbers.clone();
+        for (int i = 0; i < nodeChannels.length && i < values.length; i++) {
+            int channel = nodeChannels[i];
+            // Animator holds colors in RGBA order, most significant byte first.
+            if (channel != 0) values[i] = ((colors[i] >>> (32 - 8 * channel)) & 0xff) / 255.0;
+        }
         draw();
     }
 
     /** Hands the GL thread the uniform block of the latest frame, and has it draw. */
     void draw() {
         Program p = program;
-        if (p == null || p.source.isEmpty()) return;
+        if (!available() || role != FILL && inputs == null) return;
         double[] all = new double[3 + 2 * p.images + lanes.length];
         System.arraycopy(lanes, 0, all, 3 + 2 * p.images, lanes.length);
         if (values != null) {
@@ -186,7 +238,17 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
                 if (lane >= 0 && lane < lanes.length) all[3 + 2 * p.images + lane] = values[i];
             }
         }
-        float w = getWidth() / density, h = getHeight() / density;
+        if (inputs != null && lanes.length >= 3) {
+            // Android lays out the padding in whole pixels.
+            all[3 + 2 * p.images + 2] = margin / density;
+            for (int i = 0; i < p.images; i++) {
+                ShaderPicture picture = inputs[i];
+                all[3 + 2 * i] = picture != null ? picture.width : 1;
+                all[4 + 2 * i] = picture != null ? picture.height : 1;
+            }
+        }
+        float w = Math.max(0, getWidth() - 2 * margin) / density;
+        float h = Math.max(0, getHeight() - 2 * margin) / density;
         all[0] = w;
         all[1] = h;
         all[2] = density;
@@ -227,7 +289,10 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
             frame = block;
             frameProgram = p;
             frameImages = images.clone();
-            framePixels = pixels.clone();
+            framePixels = pixels;
+            frameInputs = inputs;
+            frameRequired = requiredPictures;
+            frameGeneration = generation;
             releaseLeases(frameLeases);
             frameLeases = leases;
             frameBitmaps = bitmaps;
@@ -282,6 +347,23 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
         gl.post(ShaderNode::makeContext);
     }
 
+    static Handler threadHandler() {
+        start();
+        return gl;
+    }
+
+    /** Makes the shared context current for texture uploads without a view surface. */
+    static boolean pictureContext() {
+        if (failed) return false;
+        // Uploads and blits can use a window's current context between draws.
+        if (context.equals(EGL14.eglGetCurrentContext())) return true;
+        if (pictureSurface == null) {
+            pictureSurface = EGL14.eglCreatePbufferSurface(display, config,
+                    new int[] {EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE}, 0);
+        }
+        return EGL14.eglMakeCurrent(display, pictureSurface, pictureSurface, context);
+    }
+
     private static void makeContext() {
         display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
         int[] version = new int[2];
@@ -289,7 +371,8 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
             failed = true;
             return;
         }
-        int[] attribs = {EGL14.EGL_RENDERABLE_TYPE, 0x40 /* EGL_OPENGL_ES3_BIT */, EGL14.EGL_RED_SIZE, 8,
+        int[] attribs = {EGL14.EGL_RENDERABLE_TYPE, 0x40 /* EGL_OPENGL_ES3_BIT */,
+                EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT | EGL14.EGL_PBUFFER_BIT, EGL14.EGL_RED_SIZE, 8,
                 EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8, EGL14.EGL_NONE};
         EGLConfig[] configs = new EGLConfig[1];
         int[] n = new int[1];
@@ -324,6 +407,7 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
 
     @Override
     public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
+        shownGeneration = -1;
         // The surface goes on the GL thread, then the texture with it.
         gl.post(() -> {
             EGLSurface s;
@@ -333,6 +417,7 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
                 releaseLeases(frameLeases);
                 frameLeases = null;
                 frameBitmaps = null;
+                frameInputs = null;
                 frame = null;
             }
             if (s != null) {
@@ -374,6 +459,8 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
         ByteBuffer block;
         String[] imgs;
         Pixels[] px;
+        ShaderPicture[] inputs;
+        int required, generation;
         Bitmap[] bitmaps;
         List<CanvasImages<CanvasNode.Picture>.Lease> leases;
         int w, h;
@@ -385,6 +472,9 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
             p = frameProgram;
             imgs = frameImages;
             px = framePixels;
+            inputs = frameInputs;
+            required = frameRequired;
+            generation = frameGeneration;
             bitmaps = frameBitmaps;
             leases = frameLeases;
             frameLeases = null;
@@ -395,6 +485,11 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
         }
         try {
             if (failed || s == null || block == null || p == null || w <= 0 || h <= 0) return;
+            if (inputs != null) {
+                for (int i = 0; i < inputs.length; i++) {
+                    if ((required & (1 << i)) != 0 && (inputs[i] == null || inputs[i].texture == 0)) return;
+                }
+            }
             if (!EGL14.eglMakeCurrent(display, s, s, context)) return;
             deleteReleased();
             if (p.id == -1 && !link(p)) p.id = 0;
@@ -407,7 +502,10 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
                 for (int i = 0; i < p.images; i++) {
                     GLES30.glActiveTexture(GLES30.GL_TEXTURE0 + i);
                     int t = 0;
-                    if (i < px.length && px[i] != null) {
+                    if (inputs != null) {
+                        ShaderPicture pic = inputs[i];
+                        t = pic != null && pic.texture != 0 ? pic.texture : emptyPicture();
+                    } else if (i < px.length && px[i] != null) {
                         t = pixelTexture(i, px[i]);
                     } else {
                         if (i < pixelTextures.length && pixelTextures[i] != 0) {
@@ -434,7 +532,12 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
                 GLES30.glBindVertexArray(p.vao);
                 GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3);
             }
-            EGL14.eglSwapBuffers(display, s);
+            if (EGL14.eglSwapBuffers(display, s) && inputs != null && p.id > 0 && shownGeneration != generation) {
+                shownGeneration = generation;
+                post(() -> {
+                    if (effectReady() && pictureShown != null) pictureShown.run();
+                });
+            }
         } finally {
             releaseLeases(leases);
         }
@@ -466,6 +569,21 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
         }
         uploaded[i] = px;
         return pixelTextures[i];
+    }
+
+    /** The transparent picture a role does not supply. The shader thread owns it. */
+    private static int emptyPicture() {
+        if (emptyPicture != 0) return emptyPicture;
+        int[] names = new int[1];
+        GLES30.glGenTextures(1, names, 0);
+        emptyPicture = names[0];
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, emptyPicture);
+        ByteBuffer pixel = ByteBuffer.allocateDirect(4);
+        GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA, 1, 1, 0,
+                GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, pixel);
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST);
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST);
+        return emptyPicture;
     }
 
     /** Returns image key's texture, made from bitmap once it decoded; 0 until then. */
@@ -509,10 +627,15 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
             + "\tgl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);\n"
             + "}\n";
 
-    /** Compiles and links p in the shared context, reporting whether it can draw. */
-    private static boolean link(Program p) {
-        int vs = compile(GLES30.GL_VERTEX_SHADER, VERTEX), fs = compile(GLES30.GL_FRAGMENT_SHADER, p.source);
-        if (vs == 0 || fs == 0) return false;
+    /** Links a full-frame fragment program in the shared context. */
+    static int linkProgram(String source) {
+        int vs = compile(GLES30.GL_VERTEX_SHADER, VERTEX);
+        if (vs == 0) return 0;
+        int fs = compile(GLES30.GL_FRAGMENT_SHADER, source);
+        if (fs == 0) {
+            GLES30.glDeleteShader(vs);
+            return 0;
+        }
         int prog = GLES30.glCreateProgram();
         GLES30.glAttachShader(prog, vs);
         GLES30.glAttachShader(prog, fs);
@@ -521,11 +644,16 @@ final class ShaderNode extends TextureView implements TextureView.SurfaceTexture
         GLES30.glDeleteShader(fs);
         int[] ok = new int[1];
         GLES30.glGetProgramiv(prog, GLES30.GL_LINK_STATUS, ok, 0);
-        if (ok[0] == 0) {
-            Log.w(TAG, "shader: GLES: " + GLES30.glGetProgramInfoLog(prog));
-            GLES30.glDeleteProgram(prog);
-            return false;
-        }
+        if (ok[0] != 0) return prog;
+        Log.w(TAG, "shader: GLES: " + GLES30.glGetProgramInfoLog(prog));
+        GLES30.glDeleteProgram(prog);
+        return 0;
+    }
+
+    /** Links p and binds its images and uniform block. */
+    private static boolean link(Program p) {
+        int prog = linkProgram(p.source);
+        if (prog == 0) return false;
         p.id = prog;
         p.height = GLES30.glGetUniformLocation(prog, "nsgoHeight");
         GLES30.glUseProgram(prog);

@@ -274,6 +274,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private final Gestures gestures;
     /** The view the root node shows in, among the accessory bar. */
     private View rootView;
+    private final Set<ShaderEffect> effects = new LinkedHashSet<>();
+    private final ViewTreeObserver.OnPreDrawListener drawEffects = () -> {
+        for (ShaderEffect effect : effects) effect.capture();
+        return true;
+    };
 
     // Animation, on the UI thread: the graph, whether a frame callback is
     // posted and the app waits for it, the nodes whose frames move or which appear, and the views
@@ -496,6 +501,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         super.onAttachedToWindow();
         updateGestureRects();
         if (preferredFrameRate > 0) refreshRateHint();
+        if (!effects.isEmpty()) getViewTreeObserver().addOnPreDrawListener(drawEffects);
         // Embedded hosts may already have a focused sibling; keep it there.
         if (getRootView().findFocus() == null) requestFocus();
         accessibility.addTouchExplorationStateChangeListener(screenReader);
@@ -564,6 +570,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         releasePhysicalKeys();
         pauseAudio();
         hapticPatterns.stop();
+        getViewTreeObserver().removeOnPreDrawListener(drawEffects);
+        for (ShaderEffect effect : effects) effect.detach();
         releaseEnvironment();
         // An app waiting for the folds starts as the view leaves its window, as it would have without them.
         releaseStart();
@@ -3031,6 +3039,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 detach(n.view);
                 break;
             case Protocol.ITEM_DELETE:
+                if (n.effect != null) endShaderEffect(n);
                 // Dropping the node drops its views, its text layout and its
                 // bitmaps. A view inside one fading out goes with it.
                 if (!vanish(n) && !inGhost(n.view)) detach(n.view);
@@ -3243,9 +3252,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 break;
             }
             case Protocol.ITEM_SHADER:
-                n.shader.set(in);
-                animator.bindCanvas(n.id, n.shader.boundNodes);
-                applyAnimated();
+                setShader(n, in);
+                break;
+            case Protocol.ITEM_SHADER_TRANSITION:
+                if (n != null && Build.VERSION.SDK_INT >= 29) shaderEffect(n).start();
+                break;
+            case Protocol.ITEM_SHADER_INPUT:
+                if (n != null && n.effect != null) n.effect.dirty();
                 break;
             case Protocol.ITEM_KEEP_IMAGE:
                 canvasImages.keep(Protocol.readString(in));
@@ -3702,6 +3715,55 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
     }
 
+    private void setShader(Node node, DataInputStream in) throws IOException {
+        if (node.shader == null) node.shader = new ShaderNode(getContext(), canvasImages);
+        ShaderNode shader = node.shader;
+        shader.set(in);
+        animator.bindCanvas(node.id, shader.boundNodes);
+        if (!shader.available()) {
+            endShaderEffect(node);
+            detach(shader);
+        } else if (shader.role == ShaderNode.FILL) {
+            endShaderEffect(node);
+            if (shader.getParent() == null)
+                node.children.addView(shader, 0, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+            shader.draw();
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            shaderEffect(node).configure();
+        } else {
+            detach(shader);
+        }
+    }
+
+    private ShaderEffect shaderEffect(Node node) {
+        if (node.effect == null) {
+            if (node.shader == null) node.shader = new ShaderNode(getContext(), canvasImages);
+            node.effect = new ShaderEffect(node.view, node.shader, () -> rootView);
+            if (effects.isEmpty() && isAttachedToWindow()) getViewTreeObserver().addOnPreDrawListener(drawEffects);
+            effects.add(node.effect);
+        }
+        return node.effect;
+    }
+
+    private void endShaderEffect(Node node) {
+        if (node.effect == null) return;
+        node.effect.detach();
+        effects.remove(node.effect);
+        if (effects.isEmpty() && isAttachedToWindow()) getViewTreeObserver().removeOnPreDrawListener(drawEffects);
+        node.effect = null;
+    }
+
+    @Override
+    public void onDescendantInvalidated(View child, View target) {
+        super.onDescendantInvalidated(child, target);
+        // A sibling or the background can change without invalidating the effect's host.
+        if (!(target instanceof ShaderNode)) {
+            for (ShaderEffect effect : effects) {
+                if (target != effect.host && (effect.shader.reads & (1 << ShaderNode.BACKDROP)) != 0) effect.stale = true;
+            }
+        }
+    }
+
     /** Draws the views whose animated values changed. */
     private void applyAnimated() {
         animator.changed((id, values) -> {
@@ -3722,7 +3784,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             Node n = nodes.get(id);
             if (n == null) return;
             if (n.canvas != null) n.canvas.patch(c.nums, c.colors);
-            if (n.shader != null) n.shader.patch(c.nums);
+            if (n.shader != null) n.shader.patch(c.nums, c.colors);
             if (n.bound != null && n.embedded != null) n.embedded.animate(n.bound, c.nums, c.colors);
             if (measuring) perfDirty = true;
         });
@@ -4131,7 +4193,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         event(Protocol.EVENT_NATIVE_SIZE, n.id, 0, 0, 0, "", size[0] / density, size[1] / density, 0);
     }
 
-    private static void detach(View view) {
+    static void detach(View view) {
         ViewParent parent = view.getParent();
         if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(view);
     }
@@ -6012,8 +6074,44 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * its children leave, so the gestures see them, and while one of them
      * is active it takes its children's too, cancelling their presses.
      */
-    private final class Group extends FrameLayout {
+    final class Group extends FrameLayout {
         Node node;
+        ShaderEffect effect;
+        private boolean picturing;
+
+        @Override
+        public void onDescendantInvalidated(View child, View target) {
+            super.onDescendantInvalidated(child, target);
+            if (effect != null && target != effect.shader) effect.stale = true;
+        }
+
+        @Override
+        protected void dispatchDraw(Canvas canvas) {
+            if (canvas.isHardwareAccelerated() && effect != null && effect.shader.effectReady()) {
+                super.drawChild(canvas, effect.shader, getDrawingTime());
+            } else {
+                super.dispatchDraw(canvas);
+            }
+        }
+
+        @Override
+        protected boolean drawChild(Canvas canvas, View child, long time) {
+            if (effect != null && child == effect.shader && (picturing || effect.shader.isAvailable())) return false;
+            return super.drawChild(canvas, child, time);
+        }
+
+        void picture(Canvas canvas, boolean previous) {
+            if (previous && effect != null && effect.shader.effectReady()) {
+                super.drawChild(canvas, effect.shader, getDrawingTime());
+                return;
+            }
+            picturing = true;
+            try {
+                super.dispatchDraw(canvas);
+            } finally {
+                picturing = false;
+            }
+        }
         /** The child a touch outside every child went to by its hit slop or area, until it lifts. */
         private View routed;
         /** Whether the touch reached the group outside its bounds and slop: only children may take it. */
@@ -6064,7 +6162,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             if (node != null && node.pointerEvents == Protocol.POINTER_EVENTS_BOX_ONLY) return null;
             for (int i = getChildCount() - 1; i >= 0; i--) {
                 View child = getChildAt(i);
-                if (child.getVisibility() != VISIBLE) continue;
+                if (child.getVisibility() != VISIBLE || effect != null && child == effect.shader) continue;
                 float[] point = intoChild(this, child, e.getX(), e.getY());
                 if (point == null) continue;
                 float x = point[0], y = point[1];
@@ -6637,6 +6735,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         ImageNode image;
         CanvasNode canvas;
         ShaderNode shader;
+        ShaderEffect effect;
         WebNode web;
         VideoNode video;
         /** The view's background, the look it shows and the transition moving it. */
