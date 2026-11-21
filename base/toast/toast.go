@@ -77,8 +77,8 @@ func (s SwipeDirection) horizontal() bool { return s == SwipeRight || s == Swipe
 // goes back. While ending it takes no presses. The screen reader reads
 // Label as it shows. A Stack lays toasts out.
 //
-// The swipe moves a view around the root, since a backend draws a view
-// with animated values without its Transition.
+// The swipe moves a view around the root so its animated translation
+// composes with StartingStyle, EndingStyle and the app's own Transform.
 type Toast struct {
 	// Status is its phase, Starting when nil.
 	Status         func() Status

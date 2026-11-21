@@ -1,7 +1,101 @@
 package driver
 
+import (
+	"slices"
+	"time"
+)
+
 // Backends that draw their own views (Windows, Linux) step a style
 // transition themselves: each frame shows the style MixStyles returns.
+// Apple and the web also use StyleTransition to step composite properties
+// (transform, or box-shadow on the web) when some sub-properties are bound
+// by AnimatedValues while others transition.
+
+// StyleTransition steps a subset of ViewStyle properties on a backend's
+// frame clock from one style to another.
+type StyleTransition struct {
+	from, to ViewStyle
+	start    time.Duration
+	delay    time.Duration
+	duration time.Duration
+	curve    Curve
+	props    TransitionProperty
+}
+
+// StartStyleTransition starts, keeps or retargets a transition over props
+// from prevStyle to nextStyle at now, ignoring differences covered by anim.
+// It returns nil when nextStyle carries no transition for props or no
+// unbound property in props changed.
+func StartStyleTransition(prev *StyleTransition, prevStyle, nextStyle ViewStyle, now time.Duration, props TransitionProperty, anim AnimatedValues) *StyleTransition {
+	tr := nextStyle.Transition
+	if tr.Duration <= 0 || props == 0 {
+		return nil
+	}
+	if tr.Properties != 0 {
+		props &= tr.Properties
+		if props == 0 {
+			return nil
+		}
+	}
+	from := prevStyle
+	if prev != nil {
+		// Keep an in-flight transition running when its target for props did
+		// not change, updating non-props fields on to so At preserves them.
+		if prev.props == props {
+			if _, done := prev.At(now); !done {
+				a, b := MixStyles(prev.to, nextStyle, 0, props), MixStyles(prev.to, nextStyle, 1, props)
+				if sameStyleProps(anim.Apply(a), anim.Apply(b), props) {
+					prev.to = nextStyle
+					return prev
+				}
+			}
+		}
+		from, _ = prev.At(now)
+	}
+	first, last := MixStyles(from, nextStyle, 0, props), MixStyles(from, nextStyle, 1, props)
+	if sameStyleProps(anim.Apply(first), anim.Apply(last), props) {
+		return nil
+	}
+	return &StyleTransition{
+		from: from, to: nextStyle, start: now,
+		delay: tr.Delay, duration: tr.Duration, curve: tr.Easing, props: props,
+	}
+}
+
+// Props returns the transition property groups st steps.
+func (st *StyleTransition) Props() TransitionProperty { return st.props }
+
+// At returns the style shown at now and whether the transition has finished.
+func (st *StyleTransition) At(now time.Duration) (ViewStyle, bool) {
+	elapsed := now - st.start - st.delay
+	if elapsed <= 0 {
+		return MixStyles(st.from, st.to, 0, st.props), false
+	}
+	if elapsed >= st.duration {
+		return st.to, true
+	}
+	t := st.curve.At(float64(elapsed) / float64(st.duration))
+	return MixStyles(st.from, st.to, t, st.props), false
+}
+
+// sameStyleProps reports whether a and b match on props, comparing
+// Effects.Shadows by value rather than pointer.
+func sameStyleProps(a, b ViewStyle, props TransitionProperty) bool {
+	if props&TransitionShadow != 0 {
+		var sa, sb []BoxShadow
+		if a.Effects != nil {
+			sa = a.Effects.Shadows
+		}
+		if b.Effects != nil {
+			sb = b.Effects.Shadows
+		}
+		if !slices.Equal(sa, sb) {
+			return false
+		}
+	}
+	a.Effects, b.Effects = nil, nil
+	return a == b
+}
 
 // MixStyles returns the style shown t of the way from from to to, moving
 // only the properties props lists and taking to's for the rest.

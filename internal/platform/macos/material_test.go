@@ -130,7 +130,7 @@ func aBareBackdropBlurFollowsItsRadius(t *testing.T) {
 			Effects: &driver.Effects{BackdropFilters: []driver.Filter{{Kind: driver.FilterBlur, Amount: blur}}}}
 		v.style = vs
 		v.setBackdrop(&vs)
-		v.styleLayer(&vs)
+		v.styleLayer(&vs, 0)
 	}
 	isA := func(o objc.ID, class objc.Class) bool {
 		return o != 0 && objc.Send[bool](o, sel("isKindOfClass:"), class)
@@ -228,7 +228,7 @@ func backdropColorFiltersChangeWhatIsBehind(t *testing.T) {
 		vs := driver.ViewStyle{Opacity: 1, Material: m, Effects: &driver.Effects{BackdropFilters: filters}}
 		v.style = vs
 		v.setBackdrop(&vs)
-		v.styleLayer(&vs)
+		v.styleLayer(&vs, 0)
 		for range 20 {
 			objc.ID(apple.Class("NSRunLoop")).Send(sel("mainRunLoop")).Send(sel("runUntilDate:"), objc.ID(apple.Class("NSDate")).Send(sel("dateWithTimeIntervalSinceNow:"), 0.05))
 		}

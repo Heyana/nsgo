@@ -79,6 +79,15 @@ const (
 	PropCount
 )
 
+// Bitmasks of AnimatedValues.Set for composite style properties.
+const (
+	AnimatedTransformMask uint16 = 1<<PropTranslateX | 1<<PropTranslateY |
+		1<<PropScale | 1<<PropScaleX | 1<<PropScaleY |
+		1<<PropRotate | 1<<PropRotateX | 1<<PropRotateY
+	AnimatedShadowColorMask uint16 = 1<<PropShadowColor | 1<<PropShadowOpacity
+	AnimatedShadowMask      uint16 = AnimatedShadowColorMask | 1<<PropShadowRadius
+)
+
 // Easing is how a timing animation or an interpolation segment
 // progresses: a cubic Bézier, or one of React Native's curves. Its zero
 // value is linear.

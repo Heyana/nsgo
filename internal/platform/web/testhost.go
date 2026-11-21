@@ -222,7 +222,7 @@ func (t *testSurface) Sync() { t.s.engine.Sync() }
 // Animating counts the page's own finite animations too: transitions
 // and a screen sliding in.
 func (t *testSurface) Animating() bool {
-	if t.s.animator.Ending() {
+	if t.s.animator.Ending() || len(t.s.transitions) > 0 {
 		return true
 	}
 	running := js.Global().Get("document").Call("getAnimations")

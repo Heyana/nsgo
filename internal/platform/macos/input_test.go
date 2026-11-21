@@ -324,7 +324,7 @@ func TestInputReplacementKeepsItsClipHolder(t *testing.T) {
 		defer s.delete(v, false)
 		v.native.Send(selSetFrame, apple.Rect(0, 0, 160, 80))
 		v.style = driver.ViewStyle{Clip: true, CornerRadius: 24, ShadowColor: driver.RGB(0xff0000)}
-		v.styleLayer(&v.style)
+		v.styleLayer(&v.style, 0)
 		holder := v.content
 		if holder == v.native {
 			t.Fatal("decorated input has no clip holder")

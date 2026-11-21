@@ -48,8 +48,9 @@ type ring struct {
 var rings = map[objc.ID]*ring{}
 
 // setBorders draws vs's per-side borders on layer, or removes them when
-// its border is uniform. tr animates them when it lists borders.
-func setBorders(layer objc.ID, vs *driver.ViewStyle, tr *driver.Transition) {
+// its border is uniform. tr animates them when it lists borders, skipping
+// fill color transitions while PropBorderColor is bound.
+func setBorders(layer objc.ID, vs *driver.ViewStyle, tr *driver.Transition, bound uint16) {
 	r := rings[layer]
 	if vs.Borders == (driver.Edges{}) {
 		ForgetBorders(layer)
@@ -64,14 +65,18 @@ func setBorders(layer objc.ID, vs *driver.ViewStyle, tr *driver.Transition) {
 	if tr.Duration <= 0 || (tr.Properties != 0 && tr.Properties&driver.TransitionBorder == 0) {
 		tr = nil
 	}
-	r.layout(layer, tr)
+	fillTr := tr
+	if bound&(1<<driver.PropBorderColor) != 0 {
+		fillTr = nil
+	}
+	r.layout(layer, tr, fillTr)
 }
 
 // LayoutBorders fits a layer's per-side borders to its bounds after its
 // frame changed.
 func LayoutBorders(layer objc.ID) {
 	if r := rings[layer]; r != nil {
-		r.layout(layer, nil)
+		r.layout(layer, nil, nil)
 	}
 }
 
@@ -129,7 +134,7 @@ func (r *ring) remove(i int) {
 	}
 }
 
-func (r *ring) layout(layer objc.ID, tr *driver.Transition) {
+func (r *ring) layout(layer objc.ID, tr, fillTr *driver.Transition) {
 	bounds := objc.Send[CGRect](layer, selBounds)
 	w, h := bounds.Size.Width, bounds.Size.Height
 	b := r.widths
@@ -167,7 +172,7 @@ func (r *ring) layout(layer objc.ID, tr *driver.Transition) {
 			}
 			side.Send(selSetFrame, bounds)
 			color := CGColor(colors[i])
-			animate(side, "fillColor", tr, fresh, func() { side.Send(selSetFill, color) })
+			animate(side, "fillColor", fillTr, fresh, func() { side.Send(selSetFill, color) })
 			Release(color)
 			animate(side, "path", tr, fresh, func() { side.Send(selSetPath, ring) })
 			mask := side.Send(sel("mask"))

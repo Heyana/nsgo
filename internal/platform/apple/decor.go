@@ -50,6 +50,7 @@ type decor struct {
 	// fades it to a new one, while a new style draws.
 	covers  driver.Color
 	recolor *driver.Transition
+	bound   uint16
 	// insets holds the inset shadows, clipped to the padding box.
 	insets objc.ID
 	// clip and mask are the layer's masks, which d owns: the clip shape,
@@ -186,7 +187,7 @@ func needsShape(vs *driver.ViewStyle, radii driver.Corners) bool {
 
 // applyDecor draws what vs needs beyond the layer's own properties, for
 // the layer's bounds.
-func applyDecor(layer objc.ID, vs *driver.ViewStyle) {
+func applyDecor(layer objc.ID, vs *driver.ViewStyle, bound uint16) {
 	d := decors[layer]
 	e := vs.Effects
 	if d == nil {
@@ -200,7 +201,9 @@ func applyDecor(layer objc.ID, vs *driver.ViewStyle) {
 		decors[layer] = d
 	}
 	d.vs = *vs
-	if tr := vs.Transition; tr.Duration > 0 && (tr.Properties == 0 || tr.Properties&driver.TransitionBackground != 0) {
+	d.bound = bound
+	if tr := vs.Transition; tr.Duration > 0 && bound&(1<<driver.PropBackground) == 0 &&
+		(tr.Properties == 0 || tr.Properties&driver.TransitionBackground != 0) {
 		d.recolor = &tr
 	}
 	d.layout(layer)
@@ -266,7 +269,7 @@ func (d *decor) layout(layer objc.ID) {
 	}
 	WithoutAnimation(func() {
 		d.shaped = needsShape(vs, radii)
-		d.covered = coversShadows(vs, e)
+		d.covered = coversShadows(layer, vs, e, d.bound)
 		d.layoutShape(layer, w, h, radii)
 		d.layoutShadows(layer, e.Shadows, w, h, radii)
 		d.layoutGradients(layer, e.Gradients, w, h, radii)
@@ -365,7 +368,7 @@ func cornersOf(radii driver.Corners) (driver.Points, uint) {
 // coversShadows reports whether an opaque background or gradient hides
 // vs's outer shadows inside the box. A background a Core Animation
 // transition animates stays the layer's own.
-func coversShadows(vs *driver.ViewStyle, e *driver.Effects) bool {
+func coversShadows(layer objc.ID, vs *driver.ViewStyle, e *driver.Effects, bound uint16) bool {
 	outer := false
 	for _, sh := range e.Shadows {
 		outer = outer || !sh.Inset
@@ -377,7 +380,9 @@ func coversShadows(vs *driver.ViewStyle, e *driver.Effects) bool {
 		return true
 	}
 	tr := vs.Transition
-	animated := tr.Duration > 0 && (tr.Properties == 0 || tr.Properties&driver.TransitionBackground != 0)
+	animated := (tr.Duration > 0 && bound&(1<<driver.PropBackground) == 0 &&
+		(tr.Properties == 0 || tr.Properties&driver.TransitionBackground != 0)) ||
+		layer.Send(sel("animationForKey:"), NSString("nsgo.backgroundColor")) != 0
 	return vs.Background&0xff == 0xff && !animated
 }
 

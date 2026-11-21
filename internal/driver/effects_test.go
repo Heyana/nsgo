@@ -239,3 +239,65 @@ func TestMixStylesScalesFromUnsetAsOne(t *testing.T) {
 		t.Fatalf("unset scales = %+v", got)
 	}
 }
+
+func TestStyleTransitionBesideBoundAnimatedProps(t *testing.T) {
+	tr := Transition{Duration: 200 * time.Millisecond, Delay: 50 * time.Millisecond}
+	anim := AnimatedValues{Set: 1 << PropTranslateX, TranslateX: 40}
+
+	// Only the bound TranslateX changed: no transition needed.
+	from := ViewStyle{Opacity: 1, Transform: Transform{TranslateX: 0, Scale: 1}, Transition: tr}
+	onlyBound := ViewStyle{Opacity: 1, Transform: Transform{TranslateX: 99, Scale: 1}, Transition: tr}
+	if got := StartStyleTransition(nil, from, onlyBound, 0, TransitionTransform, anim); got != nil {
+		t.Fatal("a change only to a bound transform property started a StyleTransition")
+	}
+
+	// Unbound Scale changed alongside bound TranslateX: interpolates after Delay.
+	scaled := ViewStyle{Opacity: 1, Transform: Transform{TranslateX: 99, Scale: 0.5}, Transition: tr}
+	st := StartStyleTransition(nil, from, scaled, 0, TransitionTransform, anim)
+	if st == nil {
+		t.Fatal("unbound Scale change did not start a StyleTransition")
+	}
+	if at, done := st.At(25 * time.Millisecond); done || at.Transform.Scale != 1 {
+		t.Fatalf("during delay: scale=%v done=%v, want 1 false", at.Transform.Scale, done)
+	}
+	if at, done := st.At(150 * time.Millisecond); done || math.Abs(float64(at.Transform.Scale-0.75)) > 1e-4 {
+		t.Fatalf("halfway: scale=%v done=%v, want 0.75 false", at.Transform.Scale, done)
+	}
+	// An unrelated Opacity change keeps the in-flight transition without
+	// resetting its start time, while updating non-transform fields on to.
+	faded := scaled
+	faded.Opacity = 0.2
+	kept := StartStyleTransition(st, scaled, faded, 150*time.Millisecond, TransitionTransform, anim)
+	if kept != st {
+		t.Fatal("unrelated Opacity change restarted the in-flight transform StyleTransition")
+	}
+	if at, done := kept.At(150 * time.Millisecond); done || at.Opacity != 0.2 || math.Abs(float64(at.Transform.Scale-0.75)) > 1e-4 {
+		t.Fatalf("kept halfway: opacity=%v scale=%v done=%v, want 0.2 0.75 false", at.Opacity, at.Transform.Scale, done)
+	}
+	// Retargeting mid-flight starts from the shown 0.75.
+	back := from
+	back.Opacity = 0.2
+	retargeted := StartStyleTransition(kept, faded, back, 150*time.Millisecond, TransitionTransform, anim)
+	if retargeted == nil || retargeted == kept {
+		t.Fatal("retargeting did not start a new StyleTransition")
+	}
+	if at, done := retargeted.At(150 * time.Millisecond); done || math.Abs(float64(at.Transform.Scale-0.75)) > 1e-4 {
+		t.Fatalf("retargeted start: scale=%v done=%v, want 0.75 false", at.Transform.Scale, done)
+	}
+	if at, done := retargeted.At(400 * time.Millisecond); !done || at.Transform.Scale != 1 {
+		t.Fatalf("retargeted end: scale=%v done=%v, want 1 true", at.Transform.Scale, done)
+	}
+	// Shadow group: unchanged box shadows by value (distinct pointers) do not
+	// trigger a no-op transition, while an unbound ShadowColor change does.
+	shadowAnim := AnimatedValues{Set: 1 << PropShadowRadius, ShadowRadius: 6}
+	s1 := ViewStyle{ShadowColor: RGB(0x000000), ShadowRadius: 2, Effects: &Effects{Shadows: []BoxShadow{{Blur: 4, Color: RGB(0x111111)}}}, Transition: tr}
+	s2 := ViewStyle{ShadowColor: RGB(0x000000), ShadowRadius: 12, Effects: &Effects{Shadows: []BoxShadow{{Blur: 4, Color: RGB(0x111111)}}}, Transition: tr}
+	if got := StartStyleTransition(nil, s1, s2, 0, TransitionShadow, shadowAnim); got != nil {
+		t.Fatal("identical box shadows with only bound ShadowRadius changed started a StyleTransition")
+	}
+	s3 := s2
+	s3.ShadowColor = RGB(0xff0000)
+	if got := StartStyleTransition(nil, s1, s3, 0, TransitionShadow, shadowAnim); got == nil {
+		t.Fatal("unbound ShadowColor change with bound ShadowRadius did not start a StyleTransition")
+	}
+}

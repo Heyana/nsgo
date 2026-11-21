@@ -197,9 +197,11 @@ type surface struct {
 	// pointerCSS is whether pointerCSS was added to the page.
 	pointerCSS bool
 
-	animator *driver.Animator
-	frame    js.Func // the animation frame callback
-	ticking  bool
+	animator    *driver.Animator
+	batch       uint64
+	transitions map[*view]bool
+	frame       js.Func // the animation frame callback
+	ticking     bool
 	// frameWanted is set while the app waits for a display frame.
 	frameWanted bool
 	// perf measures the engine when a test asks (nsgo test -fps).
@@ -303,6 +305,9 @@ type view struct {
 	keyframes  driver.KeyframeAnimation
 	running    []js.Value
 	animated   driver.AnimatedValues
+	styleTr    *driver.StyleTransition
+	styled     bool
+	born       uint64
 	framed     bool
 	layoutAnim js.Value
 	appearAnim js.Value
@@ -1417,6 +1422,7 @@ func (s *surface) Mount(b *driver.MountBatch) { driver.Apply(b, s.mount) }
 // mount applies b to the page at once, which runs on its one thread.
 func (s *surface) mount(b *driver.MountBatch) {
 	defer collectLater()
+	s.batch++
 	var lb *layoutBatch
 	if b.LayoutAnimation != nil && !s.env.ReduceMotion {
 		lb = &layoutBatch{anim: b.LayoutAnimation, created: map[driver.NodeID]bool{}}
@@ -1660,6 +1666,7 @@ func (s *surface) mount(b *driver.MountBatch) {
 				v.el.Call("remove")
 			}
 			s.animator.Forget(v.id)
+			delete(s.transitions, v)
 			s.endEffect(v)
 			if s.drag == v {
 				s.drag = nil
@@ -1731,7 +1738,10 @@ func (s *surface) mount(b *driver.MountBatch) {
 				s.redrawGradients(v)
 			}
 		case driver.ItemViewStyle:
+			prev := v.style
 			v.style = *it.ViewStyle
+			s.updateStyleTransition(v, prev)
+			v.styled = true
 			s.setViewStyle(v, it.ViewStyle)
 			if v.animated.Set != 0 {
 				s.animator.Touch(v.id)
@@ -1875,7 +1885,7 @@ func (s *surface) mount(b *driver.MountBatch) {
 			s.requestGlassPaint()
 		}
 	}
-	if s.animator.Running() || len(s.shading) > 0 {
+	if s.animator.Running() || len(s.shading) > 0 || len(s.transitions) > 0 {
 		s.startTicking()
 	}
 }
@@ -1913,7 +1923,7 @@ func (s *surface) create(id driver.NodeID, kind driver.ViewKind) *view {
 	}
 	// A new view has the default style and no props or events: the core
 	// sends them only when they differ, and the element shows them as it is.
-	v := &view{id: id, kind: kind, el: s.element("div"), style: driver.DefaultViewStyle,
+	v := &view{id: id, kind: kind, el: s.element("div"), style: driver.DefaultViewStyle, born: s.batch,
 		accessPrefix: fmt.Sprintf("nsgo-a11y-%p-", s)}
 	v.el.Get("classList").Call("add", "nsgo-view")
 	v.el.Set("nsgoID", int(id))

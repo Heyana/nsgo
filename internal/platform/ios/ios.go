@@ -124,11 +124,13 @@ type view struct {
 
 	// frame is where the view shows now; style its own style, which its
 	// animated values and a layout animation draw over.
-	frame    driver.Bounds
-	framed   bool
-	shift    driver.Point // a sticky cell's, from frame
-	style    driver.ViewStyle
-	animated driver.AnimatedValues
+	frame       driver.Bounds
+	framed      bool
+	shift       driver.Point // a sticky cell's, from frame
+	style       driver.ViewStyle
+	animated    driver.AnimatedValues
+	bound       uint16
+	transformTr *driver.StyleTransition
 	// drawn is the style its layer was last drawn with, once styled, and
 	// the default style before. born is the batch that created it, whose
 	// style shows at once.
@@ -281,6 +283,7 @@ type surface struct {
 	frameWanted atomic.Bool
 	fullRate    atomic.Bool
 	motions     map[*view]*motion
+	transitions map[*view]bool
 	ghosts      []*ghost
 	components  driver.NativeComponents
 	unknown     map[string]bool
@@ -716,7 +719,7 @@ func (s *surface) reconnect(scene objc.ID) {
 		runner.sendLaunchLinks()
 		runner.sendLaunchFiles()
 	}
-	if s.perf != nil || s.frameWanted.Load() || s.animator.Running() || len(s.motions) > 0 {
+	if s.perf != nil || s.frameWanted.Load() || s.animator.Running() || len(s.motions) > 0 || len(s.transitions) > 0 {
 		s.startTicking()
 	}
 }
@@ -1486,13 +1489,11 @@ func (s *surface) apply(b *driver.MountBatch) {
 			if v.bar != nil && it.ViewStyle.Hidden != v.style.Hidden {
 				s.touchStack(s.stackOf(v))
 			}
+			prev := v.style
 			v.style = *it.ViewStyle
 			v.setBackdrop(it.ViewStyle)
-			if v.animatesStyle() {
-				v.restyle()
-			} else {
-				v.styleLayer(it.ViewStyle)
-			}
+			v.updateTransformTransition(prev)
+			v.restyleWith(true)
 			if v.layout != nil {
 				// A rounded text's layer takes its exact frame (sizeContent).
 				v.sizeContent()
@@ -1689,7 +1690,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 	s.drawShaders()
 	s.updatePictureInPictureVideos()
 	s.dirtyPictureInPictures()
-	if s.animator.Running() {
+	if s.animator.Running() || len(s.transitions) > 0 {
 		s.startTicking()
 	}
 }
@@ -1813,6 +1814,7 @@ func (s *surface) delete(v *view, kept bool) {
 	}
 	s.animator.Forget(v.id)
 	delete(s.motions, v)
+	delete(s.transitions, v)
 	if v.component != nil {
 		v.component.Close()
 		v.component = nil

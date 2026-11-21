@@ -37,8 +37,9 @@ func (s *surface) startTicking() {
 func (s *surface) tick(stamp time.Duration) {
 	s.ticking = false
 	s.animator.Step(stamp)
-	s.applyAnimated()
-	if s.animator.Running() {
+	s.applyAnimatedAt(stamp)
+	s.stepTransitions(stamp)
+	if s.animator.Running() || len(s.transitions) > 0 {
 		s.staleEffects()
 		s.requestGlassPaint()
 	}
@@ -51,59 +52,92 @@ func (s *surface) tick(stamp time.Duration) {
 			s.engine.FrameAt(driver.DisplayTime(stamp, time.Duration(now()*float64(time.Millisecond))))
 		}
 	}
-	if s.animator.Running() || s.frameWanted {
+	if s.animator.Running() || len(s.transitions) > 0 || s.frameWanted {
 		s.startTicking()
 	}
 }
 
+func (s *surface) clock() time.Duration { return time.Duration(now() * float64(time.Millisecond)) }
+
+// compositeTransitionProps returns the composite CSS property groups that
+// overlap bound and therefore cannot rely on CSS transition alongside inline
+// animated values.
+func compositeTransitionProps(bound uint16) driver.TransitionProperty {
+	var props driver.TransitionProperty
+	if bound&driver.AnimatedTransformMask != 0 {
+		props |= driver.TransitionTransform
+	}
+	if bound&driver.AnimatedShadowMask != 0 {
+		props |= driver.TransitionShadow
+	}
+	return props
+}
+
+// updateStyleTransition starts, keeps or clears v's frame-stepped transition
+// for composite CSS properties (transform, box-shadow) where some
+// sub-properties are bound by v.animated while others change with Transition.
+func (s *surface) updateStyleTransition(v *view, prev driver.ViewStyle) {
+	styled := v.styled || v.born != s.batch
+	props := compositeTransitionProps(v.animated.Set)
+	if !styled || props == 0 || s.env.ReduceMotion {
+		v.styleTr = nil
+		delete(s.transitions, v)
+		return
+	}
+	v.styleTr = driver.StartStyleTransition(v.styleTr, prev, v.style, s.clock(), props, v.animated)
+	if v.styleTr != nil {
+		if s.transitions == nil {
+			s.transitions = map[*view]bool{}
+		}
+		s.transitions[v] = true
+	} else {
+		delete(s.transitions, v)
+	}
+}
+
+func (s *surface) stepTransitions(stamp time.Duration) {
+	for v := range s.transitions {
+		if s.view(v.id) != v || v.styleTr == nil {
+			delete(s.transitions, v)
+			continue
+		}
+		s.writeAnimatedStyle(v, stamp)
+	}
+}
+
+func (s *surface) writeAnimatedStyle(v *view, at time.Duration) {
+	base := v.style
+	if v.styleTr != nil {
+		var done bool
+		base, done = v.styleTr.At(at)
+		if done {
+			v.styleTr = nil
+			delete(s.transitions, v)
+		}
+	}
+	inline := webstyle.AnimatedInline(base, v.animated)
+	if v.glassActive && inline["background-color"] != "" {
+		// The glass shader renders the animated background tint.
+		inline["background-color"] = "transparent"
+	}
+	v.css().set(inline)
+}
+
 // applyAnimated writes the animated values that changed.
-func (s *surface) applyAnimated() {
+func (s *surface) applyAnimated() { s.applyAnimatedAt(s.clock()) }
+
+func (s *surface) applyAnimatedAt(at time.Duration) {
 	s.animator.Changed(func(id driver.NodeID, vals driver.AnimatedValues) {
 		v := s.view(id)
 		if v == nil {
 			return
 		}
 		v.animated = vals
-		// What animates goes inline over the view's class; once nothing
-		// does, the class shows.
-		style := map[string]string{"opacity": "", "transform": "", "background-color": "", "box-shadow": "",
-			"transition": "", "-webkit-text-fill-color": "", "border-color": "", "will-change": ""}
-		if vals.Set != 0 {
-			vs := vals.Apply(v.style)
-			style["opacity"], style["transform"] = webstyle.Opacity(vs.Opacity), webstyle.Transform(vs.Transform)
-			style["background-color"], style["box-shadow"] = webstyle.Fill(vs.Background), webstyle.Shadow(&vs)
-			if v.glassActive {
-				// The glass shader renders the animated background tint.
-				style["background-color"] = "transparent"
-			}
-			// A bound value moves at once; the view's transition is for
-			// its style's changes.
-			style["transition"] = "none"
-			if vs.Opacity == 1 {
-				style["opacity"] = "1"
-			}
-			if style["transform"] == "" {
-				style["transform"] = "none"
-			}
-			if vals.Has(driver.PropTranslateX) || vals.Has(driver.PropTranslateY) {
-				style["will-change"] = "transform"
-			}
-			if style["background-color"] == "" {
-				style["background-color"] = "transparent"
-			}
-			if style["box-shadow"] == "" {
-				style["box-shadow"] = "none"
-			}
-			if vals.Has(driver.PropBorderColor) {
-				style["border-color"] = webstyle.Color(vs.BorderColor)
-			}
-			// A bound color fills every glyph, the spans' too, which
-			// inherit the fill color over their own.
-			if vals.Has(driver.PropTextColor) {
-				style["-webkit-text-fill-color"] = webstyle.Color(vals.TextColor)
-			}
+		if v.styleTr != nil && compositeTransitionProps(vals.Set)&v.styleTr.Props() == 0 {
+			v.styleTr = nil
+			delete(s.transitions, v)
 		}
-		v.css().set(style)
+		s.writeAnimatedStyle(v, at)
 	})
 	s.changedCanvases()
 	s.changedNatives()

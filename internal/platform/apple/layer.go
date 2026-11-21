@@ -44,6 +44,14 @@ var (
 // layer. A style with a transition animates what it lists from the
 // values shown; was is the style last drawn, nil for none.
 func StyleLayer(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID) {
+	StyleLayerBound(layer, was, vs, view, 0)
+}
+
+// StyleLayerBound draws vs with layer like StyleLayer, skipping Core
+// Animation transitions for properties named in bound (AnimatedValues.Set)
+// so bound animated values keep moving immediately while unbound properties
+// run vs.Transition.
+func StyleLayerBound(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID, bound uint16) {
 	tr := vs.Transition
 	var keys []string
 	var from []objc.ID
@@ -52,7 +60,7 @@ func StyleLayer(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID) {
 		if shown == 0 {
 			shown = layer
 		}
-		keys = transitionKeys(tr.Properties)
+		keys = transitionKeys(tr.Properties, bound)
 		for _, k := range keys {
 			value := shown.Send(selValueForKey, NSString(k))
 			if value != 0 {
@@ -86,7 +94,9 @@ func StyleLayer(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID) {
 	sh := layerShadow(vs)
 	switch {
 	case view != 0:
-		setViewShadow(view, sh)
+		if was == nil || layerShadow(was) != sh {
+			setViewShadow(view, sh)
+		}
 	case sh.Color == 0:
 		layer.Send(selSetShadowOpacity, float32(0))
 	default:
@@ -95,8 +105,8 @@ func StyleLayer(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID) {
 		layer.Send(selSetShadowRadius, float64(sh.Blur)/2)
 		layer.Send(selSetShadowOpacity, float32(1))
 	}
-	setBorders(layer, vs, &tr)
-	applyDecor(layer, vs)
+	setBorders(layer, vs, &tr, bound)
+	applyDecor(layer, vs, bound)
 	SetTransform(layer, vs.Transform)
 	for i, k := range keys {
 		to := layer.Send(selValueForKey, NSString(k))
@@ -126,22 +136,65 @@ func StyleLayer(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID) {
 	}
 }
 
+// ClearBoundAnimations removes active style transitions on layer (and its
+// border or cover sublayers) for properties named in bound, leaving
+// transitions on unbound properties running.
+func ClearBoundAnimations(layer objc.ID, bound uint16) {
+	if bound == 0 {
+		return
+	}
+	remove := func(k string) {
+		layer.Send(selRemoveAnimation, NSString("nsgo."+k))
+	}
+	if bound&(1<<driver.PropOpacity) != 0 {
+		remove("opacity")
+	}
+	if bound&(1<<driver.PropBackground) != 0 {
+		remove("backgroundColor")
+		if d := decors[layer]; d != nil && d.cover != 0 {
+			d.cover.Send(selRemoveAnimation, NSString("nsgo.backgroundColor"))
+		}
+	}
+	if bound&driver.AnimatedTransformMask != 0 {
+		remove("transform")
+		delete(moves, layer)
+	}
+	if bound&(1<<driver.PropBorderColor) != 0 {
+		remove("borderColor")
+		if r := rings[layer]; r != nil {
+			for _, side := range r.sides {
+				if side != 0 {
+					side.Send(selRemoveAnimation, NSString("nsgo.fillColor"))
+				}
+			}
+		}
+	}
+	if bound&driver.AnimatedShadowColorMask != 0 {
+		remove("shadowColor")
+		remove("shadowOpacity")
+	}
+	if bound&(1<<driver.PropShadowRadius) != 0 {
+		remove("shadowRadius")
+	}
+}
+
 // RestyleLayer draws vs with a layer that shows shown, the style
 // StyleLayer last drew there; with none it draws vs at once. When the two
 // differ only in opacity and transform, as an animation's frames do, it
 // sets just those: drawing every property again remade its colors,
 // shadow, filters and gradients each frame, and the window server drew
-// them all again.
-func RestyleLayer(layer objc.ID, shown, vs *driver.ViewStyle, view objc.ID) {
+// them all again. bound names the properties currently driven by animated
+// values or appearance motions, whose transitions are skipped.
+func RestyleLayer(layer objc.ID, shown, vs *driver.ViewStyle, view objc.ID, bound uint16) {
 	if shown == nil && vs.Transition.Duration > 0 {
 		// A view's first style shows at once, as CSS transitions none.
 		first := *vs
 		first.Transition = driver.Transition{}
-		StyleLayer(layer, nil, &first, view)
+		StyleLayerBound(layer, nil, &first, view, bound)
 		return
 	}
 	if shown == nil || vs.Transition.Duration > 0 || !onlyMoves(shown, vs) {
-		StyleLayer(layer, shown, vs, view)
+		StyleLayerBound(layer, shown, vs, view, bound)
 		return
 	}
 	if vs.Opacity != shown.Opacity {
@@ -156,9 +209,11 @@ func RestyleLayer(layer objc.ID, shown, vs *driver.ViewStyle, view objc.ID) {
 }
 
 // onlyMoves reports whether b differs from a in its opacity and transform
-// alone. An opacity under filters is drawn with them on iOS (layoutFilters).
+// alone (ignoring Transition, which RestyleLayer checks before calling it).
+// An opacity under filters is drawn with them on iOS (layoutFilters).
 func onlyMoves(a, b *driver.ViewStyle) bool {
 	x, y := *a, *b
+	x.Transition, y.Transition = driver.Transition{}, driver.Transition{}
 	x.Transform, y.Transform = driver.Transform{}, driver.Transform{}
 	if x.Effects != nil && len(x.Effects.Filters) > 0 {
 		return x == y
@@ -204,16 +259,41 @@ func setViewShadow(view objc.ID, sh driver.BoxShadow) {
 	ns.Send(selRelease)
 }
 
+// keyBound reports whether CALayer property k is currently driven by bound
+// (AnimatedValues.Set).
+func keyBound(k string, bound uint16) bool {
+	switch k {
+	case "opacity":
+		return bound&(1<<driver.PropOpacity) != 0
+	case "backgroundColor":
+		return bound&(1<<driver.PropBackground) != 0
+	case "transform":
+		return bound&driver.AnimatedTransformMask != 0
+	case "borderColor":
+		return bound&(1<<driver.PropBorderColor) != 0
+	case "shadowColor", "shadowOpacity":
+		return bound&driver.AnimatedShadowColorMask != 0
+	case "shadowRadius":
+		return bound&(1<<driver.PropShadowRadius) != 0
+	}
+	return false
+}
+
 // transitionKeys returns the CALayer keys of the properties a transition
-// animates.
-func transitionKeys(p driver.TransitionProperty) []string {
+// animates, excluding any driven by bound.
+func transitionKeys(p driver.TransitionProperty, bound uint16) []string {
 	if p == 0 {
 		p = ^driver.TransitionProperty(0)
 	}
 	var keys []string
 	add := func(bit driver.TransitionProperty, ks ...string) {
-		if p&bit != 0 {
-			keys = append(keys, ks...)
+		if p&bit == 0 {
+			return
+		}
+		for _, k := range ks {
+			if !keyBound(k, bound) {
+				keys = append(keys, k)
+			}
 		}
 	}
 	add(driver.TransitionOpacity, "opacity")

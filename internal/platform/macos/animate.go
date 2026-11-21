@@ -52,7 +52,12 @@ type ghost struct {
 }
 
 // clock returns the frame clock's time.
-func (s *surface) clock() time.Duration { return time.Since(s.epoch) }
+func (s *surface) clock() time.Duration {
+	if s.epoch.IsZero() {
+		s.epoch = time.Now()
+	}
+	return time.Since(s.epoch)
+}
 
 // frameRateRange preserves the rate native interactions need and applies
 // the app's preference when its callbacks are the only frame work.
@@ -128,7 +133,7 @@ func (s *surface) startTicking() {
 // wantedPace is the rate the frame clock need run at: the animations' own
 // when they are all it steps, else the screen's highest.
 func (s *surface) wantedPace() float64 {
-	if len(s.motions) > 0 || len(s.ghosts) > 0 || len(s.live) > 0 || s.frameWanted.Load() || s.selecting != nil || s.perf != nil {
+	if len(s.motions) > 0 || len(s.transitions) > 0 || len(s.ghosts) > 0 || len(s.live) > 0 || s.frameWanted.Load() || s.selecting != nil || s.perf != nil {
 		return 0
 	}
 	return s.animator.FrameRate()
@@ -241,7 +246,7 @@ func (s *surface) framePeriod() time.Duration {
 func (s *surface) tick(period time.Duration, linked bool) {
 	last := s.ticked
 	s.ticked = time.Now()
-	dirty := s.animator.Running() || len(s.motions) > 0 || len(s.ghosts) > 0 || len(s.images) > 0 || len(s.live) > 0
+	dirty := s.animator.Running() || len(s.motions) > 0 || len(s.transitions) > 0 || len(s.ghosts) > 0 || len(s.images) > 0 || len(s.live) > 0
 	var start time.Time
 	if s.perf != nil {
 		start = time.Now()
@@ -264,6 +269,7 @@ func (s *surface) tick(period time.Duration, linked bool) {
 	}
 	apple.WithoutAnimation(func() {
 		s.stepMotions(now)
+		s.stepTransitions(now)
 		s.applyAnimated()
 	})
 	if dirty || selecting {
@@ -303,7 +309,7 @@ func (s *surface) tick(period time.Duration, linked bool) {
 // animation graph, a layout animation, or a scroll view moving or fading
 // its indicator. Batches wait for the start of a frame meanwhile.
 func (s *surface) animating() bool {
-	return s.animator.Running() || len(s.motions) > 0 || len(s.ghosts) > 0 || len(s.live) > 0
+	return s.animator.Running() || len(s.motions) > 0 || len(s.transitions) > 0 || len(s.ghosts) > 0 || len(s.live) > 0
 }
 
 // held reports whether batches wait for a frame.
@@ -318,31 +324,101 @@ func (s *surface) applyAnimated() {
 		return nil
 	}, func(v *view) *driver.AnimatedValues {
 		return &v.animated
-	}, (*view).restyle, (*view).redraw, (*view).redrawAnimated, func(v *view) driver.NativeComponent {
+	}, func(v *view) {
+		// A transform transition stepped beside bound transform values ends once none is bound.
+		if v.transformTr != nil && v.animated.Set&driver.AnimatedTransformMask == 0 {
+			v.transformTr = nil
+			delete(s.transitions, v)
+		}
+		v.restyle()
+	}, (*view).redraw, (*view).redrawAnimated, func(v *view) driver.NativeComponent {
 		return v.component
 	}, s.repinBound)
 }
 
+// updateTransformTransition starts, keeps or clears v's frame-stepped
+// transform transition when a transform property is bound alongside an
+// unbound transform change: Core Animation's single transform layer property
+// cannot run a transition and an animated value at once.
+func (v *view) updateTransformTransition(prev driver.ViewStyle) {
+	s := v.surface
+	styled := v.styled || v.born != s.batch
+	bound := v.animated.Set
+	if m := s.motions[v]; m != nil && m.appear != nil && m.appear.Property == driver.LayoutScale {
+		bound |= 1 << driver.PropScale
+	}
+	if !styled || bound&driver.AnimatedTransformMask == 0 || s.env.ReduceMotion {
+		v.transformTr = nil
+		delete(s.transitions, v)
+		return
+	}
+	v.transformTr = driver.StartStyleTransition(v.transformTr, prev, v.style, s.clock(), driver.TransitionTransform, v.animated)
+	if v.transformTr != nil {
+		if s.transitions == nil {
+			s.transitions = map[*view]bool{}
+		}
+		s.transitions[v] = true
+		s.startTicking()
+	} else {
+		delete(s.transitions, v)
+	}
+}
+
+// stepTransitions advances active frame-stepped transform transitions.
+func (s *surface) stepTransitions(now time.Duration) {
+	for v := range s.transitions {
+		if int(v.id) >= len(s.views) || s.views[v.id] != v || v.transformTr == nil {
+			delete(s.transitions, v)
+			continue
+		}
+		v.restyleAt(false, now)
+	}
+}
+
 // restyle draws v's style with its animated values and what a layout
-// animation does to it.
-func (v *view) restyle() {
-	vs := v.animated.Apply(v.style)
-	vs.Transition = driver.Transition{}
+// animation does to it, without starting new transitions.
+func (v *view) restyle() { v.restyleWith(false) }
+
+// restyleWith draws v's style with its animated values and layout appearance
+// animation. When transition is true (from ItemViewStyle), unbound properties
+// run v.style.Transition.
+func (v *view) restyleWith(transition bool) { v.restyleAt(transition, v.surface.clock()) }
+
+func (v *view) restyleAt(transition bool, now time.Duration) {
+	base := v.style
+	if v.transformTr != nil {
+		var done bool
+		base, done = v.transformTr.At(now)
+		if done {
+			v.transformTr = nil
+			delete(v.surface.transitions, v)
+		}
+	}
+	bound := v.animated.Set
+	vs := base
+	if bound != 0 {
+		vs = v.animated.Apply(base)
+	}
+	if !transition {
+		vs.Transition = driver.Transition{}
+	}
 	if m := v.surface.motions[v]; m != nil && m.appear != nil {
-		p, _ := m.appear.At(v.surface.clock() - m.start)
+		p, _ := m.appear.At(now - m.start)
 		if m.appear.Property == driver.LayoutScale {
 			sx, sy := vs.Transform.Scales()
 			vs.Transform.ScaleX, vs.Transform.ScaleY = sx*float32(p), sy*float32(p)
+			bound |= 1 << driver.PropScale
 		} else {
 			vs.Opacity *= float32(p)
+			bound |= 1 << driver.PropOpacity
 		}
 	}
-	v.styleLayer(&vs)
+	v.styleLayer(&vs, bound)
 }
 
 // styleLayer draws vs with v's layer, only what changed since it was
 // last drawn when that is all an animation moves.
-func (v *view) styleLayer(vs *driver.ViewStyle) {
+func (v *view) styleLayer(vs *driver.ViewStyle, bound uint16) {
 	v.styleTint(vs)
 	if v.holdClip(vs) {
 		// The holder clips the children: the view's own layer, its shadow and outline, stays unclipped.
@@ -362,24 +438,19 @@ func (v *view) styleLayer(vs *driver.ViewStyle) {
 	if v.styled || v.born != v.surface.batch {
 		shown = &v.drawn
 	}
-	apple.RestyleLayer(v.native.Send(selLayer), shown, vs, v.native)
+	layer := v.native.Send(selLayer)
+	if added := bound &^ v.bound; added != 0 {
+		apple.ClearBoundAnimations(layer, added)
+	}
+	v.bound = bound
+	apple.RestyleLayer(layer, shown, vs, v.native, bound)
 	// RestyleLayer may create per-side rings after setBackdrop ran; move them above the backdrop now that they exist.
-	apple.MoveBorders(v.native.Send(selLayer), v.borderHost())
+	apple.MoveBorders(layer, v.borderHost())
 	v.drawn, v.styled = *vs, true
 	v.transform = vs.Transform
 	if vs.Transform != (driver.Transform{}) || vs.Animation.Keyframes != 0 {
 		v.transformed = true
 	}
-}
-
-// animatesStyle reports whether v's style is drawn by restyle rather than
-// as the batch sends it.
-func (v *view) animatesStyle() bool {
-	if v.animated.Set != 0 {
-		return true
-	}
-	m := v.surface.motions[v]
-	return m != nil && m.appear != nil
 }
 
 // layoutBatch is what a batch with a layout animation tracks.

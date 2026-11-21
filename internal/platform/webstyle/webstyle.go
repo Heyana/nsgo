@@ -95,6 +95,31 @@ var transitionProperties = []struct {
 // Transition animates the listed properties from what the view shows to
 // what the same style change sets.
 func Transition(t driver.Transition) string {
+	return TransitionFor(t, 0)
+}
+
+// cssPropBound reports whether CSS property name is driven by bound
+// (AnimatedValues.Set).
+func cssPropBound(name string, bound uint16) bool {
+	switch name {
+	case "opacity":
+		return bound&(1<<driver.PropOpacity) != 0
+	case "background-color":
+		return bound&(1<<driver.PropBackground) != 0
+	case "transform":
+		return bound&driver.AnimatedTransformMask != 0
+	case "border-color":
+		return bound&(1<<driver.PropBorderColor) != 0
+	case "box-shadow":
+		return bound&driver.AnimatedShadowMask != 0
+	}
+	return false
+}
+
+// TransitionFor returns the CSS transition of t excluding the CSS properties
+// currently driven by bound (AnimatedValues.Set), so unbound properties keep
+// transitioning alongside animated values.
+func TransitionFor(t driver.Transition, bound uint16) string {
 	if t.Duration <= 0 {
 		return ""
 	}
@@ -103,11 +128,79 @@ func Transition(t driver.Transition) string {
 	for _, p := range transitionProperties {
 		if t.Properties == 0 || t.Properties&p.property != 0 {
 			for _, name := range p.css {
-				parts = append(parts, name+timing)
+				if !cssPropBound(name, bound) {
+					parts = append(parts, name+timing)
+				}
 			}
 		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+// AnimatedInline returns the inline CSS properties for a view with base style
+// base and bound animated values vals. Only properties driven by vals are set
+// inline; unbound properties stay empty so the view's class and its CSS
+// transitions own them. When vals binds properties listed in base.Transition,
+// transition is narrowed to the unbound ones (or "none" when none remain).
+func AnimatedInline(base driver.ViewStyle, vals driver.AnimatedValues) map[string]string {
+	style := map[string]string{
+		"opacity": "", "transform": "", "background-color": "", "box-shadow": "",
+		"transition": "", "-webkit-text-fill-color": "", "border-color": "", "will-change": "",
+	}
+	if vals.Set == 0 {
+		return style
+	}
+	vs := vals.Apply(base)
+	if vals.Has(driver.PropOpacity) {
+		if o := Opacity(vs.Opacity); o != "" {
+			style["opacity"] = o
+		} else {
+			style["opacity"] = "1"
+		}
+	}
+	if vals.Set&driver.AnimatedTransformMask != 0 {
+		if tf := Transform(vs.Transform); tf != "" {
+			style["transform"] = tf
+		} else {
+			style["transform"] = "none"
+		}
+		if vals.Has(driver.PropTranslateX) || vals.Has(driver.PropTranslateY) {
+			style["will-change"] = "transform"
+		}
+	}
+	if vals.Has(driver.PropBackground) {
+		if bg := Fill(vs.Background); bg != "" {
+			style["background-color"] = bg
+		} else {
+			style["background-color"] = "transparent"
+		}
+	}
+	if vals.Has(driver.PropBorderColor) {
+		style["border-color"] = Color(vs.BorderColor)
+	}
+	if vals.Set&driver.AnimatedShadowMask != 0 {
+		if sh := Shadow(&vs); sh != "" {
+			style["box-shadow"] = sh
+		} else {
+			style["box-shadow"] = "none"
+		}
+	}
+	// A bound color fills every glyph, the spans' too, which inherit the fill
+	// color over their own.
+	if vals.Has(driver.PropTextColor) {
+		style["-webkit-text-fill-color"] = Color(vals.TextColor)
+	}
+	if full := Transition(base.Transition); full != "" {
+		filtered := TransitionFor(base.Transition, vals.Set)
+		switch filtered {
+		case "":
+			style["transition"] = "none"
+		case full:
+		default:
+			style["transition"] = filtered
+		}
+	}
+	return style
 }
 
 // Easing is the CSS timing function of a curve, linear for none.

@@ -1329,3 +1329,49 @@ func TestHapticPatternsRecordPlaybackAndCancellation(t *testing.T) {
 		t.Errorf("haptics seen by the test = %v, want %v, %v, and a cancellation", got, first, second)
 	}
 }
+
+func TestTransitionsAndAnimatedValuesCoexist(t *testing.T) {
+	var dim *core.Signal[bool]
+	var x *core.AnimatedValue
+	ended := 0
+	app := Start(t, func(cx *core.Scope) core.Node {
+		dim = core.NewSignal(cx, false)
+		x = core.NewAnimatedValue(cx, 0)
+		return core.View{
+			TestID: "box",
+			Style: core.Style{
+				Width:      core.Pt(100),
+				Height:     core.Pt(40),
+				Animated:   &core.AnimatedStyle{TranslateX: x},
+				Transition: core.Transition{Duration: 200 * time.Millisecond, Easing: core.EaseOut},
+			},
+			StyleFunc: func() core.Style {
+				if dim.Get() {
+					return core.Style{Opacity: core.Alpha(0.25), Background: core.RGB(0x224466)}
+				}
+				return core.Style{Opacity: core.Alpha(1), Background: core.RGB(0x112233)}
+			},
+			OnTransitionEnd: func() { ended++ },
+			OnPress: func(core.PressEvent) {
+				dim.Set(true)
+				cx.StartAnimation(core.Timing(x, 80, core.TimingConfig{Duration: 200 * time.Millisecond}), nil)
+			},
+		}
+	})
+	app.Press("id:box")
+	// OnTransitionEnd runs after the 200ms transition duration and the animated
+	// TranslateX reaches 80 without clobbering the unbound Opacity or Background.
+	if ended != 1 {
+		t.Fatalf("OnTransitionEnd ran %d times, want 1", ended)
+	}
+	got := app.Animated("id:box")
+	if got.Transform.TranslateX != 80 {
+		t.Errorf("TranslateX = %v, want 80", got.Transform.TranslateX)
+	}
+	if got.Opacity != 0.25 || got.Background != core.RGB(0x224466) {
+		t.Errorf("unbound style clobbered: opacity=%v background=%x", got.Opacity, got.Background)
+	}
+	if app.Find("id:box").Style.Transition.Duration != 200*time.Millisecond {
+		t.Errorf("Transition duration = %v, want 200ms", app.Find("id:box").Style.Transition.Duration)
+	}
+}

@@ -151,11 +151,13 @@ type view struct {
 
 	// frame is where the view shows now; style its own style, which its
 	// animated values and a layout animation draw over.
-	frame    driver.Bounds
-	framed   bool
-	shift    driver.Point // a sticky cell's, from frame
-	style    driver.ViewStyle
-	animated driver.AnimatedValues
+	frame       driver.Bounds
+	framed      bool
+	shift       driver.Point // a sticky cell's, from frame
+	style       driver.ViewStyle
+	animated    driver.AnimatedValues
+	bound       uint16
+	transformTr *driver.StyleTransition
 	// drawn is the style its layer was last drawn with, once styled, and
 	// the default style before. born is the batch that created it, whose
 	// style shows at once.
@@ -345,6 +347,7 @@ type surface struct {
 	fullRate    atomic.Bool
 	stepping    bool // while tick steps a frame, up to the frame it reports
 	motions     map[*view]*motion
+	transitions map[*view]bool
 	ghosts      []*ghost
 	components  driver.NativeComponents
 	unknown     map[string]bool // component names warned about
@@ -2429,6 +2432,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			if v.style.Cursor != it.ViewStyle.Cursor || !v.style.CursorImage.Equal(it.ViewStyle.CursorImage) || v.style.Hidden != it.ViewStyle.Hidden {
 				s.repick = true
 			}
+			prev := v.style
 			v.style = *it.ViewStyle
 			if v.layout != nil {
 				// A rounded text's layer takes its exact frame (sizeContent).
@@ -2438,11 +2442,8 @@ func (s *surface) apply(b *driver.MountBatch) {
 				v.native.Send(sel("setLayerUsesCoreImageFilters:"), true)
 			}
 			v.setBackdrop(it.ViewStyle)
-			if v.animatesStyle() {
-				v.restyle()
-			} else {
-				v.styleLayer(it.ViewStyle)
-			}
+			v.updateTransformTransition(prev)
+			v.restyleWith(true)
 			v.native.Send(selSetHidden, it.ViewStyle.Hidden)
 			if v.image != nil {
 				v.image.SetStyle(it.ViewStyle)
@@ -2596,7 +2597,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 		s.applyAnimated()
 	})
 	s.drawShaders()
-	if s.animator.Running() {
+	if s.animator.Running() || len(s.transitions) > 0 {
 		s.startTicking()
 	}
 	s.reshadow()
@@ -2690,6 +2691,7 @@ func (s *surface) delete(v *view, kept bool) {
 	}
 	s.animator.Forget(v.id)
 	delete(s.motions, v)
+	delete(s.transitions, v)
 	delete(s.live, v)
 	if v.sc != nil {
 		s.forgetScroll(v)

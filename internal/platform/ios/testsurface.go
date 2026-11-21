@@ -1389,7 +1389,7 @@ func (t *testSurface) Animating() bool {
 			t.pressID = 0
 		}
 		windowAnimating := t.s.window != 0 && (layersAnimating(t.s.window.Send(sel("layer"))) || gliding(t.s.window))
-		busy = testSurfaceBusy(t.s.batches.Len(), t.s.animator.Ending(), len(t.s.motions), len(t.s.ghosts), hidPresses.pending(t.pressID), windowAnimating)
+		busy = testSurfaceBusy(t.s.batches.Len(), t.s.animator.Ending() || len(t.s.transitions) > 0, len(t.s.motions), len(t.s.ghosts), hidPresses.pending(t.pressID), windowAnimating)
 	})
 	return busy
 }

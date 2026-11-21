@@ -45,7 +45,7 @@ func TestMoveBordersAboveBackdropLayer(t *testing.T) {
 	defer layer.Send(selRelease)
 	defer backdrop.Send(selRelease)
 	layer.Send(sel("addSublayer:"), backdrop)
-	setBorders(layer, &driver.ViewStyle{Borders: driver.Edges{Top: 1}, BorderColors: driver.EdgeColors{Top: driver.RGB(0xff0000)}}, &driver.Transition{})
+	setBorders(layer, &driver.ViewStyle{Borders: driver.Edges{Top: 1}, BorderColors: driver.EdgeColors{Top: driver.RGB(0xff0000)}}, &driver.Transition{}, 0)
 	r := rings[layer]
 	if r == nil || r.sides[0] == 0 {
 		t.Fatal("per-side border did not create a ring")
@@ -58,7 +58,7 @@ func TestMoveBordersAboveBackdropLayer(t *testing.T) {
 	if r.sides[0].Send(sel("superlayer")) != layer {
 		t.Fatal("border did not return to the view layer")
 	}
-	setBorders(layer, &driver.ViewStyle{}, &driver.Transition{})
+	setBorders(layer, &driver.ViewStyle{}, &driver.Transition{}, 0)
 }
 
 func TestForgetBordersReleasesSideLayers(t *testing.T) {
