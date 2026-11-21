@@ -189,8 +189,9 @@ type Shader struct {
 	Ref      *Ref
 	// Label names what the shader shows for assistive technology, which
 	// skips an unlabeled shader as a decoration.
-	Label  string
-	TestID string
+	Label     string
+	LabelFunc func() string
+	TestID    string
 }
 
 // Render implements Node.
@@ -235,11 +236,8 @@ func (t *Tree) mountShader(cx *Scope, parent *node, s Shader) {
 	}
 	t.setRef(n, s.Ref)
 	n.h = handlers{press: s.OnPress, layout: s.OnLayout}
-	role := RoleNone
-	if s.Label != "" {
-		role = RoleImage
-	}
-	n.props = driver.ViewProps{Role: role, Label: s.Label, TestID: s.TestID}
+	n.props = driver.ViewProps{Label: s.Label, TestID: s.TestID}
+	t.bindIllustrationLabel(cx, n, s.LabelFunc)
 	sn := &shaderNode{}
 	n.shader = sn
 	if s.Program == nil {

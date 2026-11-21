@@ -31,6 +31,7 @@ func (r *Ref) SetAccessibilityFocus() {
 // a11y is what an element's accessibility props are bound from.
 type a11y struct {
 	labelFunc       func() string
+	hintFunc        func() string
 	descriptionFunc func() string
 	value           func() AccessibilityValue
 	expanded        func() bool
@@ -54,18 +55,9 @@ func (t *Tree) bindAccessibility(cx *Scope, n *node, a a11y) {
 	if len(a.actions) > 0 {
 		p.Actions = &a.actions
 	}
-	if a.labelFunc != nil {
-		cx.renderEffect(func() {
-			p.Label = a.labelFunc()
-			t.touch(n)
-		})
-	}
-	if a.descriptionFunc != nil {
-		cx.renderEffect(func() {
-			p.Description = a.descriptionFunc()
-			t.touch(n)
-		})
-	}
+	t.bindAccessibilityText(cx, n, &p.Label, a.labelFunc)
+	t.bindAccessibilityText(cx, n, &p.Hint, a.hintFunc)
+	t.bindAccessibilityText(cx, n, &p.Description, a.descriptionFunc)
 	if a.value != nil {
 		cx.renderEffect(func() {
 			p.Value = a.value()
@@ -91,6 +83,37 @@ func (t *Tree) bindAccessibility(cx *Scope, n *node, a a11y) {
 			t.touch(n)
 		})
 	}
+}
+
+// bindAccessibilityText updates a spoken name, hint or description on the same view.
+func (t *Tree) bindAccessibilityText(cx *Scope, n *node, dst *string, text func() string) {
+	if text != nil {
+		cx.renderEffect(func() {
+			if value := text(); value != *dst {
+				*dst = value
+				t.touch(n)
+			}
+		})
+	}
+}
+
+// bindIllustrationLabel makes a labeled icon or shader an image and lets
+// an unlabeled one remain decorative.
+func (t *Tree) bindIllustrationLabel(cx *Scope, n *node, text func() string) {
+	set := func(label string) {
+		n.props.Label, n.props.Role = label, RoleNone
+		if label != "" {
+			n.props.Role = RoleImage
+		}
+	}
+	if text == nil {
+		set(n.props.Label)
+		return
+	}
+	cx.renderEffect(func() {
+		set(text())
+		t.touch(n)
+	})
 }
 
 // sentProps returns the props n sends: a group without a label of its

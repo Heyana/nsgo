@@ -1736,7 +1736,7 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	t.bindClasses(cx, n, v.Class, v.ClassFunc)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	t.setViewParts(n, v)
-	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, descriptionFunc: v.AccessibilityDescriptionFunc, value: v.AccessibilityValue, expanded: v.Expanded, expandable: v.Expandable,
+	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, hintFunc: v.HintFunc, descriptionFunc: v.AccessibilityDescriptionFunc, value: v.AccessibilityValue, expanded: v.Expanded, expandable: v.Expandable,
 		hidden: v.AccessibilityElementsHidden, actions: v.AccessibilityActions, accessible: v.Accessible,
 		important: v.ImportantForAccessibility})
 	t.bindBool(cx, n, v.Disabled, &n.props.Disabled)
@@ -1848,7 +1848,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 	if n.props.Role == RoleNone {
 		n.props.Role = RoleText
 	}
-	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc})
+	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, hintFunc: v.HintFunc})
 	t.setRef(n, v.Ref)
 	n.text = &textNode{content: v.Content, maxLines: v.MaxLines, ellipsize: v.EllipsizeMode,
 		noScale: v.NoFontScaling, maxScale: v.MaxFontSizeMultiplier,
@@ -2157,6 +2157,7 @@ func (t *Tree) mountScroll(cx *Scope, parent *node, v Scroll) {
 		n.h.scroll = func(p Point) { on(n.scrollEvent(p)) }
 	}
 	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID}
+	t.bindAccessibilityText(cx, n, &n.props.Label, v.LabelFunc)
 	t.bindBool(cx, n, v.Busy, &n.props.Busy)
 	t.setRef(n, v.Ref)
 	n.scroll = &scrollNode{config: driver.ScrollConfig{Horizontal: v.Horizontal, HideIndicator: v.HideIndicator}, effects: v.EdgeEffects,

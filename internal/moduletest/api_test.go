@@ -223,7 +223,7 @@ func TestPublicAPINamesNoInternalType(t *testing.T) {
 // twinned are the fields that must have an XFunc twin: part styles that live as long as their component, such as a list of rows' padding, which follows the window's layout and would otherwise remount the list as it changes (#294). The other part styles are read once per presentation, such as a popup's or a backdrop's, and may stay fixed.
 var twinned = []string{"base.List.ListStyle", "base.Tree.ListStyle"}
 
-// TestFuncFieldsBindTheirValue checks the components' rule for fields that change: a field named XFunc is a func() T beside a field X of type T, so a value is written plainly and bound by the same name with Func added; and the fields in twinned have one.
+// TestFuncFieldsBindTheirValue checks the type of each XFunc twin and requires twins for core nodes' accessibility text and the fields in twinned.
 func TestFuncFieldsBindTheirValue(t *testing.T) {
 	if testing.Short() {
 		t.Skip("type-checks the component packages from source")
@@ -234,6 +234,10 @@ func TestFuncFieldsBindTheirValue(t *testing.T) {
 		pkg, err := imp.Import(modulePath + "/" + rel)
 		if err != nil {
 			t.Fatal(err)
+		}
+		var coreNode *types.Interface
+		if rel == "core" {
+			coreNode = pkg.Scope().Lookup("Node").Type().Underlying().(*types.Interface)
 		}
 		for _, name := range pkg.Scope().Names() {
 			tn, ok := pkg.Scope().Lookup(name).(*types.TypeName)
@@ -247,6 +251,13 @@ func TestFuncFieldsBindTheirValue(t *testing.T) {
 			fields := map[string]types.Type{}
 			for i := range st.NumFields() {
 				fields[st.Field(i).Name()] = st.Field(i).Type()
+			}
+			if coreNode != nil && types.Implements(types.NewPointer(tn.Type()), coreNode) {
+				for _, text := range []string{"Label", "Hint", "AccessibilityDescription"} {
+					if fields[text] == types.Typ[types.String] && fields[text+"Func"] == nil {
+						t.Errorf("%s.%s.%s needs a %sFunc twin for changing accessibility text", pkg.Name(), name, text, text)
+					}
+				}
 			}
 			for i := range st.NumFields() {
 				f := st.Field(i)

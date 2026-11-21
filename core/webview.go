@@ -79,6 +79,7 @@ type WebView struct {
 	OnLayout   func(Bounds)
 	Ref        *Ref
 	Label      string
+	LabelFunc  func() string
 	TestID     string
 }
 
@@ -144,6 +145,7 @@ func (t *Tree) mountWebView(cx *Scope, parent *node, w WebView) {
 	t.setRef(n, w.Ref)
 	n.h = handlers{layout: w.OnLayout}
 	n.props = driver.ViewProps{Label: w.Label, TestID: w.TestID}
+	t.bindAccessibilityText(cx, n, &n.props.Label, w.LabelFunc)
 	n.web = &webNode{
 		config: driver.WebConfig{Source: w.Source, InjectedJavaScript: w.InjectedJavaScript,
 			InjectedJavaScriptBeforeContent: w.InjectedJavaScriptBeforeContent, UserAgent: w.UserAgent, UserAgentSuffix: w.UserAgentSuffix,

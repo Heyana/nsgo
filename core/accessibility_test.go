@@ -151,6 +151,126 @@ func TestAccessibilityDescriptionAndInputLabelFollowSignals(t *testing.T) {
 	}
 }
 
+func TestAccessibilityTextFollowsSignalsOnTheSameViews(t *testing.T) {
+	var text *Signal[string]
+	h := newHost(t, Size{Width: 200, Height: 180}, func(cx *Scope) Node {
+		text = NewSignal(cx, "Play")
+		return View{Children: []Node{
+			View{TestID: "view", HintFunc: text.Get},
+			Text{TestID: "text", HintFunc: text.Get, Content: "A label"},
+			Scroll{TestID: "scroll", Role: RoleListbox, LabelFunc: text.Get},
+			Image{TestID: "image", LabelFunc: text.Get, ElementsHidden: true},
+			Icon{TestID: "icon", LabelFunc: text.Get},
+			SVGView{TestID: "svg", LabelFunc: text.Get},
+			Shader{TestID: "shader", LabelFunc: text.Get},
+			Overlay{TestID: "overlay", LabelFunc: text.Get},
+			Modal{TestID: "modal", LabelFunc: text.Get},
+			Native{TestID: "native", LabelFunc: text.Get},
+			SystemSwitch{TestID: "switch", LabelFunc: text.Get},
+			WebView{TestID: "web", LabelFunc: text.Get},
+			Video{TestID: "video", LabelFunc: text.Get},
+		}}
+	})
+	h.tree.SetEnvironment(Environment{OS: OSMacOS})
+	props := propsOf(h.commit())
+	labels := []string{"scroll", "image", "icon", "svg", "shader", "overlay", "modal", "native", "switch", "web", "video"}
+	ids := map[string]NodeID{}
+	for _, id := range labels {
+		ids[id] = h.find(id).id
+		if got := props[ids[id]].Label; got != "Play" {
+			t.Errorf("%s's initial label = %q", id, got)
+		}
+	}
+	for _, id := range []string{"view", "text"} {
+		ids[id] = h.find(id).id
+		if got := props[ids[id]].Hint; got != "Play" {
+			t.Errorf("%s's initial hint = %q", id, got)
+		}
+	}
+	if !props[ids["image"]].ElementsHidden {
+		t.Error("a label exposed an image whose elements are hidden")
+	}
+	for _, id := range []string{"icon", "svg", "shader"} {
+		if props[ids[id]].Role != RoleImage {
+			t.Errorf("the named %s did not have the image role", id)
+		}
+	}
+
+	text.Set("Pause")
+	b := h.commit()
+	if k := kinds(b); k[driver.ItemCreate] != 0 || k[driver.ItemDelete] != 0 {
+		t.Fatalf("changing accessibility text recreated views: %v", k)
+	}
+	updated := map[NodeID]string{}
+	for _, item := range b.Items {
+		switch item.Kind {
+		case driver.ItemViewProps:
+			updated[item.ID] = item.ViewProps.Label
+		case driver.ItemAccessibilityLabel:
+			updated[item.ID] = item.Value
+		}
+	}
+	for _, id := range labels {
+		if h.find(id).id != ids[id] || updated[ids[id]] != "Pause" {
+			t.Errorf("%s did not receive the new label on its original view", id)
+		}
+	}
+	props = propsOf(b)
+	for _, id := range []string{"view", "text"} {
+		if h.find(id).id != ids[id] || props[ids[id]].Hint != "Pause" {
+			t.Errorf("%s did not receive the new hint on its original view", id)
+		}
+	}
+
+	text.Set("")
+	props = propsOf(h.commit())
+	for _, id := range []string{"icon", "svg", "shader"} {
+		if p, ok := props[ids[id]]; !ok || p.Role != RoleNone || p.Label != "" {
+			t.Errorf("the %s is decorative again, got %+v", id, p)
+		}
+	}
+}
+
+func TestAccessibilityTextReadsFunctionsWhenAnElementIsSet(t *testing.T) {
+	var elements []*Element
+	var values *Signal[string]
+	props := func(read func() string) []Node {
+		return []Node{
+			View{TestID: "view", HintFunc: read, AccessibilityDescriptionFunc: read},
+			Text{TestID: "text", HintFunc: read, Content: "A label"},
+			Scroll{TestID: "scroll", Role: RoleListbox, LabelFunc: read},
+			Image{TestID: "image", LabelFunc: read},
+		}
+	}
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
+		values = NewSignal(cx, "First")
+		var children []Node
+		for _, p := range props(values.Get) {
+			el := NewElement(cx, p)
+			elements = append(elements, el)
+			children = append(children, el)
+		}
+		return View{Children: children}
+	})
+	h.commit()
+	values.Set("Second")
+	if got := h.find("view").props.Hint; got != "First" {
+		t.Fatalf("the detached-element API bound the hint to its signal, got %q", got)
+	}
+	for i, p := range props(values.Get) {
+		elements[i].Set(p)
+	}
+	h.commit()
+	view, text := h.find("view").props, h.find("text").props
+	if view.Hint != "Second" || view.Description != "Second" || text.Hint != "Second" {
+		t.Errorf("updated view and text accessibility = %+v, %+v", view, text)
+	}
+	scroll, image := h.find("scroll").props, h.find("image").props
+	if scroll.Label != "Second" || scroll.Role != RoleListbox || image.Label != "Second" {
+		t.Errorf("updated scroll and image labels = %+v, %+v", scroll, image)
+	}
+}
+
 func TestInputElementAccessibilityMatchesMountedInput(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

@@ -28,6 +28,7 @@ type Icon struct {
 	OnLayout  func(Bounds)
 	Ref       *Ref
 	Label     string
+	LabelFunc func() string
 	TestID    string
 	// documentSize measures it at its document's size (SVGView).
 	documentSize bool
@@ -53,13 +54,14 @@ type SVGView struct {
 	OnLayout  func(Bounds)
 	Ref       *Ref
 	Label     string
+	LabelFunc func() string
 	TestID    string
 }
 
 // Render implements Node.
 func (v SVGView) Render(*Scope) Node {
 	return Icon{Class: v.Class, SVG: v.SVG, SVGFunc: v.SVGFunc, Style: v.Style, StyleFunc: v.StyleFunc, OnPress: v.OnPress,
-		OnLayout: v.OnLayout, Ref: v.Ref, Label: v.Label, TestID: v.TestID, documentSize: true}
+		OnLayout: v.OnLayout, Ref: v.Ref, Label: v.Label, LabelFunc: v.LabelFunc, TestID: v.TestID, documentSize: true}
 }
 
 // iconNode is an icon's drawing state: the document, the color it inherits
@@ -98,13 +100,8 @@ func (t *Tree) mountIcon(cx *Scope, parent *node, v Icon) {
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	t.setRef(n, v.Ref)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
-	// An icon is a decoration until Label names it, so assistive technology
-	// skips an unlabeled one instead of announcing an empty image.
-	role := RoleNone
-	if v.Label != "" {
-		role = RoleImage
-	}
-	n.props = driver.ViewProps{Role: role, Label: v.Label, TestID: v.TestID}
+	n.props = driver.ViewProps{Label: v.Label, TestID: v.TestID}
+	t.bindIllustrationLabel(cx, n, v.LabelFunc)
 	in := &iconNode{svg: NewSignal(cx, v.SVG), color: NewSignal(cx, Color(0)), documentSize: v.documentSize}
 	cn := &canvasNode{size: NewSignal(cx, Size{})}
 	n.icon, n.canvas = in, cn

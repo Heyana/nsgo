@@ -34,6 +34,7 @@ type Native struct {
 	OnLayout   func(Bounds)
 	Ref        *Ref
 	Label      string
+	LabelFunc  func() string
 	LabelledBy []*Ref
 	Invalid    func() bool
 	TestID     string
@@ -61,6 +62,7 @@ func (t *Tree) mountNative(cx *Scope, parent *node, v Native) {
 	t.setRef(n, v.Ref)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
 	n.props = driver.ViewProps{Label: v.Label, TestID: v.TestID}
+	t.bindAccessibilityText(cx, n, &n.props.Label, v.LabelFunc)
 	t.bindBool(cx, n, v.Invalid, &n.props.Invalid)
 	nn := &nativeNode{component: v.Component, props: v.Props, event: v.OnEvent}
 	n.native = nn

@@ -180,9 +180,9 @@ func (t *Tree) setView(n *node, v View) {
 	t.bindAccessibility(nil, n, a11y{actions: v.AccessibilityActions, accessible: v.Accessible,
 		important: v.ImportantForAccessibility})
 	p := &n.props
-	if v.LabelFunc != nil {
-		p.Label = v.LabelFunc()
-	}
+	p.Label = readText(v.Label, v.LabelFunc)
+	p.Hint = readText(v.Hint, v.HintFunc)
+	p.Description = readText(v.AccessibilityDescription, v.AccessibilityDescriptionFunc)
 	if v.AccessibilityValue != nil {
 		p.Value = v.AccessibilityValue()
 	}
@@ -227,15 +227,12 @@ func (t *Tree) setText(cx *Scope, n *node, v Text) {
 	n.base = base
 	t.setClasses(n, v.Class)
 	n.h = handlers{press: v.OnPress, longPress: v.OnLongPress, layout: v.OnLayout}
-	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: liveRegion(v.Role, v.LiveRegion), TestID: v.TestID,
+	n.props = driver.ViewProps{Role: v.Role, Label: readText(v.Label, v.LabelFunc), Hint: readText(v.Hint, v.HintFunc), LiveRegion: liveRegion(v.Role, v.LiveRegion), TestID: v.TestID,
 		Selectable: v.Selectable, PointerEvents: v.PointerEvents}
 	n.ownPointer = v.PointerEvents
 	t.pointersMoved = t.pointerStyled
 	if n.props.Role == RoleNone {
 		n.props.Role = RoleText
-	}
-	if v.LabelFunc != nil {
-		n.props.Label = v.LabelFunc()
 	}
 	t.setRef(n, v.Ref)
 	tn := n.text
@@ -320,7 +317,7 @@ func (t *Tree) setScroll(n *node, v Scroll) {
 	if on := v.OnScroll; on != nil {
 		n.h.scroll = func(p Point) { on(n.scrollEvent(p)) }
 	}
-	n.props = driver.ViewProps{TestID: v.TestID}
+	n.props = driver.ViewProps{Role: v.Role, Label: readText(v.Label, v.LabelFunc), TestID: v.TestID}
 	t.setRef(n, v.Ref)
 	t.rebind(n, boundValues{scroll: v.OffsetValues, pull: v.PullValue})
 	sc := n.scroll
@@ -456,7 +453,7 @@ func (t *Tree) setImage(n *node, v Image) {
 	t.setRef(n, v.Ref)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout, loadStart: v.OnLoadStart, loadEnd: v.OnLoadEnd,
 		progress: v.OnProgress, load: v.OnLoad, loadError: v.OnError}
-	n.props = driver.ViewProps{Role: RoleImage, Label: v.Label, TestID: v.TestID, ElementsHidden: v.ElementsHidden}
+	n.props = driver.ViewProps{Role: RoleImage, Label: readText(v.Label, v.LabelFunc), TestID: v.TestID, ElementsHidden: v.ElementsHidden}
 	src := v.Source
 	if v.SourceFunc != nil {
 		src = v.SourceFunc()
@@ -513,6 +510,13 @@ func (t *Tree) followEnvTerms(n *node) {
 }
 
 func read(fn func() bool) bool { return fn != nil && fn() }
+
+func readText(value string, fn func() string) string {
+	if fn != nil {
+		return fn()
+	}
+	return value
+}
 
 // RenderEffect runs fn now and again, before the app's effects, whenever
 // what it read changes, as element bindings do: the tsx package's

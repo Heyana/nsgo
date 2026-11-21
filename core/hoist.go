@@ -257,6 +257,7 @@ func (t *Tree) mountOverlay(cx *Scope, parent *node, o Overlay) {
 	n.h = handlers{pressOutside: o.OnPressOutside, cancel: o.OnCancel, transitionEnd: o.OnTransitionEnd,
 		mouseEnter: o.OnMouseEnter, mouseLeave: o.OnMouseLeave}
 	n.props = driver.ViewProps{Role: o.Role, Label: o.Label, TestID: o.TestID, PointerEvents: o.PointerEvents}
+	t.bindAccessibilityText(cx, n, &n.props.Label, o.LabelFunc)
 	n.ownPointer = o.PointerEvents
 	for _, c := range o.Children {
 		t.mount(cx, n, c)
@@ -275,6 +276,7 @@ func (t *Tree) mountModal(cx *Scope, parent *node, m Modal) {
 	t.setClasses(n, m.Class)
 	t.bindStyle(cx, n, m.Style, m.StyleFunc)
 	n.props = driver.ViewProps{Role: m.Role, Label: m.Label, TestID: m.TestID}
+	t.bindAccessibilityText(cx, n, &n.props.Label, m.LabelFunc)
 	if n.props.Role == RoleNone {
 		n.props.Role = RoleDialog
 	}

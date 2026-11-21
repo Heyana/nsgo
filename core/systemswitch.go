@@ -19,10 +19,11 @@ type SystemSwitch struct {
 	OnChange func(checked bool)
 	// Size is macOS's control size, "small" or "large", else the regular
 	// one; UISwitch has one size.
-	Size   string
-	Label  string
-	Style  Style
-	TestID string
+	Size      string
+	Label     string
+	LabelFunc func() string
+	Style     Style
+	TestID    string
 }
 
 // SystemSwitchAvailable reports whether the platform has a SystemSwitch: macOS, iOS (not a watch), or Android's Material 3 switch, or a web build that runs as them.
@@ -44,7 +45,7 @@ func (s SystemSwitch) native(*Scope) Node {
 	if style.AlignSelf == 0 {
 		style.AlignSelf = AlignCenter
 	}
-	return Native{Component: driver.SwitchComponent, Style: style, Label: s.Label, TestID: s.TestID,
+	return Native{Component: driver.SwitchComponent, Style: style, Label: s.Label, LabelFunc: s.LabelFunc, TestID: s.TestID,
 		Ref: s.Ref, LabelledBy: s.LabelledBy, Invalid: s.Invalid,
 		PropsFunc: func() map[string]any {
 			props := map[string]any{"checked": s.Checked != nil && s.Checked(), "disabled": s.Disabled != nil && s.Disabled()}

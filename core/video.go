@@ -68,13 +68,14 @@ type Video struct {
 	// OnPause reports that the platform paused the video, not the app: its built-in controls, or the system for an interruption or a lost audio output. The video stays paused until Paused changes, or the controls or the system play it again (OnPlay); an app that shows its own play state sets Paused to true, and then false to play again.
 	OnPause func(VideoPauseReason)
 	// OnPlay reports that the platform played the video, not the app: its built-in controls, or the system as an interruption that paused it ends. The video plays on until Paused changes, even while Paused is true.
-	OnPlay   func()
-	OnError  func(err error)
-	OnPress  func(PressEvent)
-	OnLayout func(Bounds)
-	Ref      *Ref
-	Label    string
-	TestID   string
+	OnPlay    func()
+	OnError   func(err error)
+	OnPress   func(PressEvent)
+	OnLayout  func(Bounds)
+	Ref       *Ref
+	Label     string
+	LabelFunc func() string
+	TestID    string
 }
 
 // VideoPauseReason says why the platform paused a video (Video.OnPause).
@@ -140,6 +141,7 @@ func (t *Tree) mountVideo(cx *Scope, parent *node, v Video) {
 	t.setRef(n, v.Ref)
 	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
 	n.props = driver.ViewProps{Label: v.Label, TestID: v.TestID}
+	t.bindAccessibilityText(cx, n, &n.props.Label, v.LabelFunc)
 	vn := &videoNode{
 		config: driver.VideoConfig{Source: v.Source, Paused: v.Paused, Muted: v.Muted, Volume: videoVolume(v.Volume),
 			Rate: videoRate(v.Rate), Repeat: v.Repeat, ResizeMode: v.ResizeMode, Controls: v.Controls,
