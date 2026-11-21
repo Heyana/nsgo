@@ -909,8 +909,11 @@ func buildMacApp(ctx context.Context, p *project, dir, arch string) (string, err
 	if err := p.writeFileTypeIcons(resources); err != nil {
 		return "", err
 	}
-	if err := writePlist(filepath.Join(app, "Contents", "Info.plist"), p, macPlist,
-		icon+"\n"+names+"\n"+p.fileTypesPlist()+"\n"+p.urlSchemesPlist()+"\n"+p.widgetPlist(false)+"\n"+p.sparklePlist("macos_"+goArchName(arch))); err != nil {
+	extra := icon + "\n" + names + "\n" + p.fileTypesPlist() + "\n" + p.urlSchemesPlist() + "\n" + p.widgetPlist(false) + "\n" + p.sparklePlist("macos_"+goArchName(arch))
+	if game := p.gamePlist(true); game != "" {
+		extra += "\n" + game
+	}
+	if err := writePlist(filepath.Join(app, "Contents", "Info.plist"), p, macPlist, extra); err != nil {
 		return "", err
 	}
 	if err := p.writePrivacyManifest(resources); err != nil {
@@ -1511,8 +1514,8 @@ var macPlist = template.Must(template.New("mac").Parse(plistHead + `	<key>LSMini
 {{- if and .Copyright (not (index .Apple.Info "NSHumanReadableCopyright"))}}
 	<key>NSHumanReadableCopyright</key><string>{{html .Copyright}}</string>
 {{- end}}
-{{- if .MacOS.Category}}
-	<key>LSApplicationCategoryType</key><string>{{html .MacOS.Category}}</string>
+{{- if .MacOSCategory}}
+	<key>LSApplicationCategoryType</key><string>{{html .MacOSCategory}}</string>
 {{- end}}
 {{- if eq .Appearance "light"}}
 	<key>NSRequiresAquaSystemAppearance</key><true/>

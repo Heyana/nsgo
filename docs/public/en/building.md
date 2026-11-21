@@ -111,6 +111,12 @@ Paths are relative to `nsgo.yaml` unless absolute. Each path names a `.dex` file
 
 The [Android native example](https://github.com/nsgo-dev/nsgo/tree/main/examples/android-native) registers a class with a public `Context` constructor and configures it with a Go prop.
 
+## Games
+
+Set `game: true` in `nsgo.yaml` for a game. Android classifies the app as a game and uses the system's Game Mode optimizations. macOS and iOS opt into Game Mode, macOS defaults to the Games category, and Linux adds `Game` to the desktop entry. An explicit `macos.category` or Game Mode key in `apple.info` takes precedence.
+
+Set `gamepad: true` when your app handles a hardware gamepad. Android declares both gamepad and touchscreen optional. macOS, iOS and tvOS declare the Extended Gamepad profile, with controller keys in `apple.info` taking precedence.
+
 ## Installers
 
 For the desktop targets, `build` writes what users install the app from into `dist/releases`, each with a `.sha256` checksum:

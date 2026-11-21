@@ -85,7 +85,7 @@ var linuxReservedCategories = []string{"Screensaver", "TrayIcon", "Applet", "She
 
 // validateLinuxCategories accepts the desktop entry's categories that desktop-file-validate does: each registered, or an extension starting with X- of letters, digits, '-', '_' and '.', once each, with AudioVideo beside Audio or Video. It also asks for a main category, without which menus file the app under Other, the case the setting exists to avoid.
 func (p *project) validateLinuxCategories() error {
-	categories := p.Linux.Categories
+	categories := p.linuxCategories()
 	if len(categories) == 0 {
 		return nil
 	}
@@ -223,7 +223,7 @@ func linuxPackageFiles(p *project, dir string) ([]linuxPackageEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	entry := desktopData{Name: p.Name, Exec: "/" + opt + "/" + p.Name, ID: p.ID, MIMETypes: types, URLSchemes: p.URLSchemes, Categories: p.Linux.Categories}
+	entry := desktopData{Name: p.Name, Exec: "/" + opt + "/" + p.Name, ID: p.ID, MIMETypes: types, URLSchemes: p.URLSchemes, Categories: p.linuxCategories()}
 	if n != nil {
 		entry.Name = n.names[n.source]
 		for _, lang := range n.languages()[1:] {

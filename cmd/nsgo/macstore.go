@@ -49,7 +49,7 @@ func buildMacStorePackage(ctx context.Context, p *project, app, dir, arch string
 	if len(p.Widgets) > 0 {
 		return "", errors.New("the Mac App Store's sandboxed apps cannot share widgets' timelines yet; build without widgets")
 	}
-	if p.MacOS.Category == "" {
+	if !p.Game && p.MacOSCategory() == "" {
 		detailIn(ctx, "set macos.category, which the Mac App Store requires, such as public.app-category.productivity")
 	}
 	ents := p.sandboxEntitlements()

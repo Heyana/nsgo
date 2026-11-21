@@ -3,6 +3,7 @@ package apk
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/xml"
 	"slices"
 	"sort"
 	"strings"
@@ -30,6 +31,8 @@ const (
 	monochromeResource = "@mipmap/ic_launcher_monochrome"
 	iconResourceID     = appPackageID<<24 | 1<<16 // package 0x7f, type 1, entry 0
 	nameResource       = "@string/app_name"
+	gameModeName       = "game_mode_config"
+	gameModeFile       = "res/xml/" + gameModeName + ".xml"
 	utf8PoolFlag       = 1 << 8
 	resStringHeader    = 28
 
@@ -62,6 +65,38 @@ func nameResourceID(icon bool) uint32 {
 		return appPackageID<<24 | 2<<16
 	}
 	return appPackageID<<24 | 1<<16
+}
+
+// xmlResourceID is the first XML resource ID, following the optional launcher icon and app names in the resource table.
+func xmlResourceID(m Manifest) uint32 {
+	id := nameResourceID(m.Icon != nil)
+	if len(m.Names) > 0 {
+		id += 1 << 16
+	}
+	return id
+}
+
+// xmlResource describes one of the app's XML resources in resource ID order.
+type xmlResource struct {
+	name, file string
+	node       func() *node
+}
+
+func (m Manifest) xmlResources() []xmlResource {
+	var out []xmlResource
+	if m.LoopbackCleartext {
+		out = append(out, xmlResource{networkSecurityName, networkSecurityFile, networkSecurityConfig})
+	}
+	if m.Game {
+		out = append(out, xmlResource{gameModeName, gameModeFile, gameModeConfig})
+	}
+	return out
+}
+
+func gameModeConfig() *node {
+	// Default attributes let the OS apply Game Mode interventions. An
+	// app must implement its own optimizations to opt into managing them.
+	return &node{name: xml.Name{Local: "game-mode-config"}}
 }
 
 // resType is a type of the table with one entry, key, and its value in
@@ -154,9 +189,12 @@ func resources(m Manifest) []byte {
 		}
 		types = append(types, t)
 	}
-	if m.LoopbackCleartext {
-		entry := resEntry{key: networkSecurityName, values: []resValue{{newConfig(), networkSecurityFile}}}
-		types = append(types, resType{name: "xml", entries: []resEntry{entry}})
+	var xmlEntries []resEntry
+	for _, resource := range m.xmlResources() {
+		xmlEntries = append(xmlEntries, resEntry{key: resource.name, values: []resValue{{newConfig(), resource.file}}})
+	}
+	if len(xmlEntries) > 0 {
+		types = append(types, resType{name: "xml", entries: xmlEntries})
 	}
 	return table(m.Package, types)
 }

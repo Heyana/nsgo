@@ -188,6 +188,8 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
 		Recording:         p.Android.Recording,
 		Location:          p.androidLocation(),
 		Libraries:         libraries,
+		Game:              p.Game,
+		Gamepad:           p.Gamepad,
 	}, files, key)
 	if err != nil {
 		return "", err

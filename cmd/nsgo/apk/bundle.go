@@ -54,12 +54,12 @@ func WriteBundle(w io.Writer, template []byte, m Manifest, files []File, key *Ke
 			all = append(all, file)
 		}
 	}
-	if m.LoopbackCleartext {
-		policy, err := protoElement(networkSecurityConfig(), false, false)
+	for _, resource := range m.xmlResources() {
+		data, err := protoElement(resource.node(), false, false)
 		if err != nil {
 			return err
 		}
-		all = append(all, File{Name: "base/" + networkSecurityFile, Data: pbBytes(nil, 1, policy)})
+		all = append(all, File{Name: "base/" + resource.file, Data: pbBytes(nil, 1, data)})
 	}
 	if native := bundleNativeLibraries(files); len(native) != 0 {
 		all = append(all, File{Name: "base/native.pb", Data: native})
@@ -278,11 +278,21 @@ func resourcesProto(m Manifest) []byte {
 		}
 		types = append(types, protoType(id, "string", "app_name", values))
 	}
-	if m.LoopbackCleartext {
-		file := pbString(nil, 1, networkSecurityFile)
+	var xmlEntries []protoEntry
+	for _, resource := range m.xmlResources() {
+		file := pbString(nil, 1, resource.file)
 		file = pbVarint(file, 2, 3) // PROTO_XML
 		values := [][2][]byte{{nil, pbBytes(nil, 5, file)}}
-		types = append(types, protoType(uint64(networkSecurityID(m)>>16&0xff), "xml", networkSecurityName, values))
+		xmlEntries = append(xmlEntries, protoEntry{resource.name, values})
+	}
+	xmlType := uint64(xmlResourceID(m) >> 16 & 0xff)
+	switch len(xmlEntries) {
+	case 0:
+	case 1:
+		entry := xmlEntries[0]
+		types = append(types, protoType(xmlType, "xml", entry.key, entry.values))
+	default:
+		types = append(types, protoTypeEntries(xmlType, "xml", xmlEntries))
 	}
 	p := pbBytes(nil, 1, pbVarint(nil, 1, appPackageID))
 	p = pbString(p, 2, m.Package)

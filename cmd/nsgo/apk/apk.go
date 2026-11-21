@@ -30,12 +30,12 @@ func Write(w io.Writer, template []byte, m Manifest, files []File, key *Key) err
 		}
 		all = append(all, adaptive...)
 	}
-	if m.LoopbackCleartext {
-		policy, err := encodeXML(networkSecurityConfig(), false)
+	for _, resource := range m.xmlResources() {
+		data, err := encodeXML(resource.node(), false)
 		if err != nil {
 			return err
 		}
-		all = append(all, File{Name: networkSecurityFile, Data: policy, Stored: true})
+		all = append(all, File{Name: resource.file, Data: data, Stored: true})
 	}
 	all = append(all, File{Name: "resources.arsc", Data: resources(m), Stored: true})
 	zip, err := archive(all)

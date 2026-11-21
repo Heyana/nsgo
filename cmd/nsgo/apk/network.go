@@ -1,30 +1,12 @@
 package apk
 
-import (
-	"encoding/xml"
-	"strconv"
-	"strings"
-)
+import "encoding/xml"
 
 const (
 	networkSecurityName = "network_security_config"
 	networkSecurityFile = "res/xml/" + networkSecurityName + ".xml"
 	cleartextAttribute  = "cleartextTrafficPermitted"
 )
-
-// networkSecurityID follows the optional launcher icon and app names in the resource table.
-func networkSecurityID(m Manifest) uint32 {
-	id := nameResourceID(m.Icon != nil)
-	if len(m.Names) > 0 {
-		id += 1 << 16
-	}
-	return id
-}
-
-func parseResourceID(value string) (uint32, error) {
-	id, err := strconv.ParseUint(strings.TrimPrefix(value, "@"), 0, 32)
-	return uint32(id), err
-}
 
 // networkSecurityConfig allows HTTP for the exact loopback host names that
 // Android clients pass to the policy, including both forms of the IPv6 literal.

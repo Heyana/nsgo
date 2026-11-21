@@ -63,6 +63,10 @@ type project struct {
 	Name    string `yaml:"name"`
 	ID      string `yaml:"id"`
 	Version string `yaml:"version"`
+	// Game covers the app's game classification and system Game Mode metadata.
+	Game bool `yaml:"game"`
+	// Gamepad declares support for an optional extended game controller.
+	Gamepad bool `yaml:"gamepad"`
 	// Copyright is the app's copyright notice, such as "© 2026 Example": its Windows executables' LegalCopyright and its installer's, and the NSHumanReadableCopyright of its macOS Info.plist, which the About panel shows.
 	Copyright string `yaml:"copyright"`
 	// BuildNumber numbers builds of a version, as stores want each upload

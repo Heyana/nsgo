@@ -707,7 +707,7 @@ func writeLinuxIcon(p *project, dir string) error {
 	if err != nil {
 		return err
 	}
-	entry := desktopData{Name: p.Name, Exec: p.Name, ID: p.ID, MIMETypes: types, URLSchemes: p.URLSchemes, Categories: p.Linux.Categories}
+	entry := desktopData{Name: p.Name, Exec: p.Name, ID: p.ID, MIMETypes: types, URLSchemes: p.URLSchemes, Categories: p.linuxCategories()}
 	if n != nil {
 		entry.Name = n.names[n.source]
 		for _, lang := range n.languages()[1:] {

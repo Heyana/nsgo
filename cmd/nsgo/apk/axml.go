@@ -52,6 +52,10 @@ type Manifest struct {
 	Location bool
 	// Libraries are the shared libraries of the device the app uses where it has them, by name, as uses-library elements that do not require them.
 	Libraries []string
+	// Game classifies the app as a game and declares its Game Mode XML.
+	Game bool
+	// Gamepad declares an optional gamepad and touchscreen.
+	Gamepad bool
 }
 
 // recordingPermissions are what the runtime's recording service needs: the microphone, a foreground service, from Android 14 one of the microphone type, and from Android 13 the notifications the service's notification shows with, which RecordWAV asks for with the microphone.
@@ -111,6 +115,9 @@ var androidAttrs = map[string]attrSpec{
 	"icon":                {0x01010002, typeReference, parseAppResource},
 	"debuggable":          {0x0101000f, typeBool, parseBool},
 	"required":            {0x0101028e, typeBool, parseBool},
+	"appCategory":         {0x01010545, typeInt, parseAppCategory},
+	"isGame":              {0x010103f4, typeBool, parseBool},
+	"resource":            {0x01010025, typeReference, parseResourceID},
 
 	"extractNativeLibs":           {0x010104ea, typeBool, parseBool},
 	"enableOnBackInvokedCallback": {0x0101066c, typeBool, parseBool},
@@ -283,7 +290,27 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 		setAttr(app, androidNS, "icon", iconResource)
 	}
 	if m.LoopbackCleartext {
-		setAttr(app, androidNS, "networkSecurityConfig", fmt.Sprintf("@0x%08x", networkSecurityID(m)))
+		setAttr(app, androidNS, "networkSecurityConfig", fmt.Sprintf("@0x%08x", xmlResourceID(m)))
+	}
+	if m.Game {
+		setAttr(app, androidNS, "appCategory", "game")
+		setAttr(app, androidNS, "isGame", "true")
+		meta := &node{name: xml.Name{Local: "meta-data"}}
+		setAttr(meta, androidNS, "name", "android.game_mode_config")
+		id := xmlResourceID(m)
+		if m.LoopbackCleartext {
+			id++
+		}
+		setAttr(meta, androidNS, "resource", fmt.Sprintf("@0x%08x", id))
+		app.kids = append(app.kids, meta)
+	}
+	if m.Gamepad {
+		for _, feature := range []string{"android.hardware.gamepad", "android.hardware.touchscreen"} {
+			use := &node{name: xml.Name{Local: "uses-feature"}}
+			setAttr(use, androidNS, "name", feature)
+			setAttr(use, androidNS, "required", "false")
+			root.kids = slices.Insert(root.kids, slices.Index(root.kids, app), use)
+		}
 	}
 	if len(m.URLSchemes) > 0 || len(m.ShareTypes) > 0 {
 		launcher := xml.Attr{Name: xml.Name{Space: androidNS, Local: "name"}, Value: "dev.oneo.nsgo.NsgoActivity"}
@@ -476,6 +503,18 @@ var appResources = map[string]uint32{
 	foregroundResource: foregroundResourceID,
 	backgroundResource: backgroundResourceID,
 	monochromeResource: monochromeResourceID,
+}
+
+func parseResourceID(value string) (uint32, error) {
+	id, err := strconv.ParseUint(strings.TrimPrefix(value, "@"), 0, 32)
+	return uint32(id), err
+}
+
+func parseAppCategory(s string) (uint32, error) {
+	if s == "game" {
+		return 0, nil // ApplicationInfo.CATEGORY_GAME
+	}
+	return 0, fmt.Errorf("unknown app category %q", s)
 }
 
 func parseStyle(s string) (uint32, error) {
