@@ -527,9 +527,11 @@ func TestSaveDialogStartsInFolder(t *testing.T) {
 	refused := filepath.Join(dir, "report.txt")
 	path := filepath.Join(dir, "renamed.txt")
 	var attempts int
+	choices := make(chan string, 4)
 	cx.Post(func() {
 		cx.SaveFile(core.SaveOptions{Name: "report.txt", Data: []byte("notes"), Start: start, Accept: func(chosen string) error {
 			attempts++
+			choices <- chosen
 			if attempts == 1 {
 				if !strings.EqualFold(chosen, refused) {
 					t.Errorf("first destination %q, want %q", chosen, refused)
@@ -544,14 +546,26 @@ func TestSaveDialogStartsInFolder(t *testing.T) {
 			status <- fmt.Sprintf("%v %q %v (%d attempts)", saved, path, err, attempts)
 		})
 	})
-	dlg, _ := fileDialog(t, hwnd)
+	dlg, field := fileDialog(t, hwnd)
 	const idOK = 1
+	chosen := func(want string) {
+		t.Helper()
+		select {
+		case path := <-choices:
+			if !strings.EqualFold(path, want) {
+				t.Fatalf("the dialog chose %q, want %q", path, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("the native dialog did not submit %q for preflight", want)
+		}
+	}
 	postMessageW.Call(dlg, wmCommand, idOK, 0)
+	chosen(refused)
 	warning := waitForWindow(t, "report.txt", done)
 	if warning == 0 {
 		return
 	}
-	defer postMessageW.Call(warning, wmCommand, idOK, 0)
+	defer postMessageW.Call(warning, wmClose, 0, 0)
 	const gwOwner = 4
 	if owner, _, _ := getWindowProc.Call(warning, gwOwner); owner != dlg {
 		t.Errorf("warning was not owned by the save dialog")
@@ -564,8 +578,32 @@ func TestSaveDialogStartsInFolder(t *testing.T) {
 		t.Fatalf("a refusal completed the save before the dialog closed: %s", got)
 	default:
 	}
-	postMessageW.Call(warning, wmCommand, idOK, 0)
-	answerFileDialog(t, hwnd, path)
+	okButton, _, _ := getDlgItem.Call(warning, idOK)
+	if okButton == 0 {
+		t.Fatal("the rejection warning has no OK control")
+	}
+	const bmClick = 0x00F5
+	postMessageW.Call(okButton, bmClick, 0, 0)
+	isWindow := user32.NewProc("IsWindow")
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if open, _, _ := isWindow.Call(warning); open == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the rejection warning did not dismiss")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// Reuse the original filename control. Querying the focus again
+	// after the warning closes can find a different control.
+	const wmSetText = 0x000C
+	name := filepath.Base(path)
+	sendMessage.Call(field, wmSetText, 0, uintptr(unsafe.Pointer(wide(name))))
+	if got := windowText(field); got != name {
+		t.Fatalf("the save dialog's name field now reads %q, want %q", got, name)
+	}
+	postMessageW.Call(dlg, wmCommand, idOK, 0)
+	chosen(path)
 	select {
 	case got := <-status:
 		if want := fmt.Sprintf("true %q <nil> (2 attempts)", path); !strings.EqualFold(got, want) {
