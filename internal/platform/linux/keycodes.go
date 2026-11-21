@@ -31,7 +31,7 @@ var keyLayoutAPI = sync.OnceValue(func() (api struct {
 })
 
 func (w *window) keyLayoutChanged(controller uintptr) {
-	if !w.heldKeys {
+	if !w.heldKeys || controller == 0 {
 		return
 	}
 	if event := gtkEventControllerGetCurrentEvent(controller); event != 0 {
@@ -78,4 +78,13 @@ func (w *window) keyboardCodeNames() map[string]string {
 		}
 	}
 	return names
+}
+
+// keyCode returns the position for a hardware keycode. The test host uses
+// synthetic identities outside this range for its layout-dependent presses.
+func keyCode(code uint32) string {
+	if code > 0xffff {
+		return ""
+	}
+	return driver.XKBKeyCode(uint16(code))
 }

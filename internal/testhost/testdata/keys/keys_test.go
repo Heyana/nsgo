@@ -112,6 +112,13 @@ func TestEditingKeysKeepTheirUnboundActions(t *testing.T) {
 	}
 }
 
+// logicalKey keeps the parts these tests exercise with layout-dependent
+// steps. Some target hosts can also provide a position for those steps.
+func logicalKey(e core.KeyEvent) core.KeyEvent {
+	e.Code = ""
+	return e
+}
+
 // A focused view hears the keys that go down on it before the keymap, with their modifiers, a modifier alone included, and a key it consumes fires no binding (#287).
 func TestAFocusedViewHearsItsKeysBeforeTheKeymap(t *testing.T) {
 	switch nsgotest.Target() {
@@ -127,7 +134,7 @@ func TestAFocusedViewHearsItsKeysBeforeTheKeymap(t *testing.T) {
 		}
 		return core.View{Style: core.Style{Padding: core.All(20)}, Children: []core.Node{core.View{
 			TestID: "recorder", Focusable: func() bool { return true },
-			OnKeyDown: func(e core.KeyEvent) bool { got = append(got, e); return e.Key != "x" },
+			OnKeyDown: func(e core.KeyEvent) bool { got = append(got, logicalKey(e)); return e.Key != "x" },
 			Style:     core.Style{Width: core.Pt(200), Height: core.Pt(40)},
 		}}}
 	}, nsgotest.Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}), nsgotest.Size(300, 120))
@@ -187,8 +194,8 @@ func TestAFocusedViewHearsItsKeysComeUp(t *testing.T) {
 		return core.View{Style: core.Style{Padding: core.All(20)}, Children: []core.Node{
 			core.View{
 				TestID: "recorder", Ref: &recorder, Focusable: func() bool { return true }, OnFocus: func() { focused.Store(true) },
-				OnKeyDown: func(e core.KeyEvent) bool { mu.Lock(); downs = append(downs, e); mu.Unlock(); return false },
-				OnKeyUp:   func(e core.KeyEvent) { mu.Lock(); ups = append(ups, e); mu.Unlock() },
+				OnKeyDown: func(e core.KeyEvent) bool { mu.Lock(); downs = append(downs, logicalKey(e)); mu.Unlock(); return false },
+				OnKeyUp:   func(e core.KeyEvent) { mu.Lock(); ups = append(ups, logicalKey(e)); mu.Unlock() },
 				Style:     core.Style{Width: core.Pt(200), Height: core.Pt(40)},
 			},
 			core.Text{TestID: "held", ContentFunc: func() string { return strings.Join(core.KeysDown(cx), " ") }},
@@ -294,9 +301,9 @@ func TestNoKeyStaysHeldIntoTheNextTest(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		if down {
-			downs = append(downs, e)
+			downs = append(downs, logicalKey(e))
 		} else {
-			ups = append(ups, e)
+			ups = append(ups, logicalKey(e))
 		}
 	}
 	t.Run("holds", func(t *testing.T) {

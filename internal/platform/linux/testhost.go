@@ -500,17 +500,18 @@ func (t *testSurface) KeyUp(key string) error {
 	return t.key(name, keyval, state, false, true)
 }
 
-// key presses (press) a key with the modifiers in state through the window's controller first, then lets the focused field edit if the controller leaves it the key, and releases it (release) either way. The key's keycode is its keyval, so the keys held apart stay apart.
+// key presses (press) a key with the modifiers in state through the window's controller first, then lets the focused field edit if the controller leaves it the key, and releases it (release) either way. The key's identity comes from its keyval in a range outside the hardware keycodes.
 func (t *testSurface) key(name string, keyval, state uint32, press, release bool) error {
 	loadEditing()
 	closing := false
+	identity := keyval | 1<<31
 	t.onLoop(func() {
 		// After the release, wait for the display server to have sent the events the key caused, which the loop's next turn handles before the turn below.
 		defer func() { gdkDisplaySync(gdkDisplayGetDefault()); closing = t.w.closing }()
 		if release {
-			defer keyReleasedCallback(0, keyval, keyval, state, t.w.handle)
+			defer keyReleasedCallback(0, keyval, identity, state, t.w.handle)
 		}
-		if !press || keyPressedCallback(0, keyval, keyval, state, t.w.handle) != 0 {
+		if !press || keyPressedCallback(0, keyval, identity, state, t.w.handle) != 0 {
 			return
 		}
 		v := t.focused()

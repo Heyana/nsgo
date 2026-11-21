@@ -965,7 +965,7 @@ func (w *window) keyDown(keycode, keyval, state uint32, repeat bool) bool {
 		return false
 	}
 	name, mods, modifier := w.keyEvent(keycode, keyval, state, true)
-	position := driver.XKBKeyCode(uint16(keycode))
+	position := keyCode(keycode)
 	if name == "" && position == "" {
 		return false
 	}
@@ -998,14 +998,14 @@ func (w *window) keyUp(keycode, keyval, state uint32) {
 		return
 	}
 	_, mods, _ := w.keyEvent(keycode, keyval, state, false)
-	w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: k.id, Text: k.name, KeyCode: driver.XKBKeyCode(uint16(keycode)), Modifiers: mods})
+	w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: k.id, Text: k.name, KeyCode: keyCode(keycode), Modifiers: mods})
 }
 
 // releaseKeys reports every key held whose down was reported as coming up, with no modifiers, and forgets every key held, as the window loses the keyboard: their releases go to another window, and a key pressed again on return is a new press, not a repeat.
 func (w *window) releaseKeys() {
 	for keycode, k := range w.held {
 		if k.reported && w.engine != nil {
-			w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: k.id, Text: k.name, KeyCode: driver.XKBKeyCode(uint16(keycode))})
+			w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: k.id, Text: k.name, KeyCode: keyCode(keycode)})
 		}
 	}
 	clear(w.held)
