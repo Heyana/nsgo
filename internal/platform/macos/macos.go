@@ -1186,6 +1186,7 @@ func (s *surface) environment() driver.Environment {
 		Speak:            apple.SpeakAvailable(),
 		Audio:            apple.AudioAvailable(),
 		Gamepads:         true,
+		AudioSchedule:    apple.AudioAvailable(),
 		CanSendInput:     true,
 		HasWebView:       true,
 		SignInWithApple:  apple.AppleSignInAvailable(),

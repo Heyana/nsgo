@@ -55,6 +55,53 @@ func TestASoundPlaysOnATap(t *testing.T) {
 	}
 }
 
+func TestSoundSchedulesOnTheTestClockAndReadsLatency(t *testing.T) {
+	var sound *audio.Sound
+	var starts []time.Time
+	var latency time.Duration
+	var known, schedule bool
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		schedule = audio.CanSchedule(cx)
+		audio.OutputLatency(cx, func(d time.Duration, ok bool) { latency, known = d, ok })
+		audio.LoadSound(cx, audio.Source{URI: "asset:beat.wav"}, func(s *audio.Sound, err error) {
+			if err != nil {
+				t.Errorf("load the beat: %v", err)
+			}
+			sound = s
+		})
+		return core.View{TestID: "play", Class: "size-12", OnPress: func(core.PressEvent) {
+			first := audio.Now(cx).Add(time.Second)
+			starts = []time.Time{first, first.Add(500 * time.Millisecond)}
+			for _, at := range starts {
+				sound.Play(audio.Voice{StartAt: at})
+			}
+		}}
+	}, nsgotest.Environment(core.Environment{Audio: true, AudioSchedule: true}), func(a *nsgotest.App) {
+		a.AudioDurations = map[string]time.Duration{"asset:beat.wav": 20 * time.Millisecond}
+		a.AudioOutputLatency = 12 * time.Millisecond
+	})
+	if !schedule || !known || latency != 12*time.Millisecond || sound == nil {
+		t.Fatalf("schedule %v, latency %s, known %v, sound %v", schedule, latency, known, sound)
+	}
+	app.Press("id:play")
+	plays := app.Sounds[0].Plays
+	if len(plays) != 2 || !plays[0].StartAt.Equal(starts[0]) || !plays[1].StartAt.Equal(starts[1]) {
+		t.Fatalf("scheduled plays = %+v, want %v", plays, starts)
+	}
+}
+
+func TestOutputLatencyIsUnknownWithoutAudio(t *testing.T) {
+	var answered, known, schedule bool
+	nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		schedule = audio.CanSchedule(cx)
+		audio.OutputLatency(cx, func(_ time.Duration, ok bool) { answered, known = true, ok })
+		return core.View{}
+	})
+	if !answered || known || schedule {
+		t.Fatalf("answered %v, latency known %v, can schedule %v", answered, known, schedule)
+	}
+}
+
 func TestAPlayerPlaysOnTheClock(t *testing.T) {
 	var player *audio.Player
 	var log []string

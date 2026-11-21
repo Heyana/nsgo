@@ -40,9 +40,11 @@ const (
 	AudioSet
 	// AudioClose stops and frees player Count. Nothing is reported of it after this.
 	AudioClose
+	// AudioReadLatency reads the current output route's latency.
+	AudioReadLatency
 )
 
-var audioCommandNames = [...]string{"load", "play", "stop", "unload", "open", "preload", "resume", "pause", "seek", "set", "close"}
+var audioCommandNames = [...]string{"load", "play", "stop", "unload", "open", "preload", "resume", "pause", "seek", "set", "close", "read-latency"}
 
 // String returns the command's name, as traces print it: load, play, ...
 func (c AudioCommand) String() string {
@@ -62,6 +64,8 @@ type AudioRequest struct {
 	MaxDuration time.Duration
 	// Volume runs from 0 to 1, Rate from 0.5 to 2 and Pan from -1 (full left) to 1 (full right); AudioPlay's, with Volume and Rate AudioOpen's and AudioSet's too.
 	Volume, Rate, Pan float32
+	// StartAt is AudioPlay's scheduled start in the engine clock's time.
+	StartAt time.Time
 	// Loop has a player start over at its end, with no AudioEnded.
 	Loop bool
 	// Session is a player's: what it does to other apps' audio while it plays. Sounds mix with other apps' audio.
@@ -92,6 +96,8 @@ const (
 	AudioEnded
 	// AudioFailure says a sound did not load or a player failed, with Error and Message. A player plays nothing more until a command loads it again.
 	AudioFailure
+	// AudioLatency reports the output route's latency.
+	AudioLatency
 )
 
 // The errors a sound or a player fails with, named as NSH's, which follow the web's MediaError.
@@ -109,6 +115,8 @@ const (
 type AudioEvent struct {
 	Phase              AudioPhase
 	Duration, Position time.Duration
+	// Latency is the output route's latency in AudioLatency, zero when unknown.
+	Latency time.Duration
 	// Bytes is a loaded sound's decoded size, which the core counts against MaxDecodedBytes, and Cut says it was longer than the MaxDuration decoded.
 	Bytes int64
 	Cut   bool

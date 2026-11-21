@@ -17,6 +17,7 @@ import (
 
 var (
 	dispatchAsyncF   func(queue, context, work uintptr)
+	machTime         func() uint64
 	poolPush         func() uintptr
 	poolPop          func(uintptr)
 	mainQueue        uintptr
@@ -35,6 +36,7 @@ var (
 func loadSystem() {
 	lib := load("/usr/lib/libSystem.B.dylib")
 	purego.RegisterLibFunc(&dispatchAsyncF, lib, "dispatch_async_f")
+	purego.RegisterLibFunc(&machTime, lib, "mach_absolute_time")
 	mainQueue = symbol(lib, "_dispatch_main_q")
 	mainWork = purego.NewCallback(func(uintptr) { runMain() })
 	runtimeLib := load("/usr/lib/libobjc.A.dylib")

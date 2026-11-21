@@ -26,6 +26,7 @@ type Env struct {
 	screenColor, speech     *Signal[bool]
 	audio, speak, gamepads  *Signal[bool]
 	gpu                     *Signal[bool]
+	audioSchedule           *Signal[bool]
 	camera                  *Signal[bool]
 	scanCode                *Signal[bool]
 	discoverServices        *Signal[bool]
@@ -109,6 +110,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		screenColor:      NewSignal(cx, false),
 		speech:           NewSignal(cx, false),
 		audio:            NewSignal(cx, false),
+		audioSchedule:    NewSignal(cx, false),
 		speak:            NewSignal(cx, false),
 		gamepads:         NewSignal(cx, false),
 		gpu:              NewSignal(cx, false),
@@ -235,6 +237,7 @@ func (e *Env) set(v Environment) {
 	e.screenColor.Set(v.ScreenColor)
 	e.speech.Set(v.Speech)
 	e.audio.Set(v.Audio)
+	e.audioSchedule.Set(v.Audio && v.AudioSchedule)
 	e.speak.Set(v.Speak)
 	e.gamepads.Set(v.Gamepads)
 	e.gpu.Set(v.GPU)
@@ -398,6 +401,9 @@ func (e *Env) CanRecognizeSpeech() bool { return e.speech.Get() }
 
 // CanPlayAudio reports whether the platform plays the audio package's sounds and players; elsewhere they fail with AudioUnavailable without asking it.
 func (e *Env) CanPlayAudio() bool { return e.audio.Get() }
+
+// CanScheduleAudio reports whether the platform schedules audio.Sound playback at a requested time.
+func (e *Env) CanScheduleAudio() bool { return e.audioSchedule.Get() }
 
 // CanSpeak reports whether Scope.Speak speaks text here: macOS, iOS, tvOS, Android, Windows, the web where the browser has speechSynthesis, and Linux where speech-dispatcher is installed. Elsewhere an utterance fails with SpeakUnavailable without asking the platform.
 func (e *Env) CanSpeak() bool { return e.speak.Get() }

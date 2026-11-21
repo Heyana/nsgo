@@ -523,6 +523,10 @@ mobile.RequestOverlayPermission(cx, func(p core.OverlayPermission) {
 
 浏览器需要用户操作才能播放有声内容。可提前加载短音效，在点击、轻触或按键后调用 `Sound.Play`。用户操作之前播放的音效无声。如果浏览器拒绝播放，播放器的 `Play` 回调会收到 `audio.NotAllowed`。可在下一次用户操作中重试。
 
+## 音频时序
+
+用 `audio.Now(cx)` 读取预约播放的时钟。`audio.CanSchedule(cx)` 为 true 时，可将 `audio.Voice.StartAt` 设置为将来的时刻。调用 `audio.OutputLatency(cx, func(latency time.Duration, known bool) { ... })` 可读取当前音频输出路径的延迟。macOS、iOS、Linux 和 Web 支持预约播放，回调中的 `known` 表示当前路径是否报告了延迟。
+
 ## 下一步
 
 - [通知](notifications.md)：权限、图标角标和点按。

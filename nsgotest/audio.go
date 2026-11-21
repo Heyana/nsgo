@@ -51,6 +51,9 @@ func (a *App) audio(id uint32, r driver.AudioRequest) {
 		report(driver.AudioEvent{Phase: driver.AudioFailure, Error: code, Message: message})
 	}
 	switch r.Command {
+	case driver.AudioReadLatency:
+		report(driver.AudioEvent{Phase: driver.AudioLatency, Latency: a.AudioOutputLatency})
+		return
 	case driver.AudioLoad:
 		if int64(len(r.Source.Data)) > r.MaxBytes {
 			fail(driver.AudioQuotaExceeded, "nsgotest: the sound has more than its bytes")
@@ -76,7 +79,7 @@ func (a *App) audio(id uint32, r driver.AudioRequest) {
 		s := a.Sounds[i]
 		switch r.Command {
 		case driver.AudioPlay:
-			s.Plays = append(s.Plays, core.SoundVoice{Volume: r.Volume, Rate: r.Rate, Pan: r.Pan})
+			s.Plays = append(s.Plays, core.SoundVoice{Volume: r.Volume, Rate: r.Rate, Pan: r.Pan, StartAt: r.StartAt})
 		case driver.AudioStop:
 			s.Stops++
 		default:

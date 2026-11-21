@@ -600,6 +600,10 @@ loop = func(time.Time) {
 cx.RequestAnimationFrame(loop)
 ```
 
+## Audio timing
+
+Use `audio.Now(cx)` as the clock for timed playback. Set `audio.Voice.StartAt` to a future time when `audio.CanSchedule(cx)` is true. Call `audio.OutputLatency(cx, func(latency time.Duration, known bool) { ... })` for the active output route. macOS, iOS, Linux and the web support timed starts. The callback's `known` value tells whether the route reported a latency.
+
 ## Next
 
 - [Notifications](notifications.md): permission, badges and presses.

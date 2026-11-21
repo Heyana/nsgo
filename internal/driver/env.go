@@ -58,6 +58,8 @@ type Environment struct {
 	Audio    bool
 	Gamepads bool
 	GPU      bool
+	// AudioSchedule says ItemAudio honors AudioPlay's StartAt.
+	AudioSchedule bool
 	// Camera says ItemTakePhoto shows a camera here.
 	Camera bool
 	// ScanCode says ItemScanCode shows a camera that reads codes here.

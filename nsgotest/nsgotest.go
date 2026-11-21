@@ -391,9 +391,11 @@ type App struct {
 	Overlay           *Overlay
 	// AudioDurations are the lengths of the audio the platform decodes, by a source's URI or, for bytes, their string; a source missing from it fails with audio.Decode, and a sound is cut at 5 seconds, as a platform cuts it. RefusePlayback has every player's play fail with audio.NotAllowed, as a browser's before a user gesture. Sounds are the sounds the platform decoded and Players the players the app opened, oldest first, where the environment says Audio; a player plays only as Advance moves the clock.
 	AudioDurations map[string]time.Duration
-	RefusePlayback bool
-	Sounds         []*Sound
-	Players        []*AudioPlayer
+	// AudioOutputLatency is the test output's latency, zero when unknown.
+	AudioOutputLatency time.Duration
+	RefusePlayback     bool
+	Sounds             []*Sound
+	Players            []*AudioPlayer
 	// OnAlert answers each alert the app shows with the index of the
 	// button the user presses, or -1 to dismiss it, once the step that
 	// showed it ends. Without it Alerts lists them and Answer answers

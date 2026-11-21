@@ -2370,7 +2370,11 @@ func (t *Tree) Dispatch(ev driver.Event) {
 		t.authEvent(ev)
 		return
 	case driver.EventAudio:
-		t.rt.audioEvent(ev)
+		if e, _ := ev.Data.(*driver.AudioEvent); e != nil && e.Phase == driver.AudioLatency {
+			t.answer(ev)
+		} else {
+			t.rt.audioEvent(ev)
+		}
 		return
 	case driver.EventSpeak:
 		t.speakEvent(ev)

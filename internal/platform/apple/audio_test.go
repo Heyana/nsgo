@@ -20,6 +20,7 @@ import (
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/platform/objcblock"
 )
 
 // init keeps the main goroutine, and so TestMain, on the main thread.
@@ -279,6 +280,128 @@ func TestASoundReusesMixerAcrossFormats(t *testing.T) {
 			t.Error("the mixer did not send the new source format to the same main mixer bus")
 		}
 	})
+}
+
+func TestScheduledSoundsAreHalfASecondApartInTheMixer(t *testing.T) {
+	ta := newTestAudio(t)
+	const sourceRate = 44100
+	data := wavOf(40*time.Millisecond, sourceRate, 1)
+	for i := range (len(data) - 44) / 2 {
+		sample := int16(4096 * math.Sin(2*math.Pi*400*float64(i)/sourceRate))
+		binary.LittleEndian.PutUint16(data[44+i*2:], uint16(sample))
+	}
+	ta.send(1, driver.AudioRequest{Command: driver.AudioLoad, Source: driver.ImageSource{Data: data},
+		MaxBytes: driver.MaxSoundBytes, MaxDuration: driver.MaxSoundDuration})
+	ta.wait(1, driver.AudioLoaded, 5*time.Second, nil)
+
+	var mixer objc.ID
+	var first atomic.Int64
+	first.Store(-1)
+	gap := make(chan time.Duration, 1)
+	t.Cleanup(func() {
+		if mixer != 0 {
+			onMain(func() { mixer.Send(sel("removeTapOnBus:"), uint(0)) })
+		}
+	})
+	onMain(func() {
+		engine := ta.audio.audioEngine()
+		format := ta.audio.sounds[1].format
+		for range 2 {
+			voice := newVoice(engine, format)
+			if voice == nil {
+				return
+			}
+			ta.audio.voices = append(ta.audio.voices, voice)
+		}
+		if ta.audio.startEngine() == 0 {
+			return
+		}
+		// Reuse nodes that have already played a buffer, as a running app does when it schedules the next pair of sounds.
+		warm := driver.AudioRequest{Command: driver.AudioPlay, Rate: 1}
+		ta.audio.Handle(1, &warm)
+		ta.audio.Handle(1, &warm)
+		time.Sleep(150 * time.Millisecond)
+		mixer = engine.Send(sel("mainMixerNode"))
+		outputFormat := mixer.Send(sel("outputFormatForBus:"), uint(0))
+		rate := objc.Send[float64](outputFormat, sel("sampleRate"))
+		tap := objcblock.New(func(_ objc.Block, buffer, when objc.ID) {
+			count := int(objc.Send[uint32](buffer, sel("frameLength")))
+			channels := objc.Send[**float32](buffer, sel("floatChannelData"))
+			base := objc.Send[int64](when, sel("sampleTime"))
+			if channels == nil || *channels == nil || base < 0 {
+				return
+			}
+			for i, value := range unsafe.Slice(*channels, count) {
+				if math.Abs(float64(value)) < 0.025 {
+					continue
+				}
+				frame := base + int64(i)
+				if first.CompareAndSwap(-1, frame) {
+					continue
+				}
+				if delta := frame - first.Load(); delta > int64(rate/4) {
+					select {
+					case gap <- time.Duration(float64(delta) / rate * float64(time.Second)):
+					default:
+					}
+					return
+				}
+			}
+		})
+		mixer.Send(sel("installTapOnBus:bufferSize:format:block:"), uint(0), uint32(1024), objc.ID(0), tap)
+		tap.Release()
+
+		start := time.Now().Add(time.Second)
+		play := driver.AudioRequest{Command: driver.AudioPlay, Volume: 0.5, Rate: 1, StartAt: start}
+		ta.audio.Handle(1, &play)
+		play.StartAt = start.Add(500 * time.Millisecond)
+		ta.audio.Handle(1, &play)
+	})
+	if mixer == 0 {
+		t.Skip("AVAudioEngine cannot open the test host's audio output")
+	}
+	select {
+	case got := <-gap:
+		const want = 500 * time.Millisecond
+		if got < want-time.Millisecond || got > want+time.Millisecond {
+			t.Errorf("recorded PCM starts were %s apart, want %s ± 1ms", got, want)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the mixer did not render both scheduled sounds")
+	}
+}
+
+func TestStoppingAScheduledSoundLetsTheEngineIdle(t *testing.T) {
+	ta := newTestAudio(t)
+	ta.send(1, driver.AudioRequest{Command: driver.AudioLoad, Source: driver.ImageSource{Data: wav(40 * time.Millisecond)},
+		MaxBytes: driver.MaxSoundBytes, MaxDuration: driver.MaxSoundDuration})
+	ta.wait(1, driver.AudioLoaded, 5*time.Second, nil)
+	engineRunning := func() bool {
+		var running bool
+		onMain(func() {
+			engine := ta.audio.engine
+			running = engine != 0 && objc.Send[bool](engine, sel("isRunning"))
+		})
+		return running
+	}
+	ta.send(1, driver.AudioRequest{Command: driver.AudioPlay, Rate: 1, StartAt: time.Now().Add(time.Minute)})
+	if !engineRunning() {
+		t.Skip("AVAudioEngine cannot open the test host's audio output")
+	}
+	onMain(func() {
+		if len(ta.audio.voices) != 1 || time.Until(ta.audio.voices[0].until) < 30*time.Second {
+			t.Error("the engine did not schedule a voice")
+		}
+	})
+	ta.send(1, driver.AudioRequest{Command: driver.AudioStop})
+	deadline := time.Now().Add(idleGrace + 2*time.Second)
+	for time.Now().Before(deadline) {
+		if !engineRunning() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("the engine kept running after the scheduled sound stopped")
 }
 
 func TestASoundFailsAsTheDesignSays(t *testing.T) {
@@ -703,7 +826,7 @@ func TestASoundPansStereo(t *testing.T) {
 					if ta.audio.engine == 0 && !ta.enableOfflineRendering() {
 						return
 					}
-					ta.audio.play(1, 1, 1, pan)
+					ta.audio.play(1, &driver.AudioRequest{Command: driver.AudioPlay, Volume: 1, Rate: 1, Pan: pan})
 					if len(ta.audio.voices) == 0 {
 						t.Fatal("no voice")
 					}

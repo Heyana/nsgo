@@ -3,7 +3,11 @@
 // Both are called on the engine's goroutine, as every scope service is; other goroutines reach them through core.Scope.Post. Their callbacks run on the engine's goroutine too, in a later turn, so they may set signals. A closed sound's or player's callbacks never run.
 package audio
 
-import "github.com/nsgo-dev/nsgo/core"
+import (
+	"time"
+
+	"github.com/nsgo-dev/nsgo/core"
+)
 
 type (
 	// Source is what a sound or a player plays, as an image's source: URI, an "asset:" path in the app's resources, a file path or file: URL, a data: URL or an http(s) URL; or Data, the bytes of a file, such as one embedded with go:embed, named by the format their first bytes say. The platform resolves it as it resolves an image's source and decodes it with its own decoders: ship WAV, AAC (.m4a) or MP3.
@@ -55,6 +59,17 @@ const (
 	// PlayerFailed: it failed, and plays nothing until Play or Preload loads it again.
 	PlayerFailed = core.AudioPlayerFailed
 )
+
+// Now returns the shared clock used by Voice.StartAt. Headless tests use their manual clock.
+func Now(cx *core.Scope) time.Time { return cx.Now() }
+
+// CanSchedule reports whether this platform supports a timed sound start.
+func CanSchedule(cx *core.Scope) bool { return cx.Env().CanScheduleAudio() }
+
+// OutputLatency reads the current output route's presentation latency. The callback receives zero and false when the platform has no reading.
+func OutputLatency(cx *core.Scope, done func(latency time.Duration, known bool)) {
+	cx.AudioOutputLatency(done)
+}
 
 // LoadSound has the platform read and decode src into memory once, and calls done with the sound or why not, an Error. A source this engine already holds, the same URI or bytes of the same digest, shares the decoded sound, which goes with the last Sound over it. The sound belongs to cx itself rather than the running owner, so loading with the app's scope from a handler keeps it until cx goes or Close is called.
 func LoadSound(cx *core.Scope, src Source, done func(*Sound, error)) { cx.LoadSound(src, done) }
