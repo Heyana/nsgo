@@ -64,6 +64,7 @@
 - Add `WebView.UserAgentSuffix`, and `userAgentSuffix` in TSX, to append to the platform's own user agent or to `UserAgent` on macOS, iOS, Android, Windows and Linux (#114 by @houko).
 - Show a WebView placeholder with an AppArmor diagnostic on Linux when bubblewrap cannot start WebKitGTK's sandbox (#1029 by @houko).
 - Report same-document URL, history and title changes from `WebView` on Linux (#113 by @houko).
+- Play short sounds and streamed audio on the web through `audio.Sound` and `audio.Player` (#1098 by @houko).
 - Honor every family in a Windows `FontFamily` list when DirectWrite falls back for missing characters (#668 by @houko).
 - Add the `macos_universal` build target, which joins the arm64 and x64 apps, libraries and widgets into one direct-channel disk image and Sparkle feed (#265 by @houko).
 - Stop resolving and emitting the whole tree when the platform reports only a new window frame, maximized state, lifecycle or title bar, as on every step of a window drag; what reads them through `Env` still updates (#178 by @houko).

@@ -135,6 +135,8 @@ type surface struct {
 	measureLang  string        // measure's lang attribute
 	metrics      js.Value      // a canvas's 2D context, for fonts' metrics
 	engine       *engine.Engine
+	audio        *webAudio
+	audioGesture bool
 	views        []*view // index is NodeID
 	press        press
 	touch        fingers
@@ -1445,6 +1447,14 @@ func (s *surface) mount(b *driver.MountBatch) {
 		case driver.ItemAuthSession:
 			s.authSession(it.Count, *it.Auth)
 			continue
+		case driver.ItemAudio:
+			if s.audio == nil && (it.Audio.Command == driver.AudioLoad || it.Audio.Command == driver.AudioOpen) {
+				s.audio = newWebAudio(s.doc, s.engine.Dispatch, s.audioGesture)
+			}
+			if s.audio != nil {
+				s.audio.handle(it.Count, it.Audio)
+			}
+			continue
 		case driver.ItemSpeak:
 			speak(it.Count, *it.Speak, s.engine.Dispatch)
 			continue
@@ -2626,6 +2636,8 @@ func (s *surface) windowCommand(c *driver.WindowCommand) {
 		}
 	case driver.WindowClose:
 		js.Global().Call("close")
+	case driver.WindowDestroy:
+		s.closeAudio()
 	}
 }
 
@@ -2657,6 +2669,14 @@ var ignore = js.FuncOf(func(js.Value, []js.Value) any { return nil })
 // listeners see presses outside views and Escape anywhere.
 func (s *surface) listen() {
 	var ls listeners
+	for _, name := range []string{"pointerup", "touchend", "click"} {
+		ls.on(s.host, name, s.activateAudio)
+	}
+	ls.on(js.Global(), "pagehide", func(e js.Value) {
+		if !e.Get("persisted").Truthy() {
+			s.closeAudio()
+		}
+	})
 	ls.on(s.host, "pointerdown", s.pointerDown)
 	ls.on(s.host, "pointerup", s.pointerUp)
 	ls.on(s.host, "pointercancel", s.pointerUp)
@@ -2674,6 +2694,7 @@ func (s *surface) listen() {
 	// Captured, so shortcuts come before what has focus.
 	s.doc.Call("addEventListener", "keydown", js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if s.owns() {
+			s.activateAudio(args[0])
 			if !modifierKey(args[0].Get("key").String()) {
 				s.engine.InputModality(driver.ModalityKeyboard)
 			}
@@ -2692,6 +2713,7 @@ func (s *surface) listen() {
 	s.doc.Call("addEventListener", "pointerdown", js.FuncOf(func(_ js.Value, args []js.Value) any {
 		s.pressedIn = s.host.Call("contains", args[0].Get("target")).Bool()
 		if s.pressedIn {
+			s.activateAudio(args[0])
 			s.engine.InputModality(driver.ModalityPointer)
 		}
 		s.pressOutside(args[0])
