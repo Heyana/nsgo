@@ -28,6 +28,7 @@ import (
 type session struct {
 	build func(ctx context.Context, p *project) error
 	start func(ctx context.Context, p *project) (app, error)
+	watch func(*project) string // additional inputs the target packages
 }
 
 // app is one started dev app. stop ends it, and wait returns once it has
@@ -162,7 +163,14 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 			dirs = append(dirs, p.I18n.Dir)
 		}
 		dirs, sources := splitSources(dirs)
-		fingerprint := scan(dirs)
+		scanBuild := func() string {
+			files := scan(dirs)
+			if s.watch != nil {
+				files += s.watch(p)
+			}
+			return files
+		}
+		fingerprint := scanBuild()
 		err = catalogErr
 		if err == nil {
 			err = s.build(ctx, p)
@@ -222,7 +230,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 			}
 		}
 		first = false
-		if reason := waitForChange(ctx, p, srv, dirs, sources, fingerprint, exited); reason != nil {
+		if reason := waitForChange(ctx, p, srv, scanBuild, sources, fingerprint, exited); reason != nil {
 			return *reason
 		}
 		// The flags and the rest of nsgo.yaml may have changed too.
@@ -282,7 +290,7 @@ func (o devOptions) appFlags() []string {
 //
 // A change of the app's TSX alone builds no Go: its bundles are compiled
 // again and the running apps load them (compiler.App under nsgodev).
-func waitForChange(ctx context.Context, p *project, srv *devServer, dirs, sources []string, fingerprint string, exited chan error) *error {
+func waitForChange(ctx context.Context, p *project, srv *devServer, scanBuild func() string, sources []string, fingerprint string, exited chan error) *error {
 	tick := time.NewTicker(300 * time.Millisecond)
 	defer tick.Stop()
 	tsx := scan(sources)
@@ -299,7 +307,7 @@ func waitForChange(ctx context.Context, p *project, srv *devServer, dirs, source
 			if !p.hotReload() {
 				continue
 			}
-			if scan(dirs) != fingerprint {
+			if scanBuild() != fingerprint {
 				// Let the editor finish writing.
 				time.Sleep(100 * time.Millisecond)
 				return nil

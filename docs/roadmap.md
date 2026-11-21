@@ -139,6 +139,8 @@ What NSGo's own issues ask for beyond NSH's releases, each issue where its desig
 
 Android and HarmonyOS still need to deliver their web views' new-window requests to the app as `OnOpenWindow` ([#113](https://github.com/nsgo-dev/nsgo/issues/113)).
 
+Android's [dev loop](architecture/tool.md#dev-loop) could run the Go process on the development Mac and reconnect it over adb on a rebuild, keeping the activity and window. That mode would be opt-in because the Go process uses the Mac's OS and filesystem ([#661](https://github.com/nsgo-dev/nsgo/issues/661)).
+
 ## Application and windows
 
 What Windows and Linux still lack of what macOS opens for an app, and Android of the overlays it floats over other apps ([application and windows](architecture/application.md)): Windows and Linux open windows, panels and tray icons for `nsgo.Run(App)`, but Windows's panels activate the app, its drawn tray icons do not draw, and Linux's panels are placed by the compositor rather than under their tray icon. Avalonia's desktop lifetime is the reference for the model, and NSH 0.5.0, which opens windows, tray icons, global shortcuts and one instance on Windows and Linux too, for each platform's mechanism.

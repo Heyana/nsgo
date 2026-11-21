@@ -28,6 +28,7 @@ go tool nsgo dev -target android            # 通过 adb 在连接的设备或�
 
 `-h` 列出全部参数。
 
+
 ## 组件预览
 
 在组件所在的可导入 Go 包中定义一个或多个 `PreviewXxx` 函数。在文件顶部用构建标签标记这些预览。
@@ -53,6 +54,7 @@ go tool nsgo dev -target web -preview ./components
 
 保存文件会重新构建预览，保留已选的组件和显示设置。`nsgopreview` 标签将预览排除在普通发布构建之外。在使用同一标签的 `_test.go` 文件中用 `nsgotest.Start(t, PreviewEmpty)` 复用预览，然后用 `GOFLAGS=-tags=nsgopreview go tool nsgo test -target macos ./components` 运行测试以生成原生截图。
 
+使用 `-target ios_simulator` 首次安装主应用后，只改 Go 代码会替换已安装的可执行文件并重新启动应用。修改 `nsgo.yaml`、打包资源或应用图标会重新安装。
 ## 错误
 
 构建失败时，错误显示在运行中的应用上方，带有复制错误和重新构建的按钮；修好文件后，下一次保存就会替换它。组件渲染时 panic 也以同样方式显示。在应用里按 Command+R（非 Apple 平台为 Control+R）随时可以重新构建并重启应用，错误显示时也可以，除非应用自己绑定了这个键，无论是用 `cx.OnKey` 还是作为应用菜单里一个启用的菜单项；在浏览器里这个键照常刷新页面。应用自己的输出（比如 `log.Print`）出现在终端里工具输出的下方。

@@ -320,10 +320,17 @@ var tvosPlist = template.Must(template.New("tvos").Parse(plistHead + `	<key>Mini
 // booted one, booting one when none is, and streams its output here.
 func iosSession(sys *appleOS, opts devOptions) session {
 	cache := sys.target + "_simulator"
-	return session{
+	var installation iosSimulatorInstall
+	var inputs string
+	s := session{
 		build: func(ctx context.Context, p *project) error {
 			dir := p.cache("dev", cache)
-			os.RemoveAll(dir)
+			if sys == iOS && opts.clip == "" {
+				inputs = iosSimulatorInputs(p)
+			}
+			if err := os.RemoveAll(dir); err != nil {
+				return err
+			}
 			_, err := buildIOSApp(ctx, p, sys, dir, true)
 			return err
 		},
@@ -346,7 +353,11 @@ func iosSession(sys *appleOS, opts devOptions) session {
 					wait: wait,
 				}, nil
 			}
-			if err := run(ctx, "xcrun", "simctl", "install", udid, bundle); err != nil {
+			if sys == iOS {
+				if err := installation.update(ctx, p, udid, bundle, inputs); err != nil {
+					return app{}, err
+				}
+			} else if err := run(ctx, "xcrun", "simctl", "install", udid, bundle); err != nil {
 				return app{}, err
 			}
 			// The simulator shares this Mac's network.
@@ -364,6 +375,10 @@ func iosSession(sys *appleOS, opts devOptions) session {
 			}, nil
 		},
 	}
+	if sys == iOS && opts.clip == "" {
+		s.watch = iosSimulatorInputs
+	}
+	return s
 }
 
 // configureAppleDeviceDev sets p's dev server address (injected via -ldflags -X)

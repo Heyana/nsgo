@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/xml"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -58,5 +60,76 @@ func TestSimulatorProcessResults(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestIOSSimulatorDevEndToEnd launches both versions of a signed simulator
+// app and checks that a Go-only rebuild leaves the installed bundle in place.
+func TestIOSSimulatorDevEndToEnd(t *testing.T) {
+	if runtime.GOOS != "darwin" || os.Getenv("NSGO_SIMULATOR_E2E") != "1" {
+		t.Skip("set NSGO_SIMULATOR_E2E=1 to run tests in an iPhone simulator")
+	}
+	ctx := t.Context()
+	udid, err := bootSimulator(ctx, iOS, os.Getenv("NSGO_SIMULATOR_DEVICE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := load(filepath.Join("..", "..", "testdata", "simulatordev"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.ID += fmt.Sprintf(".test%d", os.Getpid())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		run(ctx, "xcrun", "simctl", "uninstall", udid, p.ID)
+	})
+	var installation iosSimulatorInstall
+	var plist os.FileInfo
+	inputs := iosSimulatorInputs(p)
+	for _, marker := range []string{"first", "second"} {
+		p.Build.LDFlags = []string{"-X main.marker=" + marker}
+		bundle, err := buildIOSApp(ctx, p, iOS, t.TempDir(), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := installation.update(ctx, p, udid, bundle, inputs); err != nil {
+			t.Fatal(err)
+		}
+		installed, err := output(ctx, "xcrun", "simctl", "get_app_container", udid, p.ID, "app")
+		if err != nil {
+			t.Fatal(err)
+		}
+		current, err := os.Stat(filepath.Join(installed, "Info.plist"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if plist != nil && !os.SameFile(plist, current) {
+			t.Fatal("a Go-only rebuild replaced the installed bundle")
+		}
+		plist = current
+		data, err := output(ctx, "xcrun", "simctl", "get_app_container", udid, p.ID, "data")
+		if err != nil {
+			t.Fatal(err)
+		}
+		markerPath := filepath.Join(data, "Documents", "marker")
+		if err := os.MkdirAll(filepath.Dir(markerPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := run(ctx, "env", "SIMCTL_CHILD_NSGO_TEST_MARKER="+markerPath, "xcrun", "simctl", "launch", udid, p.ID); err != nil {
+			t.Fatal(err)
+		}
+		for deadline := time.Now().Add(15 * time.Second); ; {
+			if got, _ := os.ReadFile(markerPath); string(got) == marker {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the simulator did not run the %s executable", marker)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if err := run(ctx, "xcrun", "simctl", "terminate", udid, p.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

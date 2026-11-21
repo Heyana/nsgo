@@ -28,6 +28,7 @@ go tool nsgo dev -target android            # on a connected device or emulator,
 
 `-h` lists every flag.
 
+
 ## Component previews
 
 Put one or more `PreviewXxx` functions beside the components in an importable Go package. Save them in a Go file guarded by the preview build tag.
@@ -53,6 +54,7 @@ Check the fixtures you want to display together and choose a locale, theme, ligh
 
 Saving a file rebuilds the preview and keeps your selection and display settings. The `nsgopreview` tag excludes the fixtures from ordinary release builds. Use the same fixture in a tagged `_test.go` file with `nsgotest.Start(t, PreviewEmpty)` and run it with `GOFLAGS=-tags=nsgopreview go tool nsgo test -target macos ./components` to take a native screenshot.
 
+After the main app's first install with `-target ios_simulator`, a Go-only rebuild replaces the installed executable and relaunches the app. Editing `nsgo.yaml`, packaged resources or the app icon triggers a reinstall.
 ## Errors
 
 A failed build shows over the running app, with buttons to copy the error and to build again; fix the file and the next save replaces it. A component that panics while it renders shows the same way. Command+R in the app, Control+R off Apple platforms, builds and starts it again at any time, over the error too, unless the app binds the key itself, with `cx.OnKey` or as an enabled item of its application menu; in the browser the key reloads the page as usual. The app's own output, such as `log.Print`, appears in the terminal under the tool's lines.
