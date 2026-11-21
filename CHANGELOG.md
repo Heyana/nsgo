@@ -156,6 +156,7 @@
 - Add starting-folder and destination-check options to `core.SaveFile` and keep macOS and Windows dialogs open for another choice when the app refuses a destination (#1086 by @houko).
 - Keep macOS target test windows at the requested `nsgotest.Size` and `Resize` content size instead of silently constraining them to the screen (#697 by @houko).
 - Add `nsgo publish -extra`, which signs a file's bytes into the package as `pkg.Contents.Extra` (#924 by @houko).
+- Upload signed iOS and macOS packages to App Store Connect for TestFlight with `nsgo publish ios` and `nsgo publish macos` (#1229 by @houko).
 - Add `core.Scroll.NoShrink`, and `noShrink` on TSX scroll views, to keep a scroll view at its requested size when its parent is short (#967 by @houko).
 - Add `LineWidth` to `ui.ProgressRing` and ring `ui.Spinner` to set the track and arc width (#960 by @houko).
 - Fail the `tsx.Plugin` calls still waiting on a promise when `Plugin.Close` closes the plugin, after its cleanups run (#893 by @houko).

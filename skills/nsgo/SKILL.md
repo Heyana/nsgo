@@ -127,6 +127,8 @@ Use `go tool nsgo dev -profile cpu` or `-profile heap` for a Go profile, and `-p
 
 `go tool nsgo build` packages every target `nsgo.yaml` lists into `dist/`, installers and store packages into `dist/releases`. Read [references/shipping.md](references/shipping.md) before editing `nsgo.yaml`, icons, signing, updates or embedding.
 
+Use `go tool nsgo publish ios` with a signed IPA or `go tool nsgo publish macos` with a signed PKG to upload to TestFlight. [App Store Connect setup](https://nsgo.dev/docs/building.md#app-store-connect)
+
 ## Reusable components
 
 A library of components follows NSGo's own split between behavior in an unstyled form and a look over it. Read [references/authoring.md](references/authoring.md) before writing components for other apps.

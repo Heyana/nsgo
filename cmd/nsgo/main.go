@@ -19,6 +19,7 @@
 //	nsgo publish itch -target web,macos_arm64 [dir]
 //	                                                      upload built packages to itch.io
 //	nsgo publish -cert C [-entry E] [-min-runtime V] [-out F] [dir | package]
+//	nsgo publish ios|macos <file>
 //	                                                      compile a TSX app into a signed package, or sign one again
 //	nsgo publish -store appstore|play|all [-listings DIR] [-dry-run] [-platform P] [-version V] [-track T] [dir]
 //	                                                      validate and upload store listings from YAML and Markdown files
@@ -198,6 +199,10 @@ func main() {
 			err = publishItch(ctx, args[1:])
 			break
 		}
+		if len(args) > 0 && (args[0] == "ios" || args[0] == "macos") {
+			err = publishApple(ctx, args[0], args[1:])
+			break
+		}
 		fs := flag.NewFlagSet("publish", flag.ExitOnError)
 		var o publishOptions
 		fs.StringVar(&o.cert, "cert", "", "the release key's certificate `file`; its secret key is NSGO_RELEASE_KEY's")
@@ -270,6 +275,7 @@ func usage() {
   nsgo publish itch -target web,macos_arm64 [dir]
   nsgo publish -cert C [-entry E] [-min-runtime V] [-extra F] [-out F] [dir | package]
   nsgo publish -store appstore|play|all [-listings DIR] [-dry-run] [-platform P] [-version V] [-track T] [dir]
+  nsgo publish ios|macos <file>
   nsgo verify  [-root P,... [-revocations F,...]] package
   nsgo revoke  -sequence N [-days N] [-keys IDs] [-packages H,...] -out F
 

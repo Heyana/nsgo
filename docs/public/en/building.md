@@ -191,7 +191,7 @@ sign:
 
 The runtime targets API 36 when `android.target_sdk` is unset. An Android App Bundle build fails below API 36, which [Google Play requires](https://support.google.com/googleplay/android-developer/answer/11926878) for new mobile apps and updates from August 31, 2026. A standalone APK build warns and continues.
 
-Without `sign.macos_profile` the Mac package is unsigned: it runs sandboxed on your Mac, which tests the sandbox, but uploads nowhere. A sandboxed app reaches only its own container, the network and the files the user picks; widgets cannot share timelines from the sandbox yet, so a store build refuses them. Upload the `.pkg` with Transporter, the `.msix` in Partner Center, the `.aab` in Play Console, and submit `flatpak/<id>.yml` to Flathub once the release holds the archives it names; `flatpak-builder` builds it locally too. Windows installs an MSIX outside the Store only when it is signed, which the Store does.
+Set `sign.macos_profile` to sign the Mac package for upload. The unsigned package still runs in the sandbox, which lets you test access to the app's container, the network and the files the user picks. Store builds currently refuse widgets because they cannot share timelines from the sandbox. Upload the `.msix` in Partner Center and the `.aab` in Play Console. Submit `flatpak/<id>.yml` to Flathub once the release holds the archives it names. `flatpak-builder` builds it locally too. Windows installs an MSIX outside the Store only when it is signed, which the Store does.
 
 On macOS and iOS, a scroll view's edge effects (`Scroll.EdgeEffects`), macOS backdrop blurs with no `IOS.BackdropMaterial`, and backdrop color filters (alone, or over a blur with no `IOS.BackdropMaterial`) draw through Core Animation's private `CABackdropLayer` and `CAFilter`, as AppKit's and UIKit's own materials and edge effects do, since no public API blurs by a radius, varies a blur across a view, or applies a backdrop color matrix. App Store review may reject apps that use private APIs: NSGo calls them only for scroll views with edge bars and those backdrop filters, but every macOS and iOS build contains their names.
 
@@ -249,6 +249,17 @@ Set an entry to `true` after completing its questionnaire. A matching `-channel 
 - For Apple's [encryption questionnaire](https://developer.apple.com/help/app-store-connect/manage-app-information/determine-and-upload-app-encryption-documentation), set `apple.info.ITSAppUsesNonExemptEncryption` to your app's answer as a YAML boolean. If Apple sends an approval code, put it in `apple.info.ITSEncryptionExportComplianceCode` as a string. You can leave the keys out and answer at upload. Apple store builds check the types of these keys and the structure of the bundle's privacy manifest.
 - Complete [Data safety](https://support.google.com/googleplay/android-developer/answer/10787469) in Play Console. Apps distributed exclusively on the internal testing track are exempt.
 - Complete the [Content Survey](https://partner.steamgames.com/doc/gettingstarted/contentsurvey) in Steamworks before submitting the game for review.
+## App Store Connect
+
+Create an app in App Store Connect and sign an iOS device IPA with an App Store distribution profile or a macOS store PKG with your team's installer identity. On a Mac with Xcode, set `NSGO_APP_STORE_KEY` to your App Store Connect team key's `.p8` file or its text, `NSGO_APP_STORE_KEY_ID` to its key ID, and `NSGO_APP_STORE_ISSUER` to its issuer ID; without them the notarization key (`NSGO_NOTARY_KEY`, `NSGO_NOTARY_KEY_ID`, `NSGO_NOTARY_ISSUER`) is used, as for store listings. Give that key access to the app and permission to upload builds.
+
+```sh
+go tool nsgo publish ios path/to/Hello.ipa
+go tool nsgo publish macos path/to/Hello.pkg
+```
+
+The tool checks the bundle's build number before uploading, then reports Apple's processing result for TestFlight. Increase `build_number` for the next upload. macOS build numbers increase across all app versions, while iOS can restart the sequence for a new version. Submit a processed build for App Review separately in App Store Connect. [Apple's distribution guide](https://developer.apple.com/documentation/xcode/preparing-your-app-for-distribution)
+
 ## Steam depots
 
 ```sh

@@ -202,6 +202,10 @@ func (c *appStoreClient) doJSON(ctx context.Context, method, path string, reqBod
 }
 
 func parseAppStoreError(method, path string, status int, raw []byte) error {
+	what := fmt.Sprintf("App Store Connect %s %s (HTTP %d)", method, path, status)
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		what = fmt.Sprintf("App Store Connect refused the API key for %s %s (HTTP %d), check the key ID, issuer and the key's access to the app", method, path, status)
+	}
 	var payload struct {
 		Errors []struct {
 			Status string `json:"status"`
@@ -220,10 +224,13 @@ func parseAppStoreError(method, path string, status int, raw []byte) error {
 			}
 		}
 		if len(parts) > 0 {
-			return fmt.Errorf("App Store Connect %s %s (HTTP %d): %s", method, path, status, strings.Join(parts, "; "))
+			return fmt.Errorf("%s: %s", what, strings.Join(parts, "; "))
 		}
 	}
-	return fmt.Errorf("App Store Connect %s %s failed with HTTP %d: %s", method, path, status, strings.TrimSpace(string(raw)))
+	if body := strings.TrimSpace(string(raw)); body != "" {
+		return fmt.Errorf("%s: %s", what, body)
+	}
+	return errors.New(what)
 }
 
 type ascResource struct {
