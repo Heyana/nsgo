@@ -19,23 +19,41 @@ func TestTitledKeyCommandsUseUIKit(t *testing.T) {
 		t.Skip("UIKit shortcut discovery is on iOS")
 	}
 	var locale func()
+	var hide, cover *core.Signal[bool]
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		count := core.NewSignal(cx, 0)
+		hide, cover = core.NewSignal(cx, false), core.NewSignal(cx, false)
 		cx.SetLocale("en")
 		locale = func() { cx.SetLocale("fr") }
-		cx.OnKeyWith("mod+1", core.KeyOptions{Title: func() string {
-			if cx.Env().Locale() == "fr" {
-				return "Ouvrir"
-			}
-			return "Open"
-		}, Group: func() string { return "Document" }}, func() { count.Update(func(n int) int { return n + 1 }) })
 		cx.OnKey("mod+2", func() { count.Update(func(n int) int { return n + 10 }) })
-		return core.Text{TestID: "shortcut-count", ContentFunc: func() string { return strconv.Itoa(count.Get()) }}
+		return core.View{Children: []core.Node{
+			core.Text{TestID: "shortcut-count", ContentFunc: func() string { return strconv.Itoa(count.Get()) }},
+			core.Func(func(cx *core.Scope) core.Node {
+				cx.OnKeyWith("mod+1", core.KeyOptions{Title: func() string {
+					if cx.Env().Locale() == "fr" {
+						return "Ouvrir"
+					}
+					return "Open"
+				}, Group: func() string { return "Document" }}, func() { count.Update(func(n int) int { return n + 1 }) })
+				return core.Text{Content: "Shortcut owner", StyleFunc: func() core.Style {
+					if hide.Get() {
+						return core.Style{Display: core.DisplayNone}
+					}
+					return core.Style{}
+				}}
+			}),
+			core.Show{When: cover.Get, Then: func(*core.Scope) core.Node { return core.Modal{} }},
+		}}
 	})
 
 	check := func(title string) {
 		t.Helper()
-		want := []nsgotest.KeyCommand{{Key: "mod+1", Title: title, Group: "Document"}}
+		var want []nsgotest.KeyCommand
+		var wantTitles []string
+		if title != "" {
+			want = []nsgotest.KeyCommand{{Key: "mod+1", Title: title, Group: "Document"}}
+			wantTitles = []string{title}
+		}
 		if got := app.KeyCommands(); !slices.Equal(got, want) {
 			t.Errorf("KeyCommands = %v, want %v", got, want)
 		}
@@ -50,8 +68,11 @@ func TestTitledKeyCommandsUseUIKit(t *testing.T) {
 				}
 			})
 			menus := runner.keyCommandMenus()
-			if len(menus) != 1 {
-				t.Errorf("UIKit has %d command groups, want one", len(menus))
+			if len(menus) != len(want) {
+				t.Errorf("UIKit has %d command groups, want %d", len(menus), len(want))
+				return
+			}
+			if len(menus) == 0 {
 				return
 			}
 			if group := apple.GoString(menus[0].Send(sel("title"))); group != "Document" {
@@ -65,8 +86,8 @@ func TestTitledKeyCommandsUseUIKit(t *testing.T) {
 				t.Errorf("UIKit group commands = %v, want [%s]", items, title)
 			}
 		})
-		if !slices.Equal(titles, []string{title}) {
-			t.Errorf("UIKit titles = %v, want [%s]", titles, title)
+		if !slices.Equal(titles, wantTitles) {
+			t.Errorf("UIKit titles = %v, want %v", titles, wantTitles)
 		}
 	}
 	check("Open")
@@ -82,6 +103,19 @@ func TestTitledKeyCommandsUseUIKit(t *testing.T) {
 	}
 	app.Post(locale)
 	check("Ouvrir")
+	app.Post(func() { hide.Set(true) })
+	check("")
+	app.Key("mod+1")
+	app.Post(func() { hide.Set(false) })
+	check("Ouvrir")
+	app.Post(func() { cover.Set(true) })
+	check("")
+	app.Key("mod+1")
+	app.Post(func() { cover.Set(false) })
+	check("Ouvrir")
+	if got := app.Find("id:shortcut-count").Text; got != "11" {
+		t.Fatalf("pressing a suspended shortcut left the count at %q, want 11", got)
+	}
 	onMainSync(func() {
 		action := sel("nsgoKeyCommand:")
 		apple.ForEach(runner.controller.Send(sel("keyCommands")), func(c objc.ID) {
