@@ -1,9 +1,13 @@
 package driver
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"fmt"
+	"maps"
 )
 
 // Update is what a platform's updater with no windows of its own found
@@ -695,6 +699,77 @@ func (r MenuRole) HoldsMenu() bool {
 	return r == MenuServices || r == MenuWindowMenu || r == MenuHelpMenu
 }
 
+// MenuIcon is an icon shown beside a native menu item on macOS, Windows
+// and Linux. Data holds encoded image bytes (PNG, JPEG, GIF, WebP or SVG),
+// as TrayConfig.Icon takes; Source holds any ImageSource (asset, file or
+// data URI, bytes or Pixels); SVG holds a parsed vector icon such as
+// lucide.Folder(). When more than one is set, SVG takes precedence over
+// Data, and Data over Source. Template draws a monochrome icon in the
+// menu's text color, adapting to light and dark appearance (and selection
+// on macOS); a monochrome SVG icon is treated as a template by default.
+type MenuIcon struct {
+	// Data is encoded image bytes (PNG, JPEG, GIF, WebP or SVG).
+	Data []byte
+	// Source is an ImageSource (asset, file or data URI, bytes or Pixels).
+	Source ImageSource
+	// SVG is a parsed vector icon, such as lucide.Folder().
+	SVG *SVG
+	// Template draws a monochrome icon in the menu's text color.
+	Template bool
+}
+
+// Empty reports whether m names no icon.
+func (m MenuIcon) Empty() bool {
+	return m.SVG == nil && len(m.Data) == 0 && m.Source.Empty()
+}
+
+// IsTemplate reports whether m should be tinted with the menu's text color:
+// Template is set, or SVG uses currentColor exclusively.
+func (m MenuIcon) IsTemplate() bool {
+	return m.Template || (m.SVG != nil && m.SVG.Monochrome())
+}
+
+// Equal reports whether m and o specify the same menu icon.
+func (m MenuIcon) Equal(o MenuIcon) bool {
+	if m.Template != o.Template || m.SVG != o.SVG || !bytes.Equal(m.Data, o.Data) {
+		return false
+	}
+	return cursorSourceEqual(m.Source, o.Source)
+}
+
+// Key returns a cache key identifying m's image and template flag, or "" when empty.
+func (m MenuIcon) Key() string {
+	switch {
+	case m.SVG != nil:
+		return fmt.Sprintf("svg:%p:t:%v", m.SVG, m.IsTemplate())
+	case len(m.Data) > 0:
+		return fmt.Sprintf("data:%x:t:%v", sha256.Sum256(m.Data), m.Template)
+	case !m.Source.Empty():
+		return fmt.Sprintf("src:%s:t:%v", m.Source.Key(), m.Template)
+	default:
+		return ""
+	}
+}
+
+// Clone returns a copy of m whose byte slices, pixel buffer and variant map
+// do not alias m's.
+func (m MenuIcon) Clone() MenuIcon {
+	out := m
+	if len(m.Data) > 0 {
+		out.Data = bytes.Clone(m.Data)
+	}
+	if len(m.Source.Data) > 0 {
+		out.Source.Data = bytes.Clone(m.Source.Data)
+	}
+	if m.Source.Pixels != nil {
+		out.Source.Pixels = CopyPixels(m.Source.Pixels)
+	}
+	if len(m.Source.Variants) > 0 {
+		out.Source.Variants = maps.Clone(m.Source.Variants)
+	}
+	return out
+}
+
 // MenuEntry is a MenuItem as an ItemMenu carries it: the item's handler
 // replaced by an ID the platform reports with EventMenu (0: none), its
 // shortcut normalized and its role's label filled in. A role item without
@@ -702,6 +777,7 @@ func (r MenuRole) HoldsMenu() bool {
 type MenuEntry struct {
 	ID        uint32
 	Label     string
+	Icon      MenuIcon
 	Shortcut  string
 	Role      MenuRole
 	Disabled  bool

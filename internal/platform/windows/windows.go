@@ -3066,6 +3066,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.stopPower()
 		w.releasePointer(false)
 		w.closeAudio()
+		w.freeMenuBitmaps()
 		w.closeCanvasImages()
 		w.removeTrays()
 		w.unregisterHotKeys()

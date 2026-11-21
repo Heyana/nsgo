@@ -192,10 +192,11 @@ type chrome struct {
 	savedStyle        uintptr
 	savedPlace        windowPlacement
 
-	menu    []driver.MenuEntry // nil: no menu bar, Windows' default
-	bar     uintptr
-	entries []menuRef          // the bar's commands; a command's id is its index + 1
-	keys    map[string]menuRef // the menu's shortcuts
+	menu        []driver.MenuEntry // nil: no menu bar, Windows' default
+	bar         uintptr
+	menuBitmaps []uintptr          // HBITMAPs attached to bar items, freed on rebuild or destroy
+	entries     []menuRef          // the bar's commands; a command's id is its index + 1
+	keys        map[string]menuRef // the menu's shortcuts
 	// menuBar says when the bar shows; with MenuBarAutoHide, revealed is
 	// set while Alt alone showed it, menuOpen while a key opened a menu,
 	// and altAlone while Alt is down with no other key.
@@ -966,13 +967,14 @@ func (w *window) showMenuBar() {
 	c := &w.chrome
 	c.entries = nil
 	var bar uintptr
+	var bitmaps []uintptr
 	shown := c.menuBar == driver.MenuBarShown || c.revealed || c.menuOpen
 	// A hidden root only ever shows as an app-modal alert's window (showAlertWindow), which must not offer the app's menus while the alert waits.
 	hiddenRoot := w.primary && w.opts.Hidden
 	if c.menu != nil && c.titleBar == driver.TitleBarDefault && !c.fullScreen && shown && !hiddenRoot && !w.transparent {
 		bar, _, _ = createMenu.Call()
 		if bar != 0 {
-			w.appendMenu(bar, c.menu)
+			w.appendMenuTo(bar, c.menu, &c.entries, &bitmaps)
 		}
 	}
 	if bar == 0 && c.bar == 0 {
@@ -982,7 +984,9 @@ func (w *window) showMenuBar() {
 	if c.bar != 0 {
 		destroyMenu.Call(c.bar)
 	}
+	freeBitmaps(c.menuBitmaps)
 	c.bar = bar
+	c.menuBitmaps = bitmaps
 	drawMenuBar.Call(w.hwnd)
 }
 
@@ -1035,15 +1039,10 @@ func (w *window) popupFlags() uintptr {
 	return tpmReturnCmd | tpmRightButton
 }
 
-// appendMenu appends entries to the menu bar's menu, numbering their
-// commands.
-func (w *window) appendMenu(menu uintptr, entries []driver.MenuEntry) {
-	w.appendMenuTo(menu, entries, &w.chrome.entries)
-}
-
-// appendMenuTo appends entries to menu, numbering their commands by their index in refs plus one, and returns how many items it appended. A separator goes between items only, so the roles Windows leaves out leave no separator at either end, and a submenu left with no items is left out too.
-func (w *window) appendMenuTo(menu uintptr, entries []driver.MenuEntry, refs *[]menuRef) int {
-	n, pos, separate := 0, uint32(0), false
+// appendMenuTo appends entries to menu, numbering their commands by their index in refs plus one, records any created HBITMAP handles in bitmaps, and returns how many items it appended. A separator goes between items only, so the roles Windows leaves out leave no separator at either end, and a submenu left with no items is left out too.
+func (w *window) appendMenuTo(menu uintptr, entries []driver.MenuEntry, refs *[]menuRef, bitmaps *[]uintptr) int {
+	n, separate := 0, false
+	var pos uint32
 	for i := range entries {
 		e := &entries[i]
 		switch {
@@ -1065,7 +1064,7 @@ func (w *window) appendMenuTo(menu uintptr, entries []driver.MenuEntry, refs *[]
 			if sub == 0 {
 				continue
 			}
-			if w.appendMenuTo(sub, e.Items, refs) == 0 {
+			if w.appendMenuTo(sub, e.Items, refs, bitmaps) == 0 {
 				destroyMenu.Call(sub)
 				continue
 			}
@@ -1089,6 +1088,14 @@ func (w *window) appendMenuTo(menu uintptr, entries []driver.MenuEntry, refs *[]
 			}
 			*refs = append(*refs, menuRef{e.ID, e.Role, e.NotInText})
 			insertMenuItem(menu, pos, fType, fState, uint32(len(*refs)), 0, label)
+		}
+		if !e.Icon.Empty() {
+			if bm := w.menuIconBitmap(e.Icon); bm != 0 {
+				attachMenuIcon(menu, pos, bm)
+				if bitmaps != nil {
+					*bitmaps = append(*bitmaps, bm)
+				}
+			}
 		}
 		pos++
 		n++

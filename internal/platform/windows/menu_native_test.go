@@ -293,11 +293,13 @@ func TestMenuLeavesOutMacRolesAndDrawsRadios(t *testing.T) {
 		speechAs(t, c.speech)
 		menu, _, _ := createPopupMenu.Call()
 		var refs []menuRef
-		(&window{}).appendMenuTo(menu, entries, &refs)
+		var bitmaps []uintptr
+		(&window{}).appendMenuTo(menu, entries, &refs, &bitmaps)
 		if got := strings.Join(items(menu), " "); got != c.want {
 			t.Errorf("with speech %v, the menu is %q, want %q", c.speech, got, c.want)
 		}
 		destroyMenu.Call(menu)
+		freeBitmaps(bitmaps)
 	}
 }
 

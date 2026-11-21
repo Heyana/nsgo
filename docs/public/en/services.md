@@ -78,6 +78,24 @@ if desktop.CanQuickLook(cx) {
 }
 ```
 
+## Native menu icons
+
+`desktop.MenuItem.Icon` shows an icon beside an item in application, Dock, tray and popup menus on macOS, Windows and Linux. A `desktop.MenuIcon` takes a parsed vector icon (`SVG`, such as `lucide.Folder()`), encoded image bytes (`Data`, PNG, JPEG, GIF, WebP or SVG) or a local/asset/pixel `core.ImageSource` (`Source`). Setting `Template` tints a monochrome image with the menu's text color, following light and dark appearance (and highlight state on macOS); monochrome `SVG` icons are treated as templates by default.
+
+```go
+desktop.SetApplicationMenu(cx, []desktop.MenuItem{{
+	Label: "File",
+	Items: []desktop.MenuItem{
+		{Label: "Open Folder…", Icon: desktop.MenuIcon{SVG: lucide.Folder()}, OnSelect: openFolder},
+		{Label: "Export", Icon: desktop.MenuIcon{Data: exportPNG, Template: true}, OnSelect: exportFile},
+	},
+}})
+```
+
+Icons load synchronously from local sources; remote URLs and invalid images leave the item without an icon. Menu labels, shortcuts and check/radio indicators keep their native behavior.
+
+In tests, `nsgotest.MenuItem.Icon` records each item's icon in `app.Menu`, `app.DockMenu` and `app.PopupMenu`.
+
 ## Photos and files
 
 `cx.PickImages` shows the system's photo picker and answers with `core.PickedFile`s, whose bytes, name, type and pixel size the app reads. `cx.TakePhoto` shows the camera where the platform has one; `cx.Env().CanTakePhoto` says whether it does. `cx.ScanCode` opens a camera preview and answers with the first code it reads, a QR code unless `ScanOptions.Kinds` asks for others, or nil when the user closes it; `cx.Env().CanScanCode` says whether the platform has a scanner, on macOS, iOS and Android devices with a camera, Windows machines with one, Linux desktops with the Camera portal and GStreamer `pipewiresrc`, and browsers with `getUserMedia` and `BarcodeDetector`. macOS presents a sheet when the requesting window is visible, Windows and Linux a modal over the window, and the web an overlay over the page. Put `NSCameraUsageDescription` in `apple.info` for macOS and iOS, and `CAMERA` in `android.permissions` for Android. Android, Windows and Linux read every kind but PDF417. Treat the code's text as untrusted input.

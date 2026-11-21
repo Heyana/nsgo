@@ -256,7 +256,13 @@ var (
 	gMenuAppendItem            func(uintptr, uintptr)
 	gMenuAppendSection         func(uintptr, *byte, uintptr)
 	gMenuItemNew               func(*byte, *byte) uintptr
+	gMenuItemNewSubmenu        func(*byte, uintptr) uintptr
+	gMenuItemSetIcon           func(uintptr, uintptr)
 	gMenuItemSetAttributeValue func(uintptr, *byte, uintptr)
+	gBytesIconNew              func(uintptr) uintptr
+	gBytesIconGetType          func() uintptr
+	gtkImageGetType            func() uintptr
+	gtkImageGetGicon           func(uintptr) uintptr
 	gSimpleActionNew           func(*byte, uintptr) uintptr
 	gSimpleActionNewStateful   func(name, parameterType *byte, state uintptr) uintptr
 	gSimpleActionSetEnabled    func(uintptr, int32)
@@ -643,7 +649,13 @@ func bind() {
 	purego.RegisterLibFunc(&gMenuAppendItem, gioLib, "g_menu_append_item")
 	purego.RegisterLibFunc(&gMenuAppendSection, gioLib, "g_menu_append_section")
 	purego.RegisterLibFunc(&gMenuItemNew, gioLib, "g_menu_item_new")
+	purego.RegisterLibFunc(&gMenuItemNewSubmenu, gioLib, "g_menu_item_new_submenu")
+	purego.RegisterLibFunc(&gMenuItemSetIcon, gioLib, "g_menu_item_set_icon")
 	purego.RegisterLibFunc(&gMenuItemSetAttributeValue, gioLib, "g_menu_item_set_attribute_value")
+	purego.RegisterLibFunc(&gBytesIconNew, gioLib, "g_bytes_icon_new")
+	purego.RegisterLibFunc(&gBytesIconGetType, gioLib, "g_bytes_icon_get_type")
+	purego.RegisterLibFunc(&gtkImageGetType, gtkLib, "gtk_image_get_type")
+	purego.RegisterLibFunc(&gtkImageGetGicon, gtkLib, "gtk_image_get_gicon")
 	purego.RegisterLibFunc(&gSimpleActionNew, gioLib, "g_simple_action_new")
 	purego.RegisterLibFunc(&gSimpleActionNewStateful, gioLib, "g_simple_action_new_stateful")
 	purego.RegisterLibFunc(&gSimpleActionSetEnabled, gioLib, "g_simple_action_set_enabled")

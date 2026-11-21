@@ -78,6 +78,24 @@ if desktop.CanQuickLook(cx) {
 }
 ```
 
+## 原生菜单图标
+
+`desktop.MenuItem.Icon` 可以在 macOS、Windows 和 Linux 的应用菜单、程序坞菜单、托盘菜单和右键弹出菜单的菜单项旁显示图标。`desktop.MenuIcon` 支持解析后的矢量图标（`SVG`，例如 `lucide.Folder()`）、已编码的图片字节（`Data`，PNG、JPEG、GIF、WebP 或 SVG）或本地、资源和像素 `core.ImageSource`（`Source`）。设置 `Template` 后，单色图标会随菜单文字颜色自动着色以适配浅色与深色外观（macOS 下同时适配高亮状态）；仅使用 `currentColor` 的 `SVG` 图标默认按模板着色。
+
+```go
+desktop.SetApplicationMenu(cx, []desktop.MenuItem{{
+	Label: "文件",
+	Items: []desktop.MenuItem{
+		{Label: "打开文件夹…", Icon: desktop.MenuIcon{SVG: lucide.Folder()}, OnSelect: openFolder},
+		{Label: "导出", Icon: desktop.MenuIcon{Data: exportPNG, Template: true}, OnSelect: exportFile},
+	},
+}})
+```
+
+图标从本地来源同步加载；远程 URL 或无效图片会使菜单项不显示图标。菜单文字、快捷键以及复选和单选标记保留原生行为。
+
+在测试中，`nsgotest.MenuItem.Icon` 会在 `app.Menu`、`app.DockMenu` 和 `app.PopupMenu` 中记录每个菜单项的图标。
+
 ## 照片与文件
 
 `cx.PickImages` 显示系统照片选择器，返回 `core.PickedFile`，其中包含字节、名称、类型和像素尺寸。`cx.TakePhoto` 在平台有相机时打开相机；`cx.Env().CanTakePhoto` 说明是否有。`cx.ScanCode` 打开相机预览，返回读到的第一个码，默认只读二维码，`ScanOptions.Kinds` 可以指定其他种类；用户关闭时返回 nil。`cx.Env().CanScanCode` 说明平台是否能扫码，支持带相机的 macOS、iOS、Android 和 Windows 设备、具备 Camera 门户和 GStreamer `pipewiresrc` 的 Linux 桌面，以及支持 `getUserMedia` 和 `BarcodeDetector` 的浏览器。macOS 在发起请求的可见窗口上展示附属面板，Windows 和 Linux 在窗口上展示模态预览，Web 在页面上展示浮层。macOS 和 iOS 需要在 `apple.info` 中设置 `NSCameraUsageDescription`，Android 需要在 `android.permissions` 中加入 `CAMERA`。Android、Windows 和 Linux 除 PDF417 外都能识别。码里的文本是不可信的输入。

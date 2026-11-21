@@ -5,6 +5,7 @@ package linux
 import (
 	"slices"
 	"strings"
+	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -56,7 +57,7 @@ func (m *dbusMenu) node(id int32) (entry *driver.MenuEntry, children []int32, ok
 }
 
 // itemProperties are the dbusmenu properties the menu's entries have.
-var itemProperties = []string{"type", "label", "enabled", "visible", "children-display", "toggle-type", "toggle-state"}
+var itemProperties = []string{"type", "label", "enabled", "visible", "children-display", "toggle-type", "toggle-state", "icon-data"}
 
 // itemProperty is an entry's property, 0 where it has the default; entry is nil for the root.
 func itemProperty(entry *driver.MenuEntry, parent bool, name string) uintptr {
@@ -92,6 +93,15 @@ func itemProperty(entry *driver.MenuEntry, parent bool, name string) uintptr {
 	case "toggle-state":
 		if entry.Checkable {
 			return gVariantNewInt32(boolInt(entry.Checked))
+		}
+	case "icon-data":
+		if !entry.Separator && !entry.Icon.Empty() {
+			if pngData := menuIconPNG(entry.Icon, 32, false); len(pngData) > 0 {
+				byteType := gVariantTypeNew(cstr("y"))
+				v := gVariantNewFixedArray(byteType, unsafe.Pointer(&pngData[0]), uintptr(len(pngData)), 1)
+				gVariantTypeFree(byteType)
+				return v
+			}
 		}
 	}
 	return 0

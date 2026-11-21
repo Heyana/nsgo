@@ -162,6 +162,27 @@ func (s *SVG) drawAt(d *Drawing, x, y, w, h float32, color Color) {
 	d.Ops = append(d.Ops, DrawOp{Kind: DrawRestore})
 }
 
+// Monochrome reports whether every painted operation in s uses currentColor
+// (Color 0) with no gradients, as icon packs such as lucide do.
+func (s *SVG) Monochrome() bool {
+	if s == nil {
+		return false
+	}
+	hasPaint := false
+	for _, op := range s.ops {
+		switch op.Kind {
+		case DrawFillColor, DrawStrokeColor:
+			hasPaint = true
+			if op.Color != 0 {
+				return false
+			}
+		case DrawFillGradient, DrawStrokeGradient:
+			return false
+		}
+	}
+	return hasPaint
+}
+
 // svgNode is an element or character-data node of the document.
 type svgNode struct {
 	// name is the element's local name, empty for elements outside the

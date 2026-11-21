@@ -6,9 +6,10 @@ import (
 )
 
 // MenuItem records an application, Dock or context menu item as the
-// test sees it, including the resolved label and shortcut.
+// test sees it, including the resolved label, icon and shortcut.
 type MenuItem struct {
 	Label     string
+	Icon      core.MenuIcon
 	Shortcut  string
 	Role      core.MenuRole
 	Disabled  bool
@@ -29,7 +30,7 @@ func menuItems(entries []driver.MenuEntry) []MenuItem {
 	items := make([]MenuItem, len(entries))
 	for i, e := range entries {
 		items[i] = MenuItem{
-			Label: e.Label, Shortcut: e.Shortcut, Role: e.Role, Disabled: e.Disabled,
+			Label: e.Label, Icon: e.Icon.Clone(), Shortcut: e.Shortcut, Role: e.Role, Disabled: e.Disabled,
 			Checkable: e.Checkable, Checked: e.Checked, Radio: e.Radio, Separator: e.Separator,
 			NotInText: e.NotInText, HasHandler: e.ID != 0, Items: menuItems(e.Items),
 		}

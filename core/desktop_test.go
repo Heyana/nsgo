@@ -536,3 +536,47 @@ func TestCursorPointAnswersOnceAndReportsUnsupported(t *testing.T) {
 		}
 	}
 }
+
+func TestMenuIconsCarriedAndCloned(t *testing.T) {
+	svg := MustParseSVG([]byte(`<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="currentColor"/></svg>`))
+	raw := []byte{0x89, 'P', 'N', 'G', 1, 2, 3}
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
+		cx.SetApplicationMenu([]MenuItem{
+			{Label: "File", Items: []MenuItem{
+				{Label: "New", Icon: MenuIcon{Data: raw, Template: true}},
+				{Label: "Folder", Icon: MenuIcon{SVG: svg}},
+				{Label: "Asset", Icon: MenuIcon{Source: ImageSource{URI: "asset:/save.png"}}},
+			}},
+		})
+		cx.SetDockMenu([]MenuItem{
+			{Label: "Quick", Icon: MenuIcon{SVG: svg}},
+		})
+		return View{}
+	})
+	raw[0] = 0x00 // mutate after SetApplicationMenu
+	var appMenu, dockMenu []driver.MenuEntry
+	for _, it := range h.commit().Items {
+		switch it.Kind {
+		case driver.ItemMenu:
+			appMenu = it.Menu
+		case driver.ItemDockMenu:
+			dockMenu = it.Menu
+		}
+	}
+	if len(appMenu) != 1 || len(appMenu[0].Items) != 3 {
+		t.Fatalf("appMenu = %+v", appMenu)
+	}
+	items := appMenu[0].Items
+	if len(items[0].Icon.Data) != 7 || items[0].Icon.Data[0] != 0x89 || !items[0].Icon.Template {
+		t.Fatalf("New icon = %+v, want cloned PNG bytes with Template", items[0].Icon)
+	}
+	if items[1].Icon.SVG != svg || !items[1].Icon.IsTemplate() {
+		t.Fatalf("Folder icon = %+v, want SVG", items[1].Icon)
+	}
+	if items[2].Icon.Source.URI != "asset:/save.png" {
+		t.Fatalf("Asset icon = %+v, want asset:/save.png", items[2].Icon)
+	}
+	if len(dockMenu) != 1 || dockMenu[0].Icon.SVG != svg {
+		t.Fatalf("dockMenu = %+v", dockMenu)
+	}
+}

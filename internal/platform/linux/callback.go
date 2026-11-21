@@ -90,6 +90,7 @@ var (
 	cbDisplaysChanged       uintptr
 	cbCurrentDisplayChanged uintptr
 	cbMenuActivate          uintptr
+	cbMenuIconVisible       uintptr
 	cbTick                  uintptr
 	cbTickWatch             uintptr
 	cbYield                 uintptr
@@ -113,6 +114,7 @@ var (
 
 func init() {
 	cbCloseRequest = newCallback(closeRequestCallback)
+	cbMenuIconVisible = newCallback(menuIconVisibleCallback)
 	cbApply = newCallback(applyCallback)
 	cbRun = newCallback(runCallback)
 	cbWindowState = newCallback(windowStateCallback)

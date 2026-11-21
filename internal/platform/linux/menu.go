@@ -139,6 +139,7 @@ func (w *window) showMenuBar() {
 	if bar == 0 {
 		return
 	}
+	showMenuIcons(bar)
 	gtkWidgetSetHalign(bar, 1) // start
 	gtkBoxPrepend(w.box, bar)
 	gtkWidgetSetVisible(bar, 1)
@@ -156,7 +157,7 @@ func (w *window) buildMenu(entries []driver.MenuEntry) uintptr {
 		if len(e.Items) > 0 {
 			sub := w.buildSubmenu(e.Items)
 			if sub != 0 {
-				gMenuAppendSubmenu(menu, cstr(menutext.Label(w.language, e, "")), sub)
+				w.appendSubmenuItem(menu, menutext.Label(w.language, e, ""), e.Icon, sub)
 				gObjectUnref(sub)
 			}
 			continue
@@ -195,7 +196,7 @@ func (w *window) buildSubmenu(entries []driver.MenuEntry) uintptr {
 		if len(e.Items) > 0 {
 			child := w.buildSubmenu(e.Items)
 			if child != 0 {
-				gMenuAppendSubmenu(section, cstr(menutext.Label(w.language, e, "")), child)
+				w.appendSubmenuItem(section, menutext.Label(w.language, e, ""), e.Icon, child)
 				gObjectUnref(child)
 			}
 			continue
@@ -225,6 +226,22 @@ func shown(e *driver.MenuEntry) bool {
 	return false
 }
 
+// appendSubmenuItem appends a submenu item with an optional icon to menu.
+func (w *window) appendSubmenuItem(menu uintptr, label string, icon driver.MenuIcon, sub uintptr) {
+	if icon.Empty() {
+		gMenuAppendSubmenu(menu, cstr(label), sub)
+		return
+	}
+	item := gMenuItemNewSubmenu(cstr(label), sub)
+	if item == 0 {
+		gMenuAppendSubmenu(menu, cstr(label), sub)
+		return
+	}
+	w.attachMenuIcon(item, icon)
+	gMenuAppendItem(menu, item)
+	gObjectUnref(item)
+}
+
 // buildItem returns a GMenuItem of e with an action when it has one.
 func (w *window) buildItem(e *driver.MenuEntry) uintptr {
 	label := menutext.Label(w.language, e, "")
@@ -234,18 +251,21 @@ func (w *window) buildItem(e *driver.MenuEntry) uintptr {
 	} else if e.Role != driver.MenuRoleNone {
 		action = w.addAction(0, e.Role, e.Disabled, false, false, false)
 	}
+	var item uintptr
 	if action == "" {
-		return gMenuItemNew(cstr(label), nil)
+		item = gMenuItemNew(cstr(label), nil)
+	} else {
+		prefix := "win."
+		if w.building.prefix != "" {
+			prefix = w.building.prefix
+		}
+		item = gMenuItemNew(cstr(label), cstr(prefix+action))
+		if item != 0 && e.Radio && e.ID != 0 {
+			// A target its action's state may equal makes GTK draw a radio, checked while it does.
+			gMenuItemSetAttributeValue(item, cstr("target"), gVariantNewString(cstr(radioTarget)))
+		}
 	}
-	prefix := "win."
-	if w.building.prefix != "" {
-		prefix = w.building.prefix
-	}
-	item := gMenuItemNew(cstr(label), cstr(prefix+action))
-	if item != 0 && e.Radio && e.ID != 0 {
-		// A target its action's state may equal makes GTK draw a radio, checked while it does.
-		gMenuItemSetAttributeValue(item, cstr("target"), gVariantNewString(cstr(radioTarget)))
-	}
+	w.attachMenuIcon(item, e.Icon)
 	return item
 }
 

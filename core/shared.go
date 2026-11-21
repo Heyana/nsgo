@@ -229,6 +229,9 @@ type (
 	// LiveRegion says how screen readers announce changes of a view's label and
 	// text (accessibilityLiveRegion).
 	LiveRegion = driver.LiveRegion
+	// MenuIcon is core's part of desktop.MenuIcon, an icon shown beside a native
+	// menu item on macOS, Windows and Linux.
+	MenuIcon = driver.MenuIcon
 	// MenuRole is a standard menu item the platform carries out, labelling it
 	// and giving it its usual shortcut when the item has none of its own.
 	MenuRole = driver.MenuRole

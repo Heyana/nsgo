@@ -540,7 +540,7 @@ func (s *surface) setMenu(entries []driver.MenuEntry) {
 			// A top-level action gets a menu of its own.
 			items = []driver.MenuEntry{e}
 		}
-		holder := s.holder(e.Role, menutext.Label(s.language, &e, s.name()), e.Disabled, items)
+		holder := s.holder(e.Role, menutext.Label(s.language, &e, s.name()), e.Disabled, e.Icon, items)
 		bar.Send(sel("addItem:"), holder)
 		holder.Send(selRelease)
 	}
@@ -643,6 +643,7 @@ func (s *surface) dockSubmenu(title string, items []driver.MenuEntry) objc.ID {
 			}
 			it.Send(sel("setState:"), state)
 		}
+		applyMenuIcon(it, e.Icon)
 		if len(e.Items) > 0 {
 			sub := s.dockSubmenu(e.Label, e.Items)
 			it.Send(sel("setSubmenu:"), sub)
@@ -742,6 +743,14 @@ func syncMenuItem(it, next objc.ID) {
 			it.Send(sel(p[1]), v)
 		}
 	}
+	if v := next.Send(sel("image")); it.Send(sel("image")) != v {
+		it.Send(sel("setImage:"), v)
+	}
+	if objc.Send[bool](it, sel("respondsToSelector:"), sel("setPreferredImageVisibility:")) {
+		if v := objc.Send[int](next, sel("preferredImageVisibility")); objc.Send[int](it, sel("preferredImageVisibility")) != v {
+			it.Send(sel("setPreferredImageVisibility:"), v)
+		}
+	}
 	if sub := next.Send(sel("submenu")); sub != 0 {
 		syncMenu(it.Send(sel("submenu")), sub)
 	}
@@ -765,7 +774,7 @@ func (s *surface) relabelMenus() {
 var selMenuDisabled = sel("nsgoMenuItemDisabled:")
 
 // holder returns a new item holding a submenu of items.
-func (s *surface) holder(role driver.MenuRole, label string, disabled bool, items []driver.MenuEntry) objc.ID {
+func (s *surface) holder(role driver.MenuRole, label string, disabled bool, icon driver.MenuIcon, items []driver.MenuEntry) objc.ID {
 	var action objc.SEL
 	if disabled {
 		action = selMenuDisabled
@@ -777,6 +786,7 @@ func (s *surface) holder(role driver.MenuRole, label string, disabled bool, item
 		// The tag marks the role, which registerMenus finds in the bar shown; a holder's tag is otherwise unused.
 		it.Send(sel("setTag:"), -int(role))
 	}
+	applyMenuIcon(it, icon)
 	sub := s.submenu(label, items)
 	it.Send(sel("setSubmenu:"), sub)
 	sub.Send(selRelease)
@@ -854,7 +864,7 @@ func (s *surface) submenu(title string, items []driver.MenuEntry) objc.ID {
 			}
 			continue
 		case len(e.Items) > 0 || e.Role.HoldsMenu():
-			holder := s.holder(e.Role, menutext.Label(s.language, &e, s.name()), e.Disabled, e.Items)
+			holder := s.holder(e.Role, menutext.Label(s.language, &e, s.name()), e.Disabled, e.Icon, e.Items)
 			m.Send(sel("addItem:"), holder)
 			holder.Send(selRelease)
 		default:
@@ -955,6 +965,7 @@ func (s *surface) item(e driver.MenuEntry) objc.ID {
 		}
 		it.Send(sel("setState:"), state)
 	}
+	applyMenuIcon(it, e.Icon)
 	return it
 }
 

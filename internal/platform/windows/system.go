@@ -1136,8 +1136,9 @@ func (w *window) showPopup() {
 	}
 	menu, _, _ := createPopupMenu.Call()
 	var refs []menuRef
+	var bitmaps []uintptr
 	if menu != 0 {
-		w.appendMenuTo(menu, p.entries, &refs)
+		w.appendMenuTo(menu, p.entries, &refs, &bitmaps)
 		at := point{w.px(p.at.X), w.px(p.at.Y)}
 		owner := w.hwnd
 		if !p.screen {
@@ -1159,6 +1160,7 @@ func (w *window) showPopup() {
 		}
 		w.popupTracking, w.popupShown = false, nil
 		destroyMenu.Call(menu)
+		freeBitmaps(bitmaps)
 		if c := w.popupChoice; c != nil {
 			// A test chose, which ended the tracking.
 			w.popupChoice, chosen = nil, 0
@@ -1195,9 +1197,13 @@ func (w *window) shownDark() bool {
 // setAppearance shows the title bar, the caption buttons and menus in a,
 // or as the system's appearance is.
 func (w *window) setAppearance(a driver.Appearance) {
+	dark := w.shownDark()
 	w.appearance = a
 	w.darkTitleBar(w.shownDark())
 	darkMenus(a)
+	if w.shownDark() != dark && w.chrome.bar != 0 && menuHasTemplateIcon(w.chrome.menu) {
+		w.showMenuBar()
+	}
 	w.redrawAll()
 }
 

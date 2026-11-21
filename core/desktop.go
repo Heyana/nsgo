@@ -172,6 +172,9 @@ func (cx *Scope) SetSkipTaskbar(on bool) {
 // desktop.MenuItem.
 type MenuItem struct {
 	Label string
+	// Icon is an optional icon shown beside the item in native menus on
+	// macOS, Windows and Linux.
+	Icon MenuIcon
 	// Shortcut is in OnKey's form, such as "mod+n".
 	Shortcut  string
 	Role      MenuRole
@@ -407,7 +410,11 @@ func (t *Tree) popupClosed(id uint32, user bool) {
 func (t *Tree) menuEntries(items []MenuItem, owner *Scope, actions map[uint32]menuAction) []driver.MenuEntry {
 	out := make([]driver.MenuEntry, 0, len(items))
 	for _, it := range items {
-		e := driver.MenuEntry{Label: it.Label, Shortcut: it.Shortcut, Role: it.Role, Disabled: it.Disabled,
+		icon := it.Icon.Clone()
+		if !icon.Source.Empty() {
+			t.refuseImageOwner(owner, &icon.Source)
+		}
+		e := driver.MenuEntry{Label: it.Label, Icon: icon, Shortcut: it.Shortcut, Role: it.Role, Disabled: it.Disabled,
 			Checkable: it.Checkable || it.Checked || it.Radio, Checked: it.Checked, Radio: it.Radio, Separator: it.Separator}
 		if e.Label == "" {
 			e.Label = it.Role.Label()

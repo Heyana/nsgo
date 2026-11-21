@@ -151,3 +151,46 @@ func TestIsAvailableSimulated(t *testing.T) {
 		}
 	}
 }
+
+func TestMenuIconsRecordedInMenus(t *testing.T) {
+	svg := core.MustParseSVG([]byte(`<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="currentColor"/></svg>`))
+	pngBytes := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
+	var cx *core.Scope
+	app := nsgotest.Start(t, func(c *core.Scope) core.Node {
+		cx = c
+		desktop.SetApplicationMenu(c, []desktop.MenuItem{{
+			Label: "File",
+			Items: []desktop.MenuItem{
+				{Label: "New", Icon: desktop.MenuIcon{Data: pngBytes, Template: true}},
+				{Label: "Open", Icon: desktop.MenuIcon{SVG: svg}},
+			},
+		}})
+		desktop.SetDockMenu(c, []desktop.MenuItem{
+			{Label: "Recent", Icon: desktop.MenuIcon{Source: core.ImageSource{URI: "asset:/recent.png"}}},
+		})
+		return core.View{}
+	}, nsgotest.Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
+
+	if len(app.Menu) != 1 || len(app.Menu[0].Items) != 2 {
+		t.Fatalf("app.Menu = %+v", app.Menu)
+	}
+	if !app.Menu[0].Items[0].Icon.Equal(desktop.MenuIcon{Data: pngBytes, Template: true}) {
+		t.Errorf("New icon = %+v", app.Menu[0].Items[0].Icon)
+	}
+	if app.Menu[0].Items[1].Icon.SVG != svg {
+		t.Errorf("Open icon = %+v", app.Menu[0].Items[1].Icon)
+	}
+	if len(app.DockMenu) != 1 || app.DockMenu[0].Icon.Source.URI != "asset:/recent.png" {
+		t.Errorf("DockMenu = %+v", app.DockMenu)
+	}
+
+	cx.Post(func() {
+		desktop.PopupMenu(cx, []desktop.MenuItem{
+			{Label: "Copy", Icon: desktop.MenuIcon{SVG: svg}},
+		}, core.Point{X: 10, Y: 20}, nil)
+	})
+	app.Settle()
+	if len(app.PopupMenu) != 1 || app.PopupMenu[0].Icon.SVG != svg {
+		t.Errorf("PopupMenu = %+v", app.PopupMenu)
+	}
+}

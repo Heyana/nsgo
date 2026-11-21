@@ -605,6 +605,7 @@ func (w *window) showPopupMenu(entries []driver.MenuEntry, p driver.Point, id ui
 		popover = gtkPopoverMenuNewFromModel(menu)
 	}
 	gObjectUnref(menu)
+	showMenuIcons(popover)
 	if w.dir != 0 {
 		directTree(popover, w.dir)
 	}
@@ -664,6 +665,7 @@ func (w *window) setAppearance(a driver.Appearance) {
 	if settings == 0 || a == w.appearance {
 		return
 	}
+	dark := w.shownDark()
 	w.appearance = a
 	name := "gtk-application-prefer-dark-theme"
 	if colorScheme() {
@@ -681,6 +683,9 @@ func (w *window) setAppearance(a driver.Appearance) {
 		gObjectSetBool(settings, cstr(name), scheme, 0)
 	default:
 		gObjectSetBool(settings, cstr(name), boolInt(a == driver.AppearanceDark), 0)
+	}
+	if w.shownDark() != dark && w.menuBar != 0 && menuHasTemplateIcon(w.chrome.menu) {
+		w.showMenuBar()
 	}
 }
 
