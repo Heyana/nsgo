@@ -38,9 +38,9 @@ func TestWebAudioMutePersistsAcrossNavigation(t *testing.T) {
 	purego.RegisterLibFunc(&isMuted, purego.RTLD_DEFAULT, "webkit_web_view_get_is_muted")
 	loads := make(chan string, 2)
 	app := func(*core.Scope) core.Node {
-		return core.WebView{Source: core.WebHTML("<title>start</title>", ""), Muted: true, Incognito: true,
-			Style:  core.Style{Width: core.Pt(200), Height: core.Pt(100)},
-			OnLoad: func(n core.WebNavigation) { loads <- n.Title }}
+		return core.WebView{Source: webMutePage("start"), Muted: true, Incognito: true,
+			Style:     core.Style{Width: core.Pt(200), Height: core.Pt(100)},
+			OnMessage: func(page string) { loads <- page }}
 	}
 	w := startTestWindow(t, app, Options{Title: "Web audio mute", Width: 200, Height: 100})
 	waitLoad := func(title string) {
@@ -83,8 +83,14 @@ func TestWebAudioMutePersistsAcrossNavigation(t *testing.T) {
 		}
 		widget = native
 	}
-	check(true, func(c *driver.WebConfig) { c.Source = core.WebHTML("<title>next</title>", "") })
+	check(true, func(c *driver.WebConfig) { c.Source = webMutePage("next") })
 	waitLoad("next")
 	check(true, nil)
 	check(false, func(c *driver.WebConfig) { c.Muted = false })
+}
+
+// The page's reply identifies the new document even if its title arrives
+// after the platform's load notification.
+func webMutePage(name string) core.WebSource {
+	return core.WebHTML("<script>window.nsgo.postMessage('"+name+"')</script>", "")
 }

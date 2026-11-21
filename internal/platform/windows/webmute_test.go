@@ -21,9 +21,9 @@ func TestWebAudioMutePersistsAcrossNavigation(t *testing.T) {
 	}
 	loads := make(chan string, 2)
 	app := func(*core.Scope) core.Node {
-		return core.WebView{Source: core.WebHTML("<title>start</title>", ""), Muted: true, Incognito: true,
-			Style:  core.Style{Width: core.Pt(200), Height: core.Pt(100)},
-			OnLoad: func(n core.WebNavigation) { loads <- n.Title }}
+		return core.WebView{Source: webMutePage("start"), Muted: true, Incognito: true,
+			Style:     core.Style{Width: core.Pt(200), Height: core.Pt(100)},
+			OnMessage: func(page string) { loads <- page }}
 	}
 	const title = "Web audio mute"
 	done := make(chan struct{})
@@ -93,8 +93,14 @@ func TestWebAudioMutePersistsAcrossNavigation(t *testing.T) {
 		}
 		widget = native
 	}
-	check(true, func(c *driver.WebConfig) { c.Source = core.WebHTML("<title>next</title>", "") })
+	check(true, func(c *driver.WebConfig) { c.Source = webMutePage("next") })
 	waitLoad("next")
 	check(true, nil)
 	check(false, func(c *driver.WebConfig) { c.Muted = false })
+}
+
+// The page's reply identifies the new document even if its title arrives
+// after the platform's load notification.
+func webMutePage(name string) core.WebSource {
+	return core.WebHTML("<script>window.nsgo.postMessage('"+name+"')</script>", "")
 }
