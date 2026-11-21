@@ -1,6 +1,6 @@
 name: Repository quality
 
-# Checks that build no code, so they run on every pull request even before the first release: actionlint over the workflows and the shell scripts in them, a review of the dependencies a pull request adds, and that a pull request leaves the prebuilt Android runtime to android-runtime.yml.
+# Checks workflows, dependencies, backend duplication and the Android runtime artifacts.
 
 on:
   pull_request:
@@ -39,6 +39,24 @@ jobs:
           # Skip style suggestions, but fail on shell correctness warnings and errors.
           SHELLCHECK_OPTS: --severity=warning
         run: actionlint -color
+
+  platform-duplicates:
+    name: Shared backend code
+    if: github.event_name == 'pull_request'
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Find new duplicate backend functions
+        env:
+          NSGO_PLATFORM_DUPLICATES_BASE: HEAD^1
+        run: go tool nsgo test -run '^TestPlatformFunctionDuplicates$' ./internal/moduletest
 
   dependencies:
     name: Dependency review

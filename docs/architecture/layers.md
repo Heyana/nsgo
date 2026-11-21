@@ -186,7 +186,7 @@ Each `internal/platform/<target>` maps the same protocol onto its system ([platf
 | `android` | An Android view per node, in the Java process the Go executable talks to over pipes |
 | `watchos` | A SwiftUI view per node in the host linked into the executable, its look a Canvas Go draws with Core Graphics |
 
-The other packages under `internal/platform` hold what two or more backends share, such as `apple` for macOS and iOS or `hover` and `textselect` for Windows and Linux. Move code there once a second backend needs it, and add it to `platformShared` in `layering_test.go`.
+The other packages under `internal/platform` hold what two or more backends share, such as `apple` for macOS and iOS or `hover` and `textselect` for Windows and Linux. Move code there once a second backend needs it, and add it to `platformShared` in `layering_test.go`. The pull request check flags new copies of multi-statement functions across backends. When two copies must remain, record the reason in a `// nsgo:allow-duplicate` comment immediately above the function.
 
 Apple backends, `privacy` and `microphone` create Objective-C blocks through `objcblock`. It pins each Go template while `_Block_copy` makes native storage, checks allocation, and keeps a callback until the block's last native release. Descriptors in native memory and one invoke trampoline per signature live for the process. This bridge avoids [purego v0.11.3's temporary stack address converted to `uintptr`](https://github.com/ebitengine/purego/blob/v0.11.3/objc/objc_block_darwin.go#L239-L246) before the copy, which Go cannot update when its stack moves; NSH's `RcBlock` has no Go stack to cross.
 
