@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"math"
 	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -27,6 +28,9 @@ type canvasCache struct {
 	drawing *driver.Drawing
 	split   driver.CanvasSplit // At 0 when the drawing is one list
 	atlas   bool               // a recording can contain aliased sprites
+	// mixes reports whether the drawing uses DrawClear or non-source-over
+	// composites, which rasterize into an offscreen bitmap scaled with world.
+	mixes bool
 	// head is the static part's list, or the whole drawing's; tail the
 	// rest's, nil until played for the arguments' current values.
 	head, tail *comObject
@@ -37,7 +41,7 @@ type canvasCache struct {
 // setDrawing takes v's new drawing.
 func (c *canvasCache) setDrawing(d *driver.Drawing) {
 	c.release()
-	c.drawing, c.split, c.atlas = d, driver.CanvasSplit{}, false
+	c.drawing, c.split, c.atlas, c.mixes = d, driver.CanvasSplit{}, false, false
 	if d == nil {
 		return
 	}
@@ -47,6 +51,7 @@ func (c *canvasCache) setDrawing(d *driver.Drawing) {
 			break
 		}
 	}
+	c.mixes = mixesAfter(d.Ops, 0)
 	if s := driver.SplitCanvas(d); s.Static(d) && !mixesAfter(d.Ops, s.At) {
 		c.split = s
 	}
@@ -78,6 +83,25 @@ func (c *canvasCache) argsChanged() {
 
 func (c *canvasCache) release() { releaseAll(&c.head, &c.tail) }
 
+// offscreenScale is the pixels per point an offscreen canvas bitmap draws at
+// under world transform world: baseScale times driver.RasterStep of world's
+// stretch, bounded to 4096 × 4096 pixels and a 16384-pixel side.
+func offscreenScale(width, height, baseScale float32, world matrix) float32 {
+	if baseScale <= 0 {
+		baseScale = 1
+	}
+	step := driver.RasterStep(world.maxScale())
+	if step <= 1 || width <= 0 || height <= 0 {
+		return baseScale
+	}
+	const maxPixels = 4096 * 4096
+	const maxSide = 16384
+	w, h := float64(width), float64(height)
+	s := float64(baseScale) * step
+	s = min(s, math.Sqrt(maxPixels/(w*h)), maxSide/max(w, h))
+	return max(float32(s), baseScale)
+}
+
 // canvas draws v's drawing from its lists, played as needed; it plays
 // the drawing into the frame where a list cannot be made.
 func (p *painter) canvas(v *view, width, height float32) {
@@ -85,9 +109,13 @@ func (p *painter) canvas(v *view, width, height float32) {
 	if c.drawing != v.drawing {
 		c.setDrawing(v.drawing)
 	}
-	if c.scale != p.scale || c.generation != gfxGeneration {
+	scale := p.scale
+	if c.mixes {
+		scale = offscreenScale(width, height, p.scale, p.m)
+	}
+	if c.scale != scale || c.generation != gfxGeneration {
 		c.release()
-		c.scale, c.generation = p.scale, gfxGeneration
+		c.scale, c.generation = scale, gfxGeneration
 	}
 	ops := p.w.animator.CanvasOps(v.id, v.drawing)
 	if c.atlas && !atlasListTransform(p.m, p.scale) {
@@ -96,13 +124,13 @@ func (p *painter) canvas(v *view, width, height float32) {
 	}
 	if c.head == nil {
 		if c.split.At > 0 {
-			c.head = p.recordCanvas(v, ops[:c.split.At], driver.CanvasSplit{}, width, height)
+			c.head = p.recordCanvas(v, ops[:c.split.At], driver.CanvasSplit{}, width, height, scale)
 		} else {
-			c.head = p.recordCanvas(v, ops, driver.CanvasSplit{}, width, height)
+			c.head = p.recordCanvas(v, ops, driver.CanvasSplit{}, width, height, scale)
 		}
 	}
 	if c.split.At > 0 && c.tail == nil {
-		c.tail = p.recordCanvas(v, ops, c.split, width, height)
+		c.tail = p.recordCanvas(v, ops, c.split, width, height, scale)
 	}
 	if c.head == nil || c.split.At > 0 && c.tail == nil {
 		p.playCanvas(v, ops, width, height)
@@ -125,7 +153,7 @@ func (p *painter) playCanvas(v *view, ops []driver.DrawOp, width, height float32
 			break
 		}
 	}
-	if mixes && p.canvasOffscreen(v, ops, width, height) {
+	if mixes && p.canvasOffscreen(v, ops, width, height, offscreenScale(width, height, p.scale, p.m)) {
 		return
 	}
 	c := p.newCanvasPlayer(v, p.m, width, height)
@@ -134,17 +162,17 @@ func (p *painter) playCanvas(v *view, ops []driver.DrawOp, width, height float32
 
 // recordCanvas plays ops into a new command list on the recording
 // context, leaving out what split skips; nil when it cannot.
-func (p *painter) recordCanvas(v *view, ops []driver.DrawOp, split driver.CanvasSplit, width, height float32) *comObject {
+func (p *painter) recordCanvas(v *view, ops []driver.DrawOp, split driver.CanvasSplit, width, height, scale float32) *comObject {
 	rec := p.g.record
 	var list *comObject
 	if failed(rec.call(dcCreateCommandList, uintptr(unsafe.Pointer(&list)))) {
 		return nil
 	}
 	rec.call(dcSetTarget, list.ptr())
-	rec.callF(rtSetDpi, 0b11, f32(96*p.scale), f32(96*p.scale))
+	rec.callF(rtSetDpi, 0b11, f32(96*scale), f32(96*scale))
 	rec.call(rtBeginDraw)
 	// The brush is the device's, which any of its contexts draws with.
-	r := &painter{w: p.w, g: p.g, dc: rec, scale: p.scale, m: identity, alpha: 1, brush: p.brush}
+	r := &painter{w: p.w, g: p.g, dc: rec, scale: scale, m: identity, alpha: 1, brush: p.brush}
 	r.setTransform(identity)
 	mixes := false
 	for i := range ops {
@@ -154,7 +182,7 @@ func (p *painter) recordCanvas(v *view, ops []driver.DrawOp, split driver.Canvas
 			break
 		}
 	}
-	if !(mixes && split.At == 0 && r.canvasOffscreen(v, ops, width, height)) {
+	if !(mixes && split.At == 0 && r.canvasOffscreen(v, ops, width, height, scale)) {
 		c := r.newCanvasPlayer(v, identity, width, height)
 		c.split = split
 		c.playAll(ops)

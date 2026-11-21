@@ -341,6 +341,9 @@ func (s *surface) scrolled(v *view) {
 		s.scrollEvent(v, driver.EventMomentumStart)
 	}
 	s.scrollSoon(v)
+	if len(s.slicedCanvases) > 0 {
+		s.checkSlicedCanvases()
+	}
 }
 
 // scrollSoon reports v's move in a task of its own after the frame. The

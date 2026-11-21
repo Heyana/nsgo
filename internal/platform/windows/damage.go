@@ -170,14 +170,27 @@ func (m *measuring) visit(v *view, parent matrix, x, y driver.Points, clip rectF
 	m.perspective, m.of = s.ChildPerspective, size
 	tree := v.area
 	world := pl.world
+	childWorld := world
+	z := v.zoomScale()
+	if z != 1 {
+		childWorld = scaling(z, z).then(translation(-float64(v.offset.X), -float64(v.offset.Y))).then(world)
+	}
 	for _, l := range v.leaving {
 		c := l.v
-		m.visit(c, world, c.frame.Origin.X-v.offset.X, c.frame.Origin.Y-v.offset.Y, inner, all, effects)
+		if z != 1 {
+			m.visit(c, childWorld, c.frame.Origin.X, c.frame.Origin.Y, inner, all, effects)
+		} else {
+			m.visit(c, world, c.frame.Origin.X-v.offset.X, c.frame.Origin.Y-v.offset.Y, inner, all, effects)
+		}
 		tree = union(tree, c.tree)
 	}
 	for _, c := range v.children {
 		f := frameOf(c)
-		m.visit(c, world, f.Origin.X-v.offset.X, f.Origin.Y-v.offset.Y, inner, all, effects)
+		if z != 1 {
+			m.visit(c, childWorld, f.Origin.X, f.Origin.Y, inner, all, effects)
+		} else {
+			m.visit(c, world, f.Origin.X-v.offset.X, f.Origin.Y-v.offset.Y, inner, all, effects)
+		}
 		tree = union(tree, c.tree)
 	}
 	m.perspective, m.of = perspective, of

@@ -90,6 +90,8 @@ type scrollCandidate struct {
 	frame   driver.Size
 	content driver.Size
 	offset  driver.Point
+	// zoom is a zooming view's scale, which pans its content on both axes.
+	zoom float64
 }
 
 // scrollCandidateOffset applies offset delta to c along its axis, clamped to its content and insets, and reports whether the offset moved. When horizontalFallback is true, a horizontal view takes delta.Y if delta.X is zero, matching vertical wheel turns over a lone horizontal scroll view.
@@ -98,6 +100,15 @@ func scrollCandidateOffset(c scrollCandidate, delta driver.Point, horizontalFall
 		return c.offset, false
 	}
 	offset := c.offset
+	if c.scroll.Zooms() {
+		if delta == (driver.Point{}) {
+			return c.offset, false
+		}
+		offset.X += delta.X
+		offset.Y += delta.Y
+		to := scrollbar.ClampZoomOffset(&c.scroll, c.frame, c.content, offset, c.zoom)
+		return to, to != c.offset
+	}
 	if c.scroll.Horizontal {
 		d := delta.X
 		if d == 0 && horizontalFallback {
@@ -125,14 +136,14 @@ func pickScrollCandidate(under []scrollCandidate, delta driver.Point) (index int
 	horizontal := absPoints(delta.X) > absPoints(delta.Y)
 	along := false
 	for _, c := range under {
-		if c.scroll.Horizontal == horizontal {
+		if c.scroll.Zooms() || c.scroll.Horizontal == horizontal {
 			along = true
 			break
 		}
 	}
 	for i := len(under) - 1; i >= 0; i-- {
 		c := under[i]
-		if c.scroll.Behavior.NoScroll || along && c.scroll.Horizontal != horizontal {
+		if c.scroll.Behavior.NoScroll || !c.scroll.Zooms() && along && c.scroll.Horizontal != horizontal {
 			continue
 		}
 		if next, ok := scrollCandidateOffset(c, delta, !along); ok {

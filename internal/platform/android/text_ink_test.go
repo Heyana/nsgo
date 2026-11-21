@@ -7,5 +7,5 @@ import "testing"
 // unclipped, apply shadows to custom decorations, size tinted layers to the
 // ink bounds, and invalidate the parent when overflow appears or clears.
 func TestTextNodeInkOverflowOnJVM(t *testing.T) {
-	runJavaAlgorithm(t, "textink", "TextInkCheck", nil, "TextNode", "Protocol")
+	runJavaAlgorithm(t, "textink", "TextInkCheck", nil, "TextNode", "Protocol", "RasterScale")
 }

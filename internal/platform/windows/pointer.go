@@ -54,9 +54,7 @@ func pick(v *view, p driver.Point) *view {
 	}
 	self, children := v.reach(p)
 	if children {
-		local := v.local(p)
-		local.X += v.offset.X
-		local.Y += v.offset.Y
+		local := v.contentPoint(v.local(p))
 		for i := len(v.children) - 1; i >= 0; i-- {
 			if h := pick(v.children[i], local); h != nil {
 				return h

@@ -499,11 +499,21 @@ func (w *window) tick() {
 				w.restScroll(v)
 			}
 		}
+		if zm := v.zooming; zm != nil && !v.deleted {
+			x := min(float64(now.Sub(zm.start))/float64(scrollbar.Animation), 1)
+			at, z := zm.ease.Step(&v.scroll, v.frame.Size, v.size, scrollbar.EaseOut(x))
+			v.zoom = z
+			w.moveOffset(v, at)
+			if x >= 1 {
+				v.zooming = nil
+				w.restScroll(v)
+			}
+		}
 		_, keyframed := v.keyframe()
 		if keyframed {
 			_, keyframed = v.style.Animation.At(now.Sub(v.keyframeStart))
 		}
-		if v.transition != nil || v.scrolling != nil || v.moving != nil || v.fading != nil || keyframed {
+		if v.transition != nil || v.scrolling != nil || v.zooming != nil || v.moving != nil || v.fading != nil || keyframed {
 			live = append(live, v)
 		}
 	}

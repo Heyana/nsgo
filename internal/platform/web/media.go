@@ -134,10 +134,14 @@ func (s *surface) applyAnimatedAt(at time.Duration) {
 			delete(s.transitions, v)
 		}
 		s.writeAnimatedStyle(v, at)
+		s.followTransform(v, true)
 	})
 	s.changedCanvases()
 	s.changedNatives()
 	s.replaceBound()
+	if len(s.slicedCanvases) > 0 {
+		s.checkSlicedCanvases()
+	}
 }
 
 // layoutBatch is what a batch with a layout animation tracks.

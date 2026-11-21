@@ -61,11 +61,13 @@ type view struct {
 	focusable       bool
 	editorFocusable bool
 
-	// A scroll view's configuration, content size and offset.
-	scroll driver.ScrollConfig
-	size   driver.Size
-	offset driver.Point
-	wheel  scrollbar.Wheel // a snapping view's wheel turns
+	// A scroll view's configuration, content size, offset and zoom scale.
+	scroll  driver.ScrollConfig
+	size    driver.Size
+	offset  driver.Point
+	zoom    float64
+	zooming *zoomAnim
+	wheel   scrollbar.Wheel // a snapping view's wheel turns
 	// applied counts the core's ItemScrollTo and ItemScrollBy items,
 	// reported with each offset; sticky are a scroll view's sticky cells,
 	// and laid and shift a sticky cell's frame from the core and how far
@@ -209,7 +211,7 @@ func (v *view) PointerVisibility() (hidden, transparent bool) {
 }
 
 func (v *view) PointerChildren(local driver.Point) (driver.Point, []*view) {
-	return driver.Point{X: local.X + v.offset.X, Y: local.Y + v.offset.Y}, v.children
+	return v.contentPoint(local), v.children
 }
 
 func (v *view) ScrollbarContains(local driver.Point) bool {

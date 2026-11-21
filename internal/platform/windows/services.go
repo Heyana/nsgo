@@ -490,7 +490,7 @@ func (v *view) PointerVisibility() (hidden, transparent bool) {
 }
 
 func (v *view) PointerChildren(local driver.Point) (driver.Point, []*view) {
-	return driver.Point{X: local.X + v.offset.X, Y: local.Y + v.offset.Y}, v.children
+	return v.contentPoint(local), v.children
 }
 
 func (v *view) ScrollbarContains(local driver.Point) bool {

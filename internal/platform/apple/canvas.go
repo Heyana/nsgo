@@ -1128,9 +1128,4 @@ func Damaged(before, after []driver.DrawOp) (area CGRect, whole bool) {
 // its content at: 1 up to its own size, then in steps of a half up to 4,
 // so its text and drawings stay sharp while a zoom redraws them only as
 // it passes a step.
-func RasterStep(scale float32) float64 {
-	if !(scale > 1) {
-		return 1
-	}
-	return min(math.Ceil(float64(scale)*2)/2, 4)
-}
+func RasterStep(scale float32) float64 { return driver.RasterStep(scale) }

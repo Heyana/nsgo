@@ -264,3 +264,77 @@ func TestCanvasListsDrawWhatAFullPlayDoes(t *testing.T) {
 		})
 	}
 }
+
+// TestStyleTransformAndScrollZoomAreSharp verifies in Direct2D pixels that a
+// 1-point black line in a canvas (both vector command-list and offscreen
+// mixing paths) draws sharply at 3x scale under a style transform and under a
+// zooming scroll view, with no grey edge blur.
+func TestStyleTransformAndScrollZoomAreSharp(t *testing.T) {
+	g, err := devices()
+	if err != nil {
+		t.Skip(err)
+	}
+	checkSharpLine := func(t *testing.T, img *image.RGBA, zoom int) {
+		t.Helper()
+		b := img.Bounds()
+		y := b.Min.Y + b.Dy()/2
+		black, gray := 0, 0
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, _, _, _ := img.At(x, y).RGBA()
+			switch {
+			case r < 0x2000:
+				black++
+			case r < 0xe000:
+				gray++
+			}
+		}
+		want := zoom * canvastest.Scale
+		if black != want || gray != 0 {
+			t.Errorf("zoom %dx: line has %d black and %d gray pixels, want %d black and 0 gray", zoom, black, gray, want)
+		}
+	}
+	makeLine := func(mix bool) *driver.Drawing {
+		d := driver.NewDrawing(nil)
+		if mix {
+			d.Clear(0, 0, 100, 100)
+		}
+		d.SetFillColor(driver.RGB(0xffffff)).FillRect(0, 0, 100, 100)
+		d.SetFillColor(driver.RGB(0x000000)).FillRect(20, 0, 1, 100)
+		return d
+	}
+	for _, mix := range []bool{false, true} {
+		name := "vector"
+		if mix {
+			name = "offscreen"
+		}
+		t.Run("style-transform-"+name, func(t *testing.T) {
+			w := &window{scale: canvastest.Scale, animator: driver.NewAnimator(nil)}
+			canvas := &view{id: 2, kind: driver.KindCanvas, frame: driver.Bounds{Size: driver.Size{Width: 100, Height: 100}},
+				style: driver.ViewStyle{Opacity: 1}, drawing: makeLine(mix)}
+			holder := &view{id: 1, kind: driver.KindView, frame: driver.Bounds{Size: driver.Size{Width: 100, Height: 100}},
+				style:    driver.ViewStyle{Opacity: 1, Origin: driver.Point{X: -50, Y: -50}, Transform: driver.Transform{Scale: 3}},
+				children: []*view{canvas}}
+			canvas.parent = holder
+			defer canvas.canvasCache.release()
+			img := drawImage(t, g, 300, 300, func(p *painter) {
+				p.draw(holder, identity, 0, 0)
+			}, w)
+			checkSharpLine(t, img, 3)
+		})
+		t.Run("scroll-zoom-"+name, func(t *testing.T) {
+			w := &window{scale: canvastest.Scale, animator: driver.NewAnimator(nil)}
+			canvas := &view{id: 2, kind: driver.KindCanvas, frame: driver.Bounds{Size: driver.Size{Width: 100, Height: 100}},
+				style: driver.ViewStyle{Opacity: 1}, drawing: makeLine(mix)}
+			scroll := &view{id: 1, kind: driver.KindScroll, frame: driver.Bounds{Size: driver.Size{Width: 300, Height: 300}},
+				size:   driver.Size{Width: 100, Height: 100},
+				scroll: driver.ScrollConfig{MinZoomScale: 0.5, MaxZoomScale: 4, ZoomScale: 3},
+				zoom:   3, style: driver.ViewStyle{Opacity: 1}, children: []*view{canvas}}
+			canvas.parent = scroll
+			defer canvas.canvasCache.release()
+			img := drawImage(t, g, 300, 300, func(p *painter) {
+				p.draw(scroll, identity, 0, 0)
+			}, w)
+			checkSharpLine(t, img, 3)
+		})
+	}
+}

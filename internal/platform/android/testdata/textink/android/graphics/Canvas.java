@@ -4,6 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Canvas {
+    public Canvas() {}
+    public Canvas(Bitmap bitmap) {}
+    public void scale(float sx, float sy) {}
+    public void drawBitmap(Bitmap bitmap, Rect src, RectF dst, Paint paint) {}
     public final List<RectF> clips = new ArrayList<>();
     public final List<RectF> saveLayers = new ArrayList<>();
     public final List<RectF> drawnRects = new ArrayList<>();

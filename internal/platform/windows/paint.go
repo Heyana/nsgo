@@ -72,6 +72,11 @@ func (m matrix) axisAligned() bool { return m.b == 0 && m.c == 0 && m.a > 0 && m
 // stretch returns how much m scales lengths, on average.
 func (m matrix) stretch() float64 { return math.Sqrt(math.Abs(m.a*m.d - m.b*m.c)) }
 
+// maxScale returns the largest column norm of m: the maximum axis stretch.
+func (m matrix) maxScale() float32 {
+	return float32(max(math.Hypot(m.a, m.b), math.Hypot(m.c, m.d)))
+}
+
 func (m matrix) d2d() matrix3x2 {
 	return matrix3x2{float32(m.a), float32(m.b), float32(m.c), float32(m.d), float32(m.e), float32(m.f)}
 }
@@ -822,18 +827,31 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	// in the view's perspective.
 	perspective, of := p.perspective, p.perspectiveOf
 	p.perspective, p.perspectiveOf = s.ChildPerspective, size
+	childWorld := world
+	z := v.zoomScale()
+	if z != 1 {
+		childWorld = scaling(z, z).then(translation(-float64(v.offset.X), -float64(v.offset.Y))).then(world)
+	}
 	next := 0
 	drawLeaving := func(upTo int) {
 		for ; next < len(v.leaving) && v.leaving[next].at <= upTo; next++ {
 			c := v.leaving[next].v
-			p.draw(c, world, c.frame.Origin.X-v.offset.X, c.frame.Origin.Y-v.offset.Y)
+			if z != 1 {
+				p.draw(c, childWorld, c.frame.Origin.X, c.frame.Origin.Y)
+			} else {
+				p.draw(c, world, c.frame.Origin.X-v.offset.X, c.frame.Origin.Y-v.offset.Y)
+			}
 		}
 	}
 	if e := p.w.effectOn(v); e == nil || !p.drawEffect(e, v, world) {
 		for i, c := range v.children {
 			drawLeaving(i)
 			f := frameOf(c)
-			p.draw(c, world, f.Origin.X-v.offset.X, f.Origin.Y-v.offset.Y)
+			if z != 1 {
+				p.draw(c, childWorld, f.Origin.X, f.Origin.Y)
+			} else {
+				p.draw(c, world, f.Origin.X-v.offset.X, f.Origin.Y-v.offset.Y)
+			}
 		}
 	}
 	drawLeaving(math.MaxInt)

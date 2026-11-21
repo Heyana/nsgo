@@ -17,12 +17,16 @@ func canvasZoomSurface(t *testing.T) (*surface, *view) {
 	if !doc.Truthy() {
 		t.Skip("run with nsgo test -target web")
 	}
+	style := doc.Call("createElement", "style")
+	style.Set("textContent", baseCSS)
+	doc.Get("head").Call("appendChild", style)
 	host := doc.Call("createElement", "div")
 	doc.Get("body").Call("appendChild", host)
 	s := &surface{doc: doc, host: host, animator: driver.NewAnimator(nil), env: driver.Environment{PixelRatio: 2, ReduceMotion: true}}
 	s.parked = s.element("div")
 	host.Call("appendChild", s.parked)
 	t.Cleanup(func() {
+		defer style.Call("remove")
 		if t.Failed() {
 			for _, v := range s.views {
 				if v != nil && v.sc != nil {
@@ -41,6 +45,7 @@ func canvasZoomSurface(t *testing.T) (*surface, *view) {
 				v.sc.stopRaster()
 				v.sc.stopZoom()
 			}
+			v.stopTransformRaster()
 			v.listeners.release()
 		}
 		host.Call("remove")
@@ -119,18 +124,93 @@ func TestCanvasScrollZoomReachesNewSubtrees(t *testing.T) {
 
 func TestCanvasScrollZoomBoundsBitmap(t *testing.T) {
 	s, _ := canvasZoomSurface(t)
-	s.zoomCommand(s.view(2), &driver.ZoomRequest{Scale: 4}, false)
-	// 1024 points at a ratio of 2 are 2048 pixels; the zoom raises them only to the 4096 by 4096 budget, not to 8192.
+	s.zoomCommand(s.view(2), &driver.ZoomRequest{Scale: 4, Center: &driver.Point{}}, false)
+	// Canvases whose full bitmap would exceed 4096×4096 or 16384 side draw only
+	// their visible slice at full zoom resolution (ratio 2 * 4 = 8), staying
+	// well within the bitmap budget.
 	square := mountCanvas(s, 6, 7, 2, 1024, 1024)
-	waitCanvasPixels(t, square, 4096)
-	// A long canvas stops at the largest side browsers draw.
 	long := mountCanvas(s, 8, 9, 2, 4096, 10)
-	waitCanvasBitmap(t, long, 16384, 40)
-	// One past the budget at the screen's ratio alone keeps that ratio.
 	large := mountCanvas(s, 10, 11, 2, 2500, 2500)
-	waitCanvasPixels(t, large, 5000)
-	// The fixture's small canvas still takes the whole zoom.
+	for _, tc := range []struct {
+		name string
+		v    *view
+	}{{"square", square}, {"long", long}, {"large", large}} {
+		if !tc.v.canvasSliced {
+			t.Errorf("%s: expected visible-slice mode", tc.name)
+		}
+		if tc.v.canvasRatio != 8 {
+			t.Errorf("%s: canvasRatio = %v, want 8", tc.name, tc.v.canvasRatio)
+		}
+		bw, bh := tc.v.inner.Get("width").Int(), tc.v.inner.Get("height").Int()
+		if bw <= 0 || bh <= 0 || bw*bh > maxZoomPixels || bw > maxZoomSide || bh > maxZoomSide {
+			t.Errorf("%s: bitmap %dx%d out of budget", tc.name, bw, bh)
+		}
+	}
+	// Scrolling to another part of a sliced canvas updates its painted slice.
+	scroll := s.view(2)
+	s.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemScrollContent, ID: 2, Size: driver.Size{Width: 2500, Height: 2500}},
+	}})
+	scroll.el.Set("scrollLeft", 4000)
+	scroll.el.Set("scrollTop", 4000)
+	s.scrolled(scroll)
+	if large.canvasTile.x < 900 || large.canvasTile.y < 900 {
+		t.Errorf("scrolled large canvas tile = %+v, want origin near (1000, 1000)", large.canvasTile)
+	}
+	// A rotated large canvas cannot use axis-aligned slicing, so it still
+	// stays bounded within the bitmap budget.
+	rot := mountCanvas(s, 12, 13, 2, 1024, 1024)
+	s.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemViewStyle, ID: 12, ViewStyle: &driver.ViewStyle{Opacity: 1, Transform: driver.Transform{Rotate: 15}}},
+	}})
+	if rot.canvasSliced {
+		t.Error("rotated canvas should not enter axis-aligned slice mode")
+	}
+	waitCanvasPixels(t, rot, 4096)
+	// The fixture's small canvas still takes the whole zoom without slicing.
 	waitCanvasPixels(t, s.view(5), 800)
+	if s.view(5).canvasSliced {
+		t.Error("small canvas should draw whole, not sliced")
+	}
+}
+
+func TestCanvasScrollZoomStyleTransforms(t *testing.T) {
+	s, canvas := canvasZoomSurface(t)
+	waitCanvasPixels(t, canvas, 200)
+	// Static style transform on holder (ID 4) sharpens canvas immediately.
+	s.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemViewStyle, ID: 4, ViewStyle: &driver.ViewStyle{Opacity: 1, Transform: driver.Transform{Scale: 3}}},
+	}})
+	waitCanvasPixels(t, canvas, 600)
+	if !canvas.canvasExact {
+		t.Error("axis-aligned style transform should enable exact pixel rendering")
+	}
+	// Rotation keeps the higher-res bitmap but disables nearest-neighbor pixelated sampling.
+	s.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemViewStyle, ID: 4, ViewStyle: &driver.ViewStyle{Opacity: 1, Transform: driver.Transform{Scale: 3, Rotate: 20}}},
+	}})
+	waitCanvasPixels(t, canvas, 600)
+	if canvas.canvasExact {
+		t.Error("rotated style transform must not use pixelated sampling")
+	}
+	// Combining style transform (1.5x) and scroll zoom (2x) multiplies to 3x (600px at ratio 2).
+	s.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemViewStyle, ID: 4, ViewStyle: &driver.ViewStyle{Opacity: 1, Transform: driver.Transform{Scale: 1.5}}},
+	}})
+	s.zoomCommand(s.view(2), &driver.ZoomRequest{Scale: 2}, false)
+	waitCanvasPixels(t, canvas, 600)
+	// Animated scale on holder replays after rest.
+	s.zoomCommand(s.view(2), &driver.ZoomRequest{Scale: 1}, false)
+	s.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemViewStyle, ID: 4, ViewStyle: &driver.ViewStyle{Opacity: 1}},
+	}})
+	waitCanvasPixels(t, canvas, 200)
+	s.animator.Apply([]driver.AnimationOp{
+		{Kind: driver.AnimCreateValue, Node: 1, Value: 2.5},
+		{Kind: driver.AnimBind, View: 4, Prop: driver.PropScale, Node: 1},
+	})
+	s.applyAnimated()
+	waitCanvasPixels(t, canvas, 500)
 }
 
 func TestCanvasScrollZoomFollowsKeptPlacement(t *testing.T) {

@@ -27,6 +27,9 @@ type Player struct {
 	// Ratio is the canvas's pixels per point, and Size its diagonal in
 	// points, which repeating gradients cover.
 	Ratio, Size float64
+	// OriginX and OriginY shift the drawing space when the <canvas> holds
+	// only a visible sub-rectangle of a larger canvas.
+	OriginX, OriginY float64
 	// Font is the context's font shorthand of a font.
 	Font func(driver.Font) string
 	// Image returns the loaded image an op draws and its pixels per
@@ -82,7 +85,7 @@ func (p *Player) Play(op *driver.DrawOp) {
 		ctx.Call("transform", f(op.X1), f(op.Y1), f(op.X2), f(op.Y2), f(op.X), f(op.Y))
 	case driver.DrawSetTransform:
 		r := p.Ratio
-		ctx.Call("setTransform", r*f(op.X1), r*f(op.Y1), r*f(op.X2), r*f(op.Y2), r*f(op.X), r*f(op.Y))
+		ctx.Call("setTransform", r*f(op.X1), r*f(op.Y1), r*f(op.X2), r*f(op.Y2), r*(f(op.X)-p.OriginX), r*(f(op.Y)-p.OriginY))
 	case driver.DrawBeginPath:
 		ctx.Call("beginPath")
 	case driver.DrawMoveTo:

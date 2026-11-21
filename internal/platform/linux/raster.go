@@ -131,6 +131,40 @@ func union(a, b driver.Bounds) driver.Bounds {
 	return driver.Bounds{Origin: driver.Point{X: x0, Y: y0}, Size: driver.Size{Width: x1 - x0, Height: y1 - y0}}
 }
 
+// canvasRasterScale returns the pixels per point canvas view v rasterizes at:
+// the window's pixel ratio times the stepped scale of v and every ancestor's
+// style transform, keyframe/layout scale, and enclosing scroll zooms, capped
+// at 4× and bounded within 4096 × 4096 pixels and maxRaster per side.
+func (w *window) canvasRasterScale(v *view, width, height float64) float64 {
+	base := max(float64(w.env.PixelRatio), 1)
+	zoom := 1.0
+	for cur := v; cur != nil; cur = cur.parent {
+		s := cur.shownStyle().Transform.RasterScale()
+		if k, ok := cur.keyframe(); ok && k.Scale > 0 {
+			s *= float32(math.Abs(float64(k.Scale)))
+		}
+		if ls := cur.layoutScale(); ls > 0 {
+			s *= ls
+		}
+		if step := driver.RasterStep(s); step > 1 {
+			zoom = min(zoom*step, 4)
+		}
+		if cur.parent != nil && cur.parent.kind == driver.KindScroll && cur.parent.scroll.Zooms() {
+			if step := driver.RasterStep(float32(cur.parent.zoomScale())); step > 1 {
+				zoom = min(zoom*step, 4)
+			}
+		}
+	}
+	if zoom <= 1 || width <= 0 || height <= 0 {
+		return base
+	}
+	const maxZoomPixels = 4096 * 4096
+	const maxZoomSide = 16384
+	s := base * zoom
+	s = min(s, math.Sqrt(maxZoomPixels/(width*height)), float64(min(maxZoomSide, maxRaster))/max(width, height))
+	return max(s, base)
+}
+
 // snapshotCanvas appends v's raster, drawn again where it changed,
 // unless v is out of sight.
 func (w *window) snapshotCanvas(v *view, snap uintptr, width, height float64) {
@@ -138,7 +172,7 @@ func (w *window) snapshotCanvas(v *view, snap uintptr, width, height float64) {
 	if len(v.drawing.Ops) == 0 {
 		return
 	}
-	scale := max(float64(w.env.PixelRatio), 1)
+	scale := w.canvasRasterScale(v, width, height)
 	pw, ph := int(math.Ceil(width*scale)), int(math.Ceil(height*scale))
 	r := c.raster
 	fits := r != nil && r.scale == scale && r.pw == pw && r.ph == ph

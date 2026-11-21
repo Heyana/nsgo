@@ -100,3 +100,57 @@ func TestCanvasesCairoCannotHoldDrawNothing(t *testing.T) {
 	v.canvas.raster = &canvasRaster{pw: 300, ph: 10, scale: 1}
 	w.snapshotCanvas(v, 0, 300, 10)
 }
+
+// TestRasterCanvasSharpUnderStyleTransformAndScrollZoom verifies in Cairo
+// pixels that a 1-point black line in a canvas rasterizes sharply at 3x scale
+// under both a style transform and a zooming scroll view, with no grey blur.
+func TestRasterCanvasSharpUnderStyleTransformAndScrollZoom(t *testing.T) {
+	if err := openLibs(); err != nil {
+		t.Skip(err)
+	}
+	d := driver.NewDrawing(nil)
+	d.SetFillColor(driver.RGB(0xffffff)).FillRect(0, 0, 100, 100)
+	d.SetFillColor(driver.RGB(0x000000)).FillRect(20, 0, 1, 100)
+
+	check := func(t *testing.T, parent *view, wantZoom int) {
+		t.Helper()
+		w := &window{animator: driver.NewAnimator(nil), env: driver.Environment{PixelRatio: canvastest.Scale}}
+		canvas := &view{id: 2, kind: driver.KindCanvas, parent: parent, style: driver.ViewStyle{Opacity: 1}}
+		w.views = []*view{nil, parent, canvas}
+		w.setCanvas(canvas, d)
+		scale := w.canvasRasterScale(canvas, 100, 100)
+		wantScale := float64(wantZoom * canvastest.Scale)
+		if scale != wantScale {
+			t.Fatalf("canvasRasterScale = %v, want %v", scale, wantScale)
+		}
+		w.rasterize(canvas, int(100*scale), int(100*scale), scale)
+		defer canvas.canvas.raster.release()
+		img := rasterImage(canvas.canvas.raster)
+		b := img.Bounds()
+		y := b.Min.Y + b.Dy()/2
+		black, gray := 0, 0
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, _, _, _ := img.At(x, y).RGBA()
+			switch {
+			case r < 0x2000:
+				black++
+			case r < 0xe000:
+				gray++
+			}
+		}
+		want := wantZoom * canvastest.Scale
+		if black != want || gray != 0 {
+			t.Errorf("zoom %dx: line has %d black and %d gray pixels, want %d black and 0 gray", wantZoom, black, gray, want)
+		}
+	}
+
+	t.Run("style-transform", func(t *testing.T) {
+		holder := &view{id: 1, kind: driver.KindView, style: driver.ViewStyle{Opacity: 1, Transform: driver.Transform{Scale: 3}}}
+		check(t, holder, 3)
+	})
+	t.Run("scroll-zoom", func(t *testing.T) {
+		scroll := &view{id: 1, kind: driver.KindScroll, scroll: driver.ScrollConfig{MinZoomScale: 0.5, MaxZoomScale: 4, ZoomScale: 3},
+			zoom: 3, style: driver.ViewStyle{Opacity: 1}}
+		check(t, scroll, 3)
+	})
+}

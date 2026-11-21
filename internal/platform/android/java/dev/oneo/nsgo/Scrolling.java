@@ -172,6 +172,9 @@ final class Scrolling {
 
         /** Whether a tap at the raw screen point lands on a view that takes presses. */
         boolean handlesTap(float rawX, float rawY);
+
+        /** The scroll view's zoom scale changed; texts and canvases inside may need sharper pixels. */
+        default void zoomChanged(float zoom) {}
     }
 
     /** A tap while the keyboard shows dismisses it, as KeyboardShouldPersistTaps says. */
@@ -925,6 +928,7 @@ final class Scrolling {
         private final int slop;
         private Config config = new Config();
         private float zoom = 1;
+        private float notifiedZoom = 1;
         private float lastX, lastY, downX, downY;
         private boolean dragging, pinching, momentum, tapping;
 
@@ -997,6 +1001,10 @@ final class Scrolling {
             content.setScaleY(zoom);
             content.setTranslationX(originX());
             content.setTranslationY(originY());
+            if (zoom != notifiedZoom) {
+                notifiedZoom = zoom;
+                host.zoomChanged(zoom);
+            }
         }
 
         private void moveTo(int x, int y) {

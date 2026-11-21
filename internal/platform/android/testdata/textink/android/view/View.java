@@ -30,5 +30,6 @@ public class View {
 
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {}
     protected void onDraw(Canvas canvas) {}
+    protected void onDetachedFromWindow() {}
     public boolean onTouchEvent(MotionEvent e) { return false; }
 }

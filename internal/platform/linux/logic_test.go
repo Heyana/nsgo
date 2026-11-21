@@ -1197,3 +1197,66 @@ func TestAccessibilityLevelAndSpinButton(t *testing.T) {
 		}
 	}
 }
+
+func TestScrollZoomAndHitTesting(t *testing.T) {
+	w := &window{animator: driver.NewAnimator(nil), env: driver.Environment{ReduceMotion: true}}
+	child := &view{id: 2, kind: driver.KindView, frame: driver.Bounds{Origin: driver.Point{X: 20, Y: 30}, Size: driver.Size{Width: 40, Height: 40}},
+		style: driver.ViewStyle{Opacity: 1}}
+	scroll := &view{id: 1, kind: driver.KindScroll, frame: driver.Bounds{Size: driver.Size{Width: 200, Height: 200}},
+		size: driver.Size{Width: 200, Height: 200}, style: driver.ViewStyle{Opacity: 1}, children: []*view{child}}
+	child.parent = scroll
+	w.views = []*view{nil, scroll, child}
+	w.root = 1
+
+	old := scroll.scroll
+	scroll.scroll = driver.ScrollConfig{MinZoomScale: 0.5, MaxZoomScale: 4, ZoomScale: 2}
+	w.configureScrollZoom(scroll, &old)
+	if scroll.zoomScale() != 2 || scroll.zoomValue() != 2 {
+		t.Fatalf("initial zoom = %v / %v, want 2", scroll.zoomScale(), scroll.zoomValue())
+	}
+	if got := hit(scroll, driver.Point{X: 50, Y: 70}, func(*view) bool { return true }); got != child {
+		t.Fatalf("hit at zoomed child = %v, want child", got)
+	}
+	if got := hit(scroll, driver.Point{X: 25, Y: 35}, func(*view) bool { return true }); got != scroll {
+		t.Fatalf("hit at unzoomed origin = %v, want scroll", got)
+	}
+	w.zoomTo(scroll, &driver.ZoomRequest{Scale: 3, Center: &driver.Point{X: 50, Y: 50}}, false)
+	if scroll.zoomScale() != 3 || scroll.offset != (driver.Point{X: 50, Y: 50}) {
+		t.Fatalf("after zoomTo(3): zoom=%v offset=%+v, want 3 and (50, 50)", scroll.zoomScale(), scroll.offset)
+	}
+	// Ctrl+wheel zooms around pointer and clamps to MaxZoomScale.
+	if !w.wheelZoom(driver.Point{X: 100, Y: 100}, -10) {
+		t.Fatal("wheelZoom did not claim zooming scroll view")
+	}
+	if scroll.zoomScale() != 4 {
+		t.Fatalf("clamped wheelZoom = %v, want 4", scroll.zoomScale())
+	}
+}
+
+func TestCanvasRasterScaleFollowsStyleAndScrollZoom(t *testing.T) {
+	w := &window{env: driver.Environment{PixelRatio: 2}}
+	scroll := &view{kind: driver.KindScroll, scroll: driver.ScrollConfig{MinZoomScale: 0.5, MaxZoomScale: 4, ZoomScale: 2}, zoom: 2}
+	holder := &view{kind: driver.KindView, parent: scroll, style: driver.ViewStyle{Opacity: 1, Transform: driver.Transform{Scale: 1.5}}}
+	canvas := &view{kind: driver.KindCanvas, parent: holder, style: driver.ViewStyle{Opacity: 1}}
+
+	// Scroll zoom 2x * style transform 1.5x = 3x * pixelRatio 2 = 6.
+	if got := w.canvasRasterScale(canvas, 100, 100); got != 6 {
+		t.Fatalf("combined canvasRasterScale = %v, want 6", got)
+	}
+	// Step rounding: style scale 2.2 rounds up to step 2.5 (no scroll zoom).
+	scroll.scroll = driver.ScrollConfig{}
+	scroll.zoom = 1
+	holder.style.Transform.Scale = 2.2
+	if got := w.canvasRasterScale(canvas, 100, 100); got != 5 {
+		t.Fatalf("stepped canvasRasterScale = %v, want 5", got)
+	}
+	// Cap at 4x (8 px/pt at ratio 2).
+	holder.style.Transform.Scale = 8
+	if got := w.canvasRasterScale(canvas, 100, 100); got != 8 {
+		t.Fatalf("capped canvasRasterScale = %v, want 8", got)
+	}
+	// Large canvas past 4096×4096 at base ratio 2 stays at base ratio 2.
+	if got := w.canvasRasterScale(canvas, 2048, 2048); got != 2 {
+		t.Fatalf("budget-capped canvasRasterScale = %v, want 2", got)
+	}
+}

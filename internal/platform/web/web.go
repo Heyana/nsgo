@@ -175,6 +175,9 @@ type surface struct {
 	// canvasImages are the images canvases draw, by ImageSource.Key.
 	canvasImages map[string]*canvasImage
 	meshCanvas   js.Value
+	// slicedCanvases are the canvases past the bitmap budget whose visible
+	// part is drawn and updated as scrolling or panning moves them.
+	slicedCanvases map[*view]bool
 	// canvasFrames are the canvases of the pixels canvases drew last (canvasFrame).
 	canvasFrames      []canvasFrame
 	canvasFramePixels int // the pixels of canvasFrames together
@@ -278,10 +281,21 @@ type view struct {
 	cancelAnim  func()   // cancels presentAnim and releases its callbacks
 	hover       bool     // pointerenter and pointerleave are listened to
 	moves       bool     // pointermove is
-	// canvasRatio is the pixels per point of the last replay, including scroll zoom.
+	// canvasRatio is the pixels per point of the last replay, including scroll zoom and style transforms.
 	canvasRatio float64
-	// canvasExact is whether the canvas is drawn with image-rendering: pixelated, which it is while its bitmap matches the screen pixels a zoomed scroll view shows it at.
+	// canvasTile is the drawing-point rectangle painted in inner, and
+	// canvasSliced whether inner is positioned as a visible sub-rectangle.
+	canvasTile   canvasRect
+	canvasSliced bool
+	// canvasExact is whether the canvas is drawn with image-rendering: pixelated, which it is while its bitmap matches the screen pixels an axis-aligned zoom shows it at.
 	canvasExact bool
+	// transformZoom and transformSkewed track the view's style/animated
+	// transform scale and whether it rotates/skews/tilts, for sharp canvas
+	// replay under style transforms.
+	transformZoom   float64
+	transformSkewed bool
+	rasterTimer     js.Value
+	rasterEnd       js.Func
 	// focused is whether the view has the keyboard focus it reported.
 	focused bool
 	// panActivation decides when a drag on the view becomes its pan.
@@ -1656,6 +1670,8 @@ func (s *surface) mount(b *driver.MountBatch) {
 				v.sc.stopRaster()
 				v.sc.stopZoom()
 			}
+			v.stopTransformRaster()
+			delete(s.slicedCanvases, v)
 			s.dom.forget(it.ID)
 			if v.kind == driver.KindModal {
 				if v.cancelAnim != nil {
@@ -1743,6 +1759,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 					s.placeEdges(v)
 				}
 				s.redrawGradients(v)
+				if len(s.slicedCanvases) > 0 {
+					s.checkSlicedCanvases()
+				}
 			}
 		case driver.ItemViewStyle:
 			prev := v.style
@@ -2008,6 +2027,10 @@ func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
 	s.setLook(v)
 	s.setFeel(v)
 	s.setKeyframes(v, vs.Animation)
+	s.followTransform(v, false)
+	if len(s.slicedCanvases) > 0 {
+		s.checkSlicedCanvases()
+	}
 }
 
 // setLook gives v the class of its view style, at its size.

@@ -128,6 +128,9 @@ func (w *window) stopClock(fromFrameClock bool) {
 // pass, where a report that woke it on its own cost a second pass and
 // commit every frame of an app scrolling in its frames.
 func (w *window) reportScroll(ev driver.Event) {
+	if w.engine == nil {
+		return
+	}
 	if w.frameWanted.Load() {
 		w.engine.DispatchBeforeFrame(ev)
 	} else {
@@ -257,6 +260,18 @@ func (w *window) step(v *view, now time.Time) bool {
 				Y: driver.Points(float64(s.From.Y) + float64(s.To.Y-s.From.Y)*p),
 			}
 			w.scrollTo(v, at)
+			keep = true
+		}
+	}
+	if zm := v.zooming; zm != nil {
+		x := min(float64(now.Sub(zm.start))/float64(scrollbar.Animation), 1)
+		at, z := zm.ease.Step(&v.scroll, v.frame.Size, v.size, scrollbar.EaseOut(x))
+		v.zoom = z
+		w.moveOffset(v, at)
+		if x >= 1 {
+			v.zooming = nil
+			w.restScroll(v)
+		} else {
 			keep = true
 		}
 	}

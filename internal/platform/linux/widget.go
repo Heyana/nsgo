@@ -409,14 +409,24 @@ func (w *window) allocateView(v *view) {
 }
 
 // place allocates v's widget at the frame it shows, less its parent's
-// scroll offset ox, oy, with its transform around its center and the
-// scale of a layout animation after it.
+// scroll offset ox, oy (and scaled by its parent's scroll zoom when set),
+// with its transform around its center and the scale of a layout animation
+// after it.
 func (w *window) place(v *view, ox, oy float32) {
 	if gtkWidgetGetChildVisible(v.widget) == 0 {
 		return
 	}
 	f := v.shownFrame()
-	t := gskMatrixTransform(0, v.placement(ox, oy))
+	var m driver.Matrix3D
+	if p := v.parent; p != nil && p.kind == driver.KindScroll && p.zoomScale() != 1 {
+		z := p.zoomScale()
+		m = driver.Translate3D(-float64(ox), -float64(oy), 0).
+			Mul(driver.Matrix3D{z, 0, 0, 0, 0, z, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}).
+			Mul(v.placement(0, 0))
+	} else {
+		m = v.placement(ox, oy)
+	}
+	t := gskMatrixTransform(0, m)
 	width := int32(math.Ceil(max(float64(f.Size.Width), 0)))
 	height := int32(math.Ceil(max(float64(f.Size.Height), 0)))
 	gtkWidgetAllocate(v.widget, width, height, -1, t)

@@ -1,7 +1,9 @@
 package dev.oneo.nsgo;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -11,6 +13,7 @@ import android.graphics.RectF;
 import android.text.Layout;
 import android.text.Spanned;
 import android.text.StaticLayout;
+import android.text.TextPaint;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -47,12 +50,45 @@ final class TextNode extends FrameLayout {
     private int selStart, selEnd;
     private final Path selection = new Path();
     private final Paint selectionPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /** Stepped raster scale (>1 when inside a scaled view or zooming scroll). */
+    private float rasterScale = 1f;
+    private Bitmap backing;
+    private boolean backingDirty = true;
+    private final RectF backingDst = new RectF();
+    private final Paint backingPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
     TextNode(Context context) {
         super(context);
         setWillNotDraw(false);
         setClipChildren(false);
         setClipToPadding(false);
+    }
+
+    float rasterScale() {
+        return rasterScale;
+    }
+
+    void setRasterScale(float scale) {
+        float next = scale > 1f ? scale : 1f;
+        if (next == rasterScale) return;
+        rasterScale = next;
+        backingDirty = true;
+        if (rasterScale <= 1f) releaseBacking();
+        invalidate();
+    }
+
+    private void releaseBacking() {
+        if (backing != null) {
+            backing.recycle();
+            backing = null;
+        }
+        backingDirty = true;
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        releaseBacking();
     }
 
     /**
@@ -75,6 +111,8 @@ final class TextNode extends FrameLayout {
         this.clipLines = clipLines;
         this.shadow = shadow != null && (shadow.color >>> 24) != 0 ? shadow : null;
         overflows = overflowsBox();
+        this.backingDirty = true;
+        if (layout == null) releaseBacking();
         invalidate();
         if ((hadOverflow || overflows) && getParent() instanceof View) {
             ((View) getParent()).invalidate();
@@ -85,6 +123,7 @@ final class TextNode extends FrameLayout {
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         overflows = overflowsBox();
+        backingDirty = true;
     }
 
     StaticLayout layout() {
@@ -110,6 +149,7 @@ final class TextNode extends FrameLayout {
         if (start == selStart && end == selEnd) return;
         selStart = start;
         selEnd = end;
+        backingDirty = true;
         invalidate();
     }
 
@@ -203,38 +243,80 @@ final class TextNode extends FrameLayout {
     @Override
     protected void onDraw(Canvas canvas) {
         if (layout == null) return;
-        // A bound color paints over the whole text, in a layer grown to hold
-        // decorations and shadows that reach past the view's box.
-        int tinted = -1;
-        if (tint != 0) {
+        if (rasterScale > 1f) {
+            // The backing holds the view's box and the ink reaching past it: decorations and shadows.
             inkBounds(ink);
-            tinted = canvas.saveLayer(ink.left, ink.top, ink.right, ink.bottom, null);
-        }
-        canvas.save();
-        canvas.translate(x, y);
-        if (clipLines > 0 && layout.getLineCount() > clipLines) {
-            canvas.clipRect(0, 0, layout.getWidth(), layout.getLineTop(clipLines));
-        }
-        drawBackgrounds(canvas);
-        if (selEnd > selStart) {
-            int color = selectionColor;
-            if (color == 0) {
-                android.util.TypedValue v = new android.util.TypedValue();
-                color = !getContext().getTheme().resolveAttribute(android.R.attr.textColorHighlight, v, true) ? 0x6633b5e5
-                        : v.resourceId != 0 ? getContext().getColor(v.resourceId) : v.data;
+            int ox = Math.min(0, (int) Math.floor(ink.left));
+            int oy = Math.min(0, (int) Math.floor(ink.top));
+            int right = Math.max(getWidth(), (int) Math.ceil(ink.right));
+            int bottom = Math.max(getHeight(), (int) Math.ceil(ink.bottom));
+            int cw = right - ox, ch = bottom - oy;
+            float eff = RasterScale.boundedScale(cw, ch, rasterScale);
+            if (eff > 1f) {
+                int bw = RasterScale.scaledPixels(cw, eff);
+                int bh = RasterScale.scaledPixels(ch, eff);
+                if (backing == null || backing.getWidth() != bw || backing.getHeight() != bh) {
+                    releaseBacking();
+                    backing = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888);
+                    backingDirty = true;
+                }
+                if (backingDirty) {
+                    backing.eraseColor(Color.TRANSPARENT);
+                    Canvas bmCanvas = new Canvas(backing);
+                    bmCanvas.scale((float) bw / cw, (float) bh / ch);
+                    bmCanvas.translate(-ox, -oy);
+                    drawContent(bmCanvas, true);
+                    backingDirty = false;
+                }
+                backingDst.set(ox, oy, right, bottom);
+                canvas.drawBitmap(backing, null, backingDst, backingPaint);
+                return;
             }
-            selectionPaint.setColor(color);
-            layout.getSelectionPath(selStart, Math.min(selEnd, layout.getText().length()), selection);
-            canvas.drawPath(selection, selectionPaint);
         }
-        layout.draw(canvas);
-        drawDecorations(canvas);
-        canvas.restore();
-        if (tinted >= 0) {
-            tintPaint.setColor(tint);
-            tintPaint.setXfermode(TINT_MODE);
-            canvas.drawRect(ink, tintPaint);
-            canvas.restoreToCount(tinted);
+        drawContent(canvas, false);
+    }
+
+    private void drawContent(Canvas canvas, boolean linearText) {
+        TextPaint paint = layout.getPaint();
+        int origFlags = paint.getFlags();
+        if (linearText) {
+            paint.setFlags(origFlags | Paint.LINEAR_TEXT_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
+        }
+        try {
+            // A bound color paints over the whole text, in a layer grown to hold decorations and shadows that reach past the view's box.
+            int tinted = -1;
+            if (tint != 0) {
+                inkBounds(ink);
+                tinted = canvas.saveLayer(ink.left, ink.top, ink.right, ink.bottom, null);
+            }
+            canvas.save();
+            canvas.translate(x, y);
+            if (clipLines > 0 && layout.getLineCount() > clipLines) {
+                canvas.clipRect(0, 0, layout.getWidth(), layout.getLineTop(clipLines));
+            }
+            drawBackgrounds(canvas);
+            if (selEnd > selStart) {
+                int color = selectionColor;
+                if (color == 0) {
+                    android.util.TypedValue v = new android.util.TypedValue();
+                    color = !getContext().getTheme().resolveAttribute(android.R.attr.textColorHighlight, v, true) ? 0x6633b5e5
+                            : v.resourceId != 0 ? getContext().getColor(v.resourceId) : v.data;
+                }
+                selectionPaint.setColor(color);
+                layout.getSelectionPath(selStart, Math.min(selEnd, layout.getText().length()), selection);
+                canvas.drawPath(selection, selectionPaint);
+            }
+            layout.draw(canvas);
+            drawDecorations(canvas);
+            canvas.restore();
+            if (tinted >= 0) {
+                tintPaint.setColor(tint);
+                tintPaint.setXfermode(TINT_MODE);
+                canvas.drawRect(ink, tintPaint);
+                canvas.restoreToCount(tinted);
+            }
+        } finally {
+            if (linearText) paint.setFlags(origFlags);
         }
     }
 
@@ -244,6 +326,7 @@ final class TextNode extends FrameLayout {
     void setTint(int argb) {
         if (argb == tint) return;
         tint = argb;
+        backingDirty = true;
         invalidate();
         if (overflows && getParent() instanceof View) {
             ((View) getParent()).invalidate();

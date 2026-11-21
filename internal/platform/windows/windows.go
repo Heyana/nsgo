@@ -269,10 +269,12 @@ type view struct {
 	// keyframeStart is when the keyframe animation of style began.
 	keyframeStart time.Time
 
-	// A scroll view's configuration, content size and offset.
-	scroll driver.ScrollConfig
-	size   driver.Size
-	offset driver.Point
+	// A scroll view's configuration, content size, offset and zoom scale.
+	scroll  driver.ScrollConfig
+	size    driver.Size
+	offset  driver.Point
+	zoom    float64
+	zooming *zoomAnim
 	// applied counts the core's ItemScrollTo and ItemScrollBy items,
 	// reported with each offset; sticky are a scroll view's sticky cells,
 	// and laid and shift a sticky cell's frame from the core and how far
@@ -1684,6 +1686,7 @@ func (w *window) apply(b *driver.MountBatch) {
 				w.uiaChanged(held)
 			}
 		case driver.ItemScrollConfig:
+			oldCfg := v.scroll
 			old, inset := scrollbar.RestInset(&v.scroll, v.refreshing), scrollbar.RestInset(it.Scroll, v.refreshing)
 			to := v.offset
 			if old != inset {
@@ -1694,6 +1697,7 @@ func (w *window) apply(b *driver.MountBatch) {
 				v.barAlpha = 0
 				w.redrawView(v)
 			}
+			w.configureScrollZoom(v, &oldCfg)
 			if to != v.offset {
 				w.moveOffset(v, to)
 			}
@@ -1772,6 +1776,8 @@ func (w *window) apply(b *driver.MountBatch) {
 			} else {
 				w.scrollTo(v, it.Point)
 			}
+		case driver.ItemZoomTo:
+			w.zoomTo(v, it.Zoom, it.Animated)
 		}
 	}
 	if w.root != b.Root {
@@ -1785,7 +1791,7 @@ func (w *window) apply(b *driver.MountBatch) {
 	for _, v := range rescroll {
 		// Late commits retain the refresh room even after its animation ends.
 		if !v.deleted {
-			if to := scrollbar.ClampRefreshing(&v.scroll, v.frame.Size, v.size, v.offset, v.refreshing); to != v.offset {
+			if to := v.clampOffset(v.offset, v.refreshing); to != v.offset {
 				w.moveOffset(v, to)
 			}
 		}
@@ -1937,7 +1943,7 @@ func boolArg(b bool) uintptr {
 // reports whether it moved. The engine hit tests with the offset, so a
 // move is always reported, whatever v's events.
 func (w *window) scrollTo(v *view, offset driver.Point) bool {
-	offset = scrollbar.Clamp(&v.scroll, v.frame.Size, v.size, offset)
+	offset = v.clampOffset(offset, false)
 	if offset == v.offset {
 		return false
 	}
@@ -1962,7 +1968,7 @@ func (w *window) moveOffset(v *view, offset driver.Point) {
 	w.pinSticky(v)
 	// The engine sees the offset within the content and its insets, as a
 	// touch pulls it past.
-	w.reportScroll(driver.Event{Kind: driver.EventScroll, ID: v.id, Point: scrollbar.Clamp(&v.scroll, v.frame.Size, v.size, offset), Count: v.applied})
+	w.reportScroll(driver.Event{Kind: driver.EventScroll, ID: v.id, Point: v.clampOffset(offset, false), Value: v.zoomValue(), Count: v.applied})
 }
 
 // wheelNotch is how far the content under a view taking the wheel moves
@@ -2046,6 +2052,7 @@ func (v *view) scrollCandidate() scrollCandidate {
 		frame:   v.frame.Size,
 		content: v.size,
 		offset:  v.offset,
+		zoom:    v.zoomScale(),
 	}
 }
 
@@ -2963,8 +2970,11 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 		// A precision touchpad's pinch comes as turns with Control held.
-		if message == wmMouseWheel && wParam&mkControl != 0 && w.wheelPinch(w.point(at.X, at.Y), delta) {
-			return 0
+		if message == wmMouseWheel && wParam&mkControl != 0 {
+			p := w.point(at.X, at.Y)
+			if w.wheelPinch(p, delta) || w.wheelZoom(p, delta) {
+				return 0
+			}
 		}
 		if w.wheelTaken(w.point(at.X, at.Y), delta, message == wmMouseHWheel) {
 			return 0

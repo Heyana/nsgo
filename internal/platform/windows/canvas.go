@@ -169,15 +169,15 @@ func (c *canvasPlayer) playAll(ops []driver.DrawOp) {
 	c.p.setTransform(c.world)
 }
 
-// canvasOffscreen plays ops into a bitmap of the canvas's own and draws
-// it; false when there is no bitmap.
-func (p *painter) canvasOffscreen(v *view, ops []driver.DrawOp, width, height float32) bool {
-	pw, ph := uint32(math.Ceil(float64(width*p.scale))), uint32(math.Ceil(float64(height*p.scale)))
-	if pw == 0 || ph == 0 || pw*ph > 1<<24 {
+// canvasOffscreen plays ops into a bitmap of the canvas's own at scale pixels
+// per point and draws it; false when there is no bitmap.
+func (p *painter) canvasOffscreen(v *view, ops []driver.DrawOp, width, height, scale float32) bool {
+	pw, ph := uint32(math.Ceil(float64(width*scale))), uint32(math.Ceil(float64(height*scale)))
+	if pw == 0 || ph == 0 || uint64(pw)*uint64(ph) > 1<<24 {
 		return false
 	}
-	props := bitmapProperties1{format: dxgiFormatBGRA, alphaMode: d2dAlphaPremultiplied, dpiX: 96 * p.scale,
-		dpiY: 96 * p.scale, options: d2dBitmapTarget}
+	props := bitmapProperties1{format: dxgiFormatBGRA, alphaMode: d2dAlphaPremultiplied, dpiX: 96 * scale,
+		dpiY: 96 * scale, options: d2dBitmapTarget}
 	var off *comObject
 	if failed(p.dc.callSize(dcCreateBitmap, pw, ph, 0, 0, uintptr(unsafe.Pointer(&props)), uintptr(unsafe.Pointer(&off)))) {
 		return false

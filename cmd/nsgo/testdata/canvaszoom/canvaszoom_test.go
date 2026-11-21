@@ -121,3 +121,81 @@ func TestCanvasMountedAfterZoomIsSharp(t *testing.T) {
 	a.Post(func() { shown.Set(true) })
 	checkLine(t, a, 3)
 }
+
+func TestLargeZoomedCanvasIsSharp(t *testing.T) {
+	requireWeb(t)
+	var ref core.Ref
+	draws := 0
+	// 2500×2500 at 3x zoom (ratio 2 -> 15000×15000 full bitmap) exceeds the
+	// 4096×4096 budget and stays sharp only by drawing its visible slice.
+	large := core.Canvas{Style: core.Style{Width: core.Pt(2500), Height: core.Pt(2500)}, Draw: func(d *core.Drawing, _ core.Size) {
+		draws++
+		d.SetFillColor(core.RGB(0xffffff)).FillRect(0, 0, 2500, 2500)
+		d.SetFillColor(core.RGB(0x000000)).FillRect(50, 0, 1, 2500)
+		d.SetFillColor(core.RGB(0x000000)).FillRect(1200, 0, 1, 2500)
+	}}
+	a := nsgotest.Start(t, func(*core.Scope) core.Node { return zoomScroll(&ref, large) }, nsgotest.Size(300, 300))
+	before := draws
+	a.Post(func() { ref.ZoomTo(3, &core.Point{X: 50, Y: 50}, false) })
+	checkLine(t, a, 3)
+	// Panning to a line far outside the initial slice repaints the new visible region sharply.
+	a.Post(func() { ref.ZoomTo(3, &core.Point{X: 1200, Y: 1200}, false) })
+	checkLine(t, a, 3)
+	if draws != before {
+		t.Errorf("zooming large canvas reran Draw %d times", draws-before)
+	}
+}
+
+func TestStyleTransformCanvasIsSharp(t *testing.T) {
+	requireWeb(t)
+	draws := 0
+	var scale *core.Signal[float32]
+	a := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		scale = core.NewSignal[float32](cx, 3)
+		return core.View{
+			Style: core.Style{Width: core.Pt(300), Height: core.Pt(300), Background: core.RGB(0xffffff), Overflow: core.Hidden},
+			Children: []core.Node{
+				core.View{
+					StyleFunc: func() core.Style {
+						return core.Style{
+							Width:           core.Pt(300),
+							Height:          core.Pt(300),
+							TransformOrigin: core.ObjectPosition{X: core.PositionStart, Y: core.PositionStart},
+							Transform:       core.Transform{Scale: scale.Get()},
+						}
+					},
+					Children: []core.Node{lineCanvas(&draws)},
+				},
+			},
+		}
+	}, nsgotest.Size(300, 300))
+	checkLine(t, a, 3)
+	a.Post(func() { scale.Set(2) })
+	checkLine(t, a, 2)
+}
+
+func TestAnimatedStyleTransformCanvasIsSharp(t *testing.T) {
+	requireWeb(t)
+	draws := 0
+	var animScale *core.AnimatedValue
+	a := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		animScale = core.NewAnimatedValue(cx, 3)
+		return core.View{
+			Style: core.Style{Width: core.Pt(300), Height: core.Pt(300), Background: core.RGB(0xffffff), Overflow: core.Hidden},
+			Children: []core.Node{
+				core.View{
+					Style: core.Style{
+						Width:           core.Pt(300),
+						Height:          core.Pt(300),
+						TransformOrigin: core.ObjectPosition{X: core.PositionStart, Y: core.PositionStart},
+						Animated:        &core.AnimatedStyle{Scale: animScale},
+					},
+					Children: []core.Node{lineCanvas(&draws)},
+				},
+			},
+		}
+	}, nsgotest.Size(300, 300))
+	checkLine(t, a, 3)
+	a.Post(func() { animScale.Set(2) })
+	checkLine(t, a, 2)
+}

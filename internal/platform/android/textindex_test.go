@@ -214,7 +214,7 @@ func TestTextNodePressedIndex(t *testing.T) {
 		}
 	}
 
-	out := runJavaAlgorithm(t, "textindex", "TextIndexCheck", input.buf, "TextNode", "Protocol")
+	out := runJavaAlgorithm(t, "textindex", "TextIndexCheck", input.buf, "TextNode", "Protocol", "RasterScale")
 	r := reader{out}
 	for _, c := range cases {
 		for _, q := range c.queries {

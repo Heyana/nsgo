@@ -90,9 +90,54 @@ final class CanvasNode extends View {
     private Part[] parts = new Part[0];
     Presser presser;
     private int hovered = -1;
+    /** Stepped raster scale (>1 when inside a scaled view or zooming scroll). */
+    private float rasterScale = 1f;
+    private Bitmap backing;
+    private boolean backingDirty = true;
+    private final Rect backingDst = new Rect();
+    private final Paint backingPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
     CanvasNode(Context context) {
         super(context);
+    }
+
+    float rasterScale() {
+        return rasterScale;
+    }
+
+    void setRasterScale(float scale) {
+        float next = scale > 1f ? scale : 1f;
+        if (next == rasterScale) return;
+        rasterScale = next;
+        backingDirty = true;
+        if (rasterScale <= 1f) releaseBacking();
+        invalidate();
+    }
+
+    private void releaseBacking() {
+        if (backing != null) {
+            backing.recycle();
+            backing = null;
+        }
+        backingDirty = true;
+    }
+
+    @Override
+    public void invalidate() {
+        backingDirty = true;
+        super.invalidate();
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        backingDirty = true;
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        releaseBacking();
     }
 
     /** Retains exactly the frames the new drawing uses. A new version can reuse a bitmap of its size. */
@@ -154,10 +199,33 @@ final class CanvasNode extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         if (ops == null || ops.length == 0) return;
-        int layer = canvas.saveLayer(0, 0, getWidth(), getHeight(), null);
+        int w = getWidth(), h = getHeight();
+        if (w <= 0 || h <= 0) return;
         float density = getResources().getDisplayMetrics().density;
+        if (rasterScale > 1f) {
+            float eff = RasterScale.boundedScale(w, h, rasterScale);
+            if (eff > 1f) {
+                int bw = RasterScale.scaledPixels(w, eff);
+                int bh = RasterScale.scaledPixels(h, eff);
+                if (backing == null || backing.getWidth() != bw || backing.getHeight() != bh) {
+                    releaseBacking();
+                    backing = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888);
+                }
+                if (backingDirty) {
+                    backing.eraseColor(Color.TRANSPARENT);
+                    Canvas bmCanvas = new Canvas(backing);
+                    bmCanvas.scale(density * ((float) bw / w), density * ((float) bh / h));
+                    new Player(bmCanvas, w / density, h / density, pictures, pixels).play(ByteBuffer.wrap(ops));
+                    backingDirty = false;
+                }
+                backingDst.set(0, 0, w, h);
+                canvas.drawBitmap(backing, null, backingDst, backingPaint);
+                return;
+            }
+        }
+        int layer = canvas.saveLayer(0, 0, w, h, null);
         canvas.scale(density, density);
-        new Player(canvas, getWidth() / density, getHeight() / density, pictures, pixels).play(ByteBuffer.wrap(ops));
+        new Player(canvas, w / density, h / density, pictures, pixels).play(ByteBuffer.wrap(ops));
         canvas.restoreToCount(layer);
     }
 
@@ -826,6 +894,7 @@ final class CanvasNode extends View {
             }
             paint.setTypeface(Text.typeface(family, weight, italic));
             paint.setTextSize(size);
+            paint.setFlags(paint.getFlags() | Paint.LINEAR_TEXT_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
             paint.setFontFeatureSettings(features);
             canvas.save();
             canvas.concat(state.ctm);

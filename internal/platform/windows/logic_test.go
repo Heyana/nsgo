@@ -2166,3 +2166,63 @@ func TestAccessibilityLevelAndSpinButton(t *testing.T) {
 		t.Errorf("spin button input ControlType = %+v, want %d", v, ctSpinner)
 	}
 }
+
+func TestScrollZoomAndHitTesting(t *testing.T) {
+	w := &window{animator: driver.NewAnimator(nil), env: driver.Environment{ReduceMotion: true}}
+	child := &view{id: 2, kind: driver.KindView, frame: driver.Bounds{Origin: driver.Point{X: 20, Y: 30}, Size: driver.Size{Width: 40, Height: 40}},
+		style: driver.ViewStyle{Opacity: 1}}
+	scroll := &view{id: 1, kind: driver.KindScroll, frame: driver.Bounds{Size: driver.Size{Width: 200, Height: 200}},
+		size: driver.Size{Width: 200, Height: 200}, style: driver.ViewStyle{Opacity: 1}, children: []*view{child}}
+	child.parent = scroll
+	w.views = []*view{nil, scroll, child}
+	w.root = 1
+
+	old := scroll.scroll
+	scroll.scroll = driver.ScrollConfig{MinZoomScale: 0.5, MaxZoomScale: 4, ZoomScale: 2}
+	w.configureScrollZoom(scroll, &old)
+	if scroll.zoomScale() != 2 || scroll.zoomValue() != 2 {
+		t.Fatalf("initial zoom = %v / %v, want 2", scroll.zoomScale(), scroll.zoomValue())
+	}
+	// At zoom 2, offset 0, child at content (20,30)+(40,40) occupies viewport (40,60)..(120,140).
+	if got := pick(scroll, driver.Point{X: 50, Y: 70}); got != child {
+		t.Fatalf("pick at zoomed child = %v, want child", got)
+	}
+	if got := pick(scroll, driver.Point{X: 25, Y: 35}); got != scroll {
+		t.Fatalf("pick at unzoomed origin = %v, want scroll", got)
+	}
+	// ItemZoomTo around (50, 50) at scale 3 moves offset to (50*3-100, 50*3-100) = (50, 50).
+	w.zoomTo(scroll, &driver.ZoomRequest{Scale: 3, Center: &driver.Point{X: 50, Y: 50}}, false)
+	if scroll.zoomScale() != 3 || scroll.offset != (driver.Point{X: 50, Y: 50}) {
+		t.Fatalf("after zoomTo(3): zoom=%v offset=%+v, want 3 and (50, 50)", scroll.zoomScale(), scroll.offset)
+	}
+	// Wheel pan on a zooming view scrolls both vertically and horizontally.
+	if v, to := wheelTurn([]*view{scroll}, -1, false); v != scroll || to.Y <= scroll.offset.Y {
+		t.Fatalf("vertical wheelTurn = (%v, %+v), want scroll moving down", v, to)
+	}
+	if v, to := wheelTurn([]*view{scroll}, 1, true); v != scroll || to.X <= scroll.offset.X {
+		t.Fatalf("horizontal wheelTurn = (%v, %+v), want scroll moving right", v, to)
+	}
+	// Ctrl+wheel zooms around pointer and clamps to MaxZoomScale.
+	if !w.wheelZoom(driver.Point{X: 100, Y: 100}, 120*10) {
+		t.Fatal("wheelZoom did not claim zooming scroll view")
+	}
+	if scroll.zoomScale() != 4 {
+		t.Fatalf("clamped wheelZoom = %v, want 4", scroll.zoomScale())
+	}
+}
+
+func TestOffscreenCanvasScaleFollowsWorldTransform(t *testing.T) {
+	if got := offscreenScale(100, 100, 2, identity); got != 2 {
+		t.Fatalf("identity offscreenScale = %v, want 2", got)
+	}
+	if got := offscreenScale(100, 100, 2, scaling(2.2, 2.2)); got != 5 {
+		t.Fatalf("2.2x offscreenScale = %v, want 5 (2 * RasterStep(2.2)=2.5)", got)
+	}
+	if got := offscreenScale(100, 100, 2, scaling(8, 8)); got != 8 {
+		t.Fatalf("8x offscreenScale = %v, want 8 (capped at 4x)", got)
+	}
+	// 2048x2048 at baseScale 2 is already 4096x4096 -> cannot upscale past budget.
+	if got := offscreenScale(2048, 2048, 2, scaling(3, 3)); got != 2 {
+		t.Fatalf("at-budget offscreenScale = %v, want 2", got)
+	}
+}

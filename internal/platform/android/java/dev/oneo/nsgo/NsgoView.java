@@ -3215,6 +3215,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 detach(n.view);
                 ViewGroup group = parent.children;
                 group.addView(n.view, before == null ? -1 : group.indexOfChild(before.view));
+                float parentScale = ancestorRasterScale(n.view);
+                if (parentScale != n.inheritedRasterStep) {
+                    n.inheritedRasterStep = parentScale;
+                    walkRasterScale(n.view, parentScale);
+                }
                 if (n.modal >= 0 && !n.presented) {
                     n.presented = true;
                     present(n);
@@ -3879,9 +3884,59 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             }
         }
         l.apply(n.view, n.background);
+        followScale(n, Math.max(Math.abs(l.scaleX), Math.abs(l.scaleY)));
         if (n.shift != 0) {
             if (n.shiftAcross) n.view.setTranslationX(n.view.getTranslationX() + n.shift * density);
             else n.view.setTranslationY(n.view.getTranslationY() + n.shift * density);
+        }
+    }
+
+    /**
+     * Redraws texts and canvases inside n at higher resolution when n's
+     * style transform crosses a half-step (RasterScale.step), matching Apple.
+     */
+    private void followScale(Node n, float scale) {
+        float step = RasterScale.step(scale);
+        if (step == n.rasterStep) return;
+        n.rasterStep = step;
+        walkRasterScale(n.view, ancestorRasterScale(n.view));
+    }
+
+    /** Redraws texts and canvases inside zooming scroll node n when its zoom crosses a step. */
+    private void followZoomScale(Node n, float zoom) {
+        float step = RasterScale.step(zoom);
+        if (step == n.zoomRasterStep) return;
+        n.zoomRasterStep = step;
+        walkRasterScale(n.children, ancestorRasterScale(n.children));
+    }
+
+    /** Cumulative stepped scale of v's ancestors up to this NsgoView. */
+    private float ancestorRasterScale(View v) {
+        float scale = 1f;
+        for (ViewParent p = v.getParent(); p instanceof View && p != this; p = p.getParent()) {
+            View pv = (View) p;
+            float step = RasterScale.step(Math.max(Math.abs(pv.getScaleX()), Math.abs(pv.getScaleY())));
+            scale = RasterScale.combine(scale, step);
+        }
+        return scale;
+    }
+
+    /** Applies the cumulative stepped raster scale to every TextNode and CanvasNode under v. */
+    private void walkRasterScale(View v, float parentScale) {
+        Node node = byView.get(v);
+        if (node != null) node.inheritedRasterStep = parentScale;
+        float own = RasterScale.step(Math.max(Math.abs(v.getScaleX()), Math.abs(v.getScaleY())));
+        float scale = RasterScale.combine(parentScale, own);
+        if (v instanceof CanvasNode) {
+            ((CanvasNode) v).setRasterScale(scale);
+        } else if (v instanceof TextNode) {
+            ((TextNode) v).setRasterScale(scale);
+        }
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0, count = g.getChildCount(); i < count; i++) {
+                walkRasterScale(g.getChildAt(i), scale);
+            }
         }
     }
 
@@ -5696,6 +5751,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (!zooms) {
             Scrolling.Scroller s = (Scrolling.Scroller) scroller;
             scroller.setOnScrollChangeListener((v, x, y, oldX, oldY) -> host.scrolled(s.offsetX(), s.offsetY(), 1));
+            n.children.setScaleX(1);
+            n.children.setScaleY(1);
+            if (n.zoomRasterStep > 1f) {
+                n.zoomRasterStep = 1f;
+                walkRasterScale(n.children, ancestorRasterScale(n.children));
+            }
         } else {
             n.children.setScaleX(1);
             n.children.setScaleY(1);
@@ -6901,6 +6962,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             }
 
             @Override
+            public void zoomChanged(float zoom) {
+                followZoomScale(n, zoom);
+            }
+
+            @Override
             public boolean dismissKeyboard() {
                 View focused = findFocus();
                 if (!(focused instanceof EditText)) return false;
@@ -7025,6 +7091,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         /** The view's background, the look it shows and the transition moving it. */
         Box background;
         Look shown;
+        /** Stepped raster scales for this node's transform, scroll zoom, and ancestor chain. */
+        float rasterStep = 1f, zoomRasterStep = 1f, inheritedRasterStep = 1f;
         /** Whether it still shows the default style startDefault gave it, which the first style replaces. */
         boolean fresh;
         /** Whether the node is a selection area (driver.ViewProps.SelectionArea). */

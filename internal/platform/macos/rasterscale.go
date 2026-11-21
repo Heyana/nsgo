@@ -40,8 +40,7 @@ func (v *view) parentView() *view {
 // followScale draws the content inside v again when vs, v's style with
 // its animated values, scales it past another step.
 func (v *view) followScale(vs *driver.ViewStyle) {
-	sx, sy := vs.Transform.Scales()
-	step := apple.RasterStep(max(sx, sy))
+	step := apple.RasterStep(vs.Transform.RasterScale())
 	if step == v.rasterStep || (step <= 1 && v.rasterStep <= 1) {
 		return
 	}

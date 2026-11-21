@@ -472,6 +472,9 @@ func (p *canvasPlayer) shadowed(draw func(cr uintptr)) {
 		return
 	}
 	scale := math.Max(float64(p.w.env.PixelRatio), 1)
+	if p.v != nil && p.v.canvas.raster != nil && p.v.canvas.raster.scale > 0 {
+		scale = p.v.canvas.raster.scale
+	}
 	blur := float64(sh.R) / 2 * scale // the Gaussian's deviation
 	pad := math.Ceil(3 * blur)
 	w, h := int(math.Ceil(p.size.w*scale+2*pad)), int(math.Ceil(p.size.h*scale+2*pad))

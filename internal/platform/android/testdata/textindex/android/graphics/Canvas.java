@@ -1,6 +1,10 @@
 package android.graphics;
 
 public class Canvas {
+    public Canvas() {}
+    public Canvas(Bitmap bitmap) {}
+    public void scale(float sx, float sy) {}
+    public void drawBitmap(Bitmap bitmap, Rect src, RectF dst, Paint paint) {}
     public int save() { return 0; }
     public void restore() {}
     public int saveLayer(RectF bounds, Paint paint) { return 0; }

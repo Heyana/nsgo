@@ -1431,12 +1431,14 @@ func (w *window) apply(b *driver.MountBatch) {
 				w.accessChanged(v)
 			}
 		case driver.ItemScrollConfig:
+			oldCfg := v.scroll
 			old, inset := scrollbar.RestInset(&v.scroll, v.refreshing), scrollbar.RestInset(it.Scroll, v.refreshing)
 			to := v.offset
 			if old != inset {
 				to = scrollbar.KeepStart(old, inset, to)
 			}
 			v.scroll = *it.Scroll
+			w.configureScrollZoom(v, &oldCfg)
 			if to != v.offset {
 				w.moveOffset(v, to)
 			}
@@ -1502,6 +1504,8 @@ func (w *window) apply(b *driver.MountBatch) {
 			} else {
 				w.scrollTo(v, it.Point)
 			}
+		case driver.ItemZoomTo:
+			w.zoomTo(v, it.Zoom, it.Animated)
 		}
 	}
 	oldRoot := w.view(w.root)
@@ -1518,7 +1522,7 @@ func (w *window) apply(b *driver.MountBatch) {
 	for _, v := range rescroll {
 		// Late commits retain the refresh room even after its animation ends.
 		if !v.deleted {
-			if to := scrollbar.ClampRefreshing(&v.scroll, v.frame.Size, v.size, v.offset, v.refreshing); to != v.offset {
+			if to := v.clampOffset(v.offset, v.refreshing); to != v.offset {
 				w.moveOffset(v, to)
 			}
 		}
@@ -1733,7 +1737,7 @@ func boolInt(b bool) int32 {
 // scrollTo moves v's content to offset, clamped to its content, and
 // reports the move.
 func (w *window) scrollTo(v *view, offset driver.Point) bool {
-	offset = scrollbar.Clamp(&v.scroll, v.frame.Size, v.size, offset)
+	offset = v.clampOffset(offset, false)
 	if offset == v.offset {
 		return false
 	}
@@ -1760,7 +1764,7 @@ func (w *window) moveOffset(v *view, offset driver.Point) {
 	w.pinSticky(v)
 	// The engine sees the offset within the content and its insets, as a
 	// touch pulls it past.
-	w.reportScroll(driver.Event{Kind: driver.EventScroll, ID: v.id, Point: scrollbar.Clamp(&v.scroll, v.frame.Size, v.size, offset), Count: v.applied})
+	w.reportScroll(driver.Event{Kind: driver.EventScroll, ID: v.id, Point: v.clampOffset(offset, false), Value: v.zoomValue(), Count: v.applied})
 }
 
 // wheel scrolls the innermost scroll view under at that can move in the
@@ -1778,7 +1782,13 @@ func (w *window) wheel(at driver.Point, dx, dy float64) {
 			continue
 		}
 		offset := v.offset
-		if v.scroll.Horizontal {
+		if v.scroll.Zooms() {
+			if dx == 0 && dy == 0 {
+				continue
+			}
+			offset.X += driver.Points(dx)
+			offset.Y += driver.Points(dy)
+		} else if v.scroll.Horizontal {
 			if dx == 0 {
 				continue
 			}

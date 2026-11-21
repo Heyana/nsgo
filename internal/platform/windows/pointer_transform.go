@@ -38,9 +38,7 @@ func (v *view) local(p driver.Point) driver.Point {
 // surfacePoint maps a point of the window into v's viewport.
 func (v *view) surfacePoint(p driver.Point) driver.Point {
 	if parent := v.parent; parent != nil {
-		p = parent.surfacePoint(p)
-		p.X += parent.offset.X
-		p.Y += parent.offset.Y
+		p = parent.contentPoint(parent.surfacePoint(p))
 	}
 	return v.local(p)
 }

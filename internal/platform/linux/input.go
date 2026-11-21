@@ -560,7 +560,9 @@ func controllerPoints(controller uintptr) bool {
 // says the deltas are points, as a touchpad's are.
 func (w *window) wheelEvent(state uint32, at driver.Point, dx, dy float64, inPoints bool) {
 	if state&gdkControl != 0 {
-		w.wheelPinch(at, dy)
+		if !w.wheelPinch(at, dy) {
+			w.wheelZoom(at, dy)
+		}
 		return
 	}
 	if state&gdkShift != 0 {
@@ -814,8 +816,8 @@ const (
 )
 
 // wheelPinch follows a touchpad's pinch, which comes as wheel turns with
-// Control held, at p.
-func (w *window) wheelPinch(p driver.Point, delta float64) {
+// Control held, at p; it reports whether a view took it.
+func (w *window) wheelPinch(p driver.Point, delta float64) bool {
 	g := w.pinching
 	if g != nil && g.v.deleted {
 		g = nil
@@ -823,7 +825,7 @@ func (w *window) wheelPinch(p driver.Point, delta float64) {
 	if g == nil {
 		v := w.hitEvent(p, driver.EventPinch)
 		if v == nil {
-			return
+			return false
 		}
 		g = &twoFinger{v: v, kind: driver.EventPinch, value: 1, lastTime: time.Now()}
 		w.pinching = g
@@ -836,6 +838,7 @@ func (w *window) wheelPinch(p driver.Point, delta float64) {
 		gSourceRemove(w.pinchTimeout)
 	}
 	w.pinchTimeout = gTimeoutAdd(pinchIdleMillis, cbPinchTimeout, w.handle)
+	return true
 }
 
 func pinchTimeoutCallback(data uintptr) int32 {
