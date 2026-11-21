@@ -4,6 +4,7 @@ package linux
 
 import (
 	"slices"
+	"unicode/utf8"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -59,6 +60,23 @@ func (w *window) focusedView() *view {
 		return w.controlFocus
 	}
 	return w.focusedEntry()
+}
+
+// focusCommand applies ItemFocus. For single-line fields GTK keeps the
+// selection set in this batch, or puts the caret at the end of the text.
+func (w *window) focusCommand(v *view, selectionSet bool) {
+	if v.entry == 0 || v.textView != 0 {
+		w.focusView(v)
+		return
+	}
+	if w.focus == v || !w.focusableView(v) {
+		return
+	}
+	w.setControlFocus(nil)
+	if gtkEntryGrabFocusWithoutSelecting(v.entry) != 0 && !selectionSet {
+		end := int32(utf8.RuneCountInString(w.editorText(v)))
+		gtkEditableSelectRegion(v.entry, end, end)
+	}
 }
 
 // focusView grabs the actual GTK widget; focus reports then drive the engine's focus and focus-visible styles as they do for text fields.

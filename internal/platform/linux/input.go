@@ -1201,6 +1201,10 @@ func (w *window) menuChosen(ref menuRef) bool {
 // menuEdit carries out an editing role in the focused field, else the focused page, else the text selection (Copy and Select All), reporting whether one of them took it.
 func (w *window) menuEdit(role driver.MenuRole) bool {
 	if w.focus != nil {
+		if role == driver.MenuSelectAll && w.focus.textView == 0 {
+			gtkEditableSelectRegion(w.focus.entry, 0, -1)
+			return true
+		}
 		action := map[driver.MenuRole]string{
 			driver.MenuUndo: "text.undo", driver.MenuRedo: "text.redo",
 			driver.MenuCut: "clipboard.cut", driver.MenuCopy: "clipboard.copy",

@@ -172,6 +172,7 @@ var (
 	gtkBoxPrepend                          func(uintptr, uintptr)
 	gtkBoxRemove                           func(uintptr, uintptr)
 	gtkEntryNew                            func() uintptr
+	gtkEntryGrabFocusWithoutSelecting      func(uintptr) int32
 	gtkEditableSetText                     func(uintptr, *byte)
 	gtkEditableGetText                     func(uintptr) uintptr
 	gtkEditableSetEditable                 func(uintptr, int32)
@@ -539,6 +540,7 @@ func bind() {
 	purego.RegisterLibFunc(&gtkBoxPrepend, gtkLib, "gtk_box_prepend")
 	purego.RegisterLibFunc(&gtkBoxRemove, gtkLib, "gtk_box_remove")
 	purego.RegisterLibFunc(&gtkEntryNew, gtkLib, "gtk_entry_new")
+	purego.RegisterLibFunc(&gtkEntryGrabFocusWithoutSelecting, gtkLib, "gtk_entry_grab_focus_without_selecting")
 	purego.RegisterLibFunc(&gtkEditableSetText, gtkLib, "gtk_editable_set_text")
 	purego.RegisterLibFunc(&gtkEditableGetText, gtkLib, "gtk_editable_get_text")
 	purego.RegisterLibFunc(&gtkEditableSetEditable, gtkLib, "gtk_editable_set_editable")

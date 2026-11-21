@@ -31,40 +31,39 @@ import (
 type textIter [32]uintptr
 
 var (
-	gtkTextViewNew                    func() uintptr
-	gtkTextViewGetBuffer              func(uintptr) uintptr
-	gtkTextViewSetWrapMode            func(uintptr, int32)
-	gtkTextViewSetEditable            func(uintptr, int32)
-	gtkTextViewSetCursorVisible       func(uintptr, int32)
-	gtkTextViewSetJustification       func(uintptr, int32)
-	gtkTextViewSetAcceptsTab          func(uintptr, int32)
-	gtkTextViewSetInputPurpose        func(uintptr, int32)
-	gtkTextViewSetInputHints          func(uintptr, int32)
-	gtkTextBufferSetText              func(uintptr, *byte, int32)
-	gtkTextBufferGetText              func(uintptr, *textIter, *textIter, int32) uintptr
-	gtkTextBufferGetBounds            func(uintptr, *textIter, *textIter)
-	gtkTextBufferGetSelectionBound    func(uintptr, *textIter, *textIter) int32
-	gtkTextBufferGetIterAtOffset      func(uintptr, *textIter, int32)
-	gtkTextBufferSelectRange          func(uintptr, *textIter, *textIter)
-	gtkTextBufferInsert               func(uintptr, uintptr, *byte, int32)
-	gtkTextBufferInsertAtCursor       func(uintptr, *byte, int32)
-	gtkTextIterGetOffset              func(uintptr) int32
-	gtkScrolledWindowNew              func() uintptr
-	gtkScrolledWindowSetChild         func(uintptr, uintptr)
-	gtkScrolledWindowSetPolicy        func(uintptr, int32, int32)
-	gtkEditableGetSelectionBounds     func(uintptr, *int32, *int32) int32
-	gtkEntryGrabFocusWithoutSelecting func(uintptr) int32
-	gtkEditableInsertText             func(uintptr, *byte, int32, uintptr)
-	gtkEditableGetDelegate            func(uintptr) uintptr
-	gtkEntrySetInputPurpose           func(uintptr, int32)
-	gtkEntrySetInputHints             func(uintptr, int32)
-	gtkWidgetSetName                  func(uintptr, *byte)
-	gtkLabelSetText                   func(uintptr, *byte)
-	gtkLabelSetXalign                 func(uintptr, float32)
-	gtkLabelSetYalign                 func(uintptr, float32)
-	gSignalStopEmissionByName         func(uintptr, *byte)
-	gtkStyleContextAddForDisplay      func(uintptr, uintptr, uint32)
-	gtkStyleContextRemoveDisplay      func(uintptr, uintptr)
+	gtkTextViewNew                 func() uintptr
+	gtkTextViewGetBuffer           func(uintptr) uintptr
+	gtkTextViewSetWrapMode         func(uintptr, int32)
+	gtkTextViewSetEditable         func(uintptr, int32)
+	gtkTextViewSetCursorVisible    func(uintptr, int32)
+	gtkTextViewSetJustification    func(uintptr, int32)
+	gtkTextViewSetAcceptsTab       func(uintptr, int32)
+	gtkTextViewSetInputPurpose     func(uintptr, int32)
+	gtkTextViewSetInputHints       func(uintptr, int32)
+	gtkTextBufferSetText           func(uintptr, *byte, int32)
+	gtkTextBufferGetText           func(uintptr, *textIter, *textIter, int32) uintptr
+	gtkTextBufferGetBounds         func(uintptr, *textIter, *textIter)
+	gtkTextBufferGetSelectionBound func(uintptr, *textIter, *textIter) int32
+	gtkTextBufferGetIterAtOffset   func(uintptr, *textIter, int32)
+	gtkTextBufferSelectRange       func(uintptr, *textIter, *textIter)
+	gtkTextBufferInsert            func(uintptr, uintptr, *byte, int32)
+	gtkTextBufferInsertAtCursor    func(uintptr, *byte, int32)
+	gtkTextIterGetOffset           func(uintptr) int32
+	gtkScrolledWindowNew           func() uintptr
+	gtkScrolledWindowSetChild      func(uintptr, uintptr)
+	gtkScrolledWindowSetPolicy     func(uintptr, int32, int32)
+	gtkEditableGetSelectionBounds  func(uintptr, *int32, *int32) int32
+	gtkEditableInsertText          func(uintptr, *byte, int32, uintptr)
+	gtkEditableGetDelegate         func(uintptr) uintptr
+	gtkEntrySetInputPurpose        func(uintptr, int32)
+	gtkEntrySetInputHints          func(uintptr, int32)
+	gtkWidgetSetName               func(uintptr, *byte)
+	gtkLabelSetText                func(uintptr, *byte)
+	gtkLabelSetXalign              func(uintptr, float32)
+	gtkLabelSetYalign              func(uintptr, float32)
+	gSignalStopEmissionByName      func(uintptr, *byte)
+	gtkStyleContextAddForDisplay   func(uintptr, uintptr, uint32)
+	gtkStyleContextRemoveDisplay   func(uintptr, uintptr)
 
 	cbEntryInsert, cbEntryDelete, cbEntrySelection, cbPreedit                uintptr
 	cbBufferChanged, cbBufferInsert, cbBufferDelete, cbBufferMark, cbAreaKey uintptr
@@ -98,7 +97,6 @@ func bindEditing() {
 		{&gtkScrolledWindowSetChild, "gtk_scrolled_window_set_child"},
 		{&gtkScrolledWindowSetPolicy, "gtk_scrolled_window_set_policy"},
 		{&gtkEditableGetSelectionBounds, "gtk_editable_get_selection_bounds"},
-		{&gtkEntryGrabFocusWithoutSelecting, "gtk_entry_grab_focus_without_selecting"},
 		{&gtkEditableInsertText, "gtk_editable_insert_text"},
 		{&gtkEditableGetDelegate, "gtk_editable_get_delegate"},
 		{&gtkEntrySetInputPurpose, "gtk_entry_set_input_purpose"},
@@ -536,18 +534,7 @@ func (w *window) focusEntry(v *view) {
 		if v.textView != 0 {
 			gtkWidgetGrabFocus(v.textView)
 		} else {
-			gtkEntryGrabFocusWithoutSelecting(v.entry)
-			// GTK selects an entry's whole value when it receives focus if
-			// gtk-entry-select-on-focus is enabled. NSGo places a programmatic
-			// focus at the end, matching the other desktop backends.
-			text := w.editorText(v)
-			if selection := v.fs.Selection(); selection.Start != 0 || selection.End != 0 {
-				w.selectRange(v, selection)
-				return
-			}
-			end := int32(utf8.RuneCountInString(text))
-			gtkEditableSelectRegion(v.entry, end, end)
-			v.fs.SetSelection(driver.TextRange{Start: driver.UTF16Len(text), End: driver.UTF16Len(text)})
+			gtkWidgetGrabFocus(v.entry)
 		}
 		return
 	}

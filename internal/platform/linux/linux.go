@@ -908,6 +908,7 @@ func (w *window) apply(b *driver.MountBatch) {
 		focus bool
 	}
 	var focus []focusChange
+	var selections map[*view]bool
 	lb := w.newLayoutBatch(b)
 	w.prepareRoles(b)
 	for i := range b.Items {
@@ -1183,6 +1184,10 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.setValue(v, it.Value, it.Count)
 		case driver.ItemSelection:
 			w.selectRange(v, it.Selection)
+			if selections == nil {
+				selections = make(map[*view]bool)
+			}
+			selections[v] = true
 		case driver.ItemEvents:
 			w.setEvents(v, it.Events)
 			w.accessChanged(v)
@@ -1301,7 +1306,7 @@ func (w *window) apply(b *driver.MountBatch) {
 			}
 		case f.v.deleted:
 		case f.focus:
-			w.focusView(f.v)
+			w.focusCommand(f.v, selections[f.v])
 		default:
 			if w.focusedView() == f.v {
 				w.focusEntry(nil)

@@ -19,6 +19,10 @@ func programmaticFocusApp(title string) func(*core.Scope) core.Node {
 		focused, pressed := core.NewSignal(cx, "ready"), core.NewSignal(cx, 0)
 		cx.Effect(func() { cx.SetTitle(fmt.Sprintf("%s|%s|%d", title, focused.Get(), pressed.Get())) })
 		cx.OnKeyWith("mod+f", core.KeyOptions{When: core.KeyAlways}, field.Focus)
+		cx.OnKeyWith("mod+g", core.KeyOptions{When: core.KeyAlways}, func() {
+			field.Focus()
+			field.SetSelection(0, 0)
+		})
 		cx.OnKeyWith("mod+b", core.KeyOptions{When: core.KeyAlways}, button.Focus)
 		cx.OnKeyWith("mod+p", core.KeyOptions{When: core.KeyAlways}, plain.Focus)
 		cx.OnKeyWith("mod+v", core.KeyOptions{When: core.KeyAlways}, explicit.Focus)
@@ -26,7 +30,7 @@ func programmaticFocusApp(title string) func(*core.Scope) core.Node {
 		cx.OnKeyWith("mod+m", core.KeyOptions{When: core.KeyAlways}, func() { focused.Set(focused.Get() + "-checked") })
 		cx.OnKeyWith("mod+q", core.KeyOptions{When: core.KeyAlways}, cx.Quit)
 		return core.View{Style: core.Style{Width: core.Pt(200), Height: core.Pt(200)}, Children: []core.Node{
-			core.Input{TestID: "field", Ref: &field, Value: func() string { return "hello" }, Style: core.Style{Height: core.Pt(30)},
+			core.Input{TestID: "field", Ref: &field, DefaultValue: "hello", Style: core.Style{Height: core.Pt(30)},
 				OnFocus: func() { focused.Set("field") }},
 			core.View{TestID: "button", Ref: &button, Style: core.Style{Width: core.Pt(100), Height: core.Pt(40),
 				Background: core.RGB(0xcc0000), FocusVisible: &core.Style{Background: core.RGB(0x123456)}},
@@ -66,11 +70,22 @@ func TestRefFocusUsesNativeKeyboardStops(t *testing.T) {
 			t.Error("programmatic focus did not focus the field")
 			return
 		}
-		s, e := w.selection(v)
-		if s != 5 || e != 5 {
-			t.Errorf("programmatic focus selection = %+v, want 5-5", func() any {
-				return struct{ start, end int }{s, e}
-			}())
+		if start, end := w.selection(v); start != 5 || end != 5 {
+			t.Errorf("programmatic focus selection = %d-%d, want 5-5", start, end)
+		}
+	})
+	key("mod+b")
+	waitForTitle(t, w, title+"|button|0")
+	key("mod+g")
+	waitForTitle(t, w, title+"|field|0")
+	w.onLoop(t, func() {
+		v := w.focusedEntry()
+		if v == nil {
+			t.Error("programmatic focus did not focus the field")
+			return
+		}
+		if start, end := w.selection(v); start != 0 || end != 0 {
+			t.Errorf("focus with SetSelection(0, 0) left %d-%d", start, end)
 		}
 	})
 	key("mod+b")

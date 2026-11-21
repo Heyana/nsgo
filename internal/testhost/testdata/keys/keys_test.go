@@ -398,3 +398,23 @@ func TestSelectMovesTheNativeSelection(t *testing.T) {
 		t.Fatalf("typing did not replace the selected ranges: %q", got)
 	}
 }
+
+func TestRefFocusPlacesTheNativeCaret(t *testing.T) {
+	if nsgotest.Target() != "linux" {
+		t.Skip("checks the GTK entry's programmatic focus")
+	}
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		var field core.Ref
+		cx.OnKeyWith("mod+f", core.KeyOptions{When: core.KeyAlways}, field.Focus)
+		return core.Input{TestID: "field", Ref: &field, DefaultValue: "hello",
+			Style: core.Style{Width: core.Pt(240), Height: core.Pt(40)}}
+	}, nsgotest.Size(300, 120))
+	app.Key("mod+f")
+	if !app.Find("id:field").Focused {
+		t.Fatal("Ref.Focus did not focus the field")
+	}
+	app.Type("id:field", "!")
+	if got := app.Find("id:field").Text; got != "hello!" {
+		t.Fatalf("typing after Ref.Focus left %q, want hello!", got)
+	}
+}
