@@ -162,6 +162,7 @@ Record a design question here, and confirm the answer with the user before choos
 | [Canvas](docs/architecture/canvas.md) | `Canvas`, `Drawing` or a backend's canvas player |
 | [Animation](docs/architecture/animation.md) | Animated values, layout animations or a backend's frame clock |
 | [Shaders](docs/architecture/shaders.md) | `Shader`, the shader compiler or a backend's shader view |
+| [GPU view](docs/architecture/gpu.md) | The planned `gpu` package, vertex/fragment shader IR extensions or a backend's 3D GPU surface (designed, not yet built) |
 | [Components](docs/architecture/components.md) | A component in `base`: controls, popups, resizable panels or the dock |
 | [Device differences](docs/architecture/device-differences.md) | A component that changes by device, input or width |
 | [Text view](docs/architecture/textview.md) | `TextView`, its parsers, parts or highlighting |
