@@ -297,16 +297,7 @@ func (w *window) updateAccess(v *view) bool {
 		if s == was && old.set {
 			return
 		}
-		prop := enumValue("property", nick)
-		if s == "" {
-			gtkAccessibleResetProperty(acc, prop)
-			return
-		}
-		var val gValue
-		gValueInit(uintptr(unsafe.Pointer(&val)), gTypeString)
-		gValueSetString(&val, cstr(s))
-		gtkAccessibleUpdatePropertyValue(acc, 1, &prop, &val)
-		gValueUnset(uintptr(unsafe.Pointer(&val)))
+		setAccessibleString(acc, nick, s)
 	}
 	setString("label", n.label, old.label)
 	setString("description", n.description, old.description)
@@ -376,6 +367,38 @@ func (w *window) updateAccess(v *view) bool {
 		gtkWidgetSetName(v.widget, cstr(name))
 	}
 	return old.set && n.label != old.label
+}
+
+// setAccessibleString sets string accessible property nick on acc, or resets it when s is empty.
+func setAccessibleString(acc uintptr, nick, s string) {
+	prop := enumValue("property", nick)
+	if prop < 0 {
+		return
+	}
+	if s == "" {
+		gtkAccessibleResetProperty(acc, prop)
+		return
+	}
+	var val gValue
+	gValueInit(uintptr(unsafe.Pointer(&val)), gTypeString)
+	gValueSetString(&val, cstr(s))
+	gtkAccessibleUpdatePropertyValue(acc, 1, &prop, &val)
+	gValueUnset(uintptr(unsafe.Pointer(&val)))
+}
+
+// updateEditorPlaceholder keeps a multiline GtkTextView's GtkAccessible
+// placeholder property aligned with the input's placeholder, updating on
+// change and resetting when cleared.
+func (w *window) updateEditorPlaceholder(v *view) {
+	if v.textView == 0 {
+		return
+	}
+	switch v.editorPlaceholder.update(v.input.Placeholder) {
+	case editorPlaceholderSet:
+		setAccessibleString(v.textView, editorPlaceholderProperty, v.input.Placeholder)
+	case editorPlaceholderReset:
+		setAccessibleString(v.textView, editorPlaceholderProperty, "")
+	}
 }
 
 // updateLabelRelation runs after the batch, when every referenced widget has been created. The labels go as a GtkAccessibleList (GTK 4.14), which GTK copies: a plain GList in a G_TYPE_POINTER value is one GTK up to 4.18 takes ownership of and later versions copy, so neither freeing nor keeping it is right on every version.

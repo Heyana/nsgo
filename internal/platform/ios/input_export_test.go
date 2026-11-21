@@ -73,6 +73,36 @@ func InputBaselinesForTest(testID string) (got, want []float64, ok bool) {
 	return got, want, ok
 }
 
+// InputAccessibilityState holds the native UIAccessibility state of an input's editor and visual placeholder label.
+type InputAccessibilityState struct {
+	EditorHint          string
+	HasPlaceholderLabel bool
+	LabelIsElement      bool
+	LabelElementsHidden bool
+	ContainerIsElement  bool
+}
+
+// InputAccessibilityForTest reads the native UIAccessibility state of the mounted input with testID.
+func InputAccessibilityForTest(testID string) (state InputAccessibilityState, ok bool) {
+	onMainSync(func() {
+		for _, v := range runner.views {
+			if v == nil || v.input == nil || v.props.TestID != testID {
+				continue
+			}
+			ok = true
+			state.ContainerIsElement = objc.Send[bool](v.native, sel("isAccessibilityElement"))
+			state.EditorHint = apple.GoString(v.input.field.Send(sel("accessibilityHint")))
+			if v.input.label != 0 {
+				state.HasPlaceholderLabel = true
+				state.LabelIsElement = objc.Send[bool](v.input.label, sel("isAccessibilityElement"))
+				state.LabelElementsHidden = objc.Send[bool](v.input.label, sel("accessibilityElementsHidden"))
+			}
+			return
+		}
+	})
+	return state, ok
+}
+
 // inkBaselines draws layer's tree on white, w by h points at 3 pixels a point, and returns the bottom of each band of rows with dark ink, in points: where capitals stand.
 func inkBaselines(layer objc.ID, w, h float64) []float64 {
 	cg, err := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_GLOBAL)

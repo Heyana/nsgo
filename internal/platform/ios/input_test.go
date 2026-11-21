@@ -90,3 +90,74 @@ func TestMultilineInputTakesTheLineHeight(t *testing.T) {
 		}
 	}
 }
+
+// TestMultilinePlaceholderAccessibility checks that a multiline UITextView exposes its current placeholder as its accessibilityHint (updating, clearing, hiding while text is entered, and composing with an explicit AccessibilityDescription) while its drawn UILabel stays out of VoiceOver (#1595).
+func TestMultilinePlaceholderAccessibility(t *testing.T) {
+	const wait = 5 * time.Second
+	var setPlaceholder, setDesc, setValue func(string)
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		placeholder := core.NewSignal(cx, "Write a note")
+		desc := core.NewSignal(cx, "")
+		value := core.NewSignal(cx, "")
+		setPlaceholder = placeholder.Set
+		setDesc = desc.Set
+		setValue = value.Set
+		return core.View{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
+			core.Input{
+				TestID:                       "notes",
+				Label:                        "Notes",
+				Multiline:                    true,
+				Value:                        value.Get,
+				OnChange:                     value.Set,
+				PlaceholderFunc:              placeholder.Get,
+				AccessibilityDescriptionFunc: desc.Get,
+				Style:                        core.Style{Width: core.Pt(240), Height: core.Pt(100)},
+			},
+			core.Input{
+				TestID:      "single",
+				Label:       "Title",
+				Placeholder: "Enter a title",
+				Style:       core.Style{Width: core.Pt(240), Height: core.Pt(44)},
+			},
+		}}
+	})
+	app.WaitFor("id:notes", wait)
+	check := func(id, wantHint string, wantLabel bool) {
+		t.Helper()
+		var st ios.InputAccessibilityState
+		app.WaitUntil(wait, func() bool {
+			var ok bool
+			st, ok = ios.InputAccessibilityForTest(id)
+			return ok && st.EditorHint == wantHint
+		})
+		if st.ContainerIsElement {
+			t.Errorf("%s: input container view is an accessibility element", id)
+		}
+		if st.HasPlaceholderLabel != wantLabel {
+			t.Errorf("%s: HasPlaceholderLabel = %v, want %v", id, st.HasPlaceholderLabel, wantLabel)
+		}
+		if wantLabel && (st.LabelIsElement || !st.LabelElementsHidden) {
+			t.Errorf("%s: drawn placeholder label exposed to VoiceOver (element=%v, hidden=%v)", id, st.LabelIsElement, st.LabelElementsHidden)
+		}
+	}
+	check("single", "", false)
+	check("notes", "Write a note", true)
+
+	app.Post(func() { setDesc("Supports Markdown") })
+	check("notes", "Write a note. Supports Markdown", true)
+
+	app.Post(func() { setPlaceholder("Add details") })
+	check("notes", "Add details. Supports Markdown", true)
+
+	app.Post(func() { setValue("Draft") })
+	check("notes", "Supports Markdown", true)
+
+	app.Post(func() { setValue("") })
+	check("notes", "Add details. Supports Markdown", true)
+
+	app.Post(func() { setPlaceholder("") })
+	check("notes", "Supports Markdown", true)
+
+	app.Post(func() { setDesc("") })
+	check("notes", "", true)
+}

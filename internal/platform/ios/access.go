@@ -384,7 +384,7 @@ func editorValue(own string, p *driver.ViewProps) string {
 	return strings.Join(append(parts, spokenStates(p)...), ", ")
 }
 
-// editorAccess are an input's editor's answers to VoiceOver. The editor is the input's element, as UIKit's text field or text view, so it can be edited whatever the input's role; it reads the input's label and hint, the value editorValue gives, and the search field trait for RoleSearchField.
+// editorAccess are an input's editor's answers to VoiceOver. The editor is the input's element, as UIKit's text field or text view, so it can be edited whatever the input's role; it reads the input's label and hint (including a multiline text view's placeholder while empty), the value editorValue gives, and the search field trait for RoleSearchField.
 func editorAccess() []objc.MethodDef {
 	return []objc.MethodDef{
 		{Cmd: sel("accessibilityLabel"), Fn: func(self objc.ID, cmd objc.SEL) objc.ID {
@@ -395,7 +395,18 @@ func editorAccess() []objc.MethodDef {
 		}},
 		{Cmd: sel("accessibilityHint"), Fn: func(self objc.ID, cmd objc.SEL) objc.ID {
 			if v := views[self]; v != nil {
-				if h := v.props.HelpText(); h != "" {
+				var multiline bool
+				var placeholder, text string
+				if in := v.input; in != nil {
+					multiline = in.multiline
+					if multiline {
+						placeholder = in.fs.Config.Placeholder
+						if placeholder != "" {
+							text = in.text()
+						}
+					}
+				}
+				if h := editorHint(&v.props, multiline, placeholder, text); h != "" {
 					return apple.NSString(h)
 				}
 			}

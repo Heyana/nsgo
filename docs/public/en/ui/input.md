@@ -83,7 +83,7 @@ core.View{Style: core.Style{Gap: 4}, Children: []core.Node{
 
 ## Accessibility
 
-The field reports `RoleTextField`, or `RoleSearchField` for a search box when its `Role` says so, and reads its `Label`; `Placeholder` is not a label, so give a field with no visible label a `Label`. `Readonly` and `Disabled` are reported, and `OnSubmit` is the keyboard's action. On macOS, single-line, masked and multiline fields expose the current `Placeholder` as the native accessibility placeholder.
+The field reports `RoleTextField`, or `RoleSearchField` for a search box when its `Role` says so, and reads its `Label`; `Placeholder` is not a label, so give a field with no visible label a `Label`. `Readonly` and `Disabled` are reported, and `OnSubmit` is the keyboard's action. Single-line, masked and multiline fields expose the current `Placeholder` as the native accessibility placeholder or hint on macOS, iOS and Linux, updating and clearing without a second focus stop for a multiline field's drawn placeholder label.
 
 ## Platform
 

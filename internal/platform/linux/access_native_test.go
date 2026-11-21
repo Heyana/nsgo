@@ -148,3 +148,258 @@ func probeAccessibilityStates(t *testing.T, want bool) {
 		}
 	}
 }
+
+const (
+	multilinePlaceholderTestLabel = "NSGo multiline placeholder regression"
+	multilinePlaceholderTestDesc  = "Supports Markdown"
+)
+
+// TestMultilinePlaceholderAccessibilityReachesATSPI checks that a multiline
+// GtkTextView exposes its current placeholder through AT-SPI's placeholder-text
+// attribute across updates, edits and clearing while preserving its explicit
+// description and keeping the visual placeholder GtkLabel out of AT-SPI (#1595).
+func TestMultilinePlaceholderAccessibilityReachesATSPI(t *testing.T) {
+	if _, ok := os.LookupEnv("NSGO_TEST_PLACEHOLDER_WANT"); ok {
+		probeMultilinePlaceholderATSPI(t, os.Getenv("NSGO_TEST_PLACEHOLDER_WANT"))
+		return
+	}
+	if os.Getenv("NSGO_TEST_ACCESS_PROCESS") != t.Name() {
+		bus, err := exec.LookPath("dbus-run-session")
+		if err != nil {
+			t.Skip("needs dbus-run-session")
+		}
+		cmd := exec.Command(bus, "--", os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v", "-test.timeout=45s")
+		cmd.Env = append(os.Environ(), "NSGO_TEST_ACCESS_PROCESS="+t.Name(), "GTK_A11Y=atspi")
+		runAccessibilityProcess(t, cmd)
+		return
+	}
+	var setState func(placeholder, value string)
+	w := startTestWindow(t, func(cx *core.Scope) core.Node {
+		placeholder := core.NewSignal(cx, "Write a note")
+		value := core.NewSignal(cx, "")
+		setState = func(p, v string) {
+			cx.Post(func() {
+				placeholder.Set(p)
+				value.Set(v)
+			})
+		}
+		cx.Effect(func() {
+			cx.SetTitle(fmt.Sprintf("placeholder-a11y|%s|%s", placeholder.Get(), value.Get()))
+		})
+		return core.View{
+			Style: core.Style{Width: core.Pt(260), Height: core.Pt(140)},
+			Children: []core.Node{
+				core.Input{
+					Multiline:                true,
+					Label:                    multilinePlaceholderTestLabel,
+					AccessibilityDescription: multilinePlaceholderTestDesc,
+					PlaceholderFunc:          placeholder.Get,
+					Value:                    value.Get,
+					OnChange:                 value.Set,
+					Style:                    core.Style{Width: core.Pt(240), Height: core.Pt(100)},
+				},
+			},
+		}
+	}, Options{Title: "placeholder-a11y", Width: 280, Height: 160})
+	waitForTitle(t, w, "placeholder-a11y|Write a note|")
+
+	// Verify the visual placeholder GtkLabel stays decorative and non-interactive in GTK.
+	var (
+		getRole      func(uintptr) int32
+		getFocusable func(uintptr) int32
+		getCanTarget func(uintptr) int32
+	)
+	purego.RegisterLibFunc(&getRole, gtkLib, "gtk_accessible_get_accessible_role")
+	purego.RegisterLibFunc(&getFocusable, gtkLib, "gtk_widget_get_focusable")
+	purego.RegisterLibFunc(&getCanTarget, gtkLib, "gtk_widget_get_can_target")
+	w.onLoop(t, func() {
+		var note *view
+		for _, v := range w.entries {
+			if v.textView != 0 {
+				note = v
+				break
+			}
+		}
+		if note == nil || note.hint == 0 {
+			t.Fatal("multiline input or its visual placeholder label did not mount")
+		}
+		if got, want := getRole(note.hint), enumValue("role", placeholderLabelRole); got != want {
+			t.Errorf("placeholder label accessible role = %d, want presentation (%d)", got, want)
+		}
+		if getFocusable(note.hint) != 0 {
+			t.Error("placeholder label is focusable")
+		}
+		if getCanTarget(note.hint) != 0 {
+			t.Error("placeholder label takes pointer targets")
+		}
+	})
+
+	for _, step := range []struct{ placeholder, value string }{
+		{"Write a note", ""},
+		{"Add details", ""},
+		{"Add details", "Draft"},
+		{"", ""},
+	} {
+		setState(step.placeholder, step.value)
+		waitForTitle(t, w, fmt.Sprintf("placeholder-a11y|%s|%s", step.placeholder, step.value))
+		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v", "-test.timeout=15s")
+		cmd.Env = append(os.Environ(), "NSGO_TEST_PLACEHOLDER_WANT="+step.placeholder)
+		runAccessibilityProcess(t, cmd)
+	}
+}
+
+func probeMultilinePlaceholderATSPI(t *testing.T, wantPlaceholder string) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	lib, err := purego.Dlopen("libatspi.so.0", purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	if err != nil {
+		t.Skip("needs libatspi: ", err)
+	}
+	var (
+		init        func() int32
+		desktop     func(int32) uintptr
+		name        func(uintptr, *uintptr) uintptr
+		description func(uintptr, *uintptr) uintptr
+		roleName    func(uintptr, *uintptr) uintptr
+		attributes  func(uintptr, *uintptr) uintptr
+		count       func(uintptr, *uintptr) int32
+		child       func(uintptr, int32, *uintptr) uintptr
+		clear       func(uintptr)
+		retain      func(uintptr) uintptr
+		hashLookup  func(uintptr, *byte) uintptr
+		hashUnref   func(uintptr)
+	)
+	purego.RegisterLibFunc(&init, lib, "atspi_init")
+	purego.RegisterLibFunc(&desktop, lib, "atspi_get_desktop")
+	purego.RegisterLibFunc(&name, lib, "atspi_accessible_get_name")
+	purego.RegisterLibFunc(&description, lib, "atspi_accessible_get_description")
+	purego.RegisterLibFunc(&roleName, lib, "atspi_accessible_get_role_name")
+	purego.RegisterLibFunc(&attributes, lib, "atspi_accessible_get_attributes")
+	purego.RegisterLibFunc(&count, lib, "atspi_accessible_get_child_count")
+	purego.RegisterLibFunc(&child, lib, "atspi_accessible_get_child_at_index")
+	purego.RegisterLibFunc(&clear, lib, "atspi_accessible_clear_cache")
+	purego.RegisterLibFunc(&retain, gobjectLib, "g_object_ref")
+	purego.RegisterLibFunc(&hashLookup, glibLib, "g_hash_table_lookup")
+	purego.RegisterLibFunc(&hashUnref, glibLib, "g_hash_table_unref")
+	if init() != 0 {
+		t.Fatal("AT-SPI could not connect to the private bus")
+	}
+	readStr := func(fn func(uintptr, *uintptr) uintptr, node uintptr) string {
+		s := fn(node, nil)
+		got := goString(s)
+		gFree(s)
+		return got
+	}
+	var findByName func(uintptr, string, int) uintptr
+	findByName = func(node uintptr, target string, depth int) uintptr {
+		if node == 0 || depth > 12 {
+			return 0
+		}
+		clear(node)
+		if readStr(name, node) == target {
+			retain(node)
+			return node
+		}
+		for i, n := int32(0), count(node, nil); i < n; i++ {
+			c := child(node, i, nil)
+			found := findByName(c, target, depth+1)
+			if c != 0 {
+				gObjectUnref(c)
+			}
+			if found != 0 {
+				return found
+			}
+		}
+		return 0
+	}
+	var inputNode uintptr
+	for deadline := time.Now().Add(10 * time.Second); inputNode == 0; time.Sleep(20 * time.Millisecond) {
+		root := desktop(0)
+		inputNode = findByName(root, multilinePlaceholderTestLabel, 0)
+		if root != 0 {
+			gObjectUnref(root)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the multiline input did not appear on the AT-SPI bus")
+		}
+	}
+	defer gObjectUnref(inputNode)
+
+	// Walk inputNode's subtree to find the GtkTextView editor ("text") and ensure no "label" stop exposes the visual placeholder.
+	var inspect func(uintptr, int) (editor uintptr, hasLabel bool)
+	inspect = func(node uintptr, depth int) (uintptr, bool) {
+		if node == 0 || depth > 8 {
+			return 0, false
+		}
+		clear(node)
+		var ed uintptr
+		var labelFound bool
+		if depth > 0 {
+			r := readStr(roleName, node)
+			if r == "label" {
+				labelFound = true
+			}
+			if r == "text" {
+				retain(node)
+				ed = node
+			}
+		}
+		for i, n := int32(0), count(node, nil); i < n; i++ {
+			c := child(node, i, nil)
+			subEd, subLabel := inspect(c, depth+1)
+			if c != 0 {
+				gObjectUnref(c)
+			}
+			if subLabel {
+				labelFound = true
+			}
+			if ed == 0 && subEd != 0 {
+				ed = subEd
+			} else if subEd != 0 {
+				gObjectUnref(subEd)
+			}
+		}
+		return ed, labelFound
+	}
+
+	var editorNode uintptr
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if editorNode != 0 {
+			gObjectUnref(editorNode)
+			editorNode = 0
+		}
+		var hasLabel bool
+		editorNode, hasLabel = inspect(inputNode, 0)
+		if hasLabel {
+			if editorNode != 0 {
+				gObjectUnref(editorNode)
+			}
+			t.Fatal("visual placeholder GtkLabel appeared as a separate AT-SPI label stop")
+		}
+		if editorNode == 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("GtkTextView editor did not appear under the multiline input on AT-SPI")
+			}
+			continue
+		}
+		clear(inputNode)
+		desc := readStr(description, inputNode)
+		clear(editorNode)
+		var gotPlaceholder string
+		if attrs := attributes(editorNode, nil); attrs != 0 {
+			if p := hashLookup(attrs, cstr("placeholder-text")); p != 0 {
+				gotPlaceholder = goString(p)
+			}
+			hashUnref(attrs)
+		}
+		if desc == multilinePlaceholderTestDesc && gotPlaceholder == wantPlaceholder {
+			gObjectUnref(editorNode)
+			return
+		}
+		if time.Now().After(deadline) {
+			gObjectUnref(editorNode)
+			t.Fatalf("AT-SPI description = %q (want %q), placeholder-text = %q (want %q)",
+				desc, multilinePlaceholderTestDesc, gotPlaceholder, wantPlaceholder)
+		}
+	}
+}

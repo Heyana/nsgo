@@ -154,6 +154,9 @@ func (v *view) setEditor(multiline bool) {
 		label := objc.ID(apple.Class("UILabel")).Send(selNew)
 		label.Send(sel("setNumberOfLines:"), 0)
 		label.Send(selSetHidden, true)
+		// The placeholder is exposed on the text view itself (editorAccess), so its drawn label is not a separate VoiceOver stop.
+		label.Send(selSetIsAccessibilityElement, false)
+		label.Send(selSetAccessibilityElementsHidden, true)
 		v.native.Send(selAddSubview, label)
 		label.Send(selRelease)
 		in.field, in.label = tv, label

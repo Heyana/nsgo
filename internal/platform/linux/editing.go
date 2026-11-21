@@ -227,6 +227,7 @@ func (w *window) configure(v *view, in *driver.InputConfig) {
 		gtkTextViewSetJustification(tv, justify)
 		gtkLabelSetText(v.hint, cstr(in.Placeholder))
 		gtkLabelSetXalign(v.hint, x)
+		w.updateEditorPlaceholder(v)
 		w.updateHint(v)
 	} else {
 		gtkEntrySetPlaceholderText(v.entry, cstr(in.Placeholder))
@@ -307,8 +308,11 @@ func (w *window) makeEditor(v *view, multiline bool) {
 		}
 	}
 	if multiline {
-		v.hint = gtkLabelNew(cstr(""))
+		// The placeholder is exposed on the text view itself (GTK_ACCESSIBLE_PROPERTY_PLACEHOLDER), so its drawn label stays out of AT-SPI.
+		v.hint = newAccessibleWidget(gtkLabelGetType(), enumValue("role", placeholderLabelRole))
 		gObjectRefSink(v.hint)
+		gtkWidgetSetFocusable(v.hint, 0)
+		gtkWidgetSetCanTarget(v.hint, 0)
 		gtkLabelSetWrap(v.hint, 1)
 		// At the top of the content box, where the text view's first line is: a label centers its lines in its box.
 		gtkLabelSetYalign(v.hint, 0)
@@ -383,6 +387,7 @@ func (w *window) dropEditor(v *view) {
 		}
 	}
 	v.textView, v.buffer = 0, 0
+	v.editorPlaceholder.reset()
 }
 
 // releaseEditor lets a deleted input's editor and CSS go.

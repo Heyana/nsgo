@@ -83,7 +83,7 @@ core.View{Style: core.Style{Gap: 4}, Children: []core.Node{
 
 ## 无障碍
 
-输入框报告 `RoleTextField`，`Role` 设为 `RoleSearchField` 时报告为搜索框，并朗读 `Label`；`Placeholder` 不是标签，因此没有可见标签的输入框要设置 `Label`。`Readonly` 和 `Disabled` 会被报告，`OnSubmit` 是键盘上的动作。在 macOS 上，单行、密码和多行输入框都通过原生无障碍占位提示属性提供当前的 `Placeholder`。
+输入框报告 `RoleTextField`，`Role` 设为 `RoleSearchField` 时报告为搜索框，并朗读 `Label`；`Placeholder` 不是标签，因此没有可见标签的输入框要设置 `Label`。`Readonly` 和 `Disabled` 会被报告，`OnSubmit` 是键盘上的动作。在 macOS、iOS 和 Linux 上，单行、密码和多行输入框都会通过原生的无障碍占位提示属性或提示文本提供当前的 `Placeholder`，随更新和清空同步变化，不会为多行输入框绘制的占位标签产生第二个焦点停靠点。
 
 ## 平台
 
