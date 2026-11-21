@@ -296,6 +296,7 @@ var drawKindNames = map[DrawKind]string{
 	DrawImage:          "DrawImage",
 	DrawTextAlign:      "DrawTextAlign",
 	DrawTextBaseline:   "DrawTextBaseline",
+	DrawVertices:       "DrawVertices",
 }
 
 // String returns the kind's name, as a log or an event prints it.

@@ -240,12 +240,12 @@ func (a *App) drawCanvas(v *View, d *driver.Drawing) {
 	v.Ops = slices.Clone(a.anim.CanvasOps(v.ID, d))
 	pass := a.canvasImageUse
 	for i := range d.Ops {
-		if op := &d.Ops[i]; op.Kind == driver.DrawImage && op.Image != nil {
+		if op := &d.Ops[i]; op.Image != nil {
 			a.touchCanvasImage(*op.Image, pass)
 		}
 	}
 	for i := range v.Ops {
-		if op := &v.Ops[i]; op.Kind == driver.DrawImage && op.Image != nil && op.Image.Offscreen != nil {
+		if op := &v.Ops[i]; op.Image != nil && op.Image.Offscreen != nil {
 			a.recordOffscreen(op.Image.Offscreen, nil)
 		}
 	}
@@ -295,7 +295,7 @@ func (a *App) recordOffscreen(off *driver.OffscreenCanvas, seen map[uint64]bool)
 		}
 		seen[off.ID] = true
 		for i := range s.Ops {
-			if op := &s.Ops[i]; op.Kind == driver.DrawImage && op.Image != nil && op.Image.Offscreen != nil {
+			if op := &s.Ops[i]; op.Image != nil && op.Image.Offscreen != nil {
 				a.recordOffscreen(op.Image.Offscreen, seen)
 			}
 		}

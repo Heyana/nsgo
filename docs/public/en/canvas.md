@@ -46,7 +46,7 @@ d.DrawSVGIn(badge, 12, 12, 180, 60)
 
 Scaled bitmaps use smooth sampling by default. For pixel art, call `d.SetImageSmoothing(false)` before drawing the bitmap, or set `ctx.imageSmoothingEnabled = false` in TSX. `Save` and `Restore` keep the setting with the rest of the drawing state. Nearest-neighbor sampling is available on Apple platforms, Windows, Linux, Android and the web.
 
-`d.DrawVertices(image, vertices)` draws a textured mesh. Each consecutive three `core.CanvasVertex` values make one triangle. Set `Position` in canvas points and `TexCoord` in image points, as in `DrawImageFrom`. Each vertex's `Color` multiplies the texture and interpolates over the triangle. Its zero value leaves the texture unchanged. Update the points and record the drawing again to deform the mesh. The web needs inline or same-origin images for arbitrary meshes.
+`d.DrawVertices(image, vertices)` draws a textured mesh. Each consecutive three `core.CanvasVertex` values make one triangle. Set `Position` in canvas points and `TexCoord` in image points, as in `DrawImageFrom`. Each vertex's `Color` multiplies the texture and interpolates over the triangle. Its zero value leaves the texture unchanged. Update the points and record the drawing again to deform the mesh. The image can be any `ImageSource`, including a pixel buffer or an `OffscreenImage`'s `Source()`; Android's canvases draw no offscreen images yet. The web needs inline or same-origin images for arbitrary meshes.
 
 `Drawing.Node` names a part of a drawing, such as a chart's bar or a map's region, with bounds, a role, a label and a selected state. Assistive technology reads those parts as the canvas's children, and tests find them by label, text or test ID; a press on one is a press at its center.
 

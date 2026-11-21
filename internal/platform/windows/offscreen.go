@@ -18,6 +18,8 @@ type offscreenEntry struct {
 	bitmap     *comObject
 	scale      float32
 	points     driver.Size
+	// meshPixels is bitmap's BGRA pixels, read back the first time a mesh samples this version.
+	meshPixels []byte
 }
 
 func (e *offscreenEntry) release() {

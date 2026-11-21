@@ -16,13 +16,6 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/canvastest"
 )
 
-const (
-	bitmapMap        = 14
-	bitmapUnmap      = 15
-	d2dBitmapCPURead = 4
-	d2dMapRead       = 1
-)
-
 // TestCanvasSamples plays the shared samples into a Direct2D bitmap at
 // canvastest.Scale and reads its pixels back. NSGO_CANVAS_PNG names a
 // directory to write them to.
@@ -125,6 +118,23 @@ func TestCanvasMesh(t *testing.T) {
 	}))
 	if c := tinted.RGBAAt(48, 48); c.R < 35 || c.R > 48 || c.G < 52 || c.G > 74 || c.B < 74 || c.B > 97 {
 		t.Fatalf("the mesh's interpolated tint at its barycenter was %v", c)
+	}
+
+	// A triangle from an offscreen drawing reads the GPU bitmap back, upright.
+	off := &driver.OffscreenCanvas{ID: 1, Version: 1, Size: driver.Size{Width: 40, Height: 20}, Scale: 2,
+		Drawing: driver.NewDrawing(nil).
+			SetFillColor(driver.RGB(0xff0000)).FillRect(0, 0, 40, 10).
+			SetFillColor(driver.RGB(0x0000ff)).FillRect(0, 10, 40, 10)}
+	sampled := draw(driver.NewDrawing(nil).DrawVertices(driver.ImageSource{Offscreen: off}, []driver.CanvasVertex{
+		vert(0, 0, 0, 0, 0), vert(80, 0, 40, 0, 0), vert(0, 80, 0, 20, 0),
+	}))
+	w.closeOffscreen()
+	at := func(x, y int) color.RGBA { return sampled.RGBAAt(x*canvastest.Scale, y*canvastest.Scale) }
+	if c := at(10, 10); c.R < 240 || c.G > 15 || c.B > 15 {
+		t.Errorf("the offscreen mesh's top was %v, want red", c)
+	}
+	if c := at(10, 60); c.R > 15 || c.G > 15 || c.B < 240 {
+		t.Errorf("the offscreen mesh's bottom was %v, want blue", c)
 	}
 }
 

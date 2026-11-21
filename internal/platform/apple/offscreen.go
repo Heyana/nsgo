@@ -29,6 +29,8 @@ type offscreenEntry struct {
 	image         uintptr
 	width, height float64
 	points        driver.Size
+	// meshPixels is image's BGRA pixels, read the first time a mesh samples this version.
+	meshPixels []byte
 }
 
 var (
