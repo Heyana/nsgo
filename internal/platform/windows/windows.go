@@ -360,13 +360,14 @@ type window struct {
 	saves  driver.SavePreflights
 	// primary is the backend's own surface. Opened surfaces share its engine
 	// and message loop, but closing one must not end the process.
-	primary    bool
-	hostWindow *window // root window for services shared by an opened surface
-	kind       driver.SurfaceKind
-	destroying bool
-	hideOnBlur bool
-	noActivate bool
-	visible    bool
+	primary       bool
+	hostWindow    *window // root window for services shared by an opened surface
+	kind          driver.SurfaceKind
+	destroying    bool
+	sessionEnding bool
+	hideOnBlur    bool
+	noActivate    bool
+	visible       bool
 	// pointerMode is where the window takes the pointer (windowpointer.go).
 	pointerMode driver.WindowPointerEvents
 	focused     bool
@@ -747,8 +748,10 @@ func Run(app engine.App, opts Options) {
 		if int32(r) <= 0 {
 			unwatchFrontmost()
 			stopWinSparkle()
-			w.engine.Close()
-			engine.SyncStorage()
+			if !w.sessionEnding {
+				w.engine.Close()
+				engine.SyncStorage()
+			}
 			return
 		}
 		// Shortcuts take key presses before they become characters, in the window the keys go to: this one or a surface the app opened.
@@ -1413,13 +1416,12 @@ func (w *window) apply(b *driver.MountBatch) {
 			}
 			continue
 		case driver.ItemQuit:
-			if w.embedded {
-				continue // the host's window stays
+			w.finishQuit()
+			continue
+		case driver.ItemQuitResponse:
+			if it.On {
+				w.finishQuit()
 			}
-			if w.popupTracking {
-				endMenu.Call()
-			}
-			postMessageW.Call(w.hwnd, wmClose, 0, 0)
 			continue
 		case driver.ItemImageInfo:
 			w.imageInfo(it)
@@ -2272,9 +2274,25 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		r, _, _ := defWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
 		return r
 	}
-	if message == wmClose && !w.primary && !w.embedded && !w.destroying {
-		w.engine.Dispatch(driver.Event{Kind: driver.EventWindowClose})
-		return 0
+	if !w.embedded {
+		switch message {
+		case wmClose:
+			if !w.destroying {
+				if w.primary {
+					w.requestQuit()
+				} else {
+					w.engine.Dispatch(driver.Event{Kind: driver.EventWindowClose})
+				}
+				return 0
+			}
+		case wmQueryEndSession:
+			return 1
+		case wmEndSession:
+			if wParam != 0 {
+				w.appWindow().endSession()
+			}
+			return 0
+		}
 	}
 	// Closing an alert's window cancels the alert, if it can be, rather than ending the app.
 	if message == wmSysCommand && wParam&0xfff0 == scClose && w.alertWindow {

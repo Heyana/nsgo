@@ -107,17 +107,21 @@ func TestTrayServesItsItemAndMenuOverDBus(t *testing.T) {
 	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
 		t.Skip("no session bus")
 	}
-	var inner atomic.Int32
+	var inner, quits atomic.Int32
 	icon := trayPNG(t, 128, 64)
 	app := core.AppRoot(func(cx *core.Scope) {
 		cx.SetShutdownMode(core.ShutdownOnExplicit)
+		cx.OnQuitRequest(func(q *core.QuitRequest) {
+			quits.Add(1)
+			q.Cancel()
+		})
 		cx.NewTray(core.TrayOptions{Icon: icon, Tooltip: "first", Menu: func() []core.MenuItem {
 			return []core.MenuItem{
 				{Label: "Count_1", OnSelect: func() {}},
 				{Separator: true},
 				{Label: "More", Items: []core.MenuItem{{Label: "Inner", OnSelect: func() { inner.Add(1) }}}},
 				{Separator: true},
-				{Label: "About"},
+				{Label: "Quit", Role: core.MenuQuit},
 			}
 		}})
 		cx.NewTray(core.TrayOptions{Tooltip: "second"})
@@ -280,4 +284,16 @@ func TestTrayServesItsItemAndMenuOverDBus(t *testing.T) {
 			t.Fatal("the submenu's item was not chosen")
 		}
 	}
+	gVariantUnref(call("AboutToShow", gVariantNewInt32(0)))
+	root = layout(0, -1)
+	gVariantUnref(call("Event", gVariantNewInt32(root.children[4].id), str("clicked"), gVariantNewVariant(gVariantNewInt32(0)), gVariantNewUint32(0)))
+	w.engine.Sync()
+	if quits.Load() != 1 {
+		t.Fatalf("the tray Quit ran %d quit handlers", quits.Load())
+	}
+	w.onLoop(t, func() {
+		if w.closing {
+			t.Error("a canceled tray Quit ended the app")
+		}
+	})
 }

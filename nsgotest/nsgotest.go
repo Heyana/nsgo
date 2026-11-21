@@ -465,7 +465,7 @@ type App struct {
 	menuTree  *core.Tree
 	dockTree  *core.Tree
 	popupTree *core.Tree
-	// quitRequests numbers the requests a Quit menu role or RequestQuit sends, as macOS numbers the requests it sends.
+	// quitRequests numbers the requests a Quit menu role or RequestQuit sends, for the test's app.
 	quitRequests uint32
 
 	// StatusBar is the status bar the app last set.

@@ -1063,12 +1063,7 @@ func (w *window) chooseMenu(ref menuRef) {
 	edited := false
 	switch ref.role {
 	case driver.MenuQuit:
-		// The app's root window, whose closing ends the loop, even from a window the app opened.
-		root := w
-		if w.hostWindow != nil {
-			root = w.hostWindow
-		}
-		postMessageW.Call(root.hwnd, wmClose, 0, 0)
+		w.requestQuit()
 	case driver.MenuClose:
 		postMessageW.Call(w.hwnd, wmClose, 0, 0)
 	case driver.MenuMinimize:

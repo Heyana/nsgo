@@ -107,6 +107,7 @@ type window struct {
 	primary bool
 	// opener is the app's own window for a surface the app opened, which goes when that window stops (stop).
 	opener     *window
+	session    *sessionMonitor
 	kind       driver.SurfaceKind
 	hideOnBlur bool
 	visible    bool
@@ -350,6 +351,7 @@ func Run(app engine.App, opts Options) {
 	if err != nil {
 		panic("nsgo: " + err.Error())
 	}
+	w.watchSession()
 	if instance != nil {
 		instance.setDelivery(func(args engine.Launch) { w.post(func() { w.launched(args) }) })
 	}
@@ -649,7 +651,9 @@ func (w *window) run() {
 // stop ends the engine, destroys the native components still showing
 // and frees the loop after run returns.
 func (w *window) stop() {
-	w.engine.Close()
+	if !w.closing {
+		w.engine.Close()
+	}
 	w.closeNatives()
 	w.closeEditors()
 	// The windows the app opened that are still open go with it as WindowDestroy takes them, which a stopped engine no longer sends: left, their editors' CSS providers stay on the whole display.
@@ -791,15 +795,7 @@ func applyCallback(data uintptr) int32 {
 
 func closeRequestCallback(win uintptr, data uintptr) int32 {
 	if w := windowOf(data); w != nil {
-		if w.primary || w.embedded {
-			w.close()
-			return 1
-		}
-		// An opened window's close is the app's to decide (core.Window.OnClosing): it stays until WindowDestroy.
-		if w.engine != nil && !w.closing {
-			w.engine.Dispatch(driver.Event{Kind: driver.EventWindowClose})
-		}
-		return 1
+		w.requestClose()
 	}
 	return 1
 }
@@ -831,11 +827,18 @@ func (w *window) chromeItem(it *driver.MountItem) {
 }
 
 // close ends the app: the engine stops, and the main loop returns.
-func (w *window) close() {
+func (w *window) close() { w.shutdown(false) }
+
+func (w *window) shutdown(forced bool) {
 	if w.closing {
 		return
 	}
 	w.closing = true
+	if forced {
+		w.engine.CloseForForcedQuit()
+		engine.SyncStorage()
+	}
+	w.unwatchSession()
 	w.closeCanvasImages()
 	w.closeHotKeys()
 	if w.loop != 0 {
@@ -854,7 +857,7 @@ func (w *window) close() {
 		w.ticking = false
 		stopYielding()
 	}
-	if w.engine != nil {
+	if !forced && w.engine != nil {
 		w.engine.Close()
 	}
 	w.stopPerf()
@@ -1085,8 +1088,11 @@ func (w *window) apply(b *driver.MountBatch) {
 			}
 			continue
 		case driver.ItemQuit:
-			if !w.embedded {
-				w.close()
+			w.finishQuit()
+			continue
+		case driver.ItemQuitResponse:
+			if it.On {
+				w.finishQuit()
 			}
 			continue
 		case driver.ItemImageInfo:

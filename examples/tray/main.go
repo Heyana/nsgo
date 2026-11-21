@@ -44,7 +44,7 @@ func App(app *core.Scope) {
 				{Label: "Count", OnSelect: func() { count.Set(count.Get() + 1) }},
 				{Label: "Settings…", OnSelect: settings},
 				{Separator: true},
-				{Label: "Quit Tray", OnSelect: app.Quit},
+				{Label: "Quit Tray", Role: desktop.MenuQuit},
 			}
 		},
 	})

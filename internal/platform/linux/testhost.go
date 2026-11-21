@@ -79,6 +79,10 @@ func (h *host) Open(app func(cx *core.Scope) core.Node, o testhost.Options) (tes
 	return &testSurface{w: r.w, test: test}, nil
 }
 
+func (t *testSurface) RequestQuit(id uint32, forced bool) {
+	t.w.engine.Dispatch(driver.Event{Kind: driver.EventQuitRequest, Count: id, Forced: forced})
+}
+
 type testSurface struct {
 	w      *window
 	test   *testOpen

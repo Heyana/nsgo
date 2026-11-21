@@ -80,7 +80,7 @@ func MainWindow(cx *core.Scope) *Window { return cx.MainWindow() }
 // handler the main window shows and takes the focus.
 func OnReopen(cx *core.Scope, fn func()) { cx.OnReopen(fn) }
 
-// OnQuitRequest runs fn on macOS for Cmd+Q, the Dock, a tray menu's Quit, or when the system ends the session. Handlers run newest first and may cancel or defer a user quit. Check QuitRequest.Forced before asking the user for a decision. core.Scope.Quit and Restart quit without asking.
+// OnQuitRequest runs fn when the user chooses Quit from a desktop menu, or the system ends the session. On Windows and Linux, closing a window also asks when its close would end the app. Handlers run newest first and may cancel or defer a user quit. Check QuitRequest.Forced before asking the user for a decision. core.Scope.Quit and Restart quit without asking.
 //
 //	desktop.OnQuitRequest(cx, func(q *desktop.QuitRequest) {
 //		if q.Forced() || !dirty.Get() {
@@ -90,6 +90,13 @@ func OnReopen(cx *core.Scope, fn func()) { cx.OnReopen(fn) }
 //		base.ShowAlertDialog(cx, discard, func(label string) { done(label == "Discard") })
 //	})
 func OnQuitRequest(cx *core.Scope, fn func(q *QuitRequest)) { cx.OnQuitRequest(fn) }
+
+// RequestQuit asks the app to quit as a desktop Quit menu item does.
+func RequestQuit(cx *core.Scope) {
+	if IsAvailable(cx) {
+		cx.RequestQuit()
+	}
+}
 
 // OnOpenFiles runs fn with the paths of files the system asks the app to
 // open: the file types nsgo.yaml's file_types declares, opened from the

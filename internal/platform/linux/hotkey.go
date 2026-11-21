@@ -651,12 +651,16 @@ func portalToken(prefix string) string {
 
 // portalRequestPath is the object path xdg-desktop-portal derives from the connection's unique name and the request's handle token. Knowing it before the method call lets the response subscription win a fast portal reply.
 func portalRequestPath(bus uintptr, token string) string {
+	return portalHandlePath(bus, "request", token)
+}
+
+func portalHandlePath(bus uintptr, kind, token string) string {
 	name := goString(gDBusConnectionGetUniqueName(bus))
 	if name == "" {
 		return ""
 	}
 	name = strings.ReplaceAll(strings.TrimPrefix(name, ":"), ".", "_")
-	return globalShortcutPath + "/request/" + name + "/" + token
+	return globalShortcutPath + "/" + kind + "/" + name + "/" + token
 }
 
 func portalShortcuts(specs []globalHotKeySpec) uintptr {

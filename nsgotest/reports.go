@@ -298,7 +298,7 @@ func (a *App) ClosePopup() {
 	a.Settle()
 }
 
-// CloseWindow asks the main window to close, as its close button does, and reports whether it closed: its OnClosing handlers run newest first, and it closes unless one cancels. It needs a main window open, which a macOS environment, or StartApp with a Windows or Linux one, opens, and runs headless only.
+// CloseWindow asks the main window to close, as its close button does, and reports whether it closed: its OnClosing handlers run newest first, and Windows and Linux also ask OnQuitRequest if the close would end the app. It needs a main window open, which a macOS environment, or StartApp with a Windows or Linux one, opens, and runs headless only.
 func (a *App) CloseWindow() bool {
 	a.t.Helper()
 	if a.target == nil && (a.appTree == nil || a.tree == a.appTree) {
@@ -309,7 +309,7 @@ func (a *App) CloseWindow() bool {
 	return w.Closed()
 }
 
-// RequestQuit sends a user quit request, or a forced request as at logout, to the app's OnQuitRequest handlers. An approved request counts in Quits. The step runs headless and on macOS.
+// RequestQuit sends a user quit request, or a forced request as at logout, to the app's OnQuitRequest handlers. An approved request counts in Quits. The step runs headless and on macOS, Windows and Linux.
 func (a *App) RequestQuit(forced bool) {
 	a.t.Helper()
 	a.step("requestQuit(%t)", forced)
@@ -327,7 +327,7 @@ func (a *App) requestQuit(forced bool) {
 	if s, ok := a.target.surface.(testhost.QuitSurface); ok {
 		s.RequestQuit(a.quitRequests, forced)
 	} else {
-		a.t.Skip("nsgotest: RequestQuit runs headless or on macOS")
+		a.t.Skip("nsgotest: RequestQuit runs headless or on a desktop target")
 	}
 }
 

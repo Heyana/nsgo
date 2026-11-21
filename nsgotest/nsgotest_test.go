@@ -714,7 +714,7 @@ func TestApplicationMenuRolesHeadless(t *testing.T) {
 		t.Fatalf("the close role ran %d handlers and left the window open: %v", closings, app.root.MainWindow() != nil)
 	}
 
-	// On macOS Quit asks the app, which may cancel; elsewhere it quits without asking, as the platforms do.
+	// Quit asks the app on all three desktops.
 	quitMenu := []desktop.MenuItem{{Label: "App", Items: []desktop.MenuItem{{Role: core.MenuQuit}}}}
 	for _, os := range []core.OS{core.OSMacOS, core.OSWindows, core.OSLinux} {
 		requests, keep := 0, true
@@ -729,20 +729,17 @@ func TestApplicationMenuRolesHeadless(t *testing.T) {
 			cx.SetMainView(text)
 		}, Environment(core.Environment{OS: os, Idiom: core.IdiomDesktop}))
 		app.ChooseMenu("App", "Quit")
+		if requests != 1 || app.Quits != 0 {
+			t.Fatalf("%v: a canceled quit role asked %d times and quit %d times", os, requests, app.Quits)
+		}
 		keep = false
 		if os == core.OSMacOS {
-			if requests != 1 || app.Quits != 0 {
-				t.Fatalf("macOS: a canceled quit role asked %d times and quit %d times", requests, app.Quits)
-			}
 			app.Key("meta+q")
-			if requests != 2 || app.Quits != 1 {
-				t.Fatalf("macOS: an approved quit role asked %d times and quit %d times", requests, app.Quits)
-			}
-			continue
+		} else {
+			app.Key("alt+f4")
 		}
-		app.Key("alt+f4")
-		if requests != 0 || app.Quits != 2 {
-			t.Fatalf("%v: the quit role asked %d times and quit %d times", os, requests, app.Quits)
+		if requests != 2 || app.Quits != 1 {
+			t.Fatalf("%v: an approved quit role asked %d times and quit %d times", os, requests, app.Quits)
 		}
 	}
 
@@ -962,6 +959,58 @@ func TestOtherWindowsLeaveTheMainOnesViews(t *testing.T) {
 	}
 	if got := strings.Join(answers, " "); got != want {
 		t.Fatalf("answers reached %q, want %q", got, want)
+	}
+}
+
+func TestDesktopLastWindowKeepsItsViewDuringAQuitRequest(t *testing.T) {
+	if Target() != "" {
+		t.Skip("checks the headless window model")
+	}
+	for _, os := range []core.OS{core.OSWindows, core.OSLinux} {
+		var closing, requested int
+		var answer func(bool)
+		var main, other *desktop.Window
+		app := StartApp(t, func(cx *core.Scope) {
+			desktop.OnQuitRequest(cx, func(q *desktop.QuitRequest) {
+				requested++
+				if requested == 1 {
+					q.Cancel()
+				} else {
+					answer = q.Defer()
+				}
+			})
+			other = desktop.OpenWindow(cx, desktop.WindowOptions{Title: "Other"}, func(*core.Scope) core.Node { return nil })
+			view := func(cx *core.Scope) core.Node {
+				main = desktop.CurrentWindow(cx)
+				main.OnClosing(cx, func(*desktop.WindowClosing) { closing++ })
+				return core.Text{Content: "Main", TestID: "main"}
+			}
+			cx.SetMainView(view)
+			desktop.OnReopen(cx, func() { cx.SetMainView(view) })
+		}, Environment(core.Environment{OS: os}))
+
+		if !app.CloseWindow() || requested != 0 || app.Quits != 0 {
+			t.Fatalf("%v: closing a window with another open asked %d times and quit %d times", os, requested, app.Quits)
+		}
+		app.Report(driver.Event{Kind: driver.EventReopen})
+		other.Close()
+		app.Settle()
+		if app.Quits != 0 {
+			t.Fatalf("%v: closing the other window quit %d times", os, app.Quits)
+		}
+
+		if app.CloseWindow() || requested != 1 || main.Closed() {
+			t.Fatalf("%v: a canceled quit closed the last window", os)
+		}
+		if app.CloseWindow() || requested != 2 || main.Closed() {
+			t.Fatalf("%v: a deferred quit closed the last window", os)
+		}
+		app.Find("id:main")
+		answer(true)
+		app.Settle()
+		if closing != 3 || !main.Closed() || app.Quits != 1 {
+			t.Fatalf("%v: approval ran %d closing handlers, left the window closed=%t and quit %d times", os, closing, main.Closed(), app.Quits)
+		}
 	}
 }
 

@@ -25,7 +25,7 @@ const (
 	ShutdownOnLastWindowClose ShutdownMode = iota
 	// ShutdownOnMainWindowClose ends it as its main window closes.
 	ShutdownOnMainWindowClose
-	// ShutdownOnExplicit ends it only by Scope.Quit, as a tray app does.
+	// ShutdownOnExplicit keeps the app running when its windows close, as a tray app does.
 	ShutdownOnExplicit
 )
 
@@ -254,19 +254,29 @@ func (w *Window) gone() {
 	if main {
 		rt.main = nil
 	}
+	if w.endsApp(main) {
+		rt.quit(false)
+	}
+}
+
+// endsApp reports whether closing this window ends the app under its shutdown mode.
+func (w *Window) endsApp(main bool) bool {
+	if w.kind != driver.SurfaceWindow {
+		return false
+	}
+	rt := w.t.rt
 	switch rt.shutdown {
 	case ShutdownOnLastWindowClose:
 		for _, o := range rt.surfaces {
-			if o.window.kind == driver.SurfaceWindow && !o.closed {
-				return
+			if o.window != w && o.window.kind == driver.SurfaceWindow && !o.closed {
+				return false
 			}
 		}
-		rt.quit(false)
+		return true
 	case ShutdownOnMainWindowClose:
-		if main {
-			rt.quit(false)
-		}
+		return main
 	}
+	return false
 }
 
 // command sends c to the window's platform.
@@ -412,9 +422,23 @@ func (w *Window) requestClose() {
 		h := w.closing[i]
 		w.t.within(h.owner, func() { h.fn(c) })
 	}
-	if !c.canceled {
-		w.t.within(w.t.root, w.Close)
+	if c.canceled || w.closed {
+		return
 	}
+	t := w.t
+	rt := t.rt
+	switch t.reported.OS {
+	case OSWindows, OSLinux:
+		if w.endsApp(rt.main == w) {
+			rt.requestQuit(false, func(approved bool) {
+				if approved {
+					t.within(t.root, w.Close)
+				}
+			})
+			return
+		}
+	}
+	t.within(t.root, w.Close)
 }
 
 // CurrentWindow is the core's part of desktop.CurrentWindow, which apps

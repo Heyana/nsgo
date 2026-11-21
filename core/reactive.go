@@ -202,6 +202,7 @@ type runtime struct {
 	quits []*quitHandler
 	// quitRequests are the handlers for user-initiated quit requests.
 	quitRequests []*quitRequestHandler
+	quitPending  bool
 	// notificationPresses hear notifications pressed, and pressesPending
 	// keeps those pressed before any did.
 	notificationPresses []*notificationPressHandler

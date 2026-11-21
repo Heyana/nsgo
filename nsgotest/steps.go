@@ -1010,18 +1010,14 @@ func (a *App) chooseMenuEntry(e driver.MenuEntry) {
 	a.menuRole(e.Role)
 }
 
-// menuRole carries out a standard role of an item without OnSelect: Close closes the main window as its close button does, running its OnClosing handlers; Quit asks the app's OnQuitRequest handlers on macOS, where an approved request counts in Quits, and quits at once on Windows and Linux, which do not ask; Minimize, Zoom and Toggle Full Screen change the main window's state its environment reports, Minimize putting it in the background as the desktops do, the other windows staying as they are; an editing role with no focused field to take it does nothing, as on the platforms. A role the model cannot carry out fails the step, so that its key is not swallowed unnoticed.
+// menuRole carries out a standard role of an item without OnSelect: Close closes the main window as its close button does, running its OnClosing handlers; Quit asks the app's OnQuitRequest handlers and an approved request counts in Quits; Minimize, Zoom and Toggle Full Screen change the main window's state its environment reports, Minimize putting it in the background as the desktops do, the other windows staying as they are; an editing role with no focused field to take it does nothing, as on the platforms. A role the model cannot carry out fails the step, so that its key is not swallowed unnoticed.
 func (a *App) menuRole(role driver.MenuRole) {
 	a.t.Helper()
 	switch role {
 	case driver.MenuClose:
 		a.CloseWindow()
 	case driver.MenuQuit:
-		if a.env != nil && a.env.OS == driver.OSMacOS {
-			a.requestQuit(false)
-		} else {
-			a.Quits++
-		}
+		a.requestQuit(false)
 	case driver.MenuMinimize:
 		a.changeWindowState(role, func(env *driver.Environment) { env.Minimized, env.Lifecycle = true, driver.LifecycleBackground })
 	case driver.MenuZoom:

@@ -571,8 +571,12 @@ func (w *window) trayMenuMethod(tr *linuxTray, method string, params, invocation
 		id := variantInt32(params, 0)
 		switch variantString(params, 1) {
 		case "clicked":
-			if entry, _, ok := m.node(id); ok && entry != nil && entry.ID != 0 {
-				w.engine.Dispatch(driver.Event{Kind: driver.EventMenu, Count: entry.ID})
+			if entry, _, ok := m.node(id); ok && entry != nil && !entry.Disabled {
+				if entry.ID != 0 {
+					w.engine.Dispatch(driver.Event{Kind: driver.EventMenu, Count: entry.ID})
+				} else if entry.Role == driver.MenuQuit {
+					w.requestQuit()
+				}
 			}
 			w.trayMenuClosed(tr)
 		case "closed":

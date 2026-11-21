@@ -29,7 +29,7 @@ type QuitRequest struct {
 	answer   func(bool)
 }
 
-// Forced reports whether the system is ending the session, as at logout, restart or shutdown on macOS.
+// Forced reports whether the system is ending the session, as at logout, restart or shutdown.
 func (q *QuitRequest) Forced() bool { return q != nil && q.forced }
 
 // Cancel keeps the app running. It has an effect in a user quit's request handler.
@@ -61,7 +61,7 @@ type quitRequestHandler struct {
 	fn    func(*QuitRequest)
 }
 
-// OnQuitRequest is the core's part of desktop.OnQuitRequest. On macOS it runs fn while the current owner lives, when the user asks the app to quit or the system ends the session. Handlers run newest first. A user request goes on to the next handler until one cancels or defers it, or all accept it. A forced request cannot be canceled or deferred. Scope.Quit and Restart remain immediate.
+// OnQuitRequest is the core's part of desktop.OnQuitRequest. On desktop it runs fn while the current owner lives, when the user asks the app to quit or the system ends the session. Handlers run newest first. A user request goes on to the next handler until one cancels or defers it, or all accept it. A forced request cannot be canceled or deferred. Scope.Quit and Restart remain immediate.
 func (cx *Scope) OnQuitRequest(fn func(*QuitRequest)) {
 	rt := cx.rt
 	h := &quitRequestHandler{owner: cx.current(), fn: fn}
@@ -71,14 +71,38 @@ func (cx *Scope) OnQuitRequest(fn func(*QuitRequest)) {
 	})
 }
 
+// RequestQuit is the core's part of desktop.RequestQuit.
+func (cx *Scope) RequestQuit() {
+	rt := cx.rt
+	rt.requestQuit(false, func(approved bool) {
+		if approved {
+			rt.quit(false)
+		}
+	})
+}
+
 func (rt *runtime) quitRequest(id uint32, forced bool) {
-	answer := func(quit bool) {
-		t := rt.tree
-		if t == nil {
+	rt.requestQuit(forced, func(quit bool) {
+		rt.app(driver.MountItem{Kind: driver.ItemQuitResponse, Count: id, On: quit})
+	})
+}
+
+func (rt *runtime) requestQuit(forced bool, reply func(bool)) {
+	if rt.tree == nil {
+		return
+	}
+	if !forced {
+		if rt.quitPending {
+			reply(false)
 			return
 		}
-		t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemQuitResponse, Count: id, On: quit})
-		t.changed = true
+		rt.quitPending = true
+	}
+	answer := func(quit bool) {
+		if !forced {
+			rt.quitPending = false
+		}
+		reply(quit)
 	}
 	// A handler may dispose the owners of others, as closing a window does, so they run from a copy.
 	hs := slices.Clone(rt.quitRequests)

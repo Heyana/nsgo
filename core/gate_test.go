@@ -97,7 +97,7 @@ var exempt = map[string][]string{
 		"MinimizeWindow", "ToggleMaximize", "ToggleFullScreen", "CloseWindow", "SetWindowFrame", "SetWindowLevel",
 		"SetWindowWorkspaces", "SetWindowConstraints", "OrderFront", "SetMenuBar", "SetWindowControls", "SetWindowMaterial", "SetWindowTransparent",
 		"SetWindowShadow", "SetSkipTaskbar", "RequestOrientation",
-		"SetApplicationMenu", "ExitApp", "OnQuitRequest", "OnQuit", "Quit", "Restart",
+		"SetApplicationMenu", "ExitApp", "RequestQuit", "OnQuitRequest", "OnQuit", "Quit", "Restart",
 		"SetShutdownMode", "SetMainWindow", "OnReopen", "NewTray", "RegisterHotKey", "SetDockVisible",
 		"SetLaunchAtLogin", "OnOpenFiles", "OnOpenLinks", "CheckForUpdates", "InstallPackage", "CanInstallPackages",
 		"OpenInstallSettings", "Store", "DataDir", "CacheDir", "LogsDir", "OpenFile", "Share", "RevealFile", "TrashFile", "KeepAwake",

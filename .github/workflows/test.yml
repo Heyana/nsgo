@@ -336,6 +336,8 @@ jobs:
         run: go tool nsgo test -run '^TestSaveDialogStartsInFolder$' ./internal/platform/windows
       - name: Test pixel frames and animated images
         run: go tool nsgo test -run '^(TestPixelFramesShowEachFrame|TestAnimatedGIFAndSVGImagesDraw)$' ./internal/platform/windows
+      - name: Test Windows last-window close and session end
+        run: go tool nsgo test -run '^TestWindows(LastWindowAsksBeforeQuitting|SessionEndForcesQuit)$' ./internal/platform/windows
       - name: Test Windows menu visibility after Alt shortcuts
         run: go tool nsgo test -run '^TestConsumedAltChordKeepsMenusClosed$' ./internal/platform/windows
       - name: Test menu yield with a focused WebView2 page
