@@ -29,7 +29,8 @@ public final class BulkPipeCheck {
         DataOutputStream wire = new DataOutputStream(incoming);
         bulk(wire, new byte[0]);
         bulk(wire, fragment(Protocol.IMAGE, picture, 0));
-        frame(wire, Protocol.TEXT_REQUEST, new byte[]{42});
+        byte[] measure = ByteBuffer.allocate(17).putLong(42L).put((byte) Protocol.TEXT_MEASURE).putInt(0).putFloat(200).array();
+        frame(wire, Protocol.TEXT_REQUEST, measure);
         for (int offset = Protocol.BULK_CHUNK; offset < picture.length; offset += Protocol.BULK_CHUNK) {
             bulk(wire, fragment(Protocol.IMAGE, picture, offset));
         }
@@ -46,13 +47,22 @@ public final class BulkPipeCheck {
         });
         CountDownLatch end = new CountDownLatch(1);
         final class Listener implements NsgoEngine.Listener {
-            int messages;
+            int images;
             IOException failure;
             public void onMessage(int kind, byte[] payload) {
-                if (messages++ == 0) {
-                    check(kind == Protocol.TEXT_REQUEST && Arrays.equals(payload, new byte[]{42}), "text was held behind the image");
-                } else {
-                    check(kind == Protocol.IMAGE && Arrays.equals(payload, picture), "incomplete or corrupted image");
+                if (kind == Protocol.TEXT_REQUEST) {
+                    check(Arrays.equals(payload, measure), "changed measure request");
+                    engine.write(Protocol.TEXT_REPLY, ByteBuffer.allocate(Long.BYTES).putLong(42L).array());
+                    return;
+                }
+                check(images++ == 0 && kind == Protocol.IMAGE && Arrays.equals(payload, picture), "incomplete or corrupted image");
+                DataInputStream replies = new DataInputStream(new ByteArrayInputStream(output.toByteArray()));
+                try {
+                    check(replies.readUnsignedByte() == Protocol.BULK_REPLY && replies.readInt() == 0, "missing bulk acknowledgement");
+                    check(replies.readUnsignedByte() == Protocol.TEXT_REPLY && replies.readInt() >= Long.BYTES &&
+                            replies.readLong() == 42L, "text reply did not pass the image");
+                } catch (IOException e) {
+                    throw new AssertionError("image arrived before the text reply", e);
                 }
             }
             public void onProcessEnded(IOException e) { failure = e; end.countDown(); }
@@ -61,8 +71,7 @@ public final class BulkPipeCheck {
         Listener listener = new Listener();
         engine.attach(listener);
         check(end.await(5, TimeUnit.SECONDS), "bulk reader hung");
-        check(listener.failure == null && listener.messages == 2, "bulk reader lost a message");
-        check(Arrays.equals(output.toByteArray(), new byte[]{(byte) Protocol.BULK_REPLY, 0, 0, 0, 0}), "missing bulk acknowledgement");
+        check(listener.failure == null && listener.images == 1, "bulk reader lost the image");
     }
 
     private static void writeWhileFileLeaves(byte[] file) throws Exception {
