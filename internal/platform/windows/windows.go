@@ -386,15 +386,15 @@ type window struct {
 	hud *hud
 	// embedded is set for a host's child window (NewView): the host owns
 	// the top-level window, its chrome and the message loop. app and
-	// opts start its engine once it first has a size; skipChar drops the
-	// character of a key a shortcut took, which the host's loop
-	// translated anyway.
-	embedded bool
-	app      engine.App
-	opts     Options
-	skipChar bool
-	engine   *engine.Engine
-	batches  queue.Batches
+	// opts start its engine once it first has a size. The skip flags drop
+	// characters the host translated before the child consumed their keys.
+	embedded    bool
+	app         engine.App
+	opts        Options
+	skipChar    bool
+	skipSysChar bool
+	engine      *engine.Engine
+	batches     queue.Batches
 	// applying is set while batches are applied; resized is the commit
 	// at a size resize stopped waiting for, until it lands.
 	applying bool
@@ -2605,6 +2605,13 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if !repeated(lParam) {
 			w.modifierKey(wParam)
 		}
+		// A host's loop sends system keys directly to an embedded child
+		// window. Give the focused view and the keymap the same chance as
+		// WM_KEYDOWN before Windows handles menu mnemonics or Alt+Left.
+		w.skipSysChar = w.embedded && (w.keyDown(wParam, lParam) || w.shortcut(wParam, lParam))
+		if w.skipSysChar {
+			return 0
+		}
 		if w.menuBarKey(message, wParam, lParam) {
 			return 0
 		}
@@ -2614,6 +2621,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			w.back()
 		}
 	case wmSysChar:
+		if w.skipSysChar {
+			w.skipSysChar = false
+			return 0
+		}
 		if w.menuChar(wParam) {
 			return 0
 		}
