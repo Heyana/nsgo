@@ -163,6 +163,7 @@ func writeDrawing(w *writer, d *driver.Drawing) {
 				key = op.Image.Key()
 			}
 			w.str(key)
+			w.flags(op.Sampling == driver.ImageSamplingNearest)
 			var vertices []driver.CanvasVertex
 			if op.Mesh != nil {
 				vertices = op.Mesh.Vertices

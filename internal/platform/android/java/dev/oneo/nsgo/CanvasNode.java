@@ -864,20 +864,21 @@ final class CanvasNode extends View {
 
         private void vertices(ByteBuffer b) {
             String key = string(b);
+            boolean nearest = b.get() != 0;
             int count = b.getInt();
             int end = b.position() + count * 20;
             if (pixels.containsKey(key)) {
                 Picture picture = pixels.get(key);
-                if (picture != null) vertices(b, count, picture);
+                if (picture != null) vertices(b, count, picture, nearest);
             } else if (pictures != null && !key.isEmpty()) {
                 try (CanvasImages<Picture>.Lease lease = pictures.acquire(key)) {
-                    if (lease != null) vertices(b, count, lease.value);
+                    if (lease != null) vertices(b, count, lease.value, nearest);
                 }
             }
             b.position(end);
         }
 
-        private void vertices(ByteBuffer b, int count, Picture picture) {
+        private void vertices(ByteBuffer b, int count, Picture picture, boolean nearest) {
             float[] verts = new float[count * 2], tex = new float[count * 2];
             int[] colors = new int[count];
             for (int i = 0; i < count; i++) {
@@ -889,7 +890,7 @@ final class CanvasNode extends View {
                 colors[i] = color == 0 ? Color.WHITE : Text.argb(color);
             }
             paint.reset();
-            paint.setFilterBitmap(true);
+            paint.setFilterBitmap(!nearest);
             paint.setAlpha(Math.round(255 * state.alpha));
             paint.setShader(new BitmapShader(picture.bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
             canvas.save();

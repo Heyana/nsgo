@@ -35,6 +35,7 @@ func (p *Player) vertices(op *driver.DrawOp) {
 	if pix != nil {
 		c := p.MeshCanvas()
 		WritePixels(c, pix)
+		p.Ctx.Set("imageSmoothingEnabled", op.Sampling != driver.ImageSamplingNearest)
 		p.Ctx.Call("drawImage", c, float64(op.X), float64(op.Y), float64(op.W), float64(op.H))
 	}
 }

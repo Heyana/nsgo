@@ -27,6 +27,10 @@ func TestDrawVerticesSnapshotsItsTriangles(t *testing.T) {
 	if !ok || crop.X != 2 || crop.Y != 4 || crop.W != 6 || crop.H != 8 || crop.X2 != 2 || crop.Y2 != 2 {
 		t.Fatalf("rectangular mesh became %+v, ok=%v", crop, ok)
 	}
+	nearest := NewDrawing(nil).SetImageSmoothing(false).DrawVertices(src, []CanvasVertex{a, b, c, a, c, e}).Ops[0]
+	if crop, ok := nearest.ImageRect(); !ok || nearest.Sampling != ImageSamplingNearest || crop.Sampling != ImageSamplingNearest {
+		t.Fatalf("a nearest mesh became %+v, ok=%v", crop, ok)
+	}
 
 	before := NewDrawing(nil).Translate(0, 0).DrawVertices(src, []CanvasVertex{a, b, c})
 	after := append([]DrawOp(nil), before.Ops...)

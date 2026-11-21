@@ -19,6 +19,8 @@ type Texture struct {
 	Width, Height, Stride int
 	Points                driver.Size
 	BGRA                  bool
+	// nearest samples the closest texel rather than blending four, as the op's ImageSamplingNearest asks.
+	nearest bool
 }
 
 // RGBA uses the pixels of img without copying them.
@@ -43,6 +45,7 @@ func Raster(op *driver.DrawOp, texture Texture, scale float64) *image.RGBA {
 	if scale <= 0 || math.IsNaN(scale) {
 		return nil
 	}
+	texture.nearest = op.Sampling == driver.ImageSamplingNearest
 	pw, ph := int(math.Ceil(w*scale)), int(math.Ceil(h*scale))
 	out := image.NewRGBA(image.Rect(0, 0, pw, ph))
 	sx, sy := float64(pw)/w, float64(ph)/h
@@ -233,9 +236,15 @@ func (t Texture) sample(u, v float64) uint32 {
 		i := y*t.Stride + x*4
 		return binary.LittleEndian.Uint32(t.Pix[i:])
 	}
-	a, b, c, d := at(x, y), at(x1, y), at(x, y1), at(x1, y1)
-	fx, fy := uint32((u-float64(x))*256), uint32((v-float64(y))*256)
-	color := mixPixels(mixPixels(a, b, fx), mixPixels(c, d, fx), fy)
+	var color uint32
+	if t.nearest {
+		// u and v are at texel centers, so the closest texel is the rounded one.
+		color = at(int(u+.5), int(v+.5))
+	} else {
+		a, b, c, d := at(x, y), at(x1, y), at(x, y1), at(x1, y1)
+		fx, fy := uint32((u-float64(x))*256), uint32((v-float64(y))*256)
+		color = mixPixels(mixPixels(a, b, fx), mixPixels(c, d, fx), fy)
+	}
 	if t.BGRA {
 		color = color&0xff00ff00 | bits.RotateLeft32(color&0x000000ff, 16) | color>>16&0xff
 	}

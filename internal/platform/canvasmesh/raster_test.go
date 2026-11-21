@@ -87,3 +87,30 @@ func BenchmarkDeformingMesh(b *testing.B) {
 		})
 	}
 }
+
+func TestRasterSamplesNearestWhenSmoothingIsOff(t *testing.T) {
+	pixels := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	red, blue := color.RGBA{R: 255, A: 255}, color.RGBA{B: 255, A: 255}
+	pixels.SetRGBA(0, 0, red)
+	pixels.SetRGBA(1, 0, blue)
+	src := driver.ImageSource{Pixels: pixels}
+	// A triangle stretches the two texels over 16 pixels; its top row crosses both.
+	vertices := []driver.CanvasVertex{vertexAt(0, 0, 0, 0, 0), vertexAt(16, 0, 2, 0, 0), vertexAt(0, 16, 0, 1, 0)}
+	draw := func(smooth bool) *image.RGBA {
+		op := driver.NewDrawing(nil).SetImageSmoothing(smooth).DrawVertices(src, vertices).Ops[0]
+		return Raster(&op, RGBA(pixels, driver.Size{}), 1)
+	}
+	nearest := draw(false)
+	for x := range 15 {
+		want := red
+		if x >= 8 {
+			want = blue
+		}
+		if c := nearest.RGBAAt(x, 0); c != want {
+			t.Errorf("nearest pixel %d = %v, want %v", x, c, want)
+		}
+	}
+	if c := draw(true).RGBAAt(7, 0); c == red || c == blue {
+		t.Errorf("smooth pixel 7 = %v, want a blend", c)
+	}
+}

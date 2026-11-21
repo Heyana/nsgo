@@ -106,6 +106,6 @@ func (op *DrawOp) ImageRect() (DrawOp, bool) {
 		uv[0].X < 0 || uv[0].Y < 0 || uv[3].X <= uv[0].X || uv[3].Y <= uv[0].Y {
 		return DrawOp{}, false
 	}
-	return DrawOp{Kind: DrawImage, Image: op.Image, X: op.X, Y: op.Y, W: op.W, H: op.H,
+	return DrawOp{Kind: DrawImage, Image: op.Image, Sampling: op.Sampling, X: op.X, Y: op.Y, W: op.W, H: op.H,
 		X1: float32(uv[0].X), Y1: float32(uv[0].Y), X2: float32(uv[3].X - uv[0].X), Y2: float32(uv[3].Y - uv[0].Y)}, true
 }
