@@ -17,7 +17,7 @@ func allowedPublicDriverType(name string) bool {
 		"Color", "ColorMatrix", "ColorSpace", "ColorStop",
 		"CompositeOp", "Corners", "Cursor", "Curve",
 		"CustomCursor", "DecayConfig", "Directory", "DisplayInfo",
-		"DrawArg", "DrawKind", "DrawOp", "DrawSlot", "OffscreenCanvas", "WebSchemeRequest", "WebSchemeResponse", "SharedItem", "DiskSpace", "VideoHeaders", "GPUDeviceLostReason", "WebWindowRequest", "SelectedRange", "WebSchemeHandler",
+		"DrawArg", "DrawKind", "DrawOp", "DrawSlot", "OffscreenCanvas", "CanvasMesh", "CanvasVertex", "WebSchemeRequest", "WebSchemeResponse", "SharedItem", "DiskSpace", "VideoHeaders", "GPUDeviceLostReason", "WebWindowRequest", "SelectedRange", "WebSchemeHandler",
 		"Drawing", "EaseMode", "Easing", "EasingKind",
 		"EdgeColors", "EdgeEffect", "Edges", "Effects",
 		"EllipsizeMode", "Environment", "Extrapolate", "File",

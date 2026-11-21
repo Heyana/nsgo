@@ -77,6 +77,8 @@ type (
 	Drawing = driver.Drawing
 	// CanvasVertex is a corner of a triangle drawn by Drawing.DrawVertices.
 	CanvasVertex = driver.CanvasVertex
+	// CanvasMesh is the triangle list a DrawVertices op recorded, in DrawOp.Mesh.
+	CanvasMesh = driver.CanvasMesh
 	// EaseMode applies a curve as is, mirrored, or both halves.
 	EaseMode = driver.EaseMode
 	// Easing is how a timing animation or an interpolation segment progresses:

@@ -66,6 +66,7 @@ nsgo
 │   │   ├── scrollbar, textselect        Shared scrolling and selection
 │   │   ├── speechd                      speech-dispatcher's protocol, Linux's speaking
 │   │   ├── imagedecode, imageload       Shared images
+│   │   ├── canvasmesh                   Shared triangle-mesh rasterizer of canvases without textured vertices
 │   │   ├── menutext                     Shared menu labels
 │   │   ├── loopback                     Shared loopback redirects of desktops' sign-ins
 │   │   ├── updates                      Shared update checks of Linux, Android and iOS
