@@ -22,18 +22,25 @@ func TestDevProfileFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &project{Dir: t.TempDir()}
-	profile, err := dev.options().profile.forProject(p)
+	profile, err := dev.options().profile.forProject(p, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if profile.kind != "cpu" || profile.duration != 10*time.Second || profile.output != p.cache("profiles", "cpu.pprof") {
 		t.Errorf("wrong defaults: %+v", profile)
 	}
+	if _, err := dev.options().profile.forProject(p, true); err == nil {
+		t.Fatal("-release accepted a runtime profile")
+	}
+	p.Dev.Target = "miniprogram_wechat"
+	if _, err := dev.options().profile.forProject(p, false); err == nil {
+		t.Fatal("the mini program target accepted a runtime profile")
+	}
 	p.Dev.Target = "web"
-	if _, err := dev.options().profile.forProject(p); err == nil {
+	if _, err := dev.options().profile.forProject(p, false); err == nil {
 		t.Fatal("web accepted a CPU profile")
 	}
-	heap, err := (devProfileOptions{kind: "heap", output: "browser.pprof"}).forProject(p)
+	heap, err := (devProfileOptions{kind: "heap", output: "browser.pprof"}).forProject(p, false)
 	if err != nil || heap.output != filepath.Join(p.Dir, "browser.pprof") || heap.duration != 0 {
 		t.Errorf("web heap profile = %+v, %v", heap, err)
 	}

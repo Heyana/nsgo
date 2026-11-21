@@ -135,6 +135,24 @@ go tool nsgo dev -trace
 
 某一行写了很多次，或者一次写入触发了大量绑定重算，就是该合并写入（`cx.Batch`）或缩小绑定读取范围的地方。`go tool nsgo test -trace` 会在测试的每一步下打印同样的内容。
 
+## 运行时性能分析
+
+使用 `nsgo dev` 采集运行中应用的 Go CPU 活动、堆快照或执行跟踪。应用将采集结果发给开发服务器，由运行命令的机器保存。
+
+```sh
+go tool nsgo dev -target android -profile cpu -profile-duration 10s
+go tool pprof -top .nsgo/profiles/cpu.pprof
+```
+
+桌面、iPhone 和 iOS 模拟器也可以采集 CPU。iPhone 提示本地网络权限时请允许。也可以用 `go tool nsgo dev -profile trace` 记录调度器和 goroutine 事件，再用 `go tool trace` 打开 `.nsgo/profiles/execution.trace`。CPU 和执行跟踪默认采集 10 秒，`-profile-output` 指定本机输出路径。开发命令保存第一份完整采集结果后，应用会继续运行。
+
+```sh
+go tool nsgo dev -target web -profile heap
+go tool pprof -top .nsgo/profiles/heap.pprof
+```
+
+Go 在浏览器中支持堆快照和执行跟踪。浏览器 CPU 采样可使用其性能工具。`-profile` 和 `-release` 二选一。`nsgo build` 的发布产物不包含开发采集客户端。[Go 运行时诊断](https://go.dev/doc/diagnostics)
+
 ## 布局
 
 ```sh

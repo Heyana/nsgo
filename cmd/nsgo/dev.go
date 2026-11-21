@@ -88,7 +88,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 			return err
 		}
 	}
-	profile, err := opts.profile.forProject(p)
+	profile, err := opts.profile.forProject(p, opts.release)
 	if err != nil {
 		return err
 	}

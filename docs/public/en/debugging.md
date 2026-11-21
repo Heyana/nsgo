@@ -151,7 +151,7 @@ go tool nsgo dev -target web -profile heap
 go tool pprof -top .nsgo/profiles/heap.pprof
 ```
 
-Go's browser runtime supports heap profiles and execution traces. For browser CPU samples, use the browser's Performance tools. Shipping with `nsgo build` leaves the dev capture client out. [Go runtime diagnostics](https://go.dev/doc/diagnostics)
+Go's browser runtime supports heap profiles and execution traces. For browser CPU samples, use the browser's Performance tools. Choose either `-profile` or `-release`. Shipping with `nsgo build` leaves the dev capture client out. [Go runtime diagnostics](https://go.dev/doc/diagnostics)
 
 ## Layout
 

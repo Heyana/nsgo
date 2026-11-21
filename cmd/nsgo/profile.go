@@ -19,13 +19,19 @@ type devProfileOptions struct {
 	duration     time.Duration
 }
 
-func (o devProfileOptions) forProject(p *project) (devProfileOptions, error) {
+func (o devProfileOptions) forProject(p *project, release bool) (devProfileOptions, error) {
 	names := map[string]string{"cpu": "cpu.pprof", "heap": "heap.pprof", "trace": "execution.trace"}
 	if o.kind == "" {
 		if o.output != "" {
 			return o, errors.New("-profile-output needs -profile")
 		}
 		return o, nil
+	}
+	if release {
+		return o, errors.New("-profile needs a development build. Remove -release.")
+	}
+	if _, mini := miniProgramPlatformOf(p.Dev.Target); mini {
+		return o, errors.New("-profile needs a target that connects to the dev server")
 	}
 	name, ok := names[o.kind]
 	if !ok {
