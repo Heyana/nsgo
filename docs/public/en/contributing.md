@@ -56,6 +56,14 @@ go tool nsgo test -env GOOS=js -env GOARCH=wasm ./internal/platform/harmonyos \
 go tool nsgo test -target harmonyos -run TestHarmonyOSPages -timeout 10m ./examples/gallery
 ```
 
+## Releases
+
+NSGo releases on demand when a downstream project needs a tagged version or maintainers have changes ready to ship. When requesting a release for a library, link the dependent work and name the commit that contains the last NSGo change it needs. The first release tag that contains that commit is the version the library can require.
+
+To test a merged change before it is tagged, run `go get github.com/nsgo-dev/nsgo@main` from the dependent module. You can use a commit ID in place of `main` to select the revision you verified. Go records the resulting pseudo-version in `go.mod`.
+
+A maintainer gives the changes their version and date in `CHANGELOG.md`, leaves a fresh Unreleased section, and tags the resulting commit on `main`. The [release workflow](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) checks the tag and publishes it after the test workflow passes.
+
 ## NSH
 
 NSGo reads [Native Shell](https://github.com/longbridge/nsh) as a design reference; none of its tests need it. To read it, clone it beside the repository and check out its latest release tag, never `main`:

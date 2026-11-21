@@ -54,6 +54,14 @@ go tool nsgo test -env GOOS=js -env GOARCH=wasm ./internal/platform/harmonyos \
 go tool nsgo test -target harmonyos -run TestHarmonyOSPages -timeout 10m ./examples/gallery
 ```
 
+## 发布版本
+
+下游项目需要带标签的版本，或维护者有可以发布的改动时，NSGo 会按需发布。为下游库请求发布时，请链接依赖的工作，并注明包含该库所需最后一项 NSGo 改动的提交。第一个包含该提交的发布标签，就是该库可以依赖的版本。
+
+要在打标签前测试已合入的改动，可以在下游模块中运行 `go get github.com/nsgo-dev/nsgo@main`。也可以用提交 ID 代替 `main`，选定已验证的版本。Go 会把生成的伪版本记录在 `go.mod` 中。
+
+维护者在 `CHANGELOG.md` 中为改动写上版本和日期，留出新的 Unreleased 小节，并为 `main` 上的对应提交打标签。[发布工作流](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/release.yml) 检查标签，并在测试工作流通过后发布。
+
 ## NSH
 
 NSGo 把 [Native Shell](https://github.com/longbridge/nsh) 作为设计参考，测试都不依赖它。需要阅读时，将它克隆到仓库旁边，并检出它的最新发行版标签，不要用 `main`：
