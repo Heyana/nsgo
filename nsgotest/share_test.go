@@ -5,13 +5,10 @@ import (
 	"slices"
 	"testing"
 
-	_ "github.com/nsgo-dev/nsgo" // Links the native test host.
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/mobile"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
-
-func TestMain(m *testing.M) { nsgotest.Main(m) }
 
 func TestReceiveShareKeepsBatchesUntilAHandlerRegisters(t *testing.T) {
 	first := []mobile.SharedItem{
