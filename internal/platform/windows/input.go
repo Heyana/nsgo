@@ -46,6 +46,7 @@ import (
 	"github.com/nsgo-dev/nsgo/desktop/locales"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/field"
+	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
 )
 
 var (
@@ -170,6 +171,7 @@ type textInput struct {
 	drag                 dragKind
 	dragStart, dragEnd   int
 	width, height        float32 // the content box's size
+	contentHeight        float32 // the laid-out text's height, for multiline scrolling and its bar
 	format, layout, hint *comObject
 	// world is where the view was drawn last, for the pointer and the IME.
 	world matrix
@@ -196,11 +198,15 @@ func (in *textInput) masked() bool { return in.config.Masked && !in.config.Multi
 func (in *textInput) release() { releaseAll(&in.layout, &in.hint, &in.format) }
 
 // relayout drops the shown text's layout: the text changed what it shows.
-func (in *textInput) relayout() { releaseAll(&in.layout) }
+func (in *textInput) relayout() {
+	releaseAll(&in.layout)
+	in.contentHeight = 0
+}
 
 func (in *textInput) setSize(width, height float32) {
 	if width != in.width || height != in.height {
 		in.width, in.height = width, height
+		in.contentHeight = 0
 		releaseAll(&in.layout, &in.hint)
 	}
 }
@@ -328,11 +334,78 @@ func dwAlignment(a driver.TextAlign) uintptr {
 	return dwAlignLeading
 }
 
+// paddingBox returns the area inside the view's border where a multiline
+// editor scrolls, with its text inset by Padding.
+func (in *textInput) paddingBox() rectF {
+	c, p := in.config.Content, in.config.Padding
+	return rectF{
+		left:   float32(c.Origin.X - p.Left),
+		top:    float32(c.Origin.Y - p.Top),
+		right:  float32(c.Origin.X + c.Size.Width + p.Right),
+		bottom: float32(c.Origin.Y + c.Size.Height + p.Bottom),
+	}
+}
+
+// clipRect returns the rectangle that clips the editor: the padding box
+// when multiline so its text scrolls under the padding, or horizontally
+// clamped to the content box when single-line.
+func (in *textInput) clipRect() rectF {
+	if in.multiline() {
+		return in.paddingBox()
+	}
+	c := in.config.Content
+	cx, cy := float32(c.Origin.X), float32(c.Origin.Y)
+	return rectF{cx, cy - 1e4, cx + in.width, cy + 1e4}
+}
+
+// bar returns a multiline editor's vertical scroll bar along the outer
+// edge of its padding box.
+func (in *textInput) bar() scrollbar.Bar {
+	box := in.paddingBox()
+	p := in.config.Padding
+	return scrollbar.Bar{
+		Frame:   driver.Size{Width: driver.Points(box.right - box.left), Height: driver.Points(box.bottom - box.top)},
+		Content: driver.Size{Width: driver.Points(in.width), Height: driver.Points(in.contentHeight) + p.Top + p.Bottom},
+		Offset:  driver.Point{Y: driver.Points(in.scroll)},
+	}
+}
+
+// wheelScroll scrolls a multiline editor vertically by notches and reports
+// whether its offset changed.
+func (in *textInput) wheelScroll(notches driver.Points) bool {
+	if !in.multiline() {
+		return false
+	}
+	if in.contentHeight == 0 && in.w != nil {
+		if l := in.textLayout(); l != nil {
+			in.contentHeight = layoutMetrics(l).height
+		}
+	}
+	maxScroll := max(in.contentHeight-in.height, 0)
+	if maxScroll <= 0 {
+		return false
+	}
+	to := min(max(in.scroll-float32(notches*wheelStep), 0), maxScroll)
+	if to == in.scroll {
+		return false
+	}
+	in.scroll = to
+	if in.w != nil && in.v != nil {
+		in.w.showBar(in.v)
+		in.w.redrawView(in.v)
+	}
+	if in.w != nil {
+		in.caretMoved()
+	}
+	return true
+}
+
 // origin returns where the layout's origin goes in the content box: the
 // line is centered vertically, aligned while it fits and scrolled when it
 // does not.
 func (in *textInput) origin(layout *comObject) (x, y float32) {
 	m := layoutMetrics(layout)
+	in.contentHeight = m.height
 	if in.multiline() {
 		// Lines start at the top, scrolled up as far as they overflow.
 		in.scroll = min(max(in.scroll, 0), max(m.height-in.height, 0))
@@ -420,6 +493,7 @@ func (in *textInput) reveal() {
 	if layout == nil {
 		return
 	}
+	old := in.scroll
 	x, y, h := caretAt(layout, in.model.displayCaret(in.masked()))
 	if in.multiline() {
 		if y < in.scroll {
@@ -433,6 +507,9 @@ func (in *textInput) reveal() {
 		in.scroll = x + caret - in.width
 	}
 	in.origin(layout) // clamps it to the text
+	if in.multiline() && in.scroll != old && in.w != nil && in.v != nil {
+		in.w.showBar(in.v)
+	}
 	in.caretMoved()
 }
 
@@ -478,12 +555,10 @@ func (in *textInput) draw(p *painter, world matrix) {
 	}
 	cx, cy := float32(c.Origin.X), float32(c.Origin.Y)
 	// One line may be taller than its box: it stays centered and the
-	// view's bounds clip it. Several lines scroll inside the box.
-	clip := rectF{cx, cy - 1e4, cx + in.width, cy + 1e4}
-	if in.multiline() {
-		clip.top, clip.bottom = cy, cy+in.height
-	}
-	p.pushClipRect(clip)
+	// view's bounds clip it. Several lines scroll inside the padding box so
+	// their text scrolls under the padding and the scroll bar runs along
+	// the padding box's edge.
+	p.pushClipRect(in.clipRect())
 	defer p.pop()
 	ox, oy := in.origin(layout)
 	ox, oy = ox+cx, oy+cy
@@ -532,6 +607,20 @@ func (in *textInput) draw(p *painter, world matrix) {
 		// On whole pixels, so that the caret stays sharp.
 		x = float32(math.Round(float64((ox+x)*p.scale))) / p.scale
 		p.fillRect(rectF{x, oy + y, x + caretWidth(), oy + y + h}, in.caretColor())
+	}
+
+	if in.multiline() && in.v != nil && in.v.barAlpha > 0 {
+		if thumb, _, ok := in.bar().Indicator(); ok {
+			box := in.paddingBox()
+			bar := rectF{box.left + float32(thumb.Origin.X), box.top + float32(thumb.Origin.Y),
+				box.left + float32(thumb.Origin.X+thumb.Size.Width), box.top + float32(thumb.Origin.Y+thumb.Size.Height)}
+			radius := min(thumb.Size.Width, thumb.Size.Height) / 2
+			barColor := driver.RGBA(0x000000, 0.45*in.v.barAlpha)
+			if p.w.shownDark() {
+				barColor = driver.RGBA(0xffffff, 0.55*in.v.barAlpha)
+			}
+			p.fillRounded(bar, float32(radius), barColor)
+		}
 	}
 }
 

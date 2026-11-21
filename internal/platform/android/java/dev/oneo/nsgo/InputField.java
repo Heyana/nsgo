@@ -17,6 +17,7 @@ import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputConnectionWrapper;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
+import android.widget.ScrollView;
 import java.io.DataInputStream;
 import java.io.IOException;
 
@@ -69,6 +70,39 @@ final class InputField extends EditText {
     private boolean caretPosted;
     /** A multiline field's lines' height, the glyphs centered in each as in a Text; null for the font's own. */
     private Text.LineHeight lineHeight;
+    /** Padding in points, carried on the field while a multiline ScrollHost fills the padding box. */
+    private float padTop, padRight, padBottom, padLeft;
+    /** The ScrollView hosting a multiline field inside its padding box, or null when single-line. */
+    private ScrollView host;
+
+    /**
+     * A multiline field's scroll view, filling the input's padding box so its
+     * vertical scroll bar runs along the edges while the field inside carries
+     * the padding and scrolls under it.
+     */
+    static final class ScrollHost extends ScrollView {
+        private final InputField field;
+
+        ScrollHost(Context context, InputField field) {
+            super(context);
+            this.field = field;
+            setFillViewport(true);
+            setClipToPadding(false);
+            setVerticalScrollBarEnabled(true);
+            setHorizontalScrollBarEnabled(false);
+            setScrollBarStyle(View.SCROLLBARS_OUTSIDE_OVERLAY);
+            setNestedScrollingEnabled(true);
+            setFocusable(false);
+            setFocusableInTouchMode(false);
+            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        @Override
+        protected void onScrollChanged(int x, int y, int oldX, int oldY) {
+            super.onScrollChanged(x, y, oldX, oldY);
+            field.caretMoved();
+        }
+    }
 
     InputField(Context context, Listener listener) {
         super(context);
@@ -179,6 +213,11 @@ final class InputField extends EditText {
         float x = l.getPrimaryHorizontal(at) + getTotalPaddingLeft() - getScrollX() + getLeft();
         float top = l.getLineTop(line) + getTotalPaddingTop() - getScrollY() + getTop();
         float bottom = l.getLineBottom(line) + getTotalPaddingTop() - getScrollY() + getTop();
+        if (host != null) {
+            x += host.getLeft() - host.getScrollX();
+            top += host.getTop() - host.getScrollY();
+            bottom += host.getTop() - host.getScrollY();
+        }
         listener.caret(x / density, top / density, 2, (bottom - top) / density);
     }
 
@@ -264,6 +303,10 @@ final class InputField extends EditText {
         String autofill = Protocol.readString(in);
         int placeholderColor = in.readInt(), selectionColor = in.readInt();
         pasteReport = in.readUnsignedByte() == 1;
+        padTop = in.readFloat();
+        padRight = in.readFloat();
+        padBottom = in.readFloat();
+        padLeft = in.readFloat();
 
         boolean restart = configured && multiline && this.submit != submit;
         this.multiline = multiline;
@@ -285,7 +328,10 @@ final class InputField extends EditText {
         // transformation.
         applying = true;
         setSingleLine(!multiline);
-        if (multiline) setMaxLines(Integer.MAX_VALUE);
+        if (multiline) {
+            setMaxLines(Integer.MAX_VALUE);
+            setVerticalScrollBarEnabled(false);
+        }
         // Setting the input type restarts the keyboard, so only on change.
         if (getInputType() != type) setInputType(type);
         if (selection >= 0 && selection <= length()) setSelection(selection);
@@ -338,6 +384,15 @@ final class InputField extends EditText {
 
     boolean multiline() {
         return multiline;
+    }
+
+    float padTop() { return padTop; }
+    float padRight() { return padRight; }
+    float padBottom() { return padBottom; }
+    float padLeft() { return padLeft; }
+
+    void setHost(ScrollView host) {
+        this.host = host;
     }
 
     private void submitted() {

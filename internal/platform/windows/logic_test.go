@@ -1524,3 +1524,41 @@ func TestPixelsReplaceThePictureInPlace(t *testing.T) {
 		t.Fatal("same-sized pixel frames did not reuse the upload buffer")
 	}
 }
+
+// TestMultilineInputScrollsUnderPadding checks that a multiline textInput clips
+// to its padding box, runs its scroll indicator along the padding box's outer
+// edge, and scrolls vertically across its content height (#1598).
+func TestMultilineInputScrollsUnderPadding(t *testing.T) {
+	pad := driver.Edges{Top: 18, Right: 20, Bottom: 20, Left: 12}
+	in := &textInput{
+		config: driver.InputConfig{
+			Multiline: true,
+			Padding:   pad,
+			Content:   driver.Bounds{Origin: driver.Point{X: 13, Y: 19}, Size: driver.Size{Width: 266, Height: 160}},
+		},
+		width:         266,
+		height:        160,
+		contentHeight: 400,
+	}
+	wantClip := rectF{left: 1, top: 1, right: 299, bottom: 199}
+	if got := in.clipRect(); got != wantClip {
+		t.Fatalf("multiline clipRect = %+v, want padding box %+v", got, wantClip)
+	}
+	thumb, _, ok := in.bar().Indicator()
+	if !ok {
+		t.Fatal("expected scroll indicator for overflowing multiline input")
+	}
+	if wantRight := driver.Points(298) - 3; thumb.Origin.X+thumb.Size.Width != wantRight {
+		t.Errorf("indicator right edge = %v in padding box, want %v", thumb.Origin.X+thumb.Size.Width, wantRight)
+	}
+	if !in.wheelScroll(-1) || in.scroll <= 0 {
+		t.Fatalf("wheelScroll(-1) did not scroll down: scroll=%v", in.scroll)
+	}
+	if !in.wheelScroll(-100) || in.scroll != 240 {
+		t.Fatalf("wheelScroll clamp: scroll=%v, want 240 (400-160)", in.scroll)
+	}
+	in.config.Multiline = false
+	if got := in.clipRect(); got.left != 13 || got.right != 279 {
+		t.Errorf("single-line clipRect = %+v, want horizontal bounds [13, 279]", got)
+	}
+}

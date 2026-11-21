@@ -9,9 +9,9 @@
 - Upload built web and desktop packages to itch.io with `nsgo publish itch` (#1561 by @houko).
 - Check target API, Apple privacy and encryption declarations, and release questionnaires during store builds (#1566 by @houko).
 - Show Android frame, commit and native text round-trip timings with `nsgo dev -fps` (#173 by @houko).
->>>>>>> 92d49a53 (feat(android): show frame and text timings in the performance panel)
 - Verify native macOS Finder and Linux X11 XDND file drags end to end, enforce modal and nested-disabled drop boundaries across desktop backends, report `OnFileDragLeave` after a completed macOS drop, and accept single `GFile` drops on Linux (#1601).
 - Support `Scope.PickScreenColor` and `base.ColorEyeDropper` on Windows via a virtual-screen crosshair capture overlay and on Linux via the XDG Desktop Portal `Screenshot.PickColor` interface (#1600).
+- Keep a multiline `Input`'s scroll bar along its padding box edges and let its text scroll under `InputConfig.Padding` on Android, Windows, Linux and the web, and serialize `InputConfig.Padding` in HarmonyOS's input op (#1598).
 - Fall back to estimated text sizes on Android when a runtime text request fails or times out (#173 by @houko).
 - Report the character's UTF-8 byte offset on Android text long presses so `Span.OnLongPress` fires on Android as on the other backends (#1602).
 - Measure text on Linux in fractional Pango units (`pango_layout_get_size`) instead of whole points so the core rounds up to device pixels at HiDPI scales (#1603).

@@ -347,6 +347,8 @@ func (w *window) allocateView(v *view) {
 		switch {
 		case c == v.fxArea && c != 0:
 			allocateNative(c, w.effectArea(v))
+		case c == v.entry && v.textView != 0:
+			allocateNative(c, editorBounds(&v.input))
 		case c == v.entry, c == v.hint:
 			allocateNative(c, v.input.Content)
 		case v.hosted() != nil && c == v.hosted().child:

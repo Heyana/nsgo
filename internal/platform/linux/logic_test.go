@@ -452,6 +452,22 @@ func TestEntryStyleCarriesTheLineHeight(t *testing.T) {
 	}
 }
 
+// TestMultilineEditorBounds checks that a multiline input's scrolled window
+// fills the padding box while a single-line entry stays at the content box (#1598).
+func TestMultilineEditorBounds(t *testing.T) {
+	pad := driver.Edges{Top: 18, Right: 20, Bottom: 20, Left: 12}
+	content := driver.Bounds{Origin: driver.Point{X: 13, Y: 19}, Size: driver.Size{Width: 266, Height: 160}}
+	in := driver.InputConfig{Multiline: true, Padding: pad, Content: content}
+	want := driver.Bounds{Origin: driver.Point{X: 1, Y: 1}, Size: driver.Size{Width: 298, Height: 198}}
+	if got := editorBounds(&in); got != want {
+		t.Errorf("multiline editorBounds = %+v, want padding box %+v", got, want)
+	}
+	in.Multiline = false
+	if got := editorBounds(&in); got != content {
+		t.Errorf("single-line editorBounds = %+v, want content box %+v", got, content)
+	}
+}
+
 func TestHistoryKeysStepThroughAPage(t *testing.T) {
 	for _, c := range []struct {
 		keyval, state uint32

@@ -3660,7 +3660,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * above it, through the innermost vertical scroll view around it.
      */
     private void keepFocusedClear() {
-        View field = focusedInput != null && keyboard > 0 ? focusedInput.field : null;
+        View field = focusedInput != null && keyboard > 0 ? focusedInput.fieldHost() : null;
         Scrolling.VScroll scroll = null;
         for (android.view.ViewParent p = field != null ? field.getParent() : null; p != null; p = p.getParent()) {
             if (p instanceof Scrolling.VScroll) {
@@ -4903,7 +4903,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         int flags = in.readUnsignedByte();
         boolean masked = Protocol.flag(flags, 0), readonly = Protocol.flag(flags, 1);
         boolean disabled = Protocol.flag(flags, 2);
-        LayoutParams content = frame(in);
+        float cx = in.readFloat(), cy = in.readFloat(), cw = in.readFloat(), ch = in.readFloat();
         n.accessory = in.readInt();
         field.configure(in, keyboard, masked, readonly, disabled, density);
         field.setTypeface(style.typeface());
@@ -4915,7 +4915,49 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         // A field's one line stays centered in its box.
         field.setLineHeights(field.multiline() ? Math.round(style.lineHeight) : 0, placeholder);
         field.setGravity(style.gravity() | (field.multiline() ? Gravity.TOP : Gravity.CENTER_VERTICAL));
-        field.setLayoutParams(content);
+        ViewGroup parent = (ViewGroup) n.view;
+        if (field.multiline()) {
+            // A multiline editor scrolls in the padding box, its text inset by
+            // InputConfig.Padding, so its scroll bar runs along the edges and
+            // its text scrolls under the padding.
+            if (n.fieldScroll == null) {
+                boolean hadFocus = field.hasFocus();
+                parent.removeView(field);
+                InputField.ScrollHost host = new InputField.ScrollHost(getContext(), field);
+                host.addView(field, new FrameLayout.LayoutParams(
+                        LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+                parent.addView(host);
+                field.setHost(host);
+                n.fieldScroll = host;
+                if (hadFocus) field.requestFocus();
+            }
+            float bx = cx - field.padLeft(), by = cy - field.padTop();
+            float bw = cw + field.padLeft() + field.padRight(), bh = ch + field.padTop() + field.padBottom();
+            int left = px(bx), top = px(by);
+            int right = px(bx + bw), bottom = px(by + bh);
+            LayoutParams hostLP = new LayoutParams(Math.max(right - left, 0), Math.max(bottom - top, 0), Gravity.LEFT | Gravity.TOP);
+            hostLP.leftMargin = left;
+            hostLP.topMargin = top;
+            n.fieldScroll.setLayoutParams(hostLP);
+            field.setPadding(Math.max(px(cx) - left, 0), Math.max(px(cy) - top, 0),
+                    Math.max(right - px(cx + cw), 0), Math.max(bottom - px(cy + ch), 0));
+        } else {
+            if (n.fieldScroll != null) {
+                boolean hadFocus = field.hasFocus();
+                n.fieldScroll.removeView(field);
+                parent.removeView(n.fieldScroll);
+                n.fieldScroll = null;
+                field.setHost(null);
+                parent.addView(field);
+                if (hadFocus) field.requestFocus();
+            }
+            field.setPadding(0, 0, 0, 0);
+            int left = px(cx), top = px(cy);
+            LayoutParams content = new LayoutParams(Math.max(px(cx + cw) - left, 0), Math.max(px(cy + ch) - top, 0), Gravity.LEFT | Gravity.TOP);
+            content.leftMargin = left;
+            content.topMargin = top;
+            field.setLayoutParams(content);
+        }
     }
 
     static int inputType(int keyboard, boolean masked) {
@@ -5837,7 +5879,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             public boolean onInput(float rawX, float rawY) {
                 for (int i = 0; i < nodes.size(); i++) {
                     Node o = nodes.valueAt(i);
-                    if (o.field != null && under(o.field, rawX, rawY)) return true;
+                    if (o.field != null && under(o.fieldHost(), rawX, rawY)) return true;
                 }
                 return false;
             }
@@ -5933,6 +5975,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         /** The id of the text layout a text node shows. */
         int laid;
         InputField field;
+        InputField.ScrollHost fieldScroll;
+
+        /** The visible input box: the multiline ScrollHost or the single-line field. */
+        View fieldHost() {
+            return fieldScroll != null ? fieldScroll : field;
+        }
         ImageNode image;
         CanvasNode canvas;
         ShaderNode shader;

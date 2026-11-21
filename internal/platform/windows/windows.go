@@ -1899,6 +1899,11 @@ func (w *window) wheel(at driver.Point, notches driver.Points, tilt bool) {
 	if root == nil {
 		return
 	}
+	if !tilt {
+		if in := w.fieldAt(at); in != nil && in.wheelScroll(notches) {
+			return
+		}
+	}
 	v, to := wheelTurn(scrollsAt(root, at, nil), notches, tilt)
 	if v == nil {
 		return
@@ -1950,17 +1955,23 @@ type barDrag struct {
 	drag   scrollbar.Drag
 }
 
-// bar returns a scroll view's scroll bar.
+// bar returns a scroll view's or multiline input's scroll bar.
 func (v *view) bar() scrollbar.Bar {
+	if v.kind == driver.KindInput && v.field != nil && v.field.multiline() {
+		return v.field.bar()
+	}
 	return scrollbar.Bar{Horizontal: v.scroll.Horizontal, Frame: v.frame.Size, Content: v.size, Offset: v.offset,
 		Inset: v.scroll.Behavior.ContentInset}
 }
 
-// hoverBars shows the bars of the scroll views under at, the pointer.
+// hoverBars shows the bars of the scroll views and multiline inputs under at, the pointer.
 func (w *window) hoverBars(at driver.Point) {
 	var under []*view
 	if root := w.view(w.root); root != nil {
 		under = scrollsAt(root, at, nil)
+		if v := pick(root, at); v != nil && v.field != nil && v.field.multiline() {
+			under = append(under, v)
+		}
 	}
 	if !slices.Equal(under, w.bars) {
 		for _, v := range w.bars {

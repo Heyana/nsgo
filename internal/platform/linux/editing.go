@@ -4,6 +4,7 @@ package linux
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"sync/atomic"
 	"unicode/utf8"
@@ -40,6 +41,10 @@ var (
 	gtkTextViewSetAcceptsTab       func(uintptr, int32)
 	gtkTextViewSetInputPurpose     func(uintptr, int32)
 	gtkTextViewSetInputHints       func(uintptr, int32)
+	gtkTextViewSetTopMargin        func(uintptr, int32)
+	gtkTextViewSetBottomMargin     func(uintptr, int32)
+	gtkTextViewSetLeftMargin       func(uintptr, int32)
+	gtkTextViewSetRightMargin      func(uintptr, int32)
 	gtkTextBufferSetText           func(uintptr, *byte, int32)
 	gtkTextBufferGetText           func(uintptr, *textIter, *textIter, int32) uintptr
 	gtkTextBufferGetBounds         func(uintptr, *textIter, *textIter)
@@ -84,6 +89,10 @@ func bindEditing() {
 		{&gtkTextViewSetAcceptsTab, "gtk_text_view_set_accepts_tab"},
 		{&gtkTextViewSetInputPurpose, "gtk_text_view_set_input_purpose"},
 		{&gtkTextViewSetInputHints, "gtk_text_view_set_input_hints"},
+		{&gtkTextViewSetTopMargin, "gtk_text_view_set_top_margin"},
+		{&gtkTextViewSetBottomMargin, "gtk_text_view_set_bottom_margin"},
+		{&gtkTextViewSetLeftMargin, "gtk_text_view_set_left_margin"},
+		{&gtkTextViewSetRightMargin, "gtk_text_view_set_right_margin"},
 		{&gtkTextBufferSetText, "gtk_text_buffer_set_text"},
 		{&gtkTextBufferGetText, "gtk_text_buffer_get_text"},
 		{&gtkTextBufferGetBounds, "gtk_text_buffer_get_bounds"},
@@ -187,6 +196,21 @@ func entryStyle(v *view) string {
 	return b.String()
 }
 
+// editorBounds returns the box v's editor fills: the padding box for a
+// multiline text view so its scroll bar runs along the edges and its text
+// scrolls under the padding, or the content box for a single-line entry.
+func editorBounds(in *driver.InputConfig) driver.Bounds {
+	b := in.Content
+	if !in.Multiline {
+		return b
+	}
+	p := in.Padding
+	return driver.Bounds{
+		Origin: driver.Point{X: b.Origin.X - p.Left, Y: b.Origin.Y - p.Top},
+		Size:   driver.Size{Width: b.Size.Width + p.Left + p.Right, Height: b.Size.Height + p.Top + p.Bottom},
+	}
+}
+
 // configure applies an input's look and behavior to its editor, making
 // it on the first configuration and again when it becomes or stops being
 // multiline.
@@ -217,6 +241,11 @@ func (w *window) configure(v *view, in *driver.InputConfig) {
 		gtkTextViewSetCursorVisible(tv, boolInt(!in.HideCaret && !in.Readonly))
 		gtkTextViewSetInputPurpose(tv, purpose)
 		gtkTextViewSetInputHints(tv, hints)
+		p := in.Padding
+		gtkTextViewSetTopMargin(tv, int32(math.Round(float64(p.Top))))
+		gtkTextViewSetBottomMargin(tv, int32(math.Round(float64(p.Bottom))))
+		gtkTextViewSetLeftMargin(tv, int32(math.Round(float64(p.Left))))
+		gtkTextViewSetRightMargin(tv, int32(math.Round(float64(p.Right))))
 		justify, x := int32(0), float32(0)
 		switch in.Style.Align {
 		case driver.TextAlignCenter:

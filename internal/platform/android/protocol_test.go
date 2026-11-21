@@ -435,3 +435,51 @@ func TestReadEventLongPressIndex(t *testing.T) {
 		}
 	}
 }
+
+// TestWriteEditingEncodesPadding checks that writeEditing appends InputConfig.Padding
+// (top, right, bottom, left) in the order InputField.configure reads it (#1598).
+func TestWriteEditingEncodesPadding(t *testing.T) {
+	pad := driver.Edges{Top: 18, Right: 20, Bottom: 22, Left: 12}
+	in := &driver.InputConfig{
+		Multiline:        true,
+		MaxLength:        250,
+		SubmitBehavior:   driver.SubmitBehaviorNewline,
+		ReturnKey:        driver.ReturnKeySend,
+		AutoCapitalize:   driver.AutoCapitalizeWords,
+		NoAutoCorrect:    true,
+		HideCaret:        false,
+		AutoComplete:     driver.AutoCompleteEmail,
+		PlaceholderColor: driver.RGB(0x667788),
+		SelectionColor:   driver.RGB(0x112233),
+		PasteBehavior:    driver.PasteReport,
+		Padding:          pad,
+	}
+	var w writer
+	writeEditing(&w, in)
+	r := reader{w.buf}
+	if flags := r.byte(); flags != 1 {
+		t.Fatalf("multiline flags = %d, want 1", flags)
+	}
+	if maxLen := r.u32(); maxLen != 250 {
+		t.Fatalf("maxLength = %d, want 250", maxLen)
+	}
+	if submit, ret, capMode := r.byte(), r.byte(), r.byte(); submit != byte(in.Submit()) || ret != byte(driver.ReturnKeySend) || capMode != byte(driver.AutoCapitalizeWords) {
+		t.Fatalf("submit=%d returnKey=%d cap=%d", submit, ret, capMode)
+	}
+	if flags := r.byte(); flags != 1 {
+		t.Fatalf("editing flags = %d, want 1", flags)
+	}
+	if hint := r.str(); hint != "emailAddress" {
+		t.Fatalf("autofill hint = %q, want emailAddress", hint)
+	}
+	if ph, sel := r.u32(), r.u32(); ph != uint32(in.PlaceholderColor) || sel != uint32(in.Caret()) {
+		t.Fatalf("colors ph=%#x sel=%#x", ph, sel)
+	}
+	if paste := r.byte(); paste != byte(driver.PasteReport) {
+		t.Fatalf("paste = %d, want %d", paste, driver.PasteReport)
+	}
+	got := driver.Edges{Top: r.points(), Right: r.points(), Bottom: r.points(), Left: r.points()}
+	if got != pad || len(r.buf) != 0 {
+		t.Fatalf("padding = %+v (%d bytes left), want %+v", got, len(r.buf), pad)
+	}
+}

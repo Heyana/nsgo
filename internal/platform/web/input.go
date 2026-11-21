@@ -75,6 +75,9 @@ func (s *surface) setFieldElement(v *view, tag string) {
 	el.Set("value", value)
 	v.inner = el
 	v.el.Call("appendChild", el)
+	if v.border != (driver.Edges{}) {
+		unborder(el, v.border)
+	}
 	if in.props != nil {
 		setViewProps(v, in.props)
 	}
@@ -167,6 +170,21 @@ func (s *surface) selectInput(v *view, r driver.TextRange) {
 	v.inner.Call("setSelectionRange", start, end)
 }
 
+// fieldBox returns the box the field element fills: the padding box for a
+// multiline textarea so its scroll bar runs along the edges and its text
+// scrolls under the padding, or the content box for a single-line input.
+func fieldBox(c *driver.InputConfig) driver.Bounds {
+	b := c.Content
+	if !c.Multiline {
+		return b
+	}
+	p := c.Padding
+	return driver.Bounds{
+		Origin: driver.Point{X: b.Origin.X - p.Left, Y: b.Origin.Y - p.Top},
+		Size:   driver.Size{Width: b.Size.Width + p.Left + p.Right, Height: b.Size.Height + p.Top + p.Bottom},
+	}
+}
+
 func (s *surface) setInput(v *view, c *driver.InputConfig) {
 	if v.kind != driver.KindInput {
 		return
@@ -182,7 +200,7 @@ func (s *surface) setInput(v *view, c *driver.InputConfig) {
 	}
 	in.fs.Config = *c
 	el := v.inner
-	setStyle(el, frameStyle(c.Content))
+	setStyle(el, frameStyle(fieldBox(c)))
 	if !c.Multiline {
 		// A search field stays type=text with ARIA's searchbox role (setViewProps): type=search would add the browser's clear button and look, and clear the field on Escape.
 		kind := "text"
@@ -220,6 +238,11 @@ func (s *surface) setInput(v *view, c *driver.InputConfig) {
 	}
 	setAttr(el, "maxlength", maxLength)
 	css := fontStyle(c.Style)
+	if c.Multiline && c.Padding != (driver.Edges{}) {
+		pad := webstyle.Px(c.Padding.Top) + " " + webstyle.Px(c.Padding.Right) + " " + webstyle.Px(c.Padding.Bottom) + " " + webstyle.Px(c.Padding.Left)
+		css["padding"] = pad
+		css["scroll-padding"] = pad
+	}
 	switch {
 	case c.HideCaret:
 		css["caret-color"] = "transparent"
