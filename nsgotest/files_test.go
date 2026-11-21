@@ -65,3 +65,53 @@ func TestSaveFilePreflight(t *testing.T) {
 		})
 	}
 }
+
+func TestSaveFilePreflightCancellationAndWriteFailure(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		choose    func(*testing.T) string
+		checks    int
+		wantError bool
+	}{
+		{name: "cancelled", choose: func(*testing.T) string { return "" }},
+		{
+			name: "write failure",
+			choose: func(t *testing.T) string {
+				return filepath.Join(t.TempDir(), "missing", "report.txt")
+			},
+			checks: 1, wantError: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := test.choose(t)
+			var scope *core.Scope
+			app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+				scope = cx
+				return core.View{}
+			})
+			app.SaveFile = func(driver.SaveRequest) string { return path }
+			checks, completions := 0, 0
+			app.Post(func() {
+				scope.SaveFile(core.SaveOptions{
+					Name: "report.txt", Data: []byte("new file"),
+					Accept: func(chosen string) error {
+						checks++
+						if chosen != path {
+							t.Errorf("preflight target %q, want %q", chosen, path)
+						}
+						return nil
+					},
+				}, func(saved bool, chosen string, err error) {
+					completions++
+					if saved || chosen != "" || (err != nil) != test.wantError {
+						t.Errorf("save answered %v, %q, %v", saved, chosen, err)
+					}
+				})
+			})
+			app.Settle()
+			if checks != test.checks || completions != 1 {
+				t.Errorf("ran %d checks and answered %d times, want %d checks and one answer", checks, completions, test.checks)
+			}
+		})
+	}
+}
