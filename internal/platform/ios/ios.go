@@ -168,8 +168,8 @@ type surface struct {
 	session            string
 	scene, tree        uint32
 	discarded, ending  bool
-	// alerts are the alerts shown, by ID, kept for a test host to answer
-	// them.
+	// alerts are the alerts shown, by ID, kept for a test host or nsgo dev's
+	// automation to answer them.
 	alerts map[uint32]shownAlert
 	// opening is the document interaction showing the apps that open a
 	// file, kept while it shows.
@@ -494,6 +494,10 @@ func newSurface(root engine.App, opts Options) *surface {
 	s := &surface{app: root, id: opts.ID, epoch: time.Now(), motions: map[*view]*motion{}, tops: map[*view]*view{}, effects: map[*view]bool{}, slides: map[*view]*slide{}, appearance: opts.Appearance,
 		components: opts.Components, unknown: map[string]bool{}, accessories: map[driver.NodeID]*view{}, ownTexts: map[driver.NodeID]*view{},
 		perfOn: opts.Perf}
+	if automationBuild {
+		// nsgo dev's automation answers alerts as a test does.
+		s.alerts = map[uint32]shownAlert{}
+	}
 	s.animator = driver.NewAnimator(func(e driver.Event) { s.engine.Dispatch(e) })
 	return s
 }
@@ -989,6 +993,9 @@ func (s *surface) alert(a *driver.AlertConfig) {
 		// on a tap outside, so one that is never shown closes it.
 		if !cancel {
 			handler := objcblock.New(func(_ objc.Block, _ objc.ID) {
+				if s.alerts != nil {
+					delete(s.alerts, id)
+				}
 				s.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: id, Index: -1})
 			})
 			action := objc.ID(apple.Class("UIAlertAction")).Send(sel("actionWithTitle:style:handler:"),

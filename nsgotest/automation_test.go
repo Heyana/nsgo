@@ -614,3 +614,48 @@ func TestAgentLosesAModelRatherThanTheApp(t *testing.T) {
 		t.Errorf("a lost model still queues %d batches and events", queued)
 	}
 }
+
+func TestAgentFollowsAppAndScenes(t *testing.T) {
+	g := newAgent()
+	t.Cleanup(g.close)
+	root := core.NewRoot(core.RootOptions{CheckCommits: !automationBuild})
+	t.Cleanup(root.Dispose)
+	makeScene := func(id int, width, height driver.Points) *fakeLive {
+		tree := core.NewTree(root, core.ApproxTextEngine{})
+		tree.Resize(driver.Size{Width: width, Height: height}, driver.Geometry{})
+		tree.Mount(fixture(new(int)))
+		return &fakeLive{surface: register(g, id), tree: tree}
+	}
+	first := makeScene(0, 390, 844)
+	second := makeScene(1, 500, 700)
+	testhost.RegisterLive(func(id uint32) testhost.Surface {
+		switch id {
+		case 0:
+			return first
+		case 1:
+			return second
+		default:
+			return nil
+		}
+	})
+	t.Cleanup(func() { testhost.RegisterLive(nil) })
+	b := first.tree.Commit()
+	first.surface.follow.Batch(b)
+	first.surface.follow.Batch(&driver.MountBatch{Root: b.Root, Items: []driver.MountItem{{Kind: driver.ItemOpenSurface, Surface: &driver.SurfaceConfig{ID: 1, Kind: driver.SurfaceScene, Scene: 1}}}})
+	second.commit()
+
+	var ws automation.WindowsResult
+	result(t, g, automation.Windows, nil, &ws)
+	if len(ws.Windows) != 2 || ws.Windows[0].ID != 0 || ws.Windows[0].Kind != "app" || ws.Windows[1].ID != 1 || ws.Windows[1].Kind != "scene" || !ws.Windows[1].Default {
+		t.Fatalf("windows %+v", ws)
+	}
+	var r automation.StepResult
+	result(t, g, automation.Press, automation.PressParams{Window: 0, Selector: "id:add", Snapshot: true}, &r)
+	if !strings.Contains(r.Snapshot, `"Count: 1"`) {
+		t.Fatalf("first scene press:\n%s", r.Snapshot)
+	}
+	result(t, g, automation.Press, automation.PressParams{Window: 1, Selector: "id:add", Snapshot: true}, &r)
+	if !strings.Contains(r.Snapshot, `"Count: 1"`) {
+		t.Fatalf("second scene press:\n%s", r.Snapshot)
+	}
+}

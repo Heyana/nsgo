@@ -148,6 +148,12 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 					err = fmt.Errorf("test hosts: %w", err)
 				}
 			}
+			if err == nil && repository && targetSupportsAutomation(name) {
+				err = goToolWithTags(ctx, p, env, slices.Concat(targetTags(name), []string{"nsgodev", "nsgoautomation"}), vetArgs(jobs, ".", "./internal/dev", "./nsgotest", "./internal/platform/...")...)
+				if err != nil {
+					err = fmt.Errorf("automation: %w", err)
+				}
+			}
 			if err != nil {
 				s.fail()
 				outcomes[i].err = fmt.Errorf("%s: %w", name, err)
@@ -261,6 +267,15 @@ func moduleRootOf(dir string) string {
 			return dir
 		}
 	}
+}
+
+// targetSupportsAutomation reports whether checkTargets vets target's live automation build too.
+func targetSupportsAutomation(name string) bool {
+	switch name {
+	case "macos_arm64", "macos_x64", "macos_universal", "ios_simulator", "tvos_simulator", "watchos_simulator":
+		return true
+	}
+	return false
 }
 
 // vetEnv is the environment go vets a target's build in, as the target's build sets it; the tags its build adds are targetTags'.

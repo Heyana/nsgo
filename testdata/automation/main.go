@@ -37,7 +37,7 @@ func App(app *core.Scope) {
 		for i := range rows {
 			rows[i] = core.Text{Content: "Row " + strconv.Itoa(i), TestID: "row-" + strconv.Itoa(i), Style: core.Style{Padding: core.All(8)}}
 		}
-		return core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(16), Gap: 8}, Children: []core.Node{
+		return core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(16), PaddingEnv: core.EnvEdges{Top: core.EnvSafeArea}, Gap: 8}, Children: []core.Node{
 			button("add", "Add", func() { count.Set(count.Get() + 1) }),
 			core.Text{ContentFunc: func() string { return "Count: " + strconv.Itoa(count.Get()) }, TestID: "count"},
 			core.Input{TestID: "name", Placeholder: "Name", OnChange: func(s string) { name.Set(s) }},

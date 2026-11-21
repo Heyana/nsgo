@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -353,7 +355,134 @@ func TestDevAutomationRefusesWhatItCannotDrive(t *testing.T) {
 		t.Errorf("-automation -release: %v", err)
 	}
 	p.Dev.Target = "web"
-	if err := dev(context.Background(), p, devOptions{automation: true}); err == nil || !strings.Contains(err.Error(), "macOS apps so far") {
+	if err := dev(context.Background(), p, devOptions{automation: true}); err == nil || !strings.Contains(err.Error(), "simulators so far") {
 		t.Errorf("-automation -target web: %v", err)
+	}
+	for _, target := range []string{"native", "ios_simulator", "tvos_simulator", "watchos_simulator"} {
+		if err := automationTargetError(target, "darwin", false); err != nil {
+			t.Errorf("darwin %s: %v", target, err)
+		}
+		if err := automationTargetError(target, "darwin", true); err == nil || !strings.Contains(err.Error(), "-release") {
+			t.Errorf("darwin %s -release: %v", target, err)
+		}
+		for _, goos := range []string{"linux", "windows"} {
+			if err := automationTargetError(target, goos, false); err == nil {
+				t.Errorf("%s %s unexpectedly allowed", goos, target)
+			}
+		}
+	}
+	for _, target := range []string{"ios", "tvos", "watchos", "web", "android", "miniprogram_wechat"} {
+		if err := automationTargetError(target, "darwin", false); err == nil {
+			t.Errorf("darwin %s unexpectedly allowed", target)
+		}
+	}
+}
+
+func TestSimulatorAutomationEnvAndLaunch(t *testing.T) {
+	h := startHub(t)
+	opts := devOptions{server: h.srv, automation: true, device: "test-sim"}
+	gotEnv := simulatorEnv(opts)
+	wantServer := "SIMCTL_CHILD_NSGO_DEV_SERVER=" + h.srv.url()
+	wantToken := "SIMCTL_CHILD_NSGO_DEV_TOKEN=" + h.srv.token
+	if !slices.Contains(gotEnv, wantServer) || !slices.Contains(gotEnv, wantToken) {
+		t.Fatalf("simulatorEnv = %v, want %q and %q", gotEnv, wantServer, wantToken)
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("the simulator launcher fixture uses a shell script")
+	}
+	for _, tc := range []struct {
+		sys     *appleOS
+		runtime string
+	}{
+		{iOS, "com.apple.CoreSimulator.SimRuntime.iOS-27-0"},
+		{tvOS, "com.apple.CoreSimulator.SimRuntime.tvOS-27-0"},
+		{watchOS, "com.apple.CoreSimulator.SimRuntime.watchOS-26-0"},
+	} {
+		t.Run(tc.sys.target+"_simulator", func(t *testing.T) {
+			recorded := filepath.Join(t.TempDir(), "launch.env")
+			t.Setenv("NSGO_RECORD_ENV", recorded)
+			t.Setenv("NSGO_SIM_RUNTIME", tc.runtime)
+			checkXcrun(t, `case "$2" in
+list) printf '{"devices":{"%s":[{"udid":"test-sim","name":"Sim","state":"Booted"}]}}\n' "$NSGO_SIM_RUNTIME" ;;
+bootstatus|install|terminate) exit 0 ;;
+launch)
+	printf 'ARGS=%s\nSERVER=%s\nTOKEN=%s\n' "$*" "$SIMCTL_CHILD_NSGO_DEV_SERVER" "$SIMCTL_CHILD_NSGO_DEV_TOKEN" > "$NSGO_RECORD_ENV"
+	exit 0
+	;;
+*) exit 1 ;;
+esac
+`)
+			stubOpen(t, `exit 0`)
+			p := &project{Dir: t.TempDir(), Name: "Sample", ID: "dev.example.sample"}
+			p.prepareDev(opts)
+			app, err := iosSession(tc.sys, opts).start(t.Context(), p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := app.wait(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			app.stop()
+			data, err := os.ReadFile(recorded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := string(data)
+			for _, want := range []string{
+				"SERVER=" + h.srv.url(),
+				"TOKEN=" + h.srv.token,
+				"dev.example.sample",
+			} {
+				if !strings.Contains(text, want) {
+					t.Errorf("launch output missing %q:\n%s", want, text)
+				}
+			}
+		})
+	}
+}
+
+func TestSimulatorAutomationBuildTags(t *testing.T) {
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"go.mod":  "module simauto\n\ngo 1.26\n",
+		"main.go": "package main\nfunc main() {}\n",
+	})
+	for _, tc := range []struct {
+		name       string
+		automation bool
+		extra      []string
+		wantAuto   bool
+		wantWatch  bool
+	}{
+		{"ios_dev", false, nil, false, false},
+		{"ios_automation", true, nil, true, false},
+		{"watchos_dev", false, []string{"nsgowatch"}, false, true},
+		{"watchos_automation", true, []string{"nsgowatch"}, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &project{Dir: dir, Name: "Sample", ID: "dev.example.sample"}
+			p.prepareDev(devOptions{automation: tc.automation})
+			cmd, done, err := goBuildCommand(t.Context(), p, filepath.Join(t.TempDir(), "out"), nil, buildExtra{tags: tc.extra})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer done()
+			var tags string
+			for i, a := range cmd.Args {
+				if a == "-tags" && i+1 < len(cmd.Args) {
+					tags = cmd.Args[i+1]
+				}
+			}
+			parts := strings.Split(tags, ",")
+			if !slices.Contains(parts, "nsgodev") {
+				t.Errorf("tags %q missing nsgodev", tags)
+			}
+			if got := slices.Contains(parts, "nsgoautomation"); got != tc.wantAuto {
+				t.Errorf("tags %q nsgoautomation=%v, want %v", tags, got, tc.wantAuto)
+			}
+			if got := slices.Contains(parts, "nsgowatch"); got != tc.wantWatch {
+				t.Errorf("tags %q nsgowatch=%v, want %v", tags, got, tc.wantWatch)
+			}
+		})
 	}
 }

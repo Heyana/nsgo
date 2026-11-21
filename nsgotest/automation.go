@@ -353,6 +353,8 @@ func (g *agent) windows() []automation.Window {
 			kind = "window"
 		case f.opened && f.kind == driver.SurfacePanel:
 			kind = "panel"
+		case f.opened && f.kind == driver.SurfaceScene:
+			kind = "scene"
 		case !f.opened && size.Width > 0 && size.Height > 0:
 			// Where the platform opens no windows of the app's, the app's own surface shows its views.
 			kind = "app"

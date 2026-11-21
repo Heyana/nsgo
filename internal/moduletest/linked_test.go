@@ -3,8 +3,11 @@ package moduletest
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -148,4 +151,85 @@ func symbolPackage(sym string) string {
 		return sym[:slash+1+dot]
 	}
 	return sym
+}
+
+// TestIOSPrivateAutomationLookupsAreGated verifies that iOS's private IOKit HID, BackBoardServices and UIKeyboardImpl lookups compile only under nsgotest or nsgoautomation, never in release or plain dev builds, and that watchOS's automation surface is gated the same way.
+func TestIOSPrivateAutomationLookupsAreGated(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("needs the go command")
+	}
+	listFiles := func(pkg, tags string) (dir string, files []string) {
+		t.Helper()
+		cmd := exec.Command("go", "list", "-tags="+tags, "-json=Dir,GoFiles", pkg)
+		cmd.Dir = moduleRoot
+		cmd.Env = append(os.Environ(), "GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1", "GOFLAGS=")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("go list -tags=%s %s: %v\n%s", tags, pkg, err, out)
+		}
+		var p struct {
+			Dir     string
+			GoFiles []string
+		}
+		if err := json.Unmarshal(out, &p); err != nil {
+			t.Fatal(err)
+		}
+		return p.Dir, p.GoFiles
+	}
+	privateTokens := []string{
+		"IOHIDEvent",
+		"BKSHIDEvent",
+		"_enqueueHIDEvent:",
+		"_contextId",
+		"UIKeyboardImpl",
+		"UIKeyboardInputMode",
+	}
+	for _, tags := range []string{"", "nsgodev"} {
+		dir, files := listFiles("./internal/platform/ios", tags)
+		for _, forbidden := range []string{"testhost.go", "testsurface.go", "automation.go"} {
+			if slices.Contains(files, forbidden) {
+				t.Errorf("ios tags=%q compiled %s", tags, forbidden)
+			}
+		}
+		if !slices.Contains(files, "automation_off.go") {
+			t.Errorf("ios tags=%q did not compile automation_off.go", tags)
+		}
+		for _, name := range files {
+			data, err := os.ReadFile(filepath.Join(dir, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			src := string(data)
+			for _, tok := range privateTokens {
+				if strings.Contains(src, tok) {
+					t.Errorf("ios tags=%q file %s references private symbol %q", tags, name, tok)
+				}
+			}
+		}
+	}
+	_, iosAuto := listFiles("./internal/platform/ios", "nsgodev,nsgoautomation")
+	if !slices.Contains(iosAuto, "automation.go") || !slices.Contains(iosAuto, "testsurface.go") || slices.Contains(iosAuto, "testhost.go") || slices.Contains(iosAuto, "automation_off.go") {
+		t.Errorf("ios automation files = %v", iosAuto)
+	}
+	_, iosTest := listFiles("./internal/platform/ios", "nsgotest")
+	if !slices.Contains(iosTest, "testhost.go") || !slices.Contains(iosTest, "testsurface.go") || !slices.Contains(iosTest, "automation_off.go") || slices.Contains(iosTest, "automation.go") {
+		t.Errorf("ios test files = %v", iosTest)
+	}
+
+	for _, tags := range []string{"nsgowatch", "nsgowatch,nsgodev"} {
+		_, files := listFiles("./internal/platform/watchos", tags)
+		for _, forbidden := range []string{"testhost.go", "testsurface.go", "automation.go"} {
+			if slices.Contains(files, forbidden) {
+				t.Errorf("watchos tags=%q compiled %s", tags, forbidden)
+			}
+		}
+	}
+	_, watchAuto := listFiles("./internal/platform/watchos", "nsgowatch,nsgodev,nsgoautomation")
+	if !slices.Contains(watchAuto, "automation.go") || !slices.Contains(watchAuto, "testsurface.go") || slices.Contains(watchAuto, "testhost.go") {
+		t.Errorf("watchos automation files = %v", watchAuto)
+	}
+	_, watchTest := listFiles("./internal/platform/watchos", "nsgowatch,nsgotest")
+	if !slices.Contains(watchTest, "testhost.go") || !slices.Contains(watchTest, "testsurface.go") || slices.Contains(watchTest, "automation.go") {
+		t.Errorf("watchos test files = %v", watchTest)
+	}
 }

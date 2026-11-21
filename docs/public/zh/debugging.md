@@ -124,7 +124,7 @@ go tool nsgo dev -lang ar-XB   # 从右到左
 go tool nsgo dev -automation
 ```
 
-`-automation` 让 AI 智能体或端到端测试工具像人一样使用运行中的应用（目前仅限 macOS）：列出窗口、概括某个窗口显示的内容、点击、输入、按键、滚动、拖动、悬停、选择菜单项、回答提示框、等待内容出现以及截图。智能体通过 `go tool nsgo mcp` 以 MCP 连接：它使用当前目录正在运行的 `dev -automation`，没有时就用相同的参数启动一个，并在客户端断开时停止它：
+`-automation` 让 AI 智能体或端到端测试工具像人一样使用运行中的应用（目前支持 macOS 以及 iOS、tvOS 和 watchOS 模拟器，通过 `-target ios_simulator`、`tvos_simulator` 或 `watchos_simulator`）：列出窗口、概括某个窗口显示的内容、点击、输入、按键、滚动、拖动、悬停、选择菜单项、回答提示框、等待内容出现以及截图。智能体通过 `go tool nsgo mcp` 以 MCP 连接：它使用当前目录正在运行的 `dev -automation`，没有时就用相同的参数启动一个，并在客户端断开时停止它：
 
 ```sh
 claude mcp add nsgo -- go tool nsgo mcp

@@ -101,7 +101,7 @@ Test an app as a user uses it with `nsgotest`, finding views by text, role, labe
 
 ## Debugging
 
-`go tool nsgo dev -devtools` opens DevTools (elements, signals, a commit profiler and a test recorder); `-highlight` outlines what each commit changes, `-trace` prints each commit with the lines whose writes caused it, `-layout` outlines every box and `-release -fps` measures speed. On macOS, `go tool nsgo mcp` lets an agent drive the running app over MCP (`claude mcp add nsgo -- go tool nsgo mcp`): list windows, outline views, press, type, scroll and take screenshots. Use it to check a change on screen instead of assuming it renders. Command/Control+R reloads from every open window and remains available after an app function's main view closes.
+`go tool nsgo dev -devtools` opens DevTools (elements, signals, a commit profiler and a test recorder); `-highlight` outlines what each commit changes, `-trace` prints each commit with the lines whose writes caused it, `-layout` outlines every box and `-release -fps` measures speed. On macOS and the iOS, tvOS and watchOS simulators (`-target ios_simulator`, `tvos_simulator`, `watchos_simulator`), `go tool nsgo mcp` lets an agent drive the running app over MCP (`claude mcp add nsgo -- go tool nsgo mcp`): list windows, outline views, press, type, scroll and take screenshots. Use it to check a change on screen instead of assuming it renders. Command/Control+R reloads from every open window and remains available after an app function's main view closes.
 
 ## Shipping
 
