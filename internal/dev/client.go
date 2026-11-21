@@ -42,7 +42,7 @@ func devServerURL() (server string, page bool) {
 	return server, false
 }
 
-// Start has the server print each commit under -trace, starts DevTools under -devtools and serves -automation's agent. nsgo.Run calls it before any graph starts, for an app's function as for a root view, as both read what it sets; it starts them once, however many views nsgo.SetMainView shows.
+// Start has the server print each commit under -trace, starts DevTools under -devtools and serves -automation's agent. nsgo.Run and nsgo.NewView call it before any graph starts, for an app's function, a root view or an embedded view, as all read what it sets; it starts them once, however many views or engines the process runs.
 func Start() { start() }
 
 var start = sync.OnceFunc(func() {

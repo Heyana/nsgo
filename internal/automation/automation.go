@@ -190,7 +190,7 @@ type MenuParams struct {
 
 // AlertParams list the alerts showing, or answer one.
 type AlertParams struct {
-	Window *uint32 `json:"window,omitempty" jsonschema:"only the alerts of this window as listed, 0 for the app's own; every alert by default"`
+	Window *uint32 `json:"window,omitempty" jsonschema:"only the alerts of this window as listed, 0 for the first app's own; every alert by default"`
 	ID     uint32  `json:"id,omitempty" jsonschema:"the alert to answer, as listed, with its window when another window's alert has the same ID; the oldest by default"`
 	Answer *int    `json:"answer,omitempty" jsonschema:"press the button at this index, or -1 to dismiss; without it the alerts are listed"`
 }
@@ -219,9 +219,11 @@ type LogsParams struct {
 // ReloadParams build and start the app again.
 type ReloadParams struct{}
 
-// Window is a window the app shows.
+// Window is a window or embedded view the process shows.
 type Window struct {
-	ID     uint32  `json:"id"`
+	ID uint32 `json:"id"`
+	// Graph numbers the engine's reactive graph within the process, from 1, telling apart surfaces of several engines in one host.
+	Graph  int     `json:"graph,omitempty"`
 	Title  string  `json:"title"`
 	Kind   string  `json:"kind"`
 	Width  float64 `json:"width"`
@@ -273,7 +275,7 @@ type ScreenshotResult struct {
 	Height int    `json:"height"`
 }
 
-// AlertInfo is an alert showing, which a window or the app (window 0 on macOS) shows.
+// AlertInfo is an alert showing, which a window or an app's own surface (window 0 for the first graph on macOS) shows.
 type AlertInfo struct {
 	ID      uint32   `json:"id"`
 	Window  uint32   `json:"window"`

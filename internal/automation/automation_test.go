@@ -48,3 +48,20 @@ func TestEveryMethodHasParams(t *testing.T) {
 		t.Errorf("%d params types for 16 methods", len(Params))
 	}
 }
+
+func TestWindowGraphRoundTrip(t *testing.T) {
+	data, err := json.Marshal(WindowsResult{Windows: []Window{
+		{ID: 1, Graph: 2, Title: "First", Kind: "window", Width: 300, Height: 200},
+		{ID: 2, Title: "Plain", Kind: "window", Width: 300, Height: 200, Default: true},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got WindowsResult
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Windows) != 2 || got.Windows[0].Graph != 2 || got.Windows[1].Graph != 0 {
+		t.Fatalf("round trip: %+v (%s)", got, data)
+	}
+}

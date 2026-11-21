@@ -322,6 +322,8 @@ type runner struct {
 	forcedQuit bool
 	// tree is the first surface's graph, which only the engine's goroutine reads: Language posts a function there.
 	tree *core.Tree
+	// graph numbers the engine's reactive graph within the process while devtools.Enabled (core.Tree.Graph), 0 otherwise.
+	graph atomic.Int64
 }
 
 type message struct {
@@ -511,6 +513,7 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 	})
 	tree := core.NewTree(root, p)
 	e.tree = tree
+	e.graph.Store(int64(tree.Graph()))
 	tree.Resize(opts.Size, opts.Geometry)
 	tree.SetEnvironment(opts.Environment)
 	tree.SetAppearance(opts.Appearance)
@@ -943,6 +946,14 @@ func fileURLPath(arg string) (string, bool) {
 		path = path[1:]
 	}
 	return filepath.FromSlash(path), true
+}
+
+// Graph numbers the engine's reactive graph within the process while devtools.Enabled, 0 otherwise.
+func (e *Engine) Graph() int {
+	if e == nil {
+		return 0
+	}
+	return int(e.graph.Load())
 }
 
 // Sync returns once the engine ran what was posted to it before and handed the resulting commits to the platforms, or the engine exited. It must not be called from the engine goroutine.

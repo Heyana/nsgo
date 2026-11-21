@@ -88,7 +88,10 @@ type View interface {
 }
 
 // NewView makes the platform's view showing app, for a host that runs the event loop itself.
-func NewView(app engine.App, o Options, h engine.HostOptions) View { return newView(app, o, h) }
+func NewView(app engine.App, o Options, h engine.HostOptions) View {
+	dev.Start()
+	return newView(app, o, h)
+}
 
 // appOf returns the app's function of what Run runs: app, or one showing
 // root as its main view.

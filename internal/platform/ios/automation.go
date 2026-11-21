@@ -10,7 +10,7 @@ const automationBuild = true
 func init() { testhost.RegisterLive(liveSurface) }
 
 // liveSurface returns the running app's scene surface numbered id (0 for the first scene, else the tree ID of a further scene) as a test host's surface acts on it, or nil while no connected scene shows it.
-func liveSurface(id uint32) testhost.Surface {
+func liveSurface(_ int, id uint32) testhost.Surface {
 	var found *surface
 	onMainSync(func() {
 		for _, s := range scenes {

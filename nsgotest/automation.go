@@ -2,6 +2,7 @@ package nsgotest
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,18 +21,29 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
-// The automation's agent. `nsgo dev -automation` links it into the running app (automation_on.go), where it is DevTools' agent (devtools.Automation): DevTools' registry hands it every surface core registers, and it follows those of the app's graph (devtools.Surface.Follow) for their batches and events, so each surface has a model as a test's app on a target does, and it answers package internal/automation's requests with the steps tests take, acting through the backend's live surfaces (testhost.Live).
+// The automation's agent. `nsgo dev -automation` links it into the running app (automation_on.go), where it is DevTools' agent (devtools.Automation): DevTools' registry hands it every surface core registers across every graph in the process, and it follows each (devtools.Surface.Follow) for its batches and events, so each surface has a model as a test's app on a target does, and it answers package internal/automation's requests with the steps tests take, acting through the backend's live surfaces (testhost.Live).
 
-// agent follows a running app's surfaces and answers requests about them.
+// surfaceKey identifies one surface within the process: each graph numbers its own surfaces from 0.
+type surfaceKey struct {
+	graph int
+	id    uint32
+}
+
+// agent follows every running engine's surfaces in the process and answers requests about them.
 type agent struct {
 	tb   *liveTB
 	stop chan struct{}
 	tick sync.Once
 
-	mu sync.Mutex
-	// graph is the graph whose surfaces the agent follows, the first that registers one: another graph's surfaces have the same IDs (the roadmap's Automation section).
-	graph    int
-	surfaces map[uint32]*followed
+	mu       sync.Mutex
+	surfaces map[surfaceKey]*followed
+	byWindow map[uint32]*followed
+	// ownZero is the first windowless app-own surface, which keeps window ID 0 for its alerts as a single-engine app does; another graph's own surface gets a window ID of its own.
+	ownZero *followed
+	// nextID numbers listed windows, embedded views and secondary own surfaces monotonically from 1, so closed IDs are never reused and no listed window collides with 0 (the default window).
+	nextID uint32
+	// nextSeq orders surfaces oldest-first across every graph.
+	nextSeq uint64
 	// dock is the surface that set the app icon's menu last, as the batches came: the platform shows that surface's menu alone, and drops it as the surface goes. Nil while none did, as for nsgotest's own apps, whose model has the app's.
 	dock *followed
 
@@ -44,12 +56,21 @@ type agent struct {
 // followed is a surface the agent follows: its model, and what the app opened it as. It hears the surface as its devtools.Follower.
 type followed struct {
 	g   *agent
-	id  uint32
+	key surfaceKey
+	// winID is the automation window ID exposed to tools, valid once hasWinID is set.
+	winID    uint32
+	hasWinID bool
+	// own is set when winID was assigned for a windowless app-own surface (alerts), not a listed view.
+	own bool
+	// seq is when the agent first heard of this surface, for deterministic oldest-first ordering across graphs.
+	seq uint64
 	app *App
 	// opened is set for a window, a panel or a tray icon's view the app opened, of kind and title.
 	opened bool
 	kind   driver.SurfaceKind
 	title  string
+	// opensSurfaces is set once this surface opens child surfaces (ItemOpenSurface): it is an app's own windowless surface, not a view shown in windows().
+	opensSurfaces bool
 	// closed is set once the surface went.
 	closed bool
 }
@@ -70,7 +91,12 @@ const (
 )
 
 func newAgent() *agent {
-	return &agent{tb: &liveTB{}, stop: make(chan struct{}), surfaces: map[uint32]*followed{}}
+	return &agent{
+		tb:       &liveTB{},
+		stop:     make(chan struct{}),
+		surfaces: map[surfaceKey]*followed{},
+		byWindow: map[uint32]*followed{},
+	}
 }
 
 // newLiveApp returns a model of a running app's surface, which the agent feeds: target mode with no surface of a test's, alerts left to whoever answers them, and no clock of its own but the system's.
@@ -88,47 +114,110 @@ func newLiveApp(tb testing.TB) *App {
 	return a
 }
 
-// follow returns surface's, made as the surface registers or the app's own surface opens it. The caller holds g.mu.
-func (g *agent) follow(surface uint32) *followed {
-	f := g.surfaces[surface]
-	if f == nil {
-		f = &followed{g: g, id: surface, app: newLiveApp(g.tb)}
-		g.surfaces[surface] = f
+// follow returns key's followed surface, made as the surface registers or its graph's own surface opens it. The caller holds g.mu.
+func (g *agent) follow(key surfaceKey) *followed {
+	f := g.surfaces[key]
+	if f == nil || f.closed {
+		if f != nil {
+			g.forget(key, f)
+		}
+		g.nextSeq++
+		f = &followed{g: g, key: key, seq: g.nextSeq, app: newLiveApp(g.tb)}
+		g.surfaces[key] = f
 	}
 	return f
 }
 
-// serve has the agent answer for a, as the app's surface id, a window: for tests of the agent on nsgotest's own apps, whose steps then fail the request rather than the test.
+// forget removes f from the agent's tables. The caller holds g.mu.
+func (g *agent) forget(key surfaceKey, f *followed) {
+	delete(g.surfaces, key)
+	if f.hasWinID && g.byWindow[f.winID] == f {
+		delete(g.byWindow, f.winID)
+	}
+	if g.ownZero == f {
+		g.ownZero = nil
+	}
+	if g.dock == f {
+		g.dock = nil
+	}
+}
+
+// allocWindowID returns the next unused positive automation window ID. The caller holds g.mu.
+func (g *agent) allocWindowID() uint32 {
+	for {
+		g.nextID++
+		if g.nextID == 0 {
+			g.nextID = 1
+		}
+		if g.byWindow[g.nextID] == nil {
+			return g.nextID
+		}
+	}
+}
+
+// windowID returns f's automation window ID, assigning one when it has none. own is true only for a windowless app-own surface: the first keeps 0 for its alerts, while every listed window and every other graph's own surface gets a unique positive ID. The caller holds g.mu.
+func (g *agent) windowID(f *followed, own bool) uint32 {
+	if f.hasWinID {
+		if !own && f.winID == 0 {
+			// A surface that was assigned 0 before it had a size and later became a listed view moves to a positive ID so it never collides with 0 (the default window).
+			if g.byWindow[0] == f {
+				delete(g.byWindow, 0)
+			}
+			if g.ownZero == f {
+				g.ownZero = nil
+			}
+			f.hasWinID, f.own = false, false
+		} else {
+			if !own {
+				f.own = false
+			}
+			return f.winID
+		}
+	}
+	if own && f.key.id == 0 && g.ownZero == nil {
+		f.winID, f.hasWinID, f.own = 0, true, true
+		g.ownZero = f
+		g.byWindow[0] = f
+		return 0
+	}
+	id := g.allocWindowID()
+	f.winID, f.hasWinID, f.own = id, true, own
+	g.byWindow[id] = f
+	return id
+}
+
+// serve has the agent answer for a, as window id: for tests of the agent on nsgotest's own apps, whose steps then fail the request rather than the test.
 func (g *agent) serve(id uint32, a *App, title string) {
 	a.t = g.tb
 	g.mu.Lock()
-	g.surfaces[id] = &followed{g: g, id: id, app: a, opened: true, kind: driver.SurfaceWindow, title: title}
+	g.nextSeq++
+	key := surfaceKey{graph: 0, id: id}
+	f := &followed{g: g, key: key, winID: id, hasWinID: true, seq: g.nextSeq, app: a, opened: true, kind: driver.SurfaceWindow, title: title}
+	g.surfaces[key] = f
+	g.byWindow[id] = f
+	if id > g.nextID {
+		g.nextID = id
+	}
 	g.mu.Unlock()
 }
 
 // close stops the agent's drains.
 func (g *agent) close() { close(g.stop) }
 
-// Registered implements devtools.Agent: the agent follows each surface of its graph, from before the surface's first batch.
+// Registered implements devtools.Agent: the agent follows every surface of every graph in the process, from before the surface's first batch.
 func (g *agent) Registered(s devtools.Surface) {
+	key := surfaceKey{graph: s.Graph(), id: uint32(s.ID())}
 	g.mu.Lock()
-	if g.graph == 0 {
-		g.graph = s.Graph()
-	}
-	var f *followed
-	if s.Graph() == g.graph {
-		f = g.follow(uint32(s.ID()))
-	}
+	f := g.follow(key)
 	g.mu.Unlock()
-	if f != nil {
-		s.Follow(f)
-	}
+	s.Follow(f)
 }
 
 // Unregistered implements devtools.Agent: the next drain forgets the surface.
 func (g *agent) Unregistered(s devtools.Surface) {
+	key := surfaceKey{graph: s.Graph(), id: uint32(s.ID())}
 	g.mu.Lock()
-	if f := g.surfaces[uint32(s.ID())]; f != nil && s.Graph() == g.graph {
+	if f := g.surfaces[key]; f != nil {
 		f.closed = true
 	}
 	g.mu.Unlock()
@@ -139,17 +228,28 @@ func (f *followed) Batch(b *driver.MountBatch) {
 	g := f.g
 	g.tick.Do(func() { go g.drainEvery(drainInterval) })
 	g.mu.Lock()
-	for _, it := range b.Items {
-		if it.Kind == driver.ItemOpenSurface && it.Surface != nil {
-			o := g.follow(it.Surface.ID)
-			o.opened, o.kind, o.title = true, it.Surface.Kind, it.Surface.Title
-		}
-		if it.Kind == driver.ItemDockMenu {
-			g.dock = f
+	closed := f.closed
+	if !closed {
+		for _, it := range b.Items {
+			if it.Kind == driver.ItemOpenSurface && it.Surface != nil {
+				if it.Surface.Kind != driver.SurfaceScene {
+					f.opensSurfaces = true
+					if f.key.id == 0 && !f.hasWinID && g.ownZero == nil {
+						f.winID, f.hasWinID, f.own = 0, true, true
+						g.ownZero = f
+						g.byWindow[0] = f
+					}
+				}
+				o := g.follow(surfaceKey{graph: f.key.graph, id: it.Surface.ID})
+				o.opened, o.kind, o.title = true, it.Surface.Kind, it.Surface.Title
+			}
+			if it.Kind == driver.ItemDockMenu {
+				g.dock = f
+			}
 		}
 	}
 	g.mu.Unlock()
-	if f.app.target != nil {
+	if !closed && f.app.target != nil {
 		// Each model follows its one surface, as a target's first.
 		f.app.target.observe(0, b)
 	}
@@ -157,7 +257,11 @@ func (f *followed) Batch(b *driver.MountBatch) {
 
 // Event implements devtools.Follower.
 func (f *followed) Event(ev driver.Event) {
-	if f.app.target != nil {
+	g := f.g
+	g.mu.Lock()
+	closed := f.closed
+	g.mu.Unlock()
+	if !closed && f.app.target != nil {
 		f.app.target.event(ev)
 	}
 }
@@ -182,9 +286,9 @@ func (g *agent) drainEvery(d time.Duration) {
 func (g *agent) drainAll() {
 	g.mu.Lock()
 	var live []*followed
-	for id, f := range g.surfaces {
+	for key, f := range g.surfaces {
 		if f.closed {
-			delete(g.surfaces, id)
+			g.forget(key, f)
 			continue
 		}
 		if f.app.target != nil && f.lost() == "" {
@@ -335,37 +439,48 @@ func (g *agent) do(req automation.Request) (any, *automation.Error) {
 	return nil, automation.Errorf(automation.UnknownMethod, "the app answers no method %q", req.Method)
 }
 
-// windows lists the windows and panels the app shows, oldest first, and the app's own surface where it shows views itself; the newest is the default.
+// windowKind returns how windows lists f ("window", "panel", "app", or "" for a windowless own surface or tray icon) and its root's size. The caller holds g.work and g.mu.
+func (f *followed) windowKind() (string, driver.Size) {
+	var size driver.Size
+	if root := f.app.views[f.app.rootID]; root != nil {
+		size = root.Frame.Size
+	}
+	switch {
+	case f.opened && f.kind == driver.SurfaceWindow:
+		return "window", size
+	case f.opened && f.kind == driver.SurfacePanel:
+		return "panel", size
+	case f.opened && f.kind == driver.SurfaceScene:
+		return "scene", size
+	case !f.opened && !f.opensSurfaces && (size.Width > 0 && size.Height > 0 || f.hasWinID && !f.own && f.lost() != ""):
+		// Where the platform opens no windows of the app's, or in an embedded view (NewView), the surface shows views directly; keep a lost model listed so requests to it report why it stopped following instead of no_window.
+		return "app", size
+	default:
+		return "", size
+	}
+}
+
+// windows lists the windows, panels and embedded views the process shows across every graph, oldest first; the newest is the default.
 func (g *agent) windows() []automation.Window {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	list := slices.Collect(maps.Values(g.surfaces))
+	slices.SortFunc(list, func(a, b *followed) int { return cmp.Compare(a.seq, b.seq) })
 	out := []automation.Window{}
-	for _, id := range slices.Sorted(maps.Keys(g.surfaces)) {
-		f := g.surfaces[id]
-		root := f.app.views[f.app.rootID]
-		var size driver.Size
-		if root != nil {
-			size = root.Frame.Size
-		}
-		kind := ""
-		switch {
-		case f.opened && f.kind == driver.SurfaceWindow:
-			kind = "window"
-		case f.opened && f.kind == driver.SurfacePanel:
-			kind = "panel"
-		case f.opened && f.kind == driver.SurfaceScene:
-			kind = "scene"
-		case !f.opened && size.Width > 0 && size.Height > 0:
-			// Where the platform opens no windows of the app's, the app's own surface shows its views.
-			kind = "app"
-		default:
+	for _, f := range list {
+		if f.closed {
 			continue
 		}
+		kind, size := f.windowKind()
+		if kind == "" {
+			continue
+		}
+		id := g.windowID(f, false)
 		title := f.app.Title
 		if title == "" {
 			title = f.title
 		}
-		out = append(out, automation.Window{ID: id, Title: title, Kind: kind, Width: float64(size.Width), Height: float64(size.Height)})
+		out = append(out, automation.Window{ID: id, Graph: f.key.graph, Title: title, Kind: kind, Width: float64(size.Width), Height: float64(size.Height)})
 	}
 	if len(out) > 0 {
 		out[len(out)-1].Default = true
@@ -395,30 +510,34 @@ func (g *agent) window(id uint32) (uint32, *followed, *automation.Error) {
 	if len(ws) == 0 {
 		return 0, nil, automation.Errorf(automation.NoWindow, "the app shows no window")
 	}
-	at := slices.IndexFunc(ws, func(w automation.Window) bool { return w.ID == id })
-	if id == 0 && at < 0 {
-		at = len(ws) - 1
-	}
-	if at < 0 {
-		return 0, nil, automation.Errorf(automation.NoWindow, "no window %d: windows lists the app's", id)
+	at := len(ws) - 1
+	if id != 0 {
+		at = slices.IndexFunc(ws, func(w automation.Window) bool { return w.ID == id })
+		if at < 0 {
+			return 0, nil, automation.Errorf(automation.NoWindow, "no window %d: windows lists the app's", id)
+		}
 	}
 	id = ws[at].ID
 	g.mu.Lock()
-	f := g.surfaces[id]
+	f := g.byWindow[id]
+	closed := f == nil || f.closed
 	g.mu.Unlock()
+	if closed {
+		return 0, nil, automation.Errorf(automation.NoWindow, "no window %d: windows lists the app's", id)
+	}
 	if why := f.lost(); why != "" {
 		return 0, nil, automation.Errorf(automation.Failed, "the automation stopped following window %d: %s", id, why)
 	}
-	g.prepare(id, f)
+	g.prepare(f)
 	return id, f, nil
 }
 
 // prepare gives f's model the backend's live surface to act on, or one that shows nothing.
-func (g *agent) prepare(id uint32, f *followed) {
+func (g *agent) prepare(f *followed) {
 	if f.app.target == nil {
 		return
 	}
-	s := testhost.Live(id)
+	s := testhost.Live(f.key.graph, f.key.id)
 	if s == nil {
 		s = noSurface{}
 	}
@@ -487,7 +606,7 @@ func (g *agent) find(p *automation.FindParams) (any, *automation.Error) {
 	return r, nil
 }
 
-// menu chooses an item of the application menu, the window's or the app's own (on macOS set from the app's function), of the context menu showing, or of the app icon's menu, the app's whichever surface set it.
+// menu chooses an item of the application menu, the window's or its graph's own surface's (on macOS set from the app's function), of the context menu showing, or of the app icon's menu, the process's whichever surface set it.
 func (g *agent) menu(p *automation.MenuParams) (any, *automation.Error) {
 	if len(p.Path) == 0 {
 		return nil, automation.Errorf(automation.InvalidRequest, "menu needs a path")
@@ -495,26 +614,46 @@ func (g *agent) menu(p *automation.MenuParams) (any, *automation.Error) {
 	if p.Popup && p.Dock {
 		return nil, automation.Errorf(automation.InvalidRequest, "popup and dock name different menus")
 	}
-	id, f, err := g.window(p.Window)
-	if err != nil {
-		return nil, err
+	var id uint32
+	var f *followed
+	if p.Dock && p.Window == 0 && !p.Snapshot {
+		// On macOS the Dock menu can still be chosen after every window closes.
+		if ws := g.windows(); len(ws) > 0 {
+			var err *automation.Error
+			id, f, err = g.window(0)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		var err *automation.Error
+		id, f, err = g.window(p.Window)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if p.Popup {
 		return g.step(id, "", p.Snapshot, func(a *App) { a.ChoosePopup(p.Path...) })
 	}
-	owner, ownerID := f, id
+	owner := f
 	var item *driver.MenuEntry
 	var why string
 	if p.Dock {
-		// The app has one Dock menu, the one a surface set last, whichever window the request names.
+		// The process has one Dock menu, the one a surface set last, whichever window the request names.
 		g.mu.Lock()
-		if g.dock != nil {
-			owner, ownerID = g.dock, g.dock.id
+		dock := g.dock
+		if dock != nil {
+			owner = dock
+		} else if f != nil && f.app.target != nil {
+			// A live app whose Dock menu was never set, or whose owner closed.
+			owner = nil
 		}
-		gone := owner.closed
+		gone := owner == nil || owner.closed
 		g.mu.Unlock()
-		if lost := owner.lost(); lost != "" && !gone {
-			return nil, automation.Errorf(automation.Failed, "the automation stopped following surface %d, which set the Dock menu: %s", ownerID, lost)
+		if !gone {
+			if lost := owner.lost(); lost != "" {
+				return nil, automation.Errorf(automation.Failed, "the automation stopped following surface %d, which set the Dock menu: %s", owner.key.id, lost)
+			}
 		}
 		if gone || len(owner.app.dockMenu) == 0 {
 			return nil, automation.Errorf(automation.NoMatch, "the app shows no Dock menu")
@@ -524,11 +663,12 @@ func (g *agent) menu(p *automation.MenuParams) (any, *automation.Error) {
 		item, why = menuItemAt(f.app.menu, p.Path)
 		if item == nil {
 			g.mu.Lock()
-			own := g.surfaces[0]
+			own := g.surfaces[surfaceKey{graph: f.key.graph, id: 0}]
+			ownClosed := own == nil || own.closed
 			g.mu.Unlock()
-			if own != nil && own != f {
+			if !ownClosed && own != f {
 				if it, w := menuItemAt(own.app.menu, p.Path); it != nil || len(f.app.menu) == 0 {
-					item, why, owner, ownerID = it, w, own, 0
+					item, why, owner = it, w, own
 				}
 			}
 		}
@@ -550,7 +690,7 @@ func (g *agent) menu(p *automation.MenuParams) (any, *automation.Error) {
 		}
 	} else {
 		// Each surface numbers its menu's items itself, so the surface whose menu has the item chooses it.
-		s := testhost.Live(ownerID)
+		s := testhost.Live(owner.key.graph, owner.key.id)
 		if s == nil {
 			return nil, automation.Errorf(automation.Unsupported, "no surface shows the menu")
 		}
@@ -563,13 +703,18 @@ func (g *agent) menu(p *automation.MenuParams) (any, *automation.Error) {
 		} else if err != nil {
 			return nil, automation.Errorf(automation.Failed, "%v", err)
 		}
-		g.prepare(ownerID, owner)
-		if err := g.tb.try(func() { owner.app.target.settle(); f.app.target.settle() }); err != nil {
+		g.prepare(owner)
+		if err := g.tb.try(func() {
+			owner.app.target.settle()
+			if f != nil && f != owner {
+				f.app.target.settle()
+			}
+		}); err != nil {
 			return nil, err
 		}
 	}
-	r := automation.StepResult{Settled: f.app.target == nil || f.app.target.quiet}
-	if p.Snapshot {
+	r := automation.StepResult{Settled: f == nil || f.app.target == nil || f.app.target.quiet}
+	if p.Snapshot && f != nil {
 		r.Snapshot = outline(f.app, false, false)
 	}
 	return r, nil
@@ -598,26 +743,32 @@ func menuItemAt(items []driver.MenuEntry, path []string) (*driver.MenuEntry, str
 	return nil, "no menu item"
 }
 
-// shownAlert is an alert showing, the surface showing it, and where it is among its model's alerts.
+// shownAlert is an alert showing, the automation window ID of the surface showing it, and where it is among its model's alerts.
 type shownAlert struct {
-	surface uint32
-	f       *followed
-	alert   driver.AlertConfig
-	index   int
+	window uint32
+	f      *followed
+	alert  driver.AlertConfig
+	index  int
 }
 
-// alerts lists the alerts showing, the app's own first, then each window's, oldest first: window's alone when it names one.
+// alerts lists the alerts showing across every graph, oldest surface first: window's alone when it names one.
 func (g *agent) alerts(window *uint32) []shownAlert {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	list := slices.Collect(maps.Values(g.surfaces))
+	slices.SortFunc(list, func(a, b *followed) int { return cmp.Compare(a.seq, b.seq) })
 	var out []shownAlert
-	for _, id := range slices.Sorted(maps.Keys(g.surfaces)) {
-		if window != nil && id != *window {
+	for _, f := range list {
+		if f.closed || len(f.app.alerts) == 0 {
 			continue
 		}
-		f := g.surfaces[id]
+		kind, _ := f.windowKind()
+		winID := g.windowID(f, kind == "")
+		if window != nil && winID != *window {
+			continue
+		}
 		for i, a := range f.app.alerts {
-			out = append(out, shownAlert{id, f, a, i})
+			out = append(out, shownAlert{winID, f, a, i})
 		}
 	}
 	return out
@@ -627,7 +778,7 @@ func (g *agent) alert(p *automation.AlertParams) (any, *automation.Error) {
 	list := func() automation.AlertResult {
 		r := automation.AlertResult{Alerts: []automation.AlertInfo{}}
 		for _, s := range g.alerts(p.Window) {
-			info := automation.AlertInfo{ID: s.alert.ID, Window: s.surface, Title: s.alert.Title, Message: s.alert.Message, Buttons: []string{}}
+			info := automation.AlertInfo{ID: s.alert.ID, Window: s.window, Title: s.alert.Title, Message: s.alert.Message, Buttons: []string{}}
 			for _, b := range s.alert.Actions {
 				info.Buttons = append(info.Buttons, b.Label)
 			}
@@ -662,7 +813,7 @@ func (g *agent) alert(p *automation.AlertParams) (any, *automation.Error) {
 		}
 		return list(), nil
 	}
-	live := testhost.Live(s.surface)
+	live := testhost.Live(s.f.key.graph, s.f.key.id)
 	if live == nil {
 		return nil, automation.Errorf(automation.Unsupported, "no surface shows the alert")
 	}
@@ -670,7 +821,7 @@ func (g *agent) alert(p *automation.AlertParams) (any, *automation.Error) {
 		return nil, automation.Errorf(automation.Failed, "%v", err)
 	}
 	a.alerts = slices.DeleteFunc(a.alerts, func(c driver.AlertConfig) bool { return c.ID == s.alert.ID })
-	g.prepare(s.surface, s.f)
+	g.prepare(s.f)
 	if err := g.tb.try(a.target.settle); err != nil {
 		return nil, err
 	}

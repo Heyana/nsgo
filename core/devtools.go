@@ -302,6 +302,14 @@ func clip(s string) string {
 	return s[:end] + "…"
 }
 
+// Graph numbers the tree's graph within the process while devtools.Enabled, 0 otherwise (internal/devtools).
+func (t *Tree) Graph() int {
+	if t == nil || t.rt == nil || t.rt.dev == nil {
+		return 0
+	}
+	return t.rt.dev.graph
+}
+
 // devSurface is a tree as DevTools read and drive it.
 type devSurface struct{ t *Tree }
 

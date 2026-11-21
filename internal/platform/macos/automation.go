@@ -12,21 +12,25 @@ const automationBuild = true
 
 func init() { testhost.RegisterLive(liveSurface) }
 
-// liveSurface returns the running app's surface id as a test host's surface acts on it: the app's own for 0, which shows no window but answers its alerts and chooses the main menu's items, else the window or panel the app opened as id; nil for a tray icon's view or a surface gone.
-func liveSurface(id uint32) testhost.Surface {
+// liveSurface returns surface id of graph as a test host's surface acts on it: a windowing app's own surface (id 0, not embedded), which shows no window but answers its alerts and chooses the main menu's items, any window or panel an engine opened as id, or an embedded view (NewView, id 0) mounted in a host window; nil for a tray icon's view, an unmounted embedded view or a surface gone.
+func liveSurface(graph int, id uint32) testhost.Surface {
+	if graph <= 0 {
+		return nil
+	}
 	var found *surface
 	onMainSync(func() {
-		if own == nil {
-			return
-		}
-		if id == 0 {
-			found = own
-			return
-		}
 		for s := range surfaces {
-			if s.id == id && !s.embedded && !s.closed && s.window != 0 && s.kind != driver.SurfaceTrayIcon {
-				found = s
+			if s.closed || s.engine == nil || s.id != id || s.kind == driver.SurfaceTrayIcon {
+				continue
 			}
+			if s.engine.Graph() != graph {
+				continue
+			}
+			if s.window == 0 && (s.embedded || id != 0) {
+				continue
+			}
+			found = s
+			break
 		}
 	})
 	if found == nil {
