@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nsgo-dev/nsgo/cmd/nsgo/harmony"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -181,9 +182,10 @@ type project struct {
 	// Harmonyos is the harmonyos target's: Permissions are the ones its
 	// module.json asks for beyond the runtime's INTERNET, by their
 	// ohos.permission names, such as MICROPHONE and CAMERA, which a prompt
-	// only asks for once declared.
+	// only asks for once declared. Signing takes AppGallery Connect files.
 	Harmonyos struct {
-		Permissions []string `yaml:"permissions"`
+		Permissions []string         `yaml:"permissions"`
+		Signing     *harmony.Signing `yaml:"signing"`
 	} `yaml:"harmonyos"`
 	// MacOS is the macOS target's disk image: DMGBackground, a PNG with
 	// an optional @2x twin, is the picture behind its window, which takes

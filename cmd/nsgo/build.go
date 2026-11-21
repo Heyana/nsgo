@@ -342,7 +342,7 @@ func expandTargets(names []string) ([]string, error) {
 	return out, nil
 }
 
-// goAndXcodeTargets are the packages a Mac with Go and Xcode can build. android_x64 is omitted: Go links android/amd64 only with cgo, so it needs an NDK; macos_universal, which joins the two macOS targets' builds; harmonyos, whose packages are unsigned previews, and the mini programs, which only some apps fit.
+// goAndXcodeTargets are the packages a Mac with Go and Xcode can build. android_x64 is omitted: Go links android/amd64 only with cgo, so it needs an NDK; macos_universal, which joins the two macOS targets' builds; the harmonyos preview, and the mini programs, which only some apps fit.
 func goAndXcodeTargets() []string {
 	var out []string
 	for _, target := range targets {
@@ -1014,7 +1014,8 @@ func buildHarmony(ctx context.Context, p *project, dir string) error {
 
 // buildHarmonyHAP assembles the HAP, naming the installed bundle from the
 // app's id when the machine can build a host for it (harmony.CompileHost)
-// and the configuration asks for it. Without the SDK it falls back to the
+// and the configuration asks for it. Signing always uses the app's exact
+// id. Without the SDK an unsigned auto build falls back to the
 // committed host's padded name, which harmony.Package swaps in the bytecode.
 // Exact mode fails when the SDK cannot build a host; auto keeps the app
 // building and says why.
@@ -1023,12 +1024,12 @@ func buildHarmonyHAP(ctx context.Context, p *project, dir, site string, code int
 	if mode == "" {
 		mode = "auto"
 	}
-	exact := func() (string, error) {
+	exact := func(output string) (string, error) {
 		hostDir, err := harmony.CompileHost(ctx, p.ID)
 		if err != nil {
 			return "", err
 		}
-		return harmony.PackageWithHost(dir, site, hostDir, p.Name, p.ID, p.Version, code, p.Harmonyos.Permissions)
+		return harmony.PackageWithHost(output, site, hostDir, p.Name, p.ID, p.Version, code, p.Harmonyos.Permissions)
 	}
 	padded := func() (string, error) {
 		return harmony.Package(dir, site, p.Name, p.ID, p.Version, code, p.Harmonyos.Permissions)
@@ -1038,9 +1039,35 @@ func buildHarmonyHAP(ctx context.Context, p *project, dir, site string, code int
 			stage(ctx, "harmonyos: bundle %s", name)
 		}
 	}
+	if p.Harmonyos.Signing != nil {
+		signer, err := p.harmonySigner(ctx)
+		if err != nil {
+			return "", err
+		}
+		work, err := os.MkdirTemp(dir, ".hap-signing-*")
+		if err != nil {
+			return "", err
+		}
+		defer os.RemoveAll(work)
+		unsigned, err := exact(work)
+		if err != nil {
+			return "", fmt.Errorf("HarmonyOS signing needs an exact bundle name: %w", err)
+		}
+		stage(ctx, "signing the HarmonyOS HAP")
+		signed := filepath.Join(work, "signed-"+filepath.Base(unsigned))
+		if err := signer.Sign(ctx, unsigned, signed); err != nil {
+			return "", err
+		}
+		hap := filepath.Join(dir, filepath.Base(unsigned))
+		if err := os.Rename(signed, hap); err != nil {
+			return "", err
+		}
+		report(p.ID)
+		return hap, nil
+	}
 	switch mode {
 	case "exact":
-		hap, err := exact()
+		hap, err := exact(dir)
 		if err != nil {
 			return "", fmt.Errorf("build.harmonyos_bundles is exact: %w", err)
 		}
@@ -1055,7 +1082,7 @@ func buildHarmonyHAP(ctx context.Context, p *project, dir, site string, code int
 		report(name)
 		return hap, nil
 	case "auto":
-		hap, err := exact()
+		hap, err := exact(dir)
 		if err == nil {
 			report(p.ID)
 			return hap, nil
@@ -1072,6 +1099,24 @@ func buildHarmonyHAP(ctx context.Context, p *project, dir, site string, code int
 		return hap, nil
 	}
 	return "", fmt.Errorf("harmonyos: unknown build.harmonyos_bundles %q: use auto, exact or padded", mode)
+}
+
+func (p *project) harmonySigner(ctx context.Context) (*harmony.Signer, error) {
+	switch p.Build.HarmonyosBundles {
+	case "", "auto", "exact":
+	case "padded":
+		return nil, fmt.Errorf("harmonyos.signing needs the app's exact id: use auto or exact for build.harmonyos_bundles")
+	default:
+		return nil, fmt.Errorf("harmonyos: unknown build.harmonyos_bundles %q: use auto or exact for signing", p.Build.HarmonyosBundles)
+	}
+	signer, err := harmony.OpenSigner(p.Dir, *p.Harmonyos.Signing)
+	if err != nil {
+		return nil, err
+	}
+	if err := signer.CheckProfile(ctx, p.ID); err != nil {
+		return nil, err
+	}
+	return signer, nil
 }
 
 // buildWeb writes the site to dir: index.html, nsgo.json, nsgo.js (the

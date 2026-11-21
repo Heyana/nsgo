@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"go/version"
 	"os"
@@ -79,7 +80,7 @@ func doctor(ctx context.Context) error {
 	}
 	line(title + " " + dim("· "+m.system+" "+goArchName(m.goarch)))
 	emit("")
-	for _, t := range m.tools() {
+	for _, t := range append(m.tools(), harmonySigningStatus(ctx, ".")) {
 		switch {
 		case t.ok:
 			done("%s", t.why)
@@ -121,6 +122,20 @@ func doctor(ctx context.Context) error {
 		return fmt.Errorf("NSGo needs Go %s or later: https://go.dev/dl/", strings.TrimPrefix(minGo, "go"))
 	}
 	return nil
+}
+
+func harmonySigningStatus(ctx context.Context, dir string) verdict {
+	p, err := load(dir)
+	if errors.Is(err, os.ErrNotExist) || err == nil && p.Harmonyos.Signing == nil {
+		return elsewhere("HarmonyOS HAP signing is not configured")
+	}
+	if err != nil {
+		return no("HarmonyOS HAP signing could not read nsgo.yaml: " + err.Error())
+	}
+	if _, err := p.harmonySigner(ctx); err != nil {
+		return no("HarmonyOS HAP signing is configured: " + err.Error())
+	}
+	return yes().with("HarmonyOS HAP signing is configured and the profile matches " + p.ID)
 }
 
 // goBuilds is whether the Go found builds NSGo apps: minGo or later, or an older one that switches to minGo when a module asks for it. A GOTOOLCHAIN naming one toolchain, as go1.27.3, is the Go found, as go env runs it.

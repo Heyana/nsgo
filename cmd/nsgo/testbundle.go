@@ -12,6 +12,9 @@ import (
 func testProject(p *project) *project {
 	t := *p
 	t.ID = testBundleID(p.ID)
+	// HarmonyOS target tests install on emulators under their own bundle ID.
+	// The release profile belongs to the original bundle ID.
+	t.Harmonyos.Signing = nil
 	if p.AppClip != nil {
 		clip := *p.AppClip
 		clip.ID = t.ID + strings.TrimPrefix(clip.ID, p.ID)

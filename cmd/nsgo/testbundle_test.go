@@ -21,6 +21,15 @@ func TestTestBundleID(t *testing.T) {
 	}
 }
 
+func TestTestProjectDropsHarmonyOSReleaseProfile(t *testing.T) {
+	p := &project{ID: "dev.example.app"}
+	signing := &harmony.Signing{Profile: "app.p7b"}
+	p.Harmonyos.Signing = signing
+	if testProject(p).Harmonyos.Signing != nil || p.Harmonyos.Signing != signing {
+		t.Fatal("the release profile must stay with the original bundle ID")
+	}
+}
+
 // iOS installs an App Clip only under its app's ID, so the test build's clip moves under the test's ID and leaves the app's own alone (#898).
 func TestTestProjectMovesTheAppClip(t *testing.T) {
 	p := &project{ID: "dev.example.app", AppClip: &appClip{ID: "dev.example.app.Clip"}}

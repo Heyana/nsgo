@@ -345,11 +345,26 @@ go tool nsgo dev -target miniprogram_alipay
 go tool nsgo build -target harmonyos -run
 ```
 
-`harmonyos` 在 `dist/releases` 写出 `<name>-<version>-harmonyos.hap`。引擎以 WebAssembly 运行在 ArkWeb 中，ArkTS 宿主用 ArkUI 视图绘制它挂载的内容，文字、输入框、滚动和对话框都是系统自己的。`PATH` 中有 `hdc` 时，`-run` 把 HAP 安装到连接的设备或模拟器上并启动，`nsgo test -target harmonyos` 使用独立的 `.nsgotest` bundle 标识在模拟器上运行测试，并在结束后删除测试 HAP，因此已安装的应用仍然可用。
+`harmonyos` 在 `dist/releases` 写出 `<name>-<version>-harmonyos.hap`。引擎以 WebAssembly 运行在 ArkWeb 中，ArkTS 宿主用 ArkUI 视图绘制它挂载的内容，文字、输入框、滚动和对话框都是系统自己的。`PATH` 中有 `hdc` 时，`-run` 把 HAP 安装到连接的设备或模拟器上并启动，`nsgo test -target harmonyos` 使用独立的 `.nsgotest` bundle 标识在模拟器上运行未签名的测试 HAP，并在结束后删除测试 HAP，因此已安装的应用仍然可用。
 
 要从模板编译 ArkTS 宿主并用应用的 `id` 作为包名，请将 `hvigorw` 加入 `PATH`，并将 `OHOS_BASE_SDK_HOME` 设为包含 API 26（`26.0.0`）的 OpenHarmony SDK 路径。模板的编译和目标 SDK 版本都是 `26.0.0`。`build.harmonyos_bundles` 可选 `auto`（默认）、需要 SDK 的 `exact`，或无需 SDK 的 `padded`（将 id 填充到预编译宿主的固定长度）。目标测试使用同一设置，并输出打包时使用的宿主来源。`harmonyos.permissions` 列出应用要申请的 `ohos.permission` 名称，如 `MICROPHONE` 和 `CAMERA`；`widget.title` 是桌面卡片显示的标题。
 
-鸿蒙为预览支持。模拟器可直接安装 HAP，手机只接受用 AppGallery Connect 证书签名、且调试 profile 的包名与应用完全一致的 HAP，所以要用 `exact` 构建，再用 SDK 的 `hap-sign-tool` 签名后安装。ArkUI 目前只绘制首批视图：标签栏、分页滚动、网页视图中的内联 HTML、单边边框和阴影暂不绘制；能运行的部分见[架构说明](https://github.com/nsgo-dev/nsgo/blob/main/docs/architecture/harmonyos.md)。
+鸿蒙为预览支持。模拟器可安装未签名的 HAP。[架构说明](https://github.com/nsgo-dev/nsgo/blob/main/docs/architecture/harmonyos.md)列出了预览版已支持的 ArkUI 功能。
+
+### HAP 签名
+
+设置 `harmonyos.signing` 后，构建会用你的 AppGallery Connect 资料为 HAP 签名。直接安装到华为手机时，使用覆盖该设备的调试证书和 profile。发布时使用发布资料。[华为签名指南](https://developer.huawei.com/consumer/en/doc/harmonyos-guides-V2/command-line-building-app-hap-hvigor-0000001553061909-V2/)
+
+```yaml
+harmonyos:
+  signing:
+    keystore: signing/app.p12
+    key_alias: app
+    certificate: signing/app.cer
+    profile: signing/app.p7b
+```
+
+路径相对于 `nsgo.yaml`。在环境中设置 `NSGO_HARMONY_KEYSTORE_PASSWORD` 和 `NSGO_HARMONY_KEY_PASSWORD`。签名使用 SDK 的 `hap-sign-tool.jar`，并从 `JAVA_HOME` 或 `PATH` 找到 Java。构建保留应用的完整 `id`，使其与 profile 的包名匹配，因此 `auto` 模式签名也需要 SDK 和 `hvigorw`。在应用目录运行 `go tool nsgo doctor` 可检查签名配置和 profile 包名，无需密码。`build -run` 会把已签名的 HAP 交给 `hdc` 安装。
 
 ## 签名
 

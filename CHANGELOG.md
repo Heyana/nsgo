@@ -94,6 +94,7 @@
 - Deliver a quick click on macOS where a pushed page has replaced the view that took the previous click to the new view as its first click, rather than dropping it (#900 by @houko).
 - Keep Windows application menus closed when a focused view or key binding consumes an Alt shortcut (#1132 by @houko).
 - Add `nsgo build -macos-profile` and `-installer`, which replace `sign.macos_profile` and `sign.installer` for the Mac App Store package from the command line (#899 by @houko).
+- Sign HarmonyOS HAPs with an AppGallery Connect certificate and profile from `harmonyos.signing` (#479 by @houko).
 - Install `nsgo test`'s builds on the iOS, tvOS and watchOS simulators under the app's ID followed by `.nsgotest` and uninstall them when the run ends, leaving an installed build of the app and its data as they were (#898 by @houko).
 - Recognize Apple mobile test results when a platform library writes a message without a trailing newline (#681 by @houko).
 - Hold the starting value of macOS and iOS style and border animations across the update that replaces it, which could crash an app showing a `ui.Select` (#995 by @houko).
