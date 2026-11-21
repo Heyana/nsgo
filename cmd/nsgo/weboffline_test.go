@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -248,4 +250,97 @@ func main() {
 	wait(offline, readAsset(newApp), "new-generation")
 	rangeRead := fmt.Sprintf(`fetch(%q, { headers: { Range: "bytes=4-7" } }).then(async r => r.status + " " + await r.text())`, assetURL(newApp))
 	wait(offline, rangeRead, "206 gene")
+}
+
+// TestWebOfflineTSX launches examples/tsx offline: the realm's scripts and the chunk its import() names load in a frame the service worker controls, which an about:blank frame is not in Chrome.
+func TestWebOfflineTSX(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds an app for the web")
+	}
+	if _, err := findBrowser(); err != nil {
+		t.Skip(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	p, err := load("../../examples/tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Release = true
+	p.Web.Offline = true
+	dir := t.TempDir()
+	if err := buildWeb(ctx, p, dir, false); err != nil {
+		t.Fatal(err)
+	}
+	files := http.FileServer(http.Dir(dir))
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Security-Policy", strictPolicy)
+		files.ServeHTTP(w, r)
+	})}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	go srv.Serve(ln)
+	b, err := startBrowser(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.close()
+	open := func() *webPage {
+		t.Helper()
+		raw, err := b.call("", "Target.createTarget", map[string]any{"url": fmt.Sprintf("http://%s/index.html", ln.Addr())})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var target struct{ TargetID string }
+		if err := json.Unmarshal(raw, &target); err != nil {
+			t.Fatal(err)
+		}
+		raw, err = b.call("", "Target.attachToTarget", map[string]any{"targetId": target.TargetID, "flatten": true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var attached struct{ SessionID string }
+		if err := json.Unmarshal(raw, &attached); err != nil {
+			t.Fatal(err)
+		}
+		return &webPage{b: b, session: attached.SessionID}
+	}
+	eval := func(pg *webPage, expr string) any {
+		t.Helper()
+		raw, err := pg.call("Runtime.evaluate", map[string]any{"expression": expr, "returnByValue": true, "awaitPromise": true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var res struct{ Result struct{ Value any } }
+		if err := json.Unmarshal(raw, &res); err != nil {
+			t.Fatal(err)
+		}
+		return res.Result.Value
+	}
+	wait := func(pg *webPage, expr string) {
+		t.Helper()
+		for deadline := time.Now().Add(60 * time.Second); eval(pg, expr) != true; time.Sleep(100 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("%s never held; the page shows %q", expr, eval(pg, "document.body?.innerText"))
+			}
+		}
+	}
+	// The app's heading, and the card of the chunk its import() names.
+	shows := func(pg *webPage) {
+		t.Helper()
+		for _, text := range []string{"Today", "A 25 minute session"} {
+			wait(pg, fmt.Sprintf("Boolean(document.body?.innerText.includes(%q))", text))
+		}
+	}
+	online := open()
+	shows(online)
+	wait(online, "Boolean(navigator.serviceWorker.controller)")
+	srv.Close()
+	offline := open()
+	shows(offline)
+	wait(offline, `Boolean(document.querySelector("iframe").contentWindow.navigator.serviceWorker.controller)`)
 }

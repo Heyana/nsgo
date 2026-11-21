@@ -151,7 +151,7 @@ async function runApp(element, at, config, options, hostModule, report) {
     options.module
       ? Promise.resolve(options.module).then((module) => WebAssembly.instantiate(module, go.importObject))
       : instantiateWasm(at(config.wasm), config.wasmSize, go.importObject, report),
-    config.runtime && openRealm([config.runtime, ...(config.scripts ?? [])].map(at)),
+    config.runtime && openRealm([config.runtime, ...(config.scripts ?? [])].map(at), config.realm && at(config.realm)),
   ]);
   // The realm's scripts load before instantiation, but the global is set
   // after, as the app reads it from its first instruction.
@@ -212,13 +212,32 @@ async function instantiateWasm(url, size, imports, report) {
 // openRealm makes the hidden iframe an app runs in, and loads into it the
 // scripts its realm runs: each is the page's own file, which a policy
 // allows where it allows any script.
-async function openRealm(urls) {
+//
+// An offline release names page, an empty document of its own for the frame: a service worker serves the scripts of a frame showing it, and not those of an about:blank frame, which Chrome leaves uncontrolled.
+async function openRealm(urls, page) {
+  let frame = hiddenFrame();
+  if (page) {
+    const loaded = new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
+    frame.src = page;
+    document.documentElement.append(frame);
+    await loaded;
+    // A host that refuses to be framed leaves the frame an error page, so the realm makes do with an about:blank one, as a release without web.offline does.
+    if (frame.contentDocument?.URL !== page) {
+      frame.remove();
+      frame = hiddenFrame();
+      page = null;
+    }
+  }
+  if (!page) document.documentElement.append(frame);
+  for (const url of urls) await loadScript(url, frame.contentWindow);
+  return frame;
+}
+
+function hiddenFrame() {
   const frame = document.createElement("iframe");
   frame.setAttribute("aria-hidden", "true");
   frame.setAttribute("tabindex", "-1");
   frame.style.display = "none";
-  document.documentElement.append(frame);
-  for (const url of urls) await loadScript(url, frame.contentWindow);
   return frame;
 }
 

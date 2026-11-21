@@ -1275,6 +1275,11 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 			if app.Runtime, err = write("nsgo-runtime.js", []byte(websrc.Runtime())); err != nil {
 				return err
 			}
+			if offline {
+				if app.Realm, err = write("realm.html", []byte("<!doctype html>\n<meta charset=\"utf-8\">\n")); err != nil {
+					return err
+				}
+			}
 		}
 		for _, e := range slices.Sorted(maps.Keys(p.split.main)) {
 			file := strings.TrimSuffix(filepath.Base(e), filepath.Ext(e)) + ".js"
@@ -1403,8 +1408,10 @@ type webApp struct {
 	// programs, and Scripts the app's bundles: the loader runs them in the
 	// realm before the app starts, so a Content-Security-Policy needs no
 	// 'unsafe-eval' (docs/architecture/tsx.md).
-	Runtime   string            `json:"runtime,omitempty"`
-	Scripts   []string          `json:"scripts,omitempty"`
+	Runtime string   `json:"runtime,omitempty"`
+	Scripts []string `json:"scripts,omitempty"`
+	// Realm is the empty page an offline release's realm frame shows, so its service worker serves the realm's scripts and lazy chunks.
+	Realm     string            `json:"realm,omitempty"`
 	Resources map[string]string `json:"resources,omitempty"`
 }
 
