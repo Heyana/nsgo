@@ -315,6 +315,8 @@ func (r *Runtime) SetEntry(entry func(run func())) { r.entry = entry }
 func (r *Runtime) SetFieldNameMapper(m FieldNameMapper) { r.mapper = m }
 func (r *Runtime) SetMaxCallStackSize(int)              {}
 func (r *Runtime) SetAsyncContextTracker(any)           {}
+func (r *Runtime) SetPromiseJobFilter(func(any) bool)   {}
+func (r *Runtime) DrainPromiseJobs() error              { return nil }
 func (r *Runtime) Interrupt(any)                        {}
 func (r *Runtime) ClearInterrupt()                      {}
 

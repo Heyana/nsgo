@@ -100,7 +100,7 @@ trust.Accept(p) // 运行之后，更旧的构建会被拒绝
 
 原生函数之间的相互调用与 JS 调用一样计入 `Limits.Stack`：作为内置函数的 getter、`toString` 或 `valueOf`，`exec` 被换成自身其他方法的正则表达式，相互嵌套的 `Reflect.apply` 与 `Reflect.construct`，以及绑定函数或代理组成的链，超过该深度时抛出可捕获的 `RangeError`，不会让应用退出；嵌套深度超过它的插件值在转换为 Go 值时，让该调用以 `RangeError` 失败。这来自 NSGo 依赖的 goja 分支 `github.com/nsgo-dev/goja`，应用随 NSGo 一同获得，无需修改自己的 `go.mod`。
 
-在原生平台上，`Limits.Call` 限制每一段 JavaScript 的连续执行时间，包括定时器回调和 `await` 后恢复的执行。若其中一段被中断，仍在等待结果的 `Plugin.Call` 只回调一次并返回 `tsx.ErrBudget`，同时停止该调用剩余的定时器、忽略迟到的宿主应答。其他独立调用继续运行。回溯正则表达式使用加载与调用预算中较短的值作为匹配超时；未处理的超时也会变成 `tsx.ErrBudget`。
+在原生平台上，`Limits.Call` 限制每一段 JavaScript 的连续执行时间，包括定时器回调和 `await` 后恢复的执行。若其中一段被中断，仍在等待结果的 `Plugin.Call` 只回调一次并返回 `tsx.ErrBudget`，同时停止该调用剩余的定时器、忽略迟到的宿主应答。其他独立调用继续运行，包括在被中断的执行段中排队的 Promise 后续回调。回溯正则表达式使用加载与调用预算中较短的值作为匹配超时；未处理的超时也会变成 `tsx.ErrBudget`。
 
 `Limits.CallTotal` 为每次插件调用设置从调用开始算起的截止时间，等待时间也计入。即使调用已完成，它启动的定时器、interval、动画帧、Promise 后续回调和宿主应答仍受这个截止时间限制。到期后，待执行的工作被丢弃，仍在等待结果的调用以 `tsx.ErrBudget` 失败。入口模块启动的工作受 `Limits.Load` 限制，宿主主动送达的事件从送达时起受 `CallTotal` 限制。`Plugin.Interrupt` 可从任意 goroutine 停止插件，丢弃待处理的定时器，让进行中和之后的调用失败。`Plugin.Close` 会运行插件的清理函数，并让仍在等待的调用以“插件已关闭”的错误结束。
 

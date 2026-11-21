@@ -271,6 +271,9 @@ func (s Sandbox) start(cx *core.Scope, name, src string) *runtime {
 	if limits.Harden {
 		r.harden()
 	}
+	if s.plugin && !js.Browser && (limits.Call > 0 || limits.CallTotal > 0) {
+		r.keepPromiseJobs()
+	}
 	if s.plugin && limits.CallTotal > 0 {
 		// What the entry module sets going as it loads runs until the load's deadline.
 		r.deadlines = true
@@ -512,6 +515,7 @@ func (r *runtime) within(budget time.Duration, fn func() error) (err error, cut 
 	}
 	defer func() {
 		total, owner := r.sliceDeadline, r.current
+		inJob := len(r.continuations.resume) > resumed
 		if interrupt != nil {
 			r.slice.Stop()
 			// Do not let a watchdog racing Stop interrupt the next slice.
@@ -527,13 +531,49 @@ func (r *runtime) within(budget time.Duration, fn func() error) (err error, cut 
 		r.depth--
 		r.current = prev
 		cut = r.passed(total)
-		if stop, ok := err.(*js.InterruptedError); ok && owner != nil && owner.done != nil &&
-			!r.interrupted.Load() && errors.Is(stop, ErrBudget) {
-			r.expire(owner)
-			cut = true
+		if r.retainPromiseJobs && (r.stoppedErr() != nil || r.cx.Disposed()) {
+			r.vm.SetPromiseJobFilter(nil)
+			return
+		}
+		if stop, ok := err.(*js.InterruptedError); ok && !r.interrupted.Load() && errors.Is(stop, ErrBudget) {
+			if owner != nil && (owner.done != nil || inJob && r.retainPromiseJobs) {
+				r.expire(owner)
+				cut = true
+				if inJob && r.retainPromiseJobs && owner != prev {
+					// A reaction belonging to another call ran after this
+					// entry returned. This entry still has its own result.
+					err = nil
+				}
+			}
+			if r.retainPromiseJobs {
+				r.cx.Post(r.resumePromiseJobs)
+			}
 		}
 	}()
 	return fn(), false
+}
+
+func (r *runtime) keepPromiseJobs() {
+	r.retainPromiseJobs = true
+	r.vm.SetPromiseJobFilter(func(context any) bool {
+		owner, _ := context.(*deadline)
+		return r.stoppedErr() == nil && !r.cx.Disposed() && !r.passed(owner)
+	})
+	r.cx.Cleanup(func() {
+		if r.depth == 0 {
+			r.vm.SetPromiseJobFilter(nil)
+		}
+	})
+}
+
+func (r *runtime) resumePromiseJobs() {
+	if r.stoppedErr() != nil || r.cx.Disposed() {
+		r.vm.SetPromiseJobFilter(nil)
+		return
+	}
+	if err, cut := r.within(r.limits.Call, r.vm.DrainPromiseJobs); err != nil && !cut {
+		panic(r.failure(err))
+	}
 }
 
 // harden closes what makes code from strings and freezes the shared

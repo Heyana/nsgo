@@ -13,7 +13,7 @@ require (
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/nsgo-dev/goja v0.1.0-nsgo.1
+	github.com/nsgo-dev/goja v0.1.0-nsgo.1.0.20261121044020-2708d04190a4
 	github.com/yuin/goldmark v1.8.7
 	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/image v0.48.0

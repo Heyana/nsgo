@@ -139,6 +139,8 @@ type runtime struct {
 	committing bool
 	// exportView says a view renders one of the entry module's exports, so mount attaches nothing and runs nothing of what it is given.
 	exportView bool
+	// retainPromiseJobs keeps a native plugin's unstarted work across a budget cut.
+	retainPromiseJobs bool
 }
 
 // maxCallStack is the native runtime's default and maximum call depth.

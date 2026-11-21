@@ -104,6 +104,7 @@
 - Add `LineWidth` to `ui.ProgressRing` and ring `ui.Spinner` to set the track and arc width (#960 by @houko).
 - Fail the `tsx.Plugin` calls still waiting on a promise when `Plugin.Close` closes the plugin, after its cleanups run (#893 by @houko).
 - Fail a native `tsx.Plugin.Call` once with `ErrBudget` when a slice exceeds `Limits.Call` after an `await`, without stopping independent calls (#1039 by @J4ck1e2000).
+- Keep independent TSX promise reactions queued when a plugin call exceeds its slice budget (#1092 by @houko).
 - Throw a catchable `RangeError` in a native sandbox, instead of overflowing the host's Go stack, when native functions call each other past `Limits.Stack` (built-in getters, `toString`/`valueOf`, `RegExp` `exec` dispatch, `Reflect.apply`/`construct`, bound-function and proxy chains), and fail converting a plugin value nested past it with a `RangeError`, by requiring a goja fork under a module path of its own, `github.com/nsgo-dev/goja`, which apps get with NSGo without a `replace`, until [dop251/goja#890](https://github.com/dop251/goja/pull/890) is merged (#1063 by @houko).
 - Cap the call depth of native TSX sandboxes at 10,000 frames (#1093 by @houko).
 - Keep the borders of `ui/chat`'s glass composer, `GlassPanel` and popovers on watchOS, which draws no Liquid Glass rim (#896 by @houko).
