@@ -76,7 +76,7 @@ func EdgeBlur(s driver.Side, d driver.EdgeEffect) objc.ID {
 	return objc.ID(Class("NSArray")).Send(sel("arrayWithObject:"), f)
 }
 
-// GaussianBackdrop returns a CABackdropLayer's filters for an even blur of radius points, the standard deviation as CSS's blur() has it: hard scroll edges and macOS's backdrop blurs. The array is autoreleased.
+// GaussianBackdrop returns a CABackdropLayer's filters for an even blur of radius points, the standard deviation as CSS's blur() has it: hard scroll edges and backdrop blurs. The array is autoreleased.
 func GaussianBackdrop(radius float64) objc.ID {
 	return objc.ID(Class("NSArray")).Send(sel("arrayWithObject:"), gaussianBackdropFilter(radius))
 }

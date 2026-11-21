@@ -54,9 +54,11 @@ type view struct {
 	rasterStep float64
 	// axNodes are a canvas's named parts, its accessibility elements.
 	axNodes []objc.ID
-	// backdrop is the view's backdrop blur or Liquid Glass.
-	backdrop objc.ID
-	glass    bool
+	// backdrop is the view's backdrop: a UIVisualEffectView for backdropMaterial
+	// or backdropGlass, or a holder UIView of backdropLayer (a CABackdropLayer)
+	// and tint for backdropFiltered.
+	backdrop, backdropLayer, tint objc.ID
+	backdropKind                  backdropMode
 
 	pressing  atomic.Bool
 	longFired atomic.Bool
@@ -1428,12 +1430,12 @@ func (s *surface) apply(b *driver.MountBatch) {
 				s.touchStack(s.stackOf(v))
 			}
 			v.style = *it.ViewStyle
+			v.setBackdrop(it.ViewStyle)
 			if v.animatesStyle() {
 				v.restyle()
 			} else {
 				v.styleLayer(it.ViewStyle)
 			}
-			v.setBackdrop(it.ViewStyle)
 			if v.layout != nil {
 				// A rounded text's layer takes its exact frame (sizeContent).
 				v.sizeContent()

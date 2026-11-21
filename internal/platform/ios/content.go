@@ -167,35 +167,79 @@ func (v *view) forgetContent() {
 	}
 }
 
-// A view's backdrop blur is a UIVisualEffectView under its children with
-// the system material its style names, and Liquid Glass on iOS 26 and
-// later when it asks for glass. UIKit sets the blur's strength by
-// material: the radius only turns it on.
+// A view's backdrop is a UIVisualEffectView under its children with the
+// system material its style names for a plain blur or a named material,
+// Liquid Glass on iOS 26 and later when it asks for glass, or a
+// CABackdropLayer with Core Animation's gaussianBlur and colorMatrix filters
+// when color filters are set alone or over an unnamed-material blur, matching
+// macOS. The background shows over the backdrop, where CSS has it, in a tint
+// view over the CABackdropLayer (and left out of the view's own layer, which
+// the backdrop layer would otherwise filter) or in UIVisualEffectView's
+// contentView.
 
-// blurStyle is the UIBlurEffectStyle of a backdrop material.
-func blurStyle(m driver.BackdropMaterial) int {
-	return 6 + int(m) // systemUltraThinMaterial and on
+// hasGlass reports whether UIKit has Liquid Glass (iOS 26 and later).
+func hasGlass() bool { return apple.Class("UIGlassEffect") != 0 }
+
+// fitBackdrop lays v's backdrop out for style vs at size w by h.
+func (v *view) fitBackdrop(vs *driver.ViewStyle, w, h float64) {
+	apple.FitBackdrop(v.backdrop, vs, w, h)
+	if v.backdropLayer != 0 || v.tint != 0 {
+		bounds := objc.Send[apple.CGRect](v.backdrop, selBounds)
+		if v.backdropLayer != 0 {
+			// A layer of its own would ease to its frame on its own.
+			apple.WithoutAnimation(func() { v.backdropLayer.Send(selSetFrame, bounds) })
+		}
+		if v.tint != 0 {
+			v.tint.Send(selSetFrame, bounds)
+		}
+	}
 }
-
-// The background shows over the blur, where CSS has it, in the effect's
-// content view.
 
 // setBackdrop gives v the backdrop its style asks for, or takes it away.
 func (v *view) setBackdrop(vs *driver.ViewStyle) {
-	glass := vs.Glass != driver.GlassNone && apple.Class("UIGlassEffect") != 0
-	want := vs.Effects.BackdropBlur() > 0 || glass
-	if !want || glass != v.glass {
-		apple.MoveBorders(v.native.Send(selLayer), 0)
+	mode := chooseBackdrop(vs, hasGlass())
+	if mode == backdropNone || mode != v.backdropKind {
 		if v.backdrop != 0 {
+			apple.MoveBorders(v.native.Send(selLayer), 0)
 			v.backdrop.Send(sel("removeFromSuperview"))
-			v.backdrop = 0
+			v.backdrop, v.backdropLayer, v.tint = 0, 0, 0
 		}
-		if !want {
+		v.backdropKind = backdropNone
+		if mode == backdropNone {
 			return
 		}
 	}
+	const flexible = 2 | 16 // width and height
+	if mode == backdropFiltered {
+		if v.backdrop == 0 {
+			v.backdrop = objc.ID(apple.Class("UIView")).Send(selAlloc).Send(sel("initWithFrame:"), objc.Send[apple.CGRect](v.native, selBounds))
+			v.backdrop.Send(sel("setAutoresizingMask:"), flexible)
+			v.backdrop.Send(sel("setUserInteractionEnabled:"), false)
+			v.backdrop.Send(selSetOpaque, false)
+			v.backdropLayer = objc.ID(apple.Class("CABackdropLayer")).Send(selNew)
+			v.backdrop.Send(selLayer).Send(sel("addSublayer:"), v.backdropLayer)
+			v.backdropLayer.Send(selRelease)
+			v.tint = objc.ID(apple.Class("UIView")).Send(selAlloc).Send(sel("initWithFrame:"), objc.Send[apple.CGRect](v.backdrop, selBounds))
+			v.tint.Send(sel("setAutoresizingMask:"), flexible)
+			v.tint.Send(sel("setUserInteractionEnabled:"), false)
+			v.tint.Send(selSetOpaque, false)
+			v.backdrop.Send(selAddSubview, v.tint)
+			v.tint.Send(selRelease)
+			v.native.Send(sel("insertSubview:atIndex:"), v.backdrop, 0)
+			v.backdrop.Send(selRelease)
+			v.backdropKind = mode
+		}
+		apple.WithoutAnimation(func() {
+			v.backdropLayer.Send(sel("setFilters:"), apple.BackdropFilters(vs.Effects.BackdropFilters))
+		})
+		b := objc.Send[apple.CGRect](v.native, selBounds)
+		v.fitBackdrop(vs, b.Size.Width, b.Size.Height)
+		v.tint.Send(sel("setBackgroundColor:"), uiColor(vs.Background))
+		apple.MoveBorders(v.native.Send(selLayer), v.borderHost())
+		return
+	}
 	var effect objc.ID
-	if glass {
+	if mode == backdropGlass {
 		effect = objc.ID(apple.Class("UIGlassEffect")).Send(sel("effectWithStyle:"), int(vs.Glass)-1)
 	} else {
 		effect = objc.ID(apple.Class("UIBlurEffect")).Send(sel("effectWithStyle:"), blurStyle(vs.Material))
@@ -203,30 +247,31 @@ func (v *view) setBackdrop(vs *driver.ViewStyle) {
 	if v.backdrop == 0 {
 		v.backdrop = objc.ID(apple.Class("UIVisualEffectView")).Send(selAlloc).Send(sel("initWithEffect:"), effect)
 		v.backdrop.Send(selSetFrame, objc.Send[apple.CGRect](v.native, selBounds))
-		const flexible = 2 | 16 // width and height
 		v.backdrop.Send(sel("setAutoresizingMask:"), flexible)
 		v.backdrop.Send(sel("setUserInteractionEnabled:"), false)
 		v.native.Send(sel("insertSubview:atIndex:"), v.backdrop, 0)
 		v.backdrop.Send(selRelease)
-		v.glass = glass
+		v.backdropKind = mode
 	} else {
 		v.backdrop.Send(sel("setEffect:"), effect)
 	}
 	b := objc.Send[apple.CGRect](v.native, selBounds)
-	apple.FitBackdrop(v.backdrop, vs, b.Size.Width, b.Size.Height)
-	if !glass {
+	v.fitBackdrop(vs, b.Size.Width, b.Size.Height)
+	if mode != backdropGlass {
 		v.backdrop.Send(sel("contentView")).Send(sel("setBackgroundColor:"), uiColor(vs.Background))
 	}
 	apple.MoveBorders(v.native.Send(selLayer), v.borderHost())
 }
 
-// borderHost is the layer v's per-side borders go in, above its backdrop and below its children: the glass's own layer, else the blur's content view, which draws the background; zero, v's own layer, without a backdrop.
+// borderHost is the layer v's per-side borders go in, above its backdrop and below its children: the glass's own layer, the tint over a filter backdrop, else the blur's content view, which draws the background; zero, v's own layer, without a backdrop.
 func (v *view) borderHost() objc.ID {
-	switch {
-	case v.backdrop == 0:
-		return 0
-	case v.glass:
+	switch v.backdropKind {
+	case backdropGlass:
 		return v.backdrop.Send(selLayer)
+	case backdropFiltered:
+		return v.tint.Send(selLayer)
+	case backdropMaterial:
+		return v.backdrop.Send(sel("contentView")).Send(selLayer)
 	}
-	return v.backdrop.Send(sel("contentView")).Send(selLayer)
+	return 0
 }

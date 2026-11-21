@@ -172,7 +172,7 @@ sign:
 
 没有 `sign.macos_profile` 时，Mac 包不签名：它能在你的 Mac 上以沙盒方式运行，可用来测试沙盒，但无法上传。沙盒中的应用只能访问自己的容器、网络和用户选择的文件；小组件暂时无法在沙盒中共享时间线，所以 store 构建会拒绝带小组件的应用。用 Transporter 上传 `.pkg`，在 Partner Center 上传 `.msix`，在 Play Console 上传 `.aab`；Release 中有了清单引用的归档后，把 `flatpak/<id>.yml` 提交到 Flathub，也可以用 `flatpak-builder` 在本地构建。Windows 只安装已签名的 MSIX，商店之外安装需要签名，上架时由商店签名。
 
-在 macOS 上，滚动视图的边缘效果（`Scroll.EdgeEffects`）和没有指定 `IOS.BackdropMaterial` 的背景模糊 `Blur` 像 AppKit 自己的边缘效果和材质一样，通过 Core Animation 的私有 `CABackdropLayer` 和 `CAFilter` 实现模糊，因为没有公开 API 能按半径模糊，或让模糊程度在视图上渐变。App Store 审核可能拒绝使用私有 API 的应用：NSGo 只在带边缘栏的滚动视图和这类模糊中调用它们，但每个 macOS 构建都包含它们的名称。
+在 macOS 和 iOS 上，滚动视图的边缘效果（`Scroll.EdgeEffects`）、macOS 上没有指定 `IOS.BackdropMaterial` 的背景模糊 `Blur`，以及背景颜色滤镜（单独使用，或与没有指定 `IOS.BackdropMaterial` 的模糊组合使用）像 AppKit 和 UIKit 自己的材质与边缘效果一样，通过 Core Animation 的私有 `CABackdropLayer` 和 `CAFilter` 绘制，因为没有公开 API 能按半径模糊、让模糊程度在视图上渐变或对背景应用颜色矩阵。App Store 审核可能拒绝使用私有 API 的应用：NSGo 只在带边缘栏的滚动视图和这些背景滤镜中调用它们，但每个 macOS 和 iOS 构建都包含它们的名称。
 
 `build` 写出的每个 Apple 包，即应用、它的小组件扩展、App Clip 和 Apple Watch 应用，以及 `-dynamic` 的 `-embed` 框架，都带有隐私清单 `PrivacyInfo.xcprivacy`，声明 NSGo 和 Go 运行时用到的需要理由的 API：用户默认设置（`CA92.1`）、文件时间戳（`C617.1`）和系统启动时间（`35F9.1`）。`apple.privacy` 添加应用自己的声明：`accessed_apis` 给出每个类别的理由，另有 `tracking`、`tracking_domains` 和 `collected_data`，后者的条目按 Apple 的命名写成 `NSPrivacyCollectedDataTypes` 的条目；`resources/` 中的 `PrivacyInfo.xcprivacy` 会与这些声明合并，而不是被替换。
 

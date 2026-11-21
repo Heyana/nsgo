@@ -227,6 +227,12 @@ func (v *view) styleLayer(vs *driver.ViewStyle) {
 		drawn.Clip = false
 		vs = &drawn
 	}
+	if hidesOwnBackground(vs, hasGlass()) {
+		// The tint draws the background over the CABackdropLayer, which would filter the layer's own and show it twice.
+		drawn := *vs
+		drawn.Background = 0
+		vs = &drawn
+	}
 	v.followScale(vs)
 	// A view created by an earlier batch shows the default style.
 	var shown *driver.ViewStyle
@@ -315,7 +321,7 @@ func (v *view) place(f driver.Bounds) {
 		v.fitHolder(&held)
 	}
 	if v.backdrop != 0 {
-		apple.FitBackdrop(v.backdrop, &v.style, float64(f.Size.Width), float64(f.Size.Height))
+		v.fitBackdrop(&v.style, float64(f.Size.Width), float64(f.Size.Height))
 	}
 	if v.componentView != 0 {
 		v.componentView.Send(selSetFrame, apple.Rect(0, 0, float64(f.Size.Width), float64(f.Size.Height)))
