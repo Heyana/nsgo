@@ -3206,14 +3206,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         boolean horizontal = n.scroller instanceof Scrolling.HScroll;
         float at = horizontal ? s.offsetX() : s.offsetY();
         for (int i = 0; i < n.sticky.length; i += 5) {
-            float start = n.sticky[i + 1], end = n.sticky[i + 2], offset = at;
-            if (n.sticky[i + 3] != 0) {
-                // The inset follows its animated value.
-                double v = animator.valueOf((int) n.sticky[i + 3]);
-                if (!Double.isNaN(v)) offset += (float) v - n.sticky[i + 4];
-            }
-            float travel = end - start;
-            stick(nodes.get((int) n.sticky[i]), Math.min(Math.max(offset - start, Math.min(travel, 0)), Math.max(travel, 0)), horizontal);
+            int animatedNode = (int) n.sticky[i + 3];
+            double inset = animatedNode == 0 ? Double.NaN : animator.valueOf(animatedNode);
+            float shift = ScrollPhysics.stickyShift(n.sticky[i + 1], n.sticky[i + 2], at, inset, n.sticky[i + 4]);
+            stick(nodes.get((int) n.sticky[i]), shift, horizontal);
         }
     }
 

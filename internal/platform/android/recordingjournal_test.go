@@ -7,17 +7,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
 // TestRecordingJournal runs the Java runtime's RecordingJournal on the JVM, one process per step, as the Go processes that hear its records come and go: a repaired recording's record outlives the process it was reported to until the app takes it, a newer record of a file replaces the older, and a deleted file's record is dropped. It needs a JDK on PATH.
 func TestRecordingJournal(t *testing.T) {
-	testhost.RequireSource(t)
-	javac, err := exec.LookPath("javac")
-	if err != nil || exec.Command(javac, "-version").Run() != nil {
-		t.Skip("no JDK")
-	}
+	javac, java := androidJDK(t)
 	classes := t.TempDir()
 	build := exec.Command(javac, "-d", classes, "java/dev/oneo/nsgo/RecordingJournal.java", "testdata/RecordingJournalCheck.java")
 	if out, err := build.CombinedOutput(); err != nil {
@@ -26,7 +20,7 @@ func TestRecordingJournal(t *testing.T) {
 	dir := t.TempDir()
 	step := func(args ...string) []string {
 		t.Helper()
-		out, err := exec.Command("java", append([]string{"-cp", classes, "dev.oneo.nsgo.RecordingJournalCheck", dir}, args...)...).CombinedOutput()
+		out, err := exec.Command(java, append([]string{"-cp", classes, "dev.oneo.nsgo.RecordingJournalCheck", dir}, args...)...).CombinedOutput()
 		if err != nil {
 			t.Fatalf("%v: %v\n%s", args, err, out)
 		}

@@ -74,6 +74,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Set up Java for Android runtime tests
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '17'
       - name: Install native test dependencies
         run: |
           sudo apt-get update
@@ -144,6 +149,7 @@ jobs:
           GSK_RENDERER: cairo
           PULSE_SINK: nsgo_test
           NSGO_FILE_ASSOCIATIONS: '1'
+          NSGO_REQUIRE_JDK: '1'
         # examples/gallery runs its tests in sequence for about nine minutes on a hosted runner, beside the other packages, so go test's default ten-minute limit cuts it off.
         run: xvfb-run -a go tool nsgo test -- -timeout=20m
       - name: Test native radio and tab focus

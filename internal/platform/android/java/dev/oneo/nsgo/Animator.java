@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.function.BiConsumer;
 
 /**
- * The animation graph on the UI thread: a faithful port of core/animator.go,
+ * The animation graph on the UI thread: a port of internal/driver/animator.go,
  * same formulas and semantics, so a run plays without a round trip to Go per
  * frame. NsgoView feeds it each ItemAnimation as android.go's
  * writeAnimation encodes it, steps it on Choreographer frames while it runs

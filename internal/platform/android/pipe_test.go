@@ -25,11 +25,7 @@ func TestAndroidProcessReportsExit(t *testing.T) {
 
 func runJavaEngineCheck(t *testing.T, check string) {
 	t.Helper()
-	testhost.RequireSource(t)
-	javac, err := exec.LookPath("javac")
-	if err != nil || exec.Command(javac, "-version").Run() != nil {
-		t.Skip("no JDK")
-	}
+	javac, java := androidJDK(t)
 	classes := t.TempDir()
 	args := []string{"-d", classes, "java/dev/oneo/nsgo/Protocol.java", "java/dev/oneo/nsgo/NsgoEngine.java"}
 	if err := filepath.WalkDir("testdata/pipe", func(path string, entry fs.DirEntry, err error) error {
@@ -43,7 +39,6 @@ func runJavaEngineCheck(t *testing.T, check string) {
 	if out, err := exec.CommandContext(t.Context(), javac, args...).CombinedOutput(); err != nil {
 		t.Fatalf("javac: %v\n%s", err, out)
 	}
-	java := filepath.Join(filepath.Dir(javac), "java")
 	if out, err := exec.CommandContext(t.Context(), java, "-Xmx32m", "-cp", classes, "dev.oneo.nsgo."+check).CombinedOutput(); err != nil {
 		t.Fatalf("java: %v\n%s", err, out)
 	}

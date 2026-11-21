@@ -21,7 +21,7 @@ import java.io.IOException;
  * Scroll views, as NSH's ScrollBox scrolls: Android's ScrollView and
  * HorizontalScrollView, whose flings glide with OverScroller's spline
  * (its friction scaled by core.ScrollBehavior's deceleration) or end at
- * the snap point snapTarget (a port of core.ScrollBehavior.SnapTarget)
+ * the snap point ScrollPhysics.snapTarget
  * picks; drag and momentum events; the content inset as padding;
  * keyboard dismissal on drags and taps; pull to refresh with a spinner,
  * or the app's own indicator, above the content; and ZoomScroll, which a
@@ -33,8 +33,6 @@ final class Scrolling {
 
     /** How far past the top a pull refreshes, and the spinner's room, in points. */
     static final float REFRESH_PULL = 64, REFRESH_SPACE = 56;
-    /** Releases slower than this (points per millisecond) settle at the nearest snap point. */
-    private static final float SLOW = 0.3f;
     /** Speed threshold (5x this, in points per millisecond) below which a release does not glide. */
     private static final float STOP = 0.01f;
     /** Default DecelerationRate (core.DecelerationNormal), velocity kept per millisecond. */
@@ -109,63 +107,6 @@ final class Scrolling {
             c.headerInset = in.readFloat();
             return c;
         }
-    }
-
-    /** The snap points of a view snapping along a viewport and content of those lengths. */
-    static float[] snapPoints(Config c, float viewport, float content) {
-        float limit = Math.max(content - viewport, 0);
-        if (c.interval > 0) {
-            float shift = c.alignment == 1 ? (viewport - c.interval) / 2 : c.alignment == 2 ? viewport - c.interval : 0;
-            int n = Math.max((int) Math.ceil((limit + shift) / c.interval), 0);
-            float[] out = new float[n + 1];
-            for (int i = 0; i <= n; i++) out[i] = Math.min(Math.max(i * c.interval - shift, 0), limit);
-            return out;
-        }
-        if (c.offsets.length > 0) {
-            float[] out = new float[c.offsets.length];
-            for (int i = 0; i < out.length; i++) out[i] = Math.min(Math.max(c.offsets[i], 0), limit);
-            return out;
-        }
-        if (c.paging) {
-            float page = Math.max(viewport, 1);
-            int n = (int) Math.ceil(limit / page);
-            float[] out = new float[n + 1];
-            for (int i = 0; i <= n; i++) out[i] = Math.min(i * page, limit);
-            return out;
-        }
-        return new float[0];
-    }
-
-    /**
-     * core.ScrollBehavior.SnapTarget: the snap point a fling released at
-     * offset, which would glide to projected at velocity (points per
-     * millisecond), ends at; NaN when the view does not snap.
-     */
-    static float snapTarget(Config c, float offset, float projected, float velocity, float viewport, float content) {
-        float[] points = snapPoints(c, viewport, content);
-        if (points.length == 0) return Float.NaN;
-        float limit = Math.max(content - viewport, 0);
-        boolean step = c.oneStep || c.paging && c.interval <= 0 && c.offsets.length == 0;
-        float from = step ? offset : projected;
-        if (velocity > SLOW) {
-            for (float p : points) if (step ? p > from + 0.5f : p >= from - 0.5f) return p;
-            return limit;
-        }
-        if (velocity < -SLOW) {
-            for (int i = points.length - 1; i >= 0; i--) {
-                float p = points[i];
-                if (step ? p < from - 0.5f : p <= from + 0.5f) return p;
-            }
-            return 0;
-        }
-        float best = points[0];
-        for (float p : points) if (Math.abs(p - from) < Math.abs(best - from)) best = p;
-        return best;
-    }
-
-    /** Where a glide at velocity from offset comes to rest. */
-    static float projected(float offset, float velocity, float rate) {
-        return offset - velocity / (float) Math.log(rate);
     }
 
     /** How long (ms) an eased move of distance starting at velocity takes, as NSH's snap_duration. */
@@ -491,7 +432,8 @@ final class Scrolling {
                 float lead = horizontal ? config.insetLeft : config.insetTop;
                 float viewport = (horizontal ? view.getWidth() : view.getHeight()) / density;
                 float length = max + viewport - lead; // the content and its trailing inset
-                float to = snapTarget(config, pos - lead, projected(pos, v, config.rate) - lead, v, viewport, length);
+                float to = ScrollPhysics.snapTarget(config.interval, config.alignment, config.offsets, config.paging, config.oneStep,
+                        pos - lead, ScrollPhysics.projected(pos, v, config.rate) - lead, v, viewport, length);
                 if (!Float.isNaN(to)) {
                     int target = Math.min(Math.max(Math.round((to + lead) * density), 0), range());
                     long duration = snapDuration(target / density - pos, v);

@@ -56,7 +56,7 @@ Headless `nsgo test` adds `nsgocheck` to the effective build tags, preserving `G
 
 CI runs the full Go gallery on macOS and the web in independent jobs, retaining JUnit results with skip reasons and screenshots. Tests that require iOS navigation, native context menus or local shell processes skip explicitly where those capabilities are absent.
 
-The base part-style check and Android's source/JDK checks call `testhost.RequireSource` first: they run on the host, and skip in native test hosts and browser library runs, which carry no checkout (#530). Android's runtime protocol and control tests still run on the device.
+The base part-style check and Android's source checks call `testhost.RequireSource` first. Native test hosts and browser library runs skip them because they carry no checkout (#530). On the host, the Android JVM fixtures compare animation, scroll snapping and projection, sticky offsets, and layout transitions against the Go driver. The Linux test job installs JDK 17 and sets `NSGO_REQUIRE_JDK=1` so a missing compiler or launcher fails the job. A local run without a JDK skips these fixtures. Android's native protocol and control tests run on the device.
 
 The macOS backend's own Go tests (`internal/platform/macos`, `onMain`) run their closures on the original AppKit thread. A closure's `Fatal`, `FailNow` or `SkipNow` also exits the test goroutine, while the main thread keeps serving later tests; a panic is rethrown on the test goroutine with its originating main-thread stack printed.
 

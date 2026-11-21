@@ -5,9 +5,9 @@ import java.io.DataInputStream;
 import java.io.IOException;
 
 /**
- * One phase of a batch's LayoutAnimation, or a frame's own transition, as
- * core.LayoutTransition: its
- * progress over time, the same as core's At, durations in nanoseconds.
+ * One phase of a batch's LayoutAnimation, or a frame's own transition,
+ * sampled as driver.LayoutTransition.At (internal/driver/animated.go).
+ * Durations are in nanoseconds.
  */
 final class LayoutTransition {
     // Curves, as core.LayoutCurve.

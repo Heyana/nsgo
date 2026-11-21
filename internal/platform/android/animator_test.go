@@ -14,7 +14,6 @@ import (
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
-	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
 // animatorBatch is ops applied after the animator steps to at.
@@ -167,11 +166,7 @@ func channels(c driver.Color) string {
 // with the ops android.go encodes and compares what it samples with
 // core.Animator's. It needs a JDK on PATH.
 func TestAnimatorMatchesJava(t *testing.T) {
-	testhost.RequireSource(t)
-	javac, err := exec.LookPath("javac")
-	if err != nil || exec.Command(javac, "-version").Run() != nil {
-		t.Skip("no JDK")
-	}
+	javac, java := androidJDK(t)
 	batches, steps := animatorScenario(), animatorSteps()
 	w := &writer{}
 	w.u32(uint32(len(batches)))
@@ -188,12 +183,12 @@ func TestAnimatorMatchesJava(t *testing.T) {
 	if err := os.WriteFile(input, w.buf, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	build := exec.Command(javac, "-d", dir, "java/dev/oneo/nsgo/Animator.java", "java/dev/oneo/nsgo/Protocol.java",
+	build := exec.CommandContext(t.Context(), javac, "-d", dir, "java/dev/oneo/nsgo/Animator.java", "java/dev/oneo/nsgo/Protocol.java",
 		"testdata/AnimatorCheck.java")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("javac: %v\n%s", err, out)
 	}
-	out, err := exec.Command("java", "-cp", dir, "dev.oneo.nsgo.AnimatorCheck", input).Output()
+	out, err := exec.CommandContext(t.Context(), java, "-cp", dir, "dev.oneo.nsgo.AnimatorCheck", input).Output()
 	if err != nil {
 		t.Fatalf("java: %v", err)
 	}

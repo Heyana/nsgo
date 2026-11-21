@@ -9,19 +9,10 @@ import (
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
-	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
 func TestSensorJavaProviderFixtures(t *testing.T) {
-	testhost.RequireSource(t)
-	javac, err := exec.LookPath("javac")
-	if err != nil {
-		t.Skip("JDK not installed")
-	}
-	java, err := exec.LookPath("java")
-	if err != nil {
-		t.Skip("JDK not installed")
-	}
+	javac, java := androidJDK(t)
 	dir := t.TempDir()
 	if out, err := exec.Command(javac, "-d", dir, filepath.Join("java", "dev", "oneo", "nsgo", "SensorPolicy.java"), filepath.Join("testdata", "SensorCheck.java")).CombinedOutput(); err != nil {
 		t.Fatalf("compile fixtures: %v\n%s", err, out)
