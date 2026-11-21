@@ -1,6 +1,10 @@
 package dev.oneo.nsgo;
 
 import android.content.Context;
+import android.content.res.Configuration;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -39,6 +43,14 @@ final class Scrolling {
     private static final float NORMAL = 0.998f;
     /** Duration of animated scrolls, in milliseconds. */
     private static final long ANIMATION = 300;
+    /** Phone scroll handle geometry in points (mirrors internal/driver/scrollhandle.go). */
+    private static final float HANDLE_INSET = 3f;
+    private static final float HANDLE_MARGIN = 4f;
+    private static final float HANDLE_THICKNESS = 6f;
+    private static final float HANDLE_ACTIVE_THICKNESS = 10f;
+    private static final float HANDLE_MIN_LENGTH = 44f;
+    private static final float HANDLE_GRAB_THICKNESS = 32f;
+    private static final float HANDLE_GRAB_SLOP = 8f;
 
     /** A scroll view's configuration (core.ScrollConfig), lengths in points. */
     static final class Config {
@@ -190,6 +202,9 @@ final class Scrolling {
 
         /** How far the view is pulled past its top, its refresh room included, in points. */
         float pulled();
+
+        /** Releases any sibling overlay views attached to the outer frame before replacing the scroller. */
+        default void detach() {}
     }
 
     /**
@@ -218,6 +233,9 @@ final class Scrolling {
         private float pull, pullTarget;
         private boolean pulling, refreshing;
         private ProgressBar spinner;
+        // Touch-draggable scroll handle overlay on frame, and layout listener keeping it synced.
+        private HandleView handle;
+        private final View.OnLayoutChangeListener layoutListener;
 
         Driver(FrameLayout view, boolean horizontal, Host host, float density, View content, ViewGroup frame) {
             this.view = view;
@@ -228,6 +246,9 @@ final class Scrolling {
             this.frame = frame;
             slop = ViewConfiguration.get(view.getContext()).getScaledTouchSlop();
             flinger = new OverScroller(view.getContext());
+            layoutListener = (v, l, t, r, b, ol, ot, or, ob) -> updateHandle();
+            view.addOnLayoutChangeListener(layoutListener);
+            content.addOnLayoutChangeListener(layoutListener);
         }
 
         int pos() {
@@ -255,14 +276,50 @@ final class Scrolling {
         /** What the keyboard covers of the view, added to its bottom inset, in pixels. */
         private int keyboardPad;
 
+        boolean phoneHandleEnabled() {
+            int uiType = view.getResources().getConfiguration().uiMode & Configuration.UI_MODE_TYPE_MASK;
+            return !config.hideIndicator && !config.noScroll && uiType != Configuration.UI_MODE_TYPE_TELEVISION;
+        }
+
         void configure(Config c) {
             config = c;
             pad();
             view.setClipToPadding(false);
             view.setOverScrollMode(c.noBounces ? View.OVER_SCROLL_NEVER : View.OVER_SCROLL_IF_CONTENT_SCROLLS);
-            view.setVerticalScrollBarEnabled(!c.hideIndicator && !horizontal);
-            view.setHorizontalScrollBarEnabled(!c.hideIndicator && horizontal);
+            boolean phoneHandle = phoneHandleEnabled();
+            view.setVerticalScrollBarEnabled(!c.hideIndicator && !horizontal && !phoneHandle);
+            view.setHorizontalScrollBarEnabled(!c.hideIndicator && horizontal && !phoneHandle);
             setRefreshing(c.refreshing && !horizontal);
+            updateHandle();
+        }
+
+        void updateHandle() {
+            boolean show = phoneHandleEnabled() && range() > 0;
+            if (!show) {
+                if (handle != null) {
+                    handle.dragging = false;
+                    handle.setVisibility(View.GONE);
+                }
+                return;
+            }
+            if (handle == null) {
+                handle = new HandleView(view.getContext(), this);
+                frame.addView(handle, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                handle.bringToFront();
+            }
+            handle.setVisibility(View.VISIBLE);
+            handle.invalidate();
+        }
+
+        void detach() {
+            view.removeOnLayoutChangeListener(layoutListener);
+            content.removeOnLayoutChangeListener(layoutListener);
+            if (handle != null) {
+                frame.removeView(handle);
+                handle = null;
+            }
+            showSpinner(false);
         }
 
         private void pad() {
@@ -307,7 +364,7 @@ final class Scrolling {
             else move(target);
         }
 
-        private void move(int px) {
+        void move(int px) {
             if (horizontal) view.scrollTo(px, 0);
             else view.scrollTo(0, px);
         }
@@ -317,10 +374,11 @@ final class Scrolling {
             int d = Math.round((horizontal ? dx : dy) * density);
             if (d == 0) return;
             if (motion != null) carry += d;
+            if (handle != null && handle.dragging) handle.shift(d);
             move(pos() + d);
         }
 
-        private void event(int kind) {
+        void event(int kind) {
             host.scrollEvent(kind, offsetX(), offsetY(), 1);
         }
 
@@ -569,6 +627,116 @@ final class Scrolling {
         }
     }
 
+    /**
+     * Touch-draggable scroll handle drawn over a vertical or horizontal
+     * scroll view's viewport on Android phones and tablets, mirroring
+     * internal/driver/scrollhandle.go.
+     */
+    static final class HandleView extends View {
+        private final Driver d;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF visual = new RectF();
+        private final RectF grab = new RectF();
+        boolean dragging;
+        private float dragFrom, dragStart, dragTravel, dragSpan;
+
+        HandleView(Context context, Driver d) {
+            super(context);
+            this.d = d;
+            setWillNotDraw(false);
+        }
+
+        void shift(int deltaPx) {
+            dragStart = Math.min(Math.max(dragStart + deltaPx, 0f), dragSpan);
+        }
+
+        /** Computes the visual and touch-grab rectangles in pixels; returns travel (> 0) or 0 when hidden. */
+        private float layoutRects(boolean active) {
+            int w = d.view.getWidth();
+            int h = d.view.getHeight();
+            int span = d.range();
+            float viewport = d.horizontal ? w : h;
+            float margin = HANDLE_MARGIN * d.density;
+            if (span <= 0 || viewport <= 2f * margin + d.density) return 0f;
+            float total = viewport + span;
+            float track = viewport - 2f * margin;
+            float minLen = Math.min(HANDLE_MIN_LENGTH * d.density, track / 2f);
+            float length = Math.min(Math.max(track * viewport / total, minLen), track);
+            float travel = Math.max(track - length, 0f);
+            if (travel <= 0f) return 0f;
+            float t = Math.min(Math.max(d.pos() / (float) span, 0f), 1f);
+            float start = margin + travel * t;
+            float thickness = (active ? HANDLE_ACTIVE_THICKNESS : HANDLE_THICKNESS) * d.density;
+            float inset = HANDLE_INSET * d.density;
+            float grabThickness = HANDLE_GRAB_THICKNESS * d.density;
+            float grabSlop = HANDLE_GRAB_SLOP * d.density;
+            if (d.horizontal) {
+                float top = Math.max(h - inset - thickness, 0f);
+                visual.set(start, top, start + length, Math.min(top + thickness, h));
+                float gx0 = Math.max(start - grabSlop, 0f);
+                float gx1 = Math.min(start + length + grabSlop, w);
+                grab.set(gx0, Math.max(h - grabThickness, 0f), gx1, h);
+            } else {
+                float left = Math.max(w - inset - thickness, 0f);
+                visual.set(left, start, Math.min(left + thickness, w), start + length);
+                float gy0 = Math.max(start - grabSlop, 0f);
+                float gy1 = Math.min(start + length + grabSlop, h);
+                grab.set(Math.max(w - grabThickness, 0f), gy0, w, gy1);
+            }
+            return travel;
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent e) {
+            int action = e.getActionMasked();
+            if (!dragging) {
+                if (action != MotionEvent.ACTION_DOWN || !d.phoneHandleEnabled()) return false;
+                float travel = layoutRects(false);
+                if (travel <= 0f || !grab.contains(e.getX(), e.getY())) return false;
+                int span = d.range();
+                if (span <= 0) return false;
+                d.stop();
+                dragging = true;
+                dragFrom = d.horizontal ? e.getX() : e.getY();
+                dragStart = d.pos();
+                dragTravel = travel;
+                dragSpan = span;
+                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                d.event(Protocol.EVENT_SCROLL_DRAG_START);
+                invalidate();
+                return true;
+            }
+            switch (action) {
+                case MotionEvent.ACTION_MOVE: {
+                    float at = d.horizontal ? e.getX() : e.getY();
+                    float to = Math.min(Math.max(dragStart + (at - dragFrom) * dragSpan / dragTravel, 0f), dragSpan);
+                    d.move(Math.round(to));
+                    invalidate();
+                    return true;
+                }
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    dragging = false;
+                    invalidate();
+                    d.event(Protocol.EVENT_SCROLL_DRAG_END);
+                    d.settle(0);
+                    if (!d.momentum) d.event(Protocol.EVENT_SCROLL_END);
+                    return true;
+            }
+            return true;
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            if (!d.phoneHandleEnabled() || layoutRects(dragging) <= 0f) return;
+            boolean dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+            int alpha = dragging ? 0xCC : 0x73;
+            paint.setColor((alpha << 24) | (dark ? 0x00FFFFFF : 0x00000000));
+            float r = Math.min(visual.width(), visual.height()) / 2f;
+            canvas.drawRoundRect(visual, r, r, paint);
+        }
+    }
+
     /** A vertical scroll view. */
     static final class VScroll extends ScrollView implements Scroller {
         final Driver d;
@@ -636,6 +804,17 @@ final class Scrolling {
         @Override
         public float offsetY() {
             return d.offsetY();
+        }
+
+        @Override
+        protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+            super.onScrollChanged(l, t, oldl, oldt);
+            d.updateHandle();
+        }
+
+        @Override
+        public void detach() {
+            d.detach();
         }
 
         @Override
@@ -710,6 +889,17 @@ final class Scrolling {
         @Override
         public float offsetY() {
             return d.offsetY();
+        }
+
+        @Override
+        protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+            super.onScrollChanged(l, t, oldl, oldt);
+            d.updateHandle();
+        }
+
+        @Override
+        public void detach() {
+            d.detach();
         }
 
         @Override

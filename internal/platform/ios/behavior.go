@@ -28,6 +28,7 @@ import (
 type scrollState struct {
 	// edges are its sides' effects.
 	edges   [4]edgeView
+	handle  scrollHandleView
 	config  driver.ScrollConfig
 	content driver.Size // unzoomed
 	zoom    objc.ID     // the zoom view, while it zooms
@@ -49,6 +50,13 @@ type scrollState struct {
 // carry on from: the core keeps the visible content in place as rows
 // above it change size.
 func (v *view) scrollBy(d driver.Point) {
+	if v.sc != nil && v.sc.handle.dragging {
+		if v.sc.config.Horizontal {
+			v.sc.handle.drag.Shift(d.X)
+		} else {
+			v.sc.handle.drag.Shift(d.Y)
+		}
+	}
 	o := objc.Send[apple.CGPoint](v.native, selContentOffset)
 	v.native.Send(sel("setContentOffset:"), apple.CGPoint{X: o.X + float64(d.X), Y: o.Y + float64(d.Y)})
 }
@@ -100,6 +108,7 @@ func behaviorMethods() []objc.MethodDef {
 		{Cmd: sel("scrollViewDidZoom:"), Fn: scrollDidZoom},
 		{Cmd: selRefreshed, Fn: scrollRefreshed},
 		{Cmd: selDismissKeyboard, Fn: dismissKeyboardTap},
+		{Cmd: selHandleDrag, Fn: scrollHandleAction},
 		{Cmd: sel("gestureRecognizer:shouldReceiveTouch:"), Fn: scrollTapReceives},
 	}
 }
@@ -137,8 +146,13 @@ func (v *view) configureScroll(c *driver.ScrollConfig) {
 	s.config = *c
 	b := &c.Behavior
 	n := v.native
-	n.Send(sel("setShowsVerticalScrollIndicator:"), !c.Horizontal && !c.HideIndicator)
-	n.Send(sel("setShowsHorizontalScrollIndicator:"), (c.Horizontal || c.Zooms()) && !c.HideIndicator)
+	if v.hasPhoneHandle() {
+		n.Send(sel("setShowsVerticalScrollIndicator:"), false)
+		n.Send(sel("setShowsHorizontalScrollIndicator:"), false)
+	} else {
+		n.Send(sel("setShowsVerticalScrollIndicator:"), !c.Horizontal && !c.HideIndicator)
+		n.Send(sel("setShowsHorizontalScrollIndicator:"), (c.Horizontal || c.Zooms()) && !c.HideIndicator)
+	}
 	// Native paging pages by the viewport; other snapping is decided as a
 	// drag ends.
 	n.Send(sel("setPagingEnabled:"), b.Paging && b.SnapToInterval <= 0 && len(b.SnapToOffsets) == 0)
@@ -178,6 +192,7 @@ func (v *view) configureScroll(c *driver.ScrollConfig) {
 		v.layoutZoom()
 	}
 	v.placeEdges()
+	v.updateHandle()
 }
 
 // setInset sets the view's content inset to in, with the refresh room
@@ -282,6 +297,7 @@ func (v *view) setContent(size driver.Size) {
 		return
 	}
 	v.native.Send(selSetContentSize, apple.CGSize{Width: float64(size.Width), Height: float64(size.Height)})
+	v.updateHandle()
 }
 
 func scrollLimits(n objc.ID) (start, end apple.CGPoint) {
@@ -552,6 +568,9 @@ func scrollTapReceives(self objc.ID, cmd objc.SEL, r, touch objc.ID) bool {
 		return true
 	}
 	under := touch.Send(selView)
+	if v.sc.handle.holder != 0 && under == v.sc.handle.holder {
+		return false
+	}
 	switch v.sc.config.Behavior.KeyboardShouldPersistTaps {
 	case driver.KeyboardTapsAlways:
 		return false

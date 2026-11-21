@@ -67,7 +67,7 @@ row.Reveal(core.RevealOptions{Vertical: core.ScrollAlignCenter, Animated: true})
 
 ## 平台
 
-每个后端都使用平台的滚动视图，因此惯性、回弹、滚动条和触摸滚动都是原生的。边缘效果不同：macOS 和 iOS 回弹，Android 拉伸，Windows 和 Linux 停止，Web 跟随浏览器。`EdgeEffects` 和 `EdgeBar` 在应用需要时把栏放在内容上方。在 Windows 上，覆盖式滚动条会在滚轮、触摸、拖动滚动条及其惯性滚动时显示；应用自己的 `ScrollTo`、`ScrollBy`、视图显示、内嵌边距和动画不会显示它。
+每个后端都使用平台的滚动视图，因此惯性、回弹、滚动条和触摸滚动都是原生的。边缘效果不同：macOS 和 iOS 回弹，Android 拉伸，Windows 和 Linux 停止，Web 跟随浏览器。`EdgeEffects` 和 `EdgeBar` 在应用需要时把栏放在内容上方。在 iOS 和 Android 手机与平板上，内容超出视口的纵向和横向滚动视图会在当前滚动轴边缘显示可触摸拖动的滚动手柄，可平滑拖动浏览整个内容范围；内容未溢出的短滚动视图、可缩放视图、`Behavior.NoScroll`、`HideIndicator` 以及使用自定义 `Bar` 或 `base.SetScrollbarTheme` 的视图会隐藏该手柄。在测试中，`nsgotest.App.ScrollHandle` 返回其视口边界，可用 `DragAt` 或 `Touch` 直接拖动。在 Windows 上，覆盖式滚动条会在滚轮、触摸、拖动滚动条及其惯性滚动时显示；应用自己的 `ScrollTo`、`ScrollBy`、视图显示、内嵌边距和动画不会显示它。
 
 ## 相关
 

@@ -67,7 +67,7 @@ A view the keyboard moves the focus to scrolls into view by itself.
 
 ## Platform
 
-Every backend uses the platform's scroll view, so flings, bounces, scroll bars and touch scrolling are native. Edge effects differ: macOS and iOS rubber-band, Android stretches, Windows and Linux stop, and the web follows the browser. `EdgeEffects` and `EdgeBar` add bars over the content where the app wants them. On Windows, the overlay indicator appears for wheel, touch, bar-drag and their momentum, not for app-owned `ScrollTo`, `ScrollBy`, reveals, insets or animations.
+Every backend uses the platform's scroll view, so flings, bounces, scroll bars and touch scrolling are native. Edge effects differ: macOS and iOS rubber-band, Android stretches, Windows and Linux stop, and the web follows the browser. `EdgeEffects` and `EdgeBar` add bars over the content where the app wants them. On iOS and Android phones and tablets, overflowing vertical and horizontal scroll views show a touch-draggable scroll handle along the active axis that scrubs across the full content range; short scroll views that fit without overflowing, zooming views, `Behavior.NoScroll`, `HideIndicator` and views using a custom `Bar` or `base.SetScrollbarTheme` hide it. In tests, `nsgotest.App.ScrollHandle` reports its viewport bounds and `DragAt` or `Touch` drags it directly. On Windows, the overlay indicator appears for wheel, touch, bar-drag and their momentum, not for app-owned `ScrollTo`, `ScrollBy`, reveals, insets or animations.
 
 ## Related
 

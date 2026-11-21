@@ -5352,6 +5352,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         n.children.setTranslationX(0);
         n.children.setTranslationY(0);
         if (n.scroller != null) {
+            if (n.scroller instanceof Scrolling.Scroller) ((Scrolling.Scroller) n.scroller).detach();
             n.scroller.removeView(n.children);
             ((ViewGroup) n.view).removeView(n.scroller);
         }

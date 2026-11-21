@@ -1758,6 +1758,7 @@ func (s *surface) delete(v *view, kept bool) {
 	}
 	delete(s.ownTexts, v.id)
 	if v.sc != nil {
+		v.releaseHandle()
 		for i := range v.sc.edges {
 			if ev := &v.sc.edges[i]; ev.holder != 0 {
 				ev.paint.Release()
@@ -2457,6 +2458,9 @@ func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
 	}
 	if v.sc != nil && v.hasEdges() {
 		v.followEdges()
+	}
+	if v.sc != nil {
+		v.updateHandle()
 	}
 	v.surface.followLargeTitle(v, offset.Y)
 	v.scrollEvent(driver.EventScroll)

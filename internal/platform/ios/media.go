@@ -352,6 +352,7 @@ func (v *view) place(f driver.Bounds) {
 			// Each step of a layout animation, as the keyboard moves a composer.
 			v.placeEdges()
 		}
+		v.updateHandle()
 	}
 	if v.image != nil {
 		v.image.Layout(apple.CGSize{Width: float64(f.Size.Width), Height: float64(f.Size.Height)})

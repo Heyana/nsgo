@@ -37,6 +37,9 @@ func scrollPanShouldBegin(self objc.ID, cmd objc.SEL, r objc.ID) bool {
 	if r != self.Send(selPanRecognizer) {
 		return apple.SendSuper[bool](self, cmd, r)
 	}
+	if v := scrollView(self); v != nil && v.handleBlocksPan(r) {
+		return false
+	}
 	d := objc.Send[apple.CGPoint](r, selTranslation, self)
 	if d == (apple.CGPoint{}) {
 		d = objc.Send[apple.CGPoint](r, selVelocity, self)
@@ -58,6 +61,9 @@ func scrollPanShouldBegin(self objc.ID, cmd objc.SEL, r objc.ID) bool {
 // instead of scrolling.
 func scrollPanWaits(self objc.ID, cmd objc.SEL, r, other objc.ID) bool {
 	if r == self.Send(selPanRecognizer) {
+		if v := scrollView(self); v != nil && v.sc.handle.gesture != 0 && other == v.sc.handle.gesture {
+			return true
+		}
 		inner := other.Send(selView)
 		if inner != 0 && inner != self && objc.Send[bool](inner, selIsKindOf, apple.Class("UIScrollView")) &&
 			inner.Send(selPanRecognizer) == other && objc.Send[bool](inner, selIsDescendant, self) {

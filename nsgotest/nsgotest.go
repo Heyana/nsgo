@@ -1158,6 +1158,7 @@ func (a *App) SetEnvironment(env driver.Environment) {
 			}
 		}
 	} else {
+		a.env = &env
 		a.tree.SetEnvironment(env)
 	}
 	a.Settle()

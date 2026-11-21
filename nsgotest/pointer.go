@@ -26,6 +26,7 @@ const (
 	dragFree                   // nothing native will: the responder took it, or nothing could
 	dragPan                    // a view's pan
 	dragScroll                 // a scroll view
+	dragHandle                 // a phone scroll view's touch-draggable handle
 )
 
 // finger is the finger of a Drag.
@@ -38,12 +39,13 @@ type finger struct {
 	pressed         bool    // press heard PressDown
 	cancelled       bool    // it moved away from press
 	mode            dragMode
-	view            *View         // the pan's or scroll view's
-	id              int           // its Touch.ID: 0 for Drag's, as a mouse's
-	t0              time.Duration // when it went down, which reports count from
-	downAt          time.Time     // when it went down, on the clock
-	from            driver.Point  // the scroll view's offset when it took the drag
-	grabbed         driver.Point  // where the finger was then
+	view            *View                   // the pan's or scroll view's
+	id              int                     // its Touch.ID: 0 for Drag's, as a mouse's
+	t0              time.Duration           // when it went down, which reports count from
+	downAt          time.Time               // when it went down, on the clock
+	from            driver.Point            // the scroll view's offset when it took the drag
+	grabbed         driver.Point            // where the finger was then
+	handleDrag      driver.ScrollHandleDrag // active phone scroll handle drag
 	moved           bool
 }
 
@@ -115,18 +117,20 @@ func (a *App) drag(v *View, start driver.Point, path []driver.Point) {
 	}
 	// A finger going down ends what a responder held before.
 	a.blocked = false
-	inScroll := false
-	for _, p := range f.chain {
-		if f.press == nil && (pressable(p) || p.Events.Has(driver.EventLongPress)) && !v.disabled(p) {
-			f.press = p
+	if !a.tryGrabScrollHandle(f, start) {
+		inScroll := false
+		for _, p := range f.chain {
+			if f.press == nil && (pressable(p) || p.Events.Has(driver.EventLongPress)) && !v.disabled(p) {
+				f.press = p
+			}
+			inScroll = inScroll || p != v && p.Kind == KindScroll && !p.Scroll.Behavior.NoScroll
 		}
-		inScroll = inScroll || p != v && p.Kind == KindScroll && !p.Scroll.Behavior.NoScroll
-	}
-	a.touchAt(driver.GestureBegan, start, 0)
-	a.pressOutside(v, start)
-	// Inside a scroll view a touch presses only once it rests.
-	if !inScroll {
-		a.pressIn(f)
+		a.touchAt(driver.GestureBegan, start, 0)
+		a.pressOutside(v, start)
+		// Inside a scroll view a touch presses only once it rests.
+		if !inScroll {
+			a.pressIn(f)
+		}
 	}
 	for f.elapsed+driver.FrameInterval <= landing {
 		a.frame(f)
@@ -171,18 +175,20 @@ func (a *App) Touch(selector string, at driver.Point) *Finger {
 		f.chain = append(f.chain, p)
 	}
 	a.blocked = false
-	for _, p := range f.chain {
-		if f.press == nil && (pressable(p) || p.Events.Has(driver.EventLongPress)) && !v.disabled(p) {
-			f.press = p
+	if !a.tryGrabScrollHandle(f, start) {
+		for _, p := range f.chain {
+			if f.press == nil && (pressable(p) || p.Events.Has(driver.EventLongPress)) && !v.disabled(p) {
+				f.press = p
+			}
 		}
+		// It names the view it went down on, as a platform that knows.
+		if f.reporting {
+			a.dispatch(driver.Event{Kind: driver.EventTouch, ID: v.ID, Phase: driver.GestureBegan, Time: f.t0,
+				Touches: []driver.Touch{{ID: f.id, PagePosition: start, Changed: true}}})
+		}
+		a.pressOutside(v, start)
+		a.pressIn(f)
 	}
-	// It names the view it went down on, as a platform that knows.
-	if f.reporting {
-		a.dispatch(driver.Event{Kind: driver.EventTouch, ID: v.ID, Phase: driver.GestureBegan, Time: f.t0,
-			Touches: []driver.Touch{{ID: f.id, PagePosition: start, Changed: true}}})
-	}
-	a.pressOutside(v, start)
-	a.pressIn(f)
 	a.done()
 	return &Finger{a: a, f: f, view: v, matrix: v.pageMatrix()}
 }
@@ -224,6 +230,12 @@ func (g *Finger) Cancel() {
 	g.a.t.Helper()
 	g.a.step("cancel")
 	f := g.f
+	if f.mode == dragHandle {
+		g.a.scrollEvent(f.view, driver.EventScrollDragEnd)
+		g.a.scrollEvent(f.view, driver.EventScrollEnd)
+		g.a.done()
+		return
+	}
 	if f.reporting {
 		g.a.touchAt(driver.GestureCancelled, f.at, f.t0+f.elapsed, f.id)
 	}
@@ -275,6 +287,8 @@ func (a *App) fingerMoved(f *finger, at driver.Point) {
 		a.pan(f, driver.GestureChanged, t)
 	case dragScroll:
 		a.dragScroll(f)
+	case dragHandle:
+		a.scrollView(f.view, f.handleDrag.Offset(f.view.localPoint(at)))
 	}
 }
 
@@ -418,6 +432,10 @@ func (a *App) fingerLifted(f *finger) {
 			a.scrollEvent(v, driver.EventMomentumEnd)
 		}
 		a.settle(v)
+	case dragHandle:
+		v := f.view
+		a.scrollEvent(v, driver.EventScrollDragEnd)
+		a.settleHandle(v)
 	}
 	if f.pressed && !f.cancelled {
 		// Held past a long press's delay, it long-presses the view that
