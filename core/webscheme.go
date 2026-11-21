@@ -19,7 +19,7 @@ func (cx *Scope) ServeScheme(scheme string, handler func(url string) []byte) err
 	})
 }
 
-// ServeSchemeRequest registers an app-owned URL scheme for web views created under cx, as ServeScheme does, whose handler sees the request — its URL, its method where the platform reports one and its headers where it gives them — and answers its status, headers and body: status as HTTP's, 405 for a method the scheme refuses among them, with 0 for 200 and a nil response for 404, an empty body. The response's content type is the response's Content-Type header, else what the native backend infers from the URL and body. As WebKit checks them, a scheme's cross-origin fetches also need the response's Access-Control-Allow-Origin header.
+// ServeSchemeRequest registers an app-owned URL scheme for web views created under cx, as ServeScheme does, whose handler sees the request — its URL, its method where the platform reports one and its headers where it gives them — and answers its status, headers and body: status as HTTP's, 405 for a method the scheme refuses among them, with 0 for 200 and a nil response for 404, an empty body. The response's content type is the response's Content-Type header, else what the native backend infers from the URL and body. As WebKit checks them, a scheme's cross-origin fetches also need the response's Access-Control-Allow-Origin header; WebView2 lets no page of another scheme request it.
 func (cx *Scope) ServeSchemeRequest(scheme string, handler func(*WebSchemeRequest) *WebSchemeResponse) error {
 	if cx == nil || cx.rt == nil {
 		return fmt.Errorf("core: no scope")

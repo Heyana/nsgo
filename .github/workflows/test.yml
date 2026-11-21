@@ -346,6 +346,8 @@ jobs:
         run: go tool nsgo test -run '^TestFocusedPageKeysReachShortcutsFirst$' ./internal/platform/windows
       - name: Test Edit menu roles in a focused WebView2 page and their OnSelect fallback
         run: go tool nsgo test -run '^(TestEditMenuEditsTheFocusedPage|TestWebEditCommandsCoverTheEditingRoles|TestEditingRolesFallBackToOnSelect)$' ./internal/platform/windows
+      - name: Test WebView2 custom scheme requests and responses
+        run: go tool nsgo test -run '^TestWebSchemeRequestAnswers$' ./internal/platform/windows
       - name: Test native radio and tab focus
         run: go tool nsgo test -target windows -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
       - name: Test instance isolation and file handoff

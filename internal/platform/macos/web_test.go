@@ -114,9 +114,9 @@ func TestWebSchemeRequestAnswers(t *testing.T) {
 async function check() {
   let report = [];
   let r = await fetch('nsgotest://main/data', { method: 'POST', body: 'x' });
-  report.push('post:' + r.status + ':' + await r.text());
-  r = await fetch('nsgotest://main/ok.txt');
-  report.push('get:' + r.status + ':' + r.headers.get('X-Served') + ':' + await r.text());
+  report.push('post:' + r.status + ':' + r.headers.get('Allow') + ':' + await r.text());
+  r = await fetch('nsgotest://main/ok.txt', { headers: { 'X-Probe': 'probe' } });
+  report.push('get:' + r.status + ':' + r.headers.get('X-Served') + ':' + r.headers.get('Content-Type') + ':' + await r.text());
   r = await fetch('nsgotest://main/missing');
   report.push('missing:' + r.status);
   window.nsgo.postMessage(report.join('|'));
@@ -136,7 +136,7 @@ check().catch((e) => window.nsgo.postMessage('error:' + e.message));
 			case strings.HasSuffix(r.URL, "missing"):
 				return nil
 			default:
-				return &core.WebSchemeResponse{Status: 201, Headers: map[string]string{"X-Served": "yes"}, Body: []byte("bytes")}
+				return &core.WebSchemeResponse{Status: 201, Headers: map[string]string{"X-Served": "yes", "content-type": "text/x-nsgo"}, Body: []byte("bytes " + r.Header("x-probe"))}
 			}
 		})
 		if err != nil {
@@ -157,7 +157,7 @@ check().catch((e) => window.nsgo.postMessage('error:' + e.message));
 	onMain(func() { Run(app, Options{Title: "Scheme requests", Width: 200, Height: 150}) })
 	mu.Lock()
 	defer mu.Unlock()
-	if want := "post:405:|get:201:yes:bytes|missing:404"; result != want {
+	if want := "post:405:GET:|get:201:yes:text/x-nsgo:bytes probe|missing:404"; result != want {
 		t.Errorf("the page reported %q, want %q", result, want)
 	}
 }
