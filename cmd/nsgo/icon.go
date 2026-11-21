@@ -369,12 +369,8 @@ func icns(img image.Image) []byte {
 	return out.Bytes()
 }
 
-// writeIOSIcon compiles the app's icon into an iOS or tvOS bundle and
-// returns the Info.plist entries naming it: on iOS the Icon Composer
-// .icon when there is one, else the PNG through an asset catalog; on tvOS
-// Icon.TVOS, the project's brand assets or a wide image, else the PNG as
-// the layered icon and top shelf images the Apple TV asks for.
-func writeIOSIcon(ctx context.Context, p *project, sys *appleOS, app string, simulator bool) (string, error) {
+// writeIOSAssets compiles the icon and launch screen into one asset catalog's output and returns the Info.plist entries naming the icon. tvOS uses its own layered icon and top shelf art.
+func writeIOSAssets(ctx context.Context, p *project, sys *appleOS, app string, simulator bool) (string, error) {
 	minimum, err := p.appleMinimum(sys)
 	if err != nil {
 		return "", err
@@ -383,26 +379,46 @@ func writeIOSIcon(ctx context.Context, p *project, sys *appleOS, app string, sim
 	if sys == tvOS {
 		return writeTVOSIcon(ctx, p, app, sdk)
 	}
+	var inputs []string
+	var name string
+	var img image.Image
 	if filepath.Ext(p.Icon.Apple) == ".icon" {
-		return compileIcon(ctx, p.Icon.Apple, app, sdk, minimum, sys.idioms)
+		inputs = append(inputs, p.Icon.Apple)
+		name = iconAssetName(p.Icon.Apple)
+	} else {
+		img, err = p.iconImage()
+		if err != nil {
+			return "", err
+		}
 	}
-	img, err := p.iconImage()
-	if img == nil || err != nil {
-		return "", err
+	if img == nil && p.LaunchScreen == nil {
+		if len(inputs) == 0 {
+			return "", nil
+		}
+		return compileIcon(ctx, inputs[0], app, sdk, minimum, sys.idioms)
 	}
-	tmp, err := os.MkdirTemp("", "nsgo-icon-")
+	tmp, err := os.MkdirTemp("", "nsgo-assets-")
 	if err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(tmp)
 	catalog := filepath.Join(tmp, "Assets.xcassets")
-	if err := writeDir(filepath.Join(catalog, "AppIcon.appiconset"), map[string][]byte{
-		"Icon.png":      scaledPNG(img, 1024),
-		"Contents.json": []byte(`{"images":[{"filename":"Icon.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"nsgo","version":1}}`),
-	}); err != nil {
-		return "", err
+	if img != nil {
+		name = "AppIcon"
+		if err := writeDir(filepath.Join(catalog, "AppIcon.appiconset"), map[string][]byte{
+			"Icon.png":      scaledPNG(img, 1024),
+			"Contents.json": []byte(`{"images":[{"filename":"Icon.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"nsgo","version":1}}`),
+		}); err != nil {
+			return "", err
+		}
 	}
-	return compileIcon(ctx, catalog, app, sdk, minimum, sys.idioms)
+	if p.LaunchScreen != nil {
+		if err := p.LaunchScreen.writeIOSCatalog(catalog); err != nil {
+			return "", err
+		}
+	}
+	inputs = append(inputs, catalog)
+	return compileAssets(ctx, inputs, name, app, sdk, minimum, sys.idioms)
 }
 
 // writeTVOSIcon compiles the app's icon into an Apple TV bundle: the
@@ -627,38 +643,49 @@ func edgeColor(img image.Image) color.Color {
 	return color.RGBA64{uint16(r / n), uint16(g / n), uint16(bl / n), 0xffff}
 }
 
-// compileIcon runs actool on an Icon Composer .icon or an asset catalog
-// holding AppIcon, writing Assets.car and the platform's icon files into
-// out, and returns the Info.plist entries actool says name them. actool
-// takes seconds, so the user's cache keeps its output by actool's
-// version, the arguments and the input's files, and builds after the
-// first copy it.
-func compileIcon(ctx context.Context, input, out, platform, minimum string, idioms []string) (string, error) {
-	name := "AppIcon"
+func iconAssetName(input string) string {
 	if filepath.Ext(input) == ".icon" {
-		name = strings.TrimSuffix(filepath.Base(input), ".icon")
+		return strings.TrimSuffix(filepath.Base(input), ".icon")
 	}
-	args := []string{"--platform", platform, "--minimum-deployment-target", minimum, "--app-icon", name}
+	return "AppIcon"
+}
+
+// compileIcon runs actool on an Icon Composer .icon or an asset catalog
+// holding AppIcon and returns the Info.plist entries naming the icon.
+func compileIcon(ctx context.Context, input, out, platform, minimum string, idioms []string) (string, error) {
+	return compileAssets(ctx, []string{input}, iconAssetName(input), out, platform, minimum, idioms)
+}
+
+// compileAssets writes actool's output to out and caches it by tool version,
+// arguments and source files. name is empty for catalogs without an icon.
+func compileAssets(ctx context.Context, inputs []string, name, out, platform, minimum string, idioms []string) (string, error) {
+	args := []string{"--platform", platform, "--minimum-deployment-target", minimum}
+	if name != "" {
+		args = append(args, "--app-icon", name)
+	}
 	for _, idiom := range idioms {
 		args = append(args, "--target-device", idiom)
 	}
 	version, err := output(ctx, "xcrun", "actool", "--version")
 	if err != nil {
-		return "", fmt.Errorf("the icon needs Xcode's actool: %w", err)
+		return "", fmt.Errorf("the asset catalog needs Xcode's actool: %w", err)
 	}
 	sum := sha256.New()
 	fmt.Fprintf(sum, "%s\n%q\n", version, args)
-	err = filepath.WalkDir(input, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	for _, input := range inputs {
+		fmt.Fprintf(sum, "%q\n", filepath.Base(input))
+		err := filepath.WalkDir(input, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			data, err := os.ReadFile(path)
+			fmt.Fprintf(sum, "%q %d\n", strings.TrimPrefix(path, input), len(data))
+			sum.Write(data)
 			return err
+		})
+		if err != nil {
+			return "", err
 		}
-		data, err := os.ReadFile(path)
-		fmt.Fprintf(sum, "%q %d\n", strings.TrimPrefix(path, input), len(data))
-		sum.Write(data)
-		return err
-	})
-	if err != nil {
-		return "", err
 	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
@@ -666,16 +693,20 @@ func compileIcon(ctx context.Context, input, out, platform, minimum string, idio
 	}
 	dir := filepath.Join(cache, "nsgo", "icons", hex.EncodeToString(sum.Sum(nil)[:16]))
 	if _, err := os.Stat(dir); err != nil {
-		if err := runActool(ctx, input, dir, args); err != nil {
+		if err := runActool(ctx, inputs, dir, args, name != ""); err != nil {
 			return "", err
 		}
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "Info.plist"))
-	if err != nil {
-		return "", err
+	var plist string
+	if name != "" {
+		data, err := os.ReadFile(filepath.Join(dir, "Info.plist"))
+		if err != nil {
+			return "", err
+		}
+		plist = plistEntries(string(data))
 	}
 	files := filepath.Join(dir, "files")
-	return plistEntries(string(data)), filepath.WalkDir(files, func(path string, d fs.DirEntry, err error) error {
+	return plist, filepath.WalkDir(files, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -691,9 +722,9 @@ func compileIcon(ctx context.Context, input, out, platform, minimum string, idio
 	})
 }
 
-// runActool compiles input into dir: the icon files in files, and the
-// partial Info.plist naming them.
-func runActool(ctx context.Context, input, dir string, args []string) error {
+// runActool compiles inputs into dir: the catalog and icon files in files,
+// and the partial Info.plist naming the icon when present.
+func runActool(ctx context.Context, inputs []string, dir string, args []string, icon bool) error {
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return err
 	}
@@ -702,23 +733,32 @@ func runActool(ctx context.Context, input, dir string, args []string) error {
 		return err
 	}
 	defer os.RemoveAll(tmp)
+	files := filepath.Join(tmp, "files")
+	if err := os.MkdirAll(files, 0o755); err != nil {
+		return err
+	}
 	partial := filepath.Join(tmp, "Info.plist")
-	args = append([]string{"actool", input, "--compile", filepath.Join(tmp, "files"),
-		"--output-partial-info-plist", partial}, args...)
-	if err := os.MkdirAll(filepath.Join(tmp, "files"), 0o755); err != nil {
-		return err
+	cmd := append([]string{"actool", "--compile", files}, args...)
+	if icon {
+		cmd = append(cmd, "--output-partial-info-plist", partial)
 	}
-	if err := run(ctx, "xcrun", args...); err != nil {
-		return fmt.Errorf("the icon needs Xcode's actool: %w", err)
+	if err := run(ctx, "xcrun", append(cmd, inputs...)...); err != nil {
+		return fmt.Errorf("the asset catalog needs Xcode's actool: %w", err)
 	}
-	data, err := os.ReadFile(partial)
-	if err != nil {
-		return err
+	// actool can report problems in its output and still succeed.
+	if icon {
+		data, err := os.ReadFile(partial)
+		if err != nil {
+			return err
+		}
+		if plistEntries(string(data)) == "" {
+			return fmt.Errorf("actool compiled no icon from %s", rel(inputs[0]))
+		}
 	}
-	// actool reports problems in its output and still succeeds; an icon
-	// it could not compile leaves the plist empty.
-	if plistEntries(string(data)) == "" {
-		return fmt.Errorf("actool compiled no icon from %s", rel(input))
+	if !icon || len(inputs) > 1 {
+		if _, err := os.Stat(filepath.Join(files, "Assets.car")); err != nil {
+			return fmt.Errorf("actool compiled no asset catalog: %w", err)
+		}
 	}
 	// Another build may have filled dir meanwhile, with the same files.
 	if err := os.Rename(tmp, dir); err != nil {

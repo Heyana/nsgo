@@ -45,6 +45,8 @@ Set `game: true` for game classification and Game Mode metadata, and `gamepad: t
 
 An iOS app with `app_clip` keeps its clip when Xcode automatically signs `dev` or `build -run`; it needs a paid-team account and provisioning for both targets. `dev -clip <url>` runs the clip alone; use `-release` if development symbols exceed the QR size limit. [App Clips](https://nsgo.dev/docs/building.md#app-clips).
 
+Set `launch_screen.background` to a quoted `"#RRGGBB"` color and/or `launch_screen.image` to a centered PNG path on iOS and Android 12 or later. Use `launch_screen.dark` to override either field for dark appearance ([Launch screen](https://nsgo.dev/docs/building.md#launch-screen)).
+
 ## Build
 
 ```sh

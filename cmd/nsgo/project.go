@@ -84,6 +84,8 @@ type project struct {
 	// Appearance starts the app light or dark whatever the system's, its
 	// launch screen and window included; empty follows the system.
 	Appearance string `yaml:"appearance"`
+	// LaunchScreen gives standalone iOS and Android apps their launch artwork.
+	LaunchScreen *launchScreen `yaml:"launch_screen"`
 	// Window is no longer nsgo.yaml's: Go code sizes windows.
 	Window any `yaml:"window"`
 	// Widget is the app's home-screen card on HarmonyOS: the title it shows.
@@ -447,6 +449,9 @@ func load(dir string) (*project, error) {
 	case "", "light", "dark":
 	default:
 		return nil, fmt.Errorf("nsgo.yaml: appearance is %q; use light, dark or leave it out", p.Appearance)
+	}
+	if err := p.validateLaunchScreen(); err != nil {
+		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	if p.Window != nil {
 		return nil, fmt.Errorf("nsgo.yaml: window is set in Go now: nsgo.Run(Root, nsgo.WindowSize(width, height)), or desktop.WindowOptions")

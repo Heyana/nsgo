@@ -131,6 +131,21 @@ On Android, `icon.android.foreground` and `background` make the launcher icon ad
 
 Every build also takes NSGo's own flags as it starts, such as `--nsgo-fps` ([Running and debugging](debugging.md#flags-of-every-build)). In `nsgo dev`, Command/Control+R reloads from every open window and remains available after the main view closes when another window keeps an app function running.
 
+### Launch screen
+
+Set `launch_screen` to show an opaque background, a centered PNG, or both on iOS and Android 12 or later. Image paths are relative to `nsgo.yaml`. The image fits proportionally inside 128 × 128 points or dp. A transparent PNG with a longest side of at least 512 pixels keeps it sharp on high-density screens.
+
+```yaml
+launch_screen:
+  background: "#F5F1EA"
+  image: assets/Launch.png
+  dark:
+    background: "#201C26"
+    image: assets/LaunchDark.png
+```
+
+The system selects the appearance unless `appearance` pins it. Omit either `dark` field to reuse the corresponding value. An omitted background or image keeps the platform's default. Embedded apps get their launch screen from the host.
+
 ## Android native classes
 
 List precompiled Android classes in the app's `nsgo.yaml` to use a custom View from `core.Native`.

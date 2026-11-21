@@ -195,7 +195,7 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 	if err := copyMobileResources(p, app); err != nil {
 		return "", err
 	}
-	icon, err := writeIOSIcon(ctx, p, sys, app, simulator)
+	icon, err := writeIOSAssets(ctx, p, sys, app, simulator)
 	if err != nil {
 		return "", err
 	}
@@ -294,7 +294,18 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 // to apps that set CADisableMinimumFrameDurationOnPhone.
 var iosPlist = template.Must(template.New("ios").Parse(plistHead + `	<key>MinimumOSVersion</key><string>{{.IOSMinimum}}</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key><true/>
-	<key>UILaunchScreen</key><dict/>
+{{- if not (index .Apple.Info "UILaunchScreen")}}
+	<key>UILaunchScreen</key>
+	<dict>{{with .LaunchScreen}}
+		{{- if .Background}}
+		<key>UIColorName</key><string>NSGoLaunchBackground</string>
+		{{- end}}
+		{{- if .Image}}
+		<key>UIImageName</key><string>NSGoLaunchImage</string>
+		<key>UIImageRespectsSafeAreaInsets</key><false/>
+		{{- end}}
+	{{- end}}</dict>
+{{- end}}
 	<key>UIRequiresFullScreen</key>{{if .IOSRequiresFullScreen}}<true/>{{else}}<false/>{{end}}
 {{- if .IOSHasIPadOrientations}}
 	<key>UISupportedInterfaceOrientations~ipad</key>{{.IOSIPadOrientationsPlist}}

@@ -12,7 +12,7 @@ import (
 
 // Write writes a signed APK to w: template's manifest with m filled in,
 // then files, and the resource table the system expects, which holds the
-// launcher icon, app names and network policy when m has them.
+// launcher icon, app names, network policy and launch screen when m has them.
 func Write(w io.Writer, template []byte, m Manifest, files []File, key *Key) error {
 	manifest, err := EncodeManifest(template, m)
 	if err != nil {
@@ -30,6 +30,7 @@ func Write(w io.Writer, template []byte, m Manifest, files []File, key *Key) err
 		}
 		all = append(all, adaptive...)
 	}
+	all = append(all, launchFiles(m)...)
 	for _, resource := range append(m.xmlResources(), m.layoutResources()...) {
 		data, err := encodeXML(resource.node(), false)
 		if err != nil {

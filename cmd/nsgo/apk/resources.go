@@ -112,10 +112,11 @@ type resEntry struct {
 	values []resValue
 }
 
-// resValue is a string value of an entry in a configuration.
+// resValue is an entry's string or style in a configuration.
 type resValue struct {
 	config []byte
 	str    string
+	style  *resStyle
 }
 
 func sortedConfigs(configs map[string][]byte) [][]byte {
@@ -144,8 +145,8 @@ func valueForConfig(values []resValue, config []byte) (resValue, bool) {
 // @mipmap/ic_launcher when icon, at xxxhdpi in iconFile, and the app's
 // name @string/app_name in each language of names, by BCP 47 tag, ""
 // for the default, when names has any. The manifest refers to them by
-// iconResourceID and nameResourceID. The network policy, when enabled,
-// follows those types.
+// iconResourceID and nameResourceID. The network policy and launch screen,
+// when present, follow those types.
 func resources(m Manifest) []byte {
 	adaptive := m.Adaptive
 	var types []resType
@@ -153,20 +154,20 @@ func resources(m Manifest) []byte {
 		config := newConfig()
 		binary.LittleEndian.PutUint16(config[14:], densityXXXHigh)
 		binary.LittleEndian.PutUint16(config[24:], 4) // sdkVersion, as aapt2 adds for a density
-		entry := resEntry{key: "ic_launcher", values: []resValue{{config, iconFile}}}
+		entry := resEntry{key: "ic_launcher", values: []resValue{{config: config, str: iconFile}}}
 		if adaptive != nil {
 			anydpi := newConfig()
 			binary.LittleEndian.PutUint16(anydpi[14:], 0xfffe)
 			binary.LittleEndian.PutUint16(anydpi[24:], 26)
-			entry.values = append(entry.values, resValue{anydpi, adaptiveIconFile})
+			entry.values = append(entry.values, resValue{config: anydpi, str: adaptiveIconFile})
 		}
 		entries := []resEntry{entry}
 		if adaptive != nil {
 			entries = append(entries,
-				resEntry{key: "ic_launcher_foreground", values: []resValue{{config, foregroundFile}}},
-				resEntry{key: "ic_launcher_background", values: []resValue{{config, backgroundFile}}})
+				resEntry{key: "ic_launcher_foreground", values: []resValue{{config: config, str: foregroundFile}}},
+				resEntry{key: "ic_launcher_background", values: []resValue{{config: config, str: backgroundFile}}})
 			if len(adaptive.Monochrome) > 0 {
-				entries = append(entries, resEntry{key: "ic_launcher_monochrome", values: []resValue{{config, monochromeFile}}})
+				entries = append(entries, resEntry{key: "ic_launcher_monochrome", values: []resValue{{config: config, str: monochromeFile}}})
 			}
 		}
 		types = append(types, resType{name: "mipmap", varies: configDensity, entries: entries})
@@ -187,7 +188,7 @@ func resources(m Manifest) []byte {
 				if lang != "" {
 					config = localeConfig(lang)
 				}
-				entry.values = append(entry.values, resValue{config, resource.values[lang]})
+				entry.values = append(entry.values, resValue{config: config, str: resource.values[lang]})
 			}
 			t.entries = append(t.entries, entry)
 		}
@@ -195,7 +196,7 @@ func resources(m Manifest) []byte {
 	}
 	var xmlEntries []resEntry
 	for _, resource := range m.xmlResources() {
-		xmlEntries = append(xmlEntries, resEntry{key: resource.name, values: []resValue{{newConfig(), resource.file}}})
+		xmlEntries = append(xmlEntries, resEntry{key: resource.name, values: []resValue{{config: newConfig(), str: resource.file}}})
 	}
 	if len(xmlEntries) > 0 {
 		types = append(types, resType{name: "xml", entries: xmlEntries})
@@ -203,9 +204,12 @@ func resources(m Manifest) []byte {
 	if layouts := m.layoutResources(); len(layouts) > 0 {
 		t := resType{name: "layout"}
 		for _, res := range layouts {
-			t.entries = append(t.entries, resEntry{key: res.name, values: []resValue{{newConfig(), res.file}}})
+			t.entries = append(t.entries, resEntry{key: res.name, values: []resValue{{config: newConfig(), str: res.file}}})
 		}
 		types = append(types, t)
+	}
+	if m.Launch != nil {
+		types = append(types, launchBinaryTypes(m)...)
 	}
 	return table(m.Package, types)
 }
@@ -290,35 +294,46 @@ func table(pkg string, types []resType) []byte {
 		}
 		for _, config := range sortedConfigs(configs) {
 			const typeHeader = 20 + configSize
-			present := make([]int, 0, len(t.entries))
+			var entries bytes.Buffer
+			offsets := make([]uint32, len(t.entries))
 			for entryID, entry := range t.entries {
-				if _, ok := valueForConfig(entry.values, config); ok {
-					present = append(present, entryID)
+				value, ok := valueForConfig(entry.values, config)
+				if !ok {
+					offsets[entryID] = noIndex
+					continue
+				}
+				offsets[entryID] = uint32(entries.Len())
+				key := uint32(firstKey + entryID)
+				if value.style == nil {
+					put(&entries, [2]uint16{8, 0})
+					put(&entries, key)
+					put(&entries, uint16(8))
+					put(&entries, [2]uint8{0, typeString})
+					put(&entries, uint32(len(values)))
+					values = append(values, value.str)
+					continue
+				}
+				// ResTable_map_entry followed by ResTable_map records.
+				put(&entries, [2]uint16{16, 1}) // FLAG_COMPLEX
+				put(&entries, key)
+				put(&entries, value.style.parent)
+				put(&entries, uint32(len(value.style.items)))
+				for _, item := range value.style.items {
+					put(&entries, item.key)
+					put(&entries, uint16(8))
+					put(&entries, [2]uint8{0, item.kind})
+					put(&entries, item.data)
 				}
 			}
+			start := typeHeader + 4*len(t.entries)
 			put(&chunks, [2]uint16{tableType, typeHeader})
-			put(&chunks, uint32(typeHeader+4*len(t.entries)+16*len(present)))
+			put(&chunks, uint32(start+entries.Len()))
 			put(&chunks, [4]uint8{id, 0, 0, 0})
 			put(&chunks, uint32(len(t.entries)))
-			put(&chunks, uint32(typeHeader+4*len(t.entries)))
+			put(&chunks, uint32(start))
 			chunks.Write(config)
-			// Each entry's offset among the entries present, or none (ResTable_type::NO_ENTRY).
-			for entryID := range t.entries {
-				if i := slices.Index(present, entryID); i >= 0 {
-					put(&chunks, uint32(i*16))
-				} else {
-					put(&chunks, uint32(0xffffffff))
-				}
-			}
-			for _, entryID := range present {
-				value, _ := valueForConfig(t.entries[entryID].values, config)
-				put(&chunks, [2]uint16{8, 0})
-				put(&chunks, uint32(firstKey+entryID))
-				put(&chunks, uint16(8))
-				put(&chunks, [2]uint8{0, typeString})
-				put(&chunks, uint32(len(values)))
-				values = append(values, value.str)
-			}
+			put(&chunks, offsets)
+			chunks.Write(entries.Bytes())
 		}
 	}
 
