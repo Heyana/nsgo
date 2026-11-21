@@ -36,7 +36,7 @@ A transparent clip shows what is behind it as HEVC with alpha in a `.mov` on mac
 
 `Rate` sets playback speed and `RateFunc` can change it during playback. Use `VideoInfo.RateChangeable` from `OnLoad` to show a speed control. Linux can change the rate of seekable videos when GstPlay and GStreamer's `scaletempo` filter are installed. The fallback player uses 1×.
 
-Set `Video.Headers` to send HTTP request headers such as `Referer`, `User-Agent` or `Cookie` on Android and for finite HTTP files such as MP4 or MOV on macOS, iOS and tvOS.
+Set `Video.Headers` to send HTTP request headers such as `Referer`, `User-Agent` or `Cookie` on Android and for direct HTTP files such as MP4 or MOV on Linux, macOS, iOS and tvOS.
 
 ```go
 core.Video{
@@ -46,6 +46,8 @@ core.Video{
 ```
 
 The video copies the map when it mounts and uses the same headers if `SourceFunc` supplies a new URL. On Apple platforms, use a source with a known byte length and range support for seeking. The player sends the configured headers through same-origin redirects. Set `Headers` only for file URLs on Apple platforms. The separate `AudioSource` has its own native load.
+
+On Linux, install GstPlay and GStreamer's `scaletempo` and `souphttpsrc` plug-ins. Use the final media URL if you set `User-Agent` or your `souphttpsrc` lacks the `location-trusted` property. With that property and the default user agent, GStreamer keeps app headers on same-origin redirects. The app's headers apply to the source file, and adaptive media segments use their own requests.
 
 ## Components
 

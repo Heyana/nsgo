@@ -45,7 +45,7 @@ func (w *window) configureVideo(v *view, c *driver.VideoConfig) {
 	vd := v.video
 	old, first := vd.config, !vd.made
 	vd.config, vd.made = *c, true
-	reopened := first || c.Source != old.Source
+	reopened := first || c.Source != old.Source || c.Headers != old.Headers
 	if reopened {
 		w.openVideo(v)
 	}
@@ -135,15 +135,23 @@ func (w *window) openVideo(v *view) {
 		w.report(v, driver.Event{Kind: driver.EventError, ID: v.id, Text: source + ": " + msg, Index: driver.VideoErrorAlphaUnsupported})
 		return
 	}
+	w.report(v, driver.Event{Kind: driver.EventLoadStart, ID: v.id})
 	file := videoFile(source)
-	vd.player = openGSTVideo(w, v, file)
+	defer gObjectUnref(file)
+	var headers *driver.VideoHeaders
+	if videoHTTPSource(source) {
+		headers = vd.config.Headers
+	}
+	vd.player = openGSTVideo(w, v, file, headers)
 	if vd.player != nil {
 		vd.stream = vd.player.stream
+	} else if headers.Len() > 0 {
+		vd.failed = true
+		w.report(v, driver.Event{Kind: driver.EventError, ID: v.id, Text: "Video.Headers requires GstPlay and the GStreamer scaletempo filter on Linux."})
+		return
 	} else {
 		vd.stream = gtkMediaFileNewForFile(file)
 	}
-	gObjectUnref(file)
-	w.report(v, driver.Event{Kind: driver.EventLoadStart, ID: v.id})
 	w.connect(v, vd.stream, "notify::prepared", cbVideoPrepared)
 	// The picture's size is known with the first frame, which may come
 	// after it is prepared.

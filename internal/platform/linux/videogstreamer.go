@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 
 	"github.com/ebitengine/purego"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
 // videoGST binds GstPlay, which supplies the pipeline for Linux videos that can change rate. Its NsgoMediaStream keeps the same paintable and GTK control APIs as the fallback GtkMediaFile.
@@ -87,6 +89,9 @@ var bindVideoGST = sync.OnceValue(func() bool {
 		h, err := purego.Dlopen(dll.name, purego.RTLD_NOW|purego.RTLD_LOCAL)
 		if err != nil {
 			return false
+		}
+		if dll.name == "libgstreamer-1.0.so.0" {
+			bindVideoHTTP(h)
 		}
 		for name, fn := range dll.symbols {
 			symbol, err := purego.Dlsym(h, name)
@@ -175,13 +180,14 @@ type gstVideo struct {
 	v                                  *view
 	stream, play, adapter, sink, image uintptr
 	paintableSignals                   [2]uint64
+	headerKey                          uintptr
 	key                                uintptr
 	rate                               float32
 	appSink                            bool
 	framePending                       atomic.Bool
 }
 
-func openGSTVideo(w *window, v *view, file uintptr) *gstVideo {
+func openGSTVideo(w *window, v *view, file uintptr, headers *driver.VideoHeaders) *gstVideo {
 	if !bindVideoGST() {
 		return nil
 	}
@@ -235,6 +241,12 @@ func openGSTVideo(w *window, v *view, file uintptr) *gstVideo {
 		}
 	}
 	uri := videoGST.fileURI(file)
+	if headers.Len() > 0 {
+		nextGSTVideo++
+		p.headerKey = nextGSTVideo
+		videoHTTPRequests.Store(p.headerKey, videoHTTPRequest{uri: goString(uri), headers: headers})
+		gSignalConnect(pipeline, "source-setup", videoHTTP.setup, p.headerKey)
+	}
 	videoGST.uri(p.play, (*byte)(cPointer(uri)))
 	gFree(uri)
 	// Also load metadata and the first frame for a video opened paused.
@@ -257,6 +269,9 @@ func (p *gstVideo) prepareAppSink() {
 
 func (p *gstVideo) close() {
 	delete(gstVideos, p.stream)
+	if p.headerKey != 0 {
+		videoHTTPRequests.Delete(p.headerKey)
+	}
 	if p.appSink {
 		gstVideoSamples.Delete(p.key)
 	}
