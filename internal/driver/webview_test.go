@@ -103,7 +103,7 @@ func TestWebEvaluateMarker(t *testing.T) {
 }
 
 func TestNavigableHoldsPageSchemes(t *testing.T) {
-	base := WebConfig{Restricted: true, Hosts: "ok.com", SchemeHandlers: map[string]func(string) []byte{"app": nil}}
+	base := WebConfig{Restricted: true, Hosts: "ok.com", SchemeHandlers: map[string]WebSchemeHandler{"app": nil}}
 	for _, c := range []struct {
 		schemes string
 		url     string
@@ -136,6 +136,23 @@ func TestNavigableHoldsPageSchemes(t *testing.T) {
 	var open WebConfig
 	if !open.Navigable("data:text/html,x") || !open.SourceNavigable("https://evil.io/") {
 		t.Error("an unrestricted view refuses a navigation")
+	}
+}
+
+func TestWebSchemeHeader(t *testing.T) {
+	resp := &WebSchemeResponse{Headers: map[string]string{"content-type": "text/html", "X-Allow": "yes"}}
+	if got := resp.Header("Content-Type"); got != "text/html" {
+		t.Errorf("Content-Type = %q", got)
+	}
+	if got := resp.Header("x-allow"); got != "yes" {
+		t.Errorf("x-allow = %q", got)
+	}
+	if got := resp.Header("Missing"); got != "" {
+		t.Errorf("Missing = %q", got)
+	}
+	var nilResp *WebSchemeResponse
+	if got := nilResp.Header("Any"); got != "" {
+		t.Errorf("nil response's Any = %q", got)
 	}
 }
 

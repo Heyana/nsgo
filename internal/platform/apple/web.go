@@ -5,7 +5,6 @@ package apple
 import (
 	"log"
 	"maps"
-	"mime"
 	neturl "net/url"
 	"os"
 	"path/filepath"
@@ -132,16 +131,48 @@ func loadWebKit() {
 					task.Send(sel("didFinish"))
 					return
 				}
-				body := handler(raw)
-				// NSURLResponse takes the media type and its charset apart: WebKit shows "text/html; charset=utf-8" as no HTML.
-				mimeType, params, _ := mime.ParseMediaType(driver.WebMIME(GoString(u.Send(sel("path"))), body))
-				encoding := objc.ID(0)
-				if charset := params["charset"]; charset != "" {
-					encoding = NSString(charset)
+				request := &driver.WebSchemeRequest{URL: raw}
+				req := task.Send(sel("request"))
+				request.Method = GoString(req.Send(sel("HTTPMethod")))
+				if fields := req.Send(sel("allHTTPHeaderFields")); fields != 0 {
+					keys := fields.Send(sel("allKeys"))
+					for i := range objc.Send[uint](keys, sel("count")) {
+						k := keys.Send(sel("objectAtIndex:"), i)
+						if request.Headers == nil {
+							request.Headers = map[string]string{}
+						}
+						request.Headers[GoString(k)] = GoString(fields.Send(sel("objectForKey:"), k))
+					}
 				}
-				response := objc.ID(Class("NSURLResponse")).Send(sel("alloc")).Send(
-					sel("initWithURL:MIMEType:expectedContentLength:textEncodingName:"), u,
-					NSString(mimeType), int64(len(body)), encoding)
+				resp := handler(request)
+				// A nil answer is 404, an empty body.
+				status := int64(404)
+				var body []byte
+				if resp != nil {
+					status = int64(resp.Status)
+					if status == 0 {
+						status = 200
+					}
+					body = resp.Body
+				}
+				// A request is answered as HTTP (NSHTTPURLResponse), whose
+				// status and headers the page's fetches see.
+				fields := objc.ID(Class("NSMutableDictionary")).Send(sel("dictionary"))
+				contentType := resp.Header("Content-Type")
+				if contentType == "" {
+					contentType = driver.WebMIME(GoString(u.Send(sel("path"))), body)
+				}
+				fields.Send(sel("setObject:forKey:"), NSString(contentType), NSString("Content-Type"))
+				if resp != nil {
+					for k, v := range resp.Headers {
+						if !strings.EqualFold(k, "Content-Type") {
+							fields.Send(sel("setObject:forKey:"), NSString(v), NSString(k))
+						}
+					}
+				}
+				response := objc.ID(Class("NSHTTPURLResponse")).Send(sel("alloc")).Send(
+					sel("initWithURL:statusCode:HTTPVersion:headerFields:"), u,
+					status, NSString("HTTP/1.1"), fields)
 				task.Send(sel("didReceiveResponse:"), response)
 				response.Send(sel("release"))
 				var ptr unsafe.Pointer

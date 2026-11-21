@@ -20,13 +20,28 @@ func TestServeScheme(t *testing.T) {
 			got = item.Web
 		}
 	}
-	if got == nil || got.SchemeHandlers["app"] == nil || string(got.SchemeHandlers["app"]("app://index.html")) != "ok" {
+	if got == nil || got.SchemeHandlers["app"] == nil || string(got.SchemeHandlers["app"](&driver.WebSchemeRequest{URL: "app://index.html"}).Body) != "ok" {
 		t.Fatalf("scheme handlers %+v", got)
 	}
 	for _, scheme := range []string{"", "http", "1app", "bad scheme", "WS", "wss:", "javascript", "ftp", "applewebdata", "webkit-fake-url", "blob", "about"} {
 		if err := h.tree.root.ServeScheme(scheme, func(string) []byte { return nil }); err == nil {
 			t.Errorf("ServeScheme(%q) accepted", scheme)
 		}
+	}
+}
+
+func TestServeSchemeRefusesNoHandler(t *testing.T) {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node { return View{} })
+	for _, err := range []error{
+		h.tree.root.ServeScheme("app", nil),
+		h.tree.root.ServeSchemeRequest("app", nil),
+	} {
+		if err == nil {
+			t.Error("a scheme without a handler was accepted")
+		}
+	}
+	if servesWebScheme(h.tree.root, "app") {
+		t.Error("a scheme without a handler was registered")
 	}
 }
 
@@ -62,11 +77,11 @@ func TestServeSchemeStaysInItsSubtree(t *testing.T) {
 	if served == nil || sibling == nil {
 		t.Fatalf("web configs %v", configs)
 	}
-	if got := string(served.SchemeHandlers["app"]("app://x")); got != "inner" || served.SchemeHandlers["own"] == nil {
-		t.Errorf("the subtree's schemes: app answers %q, own %v", got, served.SchemeHandlers["own"] != nil)
+	if got := served.SchemeHandlers["app"](&driver.WebSchemeRequest{URL: "app://x"}); string(got.Body) != "inner" || served.SchemeHandlers["own"] == nil {
+		t.Errorf("the subtree's schemes: app answers %q, own %v", got.Body, served.SchemeHandlers["own"] != nil)
 	}
-	if got := string(sibling.SchemeHandlers["app"]("app://x")); got != "outer" || sibling.SchemeHandlers["own"] != nil {
-		t.Errorf("a sibling's schemes: app answers %q, own %v", got, sibling.SchemeHandlers["own"] != nil)
+	if got := sibling.SchemeHandlers["app"](&driver.WebSchemeRequest{URL: "app://x"}); string(got.Body) != "outer" || sibling.SchemeHandlers["own"] != nil {
+		t.Errorf("a sibling's schemes: app answers %q, own %v", got.Body, sibling.SchemeHandlers["own"] != nil)
 	}
 	// A restricted sibling may not load a scheme only another subtree serves.
 	if sibling.Source.Src != "about:blank" || sibling.Navigable("own://index.html") {
@@ -96,5 +111,52 @@ func TestServeSchemeStaysInItsWindow(t *testing.T) {
 	}
 	if schemes := other[0].Web.SchemeHandlers; schemes != nil {
 		t.Errorf("another window's web view serves %v", schemes)
+	}
+}
+
+func TestServeSchemeRequest(t *testing.T) {
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
+		if err := cx.ServeSchemeRequest("app", func(r *WebSchemeRequest) *WebSchemeResponse {
+			if r.Method != "GET" && r.Method != "" {
+				return &WebSchemeResponse{Status: 405, Headers: map[string]string{"Allow": "GET"}}
+			}
+			return &WebSchemeResponse{Status: 201, Headers: map[string]string{"Access-Control-Allow-Origin": "app://page"}, Body: []byte(r.URL + " via " + r.Header("Accept"))}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := cx.ServeScheme("bytes", func(url string) []byte { return []byte(url) }); err != nil {
+			t.Fatal(err)
+		}
+		return WebView{Source: WebSrc("app://index.html"), TestID: "web"}
+	})
+	var got *driver.WebConfig
+	for _, item := range h.commit().Items {
+		if item.Kind == driver.ItemWeb {
+			got = item.Web
+		}
+	}
+	if got == nil {
+		t.Fatal("no web config")
+	}
+	resp := got.SchemeHandlers["app"](&driver.WebSchemeRequest{URL: "app://a", Method: "POST"})
+	if resp == nil || resp.Status != 405 || resp.Header("allow") != "GET" || len(resp.Body) != 0 {
+		t.Errorf("POST answers %+v", resp)
+	}
+	req := &driver.WebSchemeRequest{URL: "app://a", Method: "GET", Headers: map[string]string{"accept": "text/*"}}
+	resp = got.SchemeHandlers["app"](req)
+	if resp == nil || resp.Status != 201 || resp.Header("Access-Control-Allow-Origin") != "app://page" ||
+		string(resp.Body) != "app://a via text/*" {
+		t.Errorf("GET answers %+v", resp)
+	}
+	// ServeScheme's bytes handler answers every request's method 200.
+	resp = got.SchemeHandlers["bytes"](&driver.WebSchemeRequest{URL: "bytes://a", Method: "POST"})
+	if resp == nil || resp.Status != 0 || string(resp.Body) != "bytes://a" {
+		t.Errorf("bytes answers %+v", resp)
+	}
+	if err := h.tree.root.ServeSchemeRequest("http", func(*WebSchemeRequest) *WebSchemeResponse { return nil }); err == nil {
+		t.Error("ServeSchemeRequest(http) accepted")
+	}
+	if err := h.tree.root.ServeSchemeRequest("gone", nil); err == nil {
+		t.Error("ServeSchemeRequest with no handler accepted")
 	}
 }

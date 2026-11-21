@@ -3,10 +3,24 @@ package core
 import (
 	"fmt"
 	"strings"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// ServeScheme registers an app-owned URL scheme for web views created under cx: cx and what it owns, where the nearest scope serving a scheme answers it, and no other subtree or window. A web view serves the schemes registered before its native view is made; the handler runs on the platform's UI thread and returns the response body. The response's content type is inferred from the URL and bytes by the native backend. It refuses the schemes web views handle themselves, such as http, ws or javascript.
+// ServeScheme registers an app-owned URL scheme for web views created under cx: cx and what it owns, where the nearest scope serving a scheme answers it, and no other subtree or window. A web view serves the schemes registered before its native view is made; the handler runs on the platform's UI thread and returns the response body, which every request answers with status 200 whatever its method, as ServeSchemeRequest's handler of WebSchemeResponse{Body: handler(url)}. The response's content type is inferred from the URL and bytes by the native backend. It refuses the schemes web views handle themselves, such as http, ws or javascript.
 func (cx *Scope) ServeScheme(scheme string, handler func(url string) []byte) error {
+	if handler == nil {
+		// ServeSchemeRequest reports the scope, the scheme's name and the
+		// missing handler, in that order.
+		return cx.ServeSchemeRequest(scheme, nil)
+	}
+	return cx.ServeSchemeRequest(scheme, func(r *WebSchemeRequest) *WebSchemeResponse {
+		return &WebSchemeResponse{Body: handler(r.URL)}
+	})
+}
+
+// ServeSchemeRequest registers an app-owned URL scheme for web views created under cx, as ServeScheme does, whose handler sees the request — its URL, its method where the platform reports one and its headers where it gives them — and answers its status, headers and body: status as HTTP's, 405 for a method the scheme refuses among them, with 0 for 200 and a nil response for 404, an empty body. The response's content type is the response's Content-Type header, else what the native backend infers from the URL and body. As WebKit checks them, a scheme's cross-origin fetches also need the response's Access-Control-Allow-Origin header.
+func (cx *Scope) ServeSchemeRequest(scheme string, handler func(*WebSchemeRequest) *WebSchemeResponse) error {
 	if cx == nil || cx.rt == nil {
 		return fmt.Errorf("core: no scope")
 	}
@@ -17,9 +31,9 @@ func (cx *Scope) ServeScheme(scheme string, handler func(url string) []byte) err
 	if handler == nil {
 		return fmt.Errorf("core: web scheme %q has no handler", name)
 	}
-	schemes, _ := cx.values[webSchemesKey{}].(map[string]func(string) []byte)
+	schemes, _ := cx.values[webSchemesKey{}].(map[string]driver.WebSchemeHandler)
 	if schemes == nil {
-		schemes = map[string]func(string) []byte{}
+		schemes = map[string]driver.WebSchemeHandler{}
 		if cx.values == nil {
 			cx.values = map[any]any{}
 		}
@@ -33,14 +47,14 @@ func (cx *Scope) ServeScheme(scheme string, handler func(url string) []byte) err
 type webSchemesKey struct{}
 
 // webSchemesOf returns the schemes the web views of owner o serve, each the nearest scope's, nil for none.
-func webSchemesOf(o *Scope) map[string]func(string) []byte {
-	var out map[string]func(string) []byte
+func webSchemesOf(o *Scope) map[string]driver.WebSchemeHandler {
+	var out map[string]driver.WebSchemeHandler
 	for s := o; s != nil; s = s.parent {
-		schemes, _ := s.values[webSchemesKey{}].(map[string]func(string) []byte)
+		schemes, _ := s.values[webSchemesKey{}].(map[string]driver.WebSchemeHandler)
 		for name, handler := range schemes {
 			if _, nearer := out[name]; !nearer {
 				if out == nil {
-					out = map[string]func(string) []byte{}
+					out = map[string]driver.WebSchemeHandler{}
 				}
 				out[name] = handler
 			}
@@ -52,7 +66,7 @@ func webSchemesOf(o *Scope) map[string]func(string) []byte {
 // servesWebScheme reports whether a scope at or above o serves scheme, written in lower case.
 func servesWebScheme(o *Scope, scheme string) bool {
 	for s := o; s != nil; s = s.parent {
-		if schemes, ok := s.values[webSchemesKey{}].(map[string]func(string) []byte); ok && schemes[scheme] != nil {
+		if schemes, ok := s.values[webSchemesKey{}].(map[string]driver.WebSchemeHandler); ok && schemes[scheme] != nil {
 			return true
 		}
 	}

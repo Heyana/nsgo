@@ -125,6 +125,57 @@ const (
 	WebDownloadFailed
 )
 
+// WebSchemeRequest is a request for a URL of a scheme the app serves (WebConfig.SchemeHandlers).
+type WebSchemeRequest struct {
+	URL string
+	// Method is the request's HTTP method in upper case, such as GET or
+	// OPTIONS. It is empty where the platform reports none.
+	Method string
+	// Headers are the request's, nil where the platform gives none.
+	Headers map[string]string
+}
+
+// Header returns the value of request header name, matched without case.
+func (r *WebSchemeRequest) Header(name string) string {
+	if r == nil {
+		return ""
+	}
+	return webSchemeHeader(r.Headers, name)
+}
+
+// WebSchemeResponse is what a WebSchemeHandler answers: Status as HTTP's (0 is 200), the response's Headers and its Body. The response's Content-Type is Headers's when it names one, else what the platform infers from the request's URL and Body.
+type WebSchemeResponse struct {
+	Status  int
+	Headers map[string]string
+	Body    []byte
+}
+
+// Header returns the value of response header name, matched without case.
+func (r *WebSchemeResponse) Header(name string) string {
+	if r == nil {
+		return ""
+	}
+	return webSchemeHeader(r.Headers, name)
+}
+
+// webSchemeHeader is headers[name], matched without case as HTTP header
+// names compare.
+func webSchemeHeader(headers map[string]string, name string) string {
+	if v, ok := headers[name]; ok {
+		return v
+	}
+	for k, v := range headers {
+		if strings.EqualFold(k, name) {
+			return v
+		}
+	}
+	return ""
+}
+
+// WebSchemeHandler answers a request for a URL of a scheme the app serves: nil
+// is 404, an empty body. It runs on the platform's UI thread.
+type WebSchemeHandler func(*WebSchemeRequest) *WebSchemeResponse
+
 // WebFailure identifies the platform error behind an EventError. Domain is empty for an error the engine produced itself, such as a refused navigation.
 type WebFailure struct {
 	Domain string
@@ -145,9 +196,9 @@ type WebConfig struct {
 	// Incognito keeps website data in memory for this view. Platforms read
 	// this when the native view is first made.
 	Incognito bool
-	// SchemeHandlers are app-owned URL schemes and their response bodies.
+	// SchemeHandlers are app-owned URL schemes and their responders.
 	// Platforms read them when the native view is first made.
-	SchemeHandlers map[string]func(string) []byte
+	SchemeHandlers map[string]WebSchemeHandler
 	NoScroll       bool
 	NoJavaScript   bool
 	// PinchZoom enables the platform web view's pinch magnification where it has a setting for it. Platforms without one keep their native behavior.

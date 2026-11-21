@@ -347,7 +347,7 @@ func TestProvideStoragePartitions(t *testing.T) {
 }
 
 func TestWebConfigNavigable(t *testing.T) {
-	c := driver.WebConfig{Restricted: true, Hosts: "ok.com *.cdn.com", Schemes: "about blob data", SchemeHandlers: map[string]func(string) []byte{"app": nil}}
+	c := driver.WebConfig{Restricted: true, Hosts: "ok.com *.cdn.com", Schemes: "about blob data", SchemeHandlers: map[string]driver.WebSchemeHandler{"app": nil}}
 	for url, want := range map[string]bool{
 		"https://ok.com/a": true, "http://OK.com": true, "https://a.cdn.com/x": true, "https://cdn.com/": false,
 		"https://evil.io": false, "https://ok.com@evil.io/": false, "about:blank": true, "data:text/html,x": true,

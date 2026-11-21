@@ -208,6 +208,7 @@ const (
 	resourceArgsGetRequest  = 3
 	resourceArgsPutResponse = 5
 	requestGetUri           = 3
+	requestGetMethod        = 5 // after put_Uri
 
 	// ICoreWebView2PointerInfo
 	pointerPutPointerKind         = 4

@@ -50,6 +50,7 @@ package windows
 import (
 	"cmp"
 	"maps"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -950,7 +951,7 @@ func (wv *webView) serveHTML() {
 		if !sameDocument(uri, wv.base) {
 			return
 		}
-		wv.respondResource(a, []byte(wv.html), "text/html; charset=utf-8")
+		wv.respondResource(a, &driver.WebSchemeResponse{Body: []byte(wv.html), Headers: map[string]string{"Content-Type": "text/html; charset=utf-8"}}, "")
 	}))
 }
 
@@ -973,6 +974,7 @@ func (wv *webView) serveSchemes() {
 			return
 		}
 		uri := request.getString(requestGetUri)
+		method := request.getString(requestGetMethod)
 		request.release()
 		u, err := url.Parse(uri)
 		if err != nil {
@@ -982,12 +984,22 @@ func (wv *webView) serveSchemes() {
 		if handler == nil {
 			return
 		}
-		body := handler(uri)
-		wv.respondResource(a, body, webMIME(u.Path, body))
+		wv.respondResource(a, handler(&driver.WebSchemeRequest{URL: uri, Method: method}), u.Path)
 	}))
 }
 
-func (wv *webView) respondResource(args *comObject, body []byte, contentType string) {
+// respondResource answers a resource request with response, a nil one as
+// 404, an empty body; its status, headers and body are the page's fetch's.
+func (wv *webView) respondResource(args *comObject, response *driver.WebSchemeResponse, path string) {
+	var body []byte
+	status := int64(404)
+	if response != nil {
+		status = int64(response.Status)
+		if status == 0 {
+			status = 200
+		}
+		body = response.Body
+	}
 	var data unsafe.Pointer
 	if len(body) > 0 {
 		data = unsafe.Pointer(&body[0])
@@ -998,13 +1010,32 @@ func (wv *webView) respondResource(args *comObject, body []byte, contentType str
 	}
 	s := *(**comObject)(unsafe.Pointer(&stream))
 	defer s.release()
-	var response *comObject
-	if failed(wv.env.call(envCreateWebResourceResponse, s.ptr(), 200, uintptr(unsafe.Pointer(wide("OK"))),
-		uintptr(unsafe.Pointer(wide("Content-Type: "+contentType))), uintptr(unsafe.Pointer(&response)))) {
+	text := http.StatusText(int(status))
+	if text == "" {
+		text = "OK"
+	}
+	headers := map[string]string{}
+	if response != nil {
+		maps.Copy(headers, response.Headers)
+	}
+	contentType := response.Header("Content-Type")
+	if contentType == "" {
+		contentType = webMIME(path, body)
+	}
+	// The Content-Type the headers name wins, whatever its case.
+	for name := range headers {
+		if strings.EqualFold(name, "Content-Type") && name != "Content-Type" {
+			delete(headers, name)
+		}
+	}
+	headers["Content-Type"] = contentType
+	var resource *comObject
+	if failed(wv.env.call(envCreateWebResourceResponse, s.ptr(), uintptr(status), uintptr(unsafe.Pointer(wide(text))),
+		uintptr(unsafe.Pointer(wide(webRequestHeaders(headers)))), uintptr(unsafe.Pointer(&resource)))) {
 		return
 	}
-	args.call(resourceArgsPutResponse, response.ptr())
-	response.release()
+	args.call(resourceArgsPutResponse, resource.ptr())
+	resource.release()
 }
 
 func webMIME(path string, body []byte) string {

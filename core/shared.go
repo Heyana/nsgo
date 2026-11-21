@@ -356,6 +356,12 @@ type (
 	// vertical-align places a replaced inline box, against the font of the text
 	// around it.
 	VerticalAlign = driver.VerticalAlign
+	// WebSchemeRequest is a request for a URL of a scheme the app serves (Scope.ServeSchemeRequest).
+	WebSchemeRequest = driver.WebSchemeRequest
+	// WebSchemeResponse is what a scheme handler answers: its status, headers and body.
+	WebSchemeResponse = driver.WebSchemeResponse
+	// WebSchemeHandler answers a request for a URL of a scheme the app serves.
+	WebSchemeHandler = driver.WebSchemeHandler
 	// WebNavigation is a web view's page and history.
 	WebNavigation = driver.WebNavigation
 	// WebSource is what a web view shows: the page at Src, or HTML, whose relative links resolve against BaseURL, instead when it is set. With neither Src nor HTML it loads about:blank and reports the usual load and navigation events, clearing any previous page.

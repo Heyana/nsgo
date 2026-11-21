@@ -95,3 +95,69 @@ parent.postMessage('relay', '*');
 		}
 	}
 }
+
+// TestWebSchemeRequestAnswers verifies a served scheme's requests reach its
+// handler with their method and answer it with the status, headers and body
+// its WebSchemeResponse gives, as a page's fetch sees them: a POST answered
+// 405 without body, a GET answered 201 with a header the page reads back.
+// Run ends a process's app for good, so the test runs in a process of its own.
+func TestWebSchemeRequestAnswers(t *testing.T) {
+	if os.Getenv("NSGO_TEST_WEB_PROCESS") != t.Name() {
+		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
+		cmd.Env = append(os.Environ(), "NSGO_TEST_WEB_PROCESS="+t.Name(), "HOME="+t.TempDir())
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		return
+	}
+	page := `<!doctype html><script>
+async function check() {
+  let report = [];
+  let r = await fetch('nsgotest://main/data', { method: 'POST', body: 'x' });
+  report.push('post:' + r.status + ':' + await r.text());
+  r = await fetch('nsgotest://main/ok.txt');
+  report.push('get:' + r.status + ':' + r.headers.get('X-Served') + ':' + await r.text());
+  r = await fetch('nsgotest://main/missing');
+  report.push('missing:' + r.status);
+  window.nsgo.postMessage(report.join('|'));
+}
+check().catch((e) => window.nsgo.postMessage('error:' + e.message));
+</script>`
+	var mu sync.Mutex
+	var result string
+	app := func(cx *core.Scope) core.Node {
+		err := cx.ServeSchemeRequest("nsgotest", func(r *core.WebSchemeRequest) *core.WebSchemeResponse {
+			if r.Method != "GET" {
+				return &core.WebSchemeResponse{Status: 405, Headers: map[string]string{"Allow": "GET"}}
+			}
+			switch {
+			case strings.HasSuffix(r.URL, "index.html"):
+				return &core.WebSchemeResponse{Body: []byte(page)}
+			case strings.HasSuffix(r.URL, "missing"):
+				return nil
+			default:
+				return &core.WebSchemeResponse{Status: 201, Headers: map[string]string{"X-Served": "yes"}, Body: []byte("bytes")}
+			}
+		})
+		if err != nil {
+			t.Error(err)
+		}
+		return core.WebView{Source: core.WebSrc("nsgotest://main/index.html"),
+			Style: core.Style{Width: core.Pt(200), Height: core.Pt(150)},
+			OnMessage: func(m string) {
+				mu.Lock()
+				result = m
+				mu.Unlock()
+				cx.Quit()
+			},
+		}
+	}
+	watchdog := time.AfterFunc(30*time.Second, func() { panic("the scheme requests did not answer") })
+	defer watchdog.Stop()
+	onMain(func() { Run(app, Options{Title: "Scheme requests", Width: 200, Height: 150}) })
+	mu.Lock()
+	defer mu.Unlock()
+	if want := "post:405:|get:201:yes:bytes|missing:404"; result != want {
+		t.Errorf("the page reported %q, want %q", result, want)
+	}
+}
