@@ -135,6 +135,24 @@ go tool nsgo dev -trace
 
 A line that writes many times, or many bindings run for one write, is where to batch writes (`cx.Batch`) or narrow what a binding reads. `go tool nsgo test -trace` prints the same under each step of a test.
 
+## Runtime profiles
+
+Capture a running app's Go CPU activity, heap, or execution trace with `nsgo dev`. The app sends the capture to the dev server, which saves it on the machine running the command.
+
+```sh
+go tool nsgo dev -target android -profile cpu -profile-duration 10s
+go tool pprof -top .nsgo/profiles/cpu.pprof
+```
+
+The CPU example also works on a desktop, an iPhone, or an iOS simulator. On an iPhone, allow Local Network access if the system prompts for it. The heap is a snapshot and works on the web too. For scheduler and goroutine events, run `go tool nsgo dev -profile trace` and open `.nsgo/profiles/execution.trace` with `go tool trace`. CPU and execution traces default to 10 seconds. `-profile-output` sets the local file's path. A dev run saves its first complete capture, then continues running the app.
+
+```sh
+go tool nsgo dev -target web -profile heap
+go tool pprof -top .nsgo/profiles/heap.pprof
+```
+
+Go's browser runtime supports heap profiles and execution traces. For browser CPU samples, use the browser's Performance tools. Shipping with `nsgo build` leaves the dev capture client out. [Go runtime diagnostics](https://go.dev/doc/diagnostics)
+
 ## Layout
 
 ```sh

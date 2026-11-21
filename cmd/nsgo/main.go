@@ -258,7 +258,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   nsgo init  [-template go|tsx|mixed|module[@version]] [-name N] [-module M] [dir]
-  nsgo dev   [-target native|web|ios|ios_simulator|tvos|tvos_simulator|android] [-hot-reload=false] [-release] [-trace] [-automation] [-fps] [-lang L] [-device D] [-port N] [-open=false] [dir]
+  nsgo dev   [-target native|web|ios|ios_simulator|tvos|tvos_simulator|android] [-hot-reload=false] [-release] [-trace] [-profile cpu|heap|trace] [-automation] [-fps] [-lang L] [-device D] [-port N] [-open=false] [dir]
   nsgo mcp   [dev flags] [dir]
   nsgo build [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [-output DIR] [-open] [-fps] [-run [-device D]] [dir]
   nsgo test  [-run REGEXP] [-bench REGEXP] [-junit FILE] [-trace] [-target macos|windows|linux|web|ios_simulator|tvos_simulator|android [-fps]] [dir | App.tsx < steps] [-- go test flags]

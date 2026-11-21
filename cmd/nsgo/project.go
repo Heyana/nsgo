@@ -93,6 +93,8 @@ type project struct {
 		// each commit: nsgo dev -trace sets it.
 		Client bool `yaml:"-"`
 		Trace  bool `yaml:"-"`
+		// Profile enables a runtime profile capture from the dev server.
+		Profile bool `yaml:"-"`
 		// Highlight has the client outline what each commit changed: nsgo dev -highlight sets it.
 		Highlight bool `yaml:"-"`
 		// Devtools has the client serve DevTools: nsgo dev -devtools sets it.
@@ -558,6 +560,9 @@ func (p *project) ldflags(extra ...string) string {
 	}
 	if p.Dev.Client && p.Dev.Trace {
 		flags += fmt.Sprintf(" -X %s.devTrace=1", devPkg)
+	}
+	if p.Dev.Client && p.Dev.Profile {
+		flags += fmt.Sprintf(" -X %s.devProfile=1", devPkg)
 	}
 	if p.Dev.Client && p.Dev.Highlight {
 		flags += fmt.Sprintf(" -X %s.devHighlight=1", devPkg)

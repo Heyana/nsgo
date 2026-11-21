@@ -53,6 +53,9 @@ var start = sync.OnceFunc(func() {
 	if devTrace == "1" {
 		traceTo(server)
 	}
+	if devProfile == "1" {
+		go receiveRuntimeProfile(server)
+	}
 	if devDevtools == "1" {
 		startDevTools(server)
 	}

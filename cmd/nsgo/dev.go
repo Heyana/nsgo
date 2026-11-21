@@ -44,15 +44,17 @@ type app struct {
 // The rest of the flags have replaced nsgo.yaml's values already, and apply
 // replaces them again after each reload.
 type devOptions struct {
-	apply     func(*project)
-	port      int    // the dev server's, which the web target is served from
-	open      bool   // whether to open the web target in the browser
-	device    string // the iPhone, simulator or Android device to run on
-	team      string // the Apple developer team the iOS target signs with
-	release   bool   // build as nsgo build does, for measuring
-	debug     bool   // run a native desktop app under Delve
+	apply   func(*project)
+	port    int    // the dev server's, which the web target is served from
+	open    bool   // whether to open the web target in the browser
+	device  string // the iPhone, simulator or Android device to run on
+	team    string // the Apple developer team the iOS target signs with
+	release bool   // build as nsgo build does, for measuring
+
+	debug     bool // run a native desktop app under Delve
 	debugger  *devDebugger
 	trace     bool // print the running app's commits
+	profile   devProfileOptions
 	highlight bool // outline what the running app's commits changed
 	devtools  bool // open DevTools for the running app
 	// automation lets tools drive the running app (automation.go); hub relays their requests.
@@ -86,6 +88,10 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 			return err
 		}
 	}
+	profile, err := opts.profile.forProject(p)
+	if err != nil {
+		return err
+	}
 	p.prepareDev(opts)
 	if runtime.GOOS == "darwin" && p.Dev.Target == "native" && !opts.release {
 		if dir, err := os.MkdirTemp("", "nsgo-dev-window-"); err == nil {
@@ -103,6 +109,11 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		srv.dir = opts.preview.projectDir
 	}
 	opts.server = srv
+	if profile.kind != "" {
+		srv.mu.Lock()
+		srv.profile = &devProfile{opts: profile}
+		srv.mu.Unlock()
+	}
 	if opts.automation {
 		hub, err := newAutomationHub(srv, p.Dev.Target)
 		if err != nil {
@@ -296,7 +307,9 @@ func automationTargetError(target, goos string, release bool) error {
 func (p *project) prepareDev(opts devOptions) {
 	p.Release, p.Dev.Client, p.Dev.Trace, p.Dev.Highlight, p.Dev.Devtools, p.Dev.Automation = opts.release, true, opts.trace, opts.highlight, opts.devtools, opts.automation
 	p.Dev.Layout = opts.layout
+
 	p.devDebug = opts.debug
+	p.Dev.Profile = opts.profile.kind != ""
 	p.useDevIcons()
 }
 
@@ -431,6 +444,8 @@ type devServer struct {
 	last    string // the last error event, for apps that connect later
 	files   string
 	bundles map[string]string // the latest TSX bundles, by entry
+	// profile is the active runtime capture, set before the app starts.
+	profile *devProfile
 	// hub relays nsgo dev -automation's requests over the app's DevTools stream, nil without -automation.
 	hub *automationHub
 	// opened are the files open wrote, which close removes.
@@ -463,6 +478,7 @@ func startDevServer(port int) (*devServer, error) {
 	s := &devServer{port: ln.Addr().(*net.TCPAddr).Port, mux: http.NewServeMux(), reloads: make(chan struct{}, 1), token: token,
 		clients: map[chan string]bool{}, pages: map[chan string]bool{}}
 	s.handle("/_nsgo/events", s.events)
+	s.handle("/_nsgo/profile", s.serveProfile)
 	s.serveDevTools()
 	s.handle("/_nsgo/bundle", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()

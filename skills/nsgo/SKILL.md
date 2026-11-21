@@ -116,6 +116,8 @@ Run `go tool nsgo dev -target native -debug` with Delve on `PATH` to attach a de
 
 For Go component previews, put `PreviewXxx(*core.Scope) core.Node` functions in an importable package under `//go:build nsgopreview`. Run `go tool nsgo dev -preview ./components` or add `-target web`. [Component previews](https://nsgo.dev/docs/debugging.md#component-previews)
 
+Use `go tool nsgo dev -profile cpu` or `-profile heap` for a Go profile, and `-profile trace` for a scheduler trace. The host writes them under `.nsgo/profiles` unless `-profile-output` sets a path. On the web, capture the heap or an execution trace. [Runtime profiles](https://nsgo.dev/docs/debugging.md#runtime-profiles)
+
 ## Shipping
 
 `go tool nsgo build` packages every target `nsgo.yaml` lists into `dist/`, installers and store packages into `dist/releases`. Read [references/shipping.md](references/shipping.md) before editing `nsgo.yaml`, icons, signing, updates or embedding.
