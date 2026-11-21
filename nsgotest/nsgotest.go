@@ -145,7 +145,7 @@ func NoCaretMoves() Option {
 	return func(a *App) { a.noCaretMoves = true }
 }
 
-// ManualFrames keeps steps from taking display frames: the animations and style transitions a step starts move, and their OnTransitionEnd runs, only as Advance moves the clock, so a test can look at them on the way.
+// ManualFrames keeps steps and waits from taking display frames so a test can inspect animations and style transitions as it advances the clock.
 func ManualFrames() Option {
 	return func(a *App) { a.manualFrames = true }
 }
@@ -1017,20 +1017,27 @@ func (a *App) WaitForGone(selector string, timeout time.Duration) {
 	a.WaitUntil(timeout, func() bool { return len(a.Query(selector)) == 0 })
 }
 
-// WaitUntil settles until cond holds, checking it after each change,
-// failing the test after timeout of real time.
+// WaitUntil settles until cond holds, failing the test after timeout of
+// real time. Headless it advances one frame between checks unless
+// ManualFrames was set.
 func (a *App) WaitUntil(timeout time.Duration, cond func() bool) {
 	a.t.Helper()
 	deadline := time.Now().Add(timeout)
-	for {
-		a.Settle()
-		if cond() {
-			return
-		}
+	clockApp := a
+	if a.owner != nil {
+		clockApp = a.owner
+	}
+	a.Settle()
+	for !cond() {
 		if time.Now().After(deadline) {
 			a.t.Fatalf("nsgotest: the condition did not hold after %v\n%s", timeout, a.Dump())
 		}
 		time.Sleep(time.Millisecond)
+		if clockApp.target == nil && !clockApp.manualFrames {
+			clockApp.elapse(driver.FrameInterval)
+		} else {
+			a.Settle()
+		}
 	}
 }
 

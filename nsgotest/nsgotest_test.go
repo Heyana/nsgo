@@ -53,6 +53,50 @@ func TestManualFramesKeepsEndingStyleTransitionPending(t *testing.T) {
 	}
 }
 
+func TestWaitForGoneFinishesSheetClosedByPost(t *testing.T) {
+	if onTarget() {
+		t.Skip("checks the headless clock")
+	}
+	reply := make(chan struct{})
+	app := Start(t, func(cx *core.Scope) core.Node {
+		open := core.NewSignal(cx, true)
+		return base.Sheet{
+			Open: open.Get, TestID: "sheet",
+			PopupStyle: core.Style{Width: core.Pt(160), Height: core.Pt(100)},
+			Children: []core.Node{core.View{
+				Role: core.RoleButton, TestID: "close",
+				Style: core.Style{Width: core.Pt(60), Height: core.Pt(40)},
+				OnPress: func(core.PressEvent) {
+					go func() {
+						select {
+						case <-t.Context().Done():
+						case <-reply:
+							cx.Post(func() { open.Set(false) })
+						}
+					}()
+				},
+			}},
+		}
+	})
+	app.Press("id:close")
+	app.Find("id:sheet")
+	close(reply)
+	app.WaitForGone("id:sheet", time.Second)
+}
+
+func TestManualFramesKeepsTheClockStillDuringWaits(t *testing.T) {
+	app := Start(t, func(*core.Scope) core.Node { return core.View{} }, ManualFrames())
+	before := app.Clock.Now()
+	checks := 0
+	app.WaitUntil(time.Second, func() bool {
+		checks++
+		return checks == 2
+	})
+	if after := app.Clock.Now(); after != before {
+		t.Fatalf("WaitUntil advanced the manual clock by %v", after.Sub(before))
+	}
+}
+
 // fading is a dynamic style whose opacity follows on, with a transition of delay and duration.
 func fading(on *core.Signal[bool], delay, duration time.Duration) func() core.Style {
 	return func() core.Style {

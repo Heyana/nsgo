@@ -95,6 +95,8 @@ Headless and on a target, the app runs on `app.Clock`, a `core.ManualClock` that
 
 The app reads this clock with `cx.Now()`, and the date it shows with `cx.WallTime()`, so time what it measures itself, such as a gesture's speed or a double tap's window, with them. `time.Now()` and `time.Sleep` follow the system's clock, which `Advance` does not move: an app timing with `time.Now()` misses the time a test moves, and a `time.Sleep` in a test only makes it slower. Wait for work that arrives from another goroutine, such as a `cx.Post` after a reply, with `app.WaitFor`, `app.WaitForGone` or `app.WaitUntil`, whose timeouts count real time.
 
+Headless, these waits advance the clock a frame at a time between checks. Start with `nsgotest.ManualFrames()` to keep the clock still during a wait. On a target the waits settle the app while the platform runs its own animations.
+
 A screen that depends on the date, such as what is due today, starts with `nsgotest.WallTime(t0)`: the first render's `cx.WallTime()` is `t0`, in its location, and timers keep running on the clock's own time. `nsgotest.Clock(c)` runs the app on a clock of the test's own, so code outside the app shares it; the app's timers fire as `c.Advance` moves it. A measurement on a target, started with `nsgotest.Measure()`, runs the app on the system's clock instead, as described below.
 
 ## Run on a platform

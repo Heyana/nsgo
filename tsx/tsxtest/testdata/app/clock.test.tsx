@@ -34,6 +34,14 @@ test("runFor fires a timer once it is due and not before", async () => {
   expect(app.texts()).toContain("fired at 100");
 });
 
+test("waitFor leaves an explicit clock still", async () => {
+  const app = await open("Clock.tsx", { clock: { time: 0 } });
+  await app.clock.runFor(99);
+  await expect(() => app.waitFor("text:fired at 100", { timeout: 20 })).rejects.toThrow("the condition did not hold");
+  await app.clock.runFor(1);
+  expect(app.texts()).toContain("fired at 100");
+});
+
 test("fastForward fires the timers due meanwhile", async () => {
   const app = await open("Clock.tsx", { clock: { time: 0 } });
   await app.waitFor("id:now");

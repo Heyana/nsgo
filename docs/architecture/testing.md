@@ -48,6 +48,8 @@ Steps (`steps.go`, `pointer.go`) act as a user does and send what a platform sen
 
 Each step then takes frames while an animation that ends, a style transition whose `OnTransitionEnd` is pending, or a list binds the rows it paces ([lists](scrolling.md#lists)), for at most 2 seconds of clock time. Frames the app requests itself do not hold a step, since its own loops may never end; `ManualFrames` keeps steps from taking frames at all, for tests that look at animations on the way. `Advance` moves the clock a frame at a time; `FastForward` jumps it, running each due timer once.
 
+Headless waits check the condition after settling and advance one frame between checks, as TSX's default waits do. The deadline uses real time, so an animation can start on a post from another goroutine any time during the wait. `ManualFrames` keeps the clock still during a wait.
+
 Headless `nsgo test` adds `nsgocheck` to the effective build tags, preserving `GOFLAGS` and explicit `-- -tags` values. In such a build, each graph created with `RootOptions.CheckCommits` (every `nsgotest` app outside `Measure`, and the core's test graphs) records its creating goroutine and rejects access from another, while the graph is idle, with a `Scope.Post` diagnostic ([core](core.md)); an engine passes `engine.Options.CheckCommits` to its root. Target tests include the same diagnostics under `nsgotest`. Native `nsgodev` builds enable them; release builds contain no goroutine lookup or ownership branch; WebAssembly omits this goroutine-ID assertion in development and test builds because browser callbacks may resume on a different managed goroutine; commit-consistency checks still run. On native hosts, test graphs and their cleanup must run on the same goroutine.
 
 ## On a platform

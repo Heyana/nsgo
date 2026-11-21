@@ -604,11 +604,9 @@ func selector(s string) string {
 // app is a JS App over an nsgotest app.
 func (r *runner) app(a *nsgotest.App, tb *appTB, env driver.Environment, net *network, th *testHost, manual bool) *goja.Object {
 	o := r.vm.NewObject()
-	// until settles until cond holds, failing after timeout of real time.
-	// Without open's clock the app's time passes meanwhile, a frame at a
-	// time, as the system's clock that NSH's app runs on then moves.
+	// An explicit clock leaves time under the test's control during waits.
 	until := func(timeout time.Duration, cond func() bool) {
-		if manual || nsgotest.Target() != "" {
+		if !manual {
 			a.WaitUntil(timeout, cond)
 			return
 		}
@@ -621,7 +619,6 @@ func (r *runner) app(a *nsgotest.App, tb *appTB, env driver.Environment, net *ne
 			if time.Now().After(deadline) {
 				tb.Fatalf("nsgotest: the condition did not hold after %v\n%s", timeout, a.Dump())
 			}
-			a.Advance(driver.FrameInterval)
 			time.Sleep(time.Millisecond)
 		}
 	}
