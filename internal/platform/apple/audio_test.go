@@ -421,18 +421,19 @@ func TestALoopingSoundRendersAMinuteContinuously(t *testing.T) {
 		engine := objc.ID(Class("AVAudioEngine")).Send(sel("alloc")).Send(sel("init"))
 		ta.audio.engine = engine
 		format := ta.audio.sounds[1].format
-		voice := newVoice(engine, format)
-		if voice == nil {
-			t.Error("could not attach the test voice")
-			return
-		}
-		ta.audio.voices = append(ta.audio.voices, voice)
+		// Manual rendering goes on before the main mixer exists, so the engine never connects to the output device, which later tests in the process would otherwise share.
 		var nsErr objc.ID
 		if !objc.Send[bool](engine, sel("enableManualRenderingMode:format:maximumFrameCount:error:"), 0, format, uint32(block), unsafe.Pointer(&nsErr)) {
 			t.Error(describeError(nsErr, "could not start offline audio rendering"))
 			return
 		}
+		engine.Send(sel("mainMixerNode"))
 		ta.audio.Handle(1, &driver.AudioRequest{Command: driver.AudioPlay, Volume: 1, Rate: 1, Loop: true})
+		if len(ta.audio.voices) != 1 {
+			t.Error("the looping sound took no voice")
+			return
+		}
+		voice := ta.audio.voices[0]
 		pcm := objc.ID(Class("AVAudioPCMBuffer")).Send(sel("alloc")).Send(sel("initWithPCMFormat:frameCapacity:"), format, uint32(block))
 		defer pcm.Send(sel("release"))
 
