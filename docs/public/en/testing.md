@@ -41,6 +41,8 @@ Use `app.Surfaces()` to list the open windows, panels and tray views in opening 
 
 A surface's `Press`, `Type`, `Key`, `Find` and `Query` act in its own window while steps settle the whole app. `Config` returns its opening options as a `nsgotest.SurfaceConfig`, also recorded in `app.Opened`. `Screenshot` captures that surface on a native target, and `Close` asks its window to close through `OnClosing` and reports whether it closed. A closed handle fails a step and drops out of the list. The same steps work headless and on the macOS, Windows and Linux test hosts. Single-surface targets list their main surface alone.
 
+`app.Menu`, `app.DockMenu` and `app.PopupMenu` expose `nsgotest.MenuItem` snapshots with labels, roles, check state and nested items. Use the corresponding choose step with a path of labels to invoke an item.
+
 `Drag` cancels the press under the pointer once it moves more than 8 points from where it went down. The same rule applies to the web, so a drag that returns to its starting view does not fire `OnPress`.
 
 `app.KeyCommands()` lists the titled keyboard shortcuts that can fire with the current focus and visible views. It reports the key, title and group headless and on a target.

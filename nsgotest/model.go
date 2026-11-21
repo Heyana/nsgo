@@ -386,26 +386,27 @@ func (a *App) setMenu(tree *core.Tree, menu []driver.MenuEntry) {
 // showMenu shows, on macOS, the menu of the surface that sent one last, as its one menu bar and the core (menuHasKey) do: none once that surface restored the platform's or closed. Other desktops show the main window's menu, else the app's own surface's.
 func (a *App) showMenu() {
 	if a.env != nil && a.env.OS == core.OSMacOS && a.menuBar != nil {
-		a.Menu, a.menuTree = a.menus[a.menuBar], a.menuBar
-		return
+		a.menu, a.menuTree = a.menus[a.menuBar], a.menuBar
+	} else {
+		a.menu, a.menuTree = a.menus[a.tree], a.tree
+		if a.menu == nil && a.appTree != nil {
+			a.menu, a.menuTree = a.menus[a.appTree], a.appTree
+		}
+		if a.menu == nil && a.target != nil {
+			a.menu = a.target.ownMenu
+		}
 	}
-	a.Menu, a.menuTree = a.menus[a.tree], a.tree
-	if a.Menu == nil && a.appTree != nil {
-		a.Menu, a.menuTree = a.menus[a.appTree], a.appTree
-	}
-	if a.Menu == nil && a.target != nil {
-		a.Menu = a.target.ownMenu
-	}
+	a.Menu = menuItems(a.menu)
 }
 
 // closed forgets what a surface that closed left in the model: a context menu it showed, its menu, and for the main window its views and keyboard shortcuts, as nothing is left there for steps to reach.
 func (a *App) closed(surface *core.Tree) {
 	delete(a.menus, surface)
 	if a.dockTree == surface && surface != nil {
-		a.DockMenu, a.dockTree = nil, nil
+		a.dockMenu, a.DockMenu, a.dockTree = nil, nil, nil
 	}
 	if a.popupTree == surface {
-		a.PopupMenu, a.popupID, a.popupTree = nil, 0, nil
+		a.clearPopupMenu()
 	}
 	if surface == a.tree {
 		a.views, a.rootID, a.tree, a.main, a.Keymap, a.keyBindings, a.heldKeys, a.heldMouse = map[driver.NodeID]*View{}, 0, a.appTree, nil, nil, nil, false, false
@@ -893,7 +894,8 @@ func (a *App) apply(b *driver.MountBatch) {
 			if a.popupID != 0 {
 				a.postTo(a.popupTree, driver.Event{Kind: driver.EventMenuClosed, Count: a.popupID})
 			}
-			a.PopupMenu, a.PopupAt, a.popupID, a.popupTree = it.Menu, it.Point, it.Count, a.responseTree
+			a.popupMenu, a.PopupMenu = it.Menu, menuItems(it.Menu)
+			a.PopupAt, a.popupID, a.popupTree = it.Point, it.Count, a.responseTree
 		case driver.ItemImageInfo:
 			ev := driver.Event{Kind: driver.EventImageInfo, Count: it.Count}
 			if size, ok := a.ImageSizes[it.Image.Source.URI]; ok {
@@ -930,7 +932,7 @@ func (a *App) apply(b *driver.MountBatch) {
 			a.setMenu(a.responseTree, it.Menu)
 		case driver.ItemDockMenu:
 			// The app has one, whichever surface set it last.
-			a.DockMenu, a.dockTree = it.Menu, a.responseTree
+			a.dockMenu, a.DockMenu, a.dockTree = it.Menu, menuItems(it.Menu), a.responseTree
 		case driver.ItemWindow:
 			a.Window = append(a.Window, *it.Window)
 		case driver.ItemOpenSurface:

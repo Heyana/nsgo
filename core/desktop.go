@@ -171,7 +171,7 @@ func (cx *Scope) SetApplicationMenu(items []MenuItem) {
 	gen := t.menuGen
 	t.menuActions = map[uint32]menuAction{}
 	owner := cx.current()
-	var entries []MenuEntry
+	var entries []driver.MenuEntry
 	if items != nil {
 		entries = t.menuEntries(items, owner, t.menuActions)
 		owner.addCleanup(func() {
@@ -235,7 +235,7 @@ func (t *Tree) menuClosed() {
 type dockMenu struct {
 	tree    *Tree
 	gen     uint32
-	entries []MenuEntry
+	entries []driver.MenuEntry
 	// actions are nil while no menu is set.
 	actions map[uint32]menuAction
 	// pending are the labels of tasks chosen before the app set a menu, as the one a Windows Jump List started the app with; set is whether it has set one.
@@ -354,10 +354,10 @@ func (t *Tree) popupClosed(id uint32, user bool) {
 	}
 }
 
-func (t *Tree) menuEntries(items []MenuItem, owner *Scope, actions map[uint32]menuAction) []MenuEntry {
-	out := make([]MenuEntry, 0, len(items))
+func (t *Tree) menuEntries(items []MenuItem, owner *Scope, actions map[uint32]menuAction) []driver.MenuEntry {
+	out := make([]driver.MenuEntry, 0, len(items))
 	for _, it := range items {
-		e := MenuEntry{Label: it.Label, Shortcut: it.Shortcut, Role: it.Role, Disabled: it.Disabled,
+		e := driver.MenuEntry{Label: it.Label, Shortcut: it.Shortcut, Role: it.Role, Disabled: it.Disabled,
 			Checkable: it.Checkable || it.Checked || it.Radio, Checked: it.Checked, Radio: it.Radio, Separator: it.Separator}
 		if e.Label == "" {
 			e.Label = it.Role.Label()

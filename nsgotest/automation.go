@@ -514,18 +514,18 @@ func (g *agent) menu(p *automation.MenuParams) (any, *automation.Error) {
 		if lost := owner.lost(); lost != "" && !gone {
 			return nil, automation.Errorf(automation.Failed, "the automation stopped following surface %d, which set the Dock menu: %s", ownerID, lost)
 		}
-		if gone || len(owner.app.DockMenu) == 0 {
+		if gone || len(owner.app.dockMenu) == 0 {
 			return nil, automation.Errorf(automation.NoMatch, "the app shows no Dock menu")
 		}
-		item, why = menuItemAt(owner.app.DockMenu, p.Path)
+		item, why = menuItemAt(owner.app.dockMenu, p.Path)
 	} else {
-		item, why = menuItemAt(f.app.Menu, p.Path)
+		item, why = menuItemAt(f.app.menu, p.Path)
 		if item == nil {
 			g.mu.Lock()
 			own := g.surfaces[0]
 			g.mu.Unlock()
 			if own != nil && own != f {
-				if it, w := menuItemAt(own.app.Menu, p.Path); it != nil || len(f.app.Menu) == 0 {
+				if it, w := menuItemAt(own.app.menu, p.Path); it != nil || len(f.app.menu) == 0 {
 					item, why, owner, ownerID = it, w, own, 0
 				}
 			}

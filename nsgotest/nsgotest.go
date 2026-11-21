@@ -391,8 +391,8 @@ type App struct {
 	BackUnhandled int
 	// PopupMenu is the context menu the app shows with PopupMenu, at
 	// PopupAt; nil once it closed.
-	PopupMenu []driver.MenuEntry
-	PopupAt   driver.Point
+	PopupMenu []MenuItem
+	PopupAt   core.Point
 	popupID   uint32
 	// AccessibilityFocus is the view the app last moved the screen
 	// reader's focus to.
@@ -406,8 +406,8 @@ type App struct {
 	Language       string
 	LanguageForced bool
 	// Menu is the application menu the app set: on macOS the one the main window or the app's own surface sent last, none once that surface closed, and on other desktops the main window's or else the app's own surface's; DockMenu the app icon's menu, the one any surface set last; Window the window commands it sent, oldest first.
-	Menu     []driver.MenuEntry
-	DockMenu []driver.MenuEntry
+	Menu     []MenuItem
+	DockMenu []MenuItem
 	Window   []driver.WindowCommand
 	// Opened are the surfaces the app opened, oldest first, as it opened them: with a desktop environment its windows, panels and tray views, a window's transparency, shadow and taskbar button among what it asked for, and on Android its overlays.
 	Opened []SurfaceConfig
@@ -446,7 +446,11 @@ type App struct {
 	responseTree *core.Tree
 	guideTree    *core.Tree
 	// menus are the application menus the surfaces set, by tree, nil under a target; menuBar is the surface that sent one last, menuTree the one Menu came from, dockTree the one that set DockMenu and popupTree the one that shows PopupMenu, where choosing their items goes.
-	menus     map[*core.Tree][]driver.MenuEntry
+	menus map[*core.Tree][]driver.MenuEntry
+	// Menu entries keep the handler IDs used by steps and automation.
+	menu      []driver.MenuEntry
+	dockMenu  []driver.MenuEntry
+	popupMenu []driver.MenuEntry
 	menuBar   *core.Tree
 	menuTree  *core.Tree
 	dockTree  *core.Tree

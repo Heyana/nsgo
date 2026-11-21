@@ -936,7 +936,7 @@ func pick(p driver.PickRequest) map[string]any {
 
 // menuEntries are a context menu's actions, a submenu's after its label
 // ("Share > Mail"), disabled with a disabled submenu around them.
-func menuEntries(items []driver.MenuEntry, prefix string, disabled bool, out []map[string]any) []map[string]any {
+func menuEntries(items []nsgotest.MenuItem, prefix string, disabled bool, out []map[string]any) []map[string]any {
 	for _, e := range items {
 		if e.Separator {
 			continue

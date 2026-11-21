@@ -134,7 +134,7 @@ func TestApplicationMenuFollowsItsOwner(t *testing.T) {
 			return View{}
 		}}
 	})
-	var menu []MenuEntry
+	var menu []driver.MenuEntry
 	for _, it := range h.commit().Items {
 		if it.Kind == driver.ItemMenu {
 			menu = it.Menu
@@ -185,7 +185,7 @@ func TestDockMenuFollowsItsOwner(t *testing.T) {
 			return View{}
 		}}
 	})
-	var menu []MenuEntry
+	var menu []driver.MenuEntry
 	for _, it := range h.commit().Items {
 		if it.Kind == driver.ItemDockMenu {
 			menu = it.Menu
@@ -207,8 +207,8 @@ func TestDockMenuFollowsItsOwner(t *testing.T) {
 }
 
 // dockMenus are the app icon menus a batch sends, in order.
-func dockMenus(b *driver.MountBatch) [][]MenuEntry {
-	var menus [][]MenuEntry
+func dockMenus(b *driver.MountBatch) [][]driver.MenuEntry {
+	var menus [][]driver.MenuEntry
 	for _, it := range b.Items {
 		if it.Kind == driver.ItemDockMenu {
 			menus = append(menus, it.Menu)
@@ -346,7 +346,7 @@ func TestApplicationMenuSetAgainKeepsTheBar(t *testing.T) {
 	})
 	h.commit()
 	checked.Set(false)
-	var menus [][]MenuEntry
+	var menus [][]driver.MenuEntry
 	for _, it := range h.commit().Items {
 		if it.Kind == driver.ItemMenu {
 			menus = append(menus, it.Menu)
@@ -371,7 +371,7 @@ func TestApplicationMenuStandardRolesAndRadios(t *testing.T) {
 		})
 		return View{}
 	})
-	var menu []MenuEntry
+	var menu []driver.MenuEntry
 	for _, it := range h.commit().Items {
 		if it.Kind == driver.ItemMenu {
 			menu = it.Menu
@@ -436,7 +436,7 @@ func TestMenuWhenLeavesInputsTheirKeys(t *testing.T) {
 		}}})
 		return View{}
 	})
-	var menu []MenuEntry
+	var menu []driver.MenuEntry
 	for _, it := range h.commit().Items {
 		if it.Kind == driver.ItemMenu {
 			menu = it.Menu

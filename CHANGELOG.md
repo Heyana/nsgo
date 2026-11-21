@@ -63,6 +63,7 @@
 - Include open native popups in macOS `nsgotest` captures, clipped to the test window and excluding other windows (#396 by @J4ck1e2000).
 - Stop a `tsx.View` that renders an `Export` from also running what the package's entry module mounts, with its effects, handlers, timers and animation frames (#923 by @houko).
 - Search a `ui/chat` transcript from Mod+F in a find bar that unfolds folded turns and reasoning, marks the matches in `ui.TextView` and reasoning, reveals each match clear of the bar and the composer and gives the focus back as it closes, with `core.FocusedRef` to read the focused view (#47 by @houko).
+- Record application, Dock and context menus as `nsgotest.MenuItem` snapshots (#181 by @houko).
 - Let `nsgotest` find and drive an app's other windows through `App.Surface` (#1085 by @houko).
 - Record surface opening options and status bar settings with `nsgotest` types (#181 by @houko).
 - Add `desktop.QuickLook` and `desktop.CanQuickLook` to preview files in macOS's Quick Look panel (#370 by @houko).

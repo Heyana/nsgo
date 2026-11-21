@@ -156,7 +156,7 @@ func (a *App) gesture(v *View, kind driver.EventKind, n int, step func(*driver.E
 // ChooseMenu chooses the application menu item at path, its labels from the menu bar down, such as "File", "New": of Menu, which on macOS is the one the main window or the app's function sent last, and on other desktops the main window's or else the one the app's function set. Headless, as the desktop platforms do, an editing role goes to the focused field first, its OnSelect running when no field takes it, and an item without OnSelect carries out its standard role: Close, Quit, Minimize, Zoom, Toggle Full Screen and the editing roles; a role the model does not carry out fails the step. Under nsgo test -target an item without OnSelect skips the test.
 func (a *App) ChooseMenu(path ...string) {
 	a.t.Helper()
-	items := a.Menu
+	items := a.menu
 	for i, label := range path {
 		var found *driver.MenuEntry
 		for k := range items {
@@ -194,7 +194,7 @@ func (a *App) ChooseMenu(path ...string) {
 // ChooseDockMenu chooses the item at path in the app icon's menu (desktop.SetDockMenu), its labels from the menu down, as the Dock menu on macOS and a Jump List task on Windows do.
 func (a *App) ChooseDockMenu(path ...string) {
 	a.t.Helper()
-	items := a.DockMenu
+	items := a.dockMenu
 	for i, label := range path {
 		var found *driver.MenuEntry
 		for k := range items {
@@ -245,10 +245,10 @@ func (a *App) OpenLinks(links ...string) {
 // with PopupMenu, its labels from the menu down, which closes the menu.
 func (a *App) ChoosePopup(path ...string) {
 	a.t.Helper()
-	if a.PopupMenu == nil {
+	if a.popupMenu == nil {
 		a.t.Fatalf("nsgotest: no context menu shows")
 	}
-	items := a.PopupMenu
+	items := a.popupMenu
 	for i, label := range path {
 		var found *driver.MenuEntry
 		for k := range items {
@@ -266,7 +266,7 @@ func (a *App) ChoosePopup(path ...string) {
 			if a.target != nil {
 				a.step("choosePopup(%q)", path)
 				a.target.menu(func(s testhost.Surface) error { return s.ChoosePopup(found.ID) })
-				a.PopupMenu, a.popupID = nil, 0
+				a.clearPopupMenu()
 				a.done()
 				return
 			}
@@ -287,13 +287,13 @@ func (a *App) ClosePopup() {
 	if a.target != nil {
 		a.step("closePopup()")
 		a.target.menu(func(s testhost.Surface) error { return s.ChoosePopup(0) })
-		a.PopupMenu, a.popupID = nil, 0
+		a.clearPopupMenu()
 		a.done()
 		return
 	}
 	if a.popupID != 0 {
 		a.postTo(a.popupTree, driver.Event{Kind: driver.EventMenuClosed, Count: a.popupID})
-		a.PopupMenu, a.popupID, a.popupTree = nil, 0, nil
+		a.clearPopupMenu()
 	}
 	a.Settle()
 }
