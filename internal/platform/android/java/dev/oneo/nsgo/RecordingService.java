@@ -170,6 +170,11 @@ public final class RecordingService extends Service {
         }
     }
 
+    /** An active recording keeps its owner running when its activity goes away. */
+    static synchronized boolean active(NsgoEngine owner) {
+        return current != null && current.owner == owner;
+    }
+
     /** Stops owner's recording id; nothing if it ended already. */
     static void stop(NsgoEngine owner, long id) {
         Recorder r;
@@ -634,14 +639,10 @@ public final class RecordingService extends Service {
             if (rate > 0) {
                 end.put("path", path).put("rate", rate).put("channels", channels).put("frames", frames);
             }
-            if (gone) {
-                // Nothing reports what nobody recorded.
-                if (rate > 0) orphan(this, path, json(end));
-                sender.finish(null);
-            } else {
-                sender.finish(json(end));
-            }
+            // Nothing reports what nobody recorded.
+            if (gone && rate > 0) orphan(this, path, json(end));
             released(this);
+            sender.finish(gone ? null : json(end));
         }
     }
 
@@ -683,6 +684,14 @@ public final class RecordingService extends Service {
 
         @Override
         public void run() {
+            try {
+                sendReports();
+            } finally {
+                owner.recordingEnded();
+            }
+        }
+
+        private void sendReports() {
             while (true) {
                 byte[] next;
                 synchronized (this) {

@@ -194,7 +194,7 @@ public class NsgoActivity extends Activity {
         view.permissionResult(request, permissions, results);
     }
 
-    /** Ends the app with the activity, unless its overlays over other apps or its background location streams keep it running, off screen, for the next activity. */
+    /** Ends the app with the activity unless an overlay, a background location stream or a recording keeps it running for the next activity. */
     @Override
     protected void onDestroy() {
         if (view.keepOffScreen()) {

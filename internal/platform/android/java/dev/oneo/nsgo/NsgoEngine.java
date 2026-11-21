@@ -33,6 +33,9 @@ public final class NsgoEngine {
         void onProcessEnded(IOException error);
 
         void onLog(String line);
+
+        /** A recording's sender has sent its reports. */
+        default void onRecordingEnded() {}
     }
 
     private final Context application;
@@ -107,6 +110,15 @@ public final class NsgoEngine {
     /** Where the app's recordings go: under its data directory, the host's storage root. */
     synchronized File recordings() {
         return data == null ? null : new File(data, "recordings");
+    }
+
+    /** Tells the view to check whether the ended recording was its last keeper. */
+    void recordingEnded() {
+        Listener current;
+        synchronized (this) {
+            current = listener;
+        }
+        if (current != null) current.onRecordingEnded();
     }
 
     /** Says whether the engine has neither started a process nor been destroyed. */

@@ -189,7 +189,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private Gamepads gamepads;
     private boolean ownsEngine;
     private boolean attached;
-    /** Whether the app's process runs on, off screen, for its overlays over other apps or its background location streams alone, its activity ended (keepOffScreen); and whether the app quit, which keeps nothing. */
+    /** Whether a service or overlay keeps the app running off screen after its activity ends, and whether the app quit, which keeps nothing. */
     private boolean keptOffScreen, quit;
     // The engine's flags the app starts with (--nsgo-fps).
     private final ArrayList<String> flags = new ArrayList<>();
@@ -724,7 +724,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     /**
-     * Keeps the app's process running off screen as the activity showing this view ends while the app's overlays over other apps show or a background location stream runs (keeps), on a view that owns its engine and an app that did not quit: the view detaches, as from a host's engine, an activity that shows the app again takes it back (showAgain) and the process ends with the last of them (keeperEnded). Whether it kept the process; the activity stops the view otherwise.
+     * Keeps a standalone engine running after its activity ends while an overlay, background location stream or recording is active. The view detaches until the next activity takes it back or the last keeper ends.
      */
     boolean keepOffScreen() {
         if (!ownsEngine || quit || engine == null || !engine.isAlive() || !keeps()) return false;
@@ -733,9 +733,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         return true;
     }
 
-    /** Whether something keeps the app's process running without an activity: an overlay over other apps, or a background location stream in its foreground service. */
+    /** Whether an overlay or a foreground service keeps the app's process running without an activity. */
     private boolean keeps() {
-        return (overlays != null && overlays.any()) || (sensors != null && sensors.hasBackground());
+        return (overlays != null && overlays.any()) || (sensors != null && sensors.hasBackground())
+                || RecordingService.active(engine);
     }
 
     /** Whether keepOffScreen kept the app's process, which still runs. */
@@ -761,9 +762,14 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         applyOrientation();
     }
 
-    /** The last overlay over other apps closed or the last background location stream stopped: a view kept only for them ends the app's process, as its activity did, once nothing else keeps it. */
+    /** Ends the app's process once its activity is gone and nothing keeps it running. */
     void keeperEnded() {
         if (keptOffScreen && !keeps()) stop();
+    }
+
+    @Override
+    public void onRecordingEnded() {
+        ui.post(this::keeperEnded);
     }
 
     /**
