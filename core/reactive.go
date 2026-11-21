@@ -26,8 +26,7 @@ import (
 // scopes and the views of its elements. Components receive one as cx.
 //
 // Go has no goroutine-local state, so cx is how code finds its graph.
-// While the graph runs code, what it creates belongs to the innermost
-// running owner, whichever cx the code captured.
+// While the graph runs code, reactive primitives (Effect, Memo, Cleanup, AfterFunc, Context, Child, Key.Provide and event registrations) belong to the innermost running owner, whichever cx the code captured, so closures inside an Effect clean up when the Effect runs again; use Scope.Run to switch the running owner when calling those from another handler. Explicit-lifetime resources and surfaces (OpenWindow, OpenPanel, NewTray, OpenOverlay, NewAudioPlayer, LoadSound, NewHolder and Post) instead belong to cx itself, so passing a longer-lived scope such as the app's from an OnPress handler keeps them alive after the button's scope goes.
 type Scope struct {
 	rt       *runtime
 	parent   *Scope

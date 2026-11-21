@@ -56,10 +56,10 @@ const (
 	PlayerFailed = core.AudioPlayerFailed
 )
 
-// LoadSound has the platform read and decode src into memory once, and calls done with the sound or why not, an Error. A source this engine already holds, the same URI or bytes of the same digest, shares the decoded sound, which goes with the last Sound over it.
+// LoadSound has the platform read and decode src into memory once, and calls done with the sound or why not, an Error. A source this engine already holds, the same URI or bytes of the same digest, shares the decoded sound, which goes with the last Sound over it. The sound belongs to cx itself rather than the running owner, so loading with the app's scope from a handler keeps it until cx goes or Close is called.
 func LoadSound(cx *core.Scope, src Source, done func(*Sound, error)) { cx.LoadSound(src, done) }
 
-// NewPlayer makes a player of src, which loads nothing until Play or Preload, so making one is free. Play calls back once the platform plays, or with the error.
+// NewPlayer makes a player of src, which loads nothing until Play or Preload, so making one is free. Play calls back once the platform plays, or with the error. The player belongs to cx itself rather than the running owner, so creating one with the app's scope from a button or row handler keeps it playing after that handler's scope goes, closing only when cx goes or Close is called.
 func NewPlayer(cx *core.Scope, src Source, opts PlayerOptions) *Player {
 	return cx.NewAudioPlayer(src, opts)
 }

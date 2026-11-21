@@ -108,10 +108,10 @@ func (cx *Scope) overlays() bool {
 	return cx.Env().hostUntracked() == OSAndroid && !cx.denied(serviceOverlay, "")
 }
 
-// OpenOverlay is the core's part of mobile.OpenOverlay, which apps use: it opens an overlay over other apps showing content, a tree of its own that belongs to cx and closes as cx goes. The app has one overlay at a time: it returns nil while another is open, off Android and where Access does not grant AccessOverlay. Without the permission the platform ends it at once (OverlayEndDenied).
+// OpenOverlay is the core's part of mobile.OpenOverlay, which apps use: it opens an overlay over other apps showing content, a tree of its own that belongs to cx and closes as cx goes. The app has one overlay at a time: it returns nil while another is open, once cx is disposed, off Android and where Access does not grant AccessOverlay. Without the permission the platform ends it at once (OverlayEndDenied).
 func (cx *Scope) OpenOverlay(opts OverlayOptions, content func(cx *Scope) Node) *Window {
 	rt := cx.rt
-	if !cx.overlays() || rt.overlay != nil && !rt.overlay.closed {
+	if !cx.overlays() || cx.disposed || rt.overlay != nil && !rt.overlay.closed {
 		return nil
 	}
 	if opts.Width <= 0 || opts.Height <= 0 {

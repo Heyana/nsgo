@@ -216,12 +216,22 @@ var services = map[service]serviceRule{
 	serviceDiscovery:          {permission: AccessServiceDiscovery},
 }
 
-// gate is the refusal of a service of kind for resource by the current owner's Access, as services holds it; a kind services lacks is refused.
+// gate is the refusal of a service of kind for resource by the running owner's Access (and cx's own when they differ), as services holds it; a kind services lacks is refused.
 func (cx *Scope) gate(kind service, resource string) error {
 	if !cx.rt.restricted {
 		return nil
 	}
 	o := cx.current()
+	if err := gateScope(o, kind, resource); err != nil {
+		return err
+	}
+	if o != cx {
+		return gateScope(cx, kind, resource)
+	}
+	return nil
+}
+
+func gateScope(o *Scope, kind service, resource string) error {
 	a := accessOf(o)
 	if a == nil {
 		return nil

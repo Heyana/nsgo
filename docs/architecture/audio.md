@@ -4,7 +4,7 @@ NSGo ports NSH 0.5.0's audio design (`nsh/docs/dev/audio-design.md`) for issue #
 
 ## The API
 
-The API's home is the `audio` package, which imports `core` alone, as `mobile` does: `core` implements its engine part and names `audio` in that part's comments. Its functions take the `*core.Scope` asking, so a sound or a player belongs to that scope's engine and owner, as NSH's belong to their engine and JS owner.
+The API's home is the `audio` package, which imports `core` alone, as `mobile` does: `core` implements its engine part and names `audio` in that part's comments. Its functions take the `*core.Scope` asking, so a sound or a player belongs to that scope's engine and directly to the `cx` passed (rather than the running owner, matching `OpenWindow` and `NewHolder`), so starting playback with the app's or a page's scope from a button or list-row handler keeps it alive after that handler's scope goes.
 
 ```go
 // A short sound: decoded once, played any number of times, overlapping.

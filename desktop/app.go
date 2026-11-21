@@ -47,7 +47,7 @@ func OpenWindow(cx *core.Scope, opts WindowOptions, content func(cx *core.Scope)
 	return cx.OpenWindow(opts, content)
 }
 
-// OpenPanel opens a hidden panel showing content: a borderless window above the others, which takes the keyboard without activating the app, for Window.Toggle, a global shortcut or a tray icon to show, as a launcher or a tray icon's panel does. With PanelOptions.NoActivate it never takes the keyboard, for Window.ShowAt to place beside another app's text caret, as an input method's candidate window does:
+// OpenPanel opens a hidden panel showing content: a borderless window above the others, which takes the keyboard without activating the app, for Window.Toggle, a global shortcut or a tray icon to show, as a launcher or a tray icon's panel does. Like OpenWindow, the panel belongs to cx itself rather than the running owner. With PanelOptions.NoActivate it never takes the keyboard, for Window.ShowAt to place beside another app's text caret, as an input method's candidate window does:
 //
 //	candidates := desktop.OpenPanel(cx, desktop.PanelOptions{Width: 320, Height: 40, NoActivate: true}, Candidates)
 //	candidates.ShowAt(caret, core.PlaceBottom)

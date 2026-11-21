@@ -557,3 +557,86 @@ func TestPlayerGoesWithItsOwner(t *testing.T) {
 		t.Fatal("state names")
 	}
 }
+
+func TestExplicitScopeOwnsAudioPlayerAndSound(t *testing.T) {
+	var appScope *Scope
+	var shown *Signal[bool]
+	var player *AudioPlayer
+	var sound *Sound
+	h := newAudioHost(t, func(app *Scope) Node {
+		appScope = app
+		shown = NewSignal(app, true)
+		return Show{When: shown.Get, Then: func(*Scope) Node {
+			return View{
+				TestID: "play",
+				Style:  Style{Width: Pt(40), Height: Pt(20)},
+				OnPress: func(PressEvent) {
+					player = app.NewAudioPlayer(AudioSource{URI: "asset:song.mp3"}, AudioPlayerOptions{})
+					player.Play(nil)
+					app.LoadSound(AudioSource{URI: "asset:click.wav"}, func(s *Sound, err error) {
+						if err == nil {
+							sound = s
+						}
+					})
+				},
+			}
+		}}
+	})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPress, ID: h.find("play").id})
+	items := audioItems(h.commit())
+	if player == nil || len(items) < 2 {
+		t.Fatalf("player=%v items=%v", player, audioCommands(&driver.MountBatch{Items: items}))
+	}
+	var playerID, soundID uint32
+	for _, it := range items {
+		switch it.Audio.Command {
+		case driver.AudioOpen:
+			playerID = it.Count
+		case driver.AudioLoad:
+			soundID = it.Count
+		}
+	}
+	reportAudio(h, soundID, driver.AudioEvent{Phase: driver.AudioLoaded, Duration: 100 * time.Millisecond, Bytes: 1024})
+	if sound == nil {
+		t.Fatal("sound did not load")
+	}
+
+	// Disposing the button's Show branch leaves app-owned player and sound alive.
+	shown.Set(false)
+	if cmds := audioCommands(h.commit()); len(cmds) != 0 {
+		t.Fatalf("button branch disposal closed app-owned audio: %v", cmds)
+	}
+	if player.closed || sound.closed {
+		t.Fatalf("player.closed=%v sound.closed=%v after branch disposal", player.closed, sound.closed)
+	}
+
+	// Access restrictions still apply from both the running owner and the explicit scope.
+	restricted := appScope.Child()
+	restricted.ProvideAccess(audioAccess{})
+	var deniedFromRunning, deniedFromTarget error
+	restricted.Run(func() {
+		p := appScope.NewAudioPlayer(AudioSource{URI: "asset:a.mp3"}, AudioPlayerOptions{})
+		p.Play(func(err error) { deniedFromRunning = err })
+	})
+	appScope.Run(func() {
+		p := restricted.NewAudioPlayer(AudioSource{URI: "asset:a.mp3"}, AudioPlayerOptions{})
+		p.Play(func(err error) { deniedFromTarget = err })
+	})
+	h.drain()
+	if !errors.Is(deniedFromRunning, AudioNotAllowed) || !errors.Is(deniedFromTarget, AudioNotAllowed) {
+		t.Fatalf("access checks: running=%v target=%v", deniedFromRunning, deniedFromTarget)
+	}
+
+	// Disposing app closes both the player and the sound.
+	appScope.Dispose()
+	cmds := audioCommands(h.commit())
+	if !slices.Contains(cmds, fmt.Sprint(playerID, " close")) || !slices.Contains(cmds, fmt.Sprint(soundID, " unload")) {
+		t.Fatalf("app disposal commands = %v, want close %d and unload %d", cmds, playerID, soundID)
+	}
+
+	// LoadSound on a disposed scope emits nothing.
+	appScope.LoadSound(AudioSource{URI: "asset:dead.wav"}, nil)
+	if cmds := audioCommands(h.commit()); len(cmds) != 0 {
+		t.Fatalf("LoadSound on disposed scope emitted %v", cmds)
+	}
+}

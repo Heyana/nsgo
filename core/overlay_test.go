@@ -193,6 +193,49 @@ func TestOverlayLifecycle(t *testing.T) {
 	}
 }
 
+func TestExplicitScopeOwnsOverlay(t *testing.T) {
+	var appScope *Scope
+	var shown *Signal[bool]
+	var overlay *Window
+	w := newOverlays(t, OSAndroid, func(app *Scope) Node {
+		appScope = app
+		shown = NewSignal(app, true)
+		return Show{When: shown.Get, Then: func(branch *Scope) Node {
+			return View{
+				TestID: "open",
+				Style:  Style{Width: Pt(40), Height: Pt(20)},
+				OnPress: func(PressEvent) {
+					overlay = app.OpenOverlay(OverlayOptions{}, func(*Scope) Node { return Text{Content: "floating"} })
+				},
+			}
+		}}
+	})
+	var btn NodeID
+	for _, n := range w.app.nodes {
+		if n != nil && n.props.TestID == "open" {
+			btn = n.id
+			break
+		}
+	}
+	w.dispatch(0, driver.Event{Kind: driver.EventPress, ID: btn})
+	if overlay == nil || overlay.Closed() {
+		t.Fatal("overlay did not open")
+	}
+	shown.Set(false)
+	w.commit()
+	if overlay.Closed() {
+		t.Fatal("overlay opened with app scope closed when button branch disposed")
+	}
+	appScope.Dispose()
+	w.commit()
+	if !overlay.Closed() {
+		t.Fatal("overlay survived app scope disposal")
+	}
+	if appScope.OpenOverlay(OverlayOptions{}, nil) != nil {
+		t.Fatal("OpenOverlay on a disposed scope returned a handle")
+	}
+}
+
 // TestScenesShowTheMainView opens the scenes a platform connects beyond the app's first, as iPadOS does for each window the user opens: each is a tree of its own showing the main view, the scenes share the app's signals, and the platform ends one as the system discards it.
 func TestScenesShowTheMainView(t *testing.T) {
 	var shared *Signal[string]

@@ -130,13 +130,7 @@ func (c *WindowClosing) Cancel() { c.canceled = true }
 // Canceled reports whether a handler canceled the close: what a test of a handler reads.
 func (c *WindowClosing) Canceled() bool { return c != nil && c.canceled }
 
-// OpenWindow is the core's part of desktop.OpenWindow, which apps use: it
-// opens a window showing content, which belongs to cx and closes when cx
-// goes. The scope a batch owns while it builds content is not cx: a window
-// belongs to the scope the app opened it on, so rebuilding a panel or a
-// page does not close a window opened from that code, and an app closing
-// its window scope still closes its windows. It returns nil where the
-// platform opens no windows.
+// OpenWindow is the core's part of desktop.OpenWindow, which apps use: it opens a window showing content, which belongs to cx and closes when cx goes. The scope a batch owns while it builds content is not cx: a window belongs to the scope the app opened it on, so rebuilding a panel or a page does not close a window opened from that code, and an app closing its window scope still closes its windows. It returns nil where the platform opens no windows or once cx is disposed.
 func (cx *Scope) OpenWindow(opts WindowOptions, content func(cx *Scope) Node) *Window {
 	return cx.openWindow(opts, content, false)
 }
@@ -144,7 +138,7 @@ func (cx *Scope) OpenWindow(opts WindowOptions, content func(cx *Scope) Node) *W
 // openWindow is OpenWindow, opening the main window when main is set.
 func (cx *Scope) openWindow(opts WindowOptions, content func(cx *Scope) Node, main bool) *Window {
 	rt := cx.rt
-	if rt.windows == nil {
+	if rt.windows == nil || cx.disposed {
 		return nil
 	}
 	if opts.Key != "" {
@@ -183,10 +177,10 @@ func (cx *Scope) openWindow(opts WindowOptions, content func(cx *Scope) Node, ma
 
 // OpenPanel is the core's part of desktop.OpenPanel, which apps use: it
 // opens a hidden panel showing content, for Show, Toggle or a tray icon
-// to show. It belongs to cx, as OpenWindow does. It returns nil where the platform opens no windows.
+// to show. It belongs to cx, as OpenWindow does. It returns nil where the platform opens no windows or once cx is disposed.
 func (cx *Scope) OpenPanel(opts PanelOptions, content func(cx *Scope) Node) *Window {
 	rt := cx.rt
-	if rt.windows == nil {
+	if rt.windows == nil || cx.disposed {
 		return nil
 	}
 	if opts.Width <= 0 || opts.Height <= 0 {
@@ -618,10 +612,10 @@ type Tray struct {
 	removed bool
 }
 
-// NewTray is the core's part of desktop.NewTray, which apps use: it adds a tray icon, the macOS menu bar's or the Windows notification area's, which cx keeps.
+// NewTray is the core's part of desktop.NewTray, which apps use: it adds a tray icon, the macOS menu bar's or the Windows notification area's, which cx keeps. It returns nil once cx is disposed.
 func (cx *Scope) NewTray(opts TrayOptions) *Tray {
 	rt := cx.rt
-	if rt.windows == nil && !rt.tray {
+	if (rt.windows == nil && !rt.tray) || cx.disposed {
 		return nil
 	}
 	owner := cx

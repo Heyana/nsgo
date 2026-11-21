@@ -39,6 +39,7 @@
 - Advance the clock during headless Go test waits so animations started by asynchronous replies can finish (#1642 by @houko).
 - Run native desktop apps under Delve with `nsgo dev -debug`, reusing the debugger address across Go rebuilds (#662 by @houko).
 - Run the shared JavaScript API and TSX runtime suites in Chromium CI with browser DevTools reporting TSX source lines (#185 by @houko).
+- Bind `desktop.OpenWindow`, `desktop.OpenPanel`, `desktop.NewTray`, `mobile.OpenOverlay`, `audio.NewPlayer`, `audio.LoadSound` and `nsgo.SetMainView` to the explicit `*core.Scope` passed rather than the running handler's owner, so opening a window or audio player with the app's scope from a button or menu handler no longer closes it when that button's scope disposes (#1259 by @henry-wm).
 - Add `nsgo build -channel steam` for desktop depots with development-only `steam_appid.txt` support (#1227 by @houko).
 - Build one universal Mac App Store package or dual-ABI Android App Bundle when both platform architectures are selected (#1231 by @houko).
 - Record window and share requests as `nsgotest.WindowRequest` and `nsgotest.Share`, with window action constants in `nsgotest` (#181 by @houko).

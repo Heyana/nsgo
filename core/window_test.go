@@ -1071,3 +1071,79 @@ func TestWindowLookCapabilities(t *testing.T) {
 		t.Fatalf("transparent = %v, taskbar = %v", transparent, taskbar)
 	}
 }
+
+// Passing a longer-lived scope such as the app's to OpenWindow, OpenPanel, NewTray or SetMainView from inside a button handler attaches the opened resource to that explicit scope rather than the button's running owner, so disposing the button's branch does not close it.
+func TestExplicitScopeOwnsOpenedWindowPanelAndTray(t *testing.T) {
+	var appScope *Scope
+	var showBranch *Signal[bool]
+	var settings, panel, branchWin *Window
+	var tray *Tray
+	var buttonID NodeID
+	w := newWindows(t, func(app *Scope) {
+		appScope = app
+		app.SetShutdownMode(ShutdownOnExplicit)
+		showBranch = NewSignal(app, true)
+		app.OpenWindow(WindowOptions{Title: "Host"}, func(cx *Scope) Node {
+			return Show{When: showBranch.Get, Then: func(branch *Scope) Node {
+				return Func(func(btnCx *Scope) Node {
+					return View{
+						TestID: "open",
+						Style:  Style{Width: Pt(40), Height: Pt(20)},
+						OnPress: func(PressEvent) {
+							settings = app.OpenWindow(WindowOptions{Title: "Settings", Key: "settings"}, func(*Scope) Node { return Text{Content: "settings"} })
+							panel = app.OpenPanel(PanelOptions{}, func(*Scope) Node { return Text{Content: "panel"} })
+							tray = app.NewTray(TrayOptions{Tooltip: "App"})
+							app.SetMainView(func(*Scope) Node { return Text{Content: "main"} })
+							branchWin = branch.OpenWindow(WindowOptions{Title: "Branch"}, func(*Scope) Node { return Text{Content: "branch"} })
+						},
+					}
+				})
+			}}
+		})
+	})
+	host := w.app.Surfaces()[0]
+	for _, n := range host.nodes {
+		if n != nil && n.props.TestID == "open" {
+			buttonID = n.id
+			break
+		}
+	}
+	if buttonID == 0 {
+		t.Fatal("button not mounted")
+	}
+	w.dispatch(host.ID(), driver.Event{Kind: driver.EventPress, ID: buttonID})
+	if settings == nil || panel == nil || tray == nil || branchWin == nil || appScope.MainWindow() == nil {
+		t.Fatalf("opened: settings=%v panel=%v tray=%v branch=%v main=%v", settings, panel, tray, branchWin, appScope.MainWindow())
+	}
+
+	// Disposing the Show branch closes only the window owned by branch, not those opened with app.
+	showBranch.Set(false)
+	w.commit()
+	if !branchWin.Closed() {
+		t.Error("window opened with branch scope stayed open after branch disposed")
+	}
+	if settings.Closed() || panel.Closed() || tray.removed || appScope.MainWindow().Closed() {
+		t.Fatalf("app-owned resources closed with button branch: settings=%v panel=%v tray=%v main=%v",
+			settings.Closed(), panel.Closed(), tray.removed, appScope.MainWindow().Closed())
+	}
+
+	// Opening on a disposed scope returns nil without emitting commands.
+	dead := appScope.Child()
+	dead.Dispose()
+	w.take(0, driver.ItemOpenSurface)
+	w.take(0, driver.ItemTray)
+	if dead.OpenWindow(WindowOptions{}, nil) != nil || dead.OpenPanel(PanelOptions{}, nil) != nil || dead.NewTray(TrayOptions{}) != nil {
+		t.Error("opening on a disposed scope returned a handle")
+	}
+	w.commit()
+	if len(w.take(0, driver.ItemOpenSurface)) != 0 || len(w.take(0, driver.ItemTray)) != 0 {
+		t.Error("opening on a disposed scope emitted commands")
+	}
+
+	// Disposing app closes everything owned by app.
+	appScope.Dispose()
+	w.commit()
+	if !settings.Closed() || !panel.Closed() || !tray.removed {
+		t.Fatalf("app-owned resources survived app dispose: settings=%v panel=%v tray=%v", settings.Closed(), panel.Closed(), tray.removed)
+	}
+}

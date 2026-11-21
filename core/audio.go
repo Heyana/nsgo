@@ -169,13 +169,16 @@ func (t *Tree) sendAudio(id uint32, r driver.AudioRequest) {
 	t.changed = true
 }
 
-// audioRefusal is AudioNotAllowed when the current owner's Access refuses audio, or src's URI when it is no bytes the app holds, wrapping the refusal.
+// audioRefusal is AudioNotAllowed when the running owner's or cx's Access refuses audio, or src's URI when it is no bytes the app holds, wrapping the refusal.
 func audioRefusal(cx *Scope, src AudioSource) error {
 	var err error
 	if cx.denied(serviceAudio, "") {
 		err = AccessDenied(AccessAudio, "")
 	} else if len(src.Data) == 0 {
-		err = sourceRefusal(cx.current(), AccessNetwork, src.URI)
+		o := cx.current()
+		if err = sourceRefusal(o, AccessNetwork, src.URI); err == nil && o != cx {
+			err = sourceRefusal(cx, AccessNetwork, src.URI)
+		}
 	}
 	if err == nil {
 		return nil
@@ -224,9 +227,12 @@ type Sound struct {
 	closed bool
 }
 
-// LoadSound has the platform read and decode src into memory once and calls done with the sound or why not, an AudioError: the core's part of audio.LoadSound, which apps use. A source this engine's surface already holds, the same URI or bytes of the same digest, shares its decoded sound. The current owner closes the sound as it goes; done, which runs in a later turn, never runs once it went.
+// LoadSound has the platform read and decode src into memory once and calls done with the sound or why not, an AudioError: the core's part of audio.LoadSound, which apps use. A source this engine's surface already holds, the same URI or bytes of the same digest, shares its decoded sound. The sound belongs to cx itself rather than the running owner, so loading with the app's scope from a handler keeps it until cx goes or Close is called; done, which runs in a later turn, never runs once cx went.
 func (cx *Scope) LoadSound(src AudioSource, done func(*Sound, error)) {
-	owner := cx.current()
+	owner := cx
+	if owner.disposed {
+		return
+	}
 	fail := func(err error) {
 		if done != nil && cx.rt.post != nil {
 			owner.Post(func() { done(nil, err) })
@@ -435,9 +441,9 @@ type AudioPlayer struct {
 	plays             []func(error)
 }
 
-// NewAudioPlayer makes a player of src, loading nothing until Play or Preload: the core's part of audio.NewPlayer, which apps use. The current owner closes it as it goes.
+// NewAudioPlayer makes a player of src, loading nothing until Play or Preload: the core's part of audio.NewPlayer, which apps use. The player belongs to cx itself rather than the running owner, so creating one with the app's scope from a button or row handler keeps it playing after that handler's scope goes, closing only when cx goes or Close is called.
 func (cx *Scope) NewAudioPlayer(src AudioSource, opts AudioPlayerOptions) *AudioPlayer {
-	owner := cx.current()
+	owner := cx
 	opts.ProgressInterval = videoInterval(opts.ProgressInterval)
 	p := &AudioPlayer{rt: cx.rt, tree: cx.tree(), owner: owner, id: audioIDs.Add(1), src: src, opts: opts, volume: 1, rate: 1}
 	p.refused = audioRefusal(cx, src)
