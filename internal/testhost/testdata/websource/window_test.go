@@ -11,6 +11,7 @@ import (
 )
 
 const windowPage = `<!doctype html>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 body, form { margin: 0; }
 a, button { display: block; box-sizing: border-box; width: 220px; height: 32px; }
@@ -19,6 +20,7 @@ a, button { display: block; box-sizing: border-box; width: 220px; height: 32px; 
 <button onclick="request('click')">Script</button>
 <form target="_blank" method="post" action="https://allowed.invalid/form"><button>Form</button></form>
 <a target="_blank" href="https://denied.invalid/link">Denied</a>
+<button onclick="window.nsgo.postMessage('input-ready')">Ready</button>
 <script>
 function request(source) {
     const popup = window.open('https://allowed.invalid/' + source);
@@ -35,9 +37,9 @@ func (windowAccess) WebHosts() []string             { return []string{"allowed.i
 func checkWindowTarget(t *testing.T) {
 	t.Helper()
 	switch nsgotest.Target() {
-	case "macos", "linux":
+	case "macos", "linux", "ios", "ios_simulator":
 	default:
-		t.Skip("checks a desktop browser's actual popup behavior")
+		t.Skip("checks the behavior of WebKit's native popup delegate")
 	}
 }
 
@@ -49,6 +51,28 @@ func startWindowPage(t *testing.T, access core.Access, web core.WebView) (*nsgot
 	t.Helper()
 	var ref core.Ref
 	var scope *core.Scope
+	var container core.Style
+	target := nsgotest.Target()
+	ios := target == "ios" || target == "ios_simulator"
+	var inputReady chan struct{}
+	if ios {
+		// Leave the links below the status bar in the iOS test window.
+		container.Padding.Top = 88
+		inputReady = make(chan struct{}, 1)
+		onMessage := web.OnMessage
+		web.OnMessage = func(message string) {
+			if message == "input-ready" {
+				select {
+				case inputReady <- struct{}{}:
+				default:
+				}
+				return
+			}
+			if onMessage != nil {
+				onMessage(message)
+			}
+		}
+	}
 	web.Ref, web.Source, web.TestID = &ref, core.WebHTML(windowPage, ""), "page"
 	web.Style = core.Style{Width: core.Pt(240), Height: core.Pt(160)}
 	a := nsgotest.Start(t, func(cx *core.Scope) core.Node {
@@ -58,19 +82,36 @@ func startWindowPage(t *testing.T, access core.Access, web core.WebView) (*nsgot
 		}
 		// The parent makes a test step pressable while native hit
 		// testing sends the mouse input to the WebView.
-		return core.View{OnPress: func(core.PressEvent) {}, Children: []core.Node{web}}
+		return core.View{Style: container, OnPress: func(core.PressEvent) {}, Children: []core.Node{web}}
 	}, nsgotest.Size(240, 160))
-	return a, func(y int) {
+	click := func(y int) {
 		if nsgotest.Target() == "macos" {
 			scope.Post(func() { ref.SendInput(core.WebClick(12, core.Points(y))) })
 			return
 		}
 		clickWindowPage(a, t, y)
 	}
+	if !ios {
+		return a, click
+	}
+	// The simulator can drop taps during launch. Wait for the page to
+	// acknowledge an inert tap before testing the actual requests.
+	for range 12 {
+		click(144)
+		select {
+		case <-inputReady:
+			return a, click
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+	t.Fatal("the iOS web view did not accept the readiness tap")
+	return nil, nil
 }
 
 func TestWebWindowRequestsAndAccess(t *testing.T) {
 	checkWindowTarget(t)
+	target := nsgotest.Target()
+	ios := target == "ios" || target == "ios_simulator"
 	var mu sync.Mutex
 	var requests []core.WebWindowRequest
 	var problems []error
@@ -107,7 +148,10 @@ func TestWebWindowRequestsAndAccess(t *testing.T) {
 	}
 	requireSuppressed("timer")
 	for i, action := range []string{"link", "click", "form"} {
+		t.Logf("requesting a window from %s", action)
 		url := "https://allowed.invalid/" + action
+		// The iOS delegate can identify links and forms by navigation type.
+		wantGesture := action != "click" || !ios
 		click(i*32 + 16)
 		a.WaitUntil(10*time.Second, func() bool {
 			mu.Lock()
@@ -122,8 +166,8 @@ func TestWebWindowRequestsAndAccess(t *testing.T) {
 		for _, r := range requests {
 			if r.URL == url {
 				count++
-				if !r.UserInitiated {
-					t.Errorf("%s request was reported without its user gesture", action)
+				if r.UserInitiated != wantGesture {
+					t.Errorf("%s user gesture = %t, want %t", action, r.UserInitiated, wantGesture)
 				}
 			}
 		}
