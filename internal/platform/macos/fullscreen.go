@@ -34,7 +34,8 @@ func (s *surface) setFullScreen(on bool, displayID string) {
 	if !s.ownWindow() {
 		return
 	}
-	if on && (s.constraints.NoMaximize || !s.showFirst && !objc.Send[bool](w, sel("isVisible"))) {
+	// AppKit ignores toggleFullScreen: for a window that never enters full screen, as an auxiliary one on every space does, and no notification would end the transition.
+	if on && (s.constraints.NoMaximize || objc.Send[uint](w, sel("collectionBehavior"))&(fullScreenAuxiliary|fullScreenNone) != 0 || !s.showFirst && !objc.Send[bool](w, sel("isVisible"))) {
 		return
 	}
 	var target objc.ID

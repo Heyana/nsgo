@@ -172,6 +172,10 @@ func (s *surface) command(c *driver.WindowCommand) {
 			s.show(c.Anchor)
 		}
 	case driver.WindowHide:
+		if s.showFirst {
+			// A request queued for the first show goes with it.
+			s.fullScreenTransition.next = nil
+		}
 		s.showFirst = false
 		if s.kind == driver.SurfacePanel {
 			s.hidePanel(false)
