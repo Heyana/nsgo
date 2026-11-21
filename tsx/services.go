@@ -545,12 +545,23 @@ func (r *runtime) resource(call js.FunctionCall) js.Value {
 
 // call2 calls fn with this.
 func (r *runtime) call2(fn, this js.Value, args ...js.Value) js.Value {
+	if r.stoppedErr() != nil {
+		return js.Undefined()
+	}
 	f, ok := js.AssertFunction(fn)
 	if !ok {
 		panic(r.vm.NewTypeError("nsgo: %s is not a function", fn))
 	}
-	v, err := f(this, args...)
+	var v js.Value
+	err := r.measureJS(func() error {
+		var err error
+		v, err = f(this, args...)
+		return err
+	})
 	if err != nil {
+		if r.interrupted.Load() {
+			return js.Undefined()
+		}
 		panic(err)
 	}
 	return v

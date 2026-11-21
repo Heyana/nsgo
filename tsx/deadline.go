@@ -32,7 +32,27 @@ func (r *runtime) watch(dl *deadline) {
 	if dl.at.IsZero() || dl.watch != nil || dl.expired {
 		return
 	}
-	dl.watch = time.AfterFunc(time.Until(dl.at), func() { r.cx.Post(func() { r.expire(dl) }) })
+	if r.watches == nil {
+		r.watches = make(map[*deadline]struct{})
+	}
+	r.watches[dl] = struct{}{}
+	dl.watch = time.AfterFunc(time.Until(dl.at), func() {
+		r.cx.Post(func() {
+			// An extension can move the deadline before this post runs.
+			if r.stoppedErr() == nil && dl.watch != nil {
+				r.passed(dl)
+			}
+		})
+	})
+}
+
+// stopWatches releases the watchdogs when the runtime stops or is disposed.
+func (r *runtime) stopWatches() {
+	for dl := range r.watches {
+		dl.watch.Stop()
+		dl.watch = nil
+	}
+	clear(r.watches)
 }
 
 // passed reports whether dl has run out, expiring it if it just did.
@@ -55,6 +75,7 @@ func (r *runtime) expire(dl *deadline) {
 	if dl.watch != nil {
 		dl.watch.Stop()
 		dl.watch = nil
+		delete(r.watches, dl)
 	}
 	for id := range dl.timers {
 		r.stopTimer(id)
@@ -130,4 +151,27 @@ func (r *runtime) newPromise() (*js.Promise, func(any) error, func(any) error) {
 		}
 	}
 	return p, wrap(resolve), wrap(reject)
+}
+
+// CallBudget controls one waiting Plugin.Call's total deadline. It is safe
+// to keep after a call settles.
+type CallBudget struct {
+	r  *runtime
+	dl *deadline
+}
+
+// Extend adds time to a pending call's total budget before it expires. Call
+// it on the engine goroutine between JavaScript entries, for example in a
+// Scope.Post from a worker. It reports whether the deadline moved.
+func (b *CallBudget) Extend(extra time.Duration) bool {
+	if b == nil || b.dl == nil || extra <= 0 || b.r.depth != 0 || b.r.stoppedErr() != nil {
+		return false
+	}
+	dl := b.dl
+	if dl.expired || dl.done == nil || dl.watch == nil || !time.Now().Before(dl.at) {
+		return false
+	}
+	dl.at = dl.at.Add(extra)
+	dl.watch.Reset(time.Until(dl.at))
+	return true
 }

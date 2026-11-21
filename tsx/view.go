@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/tsx/internal/js"
 	"github.com/nsgo-dev/nsgo/tsx/pkg"
@@ -45,6 +46,46 @@ func (s Sandbox) of(p *pkg.Package) Sandbox {
 	}
 	return s
 }
+
+// ViewRuntime is a handle to one mounted sandboxed view. Sandbox.OnViewRuntime
+// supplies it before the view's entry starts. The handle's methods are safe
+// from any goroutine.
+type ViewRuntime struct{ r *runtime }
+
+// Interrupt stops the view for err, or ErrInterrupted when err is nil. Its
+// last views remain until removed by the owner. The web stops future NSGo
+// callbacks once control returns to the host.
+func (v *ViewRuntime) Interrupt(err error) {
+	if v != nil && v.r != nil {
+		v.r.interrupt(err)
+	}
+}
+
+// Stopped reports whether the view's runtime has stopped or been disposed.
+func (v *ViewRuntime) Stopped() bool { return v.Err() != nil }
+
+// Err returns the view's first stop reason, or nil while it runs. Normal
+// disposal reports ErrViewClosed.
+func (v *ViewRuntime) Err() error {
+	if v == nil || v.r == nil {
+		return nil
+	}
+	return v.r.stoppedErr()
+}
+
+// JSTime reports accumulated elapsed time in native JavaScript entries,
+// including the active entry. It excludes time between entries and inside
+// registered synchronous Go functions. The browser reports false because
+// its own JavaScript turns are outside the runtime's measurement.
+func (v *ViewRuntime) JSTime() (time.Duration, bool) {
+	if v == nil {
+		return 0, false
+	}
+	return v.r.executionTime()
+}
+
+// ErrViewClosed is the stop reason when a view's scope is disposed normally.
+var ErrViewClosed = errors.New("tsx: the view was closed")
 
 // Plugin is a package that gives the Go app functions rather than a view:
 // what its entry module exports, which Call calls. It runs sandboxed as
@@ -115,7 +156,7 @@ func Load(cx *core.Scope, p *pkg.Package, s Sandbox) (plugin *Plugin, err error)
 	}
 	plugin = &Plugin{r: r, cx: inner}
 	plugin.exports, _ = r.vm.Get(exportsGlobal).(*js.Object)
-	r.onPluginStop = s.OnStop
+	r.onStop = s.OnStop
 	return plugin, nil
 }
 
@@ -139,10 +180,25 @@ func (p *Plugin) Exports() []string {
 
 // Call calls the plugin's export name with JSON arguments and passes its result to done on the engine's goroutine, awaiting a returned promise. The error is what the export threw or rejected with (a *core.Error when it carries a code), ErrNoExport, ErrBudget for a cut slice or expired total budget, or why the plugin stopped or closed. Call it on the engine's goroutine.
 func (p *Plugin) Call(name string, args []any, done func(result any, err error)) {
+	p.startCall(name, args, done)
+}
+
+// CallWithBudget starts a call like Call and returns a handle while its total
+// deadline can still be extended. It returns nil for a call that has already
+// completed or has no total deadline.
+func (p *Plugin) CallWithBudget(name string, args []any, done func(result any, err error)) *CallBudget {
+	dl := p.startCall(name, args, done)
+	if dl == nil || dl.done == nil || dl.at.IsZero() {
+		return nil
+	}
+	return &CallBudget{r: p.r, dl: dl}
+}
+
+func (p *Plugin) startCall(name string, args []any, done func(result any, err error)) *deadline {
 	r := p.r
 	if err := r.stoppedErr(); err != nil || p.cx.Disposed() {
 		done(nil, cmp.Or(err, ErrPluginClosed))
-		return
+		return nil
 	}
 	var v js.Value
 	if p.exports != nil {
@@ -151,7 +207,7 @@ func (p *Plugin) Call(name string, args []any, done func(result any, err error))
 	fn, ok := js.AssertFunction(v)
 	if !ok {
 		done(nil, fmt.Errorf("%w: %q", ErrNoExport, name))
-		return
+		return nil
 	}
 	if r.calls == nil {
 		r.calls = map[*deadline]struct{}{}
@@ -165,6 +221,7 @@ func (p *Plugin) Call(name string, args []any, done func(result any, err error))
 		owner = nil
 	}
 	p.cx.Run(func() { r.under(owner, func() { p.call(fn, args, dl) }) })
+	return dl
 }
 
 func (p *Plugin) call(fn js.Callable, args []any, dl *deadline) {
@@ -223,9 +280,6 @@ func (p *Plugin) Interrupt(err error) {
 	if p == nil || p.r == nil {
 		return
 	}
-	if err == nil {
-		err = ErrInterrupted
-	}
 	p.r.interrupt(err)
 }
 
@@ -243,6 +297,15 @@ func (p *Plugin) Err() error {
 	return p.r.stoppedErr()
 }
 
+// JSTime reports the same native execution time as ViewRuntime.JSTime.
+// It is safe to call from any goroutine.
+func (p *Plugin) JSTime() (time.Duration, bool) {
+	if p == nil {
+		return 0, false
+	}
+	return p.r.executionTime()
+}
+
 // Close runs the plugin's cleanups and fails waiting calls with its stop
 // reason. Call it on the engine's goroutine.
 func (p *Plugin) Close() {
@@ -253,20 +316,20 @@ func (p *Plugin) Close() {
 	defer func() { p.closing = false }()
 	p.cx.Dispose()
 	// Posted stop work dies with the plugin's scope.
-	p.r.finishPluginStop(p.Err())
+	p.r.finishStop(p.Err())
 }
 
 func (p *Plugin) dispose() {
 	p.r.markStopped(ErrPluginClosed)
 	p.r.stopTimers()
-	if p.closing || p.r.onPluginStop == nil {
+	if p.closing {
 		return
 	}
 	// The owner disposed the plugin. An explicit Close completes this
 	// work after Dispose returns.
 	p.closing = true
 	defer func() { p.closing = false }()
-	p.r.finishPluginStop(p.Err())
+	p.r.finishStop(p.Err())
 }
 
 // ErrPluginClosed is the stop reason when a plugin closes normally.

@@ -342,7 +342,12 @@ func (r *runtime) callGo(name string, fn reflect.Value, args []js.Value) js.Valu
 	ft := fn.Type()
 	if !isAsync(ft, 0) {
 		in := r.goArgs(ft, 0, args)
-		out := r.guard(name, func() []reflect.Value { return callIn(fn, in) })
+		out := r.guard(name, func() []reflect.Value {
+			if r.clock != nil && r.clock.leave() {
+				defer r.clock.enter()
+			}
+			return callIn(fn, in)
+		})
 		if err := trailingErr(ft, out); err != nil {
 			panic(r.goError(err))
 		}

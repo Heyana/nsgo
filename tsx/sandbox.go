@@ -27,7 +27,7 @@ import (
 
 // Limits are what a bundle may use. Zero time budgets and quotas leave them unlimited.
 type Limits struct {
-	// Load limits the entry script and Call limits each slice of JS. On goja, a Plugin.Call whose slice is cut fails with ErrBudget even after it has awaited. CallTotal limits the wall time of a plugin call and the work it starts; at that deadline its pending work is dropped and a call still waiting fails with ErrBudget. The entry module's work is held to Load and standalone host events to CallTotal when CallTotal is set. Zero leaves a budget unlimited.
+	// Load limits the entry script and Call limits each slice of JS. On goja, a Plugin.Call whose slice is cut fails with ErrBudget even after it has awaited. CallTotal limits the wall time of a plugin call or sandboxed view event and its work. At the deadline, pending work is dropped and a waiting call fails with ErrBudget. When CallTotal is set, work begun by the entry module is held to Load, or CallTotal when Load is zero.
 	Load, Call, CallTotal time.Duration
 	// Stack is the call depth in frames on native targets. Values at or below zero or above 10,000 use 10,000, so a plugin's recursion throws a catchable RangeError rather than overflowing the goroutine's stack. DefaultLimits uses 1,000. The web uses the browser's stack limit.
 	Stack int
@@ -55,8 +55,8 @@ var DefaultLimits = Limits{Load: 10 * time.Second, Call: 2 * time.Second, Stack:
 // ErrBudget is what a call cut at its time budget fails with.
 var ErrBudget = errors.New("tsx: the script ran past its time budget")
 
-// ErrInterrupted is used when a host interrupts a plugin without supplying
-// its own error.
+// ErrInterrupted is used when a host interrupts a sandboxed runtime without
+// supplying its own error.
 var ErrInterrupted = errors.New("tsx: the plugin was interrupted")
 
 // regexpTimeouts are the match timeouts of the sandboxed calls running, whose shortest is regexp2's process-wide default while any runs, as a regular expression takes it when it compiles, and the default before them once none runs. The lock is held only while the default changes, never across a call: a sandboxed call can run another sandbox's on the same goroutine, as a host function calling a plugin does.
@@ -148,8 +148,11 @@ type Sandbox struct {
 	// Host is the channel its host module reaches, for the Go app to
 	// answer its calls and send it events; nil gives it none.
 	Host *core.Host
-	// OnStop runs once on the engine's goroutine when a plugin loaded
-	// by Load stops. It receives Plugin.Err after waiting calls fail.
+	// OnViewRuntime receives a view's handle on the engine goroutine
+	// before the entry module runs. Load does not use it.
+	OnViewRuntime func(*ViewRuntime)
+	// OnStop runs once on the engine goroutine when the runtime stops,
+	// after any waiting plugin calls fail.
 	OnStop func(error)
 	// Storage names its partition of the app's storage and of its secrets (core.Scope.ProvideSecrets), which no one else's code sees; "" leaves it the app's.
 	Storage string
@@ -189,7 +192,7 @@ func Sandboxed(name, src string, s Sandbox, options ...ViewOptions) func(cx *cor
 		var root core.Node
 		inner.Run(func() {
 			r := s.start(inner, name, src)
-			if view.Export != "" {
+			if view.Export != "" && r.stoppedErr() == nil {
 				r.renderExport(view.Export, view.Props)
 			}
 			root = r.root.elem
@@ -274,10 +277,27 @@ func (s Sandbox) start(cx *core.Scope, name, src string) *runtime {
 	if limits.Harden {
 		r.harden()
 	}
-	if s.plugin && js.Properties().CanInterrupt && (limits.Call > 0 || limits.CallTotal > 0) {
+	props := js.Properties()
+	if !props.ReactionsAfterCommit && (s.plugin || s.OnViewRuntime != nil) {
+		r.clock = &executionClock{}
+	}
+	if props.CanInterrupt && ((s.plugin && limits.Call > 0) || limits.CallTotal > 0) {
 		r.keepPromiseJobs()
 	}
-	if s.plugin && limits.CallTotal > 0 {
+	trackView := !s.plugin && (s.OnViewRuntime != nil || s.OnStop != nil)
+	if trackView {
+		r.onStop = s.OnStop
+		cx.Cleanup(func() {
+			r.markStopped(ErrViewClosed)
+			r.stopTimers()
+			r.finishStop(r.stoppedErr())
+		})
+		if s.OnViewRuntime != nil {
+			s.OnViewRuntime(&ViewRuntime{r: r})
+		}
+	}
+	if limits.CallTotal > 0 && r.stoppedErr() == nil {
+		cx.Cleanup(r.stopWatches)
 		// What the entry module sets going as it loads runs until the load's deadline.
 		r.deadlines = true
 		r.current = newDeadline(cmp.Or(limits.Load, limits.CallTotal))
@@ -287,8 +307,14 @@ func (s Sandbox) start(cx *core.Scope, name, src string) *runtime {
 	if err, _ := r.within(limits.Load, func() error {
 		_, err := r.vm.RunScript(name, src)
 		return err
-	}); err != nil {
-		panic(r.failure(err))
+	}); err != nil && !r.interrupted.Load() {
+		err = r.failure(err)
+		if trackView {
+			r.markStopped(err)
+			r.stopTimers()
+			cx.Post(func() { r.finishStop(r.stoppedErr()) })
+		}
+		panic(err)
 	}
 	return r
 }
@@ -432,8 +458,9 @@ func (r *runtime) stop(err error) {
 		return
 	}
 	r.stopTimers()
-	if len(r.calls) > 0 || r.onPluginStop != nil {
-		r.cx.Post(func() { r.finishPluginStop(err) })
+	r.stopWatches()
+	if len(r.calls) > 0 || r.onStop != nil {
+		r.cx.Post(func() { r.finishStop(err) })
 	}
 	if !canInterrupt {
 		// A throw unwinds the page's engine.
@@ -444,6 +471,9 @@ func (r *runtime) stop(err error) {
 
 // interrupt stops the runtime for err as stop does, from any goroutine: goja's interrupt is safe to call concurrently, while the timers and the waiting calls belong to the engine's goroutine, which a post stops and fails.
 func (r *runtime) interrupt(err error) {
+	if err == nil {
+		err = ErrInterrupted
+	}
 	if !r.markStopped(err) {
 		return
 	}
@@ -451,15 +481,16 @@ func (r *runtime) interrupt(err error) {
 	r.vm.Interrupt(err)
 	r.cx.Post(func() {
 		r.stopTimers()
-		r.finishPluginStop(r.stoppedErr())
+		r.finishStop(r.stoppedErr())
 	})
 }
 
-// finishPluginStop completes pending calls and consumes the stop callback
-// before invoking app code, which may close the plugin again.
-func (r *runtime) finishPluginStop(err error) {
-	if notify := r.onPluginStop; notify != nil {
-		r.onPluginStop = nil
+// finishStop completes pending calls and consumes the stop callback before
+// invoking app code, which may dispose the runtime again.
+func (r *runtime) finishStop(err error) {
+	r.stopWatches()
+	if notify := r.onStop; notify != nil {
+		r.onStop = nil
 		defer notify(err)
 	}
 	r.failCalls(err)
@@ -494,7 +525,7 @@ func (r *runtime) within(budget time.Duration, fn func() error) (err error, cut 
 		return nil, false
 	}
 	if r.depth > 0 {
-		return fn(), false
+		return r.measureJS(fn), false
 	}
 	prev := r.current
 	if prev == nil && r.deadlines {
@@ -564,7 +595,7 @@ func (r *runtime) within(budget time.Duration, fn func() error) (err error, cut 
 			}
 		}
 	}()
-	return fn(), false
+	return r.measureJS(fn), false
 }
 
 func (r *runtime) keepPromiseJobs() {

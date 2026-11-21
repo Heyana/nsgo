@@ -10,6 +10,9 @@ import "github.com/nsgo-dev/nsgo/tsx/internal/js"
 // the app.
 func (r *runtime) attachEngine() {
 	js.SetEntry(r.vm, func(run func()) {
+		if r.stoppedErr() != nil || r.cx.Disposed() {
+			return
+		}
 		r.cx.Run(run)
 		if !r.committing {
 			r.committing = true
