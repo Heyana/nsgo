@@ -62,8 +62,7 @@ func (w *window) focusedView() *view {
 	return w.focusedEntry()
 }
 
-// focusCommand applies ItemFocus. For single-line fields GTK keeps the
-// selection set in this batch, or puts the caret at the end of the text.
+// focusCommand applies ItemFocus. A single-line field is focused without GTK's select-on-focus: it keeps a selection set in the same batch, or else gets the caret at the end of its text.
 func (w *window) focusCommand(v *view, selectionSet bool) {
 	if v.entry == 0 || v.textView != 0 {
 		w.focusView(v)
