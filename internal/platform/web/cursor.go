@@ -3,6 +3,9 @@
 package web
 
 import (
+	"bytes"
+	stdimage "image"
+	"image/png"
 	"strings"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -28,7 +31,7 @@ func (s *surface) cursorURL(src driver.ImageSource) string {
 	var u string
 	switch {
 	case src.Pixels != nil && !src.Pixels.Rect.Empty():
-		u = pixelsURL(src.Pixels)
+		u = cursorPixelsURL(src.Pixels)
 	case len(src.Data) > 0:
 		u = webstyle.DataURL(src.Data)
 	case strings.HasPrefix(src.URI, "asset:"):
@@ -46,4 +49,12 @@ func (s *surface) cursorURL(src driver.ImageSource) string {
 		s.cursorURLs[key] = u
 	}
 	return u
+}
+
+func cursorPixelsURL(p *stdimage.RGBA) string {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, p); err != nil {
+		return ""
+	}
+	return webstyle.DataURL(buf.Bytes())
 }
