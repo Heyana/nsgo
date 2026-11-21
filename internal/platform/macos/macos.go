@@ -219,7 +219,8 @@ type surface struct {
 	sharing objc.ID
 	// window is the window native is in: its own, or for an embedded
 	// surface the host's, 0 while it is in none.
-	window objc.ID
+	window               objc.ID
+	fullScreenTransition fullScreenTransition
 	// embedded is set for a host's view (NewView): the host owns the
 	// window, its chrome and the menu bar.
 	embedded bool
@@ -1369,11 +1370,12 @@ func (s *surface) observe() {
 	})
 	center := objc.ID(apple.Class("NSNotificationCenter")).Send(sel("defaultCenter"))
 	names := []string{"NSWindowDidResizeNotification", "NSWindowDidMoveNotification",
+		"NSWindowWillEnterFullScreenNotification", "NSWindowWillExitFullScreenNotification",
 		"NSWindowDidEnterFullScreenNotification", "NSWindowDidExitFullScreenNotification",
 		"NSWindowDidMiniaturizeNotification", "NSWindowDidDeminiaturizeNotification",
 		"NSWindowDidBecomeKeyNotification", "NSWindowDidResignKeyNotification", "NSWindowDidChangeOcclusionStateNotification"}
 	if s.id != 0 && !s.embedded && s.kind == driver.SurfaceWindow {
-		names = append(names, "NSWindowDidBecomeMainNotification", "NSWindowWillEnterFullScreenNotification")
+		names = append(names, "NSWindowDidBecomeMainNotification")
 	}
 	for _, name := range names {
 		s.stops = append(s.stops, apple.Observe(center, apple.Global(appKitPath, name), func(note objc.ID) {
@@ -1381,11 +1383,16 @@ func (s *surface) observe() {
 				return
 			}
 			s.childWindowEvent(name)
+			if name == "NSWindowWillEnterFullScreenNotification" || name == "NSWindowWillExitFullScreenNotification" {
+				// A transition, however it started, settles before an explicit request runs.
+				s.fullScreenTransition.busy = true
+			}
 			s.refresh()
 			if name == "NSWindowDidEnterFullScreenNotification" || name == "NSWindowDidExitFullScreenNotification" {
 				// AppKit lays the bar out again as it leaves full screen, after the notification. A surface closed by then may have let its window go.
 				apple.OnMain(func() {
 					if !s.closed {
+						s.finishFullScreenTransition(name == "NSWindowDidExitFullScreenNotification")
 						s.layoutTrafficLights()
 						s.refresh()
 					}
@@ -2566,6 +2573,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.showPanel(0, driver.Bounds{}, driver.WindowPlaceDefault)
 		} else {
 			s.orderFront()
+			if s.fullScreenTransition.next != nil {
+				s.finishFullScreenTransition(false)
+			}
 		}
 	}
 }

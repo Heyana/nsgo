@@ -149,6 +149,8 @@ func (s *surface) command(c *driver.WindowCommand) {
 		w.Send(sel("zoom:"), objc.ID(0))
 	case driver.WindowToggleFullScreen:
 		w.Send(sel("toggleFullScreen:"), objc.ID(0))
+	case driver.WindowSetFullScreen:
+		s.setFullScreen(c.On, c.DisplayID)
 	case driver.WindowClose:
 		w.Send(sel("performClose:"), objc.ID(0))
 	case driver.WindowSetFrame:

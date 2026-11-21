@@ -224,6 +224,12 @@ func ToggleMaximize(cx *core.Scope) { cx.ToggleMaximize() }
 // On the web, call it from a press handler. Browser refusals go to the log.
 func ToggleFullScreen(cx *core.Scope) { cx.ToggleFullScreen() }
 
+// SetFullScreen enters or leaves full screen. A display ID from Env.Displays
+// selects a desktop display. An omitted ID uses the window's current display.
+// On the web, call it from a press or another user gesture. The browser chooses
+// the display and Env.FullScreen follows changes, including leaving with Esc.
+func SetFullScreen(cx *core.Scope, on bool, displayID ...string) { cx.SetFullScreen(on, displayID...) }
+
 // CloseWindow closes the window as its close button does: the window's
 // OnClosing handlers may keep it, and the app ends by its shutdown mode.
 func CloseWindow(cx *core.Scope) { cx.CloseWindow() }

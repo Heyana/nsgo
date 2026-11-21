@@ -131,6 +131,7 @@ var (
 	gtkWindowMaximize                      func(uintptr)
 	gtkWindowUnmaximize                    func(uintptr)
 	gtkWindowFullscreen                    func(uintptr)
+	gtkWindowFullscreenOnMonitor           func(uintptr, uintptr)
 	gtkWindowUnfullscreen                  func(uintptr)
 	gtkWindowSetTransientFor               func(uintptr, uintptr)
 	gtkWindowIsFullscreen                  func(uintptr) int32
@@ -235,6 +236,9 @@ var (
 	gdkToplevelLower           func(uintptr) int32
 	gdkToplevelShowWindowMenu  func(uintptr, uintptr) int32
 	gtkGestureGetDevice        func(uintptr) uintptr
+
+	gdkDisplayGetMonitorAtSurface func(uintptr, uintptr) uintptr
+
 	// Optional GDK functions, nil where GTK lacks them: the fractional monitor scale (GTK 4.14), and the work area GTK 4 has only for X11 monitors, where GTK was built with X11.
 	gdkMonitorGetScale       func(uintptr) float64
 	gdkX11MonitorGetType     func() uintptr
@@ -505,6 +509,7 @@ func bind() {
 	purego.RegisterLibFunc(&gtkWindowMaximize, gtkLib, "gtk_window_maximize")
 	purego.RegisterLibFunc(&gtkWindowUnmaximize, gtkLib, "gtk_window_unmaximize")
 	purego.RegisterLibFunc(&gtkWindowFullscreen, gtkLib, "gtk_window_fullscreen")
+	purego.RegisterLibFunc(&gtkWindowFullscreenOnMonitor, gtkLib, "gtk_window_fullscreen_on_monitor")
 	purego.RegisterLibFunc(&gtkWindowUnfullscreen, gtkLib, "gtk_window_unfullscreen")
 	purego.RegisterLibFunc(&gtkWindowSetTransientFor, gtkLib, "gtk_window_set_transient_for")
 	purego.RegisterLibFunc(&gtkWindowIsFullscreen, gtkLib, "gtk_window_is_fullscreen")
@@ -599,6 +604,7 @@ func bind() {
 	purego.RegisterLibFunc(&gdkFrameClockGetFrameTime, gtkLib, "gdk_frame_clock_get_frame_time")
 	purego.RegisterLibFunc(&gdkDisplayGetDefault, gtkLib, "gdk_display_get_default")
 	purego.RegisterLibFunc(&gdkDisplayGetMonitors, gtkLib, "gdk_display_get_monitors")
+	purego.RegisterLibFunc(&gdkDisplayGetMonitorAtSurface, gtkLib, "gdk_display_get_monitor_at_surface")
 	purego.RegisterLibFunc(&gdkDisplayGetClipboard, gtkLib, "gdk_display_get_clipboard")
 	purego.RegisterLibFunc(&gdkClipboardSetText, gtkLib, "gdk_clipboard_set_text")
 	purego.RegisterLibFunc(&gdkClipboardReadTextAsync, gtkLib, "gdk_clipboard_read_text_async")

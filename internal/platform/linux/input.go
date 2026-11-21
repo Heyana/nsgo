@@ -1380,13 +1380,7 @@ func (w *window) menuChosen(ref menuRef) bool {
 	case driver.MenuZoom:
 		w.toggleMaximize()
 	case driver.MenuToggleFullScreen:
-		if w.chrome.fullScreen {
-			gtkWindowUnfullscreen(w.win)
-		} else {
-			gtkWindowFullscreen(w.win)
-		}
-		w.chrome.fullScreen = !w.chrome.fullScreen
-		w.updateEnvironment()
+		w.toggleFullScreen()
 	case driver.MenuUndo, driver.MenuRedo, driver.MenuCut, driver.MenuCopy, driver.MenuPaste, driver.MenuPasteAndMatchStyle, driver.MenuDelete, driver.MenuSelectAll:
 		// Nothing took the edit; the item still takes its key, as it does with an editor.
 	case driver.MenuStartSpeaking:

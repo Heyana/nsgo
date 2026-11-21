@@ -545,6 +545,8 @@ jobs:
         run: go tool nsgo test -run '^TestInstance' ./internal/platform/windows
       - name: Test native network reachability
         run: go tool nsgo test -run '^TestNetworkMonitorReadsNetworkListManager$' ./internal/platform/windows
+      - name: Test explicit full screen and restoration
+        run: go tool nsgo test -run '^TestExplicitFullScreenRestoresWindowFrame$' ./internal/platform/windows
       - name: Test process and automation sessions
         run: go tool nsgo test -run '^(TestProcessAlive.*|TestAutomationSessionFile|TestMCPSessionBridge)$' ./cmd/nsgo
       # The runner image has no NSIS. It comes from a pinned installer checked against its SHA-256 and cached by version, so an outage at a package host fails this step instead of the document registration test (#707). The hash is the one SourceForge serves and the one the Chocolatey nsis.install 3.13.0 package records.

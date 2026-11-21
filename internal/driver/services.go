@@ -179,6 +179,8 @@ const (
 	WindowSetSkipTaskbar
 	// WindowFitSize sizes a panel's content to Frame's Width and Height, the size its content takes (core.PanelOptions.FitContent), keeping the edge it is placed by: one that shows stays beside the rectangle or under the tray icon it was placed at, else keeps its top edge. It changes neither whether it shows nor the focus.
 	WindowFitSize
+	// WindowSetFullScreen enters or leaves full screen (On, DisplayID).
+	WindowSetFullScreen
 )
 
 // SurfaceKind is what an opened surface shows in.
@@ -288,7 +290,9 @@ type WindowCommand struct {
 	Workspaces WindowWorkspaces
 	// PointerEvents is what WindowSetPointerEvents sets.
 	PointerEvents WindowPointerEvents
-	// On is what WindowSetTransparent, WindowSetShadow and WindowSetSkipTaskbar set.
+	// DisplayID is the desktop display WindowSetFullScreen enters on. Empty uses the window's current display.
+	DisplayID string
+	// On is what WindowSetTransparent, WindowSetShadow, WindowSetSkipTaskbar and WindowSetFullScreen set.
 	On bool
 }
 

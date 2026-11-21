@@ -374,6 +374,10 @@ Call the returned function to release the lock. Escape, a window losing focus, o
 
 Use `audio.SetSoundLimits(cx, audio.SoundLimits{MaxSounds: 200, MaxDuration: 20 * time.Second})` before loading sounds to change the engine's limits. `MaxEncodedBytes`, `MaxDecodedBytes` and `MaxPlaybacks` can also be set. Zero fields use the defaults of 8 MiB encoded and 5 seconds per sound, 64 sources, 16 MiB decoded across sounds, and 32 overlapping playbacks per output. Existing sounds stay loaded and count toward the new limits. Restricted scopes keep the default limits within the engine's budget.
 
+## Full screen
+
+`desktop.SetFullScreen(cx, true, displayID)` fills the display named by `cx.Env().Displays()` on macOS, Windows and Linux. Omit the ID to use the window's current display. An unknown ID leaves the window where it is. Repeating the same request has no effect. `desktop.SetFullScreen(cx, false)` leaves full screen and restores the window's previous frame. On the web, enter from a press handler. The browser chooses the display, and `cx.Env().FullScreen()` follows entry and exit, including Esc.
+
 ## Speaking text
 
 `cx.Speak` reads text aloud in the system's voice for a language where `cx.Env().CanSpeak()` says the platform speaks: macOS, iOS, tvOS, Android, Windows, the web and Linux with speech-dispatcher. One utterance speaks at a time: another `Speak` cuts the one speaking, and so do `cx.StopSpeaking` and the end of the scope that spoke it. `done` hears once how it ended: finished, stopped, or failed with a `core.SpeakError`, such as `core.SpeakLanguageUnavailable` when no voice installed speaks the language.

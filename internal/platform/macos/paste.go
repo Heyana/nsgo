@@ -67,6 +67,20 @@ func registerPaste() {
 				return true
 			},
 		}, {
+			Cmd: sel("windowDidFailToEnterFullScreen:"),
+			Fn: func(_ objc.ID, _ objc.SEL, window objc.ID) {
+				if s := windowSurface(window); s != nil {
+					s.finishFullScreenTransition(true)
+				}
+			},
+		}, {
+			Cmd: sel("windowDidFailToExitFullScreen:"),
+			Fn: func(_ objc.ID, _ objc.SEL, window objc.ID) {
+				if s := windowSurface(window); s != nil {
+					s.finishFullScreenTransition(false)
+				}
+			},
+		}, {
 			// A window the app keeps from maximizing stays as it is.
 			// The rect after the window goes unread.
 			Cmd: sel("windowShouldZoom:toFrame:"),

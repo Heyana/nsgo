@@ -137,9 +137,10 @@ func (v *view) detach() {
 
 // chrome is the desktop window's title bar and application menu.
 type chrome struct {
-	titleBar   driver.TitleBarStyle
-	height     driver.Points // the app's title bar height
-	fullScreen bool
+	titleBar          driver.TitleBarStyle
+	height            driver.Points // the app's title bar height
+	fullScreen        bool
+	fullScreenRequest *fullScreenRequest
 	// constraints are the app's limits on the window.
 	constraints driver.WindowConstraints
 	menu        []driver.MenuEntry

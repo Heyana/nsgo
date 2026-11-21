@@ -100,6 +100,8 @@ func (s *surface) watchChanges() {
 		}
 		return nil
 	}))
+	s.doc.Call("addEventListener", "fullscreenchange", w.changed)
+	s.doc.Call("addEventListener", "webkitfullscreenchange", w.changed)
 	// A page that hides is the app quitting, unless the browser keeps it
 	// in its back-forward cache to show again, where it may also discard
 	// it unheard: the OnQuit handlers run then too, kept for the next.
@@ -197,6 +199,7 @@ func (s *surface) environment() driver.Environment {
 		CustomCursor:     true,
 		AppleKeyboard:    apple,
 		Idiom:            driver.IdiomPhone,
+		FullScreen:       s.browserFullscreen(),
 	}
 	if w.desktop.Get("matches").Bool() {
 		env.Idiom = driver.IdiomDesktop

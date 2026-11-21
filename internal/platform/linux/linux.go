@@ -766,7 +766,7 @@ func (w *window) createWindow(opts Options) {
 	w.setupInputs()
 	gSignalConnect(w.win, "close-request", cbCloseRequest, w.handle)
 	gSignalConnect(w.win, "map", cbWindowMapped, w.handle)
-	for _, name := range []string{"maximized", "fullscreen", "default-width", "default-height"} {
+	for _, name := range []string{"maximized", "fullscreened", "default-width", "default-height"} {
 		gSignalConnect(w.win, "notify::"+name, cbWindowState, w.handle)
 	}
 }
@@ -1575,15 +1575,9 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 	case driver.WindowToggleMaximize:
 		w.toggleMaximize()
 	case driver.WindowToggleFullScreen:
-		if w.chrome.fullScreen {
-			gtkWindowUnfullscreen(w.win)
-			w.chrome.fullScreen = false
-		} else {
-			gtkWindowFullscreen(w.win)
-			w.chrome.fullScreen = true
-		}
-		w.showMenuBar()
-		w.updateEnvironment()
+		w.toggleFullScreen()
+	case driver.WindowSetFullScreen:
+		w.setFullScreen(c.On, c.DisplayID)
 	case driver.WindowClose:
 		if w.primary || w.embedded {
 			w.close()

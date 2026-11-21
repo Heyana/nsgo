@@ -14,7 +14,9 @@ type browserScreen struct {
 	lockID      uint64
 	lockAsked   bool
 	entering    bool
-	legacy      bool
+	// leave is an exit asked while an entry was under way, made once the entry settles.
+	leave  bool
+	legacy bool
 }
 
 func (s *surface) browserFullscreen() bool {
@@ -23,11 +25,17 @@ func (s *surface) browserFullscreen() bool {
 
 // toggleBrowserFullscreen calls the browser during the triggering press's
 // commit. The browser can consume that press's activation here.
-func (s *surface) toggleBrowserFullscreen() {
+func (s *surface) toggleBrowserFullscreen() { s.setBrowserFullscreen(!s.browserFullscreen()) }
+
+// setBrowserFullscreen enters or leaves the browser's full screen, doing nothing when the page already is as asked. It calls the browser during the triggering press's commit, as entry needs the press's activation.
+func (s *surface) setBrowserFullscreen(enter bool) {
 	if s.screen.entering {
+		s.screen.leave = !enter
 		return
 	}
-	enter := !s.browserFullscreen()
+	if enter == s.browserFullscreen() {
+		return
+	}
 	target, method, legacy, action := s.doc, "exitFullscreen", "webkitExitFullscreen", "exit full screen"
 	if enter {
 		target, method, legacy, action = s.doc.Get("documentElement"), "requestFullscreen", "webkitRequestFullscreen", "enter full screen"
@@ -52,15 +60,25 @@ func (s *surface) toggleBrowserFullscreen() {
 	}
 	then(promise, func(js.Value) {
 		if enter {
-			s.screen.entering = false
-			s.lockOrientation()
+			s.enteredBrowserFullscreen()
 		}
 	}, func(err js.Value) {
 		if enter {
-			s.screen.entering = false
+			s.screen.entering, s.screen.leave = false, false
 		}
 		log.Printf("nsgo: %s: %v", action, jsError(err))
 	})
+}
+
+// enteredBrowserFullscreen ends an entry, leaving again when an exit was asked meanwhile.
+func (s *surface) enteredBrowserFullscreen() {
+	s.screen.entering = false
+	if s.screen.leave {
+		s.screen.leave = false
+		s.setBrowserFullscreen(false)
+		return
+	}
+	s.lockOrientation()
 }
 
 func (s *surface) screenChanged(js.Value) {
@@ -69,9 +87,11 @@ func (s *surface) screenChanged(js.Value) {
 		s.unlockOrientation()
 	}
 	if s.screen.legacy {
-		s.screen.entering, s.screen.legacy = false, false
+		s.screen.legacy = false
 		if fullscreen {
-			s.lockOrientation()
+			s.enteredBrowserFullscreen()
+		} else {
+			s.screen.entering, s.screen.leave = false, false
 		}
 	}
 }
@@ -79,7 +99,7 @@ func (s *surface) screenChanged(js.Value) {
 func (s *surface) screenFailed(js.Value) {
 	if s.screen.legacy {
 		log.Print("nsgo: enter full screen: the browser refused the request")
-		s.screen.entering, s.screen.legacy = false, false
+		s.screen.entering, s.screen.legacy, s.screen.leave = false, false, false
 	}
 }
 

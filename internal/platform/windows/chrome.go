@@ -168,9 +168,10 @@ type chrome struct {
 	// constraints are the app's limits on the window.
 	constraints driver.WindowConstraints
 
-	fullScreen bool
-	savedStyle uintptr
-	savedPlace windowPlacement
+	fullScreen        bool
+	fullScreenMonitor uintptr
+	savedStyle        uintptr
+	savedPlace        windowPlacement
 
 	menu    []driver.MenuEntry // nil: no menu bar, Windows' default
 	bar     uintptr
@@ -290,6 +291,8 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 		w.toggleMaximize()
 	case driver.WindowToggleFullScreen:
 		w.toggleFullScreen()
+	case driver.WindowSetFullScreen:
+		w.setFullScreen(c.On, c.DisplayID)
 	case driver.WindowClose:
 		w.destroying = true
 		w.visible = false
@@ -466,26 +469,50 @@ func (w *window) toggleMaximize() {
 // toggleFullScreen makes the window a borderless one covering its
 // monitor, or puts it back as it was.
 func (w *window) toggleFullScreen() {
+	w.setFullScreen(!w.chrome.fullScreen, "")
+}
+
+func (w *window) setFullScreen(on bool, displayID string) {
 	c := &w.chrome
-	if !c.fullScreen {
+	if on {
+		monitor, _, _ := monitorFromWindow.Call(w.hwnd, monitorDefaultNear)
+		if displayID != "" {
+			monitor = 0
+			for _, display := range monitorLayout() {
+				if display.display.ID == displayID {
+					monitor = display.monitor
+					break
+				}
+			}
+		}
+		if monitor == 0 || c.fullScreen && (displayID == "" || c.fullScreenMonitor == monitor) {
+			return
+		}
 		var mi monitorInfo
 		mi.Size = uint32(unsafe.Sizeof(mi))
-		monitor, _, _ := monitorFromWindow.Call(w.hwnd, monitorDefaultNear)
 		if r, _, _ := getMonitorInfoW.Call(monitor, uintptr(unsafe.Pointer(&mi))); r == 0 {
 			return
 		}
-		c.savedPlace = windowPlacement{}
-		c.savedPlace.Length = uint32(unsafe.Sizeof(c.savedPlace))
-		getWindowPlacement.Call(w.hwnd, uintptr(unsafe.Pointer(&c.savedPlace)))
-		c.savedStyle, _, _ = getWindowLongPtrW.Call(w.hwnd, gwlStyle)
-		c.fullScreen = true
-		w.showMenuBar()
-		setWindowLongPtrW.Call(w.hwnd, gwlStyle, c.savedStyle&^wsOverlappedWindow|wsPopup)
+		if !c.fullScreen {
+			c.savedPlace = windowPlacement{}
+			c.savedPlace.Length = uint32(unsafe.Sizeof(c.savedPlace))
+			if ok, _, _ := getWindowPlacement.Call(w.hwnd, uintptr(unsafe.Pointer(&c.savedPlace))); ok == 0 {
+				return
+			}
+			c.savedStyle, _, _ = getWindowLongPtrW.Call(w.hwnd, gwlStyle)
+			c.fullScreen = true
+			w.showMenuBar()
+			setWindowLongPtrW.Call(w.hwnd, gwlStyle, c.savedStyle&^wsOverlappedWindow|wsPopup)
+		}
+		c.fullScreenMonitor = monitor
 		m := mi.Monitor
 		setWindowPos.Call(w.hwnd, 0, uintptr(m.Left), uintptr(m.Top), uintptr(m.Right-m.Left), uintptr(m.Bottom-m.Top),
 			swpNoOwnerZOrder|swpFrameChanged)
 	} else {
-		c.fullScreen = false
+		if !c.fullScreen {
+			return
+		}
+		c.fullScreen, c.fullScreenMonitor = false, 0
 		setWindowLongPtrW.Call(w.hwnd, gwlStyle, c.savedStyle)
 		w.showMenuBar()
 		setWindowPlacement.Call(w.hwnd, uintptr(unsafe.Pointer(&c.savedPlace)))

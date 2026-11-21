@@ -2665,6 +2665,8 @@ func (s *surface) windowCommand(c *driver.WindowCommand) {
 	switch c.Action {
 	case driver.WindowToggleFullScreen:
 		s.toggleBrowserFullscreen()
+	case driver.WindowSetFullScreen:
+		s.setBrowserFullscreen(c.On)
 	case driver.WindowClose:
 		js.Global().Call("close")
 	case driver.WindowDestroy:
@@ -2973,6 +2975,13 @@ func (s *surface) escape(e js.Value) {
 		return
 	}
 	if e.Get("key").String() != "Escape" || e.Get("isComposing").Bool() || e.Get("defaultPrevented").Bool() {
+		return
+	}
+	// A browser that delivers Escape to the page leaves full screen before
+	// the app treats the key as a back action.
+	if s.browserFullscreen() {
+		e.Call("preventDefault")
+		s.setBrowserFullscreen(false)
 		return
 	}
 	if n := len(s.alerts); n > 0 {

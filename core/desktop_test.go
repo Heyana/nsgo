@@ -67,6 +67,8 @@ func TestWindowCommands(t *testing.T) {
 		cx.SetTitleBar(TitleBarHidden, 40)
 		cx.SetWindowControls(lights)
 		cx.SetWindowMaterial(WindowMaterialSidebar)
+		cx.SetFullScreen(true, "display-2")
+		cx.SetFullScreen(false)
 		return View{TestID: "bar", Desktop: DesktopViewProps{WindowDrag: WindowDragOn}}
 	})
 	b := h.commit()
@@ -80,6 +82,8 @@ func TestWindowCommands(t *testing.T) {
 		{Action: driver.WindowSetTitleBar, TitleBar: TitleBarHidden, Height: 40},
 		{Action: driver.WindowSetControls, Controls: lights},
 		{Action: driver.WindowSetMaterial, Material: WindowMaterialSidebar},
+		{Action: driver.WindowSetFullScreen, On: true, DisplayID: "display-2"},
+		{Action: driver.WindowSetFullScreen},
 	}; !slices.Equal(cmds, want) {
 		t.Fatalf("window commands = %+v, want %+v", cmds, want)
 	}

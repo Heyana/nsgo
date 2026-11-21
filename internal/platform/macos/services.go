@@ -547,18 +547,21 @@ func displays() []driver.DisplayInfo {
 		screen := screens.Send(sel("objectAtIndex:"), i)
 		frame := objc.Send[apple.CGRect](screen, sel("frame"))
 		visible := objc.Send[apple.CGRect](screen, sel("visibleFrame"))
-		description := screen.Send(sel("deviceDescription"))
-		number := description.Send(sel("objectForKey:"), apple.NSString("NSScreenNumber"))
-		id := strconv.FormatUint(uint64(objc.Send[uint64](number, sel("unsignedLongLongValue"))), 10)
-		if number == 0 {
-			id = strconv.FormatUint(uint64(i), 10)
-		}
 		point := func(r apple.CGRect) driver.Bounds {
 			return driver.Bounds{Origin: driver.Point{X: driver.Points(r.Origin.X - primaryFrame.Origin.X), Y: driver.Points(top - r.Origin.Y - r.Size.Height)}, Size: driver.Size{Width: driver.Points(r.Size.Width), Height: driver.Points(r.Size.Height)}}
 		}
-		out = append(out, driver.DisplayInfo{ID: id, Frame: point(frame), VisibleFrame: point(visible), Scale: float32(objc.Send[float64](screen, sel("backingScaleFactor"))), Main: screen == primary})
+		out = append(out, driver.DisplayInfo{ID: screenDisplayID(screen, i), Frame: point(frame), VisibleFrame: point(visible), Scale: float32(objc.Send[float64](screen, sel("backingScaleFactor"))), Main: screen == primary})
 	}
 	return out
+}
+
+func screenDisplayID(screen objc.ID, index uint) string {
+	description := screen.Send(sel("deviceDescription"))
+	number := description.Send(sel("objectForKey:"), apple.NSString("NSScreenNumber"))
+	if number == 0 {
+		return strconv.FormatUint(uint64(index), 10)
+	}
+	return strconv.FormatUint(objc.Send[uint64](number, sel("unsignedLongLongValue")), 10)
 }
 
 // usableScreens returns what the screens leave windows, past the menu bar
