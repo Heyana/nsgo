@@ -102,7 +102,8 @@ var exempt = map[string][]string{
 		"SetLaunchAtLogin", "OnOpenFiles", "OnOpenLinks", "CheckForUpdates", "InstallPackage", "CanInstallPackages",
 		"OpenInstallSettings", "Store", "DataDir", "CacheDir", "LogsDir", "OpenFile", "Share", "RevealFile", "TrashFile", "KeepAwake",
 		"SetTaskProgress", "SetDockMenu", "AddRecentFile", "ClearRecentFiles", "LookUp", "QuickLook", "RequestReview"},
-	"stopping what the code's own requests started, which asked the gate": {"StopSpeaking"},
+	"app-volume capacity, exposed to Go and gated by the project's declaration on Apple": {"DiskSpace"},
+	"stopping what the code's own requests started, which asked the gate":                {"StopSpeaking"},
 }
 
 // TestServicesGoThroughTheGate holds every exported Scope method to a listing: a gated one must reach gate or denied with its service, through the Scope methods and functions it calls, and an exempt one must not. A new method fails until it is listed, so a service that reaches the platform cannot skip the gate unnoticed.
