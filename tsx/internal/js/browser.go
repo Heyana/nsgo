@@ -1,16 +1,5 @@
 //go:build js
 
-// Package js is the JavaScript engine package tsx runs apps on: goja on
-// every target but the web (goja.go), where the page's own engine runs
-// them. Its API is goja's, so the runtime is written once; here it is the
-// part tsx uses, over syscall/js, each Runtime a realm of its own, an
-// iframe of the page's origin.
-//
-// Values cross as goja's do: primitives are copied into Go, objects are
-// handles, Go functions and objects are JS functions and objects calling
-// back through one function, and what JS throws comes back as an
-// *Exception. A Go panic in a Go function JS called goes on in the Go code
-// that called JS.
 package js
 
 import (
@@ -39,21 +28,6 @@ var engineProperties = EngineProperties{
 	HasNativeIntl:        true,
 	SharesPageAuthority:  true,
 }
-
-// Callable is a JS function as Go calls it.
-type Callable func(this Value, args ...Value) (Value, error)
-
-// Constructor is a JS constructor as Go calls it with new.
-type Constructor func(newTarget *Object, args ...Value) (*Object, error)
-
-// Flag is a property attribute's setting.
-type Flag int
-
-const (
-	FLAG_NOT_SET Flag = iota
-	FLAG_FALSE
-	FLAG_TRUE
-)
 
 func (f Flag) js(def bool) bool {
 	if f == FLAG_NOT_SET {
@@ -88,35 +62,6 @@ func MustCompile(name, src string, _ bool) *Program { return &Program{name: name
 // timeProgram patches Date to read the app's clock.
 var timeProgram = MustCompile(websrc.Time.Name, websrc.Time.Source, true)
 
-// FunctionCall is a call of a Go function from JS.
-type FunctionCall struct {
-	This      Value
-	Arguments []Value
-}
-
-// Argument returns argument i, undefined when missing.
-func (f FunctionCall) Argument(i int) Value {
-	if i < len(f.Arguments) {
-		return f.Arguments[i]
-	}
-	return Undefined()
-}
-
-// ConstructorCall is a call of a Go constructor with new.
-type ConstructorCall struct {
-	This      *Object
-	Arguments []Value
-	NewTarget *Object
-}
-
-// Argument returns argument i, undefined when missing.
-func (f ConstructorCall) Argument(i int) Value {
-	if i < len(f.Arguments) {
-		return f.Arguments[i]
-	}
-	return Undefined()
-}
-
 // Exception is what JS threw.
 type Exception struct {
 	val   Value
@@ -145,21 +90,18 @@ func (e *Exception) Unwrap() error {
 	return nil
 }
 
-// InterruptedError and StackOverflowError are goja's; the page's engine
-// cannot be interrupted and reports overflows as RangeErrors.
-type InterruptedError struct{ Exception }
-type StackOverflowError struct{ Exception }
+// InterruptedError and StackOverflowError are available on Goja. The browser
+// reports overflows as regular JavaScript exceptions and cannot be interrupted.
+type InterruptedError struct{ exception Exception }
+type StackOverflowError struct{ exception Exception }
 
-func (*InterruptedError) CallError() error { return nil }
-
-// PromiseState is a promise's state.
-type PromiseState int
-
-const (
-	PromiseStatePending PromiseState = iota
-	PromiseStateFulfilled
-	PromiseStateRejected
-)
+func (e *InterruptedError) Error() string    { return e.exception.Error() }
+func (e *InterruptedError) String() string   { return e.exception.String() }
+func (e *InterruptedError) Unwrap() error    { return e.exception.Unwrap() }
+func (*InterruptedError) CallError() error   { return nil }
+func (e *StackOverflowError) Error() string  { return e.exception.Error() }
+func (e *StackOverflowError) String() string { return e.exception.String() }
+func (e *StackOverflowError) Unwrap() error  { return e.exception.Unwrap() }
 
 // Promise is a JS promise. Its state follows the promise's reactions from
 // its first reading, so it changes only once the page's engine ran them.
@@ -227,7 +169,7 @@ type helpers struct {
 	newPromise, track, run, kind, str, num        sjs.Value
 	className, keys, array, typeError, error      sjs.Value
 	toObject, setProto, getProto, set, json, desc sjs.Value
-	del, bytes, buffer, date, dateValue           sjs.Value
+	bytes, buffer, date, dateValue                sjs.Value
 }
 
 // factory returns the realm's helper factory: the page's own when it
@@ -290,7 +232,7 @@ func New() *Runtime {
 		newPromise: g("newPromise"), track: g("track"), run: g("run"), kind: g("kind"), str: g("str"), num: g("num"),
 		className: g("className"), keys: g("keys"), array: g("array"), typeError: g("typeError"), error: g("error"),
 		toObject: g("toObject"), setProto: g("setProto"), getProto: g("getProto"), set: g("set"), json: g("json"), desc: g("desc"),
-		del: g("del"), bytes: g("bytes"), buffer: g("buffer"), date: g("date"), dateValue: g("dateValue"),
+		bytes: g("bytes"), buffer: g("buffer"), date: g("date"), dateValue: g("dateValue"),
 	}
 	return r
 }
@@ -368,9 +310,9 @@ func (r *Runtime) guarded(fn func(this, target sjs.Value, args []sjs.Value) sjs.
 		}
 		switch v := p.(type) {
 		case *Exception:
-			r.h.setThrown.Invoke(v.val.js())
+			r.h.setThrown.Invoke(jsOf(v.val))
 		case Value:
-			r.h.setThrown.Invoke(v.js())
+			r.h.setThrown.Invoke(jsOf(v))
 		default:
 			// A Go panic: JS unwinds, and the Go code that called JS
 			// goes on with it, with where it began.
@@ -584,7 +526,7 @@ func (r *Runtime) NewObject() *Object {
 func (r *Runtime) NewArray(items ...any) *Object {
 	args := make([]any, len(items))
 	for i, it := range items {
-		args[i] = r.ToValue(it).js()
+		args[i] = jsOf(r.ToValue(it))
 	}
 	return &Object{r: r, v: r.h.array.Invoke(args...)}
 }
@@ -610,7 +552,7 @@ func (r *Runtime) NewPromise() (*Promise, func(any) error, func(any) error) {
 	resolve, reject := trio.Index(1), trio.Index(2)
 	settle := func(fn sjs.Value) func(any) error {
 		return func(v any) error {
-			_, err := r.try(func() sjs.Value { return fn.Invoke(r.ToValue(v).js()) })
+			_, err := r.try(func() sjs.Value { return fn.Invoke(jsOf(r.ToValue(v))) })
 			return err
 		}
 	}
@@ -710,7 +652,7 @@ func jsOf(v Value) sjs.Value {
 	if v == nil {
 		return sjs.Undefined()
 	}
-	return v.js()
+	return v.(browserValue).js()
 }
 
 func jsAll(vs []Value) []any {

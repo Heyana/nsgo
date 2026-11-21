@@ -74,7 +74,6 @@
     toObject: (v) => Object(v),
     setProto: (o, p) => { Object.setPrototypeOf(o, p); },
     getProto: (o) => Object.getPrototypeOf(o),
-    del: (o, k) => delete o[k],
     bytes: (n) => new Uint8Array(n),
     buffer: (b) => (b instanceof ArrayBuffer ? new Uint8Array(b) : new Uint8Array(b.buffer, b.byteOffset, b.byteLength)),
     date: (ms) => new Date(ms),

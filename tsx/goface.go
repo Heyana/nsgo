@@ -573,7 +573,7 @@ var (
 	boundsType    = reflect.TypeFor[core.Bounds]()
 	imageType     = reflect.TypeFor[core.ImageSource]()
 	pressType     = reflect.TypeFor[core.PressEvent]()
-	gojaValueType = reflect.TypeFor[js.Value]()
+	jsValueGoType = reflect.TypeFor[js.Value]()
 	errorType     = reflect.TypeFor[error]()
 	easingType    = reflect.TypeFor[core.Easing]()
 	regexpType    = reflect.TypeFor[*regexp.Regexp]()
@@ -933,7 +933,7 @@ func (r *runtime) decode(v js.Value, t reflect.Type) reflect.Value {
 	case refType:
 		out.Set(reflect.ValueOf(r.labelRef(v)))
 		return out
-	case gojaValueType:
+	case jsValueGoType:
 		out.Set(reflect.ValueOf(v))
 		return out
 	case styleType:
@@ -1110,6 +1110,12 @@ func setInt(v reflect.Value, n int64) {
 func (r *runtime) encode(v reflect.Value) js.Value {
 	if !v.IsValid() {
 		return js.Undefined()
+	}
+	if v.CanInterface() {
+		switch x := v.Interface().(type) {
+		case js.Value, *js.Promise, js.ArrayBuffer:
+			return r.vm.ToValue(x)
+		}
 	}
 	if s, ok := shapeOf(v.Type()); ok {
 		if s.write != nil {

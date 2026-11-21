@@ -93,7 +93,9 @@ func (n *node) box() *core.Element {
 // value is n's JS object.
 func (n *node) value() *js.Object {
 	if n.obj == nil {
-		n.obj = n.r.vm.ToValue(n).(*js.Object)
+		n.obj = n.r.vm.NewObject()
+		_ = n.obj.SetPrototype(n.r.nodePrototype())
+		_ = n.obj.DefineDataPropertySymbol(nodeKey, n.r.vm.ToValue(&nodeTarget{n}), js.FLAG_FALSE, js.FLAG_FALSE, js.FLAG_FALSE)
 	}
 	return n.obj
 }
@@ -101,8 +103,10 @@ func (n *node) value() *js.Object {
 // nodeOf returns the node v is, or nil.
 func (r *runtime) nodeOf(v js.Value) *node {
 	if o, ok := v.(*js.Object); ok {
-		if n, ok := o.Export().(*node); ok && n.r == r {
-			return n
+		if v := o.GetSymbol(nodeKey); v != nil {
+			if t, ok := v.Export().(*nodeTarget); ok && t.node.r == r && t.node.obj.StrictEquals(o) {
+				return t.node
+			}
 		}
 	}
 	return nil

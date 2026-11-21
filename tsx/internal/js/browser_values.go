@@ -11,20 +11,9 @@ import (
 	"time"
 )
 
-// Value is a JS value: a primitive copied into Go, or an *Object.
-type Value interface {
-	Export() any
-	ExportType() reflect.Type
-	ToInteger() int64
-	ToFloat() float64
-	ToNumber() Value
-	ToString() Value
-	String() string
-	ToBoolean() bool
-	ToObject(*Runtime) *Object
-	SameAs(Value) bool
-	Equals(Value) bool
-	StrictEquals(Value) bool
+type browserValue interface {
+	Value
+	toObject(*Runtime) *Object
 	js() sjs.Value
 }
 
@@ -50,11 +39,9 @@ func (v undefinedValue) ToNumber() Value        { return floatValue(math.NaN()) 
 func (undefinedValue) ToString() Value          { return stringValue("undefined") }
 func (undefinedValue) String() string           { return "undefined" }
 func (undefinedValue) ToBoolean() bool          { return false }
-func (undefinedValue) ToObject(r *Runtime) *Object {
+func (undefinedValue) toObject(r *Runtime) *Object {
 	panic(r.NewTypeError("Cannot convert undefined to object"))
 }
-func (undefinedValue) SameAs(o Value) bool       { return IsUndefined(o) }
-func (undefinedValue) Equals(o Value) bool       { return IsUndefined(o) || IsNull(o) }
 func (undefinedValue) StrictEquals(o Value) bool { return IsUndefined(o) }
 func (undefinedValue) js() sjs.Value             { return sjs.Undefined() }
 
@@ -66,9 +53,7 @@ func (nullValue) ToNumber() Value             { return floatValue(0) }
 func (nullValue) ToString() Value             { return stringValue("null") }
 func (nullValue) String() string              { return "null" }
 func (nullValue) ToBoolean() bool             { return false }
-func (nullValue) ToObject(r *Runtime) *Object { panic(r.NewTypeError("Cannot convert null to object")) }
-func (nullValue) SameAs(o Value) bool         { return IsNull(o) }
-func (nullValue) Equals(o Value) bool         { return IsUndefined(o) || IsNull(o) }
+func (nullValue) toObject(r *Runtime) *Object { panic(r.NewTypeError("Cannot convert null to object")) }
 func (nullValue) StrictEquals(o Value) bool   { return IsNull(o) }
 func (nullValue) js() sjs.Value               { return sjs.Null() }
 
@@ -85,11 +70,9 @@ func (b boolValue) ToNumber() Value { return floatValue(b.ToFloat()) }
 func (b boolValue) ToString() Value { return stringValue(b.String()) }
 func (b boolValue) String() string  { return strconv.FormatBool(bool(b)) }
 func (b boolValue) ToBoolean() bool { return bool(b) }
-func (b boolValue) ToObject(r *Runtime) *Object {
+func (b boolValue) toObject(r *Runtime) *Object {
 	return &Object{r: r, v: r.h.toObject.Invoke(bool(b))}
 }
-func (b boolValue) SameAs(o Value) bool       { return b.StrictEquals(o) }
-func (b boolValue) Equals(o Value) bool       { return b.StrictEquals(o) || looseNumber(b, o) }
 func (b boolValue) StrictEquals(o Value) bool { ob, ok := o.(boolValue); return ok && ob == b }
 func (b boolValue) js() sjs.Value             { return sjs.ValueOf(bool(b)) }
 
@@ -119,20 +102,9 @@ func (f floatValue) ToNumber() Value  { return f }
 func (f floatValue) ToString() Value  { return stringValue(f.String()) }
 func (f floatValue) String() string   { return numberString(float64(f)) }
 func (f floatValue) ToBoolean() bool  { return f != 0 && !math.IsNaN(float64(f)) }
-func (f floatValue) ToObject(r *Runtime) *Object {
+func (f floatValue) toObject(r *Runtime) *Object {
 	return &Object{r: r, v: r.h.toObject.Invoke(float64(f))}
 }
-func (f floatValue) SameAs(o Value) bool {
-	of, ok := o.(floatValue)
-	if !ok {
-		return false
-	}
-	if math.IsNaN(float64(f)) {
-		return math.IsNaN(float64(of))
-	}
-	return f == of && math.Signbit(float64(f)) == math.Signbit(float64(of))
-}
-func (f floatValue) Equals(o Value) bool       { return f.StrictEquals(o) || looseNumber(f, o) }
 func (f floatValue) StrictEquals(o Value) bool { of, ok := o.(floatValue); return ok && of == f }
 func (f floatValue) js() sjs.Value             { return sjs.ValueOf(float64(f)) }
 
@@ -144,23 +116,12 @@ func (s stringValue) ToNumber() Value        { return floatValue(s.ToFloat()) }
 func (s stringValue) ToString() Value        { return s }
 func (s stringValue) String() string         { return string(s) }
 func (s stringValue) ToBoolean() bool        { return s != "" }
-func (s stringValue) ToObject(r *Runtime) *Object {
+func (s stringValue) toObject(r *Runtime) *Object {
 	return &Object{r: r, v: r.h.toObject.Invoke(string(s))}
 }
-func (s stringValue) SameAs(o Value) bool       { return s.StrictEquals(o) }
-func (s stringValue) Equals(o Value) bool       { return s.StrictEquals(o) || looseNumber(s, o) }
 func (s stringValue) StrictEquals(o Value) bool { os, ok := o.(stringValue); return ok && os == s }
 func (s stringValue) js() sjs.Value             { return sjs.ValueOf(string(s)) }
 
-func looseNumber(a, b Value) bool {
-	switch b.(type) {
-	case boolValue, floatValue, stringValue:
-		return a.ToFloat() == b.ToFloat()
-	}
-	return false
-}
-
-// stringNumber is JS's ToNumber of a string.
 func stringNumber(s string) float64 {
 	s = strings.TrimSpace(s)
 	switch s {
@@ -206,9 +167,7 @@ func (s *Symbol) ToNumber() Value             { return floatValue(math.NaN()) }
 func (s *Symbol) ToString() Value             { return stringValue(s.String()) }
 func (s *Symbol) String() string              { return "Symbol(" + s.desc + ")" }
 func (s *Symbol) ToBoolean() bool             { return true }
-func (s *Symbol) ToObject(r *Runtime) *Object { return &Object{r: r, v: r.h.toObject.Invoke(s.v)} }
-func (s *Symbol) SameAs(o Value) bool         { return s.StrictEquals(o) }
-func (s *Symbol) Equals(o Value) bool         { return s.StrictEquals(o) }
+func (s *Symbol) toObject(r *Runtime) *Object { return &Object{r: r, v: r.h.toObject.Invoke(s.v)} }
 func (s *Symbol) StrictEquals(o Value) bool   { os, ok := o.(*Symbol); return ok && os.v.Equal(s.v) }
 func (s *Symbol) js() sjs.Value               { return s.v }
 
@@ -223,7 +182,7 @@ func (o *Object) js() sjs.Value { return o.v }
 
 func (o *Object) isFunction() bool { return o.fn || o.v.Type() == sjs.TypeFunction }
 
-func (o *Object) ToObject(*Runtime) *Object { return o }
+func (o *Object) toObject(*Runtime) *Object { return o }
 func (o *Object) ToBoolean() bool           { return true }
 func (o *Object) ToFloat() float64 {
 	var f float64
@@ -241,8 +200,6 @@ func (o *Object) String() string {
 	_, _ = o.r.try(func() sjs.Value { s = o.r.h.str.Invoke(o.v).String(); return sjs.Undefined() })
 	return s
 }
-func (o *Object) SameAs(v Value) bool       { return o.StrictEquals(v) }
-func (o *Object) Equals(v Value) bool       { return o.StrictEquals(v) }
 func (o *Object) StrictEquals(v Value) bool { ov, ok := v.(*Object); return ok && ov.v.Equal(o.v) }
 
 // MarshalJSON writes the object as JSON.stringify does.
@@ -258,9 +215,10 @@ func (o *Object) MarshalJSON() ([]byte, error) {
 }
 
 // Get returns the property name, nil when the object has none.
-func (o *Object) Get(name string) Value {
-	var v sjs.Value
-	_, err := o.r.try(func() sjs.Value { v = o.r.h.get.Invoke(o.v, name); return v })
+func (o *Object) Get(name string) Value { return o.get(name) }
+
+func (o *Object) get(key any) Value {
+	v, err := o.r.try(func() sjs.Value { return o.r.h.get.Invoke(o.v, key) })
 	if err != nil {
 		panic(err)
 	}
@@ -271,15 +229,9 @@ func (o *Object) Get(name string) Value {
 }
 
 func (o *Object) Set(name string, v any) error {
-	val := o.r.ToValue(v).js()
+	val := jsOf(o.r.ToValue(v))
 	_, err := o.r.try(func() sjs.Value { o.v.Set(name, val); return sjs.Undefined() })
 	return err
-}
-
-func (o *Object) Delete(name string) bool {
-	var ok bool
-	_, _ = o.r.try(func() sjs.Value { ok = o.r.h.del.Invoke(o.v, name).Bool(); return sjs.Undefined() })
-	return ok
 }
 
 // Keys are the object's own enumerable string keys.
@@ -299,15 +251,11 @@ func (o *Object) GetSymbol(s *Symbol) Value {
 	if s == nil {
 		return nil
 	}
-	v := o.r.h.get.Invoke(o.v, s.v)
-	if v.Equal(o.r.h.missing) {
-		return nil
-	}
-	return o.r.wrap(v)
+	return o.get(s.v)
 }
 
 func (o *Object) SetSymbol(s *Symbol, v any) error {
-	val := o.r.ToValue(v).js()
+	val := jsOf(o.r.ToValue(v))
 	_, err := o.r.try(func() sjs.Value { return o.r.h.set.Invoke(o.v, s.v, val) })
 	return err
 }

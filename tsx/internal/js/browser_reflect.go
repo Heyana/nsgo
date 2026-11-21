@@ -21,7 +21,7 @@ var (
 )
 
 // ToObject boxes v using the realm's prototypes and returns objects unchanged.
-func (r *Runtime) ToObject(v Value) *Object { return v.ToObject(r) }
+func (r *Runtime) ToObject(v Value) *Object { return v.(browserValue).toObject(r) }
 
 // ToValue makes a JS value of a Go one, as goja does: primitives as
 // themselves, functions as JS functions converting their arguments and
@@ -112,7 +112,7 @@ func (r *Runtime) reflectValue(v reflect.Value) Value {
 		}
 		items := make([]any, v.Len())
 		for i := range items {
-			items[i] = r.reflectValue(v.Index(i)).js()
+			items[i] = jsOf(r.reflectValue(v.Index(i)))
 		}
 		return &Object{r: r, v: r.h.array.Invoke(items...)}
 	case reflect.Map:
@@ -122,7 +122,7 @@ func (r *Runtime) reflectValue(v reflect.Value) Value {
 		o := r.NewObject()
 		it := v.MapRange()
 		for it.Next() {
-			o.v.Set(fmt.Sprint(it.Key().Interface()), r.reflectValue(it.Value()).js())
+			o.v.Set(fmt.Sprint(it.Key().Interface()), jsOf(r.reflectValue(it.Value())))
 		}
 		return o
 	case reflect.Interface:
@@ -211,7 +211,7 @@ func (r *Runtime) proto(t reflect.Type) sjs.Value {
 				return recv.FieldByIndex(index)
 			}
 			get := r.newFunc(func(this, _ sjs.Value, _ []sjs.Value) sjs.Value {
-				return r.reflectValue(field(this)).js()
+				return jsOf(r.reflectValue(field(this)))
 			}, false)
 			set := r.newFunc(func(this, _ sjs.Value, args []sjs.Value) sjs.Value {
 				fv := field(this)
@@ -289,11 +289,11 @@ func (r *Runtime) results(out []reflect.Value) sjs.Value {
 		if out[0].Type() == valueType && out[0].IsNil() {
 			return sjs.Undefined()
 		}
-		return r.reflectValue(out[0]).js()
+		return jsOf(r.reflectValue(out[0]))
 	}
 	items := make([]any, len(out))
 	for i, o := range out {
-		items[i] = r.reflectValue(o).js()
+		items[i] = jsOf(r.reflectValue(o))
 	}
 	return r.h.array.Invoke(items...)
 }
@@ -313,7 +313,7 @@ func (r *Runtime) exportAs(v Value, t reflect.Type) (reflect.Value, error) {
 		if IsUndefined(v) || IsNull(v) {
 			return reflect.Zero(t), nil
 		}
-		return reflect.ValueOf(v.ToObject(r)), nil
+		return reflect.ValueOf(r.ToObject(v)), nil
 	case anyType:
 		e := v.Export()
 		if e == nil {

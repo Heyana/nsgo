@@ -1,9 +1,5 @@
 //go:build !js
 
-// Package js is the JavaScript engine package tsx runs apps on: goja on
-// every target but the web, where the page's own engine runs them
-// (browser.go). The native adapter shares Goja's value types and exposes
-// the runtime operations in runtime.go.
 package js
 
 import (
@@ -13,47 +9,17 @@ import (
 	"github.com/nsgo-dev/goja"
 )
 
-type (
-	Value              = goja.Value
-	Object             = goja.Object
-	FunctionCall       = goja.FunctionCall
-	ConstructorCall    = goja.ConstructorCall
-	Exception          = goja.Exception
-	Promise            = goja.Promise
-	PromiseState       = goja.PromiseState
-	ArrayBuffer        = goja.ArrayBuffer
-	Symbol             = goja.Symbol
-	Callable           = goja.Callable
-	Program            = goja.Program
-	InterruptedError   = goja.InterruptedError
-	StackOverflowError = goja.StackOverflowError
-	String             = goja.String
-)
+// Program is a script compiled for RunProgram.
+type Program goja.Program
 
-const (
-	PromiseStatePending   = goja.PromiseStatePending
-	PromiseStateFulfilled = goja.PromiseStateFulfilled
-	PromiseStateRejected  = goja.PromiseStateRejected
-
-	FLAG_TRUE  = goja.FLAG_TRUE
-	FLAG_FALSE = goja.FLAG_FALSE
-)
+func MustCompile(name, source string, strict bool) *Program {
+	return (*Program)(goja.MustCompile(name, source, strict))
+}
 
 var engineProperties = EngineProperties{
 	CanInterrupt:    true,
 	CanLimitRegexps: true,
 }
-
-var (
-	Undefined         = goja.Undefined
-	Null              = goja.Null
-	IsUndefined       = goja.IsUndefined
-	IsNull            = goja.IsNull
-	AssertFunction    = goja.AssertFunction
-	AssertConstructor = goja.AssertConstructor
-	NewSymbol         = goja.NewSymbol
-	MustCompile       = goja.MustCompile
-)
 
 // TrackCallers does nothing because goja provides the current call stack.
 func TrackCallers(*Runtime) {}
@@ -70,7 +36,7 @@ func Caller(r *Runtime) (file string, line int, ok bool) {
 
 // StringData is the memory goja keeps s, a string it made, in: where it starts and its size in bytes. goja keeps an ASCII string as a Go string, a byte a unit, and others as UTF-16 with a leading BOM, or, as JSON.stringify returns them, as a Go string it reads as UTF-16 once it needs to, keeping both, which starts where its record of the two does; a concatenation it has not read yet, which keeps its parts, and a value that is no string have none (nil).
 func StringData(s Value) (*byte, int) {
-	switch v := reflect.ValueOf(s); v.Kind() {
+	switch v := reflect.ValueOf(rawValue(s)); v.Kind() {
 	case reflect.String:
 		if str := v.String(); str != "" {
 			return unsafe.StringData(str), len(str)

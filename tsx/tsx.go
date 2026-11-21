@@ -132,8 +132,9 @@ type runtime struct {
 	origin time.Time
 	// classes are the Go classes made in this VM; posting counts the
 	// async calls converting their arguments.
-	classes vmClasses
-	posting int
+	classes   vmClasses
+	posting   int
+	nodeProto *js.Object
 	// chunk loads a split bundle's chunks (SplitApp).
 	chunk func(key string) (string, error)
 	// committing is set while a commit is asked for after the page's
@@ -197,7 +198,7 @@ func newRuntime(cx *core.Scope) *runtime {
 		r.vm.SetAsyncContextTracker(&r.continuations)
 	}
 	r.attachEngine()
-	r.vm.Set("require", r.require)
+	r.vm.Set("require", r.function(func(call js.FunctionCall) js.Value { return r.require(arg(call, 0).String()) }))
 	r.installGlobals()
 	r.installTimers()
 	r.installAnimated()

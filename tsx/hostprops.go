@@ -296,7 +296,7 @@ func (r *runtime) textProp(p *core.Text, name string, v js.Value) bool {
 					out[i] = o
 				}
 				e := r.vm.NewObject()
-				_ = e.Set("lines", out)
+				_ = e.Set("lines", r.vm.NewArray(out...))
 				r.call(v, e)
 			}
 		}
@@ -649,7 +649,7 @@ func (r *runtime) inputProp(p *core.Input, name string, v js.Value) bool {
 				for i, f := range pe.Files {
 					files[i] = r.pastedFile(f)
 				}
-				_ = e.Set("files", files)
+				_ = e.Set("files", r.vm.NewArray(files...))
 				r.call(v, e)
 			}
 		}

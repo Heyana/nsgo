@@ -1,6 +1,7 @@
 package tsx
 
 import (
+	"reflect"
 	"strconv"
 	"time"
 
@@ -9,9 +10,29 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// The methods of a node (NSH's YNode, `_core.d.ts`): each a command to
-// the view through its ref. The VM's field name mapper names them as JS
-// does (Focus is focus).
+var nodeKey = js.NewSymbol("nsgo.node")
+
+// nodeTarget holds the Go node without exposing its methods to either
+// engine's reflection bridge.
+type nodeTarget struct{ node *node }
+
+// nodePrototype exposes the methods of NSH's YNode through the same
+// argument and result conversions as TSX's other Go methods.
+func (r *runtime) nodePrototype() *js.Object {
+	if r.nodeProto == nil {
+		r.nodeProto = r.vm.NewObject()
+		t := reflect.TypeFor[*node]()
+		for i := range t.NumMethod() {
+			m := t.Method(i)
+			name := lowerCamel(m.Name)
+			_ = r.nodeProto.Set(name, r.function(func(call js.FunctionCall) js.Value {
+				n := r.mustNode(call.This)
+				return r.callGo("Node."+name, reflect.ValueOf(n).Method(i), call.Arguments)
+			}))
+		}
+	}
+	return r.nodeProto
+}
 
 // Focus focuses an <Input>.
 func (n *node) Focus() {

@@ -6,12 +6,19 @@ import (
 )
 
 func TestRuntimeMethodSet(t *testing.T) {
-	api := reflect.TypeFor[runtimeAPI]()
-	runtime := reflect.TypeFor[*Runtime]()
-	for i := range runtime.NumMethod() {
-		method := runtime.Method(i)
+	checkMethodSet(t, reflect.TypeFor[*Runtime](), reflect.TypeFor[runtimeAPI]())
+}
+
+func TestObjectMethodSet(t *testing.T) {
+	checkMethodSet(t, reflect.TypeFor[*Object](), reflect.TypeFor[objectAPI]())
+}
+
+func checkMethodSet(t *testing.T, implementation, api reflect.Type) {
+	t.Helper()
+	for i := range implementation.NumMethod() {
+		method := implementation.Method(i)
 		if _, ok := api.MethodByName(method.Name); !ok {
-			t.Errorf("%s is outside the shared runtime API", method.Name)
+			t.Errorf("%v.%s is outside the shared API", implementation, method.Name)
 		}
 	}
 }

@@ -218,3 +218,67 @@ func TestObjects(t *testing.T) {
 		t.Errorf("an array's class is %q", cn)
 	}
 }
+
+func TestValuesCrossCallsAndPromiseSettlement(t *testing.T) {
+	r := newRuntime(t)
+	object := r.NewObject()
+	symbol := NewSymbol("private")
+	if err := object.SetSymbol(symbol, r.ToValue("kept")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Set("object", object); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Set("symbol", symbol); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Set("through", func(call FunctionCall) Value {
+		arg, ok := call.Argument(0).(*Object)
+		if !ok || !arg.StrictEquals(object) {
+			t.Error("the callback received a different object")
+		}
+		if key, ok := call.Argument(1).(*Symbol); !ok || !key.StrictEquals(symbol) {
+			t.Error("the callback received a different symbol")
+		}
+		return arg
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out := run(t, r, "through(object, symbol)")
+	if !out.StrictEquals(object) || out.(*Object).GetSymbol(symbol).String() != "kept" {
+		t.Fatal("the callback lost the object's identity or symbol")
+	}
+
+	promise, resolve, _ := r.NewPromise()
+	if got := promise.State(); got != PromiseStatePending {
+		t.Fatalf("the new promise is %v", got)
+	}
+	if err := r.Set("promise", promise); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := r.Get("promise").Export().(*Promise); !ok || got.State() != PromiseStatePending {
+		t.Fatalf("the exported promise is %v", got)
+	}
+	done := make(chan Value, 1)
+	if err := r.Set("settled", func(call FunctionCall) Value {
+		done <- call.Argument(0)
+		return Undefined()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run(t, r, "promise.then(settled)")
+	if err := resolve(out); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-done:
+		if !got.StrictEquals(object) {
+			t.Error("the reaction received a different object")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the promise reaction did not run")
+	}
+	if got := promise.Result(); got == nil || !got.StrictEquals(object) {
+		t.Errorf("the promise result is %v", got)
+	}
+}

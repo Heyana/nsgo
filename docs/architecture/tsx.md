@@ -38,7 +38,7 @@ Read the NSH file before changing its port, and keep the port's names and order 
 
 ## The engines
 
-goja runs the JS on every target but the web: pure Go, so it builds everywhere. On the web the page's own engine runs it, as NSH 0.4.0's does (decided by the user, 2026-11-08), which keeps goja out of the WebAssembly (13 MB less in `examples/tsx`'s package). `tsx/internal/js` is the one API both share, goja's: on goja its types under other names (`goja.go`), on the web the part `tsx` uses over `syscall/js` (`browser.go`), so the runtime is written once. CI runs the shared JavaScript API and TSX runtime suites on goja and in Chromium (`go tool nsgo test -target web ./tsx/internal/js` and `go tool nsgo test -target web ./tsx`).
+goja runs the JS on every target but the web: pure Go, so it builds everywhere. On the web the page's own engine runs it, as NSH 0.4.0's does (decided by the user, 2026-11-08), which keeps goja out of the WebAssembly (13 MB less in `examples/tsx`'s package). `tsx/internal/js` defines the runtime, value and object operations TSX uses on both engines. The native adapter keeps Goja's APIs behind that contract. The browser adapter implements the operations through `syscall/js`. CI runs the shared JavaScript API and TSX runtime suites on goja and in Chromium (`go tool nsgo test -target web ./tsx/internal/js` and `go tool nsgo test -target web ./tsx`).
 
 The alternatives to goja fail a [principle](../../AGENTS.md#principles) or a target:
 
@@ -60,7 +60,7 @@ What goja lacks, and the answer:
 - **`Intl` and locale methods**: goja has none (its `toLocaleString` reads a radix), so `intl.go` gives `Intl.NumberFormat`, `PluralRules` and `Collator` CLDR's data through `golang.org/x/text`, dates in English, and patches `Number`, `Date` and `String`'s locale methods.
 - **Speed**: slower than QuickJS on pure JS, so NSH's first performance rule matters more: only the app's code is JS.
 
-Both adapters implement the explicit `js.Runtime` method set in `tsx/internal/js/runtime.go`. The Goja runtime is private to its adapter. `Runtime.ToObject` boxes a value with the prototypes of that runtime's realm.
+The adapters share the method sets in `runtime.go` and `value.go`. `Runtime.ToObject` boxes a value with the prototypes of that runtime's realm. Object handles preserve JavaScript identity across callbacks, property access and promise settlement.
 
 ### The page's engine
 
