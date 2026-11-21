@@ -645,22 +645,19 @@ func webSchemeCallback(request, _ uintptr) {
 		contentType = driver.WebMIME(u.Path, body)
 	}
 	webkitURISchemeResponseSetContentType(response, cstr(contentType))
+	// The content type is the response's MIME type, but a page's fetch reads its headers only from the SoupMessageHeaders, so they carry it too, as Apple's NSHTTPURLResponse does.
+	const soupHeadersResponse = 1
+	headers := soupMessageHeadersNew(soupHeadersResponse)
+	webkitMessageHeadersAppend(headers, cstr("Content-Type"), cstr(contentType))
 	if resp != nil {
-		const soupHeadersResponse = 1
-		var headers uintptr
 		for name, value := range resp.Headers {
 			if !strings.EqualFold(name, "Content-Type") {
-				if headers == 0 {
-					headers = soupMessageHeadersNew(soupHeadersResponse)
-				}
 				webkitMessageHeadersAppend(headers, cstr(name), cstr(value))
 			}
 		}
-		if headers != 0 {
-			// set_http_headers takes ownership of the SoupMessageHeaders.
-			webkitURISchemeResponseSetHTTPHeaders(response, headers)
-		}
 	}
+	// set_http_headers takes ownership of the SoupMessageHeaders.
+	webkitURISchemeResponseSetHTTPHeaders(response, headers)
 	webkitURISchemeRequestFinishWithResponse(request, response)
 	gObjectUnref(response)
 	gObjectUnref(stream)
