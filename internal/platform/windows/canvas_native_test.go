@@ -3,8 +3,10 @@
 package windows
 
 import (
+	"bytes"
 	"context"
 	"image"
+	"image/color"
 	"image/png"
 	"os"
 	"testing"
@@ -80,6 +82,49 @@ func TestImageNearestSampling(t *testing.T) {
 	img := draw()
 	if p, differs := canvastest.SamplingDifference(img, image.Point{}, frame, canvastest.Scale, 0); differs {
 		t.Errorf("nearest Image differs at %v: %v", p, img.At(p.X, p.Y))
+	}
+}
+
+func TestCanvasMesh(t *testing.T) {
+	g, err := devices()
+	if err != nil {
+		t.Skip(err)
+	}
+	w := &window{scale: canvastest.Scale, animator: driver.NewAnimator(nil)}
+	draw := func(d *driver.Drawing) *image.RGBA {
+		return drawImage(t, g, 96, 96, func(p *painter) {
+			p.canvas(&view{drawing: d}, 96, 96)
+		}, w)
+	}
+	vert := func(x, y, u, v driver.Points, tint driver.Color) driver.CanvasVertex {
+		return driver.CanvasVertex{Position: driver.Point{X: x, Y: y}, TexCoord: driver.Point{X: u, Y: v}, Color: tint}
+	}
+	tex := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	tex.SetRGBA(1, 1, color.RGBA{R: 255, A: 255})
+	tex.SetRGBA(2, 1, color.RGBA{G: 255, A: 255})
+	tex.SetRGBA(1, 2, color.RGBA{B: 255, A: 255})
+	tex.SetRGBA(2, 2, color.RGBA{R: 255, G: 255, A: 255})
+	src := driver.ImageSource{Pixels: tex}
+	a, b := vert(16, 16, 1, 1, 0), vert(80, 16, 3, 1, 0)
+	c, e := vert(80, 80, 3, 3, 0), vert(16, 80, 1, 3, 0)
+	ref := draw(driver.NewDrawing(nil).DrawImageFrom(src, 1, 1, 2, 2, 16, 16, 64, 64))
+	got := draw(driver.NewDrawing(nil).DrawVertices(src, []driver.CanvasVertex{a, b, c, a, c, e}))
+	if !bytes.Equal(ref.Pix, got.Pix) {
+		t.Fatal("the textured mesh differs from the rectangular crop")
+	}
+	if c := got.RGBAAt(64, 64); c.R < 200 || c.G > 20 || c.B > 20 {
+		t.Fatalf("the crop's first texel was not drawn: %v", c)
+	}
+
+	white := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	white.SetRGBA(0, 0, color.RGBA{R: 128, G: 192, B: 255, A: 255})
+	tinted := draw(driver.NewDrawing(nil).DrawVertices(driver.ImageSource{Pixels: white}, []driver.CanvasVertex{
+		vert(0, 0, 0, 0, driver.RGB(0xff0000)),
+		vert(72, 0, 1, 0, driver.RGB(0x00ff00)),
+		vert(0, 72, 0, 1, driver.RGB(0x0000ff)),
+	}))
+	if c := tinted.RGBAAt(48, 48); c.R < 35 || c.R > 48 || c.G < 52 || c.G > 74 || c.B < 74 || c.B > 97 {
+		t.Fatalf("the mesh's interpolated tint at its barycenter was %v", c)
 	}
 }
 
