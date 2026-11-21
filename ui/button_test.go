@@ -6,14 +6,15 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/icons/lucide"
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
 // TestButton presses each variant, with a rim only on the outline and the secondary's fill see-through, 28 points tall on desktops and TVs and 44 on touch devices, and an icon's button as a square.
 func TestButton(t *testing.T) {
 	each(t, func(t *testing.T, e core.Environment) {
 		var pressed []string
-		variants := []ButtonVariant{ButtonPrimary, ButtonSecondary, ButtonOutline, ButtonGhost}
-		names := []string{"primary", "secondary", "outline", "ghost"}
+		variants := []ButtonVariant{ButtonPrimary, ButtonSecondary, ButtonOutline, ButtonGhost, ButtonTinted, ButtonDanger}
+		names := []string{"primary", "secondary", "outline", "ghost", "tinted", "danger"}
 		app, p := start(t, e, func(cx *core.Scope) core.Node {
 			var row []core.Node
 			for i, v := range variants {
@@ -56,6 +57,31 @@ func TestButton(t *testing.T) {
 		}
 		if w := app.Find("outline").Children[0].Style.BorderWidth; w != 1 {
 			t.Fatalf("outline has a %v rim, want 1", w)
+		}
+		for _, c := range []struct {
+			id   string
+			tone core.Color
+		}{{"tinted", p.Accent}, {"danger", p.Danger}} {
+			face := app.Find(c.id).Children[0]
+			if fill, ink := face.Style.Background, face.Children[0].TextStyle.Color; fill != Alpha(c.tone, 0.12) || ink != c.tone {
+				t.Fatalf("%s fill = %v and text = %v, want a tint and text of %v", c.id, fill, ink, c.tone)
+			}
+			if nsgotest.Target() == "" && e.Idiom == core.IdiomDesktop {
+				app.Hover(c.id)
+				if got := face.Style.Background; got != Alpha(c.tone, 0.18) {
+					t.Fatalf("%s hover fill = %v", c.id, got)
+				}
+				app.HoverOut()
+				finger := app.Touch(c.id, core.Point{X: 10, Y: 10})
+				if got := face.Style.Background; got != Alpha(c.tone, 0.25) {
+					t.Fatalf("%s press fill = %v", c.id, got)
+				}
+				finger.Lift()
+				app.Focus(c.id)
+				if got := app.Find(c.id).Style.Outline.Width; got != 2 {
+					t.Fatalf("%s focus outline width = %v, want 2", c.id, got)
+				}
+			}
 		}
 		if f := app.Find("icon").Children[0].Frame.Size; f.Width != wantHeight || f.Height != wantHeight {
 			t.Fatalf("icon's button = %v, want a %v square", f, wantHeight)
@@ -120,6 +146,51 @@ func TestButtonBusy(t *testing.T) {
 			t.Fatalf("saved %d times, want twice", saves)
 		}
 	})
+}
+
+func TestButtonBusyLabelKeepsRestingWidth(t *testing.T) {
+	var waiting *core.Signal[bool]
+	var label *core.Signal[string]
+	var presses int
+	app, _ := start(t, desktopEnv, func(cx *core.Scope) core.Node {
+		waiting = core.NewSignal(cx, false)
+		label = core.NewSignal(cx, "Wait")
+		return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignStart}, Children: []core.Node{
+			Button{Text: "Continue to checkout", TextStyle: core.Style{FontSize: 17, FontWeight: Semibold},
+				Busy: waiting.Get, BusyLabelFunc: label.Get, TestID: "buy", OnPress: func() { presses++ }},
+		}}
+	})
+	button := app.Find("buy")
+	idle := button.Frame.Size
+	if font := app.Find("text:Continue to checkout").TextStyle.Font; font.Size != 17 || font.Weight != Semibold {
+		t.Fatalf("button label font = %+v, want 17 point semibold", font)
+	}
+	app.Post(func() { waiting.Set(true) })
+	app.Settle()
+	if !button.Props.Busy || button.Props.Label != "Wait" || button.Frame.Size != idle || len(canvasStrokes(button)) != 2 {
+		t.Fatalf("busy button = %v, label %q, busy %v, spinner %v", button.Frame.Size, button.Props.Label, button.Props.Busy, canvasStrokes(button))
+	}
+	app.Find("text:Wait")
+	app.Press("buy")
+	if presses != 0 {
+		t.Fatalf("the busy button ran its action %d times", presses)
+	}
+	long := "Waiting for the payment provider"
+	app.Post(func() { label.Set(long) })
+	app.Settle()
+	progress := app.Find("text:" + long)
+	if button.Props.Label != long || progress.Bounds().Origin.X+progress.Bounds().Size.Width > button.Bounds().Origin.X+button.Bounds().Size.Width {
+		t.Fatalf("updated busy label %q does not fit in %v", button.Props.Label, button.Bounds())
+	}
+	app.Post(func() { waiting.Set(false) })
+	app.Settle()
+	if button.Props.Busy || button.Props.Label != "Continue to checkout" || button.Frame.Size != idle || len(canvasStrokes(button)) != 0 {
+		t.Fatalf("restored button = %v with label %q", button.Frame.Size, button.Props.Label)
+	}
+	app.Press("buy")
+	if presses != 1 {
+		t.Fatalf("the restored button ran its action %d times", presses)
+	}
 }
 
 // TestButtonStyleSizesTheFaceOnce keeps a Style's percentage width, margins and padding on the pressable, with the face covering its content box, and rounds the face by the Style's CornerRadius.

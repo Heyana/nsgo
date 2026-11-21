@@ -14,7 +14,7 @@ ui.Button{Text: "Cancel", Variant: ui.ButtonSecondary, OnPress: cancel}
 
 ## Variants and sizes
 
-`ui.Button.Variant` is `ButtonPrimary` (the default), `ButtonSecondary`, `ButtonOutline` or `ButtonGhost`. On desktop and TV idioms, `Size` is `SizeDefault` (28 points), `SizeSmall` (24) or `SizeLarge` (32). On touch idioms, the same sizes are 44, 40 and 48 points, so the button can be used without restyling it.
+`ui.Button.Variant` is `ButtonPrimary` (the default), `ButtonSecondary`, `ButtonOutline`, `ButtonGhost`, `ButtonTinted` or `ButtonDanger`. Tinted and danger use the theme’s accent or danger color on a soft fill. On desktop and TV idioms, `Size` is `SizeDefault` (28 points), `SizeSmall` (24) or `SizeLarge` (32). On touch idioms, the same sizes are 44, 40 and 48 points, so the button can be used without restyling it.
 
 ```go preview=button/variants
 ui.Button{Text: "Delete", Variant: ui.ButtonOutline, OnPress: remove}
@@ -37,7 +37,7 @@ ui.IconButton{Icon: lucide.Trash, Label: "Delete", Variant: ui.IconButtonGhost, 
 
 ## Content and states
 
-`ui.Button` shows `Text`, an optional leading `Icon`, or both.
+`ui.Button` shows `Text`, an optional leading `Icon`, or both. Use `TextStyle` to customize the label’s font size, weight or other text styles.
 
 ```go
 ui.Button{Text: "Saving…", Disabled: saving.Get, OnPress: save}
@@ -45,10 +45,10 @@ ui.Button{Text: "Saving…", Disabled: saving.Get, OnPress: save}
 
 `Disabled` takes a function, so the button follows a signal: a disabled button takes neither presses nor the keyboard focus, and its look is the disabled state, not a color the app picks.
 
-`Busy` is for an action still running. While it returns true, a spinner in the button's text color shows over the content, so it shows on a primary button's accent too, the button keeps its size, presses do nothing, and assistive technology hears that it is busy. It keeps the keyboard focus, unlike `Disabled`.
+`Busy` is for an action still running. While it returns true, a spinner in the button's text color shows over the content, so it shows on a primary button's accent too, presses do nothing, and assistive technology hears that it is busy. By default the content keeps its room under the spinner. The button keeps keyboard focus. `BusyLabel` or `BusyLabelFunc` shows a message beside the spinner and reports it as the button’s accessible name while it is busy. The button keeps at least its resting width.
 
 ```go preview=button/busy
-ui.Button{Text: "Save", Busy: saving.Get, OnPress: save}
+ui.Button{Text: "Save", Busy: saving.Get, BusyLabel: "Saving…", OnPress: save}
 ```
 
 `ui.Spinner` and `ui.ProgressRing` take a `Tint` of their own for any other surface their accent would vanish on.

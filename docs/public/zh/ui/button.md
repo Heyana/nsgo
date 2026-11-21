@@ -14,7 +14,7 @@ ui.Button{Text: "取消", Variant: ui.ButtonSecondary, OnPress: cancel}
 
 ## 变体与尺寸
 
-`ui.Button.Variant` 可以是 `ButtonPrimary`（默认）、`ButtonSecondary`、`ButtonOutline` 或 `ButtonGhost`。桌面和电视上，`Size` 可以是 `SizeDefault`（28 点）、`SizeSmall`（24）或 `SizeLarge`（32）；触屏设备上分别为 44、40 和 48 点。
+`ui.Button.Variant` 可以是 `ButtonPrimary`（默认）、`ButtonSecondary`、`ButtonOutline`、`ButtonGhost`、`ButtonTinted` 或 `ButtonDanger`。后两种分别使用主题的强调色和危险色，并配以浅色底。桌面和电视上，`Size` 可以是 `SizeDefault`（28 点）、`SizeSmall`（24）或 `SizeLarge`（32）；触屏设备上分别为 44、40 和 48 点。
 
 ```go preview=button/variants
 ui.Button{Text: "删除", Variant: ui.ButtonOutline, OnPress: remove}
@@ -37,6 +37,8 @@ ui.IconButton{Icon: lucide.Trash, Label: "删除", Variant: ui.IconButtonGhost, 
 
 ## 内容与状态
 
+用 `TextStyle` 设置按钮文字的字号、字重等样式。
+
 `ui.Button` 显示 `Text`、可选的前置 `Icon`，或两者都显示。
 
 ```go
@@ -45,10 +47,12 @@ ui.Button{Text: "正在保存…", Disabled: saving.Get, OnPress: save}
 
 `Disabled` 接受一个函数，所以按钮可以跟随 signal：禁用的按钮既不接受按压也不获得键盘焦点，它的外观是禁用状态，而不是应用挑选的颜色。
 
-`Busy` 用于仍在进行的操作。它返回 true 时，按钮内容上方显示一个按钮文字颜色的旋转指示器，所以在主按钮的强调色上也看得见；按钮保持原来的尺寸，按压不起作用，辅助技术会读出它正忙。与 `Disabled` 不同，它仍保留键盘焦点。
+`Busy` 用于仍在进行的操作。它返回 true 时，按钮内容上方显示一个按钮文字颜色的旋转指示器，所以在主按钮的强调色上也看得见；按压不起作用，辅助技术会读出它正忙。原有内容默认在指示器下方保留占位，按钮也保持键盘焦点。
+
+`BusyLabel` 或 `BusyLabelFunc` 在转圈指示器旁显示进度文字，忙碌时也将这段文字作为按钮的无障碍名称。按钮至少保留空闲时的宽度。
 
 ```go preview=button/busy
-ui.Button{Text: "保存", Busy: saving.Get, OnPress: save}
+ui.Button{Text: "保存", Busy: saving.Get, BusyLabel: "正在保存…", OnPress: save}
 ```
 
 在强调色会看不见的其他表面上，`ui.Spinner` 和 `ui.ProgressRing` 也可以用各自的 `Tint` 指定颜色。

@@ -13,7 +13,8 @@ import (
 // form, with their props to set.
 
 // buttonVariants are the button's looks, each labeled by its name.
-var buttonVariants = options([]ui.ButtonVariant{ui.ButtonPrimary, ui.ButtonSecondary, ui.ButtonOutline, ui.ButtonGhost}, "Primary", "Secondary", "Outline", "Ghost")
+var buttonVariants = options([]ui.ButtonVariant{ui.ButtonPrimary, ui.ButtonSecondary, ui.ButtonOutline, ui.ButtonGhost, ui.ButtonTinted, ui.ButtonDanger},
+	"Primary", "Secondary", "Outline", "Ghost", "Tinted", "Danger")
 
 func buttonCard(cx *core.Scope) core.Node {
 	selected, icon, iconOnly, disabled := core.NewSignal(cx, false), core.NewSignal(cx, false), core.NewSignal(cx, false), core.NewSignal(cx, false)

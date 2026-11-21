@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"cmp"
+
 	"github.com/nsgo-dev/nsgo/base"
 	"github.com/nsgo-dev/nsgo/core"
 )
@@ -20,6 +22,10 @@ const (
 	// and held down, as an IconButton's, such as a menu's trigger in a
 	// toolbar.
 	ButtonGhost
+	// ButtonTinted uses accent text on a quiet accent fill.
+	ButtonTinted
+	// ButtonDanger uses danger text on a quiet danger fill.
+	ButtonDanger
 )
 
 // Button is ui's button, as tall as its Size: Text with an optional
@@ -29,7 +35,9 @@ type Button struct {
 	Ref        *core.Ref
 	LabelledBy []*core.Ref
 	Text       string
-	Variant    ButtonVariant
+	// TextStyle overrides the typography of the button's label.
+	TextStyle core.Style
+	Variant   ButtonVariant
 	// Color fills it with that color instead.
 	Color func() core.Color
 	Icon  func() *core.SVG
@@ -39,6 +47,10 @@ type Button struct {
 	Disabled func() bool
 	// Busy says the button's action is still loading, for assistive technology too: while it returns true a spinner in the button's text color shows over its content, which keeps its room, and presses do nothing, so the action does not start twice.
 	Busy func() bool
+	// BusyLabel shows beside the spinner and names the busy button for
+	// assistive technology. BusyLabelFunc supplies the text when set.
+	BusyLabel     string
+	BusyLabelFunc func() string
 	// AutoFocus moves the keyboard focus here once it mounts, as base.Button's.
 	AutoFocus bool
 	// Flex grows it to share a row with its siblings.
@@ -69,8 +81,20 @@ func (b Button) Render(cx *core.Scope) core.Node {
 			}
 		}
 	}
-	return base.Button{Ref: b.Ref, LabelledBy: b.LabelledBy, OnPress: press, Disabled: b.Disabled, Busy: b.Busy, AutoFocus: b.AutoFocus, Label: b.label(), TestID: b.TestID,
-		Style: style, StyleFunc: focus, Children: []core.Node{face}}
+	label := b.label()
+	var labelFunc func() string
+	if b.Busy != nil && (b.BusyLabel != "" || b.BusyLabelFunc != nil) {
+		resting := label
+		label = ""
+		labelFunc = func() string {
+			if b.Busy() {
+				return cmp.Or(b.busyLabel(), resting)
+			}
+			return resting
+		}
+	}
+	return base.Button{Ref: b.Ref, LabelledBy: b.LabelledBy, OnPress: press, Disabled: b.Disabled, Busy: b.Busy, AutoFocus: b.AutoFocus,
+		Label: label, LabelFunc: labelFunc, TestID: b.TestID, Style: style, StyleFunc: focus, Children: []core.Node{face}}
 }
 
 // label is what assistive technology reads.
@@ -93,6 +117,10 @@ func (b Button) parts(cx *core.Scope) (core.Style, func() core.Style, core.Node)
 		fg = Fixed(core.RGB(0xffffff))
 	case b.Variant == ButtonPrimary:
 		fg = colors.OnAccent
+	case b.Variant == ButtonTinted:
+		fg = colors.Accent
+	case b.Variant == ButtonDanger:
+		fg = colors.Danger
 	}
 	// fill is the face at rest, under the pointer and held down.
 	fill := func() (rest, hover, pressed core.Color) {
@@ -107,6 +135,9 @@ func (b Button) parts(cx *core.Scope) (core.Style, func() core.Style, core.Node)
 			// The text's color at a low opacity, so it holds over any surface.
 			text := colors.Text()
 			return Alpha(text, 0.08), Alpha(text, 0.12), Alpha(text, 0.18)
+		case b.Variant == ButtonTinted, b.Variant == ButtonDanger:
+			tone := fg()
+			return Alpha(tone, 0.12), Alpha(tone, 0.18), Alpha(tone, 0.25)
 		}
 		return 0, colors.Hover(), colors.Pressed()
 	}
@@ -121,35 +152,26 @@ func (b Button) parts(cx *core.Scope) (core.Style, func() core.Style, core.Node)
 		}
 		children = append(children, Icon(b.Icon, glyph, tint))
 	}
+	textStyle := core.Style{FontSize: b.Size.text().FontSize, FontWeight: Regular}.Merge(b.TextStyle)
+	labelStyle := func() core.Style { return core.Style{Color: cmp.Or(b.TextStyle.Color, fg())} }
 	if b.Text != "" || b.Icon == nil {
-		children = append(children, Text(b.Text, b.Size.text().FontSize, Regular, fg))
+		children = append(children, core.Text{Content: b.Text, Style: textStyle, StyleFunc: labelStyle})
 	}
+	withBusyLabel := b.Busy != nil && (b.BusyLabel != "" || b.BusyLabelFunc != nil)
 	if b.Busy != nil {
-		// The content stays, unseen, so the button keeps its size while the spinner shows over it.
-		children = []core.Node{
-			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6, FlexShrink: 1}, Children: children,
-				StyleFunc: func() core.Style {
-					if b.Busy() {
-						return core.Style{Opacity: core.Alpha(0)}
-					}
-					return core.Style{}
-				}},
-			core.Show{When: b.Busy, Then: func(*core.Scope) core.Node {
-				return core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0), Left: core.Pt(0),
-					AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}, Children: []core.Node{Spinner{Size: b.Size.glyph(), Tint: fg}}}
-			}},
-		}
+		children = b.busyContent(children, textStyle, labelStyle, withBusyLabel)
 	}
 	shape := core.Style{Height: core.Pt(height), Padding: core.Symmetric(0, b.Size.inset())}
+	var minWidth core.Length
 	if b.Text == "" && b.Icon != nil {
-		side := b.Side
-		if side == 0 {
-			side = height
-		}
+		side := cmp.Or(b.Side, height)
 		shape = core.Style{Width: core.Pt(side), Height: core.Pt(side)}
+		if withBusyLabel {
+			minWidth, shape.Width = shape.Width, core.Length{}
+		}
 	}
 	style := core.Style{Group: "button", FlexGrow: b.Flex, FlexShrink: b.Flex, CornerRadius: RadiusControl,
-		Height: shape.Height, Width: shape.Width, Disabled: &core.Style{Opacity: core.Alpha(0.4)}}.Merge(b.Style)
+		Height: shape.Height, Width: shape.Width, MinWidth: minWidth, Disabled: &core.Style{Opacity: core.Alpha(0.4)}}.Merge(b.Style)
 	// Only the pressable takes the app's layout style: repeating a percentage width, margin or padding on the face would size or space it twice. The face's corners follow the pressable's, so the focus ring and the fill agree.
 	shape.Height, shape.Width = core.Length{}, core.Length{}
 	shape.FlexGrow, shape.FlexShrink, shape.MinHeight = 1, 1, core.Pt(0)
@@ -166,4 +188,43 @@ func (b Button) parts(cx *core.Scope) (core.Style, func() core.Style, core.Node)
 		return shape.Merge(s)
 	}
 	return style, func() core.Style { return core.Style{FocusVisible: FocusRing(cx, 2)} }, core.View{StyleFunc: face, Children: children}
+}
+
+func (b Button) busyLabel() string {
+	if b.BusyLabelFunc != nil {
+		return b.BusyLabelFunc()
+	}
+	return b.BusyLabel
+}
+
+func (b Button) busyContent(children []core.Node, textStyle core.Style, labelStyle func() core.Style, withLabel bool) []core.Node {
+	row := core.Style{Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 6, FlexShrink: 1}
+	content := core.View{Style: row, Children: children, AccessibilityElementsHidden: b.Busy,
+		StyleFunc: func() core.Style {
+			if b.Busy() {
+				return core.Style{Opacity: core.Alpha(0)}
+			}
+			return core.Style{}
+		}}
+	spinner := Spinner{Size: b.Size.glyph(), Tint: func() core.Color { return labelStyle().Color }}
+	if !withLabel {
+		return []core.Node{content, core.Show{When: b.Busy, Then: func(*core.Scope) core.Node {
+			return core.View{Style: core.Style{Position: core.Absolute, Top: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0), Left: core.Pt(0),
+				AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter}, Children: []core.Node{spinner}}
+		}}}
+	}
+	// The two rows share a grid cell so the resting content still sets the
+	// minimum width while the busy label can make the button wider.
+	slot := core.GridLines{Start: core.GridLine(1)}
+	row.GridColumn, row.GridRow = slot, slot
+	content.Style = row
+	busy := core.Show{When: b.Busy, Then: func(*core.Scope) core.Node {
+		return core.View{Style: row, Children: []core.Node{spinner,
+			core.Show{When: func() bool { return b.busyLabel() != "" }, Then: func(*core.Scope) core.Node {
+				return core.Text{ContentFunc: b.busyLabel, Style: textStyle, StyleFunc: labelStyle}
+			}},
+		}}
+	}}
+	return []core.Node{core.View{Style: core.Style{Display: core.DisplayGrid, GridTemplateColumns: "auto", AlignItems: core.AlignCenter,
+		JustifyItems: core.AlignCenter, FlexShrink: 1}, Children: []core.Node{content, busy}}}
 }
