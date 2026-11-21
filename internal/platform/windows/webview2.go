@@ -58,6 +58,9 @@ var (
 	iidCompositionControllerCompleted = parseGUID("02fab84b-1428-4fb7-ad45-1b2e64736184")
 	iidNavigationStarting             = parseGUID("9adbe429-f36d-432b-9ddc-f8881fbd76e3")
 	iidNavigationStartingArgs3        = parseGUID("ddffe494-4942-4bd2-ab73-35b8ff40e19f")
+	iidSourceChanged                  = parseGUID("3c067f9f-5388-4772-8b48-79f7ef1ab37c")
+	iidHistoryChanged                 = parseGUID("c79a420c-efd9-4058-9295-3e8b4bcab645")
+	iidDocumentTitleChanged           = parseGUID("f5f2b923-953e-4042-9f95-f3a118e1afd4")
 	iidNavigationCompleted            = parseGUID("d33a35bf-1c49-4f98-93ab-006e0533fe1c")
 	iidWebMessageReceived             = parseGUID("57213f19-00e6-49fa-8e07-898ea01ecbd2")
 	iidWebResourceRequested           = parseGUID("ab00b74c-15f1-4646-80e8-e76341d25d71")
@@ -125,6 +128,8 @@ const (
 	webNavigate                      = 5
 	webNavigateToString              = 6
 	webAddNavigationStarting         = 7
+	webAddSourceChanged              = 11
+	webAddHistoryChanged             = 13
 	webAddNavigationCompleted        = 15
 	webAddPermissionRequested        = 23
 	webAddScriptOnDocumentCreated    = 27
@@ -138,6 +143,7 @@ const (
 	webGoBack                        = 40
 	webGoForward                     = 41
 	webStop                          = 43
+	webAddDocumentTitleChanged       = 46
 	webGetDocumentTitle              = 48
 	webAddWebResourceRequested       = 55
 	webAddWebResourceRequestedFilter = 57
@@ -175,6 +181,9 @@ const (
 	navigationStartingPutCancel       = 8
 	navigationStartingGetNavigationId = 9
 	navigationStartingGetKind         = 12 // ICoreWebView2NavigationStartingEventArgs3, after 2
+
+	// ICoreWebView2SourceChangedEventArgs
+	sourceChangedGetIsNewDocument = 3
 
 	// ICoreWebView2NavigationCompletedEventArgs
 	navigationGetIsSuccess      = 3

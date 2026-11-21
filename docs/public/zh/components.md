@@ -20,7 +20,7 @@ core.View{
 
 `core.WebView` 显示网页内容；空的 `WebSource` 会加载 `about:blank`，并报告通常的加载和导航事件。让 `SourceFunc` 返回空来源，或调用 `Ref.Load(core.WebSource{})`，即可清空之前的页面。若页面自身脚本之前的注入脚本跟随 signal，请设置 `InjectedJavaScriptBeforeContentFunc`：脚本变化时，web view 会带着新脚本重新加载它的来源，替换当前显示的页面，即使那是用户或 `Ref.Load` 导航到的页面。设置 `UserAgentSuffix`（TSX 中为 `userAgentSuffix`）可在平台自己的 user agent 之后（设置了 `UserAgent` 时则在它之后）追加一段标识，例如 `Version/26.0 Safari/605.1.15`；在 macOS 和 iOS 上，追加到平台自己的 user agent 只在 web view 首次创建时生效，HarmonyOS 和 Web 保持各自的 user agent。给它绑定一个 `core.Ref` 即可调用 `Reload`、`GoBack` 和 `GoForward`。在原生目标上，这些命令让应用自己的 HTML 和 data 来源继续不受 `core.AccessWebSchemes` 限制；页面自己发起的新导航仍遵循访问策略。
 
-在 macOS、iOS 和 Linux 上，`OnNavigationStateChange` 还会报告同一文档内的 URL、历史记录和标题变化。
+在 macOS、iOS、Windows 和 Linux 上，`OnNavigationStateChange` 还会报告同一文档内的 URL、历史记录和标题变化。
 
 在 TSX 中，`injectedJavaScriptBeforeContentLoaded` 变化时，同一个 web view 会像 `InjectedJavaScriptBeforeContentFunc` 那样带着新脚本重新加载来源；`injectedJavaScript` 变化时，则会像 `userAgent`、`userAgentSuffix` 或 `mobile` 变化时一样，换成一个新的 web view，重新加载来源。
 

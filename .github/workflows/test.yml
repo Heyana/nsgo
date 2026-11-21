@@ -365,6 +365,8 @@ jobs:
         run: go tool nsgo test -run '^TestMenuYieldReachesTheBindingTheMenuLeaves$' ./internal/platform/windows
       - name: Test WebView2 accelerator shortcuts
         run: go tool nsgo test -run '^TestFocusedPageKeysReachShortcutsFirst$' ./internal/platform/windows
+      - name: Test WebView2 history and navigation state
+        run: go tool nsgo test -run '^(TestWebOwnPagesReloadAndReturn|TestWebNavigationStateTracksPageEdits)$' ./internal/platform/windows
       - name: Test Edit menu roles in a focused WebView2 page and their OnSelect fallback
         run: go tool nsgo test -run '^(TestEditMenuEditsTheFocusedPage|TestWebEditCommandsCoverTheEditingRoles|TestEditingRolesFallBackToOnSelect)$' ./internal/platform/windows
       - name: Test WebView2 custom scheme requests and responses

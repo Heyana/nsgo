@@ -58,6 +58,8 @@ On Linux, initialization checks whether the system bubblewrap can start WebKitGT
 | Android | `CookieManager.setCookie` of each cookie's `Set-Cookie` value on a URL it goes to, then `flush` | `CookieManager.getCookie` of the filter's URL: names and values, `Domain` the URL's host; a domain or the zero filter answers unavailable (`driver.NoWebCookieDomains`) | `CookieManager.removeAllCookies`, `flush` and `WebStorage.deleteAllData`, which leave the web views' HTTP cache |
 | Web, tvOS, watchOS, mini programs | Unavailable (`driver.NoWebCookieStore`) | Unavailable | Unavailable |
 
+On Windows, WebView2's `SourceChanged`, `HistoryChanged` and `DocumentTitleChanged` queue a fresh `WebNavigation` snapshot once per window task. `OnNavigationStateChange` reports same-document URL, history and title updates when that snapshot changes. The navigation handlers report each full load at its start and finish.
+
 ## Videos
 
 - A source is a URL, a file path or an `asset:` path resolved against the app's resources.

@@ -106,10 +106,12 @@ type webView struct {
 	historyURL            string
 	historyKind           int32
 	ownSource             driver.WebSource
-	starting              string           // the URL of the navigation started last, which a failure reports
-	started               uint64           // the NavigationId of the navigation started last
-	cut                   uint64           // the NavigationId of a navigation the view cut short (StopLoading, or a load that replaced it), whose failure is no error
-	aborted               uint64           // the NavigationId of a navigation that ended aborted, whose failure waits for webAbortWait
+	starting              string // the URL of the navigation started last, which a failure reports
+	started               uint64 // the NavigationId of the navigation started last
+	cut                   uint64 // the NavigationId of a navigation the view cut short (StopLoading, or a load that replaced it), whose failure is no error
+	aborted               uint64 // the NavigationId of a navigation that ended aborted, whose failure waits for webAbortWait
+	lastNavigation        driver.WebNavigation
+	loading, navQueued    bool             // full load in progress and queued state snapshot
 	source                driver.WebSource // what the pending or last navigation loads: the config's, or Ref.Load's
 	html, base            string           // the HTML served at its base URL
 	serving               bool
@@ -459,6 +461,7 @@ func (wv *webView) listen() {
 		var id uint64
 		a.call(navigationStartingGetNavigationId, uintptr(unsafe.Pointer(&id)))
 		wv.starting, wv.started, wv.aborted = nav.URL, id, 0
+		wv.loading = true
 		if own {
 			wv.ownStarted = id
 			wv.ownSource = source
@@ -476,6 +479,9 @@ func (wv *webView) listen() {
 		var id uint64
 		a.call(navigationGetWebErrorStatus, uintptr(unsafe.Pointer(&status)))
 		a.call(navigationGetNavigationId, uintptr(unsafe.Pointer(&id)))
+		if id != wv.started {
+			return
+		}
 		if a.getBool(navigationGetIsSuccess) {
 			if id == wv.ownStarted {
 				source, nav := wv.ownSource, wv.navigation(false)
@@ -489,12 +495,15 @@ func (wv *webView) listen() {
 						}
 						wv.ownEntries[history.Entries[history.CurrentIndex].ID] = &source
 					}
-					wv.navigated(nav, driver.EventLoad, driver.EventNavigationStateChange)
+					wv.finishNavigation(nav)
 				})
 				return
 			}
-			wv.navigated(wv.navigation(false), driver.EventLoad, driver.EventNavigationStateChange)
-		} else if why := webError(status); why != "" && id == wv.started && id != wv.cut {
+			wv.finishNavigation(wv.navigation(false))
+			return
+		}
+		wv.loading = false
+		if why := webError(status); why != "" && id != wv.cut {
 			// The view still shows the page before the one that failed, which never committed.
 			nav := wv.navigation(false)
 			nav.URL = cmp.Or(wv.starting, nav.URL)
@@ -516,6 +525,14 @@ func (wv *webView) listen() {
 			})
 		}
 	}))
+	web.subscribe(webAddSourceChanged, newHandler(&iidSourceChanged, func(_ uintptr, args unsafe.Pointer) {
+		if !wv.closed && !(*comObject)(args).getBool(sourceChangedGetIsNewDocument) {
+			wv.navigationChanged()
+		}
+	}))
+	changed := func(_ uintptr, _ unsafe.Pointer) { wv.navigationChanged() }
+	web.subscribe(webAddHistoryChanged, newHandler(&iidHistoryChanged, changed))
+	web.subscribe(webAddDocumentTitleChanged, newHandler(&iidDocumentTitleChanged, changed))
 	// getUserMedia: what the config's Media grants, without WebView2's
 	// own prompt; other permissions keep WebView2's handling.
 	web.subscribe(webAddPermissionRequested, newHandler(&iidPermissionRequested, func(_ uintptr, args unsafe.Pointer) {
@@ -639,9 +656,39 @@ func (wv *webView) navigation(loading bool) driver.WebNavigation {
 	}
 }
 
+// finishNavigation reports the load's final snapshot, then picks up any
+// changed state that arrived while the app-owned history entry was read.
+func (wv *webView) finishNavigation(nav driver.WebNavigation) {
+	wv.loading = false
+	wv.navigated(nav, driver.EventLoad, driver.EventNavigationStateChange)
+	wv.navigationChanged()
+}
+
+// navigationChanged coalesces WebView2's property notifications. A full
+// load reports its start and finish from the navigation handlers.
+func (wv *webView) navigationChanged() {
+	if wv.closed || wv.loading || wv.navQueued || !wv.v.events.Has(driver.EventNavigationStateChange) {
+		return
+	}
+	wv.navQueued = true
+	wv.w.post(func() {
+		wv.navQueued = false
+		if wv.closed || wv.loading {
+			return
+		}
+		nav := wv.navigation(false)
+		if nav != wv.lastNavigation {
+			wv.navigated(nav, driver.EventNavigationStateChange)
+		}
+	})
+}
+
 // navigated reports nav as kinds.
 func (wv *webView) navigated(nav driver.WebNavigation, kinds ...driver.EventKind) {
 	for _, k := range kinds {
+		if k == driver.EventNavigationStateChange {
+			wv.lastNavigation = nav
+		}
 		n := nav
 		wv.report(driver.Event{Kind: k, Navigation: &n})
 	}
