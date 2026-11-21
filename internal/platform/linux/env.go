@@ -94,6 +94,7 @@ func (w *window) environment() driver.Environment {
 		RTL:              systemDirection() == gtkTextDirRTL || rightToLeft(locale),
 		PixelRatio:       float32(scale),
 		Locale:           locale,
+		KeyCodeNames:     w.keyboardCodeNames(),
 		LocaleSettings:   localeSettings(),
 		Displays:         displays(),
 		OS:               driver.OSLinux,

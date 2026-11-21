@@ -258,8 +258,8 @@ func (w *window) releaseMouseButtons() {
 
 // heldKey is a key the window reported going down, by its physical key (physicalKey), until it reports it coming up: the view the down went to, or 0, and the name the down had.
 type heldKey struct {
-	id   driver.NodeID
-	name string
+	id         driver.NodeID
+	name, code string
 }
 
 // physicalKey identifies the key a key message's lParam names, so a key's up finds its down whatever the layout or the modifiers make of it since: the scan code and the extended bit (bits 16-24), which tell the left Shift from the right and the keypad's Enter from the main one. Input that carries no scan code is identified by its virtual key, outside the scan codes' range.
@@ -268,6 +268,21 @@ func physicalKey(vk, lParam uintptr) uint32 {
 		return code
 	}
 	return 0x10000 | uint32(vk&0xffff)
+}
+
+func positionOfKey(vk, lParam uintptr) string {
+	if vk == 0x13 { // VK_PAUSE is a special multi-byte scan code.
+		return "Pause"
+	}
+	code := physicalKey(vk, lParam)
+	if code > 0x1ff {
+		return ""
+	}
+	scan := uint16(code & 0xff)
+	if code&0x100 != 0 {
+		scan |= 0xe000
+	}
+	return driver.WinKeyCode(scan)
 }
 
 // heldName names a key as keyDown reports it, a modifier alone as "shift", "ctrl", "alt" or "meta", and says whether it is a modifier; "" for a key with no name, such as the IME's VK_PROCESSKEY while it composes.
@@ -301,7 +316,8 @@ func (w *window) keyDown(vk, lParam uintptr) bool {
 		return false
 	}
 	name, modifier := heldName(vk)
-	if name == "" {
+	position := positionOfKey(vk, lParam)
+	if name == "" && position == "" || vk == 0xe5 { // VK_PROCESSKEY is IME input.
 		return false
 	}
 	v := w.focusedView()
@@ -309,7 +325,7 @@ func (w *window) keyDown(vk, lParam uintptr) bool {
 	if !hears && !w.heldKeys {
 		return false
 	}
-	ev := driver.Event{Kind: driver.EventKeyDown, Text: name, Modifiers: modifiers(), Repeat: repeated(lParam)}
+	ev := driver.Event{Kind: driver.EventKeyDown, Text: name, KeyCode: position, Modifiers: modifiers(), Repeat: repeated(lParam)}
 	if hears {
 		ev.ID = v.id
 	}
@@ -317,12 +333,12 @@ func (w *window) keyDown(vk, lParam uintptr) bool {
 	if held, recorded := w.keysHeld[code]; !recorded || !ev.Repeat {
 		if recorded {
 			// A key that goes down again without repeating lost its up, which is reported first, so the view hears one up for each down.
-			w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, Modifiers: ev.Modifiers})
+			w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, KeyCode: held.code, Modifiers: ev.Modifiers})
 		}
 		if w.keysHeld == nil {
 			w.keysHeld = map[uint32]heldKey{}
 		}
-		w.keysHeld[code] = heldKey{id: ev.ID, name: name}
+		w.keysHeld[code] = heldKey{id: ev.ID, name: name, code: position}
 	}
 	if !hears {
 		// An auto-repeat changes nothing the app can read without a view to hear it.
@@ -347,7 +363,7 @@ func (w *window) keyUp(vk, lParam uintptr) {
 		return
 	}
 	delete(w.keysHeld, code)
-	w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: k.id, Text: k.name, Modifiers: modifiers()})
+	w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: k.id, Text: k.name, KeyCode: k.code, Modifiers: modifiers()})
 }
 
 // releaseShifts reports each Shift the window holds whose side GetKeyState shows up. With both Shifts down, Windows sends no WM_KEYUP for the first one released, so the window checks on every key message.
@@ -364,7 +380,7 @@ func (w *window) releaseShifts() {
 		}
 		if !keyDown(side) {
 			delete(w.keysHeld, code)
-			w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: k.id, Text: k.name, Modifiers: modifiers()})
+			w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: k.id, Text: k.name, KeyCode: k.code, Modifiers: modifiers()})
 		}
 	}
 }
@@ -377,7 +393,7 @@ func (w *window) releaseKeys() {
 	}
 	for code, k := range w.keysHeld {
 		delete(w.keysHeld, code)
-		w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: k.id, Text: k.name})
+		w.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: k.id, Text: k.name, KeyCode: k.code})
 	}
 }
 

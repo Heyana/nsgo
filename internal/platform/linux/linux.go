@@ -170,21 +170,22 @@ type window struct {
 	root  driver.NodeID
 	// effects are the views with an effect, a transition or a navigation
 	// shader (effect.go).
-	effects     map[*view]bool
-	entries     map[uintptr]*view
-	natives     map[uintptr]*view // by the objects of hosted widgets
-	appID       string
-	keys        []driver.KeyBinding
-	hotKeys     *globalHotKeys
-	colorPick   *portalColorPick
-	discovery   avahiDiscovery
-	held        map[uint32]heldKey                  // the keys down, by keycode (keyPressedCallback)
-	heldKeys    bool                                // the app follows every key going down and up (driver.MountItem.HeldKeys)
-	heldMouse   bool                                // the app follows every mouse button going down and up (driver.MountItem.HeldMouseButtons)
-	mouseHeld   map[driver.MouseButton]heldMouseBtn // mouse buttons reported going down and not yet up
-	mouseClicks map[driver.MouseButton]buttonClicks
-	animating   []*view
-	ticking     bool
+	effects        map[*view]bool
+	entries        map[uintptr]*view
+	natives        map[uintptr]*view // by the objects of hosted widgets
+	appID          string
+	keys           []driver.KeyBinding
+	hotKeys        *globalHotKeys
+	colorPick      *portalColorPick
+	discovery      avahiDiscovery
+	held           map[uint32]heldKey                  // the keys down, by keycode (keyPressedCallback)
+	heldKeys       bool                                // the app follows every key going down and up (driver.MountItem.HeldKeys)
+	heldMouse      bool                                // the app follows every mouse button going down and up (driver.MountItem.HeldMouseButtons)
+	mouseHeld      map[driver.MouseButton]heldMouseBtn // mouse buttons reported going down and not yet up
+	mouseClicks    map[driver.MouseButton]buttonClicks
+	keyLayoutGroup int32
+	animating      []*view
+	ticking        bool
 	// tickID is the surface's tick callback and watchID the timer watching it while the clock runs; ticked is when the frame clock last ticked.
 	tickID, watchID uint32
 	ticked          time.Time
@@ -1170,8 +1171,12 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.releaseCanvasImage(it.Value)
 			continue
 		case driver.ItemKeymap:
+			started := it.HeldKeys && !w.heldKeys
 			w.setKeymap(it.Keys)
 			w.heldKeys, w.heldMouse = it.HeldKeys, it.HeldMouseButtons
+			if started {
+				w.updateEnvironment()
+			}
 			continue
 		case driver.ItemTitle, driver.ItemWindow, driver.ItemMenu:
 			if it.Kind == driver.ItemWindow && it.Window != nil && it.Window.Action == driver.WindowDestroy {

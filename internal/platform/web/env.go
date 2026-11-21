@@ -74,7 +74,17 @@ func (s *surface) watchChanges() {
 	g.Call("addEventListener", "resize", w.changed)
 	g.Call("addEventListener", "languagechange", w.changed)
 	// The page's visibility and focus are the app's lifecycle.
-	g.Call("addEventListener", "focus", w.changed)
+	g.Call("addEventListener", "focus", js.FuncOf(func(js.Value, []js.Value) any {
+		s.updateEnv()
+		s.readKeyboardLayout()
+		return nil
+	}))
+	if keyboard := g.Get("navigator").Get("keyboard"); keyboard.Truthy() && keyboard.Get("addEventListener").Type() == js.TypeFunction {
+		keyboard.Call("addEventListener", "layoutchange", js.FuncOf(func(js.Value, []js.Value) any {
+			s.readKeyboardLayout()
+			return nil
+		}))
+	}
 	g.Call("addEventListener", "blur", w.changed)
 	s.doc.Call("addEventListener", "visibilitychange", w.changed)
 	// A page that loses the focus or hides hears no key or mouse button come up, so every held one comes up then.
@@ -157,6 +167,7 @@ func (s *surface) environment() driver.Environment {
 		return driver.Points(f)
 	}
 	env := driver.Environment{
+		KeyCodeNames: s.keyCodeNames,
 		ScreenColor: js.Global().Get("EyeDropper").Truthy(),
 		Speak:       speakAvailable(),
 		Gamepads:    g.Get("navigator").Get("getGamepads").Type() == js.TypeFunction,

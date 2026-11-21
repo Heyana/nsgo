@@ -129,6 +129,8 @@ const (
 	msgDiskSpaceReply = 25
 	msgTextReply      = 27
 	msgPerfFrame      = 28 // a monitored Choreographer frame and UI work since the previous frame
+	// msgPhysicalKey reports a hardware key and its scan code (keycodes.go).
+	msgPhysicalKey = 29
 )
 
 // The parts of an image view's request msgImage carries.
@@ -432,6 +434,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.scanReport(&r)
 		case msgGamepad:
 			readGamepad(&r)
+		case msgPhysicalKey:
+			s.physicalKey(&r)
 		case msgDNS:
 			servers := make([]string, r.u32())
 			for i := range servers {
@@ -1651,6 +1655,7 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 				// The ID EventKey reports when the binding fires.
 				w.u32(k.ID)
 			}
+			w.flags(it.HeldKeys)
 		case driver.ItemStatusBar:
 			c := it.StatusBar
 			w.byte(byte(c.Style))

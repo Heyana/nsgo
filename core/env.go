@@ -1,6 +1,7 @@
 package core
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -69,10 +70,11 @@ type Env struct {
 	canReadFrontmost *Signal[bool]
 	customCursor     *Signal[bool]
 	// systemDark is the system's appearance, which a forced one hides.
-	systemDark bool
-	material   *Signal[WindowMaterial]
-	appleKeys  *Signal[bool]
-	tokens     *Signal[hostColors]
+	systemDark   bool
+	material     *Signal[WindowMaterial]
+	appleKeys    *Signal[bool]
+	keyCodeNames *Signal[map[string]string]
+	tokens       *Signal[hostColors]
 	// geometry is the fold geometry Tree.Resize sets; shown is it with each region's safe area.
 	geometry    *Signal[Geometry]
 	shown       *Memo[Geometry]
@@ -154,6 +156,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		customCursor:     NewSignal(cx, false),
 		appearance:       NewSignal(cx, AppearanceSystem),
 		appleKeys:        NewSignal(cx, false),
+		keyCodeNames:     NewSignalFunc(cx, map[string]string(nil), maps.Equal[map[string]string]),
 		material:         NewSignal(cx, WindowMaterialNone),
 		clear:            NewSignal(cx, false),
 		tokens:           NewSignalFunc(cx, hostColors{}, nil),
@@ -233,6 +236,7 @@ func (e *Env) set(v Environment) {
 	e.minimized.Set(v.Minimized)
 	e.windowFrame.Set(v.WindowFrame)
 	e.keyboard.Set(v.KeyboardHeight)
+	e.keyCodeNames.Set(maps.Clone(v.KeyCodeNames))
 	e.keyboardDuration.Set(v.KeyboardDuration)
 	e.systemDark = v.Dark
 	e.dark.Set(e.shownDark())

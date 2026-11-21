@@ -872,7 +872,7 @@ func (a *App) Key(key string) {
 		return
 	}
 	parts := strings.Split(driver.NormalizeKey(key), "+")
-	a.press(key)
+	a.press(key, "")
 	a.release(a.keyName(parts[len(parts)-1]), a.keyModifiers(parts[:len(parts)-1]))
 	a.done()
 }
@@ -887,7 +887,7 @@ func (a *App) KeyDown(key string) {
 		a.done()
 		return
 	}
-	a.press(key)
+	a.press(key, "")
 	a.done()
 }
 
@@ -909,6 +909,51 @@ func (a *App) KeyUp(key string) {
 	a.done()
 }
 
+// KeyCode presses and releases a physical position, such as KeyW, in a
+// headless test. It uses the test environment's KeyCodeNames or the US layout.
+func (a *App) KeyCode(code string) {
+	a.t.Helper()
+	a.step("keyCode(%s)", code)
+	a.press(a.physicalKeyName(code), code)
+	a.release(code, driver.Modifiers{})
+	a.done()
+}
+
+// KeyCodeDown presses a physical position and holds it until KeyCodeUp.
+func (a *App) KeyCodeDown(code string) {
+	a.t.Helper()
+	a.step("keyCodeDown(%s)", code)
+	a.press(a.physicalKeyName(code), code)
+	a.done()
+}
+
+// KeyCodeUp releases a physical position held by KeyCodeDown.
+func (a *App) KeyCodeUp(code string) {
+	a.t.Helper()
+	a.step("keyCodeUp(%s)", code)
+	a.physicalKeyName(code)
+	if _, ok := a.held[code]; !ok {
+		a.t.Fatalf("nsgotest: %s: %q is not held. KeyCodeDown holds a position", a.stepName, code)
+	}
+	a.release(code, driver.Modifiers{})
+	a.done()
+}
+
+func (a *App) physicalKeyName(code string) string {
+	a.t.Helper()
+	if a.target != nil {
+		a.t.Skip("nsgotest: physical key positions are supported in headless tests")
+	}
+	if name := a.env.KeyCodeNames[code]; name != "" {
+		return name
+	}
+	name := driver.USKeyName(code)
+	if name == "" {
+		a.t.Fatalf("nsgotest: %s: unknown physical key code %q", a.stepName, code)
+	}
+	return name
+}
+
 // oneKey fails the step for a chord, which KeyDown and KeyUp do not take.
 func (a *App) oneKey(key string) {
 	a.t.Helper()
@@ -918,7 +963,8 @@ func (a *App) oneKey(key string) {
 }
 
 // press does what Key does as key goes down, the modifiers KeyDown holds joining it.
-func (a *App) press(key string) {
+func (a *App) press(key, code string) {
+	name := key
 	key = a.withHeld(key)
 	k := driver.NormalizeKey(key)
 	a.inputBy(driver.ModalityKeyboard)
@@ -928,8 +974,13 @@ func (a *App) press(key string) {
 	}
 	names := a.keyNames(k)
 	parts := strings.Split(k, "+")
-	_, repeat := a.held[a.keyName(parts[len(parts)-1])]
-	if a.keyDown(k, repeat) {
+	identity := code
+	if identity == "" {
+		name = a.keyName(parts[len(parts)-1])
+		identity = name
+	}
+	_, repeat := a.held[identity]
+	if a.keyDown(k, name, code, identity, repeat) {
 		return
 	}
 	if id, consumed := driver.FindKey(a.keyBindings, names, a.focusKeyUse(), repeat); consumed {
@@ -1139,13 +1190,14 @@ func (a *App) editField(v *View, role driver.MenuRole) {
 
 // heldKey is a key KeyDown holds: tree and id are the surface and the view its down went to, id 0 for none, and reported whether the platform would report its up, which it would not after a down while a field or web view had the focus, or with no view hearing keys while the surface did not ask for every key (driver.MountItem.HeldKeys).
 type heldKey struct {
-	tree     *core.Tree
-	id       driver.NodeID
-	reported bool
+	tree       *core.Tree
+	id         driver.NodeID
+	name, code string
+	reported   bool
 }
 
 // keyDown offers key k, normalized, to the focused view that hears keys go down (View.OnKeyDown), as the platforms do before the keymap, and reports whether it consumed the key. A modifier alone ("shift", "mod") is reported with its own modifier held and never consumed. With no such view, the surface that asks for every key hears it with no view, unless a field or web view has the focus. A key not held yet is held from here, with where its up goes; repeat is whether it was held already, which neither changes.
-func (a *App) keyDown(k string, repeat bool) bool {
+func (a *App) keyDown(k, name, code, identity string, repeat bool) bool {
 	var focused *View
 	editing := false
 	for _, v := range a.shown() {
@@ -1159,13 +1211,12 @@ func (a *App) keyDown(k string, repeat bool) bool {
 		}
 	}
 	parts := strings.Split(k, "+")
-	name := a.keyName(parts[len(parts)-1])
 	held := parts[:len(parts)-1]
 	modifier := modifierKey(name)
 	if modifier {
 		held = append(held, name)
 	}
-	ev := driver.Event{Kind: driver.EventKeyDown, Text: name, Modifiers: a.keyModifiers(held), Repeat: repeat}
+	ev := driver.Event{Kind: driver.EventKeyDown, Text: name, KeyCode: code, Modifiers: a.keyModifiers(held), Repeat: repeat}
 	entry, consumed := heldKey{}, false
 	switch {
 	case editing:
@@ -1181,25 +1232,26 @@ func (a *App) keyDown(k string, repeat bool) bool {
 		if a.held == nil {
 			a.held = map[string]heldKey{}
 		}
-		a.held[name] = entry
+		entry.name, entry.code = name, code
+		a.held[identity] = entry
 	}
 	a.Settle()
 	return consumed && !modifier
 }
 
 // release lets key name, held, come up: the view its down went to hears it (EventKeyUp) with the modifiers still held and extra, those Key pressed with it.
-func (a *App) release(name string, extra driver.Modifiers) {
-	h, ok := a.held[name]
+func (a *App) release(identity string, extra driver.Modifiers) {
+	h, ok := a.held[identity]
 	if !ok {
 		return
 	}
-	delete(a.held, name)
+	delete(a.held, identity)
 	if !h.reported {
 		return
 	}
 	mods := a.heldModifiers()
 	mods.Control, mods.Alt, mods.Shift, mods.Platform = mods.Control || extra.Control, mods.Alt || extra.Alt, mods.Shift || extra.Shift, mods.Platform || extra.Platform
-	h.tree.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: h.id, Text: name, Modifiers: mods})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: h.id, Text: h.name, KeyCode: h.code, Modifiers: mods})
 	a.Settle()
 }
 
@@ -1207,10 +1259,14 @@ func (a *App) release(name string, extra driver.Modifiers) {
 func (a *App) withHeld(key string) string {
 	parts := strings.Split(driver.NormalizeKey(key), "+")
 	own := a.keyName(parts[len(parts)-1])
+	held := a.heldModifiers()
 	var mods []string
-	for _, m := range []string{"ctrl", "alt", "shift", "meta"} {
-		if _, ok := a.held[m]; ok && m != own {
-			mods = append(mods, m)
+	for _, m := range []struct {
+		name string
+		on   bool
+	}{{"ctrl", held.Control}, {"alt", held.Alt}, {"shift", held.Shift}, {"meta", held.Platform}} {
+		if m.on && m.name != own {
+			mods = append(mods, m.name)
 		}
 	}
 	if len(mods) == 0 {
@@ -1222,9 +1278,9 @@ func (a *App) withHeld(key string) string {
 // heldModifiers are the modifiers KeyDown holds.
 func (a *App) heldModifiers() driver.Modifiers {
 	var names []string
-	for name := range a.held {
-		if modifierKey(name) {
-			names = append(names, name)
+	for _, key := range a.held {
+		if modifierKey(key.name) {
+			names = append(names, key.name)
 		}
 	}
 	return a.keyModifiers(names)

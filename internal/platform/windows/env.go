@@ -89,6 +89,7 @@ func (w *window) environment() driver.Environment {
 		PixelRatio:       float32(w.scale),
 		Locale:           locale,
 		LocaleSettings:   localeSettings(),
+		KeyCodeNames:     w.keyboardCodeNames(),
 		Displays:         w.displays(),
 		OS:               driver.OSWindows,
 		HasWebView:       true,

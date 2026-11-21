@@ -117,6 +117,9 @@ type Environment struct {
 	Simulated bool
 	// AppleKeyboard says a browser or a mini program runs on an Apple platform, where "mod" is Command as on macOS and iOS.
 	AppleKeyboard bool
+	// KeyCodeNames maps physical positions to unmodified key names on the
+	// current keyboard layout, where the platform provides the map.
+	KeyCodeNames map[string]string
 	// HeaderHeight and LargeHeaderHeight are the heights of the system
 	// header a platform draws over screens, without the status bar, and
 	// with a large title. 0 where screens show their Header instead.

@@ -283,6 +283,8 @@ type surface struct {
 	keys                     []driver.KeyBinding // the keymap's bindings
 	heldKeys                 bool                // ItemKeymap's HeldKeys: report every key going down and up, not only a focused view's
 	heldMouse                bool                // ItemKeymap's HeldMouseButtons: report every mouse button going down and up
+	keyLayoutID              string
+	keyLayoutType            uint8
 	webFocus                 *view               // the page holding the window's first responder
 	stopWebFocus             func()              // ends first-responder observation in the current window
 	// keysHeld are the keys whose down was reported, by AppKit key code: the view the down went to, 0 for none, and the name it reported, which the key's up reports wherever the focus has gone since.
@@ -1205,6 +1207,7 @@ func (s *surface) environment() driver.Environment {
 		PixelRatio:       s.backingScale(),
 		Locale:           locale,
 		LocaleSettings:   apple.LocaleSettings(),
+		KeyCodeNames:     s.keyboardCodeNames(),
 		Displays:         displays(),
 		OS:               driver.OSMacOS,
 		Idiom:            driver.IdiomDesktop,
@@ -1414,6 +1417,10 @@ func observeApp() {
 	center := objc.ID(apple.Class("NSNotificationCenter")).Send(sel("defaultCenter"))
 	apple.Observe(center, apple.Global(foundation, "NSCurrentLocaleDidChangeNotification"), refresh)
 	apple.ObserveProcessPower(func() { refresh(0) })
+	distributed := objc.ID(apple.Class("NSDistributedNotificationCenter")).Send(sel("defaultCenter"))
+	apple.Observe(distributed, apple.Global(carbonPath, "kTISNotifySelectedKeyboardInputSourceChanged"), func(objc.ID) {
+		apple.OnMain(func() { refresh(0) })
+	})
 	for _, name := range []string{"NSApplicationDidBecomeActiveNotification", "NSApplicationDidResignActiveNotification",
 		"NSApplicationDidHideNotification", "NSApplicationDidUnhideNotification",
 		"NSApplicationDidChangeOcclusionStateNotification", "NSApplicationDidChangeScreenParametersNotification"} {
@@ -1585,17 +1592,17 @@ func (s *surface) keyDown(code uint16, name string, event objc.ID, repeat bool) 
 		s.keysHeld[code] = heldKey{id, name}
 	case !repeat:
 		// Its up never came, as AppKit can drop one: report it before the key goes down again.
-		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, Modifiers: mods})
+		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, KeyCode: driver.AppKitKeyCode(code), Modifiers: mods})
 		s.keysHeld[code] = heldKey{id, name}
 	case v == nil:
 		// The repeat of a key no view hears changes no key held.
 		return false
 	}
 	if v == nil {
-		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyDown, Text: name, Modifiers: mods, Repeat: repeat})
+		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyDown, Text: name, KeyCode: driver.AppKitKeyCode(code), Modifiers: mods, Repeat: repeat})
 		return false
 	}
-	return s.engine.DispatchKeyDown(driver.Event{Kind: driver.EventKeyDown, ID: v.id, Text: name, Modifiers: mods, Repeat: repeat})
+	return s.engine.DispatchKeyDown(driver.Event{Kind: driver.EventKeyDown, ID: v.id, Text: name, KeyCode: driver.AppKitKeyCode(code), Modifiers: mods, Repeat: repeat})
 }
 
 // keyUp reports the up of the key with AppKit key code code, with mods the keys still held, to the view its down went to, if its down was reported.
@@ -1605,7 +1612,7 @@ func (s *surface) keyUp(code uint16, mods driver.Modifiers) {
 		return
 	}
 	delete(s.keysHeld, code)
-	s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, Modifiers: mods})
+	s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, KeyCode: driver.AppKitKeyCode(code), Modifiers: mods})
 }
 
 // heldMouseButton is a mouse button whose down was reported: the view it went to (0/nil for none).
@@ -1778,7 +1785,7 @@ func (s *surface) releaseKeys() {
 	}
 	for code, held := range s.keysHeld {
 		delete(s.keysHeld, code)
-		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name})
+		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, KeyCode: driver.AppKitKeyCode(code)})
 	}
 }
 
@@ -2276,7 +2283,11 @@ func (s *surface) apply(b *driver.MountBatch) {
 			announce(it.Value)
 			continue
 		case driver.ItemKeymap:
+			started := it.HeldKeys && !s.heldKeys
 			s.keys, s.heldKeys, s.heldMouse = it.Keys, it.HeldKeys, it.HeldMouseButtons
+			if started {
+				s.refresh()
+			}
 			continue
 		case driver.ItemTitle, driver.ItemWindow, driver.ItemMenu, driver.ItemDockMenu, driver.ItemRecentFile:
 			if it.Kind == driver.ItemWindow && it.Window.Action == driver.WindowDestroy {

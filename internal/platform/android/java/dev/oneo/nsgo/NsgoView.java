@@ -498,6 +498,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (!hasFocus) releasePhysicalKeys();
         environment();
         if (hasFocus && overlays != null) overlays.returned();
         // The user may have changed RECORD_AUDIO in the system's settings; the first view tells the app.
@@ -515,6 +516,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
 
     @Override
     protected void onDetachedFromWindow() {
+        releasePhysicalKeys();
         releaseEnvironment();
         // An app waiting for the folds starts as the view leaves its window, as it would have without them.
         releaseStart();
@@ -3261,6 +3263,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 keys = bindings;
                 keyFlags = flags;
                 keyIds = ids;
+                reportHeldKeys = in.readUnsignedByte() != 0;
                 break;
             }
             case Protocol.ITEM_STATUS_BAR:
@@ -4391,6 +4394,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (gamepads != null && gamepads.onKeyEvent(e)) return true;
         // A key the window delivers is the keyboard's input. An IME's action or committed Return, which a field offers to keyBinding, leaves the modality, as a software Return does on iOS.
         if (e.getAction() == KeyEvent.ACTION_DOWN && !KeyEvent.isModifierKey(e.getKeyCode())) modality(Protocol.MODALITY_KEYBOARD);
+        physicalKey(e);
         return keyBinding(e) || super.dispatchKeyEvent(e);
     }
 
@@ -4398,6 +4402,72 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     public boolean dispatchGenericMotionEvent(MotionEvent e) {
         if (gamepads != null && gamepads.onGenericMotionEvent(e)) return true;
         return super.dispatchGenericMotionEvent(e);
+    }
+
+    private record PhysicalKey(int id, int scan, int key, String name) {}
+
+    private boolean reportHeldKeys;
+    private final java.util.HashMap<Long, PhysicalKey> heldPhysicalKeys = new java.util.HashMap<>();
+
+    private void physicalKey(KeyEvent e) {
+        if (!e.isFromSource(android.view.InputDevice.SOURCE_KEYBOARD)) return;
+        int scan = e.getScanCode(), key = e.getKeyCode();
+        long identity = ((long) e.getDeviceId() << 32) | (scan != 0 ? scan : 0x10000 | key);
+        int mods = (e.isCtrlPressed() ? 1 : 0) | (e.isAltPressed() ? 2 : 0)
+                | (e.isShiftPressed() ? 4 : 0) | (e.isMetaPressed() ? 8 : 0);
+        if (e.getAction() == KeyEvent.ACTION_UP) {
+            PhysicalKey held = heldPhysicalKeys.remove(identity);
+            if (held != null) reportPhysicalKey(held, mods | 16);
+            return;
+        }
+        if (e.getAction() != KeyEvent.ACTION_DOWN || (focusKeyUse() & Protocol.KEY_USE_TEXT) != 0) return;
+        Node focused = byView.get(findFocus());
+        int id = focused != null && focused.has(Protocol.EVENT_KEY) ? focused.id : 0;
+        if (id == 0 && !reportHeldKeys) return;
+        String name = physicalKeyName(e);
+        PhysicalKey current = new PhysicalKey(id, scan, key, name);
+        boolean repeat = e.getRepeatCount() != 0;
+        PhysicalKey previous = heldPhysicalKeys.get(identity);
+        if (previous != null && !repeat) reportPhysicalKey(previous, mods | 16);
+        if (previous == null || !repeat) heldPhysicalKeys.put(identity, current);
+        if (!repeat || id != 0) reportPhysicalKey(current, mods | (repeat ? 32 : 0));
+    }
+
+    private void releasePhysicalKeys() {
+        for (PhysicalKey key : heldPhysicalKeys.values()) reportPhysicalKey(key, 16);
+        heldPhysicalKeys.clear();
+    }
+
+    private void reportPhysicalKey(PhysicalKey key, int flags) {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(bytes);
+        try {
+            out.writeInt(surface);
+            out.writeInt(key.id());
+            out.writeInt(key.scan());
+            out.writeInt(key.key());
+            out.writeByte(flags);
+            Protocol.writeString(out, key.name());
+        } catch (IOException impossible) {
+            throw new AssertionError(impossible);
+        }
+        write(Protocol.PHYSICAL_KEY, bytes.toByteArray());
+    }
+
+    private static String physicalKeyName(KeyEvent e) {
+        switch (e.getKeyCode()) {
+            case KeyEvent.KEYCODE_CTRL_LEFT: case KeyEvent.KEYCODE_CTRL_RIGHT: return "ctrl";
+            case KeyEvent.KEYCODE_ALT_LEFT: case KeyEvent.KEYCODE_ALT_RIGHT: return "alt";
+            case KeyEvent.KEYCODE_SHIFT_LEFT: case KeyEvent.KEYCODE_SHIFT_RIGHT: return "shift";
+            case KeyEvent.KEYCODE_META_LEFT: case KeyEvent.KEYCODE_META_RIGHT: return "meta";
+            default: break;
+        }
+        int c = e.getUnicodeChar(0);
+        if (c > ' ' && (c & KeyCharacterMap.COMBINING_ACCENT) == 0) {
+            return new String(Character.toChars(c)).toLowerCase(Locale.ROOT);
+        }
+        String name = keyName(e);
+        return name == null ? "" : name;
     }
 
     /** The one matcher for hardware keys and Return delivered through an IME. */

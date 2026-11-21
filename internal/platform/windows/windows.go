@@ -146,6 +146,7 @@ const (
 	wmPaint         = 0x000F
 	wmEraseBkgnd    = 0x0014
 	wmSettingChange = 0x001A
+	wmInputLanguageChange = 0x0051
 	wmDisplayChange = 0x007E
 	wmDPIChanged    = 0x02E0
 	wmShowWindow    = 0x0018
@@ -576,8 +577,9 @@ type window struct {
 	swap *swapChain
 
 	// heldKeys is ItemKeymap's ask for every key's down and up (driver.MountItem.HeldKeys); keysHeld the keys reported going down and not yet up, by physical key (physicalKey).
-	heldKeys bool
-	keysHeld map[uint32]heldKey
+	heldKeys  bool
+	keyLayout uintptr
+	keysHeld  map[uint32]heldKey
 	// heldMouse is ItemKeymap's ask for every mouse button's down and up (driver.MountItem.HeldMouseButtons); mouseHeld the buttons reported going down and not yet up.
 	heldMouse   bool
 	mouseHeld   map[driver.MouseButton]heldMouseButton
@@ -1467,7 +1469,11 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.releaseCanvasImage(it.Value)
 			continue
 		case driver.ItemKeymap:
+			started := it.HeldKeys && !w.heldKeys
 			w.setKeymap(it.Keys, it.HeldKeys, it.HeldMouseButtons)
+			if started {
+				w.updateEnvironment()
+			}
 			continue
 		case driver.ItemTitle, driver.ItemWindow, driver.ItemMenu, driver.ItemDockMenu, driver.ItemRecentFile:
 			// An embedding host owns its window and menu bar.
@@ -2408,6 +2414,8 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if w.powerChanged(wParam, lParam) {
 			return 1
 		}
+	case wmInputLanguageChange:
+		w.updateEnvironment()
 	case wmDisplayChange:
 		for _, other := range windows {
 			if other.engine != nil {

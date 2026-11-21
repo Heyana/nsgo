@@ -443,7 +443,8 @@ func (a *App) closed(surface *core.Tree) {
 	// A key or mouse button held stays held, but its up has no window to go to.
 	for name, h := range a.held {
 		if h.tree == surface {
-			a.held[name] = heldKey{}
+			h.tree, h.id, h.reported = nil, 0, false
+			a.held[name] = h
 		}
 	}
 	for btn, h := range a.heldButtons {

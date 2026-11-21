@@ -129,6 +129,53 @@ func TestKeysGoDownAndComeUpSeparately(t *testing.T) {
 	}
 }
 
+func TestPhysicalKeyStepsFollowThePositionAndLayout(t *testing.T) {
+	var downs, ups []core.KeyEvent
+	app := Start(t, func(cx *core.Scope) core.Node {
+		return core.View{Children: []core.Node{
+			core.View{
+				TestID: "pad", Focusable: func() bool { return true },
+				OnKeyDown: func(e core.KeyEvent) bool { downs = append(downs, e); return true },
+				OnKeyUp:   func(e core.KeyEvent) { ups = append(ups, e) },
+				Style:     core.Style{Width: core.Pt(100), Height: core.Pt(30)},
+			},
+			core.Text{TestID: "label", ContentFunc: func() string {
+				return core.KeyCodeLabel(cx, "KeyW") + " " + core.KeyCodeLabel(cx, "Equal")
+			}},
+			core.Text{TestID: "held", ContentFunc: func() string {
+				return fmt.Sprint(core.KeyCodesDown(cx), " ", core.KeyCodeHeld(cx, "KeyW"), " ", core.KeyHeld(cx, "shift"))
+			}},
+		}}
+	}, Environment(core.Environment{OS: core.OSWindows, Idiom: core.IdiomDesktop, KeyCodeNames: map[string]string{"KeyW": "z", "Equal": "+"}}))
+	app.Focus("id:pad")
+	if got := app.Find("id:label").Text; got != "Z +" {
+		t.Fatalf("physical labels: %q, want Z +", got)
+	}
+	app.KeyCodeDown("KeyW")
+	app.KeyCodeDown("KeyW")
+	if got := app.Find("id:held").Text; got != "[KeyW] true false" {
+		t.Fatalf("while holding KeyW: %q", got)
+	}
+	app.KeyCodeUp("KeyW")
+	if want := []core.KeyEvent{{Key: "z", Code: "KeyW"}, {Key: "z", Code: "KeyW", Repeat: true}}; !slices.Equal(downs, want) {
+		t.Fatalf("physical downs %+v, want %+v", downs, want)
+	}
+	if want := []core.KeyEvent{{Key: "z", Code: "KeyW"}}; !slices.Equal(ups, want) {
+		t.Fatalf("physical ups %+v, want %+v", ups, want)
+	}
+	app.KeyCodeDown("ShiftLeft")
+	app.KeyCodeDown("ShiftRight")
+	app.KeyCodeUp("ShiftLeft")
+	if got := app.Find("id:held").Text; got != "[ShiftRight] false true" {
+		t.Fatalf("while holding ShiftRight: %q", got)
+	}
+	app.KeyCodeUp("ShiftRight")
+	app.KeyCode("KeyW")
+	if got := app.Find("id:held").Text; got != "[] false false" {
+		t.Fatalf("after releasing all keys: %q", got)
+	}
+}
+
 // TestKeysDownHearsKeysNoViewHears holds the keys a frame loop reads to follow KeyDown and KeyUp with no view that hears keys focused, once a read asked for every key, and to leave out those typed into a field (#1046).
 func TestKeysDownHearsKeysNoViewHears(t *testing.T) {
 	var held string

@@ -62,6 +62,8 @@ Use `app.SelectTab("id:tabs", 1)` to choose the second item of a mounted `mobile
 
 Use `app.Window` and `nsgotest.WindowAction` constants such as `nsgotest.WindowSetConstraints` to assert what the app asked of its main window. In headless tests, `app.Shares` records the files, text and anchor of each share request. Use `View.WebCommands` and `nsgotest.WebCommandKind` constants to check requests sent to a web view.
 
+Headless tests can press a physical position with `KeyCode("KeyW")` or hold and release it with `KeyCodeDown` and `KeyCodeUp`. Override `core.Environment.KeyCodeNames` to exercise a layout. Unspecified positions use the US layout.
+
 ## Tests without the network
 
 Use `app.AppleSignIn` or `app.PurchaseAnswer` when a test needs to answer Sign in with Apple or a purchase. The hooks receive `nsgotest.AppleSignInRequest` and `nsgotest.PurchaseRequest` records. [Services](https://nsgo.dev/docs/services.md)

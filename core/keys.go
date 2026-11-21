@@ -2,8 +2,10 @@ package core
 
 import (
 	"log"
+	"maps"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -12,15 +14,74 @@ import (
 type KeyEvent struct {
 	// Key names the key as OnKey does, without modifiers: "k", "1", "space", "enter", "f5", "left", "escape"; a modifier pressed alone is "shift", "ctrl", "alt" or "meta", which is Command on macOS and the Windows or Super key elsewhere. A letter or a digit is the one the keyboard layout types unshifted.
 	Key string
+	// Code identifies the physical position as KeyboardEvent.code does,
+	// such as KeyW, ArrowLeft or ShiftRight. It is empty when unavailable.
+	Code string
 	// Modifiers are the modifier keys held: going down, the one pressed alone included; coming up, those still held, the one released not among them.
 	Modifiers Modifiers
 	// Repeat is whether the press is a held key's auto-repeat, which iOS never reports; it is false for a key coming up.
 	Repeat bool
 }
 
+// KeyCodesDown returns the physical positions held on cx's window, sorted.
+// It tracks changes as KeysDown does and omits keys with unknown positions.
+func KeyCodesDown(cx *Scope) []string {
+	if t := cx.tree(); t != nil {
+		return slices.Clone(t.codesHeld().Get())
+	}
+	return nil
+}
+
+// KeyCodeHeld reports whether a physical position is held on cx's window.
+func KeyCodeHeld(cx *Scope, code string) bool {
+	if t := cx.tree(); t != nil {
+		return slices.Contains(t.codesHeld().Get(), code)
+	}
+	return false
+}
+
+// KeyCodeLabel returns the display label for a physical position. It uses
+// the active layout where the platform provides it and the last recorded
+// key on this surface otherwise. An unknown label is empty.
+func KeyCodeLabel(cx *Scope, code string) string {
+	t := cx.tree()
+	if t == nil || code == "" {
+		return ""
+	}
+	t.followKeys()
+	name := cx.Env().keyCodeNames.Get()[code]
+	if name == "" {
+		name = t.keyNamesByCode().Get()[code]
+	}
+	if utf8.RuneCountInString(name) == 1 {
+		return strings.ToUpper(name)
+	}
+	return cx.KeyLabel(name)
+}
+
+func (t *Tree) keyNamesByCode() *Signal[map[string]string] {
+	if t.keyCodeNames == nil {
+		t.keyCodeNames = NewSignalFunc(t.root, map[string]string{}, maps.Equal[map[string]string])
+	}
+	return t.keyCodeNames
+}
+
+func (t *Tree) observeKeyCode(code, key string) {
+	if code == "" || key == "" {
+		return
+	}
+	labels := t.keyNamesByCode()
+	previous := Untracked(t.root, labels.Get)
+	if previous[code] != key {
+		next := maps.Clone(previous)
+		next[code] = key
+		labels.Set(next)
+	}
+}
+
 // KeysDown returns the names of the keys held on cx's window, sorted, as KeyEvent.Key names them: "shift" for either Shift, "left", "space", "a". It is a tracked read, so what reads it renders again as a key goes down or comes up but not as a held key repeats, and a RequestAnimationFrame callback, which runs untracked, reads the same keys, as a game's frame loop polls them. A key held as the window loses the keyboard focus comes up then.
 //
-// The first read on a window asks its platform for every key, not only those a focused view that hears keys (View.OnKeyDown) has, and that stays on for the life of the window; a key already held then is unknown until it is pressed again. Keys typed while a text input or a web view has the focus, or while an input method composes, are never held. macOS, Windows, Linux, the web and iOS with a hardware keyboard report them; Android, HarmonyOS, watchOS and mini programs do not, so none is ever held there.
+// The first read on a window asks its platform for every key, not only those a focused view that hears keys (View.OnKeyDown) has, and that stays on for the life of the window; a key already held then is unknown until it is pressed again. Keys typed while a text input or a web view has the focus, or while an input method composes, are never held. macOS, Windows, Linux, the web, iOS and Android with a hardware keyboard report them; HarmonyOS, watchOS and mini programs do not, so none is ever held there.
 func KeysDown(cx *Scope) []string {
 	t := cx.tree()
 	if t == nil {
@@ -60,40 +121,49 @@ func KeyHeld(cx *Scope, key string) bool {
 // keysHeld is the signal KeysDown reads, made by the first read, which asks the platform for every key going down and up (driver.MountItem.HeldKeys) with the next keymap.
 func (t *Tree) keysHeld() *Signal[[]string] {
 	if t.heldRead == nil {
-		t.heldRead = NewSignalFunc(t.root, t.heldNames(), slices.Equal[[]string])
-		t.heldKeys = true
-		t.keysChanged, t.changed = true, true
+		t.heldRead = NewSignalFunc(t.root, slices.Sorted(maps.Keys(t.held)), slices.Equal[[]string])
+		t.followKeys()
 	}
 	return t.heldRead
 }
 
-// holdKey counts key name going down (delta 1) or coming up (-1). A count never goes below none: the platform reports an up for a key it saw go down only as a repeat, as one held before the window took the focus, which was never counted.
-func (t *Tree) holdKey(name string, delta int) {
-	n := t.held[name] + delta
+func (t *Tree) codesHeld() *Signal[[]string] {
+	if t.codeRead == nil {
+		t.codeRead = NewSignalFunc(t.root, slices.Sorted(maps.Keys(t.heldCodes)), slices.Equal[[]string])
+		t.followKeys()
+	}
+	return t.codeRead
+}
+
+func (t *Tree) followKeys() {
+	if !t.heldKeys {
+		t.heldKeys = true
+		t.keysChanged, t.changed = true, true
+	}
+}
+
+// holdKey counts a logical key and its position as they go down or come up.
+func (t *Tree) holdKey(name, code string, delta int) {
+	countHeld(&t.held, t.heldRead, name, delta)
+	countHeld(&t.heldCodes, t.codeRead, code, delta)
+}
+
+func countHeld(held *map[string]int, read *Signal[[]string], name string, delta int) {
+	n := (*held)[name] + delta
 	if name == "" || n < 0 {
 		return
 	}
 	if n == 0 {
-		delete(t.held, name)
+		delete(*held, name)
 	} else {
-		if t.held == nil {
-			t.held = map[string]int{}
+		if *held == nil {
+			*held = map[string]int{}
 		}
-		t.held[name] = n
+		(*held)[name] = n
 	}
-	if t.heldRead != nil {
-		t.heldRead.Set(t.heldNames())
+	if read != nil {
+		read.Set(slices.Sorted(maps.Keys(*held)))
 	}
-}
-
-// heldNames returns the names of the keys held, sorted.
-func (t *Tree) heldNames() []string {
-	names := make([]string, 0, len(t.held))
-	for name := range t.held {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names
 }
 
 // Shortcut returns the press in OnKey's and desktop.RegisterHotKey's form, with each modifier by its own name, as driver.NormalizeKey writes it: "ctrl+shift+k" or "alt+space" on Windows and Linux, "shift+meta+k" for Command+Shift+K on macOS. A modifier pressed alone is "".

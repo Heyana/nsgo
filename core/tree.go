@@ -101,9 +101,10 @@ type Tree struct {
 	keyID       uint32
 	keysChanged bool
 	// held counts the keys down on the surface by name, from EventKeyDown and EventKeyUp, so both Shifts read as one "shift" until both are up; heldRead is what KeysDown reads, made by the first read, which asks the platform for every key (heldKeys).
-	held     map[string]int
-	heldRead *Signal[[]string]
-	heldKeys bool
+	held, heldCodes    map[string]int
+	heldRead, codeRead *Signal[[]string]
+	keyCodeNames       *Signal[map[string]string]
+	heldKeys           bool
 	// heldButtons is a bitmask of the mouse buttons down on the surface (1<<b), from EventMouseDown and EventMouseUp; heldMouseRead is what MouseButtonsDown reads, made by the first read, which asks the platform for every mouse button (heldMouse).
 	heldButtons   uint8
 	heldMouseRead *Signal[[]MouseButton]
@@ -2776,24 +2777,25 @@ func (t *Tree) KeyDown(ev driver.Event) bool {
 
 func (t *Tree) keyDown(ev driver.Event) bool {
 	if !ev.Repeat {
-		t.holdKey(ev.Text, 1)
+		t.holdKey(ev.Text, ev.KeyCode, 1)
 	}
+	t.observeKeyCode(ev.KeyCode, ev.Text)
 	n := t.node(ev.ID)
 	if n == nil || n.h.keyDown == nil {
 		return false
 	}
-	fn, e := n.h.keyDown, KeyEvent{Key: ev.Text, Modifiers: ev.Modifiers, Repeat: ev.Repeat}
+	fn, e := n.h.keyDown, KeyEvent{Key: ev.Text, Code: ev.KeyCode, Modifiers: ev.Modifiers, Repeat: ev.Repeat}
 	return t.within2(n, func() bool { return fn(e) })
 }
 
 // keyUp counts EventKeyUp ev's key as up and runs OnKeyUp of the view its down went to, a view gone or ID 0 hearing nothing.
 func (t *Tree) keyUp(ev driver.Event) {
-	t.holdKey(ev.Text, -1)
+	t.holdKey(ev.Text, ev.KeyCode, -1)
 	n := t.node(ev.ID)
 	if n == nil || n.h.keyUp == nil {
 		return
 	}
-	fn, e := n.h.keyUp, KeyEvent{Key: ev.Text, Modifiers: ev.Modifiers}
+	fn, e := n.h.keyUp, KeyEvent{Key: ev.Text, Code: ev.KeyCode, Modifiers: ev.Modifiers}
 	t.within(n.owner, func() { fn(e) })
 }
 

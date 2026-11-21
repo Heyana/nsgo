@@ -42,14 +42,14 @@ func TestKeysComeUpAsTheWindowResignsKey(t *testing.T) {
 			})
 		}
 		key := func(prefix string, e core.KeyEvent) {
-			s := prefix + e.Key
+			s := prefix + e.Key + "/" + e.Code
 			if e.Repeat {
 				s += "!"
 			}
 			mark(s)
 		}
 		cx.Effect(func() {
-			cx.SetTitle(fmt.Sprintf("%s|%s|%s", title, log.Get(), strings.Join(core.KeysDown(cx), " ")))
+			cx.SetTitle(fmt.Sprintf("%s|%s|%s|%s|%s", title, log.Get(), strings.Join(core.KeysDown(cx), " "), strings.Join(core.KeyCodesDown(cx), " "), core.KeyCodeLabel(cx, "Enter")))
 		})
 		cx.OnKeyWith("mod+p", core.KeyOptions{When: core.KeyAlways}, pad.Focus)
 		cx.OnKeyWith("mod+q", core.KeyOptions{When: core.KeyAlways}, cx.Quit)
@@ -114,21 +114,21 @@ func TestKeysComeUpAsTheWindowResignsKey(t *testing.T) {
 			})
 		}
 		check := func() error {
-			if err := wait(title + "||"); err != nil {
+			if err := wait(title + "||||↩"); err != nil {
 				return err
 			}
 			binding("mod+p")
-			if err := wait(title + "|f|"); err != nil {
+			if err := wait(title + "|f|||↩"); err != nil {
 				return err
 			}
 			key(evKeyDown, false)
 			key(evKeyDown, true)
-			if err := wait(title + "|f,d:b,d:b!|b"); err != nil {
+			if err := wait(title + "|f,d:b/KeyB,d:b/KeyB!|b|KeyB|↩"); err != nil {
 				return err
 			}
 			// Its up never came: the key going down again without repeating reports it first.
 			key(evKeyDown, false)
-			if err := wait(title + "|f,d:b,d:b!,u:b,d:b|b"); err != nil {
+			if err := wait(title + "|f,d:b/KeyB,d:b/KeyB!,u:b/KeyB,d:b/KeyB|b|KeyB|↩"); err != nil {
 				return err
 			}
 			var held int
@@ -136,7 +136,7 @@ func TestKeysComeUpAsTheWindowResignsKey(t *testing.T) {
 				center := objc.ID(apple.Class("NSNotificationCenter")).Send(sel("defaultCenter"))
 				center.Send(sel("postNotificationName:object:"), apple.Global(appKitPath, "NSWindowDidResignKeyNotification"), live.window)
 			})
-			if err := wait(title + "|f,d:b,d:b!,u:b,d:b,u:b|"); err != nil {
+			if err := wait(title + "|f,d:b/KeyB,d:b/KeyB!,u:b/KeyB,d:b/KeyB,u:b/KeyB|||↩"); err != nil {
 				return err
 			}
 			main(func() { held = len(live.keysHeld) })
@@ -147,7 +147,7 @@ func TestKeysComeUpAsTheWindowResignsKey(t *testing.T) {
 			key(evKeyUp, false)
 			key(evKeyDown, false)
 			key(evKeyUp, false)
-			return wait(title + "|f,d:b,d:b!,u:b,d:b,u:b,d:b,u:b|")
+			return wait(title + "|f,d:b/KeyB,d:b/KeyB!,u:b/KeyB,d:b/KeyB,u:b/KeyB,d:b/KeyB,u:b/KeyB|||↩")
 		}
 		err := check()
 		done <- err

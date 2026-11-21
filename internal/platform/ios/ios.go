@@ -2082,7 +2082,7 @@ func (s *surface) pressKeys(presses objc.ID) bool {
 		mods := s.heldModifiers(apple.Modifiers(objc.Send[uint](key, sel("modifierFlags"))))
 		if held, ok := s.keysHeld[code]; ok {
 			// Its up never came: report it before the key goes down again.
-			s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, Modifiers: withModifier(mods, held.name, false)})
+			s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, KeyCode: driver.USBKeyCode(uint16(code)), Modifiers: withModifier(mods, held.name, false)})
 		}
 		mods = withModifier(mods, name, true)
 		if s.keysHeld == nil {
@@ -2090,11 +2090,11 @@ func (s *surface) pressKeys(presses objc.ID) bool {
 		}
 		if v == nil {
 			s.keysHeld[code] = heldKey{0, name}
-			s.engine.Dispatch(driver.Event{Kind: driver.EventKeyDown, Text: name, Modifiers: mods})
+			s.engine.Dispatch(driver.Event{Kind: driver.EventKeyDown, Text: name, KeyCode: driver.USBKeyCode(uint16(code)), Modifiers: mods})
 			return
 		}
 		s.keysHeld[code] = heldKey{v.id, name}
-		if s.engine.DispatchKeyDown(driver.Event{Kind: driver.EventKeyDown, ID: v.id, Text: name, Modifiers: mods}) {
+		if s.engine.DispatchKeyDown(driver.Event{Kind: driver.EventKeyDown, ID: v.id, Text: name, KeyCode: driver.USBKeyCode(uint16(code)), Modifiers: mods}) {
 			consumed = true
 		}
 	})
@@ -2123,7 +2123,7 @@ func (s *surface) releasePresses(presses, event objc.ID) {
 			flags = objc.Send[uint](event, sel("modifierFlags"))
 		}
 		mods := withModifier(s.heldModifiers(apple.Modifiers(flags)), held.name, s.holds(held.name))
-		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, Modifiers: mods})
+		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, KeyCode: driver.USBKeyCode(uint16(code)), Modifiers: mods})
 	})
 }
 
@@ -2153,7 +2153,7 @@ func (s *surface) releaseKeys() {
 	}
 	for code, held := range s.keysHeld {
 		delete(s.keysHeld, code)
-		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name})
+		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, KeyCode: driver.USBKeyCode(uint16(code))})
 	}
 }
 

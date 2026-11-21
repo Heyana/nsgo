@@ -33,6 +33,8 @@ func TestKeysComeUpAsThePageLosesThem(t *testing.T) {
 	var mu sync.Mutex
 	var log []string
 	var held []string
+	var codes []string
+	var events []core.KeyEvent
 	mark := func(prefix string, e core.KeyEvent) {
 		s := prefix + e.Key
 		if e.Modifiers.Shift {
@@ -43,14 +45,15 @@ func TestKeysComeUpAsThePageLosesThem(t *testing.T) {
 		}
 		mu.Lock()
 		log = append(log, s)
+		events = append(events, e)
 		mu.Unlock()
 	}
 	s := open(func(cx *core.Scope) core.Node {
 		scope = cx
 		cx.Effect(func() {
-			keys := core.KeysDown(cx)
+			keys, positions := core.KeysDown(cx), core.KeyCodesDown(cx)
 			mu.Lock()
-			held = keys
+			held, codes = keys, positions
 			mu.Unlock()
 		})
 		return core.View{Children: []core.Node{
@@ -119,6 +122,25 @@ func TestKeysComeUpAsThePageLosesThem(t *testing.T) {
 	heard("d:b,d:b!,u:b,d:b,u:b,d:c", "c")
 	key("keyup", "c", "KeyC", false, false, false)
 	heard("d:b,d:b!,u:b,d:b,u:b,d:c,u:c")
+	for _, name := range []string{"z", "w"} {
+		mu.Lock()
+		log, events = nil, nil
+		mu.Unlock()
+		key("keydown", name, "KeyW", false, false, false)
+		wait("the physical W position held", func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return slices.Equal(codes, []string{"KeyW"})
+		})
+		key("keyup", name, "KeyW", false, false, false)
+		heard("d:" + name + ",u:" + name)
+		mu.Lock()
+		want := core.KeyEvent{Key: name, Code: "KeyW"}
+		if !slices.Equal(events, []core.KeyEvent{want, want}) || len(codes) != 0 {
+			t.Errorf("physical W with %q: events %+v, held %v", name, events, codes)
+		}
+		mu.Unlock()
+	}
 	// This test owns the surface's engine; browser listeners last until the per-test page closes, as in the backend's other browser tests.
 	s.engine.Close()
 }

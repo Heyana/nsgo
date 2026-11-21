@@ -34,7 +34,45 @@ var apple = func() bool {
 
 // setKeymap takes the keymap's bindings and whether the app asked for every key or mouse button held (MountItem.HeldKeys, HeldMouseButtons).
 func (s *surface) setKeymap(keys []driver.KeyBinding, held, heldMouse bool) {
+	started := held && !s.heldKeys
 	s.keys, s.heldKeys, s.heldMouse = keys, held, heldMouse
+	if started {
+		s.readKeyboardLayout()
+	}
+}
+
+func (s *surface) readKeyboardLayout() {
+	if !s.heldKeys {
+		return
+	}
+	keyboard := js.Global().Get("navigator").Get("keyboard")
+	if !keyboard.Truthy() || keyboard.Get("getLayoutMap").Type() != js.TypeFunction {
+		return
+	}
+	promise := keyboard.Call("getLayoutMap")
+	go func() {
+		layout, err := await(promise)
+		if err != nil || !layout.Truthy() {
+			return
+		}
+		names := map[string]string{}
+		each := js.FuncOf(func(_ js.Value, args []js.Value) any {
+			if len(args) >= 2 {
+				name := strings.ToLower(args[0].String())
+				if name == " " {
+					name = "space"
+				}
+				names[args[1].String()] = name
+			}
+			return nil
+		})
+		layout.Call("forEach", each)
+		each.Release()
+		s.keyCodeNames = names
+		if s.engine != nil {
+			s.updateEnv()
+		}
+	}()
 }
 
 // focusKeyUse returns the keys the focused element uses itself, which the keymap's bindings that yield them leave it (driver.FindKey): a field's, a select's or an editable element's editing keys, a pressable view's Return and Space, a slider's or a tab bar's arrows.
@@ -80,8 +118,8 @@ func keyName(e js.Value) string {
 
 // heldKey is a key down that focusKeyDown reported: the view it went down on, or 0 for none, and the name its up reports again.
 type heldKey struct {
-	id   driver.NodeID
-	name string
+	id         driver.NodeID
+	name, code string
 }
 
 // keyCode returns the physical key of e, which pairs a key's up with its down: its code, or its key where the browser gives no code.
@@ -128,18 +166,22 @@ func (s *surface) focusKeyDown(e js.Value) bool {
 	if hears {
 		id = v.id
 	}
-	mods, repeat, code := keyModifiers(e), e.Get("repeat").Bool(), keyCode(e)
+	mods, repeat, physical := keyModifiers(e), e.Get("repeat").Bool(), e.Get("code").String()
+	code := keyCode(e)
+	if physical == "Unidentified" {
+		physical = ""
+	}
 	if held, ok := s.keysHeld[code]; !ok || !repeat {
 		if ok {
 			// A key that goes down again without repeating lost its up, which is reported first.
-			s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, Modifiers: mods})
+			s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, KeyCode: held.code, Modifiers: mods})
 		}
 		if s.keysHeld == nil {
 			s.keysHeld = map[string]heldKey{}
 		}
-		s.keysHeld[code] = heldKey{id: id, name: name}
+		s.keysHeld[code] = heldKey{id: id, name: name, code: physical}
 	}
-	ev := driver.Event{Kind: driver.EventKeyDown, ID: id, Text: name, Modifiers: mods, Repeat: repeat}
+	ev := driver.Event{Kind: driver.EventKeyDown, ID: id, Text: name, KeyCode: physical, Modifiers: mods, Repeat: repeat}
 	if !hears {
 		// No view can consume it, so it goes without the engine's answer, as a binding's press does: with neither an ID nor a Count.
 		s.engine.Dispatch(ev)
@@ -158,7 +200,7 @@ func (s *surface) focusKeyUp(e js.Value) {
 	mods, code := keyModifiers(e), keyCode(e)
 	if held, ok := s.keysHeld[code]; ok {
 		delete(s.keysHeld, code)
-		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, Modifiers: mods})
+		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, KeyCode: held.code, Modifiers: mods})
 	}
 	switch e.Get("key").String() {
 	case "Meta", "OS":
@@ -176,7 +218,7 @@ func (s *surface) releaseKeys(mods driver.Modifiers, modifiers bool) {
 			continue
 		}
 		delete(s.keysHeld, code)
-		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, Modifiers: mods})
+		s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, KeyCode: held.code, Modifiers: mods})
 	}
 }
 
