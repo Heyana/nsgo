@@ -77,6 +77,8 @@
 - Let a web scheme's handler see the request and answer it whole with `Scope.ServeSchemeRequest`: the request's method and headers where the platform reports them (Apple, Linux and Windows) and the response's status, headers and body, a nil one 404, on macOS and iOS answered as `NSHTTPURLResponse` and on Linux as `webkit_uri_scheme_request_finish_with_response`, whose schemes are registered CORS-enabled as WKWebView's are. `ServeScheme`'s bytes-only handler keeps answering every request 200 (#1175 by @shuuul).
 - Bind changing accessibility labels and hints on mounted core elements (#145 by @houko).
 - Mute `WebView` audio in place on Windows and Linux and suspend media playback on macOS and iOS (#114 by @houko).
+- Show the user-agent suffix in the gallery's WebView script result (#114 by @houko).
+- Update changing text, accessible names and hints in place on core elements and on buttons, checkboxes, slider thumbs, tabs, switches, progress bars and popup triggers (#145 by @houko).
 - Update changing text, accessible names and hints in place on core elements and on buttons, checkboxes, slider thumbs, tabs, tab shells, switches, progress bars and popup triggers (#145 by @houko).
 - Add `apple.multiple_scenes`, which writes `UIApplicationSupportsMultipleScenes`, and show each further scene an iPad connects for it, as the user opens another window of the app, in a window of its own: a tree of the app's one engine showing the main view, with its own size, safe area, status bar and orientations, kept while UIKit disconnects the scene and ended as the system discards it (#49 by @houko).
 - Honor quit requests from Windows and Linux menus, tray icons, and window closes, and run bounded cleanup when the session ends (#1082 by @houko).

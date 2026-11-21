@@ -2059,16 +2059,26 @@ func TestRichEditorTakesTyping(t *testing.T) {
 func TestWebEvaluate(t *testing.T) {
 	app := startDesktop(t)
 	open(app, "WebView")
-	app.WaitFor("id:bridge", 10*time.Second)
-	if nsgotest.Target() != "" {
-		// The page loads before it can answer.
-		time.Sleep(2 * time.Second)
+	bridge := app.WaitFor("id:bridge", 10*time.Second)
+	if got := bridge.Web.UserAgentSuffix; got != galleryUserAgentSuffix {
+		t.Fatalf("gallery web view's user-agent suffix = %q, want %q", got, galleryUserAgentSuffix)
+	}
+	target := nsgotest.Target()
+	if target != "" {
+		// Wait until the page posts its button positions.
+		app.WaitUntil(10*time.Second, func() bool { return app.Enabled("id:click-page") })
 	}
 	app.Press("id:run-script")
-	if nsgotest.Target() == "" {
-		app.AnswerScript("id:bridge", `{"elements":true,"sum":42}`, "")
+	const result = `{"elements":true,"sum":42,"userAgentToken":"`
+	if target == "" {
+		app.AnswerScript("id:bridge", result+galleryUserAgentSuffix+`"}`, "")
 	}
-	app.WaitFor(`text:{"elements":true,"sum":42}`, 10*time.Second)
+	switch target {
+	case "", "macos", "linux", "windows":
+		app.WaitFor(`text:`+result+galleryUserAgentSuffix+`"}`, 10*time.Second)
+	default:
+		app.WaitFor(`text:`+result, 10*time.Second)
+	}
 }
 
 func TestSystemPermissions(t *testing.T) {

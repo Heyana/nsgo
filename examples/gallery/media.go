@@ -103,6 +103,8 @@ func mediaFrame(cx *core.Scope, height core.Points, bg core.Color) core.Style {
 	return core.Style{Height: core.Pt(height), CornerRadius: ui.RadiusControl, Overflow: core.Hidden, BorderWidth: 1, BorderColor: ui.ColorsOf(cx).Border(), Background: bg}
 }
 
+const galleryUserAgentSuffix = "NSGoGallery/1.0"
+
 func messaging(cx *core.Scope) core.Node {
 	tr := locales.For(cx)
 	colors := ui.ColorsOf(cx)
@@ -158,7 +160,9 @@ func messaging(cx *core.Scope) core.Node {
 		return s
 	}
 	return Card{Title: tr.MediaWebView(), Description: tr.MediaInlineHtmlWithMessagesBoth(), Children: []core.Node{
-		core.WebView{Ref: web, SourceFunc: source, Headers: map[string]string{"X-NSGo-Gallery": "webview"}, Incognito: true, MutedFunc: muted.Get, TestID: "bridge", StyleFunc: func() core.Style { return mediaFrame(cx, 210, colors.Inset()) }, OnMessage: got, OnDownload: download, OnNavigationStateChange: pageState.Set,
+		core.WebView{Ref: web, SourceFunc: source, Headers: map[string]string{"X-NSGo-Gallery": "webview"}, UserAgentSuffix: galleryUserAgentSuffix,
+			Incognito: true, MutedFunc: muted.Get, TestID: "bridge", StyleFunc: func() core.Style { return mediaFrame(cx, 210, colors.Inset()) },
+			OnMessage: got, OnDownload: download, OnNavigationStateChange: pageState.Set,
 			OnOpenWindow: func(r core.WebWindowRequest) {
 				if r.UserInitiated {
 					message.Set(r.URL)
@@ -198,7 +202,9 @@ func messaging(cx *core.Scope) core.Node {
 				OnPress:  func() { web.SendInput(core.WebClick(at.Save[0], at.Save[1])) }},
 			// A promise the page settles, answered as JSON.
 			ui.Button{Text: tr.MediaRunAScript(), Variant: ui.ButtonSecondary, TestID: "run-script", OnPress: func() {
-				web.Evaluate("Promise.resolve(document.body.childElementCount).then(n => ({elements: n > 0, sum: 6 * 7}))",
+				web.Evaluate(`Promise.resolve(document.body.childElementCount).then(n => ({
+					elements: n > 0, sum: 6 * 7, userAgentToken: navigator.userAgent.split(" ").pop()
+				}))`,
 					func(json string, err error) {
 						if err != nil {
 							result.Set(err.Error())
