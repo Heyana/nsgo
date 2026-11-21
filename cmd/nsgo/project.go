@@ -141,9 +141,11 @@ type project struct {
 	} `yaml:"i18n"`
 	// Web is the web target's: Host is a JS module, relative to
 	// nsgo.yaml and inside its directory, whose createHost(player) gives
-	// the app's page its host.
+	// the app's page its host. Offline enables an offline launch of the
+	// published site through a service worker.
 	Web struct {
-		Host string `yaml:"host"`
+		Host    string `yaml:"host"`
+		Offline bool   `yaml:"offline"`
 	} `yaml:"web"`
 	// MiniProgram is the mini program targets': AppID holds the mini
 	// program's on each platform (wechat, qq, alipay, douyin), and

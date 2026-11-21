@@ -30,6 +30,17 @@ Each file is named `<name>-<version>-<system>-<arch>`, such as `hello-1.2.0-wind
 
 The web site includes `.wasm.br` and `.wasm.gz` when they are smaller than the original module. Enable precompressed files on hosts that support them. Serve them at the original `.wasm` URL with `Content-Type: application/wasm`, the matching `Content-Encoding`, and `Vary: Accept-Encoding`. The original module works on any static host.
 
+### Offline web packages
+
+Set `web.offline: true` in `nsgo.yaml` to cache a web release on its first online launch.
+
+```yaml
+web:
+  offline: true
+```
+
+Serve the published directory over HTTPS, or use `go tool nsgo build -target web -run` on localhost. The service worker caches the page, WebAssembly, scripts and packaged resources. Online visits load the published version. After the installation succeeds and the previous release's tabs close, the latest release can launch from its cache. Requests for an app's online services still need a connection.
+
 ## nsgo.yaml
 
 ```yaml

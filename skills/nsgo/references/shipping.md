@@ -61,6 +61,7 @@ On the store channel, `-target macos` and `-target macos_universal` write one un
 Android store builds require API 36 or higher. Record outstanding store questionnaires in `compliance` and declare Apple's export compliance in `apple.info` ([Store compliance](https://nsgo.dev/docs/building.md#store-compliance)).
 For Steam, upload the desktop target directories directly. Use `steam-launch.sh` for Linux x64 and upload `nsgo-gtk/` with it. Native dev with `steam.app_id` writes `steam_appid.txt` into its build and starts there. The depot output excludes that file, installers and self-updaters.
 
+Set `web.offline: true` in `nsgo.yaml` to cache a published web build and its packaged resources for offline launch. Serve the site over HTTPS or preview it with `go tool nsgo build -target web -run`. See [Offline web packages](https://nsgo.dev/docs/building.md#offline-web-packages).
 
 ## Store listings
 

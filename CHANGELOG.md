@@ -67,6 +67,7 @@
 - Declare game classification, Game Mode and optional gamepad support with `game` and `gamepad` in `nsgo.yaml` (#1217 by @houko).
 - Keep the display awake through `Scope.KeepAwake` on Android and in visible web pages (#1215 by @houko).
 - Bundle third-party license notices with built apps and expose them through `core.ThirdPartyNotices` (#1244 by @houko).
+- Enable offline launch and versioned resource caching for published web apps with `web.offline` (#1245 by @houko).
 - Let `richeditor.View.NodeViews` draw inline leaves in the text, where a press selects the node and an edit can replace it whole (#1172 by @shuuul).
 - Keep an image with its surrounding text when the rich editor's schema defines `inlineImage`, and keep the image's title and link when writing Markdown (#1174 by @shuuul).
 - Slide the title of `ui.SidebarShell`'s content with the content until it meets the sidebar's toggle, where it jumped as the sidebar hid or showed, and add `examples/shell` of the inset shell.
