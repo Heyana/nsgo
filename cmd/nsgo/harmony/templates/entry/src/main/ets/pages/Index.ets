@@ -14,6 +14,7 @@ import { common, ConfigurationConstant, abilityAccessCtrl, bundleManager } from 
 import type { Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import { userAuth } from '@kit.UserAuthenticationKit';
 import MeasureText, { MeasureOptions } from '@ohos.measure';
+import { SandboxFiles } from './SandboxFiles';
 
 // The host the harmonyos target builds: the app's engine runs in WebAssembly
 // in a 1x1 Web view, and this page draws what it mounts with ArkUI views.
@@ -883,6 +884,10 @@ class Bridge {
     return AppStorage.get<string>('nsgoLaunch') ?? '{"args":[],"url":""}';
   }
 
+  sandbox(operation: string, request: string): string {
+    return this.host?.files?.call(operation, request) ?? '{"error":"ENOSYS"}';
+  }
+
   alert(json: string): void {
     if (this.host !== undefined) {
       this.host.alert(json);
@@ -1072,6 +1077,7 @@ struct Index {
   renderController: RenderController = new RenderController();
   private res: resourceManager.ResourceManager | undefined = undefined;
   private hostCtx: common.UIAbilityContext | undefined = undefined;
+  files: SandboxFiles | undefined = undefined;
   private win: window.Window | undefined = undefined;
   // awake holds the power assertions keeping the screen on.
   private awake: Set<number> = new Set();
@@ -1762,12 +1768,18 @@ struct Index {
     if (host) {
       this.hostCtx = host;
       this.res = host.resourceManager;
+      this.files = new SandboxFiles(host.filesDir, host.cacheDir, host.tempDir);
     }
     this.bridge.host = this;
     this.renderer.host = this;
     nsgoHost = this;
     this.renderController.renderer = this.renderer;
     this.watchWindow();
+  }
+
+  aboutToDisappear(): void {
+    this.files?.close();
+    this.files = undefined;
   }
 
   // watchWindow measures what the system bars cover, and measures again when
@@ -2063,7 +2075,7 @@ struct Index {
         .javaScriptProxy({
           object: this.bridge,
           name: 'nsgoHarmony',
-          methodList: ['ready', 'submit', 'tick', 'idle', 'device', 'measure', 'perf', 'snapshot', 'scrollBy', 'typeInput', 'launch', 'alert', 'backunhandled', 'clipread', 'clipset', 'clipimage', 'dismisskeyboard', 'announce', 'title', 'updatewidget', 'listdir', 'readfile', 'pickdirectories', 'imageinfo', 'openurl', 'pickimages', 'pickfiles', 'savefile', 'saved', 'openfile', 'takephoto', 'keepawake', 'releaseawake', 'bioavail', 'bioauth', 'permission'],
+          methodList: ['ready', 'submit', 'tick', 'idle', 'device', 'measure', 'perf', 'snapshot', 'scrollBy', 'typeInput', 'launch', 'sandbox', 'alert', 'backunhandled', 'clipread', 'clipset', 'clipimage', 'dismisskeyboard', 'announce', 'title', 'updatewidget', 'listdir', 'readfile', 'pickdirectories', 'imageinfo', 'openurl', 'pickimages', 'pickfiles', 'savefile', 'saved', 'openfile', 'takephoto', 'keepawake', 'releaseawake', 'bioavail', 'bioauth', 'permission'],
           controller: this.controller
         })
         .onInterceptRequest((event) => {

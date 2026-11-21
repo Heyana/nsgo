@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall/js"
@@ -48,11 +49,17 @@ func (host) Open(app func(cx *core.Scope) core.Node, o testhost.Options) (testho
 	if o.Size.Width > 0 && o.Size.Height > 0 {
 		s.size0 = o.Size
 	}
-	s.engine = engine.Start(s, app, engine.Options{
+	engineOpts := engine.Options{
 		CheckCommits: o.CheckCommits,
 		Size:         s.size0, Environment: env, Clock: o.Clock, Storage: o.Storage,
 		Observe: o.Observe, Event: o.Event,
-	})
+	}
+	if dir, err := os.MkdirTemp("", "nsgo-test-"); err == nil {
+		engineOpts.DataDir = filepath.Join(dir, "data")
+		engineOpts.CacheDir = filepath.Join(dir, "cache")
+		engineOpts.LogsDir = filepath.Join(dir, "logs")
+	}
+	s.engine = engine.Start(s, app, engineOpts)
 	s.install()
 	s.bridge.Call("ready")
 	return &testSurface{s: s, epoch: time.Now()}, nil

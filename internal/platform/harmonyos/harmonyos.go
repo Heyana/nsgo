@@ -16,6 +16,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"log"
+	"path/filepath"
 	"syscall/js"
 	"time"
 
@@ -57,9 +58,15 @@ type surface struct {
 // Run runs app in ArkWeb. Call it from main; it does not return.
 func Run(app engine.App, opts Options) {
 	s := newSurface(opts)
-	s.engine = engine.Start(s, app, engine.Options{
+	engineOpts := engine.Options{
 		Size: s.size0, Environment: s.env, Appearance: opts.Appearance, Perf: s.perf,
-	})
+	}
+	if paths := js.Global().Get("nsgoSandboxPaths"); paths.Type() == js.TypeObject {
+		engineOpts.DataDir = paths.Get("data").String()
+		engineOpts.CacheDir = paths.Get("cache").String()
+		engineOpts.LogsDir = filepath.Join(engineOpts.DataDir, "logs")
+	}
+	s.engine = engine.Start(s, app, engineOpts)
 	s.install()
 	s.bridge.Call("ready")
 	// A monitor measures what a display shows, so its clock keeps running

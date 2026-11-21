@@ -3,6 +3,109 @@
 <title>nsgo</title>
 <script src="wasm_exec.js"></script>
 <script>
+// Go's js/wasm syscall package reads these Node-style hooks at startup.
+// An older committed host leaves the standard console-only hooks in place.
+function installSandbox(go) {
+  if (typeof nsgoHarmony.sandbox !== 'function') return;
+  const call = (op, args) => {
+    const result = JSON.parse(nsgoHarmony.sandbox(op, JSON.stringify(args)));
+    if (result.error) throw Object.assign(new Error(result.error), { code: result.error });
+    return result.value;
+  };
+  let paths;
+  try { paths = call('paths', {}); }
+  catch (err) {
+    console.warn('nsgo: sandbox directories unavailable: ' + err);
+    return;
+  }
+  if (!paths.data || !paths.cache || !paths.temp) return;
+  globalThis.nsgoSandboxPaths = paths;
+  if (!go.env.TMPDIR) go.env.TMPDIR = paths.temp;
+
+  let cwd = paths.data;
+  const resolve = name => {
+    const parts = [];
+    const absolute = name.startsWith('/') ? name : cwd + '/' + name;
+    for (const part of absolute.split('/')) {
+      if (part === '..') parts.pop();
+      else if (part && part !== '.') parts.push(part);
+    }
+    return '/' + parts.join('/');
+  };
+  globalThis.path.resolve = resolve;
+  globalThis.process.cwd = () => cwd;
+  globalThis.process.chdir = name => {
+    const path = resolve(name);
+    if (!call('stat', { path }).directory) {
+      throw Object.assign(new Error('not a directory'), { code: 'ENOTDIR' });
+    }
+    cwd = path;
+  };
+
+  const invoke = (callback, operation) => {
+    let result;
+    try { result = operation(); }
+    catch (err) { callback(err.code ? err : Object.assign(err, { code: 'EIO' })); return; }
+    callback(null, result);
+  };
+  const pathOp = op => (name, callback) => invoke(callback, () => call(op, { path: resolve(name) }));
+  const fdOp = op => (fd, callback) => invoke(callback, () => call(op, { fd }));
+  const stat = value => Object.assign(value, { isDirectory: () => value.directory });
+  const consoleWrite = globalThis.fs.write.bind(globalThis.fs);
+  const chunkSize = 64 * 1024;
+  Object.assign(globalThis.fs, {
+    constants: { O_WRONLY: 1, O_RDWR: 2, O_CREAT: 0o100, O_EXCL: 0o200,
+      O_TRUNC: 0o1000, O_APPEND: 0o2000, O_DIRECTORY: 0o200000 },
+    open(name, flags, mode, callback) {
+      invoke(callback, () => call('open', { path: resolve(name), flags, mode }));
+    },
+    close: fdOp('close'),
+    fsync: fdOp('fsync'),
+    stat(name, callback) { invoke(callback, () => stat(call('stat', { path: resolve(name) }))); },
+    lstat(name, callback) { invoke(callback, () => stat(call('lstat', { path: resolve(name) }))); },
+    fstat(fd, callback) { invoke(callback, () => stat(call('fstat', { fd }))); },
+    readdir: pathOp('readdir'),
+    unlink: pathOp('unlink'),
+    rmdir: pathOp('rmdir'),
+    mkdir(name, mode, callback) {
+      invoke(callback, () => call('mkdir', { path: resolve(name), mode }));
+    },
+    rename(from, to, callback) {
+      invoke(callback, () => call('rename', { path: resolve(from), target: resolve(to) }));
+    },
+    truncate(name, size, callback) {
+      invoke(callback, () => call('truncate', { path: resolve(name), size }));
+    },
+    ftruncate(fd, size, callback) { invoke(callback, () => call('ftruncate', { fd, size })); },
+    read(fd, buf, offset, length, position, callback) {
+      invoke(callback, () => {
+        const bytes = atob(call('read', { fd, size: Math.min(length, chunkSize), position }));
+        for (let i = 0; i < bytes.length; i++) buf[offset + i] = bytes.charCodeAt(i);
+        return bytes.length;
+      });
+    },
+    write(fd, buf, offset, length, position, callback) {
+      if (fd === 1 || fd === 2) { consoleWrite(fd, buf, offset, length, position, callback); return; }
+      invoke(callback, () => {
+        let written = 0;
+        while (written < length) {
+          const size = Math.min(length - written, chunkSize);
+          const chunk = buf.subarray(offset + written, offset + written + size);
+          let raw = '';
+          for (let i = 0; i < chunk.length; i += 8192) {
+            raw += String.fromCharCode(...chunk.subarray(i, i + 8192));
+          }
+          const data = btoa(raw);
+          const n = call('write', { fd, data, position: position === null ? null : position + written });
+          if (n === 0) break;
+          written += n;
+        }
+        return written;
+      });
+    },
+  });
+}
+
 // The engine's module, started in the host's Web view: the ArkTS side
 // provides nsgoHarmony, and draws what the module mounts. A test build
 // carries test.json: its arguments go to the test binary, whose output
@@ -29,6 +132,7 @@
     } else if (perf) {
       go.argv = ['app', '--nsgo-fps'];
     }
+    installSandbox(go);
     const res = await WebAssembly.instantiate(buf, go.importObject);
     go.run(res.instance);
   } catch (e) {

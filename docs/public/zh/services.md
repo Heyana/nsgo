@@ -114,6 +114,8 @@ store.SetItem("tab", "library")
 
 `store.Keys()` 列出键，`RemoveItem` 删除一个，`Clear` 清空存储。`cx.DataDir()` 和 `cx.CacheDir()` 给出应用存放键值存储放不下的文件的目录；`cx.LogsDir()` 给出平台存放日志的目录；`Scope.ProvideStorage` 给子树一个独立分区。
 
+在 HarmonyOS 上，`os.ReadFile`、`os.WriteFile` 和 `os.Rename` 等 Go 文件操作可用于这些目录及系统的临时目录。相对路径从应用的文件目录开始解析。暂不支持建议性文件锁和符号链接。
+
 ### 崩溃报告
 
 原生发布构建将 Go 崩溃堆栈保存在 `cx.LogsDir()/crashes` 下。Apple 平台记录未捕获的 Objective-C 异常，Android 记录未捕获的 Java 异常，Windows 记录到达顶层过滤器的 SEH 异常。下次启动时调用 `cx.CrashReports()` 列出待处理报告。报告含崩溃应用的版本、构建号和平台。调用 `Open()` 读取诊断文本并关闭读取器，处理完成后调用 `Acknowledge()` 删除报告。在 goroutine 中执行这些文件操作。

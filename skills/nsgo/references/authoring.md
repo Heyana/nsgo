@@ -38,6 +38,8 @@ These are the rules NSGo's own `base` and `ui` follow, for components other apps
 - A complex component gets a package of its own whose API drops its name (`dock.Area`, not `dock.DockArea`).
 - Keep unstyled and styled forms in separate packages when both exist, so apps with their own look import no styles.
 
+On HarmonyOS, use Go’s standard file APIs under `cx.DataDir()`, `cx.CacheDir()` or the system’s temporary directory. See [Services](https://nsgo.dev/docs/services.md#storage).
+
 ## Words and tests
 
 - Say the component's own words, such as an icon button's label, through the package's `locales/` catalogs in English and the languages you translate to, never string literals. Add `//go:generate go tool nsgo i18n` to the package and commit the generated `catalog_gen.go`, so apps build with Go alone.

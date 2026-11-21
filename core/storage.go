@@ -359,7 +359,7 @@ func (s Storage) apply(c StorageChange) error {
 
 // DataDir returns the directory the app keeps its files in: Application
 // Support on Apple platforms, %APPDATA% on Windows, the files directory on
-// Android, each with a directory of the app's own. It is "" on the web,
+// Android and HarmonyOS, each with a directory of the app's own. It is "" on the web,
 // which has none.
 func (cx *Scope) DataDir() string { return cx.rt.dataDir }
 

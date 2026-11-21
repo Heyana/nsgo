@@ -114,6 +114,8 @@ store.SetItem("tab", "library")
 
 `store.Keys()` lists the keys, `RemoveItem` deletes one and `Clear` empties the storage. `cx.DataDir()` and `cx.CacheDir()` give the app's folders for files the key-value storage is too small for; `cx.LogsDir()` gives the platform's directory for log files, and a `Scope.ProvideStorage` gives a subtree a partition of its own.
 
+On HarmonyOS, Go file operations such as `os.ReadFile`, `os.WriteFile` and `os.Rename` work under these directories and `os.TempDir()`. Relative paths start in the files directory. Advisory file locks and symbolic links are unavailable.
+
 ### Crash reports
 
 Native release builds keep Go crash traces under `cx.LogsDir()/crashes`. Apple records uncaught Objective-C exceptions, Android records uncaught Java exceptions, and Windows records SEH exceptions that reach its top-level filter. List pending reports on the next launch with `cx.CrashReports()`. Each report identifies the version, build and platform that produced it. Call `Open()` to read the diagnostic text, close the reader, then call `Acknowledge()` to delete the report when the app has processed it. Run these file operations on a goroutine.
