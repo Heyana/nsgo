@@ -26,6 +26,11 @@ type SharedMounter interface {
 	MountsAtOnce()
 }
 
+// ApproximateTextSize estimates text geometry if a platform cannot measure it.
+func ApproximateTextSize(t *driver.AttributedText, width driver.Points) driver.Size {
+	return (core.ApproxTextEngine{}).Prepare(t).Measure(width)
+}
+
 // Platform is what a backend gives the engine.
 type Platform interface {
 	driver.TextEngine

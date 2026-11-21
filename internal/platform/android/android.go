@@ -1,6 +1,6 @@
 //go:build android
 
-// Package android is NSGo's Android backend. The app is a plain Go executable that the prebuilt Java runtime in java/ starts as a child process; nsgo packages it as libnsgo.so in an APK. The two talk over the process's pipes: one batch per commit, with separate messages for pixel frames, and one message per event and per step of text. Java keeps the text the engine prepares, measures it and lays it out with StaticLayout, and mounts one Android view per node; measuring, and laying out text with attachments, are the only round trips. Go fetches images and Java decodes them, animated GIF and WebP included; Go rasterizes SVG with imagedecode first, as Android cannot. Java hosts web views, videos and native components' views, plays canvas drawings, runs style transitions, a port of core.Animator and layout animations on Choreographer frames, shows input accessory bars above the keyboard and reports the environment, back, keys, presses outside overlays and answers to alerts and clipboard reads. An overlay over other apps shows in a window of its own, an NsgoView the first view hands its surface's batches, images and events on to (overlay.go).
+// Package android is NSGo's Android backend. The app is a plain Go executable that the prebuilt Java runtime in java/ starts as a child process; nsgo packages it as libnsgo.so in an APK. The two talk over the process's pipes: one batch per commit, with separate messages for pixel frames, and one message per event and per step of text. Java keeps the text the engine prepares, measures it and lays it out with StaticLayout, and mounts one Android view per node; text calls have correlated replies and deadlines. Go fetches images and Java decodes them, animated GIF and WebP included; Go rasterizes SVG with imagedecode first, as Android cannot. Java hosts web views, videos and native components' views, plays canvas drawings, runs style transitions, a port of core.Animator and layout animations on Choreographer frames, shows input accessory bars above the keyboard and reports the environment, back, keys, presses outside overlays and answers to alerts and clipboard reads. An overlay over other apps shows in a window of its own, an NsgoView the first view hands its surface's batches, images and events on to (overlay.go).
 //
 // Go builds Android shared libraries only with cgo and the NDK; a second
 // process keeps every build an executable, so arm64 needs only Go. An
@@ -44,12 +44,8 @@ import (
 const (
 	// Go to Java.
 	msgBatch   = 1 // a MountBatch, applied on the UI thread
-	msgPrepare = 2 // keeps text and its style under a new id
-	msgMeasure = 3 // asks a prepared text's size at a width
-	msgLayout  = 4 // lays a prepared text out under a new layout id
 	msgRelease = 5 // frees a prepared text
 	msgImage   = 6 // bytes of an image view's source or placeholder
-	msgLines   = 7 // asks a text layout's lines
 	// msgCanvasImage is the bytes of an image canvases draw, by its key.
 	msgCanvasImage = 8
 	// msgFonts lists the app's font files, with each face's family,
@@ -60,9 +56,6 @@ const (
 	// msgHostCall is the app's call of an embedding host's handler, a URL
 	// for its handler or a failure (host.go).
 	msgHostCall = 11
-	// msgCarets asks where a text layout's characters are, for hit
-	// testing.
-	msgCarets = 12
 	// msgWantFrame asks for msgFrame at the next Choreographer frame.
 	msgWantFrame = 13
 	// msgFontData is a font the app registers as it runs, its bytes with
@@ -86,22 +79,20 @@ const (
 	// msgScan starts or stops the runtime's code scanner (scan.go).
 	msgScan = 21
 	// msgPixelFrame carries a bitmap for an item of the next batch on its surface.
+
 	msgPixelFrame = 22
 	// msgDiskSpace asks what the app can allocate on the volume containing its data directory.
-	msgDiskSpace = 23
+	msgDiskSpace   = 23
+	msgTextRequest = 26
 
 	// Java to Go.
 	msgStart       = 1 // the view's size and the folds measured at it (readSize), as msgResize
 	msgResize      = 2 // as msgStart, then the environment as msgEnvironment's when it changed with the size
 	msgEvent       = 3
-	msgMeasured    = 4
 	msgEnvironment = 5  // the environment, before msgStart and on change
 	msgDNS         = 6  // the default network's DNS servers
-	msgLaidOut     = 7  // where a msgLayout put a text's attachments
-	msgTextLines   = 8  // a text layout's lines, answering msgLines
 	msgTestReply   = 9  // the test agent's answer to a msgTest
 	msgHost        = 10 // the embedding host's part of the channel (host.go)
-	msgCaretLines  = 11 // a text layout's lines and clusters, answering msgCarets
 	msgFrame       = 12 // a Choreographer frame began, answering msgWantFrame: its frameTimeNanos, a u64
 	msgFolderReply = 13 // a folder's entries or a file's bytes, answering msgFolder
 	msgFetched     = 14 // a download's progress or response, answering msgFetch
@@ -124,10 +115,12 @@ const (
 	msgCanvasRequest = 22
 	// msgScanReport is what the code scanner reports: a frame of the camera, its close or its failure (scan.go).
 	msgScanReport = 23
+
 	// msgGamepad reports a game controller connecting, disconnecting or changing buttons and axes (gamepad.go).
 	msgGamepad = 24
 	// msgDiskSpaceReply answers msgDiskSpace, with byte counts or the reason it failed.
 	msgDiskSpaceReply = 25
+	msgTextReply      = 27
 )
 
 // The parts of an image view's request msgImage carries.
@@ -139,17 +132,14 @@ const (
 type surface struct {
 	sensorReports sensorReports
 
-	mu       sync.Mutex // guards out and buf
-	out      *os.File
-	buf      []byte
-	ids      atomic.Uint32 // the last prepared text or layout id
-	measured chan driver.Size
-	laidOut  chan []attachmentBox
-	lines    chan []driver.TextLine
-	carets   chan driver.CaretLayout
-	engine   *engine.Engine
-	started  chan struct{}      // closed once engine is set
-	env      driver.Environment // the last reported, on the reader goroutine
+	mu      sync.Mutex // guards out and buf
+	out     *os.File
+	buf     []byte
+	ids     atomic.Uint32 // the last prepared text or layout id
+	textRPC *textRPC
+	engine  *engine.Engine
+	started chan struct{}      // closed once engine is set
+	env     driver.Environment // the last reported, on the reader goroutine
 	// omu guards overlays, the overlays over other apps the app opened, by their surface IDs (overlay.go).
 	omu      sync.Mutex
 	overlays map[uint32]*overlay
@@ -226,10 +216,6 @@ func connect(opts Options) *surface {
 	}
 	s := &surface{
 		out:      os.NewFile(uintptr(fd), "nsgo-runtime"),
-		measured: make(chan driver.Size, 1),
-		laidOut:  make(chan []attachmentBox, 1),
-		lines:    make(chan []driver.TextLine, 1),
-		carets:   make(chan driver.CaretLayout, 1),
 		started:  make(chan struct{}),
 		env:      driver.Environment{OS: driver.OSAndroid, HasWebView: true, ScheduledNotifications: true, Gamepads: true},
 		main:     treeView{images: map[driver.NodeID]*imageView{}},
@@ -239,6 +225,9 @@ func connect(opts Options) *surface {
 		natives:    map[nativeKey]*nativeView{},
 		host:       newEmbedHost(),
 	}
+	s.textRPC = newTextRPC(func(payload []byte, deadline time.Time) error {
+		return s.sendBefore(msgTextRequest, deadline, func(w *writer) { w.buf = append(w.buf, payload...) })
+	})
 	useDNS()
 	s.sendFonts(opts.Fonts)
 	driver.ConnectLiveUpdates(func(msg []byte) {
@@ -259,6 +248,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 		kind, payload, err := readMessage(in)
 		if err != nil {
 			// The runtime is gone, and the app with it.
+			s.textRPC.close()
+			s.out.Close()
 			if s.engine != nil {
 				s.engine.Close()
 			}
@@ -389,28 +380,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			} else {
 				target.Dispatch(ev)
 			}
-		case msgMeasured:
-			s.measured <- driver.Size{Width: r.points(), Height: r.points()}
-		case msgLaidOut:
-			boxes := make([]attachmentBox, r.u32())
-			for i := range boxes {
-				// NaN for one the line limit or the ellipsis cut off.
-				x, y := r.points(), r.points()
-				boxes[i] = attachmentBox{driver.Point{X: x, Y: y}, !math.IsNaN(float64(x))}
-			}
-			s.laidOut <- boxes
-		case msgTextLines:
-			lines := make([]driver.TextLine, r.u32())
-			for i := range lines {
-				l := &lines[i]
-				l.Start, l.End = int(r.u32()), int(r.u32()) // UTF-8 offsets
-				l.Bounds = driver.Bounds{Origin: driver.Point{X: r.points(), Y: r.points()},
-					Size: driver.Size{Width: r.points(), Height: r.points()}}
-				l.Ascender, l.Descender, l.CapHeight, l.XHeight = r.points(), r.points(), r.points(), r.points()
-			}
-			s.lines <- lines
-		case msgCaretLines:
-			s.carets <- readCarets(&r)
+		case msgTextReply:
+			s.receiveText(&r)
 		case msgEnvironment:
 			env := readEnvironment(&r)
 			if env.Equal(s.env) {
@@ -664,19 +635,44 @@ func useDNS() {
 	}
 }
 
+func (s *surface) requestText(kind byte, body func(*writer)) ([]byte, bool) {
+	id, reply := s.textRPC.call(kind, textTimeout, body)
+	if reply.err != nil {
+		log.Printf("android text %s %d: %v", textOperation(kind), id, reply.err)
+		return nil, false
+	}
+	return reply.data, true
+}
+
+func (s *surface) receiveText(r *reader) {
+	if len(r.buf) < 10 {
+		log.Print("android text: truncated reply")
+		return
+	}
+	id, kind, failed := r.u64(), r.byte(), r.byte()
+	reply := textReply{data: r.buf}
+	if failed != 0 {
+		if failed == 1 && len(r.buf) >= 4 && uint32(len(r.buf)-4) == binary.BigEndian.Uint32(r.buf) {
+			reply = textReply{err: errors.New(r.str())}
+		} else {
+			reply = textReply{err: errors.New("malformed error reply")}
+		}
+	}
+	if !s.textRPC.complete(id, kind, reply) {
+		log.Printf("android text: unexpected %s reply %d", textOperation(kind), id)
+	}
+}
+
 // Prepare implements core.TextEngine: Java keeps the text and its paint
 // under a new id, so measuring and laying it out send only the id.
 func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
-	p := preparedText{s: s, id: s.ids.Add(1)}
-	if (t.Ellipsize == driver.EllipsizeHead || t.Ellipsize == driver.EllipsizeMiddle) && t.MaxLines > 1 {
-		// StaticLayout ellipsizes a head or a middle on one line only.
-		c := *t
-		p.cut = &c
-	}
+	p := preparedText{s: s, id: s.ids.Add(1), text: *t}
+	// StaticLayout ellipsizes a head or a middle on one line only.
+	p.cut = (t.Ellipsize == driver.EllipsizeHead || t.Ellipsize == driver.EllipsizeMiddle) && t.MaxLines > 1
 	for _, a := range t.Attachments {
 		p.attachments = append(p.attachments, a.Size)
 	}
-	s.send(msgPrepare, func(w *writer) {
+	_, p.ready = s.requestText(textPrepare, func(w *writer) {
 		w.u32(p.id)
 		w.str(t.Text)
 		writeStyle(w, &t.Style)
@@ -723,40 +719,66 @@ type preparedText struct {
 	s           *surface
 	id          uint32
 	attachments []driver.Size
-	// cut is the text, kept when it ellipsizes at its head or middle on
-	// several lines: Layout cuts its last line's rest.
-	cut *driver.AttributedText
+	text        driver.AttributedText
+	ready       bool
+	// cut means Layout cuts the last line at its head or middle.
+	cut bool
 }
 
-// Measure asks the runtime's StaticLayout and waits for the answer. Only
-// the engine goroutine measures, so one request is in flight at a time.
+// Measure asks the runtime's StaticLayout and estimates the size on failure.
 func (p preparedText) Measure(maxWidth driver.Points) driver.Size {
-	p.s.send(msgMeasure, func(w *writer) {
-		w.u32(p.id)
-		w.points(maxWidth) // Auto, a NaN, does not wrap
-	})
-	return <-p.s.measured
+	if p.ready {
+		if data, ok := p.s.requestText(textMeasure, func(w *writer) {
+			w.u32(p.id)
+			w.points(maxWidth) // Auto, a NaN, does not wrap
+		}); ok {
+			if len(data) == 8 {
+				r := reader{data}
+				return driver.Size{Width: r.points(), Height: r.points()}
+			}
+			log.Print("android text measure: malformed size")
+		}
+	}
+	return engine.ApproximateTextSize(&p.text, maxWidth)
 }
 
-// Layout has Java build the final StaticLayout under a new id for an
-// ItemText to name: Java reads it before the batch. Only a text with
-// attachments waits for an answer, where they went.
+// Layout asks Java to keep the final StaticLayout for the upcoming mount.
 func (p preparedText) Layout(size driver.Size) driver.TextLayout {
-	if p.cut != nil {
+	if p.cut && p.ready {
 		if l := p.layoutCut(size); l != nil {
 			return l
 		}
 	}
-	l := &textLayout{id: p.s.ids.Add(1), s: p.s}
+	l := &textLayout{s: p.s}
 	l.carets.Set(l.caretLines)
-	p.s.send(msgLayout, func(w *writer) {
+	if !p.ready {
+		return l
+	}
+	l.id = p.s.ids.Add(1)
+	data, ok := p.s.requestText(textLayoutOp, func(w *writer) {
 		w.u32(p.id)
 		w.u32(l.id)
-		w.points(size.Width) // the height is the one measured
+		w.points(size.Width)
 	})
-	if len(p.attachments) > 0 {
-		l.attachments = <-p.s.laidOut
-		l.sizes = p.attachments
+	if !ok {
+		return l
+	}
+	if len(data) < 4 {
+		log.Print("android text layout: missing attachments count")
+		return l
+	}
+	r := reader{data}
+	n := int(r.u32())
+	if n > len(r.buf)/8 || len(r.buf) != n*8 {
+		log.Print("android text layout: malformed attachment boxes")
+		return l
+	}
+	l.native = true
+	l.attachments = make([]attachmentBox, n)
+	l.sizes = p.attachments
+	for i := range l.attachments {
+		x, y := r.points(), r.points()
+		l.attachments[i] = attachmentBox{driver.Point{X: x, Y: y}, !math.IsNaN(float64(x))}
 	}
 	return l
 }
@@ -769,14 +791,14 @@ func (p preparedText) Release() {
 // middle, as driver.AttributedText.CutRest does, from where StaticLayout
 // breaks its lines at size's width; nil when the lines fit.
 func (p preparedText) layoutCut(size driver.Size) driver.TextLayout {
-	whole := *p.cut
+	whole := p.text
 	whole.MaxLines = 0
 	q := p.s.Prepare(&whole).(preparedText)
 	ql := q.Layout(size).(*textLayout)
 	lines := ql.TextLines()
 	ql.Release()
 	q.Release()
-	if len(lines) <= p.cut.MaxLines {
+	if len(lines) <= p.text.MaxLines {
 		return nil
 	}
 	fits := func(c *driver.AttributedText) bool {
@@ -784,12 +806,12 @@ func (p preparedText) layoutCut(size driver.Size) driver.TextLayout {
 		defer r.Release()
 		return r.Measure(driver.Auto).Width <= size.Width+0.01
 	}
-	cut := p.cut.CutRest(lines[p.cut.MaxLines-1].Start, fits)
+	cut := p.text.CutRest(lines[p.text.MaxLines-1].Start, fits)
 	r := p.s.Prepare(&cut).(preparedText)
 	defer r.Release()
 	l := r.Layout(size).(*textLayout)
 	// Attachments by the app's indices: those cut out are hidden.
-	if n := len(p.cut.Attachments); n > 0 {
+	if n := len(p.text.Attachments); n > 0 {
 		boxes, sizes := make([]attachmentBox, n), make([]driver.Size, n)
 		for k, o := range cut.Origin {
 			if k < len(l.attachments) && o < n {
@@ -805,6 +827,7 @@ func (p preparedText) layoutCut(size driver.Size) driver.TextLayout {
 // text's attachments. The runtime drops the layout itself when a later
 // ItemText replaces it or its view is deleted.
 type textLayout struct {
+	native      bool
 	id          uint32
 	s           *surface
 	attachments []attachmentBox
@@ -827,21 +850,45 @@ func (l *textLayout) RangeRects(start, end int, out []driver.Bounds) []driver.Bo
 // caretLines asks Java where the StaticLayout's characters are, which it
 // keeps while a text view shows it, and waits for the answer.
 func (l *textLayout) caretLines() driver.CaretLayout {
-	l.s.send(msgCarets, func(w *writer) { w.u32(l.id) })
-	return <-l.s.carets
+	if !l.native {
+		return nil
+	}
+	data, ok := l.s.requestText(textCarets, func(w *writer) { w.u32(l.id) })
+	if !ok {
+		return nil
+	}
+	if out, ok := readCarets(data); ok {
+		return out
+	}
+	log.Print("android text carets: malformed lines")
+	return nil
 }
 
-// readCarets reads a msgCaretLines: each line's UTF-16 range, box and
-// direction, then its clusters'.
-func readCarets(r *reader) driver.CaretLayout {
-	out := make(driver.CaretLayout, r.u32())
+// readCarets reads each line's UTF-16 range, box and direction, then its clusters.
+func readCarets(data []byte) (driver.CaretLayout, bool) {
+	if len(data) < 4 {
+		return nil, false
+	}
+	r := reader{data}
+	n := int(r.u32())
+	if n > len(r.buf)/29 {
+		return nil, false
+	}
+	out := make(driver.CaretLayout, n)
 	for i := range out {
+		if len(r.buf) < 29 {
+			return nil, false
+		}
 		l := &out[i]
 		l.Start, l.End = int(r.u32()), int(r.u32())
 		l.Box = driver.Bounds{Origin: driver.Point{X: r.points(), Y: r.points()},
 			Size: driver.Size{Width: r.points(), Height: r.points()}}
 		l.RTL = r.byte() != 0
-		l.Clusters = make([]driver.CaretCluster, r.u32())
+		n := int(r.u32())
+		if n > len(r.buf)/17 {
+			return nil, false
+		}
+		l.Clusters = make([]driver.CaretCluster, n)
 		for k := range l.Clusters {
 			c := &l.Clusters[k]
 			c.Start, c.End = int(r.u32()), int(r.u32())
@@ -849,14 +896,37 @@ func readCarets(r *reader) driver.CaretLayout {
 			c.RTL = r.byte() != 0
 		}
 	}
-	return out
+	return out, len(r.buf) == 0
 }
 
-// TextLines implements core.LineLayout: Java answers with the lines of
-// the StaticLayout it keeps until the batch that names it.
+// TextLines implements core.LineLayout, through the runtime's StaticLayout.
 func (l *textLayout) TextLines() []driver.TextLine {
-	l.s.send(msgLines, func(w *writer) { w.u32(l.id) })
-	return <-l.s.lines
+	if !l.native {
+		return nil
+	}
+	data, ok := l.s.requestText(textLines, func(w *writer) { w.u32(l.id) })
+	if !ok {
+		return nil
+	}
+	if len(data) < 4 {
+		log.Print("android text lines: missing line count")
+		return nil
+	}
+	r := reader{data}
+	n := int(r.u32())
+	if n > len(r.buf)/40 || len(r.buf) != n*40 {
+		log.Print("android text lines: malformed lines")
+		return nil
+	}
+	lines := make([]driver.TextLine, n)
+	for i := range lines {
+		l := &lines[i]
+		l.Start, l.End = int(r.u32()), int(r.u32()) // UTF-8 offsets
+		l.Bounds = driver.Bounds{Origin: driver.Point{X: r.points(), Y: r.points()},
+			Size: driver.Size{Width: r.points(), Height: r.points()}}
+		l.Ascender, l.Descender, l.CapHeight, l.XHeight = r.points(), r.points(), r.points(), r.points()
+	}
+	return lines
 }
 
 // attachmentBox is the top left of an attachment in the content box.
@@ -867,7 +937,9 @@ type attachmentBox struct {
 
 // Release frees a StaticLayout that no mount batch will name.
 func (l *textLayout) Release() {
-	l.s.send(msgRelease, func(w *writer) { w.u32(l.id) })
+	if l.id != 0 {
+		l.s.send(msgRelease, func(w *writer) { w.u32(l.id) })
+	}
 }
 
 // Attachment implements core.AttachmentLayout.
@@ -921,8 +993,16 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 	canvases := v.trackCanvasPixels(b, &frames)
 	s.stage(v.id, b)
 	for i := range b.Items {
-		if it := &b.Items[i]; it.Kind == driver.ItemPickDirectories {
+		it := &b.Items[i]
+		switch it.Kind {
+		case driver.ItemPickDirectories:
 			s.pickFolders(answerKey(v.id, it.Count))
+		case driver.ItemText:
+			if l, ok := it.Text.Layout.(*textLayout); ok && !l.native {
+				// A timed-out layout may have reached Java. Release its ID
+				// before the batch, which sends an empty layout instead.
+				l.Release()
+			}
 		}
 	}
 	natives := s.trackNatives(v.id, b)
@@ -1190,19 +1270,26 @@ func imageScale(uri string) float32 {
 
 // send writes one message whose payload body writes, or none and an error when the payload is longer than Java reads, as an image's or a font's bytes can be.
 func (s *surface) send(kind byte, body func(w *writer)) error {
+	return s.sendBefore(kind, time.Time{}, body)
+}
+
+func (s *surface) sendBefore(kind byte, deadline time.Time, body func(w *writer)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !deadline.IsZero() && !time.Now().Before(deadline) {
+		return errTextTimeout
+	}
 	w := writer{append(s.buf[:0], kind, 0, 0, 0, 0)}
 	body(&w)
 	if err := checkMessage(kind, len(w.buf)-5); err != nil {
 		return err
 	}
 	binary.BigEndian.PutUint32(w.buf[1:], uint32(len(w.buf)-5))
-	s.out.Write(w.buf)
+	_, err := s.out.Write(w.buf)
 	if cap(w.buf) <= 1<<20 { // let an image's buffer go
 		s.buf = w.buf
 	}
-	return nil
+	return err
 }
 
 func readMessage(r *bufio.Reader) (byte, []byte, error) {
@@ -1267,7 +1354,7 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 		case driver.ItemText:
 			t := it.Text
 			var layout uint32
-			if l, ok := t.Layout.(*textLayout); ok {
+			if l, ok := t.Layout.(*textLayout); ok && l.native {
 				layout = l.id
 			}
 			w.str(t.Text)

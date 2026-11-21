@@ -29,7 +29,9 @@ final class Protocol {
     static Message readMessage(DataInputStream in) throws IOException {
         int kind = in.read();
         if (kind == -1) return null;
-        if (kind < BATCH || kind > DISK_SPACE) throw invalidMessage("unexpected message kind " + kind);
+
+        if (kind < BATCH || kind > TEXT_REPLY) throw invalidMessage("unexpected message kind " + kind);
+
         int length;
         try {
             length = in.readInt();
@@ -55,17 +57,12 @@ final class Protocol {
 
     // Go to Java.
     static final int BATCH = 1;
-    static final int PREPARE = 2;
-    static final int MEASURE = 3;
-    static final int LAYOUT = 4;
     static final int RELEASE = 5;
     static final int IMAGE = 6;
-    static final int LINES = 7;
     static final int CANVAS_IMAGE = 8;
     static final int FONTS = 9;
     static final int TEST = 10;
     static final int HOST_CALL = 11;
-    static final int CARETS = 12;
     static final int WANT_FRAME = 13;
     static final int FONT_DATA = 14;
     static final int FOLDER = 15;
@@ -82,21 +79,22 @@ final class Protocol {
     static final int SCAN = 21;
     /** A bitmap of the next batch: item index, key, width, height and premultiplied RGBA bytes. */
     static final int PIXEL_FRAME = 22;
+
     /** The requesting surface, the request's count and the app's data directory. */
     static final int DISK_SPACE = 23;
+
+    /** A correlated text request: request ID and operation. */
+    static final int TEXT_REQUEST = 26;
+
 
     // Java to Go.
     static final int START = 1;
     static final int RESIZE = 2;
     static final int EVENT = 3;
-    static final int MEASURED = 4;
     static final int ENVIRONMENT = 5;
     static final int DNS = 6;
-    static final int LAID_OUT = 7;
-    static final int TEXT_LINES = 8;
     static final int TEST_REPLY = 9;
     static final int HOST = 10;
-    static final int CARET_LINES = 11;
     /** A Choreographer frame began, answering WANT_FRAME: its frameTimeNanos as a long. */
     static final int FRAME = 12;
     static final int FOLDER_REPLY = 13;
@@ -119,6 +117,7 @@ final class Protocol {
     static final int CANVAS_REQUEST = 22;
     /** What the code scanner reports: the surface, the request's count and a SCAN_FRAME with the frame's width, height and luminance, a SCAN_CLOSED, or a SCAN_FAILED with why (scan.go). */
     static final int SCAN_REPORT = 23;
+
     /** Game controller connect, disconnect or button/axis state (gamepad.go, Gamepads). */
     static final int GAMEPAD = 24;
 
@@ -129,6 +128,16 @@ final class Protocol {
 
     /** Answers DISK_SPACE with its surface and count, an error ("" for none), total and allocatable bytes. */
     static final int DISK_SPACE_REPLY = 25;
+
+    /** Answers TEXT_REQUEST with its request ID, its operation, and the reply bytes or an error. */
+    static final int TEXT_REPLY = 27;
+
+    // TEXT_REQUEST carries a request ID and one of these operations.
+    static final int TEXT_PREPARE = 1;
+    static final int TEXT_MEASURE = 2;
+    static final int TEXT_LAYOUT = 3;
+    static final int TEXT_LAYOUT_LINES = 4;
+    static final int TEXT_CARETS = 5;
 
     /** Writes a message's part after its head. */
     interface Body {

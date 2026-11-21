@@ -901,8 +901,18 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                         startTicking();
                     });
                     break;
+                case Protocol.TEXT_REQUEST:
+                    text(message);
+                    break;
+                case Protocol.RELEASE: {
+                    int id = message.readInt();
+                    prepared.remove(id);
+                    layouts.remove(id);
+                    clips.remove(id);
+                    break;
+                }
                 default:
-                    text(kind, message);
+                    Log.w(TAG, "unknown message " + kind);
             }
         } catch (IOException e) {
             Log.w(TAG, "invalid message from app", e);
@@ -1399,15 +1409,37 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         write(Protocol.DNS, bytes.toByteArray());
     }
 
-    /**
-     * Serves the engine's text engine. A measurement has an answer, and so
-     * has the layout of text with attachments, where they went; the engine
-     * waits for both.
-     */
-    private void text(int kind, DataInputStream in) throws IOException {
+    /** Answers every numbered text request with its data or an error. */
+    private void text(DataInputStream in) {
+        long request = 0;
+        int kind = 0;
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(bytes);
+        try {
+            request = in.readLong();
+            kind = in.readUnsignedByte();
+            out.writeLong(request);
+            out.writeByte(kind);
+            out.writeBoolean(false);
+            textOperation(kind, in, out);
+        } catch (Throwable error) {
+            bytes.reset();
+            try {
+                out.writeLong(request);
+                out.writeByte(kind);
+                out.writeBoolean(true);
+                Protocol.writeString(out, error.getClass().getSimpleName() + ": " + error.getMessage());
+            } catch (IOException impossible) {
+                throw new AssertionError(impossible);
+            }
+        }
+        write(Protocol.TEXT_REPLY, bytes.toByteArray());
+    }
+
+    private void textOperation(int kind, DataInputStream in, DataOutputStream out) throws IOException {
         int id = in.readInt();
         switch (kind) {
-            case Protocol.PREPARE: {
+            case Protocol.TEXT_PREPARE: {
                 String text = Protocol.readString(in);
                 Text.Style style = new Text.Style(in, density);
                 int maxLines = in.readInt();
@@ -1422,38 +1454,53 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 prepared.put(id, new Text.Prepared(text, style, maxLines, ellipsize, shadow, spans, attachments));
                 break;
             }
-            case Protocol.MEASURE: {
+            case Protocol.TEXT_MEASURE: {
+                Text.Prepared p = prepared.get(id);
+                if (p == null) throw new IOException("unknown prepared text " + id);
                 float maxWidth = in.readFloat(); // NaN does not wrap
-                float[] size = prepared.get(id).measure(maxWidth * density);
-                send(Protocol.MEASURED, size[0] / density, size[1] / density);
+                float[] size = p.measure(maxWidth * density);
+                out.writeFloat(size[0] / density);
+                out.writeFloat(size[1] / density);
                 break;
             }
-            case Protocol.LAYOUT: {
+            case Protocol.TEXT_LAYOUT: {
                 int layout = in.readInt();
                 Text.Prepared p = prepared.get(id);
+                if (p == null) throw new IOException("unknown prepared text " + id);
                 StaticLayout l = p.layout(in.readFloat() * density);
+                if (p.hasAttachments()) {
+                    float[] places = Text.attachments(l);
+                    out.writeInt(places.length / 2);
+                    for (float f : places) out.writeFloat(f / density);
+                } else {
+                    out.writeInt(0);
+                }
                 layouts.put(layout, l);
                 if (p.clipLines() > 0) clips.put(layout, p.clipLines());
-                if (p.hasAttachments()) laidOut(Text.attachments(l));
                 break;
             }
-            case Protocol.LINES:
-                lines(Text.lines(layouts.get(id)));
-                break;
-            case Protocol.CARETS: {
+            case Protocol.TEXT_LAYOUT_LINES: {
                 StaticLayout l = layouts.get(id);
                 if (l == null) l = shown.get(id);
-                write(Protocol.CARET_LINES, Text.carets(l, density));
+                if (l == null) throw new IOException("unknown text layout " + id);
+                float[][] lines = Text.lines(l);
+                out.writeInt(lines.length);
+                for (float[] line : lines) {
+                    out.writeInt((int) line[0]);
+                    out.writeInt((int) line[1]);
+                    for (int i = 2; i < line.length; i++) out.writeFloat(line[i] / density);
+                }
                 break;
             }
-            case Protocol.RELEASE:
-                // A prepared text, or a layout no batch will name.
-                prepared.remove(id);
-                layouts.remove(id);
-                clips.remove(id);
+            case Protocol.TEXT_CARETS: {
+                StaticLayout l = layouts.get(id);
+                if (l == null) l = shown.get(id);
+                if (l == null) throw new IOException("unknown text layout " + id);
+                out.write(Text.carets(l, density));
                 break;
+            }
             default:
-                Log.w(TAG, "unknown message " + kind);
+                throw new IOException("unknown text operation " + kind);
         }
     }
 
@@ -1612,36 +1659,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 });
             });
         });
-    }
-
-    /** Answers a layout with where its attachments went: x and y in points, NaN for ones cut off. */
-    private void laidOut(float[] places) {
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream(4 + places.length * 4);
-        DataOutputStream d = new DataOutputStream(bytes);
-        try {
-            d.writeInt(places.length / 2);
-            for (float f : places) d.writeFloat(f / density);
-        } catch (IOException impossible) {
-            throw new AssertionError(impossible);
-        }
-        write(Protocol.LAID_OUT, bytes.toByteArray());
-    }
-
-    /** Answers a LINES message: per line its UTF-8 range, box and metrics, in points. */
-    private void lines(float[][] lines) {
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream(4 + lines.length * 40);
-        DataOutputStream d = new DataOutputStream(bytes);
-        try {
-            d.writeInt(lines.length);
-            for (float[] line : lines) {
-                d.writeInt((int) line[0]);
-                d.writeInt((int) line[1]);
-                for (int i = 2; i < line.length; i++) d.writeFloat(line[i] / density);
-            }
-        } catch (IOException impossible) {
-            throw new AssertionError(impossible);
-        }
-        write(Protocol.TEXT_LINES, bytes.toByteArray());
     }
 
     void write(int kind, byte[] payload) {
@@ -1815,18 +1832,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
         write(kind, bytes.toByteArray());
         if (env != null) overlays.environment();
-    }
-
-    private void send(int kind, float a, float b) {
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream(8);
-        DataOutputStream d = new DataOutputStream(bytes);
-        try {
-            d.writeFloat(a);
-            d.writeFloat(b);
-        } catch (IOException impossible) {
-            throw new AssertionError(impossible);
-        }
-        write(kind, bytes.toByteArray());
     }
 
     private void event(int kind, int id, long count, float x, float y, String text, float width, float height,

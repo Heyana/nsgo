@@ -72,6 +72,10 @@ The family `FontMonospace` is each platform's fixed-pitch font: CoreText's user 
 
 A `Canvas` records its drawing on the engine into an immutable `Drawing` the platform plays ([canvas](canvas.md)).
 
+## Android runtime
+
+Android sends `Prepare`, `Measure`, `Layout`, `Lines` and `Carets` over the runtime pipe with a request ID separate from the prepared text or layout ID. Java always replies with data or an error for a request whose header it can read. Go checks the operation and ID, ignores duplicate or late replies, and waits at most one second for each text request, including its queued write. A failed measurement uses the approximate engine's size, and failed line and caret queries return no geometry. A failed native layout leaves its text and attachments without a native layout for that commit.
+
 ## Hit testing
 
 A final layout answers where its carets are, as NSH's `TextEngine` hit testing does (`internal/driver/hittest.go`): `HitTest` gives the `Caret` nearest a point, `CaretRect` a line-high box of no width, and `RangeRects` the boxes a range covers, a box per run of one direction. Points are in the content box and offsets UTF-16. A point past the end of a wrapped line gives its end with `Upstream` affinity, so the caret stays on that line.
