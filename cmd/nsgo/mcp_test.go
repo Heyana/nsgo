@@ -19,14 +19,19 @@ import (
 
 // fakeBridge answers as nsgo dev -automation would, recording the calls.
 type fakeBridge struct {
-	calls []string
-	png   []byte
+	calls    []string
+	png      []byte
+	appTools []automation.AppTool
 }
 
 func (f *fakeBridge) call(_ context.Context, method string, params json.RawMessage) (json.RawMessage, *automation.Error) {
 	f.calls = append(f.calls, method+" "+string(params))
 	var result any
 	switch method {
+	case automation.ListAppTools:
+		result = f.appTools
+	case "set_count":
+		result = params
 	case automation.Screenshot:
 		result = automation.ScreenshotResult{PNG: f.png, Width: 2, Height: 1}
 	case automation.Press:
@@ -48,7 +53,8 @@ func connectMCP(t *testing.T, b mcpBridge) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
-	ss, err := newMCPServer(b).Connect(ctx, st, nil)
+	server, _ := newMCPServer(b)
+	ss, err := server.Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,5 +172,56 @@ func TestMCPResults(t *testing.T) {
 	n := len(b.calls)
 	if r, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: automation.Press, Arguments: map[string]any{}}); err == nil && !r.IsError || len(b.calls) != n {
 		t.Errorf("a press without a selector was taken: %q", b.calls)
+	}
+}
+
+func TestMCPAppToolCatalog(t *testing.T) {
+	b := &fakeBridge{}
+	cs := connectMCP(t, b)
+	ctx := t.Context()
+	tool := automation.AppTool{
+		Name: "set_count", Description: "Set the count",
+		InputSchema: json.RawMessage(`{"type":"object","required":["count"]}`),
+	}
+	list := func() []*mcp.Tool {
+		t.Helper()
+		result, err := cs.ListTools(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.Tools
+	}
+	has := func(name, description string) bool {
+		for _, tool := range list() {
+			if tool.Name == name && tool.Description == description {
+				return true
+			}
+		}
+		return false
+	}
+	if has(tool.Name, tool.Description) {
+		t.Fatal("the server listed an unregistered tool")
+	}
+	b.appTools = []automation.AppTool{tool, {
+		Name: automation.Status, Description: "Replace status",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+	}, {
+		Name: "bad_header", Description: "A schema with an invalid header",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string","x-mcp-header":"bad header"}}}`),
+	}}
+	if !has(tool.Name, tool.Description) || has(automation.Status, "Replace status") || has("bad_header", "A schema with an invalid header") {
+		t.Fatal("the tool catalog was not added alongside the built-in tools")
+	}
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: tool.Name, Arguments: map[string]int{"count": 3}})
+	if err != nil || result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, `"count": 3`) {
+		t.Fatalf("app tool call: %+v, %v", result, err)
+	}
+	b.appTools[0].Description = "Change the count"
+	if !has(tool.Name, "Change the count") {
+		t.Fatal("the changed tool definition was not published")
+	}
+	b.appTools = nil
+	if has(tool.Name, "Change the count") {
+		t.Fatal("the removed tool is still published")
 	}
 }

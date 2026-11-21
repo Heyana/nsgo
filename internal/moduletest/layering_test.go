@@ -46,6 +46,7 @@ var layers = []struct {
 	{"internal/shader", []string{"internal/shaderir"}},
 	{"internal/shader/wgsl", []string{"internal/shaderir"}},
 	{"core", []string{"internal/crashreport", "internal/devtools", "internal/driver", "internal/layout", "internal/shader", "internal/shader/wgsl", "internal/shaderir"}},
+	{"automation", []string{"core"}},
 	{"internal/engine", []string{"core", "internal/driver", "internal/testhost"}},
 	{"internal/testhost", []string{"core", "internal/driver"}},
 	{"internal/platform/android/runtime", nil},
@@ -126,7 +127,7 @@ var layers = []struct {
 	{"tsx/", []string{"core", "base/", "mobile", "desktop", "gamepad", "web", "internal/devtools", "tsx", "tsx/bundler", "tsx/internal/js", "tsx/pkg", "tsx/websrc"}},
 	// Apps use the public packages only, and the hosts that embed an
 	// example app its package.
-	{"examples/", []string{"", "audio", "core", "base/", "ui/", "gpu", "mobile", "desktop", "desktop/locales", "web", "gamepad", "gameservices", "i18n", "icons/", "nsgotest", "tsx/", "updater", "widget", "examples/"}},
+	{"examples/", []string{"", "audio", "automation", "core", "base/", "ui/", "gpu", "mobile", "desktop", "desktop/locales", "web", "gamepad", "gameservices", "i18n", "icons/", "nsgotest", "tsx/", "updater", "widget", "examples/"}},
 	// The nsgo tool links no component or runtime, so changing them does
 	// not build it again; it writes TSX declarations by running the app.
 	{"cmd/", []string{"core", "cmd/", "internal/automation", "internal/appstartup", "internal/mimeinfo", "internal/platform/android/runtime", "tsx/bundler", "tsx/pkg", "tsx/websrc"}},
@@ -314,6 +315,9 @@ func layerImports(pkg, tags string) ([]string, bool) {
 	for _, l := range layers {
 		if matches(pkg, l.pkg) {
 			allowed := l.imports
+			if pkg == "core" && hasTag(tags, "nsgoautomation", "nsgotest", "nsgocheck") {
+				allowed = append(slices.Clip(allowed), "internal/automation")
+			}
 			if matches(pkg, "internal/platform/") && hasTag(tags, "nsgotest", "nsgoautomation") {
 				allowed = append(slices.Clip(allowed), "core")
 			}

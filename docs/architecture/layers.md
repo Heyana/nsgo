@@ -28,7 +28,8 @@ nsgo
 │   │   ├── bundler, compiler            Compiles and loads their bundles
 │   │   ├── textview, editor, diff, terminal  Register base's optional components
 │   │   └── tsxtest                      Runs *.test.tsx as Go tests
-│   └── nsgotest                         Runs apps in tests, headless or on a target, and drives nsgo dev -automation's
+│   ├── nsgotest                         Runs apps in tests and drives nsgo dev -automation
+│   └── automation                       Registers app-defined MCP tools
 │
 ├── Components
 │   ├── ui                               Styled components on base
@@ -148,7 +149,7 @@ A line means "imports". `internal/moduletest/layering_test.go` checks the graph 
 
 - Apps may import any public package directly, `core` included. `core`, or the public package itself, aliases each internal type a public package's API reaches; `TestPublicAPINamesNoInternalType` lists the public packages with `go list`, every package outside `internal/`, `cmd/`, `tools/` and `examples/`, so a new one is checked without a list to edit. The test also forbids protocol types that have been removed from the public API, including the window and share messages.
 - `internal/driver` imports `internal/shaderir` for shader programs and `internal/mimeinfo` for file types. The latter holds only fixed tables and standard-library helpers, so the build tool shares those names without linking the runtime.
-- `core` imports `internal/driver`, `internal/devtools`, `internal/crashreport`, `internal/layout` and the shader compilers (`internal/shader`, `internal/shader/wgsl`, `internal/shaderir`). `internal/devtools` imports only `internal/driver`, for the batches and events it hands `nsgo dev -automation`'s agent, so DevTools' overlay, the layout audit's included, lives in `core` (`UpdateHighlights`).
+- `core` imports `internal/driver`, `internal/devtools`, `internal/crashreport`, `internal/layout` and the shader compilers (`internal/shader`, `internal/shader/wgsl`, `internal/shaderir`). The public `automation` package imports only `core`, which imports `internal/automation` for the tool registry under `nsgoautomation`, `nsgotest` or `nsgocheck`. `internal/devtools` imports only `internal/driver`, for the batches and events it hands `nsgo dev -automation`'s agent, so DevTools' overlay, the layout audit's included, lives in `core` (`UpdateHighlights`).
 - Backends import `internal/driver`, `internal/engine`, `desktop/locales`, `mobile/locales`, their shared packages and the shader writers, never the compilers, which only `core` links.
 - Only a backend's test host, built with the `nsgotest` tag, imports `core`; its surface (`testsurface.go`) also builds with `nsgoautomation`, for `nsgo dev -automation`'s live windows. The release, embed, watch and mini-program backend builds are checked separately so a test-only import cannot leak into an app.
 - The root starts the dev client (`internal/dev`), which imports `internal/devtools` and `internal/driver` only in dev builds, to write `-trace`'s batches and DevTools' commits, its catalog `internal/dev/locales`, of `core` and `i18n` alone, for its failure overlay's words, and `nsgotest` only in `nsgo dev -automation`'s (`internal/dev/automation.go`, the `nsgodev` and `nsgoautomation` tags), whose agent `nsgotest` and the tool reach through `internal/automation`, which imports nothing of NSGo's; `TestLayering` lists that build too, and `TestMinimalAppLinks` fails a release app that links `testing`, `nsgotest` or the protocol.

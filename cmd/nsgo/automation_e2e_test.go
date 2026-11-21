@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/nsgo-dev/nsgo/internal/automation"
 )
 
@@ -108,6 +110,9 @@ func TestAutomationEndToEnd(t *testing.T) {
 	if len(ws.Windows) != 1 || !ws.Windows[0].Default || ws.Windows[0].Kind != "window" {
 		t.Fatalf("windows %+v", ws)
 	}
+	exerciseAppMCPTool(t, h, p.Dir)
+	shows(`text:"Count: 3"`)
+	must(automation.Menu, automation.MenuParams{Path: []string{"Actions", "Reset"}}, nil)
 	var snap automation.SnapshotResult
 	must(automation.Snapshot, automation.SnapshotParams{}, &snap)
 	if !strings.Contains(snap.Text, `- button "Add"`) {
@@ -315,5 +320,60 @@ func TestSimulatorAutomationEndToEnd(t *testing.T) {
 	must(automation.Screenshot, automation.ScreenshotParams{}, &shot)
 	if shot.Width < int(ws.Windows[0].Width) || shot.Height < int(ws.Windows[0].Height) || len(shot.PNG) == 0 {
 		t.Fatalf("a %dx%d screenshot of a %gx%g surface", shot.Width, shot.Height, ws.Windows[0].Width, ws.Windows[0].Height)
+	}
+}
+
+// exerciseAppMCPTool connects to the actual CLI over stdio while the fixture is running.
+func exerciseAppMCPTool(t *testing.T, h *automationHub, fixtureDir string) {
+	t.Helper()
+	dir := t.TempDir()
+	config, err := os.ReadFile(filepath.Join(fixtureDir, "nsgo.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "nsgo.yaml"), config, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.writeSession(dir); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "tool", "nsgo", "mcp", dir)
+	cmd.Dir = fixtureDir
+	var stderr lockedBuffer
+	cmd.Stderr = &stderr
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("nsgo mcp's output:\n%s", stderr.String())
+		}
+	})
+	client := mcp.NewClient(&mcp.Implementation{Name: "automation test"}, nil)
+	cs, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	list, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, tool := range list.Tools {
+		if tool.Name == "set_count" && tool.Description == "Set the counter to a test value" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("nsgo mcp did not list set_count")
+	}
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "set_count", Arguments: map[string]int{"count": 3}})
+	if err != nil || result.IsError {
+		t.Fatalf("set_count: %+v, %v", result, err)
+	}
+	var value map[string]int
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &value); err != nil || value["count"] != 3 {
+		t.Fatalf("set_count returned %+v, %v", value, err)
 	}
 }

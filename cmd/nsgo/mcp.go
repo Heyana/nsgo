@@ -23,7 +23,7 @@ const mcpInstructions = `Drives the NSGo app of this directory as it runs under 
 
 Start with windows, then snapshot: it outlines what a window shows, an element a line, such as - button "Add" [view:12] id=add focused. Name what to act on with a selector: id:<test ID>, label:<label>, text:<text>, role:<role> <name>, or the [view:N] ref a snapshot printed; a >> b looks inside a, and >> nth=0 keeps the first match. Act with press, type, key, scroll, drag, hover, menu and alert, passing snapshot: true to see the window after the step, and wait for what work on other goroutines shows. A step answers not settled when the app kept changing for 5 seconds.
 
-Saving a Go file rebuilds and restarts the app: status says whether it builds and its last build error, and its run count grows with each start, which makes earlier view refs stale. logs reads the app's output, reload builds and starts it again, and screenshot captures a window as a PNG. The app runs with its real data.`
+Saving a Go file rebuilds and restarts the app: status says whether it builds and its last build error, and its run count grows with each start, which makes earlier view refs stale. logs reads the app's output, reload builds and starts it again, and screenshot captures a window as a PNG. The app runs with its real data. The app may register tools of its own, which appear as it starts.`
 
 // mcpBridge reaches nsgo dev -automation: it sends an automation request and returns its result.
 type mcpBridge interface {
@@ -54,12 +54,14 @@ var mcpTools = []struct {
 }
 
 // newMCPServer returns the MCP server answering through b.
-func newMCPServer(b mcpBridge) *mcp.Server {
+func newMCPServer(b mcpBridge) (*mcp.Server, *mcpAppTools) {
 	s := mcp.NewServer(&mcp.Implementation{Name: "nsgo", Version: toolVersion()}, &mcp.ServerOptions{Instructions: mcpInstructions})
 	for _, t := range mcpTools {
 		t.add(s, b, t.name, t.doc)
 	}
-	return s
+	appTools := &mcpAppTools{server: s, bridge: b}
+	s.AddReceivingMiddleware(appTools.receive)
+	return s, appTools
 }
 
 // addMCPTool adds the tool of method, whose input is the method's params In.
@@ -129,7 +131,11 @@ func serveMCP(ctx context.Context, p *project, args []string) error {
 			return err
 		}
 	}
-	return newMCPServer(b).Run(ctx, &mcp.IOTransport{Reader: os.Stdin, Writer: stdout})
+	s, appTools := newMCPServer(b)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go appTools.watch(ctx)
+	return s.Run(ctx, &mcp.IOTransport{Reader: os.Stdin, Writer: stdout})
 }
 
 // sessionBridge reaches the nsgo dev -automation the session file in dir names, starting one with args when none runs.
@@ -232,9 +238,20 @@ func (b *sessionBridge) session(ctx context.Context) (*automationSession, *autom
 }
 
 func (b *sessionBridge) call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, *automation.Error) {
-	s, aerr := b.session(ctx)
-	if aerr != nil {
-		return nil, aerr
+	var s *automationSession
+	if method == automation.ListAppTools {
+		// Listing tools never starts a session or waits for one to start.
+		var err error
+		s, err = readSession(b.dir)
+		if err != nil {
+			return nil, automation.Errorf(automation.NoApp, "no automation session: %v", err)
+		}
+	} else {
+		var err *automation.Error
+		s, err = b.session(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	body, _ := json.Marshal(automation.Request{ID: 1, Method: method, Params: params})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.URL+"/_nsgo/automation", bytes.NewReader(body))
@@ -245,6 +262,9 @@ func (b *sessionBridge) call(ctx context.Context, method string, params json.Raw
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, automation.Errorf(automation.Timeout, "%v", ctx.Err())
+		}
 		return nil, automation.Errorf(automation.NoApp, "nsgo dev -automation does not answer: %v", err)
 	}
 	defer resp.Body.Close()

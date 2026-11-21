@@ -154,6 +154,7 @@ type runtime struct {
 	graphOwner
 	workObserved bool
 	activeWork   *workObserver
+	automation   automationToolRegistry
 	aborted      bool // fault recovery must never schedule another computation
 	checkCommits bool
 	classCache   parseCache[classSource, *classList]

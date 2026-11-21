@@ -129,6 +129,16 @@ func (h *automationHub) answer(req automation.Request) automation.Answer {
 	switch req.Method {
 	case automation.Status:
 		return automation.Reply(req.ID, h.status(), nil)
+	case automation.ListAppTools:
+		if !h.calls.TryLock() {
+			return automation.Reply(req.ID, nil, automation.Errorf(automation.Timeout, "the app is answering another request"))
+		}
+		defer h.calls.Unlock()
+		a := h.relay(req, 0, 2*automation.AppToolListTimeout)
+		if a.Error != nil && a.Error.Code == automation.NoApp {
+			return automation.Reply(req.ID, []automation.AppTool{}, nil)
+		}
+		return a
 	case automation.Logs:
 		var p automation.LogsParams
 		if len(req.Params) > 0 {
@@ -169,6 +179,11 @@ func (h *automationHub) status() automation.StatusResult {
 func (h *automationHub) call(req automation.Request, wait time.Duration) automation.Answer {
 	h.calls.Lock()
 	defer h.calls.Unlock()
+	return h.relay(req, wait, answerFor)
+}
+
+// relay sends a request while the caller holds h.calls.
+func (h *automationHub) relay(req automation.Request, wait, limit time.Duration) automation.Answer {
 	deadline := time.NewTimer(wait)
 	defer deadline.Stop()
 	h.mu.Lock()
@@ -196,10 +211,12 @@ func (h *automationHub) call(req automation.Request, wait time.Duration) automat
 	asked := req
 	asked.ID = id
 	data, _ := json.Marshal(asked)
-	timeout := time.NewTimer(answerFor)
+	timeout := time.NewTimer(limit)
 	defer timeout.Stop()
 	select {
 	case app <- data:
+	case <-timeout.C:
+		return automation.Reply(req.ID, nil, automation.Errorf(automation.Timeout, "the app did not take the request within %v", limit))
 	case <-gone:
 		return automation.Reply(req.ID, nil, automation.Errorf(automation.NoApp, "the app went away"))
 	}
@@ -210,7 +227,7 @@ func (h *automationHub) call(req automation.Request, wait time.Duration) automat
 	case <-gone:
 		return automation.Reply(req.ID, nil, automation.Errorf(automation.NoApp, "the app went away before it answered"))
 	case <-timeout.C:
-		return automation.Reply(req.ID, nil, automation.Errorf(automation.Timeout, "the app did not answer within %v", answerFor))
+		return automation.Reply(req.ID, nil, automation.Errorf(automation.Timeout, "the app did not answer within %v", limit))
 	}
 }
 

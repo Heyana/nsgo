@@ -225,6 +225,35 @@ Other clients take the same command, `go` with the arguments `tool nsgo mcp`, ru
 
 The agent acts on the app's real data, as `dev` runs it. Only `dev -automation` builds carry it, and only tools on this machine holding the token in `.nsgo/automation.yaml`, which only you can read, reach it.
 
+### App-defined MCP tools
+
+Call `automation.Register` from a Go app or library on the engine goroutine. For example, this function gives agents the ID of the scene currently shown.
+
+```go
+import (
+    "context"
+    "encoding/json"
+
+    "github.com/nsgo-dev/nsgo/automation"
+    "github.com/nsgo-dev/nsgo/core"
+)
+
+func registerSceneTool(cx *core.Scope, sceneID *core.Signal[string]) error {
+    return automation.Register(cx, automation.Tool{
+        Name:        "current_scene",
+        Description: "Read the ID of the active scene",
+        InputSchema: json.RawMessage(`{"type":"object"}`),
+        Handler: func(_ context.Context, _ json.RawMessage) (any, error) {
+            return map[string]string{"id": sceneID.Get()}, nil
+        },
+    })
+}
+```
+
+The name must be unique on the app's graph and distinct from the built-in names. `nsgo mcp` lists the tool until the scope is cleaned up. The handler runs on the engine goroutine, so it can read or set signals. It receives a JSON object, checks the arguments it needs and returns a JSON-encodable value or an error.
+
+In a test, capture the scope when the app starts, call `automation.Call(cx, ctx, name, args)` inside `app.Post`, then use `app.Settle()` before checking the result or the view. Registration is active in `dev -automation` and tests and is a no-op in release builds.
+
 ## Flags of every build
 
 Every build of an app, packages included, takes NSGo's own flags as it starts, which override `nsgo.yaml` and the app's code and never reach the app's own flags:

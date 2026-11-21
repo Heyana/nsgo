@@ -225,6 +225,12 @@ claude mcp add nsgo -- go tool nsgo mcp
 
 智能体操作的是应用的真实数据，与 `dev` 运行时相同。只有 `dev -automation` 的构建带有它，也只有本机上持有 `.nsgo/automation.yaml` 中令牌的工具能连接它，而这个文件只有你能读取。
 
+### 应用自定义的 MCP 工具
+
+Go 应用或库可以在引擎 goroutine 中调用 `automation.Register`，传入作用域以及包含名称、描述、JSON 对象输入模式和处理函数的 `automation.Tool`。名称在应用的响应式图内必须唯一，也不能与内置工具重名。作用域清理时，`nsgo mcp` 会移除该工具。处理函数在引擎 goroutine 中运行，可以读写信号。它接收 JSON 对象，自行检查所需的参数，并返回可编码为 JSON 的值或错误。参见[注册工具的示例](https://nsgo.dev/docs/debugging.md#app-defined-mcp-tools)。
+
+测试中，在应用启动时保存作用域，在 `app.Post` 内调用 `automation.Call(cx, ctx, name, args)`，再用 `app.Settle()` 等待结果和视图更新。注册在 `dev -automation` 和测试中生效，在发布构建中为空操作。
+
 ## 所有构建都接受的参数
 
 应用的每个构建（包括发布包）在启动时都接受 NSGo 自己的参数。它们优先于 `nsgo.yaml` 和应用代码中的设置，也不会传到应用自己的参数解析中：

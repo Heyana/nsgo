@@ -103,6 +103,21 @@ func TestNetworkWatchersLinkOnUse(t *testing.T) {
 	}
 }
 
+// TestAutomationAppLinks verifies that calling automation.Register in ordinary
+// app source brings no automation code into the release.
+func TestAutomationAppLinks(t *testing.T) {
+	linked := linkedPackagesOf(t, moduleRoot+"/testdata/automation", "darwin", "arm64", "")
+	for _, pkg := range []string{
+		"github.com/nsgo-dev/nsgo/automation",
+		"github.com/nsgo-dev/nsgo/internal/automation",
+		"github.com/nsgo-dev/nsgo/nsgotest",
+	} {
+		if linked[pkg] {
+			t.Errorf("a release app that registers an automation tool links %s", pkg)
+		}
+	}
+}
+
 // TestDevBuildsLink builds the minimal app as nsgo dev does, with the dev client (nsgodev), for each target, which TestReleaseBuildsLinkNoDevClient does for this machine's alone, and checks that the client, which reaches the dev server over HTTP, links.
 func TestDevBuildsLink(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
