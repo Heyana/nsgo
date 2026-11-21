@@ -207,6 +207,8 @@ type SurfaceConfig struct {
 	// ID numbers the surface's tree, which the platform attaches.
 	ID   uint32
 	Kind SurfaceKind
+	// Parent is the ID of the window this is a child of, or zero.
+	Parent uint32
 	// Title is a window's; empty is the app's name.
 	Title string
 	// Width and Height are the content's size in points; zero is the

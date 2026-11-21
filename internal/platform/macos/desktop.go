@@ -174,7 +174,10 @@ func (s *surface) command(c *driver.WindowCommand) {
 		if s.kind == driver.SurfacePanel {
 			s.hidePanel(false)
 		} else {
+			s.childShown = false
+			s.attachChildWindow(false)
 			w.Send(sel("orderOut:"), objc.ID(0))
+			s.syncChildWindows()
 		}
 	case driver.WindowSetControls:
 		hidden := s.controls.Hidden

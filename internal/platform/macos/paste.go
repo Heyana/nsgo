@@ -74,6 +74,14 @@ func registerPaste() {
 					apple.OnMain(finish)
 				}
 			},
+		}, {
+			Cmd: sel("windowDidFailToEnterFullScreen:"),
+			Fn: func(self objc.ID, _ objc.SEL, window objc.ID) {
+				if s := windowSurface(window); s != nil {
+					s.windowFullScreen = false
+					s.syncChildWindows()
+				}
+			},
 		}})
 }
 

@@ -125,7 +125,7 @@ func (cx *Scope) OpenOverlay(opts OverlayOptions, content func(cx *Scope) Node) 
 	opts.Frame.Width, opts.Frame.Height = opts.Width, opts.Height
 	passive := opts.Passive
 	owner := cx
-	w := rt.openSurface(owner, driver.SurfaceConfig{Kind: driver.SurfaceOverlay, Width: opts.Width, Height: opts.Height,
+	w := rt.openSurface(owner, nil, driver.SurfaceConfig{Kind: driver.SurfaceOverlay, Width: opts.Width, Height: opts.Height,
 		Frame: opts.Frame, Hidden: opts.Hidden, Focusable: opts.Focusable && !passive, Passive: passive,
 		Accessible: opts.Accessible}, content)
 	w.onEnd, w.endOwner = opts.OnEnd, owner

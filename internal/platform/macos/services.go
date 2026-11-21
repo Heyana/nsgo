@@ -625,6 +625,10 @@ func (s *surface) applySpaces() {
 	if s.constraints.NoMaximize && behavior&fullScreenAuxiliary == 0 {
 		behavior |= fullScreenNone
 	}
+	if s.childAttached {
+		const fullScreenPrimary = 1 << 7
+		behavior = behavior&^(fullScreenPrimary|fullScreenNone) | fullScreenAuxiliary
+	}
 	if s.skipTaskbar {
 		// SkipTaskbar keeps the window out of Cmd-` cycling too.
 		behavior |= ignoresCycle
@@ -635,6 +639,10 @@ func (s *surface) applySpaces() {
 // orderFront shows the window, restored when minimized or the app was
 // hidden, at the front of its level, and activates the app.
 func (s *surface) orderFront() {
+	if !s.showChildWindow() {
+		return
+	}
+	defer s.syncChildWindows()
 	w := s.window
 	if objc.Send[bool](w, sel("isMiniaturized")) {
 		w.Send(sel("deminiaturize:"), objc.ID(0))

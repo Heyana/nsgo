@@ -123,6 +123,15 @@ func (o *surface) openSurface(cfg driver.SurfaceConfig) {
 	// A window or a panel opened transparent (look.go, newPanel).
 	s.transparent = cfg.Transparent
 	s.window = window
+	if cfg.Parent != 0 {
+		for parent := range surfaces {
+			if parent.id == cfg.Parent && parent.kind == driver.SurfaceWindow && !parent.embedded && parent.window != 0 {
+				s.windowParent = parent
+				parent.windowChildren = append(parent.windowChildren, s)
+				break
+			}
+		}
+	}
 	// A panel is on every space from the start (newPanel); setConstraints applies a window's.
 	s.workspaces = cfg.Workspaces
 	if cfg.Kind == driver.SurfacePanel {
@@ -151,6 +160,8 @@ func (o *surface) openSurface(cfg driver.SurfaceConfig) {
 		if cfg.Frame.Move {
 			s.openFrame = cfg.Frame.OnScreen(usableScreens())
 			s.setWindowFrame(s.openFrame)
+		} else if s.windowParent != nil {
+			s.centerOverParent()
 		} else {
 			window.Send(sel("center"))
 		}
@@ -244,7 +255,10 @@ func (s *surface) show(anchor uint32) {
 		s.showPanel(anchor, driver.Bounds{}, driver.WindowPlaceDefault)
 		return
 	}
-	s.window.Send(sel("orderFront:"), objc.ID(0))
+	if s.showChildWindow() {
+		s.window.Send(sel("orderFront:"), objc.ID(0))
+		s.syncChildWindows()
+	}
 }
 
 // showPanel shows a panel and gives it the keyboard, unless it never takes it: beside at on side when side is set (core.Window.ShowAt), else under tray icon anchor, else in the upper middle of the screen with the mouse, as Spotlight shows.

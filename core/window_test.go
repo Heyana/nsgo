@@ -121,6 +121,35 @@ func TestWindowsShareSignals(t *testing.T) {
 	}
 }
 
+func TestChildWindowClosesWithParent(t *testing.T) {
+	var parent, child, other *Window
+	var childClosing bool
+	w := newWindows(t, func(cx *Scope) {
+		parent = cx.OpenWindow(WindowOptions{}, nil)
+		child = cx.Child().OpenWindow(WindowOptions{Parent: parent}, func(cx *Scope) Node {
+			cx.CurrentWindow().OnClosing(cx, func(*WindowClosing) { childClosing = true })
+			return Text{Content: "Child"}
+		})
+		other = cx.OpenWindow(WindowOptions{}, nil)
+	})
+	opened := w.take(0, driver.ItemOpenSurface)
+	if len(opened) != 3 || opened[1].Surface.Parent != opened[0].Surface.ID || opened[2].Surface.Parent != 0 {
+		t.Fatalf("unexpected surface relationships: %+v", opened)
+	}
+	w.dispatch(opened[0].Surface.ID, driver.Event{Kind: driver.EventWindowClose})
+	if !parent.Closed() || !child.Closed() || childClosing || other.Closed() {
+		t.Fatalf("closed parent %v, child %v, other %v; asked child %v", parent.Closed(), child.Closed(), other.Closed(), childClosing)
+	}
+	if destroyed := w.take(opened[1].Surface.ID, driver.ItemWindow); len(destroyed) != 1 || destroyed[0].Window.Action != driver.WindowDestroy {
+		t.Fatalf("child's commands: %+v", destroyed)
+	}
+	orphan := w.root.OpenWindow(WindowOptions{Parent: parent}, nil)
+	w.commit()
+	if got := w.take(0, driver.ItemOpenSurface); orphan.Closed() || len(got) != 1 || got[0].Surface.Parent != 0 {
+		t.Fatalf("opening with a closed parent produced %+v", got)
+	}
+}
+
 // A handler's decision reads back through Canceled, as the close button's request goes on to close the window or not.
 func TestWindowClosingReportsCanceled(t *testing.T) {
 	var seen []bool

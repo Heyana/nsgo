@@ -199,6 +199,12 @@ type surface struct {
 	// showFirst is set while an opened window waits for its first batch
 	// to show.
 	showFirst bool
+	// Window relationships, all on the AppKit thread (childwindow.go).
+	windowParent     *surface
+	windowChildren   []*surface
+	childShown       bool
+	childAttached    bool
+	windowFullScreen bool
 
 	batch uint64 // batches applied
 	// stickyBound are the scroll views with sticky cells whose insets
@@ -481,10 +487,17 @@ func loadAppKit() {
 		Cmd: sel("sendEvent:"),
 		Fn: func(self objc.ID, cmd objc.SEL, event objc.ID) {
 			if inputAllowed(event) {
-				if s := windowSurface(self); s != nil {
+				s := windowSurface(self)
+				if s != nil {
 					event = s.restartClicks(event)
 				}
 				apple.Super(self, cmd, event)
+				if s != nil && len(s.windowChildren) != 0 {
+					switch objc.Send[uint](event, sel("type")) {
+					case evLeftDown, evRightDown:
+						s.syncChildWindows()
+					}
+				}
 			}
 		},
 	}, {
@@ -968,6 +981,7 @@ func (s *surface) close() {
 		return
 	}
 	s.closed = true
+	s.releaseChildWindows()
 	if dockMenu.target == s {
 		clearDockMenu()
 	}
@@ -1290,16 +1304,21 @@ func (s *surface) observe() {
 		}
 	})
 	center := objc.ID(apple.Class("NSNotificationCenter")).Send(sel("defaultCenter"))
-	for _, name := range []string{"NSWindowDidResizeNotification", "NSWindowDidMoveNotification",
+	names := []string{"NSWindowDidResizeNotification", "NSWindowDidMoveNotification",
 		"NSWindowDidEnterFullScreenNotification", "NSWindowDidExitFullScreenNotification",
 		"NSWindowDidMiniaturizeNotification", "NSWindowDidDeminiaturizeNotification",
-		"NSWindowDidBecomeKeyNotification", "NSWindowDidResignKeyNotification", "NSWindowDidChangeOcclusionStateNotification"} {
+		"NSWindowDidBecomeKeyNotification", "NSWindowDidResignKeyNotification", "NSWindowDidChangeOcclusionStateNotification"}
+	if s.id != 0 && !s.embedded && s.kind == driver.SurfaceWindow {
+		names = append(names, "NSWindowDidBecomeMainNotification", "NSWindowWillEnterFullScreenNotification")
+	}
+	for _, name := range names {
 		s.stops = append(s.stops, apple.Observe(center, apple.Global(appKitPath, name), func(note objc.ID) {
 			if note.Send(sel("object")) != s.window {
 				return
 			}
+			s.childWindowEvent(name)
 			s.refresh()
-			if strings.Contains(name, "FullScreen") {
+			if name == "NSWindowDidEnterFullScreenNotification" || name == "NSWindowDidExitFullScreenNotification" {
 				// AppKit lays the bar out again as it leaves full screen, after the notification. A surface closed by then may have let its window go.
 				apple.OnMain(func() {
 					if !s.closed {

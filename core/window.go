@@ -44,6 +44,10 @@ type WindowOptions struct {
 	// Key, when set, finds a window opened with the same key and still
 	// open: OpenWindow shows and focuses it instead of opening another.
 	Key string
+	// Parent is an open window of the same app. Closing it closes this
+	// window too. On macOS this window opens centered over it when Frame
+	// is unset, stays above it and follows its visibility and full screen.
+	Parent *Window
 	// Hidden opens the window without showing it.
 	Hidden bool
 	// Material is the material behind the content (WindowMaterial).
@@ -88,11 +92,13 @@ type PanelOptions struct {
 // Window, which OpenWindow returns where the platform opens no windows,
 // or once it closed.
 type Window struct {
-	t       *Tree
-	scope   *Scope
-	kind    driver.SurfaceKind
-	key     string
-	visible *Signal[bool]
+	t        *Tree
+	scope    *Scope
+	kind     driver.SurfaceKind
+	key      string
+	visible  *Signal[bool]
+	parent   *Window
+	children []*Window
 	// anchorBounds and placement are where ShowAt or MoveTo last asked a panel to go, placement WindowPlaceDefault for none: every later show, focus and toggle keeps them.
 	anchorBounds    Bounds
 	placement       driver.WindowPlacement
@@ -157,7 +163,11 @@ func (cx *Scope) openWindow(opts WindowOptions, content func(cx *Scope) Node, ma
 	}
 	limits := opts.Constraints.Normalized()
 	size := limits.Clamp(Size{Width: opts.Width, Height: opts.Height})
-	w := rt.openSurface(cx, driver.SurfaceConfig{Kind: driver.SurfaceWindow, Title: opts.Title,
+	parent := opts.Parent
+	if parent != nil && (parent.closed || parent.kind != driver.SurfaceWindow || parent.t == nil || parent.t.rt != rt) {
+		parent = nil
+	}
+	w := rt.openSurface(cx, parent, driver.SurfaceConfig{Kind: driver.SurfaceWindow, Title: opts.Title,
 		Width: size.Width, Height: size.Height, Frame: opts.Frame, Hidden: opts.Hidden, Material: opts.Material, Constraints: limits,
 		Workspaces: opts.Workspaces, PointerEvents: cx.windowPointer(opts.PointerEvents),
 		Transparent: opts.Transparent, NoShadow: opts.NoShadow, SkipTaskbar: opts.SkipTaskbar, Main: main}, content)
@@ -185,7 +195,7 @@ func (cx *Scope) OpenPanel(opts PanelOptions, content func(cx *Scope) Node) *Win
 	cfg := driver.SurfaceConfig{Kind: driver.SurfacePanel, Width: opts.Width, Height: opts.Height, Hidden: true,
 		HideOnBlur: opts.HideOnBlur, NoActivate: opts.NoActivate, Material: opts.Material,
 		PointerEvents: cx.windowPointer(opts.PointerEvents), Transparent: opts.Transparent}
-	w := rt.openSurface(cx, cfg, content)
+	w := rt.openSurface(cx, nil, cfg, content)
 	if opts.FitContent {
 		// Its first commit, which lays it out, sizes it before anything shows it.
 		w.t.fitContent(Size{Width: opts.Width, Height: opts.Height})
@@ -195,14 +205,18 @@ func (cx *Scope) OpenPanel(opts PanelOptions, content func(cx *Scope) Node) *Win
 
 // openSurface opens a surface of cfg's kind showing content under owner:
 // a tree of its own, which the platform attaches as ItemOpenSurface asks.
-func (rt *runtime) openSurface(owner *Scope, cfg driver.SurfaceConfig, content func(cx *Scope) Node) *Window {
+func (rt *runtime) openSurface(owner *Scope, parent *Window, cfg driver.SurfaceConfig, content func(cx *Scope) Node) *Window {
 	app := rt.tree
 	s := &Scope{}
 	owner.adopt(s)
 	rt.surfaceID++
 	t := newTree(s, app.text, rt.surfaceID)
 	cfg.ID = t.id
-	w := &Window{t: t, scope: s, kind: cfg.Kind, visible: NewSignal(s, !cfg.Hidden)}
+	w := &Window{t: t, scope: s, kind: cfg.Kind, visible: NewSignal(s, !cfg.Hidden), parent: parent}
+	if parent != nil {
+		cfg.Parent = parent.t.id
+		parent.children = append(parent.children, w)
+	}
 	t.window = w
 	rt.surfaces = append(rt.surfaces, t)
 	// It starts in the app's environment until its platform reports its own.
@@ -230,7 +244,7 @@ func (rt *runtime) openScene(scene uint32) {
 	if rt.mainView != nil {
 		content = rt.showMainView
 	}
-	rt.openSurface(rt.root, driver.SurfaceConfig{Kind: driver.SurfaceScene, Scene: scene}, content)
+	rt.openSurface(rt.root, nil, driver.SurfaceConfig{Kind: driver.SurfaceScene, Scene: scene}, content)
 }
 
 // gone ends the window as its scope goes: the engine sends its platform
@@ -240,6 +254,16 @@ func (w *Window) gone() {
 		return
 	}
 	w.closed = true
+	if w.parent != nil {
+		p := w.parent
+		p.children = slices.DeleteFunc(p.children, func(child *Window) bool { return child == w })
+		w.parent = nil
+	}
+	children := w.children
+	w.children = nil
+	for _, child := range children {
+		child.Close()
+	}
 	t := w.t
 	t.closed = true
 	t.menuClosed()
@@ -618,7 +642,7 @@ func (cx *Scope) NewTray(opts TrayOptions) *Tray {
 		if width <= 0 {
 			width = 22
 		}
-		tr.view = rt.openSurface(owner, driver.SurfaceConfig{Kind: driver.SurfaceTrayIcon, Width: width, Height: 22,
+		tr.view = rt.openSurface(owner, nil, driver.SurfaceConfig{Kind: driver.SurfaceTrayIcon, Width: width, Height: 22,
 			Tray: tr.cfg.ID}, opts.View)
 	}
 	owner.addCleanup(tr.Remove)
