@@ -114,6 +114,7 @@ func (c *appClip) limit() int64 {
 func (p *project) clipProject() *project {
 	c := *p
 	c.clipParent, c.parentClip = p.ID, p.AppClip
+	c.thirdPartyNotices = ""
 	c.Name, c.ID = p.AppClip.Name, p.AppClip.ID
 	c.Dir = p.resolve(p.AppClip.Main)
 	c.AppClip, c.Widgets, c.FileTypes, c.LiveActivities = nil, nil, nil, liveActivities{}

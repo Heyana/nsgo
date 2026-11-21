@@ -59,6 +59,11 @@ type project struct {
 	// buildParallel bounds Go's compile workers for one target while several
 	// targets build together. Zero keeps Go's default.
 	buildParallel int
+	// packageLicenses is set by build for a standalone app package.
+	packageLicenses bool
+	// noticeArchitectures is set for a bundle with more than one Go binary.
+	noticeArchitectures []string
+	thirdPartyNotices   string
 
 	Name    string `yaml:"name"`
 	ID      string `yaml:"id"`
@@ -68,7 +73,8 @@ type project struct {
 	// Gamepad declares support for an optional extended game controller.
 	Gamepad bool `yaml:"gamepad"`
 	// Copyright is the app's copyright notice, such as "© 2026 Example": its Windows executables' LegalCopyright and its installer's, and the NSHumanReadableCopyright of its macOS Info.plist, which the About panel shows.
-	Copyright string `yaml:"copyright"`
+	Copyright string        `yaml:"copyright"`
+	Licenses  licensePolicy `yaml:"licenses"`
 	// BuildNumber numbers builds of a version, as stores want each upload
 	// numbered: CFBundleVersion and Android's versionCode. Without it
 	// they come from Version.
@@ -396,6 +402,9 @@ func load(dir string) (*project, error) {
 	}
 	if _, err := p.capabilities(); err != nil {
 		return nil, err
+	}
+	if err := p.Licenses.validate(); err != nil {
+		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	if p.ID == "" {
 		p.ID = generatedID(p.Name)

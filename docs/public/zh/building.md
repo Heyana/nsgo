@@ -117,6 +117,19 @@ android:
 
 应用支持物理手柄时，设置 `gamepad: true`。Android 将手柄和触摸屏声明为可选。macOS、iOS 和 tvOS 声明 Extended Gamepad 配置，tvOS 还声明 Siri Remote 的 Micro Gamepad 配置，`apple.info` 中的手柄键优先。
 
+## 许可证声明
+
+`nsgo build` 将 `THIRD_PARTY_NOTICES.txt` 放入独立应用包的资源中，包含目标使用的 Go 模块、Go 运行时和 NSGo 随包提供的 Java 或 JavaScript 运行时的许可证文本。Web 构建按文件内容为其命名，与其他资源一致。应用可通过 `core.ThirdPartyNotices()` 在致谢页面显示相同的文本。开发构建、测试和嵌入库构建中此函数返回空字符串。
+
+默认情况下，缺少第三方许可证或无法识别其许可证会使构建失败，检测到著佐权（copyleft）许可证时会发出警告。两条规则均可设为 `error` 或 `warn`。`allow` 按完整的模块路径免除两条规则，构建找到的许可证文本仍会打包。
+
+```yaml
+licenses:
+  unknown: error
+  copyleft: warn
+  allow: [example.org/reviewed-module]
+```
+
 ## 安装程序
 
 对桌面目标，`build` 会把供用户安装的文件写到 `dist/releases`，每个文件旁附带 `.sha256` 校验和：

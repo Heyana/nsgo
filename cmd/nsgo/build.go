@@ -27,6 +27,7 @@ import (
 // buildAll writes one directory per target: <output>/<name>-<version>-<target>.
 func buildAll(ctx context.Context, p *project) error {
 	p.Release = true
+	p.packageLicenses = !p.Build.embed
 	if err := p.readReleaseNotes(); err != nil {
 		return err
 	}
@@ -568,6 +569,7 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 
 // buildMacUniversal joins the two macOS app builds before the bundle is signed and packaged. Each architecture is built through the normal pipeline first, so resources, widgets and optional libraries keep the same inputs as their single-architecture counterparts.
 func buildMacUniversal(ctx context.Context, p *project, dir string) error {
+	p.noticeArchitectures = []string{"arm64", "amd64"}
 	work, err := os.MkdirTemp(dir, ".universal-")
 	if err != nil {
 		return err
@@ -794,7 +796,6 @@ func goBuildCommand(ctx context.Context, p *project, out string, env []string, e
 	if err != nil {
 		return nil, nil, err
 	}
-	stage(ctx, "compiling Go")
 	if p.devToken != "" {
 		token, err := p.devTokenFile()
 		if err != nil {
@@ -803,18 +804,43 @@ func goBuildCommand(ctx context.Context, p *project, out string, env []string, e
 		done = func() { os.Remove(token) }
 		files["zz_nsgo_devtoken.go"] = token
 	}
-	if len(files) > 0 {
-		ov, err := p.overlay(files)
-		if err != nil {
-			done()
-			return nil, nil, err
-		}
-		args = append(args, "-overlay", ov)
+	overlay, err := p.buildOverlay(ctx, env, tags, extra.flags, files)
+	if err != nil {
+		done()
+		return nil, nil, err
 	}
+	if overlay != "" {
+		args = append(args, "-overlay", overlay)
+	}
+	stage(ctx, "compiling Go")
 	cmd = exec.CommandContext(ctx, "go", append(args, ".")...)
 	cmd.Dir = p.Dir
 	cmd.Env = append(os.Environ(), env...)
 	return cmd, done, nil
+}
+
+func (p *project) buildOverlay(ctx context.Context, env, tags, flags []string, files map[string]string) (string, error) {
+	var overlay string
+	if len(files) > 0 {
+		var err error
+		overlay, err = p.overlay(files)
+		if err != nil {
+			return "", err
+		}
+	}
+	if !p.packageLicenses || p.testBinary {
+		return overlay, nil
+	}
+	stage(ctx, "collecting license notices")
+	noticeFile, err := p.licenseNoticesFile(ctx, env, tags, flags, overlay)
+	if err != nil {
+		return "", err
+	}
+	if noticeFile == "" {
+		return overlay, nil
+	}
+	files["zz_nsgo_notices.go"] = noticeFile
+	return p.overlay(files)
 }
 
 // devTokenFile writes the file a build for a target that passes the app no environment adds to its main package: it gives the app the run's token in NSGO_DEV_TOKEN as main initializes (devtools.Token). With -ldflags -X, the token would be on go build's command line and the linker's, which every user of the machine may read, and in the binary's build information; this file only its user reads, and goBuildCommand's done removes it.

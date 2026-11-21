@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -53,6 +54,9 @@ func copyWalked(p *project, root string, walk func(*project, func(string, []byte
 // mobile.exclude_resources leaves out of phones' packages.
 func walkMobileResources(p *project, f func(rel string, data []byte) error) error {
 	return walkResources(p, func(rel string, data []byte) error {
+		if rel == noticesName && p.thirdPartyNotices != "" {
+			return f(rel, data)
+		}
 		for _, out := range p.Mobile.ExcludeResources {
 			if out = strings.Trim(out, "/"); rel == out || strings.HasPrefix(rel, out+"/") {
 				return nil
@@ -73,9 +77,23 @@ func (p *project) resourceRoot() string {
 // directory, by its slash-separated path inside it.
 func walkResources(p *project, f func(rel string, data []byte) error) error {
 	src := p.resourceRoot()
-	if _, err := os.Stat(src); os.IsNotExist(err) {
-		return nil
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		if err := walkResourceDir(src, func(rel string, data []byte) error {
+			if rel == noticesName && p.thirdPartyNotices != "" {
+				return fmt.Errorf("resources/%s is reserved for generated license notices", noticesName)
+			}
+			return f(rel, data)
+		}); err != nil {
+			return err
+		}
 	}
+	if p.thirdPartyNotices != "" {
+		return f(noticesName, []byte(p.thirdPartyNotices))
+	}
+	return nil
+}
+
+func walkResourceDir(src string, f func(rel string, data []byte) error) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err

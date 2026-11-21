@@ -11,6 +11,7 @@ require (
 	github.com/evanw/esbuild v0.28.2
 	github.com/firede/limu v0.5.1
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible
+	github.com/google/licenseclassifier/v2 v2.0.0
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/nsgo-dev/goja v0.1.0-nsgo.2.0.20261121173409-f05dab9a4261
@@ -24,12 +25,14 @@ require (
 )
 
 require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/go-typeset/bidi v0.3.1 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
+	github.com/sergi/go-diff v1.1.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect

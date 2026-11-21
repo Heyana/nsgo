@@ -117,6 +117,19 @@ Set `game: true` in `nsgo.yaml` for a game. Android classifies the app as a game
 
 Set `gamepad: true` when your app handles a hardware gamepad. Android declares both gamepad and touchscreen optional. macOS, iOS and tvOS declare the Extended Gamepad profile, and tvOS also the Siri Remote's Micro Gamepad, with controller keys in `apple.info` taking precedence.
 
+## License notices
+
+`nsgo build` puts `THIRD_PARTY_NOTICES.txt` in the standalone package's resources. It includes the license texts of the Go modules used by that target, the Go runtime and NSGo's bundled Java or JavaScript runtime. Web builds name the file by its content, as for other resources. Use `core.ThirdPartyNotices()` to show the same text in an in-app credits screen. The function returns an empty string in development, tests and builds of embedded libraries.
+
+By default an unknown or missing third-party license fails the build and a detected copyleft license warns. Set either rule to `error` or `warn`. The `allow` list exempts exact module paths from both rules and keeps any license text the build found.
+
+```yaml
+licenses:
+  unknown: error
+  copyleft: warn
+  allow: [example.org/reviewed-module]
+```
+
 ## Installers
 
 For the desktop targets, `build` writes what users install the app from into `dist/releases`, each with a `.sha256` checksum:

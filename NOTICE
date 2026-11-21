@@ -55,6 +55,11 @@ cmd/nsgo/dsstore.go, which lays out disk images' Finder windows, comes from
 MyGo, https://github.com/egoist/mygo, Copyright (c) 2026 MyGo contributors,
 licensed under the MIT License. cmd/nsgo/install follows NSH's install scripts.
 
+The nsgo tool identifies license text with Google's licenseclassifier,
+https://github.com/google/licenseclassifier, licensed under Apache-2.0.
+Its Go dependencies include go-diff (MIT, https://github.com/sergi/go-diff)
+and go-spew (ISC, https://github.com/davecgh/go-spew).
+
 base/terminal/internal/vt, base/terminal/internal/pty and
 base/terminal/mirror.go and mirror_images.go come from
 https://github.com/egoist/mygo, Copyright (c) 2026 MyGo contributors, licensed
