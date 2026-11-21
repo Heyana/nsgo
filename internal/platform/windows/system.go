@@ -710,7 +710,7 @@ var (
 		syscall.NewCallback(func(e *fileDialogEvents, dialog uintptr) uintptr { return sOK }),         // OnSelectionChange
 		syscall.NewCallback(fileDialogEventsDefaultResponse),                                          // OnShareViolation
 		syscall.NewCallback(func(e *fileDialogEvents, dialog uintptr) uintptr { return sOK }),         // OnTypeChange
-		syscall.NewCallback(fileDialogEventsDefaultResponse),                                          // OnOverwrite
+		syscall.NewCallback(fileDialogEventsOverwrite),                                                // OnOverwrite
 	}
 )
 
@@ -721,6 +721,7 @@ type fileDialogEvents struct {
 	refs       atomic.Int32
 	fileOK     func(*comObject) uintptr
 	folderOpen func()
+	overwrite  func(*comObject) uint32
 }
 
 func fileDialogEventsQueryInterface(e *fileDialogEvents, iid *guid, out *unsafe.Pointer) uintptr {
@@ -751,10 +752,18 @@ func fileDialogEventsFolderChange(e *fileDialogEvents, _ uintptr) uintptr {
 	return sOK
 }
 
-// fileDialogEventsDefaultResponse lets the shell handle overwrites and
-// sharing violations with its usual prompts.
+func fileDialogEventsOverwrite(e *fileDialogEvents, _ uintptr, item *comObject, response *uint32) uintptr {
+	*response = 0 // FDEOR_DEFAULT
+	if e.overwrite != nil && item != nil {
+		*response = e.overwrite(item)
+	}
+	return sOK
+}
+
+// fileDialogEventsDefaultResponse lets the shell handle sharing
+// violations with its usual prompt.
 func fileDialogEventsDefaultResponse(_ *fileDialogEvents, _, _ uintptr, response *uint32) uintptr {
-	*response = 0 // FDEOR_DEFAULT or FDESVR_DEFAULT
+	*response = 0 // FDESVR_DEFAULT
 	return sOK
 }
 
@@ -1037,7 +1046,7 @@ func (w *window) saveDialog(name, start string, preflight *saveDialogPreflight) 
 		}
 		customize.call(fileDialogSetState, saveRefusalControl, 0)
 		preflight.customize = customize
-		events := &fileDialogEvents{vtbl: &fileDialogEventsVtbl, fileOK: preflight.fileOK}
+		events := &fileDialogEvents{vtbl: &fileDialogEventsVtbl, fileOK: preflight.fileOK, overwrite: preflight.confirmOverwrite}
 		var cookie uint32
 		if hr := dialog.call(fileDialogAdvise, uintptr(unsafe.Pointer(events)), uintptr(unsafe.Pointer(&cookie))); failed(hr) {
 			return "", hresultError("save dialog preflight", hr)
@@ -1055,13 +1064,11 @@ func (w *window) saveDialog(name, start string, preflight *saveDialogPreflight) 
 	if failed(hr) {
 		return "", hresultError("save dialog", hr)
 	}
-	if preflight != nil {
-		if preflight.approved == "" {
-			return "", fmt.Errorf("%s", driver.NoSavePreflight)
-		}
-		return preflight.approved, nil
+	path, err := saveDialogPath(dialog)
+	if err == nil && preflight != nil && (path == "" || path != preflight.approved) {
+		return "", fmt.Errorf("%s", driver.NoSavePreflight)
 	}
-	return saveDialogPath(dialog)
+	return path, err
 }
 
 // saveDialogPath works after Show returns and from an OnFileOk event.

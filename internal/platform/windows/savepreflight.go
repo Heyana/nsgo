@@ -8,14 +8,17 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-var iidFileDialogCustomize = parseGUID("E6FDD21A-163F-4975-9C8C-A69F1BA37034")
+var (
+	iidFileDialogCustomize = parseGUID("E6FDD21A-163F-4975-9C8C-A69F1BA37034")
+	iidOleWindow           = parseGUID("00000114-0000-0000-C000-000000000046")
+)
 
 const (
 	fileDialogGetFileName = 16
-	fileDialogClose       = 23
 	fileDialogAddText     = 11
 	fileDialogSetLabel    = 12
 	fileDialogSetState    = 14
+	oleWindowGetWindow    = 3
 
 	saveRefusalControl = 0x1000
 	dialogControlShown = 3 // CDCS_ENABLED | CDCS_VISIBLE
@@ -30,12 +33,24 @@ type saveDialogPreflight struct {
 	id, attempt     uint32
 	pending, closed bool
 	approved        string
+	overwrite       string
+	overwriteOK     bool
 	refusal         driver.Event
 }
 
 func (p *saveDialogPreflight) fileOK(dialog *comObject) uintptr {
 	const sFalse = 1 // keep the dialog open
 	path, err := saveDialogPath(dialog)
+	if p.approved != "" {
+		if err == nil && path == p.approved {
+			return sOK
+		}
+		p.approved = ""
+		p.overwriteOK = false
+		return sFalse
+	}
+	overwriteOK := p.overwrite != "" && p.overwrite == path
+	p.overwrite = ""
 	if err != nil || path == "" || p.pending {
 		return sFalse
 	}
@@ -63,13 +78,49 @@ func (p *saveDialogPreflight) fileOK(dialog *comObject) uintptr {
 			}
 			if currentFolder, currentName := saveDialogEdit(dialog); currentFolder == folder && currentName == name {
 				p.approved = path
-				if failed(dialog.call(fileDialogClose, sOK)) {
+				p.overwriteOK = overwriteOK
+				if !resubmitSaveDialog(dialog) {
 					p.approved = ""
+					p.overwriteOK = false
 				}
 			}
 		})
 	}()
 	return sFalse
+}
+
+// An overwrite that reached OnFileOk already passed the shell's
+// confirmation. A file that appeared during the check still needs it.
+func (p *saveDialogPreflight) confirmOverwrite(item *comObject) uint32 {
+	const (
+		defaultOverwrite = 0 // FDEOR_DEFAULT
+		acceptOverwrite  = 1 // FDEOR_ACCEPT
+	)
+	path, err := shellItemPath(item)
+	if err == nil && path != "" {
+		if p.approved == path && p.overwriteOK {
+			return acceptOverwrite
+		}
+		p.overwrite = path
+	}
+	return defaultOverwrite
+}
+
+// Resubmit the native button command so the dialog can finish through
+// OnFileOk and publish its result.
+func resubmitSaveDialog(dialog *comObject) bool {
+	window := dialog.query(&iidOleWindow)
+	if window == nil {
+		return false
+	}
+	defer window.release()
+	var hwnd uintptr
+	if failed(window.call(oleWindowGetWindow, uintptr(unsafe.Pointer(&hwnd)))) || hwnd == 0 {
+		return false
+	}
+	const idOK = 1
+	posted, _, _ := postMessageW.Call(hwnd, wmCommand, idOK, 0)
+	return posted != 0
 }
 
 func saveDialogEdit(dialog *comObject) (folderPath, name string) {
