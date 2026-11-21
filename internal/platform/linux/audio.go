@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,6 +33,14 @@ type linuxAudio struct {
 	mixer    *soundMixer
 	lastPlay time.Time
 	timer    uint32
+	// latencyReads wait for the mixer to reach PLAYING, which configures its latency.
+	latencyReads []latencyRead
+}
+
+type latencyRead struct {
+	owner *window
+	id    uint32
+	until time.Time
 }
 
 func (w *window) audioRoot() *window {
@@ -46,8 +55,11 @@ func (w *window) audioCommand(id uint32, req *driver.AudioRequest) {
 		return
 	}
 	if !loadSound() {
-		if req.Command == driver.AudioLoad || req.Command == driver.AudioOpen {
+		switch req.Command {
+		case driver.AudioLoad, driver.AudioOpen:
 			w.audioReport(id, driver.AudioEvent{Phase: driver.AudioFailure, Error: driver.AudioUnavailable})
+		case driver.AudioReadLatency:
+			w.audioReport(id, driver.AudioEvent{Phase: driver.AudioLatency})
 		}
 		return
 	}
@@ -63,7 +75,9 @@ func (w *window) audioCommand(id uint32, req *driver.AudioRequest) {
 	case driver.AudioLoad:
 		a.load(w, id, *req)
 	case driver.AudioPlay:
-		a.play(id, req.Volume, req.Rate, req.Pan)
+		a.play(id, req)
+	case driver.AudioReadLatency:
+		a.readLatency(w, id)
 	case driver.AudioStop:
 		if a.mixer != nil {
 			a.mixer.sweep(time.Now(), id)
@@ -178,7 +192,7 @@ func remoteAudio(uri string) bool {
 	return ok && (strings.EqualFold(scheme, "http") || strings.EqualFold(scheme, "https"))
 }
 
-func (a *linuxAudio) play(id uint32, volume, rate, pan float32) {
+func (a *linuxAudio) play(id uint32, req *driver.AudioRequest) {
 	sound := a.sounds[id]
 	if sound == nil || len(sound.pcm) == 0 {
 		return
@@ -188,10 +202,46 @@ func (a *linuxAudio) play(id uint32, volume, rate, pan float32) {
 		a.mixer = newSoundMixer()
 	}
 	if a.mixer != nil {
-		a.mixer.play(id, sound.pcm, volume, rate, pan)
+		a.mixer.play(soundPlayback{id: id, pcm: sound.pcm, volume: req.Volume, rate: req.Rate, pan: req.Pan, startAt: req.StartAt})
 		a.lastPlay = time.Now()
 		a.ensureTick()
 	}
+}
+
+// readLatency answers with the output pipeline's latency once it plays. A read opens the output as a play does, and the idle sweep closes it again.
+func (a *linuxAudio) readLatency(w *window, id uint32) {
+	a.checkOutput()
+	if a.mixer == nil {
+		a.mixer = newSoundMixer()
+	}
+	if a.mixer == nil {
+		w.audioReport(id, driver.AudioEvent{Phase: driver.AudioLatency})
+		return
+	}
+	now := time.Now()
+	a.lastPlay = now
+	a.latencyReads = append(a.latencyReads, latencyRead{owner: w, id: id, until: now.Add(time.Second)})
+	a.answerLatency(now)
+	a.ensureTick()
+}
+
+// answerLatency answers the reads the mixer can answer: all of them once it plays, the late ones unknown, and all of them unknown without a mixer.
+func (a *linuxAudio) answerLatency(now time.Time) {
+	if len(a.latencyReads) == 0 {
+		return
+	}
+	var latency time.Duration
+	playing := a.mixer != nil && a.mixer.playing()
+	if playing {
+		latency = a.mixer.latency()
+	}
+	a.latencyReads = slices.DeleteFunc(a.latencyReads, func(r latencyRead) bool {
+		if playing || a.mixer == nil || now.After(r.until) {
+			r.owner.audioReport(r.id, driver.AudioEvent{Phase: driver.AudioLatency, Latency: latency})
+			return true
+		}
+		return false
+	})
 }
 
 func (a *linuxAudio) checkOutput() {
@@ -235,11 +285,13 @@ func audioTick(handle uintptr) int32 {
 	if a.mixer != nil {
 		a.mixer.sweep(now, 0)
 		a.mixer.startPending()
-		if len(a.mixer.voices) == 0 && now.Sub(a.lastPlay) > 2*time.Second {
+		a.answerLatency(now)
+		if len(a.mixer.voices) == 0 && len(a.latencyReads) == 0 && now.Sub(a.lastPlay) > 2*time.Second {
 			a.mixer.close()
 			a.mixer = nil
 		}
 	}
+	a.answerLatency(now)
 	active := a.mixer != nil
 	for _, p := range a.players {
 		if p.tick(now) {
@@ -270,6 +322,7 @@ func (w *window) closeAudio() {
 			p.close()
 		}
 	}
+	a.latencyReads = slices.DeleteFunc(a.latencyReads, func(r latencyRead) bool { return w == root || r.owner == w })
 	if w == root {
 		if a.timer != 0 {
 			gSourceRemove(a.timer)

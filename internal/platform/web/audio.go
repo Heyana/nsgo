@@ -5,6 +5,7 @@ package web
 import (
 	"context"
 	"io/fs"
+	"math"
 	"net/url"
 	"slices"
 	"strconv"
@@ -24,6 +25,9 @@ type webAudio struct {
 	sounds          map[uint32]*webSound
 	voices          []*webSoundVoice
 	players         map[uint32]*webAudioPlayer
+	// clockGo and clockAt anchor the output context's currentTime to the Go clock, so that voices scheduled in different turns keep their spacing, which currentTime alone quantizes to its render callbacks.
+	clockGo time.Time
+	clockAt float64
 }
 
 type webSound struct {
@@ -81,7 +85,9 @@ func (a *webAudio) handle(id uint32, r *driver.AudioRequest) {
 	case driver.AudioLoad:
 		a.load(id, r.Source, r.MaxBytes, r.MaxDuration)
 	case driver.AudioPlay:
-		a.play(id, r.Volume, r.Rate, r.Pan)
+		a.play(id, r.Volume, r.Rate, r.Pan, r.StartAt)
+	case driver.AudioReadLatency:
+		a.report(id, driver.AudioEvent{Phase: driver.AudioLatency, Latency: a.outputLatency()})
 	case driver.AudioStop:
 		a.stop(id)
 	case driver.AudioUnload:
@@ -242,7 +248,7 @@ func audioBytes(data []byte) js.Value {
 	return bytes
 }
 
-func (a *webAudio) play(id uint32, volume, rate, pan float32) {
+func (a *webAudio) play(id uint32, volume, rate, pan float32, startAt time.Time) {
 	sound := a.sounds[id]
 	if sound == nil || !sound.buffer.Truthy() || !a.activated {
 		return
@@ -275,7 +281,39 @@ func (a *webAudio) play(id uint32, volume, rate, pan float32) {
 	})
 	source.Set("onended", voice.ended)
 	a.voices = append(a.voices, voice)
-	source.Call("start")
+	if !startAt.IsZero() && time.Until(startAt) > 0 {
+		source.Call("start", a.contextTime(startAt))
+	} else {
+		source.Call("start")
+	}
+}
+
+// contextTime is the output context's time for t on the Go clock. The anchor moves when currentTime strays from it by more than a render callback, as when the context was suspended or its clock drifted.
+func (a *webAudio) contextTime(t time.Time) float64 {
+	now, current := time.Now(), a.output.Get("currentTime").Float()
+	if a.clockGo.IsZero() || math.Abs(a.clockAt+now.Sub(a.clockGo).Seconds()-current) > 0.05 {
+		a.clockGo, a.clockAt = now, current
+	}
+	return a.clockAt + t.Sub(a.clockGo).Seconds()
+}
+
+// outputLatency is the running output's base and output latency, zero when there is no running output or the browser does not report AudioContext.outputLatency.
+func (a *webAudio) outputLatency() time.Duration {
+	if !a.output.Truthy() || a.output.Get("state").String() != "running" {
+		return 0
+	}
+	out := a.output.Get("outputLatency")
+	if out.Type() != js.TypeNumber || !(out.Float() > 0) {
+		return 0
+	}
+	seconds := out.Float()
+	if base := a.output.Get("baseLatency"); base.Type() == js.TypeNumber && base.Float() > 0 {
+		seconds += base.Float()
+	}
+	if seconds >= float64(math.MaxInt64)/float64(time.Second) {
+		return 0
+	}
+	return time.Duration(seconds * float64(time.Second))
 }
 
 func (a *webAudio) endVoice(voice *webSoundVoice, stop bool) {
@@ -327,4 +365,5 @@ func (a *webAudio) close() {
 		a.output.Call("close").Call("catch", ignore)
 	}
 	a.output, a.decoder = js.Undefined(), js.Undefined()
+	a.clockGo = time.Time{}
 }

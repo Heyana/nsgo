@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/binary"
 	"math"
+	"slices"
 	"syscall/js"
 	"testing"
 	"time"
@@ -114,7 +115,7 @@ func TestWebAudioSounds(t *testing.T) {
 		t.Fatalf("sound beyond the duration limit: %+v", e)
 	}
 
-	a.play(1, 1, 1, 0)
+	a.play(1, 1, 1, 0, time.Time{})
 	if a.output.Truthy() || len(a.voices) != 0 {
 		t.Fatal("sound opened the playback output before a gesture")
 	}
@@ -122,7 +123,7 @@ func TestWebAudioSounds(t *testing.T) {
 	var analyser js.Value
 	pressAudio(t, doc, a, func() {
 		started = time.Now()
-		a.play(1, 0.8, 1, 0)
+		a.play(1, 0.8, 1, 0, time.Time{})
 		if len(a.voices) == 1 {
 			analyser = a.output.Call("createAnalyser")
 			analyser.Set("fftSize", 256)
@@ -146,10 +147,10 @@ func TestWebAudioSounds(t *testing.T) {
 	analyser.Call("disconnect")
 	a.stop(1)
 
-	a.play(2, 1, 1, 0)
+	a.play(2, 1, 1, 0, time.Time{})
 	oldest := a.voices[0]
 	for range driver.MaxSoundVoices {
-		a.play(1, 0.5, 1.2, -0.5)
+		a.play(1, 0.5, 1.2, -0.5, time.Time{})
 	}
 	if panner := a.voices[len(a.voices)-1].panner; !panner.Truthy() || math.Abs(panner.Get("pan").Get("value").Float()+0.5) > 1e-6 {
 		t.Fatal("a panned voice played without its stereo panner")
@@ -157,7 +158,7 @@ func TestWebAudioSounds(t *testing.T) {
 	if len(a.voices) != driver.MaxSoundVoices || a.voices[0] == oldest {
 		t.Fatal("the oldest voice survived the overlap limit")
 	}
-	a.play(2, 1, 1, 0)
+	a.play(2, 1, 1, 0, time.Time{})
 	a.stop(1)
 	if len(a.voices) != 1 || a.voices[0].sound != 2 {
 		t.Fatal("stopping one sound interrupted a different sound")
@@ -166,6 +167,77 @@ func TestWebAudioSounds(t *testing.T) {
 	a.unload(2)
 	if a.sounds[2] != nil {
 		t.Fatal("unload left a decoded sound")
+	}
+}
+
+// TestWebAudioSchedulesStarts measures two voices scheduled 500 ms apart, in different turns, in the samples the output context renders.
+func TestWebAudioSchedulesStarts(t *testing.T) {
+	doc := js.Global().Get("document")
+	reports := map[uint32]driver.AudioEvent{}
+	a := newWebAudio(doc, func(e driver.Event) { reports[e.Count] = *e.Data.(*driver.AudioEvent) }, false)
+	defer a.close()
+	a.handle(1, &driver.AudioRequest{Command: driver.AudioReadLatency})
+	if e, ok := reports[1]; !ok || e.Phase != driver.AudioLatency || e.Latency != 0 {
+		t.Fatalf("latency without an output: %+v", e)
+	}
+	a.handle(2, &driver.AudioRequest{Command: driver.AudioLoad, Source: driver.ImageSource{Data: audioWAV(100 * time.Millisecond)},
+		MaxBytes: driver.MaxSoundBytes, MaxDuration: driver.MaxSoundDuration})
+	audioWait(t, "sound load", func() bool { _, ok := reports[2]; return ok })
+	if e := reports[2]; e.Phase != driver.AudioLoaded {
+		t.Fatalf("sound load: %+v", e)
+	}
+	pressAudio(t, doc, a, a.resumeOutput)
+	if !a.output.Truthy() {
+		t.Fatal("the gesture did not open the output")
+	}
+	audioWait(t, "a running output", func() bool { return a.output.Get("state").String() == "running" })
+	a.handle(3, &driver.AudioRequest{Command: driver.AudioReadLatency})
+	if e := reports[3]; e.Phase != driver.AudioLatency || e.Latency < 0 {
+		t.Fatalf("latency of the running output: %+v", e)
+	}
+	t.Logf("output latency %v", reports[3].Latency)
+	if a.output.Get("createScriptProcessor").Type() != js.TypeFunction {
+		t.Skip("the browser has no ScriptProcessorNode to record its output")
+	}
+	tap := a.output.Call("createScriptProcessor", 1024, 1, 1)
+	tap.Call("connect", a.output.Get("destination"))
+	defer tap.Call("disconnect")
+	rate := a.output.Get("sampleRate").Float()
+	var onsets []float64
+	quiet := 0
+	var data []byte
+	process := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		e := args[0]
+		at := e.Get("playbackTime").Float()
+		samples := e.Get("inputBuffer").Call("getChannelData", 0)
+		bytes := js.Global().Get("Uint8Array").New(samples.Get("buffer"), samples.Get("byteOffset"), samples.Get("byteLength"))
+		data = slices.Grow(data[:0], bytes.Length())[:bytes.Length()]
+		js.CopyBytesToGo(data, bytes)
+		for i := 0; i+4 <= len(data); i += 4 {
+			if math.Abs(float64(math.Float32frombits(binary.LittleEndian.Uint32(data[i:])))) < 0.01 {
+				quiet++
+				continue
+			}
+			// A start follows at least 20 ms of silence; a tone's zero crossings are much shorter.
+			if quiet > int(rate/50) {
+				onsets = append(onsets, at+float64(i/4)/rate)
+			}
+			quiet = 0
+		}
+		return nil
+	})
+	defer process.Release()
+	tap.Set("onaudioprocess", process)
+	first := time.Now().Add(300 * time.Millisecond)
+	a.play(2, 1, 1, 0, first)
+	a.voices[len(a.voices)-1].gain.Call("connect", tap)
+	// The second voice is scheduled in a later turn, after the context's clock moved on.
+	time.Sleep(70 * time.Millisecond)
+	a.play(2, 1, 1, 0, first.Add(500*time.Millisecond))
+	a.voices[len(a.voices)-1].gain.Call("connect", tap)
+	audioWait(t, "two scheduled starts", func() bool { return len(onsets) >= 2 })
+	if gap := onsets[1] - onsets[0]; math.Abs(gap-0.5) > 0.001 {
+		t.Fatalf("scheduled starts %.4fs apart in the output, want 0.5s within 1ms", gap)
 	}
 }
 

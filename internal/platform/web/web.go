@@ -1459,7 +1459,7 @@ func (s *surface) mount(b *driver.MountBatch) {
 			s.authSession(it.Count, *it.Auth)
 			continue
 		case driver.ItemAudio:
-			if s.audio == nil && (it.Audio.Command == driver.AudioLoad || it.Audio.Command == driver.AudioOpen) {
+			if s.audio == nil && (it.Audio.Command == driver.AudioLoad || it.Audio.Command == driver.AudioOpen || it.Audio.Command == driver.AudioReadLatency) {
 				s.audio = newWebAudio(s.doc, s.engine.Dispatch, s.audioGesture)
 			}
 			if s.audio != nil {

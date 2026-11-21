@@ -60,6 +60,9 @@ var (
 	gstAppSrcEndOfStream     func(uintptr) int32
 	gstAppSinkTryPullSample  func(uintptr, uint64) uintptr
 	gstAppSinkIsEOS          func(uintptr) int32
+	gstQueryNewLatency       func() uintptr
+	gstElementQuery          func(uintptr, uintptr) int32
+	gstQueryParseLatency     func(uintptr, *int32, *uint64, *uint64)
 )
 
 // loadSound initializes GStreamer once, without starting any output.
@@ -102,6 +105,9 @@ var loadSound = sync.OnceValue(func() bool {
 	bind(&gstBufferGetSize, "gst_buffer_get_size")
 	bind(&gstBufferExtract, "gst_buffer_extract")
 	bind(&gstSampleGetBuffer, "gst_sample_get_buffer")
+	bind(&gstQueryNewLatency, "gst_query_new_latency")
+	bind(&gstElementQuery, "gst_element_query")
+	bind(&gstQueryParseLatency, "gst_query_parse_latency")
 	purego.RegisterLibFunc(&gstAppSrcPushBuffer, app, "gst_app_src_push_buffer")
 	purego.RegisterLibFunc(&gstAppSrcEndOfStream, app, "gst_app_src_end_of_stream")
 	purego.RegisterLibFunc(&gstAppSinkTryPullSample, app, "gst_app_sink_try_pull_sample")
@@ -255,6 +261,8 @@ type soundPlayback struct {
 	id                uint32
 	pcm               []byte
 	volume, rate, pan float32
+	// startAt is the Go clock time the voice should start at; zero, or a time sooner than the mixer can reach, starts it at the next mixer block.
+	startAt time.Time
 }
 
 // soundMixer keeps one live pipeline per engine. A silent input leaves
@@ -263,6 +271,8 @@ type soundMixer struct {
 	pipeline, mixer, bus uintptr
 	voices               []soundVoice
 	pending              []soundPlayback
+	// knownLatency is the last live latency the pipeline answered.
+	knownLatency time.Duration
 }
 
 func newSoundMixer() *soundMixer {
@@ -296,23 +306,54 @@ func soundMixerTo(output string) *soundMixer {
 	return m
 }
 
-func (m *soundMixer) play(id uint32, pcm []byte, volume, rate, pan float32) {
+func (m *soundMixer) play(play soundPlayback) {
 	if len(m.pending) == driver.MaxSoundVoices {
 		m.pending[0] = soundPlayback{}
 		m.pending = m.pending[1:]
 	}
-	m.pending = append(m.pending, soundPlayback{id, pcm, volume, rate, pan})
+	m.pending = append(m.pending, play)
 	m.startPending()
 }
 
-func (m *soundMixer) startPending() {
-	if len(m.pending) == 0 {
-		return
-	}
+// playing reports whether the output pipeline reached PLAYING, which starts its clock and configures its latency.
+func (m *soundMixer) playing() bool {
 	var state int32
 	gstElementGetState(m.pipeline, &state, nil, 0)
-	if state != gstStatePlaying {
+	return state == gstStatePlaying
+}
+
+// latency is the pipeline's live latency: how long after a voice's running time its first sample reaches the output device. Zero when GStreamer has not reported one. While a voice's bin is linked the pipeline answers the query as not live, so the mixer keeps the answer it read before its first voice started.
+func (m *soundMixer) latency() time.Duration {
+	if d := m.queryLatency(); d > 0 {
+		m.knownLatency = d
+	}
+	return m.knownLatency
+}
+
+func (m *soundMixer) queryLatency() time.Duration {
+	query := gstQueryNewLatency()
+	if query == 0 {
+		return 0
+	}
+	defer gstMiniObjectUnref(query)
+	var live int32
+	var least, most uint64
+	if gstElementQuery(m.pipeline, query) == 0 {
+		return 0
+	}
+	gstQueryParseLatency(query, &live, &least, &most)
+	if live == 0 || least == math.MaxUint64 || least > math.MaxInt64 {
+		return 0
+	}
+	return time.Duration(least)
+}
+
+func (m *soundMixer) startPending() {
+	if len(m.pending) == 0 || !m.playing() {
 		return
+	}
+	if m.knownLatency == 0 {
+		m.latency()
 	}
 	for _, voice := range m.pending {
 		m.startVoice(voice)
@@ -381,13 +422,16 @@ func (m *soundMixer) startVoice(play soundPlayback) {
 	voice := soundVoice{sound: play.id, bin: bin, src: gstElementGetStaticPad(bin, cstr("src")),
 		pad: gstElementGetRequestPad(m.mixer, cstr("sink_%u"))}
 	start := gstElementRunningTime(m.pipeline)
+	// The voice's segment begins at zero. Its pad shifts that segment ahead of the mixer's block already being aggregated, or to the running time that matches startAt on the Go clock; the pipeline clock and the Go clock advance together over a voice's delay.
+	lead := 20 * time.Millisecond
+	if delay := time.Until(play.startAt); delay > lead {
+		lead = delay
+	}
 	if voice.src == 0 || voice.pad == 0 || start == math.MaxUint64 {
 		m.remove(voice)
 		return
 	}
-	// The voice's segment begins at zero. Its pad shifts that segment
-	// ahead of the mixer's block already being aggregated.
-	gstPadSetOffset(voice.src, int64(start)+int64(20*time.Millisecond))
+	gstPadSetOffset(voice.src, int64(start)+int64(lead))
 	if gstPadLink(voice.src, voice.pad) != 0 || gstElementSyncState(bin) == 0 {
 		m.remove(voice)
 		return
@@ -400,7 +444,7 @@ func (m *soundMixer) startVoice(play soundPlayback) {
 		return
 	}
 	// Leave time for the mixer and the device's output buffer to drain.
-	voice.until = time.Now().Add(duration + 500*time.Millisecond)
+	voice.until = time.Now().Add(lead + duration + 500*time.Millisecond)
 	m.voices = append(m.voices, voice)
 }
 

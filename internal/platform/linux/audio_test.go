@@ -221,19 +221,102 @@ func TestLinuxAudioMixerOutput(t *testing.T) {
 	}
 	for range 3 {
 		w.onLoop(t, func() {
-			mixer.play(1, pcm, 1, 1, 0)
-			mixer.play(2, pcm, 1, 1, 0)
+			mixer.play(soundPlayback{id: 1, pcm: pcm, volume: 1, rate: 1})
+			mixer.play(soundPlayback{id: 2, pcm: pcm, volume: 1, rate: 1})
 		})
 		hear(0.5, 0.5)
 		hear(0, 0)
 	}
 	// Full pans silence the far channel and leave the near one at its level.
-	w.onLoop(t, func() { mixer.play(1, pcm, 1, 1, 1) })
+	w.onLoop(t, func() { mixer.play(soundPlayback{id: 1, pcm: pcm, volume: 1, rate: 1, pan: 1}) })
 	hear(0, 0.25)
 	hear(0, 0)
-	w.onLoop(t, func() { mixer.play(1, pcm, 1, 1, -1) })
+	w.onLoop(t, func() { mixer.play(soundPlayback{id: 1, pcm: pcm, volume: 1, rate: 1, pan: -1}) })
 	hear(0.25, 0)
 	hear(0, 0)
+}
+
+// TestLinuxAudioMixerSchedulesStarts measures two voices scheduled 500 ms apart in the mixed output's timestamps.
+func TestLinuxAudioMixerSchedulesStarts(t *testing.T) {
+	w, _ := audioTestWindow(t)
+	var mixer *soundMixer
+	var sink uintptr
+	w.onLoop(t, func() {
+		mixer = soundMixerTo("appsink name=output max-buffers=0")
+		if mixer != nil {
+			sink = gstBinGetByName(mixer.pipeline, cstr("output"))
+		}
+	})
+	if mixer == nil || sink == 0 {
+		t.Fatal("the native mixer did not open its test output")
+	}
+	defer w.onLoop(t, func() { gstObjectUnref(sink); mixer.close() })
+	pcm := make([]byte, soundRate*soundFrameBytes/20)
+	for at := 0; at < len(pcm); at += 4 {
+		binary.LittleEndian.PutUint32(pcm[at:], math.Float32bits(0.25))
+	}
+	scheduled := false
+	var onsets []time.Duration
+	silent := true
+	deadline := time.Now().Add(5 * time.Second)
+	for len(onsets) < 2 && time.Now().Before(deadline) {
+		w.onLoop(t, func() {
+			if message := mixer.checkOutput(); message != "" {
+				t.Error(message)
+			}
+			if !scheduled && mixer.playing() {
+				scheduled = true
+				first := time.Now().Add(300 * time.Millisecond)
+				mixer.play(soundPlayback{id: 1, pcm: pcm, volume: 1, rate: 1, startAt: first})
+				mixer.play(soundPlayback{id: 2, pcm: pcm, volume: 1, rate: 1, startAt: first.Add(500 * time.Millisecond)})
+			}
+		})
+		sample := gstAppSinkTryPullSample(sink, uint64(20*time.Millisecond))
+		if sample == 0 {
+			continue
+		}
+		b := gstSampleGetBuffer(sample)
+		pts := (*gstSoundBuffer)(cPointer(b)).pts
+		data := make([]byte, gstBufferGetSize(b))
+		if len(data) > 0 {
+			gstBufferExtract(b, 0, unsafe.Pointer(&data[0]), uintptr(len(data)))
+		}
+		gstMiniObjectUnref(sample)
+		for frame := 0; frame+soundFrameBytes <= len(data); frame += soundFrameBytes {
+			loud := math.Float32frombits(binary.LittleEndian.Uint32(data[frame:])) > 0.1
+			if loud && silent && scheduled {
+				onsets = append(onsets, time.Duration(pts)+time.Duration(frame/soundFrameBytes)*time.Second/soundRate)
+			}
+			silent = !loud
+		}
+	}
+	if len(onsets) < 2 {
+		t.Fatalf("heard %d scheduled starts, want 2", len(onsets))
+	}
+	if gap := onsets[1] - onsets[0]; gap < 499*time.Millisecond || gap > 501*time.Millisecond {
+		t.Fatalf("scheduled starts %v apart in the output, want 500ms within 1ms", gap)
+	}
+	var latency time.Duration
+	w.onLoop(t, func() { latency = mixer.latency() })
+	if latency <= 0 {
+		t.Fatalf("live mixer latency %v, want a reported latency", latency)
+	}
+}
+
+func TestLinuxAudioOutputLatencyAnswers(t *testing.T) {
+	_, cx := audioTestWindow(t)
+	type reading struct {
+		latency time.Duration
+		known   bool
+	}
+	got := make(chan reading, 1)
+	cx.Post(func() {
+		cx.AudioOutputLatency(func(latency time.Duration, known bool) { got <- reading{latency, known} })
+	})
+	r := awaitAudio(t, got)
+	if r.known != (r.latency > 0) {
+		t.Fatalf("latency %v known %v", r.latency, r.known)
+	}
 }
 
 func TestLinuxAudioPlayer(t *testing.T) {
