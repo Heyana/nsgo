@@ -2610,6 +2610,8 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		// WM_KEYDOWN before Windows handles menu mnemonics or Alt+Left.
 		w.skipSysChar = w.embedded && (w.keyDown(wParam, lParam) || w.shortcut(wParam, lParam))
 		if w.skipSysChar {
+			// As in Run's loop, a consumed key means Alt was not pressed alone, so its release opens no menu.
+			w.chrome.altAlone = false
 			return 0
 		}
 		if w.menuBarKey(message, wParam, lParam) {
