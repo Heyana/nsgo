@@ -212,6 +212,22 @@ core.Suspense{
 
 等待期间内容保持挂载但处于隐藏状态，值一到就能立即显示。重新加载时会继续显示上一次的值。
 
+### 发现局域网服务
+
+在 macOS 和 iOS 上，`cx.AdvertiseService` 通过 Bonjour 发布监听端口和 TXT 属性。`cx.BrowseServices` 报告解析后的服务，包括主机名、端口和 TXT 属性。服务离开时，回调收到设置了 `Removed` 的事件。通过 `cx.Env().CanDiscoverServices()` 检查平台支持。两个调用都会返回停止函数，作用域释放时自动停止。平台错误会通过引擎 goroutine 异步报告。
+
+在 `nsgo.yaml` 中声明服务类型和访问局域网的用途。权限提示由系统显示，用户的选择也由系统保存。
+
+```yaml
+apple:
+  info:
+    NSLocalNetworkUsageDescription: 查找附近可同步的设备。
+    NSBonjourServices:
+      - _example._tcp
+```
+
+可用 `nsgotest.LocalServices` 为无头测试提供浏览结果。
+
 ## 语音与生命周期
 
 `cx.StartSpeech` 在 `cx.Env().CanRecognizeSpeech()` 为真时用系统识别器识别语音，并随着转写结果变化返回文本。在无头测试中，识别期间 `app.Speech` 保存一个 `nsgotest.SpeechSession`。使用 `app.HearSpeech` 和 `app.EndSpeech` 交付结果。

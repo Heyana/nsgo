@@ -82,6 +82,8 @@ const (
 	AccessMotion             = "motion"
 	// AccessFrontmostApp is the application in front on the desktop (Scope.FrontmostApp and Scope.CanReadFrontmostApp), as it says what else the user runs.
 	AccessFrontmostApp = "frontmostApp"
+	// AccessServiceDiscovery is DNS-SD advertising and browsing by service type.
+	AccessServiceDiscovery = "serviceDiscovery"
 )
 
 // AccessInput is AccessRequest.Method for a web view's trusted input, AccessMedia for the devices its pages capture, and AccessCookies for writing, listing or clearing the store every web view of the app shares, which no TSX capability grants.
@@ -172,6 +174,7 @@ const (
 	serviceMotion             service = "motion"
 	serviceWebCookies         service = "webCookies"
 	serviceFrontmostApp       service = "frontmostApp"
+	serviceDiscovery          service = "serviceDiscovery"
 )
 
 // serviceRule is how core holds a kind of service to Access.
@@ -210,6 +213,7 @@ var services = map[service]serviceRule{
 	serviceMotion:             {permission: AccessMotion},
 	serviceWebCookies:         {permission: AccessWebView, method: AccessCookies},
 	serviceFrontmostApp:       {permission: AccessFrontmostApp},
+	serviceDiscovery:          {permission: AccessServiceDiscovery},
 }
 
 // gate is the refusal of a service of kind for resource by the current owner's Access, as services holds it; a kind services lacks is refused.

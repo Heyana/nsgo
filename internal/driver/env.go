@@ -62,6 +62,8 @@ type Environment struct {
 	Camera bool
 	// ScanCode says ItemScanCode shows a camera that reads codes here.
 	ScanCode bool
+	// DiscoverServices says the target can advertise and browse DNS-SD services.
+	DiscoverServices bool
 	// CanSendInput says Ref.SendInput can deliver trusted input to web views.
 	CanSendInput bool
 	// CanLookUp says ItemLookUp can show the system dictionary panel.

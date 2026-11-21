@@ -59,6 +59,8 @@ var gated = map[string]service{
 	"PickScreenColor":               servicePicker,
 	"SaveFile":                      servicePicker,
 	"StartSpeech":                   serviceSpeech,
+	"AdvertiseService":              serviceDiscovery,
+	"BrowseServices":                serviceDiscovery,
 	"Speak":                         serviceSpeak,
 	"Voices":                        serviceSpeak,
 	"OpenOverlay":                   serviceOverlay,

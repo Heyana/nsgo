@@ -141,6 +141,12 @@ Android hands files on as content URIs from the runtime's `FileProvider`, which 
 
 The installer refuses an app whose manifest does not ask for `REQUEST_INSTALL_PACKAGES`, which stores review, so the runtime asks for nothing: an app lists it in `nsgo.yaml`'s `android.permissions` ([tool](tool.md)), which the tool adds itself to a build on the direct updates channel ([updates](updates.md)), an embedding host in its own manifest, and `InstallPackage` fails with that advice without it.
 
+## Local service discovery
+
+`Scope.AdvertiseService` and `Scope.BrowseServices` send `ItemDiscovery` on the calling surface. Both operations belong to the current scope, use an ID for subsequent `EventDiscovery` reports, and release the native operation when stopped or disposed. `AccessServiceDiscovery` gates advertising and browsing by DNS-SD service type. The headless model serves synthetic browse results from `nsgotest.LocalServices`.
+
+NSH has no local service discovery API. On macOS and iOS, the system's DNS-SD library registers services in `local.`, browses on every interface and resolves the endpoint and TXT records of each matching instance. Resolvers are cancelled if their instance disappears. A matching endpoint seen on multiple interfaces is reported once and removed when its last record goes away. Each surface owns its operations, and callbacks and reference release run on Apple's main dispatch queue. Apps declare `NSLocalNetworkUsageDescription` and `NSBonjourServices` in `nsgo.yaml` through `apple.info`.
+
 ## Speech
 
 `StartSpeech` recognizes what the user says, NSH's `Speech.start`: one session per engine, which a new one and its scope's end abort. It reports the whole transcript so far, before it is final with `Interim`, and ends once with the last one and a `SpeechError` named as the Web Speech API's (`not-allowed`, `no-speech`, `audio-capture`, `network`, `language-not-supported`, `unavailable`, `failed`). `Stop` has the recognizer finish what it heard; `Abort` ends it at once. A `Lang` of "" is the app's locale.

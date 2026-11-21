@@ -114,7 +114,7 @@ var itemNames = map[ItemKind]string{
 	ItemOpenSurface: "open-surface", ItemTray: "tray", ItemTrayMenu: "tray-menu", ItemHotKeys: "hot-keys",
 	ItemDock: "dock", ItemSetLaunchAtLogin: "set-launch-at-login", ItemLaunchAtLogin: "launch-at-login",
 	ItemShaderTransition: "shader-transition", ItemShaderInput: "shader-input", ItemSpeech: "speech", ItemSensor: "sensor",
-	ItemTakePhoto: "take-photo", ItemScanCode: "scan-code", ItemMatch: "match", ItemCheckForUpdates: "check-for-updates",
+	ItemTakePhoto: "take-photo", ItemScanCode: "scan-code", ItemDiscovery: "discovery", ItemMatch: "match", ItemCheckForUpdates: "check-for-updates",
 	ItemBiometricAvailability: "biometric-availability", ItemBiometricAuthenticate: "biometric-authenticate", ItemPermission: "permission",
 	ItemRevealFile: "reveal-file", ItemTrashFile: "trash-file",
 	ItemTaskProgress: "task-progress",

@@ -28,6 +28,7 @@ type Env struct {
 	gpu                     *Signal[bool]
 	camera                  *Signal[bool]
 	scanCode                *Signal[bool]
+	discoverServices        *Signal[bool]
 	canSendInput            *Signal[bool]
 	canLookUp               *Signal[bool]
 	canQuickLook            *Signal[bool]
@@ -110,6 +111,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		gpu:              NewSignal(cx, false),
 		camera:           NewSignal(cx, false),
 		scanCode:         NewSignal(cx, false),
+		discoverServices: NewSignal(cx, false),
 		canSendInput:     NewSignal(cx, false),
 		canLookUp:        NewSignal(cx, false),
 		canQuickLook:     NewSignal(cx, false),
@@ -232,6 +234,7 @@ func (e *Env) set(v Environment) {
 	e.gpu.Set(v.GPU)
 	e.camera.Set(v.Camera)
 	e.scanCode.Set(v.ScanCode)
+	e.discoverServices.Set(v.DiscoverServices)
 	e.canSendInput.Set(v.CanSendInput)
 	e.canLookUp.Set(v.CanLookUp)
 	e.canQuickLook.Set(v.CanQuickLook)
@@ -392,6 +395,9 @@ func (e *Env) CanTakePhoto() bool { return e.camera.Get() }
 
 // CanScanCode reports whether Scope.ScanCode shows a camera that reads codes here: iOS devices with a camera, not the simulator, and Android devices with one whose app's manifest asks for CAMERA (nsgo.yaml's android.permissions).
 func (e *Env) CanScanCode() bool { return e.scanCode.Get() }
+
+// CanDiscoverServices reports whether this target supports local DNS-SD.
+func (e *Env) CanDiscoverServices() bool { return e.discoverServices.Get() }
 
 // CanSendInput reports whether Ref.SendInput can give a web view's page
 // trusted input here. macOS supports this through AppKit; other backends

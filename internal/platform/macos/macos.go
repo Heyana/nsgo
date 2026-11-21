@@ -190,8 +190,9 @@ type view struct {
 }
 
 type surface struct {
-	sensors apple.Sensors
-	saves   driver.SavePreflights
+	sensors   apple.Sensors
+	saves     driver.SavePreflights
+	discovery apple.Discovery
 
 	// openFrame is the frame the window opened at, until its first batch,
 	// whose title bar would change it.
@@ -991,6 +992,7 @@ func (s *surface) close() {
 		s.restoreMainMenu()
 	}
 	s.sensors.Close()
+	s.discovery.Close()
 	delete(surfaces, s)
 	s.stopTicking()
 	// The run loop holds the link, which holds the surface's view as its target, and so the whole tree.
@@ -1170,6 +1172,7 @@ func (s *surface) environment() driver.Environment {
 		IncreaseContrast: objc.Send[bool](ws, sel("accessibilityDisplayShouldIncreaseContrast")),
 		ScreenReader:     objc.Send[bool](ws, sel("isVoiceOverEnabled")),
 		ScreenColor:      true,
+		DiscoverServices: true,
 		Speech:           apple.SpeechAvailable(),
 		Speak:            apple.SpeakAvailable(),
 		Audio:            apple.AudioAvailable(),
@@ -2029,6 +2032,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemSensor:
 			s.sensors.Handle(it, s.engine.Dispatch, false, true)
+			continue
+		case driver.ItemDiscovery:
+			s.discovery.Handle(it, s.engine.Dispatch)
 			continue
 		case driver.ItemSpeech:
 			apple.HandleSpeech(it.Count, *it.Speech, s.engine.Dispatch)

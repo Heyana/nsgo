@@ -142,7 +142,8 @@ type view struct {
 }
 
 type surface struct {
-	sensors apple.Sensors
+	sensors   apple.Sensors
+	discovery apple.Discovery
 
 	batch uint64 // batches applied
 	// hinge is the latest a UIHingeInteraction reported (watchHinge).
@@ -806,6 +807,7 @@ func (s *surface) environment() driver.Environment {
 		OS:               driver.OSIOS,
 		OSVersion:        osVersion(),
 		Idiom:            idiom,
+		DiscoverServices: idiom != driver.IdiomTV,
 		Speech:           apple.SpeechAvailable(),
 		Speak:            apple.SpeakAvailable(),
 		Audio:            idiom != driver.IdiomTV && apple.AudioAvailable(), // none on tvOS in the first stages (docs/architecture/audio.md)
@@ -1161,6 +1163,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemSensor:
 			s.sensors.Handle(it, s.engine.Dispatch, !onTV(), !onTV())
+			continue
+		case driver.ItemDiscovery:
+			s.discovery.Handle(it, s.engine.Dispatch)
 			continue
 		case driver.ItemSpeech:
 			apple.HandleSpeech(it.Count, *it.Speech, s.engine.Dispatch)

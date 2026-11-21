@@ -374,6 +374,7 @@ const (
 	ItemQuickLook
 	// ItemOrientation asks the app to use the Orientation mask in Count, or the platform default when zero.
 	ItemOrientation
+
 	// ItemKeepImage pins the canvas image cache entry named by Value
 	// (ImageSource.Key) so it stays out of LRU eviction while kept;
 	// ItemReleaseImage releases one pin of Value, letting it be evicted once
@@ -394,6 +395,8 @@ const (
 	ItemSaveFilePreflight
 	// ItemDiskSpace asks for the capacity of the volume containing Value, answered by EventDiskSpace carrying Count.
 	ItemDiskSpace
+	// ItemDiscovery starts or stops a DNS-SD operation numbered by Count.
+	ItemDiscovery
 )
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.
@@ -583,6 +586,8 @@ type MountItem struct {
 	Pick *PickRequest
 	// Scan is ItemScanCode's request.
 	Scan *ScanRequest
+	// Discovery is ItemDiscovery's request.
+	Discovery *DiscoveryRequest
 	// Sensor is an ItemSensor's request, Speech an ItemSpeech's, Audio an ItemAudio's.
 	Sensor *SensorRequest
 	Speech *SpeechRequest

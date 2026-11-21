@@ -255,9 +255,11 @@ type App struct {
 	// Speech is the speech session running, nil without one, which
 	// HearSpeech and EndSpeech report to; sessions end unavailable unless
 	// the environment says Speech.
-	Speech     *SpeechSession
-	speechID   uint32
-	speechText string
+	Speech        *SpeechSession
+	localServices []core.LocalService
+	speechID      uint32
+	speechText    string
+
 	// Spoken are the utterances the app spoke, oldest first, where the environment says Speak; the last speaks until FinishSpeaking ends it or the app stops it (Speaking). Voices are the voices the platform has, which Scope.Voices answers with.
 	Spoken []*Utterance
 	Voices []core.VoiceInfo
@@ -597,6 +599,14 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 		driver.TraceCauses, devtools.Enabled = true, true
 	}
 	a.stepName = "start"
+	if !onTarget() && a.localServices != nil {
+		var env driver.Environment
+		if a.env != nil {
+			env = *a.env
+		}
+		env.DiscoverServices = true
+		a.env = &env
+	}
 	if onTarget() && a.manualFrames {
 		t.Skip("nsgotest: ManualFrames steps the clock, which runs headless only")
 	}

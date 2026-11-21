@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Advertise and browse local DNS-SD services through Bonjour on macOS and iOS (#430 by @houko).
 - Let images in painted macOS and Windows windows pass the pointer through transparent pixels with `Image.HitTestAlpha` and TSX's `hitTestAlpha` (#599 by @houko).
 - Preview Go component fixtures with `nsgo dev -preview` (#659 by @houko).
 - Send `core.Video.Headers` with HTTP requests from the Android video player (#681 by @houko).

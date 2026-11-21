@@ -116,14 +116,16 @@ var itemKindNames = map[ItemKind]string{
 	ItemScanCode:                "ItemScanCode",
 	ItemQuickLook:               "ItemQuickLook",
 	ItemOrientation:             "ItemOrientation",
-	ItemKeepImage:               "ItemKeepImage",
-	ItemReleaseImage:            "ItemReleaseImage",
-	ItemReleaseOffscreen:        "ItemReleaseOffscreen",
-	ItemRequestReview:           "ItemRequestReview",
-	ItemGPU:                     "ItemGPU",
-	ItemSavePreflightAnswer:     "ItemSavePreflightAnswer",
-	ItemSaveFilePreflight:       "ItemSaveFilePreflight",
-	ItemDiskSpace:               "ItemDiskSpace",
+
+	ItemKeepImage:           "ItemKeepImage",
+	ItemReleaseImage:        "ItemReleaseImage",
+	ItemReleaseOffscreen:    "ItemReleaseOffscreen",
+	ItemRequestReview:       "ItemRequestReview",
+	ItemGPU:                 "ItemGPU",
+	ItemSavePreflightAnswer: "ItemSavePreflightAnswer",
+	ItemSaveFilePreflight:   "ItemSaveFilePreflight",
+	ItemDiskSpace:           "ItemDiskSpace",
+	ItemDiscovery:           "ItemDiscovery",
 }
 
 // String returns the kind's name, as a log or an event prints it.
@@ -231,10 +233,12 @@ var eventKindNames = map[EventKind]string{
 	EventWebCookies:            "EventWebCookies",
 	EventOpenScene:             "EventOpenScene",
 	EventKeyUp:                 "EventKeyUp",
-	EventMouseUp:               "EventMouseUp",
-	EventGPU:                   "EventGPU",
-	EventSavePreflight:         "EventSavePreflight",
-	EventDiskSpace:             "EventDiskSpace",
+
+	EventMouseUp:       "EventMouseUp",
+	EventGPU:           "EventGPU",
+	EventSavePreflight: "EventSavePreflight",
+	EventDiskSpace:     "EventDiskSpace",
+	EventDiscovery:     "EventDiscovery",
 }
 
 // String returns the kind's name, as a log or an event prints it.

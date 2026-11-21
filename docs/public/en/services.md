@@ -212,6 +212,22 @@ core.Suspense{
 
 The content stays mounted but hidden while it waits, so it shows at once when the values arrive. A refetch keeps it shown with the last value.
 
+### Discovering local services
+
+On macOS and iOS, `cx.AdvertiseService` publishes a listening port and TXT attributes through Bonjour. `cx.BrowseServices` reports resolved services with their host, port and TXT attributes, then reports them again with `Removed` when they leave. Check `cx.Env().CanDiscoverServices()` for support. Both calls return a stop function and end when their scope is disposed. A platform error is reported asynchronously on the engine goroutine.
+
+Declare the service types and explain local network access in `nsgo.yaml`. The system manages the permission prompt and remembers the user's choice.
+
+```yaml
+apple:
+  info:
+    NSLocalNetworkUsageDescription: Finds nearby devices to sync with.
+    NSBonjourServices:
+      - _example._tcp
+```
+
+Use `nsgotest.LocalServices` to supply browse results in a headless test.
+
 ## Speech and the lifecycle
 
 `cx.StartSpeech` recognizes speech with the system's recognizer where `cx.Env().CanRecognizeSpeech()` says it exists, and answers with the transcript as it changes. In a headless test, `app.Speech` holds a `nsgotest.SpeechSession` while recognition is active. Use `app.HearSpeech` and `app.EndSpeech` to deliver results.
