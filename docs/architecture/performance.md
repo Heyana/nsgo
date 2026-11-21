@@ -192,6 +192,27 @@ purego prices each foreign call by what its Go signature asks of reflection (App
 
 Name selectors and classes with `apple.Sel` (each backend's `sel`) and `apple.Class`. On per-frame paths, send messages whose arguments and result are objects, integers or booleans with `apple.Msg`, and set C functions of pointers and integers with `registerSyscall` instead of `purego.RegisterLibFunc`. Send a point to super with `apple.SendSuperPoint`, registered once; the generic `apple.SendSuper` registers a function on every call. Pass runs by pointer, as `CGContextAddLines` takes a polyline's points and `CGContextAddRects` a rectangle, rather than a call for each. Declare a 16-byte struct argument (`CFRange`, `CGSize`, `CGPoint`) as its two fields, which arm64 and x86-64 both pass in two registers; larger structs pass differently on the two, so they stay structs. Keep immutable CoreFoundation objects, such as fonts, attributes and frame paths, in bounded caches.
 
+### Checking display timestamps
+
+`internal/testhost/testdata/frameclock` measures the time `Scope.RequestAnimationFrame` passes to the app for 180 steady-state intervals, with the first 60 intervals reported as startup. The test uses `nsgotest.Measure` to put the app on its system clock. Run with the display's configured refresh rate for a cadence check. Set `NSGO_FRAME_TEST_DRAW=1` to repaint a view each callback and observe a compositor that paces idle and drawing surfaces differently.
+
+```sh
+go tool nsgo test -target macos -activate -env NSGO_FRAME_TEST_HZ=120 ./internal/testhost/testdata/frameclock
+```
+
+A configured run checks each steady-state interval against the nearest whole number of refresh periods with 0.5 ms of tolerance and requires at least 90% to be one refresh. Missed refreshes and startup deviations are counted separately. On macOS and iOS the test also checks that a link timestamp arrives ahead of the presentation it names. CI checks that the steady-state timestamps advance on its own displays, whose refresh modes vary.
+
+| Setup (2026-11-21) | Nominal period | Median interval | Maximum error | Missed refreshes |
+| --- | ---: | ---: | ---: | ---: |
+| macOS 27.2, M4 Pro at 120 Hz | 8.333 ms | 8.333 ms | 0.006 ms | 0 |
+| iOS 18.7.11, iPhone XR at 60 Hz | 16.667 ms | 16.666 ms | 0.006 ms | 0 |
+| Android 12, Pixel 3 XL at 60 Hz | 16.667 ms | 16.696 ms | 0.050 ms | 0 |
+| Headless Chrome 158 at 60 Hz | 16.667 ms | 16.700 ms | 0.167 ms | 0 |
+
+On Pixel, each early run included one startup gap around 18.2 ms. The diagnostic read 18.190459 ms directly from Choreographer and 18.190615 ms after conversion. On macOS one launch repeated a timestamp before the display link settled, and the 120 Hz sample followed the link.
+
+On Linux, GTK 4.14 under Xvfb delivered increasing frame times. Sway 1.9 in the arm64 VM advertised a virtual 120 Hz output. The median app interval was 18.979 ms with frame requests alone and 9.782 ms while repainting. A physical 120 Hz Linux display and HarmonyOS remain to be measured.
+
 ## Where Go departs from NSH
 
 | NSH | NSGo | Why |

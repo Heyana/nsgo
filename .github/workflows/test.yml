@@ -163,6 +163,11 @@ jobs:
           NSGO_REQUIRE_JDK: '1'
         # examples/gallery runs its tests in sequence for about nine minutes on a hosted runner, beside the other packages, so go test's default ten-minute limit cuts it off.
         run: xvfb-run -a go tool nsgo test -- -timeout=20m
+      - name: Test Linux display frame timestamps
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+        run: xvfb-run -a go tool nsgo test -target linux -timeout 1m ./internal/testhost/testdata/frameclock
       - name: Test native radio and tab focus
         env:
           GDK_BACKEND: x11
@@ -180,6 +185,8 @@ jobs:
         run: go tool nsgo test -target web ./tsx
       - name: Test browser radio and tab focus
         run: go tool nsgo test -target web -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
+      - name: Test Chromium display frame timestamps
+        run: go tool nsgo test -target web -timeout 1m ./internal/testhost/testdata/frameclock
       - name: Test browser package trust persistence
         run: go tool nsgo test -target web ./tsx/pkg
 
@@ -239,6 +246,7 @@ jobs:
           ndk: 27.2.12479018
           script: |
             NSGO_ANDROID_E2E=1 NSGO_ANDROID_DEVICE=emulator-5554 go tool nsgo test -run '^TestAndroidProcessExitResults$' ./cmd/nsgo || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+            go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/frameclock || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestGreets$' ./examples/hello || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/press || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestHardwareKeys' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
@@ -302,6 +310,8 @@ jobs:
         run: go tool nsgo test -run '^TestWindowObserversSurviveGC$' ./internal/platform/macos -- -race -timeout=180s
       - name: Test native press routing, modifiers and visible labels
         run: go tool nsgo test -target macos ./internal/testhost/testdata/press
+      - name: Test macOS display frame timestamps
+        run: go tool nsgo test -target macos -timeout 1m ./internal/testhost/testdata/frameclock
       - name: Test native editing keys and bindings
         run: go tool nsgo test -target macos ./internal/testhost/testdata/keys
       - name: Test native empty web sources
@@ -351,6 +361,7 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/websource
           go tool nsgo test -target ios_simulator -timeout 1m -run '^TestIOSCaptureIsSRGB$' ./internal/testhost/testdata/capture
           go tool nsgo test -target ios_simulator -timeout 1m -run '^Test(Scroll|List)PastItsEndComesBackToIt$' ./nsgotest
+          go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/frameclock
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/platform/watchos
 
   windows:
