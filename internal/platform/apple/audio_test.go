@@ -253,17 +253,17 @@ func TestASoundReusesMixerAcrossFormats(t *testing.T) {
 
 		now := time.Now()
 		for i := range driver.MaxSoundVoices {
-			v := ta.audio.voiceFor(engine, ta.audio.sounds[1], now)
+			v := ta.audio.voiceFor(engine, ta.audio.sounds[1])
 			if v == nil {
 				t.Error("a mono voice could not be connected")
 				return
 			}
-			v.started, v.until = now.Add(time.Duration(i)), now.Add(time.Second)
+			v.sound, v.started = 1, now.Add(time.Duration(i))
 		}
 		first := ta.audio.voices[0]
 		mixer := first.mixer
 		mainBus := first.mainBus
-		reused := ta.audio.voiceFor(engine, ta.audio.sounds[2], now)
+		reused := ta.audio.voiceFor(engine, ta.audio.sounds[2])
 		if reused != first || reused.mixer != mixer {
 			t.Error("taking the oldest voice for a stereo sound replaced its mixer")
 			return
@@ -389,7 +389,7 @@ func TestStoppingAScheduledSoundLetsTheEngineIdle(t *testing.T) {
 		t.Skip("AVAudioEngine cannot open the test host's audio output")
 	}
 	onMain(func() {
-		if len(ta.audio.voices) != 1 || time.Until(ta.audio.voices[0].until) < 30*time.Second {
+		if len(ta.audio.voices) != 1 || ta.audio.voices[0].sound != 1 {
 			t.Error("the engine did not schedule a voice")
 		}
 	})
@@ -471,7 +471,7 @@ func TestALoopingSoundRendersAMinuteContinuously(t *testing.T) {
 			t.Errorf("looped PCM peak %g, longest near-silence %d frames, largest sample step %g", peak, longestSilence, maxStep)
 		}
 		ta.audio.Handle(1, &driver.AudioRequest{Command: driver.AudioStop})
-		if voice.active(time.Now()) {
+		if voice.sound != 0 {
 			t.Error("the looping voice is still active after Stop")
 		}
 	})
@@ -1008,4 +1008,104 @@ func TestASoundPansStereo(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSoundPlaybackHasIndependentNativeControls(t *testing.T) {
+	ta := newTestAudio(t)
+	ta.send(1, driver.AudioRequest{Command: driver.AudioLoad, Source: driver.ImageSource{Data: wav(2 * time.Second)},
+		MaxBytes: driver.MaxSoundBytes, MaxDuration: driver.MaxSoundDuration})
+	ta.wait(1, driver.AudioLoaded, 5*time.Second, nil)
+	onMain(func() {
+		for id := uint32(1); id <= 2; id++ {
+			ta.audio.Handle(1, &driver.AudioRequest{Command: driver.AudioPlay, Playback: id, Volume: 0.05, Rate: 1})
+		}
+		ta.audio.Handle(1, &driver.AudioRequest{Command: driver.AudioPlaybackSet, Playback: 2, Volume: 0, Rate: 2})
+		voices := 0
+		for _, v := range ta.audio.voices {
+			if v.sound != 0 {
+				voices++
+			}
+			switch v.playback {
+			case 1:
+				if got := objc.Send[float32](v.mixer, sel("outputVolume")); got != 0.05 {
+					t.Errorf("other playback volume = %g", got)
+				}
+			case 2:
+				volume := objc.Send[float32](v.mixer, sel("outputVolume"))
+				rate := objc.Send[float32](v.varispeed, sel("rate"))
+				if volume != 0 || rate != 2 {
+					t.Errorf("live settings = volume %g, rate %g", volume, rate)
+				}
+			}
+		}
+		if voices != 2 {
+			t.Errorf("started %d voices, want two", voices)
+		}
+		ta.audio.Handle(1, &driver.AudioRequest{Command: driver.AudioPlaybackStop, Playback: 1})
+	})
+	if e := ta.wait(1, driver.AudioPlaybackEnded, time.Second, nil); e.Playback != 1 {
+		t.Fatalf("stop ended playback %d", e.Playback)
+	}
+	if e := ta.wait(1, driver.AudioPlaybackEnded, 3*time.Second, nil); e.Playback != 2 {
+		t.Fatalf("natural completion ended playback %d", e.Playback)
+	}
+	ta.quiet(1, 100*time.Millisecond)
+}
+
+func TestSoundPlaybackEndsOldestAtNativeLimit(t *testing.T) {
+	ta := newTestAudio(t)
+	ta.send(1, driver.AudioRequest{Command: driver.AudioLoad, Source: driver.ImageSource{Data: wav(2 * time.Second)},
+		MaxBytes: driver.MaxSoundBytes, MaxDuration: driver.MaxSoundDuration})
+	ta.wait(1, driver.AudioLoaded, 5*time.Second, nil)
+	onMain(func() {
+		for id := uint32(1); id <= driver.MaxSoundVoices+1; id++ {
+			ta.audio.Handle(1, &driver.AudioRequest{Command: driver.AudioPlay, Playback: id, Rate: 1})
+		}
+		active := 0
+		for _, v := range ta.audio.voices {
+			if v.sound != 0 {
+				active++
+			}
+		}
+		if active != driver.MaxSoundVoices {
+			t.Errorf("active voices = %d, want %d", active, driver.MaxSoundVoices)
+		}
+	})
+	if e := ta.wait(1, driver.AudioPlaybackEnded, time.Second, nil); e.Playback != 1 {
+		t.Fatalf("eviction ended playback %d instead of the oldest", e.Playback)
+	}
+	ta.send(1, driver.AudioRequest{Command: driver.AudioStop})
+	for id := uint32(2); id <= driver.MaxSoundVoices+1; id++ {
+		e := ta.wait(1, driver.AudioPlaybackEnded, time.Second, nil)
+		if e.Playback < 2 || e.Playback > driver.MaxSoundVoices+1 {
+			t.Fatalf("stop ended unexpected playback %d", e.Playback)
+		}
+	}
+	ta.quiet(1, 100*time.Millisecond)
+}
+
+func TestPlayerMutePreservesNativePlayback(t *testing.T) {
+	ta := newTestAudio(t)
+	playing(ta, 1)
+	var native objc.ID
+	onMain(func() { native = ta.audio.players[1].player })
+	check := func(volume float32) {
+		t.Helper()
+		onMain(func() {
+			p := ta.audio.players[1]
+			got := objc.Send[float32](p.player, sel("volume"))
+			rate := objc.Send[float32](p.player, sel("rate"))
+			if p.player != native || !p.playing || got != volume || rate != 1 {
+				t.Errorf("player %v, playing %v, volume %g, rate %g; want original player playing at volume %g and rate 1",
+					p.player == native, p.playing, got, rate, volume)
+			}
+		})
+	}
+	ta.send(1, driver.AudioRequest{Command: driver.AudioSet, Volume: 0, Rate: 1})
+	check(0)
+	if p := ta.wait(1, driver.AudioProgress, time.Second, nil).Position; p <= 200*time.Millisecond {
+		t.Fatalf("muted player did not advance: %v", p)
+	}
+	ta.send(1, driver.AudioRequest{Command: driver.AudioSet, Volume: 0.5, Rate: 1})
+	check(0.5)
 }

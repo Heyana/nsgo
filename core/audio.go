@@ -23,8 +23,10 @@ type SoundVoice struct {
 	Volume, Rate, Pan float32
 	// StartAt schedules this playback on the clock returned by audio.Now. A zero or past time plays as soon as possible.
 	StartAt time.Time
-	// Loop repeats this playback until the sound stops or closes.
+	// Loop repeats this playback until its Playback or the sound stops, or the sound closes.
 	Loop bool
+	// Muted starts the playback at zero volume, which its Playback's SetVolume can raise.
+	Muted bool
 }
 
 // AudioError is why a sound or a player failed, named as NSH's codes, which follow the web's MediaError: the core's part of audio.Error, which apps use. A failure that says more is one wrapped with the platform's words, which errors.Is and errors.As find.
@@ -237,7 +239,8 @@ type soundBuffer struct {
 	// open counts the Sounds over it that are not closed.
 	open int
 	// waits are the loads waiting for it to decode.
-	waits []*soundWait
+	waits     []*soundWait
+	playbacks map[uint32]*Playback
 }
 
 type soundWait struct {
@@ -331,6 +334,7 @@ func (b *soundBuffer) drop() {
 		st.decoded -= b.bytes
 	}
 	b.waits = nil
+	b.endPlaybacks()
 	b.key.tree.sendAudio(b.id, driver.AudioRequest{Command: driver.AudioUnload})
 }
 
@@ -344,6 +348,12 @@ func (b *soundBuffer) newSound(owner *Scope) *Sound {
 
 // event takes the platform's answer to the buffer's load.
 func (b *soundBuffer) event(e *driver.AudioEvent) {
+	if e.Phase == driver.AudioPlaybackEnded {
+		if p := b.playbacks[e.Playback]; p != nil {
+			p.finish()
+		}
+		return
+	}
 	if b.loaded {
 		return
 	}
@@ -391,18 +401,39 @@ func (b *soundBuffer) event(e *driver.AudioEvent) {
 	}
 }
 
-// Play starts a playback of the sound, over those playing, within a frame: it is a command in the batch of the turn that calls it. A playback that cannot be heard, the device muted or one dropped past 32 at once, is no error.
-func (s *Sound) Play(v SoundVoice) {
-	if s.closed {
-		return
+// Play starts a playback of the sound, over those playing, within a frame: it is a command in the batch of the turn that calls it. It returns the playback, to change, stop or watch alone; one of a closed sound, or on a backend that cannot address playbacks, is already ended. A playback that cannot be heard, the device muted, is no error.
+func (s *Sound) Play(v SoundVoice) *Playback {
+	p := &Playback{}
+	if s == nil || s.closed {
+		return p
 	}
-	s.buffer.key.tree.sendAudio(s.buffer.id, driver.AudioRequest{Command: driver.AudioPlay, Volume: audioVolume(v.Volume), Rate: audioRate(v.Rate), Pan: audioPan(v.Pan), StartAt: v.StartAt, Loop: v.Loop})
+	b := s.buffer
+	volume, rate := audioVolume(v.Volume), audioRate(v.Rate)
+	if v.Muted {
+		volume = 0
+	}
+	if b.key.tree.reported.AudioPlaybackControls {
+		*p = Playback{sound: b, id: audioIDs.Add(1), ended: NewSignal(b.rt.root, false), volume: volume, rate: rate}
+		if b.playbacks == nil {
+			b.playbacks = map[uint32]*Playback{}
+		}
+		b.playbacks[p.id] = p
+	}
+	b.key.tree.sendAudio(b.id, driver.AudioRequest{Command: driver.AudioPlay, Playback: p.id, Volume: volume, Rate: rate, Pan: audioPan(v.Pan), StartAt: v.StartAt, Loop: v.Loop})
+	return p
 }
 
 // Stop stops every playback of the sound's source.
 func (s *Sound) Stop() {
 	if !s.closed {
 		s.buffer.key.tree.sendAudio(s.buffer.id, driver.AudioRequest{Command: driver.AudioStop})
+		s.buffer.endPlaybacks()
+	}
+}
+
+func (b *soundBuffer) endPlaybacks() {
+	for _, p := range b.playbacks {
+		p.finish()
 	}
 }
 
@@ -461,7 +492,7 @@ type AudioPlayer struct {
 	state              AudioPlayerState
 	position, duration time.Duration
 	volume, rate       float32
-	loop               bool
+	loop, muted        bool
 	// seeks counts the AudioSeeks sent; seen and laps are the Seeks and Laps of the report the position came from last.
 	seeks, seen, laps uint32
 	plays             []func(error)
@@ -518,7 +549,7 @@ func (p *AudioPlayer) open() {
 	p.opened = true
 	p.rt.audioState().players[p.id] = p
 	p.tree.sendAudio(p.id, driver.AudioRequest{Command: driver.AudioOpen, Source: driver.ImageSource{URI: p.src.URI, Data: p.src.Data},
-		Volume: p.volume, Rate: p.rate, Loop: p.loop, LoopStart: max(0, p.opts.LoopStart), Session: p.opts.AudioSession, ProgressInterval: p.opts.ProgressInterval,
+		Volume: p.effectiveVolume(), Rate: p.rate, Loop: p.loop, LoopStart: max(0, p.opts.LoopStart), Session: p.opts.AudioSession, ProgressInterval: p.opts.ProgressInterval,
 		Position: p.position})
 }
 
@@ -610,21 +641,31 @@ func (p *AudioPlayer) Seek(position time.Duration) {
 }
 
 // SetVolume sets the volume, from 0 to 1; 0 is 1, as Video's, and other values are clamped.
-func (p *AudioPlayer) SetVolume(v float32) { p.set(audioVolume(v), p.rate, p.loop) }
+func (p *AudioPlayer) SetVolume(v float32) { p.set(audioVolume(v), p.rate, p.loop, p.muted) }
+
+// SetMuted silences or restores the player without changing its volume or playback state.
+func (p *AudioPlayer) SetMuted(muted bool) { p.set(p.volume, p.rate, p.loop, muted) }
 
 // SetRate sets the playback speed, from 0.5 to 2; 0 is 1, as Video's, and other values are clamped.
-func (p *AudioPlayer) SetRate(r float32) { p.set(p.volume, audioRate(r), p.loop) }
+func (p *AudioPlayer) SetRate(r float32) { p.set(p.volume, audioRate(r), p.loop, p.muted) }
 
 // SetLoop repeats playback from the configured LoopStart at the end, with no OnEnd.
-func (p *AudioPlayer) SetLoop(loop bool) { p.set(p.volume, p.rate, loop) }
+func (p *AudioPlayer) SetLoop(loop bool) { p.set(p.volume, p.rate, loop, p.muted) }
 
-func (p *AudioPlayer) set(volume, rate float32, loop bool) {
-	if p.closed || volume == p.volume && rate == p.rate && loop == p.loop {
+func (p *AudioPlayer) effectiveVolume() float32 {
+	if p.muted {
+		return 0
+	}
+	return p.volume
+}
+
+func (p *AudioPlayer) set(volume, rate float32, loop, muted bool) {
+	if p.closed || volume == p.volume && rate == p.rate && loop == p.loop && muted == p.muted {
 		return
 	}
-	p.volume, p.rate, p.loop = volume, rate, loop
+	p.volume, p.rate, p.loop, p.muted = volume, rate, loop, muted
 	if p.opened {
-		p.tree.sendAudio(p.id, driver.AudioRequest{Command: driver.AudioSet, Volume: volume, Rate: rate, Loop: loop})
+		p.tree.sendAudio(p.id, driver.AudioRequest{Command: driver.AudioSet, Volume: p.effectiveVolume(), Rate: rate, Loop: loop})
 	}
 }
 

@@ -616,6 +616,10 @@ audio.LoadSound(cx, audio.Source{URI: "asset:sounds/click.wav"}, func(click *aud
 
 Browsers require a user gesture for audible playback. Load short sounds ahead of time, then call `Sound.Play` after a click, tap or key press. A sound played before a gesture is silent. A player's `Play` callback receives `audio.NotAllowed` if the browser blocks playback. Retry from a user gesture.
 
+`Sound.Play` returns an `audio.Playback`, which on macOS and iOS can set its own volume and rate or stop independently. `Ended()` is reactive and becomes true when that playback finishes, stops, is displaced by the voice limit, or cannot start. Backends without individual controls return an ended handle.
+
+Use `audio.Voice{Muted: true}` to start an effect silently and `playback.SetVolume(0)` to silence an active effect. For long audio, `audio.NewPlayer` streams a source and `player.SetMuted(true)` silences the output while playback continues. Unmuting restores the player's configured volume. `Voice.Volume` and `Player.SetVolume` use zero for default full volume.
+
 ## Gamepads
 
 Package `gamepad` reads connected game controllers in the W3C Standard Gamepad layout (`ButtonSouth`/`ButtonA` through `ButtonHome`, `AxisLeftX`/`AxisLeftY`/`AxisRightX`/`AxisRightY`). `cx.Env().SupportsGamepads()` reports whether the target supports controllers (macOS, iOS, Windows, Linux, Android and browsers with the Gamepad API).

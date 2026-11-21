@@ -843,6 +843,8 @@ func (s *surface) environment() driver.Environment {
 		AppClip:          appClip(),
 		OpenedURL:        openedURL,
 
+		AudioPlaybackControls: idiom != driver.IdiomTV && apple.AudioAvailable(),
+
 		// tvOS's center shows badges only.
 		ScheduledNotifications: idiom != driver.IdiomTV && apple.NotificationsAvailable(),
 	}

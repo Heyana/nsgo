@@ -472,6 +472,12 @@ cx.Purchase("com.example.pro.monthly", core.PurchaseOptions{AccountToken: userUU
 
 调用返回的函数可以解锁。按 Escape、窗口失去焦点，或者隐藏或移除视图，也会解除锁定。用 `cx.Env().CanLockPointer()` 查看当前窗口是否支持。Web 需要点击等用户操作。Linux 的 Wayland 会话需要合成器支持指针约束和相对位移。
 
+## 音频播放
+
+用 `audio.LoadSound` 加载短音效，再用 `sound.Play(audio.Voice{})` 播放。多次调用可以重叠播放。在 macOS 和 iOS 上，可以用返回的 `audio.Playback` 单独调整音量和倍速，或停止本次播放。播放结束、停止、超过并发上限被淘汰，或无法启动时，响应式的 `Ended()` 变为 true。无法单独控制每次播放的后端会返回一个已结束的句柄。
+
+用 `audio.Voice{Muted: true}` 静音启动音效，也可用 `playback.SetVolume(0)` 将正在播放的音效静音。长音频用 `audio.NewPlayer` 流式播放，`player.SetMuted(true)` 可在保持播放进度的同时静音。取消静音会恢复播放器设定的音量。`Voice.Volume` 和 `Player.SetVolume` 以零表示默认满音量。
+
 ## 朗读文本
 
 `cx.Speak` 在 `cx.Env().CanSpeak()` 为真时用系统中某种语言的语音朗读文本：macOS、iOS、tvOS、Android、Windows、Web，以及装有 speech-dispatcher 的 Linux。同一时间只朗读一段：新的 `Speak` 会打断正在朗读的那段，`cx.StopSpeaking` 和发起朗读的作用域结束也会停止它。`done` 只会收到一次结束方式：读完、被停止，或因 `core.SpeakError` 失败，例如没有安装该语言的语音时返回 `core.SpeakLanguageUnavailable`。

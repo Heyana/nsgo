@@ -1262,6 +1262,8 @@ func (s *surface) environment() driver.Environment {
 
 		// A transparent window or panel draws nothing of its own wherever it is (look.go, newPanel).
 		WindowTransparent: s.transparent,
+
+		AudioPlaybackControls: apple.AudioAvailable(),
 	}
 }
 

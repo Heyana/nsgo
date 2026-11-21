@@ -386,6 +386,7 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 1m -run '^Test(Scroll|List)PastItsEndComesBackToIt$' ./nsgotest
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/frameclock
           go tool nsgo test -target ios_simulator -timeout 1m -run '^TestPressAtFindsZoomedScrollContent$' ./internal/testhost/testdata/press
+          go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/audio
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/platform/watchos
 
   windows:

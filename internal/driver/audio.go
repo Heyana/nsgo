@@ -20,7 +20,7 @@ type AudioCommand uint8
 const (
 	// AudioLoad has the platform read sound Count's Source, failing with AudioQuotaExceeded past MaxBytes, and decode at most MaxDuration of it into memory, reporting AudioLoaded or AudioFailure.
 	AudioLoad AudioCommand = iota
-	// AudioPlay starts a playback of sound Count at Volume, Rate and Pan over those playing; it reports nothing.
+	// AudioPlay starts a playback of sound Count at Volume, Rate and Pan over those playing. A nonzero Playback gets AudioPlaybackEnded when it stops.
 	AudioPlay
 	// AudioStop stops every playback of sound Count.
 	AudioStop
@@ -42,9 +42,13 @@ const (
 	AudioClose
 	// AudioReadLatency reads the current output route's latency.
 	AudioReadLatency
+	// AudioPlaybackSet updates Playback's volume and rate.
+	AudioPlaybackSet
+	// AudioPlaybackStop stops Playback alone.
+	AudioPlaybackStop
 )
 
-var audioCommandNames = [...]string{"load", "play", "stop", "unload", "open", "preload", "resume", "pause", "seek", "set", "close", "read-latency"}
+var audioCommandNames = [...]string{"load", "play", "stop", "unload", "open", "preload", "resume", "pause", "seek", "set", "close", "read-latency", "playback-set", "playback-stop"}
 
 // String returns the command's name, as traces print it: load, play, ...
 func (c AudioCommand) String() string {
@@ -57,12 +61,14 @@ func (c AudioCommand) String() string {
 // AudioRequest is an ItemAudio's request. Count numbers the sound or the player, from one counter of the process, so a sound's and a player's are never the same.
 type AudioRequest struct {
 	Command AudioCommand
+	// Playback identifies one playback of the sound named by Count. Zero plays without tracking it.
+	Playback uint32
 	// Source is AudioLoad's and AudioOpen's: an "asset:" path in the app's resources, a file path or file: URL, a data: URL, an http(s) URL, or Data. A platform reads it as it reads an image's.
 	Source ImageSource
 	// MaxBytes and MaxDuration are AudioLoad's limits.
 	MaxBytes    int64
 	MaxDuration time.Duration
-	// Volume runs from 0 to 1, Rate from 0.5 to 2 and Pan from -1 (full left) to 1 (full right); AudioPlay's, with Volume and Rate AudioOpen's and AudioSet's too.
+	// Volume runs from 0 to 1, Rate from 0.5 to 2 and Pan from -1 (full left) to 1 (full right); AudioPlay's, with Volume and Rate AudioPlaybackSet's, AudioOpen's and AudioSet's too.
 	Volume, Rate, Pan float32
 	// StartAt is AudioPlay's scheduled start in the engine clock's time.
 	StartAt time.Time
@@ -107,6 +113,8 @@ const (
 	AudioFailure
 	// AudioLatency reports the output route's latency.
 	AudioLatency
+	// AudioPlaybackEnded reports a sound playback's completion, stop, eviction, or failure to start.
+	AudioPlaybackEnded
 )
 
 // The errors a sound or a player fails with, named as NSH's, which follow the web's MediaError.
@@ -123,6 +131,7 @@ const (
 // AudioEvent is an EventAudio's report.
 type AudioEvent struct {
 	Phase              AudioPhase
+	Playback           uint32
 	Duration, Position time.Duration
 	// Latency is the output route's latency in AudioLatency, zero when unknown.
 	Latency time.Duration

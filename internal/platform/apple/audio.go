@@ -40,8 +40,10 @@ type Audio struct {
 	voices  []*soundVoice
 	players map[uint32]*audioPlayer
 	// soundsHeld lets go of the session the sounds hold while they play, nil while they hold none; idle pauses the engine and lets it go once the last playback ended.
-	soundsHeld func()
-	idle       *time.Timer
+	soundsHeld    func()
+	idle          *time.Timer
+	idleAt        time.Time
+	unwatchEngine func()
 	// interruptions is the observer of AVAudioSessionInterruptionNotification, 0 until AVFoundation loaded.
 	interruptions objc.ID
 	closed        bool
@@ -59,13 +61,11 @@ type soundVoice struct {
 	mainBus                  uint
 	// format is the one it is connected with, retained.
 	format objc.ID
-	// sound is the one it plays, 0 for none, and until when.
-	sound          uint32
-	started, until time.Time
-	loop           bool
+	// sound is the one it plays, 0 for none, and playback the core's handle of it, 0 for an untracked one. generation distinguishes a queued native completion from the next play on this node.
+	sound, playback uint32
+	generation      uint64
+	started         time.Time
 }
-
-func (v *soundVoice) active(now time.Time) bool { return v.loop || v.until.After(now) }
 
 // idleGrace is how long the engine keeps the output open after the last playback ends, so that the next sound starts at once.
 const idleGrace = 2 * time.Second
@@ -105,6 +105,8 @@ func (a *Audio) Handle(id uint32, r *driver.AudioRequest) {
 			a.fail(id, driver.AudioUnavailable, "AVFoundation is not available")
 		case driver.AudioReadLatency:
 			a.report(id, driver.AudioEvent{Phase: driver.AudioLatency})
+		case driver.AudioPlay:
+			a.playbackEnded(id, r.Playback)
 		}
 		return
 	}
@@ -118,6 +120,8 @@ func (a *Audio) Handle(id uint32, r *driver.AudioRequest) {
 		a.load(id, r.Source, r.MaxBytes, r.MaxDuration)
 	case driver.AudioPlay:
 		a.play(id, r)
+	case driver.AudioPlaybackSet, driver.AudioPlaybackStop:
+		a.controlPlayback(id, r)
 	case driver.AudioStop:
 		a.stop(id)
 	case driver.AudioUnload:
@@ -149,6 +153,7 @@ func (a *Audio) watchInterruptions() {
 	queue := objc.ID(Class("NSOperationQueue")).Send(selMainQueue)
 	block := objcblock.New(func(_ objc.Block, note objc.ID) {
 		if !a.closed && interruptionBegan(note) {
+			a.endSoundVoices()
 			a.PausePlayers()
 		}
 	})
@@ -198,6 +203,9 @@ func (a *Audio) Close() {
 	clear(a.loading)
 	if a.idle != nil {
 		a.idle.Stop()
+	}
+	if a.unwatchEngine != nil {
+		a.unwatchEngine()
 	}
 	if a.engine != 0 {
 		a.engine.Send(sel("stop"))
@@ -446,6 +454,7 @@ func (a *Audio) audioEngine() objc.ID {
 		a.engine = objc.ID(c).Send(sel("alloc")).Send(sel("init"))
 		// The main mixer exists, connected to the output, once asked for.
 		a.engine.Send(sel("mainMixerNode"))
+		a.watchEngine()
 	}
 	return a.engine
 }
@@ -456,6 +465,7 @@ func (a *Audio) startEngine() objc.ID {
 		return 0
 	}
 	if !objc.Send[bool](a.engine, sel("isRunning")) {
+		a.endSoundVoices()
 		var nsErr objc.ID
 		if !objc.Send[bool](a.engine, sel("startAndReturnError:"), unsafe.Pointer(&nsErr)) {
 			log.Print("nsgo: " + describeError(nsErr, "the audio engine did not start"))
@@ -463,6 +473,26 @@ func (a *Audio) startEngine() objc.ID {
 		}
 	}
 	return a.engine
+}
+
+// watchEngine ends the sounds whose engine stopped during a route change.
+func (a *Audio) watchEngine() {
+	center := objc.ID(Class("NSNotificationCenter")).Send(sel("defaultCenter"))
+	// A configuration notification may post on the audio engine's thread. It must return before main calls back into the engine.
+	block := objcblock.New(func(objc.Block, objc.ID) {
+		OnMain(func() {
+			if !a.closed && !objc.Send[bool](a.engine, sel("isRunning")) {
+				a.endSoundVoices()
+			}
+		})
+	})
+	name := avName("AVAudioEngineConfigurationChangeNotification")
+	token := center.Send(selAddObserver, name, a.engine, objc.ID(0), block).Send(sel("retain"))
+	block.Release()
+	a.unwatchEngine = func() {
+		center.Send(sel("removeObserver:"), token)
+		token.Send(sel("release"))
+	}
 }
 
 // newVoice attaches a mixer for the life of a voice.
@@ -528,11 +558,11 @@ func (v *soundVoice) drop(engine objc.ID) {
 
 // voiceFor takes a free voice of the sound's format or creates one up to the
 // limit. It can reuse a free voice of another format or take the oldest one.
-func (a *Audio) voiceFor(engine objc.ID, s *decodedSound, now time.Time) *soundVoice {
+func (a *Audio) voiceFor(engine objc.ID, s *decodedSound) *soundVoice {
 	same := func(v *soundVoice) bool { return objc.Send[bool](v.format, sel("isEqual:"), s.format) }
 	var free *soundVoice
 	for _, v := range a.voices {
-		if !v.active(now) {
+		if v.sound == 0 {
 			if same(v) {
 				return v
 			}
@@ -554,6 +584,7 @@ func (a *Audio) voiceFor(engine objc.ID, s *decodedSound, now time.Time) *soundV
 				v = other
 			}
 		}
+		a.finishVoice(v)
 	}
 	if same(v) {
 		v.player.Send(sel("stop"))
@@ -569,59 +600,100 @@ func (a *Audio) voiceFor(engine objc.ID, s *decodedSound, now time.Time) *soundV
 func (a *Audio) play(id uint32, r *driver.AudioRequest) {
 	s := a.sounds[id]
 	if s == nil {
+		a.playbackEnded(id, r.Playback)
 		return
 	}
 	a.holdForSounds()
 	engine := a.startEngine()
 	if engine == 0 {
+		a.playbackEnded(id, r.Playback)
 		a.idleLater()
 		return
 	}
-	now := time.Now()
-	v := a.voiceFor(engine, s, now)
+	v := a.voiceFor(engine, s)
 	if v == nil {
+		a.playbackEnded(id, r.Playback)
 		a.idleLater()
 		return
 	}
+	if a.idle != nil {
+		a.idle.Stop()
+	}
+	v.generation++
+	gen := v.generation
+	v.sound, v.playback, v.started = id, r.Playback, time.Now()
 	v.varispeed.Send(sel("setRate:"), r.Rate)
 	v.mixer.Send(sel("setOutputVolume:"), r.Volume)
 	v.mixer.Send(sel("setPan:"), r.Pan)
-	at := scheduledAudioTime(r.StartAt)
-	if at != 0 {
-		// A reused node is still playing after its last buffer finishes. Stop resets its timeline so the next playAtTime takes effect.
-		v.player.Send(sel("stop"))
-	}
-	const loops, interrupts = 1, 2 // AVAudioPlayerNodeBufferOptions
-	options := uint(interrupts)
+	// The played-back completion accounts for device latency and live rate changes. Leave the native callback before resetting or reusing a node.
+	completed := objcblock.New(func(_ objc.Block, _ int) {
+		OnMain(func() {
+			if !a.closed && v.generation == gen && v.sound != 0 {
+				a.finishVoice(v)
+			}
+		})
+	})
+	// A looping buffer completes only as the node stops, after finishVoice has let its playback go.
+	const loops, playedBack = 1, 2 // AVAudioPlayerNodeBufferLoops, AVAudioPlayerNodeCompletionDataPlayedBack
+	options := uint(0)
 	if r.Loop {
-		options |= loops
+		options = loops
 	}
-	v.player.Send(sel("scheduleBuffer:atTime:options:completionHandler:"), s.buffer, objc.ID(0), options, objc.ID(0))
-	start := time.Now()
-	if at != 0 {
+	v.player.Send(sel("scheduleBuffer:atTime:options:completionCallbackType:completionHandler:"), s.buffer, objc.ID(0), options, playedBack, completed)
+	completed.Release()
+	if at := scheduledAudioTime(r.StartAt); at != 0 {
 		v.player.Send(sel("playAtTime:"), at)
-		start = r.StartAt
 	} else {
 		v.player.Send(sel("play"))
 	}
-	v.sound, v.started, v.loop = id, now, r.Loop
-	v.until = start.Add(time.Duration(float64(s.duration) / float64(max(r.Rate, 0.01))))
+}
+
+func (a *Audio) controlPlayback(id uint32, r *driver.AudioRequest) {
+	if r.Playback == 0 {
+		return
+	}
+	for _, v := range a.voices {
+		if v.sound == id && v.playback == r.Playback {
+			if r.Command == driver.AudioPlaybackStop {
+				a.finishVoice(v)
+			} else {
+				v.varispeed.Send(sel("setRate:"), r.Rate)
+				v.mixer.Send(sel("setOutputVolume:"), r.Volume)
+			}
+			return
+		}
+	}
+}
+
+func (a *Audio) playbackEnded(sound, playback uint32) {
+	if !a.closed && playback != 0 {
+		a.report(sound, driver.AudioEvent{Phase: driver.AudioPlaybackEnded, Playback: playback})
+	}
+}
+
+// finishVoice disconnects the playback's identity before stop can enqueue its native completion.
+func (a *Audio) finishVoice(v *soundVoice) {
+	sound, playback := v.sound, v.playback
+	v.sound, v.playback = 0, 0
+	v.player.Send(sel("stop"))
+	a.playbackEnded(sound, playback)
 	a.idleLater()
 }
 
 // stop stops every playback of sound id.
 func (a *Audio) stop(id uint32) {
-	now := time.Now()
-	stopped := false
 	for _, v := range a.voices {
 		if v.sound == id {
-			v.player.Send(sel("stop"))
-			v.sound, v.until, v.loop = 0, now, false
-			stopped = true
+			a.finishVoice(v)
 		}
 	}
-	if stopped {
-		a.idleLater()
+}
+
+func (a *Audio) endSoundVoices() {
+	for _, v := range a.voices {
+		if v.sound != 0 {
+			a.finishVoice(v)
+		}
 	}
 }
 
@@ -645,39 +717,35 @@ func (a *Audio) letSoundsGo() {
 	}
 }
 
-// idleLater pauses the engine, letting the output and the sounds' session go, idleGrace after the last playback ends.
+// idleLater pauses the engine after the last playback and an idle grace period.
 func (a *Audio) idleLater() {
-	last := time.Now()
-	for _, v := range a.voices {
-		if v.loop {
-			if a.idle != nil {
-				a.idle.Stop()
-			}
-			return
-		}
-		if v.until.After(last) {
-			last = v.until
-		}
-	}
-	wait := time.Until(last) + idleGrace
-	if a.idle == nil {
-		a.idle = time.AfterFunc(wait, func() { OnMain(a.idleNow) })
+	if a.closed || a.soundsPlaying() {
 		return
 	}
-	a.idle.Reset(wait)
+	a.idleAt = time.Now().Add(idleGrace)
+	if a.idle == nil {
+		a.idle = time.AfterFunc(idleGrace, func() { OnMain(a.idleNow) })
+		return
+	}
+	a.idle.Reset(idleGrace)
 }
 
-// idleNow pauses the engine and lets the session go, unless a playback started since the timer was set.
+func (a *Audio) soundsPlaying() bool {
+	for _, v := range a.voices {
+		if v.sound != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *Audio) idleNow() {
-	if a.closed {
+	if a.closed || a.soundsPlaying() {
 		return
 	}
-	now := time.Now()
-	for _, v := range a.voices {
-		if v.loop || v.until.Add(idleGrace).After(now) {
-			a.idleLater()
-			return
-		}
+	if wait := time.Until(a.idleAt); wait > 0 {
+		a.idle.Reset(wait)
+		return
 	}
 	if a.engine != 0 && objc.Send[bool](a.engine, sel("isRunning")) {
 		// Paused, the engine keeps its nodes and connections but no longer runs the output, so the session can be deactivated.
@@ -768,11 +836,14 @@ func (p *audioPlayer) apply(r *driver.AudioRequest) {
 			p.seek(position)
 		}
 	case driver.AudioSet:
+		volumeChanged, rateChanged := p.volume != r.Volume, p.rate != r.Rate
 		p.volume, p.rate = r.Volume, r.Rate
 		p.setLoop(r.Loop)
 		if p.player != 0 {
-			p.player.Send(sel("setVolume:"), p.volume)
-			if p.playing {
+			if volumeChanged {
+				p.player.Send(sel("setVolume:"), p.volume)
+			}
+			if p.playing && rateChanged {
 				p.player.Send(sel("setRate:"), p.rate)
 			}
 		}
