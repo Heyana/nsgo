@@ -30,7 +30,7 @@ func readClipboardItems(pb objc.ID) ([]driver.ClipboardItem, error) {
 			data := object.Send(sel("dataForType:"), kind)
 			name := apple.GoString(kind)
 			if data == 0 {
-				return nil, fmt.Errorf("clipboard format %q is no longer available", name)
+				continue // the owner could not provide this type; keep the ones it did
 			}
 			n := objc.Send[uint](data, sel("length"))
 			if n > remaining {

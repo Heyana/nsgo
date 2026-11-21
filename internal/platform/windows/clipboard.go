@@ -116,9 +116,9 @@ func (w *window) readClipboardItems() ([]driver.ClipboardItem, error) {
 		if name == "" {
 			continue
 		}
-		h, _, err := getClipboardData.Call(format)
+		h, _, _ := getClipboardData.Call(format)
 		if h == 0 {
-			return nil, fmt.Errorf("read clipboard format %q: %w", name, err)
+			continue // a delayed-rendered format its owner failed to render; keep the others
 		}
 		const gmemInvalidHandle = 0x8000
 		if flags, _, _ := globalFlags.Call(h); flags == gmemInvalidHandle {
