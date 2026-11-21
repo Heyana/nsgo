@@ -190,6 +190,11 @@ type KeyboardSurface interface {
 	FocusRefusal() error
 }
 
+// MediaSurface is a surface whose app can publish system media controls.
+type MediaSurface interface {
+	MediaCommand(revision uint32, command driver.MediaCommand)
+}
+
 // QuitSurface sends a user or system quit request to the test's app without ending the test host.
 type QuitSurface interface {
 	RequestQuit(id uint32, forced bool)

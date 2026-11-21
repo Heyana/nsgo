@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"strings"
 	"structs"
 	"sync"
 	"unsafe"
@@ -42,8 +43,13 @@ var (
 	dispose    uintptr
 	typesMu    sync.Mutex
 	types      = map[reflect.Type]literal{}
-	functions  sync.Map // objc.Block -> reflect.Value
+	functions  sync.Map // objc.Block -> callback
 )
+
+type callback struct {
+	value   reflect.Value
+	cleanup func()
+}
 
 func initialize() {
 	lib, err := purego.Dlopen("/usr/lib/libSystem.B.dylib", purego.RTLD_NOW|purego.RTLD_GLOBAL)
@@ -56,16 +62,33 @@ func initialize() {
 	}
 	purego.RegisterLibFunc(&copyNative, lib, "_Block_copy")
 	purego.RegisterLibFunc(&malloc, lib, "malloc")
-	dispose = purego.NewCallback(func(block objc.Block) { functions.Delete(block) })
+	dispose = purego.NewCallback(func(block objc.Block) {
+		if entry, ok := functions.LoadAndDelete(block); ok {
+			if cleanup := entry.(callback).cleanup; cleanup != nil {
+				cleanup()
+			}
+		}
+	})
 }
 
-// New returns a retained block for fn, whose first argument must be objc.Block. It supports the scalar and pointer signatures the platform backends use. The caller releases its reference with Block.Release after the receiving API has copied the block, or once the callback is no longer needed. Invoke it through native APIs, not purego's Go-only Block.Invoke cache.
+// New returns a retained block for fn, whose first argument must be objc.Block. It supports the scalar, pointer and struct arguments the platform backends use. The caller releases its reference with Block.Release after the receiving API has copied the block, or once the callback is no longer needed. Invoke it through native APIs, not purego's Go-only Block.Invoke cache.
 func New(fn any) objc.Block {
 	setup.Do(initialize)
 	return newBlock(fn, copyNative)
 }
 
+// NewWithCleanup is New with cleanup called when the block's final native
+// reference is released. Cleanup may run on any thread.
+func NewWithCleanup(fn any, cleanup func()) objc.Block {
+	setup.Do(initialize)
+	return newBlockWithCleanup(fn, cleanup, copyNative)
+}
+
 func newBlock(fn any, copyBlock func(*literal) objc.Block) objc.Block {
+	return newBlockWithCleanup(fn, nil, copyBlock)
+}
+
+func newBlockWithCleanup(fn any, cleanup func(), copyBlock func(*literal) objc.Block) objc.Block {
 	value := reflect.ValueOf(fn)
 	if !value.IsValid() || value.Kind() != reflect.Func || value.IsNil() {
 		panic("objcblock: expected a non-nil function")
@@ -80,7 +103,7 @@ func newBlock(fn any, copyBlock func(*literal) objc.Block) objc.Block {
 	if block == 0 {
 		panic(fmt.Sprintf("objcblock: _Block_copy failed for %s", value.Type()))
 	}
-	functions.Store(block, value)
+	functions.Store(block, callback{value: value, cleanup: cleanup})
 	return block
 }
 
@@ -107,7 +130,7 @@ func template(typ reflect.Type) literal {
 		if !ok {
 			panic("objcblock: callback invoked after its block was released")
 		}
-		return fn.(reflect.Value).Call(args)
+		return fn.(callback).value.Call(args)
 	}).Interface())
 	bytes := append([]byte(signature), 0)
 	storage := malloc(unsafe.Sizeof(descriptor{}) + uintptr(len(bytes)))
@@ -158,6 +181,16 @@ func encode(typ reflect.Type) string {
 		return "^" + encode(typ.Elem())
 	case reflect.UnsafePointer:
 		return "^v"
+	case reflect.Struct:
+		var b strings.Builder
+		b.WriteString("{" + typ.Name() + "=")
+		for field := range typ.Fields() {
+			if field.Type != reflect.TypeFor[structs.HostLayout]() {
+				b.WriteString(encode(field.Type))
+			}
+		}
+		b.WriteByte('}')
+		return b.String()
 	default:
 		panic(fmt.Sprintf("objcblock: unsupported callback type %s", typ))
 	}

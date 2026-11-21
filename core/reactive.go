@@ -216,6 +216,10 @@ type runtime struct {
 	speaking *utterance
 	// audio is the engine's sounds and players, made with the first.
 	audio *audioState
+	// Now Playing is shared by every surface of the app.
+	nowPlaying    *driver.NowPlayingUpdate
+	mediaHandlers []*mediaHandler
+	mediaRevision uint32
 	// causes are what ran since a tree last committed, while driver.TraceCauses is set.
 	causes causes
 	// dev is what DevTools read, while devtools.Enabled.

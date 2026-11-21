@@ -44,6 +44,7 @@ var gated = map[string]service{
 	"CallHost":                      serviceHost,
 	"CallHostTimeout":               serviceHost,
 	"PostHost":                      serviceHost,
+	"SetNowPlaying":                 serviceImage,
 	"ImageSize":                     serviceImage,
 	"PrefetchImage":                 serviceImage,
 	"KeepImage":                     serviceImage,
@@ -123,6 +124,7 @@ var exempt = map[string][]string{
 		"SetTaskProgress", "SetDockMenu", "AddRecentFile", "ClearRecentFiles", "LookUp", "QuickLook", "RequestReview", "ShowAppClipOverlay"},
 	"app-volume capacity, exposed to Go and gated by the project's declaration on Apple": {"DiskSpace"},
 	"engine configuration reserved for unrestricted Go scopes":                           {"SetSoundLimits"},
+	"app media controls outside a view":                                                  {"ClearNowPlaying", "OnMediaCommand"},
 	"stopping what the code's own requests started, which asked the gate":                {"StopSpeaking"},
 	"bundled resources provided by the app to trusted Go code":                           {"ReadAsset"},
 }

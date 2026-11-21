@@ -2503,6 +2503,9 @@ func (t *Tree) Dispatch(ev driver.Event) {
 	case driver.EventAuthSession:
 		t.authEvent(ev)
 		return
+	case driver.EventMediaCommand:
+		t.rt.mediaCommand(ev)
+		return
 	case driver.EventAudio:
 		if e, _ := ev.Data.(*driver.AudioEvent); e != nil && e.Phase == driver.AudioLatency {
 			t.answer(ev)

@@ -135,6 +135,7 @@ var itemKindNames = map[ItemKind]string{
 	ItemMiniProgramSignIn:       "ItemMiniProgramSignIn",
 	ItemAppClipOverlay:          "ItemAppClipOverlay",
 	ItemSetClipboardItems:       "ItemSetClipboardItems",
+	ItemNowPlaying:              "ItemNowPlaying",
 }
 
 // String returns the kind's name, as a log or an event prints it.
@@ -253,6 +254,7 @@ var eventKindNames = map[EventKind]string{
 	EventPointerUnlocked:       "EventPointerUnlocked",
 	EventEditAction:            "EventEditAction",
 	EventMiniProgramSignIn:     "EventMiniProgramSignIn",
+	EventMediaCommand:          "EventMediaCommand",
 }
 
 // String returns the kind's name, as a log or an event prints it.

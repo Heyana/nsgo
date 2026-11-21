@@ -298,6 +298,8 @@ const (
 	EventEditAction
 	// EventMiniProgramSignIn answers ItemMiniProgramSignIn Count, Data a *MiniProgramCredential, or Text a stable failure code.
 	EventMiniProgramSignIn
+	// EventMediaCommand carries a MediaCommand in Data for publication Count. It has no EventMask bit.
+	EventMediaCommand
 )
 
 // SharedItem is text or a file copied from an incoming share.

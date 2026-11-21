@@ -71,6 +71,8 @@ type Environment struct {
 	HapticPatterns bool
 	// ClipboardItems says the clipboard supports native representations and a change count.
 	ClipboardItems bool
+	// NowPlaying reports ItemNowPlaying support on this platform.
+	NowPlaying bool
 	// Camera says ItemTakePhoto shows a camera here.
 	Camera bool
 	// ScanCode says ItemScanCode shows a camera that reads codes here.

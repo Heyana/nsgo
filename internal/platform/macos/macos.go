@@ -1036,6 +1036,7 @@ func (s *surface) close() {
 		s.scanner.finish(nil, "")
 	}
 	s.releasePointer(false)
+	s.clearNowPlaying()
 	if dockMenu.target == s {
 		clearDockMenu()
 	}
@@ -1279,6 +1280,7 @@ func (s *surface) environment() driver.Environment {
 		LaunchedAtLogin:    s.opts.LaunchedAtLogin,
 		FrontmostApp:       frontmostApp(),
 		ClipboardItems:     true,
+		NowPlaying:         true,
 
 		// Any window of the surface's own turns transparent and leaves the Window menu (look.go); a panel's look is its own.
 		CanMakeWindowsTransparent: s.ownWindow(),
@@ -2205,6 +2207,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemWebCookies:
 			apple.WebCookies(it.Count, *it.Cookies, s.engine.Dispatch)
+			continue
+		case driver.ItemNowPlaying:
+			s.setNowPlaying(it.Count, it.NowPlaying)
 			continue
 		case driver.ItemAudio:
 			if s.audio == nil {

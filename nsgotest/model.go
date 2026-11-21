@@ -1173,6 +1173,8 @@ func (a *App) apply(b *driver.MountBatch) {
 			a.speech(it.Count, *it.Speech)
 		case driver.ItemAuthSession:
 			a.authSession(it.Count, *it.Auth)
+		case driver.ItemNowPlaying:
+			a.nowPlaying, a.mediaTree, a.mediaRevision = it.NowPlaying, a.responseTree, it.Count
 		case driver.ItemAudio:
 			a.audio(it.Count, *it.Audio)
 		case driver.ItemSpeak:

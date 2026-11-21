@@ -86,6 +86,8 @@ Headless Linux and Android tests can check the package paths passed to the insta
 
 `app.Orientation` holds the active `Scope.RequestOrientation` mask. It is zero when the app uses its usual orientation policy.
 
+`app.NowPlaying()` returns the app's last system media publication, or nil after it is cleared. `app.MediaCommand(core.MediaCommand{Kind: core.MediaSeek, Position: 30 * time.Second})` sends a command through the publication to its live handler. Use `nsgotest.Environment(core.Environment{NowPlaying: true})` headless, or run on the macOS target.
+
 ## Drawings without a window
 
 On macOS, `nsgotest.PlatformTextEngine()` gives headless tests CoreText metrics. Pass it through `nsgotest.TextEngine`; elsewhere it returns nil and the model keeps its approximate metrics. Register font bytes with `nsgotest.RegisterFont` before starting the app.

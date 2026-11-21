@@ -280,6 +280,12 @@ Android 使用 `NsdManager`。在 Android 12 及更早版本以及低于 T Exten
 
 可用 `nsgotest.LocalServices` 为无头测试提供浏览结果。
 
+## 正在播放
+
+用 `cx.SetNowPlaying(core.NowPlaying{...})` 在 macOS 的控制中心和菜单栏显示应用正在播放的媒体。可提供 `Title`、`Artist`、`Album` 和 `*core.ImageSource` 类型的可选封面 `Artwork`。`Duration` 为零表示直播。填写当前的 `Position` 和播放速率 `Rate`，暂停时填零，正常速度填一。曲目、位置或速率变化时再次发布，两次调用之间由系统推进播放位置。
+
+用 `Commands` 列出支持的控制项，例如 `core.MediaPlay`、`core.MediaPause`、`core.MediaTogglePlayPause` 和 `core.MediaSeek`。用 `cx.OnMediaCommand` 处理请求，回调会收到命令的 `Kind`，跳转时还会收到目标 `Position`。仍然有效的处理函数中，最后注册的接收命令。应用结束播放时调用 `cx.ClearNowPlaying()`。应用主动发布期间，macOS 上带控制条的视频会暂停自动发布。用 `cx.Env().CanShowNowPlaying()` 查看平台是否支持。
+
 ## 后台下载
 
 在独立的 iOS、macOS 应用及 Android 上使用 `cx.Download` 和 `cx.OnDownloadUpdate`。嵌入式 Apple 视图尚无传输宿主。Android 应用需在 `nsgo.yaml` 中启用 `android.background_downloads: true`。应用可见时，通过用户操作启动下载。目标路径必须是绝对路径，且父目录已存在并可由应用写入。

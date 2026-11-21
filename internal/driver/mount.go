@@ -416,6 +416,8 @@ const (
 	ItemAppClipOverlay
 	// ItemSetClipboardItems replaces the clipboard with Data ([]ClipboardItem). When Count is nonzero, EventClipboard reports the outcome.
 	ItemSetClipboardItems
+	// ItemNowPlaying replaces the app's publication (NowPlaying), or clears it when nil.
+	ItemNowPlaying
 )
 
 // EditAction is an editing action of an input's touch edit menu (ItemEditMenu, EventEditAction).
@@ -639,6 +641,8 @@ type MountItem struct {
 	Audio  *AudioRequest
 	// HapticPattern is the timed feedback ItemHapticPattern plays.
 	HapticPattern *HapticPattern
+	// NowPlaying is the app's publication (ItemNowPlaying).
+	NowPlaying *NowPlayingUpdate
 	// Auth is an ItemAuthSession's request.
 	Auth *AuthRequest
 	// Cookies is an ItemWebCookies' request.

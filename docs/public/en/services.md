@@ -283,6 +283,12 @@ Android uses `NsdManager`. Android 12 and earlier and Android 13 before T Extens
 
 Use `nsgotest.LocalServices` to supply browse results in a headless test.
 
+## Now Playing
+
+Use `cx.SetNowPlaying(core.NowPlaying{...})` to show the app's current media in macOS's Control Center and menu bar. Supply `Title`, `Artist`, `Album` and optional `Artwork` as a `*core.ImageSource`. A zero `Duration` means a live stream. Give the current `Position` and playback `Rate` (zero while paused, one at normal speed). Publish again when the track, position or rate changes. The system advances the position between calls.
+
+List the supported transport controls in `Commands`, such as `core.MediaPlay`, `core.MediaPause`, `core.MediaTogglePlayPause` and `core.MediaSeek`. Handle requests with `cx.OnMediaCommand`. The callback receives the command's `Kind` and, for a seek, the requested `Position`. The newest live handler takes commands. Call `cx.ClearNowPlaying()` when the app is done playing. While the app publishes manually, controlled videos on macOS suspend their own publication. Check `cx.Env().CanShowNowPlaying()` for platform support.
+
 ## Background downloads
 
 Use `cx.Download` and `cx.OnDownloadUpdate` in standalone iOS and macOS apps, and on Android. Embedded Apple views have no transfer host. Android apps enable `android.background_downloads: true` in `nsgo.yaml`. Start a download from a user action while the app is visible. Use an absolute destination with an existing parent directory the app can write.

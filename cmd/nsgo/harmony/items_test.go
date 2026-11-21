@@ -54,7 +54,7 @@ var unsupportedItems = map[string]string{
 	// path with os.Stat, which js/wasm does not implement, answers the
 	// install family itself off Android, and sends no audio or clipboard
 	// representation writes where the environment says none.
-	"answered by the core": `ItemAudio ItemRevealFile ItemTrashFile ItemSetClipboardItems`,
+	"answered by the core": `ItemAudio ItemRevealFile ItemTrashFile ItemSetClipboardItems ItemNowPlaying`,
 }
 
 // unsupportedEvents are the events no HarmonyOS code reads or dispatches.
@@ -86,7 +86,7 @@ var unsupportedEvents = map[string]string{
 	// The app hears neither: the core sends no audio where the environment
 	// says none, and asks about a quit only where the platform ends apps
 	// itself.
-	"answered by the core": `EventAudio`,
+	"answered by the core": `EventAudio EventMediaCommand`,
 }
 
 // unsupportedKinds are the view kinds Index.ets has no constant for.

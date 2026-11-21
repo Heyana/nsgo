@@ -476,6 +476,22 @@ func (v *Video) close() {
 	}
 }
 
+// The macOS Now Playing center is shared by every AVPlayerView in the
+// process. These views and the manual publisher are managed on the main thread.
+var (
+	macControlledVideos = map[objc.ID]struct{}{}
+	manualNowPlaying    bool
+)
+
+// SetManualNowPlaying suspends automatic publication by controlled macOS
+// videos while a manual publication owns the system's controls.
+func SetManualNowPlaying(active bool) {
+	manualNowPlaying = active
+	for view := range macControlledVideos {
+		view.Send(sel("setUpdatesNowPlayingInfoCenter:"), !active)
+	}
+}
+
 // show shows the player in a layer, or with the platform's controls.
 func (v *Video) show() {
 	if runtime.GOOS == "ios" {
@@ -488,6 +504,7 @@ func (v *Video) show() {
 		return
 	}
 	if v.shown != 0 {
+		delete(macControlledVideos, v.shown)
 		v.shown.Send(sel("removeFromSuperview"))
 		v.shown.Send(sel("release"))
 		v.shown = 0
@@ -502,6 +519,10 @@ func (v *Video) show() {
 	var shown objc.ID
 	if c := playerClass(v.config.Controls, "AVPlayerView"); c != 0 {
 		shown = objc.ID(c).Send(sel("alloc")).Send(sel("initWithFrame:"), CGRect{})
+		macControlledVideos[shown] = struct{}{}
+		if manualNowPlaying {
+			shown.Send(sel("setUpdatesNowPlayingInfoCenter:"), false)
+		}
 		shown.Send(sel("setPlayer:"), v.player)
 		const inline = 1 // AVPlayerViewControlsStyleInline
 		shown.Send(sel("setControlsStyle:"), inline)
@@ -865,6 +886,9 @@ func (v *Video) Seek(position time.Duration) {
 // Close stops the player. The view keeps the last frame while it still
 // shows.
 func (v *Video) Close() {
+	if runtime.GOOS != "ios" {
+		delete(macControlledVideos, v.shown)
+	}
 	v.close()
 	v.frame = pipVideo{}
 	v.status = nil

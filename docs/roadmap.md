@@ -35,6 +35,10 @@ What NSH added between 0.4.0 and 0.5.0 that NSGo has not, in the order to build 
 | Google Play upload verification | [#1230](https://github.com/nsgo-dev/nsgo/issues/1230), [Google Play publishing](architecture/tool.md#google-play-publishing) | A signed App Bundle uploads to a real app's internal track and the committed release appears in Play Console |
 | Store asset packs | [#1232](https://github.com/nsgo-dev/nsgo/issues/1232) | Read Play fast-follow packs through the Play Asset Delivery SDK and verify an iOS app downloads and opens an Apple-hosted pack on a signed device |
 
+## Now Playing
+
+The [core contract](architecture/services.md#now-playing) starts on macOS ([#1084](https://github.com/nsgo-dev/nsgo/issues/1084)). The remaining implementations are Windows through SMTC, Linux through MPRIS, iOS through MediaPlayer and a playback audio session, Android through a MediaSession and media playback service, and the web through Media Session. Each needs its own end-to-end test of publication, commands and clearing.
+
 ## Remote push
 
 NSGo's own, beyond NSH's notifications: a server reaching the app ([remote push](architecture/remote-push.md), [#59](https://github.com/nsgo-dev/nsgo/issues/59)), waiting on its [open question](../ARCHITECTURE.md#open-questions).

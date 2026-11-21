@@ -138,6 +138,7 @@ func main() { nsgo.Run(Root) }
 - Native functions calling each other (built-in getters, `toString`/`valueOf`, `RegExp` `exec` dispatch, `Reflect.apply`/`construct`, bound-function and proxy chains) count against `Limits.Stack` and throw a catchable `RangeError`, and exporting a plugin value nested deeper fails with a `RangeError`, through NSGo's goja fork `github.com/nsgo-dev/goja`, which apps get with NSGo without a `replace` of their own.
 - `Limits.Memory` budgets metered native storage, including array copies and spread, string concatenation and replacement, and typed-array buffers. The browser uses its own heap. [TSX apps](https://nsgo.dev/docs/tsx.md)
 - Register a getter's nonzero default with `tsx.Default("Max", float64(100))` so forwarded undefined props keep that default as they change.
+- Publish system media controls with `Scope.SetNowPlaying` and handle them with `Scope.OnMediaCommand` where `Env.CanShowNowPlaying` reports support. For playback state and test steps, see [Now Playing](https://nsgo.dev/docs/services.md#now-playing).
 
 ## Layout and styles
 

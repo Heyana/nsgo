@@ -286,6 +286,10 @@ type App struct {
 	widgets    *widgetServices
 	// gameServices is this app's isolated in-memory fake for package gameservices.
 	gameServices *fakeGameServices
+	// The app publishes through its first surface, even when steps act on a window.
+	nowPlaying    *driver.NowPlayingUpdate
+	mediaTree     *core.Tree
+	mediaRevision uint32
 	// OpenedURLs are the URLs the app opened, oldest first. OpenURL
 	// answers whether each opens; every one does when it is nil.
 	OpenedURLs []string

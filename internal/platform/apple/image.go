@@ -107,6 +107,7 @@ type request struct {
 	scale    float64 // the image's pixels per point at its natural size
 	blur     float64 // points
 	sampling driver.ImageSampling
+	still bool    // decode only the first frame
 }
 
 // pointsPerPixel returns how many points one pixel of a w×h image covers
@@ -247,17 +248,19 @@ func decode(ctx context.Context, data []byte, r request) (decoded, error) {
 		return decoded{}, errors.New("apple: cannot decode the image")
 	}
 	// An animated image plays unblurred, as NSH's does.
-	if delays, loops, ok := animation(src); ok && r.blur <= 0 {
-		d := decoded{image: img, width: w, height: h, scale: r.scale, points: pointsOf(w, h, r.scale), frames: []uintptr{img}, loops: loops}
-		for i := 1; i < len(delays); i++ {
-			f := cgImageSourceCreateThumbnail(src, i, opts)
-			if f == 0 {
-				break
+	if !r.still && r.blur <= 0 {
+		if delays, loops, ok := animation(src); ok {
+			d := decoded{image: img, width: w, height: h, scale: r.scale, points: pointsOf(w, h, r.scale), frames: []uintptr{img}, loops: loops}
+			for i := 1; i < len(delays); i++ {
+				f := cgImageSourceCreateThumbnail(src, i, opts)
+				if f == 0 {
+					break
+				}
+				d.frames = append(d.frames, f)
 			}
-			d.frames = append(d.frames, f)
+			d.delays = delays[:len(d.frames)]
+			return d, nil
 		}
-		d.delays = delays[:len(d.frames)]
-		return d, nil
 	}
 	if r.blur > 0 {
 		dw, dh := float64(cgImageGetWidth(img)), float64(cgImageGetHeight(img))
@@ -271,6 +274,26 @@ func decode(ctx context.Context, data []byte, r request) (decoded, error) {
 		}
 	}
 	return decoded{image: img, width: w, height: h, scale: r.scale, points: pointsOf(w, h, r.scale)}, nil
+}
+
+// LoadStillImage loads artwork upright. It blocks and returns a retained
+// CGImage for the caller to release.
+func LoadStillImage(ctx context.Context, src driver.ImageSource) (uintptr, CGSize) {
+	r := request{scale: uriScale(src.URI), ratio: 1, still: true}
+	var img decoded
+	if src.Pixels != nil {
+		img = pixelsImage(src, r)
+	} else {
+		data, err := imageload.Load(ctx, src, nil)
+		if err != nil || ctx.Err() != nil {
+			return 0, CGSize{}
+		}
+		img, err = decode(ctx, data, r)
+		if err != nil {
+			return 0, CGSize{}
+		}
+	}
+	return img.image, CGSize{Width: float64(img.points.Width), Height: float64(img.points.Height)}
 }
 
 // decodeSVG draws an SVG with Go's rasterizer for the pixels r's view
