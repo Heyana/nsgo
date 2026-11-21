@@ -12,11 +12,13 @@ import (
 // nsSwitch is core.SystemSwitch's component, which the backend registers
 // itself: an NSSwitch reporting the user's choice as "change".
 type nsSwitch struct {
-	cx   *driver.NativeContext
-	view objc.ID
+	cx      *driver.NativeContext
+	view    objc.ID
+	invalid bool
 }
 
 var (
+	classSwitch  objc.Class
 	nsSwitches   = map[objc.ID]*nsSwitch{}
 	switchTarget objc.ID
 )
@@ -32,7 +34,30 @@ func newSwitch(cx *driver.NativeContext) driver.NativeComponent {
 		})
 		switchTarget = objc.ID(class).Send(selNew)
 	}
-	s := &nsSwitch{cx: cx, view: objc.ID(apple.Class("NSSwitch")).Send(selNew)}
+	if classSwitch == 0 {
+		classSwitch = register("NsgoSwitch", apple.Class("NSSwitch"), nil, []objc.MethodDef{
+			{Cmd: sel("accessibilityAttributeNames"), Fn: func(self objc.ID, cmd objc.SEL) objc.ID {
+				names := apple.SendSuper[objc.ID](self, cmd)
+				if nsSwitches[self] == nil || names == 0 {
+					return names
+				}
+				return axAddAttr(names, axAttrInvalid)
+			}},
+			{Cmd: sel("accessibilityAttributeValue:"), Fn: func(self objc.ID, cmd objc.SEL, name objc.ID) objc.ID {
+				if s := nsSwitches[self]; s != nil && apple.GoString(name) == axAttrInvalid {
+					return axInvalidValue(s.invalid)
+				}
+				return apple.SendSuper[objc.ID](self, cmd, name)
+			}},
+			{Cmd: sel("accessibilityIsAttributeSettable:"), Fn: func(self objc.ID, cmd objc.SEL, name objc.ID) bool {
+				if nsSwitches[self] != nil && apple.GoString(name) == axAttrInvalid {
+					return false
+				}
+				return apple.SendSuper[bool](self, cmd, name)
+			}},
+		})
+	}
+	s := &nsSwitch{cx: cx, view: objc.ID(classSwitch).Send(selNew)}
 	s.view.Send(sel("setTarget:"), switchTarget)
 	s.view.Send(sel("setAction:"), sel("changed:"))
 	nsSwitches[s.view] = s

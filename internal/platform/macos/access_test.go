@@ -404,3 +404,228 @@ func searchFieldAndStatus(t *testing.T) {
 	delete(views, status.native)
 	status.native.Send(selRelease)
 }
+
+// TestInvalidAccessibility checks, through accessibilityAttributeNames and accessibilityAttributeValue: in a window's accessibility tree, that views, input editors (plain, masked and multiline) and SystemSwitch answer AXInvalid with NSString "true"/"false" and post AXInvalidStatusChanged only when Invalid transitions, while non-element and hidden views neither expose AXInvalid nor post notifications (#1592).
+func TestInvalidAccessibility(t *testing.T) {
+	if os.Getenv("NSGO_TEST_INVALID_ACCESS_PROCESS") != t.Name() {
+		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v", "-test.timeout=30s")
+		cmd.Env = append(os.Environ(), "NSGO_TEST_INVALID_ACCESS_PROCESS="+t.Name())
+		if out, err := cmd.CombinedOutput(); err != nil || !bytes.Contains(out, []byte("\nPASS\n")) {
+			t.Fatalf("native invalid accessibility test did not pass (%v):\n%s", err, out)
+		}
+		return
+	}
+	onMain(func() {
+		loadAppKit()
+		type posted struct {
+			element objc.ID
+			name    string
+		}
+		var notes []posted
+		origPost := axPost
+		realPost := origPost()
+		axPost = func() func(element, name, info objc.ID) {
+			return func(element, name, info objc.ID) {
+				notes = append(notes, posted{element: element, name: apple.GoString(name)})
+				realPost(element, name, info)
+			}
+		}
+		defer func() { axPost = origPost }()
+
+		nsStringClass := objc.ID(apple.Class("NSString"))
+		checkAXInvalid := func(label string, el objc.ID, want string) {
+			t.Helper()
+			if names := axAttrNames(el); !slices.Contains(names, axAttrInvalid) {
+				t.Errorf("%s: accessibilityAttributeNames lacks %s: %v", label, axAttrInvalid, names)
+			}
+			raw := el.Send(sel("accessibilityAttributeValue:"), apple.NSString(axAttrInvalid))
+			if raw == 0 {
+				t.Errorf("%s: AXInvalid value is nil, want %q", label, want)
+				return
+			}
+			if !objc.Send[bool](raw, sel("isKindOfClass:"), nsStringClass) {
+				t.Errorf("%s: AXInvalid value is not an NSString", label)
+			}
+			if got := apple.GoString(raw); got != want {
+				t.Errorf("%s: AXInvalid = %q, want %q", label, got, want)
+			}
+			if objc.Send[bool](el, sel("accessibilityIsAttributeSettable:"), apple.NSString(axAttrInvalid)) {
+				t.Errorf("%s: AXInvalid reported settable", label)
+			}
+		}
+		checkNotes := func(label string, want ...posted) {
+			t.Helper()
+			if !slices.Equal(notes, want) {
+				t.Errorf("%s: notifications = %+v, want %+v", label, notes, want)
+			}
+			notes = nil
+		}
+
+		window := objc.ID(apple.Class("NSWindow")).Send(selAlloc).Send(sel("initWithContentRect:styleMask:backing:defer:"),
+			apple.Rect(0, 0, 320, 200), uint(0), uint(2), false)
+		window.Send(sel("setReleasedWhenClosed:"), false)
+		defer window.Send(selRelease)
+		content := window.Send(sel("contentView"))
+
+		// 1. Regular accessible view (checkbox) inside a window.
+		box := &view{id: 1, kind: driver.KindView, native: objc.ID(classView).Send(selNew)}
+		views[box.native] = box
+		box.native.Send(sel("setFrame:"), apple.Rect(0, 0, 120, 30))
+		content.Send(selAddSubview, box.native)
+		box.setProps(&driver.ViewProps{Role: driver.RoleCheckbox, Label: "Terms", Checked: true})
+		checkNotes("view mount valid")
+		if got := findAX(window, axIs("AXCheckBox", "Terms")); got != box.native {
+			t.Fatalf("view: findAX returned %v, want %v", got, box.native)
+		}
+		if got := apple.GoString(box.native.Send(sel("accessibilityRole"))); got != "AXCheckBox" {
+			t.Errorf("view: accessibilityRole = %q, want AXCheckBox", got)
+		}
+		if got := apple.GoString(box.native.Send(sel("accessibilityValue")).Send(sel("description"))); got != "1" {
+			t.Errorf("view: accessibilityValue = %q, want 1", got)
+		}
+		checkAXInvalid("view valid", box.native, "false")
+
+		box.setProps(&driver.ViewProps{Role: driver.RoleCheckbox, Label: "Terms", Checked: true, Invalid: true})
+		checkAXInvalid("view invalid", box.native, "true")
+		checkNotes("view false->true", posted{element: box.native, name: axInvalidStatusChanged})
+
+		// Unchanged Invalid should not re-post.
+		box.setProps(&driver.ViewProps{Role: driver.RoleCheckbox, Label: "Accept terms", Checked: true, Invalid: true})
+		checkAXInvalid("view still invalid", box.native, "true")
+		checkNotes("view true->true")
+
+		box.setProps(&driver.ViewProps{Role: driver.RoleCheckbox, Label: "Accept terms", Checked: true, Invalid: false})
+		checkAXInvalid("view valid again", box.native, "false")
+		checkNotes("view true->false", posted{element: box.native, name: axInvalidStatusChanged})
+
+		box.setProps(&driver.ViewProps{Role: driver.RoleCheckbox, Label: "Accept terms", Checked: false, Invalid: false})
+		checkNotes("view false->false")
+
+		box.native.Send(sel("removeFromSuperview"))
+		delete(views, box.native)
+		box.native.Send(selRelease)
+
+		// 2. View mounted already invalid: exposes "true" without posting on mount.
+		mountedBad := &view{id: 2, kind: driver.KindView, native: objc.ID(classView).Send(selNew)}
+		views[mountedBad.native] = mountedBad
+		mountedBad.native.Send(sel("setFrame:"), apple.Rect(0, 0, 120, 30))
+		content.Send(selAddSubview, mountedBad.native)
+		mountedBad.setProps(&driver.ViewProps{Role: driver.RoleButton, Label: "Submit", Invalid: true})
+		checkAXInvalid("mounted invalid view", mountedBad.native, "true")
+		checkNotes("view mount invalid")
+		mountedBad.setProps(&driver.ViewProps{Role: driver.RoleButton, Label: "Submit", Invalid: false})
+		checkAXInvalid("mounted invalid view cleared", mountedBad.native, "false")
+		checkNotes("mounted invalid true->false", posted{element: mountedBad.native, name: axInvalidStatusChanged})
+		mountedBad.native.Send(sel("removeFromSuperview"))
+		delete(views, mountedBad.native)
+		mountedBad.native.Send(selRelease)
+
+		// 3. Non-element and hidden views neither expose AXInvalid nor post notifications.
+		for _, c := range []struct {
+			name  string
+			props driver.ViewProps
+		}{
+			{"plain container", driver.ViewProps{}},
+			{"accessible no", driver.ViewProps{Accessible: driver.AccessibleNo, Label: "Ignored"}},
+			{"hidden", driver.ViewProps{Role: driver.RoleButton, Label: "Hidden", ElementsHidden: true}},
+		} {
+			nv := &view{id: 3, kind: driver.KindView, native: objc.ID(classView).Send(selNew)}
+			views[nv.native] = nv
+			nv.native.Send(sel("setFrame:"), apple.Rect(0, 0, 100, 30))
+			content.Send(selAddSubview, nv.native)
+			p := c.props
+			nv.setProps(&p)
+			if names := axAttrNames(nv.native); slices.Contains(names, axAttrInvalid) {
+				t.Errorf("%s: non-element unexpectedly exposes %s", c.name, axAttrInvalid)
+			}
+			p.Invalid = true
+			nv.setProps(&p)
+			checkNotes(c.name + " false->true")
+			p.Invalid = false
+			nv.setProps(&p)
+			checkNotes(c.name + " true->false")
+			nv.native.Send(sel("removeFromSuperview"))
+			delete(views, nv.native)
+			nv.native.Send(selRelease)
+		}
+
+		// 4. Text inputs: plain field, masked field, and multiline text view.
+		for _, c := range []struct {
+			name              string
+			multiline, masked bool
+			role              string
+		}{
+			{"field", false, false, "AXTextField"},
+			{"secure field", false, true, "AXTextField"},
+			{"text view", true, false, "AXTextArea"},
+		} {
+			v := &view{id: 4, kind: driver.KindInput, native: objc.ID(classInput).Send(selNew), input: &input{}}
+			views[v.native] = v
+			v.setEditor(c.multiline, c.masked)
+			v.native.Send(sel("setFrame:"), apple.Rect(0, 0, 280, 100))
+			v.input.host.Send(sel("setFrame:"), apple.Rect(0, 0, 280, 100))
+			content.Send(selAddSubview, v.native)
+			v.setProps(&driver.ViewProps{Role: driver.RoleTextField, Label: "Email"})
+			checkNotes(c.name + " mount")
+			editor := v.accessElement()
+			if got := findAX(window, axIs(c.role, "Email")); got != editor {
+				t.Fatalf("%s: findAX returned %v, want editor %v", c.name, got, editor)
+			}
+			if names := axAttrNames(v.native); slices.Contains(names, axAttrInvalid) {
+				t.Errorf("%s: input container view unexpectedly exposes %s", c.name, axAttrInvalid)
+			}
+			checkAXInvalid(c.name+" valid", editor, "false")
+
+			v.setProps(&driver.ViewProps{Role: driver.RoleTextField, Label: "Email", Invalid: true})
+			checkAXInvalid(c.name+" invalid", editor, "true")
+			checkNotes(c.name+" false->true", posted{element: editor, name: axInvalidStatusChanged})
+
+			v.setProps(&driver.ViewProps{Role: driver.RoleTextField, Label: "Work email", Invalid: true})
+			checkAXInvalid(c.name+" still invalid", editor, "true")
+			checkNotes(c.name + " true->true")
+
+			v.setProps(&driver.ViewProps{Role: driver.RoleTextField, Label: "Work email", Invalid: false})
+			checkAXInvalid(c.name+" valid again", editor, "false")
+			checkNotes(c.name+" true->false", posted{element: editor, name: axInvalidStatusChanged})
+
+			v.native.Send(sel("removeFromSuperview"))
+			delete(views, v.native)
+			delete(views, v.input.field)
+			delete(views, v.input.host)
+			v.native.Send(selRelease)
+		}
+
+		// 5. Native SystemSwitch (NSSwitch).
+		swView := &view{id: 5, kind: driver.KindNative, native: objc.ID(classView).Send(selNew)}
+		views[swView.native] = swView
+		swComp := newSwitch(driver.NewNativeContext(func(string, any) {}, func(driver.Size) {})).(*nsSwitch)
+		swView.component = swComp
+		swView.componentView = swComp.view
+		swView.native.Send(sel("setFrame:"), apple.Rect(0, 0, 60, 30))
+		swComp.view.Send(sel("setFrame:"), apple.Rect(0, 0, 60, 30))
+		swView.native.Send(selAddSubview, swComp.view)
+		content.Send(selAddSubview, swView.native)
+		swView.setProps(&driver.ViewProps{Label: "Notifications"})
+		checkNotes("switch mount")
+		swEl := swView.accessElement()
+		if got := findAX(window, func(e objc.ID) bool {
+			return apple.GoString(e.Send(sel("accessibilityLabel"))) == "Notifications"
+		}); got != swEl {
+			t.Fatalf("switch: findAX returned %v, want %v", got, swEl)
+		}
+		checkAXInvalid("switch valid", swEl, "false")
+
+		swView.setProps(&driver.ViewProps{Label: "Notifications", Invalid: true})
+		checkAXInvalid("switch invalid", swEl, "true")
+		checkNotes("switch false->true", posted{element: swEl, name: axInvalidStatusChanged})
+
+		swView.setProps(&driver.ViewProps{Label: "Notifications", Invalid: false})
+		checkAXInvalid("switch valid again", swEl, "false")
+		checkNotes("switch true->false", posted{element: swEl, name: axInvalidStatusChanged})
+
+		swView.native.Send(sel("removeFromSuperview"))
+		swComp.Close()
+		delete(views, swView.native)
+		swView.native.Send(selRelease)
+	})
+}

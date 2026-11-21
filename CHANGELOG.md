@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Expose `AXInvalid` (`"true"`/`"false"`) on macOS accessible views, input editors and switches and post `AXInvalidStatusChanged` when validation state changes (#1592).
+>>>>>>> 39a9ef62 (feat(macos): expose AXInvalid and AXInvalidStatusChanged for invalid fields)
 - Add `mobile.DeferSystemGestures` for scoped iOS edge deferral and Android touch exclusion rectangles (#1218 by @houko).
 - Upload built web and desktop packages to itch.io with `nsgo publish itch` (#1561 by @houko).
 - Check target API, Apple privacy and encryption declarations, and release questionnaires during store builds (#1566 by @houko).

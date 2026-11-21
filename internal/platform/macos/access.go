@@ -28,9 +28,17 @@ import (
 //   and AXCancel, custom ones NSAccessibilityCustomActions.
 // - Live regions are announced from here: a changed label, or a changed
 //   text inside one.
+// - Invalid views, switches and input editors expose AXInvalid ("true" or
+//   "false") through accessibilityAttributeNames and
+//   accessibilityAttributeValue:, posting AXInvalidStatusChanged as it
+//   changes.
 // - An input's editor is its element and answers for the input (editorAccessMethods); one with RoleCombobox is an editable combobox, AXComboBox, where a view with RoleCombobox is a select's pop-up button, and one with RoleSpinButton an editable AXIncrementor with the input's actions, where a view with RoleSpinButton is an incrementor of its own.
 
-const appKitPath = "/System/Library/Frameworks/AppKit.framework/AppKit"
+const (
+	appKitPath             = "/System/Library/Frameworks/AppKit.framework/AppKit"
+	axAttrInvalid          = "AXInvalid"
+	axInvalidStatusChanged = "AXInvalidStatusChanged"
+)
 
 var (
 	selSetAccessibilityHidden   = sel("setAccessibilityHidden:")
@@ -62,7 +70,7 @@ var axPost = sync.OnceValue(func() func(element, name, info objc.ID) {
 	return post
 })
 
-// accessMethods are what every view answers VoiceOver's actions with.
+// accessMethods are what every view answers VoiceOver's actions and attributes with.
 func accessMethods() []objc.MethodDef {
 	defs := []objc.MethodDef{
 		{Cmd: sel("accessibilityPerformPress"), Fn: accessibilityPress},
@@ -70,6 +78,26 @@ func accessMethods() []objc.MethodDef {
 		{Cmd: selCustomAction, Fn: accessibilityCustom},
 		{Cmd: sel("accessibilityLabel"), Fn: accessibilityLabel},
 		{Cmd: sel("accessibilityChildren"), Fn: accessibilityChildren},
+		{Cmd: sel("accessibilityAttributeNames"), Fn: func(self objc.ID, cmd objc.SEL) objc.ID {
+			names := apple.SendSuper[objc.ID](self, cmd)
+			v := views[self]
+			if v == nil || !v.axElement || names == 0 {
+				return names
+			}
+			return axAddAttr(names, axAttrInvalid)
+		}},
+		{Cmd: sel("accessibilityAttributeValue:"), Fn: func(self objc.ID, cmd objc.SEL, name objc.ID) objc.ID {
+			if v := views[self]; v != nil && v.axElement && apple.GoString(name) == axAttrInvalid {
+				return axInvalidValue(v.props.Invalid)
+			}
+			return apple.SendSuper[objc.ID](self, cmd, name)
+		}},
+		{Cmd: sel("accessibilityIsAttributeSettable:"), Fn: func(self objc.ID, cmd objc.SEL, name objc.ID) bool {
+			if v := views[self]; v != nil && v.axElement && apple.GoString(name) == axAttrInvalid {
+				return false
+			}
+			return apple.SendSuper[bool](self, cmd, name)
+		}},
 		{Cmd: sel("accessibilityTitleUIElement"), Fn: func(self objc.ID, _ objc.SEL) objc.ID {
 			if v := views[self]; v != nil {
 				return v.titleUIElement()
@@ -197,6 +225,20 @@ func nsOrNil(s string) objc.ID {
 	return apple.NSString(s)
 }
 
+func axInvalidValue(invalid bool) objc.ID {
+	if invalid {
+		return apple.NSString("true")
+	}
+	return apple.NSString("false")
+}
+
+func axAddAttr(names objc.ID, name string) objc.ID {
+	if ns := apple.NSString(name); !objc.Send[bool](names, sel("containsObject:"), ns) {
+		return names.Send(sel("arrayByAddingObject:"), ns)
+	}
+	return names
+}
+
 // accessElement is the control's exposed element, an input's cell or text editor rather than its container.
 func (v *view) accessElement() objc.ID {
 	if s, ok := v.component.(*nsSwitch); ok {
@@ -209,6 +251,29 @@ func (v *view) accessElement() objc.ID {
 		return in.field.Send(sel("cell"))
 	}
 	return v.native
+}
+
+// invalidElement is the exposed element that answers AXInvalid and takes AXInvalidStatusChanged, or 0 when v exposes none.
+func (v *view) invalidElement() objc.ID {
+	if v.props.ElementsHidden {
+		return 0
+	}
+	if s, ok := v.component.(*nsSwitch); ok {
+		return s.view
+	}
+	if in := v.input; in != nil && !v.axElement {
+		if in.field == 0 {
+			return 0
+		}
+		if in.multiline {
+			return in.field
+		}
+		return in.field.Send(sel("cell"))
+	}
+	if v.axElement {
+		return v.native
+	}
+	return 0
 }
 
 // AppKit and UI Automation expose one naming element. Label carries the complete resolved name when the app supplies several.
@@ -247,6 +312,11 @@ func (v *view) setProps(p *driver.ViewProps) {
 		v.native.Send(sel("setAppearance:"), nsAppearance(p.Appearance))
 	}
 	v.updateAccessibility()
+	if v.propsSet && p.Invalid != old.Invalid {
+		if el := v.invalidElement(); el != 0 {
+			axPost()(el, apple.NSString(axInvalidStatusChanged), 0)
+		}
+	}
 	if v.propsSet && p.Label != old.Label {
 		v.announceLive(p.Label)
 	}
@@ -368,19 +438,23 @@ func editorAccessMethods(cell bool) []objc.MethodDef {
 			}
 			return apple.SendSuper[objc.ID](self, cmd, name)
 		}},
+		{Cmd: sel("accessibilityIsAttributeSettable:"), Fn: func(self objc.ID, cmd objc.SEL, name objc.ID) bool {
+			if v := owner(self); v != nil && apple.GoString(name) == axAttrInvalid {
+				return false
+			}
+			return apple.SendSuper[bool](self, cmd, name)
+		}},
 		{Cmd: sel("accessibilityAttributeNames"), Fn: func(self objc.ID, cmd objc.SEL) objc.ID {
 			names := apple.SendSuper[objc.ID](self, cmd)
 			v := owner(self)
 			if v == nil || names == 0 {
 				return names
 			}
-			for _, name := range []string{"AXSubrole", "AXDescription", "AXIdentifier", "AXExpanded", "AXValueDescription", "AXPlaceholderValue", "AXTitleUIElement"} {
+			for _, name := range []string{"AXSubrole", "AXDescription", "AXIdentifier", "AXExpanded", "AXValueDescription", "AXPlaceholderValue", "AXTitleUIElement", axAttrInvalid} {
 				if _, ok := v.editorAttribute(name); !ok {
 					continue
 				}
-				if ns := apple.NSString(name); !objc.Send[bool](names, sel("containsObject:"), ns) {
-					names = names.Send(sel("arrayByAddingObject:"), ns)
-				}
+				names = axAddAttr(names, name)
 			}
 			return names
 		}},
@@ -467,6 +541,8 @@ func (v *view) editorAttribute(name string) (objc.ID, bool) {
 		if t := p.Value.Text; t != "" && t != v.input.text() {
 			return apple.NSString(t), true
 		}
+	case axAttrInvalid:
+		return axInvalidValue(p.Invalid), true
 	}
 	return 0, false
 }
@@ -504,6 +580,7 @@ func (v *view) updateAccessibility() {
 	if s, ok := v.component.(*nsSwitch); ok {
 		native.Send(selSetAccessibilityElement, false)
 		v.axElement = false
+		s.invalid = p.Invalid
 		s.view.Send(sel("setAccessibilityLabel:"), nsOrNil(p.Label))
 		s.view.Send(sel("setAccessibilityTitleUIElement:"), v.titleUIElement())
 		return
