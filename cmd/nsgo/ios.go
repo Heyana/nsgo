@@ -294,7 +294,7 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 // to apps that set CADisableMinimumFrameDurationOnPhone.
 var iosPlist = template.Must(template.New("ios").Parse(plistHead + `	<key>MinimumOSVersion</key><string>{{.IOSMinimum}}</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key><true/>
-{{- if not (index .Apple.Info "UILaunchScreen")}}
+{{- if not (.SetsInfo "UILaunchScreen")}}
 	<key>UILaunchScreen</key>
 	<dict>{{with .LaunchScreen}}
 		{{- if .Background}}

@@ -9,6 +9,12 @@ import (
 	"strconv"
 )
 
+// SetsInfo reports whether apple.info has key, even with an empty value, which writePlist writes in place of the package's own.
+func (p *project) SetsInfo(key string) bool {
+	_, ok := p.Apple.Info[key]
+	return ok
+}
+
 // InfoValue writes the types apple.info can express in an Info.plist.
 // Keep strings as strings: YAML booleans and numbers have their own
 // native types. Reject unsupported values rather than stringify them.

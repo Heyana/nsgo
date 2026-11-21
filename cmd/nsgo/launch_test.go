@@ -68,6 +68,24 @@ func TestLaunchScreenConfig(t *testing.T) {
 	}
 }
 
+func TestLaunchScreenLeavesAppleInfoKey(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "nsgo.yaml"), []byte("name: App\napple:\n  info:\n    UILaunchScreen: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plist bytes.Buffer
+	if err := iosPlist.Execute(&plist, p); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(plist.String(), "<key>UILaunchScreen</key>"); n != 1 {
+		t.Errorf("iOS Info.plist has %d UILaunchScreen keys, want apple.info's only", n)
+	}
+}
+
 func TestLaunchImagePreservesAspectRatio(t *testing.T) {
 	source := image.NewNRGBA(image.Rect(0, 0, 4, 2))
 	red := color.NRGBA{R: 255, A: 255}
