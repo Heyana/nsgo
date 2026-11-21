@@ -86,7 +86,7 @@ func (w *window) audioCommand(id uint32, req *driver.AudioRequest) {
 		a.unload(id)
 	case driver.AudioOpen:
 		a.players[id] = &linuxPlayer{owner: w, id: id, source: req.Source, interval: req.ProgressInterval,
-			volume: req.Volume, loop: req.Loop, position: req.Position, pendingSeek: req.Position > 0}
+			volume: req.Volume, loop: req.Loop, loopStart: req.LoopStart, position: req.Position, pendingSeek: req.Position > 0}
 		warnAudioRate(req.Rate)
 	case driver.AudioClose:
 		if p := a.players[id]; p != nil {
@@ -202,7 +202,7 @@ func (a *linuxAudio) play(id uint32, req *driver.AudioRequest) {
 		a.mixer = newSoundMixer()
 	}
 	if a.mixer != nil {
-		a.mixer.play(soundPlayback{id: id, pcm: sound.pcm, volume: req.Volume, rate: req.Rate, pan: req.Pan, startAt: req.StartAt})
+		a.mixer.play(soundPlayback{id: id, pcm: sound.pcm, volume: req.Volume, rate: req.Rate, pan: req.Pan, startAt: req.StartAt, loop: req.Loop})
 		a.lastPlay = time.Now()
 		a.ensureTick()
 	}
@@ -286,6 +286,7 @@ func audioTick(handle uintptr) int32 {
 		a.mixer.sweep(now, 0)
 		a.mixer.startPending()
 		a.answerLatency(now)
+		a.mixer.feed(now)
 		if len(a.mixer.voices) == 0 && len(a.latencyReads) == 0 && now.Sub(a.lastPlay) > 2*time.Second {
 			a.mixer.close()
 			a.mixer = nil

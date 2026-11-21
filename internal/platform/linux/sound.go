@@ -173,6 +173,11 @@ type gstMessageHeader struct {
 // pushSound copies b into a native buffer that appsrc takes ownership of.
 // A duration of zero leaves encoded bytes unstamped for the decoder.
 func pushSound(src uintptr, b []byte, start uint64, duration time.Duration) bool {
+	return pushSoundBuffer(src, b, start, duration) && gstAppSrcEndOfStream(src) == 0
+}
+
+// pushSoundBuffer queues b on src, stamped from start for duration when duration is not 0, and leaves the stream open.
+func pushSoundBuffer(src uintptr, b []byte, start uint64, duration time.Duration) bool {
 	size := uintptr(len(b))
 	buffer := gstBufferNewAllocate(0, size, 0)
 	if buffer == 0 {
@@ -187,7 +192,7 @@ func pushSound(src uintptr, b []byte, start uint64, duration time.Duration) bool
 		gstMiniObjectUnref(buffer)
 		return false
 	}
-	return gstAppSrcPushBuffer(src, buffer) == 0 && gstAppSrcEndOfStream(src) == 0
+	return gstAppSrcPushBuffer(src, buffer) == 0
 }
 
 // decodeSound uses a temporary pipeline on a worker, retaining at most
@@ -255,6 +260,13 @@ type soundVoice struct {
 	sound         uint32
 	bin, src, pad uintptr
 	until         time.Time
+	// A looping voice keeps its appsrc and pushes copies of pcm, counted in copies, from started on; it never ends on its own.
+	loop      bool
+	appsrc    uintptr
+	pcm       []byte
+	inputRate int
+	copies    int64
+	started   time.Time
 }
 
 type soundPlayback struct {
@@ -263,6 +275,37 @@ type soundPlayback struct {
 	volume, rate, pan float32
 	// startAt is the Go clock time the voice should start at; zero, or a time sooner than the mixer can reach, starts it at the next mixer block.
 	startAt time.Time
+	loop    bool
+}
+
+// soundLoopAhead is how much of a looping voice stays queued past now.
+const soundLoopAhead = 500 * time.Millisecond
+
+// copyEnd is where copy n of a looping voice's sound ends, counted in its input frames so that copies stay sample-contiguous.
+func (v *soundVoice) copyEnd(n int64) time.Duration {
+	frames := int64(len(v.pcm) / soundFrameBytes)
+	return time.Duration(n * frames * int64(time.Second) / int64(v.inputRate))
+}
+
+// fill queues copies of a looping voice's sound until soundLoopAhead past now is queued.
+func (v *soundVoice) fill(now time.Time) bool {
+	for v.copyEnd(v.copies) < now.Sub(v.started)+soundLoopAhead {
+		start := v.copyEnd(v.copies)
+		if !pushSoundBuffer(v.appsrc, v.pcm, uint64(start), v.copyEnd(v.copies+1)-start) {
+			return false
+		}
+		v.copies++
+	}
+	return true
+}
+
+// feed keeps every looping voice queued ahead of its playback.
+func (m *soundMixer) feed(now time.Time) {
+	for i := range m.voices {
+		if m.voices[i].loop {
+			m.voices[i].fill(now)
+		}
+	}
 }
 
 // soundMixer keeps one live pipeline per engine. A silent input leaves
@@ -399,7 +442,8 @@ func (m *soundMixer) startVoice(play soundPlayback) {
 
 	// Changing the input caps' sample rate gives the same pitch shift as
 	// Apple's varispeed, and GStreamer resamples it back to the mixer rate.
-	input := fmt.Sprintf("audio/x-raw,format=F32LE,layout=interleaved,channels=2,rate=%d", int(math.Round(float64(play.rate)*soundRate)))
+	inputRate := int(math.Round(float64(play.rate) * soundRate))
+	input := fmt.Sprintf("audio/x-raw,format=F32LE,layout=interleaved,channels=2,rate=%d", inputRate)
 	desc := "appsrc name=voice is-live=true format=time min-latency=0 max-latency=0 caps=\"" + input +
 		"\" ! audioresample ! " + soundCaps + fmt.Sprintf(" ! volume volume=%g", play.volume)
 	if play.pan != 0 {
@@ -437,6 +481,15 @@ func (m *soundMixer) startVoice(play soundPlayback) {
 		return
 	}
 	src := gstBinGetByName(bin, cstr("voice"))
+	if play.loop {
+		voice.loop, voice.appsrc, voice.pcm, voice.inputRate, voice.started = true, src, play.pcm, inputRate, time.Now().Add(lead)
+		if !voice.fill(voice.started) {
+			m.remove(voice)
+			return
+		}
+		m.voices = append(m.voices, voice)
+		return
+	}
 	defer gstObjectUnref(src)
 	duration := time.Duration(float64(soundDuration(play.pcm)) / float64(play.rate))
 	if !pushSound(src, play.pcm, 0, duration) {
@@ -453,7 +506,7 @@ func (m *soundMixer) sweep(now time.Time, stop uint32) {
 		m.pending = slices.DeleteFunc(m.pending, func(play soundPlayback) bool { return play.id == stop })
 	}
 	m.voices = slices.DeleteFunc(m.voices, func(voice soundVoice) bool {
-		if voice.sound != stop && voice.until.After(now) {
+		if voice.sound != stop && (voice.loop || voice.until.After(now)) {
 			return false
 		}
 		m.remove(voice)
@@ -472,6 +525,9 @@ func (m *soundMixer) remove(voice soundVoice) {
 	if voice.pad != 0 {
 		gstElementReleasePad(m.mixer, voice.pad)
 		gstObjectUnref(voice.pad)
+	}
+	if voice.appsrc != 0 {
+		gstObjectUnref(voice.appsrc)
 	}
 	gstBinRemove(m.pipeline, voice.bin)
 }

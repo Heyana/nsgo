@@ -22,9 +22,10 @@ type linuxPlayer struct {
 	stream uintptr
 	file   audioPlayerFile
 
-	volume   float32
-	loop     bool
-	interval time.Duration
+	volume    float32
+	loop      bool
+	loopStart time.Duration
+	interval  time.Duration
 
 	loading, loaded, wanted, playing, ended, buffering, closed bool
 	loadDeadline, lastProgress                                 time.Time
@@ -103,9 +104,35 @@ func (p *linuxPlayer) command(req *driver.AudioRequest) {
 		warnAudioRate(req.Rate)
 		if p.stream != 0 {
 			gtkMediaStreamSetVolume(p.stream, float64(p.volume))
-			gtkMediaStreamSetLoop(p.stream, boolInt(p.loop))
+			p.setStreamLoop()
 		}
 	}
+}
+
+// setStreamLoop leaves a whole-track loop to the stream, which always restarts at 0; a loop with a start is a seek at the end, in tick, since the stream may know no duration yet to tell whether the start is inside it.
+func (p *linuxPlayer) setStreamLoop() {
+	gtkMediaStreamSetLoop(p.stream, boolInt(p.loop && p.loopStart <= 0))
+}
+
+// loopFrom is where a looping player starts over: loopStart inside a known duration, else 0.
+func (p *linuxPlayer) loopFrom() time.Duration {
+	return driver.AudioLoopStart(p.loopStart, p.duration)
+}
+
+// loopAgain seeks an ended player to its loop start and plays on, counting the lap, as tick plays again once the seek lands; a stream that cannot seek ends instead.
+func (p *linuxPlayer) loopAgain() bool {
+	if gtkMediaStreamIsSeekable(p.stream) == 0 {
+		return false
+	}
+	if p.duration == 0 {
+		p.duration = micros(max(0, gtkMediaStreamGetDuration(p.stream)))
+	}
+	p.laps++
+	p.position, p.pendingSeek = p.loopFrom(), true
+	p.lastProgress = time.Now()
+	p.report(driver.AudioProgress)
+	p.applySeek()
+	return true
 }
 
 func (p *linuxPlayer) prepare() {
@@ -172,7 +199,7 @@ func (p *linuxPlayer) openFile(source string) {
 	}
 	p.stream = stream
 	gtkMediaStreamSetVolume(stream, float64(p.volume))
-	gtkMediaStreamSetLoop(stream, boolInt(p.loop))
+	p.setStreamLoop()
 }
 
 func (p *linuxPlayer) tick(now time.Time) bool {
@@ -227,6 +254,9 @@ func (p *linuxPlayer) tick(now time.Time) bool {
 		return false
 	}
 	if gtkMediaStreamGetEnded(p.stream) != 0 {
+		if p.loop && p.loopAgain() {
+			return true
+		}
 		p.ended, p.wanted, p.playing = true, false, false
 		p.position = p.duration
 		p.report(driver.AudioEnded)

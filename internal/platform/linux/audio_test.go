@@ -202,6 +202,7 @@ func TestLinuxAudioMixerOutput(t *testing.T) {
 					t.Error(message)
 				}
 				mixer.startPending()
+				mixer.feed(time.Now())
 			})
 			sample := gstAppSinkTryPullSample(sink, uint64(20*time.Millisecond))
 			if sample == 0 {
@@ -233,6 +234,21 @@ func TestLinuxAudioMixerOutput(t *testing.T) {
 	hear(0, 0)
 	w.onLoop(t, func() { mixer.play(soundPlayback{id: 1, pcm: pcm, volume: 1, rate: 1, pan: -1}) })
 	hear(0.25, 0)
+	hear(0, 0)
+
+	// A looping 100 ms voice still sounds after a second, past what its first fill queued, until its sound stops.
+	w.onLoop(t, func() { mixer.play(soundPlayback{id: 3, pcm: pcm, volume: 1, rate: 1, loop: true}) })
+	hear(0.25, 0.25)
+	for until := time.Now().Add(time.Second); time.Now().Before(until); time.Sleep(20 * time.Millisecond) {
+		w.onLoop(t, func() { mixer.feed(time.Now()) })
+	}
+	hear(0.25, 0.25)
+	w.onLoop(t, func() {
+		mixer.sweep(time.Now(), 3)
+		if len(mixer.voices) != 0 {
+			t.Error("stopping the sound kept its looping voice")
+		}
+	})
 	hear(0, 0)
 }
 
@@ -412,5 +428,48 @@ looped:
 	})
 	if err := awaitAudio(t, bad); !errors.Is(err, core.AudioDecode) {
 		t.Fatalf("unsupported player format: %v", err)
+	}
+}
+
+func TestLinuxAudioPlayerLoopsFromItsStart(t *testing.T) {
+	_, cx := audioTestWindow(t)
+	const loopStart = 600 * time.Millisecond
+	played, ended := make(chan error, 1), make(chan struct{}, 1)
+	progress := make(chan time.Duration, 256)
+	var p *core.AudioPlayer
+	cx.Post(func() {
+		p = cx.NewAudioPlayer(core.AudioSource{Data: audioTestWAV(1200 * time.Millisecond)}, core.AudioPlayerOptions{
+			LoopStart: loopStart, ProgressInterval: 50 * time.Millisecond,
+			OnProgress: func(pos, _ time.Duration) { progress <- pos }, OnEnd: func() { ended <- struct{}{} },
+		})
+		p.SetLoop(true)
+		p.Play(func(err error) { played <- err })
+	})
+	defer cx.Post(func() { p.Close() })
+	if err := awaitAudio(t, played); err != nil {
+		t.Fatal(err)
+	}
+	var last time.Duration
+	intro, laps := false, 0
+	deadline := time.After(6 * time.Second)
+	for laps < 2 {
+		select {
+		case pos := <-progress:
+			intro = intro || pos > 0 && pos < loopStart-50*time.Millisecond
+			if pos < last {
+				if !intro {
+					t.Fatal("the player looped before playing its intro")
+				}
+				if pos < loopStart-20*time.Millisecond {
+					t.Fatalf("a repeat started at %v, before the loop start %v", pos, loopStart)
+				}
+				laps++
+			}
+			last = pos
+		case <-ended:
+			t.Fatal("a player looping from its start reported completion")
+		case <-deadline:
+			t.Fatalf("the player repeated %d times before the deadline", laps)
+		}
 	}
 }
