@@ -271,10 +271,13 @@ type surface struct {
 	transparent, skipTaskbar bool
 	keys                     []driver.KeyBinding // the keymap's bindings
 	heldKeys                 bool                // ItemKeymap's HeldKeys: report every key going down and up, not only a focused view's
+	heldMouse                bool                // ItemKeymap's HeldMouseButtons: report every mouse button going down and up
 	webFocus                 *view               // the page holding the window's first responder
 	stopWebFocus             func()              // ends first-responder observation in the current window
 	// keysHeld are the keys whose down was reported, by AppKit key code: the view the down went to, 0 for none, and the name it reported, which the key's up reports wherever the focus has gone since.
 	keysHeld map[uint16]heldKey
+	// mouseHeld are the mouse buttons whose down was reported, by button: the view the down went to (nil/0 for none).
+	mouseHeld map[driver.MouseButton]heldMouseButton
 
 	// What a batch touched, finished once its frames are set.
 	images, presenting []*view
@@ -1314,18 +1317,19 @@ func (s *surface) observe() {
 		})
 	}
 
-	// A key held as the window stops being key comes up for the app: its up goes to the window that is key now, or to none.
+	// Keys and mouse buttons held as the window stops being key come up for the app: their ups go to the window that is key now, or to none.
 	s.stops = append(s.stops, apple.Observe(center, apple.Global(appKitPath, "NSWindowDidResignKeyNotification"), func(note objc.ID) {
 		if note.Send(sel("object")) == s.window {
 			s.releaseKeys()
+			s.releaseMouseButtons()
 		}
 	}))
 
-	const keyDown, keyUp, leftDown, leftUp, mouseMoved, leftDragged, rightDown, otherDown, rightDragged, otherDragged, wheel, flags = 1 << 10, 1 << 11, 1 << 1, 1 << 2, 1 << 5, 1 << 6, 1 << 3, 1 << 25, 1 << 7, 1 << 27, 1 << 22, 1 << 12
+	const keyDown, keyUp, leftDown, leftUp, mouseMoved, leftDragged, rightDown, rightUp, otherDown, otherUp, rightDragged, otherDragged, wheel, flags = 1 << 10, 1 << 11, 1 << 1, 1 << 2, 1 << 5, 1 << 6, 1 << 3, 1 << 4, 1 << 25, 1 << 26, 1 << 7, 1 << 27, 1 << 22, 1 << 12
 	handler := objcblock.New(func(_ objc.Block, event objc.ID) objc.ID { return s.filter(event) })
 	nsEvent := objc.ID(apple.Class("NSEvent"))
 	monitor := nsEvent.Send(sel("addLocalMonitorForEventsMatchingMask:handler:"),
-		uint64(keyDown|keyUp|leftDown|leftUp|mouseMoved|leftDragged|rightDown|otherDown|rightDragged|otherDragged|wheel|flags), handler).Send(sel("retain"))
+		uint64(keyDown|keyUp|leftDown|leftUp|mouseMoved|leftDragged|rightDown|rightUp|otherDown|otherUp|rightDragged|otherDragged|wheel|flags), handler).Send(sel("retain"))
 	handler.Release()
 	s.stops = append(s.stops, func() {
 		nsEvent.Send(sel("removeMonitor:"), monitor)
@@ -1392,7 +1396,7 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 	if s.window == 0 || event.Send(selWindow) != s.window || s.engine == nil {
 		return event
 	}
-	const typeLeftDown, typeLeftUp, typeRightDown, typeMouseMoved, typeLeftDragged, typeRightDragged, typeKeyDown, typeKeyUp, typeFlagsChanged, typeScrollWheel, typeOtherDown, typeOtherDragged = 1, 2, 3, 5, 6, 7, 10, 11, 12, 22, 25, 27
+	const typeLeftDown, typeLeftUp, typeRightDown, typeRightUp, typeMouseMoved, typeLeftDragged, typeRightDragged, typeKeyDown, typeKeyUp, typeFlagsChanged, typeScrollWheel, typeOtherDown, typeOtherUp, typeOtherDragged = 1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 22, 25, 26, 27
 	switch objc.Send[uint](event, sel("type")) {
 	case typeFlagsChanged:
 		s.modifiersChanged(event)
@@ -1437,6 +1441,7 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 	case typeLeftDown:
 		s.engine.InputModality(driver.ModalityPointer)
 		s.commitPending()
+		s.mouseButtonDown(driver.MouseButtonLeft, event)
 		s.pressOutside(event)
 		if s.pressScrolls(event) {
 			return 0
@@ -1448,6 +1453,7 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 	case typeRightDragged, typeOtherDragged:
 		s.dragMoved(event)
 	case typeLeftUp:
+		s.mouseButtonUp(driver.MouseButtonLeft, event)
 		s.pick(objc.Send[apple.CGPoint](event, selLocationInWindow), true)
 		if s.releaseScrolls() || s.selectUp() {
 			return 0
@@ -1455,15 +1461,22 @@ func (s *surface) filterEvent(event objc.ID) objc.ID {
 	case typeRightDown:
 		s.engine.InputModality(driver.ModalityPointer)
 		s.commitPending()
+		s.mouseButtonDown(driver.MouseButtonRight, event)
 		s.pressOutside(event)
+	case typeRightUp:
+		s.mouseButtonUp(driver.MouseButtonRight, event)
 	case typeOtherDown:
 		s.engine.InputModality(driver.ModalityPointer)
 		s.commitPending()
-		const backButton = 3
-		if objc.Send[int](event, sel("buttonNumber")) == backButton && s.under(event) {
+		btn := macMouseButton(objc.Send[int](event, sel("buttonNumber")))
+		heard := s.mouseButtonDown(btn, event)
+		if btn == driver.MouseButtonBack && !heard && s.under(event) {
 			s.engine.Dispatch(driver.Event{Kind: driver.EventBack})
 			return 0
 		}
+	case typeOtherUp:
+		btn := macMouseButton(objc.Send[int](event, sel("buttonNumber")))
+		s.mouseButtonUp(btn, event)
 	}
 	return event
 }
@@ -1524,6 +1537,169 @@ func (s *surface) keyUp(code uint16, mods driver.Modifiers) {
 	}
 	delete(s.keysHeld, code)
 	s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: held.id, Text: held.name, Modifiers: mods})
+}
+
+// heldMouseButton is a mouse button whose down was reported: the view it went to (0/nil for none).
+type heldMouseButton struct {
+	id driver.NodeID
+	v  *view
+}
+
+// macMouseButton maps an NSEvent buttonNumber (0=Left, 1=Right, 2=Middle, 3=Back, 4=Forward) to a MouseButton.
+func macMouseButton(n int) driver.MouseButton {
+	switch n {
+	case 0:
+		return driver.MouseButtonLeft
+	case 1:
+		return driver.MouseButtonRight
+	case 2:
+		return driver.MouseButtonMiddle
+	case 3:
+		return driver.MouseButtonBack
+	case 4:
+		return driver.MouseButtonForward
+	default:
+		return driver.MouseButtonNone
+	}
+}
+
+// mouseViewAt returns the innermost view at window point loc that listens for mouse button down/up events.
+func (s *surface) mouseViewAt(loc apple.CGPoint) *view {
+	stop := s.native.Send(selSuperview)
+	for n := s.hitAt(loc); n != 0 && n != stop; n = n.Send(selSuperview) {
+		if v := views[n]; v != nil && v.native == n && v.events.Has(driver.EventMouseDown) {
+			return v
+		}
+	}
+	return nil
+}
+
+// inSurfaceAt reports whether window point loc falls inside the surface's bounds.
+func (s *surface) inSurfaceAt(loc apple.CGPoint) bool {
+	if s.native == 0 {
+		return false
+	}
+	p := objc.Send[apple.CGPoint](s.native, selConvertPoint, loc, objc.ID(0))
+	b := objc.Send[apple.CGRect](s.native, selBounds)
+	return p.X >= 0 && p.Y >= 0 && p.X < b.Size.Width && p.Y < b.Size.Height
+}
+
+// surfacePagePointAt converts window point loc to the surface's coordinates.
+func (s *surface) surfacePagePointAt(loc apple.CGPoint) driver.Point {
+	if s.native == 0 {
+		return driver.Point{}
+	}
+	p := objc.Send[apple.CGPoint](s.native, selConvertPoint, loc, objc.ID(0))
+	return driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)}
+}
+
+// mouseButtonDown reports btn going down from event to the innermost listening view under the pointer, or with ID 0 when heldMouse is enabled, and returns whether a view heard it.
+func (s *surface) mouseButtonDown(btn driver.MouseButton, event objc.ID) bool {
+	loc := objc.Send[apple.CGPoint](event, selLocationInWindow)
+	mods := apple.Modifiers(objc.Send[uint](event, sel("modifierFlags")))
+	clicks := uint32(max(objc.Send[int](event, sel("clickCount")), 1))
+	return s.mouseButtonDownAt(btn, loc, mods, clicks)
+}
+
+func (s *surface) mouseButtonDownAt(btn driver.MouseButton, loc apple.CGPoint, mods driver.Modifiers, clicks uint32) bool {
+	if btn == driver.MouseButtonNone || s.engine == nil {
+		return false
+	}
+	v := s.mouseViewAt(loc)
+	if v == nil && (!s.heldMouse || !s.inSurfaceAt(loc)) {
+		return false
+	}
+	if prev, ok := s.mouseHeld[btn]; ok {
+		delete(s.mouseHeld, btn)
+		s.engine.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: prev.id, Modifiers: mods, Button: btn})
+	}
+	if s.mouseHeld == nil {
+		s.mouseHeld = map[driver.MouseButton]heldMouseButton{}
+	}
+	if v != nil {
+		s.mouseHeld[btn] = heldMouseButton{id: v.id, v: v}
+		p := v.windowPoint(loc)
+		v.report(driver.Event{
+			Kind:      driver.EventMouseDown,
+			Point:     driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)},
+			Page:      v.page(loc),
+			Modifiers: mods,
+			Button:    btn,
+			Count:     clicks,
+		})
+		return true
+	}
+	s.mouseHeld[btn] = heldMouseButton{}
+	s.engine.Dispatch(driver.Event{
+		Kind:      driver.EventMouseDown,
+		Page:      s.surfacePagePointAt(loc),
+		Modifiers: mods,
+		Button:    btn,
+		Count:     clicks,
+	})
+	return false
+}
+
+// mouseButtonUp reports btn coming up from event to the view its down went to (or the view currently under the pointer if no down was recorded).
+func (s *surface) mouseButtonUp(btn driver.MouseButton, event objc.ID) {
+	loc := objc.Send[apple.CGPoint](event, selLocationInWindow)
+	mods := apple.Modifiers(objc.Send[uint](event, sel("modifierFlags")))
+	clicks := uint32(max(objc.Send[int](event, sel("clickCount")), 1))
+	s.mouseButtonUpAt(btn, loc, mods, clicks)
+}
+
+func (s *surface) mouseButtonUpAt(btn driver.MouseButton, loc apple.CGPoint, mods driver.Modifiers, clicks uint32) {
+	if btn == driver.MouseButtonNone || s.engine == nil {
+		return
+	}
+	if h, ok := s.mouseHeld[btn]; ok {
+		delete(s.mouseHeld, btn)
+		if h.v != nil && h.v.native != 0 && h.v.native.Send(selWindow) != 0 {
+			p := h.v.windowPoint(loc)
+			h.v.report(driver.Event{
+				Kind:      driver.EventMouseUp,
+				Point:     driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)},
+				Page:      h.v.page(loc),
+				Modifiers: mods,
+				Button:    btn,
+				Count:     clicks,
+			})
+			return
+		}
+		s.engine.Dispatch(driver.Event{
+			Kind:      driver.EventMouseUp,
+			ID:        h.id,
+			Page:      s.surfacePagePointAt(loc),
+			Modifiers: mods,
+			Button:    btn,
+			Count:     clicks,
+		})
+		return
+	}
+	if v := s.mouseViewAt(loc); v != nil {
+		p := v.windowPoint(loc)
+		v.report(driver.Event{
+			Kind:      driver.EventMouseUp,
+			Point:     driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)},
+			Page:      v.page(loc),
+			Modifiers: mods,
+			Button:    btn,
+			Count:     clicks,
+		})
+	}
+}
+
+// releaseMouseButtons reports every held mouse button coming up with zero modifiers and clicks as the window stops being key.
+func (s *surface) releaseMouseButtons() {
+	if s.engine == nil {
+		return
+	}
+	for b := driver.MouseButtonLeft; b <= driver.MouseButtonForward; b++ {
+		if h, ok := s.mouseHeld[b]; ok {
+			delete(s.mouseHeld, b)
+			s.engine.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: h.id, Button: b})
+		}
+	}
 }
 
 // releaseKeys reports the up of every key whose down was reported, with no modifiers held, as the window stops being key: AppKit sends their ups to another window, or to none.
@@ -1983,7 +2159,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			announce(it.Value)
 			continue
 		case driver.ItemKeymap:
-			s.keys, s.heldKeys = it.Keys, it.HeldKeys
+			s.keys, s.heldKeys, s.heldMouse = it.Keys, it.HeldKeys, it.HeldMouseButtons
 			continue
 		case driver.ItemTitle, driver.ItemWindow, driver.ItemMenu, driver.ItemDockMenu, driver.ItemRecentFile:
 			if it.Kind == driver.ItemWindow && it.Window.Action == driver.WindowDestroy {

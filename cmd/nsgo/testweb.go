@@ -97,6 +97,7 @@ type webOp struct {
 	} `json:"path,omitempty"`
 	Text   string  `json:"text,omitempty"`
 	Key    string  `json:"key,omitempty"`
+	Button string  `json:"button,omitempty"`
 	Width  float64 `json:"width,omitempty"`
 	Height float64 `json:"height,omitempty"`
 	Code   int     `json:"code,omitempty"`
@@ -224,10 +225,11 @@ func runWebTest(ctx context.Context, b *cdp, base string, args, env []string, ou
 type webPage struct {
 	b       *cdp
 	session string
-	// heldMu guards held, the modifiers bitmask of the modifier keys the keyDown op holds, which every key event after it carries, and down, the physical keys it holds, until the keyUp op.
-	heldMu sync.Mutex
-	held   int
-	down   map[string]bool
+	// heldMu guards held, the modifiers bitmask of the modifier keys the keyDown op holds, which every key event after it carries, down, the physical keys it holds, and buttons, the held mouse button bitmask.
+	heldMu  sync.Mutex
+	held    int
+	down    map[string]bool
+	buttons int
 }
 
 func (p *webPage) call(method string, params any) (json.RawMessage, error) {
@@ -299,6 +301,30 @@ func (p *webPage) do(op webOp, data *any) error {
 			return err
 		}
 		return p.mouse("mouseReleased", op.X, op.Y, "right", 0, 1)
+	case "mouseDown", "mouseUp":
+		bit := map[string]int{"left": 1, "right": 2, "middle": 4, "back": 8, "forward": 16}[op.Button]
+		if bit == 0 {
+			return fmt.Errorf("unknown mouse button %q", op.Button)
+		}
+		p.heldMu.Lock()
+		if op.Op == "mouseDown" {
+			p.buttons |= bit
+		} else {
+			p.buttons &^= bit
+		}
+		buttons := p.buttons
+		p.heldMu.Unlock()
+		kind := "mouseReleased"
+		if op.Op == "mouseDown" {
+			kind = "mousePressed"
+		}
+		return p.mouseWith(kind, op.X, op.Y, op.Button, buttons, 1, op.Modifiers)
+	case "blurWindow":
+		p.heldMu.Lock()
+		p.held, p.down, p.buttons = 0, nil, 0
+		p.heldMu.Unlock()
+		_, err := p.call("Runtime.evaluate", map[string]any{"expression": `window.dispatchEvent(new Event("blur"))`})
+		return err
 	case "hover":
 		return p.mouse("mouseMoved", op.X, op.Y, "none", 0, 0)
 	case "drag":

@@ -32,8 +32,10 @@ var apple = func() bool {
 		strings.Contains(p, "iPad") || strings.Contains(p, "macOS")
 }()
 
-// setKeymap takes the keymap's bindings and whether the app asked for every key held (MountItem.HeldKeys).
-func (s *surface) setKeymap(keys []driver.KeyBinding, held bool) { s.keys, s.heldKeys = keys, held }
+// setKeymap takes the keymap's bindings and whether the app asked for every key or mouse button held (MountItem.HeldKeys, HeldMouseButtons).
+func (s *surface) setKeymap(keys []driver.KeyBinding, held, heldMouse bool) {
+	s.keys, s.heldKeys, s.heldMouse = keys, held, heldMouse
+}
 
 // focusKeyUse returns the keys the focused element uses itself, which the keymap's bindings that yield them leave it (driver.FindKey): a field's, a select's or an editable element's editing keys, a pressable view's Return and Space, a slider's or a tab bar's arrows.
 func (s *surface) focusKeyUse() driver.KeyUse {

@@ -126,6 +126,21 @@ func (t *testSurface) RightClick(at driver.Point) error {
 	return t.do(with(t.page(at), "op", "rightClick"))
 }
 
+// MouseDown implements testhost.MouseButtonSurface for all five mouse buttons.
+func (t *testSurface) MouseDown(at driver.Point, button driver.MouseButton, mods driver.Modifiers) error {
+	return t.do(with(t.page(at), "op", "mouseDown", "button", button.String(), "modifiers", mods))
+}
+
+// MouseUp implements testhost.MouseButtonSurface for all five mouse buttons.
+func (t *testSurface) MouseUp(at driver.Point, button driver.MouseButton, mods driver.Modifiers) error {
+	return t.do(with(t.page(at), "op", "mouseUp", "button", button.String(), "modifiers", mods))
+}
+
+// BlurWindow implements testhost.BlurWindowSurface by dispatching a blur event on window.
+func (t *testSurface) BlurWindow() error {
+	return t.do(map[string]any{"op": "blurWindow"})
+}
+
 func (t *testSurface) Drag(path []driver.Point) error {
 	var pts []map[string]any
 	for _, p := range path {

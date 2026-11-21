@@ -1000,6 +1000,163 @@ var cbKeysLeave = newCallback(keysLeaveCallback)
 func keysLeaveCallback(controller, data uintptr) {
 	if w := windowOf(data); w != nil {
 		w.releaseKeys()
+		w.releaseMouseButtons()
+	}
+}
+
+// heldMouseBtn is a mouse button whose down was reported: the view it went to (nil/0 for none) and its click count.
+type heldMouseBtn struct {
+	id     driver.NodeID
+	v      *view
+	clicks uint32
+}
+
+// buttonClicks tracks consecutive clicks of one mouse button on Linux.
+type buttonClicks struct {
+	at    driver.Point
+	when  time.Time
+	count uint32
+}
+
+// gtkMouseButton maps GTK button numbers (1=Left, 2=Middle, 3=Right, 8=Back, 9=Forward) to a MouseButton.
+func gtkMouseButton(button uint32) driver.MouseButton {
+	switch button {
+	case 1:
+		return driver.MouseButtonLeft
+	case 2:
+		return driver.MouseButtonMiddle
+	case 3:
+		return driver.MouseButtonRight
+	case 8:
+		return driver.MouseButtonBack
+	case 9:
+		return driver.MouseButtonForward
+	default:
+		return driver.MouseButtonNone
+	}
+}
+
+// countMouseClicks counts consecutive clicks of btn within the desktop's double-click interval and 4 points.
+func (w *window) countMouseClicks(btn driver.MouseButton, at driver.Point) uint32 {
+	interval := 400 * time.Millisecond
+	if settings := gtkSettingsGetDefault(); settings != 0 {
+		if ms := settingInt(settings, "gtk-double-click-time"); ms > 0 {
+			interval = time.Duration(ms) * time.Millisecond
+		}
+	}
+	now := time.Now()
+	if w.mouseClicks == nil {
+		w.mouseClicks = map[driver.MouseButton]buttonClicks{}
+	}
+	c := w.mouseClicks[btn]
+	dx, dy := at.X-c.at.X, at.Y-c.at.Y
+	if dx < 0 {
+		dx = -dx
+	}
+	if dy < 0 {
+		dy = -dy
+	}
+	if c.count > 0 && now.Sub(c.when) <= interval && dx <= 4 && dy <= 4 {
+		c.count++
+	} else {
+		c.count = 1
+	}
+	c.at, c.when = at, now
+	w.mouseClicks[btn] = c
+	return c.count
+}
+
+// mouseButtonDown reports btn going down at surface point at with modifiers mods.
+func (w *window) mouseButtonDown(btn driver.MouseButton, at driver.Point, mods driver.Modifiers) bool {
+	if btn == driver.MouseButtonNone || w.engine == nil {
+		return false
+	}
+	root := w.view(w.root)
+	var v *view
+	if root != nil {
+		v = hit(root, at, func(v *view) bool { return v.events.Has(driver.EventMouseDown) })
+	}
+	if v == nil && !w.heldMouse {
+		return false
+	}
+	clicks := w.countMouseClicks(btn, at)
+	if prev, ok := w.mouseHeld[btn]; ok {
+		delete(w.mouseHeld, btn)
+		w.engine.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: prev.id, Page: at, Modifiers: mods, Button: btn})
+	}
+	if w.mouseHeld == nil {
+		w.mouseHeld = map[driver.MouseButton]heldMouseBtn{}
+	}
+	if v != nil {
+		w.mouseHeld[btn] = heldMouseBtn{id: v.id, v: v, clicks: clicks}
+		w.engine.Dispatch(driver.Event{
+			Kind:      driver.EventMouseDown,
+			ID:        v.id,
+			Point:     v.surfacePoint(at),
+			Page:      at,
+			Modifiers: mods,
+			Button:    btn,
+			Count:     clicks,
+		})
+		return true
+	}
+	w.mouseHeld[btn] = heldMouseBtn{clicks: clicks}
+	w.engine.Dispatch(driver.Event{
+		Kind:      driver.EventMouseDown,
+		Page:      at,
+		Modifiers: mods,
+		Button:    btn,
+		Count:     clicks,
+	})
+	return false
+}
+
+// mouseButtonUp reports btn coming up at surface point at to the view its down went to (or the view currently under the pointer).
+func (w *window) mouseButtonUp(btn driver.MouseButton, at driver.Point, mods driver.Modifiers) {
+	if btn == driver.MouseButtonNone || w.engine == nil {
+		return
+	}
+	if h, ok := w.mouseHeld[btn]; ok {
+		delete(w.mouseHeld, btn)
+		ev := driver.Event{
+			Kind:      driver.EventMouseUp,
+			ID:        h.id,
+			Page:      at,
+			Modifiers: mods,
+			Button:    btn,
+			Count:     h.clicks,
+		}
+		if h.v != nil && !h.v.deleted {
+			ev.Point = h.v.surfacePoint(at)
+		}
+		w.engine.Dispatch(ev)
+		return
+	}
+	if root := w.view(w.root); root != nil {
+		if v := hit(root, at, func(v *view) bool { return v.events.Has(driver.EventMouseDown) }); v != nil {
+			w.engine.Dispatch(driver.Event{
+				Kind:      driver.EventMouseUp,
+				ID:        v.id,
+				Point:     v.surfacePoint(at),
+				Page:      at,
+				Modifiers: mods,
+				Button:    btn,
+				Count:     1,
+			})
+		}
+	}
+}
+
+// releaseMouseButtons reports every held mouse button coming up with zero modifiers and clicks when the window loses focus.
+func (w *window) releaseMouseButtons() {
+	if w.engine == nil {
+		return
+	}
+	for b := driver.MouseButtonLeft; b <= driver.MouseButtonForward; b++ {
+		if h, ok := w.mouseHeld[b]; ok {
+			delete(w.mouseHeld, b)
+			w.engine.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: h.id, Button: b})
+		}
 	}
 }
 
@@ -1280,6 +1437,28 @@ func (w *window) shield(event uintptr) bool {
 	at, ok := w.eventPoint(event)
 	if !ok {
 		return false
+	}
+	// Report mouse button downs and ups for all five buttons directly from GDK button events so simultaneous multi-button holds are not dropped by GtkGestureSingle.
+	if (typ == gdkButtonPress || typ == gdkButtonRelease) && !isTouch(gdkEventGetDevice(event)) {
+		if btn := gtkMouseButton(gdkButtonEventGetButton(event)); btn != driver.MouseButtonNone {
+			mods := modifiers(gdkEventGetModifierState(event))
+			if typ == gdkButtonPress {
+				picked := gtkWidgetPick(w.surface, float64(at.X), float64(at.Y), gtkPickDefault)
+				native := w.nativeAt(picked)
+				if native && w.hostsControls() {
+					if cv := w.controlAt(picked); cv != nil {
+						if root := w.view(w.root); root != nil && hit(root, at, func(*view) bool { return true }) != cv {
+							native = false // clipped native control is shielded
+						}
+					}
+				}
+				if !native {
+					w.mouseButtonDown(btn, at, mods)
+				}
+			} else {
+				w.mouseButtonUp(btn, at, mods)
+			}
+		}
 	}
 	if w.shielding {
 		// The press went to the app; its moves and release follow.

@@ -274,6 +274,8 @@ core.View{
 
 游戏或画布则轮询按键。`core.KeysDown(cx)` 列出窗口上按住的键，`core.KeyHeld(cx, "left")` 判断某个键是否按住：二者都是被追踪的读取，`RequestAnimationFrame` 循环也能读取。第一次读取后，平台从此报告每个键，所以读取前已经按住的键要再按一次才会知道；在文本框或网页视图中、或输入法组字时按下的键永远不算按住，窗口失去焦点时仍按住的键会在那时抬起。它们在 `OnKeyUp` 可用的地方都可用，在接了硬件键盘的 iPhone 和 iPad 上也可用。
 
+对于鼠标按键，`View.OnMouseDown` 和 `View.OnMouseUp` 在 macOS、Windows、Linux、Web 和 `nsgotest` 上为五个按键（`core.MouseButtonLeft`、`core.MouseButtonRight`、`core.MouseButtonMiddle`、`core.MouseButtonBack`、`core.MouseButtonForward`）报告 `core.MouseButtonEvent`，且不会把视图变成键盘焦点停靠点。`core.MouseButtonsDown(cx)` 和 `core.MouseButtonHeld(cx, core.MouseButtonRight)` 是对窗口上当前按住的鼠标按键的被追踪读取，窗口失焦时会自动清空。
+
 ```go
 var loop func(time.Time)
 loop = func(time.Time) {

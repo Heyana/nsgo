@@ -1,8 +1,11 @@
 package core
 
 import (
+	"fmt"
 	"math"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -251,5 +254,153 @@ func TestPointerEventsNoneLetsPressesThrough(t *testing.T) {
 	h.commit()
 	if got := h.tree.HitTest(Point{X: 50, Y: 50}); got != h.find("under").id {
 		t.Fatalf("hit = %d, want the view under the one that takes no pointer", got)
+	}
+}
+
+func TestMouseButtonDownAndUpDeliverAllFiveButtons(t *testing.T) {
+	var downs, ups []MouseButtonEvent
+	var alerted int
+	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
+		return View{Children: []Node{
+			View{TestID: "pad",
+				OnMouseDown: func(e MouseButtonEvent) { downs = append(downs, e) },
+				OnMouseUp:   func(e MouseButtonEvent) { ups = append(ups, e) }},
+			View{TestID: "upOnly", OnMouseUp: func(e MouseButtonEvent) { ups = append(ups, e) }},
+			View{TestID: "plain"},
+		}}
+	})
+	b := h.commit()
+	pad, upOnly, plain := h.find("pad"), h.find("upOnly"), h.find("plain")
+	masks := map[driver.NodeID]driver.EventMask{}
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemEvents {
+			masks[it.ID] = it.Events
+		}
+	}
+	if !masks[pad.id].Has(driver.EventMouseDown) || !masks[upOnly.id].Has(driver.EventMouseDown) || masks[plain.id].Has(driver.EventMouseDown) {
+		t.Fatalf("masks: pad=%v upOnly=%v plain=%v", masks[pad.id].Has(driver.EventMouseDown), masks[upOnly.id].Has(driver.EventMouseDown), masks[plain.id].Has(driver.EventMouseDown))
+	}
+	// OnMouseDown / OnMouseUp must not turn a plain view into a pressable Tab stop.
+	if pad.takesPresses() || upOnly.takesPresses() {
+		t.Fatal("OnMouseDown/OnMouseUp turned a view into a pressable")
+	}
+
+	buttons := []MouseButton{MouseButtonLeft, MouseButtonRight, MouseButtonMiddle, MouseButtonBack, MouseButtonForward}
+	for i, btn := range buttons {
+		mods := Modifiers{Shift: i%2 == 1}
+		h.tree.Dispatch(driver.Event{Kind: driver.EventMouseDown, ID: pad.id, Point: Point{X: 10, Y: 20}, Page: Point{X: 30, Y: 40}, Modifiers: mods, Button: btn, Count: uint32(i + 1)})
+		h.tree.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: pad.id, Point: Point{X: 11, Y: 21}, Page: Point{X: 31, Y: 41}, Modifiers: mods, Button: btn, Count: uint32(i + 1)})
+	}
+	if len(downs) != 5 || len(ups) != 5 {
+		t.Fatalf("downs=%d ups=%d, want 5 each", len(downs), len(ups))
+	}
+	for i, btn := range buttons {
+		mods := Modifiers{Shift: i%2 == 1}
+		wantDown := MouseButtonEvent{Position: Point{X: 10, Y: 20}, PagePosition: Point{X: 30, Y: 40}, Modifiers: mods, Button: btn, Clicks: i + 1}
+		wantUp := MouseButtonEvent{Position: Point{X: 11, Y: 21}, PagePosition: Point{X: 31, Y: 41}, Modifiers: mods, Button: btn, Clicks: i + 1}
+		if downs[i] != wantDown || ups[i] != wantUp {
+			t.Fatalf("button %s: down=%+v up=%+v", btn, downs[i], ups[i])
+		}
+	}
+	// A view with only OnMouseUp hears ups and ignores downs.
+	h.tree.Dispatch(driver.Event{Kind: driver.EventMouseDown, ID: upOnly.id, Button: MouseButtonRight})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: upOnly.id, Button: MouseButtonRight, Count: 1})
+	if len(ups) != 6 || ups[5].Button != MouseButtonRight || ups[5].Clicks != 1 {
+		t.Fatalf("upOnly: ups=%+v", ups)
+	}
+	// Focus-loss release carries Clicks == 0.
+	h.tree.Dispatch(driver.Event{Kind: driver.EventMouseDown, ID: pad.id, Button: MouseButtonMiddle})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: pad.id, Button: MouseButtonMiddle})
+	if len(ups) != 7 || ups[6].Clicks != 0 || ups[6].Button != MouseButtonMiddle {
+		t.Fatalf("focus-loss release: %+v", ups[len(ups)-1])
+	}
+	// EventAlert shares EventMouseDown's kind, distinguished by Button == MouseButtonNone.
+	h.tree.root.ShowAlert(AlertConfig{Title: "Hi", Actions: []AlertAction{{Label: "OK"}}}, func(i int) { alerted = i + 1 })
+	b = h.commit()
+	var alertID uint32
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemAlert && it.Alert != nil {
+			alertID = it.Alert.ID
+		}
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventAlert, Count: alertID, Index: 0})
+	if alerted != 1 {
+		t.Fatalf("EventAlert callback ran %d, want 1", alerted)
+	}
+}
+
+func TestMouseButtonsDownTracksHeldButtons(t *testing.T) {
+	var renders int
+	var root *Scope
+	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
+		root = cx
+		return Text{TestID: "held", ContentFunc: func() string {
+			renders++
+			return fmt.Sprintf("%v left=%v right=%v none=%v",
+				MouseButtonsDown(cx),
+				MouseButtonHeld(cx, MouseButtonLeft),
+				MouseButtonHeld(cx, MouseButtonRight),
+				MouseButtonHeld(cx, MouseButtonNone))
+		}}
+	})
+	b := h.commit()
+	asked := false
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemKeymap && it.HeldMouseButtons {
+			asked = true
+		}
+	}
+	if !asked {
+		t.Fatal("first commit did not set HeldMouseButtons on ItemKeymap")
+	}
+	shows := func(want string) {
+		t.Helper()
+		h.commit()
+		if got := h.find("held").text.content; got != want {
+			t.Fatalf("shows %q, want %q", got, want)
+		}
+	}
+	shows("[] left=false right=false none=false")
+	h.tree.Dispatch(driver.Event{Kind: driver.EventMouseDown, Button: MouseButtonRight})
+	shows("[right] left=false right=true none=false")
+	h.tree.Dispatch(driver.Event{Kind: driver.EventMouseDown, Button: MouseButtonLeft})
+	// Returned in canonical button order (left before right).
+	shows("[left right] left=true right=true none=false")
+	before := renders
+	// Duplicate down for an already-held button does not rerender.
+	h.tree.Dispatch(driver.Event{Kind: driver.EventMouseDown, Button: MouseButtonLeft})
+	h.commit()
+	if renders != before {
+		t.Fatalf("duplicate down rendered %d more times", renders-before)
+	}
+	var framed []MouseButton
+	root.RequestAnimationFrame(func(time.Time) { framed = MouseButtonsDown(root) })
+	h.frame()
+	if !slices.Equal(framed, []MouseButton{MouseButtonLeft, MouseButtonRight}) {
+		t.Fatalf("frame callback read %v", framed)
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventMouseUp, Button: MouseButtonLeft})
+	shows("[right] left=false right=true none=false")
+	h.tree.Dispatch(driver.Event{Kind: driver.EventMouseUp, Button: MouseButtonRight})
+	shows("[] left=false right=false none=false")
+}
+
+func TestMouseButtonsDownFromFrameAsksPlatform(t *testing.T) {
+	var root *Scope
+	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
+		root = cx
+		return View{}
+	})
+	h.commit()
+	root.RequestAnimationFrame(func(time.Time) { MouseButtonsDown(root) })
+	h.frame()
+	asked := false
+	for _, it := range h.commit().Items {
+		if it.Kind == driver.ItemKeymap && it.HeldMouseButtons {
+			asked = true
+		}
+	}
+	if !asked {
+		t.Fatal("frame read did not commit HeldMouseButtons on ItemKeymap")
 	}
 }

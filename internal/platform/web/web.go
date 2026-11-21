@@ -198,8 +198,10 @@ type surface struct {
 	mouse   driver.Point
 	mouseIn bool
 	// heldKeys is whether the app asked for every key held (MountItem.HeldKeys), and keysHeld the keys whose down focusKeyDown reported, by physical key, until they come up.
-	heldKeys bool
-	keysHeld map[string]heldKey
+	heldKeys  bool
+	keysHeld  map[string]heldKey
+	heldMouse bool
+	mouseHeld map[driver.MouseButton]heldMouseBtn
 }
 
 // view is the element of one NodeID.
@@ -1497,7 +1499,7 @@ func (s *surface) mount(b *driver.MountBatch) {
 			s.announce(it.Value)
 			continue
 		case driver.ItemKeymap:
-			s.setKeymap(it.Keys, it.HeldKeys)
+			s.setKeymap(it.Keys, it.HeldKeys, it.HeldMouseButtons)
 			continue
 		case driver.ItemTitle:
 			if s.whole {
@@ -2411,6 +2413,144 @@ func (s *surface) listenModifiers(ls *listeners) {
 	ls.on(s.doc, "keydown", changed)
 	ls.on(s.doc, "keyup", changed)
 	ls.on(s.doc, "selectionchange", func(js.Value) { s.selectionChanged() })
+	ls.on(s.host, "mousedown", func(e js.Value) { s.mouseButtonDown(e) })
+	ls.on(js.Global(), "mouseup", func(e js.Value) { s.mouseButtonUp(e) })
+}
+
+// heldMouseBtn is a mouse button whose down was reported: the view it went to (nil/0 for none).
+type heldMouseBtn struct {
+	id driver.NodeID
+	v  *view
+}
+
+// domMouseButton maps a DOM MouseEvent.button value (0=Left, 1=Middle, 2=Right, 3=Back, 4=Forward) to a MouseButton.
+func domMouseButton(b int) driver.MouseButton {
+	switch b {
+	case 0:
+		return driver.MouseButtonLeft
+	case 1:
+		return driver.MouseButtonMiddle
+	case 2:
+		return driver.MouseButtonRight
+	case 3:
+		return driver.MouseButtonBack
+	case 4:
+		return driver.MouseButtonForward
+	default:
+		return driver.MouseButtonNone
+	}
+}
+
+// mouseViewFor finds the innermost view from target up to s.host that listens for mouse button events.
+func (s *surface) mouseViewFor(target js.Value) *view {
+	for el := target; el.Truthy() && !el.Equal(s.host); el = el.Get("parentElement") {
+		if v := s.viewOf(el); v != nil && v.el.Equal(el) && v.events.Has(driver.EventMouseDown) {
+			return v
+		}
+	}
+	return nil
+}
+
+// hostPagePoint converts client coordinates (x, y) into s.host's points.
+func (s *surface) hostPagePoint(x, y float64) driver.Point {
+	r := s.host.Call("getBoundingClientRect")
+	return driver.Point{X: driver.Points(x - r.Get("left").Float()), Y: driver.Points(y - r.Get("top").Float())}
+}
+
+func (s *surface) mouseButtonDown(e js.Value) {
+	btn := domMouseButton(e.Get("button").Int())
+	if btn == driver.MouseButtonNone || s.engine == nil {
+		return
+	}
+	s.engine.InputModality(driver.ModalityPointer)
+	v := s.mouseViewFor(e.Get("target"))
+	if v == nil && !s.heldMouse {
+		return
+	}
+	mods := driver.Modifiers{
+		Control:  e.Get("ctrlKey").Bool(),
+		Alt:      e.Get("altKey").Bool(),
+		Shift:    e.Get("shiftKey").Bool(),
+		Platform: e.Get("metaKey").Bool(),
+	}
+	clicks := uint32(max(e.Get("detail").Int(), 1))
+	x, y := e.Get("clientX").Float(), e.Get("clientY").Float()
+	if prev, ok := s.mouseHeld[btn]; ok {
+		delete(s.mouseHeld, btn)
+		s.engine.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: prev.id, Modifiers: mods, Button: btn})
+	}
+	if s.mouseHeld == nil {
+		s.mouseHeld = map[driver.MouseButton]heldMouseBtn{}
+	}
+	if v != nil {
+		if btn == driver.MouseButtonBack || btn == driver.MouseButtonForward {
+			e.Call("preventDefault")
+		}
+		s.mouseHeld[btn] = heldMouseBtn{id: v.id, v: v}
+		ev := s.pointerAt(v, driver.EventMouseDown, x, y, e)
+		ev.Button, ev.Count = btn, clicks
+		s.send(v, ev)
+		return
+	}
+	s.mouseHeld[btn] = heldMouseBtn{}
+	s.engine.Dispatch(driver.Event{
+		Kind:      driver.EventMouseDown,
+		Page:      s.hostPagePoint(x, y),
+		Modifiers: mods,
+		Button:    btn,
+		Count:     clicks,
+	})
+}
+
+func (s *surface) mouseButtonUp(e js.Value) {
+	btn := domMouseButton(e.Get("button").Int())
+	if btn == driver.MouseButtonNone || s.engine == nil {
+		return
+	}
+	mods := driver.Modifiers{
+		Control:  e.Get("ctrlKey").Bool(),
+		Alt:      e.Get("altKey").Bool(),
+		Shift:    e.Get("shiftKey").Bool(),
+		Platform: e.Get("metaKey").Bool(),
+	}
+	clicks := uint32(max(e.Get("detail").Int(), 1))
+	x, y := e.Get("clientX").Float(), e.Get("clientY").Float()
+	if h, ok := s.mouseHeld[btn]; ok {
+		delete(s.mouseHeld, btn)
+		if h.v != nil && s.views[h.id] == h.v {
+			ev := s.pointerAt(h.v, driver.EventMouseUp, x, y, e)
+			ev.Button, ev.Count = btn, clicks
+			s.send(h.v, ev)
+			return
+		}
+		s.engine.Dispatch(driver.Event{
+			Kind:      driver.EventMouseUp,
+			ID:        h.id,
+			Page:      s.hostPagePoint(x, y),
+			Modifiers: mods,
+			Button:    btn,
+			Count:     clicks,
+		})
+		return
+	}
+	if v := s.mouseViewFor(e.Get("target")); v != nil {
+		ev := s.pointerAt(v, driver.EventMouseUp, x, y, e)
+		ev.Button, ev.Count = btn, clicks
+		s.send(v, ev)
+	}
+}
+
+// releaseMouseButtons reports every held mouse button coming up with zero modifiers and clicks when the page loses focus or hides.
+func (s *surface) releaseMouseButtons() {
+	if s.engine == nil {
+		return
+	}
+	for b := driver.MouseButtonLeft; b <= driver.MouseButtonForward; b++ {
+		if h, ok := s.mouseHeld[b]; ok {
+			delete(s.mouseHeld, b)
+			s.engine.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: h.id, Button: b})
+		}
+	}
 }
 
 // pointer returns where e's pointer is in v and in v's root view, the

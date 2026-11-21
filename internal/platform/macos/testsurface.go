@@ -222,6 +222,117 @@ func (t *testSurface) RightClick(at driver.Point) error {
 	return nil
 }
 
+// MouseDown implements testhost.MouseButtonSurface for all five mouse buttons.
+func (t *testSurface) MouseDown(at driver.Point, button driver.MouseButton, mods driver.Modifiers) error {
+	return t.mouseButtonStep(at, button, mods, true)
+}
+
+// MouseUp implements testhost.MouseButtonSurface for all five mouse buttons.
+func (t *testSurface) MouseUp(at driver.Point, button driver.MouseButton, mods driver.Modifiers) error {
+	return t.mouseButtonStep(at, button, mods, false)
+}
+
+func (t *testSurface) mouseButtonStep(at driver.Point, button driver.MouseButton, mods driver.Modifiers, down bool) error {
+	t.follow()
+	const evRightUp, evOtherDown, evOtherUp = 4, 25, 26
+	switch button {
+	case driver.MouseButtonLeft:
+		kind := uint(evLeftUp)
+		if down {
+			kind = evLeftDown
+		}
+		t.mouseWith(kind, at, 1, mods)
+		return nil
+	case driver.MouseButtonRight:
+		kind := uint(evRightUp)
+		if down {
+			kind = evRightDown
+		}
+		t.mouseWith(kind, at, 1, mods)
+		return nil
+	case driver.MouseButtonMiddle, driver.MouseButtonBack, driver.MouseButtonForward:
+		btnNum := int(button) - 1 // Middle=2, Back=3, Forward=4
+		if button == driver.MouseButtonMiddle {
+			btnNum = 2
+		} else if button == driver.MouseButtonBack {
+			btnNum = 3
+		} else {
+			btnNum = 4
+		}
+		loadCG()
+		onMainSync(func() {
+			if t.s.closed {
+				return
+			}
+			t.s.commitPending()
+			if t.s.testPointer != nil {
+				*t.s.testPointer = t.windowPoint(at)
+			}
+			cgType := uint32(evOtherUp)
+			if down {
+				cgType = evOtherDown
+			}
+			cg := cgEventCreateMouseEvent(0, cgType, t.screenPoint(at), uint32(btnNum))
+			if cg == 0 {
+				return
+			}
+			defer apple.Release(cg)
+			const fieldClickState, fieldButtonNumber, fieldWindowUnder, fieldWindowHandle = 1, 3, 91, 92
+			winNum := int64(objc.Send[int](t.s.window, sel("windowNumber")))
+			cgEventSetIntegerValueField(cg, fieldClickState, 1)
+			cgEventSetIntegerValueField(cg, fieldButtonNumber, int64(btnNum))
+			cgEventSetIntegerValueField(cg, fieldWindowUnder, winNum)
+			cgEventSetIntegerValueField(cg, fieldWindowHandle, winNum)
+			var flags uint64
+			if mods.Shift {
+				flags |= flagShift
+			}
+			if mods.Control {
+				flags |= flagControl
+			}
+			if mods.Alt {
+				flags |= flagOption
+			}
+			if mods.Platform {
+				flags |= flagCommand
+			}
+			cgEventSetFlags(cg, flags)
+			ev := objc.ID(apple.Class("NSEvent")).Send(sel("eventWithCGEvent:"), cg)
+			if ev == 0 {
+				return
+			}
+			rememberTestInput(ev)
+			if ev.Send(selWindow) == t.s.window {
+				nsApp().Send(sel("postEvent:atStart:"), ev, false)
+				return
+			}
+			// When AppKit does not associate a synthetic CGEvent with a background window, deliver directly through the surface's handlers at the exact window point.
+			loc := t.windowPoint(at)
+			if down {
+				t.s.mouseButtonDownAt(button, loc, mods, 1)
+			} else {
+				t.s.mouseButtonUpAt(button, loc, mods, 1)
+			}
+		})
+		return nil
+	default:
+		return fmt.Errorf("unsupported mouse button %s", button)
+	}
+}
+
+// BlurWindow implements testhost.BlurWindowSurface, releasing held keys and mouse buttons as NSWindowDidResignKeyNotification does.
+func (t *testSurface) BlurWindow() error {
+	t.follow()
+	onMainSync(func() {
+		if t.s.closed {
+			return
+		}
+		t.s.releaseKeys()
+		t.s.releaseMouseButtons()
+	})
+	return nil
+}
+
 // Drag rests where it lands, then moves 10 points a frame, as a hand.
 func (t *testSurface) Drag(path []driver.Point) error {
 	t.follow()
@@ -256,8 +367,10 @@ func steps(a, b driver.Point, step driver.Points) []driver.Point {
 }
 
 var (
+	cgEventCreateMouseEvent          func(source uintptr, mouseType uint32, pos apple.CGPoint, button uint32) uintptr
 	cgEventCreateScrollWheelEvent2   func(source uintptr, units uint32, count uint32, w1, w2, w3 int32) uintptr
 	cgEventSetIntegerValueField      func(event uintptr, field uint32, value int64)
+	cgEventSetFlags                  func(event uintptr, flags uint64)
 	cgEventSetLocation               func(event uintptr, p apple.CGPoint)
 	cgWindowListCreateImage          func(bounds apple.CGRect, option uint32, window uint32, imageOption uint32) uintptr
 	cgWindowListCreateImageFromArray func(bounds apple.CGRect, windows uintptr, imageOption uint32) uintptr
@@ -274,8 +387,10 @@ func loadCG() {
 	if err != nil {
 		panic(err)
 	}
+	purego.RegisterLibFunc(&cgEventCreateMouseEvent, cg, "CGEventCreateMouseEvent")
 	purego.RegisterLibFunc(&cgEventCreateScrollWheelEvent2, cg, "CGEventCreateScrollWheelEvent2")
 	purego.RegisterLibFunc(&cgEventSetIntegerValueField, cg, "CGEventSetIntegerValueField")
+	purego.RegisterLibFunc(&cgEventSetFlags, cg, "CGEventSetFlags")
 	purego.RegisterLibFunc(&cgEventSetLocation, cg, "CGEventSetLocation")
 	// Deprecated since macOS 14; a system without it captures through AppKit instead of failing to load.
 	if _, err := purego.Dlsym(cg, "CGWindowListCreateImage"); err == nil {

@@ -276,6 +276,8 @@ const (
 	EventOpenScene
 	// EventKeyUp reports a key coming up that went down while view ID had the keyboard focus, or with ID 0 one that went down while no view hearing keys had it, after its EventKeyDown: Text is the name the down reported, Modifiers the keys still held, the released one not among them, and Repeat false. The platform reports it asynchronously (Engine.Dispatch), as an up cannot be consumed, for each down it reported, wherever the focus has gone since, and an up for every key still held when the window loses the focus. It names a view but is never in a mask: a view that hears keys has EventKeyDown's bit, which a kind past 63 could not have, as Android's runtime shifts a kind into a 64-bit mask.
 	EventKeyUp
+	// EventMouseUp reports a mouse button coming up (Button, Count the consecutive click count, Point in the view, Page in its root view, Modifiers the keys held) on the view its down went to (ID), or with ID 0 when no view hearing mouse buttons was under the pointer, and for every held button when the window loses focus (with zero Count and Modifiers). Like EventKeyUp, it is never in a mask: a view that hears mouse buttons has EventMouseDown's bit, which a kind past 63 could not have.
+	EventMouseUp
 )
 
 // EventVideoPause reports that the platform paused video ID, not the app's Paused: Index is why (VideoPauseInterruption, ...). An EventMask has no room for another kind, so it shares EventImageInfo's, an answer that names no view and is never in a mask; Android's Protocol.java mirrors it.
@@ -283,6 +285,9 @@ const EventVideoPause EventKind = EventImageInfo
 
 // EventKeyDown reports a key going down on view ID, which has the keyboard focus, before the keymap matches it: Text is the key's name as NormalizeKey writes it without modifiers ("k", "space", "f5", or "shift", "ctrl", "alt" and "meta" for a modifier pressed alone), Modifiers the keys held, the pressed one included, and Repeat whether it is a held key's auto-repeat. Its bit in a view's mask means the view hears keys, going down and coming up (EventKeyUp). The platform asks the engine synchronously (Engine.DispatchKeyDown) and takes the key from the keymap and the view when the view's handler consumes it. Where no view that hears keys has the focus and the surface asked for held keys (MountItem.HeldKeys), it reports the down asynchronously with ID 0 and consumes nothing. An EventMask has no room for another kind, so it shares EventKey's, a binding's press that names no view and so is never in a view's mask: a binding's press has a Count, and a key down has an ID, or neither when no view hears it.
 const EventKeyDown EventKind = EventKey
+
+// EventMouseDown reports a mouse button going down on view ID (Button, Count the consecutive click count, Point in the view, Page in its root view, Modifiers the keys held), or with ID 0 when no view under the pointer hears mouse buttons and the surface asked for held mouse buttons (MountItem.HeldMouseButtons). Its bit in a view's mask means the view hears mouse buttons, going down and coming up (EventMouseUp). An EventMask has no room for another kind, so it shares EventAlert's, an answer that names no view and never carries a Button: a mouse button down always has Button != MouseButtonNone.
+const EventMouseDown EventKind = EventAlert
 
 // EventVideoPlay reports that the platform played video ID, not the app's Paused. It shares EventMenuClosed's kind as EventVideoPause shares EventImageInfo's.
 const EventVideoPlay EventKind = EventMenuClosed
@@ -407,6 +412,26 @@ const (
 	MouseButtonBack
 	MouseButtonForward
 )
+
+// String names the mouse button for logs and diagnostics.
+func (b MouseButton) String() string {
+	switch b {
+	case MouseButtonNone:
+		return "none"
+	case MouseButtonLeft:
+		return "left"
+	case MouseButtonRight:
+		return "right"
+	case MouseButtonMiddle:
+		return "middle"
+	case MouseButtonBack:
+		return "back"
+	case MouseButtonForward:
+		return "forward"
+	default:
+		return "unknown"
+	}
+}
 
 // PointerEvents says which of a view and its children take touches and
 // the pointer.

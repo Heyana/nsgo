@@ -168,6 +168,87 @@ func (t *testSurface) RightClick(at driver.Point) error {
 	return nil
 }
 
+// MouseDown implements testhost.MouseButtonSurface for all five mouse buttons.
+func (t *testSurface) MouseDown(at driver.Point, button driver.MouseButton, mods driver.Modifiers) error {
+	return t.mouseButtonStep(at, button, mods, true)
+}
+
+// MouseUp implements testhost.MouseButtonSurface for all five mouse buttons.
+func (t *testSurface) MouseUp(at driver.Point, button driver.MouseButton, mods driver.Modifiers) error {
+	return t.mouseButtonStep(at, button, mods, false)
+}
+
+func (t *testSurface) mouseButtonStep(at driver.Point, button driver.MouseButton, mods driver.Modifiers, down bool) error {
+	var msg uintptr
+	var wParam uintptr
+	if mods.Shift {
+		wParam |= 0x0004 // MK_SHIFT
+	}
+	if mods.Control {
+		wParam |= 0x0008 // MK_CONTROL
+	}
+	switch button {
+	case driver.MouseButtonLeft:
+		if down {
+			msg, wParam = wmLButtonDown, wParam|mkLButton
+		} else {
+			msg = wmLButtonUp
+		}
+	case driver.MouseButtonRight:
+		if down {
+			msg, wParam = wmRButtonDown, wParam|mkRButton
+		} else {
+			msg = wmRButtonUp
+		}
+	case driver.MouseButtonMiddle:
+		if down {
+			msg, wParam = wmMButtonDown, wParam|mkMButton
+		} else {
+			msg = wmMButtonUp
+		}
+	case driver.MouseButtonBack:
+		if down {
+			msg, wParam = wmXButtonDown, wParam|mkXButton1|(1<<16)
+		} else {
+			msg, wParam = wmXButtonUp, wParam|(1<<16)
+		}
+	case driver.MouseButtonForward:
+		if down {
+			msg, wParam = wmXButtonDown, wParam|mkXButton2|(xButtonForward<<16)
+		} else {
+			msg, wParam = wmXButtonUp, wParam|(xButtonForward<<16)
+		}
+	default:
+		return fmt.Errorf("unsupported mouse button %s", button)
+	}
+	t.onMain(func() {
+		var saved [256]byte
+		hostGetKeyboardState.Call(uintptr(unsafe.Pointer(&saved)))
+		state := saved
+		for _, key := range []struct {
+			code uintptr
+			held bool
+		}{{vkControl, mods.Control}, {vkShift, mods.Shift}, {vkMenu, mods.Alt}, {vkLWin, mods.Platform}} {
+			if key.held {
+				setKey(&state, key.code, true)
+			}
+		}
+		hostSetKeyboardState.Call(uintptr(unsafe.Pointer(&state)))
+		defer hostSetKeyboardState.Call(uintptr(unsafe.Pointer(&saved)))
+		hostSendMessage.Call(t.w.hwnd, msg, wParam, t.lParam(at))
+	})
+	return nil
+}
+
+// BlurWindow implements testhost.BlurWindowSurface, releasing held keys and mouse buttons as WM_KILLFOCUS does.
+func (t *testSurface) BlurWindow() error {
+	t.onMain(func() {
+		t.w.releaseKeys()
+		t.w.releaseMouseButtons()
+	})
+	return nil
+}
+
 func (t *testSurface) Drag(path []driver.Point) error {
 	if len(path) == 0 {
 		return errors.New("an empty drag")

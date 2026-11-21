@@ -4,6 +4,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
@@ -474,10 +475,238 @@ func (a *App) hoverAt(selector string, local *driver.Point) {
 	}
 	a.mouseIn = true
 	a.setHovered(next, at)
+	btn := a.heldMouseButton()
 	for _, h := range next {
 		ev := a.pressEvent(h, at)
-		ev.Kind, ev.Count = driver.EventMouseMove, 0
+		ev.Kind, ev.Count, ev.Button = driver.EventMouseMove, 0, btn
 		a.send(h, ev)
+	}
+	a.done()
+}
+
+// heldMouseButton is a mouse button MouseDown holds: tree and id are the surface and view its down went to (id 0 for none), clicks is its click count, and reported whether the platform would report its up.
+type heldMouseButton struct {
+	tree     *core.Tree
+	id       driver.NodeID
+	clicks   uint32
+	reported bool
+}
+
+// mouseClickState tracks consecutive clicks of one button for click counting.
+type mouseClickState struct {
+	view  driver.NodeID
+	at    time.Time
+	count uint32
+}
+
+// heldMouseButton returns the first mouse button held by MouseDown, or MouseButtonNone.
+func (a *App) heldMouseButton() driver.MouseButton {
+	for b := driver.MouseButtonLeft; b <= driver.MouseButtonForward; b++ {
+		if _, ok := a.heldButtons[b]; ok {
+			return b
+		}
+	}
+	return driver.MouseButtonNone
+}
+
+// mergeHeldModifiers merges explicit modifiers with any modifier keys currently held by KeyDown.
+func (a *App) mergeHeldModifiers(mods driver.Modifiers) driver.Modifiers {
+	held := a.heldModifiers()
+	return driver.Modifiers{
+		Control:  mods.Control || held.Control,
+		Alt:      mods.Alt || held.Alt,
+		Shift:    mods.Shift || held.Shift,
+		Platform: mods.Platform || held.Platform,
+	}
+}
+
+// checkMouseButton validates that button is one of the five mouse buttons.
+func (a *App) checkMouseButton(button driver.MouseButton) {
+	a.t.Helper()
+	if button < driver.MouseButtonLeft || button > driver.MouseButtonForward {
+		a.t.Fatalf("nsgotest: %s: mouse button must be one of left, right, middle, back or forward, got %s", a.stepName, button)
+	}
+}
+
+// MouseDown presses button on the middle of what selector names and holds it until MouseUp or BlurWindow.
+func (a *App) MouseDown(selector string, button driver.MouseButton) {
+	a.t.Helper()
+	a.MouseDownWith(selector, button, driver.Modifiers{})
+}
+
+// MouseDownWith presses button as MouseDown does, with mods held.
+func (a *App) MouseDownWith(selector string, button driver.MouseButton, mods driver.Modifiers) {
+	a.t.Helper()
+	if mods == (driver.Modifiers{}) {
+		a.step("mouseDown(%s, %s)", selector, button)
+	} else {
+		a.step("mouseDownWith(%s, %s, %s)", selector, button, modifierNames(mods))
+	}
+	a.mouseButton(selector, nil, button, mods, true)
+}
+
+// MouseDownAt presses button at local point at in what selector names and holds it until MouseUp or BlurWindow.
+func (a *App) MouseDownAt(selector string, at driver.Point, button driver.MouseButton) {
+	a.t.Helper()
+	a.MouseDownAtWith(selector, at, button, driver.Modifiers{})
+}
+
+// MouseDownAtWith presses button as MouseDownAt does, with mods held.
+func (a *App) MouseDownAtWith(selector string, at driver.Point, button driver.MouseButton, mods driver.Modifiers) {
+	a.t.Helper()
+	if mods == (driver.Modifiers{}) {
+		a.step("mouseDownAt(%s, %v, %v, %s)", selector, at.X, at.Y, button)
+	} else {
+		a.step("mouseDownAtWith(%s, %v, %v, %s, %s)", selector, at.X, at.Y, button, modifierNames(mods))
+	}
+	a.mouseButton(selector, &at, button, mods, true)
+}
+
+// MouseUp releases button held by MouseDown at the middle of what selector names. Releasing a button not held fails the step.
+func (a *App) MouseUp(selector string, button driver.MouseButton) {
+	a.t.Helper()
+	a.MouseUpWith(selector, button, driver.Modifiers{})
+}
+
+// MouseUpWith releases button as MouseUp does, with mods held.
+func (a *App) MouseUpWith(selector string, button driver.MouseButton, mods driver.Modifiers) {
+	a.t.Helper()
+	if mods == (driver.Modifiers{}) {
+		a.step("mouseUp(%s, %s)", selector, button)
+	} else {
+		a.step("mouseUpWith(%s, %s, %s)", selector, button, modifierNames(mods))
+	}
+	a.mouseButton(selector, nil, button, mods, false)
+}
+
+// MouseUpAt releases button held by MouseDown at local point at in what selector names.
+func (a *App) MouseUpAt(selector string, at driver.Point, button driver.MouseButton) {
+	a.t.Helper()
+	a.MouseUpAtWith(selector, at, button, driver.Modifiers{})
+}
+
+// MouseUpAtWith releases button as MouseUpAt does, with mods held.
+func (a *App) MouseUpAtWith(selector string, at driver.Point, button driver.MouseButton, mods driver.Modifiers) {
+	a.t.Helper()
+	if mods == (driver.Modifiers{}) {
+		a.step("mouseUpAt(%s, %v, %v, %s)", selector, at.X, at.Y, button)
+	} else {
+		a.step("mouseUpAtWith(%s, %v, %v, %s, %s)", selector, at.X, at.Y, button, modifierNames(mods))
+	}
+	a.mouseButton(selector, &at, button, mods, false)
+}
+
+func (a *App) mouseButton(selector string, local *driver.Point, button driver.MouseButton, mods driver.Modifiers, down bool) {
+	a.t.Helper()
+	a.checkMouseButton(button)
+	v := a.pick(selector, "view", func(m *View) (*View, bool) { return m, true })
+	at := a.reveal(v)
+	if local != nil {
+		at = v.pagePoint(*local)
+	}
+	if a.target != nil {
+		a.target.mouseButton(at, button, mods, down)
+		a.done()
+		return
+	}
+	mods = a.mergeHeldModifiers(mods)
+	if down {
+		a.inputBy(driver.ModalityPointer)
+		if prev, ok := a.heldButtons[button]; ok {
+			delete(a.heldButtons, button)
+			if prev.reported && prev.tree != nil {
+				prev.tree.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: prev.id, Page: at, Modifiers: mods, Button: button})
+			}
+		}
+		target := a.viewAt(at, func(v *View) bool { return v.Events.Has(driver.EventMouseDown) })
+		var targetID driver.NodeID
+		if target != nil {
+			targetID = target.ID
+		}
+		clicks := a.countMouseClick(button, targetID)
+		entry := heldMouseButton{clicks: clicks}
+		switch {
+		case target != nil:
+			entry = heldMouseButton{tree: a.tree, id: target.ID, clicks: clicks, reported: true}
+			a.tree.Dispatch(driver.Event{
+				Kind: driver.EventMouseDown, ID: target.ID,
+				Point: target.localPoint(at), Page: at,
+				Modifiers: mods, Button: button, Count: clicks,
+			})
+		case a.heldMouse:
+			entry = heldMouseButton{tree: a.tree, clicks: clicks, reported: true}
+			a.tree.Dispatch(driver.Event{
+				Kind: driver.EventMouseDown, Page: at,
+				Modifiers: mods, Button: button, Count: clicks,
+			})
+		}
+		if a.heldButtons == nil {
+			a.heldButtons = map[driver.MouseButton]heldMouseButton{}
+		}
+		a.heldButtons[button] = entry
+		a.done()
+		return
+	}
+	h, ok := a.heldButtons[button]
+	if !ok {
+		a.t.Fatalf("nsgotest: %s: %s button is not held; MouseDown holds a button", a.stepName, button)
+	}
+	delete(a.heldButtons, button)
+	if h.reported && h.tree != nil {
+		ev := driver.Event{
+			Kind: driver.EventMouseUp, ID: h.id,
+			Page: at, Modifiers: mods, Button: button, Count: h.clicks,
+		}
+		if h.id != 0 {
+			if target := a.views[h.id]; target != nil {
+				ev.Point = target.localPoint(at)
+			}
+		}
+		h.tree.Dispatch(ev)
+	}
+	a.done()
+}
+
+// countMouseClick counts consecutive clicks of button on targetID within 500 ms.
+func (a *App) countMouseClick(button driver.MouseButton, targetID driver.NodeID) uint32 {
+	now := a.Clock.Now()
+	if a.mouseClicks == nil {
+		a.mouseClicks = map[driver.MouseButton]mouseClickState{}
+	}
+	st := a.mouseClicks[button]
+	if st.view == targetID && !st.at.IsZero() && now.Sub(st.at) <= 500*time.Millisecond {
+		st.count++
+	} else {
+		st.view = targetID
+		st.count = 1
+	}
+	st.at = now
+	a.mouseClicks[button] = st
+	return st.count
+}
+
+// BlurWindow simulates the window losing focus (resign key / blur), releasing every held key and held mouse button just as desktop and web platforms do on focus loss.
+func (a *App) BlurWindow() {
+	a.t.Helper()
+	a.step("blurWindow()")
+	if a.target != nil {
+		a.target.blurWindow()
+		a.done()
+		return
+	}
+	for name, h := range a.held {
+		delete(a.held, name)
+		if h.reported && h.tree != nil {
+			h.tree.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: h.id, Text: name})
+		}
+	}
+	for b := driver.MouseButtonLeft; b <= driver.MouseButtonForward; b++ {
+		if h, ok := a.heldButtons[b]; ok {
+			delete(a.heldButtons, b)
+			if h.reported && h.tree != nil {
+				h.tree.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: h.id, Button: b})
+			}
+		}
 	}
 	a.done()
 }

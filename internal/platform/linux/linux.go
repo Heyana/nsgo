@@ -166,16 +166,19 @@ type window struct {
 	root  driver.NodeID
 	// effects are the views with an effect, a transition or a navigation
 	// shader (effect.go).
-	effects   map[*view]bool
-	entries   map[uintptr]*view
-	natives   map[uintptr]*view // by the objects of hosted widgets
-	appID     string
-	keys      []driver.KeyBinding
-	hotKeys   *globalHotKeys
-	held      map[uint32]heldKey // the keys down, by keycode (keyPressedCallback)
-	heldKeys  bool               // the app follows every key going down and up (driver.MountItem.HeldKeys)
-	animating []*view
-	ticking   bool
+	effects     map[*view]bool
+	entries     map[uintptr]*view
+	natives     map[uintptr]*view // by the objects of hosted widgets
+	appID       string
+	keys        []driver.KeyBinding
+	hotKeys     *globalHotKeys
+	held        map[uint32]heldKey                  // the keys down, by keycode (keyPressedCallback)
+	heldKeys    bool                                // the app follows every key going down and up (driver.MountItem.HeldKeys)
+	heldMouse   bool                                // the app follows every mouse button going down and up (driver.MountItem.HeldMouseButtons)
+	mouseHeld   map[driver.MouseButton]heldMouseBtn // mouse buttons reported going down and not yet up
+	mouseClicks map[driver.MouseButton]buttonClicks
+	animating   []*view
+	ticking     bool
 	// tickID is the surface's tick callback and watchID the timer watching it while the clock runs; ticked is when the frame clock last ticked.
 	tickID, watchID uint32
 	ticked          time.Time
@@ -1072,7 +1075,7 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemKeymap:
 			w.setKeymap(it.Keys)
-			w.heldKeys = it.HeldKeys
+			w.heldKeys, w.heldMouse = it.HeldKeys, it.HeldMouseButtons
 			continue
 		case driver.ItemTitle, driver.ItemWindow, driver.ItemMenu:
 			if it.Kind == driver.ItemWindow && it.Window != nil && it.Window.Action == driver.WindowDestroy {

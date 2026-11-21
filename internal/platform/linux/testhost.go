@@ -184,6 +184,32 @@ func (t *testSurface) RightClick(at driver.Point) error {
 	return nil
 }
 
+// MouseDown implements testhost.MouseButtonSurface for all five mouse buttons.
+func (t *testSurface) MouseDown(at driver.Point, button driver.MouseButton, mods driver.Modifiers) error {
+	t.onLoop(func() {
+		t.w.engine.InputModality(driver.ModalityPointer)
+		t.w.mouseButtonDown(button, at, mods)
+	})
+	return nil
+}
+
+// MouseUp implements testhost.MouseButtonSurface for all five mouse buttons.
+func (t *testSurface) MouseUp(at driver.Point, button driver.MouseButton, mods driver.Modifiers) error {
+	t.onLoop(func() {
+		t.w.mouseButtonUp(button, at, mods)
+	})
+	return nil
+}
+
+// BlurWindow implements testhost.BlurWindowSurface, releasing held keys and mouse buttons as window focus loss does.
+func (t *testSurface) BlurWindow() error {
+	t.onLoop(func() {
+		t.w.releaseKeys()
+		t.w.releaseMouseButtons()
+	})
+	return nil
+}
+
 func (t *testSurface) Drag(path []driver.Point) error {
 	if len(path) == 0 {
 		return errors.New("an empty drag")

@@ -1028,3 +1028,117 @@ func TestKeyCommandsFollowTheirOwners(t *testing.T) {
 	app.Post(func() { cover.Set(false) })
 	check(command)
 }
+
+func TestMouseDownUpHeldButtonsAndBlurWindow(t *testing.T) {
+	var downs, ups []core.MouseButtonEvent
+	var held []core.MouseButton
+	var moves []core.MouseEvent
+	app := Start(t, func(cx *core.Scope) core.Node {
+		return core.View{Children: []core.Node{
+			core.View{
+				TestID: "pad",
+				Style:  core.Style{Width: core.Pt(100), Height: core.Pt(80)},
+				OnMouseDown: func(e core.MouseButtonEvent) {
+					downs = append(downs, e)
+				},
+				OnMouseUp: func(e core.MouseButtonEvent) {
+					ups = append(ups, e)
+				},
+				OnMouseMove: func(e core.MouseEvent) {
+					moves = append(moves, e)
+				},
+			},
+			core.Text{TestID: "held", ContentFunc: func() string {
+				held = core.MouseButtonsDown(cx)
+				return fmt.Sprint(held, core.MouseButtonHeld(cx, core.MouseButtonRight))
+			}},
+		}}
+	}, Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
+
+	buttons := []core.MouseButton{
+		core.MouseButtonLeft,
+		core.MouseButtonRight,
+		core.MouseButtonMiddle,
+		core.MouseButtonBack,
+		core.MouseButtonForward,
+	}
+	for _, b := range buttons {
+		app.MouseDownAtWith("id:pad", core.Point{X: 12, Y: 24}, b, core.Modifiers{Shift: true})
+		if !slices.Equal(held, []core.MouseButton{b}) {
+			t.Fatalf("after %s down: held=%v", b, held)
+		}
+		app.MouseUpAtWith("id:pad", core.Point{X: 14, Y: 26}, b, core.Modifiers{Shift: true})
+		if len(held) != 0 {
+			t.Fatalf("after %s up: held=%v", b, held)
+		}
+	}
+	if len(downs) != 5 || len(ups) != 5 {
+		t.Fatalf("downs=%d ups=%d, want 5 each", len(downs), len(ups))
+	}
+	for i, b := range buttons {
+		if downs[i].Button != b || downs[i].Position != (core.Point{X: 12, Y: 24}) || !downs[i].Modifiers.Shift || downs[i].Clicks != 1 {
+			t.Fatalf("down[%d] = %+v", i, downs[i])
+		}
+		if ups[i].Button != b || ups[i].Position != (core.Point{X: 14, Y: 26}) || !ups[i].Modifiers.Shift || ups[i].Clicks != 1 {
+			t.Fatalf("up[%d] = %+v", i, ups[i])
+		}
+	}
+
+	// Simultaneous buttons + hover sees held button + BlurWindow clears all held buttons and keys.
+	downs, ups, moves = nil, nil, nil
+	app.MouseDown("id:pad", core.MouseButtonRight)
+	app.MouseDown("id:pad", core.MouseButtonLeft)
+	if !slices.Equal(held, []core.MouseButton{core.MouseButtonLeft, core.MouseButtonRight}) {
+		t.Fatalf("multi-hold: held=%v", held)
+	}
+	app.Hover("id:pad")
+	if len(moves) == 0 || moves[len(moves)-1].PressedButton != core.MouseButtonLeft {
+		t.Fatalf("hover while held: moves=%+v", moves)
+	}
+	app.BlurWindow()
+	if len(held) != 0 {
+		t.Fatalf("after BlurWindow: held=%v, want empty", held)
+	}
+	if len(ups) != 2 || ups[0].Button != core.MouseButtonLeft || ups[1].Button != core.MouseButtonRight || ups[0].Clicks != 0 || ups[1].Clicks != 0 {
+		t.Fatalf("BlurWindow ups = %+v", ups)
+	}
+
+	// MouseUp of a button not held fails.
+	if msg := fails(t, func(tb testing.TB) {
+		a := Start(tb, func(cx *core.Scope) core.Node {
+			return core.View{TestID: "v", Style: core.Style{Width: core.Pt(40), Height: core.Pt(40)}}
+		})
+		a.MouseUp("id:v", core.MouseButtonLeft)
+	}); !strings.Contains(msg, "not held") {
+		t.Fatalf("MouseUp not held failed with %q", msg)
+	}
+	// MouseButtonNone fails.
+	if msg := fails(t, func(tb testing.TB) {
+		a := Start(tb, func(cx *core.Scope) core.Node {
+			return core.View{TestID: "v", Style: core.Style{Width: core.Pt(40), Height: core.Pt(40)}}
+		})
+		a.MouseDown("id:v", core.MouseButtonNone)
+	}); !strings.Contains(msg, "mouse button must be one of") {
+		t.Fatalf("MouseDown none failed with %q", msg)
+	}
+}
+
+func TestMouseButtonsDownHearsButtonsWithoutViewHandlers(t *testing.T) {
+	var held string
+	app := Start(t, func(cx *core.Scope) core.Node {
+		return core.View{TestID: "bg", Style: core.Style{Width: core.Pt(100), Height: core.Pt(100)}, Children: []core.Node{
+			core.Text{TestID: "held", ContentFunc: func() string {
+				held = fmt.Sprint(core.MouseButtonsDown(cx), core.MouseButtonHeld(cx, core.MouseButtonMiddle))
+				return held
+			}},
+		}}
+	})
+	app.MouseDown("id:bg", core.MouseButtonMiddle)
+	if held != "[middle] true" {
+		t.Fatalf("held=%q with middle down", held)
+	}
+	app.MouseUp("id:bg", core.MouseButtonMiddle)
+	if held != "[] false" {
+		t.Fatalf("held=%q with middle up", held)
+	}
+}

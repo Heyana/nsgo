@@ -565,6 +565,10 @@ type window struct {
 	// heldKeys is ItemKeymap's ask for every key's down and up (driver.MountItem.HeldKeys); keysHeld the keys reported going down and not yet up, by physical key (physicalKey).
 	heldKeys bool
 	keysHeld map[uint32]heldKey
+	// heldMouse is ItemKeymap's ask for every mouse button's down and up (driver.MountItem.HeldMouseButtons); mouseHeld the buttons reported going down and not yet up.
+	heldMouse   bool
+	mouseHeld   map[driver.MouseButton]heldMouseButton
+	mouseClicks map[driver.MouseButton]buttonClicks
 }
 
 // Window procedures are process-wide callbacks; they find their window
@@ -1402,7 +1406,7 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.imageInfo(it)
 			continue
 		case driver.ItemKeymap:
-			w.setKeymap(it.Keys, it.HeldKeys)
+			w.setKeymap(it.Keys, it.HeldKeys, it.HeldMouseButtons)
 			continue
 		case driver.ItemTitle, driver.ItemWindow, driver.ItemMenu, driver.ItemDockMenu, driver.ItemRecentFile:
 			// An embedding host owns its window and menu bar.
@@ -2356,9 +2360,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 	case wmEnterMenuLoop, wmExitMenuLoop:
-		// The menu's own loop takes the keys from here on, their ups too.
+		// The menu's own loop takes the keys and mouse buttons from here on, their ups too.
 		if message == wmEnterMenuLoop {
 			w.releaseKeys()
+			w.releaseMouseButtons()
 		}
 		w.menuLoop(message == wmEnterMenuLoop, wParam != 0)
 	case wmSettingChange:
@@ -2428,6 +2433,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.paint()
 		return 0
 	case wmLButtonDown, wmRButtonDown:
+		w.held = wParam & 0xffff
 		if w.embedded {
 			// A child window takes the keyboard when pressed.
 			if f, _, _ := getFocus.Call(); f != hwnd {
@@ -2436,17 +2442,23 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		w.hideMenuBar()
 		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
-		if message == wmLButtonDown && w.pressBar(w.point(int32(x), int32(y))) {
+		at := w.point(int32(x), int32(y))
+		if message == wmRButtonDown {
+			w.mouseButtonDown(driver.MouseButtonRight, at, w.countButtonClicks(driver.MouseButtonRight, lParam))
+		}
+		if message == wmLButtonDown && w.pressBar(at) {
 			return 0
 		}
 		if message == wmLButtonDown && !touchMouse() {
 			// A touchscreen's fingers are reported by their pointers (touch.go).
-			w.touch(w.fingers.Down(w.listensTouches(), w.point(int32(x), int32(y))))
+			w.touch(w.fingers.Down(w.listensTouches(), at))
 		}
 		w.pressOutside(int32(x), int32(y))
 		if message == wmLButtonDown {
-			at := w.point(int32(x), int32(y))
 			clicks := w.countClicks(lParam)
+			if !touchMouse() {
+				w.mouseButtonDown(driver.MouseButtonLeft, at, uint32(clicks))
+			}
 			w.down = driver.Event{Modifiers: modifiers(), Count: uint32(clicks)}
 			if w.fieldDown(at, clicks, wParam&mkShift != 0) {
 				w.clearSelection()
@@ -2457,6 +2469,37 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			}
 			w.pressDown(at)
 			w.panDown(at)
+		}
+	case wmRButtonUp:
+		w.held = wParam & 0xffff
+		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
+		w.mouseButtonUp(driver.MouseButtonRight, w.point(int32(x), int32(y)))
+	case wmMButtonDown, wmMButtonUp:
+		w.held = wParam & 0xffff
+		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
+		at := w.point(int32(x), int32(y))
+		if message == wmMButtonDown {
+			w.mouseButtonDown(driver.MouseButtonMiddle, at, w.countButtonClicks(driver.MouseButtonMiddle, lParam))
+		} else {
+			w.mouseButtonUp(driver.MouseButtonMiddle, at)
+		}
+	case wmXButtonDown, wmXButtonUp:
+		w.held = wParam & 0xffff
+		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
+		at := w.point(int32(x), int32(y))
+		btn := driver.MouseButtonNone
+		switch wParam >> 16 & 0xffff {
+		case 1:
+			btn = driver.MouseButtonBack
+		case xButtonForward:
+			btn = driver.MouseButtonForward
+		}
+		if message == wmXButtonDown {
+			if w.mouseButtonDown(btn, at, w.countButtonClicks(btn, lParam)) {
+				return 1
+			}
+		} else {
+			w.mouseButtonUp(btn, at)
 		}
 	case wmMouseMove:
 		w.setHover(0) // off the caption buttons
@@ -2483,8 +2526,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case wmLButtonUp:
+		w.held = wParam & 0xffff
 		x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
 		at := w.point(int32(x), int32(y))
+		w.mouseButtonUp(driver.MouseButtonLeft, at)
 		w.touch(w.fingers.Up(at))
 		if w.fieldUp() || w.selectUp() {
 			return 0

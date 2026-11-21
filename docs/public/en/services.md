@@ -274,6 +274,8 @@ core.View{
 
 A game or a canvas polls the keys instead. `core.KeysDown(cx)` lists the keys held on the window and `core.KeyHeld(cx, "left")` says whether one is: tracked reads, which a `RequestAnimationFrame` loop reads too. The first read has the platform report every key from then on, so a key already held stays unknown until it is pressed again; keys typed into a field or a web view, or while an input method composes, are never held, and a key still held as the window loses the focus comes up then. They work where `OnKeyUp` does and on iPhone and iPad with a hardware keyboard.
 
+For mouse buttons, `View.OnMouseDown` and `View.OnMouseUp` deliver a `core.MouseButtonEvent` for every button (`core.MouseButtonLeft`, `core.MouseButtonRight`, `core.MouseButtonMiddle`, `core.MouseButtonBack`, `core.MouseButtonForward`) on macOS, Windows, Linux, the web and `nsgotest`, without making the view a keyboard focus stop. `core.MouseButtonsDown(cx)` and `core.MouseButtonHeld(cx, core.MouseButtonRight)` are tracked reads of the buttons held on the window, clearing automatically when the window loses focus.
+
 ```go
 var loop func(time.Time)
 loop = func(time.Time) {

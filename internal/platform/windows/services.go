@@ -109,8 +109,151 @@ func (w *window) editing() bool {
 	return false
 }
 
-// setKeymap replaces the keyboard shortcuts, and whether every key going down and up on the surface is reported (driver.MountItem.HeldKeys).
-func (w *window) setKeymap(keys []driver.KeyBinding, held bool) { w.keys, w.heldKeys = keys, held }
+// setKeymap replaces the keyboard shortcuts, and whether every key or mouse button going down and up on the surface is reported (driver.MountItem.HeldKeys, HeldMouseButtons).
+func (w *window) setKeymap(keys []driver.KeyBinding, held, heldMouse bool) {
+	w.keys, w.heldKeys, w.heldMouse = keys, held, heldMouse
+}
+
+// heldMouseButton is a mouse button whose down was reported: the view it went to (nil/0 for none) and its click count.
+type heldMouseButton struct {
+	id     driver.NodeID
+	v      *view
+	clicks uint32
+}
+
+// buttonClicks tracks consecutive clicks of one mouse button.
+type buttonClicks struct {
+	time  uint32
+	at    point
+	count uint32
+}
+
+// countButtonClicks counts consecutive clicks of btn against the system double-click time and distance.
+func (w *window) countButtonClicks(btn driver.MouseButton, lParam uintptr) uint32 {
+	t, _, _ := getMessageTime.Call()
+	maxMs, _, _ := getDoubleClickTime.Call()
+	cx, _, _ := getSystemMetrics.Call(smCxClick)
+	cy, _, _ := getSystemMetrics.Call(smCyClick)
+	p := point{int32(int16(lParam & 0xffff)), int32(int16(lParam >> 16 & 0xffff))}
+	if w.mouseClicks == nil {
+		w.mouseClicks = map[driver.MouseButton]buttonClicks{}
+	}
+	c := w.mouseClicks[btn]
+	near := abs32(p.X-c.at.X) <= int32(cx)/2 && abs32(p.Y-c.at.Y) <= int32(cy)/2
+	if near && c.count > 0 && uint32(t)-c.time <= uint32(maxMs) {
+		c.count++
+	} else {
+		c.count = 1
+	}
+	c.time, c.at = uint32(t), p
+	w.mouseClicks[btn] = c
+	return c.count
+}
+
+// mouseViewAt returns the innermost view at client point at that listens for mouse button events.
+func (w *window) mouseViewAt(at driver.Point) *view {
+	root := w.view(w.root)
+	if root == nil {
+		return nil
+	}
+	under, _ := viewsAt(root, at, func(v *view) bool { return v.events.Has(driver.EventMouseDown) }, nil)
+	if len(under) == 0 {
+		return nil
+	}
+	return under[len(under)-1]
+}
+
+// mouseButtonDown reports btn going down at client point at, returning whether a view heard it.
+func (w *window) mouseButtonDown(btn driver.MouseButton, at driver.Point, clicks uint32) bool {
+	if btn == driver.MouseButtonNone || w.engine == nil {
+		return false
+	}
+	v := w.mouseViewAt(at)
+	if v == nil && !w.heldMouse {
+		return false
+	}
+	mods := modifiers()
+	if clicks == 0 {
+		clicks = 1
+	}
+	if prev, ok := w.mouseHeld[btn]; ok {
+		delete(w.mouseHeld, btn)
+		w.engine.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: prev.id, Page: at, Modifiers: mods, Button: btn})
+	}
+	if w.mouseHeld == nil {
+		w.mouseHeld = map[driver.MouseButton]heldMouseButton{}
+	}
+	if v != nil {
+		w.mouseHeld[btn] = heldMouseButton{id: v.id, v: v, clicks: clicks}
+		w.engine.Dispatch(driver.Event{
+			Kind:      driver.EventMouseDown,
+			ID:        v.id,
+			Point:     v.surfacePoint(at),
+			Page:      at,
+			Modifiers: mods,
+			Button:    btn,
+			Count:     clicks,
+		})
+		return true
+	}
+	w.mouseHeld[btn] = heldMouseButton{clicks: clicks}
+	w.engine.Dispatch(driver.Event{
+		Kind:      driver.EventMouseDown,
+		Page:      at,
+		Modifiers: mods,
+		Button:    btn,
+		Count:     clicks,
+	})
+	return false
+}
+
+// mouseButtonUp reports btn coming up at client point at to the view its down went to (or the view currently under the pointer).
+func (w *window) mouseButtonUp(btn driver.MouseButton, at driver.Point) {
+	if btn == driver.MouseButtonNone || w.engine == nil {
+		return
+	}
+	mods := modifiers()
+	if h, ok := w.mouseHeld[btn]; ok {
+		delete(w.mouseHeld, btn)
+		ev := driver.Event{
+			Kind:      driver.EventMouseUp,
+			ID:        h.id,
+			Page:      at,
+			Modifiers: mods,
+			Button:    btn,
+			Count:     h.clicks,
+		}
+		if h.v != nil && !h.v.deleted {
+			ev.Point = h.v.surfacePoint(at)
+		}
+		w.engine.Dispatch(ev)
+		return
+	}
+	if v := w.mouseViewAt(at); v != nil {
+		w.engine.Dispatch(driver.Event{
+			Kind:      driver.EventMouseUp,
+			ID:        v.id,
+			Point:     v.surfacePoint(at),
+			Page:      at,
+			Modifiers: mods,
+			Button:    btn,
+			Count:     1,
+		})
+	}
+}
+
+// releaseMouseButtons reports every held mouse button coming up with zero modifiers and clicks when the window loses focus.
+func (w *window) releaseMouseButtons() {
+	if w.engine == nil {
+		return
+	}
+	for b := driver.MouseButtonLeft; b <= driver.MouseButtonForward; b++ {
+		if h, ok := w.mouseHeld[b]; ok {
+			delete(w.mouseHeld, b)
+			w.engine.Dispatch(driver.Event{Kind: driver.EventMouseUp, ID: h.id, Button: b})
+		}
+	}
+}
 
 // heldKey is a key the window reported going down, by its physical key (physicalKey), until it reports it coming up: the view the down went to, or 0, and the name the down had.
 type heldKey struct {

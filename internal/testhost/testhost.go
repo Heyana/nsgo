@@ -143,6 +143,17 @@ type OpenLinksSurface interface {
 	OpenLinks(links []string)
 }
 
+// MouseButtonSurface is a surface that presses one mouse button at a point and holds it (MouseDown), or lets it come up (MouseUp), with optional modifiers.
+type MouseButtonSurface interface {
+	MouseDown(at driver.Point, button driver.MouseButton, mods driver.Modifiers) error
+	MouseUp(at driver.Point, button driver.MouseButton, mods driver.Modifiers) error
+}
+
+// BlurWindowSurface is a surface whose window can lose focus in a test, releasing held keys and mouse buttons as the platform does on focus loss.
+type BlurWindowSurface interface {
+	BlurWindow() error
+}
+
 // KeyboardSurface is a surface whose window takes the keyboard only while its app is active, as macOS's does.
 type KeyboardSurface interface {
 	// PrepareKeyboard activates the app and waits for its window to take the keyboard when the run opted in to that (nsgo test -target macos -activate), and does nothing otherwise.

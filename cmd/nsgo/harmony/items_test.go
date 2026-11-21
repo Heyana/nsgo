@@ -53,7 +53,7 @@ var unsupportedItems = map[string]string{
 
 // unsupportedEvents are the events no HarmonyOS code reads or dispatches.
 var unsupportedEvents = map[string]string{
-	"pointers, gestures and drops": `EventMouseEnter EventMouseLeave EventMouseMove
+	"pointers, gestures and drops": `EventMouseEnter EventMouseLeave EventMouseMove EventMouseUp
 		EventPan EventPinch EventRotation EventWheel EventPressOutside
 		EventContextMenu EventFileDragEnter EventFileDragLeave EventFileDrop`,
 	"keyboard, text and selection": `EventKeyPress EventKeyUp EventCompositionChange

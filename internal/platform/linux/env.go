@@ -370,9 +370,10 @@ func activityCallback(object, pspec, data uintptr) {
 			if active {
 				w.focused = true
 			}
-			// The keys held come up in another window once this one is no longer active: an embedded surface's is the host's.
+			// Keys and mouse buttons held come up in another window once this one is no longer active: an embedded surface's is the host's.
 			if root := w.rootWindow(); root == 0 || gtkWindowIsActive(root) == 0 {
 				w.releaseKeys()
+				w.releaseMouseButtons()
 			}
 			if w.kind == driver.SurfacePanel && w.hideOnBlur && w.visible && w.focused && !active {
 				w.visible = false

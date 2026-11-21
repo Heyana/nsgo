@@ -785,6 +785,7 @@ func (w *window) windowFocus(focused bool) {
 	w.inactive = !focused
 	if !focused {
 		w.releaseKeys()
+		w.releaseMouseButtons()
 	}
 	if focused {
 		w.focused = true

@@ -121,6 +121,8 @@ const (
 	EventLongPress             = driver.EventLongPress
 	EventMouseEnter            = driver.EventMouseEnter
 	EventMouseLeave            = driver.EventMouseLeave
+	EventMouseDown             = driver.EventMouseDown
+	EventMouseUp               = driver.EventMouseUp
 	EventFocus                 = driver.EventFocus
 	EventBlur                  = driver.EventBlur
 	EventChangeText            = driver.EventChangeText

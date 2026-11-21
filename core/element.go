@@ -55,6 +55,15 @@ type View struct {
 	OnMouseEnter func(MouseEvent)
 	OnMouseLeave func(MouseEvent)
 	OnMouseMove  func(MouseEvent)
+	// OnMouseDown hears any mouse button (left, right, middle, back or
+	// forward) going down over the view on desktops and the web. Unlike
+	// OnPress, it does not turn the view into a keyboard focus stop.
+	OnMouseDown func(MouseButtonEvent)
+	// OnMouseUp hears a mouse button coming up after going down on the
+	// view (or released over it), including when a held button is cleared
+	// because the window lost focus (Clicks is 0 then). It reports where
+	// OnMouseDown does.
+	OnMouseUp func(MouseButtonEvent)
 	// OnContextMenu receives a secondary click in the view.
 	OnContextMenu func(ContextMenuEvent)
 	// OnTouch hears the fingers on the surface while one that went down

@@ -97,6 +97,8 @@ type target struct {
 	ownMenu  []driver.MenuEntry
 	// held are the keys KeyDown holds on the surface, as the test named them, by the name keyName gives them, so a KeyUp of a key not held fails the step on every platform, as it does headless, and the test's end lets them come up (releaseHeld).
 	held map[string]string
+	// heldButtons are the mouse buttons MouseDown holds on the surface, with the last point pressed, so MouseUp of a button not held fails and cleanup releases them.
+	heldButtons map[driver.MouseButton]driver.Point
 }
 
 // targetUpdate is a batch or an event reported by the named surface.
@@ -819,21 +821,61 @@ func (t *target) hold(key string, down bool) {
 	t.check(s.KeyDown(key))
 }
 
-// releaseHeld lets every key KeyDown still holds come up as the test ends, other keys before modifiers, so neither the platform nor, on the web, the page keeps one held into the next app the test process opens, such as a later subtest's. A key a window that has closed held is gone with it; such an up's error is ignored.
+// releaseHeld lets every key KeyDown and mouse button MouseDown still holds come up as the test ends, other keys before modifiers, so neither the platform nor, on the web, the page keeps one held into the next app the test process opens, such as a later subtest's. A key or button a window that has closed held is gone with it; such an up's error is ignored.
 func (t *target) releaseHeld() {
-	s, ok := t.surface.(testhost.KeyHoldSurface)
-	if !ok {
-		return
+	if s, ok := t.surface.(testhost.MouseButtonSurface); ok {
+		for b := driver.MouseButtonLeft; b <= driver.MouseButtonForward; b++ {
+			if at, held := t.heldButtons[b]; held {
+				_ = s.MouseUp(at, b, driver.Modifiers{})
+			}
+		}
 	}
-	names := slices.Sorted(maps.Keys(t.held))
-	for _, modifiers := range []bool{false, true} {
-		for _, name := range names {
-			if modifierKey(name) == modifiers {
-				_ = s.KeyUp(t.held[name])
+	t.heldButtons = nil
+	if s, ok := t.surface.(testhost.KeyHoldSurface); ok {
+		names := slices.Sorted(maps.Keys(t.held))
+		for _, modifiers := range []bool{false, true} {
+			for _, name := range names {
+				if modifierKey(name) == modifiers {
+					_ = s.KeyUp(t.held[name])
+				}
 			}
 		}
 	}
 	t.held = nil
+}
+
+// mouseButton presses or releases button at surface point at on the target where it implements testhost.MouseButtonSurface.
+func (t *target) mouseButton(at driver.Point, button driver.MouseButton, mods driver.Modifiers, down bool) {
+	t.a.t.Helper()
+	s, ok := t.surface.(testhost.MouseButtonSurface)
+	if !ok {
+		t.a.t.Skipf("nsgotest: %s: the platform cannot hold a mouse button", t.a.stepName)
+	}
+	if !down {
+		if _, held := t.heldButtons[button]; !held {
+			t.a.t.Fatalf("nsgotest: %s: %s button is not held; MouseDown holds a button", t.a.stepName, button)
+		}
+		delete(t.heldButtons, button)
+		t.check(s.MouseUp(at, button, mods))
+		return
+	}
+	if t.heldButtons == nil {
+		t.heldButtons = map[driver.MouseButton]driver.Point{}
+	}
+	t.heldButtons[button] = at
+	t.check(s.MouseDown(at, button, mods))
+}
+
+// blurWindow simulates window focus loss on the target where it implements testhost.BlurWindowSurface.
+func (t *target) blurWindow() {
+	t.a.t.Helper()
+	s, ok := t.surface.(testhost.BlurWindowSurface)
+	if !ok {
+		t.a.t.Skipf("nsgotest: %s: the platform cannot blur its window in a test", t.a.stepName)
+	}
+	t.held = nil
+	t.heldButtons = nil
+	t.check(s.BlurWindow())
 }
 
 func (t *target) drag(start driver.Point, path []driver.Point) {

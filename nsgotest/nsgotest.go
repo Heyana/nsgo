@@ -459,6 +459,12 @@ type App struct {
 	heldKeys bool
 	// held are the keys KeyDown holds, by the name the platforms report (KeyEvent.Key).
 	held map[string]heldKey
+	// heldMouse is whether the keymap asked for every mouse button going down and up (driver.MountItem.HeldMouseButtons).
+	heldMouse bool
+	// heldButtons are the mouse buttons MouseDown holds.
+	heldButtons map[driver.MouseButton]heldMouseButton
+	// mouseClicks tracks per-button consecutive click counts for MouseDown / MouseUp.
+	mouseClicks map[driver.MouseButton]mouseClickState
 
 	// blocked is set while the touch responder keeps native drags from
 	// starting (ItemBlockNative).
@@ -617,8 +623,9 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 		Windows: windows,
 	})
 	t.Cleanup(func() {
-		// Keys KeyDown still holds go with the app; on a target they come up through the platform (target.releaseHeld).
+		// Keys KeyDown and buttons MouseDown still hold go with the app; on a target they come up through the platform (target.releaseHeld).
 		a.held = nil
+		a.heldButtons = nil
 		a.root.Dispose()
 	})
 	a.seed()

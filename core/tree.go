@@ -99,7 +99,11 @@ type Tree struct {
 	held     map[string]int
 	heldRead *Signal[[]string]
 	heldKeys bool
-	backs    []*backHandler
+	// heldButtons is a bitmask of the mouse buttons down on the surface (1<<b), from EventMouseDown and EventMouseUp; heldMouseRead is what MouseButtonsDown reads, made by the first read, which asks the platform for every mouse button (heldMouse).
+	heldButtons   uint8
+	heldMouseRead *Signal[[]MouseButton]
+	heldMouse     bool
+	backs         []*backHandler
 	// regions are the live regions, which the views do not number: an owner may have no view but a region, as a Holder's content may (keyPlaces).
 	regions map[*node]struct{}
 	// peeking is the screen a back gesture may uncover (Tree.peek).
@@ -363,6 +367,7 @@ type handlers struct {
 	press, longPress, pressDown, pressUp func(PressEvent)
 	focusIn, focusOut                    func()
 	mouseEnter, mouseLeave, mouseMove    func(MouseEvent)
+	mouseDown, mouseUp                   func(MouseButtonEvent)
 	textSelection                        func(TextSelection)
 	focus, blur                          func()
 	keyDown                              func(KeyEvent) bool
@@ -1801,6 +1806,7 @@ func (t *Tree) setViewParts(n *node, v View) {
 	t.pointersMoved = t.pointerStyled
 	n.h = handlers{focusIn: v.OnFocusIn, focusOut: v.OnFocusOut, press: v.OnPress, longPress: v.OnLongPress, pressDown: v.OnPressDown, pressUp: v.OnPressUp,
 		mouseEnter: v.OnMouseEnter, mouseLeave: v.OnMouseLeave, mouseMove: v.OnMouseMove,
+		mouseDown: v.OnMouseDown, mouseUp: v.OnMouseUp,
 		textSelection: v.OnTextSelection,
 		layout:        v.OnLayout, contextMenu: v.OnContextMenu, touch: v.OnTouch, touchCapture: v.OnTouchCapture,
 		pan: v.OnPan, pinch: v.OnPinch, rotation: v.OnRotation, wheel: v.OnWheel,
@@ -2265,6 +2271,15 @@ func (t *Tree) Dispatch(ev driver.Event) {
 		t.keyUp(ev)
 		return
 	}
+	// A mouse button down shares its kind with EventAlert, which carries no Button: a mouse button down always has Button != MouseButtonNone.
+	if ev.Kind == driver.EventMouseDown && ev.Button != driver.MouseButtonNone {
+		t.mouseButton(ev, true)
+		return
+	}
+	if ev.Kind == driver.EventMouseUp {
+		t.mouseButton(ev, false)
+		return
+	}
 	switch ev.Kind {
 	case driver.EventTouch:
 		t.touched(ev)
@@ -2718,6 +2733,25 @@ func (t *Tree) keyUp(ev driver.Event) {
 	t.within(n.owner, func() { fn(e) })
 }
 
+// mouseButton records ev's button going down or coming up and runs OnMouseDown or OnMouseUp of view ev.ID, a view gone or ID 0 hearing nothing.
+func (t *Tree) mouseButton(ev driver.Event, down bool) {
+	t.holdMouseButton(ev.Button, down)
+	n := t.node(ev.ID)
+	if n == nil {
+		return
+	}
+	t.activated = n.owner
+	fn := n.h.mouseUp
+	if down {
+		fn = n.h.mouseDown
+	}
+	if fn == nil {
+		return
+	}
+	e := mouseButtonOf(ev, down)
+	t.within(n.owner, func() { fn(e) })
+}
+
 // PressAt dispatches ev as a press on the innermost pressable view at its
 // Page, in surface points, with its Point in that view.
 func (t *Tree) PressAt(ev driver.Event) {
@@ -2890,6 +2924,8 @@ func (n *node) events() driver.EventMask {
 	bit(driver.EventMouseEnter, h.mouseEnter != nil || s.Hover != nil || group || peer || n.tip != nil || watched&classHovered != 0)
 	bit(driver.EventMouseLeave, h.mouseLeave != nil || s.Hover != nil || group || peer || n.tip != nil || watched&classHovered != 0)
 	bit(driver.EventMouseMove, h.mouseMove != nil)
+	// One bit says the view hears mouse buttons, going down and up: EventMouseUp has none.
+	bit(driver.EventMouseDown, h.mouseDown != nil || h.mouseUp != nil)
 	bit(driver.EventTouch, n.hearsTouches())
 	// The focus of any view that can take it is reported, for the core's
 	// own focus (focusReported).

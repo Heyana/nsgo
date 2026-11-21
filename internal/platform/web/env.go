@@ -75,14 +75,16 @@ func (s *surface) watchChanges() {
 	g.Call("addEventListener", "focus", w.changed)
 	g.Call("addEventListener", "blur", w.changed)
 	s.doc.Call("addEventListener", "visibilitychange", w.changed)
-	// A page that loses the focus or hides hears no key come up, so every key held comes up then.
+	// A page that loses the focus or hides hears no key or mouse button come up, so every held one comes up then.
 	g.Call("addEventListener", "blur", js.FuncOf(func(js.Value, []js.Value) any {
 		s.releaseKeys(driver.Modifiers{}, true)
+		s.releaseMouseButtons()
 		return nil
 	}))
 	s.doc.Call("addEventListener", "visibilitychange", js.FuncOf(func(js.Value, []js.Value) any {
 		if s.doc.Get("visibilityState").String() == "hidden" {
 			s.releaseKeys(driver.Modifiers{}, true)
+			s.releaseMouseButtons()
 		}
 		return nil
 	}))
@@ -91,6 +93,7 @@ func (s *surface) watchChanges() {
 	// it unheard: the OnQuit handlers run then too, kept for the next.
 	g.Call("addEventListener", "pagehide", js.FuncOf(func(_ js.Value, args []js.Value) any {
 		s.releaseKeys(driver.Modifiers{}, true)
+		s.releaseMouseButtons()
 		if args[0].Get("persisted").Bool() {
 			s.engine.Hide()
 		} else {

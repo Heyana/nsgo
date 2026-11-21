@@ -535,9 +535,11 @@ type MountItem struct {
 	Keys []KeyBinding
 	// HeldKeys is ItemKeymap's ask for every key going down and up on the surface, not only those of a focused view that hears keys: the platform reports a down no such view hears with ID 0 (EventKeyDown) and its up (EventKeyUp), for core.KeysDown. It leaves out keys typed while a text input or a web view has the focus or an input method composes, as for a view's keys.
 	HeldKeys bool
-	Window   *WindowCommand
-	Menu     []MenuEntry
-	Web      *WebConfig
+	// HeldMouseButtons is ItemKeymap's ask for every mouse button going down and up on the surface, not only those on a view that hears mouse buttons: the platform reports a button press no such view hears with ID 0 (EventMouseDown) and its release (EventMouseUp), for core.MouseButtonsDown.
+	HeldMouseButtons bool
+	Window           *WindowCommand
+	Menu             []MenuEntry
+	Web              *WebConfig
 	// WebCommand is ItemWebCommand's.
 	WebCommand       WebCommand
 	PictureInPicture *PictureInPictureConfig
