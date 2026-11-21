@@ -196,6 +196,7 @@ type surface struct {
 	// openFrame is the frame the window opened at, until its first batch,
 	// whose title bar would change it.
 	openFrame driver.WindowFrame
+	devFrame  devWindowFrame
 	// showFirst is set while an opened window waits for its first batch
 	// to show.
 	showFirst bool
@@ -1288,6 +1289,7 @@ func (s *surface) refresh() {
 }
 
 func (s *surface) reportFrameWindow(env driver.Environment) {
+	s.devFrame.record(env)
 	visible := s.window != 0 && s.kind != driver.SurfaceTrayIcon && env.Lifecycle != driver.LifecycleBackground
 	s.engine.SetFrameWindow(visible, visible && objc.Send[bool](s.window, sel("isKeyWindow")))
 }

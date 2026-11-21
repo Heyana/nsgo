@@ -52,13 +52,14 @@ type devOptions struct {
 	highlight bool   // outline what the running app's commits changed
 	devtools  bool   // open DevTools for the running app
 	// automation lets tools drive the running app (automation.go); hub relays their requests.
-	automation bool
-	hub        *automationHub
-	layout     string // what DevTools' layout audit starts showing (layoutFlag)
-	fps        bool   // show the performance monitor: --nsgo-fps
-	lang       string // the locale to run the app in: --nsgo-lang
-	clip       string // the URL the App Clip opens from, run in the app's place
-	server     *devServer
+	automation      bool
+	hub             *automationHub
+	layout          string // what DevTools' layout audit starts showing (layoutFlag)
+	fps             bool   // show the performance monitor: --nsgo-fps
+	lang            string // the locale to run the app in: --nsgo-lang
+	clip            string // the URL the App Clip opens from, run in the app's place
+	server          *devServer
+	windowFrameFile string // the macOS main window's frame within this dev session
 }
 
 // dev builds and runs the app, with a dev server its builds connect to: a failed build shows over the app, and Command or Control+R in the app, outside the browser, builds and starts it again unless the app binds the key itself, with OnKey or an enabled item of its application menu (internal/dev's Wrap). It exits once the app does. With nsgo.yaml's hot reload it rebuilds and restarts the app whenever a Go file it compiles from, go.mod, nsgo.yaml or a catalog changes, and keeps the running app when a build fails. After each Go build of an app with a tsconfig.json it writes the TSX's types to .nsgo/types, for editors.
@@ -69,6 +70,12 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		}
 	}
 	p.prepareDev(opts)
+	if runtime.GOOS == "darwin" && p.Dev.Target == "native" && !opts.release {
+		if dir, err := os.MkdirTemp("", "nsgo-dev-window-"); err == nil {
+			defer os.RemoveAll(dir)
+			opts.windowFrameFile = filepath.Join(dir, "frame")
+		}
+	}
 	srv, err := startDevServer(opts.port)
 	if err != nil {
 		return err
@@ -741,7 +748,11 @@ func scan(dirs []string) string {
 
 // devEnv is the environment of a dev app this machine starts: where its dev server is, and the run's token for it.
 func devEnv(opts devOptions) []string {
-	return []string{"NSGO_DEV_SERVER=" + opts.server.url(), "NSGO_DEV_TOKEN=" + opts.server.token}
+	env := []string{"NSGO_DEV_SERVER=" + opts.server.url(), "NSGO_DEV_TOKEN=" + opts.server.token}
+	if opts.windowFrameFile != "" {
+		env = append(env, "NSGO_DEV_WINDOW_FRAME_FILE="+opts.windowFrameFile)
+	}
+	return env
 }
 
 // simulatorEnv is devEnv for an app the simulator starts, which passes it the variables named with SIMCTL_CHILD_.

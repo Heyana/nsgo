@@ -151,13 +151,10 @@ func (o *surface) openSurface(cfg driver.SurfaceConfig) {
 		s.applyBackground()
 		window.Send(selSetHasShadow, !cfg.NoShadow)
 		s.setSkipTaskbar(cfg.SkipTaskbar)
-	}
-	s.attach(o.engine)
-	if cfg.Main && s.test != nil {
-		s.test.main.Store(s)
-	}
-	if cfg.Kind == driver.SurfaceWindow {
 		s.setConstraints(cfg.Constraints)
+		if cfg.Main {
+			cfg.Frame = s.devFrame.restore(cfg.Frame)
+		}
 		if cfg.Frame.Move {
 			s.openFrame = cfg.Frame.OnScreen(usableScreens())
 			s.setWindowFrame(s.openFrame)
@@ -167,6 +164,13 @@ func (o *surface) openSurface(cfg driver.SurfaceConfig) {
 			window.Send(sel("center"))
 		}
 	}
+	// Attach once the frame is set so the app's first layout sees the
+	// window's opening screen and content size.
+	s.attach(o.engine)
+	if cfg.Main && s.test != nil {
+		s.test.main.Store(s)
+	}
+	s.devFrame.start(s)
 	// Shown before its first batch, the window would show AppKit's title
 	// bar and no content until the app's title bar, frame and views come.
 	s.showFirst = !cfg.Hidden
