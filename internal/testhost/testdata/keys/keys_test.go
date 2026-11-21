@@ -112,8 +112,7 @@ func TestEditingKeysKeepTheirUnboundActions(t *testing.T) {
 	}
 }
 
-// logicalKey keeps the parts these tests exercise with layout-dependent
-// steps. Some target hosts can also provide a position for those steps.
+// logicalKey keeps the parts these tests exercise with layout-dependent steps. Some target hosts can also provide a position for those steps.
 func logicalKey(e core.KeyEvent) core.KeyEvent {
 	e.Code = ""
 	return e

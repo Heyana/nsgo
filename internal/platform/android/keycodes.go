@@ -8,8 +8,7 @@ func androidKeyCode(scan, key uint32) string {
 	if scan > 0 && scan <= 0xffff-8 {
 		return driver.XKBKeyCode(uint16(scan + 8)) // evdev to XKB
 	}
-	// Synthesized KeyEvents may lack a scan code. Use Android's named
-	// keys for those cases where its virtual code identifies a position.
+	// Synthesized KeyEvents may lack a scan code. Use Android's named keys for those cases where its virtual code identifies a position.
 	switch {
 	case key >= 29 && key <= 54:
 		return driver.USBKeyCode(uint16(key - 29 + 4)) // KEYCODE_A ... Z

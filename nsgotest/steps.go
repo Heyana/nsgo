@@ -909,8 +909,7 @@ func (a *App) KeyUp(key string) {
 	a.done()
 }
 
-// KeyCode presses and releases a physical position, such as KeyW, in a
-// headless test. It uses the test environment's KeyCodeNames or the US layout.
+// KeyCode presses and releases a physical position, such as KeyW, in a headless test. It uses the test environment's KeyCodeNames or the US layout.
 func (a *App) KeyCode(code string) {
 	a.t.Helper()
 	a.step("keyCode(%s)", code)

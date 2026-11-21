@@ -2,9 +2,7 @@ package driver
 
 import "strings"
 
-// A physical position's names and platform codes. The public code is the
-// W3C UI Events KeyboardEvent.code value. Numeric mappings follow Chromium's
-// DOM code data, ui/events/keycodes/dom/dom_code_data.inc.
+// A physical position's names and platform codes. The public code is the W3C UI Events KeyboardEvent.code value. Numeric mappings follow Chromium's DOM code data, ui/events/keycodes/dom/dom_code_data.inc.
 var keyPositions = [...]struct {
 	name                   string
 	usb, xkb, windows, mac uint16
@@ -197,8 +195,7 @@ func XKBKeyCode(code uint16) string {
 	return ""
 }
 
-// WinKeyCode returns the physical code for a set-1 scan code with its
-// extended 0xe0 prefix, when applicable.
+// WinKeyCode returns the physical code for a set-1 scan code with its extended 0xe0 prefix, when applicable.
 func WinKeyCode(scan uint16) string {
 	if scan != 0 {
 		for _, p := range keyPositions {
@@ -210,8 +207,7 @@ func WinKeyCode(scan uint16) string {
 	return ""
 }
 
-// USKeyName is the unmodified logical key name for a physical code on
-// the US layout, for nsgotest's headless keyboard.
+// USKeyName is the unmodified logical key name for a physical code on the US layout, for nsgotest's headless keyboard.
 func USKeyName(code string) string {
 	switch {
 	case len(code) == 4 && strings.HasPrefix(code, "Key"):

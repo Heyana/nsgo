@@ -80,8 +80,7 @@ func (w *window) keyboardCodeNames() map[string]string {
 	return names
 }
 
-// keyCode returns the position for a hardware keycode. The test host uses
-// synthetic identities outside this range for its layout-dependent presses.
+// keyCode returns the position for a hardware keycode. The test host uses synthetic identities outside this range for its layout-dependent presses.
 func keyCode(code uint32) string {
 	if code > 0xffff {
 		return ""

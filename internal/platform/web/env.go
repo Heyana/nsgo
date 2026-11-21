@@ -168,10 +168,10 @@ func (s *surface) environment() driver.Environment {
 	}
 	env := driver.Environment{
 		KeyCodeNames: s.keyCodeNames,
-		ScreenColor: js.Global().Get("EyeDropper").Truthy(),
-		Speak:       speakAvailable(),
-		Gamepads:    g.Get("navigator").Get("getGamepads").Type() == js.TypeFunction,
-		Audio:       webAudioAvailable(),
+		ScreenColor:  js.Global().Get("EyeDropper").Truthy(),
+		Speak:        speakAvailable(),
+		Gamepads:     g.Get("navigator").Get("getGamepads").Type() == js.TypeFunction,
+		Audio:        webAudioAvailable(),
 		// AudioBufferSourceNode.start(when) schedules on the output context's clock.
 		AudioSchedule:  webAudioAvailable(),
 		CanLockPointer: webCanLockPointer(s.doc),

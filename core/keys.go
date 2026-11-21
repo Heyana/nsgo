@@ -14,8 +14,7 @@ import (
 type KeyEvent struct {
 	// Key names the key as OnKey does, without modifiers: "k", "1", "space", "enter", "f5", "left", "escape"; a modifier pressed alone is "shift", "ctrl", "alt" or "meta", which is Command on macOS and the Windows or Super key elsewhere. A letter or a digit is the one the keyboard layout types unshifted.
 	Key string
-	// Code identifies the physical position as KeyboardEvent.code does,
-	// such as KeyW, ArrowLeft or ShiftRight. It is empty when unavailable.
+	// Code identifies the physical position as KeyboardEvent.code does, such as KeyW, ArrowLeft or ShiftRight. It is empty when unavailable.
 	Code string
 	// Modifiers are the modifier keys held: going down, the one pressed alone included; coming up, those still held, the one released not among them.
 	Modifiers Modifiers
@@ -23,8 +22,7 @@ type KeyEvent struct {
 	Repeat bool
 }
 
-// KeyCodesDown returns the physical positions held on cx's window, sorted.
-// It tracks changes as KeysDown does and omits keys with unknown positions.
+// KeyCodesDown returns the physical positions held on cx's window, sorted. It tracks changes as KeysDown does and omits keys with unknown positions.
 func KeyCodesDown(cx *Scope) []string {
 	if t := cx.tree(); t != nil {
 		return slices.Clone(t.codesHeld().Get())
@@ -40,9 +38,7 @@ func KeyCodeHeld(cx *Scope, code string) bool {
 	return false
 }
 
-// KeyCodeLabel returns the display label for a physical position. It uses
-// the active layout where the platform provides it and the last recorded
-// key on this surface otherwise. An unknown label is empty.
+// KeyCodeLabel returns the display label for a physical position. It uses the active layout where the platform provides it and the last recorded key on this surface otherwise. An unknown label is empty.
 func KeyCodeLabel(cx *Scope, code string) string {
 	t := cx.tree()
 	if t == nil || code == "" {

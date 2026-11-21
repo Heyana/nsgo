@@ -285,8 +285,8 @@ type surface struct {
 	heldMouse                bool                // ItemKeymap's HeldMouseButtons: report every mouse button going down and up
 	keyLayoutID              string
 	keyLayoutType            uint8
-	webFocus                 *view               // the page holding the window's first responder
-	stopWebFocus             func()              // ends first-responder observation in the current window
+	webFocus                 *view  // the page holding the window's first responder
+	stopWebFocus             func() // ends first-responder observation in the current window
 	// keysHeld are the keys whose down was reported, by AppKit key code: the view the down went to, 0 for none, and the name it reported, which the key's up reports wherever the focus has gone since.
 	keysHeld map[uint16]heldKey
 	// mouseHeld are the mouse buttons whose down was reported, by button: the view the down went to (nil/0 for none).
