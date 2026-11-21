@@ -512,8 +512,15 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 		}
 		return p.releaseCopy(hap, p.releaseName(target, ".hap"))
 	case "linux_arm64", "linux_x64":
-		if err := buildLinux(ctx, p, dir, goArch(arch)); err != nil || !p.installers() {
+		if err := buildLinux(ctx, p, dir, goArch(arch)); err != nil {
 			return err
+		}
+		if p.bundlesSteamLinuxRuntime(target) {
+			stage(ctx, "bundling the Steam GTK runtime")
+			return addSteamLinuxRuntime(p, dir)
+		}
+		if !p.installers() {
+			return nil
 		}
 		if p.channel() == channelStore {
 			archive, err := buildLinuxArchive(ctx, p, dir, goArch(arch))

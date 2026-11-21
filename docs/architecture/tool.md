@@ -143,6 +143,8 @@ A `store` build (`-channel store`) writes store packages for desktop and Android
 
 `steam.go` limits the Steam channel to desktop targets, including `macos_universal`. The tool writes the ordinary signed bundle or executable directory and skips installers, store archives and the releases directory. Native `dev` with `steam.app_id` writes `steam_appid.txt` into its build directory and launches the app there, which is where Steamworks reads the file. Steam release and development packages filter copies of that file out of app resources.
 
+`steam_linux_runtime.go` unpacks the embedded x64 GTK bundle into `nsgo-gtk/` and writes `steam-launch.sh`. The launcher prepends the depot's library and data paths before executing the app, and `build -run` uses the same entry point. `steam-linux-runtime/build.sh` rebuilds the archive with Valve's pinned sniper SDK and includes the licenses and source versions.
+
 ### Updates
 
 `updates.go` builds each package for the channel `updates.channel` or `-channel` names, as [updates](updates.md#channels) describes; development builds never update. Only the direct channel adds anything to a package beyond `-X` flags giving `nsgo.Run` `updates.automatic`; every build, development ones too, gets the app's identity, version and build number in `core` (`core.App`).

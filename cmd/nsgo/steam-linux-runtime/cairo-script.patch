@@ -1,0 +1,16 @@
+--- a/meson.build
++++ b/meson.build
+@@ -471,2 +471,3 @@
+-cairo_csi_dep = dependency('cairo-script-interpreter', required: false)
+-if not cairo_csi_dep.found()
++cairo_script = get_option('cairo-script')
++cairo_csi_dep = dependency('cairo-script-interpreter', required: cairo_script)
++if not cairo_csi_dep.found() and not cairo_script.disabled()
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -155,0 +156,5 @@
++
++option('cairo-script',
++       type: 'feature',
++       value: 'auto',
++       description: 'Enable Cairo script interpretation for render-node debugging')

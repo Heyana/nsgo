@@ -242,7 +242,9 @@ Set an entry to `true` after completing its questionnaire. A matching `-channel 
 go tool nsgo build -channel steam -target macos_universal,windows_x64,linux_x64
 ```
 
-Set `updates.channel: steam` to use the channel by default. Select macOS, Windows and Linux targets. Upload each `dist/<name>-<version>-<target>` directory to its Steam depot, using the app bundle on macOS and the executable on Windows and Linux as the launch option. Steam handles updates. The directories contain no installers, self-updater or `steam_appid.txt`.
+Set `updates.channel: steam` to use the channel by default. Select macOS, Windows and Linux targets. Upload each `dist/<name>-<version>-<target>` directory to its Steam depot, using the app bundle on macOS, the executable on Windows and Linux arm64, and `steam-launch.sh` on Linux x64 as the launch option. Steam handles updates. The directories contain no installers, self-updater or `steam_appid.txt`.
+
+Linux x64 depots include GTK 4 and its dependencies for Steam Linux Runtime 3.0 and 4.0. Keep `nsgo-gtk/` next to the launcher. Linux arm64 needs GTK 4 available in its runtime.
 
 For local testing outside the Steam client, set `steam: {app_id: 480}` in `nsgo.yaml`, replacing 480 with your Steamworks App ID. `go tool nsgo dev` writes the ID to `steam_appid.txt` in its native build directory and launches the app with that directory as its working directory. [Steamworks API](https://partner.steamgames.com/doc/api/steam_api), [SteamPipe](https://partner.steamgames.com/doc/sdk/uploading).
 

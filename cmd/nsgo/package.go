@@ -311,6 +311,8 @@ func runPackage(ctx context.Context, p *project, target, dir string) error {
 			return err
 		}
 		return d.run(ctx, "shell", "am", "start", "-S", "-n", p.ID+androidComponent)
+	case p.bundlesSteamLinuxRuntime(target):
+		return startDetached(filepath.Join(dir, steamLinuxLauncher))
 	case strings.HasPrefix(target, "linux_"):
 		return startDetached(filepath.Join(dir, p.Name))
 	case strings.HasPrefix(target, "windows_"):

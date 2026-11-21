@@ -395,6 +395,7 @@ What the desktop installers ([tool](architecture/tool.md#installers)) and the st
 | Signed MSIX | `AppxSignature.p7x`, [#1414](https://github.com/nsgo-dev/nsgo/issues/1414) | A certificate in `sign` signs the MSIX, so it installs outside the Store with `Add-AppxPackage` or App Installer |
 | MSIX names and logos | `resources.pri`, [#1415](https://github.com/nsgo-dev/nsgo/issues/1415) | The MSIX names the app in each of its languages and carries its logos at every scale, which need a resource index |
 | Flatpak bundles | OSTree, `flatpak build-bundle`, [#1416](https://github.com/nsgo-dev/nsgo/issues/1416) | `build` writes a `.flatpak` users install directly, and the manifest is built with flatpak-builder on GNOME's runtime |
+| Linux arm64 Steam runtime | [Steam verification (#1228)](https://github.com/nsgo-dev/nsgo/issues/1228) | An arm64 depot includes its own GTK 4 libraries and opens in a Steam runtime for arm64 |
 | AppImage updates | `.upd_info`, zsync, [#1417](https://github.com/nsgo-dev/nsgo/issues/1417) | The AppImage carries its update information, so AppImageUpdate and launchers update it |
 
 ## Updates
