@@ -877,6 +877,8 @@ func (s *surface) RequestFrame() {
 	s.send(msgWantFrame, func(*writer) {})
 }
 
+func (s *surface) SubmitGPU(driver.GPUFrame) {}
+
 // Mount implements engine.Platform: the commit and any follow-up shader
 // pixel batches, then the loads of the image sources it changed.
 func (s *surface) Mount(b *driver.MountBatch) {

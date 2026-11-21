@@ -225,6 +225,8 @@ type Tree struct {
 	follower devtools.Follower
 	// suspended holds the regions of the Contents of the Suspenses that wait, whose views hide.
 	suspended map[*node]bool
+	// gpuSubmit forwards off-commit GPUFrames directly to the platform backend.
+	gpuSubmit func(driver.GPUFrame)
 }
 
 // report is a handler to run under owner after the commit.
@@ -300,6 +302,7 @@ type node struct {
 	screen *screenNode
 	list   *listNode
 	canvas *canvasNode
+	gpu    *gpuNode
 	shader *shaderNode
 	fx     *fxNode // an effect's, a transition's or a navigation's shader
 	icon   *iconNode
@@ -2626,6 +2629,10 @@ func (t *Tree) Dispatch(ev driver.Event) {
 	case driver.EventPressOutside:
 		if n.hoist != nil {
 			t.pressOutside(n, ev.Point)
+		}
+	case driver.EventGPU:
+		if n.gpu != nil && n.gpu.onEvent != nil && !n.gpu.surf.disposed {
+			t.within(n.owner, func() { n.gpu.onEvent(ev.Data) })
 		}
 	case driver.EventFileDragEnter:
 		call(h.fileEnter)

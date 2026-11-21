@@ -425,7 +425,7 @@ func compKindName(k compKind) string {
 var kindNames = map[driver.ViewKind]string{
 	driver.KindView: "View", driver.KindText: "Text", driver.KindInput: "Input", driver.KindScroll: "Scroll",
 	driver.KindImage: "Image", driver.KindModal: "Modal", driver.KindCanvas: "Canvas", driver.KindWeb: "WebView",
-	driver.KindVideo: "Video", driver.KindNative: "Native", driver.KindShader: "Shader",
+	driver.KindVideo: "Video", driver.KindNative: "Native", driver.KindShader: "Shader", driver.KindGPU: "GPU",
 }
 
 // Elements returns the tree's views from its root, leaving out DevTools' own.

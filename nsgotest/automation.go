@@ -808,7 +808,7 @@ func element(v *View, bounds bool) automation.Element {
 	if e.Role == "" {
 		e.Role = map[driver.ViewKind]string{driver.KindText: "text", driver.KindInput: "textbox", driver.KindScroll: "scroll",
 			driver.KindImage: "image", driver.KindModal: "modal", driver.KindCanvas: "canvas", driver.KindWeb: "web",
-			driver.KindVideo: "video", driver.KindNative: "native", driver.KindShader: "shader"}[v.Kind]
+			driver.KindVideo: "video", driver.KindNative: "native", driver.KindShader: "shader", driver.KindGPU: "gpu"}[v.Kind]
 		if e.Role == "" {
 			e.Role = "view"
 		}

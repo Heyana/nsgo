@@ -1968,6 +1968,8 @@ func (s *surface) RequestFrame() {
 	}
 }
 
+func (s *surface) SubmitGPU(driver.GPUFrame) {}
+
 func (s *surface) apply(b *driver.MountBatch) {
 	defer func() { s.openFrame = driver.WindowFrame{} }()
 	s.batch++

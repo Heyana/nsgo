@@ -263,8 +263,9 @@ func editableCombobox(t *testing.T) {
 // actionEngine is a platform that shows nothing, for an engine that only hears the events a test's views report.
 type actionEngine struct{ apple.TextEngine }
 
-func (actionEngine) Mount(*driver.MountBatch) {}
-func (actionEngine) RequestFrame()            {}
+func (actionEngine) Mount(*driver.MountBatch)  {}
+func (actionEngine) RequestFrame()             {}
+func (actionEngine) SubmitGPU(driver.GPUFrame) {}
 
 // TestEditableSpinButton checks, through the accessibility API VoiceOver uses, that an input with RoleSpinButton is an editable incrementor on its editor, the field's cell or the text view, with its text, label and test ID, whose AXIncrement and AXDecrement report the input's actions, its view no element; that an input without the actions offers none; and that a view with RoleSpinButton stays an incrementor of its own (#254).
 func TestEditableSpinButton(t *testing.T) { onMain(func() { editableSpinButton(t) }) }

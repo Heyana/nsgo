@@ -68,6 +68,14 @@ type Program struct {
 	VertexFunc   VertexFunc
 	FragmentFunc FragmentFunc
 
+	// GPU pipeline metadata (docs/architecture/gpu.md). Left empty for legacy
+	// fragment-only shaders so existing FragmentLibrary paths stay unchanged.
+	AttributeMeta []StageIO
+	VaryingMeta   []StageIO
+	Bindings      []Binding
+	VertexEntry   string
+	FragmentEntry string
+
 	SourceID SourceID
 
 	// FragmentSource is the Kage source the program was compiled from, or nil if it was not built from
@@ -161,6 +169,9 @@ type Expr struct {
 	// a count that is not one, and operations of such shifts with untyped
 	// constants. Its type is int where the context gives none.
 	Untyped bool
+
+	// StructType carries the struct type for a StructConstruct expression.
+	StructType *Type
 }
 
 type ExprType int
@@ -181,6 +192,11 @@ const (
 	Call
 	FieldSelector
 	Index
+
+	// Added by NSGo for 3D GPU pipelines (docs/architecture/gpu.md).
+	BindingVariable
+	BuiltinInput
+	StructConstruct
 )
 
 type Op int
@@ -347,6 +363,15 @@ const (
 	FloatBitsToUint BuiltinFunc = "floatBitsToUint"
 	IntBitsToFloat  BuiltinFunc = "intBitsToFloat"
 	UintBitsToFloat BuiltinFunc = "uintBitsToFloat"
+
+	// Added by NSGo for 3D GPU pipelines (docs/architecture/gpu.md).
+	TextureSample        BuiltinFunc = "textureSample"
+	TextureSampleLevel   BuiltinFunc = "textureSampleLevel"
+	TextureSampleBias    BuiltinFunc = "textureSampleBias"
+	TextureSampleGrad    BuiltinFunc = "textureSampleGrad"
+	TextureSampleCompare BuiltinFunc = "textureSampleCompare"
+	TextureLoad          BuiltinFunc = "textureLoad"
+	TextureDimensions    BuiltinFunc = "textureDimensions"
 )
 
 func ParseBuiltinFunc(str string) (BuiltinFunc, bool) {

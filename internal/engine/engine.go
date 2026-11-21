@@ -38,6 +38,10 @@ type Platform interface {
 	// platform with no display frame leaves it empty, and the app's frame
 	// callbacks wait.
 	RequestFrame()
+	// SubmitGPU submits an off-commit GPUFrame directly to the platform's
+	// render thread without triggering a UI view-tree commit (docs/architecture/gpu.md).
+	// Called on the engine goroutine; must not block.
+	SubmitGPU(frame driver.GPUFrame)
 }
 
 // observed is a platform whose batches a test host sees first. With a
@@ -501,6 +505,7 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 	// batch past the next commit.
 	attach := func(t *core.Tree, p Platform) *surface {
 		s := &surface{id: t.ID(), tree: t, p: p, commit: t.Commit}
+		t.SetGPUSubmitter(p.SubmitGPU)
 		if _, ok := p.(SharedMounter); ok && opts.Observe == nil {
 			s.commit = t.CommitShared
 		}

@@ -37,7 +37,8 @@ func (s *surface) openOverlays(b *driver.MountBatch) {
 func (o *overlay) Prepare(t *driver.AttributedText) driver.PreparedText { return o.s.Prepare(t) }
 
 // RequestFrame implements engine.Platform: the engine asks an opened surface for the app's frames, and the first view's Choreographer answers for every surface.
-func (o *overlay) RequestFrame() { o.s.RequestFrame() }
+func (o *overlay) RequestFrame()                   { o.s.RequestFrame() }
+func (o *overlay) SubmitGPU(frame driver.GPUFrame) { o.s.SubmitGPU(frame) }
 
 // Mount implements engine.Platform: an overlay that ended takes nothing more, and the batch that destroys its window lets go of what Go kept of its tree, as a closed tree deletes none of its views.
 func (o *overlay) Mount(b *driver.MountBatch) {

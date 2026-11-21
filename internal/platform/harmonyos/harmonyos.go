@@ -158,7 +158,8 @@ func (s *surface) Mount(b *driver.MountBatch) {
 
 // RequestFrame implements engine.Platform: the host keeps a display frame
 // clock running, which calls nsgoFrame until the animator stops.
-func (s *surface) RequestFrame() { s.bridge.Call("tick") }
+func (s *surface) RequestFrame()             { s.bridge.Call("tick") }
+func (s *surface) SubmitGPU(driver.GPUFrame) {}
 
 // frame runs one display frame, which shows at at, or the zero time where the host gave none: the animator moves its values, the views that changed are written again, and the engine commits. The host's clock stops when nothing animates.
 func (s *surface) frame(at time.Time) {

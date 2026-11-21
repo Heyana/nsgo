@@ -271,6 +271,10 @@ func (c *checker) ident(x *identExpr, out *[]shaderir.Stmt) value {
 	switch sym.kind {
 	case symLocal:
 		return value{t: sym.t, e: local(sym.local, sym.t), ref: true, mutable: sym.mutable}
+	case symBinding:
+		return value{t: sym.t, e: mk(shaderir.Expr{Type: shaderir.BindingVariable, Index: sym.binding}, sym.t)}
+	case symExpr:
+		return value{t: sym.t, e: sym.expr}
 	case symConst:
 		if sym.val != nil {
 			return *sym.val
@@ -476,12 +480,14 @@ func (c *checker) arith(op string, a, b value, pos int, out *[]shaderir.Stmt) va
 
 func (c *checker) matrixResult(op string, a, b ty, pos int) ty {
 	switch {
-	case a.k == kMat && b.k == kMat && a.equal(b) && (op == "+" || op == "-" || op == "*"):
+	case a.k == kMat && b.k == kMat && a.equal(b) && (op == "+" || op == "-"):
 		return a
+	case op == "*" && a.k == kMat && b.k == kMat && a.n == b.rows:
+		return ty{k: kMat, elem: kF32, n: b.n, rows: a.rows}
 	case op == "*" && a.k == kMat && b.k == kVec && b.elem == kF32 && b.n == a.n:
-		return b
+		return vec(kF32, a.rows)
 	case op == "*" && b.k == kMat && a.k == kVec && a.elem == kF32 && a.n == b.rows:
-		return a
+		return vec(kF32, b.n)
 	case op == "*" && a.k == kMat && b.k == kF32:
 		return a
 	case op == "*" && b.k == kMat && a.k == kF32:
@@ -656,6 +662,18 @@ func (c *checker) member(x *memberExpr, out *[]shaderir.Stmt) value {
 		}
 	}
 	v := c.expr(x.x, out)
+	if v.t.k == kStruct && v.t.st != nil {
+		for idx, f := range v.t.st.fields {
+			if f.name == x.name {
+				e := mk(shaderir.Expr{
+					Type:  shaderir.FieldSelector,
+					Exprs: []shaderir.Expr{c.ir(v), {Type: shaderir.StructMember, Index: idx}},
+				}, f.t)
+				return value{t: f.t, e: e, ref: v.ref, mutable: v.mutable}
+			}
+		}
+		fail(x.pos, "struct %s has no member %s", v.t.st.name, x.name)
+	}
 	if v.t.k != kVec {
 		fail(x.pos, "a %s has no member %s", v.t, x.name)
 	}

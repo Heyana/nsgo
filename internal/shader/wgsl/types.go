@@ -21,7 +21,27 @@ const (
 	kVec
 	kMat
 	kArray
+	kStruct
+	kTexture2D
+	kTextureCube
+	kTexture2DArray
+	kTextureDepth2D
+	kTextureMultisampled2D
+	kSampler
+	kSamplerComparison
 )
+
+type structField struct {
+	name  string
+	t     ty
+	attrs []attr
+	pos   int
+}
+
+type structType struct {
+	name   string
+	fields []structField
+}
 
 // ty is a WGSL type. The IR has no boolean vectors, so a vec<bool> is a
 // float vector of 0 and 1 there (see boolVector).
@@ -31,6 +51,7 @@ type ty struct {
 	n    int  // a vector's components, a matrix's columns, an array's length
 	rows int  // a matrix's rows
 	arr  *ty  // an array's element
+	st   *structType
 }
 
 var (
@@ -96,6 +117,9 @@ func (t ty) equal(u ty) bool {
 	if t.k == kArray {
 		return t.arr.equal(*u.arr)
 	}
+	if t.k == kStruct {
+		return t.st == u.st
+	}
 	return true
 }
 
@@ -125,6 +149,25 @@ func (t ty) String() string {
 		return fmt.Sprintf("mat%dx%d<%s>", t.n, t.rows, scalarName(t.elem))
 	case kArray:
 		return fmt.Sprintf("array<%s, %d>", t.arr, t.n)
+	case kStruct:
+		if t.st != nil {
+			return t.st.name
+		}
+		return "struct"
+	case kTexture2D:
+		return "texture_2d<f32>"
+	case kTextureCube:
+		return "texture_cube<f32>"
+	case kTexture2DArray:
+		return "texture_2d_array<f32>"
+	case kTextureDepth2D:
+		return "texture_depth_2d"
+	case kTextureMultisampled2D:
+		return "texture_multisampled_2d<f32>"
+	case kSampler:
+		return "sampler"
+	case kSamplerComparison:
+		return "sampler_comparison"
 	}
 	return scalarName(t.k)
 }
@@ -151,9 +194,31 @@ func (t ty) ir() shaderir.Type {
 		}
 		return shaderir.Type{Main: shaderir.VectorOf(s, t.n)}
 	case kMat:
-		return shaderir.Type{Main: [...]shaderir.BasicType{2: shaderir.Mat2, 3: shaderir.Mat3, 4: shaderir.Mat4}[t.n]}
+		return shaderir.Type{Main: shaderir.MatrixOf(t.n, t.rows)}
 	case kArray:
 		return shaderir.Type{Main: shaderir.Array, Sub: []shaderir.Type{t.arr.ir()}, Length: t.n}
+	case kStruct:
+		sub := make([]shaderir.Type, len(t.st.fields))
+		names := make([]string, len(t.st.fields))
+		for i, f := range t.st.fields {
+			sub[i] = f.t.ir()
+			names[i] = f.name
+		}
+		return shaderir.Type{Main: shaderir.Struct, Sub: sub, FieldNames: names}
+	case kTexture2D:
+		return shaderir.Type{Main: shaderir.Texture2D}
+	case kTextureCube:
+		return shaderir.Type{Main: shaderir.TextureCube}
+	case kTexture2DArray:
+		return shaderir.Type{Main: shaderir.Texture2DArray}
+	case kTextureDepth2D:
+		return shaderir.Type{Main: shaderir.TextureDepth2D}
+	case kTextureMultisampled2D:
+		return shaderir.Type{Main: shaderir.TextureMultisampled2D}
+	case kSampler:
+		return shaderir.Type{Main: shaderir.Sampler}
+	case kSamplerComparison:
+		return shaderir.Type{Main: shaderir.SamplerComparison}
 	}
 	return shaderir.Type{}
 }
@@ -188,15 +253,45 @@ func (t ty) layout() (align, size int) {
 // lanes is how many lanes t's value takes among a program's uniforms.
 func (t ty) lanes() int { return t.ir().DwordCount() }
 
-// builtinTypes are the types WGSL names without a template, its
-// predeclared aliases among them.
-var builtinTypes = map[string]ty{
-	"bool": tBool, "i32": tI32, "u32": tU32, "f32": tF32,
-	"vec2f": vec(kF32, 2), "vec3f": vec(kF32, 3), "vec4f": vec(kF32, 4),
-	"vec2i": vec(kI32, 2), "vec3i": vec(kI32, 3), "vec4i": vec(kI32, 4),
-	"vec2u": vec(kU32, 2), "vec3u": vec(kU32, 3), "vec4u": vec(kU32, 4),
-	"mat2x2f": {k: kMat, elem: kF32, n: 2, rows: 2}, "mat3x3f": {k: kMat, elem: kF32, n: 3, rows: 3},
-	"mat4x4f": {k: kMat, elem: kF32, n: 4, rows: 4},
+// lookupBuiltinType returns the WGSL predeclared type named without a template,
+// built as a switch rather than a package-level map so minimal apps that never
+// compile a WGSL shader link zero symbols from internal/shader/wgsl.
+func lookupBuiltinType(name string) (ty, bool) {
+	switch name {
+	case "bool":
+		return tBool, true
+	case "i32":
+		return tI32, true
+	case "u32":
+		return tU32, true
+	case "f32":
+		return tF32, true
+	case "vec2f":
+		return vec(kF32, 2), true
+	case "vec3f":
+		return vec(kF32, 3), true
+	case "vec4f":
+		return vec(kF32, 4), true
+	case "vec2i":
+		return vec(kI32, 2), true
+	case "vec3i":
+		return vec(kI32, 3), true
+	case "vec4i":
+		return vec(kI32, 4), true
+	case "vec2u":
+		return vec(kU32, 2), true
+	case "vec3u":
+		return vec(kU32, 3), true
+	case "vec4u":
+		return vec(kU32, 4), true
+	case "mat2x2f":
+		return ty{k: kMat, elem: kF32, n: 2, rows: 2}, true
+	case "mat3x3f":
+		return ty{k: kMat, elem: kF32, n: 3, rows: 3}, true
+	case "mat4x4f":
+		return ty{k: kMat, elem: kF32, n: 4, rows: 4}, true
+	}
+	return ty{}, false
 }
 
 // matShapes are the matrix types by name, with their columns and rows.

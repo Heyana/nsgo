@@ -944,6 +944,12 @@ func (t *Tree) emitParts(n *node) bool {
 			sn.fresh = false
 			add(driver.MountItem{Kind: driver.ItemShader, ID: n.id, Shader: sn.withFrames()})
 		}
+	case n.gpu != nil:
+		if gn := n.gpu; gn.fresh {
+			gn.fresh = false
+			cfg := gn.cfg
+			add(driver.MountItem{Kind: driver.ItemGPU, ID: n.id, GPU: &cfg})
+		}
 	case n.web != nil:
 		wn := n.web
 		c := wn.config

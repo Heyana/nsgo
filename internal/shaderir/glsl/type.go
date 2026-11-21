@@ -108,6 +108,18 @@ func basicTypeString(t shaderir.BasicType) string {
 		return "mat3"
 	case shaderir.Mat4:
 		return "mat4"
+	case shaderir.Mat2x3:
+		return "mat2x3"
+	case shaderir.Mat2x4:
+		return "mat2x4"
+	case shaderir.Mat3x2:
+		return "mat3x2"
+	case shaderir.Mat3x4:
+		return "mat3x4"
+	case shaderir.Mat4x2:
+		return "mat4x2"
+	case shaderir.Mat4x3:
+		return "mat4x3"
 	case shaderir.Uint:
 		return "uint"
 	case shaderir.UVec2:

@@ -359,6 +359,8 @@ func (s *surface) RequestFrame() {
 	}
 }
 
+func (s *surface) SubmitGPU(driver.GPUFrame) {}
+
 // tick starts or stops the host's display frames.
 func (s *surface) tick(on bool) {
 	if on == s.ticking {

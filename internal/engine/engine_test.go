@@ -16,9 +16,10 @@ import (
 // recorder is a platform that keeps the batches it is handed.
 type recorder struct {
 	core.ApproxTextEngine
-	mu      sync.Mutex
-	batches []*driver.MountBatch
-	mounted chan struct{}
+	mu        sync.Mutex
+	batches   []*driver.MountBatch
+	gpuFrames []driver.GPUFrame
+	mounted   chan struct{}
 	// frames receives a value for each display frame the app asks for.
 	frames chan struct{}
 }
@@ -34,6 +35,12 @@ func (r *recorder) Mount(b *driver.MountBatch) {
 }
 
 // RequestFrame implements Platform: the app waits for a display frame.
+func (r *recorder) SubmitGPU(frame driver.GPUFrame) {
+	r.mu.Lock()
+	r.gpuFrames = append(r.gpuFrames, frame)
+	r.mu.Unlock()
+}
+
 func (r *recorder) RequestFrame() {
 	if r.frames == nil {
 		return

@@ -1082,6 +1082,8 @@ func (s *surface) RequestFrame() {
 	}
 }
 
+func (s *surface) SubmitGPU(driver.GPUFrame) {}
+
 // frameClock starts the clock that serves a frame the engine asked s for: s's own, or, for a standalone app's scene that shows in no foreground window, that of one that does, since the engine asks one of its surfaces for the frames of all their trees.
 func (s *surface) frameClock() {
 	if !s.embedded && !s.foreground() {

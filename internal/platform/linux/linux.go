@@ -746,6 +746,8 @@ func (w *window) RequestFrame() {
 	}
 }
 
+func (w *window) SubmitGPU(driver.GPUFrame) {}
+
 // post runs fn on the main thread; any goroutine may call it.
 func (w *window) post(fn func()) {
 	w.mu.Lock()

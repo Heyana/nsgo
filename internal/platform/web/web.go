@@ -1821,6 +1821,8 @@ func (s *surface) RequestFrame() {
 	s.startTicking()
 }
 
+func (s *surface) SubmitGPU(driver.GPUFrame) {}
+
 // baseCSS places the elements the surface makes (nsgo-el) where their
 // frames say, starts views (nsgo-view) without a border or the browser's
 // focus ring, so their styles only write what they draw, breaks texts'

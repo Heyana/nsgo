@@ -463,6 +463,7 @@ var viewItemNames = map[driver.ItemKind]string{
 	driver.ItemShaderTransition:   "ItemShaderTransition",
 	driver.ItemShaderInput:        "ItemShaderInput",
 	driver.ItemMatch:              "ItemMatch",
+	driver.ItemGPU:                "ItemGPU",
 }
 
 func (a *App) apply(b *driver.MountBatch) {
@@ -471,6 +472,7 @@ func (a *App) apply(b *driver.MountBatch) {
 		a.LayoutAnimation = b.LayoutAnimation
 	}
 	var resized []*View
+	var gpuConfigured []*View
 	for _, it := range b.Items {
 		v := a.views[it.ID]
 		if name := viewItemNames[it.Kind]; v == nil && (name != "" || it.ID != 0 && it.Kind != driver.ItemCreate) {
@@ -487,6 +489,7 @@ func (a *App) apply(b *driver.MountBatch) {
 				v.detach()
 			}
 			a.anim.Forget(it.ID)
+			a.deleteGPUView(it.ID)
 			delete(a.views, it.ID)
 			delete(a.edits, it.ID)
 		case driver.ItemRemove:
@@ -620,6 +623,11 @@ func (a *App) apply(b *driver.MountBatch) {
 			v.ShaderStarts++
 		case driver.ItemShaderInput:
 			v.ShaderInputs++
+		case driver.ItemGPU:
+			if it.GPU != nil {
+				a.configureGPUView(v, *it.GPU)
+				gpuConfigured = append(gpuConfigured, v)
+			}
 		case driver.ItemAnimation:
 			a.anim.Apply(it.Animation)
 			for _, op := range it.Animation {
@@ -990,6 +998,7 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 		}
 	}
+	a.syncGPUViews(gpuConfigured, resized)
 	// When content shrinks or the viewport grows, pull an offset past the new end back after the batch's scroll commands keep the visible content in place.
 	for _, v := range resized {
 		if v.Kind != driver.KindScroll || v.Scroll.Zooms() || a.views[v.ID] != v {

@@ -11,6 +11,12 @@ type TypeEnv interface {
 	FuncReturn(index int) Type
 }
 
+// BindingTypeEnv is an optional extension of TypeEnv for programs with
+// explicit @group/@binding resources.
+type BindingTypeEnv interface {
+	BindingType(index int) Type
+}
+
 // TypeOf returns the type of e, an expression the compiler checked. A
 // constant has the type of its kind, bool, float or int, or uint when it
 // is Unsigned; a call of a function with output parameters, which only
@@ -31,6 +37,28 @@ func TypeOf(e *Expr, env TypeEnv) Type {
 		}
 	case UniformVariable:
 		return env.UniformType(e.Index)
+	case BindingVariable:
+		if be, ok := env.(BindingTypeEnv); ok {
+			return be.BindingType(e.Index)
+		}
+		return Type{}
+	case BuiltinInput:
+		switch StageBuiltin(e.Index) {
+		case BuiltinPosition:
+			return Type{Main: Vec4}
+		case BuiltinVertexIndex, BuiltinInstanceIndex:
+			return Type{Main: Uint}
+		case BuiltinFrontFacing:
+			return Type{Main: Bool}
+		case BuiltinFragDepth:
+			return Type{Main: Float}
+		}
+		return Type{}
+	case StructConstruct:
+		if e.StructType != nil {
+			return *e.StructType
+		}
+		return Type{}
 	case TextureVariable:
 		return Type{Main: Texture}
 	case LocalVariable:
@@ -60,7 +88,7 @@ func TypeOf(e *Expr, env TypeEnv) Type {
 		case base.Main == Array:
 			return base.Sub[0]
 		case base.IsMatrix():
-			return Type{Main: VectorOf(Float, base.MatrixSize())}
+			return Type{Main: VectorOf(Float, base.MatrixRows())}
 		default:
 			return Type{Main: base.Scalar()}
 		}
@@ -94,11 +122,14 @@ func binaryType(e *Expr, env TypeEnv) Type {
 	case MatrixMul:
 		switch {
 		case l.IsMatrix() && r.IsMatrix():
+			if m := MatrixOf(r.MatrixCols(), l.MatrixRows()); m != None {
+				return Type{Main: m}
+			}
 			return l
 		case l.IsMatrix() && r.IsFloatVector():
-			return r
+			return Type{Main: VectorOf(Float, l.MatrixRows())}
 		case l.IsFloatVector() && r.IsMatrix():
-			return l
+			return Type{Main: VectorOf(Float, r.MatrixCols())}
 		case r.IsMatrix():
 			return r
 		}
@@ -137,8 +168,12 @@ func callType(e *Expr, env TypeEnv) Type {
 		return Type{Main: Vec2}
 	case Vec3F, Cross:
 		return Type{Main: Vec3}
-	case Vec4F, TexelAt:
+	case Vec4F, TexelAt, TextureSample, TextureSampleLevel, TextureSampleBias, TextureSampleGrad, TextureLoad:
 		return Type{Main: Vec4}
+	case TextureSampleCompare:
+		return Type{Main: Float}
+	case TextureDimensions:
+		return Type{Main: UVec2}
 	case IVec2F:
 		return Type{Main: IVec2}
 	case IVec3F:

@@ -14,12 +14,13 @@ type checker struct {
 	m *module
 	// user is the length of the app's source, before the built-ins: what
 	// lies past it may use the intrinsics and names starting with __.
-	user   int
-	prog   *shaderir.Program
-	global *scope
-	scope  *scope
-	fns    []*fnInfo
-	cur    *fnState
+	user     int
+	pipeline bool
+	prog     *shaderir.Program
+	global   *scope
+	scope    *scope
+	fns      []*fnInfo
+	cur      *fnState
 	// nsh is the IR uniform holding time, progress and overflow;
 	// pictures how many textures the program reads.
 	nsh      int
@@ -43,12 +44,16 @@ const (
 	symFn
 	symType
 	symBuiltin // nsh, uniforms
+	symBinding // @group/@binding var in pipeline mode
+	symExpr    // custom IR expression (e.g. stage built-in input)
 )
 
 type symbol struct {
 	kind    symKind
 	t       ty
 	local   int
+	binding int
+	expr    shaderir.Expr
 	mutable bool
 	// val is a const's value, or nil for one written again where it is
 	// used (init, read in the module's scope).
@@ -79,7 +84,7 @@ func (c *checker) declare(name string, pos int, sym *symbol) {
 	if strings.HasPrefix(name, "__") && pos < c.user {
 		fail(pos, "a name starting with __ is reserved")
 	}
-	if _, ok := builtinTypes[name]; ok {
+	if _, ok := lookupBuiltinType(name); ok {
 		fail(pos, "%s is a type", name)
 	}
 	if c.scope.names[name] != nil {
@@ -108,11 +113,13 @@ type fnInfo struct {
 // its locals (nested blocks hold none), and the loops and switches around
 // the statement being written.
 type fnState struct {
-	info   *fnInfo
-	params int
-	top    *shaderir.Block
-	blocks []*shaderir.Block
-	flows  []*flow
+	info     *fnInfo
+	params   int
+	top      *shaderir.Block
+	blocks   []*shaderir.Block
+	flows    []*flow
+	stage    string // "", "vertex", or "fragment"
+	onReturn func(v value, out *[]shaderir.Stmt)
 }
 
 // flowKind is what a break or a continue leaves, as the IR writes WGSL's
@@ -354,7 +361,7 @@ func (c *checker) constant(e expr) value {
 }
 
 func (c *checker) resolveType(t *typeExpr) ty {
-	if bt, ok := builtinTypes[t.name]; ok {
+	if bt, ok := lookupBuiltinType(t.name); ok {
 		if t.args != nil {
 			fail(t.pos, "%s takes no template", t.name)
 		}
@@ -383,12 +390,49 @@ func (c *checker) resolveType(t *typeExpr) ty {
 	case "f16":
 		fail(t.pos, "f16 is not supported")
 	case "Uniforms", "Nsh":
-		fail(t.pos, "%s is a struct of the shader's inputs, not a type to use", t.name)
-	case "ptr", "atomic", "sampler", "texture_2d":
+		if !c.pipeline {
+			fail(t.pos, "%s is a struct of the shader's inputs, not a type to use", t.name)
+		}
+	case "ptr", "atomic":
 		fail(t.pos, "a shader takes no %s", t.name)
+	case "sampler":
+		if !c.pipeline {
+			fail(t.pos, "a shader takes no %s", t.name)
+		}
+		return ty{k: kSampler}
+	case "sampler_comparison":
+		if !c.pipeline {
+			fail(t.pos, "a shader takes no %s", t.name)
+		}
+		return ty{k: kSamplerComparison}
+	case "texture_depth_2d":
+		if !c.pipeline {
+			fail(t.pos, "a shader takes no %s", t.name)
+		}
+		return ty{k: kTextureDepth2D}
+	case "texture_2d":
+		if !c.pipeline {
+			fail(t.pos, "a shader takes no %s", t.name)
+		}
+		return ty{k: kTexture2D}
+	case "texture_cube":
+		if !c.pipeline {
+			fail(t.pos, "a shader takes no %s", t.name)
+		}
+		return ty{k: kTextureCube}
+	case "texture_2d_array":
+		if !c.pipeline {
+			fail(t.pos, "a shader takes no %s", t.name)
+		}
+		return ty{k: kTexture2DArray}
+	case "texture_multisampled_2d":
+		if !c.pipeline {
+			fail(t.pos, "a shader takes no %s", t.name)
+		}
+		return ty{k: kTextureMultisampled2D}
 	}
 	if shape, ok := matShapes[t.name]; ok {
-		if shape[0] != shape[1] {
+		if !c.pipeline && shape[0] != shape[1] {
 			fail(t.pos, "only square matrices are supported")
 		}
 		if !strings.HasSuffix(t.name, "f") {
@@ -609,6 +653,10 @@ func (c *checker) stmt(st stmt, out *[]shaderir.Stmt) {
 			fail(s.pos, "%s returns no value", f.decl.name)
 		}
 		v := c.convert(c.expr(s.x, out), f.ret, s.x.at())
+		if c.cur.onReturn != nil {
+			c.cur.onReturn(v, out)
+			return
+		}
 		*out = append(*out, shaderir.Stmt{Type: shaderir.Return, Exprs: []shaderir.Expr{c.ir(v)}})
 	case *branchStmt:
 		switch s.kind {
@@ -617,7 +665,11 @@ func (c *checker) stmt(st stmt, out *[]shaderir.Stmt) {
 		case "continue":
 			c.emitContinue(s.pos, len(c.cur.flows)-1, out)
 		case "discard":
-			if c.cur.info.decl.name != "shade" {
+			if c.pipeline {
+				if c.cur.stage == "vertex" {
+					fail(s.pos, "discard is not allowed in a vertex shader")
+				}
+			} else if c.cur.info.decl.name != "shade" {
 				fail(s.pos, "discard is supported in shade only")
 			}
 			*out = append(*out, shaderir.Stmt{Type: shaderir.Discard})

@@ -162,6 +162,9 @@ func (a *App) openSurface(config SurfaceConfig, t *core.Tree, main bool) *Surfac
 		}
 		model.anim = driver.NewAnimator(func(ev driver.Event) { a.postTo(t, ev) })
 	}
+	if t != nil {
+		t.SetGPUSubmitter(a.submitGPU)
+	}
 	s := &Surface{app: a, model: model, config: config, label: config.Title}
 	a.surfaceModels[config.ID] = s
 	if main {

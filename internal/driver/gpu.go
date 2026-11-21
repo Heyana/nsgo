@@ -1,0 +1,656 @@
+package driver
+
+import "github.com/nsgo-dev/nsgo/internal/shaderir"
+
+// GPUID uniquely identifies a retained GPU resource (buffer, texture, sampler,
+// bind group layout, bind group, or pipeline) within a GPU surface.
+type GPUID uint64
+
+// GPUTextureFormat identifies the pixel or depth/stencil layout of a GPU texture.
+type GPUTextureFormat uint8
+
+const (
+	GPUFormatUndefined GPUTextureFormat = iota
+	GPUFormatRGBA8Unorm
+	GPUFormatRGBA8UnormSRGB
+	GPUFormatBGRA8Unorm
+	GPUFormatRG8Unorm
+	GPUFormatR8Unorm
+	GPUFormatRGBA16Float
+	GPUFormatDepth24Plus
+	GPUFormatDepth24PlusStencil8
+	GPUFormatDepth32Float
+)
+
+// IsDepth reports whether f is a depth or depth-stencil texture format.
+func (f GPUTextureFormat) IsDepth() bool {
+	return f == GPUFormatDepth24Plus || f == GPUFormatDepth24PlusStencil8 || f == GPUFormatDepth32Float
+}
+
+// BytesPerPixel returns the texel stride in bytes for color formats (0 for depth/undefined).
+func (f GPUTextureFormat) BytesPerPixel() uint32 {
+	switch f {
+	case GPUFormatR8Unorm:
+		return 1
+	case GPUFormatRG8Unorm:
+		return 2
+	case GPUFormatRGBA8Unorm, GPUFormatRGBA8UnormSRGB, GPUFormatBGRA8Unorm:
+		return 4
+	case GPUFormatRGBA16Float:
+		return 8
+	default:
+		return 0
+	}
+}
+
+// GPUTextureDimension is the dimensionality of a GPU texture.
+type GPUTextureDimension uint8
+
+const (
+	GPUDim2D GPUTextureDimension = iota
+	GPUDimCube
+	GPUDim2DArray
+)
+
+// GPUTextureUsage is a bitmask of permitted uses for a GPU texture.
+type GPUTextureUsage uint32
+
+const (
+	GPUTextureSampled GPUTextureUsage = 1 << iota
+	GPUTextureRenderAttachment
+	GPUTextureCopySrc
+	GPUTextureCopyDst
+)
+
+// GPUBufferUsage is a bitmask of permitted uses for a GPU buffer.
+type GPUBufferUsage uint32
+
+const (
+	GPUBufferVertex GPUBufferUsage = 1 << iota
+	GPUBufferIndex
+	GPUBufferUniform
+	GPUBufferStorage
+	GPUBufferCopySrc
+	GPUBufferCopyDst
+)
+
+// GPUFilterMode selects texture minification, magnification, or mipmap filtering.
+type GPUFilterMode uint8
+
+const (
+	GPUFilterNearest GPUFilterMode = iota
+	GPUFilterLinear
+)
+
+// GPUAddressMode selects texture coordinate wrapping behavior.
+type GPUAddressMode uint8
+
+const (
+	GPUAddressClampToEdge GPUAddressMode = iota
+	GPUAddressRepeat
+	GPUAddressMirrorRepeat
+)
+
+// GPUCompareFunc selects a depth, stencil, or shadow-sampler comparison function.
+type GPUCompareFunc uint8
+
+const (
+	GPUCompareUndefined GPUCompareFunc = iota
+	GPUCompareNever
+	GPUCompareLess
+	GPUCompareEqual
+	GPUCompareLessEqual
+	GPUCompareGreater
+	GPUCompareNotEqual
+	GPUCompareGreaterEqual
+	GPUCompareAlways
+)
+
+// GPUVertexFormat specifies the component layout of a vertex attribute.
+type GPUVertexFormat uint8
+
+const (
+	GPUVertexFloat32 GPUVertexFormat = iota + 1
+	GPUVertexFloat32x2
+	GPUVertexFloat32x3
+	GPUVertexFloat32x4
+	GPUVertexSint32
+	GPUVertexSint32x2
+	GPUVertexSint32x3
+	GPUVertexSint32x4
+	GPUVertexUint32
+	GPUVertexUint32x2
+	GPUVertexUint32x3
+	GPUVertexUint32x4
+	GPUVertexUnorm8x4
+)
+
+// ByteSize returns the size of one attribute element in bytes.
+func (f GPUVertexFormat) ByteSize() uint64 {
+	switch f {
+	case GPUVertexFloat32, GPUVertexSint32, GPUVertexUint32, GPUVertexUnorm8x4:
+		return 4
+	case GPUVertexFloat32x2, GPUVertexSint32x2, GPUVertexUint32x2:
+		return 8
+	case GPUVertexFloat32x3, GPUVertexSint32x3, GPUVertexUint32x3:
+		return 12
+	case GPUVertexFloat32x4, GPUVertexSint32x4, GPUVertexUint32x4:
+		return 16
+	default:
+		return 0
+	}
+}
+
+// GPUVertexStepMode specifies whether a vertex buffer advances per vertex or per instance.
+type GPUVertexStepMode uint8
+
+const (
+	GPUStepVertex GPUVertexStepMode = iota
+	GPUStepInstance
+)
+
+// GPUIndexFormat specifies the element width of an index buffer.
+type GPUIndexFormat uint8
+
+const (
+	GPUIndexUint16 GPUIndexFormat = iota
+	GPUIndexUint32
+)
+
+// GPUPrimitiveTopology specifies how vertices are assembled into primitives.
+type GPUPrimitiveTopology uint8
+
+const (
+	GPUTopologyTriangleList GPUPrimitiveTopology = iota
+	GPUTopologyTriangleStrip
+	GPUTopologyLineList
+	GPUTopologyLineStrip
+	GPUTopologyPointList
+)
+
+// GPUFrontFace specifies the winding order considered front-facing.
+type GPUFrontFace uint8
+
+const (
+	GPUFrontCCW GPUFrontFace = iota
+	GPUFrontCW
+)
+
+// GPUCullMode specifies which faces are culled during rasterization.
+type GPUCullMode uint8
+
+const (
+	GPUCullNone GPUCullMode = iota
+	GPUCullFront
+	GPUCullBack
+)
+
+// GPUBlendFactor specifies a source or destination blend multiplier.
+type GPUBlendFactor uint8
+
+const (
+	GPUBlendZero GPUBlendFactor = iota
+	GPUBlendOne
+	GPUBlendSrc
+	GPUBlendOneMinusSrc
+	GPUBlendSrcAlpha
+	GPUBlendOneMinusSrcAlpha
+	GPUBlendDst
+	GPUBlendOneMinusDst
+	GPUBlendDstAlpha
+	GPUBlendOneMinusDstAlpha
+	GPUBlendConstant
+	GPUBlendOneMinusConstant
+)
+
+// GPUBlendOperation specifies how blended source and destination terms combine.
+type GPUBlendOperation uint8
+
+const (
+	GPUBlendAdd GPUBlendOperation = iota
+	GPUBlendSubtract
+	GPUBlendReverseSubtract
+	GPUBlendMin
+	GPUBlendMax
+)
+
+// GPUColorWriteMask selects which color channels a render pipeline writes.
+type GPUColorWriteMask uint8
+
+const (
+	GPUColorWriteRed GPUColorWriteMask = 1 << iota
+	GPUColorWriteGreen
+	GPUColorWriteBlue
+	GPUColorWriteAlpha
+	GPUColorWriteAll = GPUColorWriteRed | GPUColorWriteGreen | GPUColorWriteBlue | GPUColorWriteAlpha
+)
+
+// GPULoadOp specifies what happens to an attachment at the start of a render pass.
+type GPULoadOp uint8
+
+const (
+	GPULoadClear GPULoadOp = iota
+	GPULoadLoad
+)
+
+// GPUStoreOp specifies what happens to an attachment at the end of a render pass.
+type GPUStoreOp uint8
+
+const (
+	GPUStoreStore GPULoadStore = iota
+	GPUStoreDiscard
+)
+
+// GPULoadStore is an alias for GPUStoreOp to keep constant iota clean.
+type GPULoadStore = GPUStoreOp
+
+// GPUBindingType classifies an entry in a bind group layout.
+type GPUBindingType uint8
+
+const (
+	GPUBindingUniform GPUBindingType = iota
+	GPUBindingStorageRead
+	GPUBindingTexture
+	GPUBindingSampler
+	GPUBindingComparisonSampler
+)
+
+// GPUShaderStageFlags specifies which shader stages can see a binding.
+type GPUShaderStageFlags uint8
+
+const (
+	GPUStageVertex GPUShaderStageFlags = 1 << iota
+	GPUStageFragment
+	GPUStageAll = GPUStageVertex | GPUStageFragment
+)
+
+// GPUDeviceLostReason describes why a GPU device was lost.
+type GPUDeviceLostReason uint8
+
+const (
+	GPULostUnknown GPUDeviceLostReason = iota
+	GPULostReset
+	GPULostDestroyed
+	GPULostOutOfMemory
+)
+
+// GPUErrorCode classifies a GPU validation or runtime error.
+type GPUErrorCode uint8
+
+const (
+	GPUErrorNone GPUErrorCode = iota
+	GPUErrorUnsupported
+	GPUErrorInvalidDescriptor
+	GPUErrorShaderCompile
+	GPUErrorOutOfMemory
+	GPUErrorDeviceLost
+	GPUErrorFailed
+)
+
+// GPUViewConfig is the mount configuration for a KindGPU view (ItemGPU).
+type GPUViewConfig struct {
+	ColorFormat GPUTextureFormat
+	DepthFormat GPUTextureFormat
+	SampleCount int
+}
+
+// GPULimits reports device capability limits.
+type GPULimits struct {
+	MaxTextureDimension2D     uint32
+	MaxBufferSize             uint64
+	MaxUniformBufferSize      uint64
+	MaxBindGroups             uint32
+	MaxVertexBuffers          uint32
+	MaxVertexAttributes       uint32
+	MinUniformBufferAlignment uint32
+}
+
+// DefaultGPULimits returns conservative portable Stage 1 GPU limits.
+func DefaultGPULimits() GPULimits {
+	return GPULimits{
+		MaxTextureDimension2D:     4096,
+		MaxBufferSize:             256 << 20,
+		MaxUniformBufferSize:      64 << 10,
+		MaxBindGroups:             4,
+		MaxVertexBuffers:          8,
+		MaxVertexAttributes:       16,
+		MinUniformBufferAlignment: 256,
+	}
+}
+
+// GPUFeatures reports optional GPU capabilities supported by the active device.
+type GPUFeatures struct {
+	StorageBuffers bool
+	Compute        bool
+	MSAA4x         bool
+	Depth32Float   bool
+	Anisotropy     bool
+}
+
+// GPUBufferDesc describes a GPU buffer allocation.
+type GPUBufferDesc struct {
+	Label string
+	Size  uint64
+	Usage GPUBufferUsage
+	Data  []byte
+}
+
+// GPUTextureDesc describes a GPU texture allocation.
+type GPUTextureDesc struct {
+	Label       string
+	Dimension   GPUTextureDimension
+	Width       uint32
+	Height      uint32
+	Layers      uint32
+	MipLevels   uint32
+	SampleCount int
+	Format      GPUTextureFormat
+	Usage       GPUTextureUsage
+}
+
+// GPUSamplerDesc describes a GPU texture sampler.
+type GPUSamplerDesc struct {
+	MinFilter     GPUFilterMode
+	MagFilter     GPUFilterMode
+	MipmapFilter  GPUFilterMode
+	AddressU      GPUAddressMode
+	AddressV      GPUAddressMode
+	AddressW      GPUAddressMode
+	Compare       GPUCompareFunc
+	MaxAnisotropy uint16
+}
+
+// GPUBindGroupLayoutEntry describes one binding slot in a bind group layout.
+type GPUBindGroupLayoutEntry struct {
+	Binding          uint32
+	Visibility       GPUShaderStageFlags
+	Type             GPUBindingType
+	HasDynamicOffset bool
+}
+
+// GPUBindGroupLayoutDesc describes a bind group layout.
+type GPUBindGroupLayoutDesc struct {
+	Label   string
+	Entries []GPUBindGroupLayoutEntry
+}
+
+// GPUBindGroupEntry binds a buffer, texture, or sampler to a slot.
+type GPUBindGroupEntry struct {
+	Binding uint32
+	Buffer  GPUID
+	Offset  uint64
+	Size    uint64
+	Texture GPUID
+	Sampler GPUID
+}
+
+// GPUBindGroupDesc describes a bind group instance.
+type GPUBindGroupDesc struct {
+	Label   string
+	Layout  GPUID
+	Entries []GPUBindGroupEntry
+}
+
+// GPUVertexAttribute describes one vertex attribute within a vertex buffer.
+type GPUVertexAttribute struct {
+	Format   GPUVertexFormat
+	Offset   uint64
+	Location uint32
+}
+
+// GPUVertexBufferLayout describes one vertex buffer slot in a render pipeline.
+type GPUVertexBufferLayout struct {
+	Stride     uint64
+	StepMode   GPUVertexStepMode
+	Attributes []GPUVertexAttribute
+}
+
+// GPUShaderStage pairs a compiled shaderir.Program with an entry point name.
+type GPUShaderStage struct {
+	IR         *shaderir.Program
+	EntryPoint string
+}
+
+// GPUPrimitiveState configures primitive assembly and face culling.
+type GPUPrimitiveState struct {
+	Topology  GPUPrimitiveTopology
+	FrontFace GPUFrontFace
+	CullMode  GPUCullMode
+}
+
+// GPUDepthStencilState configures depth testing and writing.
+type GPUDepthStencilState struct {
+	Format              GPUTextureFormat
+	DepthWrite          bool
+	DepthCompare        GPUCompareFunc
+	DepthBias           int32
+	DepthBiasSlopeScale float32
+}
+
+// GPUBlendComponent describes one channel (color or alpha) blend equation.
+type GPUBlendComponent struct {
+	SrcFactor GPUBlendFactor
+	DstFactor GPUBlendFactor
+	Operation GPUBlendOperation
+}
+
+// GPUBlendState configures color and alpha blending for a color target.
+type GPUBlendState struct {
+	Color GPUBlendComponent
+	Alpha GPUBlendComponent
+}
+
+// GPUColorTargetState describes one color attachment output of a render pipeline.
+type GPUColorTargetState struct {
+	Format    GPUTextureFormat
+	Blend     *GPUBlendState
+	WriteMask GPUColorWriteMask
+}
+
+// GPUPipelineDesc describes an immutable render pipeline.
+type GPUPipelineDesc struct {
+	Label         string
+	Vertex        GPUShaderStage
+	Fragment      GPUShaderStage
+	Layouts       []GPUID
+	VertexBuffers []GPUVertexBufferLayout
+	Primitive     GPUPrimitiveState
+	DepthStencil  *GPUDepthStencilState
+	Targets       []GPUColorTargetState
+	SampleCount   int
+}
+
+// GPUTextureCopy identifies a subresource and origin within a GPU texture.
+type GPUTextureCopy struct {
+	Texture    GPUID
+	MipLevel   uint32
+	ArrayLayer uint32
+	OriginX    uint32
+	OriginY    uint32
+}
+
+// GPUDataLayout describes linear pixel data layout in a Go byte slice or buffer.
+type GPUDataLayout struct {
+	Offset       uint64
+	BytesPerRow  uint32
+	RowsPerImage uint32
+}
+
+// GPUTextureRegion selects a rectangular region of a texture for CPU readback.
+type GPUTextureRegion struct {
+	MipLevel   uint32
+	ArrayLayer uint32
+	X, Y       uint32
+	Width      uint32
+	Height     uint32
+}
+
+// GPUResourceOpKind identifies a retained GPU resource lifecycle or upload op.
+type GPUResourceOpKind uint8
+
+const (
+	GPUOpCreateBuffer GPUResourceOpKind = iota + 1
+	GPUOpWriteBuffer
+	GPUOpDestroyBuffer
+	GPUOpCreateTexture
+	GPUOpWriteTexture
+	GPUOpDestroyTexture
+	GPUOpCreateSampler
+	GPUOpDestroySampler
+	GPUOpCreateBindGroupLayout
+	GPUOpDestroyBindGroupLayout
+	GPUOpCreateBindGroup
+	GPUOpDestroyBindGroup
+	GPUOpCreatePipeline
+	GPUOpDestroyPipeline
+	GPUOpReadTexture
+)
+
+// GPUResourceOp is one resource creation, update, destruction, or readback op.
+type GPUResourceOp struct {
+	Kind            GPUResourceOpKind
+	ID              GPUID
+	Offset          uint64
+	Data            []byte
+	Buffer          *GPUBufferDesc
+	Texture         *GPUTextureDesc
+	Sampler         *GPUSamplerDesc
+	BindGroupLayout *GPUBindGroupLayoutDesc
+	BindGroup       *GPUBindGroupDesc
+	Pipeline        *GPUPipelineDesc
+	TextureDst      GPUTextureCopy
+	DataLayout      GPUDataLayout
+	ReadbackID      uint64
+	ReadbackRegion  GPUTextureRegion
+	ReadbackSurface bool
+}
+
+// GPUCommandKind identifies a render-pass command.
+type GPUCommandKind uint8
+
+const (
+	GPUCmdSetViewport GPUCommandKind = iota + 1
+	GPUCmdSetScissor
+	GPUCmdSetPipeline
+	GPUCmdSetBindGroup
+	GPUCmdSetVertexBuffer
+	GPUCmdSetIndexBuffer
+	GPUCmdSetStencilReference
+	GPUCmdSetBlendConstant
+	GPUCmdDraw
+	GPUCmdDrawIndexed
+	GPUCmdDrawInstanced
+	GPUCmdDrawIndexedInstanced
+)
+
+// GPUCommand is one encoded command inside a GPUPass.
+type GPUCommand struct {
+	Kind           GPUCommandKind
+	ID             GPUID
+	Slot           uint32
+	Offset         uint64
+	IndexFormat    GPUIndexFormat
+	DynamicOffsets []uint32
+	// Viewport / BlendConstant floats
+	F0, F1, F2, F3, F4, F5 float32
+	// Scissor / BaseVertex signed ints
+	I0, I1, I2, I3 int32
+	// Draw counts / first indices / stencil ref
+	U0, U1, U2, U3 uint32
+}
+
+// GPUColorAttachment configures one color target of a render pass.
+// Texture == 0 targets the view's swapchain drawable.
+type GPUColorAttachment struct {
+	Texture       GPUID
+	ResolveTarget GPUID
+	MipLevel      uint32
+	ArrayLayer    uint32
+	LoadOp        GPULoadOp
+	StoreOp       GPUStoreOp
+	ClearColor    Color
+}
+
+// GPUDepthStencilAttachment configures the depth/stencil target of a render pass.
+// Texture == 0 targets the view's automatic swapchain depth buffer.
+type GPUDepthStencilAttachment struct {
+	Texture        GPUID
+	DepthLoadOp    GPULoadOp
+	DepthStoreOp   GPUStoreOp
+	ClearDepth     float32
+	StencilLoadOp  GPULoadOp
+	StencilStoreOp GPUStoreOp
+	ClearStencil   uint32
+}
+
+// GPUPass is one render pass recorded in a GPUFrame.
+type GPUPass struct {
+	ColorAttachments []GPUColorAttachment
+	DepthStencil     *GPUDepthStencilAttachment
+	Commands         []GPUCommand
+}
+
+// GPUCopyOpKind identifies a GPU copy command outside a render pass.
+type GPUCopyOpKind uint8
+
+const (
+	GPUCopyBufferToBuffer GPUCopyOpKind = iota + 1
+	GPUCopyBufferToTexture
+	GPUCopyTextureToTexture
+)
+
+// GPUCopyOp describes a buffer/texture copy recorded on an encoder.
+type GPUCopyOp struct {
+	Kind      GPUCopyOpKind
+	SrcID     GPUID
+	DstID     GPUID
+	SrcOffset uint64
+	DstOffset uint64
+	Size      uint64
+	SrcLayout GPUDataLayout
+	SrcTex    GPUTextureCopy
+	DstTex    GPUTextureCopy
+	Width     uint32
+	Height    uint32
+	Layers    uint32
+}
+
+// GPUFrame is one off-commit batch of GPU resource operations, copy commands,
+// and render passes submitted directly to a platform backend without triggering
+// a UI view-tree commit.
+type GPUFrame struct {
+	SurfaceID  uint32
+	ViewID     NodeID
+	Generation uint32
+	Ops        []GPUResourceOp
+	Copies     []GPUCopyOp
+	Passes     []GPUPass
+	Present    bool
+}
+
+// GPUEventKind identifies an asynchronous report from a GPU backend to core.
+type GPUEventKind uint8
+
+const (
+	GPUEventDeviceReady GPUEventKind = iota + 1
+	GPUEventDeviceLost
+	GPUEventResize
+	GPUEventError
+	GPUEventReadback
+)
+
+// GPUEvent is the payload carried in Event.Data for EventGPU.
+type GPUEvent struct {
+	Kind          GPUEventKind
+	Generation    uint32
+	Width         int
+	Height        int
+	SurfaceFormat GPUTextureFormat
+	Limits        GPULimits
+	Features      GPUFeatures
+	LostReason    GPUDeviceLostReason
+	ErrorCode     GPUErrorCode
+	Message       string
+	ReadbackID    uint64
+	Pixels        []byte
+}

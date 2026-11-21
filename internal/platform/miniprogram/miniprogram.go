@@ -110,7 +110,8 @@ func (s *surface) MountsAtOnce() {}
 func (s *surface) Mount(b *driver.MountBatch) { driver.Apply(b, s.m.mount) }
 
 // RequestFrame implements engine.Platform.
-func (s *surface) RequestFrame() { s.m.requestFrame() }
+func (s *surface) RequestFrame()             { s.m.requestFrame() }
+func (s *surface) SubmitGPU(driver.GPUFrame) {}
 
 func (s *surface) submit(ops []byte) { s.bridge.Call("submit", string(ops)) }
 

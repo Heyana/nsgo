@@ -24,7 +24,7 @@ func (c *checker) call(x *callExpr, out *[]shaderir.Stmt, asStmt bool) value {
 		}
 		fail(x.at(), "%s is not a function", name)
 	}
-	if bt, ok := builtinTypes[name]; ok {
+	if bt, ok := lookupBuiltinType(name); ok {
 		return c.construct(bt, x, out)
 	}
 	switch name {
@@ -60,6 +60,11 @@ func (c *checker) call(x *callExpr, out *[]shaderir.Stmt, asStmt bool) value {
 			args[i] = c.expr(a, out)
 		}
 		return f(c, args, x.fn.pos, out)
+	}
+	if c.pipeline {
+		if v, ok := c.pipelineTextureBuiltin(name, x, out); ok {
+			return v
+		}
 	}
 	if strings.HasPrefix(name, "texture") || name == "arrayLength" || strings.HasPrefix(name, "atomic") {
 		fail(x.at(), "a shader takes no resources: read pictures with sample_content, sample_backdrop, sample_from and sample_to")
@@ -120,6 +125,8 @@ func (c *checker) construct(t ty, x *callExpr, out *[]shaderir.Stmt) value {
 		return c.matrix(t, x, out)
 	case kArray:
 		return c.arrayOf(&t, x, out)
+	case kStruct:
+		return c.structConstruct(t, x, out)
 	}
 	// A scalar: its zero, or a conversion.
 	if len(x.args) == 0 {

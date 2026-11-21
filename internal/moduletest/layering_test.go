@@ -87,6 +87,7 @@ var layers = []struct {
 	{"audio", []string{"core"}},
 	// Gamepads reach GameController on Apple (with objcblock), XInput on Windows, evdev on Linux, navigator.getGamepads on the web, and the driver's bridge on Android and nsgotest.
 	{"gamepad", []string{"core", "internal/driver", "internal/platform/objcblock"}},
+	{"gpu", []string{"core", "internal/driver", "internal/shader", "internal/shader/wgsl", "internal/shaderir"}},
 	{"desktop/locales", []string{"core", "i18n"}},
 	{"desktop", []string{"core"}},
 	{"updater/locales", []string{"core", "i18n"}},
@@ -111,7 +112,7 @@ var layers = []struct {
 	{"tsx/", []string{"core", "base/", "mobile", "desktop", "internal/devtools", "tsx", "tsx/bundler", "tsx/internal/js", "tsx/pkg", "tsx/websrc"}},
 	// Apps use the public packages only, and the hosts that embed an
 	// example app its package.
-	{"examples/", []string{"", "audio", "core", "base/", "ui/", "mobile", "desktop", "desktop/locales", "gamepad", "i18n", "icons/", "nsgotest", "tsx/", "updater", "widget", "examples/"}},
+	{"examples/", []string{"", "audio", "core", "base/", "ui/", "gpu", "mobile", "desktop", "desktop/locales", "gamepad", "i18n", "icons/", "nsgotest", "tsx/", "updater", "widget", "examples/"}},
 	// The nsgo tool links no component or runtime, so changing them does
 	// not build it again; it writes TSX declarations by running the app.
 	{"cmd/", []string{"core", "cmd/", "internal/automation", "internal/mimeinfo", "internal/platform/android/runtime", "tsx/bundler", "tsx/pkg", "tsx/websrc"}},
@@ -137,7 +138,7 @@ var owned = map[string][]string{
 // portable lists the packages that build unchanged for every target: no
 // purego, syscall or unsafe.
 var portable = []string{"core", "internal/automation", "internal/dev/locales", "internal/driver", "internal/mimeinfo", "internal/layout", "internal/shader", "internal/shader/wgsl", "internal/shaderir/", "internal/engine",
-	"internal/testhost", "internal/cldr", "base/", "ui/", "i18n", "mobile", "audio", "desktop", "desktop/locales", "icons/", "nsgotest", "tsx", "tsx/websrc", "updater", "updater/locales"}
+	"internal/testhost", "internal/cldr", "base/", "ui/", "i18n", "mobile", "audio", "gpu", "desktop", "desktop/locales", "icons/", "nsgotest", "tsx", "tsx/websrc", "updater", "updater/locales"}
 
 // unportable are the packages among portable's that reach the system: the
 // terminal loads libghostty-vt and runs programs, on macOS, Linux and

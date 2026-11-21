@@ -533,6 +533,10 @@ type App struct {
 	lastPress   driver.NodeID
 	lastPressAt time.Time
 	clicks      uint32
+	// noGPU disables Env.SupportsGPU() in headless mode (NoGPU).
+	noGPU     bool
+	gpuViews  map[driver.NodeID]*gpuViewState
+	gpuFrames []GPUFrameRecord
 }
 
 // Start runs app, a root view, and settles it; the test's cleanup disposes it. Under `nsgo test -target` it opens the app on that platform instead, in the main window on macOS, as there nsgo.Run shows a root view. With a macOS Environment app shows in the main window, as nsgo.Run shows a root view there, which steps act on; with any other, Windows and Linux included, it fills the app's one surface, as nsgo.Run's does. An app run with its function is tested with StartApp.
@@ -675,12 +679,20 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 		engine = a.textEngine
 	}
 	a.tree = core.NewTree(a.root, engine)
+	a.tree.SetGPUSubmitter(a.submitGPU)
 	// Steps reach every view, not only those in sight.
 	a.tree.SetViewPacing(false)
 	a.tree.Resize(a.size, driver.Geometry{})
+	env := driver.Environment{}
 	if a.env != nil {
-		a.tree.SetEnvironment(*a.env)
+		env = *a.env
 	}
+	if !a.noGPU {
+		env.GPU = true
+	} else {
+		env.GPU = false
+	}
+	a.tree.SetEnvironment(env)
 	if desktop {
 		// The app's own surface runs the app's function, as on a desktop; a root view is one showing it as the main view, as nsgo.Run makes it.
 		a.appTree = a.tree

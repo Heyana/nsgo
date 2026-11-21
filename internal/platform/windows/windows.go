@@ -1164,6 +1164,8 @@ func (w *window) RequestFrame() {
 	}
 }
 
+func (w *window) SubmitGPU(driver.GPUFrame) {}
+
 // applyBatches applies the batches the engine has sent, in order, unless
 // a batch is being applied: one can resize the window.
 func (w *window) applyBatches() {

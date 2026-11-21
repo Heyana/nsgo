@@ -71,6 +71,8 @@ type (
 	PictureInPictureConfig = driver.PictureInPictureConfig
 	// ViewKind is the kind of native view a node mounts.
 	ViewKind = driver.ViewKind
+	// GPUDeviceLostReason describes why a simulated GPU device was lost.
+	GPUDeviceLostReason = driver.GPUDeviceLostReason
 	// ViewProps is a view's accessibility and identity.
 	ViewProps = driver.ViewProps
 	// ViewStyle is everything a platform draws for a view itself.
@@ -190,6 +192,14 @@ const (
 	KindVideo  = driver.KindVideo
 	KindNative = driver.KindNative
 	KindShader = driver.KindShader
+	KindGPU    = driver.KindGPU
+)
+
+const (
+	GPULostUnknown     = driver.GPULostUnknown
+	GPULostReset       = driver.GPULostReset
+	GPULostDestroyed   = driver.GPULostDestroyed
+	GPULostOutOfMemory = driver.GPULostOutOfMemory
 )
 
 const (

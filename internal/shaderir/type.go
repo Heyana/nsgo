@@ -22,9 +22,10 @@ import (
 )
 
 type Type struct {
-	Main   BasicType
-	Sub    []Type
-	Length int
+	Main       BasicType
+	Sub        []Type
+	Length     int
+	FieldNames []string
 }
 
 func (t Type) Equal(rhs *Type) bool {
@@ -73,6 +74,18 @@ func (t Type) String() string {
 		return "mat3"
 	case Mat4:
 		return "mat4"
+	case Mat2x3:
+		return "mat2x3"
+	case Mat2x4:
+		return "mat2x4"
+	case Mat3x2:
+		return "mat3x2"
+	case Mat3x4:
+		return "mat3x4"
+	case Mat4x2:
+		return "mat4x2"
+	case Mat4x3:
+		return "mat4x3"
 	case Uint:
 		return "uint"
 	case UVec2:
@@ -83,6 +96,20 @@ func (t Type) String() string {
 		return "uvec4"
 	case Texture:
 		return "texture"
+	case Texture2D:
+		return "texture2d"
+	case TextureCube:
+		return "texturecube"
+	case Texture2DArray:
+		return "texture2darray"
+	case TextureDepth2D:
+		return "texturedepth2d"
+	case TextureMultisampled2D:
+		return "texturemultisampled2d"
+	case Sampler:
+		return "sampler"
+	case SamplerComparison:
+		return "samplercomparison"
 	case Array:
 		return fmt.Sprintf("[%d]%s", t.Length, t.Sub[0].String())
 	case Struct:
@@ -122,8 +149,14 @@ func (t Type) DwordCount() int {
 		return 4
 	case Mat2:
 		return 4
+	case Mat2x3, Mat3x2:
+		return 6
+	case Mat2x4, Mat4x2:
+		return 8
 	case Mat3:
 		return 9
+	case Mat3x4, Mat4x3:
+		return 12
 	case Mat4:
 		return 16
 	case Uint:
@@ -136,7 +169,9 @@ func (t Type) DwordCount() int {
 		return 4
 	case Array:
 		return t.Length * t.Sub[0].DwordCount()
-	default: // TODO: Parse a struct correctly
+	case Struct:
+		return t.SizeBytes() / 4
+	default:
 		return -1
 	}
 }
@@ -178,7 +213,7 @@ func (t Type) IsInteger() bool {
 // a matrix, int or uint for an integer vector, and t's own for a scalar.
 func (t Type) Scalar() BasicType {
 	switch t.Main {
-	case Vec2, Vec3, Vec4, Mat2, Mat3, Mat4:
+	case Vec2, Vec3, Vec4, Mat2, Mat3, Mat4, Mat2x3, Mat2x4, Mat3x2, Mat3x4, Mat4x2, Mat4x3:
 		return Float
 	case IVec2, IVec3, IVec4:
 		return Int
@@ -238,10 +273,70 @@ func (t Type) VectorElementCount() int {
 
 func (t Type) IsMatrix() bool {
 	switch t.Main {
-	case Mat2, Mat3, Mat4:
+	case Mat2, Mat3, Mat4, Mat2x3, Mat2x4, Mat3x2, Mat3x4, Mat4x2, Mat4x3:
 		return true
 	}
 	return false
+}
+
+func (t Type) MatrixCols() int {
+	switch t.Main {
+	case Mat2, Mat2x3, Mat2x4:
+		return 2
+	case Mat3, Mat3x2, Mat3x4:
+		return 3
+	case Mat4, Mat4x2, Mat4x3:
+		return 4
+	default:
+		return -1
+	}
+}
+
+func (t Type) MatrixRows() int {
+	switch t.Main {
+	case Mat2, Mat3x2, Mat4x2:
+		return 2
+	case Mat3, Mat2x3, Mat4x3:
+		return 3
+	case Mat4, Mat2x4, Mat3x4:
+		return 4
+	default:
+		return -1
+	}
+}
+
+// MatrixOf returns the BasicType of a cols x rows float matrix.
+func MatrixOf(cols, rows int) BasicType {
+	switch cols {
+	case 2:
+		switch rows {
+		case 2:
+			return Mat2
+		case 3:
+			return Mat2x3
+		case 4:
+			return Mat2x4
+		}
+	case 3:
+		switch rows {
+		case 2:
+			return Mat3x2
+		case 3:
+			return Mat3
+		case 4:
+			return Mat3x4
+		}
+	case 4:
+		switch rows {
+		case 2:
+			return Mat4x2
+		case 3:
+			return Mat4x3
+		case 4:
+			return Mat4
+		}
+	}
+	return None
 }
 
 func (t Type) MatrixSize() int {
@@ -255,6 +350,18 @@ func (t Type) MatrixSize() int {
 	default:
 		return -1
 	}
+}
+
+func (t Type) IsTexture() bool {
+	switch t.Main {
+	case Texture, Texture2D, TextureCube, Texture2DArray, TextureDepth2D, TextureMultisampled2D:
+		return true
+	}
+	return false
+}
+
+func (t Type) IsSampler() bool {
+	return t.Main == Sampler || t.Main == SamplerComparison
 }
 
 type BasicType int
@@ -282,6 +389,21 @@ const (
 	UVec2
 	UVec3
 	UVec4
+
+	// Added by NSGo for 3D GPU pipelines (docs/architecture/gpu.md).
+	Mat2x3
+	Mat2x4
+	Mat3x2
+	Mat3x4
+	Mat4x2
+	Mat4x3
+	Texture2D
+	TextureCube
+	Texture2DArray
+	TextureDepth2D
+	TextureMultisampled2D
+	Sampler
+	SamplerComparison
 )
 
 func descendantLocalVars(block, target *Block) ([]Type, bool) {

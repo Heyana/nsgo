@@ -61,12 +61,14 @@ type stmt interface{ at() int }
 type (
 	declStmt struct {
 		kind string // let, var or const
-		// space is a module-scope var's address space (var<private>).
-		space string
-		name  string
-		typ   *typeExpr
-		init  expr
-		pos   int
+		// space is a module-scope var's address space (var<private>, var<uniform>, var<storage>).
+		space  string
+		access string // e.g. "read" in var<storage, read>
+		name   string
+		typ    *typeExpr
+		init   expr
+		attrs  []attr
+		pos    int
 	}
 	assignStmt struct {
 		lhs expr // nil for _ =
@@ -149,22 +151,25 @@ func (s *assertStmt) at() int { return s.pos }
 
 type (
 	param struct {
-		name string
-		typ  *typeExpr
-		pos  int
+		name  string
+		typ   *typeExpr
+		attrs []attr
+		pos   int
 	}
 	fnDecl struct {
-		name   string
-		params []param
-		ret    *typeExpr
-		body   *block
-		attrs  []attr
-		pos    int
+		name     string
+		params   []param
+		ret      *typeExpr
+		retAttrs []attr
+		body     *block
+		attrs    []attr
+		pos      int
 	}
 	member struct {
-		name string
-		typ  *typeExpr
-		pos  int
+		name  string
+		typ   *typeExpr
+		attrs []attr
+		pos   int
 	}
 	structDecl struct {
 		name    string
@@ -178,6 +183,7 @@ type (
 	}
 	attr struct {
 		name string
+		args []string
 		pos  int
 	}
 	module struct {
@@ -192,16 +198,25 @@ type (
 )
 
 type parser struct {
-	toks []lexeme
-	i    int
+	toks     []lexeme
+	i        int
+	pipeline bool
 }
 
 func parse(src string) (*module, error) {
+	return parseWithMode(src, false)
+}
+
+func parsePipeline(src string) (*module, error) {
+	return parseWithMode(src, true)
+}
+
+func parseWithMode(src string, pipeline bool) (*module, error) {
 	toks, err := lex(src)
 	if err != nil {
 		return nil, err
 	}
-	p := &parser{toks: toks}
+	p := &parser{toks: toks, pipeline: pipeline}
 	m := &module{}
 	err = catch(func() {
 		for p.peek().kind != tEOF {
@@ -308,7 +323,7 @@ func (p *parser) attrs() []attr {
 		if name.kind != tIdent {
 			fail(name.pos, "expected an attribute's name, found %s", describe(name))
 		}
-		out = append(out, attr{name: name.text, pos: at.pos})
+		a := attr{name: name.text, pos: at.pos}
 		if p.accept("(") {
 			for depth := 1; depth > 0; {
 				t := p.next()
@@ -319,9 +334,15 @@ func (p *parser) attrs() []attr {
 					depth++
 				case t.text == ")" && t.kind == tPunct:
 					depth--
+				case depth == 1 && t.kind == tPunct && t.text == ",":
+				default:
+					if depth == 1 {
+						a.args = append(a.args, t.text)
+					}
 				}
 			}
 		}
+		out = append(out, a)
 	}
 	return out
 }
@@ -343,6 +364,14 @@ func (p *parser) topLevel(m *module) {
 		fail(t.pos, "a shader takes no %s directive", t.text)
 	}
 	if len(attrs) > 0 {
+		if p.pipeline && p.is("var") {
+			d := p.decl()
+			d.attrs = attrs
+			p.expect(";")
+			m.globals = append(m.globals, d)
+			m.order = append(m.order, d)
+			return
+		}
 		a := attrs[0]
 		switch a.name {
 		case "group", "binding":
@@ -390,17 +419,17 @@ func (p *parser) fn() *fnDecl {
 	f := &fnDecl{name: name.text, pos: name.pos}
 	p.expect("(")
 	for !p.is(")") {
-		p.attrs()
+		pattrs := p.attrs()
 		pn := p.ident()
 		p.expect(":")
-		f.params = append(f.params, param{name: pn.text, typ: p.typ(), pos: pn.pos})
+		f.params = append(f.params, param{name: pn.text, typ: p.typ(), attrs: pattrs, pos: pn.pos})
 		if !p.accept(",") {
 			break
 		}
 	}
 	p.expect(")")
 	if p.accept("->") {
-		p.attrs()
+		f.retAttrs = p.attrs()
 		f.ret = p.typ()
 	}
 	f.body = p.block()
@@ -413,10 +442,10 @@ func (p *parser) structDecl() *structDecl {
 	s := &structDecl{name: name.text, pos: name.pos}
 	p.expect("{")
 	for !p.is("}") {
-		p.attrs()
+		mattrs := p.attrs()
 		mn := p.ident()
 		p.expect(":")
-		s.members = append(s.members, member{name: mn.text, typ: p.typ(), pos: mn.pos})
+		s.members = append(s.members, member{name: mn.text, typ: p.typ(), attrs: mattrs, pos: mn.pos})
 		if !p.accept(",") {
 			break
 		}
@@ -430,7 +459,8 @@ func (p *parser) structDecl() *structDecl {
 var templateNames = map[string]bool{
 	"vec2": true, "vec3": true, "vec4": true, "array": true, "bitcast": true, "ptr": true, "atomic": true,
 	"mat2x2": true, "mat2x3": true, "mat2x4": true, "mat3x2": true, "mat3x3": true, "mat3x4": true,
-	"mat4x2": true, "mat4x3": true, "mat4x4": true, "texture_2d": true, "sampler": false,
+	"mat4x2": true, "mat4x3": true, "mat4x4": true, "texture_2d": true, "texture_cube": true,
+	"texture_2d_array": true, "texture_multisampled_2d": true, "sampler": false,
 }
 
 func (p *parser) typ() *typeExpr {
@@ -608,7 +638,7 @@ func (p *parser) decl() *declStmt {
 		p.next()
 		d.space = p.ident().text
 		if p.accept(",") {
-			p.ident()
+			d.access = p.ident().text
 		}
 		p.closeTemplate()
 	}

@@ -25,6 +25,7 @@ type Env struct {
 	contrast                *Signal[bool]
 	screenColor, speech     *Signal[bool]
 	audio, speak, gamepads  *Signal[bool]
+	gpu                     *Signal[bool]
 	camera                  *Signal[bool]
 	scanCode                *Signal[bool]
 	canSendInput            *Signal[bool]
@@ -106,6 +107,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		audio:            NewSignal(cx, false),
 		speak:            NewSignal(cx, false),
 		gamepads:         NewSignal(cx, false),
+		gpu:              NewSignal(cx, false),
 		camera:           NewSignal(cx, false),
 		scanCode:         NewSignal(cx, false),
 		canSendInput:     NewSignal(cx, false),
@@ -227,6 +229,7 @@ func (e *Env) set(v Environment) {
 	e.audio.Set(v.Audio)
 	e.speak.Set(v.Speak)
 	e.gamepads.Set(v.Gamepads)
+	e.gpu.Set(v.GPU)
 	e.camera.Set(v.Camera)
 	e.scanCode.Set(v.ScanCode)
 	e.canSendInput.Set(v.CanSendInput)
@@ -295,6 +298,10 @@ func regionSafeArea(f Bounds, safe Edges, size Size) Edges {
 
 // SafeArea returns the insets system UI covers on each edge.
 func (e *Env) SafeArea() Edges { return e.safe.Get() }
+
+// SupportsGPU reports whether this target and device can host a gpu.View
+// (docs/architecture/gpu.md).
+func (e *Env) SupportsGPU() bool { return e.gpu.Get() }
 
 // KeyboardHeight returns how much of the bottom the keyboard covers.
 func (e *Env) KeyboardHeight() Points { return e.keyboard.Get() }

@@ -32,7 +32,7 @@ var unsupportedItems = map[string]string{
 		ItemSpeech ItemCanInstallPackages ItemInstallPackage ItemInstallSettings
 		ItemInputSource ItemNative
 		ItemNativeCommand ItemBlockNative ItemShader ItemShaderInput
-		ItemShaderTransition`,
+		ItemShaderTransition ItemGPU`,
 	"accessibility":            `ItemAccessibilityFocus`,
 	"notifications and badges": `ItemBadge ItemCloseNotification ItemHaptic`,
 	"desktop only": `ItemDock ItemMenu ItemPopupMenu ItemLaunchAtLogin
@@ -73,7 +73,7 @@ var unsupportedEvents = map[string]string{
 	"Apple only": `EventSignInWithApple EventOpenScene`,
 	// Services main added after this target, which no HarmonyOS kit answers here yet.
 	"services added since": `EventAuthSession EventOpenLinks EventPurchase
-		EventPurchaseUpdate EventSensor EventSpeak EventWebCookies`,
+		EventPurchaseUpdate EventSensor EventSpeak EventWebCookies EventGPU`,
 	// The app hears neither: the core sends no audio where the environment
 	// says none, and asks about a quit only where the platform ends apps
 	// itself.
@@ -84,7 +84,7 @@ var unsupportedEvents = map[string]string{
 // KindView is the default branch of NodeView, so it needs no constant of
 // its own but still has no dedicated renderer.
 var unsupportedKinds = map[string]string{
-	"no view drawn yet": `KindNative KindShader`,
+	"no view drawn yet": `KindNative KindShader KindGPU`,
 	"default branch":    `KindView`,
 }
 

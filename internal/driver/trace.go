@@ -124,6 +124,7 @@ var itemNames = map[ItemKind]string{
 	ItemKeepImage: "keep-image", ItemReleaseImage: "release-image",
 	ItemReleaseOffscreen: "release-offscreen",
 	ItemRequestReview:    "request-review",
+	ItemGPU:              "gpu",
 }
 
 // TraceLine is the item as traces print it: its kind, its view and what
@@ -198,6 +199,8 @@ func (k ViewKind) String() string {
 		return "video"
 	case KindShader:
 		return "shader"
+	case KindGPU:
+		return "gpu"
 	}
 	return "?"
 }

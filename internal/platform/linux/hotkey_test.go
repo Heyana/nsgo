@@ -15,8 +15,9 @@ import (
 
 type portalTestPlatform struct{ core.ApproxTextEngine }
 
-func (portalTestPlatform) Mount(*driver.MountBatch) {}
-func (portalTestPlatform) RequestFrame()            {}
+func (portalTestPlatform) Mount(*driver.MountBatch)  {}
+func (portalTestPlatform) RequestFrame()             {}
+func (portalTestPlatform) SubmitGPU(driver.GPUFrame) {}
 
 // TestPortalBindingResponse feeds real GVariant replies to the signal handler without a display, session bus, or compositor permission dialog.
 func TestPortalBindingResponse(t *testing.T) {

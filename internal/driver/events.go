@@ -278,6 +278,8 @@ const (
 	EventKeyUp
 	// EventMouseUp reports a mouse button coming up (Button, Count the consecutive click count, Point in the view, Page in its root view, Modifiers the keys held) on the view its down went to (ID), or with ID 0 when no view hearing mouse buttons was under the pointer, and for every held button when the window loses focus (with zero Count and Modifiers). Like EventKeyUp, it is never in a mask: a view that hears mouse buttons has EventMouseDown's bit, which a kind past 63 could not have.
 	EventMouseUp
+	// EventGPU reports a GPU view lifecycle, resize, error, or readback event for view ID (Data, a *GPUEvent). It is never in an EventMask.
+	EventGPU
 )
 
 // EventVideoPause reports that the platform paused video ID, not the app's Paused: Index is why (VideoPauseInterruption, ...). An EventMask has no room for another kind, so it shares EventImageInfo's, an answer that names no view and is never in a mask; Android's Protocol.java mirrors it.
