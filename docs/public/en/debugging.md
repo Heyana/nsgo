@@ -28,6 +28,31 @@ go tool nsgo dev -target android            # on a connected device or emulator,
 
 `-h` lists every flag.
 
+## Go debugger
+
+Put a [Delve](https://github.com/go-delve/delve/blob/master/Documentation/installation/README.md) version compatible with your Go version on `PATH` as `dlv`. Start a native desktop app with its debugging information and with Go optimization disabled.
+
+```sh
+go tool nsgo dev -target native -debug
+```
+
+Copy the port from Delve's `API server listening at` line. In VS Code with the Go extension, add an attach configuration and replace `40000` with that port.
+
+```json
+{
+  "name": "Attach to NSGo",
+  "type": "go",
+  "request": "attach",
+  "mode": "remote",
+  "debugAdapter": "dlv-dap",
+  "host": "127.0.0.1",
+  "port": 40000
+}
+```
+
+In GoLand, add a **Go Remote** run configuration with host `127.0.0.1` and the same port. Set a breakpoint in your app's Go code, attach, and run the action that reaches it. After a successful Go rebuild, reconnect the debugger at the same address so it sends the breakpoints to the new process. TSX changes still use hot reload.
+
+`-debug` runs on macOS, Windows and Linux with `-target native`. Use a dev build for debugging and reserve `-release` for measuring a release build.
 
 ## Component previews
 

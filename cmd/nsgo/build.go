@@ -715,6 +715,10 @@ func goBuildWith(ctx context.Context, p *project, out string, env []string, extr
 func goBuildCommand(ctx context.Context, p *project, out string, env []string, extra buildExtra, ldflags ...string) (cmd *exec.Cmd, done func(), err error) {
 	done = func() {}
 	args := append([]string{"build"}, extra.flags...)
+	if p.devDebug {
+		args = append(args, "-gcflags=all=-N -l")
+		ldflags = append(ldflags, "-s=false -w=false")
+	}
 	if p.buildParallel > 0 {
 		args = append(args, "-p", strconv.Itoa(p.buildParallel))
 	}

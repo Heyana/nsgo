@@ -19,6 +19,7 @@
 - Restore web builds with pixel-backed custom cursors (#1206 by @houko).
 - Free a closed macOS window's views, shaders' Metal layers among them, once its frame clock had run, as an animation or a scroll does, where each window opened and closed leaked them.
 - Advance the clock during headless Go test waits so animations started by asynchronous replies can finish (#1642 by @houko).
+- Run native desktop apps under Delve with `nsgo dev -debug`, reusing the debugger address across Go rebuilds (#662 by @houko).
 - Run the shared JavaScript API and TSX runtime suites in Chromium CI with browser DevTools reporting TSX source lines (#185 by @houko).
 - Add `nsgo build -channel steam` for desktop depots with development-only `steam_appid.txt` support (#1227 by @houko).
 - Build one universal Mac App Store package or dual-ABI Android App Bundle when both platform architectures are selected (#1231 by @houko).

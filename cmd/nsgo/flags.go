@@ -112,6 +112,7 @@ type devFlags struct {
 	device    string
 	team      string
 	release   bool
+	debug     bool
 	trace     bool
 	highlight bool
 	devtools  bool
@@ -189,6 +190,7 @@ func bindDevFlags(fs *flag.FlagSet) *devFlags {
 	fs.BoolVar(&f.open, "open", true, "open the web target in the browser")
 	fs.StringVar(&f.device, "device", "", "the `device` to run on: an iPhone's name, UDID, serial or ECID, a simulator's name or UDID, or an adb serial or emulator's AVD name (default: the only one connected, or the booted simulator)")
 	fs.BoolVar(&f.release, "release", false, "build stripped release binaries, as nsgo build does, for measuring with -fps")
+	fs.BoolVar(&f.debug, "debug", false, "run the native desktop app under Delve, keeping its debugger address across reloads")
 	fs.BoolVar(&f.trace, "trace", false, "print each commit's time, mount items and the writes that caused it from the running app")
 	fs.BoolVar(&f.highlight, "highlight", false, "outline for a moment each view a commit of the running app changed")
 	fs.BoolVar(&f.devtools, "devtools", false, "open DevTools in the browser: the running app's views, state, profiler and a test recorder")
@@ -203,7 +205,7 @@ func bindDevFlags(fs *flag.FlagSet) *devFlags {
 
 // options are dev's options of the flags that name no nsgo.yaml value.
 func (f *devFlags) options() devOptions {
-	return devOptions{apply: f.apply, port: f.port, open: f.open, device: f.device, team: f.team, release: f.release, trace: f.trace,
+	return devOptions{apply: f.apply, port: f.port, open: f.open, device: f.device, team: f.team, release: f.release, debug: f.debug, trace: f.trace,
 		highlight: f.highlight, devtools: f.devtools, layout: string(f.layout), automation: f.auto, fps: f.fps, lang: f.lang, clip: f.clip}
 }
 

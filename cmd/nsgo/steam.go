@@ -52,6 +52,9 @@ func startDesktopDev(p *project, opts devOptions, dir, bin string) (app, error) 
 		}
 		workDir = dir
 	}
+	if opts.debugger != nil {
+		return opts.debugger.start(workDir, dir, devEnv(opts), bin, opts.appFlags())
+	}
 	stop, wait, err := startProcessIn(workDir, devEnv(opts), bin, opts.appFlags()...)
 	if err != nil {
 		return app{}, err

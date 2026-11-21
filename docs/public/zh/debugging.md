@@ -28,6 +28,31 @@ go tool nsgo dev -target android            # 通过 adb 在连接的设备或�
 
 `-h` 列出全部参数。
 
+## Go 调试器
+
+把与你的 Go 版本兼容的 [Delve](https://github.com/go-delve/delve/blob/master/Documentation/installation/README.md) 放到 `PATH` 上，命令名为 `dlv`。用下列命令运行原生桌面应用，保留调试信息并关闭 Go 优化。
+
+```sh
+go tool nsgo dev -target native -debug
+```
+
+从 Delve 的 `API server listening at` 输出中复制端口。在装有 Go 扩展的 VS Code 中添加用于连接调试器的配置，把 `40000` 换成这个端口。
+
+```json
+{
+  "name": "Attach to NSGo",
+  "type": "go",
+  "request": "attach",
+  "mode": "remote",
+  "debugAdapter": "dlv-dap",
+  "host": "127.0.0.1",
+  "port": 40000
+}
+```
+
+在 GoLand 中添加 **Go Remote** 运行配置，主机填 `127.0.0.1`，端口填同一个值。在应用的 Go 代码中设置断点，连接调试器，再执行会运行到该断点的操作。Go 重编译成功后，连接同一地址，让调试器把断点发给新进程。TSX 改动仍走热重载。
+
+macOS、Windows 和 Linux 可用 `-target native -debug`。用开发构建调试，用 `-release` 测量发布构建。
 
 ## 组件预览
 

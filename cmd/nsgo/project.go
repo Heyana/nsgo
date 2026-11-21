@@ -33,6 +33,8 @@ type project struct {
 	idDefault bool
 	// devURL is the dev server's address for targets that pass the app no environment, and devToken the run's token for it, which the build gives the app in a file it adds (devTokenFile).
 	devURL, devToken string
+	// devDebug retains DWARF and disables optimization for Delve.
+	devDebug bool
 	// testBinary builds the package's tests with the nsgotest tag in
 	// place of the app, for nsgo test -target.
 	testBinary bool
