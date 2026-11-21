@@ -406,3 +406,129 @@ func TestDepthOnlyVertexPipelineAndComparisonTypeErrors(t *testing.T) {
 		t.Errorf("expected error for textureSampleCompare with non-comparison sampler")
 	}
 }
+
+const instancedWGSL = `
+struct VertexIn {
+	@location(0) pos: vec2<f32>,
+	@location(1) instOffset: vec2<f32>,
+	@location(2) instColor: vec4<f32>,
+	@builtin(instance_index) instIdx: u32,
+}
+
+struct VertexOut {
+	@builtin(position) pos: vec4<f32>,
+	@location(0) color: vec4<f32>,
+	@location(1) @interpolate(flat) id: u32,
+}
+
+@vertex
+fn vs_main(in: VertexIn) -> VertexOut {
+	var out: VertexOut;
+	let boost = f32(in.instIdx % 4u) * 0.01;
+	out.pos = vec4<f32>(in.pos + in.instOffset, 0.5, 1.0);
+	out.color = in.instColor + vec4<f32>(boost, 0.0, 0.0, 0.0);
+	out.id = in.instIdx;
+	return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+	return in.color;
+}
+`
+
+const instancedParamWGSL = `
+struct VertexOut {
+	@builtin(position) pos: vec4<f32>,
+	@location(0) color: vec4<f32>,
+}
+
+@vertex
+fn vs_main(
+	@location(0) pos: vec2<f32>,
+	@builtin(instance_index) idx: u32,
+) -> VertexOut {
+	var out: VertexOut;
+	out.pos = vec4<f32>(pos, 0.5, 1.0);
+	out.color = vec4<f32>(f32(idx) / 100.0, 0.0, 1.0, 1.0);
+	return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+	return in.color;
+}
+`
+
+func TestCompileInstancedPipelineEmitters(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		src  string
+		want int
+	}{
+		{"struct_builtin_instance_index", instancedWGSL, 3},
+		{"param_builtin_instance_index", instancedParamWGSL, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prog, err := wgsl.CompilePipeline(tc.src)
+			if err != nil {
+				t.Fatalf("CompilePipeline: %v", err)
+			}
+			ir := prog.IR
+			if len(ir.Attributes) != tc.want {
+				t.Fatalf("attributes = %d, want %d (@builtin(instance_index) must not occupy an attribute slot)", len(ir.Attributes), tc.want)
+			}
+
+			mslOut, err := msl.CompilePipeline(ir)
+			if err != nil {
+				t.Fatalf("msl.CompilePipeline: %v", err)
+			}
+			for _, want := range []string{"[[instance_id]]", "__instance_id"} {
+				if !strings.Contains(mslOut.Source, want) {
+					t.Errorf("MSL missing %q:\n%s", want, mslOut.Source)
+				}
+			}
+
+			hlslOut, err := hlsl.CompilePipeline(ir)
+			if err != nil {
+				t.Fatalf("hlsl.CompilePipeline: %v", err)
+			}
+			for _, want := range []string{"SV_InstanceID", "__in.__instance_id"} {
+				if !strings.Contains(hlslOut.VertexSource, want) {
+					t.Errorf("HLSL VS missing %q:\n%s", want, hlslOut.VertexSource)
+				}
+			}
+
+			for _, ver := range []glsl.GLSLVersion{glsl.GLSLVersionDefault, glsl.GLSLVersionES300} {
+				glslOut, err := glsl.CompilePipeline(ir, ver)
+				if err != nil {
+					t.Fatalf("glsl.CompilePipeline(%v): %v", ver, err)
+				}
+				if !strings.Contains(glslOut.VertexSource, "uint(gl_InstanceID)") {
+					t.Errorf("GLSL(%v) VS missing uint(gl_InstanceID):\n%s", ver, glslOut.VertexSource)
+				}
+			}
+
+			wgslOut, err := irwgsl.CompilePipeline(ir)
+			if err != nil {
+				t.Fatalf("irwgsl.CompilePipeline: %v", err)
+			}
+			for _, want := range []string{"@builtin(instance_index) nsgo_instance_id: u32", "nsgo_instance_id"} {
+				if !strings.Contains(wgslOut, want) {
+					t.Errorf("WGSL missing %q:\n%s", want, wgslOut)
+				}
+			}
+		})
+	}
+
+	// Reject non-u32 @builtin(instance_index).
+	badSrc := `
+@vertex
+fn vs_main(@builtin(instance_index) idx: f32) -> @builtin(position) vec4<f32> {
+	return vec4<f32>(idx, 0.0, 0.0, 1.0);
+}
+`
+	if _, err := wgsl.CompilePipeline(badSrc); err == nil {
+		t.Fatalf("expected error for f32 @builtin(instance_index), got nil")
+	}
+}

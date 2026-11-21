@@ -7,6 +7,8 @@ import (
 	"image"
 	"math"
 	"slices"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/shaderir"
@@ -27,8 +29,9 @@ type GPUSoftReadback struct {
 }
 
 type softBuffer struct {
-	desc GPUBufferDesc
-	data []byte
+	desc   GPUBufferDesc
+	data   []byte
+	shared bool
 }
 
 type softTexture struct {
@@ -42,7 +45,8 @@ type softSampler struct {
 }
 
 type softBindGroupLayout struct {
-	desc GPUBindGroupLayoutDesc
+	desc           GPUBindGroupLayoutDesc
+	dynamicEntries []GPUBindGroupLayoutEntry // sorted ascending by Binding
 }
 
 type softBindGroup struct {
@@ -50,14 +54,31 @@ type softBindGroup struct {
 	entries map[uint32]GPUBindGroupEntry
 }
 
+type softAttrBinding struct {
+	slotIdx  uint32
+	stride   uint64
+	stepMode GPUVertexStepMode
+	stepRate uint32
+	offset   uint64
+	format   GPUVertexFormat
+	irIdx    int
+}
+
 type softPipeline struct {
 	desc     GPUPipelineDesc
 	combined *shaderir.Program
+	attrs    []softAttrBinding
+}
+
+type softWorkItem struct {
+	frame GPUFrame
+	stop  bool
 }
 
 // GPUSoftwareDevice is a deterministic pure-Go software 3D GPU rasterizer
 // and shaderir interpreter used by headless nsgotest and unit tests.
 type GPUSoftwareDevice struct {
+	mu            sync.Mutex
 	width, height int
 	cfg           GPUViewConfig
 	colorBuf      []byte
@@ -75,6 +96,16 @@ type GPUSoftwareDevice struct {
 	debugEvents []GPUDebugEvent
 	debugDepth  int
 	labels      map[GPUID]string
+	lastErr     error
+
+	// Optional pipelined worker goroutine and frame lifecycle hooks.
+	pipelined   bool
+	queue       chan softWorkItem
+	workerDone  chan struct{}
+	inFlightWG  sync.WaitGroup
+	beforePass  func(GPUFrame)
+	afterFrame  func(GPUFrame)
+	onReadbacks func([]GPUSoftReadback, error)
 }
 
 // NewGPUSoftwareDevice creates a software GPU device for a surface of width x height pixels.
@@ -85,6 +116,7 @@ func NewGPUSoftwareDevice(width, height int, cfg GPUViewConfig) *GPUSoftwareDevi
 	if height <= 0 {
 		height = 1
 	}
+	cfg.FramesInFlight = NormalizeFramesInFlight(cfg.FramesInFlight)
 	d := &GPUSoftwareDevice{
 		cfg:        cfg,
 		buffers:    map[GPUID]*softBuffer{},
@@ -99,6 +131,102 @@ func NewGPUSoftwareDevice(width, height int, cfg GPUViewConfig) *GPUSoftwareDevi
 	return d
 }
 
+// FramesInFlight returns the normalized frame-in-flight count configured on d.
+func (d *GPUSoftwareDevice) FramesInFlight() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return NormalizeFramesInFlight(d.cfg.FramesInFlight)
+}
+
+// SetPipelined toggles background GPU-worker execution. When enabled, Submit
+// enqueues frames onto a dedicated GPU worker goroutine and returns immediately,
+// allowing the caller to overlap CPU frame N+1 ring-buffer writes with GPU frame N
+// rasterization while frame-slot fences guard slot reuse.
+func (d *GPUSoftwareDevice) SetPipelined(enabled bool) {
+	d.mu.Lock()
+	if d.pipelined == enabled {
+		d.mu.Unlock()
+		return
+	}
+	if enabled {
+		q := make(chan softWorkItem, 32)
+		done := make(chan struct{}, 1)
+		d.queue = q
+		d.workerDone = done
+		d.pipelined = true
+		d.mu.Unlock()
+		go d.workerLoop(q, done)
+		return
+	}
+	q := d.queue
+	done := d.workerDone
+	d.queue = nil
+	d.workerDone = nil
+	d.pipelined = false
+	d.mu.Unlock()
+	if q != nil {
+		q <- softWorkItem{stop: true}
+		<-done
+	}
+}
+
+// SetFrameHooks installs optional callbacks invoked on the GPU execution thread
+// immediately before a frame's render passes run (after resource ops/copies)
+// and immediately after the frame completes (before signaling its completion fence).
+func (d *GPUSoftwareDevice) SetFrameHooks(beforePass, afterFrame func(GPUFrame)) {
+	d.mu.Lock()
+	d.beforePass = beforePass
+	d.afterFrame = afterFrame
+	d.mu.Unlock()
+}
+
+// SetReadbackHandler installs an optional callback invoked with completed
+// readbacks or execution errors when running in pipelined mode.
+func (d *GPUSoftwareDevice) SetReadbackHandler(fn func([]GPUSoftReadback, error)) {
+	d.mu.Lock()
+	d.onReadbacks = fn
+	d.mu.Unlock()
+}
+
+// WaitIdle waits until all in-flight frames submitted in pipelined mode complete.
+func (d *GPUSoftwareDevice) WaitIdle() {
+	d.inFlightWG.Wait()
+}
+
+// Close flushes pending work and stops any pipelined worker goroutine.
+func (d *GPUSoftwareDevice) Close() {
+	d.WaitIdle()
+	d.SetPipelined(false)
+}
+
+// LastError returns the most recent execution error recorded by d.
+func (d *GPUSoftwareDevice) LastError() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.lastErr
+}
+
+func (d *GPUSoftwareDevice) workerLoop(q chan softWorkItem, done chan struct{}) {
+	defer func() { done <- struct{}{} }()
+	for item := range q {
+		if item.stop {
+			return
+		}
+		frame := item.frame
+		rbs, err := d.execFrame(frame)
+		d.mu.Lock()
+		onRB := d.onReadbacks
+		d.mu.Unlock()
+		if onRB != nil && (len(rbs) > 0 || err != nil) {
+			onRB(rbs, err)
+		}
+		if frame.OnComplete != nil {
+			frame.OnComplete()
+		}
+		d.inFlightWG.Done()
+	}
+}
+
 // Resize reallocates the swapchain color and depth buffers for a new pixel size.
 func (d *GPUSoftwareDevice) Resize(width, height int) {
 	if width <= 0 {
@@ -107,6 +235,8 @@ func (d *GPUSoftwareDevice) Resize(width, height int) {
 	if height <= 0 {
 		height = 1
 	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.width == width && d.height == height && len(d.colorBuf) == width*height*4 {
 		return
 	}
@@ -119,18 +249,30 @@ func (d *GPUSoftwareDevice) Resize(width, height int) {
 }
 
 // Size returns the current swapchain dimensions in pixels.
-func (d *GPUSoftwareDevice) Size() (int, int) { return d.width, d.height }
+func (d *GPUSoftwareDevice) Size() (int, int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.width, d.height
+}
 
 // Frames returns all GPUFrames submitted to this device, oldest first.
-func (d *GPUSoftwareDevice) Frames() []GPUFrame { return d.frames }
+func (d *GPUSoftwareDevice) Frames() []GPUFrame {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.Clone(d.frames)
+}
 
 // LastPassTimings returns a copy of the pass timings measured during the most recent Submit call.
 func (d *GPUSoftwareDevice) LastPassTimings() []GPUPassTiming {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	return slices.Clone(d.lastTimings)
 }
 
 // DebugEvents returns a copy of all debug labels, groups, and markers observed by this software device.
 func (d *GPUSoftwareDevice) DebugEvents() []GPUDebugEvent {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	return slices.Clone(d.debugEvents)
 }
 
@@ -168,6 +310,8 @@ func (d *GPUSoftwareDevice) applyEncoderDebugOps(ops []GPUDebugOp, cursor *int, 
 
 // ReadBuffer returns a copy of buffer id's contents, if present.
 func (d *GPUSoftwareDevice) ReadBuffer(id GPUID) ([]byte, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	b, ok := d.buffers[id]
 	if !ok {
 		return nil, false
@@ -177,59 +321,101 @@ func (d *GPUSoftwareDevice) ReadBuffer(id GPUID) ([]byte, bool) {
 
 // SurfaceImage returns an independent RGBA snapshot of the swapchain color buffer.
 func (d *GPUSoftwareDevice) SurfaceImage() *image.RGBA {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	img := image.NewRGBA(image.Rect(0, 0, d.width, d.height))
 	copy(img.Pix, d.colorBuf)
 	return img
 }
 
 // Submit executes all resource ops, copies, and render passes in frame.
+// When SetPipelined(true) is active, Submit enqueues frame onto the GPU worker
+// goroutine and returns immediately without blocking the caller.
 func (d *GPUSoftwareDevice) Submit(frame GPUFrame) ([]GPUSoftReadback, error) {
+	d.mu.Lock()
+	if d.pipelined && d.queue != nil {
+		q := d.queue
+		d.inFlightWG.Add(1)
+		d.mu.Unlock()
+		q <- softWorkItem{frame: frame}
+		return nil, nil
+	}
+	d.mu.Unlock()
+
+	rbs, err := d.execFrame(frame)
+	if frame.OnComplete != nil {
+		frame.OnComplete()
+	}
+	return rbs, err
+}
+
+func (d *GPUSoftwareDevice) execFrame(frame GPUFrame) ([]GPUSoftReadback, error) {
+	d.mu.Lock()
 	d.frames = append(d.frames, frame)
 	d.lastTimings = nil
 	var readbacks []GPUSoftReadback
+	var err error
 	for _, op := range frame.Ops {
-		rb, err := d.execOp(op)
+		var rb *GPUSoftReadback
+		rb, err = d.execOp(op)
 		if err != nil {
-			return readbacks, err
+			d.lastErr = err
+			break
 		}
 		if rb != nil {
 			readbacks = append(readbacks, *rb)
 		}
 	}
-	for _, cp := range frame.Copies {
-		if err := d.execCopy(cp); err != nil {
-			return readbacks, err
-		}
-	}
-	debugCursor := 0
-	for passIdx, pass := range frame.Passes {
-		d.applyEncoderDebugOps(frame.DebugOps, &debugCursor, passIdx)
-		if pass.Label != "" {
-			d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: "pass", Label: pass.Label, Depth: d.debugDepth})
-		}
-		measure := pass.TimingLabel != "" || pass.TimestampQueryID != 0
-		var start time.Time
-		if measure {
-			start = time.Now()
-		}
-		if err := d.execPass(pass); err != nil {
-			return readbacks, err
-		}
-		if measure {
-			dur := time.Since(start)
-			if dur < 0 {
-				dur = 0
+	if err == nil {
+		for _, cp := range frame.Copies {
+			if err = d.execCopy(cp); err != nil {
+				d.lastErr = err
+				break
 			}
-			d.lastTimings = append(d.lastTimings, GPUPassTiming{
-				Label:     pass.TimingLabel,
-				PassIndex: passIdx,
-				QueryID:   pass.TimestampQueryID,
-				Duration:  dur,
-			})
 		}
 	}
-	d.applyEncoderDebugOps(frame.DebugOps, &debugCursor, len(frame.Passes)+1)
-	return readbacks, nil
+	beforeHook := d.beforePass
+	afterHook := d.afterFrame
+	d.mu.Unlock()
+
+	if err == nil && len(frame.Passes) > 0 && beforeHook != nil {
+		beforeHook(frame)
+	}
+	d.mu.Lock()
+	debugCursor := 0
+	if err == nil {
+		for passIdx, pass := range frame.Passes {
+			d.applyEncoderDebugOps(frame.DebugOps, &debugCursor, passIdx)
+			if pass.Label != "" {
+				d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: "pass", Label: pass.Label, Depth: d.debugDepth})
+			}
+			measure := pass.TimingLabel != "" || pass.TimestampQueryID != 0
+			var start time.Time
+			if measure {
+				start = time.Now()
+			}
+			if err = d.execPass(pass); err != nil {
+				d.lastErr = err
+				break
+			}
+			if measure {
+				d.lastTimings = append(d.lastTimings, GPUPassTiming{
+					Label:     pass.TimingLabel,
+					PassIndex: passIdx,
+					QueryID:   pass.TimestampQueryID,
+					Duration:  max(time.Since(start), 0),
+				})
+			}
+		}
+		if err == nil {
+			d.applyEncoderDebugOps(frame.DebugOps, &debugCursor, len(frame.Passes)+1)
+		}
+	}
+	d.mu.Unlock()
+	if afterHook != nil && len(frame.Passes) > 0 {
+		afterHook(frame)
+	}
+	return readbacks, err
 }
 
 func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
@@ -237,6 +423,10 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 	case GPUOpCreateBuffer:
 		if op.Buffer == nil {
 			return nil, fmt.Errorf("gpu: missing buffer descriptor")
+		}
+		if op.Buffer.Shared != nil {
+			d.buffers[op.ID] = &softBuffer{desc: *op.Buffer, data: op.Buffer.Shared, shared: true}
+			return nil, nil
 		}
 		size := op.Buffer.Size
 		if size == 0 {
@@ -250,6 +440,9 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 		b, ok := d.buffers[op.ID]
 		if !ok {
 			return nil, fmt.Errorf("gpu: write to unknown buffer %d", op.ID)
+		}
+		if b.shared && len(op.Data) == 0 {
+			return nil, nil
 		}
 		if op.Offset+uint64(len(op.Data)) > uint64(len(b.data)) {
 			return nil, fmt.Errorf("gpu: buffer %d write out of bounds (%d+%d > %d)", op.ID, op.Offset, len(op.Data), len(b.data))
@@ -375,7 +568,16 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 		if op.BindGroupLayout == nil {
 			return nil, fmt.Errorf("gpu: missing bind group layout descriptor")
 		}
-		d.layouts[op.ID] = &softBindGroupLayout{desc: *op.BindGroupLayout}
+		var dynEntries []GPUBindGroupLayoutEntry
+		for _, e := range op.BindGroupLayout.Entries {
+			if e.HasDynamicOffset {
+				dynEntries = append(dynEntries, e)
+			}
+		}
+		sort.Slice(dynEntries, func(i, j int) bool {
+			return dynEntries[i].Binding < dynEntries[j].Binding
+		})
+		d.layouts[op.ID] = &softBindGroupLayout{desc: *op.BindGroupLayout, dynamicEntries: dynEntries}
 		d.recordResourceLabel("bind_group_layout", op.ID, op.BindGroupLayout.Label)
 	case GPUOpDestroyBindGroupLayout:
 		delete(d.layouts, op.ID)
@@ -396,7 +598,41 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 			return nil, fmt.Errorf("gpu: missing pipeline descriptor")
 		}
 		comb := mergeShaderPrograms(op.Pipeline.Vertex.IR, op.Pipeline.Fragment.IR)
-		d.pipelines[op.ID] = &softPipeline{desc: *op.Pipeline, combined: comb}
+		var attrMaps []softAttrBinding
+		if comb != nil {
+			for slotIdx, layout := range op.Pipeline.VertexBuffers {
+				sr := layout.StepRate
+				if layout.StepMode == GPUStepInstance && sr == 0 {
+					sr = 1
+				}
+				for _, attr := range layout.Attributes {
+					irIdx := -1
+					for ai := range comb.Attributes {
+						loc := uint32(ai)
+						if ai < len(comb.AttributeMeta) {
+							loc = comb.AttributeMeta[ai].Location
+						}
+						if loc == attr.Location {
+							irIdx = ai
+							break
+						}
+					}
+					if irIdx < 0 {
+						continue
+					}
+					attrMaps = append(attrMaps, softAttrBinding{
+						slotIdx:  uint32(slotIdx),
+						stride:   layout.Stride,
+						stepMode: layout.StepMode,
+						stepRate: sr,
+						offset:   attr.Offset,
+						format:   attr.Format,
+						irIdx:    irIdx,
+					})
+				}
+			}
+		}
+		d.pipelines[op.ID] = &softPipeline{desc: *op.Pipeline, combined: comb, attrs: attrMaps}
 		d.recordResourceLabel("pipeline", op.ID, op.Pipeline.Label)
 		if op.Pipeline.Vertex.Label != "" {
 			d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: "shader", Label: op.Pipeline.Vertex.Label, Depth: d.debugDepth})
@@ -639,7 +875,7 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 	vpMinD, vpMaxD := float32(0), float32(1)
 	scX, scY, scW, scH := int32(0), int32(0), int32(targetW), int32(targetH)
 	var pipe *softPipeline
-	bindGroups := map[uint32]*softBindGroup{}
+	bindGroups := map[uint32]softBoundGroup{}
 	type vbSlot struct {
 		buf    *softBuffer
 		offset uint64
@@ -650,6 +886,17 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 	var idxOff uint64
 	blendConst := [4]float32{0, 0, 0, 0}
 
+	// Reusable scratch slices across draws inside a pass.
+	var (
+		scratchAttrs        []irVal
+		scratchVLocals      []irVal
+		scratchFLocals      []irVal
+		scratchVaryings     []irVal
+		scratchBindVal      []irVal
+		scratchBindHit      []bool
+		v0Out, v1Out, v2Out shadedVertex
+	)
+
 	draw := func(indexed bool, count, instances, first, firstInst uint32, baseVertex int32) error {
 		if pipe == nil || pipe.combined == nil || pipe.combined.VertexFunc.Block == nil {
 			return fmt.Errorf("gpu: draw without bound render pipeline")
@@ -658,16 +905,67 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 			return nil
 		}
 		prog := pipe.combined
+		nb := len(prog.Bindings)
+		if cap(scratchBindVal) < nb {
+			scratchBindVal = make([]irVal, nb)
+			scratchBindHit = make([]bool, nb)
+		} else {
+			scratchBindVal = scratchBindVal[:nb]
+			scratchBindHit = scratchBindHit[:nb]
+			clear(scratchBindHit)
+		}
+		nv := len(prog.Varyings)
+		if cap(scratchVaryings) < nv {
+			scratchVaryings = make([]irVal, nv)
+		} else {
+			scratchVaryings = scratchVaryings[:nv]
+		}
+		if cap(v0Out.varyings) < nv {
+			v0Out.varyings = make([]irVal, nv)
+			v1Out.varyings = make([]irVal, nv)
+			v2Out.varyings = make([]irVal, nv)
+		} else {
+			v0Out.varyings = v0Out.varyings[:nv]
+			v1Out.varyings = v1Out.varyings[:nv]
+			v2Out.varyings = v2Out.varyings[:nv]
+		}
+		na := len(prog.Attributes)
+		if cap(scratchAttrs) < na {
+			scratchAttrs = make([]irVal, na)
+		} else {
+			scratchAttrs = scratchAttrs[:na]
+		}
+		vLocalN := na + nv + 1 + len(prog.VertexFunc.Block.LocalVars)
+		if cap(scratchVLocals) < vLocalN {
+			scratchVLocals = make([]irVal, vLocalN)
+		} else {
+			scratchVLocals = scratchVLocals[:vLocalN]
+		}
+		fLocalN := nv + 1
+		if prog.FragmentFunc.Block != nil {
+			fLocalN += len(prog.FragmentFunc.Block.LocalVars)
+		}
+		if cap(scratchFLocals) < fLocalN {
+			scratchFLocals = make([]irVal, fLocalN)
+		} else {
+			scratchFLocals = scratchFLocals[:fLocalN]
+		}
+
 		ctx := &softDrawCtx{
-			dev:        d,
-			prog:       prog,
-			pipe:       pipe,
-			bindGroups: bindGroups,
-			colorPix:   colorPix,
-			depthPix:   depthPix,
-			targetW:    targetW,
-			targetH:    targetH,
-			vpX:        vpX, vpY: vpY, vpW: vpW, vpH: vpH,
+			dev:            d,
+			prog:           prog,
+			pipe:           pipe,
+			bindGroups:     bindGroups,
+			bindingCache:   scratchBindVal,
+			bindingCached:  scratchBindHit,
+			vertLocals:     scratchVLocals,
+			fragLocals:     scratchFLocals,
+			interpVaryings: scratchVaryings,
+			colorPix:       colorPix,
+			depthPix:       depthPix,
+			targetW:        targetW,
+			targetH:        targetH,
+			vpX:            vpX, vpY: vpY, vpW: vpW, vpH: vpH,
 			vpMinD: vpMinD, vpMaxD: vpMaxD,
 			scX: int(scX), scY: int(scY), scW: int(scW), scH: int(scH),
 			blendConst: blendConst,
@@ -693,45 +991,30 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 			return uint32(int32(binary.LittleEndian.Uint32(idxBuf.data[off:off+4])) + baseVertex), nil
 		}
 
-		fetchAttrs := func(vertIdx, instIdx uint32) []irVal {
-			attrs := make([]irVal, len(prog.Attributes))
+		fetchAttrs := func(vertIdx, instOffset uint32) []irVal {
 			for i, at := range prog.Attributes {
-				attrs[i] = zeroIRVal(at)
+				scratchAttrs[i] = zeroIRVal(at)
 			}
-			for slotIdx, layout := range pipe.desc.VertexBuffers {
-				vb, ok := vbufs[uint32(slotIdx)]
+			for _, am := range pipe.attrs {
+				vb, ok := vbufs[am.slotIdx]
 				if !ok || vb.buf == nil {
 					continue
 				}
 				elemIdx := vertIdx
-				if layout.StepMode == GPUStepInstance {
-					elemIdx = instIdx
+				if am.stepMode == GPUStepInstance {
+					sr := am.stepRate
+					if sr == 0 {
+						sr = 1
+					}
+					elemIdx = firstInst + instOffset/sr
 				}
-				base := vb.offset + uint64(elemIdx)*layout.Stride
-				for _, attr := range layout.Attributes {
-					// Match attribute location to IR attribute index.
-					irIdx := -1
-					for ai := range prog.Attributes {
-						loc := uint32(ai)
-						if ai < len(prog.AttributeMeta) {
-							loc = prog.AttributeMeta[ai].Location
-						}
-						if loc == attr.Location {
-							irIdx = ai
-							break
-						}
-					}
-					if irIdx < 0 {
-						continue
-					}
-					off := base + attr.Offset
-					if off+attr.Format.ByteSize() > uint64(len(vb.buf.data)) {
-						continue
-					}
-					attrs[irIdx] = decodeVertexAttr(vb.buf.data[off:], attr.Format)
+				off := vb.offset + uint64(elemIdx)*am.stride + am.offset
+				if off+am.format.ByteSize() > uint64(len(vb.buf.data)) {
+					continue
 				}
+				scratchAttrs[am.irIdx] = decodeVertexAttr(vb.buf.data[off:], am.format)
 			}
-			return attrs
+			return scratchAttrs
 		}
 
 		for inst := uint32(0); inst < instances; inst++ {
@@ -757,10 +1040,10 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 					if t%2 == 1 {
 						i1, i2 = i2, i1
 					}
-					v0 := ctx.runVertex(fetchAttrs(i0, instID), i0, instID)
-					v1 := ctx.runVertex(fetchAttrs(i1, instID), i1, instID)
-					v2 := ctx.runVertex(fetchAttrs(i2, instID), i2, instID)
-					ctx.rasterTriangle(v0, v1, v2)
+					ctx.runVertexInto(&v0Out, fetchAttrs(i0, inst), i0, instID)
+					ctx.runVertexInto(&v1Out, fetchAttrs(i1, inst), i1, instID)
+					ctx.runVertexInto(&v2Out, fetchAttrs(i2, inst), i2, instID)
+					ctx.rasterTriangle(v0Out, v1Out, v2Out)
 				}
 			default: // TriangleList
 				for t := uint32(0); t+2 < count; t += 3 {
@@ -776,16 +1059,17 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 					if err != nil {
 						return err
 					}
-					v0 := ctx.runVertex(fetchAttrs(i0, instID), i0, instID)
-					v1 := ctx.runVertex(fetchAttrs(i1, instID), i1, instID)
-					v2 := ctx.runVertex(fetchAttrs(i2, instID), i2, instID)
-					ctx.rasterTriangle(v0, v1, v2)
+					ctx.runVertexInto(&v0Out, fetchAttrs(i0, inst), i0, instID)
+					ctx.runVertexInto(&v1Out, fetchAttrs(i1, inst), i1, instID)
+					ctx.runVertexInto(&v2Out, fetchAttrs(i2, inst), i2, instID)
+					ctx.rasterTriangle(v0Out, v1Out, v2Out)
 				}
 			}
 		}
 		return nil
 	}
 
+	minAlign := uint64(DefaultGPULimits().MinUniformBufferAlignment)
 	for _, cmd := range pass.Commands {
 		switch cmd.Kind {
 		case GPUCmdSetViewport:
@@ -803,7 +1087,26 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 			if !ok {
 				return fmt.Errorf("gpu: unknown bind group %d", cmd.ID)
 			}
-			bindGroups[cmd.Slot] = bg
+			var dynOffsets map[uint32]uint64
+			if layout := d.layouts[bg.desc.Layout]; layout != nil && (len(layout.dynamicEntries) > 0 || len(cmd.DynamicOffsets) > 0) {
+				if len(cmd.DynamicOffsets) != len(layout.dynamicEntries) {
+					return fmt.Errorf("gpu: SetBindGroup slot %d got %d dynamic offsets, want %d", cmd.Slot, len(cmd.DynamicOffsets), len(layout.dynamicEntries))
+				}
+				dynOffsets = make(map[uint32]uint64, len(layout.dynamicEntries))
+				for i, le := range layout.dynamicEntries {
+					off := uint64(cmd.DynamicOffsets[i])
+					if le.Type == GPUBindingUniform && minAlign > 0 && off%minAlign != 0 {
+						return fmt.Errorf("gpu: dynamic uniform offset %d is not aligned to %d bytes", off, minAlign)
+					}
+					if entry, ok := bg.entries[le.Binding]; ok {
+						if buf := d.buffers[entry.Buffer]; buf != nil && entry.Offset+off > uint64(len(buf.data)) {
+							return fmt.Errorf("gpu: dynamic offset %d out of bounds for buffer %d", off, entry.Buffer)
+						}
+					}
+					dynOffsets[le.Binding] = off
+				}
+			}
+			bindGroups[cmd.Slot] = softBoundGroup{bg: bg, dynamicOffsets: dynOffsets}
 		case GPUCmdSetVertexBuffer:
 			b, ok := d.buffers[cmd.ID]
 			if !ok {
@@ -851,22 +1154,32 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 
 // --- Software rasterizer & shaderir VM ---
 
+type softBoundGroup struct {
+	bg             *softBindGroup
+	dynamicOffsets map[uint32]uint64
+}
+
 type softDrawCtx struct {
-	dev        *GPUSoftwareDevice
-	prog       *shaderir.Program
-	pipe       *softPipeline
-	bindGroups map[uint32]*softBindGroup
-	colorPix   []byte
-	depthPix   []float32
-	targetW    int
-	targetH    int
-	vpX, vpY   float32
-	vpW, vpH   float32
-	vpMinD     float32
-	vpMaxD     float32
-	scX, scY   int
-	scW, scH   int
-	blendConst [4]float32
+	dev            *GPUSoftwareDevice
+	prog           *shaderir.Program
+	pipe           *softPipeline
+	bindGroups     map[uint32]softBoundGroup
+	bindingCache   []irVal
+	bindingCached  []bool
+	vertLocals     []irVal
+	fragLocals     []irVal
+	interpVaryings []irVal
+	colorPix       []byte
+	depthPix       []float32
+	targetW        int
+	targetH        int
+	vpX, vpY       float32
+	vpW, vpH       float32
+	vpMinD         float32
+	vpMaxD         float32
+	scX, scY       int
+	scW, scH       int
+	blendConst     [4]float32
 }
 
 type shadedVertex struct {
@@ -874,11 +1187,11 @@ type shadedVertex struct {
 	varyings []irVal
 }
 
-func (c *softDrawCtx) runVertex(attrs []irVal, vertID, instID uint32) shadedVertex {
+func (c *softDrawCtx) runVertexInto(out *shadedVertex, attrs []irVal, vertID, instID uint32) {
 	p := c.prog
 	na, nv := len(p.Attributes), len(p.Varyings)
 	pseudo := na + nv + 1
-	locals := make([]irVal, pseudo+len(p.VertexFunc.Block.LocalVars))
+	locals := c.vertLocals
 	copy(locals, attrs)
 	locals[na] = irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{0, 0, 0, 1}}
 	for i, vt := range p.Varyings {
@@ -887,21 +1200,17 @@ func (c *softDrawCtx) runVertex(attrs []irVal, vertID, instID uint32) shadedVert
 	for i, lt := range p.VertexFunc.Block.LocalVars {
 		locals[pseudo+i] = zeroIRVal(lt)
 	}
-	vm := &irVM{
+	vm := irVM{
 		ctx:    c,
 		locals: locals,
 		vertID: vertID,
 		instID: instID,
 	}
 	vm.execBlock(p.VertexFunc.Block)
-	out := shadedVertex{
-		pos:      [4]float32{locals[na].f[0], locals[na].f[1], locals[na].f[2], locals[na].f[3]},
-		varyings: make([]irVal, nv),
-	}
+	out.pos = [4]float32{locals[na].f[0], locals[na].f[1], locals[na].f[2], locals[na].f[3]}
 	for i := range nv {
 		out.varyings[i] = locals[na+1+i]
 	}
-	return out
 }
 
 func (c *softDrawCtx) runFragment(fragCoord [4]float32, varyings []irVal, frontFacing bool) ([4]float32, bool) {
@@ -911,7 +1220,7 @@ func (c *softDrawCtx) runFragment(fragCoord [4]float32, varyings []irVal, frontF
 	}
 	nv := len(p.Varyings)
 	pseudo := nv + 1
-	locals := make([]irVal, pseudo+len(p.FragmentFunc.Block.LocalVars))
+	locals := c.fragLocals
 	locals[0] = irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{fragCoord[0], fragCoord[1], fragCoord[2], fragCoord[3]}}
 	for i := 0; i < nv && i < len(varyings); i++ {
 		locals[1+i] = varyings[i]
@@ -919,7 +1228,7 @@ func (c *softDrawCtx) runFragment(fragCoord [4]float32, varyings []irVal, frontF
 	for i, lt := range p.FragmentFunc.Block.LocalVars {
 		locals[pseudo+i] = zeroIRVal(lt)
 	}
-	vm := &irVM{
+	vm := irVM{
 		ctx:         c,
 		locals:      locals,
 		frontFacing: frontFacing,
@@ -994,7 +1303,7 @@ func (c *softDrawCtx) rasterTriangle(v0, v1, v2 shadedVertex) {
 
 	invArea := 1.0 / area
 	nv := len(c.prog.Varyings)
-	interpVaryings := make([]irVal, nv)
+	interpVaryings := c.interpVaryings
 	ds := c.pipe.desc.DepthStencil
 	var depthBias float32
 	if ds != nil && (ds.DepthBias != 0 || ds.DepthBiasSlopeScale != 0) {
@@ -1226,6 +1535,8 @@ func lerpIRVal(a, b, c irVal, wa, wb, wc float32) irVal {
 
 func decodeVertexAttr(data []byte, format GPUVertexFormat) irVal {
 	f32 := func(off int) float32 { return math.Float32frombits(binary.LittleEndian.Uint32(data[off : off+4])) }
+	u32 := func(off int) uint32 { return binary.LittleEndian.Uint32(data[off : off+4]) }
+	i32 := func(off int) int32 { return int32(binary.LittleEndian.Uint32(data[off : off+4])) }
 	switch format {
 	case GPUVertexFloat32:
 		return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{f32(0)}}
@@ -1240,9 +1551,21 @@ func decodeVertexAttr(data []byte, format GPUVertexFormat) irVal {
 			float32(data[0]) / 255.0, float32(data[1]) / 255.0, float32(data[2]) / 255.0, float32(data[3]) / 255.0,
 		}}
 	case GPUVertexUint32:
-		return irVal{typ: shaderir.Type{Main: shaderir.Uint}, u: [4]uint32{binary.LittleEndian.Uint32(data[0:4])}}
+		return irVal{typ: shaderir.Type{Main: shaderir.Uint}, u: [4]uint32{u32(0)}}
+	case GPUVertexUint32x2:
+		return irVal{typ: shaderir.Type{Main: shaderir.UVec2}, u: [4]uint32{u32(0), u32(4)}}
+	case GPUVertexUint32x3:
+		return irVal{typ: shaderir.Type{Main: shaderir.UVec3}, u: [4]uint32{u32(0), u32(4), u32(8)}}
+	case GPUVertexUint32x4:
+		return irVal{typ: shaderir.Type{Main: shaderir.UVec4}, u: [4]uint32{u32(0), u32(4), u32(8), u32(12)}}
 	case GPUVertexSint32:
-		return irVal{typ: shaderir.Type{Main: shaderir.Int}, i: [4]int32{int32(binary.LittleEndian.Uint32(data[0:4]))}}
+		return irVal{typ: shaderir.Type{Main: shaderir.Int}, i: [4]int32{i32(0)}}
+	case GPUVertexSint32x2:
+		return irVal{typ: shaderir.Type{Main: shaderir.IVec2}, i: [4]int32{i32(0), i32(4)}}
+	case GPUVertexSint32x3:
+		return irVal{typ: shaderir.Type{Main: shaderir.IVec3}, i: [4]int32{i32(0), i32(4), i32(8)}}
+	case GPUVertexSint32x4:
+		return irVal{typ: shaderir.Type{Main: shaderir.IVec4}, i: [4]int32{i32(0), i32(4), i32(8), i32(12)}}
 	}
 	return irVal{}
 }
@@ -1588,24 +1911,39 @@ func (vm *irVM) evalBinding(idx int) irVal {
 	if idx < 0 || idx >= len(vm.ctx.prog.Bindings) {
 		return irVal{}
 	}
+	if idx < len(vm.ctx.bindingCached) && vm.ctx.bindingCached[idx] {
+		return vm.ctx.bindingCache[idx]
+	}
 	b := vm.ctx.prog.Bindings[idx]
-	bg := vm.ctx.bindGroups[b.Group]
-	if bg == nil {
+	bound := vm.ctx.bindGroups[b.Group]
+	if bound.bg == nil {
 		return zeroIRVal(b.Type)
 	}
-	entry, ok := bg.entries[b.Binding]
+	entry, ok := bound.bg.entries[b.Binding]
 	if !ok {
 		return zeroIRVal(b.Type)
 	}
+	var val irVal
 	switch b.Kind {
 	case shaderir.BindingUniformBuffer, shaderir.BindingStorageBufferRead:
 		buf := vm.ctx.dev.buffers[entry.Buffer]
 		if buf == nil {
-			return zeroIRVal(b.Type)
+			val = zeroIRVal(b.Type)
+		} else {
+			effOffset := entry.Offset
+			if bound.dynamicOffsets != nil {
+				effOffset += bound.dynamicOffsets[b.Binding]
+			}
+			val = decodeUniformBytes(b.Type, buf.data, int(effOffset))
 		}
-		return decodeUniformBytes(b.Type, buf.data, int(entry.Offset))
+	default:
+		val = zeroIRVal(b.Type)
 	}
-	return zeroIRVal(b.Type)
+	if idx < len(vm.ctx.bindingCached) {
+		vm.ctx.bindingCache[idx] = val
+		vm.ctx.bindingCached[idx] = true
+	}
+	return val
 }
 
 func (vm *irVM) evalBinary(op shaderir.Op, a, b irVal) irVal {
@@ -1668,6 +2006,16 @@ func (vm *irVM) evalBinary(op shaderir.Op, a, b irVal) irVal {
 				if jv != 0 {
 					out.i[k] = iv % jv
 				}
+			case shaderir.And:
+				out.i[k] = iv & jv
+			case shaderir.Or:
+				out.i[k] = iv | jv
+			case shaderir.Xor:
+				out.i[k] = iv ^ jv
+			case shaderir.LeftShift:
+				out.i[k] = iv << uint(jv)
+			case shaderir.RightShift:
+				out.i[k] = iv >> uint(jv)
 			}
 			out.f[k] = float32(out.i[k])
 			continue
@@ -1689,6 +2037,16 @@ func (vm *irVM) evalBinary(op shaderir.Op, a, b irVal) irVal {
 				if wv != 0 {
 					out.u[k] = uv % wv
 				}
+			case shaderir.And:
+				out.u[k] = uv & wv
+			case shaderir.Or:
+				out.u[k] = uv | wv
+			case shaderir.Xor:
+				out.u[k] = uv ^ wv
+			case shaderir.LeftShift:
+				out.u[k] = uv << wv
+			case shaderir.RightShift:
+				out.u[k] = uv >> wv
 			}
 			out.f[k] = float32(out.u[k])
 			continue
@@ -1868,7 +2226,13 @@ func (vm *irVM) evalCall(e shaderir.Expr) irVal {
 		return vm.evalTextureDimensions(e.Exprs[1].Index)
 	}
 
-	args := make([]irVal, len(e.Exprs)-1)
+	var argBuf [8]irVal
+	var args []irVal
+	if n := len(e.Exprs) - 1; n <= len(argBuf) {
+		args = argBuf[:n]
+	} else {
+		args = make([]irVal, n)
+	}
 	for i, a := range e.Exprs[1:] {
 		args[i] = vm.evalExpr(a)
 	}
@@ -2018,11 +2382,11 @@ func (vm *irVM) lookupTexture(bindIdx int) *softTexture {
 		return nil
 	}
 	b := vm.ctx.prog.Bindings[bindIdx]
-	bg := vm.ctx.bindGroups[b.Group]
-	if bg == nil {
+	bound := vm.ctx.bindGroups[b.Group]
+	if bound.bg == nil {
 		return nil
 	}
-	e, ok := bg.entries[b.Binding]
+	e, ok := bound.bg.entries[b.Binding]
 	if !ok {
 		return nil
 	}
@@ -2034,11 +2398,11 @@ func (vm *irVM) lookupSampler(bindIdx int) *softSampler {
 		return nil
 	}
 	b := vm.ctx.prog.Bindings[bindIdx]
-	bg := vm.ctx.bindGroups[b.Group]
-	if bg == nil {
+	bound := vm.ctx.bindGroups[b.Group]
+	if bound.bg == nil {
 		return nil
 	}
-	e, ok := bg.entries[b.Binding]
+	e, ok := bound.bg.entries[b.Binding]
 	if !ok {
 		return nil
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,14 +32,27 @@ type Device struct {
 	compressedFormats []TextureFormat
 	surfaceFormat     TextureFormat
 	width, height     int
+	framesInFlight    int
+	directMapped      bool
 
+	frameIndex       uint64
+	inFrame          bool
+	activeFrameIndex uint64
+	activeFrameSlot  int
+	activeFence      *FrameFence
+	slotFences       []*FrameFence
+
+	fenceMu sync.Mutex
+	fences  map[uint64]*FrameFence
+
+	ringBuffers      map[*RingBuffer]struct{}
 	pendingOps       []driver.GPUResourceOp
 	readbacks        map[uint64]func(rgba []byte, err error)
 	lastPassTimings  []PassTiming
 	timestampQueries map[driver.GPUID]*TimestampQuery
 }
 
-func newDevice(surf *core.GPUSurface, scope *core.Scope, gen uint32, w, h int, fmt TextureFormat, lim Limits, feat Features, compressed []TextureFormat) *Device {
+func newDevice(surf *core.GPUSurface, scope *core.Scope, gen uint32, w, h int, fmt TextureFormat, framesInFlight int, lim Limits, feat Features, compressed []TextureFormat) *Device {
 	if fmt == FormatUndefined {
 		fmt = FormatRGBA8Unorm
 	}
@@ -47,7 +61,12 @@ func newDevice(surf *core.GPUSurface, scope *core.Scope, gen uint32, w, h int, f
 	} else {
 		compressed = slices.Clone(compressed)
 	}
+	n := driver.NormalizeFramesInFlight(framesInFlight)
 	return &Device{
+		framesInFlight:    n,
+		slotFences:        make([]*FrameFence, n),
+		fences:            map[uint64]*FrameFence{},
+		ringBuffers:       map[*RingBuffer]struct{}{},
 		surf:              surf,
 		scope:             scope,
 		generation:        gen,
@@ -90,6 +109,24 @@ func (d *Device) invalidate(reason DeviceLostReason, msg string) {
 		delete(d.timestampQueries, id)
 		q.closed = true
 	}
+	d.inFrame = false
+	if d.activeFence != nil {
+		d.activeFence.signal()
+		d.activeFence = nil
+	}
+	d.fenceMu.Lock()
+	pendingFences := make([]*FrameFence, 0, len(d.fences))
+	for id, f := range d.fences {
+		delete(d.fences, id)
+		pendingFences = append(pendingFences, f)
+	}
+	d.fenceMu.Unlock()
+	for _, f := range pendingFences {
+		f.signal()
+	}
+	for _, f := range d.slotFences {
+		f.signal()
+	}
 	err := Error{Code: ErrDeviceLost, Message: msg}
 	for id, fn := range d.readbacks {
 		delete(d.readbacks, id)
@@ -123,6 +160,43 @@ func (d *Device) completePassTimings(raw []driver.GPUPassTiming) []PassTiming {
 	}
 	d.lastPassTimings = out
 	return slices.Clone(out)
+}
+
+func (d *Device) registerFence(f *FrameFence) {
+	if d == nil || f == nil {
+		return
+	}
+	d.fenceMu.Lock()
+	d.fences[f.id] = f
+	d.fenceMu.Unlock()
+}
+
+func (d *Device) completeFence(id uint64) {
+	if d == nil || id == 0 {
+		return
+	}
+	d.fenceMu.Lock()
+	f := d.fences[id]
+	delete(d.fences, id)
+	d.fenceMu.Unlock()
+	if f != nil {
+		f.signal()
+	}
+}
+
+func (d *Device) hasDirtyRingBuffers(slot int) bool {
+	for rb := range d.ringBuffers {
+		if rb.isDirty(slot) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Device) flushRingBuffers(slot int) {
+	for rb := range d.ringBuffers {
+		rb.flushSlot(slot)
+	}
 }
 
 func (d *Device) completeReadback(id uint64, pixels []byte, errMsg string) {
@@ -236,6 +310,66 @@ func (d *Device) SurfaceSize() (width, height int) { return d.width, d.height }
 
 // Generation returns the device generation counter (incremented after device loss).
 func (d *Device) Generation() uint32 { return d.generation }
+
+// FramesInFlight returns the configured ring-buffer frame-in-flight count (2 or 3).
+func (d *Device) FramesInFlight() int {
+	if d == nil || d.framesInFlight == 0 {
+		return DefaultFramesInFlight
+	}
+	return d.framesInFlight
+}
+
+// FrameIndex returns the monotonic frame index of the active frame, or the next
+// frame to be started by BeginFrame.
+func (d *Device) FrameIndex() uint64 {
+	if d == nil {
+		return 0
+	}
+	if d.inFrame {
+		return d.activeFrameIndex
+	}
+	return d.frameIndex
+}
+
+// FrameSlot returns the ring-buffer slot index [0, FramesInFlight) for the
+// active frame, or the next frame to be started by BeginFrame.
+func (d *Device) FrameSlot() int {
+	if d == nil {
+		return 0
+	}
+	if d.inFrame {
+		return d.activeFrameSlot
+	}
+	return int(d.frameIndex % uint64(d.FramesInFlight()))
+}
+
+// SlotFence returns the most recent FrameFence submitted for ring slot, or nil
+// if slot has not yet been submitted.
+func (d *Device) SlotFence(slot int) *FrameFence {
+	if d == nil || slot < 0 || slot >= len(d.slotFences) {
+		return nil
+	}
+	return d.slotFences[slot]
+}
+
+// WaitForFrame blocks until the GPU completes any in-flight frame using slot.
+func (d *Device) WaitForFrame(slot int) {
+	if f := d.SlotFence(slot); f != nil {
+		f.Wait()
+	}
+}
+
+// WaitIdle blocks until all in-flight frame slots on d have completed.
+func (d *Device) WaitIdle() {
+	if d == nil {
+		return
+	}
+	for _, f := range d.slotFences {
+		if f != nil {
+			f.Wait()
+		}
+	}
+}
 
 // --- Retained GPU resources ---
 
@@ -505,9 +639,6 @@ func (d *Device) CreateBuffer(cx *core.Scope, desc BufferDesc) (*Buffer, error) 
 	if d.limits.MaxBufferSize > 0 && size > d.limits.MaxBufferSize {
 		return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("buffer size %d exceeds limit %d", size, d.limits.MaxBufferSize)}
 	}
-	if desc.Usage&UsageUniform != 0 && d.limits.MaxUniformBufferSize > 0 && size > d.limits.MaxUniformBufferSize {
-		return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("uniform buffer size %d exceeds limit %d", size, d.limits.MaxUniformBufferSize)}
-	}
 	id := d.nextID()
 	dd := driver.GPUBufferDesc{
 		Label: debugLabel(desc.Label),
@@ -713,6 +844,9 @@ func (d *Device) CreateBindGroupLayoutDesc(cx *core.Scope, desc BindGroupLayoutD
 			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("duplicate binding %d in BindGroupLayout", e.Binding)}
 		}
 		seen[e.Binding] = true
+		if e.HasDynamicOffset && e.Type != BindingUniform && e.Type != BindingStorageRead {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("binding %d HasDynamicOffset is only valid for uniform or storage buffer bindings", e.Binding)}
+		}
 		vis := e.Visibility
 		if vis == 0 {
 			vis = StageAll
@@ -771,6 +905,23 @@ func (d *Device) CreateBindGroupDesc(cx *core.Scope, desc BindGroupDesc) (*BindG
 				if e.Offset > e.Buffer.size {
 					return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("binding %d buffer offset out of range", e.Binding)}
 				}
+				if le.Type == BindingUniform {
+					if d.limits.MinUniformBufferAlignment > 0 && e.Offset%uint64(d.limits.MinUniformBufferAlignment) != 0 {
+						return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("binding %d uniform buffer offset %d is not aligned to %d bytes", e.Binding, e.Offset, d.limits.MinUniformBufferAlignment)}
+					}
+					bindSize := e.Size
+					if bindSize == 0 {
+						bindSize = e.Buffer.size - e.Offset
+					}
+					if d.limits.MaxUniformBufferSize > 0 {
+						if e.Size > 0 && bindSize > d.limits.MaxUniformBufferSize {
+							return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("binding %d uniform range size %d exceeds limit %d", e.Binding, bindSize, d.limits.MaxUniformBufferSize)}
+						}
+						if e.Size == 0 && !le.HasDynamicOffset && bindSize > d.limits.MaxUniformBufferSize {
+							return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("binding %d uniform buffer size %d exceeds limit %d (set Size with HasDynamicOffset for ring buffers)", e.Binding, bindSize, d.limits.MaxUniformBufferSize)}
+						}
+					}
+				}
 			case BindingTexture:
 				if e.Texture == nil || e.Texture.closed || e.Texture.dev != d {
 					return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("binding %d expects a live Texture", e.Binding)}
@@ -799,6 +950,11 @@ func (d *Device) CreateBindGroupDesc(cx *core.Scope, desc BindGroupDesc) (*BindG
 			de.Buffer = e.Buffer.id
 			if de.Size == 0 {
 				de.Size = e.Buffer.size - e.Offset
+				if layout != nil {
+					if le, ok := layoutMap[e.Binding]; ok && le.Type == BindingUniform && le.HasDynamicOffset && d.limits.MaxUniformBufferSize > 0 && de.Size > d.limits.MaxUniformBufferSize {
+						de.Size = d.limits.MaxUniformBufferSize
+					}
+				}
 			}
 		}
 		if e.Texture != nil {
@@ -841,6 +997,16 @@ func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, e
 	var totalAttrs uint32
 	dVBs := make([]driver.GPUVertexBufferLayout, len(desc.VertexBuffers))
 	for i, vb := range desc.VertexBuffers {
+		if vb.StepMode != StepVertex && vb.StepMode != StepInstance {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("vertex buffer %d has invalid StepMode %d", i, vb.StepMode)}
+		}
+		if vb.StepMode == StepVertex && vb.StepRate > 1 {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("vertex buffer %d StepRate %d requires StepInstance", i, vb.StepRate)}
+		}
+		stepRate := vb.StepRate
+		if vb.StepMode == StepInstance && stepRate == 0 {
+			stepRate = 1
+		}
 		attrs := make([]driver.GPUVertexAttribute, len(vb.Attributes))
 		for j, a := range vb.Attributes {
 			sz := driver.GPUVertexFormat(a.Format).ByteSize()
@@ -860,6 +1026,7 @@ func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, e
 		dVBs[i] = driver.GPUVertexBufferLayout{
 			Stride:     vb.Stride,
 			StepMode:   driver.GPUVertexStepMode(vb.StepMode),
+			StepRate:   stepRate,
 			Attributes: attrs,
 		}
 	}
@@ -1386,14 +1553,43 @@ func (p *RenderPass) End() {
 	}
 }
 
-// Submit hands pending resource ops and cmds directly to the platform backend
-// off-commit (zero UI view-tree commits per frame).
+// Submit hands pending resource ops, flushed ring-buffer slices, and cmds
+// directly to the platform backend off-commit (zero UI view-tree commits per frame).
 func (d *Device) Submit(cmds ...*CommandBuffer) {
 	if !d.alive() {
+		if d != nil && d.inFrame {
+			if d.activeFence != nil {
+				d.activeFence.signal()
+				d.activeFence = nil
+			}
+			d.inFrame = false
+		}
 		return
 	}
+	var (
+		frameIdx  uint64
+		frameSlot int
+		fence     *FrameFence
+	)
+	if d.inFrame {
+		frameIdx = d.activeFrameIndex
+		frameSlot = d.activeFrameSlot
+		fence = d.activeFence
+		d.inFrame = false
+		d.activeFence = nil
+		d.frameIndex++
+	} else {
+		frameIdx = d.frameIndex
+		frameSlot = int(frameIdx % uint64(d.FramesInFlight()))
+		fence = newFrameFence(fenceIDGen.Add(1), frameIdx, frameSlot)
+	}
+	d.flushRingBuffers(frameSlot)
+
 	frame := driver.GPUFrame{
 		Generation: d.generation,
+		FrameIndex: frameIdx,
+		FrameSlot:  frameSlot,
+		FenceID:    fence.id,
 		Ops:        d.pendingOps,
 		Present:    len(cmds) > 0,
 	}
@@ -1408,6 +1604,18 @@ func (d *Device) Submit(cmds ...*CommandBuffer) {
 		frame.Passes = append(frame.Passes, cb.passes...)
 	}
 	if len(frame.Ops) == 0 && len(frame.Copies) == 0 && len(frame.Passes) == 0 && len(frame.DebugOps) == 0 {
+		fence.signal()
+		d.slotFences[frameSlot] = fence
+		return
+	}
+	d.registerFence(fence)
+	d.slotFences[frameSlot] = fence
+	fid := fence.id
+	frame.OnComplete = func() {
+		d.completeFence(fid)
+	}
+	if d.submitFn == nil && d.surf == nil {
+		d.completeFence(fid)
 		return
 	}
 	d.dispatchFrame(frame)
@@ -1465,18 +1673,76 @@ func (d *Device) ReadSurface(fn func(rgba []byte, err error)) {
 	d.flushOpsOnly()
 }
 
-// Frame is the per-frame recording context handed to ViewProps.OnFrame.
+// Frame is the per-frame recording context handed to ViewProps.OnFrame or
+// returned by Device.BeginFrame.
 type Frame struct {
-	dev       *Device
-	enc       *Encoder
-	at        time.Time
-	delta     time.Duration
-	submitted bool
+	dev        *Device
+	enc        *Encoder
+	at         time.Time
+	delta      time.Duration
+	frameIndex uint64
+	frameSlot  int
+	fence      *FrameFence
+	submitted  bool
+	ended      bool
 }
 
-// BeginFrame starts a new Frame on d at timestamp at.
+// BeginFrame acquires the next ring-buffer slot (frame % FramesInFlight),
+// waits on that slot's previous FrameFence so the CPU never overwrites memory
+// still being read by the GPU, resets all live RingBuffers for that slot, and
+// returns a Frame ready for recording.
 func (d *Device) BeginFrame(at time.Time) *Frame {
-	return &Frame{dev: d, enc: d.BeginEncoder(), at: at}
+	idx := d.frameIndex
+	slot := int(idx % uint64(d.FramesInFlight()))
+	if prev := d.SlotFence(slot); prev != nil {
+		prev.Wait()
+	}
+	for rb := range d.ringBuffers {
+		rb.resetSlot(slot)
+	}
+	fence := newFrameFence(fenceIDGen.Add(1), idx, slot)
+	d.inFrame = true
+	d.activeFrameIndex = idx
+	d.activeFrameSlot = slot
+	d.activeFence = fence
+	return &Frame{
+		dev:        d,
+		enc:        d.BeginEncoder(),
+		at:         at,
+		frameIndex: idx,
+		frameSlot:  slot,
+		fence:      fence,
+	}
+}
+
+// EndFrame finalizes f. If f has not yet been submitted and has recorded passes,
+// copies, pending ops, or ring-buffer writes, EndFrame submits it; otherwise it
+// completes f's frame slot and advances to the next slot cleanly. Safe to call
+// more than once or after Frame.Submit.
+func (d *Device) EndFrame(f *Frame) {
+	if f == nil || f.ended {
+		return
+	}
+	if !f.submitted {
+		hasWork := len(f.enc.passes) > 0 || len(f.enc.copies) > 0 || len(d.pendingOps) > 0 || d.hasDirtyRingBuffers(f.frameSlot)
+		if hasWork {
+			f.Submit()
+			return
+		}
+		f.submitted = true
+		f.ended = true
+		if d.inFrame && d.activeFence == f.fence {
+			d.inFrame = false
+			d.activeFence = nil
+			d.frameIndex++
+		}
+		f.fence.signal()
+		if f.frameSlot >= 0 && f.frameSlot < len(d.slotFences) {
+			d.slotFences[f.frameSlot] = f.fence
+		}
+		return
+	}
+	f.ended = true
 }
 
 // Device returns the owning GPU Device.
@@ -1520,6 +1786,15 @@ func (f *Frame) InsertDebugMarker(label string) {
 	}
 }
 
+// FrameIndex returns this frame's monotonic frame index.
+func (f *Frame) FrameIndex() uint64 { return f.frameIndex }
+
+// FrameSlot returns this frame's ring-buffer slot index [0, FramesInFlight).
+func (f *Frame) FrameSlot() int { return f.frameSlot }
+
+// Fence returns the FrameFence signaled when the GPU finishes executing f.
+func (f *Frame) Fence() *FrameFence { return f.fence }
+
 // BeginRenderPass starts a RenderPass recorded into this frame.
 func (f *Frame) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 	return f.enc.BeginRenderPass(desc)
@@ -1540,12 +1815,22 @@ func (f *Frame) CopyTextureToTexture(src, dst TextureCopy, width, height, layers
 	f.enc.CopyTextureToTexture(src, dst, width, height, layers)
 }
 
-// Submit submits this frame's recorded commands off-commit. Safe to call once;
-// ViewProps.OnFrame automatically submits if the callback does not call Submit.
+// Submit submits this frame's recorded commands off-commit and ends the frame.
+// Safe to call once; ViewProps.OnFrame automatically finishes the frame if the
+// callback does not call Submit or End.
 func (f *Frame) Submit() {
 	if f == nil || f.submitted {
 		return
 	}
 	f.submitted = true
+	f.ended = true
 	f.dev.Submit(f.enc.Finish())
+}
+
+// End finalizes this frame via Device.EndFrame.
+func (f *Frame) End() {
+	if f == nil || f.dev == nil {
+		return
+	}
+	f.dev.EndFrame(f)
 }

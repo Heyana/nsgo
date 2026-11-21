@@ -65,9 +65,10 @@ func (s *GPUSurface) Submit(frame any) {
 // GPUView is core's host element for package gpu's View (docs/architecture/gpu.md).
 // Apps construct views via package gpu rather than using GPUView directly.
 type GPUView struct {
-	ColorFormat uint8
-	DepthFormat uint8
-	SampleCount int
+	ColorFormat    uint8
+	DepthFormat    uint8
+	SampleCount    int
+	FramesInFlight int
 
 	// OnMount runs on the engine goroutine once the KindGPU node is allocated.
 	OnMount func(surf *GPUSurface)
@@ -117,9 +118,10 @@ func (t *Tree) mountGPU(cx *Scope, parent *node, v GPUView) {
 	surf := &GPUSurface{tree: t, node: n}
 	gn := &gpuNode{
 		cfg: driver.GPUViewConfig{
-			ColorFormat: driver.GPUTextureFormat(v.ColorFormat),
-			DepthFormat: driver.GPUTextureFormat(v.DepthFormat),
-			SampleCount: samples,
+			ColorFormat:    driver.GPUTextureFormat(v.ColorFormat),
+			DepthFormat:    driver.GPUTextureFormat(v.DepthFormat),
+			SampleCount:    samples,
+			FramesInFlight: driver.NormalizeFramesInFlight(v.FramesInFlight),
 		},
 		fresh:   true,
 		surf:    surf,

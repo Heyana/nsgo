@@ -2,6 +2,7 @@ package gpu
 
 import (
 	"image"
+	"sync"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -11,21 +12,34 @@ import (
 type SoftwareRenderer struct {
 	soft *driver.GPUSoftwareDevice
 	dev  *Device
+	mu   sync.Mutex
 	err  error
 }
 
 // NewSoftwareRenderer creates a pure-Go software 3D GPU renderer with a swapchain
-// of width x height pixels and an optional depthFormat (e.g. FormatDepth24Plus).
+// of width x height pixels, an optional depthFormat (e.g. FormatDepth24Plus),
+// and DefaultFramesInFlight (2) ring-buffer slots.
 func NewSoftwareRenderer(width, height int, depthFormat TextureFormat) *SoftwareRenderer {
-	return NewSoftwareRendererWithFeatures(width, height, depthFormat, featuresFromDriver(driver.DefaultSoftwareGPUFeatures()))
+	return newSoftwareRenderer(width, height, depthFormat, featuresFromDriver(driver.DefaultSoftwareGPUFeatures()), DefaultFramesInFlight)
 }
 
 // NewSoftwareRendererWithFeatures creates a pure-Go software 3D GPU renderer with explicit device capability flags (useful for testing unsupported feature paths).
 func NewSoftwareRendererWithFeatures(width, height int, depthFormat TextureFormat, features Features) *SoftwareRenderer {
+	return newSoftwareRenderer(width, height, depthFormat, features, DefaultFramesInFlight)
+}
+
+// NewSoftwareRendererWithFrames creates a pure-Go software 3D GPU renderer with framesInFlight ring-buffer slots, clamped to [MinFramesInFlight, MaxFramesInFlight].
+func NewSoftwareRendererWithFrames(width, height int, depthFormat TextureFormat, framesInFlight int) *SoftwareRenderer {
+	return newSoftwareRenderer(width, height, depthFormat, featuresFromDriver(driver.DefaultSoftwareGPUFeatures()), framesInFlight)
+}
+
+func newSoftwareRenderer(width, height int, depthFormat TextureFormat, features Features, framesInFlight int) *SoftwareRenderer {
+	fif := driver.NormalizeFramesInFlight(framesInFlight)
 	cfg := driver.GPUViewConfig{
-		ColorFormat: driver.GPUFormatRGBA8Unorm,
-		DepthFormat: driver.GPUTextureFormat(depthFormat),
-		SampleCount: 1,
+		ColorFormat:    driver.GPUFormatRGBA8Unorm,
+		DepthFormat:    driver.GPUTextureFormat(depthFormat),
+		SampleCount:    1,
+		FramesInFlight: fif,
 	}
 	soft := driver.NewGPUSoftwareDevice(width, height, cfg)
 	r := &SoftwareRenderer{soft: soft}
@@ -36,14 +50,28 @@ func NewSoftwareRendererWithFeatures(width, height int, depthFormat TextureForma
 		width,
 		height,
 		FormatRGBA8Unorm,
+		fif,
 		limitsFromDriver(driver.DefaultGPULimits()),
 		features,
 		compressedFormatsFromFeatures(features),
 	)
+	dev.directMapped = true
+	soft.SetReadbackHandler(func(rbs []driver.GPUSoftReadback, err error) {
+		if err != nil {
+			r.mu.Lock()
+			r.err = err
+			r.mu.Unlock()
+		}
+		for _, rb := range rbs {
+			dev.completeReadback(rb.ID, rb.Pixels, rb.Err)
+		}
+	})
 	dev.submitFn = func(frame driver.GPUFrame) {
 		rbs, err := soft.Submit(frame)
 		if err != nil {
+			r.mu.Lock()
 			r.err = err
+			r.mu.Unlock()
 		}
 		for _, rb := range rbs {
 			dev.completeReadback(rb.ID, rb.Pixels, rb.Err)
@@ -58,6 +86,37 @@ func NewSoftwareRendererWithFeatures(width, height int, depthFormat TextureForma
 
 // Device returns the gpu.Device backed by this software rasterizer.
 func (r *SoftwareRenderer) Device() *Device { return r.dev }
+
+// SetPipelined enables or disables background GPU-worker execution on the
+// software renderer so CPU frame N+1 ring-buffer writes overlap with GPU
+// frame N rasterization, synchronized by FrameFence.
+func (r *SoftwareRenderer) SetPipelined(enabled bool) {
+	r.soft.SetPipelined(enabled)
+}
+
+// SetFrameHooks installs optional callbacks invoked on the GPU execution thread
+// immediately before render passes execute and immediately after each frame
+// finishes (before signaling the frame's FrameFence).
+func (r *SoftwareRenderer) SetFrameHooks(beforePass, afterFrame func(frameIndex uint64, frameSlot int)) {
+	var bHook, aHook func(driver.GPUFrame)
+	if beforePass != nil {
+		bHook = func(f driver.GPUFrame) { beforePass(f.FrameIndex, f.FrameSlot) }
+	}
+	if afterFrame != nil {
+		aHook = func(f driver.GPUFrame) { afterFrame(f.FrameIndex, f.FrameSlot) }
+	}
+	r.soft.SetFrameHooks(bHook, aHook)
+}
+
+// WaitIdle blocks until all queued pipelined frames have completed.
+func (r *SoftwareRenderer) WaitIdle() {
+	r.soft.WaitIdle()
+}
+
+// Close flushes pending work and stops any pipelined worker goroutine.
+func (r *SoftwareRenderer) Close() {
+	r.soft.Close()
+}
 
 // Resize updates the software swapchain size in pixels.
 func (r *SoftwareRenderer) Resize(width, height int) {
@@ -100,5 +159,11 @@ func (r *SoftwareRenderer) ResourceLabel(id uint64) string {
 
 // LastError returns the last execution error reported by the software device.
 func (r *SoftwareRenderer) LastError() error {
-	return r.err
+	r.mu.Lock()
+	err := r.err
+	r.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return r.soft.LastError()
 }

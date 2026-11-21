@@ -697,14 +697,29 @@ func parseStageField(name string, t ty, attrs []attr, pos int, fieldIdx int) sta
 	if b, ok := attrString(attrs, "builtin"); ok {
 		switch b {
 		case "position":
+			if !t.equal(vec(kF32, 4)) {
+				fail(pos, "@builtin(position) must have type vec4<f32>, not %s", t)
+			}
 			fb.builtin = shaderir.BuiltinPosition
 		case "vertex_index":
+			if t.k != kU32 {
+				fail(pos, "@builtin(vertex_index) must have type u32, not %s", t)
+			}
 			fb.builtin = shaderir.BuiltinVertexIndex
 		case "instance_index":
+			if t.k != kU32 {
+				fail(pos, "@builtin(instance_index) must have type u32, not %s", t)
+			}
 			fb.builtin = shaderir.BuiltinInstanceIndex
 		case "front_facing":
+			if t.k != kBool {
+				fail(pos, "@builtin(front_facing) must have type bool, not %s", t)
+			}
 			fb.builtin = shaderir.BuiltinFrontFacing
 		case "frag_depth":
+			if t.k != kF32 {
+				fail(pos, "@builtin(frag_depth) must have type f32, not %s", t)
+			}
 			fb.builtin = shaderir.BuiltinFragDepth
 		default:
 			fail(pos, "unsupported @builtin(%s)", b)

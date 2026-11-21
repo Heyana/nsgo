@@ -29,12 +29,45 @@ const (
 	UsageCopyDst BufferUsage = BufferUsage(driver.GPUBufferCopyDst)
 )
 
+// Frames-in-flight bounds for per-frame ring-buffer pipelining.
+const (
+	DefaultFramesInFlight = driver.GPUDefaultFramesInFlight
+	MinFramesInFlight     = driver.GPUMinFramesInFlight
+	MaxFramesInFlight     = driver.GPUMaxFramesInFlight
+)
+
 // BufferDesc configures Device.CreateBuffer.
 type BufferDesc struct {
 	Label string
 	Size  uint64
 	Usage BufferUsage
 	Data  []byte // optional initial contents; copied before CreateBuffer returns
+}
+
+// RingBufferDesc configures Device.CreateRingBuffer.
+type RingBufferDesc struct {
+	Label string
+	// SlotSize is the byte capacity available per frame-in-flight slot.
+	// Total underlying GPU buffer capacity is SlotSize (rounded up to Alignment)
+	// multiplied by Device.FramesInFlight().
+	SlotSize uint64
+	// Usage selects how the ring buffer is bound (e.g. UsageUniform, UsageVertex,
+	// UsageIndex, or a combination). UsageCopyDst is always included.
+	Usage BufferUsage
+	// Alignment overrides the per-allocation byte alignment. When zero, uniform
+	// ring buffers align to Device.Limits().MinUniformBufferAlignment (256 bytes)
+	// and non-uniform ring buffers align to 16 bytes.
+	Alignment uint64
+}
+
+// BufferSlice describes one aligned sub-allocation within a RingBuffer's active
+// frame-in-flight slot.
+type BufferSlice struct {
+	Buffer *Buffer // underlying retained GPU buffer
+	Offset uint64  // absolute byte offset within Buffer (aligned for dynamic offsets / SetVertexBuffer)
+	Size   uint64  // requested byte length
+	Slot   int     // frame-in-flight slot index in [0, FramesInFlight)
+	Data   []byte  // writable CPU slice of length Size backing this sub-allocation
 }
 
 // TextureDimension is the dimensionality of a Texture.
@@ -273,8 +306,10 @@ const (
 type VertexStepMode uint8
 
 const (
-	StepVertex   VertexStepMode = VertexStepMode(driver.GPUStepVertex)
-	StepInstance VertexStepMode = VertexStepMode(driver.GPUStepInstance)
+	StepVertex         VertexStepMode = VertexStepMode(driver.GPUStepVertex)
+	StepInstance       VertexStepMode = VertexStepMode(driver.GPUStepInstance)
+	VertexStepVertex   VertexStepMode = StepVertex
+	VertexStepInstance VertexStepMode = StepInstance
 )
 
 // VertexAttribute describes one attribute inside a VertexBufferLayout.
@@ -288,6 +323,7 @@ type VertexAttribute struct {
 type VertexBufferLayout struct {
 	Stride     uint64
 	StepMode   VertexStepMode
+	StepRate   uint32 // 0 defaults to 1 when StepMode is StepInstance / VertexStepInstance
 	Attributes []VertexAttribute
 }
 

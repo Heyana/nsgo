@@ -16,14 +16,17 @@ func NoGPU() Option {
 
 // GPUFrameRecord summarizes one off-commit GPUFrame submitted by a gpu.View.
 type GPUFrameRecord struct {
-	SurfaceID   uint32
-	ViewID      driver.NodeID
-	Generation  uint32
-	OpsCount    int
-	CopiesCount int
-	PassesCount int
-	DrawsCount  int
-	Present     bool
+	SurfaceID      uint32
+	ViewID         driver.NodeID
+	Generation     uint32
+	FrameIndex     uint64
+	FrameSlot      int
+	OpsCount       int
+	CopiesCount    int
+	PassesCount    int
+	DrawsCount     int
+	InstancesCount uint64
+	Present        bool
 }
 
 type gpuViewState struct {
@@ -97,13 +100,14 @@ func (a *App) syncGPUViews(configured []*View, resized []*View) {
 				Kind: driver.EventGPU,
 				ID:   v.ID,
 				Data: &driver.GPUEvent{
-					Kind:          driver.GPUEventDeviceReady,
-					Generation:    gen,
-					Width:         w,
-					Height:        h,
-					SurfaceFormat: driver.GPUFormatRGBA8Unorm,
-					Limits:        driver.DefaultGPULimits(),
-					Features:      driver.DefaultSoftwareGPUFeatures(),
+					Kind:           driver.GPUEventDeviceReady,
+					Generation:     gen,
+					Width:          w,
+					Height:         h,
+					SurfaceFormat:  driver.GPUFormatRGBA8Unorm,
+					FramesInFlight: driver.NormalizeFramesInFlight(st.cfg.FramesInFlight),
+					Limits:         driver.DefaultGPULimits(),
+					Features:       driver.DefaultSoftwareGPUFeatures(),
 				},
 			})
 		}
@@ -155,23 +159,31 @@ func (a *App) submitGPU(frame driver.GPUFrame) {
 		owner = a.owner
 	}
 	var draws int
+	var instances uint64
 	for _, p := range frame.Passes {
 		for _, c := range p.Commands {
 			switch c.Kind {
-			case driver.GPUCmdDraw, driver.GPUCmdDrawIndexed, driver.GPUCmdDrawInstanced, driver.GPUCmdDrawIndexedInstanced:
+			case driver.GPUCmdDraw, driver.GPUCmdDrawIndexed:
 				draws++
+				instances++
+			case driver.GPUCmdDrawInstanced, driver.GPUCmdDrawIndexedInstanced:
+				draws++
+				instances += uint64(c.U1)
 			}
 		}
 	}
 	rec := GPUFrameRecord{
-		SurfaceID:   frame.SurfaceID,
-		ViewID:      frame.ViewID,
-		Generation:  frame.Generation,
-		OpsCount:    len(frame.Ops),
-		CopiesCount: len(frame.Copies),
-		PassesCount: len(frame.Passes),
-		DrawsCount:  draws,
-		Present:     frame.Present,
+		SurfaceID:      frame.SurfaceID,
+		ViewID:         frame.ViewID,
+		Generation:     frame.Generation,
+		FrameIndex:     frame.FrameIndex,
+		FrameSlot:      frame.FrameSlot,
+		OpsCount:       len(frame.Ops),
+		CopiesCount:    len(frame.Copies),
+		PassesCount:    len(frame.Passes),
+		DrawsCount:     draws,
+		InstancesCount: instances,
+		Present:        frame.Present,
 	}
 	owner.gpuFrames = append(owner.gpuFrames, rec)
 
@@ -301,13 +313,14 @@ func (a *App) RestoreGPUDevice(selector string) {
 		Kind: driver.EventGPU,
 		ID:   v.ID,
 		Data: &driver.GPUEvent{
-			Kind:          driver.GPUEventDeviceReady,
-			Generation:    st.generation,
-			Width:         w,
-			Height:        h,
-			SurfaceFormat: driver.GPUFormatRGBA8Unorm,
-			Limits:        driver.DefaultGPULimits(),
-			Features:      driver.GPUFeatures{Depth32Float: true},
+			Kind:           driver.GPUEventDeviceReady,
+			Generation:     st.generation,
+			Width:          w,
+			Height:         h,
+			SurfaceFormat:  driver.GPUFormatRGBA8Unorm,
+			FramesInFlight: driver.NormalizeFramesInFlight(st.cfg.FramesInFlight),
+			Limits:         driver.DefaultGPULimits(),
+			Features:       driver.GPUFeatures{Depth32Float: true},
 		},
 	})
 	a.Settle()

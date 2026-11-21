@@ -17,6 +17,10 @@ type ViewProps struct {
 	DepthFormat TextureFormat
 	// SampleCount is 1 (default) or 4 for swapchain MSAA.
 	SampleCount int
+	// FramesInFlight configures the number of rotating per-frame ring-buffer
+	// slots (2 or 3). Zero defaults to DefaultFramesInFlight (2); values outside
+	// [MinFramesInFlight, MaxFramesInFlight] are clamped cleanly to [2, 3].
+	FramesInFlight int
 
 	// OnReady runs on the engine goroutine when the GPU device and surface are
 	// ready, and again after recovery from device loss.
@@ -111,9 +115,7 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 			}
 			lastAt = at
 			props.OnFrame(f)
-			if !f.submitted && (len(f.enc.passes) > 0 || len(f.enc.copies) > 0 || len(dev.pendingOps) > 0) {
-				f.Submit()
-			}
+			dev.EndFrame(f)
 			if activeDev == dev && dev.alive() && !cx.Disposed() {
 				stopFrame = cx.RequestAnimationFrame(tick)
 			}
@@ -130,19 +132,20 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 	})
 
 	return core.GPUView{
-		ColorFormat: uint8(props.ColorFormat),
-		DepthFormat: uint8(props.DepthFormat),
-		SampleCount: props.SampleCount,
-		Class:       props.Class,
-		Style:       props.Style,
-		StyleFunc:   props.StyleFunc,
-		Children:    props.Children,
-		OnPress:     props.OnPress,
-		OnLayout:    props.OnLayout,
-		Ref:         props.Ref,
-		Label:       props.Label,
-		LabelFunc:   props.LabelFunc,
-		TestID:      props.TestID,
+		ColorFormat:    uint8(props.ColorFormat),
+		DepthFormat:    uint8(props.DepthFormat),
+		SampleCount:    props.SampleCount,
+		FramesInFlight: driver.NormalizeFramesInFlight(props.FramesInFlight),
+		Class:          props.Class,
+		Style:          props.Style,
+		StyleFunc:      props.StyleFunc,
+		Children:       props.Children,
+		OnPress:        props.OnPress,
+		OnLayout:       props.OnLayout,
+		Ref:            props.Ref,
+		Label:          props.Label,
+		LabelFunc:      props.LabelFunc,
+		TestID:         props.TestID,
 		OnMount: func(s *core.GPUSurface) {
 			surf = s
 		},
@@ -156,6 +159,10 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 				if activeDev != nil {
 					activeDev.invalidate(LostReset, "device recreated")
 				}
+				fif := ev.FramesInFlight
+				if fif == 0 {
+					fif = props.FramesInFlight
+				}
 				dev := newDevice(
 					surf,
 					cx,
@@ -163,6 +170,7 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 					ev.Width,
 					ev.Height,
 					TextureFormat(ev.SurfaceFormat),
+					fif,
 					limitsFromDriver(ev.Limits),
 					featuresFromDriver(ev.Features),
 					compressedFormatsFromDriver(ev.Features),
@@ -216,6 +224,11 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 					if props.OnPassTimings != nil && len(timings) > 0 {
 						props.OnPassTimings(timings)
 					}
+				}
+
+			case driver.GPUEventFrameComplete:
+				if activeDev != nil {
+					activeDev.completeFence(ev.FenceID)
 				}
 			}
 		},

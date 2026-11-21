@@ -422,11 +422,34 @@ const (
 	GPUErrorFailed
 )
 
+// Frame-in-flight bounds for per-frame ring-buffer pipelining.
+const (
+	GPUDefaultFramesInFlight = 2
+	GPUMinFramesInFlight     = 2
+	GPUMaxFramesInFlight     = 3
+)
+
+// NormalizeFramesInFlight clamps n to [GPUMinFramesInFlight, GPUMaxFramesInFlight],
+// defaulting zero or negative values to GPUDefaultFramesInFlight.
+func NormalizeFramesInFlight(n int) int {
+	if n <= 0 {
+		return GPUDefaultFramesInFlight
+	}
+	if n < GPUMinFramesInFlight {
+		return GPUMinFramesInFlight
+	}
+	if n > GPUMaxFramesInFlight {
+		return GPUMaxFramesInFlight
+	}
+	return n
+}
+
 // GPUViewConfig is the mount configuration for a KindGPU view (ItemGPU).
 type GPUViewConfig struct {
-	ColorFormat GPUTextureFormat
-	DepthFormat GPUTextureFormat
-	SampleCount int
+	ColorFormat    GPUTextureFormat
+	DepthFormat    GPUTextureFormat
+	SampleCount    int
+	FramesInFlight int
 }
 
 // GPULimits reports device capability limits.
@@ -545,10 +568,11 @@ func (f GPUFeatures) SupportsCompressedFormat(fm GPUTextureFormat) bool {
 
 // GPUBufferDesc describes a GPU buffer allocation.
 type GPUBufferDesc struct {
-	Label string
-	Size  uint64
-	Usage GPUBufferUsage
-	Data  []byte
+	Label  string
+	Size   uint64
+	Usage  GPUBufferUsage
+	Data   []byte
+	Shared []byte // optional in-process shared backing slice for ring buffers
 }
 
 // GPUTextureDesc describes a GPU texture allocation.
@@ -619,6 +643,7 @@ type GPUVertexAttribute struct {
 type GPUVertexBufferLayout struct {
 	Stride     uint64
 	StepMode   GPUVertexStepMode
+	StepRate   uint32 // 0 defaults to 1 for GPUStepInstance (advance once per StepRate instances)
 	Attributes []GPUVertexAttribute
 }
 
@@ -871,6 +896,10 @@ type GPUFrame struct {
 	SurfaceID  uint32
 	ViewID     NodeID
 	Generation uint32
+	FrameIndex uint64
+	FrameSlot  int
+	FenceID    uint64
+	OnComplete func() // optional callback invoked once the backend finishes this frame
 	Ops        []GPUResourceOp
 	Copies     []GPUCopyOp
 	Passes     []GPUPass
@@ -888,21 +917,26 @@ const (
 	GPUEventError
 	GPUEventReadback
 	GPUEventPassTimings
+	GPUEventFrameComplete
 )
 
 // GPUEvent is the payload carried in Event.Data for EventGPU.
 type GPUEvent struct {
-	Kind          GPUEventKind
-	Generation    uint32
-	Width         int
-	Height        int
-	SurfaceFormat GPUTextureFormat
-	Limits        GPULimits
-	Features      GPUFeatures
-	LostReason    GPUDeviceLostReason
-	ErrorCode     GPUErrorCode
-	Message       string
-	ReadbackID    uint64
-	Pixels        []byte
-	PassTimings   []GPUPassTiming
+	Kind           GPUEventKind
+	Generation     uint32
+	Width          int
+	Height         int
+	SurfaceFormat  GPUTextureFormat
+	FramesInFlight int
+	Limits         GPULimits
+	Features       GPUFeatures
+	LostReason     GPUDeviceLostReason
+	ErrorCode      GPUErrorCode
+	Message        string
+	ReadbackID     uint64
+	Pixels         []byte
+	PassTimings    []GPUPassTiming
+	FrameIndex     uint64
+	FrameSlot      int
+	FenceID        uint64
 }
