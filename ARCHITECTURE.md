@@ -93,7 +93,7 @@ A mini program runs the engine in its logic layer, which has no DOM: text breaks
 Packages import only downward, which `internal/moduletest/layering_test.go` checks on every target; [package layers](docs/architecture/layers.md) holds the graph and the rules for each layer.
 
 - Each API has one home, `base`'s components have no look and `ui`'s are `base`'s in one ([principles](AGENTS.md#principles), [components](AGENTS.md#components)).
-- The main thread never waits for the engine, but up to 16 ms on macOS for a resized window's layout; the engine never touches main-thread-only UI objects.
+- The main thread waits for the engine in two bounded macOS paths. A resized window waits up to 16 ms for layout. AppKit's synchronous save delegate waits up to five seconds for a preflight answer, which the backend delivers before queuing the mount batch. The engine never touches main-thread-only UI objects.
 - What animates runs on the platform's frame clock, which stops when idle: the engine sends transitions and animated values once, never a commit per frame ([animation](docs/architecture/animation.md)).
 - The reactive graph belongs to the engine goroutine and never locks; other goroutines reach it through `Scope.Post`.
 - Text is prepared and laid out on the engine side through a platform `TextEngine`; the main thread only draws the result.
