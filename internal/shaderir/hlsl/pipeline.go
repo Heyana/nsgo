@@ -391,16 +391,41 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 		}
 		switch callee.BuiltinFunc {
 		case shaderir.TextureSample:
-			return fmt.Sprintf("%s.Sample(%s, %s)", args[0], args[1], strings.Join(args[2:], ", "))
+			texIdx := e.Exprs[1].Index
+			suffix := ""
+			if texIdx >= 0 && texIdx < len(w.p.Bindings) && w.p.Bindings[texIdx].Type.Main == shaderir.TextureDepth2D {
+				suffix = ".x"
+			}
+			return fmt.Sprintf("%s.Sample(%s, %s)%s", args[0], args[1], strings.Join(args[2:], ", "), suffix)
 		case shaderir.TextureSampleLevel:
-			return fmt.Sprintf("%s.SampleLevel(%s, %s, %s)", args[0], args[1], args[2], args[3])
+			texIdx := e.Exprs[1].Index
+			suffix := ""
+			if texIdx >= 0 && texIdx < len(w.p.Bindings) && w.p.Bindings[texIdx].Type.Main == shaderir.TextureDepth2D {
+				suffix = ".x"
+			}
+			if len(args) >= 5 {
+				return fmt.Sprintf("%s.SampleLevel(%s, %s, %s, %s)%s", args[0], args[1], args[2], args[3], args[4], suffix)
+			}
+			return fmt.Sprintf("%s.SampleLevel(%s, %s, %s)%s", args[0], args[1], args[2], args[3], suffix)
 		case shaderir.TextureSampleBias:
 			return fmt.Sprintf("%s.SampleBias(%s, %s, %s)", args[0], args[1], args[2], args[3])
 		case shaderir.TextureSampleGrad:
 			return fmt.Sprintf("%s.SampleGrad(%s, %s, %s, %s)", args[0], args[1], args[2], args[3], args[4])
 		case shaderir.TextureSampleCompare:
+			if len(args) >= 5 {
+				return fmt.Sprintf("%s.SampleCmp(%s, %s, %s, %s)", args[0], args[1], args[2], args[3], args[4])
+			}
 			return fmt.Sprintf("%s.SampleCmp(%s, %s, %s)", args[0], args[1], args[2], args[3])
+		case shaderir.TextureSampleCompareLevel:
+			if len(args) >= 5 {
+				return fmt.Sprintf("%s.SampleCmpLevelZero(%s, %s, %s, %s)", args[0], args[1], args[2], args[3], args[4])
+			}
+			return fmt.Sprintf("%s.SampleCmpLevelZero(%s, %s, %s)", args[0], args[1], args[2], args[3])
 		case shaderir.TextureLoad:
+			texIdx := e.Exprs[1].Index
+			if texIdx >= 0 && texIdx < len(w.p.Bindings) && w.p.Bindings[texIdx].Type.Main == shaderir.TextureDepth2D {
+				return fmt.Sprintf("%s.Load(int3(%s, %s)).x", args[0], args[1], args[2])
+			}
 			return fmt.Sprintf("%s.Load(int3(%s, %s))", args[0], args[1], args[2])
 		case shaderir.TextureDimensions:
 			return fmt.Sprintf("uint2(0u, 0u) /* %s */", args[0])

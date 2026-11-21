@@ -365,13 +365,14 @@ const (
 	UintBitsToFloat BuiltinFunc = "uintBitsToFloat"
 
 	// Added by NSGo for 3D GPU pipelines (docs/architecture/gpu.md).
-	TextureSample        BuiltinFunc = "textureSample"
-	TextureSampleLevel   BuiltinFunc = "textureSampleLevel"
-	TextureSampleBias    BuiltinFunc = "textureSampleBias"
-	TextureSampleGrad    BuiltinFunc = "textureSampleGrad"
-	TextureSampleCompare BuiltinFunc = "textureSampleCompare"
-	TextureLoad          BuiltinFunc = "textureLoad"
-	TextureDimensions    BuiltinFunc = "textureDimensions"
+	TextureSample             BuiltinFunc = "textureSample"
+	TextureSampleLevel        BuiltinFunc = "textureSampleLevel"
+	TextureSampleBias         BuiltinFunc = "textureSampleBias"
+	TextureSampleGrad         BuiltinFunc = "textureSampleGrad"
+	TextureSampleCompare      BuiltinFunc = "textureSampleCompare"
+	TextureSampleCompareLevel BuiltinFunc = "textureSampleCompareLevel"
+	TextureLoad               BuiltinFunc = "textureLoad"
+	TextureDimensions         BuiltinFunc = "textureDimensions"
 )
 
 func ParseBuiltinFunc(str string) (BuiltinFunc, bool) {

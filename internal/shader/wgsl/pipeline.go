@@ -552,21 +552,41 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 		}
 		tex := c.expr(x.args[0], out)
 		samp := c.expr(x.args[1], out)
-		coord := c.expr(x.args[2], out)
+		if samp.t.k == kSamplerComparison {
+			fail(x.args[1].at(), "textureSample expects sampler, not sampler_comparison")
+		}
+		coord := c.concrete(c.expr(x.args[2], out), x.args[2].at())
 		args := []shaderir.Expr{c.ir(tex), c.ir(samp), c.ir(coord)}
 		if len(x.args) == 4 {
-			args = append(args, c.ir(c.expr(x.args[3], out)))
+			off := c.convert(c.expr(x.args[3], out), vec(kI32, 2), x.args[3].at())
+			args = append(args, c.ir(off))
 		}
-		return value{t: vec(kF32, 4), e: builtinCall(shaderir.TextureSample, vec(kF32, 4), args...)}, true
+		retT := vec(kF32, 4)
+		if tex.t.k == kTextureDepth2D {
+			retT = tF32
+		}
+		return value{t: retT, e: builtinCall(shaderir.TextureSample, retT, args...)}, true
 	case "textureSampleLevel":
 		if len(x.args) < 4 || len(x.args) > 5 {
 			fail(x.at(), "textureSampleLevel takes 4 or 5 arguments")
 		}
+		tex := c.expr(x.args[0], out)
+		samp := c.expr(x.args[1], out)
+		if samp.t.k == kSamplerComparison {
+			fail(x.args[1].at(), "textureSampleLevel expects sampler, not sampler_comparison")
+		}
 		args := make([]shaderir.Expr, len(x.args))
-		for i, a := range x.args {
+		args[0] = c.ir(tex)
+		args[1] = c.ir(samp)
+		for i := 2; i < len(x.args); i++ {
+			a := x.args[i]
 			args[i] = c.ir(c.concrete(c.expr(a, out), a.at()))
 		}
-		return value{t: vec(kF32, 4), e: builtinCall(shaderir.TextureSampleLevel, vec(kF32, 4), args...)}, true
+		retT := vec(kF32, 4)
+		if tex.t.k == kTextureDepth2D {
+			retT = tF32
+		}
+		return value{t: retT, e: builtinCall(shaderir.TextureSampleLevel, retT, args...)}, true
 	case "textureSampleBias":
 		if len(x.args) < 4 || len(x.args) > 5 {
 			fail(x.at(), "textureSampleBias takes 4 or 5 arguments")
@@ -585,24 +605,46 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 			args[i] = c.ir(c.concrete(c.expr(a, out), a.at()))
 		}
 		return value{t: vec(kF32, 4), e: builtinCall(shaderir.TextureSampleGrad, vec(kF32, 4), args...)}, true
-	case "textureSampleCompare":
+	case "textureSampleCompare", "textureSampleCompareLevel":
 		if len(x.args) < 4 || len(x.args) > 5 {
-			fail(x.at(), "textureSampleCompare takes 4 or 5 arguments")
+			fail(x.at(), "%s takes 4 or 5 arguments", name)
 		}
-		args := make([]shaderir.Expr, len(x.args))
-		for i, a := range x.args {
-			args[i] = c.ir(c.concrete(c.expr(a, out), a.at()))
+		tex := c.expr(x.args[0], out)
+		if tex.t.k != kTextureDepth2D {
+			fail(x.args[0].at(), "%s expects texture_depth_2d, not %s", name, tex.t)
 		}
-		return value{t: tF32, e: builtinCall(shaderir.TextureSampleCompare, tF32, args...)}, true
+		samp := c.expr(x.args[1], out)
+		if samp.t.k != kSamplerComparison {
+			fail(x.args[1].at(), "%s expects sampler_comparison, not %s", name, samp.t)
+		}
+		coord := c.convert(c.expr(x.args[2], out), vec(kF32, 2), x.args[2].at())
+		ref := c.convert(c.expr(x.args[3], out), tF32, x.args[3].at())
+		args := []shaderir.Expr{c.ir(tex), c.ir(samp), c.ir(coord), c.ir(ref)}
+		if len(x.args) == 5 {
+			off := c.convert(c.expr(x.args[4], out), vec(kI32, 2), x.args[4].at())
+			args = append(args, c.ir(off))
+		}
+		fn := shaderir.TextureSampleCompare
+		if name == "textureSampleCompareLevel" {
+			fn = shaderir.TextureSampleCompareLevel
+		}
+		return value{t: tF32, e: builtinCall(fn, tF32, args...)}, true
 	case "textureLoad":
 		if len(x.args) < 3 || len(x.args) > 4 {
 			fail(x.at(), "textureLoad takes 3 or 4 arguments")
 		}
+		tex := c.expr(x.args[0], out)
 		args := make([]shaderir.Expr, len(x.args))
-		for i, a := range x.args {
+		args[0] = c.ir(tex)
+		for i := 1; i < len(x.args); i++ {
+			a := x.args[i]
 			args[i] = c.ir(c.concrete(c.expr(a, out), a.at()))
 		}
-		return value{t: vec(kF32, 4), e: builtinCall(shaderir.TextureLoad, vec(kF32, 4), args...)}, true
+		retT := vec(kF32, 4)
+		if tex.t.k == kTextureDepth2D {
+			retT = tF32
+		}
+		return value{t: retT, e: builtinCall(shaderir.TextureLoad, retT, args...)}, true
 	case "textureDimensions":
 		if len(x.args) < 1 || len(x.args) > 2 {
 			fail(x.at(), "textureDimensions takes 1 or 2 arguments")

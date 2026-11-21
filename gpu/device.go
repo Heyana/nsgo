@@ -253,6 +253,9 @@ type Sampler struct {
 // ID returns the sampler's numeric handle.
 func (s *Sampler) ID() uint64 { return uint64(s.id) }
 
+// Desc returns the sampler's descriptor.
+func (s *Sampler) Desc() SamplerDesc { return s.desc }
+
 // Close releases the sampler immediately.
 func (s *Sampler) Close() error {
 	if s == nil || s.closed {
@@ -451,30 +454,41 @@ func (d *Device) CreateTextureFromImage(cx *core.Scope, src core.ImageSource, de
 	return tex, nil
 }
 
-// CreateRenderTarget allocates an offscreen color texture (and optional depth
-// texture) suitable for render-to-texture passes, scoped to cx.
+// CreateRenderTarget allocates an offscreen render target (color-only,
+// color+depth, or depth-only shadow map) whose attachments can be rendered to
+// and sampled by subsequent passes, scoped to cx.
 func (d *Device) CreateRenderTarget(cx *core.Scope, desc RenderTargetDesc) (*RenderTarget, error) {
-	if desc.ColorFormat == FormatUndefined {
+	if desc.ColorFormat == FormatUndefined && desc.DepthFormat == FormatUndefined {
 		desc.ColorFormat = FormatRGBA8Unorm
 	}
-	colorTex, err := d.CreateTexture(cx, TextureDesc{
-		Label:       desc.Label + ".color",
-		Dimension:   Dim2D,
-		Width:       desc.Width,
-		Height:      desc.Height,
-		SampleCount: desc.SampleCount,
-		Format:      desc.ColorFormat,
-		Usage:       TextureRenderAttachment | TextureSampled | TextureCopySrc,
-	})
-	if err != nil {
-		return nil, err
+	var colorTex *Texture
+	if desc.ColorFormat != FormatUndefined {
+		if desc.ColorFormat.IsDepth() {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: "RenderTargetDesc.ColorFormat must not be a depth format"}
+		}
+		var err error
+		colorTex, err = d.CreateTexture(cx, TextureDesc{
+			Label:       desc.Label + ".color",
+			Dimension:   Dim2D,
+			Width:       desc.Width,
+			Height:      desc.Height,
+			SampleCount: desc.SampleCount,
+			Format:      desc.ColorFormat,
+			Usage:       TextureRenderAttachment | TextureSampled | TextureCopySrc,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	var depthTex *Texture
 	if desc.DepthFormat != FormatUndefined {
 		if !desc.DepthFormat.IsDepth() {
-			_ = colorTex.Close()
+			if colorTex != nil {
+				_ = colorTex.Close()
+			}
 			return nil, Error{Code: ErrInvalidDescriptor, Message: "RenderTargetDesc.DepthFormat must be a depth format"}
 		}
+		var err error
 		depthTex, err = d.CreateTexture(cx, TextureDesc{
 			Label:       desc.Label + ".depth",
 			Dimension:   Dim2D,
@@ -482,10 +496,12 @@ func (d *Device) CreateRenderTarget(cx *core.Scope, desc RenderTargetDesc) (*Ren
 			Height:      desc.Height,
 			SampleCount: desc.SampleCount,
 			Format:      desc.DepthFormat,
-			Usage:       TextureRenderAttachment,
+			Usage:       TextureRenderAttachment | TextureSampled | TextureCopySrc,
 		})
 		if err != nil {
-			_ = colorTex.Close()
+			if colorTex != nil {
+				_ = colorTex.Close()
+			}
 			return nil, err
 		}
 	}
@@ -581,9 +597,22 @@ func (d *Device) CreateBindGroup(cx *core.Scope, layout *BindGroupLayout, entrie
 				if e.Texture == nil || e.Texture.closed || e.Texture.dev != d {
 					return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("binding %d expects a live Texture", e.Binding)}
 				}
-			case BindingSampler, BindingComparisonSampler:
+				if e.Texture.desc.Usage&TextureSampled == 0 {
+					return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("binding %d texture lacks TextureSampled usage", e.Binding)}
+				}
+			case BindingSampler:
 				if e.Sampler == nil || e.Sampler.closed || e.Sampler.dev != d {
 					return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("binding %d expects a live Sampler", e.Binding)}
+				}
+				if e.Sampler.desc.Compare != CompareUndefined {
+					return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("binding %d expects a non-comparison Sampler (Compare must be CompareUndefined)", e.Binding)}
+				}
+			case BindingComparisonSampler:
+				if e.Sampler == nil || e.Sampler.closed || e.Sampler.dev != d {
+					return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("binding %d expects a live comparison Sampler", e.Binding)}
+				}
+				if e.Sampler.desc.Compare == CompareUndefined {
+					return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("binding %d comparison sampler requires a non-zero Compare function", e.Binding)}
 				}
 			}
 		}
@@ -834,12 +863,12 @@ func (d *Device) BeginEncoder() *Encoder {
 // BeginRenderPass starts a render pass on e. Call RenderPass.End when done.
 func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 	var cas []driver.GPUColorAttachment
-	if len(desc.ColorAttachments) == 0 {
+	if len(desc.ColorAttachments) == 0 && desc.DepthStencil == nil {
 		cas = []driver.GPUColorAttachment{{
 			LoadOp:  driver.GPULoadLoad,
 			StoreOp: driver.GPUStoreStore,
 		}}
-	} else {
+	} else if len(desc.ColorAttachments) > 0 {
 		cas = make([]driver.GPUColorAttachment, len(desc.ColorAttachments))
 		for i, ca := range desc.ColorAttachments {
 			var tid, rid driver.GPUID

@@ -192,11 +192,11 @@ func (w *writer) emitVertex() []string {
 		}
 		params = append(params, fmt.Sprintf("@location(%d) a%d: %s", loc, i, w.typeStr(a)))
 	}
-	params = append(params, "@builtin(vertex_index) __vertex_id: u32", "@builtin(instance_index) __instance_id: u32")
+	params = append(params, "@builtin(vertex_index) nsgo_vertex_id: u32", "@builtin(instance_index) nsgo_instance_id: u32")
 	lines = append(lines, fmt.Sprintf("@vertex fn %s(%s) -> StageOut {", entry, strings.Join(params, ", ")))
-	lines = append(lines, "\tvar __out: StageOut;")
+	lines = append(lines, "\tvar nsgo_out: StageOut;")
 	lines = append(lines, w.emitBlock(w.p.VertexFunc.Block, 1, "vertex")...)
-	lines = append(lines, "\treturn __out;", "}", "")
+	lines = append(lines, "\treturn nsgo_out;", "}", "")
 	return lines
 }
 
@@ -221,7 +221,7 @@ func (w *writer) emitFragment() []string {
 		}
 		lines = append(lines, "};", "")
 	}
-	lines = append(lines, fmt.Sprintf("@fragment fn %s(__in: StageOut, @builtin(front_facing) __front_facing: bool) -> @location(0) vec4<f32> {", entry))
+	lines = append(lines, fmt.Sprintf("@fragment fn %s(nsgo_in: StageOut, @builtin(front_facing) nsgo_front_facing: bool) -> @location(0) vec4<f32> {", entry))
 	lines = append(lines, w.emitBlock(w.p.FragmentFunc.Block, 1, "fragment")...)
 	lines = append(lines, "}", "")
 	return lines
@@ -236,17 +236,17 @@ func (w *writer) localName(stage string, idx int) string {
 		case idx < na:
 			return fmt.Sprintf("a%d", idx)
 		case idx == na:
-			return "__out.position"
+			return "nsgo_out.position"
 		case idx < na+nv+1:
-			return fmt.Sprintf("__out.v%d", idx-na-1)
+			return fmt.Sprintf("nsgo_out.v%d", idx-na-1)
 		}
 	case "fragment":
 		nv := len(w.p.Varyings)
 		switch {
 		case idx == 0:
-			return "__in.position"
+			return "nsgo_in.position"
 		case idx < nv+1:
-			return fmt.Sprintf("__in.v%d", idx-1)
+			return fmt.Sprintf("nsgo_in.v%d", idx-1)
 		}
 	}
 	return fmt.Sprintf("l%d", idx)
@@ -304,7 +304,7 @@ func (w *writer) emitBlock(b *shaderir.Block, level int, stage string) []string 
 			lines = append(lines, indent+"break;")
 		case shaderir.Return:
 			if stage == "vertex" {
-				lines = append(lines, indent+"return __out;")
+				lines = append(lines, indent+"return nsgo_out;")
 			} else if len(s.Exprs) == 0 {
 				lines = append(lines, indent+"return;")
 			} else {
@@ -328,13 +328,13 @@ func (w *writer) emitExpr(e shaderir.Expr, stage string) string {
 	case shaderir.BuiltinInput:
 		switch shaderir.StageBuiltin(e.Index) {
 		case shaderir.BuiltinVertexIndex:
-			return "__vertex_id"
+			return "nsgo_vertex_id"
 		case shaderir.BuiltinInstanceIndex:
-			return "__instance_id"
+			return "nsgo_instance_id"
 		case shaderir.BuiltinFrontFacing:
-			return "__front_facing"
+			return "nsgo_front_facing"
 		case shaderir.BuiltinPosition:
-			return "__in.position"
+			return "nsgo_in.position"
 		}
 	case shaderir.StructConstruct:
 		name := w.typeStr(*e.StructType)

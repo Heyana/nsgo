@@ -91,13 +91,21 @@ type TextureDesc struct {
 }
 
 // RenderTargetDesc configures Device.CreateRenderTarget.
+//
+// Set ColorFormat for a color-only offscreen target, both ColorFormat and
+// DepthFormat for a color+depth target, or DepthFormat alone (with
+// ColorFormat == FormatUndefined) for a depth-only target such as a shadow map.
+// When both formats are FormatUndefined, ColorFormat defaults to
+// FormatRGBA8Unorm. All created attachments include TextureRenderAttachment,
+// TextureSampled, and TextureCopySrc so subsequent passes can sample or read
+// them back.
 type RenderTargetDesc struct {
 	Label       string
 	Width       uint32
 	Height      uint32
-	ColorFormat TextureFormat // defaults to FormatRGBA8Unorm
-	DepthFormat TextureFormat // FormatUndefined disables depth attachment
-	SampleCount int           // 0 or 1
+	ColorFormat TextureFormat
+	DepthFormat TextureFormat
+	SampleCount int // 0 or 1
 }
 
 // FilterMode selects texture minification, magnification, or mipmap filtering.

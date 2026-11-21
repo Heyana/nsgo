@@ -419,13 +419,24 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 		case shaderir.TextureSample:
 			return fmt.Sprintf("%s.sample(%s, %s)", args[0], args[1], strings.Join(args[2:], ", "))
 		case shaderir.TextureSampleLevel:
+			if len(args) >= 5 {
+				return fmt.Sprintf("%s.sample(%s, %s, level(%s), %s)", args[0], args[1], args[2], args[3], args[4])
+			}
 			return fmt.Sprintf("%s.sample(%s, %s, level(%s))", args[0], args[1], args[2], args[3])
 		case shaderir.TextureSampleBias:
 			return fmt.Sprintf("%s.sample(%s, %s, bias(%s))", args[0], args[1], args[2], args[3])
 		case shaderir.TextureSampleGrad:
 			return fmt.Sprintf("%s.sample(%s, %s, gradient2d(%s, %s))", args[0], args[1], args[2], args[3], args[4])
 		case shaderir.TextureSampleCompare:
+			if len(args) >= 5 {
+				return fmt.Sprintf("%s.sample_compare(%s, %s, %s, %s)", args[0], args[1], args[2], args[3], args[4])
+			}
 			return fmt.Sprintf("%s.sample_compare(%s, %s, %s)", args[0], args[1], args[2], args[3])
+		case shaderir.TextureSampleCompareLevel:
+			if len(args) >= 5 {
+				return fmt.Sprintf("%s.sample_compare(%s, %s, %s, level(0), %s)", args[0], args[1], args[2], args[3], args[4])
+			}
+			return fmt.Sprintf("%s.sample_compare(%s, %s, %s, level(0))", args[0], args[1], args[2], args[3])
 		case shaderir.TextureLoad:
 			return fmt.Sprintf("%s.read(uint2(%s), %s)", args[0], args[1], args[2])
 		case shaderir.TextureDimensions:

@@ -168,9 +168,14 @@ func callType(e *Expr, env TypeEnv) Type {
 		return Type{Main: Vec2}
 	case Vec3F, Cross:
 		return Type{Main: Vec3}
-	case Vec4F, TexelAt, TextureSample, TextureSampleLevel, TextureSampleBias, TextureSampleGrad, TextureLoad:
+	case Vec4F, TexelAt, TextureSampleBias, TextureSampleGrad:
 		return Type{Main: Vec4}
-	case TextureSampleCompare:
+	case TextureSample, TextureSampleLevel, TextureLoad:
+		if len(args) > 0 && TypeOf(&args[0], env).Main == TextureDepth2D {
+			return Type{Main: Float}
+		}
+		return Type{Main: Vec4}
+	case TextureSampleCompare, TextureSampleCompareLevel:
 		return Type{Main: Float}
 	case TextureDimensions:
 		return Type{Main: UVec2}

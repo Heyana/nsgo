@@ -289,6 +289,7 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 		delete(d.pipelines, op.ID)
 	case GPUOpReadTexture:
 		var src []byte
+		var depthSrc []float32
 		var tw, th int
 		if op.ReadbackSurface || op.ID == 0 {
 			src, tw, th = d.colorBuf, d.width, d.height
@@ -297,7 +298,8 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 			if !ok {
 				return &GPUSoftReadback{ID: op.ReadbackID, Err: fmt.Sprintf("unknown texture %d", op.ID)}, nil
 			}
-			src, tw, th = tex.rgba, int(tex.desc.Width), int(tex.desc.Height)
+			tw, th = int(tex.desc.Width), int(tex.desc.Height)
+			src, depthSrc = tex.rgba, tex.depth
 		}
 		rx, ry := int(op.ReadbackRegion.X), int(op.ReadbackRegion.Y)
 		rw, rh := int(op.ReadbackRegion.Width), int(op.ReadbackRegion.Height)
@@ -311,6 +313,15 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 			return &GPUSoftReadback{ID: op.ReadbackID, Err: "readback region out of bounds"}, nil
 		}
 		out := make([]byte, rw*rh*4)
+		if depthSrc != nil {
+			for y := 0; y < rh; y++ {
+				for x := 0; x < rw; x++ {
+					bits := math.Float32bits(depthSrc[(ry+y)*tw+(rx+x)])
+					binary.LittleEndian.PutUint32(out[(y*rw+x)*4:], bits)
+				}
+			}
+			return &GPUSoftReadback{ID: op.ReadbackID, Pixels: out}, nil
+		}
 		for y := 0; y < rh; y++ {
 			copy(out[y*rw*4:(y+1)*rw*4], src[((ry+y)*tw+rx)*4:((ry+y)*tw+rx+rw)*4])
 		}
@@ -334,10 +345,21 @@ func (d *GPUSoftwareDevice) execCopy(cp GPUCopyOp) error {
 	case GPUCopyTextureToTexture:
 		s, ok1 := d.textures[cp.SrcTex.Texture]
 		t, ok2 := d.textures[cp.DstTex.Texture]
-		if !ok1 || !ok2 || s.rgba == nil || t.rgba == nil {
+		if !ok1 || !ok2 {
 			return fmt.Errorf("gpu: CopyTextureToTexture references unknown texture")
 		}
 		sw, dw := int(s.desc.Width), int(t.desc.Width)
+		if s.depth != nil && t.depth != nil {
+			for y := 0; y < int(cp.Height); y++ {
+				si := (int(cp.SrcTex.OriginY)+y)*sw + int(cp.SrcTex.OriginX)
+				di := (int(cp.DstTex.OriginY)+y)*dw + int(cp.DstTex.OriginX)
+				copy(t.depth[di:di+int(cp.Width)], s.depth[si:si+int(cp.Width)])
+			}
+			return nil
+		}
+		if s.rgba == nil || t.rgba == nil {
+			return fmt.Errorf("gpu: CopyTextureToTexture format mismatch between color and depth textures")
+		}
 		for y := 0; y < int(cp.Height); y++ {
 			si := ((int(cp.SrcTex.OriginY)+y)*sw + int(cp.SrcTex.OriginX)) * 4
 			di := ((int(cp.DstTex.OriginY)+y)*dw + int(cp.DstTex.OriginX)) * 4
@@ -381,6 +403,12 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 			if !ok {
 				return fmt.Errorf("gpu: render pass color attachment %d not found", ca.Texture)
 			}
+			if tex.rgba == nil {
+				return fmt.Errorf("gpu: render pass color attachment %d is a depth texture", ca.Texture)
+			}
+			if tex.desc.Usage&GPUTextureRenderAttachment == 0 {
+				return fmt.Errorf("gpu: render pass color attachment %d lacks TextureRenderAttachment usage", ca.Texture)
+			}
 			colorPix, targetW, targetH = tex.rgba, int(tex.desc.Width), int(tex.desc.Height)
 		}
 		if ca.LoadOp == GPULoadClear {
@@ -393,7 +421,7 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 				colorPix[i+3] = ab
 			}
 		}
-	} else {
+	} else if pass.DepthStencil == nil {
 		colorPix, targetW, targetH = d.colorBuf, d.width, d.height
 	}
 
@@ -401,7 +429,26 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 		ds := pass.DepthStencil
 		if ds.Texture == 0 {
 			depthPix = d.depthBuf
-		} else if tex, ok := d.textures[ds.Texture]; ok && tex.depth != nil {
+			if targetW == 0 || targetH == 0 {
+				targetW, targetH = d.width, d.height
+			}
+		} else {
+			tex, ok := d.textures[ds.Texture]
+			if !ok {
+				return fmt.Errorf("gpu: render pass depth attachment %d not found", ds.Texture)
+			}
+			if tex.depth == nil {
+				return fmt.Errorf("gpu: render pass depth attachment %d is not a depth texture", ds.Texture)
+			}
+			if tex.desc.Usage&GPUTextureRenderAttachment == 0 {
+				return fmt.Errorf("gpu: render pass depth attachment %d lacks TextureRenderAttachment usage", ds.Texture)
+			}
+			if targetW == 0 || targetH == 0 {
+				targetW, targetH = int(tex.desc.Width), int(tex.desc.Height)
+			} else if int(tex.desc.Width) != targetW || int(tex.desc.Height) != targetH {
+				return fmt.Errorf("gpu: render pass depth attachment %dx%d does not match color attachment %dx%d",
+					tex.desc.Width, tex.desc.Height, targetW, targetH)
+			}
 			depthPix = tex.depth
 		}
 		if depthPix != nil && ds.DepthLoadOp == GPULoadClear {
@@ -409,7 +456,7 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 				depthPix[i] = ds.ClearDepth
 			}
 		}
-	} else if d.cfg.DepthFormat.IsDepth() && len(pass.ColorAttachments) > 0 && pass.ColorAttachments[0].Texture == 0 {
+	} else if d.cfg.DepthFormat.IsDepth() && (len(pass.ColorAttachments) == 0 || pass.ColorAttachments[0].Texture == 0) {
 		depthPix = d.depthBuf
 	}
 
@@ -765,6 +812,15 @@ func (c *softDrawCtx) rasterTriangle(v0, v1, v2 shadedVertex) {
 	nv := len(c.prog.Varyings)
 	interpVaryings := make([]irVal, nv)
 	ds := c.pipe.desc.DepthStencil
+	var depthBias float32
+	if ds != nil && (ds.DepthBias != 0 || ds.DepthBiasSlopeScale != 0) {
+		dzdx := (z0*(y1-y2) + z1*(y2-y0) + z2*(y0-y1)) * invArea
+		dzdy := (z0*(x2-x1) + z1*(x0-x2) + z2*(x1-x0)) * invArea
+		maxSlope := float32(math.Max(math.Abs(float64(dzdx)), math.Abs(float64(dzdy))))
+		const r24 = float32(1.0 / float64(1<<24))
+		depthBias = float32(ds.DepthBias)*r24 + ds.DepthBiasSlopeScale*maxSlope
+	}
+	depthOnlyNoFrag := c.colorPix == nil && c.prog.FragmentFunc.Block == nil
 
 	for py := minY; py <= maxY; py++ {
 		fy := float32(py) + 0.5
@@ -778,6 +834,9 @@ func (c *softDrawCtx) rasterTriangle(v0, v1, v2 shadedVertex) {
 			}
 
 			depth := w0*z0 + w1*z1 + w2*z2
+			if depthBias != 0 {
+				depth = clamp01(depth + depthBias)
+			}
 			if depth < 0 || depth > 1 {
 				continue
 			}
@@ -787,6 +846,13 @@ func (c *softDrawCtx) rasterTriangle(v0, v1, v2 shadedVertex) {
 				if !compareDepth(ds.DepthCompare, depth, c.depthPix[pixIdx]) {
 					continue
 				}
+			}
+
+			if depthOnlyNoFrag {
+				if ds != nil && ds.DepthWrite && c.depthPix != nil {
+					c.depthPix[pixIdx] = depth
+				}
+				continue
 			}
 
 			// Perspective-correct interpolation weights.
@@ -1584,8 +1650,34 @@ func (vm *irVM) evalCall(e shaderir.Expr) irVal {
 
 	// Texture sampling needs raw binding indices before evaluating args.
 	switch callee.BuiltinFunc {
-	case shaderir.TextureSample, shaderir.TextureSampleLevel, shaderir.TextureSampleBias:
-		return vm.evalTextureSample(e.Exprs[1].Index, e.Exprs[2].Index, vm.evalExpr(e.Exprs[3]))
+	case shaderir.TextureSample:
+		var offX, offY int
+		if len(e.Exprs) >= 5 {
+			off := vm.evalExpr(e.Exprs[4])
+			offX, offY = int(off.i[0]), int(off.i[1])
+		}
+		return vm.evalTextureSample(e.Exprs[1].Index, e.Exprs[2].Index, vm.evalExpr(e.Exprs[3]), offX, offY)
+	case shaderir.TextureSampleLevel, shaderir.TextureSampleBias:
+		var offX, offY int
+		if len(e.Exprs) >= 6 {
+			off := vm.evalExpr(e.Exprs[5])
+			offX, offY = int(off.i[0]), int(off.i[1])
+		}
+		return vm.evalTextureSample(e.Exprs[1].Index, e.Exprs[2].Index, vm.evalExpr(e.Exprs[3]), offX, offY)
+	case shaderir.TextureSampleGrad:
+		var offX, offY int
+		if len(e.Exprs) >= 7 {
+			off := vm.evalExpr(e.Exprs[6])
+			offX, offY = int(off.i[0]), int(off.i[1])
+		}
+		return vm.evalTextureSample(e.Exprs[1].Index, e.Exprs[2].Index, vm.evalExpr(e.Exprs[3]), offX, offY)
+	case shaderir.TextureSampleCompare, shaderir.TextureSampleCompareLevel:
+		var offX, offY int
+		if len(e.Exprs) >= 6 {
+			off := vm.evalExpr(e.Exprs[5])
+			offX, offY = int(off.i[0]), int(off.i[1])
+		}
+		return vm.evalTextureSampleCompare(e.Exprs[1].Index, e.Exprs[2].Index, vm.evalExpr(e.Exprs[3]), vm.evalExpr(e.Exprs[4]).f[0], offX, offY)
 	case shaderir.TextureLoad:
 		return vm.evalTextureLoad(e.Exprs[1].Index, vm.evalExpr(e.Exprs[2]))
 	case shaderir.TextureDimensions:
@@ -1607,15 +1699,41 @@ func (vm *irVM) evalCall(e shaderir.Expr) irVal {
 		}
 		return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{args[0].f[0]}}
 	case shaderir.IntF:
-		return irVal{typ: shaderir.Type{Main: shaderir.Int}, i: [4]int32{int32(args[0].f[0])}}
+		switch args[0].typ.Scalar() {
+		case shaderir.Int:
+			return irVal{typ: shaderir.Type{Main: shaderir.Int}, i: [4]int32{args[0].i[0]}}
+		case shaderir.Uint:
+			return irVal{typ: shaderir.Type{Main: shaderir.Int}, i: [4]int32{int32(args[0].u[0])}}
+		default:
+			return irVal{typ: shaderir.Type{Main: shaderir.Int}, i: [4]int32{int32(args[0].f[0])}}
+		}
 	case shaderir.UintF:
-		return irVal{typ: shaderir.Type{Main: shaderir.Uint}, u: [4]uint32{uint32(args[0].f[0])}}
+		switch args[0].typ.Scalar() {
+		case shaderir.Uint:
+			return irVal{typ: shaderir.Type{Main: shaderir.Uint}, u: [4]uint32{args[0].u[0]}}
+		case shaderir.Int:
+			return irVal{typ: shaderir.Type{Main: shaderir.Uint}, u: [4]uint32{uint32(args[0].i[0])}}
+		default:
+			return irVal{typ: shaderir.Type{Main: shaderir.Uint}, u: [4]uint32{uint32(args[0].f[0])}}
+		}
 	case shaderir.Vec2F:
 		return packFloatVec(shaderir.Vec2, 2, args)
 	case shaderir.Vec3F:
 		return packFloatVec(shaderir.Vec3, 3, args)
 	case shaderir.Vec4F:
 		return packFloatVec(shaderir.Vec4, 4, args)
+	case shaderir.IVec2F:
+		return packIntVec(shaderir.IVec2, 2, args)
+	case shaderir.IVec3F:
+		return packIntVec(shaderir.IVec3, 3, args)
+	case shaderir.IVec4F:
+		return packIntVec(shaderir.IVec4, 4, args)
+	case shaderir.UVec2F:
+		return packUintVec(shaderir.UVec2, 2, args)
+	case shaderir.UVec3F:
+		return packUintVec(shaderir.UVec3, 3, args)
+	case shaderir.UVec4F:
+		return packUintVec(shaderir.UVec4, 4, args)
 	case shaderir.Mat3F:
 		return packMat(shaderir.Mat3, 3, args)
 	case shaderir.Mat4F:
@@ -1758,9 +1876,9 @@ func wrapCoord(u float32, mode GPUAddressMode) float32 {
 	}
 }
 
-func (vm *irVM) evalTextureSample(texIdx, sampIdx int, uv irVal) irVal {
+func (vm *irVM) evalTextureSample(texIdx, sampIdx int, uv irVal, offX, offY int) irVal {
 	tex := vm.lookupTexture(texIdx)
-	if tex == nil || tex.rgba == nil {
+	if tex == nil {
 		return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{0, 0, 0, 1}}
 	}
 	var desc GPUSamplerDesc
@@ -1771,9 +1889,38 @@ func (vm *irVM) evalTextureSample(texIdx, sampIdx int, uv irVal) irVal {
 	u := wrapCoord(uv.f[0], desc.AddressU)
 	v := wrapCoord(uv.f[1], desc.AddressV)
 
+	if tex.depth != nil {
+		readDepth := func(x, y int) float32 {
+			x = min(max(x+offX, 0), w-1)
+			y = min(max(y+offY, 0), h-1)
+			return tex.depth[y*w+x]
+		}
+		if desc.MagFilter == GPUFilterLinear || desc.MinFilter == GPUFilterLinear {
+			fx := u*float32(w) - 0.5
+			fy := v*float32(h) - 0.5
+			x0 := int(math.Floor(float64(fx)))
+			y0 := int(math.Floor(float64(fy)))
+			tx := fx - float32(x0)
+			ty := fy - float32(y0)
+			d00 := readDepth(x0, y0)
+			d10 := readDepth(x0+1, y0)
+			d01 := readDepth(x0, y0+1)
+			d11 := readDepth(x0+1, y0+1)
+			top := d00*(1-tx) + d10*tx
+			bot := d01*(1-tx) + d11*tx
+			return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{top*(1-ty) + bot*ty}}
+		}
+		ix := int(math.Floor(float64(u * float32(w))))
+		iy := int(math.Floor(float64(v * float32(h))))
+		return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{readDepth(ix, iy)}}
+	}
+	if tex.rgba == nil {
+		return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{0, 0, 0, 1}}
+	}
+
 	readPx := func(x, y int) [4]float32 {
-		x = min(max(x, 0), w-1)
-		y = min(max(y, 0), h-1)
+		x = min(max(x+offX, 0), w-1)
+		y = min(max(y+offY, 0), h-1)
 		off := (y*w + x) * 4
 		return [4]float32{
 			float32(tex.rgba[off+0]) / 255.0,
@@ -1809,14 +1956,73 @@ func (vm *irVM) evalTextureSample(texIdx, sampIdx int, uv irVal) irVal {
 	return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{c[0], c[1], c[2], c[3]}}
 }
 
+func (vm *irVM) evalTextureSampleCompare(texIdx, sampIdx int, uv irVal, depthRef float32, offX, offY int) irVal {
+	tex := vm.lookupTexture(texIdx)
+	if tex == nil || tex.depth == nil {
+		return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{0}}
+	}
+	var desc GPUSamplerDesc
+	if s := vm.lookupSampler(sampIdx); s != nil {
+		desc = s.desc
+	}
+	cmpFn := desc.Compare
+	if cmpFn == GPUCompareUndefined {
+		cmpFn = GPUCompareLessEqual
+	}
+	w, h := int(tex.desc.Width), int(tex.desc.Height)
+	u := wrapCoord(uv.f[0], desc.AddressU)
+	v := wrapCoord(uv.f[1], desc.AddressV)
+
+	// Hardware comparison sampling compares depthRef against each sampled texel
+	// BEFORE bilinear filtering (percentage-closer filtering / PCF).
+	cmpTexel := func(x, y int) float32 {
+		x = min(max(x+offX, 0), w-1)
+		y = min(max(y+offY, 0), h-1)
+		if compareDepth(cmpFn, depthRef, tex.depth[y*w+x]) {
+			return 1.0
+		}
+		return 0.0
+	}
+
+	if desc.MagFilter == GPUFilterLinear || desc.MinFilter == GPUFilterLinear {
+		fx := u*float32(w) - 0.5
+		fy := v*float32(h) - 0.5
+		x0 := int(math.Floor(float64(fx)))
+		y0 := int(math.Floor(float64(fy)))
+		tx := fx - float32(x0)
+		ty := fy - float32(y0)
+		c00 := cmpTexel(x0, y0)
+		c10 := cmpTexel(x0+1, y0)
+		c01 := cmpTexel(x0, y0+1)
+		c11 := cmpTexel(x0+1, y0+1)
+		top := c00*(1-tx) + c10*tx
+		bot := c01*(1-tx) + c11*tx
+		return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{top*(1-ty) + bot*ty}}
+	}
+
+	ix := int(math.Floor(float64(u * float32(w))))
+	iy := int(math.Floor(float64(v * float32(h))))
+	return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{cmpTexel(ix, iy)}}
+}
+
 func (vm *irVM) evalTextureLoad(texIdx int, coord irVal) irVal {
 	tex := vm.lookupTexture(texIdx)
-	if tex == nil || tex.rgba == nil {
+	if tex == nil {
 		return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{0, 0, 0, 1}}
 	}
 	w, h := int(tex.desc.Width), int(tex.desc.Height)
-	ix := min(max(int(coord.i[0]), 0), w-1)
-	iy := min(max(int(coord.i[1]), 0), h-1)
+	cx, cy := int(coord.i[0]), int(coord.i[1])
+	if coord.typ.Scalar() == shaderir.Uint {
+		cx, cy = int(coord.u[0]), int(coord.u[1])
+	}
+	ix := min(max(cx, 0), w-1)
+	iy := min(max(cy, 0), h-1)
+	if tex.depth != nil {
+		return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{tex.depth[iy*w+ix]}}
+	}
+	if tex.rgba == nil {
+		return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{0, 0, 0, 1}}
+	}
 	off := (iy*w + ix) * 4
 	return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{
 		float32(tex.rgba[off+0]) / 255.0,
@@ -1853,6 +2059,74 @@ func packFloatVec(bt shaderir.BasicType, n int, args []irVal) irVal {
 		}
 		for i := 0; i < cnt && k < n; i++ {
 			out.f[k] = a.f[i]
+			k++
+		}
+	}
+	return out
+}
+
+func irValIntAt(v irVal, idx int) int32 {
+	switch v.typ.Scalar() {
+	case shaderir.Int:
+		return v.i[idx]
+	case shaderir.Uint:
+		return int32(v.u[idx])
+	default:
+		return int32(v.f[idx])
+	}
+}
+
+func irValUintAt(v irVal, idx int) uint32 {
+	switch v.typ.Scalar() {
+	case shaderir.Uint:
+		return v.u[idx]
+	case shaderir.Int:
+		return uint32(v.i[idx])
+	default:
+		return uint32(v.f[idx])
+	}
+}
+
+func packIntVec(bt shaderir.BasicType, n int, args []irVal) irVal {
+	out := irVal{typ: shaderir.Type{Main: bt}}
+	if len(args) == 0 {
+		return out
+	}
+	if len(args) == 1 && args[0].typ.VectorElementCount() < 2 {
+		v := irValIntAt(args[0], 0)
+		for i := 0; i < n; i++ {
+			out.i[i] = v
+		}
+		return out
+	}
+	k := 0
+	for _, a := range args {
+		cnt := max(a.typ.VectorElementCount(), 1)
+		for i := 0; i < cnt && k < n; i++ {
+			out.i[k] = irValIntAt(a, i)
+			k++
+		}
+	}
+	return out
+}
+
+func packUintVec(bt shaderir.BasicType, n int, args []irVal) irVal {
+	out := irVal{typ: shaderir.Type{Main: bt}}
+	if len(args) == 0 {
+		return out
+	}
+	if len(args) == 1 && args[0].typ.VectorElementCount() < 2 {
+		v := irValUintAt(args[0], 0)
+		for i := 0; i < n; i++ {
+			out.u[i] = v
+		}
+		return out
+	}
+	k := 0
+	for _, a := range args {
+		cnt := max(a.typ.VectorElementCount(), 1)
+		for i := 0; i < cnt && k < n; i++ {
+			out.u[k] = irValUintAt(a, i)
 			k++
 		}
 	}
