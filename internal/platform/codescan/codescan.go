@@ -1,4 +1,4 @@
-// Package codescan reads QR codes and barcodes from a camera's frames in Go, for the platforms whose system reads none, as Android's: a frame's luminance, its Y plane, goes in and the first code of the kinds a driver.ScanRequest asks for comes out. It reads every kind but PDF417, which gozxing has no reader for.
+// Package codescan reads QR codes and barcodes from a camera's frames in Go, for the platforms whose system reads none (Android, Windows and Linux): a frame's luminance, its Y plane or converted from BGRA, goes in and the first code of the kinds a driver.ScanRequest asks for comes out. It reads every kind but PDF417, which gozxing has no reader for.
 package codescan
 
 import (
@@ -33,6 +33,61 @@ var linear = map[driver.CodeKind]bool{
 
 // Reads reports whether codescan reads codes of kind k.
 func Reads(k driver.CodeKind) bool { return readers[k] != nil }
+
+// HasReader reports whether codescan reads at least one kind r asks for.
+func HasReader(r driver.ScanRequest) bool {
+	for k := driver.CodeQR; k <= driver.CodeITF; k++ {
+		if r.Wants(k) && readers[k] != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// maxDecodeSide caps the longer side of a BGRA camera frame before decoding, matching Android's 960 px limit so high-resolution webcams decode quickly.
+const maxDecodeSide = 960
+
+// LuminanceBGRA converts a BGRA pixel buffer (B, G, R, A byte order) of width by height pixels and row byte stride into a luminance plane, downscaling so the longer side is at most maxSide when maxSide > 0.
+func LuminanceBGRA(bgra []byte, width, height, stride, maxSide int) (lum []byte, outW, outH int) {
+	if width <= 0 || height <= 0 {
+		return nil, 0, 0
+	}
+	if stride <= 0 {
+		stride = width * 4
+	}
+	if stride < width*4 || len(bgra) < (height-1)*stride+width*4 {
+		return nil, 0, 0
+	}
+	outW, outH = width, height
+	if maxSide > 0 {
+		if long := max(width, height); long > maxSide {
+			outW = max(width*maxSide/long, 1)
+			outH = max(height*maxSide/long, 1)
+		}
+	}
+	lum = make([]byte, outW*outH)
+	for y := range outH {
+		sy := y * height / outH
+		row := bgra[sy*stride:]
+		dst := lum[y*outW:]
+		for x := range outW {
+			sx := x * width / outW
+			off := sx * 4
+			b, g, r := uint32(row[off]), uint32(row[off+1]), uint32(row[off+2])
+			dst[x] = byte((77*r + 150*g + 29*b) >> 8)
+		}
+	}
+	return lum, outW, outH
+}
+
+// DecodeBGRA converts a BGRA camera frame to luminance (capped at 960 px on its longer side) and decodes the first matching code for r.
+func DecodeBGRA(bgra []byte, width, height, stride int, r driver.ScanRequest) *driver.ScannedCode {
+	lum, w, h := LuminanceBGRA(bgra, width, height, stride, maxDecodeSide)
+	if len(lum) == 0 {
+		return nil
+	}
+	return Decode(lum, w, h, r)
+}
 
 // Decode returns the first code of the kinds r asks for in a frame of width by height pixels whose luminance is lum, a byte a pixel, row by row; nil when it finds none.
 func Decode(lum []byte, width, height int, r driver.ScanRequest) *driver.ScannedCode {

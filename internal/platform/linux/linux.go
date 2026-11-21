@@ -209,6 +209,7 @@ type window struct {
 	hotKeys         *globalHotKeys
 	colorPick       *portalColorPick
 	discovery       avahiDiscovery
+	scanner         *codeScanner
 	held            map[uint32]heldKey                  // the keys down, by keycode (keyPressedCallback)
 	heldKeys        bool                                // the app follows every key going down and up (driver.MountItem.HeldKeys)
 	heldMouse       bool                                // the app follows every mouse button going down and up (driver.MountItem.HeldMouseButtons)
@@ -978,6 +979,7 @@ func (w *window) shutdown(forced bool) {
 
 	w.closePermissions()
 	w.closeSaveDialogs()
+	w.closeScanner()
 	if w.primary {
 		// The app ends with this window: every hold goes, sent before the main loop returns.
 		endAwake(awakeEndTimeout)
@@ -1184,6 +1186,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemPickImages:
 			w.pickImages(*it.Pick, it.Count)
+			continue
+		case driver.ItemScanCode:
+			w.scanCode(*it.Scan, it.Count)
 			continue
 		case driver.ItemPickFiles:
 			w.pickFiles(*it.Files, it.Count)

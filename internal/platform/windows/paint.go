@@ -508,7 +508,9 @@ func (w *window) frame() {
 		f := frameOf(root)
 		p.draw(root, identity, f.Origin.X, f.Origin.Y)
 	}
-	p.drawAlert(driver.Size{Width: driver.Points(float64(client.Right) / w.scale), Height: driver.Points(float64(client.Bottom) / w.scale)})
+	size := driver.Size{Width: driver.Points(float64(client.Right) / w.scale), Height: driver.Points(float64(client.Bottom) / w.scale)}
+	p.drawScanner(size)
+	p.drawAlert(size)
 	p.drawCaptionButtons(client.Right)
 	p.drawPerf()
 	p.release()

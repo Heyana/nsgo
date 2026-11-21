@@ -441,6 +441,7 @@ type window struct {
 	// from (alert.go).
 	alertShown   driver.AlertConfig
 	alert        *shownAlert
+	scanner      *shownScanner
 	alertRestore *textInput
 	// alertWindow is set while a hidden root window shows as an app-level alert's own window.
 	alertWindow bool
@@ -1443,6 +1444,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemPickImages:
 			w.pickImages(*it.Pick, it.Count)
+			continue
+		case driver.ItemScanCode:
+			w.scanCode(*it.Scan, it.Count)
 			continue
 		case driver.ItemPickFiles:
 			w.pickFiles(*it.Files, it.Count)
@@ -2491,6 +2495,10 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	}
+	if message == wmSysCommand && wParam&0xfff0 == scClose && w.scanner != nil && w.scanner.ownWindow {
+		w.finishScanner(w.scanner, nil, "")
+		return 0
+	}
 	if message == taskbarCreated && taskbarCreated != 0 {
 		w.readdTrays()
 		return 0
@@ -2515,7 +2523,21 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	if message == wmMouseActivate && w.kind == driver.SurfacePanel && w.noActivate {
 		return maNoActivate
 	}
-	// An alert takes the pointer and the keys while it shows.
+	// A code scanner or alert takes the pointer and the keys while it shows.
+	if w.scanner != nil {
+		switch message {
+		case wmMouseMove, wmLButtonDown, wmLButtonUp:
+			x, y := int16(lParam&0xffff), int16(lParam>>16&0xffff)
+			w.scannerMouse(message, w.point(int32(x), int32(y)))
+			return 0
+		case wmRButtonDown, wmRButtonUp, wmMButtonDown, wmMButtonUp, wmMouseWheel, wmChar:
+			return 0
+		case wmKeyDown:
+			if w.scannerKey(wParam) {
+				return 0
+			}
+		}
+	}
 	if w.alert != nil {
 		switch message {
 		case wmMouseMove, wmLButtonDown, wmLButtonUp:
@@ -3021,6 +3043,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.removeTrays()
 		w.unregisterHotKeys()
 		endWindowGuide(w)
+		endWindowScanner(w)
 		w.releaseAllAwake()
 		w.loopback.Close()
 		// Clients let the window's providers go.

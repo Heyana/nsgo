@@ -221,7 +221,8 @@ func (s *surface) environment() driver.Environment {
 		AudioPlaybackControls: webAudioAvailable(),
 		HapticPatterns:        hapticPatternsAvailable(g.Get("navigator")),
 		// Browsers on touch screens open the camera for an input's capture.
-		Camera: w.pointerCoarse.Get("matches").Bool(),
+		Camera:   w.pointerCoarse.Get("matches").Bool(),
+		ScanCode: scanCodeAvailable(),
 		SafeArea: driver.Edges{
 			Top: length("paddingTop"), Right: length("paddingRight"),
 			Bottom: length("paddingBottom"), Left: length("paddingLeft"),

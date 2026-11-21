@@ -167,6 +167,7 @@ type surface struct {
 	longPress      js.Func
 	outside        []*view // views that report presses outside them
 	alerts         []*alert
+	scanner        *codeScanner
 	keys           []driver.KeyBinding // the keymap
 	live           js.Value            // the region announcements are read from
 	watch          watch
@@ -1527,6 +1528,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 			continue
 		case driver.ItemTakePhoto:
 			s.takePhoto(*it.Pick, it.Count)
+			continue
+		case driver.ItemScanCode:
+			s.scanCode(*it.Scan, it.Count)
 			continue
 		case driver.ItemPickFiles:
 			s.pickFiles(*it.Files, it.Count)
@@ -3102,6 +3106,11 @@ func (s *surface) escape(e js.Value) {
 		return
 	}
 	if e.Get("key").String() != "Escape" || e.Get("isComposing").Bool() || e.Get("defaultPrevented").Bool() {
+		return
+	}
+	if s.scanner != nil {
+		e.Call("preventDefault")
+		s.closeScanner(s.scanner, nil, "")
 		return
 	}
 	// A browser that delivers Escape to the page leaves full screen before

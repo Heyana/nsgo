@@ -117,6 +117,7 @@ func (w *window) environment() driver.Environment {
 		Lifecycle:        w.lifecycle(),
 		LowPowerMode:     lowPowerMode(),
 		Speak:            speakAvailable(),
+		ScanCode:         scanCameraAvailable(),
 		Gamepads:         true,
 		Audio:            loadSound(),
 		DiscoverServices: true,

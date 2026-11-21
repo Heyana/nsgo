@@ -80,3 +80,51 @@ func TestTurnTurnsAQuarterClockwise(t *testing.T) {
 		t.Errorf("turn = %v, want %v", got, want)
 	}
 }
+
+func TestHasReader(t *testing.T) {
+	if !HasReader(driver.ScanRequest{}) {
+		t.Error("default scan request should have a reader (QR)")
+	}
+	if HasReader(driver.ScanRequest{Kinds: []driver.CodeKind{driver.CodePDF417}}) {
+		t.Error("PDF417 alone should report no reader")
+	}
+	if !HasReader(driver.ScanRequest{Kinds: []driver.CodeKind{driver.CodePDF417, driver.CodeCode128}}) {
+		t.Error("PDF417 with Code128 should report a reader")
+	}
+}
+
+func TestDecodeBGRAWithStrideAndDownscale(t *testing.T) {
+	code, err := qrcode.NewQRCodeWriter().Encode("https://nsgo.dev/scan", gozxing.BarcodeFormat_QR_CODE, 400, 400, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const w, h = 1280, 960
+	stride := w*4 + 32 // padded row stride
+	bgra := make([]byte, h*stride)
+	for y := range h {
+		for x := range w {
+			off := y*stride + x*4
+			bgra[off], bgra[off+1], bgra[off+2], bgra[off+3] = 180, 180, 180, 255
+		}
+	}
+	b := code.Bounds()
+	for py := b.Min.Y; py < b.Max.Y; py++ {
+		for px := b.Min.X; px < b.Max.X; px++ {
+			r, g, bl, _ := code.At(px, py).RGBA()
+			off := (280+py-b.Min.Y)*stride + (440+px-b.Min.X)*4
+			bgra[off], bgra[off+1], bgra[off+2], bgra[off+3] = byte(bl>>8), byte(g>>8), byte(r>>8), 255
+		}
+	}
+	lum, outW, outH := LuminanceBGRA(bgra, w, h, stride, maxDecodeSide)
+	if outW != 960 || outH != 720 || len(lum) != 960*720 {
+		t.Fatalf("LuminanceBGRA downscaled to %dx%d (%d bytes), want 960x720", outW, outH, len(lum))
+	}
+	got := DecodeBGRA(bgra, w, h, stride, driver.ScanRequest{})
+	if got == nil || got.Kind != driver.CodeQR || got.Text != "https://nsgo.dev/scan" {
+		t.Fatalf("DecodeBGRA = %+v", got)
+	}
+	// Truncated buffer returns nil cleanly.
+	if got := DecodeBGRA(bgra[:100], w, h, stride, driver.ScanRequest{}); got != nil {
+		t.Errorf("truncated BGRA decoded %+v", got)
+	}
+}

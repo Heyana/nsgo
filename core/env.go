@@ -451,7 +451,7 @@ func (e *Env) SupportsGamepads() bool { return e.gamepads.Get() }
 // on touch screens.
 func (e *Env) CanTakePhoto() bool { return e.camera.Get() }
 
-// CanScanCode reports whether Scope.ScanCode shows a camera that reads codes here: iOS devices with a camera, not the simulator, and Android devices with one whose app's manifest asks for CAMERA (nsgo.yaml's android.permissions).
+// CanScanCode reports whether Scope.ScanCode shows a camera that reads codes here: macOS and iOS devices with a camera (not the simulator), Android devices with one whose app's manifest asks for CAMERA (nsgo.yaml's android.permissions), Windows machines with a camera, Linux desktops with the Camera portal and GStreamer pipewiresrc, and browsers with getUserMedia and BarcodeDetector.
 func (e *Env) CanScanCode() bool { return e.scanCode.Get() }
 
 // CanDiscoverServices reports whether this target supports local DNS-SD.
