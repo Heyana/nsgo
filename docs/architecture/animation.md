@@ -47,7 +47,7 @@ The app builds a graph once: `AnimatedValue`s, nodes derived with `Interpolate` 
 - Values are released with the owner that made them; derived nodes with the owner running when they were made.
 - `ProjectDecay` returns where a decay brings a value to rest, to choose the point a released drag snaps to, and `RubberBandClamp` resists a value past its bounds as a scroll view's edge does: plain functions for handlers. `Resist` is `RubberBandClamp` as a node, so a view bound to it through a value `PanValues` drags slows at its ends on the frame clock; the value keeps the drag's own translation, which a pan's end reports to spring back from.
 
-The graph travels as `ItemAnimation`, after the batch's views. Each backend keeps a `driver.Animator`, applies the ops, steps it once a frame while a run is live and draws what `Changed` reports with `AnimatedValues.Apply` over the view's style. Finished runs and reads come back as `EventAnimation`.
+The graph travels as `ItemAnimation`, after the batch's views. Each backend keeps a `driver.Animator`, applies the ops, steps it once a frame while a run is live and draws what `Changed` reports with `AnimatedValues.Apply` over the view's style. Finished runs and reads come back as `EventAnimation`. AppKit and UIKit share the dispatch of those changes to view styles, canvases, native props and sticky insets.
 
 | Target | Frame clock | Draws bound values with |
 | --- | --- | --- |

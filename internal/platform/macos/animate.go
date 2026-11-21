@@ -302,30 +302,16 @@ func (s *surface) held() bool { return len(s.waiting) > 0 || s.batches.Len() > 0
 
 // applyAnimated draws the animated values that changed.
 func (s *surface) applyAnimated() {
-	s.animator.Changed(func(id driver.NodeID, vals driver.AnimatedValues) {
-		if int(id) >= len(s.views) || s.views[id] == nil {
-			return
+	apple.ApplyAnimated(s.animator, func(id driver.NodeID) *view {
+		if int(id) < len(s.views) {
+			return s.views[id]
 		}
-		v := s.views[id]
-		recolor := (v.animated.Has(driver.PropTextColor) || vals.Has(driver.PropTextColor)) &&
-			(v.animated.TextColor != vals.TextColor || v.animated.Has(driver.PropTextColor) != vals.Has(driver.PropTextColor))
-		v.animated = vals
-		v.restyle()
-		if recolor {
-			v.redraw()
-		}
-	})
-	s.animator.ChangedCanvases(func(id driver.NodeID) {
-		if int(id) < len(s.views) && s.views[id] != nil {
-			s.views[id].redrawAnimated()
-		}
-	})
-	s.animator.ChangedNatives(func(id driver.NodeID, b driver.NativeBinding, num float64, col driver.Color) {
-		if int(id) < len(s.views) && s.views[id] != nil {
-			driver.SetAnimatedProp(s.views[id].component, b, num, col)
-		}
-	})
-	s.repinBound()
+		return nil
+	}, func(v *view) *driver.AnimatedValues {
+		return &v.animated
+	}, (*view).restyle, (*view).redraw, (*view).redrawAnimated, func(v *view) driver.NativeComponent {
+		return v.component
+	}, s.repinBound)
 }
 
 // restyle draws v's style with its animated values and what a layout
