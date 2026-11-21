@@ -3,10 +3,8 @@
 package web
 
 import (
-	"bytes"
-	stdimage "image"
-	"image/png"
 	"strings"
+	"syscall/js"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/webstyle"
@@ -31,7 +29,9 @@ func (s *surface) cursorURL(src driver.ImageSource) string {
 	var u string
 	switch {
 	case src.Pixels != nil && !src.Pixels.Rect.Empty():
-		u = cursorPixelsURL(src.Pixels)
+		canvas := js.Global().Get("document").Call("createElement", "canvas")
+		newPixelCanvas(canvas).put(driver.CopyPixels(src.Pixels), 0)
+		u = canvas.Call("toDataURL", "image/png").String()
 	case len(src.Data) > 0:
 		u = webstyle.DataURL(src.Data)
 	case strings.HasPrefix(src.URI, "asset:"):
@@ -49,12 +49,4 @@ func (s *surface) cursorURL(src driver.ImageSource) string {
 		s.cursorURLs[key] = u
 	}
 	return u
-}
-
-func cursorPixelsURL(p *stdimage.RGBA) string {
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, p); err != nil {
-		return ""
-	}
-	return webstyle.DataURL(buf.Bytes())
 }
