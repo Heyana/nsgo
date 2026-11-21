@@ -121,7 +121,7 @@ cx.PickImages(core.PickOptions{Limit: 1, MaxDimension: 2048}, func(files []core.
 
 ## 拉取式 PCM 音频
 
-用 `audio.NewOutput(cx, audio.OutputConfig{SampleRate: 48000, Channels: 2, Render: render})` 播放应用解码或合成的交错 Float32 PCM。`Start` 开始拉取采样，`Pause` 停止拉取，所属作用域销毁时会关闭输出。macOS、iOS、Android 和 Web 支持此输出，其他目标返回 `audio.ErrUnsupported`。
+用 `audio.NewOutput(cx, audio.OutputConfig{SampleRate: 48000, Channels: 2, Render: render})` 播放应用解码或合成的交错 Float32 PCM。`Start` 开始拉取采样，`Pause` 停止拉取，所属作用域销毁时会关闭输出。macOS、iOS、Android、Windows 和 Web 支持此输出，其他目标返回 `audio.ErrUnsupported`。
 
 `Render` 返回填入的音频帧数。它在音频线程上运行，须避免阻塞、分配内存或访问响应式图。填入的帧数不足时，剩余部分播放静音并增加一次 `Underruns`。`Position` 返回单调递增的帧数及该帧对应的主机时间。`Flush` 丢弃待播放的帧，`Latency` 返回缓冲延迟。音频输出线路变化或会话被中断时，输出暂停并在引擎中调用 `OnInterrupt`。应用可调用 `Start` 恢复。
 
