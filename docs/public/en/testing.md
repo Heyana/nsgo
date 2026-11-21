@@ -78,7 +78,7 @@ Headless Linux and Android tests can check the package paths passed to the insta
 
 `nsgotest.LiveActivities(true)` records starts, updates, alerts and ends. `app.LiveActivities()` returns the activities in start order, with their content changes and any final content. Use `nsgotest.LiveActivities(false)` to make starts return `widget.ErrActivitiesDisabled`. These options take over the corresponding process-wide service for the test, including on a native target. Run tests that call these services sequentially.
 
-Headless tests simulate game controllers with `app.ConnectGamepad(id, name)`, `app.DisconnectGamepad(id)`, `app.SetGamepadButton(id, btn, value)` and `app.SetGamepadAxis(id, axis, value)`: connect and disconnect settle and rerender scopes reading `gamepad.Pads`, while button and axis updates take effect on the next frame for `gamepad.State`. Under `-target` they skip the test.
+Headless tests simulate game controllers with `app.ConnectGamepad(id, name)`, `app.SetGamepadInfo(id, family, vendorID, productID, canRumble)`, `app.DisconnectGamepad(id)`, `app.SetGamepadButton(id, btn, value)` and `app.SetGamepadAxis(id, axis, value)`: connect, info updates and disconnect settle and rerender scopes reading `gamepad.Pads`, while button and axis updates take effect on the next frame for `gamepad.State`. `app.GamepadRumbles()` and `app.LastGamepadRumble(id)` inspect recorded `gamepad.RumbleEvent` start and stop commands. Under `-target` they skip the test.
 
 ## Run the tests
 

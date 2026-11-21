@@ -2,7 +2,12 @@ package dev.oneo.nsgo;
 
 import android.content.Context;
 import android.hardware.input.InputManager;
+import android.os.Build;
+import android.os.CombinedVibration;
 import android.os.Handler;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.util.SparseArray;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -16,7 +21,7 @@ import java.nio.charset.StandardCharsets;
 /**
  * Tracks connected game controllers through InputManager and forwards KeyEvent
  * and MotionEvent readings in the W3C Standard Gamepad layout to Go over
- * Protocol.GAMEPAD.
+ * Protocol.GAMEPAD. Also drives controller vibration on Protocol.GAMEPAD_RUMBLE.
  */
 final class Gamepads implements InputManager.InputDeviceListener {
     private static final int BUTTON_COUNT = 17;
@@ -52,12 +57,18 @@ final class Gamepads implements InputManager.InputDeviceListener {
     private static final class Pad {
         final int id;
         final String name;
+        final int vendorId;
+        final int productId;
+        final boolean canRumble;
         final float[] buttons = new float[BUTTON_COUNT];
         final float[] axes = new float[AXIS_COUNT];
 
-        Pad(int id, String name) {
+        Pad(int id, String name, int vendorId, int productId, boolean canRumble) {
             this.id = id;
             this.name = name != null && !name.isEmpty() ? name : "Gamepad";
+            this.vendorId = vendorId & 0xFFFF;
+            this.productId = productId & 0xFFFF;
+            this.canRumble = canRumble;
         }
     }
 
@@ -84,6 +95,10 @@ final class Gamepads implements InputManager.InputDeviceListener {
         if (!started || manager == null) return;
         started = false;
         manager.unregisterInputDeviceListener(this);
+        for (int i = 0; i < pads.size(); i++) {
+            InputDevice dev = manager.getInputDevice(pads.keyAt(i));
+            if (dev != null) stopRumble(dev);
+        }
         pads.clear();
     }
 
@@ -102,6 +117,89 @@ final class Gamepads implements InputManager.InputDeviceListener {
         if (pads.indexOfKey(deviceId) < 0) return;
         pads.remove(deviceId);
         sendDisconnect(deviceId);
+    }
+
+    void rumble(int deviceId, float lowFreq, float highFreq, int durationMs) {
+        if (manager == null) return;
+        InputDevice dev = manager.getInputDevice(deviceId);
+        if (dev == null) return;
+        lowFreq = clamp01(lowFreq);
+        highFreq = clamp01(highFreq);
+        if (durationMs <= 0 || (lowFreq <= 0f && highFreq <= 0f)) {
+            stopRumble(dev);
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 31) {
+            VibratorManager vm = dev.getVibratorManager();
+            if (vm != null) {
+                int[] ids = vm.getVibratorIds();
+                if (ids.length >= 2) {
+                    CombinedVibration.ParallelCombination combo = CombinedVibration.startParallel();
+                    boolean any = false;
+                    if (lowFreq > 0f) {
+                        combo.addVibrator(ids[0], VibrationEffect.createOneShot(durationMs, toAmplitude(lowFreq)));
+                        any = true;
+                    }
+                    if (highFreq > 0f) {
+                        combo.addVibrator(ids[1], VibrationEffect.createOneShot(durationMs, toAmplitude(highFreq)));
+                        any = true;
+                    }
+                    if (any) {
+                        vm.vibrate(combo.combine());
+                    }
+                    return;
+                }
+                if (ids.length == 1) {
+                    int amp = toAmplitude(Math.max(lowFreq, highFreq));
+                    vm.vibrate(CombinedVibration.createParallel(VibrationEffect.createOneShot(durationMs, amp)));
+                    return;
+                }
+            }
+        }
+        vibrateLegacy(dev, Math.max(lowFreq, highFreq), durationMs);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void vibrateLegacy(InputDevice dev, float intensity, int durationMs) {
+        Vibrator v = dev.getVibrator();
+        if (v != null && v.hasVibrator()) {
+            v.vibrate(VibrationEffect.createOneShot(durationMs, toAmplitude(intensity)));
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void stopRumble(InputDevice dev) {
+        if (Build.VERSION.SDK_INT >= 31) {
+            VibratorManager vm = dev.getVibratorManager();
+            if (vm != null && vm.getVibratorIds().length > 0) {
+                vm.cancel();
+                return;
+            }
+        }
+        Vibrator v = dev.getVibrator();
+        if (v != null && v.hasVibrator()) {
+            v.cancel();
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static boolean hasVibrator(InputDevice dev) {
+        if (Build.VERSION.SDK_INT >= 31) {
+            VibratorManager vm = dev.getVibratorManager();
+            if (vm != null) {
+                int[] ids = vm.getVibratorIds();
+                for (int id : ids) {
+                    Vibrator v = vm.getVibrator(id);
+                    if (v != null && v.hasVibrator()) return true;
+                }
+            }
+        }
+        Vibrator v = dev.getVibrator();
+        return v != null && v.hasVibrator();
+    }
+
+    private static int toAmplitude(float intensity) {
+        return Math.max(1, Math.min(255, Math.round(intensity * 255f)));
     }
 
     boolean onKeyEvent(KeyEvent e) {
@@ -161,7 +259,7 @@ final class Gamepads implements InputManager.InputDeviceListener {
         if (dev == null || !isGamepadSource(dev.getSources())) return null;
         Pad existing = pads.get(deviceId);
         if (existing != null) return existing;
-        Pad pad = new Pad(deviceId, dev.getName());
+        Pad pad = new Pad(deviceId, dev.getName(), dev.getVendorId(), dev.getProductId(), hasVibrator(dev));
         pads.put(deviceId, pad);
         sendConnect(pad);
         return pad;
@@ -216,11 +314,14 @@ final class Gamepads implements InputManager.InputDeviceListener {
 
     private void sendConnect(Pad pad) {
         byte[] name = pad.name.getBytes(StandardCharsets.UTF_8);
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream(9 + name.length);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(18 + name.length);
         DataOutputStream out = new DataOutputStream(bytes);
         try {
             out.writeByte(Protocol.GAMEPAD_CONNECT);
             out.writeInt(pad.id);
+            out.writeInt(pad.vendorId);
+            out.writeInt(pad.productId);
+            out.writeByte(pad.canRumble ? 1 : 0);
             out.writeInt(name.length);
             out.write(name);
         } catch (IOException impossible) {

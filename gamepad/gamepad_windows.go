@@ -4,6 +4,7 @@ package gamepad
 
 import (
 	"fmt"
+	"math"
 	"structs"
 	"sync"
 	"syscall"
@@ -54,19 +55,42 @@ type xinputState struct {
 	gamepad      xinputGamepad
 }
 
+type xinputVibration struct {
+	_               structs.HostLayout
+	leftMotorSpeed  uint16
+	rightMotorSpeed uint16
+}
+
+type xinputCapabilities struct {
+	_         structs.HostLayout
+	typ       uint8
+	subType   uint8
+	flags     uint16
+	gamepad   xinputGamepad
+	vibration xinputVibration
+}
+
 var (
-	xinputOnce     sync.Once
-	xinputGetState *syscall.LazyProc
-	winDefault     = &windowsSource{}
+	xinputOnce            sync.Once
+	xinputGetState        *syscall.LazyProc
+	xinputGetCapabilities *syscall.LazyProc
+	xinputSetState        *syscall.LazyProc
+	winDefault            = &windowsSource{}
 )
 
 func loadXInput() *syscall.LazyProc {
 	xinputOnce.Do(func() {
 		for _, name := range []string{"xinput1_4.dll", "xinput1_3.dll", "xinput9_1_0.dll"} {
 			dll := syscall.NewLazyDLL(name)
-			proc := dll.NewProc("XInputGetState")
-			if proc.Find() == nil {
-				xinputGetState = proc
+			getState := dll.NewProc("XInputGetState")
+			if getState.Find() == nil {
+				xinputGetState = getState
+				if p := dll.NewProc("XInputGetCapabilities"); p.Find() == nil {
+					xinputGetCapabilities = p
+				}
+				if p := dll.NewProc("XInputSetState"); p.Find() == nil {
+					xinputSetState = p
+				}
 				return
 			}
 		}
@@ -78,7 +102,13 @@ func platformSource() driver.GamepadSource {
 	return winDefault
 }
 
-type windowsSource struct{}
+type windowsSource struct {
+	mu        sync.Mutex
+	connected [xinputMaxUsers]bool
+	canRumble [xinputMaxUsers]bool
+	timers    [xinputMaxUsers]*time.Timer
+	gens      [xinputMaxUsers]uint64
+}
 
 func (w *windowsSource) Poll() []driver.GamepadState {
 	proc := loadXInput()
@@ -90,11 +120,45 @@ func (w *windowsSource) Poll() []driver.GamepadState {
 		var st xinputState
 		r, _, _ := proc.Call(uintptr(slot), uintptr(unsafe.Pointer(&st)))
 		if r != 0 {
+			w.mu.Lock()
+			if w.connected[slot] {
+				w.connected[slot] = false
+				w.canRumble[slot] = false
+				if w.timers[slot] != nil {
+					w.timers[slot].Stop()
+					w.timers[slot] = nil
+				}
+				w.gens[slot]++
+			}
+			w.mu.Unlock()
 			continue
 		}
-		out = append(out, mapXInputState(slot, st.gamepad))
+		w.mu.Lock()
+		wasConnected := w.connected[slot]
+		canRumble := w.canRumble[slot]
+		w.mu.Unlock()
+		if !wasConnected {
+			canRumble = queryXInputCanRumble(slot)
+			w.mu.Lock()
+			w.connected[slot] = true
+			w.canRumble[slot] = canRumble
+			w.mu.Unlock()
+		}
+		out = append(out, mapXInputState(slot, st.gamepad, canRumble))
 	}
 	return out
+}
+
+func queryXInputCanRumble(slot int) bool {
+	if xinputSetState == nil || xinputGetCapabilities == nil {
+		return false
+	}
+	var caps xinputCapabilities
+	r, _, _ := xinputGetCapabilities.Call(uintptr(slot), 0, uintptr(unsafe.Pointer(&caps)))
+	if r != 0 {
+		return false
+	}
+	return caps.vibration.leftMotorSpeed != 0 || caps.vibration.rightMotorSpeed != 0
 }
 
 func (w *windowsSource) connectedMask() uint8 {
@@ -137,10 +201,59 @@ func (w *windowsSource) Watch(onChange func()) func() {
 	return func() { once.Do(func() { close(done) }) }
 }
 
-func mapXInputState(slot int, g xinputGamepad) driver.GamepadState {
+func (w *windowsSource) Rumble(id int, lowFreq, highFreq float32, duration time.Duration) {
+	if loadXInput() == nil || xinputSetState == nil || id < 0 || id >= xinputMaxUsers {
+		return
+	}
+	vib := xinputVibration{
+		leftMotorSpeed:  uint16(math.Round(float64(clamp01(lowFreq)) * 0xffff)),
+		rightMotorSpeed: uint16(math.Round(float64(clamp01(highFreq)) * 0xffff)),
+	}
+	w.mu.Lock()
+	if w.timers[id] != nil {
+		w.timers[id].Stop()
+		w.timers[id] = nil
+	}
+	w.gens[id]++
+	gen := w.gens[id]
+	_, _, _ = xinputSetState.Call(uintptr(id), uintptr(unsafe.Pointer(&vib)))
+	if duration > 0 && (vib.leftMotorSpeed != 0 || vib.rightMotorSpeed != 0) {
+		w.timers[id] = time.AfterFunc(duration, func() {
+			w.mu.Lock()
+			if w.gens[id] != gen {
+				w.mu.Unlock()
+				return
+			}
+			w.timers[id] = nil
+			var zero xinputVibration
+			_, _, _ = xinputSetState.Call(uintptr(id), uintptr(unsafe.Pointer(&zero)))
+			w.mu.Unlock()
+		})
+	}
+	w.mu.Unlock()
+}
+
+func (w *windowsSource) StopRumble(id int) {
+	if loadXInput() == nil || xinputSetState == nil || id < 0 || id >= xinputMaxUsers {
+		return
+	}
+	w.mu.Lock()
+	if w.timers[id] != nil {
+		w.timers[id].Stop()
+		w.timers[id] = nil
+	}
+	w.gens[id]++
+	var zero xinputVibration
+	_, _, _ = xinputSetState.Call(uintptr(id), uintptr(unsafe.Pointer(&zero)))
+	w.mu.Unlock()
+}
+
+func mapXInputState(slot int, g xinputGamepad, canRumble bool) driver.GamepadState {
 	pad := driver.GamepadState{
-		ID:   slot,
-		Name: fmt.Sprintf("XInput Controller %d", slot+1),
+		ID:        slot,
+		Name:      fmt.Sprintf("XInput Controller %d", slot+1),
+		Family:    driver.GamepadFamilyXbox,
+		CanRumble: canRumble,
 	}
 	btn := func(mask uint16) float32 {
 		if g.buttons&mask != 0 {

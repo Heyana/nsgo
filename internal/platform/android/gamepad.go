@@ -18,7 +18,11 @@ func readGamepad(r *reader) {
 	id := int(int32(r.u32()))
 	switch op {
 	case gamepadConnect:
-		driver.ReportGamepadConnect(id, r.str())
+		vendorID := uint16(r.u32())
+		productID := uint16(r.u32())
+		canRumble := r.byte() != 0
+		name := r.str()
+		driver.ReportGamepadConnectInfo(id, name, vendorID, productID, canRumble)
 	case gamepadDisconnect:
 		driver.ReportGamepadDisconnect(id)
 	case gamepadState:

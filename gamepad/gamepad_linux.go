@@ -3,6 +3,7 @@
 package gamepad
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -22,8 +23,13 @@ const (
 	evSyn = 0x00
 	evKey = 0x01
 	evAbs = 0x03
+	evFF  = 0x15
 
 	synDropped = 3
+
+	// Force-feedback rumble constants.
+	ffRumble = 0x50
+	ffMax    = 0x7f
 
 	// Gamepad face & shoulder buttons.
 	btnJoystick = 0x120
@@ -65,6 +71,7 @@ const (
 	iocTypeShift = 8
 	iocSizeShift = 16
 	iocDirShift  = 30
+	iocWrite     = 1
 	iocRead      = 2
 )
 
@@ -72,10 +79,25 @@ func evIor(nr, size uintptr) uintptr {
 	return (iocRead << iocDirShift) | (uintptr('E') << iocTypeShift) | (nr << iocNRShift) | (size << iocSizeShift)
 }
 
+func evIow(nr, size uintptr) uintptr {
+	return (iocWrite << iocDirShift) | (uintptr('E') << iocTypeShift) | (nr << iocNRShift) | (size << iocSizeShift)
+}
+
+func eviocGID() uintptr                  { return evIor(0x02, unsafe.Sizeof(evdevInputID{})) }
 func eviocGName(size uintptr) uintptr    { return evIor(0x06, size) }
 func eviocGKey(size uintptr) uintptr     { return evIor(0x18, size) }
 func eviocGBit(ev, size uintptr) uintptr { return evIor(0x20+ev, size) }
 func eviocGAbs(abs uintptr) uintptr      { return evIor(0x40+abs, unsafe.Sizeof(evdevAbsInfo{})) }
+func eviocSFF() uintptr                  { return evIow(0x80, unsafe.Sizeof(evdevFFEffect{})) }
+func eviocRMFF() uintptr                 { return evIow(0x81, unsafe.Sizeof(int32(0))) }
+
+type evdevInputID struct {
+	_       structs.HostLayout
+	bustype uint16
+	vendor  uint16
+	product uint16
+	version uint16
+}
 
 type evdevAbsInfo struct {
 	_          structs.HostLayout
@@ -95,11 +117,31 @@ type evdevInputEvent struct {
 	value int32
 }
 
+// evdevFFEffect matches Linux <linux/input.h> struct ff_effect with its
+// ff_rumble_effect union arm. Union size matches struct ff_periodic_effect
+// (32 bytes on 64-bit, 28 bytes on 32-bit; total 48 / 44 bytes).
+type evdevFFEffect struct {
+	_               structs.HostLayout
+	typ             uint16
+	id              int16
+	direction       uint16
+	triggerButton   uint16
+	triggerInterval uint16
+	replayLength    uint16
+	replayDelay     uint16
+	_pad            uint16
+	strongMagnitude uint16
+	weakMagnitude   uint16
+	_uPad           [5]uint32
+	_uPtr           uintptr
+}
+
 type evdevDevice struct {
 	id         int
 	path       string
 	fd         int
 	name       string
+	ffEffectID int16
 	absInfo    map[uint16]evdevAbsInfo
 	hasTrigger [2]bool // true when ABS_Z / ABS_RZ reports analog triggers
 	state      driver.GamepadState
@@ -128,7 +170,7 @@ func (l *linuxSource) Poll() []driver.GamepadState {
 	}
 	for path, dev := range l.devices {
 		if !dev.drain() {
-			_ = syscall.Close(dev.fd)
+			dev.close()
 			delete(l.devices, path)
 		}
 	}
@@ -173,6 +215,53 @@ func (l *linuxSource) Watch(onChange func()) func() {
 	return func() { once.Do(func() { close(done) }) }
 }
 
+func (l *linuxSource) Rumble(id int, lowFreq, highFreq float32, duration time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	dev := l.findByIDLocked(id)
+	if dev == nil || !dev.state.CanRumble {
+		return
+	}
+	ms := duration.Milliseconds()
+	if ms <= 0 && duration > 0 {
+		ms = 1
+	}
+	if ms > 0xffff {
+		ms = 0xffff
+	}
+	eff := evdevFFEffect{
+		typ:             ffRumble,
+		id:              dev.ffEffectID,
+		replayLength:    uint16(ms),
+		strongMagnitude: uint16(math.Round(float64(clamp01(lowFreq)) * 0xffff)),
+		weakMagnitude:   uint16(math.Round(float64(clamp01(highFreq)) * 0xffff)),
+	}
+	if err := ioctlPtr(dev.fd, eviocSFF(), unsafe.Pointer(&eff)); err != nil {
+		return
+	}
+	dev.ffEffectID = eff.id
+	dev.writeFFPlay(1)
+}
+
+func (l *linuxSource) StopRumble(id int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	dev := l.findByIDLocked(id)
+	if dev == nil || dev.ffEffectID < 0 {
+		return
+	}
+	dev.writeFFPlay(0)
+}
+
+func (l *linuxSource) findByIDLocked(id int) *evdevDevice {
+	for _, dev := range l.devices {
+		if dev.id == id {
+			return dev
+		}
+	}
+	return nil
+}
+
 func (l *linuxSource) rescanLocked() bool {
 	changed := false
 	entries, err := os.ReadDir("/dev/input")
@@ -201,7 +290,7 @@ func (l *linuxSource) rescanLocked() bool {
 
 	for path, dev := range l.devices {
 		if !present[path] {
-			_ = syscall.Close(dev.fd)
+			dev.close()
 			delete(l.devices, path)
 			changed = true
 		}
@@ -232,9 +321,14 @@ func (l *linuxSource) nextFreeIDLocked() int {
 }
 
 func openEvdevGamepad(path string, id int) *evdevDevice {
-	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	writable := true
+	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
 	if err != nil {
-		return nil
+		writable = false
+		fd, err = syscall.Open(path, syscall.O_RDONLY|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+		if err != nil {
+			return nil
+		}
 	}
 	var evBits [4]byte
 	if err := ioctlBytes(fd, eviocGBit(0, uintptr(len(evBits))), evBits[:]); err != nil {
@@ -270,13 +364,36 @@ func openEvdevGamepad(path string, id int) *evdevDevice {
 		}
 	}
 
+	var inID evdevInputID
+	var vid, pid uint16
+	if ioctlPtr(fd, eviocGID(), unsafe.Pointer(&inID)) == nil {
+		vid = inID.vendor
+		pid = inID.product
+	}
+
+	canRumble := false
+	if writable && testBit(evBits[:], evFF) {
+		var ffBits [(ffMax / 8) + 1]byte
+		if ioctlBytes(fd, eviocGBit(evFF, uintptr(len(ffBits))), ffBits[:]) == nil && testBit(ffBits[:], ffRumble) {
+			canRumble = true
+		}
+	}
+
 	dev := &evdevDevice{
-		id:      id,
-		path:    path,
-		fd:      fd,
-		name:    name,
-		absInfo: map[uint16]evdevAbsInfo{},
-		state:   driver.GamepadState{ID: id, Name: name},
+		id:         id,
+		path:       path,
+		fd:         fd,
+		name:       name,
+		ffEffectID: -1,
+		absInfo:    map[uint16]evdevAbsInfo{},
+		state: driver.GamepadState{
+			ID:        id,
+			Name:      name,
+			VendorID:  vid,
+			ProductID: pid,
+			Family:    driver.GamepadFamily(DetectFamily(vid, pid, name)),
+			CanRumble: canRumble,
+		},
 	}
 	for _, code := range []uint16{absX, absY, absZ, absRX, absRY, absRZ, absHat0X, absHat0Y} {
 		if !testBit(absBits[:], int(code)) {
@@ -295,6 +412,28 @@ func openEvdevGamepad(path string, id int) *evdevDevice {
 	}
 	dev.resyncKeys()
 	return dev
+}
+
+func (d *evdevDevice) writeFFPlay(value int32) {
+	if d.ffEffectID < 0 {
+		return
+	}
+	ev := evdevInputEvent{
+		typ:   evFF,
+		code:  uint16(d.ffEffectID),
+		value: value,
+	}
+	buf := unsafe.Slice((*byte)(unsafe.Pointer(&ev)), unsafe.Sizeof(ev))
+	_, _ = syscall.Write(d.fd, buf)
+}
+
+func (d *evdevDevice) close() {
+	if d.ffEffectID >= 0 {
+		d.writeFFPlay(0)
+		_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, uintptr(d.fd), eviocRMFF(), uintptr(d.ffEffectID))
+		d.ffEffectID = -1
+	}
+	_ = syscall.Close(d.fd)
 }
 
 func (d *evdevDevice) resyncKeys() {

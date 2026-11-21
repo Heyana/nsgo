@@ -12,6 +12,7 @@ import (
 	"math"
 	"slices"
 	"sync/atomic"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -72,10 +73,23 @@ const (
 
 // Pad is a connected game controller's state in the W3C Standard Gamepad layout.
 type Pad struct {
-	ID      int
-	Name    string
-	Buttons [ButtonCount]float32
-	Axes    [AxisCount]float32
+	ID        int
+	Name      string
+	VendorID  uint16
+	ProductID uint16
+	Family    Family
+	CanRumble bool
+	Buttons   [ButtonCount]float32
+	Axes      [AxisCount]float32
+}
+
+// RumbleEvent records one rumble command or stop sent to a controller.
+type RumbleEvent struct {
+	ID       int
+	LowFreq  float32
+	HighFreq float32
+	Duration time.Duration
+	Stopped  bool
 }
 
 // Pressed reports whether button b is pressed (value >= 0.5).
@@ -87,8 +101,23 @@ func (p Pad) Pressed(b Button) bool {
 }
 
 type padIdentity struct {
-	ID   int
-	Name string
+	ID        int
+	Name      string
+	VendorID  uint16
+	ProductID uint16
+	Family    Family
+	CanRumble bool
+}
+
+type activeRumble struct {
+	gen       uint64
+	owner     *core.Scope
+	stopTimer func() bool
+}
+
+type scopeRumbleWatch struct {
+	stopEffect func()
+	pads       map[int]uint64
 }
 
 type runtimeState struct {
@@ -101,6 +130,10 @@ type runtimeState struct {
 	stopWatch  func()
 	syncQueued atomic.Bool
 	closed     bool
+
+	nextGen uint64
+	rumbles map[int]*activeRumble
+	scopes  map[*core.Scope]*scopeRumbleWatch
 }
 
 var stateKey = core.NewKey[*runtimeState]("gamepad.state", nil)
@@ -139,12 +172,70 @@ func State(cx *core.Scope, id int) (Pad, bool) {
 	} else {
 		st.refreshSnapshot()
 	}
-	for _, p := range st.snapshot {
-		if p.ID == id {
-			return p, true
-		}
+	return st.findPad(id)
+}
+
+// Rumble drives controller id's low-frequency (left/heavy) and high-frequency
+// (right/light) rumble motors for duration, replacing any running rumble on
+// that controller. Intensities are clamped to [0, 1] (NaN becomes 0).
+//
+// A controller that is disconnected or has CanRumble == false does nothing.
+// Zero intensities or a non-positive duration stops any running rumble.
+// Rumble stops automatically after duration, when the app enters the background
+// or loses focus (cx.Env().Lifecycle() != core.LifecycleActive), when cx is
+// disposed, or when the controller disconnects.
+func Rumble(cx *core.Scope, id int, lowFreq, highFreq float32, duration time.Duration) {
+	if cx == nil || cx.Disposed() {
+		return
 	}
-	return Pad{}, false
+	root, seq, inFrame := core.FrameState(cx)
+	if root == nil {
+		return
+	}
+	lowFreq = clamp01(lowFreq)
+	highFreq = clamp01(highFreq)
+	if duration <= 0 || (lowFreq == 0 && highFreq == 0) {
+		StopRumble(cx, id)
+		return
+	}
+	if core.Untracked(cx, func() core.Lifecycle { return cx.Env().Lifecycle() }) != core.LifecycleActive {
+		return
+	}
+	st := ensureState(root)
+	if inFrame {
+		st.pollForFrame(seq, false)
+	} else {
+		st.refreshSnapshot()
+	}
+	pad, ok := st.findPad(id)
+	if !ok || !pad.CanRumble {
+		return
+	}
+	st.startRumble(cx, id, lowFreq, highFreq, duration)
+}
+
+// StopRumble stops any running rumble on controller id.
+// A controller that is disconnected or has CanRumble == false does nothing.
+func StopRumble(cx *core.Scope, id int) {
+	if cx == nil {
+		return
+	}
+	root, seq, inFrame := core.FrameState(cx)
+	if root == nil {
+		return
+	}
+	st := ensureState(root)
+	if st.stopRumble(id) {
+		return
+	}
+	if inFrame {
+		st.pollForFrame(seq, false)
+	} else {
+		st.refreshSnapshot()
+	}
+	if pad, ok := st.findPad(id); ok && pad.CanRumble {
+		st.src.StopRumble(id)
+	}
 }
 
 func ensureState(root *core.Scope) *runtimeState {
@@ -164,6 +255,8 @@ func ensureState(root *core.Scope) *runtimeState {
 			src:       src,
 			connected: core.NewSignalFunc(root, padIdentities(initial), slices.Equal[[]padIdentity]),
 			snapshot:  initial,
+			rumbles:   map[int]*activeRumble{},
+			scopes:    map[*core.Scope]*scopeRumbleWatch{},
 		}
 		st.stopWatch = src.Watch(func() {
 			if st.syncQueued.CompareAndSwap(false, true) {
@@ -187,9 +280,150 @@ func (st *runtimeState) close() {
 		return
 	}
 	st.closed = true
+	st.stopAllRumbles()
 	if st.stopWatch != nil {
 		st.stopWatch()
 		st.stopWatch = nil
+	}
+}
+
+func (st *runtimeState) findPad(id int) (Pad, bool) {
+	for _, p := range st.snapshot {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return Pad{}, false
+}
+
+func (st *runtimeState) watchScope(cx *core.Scope) *scopeRumbleWatch {
+	if w, ok := st.scopes[cx]; ok {
+		return w
+	}
+	w := &scopeRumbleWatch{pads: map[int]uint64{}}
+	st.scopes[cx] = w
+	cx.Run(func() {
+		w.stopEffect = cx.Effect(func() {
+			if cx.Env().Lifecycle() != core.LifecycleActive {
+				st.stopScopeRumbles(cx)
+			}
+		})
+		cx.Cleanup(func() {
+			st.stopScopeRumbles(cx)
+			if w.stopEffect != nil {
+				w.stopEffect()
+				w.stopEffect = nil
+			}
+			delete(st.scopes, cx)
+		})
+	})
+	return w
+}
+
+func (st *runtimeState) startRumble(cx *core.Scope, id int, lowFreq, highFreq float32, duration time.Duration) {
+	// Cancel any prior timer/ownership for this pad without emitting an extra stop.
+	if prev, ok := st.rumbles[id]; ok {
+		if prev.stopTimer != nil {
+			prev.stopTimer()
+		}
+		if w, ok := st.scopes[prev.owner]; ok && w.pads[id] == prev.gen {
+			delete(w.pads, id)
+		}
+		delete(st.rumbles, id)
+	}
+
+	w := st.watchScope(cx)
+	st.nextGen++
+	gen := st.nextGen
+	var stopTimer func() bool
+	cx.Run(func() {
+		stopTimer = cx.AfterFunc(duration, func() {
+			st.stopRumbleIfGen(id, gen)
+		})
+	})
+	st.rumbles[id] = &activeRumble{
+		gen:       gen,
+		owner:     cx,
+		stopTimer: stopTimer,
+	}
+	w.pads[id] = gen
+	st.src.Rumble(id, lowFreq, highFreq, duration)
+}
+
+func (st *runtimeState) stopRumble(id int) bool {
+	ar, ok := st.rumbles[id]
+	if !ok {
+		return false
+	}
+	delete(st.rumbles, id)
+	if ar.stopTimer != nil {
+		ar.stopTimer()
+	}
+	if w, ok := st.scopes[ar.owner]; ok && w.pads[id] == ar.gen {
+		delete(w.pads, id)
+	}
+	st.src.StopRumble(id)
+	return true
+}
+
+func (st *runtimeState) stopRumbleIfGen(id int, gen uint64) {
+	ar, ok := st.rumbles[id]
+	if !ok || ar.gen != gen {
+		return
+	}
+	st.stopRumble(id)
+}
+
+func (st *runtimeState) stopScopeRumbles(cx *core.Scope) {
+	w, ok := st.scopes[cx]
+	if !ok || len(w.pads) == 0 {
+		return
+	}
+	type pair struct {
+		id  int
+		gen uint64
+	}
+	list := make([]pair, 0, len(w.pads))
+	for id, gen := range w.pads {
+		list = append(list, pair{id: id, gen: gen})
+	}
+	for _, p := range list {
+		st.stopRumbleIfGen(p.id, p.gen)
+	}
+}
+
+func (st *runtimeState) stopAllRumbles() {
+	if len(st.rumbles) == 0 {
+		return
+	}
+	ids := make([]int, 0, len(st.rumbles))
+	for id := range st.rumbles {
+		ids = append(ids, id)
+	}
+	for _, id := range ids {
+		st.stopRumble(id)
+	}
+}
+
+func (st *runtimeState) pruneDisconnectedRumbles(pads []Pad) {
+	if len(st.rumbles) == 0 {
+		return
+	}
+	var gone []int
+	for id := range st.rumbles {
+		alive := false
+		for _, p := range pads {
+			if p.ID == id {
+				alive = true
+				break
+			}
+		}
+		if !alive {
+			gone = append(gone, id)
+		}
+	}
+	for _, id := range gone {
+		st.stopRumble(id)
 	}
 }
 
@@ -197,6 +431,7 @@ func (st *runtimeState) sync() {
 	pads := fromDriverPads(st.src.Poll())
 	st.snapshot = pads
 	st.hasSnap = false
+	st.pruneDisconnectedRumbles(pads)
 	st.connected.Set(padIdentities(pads))
 }
 
@@ -208,14 +443,17 @@ func (st *runtimeState) pollForFrame(seq uint64, updateSignal bool) {
 	st.snapshot = pads
 	st.snapSeq = seq
 	st.hasSnap = true
+	st.pruneDisconnectedRumbles(pads)
 	if updateSignal {
 		st.connected.Set(padIdentities(pads))
 	}
 }
 
 func (st *runtimeState) refreshSnapshot() {
-	st.snapshot = fromDriverPads(st.src.Poll())
+	pads := fromDriverPads(st.src.Poll())
+	st.snapshot = pads
 	st.hasSnap = false
+	st.pruneDisconnectedRumbles(pads)
 }
 
 func fromDriverPads(in []driver.GamepadState) []Pad {
@@ -225,10 +463,14 @@ func fromDriverPads(in []driver.GamepadState) []Pad {
 	out := make([]Pad, len(in))
 	for i, s := range in {
 		out[i] = Pad{
-			ID:      s.ID,
-			Name:    s.Name,
-			Buttons: s.Buttons,
-			Axes:    s.Axes,
+			ID:        s.ID,
+			Name:      s.Name,
+			VendorID:  s.VendorID,
+			ProductID: s.ProductID,
+			Family:    Family(s.Family),
+			CanRumble: s.CanRumble,
+			Buttons:   s.Buttons,
+			Axes:      s.Axes,
 		}
 	}
 	slices.SortFunc(out, func(a, b Pad) int { return a.ID - b.ID })
@@ -241,7 +483,14 @@ func padIdentities(pads []Pad) []padIdentity {
 	}
 	ids := make([]padIdentity, len(pads))
 	for i, p := range pads {
-		ids[i] = padIdentity{ID: p.ID, Name: p.Name}
+		ids[i] = padIdentity{
+			ID:        p.ID,
+			Name:      p.Name,
+			VendorID:  p.VendorID,
+			ProductID: p.ProductID,
+			Family:    p.Family,
+			CanRumble: p.CanRumble,
+		}
 	}
 	return ids
 }

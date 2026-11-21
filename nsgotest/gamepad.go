@@ -4,6 +4,7 @@ import (
 	"math"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/gamepad"
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -14,6 +15,7 @@ type fakeGamepads struct {
 	pads     map[int]*driver.GamepadState
 	watchers map[uint64]func()
 	nextID   uint64
+	rumbles  []gamepad.RumbleEvent
 }
 
 func newFakeGamepads() *fakeGamepads {
@@ -56,6 +58,26 @@ func (f *fakeGamepads) Watch(onChange func()) func() {
 	}
 }
 
+func (f *fakeGamepads) Rumble(id int, lowFreq, highFreq float32, duration time.Duration) {
+	f.mu.Lock()
+	f.rumbles = append(f.rumbles, gamepad.RumbleEvent{
+		ID:       id,
+		LowFreq:  lowFreq,
+		HighFreq: highFreq,
+		Duration: duration,
+	})
+	f.mu.Unlock()
+}
+
+func (f *fakeGamepads) StopRumble(id int) {
+	f.mu.Lock()
+	f.rumbles = append(f.rumbles, gamepad.RumbleEvent{
+		ID:      id,
+		Stopped: true,
+	})
+	f.mu.Unlock()
+}
+
 func (f *fakeGamepads) notify() {
 	f.mu.Lock()
 	ws := make([]func(), 0, len(f.watchers))
@@ -81,7 +103,9 @@ func (a *App) requireGamepadModel() *fakeGamepads {
 
 // ConnectGamepad connects a fake game controller with the given ID and name
 // (or updates its name if already connected) and settles the app so scopes
-// reading gamepad.Pads rerender.
+// reading gamepad.Pads rerender. The controller's initial Family is inferred
+// from name with gamepad.DetectFamily; call SetGamepadInfo to override family,
+// vendor/product IDs, or rumble support.
 func (a *App) ConnectGamepad(id int, name string) {
 	a.t.Helper()
 	f := a.requireGamepadModel()
@@ -89,9 +113,35 @@ func (a *App) ConnectGamepad(id int, name string) {
 	if p, ok := f.pads[id]; ok {
 		p.Name = name
 	} else {
-		f.pads[id] = &driver.GamepadState{ID: id, Name: name}
+		f.pads[id] = &driver.GamepadState{
+			ID:     id,
+			Name:   name,
+			Family: driver.GamepadFamily(gamepad.DetectFamily(0, 0, name)),
+		}
 	}
 	f.mu.Unlock()
+	f.notify()
+	a.Settle()
+}
+
+// SetGamepadInfo sets the controller family, USB vendor/product IDs, and rumble
+// capability of connected fake controller id, then settles so scopes reading
+// gamepad.Pads rerender.
+func (a *App) SetGamepadInfo(id int, family gamepad.Family, vendorID, productID uint16, canRumble bool) {
+	a.t.Helper()
+	f := a.requireGamepadModel()
+	f.mu.Lock()
+	p, ok := f.pads[id]
+	if ok {
+		p.Family = driver.GamepadFamily(family)
+		p.VendorID = vendorID
+		p.ProductID = productID
+		p.CanRumble = canRumble
+	}
+	f.mu.Unlock()
+	if !ok {
+		a.t.Fatalf("nsgotest: gamepad %d is not connected", id)
+	}
 	f.notify()
 	a.Settle()
 }
@@ -149,6 +199,31 @@ func (a *App) SetGamepadAxis(id int, axis gamepad.Axis, value float32) {
 	if !ok {
 		a.t.Fatalf("nsgotest: gamepad %d is not connected", id)
 	}
+}
+
+// GamepadRumbles returns all rumble start and stop events recorded on fake
+// controllers in order.
+func (a *App) GamepadRumbles() []gamepad.RumbleEvent {
+	a.t.Helper()
+	f := a.requireGamepadModel()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.rumbles)
+}
+
+// LastGamepadRumble returns the most recent rumble start or stop event recorded
+// for controller id, or (gamepad.RumbleEvent{}, false) if none was recorded.
+func (a *App) LastGamepadRumble(id int) (gamepad.RumbleEvent, bool) {
+	a.t.Helper()
+	f := a.requireGamepadModel()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.rumbles) - 1; i >= 0; i-- {
+		if f.rumbles[i].ID == id {
+			return f.rumbles[i], true
+		}
+	}
+	return gamepad.RumbleEvent{}, false
 }
 
 func clampGamepad01(v float32) float32 {

@@ -6,11 +6,23 @@ import (
 	"slices"
 	"sync"
 	"syscall/js"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-var webDefault = &webSource{}
+var (
+	webDefault     = &webSource{}
+	webCatchOnce   sync.Once
+	webNoopCatchFn js.Func
+)
+
+func webNoopCatch() js.Func {
+	webCatchOnce.Do(func() {
+		webNoopCatchFn = js.FuncOf(func(js.Value, []js.Value) any { return nil })
+	})
+	return webNoopCatchFn
+}
 
 func platformSource() driver.GamepadSource {
 	return webDefault
@@ -37,12 +49,21 @@ func (w *webSource) Poll() []driver.GamepadState {
 		if !gp.Truthy() || !gp.Get("connected").Bool() {
 			continue
 		}
-		st := driver.GamepadState{
-			ID:   gp.Get("index").Int(),
-			Name: gp.Get("id").String(),
+		rawID := gp.Get("id").String()
+		vid, pid := parseWebGamepadID(rawID)
+		name := rawID
+		if name == "" {
+			name = "Gamepad"
 		}
-		if st.Name == "" {
-			st.Name = "Gamepad"
+		act := gp.Get("vibrationActuator")
+		canRumble := act.Truthy() && act.Get("playEffect").Type() == js.TypeFunction
+		st := driver.GamepadState{
+			ID:        gp.Get("index").Int(),
+			Name:      name,
+			VendorID:  vid,
+			ProductID: pid,
+			Family:    driver.GamepadFamily(DetectFamily(vid, pid, rawID)),
+			CanRumble: canRumble,
 		}
 		if buttons := gp.Get("buttons"); buttons.Truthy() {
 			bn := min(buttons.Length(), ButtonCount)
@@ -92,4 +113,68 @@ func (w *webSource) Watch(onChange func()) func() {
 			cb.Release()
 		})
 	}
+}
+
+func (w *webSource) Rumble(id int, lowFreq, highFreq float32, duration time.Duration) {
+	act := findWebVibrationActuator(id)
+	if !act.Truthy() || act.Get("playEffect").Type() != js.TypeFunction {
+		return
+	}
+	ms := duration.Milliseconds()
+	if ms <= 0 && duration > 0 {
+		ms = 1
+	}
+	opts := map[string]any{
+		"startDelay":      0,
+		"duration":        ms,
+		"weakMagnitude":   float64(highFreq),
+		"strongMagnitude": float64(lowFreq),
+	}
+	p := act.Call("playEffect", "dual-rumble", opts)
+	if p.Truthy() && p.Get("catch").Type() == js.TypeFunction {
+		p.Call("catch", webNoopCatch())
+	}
+}
+
+func (w *webSource) StopRumble(id int) {
+	act := findWebVibrationActuator(id)
+	if !act.Truthy() {
+		return
+	}
+	var p js.Value
+	if act.Get("reset").Type() == js.TypeFunction {
+		p = act.Call("reset")
+	} else if act.Get("playEffect").Type() == js.TypeFunction {
+		p = act.Call("playEffect", "dual-rumble", map[string]any{
+			"startDelay":      0,
+			"duration":        0,
+			"weakMagnitude":   0,
+			"strongMagnitude": 0,
+		})
+	}
+	if p.Truthy() && p.Get("catch").Type() == js.TypeFunction {
+		p.Call("catch", webNoopCatch())
+	}
+}
+
+func findWebVibrationActuator(id int) js.Value {
+	nav := js.Global().Get("navigator")
+	if !nav.Truthy() || nav.Get("getGamepads").Type() != js.TypeFunction {
+		return js.Undefined()
+	}
+	list := nav.Call("getGamepads")
+	if !list.Truthy() {
+		return js.Undefined()
+	}
+	n := list.Length()
+	for i := 0; i < n; i++ {
+		gp := list.Index(i)
+		if !gp.Truthy() || !gp.Get("connected").Bool() {
+			continue
+		}
+		if gp.Get("index").Int() == id {
+			return gp.Get("vibrationActuator")
+		}
+	}
+	return js.Undefined()
 }

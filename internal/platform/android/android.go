@@ -87,6 +87,8 @@ const (
 	// prebuilt runtime can ignore the optional monitor and keep running.
 	msgPerfPanel   = 24
 	msgTextRequest = 26
+	// msgGamepadRumble starts or stops rumble on a connected game controller (gamepad.go, Gamepads.java).
+	msgGamepadRumble = 27
 
 	// Java to Go.
 	msgStart       = 1 // the view's size and the folds measured at it (readSize), as msgResize
@@ -241,6 +243,25 @@ func connect(opts Options) *surface {
 	})
 	driver.ConnectRecordings(func(msg []byte) {
 		s.send(msgRecording, func(w *writer) { w.buf = append(w.buf, msg...) })
+	})
+	driver.ConnectGamepadRumble(func(id int, lowFreq, highFreq float32, duration time.Duration) {
+		var ms int32
+		if duration > 0 {
+			d := duration.Milliseconds()
+			if d <= 0 {
+				d = 1
+			}
+			if d > math.MaxInt32 {
+				d = math.MaxInt32
+			}
+			ms = int32(d)
+		}
+		s.send(msgGamepadRumble, func(w *writer) {
+			w.u32(uint32(int32(id)))
+			w.float(lowFreq)
+			w.float(highFreq)
+			w.u32(uint32(ms))
+		})
 	})
 	return s
 }

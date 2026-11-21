@@ -2,7 +2,11 @@
 
 package gamepad
 
-import "github.com/nsgo-dev/nsgo/internal/driver"
+import (
+	"time"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
+)
 
 var unsupportedDefault = &unsupportedSource{}
 
@@ -12,5 +16,7 @@ func platformSource() driver.GamepadSource {
 
 type unsupportedSource struct{}
 
-func (*unsupportedSource) Poll() []driver.GamepadState { return nil }
-func (*unsupportedSource) Watch(func()) func()         { return func() {} }
+func (*unsupportedSource) Poll() []driver.GamepadState                 { return nil }
+func (*unsupportedSource) Watch(func()) func()                         { return func() {} }
+func (*unsupportedSource) Rumble(int, float32, float32, time.Duration) {}
+func (*unsupportedSource) StopRumble(int)                              {}

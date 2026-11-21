@@ -953,6 +953,15 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 case Protocol.SCAN:
                     scan(message);
                     break;
+                case Protocol.GAMEPAD_RUMBLE:
+                    int gpId = message.readInt();
+                    float gpLow = message.readFloat();
+                    float gpHigh = message.readFloat();
+                    int gpDurationMs = message.readInt();
+                    ui.post(() -> {
+                        if (gamepads != null) gamepads.rumble(gpId, gpLow, gpHigh, gpDurationMs);
+                    });
+                    break;
                 case Protocol.WANT_FRAME:
                     ui.post(() -> {
                         frameWanted = true;

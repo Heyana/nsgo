@@ -3,6 +3,7 @@ package driver
 import (
 	"slices"
 	"sync"
+	"time"
 )
 
 const (
@@ -12,21 +13,55 @@ const (
 	GamepadAxisCount = 4
 )
 
-// GamepadState is one connected game controller's state in the W3C Standard Gamepad layout.
-type GamepadState struct {
-	ID      int
-	Name    string
-	Buttons [GamepadButtonCount]float32
-	Axes    [GamepadAxisCount]float32
+// GamepadFamily identifies a game controller's physical button-label family.
+type GamepadFamily uint8
+
+const (
+	GamepadFamilyGeneric GamepadFamily = iota
+	GamepadFamilyXbox
+	GamepadFamilyPlayStation
+	GamepadFamilyNintendo
+)
+
+// String returns the family's lowercase name: generic, xbox, playstation or nintendo.
+func (f GamepadFamily) String() string {
+	switch f {
+	case GamepadFamilyXbox:
+		return "xbox"
+	case GamepadFamilyPlayStation:
+		return "playstation"
+	case GamepadFamilyNintendo:
+		return "nintendo"
+	default:
+		return "generic"
+	}
 }
 
-// GamepadSource reads connected game controllers for an app or headless test host.
+// GamepadState is one connected game controller's state in the W3C Standard Gamepad layout.
+type GamepadState struct {
+	ID        int
+	Name      string
+	VendorID  uint16
+	ProductID uint16
+	Family    GamepadFamily
+	CanRumble bool
+	Buttons   [GamepadButtonCount]float32
+	Axes      [GamepadAxisCount]float32
+}
+
+// GamepadSource reads connected game controllers and drives rumble motors for
+// an app or headless test host.
 type GamepadSource interface {
 	// Poll returns a snapshot of all currently connected controllers, sorted by ID.
 	Poll() []GamepadState
 	// Watch invokes onChange when a controller connects or disconnects. The returned
 	// stop function unregisters the watcher and is safe to call more than once.
 	Watch(onChange func()) (stop func())
+	// Rumble drives controller id's low-frequency (left/heavy) and high-frequency
+	// (right/light) motors for duration, replacing any running rumble.
+	Rumble(id int, lowFreq, highFreq float32, duration time.Duration)
+	// StopRumble stops any running rumble on controller id.
+	StopRumble(id int)
 }
 
 // boundGamepads holds per-root synthetic GamepadSources registered by nsgotest,
@@ -62,23 +97,57 @@ var platformGamepads struct {
 	pads     map[int]*GamepadState
 	watchers map[uint64]func()
 	nextID   uint64
+	rumble   func(id int, lowFreq, highFreq float32, duration time.Duration)
 }
 
 // ReportGamepadConnect records that a game controller connected on the host platform.
 func ReportGamepadConnect(id int, name string) {
+	ReportGamepadConnectInfo(id, name, 0, 0, false)
+}
+
+// ReportGamepadConnectInfo records that a game controller connected on the host
+// platform with its USB vendor/product IDs and rumble capability.
+func ReportGamepadConnectInfo(id int, name string, vendorID, productID uint16, canRumble bool) {
 	platformGamepads.mu.Lock()
 	if platformGamepads.pads == nil {
 		platformGamepads.pads = map[int]*GamepadState{}
 	}
 	if p, ok := platformGamepads.pads[id]; ok {
 		p.Name = name
+		p.VendorID = vendorID
+		p.ProductID = productID
+		p.CanRumble = canRumble
 	} else {
-		platformGamepads.pads[id] = &GamepadState{ID: id, Name: name}
+		platformGamepads.pads[id] = &GamepadState{
+			ID:        id,
+			Name:      name,
+			VendorID:  vendorID,
+			ProductID: productID,
+			CanRumble: canRumble,
+		}
 	}
 	watchers := snapshotGamepadWatchersLocked()
 	platformGamepads.mu.Unlock()
 	for _, fn := range watchers {
 		fn()
+	}
+}
+
+// ConnectGamepadRumble registers the host platform's rumble handler (Android's pipe writer).
+func ConnectGamepadRumble(fn func(id int, lowFreq, highFreq float32, duration time.Duration)) {
+	platformGamepads.mu.Lock()
+	platformGamepads.rumble = fn
+	platformGamepads.mu.Unlock()
+}
+
+// SendGamepadRumble forwards a rumble command (or stop when duration <= 0) to the
+// host platform's registered handler, if any.
+func SendGamepadRumble(id int, lowFreq, highFreq float32, duration time.Duration) {
+	platformGamepads.mu.Lock()
+	fn := platformGamepads.rumble
+	platformGamepads.mu.Unlock()
+	if fn != nil {
+		fn(id, lowFreq, highFreq, duration)
 	}
 }
 

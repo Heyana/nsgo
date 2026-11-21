@@ -42,6 +42,121 @@ func TestW3CConstantsAndPressed(t *testing.T) {
 	}
 }
 
+func TestFamilyStringAndDetectFamily(t *testing.T) {
+	if got := FamilyGeneric.String(); got != "generic" {
+		t.Errorf("FamilyGeneric.String() = %q, want generic", got)
+	}
+	if got := FamilyXbox.String(); got != "xbox" {
+		t.Errorf("FamilyXbox.String() = %q, want xbox", got)
+	}
+	if got := FamilyPlayStation.String(); got != "playstation" {
+		t.Errorf("FamilyPlayStation.String() = %q, want playstation", got)
+	}
+	if got := FamilyNintendo.String(); got != "nintendo" {
+		t.Errorf("FamilyNintendo.String() = %q, want nintendo", got)
+	}
+
+	cases := []struct {
+		name string
+		vid  uint16
+		pid  uint16
+		want Family
+	}{
+		{"Microsoft VID Xbox Series", 0x045E, 0x0B13, FamilyXbox},
+		{"Sony VID DualSense", 0x054C, 0x0CE6, FamilyPlayStation},
+		{"Sony VID DualShock 4 generic name", 0x054C, 0x09CC, FamilyPlayStation},
+		{"Nintendo VID Switch Pro", 0x057E, 0x2009, FamilyNintendo},
+		{"Nintendo VID Joy-Con", 0x057E, 0x2006, FamilyNintendo},
+		{"Logitech F310 XInput", 0x046D, 0xC21D, FamilyXbox},
+		{"PDP Xbox third-party", 0x0E6F, 0x02A1, FamilyXbox},
+		{"PDP Faceoff Deluxe Nintendo Switch", 0x0E6F, 0x0180, FamilyNintendo},
+		{"DualSense Wireless Controller", 0, 0, FamilyPlayStation},
+		{"DualShock 4", 0, 0, FamilyPlayStation},
+		{"Xbox One", 0, 0, FamilyXbox},
+		{"XInput Controller 1", 0, 0, FamilyXbox},
+		{"Switch Pro Controller", 0, 0, FamilyNintendo},
+		{"Pro Controller", 0, 0, FamilyNintendo},
+		{"Joy-Con (L/R)", 0, 0, FamilyNintendo},
+		{"Xbox Pro Controller", 0, 0, FamilyXbox},
+		{"Generic USB Gamepad", 0x1234, 0x5678, FamilyGeneric},
+		{"MFi", 0, 0, FamilyGeneric},
+		{"", 0, 0, FamilyGeneric},
+	}
+	for _, tc := range cases {
+		if got := DetectFamily(tc.vid, tc.pid, tc.name); got != tc.want {
+			t.Errorf("DetectFamily(0x%04X, 0x%04X, %q) = %v, want %v", tc.vid, tc.pid, tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestParseWebGamepadID(t *testing.T) {
+	cases := []struct {
+		id      string
+		wantVID uint16
+		wantPID uint16
+		wantFam Family
+	}{
+		{
+			id:      "Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)",
+			wantVID: 0x045E, wantPID: 0x0B13, wantFam: FamilyXbox,
+		},
+		{
+			id:      "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)",
+			wantVID: 0x054C, wantPID: 0x0CE6, wantFam: FamilyPlayStation,
+		},
+		{
+			id:      "Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 09cc)",
+			wantVID: 0x054C, wantPID: 0x09CC, wantFam: FamilyPlayStation,
+		},
+		{
+			id:      "Pro Controller (STANDARD GAMEPAD Vendor: 057e Product: 2009)",
+			wantVID: 0x057E, wantPID: 0x2009, wantFam: FamilyNintendo,
+		},
+		{
+			id:      "Generic Pad (STANDARD GAMEPAD Vendor: 1234 Product: 5678)",
+			wantVID: 0x1234, wantPID: 0x5678, wantFam: FamilyGeneric,
+		},
+		{
+			id:      "045e-0b13-Xbox Wireless Controller",
+			wantVID: 0x045E, wantPID: 0x0B13, wantFam: FamilyXbox,
+		},
+		{
+			id:      "54c-ce6-DualSense Wireless Controller",
+			wantVID: 0x054C, wantPID: 0x0CE6, wantFam: FamilyPlayStation,
+		},
+		{
+			id:      "54c-9cc-Wireless Controller",
+			wantVID: 0x054C, wantPID: 0x09CC, wantFam: FamilyPlayStation,
+		},
+		{
+			id:      "57e-2009-Pro Controller",
+			wantVID: 0x057E, wantPID: 0x2009, wantFam: FamilyNintendo,
+		},
+		{
+			id:      "1234-abcd-Generic Joystick",
+			wantVID: 0x1234, wantPID: 0xABCD, wantFam: FamilyGeneric,
+		},
+		{
+			id:      "DualSense Wireless Controller Extended Gamepad",
+			wantVID: 0, wantPID: 0, wantFam: FamilyPlayStation,
+		},
+		{
+			id:      "Unknown Controller",
+			wantVID: 0, wantPID: 0, wantFam: FamilyGeneric,
+		},
+	}
+	for _, tc := range cases {
+		vid, pid := parseWebGamepadID(tc.id)
+		if vid != tc.wantVID || pid != tc.wantPID {
+			t.Errorf("parseWebGamepadID(%q) = (0x%04X, 0x%04X), want (0x%04X, 0x%04X)",
+				tc.id, vid, pid, tc.wantVID, tc.wantPID)
+		}
+		if fam := DetectFamily(vid, pid, tc.id); fam != tc.wantFam {
+			t.Errorf("DetectFamily for %q = %v, want %v", tc.id, fam, tc.wantFam)
+		}
+	}
+}
+
 func TestNormalizationHelpers(t *testing.T) {
 	// Radial stick with XInput deadzone (7849) and Y inversion (+Y up -> -Y up).
 	if x, y := normalizeRadialStick(3000, -4000, 7849); x != 0 || y != 0 {
@@ -88,6 +203,7 @@ type mockSource struct {
 	polls     int
 	onChange  func()
 	unwatched bool
+	rumbles   []RumbleEvent
 }
 
 func (m *mockSource) Poll() []driver.GamepadState {
@@ -100,6 +216,22 @@ func (m *mockSource) Poll() []driver.GamepadState {
 func (m *mockSource) Watch(fn func()) func() {
 	m.onChange = fn
 	return func() { m.unwatched = true }
+}
+
+func (m *mockSource) Rumble(id int, lowFreq, highFreq float32, duration time.Duration) {
+	m.rumbles = append(m.rumbles, RumbleEvent{
+		ID:       id,
+		LowFreq:  lowFreq,
+		HighFreq: highFreq,
+		Duration: duration,
+	})
+}
+
+func (m *mockSource) StopRumble(id int) {
+	m.rumbles = append(m.rumbles, RumbleEvent{
+		ID:      id,
+		Stopped: true,
+	})
 }
 
 func TestFrameSnapshotCachesPerDisplayFrame(t *testing.T) {
@@ -145,12 +277,106 @@ func TestFrameSnapshotCachesPerDisplayFrame(t *testing.T) {
 	}
 }
 
+func TestRumbleClampingReplaceAndAutoStop(t *testing.T) {
+	clock := core.NewManualClock(time.Unix(0, 0))
+	var posted []func()
+	drain := func() {
+		for len(posted) > 0 {
+			q := posted
+			posted = nil
+			for _, fn := range q {
+				fn()
+			}
+		}
+	}
+	root := core.NewRoot(core.RootOptions{
+		Clock: clock,
+		Post:  func(fn func()) { posted = append(posted, fn) },
+	})
+	defer root.Dispose()
+
+	src := &mockSource{
+		pads: []driver.GamepadState{
+			{ID: 0, Name: "Xbox", VendorID: 0x045E, ProductID: 0x0B13, Family: driver.GamepadFamilyXbox, CanRumble: true},
+			{ID: 1, Name: "Basic", CanRumble: false},
+		},
+	}
+	unbind := driver.BindGamepadSource(root, src)
+	defer unbind()
+
+	// Pad with CanRumble == false and disconnected pad must be no-ops.
+	Rumble(root, 1, 0.8, 0.8, 200*time.Millisecond)
+	Rumble(root, 99, 0.8, 0.8, 200*time.Millisecond)
+	StopRumble(root, 1)
+	if len(src.rumbles) != 0 {
+		t.Fatalf("expected no rumble events for non-rumble/missing pads, got %+v", src.rumbles)
+	}
+
+	// Clamping: >1 -> 1, <0 -> 0, NaN -> 0.
+	Rumble(root, 0, 2.5, float32(math.NaN()), 500*time.Millisecond)
+	if len(src.rumbles) != 1 {
+		t.Fatalf("len(rumbles) = %d, want 1", len(src.rumbles))
+	}
+	ev := src.rumbles[0]
+	if ev.ID != 0 || ev.LowFreq != 1 || ev.HighFreq != 0 || ev.Duration != 500*time.Millisecond || ev.Stopped {
+		t.Fatalf("unexpected clamped rumble: %+v", ev)
+	}
+
+	// Replace active rumble after 200ms with a new 500ms rumble.
+	clock.Advance(200 * time.Millisecond)
+	drain()
+	Rumble(root, 0, -0.4, 0.6, 500*time.Millisecond)
+	if len(src.rumbles) != 2 {
+		t.Fatalf("expected replacement without extra stop, got %+v", src.rumbles)
+	}
+	if src.rumbles[1].LowFreq != 0 || src.rumbles[1].HighFreq != 0.6 {
+		t.Fatalf("unexpected replacement rumble: %+v", src.rumbles[1])
+	}
+
+	// Advancing 350ms (past the first rumble's 500ms deadline) must NOT stop the second rumble.
+	clock.Advance(350 * time.Millisecond)
+	drain()
+	if len(src.rumbles) != 2 {
+		t.Fatalf("first rumble timer leaked into replacement: %+v", src.rumbles)
+	}
+
+	// Advancing another 200ms completes the second rumble and auto-stops it.
+	clock.Advance(200 * time.Millisecond)
+	drain()
+	if len(src.rumbles) != 3 || !src.rumbles[2].Stopped || src.rumbles[2].ID != 0 {
+		t.Fatalf("expected auto-stop after replacement duration, got %+v", src.rumbles)
+	}
+
+	// Child scope disposal must automatically stop an active rumble started under it.
+	child := root.Child()
+	Rumble(child, 0, 0.5, 0.5, time.Second)
+	if len(src.rumbles) != 4 {
+		t.Fatalf("expected 4 events, got %+v", src.rumbles)
+	}
+	child.Dispose()
+	if len(src.rumbles) != 5 || !src.rumbles[4].Stopped {
+		t.Fatalf("expected auto-stop on child scope disposal, got %+v", src.rumbles)
+	}
+
+	// Pad disconnect while rumbling must automatically stop it.
+	Rumble(root, 0, 0.7, 0.3, time.Second)
+	if len(src.rumbles) != 6 {
+		t.Fatalf("expected 6 events, got %+v", src.rumbles)
+	}
+	src.pads = nil
+	src.onChange()
+	drain()
+	if len(src.rumbles) != 7 || !src.rumbles[6].Stopped {
+		t.Fatalf("expected auto-stop on disconnect, got %+v", src.rumbles)
+	}
+}
+
 func TestPlatformGamepadBridge(t *testing.T) {
 	changes := 0
 	stop := driver.WatchPlatformGamepads(func() { changes++ })
 	defer stop()
 
-	driver.ReportGamepadConnect(42, "Android Pad")
+	driver.ReportGamepadConnectInfo(42, "Android DualSense", 0x054C, 0x0CE6, true)
 	defer driver.ReportGamepadDisconnect(42)
 
 	var btns [driver.GamepadButtonCount]float32
@@ -164,7 +390,8 @@ func TestPlatformGamepadBridge(t *testing.T) {
 	for _, p := range pads {
 		if p.ID == 42 {
 			found = true
-			if p.Name != "Android Pad" || p.Buttons[ButtonSouth] != 1 || p.Axes[AxisRightY] != -0.5 {
+			if p.Name != "Android DualSense" || p.VendorID != 0x054C || p.ProductID != 0x0CE6 || !p.CanRumble ||
+				p.Buttons[ButtonSouth] != 1 || p.Axes[AxisRightY] != -0.5 {
 				t.Fatalf("unexpected pad state: %+v", p)
 			}
 		}
@@ -174,5 +401,18 @@ func TestPlatformGamepadBridge(t *testing.T) {
 	}
 	if changes == 0 {
 		t.Error("watcher was not notified on connect")
+	}
+
+	var gotID int
+	var gotLow, gotHigh float32
+	var gotDur time.Duration
+	driver.ConnectGamepadRumble(func(id int, low, high float32, dur time.Duration) {
+		gotID, gotLow, gotHigh, gotDur = id, low, high, dur
+	})
+	defer driver.ConnectGamepadRumble(nil)
+
+	driver.SendGamepadRumble(42, 0.75, 0.25, 300*time.Millisecond)
+	if gotID != 42 || gotLow != 0.75 || gotHigh != 0.25 || gotDur != 300*time.Millisecond {
+		t.Fatalf("unexpected rumble bridge call: id=%d low=%v high=%v dur=%v", gotID, gotLow, gotHigh, gotDur)
 	}
 }
