@@ -149,6 +149,28 @@ func TestWebMotionPermissionRequiresActivation(t *testing.T) {
 	}
 }
 
+func TestWebMotionRejectedRequestStaysNotAsked(t *testing.T) {
+	g := js.Global()
+	nav := g.Get("navigator")
+	motionTestProperty(t, nav, "userAgent", "iPhone; AppleWebKit/617")
+	motionTestProperty(t, nav, "userActivation", js.Undefined())
+	ask := js.FuncOf(func(js.Value, []js.Value) any {
+		return g.Get("Promise").Call("reject", g.Get("Error").New("Requesting device motion access requires a user gesture to prompt"))
+	})
+	defer ask.Release()
+	motionTestProperty(t, g.Get("DeviceMotionEvent"), "requestPermission", ask)
+
+	permissions := make(chan core.PermissionStatus, 1)
+	s := open(func(cx *core.Scope) core.Node {
+		cx.RequestPermission(core.PermissionMotion, func(status core.PermissionStatus) { permissions <- status })
+		return core.View{}
+	}, Options{}, nil)
+	defer s.engine.Close()
+	if got := motionTestWait(t, permissions); got != core.PermissionNotAsked {
+		t.Fatalf("rejected request = %v", got)
+	}
+}
+
 func TestWebMotionIsUnavailableOnDesktop(t *testing.T) {
 	permission := make(chan core.PermissionStatus, 1)
 	failures := make(chan error, 1)

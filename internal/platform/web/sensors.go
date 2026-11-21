@@ -118,7 +118,10 @@ func (s *surface) motionPermission(ask bool, answer func(driver.SensorAuthorizat
 		}
 		s.motion.authorization = status
 		answer(status)
-	}, func(js.Value) { answer(driver.SensorDenied) })
+	}, func(js.Value) {
+		// WebKit rejects only while the grant is still undecided and the call came outside a gesture, so no prompt was shown.
+		answer(driver.SensorNotAsked)
+	})
 }
 
 // Browsers without the prompt method use their sensor site settings.
