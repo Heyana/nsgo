@@ -3,6 +3,9 @@
 package linux
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
@@ -36,28 +39,34 @@ func TestWebAudioMutePersistsAcrossNavigation(t *testing.T) {
 	}
 	var isMuted func(uintptr) int32
 	purego.RegisterLibFunc(&isMuted, purego.RTLD_DEFAULT, "webkit_web_view_get_is_muted")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		io.WriteString(w, "<!doctype html><p>Web audio mute</p>")
+	}))
+	t.Cleanup(server.Close)
+	start, next := server.URL+"/start", server.URL+"/next"
 	loads := make(chan string, 2)
 	app := func(*core.Scope) core.Node {
-		return core.WebView{Source: webMutePage("start"), Muted: true, Incognito: true,
-			Style:     core.Style{Width: core.Pt(200), Height: core.Pt(100)},
-			OnMessage: func(page string) { loads <- page }}
+		return core.WebView{Source: core.WebSrc(start), Muted: true, Incognito: true,
+			Style:  core.Style{Width: core.Pt(200), Height: core.Pt(100)},
+			OnLoad: func(page core.WebNavigation) { loads <- page.URL }}
 	}
 	w := startTestWindow(t, app, Options{Title: "Web audio mute", Width: 200, Height: 100})
-	waitLoad := func(title string) {
+	waitLoad := func(url string) {
 		t.Helper()
 		deadline := time.After(15 * time.Second)
 		for {
 			select {
 			case loaded := <-loads:
-				if loaded == title {
+				if loaded == url {
 					return
 				}
 			case <-deadline:
-				t.Fatalf("the web view did not load %q", title)
+				t.Fatalf("the web view did not load %q", url)
 			}
 		}
 	}
-	waitLoad("start")
+	waitLoad(start)
 	var widget uintptr
 	check := func(want bool, change func(*driver.WebConfig)) {
 		t.Helper()
@@ -83,13 +92,8 @@ func TestWebAudioMutePersistsAcrossNavigation(t *testing.T) {
 		}
 		widget = native
 	}
-	check(true, func(c *driver.WebConfig) { c.Source = webMutePage("next") })
-	waitLoad("next")
+	check(true, func(c *driver.WebConfig) { c.Source = core.WebSrc(next) })
+	waitLoad(next)
 	check(true, nil)
 	check(false, func(c *driver.WebConfig) { c.Muted = false })
-}
-
-// The page's reply identifies the new document even if its title arrives after the platform's load notification.
-func webMutePage(name string) core.WebSource {
-	return core.WebHTML("<script>window.nsgo.postMessage('"+name+"')</script>", "")
 }

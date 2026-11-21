@@ -152,6 +152,7 @@ const (
 	web2NavigateWithWebResourceRequest = 63
 	webAddDownloadStarting             = 75
 	// ICoreWebView2_8, after ICoreWebView2_7's methods.
+	web8GetIsMuted = 83
 	web8PutIsMuted = 84
 
 	// ICoreWebView2DownloadStartingEventArgs.
