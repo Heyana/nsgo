@@ -2,7 +2,12 @@
 
 package android
 
-import "github.com/nsgo-dev/nsgo/internal/driver"
+import (
+	"encoding/json"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/mobile/locales"
+)
 
 // tabBar is core.TabBar's component, which the backend registers itself
 // as NSH's TabBarComponent.java: the runtime's TabBar, a Material 3
@@ -38,6 +43,23 @@ func (*tabBar) ViewProps(name string, value any) []driver.AndroidViewProp {
 		return []driver.AndroidViewProp{{Name: "items", Value: string(data)}}
 	case "label":
 		return []driver.AndroidViewProp{{Name: name, Value: value}}
+	case "badges":
+		badges, _ := value.(driver.TabBadges)
+		messages := locales.In(badges.Language)
+		type badgeEntry struct {
+			driver.TabBadge
+			Announcement string `json:"announcement,omitempty"`
+		}
+		entries := make([]badgeEntry, len(badges.Items))
+		for i, badge := range badges.Items {
+			announcement := badge.Text
+			if announcement == "" && badge.Dot {
+				announcement = messages.TabBadgeNew()
+			}
+			entries[i] = badgeEntry{TabBadge: badge, Announcement: announcement}
+		}
+		data, _ := json.Marshal(entries)
+		return []driver.AndroidViewProp{{Name: name, Value: string(data)}}
 	case "selectedIndex":
 		i, _ := value.(float64)
 		return []driver.AndroidViewProp{{Name: "selectedIndex", Value: int(i)}}
@@ -46,7 +68,7 @@ func (*tabBar) ViewProps(name string, value any) []driver.AndroidViewProp {
 		c, _ := value.(float64)
 		rgba := uint32(c)
 		return []driver.AndroidViewProp{{Name: "tint", Value: int64(rgba>>8 | rgba<<24)}}
-	case "background", "inactive", "indicator", "activeContent":
+	case "background", "inactive", "indicator", "activeContent", "badgeColor":
 		return color(value)
 	}
 	return nil

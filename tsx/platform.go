@@ -49,7 +49,9 @@ func tabBarFace(p *props) core.Node {
 			var items []core.TabBarItem
 			for _, it := range r.arrayItems(p.get("items")) {
 				o := r.options(it)
-				tab := core.TabBarItem{Title: o.str("title", ""), Icon: o.str("icon", "")}
+				badge := r.options(o.get("badge"))
+				tab := core.TabBarItem{Title: o.str("title", ""), Icon: o.str("icon", ""),
+					Badge: core.TabBadge{Text: badge.str("text", ""), Dot: badge.bool("dot", false)}}
 				if doc := o.str("svg", ""); doc != "" {
 					tab.SVG, _ = core.ParseSVG([]byte(doc))
 				}

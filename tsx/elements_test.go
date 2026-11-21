@@ -64,19 +64,26 @@ function App() {
     return <View>
         <TabBar testID="bar" style={{ height: 80 }} selectedIndex={selected()}
             onChange={(e) => selected.set(e.index)} items={[
-                { title: "Home", svg: '<svg viewBox="0 0 24 24"><rect width="24" height="24"/></svg>' },
+                { title: "Home", badge: selected() === 0 ? { text: "5" } : { dot: true }, svg: '<svg viewBox="0 0 24 24"><rect width="24" height="24"/></svg>' },
                 { title: "Search", icon: "android:ic_menu_search" }
             ]} />
         <Text>{() => "selected " + selected()}</Text>
     </View>;
 }
 mount(App);`, nsgotest.Environment(core.Environment{OS: core.OSAndroid}))
-	items := app.Find("id:bar").NativeProps["items"].([]any)
+	bar := app.Find("id:bar")
+	if got := bar.TabBadge(0); got != (core.TabBadge{Text: "5"}) {
+		t.Fatalf("TSX tab badge = %v, want 5", got)
+	}
+	items := bar.NativeProps["items"].([]any)
 	if d, ok := items[0].(map[string]any)["drawing"].(*driver.Drawing); !ok || len(d.Ops) == 0 {
 		t.Fatal("TSX SVG did not reach the native bar")
 	}
 	app.Emit("id:bar", "change", float64(1))
 	app.Find("text:selected 1")
+	if got := app.Find("id:bar").TabBadge(0); got != (core.TabBadge{Dot: true}) {
+		t.Fatalf("updated TSX tab badge = %v, want dot", got)
+	}
 }
 
 func TestTabBarEdgeFromTSX(t *testing.T) {

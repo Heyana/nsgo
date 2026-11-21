@@ -70,6 +70,10 @@ type TabBar struct {
 	TestID    string
 }
 
+// TabBadge is the mark at a tab's icon corner. Text takes precedence
+// over Dot; the zero value clears the badge. Apps name it mobile.TabBadge.
+type TabBadge = driver.TabBadge
+
 // TabBarItem is one tab of a TabBar. Apps name it mobile.TabBarItem.
 type TabBarItem struct {
 	Title string
@@ -78,7 +82,8 @@ type TabBarItem struct {
 	// "android:", of the system ("android:ic_menu_search").
 	Icon string
 	// SVG is the tab's icon on Android where Icon names no drawable the app or system has, such as an SF Symbol name shared with iOS: fitted into 24 points and tinted by the bar as a drawable is. iOS uses only Icon.
-	SVG *SVG
+	SVG   *SVG
+	Badge TabBadge
 }
 
 // Render implements Node.
@@ -98,8 +103,11 @@ func (b TabBar) native(cx *Scope) Node {
 	}
 	return Native{Component: driver.TabBarComponent, Style: b.Style, TestID: b.TestID,
 		PropsFunc: func() map[string]any {
-			list := []any{}
-			for _, it := range items() {
+			tabs := items()
+			list := make([]any, 0, len(tabs))
+			badges := make([]TabBadge, len(tabs))
+			for i, it := range tabs {
+				badges[i] = it.Badge
 				tab := map[string]any{"title": it.Title}
 				if it.Icon != "" {
 					tab["icon"] = it.Icon
@@ -152,6 +160,8 @@ func (b TabBar) native(cx *Scope) Node {
 					props[role.prop] = float64(color)
 				}
 			}
+			props["badges"] = driver.TabBadges{Items: badges, Language: cx.Env().Language()}
+			props["badgeColor"] = float64(p.Danger)
 			return props
 		},
 		OnEvent: func(name string, data any) {

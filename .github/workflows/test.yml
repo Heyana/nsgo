@@ -433,7 +433,7 @@ jobs:
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestStandaloneReviewSDKClasses$' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestCanvasAtlasWire$' ./internal/platform/android
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestCanvasAtlas(MatchesDrawImageFrom|Sampling)$' ./internal/testhost/testdata/capture
-            go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestHardwareKeys' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+            go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestHardwareKeys|^TestTabBarBadgesNative$' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestNotificationPressIntentsKeepCollidingIDs$' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestMountFlushesDeferredShaderPixels$|^TestSendExtended' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestDetachedViewReleasesWidgetsAndResyncsItsLiveGraph$' ./internal/platform/android || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
@@ -592,6 +592,7 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/audiooutput
           go tool nsgo test -target ios_simulator -timeout 2m ./internal/testhost/testdata/shaderpixels
           go tool nsgo test -target ios_simulator -timeout 1m -run '^(TestPanEndsAtTheLastOffset|TestPinchReportsScaleAndPhase|TestPressesCountConsecutiveClicks)$' ./internal/testhost/testdata/press
+          go tool nsgo test -target ios_simulator -timeout 1m -run '^TestTabBarBadgesNative$' ./internal/platform/ios
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/platform/watchos
           go tool nsgo test -target watchos_simulator -timeout 1m ./internal/testhost/testdata/deviceidentity
           go tool nsgo test -target watchos_simulator -timeout 1m ./testdata/devtools-geometry

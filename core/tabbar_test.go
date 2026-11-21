@@ -172,3 +172,27 @@ func TestTabBarEdgeAndAutomatic(t *testing.T) {
 		t.Fatalf("automatic restored to unspecified = %v, want bottom", got)
 	}
 }
+
+func TestTabBarUpdatesBadgesWithoutChangingItems(t *testing.T) {
+	var change func(core.TabBadge)
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		badge := core.NewSignal(cx, core.TabBadge{Text: "99+"})
+		change = badge.Set
+		return core.TabBar{TestID: "bar", ItemsFunc: func() []core.TabBarItem {
+			return []core.TabBarItem{{Title: "Inbox", Icon: "envelope", Badge: badge.Get()}, {Title: "Library", Icon: "books.vertical"}}
+		}}
+	}, nsgotest.Environment(core.Environment{OS: core.OSAndroid, Idiom: core.IdiomPhone}))
+	bar := app.FindMounted("id:bar")
+	items := bar.NativeProps["items"].([]any)
+	for _, want := range []core.TabBadge{{Text: "99+"}, {Dot: true}, {}} {
+		app.Post(func() { change(want) })
+		app.Settle()
+		shown := app.FindMounted("id:bar")
+		if got := shown.TabBadge(0); got != want || shown.TabBadge(1) != (core.TabBadge{}) {
+			t.Fatalf("badges = %v, %v, want %v, empty", got, shown.TabBadge(1), want)
+		}
+		if next := shown.NativeProps["items"].([]any); shown.ID != bar.ID || &items[0] != &next[0] {
+			t.Fatal("updating the badge replaced the bar or its tab items")
+		}
+	}
+}

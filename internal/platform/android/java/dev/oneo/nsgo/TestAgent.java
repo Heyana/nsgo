@@ -25,6 +25,9 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
@@ -390,6 +393,9 @@ final class TestAgent {
                 view.testReply(id, "", metrics.toString());
                 return;
             }
+            case "tab-badge":
+                view.testReply(id, "", tabBadge(op.getInt("index")));
+                return;
             case "screenshot":
                 screenshot(id, 3);
                 return;
@@ -773,6 +779,29 @@ final class TestAgent {
                 .put("transient", controller.getSystemBarsBehavior() == WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE)
                 .put("safe", new JSONObject().put("Top", safe.top / density).put("Right", safe.right / density)
                         .put("Bottom", safe.bottom / density).put("Left", safe.left / density)).toString();
+    }
+
+    private static TabBar findTabBar(View root) {
+        if (root instanceof TabBar) return (TabBar) root;
+        if (root instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) root;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                TabBar tab = findTabBar(group.getChildAt(i));
+                if (tab != null) return tab;
+            }
+        }
+        return null;
+    }
+
+    private String tabBadge(int index) throws JSONException {
+        TabBar bar = findTabBar(view);
+        if (bar == null || index < 0 || index >= bar.getChildCount()) return "{}";
+        LinearLayout item = (LinearLayout) bar.getChildAt(index);
+        FrameLayout pill = (FrameLayout) item.getChildAt(0);
+        TextView mark = (TextView) pill.getChildAt(1);
+        return new JSONObject().put("item", System.identityHashCode(item))
+                .put("shown", mark.getVisibility() == View.VISIBLE).put("text", mark.getText().toString())
+                .put("description", item.getContentDescription().toString()).toString();
     }
 
     private static int keyCode(String name) {

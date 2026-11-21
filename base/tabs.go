@@ -23,10 +23,11 @@ type Tab struct {
 	Children  []core.Node
 	Label     string
 	// LabelFunc keeps the accessible label bound while the tab stays mounted.
-	LabelFunc func() string
-	Hint      string
-	HintFunc  func() string
-	TestID    string
+	LabelFunc          func() string
+	AccessibilityValue func() core.AccessibilityValue
+	Hint               string
+	HintFunc           func() string
+	TestID             string
 	// OnLayout and Tooltip are its view's, as a core.View's.
 	OnLayout func(core.Bounds)
 	Tooltip  core.Node
@@ -39,7 +40,7 @@ func (t Tab) Render(cx *core.Scope) core.Node {
 		press = func(core.PressEvent) {}
 	}
 	return rovingView(cx, core.View{Class: t.Class, Style: t.Style, StyleFunc: t.StyleFunc, Role: core.RoleTab, Label: t.Label, LabelFunc: t.LabelFunc, Hint: t.Hint, HintFunc: t.HintFunc, TestID: t.TestID, OnLayout: t.OnLayout, Tooltip: t.Tooltip,
-		Disabled: t.Disabled, Invalid: t.Invalid, Selected: t.Selected, OnPress: press, Children: t.Children}, t.Selected, func() { press(core.PressEvent{}) })
+		AccessibilityValue: t.AccessibilityValue, Disabled: t.Disabled, Invalid: t.Invalid, Selected: t.Selected, OnPress: press, Children: t.Children}, t.Selected, func() { press(core.PressEvent{}) })
 }
 
 // tabsIndicator is how a tab list's indicator moves to another tab:

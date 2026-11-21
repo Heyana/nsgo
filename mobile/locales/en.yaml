@@ -1,0 +1,3 @@
+tabBadgeNew:
+  message: New
+  description: What assistive technology announces for a tab's dot badge.

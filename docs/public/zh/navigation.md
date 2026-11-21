@@ -79,6 +79,8 @@ ui.Menu{Trigger: ui.Button{Text: "操作", Variant: ui.ButtonSecondary}, Childre
 
 `mobile.TabBar` 是 iOS 和 Android 的系统标签栏，带 Liquid Glass 或 Material 外观；它接收 `mobile.TabBarItem{Title, Icon, SVG}` 组成的 `Items`、选中索引、`OnChange`，以及可选的 `Edge`（`mobile.TabBarBottom`、`mobile.TabBarLeading`、`mobile.TabBarTrailing` 或在 iOS 27.1 上跟随 `cx.Env().VerticalBarEdge()` 并在其他平台回退到底部的 `mobile.TabBarAutomatic`）或响应式 `EdgeFunc`。Android 的 `tabBarBackground`、`tabBarIdle`、`tabBarSelected` 和 `tabBarIndicator` 分别设置标签栏背景、未选中项的图标和文字、选中项的图标和文字，以及选中项的胶囊背景。自定义调色板分别回退到 `Surface`、`TextMuted`、`Accent` 和 `accentContainer`，未设 `accentContainer` 时使用 12% 不透明度的强调色。默认调色板保留 Material 的背景和未选中项颜色，选中项使用强调色。其他平台上它不占空间，因此应用在那里显示 `ui.Tabs`。`mobile.IsAvailable(cx)` 说明标签栏是否显示。`Icon` 是平台图标名；在 Android 上，`Icon` 找不到对应 drawable 时显示 `SVG`（例如 `lucide.House()`），并像 drawable 一样由标签栏着色。
 
+`TabBarItem.Badge` 可设为 `mobile.TabBadge{Text: "3"}` 显示文字，或设为 `mobile.TabBadge{Dot: true}` 显示圆点。通过 `ItemsFunc` 更新，返回零值即可清除。`ui.ShellTab.Badge` 接收 `func() mobile.TabBadge`，适用于系统栏和自行绘制的栏。两项同时设置时优先显示文字。UIKit 用没有可见文字的原生徽标呈现圆点。辅助技术会读出徽标文字，或用本地化的提示说明有新内容。TSX 原生标签栏的项可用 `badge: { text: "3" }` 或 `badge: { dot: true }`，`TabShell` 的项使用返回同样对象的函数。
+
 ```go
 mobile.TabBar{
 	Items: []mobile.TabBarItem{{Title: "首页", Icon: "house"}, {Title: "搜索", Icon: "magnifyingglass"}},

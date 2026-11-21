@@ -10,6 +10,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
+	"github.com/nsgo-dev/nsgo/mobile/locales"
 )
 
 // directionalEdgeInsets is NSDirectionalEdgeInsets.
@@ -38,6 +39,9 @@ type tabBar struct {
 	tint      driver.Color
 	edge      tabBarEdge
 	metrics   tabBarSizing
+	badges    driver.TabBadges
+	// marks are the rail buttons' badge labels, one per button.
+	marks []objc.ID
 	// selected is the selected tab's index, kept for props in any order.
 	selected int
 }
@@ -233,6 +237,8 @@ func (t *tabBar) layoutSubviews() {
 	w := max(bounds.Size.Width-left-right, 0)
 	h := max(bounds.Size.Height-top-bottom, 0)
 	t.stack.Send(selSetFrame, apple.Rect(left, top, w, h))
+	t.stack.Send(sel("layoutIfNeeded"))
+	t.placeMarks()
 }
 
 // ensureRail lazily builds the vertical bar hierarchy (Liquid Glass or system
@@ -292,7 +298,10 @@ func (t *tabBar) clearRailButtons() {
 		b.Send(selRemoveFromSuperview)
 		b.Send(selRelease)
 	}
-	t.buttons = t.buttons[:0]
+	for _, m := range t.marks {
+		m.Send(selRelease)
+	}
+	t.buttons, t.marks = t.buttons[:0], t.marks[:0]
 }
 
 func (t *tabBar) rebuildRailButtons() {
@@ -307,8 +316,19 @@ func (t *tabBar) rebuildRailButtons() {
 		t.buttons = append(t.buttons, btn)
 		tabBarButtons[btn] = t
 		t.stack.Send(sel("addArrangedSubview:"), btn)
+		mark := objc.ID(apple.Class("UILabel")).Send(selNew)
+		mark.Send(sel("setUserInteractionEnabled:"), false)
+		mark.Send(selSetFont, objc.ID(apple.Class("UIFont")).Send(sel("systemFontOfSize:weight:"), 11.0, 0.23))
+		mark.Send(selSetTextColor, objc.ID(apple.Class("UIColor")).Send(sel("whiteColor")))
+		mark.Send(sel("setBackgroundColor:"), objc.ID(apple.Class("UIColor")).Send(sel("systemRedColor")))
+		mark.Send(selSetTextAlignment, 1)
+		mark.Send(sel("setClipsToBounds:"), true)
+		mark.Send(selSetHidden, true)
+		btn.Send(selAddSubview, mark)
+		t.marks = append(t.marks, mark)
 	}
 	t.styleRailButtons()
+	t.showBadges()
 }
 
 func (t *tabBar) railForeground(selected bool) objc.ID {
@@ -413,6 +433,7 @@ func (t *tabBar) SetProp(name string, value any) {
 	case "items":
 		list, _ := value.([]any)
 		t.setItems(list)
+		t.showBadges()
 	case "label":
 		label, _ := value.(string)
 		t.label = label
@@ -436,6 +457,9 @@ func (t *tabBar) SetProp(name string, value any) {
 			t.container.Send(selSetNeedsLayout)
 			t.layoutSubviews()
 		}
+	case "badges":
+		t.badges, _ = value.(driver.TabBadges)
+		t.showBadges()
 	case "selectedIndex":
 		i, _ := value.(float64)
 		t.selected = int(i)
@@ -502,6 +526,57 @@ func (t *tabBar) setItems(list []any) {
 	}
 	t.showSelected()
 	t.measure()
+}
+
+// showBadges updates the existing items. A space lets UIKit draw its
+// native badge without visible text for a dot.
+func (t *tabBar) showBadges() {
+	messages := locales.In(t.badges.Language)
+	for i, item := range t.items {
+		var value, spoken string
+		if i < len(t.badges.Items) {
+			badge := t.badges.Items[i]
+			value, spoken = badge.Text, badge.Text
+			if value == "" && badge.Dot {
+				value, spoken = " ", messages.TabBadgeNew()
+			}
+		}
+		item.Send(sel("setBadgeValue:"), nsOrNil(value))
+		item.Send(selSetAccessibilityValue, nsOrNil(spoken))
+	}
+	for i, btn := range t.buttons {
+		var badge driver.TabBadge
+		if i < len(t.badges.Items) {
+			badge = t.badges.Items[i]
+		}
+		spoken := badge.Text
+		if spoken == "" && badge.Dot {
+			spoken = messages.TabBadgeNew()
+		}
+		btn.Send(selSetAccessibilityValue, nsOrNil(spoken))
+		if i < len(t.marks) {
+			t.marks[i].Send(selSetText, nsOrNil(badge.Text))
+			t.marks[i].Send(selSetHidden, badge == (driver.TabBadge{}))
+		}
+	}
+	t.placeMarks()
+}
+
+// placeMarks sizes each rail badge to its text, or to a dot, and pins it beside the top of the button's icon, as UITabBar places its badges.
+func (t *tabBar) placeMarks() {
+	for i, mark := range t.marks {
+		if i >= len(t.buttons) || objc.Send[bool](mark, sel("isHidden")) {
+			continue
+		}
+		bounds := objc.Send[apple.CGRect](t.buttons[i], selBounds)
+		w, h := 8.0, 8.0
+		if apple.GoString(mark.Send(selText)) != "" {
+			text := objc.Send[apple.CGSize](mark, sel("intrinsicContentSize"))
+			w, h = max(text.Width+8, 16), 16
+		}
+		mark.Send(selSetFrame, apple.Rect(bounds.Size.Width/2+6, 2, w, h))
+		mark.Send(selLayer).Send(sel("setCornerRadius:"), h/2)
+	}
 }
 
 func (t *tabBar) Command(string, any) {}

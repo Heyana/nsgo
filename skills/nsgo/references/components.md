@@ -34,6 +34,7 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 - `base/terminal` runs browser sessions through `Options.Conn` (`io.ReadWriteCloser`); adapt WebSocket messages to a continuous binary stream, own its server/control protocol, and close the session with the scope. Browser builds embed libghostty-vt Wasm and need no native library or Zig installation. [Terminal](https://nsgo.dev/docs/terminal.md).
 - Use `ui.ShellTab.TextFunc` and `ui.TabShell.LabelFunc` for a changing tab title and bar name, and set `Edge` (`mobile.TabBarLeading`, `mobile.TabBarTrailing` or `mobile.TabBarAutomatic`, reading `core.Env.VerticalBarEdge`) on `mobile.TabBar` or `ui.TabShell` to place the bar vertically along an edge.
 - Set `tabBarBackground`, `tabBarIdle`, `tabBarSelected` and `tabBarIndicator` as Android `mobile.TabBar` palette roles. A custom palette uses `Accent` for selected content by default.
+- Set `mobile.TabBarItem.Badge` to a `mobile.TabBadge` with `Text` or `Dot`. Update it through `ItemsFunc`, or give `ui.ShellTab.Badge` a getter. Assert a native item with `nsgotest.View.TabBadge(index)`.
 
 - For a marker band behind wrapped text, give a `core.Span` a `Background` and `BackgroundInsetTop`, such as `core.Pct(62)` ([text](https://nsgo.dev/docs/text.md#runs-and-links)).
 - Set `core.SaveOptions.Start` to an existing absolute folder to start the system save dialog there on macOS, Windows, Linux and iOS. [Files](https://nsgo.dev/docs/services.md#files).

@@ -992,3 +992,27 @@ func TestTabShellAndroidVerticalUsesDrawnFallback(t *testing.T) {
 		t.Fatal("Android vertical fallback tabs did not stack vertically")
 	}
 }
+
+func TestTabShellDrawnBadgeUpdatesItsAccessibleValue(t *testing.T) {
+	var change func(core.TabBadge)
+	app, _ := shell(t, desktopEnv, func(cx *core.Scope) core.Node {
+		badge := core.NewSignal(cx, core.TabBadge{Text: "3"})
+		change = badge.Set
+		return TabShell{Tabs: []ShellTab{{Text: "Inbox", Badge: badge.Get}}}
+	})
+	tab := app.Find("role:tab Inbox")
+	mark := app.Find(`text:"3"`).Parent
+	if mark.Bounds().Size.Height != 16 || tab.Props.Value.Text != "3" {
+		t.Fatalf("text badge height %v, accessible value %q", mark.Bounds().Size.Height, tab.Props.Value.Text)
+	}
+	app.Post(func() { change(core.TabBadge{Dot: true}) })
+	app.Settle()
+	if got := app.Find("role:tab Inbox"); got != tab || got.Props.Value.Text != "New" || mark.Bounds().Size.Height != 6 {
+		t.Fatalf("dot badge height %v, accessible value %q", mark.Bounds().Size.Height, got.Props.Value.Text)
+	}
+	app.Post(func() { change(core.TabBadge{}) })
+	app.Settle()
+	if got := app.Find("role:tab Inbox"); got != tab || got.Props.Value.Text != "" {
+		t.Fatalf("cleared badge kept accessible value %q", got.Props.Value.Text)
+	}
+}

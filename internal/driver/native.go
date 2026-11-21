@@ -13,6 +13,19 @@ type NativeConfig struct {
 	Bindings []NativeBinding
 }
 
+// TabBadge is the mark on a native tab. Text takes precedence over Dot.
+type TabBadge struct {
+	Dot  bool   `json:"dot,omitempty"`
+	Text string `json:"text,omitempty"`
+}
+
+// TabBadges is the tab bar's independently updated badge prop. Language
+// is the app's language, for the platform's badge announcements.
+type TabBadges struct {
+	Items    []TabBadge
+	Language string
+}
+
 // NativeBinding binds a component's prop Name to animated node Node;
 // Color says the node outputs a color.
 type NativeBinding struct {

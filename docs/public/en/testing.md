@@ -112,6 +112,8 @@ Headless tests inspect `app.EditMenu` and `app.EditMenuItems()`, choose an offer
 
 Headless tests simulate game controllers with `app.ConnectGamepad(id, name)`, `app.SetGamepadInfo(id, family, vendorID, productID, canRumble)`, `app.DisconnectGamepad(id)`, `app.SetGamepadButton(id, btn, value)` and `app.SetGamepadAxis(id, axis, value)`: connect, info updates and disconnect settle and rerender scopes reading `gamepad.Pads`, while button and axis updates take effect on the next frame for `gamepad.State`. `app.GamepadRumbles()` and `app.LastGamepadRumble(id)` inspect recorded `gamepad.RumbleEvent` start and stop commands. Under `-target` they skip the test.
 
+`app.FindMounted("id:tab-bar").TabBadge(index)` returns a native tab's text or dot badge in headless and target tests. On a drawn `ui.TabShell` tab, `Props.Value.Text` is the value announced for the badge.
+
 ## Run the tests
 
 ```sh

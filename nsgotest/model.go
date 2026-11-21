@@ -1842,6 +1842,16 @@ func (v *View) localPoint(p driver.Point) driver.Point {
 	return local
 }
 
+// TabBadge returns the badge of a tab in a native tab bar, by index.
+// An absent tab or badge returns the zero value.
+func (v *View) TabBadge(index int) core.TabBadge {
+	badges, _ := v.NativeProps["badges"].(driver.TabBadges)
+	if index < 0 || index >= len(badges.Items) {
+		return core.TabBadge{}
+	}
+	return badges.Items[index]
+}
+
 // Bounds is v's layout frame in surface points, as its ancestors and their scroll offsets place it, before transforms: what Ref.Bounds reports.
 func (v *View) Bounds() core.Bounds { return v.surfaceFrame() }
 

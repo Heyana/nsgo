@@ -104,6 +104,8 @@ func TestMain(m *testing.M) {
 
 应用锁定指针后，`app.PointerDelta(dx, dy)` 向锁定的视图发送相对位移。无头测试用 `nsgotest.Environment(core.Environment{CanLockPointer: true})` 启用此功能。无头测试和目标测试都可用 Escape 解锁。
 
+`app.FindMounted("id:tab-bar").TabBadge(index)` 在无头和目标平台测试中返回原生标签页的文字或圆点徽标。自行绘制的 `ui.TabShell` 标签项通过 `Props.Value.Text` 提供徽标的朗读内容。
+
 ## 运行测试
 
 ```sh

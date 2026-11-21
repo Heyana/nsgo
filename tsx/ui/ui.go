@@ -280,6 +280,7 @@ type ShellTab struct {
 	TextFunc   func() string
 	Icon       func() *core.SVG
 	SystemIcon string
+	Badge      func() core.TabBadge
 	Content    core.Node
 	TestID     string
 }
@@ -300,7 +301,7 @@ type TabShell struct {
 func (t TabShell) Render(*core.Scope) core.Node {
 	tabs := make([]ui.ShellTab, len(t.Tabs))
 	for i, tab := range t.Tabs {
-		tabs[i] = ui.ShellTab{Text: tab.Text, TextFunc: tab.TextFunc, Icon: tab.Icon, SystemIcon: tab.SystemIcon, TestID: tab.TestID,
+		tabs[i] = ui.ShellTab{Text: tab.Text, TextFunc: tab.TextFunc, Icon: tab.Icon, SystemIcon: tab.SystemIcon, Badge: tab.Badge, TestID: tab.TestID,
 			Content: func(*core.Scope) core.Node { return tab.Content }}
 	}
 	return ui.TabShell{Tabs: tabs, Selected: t.Selected, OnChange: t.OnChange, Edge: t.Edge, EdgeFunc: t.EdgeFunc, Label: t.Label, LabelFunc: t.LabelFunc, TestID: t.TestID}

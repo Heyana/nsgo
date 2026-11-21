@@ -198,13 +198,17 @@ import { TabShell } from "nsgo/ui";
 function App() {
     const selected = signal(0);
     return <TabShell selected={selected()} onChange={(e) => selected.set(e.index)} tabs={[
-        { text: "Home", icon: '<svg viewBox="0 0 24 24"><rect width="24" height="24"/></svg>', content: () => <Text>Home page</Text> },
+        { text: "Home", icon: '<svg viewBox="0 0 24 24"><rect width="24" height="24"/></svg>', badge: () => selected() === 0 ? { text: "3" } : { dot: true }, content: () => <Text>Home page</Text> },
         { text: "Search", icon: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>', content: () => <Text>Search page</Text> }
     ]} />;
 }
 mount(App);`)}}
 	app := nsgotest.Start(t, compiler.App(files, "App.tsx"), nsgotest.Environment(core.Environment{OS: core.OSAndroid}))
-	items := app.FindMounted("id:tab-bar").NativeProps["items"].([]any)
+	bar := app.FindMounted("id:tab-bar")
+	if got := bar.TabBadge(0); got != (core.TabBadge{Text: "3"}) {
+		t.Fatalf("TSX shell badge = %v, want 3", got)
+	}
+	items := bar.NativeProps["items"].([]any)
 	for _, item := range items {
 		if d, ok := item.(map[string]any)["drawing"].(*driver.Drawing); !ok || len(d.Ops) == 0 {
 			t.Fatal("TSX shell icon did not reach Android's native bar")
@@ -212,6 +216,9 @@ mount(App);`)}}
 	}
 	app.Emit("id:tab-bar", "change", float64(1))
 	app.Find("text:Search page")
+	if got := app.FindMounted("id:tab-bar").TabBadge(0); got != (core.TabBadge{Dot: true}) {
+		t.Fatalf("updated TSX shell badge = %v, want dot", got)
+	}
 }
 
 func TestAlertDialogActionRolesFromTSX(t *testing.T) {

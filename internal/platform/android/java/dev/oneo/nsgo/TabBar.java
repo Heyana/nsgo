@@ -12,6 +12,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.util.TypedValue;
+import android.text.TextUtils;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
@@ -57,6 +58,8 @@ public final class TabBar extends LinearLayout {
     private int inactive;
     private int indicator;
     private int activeContent;
+    private int badgeColor = 0xffb3261e;
+    private JSONArray badges = new JSONArray();
     private final float density;
     /** The pixels of this bar over the system's navigation bar, kept clear as bottom padding. */
     private int bottomInset;
@@ -112,6 +115,8 @@ public final class TabBar extends LinearLayout {
         }
         if (updateTitles(items)) {
             renderedItems = items;
+            // A retitled tab's description carries its badge announcement again.
+            showBadges();
             return;
         }
         removeAllViews();
@@ -123,6 +128,7 @@ public final class TabBar extends LinearLayout {
                     new LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
         }
         restyle();
+        showBadges();
     }
 
     /** Updates titles without replacing the tabs that have the same icons. */
@@ -178,6 +184,49 @@ public final class TabBar extends LinearLayout {
     public void setIndicator(long argb) { indicator = (int) argb; restyle(); }
     public void setActiveContent(long argb) { activeContent = (int) argb; restyle(); }
 
+    public void setBadgeColor(long argb) {
+        badgeColor = argb == 0 ? 0xffb3261e : (int) argb;
+        showBadges();
+    }
+
+    /** Badge updates leave the tab views and their focus in place. */
+    public void setBadges(String json) {
+        try {
+            badges = new JSONArray(json);
+        } catch (JSONException e) {
+            badges = new JSONArray();
+        }
+        showBadges();
+    }
+
+    private void showBadges() {
+        for (int i = 0; i < getChildCount(); i++) {
+            LinearLayout item = (LinearLayout) getChildAt(i);
+            FrameLayout pill = (FrameLayout) item.getChildAt(0);
+            TextView mark = (TextView) pill.getChildAt(1);
+            TextView title = (TextView) item.getChildAt(1);
+            JSONObject badge = badges.optJSONObject(i);
+            String text = badge == null ? "" : badge.optString("text");
+            boolean dot = text.isEmpty() && badge != null && badge.optBoolean("dot");
+            String announcement = badge == null ? "" : badge.optString("announcement");
+            item.setContentDescription(announcement.isEmpty() ? title.getText() : title.getText() + ", " + announcement);
+            mark.setText(text);
+            mark.setVisibility(dot || !text.isEmpty() ? VISIBLE : GONE);
+            if (mark.getVisibility() == GONE) continue;
+            int size = dp(dot ? 6 : 16);
+            mark.setMinWidth(size);
+            mark.setPadding(dp(dot ? 0 : 4), 0, dp(dot ? 0 : 4), 0);
+            GradientDrawable shape = (GradientDrawable) mark.getBackground();
+            shape.setColor(badgeColor);
+            shape.setCornerRadius(size / 2f);
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) mark.getLayoutParams();
+            lp.width = dot ? size : LayoutParams.WRAP_CONTENT;
+            lp.height = size;
+            lp.setMarginEnd(dp(dot ? 16 : 10));
+            mark.setLayoutParams(lp);
+        }
+    }
+
     private View tab(int index, String title, Drawable icon) {
         LinearLayout item = new LinearLayout(getContext());
         item.setOrientation(VERTICAL);
@@ -190,6 +239,18 @@ public final class TabBar extends LinearLayout {
         ImageView image = new ImageView(getContext());
         if (icon != null) image.setImageDrawable(icon.mutate());
         pill.addView(image, new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
+        TextView badge = new TextView(getContext());
+        badge.setBackground(new GradientDrawable());
+        badge.setTextColor(0xffffffff);
+        badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        badge.setGravity(Gravity.CENTER);
+        badge.setIncludeFontPadding(false);
+        badge.setSingleLine(true);
+        badge.setMaxWidth(dp(50));
+        badge.setEllipsize(TextUtils.TruncateAt.END);
+        badge.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        badge.setVisibility(GONE);
+        pill.addView(badge, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.END));
         item.addView(pill, new LayoutParams(dp(64), dp(32)));
         TextView label = new TextView(getContext());
         label.setText(title);
