@@ -139,6 +139,7 @@ func TestOverlayProtocolMatchesJava(t *testing.T) {
 		"OVERLAY_END_FAILED":       driver.OverlayEndFailed,
 		"VIDEO_PAUSE_INTERRUPTION": driver.VideoPauseInterruption, "VIDEO_PAUSE_ROUTE_LOST": driver.VideoPauseRouteLost,
 		"VIDEO_PAUSE_CONTROLS": driver.VideoPauseControls,
+		"BORDER_DASHED":        int(driver.BorderDashed), "BORDER_DOTTED": int(driver.BorderDotted),
 	} {
 		if got, ok := values[name]; !ok || got != want {
 			t.Errorf("Protocol.java's %s is %d (found %v), Go's %d", name, got, ok, want)

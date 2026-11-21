@@ -284,6 +284,46 @@ final class Look {
         return sides ? borderColors[i] : borderColor;
     }
 
+    /** Whether any corner is rounded, as driver.ViewStyle.Rounded. */
+    boolean rounded() {
+        if (corners != null) {
+            return corners[0] > 0 || corners[1] > 0 || corners[2] > 0 || corners[3] > 0;
+        }
+        return radius > 0;
+    }
+
+    /**
+     * Whether a rounded box stops its fill under a uniform solid border, as
+     * driver.ViewStyle.Rim: visible fill and border with at least one opaque,
+     * no per-side borders, no dashes or dots, and no gradients.
+     */
+    boolean hasRim() {
+        int bgAlpha = background >>> 24, borderAlpha = borderColor >>> 24;
+        return rounded() && border > 0 && !sides && borderAlpha != 0 && bgAlpha != 0
+                && (bgAlpha == 0xff || borderAlpha == 0xff)
+                && borderStyle != Protocol.BORDER_DASHED && borderStyle != Protocol.BORDER_DOTTED
+                && gradients.length == 0;
+    }
+
+    /** The border color composited over the background for a rim, as driver.ViewStyle.Rim. */
+    int rimColor() {
+        return over(borderColor, background);
+    }
+
+    /** How far the fill stops inside the outer edge under a rim, as driver.ViewStyle.Rim. */
+    float rimInset() {
+        return border * 3 / 4;
+    }
+
+    /** Composites ARGB color top over opaque ARGB color under, as driver.Color.Over. */
+    static int over(int top, int under) {
+        int a = top >>> 24;
+        int r = (((top >>> 16) & 0xff) * a + ((under >>> 16) & 0xff) * (255 - a) + 127) / 255;
+        int g = (((top >>> 8) & 0xff) * a + ((under >>> 8) & 0xff) * (255 - a) + 127) / 255;
+        int b = ((top & 0xff) * a + (under & 0xff) * (255 - a) + 127) / 255;
+        return 0xff000000 | (r << 16) | (g << 8) | b;
+    }
+
     private static boolean has(int mask, int property) {
         return mask == 0 || (mask & property) != 0;
     }

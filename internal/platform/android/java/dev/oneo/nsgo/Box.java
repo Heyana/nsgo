@@ -80,7 +80,18 @@ final class Box extends GradientDrawable {
             canvas.restoreToCount(at);
         }
         paint.setStyle(Paint.Style.FILL);
-        if ((look.background >>> 24) != 0) {
+        boolean rimmed = look.hasRim();
+        if (rimmed) {
+            // Stop the fill inset under the border so curved outer edge pixels
+            // take only the rimmed border color, matching driver.ViewStyle.Rim
+            // (and border()'s 1 px minimum stroke width).
+            float inset = Math.max(0.75f, look.rimInset());
+            if (w > 2 * inset && h > 2 * inset) {
+                box(path, inset, inset, w - 2 * inset, h - 2 * inset, Shape.inset(radii, inset), continuous);
+                paint.setColor(look.background);
+                canvas.drawPath(path, paint);
+            }
+        } else if ((look.background >>> 24) != 0) {
             paint.setColor(look.background);
             canvas.drawPath(path, paint);
         }
@@ -92,7 +103,7 @@ final class Box extends GradientDrawable {
         }
         float[] widths = widths();
         insets(canvas, w, h, radii, widths);
-        border(canvas, w, h, radii, widths);
+        border(canvas, w, h, radii, widths, rimmed ? look.rimColor() : look.borderColor);
         Look.Outline o = look.outline;
         if (o != null && o.width > 0 && (o.color >>> 24) != 0) {
             float out = o.offset + o.width / 2;
@@ -172,14 +183,15 @@ final class Box extends GradientDrawable {
      * same all round, else the ring between the box and the padding box,
      * each side filling its part, as CSS joins sides that differ.
      */
-    private void border(Canvas canvas, float w, float h, float[] radii, float[] widths) {
+    private void border(Canvas canvas, float w, float h, float[] radii, float[] widths, int borderColor) {
         int[] colors = look.sides ? look.borderColors
-                : new int[] {look.borderColor, look.borderColor, look.borderColor, look.borderColor};
+                : new int[] {borderColor, borderColor, borderColor, borderColor};
         float widest = Math.max(Math.max(widths[0], widths[1]), Math.max(widths[2], widths[3]));
         if (widest <= 0) return;
         boolean same = widths[0] == widths[1] && widths[1] == widths[2] && widths[2] == widths[3]
                 && colors[0] == colors[1] && colors[1] == colors[2] && colors[2] == colors[3];
-        if (look.borderStyle != Protocol.BORDER_SOLID || same) {
+        boolean dashed = look.borderStyle == Protocol.BORDER_DASHED || look.borderStyle == Protocol.BORDER_DOTTED;
+        if (dashed || same) {
             float wd = Math.max(1, widest);
             stroke(canvas, wd / 2, wd / 2, w - wd, h - wd, Shape.inset(radii, wd / 2), wd, colors[0], look.borderStyle);
             return;
