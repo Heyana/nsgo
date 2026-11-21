@@ -1124,6 +1124,27 @@ func (t *testSurface) Back() error {
 	return nil
 }
 
+// SelectTab selects the native tab bar's item at index, as tapping it would.
+func (t *testSurface) SelectTab(id driver.NodeID, index int) error {
+	var err error
+	onMainSync(func() {
+		v := t.s.views[id]
+		if v == nil {
+			err = fmt.Errorf("no view has ID %d", id)
+			return
+		}
+		bar, ok := v.component.(*tabBar)
+		if !ok || index < 0 || index >= len(bar.items) {
+			err = fmt.Errorf("view %d has no tab at index %d", id, index)
+			return
+		}
+		item := bar.items[index]
+		bar.bar.Send(sel("setSelectedItem:"), item)
+		bar.bar.Send(sel("delegate")).Send(sel("tabBar:didSelectItem:"), bar.bar, item)
+	})
+	return err
+}
+
 // Answer taps the alert's button with the action's title on simulators, or
 // dismisses the alert controller and dispatches the action on physical devices.
 func (t *testSurface) Answer(id uint32, index int) error {
