@@ -67,6 +67,9 @@ On the store channel, `-target macos` and `-target macos_universal` write one un
 Linux store builds write an installable `.flatpak` in Go alongside the archive and `flatpak/<id>.yml` for flatpak-builder/Flathub. Install with `flatpak install --user ./<bundle>.flatpak`; use a configured remote for GNOME runtime dependencies.
 
 Android store builds require API 36 or higher. Record outstanding store questionnaires in `compliance` and declare Apple's export compliance in `apple.info` ([Store compliance](https://nsgo.dev/docs/building.md#store-compliance)).
+
+For Google Play, build with `-target android -channel store`, then use `go tool nsgo publish -target android -track internal`. Set `NSGO_PLAY_SERVICE_ACCOUNT` to the service account JSON key or its file path. [Google Play publishing](https://nsgo.dev/docs/building.md#publish-to-google-play)
+
 For Steam, upload the desktop target directories directly. Use `steam-launch.sh` for Linux x64 and upload `nsgo-gtk/` with it. Native dev with `steam.app_id` writes `steam_appid.txt` into its build and starts there. The depot output excludes that file, installers and self-updaters.
 
 Set `web.offline: true` in `nsgo.yaml` to cache a published web build and its packaged resources for offline launch. Serve the site over HTTPS or preview it with `go tool nsgo build -target web -run`. See [Offline web packages](https://nsgo.dev/docs/building.md#offline-web-packages).

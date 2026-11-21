@@ -43,6 +43,10 @@ func TestWriteBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	identity, err := ReadBundleIdentity(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if want := (BundleIdentity{Package: "dev.oneo.nsgo.test", VersionCode: 10000}); err != nil || identity != want {
+		t.Fatalf("bundle identity = %+v, %v; want %+v", identity, err, want)
+	}
 	r, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
 	if err != nil {
 		t.Fatal(err)
@@ -136,6 +140,26 @@ func TestWriteBundle(t *testing.T) {
 	digest := sha256.Sum256(sf)
 	if err := rsa.VerifyPKCS1v15(&key.Private.PublicKey, crypto.SHA256, digest[:], sd.Signers[0].Signature); err != nil {
 		t.Errorf("the signature does not verify: %v", err)
+	}
+}
+
+func TestReadBundleIdentityRejectsIncompleteManifest(t *testing.T) {
+	for _, manifest := range [][]byte{[]byte("\x0a\xff"), pbBytes(nil, 1, pbString(nil, 3, "manifest"))} {
+		var data bytes.Buffer
+		w := zip.NewWriter(&data)
+		entry, err := w.Create("base/manifest/AndroidManifest.xml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write(manifest); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReadBundleIdentity(bytes.NewReader(data.Bytes()), int64(data.Len())); err == nil {
+			t.Fatalf("accepted incomplete manifest %x", manifest)
+		}
 	}
 }
 

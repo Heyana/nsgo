@@ -168,6 +168,10 @@ A `store` build (`-channel store`) writes store packages for desktop and Android
 
 `compliance.go` runs after target expansion. It reads the app author's optional questionnaire statuses from `compliance` and prints a reminder for an outstanding item on the corresponding channel and target. Apple store builds check the types of the export compliance keys in `apple.info` and validate the app's privacy manifest before and after merging, so an invalid field cannot disappear in the merge. Embedded packages take the host app's store requirements.
 
+### Google Play publishing
+
+`nsgo publish -target android -track TRACK` opens the store AAB from the project's release directory, or an explicit `.aab` file. `apk.ReadBundleIdentity` reads the package name and version code from the bundle's protobuf base manifest before any API request. The publisher authenticates with the Android Publisher scope using the service account key in `NSGO_PLAY_SERVICE_ACCOUNT`, through the same client as store listings. It opens a Play edit, compares the bundle against all version codes on the selected track, streams the bundle, updates the track and commits. If any step fails after the edit opens, the tool attempts to delete the edit and reports the original failure.
+
 ### Steam depots
 
 `steam.go` limits the Steam channel to desktop targets, including `macos_universal`. The tool writes the ordinary signed bundle or executable directory and skips installers, store archives and the releases directory. Native `dev` with `steam.app_id` writes `steam_appid.txt` into its build directory and launches the app there, which is where Steamworks reads the file. Steam release and development packages filter copies of that file out of app resources.

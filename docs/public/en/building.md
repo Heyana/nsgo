@@ -242,6 +242,16 @@ Every Apple bundle `build` writes, the app, its widget extension, App Clip and A
 
 The Info.plist of each iOS, tvOS and watchOS bundle `build` writes for devices, the app's, its widget extension's and App Clip's, carries the SDK and Xcode `DT` keys App Store Connect checks, read from the Xcode that builds it, and `UIRequiredDeviceCapabilities: [arm64]`; simulator bundles leave them out, and a key `apple.info` sets keeps its value. `apple.multiple_scenes: true` sets `UIApplicationSupportsMultipleScenes` in an iOS app's scene manifest, which is false by default: on an iPad the user can then open more than one window of the app, and each shows the app's main view anew, with state of its own and the app's shared signals and storage, until the user closes it.
 
+### Publish to Google Play
+
+Enable the Google Play Developer API and give a service account permission to release the app to the chosen track. Set `NSGO_PLAY_SERVICE_ACCOUNT` to the account's JSON key or to the path of its key file. [Google Play API setup](https://developers.google.com/android-publisher/getting_started)
+
+```sh
+go tool nsgo build -target android -channel store
+go tool nsgo publish -target android -track internal
+```
+
+The command finds the App Bundle for the project's version in `build.output/releases`. Pass a `.aab` path after the flags to select a file when there are multiple builds. Use `internal`, `production`, or the track ID of a closed test. The command reads the package and version code from the bundle, requires a code higher than every release on that track, then uploads the bundle and commits the release.
 
 ## Store listings
 

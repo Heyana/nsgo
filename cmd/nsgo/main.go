@@ -24,6 +24,8 @@
 //	                                                      upload a signed IPA or PKG to App Store Connect
 //	nsgo publish -store appstore|play|all [-listings DIR] [-dry-run] [-platform P] [-version V] [-track T] [dir]
 //	                                                      validate and upload store listings from YAML and Markdown files
+//	nsgo publish -target android -track TRACK [dir | bundle.aab]
+//	                                                      upload an Android App Bundle and commit a Play track release
 //	nsgo verify  [-root P,... [-revocations F,...]] package
 //	                                                      check a package and print what it holds
 //	nsgo revoke  -sequence N [-days N] [-keys IDs] [-packages H,...] -out F
@@ -40,6 +42,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -206,6 +209,7 @@ func main() {
 		}
 		fs := flag.NewFlagSet("publish", flag.ExitOnError)
 		var o publishOptions
+		target := fs.String("target", "", "publish an Android App Bundle to Google Play with `android`")
 		fs.StringVar(&o.cert, "cert", "", "the release key's certificate `file`; its secret key is NSGO_RELEASE_KEY's")
 		fs.StringVar(&o.entry, "entry", "", "the TSX `entry` to compile (default: the one the main package runs, else App.tsx)")
 		fs.StringVar(&o.minRuntime, "min-runtime", "", "the oldest runtime `version` the package runs on (default: this tool's)")
@@ -216,11 +220,24 @@ func main() {
 		fs.BoolVar(&o.dryRun, "dry-run", false, "parse and validate store listings without uploading")
 		fs.StringVar(&o.platform, "platform", "", "the App Store Connect `platform`: ios, macos, tvos or visionos (default: listing.yaml's app_store.platform, else ios)")
 		fs.StringVar(&o.version, "version", "", "the App Store Connect app `version` string (default: listing.yaml's app_store.version, else nsgo.yaml's version)")
-		fs.StringVar(&o.track, "track", "", "the Google Play `track` to update release notes on (default: listing.yaml's google_play.track)")
+		fs.StringVar(&o.track, "track", "", "the Google Play `track`: with -target android, the one to release the App Bundle to, such as internal, production or a closed track's ID; with -store, the one to update release notes on (default: listing.yaml's google_play.track)")
 		if err = parseCommand(fs, args, 1); err != nil {
 			break
 		}
-		err = publishWithContext(ctx, o, fs.Arg(0))
+		switch *target {
+		case "android":
+			rest := o
+			rest.track = ""
+			if rest != (publishOptions{}) {
+				err = errors.New("publish: -target android takes only -track and an App Bundle or project directory")
+				break
+			}
+			err = publishPlay(ctx, o.track, fs.Arg(0))
+		case "":
+			err = publishWithContext(ctx, o, fs.Arg(0))
+		default:
+			err = fmt.Errorf("publish: unknown target %q", *target)
+		}
 	case "verify":
 		fs := flag.NewFlagSet("verify", flag.ExitOnError)
 		var o verifyOptions
@@ -277,6 +294,7 @@ func usage() {
   nsgo publish -cert C [-entry E] [-min-runtime V] [-extra F] [-out F] [dir | package]
   nsgo publish -store appstore|play|all [-listings DIR] [-dry-run] [-platform P] [-version V] [-track T] [dir]
   nsgo publish ios|macos <file>
+  nsgo publish -target android -track TRACK [dir | bundle.aab]
   nsgo verify  [-root P,... [-revocations F,...]] package
   nsgo revoke  -sequence N [-days N] [-keys IDs] [-packages H,...] -out F
 

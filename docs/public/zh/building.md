@@ -226,6 +226,16 @@ sign:
 
 iOS、tvOS 和 watchOS 的设备构建会在应用及其扩展中写入 App Store Connect 检查的 SDK 与 Xcode 元数据，并加入 `UIRequiredDeviceCapabilities: [arm64]`。模拟器构建不会写入这些仅设备条目；`apple.info` 中显式设置的值优先。`apple.multiple_scenes: true` 会在 iOS 应用的场景清单中将 `UIApplicationSupportsMultipleScenes` 设为 true，默认值为 false：此后用户可以在 iPad 上打开 App 的多个窗口，每个窗口都重新显示 App 的主视图，拥有各自的状态，同时共享 App 的信号和存储，直到用户关闭该窗口。
 
+### 发布到 Google Play
+
+启用 Google Play Developer API，并授予服务账号向目标轨道发布此应用的权限。将 `NSGO_PLAY_SERVICE_ACCOUNT` 设为服务账号的 JSON 密钥内容或密钥文件路径。[Google Play API 设置](https://developers.google.com/android-publisher/getting_started)
+
+```sh
+go tool nsgo build -target android -channel store
+go tool nsgo publish -target android -track internal
+```
+
+命令在 `build.output/releases` 中查找当前项目版本的 App Bundle。有多个构建时，在参数后传入 `.aab` 路径以选定文件。轨道填写 `internal`、`production` 或封闭测试的轨道 ID。命令从包中读取包名和版本代码，确认版本代码高于该轨道上的所有版本后，再上传包并提交发布。
 
 ## 商店列表
 

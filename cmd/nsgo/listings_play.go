@@ -43,11 +43,16 @@ type googleServiceAccount struct {
 }
 
 func newGooglePlayClientFromEnv() (*googlePlayClient, error) {
+	return googlePlayClientFromEnv(nil)
+}
+
+// googlePlayClientFromEnv reads NSGO_PLAY_SERVICE_ACCOUNT and sends its requests through httpClient, or a client with a 60-second timeout when it is nil.
+func googlePlayClientFromEnv(httpClient *http.Client) (*googlePlayClient, error) {
 	raw := strings.TrimSpace(os.Getenv(googlePlayServiceAccountEnvVar))
 	if raw == "" {
 		return nil, fmt.Errorf("Google Play credentials missing: set %s to the service account JSON file path or JSON contents", googlePlayServiceAccountEnvVar)
 	}
-	return newGooglePlayClientFromServiceAccount(raw, defaultGooglePlayBaseURL, nil)
+	return newGooglePlayClientFromServiceAccount(raw, defaultGooglePlayBaseURL, httpClient)
 }
 
 func newGooglePlayClientFromServiceAccount(jsonOrPath, baseURL string, httpClient *http.Client) (*googlePlayClient, error) {
@@ -58,7 +63,12 @@ func newGooglePlayClientFromServiceAccount(jsonOrPath, baseURL string, httpClien
 		var err error
 		data, err = os.ReadFile(jsonOrPath)
 		if err != nil {
-			return nil, fmt.Errorf("Google Play service account: %w", err)
+			// The value may be a mangled key rather than a path, so leave it out of the error.
+			var pathErr *os.PathError
+			if errors.As(err, &pathErr) {
+				err = pathErr.Err
+			}
+			return nil, fmt.Errorf("Google Play service account: read %s: %w", googlePlayServiceAccountEnvVar, err)
 		}
 	}
 	var sa googleServiceAccount
@@ -284,21 +294,83 @@ func (c *googlePlayClient) uploadImage(ctx context.Context, packageName, editID,
 	return nil
 }
 
+// googlePlayError is a non-2xx Android Publisher response.
+type googlePlayError struct {
+	Method, Path string
+	StatusCode   int
+	// Status is Google's error status, else its first error reason.
+	Status  string
+	Message string
+	Body    string
+}
+
+func (e *googlePlayError) Error() string {
+	if e.Message == "" {
+		return fmt.Sprintf("Google Play %s %s failed with HTTP %d: %s", e.Method, e.Path, e.StatusCode, e.Body)
+	}
+	if e.Status != "" {
+		return fmt.Sprintf("Google Play %s %s (HTTP %d, %s): %s", e.Method, e.Path, e.StatusCode, e.Status, e.Message)
+	}
+	return fmt.Sprintf("Google Play %s %s (HTTP %d): %s", e.Method, e.Path, e.StatusCode, e.Message)
+}
+
 func parseGooglePlayError(method, path string, status int, raw []byte) error {
+	e := &googlePlayError{Method: method, Path: path, StatusCode: status, Body: strings.TrimSpace(string(raw))}
 	var payload struct {
 		Error struct {
-			Code    int    `json:"code"`
 			Message string `json:"message"`
 			Status  string `json:"status"`
+			Errors  []struct {
+				Reason string `json:"reason"`
+			} `json:"errors"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(raw, &payload); err == nil && payload.Error.Message != "" {
-		if payload.Error.Status != "" {
-			return fmt.Errorf("Google Play %s %s (HTTP %d, %s): %s", method, path, status, payload.Error.Status, payload.Error.Message)
+	if json.Unmarshal(raw, &payload) == nil && payload.Error.Message != "" {
+		e.Message = payload.Error.Message
+		e.Status = payload.Error.Status
+		if e.Status == "" && len(payload.Error.Errors) > 0 {
+			e.Status = payload.Error.Errors[0].Reason
 		}
-		return fmt.Errorf("Google Play %s %s (HTTP %d): %s", method, path, status, payload.Error.Message)
 	}
-	return fmt.Errorf("Google Play %s %s failed with HTTP %d: %s", method, path, status, strings.TrimSpace(string(raw)))
+	return e
+}
+
+// uploadBundle streams an App Bundle of size bytes into the edit and returns the version code Google Play read from it.
+func (c *googlePlayClient) uploadBundle(ctx context.Context, packageName, editID string, bundle io.ReaderAt, size int64) (int64, error) {
+	path := fmt.Sprintf("/upload/androidpublisher/v3/applications/%s/edits/%s/bundles?uploadType=media", url.PathEscape(packageName), url.PathEscape(editID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.uploadBase()+path, io.NewSectionReader(bundle, 0, size))
+	if err != nil {
+		return 0, err
+	}
+	req.ContentLength = size
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Accept", "application/json")
+	if c.tokenFunc != nil {
+		token, err := c.tokenFunc(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("Google Play auth: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("Google Play upload App Bundle: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, parseGooglePlayError(http.MethodPost, path, resp.StatusCode, raw)
+	}
+	var uploaded struct {
+		VersionCode int64 `json:"versionCode"`
+	}
+	if err := json.Unmarshal(raw, &uploaded); err != nil {
+		return 0, fmt.Errorf("Google Play upload App Bundle: decode response: %w", err)
+	}
+	return uploaded.VersionCode, nil
 }
 
 func imageMIMEType(path string) string {
