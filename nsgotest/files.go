@@ -34,7 +34,7 @@ func (a *App) chooseSaveDestination(it driver.MountItem) {
 		a.saveDestinations[saveKey{a.responseTree, it.Count}] = saveDestination{*it.Save, path}
 		a.post(driver.Event{Kind: driver.EventSavePreflight, Count: it.Count, Text: path})
 	default:
-		a.post(it.Save.SaveResult(it.Count, path))
+		a.post(driver.SaveResult(*it.Save, it.Count, path))
 	}
 }
 
@@ -46,7 +46,7 @@ func (a *App) answerSavePreflight(it driver.MountItem) {
 	}
 	delete(a.saveDestinations, key)
 	if it.On {
-		a.post(destination.request.SaveResult(it.Count, destination.path))
+		a.post(driver.SaveResult(destination.request, it.Count, destination.path))
 	} else {
 		a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Data: destination.path, Text: it.Value})
 	}

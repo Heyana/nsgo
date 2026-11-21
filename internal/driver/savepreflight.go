@@ -15,7 +15,7 @@ type SavePreflights struct {
 // is opened only after an approval if the request needs a preflight check.
 func (p *SavePreflights) Save(r SaveRequest, id uint32, path string, dispatch func(Event)) {
 	if !r.Preflight {
-		dispatch(r.SaveResult(id, path))
+		dispatch(SaveResult(r, id, path))
 		return
 	}
 	reply := make(chan MountItem, 1)
@@ -30,7 +30,7 @@ func (p *SavePreflights) Save(r SaveRequest, id uint32, path string, dispatch fu
 	case answer := <-reply:
 		if time.Now().Before(deadline) {
 			if answer.On {
-				dispatch(r.SaveResult(id, path))
+				dispatch(SaveResult(r, id, path))
 				return
 			}
 			failed.Text = answer.Value
@@ -47,8 +47,8 @@ func (p *SavePreflights) Answer(it MountItem) {
 	}
 }
 
-// SaveResult writes to path and returns the answer to the app's request.
-func (r SaveRequest) SaveResult(id uint32, path string) Event {
+// SaveResult writes what r saves to path and returns the answer to the app's request. It is a function, not a method, so core's SaveRequest alias does not reach driver.Event.
+func SaveResult(r SaveRequest, id uint32, path string) Event {
 	ev := Event{Kind: EventFiles, Count: id}
 	if err := r.SaveTo(path); err != nil {
 		ev.Text = err.Error()
