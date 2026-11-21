@@ -291,7 +291,7 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 1m -run '^(TestFoldGeometry|TestSceneReconnectKeepsTheEngine)$' ./internal/platform/ios
           # An iPhone shows one scene at a time, so the tests of several run on an iPad: the newest iOS runtime's first.
           ipad=$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | contains("iOS"))] | sort_by(.key | split("-") | .[1:] | map(tonumber)) | reverse | map(.value[] | select(.deviceTypeIdentifier | contains("iPad"))) | first | .udid')
-          go tool nsgo test -target ios_simulator -device "$ipad" -timeout 1m -run '^(TestScenesShowTreesOfTheirOwn|TestSceneDisconnectsWhileTheOtherRuns|TestSceneStatusBarAndOrientationsArePerScene|TestSceneKeyboardInsetFollowsFocus)$' ./internal/platform/ios
+          go tool nsgo test -target ios_simulator -device "$ipad" -timeout 1m -run '^(TestScenesShowTreesOfTheirOwn|TestSceneDisconnectsWhileTheOtherRuns|TestSceneStatusBarAndOrientationsArePerScene|TestSceneKeyboardInsetFollowsFocus|TestTitledKeyCommandsUseUIKit)$' ./internal/platform/ios
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/websource
           go tool nsgo test -target ios_simulator -timeout 1m -run '^TestIOSCaptureIsSRGB$' ./internal/testhost/testdata/capture
           go tool nsgo test -target ios_simulator -timeout 1m -run '^Test(Scroll|List)PastItsEndComesBackToIt$' ./nsgotest

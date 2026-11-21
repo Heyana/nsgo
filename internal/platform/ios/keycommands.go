@@ -173,7 +173,7 @@ func (s *surface) refreshKeyCommands() {
 // from the responder chain that owns the key commands.
 func buildKeyMenus(self objc.ID, cmd objc.SEL, builder objc.ID) {
 	apple.Super(self, cmd, builder)
-	s := runner
+	s := keyMenuSurface()
 	if s == nil || onTV() || s.env.Idiom != driver.IdiomTablet || s.env.OSVersion.Major < 26 ||
 		builder.Send(sel("system")) != objc.ID(apple.Class("UIMenuSystem")).Send(sel("mainSystem")) {
 		return
@@ -186,6 +186,26 @@ func buildKeyMenus(self objc.ID, cmd objc.SEL, builder objc.ID) {
 	for _, menu := range menus {
 		builder.Send(sel("insertChildMenu:atEndOfMenuForIdentifier:"), menu, root)
 	}
+}
+
+// keyMenuSurface is the surface whose window receives input: the main menu shows the commands of the scene the user is in, and each scene's tree numbers its bindings on its own.
+func keyMenuSurface() *surface {
+	if w := activeKeyboardWindow(); w != 0 {
+		for _, s := range scenes {
+			if s.window == w {
+				return s
+			}
+		}
+	}
+	return runner
+}
+
+// rebuildKeyMenus has UIKit build the main menu again when another scene becomes active, so its groups follow that scene's keymap.
+func rebuildKeyMenus(objc.ID, objc.SEL, objc.ID) {
+	if onTV() || !slices.ContainsFunc(scenes, func(s *surface) bool { return len(s.commandMenuKeys) > 0 }) {
+		return
+	}
+	objc.ID(apple.Class("UIMenuSystem")).Send(sel("mainSystem")).Send(sel("setNeedsRebuild"))
 }
 
 func (s *surface) keyCommandMenus() []objc.ID {

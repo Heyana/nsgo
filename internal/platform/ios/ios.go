@@ -453,6 +453,7 @@ func loadUIKit() {
 		[]*objc.Protocol{objc.GetProtocol("UIWindowSceneDelegate")},
 		[]objc.MethodDef{{Cmd: sel("scene:willConnectToSession:options:"), Fn: sceneWillConnect},
 			{Cmd: sel("sceneDidDisconnect:"), Fn: sceneDidDisconnect},
+			{Cmd: sel("sceneDidBecomeActive:"), Fn: rebuildKeyMenus},
 			{Cmd: sel("scene:continueUserActivity:"), Fn: sceneContinueActivity},
 			{Cmd: sel("scene:openURLContexts:"), Fn: sceneOpenURLContexts}})
 }

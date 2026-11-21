@@ -70,6 +70,8 @@ func TestTitledKeyCommandsUseUIKit(t *testing.T) {
 		}
 	}
 	check("Open")
+	// UIKit drops the modifier state of the first chord a synthesized keyboard sends in a newly launched app, and matches its key commands by that state: a Shift tap first sets the keyboard up.
+	app.Key("shift")
 	app.Key("mod+1")
 	if got := app.Find("id:shortcut-count").Text; got != "1" {
 		t.Errorf("Command+1 left the count at %q, want 1", got)

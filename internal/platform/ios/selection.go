@@ -647,7 +647,7 @@ func controllerSelectAll(self objc.ID, _ objc.SEL, _ objc.ID) {
 // selection.
 func controllerCanPerform(self objc.ID, cmd objc.SEL, action objc.SEL, sender objc.ID) bool {
 	if action == sel("nsgoKeyCommand:") {
-		return runner.keyCommandID(sender) != 0
+		return controllerSurface(self).keyCommandID(sender) != 0
 	}
 	if action == sel("copy:") || action == sel("selectAll:") {
 		sl := controllerSurface(self).selecting
