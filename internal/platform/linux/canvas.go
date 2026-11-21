@@ -131,13 +131,14 @@ type canvasState struct {
 // canvasPlayer replays a drawing into a Cairo context, as the web's 2D
 // context does.
 type canvasPlayer struct {
-	w     *window
-	v     *view
-	cr    uintptr
-	base  cairoMatrix // the canvas's own coordinates
-	size  rect
-	st    canvasState
-	stack []canvasState
+	w      *window
+	v      *view
+	cr     uintptr
+	base   cairoMatrix // the canvas's own coordinates
+	size   rect
+	st     canvasState
+	stack  []canvasState
+	waited bool
 }
 
 // changedNatives hands components the animated props that changed.
@@ -159,6 +160,11 @@ func (w *window) playCanvas(v *view, cr uintptr, r rect) {
 // (raster.go) and calling before, when set, with each op's index first.
 func (w *window) playCanvasFrom(v *view, cr uintptr, r rect, ops []driver.DrawOp, split driver.CanvasSplit,
 	before func(at int)) {
+	w.playCanvasOps(v, cr, r, ops, split, before)
+}
+
+func (w *window) playCanvasOps(v *view, cr uintptr, r rect, ops []driver.DrawOp, split driver.CanvasSplit,
+	before func(at int)) bool {
 	cairoSave(cr)
 	cairoRectangle(cr, r.x, r.y, r.w, r.h)
 	cairoClip(cr)
@@ -180,6 +186,7 @@ func (w *window) playCanvasFrom(v *view, cr uintptr, r rect, ops []driver.DrawOp
 		cairoRestore(cr)
 	}
 	cairoRestore(cr)
+	return p.waited
 }
 
 func (p *canvasPlayer) play(op *driver.DrawOp) {
@@ -628,16 +635,31 @@ func (p *canvasPlayer) image(op *driver.DrawOp) {
 	if op.Image == nil {
 		return
 	}
-	s := p.w.canvasImage(*op.Image, p.v)
-	if s == nil || s.pic == nil {
-		return
-	}
-	surf := s.surfaceOf(0)
-	if surf == 0 {
-		return
+	var surf uintptr
+	var picWidth int
+	var nat driver.Size
+	if op.Image.Offscreen != nil {
+		e := p.w.offscreenSurface(p.v, op.Image.Offscreen)
+		if e == nil || e.surface == 0 {
+			return
+		}
+		surf, picWidth, nat = e.surface, e.width, e.points
+		if op.Image.Size.Width > 0 && op.Image.Size.Height > 0 {
+			nat = op.Image.Size
+		}
+	} else {
+		s := p.w.canvasImage(*op.Image, p.v)
+		if s == nil || s.pic == nil {
+			p.waited = p.waited || (s != nil && s.load != nil)
+			return
+		}
+		surf = s.surfaceOf(0)
+		if surf == 0 {
+			return
+		}
+		picWidth, nat = s.pic.width, natural(s)
 	}
 	f := func(v float32) float64 { return float64(v) }
-	nat := natural(s)
 	w, h := f(op.W), f(op.H)
 	if w == 0 && h == 0 {
 		w, h = float64(nat.Width), float64(nat.Height)
@@ -660,7 +682,7 @@ func (p *canvasPlayer) image(op *driver.DrawOp) {
 		cairoScale(cr, w/sw, h/sh)
 		cairoTranslate(cr, -sx, -sy)
 		// The picture's pixels in the image's points.
-		k := float64(nat.Width) / float64(s.pic.width)
+		k := float64(nat.Width) / float64(picWidth)
 		cairoScale(cr, k, k)
 		cairoSetSourceSurface(cr, surf, 0, 0)
 		cairoPaintWithAlpha(cr, p.st.alpha)
@@ -819,6 +841,7 @@ func (w *window) endCanvasPass() {
 
 func (w *window) closeCanvasImages() {
 	w.canvasClosed = true
+	w.closeOffscreen()
 	for _, s := range w.canvasFrames {
 		s.reset(driver.ImageSource{})
 	}

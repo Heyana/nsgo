@@ -217,6 +217,11 @@ func (a *App) drawCanvas(v *View, d *driver.Drawing) {
 			a.touchCanvasImage(*op.Image, pass)
 		}
 	}
+	for i := range v.Ops {
+		if op := &v.Ops[i]; op.Kind == driver.DrawImage && op.Image != nil && op.Image.Offscreen != nil {
+			a.recordOffscreen(op.Image.Offscreen, nil)
+		}
+	}
 	kept := v.Children[:0]
 	for _, c := range v.Children {
 		if c.Node == nil {
@@ -230,6 +235,53 @@ func (a *App) drawCanvas(v *View, d *driver.Drawing) {
 			Style: driver.ViewStyle{Opacity: 1},
 			Props: driver.ViewProps{Role: n.Role, Label: n.Label, TestID: n.TestID, Selected: n.Selected}})
 	}
+}
+
+func (a *App) recordOffscreen(off *driver.OffscreenCanvas, seen map[uint64]bool) {
+	if off == nil {
+		return
+	}
+	if seen != nil && seen[off.ID] {
+		return
+	}
+	if a.offscreenSurfaces == nil {
+		a.offscreenSurfaces = map[uint64]*OffscreenSurface{}
+	}
+	s := a.offscreenSurfaces[off.ID]
+	if s == nil {
+		s = &OffscreenSurface{ID: off.ID}
+		a.offscreenSurfaces[off.ID] = s
+	}
+	if s.Version == off.Version && !s.Released {
+		return
+	}
+	s.Version = off.Version
+	s.RenderCount++
+	s.Size = off.Size
+	s.Scale = off.EffectiveScale()
+	s.Released = false
+	s.Ops = nil
+	if off.Drawing != nil {
+		s.Ops = slices.Clone(off.Drawing.Ops)
+		if seen == nil {
+			seen = map[uint64]bool{}
+		}
+		seen[off.ID] = true
+		for i := range s.Ops {
+			if op := &s.Ops[i]; op.Kind == driver.DrawImage && op.Image != nil && op.Image.Offscreen != nil {
+				a.recordOffscreen(op.Image.Offscreen, seen)
+			}
+		}
+	}
+}
+
+// Offscreen returns the headless model's record of off, or nil if it has
+// never been drawn or released on this app.
+func (a *App) Offscreen(off *core.OffscreenImage) *OffscreenSurface {
+	if a == nil || off == nil {
+		return nil
+	}
+	return a.offscreenSurfaces[off.ID()]
 }
 
 func (a *App) dispatch(ev driver.Event) {
@@ -496,6 +548,9 @@ func (a *App) apply(b *driver.MountBatch) {
 			a.post(driver.Event{Kind: driver.EventScroll, ID: id, Point: at, Value: z})
 		case driver.ItemImage:
 			v.Image = *it.Image
+			if it.Image != nil && it.Image.Source.Offscreen != nil {
+				a.recordOffscreen(it.Image.Source.Offscreen, nil)
+			}
 		case driver.ItemWeb:
 			v.Web = *it.Web
 		case driver.ItemWebCommand:
@@ -674,6 +729,17 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemReleaseAwake:
 			a.AwakeReleases = append(a.AwakeReleases, it.Count)
 			a.Awake = slices.DeleteFunc(a.Awake, func(h AwakeHold) bool { return h.ID == it.Count })
+		case driver.ItemReleaseOffscreen:
+			if a.offscreenSurfaces == nil {
+				a.offscreenSurfaces = map[uint64]*OffscreenSurface{}
+			}
+			s := a.offscreenSurfaces[it.OffscreenID]
+			if s == nil {
+				s = &OffscreenSurface{ID: it.OffscreenID}
+				a.offscreenSurfaces[it.OffscreenID] = s
+			}
+			s.Released = true
+			s.Ops = nil
 		case driver.ItemTaskProgress:
 			if it.Progress == nil {
 				a.TaskProgress = core.TaskProgress{}

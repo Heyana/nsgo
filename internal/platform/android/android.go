@@ -882,7 +882,7 @@ func (s *surface) Mount(b *driver.MountBatch) {
 
 // mount sends the batch of v's tree to Java, which names its surface, and loads the image sources it changed.
 func (s *surface) mount(v *treeView, b *driver.MountBatch) {
-	b = s.withoutScans(v.id, s.withoutWebCookies(v.id, s.withoutAuthSessions(v.id, s.withoutPermissions(v.id, s.withoutUpdateChecks(v.id, withoutDesktopItems(withoutEffects(b)))))))
+	b = withoutOffscreenReleases(s.withoutScans(v.id, s.withoutWebCookies(v.id, s.withoutAuthSessions(v.id, s.withoutPermissions(v.id, s.withoutUpdateChecks(v.id, withoutDesktopItems(withoutEffects(b))))))))
 	// Android has no file manager an app can reveal in or trash through. The batch may be the engine's own, which a test's observer holds, so the items are filtered from a copy.
 	fileManager := func(it driver.MountItem) bool {
 		return it.Kind == driver.ItemRevealFile || it.Kind == driver.ItemTrashFile
@@ -1070,7 +1070,17 @@ func (s *surface) trackImages(tv *treeView, b *driver.MountBatch, frames *[]pixe
 
 func sameSource(a, b driver.ImageSource) bool {
 	return a.URI == b.URI && len(a.Data) == len(b.Data) && (len(a.Data) == 0 || &a.Data[0] == &b.Data[0]) &&
-		a.Pixels == b.Pixels && a.Version == b.Version
+		a.Pixels == b.Pixels && a.Offscreen.Same(b.Offscreen) && a.Version == b.Version
+}
+
+func withoutOffscreenReleases(b *driver.MountBatch) *driver.MountBatch {
+	isRelease := func(it driver.MountItem) bool { return it.Kind == driver.ItemReleaseOffscreen }
+	if !slices.ContainsFunc(b.Items, isRelease) {
+		return b
+	}
+	out := *b
+	out.Items = slices.DeleteFunc(slices.Clone(b.Items), isRelease)
+	return &out
 }
 
 func isEmpty(src driver.ImageSource) bool { return src.URI == "" && len(src.Data) == 0 }
@@ -1657,6 +1667,12 @@ func (s *surface) canvasRequest(r *reader) {
 		if !known {
 			s.sendCanvasImage(surface, key, request, decodedImage{}, true)
 		}
+		return
+	}
+	if src.Offscreen != nil {
+		// Android's canvases draw no offscreen drawings yet: a failed entry, with no log line for each version.
+		s.canvasRequests.finish(surface, key, load)
+		s.sendCanvasImage(surface, key, request, decodedImage{}, false)
 		return
 	}
 	go func() {

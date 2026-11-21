@@ -433,7 +433,7 @@ func hasSource(s driver.ImageSource) bool { return !s.Empty() }
 
 func sameSource(a, b driver.ImageSource) bool {
 	return a.URI == b.URI && len(a.Data) == len(b.Data) && (len(a.Data) == 0 || &a.Data[0] == &b.Data[0]) &&
-		a.Pixels == b.Pixels && a.Version == b.Version
+		a.Pixels == b.Pixels && a.Offscreen.Same(b.Offscreen) && a.Version == b.Version
 }
 
 // ImageView shows an image view's source, and its placeholder until the
@@ -567,6 +567,11 @@ func (iv *ImageView) Start(ratio float64) {
 		// A frame replaces the one shown in place: no blank, no events, no fade.
 		iv.cancel = nil
 		iv.show(pixelsImage(src, iv.request(ratio)), true, 0)
+		return
+	}
+	if src := iv.config.Source; src.Offscreen != nil {
+		iv.cancel = nil
+		iv.show(offscreenDecoded(src, iv.request(ratio)), true, 0)
 		return
 	}
 	n := iv.load

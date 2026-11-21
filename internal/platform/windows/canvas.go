@@ -119,6 +119,8 @@ type canvasPlayer struct {
 	strokes map[string]*comObject
 	// off is the bitmap the canvas plays into when it mixes.
 	off *comObject
+	// waited is set when an image drawn by ops is still loading.
+	waited bool
 	// split is what a list played over the static part leaves out
 	// (canvascache.go).
 	split driver.CanvasSplit
@@ -976,8 +978,37 @@ func (c *canvasPlayer) image(op *driver.DrawOp) {
 	if op.Image == nil {
 		return
 	}
+	if op.Image.Offscreen != nil {
+		e := c.p.offscreenBitmap(c.v, op.Image.Offscreen)
+		if e == nil || e.bitmap == nil {
+			return
+		}
+		nat := e.points
+		if op.Image.Size.Width > 0 && op.Image.Size.Height > 0 {
+			nat = op.Image.Size
+		}
+		w, h := op.W, op.H
+		if w == 0 && h == 0 {
+			w, h = float32(nat.Width), float32(nat.Height)
+		}
+		src := rectF{0, 0, float32(e.points.Width), float32(e.points.Height)}
+		if op.X2 != 0 || op.Y2 != 0 {
+			kx := float32(e.points.Width) / max(float32(nat.Width), 1e-3)
+			ky := float32(e.points.Height) / max(float32(nat.Height), 1e-3)
+			src = rectF{op.X1 * kx, op.Y1 * ky, (op.X1 + op.X2) * kx, (op.Y1 + op.Y2) * ky}
+		}
+		dst := rectF{op.X, op.Y, op.X + w, op.Y + h}
+		alpha := c.st.alpha
+		c.paint(func(dc *comObject, base matrix) {
+			c.setTransform(dc, c.st.ctm.then(base))
+			dc.callF(rtDrawBitmap, 0b100, e.bitmap.ptr(), uintptr(unsafe.Pointer(&dst)), f32(alpha), d2dInterpolationLinear,
+				uintptr(unsafe.Pointer(&src)))
+		})
+		return
+	}
 	s := c.p.w.canvasImage(*op.Image)
 	if s == nil || s.pic == nil {
+		c.waited = c.waited || (s != nil && s.load != nil)
 		return
 	}
 	bmp := s.bitmapOf(c.p.dc, 0)
@@ -1138,6 +1169,7 @@ func (w *window) endCanvasPass() {
 
 func (w *window) closeCanvasImages() {
 	w.canvasClosed = true
+	w.closeOffscreen()
 	for _, s := range w.canvasFrames {
 		s.reset(driver.ImageSource{})
 	}

@@ -200,6 +200,9 @@ type window struct {
 	// canvasFrames are the pictures of the pixels canvases drew last (canvasFrame).
 	canvasFrames      []*imageSlot
 	canvasFramePixels int // the pixels of canvasFrames together
+	// offscreen caches Cairo ARGB32 image surfaces for OffscreenCanvas images by ID.
+	offscreen          map[uint64]*offscreenEntry
+	offscreenRendering map[uint64]bool
 	// hiddenCanvases wait out of sight to be drawn (raster.go), and
 	// revealDue says a layout since the last frame may have shown some.
 	hiddenCanvases []*view
@@ -990,6 +993,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemReleaseAwake:
 			w.releaseAwake(it.Count)
+			continue
+		case driver.ItemReleaseOffscreen:
+			w.releaseOffscreen(it.OffscreenID)
 			continue
 		case driver.ItemCheckForUpdates:
 			w.checkForUpdates(it.Count)

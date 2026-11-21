@@ -2067,6 +2067,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemReleaseAwake:
 			s.awake.release(it.Count)
 			continue
+		case driver.ItemReleaseOffscreen:
+			apple.ReleaseOffscreen(it.OffscreenID)
+			continue
 		case driver.ItemPickImages:
 			s.pickImages(*it.Pick, it.Count)
 			continue

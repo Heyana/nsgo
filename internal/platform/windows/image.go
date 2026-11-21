@@ -148,7 +148,7 @@ func (s *imageSlot) alpha(now time.Time) float32 {
 
 func sameSource(a, b driver.ImageSource) bool {
 	return a.URI == b.URI && a.Size == b.Size && len(a.Data) == len(b.Data) &&
-		(len(a.Data) == 0 || &a.Data[0] == &b.Data[0]) && a.Pixels == b.Pixels && a.Version == b.Version
+		(len(a.Data) == 0 || &a.Data[0] == &b.Data[0]) && a.Pixels == b.Pixels && a.Offscreen.Same(b.Offscreen) && a.Version == b.Version
 }
 
 // setImage applies an image view's configuration and reports whether a
@@ -161,6 +161,9 @@ func (w *window) setImage(v *view, c *driver.ImageConfig) bool {
 	case sameSource(v.source.src, c.Source):
 	case c.Source.Pixels != nil:
 		v.source.showPixels(c.Source)
+		w.redrawView(v)
+	case c.Source.Offscreen != nil:
+		v.source.reset(c.Source)
 		w.redrawView(v)
 	default:
 		v.source.reset(c.Source)
@@ -375,6 +378,12 @@ func (w *window) fadeIn(v *view, s *imageSlot) {
 // v's resize mode and position fit it, blurred by its blur radius.
 func (p *painter) drawImage(v *view, tint driver.Color, r rectF) {
 	if r.empty() {
+		return
+	}
+	if v.source.src.Offscreen != nil {
+		p.pushClipRect(r)
+		defer p.pop()
+		p.drawOffscreenImage(v, &v.source, r)
 		return
 	}
 	alpha := float32(1)

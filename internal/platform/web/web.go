@@ -164,6 +164,9 @@ type surface struct {
 	// canvasFrames are the canvases of the pixels canvases drew last (canvasFrame).
 	canvasFrames      []canvasFrame
 	canvasFramePixels int // the pixels of canvasFrames together
+	// offscreen caches offscreen <canvas> elements for OffscreenCanvas images by ID.
+	offscreen          map[uint64]*offscreenEntry
+	offscreenRendering map[uint64]bool
 	// stickyBound are the sticky cells whose insets follow animated
 	// values.
 	stickyBound map[*view]bool
@@ -1518,6 +1521,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 			continue
 		case driver.ItemBlockNative:
 			s.touch.blocked = it.ID != 0
+			continue
+		case driver.ItemReleaseOffscreen:
+			s.releaseOffscreen(it.OffscreenID)
 			continue
 		}
 		v := s.view(it.ID)

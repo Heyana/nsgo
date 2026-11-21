@@ -378,6 +378,8 @@ const (
 	// its count reaches zero.
 	ItemKeepImage
 	ItemReleaseImage
+	// ItemReleaseOffscreen releases the cached offscreen surface for OffscreenID.
+	ItemReleaseOffscreen
 )
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.
@@ -604,6 +606,8 @@ type MountItem struct {
 	Surface *SurfaceConfig
 	Tray    *TrayConfig
 	On      bool
+	// OffscreenID is the resource ID of an ItemReleaseOffscreen.
+	OffscreenID uint64
 }
 
 // QuickLookRequest is an ItemQuickLook's files, regular files the core checked, and the index of the one shown first, within them.
@@ -1191,13 +1195,15 @@ const (
 	SelectableOff
 )
 
-// ImageSource is where an image comes from: a URI (https, file path, file:, data:), bytes, such as a file embedded with go:embed, or pixels the app draws.
+// ImageSource is where an image comes from: a URI (https, file path, file:, data:), bytes, such as a file embedded with go:embed, pixels the app draws, or a retained offscreen canvas drawing.
 type ImageSource struct {
 	URI  string
 	Data []byte
 	// Pixels, when set, is the image itself, premultiplied as image.RGBA is: nothing loads or decodes, and the view fires no load events and fades nothing in. The core copies it when the commit that carries a new Pixels or Version runs, so the app may write the next frame into the same buffer from then on, from its next RequestAnimationFrame callback for one. Without Size it measures its pixels in points. An Image's Source, a canvas's images and a Shader's Images take pixels; a Placeholder, which shows while a source loads, ignores them.
 	Pixels *image.RGBA
-	// Version tells frames written into the same Pixels apart: the same Pixels with another Version is shown again in place, the previous frame staying until the new one is drawn.
+	// Offscreen, when set, is a recorded 2D drawing that platforms render once into a retained offscreen surface keyed by (ID, Version) and reuse across frames without re-executing its drawing operations. Like Pixels, it loads nothing and fires no load events.
+	Offscreen *OffscreenCanvas
+	// Version tells frames written into the same Pixels apart: the same Pixels with another Version is shown again in place, the previous frame staying until the new one is drawn. For Offscreen it mirrors Offscreen.Version.
 	Version uint64
 	// Size is the image's size in points, when known up front.
 	Size Size
@@ -1210,9 +1216,13 @@ type ImageSource struct {
 	Variants map[float32]string
 }
 
-// Density returns the pixels a point of the image s names has: the
-// density an "asset:" file's name gives (a@2x.png is 2), else 1.
+// Density returns the pixels a point of the image s names has: an
+// offscreen canvas's backing scale, the density an "asset:" file's name
+// gives (a@2x.png is 2), else 1.
 func (s ImageSource) Density() float32 {
+	if s.Offscreen != nil {
+		return s.Offscreen.EffectiveScale()
+	}
 	if !strings.HasPrefix(s.URI, "asset:") {
 		return 1
 	}
@@ -1231,8 +1241,11 @@ func (s ImageSource) Density() float32 {
 	return float32(d)
 }
 
-// Key returns a string naming the image s loads, for caches: its URI, a digest of its bytes, or where its pixels are and their version. Bytes are named by what they hold, not where: a collected buffer's address can come back in a new buffer of the same length, which must not be handed the image cached for the old one (#738).
+// Key returns a string naming the image s loads, for caches: its URI, a digest of its bytes, an offscreen canvas's ID and version, or where its pixels are and their version. Bytes are named by what they hold, not where: a collected buffer's address can come back in a new buffer of the same length, which must not be handed the image cached for the old one (#738).
 func (s ImageSource) Key() string {
+	if s.Offscreen != nil {
+		return fmt.Sprintf("offscreen:%d:%d", s.Offscreen.ID, s.Offscreen.Version)
+	}
 	if s.Pixels != nil {
 		return fmt.Sprintf("pixels:%p:%d", s.Pixels, s.Version)
 	}
@@ -1242,14 +1255,16 @@ func (s ImageSource) Key() string {
 	return s.URI
 }
 
-// Same reports whether s and o load the same image: inline data must be the same bytes, not equal ones, and pixels the same buffer at the same Version.
+// Same reports whether s and o load the same image: inline data must be the same bytes, not equal ones, pixels the same buffer at the same Version, and offscreen canvases the same ID and Version.
 func (s ImageSource) Same(o ImageSource) bool {
 	return s.URI == o.URI && s.Size == o.Size && s.Scales == o.Scales && len(s.Data) == len(o.Data) &&
-		(len(s.Data) == 0 || &s.Data[0] == &o.Data[0]) && s.Pixels == o.Pixels && s.Version == o.Version
+		(len(s.Data) == 0 || &s.Data[0] == &o.Data[0]) && s.Pixels == o.Pixels && s.Offscreen.Same(o.Offscreen) && s.Version == o.Version
 }
 
 // Empty reports whether s names no image.
-func (s ImageSource) Empty() bool { return s.URI == "" && len(s.Data) == 0 && s.Pixels == nil }
+func (s ImageSource) Empty() bool {
+	return s.URI == "" && len(s.Data) == 0 && s.Pixels == nil && s.Offscreen == nil
+}
 
 // CopyPixels returns a copy of img's pixels in a buffer of its own, at the origin with rows of 4 bytes a pixel, as the core hands them to a platform; nil for nil.
 func CopyPixels(img *image.RGBA) *image.RGBA {

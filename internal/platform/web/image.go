@@ -67,7 +67,7 @@ func (s *surface) createImage(v *view) {
 		}
 		src.loaded, src.pixels = true, naturalSize(src.img)
 		im.draw(v.size)
-		if fade := int(im.config.FadeDuration.Milliseconds()); fade > 0 {
+		if fade := int(im.config.FadeDuration.Milliseconds()); fade > 0 && src.src.Offscreen == nil {
 			animate(src.layer, map[string]any{"opacity": 0}, fade, "linear")
 			// The placeholder stays under the source until it is opaque.
 			ph.layer.Call("animate", []any{
@@ -116,16 +116,16 @@ func (s *surface) setImage(v *view, c *driver.ImageConfig) {
 		}
 	}
 	im.config = *c
-	im.placeholder.load(c.Placeholder)
-	if im.source.load(c.Source) {
+	im.placeholder.load(s, v, c.Placeholder)
+	if im.source.load(s, v, c.Source) && c.Source.Offscreen == nil {
 		s.send(v, driver.Event{Kind: driver.EventLoadStart})
 	}
 	im.draw(v.size)
 }
 
-// load installs a pixel frame or starts loading an encoded source. It reports
-// whether the browser began a load.
-func (p *picture) load(src driver.ImageSource) bool {
+// load installs a pixel frame, renders an offscreen drawing, or starts loading an encoded source.
+// It reports whether the browser began a load.
+func (p *picture) load(s *surface, v *view, src driver.ImageSource) bool {
 	if sameSource(p.src, src) {
 		return false
 	}
@@ -149,7 +149,13 @@ func (p *picture) load(src driver.ImageSource) bool {
 		p.bitmap, p.bitmapCSS = nil, nil
 	}
 	p.release()
-	p.url, p.object = imageURL(src)
+	if src.Offscreen != nil {
+		if canvas, _, ok := s.offscreenCanvas(src.Offscreen, v); ok && canvas.Truthy() {
+			p.url, p.object = canvas.Call("toDataURL", "image/png").String(), false
+		}
+	} else {
+		p.url, p.object = imageURL(src)
+	}
 	if p.url == "" {
 		return false
 	}
@@ -159,7 +165,7 @@ func (p *picture) load(src driver.ImageSource) bool {
 
 func sameSource(a, b driver.ImageSource) bool {
 	return a.URI == b.URI && len(a.Data) == len(b.Data) && (len(a.Data) == 0 || &a.Data[0] == &b.Data[0]) &&
-		a.Pixels == b.Pixels && a.Version == b.Version
+		a.Pixels == b.Pixels && a.Offscreen.Same(b.Offscreen) && a.Version == b.Version
 }
 
 // imageURL returns where the browser loads encoded src from: an object URL

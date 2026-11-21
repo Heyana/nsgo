@@ -311,9 +311,9 @@ func (t *Tree) refuseSource(n *node, permission string, uri, refused *string, re
 	*refused, *uri = *uri, ""
 }
 
-// refuseImage empties the image sources n's Access refuses; one the app holds the bytes or pixels of loads nothing.
+// refuseImage empties the image sources n's Access refuses; one the app holds the bytes, pixels or offscreen drawing of loads nothing.
 func (t *Tree) refuseImage(n *node, src *ImageSource, refused *string, report func(error)) {
-	if len(src.Data) > 0 || src.Pixels != nil {
+	if len(src.Data) > 0 || src.Pixels != nil || src.Offscreen != nil {
 		return
 	}
 	t.refuseSource(n, AccessNetwork, &src.URI, refused, report)
@@ -324,6 +324,27 @@ func (t *Tree) refuseImage(n *node, src *ImageSource, refused *string, report fu
 	var kept map[float32]string
 	for scale, uri := range src.Variants {
 		if sourceRefusal(n.owner, AccessNetwork, uri) == nil {
+			if kept == nil {
+				kept = map[float32]string{}
+			}
+			kept[scale] = uri
+		}
+	}
+	src.Variants = kept
+}
+
+func (t *Tree) refuseImageOwner(owner *Scope, src *ImageSource) {
+	if len(src.Data) > 0 || src.Pixels != nil || src.Offscreen != nil {
+		return
+	}
+	if sourceRefusal(owner, AccessNetwork, src.URI) != nil {
+		src.URI = ""
+		src.Variants = nil
+		return
+	}
+	var kept map[float32]string
+	for scale, uri := range src.Variants {
+		if sourceRefusal(owner, AccessNetwork, uri) == nil {
 			if kept == nil {
 				kept = map[float32]string{}
 			}

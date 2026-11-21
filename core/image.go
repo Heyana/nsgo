@@ -66,8 +66,11 @@ func (t *Tree) mountImage(cx *Scope, parent *node, v Image) {
 // naturalSize is what an image measures without a style size.
 func (im *imageNode) naturalSize() Size { return naturalOf(im.config.Source) }
 
-// naturalOf is the size src declares, or its pixels in points.
+// naturalOf is the size src declares, its offscreen size, or its pixels in points.
 func naturalOf(src ImageSource) Size {
+	if src.Size == (Size{}) && src.Offscreen != nil {
+		return src.Offscreen.Size
+	}
 	if src.Size == (Size{}) && src.Pixels != nil {
 		b := src.Pixels.Rect
 		return Size{Width: Points(b.Dx()), Height: Points(b.Dy())}
@@ -90,6 +93,11 @@ var (
 func (cx *Scope) ImageSize(src ImageSource, done func(pixels Size, err error)) {
 	t := cx.tree()
 	if t == nil {
+		return
+	}
+	if off := src.Offscreen; off != nil {
+		w, h := off.PixelSize()
+		done(Size{Width: Points(w), Height: Points(h)}, nil)
 		return
 	}
 	if p := src.Pixels; p != nil {

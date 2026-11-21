@@ -46,6 +46,29 @@ d.Node(core.CanvasNode{
 })
 ```
 
+## Offscreen images
+
+`cx.NewOffscreenImage(size, scale, draw)` renders a `core.Drawing` once into a retained offscreen image that later frames draw with `DrawImage`, `DrawImageIn`, `DrawImageFrom` or `core.Image`. Passing `scale <= 0` uses the current display pixel ratio. The drawing is re-rendered only when `Invalidate()` or `Resize(size, scale)` is called (or when new fonts register), and is automatically released when `cx` is disposed or `Release()` is called.
+
+```go
+tiles := cx.NewOffscreenImage(core.Size{Width: 512, Height: 512}, 0, func(d *core.Drawing) {
+	// Drawn once into the offscreen image until tiles.Invalidate() is called.
+	for y := range 16 {
+		for x := range 16 {
+			d.SetFillColor(tileColor(x, y)).FillRect(float32(x*32), float32(y*32), 32, 32)
+		}
+	}
+})
+
+core.Canvas{
+	Style: core.Style{Width: core.Pt(320), Height: core.Pt(240)},
+	Draw: func(d *core.Drawing, _ core.Size) {
+		// Reuses the cached surface in a single DrawImage operation per frame.
+		d.DrawImage(tiles.Source(), -cameraX.Get(), -cameraY.Get())
+	},
+}
+```
+
 ## Animated arguments
 
 `Drawing.Bind` binds an argument of the last operation to an animated node, and the platform redraws only that part on its frame clock, without a commit. `core.ArgX`, `ArgY`, `ArgR`, `ArgA` and `ArgColor` name the arguments; macOS, iOS and Linux redraw only the changed area, while Windows records it again and Android and the web redraw the whole canvas.

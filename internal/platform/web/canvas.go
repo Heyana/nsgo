@@ -170,6 +170,10 @@ type canvasImage struct {
 // loadImage returns src's image, loading it the first time, and has v
 // draw again once it loads: a canvas plays again, a shader draws.
 func (s *surface) loadImage(src driver.ImageSource, v *view) *canvasImage {
+	if src.Offscreen != nil {
+		canvas, density, ok := s.offscreenCanvas(src.Offscreen, v)
+		return &canvasImage{img: canvas, density: density, loaded: ok}
+	}
 	if src.Pixels != nil {
 		return s.canvasFrame(src)
 	}

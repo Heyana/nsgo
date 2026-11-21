@@ -297,6 +297,10 @@ func (s *surface) paint(id driver.NodeID, ops []driver.DrawOp, size driver.Size)
 			canvas := s.canvasPixelFrame(src.Pixels)
 			return canvas, 1, canvas.Truthy()
 		}
+		if src.Offscreen != nil {
+			// Mini programs draw no offscreen drawings yet.
+			return js.Undefined(), 1, false
+		}
 		im := s.canvasImage(src, id)
 		if !im.loaded {
 			waiting = waiting || !im.failed

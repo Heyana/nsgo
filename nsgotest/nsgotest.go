@@ -198,14 +198,30 @@ type LookUp struct {
 	At   core.Bounds
 }
 
+// OffscreenSurface is the headless model's record of a retained
+// core.OffscreenImage rendered for canvases or image views. RenderCount
+// increments only when the offscreen surface renders a new Version (on
+// first use and after Invalidate or Resize), never when reused across
+// subsequent frames.
+type OffscreenSurface struct {
+	ID          uint64
+	Version     uint64
+	RenderCount int
+	Size        core.Size
+	Scale       float32
+	Ops         []driver.DrawOp
+	Released    bool
+}
+
 // App is an app running in a test. Its methods run on the test's
 // goroutine; the app's goroutines reach it through Scope.Post, which App
 // runs when it settles.
 type App struct {
 	touchGeometry driver.TouchTracker
 	// LocationCache is the last fix the platform keeps, which Locate takes when its MaxAge allows; the location and motion permissions are in Permissions, and the fixes and samples come from FeedLocation and FeedMotion.
-	LocationCache *core.LocationFix
-	sensorRuns    map[uint32]*sensorRun
+	LocationCache     *core.LocationFix
+	sensorRuns        map[uint32]*sensorRun
+	offscreenSurfaces map[uint64]*OffscreenSurface
 
 	t    testing.TB
 	size driver.Size

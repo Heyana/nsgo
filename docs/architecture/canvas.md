@@ -53,6 +53,21 @@ What the ops before the first bound one paint is the same whatever the nodes hol
 
 `internal/platform/canvastest`'s `Split` drawings check that playing over a kept part draws what a full play does, on each of the three.
 
+## Offscreen images
+
+`cx.NewOffscreenImage(size, scale, draw)` records a 2D `Drawing` into a retained `core.OffscreenImage` at logical `size` and backing `scale` (pixels per point; non-positive values take the display pixel ratio or 1). `Source()` returns an `ImageSource` carrying `driver.OffscreenCanvas` (`ID`, `Version`, `Size`, `Scale`, `Drawing`) usable in `Drawing.DrawImage`, `Drawing.DrawImageIn`, `Drawing.DrawImageFrom` and `core.Image`, without loading or firing load events.
+
+The callback runs lazily on first `Source()` call inside `Untracked`, and runs again only after `Invalidate()`, `Resize(size, scale)` (when size or scale changes) or `FontsChanged()`. While clean, repeated `Source()` calls return the same snapshot pointer and `Version`, so later frames pay one `DrawImage` operation per frame with zero re-rendering. `Release()` (also registered on `cx.Cleanup`) emits `ItemReleaseOffscreen` so platforms drop their cached surface.
+
+| Target | Offscreen cache |
+| --- | --- |
+| macOS, iOS, watchOS | Process-wide mutex-guarded `CGImage` rendered through `CGBitmapContextCreate` with `Play`, keyed by `(ID, Version)` |
+| Windows | Per-window GPU `ID2D1Bitmap1` (`d2dBitmapTarget` at `96 * scale` DPI) rendered through `canvasPlayer`, keyed by `(ID, Version, gfxGeneration)` |
+| Linux | Per-window Cairo `CAIRO_FORMAT_ARGB32` image surface rendered through `playCanvasOps`, keyed by `(ID, Version)` |
+| Web | Per-surface offscreen `<canvas>` rendered through `canvas2d.Player`, keyed by `(ID, Version)`, drawn directly with `drawImage` |
+| Android, mini programs | `ItemReleaseOffscreen` filtered cleanly; offscreen rasterization in the Java/mini-program runtimes is not yet implemented |
+| `nsgotest` | `App.Offscreen` tracks `Version`, `RenderCount`, `Size`, `Scale`, `Ops` and `Released` per ID |
+
 ## Nodes
 
 `Drawing.Node` names a part of the drawing, a chart's bar or a grid's cell, with bounds in the canvas, a role, a label, a test ID and a selected state. A press on one is a press on the canvas at the node's center.

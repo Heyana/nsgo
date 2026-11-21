@@ -274,6 +274,9 @@ func (t *Tree) FontsChanged() {
 			n.canvas.effect.mark(dirty)
 		}
 	}
+	for _, off := range t.offscreens {
+		off.Invalidate()
+	}
 	t.measures = newMeasureCache()
 	t.markAll()
 	t.rt.maybeFlush()

@@ -103,37 +103,9 @@ type pixelKey struct {
 
 // withFrames returns d with the pixels it draws copied, as an image view's are (pixelFrame): those the last drawing sent at the same version keep their copies, so the platform keeps its images.
 func (cn *canvasNode) withFrames(d *Drawing) *Drawing {
-	if !slices.ContainsFunc(d.Ops, func(op driver.DrawOp) bool { return op.Image != nil && op.Image.Pixels != nil }) {
-		cn.frames = nil
-		return d
-	}
-	out := *d
-	out.Ops = slices.Clone(d.Ops)
-	frames := map[pixelKey]*image.RGBA{}
-	for i := range out.Ops {
-		op := &out.Ops[i]
-		if op.Image == nil || op.Image.Pixels == nil {
-			continue
-		}
-		if op.Image.Pixels.Rect.Empty() {
-			// A buffer with no pixels draws nothing.
-			op.Image = nil
-			continue
-		}
-		k := pixelKey{op.Image.Pixels, op.Image.Version}
-		c := frames[k]
-		if c == nil {
-			if c = cn.frames[k]; c == nil {
-				c = driver.CopyPixels(k.from)
-			}
-			frames[k] = c
-		}
-		img := *op.Image
-		img.Pixels = c
-		op.Image = &img
-	}
+	out, frames := copyDrawingFrames(d, cn.frames)
 	cn.frames = frames
-	return &out
+	return out
 }
 
 // canvasPaintKey is what a canvas's view paints are resolved from.
@@ -223,11 +195,14 @@ func (t *Tree) pickDrawingScales(d *Drawing) {
 // refuseDrawingImages drops the images of d the Access of n's owner
 // refuses.
 func (t *Tree) refuseDrawingImages(n *node, d *Drawing) {
+	t.refuseDrawingImagesOwner(n.owner, d)
+}
+
+func (t *Tree) refuseDrawingImagesOwner(owner *Scope, d *Drawing) {
 	for i := range d.Ops {
 		if op := &d.Ops[i]; op.Kind == driver.DrawImage && op.Image != nil {
 			src := *op.Image
-			var refused string
-			t.refuseImage(n, &src, &refused, nil)
+			t.refuseImageOwner(owner, &src)
 			op.Image = &src
 		}
 	}

@@ -176,8 +176,10 @@ type (
 	// ImageScales is a set of ImageScaleValues: the variants an image asset
 	// ships in.
 	ImageScales = driver.ImageScales
-	// ImageSource is where an image comes from: a URI (https, file path, file:, data:), bytes, such as a file embedded with go:embed, or pixels the app draws (Pixels and Version).
+	// ImageSource is where an image comes from: a URI (https, file path, file:, data:), bytes, such as a file embedded with go:embed, pixels the app draws (Pixels and Version), or a retained offscreen canvas drawing (Offscreen).
 	ImageSource = driver.ImageSource
+	// OffscreenCanvas is a recorded 2D drawing snapshot attached to an ImageSource by OffscreenImage.Source.
+	OffscreenCanvas = driver.OffscreenCanvas
 	// Interpolation maps a node through piecewise-linear ranges.
 	Interpolation = driver.Interpolation
 	// KeyboardAppearance is the look of iOS's keyboard; the default follows the

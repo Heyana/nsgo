@@ -134,6 +134,7 @@ type Tree struct {
 	// boundaries are the relayout boundaries a change inside marked.
 	boundaries []*node
 	canvases   []*node
+	offscreens map[uint64]*OffscreenImage
 	measures   measureCache
 	// fonts counts the fonts registered as the app runs: text prepared
 	// with fewer is prepared again.
@@ -2398,10 +2399,10 @@ func (t *Tree) Dispatch(ev driver.Event) {
 	if n.native != nil && t.dispatchNative(n, ev) {
 		return
 	}
-	if n.image != nil && n.image.sent.Source.Pixels != nil {
+	if n.image != nil && (n.image.sent.Source.Pixels != nil || n.image.sent.Source.Offscreen != nil) {
 		switch ev.Kind {
 		case driver.EventLoadStart, driver.EventProgress, driver.EventLoad, driver.EventError, driver.EventLoadEnd:
-			// Pixels load nothing: a backend that shows them through a PNG of its own reports no loads, nor does one of an earlier source.
+			// Pixels and offscreen drawings load nothing: a backend that shows them through a PNG of its own reports no loads, nor does one of an earlier source.
 			return
 		}
 	}

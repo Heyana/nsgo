@@ -142,6 +142,7 @@ func loadCanvas(cg uintptr) {
 	reg(&cgGradientCreate, cg, "CGGradientCreateWithColorComponents")
 	reg(&cgImageCreateWithImageInRect, cg, "CGImageCreateWithImageInRect")
 	reg(&cgPathCreateWithRoundedRect, cg, "CGPathCreateWithRoundedRect")
+	loadOffscreen(cg)
 }
 
 // DrawTopDown runs draw with ctx's state saved and its y axis pointing
@@ -746,21 +747,35 @@ func (p *player) image(op *driver.DrawOp) {
 	if op.Image == nil {
 		return
 	}
-	img := canvasImage(*op.Image, p.host)
-	if img == nil || img.image == 0 {
-		p.waited = p.waited || img == nil || !img.failed
-		return
+	var cgImg uintptr
+	var imgWidth float64
+	var points driver.Size
+	if op.Image.Offscreen != nil {
+		var waited bool
+		cgImg, imgWidth, _, points, waited = offscreenImage(*op.Image, p.host)
+		p.waited = p.waited || waited
+		if cgImg == 0 {
+			return
+		}
+		defer Release(cgImg)
+	} else {
+		img := canvasImage(*op.Image, p.host)
+		if img == nil || img.image == 0 {
+			p.waited = p.waited || img == nil || !img.failed
+			return
+		}
+		cgImg, imgWidth, points = img.image, img.width, img.points
 	}
 	f := func(v float32) float64 { return float64(v) }
 	w, h := f(op.W), f(op.H)
 	if w == 0 && h == 0 {
-		w, h = float64(img.points.Width), float64(img.points.Height)
+		w, h = float64(points.Width), float64(points.Height)
 	}
-	src := img.image
+	src := cgImg
 	if op.X2 != 0 || op.Y2 != 0 {
 		// The part named in points of the image, in its pixels.
-		k := img.width / max(float64(img.points.Width), 1e-9)
-		src = cgImageCreateWithImageInRect(img.image, Rect(f(op.X1)*k, f(op.Y1)*k, f(op.X2)*k, f(op.Y2)*k))
+		k := imgWidth / max(float64(points.Width), 1e-9)
+		src = cgImageCreateWithImageInRect(cgImg, Rect(f(op.X1)*k, f(op.Y1)*k, f(op.X2)*k, f(op.Y2)*k))
 		if src == 0 {
 			return
 		}

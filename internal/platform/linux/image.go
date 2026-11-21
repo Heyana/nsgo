@@ -101,7 +101,7 @@ func (s *imageSlot) reset(src driver.ImageSource) {
 
 func sameSource(a, b driver.ImageSource) bool {
 	return a.URI == b.URI && a.Size == b.Size && len(a.Data) == len(b.Data) &&
-		(len(a.Data) == 0 || &a.Data[0] == &b.Data[0]) && a.Pixels == b.Pixels && a.Version == b.Version
+		(len(a.Data) == 0 || &a.Data[0] == &b.Data[0]) && a.Pixels == b.Pixels && a.Offscreen.Same(b.Offscreen) && a.Version == b.Version
 }
 
 // setImage applies an image view's configuration and reports whether a
@@ -113,6 +113,8 @@ func (w *window) setImage(v *view, c *driver.ImageConfig) bool {
 	case sameSource(v.source.src, c.Source):
 	case c.Source.Pixels != nil:
 		v.source.showPixels(c.Source)
+	case c.Source.Offscreen != nil:
+		w.showOffscreen(v, &v.source, c.Source)
 	default:
 		v.source.reset(c.Source)
 		changed = true
