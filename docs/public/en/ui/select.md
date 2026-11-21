@@ -46,7 +46,7 @@ Up, Down, Return and Space open the list from the focused trigger; arrows move t
 
 ## Accessibility
 
-The trigger and list carry the select's roles; `Label` names the field, and the selected item is reported. The keyboard reaches the trigger with Tab and opens it with Return or Space.
+`Label` names the field for assistive technology. Use `LabelFunc` to update that name in place as its signals change. An empty label uses `Placeholder`. The trigger and list carry the select's roles, and the selected item is reported. The keyboard reaches the trigger with Tab and opens it with Return or Space.
 
 ## Platform
 

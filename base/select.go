@@ -87,6 +87,7 @@ type Select struct {
 	OnClose      func()
 	OnCancel     func()
 	Label        string
+	LabelFunc    func() string
 	TestID       string
 	// OnLayout and Tooltip are its view's, as a core.View's.
 	OnLayout func(core.Bounds)
@@ -268,7 +269,7 @@ func (s Select) Render(cx *core.Scope) core.Node {
 			width.Set(b.Size.Width)
 		}
 	}
-	trigger := core.View{Ref: anchor, Class: s.Class, Style: s.Style, StyleFunc: s.StyleFunc, Label: s.Label, LabelledBy: s.LabelledBy, TestID: s.TestID, Role: core.RoleCombobox, Invalid: s.Invalid,
+	trigger := core.View{Ref: anchor, Class: s.Class, Style: s.Style, StyleFunc: s.StyleFunc, Label: s.Label, LabelFunc: s.LabelFunc, LabelledBy: s.LabelledBy, TestID: s.TestID, Role: core.RoleCombobox, Invalid: s.Invalid,
 		Disabled: s.Disabled, Focusable: func() bool { return !disabled() }, Expanded: st.open, ShowsExpanded: true,
 		AccessibilityValue: func() core.AccessibilityValue {
 			if v := current.Get(); v != nil {

@@ -38,6 +38,27 @@ func TestSelect(t *testing.T) {
 	})
 }
 
+func TestSelectLabelFuncKeepsFocus(t *testing.T) {
+	var label *core.Signal[string]
+	app, _ := start(t, core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}, func(cx *core.Scope) core.Node {
+		label = core.NewSignal(cx, "Language")
+		return Select[string]{TestID: "language", LabelFunc: label.Get, Placeholder: "Pick a language"}
+	})
+	app.Focus("language")
+	before := app.Find("language")
+	if before.Props.Label != "Language" {
+		t.Fatalf("initial label = %q, want Language", before.Props.Label)
+	}
+	for _, change := range []struct{ label, want string }{{"Langue", "Langue"}, {"", "Pick a language"}} {
+		app.Post(func() { label.Set(change.label) })
+		app.Settle()
+		after := app.Find("language")
+		if after.Props.Label != change.want || after.ID != before.ID || !after.Focused {
+			t.Fatalf("after setting %q: label = %q, same view = %t, focused = %t", change.label, after.Props.Label, after.ID == before.ID, after.Focused)
+		}
+	}
+}
+
 // TestSelectOptionGroups shows adjacent options of a group under a header that cannot be chosen or focused, and options with no group under none.
 func TestSelectOptionGroups(t *testing.T) {
 	each(t, func(t *testing.T, e core.Environment) {

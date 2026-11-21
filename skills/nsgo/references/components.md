@@ -52,6 +52,7 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 - Style the `ui.FormSection` surface with `CardStyle` and `CardStyleFunc`. Set `FormRow.LeadingWidth` for a custom `Leading` node so its divider aligns with the title, or change the icon slot with `TileSize`. Style text with `TitleStyle` and `DetailStyle`.
 - Style every toast in a stack with `ui.Toasts.Style` and `StyleFunc`, or one with `ui.ToastContent.Style` and `StyleFunc`. Per-toast styles override the stack, and each `StyleFunc` follows its signals.
 - Give each control a label screen readers hear (`Label`, or the button's text); icon-only buttons need one. An input's `Placeholder` is a separate hint, exposed on macOS for single-line, masked and multiline fields; keep its `Label` meaningful when that hint changes or clears.
+- Use `LabelFunc` on `ui.Select` and `base.Select` for a name that follows locale or other signals while the field keeps focus.
 - `ui.NavPage` and `ui.NavHeader` draw the system's own header and back gesture on phones, and `NavHeader` with its back button elsewhere, an Apple Watch included; do not build a header of views.
 - `ui.Menu` and `ui.Select` open beside their trigger on any device, or as a sheet when their `Presentation` asks; choose it explicitly instead of switching by device.
 - `core.Ref` focus, blur, scroll and zoom requests are dropped while the element is in unplaced `core.Holder` content, or when it leaves the tree before the commit; showing the content again does not replay them, so ask again once it is placed.

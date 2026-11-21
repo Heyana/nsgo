@@ -46,7 +46,7 @@ ui.Select[string]{Options: sizes, Value: size.Get, OnChange: size.Set, Label: "S
 
 ## 无障碍
 
-触发器和列表带有选择器的角色；`Label` 命名字段，并报告选中项。Tab 到达触发器，Return 或空格打开它。
+`Label` 为辅助技术提供字段名称。使用 `LabelFunc` 时，名称随其读取的 signal 原地更新。名称为空时使用 `Placeholder`。触发器和列表带有选择器的角色，并报告选中项。Tab 到达触发器，Return 或空格打开它。
 
 ## 平台
 

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"strconv"
 
 	"github.com/nsgo-dev/nsgo/base"
@@ -38,8 +39,9 @@ type Select[T comparable] struct {
 	// Presentation is base's: a popup at the field by default, or a
 	// sheet, which ui chooses on no device of its own.
 	Presentation base.Presentation
-	// Label names the field for assistive technology.
-	Label string
+	// Label names the field for assistive technology. An empty label uses Placeholder.
+	Label     string
+	LabelFunc func() string
 	// TestID names the field; each option adds "-" and its index.
 	TestID string
 	// Style merges over the field's, 200 pt wide: its height, padding and
@@ -118,9 +120,11 @@ func (s Select[T]) Render(cx *core.Scope) core.Node {
 	row, look := listRowStyle(cx, s.Presentation)
 	group, groupLook := listGroupStyle(cx)
 	popup, backdrop := pickerSurface(cx, s.Presentation)
-	label := s.Label
-	if label == "" {
-		label = s.Placeholder
+	label, labelFunc := s.Label, s.LabelFunc
+	if labelFunc == nil {
+		label = cmp.Or(label, s.Placeholder)
+	} else {
+		labelFunc = func() string { return cmp.Or(s.LabelFunc(), s.Placeholder) }
 	}
 	b := base.Select{Items: optionItemsFunc(options), Disabled: s.Disabled, Presentation: s.Presentation, Open: open.Get, OnOpenChange: func(v bool, _ base.Reason) { open.Set(v) },
 		Value: func() *string {
@@ -149,7 +153,7 @@ func (s Select[T]) Render(cx *core.Scope) core.Node {
 		Style:     core.Style{Group: "button", CornerRadius: RadiusControl},
 		StyleFunc: func() core.Style { return core.Style{FocusVisible: FocusRing(cx, 2)} },
 		Trigger:   face, PopupStyleFunc: popup, BackdropStyle: backdrop, ListStyle: core.Style{MaxHeight: core.Pt(320)},
-		ItemStyle: row, ItemStyleFunc: look, GroupStyle: group, GroupStyleFunc: groupLook, Ref: s.Ref, LabelledBy: s.LabelledBy, Invalid: s.Invalid, Label: label, TestID: s.TestID,
+		ItemStyle: row, ItemStyleFunc: look, GroupStyle: group, GroupStyleFunc: groupLook, Ref: s.Ref, LabelledBy: s.LabelledBy, Invalid: s.Invalid, Label: label, LabelFunc: labelFunc, TestID: s.TestID,
 		RenderItem: func(e base.SelectEntry) core.Node {
 			id := ""
 			if s.TestID != "" {

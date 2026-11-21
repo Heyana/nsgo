@@ -328,3 +328,28 @@ mount(App);`)}}
 		t.Fatal("the options' groups show no headers")
 	}
 }
+
+func TestSelectLabelFollowsTSXSignal(t *testing.T) {
+	files := fstest.MapFS{"App.tsx": {Data: []byte(`import { mount, signal, View } from "nsgo";
+import { Button, Select } from "nsgo/ui";
+function App() {
+    const label = signal("Language");
+    return <View>
+        <Select testID="language" accessibilityLabel={label()} />
+        <Button testID="translate" onPress={() => setTimeout(() => label.set("Langue"), 1000)}>Translate</Button>
+    </View>;
+}
+mount(App);`)}}
+	app := nsgotest.Start(t, compiler.App(files, "App.tsx"), nsgotest.Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
+	app.Press("translate")
+	app.Focus("language")
+	before := app.Find("language")
+	if before.Props.Label != "Language" {
+		t.Fatalf("initial label = %q, want Language", before.Props.Label)
+	}
+	app.Advance(time.Second)
+	after := app.Find("language")
+	if after.Props.Label != "Langue" || after.ID != before.ID || !after.Focused {
+		t.Fatalf("label = %q, same view = %t, focused = %t", after.Props.Label, after.ID == before.ID, after.Focused)
+	}
+}

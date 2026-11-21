@@ -136,6 +136,7 @@
 - Hold sandboxed TSX packages to 64 MiB of `Limits.Memory` by default, running the Go collector before stopping one so its garbage alone does not stop it (#760 by @houko).
 - Add `ui.IconButtonFilled`, a flat filled circle whose face color `IconButton.Fill` sets (#959 by @houko).
 - Add `ui.Option.Group`, which shows adjacent options of a `ui.Select` or `ui.Combobox` under a header that cannot be chosen or focused, in Go and TSX (#906 by @houko).
+- Update the accessible name of a focused `base.Select` or `ui.Select` in place through `LabelFunc` (#145 by @houko).
 - Add `ToastContent.NoClose`, `Trailing` and `OnPress`, plus `Toasts.NoClose`, so apps can customize toast dismissal, trailing content and whole-toast presses while preserving child actions (#934 by @houko).
 - Deliver links of declared `url_schemes` to `mobile.OnOpenLinks` on iOS and Android at launch and while the app runs (#909, #1080 by @houko).
 - Let Android's system tab bar follow the app theme's surface, inactive text, active text and accent-container colors (#936 by @houko).
