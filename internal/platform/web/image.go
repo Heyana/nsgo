@@ -121,6 +121,9 @@ func (s *surface) setImage(v *view, c *driver.ImageConfig) {
 		s.send(v, driver.Event{Kind: driver.EventLoadStart})
 	}
 	im.draw(v.size)
+	if c.Source.Pixels != nil {
+		s.requestGlassPaint()
+	}
 }
 
 // load installs a pixel frame, renders an offscreen drawing, or starts loading an encoded source.

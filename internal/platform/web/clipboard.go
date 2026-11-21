@@ -253,6 +253,7 @@ func (s *surface) setAppearance(a driver.Appearance) {
 		target = s.doc.Get("documentElement")
 	}
 	target.Get("style").Set("colorScheme", scheme)
+	s.refreshGlassAppearance()
 }
 
 // setHostEnvironment follows the appearance the page's host sets.

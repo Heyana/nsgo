@@ -127,6 +127,8 @@ type surface struct {
 	// shader (effect.go); effectStyled whether their style sheet is in.
 	effects      map[*view]bool
 	effectStyled bool
+	// glass manages Liquid Glass via HTML-in-Canvas + WebGL 2 (glass.go).
+	glass        *glassStage
 	measure      js.Value   // a hidden element text is measured in
 	measureCSS   *cssBox    // its style
 	widths       textWidths // texts measured on a canvas
@@ -251,26 +253,27 @@ type view struct {
 	textBoxOK bool
 	oneLine   bool
 	// placed is the frame place last set on el, while placedOK.
-	placed    driver.Bounds
-	placedOK  bool
-	elStyle   js.Value // el's style, once place has set it
-	events    driver.EventMask
-	input     *webInput    // a text field's
-	border    driver.Edges // the width of each side's border
-	size      driver.Size  // the frame's
-	scroll    driver.Size  // a scroll view's content size
-	sc        *scrollState
-	layout    *textLayout
-	image     *image
-	drawing   *driver.Drawing // a canvas's
-	gl        *glShader       // a shader view's
-	fx        *effect         // its effect, transition or navigation shader (effect.go)
-	web       *webFrame       // a web view's
-	video     *video          // a video's
-	modal     driver.ModalAnimation
-	presented bool // a modal was inserted once
-	hover     bool // pointerenter and pointerleave are listened to
-	moves     bool // pointermove is
+	placed      driver.Bounds
+	placedOK    bool
+	elStyle     js.Value // el's style, once place has set it
+	events      driver.EventMask
+	input       *webInput    // a text field's
+	border      driver.Edges // the width of each side's border
+	size        driver.Size  // the frame's
+	scroll      driver.Size  // a scroll view's content size
+	sc          *scrollState
+	layout      *textLayout
+	image       *image
+	drawing     *driver.Drawing // a canvas's
+	gl          *glShader       // a shader view's
+	fx          *effect         // its effect, transition or navigation shader (effect.go)
+	glassActive bool            // Liquid Glass drawn via the HTML-in-Canvas shader (glass.go)
+	web         *webFrame       // a web view's
+	video       *video          // a video's
+	modal       driver.ModalAnimation
+	presented   bool // a modal was inserted once
+	hover       bool // pointerenter and pointerleave are listened to
+	moves       bool // pointermove is
 	// canvasRatio is the pixels per point of the last replay, including scroll zoom.
 	canvasRatio float64
 	// canvasExact is whether the canvas is drawn with image-rendering: pixelated, which it is while its bitmap matches the screen pixels a zoomed scroll view shows it at.
@@ -426,6 +429,7 @@ func open(app engine.App, opts Options, test *testOpen) *surface {
 	// The host can change size without the window doing so.
 	observer := js.Global().Get("ResizeObserver").New(js.FuncOf(func(js.Value, []js.Value) any {
 		s.engine.Resize(s.size(), driver.Geometry{})
+		s.requestGlassPaint()
 		return nil
 	}))
 	observer.Call("observe", host)
@@ -1621,6 +1625,7 @@ func (s *surface) mount(b *driver.MountBatch) {
 				// Kept content can move between scroll views without a new drawing, and a new subtree's canvases drew before it reached the page. A subtree still being assembled waits for its root's insert, so each canvas is checked once.
 				s.refreshCanvasScale(v.el)
 			}
+			s.markGlassDirty()
 		case driver.ItemRemove:
 			if el := v.outer(); canMove() && el.Get("isConnected").Bool() {
 				// Parked, not taken out of the page, so its scroll offsets and
@@ -1629,9 +1634,11 @@ func (s *surface) mount(b *driver.MountBatch) {
 			} else {
 				el.Call("remove")
 			}
+			s.markGlassDirty()
 		case driver.ItemDelete:
 			// Forgotten first, so events its removal fires are not sent.
 			s.views[it.ID] = nil
+			s.removeGlassView(v)
 			if v.sc != nil {
 				v.sc.stopRaster()
 				v.sc.stopZoom()
@@ -1856,6 +1863,13 @@ func (s *surface) mount(b *driver.MountBatch) {
 	}
 	s.applyAnimated()
 	s.changedShaders()
+	if s.glass != nil {
+		if s.glass.dirty {
+			s.syncGlass()
+		} else if s.glass.active {
+			s.requestGlassPaint()
+		}
+	}
 	if s.animator.Running() || len(s.shading) > 0 {
 		s.startTicking()
 	}
@@ -1968,6 +1982,7 @@ func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
 			}
 		}
 	}
+	s.syncGlassView(v)
 	s.setLook(v)
 	s.setFeel(v)
 	s.setKeyframes(v, vs.Animation)
@@ -1976,22 +1991,29 @@ func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
 // setLook gives v the class of its view style, at its size.
 func (s *surface) setLook(v *view) {
 	c := s.css[:0]
-	viewCSS(&c, &v.style, v.size, v.kind)
+	viewCSS(&c, &v.style, v.size, v.kind, v.glassActive, s.shownDark())
 	s.setClass(v.el, &v.look, c)
 	s.css = c
 }
 
 // viewCSS appends the CSS of view style vs at size. A scroll view's
 // overflow is its configuration's.
-func viewCSS(c *cssText, vs *driver.ViewStyle, size driver.Size, kind driver.ViewKind) {
+func viewCSS(c *cssText, vs *driver.ViewStyle, size driver.Size, kind driver.ViewKind, glassActive, dark bool) {
 	if vs.Hidden {
 		c.add("display", "none")
 	}
-	c.add("background-color", webstyle.Fill(vs.Background))
+	switch {
+	case vs.Glass != driver.GlassNone && glassActive:
+		// The glass shader draws vs.Background as its tint.
+	case vs.Glass != driver.GlassNone:
+		c.add("background-color", webstyle.GlassFallbackTint(vs, dark))
+	default:
+		c.add("background-color", webstyle.Fill(vs.Background))
+	}
 	c.add("opacity", webstyle.Opacity(vs.Opacity))
 	c.add("transform", webstyle.Transform(vs.Transform))
 	c.add("transition", webstyle.Transition(vs.Transition))
-	decorCSS(c, vs, size)
+	decorCSS(c, vs, size, glassActive, dark)
 	border, colors := driver.All(vs.BorderWidth), driver.AllColors(vs.BorderColor)
 	if vs.Borders != (driver.Edges{}) {
 		border, colors = vs.Borders, vs.BorderColors

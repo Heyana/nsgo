@@ -18,8 +18,12 @@ import (
 // written again when the box changes size.
 
 // decorCSS appends the CSS of vs's shape and effects on a box of size;
-// what is at CSS's initial value it leaves out.
-func decorCSS(c *cssText, vs *driver.ViewStyle, size driver.Size) {
+// what is at CSS's initial value it leaves out. When vs.Glass is set
+// and glassActive is true, the HTML-in-Canvas glass shader draws the
+// refracted backdrop, tint and specular rim so CSS omits backdrop-filter
+// and fallback rim; when glassActive is false, CSS falls back to
+// backdrop-filter plus an inset rim.
+func decorCSS(c *cssText, vs *driver.ViewStyle, size driver.Size, glassActive, dark bool) {
 	c.add("border-radius", webstyle.Radius(vs))
 	if vs.ContinuousCorners {
 		c.add("corner-shape", "squircle")
@@ -28,7 +32,17 @@ func decorCSS(c *cssText, vs *driver.ViewStyle, size driver.Size) {
 		c.add("outline", webstyle.Px(o.Width)+" "+webstyle.LineStyle(o.Style)+" "+webstyle.Color(o.Color))
 		c.add("outline-offset", webstyle.Px(o.Offset))
 	}
-	c.add("box-shadow", webstyle.Shadow(vs))
+	shadow := webstyle.Shadow(vs)
+	if vs.Glass != driver.GlassNone && !glassActive {
+		if rim := webstyle.GlassFallbackRim(vs, dark); rim != "" {
+			if shadow != "" {
+				shadow += ", " + rim
+			} else {
+				shadow = rim
+			}
+		}
+	}
+	c.add("box-shadow", shadow)
 	if vs.BlendMode != driver.BlendNormal {
 		c.add("mix-blend-mode", vs.BlendMode.Name())
 	}
@@ -42,22 +56,30 @@ func decorCSS(c *cssText, vs *driver.ViewStyle, size driver.Size) {
 		c.add("backface-visibility", "hidden")
 	}
 	e := vs.Effects
-	if e == nil {
-		return
-	}
-	if len(e.Gradients) > 0 {
-		images := make([]string, len(e.Gradients))
-		for i := range e.Gradients {
-			images[i] = webstyle.Gradient(&e.Gradients[i], size)
+	if e != nil {
+		if len(e.Gradients) > 0 {
+			images := make([]string, len(e.Gradients))
+			for i := range e.Gradients {
+				images[i] = webstyle.Gradient(&e.Gradients[i], size)
+			}
+			c.add("background-image", strings.Join(images, ", "))
 		}
-		c.add("background-image", strings.Join(images, ", "))
+		c.add("filter", webstyle.Filter(e.Filters))
 	}
-	c.add("filter", webstyle.Filter(e.Filters))
-	if f := webstyle.Filter(e.BackdropFilters); f != "" {
-		c.add("backdrop-filter", f)
-		c.add("-webkit-backdrop-filter", f)
+	if vs.Glass != driver.GlassNone {
+		if !glassActive {
+			if f := webstyle.GlassFallbackBackdrop(vs); f != "" {
+				c.add("backdrop-filter", f)
+				c.add("-webkit-backdrop-filter", f)
+			}
+		}
+	} else if e != nil {
+		if f := webstyle.Filter(e.BackdropFilters); f != "" {
+			c.add("backdrop-filter", f)
+			c.add("-webkit-backdrop-filter", f)
+		}
 	}
-	if e.Mask != nil {
+	if e != nil && e.Mask != nil {
 		m := webstyle.Gradient(e.Mask, size)
 		c.add("mask-image", m)
 		c.add("-webkit-mask-image", m)

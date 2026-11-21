@@ -330,6 +330,7 @@ func (s *surface) scrolled(v *view) {
 	if s.pulled(v) || scrolled {
 		s.applyAnimated()
 	}
+	s.requestGlassPaint()
 	if sc.touching && !sc.dragging {
 		sc.dragging = true
 		s.scrollEvent(v, driver.EventScrollDragStart)

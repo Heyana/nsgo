@@ -162,6 +162,7 @@ func (s *surface) updateEnv() {
 			s.stopHapticPattern()
 		}
 		repaint := env.PixelRatio != s.env.PixelRatio
+		darkChanged := env.Dark != s.env.Dark
 		s.env = env
 		s.engine.SetEnvironment(env)
 		for _, v := range s.views {
@@ -171,6 +172,9 @@ func (s *surface) updateEnv() {
 			if repaint && v != nil && v.gl != nil {
 				s.shadeLater(v)
 			}
+		}
+		if repaint || darkChanged {
+			s.refreshGlassAppearance()
 		}
 	}
 }

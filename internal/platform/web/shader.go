@@ -79,7 +79,7 @@ func (s *surface) createShader(v *view) {
 	v.inner = s.element("canvas")
 	setStyle(v.inner, map[string]string{"width": "100%", "height": "100%", "display": "block"})
 	v.el.Call("appendChild", v.inner)
-	opts := map[string]any{"alpha": true, "premultipliedAlpha": true, "antialias": false, "depth": false, "stencil": false}
+	opts := map[string]any{"alpha": true, "premultipliedAlpha": true, "antialias": false, "depth": false, "stencil": false, "preserveDrawingBuffer": true}
 	v.gl = &glShader{gl: v.inner.Call("getContext", "webgl2", opts)}
 }
 
@@ -225,6 +225,7 @@ func (s *surface) drawShader(v *view) {
 			g.pixels[i] = pixelTexture{}
 		}
 	}
+	s.requestGlassPaint()
 }
 
 // drawGL draws g's shader on canvas, w by h points, its animated lanes

@@ -40,6 +40,7 @@ func (s *surface) tick(stamp time.Duration) {
 	s.applyAnimated()
 	if s.animator.Running() {
 		s.staleEffects()
+		s.requestGlassPaint()
 	}
 	s.changedShaders()
 	s.drawShaders()
@@ -71,6 +72,10 @@ func (s *surface) applyAnimated() {
 			vs := vals.Apply(v.style)
 			style["opacity"], style["transform"] = webstyle.Opacity(vs.Opacity), webstyle.Transform(vs.Transform)
 			style["background-color"], style["box-shadow"] = webstyle.Fill(vs.Background), webstyle.Shadow(&vs)
+			if v.glassActive {
+				// The glass shader renders the animated background tint.
+				style["background-color"] = "transparent"
+			}
 			// A bound value moves at once; the view's transition is for
 			// its style's changes.
 			style["transition"] = "none"

@@ -73,6 +73,7 @@ func (s *surface) paint(v *view) {
 		p.Play(&ops[i])
 	}
 	s.setCanvasExact(v)
+	s.requestGlassPaint()
 }
 
 // setCanvasExact draws a canvas inside zoomed scroll contents pixel for pixel while its bitmap is exactly as large as the screen shows it. Chrome composes nested scale transforms with filtering even when they add up to one pixel per pixel, which greys a sharp edge; nearest sampling of a bitmap at that size changes nothing else. During a zoom, or past the raster bounds, the bitmap is scaled for the screen and keeps smooth sampling.
