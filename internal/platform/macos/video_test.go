@@ -9,12 +9,15 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -298,4 +301,112 @@ func captureView(view objc.ID) image.Image {
 		return nil
 	}
 	return img
+}
+
+// TestVideoPlaysSeparateAudioAndSeeksItsComposition uses distinct HTTP
+// resources and a native player. The audio stays blocked until the app
+// requests a seek, which must take effect once both tracks are loaded.
+func TestVideoPlaysSeparateAudioAndSeeksItsComposition(t *testing.T) {
+	if os.Getenv("NSGO_TEST_VIDEO_PROCESS") != t.Name() {
+		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
+		cmd.Env = append(os.Environ(), "NSGO_TEST_VIDEO_PROCESS="+t.Name(), "HOME="+t.TempDir())
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		return
+	}
+
+	sound, err := os.ReadFile(silence(t, time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var videoRequests, audioRequests atomic.Int32
+	seekRequested := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/picture.mov":
+			videoRequests.Add(1)
+			w.Header().Set("Content-Type", "video/quicktime")
+			http.ServeContent(w, r, "picture.mov", time.Time{}, bytes.NewReader(alphaclips.HEVC))
+		case "/sound.wav":
+			audioRequests.Add(1)
+			select {
+			case <-seekRequested:
+			case <-r.Context().Done():
+				return
+			}
+			// Give the posted seek time to reach the player before its item exists.
+			select {
+			case <-time.After(150 * time.Millisecond):
+			case <-r.Context().Done():
+				return
+			}
+			w.Header().Set("Content-Type", "audio/wav")
+			http.ServeContent(w, r, "sound.wav", time.Time{}, bytes.NewReader(sound))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	var info atomic.Pointer[core.VideoInfo]
+	var tracksChecked atomic.Bool
+	var firstProgress atomic.Int64
+	var ref core.Ref
+	app := func(cx *core.Scope) core.Node {
+		paused := core.NewSignal(cx, true)
+		cx.AfterFunc(50*time.Millisecond, func() {
+			ref.Seek(250 * time.Millisecond)
+			paused.Set(false)
+			close(seekRequested)
+		})
+		return core.Video{
+			Source:           server.URL + "/picture.mov",
+			AudioSource:      server.URL + "/sound.wav",
+			Ref:              &ref,
+			PausedFunc:       paused.Get,
+			Muted:            true,
+			Style:            core.Style{Width: core.Pt(160), Height: core.Pt(120)},
+			ProgressInterval: 30 * time.Millisecond,
+			OnLoad: func(loaded core.VideoInfo) {
+				info.Store(&loaded)
+				apple.OnMain(func() {
+					player := videoPlayer(t)
+					asset := player.Send(sel("currentItem")).Send(sel("asset"))
+					for _, kind := range []string{"vide", "soun"} {
+						tracks := asset.Send(sel("tracksWithMediaType:"), apple.NSString(kind))
+						if got := objc.Send[int](tracks, sel("count")); got != 1 {
+							t.Errorf("the player's asset has %d %s tracks, want 1", got, kind)
+						}
+					}
+					tracksChecked.Store(true)
+				})
+			},
+			OnProgress: func(at, _ time.Duration) {
+				if at > 0 {
+					firstProgress.CompareAndSwap(0, int64(at))
+				}
+			},
+			OnEnd: func() { cx.Post(cx.Quit) },
+			OnError: func(err error) {
+				t.Error(err)
+				cx.Post(cx.Quit)
+			},
+		}
+	}
+	watchdog := time.AfterFunc(30*time.Second, func() { panic("the composed video did not finish") })
+	defer watchdog.Stop()
+	onMain(func() { Run(app, Options{Title: "Separate audio", Width: 200, Height: 140}) })
+
+	loaded := info.Load()
+	if loaded == nil || loaded.Duration != 500*time.Millisecond || loaded.Size.Width <= 0 || loaded.Size.Height <= 0 {
+		t.Errorf("loaded video = %+v, want the half-second picture", loaded)
+	}
+	if !tracksChecked.Load() || videoRequests.Load() == 0 || audioRequests.Load() == 0 {
+		t.Errorf("tracks checked %v, HTTP requests %d video and %d audio",
+			tracksChecked.Load(), videoRequests.Load(), audioRequests.Load())
+	}
+	if at := time.Duration(firstProgress.Load()); at < 200*time.Millisecond || at >= 450*time.Millisecond {
+		t.Errorf("first progress after the pending seek = %v, want near 250ms", at)
+	}
 }

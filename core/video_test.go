@@ -21,7 +21,9 @@ func TestVideoConfiguresSeeksAndReports(t *testing.T) {
 	h := newHost(t, Size{Width: 300, Height: 400}, func(cx *Scope) Node {
 		paused = NewSignal(cx, true)
 		return Video{
-			Source:     "asset:/clip.mp4",
+			Source:      "asset:/clip.mp4",
+			AudioSource: "asset:/sound.m4a",
+
 			PausedFunc: paused.Get,
 			Volume:     2,
 			Repeat:     true,
@@ -53,7 +55,7 @@ func TestVideoConfiguresSeeksAndReports(t *testing.T) {
 	if n := h.find("video"); n.kind != driver.KindVideo {
 		t.Fatalf("kind %v, want KindVideo", n.kind)
 	}
-	want := driver.VideoConfig{Source: "asset:/clip.mp4", Paused: true, Volume: 1, Rate: 1, Repeat: true, ResizeMode: Contain,
+	want := driver.VideoConfig{Source: "asset:/clip.mp4", AudioSource: "asset:/sound.m4a", Paused: true, Volume: 1, Rate: 1, Repeat: true, ResizeMode: Contain,
 		ProgressInterval: 250 * time.Millisecond}
 	if cfg == nil || *cfg != want {
 		t.Fatalf("config %+v, want %+v", cfg, want)

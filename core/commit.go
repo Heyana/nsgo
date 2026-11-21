@@ -970,9 +970,17 @@ func (t *Tree) emitParts(n *node) bool {
 		c.ResizeMode = n.resizeMode(c.ResizeMode, Contain)
 		if t.rt.restricted {
 			t.refuseSource(n, AccessNetwork, &c.Source, &vn.refused, vn.loadError)
+			if c.Source == "" {
+				c.AudioSource = ""
+			} else if c.AudioSource != "" {
+				t.refuseSource(n, AccessNetwork, &c.AudioSource, &vn.refusedAudio, vn.loadError)
+				if c.AudioSource == "" {
+					c.Source = ""
+				}
+			}
 		}
 		if first || c != vn.sent {
-			if !first && c.Source == vn.sent.Source {
+			if !first && c.Source == vn.sent.Source && c.AudioSource == vn.sent.AudioSource {
 				t.emitSeeks(n)
 			}
 			vn.sent = c

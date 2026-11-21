@@ -1512,6 +1512,7 @@ type VideoConfig struct {
 	PictureInPicture     bool
 	AutoPictureInPicture bool
 	ProgressInterval     time.Duration
+	AudioSource          string
 	AudioSession         AudioSession
 }
 

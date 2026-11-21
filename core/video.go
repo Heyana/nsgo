@@ -41,6 +41,10 @@ type Video struct {
 	// ProgressInterval is the time between OnProgress calls while the
 	// video plays: 250 milliseconds when 0, and at least 16.
 	ProgressInterval time.Duration
+	// AudioSource replaces the original sound with a separate audio track
+	// for a finite video on macOS, iOS and tvOS. It accepts the same paths
+	// and URLs as Source. Both tracks start together and seek together.
+	AudioSource string
 	// AudioSession is what the sound does to other apps' audio while it plays: by default the app's settings decide, and on iOS the device's silent mode silences it; a video of speech, as an audiobook's, plays in silent mode with AudioSessionPlayback or AudioSessionMixWithOthers. AudioSessionFunc changes it as the video plays: iOS holds the new session before letting the old go, so playback goes on without a gap, and Android opens the source again.
 	AudioSession     AudioSession
 	AudioSessionFunc func() AudioSession
@@ -122,9 +126,9 @@ type videoNode struct {
 	pause        func(VideoPauseReason)
 	play         func()
 	loadError    func(error)
-	// refused is the source Access refused last.
-	refused string
-	pip     *pictureInPictureNode
+	// The last video and audio sources refused by Access.
+	refused, refusedAudio string
+	pip                   *pictureInPictureNode
 }
 
 func (t *Tree) mountVideo(cx *Scope, parent *node, v Video) {
@@ -137,7 +141,7 @@ func (t *Tree) mountVideo(cx *Scope, parent *node, v Video) {
 	vn := &videoNode{
 		config: driver.VideoConfig{Source: v.Source, Paused: v.Paused, Muted: v.Muted, Volume: videoVolume(v.Volume),
 			Rate: videoRate(v.Rate), Repeat: v.Repeat, ResizeMode: v.ResizeMode, Controls: v.Controls,
-			ProgressInterval: videoInterval(v.ProgressInterval), AudioSession: v.AudioSession,
+			ProgressInterval: videoInterval(v.ProgressInterval), AudioSource: v.AudioSource, AudioSession: v.AudioSession,
 			PictureInPicture: v.PictureInPicture, AutoPictureInPicture: v.AutoPictureInPicture},
 		loadStart: v.OnLoadStart, load: v.OnLoad, progress: v.OnProgress, end: v.OnEnd,
 		buffer: v.OnBuffer, pause: v.OnPause, play: v.OnPlay, loadError: v.OnError,

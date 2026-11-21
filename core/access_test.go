@@ -427,3 +427,28 @@ type allows func(AccessRequest) bool
 func (a allows) Allows(req AccessRequest) bool { return a(req) }
 
 func (a allows) WebHosts() []string { return nil }
+
+func TestVideoSeparateAudioUsesNetworkGrant(t *testing.T) {
+	var failure error
+	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
+		cx.ProvideAccess(hostsAccess{hosts: []string{"ok.com"}})
+		return Video{
+			Source:      "https://ok.com/picture.mp4",
+			AudioSource: "https://other.com/sound.m4a",
+			OnError:     func(err error) { failure = err },
+		}
+	})
+	var config *driver.VideoConfig
+	for _, it := range h.commit().Items {
+		if it.Kind == driver.ItemVideo {
+			config = it.Video
+		}
+	}
+	h.drain()
+	if config == nil || config.Source != "" || config.AudioSource != "" {
+		t.Fatalf("refused separate audio should stop both sources, got %+v", config)
+	}
+	if failure == nil || !strings.Contains(failure.Error(), "other.com") {
+		t.Fatalf("audio source refusal = %v", failure)
+	}
+}

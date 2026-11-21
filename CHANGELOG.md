@@ -237,6 +237,7 @@
 - Add `chat.Composer.AutoFocus`, which focuses the editor as the composer mounts.
 - Add `chat.QuotaRow.Pace`, which marks on a limit's bar in `chat.Quota` and `chat.QuotaSummary` what would remain had it been used evenly, so a fill short of the mark runs out before it resets.
 - Add `ContentWidth` to `chat.Conversation` and `chat.FloatingConversation`, which centers the transcript and the floating composer in at most that width, and fill the conversation without it, replacing the fixed 720 pt `chat.ContentWidth` (#719).
+- Play a separate `Video.AudioSource` in sync with the picture on macOS, iOS and tvOS (#681 by @houko).
 - Report `Video.OnError` instead of an opaque picture for a local video whose alpha the platform cannot keep: WebM with alpha on macOS and iOS, any clip with alpha on Windows until Media Foundation's alpha output is checked, and on Linux HEVC with alpha, or VP8 and VP9 with alpha without GStreamer's codecalpha plug-in; add `MediaError.Reason`, `MediaErrorAlphaUnsupported` for these, so an app can fall back to its own decoder without matching the message (#569 by @houko).
 - Give a `Select`'s and a `DatePicker`'s field the height, padding and type their `Style` sets, as an `Input`'s, instead of only the view around it, so a small one lines up with a `SizeSmall` button (#721 by @Session500).
 - Stop reporting a web view load that was stopped, replaced or turned into a download to `OnError` on Apple platforms and Windows (#233 by @houko).

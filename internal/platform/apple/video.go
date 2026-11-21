@@ -54,6 +54,9 @@ type videoStatus struct {
 	settling time.Time
 	pending  bool
 	reason   int
+
+	cancelLoading    func()
+	seekWhileLoading *time.Duration
 }
 
 // videoSettle is how long after the backend's own play or pause the player's rate changes are followed only once they settle. AVPlayer can finish a play only after a pause asked for right after it, and then post that play and the pause once more: on macOS 15 on Intel, a pause the app makes just after the controls played is followed, after it returned, by a play and, some 40ms later, a pause again.
@@ -140,7 +143,7 @@ func (v *Video) Configure(c *driver.VideoConfig) {
 	}
 	old, first := v.config, !v.made
 	v.config, v.made = *c, true
-	reopened := first || c.Source != old.Source
+	reopened := first || c.Source != old.Source || c.AudioSource != old.AudioSource
 	if reopened {
 		v.open()
 	}
@@ -150,7 +153,31 @@ func (v *Video) Configure(c *driver.VideoConfig) {
 	if reopened || c.ProgressInterval != old.ProgressInterval {
 		v.observe()
 	}
-	if v.player != 0 {
+	v.applyPlayback(old, reopened)
+	gravity := NSString("AVLayerVideoGravityResizeAspect")
+	switch c.ResizeMode {
+	case driver.Cover:
+		gravity = NSString("AVLayerVideoGravityResizeAspectFill")
+	case driver.Stretch:
+		gravity = NSString("AVLayerVideoGravityResize")
+	}
+	switch {
+	case v.layer != 0:
+		v.layer.Send(sel("setVideoGravity:"), gravity)
+	case v.controller != 0:
+		v.controller.Send(sel("setVideoGravity:"), gravity)
+	case v.shown != 0:
+		v.shown.Send(sel("setVideoGravity:"), gravity)
+	}
+	if v.pipLayer != 0 {
+		v.pipLayer.Send(sel("setVideoGravity:"), gravity)
+	}
+}
+
+// applyPlayback applies the latest settings to a player with its item installed.
+func (v *Video) applyPlayback(old driver.VideoConfig, reopened bool) {
+	c := &v.config
+	if v.player != 0 && v.player.Send(sel("currentItem")) != 0 {
 		pausedChanged := reopened || c.Paused != old.Paused
 		// A play or pause the controls made while the player settled is followed first, so the app's unchanged Paused is not applied over it.
 		if !pausedChanged {
@@ -186,24 +213,6 @@ func (v *Video) Configure(c *driver.VideoConfig) {
 	}
 	v.followAudio()
 	v.configurePiP()
-	gravity := NSString("AVLayerVideoGravityResizeAspect")
-	switch c.ResizeMode {
-	case driver.Cover:
-		gravity = NSString("AVLayerVideoGravityResizeAspectFill")
-	case driver.Stretch:
-		gravity = NSString("AVLayerVideoGravityResize")
-	}
-	switch {
-	case v.layer != 0:
-		v.layer.Send(sel("setVideoGravity:"), gravity)
-	case v.controller != 0:
-		v.controller.Send(sel("setVideoGravity:"), gravity)
-	case v.shown != 0:
-		v.shown.Send(sel("setVideoGravity:"), gravity)
-	}
-	if v.pipLayer != 0 {
-		v.pipLayer.Send(sel("setVideoGravity:"), gravity)
-	}
 }
 
 // locate finds source: "asset:" paths under root, a URL when it has a
@@ -252,7 +261,11 @@ func videoAsset(source string) objc.ID {
 			objc.ID(Class("NSNumber")).Send(sel("numberWithBool:"), true),
 			NSString("AVURLAssetPreferPreciseDurationAndTimingKey"))
 	}
-	return objc.ID(Class("AVURLAsset")).Send(sel("URLAssetWithURL:options:"), videoURL(url, path), options)
+	location := videoURL(url, path)
+	if location == 0 {
+		return 0
+	}
+	return objc.ID(Class("AVURLAsset")).Send(sel("URLAssetWithURL:options:"), location, options)
 }
 
 // webmRefused says why a WebM file with alpha c does not play: AVFoundation opens no WebM, and keeps the alpha of HEVC with alpha in a QuickTime or MPEG-4 file instead, which the player layer composites over what is behind it.
@@ -280,9 +293,44 @@ func (v *Video) open() {
 		v.Dispatch(driver.Event{Kind: driver.EventError, Text: source + ": cannot resolve the video's location"})
 		return
 	}
-	item := objc.ID(Class("AVPlayerItem")).Send(sel("playerItemWithAsset:"), asset)
-	v.player = objc.ID(Class("AVPlayer")).Send(sel("playerWithPlayerItem:"), item).Send(sel("retain"))
 	v.Dispatch(driver.Event{Kind: driver.EventLoadStart})
+	if v.config.AudioSource != "" {
+		audio := videoAsset(v.config.AudioSource)
+		if audio == 0 {
+			st.failed = true
+			v.Dispatch(driver.Event{Kind: driver.EventError, Text: "cannot resolve the separate audio source"})
+			return
+		}
+		v.player = objc.ID(Class("AVPlayer")).Send(sel("alloc")).Send(sel("init"))
+		st.cancelLoading = composeVideoAndAudio(asset, audio, func(composition objc.ID, err error) {
+			if v.status != st {
+				return
+			}
+			st.cancelLoading = nil
+			if err != nil {
+				st.failed = true
+				v.Dispatch(driver.Event{Kind: driver.EventError, Text: err.Error()})
+				return
+			}
+			v.installVideoItem(st, composition)
+			if st.seekWhileLoading != nil {
+				v.Seek(*st.seekWhileLoading)
+				st.seekWhileLoading = nil
+			}
+			v.applyPlayback(v.config, true)
+		})
+		return
+	}
+	v.installVideoItem(st, asset)
+}
+
+func (v *Video) installVideoItem(st *videoStatus, asset objc.ID) {
+	item := objc.ID(Class("AVPlayerItem")).Send(sel("playerItemWithAsset:"), asset)
+	if v.player == 0 {
+		v.player = objc.ID(Class("AVPlayer")).Send(sel("playerWithPlayerItem:"), item).Send(sel("retain"))
+	} else {
+		v.player.Send(sel("replaceCurrentItemWithPlayerItem:"), item)
+	}
 	// The end of the item: report it, and loop if asked.
 	ended := objcblock.New(func(objc.Block, objc.ID) {
 		if v.status != st || v.player == 0 {
@@ -328,6 +376,10 @@ func (v *Video) open() {
 // close stops the player and stops observing it. A macOS view keeps the
 // last frame; an iOS one lets the player's layer or controller go.
 func (v *Video) close() {
+	if st := v.status; st != nil && st.cancelLoading != nil {
+		st.cancelLoading()
+		st.cancelLoading = nil
+	}
 	audioPlaying(v, v.config.AudioSession, false)
 	if v.player != 0 && v.timeToken != 0 {
 		v.player.Send(sel("removeTimeObserver:"), v.timeToken)
@@ -718,8 +770,12 @@ func (v *Video) report() {
 
 // Seek jumps to position exactly.
 func (v *Video) Seek(position time.Duration) {
+	position = max(position, 0)
+	if st := v.status; st != nil && st.cancelLoading != nil {
+		st.seekWhileLoading = &position
+		return
+	}
 	if v.player != 0 {
-		position = max(position, 0)
 		play := &v.status.play
 		replay := play.completed && position < v.itemDuration()
 		if replay {
