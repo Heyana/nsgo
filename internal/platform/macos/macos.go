@@ -88,11 +88,11 @@ type view struct {
 	backdrop, backdropLayer objc.ID
 	// tint is the view's background over its backdrop blur.
 	tint objc.ID
-	// glassContent is Liquid Glass's content view, which holds the per-side borders above the glass.
-	glassContent    objc.ID
-	tintColor       driver.Color
-	tintStyled      bool
-	glass, gaussian bool
+	// glassContent is Liquid Glass's content view, which holds the per-side borders above the glass and receives hit-tested presses when glassInteractive is set.
+	glassContent                      objc.ID
+	tintColor                         driver.Color
+	tintStyled                        bool
+	glass, gaussian, glassInteractive bool
 
 	pressing  atomic.Bool
 	longFired atomic.Bool
@@ -425,7 +425,7 @@ var (
 
 	classView, classSurface, classInput objc.Class
 	classScroll, classContainer         objc.Class
-	classOverlay                        objc.Class
+	classOverlay, classGlassContent     objc.Class
 	classObserver, classMenuTarget      objc.Class
 	classMaterial, classWindow          objc.Class
 )
@@ -594,6 +594,16 @@ func loadAppKit() {
 		{Cmd: sel("hitTest:"), Fn: containerHitTest},
 	})
 	classOverlay = register("NsgoScrollOverlay", nsView, nil, []objc.MethodDef{flipped,
+		{Cmd: sel("hitTest:"), Fn: func(objc.ID, objc.SEL, apple.CGPoint) objc.ID { return 0 }},
+	})
+	// NsgoGlassContent is Liquid Glass's content view. Its hitTest: returns
+	// nil so reach() never lands on it directly; hitTest returns it instead of
+	// the owning view when the glass is interactive so AppKit's FlexInteraction
+	// gesture recognizer answers the press while mouse events still bubble up
+	// the responder chain to the owning view.
+	classGlassContent = register("NsgoGlassContent", nsView, nil, []objc.MethodDef{flipped,
+		{Cmd: sel("acceptsFirstMouse:"), Fn: func(objc.ID, objc.SEL, objc.ID) bool { return true }},
+		{Cmd: sel("mouseDownCanMoveWindow"), Fn: func(objc.ID, objc.SEL) bool { return false }},
 		{Cmd: sel("hitTest:"), Fn: func(objc.ID, objc.SEL, apple.CGPoint) objc.ID { return 0 }},
 	})
 	classInput = register("NsgoInput", nsView, nil, append(common,
@@ -2823,6 +2833,9 @@ func hitTest(self objc.ID, cmd objc.SEL, p apple.CGPoint) objc.ID {
 				return hit // the player's controls
 			}
 			if (v.pressable() || v.events.Has(driver.EventPan)) && v.native == n {
+				if v.glassInteractive && v.glassContent != 0 {
+					return v.glassContent
+				}
 				return n
 			}
 		}

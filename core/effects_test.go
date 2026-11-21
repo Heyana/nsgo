@@ -350,3 +350,48 @@ func TestAbsoluteViewsReachPastStaticParents(t *testing.T) {
 		t.Errorf("absolute view at %+v in its static parent", f.Origin)
 	}
 }
+
+func TestGlassInteractiveMergeAndCommit(t *testing.T) {
+	base := Style{GlassEffect: GlassRegular}
+	merged := base.Merge(Style{GlassInteractive: true})
+	if merged.GlassEffect != GlassRegular || !merged.GlassInteractive {
+		t.Fatalf("merged = %+v, want GlassRegular + GlassInteractive", merged)
+	}
+	// Merging a style that leaves GlassInteractive unset keeps it true.
+	kept := merged.Merge(Style{CornerRadius: 12})
+	if !kept.GlassInteractive || kept.CornerRadius != 12 {
+		t.Fatalf("kept = %+v, want GlassInteractive preserved", kept)
+	}
+	if vs := kept.viewStyle(Size{Width: 100, Height: 40}, 0, false); vs.Glass != driver.GlassRegular || !vs.GlassInteractive {
+		t.Fatalf("viewStyle = %+v, want GlassRegular + GlassInteractive", vs)
+	}
+
+	var interactive *Signal[bool]
+	var glass *Signal[GlassEffect]
+	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
+		glass = NewSignal(cx, GlassRegular)
+		interactive = NewSignal(cx, true)
+		return View{TestID: "glass", StyleFunc: func() Style {
+			return Style{Width: Pt(120), Height: Pt(44), GlassEffect: glass.Get(), GlassInteractive: interactive.Get()}
+		}}
+	})
+	b := h.commit()
+	id := h.find("glass").id
+	if vs := viewStyles(b)[id]; vs == nil || vs.Glass != driver.GlassRegular || !vs.GlassInteractive {
+		t.Fatalf("initial viewStyle = %+v, want GlassRegular + GlassInteractive", vs)
+	}
+	// Unchanged recommit emits no ItemViewStyle.
+	if vs := viewStyles(h.commit())[id]; vs != nil {
+		t.Fatalf("unchanged commit emitted viewStyle %+v", vs)
+	}
+	// Toggling GlassInteractive off emits an updated ItemViewStyle.
+	interactive.Set(false)
+	if vs := viewStyles(h.commit())[id]; vs == nil || vs.Glass != driver.GlassRegular || vs.GlassInteractive {
+		t.Fatalf("after interactive=false: viewStyle = %+v, want GlassRegular + !GlassInteractive", vs)
+	}
+	// Removing GlassEffect clears Glass.
+	glass.Set(GlassNone)
+	if vs := viewStyles(h.commit())[id]; vs == nil || vs.Glass != driver.GlassNone || vs.GlassInteractive {
+		t.Fatalf("after GlassNone: viewStyle = %+v, want GlassNone + !GlassInteractive", vs)
+	}
+}

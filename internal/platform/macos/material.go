@@ -12,12 +12,13 @@ import (
 // The window's background material is an NSVisualEffectView behind the app's views, blending with what is behind the window. The window itself gives up its opaque background so the material shows where the app draws nothing opaque, and takes it back without one unless it is transparent (applyBackground). NSVisualEffectMaterial values follow AppKit's.
 
 var (
-	selSetMaterial         = sel("setMaterial:")
-	selSetBlendingMode     = sel("setBlendingMode:")
-	selSetState            = sel("setState:")
-	selSetAutoresizingMask = sel("setAutoresizingMask:")
-	selSetOpaque           = sel("setOpaque:")
-	selClearColor          = sel("clearColor")
+	selSetMaterial            = sel("setMaterial:")
+	selSetBlendingMode        = sel("setBlendingMode:")
+	selSetState               = sel("setState:")
+	selSetAutoresizingMask    = sel("setAutoresizingMask:")
+	selSetOpaque              = sel("setOpaque:")
+	selClearColor             = sel("clearColor")
+	selSetEffectIsInteractive = sel("setEffectIsInteractive:")
 )
 
 const (
@@ -184,7 +185,7 @@ func (v *view) setBackdrop(vs *driver.ViewStyle) {
 			v.tintColor, v.tintStyled = 0, false
 		}
 		if !want {
-			v.glass, v.gaussian = false, false
+			v.glass, v.gaussian, v.glassInteractive = false, false, false
 			return
 		}
 	}
@@ -214,15 +215,22 @@ func (v *view) setBackdrop(vs *driver.ViewStyle) {
 		v.surface.keepGlassActive()
 		v.backdrop.Send(sel("setStyle:"), int(vs.Glass)-1)
 		v.backdrop.Send(sel("setCornerRadius:"), float64(max(vs.CornerRadius, vs.Corners.TopLeft)))
+		interactive := false
+		if objc.Send[bool](v.backdrop, sel("respondsToSelector:"), selSetEffectIsInteractive) {
+			interactive = vs.GlassInteractive
+			v.backdrop.Send(selSetEffectIsInteractive, interactive)
+		}
+		v.glassInteractive = interactive
 		if v.glassContent == 0 {
 			// Glass draws over its own layer's sublayers but under its content view.
-			v.glassContent = newBorderHost(v.backdrop)
+			v.glassContent = newBorderHost(v.backdrop, classGlassContent)
 			v.backdrop.Send(sel("setContentView:"), v.glassContent)
 			v.glassContent.Send(selRelease)
 		}
 		apple.MoveBorders(v.native.Send(selLayer), v.borderHost())
 		return
 	}
+	v.glassInteractive = false
 	if gaussian {
 		v.backdropLayer.Send(sel("setFilters:"), apple.BackdropFilters(vs.Effects.BackdropFilters))
 	} else {
@@ -233,16 +241,16 @@ func (v *view) setBackdrop(vs *driver.ViewStyle) {
 	}
 	v.fitBackdrop(vs)
 	if v.tint == 0 {
-		v.tint = newBorderHost(v.backdrop)
+		v.tint = newBorderHost(v.backdrop, classOverlay)
 		v.backdrop.Send(sel("addSubview:"), v.tint)
 		v.tint.Send(selRelease)
 	}
 	apple.MoveBorders(v.native.Send(selLayer), v.borderHost())
 }
 
-// newBorderHost returns a layer-backed view filling backdrop that the mouse goes through, with the same coordinate orientation as NSGo's views.
-func newBorderHost(backdrop objc.ID) objc.ID {
-	host := objc.ID(classOverlay).Send(selAlloc).Send(sel("initWithFrame:"), objc.Send[apple.CGRect](backdrop, selBounds))
+// newBorderHost returns a layer-backed view of class filling backdrop, with the same coordinate orientation as NSGo's views.
+func newBorderHost(backdrop objc.ID, class objc.Class) objc.ID {
+	host := objc.ID(class).Send(selAlloc).Send(sel("initWithFrame:"), objc.Send[apple.CGRect](backdrop, selBounds))
 	host.Send(selSetAutoresizingMask, widthHeightSizable)
 	host.Send(sel("setWantsLayer:"), true)
 	return host

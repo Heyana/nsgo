@@ -61,6 +61,7 @@ type view struct {
 	// and tint for backdropFiltered.
 	backdrop, backdropLayer, tint objc.ID
 	backdropKind                  backdropMode
+	glassInteractive              bool
 
 	pressing  atomic.Bool
 	longFired atomic.Bool
@@ -1879,6 +1880,9 @@ func hitTest(self objc.ID, cmd objc.SEL, p apple.CGPoint, event objc.ID) objc.ID
 			}
 		}
 		if own {
+			if v.glassInteractive && v.backdrop != 0 {
+				return v.glassHit(cmd, p, event)
+			}
 			return self
 		}
 		return 0
@@ -1888,15 +1892,74 @@ func hitTest(self objc.ID, cmd objc.SEL, p apple.CGPoint, event objc.ID) objc.ID
 		// The holder of v's children, hit where no child is, is v itself; an input's editor, also v's, takes its own clicks.
 		hit = self
 	}
+	backdropHit := v.isBackdropHit(hit)
 	switch {
 	case !own && !children:
 		return 0
 	case !children && hit != 0: // box-only
+		if v.glassInteractive && v.backdrop != 0 {
+			return v.glassHit(cmd, p, event)
+		}
 		return self
-	case !own && hit == self: // box-none
+	case !own && (hit == self || backdropHit): // box-none
 		return 0
 	}
+	if v.glassInteractive && v.backdrop != 0 && hit != 0 && !backdropHit {
+		if hit == self || ((v.pressable() || v.events.Has(driver.EventPan)) && !childTakesTouch(hit, self)) {
+			return v.glassHit(cmd, p, event)
+		}
+	}
 	return hit
+}
+
+// isBackdropHit reports whether hit is v's backdrop view or a subview inside it.
+func (v *view) isBackdropHit(hit objc.ID) bool {
+	return hit != 0 && v.backdrop != 0 && (hit == v.backdrop || objc.Send[bool](hit, selIsDescendant, v.backdrop))
+}
+
+// glassHit returns the view inside v's interactive glass backdrop that should
+// receive touches at p, falling back to its content view when p is in hitSlop
+// outside the backdrop's bounds.
+func (v *view) glassHit(cmd objc.SEL, p apple.CGPoint, event objc.ID) objc.ID {
+	if v.backdrop == 0 {
+		return v.native
+	}
+	local := objc.Send[apple.CGPoint](v.native, sel("convertPoint:toView:"), p, v.backdrop)
+	if hit := v.backdrop.Send(cmd, local, event); hit != 0 {
+		return hit
+	}
+	if content := v.backdrop.Send(sel("contentView")); content != 0 {
+		return content
+	}
+	return v.backdrop
+}
+
+// childTakesTouch reports whether hit, or any ancestor below stop, handles its
+// own touches (an interactive child, editor, scroll/web/video/native view,
+// selectable text, or nested interactive glass) and should keep the touch rather
+// than routing it to stop's interactive glass backdrop.
+func childTakesTouch(hit, stop objc.ID) bool {
+	owner := views[stop]
+	for n := hit; n != 0 && n != stop; n = n.Send(selSuperview) {
+		if owner != nil && (n == owner.container || owner.isBackdropHit(n)) {
+			continue
+		}
+		c := views[n]
+		if c == nil {
+			return true
+		}
+		if c.native != n && n != c.container {
+			return true
+		}
+		if c.kind == driver.KindInput || c.kind == driver.KindScroll || c.kind == driver.KindWeb ||
+			c.kind == driver.KindVideo || c.kind == driver.KindNative {
+			return true
+		}
+		if c.pressable() || c.events != 0 || c.area || c.selectable == driver.SelectableOn || c.glassInteractive {
+			return true
+		}
+	}
+	return false
 }
 
 // within reports whether p, in v's coordinates, is on v of bounds b or

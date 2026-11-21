@@ -195,6 +195,8 @@ func (v *view) fitBackdrop(vs *driver.ViewStyle, w, h float64) {
 	}
 }
 
+var selSetInteractive = sel("setInteractive:")
+
 // setBackdrop gives v the backdrop its style asks for, or takes it away.
 func (v *view) setBackdrop(vs *driver.ViewStyle) {
 	mode := chooseBackdrop(vs, hasGlass())
@@ -205,6 +207,7 @@ func (v *view) setBackdrop(vs *driver.ViewStyle) {
 			v.backdrop, v.backdropLayer, v.tint = 0, 0, 0
 		}
 		v.backdropKind = backdropNone
+		v.glassInteractive = false
 		if mode == backdropNone {
 			return
 		}
@@ -239,8 +242,13 @@ func (v *view) setBackdrop(vs *driver.ViewStyle) {
 		return
 	}
 	var effect objc.ID
+	interactive := false
 	if mode == backdropGlass {
 		effect = objc.ID(apple.Class("UIGlassEffect")).Send(sel("effectWithStyle:"), int(vs.Glass)-1)
+		if objc.Send[bool](effect, sel("respondsToSelector:"), selSetInteractive) {
+			interactive = vs.GlassInteractive
+			effect.Send(selSetInteractive, interactive)
+		}
 	} else {
 		effect = objc.ID(apple.Class("UIBlurEffect")).Send(sel("effectWithStyle:"), blurStyle(vs.Material))
 	}
@@ -248,13 +256,14 @@ func (v *view) setBackdrop(vs *driver.ViewStyle) {
 		v.backdrop = objc.ID(apple.Class("UIVisualEffectView")).Send(selAlloc).Send(sel("initWithEffect:"), effect)
 		v.backdrop.Send(selSetFrame, objc.Send[apple.CGRect](v.native, selBounds))
 		v.backdrop.Send(sel("setAutoresizingMask:"), flexible)
-		v.backdrop.Send(sel("setUserInteractionEnabled:"), false)
 		v.native.Send(sel("insertSubview:atIndex:"), v.backdrop, 0)
 		v.backdrop.Send(selRelease)
 		v.backdropKind = mode
 	} else {
 		v.backdrop.Send(sel("setEffect:"), effect)
 	}
+	v.glassInteractive = interactive
+	v.backdrop.Send(sel("setUserInteractionEnabled:"), interactive)
 	b := objc.Send[apple.CGRect](v.native, selBounds)
 	v.fitBackdrop(vs, b.Size.Width, b.Size.Height)
 	if mode != backdropGlass {

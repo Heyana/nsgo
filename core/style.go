@@ -143,9 +143,10 @@ type Style struct {
 	Shadows []BoxShadow
 	// Filters change what the node and its children draw, in order.
 	Filters []Filter
-	// BackdropFilters change what is behind the node, seen through its background, as CSS's backdrop-filter does: Blur frosts it by its radius, and brightness, contrast, grayscale, hue rotation, invert, opacity, saturate and sepia change its colors; a drop shadow draws nothing. A blur without color filters on iOS draws the system material a view's IOS.BackdropMaterial names; a blur with a material other than BackdropUltraThin draws that material on iOS and AppKit's closest one on macOS, leaving color filters out. Linux and Android draw no backdrop filters. GlassEffect draws Liquid Glass in its place on iOS and macOS 26; give a glass view a blur to fall back to.
-	BackdropFilters []Filter
-	GlassEffect     GlassEffect
+	// BackdropFilters change what is behind the node, seen through its background, as CSS's backdrop-filter does: Blur frosts it by its radius, and brightness, contrast, grayscale, hue rotation, invert, opacity, saturate and sepia change its colors; a drop shadow draws nothing. A blur without color filters on iOS draws the system material a view's IOS.BackdropMaterial names; a blur with a material other than BackdropUltraThin draws that material on iOS and AppKit's closest one on macOS, leaving color filters out. Linux and Android draw no backdrop filters. GlassEffect draws Liquid Glass in its place on iOS and macOS 26; give a glass view a blur to fall back to. GlassInteractive turns on the system's press response for Liquid Glass on macOS 27 and iOS 26.
+	BackdropFilters  []Filter
+	GlassEffect      GlassEffect
+	GlassInteractive bool
 	// Mask draws the node, backdrop included, as much as the gradient's
 	// alpha says.
 	Mask *Gradient
@@ -741,6 +742,7 @@ func (s Style) Merge(o Style) Style {
 	setSlice(&s.Filters, o.Filters)
 	setSlice(&s.BackdropFilters, o.BackdropFilters)
 	set(&s.GlassEffect, o.GlassEffect)
+	set(&s.GlassInteractive, o.GlassInteractive)
 	set(&s.Mask, o.Mask)
 	set(&s.BlendMode, o.BlendMode)
 	set(&s.TintColor, o.TintColor)
@@ -1142,6 +1144,7 @@ func (s *Style) viewStyle(size Size, color Color, rtl bool) driver.ViewStyle {
 		ChildPerspective:  max(s.Perspective, 0),
 		BlendMode:         s.BlendMode,
 		Glass:             s.GlassEffect,
+		GlassInteractive:  s.GlassInteractive,
 		Transition:        s.Transition,
 		Animation:         s.Animation,
 		Hidden:            s.Visibility == VisibilityHidden,

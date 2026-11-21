@@ -348,6 +348,9 @@ func (r *runtime) styleKey(s *core.Style, key string, v js.Value) {
 	case "glassEffect":
 		s.GlassEffect = pick(r, key, v, map[string]core.GlassEffect{"none": core.GlassNone,
 			"regular": core.GlassRegular, "clear": core.GlassClear})
+	case "glassInteractive":
+		r.check(key, v, isBool(v))
+		s.GlassInteractive = isBool(v) && v.ToBoolean()
 	case "mixBlendMode":
 		s.BlendMode = pick(r, key, v, blendModes)
 	case "cursor":

@@ -146,6 +146,7 @@ export interface ViewStyle extends LayoutStyle {
   backdropFilter?: string;
   maskImage?: string;
   glassEffect?: "none" | "regular" | "clear";
+  glassInteractive?: boolean;
   mixBlendMode?: "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "color-dodge" | "color-burn" | "hard-light" | "soft-light" | "difference" | "exclusion" | "hue" | "saturation" | "color" | "luminosity" | "plus-darker" | "plus-lighter";
   cursor?: "auto" | "default" | "pointer" | "text" | "vertical-text" | "wait" | "progress" | "help" | "crosshair" | "move" | "all-scroll" | "grab" | "grabbing" | "not-allowed" | "no-drop" | "zoom-in" | "zoom-out" | "col-resize" | "e-resize" | "w-resize" | "ew-resize" | "row-resize" | "n-resize" | "s-resize" | "ns-resize" | "nwse-resize" | "nw-resize" | "se-resize" | "nesw-resize" | "ne-resize" | "sw-resize" | "none";
   backfaceVisibility?: "visible" | "hidden";

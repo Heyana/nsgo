@@ -750,6 +750,8 @@ type ViewStyle struct {
 	// system's shadow under it where the style casts none.
 	Elevation Points
 	Glass     GlassEffect
+	// GlassInteractive lets Liquid Glass answer presses on platforms that support it (macOS 27 and iOS 26).
+	GlassInteractive bool
 	// Effects are shadows, gradients, filters and masks, nil without any.
 	Effects *Effects
 	// Transition, when it has a duration, animates the change from the

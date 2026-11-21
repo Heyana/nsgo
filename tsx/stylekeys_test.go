@@ -149,6 +149,8 @@ func TestStyleKeysSetTheirFields(t *testing.T) {
 		},
 		`{maskImage: "linear-gradient(red, transparent)"}`: func(s core.Style) bool { return s.Mask != nil },
 		`{glassEffect: "clear"}`:                           func(s core.Style) bool { return s.GlassEffect == core.GlassClear },
+		`{glassEffect: "regular", glassInteractive: true}`: func(s core.Style) bool { return s.GlassEffect == core.GlassRegular && s.GlassInteractive },
+		`{glassInteractive: false}`:                        func(s core.Style) bool { return !s.GlassInteractive },
 		`{mixBlendMode: "multiply"}`:                       func(s core.Style) bool { return s.BlendMode != 0 },
 		`{cursor: "text"}`:                                 func(s core.Style) bool { return s.Cursor != core.CursorAuto },
 		`{cursor: "no-such-cursor"}`:                       func(s core.Style) bool { return s.Cursor == core.CursorAuto },
@@ -255,5 +257,21 @@ func TestUnknownStyleValuesWarnOnce(t *testing.T) {
 	}
 	if n := strings.Count(logged.String(), "nope"); n != 1 {
 		t.Errorf("%q warned %d times", "nope", n)
+	}
+}
+
+func TestGlassInteractiveNonBoolWarns(t *testing.T) {
+	var logged strings.Builder
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	r := decoding()
+	s := r.style(jsValue(t, r, `{glassInteractive: "yes"}`))
+	if s.GlassInteractive {
+		t.Error("non-boolean glassInteractive should stay false")
+	}
+	if !strings.Contains(logged.String(), `style key "glassInteractive"`) {
+		t.Errorf("expected warning for non-boolean glassInteractive, got %q", logged.String())
 	}
 }

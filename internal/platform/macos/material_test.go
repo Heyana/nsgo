@@ -4,10 +4,13 @@ package macos
 
 import (
 	"image/color"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ebitengine/purego/objc"
 
+	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
 )
@@ -266,4 +269,236 @@ func absDiff(a, b uint8) int {
 		return int(a - b)
 	}
 	return int(b - a)
+}
+
+// TestInteractiveLiquidGlassRoutesPresses verifies that an interactive Liquid
+// Glass view sets effectIsInteractive on macOS 27+, routes hit testing to its
+// glassContent view (which accepts first mouse and does not drag the window)
+// whose responder chain reaches the owning view so OnPress still fires, leaves
+// pressable children with their own presses, and restores normal hit testing
+// when GlassInteractive is disabled or GlassEffect is removed.
+func TestInteractiveLiquidGlassRoutesPresses(t *testing.T) {
+	onMain(func() { interactiveLiquidGlassRoutesPresses(t) })
+}
+
+func interactiveLiquidGlassRoutesPresses(t *testing.T) {
+	loadAppKit()
+	if apple.Class("NSGlassEffectView") == 0 {
+		t.Skip("NSGlassEffectView requires macOS 26 or later")
+	}
+	pool := objc.ID(apple.Class("NSAutoreleasePool")).Send(selNew)
+	defer pool.Send(sel("drain"))
+
+	window := objc.ID(classWindow).Send(selAlloc).Send(sel("initWithContentRect:styleMask:backing:defer:"),
+		apple.Rect(100, 100, 300, 200), uint(0), uint(2), false)
+	window.Send(sel("setReleasedWhenClosed:"), false)
+	defer func() {
+		window.Send(sel("close"))
+		window.Send(selRelease)
+	}()
+
+	var (
+		glassPresses atomic.Int32
+		childPresses atomic.Int32
+		glassSig     *core.Signal[core.GlassEffect]
+		interSig     *core.Signal[bool]
+		scope        *core.Scope
+	)
+
+	ev := NewView(func(cx *core.Scope) core.Node {
+		scope = cx
+		glassSig = core.NewSignal(cx, core.GlassRegular)
+		interSig = core.NewSignal(cx, true)
+		return core.View{
+			Style: core.Style{Width: core.Pt(300), Height: core.Pt(200), Padding: core.All(20)},
+			Children: []core.Node{
+				core.View{
+					TestID: "glass",
+					OnPress: func(core.PressEvent) {
+						glassPresses.Add(1)
+					},
+					StyleFunc: func() core.Style {
+						return core.Style{
+							Width:            core.Pt(200),
+							Height:           core.Pt(100),
+							CornerRadius:     16,
+							Direction:        core.Row,
+							Padding:          core.All(10),
+							Gap:              20,
+							GlassEffect:      glassSig.Get(),
+							GlassInteractive: interSig.Get(),
+						}
+					},
+					Children: []core.Node{
+						core.Text{
+							TestID:  "label",
+							Content: "Glass",
+							Style:   core.Style{Width: core.Pt(80), Height: core.Pt(40)},
+						},
+						core.View{
+							TestID: "child",
+							OnPress: func(core.PressEvent) {
+								childPresses.Add(1)
+							},
+							Style: core.Style{Width: core.Pt(70), Height: core.Pt(40)},
+						},
+					},
+				},
+			},
+		}
+	}, Options{Width: 300, Height: 200})
+	defer ev.Close()
+
+	window.Send(sel("setContentView:"), objc.ID(ev.Handle()))
+	window.Send(sel("orderFrontRegardless"))
+
+	pump := func(cond func() bool) {
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if cond() {
+				return
+			}
+			objc.ID(apple.Class("NSRunLoop")).Send(sel("mainRunLoop")).Send(
+				sel("runUntilDate:"), objc.ID(apple.Class("NSDate")).Send(sel("dateWithTimeIntervalSinceNow:"), 0.01))
+		}
+	}
+	findView := func(id string) *view {
+		for _, v := range ev.s.views {
+			if v != nil && v.props.TestID == id {
+				return v
+			}
+		}
+		return nil
+	}
+	pump(func() bool {
+		return findView("glass") != nil && findView("label") != nil && findView("child") != nil && findView("glass").backdrop != 0
+	})
+
+	glassView := findView("glass")
+	childBtn := findView("child")
+	if glassView == nil || childBtn == nil {
+		t.Fatalf("views did not mount: glass=%v child=%v", glassView, childBtn)
+	}
+	if glassView.backdrop == 0 || glassView.glassContent == 0 {
+		t.Fatalf("expected glass backdrop and glassContent, got backdrop=%v content=%v", glassView.backdrop, glassView.glassContent)
+	}
+
+	rootNative := ev.s.native
+	hitAt := func(x, y float64) objc.ID {
+		p := objc.Send[apple.CGPoint](rootNative.Send(selSuperview), sel("convertPoint:fromView:"), apple.CGPoint{X: x, Y: y}, rootNative)
+		return rootNative.Send(sel("hitTest:"), p)
+	}
+
+	if !objc.Send[bool](glassView.backdrop, sel("respondsToSelector:"), selSetEffectIsInteractive) {
+		if glassView.glassInteractive {
+			t.Fatal("glassInteractive should remain false when setEffectIsInteractive: is unavailable")
+		}
+		if got := hitAt(50, 90); got != glassView.native {
+			t.Fatalf("hitTest without effectIsInteractive = %v, want glassView.native %v", got, glassView.native)
+		}
+		t.Skip("NSGlassEffectView.setEffectIsInteractive: requires macOS 27 or later")
+	}
+
+	if !objc.Send[bool](glassView.backdrop, sel("effectIsInteractive")) {
+		t.Fatal("NSGlassEffectView.effectIsInteractive = false, want true")
+	}
+	if !objc.Send[bool](glassView.glassContent, sel("acceptsFirstMouse:"), objc.ID(0)) {
+		t.Fatal("glassContent.acceptsFirstMouse: = false, want true")
+	}
+	if objc.Send[bool](glassView.glassContent, sel("mouseDownCanMoveWindow")) {
+		t.Fatal("glassContent.mouseDownCanMoveWindow = true, want false")
+	}
+
+	// Bare glass area (20+50=70, 20+80=100) and non-pressable label (20+30=50, 20+25=45)
+	// must hit glassContent so AppKit's FlexInteraction gesture recognizer sees the press.
+	for _, pt := range []struct {
+		name string
+		x, y float64
+	}{
+		{"bare glass", 70, 100},
+		{"non-pressable label", 50, 45},
+	} {
+		got := hitAt(pt.x, pt.y)
+		if got != glassView.glassContent {
+			t.Fatalf("hitTest(%s) = %v, want glassContent %v", pt.name, got, glassView.glassContent)
+		}
+		if !objc.Send[bool](got, sel("isDescendantOf:"), glassView.backdrop) {
+			t.Fatalf("hitTest(%s) = %v is not a descendant of NSGlassEffectView %v", pt.name, got, glassView.backdrop)
+		}
+	}
+
+	// Responder chain from glassContent must reach glassView.native.
+	reaches := false
+	for r := glassView.glassContent; r != 0; r = r.Send(sel("nextResponder")) {
+		if r == glassView.native {
+			reaches = true
+			break
+		}
+	}
+	if !reaches {
+		t.Fatal("glassContent responder chain does not reach glassView.native")
+	}
+
+	// Pressable child inside the interactive glass view must keep its own hit target.
+	// childBtn frame in root: padding(20)+padding(10)+label(80)+gap(20)=130..200, y=30..70 -> center (165, 50).
+	if got := hitAt(165, 50); got != childBtn.native {
+		t.Fatalf("hitTest(pressable child) = %v, want childBtn.native %v", got, childBtn.native)
+	}
+
+	// Send real leftMouseDown + leftMouseUp events through NSWindow to verify
+	// OnPress fires for glassView (bare glass + label) and for childBtn.
+	sendClick := func(x, y float64) {
+		winPt := objc.Send[apple.CGPoint](rootNative, sel("convertPoint:toView:"), apple.CGPoint{X: x, Y: y}, objc.ID(0))
+		wn := objc.Send[int](window, sel("windowNumber"))
+		mk := func(kind uint) objc.ID {
+			return objc.ID(apple.Class("NSEvent")).Send(
+				sel("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:"),
+				kind, winPt, uint(0), 0.0, wn, objc.ID(0), 1, 1, float32(1))
+		}
+		window.Send(sel("sendEvent:"), mk(evLeftDown))
+		window.Send(sel("sendEvent:"), mk(evLeftUp))
+	}
+
+	sendClick(70, 100)
+	pump(func() bool { return glassPresses.Load() == 1 })
+	if got := glassPresses.Load(); got != 1 {
+		t.Fatalf("click on bare interactive glass fired %d presses, want 1", got)
+	}
+
+	sendClick(50, 45)
+	pump(func() bool { return glassPresses.Load() == 2 })
+	if got := glassPresses.Load(); got != 2 {
+		t.Fatalf("click on label in interactive glass fired %d presses total, want 2", got)
+	}
+
+	sendClick(165, 50)
+	pump(func() bool { return childPresses.Load() == 1 })
+	if childPresses.Load() != 1 || glassPresses.Load() != 2 {
+		t.Fatalf("click on pressable child: childPresses=%d glassPresses=%d, want 1 and 2", childPresses.Load(), glassPresses.Load())
+	}
+
+	// Turning GlassInteractive off restores effectIsInteractive=false and normal hitTest.
+	scope.Post(func() { interSig.Set(false) })
+	pump(func() bool { return !glassView.glassInteractive })
+	if objc.Send[bool](glassView.backdrop, sel("effectIsInteractive")) {
+		t.Fatal("NSGlassEffectView.effectIsInteractive stayed true after disabling")
+	}
+	if got := hitAt(70, 100); got != glassView.native {
+		t.Fatalf("hitTest after GlassInteractive=false = %v, want glassView.native %v", got, glassView.native)
+	}
+
+	// Re-enabling then removing GlassEffect clears the backdrop and restores normal hitTest.
+	scope.Post(func() { interSig.Set(true) })
+	pump(func() bool { return glassView.glassInteractive })
+	if got := hitAt(70, 100); got != glassView.glassContent {
+		t.Fatalf("hitTest after re-enabling = %v, want glassContent %v", got, glassView.glassContent)
+	}
+	scope.Post(func() { glassSig.Set(core.GlassNone) })
+	pump(func() bool { return glassView.backdrop == 0 })
+	if glassView.backdrop != 0 || glassView.glassContent != 0 || glassView.glassInteractive {
+		t.Fatalf("removing glass left backdrop=%v content=%v interactive=%v", glassView.backdrop, glassView.glassContent, glassView.glassInteractive)
+	}
+	if got := hitAt(70, 100); got != glassView.native {
+		t.Fatalf("hitTest after removing glass = %v, want glassView.native %v", got, glassView.native)
+	}
 }
