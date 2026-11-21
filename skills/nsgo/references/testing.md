@@ -71,7 +71,7 @@ Use `app.SelectTab("id:tabs", 1)` to choose the second item of a mounted `mobile
 
 `View.Style` and `View.Animated` use owned `nsgotest.ViewStyle` and `nsgotest.AnimatedValues` records. Read `app.Animated(selector)` for the style with bound values applied; geometry and animation policy helpers keep their existing behavior.
 
-Use `app.Window` and `nsgotest.WindowAction` constants such as `nsgotest.WindowSetConstraints` to assert what the app asked of its main window. In headless tests, `app.Shares` records the files, text and anchor of each share request. Use `View.WebCommands` and `nsgotest.WebCommandKind` constants to check requests sent to a web view.
+Use `app.Window` and `nsgotest.WindowAction` constants such as `nsgotest.WindowSetConstraints` to assert what the app asked of its main window. In headless tests, `app.Shares` records the files, text and anchor of each share request. Use `View.Web` to check a web view’s recorded settings, and `View.WebCommands` with `nsgotest.WebCommandKind` constants to check its requests.
 
 Headless tests can press a physical position with `KeyCode("KeyW")` or hold and release it with `KeyCodeDown` and `KeyCodeUp`. Override `core.Environment.KeyCodeNames` to exercise a layout. Unspecified positions use the US layout.
 

@@ -72,8 +72,6 @@ type (
 	GPUDeviceLostReason = driver.GPUDeviceLostReason
 	// CustomCursor describes an image-based pointer cursor on desktops and the web.
 	CustomCursor = driver.CustomCursor
-	// WebConfig is everything a web view loads and allows (ItemWeb).
-	WebConfig = driver.WebConfig
 	// WebSource is what a web view shows: a URL or HTML.
 	WebSource = driver.WebSource
 )

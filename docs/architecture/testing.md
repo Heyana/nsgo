@@ -10,7 +10,7 @@ Mounted looks and bound animation values use owned `nsgotest.ViewStyle` and `nsg
 
 Mounted identity, accessibility and interaction settings use owned `nsgotest.ViewProps` records. Their label IDs, actions and ripple are copied when a mount batch arrives; policy helpers delegate to the private driver after explicit conversion.
 
-`View.Kind` uses owned `nsgotest.ViewKind` constants mapped from the mount protocol. The model converts picker, camera, scan and save requests into the records in `nsgotest/file_requests.go`. Answer hooks receive those records too, through the test host on a target for photo picks, captures and code scans.
+`View.Kind` uses owned `nsgotest.ViewKind` constants mapped from the mount protocol. The model converts picker, camera, scan and save requests into the records in `nsgotest/file_requests.go`. Answer hooks receive those records too, through the test host on a target for photo picks, captures and code scans. A mounted web view’s settings and requests are recorded as `WebConfig` and `WebCommand`.
 
 Selectors (`nsgotest/selector.go`) name what a user sees, as Playwright's: `id:`, `label:`, `text:` (a substring, or a field's text or its placeholder while empty; in quotes, `text:"Save"`, the whole text or a span's), `role:<role> <name>`, `view:<node>`, and a bare string as a test ID, else a label, else a whole text. `label:`, `text:` and a role's name take `/regexp/flags`.
 
