@@ -526,7 +526,9 @@ func (r *testRun) event(ev testEvent) {
 	}
 }
 
-// interrupted ends the tests of pkg still running when its process ended, as a panic on another goroutine or a timeout ends it, with no closing event for the tests it cut short. Each fails with its output, which holds the panic and stack the package's output does not; a benchmark, which ends with no event of its own, hands its output to the package's.
+// interrupted fails the tests still running when pkg's process ends without
+// their closing events, as after a panic or timeout. Each shows its own output.
+// A benchmark hands its output to the package because it has no closing event.
 func (r *testRun) interrupted(pkg string) {
 	var keys []string
 	for key, t := range r.running {
@@ -545,6 +547,21 @@ func (r *testRun) interrupted(pkg string) {
 		t.failFor("the test process exited before reporting an outcome")
 		r.results = append(r.results, t)
 		r.print(t)
+	}
+	// finish skips package output when a failed test already explains the failure.
+	// An interrupted test can leave diagnostic lines attached to the package.
+	if len(keys) > 0 && r.anyFailed(pkg) {
+		var diagnostics strings.Builder
+		for line := range strings.SplitSeq(r.packages[pkg].Output, "\n") {
+			if line == "" || goTestLine(line) || strings.HasPrefix(line, "FAIL\t") {
+				continue
+			}
+			diagnostics.WriteString(line)
+			diagnostics.WriteByte('\n')
+		}
+		if diagnostics.Len() > 0 {
+			fmt.Fprintf(r.out, "%s  %s\n%s", margin, pkg, indent(diagnostics.String()))
+		}
 	}
 }
 

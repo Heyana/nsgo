@@ -552,6 +552,7 @@ func TestInterruptedTestsKeepTheirOutput(t *testing.T) {
 {"Action":"run","Package":"p","Test":"TestCrash"}
 {"Action":"run","Package":"q","Test":"TestOther"}
 {"Action":"output","Package":"p","Test":"TestCrash","Output":"panic: native callback failed\nstack trace\n"}
+{"Action":"output","Package":"p","Output":"native crash reported by the test process\n"}
 {"Action":"output","Package":"p","Output":"FAIL\tp\t0.1s\n"}
 {"Action":"fail","Package":"p","Elapsed":0.1}
 {"Action":"pass","Package":"q","Test":"TestOther","Elapsed":0.2}
@@ -565,6 +566,9 @@ func TestInterruptedTestsKeepTheirOutput(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("console misses %q:\n%s", want, out.String())
 		}
+	}
+	if got := strings.Count(out.String(), "native crash reported by the test process"); got != 1 {
+		t.Errorf("console shows the package diagnostic %d times:\n%s", got, out.String())
 	}
 	if len(r.running) != 0 {
 		t.Errorf("unfinished tests = %v", r.running)

@@ -229,16 +229,16 @@ jobs:
       - name: Test
         env:
           GOTRACEBACK: crash
-        run: go tool nsgo test ./internal/platform/apple -- -skip '^TestASoundDecodesOnceAndPlaysOverlapping$'
+        run: go tool nsgo test -ldflags '-s=false -w=false' ./internal/platform/apple -- -count=1
       - name: Test widget and Live Activity recording
         run: go tool nsgo test -run '^(TestWidgetTimelines|TestLiveActivityRecords|TestUnavailableWidgetServices)$' ./nsgotest
-      # Each run is a fresh process with Go symbols and a 30-second timeout, so a native fault or a CoreAudio stall leaves a traceback and a crash report (#801).
+      # Load AuthenticationServices before playback, as in the failed suite (#801).
       - name: Stress overlapping sound playback in fresh processes
         env:
           GOTRACEBACK: crash
         run: |
           for i in $(seq 1 200); do
-            go tool nsgo test -ldflags '-s=false -w=false' -run '^TestASoundDecodesOnceAndPlaysOverlapping$' \
+            go tool nsgo test -ldflags '-s=false -w=false' -run '^(TestAuthenticationServicesLoads|TestASoundDecodesOnceAndPlaysOverlapping)$' \
               ./internal/platform/apple -- -count=1 -timeout=30s || { echo "run $i failed"; exit 1; }
           done
       - name: Test main-thread failure propagation
