@@ -112,6 +112,7 @@ func webViewFace(p *props) core.Node {
 		UserAgentSuffix:     p.str("userAgentSuffix"),
 		NoScroll:            !p.boolOr("scrollable", true),
 		NoJavaScript:        !p.boolOr("javaScriptEnabled", true),
+		MutedFunc:           func() bool { return p.bool("muted") },
 		BackForwardGestures: p.bool("allowsBackForwardNavigationGestures"),
 		Mobile:              p.bool("mobile"),
 		Media:               r.webMedia(p.get("media")),

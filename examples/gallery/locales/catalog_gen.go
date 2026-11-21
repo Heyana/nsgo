@@ -2003,6 +2003,8 @@ const (
 	textMediaSetACookie
 	textMediaList
 	textMediaClearWebsiteData
+	textMediaMutePage
+	textMediaWebTone
 	textMediaVideo
 	textMediaThePlatformSPlayer
 	textMediaError
@@ -4315,6 +4317,8 @@ var keyOfText = [numTexts]string{
 	"mediaSetACookie",
 	"mediaList",
 	"mediaClearWebsiteData",
+	"mediaMutePage",
+	"mediaWebTone",
 	"mediaVideo",
 	"mediaThePlatformSPlayer",
 	"mediaError",
@@ -6625,6 +6629,8 @@ var textsEn = i18n.NewTexts(""+
 	"Set a cookie"+
 	"List"+
 	"Clear website data"+
+	"Mute page audio"+
+	"Test tone"+
 	"Video"+
 	"The platform's player"+
 	"Error"+
@@ -8932,6 +8938,8 @@ var textsEn = i18n.NewTexts(""+
 		12,
 		4,
 		18,
+		15,
+		9,
 		5,
 		21,
 		5,
@@ -11242,6 +11250,8 @@ var textsZhHans = i18n.NewTexts(""+
 	"写入 Cookie"+
 	"列出"+
 	"清除网站数据"+
+	"将网页静音"+
+	"测试声音"+
 	"视频"+
 	"平台的播放器"+
 	"错误"+
@@ -13549,6 +13559,8 @@ var textsZhHans = i18n.NewTexts(""+
 		13,
 		6,
 		18,
+		15,
+		12,
 		6,
 		18,
 		6,
@@ -28447,6 +28459,20 @@ func MediaClearWebsiteData(cx *core.Scope) string { return For(cx).MediaClearWeb
 
 // MediaClearWebsiteData is the package's MediaClearWebsiteData in the language of msgs.
 func (msgs Messages) MediaClearWebsiteData() string { return msgs.text(textMediaClearWebsiteData) }
+
+// MediaMutePage says "Mute page audio"
+// in the language the app shows under cx.
+func MediaMutePage(cx *core.Scope) string { return For(cx).MediaMutePage() }
+
+// MediaMutePage is the package's MediaMutePage in the language of msgs.
+func (msgs Messages) MediaMutePage() string { return msgs.text(textMediaMutePage) }
+
+// MediaWebTone says "Test tone"
+// in the language the app shows under cx.
+func MediaWebTone(cx *core.Scope) string { return For(cx).MediaWebTone() }
+
+// MediaWebTone is the package's MediaWebTone in the language of msgs.
+func (msgs Messages) MediaWebTone() string { return msgs.text(textMediaWebTone) }
 
 // MediaVideo says "Video"
 // in the language the app shows under cx.

@@ -18,6 +18,20 @@ import (
 	"github.com/nsgo-dev/nsgo/ui"
 )
 
+func canMutePage(cx *core.Scope) bool {
+	env := cx.Env()
+	if !env.HasWebView() || env.Simulated() {
+		return false
+	}
+	switch env.OS() {
+	case core.OSWindows, core.OSLinux, core.OSIOS:
+		return true
+	case core.OSMacOS:
+		return env.OSVersion().Major >= 12
+	}
+	return false
+}
+
 // inlinePage is an inline page in the gallery's colors, for the
 // appearance shown; as in NSH, a page source that reads it loads again
 // when they change.
@@ -32,6 +46,10 @@ func inlinePage(cx *core.Scope) string {
 	if isDark {
 		shine = 0.45
 	}
+	var tone string
+	if canMutePage(cx) {
+		tone = `<button id="tone" aria-pressed="false">` + html.EscapeString(locales.For(cx).MediaWebTone()) + `</button>`
+	}
 	return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html { -webkit-text-size-adjust: 100%; }
@@ -40,6 +58,8 @@ func inlinePage(cx *core.Scope) string {
   p { margin: 0 0 12px; color: ` + hex(colors.Muted) + `; font-size: 15px; }
   button { height: 44px; padding: 0 18px; border: 0; border-radius: 10px; background: linear-gradient(180deg, #d6f78a 0%, #c1ea5c 100%); color: ` + hex(colors.OnAccent) + `; font-family: inherit; font-size: 15px; font-weight: 600; box-shadow: inset 0 1px 0 rgba(255,255,255,` + fmt.Sprint(shine) + `); }
   a { margin-left: 12px; color: inherit; }
+  #tone { margin-left: 12px; }
+  #tone[aria-pressed=true] { outline: 2px solid currentColor; outline-offset: -4px; }
   #got { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid ` + hex(colors.Border) + `; color: ` + hex(colors.Muted) + `; font-size: 15px; }
 </style></head>
 <body>
@@ -48,9 +68,29 @@ func inlinePage(cx *core.Scope) string {
 <button id="post" onclick="window.nsgo.postMessage(event.isTrusted ? 'hello from the page' : 'an untrusted click')">Post to the app</button>
 <a id="save" download="note.txt" href="data:text/plain,Saved%20from%20the%20page">Save a note</a>
 <a target="_blank" href="https://nsgo.dev/">` + html.EscapeString(locales.For(cx).MediaNewWindow()) + `</a>
+` + tone + `
 <div id="got">No message from the app yet.</div>
 <script>
 window.addEventListener('message', (e) => { document.getElementById('got').textContent = 'From the app: ' + e.data; });
+const tone = document.getElementById('tone');
+if (tone) {
+  let context;
+  tone.addEventListener('click', () => {
+    if (context) {
+      context.close();
+      context = undefined;
+    } else {
+      context = new AudioContext();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.frequency.value = 220;
+      gain.gain.value = 0.025;
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start();
+    }
+    tone.setAttribute('aria-pressed', Boolean(context));
+  });
+}
 // Where the button and the link are, for the app's trusted clicks.
 const at = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
 window.nsgo.postMessage('at:' + JSON.stringify({ post: at('post'), save: at('save') }));
@@ -71,6 +111,11 @@ func messaging(cx *core.Scope) core.Node {
 	saved := core.NewSignal(cx, "")
 	result := core.NewSignal(cx, "")
 	pageState := core.NewSignal(cx, core.WebNavigation{})
+	muted := core.NewSignal(cx, false)
+	var mute core.Node
+	if canMutePage(cx) {
+		mute = ui.Checkbox{Text: tr.MediaMutePage(), Checked: muted.Get, OnChange: muted.Set}
+	}
 	// Desktop native hosts serve the same page through an app-owned scheme; targets without that bridge, a web build that runs as a desktop OS included, keep the inline HTML source.
 	schemePage := inlinePage(cx)
 	_ = cx.ServeScheme("gallery", func(url string) []byte {
@@ -113,7 +158,7 @@ func messaging(cx *core.Scope) core.Node {
 		return s
 	}
 	return Card{Title: tr.MediaWebView(), Description: tr.MediaInlineHtmlWithMessagesBoth(), Children: []core.Node{
-		core.WebView{Ref: web, SourceFunc: source, Headers: map[string]string{"X-NSGo-Gallery": "webview"}, Incognito: true, TestID: "bridge", StyleFunc: func() core.Style { return mediaFrame(cx, 210, colors.Inset()) }, OnMessage: got, OnDownload: download, OnNavigationStateChange: pageState.Set,
+		core.WebView{Ref: web, SourceFunc: source, Headers: map[string]string{"X-NSGo-Gallery": "webview"}, Incognito: true, MutedFunc: muted.Get, TestID: "bridge", StyleFunc: func() core.Style { return mediaFrame(cx, 210, colors.Inset()) }, OnMessage: got, OnDownload: download, OnNavigationStateChange: pageState.Set,
 			OnOpenWindow: func(r core.WebWindowRequest) {
 				if r.UserInitiated {
 					message.Set(r.URL)
@@ -126,6 +171,7 @@ func messaging(cx *core.Scope) core.Node {
 			}
 			return page.Title + " · " + page.URL
 		}},
+		mute,
 		Caption{Label: tr.MediaFromThePage(), Note: func() string { return or(message.Get()) }},
 		Caption{Label: tr.MediaToThePage(), Note: func() string {
 			if sent.Get() == 0 {

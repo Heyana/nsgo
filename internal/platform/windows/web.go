@@ -777,6 +777,12 @@ func (wv *webView) apply() {
 		// A precision touchpad's pinch reaches a window as Ctrl with the wheel, which WebView2 zooms by unless its zoom control is off.
 		s.call(settingsPutIsZoomControlEnabled, boolArg(c.PinchZoom))
 	}
+	if c.Muted != old.Muted {
+		if web8 := wv.web.query(&iidWeb8); web8 != nil {
+			web8.call(web8PutIsMuted, boolArg(c.Muted))
+			web8.release()
+		}
+	}
 	scripts := first || c.InjectedJavaScript != old.InjectedJavaScript ||
 		c.InjectedJavaScriptBeforeContent != old.InjectedJavaScriptBeforeContent || c.Mobile != old.Mobile
 	if c.Mobile || !first && old.Mobile {

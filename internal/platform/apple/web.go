@@ -445,6 +445,10 @@ func (w *Web) Configure(c *driver.WebConfig) {
 	if runtime.GOOS == "ios" {
 		w.web.Send(sel("scrollView")).Send(sel("setScrollEnabled:"), !c.NoScroll)
 	}
+	const suspend = "setAllMediaPlaybackSuspended:completionHandler:"
+	if c.Muted != old.Muted && responds(w.web, suspend) {
+		w.web.Send(sel(suspend), c.Muted, objc.ID(0))
+	}
 	if first || scripts || c.Source != old.Source || !maps.Equal(c.Headers, old.Headers) {
 		w.load(c.Source)
 	}

@@ -38,6 +38,12 @@ type WebView struct {
 	// pages from running scripts.
 	NoScroll     bool
 	NoJavaScript bool
+	// Muted silences the entire web view on Windows and Linux, including
+	// frames and Web Audio. macOS 12 and iOS 15 or later suspend media
+	// playback until cleared. The setting persists across navigations.
+	// MutedFunc updates it in place.
+	Muted     bool
+	MutedFunc func() bool
 	// PinchZoom lets the user magnify the page with a pinch: a trackpad's on macOS, a touchpad's or a touch screen's on Windows, where it also allows Ctrl with the wheel or with + and -, as a touchpad's pinch reaches the page as Ctrl with the wheel, and a touch screen's on Android. Without it the page keeps its size on those platforms. iOS zooms as the page's viewport says, and WebKitGTK on Linux and the browser on the web keep their own handling, having no switch for it.
 	PinchZoom bool
 	// BackForwardGestures lets swipes go back and forward where the
@@ -163,7 +169,7 @@ func (t *Tree) mountWebView(cx *Scope, parent *node, w WebView) {
 			SchemeHandlers: webSchemesOf(cx),
 			NoScroll:       w.NoScroll, NoJavaScript: w.NoJavaScript, PinchZoom: w.PinchZoom, BackForwardGestures: w.BackForwardGestures,
 			Mobile: w.Mobile,
-			Media:  w.Media},
+			Media:  w.Media, Muted: w.Muted},
 		loadStart: w.OnLoadStart, load: w.OnLoad, navigation: w.OnNavigationStateChange,
 		loadError: w.OnError, openWindow: w.OnOpenWindow, message: w.OnMessage, messageFrom: w.OnMessageFrom, download: w.OnDownload,
 		origins: messageOrigins(w.MessageOrigins),
@@ -183,6 +189,14 @@ func (t *Tree) mountWebView(cx *Scope, parent *node, w WebView) {
 		cx.renderEffect(func() {
 			if script := f(); script != n.web.config.InjectedJavaScriptBeforeContent {
 				n.web.config.InjectedJavaScriptBeforeContent = script
+				t.touch(n)
+			}
+		})
+	}
+	if f := w.MutedFunc; f != nil {
+		cx.renderEffect(func() {
+			if muted := f(); muted != n.web.config.Muted {
+				n.web.config.Muted = muted
 				t.touch(n)
 			}
 		})

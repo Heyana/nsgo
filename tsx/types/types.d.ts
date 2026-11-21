@@ -530,6 +530,8 @@ export interface WebViewHostProps {
   userAgentSuffix?: string;
   scrollable?: boolean;
   javaScriptEnabled?: boolean;
+  /** Silences the page on Windows and Linux and suspends media on macOS 12 and iOS 15 or later. */
+  muted?: boolean;
   allowsBackForwardNavigationGestures?: boolean;
   /** Presents pages as a phone sees them on Windows, macOS and Linux: a phone's user agent unless `userAgent` is set, a touch screen, and mouse drags as touches. */
   mobile?: boolean;

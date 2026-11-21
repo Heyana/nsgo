@@ -201,6 +201,8 @@ type WebConfig struct {
 	SchemeHandlers map[string]WebSchemeHandler
 	NoScroll       bool
 	NoJavaScript   bool
+	// Muted silences web audio or suspends playback, where supported.
+	Muted bool
 	// PinchZoom enables the platform web view's pinch magnification where it has a setting for it. Platforms without one keep their native behavior.
 	PinchZoom           bool
 	BackForwardGestures bool

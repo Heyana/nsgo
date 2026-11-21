@@ -77,11 +77,13 @@ func TestWebViewConfiguresLoadsAndReports(t *testing.T) {
 	var ref Ref
 	var src *Signal[WebSource]
 	var before *Signal[string]
+	var muted *Signal[bool]
 	var loaded []WebNavigation
 	var messages []string
 	h := newHost(t, Size{Width: 300, Height: 400}, func(cx *Scope) Node {
 		src = NewSignal(cx, WebSrc("https://example.com"))
 		before = NewSignal(cx, "before")
+		muted = NewSignal(cx, true)
 		return WebView{
 			SourceFunc:                          src.Get,
 			InjectedJavaScriptBeforeContentFunc: before.Get,
@@ -90,6 +92,7 @@ func TestWebViewConfiguresLoadsAndReports(t *testing.T) {
 			Incognito:                           true,
 			PinchZoom:                           true,
 			Mobile:                              true,
+			MutedFunc:                           muted.Get,
 			UserAgentSuffix:                     "TestBrowser/1.0",
 			Ref:                                 &ref,
 			TestID:                              "web",
@@ -114,7 +117,7 @@ func TestWebViewConfiguresLoadsAndReports(t *testing.T) {
 	if n := h.find("web"); n.kind != driver.KindWeb {
 		t.Fatalf("kind %v, want KindWeb", n.kind)
 	}
-	if cfg == nil || cfg.Source.Src != "https://example.com" || cfg.InjectedJavaScriptBeforeContent != "before" || cfg.InjectedJavaScript != "1" || cfg.Headers["X-Test"] != "one" || cfg.UserAgentSuffix != "TestBrowser/1.0" || !cfg.Incognito || !cfg.PinchZoom || !cfg.Mobile {
+	if cfg == nil || cfg.Source.Src != "https://example.com" || cfg.InjectedJavaScriptBeforeContent != "before" || cfg.InjectedJavaScript != "1" || cfg.Headers["X-Test"] != "one" || cfg.UserAgentSuffix != "TestBrowser/1.0" || !cfg.Incognito || !cfg.PinchZoom || !cfg.Mobile || !cfg.Muted {
 		t.Fatalf("config %+v", cfg)
 	}
 	if !mask.Has(driver.EventLoad) || !mask.Has(driver.EventMessage) || mask.Has(driver.EventLoadStart) {
@@ -132,8 +135,14 @@ func TestWebViewConfiguresLoadsAndReports(t *testing.T) {
 
 	src.Set(WebHTML("<p>hi</p>", ""))
 	b = h.commit()
-	if k := kinds(b); k[driver.ItemWeb] != 1 {
-		t.Fatalf("source change sent %v", k)
+	if len(b.Items) != 1 || b.Items[0].Kind != driver.ItemWeb || !b.Items[0].Web.Muted {
+		t.Fatalf("source change sent %+v", b.Items)
+	}
+
+	muted.Set(false)
+	b = h.commit()
+	if len(b.Items) != 1 || b.Items[0].Kind != driver.ItemWeb || b.Items[0].ID != h.find("web").id || b.Items[0].Web.Muted {
+		t.Fatalf("unmuting sent %+v", b.Items)
 	}
 
 	ref.PostMessage("ping")

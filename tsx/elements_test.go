@@ -169,6 +169,26 @@ mount(App);`)
 	}
 }
 
+func TestWebViewMutedFollowsItsProp(t *testing.T) {
+	app := run(t, `import { mount, signal, Text, View, WebView } from "nsgo";
+function App() {
+	const muted = signal(false);
+	return <View>
+		<WebView testID="web" html="<p>Hello</p>" muted={muted()} style={{ height: 50 }} />
+		<Text testID="toggle" onPress={() => muted.set(!muted())}>Toggle</Text>
+	</View>;
+}
+mount(App);`)
+	web := app.Find("id:web")
+	for _, muted := range []bool{true, false} {
+		app.Press("id:toggle")
+		again := app.Find("id:web")
+		if again.ID != web.ID || again.Web.Muted != muted {
+			t.Fatalf("mute %v produced view %v with mute %v, want view %v", muted, again.ID, again.Web.Muted, web.ID)
+		}
+	}
+}
+
 func TestVideoReportsWhatThePlatformPausedAndPlayed(t *testing.T) {
 	app := run(t, `import { mount, signal, Text, View, Video } from "nsgo";
 function App() {

@@ -66,6 +66,7 @@ var (
 	webkitWebViewGetUserContentManager       func(uintptr) uintptr
 	webkitWebViewGetSettings                 func(uintptr) uintptr
 	webkitWebViewSetBackgroundColor          func(uintptr, *[4]float32)
+	webkitWebViewSetIsMuted                  func(uintptr, int32)
 	webkitWebViewLoadURI                     func(uintptr, *byte)
 	webkitWebViewLoadRequest                 func(uintptr, uintptr)
 	webkitWebViewLoadHTML                    func(uintptr, *byte, *byte)
@@ -195,6 +196,7 @@ func bindWebKit(webkit, jsc, soup uintptr) {
 	reg(&webkitWebViewGetUserContentManager, "webkit_web_view_get_user_content_manager")
 	reg(&webkitWebViewGetSettings, "webkit_web_view_get_settings")
 	reg(&webkitWebViewSetBackgroundColor, "webkit_web_view_set_background_color")
+	reg(&webkitWebViewSetIsMuted, "webkit_web_view_set_is_muted")
 	reg(&webkitWebViewLoadURI, "webkit_web_view_load_uri")
 	reg(&webkitWebViewLoadRequest, "webkit_web_view_load_request")
 	reg(&webkitWebViewLoadHTML, "webkit_web_view_load_html")
@@ -433,6 +435,9 @@ func (w *window) configureWeb(v *view, c *driver.WebConfig) {
 	// WebKitGTK has no setting for pinches, so PinchZoom keeps its own handling.
 	// Pages see no media devices unless they may capture one.
 	webkitSettingsSetEnableMediaStream(settings, boolInt(c.Media != 0))
+	if first || c.Muted != old.Muted {
+		webkitWebViewSetIsMuted(wv.widget, boolInt(c.Muted))
+	}
 	w.webBackground(v)
 	// Scripts apply to pages loaded from now on: load again.
 	if first || scripts || c.Source != old.Source || !maps.Equal(c.Headers, old.Headers) {

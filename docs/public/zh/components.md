@@ -22,6 +22,8 @@ core.View{
 
 在 macOS、iOS、Windows 和 Linux 上，`OnNavigationStateChange` 还会报告同一文档内的 URL、历史记录和标题变化。
 
+在 Windows 和 Linux 上，`WebView.Muted` 和 `MutedFunc`（TSX 中为 `muted`）会将整个网页静音，包括 Web Audio 和内嵌框架。macOS 12 和 iOS 15 或更新版本会在静音期间暂停媒体播放。设置立即应用到当前页面，并在导航后继续生效。
+
 在 TSX 中，`injectedJavaScriptBeforeContentLoaded` 变化时，同一个 web view 会像 `InjectedJavaScriptBeforeContentFunc` 那样带着新脚本重新加载来源；`injectedJavaScript` 变化时，则会像 `userAgent`、`userAgentSuffix` 或 `mobile` 变化时一样，换成一个新的 web view，重新加载来源。
 
 设置 `Mobile`（TSX 中为 `mobile`）后，Windows、macOS 和 Linux 上的页面按手机所见的样子显示，适合 YouTube Shorts 这类只在手机上用上下滑动切换视频的网站：页面得到手机的 user agent（设置了 `UserAgent` 时以它为准）和没有悬停的触摸屏，鼠标拖动、以及在不可滚动处的滚轮或触控板滚动，都会作为手指滑动送达页面。Windows 像 Chrome 的设备模式那样模拟手机。macOS 和 Linux 用脚本实现，因此页面的样式表仍看到鼠标，触摸事件也不是可信事件，页面可能忽略它们。iOS、Android、HarmonyOS、Web 和小程序按原样显示页面。
