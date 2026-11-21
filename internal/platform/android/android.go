@@ -1808,16 +1808,7 @@ func writeDecor(w *writer, v *driver.ViewStyle) {
 		w.points(sh.Blur)
 		w.u32(uint32(sh.Color))
 	}
-	// The keyframes' steps, which Java eases between.
-	a := v.Animation
-	d, frames := a.Cycle()
-	w.u32(uint32(max(d.Milliseconds(), 0)))
-	w.u32(uint32(max(a.Delay.Milliseconds(), 0)))
-	w.u32(uint32(max(a.Iterations, 0)))
-	w.byte(byte(len(frames)))
-	for _, k := range frames {
-		w.floats(k.Offset, k.Opacity, k.Scale, k.Rotate, k.TranslateY, k.Easing.X1, k.Easing.Y1, k.Easing.X2, k.Easing.Y2)
-	}
+	writeKeyframes(w, v.Animation)
 }
 
 // writeStyle writes a text style in the format Text.Style reads.

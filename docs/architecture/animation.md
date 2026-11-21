@@ -59,6 +59,8 @@ The graph travels as `ItemAnimation`, after the batch's views. Each backend keep
 | Android | `Choreographer` | A Java port of the animator on the UI thread |
 | watchOS | SwiftUI host frames | The next host update, including values applied after a commit |
 
+Android reads the CSS animation steps from Go's `KeyframeAnimation.Cycle` and applies them with `Keyframes.java`. A JVM test checks the wire steps and sampled looks against Go. The fixture uses the Java animator's cubic solver for Android's interpolator.
+
 A display link runs only in the run loop mode object it is given: Foundation's `NSRunLoopCommonModes` (`apple.CommonModes`), not an equal string. A ProMotion iPhone grants links more than 60 Hz only to apps whose `Info.plist` sets `CADisableMinimumFrameDurationOnPhone`, which `nsgo` writes; iPads ignore it.
 
 ## Layout animation

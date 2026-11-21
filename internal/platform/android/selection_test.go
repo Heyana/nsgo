@@ -1,0 +1,115 @@
+package android
+
+import (
+	"math"
+	"slices"
+	"testing"
+	"unicode/utf16"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
+)
+
+const (
+	selectionWord byte = iota
+	selectionStart
+	selectionEnd
+	selectionAll
+	selectionClear
+)
+
+type selectionFixture struct {
+	content string
+	frame   driver.Bounds
+}
+
+type selectionFixtures []selectionFixture
+
+func (f selectionFixtures) Len() int                  { return len(f) }
+func (f selectionFixtures) Content(i int) string      { return f[i].content }
+func (f selectionFixtures) Frame(i int) driver.Bounds { return f[i].frame }
+func (f selectionFixtures) Key(i int) uint64          { return uint64(i + 1) }
+
+func (f selectionFixtures) OffsetAt(i int, p driver.Point) int {
+	// The JVM fixture lays one UTF-16 code unit in ten points.
+	return int(math.Round(float64(p.X-f[i].frame.Origin.X) / 10))
+}
+
+func TestSelectionMatchesJava(t *testing.T) {
+	fixture := func(content string, x, y driver.Points) selectionFixture {
+		return selectionFixture{content, driver.Bounds{
+			Origin: driver.Point{X: x, Y: y},
+			Size:   driver.Size{Width: driver.Points(len(utf16.Encode([]rune(content))) * 10), Height: 20},
+		}}
+	}
+	nodes := selectionFixtures{fixture("alpha beta", 0, 0), fixture("pi 🚀", 150, 0), fixture("next\uFFFC row", 0, 40)}
+	steps := []struct {
+		name string
+		op   byte
+		x, y driver.Points
+	}{
+		{"empty", selectionClear, 0, 0},
+		{"word", selectionWord, 16, 5},
+		{"extend into a surrogate pair", selectionEnd, 185, 5},
+		{"extend across an emoji", selectionEnd, 200, 5},
+		{"between rows", selectionEnd, 15, 30},
+		{"extend over an attachment", selectionEnd, 85, 45},
+		{"collapse at the end", selectionStart, 200, 80},
+		{"word after an attachment", selectionWord, 69, 45},
+		{"nearest text on a row", selectionStart, 145, 5},
+		{"second word", selectionWord, 75, 5},
+		{"cross the handles", selectionEnd, 13, 5},
+		{"select all", selectionAll, 0, 0},
+		{"clear", selectionClear, 0, 0},
+		{"moving a cleared handle", selectionEnd, 50, 5},
+	}
+	var input writer
+	input.u32(uint32(nodes.Len()))
+	for _, node := range nodes {
+		input.str(node.content)
+		input.floats(float32(node.frame.Origin.X), float32(node.frame.Origin.Y),
+			float32(node.frame.Size.Width), float32(node.frame.Size.Height))
+	}
+	input.u32(uint32(len(steps)))
+	for _, step := range steps {
+		input.byte(step.op)
+		input.floats(float32(step.x), float32(step.y))
+	}
+	out := runJavaAlgorithm(t, "selection", "SelectionCheck", input.buf, "Selection", "Protocol")
+	r := reader{out}
+	var model driver.SelectionModel
+	for _, step := range steps {
+		point := driver.Point{X: step.x, Y: step.y}
+		switch step.op {
+		case selectionWord:
+			model.SelectWordAt(nodes, point)
+		case selectionStart:
+			model.MoveHandle(nodes, driver.HandleStart, point)
+		case selectionEnd:
+			model.MoveHandle(nodes, driver.HandleEnd, point)
+		case selectionAll:
+			model.SelectAll(nodes)
+		case selectionClear:
+			model.Clear()
+		}
+		empty, copied := r.byte() != 0, r.str()
+		var ranges []driver.SelectionRange
+		for i := range nodes {
+			from, to := int(r.u32()), int(r.u32())
+			if from < to {
+				ranges = append(ranges, driver.SelectionRange{Text: i, Start: from, End: to})
+			}
+		}
+		if want := model.IsEmpty(); empty != want {
+			t.Errorf("%s: Java empty %t, Go %t", step.name, empty, want)
+		}
+		if want := model.Text(nodes); copied != want {
+			t.Errorf("%s: Java copied %q, Go %q", step.name, copied, want)
+		}
+		if want := model.Ranges(nodes); !slices.Equal(ranges, want) {
+			t.Errorf("%s: Java ranges %v, Go %v", step.name, ranges, want)
+		}
+	}
+	if len(r.buf) != 0 {
+		t.Errorf("Java wrote %d unexpected bytes", len(r.buf))
+	}
+}

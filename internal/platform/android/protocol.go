@@ -105,6 +105,18 @@ func writeLayoutTransition(w *writer, tr *driver.LayoutTransition) {
 	w.u64(uint64(tr.Delay))
 }
 
+// writeKeyframes writes the steps that Keyframes.read loads and eases between.
+func writeKeyframes(w *writer, a driver.KeyframeAnimation) {
+	d, frames := a.Cycle()
+	w.u32(uint32(max(d.Milliseconds(), 0)))
+	w.u32(uint32(max(a.Delay.Milliseconds(), 0)))
+	w.u32(uint32(max(a.Iterations, 0)))
+	w.byte(byte(len(frames)))
+	for _, k := range frames {
+		w.floats(k.Offset, k.Opacity, k.Scale, k.Rotate, k.TranslateY, k.Easing.X1, k.Easing.Y1, k.Easing.X2, k.Easing.Y2)
+	}
+}
+
 // writeAnimation writes an ItemAnimation's ops as Animator.readOp reads
 // them. Numbers stay float64, so Java computes what core.Animator would.
 func writeAnimation(w *writer, ops []driver.AnimationOp) {
