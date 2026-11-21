@@ -59,15 +59,15 @@ type devOptions struct {
 	devtools  bool // open DevTools for the running app
 	// automation lets tools drive the running app (automation.go); hub relays their requests.
 
-	automation      bool
-	hub             *automationHub
-	layout          string // what DevTools' layout audit starts showing (layoutFlag)
-	fps             bool   // show the performance monitor: --nsgo-fps
-	lang            string // the locale to run the app in: --nsgo-lang
-	clip            string // the URL the App Clip opens from, run in the app's place
-	server          *devServer
-	windowFrameFile string // the macOS main window's frame within this dev session
-	preview         *previewSession
+	automation bool
+	hub        *automationHub
+	layout     string // what DevTools' layout audit starts showing (layoutFlag)
+	fps        bool   // show the performance monitor: --nsgo-fps
+	lang       string // the locale to run the app in: --nsgo-lang
+	clip       string // the URL the App Clip opens from, run in the app's place
+	server     *devServer
+	nativeDir  string // the native desktop session's window state and Windows build directories
+	preview    *previewSession
 }
 
 // dev builds and runs the app, with a dev server its builds connect to: a failed build shows over the app, and Command or Control+R in the app, outside the browser, builds and starts it again unless the app binds the key itself, with OnKey or an enabled item of its application menu (internal/dev's Wrap). It exits once the app does. With nsgo.yaml's hot reload it rebuilds and restarts the app whenever a Go file it compiles from, go.mod, nsgo.yaml or a catalog changes, and keeps the running app when a build fails. After each Go build of an app with a tsconfig.json it writes the TSX's types to .nsgo/types, for editors.
@@ -99,10 +99,18 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		return err
 	}
 	p.prepareDev(opts)
-	if runtime.GOOS == "darwin" && p.Dev.Target == "native" && !opts.release {
-		if dir, err := os.MkdirTemp("", "nsgo-dev-window-"); err == nil {
-			defer os.RemoveAll(dir)
-			opts.windowFrameFile = filepath.Join(dir, "frame")
+	if p.Dev.Target == "native" {
+		captureFrame := !opts.release && (runtime.GOOS == "darwin" || runtime.GOOS == "windows")
+		stageWindows := runtime.GOOS == "windows" && opts.debugger == nil
+		if captureFrame || stageWindows {
+			dir, err := os.MkdirTemp("", "nsgo-dev-native-")
+			if err != nil && stageWindows {
+				return fmt.Errorf("prepare Windows dev builds: %w", err)
+			}
+			if err == nil {
+				opts.nativeDir = dir
+				defer os.RemoveAll(dir)
+			}
 		}
 	}
 	srv, err := startDevServer(opts.port)
@@ -832,8 +840,8 @@ func scan(dirs []string) string {
 // devEnv is the environment of a dev app this machine starts: where its dev server is, and the run's token for it.
 func devEnv(opts devOptions) []string {
 	env := []string{"NSGO_DEV_SERVER=" + opts.server.url(), "NSGO_DEV_TOKEN=" + opts.server.token}
-	if opts.windowFrameFile != "" {
-		env = append(env, "NSGO_DEV_WINDOW_FRAME_FILE="+opts.windowFrameFile)
+	if opts.nativeDir != "" && !opts.release {
+		env = append(env, "NSGO_DEV_WINDOW_FRAME_FILE="+filepath.Join(opts.nativeDir, "frame"))
 	}
 	return env
 }
@@ -873,19 +881,41 @@ func macSession(opts devOptions) session {
 // windowsSession builds the app as a Windows executable and runs it in
 // the foreground.
 func windowsSession(opts devOptions) session {
+	var built string
 	return session{
 		build: func(ctx context.Context, p *project) error {
 			dir := opts.desktopBuildDir(p, "windows")
-			os.RemoveAll(dir)
-			if err := os.MkdirAll(dir, 0o755); err != nil {
+			if opts.debugger == nil {
+				// The running Windows app has the previous executable open.
+				var err error
+				dir, err = os.MkdirTemp(opts.nativeDir, "app-")
+				if err != nil {
+					return err
+				}
+			}
+			if err := buildWindows(ctx, p, dir, runtime.GOARCH); err != nil {
+				os.RemoveAll(dir)
 				return err
 			}
-			return buildWindows(ctx, p, dir, runtime.GOARCH)
+			built = dir
+			return nil
 		},
 		start: func(ctx context.Context, p *project) (app, error) {
-			dir := opts.desktopBuildDir(p, "windows")
+			dir := built
 			bin := filepath.Join(dir, p.Name+".exe")
-			return startDesktopDev(p, opts, dir, bin)
+			a, err := startDesktopDev(p, opts, dir, bin)
+			if err != nil {
+				os.RemoveAll(dir)
+				return app{}, err
+			}
+			if opts.debugger == nil {
+				stop := a.stop
+				a.stop = func() {
+					stop()
+					os.RemoveAll(dir)
+				}
+			}
+			return a, nil
 		},
 	}
 }

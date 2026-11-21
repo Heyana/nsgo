@@ -486,7 +486,9 @@ func (w *window) toggleFullScreen() {
 		setWindowPos.Call(w.hwnd, 0, 0, 0, 0, 0,
 			swpNoMove|swpNoSize|swpNoZOrder|swpNoOwnerZOrder|swpNoActivate|swpFrameChanged)
 	}
-	w.chromeChanged()
+	if w.engine != nil {
+		w.chromeChanged()
+	}
 }
 
 // ncCalcSize answers WM_NCCALCSIZE with the title bar hidden: the client

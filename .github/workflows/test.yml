@@ -404,6 +404,8 @@ jobs:
 
       - name: Test the save dialog's starting folder
         run: go tool nsgo test -run '^TestSaveDialogStartsInFolder$' ./internal/platform/windows
+      - name: Test native dev window frame and full screen
+        run: go tool nsgo test -run '^TestDevWindowFrameRestoresPlacementAndFullScreen$' ./internal/platform/windows -- -tags=nsgodev
       - name: Test WebView2 popup requests
         run: go tool nsgo test -run '^TestWebView2WindowRequests$' ./internal/platform/windows
       - name: Test pixel frames and animated images

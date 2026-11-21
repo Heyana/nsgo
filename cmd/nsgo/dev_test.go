@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -70,6 +71,37 @@ func TestNativeSessionFollowsTheHost(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "web") {
 			t.Fatalf("native on %s: %v", runtime.GOOS, err)
 		}
+	}
+}
+
+func TestWindowsDevBuildKeepsThePreviousExecutable(t *testing.T) {
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"go.mod":  "module windowsdevprobe\n\ngo 1.26\n",
+		"main.go": "package main\nfunc main() {}\n",
+	})
+	p := &project{Dir: dir, Name: "Windows dev probe", ID: "dev.nsgo.windowsprobe", Version: "1.0.0"}
+	p.Dev.Target = "native"
+	opts := devOptions{nativeDir: t.TempDir()}
+	p.prepareDev(opts)
+	s := windowsSession(opts)
+	for count := 1; count <= 2; count++ {
+		if err := s.build(t.Context(), p); err != nil {
+			t.Fatal(err)
+		}
+		binaries, err := filepath.Glob(filepath.Join(opts.nativeDir, "app-*", p.Name+".exe"))
+		if err != nil || len(binaries) != count {
+			t.Fatalf("after %d builds, got %v and %v", count, binaries, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package invalid-build"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.build(t.Context(), p); err == nil {
+		t.Fatal("the invalid project built")
+	}
+	if dirs, err := os.ReadDir(opts.nativeDir); err != nil || len(dirs) != 2 {
+		t.Fatalf("after failed build, got %v and %v", dirs, err)
 	}
 }
 

@@ -355,11 +355,12 @@ func (v *view) detach() {
 }
 
 type window struct {
-	testID uint32 // the opened test surface, 0 for a regular window
-	batch  uint64 // batches applied
-	hwnd   uintptr
-	title  string
-	saves  driver.SavePreflights
+	testID   uint32 // the opened test surface, 0 for a regular window
+	batch    uint64 // batches applied
+	hwnd     uintptr
+	title    string
+	saves    driver.SavePreflights
+	devFrame devWindowFrame
 
 	powerNotification uintptr
 	// primary is the backend's own surface. Opened surfaces share its engine
@@ -696,8 +697,18 @@ func Run(app engine.App, opts Options) {
 	// Placed before it is the window's, so the sizes this sends do not
 	// reach the engine, which starts at the client area the window has.
 	w.placeNew(opts.Width, opts.Height, opts.test == nil)
-	if opts.Frame.Move {
-		w.placeAt(opts.Frame)
+	frameToPlace, fullScreen := opts.Frame, false
+	if !opts.Hidden {
+		frameToPlace, fullScreen = w.devFrame.restore(frameToPlace)
+	}
+	if frameToPlace.Move {
+		w.placeAt(frameToPlace)
+	}
+	if fullScreen {
+		w.toggleFullScreen()
+		// The restored full-screen window is still hidden. Its saved
+		// regular style is the one it takes after showing.
+		w.chrome.savedStyle |= wsVisible
 	}
 	windows[hwnd] = w
 	hearTaskbarButton(hwnd)
@@ -714,6 +725,8 @@ func Run(app engine.App, opts Options) {
 		}
 	}
 	w.env = w.environment()
+	w.devFrame.start(w)
+	defer w.devFrame.close()
 	w.appearance = opts.Appearance
 	w.darkTitleBar(w.shownDark())
 	darkMenus(w.appearance)
@@ -2787,6 +2800,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if f := w.windowFrame(); w.engine != nil && f != w.env.WindowFrame {
 			w.env.WindowFrame = f
 			w.engine.SetEnvironment(w.env)
+			w.devFrame.changed(w)
 		}
 	}
 	r, _, _ := defWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)

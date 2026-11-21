@@ -334,6 +334,7 @@ func (w *window) updateEnvironment() {
 	if env.Equal(w.env) {
 		return
 	}
+	w.devFrame.changed(w)
 	dark := w.shownDark()
 	w.env = env
 	if w.shownDark() != dark {
