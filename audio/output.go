@@ -11,7 +11,7 @@ type OutputConfig = core.AudioOutputConfig
 // ErrUnsupported reports a target without pull PCM output.
 var ErrUnsupported = core.ErrAudioOutputUnsupported
 
-// NewOutput opens a paused stream on macOS, iOS, Android, Windows and the web. Start begins pulling samples. Other targets return ErrUnsupported.
+// NewOutput opens a paused stream on macOS, iOS, Android, Windows, Linux and the web. Start begins pulling samples. Other targets return ErrUnsupported.
 func NewOutput(cx *core.Scope, opts OutputConfig) (*Output, error) {
 	return cx.NewAudioOutput(opts)
 }

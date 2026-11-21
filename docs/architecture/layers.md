@@ -67,6 +67,7 @@ nsgo
 │   │   ├── field, hover, finger         Shared input
 │   │   ├── scrollbar, textselect        Shared scrolling and selection
 │   │   ├── speechd                      speech-dispatcher's protocol, Linux's speaking
+│   │   ├── pcmoutput                    Shared pull-based PCM output loop and timing
 │   │   ├── imagedecode, imageload       Shared images
 │   │   ├── canvasmesh                   Shared triangle-mesh rasterizer of canvases without textured vertices
 │   │   ├── menutext                     Shared menu labels

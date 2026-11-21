@@ -64,6 +64,7 @@ var layers = []struct {
 	{"internal/platform/loopback", []string{"internal/driver"}},
 	{"internal/platform/menutext", []string{"internal/driver", "desktop/locales"}},
 	{"internal/platform/objcblock", nil},
+	{"internal/platform/pcmoutput", []string{"internal/driver"}},
 	{"internal/platform/perfhud", []string{"internal/driver", "internal/engine", "internal/platform/apple"}},
 	{"internal/platform/picked", []string{"internal/driver"}},
 	{"internal/platform/privacy", []string{"internal/driver", "internal/platform/objcblock"}},
@@ -135,7 +136,7 @@ var platformShared = []string{
 	"internal/appstartup",
 	"internal/audiosession", "internal/platform/apple", "internal/platform/canvas2d", "internal/platform/canvasmesh", "internal/platform/canvastest", "internal/platform/codescan", "internal/platform/field", "internal/platform/finger",
 	"internal/platform/appimage", "internal/platform/fontfile", "internal/platform/hover", "internal/platform/imagedecode", "internal/platform/imageload", "internal/platform/loopback", "internal/platform/menutext", "internal/platform/objcblock", "internal/platform/perfhud", "internal/platform/picked", "internal/platform/privacy", "internal/platform/queue", "internal/platform/scrollbar", "internal/platform/speechd",
-	"internal/platform/ops", "internal/platform/textruns", "internal/platform/textselect", "internal/platform/updates", "internal/platform/videoalpha", "internal/platform/videoplay", "internal/platform/viewtree", "internal/platform/webstyle", "internal/shaderir/",
+	"internal/platform/ops", "internal/platform/pcmoutput", "internal/platform/textruns", "internal/platform/textselect", "internal/platform/updates", "internal/platform/videoalpha", "internal/platform/videoplay", "internal/platform/viewtree", "internal/platform/webstyle", "internal/shaderir/",
 }
 
 // owned lists modules outside NSGo that only some packages may import, by module path: what is large enough that an app links it only by asking for what needs it (docs/architecture/layers.md, What an app links).
