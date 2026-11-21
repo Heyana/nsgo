@@ -100,8 +100,9 @@ func (c Column) spec() columnSpec {
 // ColumnGroup is a label over Span columns (1 when 0), or over
 // Span groups of the level below.
 type ColumnGroup struct {
-	Label string
-	Span  int
+	Label     string
+	LabelFunc func() string
+	Span      int
 }
 
 // Sort is what the data is sorted by: a column's key and the
@@ -327,6 +328,7 @@ type DataTable struct {
 	// Label is what screen readers call the table, a grid of column
 	// headers and cells.
 	Label     string
+	LabelFunc func() string
 	Class     string
 	Style     core.Style
 	StyleFunc func() core.Style

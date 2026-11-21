@@ -51,6 +51,52 @@ func TestDataTableIsOneTabStop(t *testing.T) {
 	}
 }
 
+func TestDataTableLabelFuncsKeepTheGridAndGroupMounted(t *testing.T) {
+	var scope *core.Scope
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		scope = cx
+		locale := cx.Env().Locale
+		return datatable.DataTable{
+			TestID: "quotes",
+			LabelFunc: func() string {
+				if locale() == "fr" {
+					return "Cours"
+				}
+				return "Quotes"
+			},
+			Columns: func() []datatable.Column {
+				return []datatable.Column{{Key: "bid", Title: "Bid"}, {Key: "ask", Title: "Ask"}}
+			},
+			Groups: func() [][]datatable.ColumnGroup {
+				return [][]datatable.ColumnGroup{{{Span: 2, LabelFunc: func() string {
+					if locale() == "fr" {
+						return "Prix"
+					}
+					return "Prices"
+				}}}}
+			},
+			RowCount: func() int { return 2 },
+			Text:     func(int, int) string { return "100" },
+			Style:    core.Style{Width: core.Pt(320), Height: core.Pt(200)},
+		}
+	}, nsgotest.Size(400, 300), nsgotest.Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
+	app.Focus("id:quotes")
+	grid := app.Find("id:quotes")
+	gridID, groupID := grid.ID, app.Find("Prices").ID
+	if grid.Props.Label != "Quotes" {
+		t.Fatalf("initial grid label = %q, want Quotes", grid.Props.Label)
+	}
+	app.Post(func() { scope.SetLocale("fr") })
+	app.Settle()
+	grid = app.Find("id:quotes")
+	if grid.ID != gridID || grid.Props.Label != "Cours" || !grid.Focused {
+		t.Fatalf("translated grid = %q on %v (focused %t), want Cours on focused %v", grid.Props.Label, grid.ID, grid.Focused, gridID)
+	}
+	if group := app.Find("Prix"); group.ID != groupID {
+		t.Fatalf("translated group = %v, want original text view %v", group.ID, groupID)
+	}
+}
+
 func TestDataTableMakesOnlyTheCellsInView(t *testing.T) {
 	var (
 		sel     []datatable.Selection

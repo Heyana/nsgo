@@ -67,7 +67,7 @@ func (p DataTable) Render(cx *core.Scope) core.Node {
 	font := t.font()
 	root := core.Style{Overflow: core.Hidden, FontSize: font.Size, FontFamily: font.Family}.Merge(p.Style)
 	return core.View{
-		Ref: t.focusRef, Role: core.RoleGrid, MultiSelectable: p.MultiSelect && !p.NoRowSelect, Label: p.Label, Focusable: func() bool { return true },
+		Ref: t.focusRef, Role: core.RoleGrid, MultiSelectable: p.MultiSelect && !p.NoRowSelect, Label: p.Label, LabelFunc: p.LabelFunc, Focusable: func() bool { return true },
 		OnFocus: func() { t.focused.Set(true) }, OnBlur: func() { t.focused.Set(false) },
 		TestID: p.TestID, OnLayout: p.OnLayout, Tooltip: p.Tooltip, Class: parts.JoinClasses(p.Classes.Root, p.Class), Style: root, StyleFunc: p.StyleFunc,
 		Children: []core.Node{core.View{
@@ -1003,7 +1003,11 @@ func (t *dataTable) groupCells(scroll bool, window []int, origin int) []groupCel
 				keep = to > max(fixed, low) && last >= 0 && from <= last
 			}
 			if keep {
-				out = append(out, groupCell{level, g.Label, from, to})
+				label := g.Label
+				if g.LabelFunc != nil {
+					label = g.LabelFunc()
+				}
+				out = append(out, groupCell{level, label, from, to})
 			}
 		}
 	}
@@ -1082,8 +1086,8 @@ func (t *dataTable) headerRegion(which tableRegion, w tableWindows) core.Node {
 				},
 				Children: []core.Node{
 					core.Each(groups.Get, func(g groupCell) [2]int { return [2]int{g.level, g.from} },
-						func(cx *core.Scope, g func() groupCell, _ func() int) core.Node {
-							return t.groupCell(core.Untracked(cx, g), which, w)
+						func(_ *core.Scope, g func() groupCell, _ func() int) core.Node {
+							return t.groupCell(g, which, w)
 						}),
 					core.Each(list.Get, func(def int) int { return def },
 						func(cx *core.Scope, def func() int, _ func() int) core.Node {
@@ -1095,10 +1099,11 @@ func (t *dataTable) headerRegion(which tableRegion, w tableWindows) core.Node {
 	}}
 }
 
-func (t *dataTable) groupCell(g groupCell, which tableRegion, w tableWindows) core.Node {
+func (t *dataTable) groupCell(cell func() groupCell, which tableRegion, w tableWindows) core.Node {
 	return core.View{
 		Class: t.p.Classes.GroupCell,
 		StyleFunc: func() core.Style {
+			g := cell()
 			t.layoutRev.Get()
 			levels := t.headerLevels()
 			h := t.headerRowHeightNow()
@@ -1114,7 +1119,7 @@ func (t *dataTable) groupCell(g groupCell, which tableRegion, w tableWindows) co
 				Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter,
 				Overflow: core.Hidden}, t.styles().GroupCell)
 		},
-		Children: []core.Node{core.Text{Content: g.label, MaxLines: 1}},
+		Children: []core.Node{core.Text{ContentFunc: func() string { return cell().label }, MaxLines: 1}},
 	}
 }
 

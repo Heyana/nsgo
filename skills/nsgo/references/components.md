@@ -10,7 +10,7 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 | Choices | `ui.Switch`, `ui.Checkbox`, `ui.Radio` in a `ui.RadioGroup`, `ui.Select[T]` with `ui.Option[T]`, `ui.Combobox`, `ui.Slider`, `ui.Rating` |
 | Dates, times and colors | `ui.DatePicker`, `ui.Calendar`, `ui.TimeField`, `ui.ColorPicker` |
 | Scrolling and long data | `ui.ScrollView` or `core.Scroll`; `ui.List` or `core.List` for rows built only in view; `core.NewCollection` behind them |
-| Tables, trees and charts | `base/datatable` for large tables, including `MultiSelect`, controlled `SelectedRows` and `CellTooltip` (a `ui.Tooltip` inside `RenderCell` never shows), `base.Table` for small ones, `ui.Tree`, `base/plot` for charts |
+| Tables, trees and charts | `base/datatable` for large tables, including `MultiSelect`, controlled `SelectedRows`, `LabelFunc` and `CellTooltip` (a `ui.Tooltip` inside `RenderCell` never shows), `base.Table` for small ones, `ui.Tree`, `base/plot` for charts |
 | Navigation | `base.NewNav` with `ui.NavPage` and `ui.NavHeader` (the system's header on iOS and Android), `ui.Tabs[T]`, `ui.Sidebar`, `ui.SidebarShell`, `ui.TabShell` (a bottom bar at every width; the system's on iOS when every tab has a `SystemIcon`, on Android when every tab has a `SystemIcon` or an SVG `Icon`), `mobile.TabBar` for the system tab bar, `ui.Breadcrumbs`, `ui.Pagination`, `ui.Stepper` |
 | Overlays | `ui.Dialog`, `ui.AlertDialog`, `cx.ShowAlert` for the system's alert, `ui.Sheet`, `ui.Popover`, `ui.HoverCard`, `ui.Tooltip`, `ui.Toaster` for toasts |
 | Menus and commands | `ui.Menu` with `ui.MenuItem` and `ui.Submenu`, `ui.ContextMenu`, `ui.CommandDialog`, `ui.Toolbar` |

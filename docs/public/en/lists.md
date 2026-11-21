@@ -67,6 +67,8 @@ core.List{Ref: list, Count: count, EstimatedSize: 64, Row: row, OnLoadMore: load
 
 `base/datatable` shows a table of a million rows with virtualized rows and columns, a sticky header, columns fixed at the left (`Fixed`) or the right (`FixedRight`) while the others scroll under them, sorting, single or multi-row selection, resizing and moving columns, and the app's own cells. `MultiSelect` supports Command or Control toggles, Shift ranges and Shifted keyboard extensions, while `SelectedRows` and `OnSelectedRowsChange` let the app control the rows. `CellTooltip` gives a cell a tooltip, which also describes the cell to screen readers, styled by `Styles.CellTooltip`; what `RenderCell` draws takes no pointer, so a `ui.Tooltip` inside a cell never shows. `base.Table` is a plain table of the app's rows for smaller data, and `base/plot` draws charts.
 
+Use `DataTable.LabelFunc` for a grid name that follows the locale or application state. `ColumnGroup.LabelFunc` updates a grouped column heading while the group stays in view.
+
 ## Next
 
 - [Animation](animation.md): effects that follow a scroll view.

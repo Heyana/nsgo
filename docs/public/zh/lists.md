@@ -67,6 +67,8 @@ core.List{Ref: list, Count: count, EstimatedSize: 64, Row: row, OnLoadMore: load
 
 `base/datatable` 显示百万行的表格，行和列都虚拟化，带固定表头，可以把列固定在左侧（`Fixed`）或右侧（`FixedRight`），其余列在它们下面滚动，支持单选或多行选择、排序、调整和移动列，以及应用自己的单元格。`MultiSelect` 支持 Command 或 Control 切换、Shift 范围选择和 Shift 键盘扩展，`SelectedRows` 与 `OnSelectedRowsChange` 可让应用控制所选行。`CellTooltip` 为单元格提供提示，同一段文字也作为单元格的描述提供给屏幕阅读器，外观由 `Styles.CellTooltip` 设定；`RenderCell` 绘制的内容不接收指针，因此放在单元格里的 `ui.Tooltip` 不会显示。`base.Table` 用于较小数据的普通表格，`base/plot` 绘制图表。
 
+使用 `DataTable.LabelFunc` 可让表格的无障碍名称跟随语言或应用状态。`ColumnGroup.LabelFunc` 可在列组保持显示时更新其标题。
+
 ## 下一步
 
 - [动画](animation.md)：跟随滚动视图的效果。
