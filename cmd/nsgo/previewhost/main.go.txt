@@ -58,7 +58,6 @@ func root(cx *core.Scope, theme *core.Theme) core.Node {
 			}
 		}
 	})
-	cx.Effect(func() { cx.SetLocale(prefs.Get().Locale) })
 	update := func(change func(*settings)) {
 		if err := prefs.Update(func(s settings) settings {
 			change(&s)
@@ -132,6 +131,7 @@ func root(cx *core.Scope, theme *core.Theme) core.Node {
 }
 
 func stages(cx *core.Scope, s settings, theme *core.Theme) core.Node {
+	cx.SetLocale(s.Locale)
 	switch s.Mode {
 	case "light":
 		cx.SetSubtreeAppearance(core.AppearanceLight)

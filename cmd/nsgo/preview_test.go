@@ -74,3 +74,14 @@ func TestPreviewHostOnlyUsesTaggedFixtures(t *testing.T) {
 		t.Error("host generation kept the old fixture")
 	}
 }
+
+func TestPreviewLocaleSeedsTheHostInsteadOfOverridingItsControls(t *testing.T) {
+	opts := devOptions{lang: "zh-Hans", fps: true}
+	if got := opts.appFlags(); !slices.Equal(got, []string{"--nsgo-fps", "--nsgo-lang=zh-Hans"}) {
+		t.Fatalf("ordinary app flags = %v", got)
+	}
+	opts.preview = &previewSession{}
+	if got := opts.appFlags(); !slices.Equal(got, []string{"--nsgo-fps"}) {
+		t.Fatalf("preview app flags = %v", got)
+	}
+}
