@@ -186,6 +186,34 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Set up Java for the Android runtime
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          # The JDK the committed runtime is built with, so a rebuild of unchanged Java gives the same bytes.
+          java-version: '21'
+      - name: Build the Android runtime from this commit's Java
+        # Pull requests no longer commit classes.dex and classes.jar (android-runtime.yml commits them after merge), so the emulator tests package a runtime built from the sources under test rather than the committed one.
+        run: |
+          set -euo pipefail
+          runtime=internal/platform/android/runtime
+          # build.sh needs platform 36 and a d8 from cmdline-tools or build-tools 36+; install what the runner image lacks.
+          if [ ! -f "$ANDROID_HOME/platforms/android-36/android.jar" ] || { [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/d8" ] && ! ls "$ANDROID_HOME"/build-tools/3[6-9]*/d8 >/dev/null 2>&1; }; then
+            (yes || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
+          fi
+          "$runtime/build.sh"
+          if ! git diff --quiet -- "$runtime/classes.dex" "$runtime/classes.jar"; then
+            echo "::notice::The committed Android runtime differs from this commit's Java; the tests use the rebuilt one, which android-runtime.yml commits after merge."
+          fi
+      - name: Keep the built Android runtime
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-runtime
+          path: |
+            internal/platform/android/runtime/classes.dex
+            internal/platform/android/runtime/classes.jar
+          if-no-files-found: error
+          retention-days: 14
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

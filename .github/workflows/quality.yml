@@ -1,6 +1,6 @@
 name: Repository quality
 
-# Checks that build no code, so they run on every pull request even before the first release: actionlint over the workflows and the shell scripts in them, and a review of the dependencies a pull request adds.
+# Checks that build no code, so they run on every pull request even before the first release: actionlint over the workflows and the shell scripts in them, a review of the dependencies a pull request adds, and that a pull request leaves the prebuilt Android runtime to android-runtime.yml.
 
 on:
   pull_request:
@@ -50,3 +50,28 @@ jobs:
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+
+  android-runtime:
+    name: Android runtime binaries
+    # android-runtime.yml rebuilds classes.dex and classes.jar on main and commits them through its own pull request; one from anywhere else makes every other Android pull request conflict, as Git cannot merge binaries.
+    if: github.event_name == 'pull_request'
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The merge commit and its first parent, the base: their difference is what the pull request changes.
+          fetch-depth: 2
+      - name: Check the pull request leaves the runtime's binaries alone
+        env:
+          BOT: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'bot/android-runtime' }}
+        run: |
+          set -euo pipefail
+          [ "$BOT" = true ] && exit 0
+          runtime=internal/platform/android/runtime
+          changed=$(git diff --name-only HEAD^1 HEAD -- "$runtime/classes.dex" "$runtime/classes.jar" | tr '\n' ' ')
+          if [ -n "$changed" ]; then
+            # A warning while pull requests opened before android-runtime.yml still carry the binaries; it becomes an error once they have merged or dropped them.
+            echo "::warning::This pull request changes ${changed}which android-runtime.yml rebuilds and commits after merge. Drop them with: git checkout origin/main -- $runtime/classes.dex $runtime/classes.jar"
+          fi
