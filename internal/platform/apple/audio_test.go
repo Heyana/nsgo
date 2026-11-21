@@ -200,7 +200,7 @@ func TestASoundDecodesOnceAndPlaysOverlapping(t *testing.T) {
 	if !near(e.Duration, 200*time.Millisecond) || e.Bytes != 1600*4 || e.Cut {
 		t.Fatalf("loaded %+v", e)
 	}
-	// Another format reconnects the voices it takes, with the engine running.
+	// A second format exercises voice reuse while the engine is running.
 	load.Source.Data = wavOf(100*time.Millisecond, 44100, 2)
 	ta.send(2, load)
 	if e := ta.wait(2, driver.AudioLoaded, 5*time.Second, nil); e.Bytes != 4410*2*4 {
@@ -226,6 +226,59 @@ func TestASoundDecodesOnceAndPlaysOverlapping(t *testing.T) {
 	if files, _ := os.ReadDir(ta.dir); len(files) != 0 {
 		t.Errorf("%d temporary files left", len(files))
 	}
+}
+
+func TestASoundReusesMixerAcrossFormats(t *testing.T) {
+	ta := newTestAudio(t)
+	for i, source := range [][]byte{wav(200 * time.Millisecond), wavOf(200*time.Millisecond, 44100, 2)} {
+		id := uint32(i + 1)
+		ta.send(id, driver.AudioRequest{
+			Command:     driver.AudioLoad,
+			Source:      driver.ImageSource{Data: source},
+			MaxBytes:    driver.MaxSoundBytes,
+			MaxDuration: driver.MaxSoundDuration,
+		})
+		ta.wait(id, driver.AudioLoaded, 5*time.Second, nil)
+	}
+	onMain(func() {
+		if !ta.enableOfflineRendering() {
+			return
+		}
+		engine := ta.audio.startEngine()
+		if engine == 0 {
+			t.Error("the offline engine did not start")
+			return
+		}
+
+		now := time.Now()
+		for i := range driver.MaxSoundVoices {
+			v := ta.audio.voiceFor(engine, ta.audio.sounds[1], now)
+			if v == nil {
+				t.Error("a mono voice could not be connected")
+				return
+			}
+			v.started, v.until = now.Add(time.Duration(i)), now.Add(time.Second)
+		}
+		first := ta.audio.voices[0]
+		mixer := first.mixer
+		mainBus := first.mainBus
+		reused := ta.audio.voiceFor(engine, ta.audio.sounds[2], now)
+		if reused != first || reused.mixer != mixer {
+			t.Error("taking the oldest voice for a stereo sound replaced its mixer")
+			return
+		}
+		input := engine.Send(sel("inputConnectionPointForNode:inputBus:"), mixer, uint(0))
+		if input.Send(sel("node")) != reused.varispeed {
+			t.Error("the original mixer did not receive the new source")
+		}
+		if !objc.Send[bool](reused.format, sel("isEqual:"), ta.audio.sounds[2].format) {
+			t.Error("the reused voice kept its old input format")
+		}
+		output := engine.Send(sel("mainMixerNode")).Send(sel("inputFormatForBus:"), mainBus)
+		if !objc.Send[bool](output, sel("isEqual:"), reused.format) {
+			t.Error("the mixer did not send the new source format to the same main mixer bus")
+		}
+	})
 }
 
 func TestASoundFailsAsTheDesignSays(t *testing.T) {
@@ -609,6 +662,23 @@ func toneWAV(length time.Duration, rate, channels int) []byte {
 	return b
 }
 
+// enableOfflineRendering installs an engine that can render stereo audio without an output device.
+func (ta *testAudio) enableOfflineRendering() bool {
+	engine := objc.ID(Class("AVAudioEngine")).Send(sel("alloc")).Send(sel("init"))
+	format := objc.ID(Class("AVAudioFormat")).Send(sel("alloc")).Send(sel("initStandardFormatWithSampleRate:channels:"), float64(44100), uint32(2))
+	defer format.Send(sel("release"))
+	var nsErr objc.ID
+	const offline = 0 // AVAudioEngineManualRenderingModeOffline
+	if !objc.Send[bool](engine, sel("enableManualRenderingMode:format:maximumFrameCount:error:"), int(offline), format, uint32(4096), unsafe.Pointer(&nsErr)) {
+		ta.t.Error(describeError(nsErr, "enable offline rendering"))
+		engine.Send(sel("release"))
+		return false
+	}
+	engine.Send(sel("mainMixerNode"))
+	ta.audio.engine = engine
+	return true
+}
+
 // TestASoundPansStereo renders a mono and a stereo sound offline through AVAudioEngine at left (-1), center (0) and right (+1) pan and verifies the rendered stereo channels.
 func TestASoundPansStereo(t *testing.T) {
 	for _, tc := range []struct {
@@ -630,17 +700,8 @@ func TestASoundPansStereo(t *testing.T) {
 
 			renderRMS := func(pan float32) (left, right float64) {
 				onMain(func() {
-					// Put the engine into offline manual rendering mode once.
-					if ta.audio.engine == 0 {
-						ta.audio.engine = objc.ID(Class("AVAudioEngine")).Send(sel("alloc")).Send(sel("init"))
-						outFmt := objc.ID(Class("AVAudioFormat")).Send(sel("alloc")).Send(sel("initStandardFormatWithSampleRate:channels:"), float64(44100), uint32(2))
-						defer outFmt.Send(sel("release"))
-						var nsErr objc.ID
-						const offline = 0 // AVAudioEngineManualRenderingModeOffline
-						if !objc.Send[bool](ta.audio.engine, sel("enableManualRenderingMode:format:maximumFrameCount:error:"), int(offline), outFmt, uint32(4096), unsafe.Pointer(&nsErr)) {
-							t.Fatalf("enableManualRenderingMode: %s", describeError(nsErr, "failed"))
-						}
-						ta.audio.engine.Send(sel("mainMixerNode"))
+					if ta.audio.engine == 0 && !ta.enableOfflineRendering() {
+						return
 					}
 					ta.audio.play(1, 1, 1, pan)
 					if len(ta.audio.voices) == 0 {

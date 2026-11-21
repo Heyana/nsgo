@@ -30,6 +30,7 @@
 - Select system tabs with `nsgotest.App.SelectTab` headless and on iOS and Android targets (#1275 by @houko).
 - Apply backdrop color filters (brightness, contrast, grayscale, hue-rotate, invert, opacity, saturate and sepia) on iOS, alone or over a blur, through Core Animation's backdrop layer (#1543).
 - Prevent macOS web tests from leaking Chrome code-signature clones (#1725 by @houko).
+- Keep Apple sound mixers attached when a voice switches audio formats (#801 by @houko).
 - Add text-based YAML and Markdown store listings with pre-upload validation and App Store Connect and Google Play upload support in `nsgo publish -store` (#1564).
 - Add `Drawing.DrawSVG` and `Drawing.DrawSVGIn` plus SVG `<text>`, `<tspan>` and root `preserveAspectRatio` support so canvases and `SVGView` draw vector SVGs at any size with text measured and rendered by each platform's own text engine (#1339).
 - Add `pointer-fine:` and `pointer-coarse:` Tailwind variants and `core.Env.Pointer` (`core.PointerFine`, `PointerCoarse`, `PointerNone`) matching CSS's `pointer` media feature from the browser's query on the web or `Idiom` elsewhere (#1342).

@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -57,6 +56,7 @@ type decodedSound struct {
 // soundVoice is a player node, its varispeed and its mixer, attached to the engine.
 type soundVoice struct {
 	player, varispeed, mixer objc.ID
+	mainBus                  uint
 	// format is the one it is connected with, retained.
 	format objc.ID
 	// sound is the one it plays, 0 for none, and until when.
@@ -447,37 +447,69 @@ func (a *Audio) startEngine() objc.ID {
 	return a.engine
 }
 
-// newVoice attaches a voice's nodes to engine, connected with format, which it keeps; nil when AVFAudio has none. A voice keeps its format: an AVAudioUnitVarispeed connected once does not take another, so a voice for another format is a new one.
+// newVoice attaches a mixer for the life of a voice.
 func newVoice(engine, format objc.ID) *soundVoice {
-	classes := []objc.Class{Class("AVAudioPlayerNode"), Class("AVAudioUnitVarispeed"), Class("AVAudioMixerNode")}
-	var nodes [3]objc.ID
-	for _, c := range classes {
-		if c == 0 {
-			return nil
-		}
+	mixer := objc.ID(Class("AVAudioMixerNode")).Send(sel("alloc")).Send(sel("init"))
+	if mixer == 0 {
+		return nil
 	}
-	for i, c := range classes {
-		nodes[i] = objc.ID(c).Send(sel("alloc")).Send(sel("init"))
-		engine.Send(sel("attachNode:"), nodes[i])
+	v := &soundVoice{mixer: mixer}
+	if !v.connectSource(engine, format) {
+		mixer.Send(sel("release"))
+		return nil
 	}
-	// The main mixer converts the voice's format to the output's.
-	engine.Send(sel("connect:to:format:"), nodes[0], nodes[1], format)
-	engine.Send(sel("connect:to:format:"), nodes[1], nodes[2], format)
-	engine.Send(sel("connect:to:format:"), nodes[2], engine.Send(sel("mainMixerNode")), format)
-	return &soundVoice{player: nodes[0], varispeed: nodes[1], mixer: nodes[2], format: format.Send(sel("retain"))}
+	return v
 }
 
-// drop stops the voice and detaches its nodes from engine, releasing them.
-func (v *soundVoice) drop(engine objc.ID) {
+// connectSource connects new nodes upstream of the voice mixer. A varispeed
+// node keeps its input format, and removing a mixer from a running
+// AVAudioEngine can break the graph.
+func (v *soundVoice) connectSource(engine, format objc.ID) bool {
+	player := objc.ID(Class("AVAudioPlayerNode")).Send(sel("alloc")).Send(sel("init"))
+	varispeed := objc.ID(Class("AVAudioUnitVarispeed")).Send(sel("alloc")).Send(sel("init"))
+	if player == 0 || varispeed == 0 {
+		player.Send(sel("release"))
+		varispeed.Send(sel("release"))
+		return false
+	}
+	main := engine.Send(sel("mainMixerNode"))
+	if v.player == 0 {
+		engine.Send(sel("attachNode:"), v.mixer)
+		v.mainBus = objc.Send[uint](main, sel("nextAvailableInputBus"))
+	} else {
+		v.dropSource(engine)
+	}
+	engine.Send(sel("attachNode:"), player)
+	engine.Send(sel("attachNode:"), varispeed)
+	engine.Send(sel("connect:to:format:"), player, varispeed, format)
+	engine.Send(sel("connect:to:format:"), varispeed, v.mixer, format)
+	// Keep the existing main mixer bus and send it the source format so the
+	// main mixer can adapt that audio to the current output device.
+	engine.Send(sel("connect:to:fromBus:toBus:format:"), v.mixer, main, uint(0), v.mainBus, format)
+	v.player, v.varispeed, v.format = player, varispeed, format.Send(sel("retain"))
+	return true
+}
+
+// dropSource disconnects the input chain before releasing its nodes.
+func (v *soundVoice) dropSource(engine objc.ID) {
 	v.player.Send(sel("stop"))
-	for _, node := range []objc.ID{v.player, v.varispeed, v.mixer} {
+	engine.Send(sel("disconnectNodeOutput:"), v.varispeed)
+	for _, node := range []objc.ID{v.player, v.varispeed} {
 		engine.Send(sel("detachNode:"), node)
 		node.Send(sel("release"))
 	}
 	v.format.Send(sel("release"))
 }
 
-// voiceFor returns the voice a playback of s at now takes: a free one of its format, a new one, or past the limit a free one of another format, else the oldest, stopped, made again for s's format when it has another.
+// drop releases the mixer too, after the engine stopped.
+func (v *soundVoice) drop(engine objc.ID) {
+	v.dropSource(engine)
+	engine.Send(sel("detachNode:"), v.mixer)
+	v.mixer.Send(sel("release"))
+}
+
+// voiceFor takes a free voice of the sound's format or creates one up to the
+// limit. It can reuse a free voice of another format or take the oldest one.
 func (a *Audio) voiceFor(engine objc.ID, s *decodedSound, now time.Time) *soundVoice {
 	same := func(v *soundVoice) bool { return objc.Send[bool](v.format, sel("isEqual:"), s.format) }
 	var free *soundVoice
@@ -504,18 +536,15 @@ func (a *Audio) voiceFor(engine objc.ID, s *decodedSound, now time.Time) *soundV
 				v = other
 			}
 		}
-		v.player.Send(sel("stop"))
 	}
 	if same(v) {
+		v.player.Send(sel("stop"))
 		return v
 	}
-	i := slices.Index(a.voices, v)
-	v.drop(engine)
-	if a.voices[i] = newVoice(engine, s.format); a.voices[i] == nil {
-		a.voices = slices.Delete(a.voices, i, i+1)
+	if !v.connectSource(engine, s.format) {
 		return nil
 	}
-	return a.voices[i]
+	return v
 }
 
 // play starts a playback of sound id at volume, rate and pan, on the voice voiceFor gives.
