@@ -13,7 +13,7 @@ go tool nsgo dev
 
 `dev` 为本机构建应用并打开它，或者为 `nsgo.yaml` 中 `dev.target` 指定的目标构建。每次保存 Go 文件，它都会重新构建并重启应用；应用导入的包所在的 module 不在 `go.mod` 或 `go.sum` 中时，会先执行 `go mod tidy`；只改了 TSX 时，会在运行中的应用里原地更新，并保留状态。应用退出时运行结束。
 
-在 macOS 和 Windows 上，同一次 `dev` 会话中的原生开发构建会按主视图窗口上次的普通位置和大小重新打开该窗口。Windows 还会恢复全屏状态。
+在 macOS 和 Windows 上，同一次 `dev` 会话中的原生开发构建会按主视图窗口上次的普通位置和大小重新打开该窗口。Windows 还会恢复全屏状态。在 Linux 上，GTK 会恢复窗口的普通大小，并请求恢复上次的全屏状态。窗口的位置由窗口管理器决定。
 
 `-target` 在别处运行，`-device` 按名称、UDID 或序列号选择 iPhone、Apple TV、Apple Watch、模拟器或 Android 设备：
 

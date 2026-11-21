@@ -480,6 +480,7 @@ func activityCallback(object, pspec, data uintptr) {
 // changed.
 func (w *window) updateEnvironment() {
 	env := w.environment()
+	w.devFrame.record(w, env)
 	if w.engine != nil {
 		w.reportFrameWindow(env)
 	}

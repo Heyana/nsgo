@@ -13,7 +13,7 @@ go tool nsgo dev
 
 `dev` builds the app for this machine and opens it, or for the target `nsgo.yaml`'s `dev.target` names. On each save of a Go file it rebuilds and restarts the app, running `go mod tidy` first when the app imports a package whose module `go.mod` or `go.sum` lacks; a change of TSX alone updates the running app in place, keeping its state. The run ends with the app.
 
-On macOS and Windows, a native dev rebuild reopens the main view’s window at its last regular position and size within the current session. Windows also restores full screen.
+On macOS and Windows, a native dev rebuild reopens the main view’s window at its last regular position and size within the current session. Windows also restores full screen. On Linux, GTK restores its regular size and requests its last full-screen mode. The window manager chooses the position.
 
 `-target` runs it elsewhere, and `-device` picks the iPhone, Apple TV, Apple Watch, simulator or Android device by name, UDID or serial:
 

@@ -120,6 +120,7 @@ type window struct {
 	monitorSurface  uintptr // retained GdkSurface whose monitor signals are connected
 	monitorHandlers [2]uint64
 	devGeometry     driver.GeometryObserver
+	devFrame        devWindowFrame
 	// primary is the backend's own surface. Opened surfaces share the GTK main loop, but closing one must not end the app.
 	primary bool
 	// opener is the app's own window for a surface the app opened, which goes when that window stops (stop).
@@ -460,11 +461,15 @@ func start(app engine.App, opts Options) (*window, error) {
 	}
 	startUIFont()
 	w := newWindow(opts, false)
+	if !opts.Hidden {
+		w.devFrame.restore(&opts)
+	}
 	w.primary, w.app, w.opts = true, app, opts
 	w.createWindow(opts)
 	if !opts.Hidden {
 		w.applyLook(opts)
 	}
+	w.devFrame.start(w)
 	w.env = w.environment()
 
 	w.setAppearance(opts.Appearance)
@@ -763,6 +768,7 @@ func (w *window) run() {
 // and releases window resources after run returns.
 func (w *window) stop() {
 	w.restoreMenuFocus()
+	w.devFrame.close()
 	if !w.closing {
 		w.engine.Close()
 	}

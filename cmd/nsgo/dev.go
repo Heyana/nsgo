@@ -111,7 +111,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 	}
 	p.prepareDev(opts)
 	if p.Dev.Target == "native" {
-		captureFrame := !opts.release && (runtime.GOOS == "darwin" || runtime.GOOS == "windows")
+		captureFrame := !opts.release && (runtime.GOOS == "darwin" || runtime.GOOS == "windows" || runtime.GOOS == "linux")
 		stageWindows := runtime.GOOS == "windows" && opts.debugger == nil
 		if captureFrame || stageWindows {
 			dir, err := os.MkdirTemp("", "nsgo-dev-native-")
