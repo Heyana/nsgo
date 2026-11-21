@@ -211,7 +211,7 @@ jobs:
   apple:
     # AVPlayer plays nothing on Depot's macOS runners, so the desktop backend stays on GitHub's; use its Intel pool while hosted arm64 capacity leaves jobs unallocated.
     runs-on: macos-15-intel
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -227,14 +227,19 @@ jobs:
       - name: Vet
         run: go tool nsgo check ./internal/platform/apple
       - name: Test
-        run: go tool nsgo test ./internal/platform/apple
+        env:
+          GOTRACEBACK: crash
+        run: go tool nsgo test ./internal/platform/apple -- -skip '^TestASoundDecodesOnceAndPlaysOverlapping$'
       - name: Test widget and Live Activity recording
         run: go tool nsgo test -run '^(TestWidgetTimelines|TestLiveActivityRecords|TestUnavailableWidgetServices)$' ./nsgotest
-      # A native fault ends the test process without a Go stack; the crash report printed below names the faulting thread (#801).
+      # The Intel runner stalled in CoreAudio when LLDB launched the test (#801).
       - name: Stress overlapping sound playback in fresh processes
+        env:
+          GOTRACEBACK: crash
         run: |
           for i in $(seq 1 200); do
-            go tool nsgo test -run '^TestASoundDecodesOnceAndPlaysOverlapping$' ./internal/platform/apple || { echo "run $i failed"; exit 1; }
+            go tool nsgo test -ldflags '-s=false -w=false' -run '^TestASoundDecodesOnceAndPlaysOverlapping$' \
+              ./internal/platform/apple -- -count=1 -timeout=30s || { echo "run $i failed"; exit 1; }
           done
       - name: Test main-thread failure propagation
         run: go tool nsgo test -run '^TestOnMainExitPropagation$' ./internal/platform/macos -- -race
@@ -270,8 +275,13 @@ jobs:
         if: failure()
         run: |
           # ReportCrash writes a report a few seconds after the process dies.
-          sleep 10
-          find "$HOME/Library/Logs/DiagnosticReports" -type f -newer "$RUNNER_TEMP/apple-start" -print -exec cat {} \;
+          sleep 20
+          for reports in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+            if [[ -d "$reports" ]]; then
+              find "$reports" -type f -newer "$RUNNER_TEMP/apple-start" \
+                \( -name '*.test[-_]*.ips' -o -name '*.test[-_]*.crash' \) -print -exec cat {} \;
+            fi
+          done
 
   apple-simulator:
     # Simulator packages are arm64; the Intel desktop job cannot run them.
