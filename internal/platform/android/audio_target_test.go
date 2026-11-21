@@ -118,6 +118,8 @@ func TestNativeAndroidSound(t *testing.T) {
 		app.Post(func() {
 			got.sound.Play(core.SoundVoice{Volume: 0.2})
 			got.sound.Play(core.SoundVoice{Volume: 0.3, Rate: 1.5})
+			got.sound.Play(core.SoundVoice{Volume: 0.3, Pan: -1})
+			got.sound.Play(core.SoundVoice{Volume: 0.3, Rate: 0.8, Pan: 0.6})
 		})
 		app.Settle()
 		app.Post(func() { got.sound.Stop(); got.sound.Close() })

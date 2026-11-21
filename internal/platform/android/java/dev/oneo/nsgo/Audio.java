@@ -89,8 +89,8 @@ final class Audio {
                 break;
             }
             case PLAY: {
-                float volume = in.readFloat(), rate = in.readFloat();
-                play(sounds.get(id), volume, rate);
+                float left = in.readFloat(), right = in.readFloat(), rate = in.readFloat();
+                play(sounds.get(id), left, right, rate);
                 break;
             }
             case STOP:
@@ -264,12 +264,12 @@ final class Audio {
         failure(sound.owner, sound.id, code, message);
     }
 
-    private void play(Sound sound, float volume, float rate) {
+    private void play(Sound sound, float left, float right, float rate) {
         if (sound == null || !sound.loaded) return;
         long now = SystemClock.elapsedRealtimeNanos();
         voices.removeIf(voice -> voice.until <= now);
         if (voices.size() == MAX_VOICES) pool.stop(voices.remove(0).stream);
-        int stream = pool.play(sound.sample, volume, volume, 1, 0, rate);
+        int stream = pool.play(sound.sample, left, right, 1, 0, rate);
         if (stream != 0) voices.add(new Voice(sound, stream, now + (long) (sound.duration * 1000 / (double) rate)));
     }
 

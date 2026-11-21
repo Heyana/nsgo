@@ -26,7 +26,10 @@ func writeAudio(w *writer, id uint32, r *driver.AudioRequest) {
 		w.u64(uint64(r.MaxBytes))
 		w.u64(uint64(r.MaxDuration.Microseconds()))
 	case driver.AudioPlay:
-		w.float(r.Volume)
+		// SoundPool takes a volume per channel, so the pan splits the voice's volume between them.
+		left, right := driver.AudioPanGains(r.Pan)
+		w.float(r.Volume * left)
+		w.float(r.Volume * right)
 		w.float(r.Rate)
 	case driver.AudioOpen:
 		writeAudioSource(w, r.Source)

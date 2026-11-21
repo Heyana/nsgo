@@ -510,10 +510,6 @@ cx.Speak("おはようございます", core.Voice{Lang: "ja-JP", Rate: 0.8}, fu
 
 在 macOS 14 和 iOS 17 或更新版本上，时长已知的音轨使用原生队列，在当前一遍结束前准备下一遍。更早的 Apple 系统在当前一遍结束时跳到循环起点。在 Linux 和 Web 上，带起点的循环在结尾跳回起点，会有短暂间隙。
 
-## 音频播放
-
-用 `audio.LoadSound` 加载可以重叠播放的短音效，用 `audio.NewPlayer` 流式播放可控制的音频。macOS、iOS 和 Android 支持 WAV、AAC（`.m4a`）和 MP3。用 `cx.Env().CanPlayAudio` 检查当前平台是否支持播放。Android 会在视图离开屏幕时暂停播放器，每个音效解码后最多 1 MiB。
-
 ## 生物识别
 
 `cx.BiometricAvailability` 回答设备是否录入了面容 ID、触控 ID 或指纹；Android 不说明录入的是哪一种，所以在 Android 上录入了指纹时回答指纹，否则在设备有面部识别硬件时回答面部。`cx.AuthenticateBiometric` 带着一个不能为空的原因请系统确认用户身份，回答成功、失败、取消或不可用。它不会替应用选择密码作为后备方式。
@@ -574,7 +570,7 @@ mobile.RequestOverlayPermission(cx, func(p core.OverlayPermission) {
 
 ## 音频播放
 
-短音效用 `audio.LoadSound` 加载，可多次重叠播放。需要暂停、跳转、调速或循环的流式音频用 `audio.NewPlayer`。`cx.Env().CanPlayAudio()` 报告平台是否支持。macOS、iOS、Windows、Linux 和 Web 已能播放音频：Apple、Windows 和浏览器后端支持 WAV、AAC 和 MP3，Linux 使用 GStreamer 解码；Android、tvOS、watchOS、HarmonyOS 和小程序仍将 `CanPlayAudio` 报告为 false。
+短音效用 `audio.LoadSound` 加载，可多次重叠播放。需要暂停、跳转、调速或循环的流式音频用 `audio.NewPlayer`。`cx.Env().CanPlayAudio()` 报告平台是否支持。macOS、iOS、Windows、Linux、Android 和 Web 已能播放音频：Apple、Windows 和浏览器后端支持 WAV、AAC 和 MP3，Linux 使用 GStreamer 解码。Android 会在视图离开屏幕时暂停播放器，每个音效解码后最多 1 MiB。tvOS、watchOS、HarmonyOS 和小程序仍将 `CanPlayAudio` 报告为 false。
 
 浏览器需要用户操作才能播放有声内容。可提前加载短音效，在点击、轻触或按键后调用 `Sound.Play`。用户操作之前播放的音效无声。如果浏览器拒绝播放，播放器的 `Play` 回调会收到 `audio.NotAllowed`。可在下一次用户操作中重试。
 
