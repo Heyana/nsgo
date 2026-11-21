@@ -2601,6 +2601,10 @@ const (
 	textSystemSpeaking
 	textSystemSpokeToTheEnd
 	textSystemSpeakingStopped
+	textMediaPageState
+	textMediaChangePageState
+	textMediaPreviewTitle
+	textMediaNewWindow
 	textMediaSaved
 	textMediaScriptResult
 	textMediaRunAScript
@@ -4909,6 +4913,10 @@ var keyOfText = [numTexts]string{
 	"systemSpeaking",
 	"systemSpokeToTheEnd",
 	"systemSpeakingStopped",
+	"mediaPageState",
+	"mediaChangePageState",
+	"mediaPreviewTitle",
+	"mediaNewWindow",
 	"mediaSaved",
 	"mediaScriptResult",
 	"mediaRunAScript",
@@ -7215,6 +7223,10 @@ var textsEn = i18n.NewTexts(""+
 	"Speaking…"+
 	"Finished"+
 	"Stopped"+
+	"Page state"+
+	"Change page state"+
+	"Preview"+
+	"Open in new window"+
 	"Saved"+
 	"Script result"+
 	"Run a script"+
@@ -9518,6 +9530,10 @@ var textsEn = i18n.NewTexts(""+
 		11,
 		8,
 		7,
+		10,
+		17,
+		7,
+		18,
 		5,
 		13,
 		12,
@@ -11824,6 +11840,10 @@ var textsZhHans = i18n.NewTexts(""+
 	"正在朗读…"+
 	"已读完"+
 	"已停止"+
+	"页面状态"+
+	"更改页面状态"+
+	"预览"+
+	"在新窗口中打开"+
 	"已保存"+
 	"脚本结果"+
 	"运行脚本"+
@@ -14127,6 +14147,10 @@ var textsZhHans = i18n.NewTexts(""+
 		15,
 		9,
 		9,
+		12,
+		18,
+		6,
+		21,
 		9,
 		12,
 		12,
@@ -35489,6 +35513,34 @@ func (msgs Messages) SystemVoiceCount(english int, japanese int) string {
 		}
 	}
 }
+
+// MediaPageState says "Page state"
+// in the language the app shows under cx.
+func MediaPageState(cx *core.Scope) string { return For(cx).MediaPageState() }
+
+// MediaPageState is the package's MediaPageState in the language of msgs.
+func (msgs Messages) MediaPageState() string { return msgs.text(textMediaPageState) }
+
+// MediaChangePageState says "Change page state"
+// in the language the app shows under cx.
+func MediaChangePageState(cx *core.Scope) string { return For(cx).MediaChangePageState() }
+
+// MediaChangePageState is the package's MediaChangePageState in the language of msgs.
+func (msgs Messages) MediaChangePageState() string { return msgs.text(textMediaChangePageState) }
+
+// MediaPreviewTitle says "Preview"
+// in the language the app shows under cx.
+func MediaPreviewTitle(cx *core.Scope) string { return For(cx).MediaPreviewTitle() }
+
+// MediaPreviewTitle is the package's MediaPreviewTitle in the language of msgs.
+func (msgs Messages) MediaPreviewTitle() string { return msgs.text(textMediaPreviewTitle) }
+
+// MediaNewWindow says "Open in new window"
+// in the language the app shows under cx.
+func MediaNewWindow(cx *core.Scope) string { return For(cx).MediaNewWindow() }
+
+// MediaNewWindow is the package's MediaNewWindow in the language of msgs.
+func (msgs Messages) MediaNewWindow() string { return msgs.text(textMediaNewWindow) }
 
 // MediaSaved says "Saved"
 // in the language the app shows under cx.

@@ -184,6 +184,7 @@ func loadWebKit() {
 				task.Send(sel("didFinish"))
 			}},
 			{Cmd: sel("webView:stopURLSchemeTask:"), Fn: func(objc.ID, objc.SEL, objc.ID, objc.ID) {}},
+			{Cmd: sel("webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:"), Fn: appleWebOpenWindow},
 			// getUserMedia (macOS 12, iOS 15): what the config's Media
 			// grants, which skips WebKit's own prompt; the system still
 			// asks the user for each device.
@@ -434,6 +435,9 @@ func (w *Web) Configure(c *driver.WebConfig) {
 func (w *Web) make() {
 	loadWebKit()
 	config := objc.ID(Class("WKWebViewConfiguration")).Send(sel("new"))
+	// On macOS, only a script with a WebKit user gesture may request a
+	// new window. iOS already uses this pop-up policy.
+	config.Send(sel("preferences")).Send(sel("setJavaScriptCanOpenWindowsAutomatically:"), false)
 	// WebKit appends the application name to its default user agent after a space, and a view reads it only as it is made; iOS's default name, such as Mobile/15E148, stays before the suffix.
 	if suffix := w.config.UserAgentSuffix; suffix != "" {
 		name := GoString(config.Send(sel("applicationNameForUserAgent")))

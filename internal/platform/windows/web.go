@@ -283,6 +283,11 @@ func (wv *webView) controllerReady(comp *comObject) {
 		wv.settings.call(settingsPutIsStatusBarEnabled, 0)
 		wv.userAgent = wv.settings.getString(settingsGetUserAgent)
 	}
+	if !wv.listenWindowRequests() {
+		wv.controller.call(controllerClose)
+		wv.unavailable()
+		return
+	}
 	wv.addScript(webBridge, func(string) bool { return true })
 	wv.listen()
 	wv.listenDownloads()

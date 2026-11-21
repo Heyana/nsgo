@@ -64,6 +64,10 @@ type WebView struct {
 	OnLoadStart             func(WebNavigation)
 	OnLoad                  func(WebNavigation)
 	OnNavigationStateChange func(WebNavigation)
+	// OnOpenWindow receives a page's new-window request on macOS, iOS,
+	// Windows and Linux. It may load the URL in this view or open it
+	// elsewhere. The platform creates no window, even without a callback.
+	OnOpenWindow func(WebWindowRequest)
 	// OnError receives a *WebError. A load cut short, by StopLoading, a new source, another navigation or a download it turned into, is no error.
 	OnError func(err error)
 	// MessageOrigins are the origins whose pages reach OnMessage and OnMessageFrom, written as WebMessage.Origin is ("https://example.com"), or "*" for any. Without them only pages of the source's own origin do: Src's, or for HTML BaseURL's, and "null" for HTML without one. "null" is the origin of every page without one of its own, a data: URL a frame sent the view to as much as the source's HTML, so "null", by default or listed, lets in only the source's page; "*" lets in every page. Only the page posts, never a frame in it, on every platform; a frame reaches the app through the page, with window.parent.postMessage, whose event tells the page the frame's origin.
@@ -101,6 +105,10 @@ type WebMessage struct {
 	Origin string
 }
 
+// WebWindowRequest is a page's request to open a URL in a new window.
+// UserInitiated reports when the platform associates it with user input.
+type WebWindowRequest = driver.WebWindowRequest
+
 // WebError is a page that failed to load, or a navigation the
 // platform refused; URL is the page's, when known.
 type WebError struct {
@@ -118,6 +126,7 @@ type webNode struct {
 	sent                        driver.WebConfig
 	loadStart, load, navigation func(WebNavigation)
 	loadError                   func(error)
+	openWindow                  func(WebWindowRequest)
 	message                     func(string)
 	messageFrom                 func(WebMessage)
 	download                    func(WebDownload)
@@ -155,7 +164,7 @@ func (t *Tree) mountWebView(cx *Scope, parent *node, w WebView) {
 			Mobile: w.Mobile,
 			Media:  w.Media},
 		loadStart: w.OnLoadStart, load: w.OnLoad, navigation: w.OnNavigationStateChange,
-		loadError: w.OnError, message: w.OnMessage, messageFrom: w.OnMessageFrom, download: w.OnDownload,
+		loadError: w.OnError, openWindow: w.OnOpenWindow, message: w.OnMessage, messageFrom: w.OnMessageFrom, download: w.OnDownload,
 		origins: messageOrigins(w.MessageOrigins),
 	}
 	if w.OnDownload != nil && cx.rt.dataDir != "" {
@@ -294,6 +303,10 @@ func (t *Tree) dispatchWeb(n *node, ev driver.Event) {
 		call(wn.load)
 	case driver.EventNavigationStateChange:
 		call(wn.navigation)
+	case driver.EventWebOpenWindow:
+		if r, ok := ev.Data.(WebWindowRequest); ok && wn.openWindow != nil {
+			t.within(n.owner, func() { wn.openWindow(r) })
+		}
 	case driver.EventError:
 		if wn.loadError != nil {
 			failure := driver.WebFailure{}
@@ -351,6 +364,7 @@ func (wn *webNode) events() driver.EventMask {
 	bit(driver.EventError, wn.loadError != nil)
 	bit(driver.EventMessage, wn.message != nil || wn.messageFrom != nil || len(wn.evals) > 0)
 	bit(driver.EventDownload, wn.download != nil)
+	bit(driver.EventWebOpenWindow, wn.openWindow != nil)
 	return m
 }
 

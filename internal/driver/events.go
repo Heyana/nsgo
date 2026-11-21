@@ -299,6 +299,10 @@ const EventMouseDown EventKind = EventAlert
 // EventVideoPlay reports that the platform played video ID, not the app's Paused. It shares EventMenuClosed's kind as EventVideoPause shares EventImageInfo's.
 const EventVideoPlay EventKind = EventMenuClosed
 
+// EventWebOpenWindow carries a WebWindowRequest in Data. A web view and a
+// video use the same bit for different events.
+const EventWebOpenWindow EventKind = EventEnd
+
 // Why EventVideoPause says a video paused, as core.VideoPauseReason.
 const (
 	VideoPauseInterruption = iota

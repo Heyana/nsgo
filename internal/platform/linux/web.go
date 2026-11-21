@@ -114,6 +114,7 @@ var (
 	webkitNavigationDecisionGetAction        func(uintptr) uintptr
 	webkitNavigationActionGetRequest         func(uintptr) uintptr
 	webkitNavigationActionGetType            func(uintptr) uint32
+	webkitNavigationActionIsUserGesture      func(uintptr) bool
 	webkitURIRequestNew                      func(*byte) uintptr
 	webkitURIRequestGetHTTPHeaders           func(uintptr) uintptr
 	webkitURIRequestGetURI                   func(uintptr) uintptr
@@ -242,6 +243,7 @@ func bindWebKit(webkit, jsc, soup uintptr) {
 	reg(&webkitNavigationDecisionGetAction, "webkit_navigation_policy_decision_get_navigation_action")
 	reg(&webkitNavigationActionGetRequest, "webkit_navigation_action_get_request")
 	reg(&webkitNavigationActionGetType, "webkit_navigation_action_get_navigation_type")
+	reg(&webkitNavigationActionIsUserGesture, "webkit_navigation_action_is_user_gesture")
 	reg(&webkitURIRequestNew, "webkit_uri_request_new")
 	reg(&webkitURIRequestGetHTTPHeaders, "webkit_uri_request_get_http_headers")
 	reg(&webkitURIRequestGetURI, "webkit_uri_request_get_uri")
@@ -510,6 +512,7 @@ func (w *window) makeWeb(v *view) {
 	w.connect(v, webkitWebViewGetBackForwardList(wv.widget), "changed", cbWebHistoryChanged)
 	w.connect(v, wv.widget, "resource-load-started", cbWebResourceStarted)
 	w.connect(v, wv.widget, "decide-policy", cbWebPolicy)
+	w.connect(v, wv.widget, "create", cbWebCreate)
 	w.connect(v, wv.widget, "permission-request", cbWebPermission)
 	w.connect(v, wv.widget, "map", cbWebMap)
 	w.connect(v, wv.content, "script-message-received::"+webHandler, cbWebMessage)

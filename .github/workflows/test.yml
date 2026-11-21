@@ -339,8 +339,11 @@ jobs:
         run: go tool nsgo test -target windows -fps -run '^TestPerfCanvasSprites' ./examples/gallery
       - name: Test UI Automation property-changed events
         run: go tool nsgo test -run '^TestUIAPropertyChangedEvents$' ./internal/platform/windows
+
       - name: Test the save dialog's starting folder
         run: go tool nsgo test -run '^TestSaveDialogStartsInFolder$' ./internal/platform/windows
+      - name: Test WebView2 popup requests
+        run: go tool nsgo test -run '^TestWebView2WindowRequests$' ./internal/platform/windows
       - name: Test pixel frames and animated images
         run: go tool nsgo test -run '^(TestPixelFramesShowEachFrame|TestAnimatedGIFAndSVGImagesDraw)$' ./internal/platform/windows
       - name: Test Windows last-window close and session end

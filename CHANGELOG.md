@@ -248,6 +248,7 @@
 - Play a separate `Video.AudioSource` in sync with the picture on macOS, iOS and tvOS (#681 by @houko).
 - Report `Video.OnError` instead of an opaque picture for a local video whose alpha the platform cannot keep: WebM with alpha on macOS and iOS, any clip with alpha on Windows until Media Foundation's alpha output is checked, and on Linux HEVC with alpha, or VP8 and VP9 with alpha without GStreamer's codecalpha plug-in; add `MediaError.Reason`, `MediaErrorAlphaUnsupported` for these, so an app can fall back to its own decoder without matching the message (#569 by @houko).
 - Give a `Select`'s and a `DatePicker`'s field the height, padding and type their `Style` sets, as an `Input`'s, instead of only the view around it, so a small one lines up with a `SizeSmall` button (#721 by @Session500).
+- Give apps control of WebView new-window requests on macOS, iOS, Windows and Linux through `OnOpenWindow` (#113 by @houko).
 - Stop reporting a web view load that was stopped, replaced or turned into a download to `OnError` on Apple platforms and Windows (#233 by @houko).
 - Keep a view's own outer shadows and outline outside its `Overflow: Hidden` clip on Apple for views, images and macOS scroll views, as CSS does (#238 by @houko).
 - Lay out and draw a Windows window at each size as a drag resizes it, as macOS does, instead of stretching the last frame to the window.

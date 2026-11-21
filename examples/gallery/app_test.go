@@ -814,6 +814,14 @@ func TestMedia(t *testing.T) {
 	open(app, "WebView")
 	app.PostMessage("id:bridge", "hello from the page")
 	app.Find("text:hello from the page")
+	app.Press("id:change-page-state")
+	bridge := app.Find("id:bridge").WebCommands
+	if len(bridge) == 0 || bridge[len(bridge)-1].Command != nsgotest.WebInjectJavaScript ||
+		bridge[len(bridge)-1].Value != `history.pushState({}, "", "#preview"); document.title = "Preview"` {
+		t.Fatalf("page-state commands = %+v", bridge)
+	}
+	app.Navigate("id:bridge", core.WebNavigation{URL: "gallery://inline/index.html#preview", Title: "Preview"})
+	app.Find("text:Preview · gallery://inline/index.html#preview")
 	slider := app.Find("id:native-slider")
 	if slider.Kind != nsgotest.KindNative || slider.Component != sliderComponent || slider.NativeProps["value"] != 0.4 {
 		t.Fatalf("native view %+v", slider)

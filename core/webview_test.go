@@ -345,3 +345,46 @@ func TestJSString(t *testing.T) {
 		}
 	}
 }
+
+func TestWebWindowRequestsUseThePagesNavigationPolicy(t *testing.T) {
+	var requests []WebWindowRequest
+	var failure error
+	h := newHost(t, Size{Width: 100, Height: 100}, func(cx *Scope) Node {
+		cx.ProvideAccess(hostsAccess{hosts: []string{"allowed.example"}})
+		return WebView{TestID: "web",
+			OnOpenWindow: func(r WebWindowRequest) { requests = append(requests, r) },
+			OnError:      func(err error) { failure = err },
+		}
+	})
+	batch := h.commit()
+	id := h.find("web").id
+	var config *driver.WebConfig
+	var mask driver.EventMask
+	for _, it := range batch.Items {
+		if it.ID != id {
+			continue
+		}
+		switch it.Kind {
+		case driver.ItemWeb:
+			config = it.Web
+		case driver.ItemEvents:
+			mask = it.Events
+		}
+	}
+	if config == nil || !mask.Has(driver.EventWebOpenWindow) {
+		t.Fatalf("web config = %+v, event mask = %b", config, mask)
+	}
+	allow := WebWindowRequest{URL: "https://allowed.example/path", UserInitiated: true}
+	const denied = "https://denied.example/path"
+	for _, request := range []WebWindowRequest{allow, {URL: denied}} {
+		ev := config.OpenWindowEvent(request)
+		ev.ID = id
+		h.tree.Dispatch(ev)
+	}
+	if len(requests) != 1 || requests[0] != allow {
+		t.Fatalf("web window requests = %v, want %v", requests, allow)
+	}
+	if e, ok := failure.(*WebError); !ok || e.URL != denied {
+		t.Fatalf("refused URL should reach OnError, got %v", failure)
+	}
+}

@@ -2433,6 +2433,10 @@ systemVoiceCount:
       type: int
     japanese:
       type: int
+mediaPageState: "Page state"
+mediaChangePageState: "Change page state"
+mediaPreviewTitle: "Preview"
+mediaNewWindow: "Open in new window"
 mediaSaved: "Saved"
 mediaScriptResult: "Script result"
 mediaRunAScript: "Run a script"

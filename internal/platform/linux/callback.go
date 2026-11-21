@@ -47,6 +47,7 @@ var (
 	cbWebHistoryChanged      uintptr
 	cbWebResourceStarted     uintptr
 	cbWebPolicy              uintptr
+	cbWebCreate              uintptr
 	cbWebPermission          uintptr
 	cbWebMessage             uintptr
 	cbWebMap                 uintptr
@@ -139,6 +140,7 @@ func init() {
 	cbWebHistoryChanged = newCallback(webHistoryChangedCallback)
 	cbWebResourceStarted = newCallback(webResourceStartedCallback)
 	cbWebPolicy = newCallback(webPolicyCallback)
+	cbWebCreate = newCallback(webCreateCallback)
 	cbWebPermission = newCallback(webPermissionCallback)
 	cbWebMessage = newCallback(webMessageCallback)
 	cbWebMap = newCallback(webMapCallback)

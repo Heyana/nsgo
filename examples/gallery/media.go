@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"slices"
 	"strings"
 	"time"
@@ -46,6 +47,7 @@ func inlinePage(cx *core.Scope) string {
 <p>HTML from a string. It sends messages to the app and receives them.</p>
 <button id="post" onclick="window.nsgo.postMessage(event.isTrusted ? 'hello from the page' : 'an untrusted click')">Post to the app</button>
 <a id="save" download="note.txt" href="data:text/plain,Saved%20from%20the%20page">Save a note</a>
+<a target="_blank" href="https://nsgo.dev/">` + html.EscapeString(locales.For(cx).MediaNewWindow()) + `</a>
 <div id="got">No message from the app yet.</div>
 <script>
 window.addEventListener('message', (e) => { document.getElementById('got').textContent = 'From the app: ' + e.data; });
@@ -68,6 +70,7 @@ func messaging(cx *core.Scope) core.Node {
 	sent := core.NewSignal(cx, 0)
 	saved := core.NewSignal(cx, "")
 	result := core.NewSignal(cx, "")
+	pageState := core.NewSignal(cx, core.WebNavigation{})
 	// Desktop native hosts serve the same page through an app-owned scheme; targets without that bridge, a web build that runs as a desktop OS included, keep the inline HTML source.
 	schemePage := inlinePage(cx)
 	_ = cx.ServeScheme("gallery", func(url string) []byte {
@@ -110,7 +113,19 @@ func messaging(cx *core.Scope) core.Node {
 		return s
 	}
 	return Card{Title: tr.MediaWebView(), Description: tr.MediaInlineHtmlWithMessagesBoth(), Children: []core.Node{
-		core.WebView{Ref: web, SourceFunc: source, Headers: map[string]string{"X-NSGo-Gallery": "webview"}, Incognito: true, TestID: "bridge", StyleFunc: func() core.Style { return mediaFrame(cx, 210, colors.Inset()) }, OnMessage: got, OnDownload: download},
+		core.WebView{Ref: web, SourceFunc: source, Headers: map[string]string{"X-NSGo-Gallery": "webview"}, Incognito: true, TestID: "bridge", StyleFunc: func() core.Style { return mediaFrame(cx, 210, colors.Inset()) }, OnMessage: got, OnDownload: download, OnNavigationStateChange: pageState.Set,
+			OnOpenWindow: func(r core.WebWindowRequest) {
+				if r.UserInitiated {
+					message.Set(r.URL)
+				}
+			}},
+		Caption{Label: tr.MediaPageState(), Note: func() string {
+			page := pageState.Get()
+			if page.Title == "" {
+				return or(page.URL)
+			}
+			return page.Title + " · " + page.URL
+		}},
 		Caption{Label: tr.MediaFromThePage(), Note: func() string { return or(message.Get()) }},
 		Caption{Label: tr.MediaToThePage(), Note: func() string {
 			if sent.Get() == 0 {
@@ -124,6 +139,10 @@ func messaging(cx *core.Scope) core.Node {
 			ui.Button{Text: tr.MediaPostToThePage(), OnPress: func() {
 				sent.Set(int(time.Now().UnixMilli() % 1000))
 				web.PostMessage(fmt.Sprintf("hi #%d", sent.GetUntracked()))
+			}},
+			ui.Button{Text: tr.MediaChangePageState(), Variant: ui.ButtonSecondary, TestID: "change-page-state", OnPress: func() {
+				title, _ := json.Marshal(tr.MediaPreviewTitle())
+				web.InjectJavaScript(`history.pushState({}, "", "#preview"); document.title = ` + string(title))
 			}},
 			ui.Button{Text: tr.MediaClickThePage(), Variant: ui.ButtonSecondary, TestID: "click-page",
 				Disabled: func() bool { return !positioned.Get() },

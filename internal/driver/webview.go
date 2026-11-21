@@ -278,6 +278,21 @@ func (c *WebConfig) navigable(rawURL string, source bool) bool {
 	return false
 }
 
+// WebWindowRequest is a request by the page to open a URL in a new window.
+type WebWindowRequest struct {
+	URL           string
+	UserInitiated bool
+}
+
+// OpenWindowEvent routes a new-window request through the page's navigation
+// policy. The backend always suppresses creation of the new window.
+func (c *WebConfig) OpenWindowEvent(r WebWindowRequest) Event {
+	if !c.Navigable(r.URL) {
+		return Event{Kind: EventError, Text: RefusedNavigation(r.URL), Navigation: &WebNavigation{URL: r.URL}}
+	}
+	return Event{Kind: EventWebOpenWindow, Data: r}
+}
+
 // RefusedNavigation is the message of EventError for a navigation Navigable refused.
 func RefusedNavigation(url string) string {
 	return "nsgo: the web view may not navigate to " + url + " (the webview capability's hosts or schemes)"
