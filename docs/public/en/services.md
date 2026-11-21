@@ -563,7 +563,7 @@ android:
   permissions: [ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION, FOREGROUND_SERVICE, FOREGROUND_SERVICE_LOCATION]
 ```
 
-iOS and watchOS give location and motion, macOS location, tvOS one fix at a time and Android both through the framework's own providers, without Google Play services. The web, Windows, Linux and mini programs answer unavailable. In TSX, `Sensors` has `permission`, `requestPermission`, `locate`, `watchLocation` and `watchMotion`, under the package capabilities `location`, `backgroundLocation` and `motion`, in milliseconds.
+iOS and watchOS give location and motion, macOS location, tvOS one fix at a time and Android both through the framework's own providers. A secure mobile browser can supply accelerometer, gyroscope and fused motion readings. Call `cx.RequestPermission(core.PermissionMotion, done)` from a press handler on Safari. The browser reports unavailable on desktops and for magnetometer streams. In TSX, `Sensors` has `permission`, `requestPermission`, `locate`, `watchLocation` and `watchMotion`, under the package capabilities `location`, `backgroundLocation` and `motion`, in milliseconds.
 
 ## Audio
 

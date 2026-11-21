@@ -82,7 +82,7 @@ type SensorVector struct{ X, Y, Z float64 }
 type SensorQuaternion struct{ X, Y, Z, W float64 }
 
 // MotionSample contains one sensor's latest reading, never fabricated axes.
-// Timestamp is monotonic time since boot. Accuracy is -1 if unknown,
+// Timestamp is monotonic time in the provider's clock. Accuracy is -1 if unknown,
 // otherwise 0 (unreliable) through 3 (high). Dropped counts replaced samples
 // since the previous delivery, including native provider back-pressure.
 type MotionSample struct {

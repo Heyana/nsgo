@@ -38,7 +38,7 @@ const (
 	PermissionLocation Permission = driver.PermissionLocation
 	// PermissionBackgroundLocation is a location stream going on in the background (LocationOptions.Background): on Apple platforms PermissionLocation with UIBackgroundModes' location, and on Android also ACCESS_BACKGROUND_LOCATION where android.permissions lists it, which Android 11 and later give only on the app's page of the settings, which asking opens. Ask for it after PermissionLocation.
 	PermissionBackgroundLocation Permission = driver.PermissionBackgroundLocation
-	// PermissionMotion is the accelerometer, gyroscope, magnetometer and device motion (WatchMotion): iOS and watchOS keep it from 27.2, asking with NSMotionUsageDescription, and Android grants it.
+	// PermissionMotion covers accelerometer, gyroscope, magnetometer and fused readings (WatchMotion). Apple requires NSMotionUsageDescription on iOS and watchOS from 27.2. Android grants it. Mobile browsers can ask for it from a user gesture.
 	PermissionMotion Permission = driver.PermissionMotion
 )
 

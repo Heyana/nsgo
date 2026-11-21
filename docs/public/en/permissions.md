@@ -74,7 +74,7 @@ The app held out is its bundle, else its executable; `GuideOptions.App` names an
 | Web | The microphone and the camera, unknown in Firefox |
 | Android, Apple Watch, mini programs | Unknown for now |
 
-Location and motion are told and asked wherever their sensors are, Android and Apple Watch included, and unavailable elsewhere ([location and motion](services.md#location-and-motion)).
+Location and motion permissions follow each [platform's sensors](services.md#location-and-motion). On mobile Safari, ask for `PermissionMotion` from a press handler.
 
 ## Testing
 

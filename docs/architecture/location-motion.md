@@ -20,7 +20,8 @@ Foreground streams keep running while inactive and pause in background. A paused
 | macOS | Core Location fixes and streams | Unavailable |
 | tvOS | One-shot `requestLocation`; streams unavailable | Unavailable |
 | Android | API 31+ framework fused provider when enabled; otherwise GPS with precise permission or network, with coarse accuracy preferring network; API 30+ `getCurrentLocation`, older `requestSingleUpdate` | SensorManager accelerometer, gyroscope, magnetometer and rotation vector with gravity, linear acceleration and gyro readings |
-| Web, Windows, Linux, mini programs | Explicit unavailable answers | Explicit unavailable answers |
+| Web | Unavailable | `DeviceMotionEvent` and `DeviceOrientationEvent` in secure mobile browser contexts, with acceleration, rotation and fused readings where supplied |
+| Windows, Linux, HarmonyOS, mini programs | Unavailable | Unavailable |
 
 `LocationOptions` chooses desired accuracy in meters, minimum distance, interval, cache age, timeout and background policy. Providers may give a worse accuracy or slower interval; samples carry actual accuracy and motion intervals. Apple does not offer a minimum-time location filter. The API neither geocodes nor infers place names. Missing sensors fail explicitly; fused motion requires its companion sensors on Android. Android serves an app with approximate location alone a coarse fix it refreshes at most every ten minutes: `getCurrentLocation` answers it nothing, so a `Locate` without `MaxAge` fails there, while one with `MaxAge` gets the coarse fix as `Cached` and `Approximate` (Pixel 3 XL, Android 12, 2026-11-16), and a stream's fixes come as seldom.
 
@@ -40,6 +41,8 @@ Vectors use natural, right-handed device axes: x toward screen right, y toward t
 
 Attitude rotates device axes into east-north-up world axes when `HeadingReferenced` is true. Apple prefers magnetic-north reference and rotates its north-west-up frame a quarter turn about z; otherwise its arbitrary horizontal frame reports no heading reference. Android uses its rotation vector's world frame. The contract promises neither identical noise nor synchronized companion readings.
 
+The browser uses the page's monotonic event clock. It converts rotation rates from degrees per second, normalizes WebKit's iOS acceleration sign and combines the latest orientation with motion readings when all fused fields are available. The last stream ending detaches its listeners.
+
 ## Back-pressure
 
 A `driver.SensorPacket` holds the latest copied sample per stream/sensor under a mutex and queues at most one engine wake-up. Replacement accumulates `Dropped` since the preceding delivery. Permission and terminal reports never replace samples. Android also keeps only the latest sample per stream/sensor before writing the pipe, adding those drops to the engine's count. Providers may independently sample slower than requested; the count measures replaced deliveries rather than estimating unseen hardware samples.
@@ -47,6 +50,8 @@ A `driver.SensorPacket` holds the latest copied sample per stream/sensor under a
 ## Permissions and packaging
 
 `AccessLocation`, `AccessBackgroundLocation` and `AccessMotion` are separate capabilities, mirrored by TSX package grants `location`, `backgroundLocation` and `motion`; they hold the sensors' permissions too, in place of `AccessPermissions`, so a package granted location may read and ask for it. Background sampling also needs foreground location access. Starting a stream never requests a grant implicitly: one without the permission fails with `not-allowed`.
+
+On Safari call `RequestPermission(PermissionMotion, done)` from a press handler. Other mobile browsers apply their motion site setting. The web reports unavailable on desktops and for magnetometer streams.
 
 Apple declarations live in `apple.info`: `NSLocationWhenInUseUsageDescription`, macOS's `NSLocationUsageDescription` where needed, and `NSMotionUsageDescription`. Hardened-runtime and store signing add the location entitlement only with a nonempty location usage description. Arrays and dictionaries encode as native plist values, including `UIBackgroundModes: [location]` and temporary-accuracy purpose dictionaries; requesting temporary full accuracy is a later API. Background updates need the declared mode and a manager supporting background delivery; When In Use may continue with the native indicator. This service provides no region-monitoring relaunch guarantee.
 
