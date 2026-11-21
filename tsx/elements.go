@@ -206,6 +206,7 @@ func videoFace(p *props) core.Node {
 		RateFunc:         func() float32 { return float32(p.float("rate")) },
 		Repeat:           p.bool("repeat"),
 		Controls:         p.bool("controls"),
+		HitTestAlpha:     float32(p.float("hitTestAlpha")),
 		ProgressInterval: time.Duration(p.float("progressUpdateInterval") * float64(time.Millisecond)),
 		AudioSessionFunc: func() core.AudioSession { return audioSessions[p.str("audioSession")] },
 		Class:            p.class(),

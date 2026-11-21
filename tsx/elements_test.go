@@ -230,6 +230,14 @@ mount(App);`)
 	app.WaitFor("text:pause route-lost;play;pause controls;", time.Second)
 }
 
+func TestVideoPassesItsAlphaThreshold(t *testing.T) {
+	app := run(t, `import { mount, Video } from "nsgo";
+mount(() => <Video testID="video" src="pet.mov" hitTestAlpha={0.5} style={{ height: 50 }} />);`)
+	if got := app.Find("id:video").Video.HitTestAlpha; got != 0.5 {
+		t.Fatalf("video alpha threshold = %g, want 0.5", got)
+	}
+}
+
 func TestVideoAudioSessionFollowsItsProp(t *testing.T) {
 	app := run(t, `import { mount, signal, Text, View, Video } from "nsgo";
 function App() {

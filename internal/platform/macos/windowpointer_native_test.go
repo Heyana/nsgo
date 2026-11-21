@@ -6,11 +6,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"github.com/nsgo-dev/nsgo/desktop"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/apple"
+	alphaclips "github.com/nsgo-dev/nsgo/internal/platform/videoalpha/clips"
 )
 
 // A window that takes no pointer ignores AppKit's mouse events, and one that takes it where it draws finds a painted view under a point and nothing beside it; switching back gives it the pointer again. Run owns AppKit's process lifetime, so this test gets a process of its own.
@@ -163,6 +166,99 @@ func TestWindowPointerEventsFollowTheMode(t *testing.T) {
 				}}
 			})
 		}), Options{Title: title, Width: 600, Height: 400, Transparent: true})
+	})
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestWindowPointerUsesVideoAlpha checks the same AppKit hit path as the
+// painted-window pointer timer, using an AVPlayer-decoded HEVC alpha frame.
+func TestWindowPointerUsesVideoAlpha(t *testing.T) {
+	if os.Getenv("NSGO_TEST_POINTER_PROCESS") != t.Name() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
+		cmd.Env = append(os.Environ(), "NSGO_TEST_POINTER_PROCESS="+t.Name(), "HOME="+t.TempDir())
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		return
+	}
+	clip := filepath.Join(t.TempDir(), "alpha.mov")
+	if err := os.WriteFile(clip, alphaclips.HEVCAlpha, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const title = "nsgo-video-pointer-alpha"
+	var loaded atomic.Int32
+	done := make(chan error, 1)
+	go func() {
+		for deadline := time.Now().Add(8 * time.Second); ; time.Sleep(15 * time.Millisecond) {
+			var checked, transparent, letterbox, opaque, unfiltered bool
+			barrier := make(chan struct{})
+			apple.OnMain(func() {
+				defer close(barrier)
+				if loaded.Load() < 2 {
+					return
+				}
+				var alpha, defaultVideo *view
+				for _, v := range views {
+					switch v.props.TestID {
+					case "alpha-video":
+						alpha = v
+					case "default-video":
+						defaultVideo = v
+					}
+				}
+				if alpha == nil || defaultVideo == nil {
+					return
+				}
+				s := alpha.surface
+				if s.pointer.mode != driver.WindowPointerPainted {
+					return
+				}
+				point := func(v *view, x, y float64) apple.CGPoint {
+					return objc.Send[apple.CGPoint](v.native, sel("convertPoint:toView:"),
+						apple.CGPoint{X: x, Y: y}, objc.ID(0))
+				}
+				transparent = s.paintedAt(point(alpha, 36, 12))
+				letterbox = s.paintedAt(point(alpha, 12, 48))
+				opaque = s.paintedAt(point(alpha, 72, 48))
+				unfiltered = s.paintedAt(point(defaultVideo, 36, 12))
+				checked = true
+			})
+			<-barrier
+			if checked && !transparent && !letterbox && opaque && unfiltered {
+				done <- nil
+				break
+			}
+			if time.Now().After(deadline) {
+				done <- fmt.Errorf("video hit test after %d loads: checked=%t transparent=%t letterbox=%t opaque=%t opt-out=%t",
+					loaded.Load(), checked, transparent, letterbox, opaque, unfiltered)
+				break
+			}
+		}
+		apple.OnMain(finish)
+	}()
+
+	onMain(func() {
+		Run(core.AppRoot(func(cx *core.Scope) {
+			cx.SetMainView(func(cx *core.Scope) core.Node {
+				desktop.SetTitle(cx, title)
+				desktop.SetWindowPointerEvents(cx, desktop.WindowPointerPainted)
+				video := core.Video{
+					Source: clip, TestID: "default-video", Paused: true, Muted: true,
+					Style:   core.Style{Width: core.Pt(144), Height: core.Pt(96)},
+					OnLoad:  func(core.VideoInfo) { loaded.Add(1) },
+					OnError: func(err error) { t.Error(err) },
+					OnPress: func(core.PressEvent) {},
+				}
+				alpha := video
+				alpha.TestID, alpha.HitTestAlpha = "alpha-video", 0.5
+				return core.View{Style: core.Style{Width: core.Pt(360), Height: core.Pt(120), Direction: core.Row},
+					Children: []core.Node{alpha, video}}
+			})
+		}), Options{Title: title, Width: 360, Height: 120, Transparent: true})
 	})
 	if err := <-done; err != nil {
 		t.Fatal(err)

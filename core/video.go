@@ -35,6 +35,11 @@ type Video struct {
 	ResizeMode     ResizeMode
 	ResizeModeFunc func() ResizeMode
 	Controls       bool
+	// HitTestAlpha is the minimum video opacity, from 0 to 1, at which a
+	// painted macOS window takes the pointer. It applies to videos
+	// without Controls or an asset track transform once a frame is decoded.
+	// Zero counts the whole video view.
+	HitTestAlpha float32
 	// PictureInPicture enables iOS Picture in Picture: Ref.StartPictureInPicture and StopPictureInPicture start and stop it, and the video holds the playback audio session from then on, paused or not. Other targets report Supported false through OnPictureInPicture. What the PiP window plays and pauses is reported by OnPlay and OnPause.
 	PictureInPicture bool
 	// AutoPictureInPicture lets iOS start PiP on its own as the app goes to the background while the video plays.
@@ -149,7 +154,7 @@ func (t *Tree) mountVideo(cx *Scope, parent *node, v Video) {
 	t.bindAccessibilityText(cx, n, &n.props.Label, v.LabelFunc)
 	vn := &videoNode{
 		config: driver.VideoConfig{Source: v.Source, Headers: driver.NewVideoHeaders(v.Headers), Paused: v.Paused, Muted: v.Muted, Volume: videoVolume(v.Volume),
-			Rate: videoRate(v.Rate), Repeat: v.Repeat, ResizeMode: v.ResizeMode, Controls: v.Controls,
+			Rate: videoRate(v.Rate), Repeat: v.Repeat, ResizeMode: v.ResizeMode, Controls: v.Controls, HitTestAlpha: alphaThreshold(v.HitTestAlpha),
 			ProgressInterval: videoInterval(v.ProgressInterval), AudioSource: v.AudioSource, AudioSession: v.AudioSession,
 			PictureInPicture: v.PictureInPicture, AutoPictureInPicture: v.AutoPictureInPicture},
 		loadStart: v.OnLoadStart, load: v.OnLoad, progress: v.OnProgress, end: v.OnEnd,

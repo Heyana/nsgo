@@ -2506,6 +2506,15 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemVideo:
 			delete(views, v.video.View())
 			v.video.Configure(it.Video)
+			if it.Video.HitTestAlpha > 0 && !it.Video.Controls {
+				if s.pointer.videos == nil {
+					s.pointer.videos = make(map[*apple.Video]struct{})
+				}
+				s.pointer.videos[v.video] = struct{}{}
+			} else {
+				delete(s.pointer.videos, v.video)
+				v.video.ClearHitTestAlpha()
+			}
 			if shown := v.video.View(); shown != 0 {
 				views[shown] = v
 			}
@@ -2782,6 +2791,7 @@ func (s *surface) delete(v *view, kept bool) {
 		v.web.Close()
 	}
 	if v.video != nil {
+		delete(s.pointer.videos, v.video)
 		delete(views, v.video.View())
 		v.video.Close()
 	}
@@ -2969,10 +2979,15 @@ func reach(self objc.ID, cmd objc.SEL, p apple.CGPoint) objc.ID {
 		return 0
 	}
 	own, children := driver.ReachView(frame.Size, &v.props, v.overflow, v.transformedKids, local)
-	if own && v.image != nil && v.surface.pointer.mode == driver.WindowPointerPainted {
-		hit, animated := v.image.HitTest(local)
-		own = hit || driver.Painted(driver.KindView, &v.style, 0, 0)
-		v.surface.pointer.animatedImage = v.surface.pointer.animatedImage || animated
+	if own && v.surface.pointer.mode == driver.WindowPointerPainted {
+		switch {
+		case v.image != nil:
+			hit, animated := v.image.HitTest(local)
+			own = hit || driver.Painted(driver.KindView, &v.style, 0, 0)
+			v.surface.pointer.animatedImage = v.surface.pointer.animatedImage || animated
+		case v.video != nil:
+			own = v.video.HitTestAlpha(local) || driver.Painted(driver.KindView, &v.style, 0, 0)
+		}
 	}
 	at := apple.CGPoint{X: float64(local.X), Y: float64(local.Y)}
 	// Test native children ourselves: AppKit clips the search to layout frames and does not undo their layer transforms.

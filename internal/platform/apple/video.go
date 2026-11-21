@@ -40,6 +40,7 @@ type Video struct {
 	stopBackground    func()
 	status            *videoStatus
 	config            driver.VideoConfig
+	hitTest           videoHitTest
 	made              bool
 	pip               *PictureInPicture
 	pipLayer          objc.ID // iOS: the second AVPlayerLayer a video with controls starts PiP from
@@ -406,6 +407,7 @@ func (v *Video) installVideoItem(st *videoStatus, asset objc.ID) {
 // close stops the player and stops observing it. A macOS view keeps the
 // last frame; an iOS one lets the player's layer or controller go.
 func (v *Video) close() {
+	v.ClearHitTestAlpha()
 	st := v.status
 	if st != nil && st.cancelLoading != nil {
 		st.cancelLoading()

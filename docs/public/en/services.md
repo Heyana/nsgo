@@ -376,7 +376,9 @@ Set `desktop.WindowOptions.Parent` to an open window of the app to close both wh
 desktop.OpenPanel(cx, desktop.PanelOptions{Width: 600, Height: 400, PointerEvents: desktop.WindowPointerPainted}, Pet)
 ```
 
-On macOS and Windows, an image in a painted window can set `Image.HitTestAlpha` (TSX `hitTestAlpha`) to a value above 0 and at most 1. For example, 0.5 takes the pointer on picture pixels that are at least half opaque. The threshold also applies to the image's `OnPress`. A view background or border still counts as painted. Zero uses the whole image view, as do images on Linux and videos on desktop.
+On macOS and Windows, an image in a painted window can set `Image.HitTestAlpha` (TSX `hitTestAlpha`) to a value above 0 and at most 1. For example, 0.5 takes the pointer on picture pixels that are at least half opaque. The threshold also applies to the image's `OnPress`. A view background or border still counts as painted. Zero uses the whole image view, as do images on Linux.
+
+In a painted macOS window, `Video.HitTestAlpha` (TSX `hitTestAlpha`) applies the same threshold to decoded video frames. It works with `Controls` off and an untransformed video track, such as HEVC with alpha for a desktop pet. Zero, an unavailable frame, and the other desktop hosts use the video view's bounds.
 
 `desktop.NewTray` can draw a live icon with `TrayOptions.View` on macOS and Windows. Windows fits the view's transparent rendering to the notification area's icon size and updates it when the view changes or an image finishes loading; use `TrayOptions.OnClick`, `Panel` and `Menu` for its actions. Linux currently shows PNG icons; drawing its tray view remains a goal.
 

@@ -56,7 +56,7 @@ func (t *Tree) mountImage(cx *Scope, parent *node, v Image) {
 	n.props = driver.ViewProps{Role: RoleImage, Label: v.Label, TestID: v.TestID, ElementsHidden: v.ElementsHidden}
 	t.bindAccessibilityText(cx, n, &n.props.Label, v.LabelFunc)
 	n.image = &imageNode{config: driver.ImageConfig{Source: v.Source, Placeholder: v.Placeholder,
-		ResizeMode: v.ResizeMode, Sampling: v.Sampling, BlurRadius: v.BlurRadius, FadeDuration: v.FadeDuration, HitTestAlpha: v.hitTestAlpha()}}
+		ResizeMode: v.ResizeMode, Sampling: v.Sampling, BlurRadius: v.BlurRadius, FadeDuration: v.FadeDuration, HitTestAlpha: alphaThreshold(v.HitTestAlpha)}}
 	if v.SourceFunc != nil {
 		cx.renderEffect(func() {
 			src := v.SourceFunc()
@@ -71,9 +71,9 @@ func (t *Tree) mountImage(cx *Scope, parent *node, v Image) {
 	}
 }
 
-func (i Image) hitTestAlpha() float32 {
-	if i.HitTestAlpha > 0 {
-		return min(i.HitTestAlpha, 1)
+func alphaThreshold(value float32) float32 {
+	if value > 0 {
+		return min(value, 1)
 	}
 	return 0
 }

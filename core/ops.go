@@ -473,7 +473,7 @@ func (t *Tree) setImage(n *node, v Image) {
 		t.markLayout(n)
 	}
 	n.image.config = driver.ImageConfig{Source: src, Placeholder: v.Placeholder, ResizeMode: v.ResizeMode,
-		Sampling: v.Sampling, BlurRadius: v.BlurRadius, FadeDuration: v.FadeDuration, HitTestAlpha: v.hitTestAlpha()}
+		Sampling: v.Sampling, BlurRadius: v.BlurRadius, FadeDuration: v.FadeDuration, HitTestAlpha: alphaThreshold(v.HitTestAlpha)}
 	t.restyled(n)
 }
 

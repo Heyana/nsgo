@@ -571,6 +571,8 @@ export interface VideoHostProps {
   rate?: number;
   repeat?: boolean;
   controls?: boolean;
+  /** Minimum video opacity that takes the pointer in a painted macOS window, from 0 to 1. Applies to videos without controls or an asset track transform. Zero counts the whole view. */
+  hitTestAlpha?: number;
   progressUpdateInterval?: number;
   audioSession?: AudioSession;
   onLoadStart?: () => void;

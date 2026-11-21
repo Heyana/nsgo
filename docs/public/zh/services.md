@@ -371,7 +371,9 @@ macOS、Windows 和 Linux 上调整桌面窗口大小时，绘制前最多等待
 desktop.OpenPanel(cx, desktop.PanelOptions{Width: 600, Height: 400, PointerEvents: desktop.WindowPointerPainted}, Pet)
 ```
 
-在 macOS 和 Windows 上，绘制区域接收指针的窗口可为图片设置 `Image.HitTestAlpha`（TSX 中为 `hitTestAlpha`），取值大于 0 且不超过 1。例如，0.5 表示图片像素的不透明度至少为一半时才接收指针。这个阈值也适用于图片的 `OnPress`，而视图的背景或边框仍算作绘制区域。设为 0 时使用整个图片视图，Linux 上的图片以及桌面平台上的视频也都按整个视图判断。
+在 macOS 和 Windows 上，绘制区域接收指针的窗口可为图片设置 `Image.HitTestAlpha`（TSX 中为 `hitTestAlpha`），取值大于 0 且不超过 1。例如，0.5 表示图片像素的不透明度至少为一半时才接收指针。这个阈值也适用于图片的 `OnPress`，而视图的背景或边框仍算作绘制区域。设为 0 时使用整个图片视图，Linux 上的图片也按整个视图判断。
+
+在 macOS 上，绘制区域接收指针的窗口可以用 `Video.HitTestAlpha`（TSX 中为 `hitTestAlpha`）为视频帧设置同样的阈值。此功能适用于关闭 `Controls` 且视频轨道没有变换的视频，例如用于桌面宠物的带 alpha 的 HEVC。阈值为 0、没有可用帧或使用其他桌面平台时，按整个视频视图判断。
 
 在 macOS 和 Windows 上，`desktop.NewTray` 可通过 `TrayOptions.View` 绘制实时图标。Windows 将视图的透明绘制结果缩放到通知区域的图标大小，并在视图变化或图片加载完成后更新；用 `TrayOptions.OnClick`、`Panel` 和 `Menu` 处理图标的操作。Linux 目前显示 PNG 图标，绘制托盘视图仍是目标。
 

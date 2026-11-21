@@ -24,7 +24,7 @@
 - Advertise and browse local DNS-SD services through Bonjour on macOS and iOS, NsdManager on Android, and Avahi on Linux (#430 by @houko).
 - Keep `base/datatable.DataTable` header sort controls above the trailing resize handle's touch slop on phones, place right-pinned column headers at their region's origin, and run the TSX gallery's `TestDataTableSorts` on phones as well (#1551).
 - Keep a finger that brakes a scroll view's glide or snap on Windows and Linux, or a fling on an Android zooming scroll view, as the scroll view's touch so lifting presses nothing underneath while dragging still scrolls (#1544).
-- Let images in painted macOS and Windows windows pass the pointer through transparent pixels with `Image.HitTestAlpha` and TSX's `hitTestAlpha` (#599 by @houko).
+- Let images in painted macOS and Windows windows and videos in painted macOS windows pass the pointer through transparent pixels with `HitTestAlpha` and TSX's `hitTestAlpha` (#599 by @houko).
 - Preview Go component fixtures with `nsgo dev -preview` (#659 by @houko).
 - Send `core.Video.Headers` with Android video requests and direct HTTP videos on Linux, macOS, iOS and tvOS, including separate audio files on Apple (#681 by @houko).
 - Report same-document URL, history and title changes from WebView2 through `WebView.OnNavigationStateChange` (#113 by @houko).

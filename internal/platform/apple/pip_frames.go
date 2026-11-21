@@ -27,10 +27,6 @@ var cvBufferSetAttachment func(uintptr, uintptr, uintptr, uint32)
 
 var (
 	cvPixelBufferCreate func(uintptr, int, int, uint32, uintptr, *uintptr) int32
-	cvPixelBufferLock   func(uintptr, uint64) int32
-	cvPixelBufferUnlock func(uintptr, uint64) int32
-	cvPixelBufferBase   func(uintptr) uintptr
-	cvPixelBufferRow    func(uintptr) uintptr
 	cmVideoDescription  func(uintptr, uintptr, *uintptr) int32
 	cmSampleCreate      func(uintptr, uintptr, bool, uintptr, uintptr, uintptr, *sampleTiming, *uintptr) int32
 	cmSampleAttachments func(uintptr, bool) uintptr
@@ -44,6 +40,7 @@ type sampleTiming struct {
 }
 
 func loadSamples() {
+	pixelBuffersLoaded.Do(loadPixelBuffers)
 	cv := load("/System/Library/Frameworks/CoreVideo.framework/CoreVideo")
 	cm := load("/System/Library/Frameworks/CoreMedia.framework/CoreMedia")
 	cf := load("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
@@ -56,10 +53,6 @@ func loadSamples() {
 	pixelSurfaceKey = constant(cv, "kCVPixelBufferIOSurfacePropertiesKey")
 	pixelSpaceKey = constant(cv, "kCVImageBufferCGColorSpaceKey")
 	reg(&cvPixelBufferCreate, cv, "CVPixelBufferCreate")
-	reg(&cvPixelBufferLock, cv, "CVPixelBufferLockBaseAddress")
-	reg(&cvPixelBufferUnlock, cv, "CVPixelBufferUnlockBaseAddress")
-	reg(&cvPixelBufferBase, cv, "CVPixelBufferGetBaseAddress")
-	reg(&cvPixelBufferRow, cv, "CVPixelBufferGetBytesPerRow")
 	reg(&cmVideoDescription, cm, "CMVideoFormatDescriptionCreateForImageBuffer")
 	reg(&cmSampleCreate, cm, "CMSampleBufferCreateForImageBuffer")
 	reg(&cmSampleAttachments, cm, "CMSampleBufferGetSampleAttachmentsArray")
@@ -114,12 +107,11 @@ func (p *PictureInPicture) DrawFrame(tree objc.ID, scale float64) bool {
 func sampleOfLayer(layer objc.ID, w, h int, pointsW, pointsH float64, position time.Duration) (uintptr, error) {
 	sampleOnce.Do(loadSamples)
 	var pixels, format, sample uintptr
-	const bgra = 0x42475241
 	empty := dictionary(nil, nil)
 	defer Release(empty)
 	attrs := dictionary([]uintptr{pixelSurfaceKey}, []uintptr{empty})
 	defer Release(attrs)
-	if status := cvPixelBufferCreate(0, w, h, bgra, attrs, &pixels); status != 0 {
+	if status := cvPixelBufferCreate(0, w, h, pixelBGRA, attrs, &pixels); status != 0 {
 		return 0, fmt.Errorf("PiP pixel buffer: %d", status)
 	}
 	defer Release(pixels)

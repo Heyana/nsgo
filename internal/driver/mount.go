@@ -1590,6 +1590,7 @@ type VideoConfig struct {
 	Rate                 float32
 	Repeat               bool
 	ResizeMode           ResizeMode
+	HitTestAlpha         float32
 	Controls             bool
 	PictureInPicture     bool
 	AutoPictureInPicture bool

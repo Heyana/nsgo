@@ -26,6 +26,7 @@ type windowPointer struct {
 	tested   bool
 	// An animated image changes the alpha under a still pointer.
 	animatedImage bool
+	videos        map[*apple.Video]struct{} // videos with an alpha threshold
 }
 
 // setPointerEvents makes the window take the pointer as mode says, from now.
@@ -79,11 +80,21 @@ func (s *surface) stopPassTimer() {
 		s.pointer.timer = 0
 		t.Send(sel("invalidate"))
 		t.Send(selRelease)
+		for video := range s.pointer.videos {
+			video.ClearHitTestAlpha()
+		}
 	}
 }
 
 // passUnpainted lets the mouse through while the pointer is over nothing painted, by the hit test of the views under it. A button held keeps what the window does, so a drag that began on a view goes on to its end and one from another app passes over the window.
 func (s *surface) passUnpainted() {
+	if len(s.pointer.videos) > 0 && objc.Send[bool](s.window, sel("isVisible")) {
+		for video := range s.pointer.videos {
+			if video.SampleHitTestAlpha() {
+				s.pointer.tested = false
+			}
+		}
+	}
 	loc := objc.Send[apple.CGPoint](s.window, sel("mouseLocationOutsideOfEventStream"))
 	if s.pointer.tested && loc == s.pointer.at && s.batch == s.pointer.batch && !s.ticking && !s.pointer.animatedImage {
 		return
