@@ -147,7 +147,7 @@ type view struct {
 	played    []driver.DrawOp       // the ops it last drew, its bound arguments' values in place
 	canvas    canvasPaint           // how it paints (content.go)
 	shader    *apple.ShaderLayer    // a shader view's (shader.go)
-	fx        *effect               // its effect, transition or navigation shader (effect.go)
+	fx        *apple.Effect         // its effect, transition or navigation shader (effect.go)
 	web       *apple.Web            // a web view's
 	video     *apple.Video          // a video's
 
@@ -2399,7 +2399,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.startTransition(v)
 		case driver.ItemShaderInput:
 			if v.fx != nil {
-				v.fx.stale = true
+				v.fx.Invalidate()
 				s.shadeLater(v)
 			}
 		case driver.ItemScrollTo:

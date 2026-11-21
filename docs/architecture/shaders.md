@@ -48,6 +48,8 @@ Each backend draws a shader view into a surface of its own below the view's chil
 | Linux | A `GtkGLArea`, OpenGL 3.3 or ES 3.0 as GTK's context has | The children's render nodes rendered by the window's GSK renderer into a texture and downloaded | A `GtkGLArea` of the effect's own over them |
 | Android | A `TextureView` drawn on one shared GL thread | — | — |
 
+On macOS and iOS, `internal/platform/apple/effect.go` owns effect masks, transition pictures and the Metal layer's lifecycle. Each backend supplies its native host and the child container its view tree uses for layout, clipping and input.
+
 Android's runtime draws no effects yet: its backend leaves their items out, so children show as they are and pages and dialogs come with their own motion. The backdrop is pictured on macOS, iOS and the web only, and reads as transparent elsewhere. `nextDrawable` blocks until the display frees a drawable, so Apple's frames are encoded off the main thread. A machine without Metal, WebGL 2, Direct3D 11 or OpenGL 3.3/ES 3.0 leaves a shader view empty and shows an effect's children as they are. Mini programs draw no shader: their builds take the `nsgo_noshader` tag, which leaves the compilers out of `core` for the module's size, so every program compiles to an empty one that takes any uniform ([mini programs](miniprogram.md#the-package)).
 
 ## Design choices

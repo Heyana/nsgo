@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -42,12 +43,13 @@ func TestShaderEffects(t *testing.T) {
 func TestShaderEffectsPhone(t *testing.T) {
 	var app *nsgotest.App
 	if target := nsgotest.Target(); target == "ios_simulator" || target == "android" {
-		// The phone's own environment.
-		app = nsgotest.Start(t, Root)
+		// Open the demo in the phone's own environment.
+		t.Setenv("NSGO_GALLERY_OPEN", "Shader")
+		app = nsgotest.Start(t, Root, nsgotest.Environment(core.Environment{Locale: "en-US"}))
 	} else {
 		app = startPhone(t)
+		openPhone(app, "Shader")
 	}
-	openPhone(app, "Shader")
 	app.Press("id:wave-button")
 	app.WaitFor("text:Start pressed 1 time", time.Second)
 	app.Press("id:dissolve-next")

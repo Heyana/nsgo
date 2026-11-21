@@ -87,7 +87,7 @@ type view struct {
 	drawing    *driver.Drawing    // a canvas's
 	played     []driver.DrawOp    // the ops it last drew, its bound arguments' values in place
 	shader     *apple.ShaderLayer // a shader view's (shader.go)
-	fx         *effect            // its effect, transition or navigation shader (effect.go)
+	fx         *apple.Effect      // its effect, transition or navigation shader (effect.go)
 	container  objc.ID            // what holds its children under an effect or for its clip, once it has one
 	clipHeld   bool               // whether container clips the children in place of the view's own layer, which keeps its shadow and outline (clipsInHolder)
 	web        *apple.Web         // a web view's
@@ -1501,7 +1501,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.startTransition(v)
 		case driver.ItemShaderInput:
 			if v.fx != nil {
-				v.fx.stale = true
+				v.fx.Invalidate()
 				s.shadeLater(v)
 			}
 		case driver.ItemScrollTo:
