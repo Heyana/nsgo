@@ -1055,6 +1055,25 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
 
     /** The file pick or save the documents UI answers. */
     private Services.Documents documents;
+    private final java.util.HashMap<Long, PendingSave> pendingSaves = new java.util.HashMap<>();
+    private static final long SAVE_PREFLIGHT_TIMEOUT = 5000; // driver.SavePreflightTimeout
+    private static final String SAVE_PREFLIGHT_TIMED_OUT = "the app did not approve the save before the deadline";
+
+    private static final class PendingSave {
+        final Services.Documents request;
+        final android.net.Uri tree;
+        final String destination;
+        final long deadline;
+        final Runnable timeout;
+
+        PendingSave(Services.Documents request, android.net.Uri tree, Runnable timeout) {
+            this.request = request;
+            this.tree = tree;
+            this.destination = tree.buildUpon().appendQueryParameter("name", request.saveName).build().toString();
+            this.deadline = android.os.SystemClock.elapsedRealtime() + SAVE_PREFLIGHT_TIMEOUT;
+            this.timeout = timeout;
+        }
+    }
 
     /** The photo the camera app takes, or that waits for the camera permission, and the file it writes. */
     private Services.Pick photo;
@@ -1235,6 +1254,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             return;
         }
         Context context = getContext().getApplicationContext();
+        if (d.saveName != null) {
+            checkSaveDestination(d, created);
+            return;
+        }
         if (d.folder) {
             answerDocuments(d, Services.pickedTree(context, created), "", false);
             return;
@@ -1262,8 +1285,44 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         event(Protocol.EVENT_FILES, 0, d.count, 0, 0, error, 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, files, saved);
     }
 
+    private void checkSaveDestination(Services.Documents d, android.net.Uri tree) {
+        PendingSave pending = new PendingSave(d, tree, () -> answerSavePreflight(d.count, false, SAVE_PREFLIGHT_TIMED_OUT));
+        pendingSaves.put(d.count, pending);
+        postDelayed(pending.timeout, SAVE_PREFLIGHT_TIMEOUT);
+        event(Protocol.EVENT_SAVE_PREFLIGHT, 0, d.count, 0, 0, pending.destination, 0, 0, 0, 0, 0, 0, 0, null, 0, 0, false, "", false);
+    }
+
+    private void answerSavePreflight(long count, boolean approved, String reason) {
+        PendingSave pending = pendingSaves.remove(count);
+        if (pending == null) return;
+        removeCallbacks(pending.timeout);
+        if (android.os.SystemClock.elapsedRealtime() >= pending.deadline) {
+            approved = false;
+            reason = SAVE_PREFLIGHT_TIMED_OUT;
+        }
+        if (!approved) {
+            answerDocuments(pending.request, pending.destination, reason, false);
+            return;
+        }
+        Context context = getContext().getApplicationContext();
+        new Thread(() -> {
+            try {
+                android.net.Uri saved = Services.createSave(context, pending.request, pending.tree);
+                answerDocuments(pending.request, saved.toString(), "", true);
+            } catch (java.io.IOException | RuntimeException e) {
+                answerDocuments(pending.request, pending.destination, String.valueOf(e.getMessage()), false);
+            }
+        }, "nsgo-documents").start();
+    }
+
     /** Starts d in the documents UI, answering the one it replaces, or answers d when no activity can. */
     private void startDocuments(Services.Documents d, java.util.function.Predicate<Activity> start) {
+        if (documents != null && (documents.saveName != null || d.saveName != null)) {
+            // Two live picker results share request codes. Keep the active
+            // destination tied to the save that asked to check it.
+            answerDocuments(d, "", "another document picker is open", false);
+            return;
+        }
         if (documents != null) answerDocuments(documents, "", "", false);
         documents = null;
         Activity activity = activity();
@@ -2845,13 +2904,24 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 startDocuments(new Services.Documents(count, 1, null, true), Services::startFolder);
                 break;
             }
-            case Protocol.ITEM_SAVE_FILE: {
+            case Protocol.ITEM_SAVE_FILE:
+            case Protocol.ITEM_SAVE_FILE_PREFLIGHT: {
                 long count = in.readInt() & 0xffffffffL;
                 String from = Protocol.readString(in), name = Protocol.readString(in), mime = Protocol.readString(in);
                 // No file: Go failed the save already.
                 if (!from.isEmpty()) {
-                    startDocuments(new Services.Documents(count, 1, from, false), a -> Services.startSave(a, name, mime));
+                    if (kind == Protocol.ITEM_SAVE_FILE_PREFLIGHT) {
+                        startDocuments(new Services.Documents(count, 1, from, false, name, mime), Services::startFolder);
+                    } else {
+                        startDocuments(new Services.Documents(count, 1, from, false), a -> Services.startSave(a, name, mime));
+                    }
                 }
+                break;
+            }
+            case Protocol.ITEM_SAVE_PREFLIGHT_ANSWER: {
+                long count = in.readInt() & 0xffffffffL;
+                boolean approved = (in.readUnsignedByte() & 1) != 0;
+                answerSavePreflight(count, approved, Protocol.readString(in));
                 break;
             }
             case Protocol.ITEM_OPEN_FILE: {

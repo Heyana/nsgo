@@ -122,9 +122,10 @@ var itemNames = map[ItemKind]string{
 	ItemSignInWithApple: "sign-in-with-apple", ItemAppleCredentialState: "apple-credential-state",
 	ItemPurchase: "purchase", ItemWebCookies: "web-cookies", ItemLookUp: "look-up", ItemQuickLook: "quick-look",
 	ItemKeepImage: "keep-image", ItemReleaseImage: "release-image",
-	ItemReleaseOffscreen: "release-offscreen",
-	ItemRequestReview:    "request-review",
-	ItemGPU:              "gpu",
+	ItemReleaseOffscreen:    "release-offscreen",
+	ItemRequestReview:       "request-review",
+	ItemGPU:                 "gpu",
+	ItemSavePreflightAnswer: "save-preflight-answer", ItemSaveFilePreflight: "save-file-preflight",
 }
 
 // TraceLine is the item as traces print it: its kind, its view and what

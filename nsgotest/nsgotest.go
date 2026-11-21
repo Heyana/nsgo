@@ -294,9 +294,10 @@ type App struct {
 	PickDirectories func(r driver.DirectoriesRequest) []driver.Directory
 	// Saves are the saves the app asked for, oldest first. SaveFile
 	// answers each with the path the user saves to, where the file is
-	// written; with none, or "", the user cancels.
-	Saves    []driver.SaveRequest
-	SaveFile func(r driver.SaveRequest) string
+	// written after any preflight check. An absent answer or "" cancels.
+	Saves            []driver.SaveRequest
+	SaveFile         func(r driver.SaveRequest) string
+	saveDestinations map[saveKey]saveDestination
 	// OpenedFiles are the files the app opened in other apps, oldest
 	// first. OpenFile answers whether an app opens each; every one does
 	// when it is nil.

@@ -445,17 +445,25 @@ final class Services {
         final String from;
         /** Whether it picks a folder. */
         final boolean folder;
+        /** The proposed document name and MIME type for a preflight save. */
+        final String saveName, saveMime;
 
         Documents(long count, int limit, String from, boolean folder) {
+            this(count, limit, from, folder, null, null);
+        }
+
+        Documents(long count, int limit, String from, boolean folder, String saveName, String saveMime) {
             this.count = count;
             this.limit = Math.max(limit, 1);
             this.from = from;
             this.folder = folder;
+            this.saveName = saveName;
+            this.saveMime = saveMime;
         }
 
         /** The request code of the activity that answers it. */
         int request() {
-            return folder ? FOLDER_REQUEST : from == null ? FILES_REQUEST : SAVE_REQUEST;
+            return folder || saveName != null ? FOLDER_REQUEST : from == null ? FILES_REQUEST : SAVE_REQUEST;
         }
     }
 
@@ -622,12 +630,34 @@ final class Services {
             if (o == null) throw new IOException("no stream for " + to);
             copy(in, o);
         } catch (IOException | RuntimeException e) {
-            try {
-                android.provider.DocumentsContract.deleteDocument(resolver, to);
-            } catch (Exception ignored) {
-                // The provider keeps it; nothing more to do.
-            }
+            deleteCreatedDocument(resolver, to);
             throw e instanceof IOException ? (IOException) e : new IOException(e.getMessage(), e);
+        }
+    }
+
+    /** Creates and writes the approved name under the user's directory grant. */
+    static Uri createSave(Context context, Documents d, Uri tree) throws IOException {
+        ContentResolver resolver = context.getContentResolver();
+        Uri folder = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree));
+        Uri created = DocumentsContract.createDocument(resolver, folder, d.saveMime, d.saveName);
+        if (created == null) throw new IOException("the document provider could not create " + d.saveName);
+        try (Cursor cursor = resolver.query(created, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor == null || !cursor.moveToFirst() || !d.saveName.equals(cursor.getString(0))) {
+                throw new IOException("the document provider changed the approved file name");
+            }
+        } catch (IOException | RuntimeException e) {
+            deleteCreatedDocument(resolver, created);
+            throw e instanceof IOException ? (IOException) e : new IOException(e.getMessage(), e);
+        }
+        save(context, d.from, created);
+        return created;
+    }
+
+    private static void deleteCreatedDocument(ContentResolver resolver, Uri document) {
+        try {
+            DocumentsContract.deleteDocument(resolver, document);
+        } catch (Exception ignored) {
+            // The provider did not remove the document it created.
         }
     }
 

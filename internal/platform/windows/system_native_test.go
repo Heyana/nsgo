@@ -518,16 +518,26 @@ func TestSaveDialogStartsInFolder(t *testing.T) {
 	previousAnswers := dialogAnswers
 	dialogAnswers = status
 	t.Cleanup(func() { dialogAnswers = previousAnswers })
-	dir := t.TempDir()
+	start := t.TempDir()
+	dir, err := filepath.EvalSymlinks(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The shell returns the long path even when TEMP uses an 8.3 name.
+	path := filepath.Join(dir, "report.txt")
 	cx.Post(func() {
-		cx.SaveFile(core.SaveOptions{Name: "report.txt", Data: []byte("notes"), Start: dir}, func(saved bool, path string, err error) {
+		cx.SaveFile(core.SaveOptions{Name: "report.txt", Data: []byte("notes"), Start: start, Accept: func(chosen string) error {
+			if !strings.EqualFold(chosen, path) {
+				return fmt.Errorf("preflight destination %q, want %q", chosen, path)
+			}
+			return nil
+		}}, func(saved bool, path string, err error) {
 			status <- fmt.Sprintf("%v %q %v", saved, path, err)
 		})
 	})
 	dlg, _ := fileDialog(t, hwnd)
 	const idOK = 1
 	postMessageW.Call(dlg, wmCommand, idOK, 0)
-	path := filepath.Join(dir, "report.txt")
 	select {
 	case got := <-status:
 		if want := fmt.Sprintf("true %q <nil>", path); !strings.EqualFold(got, want) {

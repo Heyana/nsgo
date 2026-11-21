@@ -551,22 +551,15 @@ func (w *window) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 func (w *window) saveFile(r driver.SaveRequest, id uint32) {
 	w.queueDialog(func() {
 		path, err := w.saveDialog(r.Name, r.Start)
-		ev := driver.Event{Kind: driver.EventFiles, Count: id}
 		if err != nil || path == "" {
+			ev := driver.Event{Kind: driver.EventFiles, Count: id}
 			if err != nil {
 				ev.Text = err.Error()
 			}
 			w.engine.Dispatch(ev)
 			return
 		}
-		go func() {
-			if err := r.SaveTo(path); err != nil {
-				ev.Text = err.Error()
-			} else {
-				ev.Finished, ev.Data = true, path
-			}
-			w.engine.Dispatch(ev)
-		}()
+		go w.saves.Save(r, id, path, w.engine.Dispatch)
 	})
 }
 

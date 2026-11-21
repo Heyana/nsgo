@@ -372,13 +372,7 @@ func (s *surface) saveFile(r driver.SaveRequest, id uint32) {
 			return
 		}
 		path := apple.GoString(panel.Send(sel("URL")).Send(sel("path")))
-		go func() {
-			ev := driver.Event{Kind: driver.EventFiles, Count: id, Finished: true, Data: path}
-			if err := r.SaveTo(path); err != nil {
-				ev.Finished, ev.Text, ev.Data = false, err.Error(), nil
-			}
-			s.engine.Dispatch(ev)
-		}()
+		go s.saves.Save(r, id, path, s.engine.Dispatch)
 	})
 	panel.Send(sel("beginSheetModalForWindow:completionHandler:"), s.window, done)
 	done.Release()

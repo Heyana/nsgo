@@ -357,6 +357,7 @@ type window struct {
 	batch  uint64 // batches applied
 	hwnd   uintptr
 	title  string
+	saves  driver.SavePreflights
 	// primary is the backend's own surface. Opened surfaces share its engine
 	// and message loop, but closing one must not end the process.
 	primary    bool
@@ -1372,6 +1373,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemSaveFile:
 			w.saveFile(*it.Save, it.Count)
+			continue
+		case driver.ItemSavePreflightAnswer:
+			w.saves.Answer(*it)
 			continue
 		case driver.ItemPopupMenu:
 			w.popupMenu(it.Menu, it.Point, it.Count)

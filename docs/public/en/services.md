@@ -92,6 +92,8 @@ cx.PickImages(core.PickOptions{Limit: 1, MaxDimension: 2048}, func(files []core.
 
 Set `core.SaveOptions.Start` to an existing absolute folder to open the save dialog there on macOS, Windows, Linux and iOS. With an empty or unusable hint, or on other targets, the system chooses the folder.
 
+Set `core.SaveOptions.Accept` to validate the chosen destination before writing. It runs on the engine's goroutine. Returning an error completes the save with `saved == false`, the destination and that error. The desktop dialog closes when the user chooses a destination. Android lets the user choose a folder and supplies a tree URI with the requested file name as its `name` query parameter. It creates the document after approval and reports the new document's URI on success. The platform abandons the write if the check does not answer within five seconds. iOS and HarmonyOS report an error for saves requiring a check. The web has no destination path and uses its ordinary save flow.
+
 ## Storage
 
 `cx.Storage()` is the app's key-value storage, kept on the device and shared by every graph of the app. Reads are synchronous and read inside a computation subscribe it to changes; `SetItem` returns a `core.StorageFullError` past the quota (`core.StorageQuota`, 5 MiB by default). It is a plain file any program of the user's can read, so keep tokens and passwords in [secrets](#secrets) instead.

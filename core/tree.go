@@ -2345,6 +2345,9 @@ func (t *Tree) Dispatch(ev driver.Event) {
 	case driver.EventClipboard, driver.EventOpenURL, driver.EventPick, driver.EventFiles, driver.EventUpdate, driver.EventWebCookies:
 		t.answer(ev)
 		return
+	case driver.EventSavePreflight:
+		t.answerSavePreflight(ev)
+		return
 	case driver.EventMenuClosed:
 		t.popupClosed(ev.Count, true)
 		return

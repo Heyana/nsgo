@@ -351,6 +351,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			case driver.EventFiles:
 				if s.pickedFolders(answerKey(from, ev.Count)) {
 					ev.Data = s.readFolders(data)
+				} else if strings.HasPrefix(data, "content://") {
+					ev.Data = data
 				} else {
 					ev.Data = readFiles(data)
 				}
@@ -1233,7 +1235,11 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 	w.u32(uint32(len(b.Items)))
 	for i := range b.Items {
 		it := &b.Items[i]
-		w.byte(byte(it.Kind))
+		kind := it.Kind
+		if kind == driver.ItemSaveFile && it.Save.Preflight {
+			kind = driver.ItemSaveFilePreflight
+		}
+		w.byte(byte(kind))
 		w.u32(uint32(it.ID))
 		switch it.Kind {
 		case driver.ItemCreate:
@@ -1465,6 +1471,10 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			w.str(it.Save.Path)
 			w.str(it.Save.Name)
 			w.str(it.Save.MIME)
+		case driver.ItemSavePreflightAnswer:
+			w.u32(it.Count)
+			w.flags(it.On)
+			w.str(it.Value)
 		case driver.ItemOpenFile:
 			// The file, the name the app opening it sees and its type.
 			w.u32(it.Count)

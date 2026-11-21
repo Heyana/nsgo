@@ -102,6 +102,7 @@ type window struct {
 	batch   uint64  // batches applied
 	win     uintptr // GtkWindow, 0 for an embedded surface
 	surface uintptr // the NsgoView holding the root view
+	saves   driver.SavePreflights
 	// primary is the backend's own surface. Opened surfaces share the GTK main loop, but closing one must not end the app.
 	primary bool
 	// opener is the app's own window for a surface the app opened, which goes when that window stops (stop).
@@ -1028,6 +1029,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemSaveFile:
 			w.saveFile(*it.Save, it.Count)
+			continue
+		case driver.ItemSavePreflightAnswer:
+			w.saves.Answer(*it)
 			continue
 		case driver.ItemPopupMenu:
 			w.popupMenu(it.Menu, it.Point, it.Count)

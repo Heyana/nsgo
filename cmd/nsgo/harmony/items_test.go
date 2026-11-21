@@ -39,12 +39,13 @@ var unsupportedItems = map[string]string{
 		ItemSetLaunchAtLogin ItemOpenSurface ItemQuit ItemTray ItemTrayMenu
 		ItemWindow ItemHotKeys ItemQuitResponse ItemDockMenu ItemRecentFile
 		ItemQuickLook`,
-	"Apple only": `ItemAppleCredentialState ItemSignInWithApple`,
+	"Apple only":        `ItemAppleCredentialState ItemSignInWithApple`,
+	"Android wire only": `ItemSaveFilePreflight`,
 	// Services main added after this target, which no HarmonyOS kit answers here yet.
 	"services added since": `ItemAuthSession ItemPurchase ItemSensor ItemSpeak
 		ItemWebCookies ItemLookUp ItemPictureInPicture ItemPictureInPictureCommand
 		ItemScanCode ItemOrientation ItemKeepImage ItemReleaseImage ItemReleaseOffscreen
-		ItemRequestReview`,
+		ItemRequestReview ItemSavePreflightAnswer`,
 	// The core answers these before the platform sees them: it resolves a
 	// path with os.Stat, which js/wasm does not implement, answers the
 	// install family itself off Android, and sends no audio where the
@@ -73,7 +74,7 @@ var unsupportedEvents = map[string]string{
 	"Apple only": `EventSignInWithApple EventOpenScene`,
 	// Services main added after this target, which no HarmonyOS kit answers here yet.
 	"services added since": `EventAuthSession EventOpenLinks EventPurchase
-		EventPurchaseUpdate EventSensor EventSpeak EventWebCookies EventGPU`,
+		EventPurchaseUpdate EventSensor EventSpeak EventWebCookies EventGPU EventSavePreflight`,
 	// The app hears neither: the core sends no audio where the environment
 	// says none, and asks about a quit only where the platform ends apps
 	// itself.

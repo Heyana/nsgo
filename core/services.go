@@ -60,22 +60,41 @@ func (t *Tree) answerAlert(id uint32, index int) {
 
 // wait is a request the platform answers with an event.
 type wait struct {
-	owner *Scope
-	done  func(driver.Event)
+	owner     *Scope
+	done      func(driver.Event)
+	preflight func(string)
 }
 
 // request numbers item, sends it and calls done with the event that
 // answers it, under the current owner, or the root's when that owner is
 // gone by then.
-func (t *Tree) request(cx *Scope, item driver.MountItem, done func(driver.Event)) {
+func (t *Tree) request(cx *Scope, item driver.MountItem, done func(driver.Event)) uint32 {
 	t.alertID++
 	item.Count = t.alertID
 	if t.waits == nil {
 		t.waits = map[uint32]wait{}
 	}
-	t.waits[item.Count] = wait{cx.current(), done}
+	t.waits[item.Count] = wait{owner: cx.current(), done: done}
 	t.commands = append(t.commands, item)
 	t.changed = true
+	return item.Count
+}
+
+// answerSavePreflight runs the check once and keeps the wait for the save's
+// final result. Like answer, it uses the root if the requesting owner closed.
+func (t *Tree) answerSavePreflight(ev driver.Event) {
+	w := t.waits[ev.Count]
+	if w.preflight == nil {
+		return
+	}
+	check := w.preflight
+	w.preflight = nil
+	t.waits[ev.Count] = w
+	owner := w.owner
+	if owner.disposed {
+		owner = t.root
+	}
+	t.within(owner, func() { check(ev.Text) })
 }
 
 // answer runs the wait ev answers, once.
@@ -612,6 +631,15 @@ type SaveOptions struct {
 	Start string
 	Path  string
 	Data  []byte
+	// Preflight asks the platform to check the chosen destination before saving.
+	// Setting Accept also requests this check.
+	Preflight bool
+	// Accept runs on the engine's goroutine after the user chooses where to
+	// save. A nil return approves the destination. If it returns an error,
+	// SaveFile reports that error and the destination without writing.
+	// Android passes the chosen tree URI with the app's file name in its
+	// name query parameter. The web has no destination path and skips Accept.
+	Accept func(path string) error
 }
 
 // SaveFile shows the system's save dialog and copies the file o names to
@@ -621,7 +649,7 @@ type SaveOptions struct {
 // save that fails leaves nothing where the user chose, or the file that
 // was there. The web has no files on disk, so it saves Data: a save
 // picker where the browser has one, else a download, which counts as
-// saved.
+// saved. An iOS or HarmonyOS save requiring preflight reports an error.
 func (cx *Scope) SaveFile(o SaveOptions, done func(saved bool, path string, err error)) {
 	answer := func(saved bool, path string, err error) {
 		if done != nil {
@@ -632,7 +660,7 @@ func (cx *Scope) SaveFile(o SaveOptions, done func(saved bool, path string, err 
 	if t == nil || cx.denied(servicePicker, "") {
 		return
 	}
-	r := driver.SaveRequest{Name: o.Name, MIME: o.MIME, Path: o.Path, Data: o.Data}
+	r := driver.SaveRequest{Name: o.Name, MIME: o.MIME, Path: o.Path, Data: o.Data, Preflight: o.Preflight || o.Accept != nil}
 	if filepath.IsAbs(o.Start) {
 		r.Start = o.Start
 	}
@@ -654,14 +682,39 @@ func (cx *Scope) SaveFile(o SaveOptions, done func(saved bool, path string, err 
 	if r.MIME == "" {
 		r.MIME = driver.MIMEForFile(r.Name)
 	}
-	t.request(cx, driver.MountItem{Kind: driver.ItemSaveFile, Save: &r}, func(ev driver.Event) {
-		if ev.Text != "" {
-			answer(false, "", errors.New(ev.Text))
+	var denied error
+	id := t.request(cx, driver.MountItem{Kind: driver.ItemSaveFile, Save: &r}, func(ev driver.Event) {
+		path, _ := ev.Data.(string)
+		if denied != nil && !ev.Finished && path != "" && ev.Text == denied.Error() {
+			answer(false, path, denied)
 			return
 		}
-		path, _ := ev.Data.(string)
+		if ev.Text != "" {
+			answer(false, path, errors.New(ev.Text))
+			return
+		}
 		answer(ev.Finished, path, nil)
 	})
+	if r.Preflight {
+		w := t.waits[id]
+		w.preflight = func(path string) {
+			denied = errors.New("the save preflight did not finish")
+			defer func() {
+				response := driver.MountItem{Kind: driver.ItemSavePreflightAnswer, Count: id, On: denied == nil}
+				if denied != nil {
+					response.Value = denied.Error()
+				}
+				t.commands = append(t.commands, response)
+				t.changed = true
+			}()
+			if o.Accept == nil {
+				denied = nil
+				return
+			}
+			denied = o.Accept(path)
+		}
+		t.waits[id] = w
+	}
 }
 
 // resolveShared returns f as the platform hands it on, with an absolute

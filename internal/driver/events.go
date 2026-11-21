@@ -280,6 +280,9 @@ const (
 	EventMouseUp
 	// EventGPU reports a GPU view lifecycle, resize, error, or readback event for view ID (Data, a *GPUEvent). It is never in an EventMask.
 	EventGPU
+	// EventSavePreflight asks the app to check the save destination in Text
+	// for ItemSaveFile Count. ItemSavePreflightAnswer allows or refuses it.
+	EventSavePreflight
 )
 
 // EventVideoPause reports that the platform paused video ID, not the app's Paused: Index is why (VideoPauseInterruption, ...). An EventMask has no room for another kind, so it shares EventImageInfo's, an answer that names no view and is never in a mask; Android's Protocol.java mirrors it.

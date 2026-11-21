@@ -191,6 +191,7 @@ type view struct {
 
 type surface struct {
 	sensors apple.Sensors
+	saves   driver.SavePreflights
 
 	// openFrame is the frame the window opened at, until its first batch,
 	// whose title bar would change it.
@@ -2103,6 +2104,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemSaveFile:
 			s.saveFile(*it.Save, it.Count)
+			continue
+		case driver.ItemSavePreflightAnswer:
+			s.saves.Answer(*it)
 			continue
 		case driver.ItemPopupMenu:
 			s.popupMenu(it.Menu, it.Point, it.Count)

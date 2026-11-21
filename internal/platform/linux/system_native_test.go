@@ -362,7 +362,12 @@ func TestFileDialogsReachGTK(t *testing.T) {
 	exportDir := t.TempDir()
 	copied := filepath.Join(exportDir, "copy.txt")
 	cx.Post(func() {
-		cx.SaveFile(core.SaveOptions{Name: "copy.txt", Path: notes, Start: exportDir}, func(saved bool, path string, err error) {
+		cx.SaveFile(core.SaveOptions{Name: "copy.txt", Path: notes, Start: exportDir, Accept: func(path string) error {
+			if path != copied {
+				return fmt.Errorf("preflight destination %q, want %q", path, copied)
+			}
+			return nil
+		}}, func(saved bool, path string, err error) {
 			status <- fmt.Sprintf("%v %q %v", saved, path, err)
 		})
 	})

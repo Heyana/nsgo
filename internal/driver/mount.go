@@ -386,6 +386,12 @@ const (
 	ItemRequestReview
 	// ItemGPU configures a KindGPU view's swapchain color/depth formats and sample count (GPU).
 	ItemGPU
+	// ItemSavePreflightAnswer answers EventSavePreflight Count. On permits
+	// the write and Value holds the reason for a refusal.
+	ItemSavePreflightAnswer
+	// ItemSaveFilePreflight is ItemSaveFile with preflight on Android's pipe.
+	// It keeps the existing save item's wire format unchanged.
+	ItemSaveFilePreflight
 )
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.

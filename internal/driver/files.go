@@ -134,7 +134,17 @@ type SaveRequest struct {
 	Start string
 	Path  string
 	Data  []byte
+	// Preflight asks the platform to report the destination before writing.
+	Preflight bool
 }
+
+const (
+	// SavePreflightTimeout bounds the time a platform holds a chosen
+	// destination awaiting the app's answer.
+	SavePreflightTimeout  = 5 * time.Second
+	SavePreflightTimedOut = "the app did not approve the save before the deadline"
+	NoSavePreflight       = "this platform cannot check a destination before saving"
+)
 
 // Open opens what r saves.
 func (r SaveRequest) Open() (io.ReadCloser, error) {

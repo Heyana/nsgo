@@ -529,6 +529,10 @@ func (m *mounter) saveFile(r *driver.SaveRequest, count uint32) {
 		m.s.bridge.Call("saved", int(count), false, "no file")
 		return
 	}
+	if r.Preflight {
+		m.s.bridge.Call("saved", int(count), false, driver.NoSavePreflight)
+		return
+	}
 	src, err := r.Open()
 	if err != nil {
 		m.s.bridge.Call("saved", int(count), false, err.Error())

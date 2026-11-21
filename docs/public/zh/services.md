@@ -92,6 +92,8 @@ cx.PickImages(core.PickOptions{Limit: 1, MaxDimension: 2048}, func(files []core.
 
 在 macOS、Windows、Linux 和 iOS 上，将 `core.SaveOptions.Start` 设为现有文件夹的绝对路径，保存对话框就会从该文件夹打开。路径为空、不可用或在其他平台上时，由系统选择起始文件夹。
 
+设置 `core.SaveOptions.Accept` 可以在写入前校验用户选定的目标。回调在引擎的 goroutine 上运行。返回错误时，保存回调收到 `saved == false`、目标和该错误。桌面对话框在用户选定目标后关闭。Android 让用户选择文件夹，传给校验回调的是树 URI，其中 `name` 查询参数为应用请求的文件名。校验通过后才创建文件，成功时返回新文档的 URI。校验超过五秒未答复，平台会放弃写入。iOS 和 HarmonyOS 对要求校验的保存返回错误。Web 没有目标路径，沿用其常规保存流程。
+
 ## 存储
 
 `cx.Storage()` 是应用的键值存储，保存在设备上，应用的每个响应式图共享它。读取是同步的，在计算中读取会让它订阅变化；超过配额时 `SetItem` 返回 `core.StorageFullError`（默认 `core.StorageQuota` 为 5 MiB）。它是一个用户的任何程序都能读取的明文文件，令牌和密码请放进[机密](#机密)。

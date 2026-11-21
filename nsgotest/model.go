@@ -839,18 +839,9 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 			a.post(ev)
 		case driver.ItemSaveFile:
-			a.Saves = append(a.Saves, *it.Save)
-			ev := driver.Event{Kind: driver.EventFiles, Count: it.Count}
-			if a.SaveFile != nil {
-				if path := a.SaveFile(*it.Save); path != "" {
-					if err := it.Save.SaveTo(path); err != nil {
-						ev.Text = err.Error()
-					} else {
-						ev.Finished, ev.Data = true, path
-					}
-				}
-			}
-			a.post(ev)
+			a.chooseSaveDestination(it)
+		case driver.ItemSavePreflightAnswer:
+			a.answerSavePreflight(it)
 		case driver.ItemOpenFile:
 			a.OpenedFiles = append(a.OpenedFiles, *it.Open)
 			opened := a.OpenFile == nil || a.OpenFile(*it.Open)
