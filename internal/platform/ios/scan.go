@@ -5,7 +5,6 @@ package ios
 import (
 	"sync"
 
-	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -13,8 +12,6 @@ import (
 )
 
 // Scanning a code: an AVCaptureSession of the back camera whose AVCaptureMetadataOutput reads the kinds of code asked for, shown full screen in its AVCaptureVideoPreviewLayer under a navigation bar with the system's Cancel button, which UIKit words in the user's language.
-
-const avFoundationPath = "/System/Library/Frameworks/AVFoundation.framework/AVFoundation"
 
 const (
 	// UIBarButtonSystemItemCancel, UIModalPresentationFullScreen and UIUserInterfaceStyleDark.
@@ -32,14 +29,12 @@ var (
 
 // scan is a scanner on screen: the request it answers, the session reading codes and the navigation controller showing it.
 type scan struct {
-	s       *surface
-	id      uint32
-	r       driver.ScanRequest
-	session objc.ID
-	output  objc.ID
-	nav     objc.ID
-	// started closes once startRunning returned, so stopRunning never comes first and leaves the camera on after a quick Cancel.
-	started chan struct{}
+	s      *surface
+	id     uint32
+	r      driver.ScanRequest
+	output objc.ID
+	nav    objc.ID
+	stop   func()
 }
 
 // scanCode has the user allow the camera, then shows the scanner, or answers with why it cannot (withCamera).
@@ -54,43 +49,15 @@ func (s *surface) scanCode(r driver.ScanRequest, id uint32) {
 
 // presentScanner starts a session of the back camera reading r's codes and presents it, returning why it could not.
 func (s *surface) presentScanner(r driver.ScanRequest, id uint32) string {
-	scanOnce.Do(registerScanner)
-	if classScanController == 0 {
-		return "AVFoundation is missing"
-	}
-	device := objc.ID(apple.Class("AVCaptureDevice")).Send(sel("defaultDeviceWithMediaType:"), apple.NSString("vide"))
+	device := apple.ScanCamera()
 	if device == 0 {
-		return "this device has no camera"
+		return driver.NoScanCamera
 	}
-	input := objc.ID(apple.Class("AVCaptureDeviceInput")).Send(sel("deviceInputWithDevice:error:"), device, objc.ID(0))
-	session := objc.ID(apple.Class("AVCaptureSession")).Send(selNew)
-	if input == 0 || !objc.Send[bool](session, sel("canAddInput:"), input) {
-		session.Send(selRelease)
-		return "the camera cannot be used"
+	scanOnce.Do(registerScanner)
+	session, output, why := apple.NewScanCapture(device, r)
+	if why != "" {
+		return why
 	}
-	session.Send(sel("addInput:"), input)
-	output := objc.ID(apple.Class("AVCaptureMetadataOutput")).Send(selNew)
-	if !objc.Send[bool](session, sel("canAddOutput:"), output) {
-		output.Send(selRelease)
-		session.Send(selRelease)
-		return "the camera cannot read codes"
-	}
-	session.Send(sel("addOutput:"), output)
-	// The types are set once the output is in the session, which says which it reads.
-	available := map[string]bool{}
-	apple.ForEach(output.Send(sel("availableMetadataObjectTypes")), func(t objc.ID) { available[apple.GoString(t)] = true })
-	types := objc.ID(apple.Class("NSMutableArray")).Send(sel("array"))
-	for _, t := range apple.MetadataTypes(r) {
-		if available[t] {
-			types.Send(sel("addObject:"), apple.NSString(t))
-		}
-	}
-	if objc.Send[uint](types, sel("count")) == 0 {
-		output.Send(selRelease)
-		session.Send(selRelease)
-		return "the camera reads none of the codes asked for"
-	}
-	output.Send(sel("setMetadataObjectTypes:"), types)
 	delegate := objc.ID(classScanDelegate).Send(selNew)
 	output.Send(sel("setMetadataObjectsDelegate:queue:"), delegate, apple.MainQueue())
 
@@ -108,22 +75,15 @@ func (s *surface) presentScanner(r driver.ScanRequest, id uint32) string {
 	nav.Send(sel("setModalPresentationStyle:"), presentationFullScreen)
 	// The bar sits over the camera's picture: dark, so its button reads in either appearance.
 	nav.Send(sel("setOverrideUserInterfaceStyle:"), interfaceStyleDark)
-	started := make(chan struct{})
-	scans[delegate] = &scan{s: s, id: id, r: r, session: session, output: output, nav: nav, started: started}
+	sc := &scan{s: s, id: id, r: r, output: output, nav: nav}
+	scans[delegate] = sc
 	s.topController().Send(sel("presentViewController:animated:completion:"), nav, true, objc.ID(0))
-	// startRunning blocks until the camera runs, which Apple asks to keep off the main thread.
-	go func() {
-		session.Send(sel("startRunning"))
-		close(started)
-	}()
+	sc.stop = apple.StartScanCapture(session, nil)
 	return ""
 }
 
 // registerScanner registers the scanner's view controller, which keeps the camera's picture filling its view, and its delegate, which hears the codes read and the Cancel button.
 func registerScanner() {
-	if _, err := purego.Dlopen(avFoundationPath, purego.RTLD_NOW|purego.RTLD_GLOBAL); err != nil || apple.Class("AVCaptureMetadataOutput") == 0 {
-		return
-	}
 	classScanController = register("NsgoScanController", apple.Class("UIViewController"), nil, []objc.MethodDef{{
 		Cmd: sel("viewDidLayoutSubviews"),
 		Fn: func(self objc.ID, _ objc.SEL) {
@@ -143,19 +103,7 @@ func registerScanner() {
 			if sc == nil {
 				return
 			}
-			var code *driver.ScannedCode
-			apple.ForEach(objects, func(o objc.ID) {
-				if code != nil || !objc.Send[bool](o, sel("respondsToSelector:"), sel("stringValue")) {
-					return
-				}
-				kind, ok := apple.MetadataKind(apple.GoString(o.Send(sel("type"))))
-				text := o.Send(sel("stringValue"))
-				// A code of binary data has no text to give.
-				if ok && sc.r.Wants(kind) && text != 0 {
-					code = &driver.ScannedCode{Kind: kind, Text: apple.GoString(text)}
-				}
-			})
-			if code != nil {
+			if code := apple.CodeFromMetadata(objects, sc.r); code != nil {
 				endScan(self, code)
 			}
 		},
@@ -175,14 +123,9 @@ func endScan(delegate objc.ID, code *driver.ScannedCode) {
 	// No more codes come to the delegate, which goes now.
 	sc.output.Send(sel("setMetadataObjectsDelegate:queue:"), objc.ID(0), objc.ID(0))
 	sc.output.Send(selRelease)
-	session, nav, started := sc.session, sc.nav, sc.started
-	go func() {
-		<-started
-		session.Send(sel("stopRunning"))
-		session.Send(selRelease)
-	}()
-	nav.Send(sel("dismissViewControllerAnimated:completion:"), true, objc.ID(0))
-	nav.Send(selRelease)
+	sc.stop()
+	sc.nav.Send(sel("dismissViewControllerAnimated:completion:"), true, objc.ID(0))
+	sc.nav.Send(selRelease)
 	delegate.Send(selRelease)
 	ev := driver.Event{Kind: driver.EventPick, Count: sc.id}
 	if code != nil {

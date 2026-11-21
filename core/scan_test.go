@@ -54,4 +54,10 @@ func TestScanCode(t *testing.T) {
 	if answered != 4 || got != nil || gotErr == nil || gotErr.Error() != "camera access denied" {
 		t.Fatalf("a failure answers %+v, %v", got, gotErr)
 	}
+	cx.ScanCode(ScanOptions{}, scan)
+	it = command(h.commit(), driver.ItemScanCode)
+	h.tree.Dispatch(driver.Event{Kind: driver.EventPick, Count: it.Count, Text: driver.NoScanCamera})
+	if answered != 5 || got != nil || !errors.Is(gotErr, ErrNoScanner) {
+		t.Fatalf("a disconnected camera answers %+v, %v", got, gotErr)
+	}
 }

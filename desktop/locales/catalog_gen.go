@@ -80,6 +80,8 @@ const (
 	textEnterFullScreen
 	textExitFullScreen
 	textClose
+	textCancel
+	textScanCode
 	textGuideDragHint
 	textPermissionAccessibility
 	textPermissionDeviceControl
@@ -142,6 +144,8 @@ var keyOfText = [numTexts]string{
 	"enterFullScreen",
 	"exitFullScreen",
 	"close",
+	"cancel",
+	"scanCode",
 	"guideDragHint",
 	"permissionAccessibility",
 	"permissionDeviceControl",
@@ -202,6 +206,8 @@ var textsEn = i18n.NewTexts(""+
 	"Enter Full Screen"+
 	"Exit Full Screen"+
 	"Close"+
+	"Cancel"+
+	"Scan Code"+
 	"Drag"+
 	"Accessibility"+
 	"Device Control and Data Access"+
@@ -259,6 +265,8 @@ var textsEn = i18n.NewTexts(""+
 		17,
 		16,
 		5,
+		6,
+		9,
 		4,
 		13,
 		30,
@@ -319,6 +327,8 @@ var textsZhHans = i18n.NewTexts(""+
 	"进入全屏幕"+
 	"退出全屏幕"+
 	"关闭"+
+	"取消"+
+	"扫码"+
 	"拖移"+
 	"辅助功能"+
 	"设备控制和数据访问"+
@@ -375,6 +385,8 @@ var textsZhHans = i18n.NewTexts(""+
 		15,
 		15,
 		15,
+		6,
+		6,
 		6,
 		6,
 		12,
@@ -710,6 +722,20 @@ func Close(cx *core.Scope) string { return For(cx).Close() }
 
 // Close is the package's Close in the language of msgs.
 func (msgs Messages) Close() string { return msgs.text(textClose) }
+
+// Cancel says "Cancel"
+// in the language the app shows under cx.
+func Cancel(cx *core.Scope) string { return For(cx).Cancel() }
+
+// Cancel is the package's Cancel in the language of msgs.
+func (msgs Messages) Cancel() string { return msgs.text(textCancel) }
+
+// ScanCode says "Scan Code"
+// in the language the app shows under cx.
+func ScanCode(cx *core.Scope) string { return For(cx).ScanCode() }
+
+// ScanCode is the package's ScanCode in the language of msgs.
+func (msgs Messages) ScanCode() string { return msgs.text(textScanCode) }
 
 // GuideDrag says "Drag {app} to the list above to allow {permission}."
 // in the language the app shows under cx.

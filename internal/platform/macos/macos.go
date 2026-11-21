@@ -255,6 +255,7 @@ type surface struct {
 	appearance, host driver.Appearance
 	engine           *engine.Engine
 	awake            awakeState
+	scanner          *scanner
 	audio            *apple.Audio // the engine's sounds and players, made with its first ItemAudio and closed with the surface
 	batches          queue.Batches
 	views            []*view            // index is NodeID
@@ -985,7 +986,11 @@ func (s *surface) close() {
 		return
 	}
 	s.closed = true
+
 	s.releaseChildWindows()
+	if s.scanner != nil {
+		s.scanner.finish(nil, "")
+	}
 	if dockMenu.target == s {
 		clearDockMenu()
 	}
@@ -1174,7 +1179,9 @@ func (s *surface) environment() driver.Environment {
 		IncreaseContrast: objc.Send[bool](ws, sel("accessibilityDisplayShouldIncreaseContrast")),
 		ScreenReader:     objc.Send[bool](ws, sel("isVoiceOverEnabled")),
 		ScreenColor:      true,
+
 		DiscoverServices: true,
+		ScanCode:         apple.ScanCamera() != 0,
 		Speech:           apple.SpeechAvailable(),
 		Speak:            apple.SpeakAvailable(),
 		Audio:            apple.AudioAvailable(),
@@ -2126,6 +2133,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemPickImages:
 			s.pickImages(*it.Pick, it.Count)
+			continue
+		case driver.ItemScanCode:
+			s.scanCode(*it.Scan, it.Count)
 			continue
 		case driver.ItemPickFiles:
 			s.pickFiles(*it.Files, it.Count)

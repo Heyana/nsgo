@@ -82,14 +82,15 @@ The desktops show no camera ([roadmap](../roadmap.md#finish-the-existing-platfor
 
 ## Scanning a code
 
-`ScanCode` shows the camera full screen and answers with the first code it reads of the kinds `ScanOptions.Kinds` asks for (a QR code alone by default), as `ItemScanCode` with a `ScanRequest`, answered by `EventPick` carrying a `*ScannedCode` (its kind and text), none when the user closes the scanner, and `Text` for a failure. It shares the picker's gate and the camera's permission. `Env.CanScanCode` says the platform shows a scanner; elsewhere `ScanCode` fails with `ErrNoScanner` without asking it. A code's binary data is not given, only its text.
+`ScanCode` shows the camera and answers with the first code it reads of the kinds `ScanOptions.Kinds` asks for (a QR code alone by default), as `ItemScanCode` with a `ScanRequest`, answered by `EventPick` carrying a `*ScannedCode` (its kind and text), none when the user closes the scanner, and `Text` for a failure. It shares the picker's gate and the camera's permission. `Env.CanScanCode` says the platform shows a scanner; elsewhere `ScanCode` fails with `ErrNoScanner` without asking it. A code's binary data is not given, only its text.
 
 | Target | Scanner | Permission |
 | --- | --- | --- |
 | Android | Camera2's preview of the back camera in a full-screen dialog with a close button worded by the system (`Scanner.java`), sending the luminance of a frame up to 960 pixels long every 200 ms as `msgScanReport`; Go reads them with gozxing (`internal/platform/codescan`), every kind but PDF417, turning a frame a quarter for a barcode across it, and stops the scanner with `msgScan`. Android reads no codes itself without Google Play services, which the runtime does not link | `CAMERA`, which the app's manifest must ask for (`android.permissions`), asked once; without it `Env.CanScanCode` is false |
 | iOS | An `AVCaptureSession` of the default camera whose `AVCaptureMetadataOutput` reads the kinds asked for, those it supports (`apple.MetadataTypes`), in an `AVCaptureVideoPreviewLayer` presented full screen in a navigation controller with the system's Cancel button, which UIKit words; not on Apple TV or the simulator | As `TakePhoto`'s (`withCamera`) |
+| macOS | The same AVFoundation capture as iOS, with an AppKit sheet over the requesting window when it is visible or a scanner window otherwise. The capture starts off the main thread and stops when the sheet closes or sends a code. | An available video device and `NSCameraUsageDescription` in the app's Info.plist |
 
-macOS, the desktops and the web show no scanner ([roadmap](../roadmap.md#finish-the-existing-platforms)).
+Windows, Linux and the web scanning remain on the [roadmap](../roadmap.md#finish-the-existing-platforms).
 
 ## Files
 

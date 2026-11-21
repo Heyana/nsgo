@@ -18,6 +18,9 @@ const (
 	CodeITF
 )
 
+// NoScanCamera says that the camera became unavailable before scanning.
+const NoScanCamera = "this device has no camera to scan a code with"
+
 // ScanRequest is ItemScanCode's request: the kinds of code to read, a QR code alone when empty.
 type ScanRequest struct {
 	Kinds []CodeKind

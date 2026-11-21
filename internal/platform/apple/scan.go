@@ -3,6 +3,9 @@
 package apple
 
 import (
+	"sync"
+
+	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -46,3 +49,92 @@ func MetadataKind(t string) (driver.CodeKind, bool) {
 
 // MainQueue is the main dispatch queue, as AVFoundation's delegates take it.
 func MainQueue() objc.ID { return objc.ID(mainQueue) }
+
+var loadScanCapture = sync.OnceValue(func() bool {
+	const path = "/System/Library/Frameworks/AVFoundation.framework/AVFoundation"
+	_, err := purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	return err == nil && Class("AVCaptureMetadataOutput") != 0
+})
+
+// ScanCamera returns the default video capture device, when available.
+func ScanCamera() objc.ID {
+	if !loadScanCapture() {
+		return 0
+	}
+	return objc.ID(Class("AVCaptureDevice")).Send(sel("defaultDeviceWithMediaType:"), NSString("vide"))
+}
+
+// NewScanCapture configures a session to read the requested metadata
+// types. The caller owns the returned session and metadata output.
+func NewScanCapture(device objc.ID, r driver.ScanRequest) (session, output objc.ID, why string) {
+	input := objc.ID(Class("AVCaptureDeviceInput")).Send(sel("deviceInputWithDevice:error:"), device, objc.ID(0))
+	session = objc.ID(Class("AVCaptureSession")).Send(sel("new"))
+	if input == 0 || !objc.Send[bool](session, sel("canAddInput:"), input) {
+		session.Send(sel("release"))
+		return 0, 0, "the camera cannot be used"
+	}
+	session.Send(sel("addInput:"), input)
+	output = objc.ID(Class("AVCaptureMetadataOutput")).Send(sel("new"))
+	if !objc.Send[bool](session, sel("canAddOutput:"), output) {
+		output.Send(sel("release"))
+		session.Send(sel("release"))
+		return 0, 0, "the camera cannot read codes"
+	}
+	session.Send(sel("addOutput:"), output)
+
+	available := map[string]bool{}
+	ForEach(output.Send(sel("availableMetadataObjectTypes")), func(t objc.ID) { available[GoString(t)] = true })
+	types := objc.ID(Class("NSMutableArray")).Send(sel("array"))
+	for _, t := range MetadataTypes(r) {
+		if available[t] {
+			types.Send(sel("addObject:"), NSString(t))
+		}
+	}
+	if objc.Send[uint](types, sel("count")) == 0 {
+		output.Send(sel("release"))
+		session.Send(sel("release"))
+		return 0, 0, "the camera reads none of the codes asked for"
+	}
+	output.Send(sel("setMetadataObjectTypes:"), types)
+	return session, output, ""
+}
+
+// CodeFromMetadata returns the first requested code with a text value.
+func CodeFromMetadata(objects objc.ID, r driver.ScanRequest) *driver.ScannedCode {
+	var code *driver.ScannedCode
+	ForEach(objects, func(o objc.ID) {
+		if code != nil || !objc.Send[bool](o, sel("respondsToSelector:"), sel("stringValue")) {
+			return
+		}
+		kind, ok := MetadataKind(GoString(o.Send(sel("type"))))
+		text := o.Send(sel("stringValue"))
+		if ok && r.Wants(kind) && text != 0 {
+			code = &driver.ScannedCode{Kind: kind, Text: GoString(text)}
+		}
+	})
+	return code
+}
+
+// StartScanCapture takes ownership of session and starts it off the main
+// thread. Stop releases the session after startup returns, so a quick
+// cancellation cannot leave the camera running. Failed runs on main.
+func StartScanCapture(session objc.ID, failed func()) (stop func()) {
+	started := make(chan struct{})
+	go withPool(func() {
+		session.Send(sel("startRunning"))
+		running := objc.Send[bool](session, sel("isRunning"))
+		close(started)
+		if !running && failed != nil {
+			OnMain(failed)
+		}
+	})
+	return func() {
+		go func() {
+			<-started
+			withPool(func() {
+				session.Send(sel("stopRunning"))
+				session.Send(sel("release"))
+			})
+		}()
+	}
+}
