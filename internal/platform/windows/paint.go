@@ -575,6 +575,9 @@ func (w *window) composedPlaced(drawn []composed, layers []int) {
 // lost drops the swap chains and the devices, and draws again on new
 // ones.
 func (w *window) lost() {
+	for _, other := range windows {
+		other.notifyGPUDeviceLost(dxgiHRErrDeviceRemoved, "Direct3D 11 device removed or reset")
+	}
 	if w.swap != nil {
 		w.swap.release()
 		w.swap = nil
@@ -584,6 +587,9 @@ func (w *window) lost() {
 	}
 	deviceLost()
 	w.redrawAll()
+	for _, other := range windows {
+		other.post(other.recoverGPUViews)
+	}
 }
 
 // placing is where a view draws in a pass: its style, its opacity and
@@ -772,6 +778,8 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 		}
 	case driver.KindShader:
 		p.drawShader(v, width, height)
+	case driver.KindGPU:
+		p.drawGPU(v, width, height)
 	case driver.KindWeb:
 		if wv := v.web; wv != nil && wv.composed() {
 			corners := float32(0)

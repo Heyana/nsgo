@@ -34,9 +34,10 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 		return PipelineSource{}, fmt.Errorf("hlsl: nil program")
 	}
 	w := &pipeWriter{
-		p:           p,
-		structNames: map[string]string{},
-		bindingReg:  make([]uint32, len(p.Bindings)),
+		p:              p,
+		structNames:    map[string]string{},
+		needStructCtor: map[string]bool{},
+		bindingReg:     make([]uint32, len(p.Bindings)),
 	}
 	var bReg, tReg, sReg uint32
 	for i, b := range p.Bindings {
@@ -89,11 +90,24 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 	var header []string
 	header = append(header, common...)
 	for i, st := range w.structTypes {
-		header = append(header, fmt.Sprintf("struct S%d {", i))
+		name := fmt.Sprintf("S%d", i)
+		header = append(header, fmt.Sprintf("struct %s {", name))
 		for j, m := range st.Sub {
 			header = append(header, fmt.Sprintf("\t%s;", w.declVar(m, fmt.Sprintf("M%d", j))))
 		}
 		header = append(header, "};", "")
+		if w.needStructCtor[name] {
+			params := make([]string, len(st.Sub))
+			for j, m := range st.Sub {
+				params[j] = w.declVar(m, fmt.Sprintf("a%d", j))
+			}
+			header = append(header, fmt.Sprintf("%s __make_%s(%s) {", name, name, strings.Join(params, ", ")))
+			header = append(header, fmt.Sprintf("\t%s r = (%s)0;", name, name))
+			for j := range st.Sub {
+				header = append(header, fmt.Sprintf("\tr.M%d = a%d;", j, j))
+			}
+			header = append(header, "\treturn r;", "}", "")
+		}
 	}
 	for i, b := range p.Bindings {
 		reg := w.bindingReg[i]
@@ -136,11 +150,12 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 }
 
 type pipeWriter struct {
-	p           *shaderir.Program
-	structNames map[string]string
-	structTypes []shaderir.Type
-	bindingReg  []uint32
-	regs        []RegisterBinding
+	p              *shaderir.Program
+	structNames    map[string]string
+	structTypes    []shaderir.Type
+	needStructCtor map[string]bool
+	bindingReg     []uint32
+	regs           []RegisterBinding
 }
 
 func (w *pipeWriter) structName(t shaderir.Type) string {
@@ -202,8 +217,11 @@ func (w *pipeWriter) emitVaryingsStruct() []string {
 		interp := ""
 		if i < len(w.p.VaryingMeta) {
 			loc = w.p.VaryingMeta[i].Location
-			if w.p.VaryingMeta[i].Interpolation == shaderir.InterpFlat {
+			switch w.p.VaryingMeta[i].Interpolation {
+			case shaderir.InterpFlat:
 				interp = "nointerpolation "
+			case shaderir.InterpLinear:
+				interp = "noperspective "
 			}
 		}
 		lines = append(lines, fmt.Sprintf("\t%s%s : TEXCOORD%d;", interp, w.declVar(v, fmt.Sprintf("v%d", i)), loc))
@@ -338,6 +356,9 @@ func (w *pipeWriter) emitBlock(top, b *shaderir.Block, level int, stage string) 
 			}
 		case shaderir.Discard:
 			lines = append(lines, indent+"discard;")
+			if stage == "fragment" {
+				lines = append(lines, indent+"return (float4)0;")
+			}
 		}
 	}
 	return lines
@@ -367,17 +388,25 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 		if len(e.Exprs) == 0 {
 			return fmt.Sprintf("(%s)0", name)
 		}
+		w.needStructCtor[name] = true
 		args := make([]string, len(e.Exprs))
 		for i, a := range e.Exprs {
 			args[i] = w.emitExpr(a, stage)
 		}
-		return fmt.Sprintf("(%s){%s}", name, strings.Join(args, ", "))
+		return fmt.Sprintf("__make_%s(%s)", name, strings.Join(args, ", "))
 	case shaderir.Unary:
 		return fmt.Sprintf("(%s%s)", opString(e.Op), w.emitExpr(e.Exprs[0], stage))
 	case shaderir.Binary:
-		if e.Op == shaderir.MatrixMul {
-			// HLSL uses mul(lhs, rhs) for matrix-vector / matrix-matrix multiplication.
+		switch e.Op {
+		case shaderir.MatrixMul:
+			// HLSL uses mul(lhs, rhs) for column-major cbuffer matrix * vector / matrix multiplication.
 			return fmt.Sprintf("mul(%s, %s)", w.emitExpr(e.Exprs[0], stage), w.emitExpr(e.Exprs[1], stage))
+		case shaderir.VectorEqualOp:
+			return fmt.Sprintf("all((%s) == (%s))", w.emitExpr(e.Exprs[0], stage), w.emitExpr(e.Exprs[1], stage))
+		case shaderir.VectorNotEqualOp:
+			return fmt.Sprintf("!all((%s) == (%s))", w.emitExpr(e.Exprs[0], stage), w.emitExpr(e.Exprs[1], stage))
+		case shaderir.AndNot:
+			return fmt.Sprintf("((%s) & ~(%s))", w.emitExpr(e.Exprs[0], stage), w.emitExpr(e.Exprs[1], stage))
 		}
 		return fmt.Sprintf("(%s %s %s)", w.emitExpr(e.Exprs[0], stage), opString(e.Op), w.emitExpr(e.Exprs[1], stage))
 	case shaderir.Selection:
@@ -443,6 +472,40 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 			return fmt.Sprintf("uint2(0u, 0u) /* %s */", args[0])
 		case shaderir.Atan2:
 			return fmt.Sprintf("atan2(%s)", strings.Join(args, ", "))
+		case shaderir.Vec2F, shaderir.Vec3F, shaderir.Vec4F,
+			shaderir.IVec2F, shaderir.IVec3F, shaderir.IVec4F,
+			shaderir.UVec2F, shaderir.UVec3F, shaderir.UVec4F:
+			var cc compileContext
+			fn := cc.builtinFuncString(callee.BuiltinFunc)
+			if len(args) == 1 {
+				// HLSL SM 5.0 rejects single-argument vector constructors like float3(x); use a cast.
+				return fmt.Sprintf("(%s)(%s)", fn, args[0])
+			}
+			return fmt.Sprintf("%s(%s)", fn, strings.Join(args, ", "))
+		case shaderir.Mat2F:
+			if len(args) == 1 {
+				return fmt.Sprintf("float2x2FromScalar(%s)", args[0])
+			}
+			// WGSL constructs matrices column-by-column whereas HLSL floatNxN(...) takes rows.
+			return fmt.Sprintf("transpose(float2x2(%s))", strings.Join(args, ", "))
+		case shaderir.Mat3F:
+			if len(args) == 1 {
+				return fmt.Sprintf("float3x3FromScalar(%s)", args[0])
+			}
+			return fmt.Sprintf("transpose(float3x3(%s))", strings.Join(args, ", "))
+		case shaderir.Mat4F:
+			if len(args) == 1 {
+				return fmt.Sprintf("float4x4FromScalar(%s)", args[0])
+			}
+			return fmt.Sprintf("transpose(float4x4(%s))", strings.Join(args, ", "))
+		case shaderir.Min, shaderir.Max:
+			var cc compileContext
+			fn := cc.builtinFuncString(callee.BuiltinFunc)
+			res := args[0]
+			for i := 1; i < len(args); i++ {
+				res = fmt.Sprintf("%s(%s, %s)", fn, res, args[i])
+			}
+			return res
 		default:
 			var cc compileContext
 			return fmt.Sprintf("%s(%s)", cc.builtinFuncString(callee.BuiltinFunc), strings.Join(args, ", "))

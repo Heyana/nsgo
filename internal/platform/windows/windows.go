@@ -169,7 +169,8 @@ const (
 	wmAlert               = 0x8000 + 3 // alerts are queued
 	wmFrame               = 0x8000 + 4 // the app waits for a display frame
 	wmSysCommand          = 0x0112
-	scClose               = 0xF060 // SC_CLOSE, in WM_SYSCOMMAND's wParam
+	scClose               = 0xF060      // SC_CLOSE, in WM_SYSCOMMAND's wParam
+	wmGPU                 = 0x8000 + 10 // off-commit GPUFrame batches are queued
 
 	wsOverlappedWindow = 0x00CF0000
 	wsCaption          = 0x00C00000
@@ -308,7 +309,8 @@ type view struct {
 	canvasCache canvasCache
 	// shaderView is a shader view's Direct3D state.
 	shaderView *shaderView
-	fx         *effect // its effect, transition or navigation shader (effect.go)
+	gpuView    *gpuView // a KindGPU view's Direct3D 11 surface and resources (gpu.go)
+	fx         *effect  // its effect, transition or navigation shader (effect.go)
 	// glass is the textures its Liquid Glass draws through.
 	glass *glassView
 
@@ -422,13 +424,16 @@ type window struct {
 	placing bool
 
 	// What other goroutines hand the main thread.
-	mu     sync.Mutex
-	tasks  []func()
-	closed chan struct{} // closed in wmDestroy so callers waiting on the window stop immediately
+	mu       sync.Mutex
+	tasks    []func()
+	closed   chan struct{} // closed in wmDestroy so callers waiting on the window stop immediately
+	gpuMu    sync.Mutex
+	gpuQueue []driver.GPUFrame
 
 	// The main thread's.
-	views []*view // index is NodeID
-	root  driver.NodeID
+	views    []*view // index is NodeID
+	gpuViews map[driver.NodeID]*view
+	root     driver.NodeID
 	// effects are the views with an effect, a transition or a navigation
 	// shader (effect.go).
 	effects       map[*view]bool
@@ -1252,8 +1257,6 @@ func (w *window) RequestFrame() {
 	}
 }
 
-func (w *window) SubmitGPU(driver.GPUFrame) {}
-
 // applyBatches applies the batches the engine has sent, in order, unless
 // a batch is being applied: one can resize the window.
 func (w *window) applyBatches() {
@@ -1344,7 +1347,7 @@ func (w *window) apply(b *driver.MountBatch) {
 	w.devGeometry.Begin(b.GeometryVersion)
 	defer func() { w.devGeometry.End(); w.reportGeometry() }()
 	w.batch++
-	var rescroll, loads []*view
+	var rescroll, loads, gpuConfigured, gpuResized []*view
 	structure := false // views came or went, for UI Automation
 	recursor := false  // a text's span cursors changed
 	lb := w.layoutBatch(b)
@@ -1649,6 +1652,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			if v.kind == driver.KindScroll {
 				rescroll = append(rescroll, v)
 			}
+			if v.kind == driver.KindGPU {
+				gpuResized = append(gpuResized, v)
+			}
 		case driver.ItemViewStyle:
 			if v.style.Cursor != it.ViewStyle.Cursor || !v.style.CursorImage.Equal(it.ViewStyle.CursorImage) || v.style.Hidden != it.ViewStyle.Hidden {
 				recursor = true
@@ -1744,6 +1750,11 @@ func (w *window) apply(b *driver.MountBatch) {
 			} else {
 				w.setEffect(v, it.Shader)
 			}
+		case driver.ItemGPU:
+			if v.kind == driver.KindGPU && it.GPU != nil {
+				w.configureGPU(v, *it.GPU)
+				gpuConfigured = append(gpuConfigured, v)
+			}
 		case driver.ItemShaderTransition:
 			w.startTransition(v)
 		case driver.ItemShaderInput:
@@ -1825,6 +1836,7 @@ func (w *window) apply(b *driver.MountBatch) {
 	}
 	// The batch's web views asked for their environments' app schemes.
 	startWebEnvironments()
+	w.syncGPUViews(gpuConfigured, gpuResized)
 	// Focus once the batch placed the fields.
 	for _, f := range focus {
 		switch {
@@ -1896,9 +1908,11 @@ func (w *window) destroy(v *view) {
 	v.shadow.release()
 	v.shadow = nil
 	v.shaderView.release()
+	v.gpuView.release()
 	w.endEffect(v)
 	v.glass.release()
 	v.shaderView = nil
+	v.gpuView = nil
 	v.canvasCache.release()
 	for _, sh := range v.boxShadows {
 		sh.release()
@@ -2617,6 +2631,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmFrame:
 		w.startClock()
 		return 0
+	case wmGPU:
+		w.processGPUFrames()
+		return 0
 	case wmAlert:
 		w.showAlert()
 		return 0
@@ -2674,6 +2691,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		// Under per-monitor awareness Windows leaves the window its pixels: it takes the rect Windows suggests for the new DPI, unless the move is one of the window's own (setWindowPosAt), which chose its pixels already. Either way the engine then lays out the client area in the new points, whether or not a WM_SIZE came before this.
 		if dpi := uint32(wParam & 0xffff); dpi != 0 {
 			w.scale = float64(dpi) / 96
+			w.resizeGPUViews()
 		}
 		if !w.placing && lParam != 0 {
 			r := *(**rect)(unsafe.Pointer(&lParam)) // the message's, valid while it is handled
@@ -3069,6 +3087,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		for c := range w.hosts {
 			w.closeComponent(c)
 		}
+		w.releaseAllGPUViews()
 		if w.primary {
 			postQuitMessage.Call(0)
 			return 0

@@ -116,6 +116,7 @@ func (w *window) environment() driver.Environment {
 		Audio:                 audioAvailable(),
 		AudioPlaybackControls: audioAvailable(),
 		FrontmostApp:          frontmostApp(),
+		GPU:                   gpuAvailable(),
 
 		// Only a window opened transparent has the composition that shows what is behind it (look.go); a transparent panel's is its own.
 		CanMakeWindowsTransparent: w.canTransparent && !w.embedded && w.kind == driver.SurfaceWindow,
