@@ -30,6 +30,8 @@ import android.net.ConnectivityManager;
 import android.net.LinkProperties;
 import android.net.Network;
 import android.os.Build;
+import android.os.StatFs;
+import android.os.storage.StorageManager;
 import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
@@ -154,9 +156,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         t.setDaemon(true);
         return t;
     });
-    /** Lists and reads the folders the user picked for Go, a few at a time. */
-    private final ExecutorService folders = Executors.newFixedThreadPool(4, r -> {
-        Thread t = new Thread(r, "nsgo-folders");
+    /** Runs filesystem requests from Go, a few at a time. */
+    private final ExecutorService files = Executors.newFixedThreadPool(4, r -> {
+        Thread t = new Thread(r, "nsgo-files");
         t.setDaemon(true);
         return t;
     });
@@ -744,7 +746,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
         canvasImages.close();
         decoder.shutdownNow();
-        folders.shutdownNow();
+        files.shutdownNow();
         // An ended process hears no answer, and a late grant starts nothing.
         recordingStarts.clear();
         recordingAsks.clear();
@@ -762,7 +764,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     void releaseOverlay() {
         canvasImages.close();
         decoder.shutdownNow();
-        folders.shutdownNow();
+        files.shutdownNow();
         for (int i = 0; i < nodes.size(); i++) {
             Node n = nodes.valueAt(i);
             if (n.animator != null) n.animator.cancel();
@@ -867,7 +869,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     host.message(message);
                     break;
                 case Protocol.FOLDER:
-                    folders.execute(() -> folder(message));
+                    files.execute(() -> folder(message));
+                    break;
+                case Protocol.DISK_SPACE:
+                    files.execute(() -> diskSpace(message));
                     break;
                 case Protocol.SECRET:
                     Secrets.answer(getContext().getApplicationContext(), message, reply -> write(Protocol.SECRET_REPLY, reply));
@@ -1641,6 +1646,32 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
 
     void write(int kind, byte[] payload) {
         if (engine != null) engine.write(kind, payload);
+    }
+
+    private void diskSpace(DataInputStream in) {
+        try {
+            int from = in.readInt(), count = in.readInt();
+            String path = Protocol.readString(in);
+            long total = 0, available = 0;
+            String error = "";
+            try {
+                StorageManager storage = getContext().getSystemService(StorageManager.class);
+                available = storage.getAllocatableBytes(storage.getUuidForPath(new File(path)));
+                total = new StatFs(path).getTotalBytes();
+            } catch (IOException | RuntimeException failure) {
+                error = failure.toString();
+            }
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeInt(from);
+            out.writeInt(count);
+            Protocol.writeString(out, error);
+            out.writeLong(total);
+            out.writeLong(available);
+            write(Protocol.DISK_SPACE_REPLY, bytes.toByteArray());
+        } catch (IOException failure) {
+            Log.w(TAG, "disk space request", failure);
+        }
     }
 
     /**

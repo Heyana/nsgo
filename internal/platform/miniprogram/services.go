@@ -52,6 +52,8 @@ func (s *surface) service(it *driver.MountItem) {
 		s.alert(it.Alert)
 	case driver.ItemSetClipboard:
 		s.call("setClipboardData", map[string]any{"data": it.Value}, nil)
+	case driver.ItemDiskSpace:
+		s.engine.Dispatch(driver.DiskSpaceEvent(it.Count, driver.DiskSpace{}, driver.ErrDiskSpaceUnavailable))
 	case driver.ItemReadClipboard:
 		s.readClipboard(it)
 	case driver.ItemSetClipboardImage:

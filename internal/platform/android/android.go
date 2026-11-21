@@ -87,6 +87,8 @@ const (
 	msgScan = 21
 	// msgPixelFrame carries a bitmap for an item of the next batch on its surface.
 	msgPixelFrame = 22
+	// msgDiskSpace asks what the app can allocate on the volume containing its data directory.
+	msgDiskSpace = 23
 
 	// Java to Go.
 	msgStart       = 1 // the view's size and the folds measured at it (readSize), as msgResize
@@ -124,6 +126,8 @@ const (
 	msgScanReport = 23
 	// msgGamepad reports a game controller connecting, disconnecting or changing buttons and axes (gamepad.go).
 	msgGamepad = 24
+	// msgDiskSpaceReply answers msgDiskSpace, with byte counts or the reason it failed.
+	msgDiskSpaceReply = 25
 )
 
 // The parts of an image view's request msgImage carries.
@@ -420,6 +424,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.surfaceReport(&r)
 		case msgFolderReply:
 			s.folderReply(&r)
+		case msgDiskSpaceReply:
+			s.diskSpaceReply(&r)
 		case msgSecretReply:
 			s.secretReply(&r)
 		case msgFetched:
@@ -891,18 +897,21 @@ func (s *surface) Mount(b *driver.MountBatch) {
 // mount sends the batch of v's tree to Java, which names its surface, and loads the image sources it changed.
 func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 	b = withoutOffscreenReleases(s.withoutScans(v.id, s.withoutWebCookies(v.id, s.withoutAuthSessions(v.id, s.withoutPermissions(v.id, s.withoutUpdateChecks(v.id, withoutDesktopItems(withoutEffects(b))))))))
-	// Android has no file manager an app can reveal in or trash through. The batch may be the engine's own, which a test's observer holds, so the items are filtered from a copy.
-	fileManager := func(it driver.MountItem) bool {
-		return it.Kind == driver.ItemRevealFile || it.Kind == driver.ItemTrashFile
+	// Disk space uses a separate message and runs on a worker. Android has no file manager an app can reveal in or trash through. A test's observer may hold the batch, so filter these items from a copy.
+	outsideBatch := func(it driver.MountItem) bool {
+		return it.Kind == driver.ItemRevealFile || it.Kind == driver.ItemTrashFile || it.Kind == driver.ItemDiskSpace
 	}
-	if slices.ContainsFunc(b.Items, fileManager) {
+	if slices.ContainsFunc(b.Items, outsideBatch) {
 		for _, it := range b.Items {
-			if fileManager(it) {
+			switch it.Kind {
+			case driver.ItemRevealFile, driver.ItemTrashFile:
 				s.dispatchTo(v.id, driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoFileRevealer})
+			case driver.ItemDiskSpace:
+				s.diskSpace(v.id, it.Count, it.Value)
 			}
 		}
 		out := *b
-		out.Items = slices.DeleteFunc(slices.Clone(b.Items), fileManager)
+		out.Items = slices.DeleteFunc(slices.Clone(b.Items), outsideBatch)
 		b = &out
 	}
 	s.canvasRequests.update(v.id, b)

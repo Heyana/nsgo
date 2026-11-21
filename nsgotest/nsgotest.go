@@ -80,6 +80,12 @@ func Secrets(values map[string]string) Option {
 	return func(a *App) { a.seedSecrets = values }
 }
 
+// DiskSpace sets what Scope.DiskSpace answers in headless and native tests.
+// Without it the service reports core.ErrDiskSpaceUnavailable.
+func DiskSpace(space core.DiskSpace, err error) Option {
+	return func(a *App) { a.diskSpace = driver.DiskSpaceResult{Space: space, Err: err} }
+}
+
 // Environment starts the app in env from its first frame, as a platform reports it before the app mounts: screens have the system header where env has HeaderHeight. Under `nsgo test -target` it pins only the appearance, reduced motion, increased contrast, the login launch reason, the application in front and whether the platform follows it, camera and code scanner availability, and, when set, the locale, text size, device name and device model; the OS, the idiom, the safe area and the header heights stay the platform's, so a test of another OS's layout runs headless or on that OS's target.
 func Environment(env driver.Environment) Option {
 	return func(a *App) { a.env = &env }
@@ -223,6 +229,7 @@ type App struct {
 	LocationCache     *core.LocationFix
 	sensorRuns        map[uint32]*sensorRun
 	offscreenSurfaces map[uint64]*OffscreenSurface
+	diskSpace         driver.DiskSpaceResult
 
 	t    testing.TB
 	size driver.Size
@@ -567,6 +574,7 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 		PermissionAnswers: map[core.Permission]core.PermissionStatus{},
 		Secrets:           &core.MemorySecrets{},
 		KeptImages:        map[string]int{},
+		diskSpace:         driver.DiskSpaceResult{Err: core.ErrDiskSpaceUnavailable},
 	}
 	for _, o := range opts {
 		o(a)

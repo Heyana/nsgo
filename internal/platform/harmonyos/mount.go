@@ -305,6 +305,8 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 		if it.Alert != nil {
 			m.alert(it.Alert)
 		}
+	case driver.ItemDiskSpace:
+		m.s.engine.Dispatch(driver.Event{Kind: driver.EventDiskSpace, Count: it.Count, Data: driver.DiskSpaceResult{Err: driver.ErrDiskSpaceUnavailable}})
 	case driver.ItemReadClipboard:
 		m.s.bridge.Call("clipread", int(it.Clipboard), int(it.Count))
 	case driver.ItemSetClipboard:

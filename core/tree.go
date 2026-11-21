@@ -2342,7 +2342,7 @@ func (t *Tree) Dispatch(ev driver.Event) {
 	case driver.EventAlert:
 		t.answerAlert(ev.Count, ev.Index)
 		return
-	case driver.EventClipboard, driver.EventOpenURL, driver.EventPick, driver.EventFiles, driver.EventUpdate, driver.EventWebCookies:
+	case driver.EventClipboard, driver.EventOpenURL, driver.EventPick, driver.EventFiles, driver.EventUpdate, driver.EventWebCookies, driver.EventDiskSpace:
 		t.answer(ev)
 		return
 	case driver.EventSavePreflight:

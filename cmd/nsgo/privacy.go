@@ -14,7 +14,22 @@ import (
 // privacyManifestName is the privacy manifest Apple reads at a bundle's resource root.
 const privacyManifestName = "PrivacyInfo.xcprivacy"
 
-// nsgoPrivacyReasons are the required-reason APIs every NSGo app uses on Apple platforms, with their reasons: NSUserDefaults for the app's own settings (internal/platform/apple's language and notification keys, CA92.1), Go's os package's stat, fstat, fstatat and lstat on files in the app's containers (C617.1), and mach_absolute_time, Go's monotonic clock, and NSProcessInfo.systemUptime for elapsed time within the app (35F9.1). No Go runtime or NSGo code calls statfs or reads the active keyboards, so disk space and active keyboards are left to apple.privacy.
+const diskSpaceCategory = "NSPrivacyAccessedAPICategoryDiskSpace"
+
+// privacyLdflags carries the project's declaration into the Apple binary,
+// including a framework that the tool builds for an embedding host.
+func (p *project) privacyLdflags(env []string) []string {
+	target := envTarget(env)
+	if !strings.HasPrefix(target, "macos_") && !strings.HasPrefix(target, "ios_") {
+		return nil
+	}
+	if len(p.Apple.Privacy.AccessedAPIs[diskSpaceCategory]) == 0 {
+		return nil
+	}
+	return []string{"-X github.com/nsgo-dev/nsgo/internal/platform/apple.diskSpaceDeclared=1"}
+}
+
+// nsgoPrivacyReasons are the required-reason APIs every NSGo app uses on Apple platforms, with their reasons: NSUserDefaults for the app's own settings (internal/platform/apple's language and notification keys, CA92.1), Go's os package's stat, fstat, fstatat and lstat on files in the app's containers (C617.1), and mach_absolute_time, Go's monotonic clock, and NSProcessInfo.systemUptime for elapsed time within the app (35F9.1). Disk space and active keyboards are left to apple.privacy. The disk-space service runs only when the project declares it.
 var nsgoPrivacyReasons = map[string][]string{
 	"NSPrivacyAccessedAPICategoryUserDefaults":   {"CA92.1"},
 	"NSPrivacyAccessedAPICategoryFileTimestamp":  {"C617.1"},

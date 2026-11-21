@@ -103,3 +103,20 @@ func TestPrivacyValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestDiskSpaceLinkerDeclaration(t *testing.T) {
+	p := &project{}
+	macos := []string{"GOOS=darwin", "GOARCH=arm64"}
+	if got := p.privacyLdflags(macos); len(got) != 0 {
+		t.Fatalf("macOS with no reason: %q", got)
+	}
+	p.Apple.Privacy.AccessedAPIs = map[string][]string{diskSpaceCategory: {"85F4.1"}}
+	for _, goos := range []string{"darwin", "ios"} {
+		if got := p.privacyLdflags([]string{"GOOS=" + goos, "GOARCH=arm64"}); len(got) != 1 || !strings.HasSuffix(got[0], ".diskSpaceDeclared=1") {
+			t.Fatalf("%s linker declaration: %q", goos, got)
+		}
+	}
+	if got := p.privacyLdflags([]string{"GOOS=linux", "GOARCH=amd64"}); len(got) != 0 {
+		t.Fatalf("Linux with a reason: %q", got)
+	}
+}

@@ -694,6 +694,7 @@ func goBuildCommand(ctx context.Context, p *project, out string, env []string, e
 	if p.buildParallel > 0 {
 		args = append(args, "-p", strconv.Itoa(p.buildParallel))
 	}
+	ldflags = append(append([]string(nil), ldflags...), p.privacyLdflags(env)...)
 	args = append(args, "-ldflags", p.ldflags(append(append([]string(nil), ldflags...), p.updateLdflags(env)...)...), "-o", out)
 	tags, err := goTags(ctx, p, env, extra.tags...)
 	if err != nil {

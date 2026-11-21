@@ -77,6 +77,7 @@
 - Record application, Dock and context menus as `nsgotest.MenuItem` snapshots (#181 by @houko).
 - Let `nsgotest` find and drive an app's other windows through `App.Surface` (#1085 by @houko).
 - Record surface opening options and status bar settings with `nsgotest` types (#181 by @houko).
+- Report the app volume's available disk space asynchronously with `Scope.DiskSpace` and explicit Apple privacy reasons (#1078 by @houko).
 - Add `desktop.QuickLook` and `desktop.CanQuickLook` to preview files in macOS's Quick Look panel (#370 by @houko).
 - Move the native field's selection with `nsgotest`'s `App.Select` under `-target` on macOS, Windows, Linux and the web, so the next edit acts on the selected range (#772 by @houko).
 - Let `nsgotest` press a text field directly and report the focus a press moves when the step returns on macOS, Windows and Linux (#1083 by @houko).

@@ -1297,6 +1297,9 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemReadClipboard:
 			w.readClipboard(it)
 			continue
+		case driver.ItemDiskSpace:
+			go w.diskSpace(it.Value, it.Count)
+			continue
 		case driver.ItemSetClipboardImage:
 			if data, ok := it.Data.([]byte); ok {
 				w.setClipboardImage(data)

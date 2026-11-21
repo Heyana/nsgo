@@ -283,6 +283,8 @@ const (
 	// EventSavePreflight asks the app to check the save destination in Text
 	// for ItemSaveFile Count. ItemSavePreflightAnswer allows or refuses it.
 	EventSavePreflight
+	// EventDiskSpace answers ItemDiskSpace Count with a DiskSpaceResult in Data. It is never used in an EventMask.
+	EventDiskSpace
 )
 
 // EventVideoPause reports that the platform paused video ID, not the app's Paused: Index is why (VideoPauseInterruption, ...). An EventMask has no room for another kind, so it shares EventImageInfo's, an answer that names no view and is never in a mask; Android's Protocol.java mirrors it.

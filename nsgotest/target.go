@@ -330,6 +330,7 @@ func (a *App) targetOptions(t *target) testhost.Options {
 		PickImages: pickImages,
 		TakePhoto:  takePhoto,
 		ScanCode:   scanCode,
+		DiskSpace:  a.diskSpace,
 	}
 }
 

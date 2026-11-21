@@ -110,6 +110,14 @@ store.SetItem("tab", "library")
 
 `store.Keys()` lists the keys, `RemoveItem` deletes one and `Clear` empties the storage. `cx.DataDir()` and `cx.CacheDir()` give the app's folders for files the key-value storage is too small for; `cx.LogsDir()` gives the platform's directory for log files, and a `Scope.ProvideStorage` gives a subtree a partition of its own.
 
+## Disk space
+
+`cx.DiskSpace(func(space core.DiskSpace, err error) { … })` queries the volume containing `cx.DataDir()` asynchronously and calls back on the engine goroutine. `Total` is the system-reported capacity, `Available` is what the app can use for a user-requested operation, and `Opportunistic` is what it can use for caches and prefetching. All three are in bytes. `Available` includes space the system reclaims on demand where it reports that figure. Platforms with a single free-space figure return it in both fields. On the web, `Total` is the browser's estimated storage quota for the origin and `Available` is the unused portion. When the service is unavailable it returns `core.ErrDiskSpaceUnavailable`.
+
+Apple builds require `apple.privacy.accessed_apis` in `nsgo.yaml` to declare `NSPrivacyAccessedAPICategoryDiskSpace`. Declare `E174.1` to check space before writing or to free files when space is low, with a change the user can observe. Declare `85F4.1` to show the user the available space. The app must follow Apple's restrictions on using and sharing the readings. A build without the category returns `core.ErrNotDeclared`. [Apple's approved reasons](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype)
+
+Set a test's answer with `nsgotest.DiskSpace(space, err)`.
+
 ## Secrets
 
 `cx.Secrets()` is the app's secure store, for refresh tokens, API keys and passwords: `Get`, `Set` and `Delete` a string by account, which the platform protects. A missing account reads as `("", false, nil)`, and where the platform has no secure store, as on the web, every call returns `core.ErrSecretsUnavailable`; NSGo never falls back to plain storage. The system may make a call wait, as a keychain asking the user does, so call them off the engine's goroutine and hand the result back with `cx.Post`.

@@ -123,6 +123,7 @@ var itemKindNames = map[ItemKind]string{
 	ItemGPU:                     "ItemGPU",
 	ItemSavePreflightAnswer:     "ItemSavePreflightAnswer",
 	ItemSaveFilePreflight:       "ItemSaveFilePreflight",
+	ItemDiskSpace:               "ItemDiskSpace",
 }
 
 // String returns the kind's name, as a log or an event prints it.
@@ -233,6 +234,7 @@ var eventKindNames = map[EventKind]string{
 	EventMouseUp:               "EventMouseUp",
 	EventGPU:                   "EventGPU",
 	EventSavePreflight:         "EventSavePreflight",
+	EventDiskSpace:             "EventDiskSpace",
 }
 
 // String returns the kind's name, as a log or an event prints it.

@@ -451,6 +451,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemAlert:
 			s.alert(it.Alert)
 			continue
+		case driver.ItemDiskSpace:
+			go apple.DiskSpace(it.Value, it.Count, false, s.engine.Dispatch)
+			continue
 		case driver.ItemImageInfo:
 			apple.ImageInfo(it, s.engine.Dispatch)
 			continue

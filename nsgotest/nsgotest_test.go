@@ -1504,3 +1504,34 @@ func TestOpenLinksReachTheApp(t *testing.T) {
 		t.Fatalf("page %q after another scheme's link, want settings", got)
 	}
 }
+
+func TestDiskSpace(t *testing.T) {
+	space := core.DiskSpace{Total: 1 << 41, Available: 1 << 35, Opportunistic: 1 << 33}
+	for _, tc := range []struct {
+		name string
+		opts []Option
+		want string
+	}{
+		{"pinned", []Option{DiskSpace(space, nil)}, fmt.Sprint(space)},
+		{"undeclared", []Option{DiskSpace(core.DiskSpace{}, core.ErrNotDeclared)}, core.ErrNotDeclared.Error()},
+		{"unavailable", nil, core.ErrDiskSpaceUnavailable.Error()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := Start(t, func(cx *core.Scope) core.Node {
+				status := core.NewSignal(cx, "waiting")
+				cx.DiskSpace(func(space core.DiskSpace, err error) {
+					if err != nil {
+						status.Set(err.Error())
+					} else {
+						status.Set(fmt.Sprint(space))
+					}
+				})
+				if status.Get() != "waiting" {
+					panic("DiskSpace answered inline")
+				}
+				return core.Text{ContentFunc: status.Get}
+			}, tc.opts...)
+			app.Find("text:" + tc.want)
+		})
+	}
+}

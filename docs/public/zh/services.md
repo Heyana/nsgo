@@ -110,6 +110,14 @@ store.SetItem("tab", "library")
 
 `store.Keys()` 列出键，`RemoveItem` 删除一个，`Clear` 清空存储。`cx.DataDir()` 和 `cx.CacheDir()` 给出应用存放键值存储放不下的文件的目录；`cx.LogsDir()` 给出平台存放日志的目录；`Scope.ProvideStorage` 给子树一个独立分区。
 
+## 磁盘空间
+
+`cx.DiskSpace(func(space core.DiskSpace, err error) { … })` 异步查询 `cx.DataDir()` 所在的卷，在引擎的 goroutine 上回调。`Total` 是系统报告的容量，`Available` 是应用可以用于用户请求操作的空间，`Opportunistic` 是可以用于缓存和预取的空间，单位都是字节。系统报告可按需回收的空间时，`Available` 也会计入它。平台只提供一个可用空间值时，两个字段取同一值。在 Web 上，`Total` 是浏览器估算的当前来源存储配额，`Available` 是剩余配额。服务不可用时返回 `core.ErrDiskSpaceUnavailable`。
+
+Apple 构建需要在 `nsgo.yaml` 的 `apple.privacy.accessed_apis` 中声明 `NSPrivacyAccessedAPICategoryDiskSpace`。写入之前检查空间或在空间不足时清理文件，且用户可感知到这样的行为变化，使用 `E174.1`。向用户显示可用空间使用 `85F4.1`。应用必须遵守 Apple 对数据使用和共享的限制。未声明该类别的构建返回 `core.ErrNotDeclared`。[Apple 批准的用途](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype)
+
+测试可以用 `nsgotest.DiskSpace(space, err)` 指定返回值。
+
 ## 机密
 
 `cx.Secrets()` 是应用的安全存储，用来保存刷新令牌、API 密钥和密码：按账户 `Get`、`Set`、`Delete` 一个字符串，由平台保护。不存在的账户读出 `("", false, nil)`；平台没有安全存储时（例如 Web），每次调用都返回 `core.ErrSecretsUnavailable`，NSGo 不会退回明文存储。系统可能让调用等待，例如钥匙串向用户请求授权，所以请在引擎的 goroutine 之外调用，再用 `cx.Post` 把结果交回。
