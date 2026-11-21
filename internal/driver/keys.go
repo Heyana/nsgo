@@ -49,6 +49,25 @@ type KeyBinding struct {
 	Yields KeyUse
 	// ID names the binding: an in-app binding's (ItemKeymap), which EventKey reports when the platform matches it, or a global shortcut's (ItemHotKeys), which EventHotKey reports. The engine never gives an in-app ID to another binding, so a press matched by a keymap that has since changed runs the binding it matched or none.
 	ID uint32
+	// Title and Group are localized names for keyboard shortcut discovery.
+	Title, Group string
+	// Priority asks UIKit to deliver an eligible command before text or
+	// focus movement, as a binding with an explicit When takes the key.
+	Priority bool
+}
+
+// KeyCommands returns the titled bindings that currently win their key's
+// physical press. names gives the platform's spellings for the same press.
+func KeyCommands(keymap []KeyBinding, focus KeyUse, names func(string) []string) []KeyBinding {
+	var commands []KeyBinding
+	for _, b := range keymap {
+		if b.Title != "" {
+			if id, _ := FindKey(keymap, names(b.Key), focus, false); id == b.ID {
+				commands = append(commands, b)
+			}
+		}
+	}
+	return commands
 }
 
 // KeyUse is a set of the keys a focused view uses itself, by the kind of view.

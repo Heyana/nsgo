@@ -132,14 +132,15 @@ type keyBinding struct {
 
 // globalKey is a binding made with KeyOptions.AllSurfaces: the binding it gives each surface's tree, the trees opened since included (newTree).
 type globalKey struct {
-	owner    *Scope
-	home     *Tree
-	key      string
-	inText   bool
-	yields   driver.KeyUse
-	opts     KeyOptions
-	fn       func()
-	bindings map[*Tree]*keyBinding
+	owner        *Scope
+	home         *Tree
+	key          string
+	inText       bool
+	yields       driver.KeyUse
+	opts         KeyOptions
+	fn           func()
+	bindings     map[*Tree]*keyBinding
+	title, group string
 	// shown is whether its owner showed in its home surface when that surface last sent its keymap, which the other surfaces' copies follow (followHome); known is whether it was looked at yet.
 	shown, known bool
 }
@@ -150,7 +151,9 @@ func (g *globalKey) bind(t *Tree, own bool) {
 	if !own {
 		home = g.home
 	}
-	g.bindings[t] = t.addKeyBinding(g.owner, g.key, g.inText, g.yields, g.opts, g.fn, home)
+	b := t.addKeyBinding(g.owner, g.key, g.inText, g.yields, g.opts, g.fn, home)
+	b.Title, b.Group = g.title, g.group
+	g.bindings[t] = b
 }
 
 // KeyWhen says when a binding fires.
@@ -176,6 +179,11 @@ type KeyOptions struct {
 	YieldsToMenu bool
 	// AllSurfaces binds the key in every surface of the app rather than only the one it is bound in: the app's own and each window, panel and tray view it opens, those it opens later too, for an app-wide shortcut. In the surface it is bound in it is as OnKey says; in each other one it comes before that surface's own bindings, so one of the same key there wins over it, whenever it was made, and rests while a modal shows there unless OverModals keeps it. It rests in all of them while what its owner shows is hidden in the surface it is bound in, a modal covering it there aside, so a component's shortcut does not run while the user cannot see the component; one bound at the app's root, which shows nothing, fires everywhere. It ends in all of them as its owner goes. Where the platform opens no windows it is OnKey's.
 	AllSurfaces bool
+	// Title gives a shortcut's localized name in the iOS keyboard menu.
+	// A nil function or an empty title leaves the shortcut out of the menu.
+	Title func() string
+	// Group gives the localized title of the shortcut's iPadOS menu.
+	Group func() string
 }
 
 // OnKey runs fn when key is pressed, while the current owner lives and the user can see what it shows. key names modifiers and a key joined by "+": "mod+s" (Command on Apple platforms, Control elsewhere), "ctrl+shift+z", "alt+left", "escape", "enter", "f5", "a". Of the bindings of a key that fire where the focus is, the newest wins, and only it runs. It fires once while the key is held, and not while the view with the keyboard focus uses the key itself, a text input its editing keys, a button Return and Space, a slider or a tab bar its arrows (KeyAuto); OnKeyWith says else. A control that binds its own keys while it has the focus binds them with KeyNotEditing, or the focus it holds would keep them from it.
@@ -206,6 +214,12 @@ func (cx *Scope) OnKeyWith(key string, opts KeyOptions, fn func()) {
 				g.bind(s, s == t)
 			}
 		}
+		cx.observeKeyTitle(opts, func(title, group string) {
+			g.title, g.group = title, group
+			for tree, b := range g.bindings {
+				tree.setKeyTitle(b, title, group)
+			}
+		})
 		owner.addCleanup(func() {
 			rt.globalKeys = slices.DeleteFunc(rt.globalKeys, func(o *globalKey) bool { return o == g })
 			for tree, b := range g.bindings {
@@ -215,7 +229,31 @@ func (cx *Scope) OnKeyWith(key string, opts KeyOptions, fn func()) {
 		return
 	}
 	b := t.addKeyBinding(owner, k, inText, yields, opts, fn, nil)
+	cx.observeKeyTitle(opts, func(title, group string) { t.setKeyTitle(b, title, group) })
 	owner.addCleanup(func() { t.removeKeyBinding(b) })
+}
+
+func (cx *Scope) observeKeyTitle(opts KeyOptions, update func(title, group string)) {
+	if opts.Title == nil {
+		return
+	}
+	cx.renderEffect(func() {
+		// The app's language can change even if the title reads a catalog indirectly.
+		_ = cx.Env().Locale()
+		title := opts.Title()
+		var group string
+		if title != "" && opts.Group != nil {
+			group = opts.Group()
+		}
+		update(title, group)
+	})
+}
+
+func (t *Tree) setKeyTitle(b *keyBinding, title, group string) {
+	if b.Title != title || b.Group != group {
+		b.Title, b.Group = title, group
+		t.keysChanged, t.changed = true, true
+	}
 }
 
 // addKeyBinding adds a binding of the normalized key to the tree's table, as its newest, or as its oldest if home, the surface of an app-wide binding made in another one, is set.
@@ -225,7 +263,10 @@ func (t *Tree) addKeyBinding(owner *Scope, key string, inText bool, yields drive
 	if t.keyID == 0 {
 		t.keyID++
 	}
-	b := &keyBinding{KeyBinding: driver.KeyBinding{Key: key, InText: inText, Repeat: opts.Repeat, Yields: yields, ID: t.keyID}, owner: owner, within: confinement(owner), overModals: opts.OverModals, yieldsToMenu: opts.YieldsToMenu, home: home, fn: fn}
+	b := &keyBinding{
+		KeyBinding: driver.KeyBinding{Key: key, InText: inText, Repeat: opts.Repeat, Yields: yields, ID: t.keyID, Priority: opts.Title != nil && opts.When != KeyAuto},
+		owner:      owner, within: confinement(owner), overModals: opts.OverModals, yieldsToMenu: opts.YieldsToMenu, home: home, fn: fn,
+	}
 	if home != nil {
 		t.keys = slices.Insert(t.keys, 0, b)
 	} else {

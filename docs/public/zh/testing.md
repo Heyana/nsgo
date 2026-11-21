@@ -43,6 +43,8 @@ func TestMain(m *testing.M) {
 
 `Drag` 在指针从按下位置移动超过 8 点后会取消指针下的按压。Web 也遵循此规则，因此拖动回到原来的视图不会触发 `OnPress`。
 
+`app.KeyCommands()` 列出当前焦点和可见视图下生效的带标题快捷键。在无界面测试和目标平台测试中，它都会返回按键、标题和分组。
+
 `app.PressWith("id:row", core.Modifiers{Shift: true})` 为一次点击按住修饰键；`PressAtWith(selector, core.Point{X: 20, Y: 10}, mods)` 点击视图中的指定点。`Shift`、`Control`、`Alt` 和 `Platform`（Apple 上为 Command，其他平台为 Windows/Super 键）会通过无头模型和目标的原生输入传给 `OnPressDown`、`OnPressUp` 和 `OnPress`。仍遵循平台的原生约定：例如 macOS 上的 Chrome 会将 Control-click 转为上下文菜单。之后的 `Press` 或 `PressAt` 不带修饰键。watchOS 没有键盘修饰键输入，因此会拒绝带修饰键的点击。
 
 点击可以直接指定文本框。在无头测试以及 macOS、Windows 和 Linux 上，可以在点击返回后立即读取 `app.Find("id:field").Focused`，包括点击处理函数聚焦文本框的情况。

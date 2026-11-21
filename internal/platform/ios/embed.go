@@ -127,7 +127,7 @@ func embedMethods() []objc.MethodDef {
 			}
 		}
 	}
-	return []objc.MethodDef{
+	return append(keyCommandMethods(), []objc.MethodDef{
 		{Cmd: sel("initWithFrame:"), Fn: embedInit},
 		// Hardware keys reach the view while a field in it has the focus.
 		{Cmd: sel("pressesBegan:withEvent:"), Fn: pressesBegan},
@@ -226,7 +226,7 @@ func embedMethods() []objc.MethodDef {
 			keep(&old, factory, true)
 			s.embed.factories[n] = old
 		}},
-	}
+	}...)
 }
 
 // embedInit makes an NSGoView's surface around it, for the app Embed

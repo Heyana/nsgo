@@ -209,6 +209,8 @@ type surface struct {
 	// keysHeld are the hardware keys whose down was reported, by UIKeyboardHIDUsage: the view the down went to, 0 for none, and the name it reported, which the key's up reports wherever the focus has gone since.
 	keysHeld map[int]heldKey
 	heldKeys bool // ItemKeymap's HeldKeys: report every hardware key going down and up, not only a focused view's
+	// commandMenuKeys are the commands UIKit's main menu was last asked to build.
+	commandMenuKeys []driver.KeyBinding
 	// held is the ID of the binding a held key fires again, on a timer of its own: UIKit reports a held key's press once.
 	held     uint32
 	heldStop chan struct{}
@@ -390,7 +392,7 @@ func loadUIKit() {
 	classWindow = register("NsgoWindow", apple.Class("UIWindow"), nil, []objc.MethodDef{
 		{Cmd: sel("nsgoKeyboardWindow:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) { keyboardWindow = self }},
 	})
-	classController = register("NsgoViewController", apple.Class("UIViewController"), nil, []objc.MethodDef{
+	classController = register("NsgoViewController", apple.Class("UIViewController"), nil, append(keyCommandMethods(), []objc.MethodDef{
 		{Cmd: sel("preferredStatusBarStyle"), Fn: func(self objc.ID, _ objc.SEL) int { return controllerSurface(self).statusBar }},
 		{Cmd: sel("prefersStatusBarHidden"), Fn: func(self objc.ID, _ objc.SEL) bool { return controllerSurface(self).hideBar }},
 		{Cmd: sel("preferredStatusBarUpdateAnimation"), Fn: func(self objc.ID, _ objc.SEL) int { return controllerSurface(self).barAnimation() }},
@@ -412,7 +414,7 @@ func loadUIKit() {
 		{Cmd: sel("copy:"), Fn: controllerCopy},
 		{Cmd: sel("selectAll:"), Fn: controllerSelectAll},
 		{Cmd: sel("canPerformAction:withSender:"), Fn: controllerCanPerform},
-	})
+	}...))
 	// The watcher sees every touch going down in the surface, before its
 	// views do, and lets it through.
 	classWatcher = register("NsgoTouchWatcher", apple.Class("UIGestureRecognizer"), nil, []objc.MethodDef{
@@ -443,7 +445,9 @@ func loadUIKit() {
 			}},
 			{Cmd: sel("application:didDiscardSceneSessions:"), Fn: func(self objc.ID, _ objc.SEL, application, sessions objc.ID) {
 				apple.ForEach(sessions, func(session objc.ID) { discardScene(sessionID(session)) })
-			}}})
+			}},
+			{Cmd: sel("buildMenuWithBuilder:"), Fn: buildKeyMenus},
+		})
 	// The SDK requires the scene life cycle; Info.plist names this class.
 	register("NsgoSceneDelegate", apple.Class("UIResponder"),
 		[]*objc.Protocol{objc.GetProtocol("UIWindowSceneDelegate")},
@@ -1084,6 +1088,7 @@ func (s *surface) foreground() bool {
 
 func (s *surface) apply(b *driver.MountBatch) {
 	var restored []func()
+	keysChanged := false
 	defer func() {
 		for _, done := range restored {
 			done()
@@ -1259,6 +1264,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemKeymap:
 			s.keys, s.heldKeys = it.Keys, it.HeldKeys
+			keysChanged = true
 			continue
 		case driver.ItemOrientation:
 			s.setOrientation(driver.Orientation(it.Count))
@@ -1521,6 +1527,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 	}
 	s.slideStacks()
 	s.finish()
+	if keysChanged {
+		s.refreshKeyCommands()
+	}
 	s.refreshSelection()
 	for _, v := range s.ownTexts {
 		v.updateOwnSelection()
@@ -2097,6 +2106,9 @@ func typesKey(presses objc.ID) bool {
 // embedded view's, or a standalone app's scene's from its controller.
 func pressSurface(self objc.ID) *surface {
 	if v := views[self]; v != nil {
+		return v.surface
+	}
+	if v := sheets[self]; v != nil {
 		return v.surface
 	}
 	return controllerSurface(self)

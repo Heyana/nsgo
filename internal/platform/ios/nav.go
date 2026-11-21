@@ -102,7 +102,7 @@ func registerNav() {
 		})
 	navDelegate = objc.ID(classNavDelegate).Send(selNew)
 	classSheet = register("NsgoSheetController", apple.Class("UIViewController"),
-		[]*objc.Protocol{objc.GetProtocol("UIAdaptivePresentationControllerDelegate")}, []objc.MethodDef{
+		[]*objc.Protocol{objc.GetProtocol("UIAdaptivePresentationControllerDelegate")}, append(keyCommandMethods(), []objc.MethodDef{
 			{Cmd: sel("viewDidLayoutSubviews"), Fn: func(self objc.ID, cmd objc.SEL) {
 				apple.Super(self, cmd)
 				if v := sheets[self]; v != nil {
@@ -146,7 +146,7 @@ func registerNav() {
 					v.surface.engine.Dispatch(driver.Event{Kind: driver.EventRequestClose, ID: v.id, Text: "swipe"})
 				}
 			}},
-		})
+		}...))
 }
 
 // navMethods are the views' methods for a screen's swipe back.

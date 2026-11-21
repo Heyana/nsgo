@@ -219,6 +219,8 @@ if err == nil {
 
 `cx.Env().Lifecycle()` 说明应用处于前台、非活动还是后台：在桌面上是 `cx` 所在窗口的状态，所以一个窗口最小化时其内容可以暂停，而其他窗口照常显示；在应用自身的作用域里则是所有窗口合起来的状态。`desktop.Minimized(cx)` 说明该窗口是否最小化，`desktop.FrontmostApp(cx)` 说明桌面上最前面的是哪个应用（包括应用自身）以及它的窗口是否全屏，桌面宠物或计时工具可以据此跟随用户正在用的应用；`desktop.CanReadFrontmostApp(cx)` 说明能否读到它，在 macOS、Windows 和 X11 上可以。`cx.OnQuit` 在应用退出时做清理，无论以何种方式退出，最多有 200 毫秒完成工作。`desktop.OnQuitRequest` 在 macOS 上可以取消或推迟用户发起的退出，例如 Cmd+Q。注销、重新启动或关机时，`q.Forced()` 为真，应用会执行 `OnQuit` 后退出。询问用户前先检查 `Forced()`。`cx.SetAppearance` 强制浅色或深色，`cx.SetLocale` 选择语言，`cx.OnKey` 绑定键盘快捷键，它的所有者显示的内容被隐藏或被对话框盖住时不生效，除非用 `core.KeyOptions{OverModals: true}` 保留；它先于应用菜单拿到按键，除非用 `YieldsToMenu` 把按键让给当前焦点下接收相同快捷键的已启用菜单项（文本框或网页视图获得焦点时，`MenuNotEditing` 菜单项把按键留给该绑定，也不让后面相同快捷键的菜单项接收；此时 Linux 的菜单不接收未按 Control、Alt 或徽标键的按键，因此绑定会保留这类按键）；它只在 `cx` 所在的窗口里生效，除非用 `AllSurfaces` 把它绑定到应用的每个窗口和面板，包括之后打开的，作为全应用的快捷键，绑定它的窗口里所有者显示的内容被隐藏时，它在所有窗口都不生效；获得焦点的控件自己要用的键也留给控件，按钮的 Return 和 Space，滑块、标签栏和单选组的方向键，除非用 `core.KeyAlways` 或 `core.KeyNotEditing` 绑定；`cx.OnOpenFiles` 听到 macOS 应用打开的文件。 在 macOS 上，提供应用菜单的窗口关闭后，会恢复最近仍打开的窗口菜单；没有其他菜单时恢复默认菜单。
 
+在 iOS 上，可以通过 `cx.OnKeyWith` 的 `core.KeyOptions.Title` 函数为快捷键提供标题。绑定生效时，快捷键会出现在系统的键盘菜单里。`Group` 为 iPadOS 26 及以上版本的菜单组命名。这两个函数可以读取应用的语言目录，让标题随语言切换。测试可以用 `app.KeyCommands()` 查看当前列表。
+
 ```go
 cx.OnKey("mod+k", func() { palette.Set(true) })
 cx.SetLocale("de")

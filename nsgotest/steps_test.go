@@ -980,3 +980,51 @@ func TestOrientationRequestsFollowTheirScopes(t *testing.T) {
 	app.Settle()
 	check(0)
 }
+
+func TestKeyCommandsFollowTheirOwners(t *testing.T) {
+	var hide, cover *core.Signal[bool]
+	var french func()
+	app := Start(t, func(cx *core.Scope) core.Node {
+		hide, cover = core.NewSignal(cx, false), core.NewSignal(cx, false)
+		cx.SetLocale("en")
+		french = func() { cx.SetLocale("fr") }
+		return core.View{Children: []core.Node{
+			core.Func(func(cx *core.Scope) core.Node {
+				cx.OnKeyWith("mod+1", core.KeyOptions{Title: func() string {
+					if cx.Env().Locale() == "fr" {
+						return "Ouvrir"
+					}
+					return "Open"
+				}, Group: func() string { return "Document" }}, func() {})
+				cx.OnKey("mod+2", func() {})
+				return core.View{StyleFunc: func() core.Style {
+					if hide.Get() {
+						return core.Style{Display: core.DisplayNone}
+					}
+					return core.Style{}
+				}}
+			}),
+			core.Show{When: cover.Get, Then: func(cx *core.Scope) core.Node { return core.Modal{} }},
+		}}
+	}, Environment(core.Environment{OS: core.OSIOS}))
+
+	check := func(want ...KeyCommand) {
+		t.Helper()
+		if got := app.KeyCommands(); !slices.Equal(got, want) {
+			t.Errorf("KeyCommands = %v, want %v", got, want)
+		}
+	}
+	command := KeyCommand{Key: "mod+1", Title: "Open", Group: "Document"}
+	check(command)
+	app.Post(french)
+	command.Title = "Ouvrir"
+	check(command)
+	app.Post(func() { hide.Set(true) })
+	check()
+	app.Post(func() { hide.Set(false) })
+	check(command)
+	app.Post(func() { cover.Set(true) })
+	check()
+	app.Post(func() { cover.Set(false) })
+	check(command)
+}

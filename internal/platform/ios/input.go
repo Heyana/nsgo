@@ -362,6 +362,7 @@ func (in *input) focusChanged(focused bool) {
 		in.compose(false, "")
 		v.dispatch(driver.EventBlur)
 	}
+	v.surface.refreshKeyCommands()
 }
 
 // shouldChange answers whether the editor may replace r with repl: Return
