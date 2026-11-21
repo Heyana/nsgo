@@ -2,6 +2,7 @@ package dev.oneo.nsgo;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.BitmapShader;
 import android.graphics.BlendMode;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -577,6 +578,9 @@ final class CanvasNode extends View {
                     case Protocol.DRAW_IMAGE:
                         image(b);
                         break;
+                    case Protocol.DRAW_VERTICES:
+                        vertices(b);
+                        break;
                     case Protocol.DRAW_CLEAR: {
                         float x = b.getFloat(), y = b.getFloat(), w = b.getFloat(), h = b.getFloat();
                         canvas.save();
@@ -855,6 +859,43 @@ final class CanvasNode extends View {
             canvas.save();
             canvas.concat(state.ctm);
             draw(() -> canvas.drawBitmap(p.bitmap, from, dst, paint), true);
+            canvas.restore();
+        }
+
+        private void vertices(ByteBuffer b) {
+            String key = string(b);
+            int count = b.getInt();
+            int end = b.position() + count * 20;
+            if (pixels.containsKey(key)) {
+                Picture picture = pixels.get(key);
+                if (picture != null) vertices(b, count, picture);
+            } else if (pictures != null && !key.isEmpty()) {
+                try (CanvasImages<Picture>.Lease lease = pictures.acquire(key)) {
+                    if (lease != null) vertices(b, count, lease.value);
+                }
+            }
+            b.position(end);
+        }
+
+        private void vertices(ByteBuffer b, int count, Picture picture) {
+            float[] verts = new float[count * 2], tex = new float[count * 2];
+            int[] colors = new int[count];
+            for (int i = 0; i < count; i++) {
+                verts[i * 2] = b.getFloat();
+                verts[i * 2 + 1] = b.getFloat();
+                tex[i * 2] = b.getFloat() * picture.scale;
+                tex[i * 2 + 1] = b.getFloat() * picture.scale;
+                int color = b.getInt();
+                colors[i] = color == 0 ? Color.WHITE : Text.argb(color);
+            }
+            paint.reset();
+            paint.setFilterBitmap(true);
+            paint.setAlpha(Math.round(255 * state.alpha));
+            paint.setShader(new BitmapShader(picture.bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
+            canvas.save();
+            canvas.concat(state.ctm);
+            draw(() -> canvas.drawVertices(Canvas.VertexMode.TRIANGLES, verts.length, verts, 0,
+                    tex, 0, colors, 0, null, 0, 0, paint), true);
             canvas.restore();
         }
 

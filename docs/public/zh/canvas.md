@@ -44,6 +44,8 @@ d.DrawSVGIn(badge, 12, 12, 180, 60)
 
 位图缩放默认使用平滑采样。绘制像素画时，先调用 `d.SetImageSmoothing(false)`，或在 TSX 中设置 `ctx.imageSmoothingEnabled = false`。`Save` 和 `Restore` 会与其余绘图状态一起保存和恢复此设置。Apple 平台、Windows、Linux、Android 和 Web 支持最近邻采样。
 
+`d.DrawVertices(image, vertices)` 绘制带纹理的网格。每三个连续的 `core.CanvasVertex` 构成一个三角形。`Position` 以画布点为单位，`TexCoord` 与 `DrawImageFrom` 一样以图像点为单位。每个顶点的 `Color` 会在三角形内插值后乘到纹理颜色上，零值保留纹理原色。修改顶点并重新记录绘图即可使网格变形。Web 绘制任意网格时使用内联或同源图像。
+
 `Drawing.Node` 给绘图的一部分命名，例如图表的柱或地图的区域，带边界、角色、标签和选中状态。辅助技术把这些部分当作画布的子元素，测试可以按标签、文本或 test ID 找到它们；按下其中一个就是按下它的中心。
 
 ```go

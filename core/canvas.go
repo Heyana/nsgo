@@ -185,7 +185,7 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 // screen, as Image's do.
 func (t *Tree) pickDrawingScales(d *Drawing) {
 	for i := range d.Ops {
-		if op := &d.Ops[i]; op.Kind == driver.DrawImage && op.Image != nil && op.Image.Scales != 0 {
+		if op := &d.Ops[i]; op.Image != nil && op.Image.Scales != 0 {
 			src := t.pickScale(*op.Image)
 			op.Image = &src
 		}
@@ -200,7 +200,7 @@ func (t *Tree) refuseDrawingImages(n *node, d *Drawing) {
 
 func (t *Tree) refuseDrawingImagesOwner(owner *Scope, d *Drawing) {
 	for i := range d.Ops {
-		if op := &d.Ops[i]; op.Kind == driver.DrawImage && op.Image != nil {
+		if op := &d.Ops[i]; op.Image != nil {
 			src := *op.Image
 			t.refuseImageOwner(owner, &src)
 			op.Image = &src

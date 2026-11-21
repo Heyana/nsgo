@@ -11,6 +11,7 @@ import (
 	"syscall/js"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/platform/canvasmesh"
 	"github.com/nsgo-dev/nsgo/internal/platform/webstyle"
 )
 
@@ -31,6 +32,10 @@ type Player struct {
 	// Image returns the loaded image an op draws and its pixels per
 	// point; false while it loads, when the op draws nothing.
 	Image func(driver.ImageSource) (img js.Value, density float64, ok bool)
+	// Texture supplies a mesh's loaded pixels. MeshCanvas supplies a
+	// scratch canvas for native 2D composition.
+	Texture    func(driver.ImageSource) canvasmesh.Texture
+	MeshCanvas func() js.Value
 	// fill and stroke are the gradients painting, whose own transforms
 	// apply as they paint, and width the line width; saved and widths
 	// keep them for Restore.
@@ -169,6 +174,8 @@ func (p *Player) Play(op *driver.DrawOp) {
 		ctx.Call("clearRect", f(op.X), f(op.Y), f(op.W), f(op.H))
 	case driver.DrawImage:
 		p.image(op)
+	case driver.DrawVertices:
+		p.vertices(op)
 	}
 }
 

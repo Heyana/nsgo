@@ -75,6 +75,8 @@ type (
 	// CanvasRenderingContext2D: a current path, fill and stroke settings, and a
 	// transform, saved and restored as a stack.
 	Drawing = driver.Drawing
+	// CanvasVertex is a corner of a triangle drawn by Drawing.DrawVertices.
+	CanvasVertex = driver.CanvasVertex
 	// EaseMode applies a curve as is, mirrored, or both halves.
 	EaseMode = driver.EaseMode
 	// Easing is how a timing animation or an interpolation segment progresses:

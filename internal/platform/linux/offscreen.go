@@ -123,3 +123,11 @@ func (w *window) showOffscreen(v *view, s *imageSlot, src driver.ImageSource) {
 	}
 	s.pic = &picture{width: e.width, height: e.height, pix: pix, size: e.points}
 }
+
+// offscreenPoints is the size in points src's offscreen surface e draws at: src.Size when the source sets one, else the drawing's own.
+func offscreenPoints(src driver.ImageSource, e *offscreenEntry) driver.Size {
+	if src.Size.Width > 0 && src.Size.Height > 0 {
+		return src.Size
+	}
+	return e.points
+}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/canvas2d"
+	"github.com/nsgo-dev/nsgo/internal/platform/canvasmesh"
 )
 
 const maxOffscreenPixels = 1 << 24
@@ -16,6 +17,9 @@ type offscreenEntry struct {
 	version uint64
 	canvas  js.Value
 	scale   float64
+	// texture is canvas's pixels, read the first time a mesh samples this version.
+	texture     canvasmesh.Texture
+	readTexture bool
 }
 
 func (s *surface) releaseOffscreen(id uint64) {
@@ -74,6 +78,12 @@ func (s *surface) offscreenCanvas(off *driver.OffscreenCanvas, v *view) (js.Valu
 			waited = true
 		}
 		return im.img, im.density, im.loaded
+	}
+	p.MeshCanvas = s.scratchMeshCanvas
+	p.Texture = func(src driver.ImageSource) canvasmesh.Texture {
+		tex, ok := s.meshTexture(src, v)
+		waited = waited || !ok
+		return tex
 	}
 	if off.Drawing != nil {
 		for i := range off.Drawing.Ops {

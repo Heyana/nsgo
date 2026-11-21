@@ -9,6 +9,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/canvas2d"
+	"github.com/nsgo-dev/nsgo/internal/platform/canvasmesh"
 	"github.com/nsgo-dev/nsgo/internal/platform/webstyle"
 )
 
@@ -59,6 +60,11 @@ func (s *surface) paint(v *view) {
 	p.Image = func(src driver.ImageSource) (js.Value, float64, bool) {
 		im := s.loadImage(src, v)
 		return im.img, im.density, im.loaded
+	}
+	p.MeshCanvas = s.scratchMeshCanvas
+	p.Texture = func(src driver.ImageSource) canvasmesh.Texture {
+		tex, _ := s.meshTexture(src, v)
+		return tex
 	}
 	ops := s.animator.CanvasOps(v.id, v.drawing)
 	for i := range ops {
@@ -161,10 +167,12 @@ func (s *surface) refreshCanvasScale(root js.Value) {
 
 // canvasImage is an image canvases draw, loaded once for the surface.
 type canvasImage struct {
-	img     js.Value
-	density float64
-	loaded  bool
-	waiting map[*view]bool
+	img         js.Value
+	density     float64
+	loaded      bool
+	waiting     map[*view]bool
+	texture     canvasmesh.Texture
+	readTexture bool
 }
 
 // loadImage returns src's image, loading it the first time, and has v
@@ -210,6 +218,44 @@ func (s *surface) loadImage(src driver.ImageSource, v *view) *canvasImage {
 		im.waiting[v] = true
 	}
 	return im
+}
+
+// scratchMeshCanvas returns the canvas meshes raster into and read textures through, made once for the surface.
+func (s *surface) scratchMeshCanvas() js.Value {
+	if !s.meshCanvas.Truthy() {
+		s.meshCanvas = s.doc.Call("createElement", "canvas")
+	}
+	return s.meshCanvas
+}
+
+// meshTexture returns the pixels a mesh samples from src, and false while src loads. Pixels are used as they are; an encoded image's are read once it loads, and an offscreen drawing's once per version.
+func (s *surface) meshTexture(src driver.ImageSource, v *view) (canvasmesh.Texture, bool) {
+	switch {
+	case src.Pixels != nil:
+		return canvasmesh.RGBA(src.Pixels, src.Size), true
+	case src.Offscreen != nil:
+		off := src.Offscreen
+		canvas, density, ok := s.offscreenCanvas(off, v)
+		e := s.offscreen[off.ID]
+		if !ok || e == nil || !e.canvas.Equal(canvas) {
+			return canvasmesh.Texture{}, ok
+		}
+		if !e.readTexture {
+			e.texture = canvas2d.ReadTexture(s.scratchMeshCanvas(), canvas, density)
+			e.texture.Points = off.Size
+			if src.Size.Width > 0 && src.Size.Height > 0 {
+				e.texture.Points = src.Size
+			}
+			e.readTexture = true
+		}
+		return e.texture, true
+	}
+	im := s.loadImage(src, v)
+	if im.loaded && !im.readTexture {
+		im.texture = canvas2d.ReadTexture(s.scratchMeshCanvas(), im.img, im.density)
+		im.readTexture = true
+	}
+	return im.texture, im.loaded
 }
 
 // fontCSS is the CSS font shorthand of fnt.

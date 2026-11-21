@@ -586,6 +586,7 @@ final class Protocol {
     static final int DRAW_SHADOW = 35;
     static final int DRAW_STROKE_TEXT = 36;
     static final int DRAW_IMAGE = 37;
+    static final int DRAW_VERTICES = 40;
 
     // Gradient spreads, as in core/canvas.go; Pad is 0.
     static final int SPREAD_REFLECT = 1;

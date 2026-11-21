@@ -327,6 +327,8 @@ func (p *canvasPlayer) play(op *driver.DrawOp) {
 		p.text(op)
 	case driver.DrawImage:
 		p.image(op)
+	case driver.DrawVertices:
+		p.vertices(op)
 	case driver.DrawClear:
 		path := cairoCopyPath(cr)
 		cairoSave(cr)
@@ -643,10 +645,7 @@ func (p *canvasPlayer) image(op *driver.DrawOp) {
 		if e == nil || e.surface == 0 {
 			return
 		}
-		surf, picWidth, nat = e.surface, e.width, e.points
-		if op.Image.Size.Width > 0 && op.Image.Size.Height > 0 {
-			nat = op.Image.Size
-		}
+		surf, picWidth, nat = e.surface, e.width, offscreenPoints(*op.Image, e)
 	} else {
 		s := p.w.canvasImage(*op.Image, p.v)
 		if s == nil || s.pic == nil {
@@ -658,6 +657,15 @@ func (p *canvasPlayer) image(op *driver.DrawOp) {
 			return
 		}
 		picWidth, nat = s.pic.width, natural(s)
+	}
+	p.drawImage(op, surf, picWidth, nat)
+}
+
+// drawImage draws surf, picWidth pixels wide and nat points in size, as op
+// places it.
+func (p *canvasPlayer) drawImage(op *driver.DrawOp, surf uintptr, picWidth int, nat driver.Size) {
+	if surf == 0 || picWidth <= 0 {
+		return
 	}
 	f := func(v float32) float64 { return float64(v) }
 	w, h := f(op.W), f(op.H)
