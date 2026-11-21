@@ -144,42 +144,19 @@ func (w *window) scrollBy(v *view, d driver.Point) {
 // setSticky replaces scroll view v's sticky cells; cells no longer
 // sticky go back to their frames.
 func (w *window) setSticky(v *view, cells []driver.StickyCell) {
-	for _, c := range v.sticky {
-		if cv := w.view(c.Cell); cv != nil {
-			w.stick(cv, driver.Point{})
-		}
-	}
+	v.sticky.Unpin(w.placeSticky)
 	v.sticky = cells
-	bound := false
-	for _, c := range cells {
-		bound = bound || c.Node != 0
-	}
-	if w.stickyBound == nil {
-		w.stickyBound = map[*view]bool{}
-	}
-	if bound {
-		w.stickyBound[v] = true
-	} else {
-		delete(w.stickyBound, v)
-	}
+	w.stickyBound.Update(v, v.id, v.sticky)
 	w.pinSticky(v)
 }
 
-// pinSticky moves scroll view v's sticky cells for its offset, within their signed travel through driver.StickyShift.
 func (w *window) pinSticky(v *view) {
-	at := v.offset.Y
-	if v.scroll.Horizontal {
-		at = v.offset.X
-	}
-	for _, c := range v.sticky {
-		if cv := w.view(c.Cell); cv != nil {
-			d := w.animator.StickyShift(c, at)
-			shift := driver.Point{Y: d}
-			if v.scroll.Horizontal {
-				shift = driver.Point{X: d}
-			}
-			w.stick(cv, shift)
-		}
+	v.sticky.Pin(v.offset, v.scroll.Horizontal, w.animator, w.placeSticky)
+}
+
+func (w *window) placeSticky(id driver.NodeID, shift driver.Point) {
+	if v := w.view(id); v != nil {
+		w.stick(v, shift)
 	}
 }
 
@@ -196,14 +173,6 @@ func (w *window) stick(v *view, shift driver.Point) {
 	w.moved(v)
 }
 
-// repinBound pins again the sticky cells whose insets follow animated
-// values, which may have moved.
 func (w *window) repinBound() {
-	for v := range w.stickyBound {
-		if w.view(v.id) == v {
-			w.pinSticky(v)
-		} else {
-			delete(w.stickyBound, v)
-		}
-	}
+	w.stickyBound.Repin(w.view, w.pinSticky)
 }

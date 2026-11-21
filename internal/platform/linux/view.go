@@ -67,7 +67,7 @@ type view struct {
 	// and laid and shift a sticky cell's frame from the core and how far
 	// it is moved from it.
 	applied uint32
-	sticky  []driver.StickyCell
+	sticky  scrollbar.StickyCells
 	laid    driver.Bounds
 	shift   driver.Point
 

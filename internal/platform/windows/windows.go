@@ -278,7 +278,7 @@ type view struct {
 	// and laid and shift a sticky cell's frame from the core and how far
 	// it is moved from it.
 	applied uint32
-	sticky  []driver.StickyCell
+	sticky  scrollbar.StickyCells
 	laid    driver.Bounds
 	shift   driver.Point
 	wheel   scrollbar.Wheel // a snapping view's wheel turns
@@ -492,7 +492,7 @@ type window struct {
 	offscreenRendering map[uint64]bool
 	// stickyBound are the scroll views with sticky cells whose insets
 	// follow animated values.
-	stickyBound map[*view]bool
+	stickyBound scrollbar.StickyBindings[*view]
 	// components are the app's native components, hosts the views showing
 	// them with a window of their own, and missing the unknown names
 	// already logged.

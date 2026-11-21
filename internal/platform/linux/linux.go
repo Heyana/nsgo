@@ -216,7 +216,7 @@ type window struct {
 	hud *hud
 	// stickyBound are the scroll views with sticky cells whose insets
 	// follow animated values.
-	stickyBound map[*view]bool
+	stickyBound scrollbar.StickyBindings[*view]
 	epoch       time.Time // the animator's clock starts here
 	layouts     []*view   // views a layout animation moves, shows or retires
 	playing     []*view   // image views whose animated images play
