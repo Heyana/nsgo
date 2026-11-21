@@ -12,6 +12,30 @@ import (
 
 func TestMain(m *testing.M) { nsgotest.Main(m) }
 
+func TestMacOSTestSurfaceKeepsRequestedSize(t *testing.T) {
+	if nsgotest.Target() != "macos" {
+		t.Skip("checks the macOS test host's geometry")
+	}
+	const width, height = 1304, 1400
+	app := nsgotest.Start(t, func(*core.Scope) core.Node {
+		return core.View{TestID: "root", Style: core.Style{FlexGrow: 1, Background: core.RGB(0x326699)}}
+	}, nsgotest.Size(width, height))
+	checkSize := func(width, height int) {
+		t.Helper()
+		if got := app.Find("id:root").Frame.Size; got != (core.Size{Width: core.Points(width), Height: core.Points(height)}) {
+			t.Fatalf("requested %d × %d points, laid out at %g × %g", width, height, got.Width, got.Height)
+		}
+		pixels := app.Capture().Bounds().Size()
+		scale := pixels.X / width
+		if scale < 1 || pixels.X != width*scale || pixels.Y != height*scale {
+			t.Fatalf("requested %d × %d points, captured %d × %d pixels", width, height, pixels.X, pixels.Y)
+		}
+	}
+	checkSize(width, height)
+	app.Resize(width, 1200)
+	checkSize(width, 1200)
+}
+
 // TestCaptureShowsCompositedEffects checks that a macOS capture is what WindowServer composites: a filter and a box shadow are Core Animation's, and an AppKit redraw of the view tree leaves both out.
 func TestCaptureShowsCompositedEffects(t *testing.T) {
 	if nsgotest.Target() != "macos" {

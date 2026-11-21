@@ -640,12 +640,7 @@ func (s *surface) orderFront() {
 	}
 	if s.test != nil {
 		// In front, as a user sees it, but without taking the keyboard from the app the user works in.
-		frame := objc.Send[apple.CGRect](w, sel("frame"))
 		w.Send(sel("orderFrontRegardless"))
-		// AppKit fits a window into the screen as it orders it in, which would shrink a test's nsgotest.Size taller than the screen; a test window is a geometry fixture and keeps it. setFrame:display: does not constrain, unlike an override of constrainFrameRect:toScreen:, whose CGRect result a Go callback cannot return on amd64.
-		if objc.Send[apple.CGRect](w, sel("frame")) != frame {
-			w.Send(sel("setFrame:display:"), frame, true)
-		}
 		w.Send(sel("makeKeyWindow"))
 		return
 	}

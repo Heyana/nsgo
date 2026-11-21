@@ -797,23 +797,6 @@ func TestApplicationMenuRolesHeadless(t *testing.T) {
 	}
 }
 
-// macOS target test windows keep geometry fixtures larger than the screen, so AppKit's visible-frame constraint cannot silently change layout assertions.
-func TestMacOSTestSurfaceKeepsRequestedSize(t *testing.T) {
-	if Target() != "" && Target() != "macos" {
-		t.Skip("checks the macOS target test surface")
-	}
-	app := Start(t, func(cx *core.Scope) core.Node {
-		return core.View{TestID: "root", Style: core.Style{FlexGrow: 1}}
-	}, Size(800, 1400))
-	if got := app.Find("id:root").Frame.Size; got != (core.Size{Width: 800, Height: 1400}) {
-		t.Fatalf("initial requested size was constrained to %+v", got)
-	}
-	app.Resize(700, 1200)
-	if got := app.Find("id:root").Frame.Size; got != (core.Size{Width: 700, Height: 1200}) {
-		t.Fatalf("resized requested size was constrained to %+v", got)
-	}
-}
-
 // A focused field takes its own clipboard keys, with or without an Edit menu, as the platforms' fields do: copy and cut take a selection a masked field keeps to itself, and paste replaces the selection.
 func TestFieldClipboardKeys(t *testing.T) {
 	if Target() != "" {

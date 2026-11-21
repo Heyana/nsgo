@@ -257,8 +257,6 @@ jobs:
         run: go tool nsgo test -target macos ./internal/testhost/testdata/pick
       - name: Test native radio and tab focus
         run: go tool nsgo test -target macos -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
-      - name: Test that a macOS test window keeps a size taller than the screen
-        run: go tool nsgo test -target macos -run '^TestMacOSTestSurfaceKeepsRequestedSize$' ./nsgotest
       - name: Test composited captures
         run: go tool nsgo test -target macos ./internal/testhost/testdata/capture
       - name: Print crash reports

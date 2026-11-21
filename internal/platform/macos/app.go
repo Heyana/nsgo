@@ -99,7 +99,11 @@ func (o *surface) openSurface(cfg driver.SurfaceConfig) {
 		if cfg.Transparent {
 			style = styleMiniaturizable | styleResizable
 		}
-		window = objc.ID(classWindow).Send(selAlloc).Send(sel("initWithContentRect:styleMask:backing:defer:"),
+		class := classWindow
+		if o.test != nil {
+			class = unconstrainedTestWindow()
+		}
+		window = objc.ID(class).Send(selAlloc).Send(sel("initWithContentRect:styleMask:backing:defer:"),
 			apple.Rect(0, 0, float64(cfg.Width), float64(cfg.Height)), style, uint(2), false)
 		title := cfg.Title
 		if title == "" {
