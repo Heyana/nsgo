@@ -651,9 +651,11 @@ func TestTouchBrakingClaimsGlideAndSnap(t *testing.T) {
 	})
 	t.Cleanup(eng.Close)
 
-	root := &view{id: 1, kind: driver.KindView, frame: driver.Bounds{Size: driver.Size{Width: 300, Height: 400}}}
+	visible := driver.ViewStyle{Opacity: 1}
+	root := &view{id: 1, kind: driver.KindView, style: visible, frame: driver.Bounds{Size: driver.Size{Width: 300, Height: 400}}}
 	scroll := &view{
 		id:     2,
+		style:  visible,
 		kind:   driver.KindScroll,
 		parent: root,
 		frame:  driver.Bounds{Size: driver.Size{Width: 300, Height: 400}},
@@ -663,6 +665,7 @@ func TestTouchBrakingClaimsGlideAndSnap(t *testing.T) {
 	}
 	child := &view{
 		id:     3,
+		style:  visible,
 		kind:   driver.KindView,
 		parent: scroll,
 		frame:  driver.Bounds{Size: driver.Size{Width: 300, Height: 2000}},

@@ -429,10 +429,9 @@ func TestFileDropFromX11FileManagerReachesView(t *testing.T) {
 		x.flush(display)
 	}
 
-	waitReply := func(wantMsg uintptr, what string) [5]int {
-		t.Helper()
-		waitDeadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(waitDeadline) {
+	// nextReply returns the next wantMsg sent to the source before deadline, answering selection requests meanwhile.
+	nextReply := func(wantMsg uintptr, deadline time.Time) ([5]int, bool) {
+		for time.Now().Before(deadline) {
 			if x.pending(display) == 0 {
 				time.Sleep(5 * time.Millisecond)
 				continue
@@ -445,19 +444,35 @@ func TestFileDropFromX11FileManagerReachesView(t *testing.T) {
 			case x11ClientMessageType:
 				cm := (*x11ClientMessage)(unsafe.Pointer(&ev))
 				if cm.window == source && cm.messageType == wantMsg {
-					return cm.data
+					return cm.data, true
 				}
 			}
 		}
-		t.Fatalf("timed out waiting for %s", what)
-		return [5]int{}
+		return [5]int{}, false
 	}
 
+	waitReply := func(wantMsg uintptr, what string) [5]int {
+		t.Helper()
+		reply, ok := nextReply(wantMsg, time.Now().Add(5*time.Second))
+		if !ok {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		return reply
+	}
+
+	// A position that moves the drag onto another GTK widget is answered twice: GTK 4 sends a refusing XdndStatus for the drop crossing it synthesizes (gtk_main_do_event ends that crossing with gtk_drop_end_event, and a drop target already holding the drop does not answer it), then the one the motion handler decides. A source acts on the latest status, so this one does too: it reads statuses until no more arrive.
 	sendPosition := func(sxPt, syPt float64) (accepted bool, action uintptr) {
 		rx, ry := surfaceToRoot(sxPt, syPt)
 		packed := int((uint32(rx) << 16) | (uint32(ry) & 0xffff))
 		sendMsg(xdndPosition, [5]int{int(source), 0, packed, int(serverTime), int(xdndActionCopy)})
 		reply := waitReply(xdndStatus, fmt.Sprintf("XdndStatus at (%v, %v)", sxPt, syPt))
+		for {
+			later, ok := nextReply(xdndStatus, time.Now().Add(250*time.Millisecond))
+			if !ok {
+				break
+			}
+			reply = later
+		}
 		return reply[1]&1 != 0, uintptr(reply[4])
 	}
 
