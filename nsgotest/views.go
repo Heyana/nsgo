@@ -67,6 +67,8 @@ type (
 	// defaults applied: Volume in 0 to 1, Rate above 0, a ResizeMode and
 	// ProgressInterval at least 16 milliseconds.
 	VideoConfig = driver.VideoConfig
+	// VideoHeaders is the snapshot of a video's HTTP request headers.
+	VideoHeaders = driver.VideoHeaders
 	// PictureInPictureConfig describes a detached custom session.
 	PictureInPictureConfig = driver.PictureInPictureConfig
 	// ViewKind is the kind of native view a node mounts.

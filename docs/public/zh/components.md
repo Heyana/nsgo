@@ -34,6 +34,8 @@ core.View{
 
 `Rate` 设置播放速度，`RateFunc` 可在播放中调整速度。根据 `OnLoad` 返回的 `VideoInfo.RateChangeable` 决定是否显示倍速控件。在 Linux 上，安装 GstPlay 和 GStreamer 的 `scaletempo` 滤镜后，可调整支持跳转的视频的播放速度。备用播放器以 1 倍速播放。
 
+在 Android 上，`Video.Headers` 可以为视频 URL 设置 `Referer`、`User-Agent` 或 `Cookie` 等 HTTP 请求头。视频挂载时会复制这个 map，`SourceFunc` 返回新的 URL 时仍使用同一组请求头。
+
 ## 组件
 
 组件是一个接收 scope、返回元素的函数。它只运行一次，之后的变化由 signal 驱动。

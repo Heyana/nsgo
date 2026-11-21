@@ -1575,6 +1575,11 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			w.byte(byte(c.ResizeMode - driver.Cover)) // Java's are 0-based
 			w.u32(uint32(c.ProgressInterval.Milliseconds()))
 			w.byte(byte(c.AudioSession))
+			w.u32(uint32(c.Headers.Len()))
+			for name, value := range c.Headers.All {
+				w.str(name)
+				w.str(value)
+			}
 		case driver.ItemVideoSeek:
 			w.u64(uint64(it.Time.Milliseconds()))
 		case driver.ItemNative:

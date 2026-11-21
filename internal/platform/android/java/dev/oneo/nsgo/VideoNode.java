@@ -25,6 +25,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -49,6 +52,7 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
     private MediaPlayer player;
     private Surface surface;
     private String source;
+    private Map<String, String> headers = Collections.emptyMap();
     private boolean prepared;
     /** A non-repeating end stays stopped until an explicit replay, seek or source change. */
     private boolean completed;
@@ -94,6 +98,11 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         int resizeMode = in.readUnsignedByte();
         long interval = in.readInt() & 0xffffffffL;
         int audioSession = in.readUnsignedByte();
+        int headerCount = in.readInt();
+        Map<String, String> headers = headerCount == 0 ? Collections.emptyMap() : new HashMap<>();
+        for (int i = 0; i < headerCount; i++) {
+            headers.put(Protocol.readString(in), Protocol.readString(in));
+        }
         boolean wasPaused = paused;
         paused = Protocol.flag(flags, 0);
         if (paused != wasPaused) {
@@ -132,8 +141,9 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
         }
         // Go sends no source as an empty one.
         if (source.isEmpty()) source = null;
-        if (!Objects.equals(source, this.source) || reopen) {
+        if (!Objects.equals(source, this.source) || !headers.equals(this.headers) || reopen) {
             this.source = source;
+            this.headers = headers;
             open();
         } else {
             apply();
@@ -219,7 +229,13 @@ final class VideoNode extends TextureView implements TextureView.SurfaceTextureL
     private void setMediaSource(MediaPlayer player, String uri) throws IOException {
         Context context = getContext();
         if (!uri.startsWith("asset:")) {
-            player.setDataSource(context, Uri.parse(uri));
+            Uri location = Uri.parse(uri);
+            String scheme = location.getScheme();
+            if (!headers.isEmpty() && ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+                player.setDataSource(context, location, headers);
+            } else {
+                player.setDataSource(context, location);
+            }
             return;
         }
         String path = uri.substring("asset:".length()).replaceFirst("^/+", "");

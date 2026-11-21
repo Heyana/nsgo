@@ -1,0 +1,4 @@
+name: VideoHeaders
+id: dev.nsgo.videoheaders
+android:
+  loopback_cleartext: true

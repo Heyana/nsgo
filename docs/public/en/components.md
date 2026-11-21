@@ -34,6 +34,17 @@ A transparent clip shows what is behind it as HEVC with alpha in a `.mov` on mac
 
 `Rate` sets playback speed and `RateFunc` can change it during playback. Use `VideoInfo.RateChangeable` from `OnLoad` to show a speed control. Linux can change the rate of seekable videos when GstPlay and GStreamer's `scaletempo` filter are installed. The fallback player uses 1×.
 
+On Android, set `Video.Headers` to send HTTP request headers such as `Referer`, `User-Agent` or `Cookie` with a URL:
+
+```go
+core.Video{
+    Source:  "https://video.example/clip.mp4",
+    Headers: map[string]string{"Referer": "https://video.example/player"},
+}
+```
+
+The video copies the map when it mounts and uses the same headers if `SourceFunc` supplies a new URL.
+
 ## Components
 
 A component is a function that takes a scope and returns an element. It runs once; what changes later is driven by signals.

@@ -260,3 +260,37 @@ func TestVideoChangesItsAudioSessionInPlace(t *testing.T) {
 		t.Fatalf("resent an unchanged session: %v", k)
 	}
 }
+
+func TestVideoCopiesRequestHeadersForEachSource(t *testing.T) {
+	headers := map[string]string{"Referer": "https://example.invalid/player"}
+	var source *Signal[string]
+	h := newHost(t, Size{Width: 160, Height: 90}, func(cx *Scope) Node {
+		source = NewSignal(cx, "https://example.invalid/first.mp4")
+		return Video{SourceFunc: source.Get, Headers: headers}
+	})
+	headers["Referer"] = "changed after mounting"
+	video := func(b *driver.MountBatch) *driver.VideoConfig {
+		t.Helper()
+		for _, it := range b.Items {
+			if it.Kind == driver.ItemVideo {
+				return it.Video
+			}
+		}
+		t.Fatal("the commit sent no video configuration")
+		return nil
+	}
+
+	first := video(h.commit())
+	if first.Headers.Len() != 1 {
+		t.Fatalf("the first video configuration has %d headers", first.Headers.Len())
+	}
+	for name, value := range first.Headers.All {
+		if name != "Referer" || value != "https://example.invalid/player" {
+			t.Fatalf("header = %s %q", name, value)
+		}
+	}
+	source.Set("https://example.invalid/second.mp4")
+	if next := video(h.commit()); next.Source == first.Source || next.Headers != first.Headers {
+		t.Fatal("the changed source did not receive the same header snapshot")
+	}
+}

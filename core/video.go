@@ -13,6 +13,9 @@ type Video struct {
 	// Source is a URL, a file path or an "asset:" path in the app's resources.
 	Source     string
 	SourceFunc func() string
+	// Headers supplies HTTP request headers for the source on Android.
+	// Its fields are copied when the video mounts.
+	Headers map[string]string
 	// Paused applies when the source opens and when its value changes. A non-repeating video stays at its end through other prop changes: set Paused true then false to replay it from the start, or from where its built-in controls scrubbed it back to, or Seek before the end, which plays on from there when Paused is false.
 	Paused     bool
 	PausedFunc func() bool
@@ -143,7 +146,7 @@ func (t *Tree) mountVideo(cx *Scope, parent *node, v Video) {
 	n.props = driver.ViewProps{Label: v.Label, TestID: v.TestID}
 	t.bindAccessibilityText(cx, n, &n.props.Label, v.LabelFunc)
 	vn := &videoNode{
-		config: driver.VideoConfig{Source: v.Source, Paused: v.Paused, Muted: v.Muted, Volume: videoVolume(v.Volume),
+		config: driver.VideoConfig{Source: v.Source, Headers: driver.NewVideoHeaders(v.Headers), Paused: v.Paused, Muted: v.Muted, Volume: videoVolume(v.Volume),
 			Rate: videoRate(v.Rate), Repeat: v.Repeat, ResizeMode: v.ResizeMode, Controls: v.Controls,
 			ProgressInterval: videoInterval(v.ProgressInterval), AudioSource: v.AudioSource, AudioSession: v.AudioSession,
 			PictureInPicture: v.PictureInPicture, AutoPictureInPicture: v.AutoPictureInPicture},

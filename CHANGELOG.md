@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Send `core.Video.Headers` with HTTP requests from the Android video player (#681 by @houko).
 - Report same-document URL, history and title changes from WebView2 through `WebView.OnNavigationStateChange` (#113 by @houko).
 - Restore the macOS main window’s last regular frame across native Go rebuilds within a `dev` session (#658 by @houko).
 - Expose a TSX plugin's stop reason and notify the Go host when it stops (#925 by @houko).
