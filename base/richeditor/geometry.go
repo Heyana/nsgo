@@ -141,9 +141,7 @@ func (v *rv) leafAt(x, y float64) *block {
 }
 
 func (v *rv) selectionRects() []Rect2 {
-	st := v.s.State()
-	sel := st.Selection
-	var out []Rect2
+	sel := v.s.State().Selection
 	switch sel.(type) {
 	case *CellSelection, *NodeSelection:
 		return nil
@@ -151,7 +149,15 @@ func (v *rv) selectionRects() []Rect2 {
 	if sel.Empty() {
 		return nil
 	}
-	from, to := sel.From(), sel.To()
+	return v.rangeRects(sel.From(), sel.To())
+}
+
+// rangeRects returns the visual line boxes of the document range from..to in content coordinates.
+func (v *rv) rangeRects(from, to int) []Rect2 {
+	if from >= to {
+		return nil
+	}
+	var out []Rect2
 	for _, b := range v.textblocks {
 		start, end := b.pos+1, b.pos+1+b.nowNode.Content.Size
 		if end < from {

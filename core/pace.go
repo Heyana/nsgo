@@ -235,7 +235,7 @@ func (t *Tree) makeCommanded() {
 func commandNeedsPlacement(kind driver.ItemKind) bool {
 	switch kind {
 	case driver.ItemFocus, driver.ItemBlur, driver.ItemAccessibilityFocus,
-		driver.ItemScrollTo, driver.ItemScrollBy, driver.ItemZoomTo:
+		driver.ItemScrollTo, driver.ItemScrollBy, driver.ItemZoomTo, driver.ItemEditMenu:
 		return true
 	}
 	return false

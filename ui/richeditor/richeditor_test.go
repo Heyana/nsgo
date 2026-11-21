@@ -85,3 +85,38 @@ func TestViewShowsAnInlineImage(t *testing.T) {
 		t.Fatalf("markdown %q", got)
 	}
 }
+
+// TestViewTouchSelectionHandlesUseThemeAccent checks that ui/richeditor styles
+// touch selection handles with the theme accent and lets apps override them.
+func TestViewTouchSelectionHandlesUseThemeAccent(t *testing.T) {
+	s, err := richeditor.NewSession(richeditor.SessionConfig{
+		Extensions: richeditor.StarterKit(richeditor.StarterOptions{}),
+		Markdown:   "touch selection test\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	override := core.RGB(0xff2200)
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		cx.SetTheme(core.DefaultTheme())
+		return uirich.View{Editor: s, Label: "Doc",
+			Styles: richeditor.Styles{SelectionHandle: core.Style{Background: override}},
+			Style:  core.Style{Width: core.Pt(360), Height: core.Pt(200)}}
+	}, nsgotest.Environment(core.Environment{OS: core.OSIOS, Idiom: core.IdiomPhone}))
+	app.Settle()
+	r, ok := s.PageCoordsAtPos(3)
+	if !ok {
+		t.Fatal("no page coords")
+	}
+	app.LongPressAt("id:rich-editor-content", driver.Point{X: driver.Points(r.X), Y: driver.Points(r.Y + r.Height/2)})
+	start := app.Find("id:rich-editor-selection-handle-start")
+	if len(start.Children) == 0 || len(start.Children[0].Children) == 0 {
+		t.Fatalf("handle missing knob view: %+v", start)
+	}
+	knob := start.Children[0].Children[0]
+	if knob.Style.Background != override {
+		t.Fatalf("knob background = %v, want %v", knob.Style.Background, override)
+	}
+	if app.EditMenu == nil {
+		t.Fatal("expected system edit menu on touch long press")
+	}
+}

@@ -259,6 +259,55 @@ func TestCaretAndPasteReachTheInputAndAnOverlayAnchorsToTheCaret(t *testing.T) {
 	}
 }
 
+func TestInputEditMenuCommandsAndActions(t *testing.T) {
+	var ref Ref
+	var actions []EditAction
+	var show *Signal[bool]
+	h := newHost(t, Size{Width: 300, Height: 200}, func(cx *Scope) Node {
+		show = NewSignal(cx, true)
+		return Show{When: show.Get, Then: func(*Scope) Node {
+			return Input{Ref: &ref, TestID: "sink", OnEditAction: func(a EditAction) { actions = append(actions, a) }}
+		}}
+	})
+	h.commit()
+	sink := h.find("sink")
+
+	// Multiple OpenEditMenu calls in one turn coalesce to the latest command.
+	first := Bounds{Origin: Point{X: 10, Y: 20}, Size: Size{Width: 40, Height: 18}}
+	second := Bounds{Origin: Point{X: 12, Y: 22}, Size: Size{Width: 60, Height: 24}}
+	ref.OpenEditMenu(first, EditCopy|EditSelectAll)
+	ref.OpenEditMenu(second, EditCut|EditCopy|EditPaste)
+	b := h.commit()
+	if len(b.Items) != 1 || b.Items[0].Kind != driver.ItemEditMenu || b.Items[0].ID != sink.id ||
+		b.Items[0].Frame != second || EditAction(b.Items[0].Count) != EditCut|EditCopy|EditPaste {
+		t.Fatalf("open batch = %+v", b.Items)
+	}
+
+	// EventEditAction dispatches to Input.OnEditAction.
+	h.tree.Dispatch(driver.Event{Kind: driver.EventEditAction, ID: sink.id, Count: uint32(EditCut)})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventEditAction, ID: sink.id, Count: uint32(EditSelectAll)})
+	if len(actions) != 2 || actions[0] != EditCut || actions[1] != EditSelectAll {
+		t.Fatalf("actions = %v, want [EditCut EditSelectAll]", actions)
+	}
+
+	// CloseEditMenu sends ItemEditMenu with Count 0.
+	ref.CloseEditMenu()
+	b = h.commit()
+	if len(b.Items) != 1 || b.Items[0].Kind != driver.ItemEditMenu || b.Items[0].Count != 0 {
+		t.Fatalf("close batch = %+v", b.Items)
+	}
+
+	// Unmounting the input drops any pending edit menu command.
+	ref.OpenEditMenu(second, EditCopy)
+	show.Set(false)
+	b = h.commit()
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemEditMenu {
+			t.Fatalf("unmounted input still emitted ItemEditMenu: %+v", it)
+		}
+	}
+}
+
 func TestInputPlaceholderFollowsItsSignal(t *testing.T) {
 	var text *Signal[string]
 	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {

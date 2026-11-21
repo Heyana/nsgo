@@ -40,3 +40,11 @@ func menuItems(entries []driver.MenuEntry) []MenuItem {
 func (a *App) clearPopupMenu() {
 	a.popupMenu, a.PopupMenu, a.popupID, a.popupTree = nil, nil, 0, nil
 }
+
+// EditMenu records the system touch edit menu an input opened with
+// Ref.OpenEditMenu, clear of Bounds in surface points, offering Actions.
+type EditMenu struct {
+	Input   *View
+	Bounds  core.Bounds
+	Actions core.EditAction
+}

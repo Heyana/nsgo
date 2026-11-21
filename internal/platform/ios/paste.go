@@ -16,10 +16,13 @@ import (
 // hear their own paste:, and the caret is the editor's own caret rect,
 // even with HideCaret.
 
-// pasteMethods are the editors' paste methods.
+// pasteMethods are the editors' paste and edit-menu methods.
 func pasteMethods() []objc.MethodDef {
 	paste := func(self objc.ID, cmd objc.SEL, sender objc.ID) {
 		in := inputOf(self)
+		if in != nil && in.editMenu != 0 {
+			in.editMenu = 0
+		}
 		if in == nil {
 			apple.Super(self, cmd, sender)
 			return
@@ -38,9 +41,23 @@ func pasteMethods() []objc.MethodDef {
 		}
 		apple.Super(self, cmd, sender)
 	}
+	editAction := func(action driver.EditAction) func(objc.ID, objc.SEL, objc.ID) {
+		return func(self objc.ID, cmd objc.SEL, sender objc.ID) {
+			if editMenuChose(self, action) {
+				return
+			}
+			apple.Super(self, cmd, sender)
+		}
+	}
 	return []objc.MethodDef{
 		{Cmd: sel("paste:"), Fn: paste},
+		{Cmd: sel("cut:"), Fn: editAction(driver.EditCut)},
+		{Cmd: sel("copy:"), Fn: editAction(driver.EditCopy)},
+		{Cmd: sel("selectAll:"), Fn: editAction(driver.EditSelectAll)},
 		{Cmd: sel("canPerformAction:withSender:"), Fn: func(self objc.ID, cmd objc.SEL, action objc.SEL, sender objc.ID) bool {
+			if in := inputOf(self); in != nil && in.editMenu != 0 {
+				return editMenuOffers(in.editMenu, action)
+			}
 			if in := inputOf(self); in != nil && in.fs.Config.Readonly && readonlyRefuses[action] {
 				return false
 			}
@@ -58,6 +75,87 @@ func pasteMethods() []objc.MethodDef {
 		{Cmd: sel("nsgoCaretRectForPosition:"), Fn: func(self objc.ID, _ objc.SEL, pos objc.ID) apple.CGRect {
 			return objc.Send[apple.CGRect](self, sel("caretRectForPosition:"), pos)
 		}},
+	}
+}
+
+// editMenuOffers answers canPerformAction:withSender: while a component's
+// touch edit menu (ItemEditMenu) is open on the input: only the actions it
+// requested (Paste when the pasteboard holds something, checked without
+// reading it so iOS shows no paste banner).
+func editMenuOffers(actions driver.EditAction, action objc.SEL) bool {
+	switch action {
+	case sel("cut:"):
+		return actions&driver.EditCut != 0
+	case sel("copy:"):
+		return actions&driver.EditCopy != 0
+	case sel("paste:"):
+		if actions&driver.EditPaste == 0 {
+			return false
+		}
+		pb := objc.ID(apple.Class("UIPasteboard")).Send(sel("generalPasteboard"))
+		return objc.Send[bool](pb, sel("hasStrings")) || objc.Send[bool](pb, sel("hasImages")) || objc.Send[bool](pb, sel("hasURLs"))
+	case sel("selectAll:"):
+		return actions&driver.EditSelectAll != 0
+	default:
+		return false
+	}
+}
+
+// editMenuChose reports action chosen from an edit menu open on editor.
+func editMenuChose(editor objc.ID, action driver.EditAction) bool {
+	in := inputOf(editor)
+	if in == nil || in.editMenu == 0 {
+		return false
+	}
+	in.editMenu = 0
+	in.fs.Dispatch(driver.Event{Kind: driver.EventEditAction, ID: in.fs.ID, Count: uint32(action)})
+	return true
+}
+
+// openEditMenu is ItemEditMenu: opens the system edit menu on the input's
+// editor clear of bounds (in the surface's points), offering actions.
+func (v *view) openEditMenu(bounds driver.Bounds, actions driver.EditAction) {
+	in := v.input
+	if in == nil || in.field == 0 {
+		return
+	}
+	if !objc.Send[bool](in.field, sel("isFirstResponder")) && !objc.Send[bool](in.field, sel("becomeFirstResponder")) {
+		return
+	}
+	surfRect := apple.Rect(float64(bounds.Origin.X), float64(bounds.Origin.Y), float64(bounds.Size.Width), float64(bounds.Size.Height))
+	rect := objc.Send[apple.CGRect](in.field, sel("convertRect:fromView:"), surfRect, v.surface.native)
+	in.editMenuGen++
+	in.editMenu = actions
+	in.editMenuRect = rect
+	if class := apple.Class("UIEditMenuInteraction"); class != 0 {
+		if in.editInteraction == 0 {
+			in.editInteraction = objc.ID(class).Send(selAlloc).Send(sel("initWithDelegate:"), selector)
+			in.field.Send(sel("addInteraction:"), in.editInteraction)
+			in.editInteraction.Send(selRelease)
+		}
+		source := apple.CGPoint{X: rect.Origin.X + rect.Size.Width/2, Y: rect.Origin.Y}
+		ident := objc.ID(apple.Class("NSNumber")).Send(sel("numberWithUnsignedInteger:"), in.editMenuGen)
+		config := objc.ID(apple.Class("UIEditMenuConfiguration")).Send(
+			sel("configurationWithIdentifier:sourcePoint:"), ident, source)
+		// UIEditMenuArrowDirectionDown (2): above the selection where it fits.
+		config.Send(sel("setPreferredArrowDirection:"), int(2))
+		in.editInteraction.Send(sel("presentEditMenuWithConfiguration:"), config)
+		return
+	}
+	menu := objc.ID(apple.Class("UIMenuController")).Send(sel("sharedMenuController"))
+	menu.Send(sel("showMenuFromView:rect:"), in.field, rect)
+}
+
+// closeEditMenu closes the edit menu openEditMenu opened on in.
+func (in *input) closeEditMenu() {
+	if in == nil || in.editMenu == 0 {
+		return
+	}
+	in.editMenu = 0
+	if in.editInteraction != 0 {
+		in.editInteraction.Send(sel("dismissMenu"))
+	} else if in.field != 0 && apple.Class("UIEditMenuInteraction") == 0 {
+		objc.ID(apple.Class("UIMenuController")).Send(sel("sharedMenuController")).Send(sel("hideMenuFromView:"), in.field)
 	}
 }
 

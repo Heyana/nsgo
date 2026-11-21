@@ -490,7 +490,10 @@ type Input struct {
 	// OnPaste receives what the user pastes, before the text it inserts
 	// is reported; PasteBehavior PasteReport keeps the text out. Images
 	// and files are never inserted, nor the text naming pasted files.
-	OnPaste       func(PasteEvent)
+	OnPaste func(PasteEvent)
+	// OnEditAction receives Cut, Copy or Select All chosen from the edit
+	// menu Ref.OpenEditMenu opened on the input; Paste runs OnPaste.
+	OnEditAction  func(EditAction)
 	PasteBehavior PasteBehavior
 	// OnScroll receives a multiline field's scroll offset as its text scrolls.
 	OnScroll  func(ScrollEvent)

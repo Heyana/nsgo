@@ -501,6 +501,7 @@ var viewItemNames = map[driver.ItemKind]string{
 	driver.ItemNativeCommand:      "ItemNativeCommand",
 	driver.ItemZoomTo:             "ItemZoomTo",
 	driver.ItemSelection:          "ItemSelection",
+	driver.ItemEditMenu:           "ItemEditMenu",
 	driver.ItemScrollBy:           "ItemScrollBy",
 	driver.ItemStickyCells:        "ItemStickyCells",
 	driver.ItemAccessibilityLabel: "ItemAccessibilityLabel",
@@ -551,6 +552,9 @@ func (a *App) apply(b *driver.MountBatch) {
 					}
 				}
 				v.detach()
+				if a.EditMenu != nil && a.EditMenu.Input == v {
+					a.EditMenu = nil
+				}
 			}
 			a.anim.Forget(it.ID)
 			a.deleteGPUView(it.ID)
@@ -667,6 +671,14 @@ func (a *App) apply(b *driver.MountBatch) {
 			n := driver.UTF16Len(v.Text)
 			r := it.Selection
 			v.Selection = driver.TextRange{Start: min(max(r.Start, 0), n), End: min(max(r.End, 0), n)}
+		case driver.ItemEditMenu:
+			if it.Count == 0 {
+				if a.EditMenu != nil && a.EditMenu.Input == v {
+					a.EditMenu = nil
+				}
+			} else {
+				a.EditMenu = &EditMenu{Input: v, Bounds: it.Frame, Actions: core.EditAction(it.Count)}
+			}
 		case driver.ItemScrollContent:
 			v.Content = it.Size
 			resized = append(resized, v)
@@ -1717,6 +1729,9 @@ func (a *App) setFocus(v *View, on bool) {
 		return
 	}
 	v.Focused = on
+	if !on && a.EditMenu != nil && a.EditMenu.Input == v {
+		a.EditMenu = nil
+	}
 	kind := driver.EventBlur
 	if on {
 		kind = driver.EventFocus

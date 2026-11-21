@@ -25,6 +25,8 @@ type Styles struct {
 	// SelectedNode goes on the block a node selection holds, and SelectedCell
 	// on the box in each selected cell.
 	SelectedNode, SelectedCell core.Style
+	// SelectionHandle is the knobs at a touch selection's ends.
+	SelectionHandle core.Style
 	// ListMarker is the marker a list's item shows; TaskCheckbox a task
 	// item's box, whose Selected state is its check.
 	ListMarker, TaskCheckbox core.Style
@@ -42,6 +44,7 @@ type Classes struct {
 	Placeholder, Caret, Selection, Composition       string
 	GapCursor, DropCursor                            string
 	SelectedNode, SelectedCell                       string
+	SelectionHandle                                  string
 	ListMarker, TaskCheckbox                         string
 	TableResizeHandle, TableGrip, TableDropIndicator string
 }
@@ -236,6 +239,7 @@ type rv struct {
 	goalX                float64
 	hasGoal              bool
 	press                pressState
+	touch                touchState
 	tableDrag            *core.Signal[tableDragState]
 	blockDrag            *core.Signal[blockDragState]
 	hovered              *core.Signal[string]
@@ -266,6 +270,7 @@ func (p View) Render(cx *core.Scope) core.Node {
 	v := &rv{p: p, cx: cx, s: s, rev: core.NewSignal(cx, 0), geo: core.NewSignal(cx, 0), focused: core.NewSignal(cx, false),
 		composing: core.NewSignal(cx, ""), sink: core.NewSignal(cx, ""), content: new(core.Ref), vs: new(core.Ref), sinkRef: new(core.Ref),
 		viewport: core.NewSignal(cx, core.Size{}), scrollY: core.NewSignal(cx, core.Points(0)),
+		touch:     touchState{rev: core.NewSignal(cx, 0)},
 		tableDrag: core.NewSignal(cx, tableDragState{}), blockDrag: core.NewSignal(cx, blockDragState{target: -1}), hovered: core.NewSignal(cx, ""), tableList: core.NewSignalFunc(cx, []*block(nil), slices.Equal[[]*block])}
 	v.looks = core.NewMemoFunc(cx, parseStyles(p), func(a, b *Styles) bool { return false })
 	v.root = v.newBlock(s.State().Doc, nil)
@@ -291,12 +296,12 @@ func (p View) Render(cx *core.Scope) core.Node {
 		Class: p.Class, Style: core.Style{Overflow: core.Hidden}.Merge(p.Style), StyleFunc: p.StyleFunc, TestID: p.TestID, OnLayout: p.OnLayout, Tooltip: p.Tooltip,
 		Role: core.RoleGroup, Label: p.Label,
 		Children: []core.Node{
+			v.sinkView(),
 			core.Scroll{Ref: v.vs, TestID: "rich-editor-scroll",
 				Style:    core.Style{Position: core.Absolute, Left: core.Pt(0), Top: core.Pt(0), Right: core.Pt(0), Bottom: core.Pt(0)},
 				OnScroll: func(e core.ScrollEvent) { v.scrollY.Set(e.Offset.Y) },
 				OnLayout: func(b core.Bounds) { v.viewport.Set(b.Size) },
 				Children: []core.Node{v.contentBox()}},
-			v.sinkView(),
 			v.bubbleMenu(),
 			core.Show{When: func() bool { return v.focused.Get() && v.composing.Get() == "" }, Then: func(cx *core.Scope) core.Node {
 				v.keys(cx)
@@ -424,6 +429,7 @@ func (v *rv) changed(st *State, trs []*Transaction) {
 				v.hasGoal = v.hasGoal && tr.Meta(keepGoal) != nil
 			}
 		}
+		v.touchFollow()
 	})
 	if v.p.OnChange != nil && st.Doc != v.lastDoc {
 		v.p.OnChange(st.Revision)
@@ -710,13 +716,24 @@ func (w inlineView) Render(cx *core.Scope) core.Node {
 			}
 		},
 	}
-	return core.View{OnPress: func(core.PressEvent) {
+	view := core.View{OnPress: func(core.PressEvent) {
 		st := v.s.State()
 		if pos := w.pos(); pos >= 0 && isNodeSelectable(w.leaf) {
 			v.sinkRef.Focus()
 			v.s.Dispatch(st.Tr().SetSelection(NodeSelectionAt(st.Doc, pos)))
 		}
 	}, Children: []core.Node{f(cx, props)}}
+	if !core.Untracked(cx, cx.Env().Desktop) {
+		view.OnLongPress = func(core.PressEvent) {
+			st := v.s.State()
+			if pos := w.pos(); pos >= 0 && isNodeSelectable(w.leaf) {
+				v.sinkRef.Focus()
+				v.s.Dispatch(st.Tr().SetSelection(NodeSelectionAt(st.Doc, pos)))
+				v.takeTouchSelection()
+			}
+		}
+	}
+	return view
 }
 
 func (v *rv) nodeLook(b *block, s *Styles) (core.Style, string) {
@@ -885,9 +902,19 @@ func (v *rv) contentBox() core.Node {
 			OnRelease:   func(core.ResponderEvent) { v.dragEnd() },
 			OnTerminate: func(core.ResponderEvent) { v.dragEnd() }}
 	} else {
-		box.OnPress = func(e core.PressEvent) { v.pressDown(e.Position, max(e.Clicks, 1), e.Modifiers) }
+		box.OnPressDown = func(core.PressEvent) { v.touchDown() }
+		box.OnPressUp = func(core.PressEvent) { v.touchUp() }
+		box.OnPress = func(e core.PressEvent) { v.tap(e.Position, e.PagePosition, e.Modifiers, e.Clicks) }
+		box.OnLongPress = func(e core.PressEvent) { v.longPress(e.Position, e.PagePosition) }
+		box.Responder = &core.Responder{
+			Claims:      []core.TouchClaim{{OnMove: true, Ask: func(core.ResponderEvent) bool { return v.sweepArmed() }}},
+			OnGrant:     func(e core.ResponderEvent) { v.beginSweep(); v.sweepTo(e.PagePosition) },
+			OnMove:      func(e core.ResponderEvent) { v.sweepTo(e.PagePosition) },
+			OnRelease:   func(core.ResponderEvent) { v.endSweep() },
+			OnTerminate: func(core.ResponderEvent) { v.endSweep() },
+		}
 	}
-	box.Children = []core.Node{v.selectionLayer(), v.kidViews(v.root), v.placeholder(), v.caret(), v.gapCursor(), v.dropCursor(), v.tableControls()}
+	box.Children = []core.Node{v.selectionLayer(), v.kidViews(v.root), v.placeholder(), v.caret(), v.gapCursor(), v.dropCursor(), v.tableControls(), v.handles()}
 	return box
 }
 

@@ -1660,6 +1660,14 @@ func (s *surface) apply(b *driver.MountBatch) {
 			if v.input != nil {
 				v.input.setSelection(it.Selection)
 			}
+		case driver.ItemEditMenu:
+			if v.input != nil && !onTV() {
+				if it.Count == 0 {
+					v.input.closeEditMenu()
+				} else {
+					v.openEditMenu(it.Frame, driver.EditAction(it.Count))
+				}
+			}
 		case driver.ItemScrollConfig:
 			if v.sc != nil {
 				v.configureScroll(it.Scroll)
@@ -1804,6 +1812,9 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 // delete releases v; kept leaves its native where it is, going away.
 func (s *surface) delete(v *view, kept bool) {
 	v.releaseCanvasNodes()
+	if v.input != nil {
+		v.input.closeEditMenu()
+	}
 	if v.tsel != nil {
 		v.resignText()
 		v.tsel = nil

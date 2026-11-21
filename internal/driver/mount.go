@@ -406,6 +406,27 @@ const (
 	ItemHapticPattern
 	// ItemPageHead replaces the web document's scoped title and description. Sent only to a web backend; an embedded app leaves its host's head alone.
 	ItemPageHead
+	// ItemEditMenu opens or closes the platform's touch edit menu on input ID
+	// (UIEditMenuInteraction on iOS, a floating ActionMode on Android), anchored
+	// clear of Frame in the surface's points and offering the EditAction bits in
+	// Count; Count 0 closes any edit menu open on the input. Choosing Cut, Copy
+	// or Select All reports EventEditAction on ID with that action in Count;
+	// Paste runs the input's own paste (EventPaste).
+	ItemEditMenu
+)
+
+// EditAction is an editing action of an input's touch edit menu (ItemEditMenu, EventEditAction).
+type EditAction uint32
+
+const (
+	// EditCut cuts the selection.
+	EditCut EditAction = 1 << iota
+	// EditCopy copies the selection.
+	EditCopy
+	// EditPaste pastes from the clipboard through the input's own paste.
+	EditPaste
+	// EditSelectAll selects the whole document or field.
+	EditSelectAll
 )
 
 // PageHead is the merged metadata of the visible web.Head components. An unset field restores the page's original value; a set empty one clears it.

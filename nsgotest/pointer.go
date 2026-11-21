@@ -47,6 +47,7 @@ type finger struct {
 	grabbed         driver.Point            // where the finger was then
 	handleDrag      driver.ScrollHandleDrag // active phone scroll handle drag
 	moved           bool
+	longPressed     bool
 }
 
 // Drag puts a finger on the middle of what selector names, rests it there
@@ -200,6 +201,37 @@ func (g *Finger) Move(at driver.Point) {
 	g.a.step("move(%v)", at)
 	g.a.frame(g.f)
 	g.a.fingerMoved(g.f, g.pagePoint(at))
+	g.a.done()
+}
+
+// Hold holds the finger still for d; if held past the view's DelayLongPress
+// (500 ms by default) without moving, it fires LongPress while the finger
+// remains down, so a subsequent Move can sweep after a long press.
+func (g *Finger) Hold(d time.Duration) {
+	g.a.t.Helper()
+	g.a.step("hold(%v)", d)
+	f := g.f
+	g.a.elapse(d)
+	f.elapsed += d
+	if f.pressed && !f.cancelled && !f.moved && !f.longPressed {
+		var long *View
+		delay := f.press.Props.DelayLongPress
+		for _, p := range f.chain {
+			if p.Events.Has(driver.EventLongPress) && !p.disabled(nil) {
+				long, delay = p, p.Props.DelayLongPress
+				break
+			}
+		}
+		if delay <= 0 {
+			delay = defaultLongPress
+		}
+		if long != nil && g.a.Clock.Now().Sub(f.downAt) >= delay {
+			f.longPressed = true
+			ev := g.a.pressEvent(long, f.start)
+			ev.Kind = driver.EventLongPress
+			g.a.send(long, ev)
+		}
+	}
 	g.a.done()
 }
 
@@ -460,8 +492,8 @@ func (a *App) fingerLifted(f *finger) {
 		if delay <= 0 {
 			delay = defaultLongPress
 		}
-		if a.Clock.Now().Sub(f.downAt) >= delay {
-			if long != nil {
+		if f.longPressed || a.Clock.Now().Sub(f.downAt) >= delay {
+			if !f.longPressed && long != nil {
 				ev := a.pressEvent(long, f.start)
 				ev.Kind = driver.EventLongPress
 				a.send(long, ev)

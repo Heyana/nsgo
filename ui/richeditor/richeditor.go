@@ -31,6 +31,7 @@ func (v View) Render(cx *core.Scope) core.Node {
 	if out.NodeViews["inlineImage"] == nil {
 		out.NodeViews["inlineImage"] = image
 	}
+	out.Styles = richeditor.Styles{}
 	out.StylesFunc = ui.Themed(cx, func() richeditor.Styles {
 		app := v.Styles
 		if v.StylesFunc != nil {
@@ -111,15 +112,16 @@ func styles(cx *core.Scope) richeditor.Styles {
 			"superscript": {FontSize: 11},
 			"mention":     {Color: c.Accent, FontWeight: core.FontWeightMedium},
 		},
-		Placeholder:  core.Style{Color: c.Muted},
-		Caret:        core.Style{Background: c.Accent},
-		Selection:    core.Style{Background: ui.Alpha(c.Accent, 0.25)},
-		Composition:  core.Style{TextDecoration: core.TextDecorationUnderline},
-		GapCursor:    core.Style{Background: c.Text},
-		DropCursor:   core.Style{Background: c.Accent},
-		SelectedNode: core.Style{OutlineWidth: 2, OutlineColor: c.Accent},
-		SelectedCell: core.Style{Background: ui.Alpha(c.Accent, 0.18)},
-		ListMarker:   core.Style{Color: c.Muted},
+		Placeholder:     core.Style{Color: c.Muted},
+		Caret:           core.Style{Background: c.Accent},
+		Selection:       core.Style{Background: ui.Alpha(c.Accent, 0.25)},
+		Composition:     core.Style{TextDecoration: core.TextDecorationUnderline},
+		GapCursor:       core.Style{Background: c.Text},
+		DropCursor:      core.Style{Background: c.Accent},
+		SelectedNode:    core.Style{OutlineWidth: 2, OutlineColor: c.Accent},
+		SelectedCell:    core.Style{Background: ui.Alpha(c.Accent, 0.18)},
+		SelectionHandle: core.Style{CornerRadius: 5, Background: c.Accent},
+		ListMarker:      core.Style{Color: c.Muted},
 		TaskCheckbox: core.Style{Width: core.Pt(14), Height: core.Pt(14), Top: core.Pt(4), Left: core.Pt(-21), BorderWidth: 1, BorderColor: c.Border, CornerRadius: 3,
 			Selected: &core.Style{Background: c.Accent, BorderColor: c.Accent}},
 		TableResizeHandle:  core.Style{Background: c.Accent},
@@ -141,6 +143,7 @@ func merge(base, app richeditor.Styles) richeditor.Styles {
 	base.DropCursor = base.DropCursor.Merge(app.DropCursor)
 	base.SelectedNode = base.SelectedNode.Merge(app.SelectedNode)
 	base.SelectedCell = base.SelectedCell.Merge(app.SelectedCell)
+	base.SelectionHandle = base.SelectionHandle.Merge(app.SelectionHandle)
 	base.ListMarker = base.ListMarker.Merge(app.ListMarker)
 	base.TaskCheckbox = base.TaskCheckbox.Merge(app.TaskCheckbox)
 	base.TableResizeHandle = base.TableResizeHandle.Merge(app.TableResizeHandle)

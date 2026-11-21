@@ -422,6 +422,52 @@ func (a *App) LongPress(selector string) {
 	a.done()
 }
 
+// LongPressAt holds a finger at a point in the view selector matches, in its
+// coordinates, as LongPress does its middle.
+func (a *App) LongPressAt(selector string, at driver.Point) {
+	a.t.Helper()
+	a.step("longPressAt(%s, %v, %v)", selector, at.X, at.Y)
+	m := a.pick(selector, "view", func(m *View) (*View, bool) { return m, true })
+	page := m.pagePoint(at)
+	v := a.viewAt(page, func(v *View) bool {
+		return v.Events.Has(driver.EventLongPress) || pressable(v) || v.Events.Has(driver.EventTouch) ||
+			v.Props.SelectionArea || v.Kind == driver.KindText && v.Props.Selectable == driver.SelectableOn
+	})
+	if v == nil {
+		v = m.upTo(func(v *View) bool {
+			return v.Events.Has(driver.EventLongPress) || pressable(v) || v.Events.Has(driver.EventTouch) ||
+				v.Props.SelectionArea || v.Kind == driver.KindText && v.Props.Selectable == driver.SelectableOn
+		})
+	}
+	if v == nil || m.disabled(v) {
+		a.t.Fatalf("nsgotest: nothing pressable at %v in %q\n%s", at, selector, a.Dump())
+	}
+	hold := v.Props.DelayLongPress
+	if hold <= 0 {
+		hold = defaultLongPress
+	}
+	if a.target != nil {
+		hold = max(hold, defaultLongPress) + 200*time.Millisecond
+		a.target.pressWhile(page, hold, func() { a.target.advance(hold, true) })
+		a.done()
+		return
+	}
+	a.inputBy(driver.ModalityPointer)
+	a.touchAt(driver.GestureBegan, page, 0)
+	a.pressOutside(v, page)
+	ev := a.pressEvent(v, page)
+	ev.Kind = driver.EventPressDown
+	a.send(v, ev)
+	a.elapse(hold)
+	ev.Kind = driver.EventLongPress
+	a.send(v, ev)
+	a.elapse(defaultLongPress - hold)
+	ev.Kind = driver.EventPressUp
+	a.send(v, ev)
+	a.touchAt(driver.GestureEnded, page, max(hold, defaultLongPress))
+	a.done()
+}
+
 // RightClick sends a secondary click to the view selector matches, or the
 // one around it that listens, as a desktop's mouse does.
 func (a *App) RightClick(selector string) {

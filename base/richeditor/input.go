@@ -34,8 +34,8 @@ func (v *rv) sinkView() core.Node {
 	clear := core.RGBA(0xffffff, 0)
 	return core.Input{Ref: v.sinkRef, Label: v.p.Label, AutoFocus: v.p.AutoFocus, Value: v.sink.Get, HideCaret: true,
 		PasteBehavior: core.PasteReport, SubmitBehavior: core.SubmitBehaviorSubmit,
-		Readonly: !v.s.Editable(),
-		OnPaste:  v.pasted, OnChange: v.sinkChanged,
+		ReadonlyFunc: func() bool { v.rev.Get(); return !v.s.Editable() },
+		OnPaste:      v.pasted, OnEditAction: v.editAction, OnChange: v.sinkChanged,
 		OnSubmit: func(string) {
 			v.clearSink()
 			v.s.HandleKey("Enter")
@@ -61,6 +61,7 @@ func (v *rv) sinkView() core.Node {
 		},
 		OnBlur: func() {
 			v.focused.Set(false)
+			v.closeEditMenu()
 			if v.p.OnBlur != nil {
 				v.p.OnBlur()
 			}
@@ -172,16 +173,7 @@ func (v *rv) keys(cx *core.Scope) {
 		bind("mod+alt+"+ch, "Alt-Mod-"+ch, nil)
 	}
 	cx.OnKeyWith("mod+c", core.KeyOptions{When: core.KeyAlways}, v.copy)
-	cx.OnKeyWith("mod+x", core.KeyOptions{When: core.KeyAlways}, func() {
-		if !v.s.Editable() {
-			v.copy()
-			return
-		}
-		text, _ := v.s.Cut()
-		if text != "" {
-			v.cx.SetClipboard(text)
-		}
-	})
+	cx.OnKeyWith("mod+x", core.KeyOptions{When: core.KeyAlways}, v.cut)
 	word := "ctrl"
 	wordName := "Mod"
 	if apple {
@@ -245,6 +237,17 @@ func (v *rv) copy() {
 	}
 	text, _ := v.s.Copy()
 	v.cx.SetClipboard(text)
+}
+
+func (v *rv) cut() {
+	if !v.s.Editable() {
+		v.copy()
+		return
+	}
+	text, _ := v.s.Cut()
+	if text != "" {
+		v.cx.SetClipboard(text)
+	}
 }
 
 func (v *rv) deleteWord(dir int) {

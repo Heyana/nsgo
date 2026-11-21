@@ -631,6 +631,7 @@ type inputNode struct {
 	contentSize func(Size)
 	caret       func(CaretEvent)
 	paste       func(PasteEvent)
+	editAction  func(EditAction)
 	// measured is what a multiline field is measured with: its value, or
 	// its placeholder while empty; sized the value's text, for
 	// OnContentSizeChange.
@@ -2158,7 +2159,7 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 	t.setRef(n, v.Ref)
 	in := &inputNode{valueFn: v.Value, value: v.DefaultValue, autoFocus: v.AutoFocus, accessory: v.InputAccessoryViewID,
 		selection: v.OnSelectionChange, keyPress: v.OnKeyPress, composition: v.OnCompositionChange,
-		contentSize: v.OnContentSizeChange, caret: v.OnCaretMove, paste: v.OnPaste,
+		contentSize: v.OnContentSizeChange, caret: v.OnCaretMove, paste: v.OnPaste, editAction: v.OnEditAction,
 		noScale: v.NoFontScaling, maxScale: v.MaxFontSizeMultiplier,
 		ownBar: v.Bar, hideIndicator: v.HideIndicator, onScroll: v.OnScroll}
 	in.config = driver.InputConfig{Placeholder: v.Placeholder, Masked: v.Masked, Readonly: v.Readonly, KeyboardType: v.KeyboardType,
@@ -2731,6 +2732,13 @@ func (t *Tree) Dispatch(ev driver.Event) {
 			if p, ok := ev.Data.(*PasteEvent); ok {
 				t.within(n.owner, func() { in.paste(*p) })
 			}
+		}
+	case driver.EventEditAction:
+		if in := n.input; in != nil && in.editAction != nil {
+			t.activated = n.owner
+			fn := in.editAction
+			act := EditAction(ev.Count)
+			t.within(n.owner, func() { fn(act) })
 		}
 	case driver.EventPan:
 		if t.devDrawn != nil {

@@ -406,7 +406,7 @@ func (t *Tree) setInput(n *node, v Input) {
 	}
 	in.noScale, in.maxScale = v.NoFontScaling, v.MaxFontSizeMultiplier
 	in.selection, in.keyPress, in.composition = v.OnSelectionChange, v.OnKeyPress, v.OnCompositionChange
-	in.contentSize, in.caret, in.paste = v.OnContentSizeChange, v.OnCaretMove, v.OnPaste
+	in.contentSize, in.caret, in.paste, in.editAction = v.OnContentSizeChange, v.OnCaretMove, v.OnPaste, v.OnEditAction
 	if in.suggest != nil {
 		if in.selection == nil {
 			in.selection = func(TextRange) {}

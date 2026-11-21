@@ -1,10 +1,26 @@
 package core
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/layout"
+)
+
+// EditAction is an editing action of an input's touch edit menu
+// (Ref.OpenEditMenu, Input.OnEditAction).
+type EditAction = driver.EditAction
+
+const (
+	// EditCut cuts the selection.
+	EditCut = driver.EditCut
+	// EditCopy copies the selection.
+	EditCopy = driver.EditCopy
+	// EditPaste pastes from the clipboard through the input's own paste.
+	EditPaste = driver.EditPaste
+	// EditSelectAll selects the whole document or field.
+	EditSelectAll = driver.EditSelectAll
 )
 
 // Composition is an input method's composition in a text field.
@@ -29,6 +45,33 @@ func (r *Ref) SetSelection(start, end int) {
 	}
 	r.t.commands = append(r.t.commands, driver.MountItem{Kind: driver.ItemSelection, ID: r.n.id, Selection: TextRange{Start: start, End: end}})
 	r.t.changed = true
+}
+
+// OpenEditMenu opens the platform's touch edit menu on the element, a focused
+// text input, anchored clear of bounds in the surface's points and offering
+// actions (a bitmask of EditCut, EditCopy, EditPaste and EditSelectAll). On
+// iOS and Android, choosing Cut, Copy or Select All runs Input.OnEditAction,
+// and choosing Paste runs Input.OnPaste. Passing 0 closes any edit menu open
+// on the input.
+func (r *Ref) OpenEditMenu(bounds Bounds, actions EditAction) {
+	if !r.placed() || r.n.input == nil {
+		return
+	}
+	r.t.commands = slices.DeleteFunc(r.t.commands, func(it driver.MountItem) bool {
+		return it.Kind == driver.ItemEditMenu && it.ID == r.n.id
+	})
+	r.t.commands = append(r.t.commands, driver.MountItem{
+		Kind:  driver.ItemEditMenu,
+		ID:    r.n.id,
+		Frame: bounds,
+		Count: uint32(actions),
+	})
+	r.t.changed = true
+}
+
+// CloseEditMenu closes any edit menu Ref.OpenEditMenu opened on the input.
+func (r *Ref) CloseEditMenu() {
+	r.OpenEditMenu(Bounds{}, 0)
 }
 
 // defaultInputWidth is a field's width when its style sets none.

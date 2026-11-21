@@ -166,6 +166,7 @@ const (
 	EventTouch                 = driver.EventTouch
 	EventCaretMove             = driver.EventCaretMove
 	EventPaste                 = driver.EventPaste
+	EventEditAction            = driver.EventEditAction
 )
 
 const (

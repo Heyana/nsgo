@@ -1,6 +1,8 @@
 package dev.oneo.nsgo;
 
+import android.content.ClipboardManager;
 import android.content.Context;
+import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.text.Editable;
@@ -9,7 +11,10 @@ import android.text.InputType;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.TextWatcher;
+import android.view.ActionMode;
 import android.view.KeyEvent;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
@@ -48,6 +53,9 @@ final class InputField extends EditText {
 
         /** The multiline field's scroll offset and vertical scroll range, in points. */
         void scroll(float x, float y, float maxY);
+
+        /** The user chose Cut, Copy or Select all from the touch edit menu. */
+        void editAction(int action);
     }
 
     /** core.SubmitBehavior's codes, as InputConfig.Submit resolves them. */
@@ -70,6 +78,10 @@ final class InputField extends EditText {
     private int selStart = -1, selEnd = -1;
     /** core.PasteReport: a paste is only reported. */
     private boolean pasteReport;
+    /** The floating edit menu ItemEditMenu opened on this input, while open. */
+    private ActionMode editMenu;
+    private float menuX, menuY, menuWidth, menuHeight, menuDensity;
+    private int menuActions;
     private boolean caretPosted;
     /** A multiline field's lines' height, the glyphs centered in each as in a Text; null for the font's own. */
     private Text.LineHeight lineHeight;
@@ -330,6 +342,7 @@ final class InputField extends EditText {
     @Override
     protected void onFocusChanged(boolean focused, int direction, android.graphics.Rect previous) {
         if (!focused) {
+            closeEditMenu();
             // A composition does not outlive the focus; end it before View's
             // focus listener reports the blur.
             endComposition();
@@ -338,6 +351,12 @@ final class InputField extends EditText {
         if (focused) {
             post(this::caretMoved);
         }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        closeEditMenu();
+        super.onDetachedFromWindow();
     }
 
     /**
@@ -582,6 +601,96 @@ final class InputField extends EditText {
         applying = false;
         selStart = getSelectionStart();
         selEnd = getSelectionEnd();
+    }
+
+    /**
+     * ItemEditMenu: opens the system's floating text toolbar clear of
+     * {@code (x, y, width, height)} in surface points on {@code host}, offering
+     * {@code actions} (Protocol.EDIT_*). Cut, Copy and Select all report
+     * EVENT_EDIT_ACTION; Paste runs the field's own paste.
+     */
+    void openEditMenu(View host, float x, float y, float width, float height, int actions, float d) {
+        menuX = x;
+        menuY = y;
+        menuWidth = width;
+        menuHeight = height;
+        menuActions = actions;
+        menuDensity = d;
+        if (editMenu != null) {
+            editMenu.invalidate();
+            editMenu.invalidateContentRect();
+            return;
+        }
+        // Start from the surface (or modal's root): a floating toolbar anchors
+        // to the view that started it, and an editor's hidden sink is a 1x1
+        // sliver at the caret.
+        View origin = getRootView() == host.getRootView() ? host : getRootView();
+        editMenu = origin.startActionMode(new ActionMode.Callback2() {
+            @Override
+            public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+                menu.add(Menu.NONE, android.R.id.cut, 0, android.R.string.cut);
+                menu.add(Menu.NONE, android.R.id.copy, 1, android.R.string.copy);
+                menu.add(Menu.NONE, android.R.id.paste, 2, android.R.string.paste);
+                menu.add(Menu.NONE, android.R.id.selectAll, 3, android.R.string.selectAll);
+                return true;
+            }
+
+            @Override
+            public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+                ClipboardManager cm = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                boolean pastes = cm != null && cm.hasPrimaryClip();
+                MenuItem cut = menu.findItem(android.R.id.cut);
+                MenuItem copy = menu.findItem(android.R.id.copy);
+                MenuItem paste = menu.findItem(android.R.id.paste);
+                MenuItem selectAll = menu.findItem(android.R.id.selectAll);
+                if (cut != null) cut.setVisible((menuActions & Protocol.EDIT_CUT) != 0);
+                if (copy != null) copy.setVisible((menuActions & Protocol.EDIT_COPY) != 0);
+                if (paste != null) paste.setVisible((menuActions & Protocol.EDIT_PASTE) != 0 && pastes);
+                if (selectAll != null) selectAll.setVisible((menuActions & Protocol.EDIT_SELECT_ALL) != 0);
+                return true;
+            }
+
+            @Override
+            public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+                int itemId = item.getItemId();
+                if (itemId == android.R.id.cut) {
+                    if (listener != null) listener.editAction(Protocol.EDIT_CUT);
+                } else if (itemId == android.R.id.copy) {
+                    if (listener != null) listener.editAction(Protocol.EDIT_COPY);
+                } else if (itemId == android.R.id.selectAll) {
+                    if (listener != null) listener.editAction(Protocol.EDIT_SELECT_ALL);
+                } else if (itemId == android.R.id.paste) {
+                    onTextContextMenuItem(android.R.id.paste);
+                } else {
+                    return false;
+                }
+                mode.finish();
+                return true;
+            }
+
+            @Override
+            public void onDestroyActionMode(ActionMode mode) {
+                if (editMenu == mode) editMenu = null;
+            }
+
+            @Override
+            public void onGetContentRect(ActionMode mode, View v, Rect out) {
+                View root = v.getRootView() == host.getRootView() ? host : v.getRootView();
+                int[] rootAt = new int[2], at = new int[2];
+                root.getLocationOnScreen(rootAt);
+                v.getLocationOnScreen(at);
+                int left = Math.round(menuX * menuDensity) + rootAt[0] - at[0];
+                int top = Math.round(menuY * menuDensity) + rootAt[1] - at[1];
+                out.set(left, top, left + Math.round(menuWidth * menuDensity), top + Math.round(menuHeight * menuDensity));
+            }
+        }, ActionMode.TYPE_FLOATING);
+    }
+
+    /** Closes any edit menu {@link #openEditMenu} opened. */
+    void closeEditMenu() {
+        ActionMode m = editMenu;
+        editMenu = null;
+        if (m != null) m.finish();
     }
 
     /** Reports the keys of soft keyboards, which edit through the input connection. */

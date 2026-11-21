@@ -1572,6 +1572,9 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 		case driver.ItemSelection:
 			w.u32(uint32(max(it.Selection.Start, 0)))
 			w.u32(uint32(max(it.Selection.End, 0)))
+		case driver.ItemEditMenu:
+			w.bounds(it.Frame)
+			w.u32(it.Count)
 		case driver.ItemScrollBy:
 			w.points(it.Point.X)
 			w.points(it.Point.Y)

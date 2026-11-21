@@ -315,6 +315,74 @@ func (a *App) ClosePopup() {
 	a.Settle()
 }
 
+// EditMenuItems returns the visible labels of the touch edit menu an input
+// opened with Ref.OpenEditMenu, in platform order, omitting Paste while the
+// clipboard is empty (matching iOS and Android), or nil when none shows.
+func (a *App) EditMenuItems() []string {
+	m := a.EditMenu
+	if m == nil {
+		return nil
+	}
+	hasClip := a.Clipboard != "" || len(a.ClipboardImage) > 0 || len(a.ClipboardFiles) > 0
+	selectAll := "Select All"
+	if a.env.OS == core.OSAndroid {
+		selectAll = "Select all"
+	}
+	var out []string
+	if m.Actions&core.EditCut != 0 {
+		out = append(out, "Cut")
+	}
+	if m.Actions&core.EditCopy != 0 {
+		out = append(out, "Copy")
+	}
+	if m.Actions&core.EditPaste != 0 && hasClip {
+		out = append(out, "Paste")
+	}
+	if m.Actions&core.EditSelectAll != 0 {
+		out = append(out, selectAll)
+	}
+	return out
+}
+
+// ChooseEditAction chooses action from the touch edit menu an input opened
+// with Ref.OpenEditMenu and closes the menu: EditPaste pastes the model's
+// clipboard into the input (EventPaste), while EditCut, EditCopy and
+// EditSelectAll report EventEditAction to it.
+func (a *App) ChooseEditAction(action core.EditAction) {
+	a.t.Helper()
+	m := a.EditMenu
+	if m == nil {
+		a.t.Fatalf("nsgotest: no edit menu shows")
+	}
+	if m.Actions&action == 0 {
+		a.t.Fatalf("nsgotest: edit menu does not offer action %d (offers %d)", action, m.Actions)
+	}
+	v := m.Input
+	a.EditMenu = nil
+	if action == core.EditPaste {
+		hasClip := a.Clipboard != "" || len(a.ClipboardImage) > 0 || len(a.ClipboardFiles) > 0
+		if !hasClip {
+			a.t.Fatalf("nsgotest: edit menu Paste is hidden while clipboard is empty")
+		}
+		p := driver.PasteEvent{Text: a.Clipboard, URIs: append([]string(nil), a.ClipboardFiles...)}
+		if len(a.ClipboardImage) > 0 {
+			p.Files = []driver.PastedFile{{MIME: "image/png", Data: append([]byte(nil), a.ClipboardImage...)}}
+		}
+		a.dispatch(driver.Event{Kind: driver.EventPaste, ID: v.ID, Data: &p})
+		a.Settle()
+		return
+	}
+	a.dispatch(driver.Event{Kind: driver.EventEditAction, ID: v.ID, Count: uint32(action)})
+	a.Settle()
+}
+
+// CloseEditMenu dismisses any touch edit menu shown without choosing an action.
+func (a *App) CloseEditMenu() {
+	a.t.Helper()
+	a.EditMenu = nil
+	a.Settle()
+}
+
 // CloseWindow asks the main window to close, as its close button does, and reports whether it closed: its OnClosing handlers run newest first, and Windows and Linux also ask OnQuitRequest if the close would end the app. It needs a main window open, which a macOS environment, or StartApp with a Windows or Linux one, opens, and runs headless only.
 func (a *App) CloseWindow() bool {
 	a.t.Helper()

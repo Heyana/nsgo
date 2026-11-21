@@ -41,6 +41,13 @@ type input struct {
 	lastScrollMax     driver.Points
 	lastScrollApplied uint32
 	scrollReported    bool
+	// editMenu is the touch edit menu ItemEditMenu opened on this input:
+	// offered actions (0 when closed), its generation, its target rect in
+	// the editor, and the UIEditMenuInteraction (iOS 16+).
+	editMenu        driver.EditAction
+	editMenuGen     uint
+	editMenuRect    apple.CGRect
+	editInteraction objc.ID
 }
 
 var classField, classTextView objc.Class
@@ -168,6 +175,8 @@ func (v *view) setEditor(multiline bool) {
 	in := v.input
 	text := ""
 	if in.field != 0 {
+		in.closeEditMenu()
+		in.editInteraction = 0
 		text = in.text()
 		in.field.Send(selRemoveFromSuperview)
 		delete(views, in.field)
@@ -414,6 +423,7 @@ func (in *input) focusChanged(focused bool) {
 		in.selectionMoved()
 		v.surface.keepFocusedClear()
 	} else {
+		in.closeEditMenu()
 		in.compose(false, "")
 		v.dispatch(driver.EventBlur)
 	}

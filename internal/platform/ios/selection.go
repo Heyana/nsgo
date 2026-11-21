@@ -327,8 +327,11 @@ func registerSelection() {
 			v := other.Send(selView)
 			return onHandle(r.Send(selView)) && v != 0 && objc.Send[bool](v, sel("isKindOfClass:"), apple.Class("UIScrollView"))
 		}},
-		// The menu keeps clear of the selection.
+		// The menu keeps clear of the selection (an input's edit menu, or a selection area's).
 		{Cmd: sel("editMenuInteraction:targetRectForConfiguration:"), Fn: func(_ objc.ID, _ objc.SEL, m, _ objc.ID) apple.CGRect {
+			if in := inputOf(m.Send(selView)); in != nil && in.editMenu != 0 {
+				return in.editMenuRect
+			}
 			if sl := selectingAt(m.Send(selView)); sl != nil {
 				if r, ok := sl.selectionRect(); ok {
 					return r
@@ -341,7 +344,12 @@ func registerSelection() {
 				sl.shown = true
 			}
 		}},
-		{Cmd: sel("editMenuInteraction:willDismissMenuForConfiguration:animator:"), Fn: func(_ objc.ID, _ objc.SEL, m, _, _ objc.ID) {
+		{Cmd: sel("editMenuInteraction:willDismissMenuForConfiguration:animator:"), Fn: func(_ objc.ID, _ objc.SEL, m, cfg, _ objc.ID) {
+			if in := inputOf(m.Send(selView)); in != nil && in.editInteraction == m && cfg != 0 {
+				if ident := cfg.Send(sel("identifier")); ident != 0 && objc.Send[uint](ident, sel("unsignedIntegerValue")) == in.editMenuGen {
+					in.editMenu = 0
+				}
+			}
 			if sl := selectingAt(m.Send(selView)); sl != nil && sl.menu == m {
 				sl.shown = false
 			}

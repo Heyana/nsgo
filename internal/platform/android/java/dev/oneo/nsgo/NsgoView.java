@@ -3417,6 +3417,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 }
                 if (n.animator != null) n.animator.cancel();
                 if (n.keyframer != null) n.keyframer.cancel();
+                if (n.field != null) n.field.closeEditMenu();
                 if (n.web != null) n.web.destroy();
                 if (n.holder != null) {
                     detach(n.holder);
@@ -3469,6 +3470,18 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             case Protocol.ITEM_SELECTION: {
                 int start = in.readInt(), end = in.readInt();
                 if (n.field != null) n.field.select(start, end);
+                break;
+            }
+            case Protocol.ITEM_EDIT_MENU: {
+                float x = in.readFloat(), y = in.readFloat(), w = in.readFloat(), h = in.readFloat();
+                int actions = in.readInt();
+                if (n != null && n.field != null) {
+                    if (actions == 0) {
+                        n.field.closeEditMenu();
+                    } else {
+                        n.field.openEditMenu(this, x, y, w, h, actions, density);
+                    }
+                }
                 break;
             }
             case Protocol.ITEM_EVENTS:
@@ -5933,6 +5946,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     float h = n.view.getHeight() / density + maxY;
                     event(Protocol.EVENT_SCROLL, n.id, n.applied, x, y, "", w, h, 0, 0, 0, 0, 0, null);
                 }
+            }
+
+            @Override public void editAction(int action) {
+                event(Protocol.EVENT_EDIT_ACTION, n.id, action, 0, 0, "");
             }
 
             @Override public void blur() {

@@ -48,7 +48,7 @@ var unsupportedItems = map[string]string{
 
 		ItemScanCode ItemOrientation ItemKeepImage ItemReleaseImage ItemReleaseOffscreen
 
-		ItemRequestReview ItemSavePreflightAnswer ItemDiscovery ItemSystemGestures ItemHapticPattern`,
+		ItemRequestReview ItemSavePreflightAnswer ItemDiscovery ItemSystemGestures ItemHapticPattern ItemEditMenu`,
 	// The core answers these before the platform sees them: it resolves a
 	// path with os.Stat, which js/wasm does not implement, answers the
 	// install family itself off Android, and sends no audio where the
@@ -80,7 +80,7 @@ var unsupportedEvents = map[string]string{
 
 	"services added since": `EventAuthSession EventOpenLinks EventShared EventPurchase
 
-		EventPurchaseUpdate EventSensor EventSpeak EventWebCookies EventGPU EventSavePreflight EventDiscovery`,
+		EventPurchaseUpdate EventSensor EventSpeak EventWebCookies EventGPU EventSavePreflight EventDiscovery EventEditAction`,
 	// The app hears neither: the core sends no audio where the environment
 	// says none, and asks about a quit only where the platform ends apps
 	// itself.

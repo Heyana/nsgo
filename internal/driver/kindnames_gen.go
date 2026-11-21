@@ -131,6 +131,7 @@ var itemKindNames = map[ItemKind]string{
 	ItemPointerLock:         "ItemPointerLock",
 	ItemHapticPattern:       "ItemHapticPattern",
 	ItemPageHead:            "ItemPageHead",
+	ItemEditMenu:            "ItemEditMenu",
 }
 
 // String returns the kind's name, as a log or an event prints it.
@@ -248,6 +249,7 @@ var eventKindNames = map[EventKind]string{
 	EventCursorPoint:     "EventCursorPoint",
 	EventPointerDelta:    "EventPointerDelta",
 	EventPointerUnlocked: "EventPointerUnlocked",
+	EventEditAction:      "EventEditAction",
 }
 
 // String returns the kind's name, as a log or an event prints it.

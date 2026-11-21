@@ -417,6 +417,13 @@ final class Protocol {
     static final int ITEM_SAVE_FILE_PREFLIGHT = 118;
     static final int ITEM_SYSTEM_GESTURES = 121;
     static final int ITEM_HAPTIC_PATTERN = 124;
+    static final int ITEM_EDIT_MENU = 126;
+
+    // Bitmask carried in ITEM_EDIT_MENU and EVENT_EDIT_ACTION, as driver.EditAction.
+    static final int EDIT_CUT = 1;
+    static final int EDIT_COPY = 2;
+    static final int EDIT_PASTE = 4;
+    static final int EDIT_SELECT_ALL = 8;
 
     // What EVENT_OVERLAY_PERMISSION answers ITEM_OVERLAY_PERMISSION with, and why an overlay ends, as the driver's.
     static final int OVERLAY_DENIED = 0;
@@ -541,6 +548,7 @@ final class Protocol {
 
     static final int EVENT_SAVE_PREFLIGHT = 99;
     static final int EVENT_SHARED = 102;
+    static final int EVENT_EDIT_ACTION = 106;
 
     // Reasons carried in EVENT_VIDEO_PAUSE's index, as core.VideoPauseReason.
     static final int VIDEO_PAUSE_INTERRUPTION = 0;
