@@ -25,11 +25,25 @@ func TestLinuxSessionEndForcesQuit(t *testing.T) {
 		if _, err := exec.LookPath("dbus-run-session"); err != nil {
 			t.Skip("dbus-run-session is needed for a private test bus")
 		}
-		cmd := exec.CommandContext(t.Context(), "dbus-run-session", "--", os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
+		ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "dbus-run-session", "--", os.Args[0], "-test.run=^"+t.Name()+"$", "-test.timeout=35s", "-test.v")
 		cmd.Env = append(os.Environ(), child+"=1")
-		out, err := cmd.CombinedOutput()
+		// Services activated on the test bus can outlive dbus-run-session.
+		// Write to a file so an inherited descriptor cannot hold up Wait.
+		log, err := os.CreateTemp(t.TempDir(), "session-*.log")
 		if err != nil {
-			t.Fatalf("%v\n%s", err, out)
+			t.Fatal(err)
+		}
+		defer log.Close()
+		cmd.Stdout, cmd.Stderr = log, log
+		runErr := cmd.Run()
+		out, err := os.ReadFile(log.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if runErr != nil {
+			t.Fatalf("%v\n%s", runErr, out)
 		}
 		if testing.Verbose() {
 			t.Logf("%s", out)
