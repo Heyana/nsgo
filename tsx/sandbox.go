@@ -44,12 +44,7 @@ type Limits struct {
 	// Storage is the most bytes its partition of the app's storage may
 	// hold (Sandbox.Storage).
 	Storage int
-	// Memory limits metered allocation on goja, including buffers, large array
-	// stores and strings built by concatenation or replacement. Checks precede
-	// allocation and collected stores release their charge. It does not cap the
-	// whole heap: ordinary objects, closures, small allocations and other
-	// unmetered storage can still grow, and it does not apply in the browser.
-	// Zero leaves it unlimited; DefaultLimits holds 64 MiB.
+	// Memory limits metered allocation on goja, including buffers, large array stores and strings built by concatenation or replacement. Checks precede allocation and collected stores release their charge. It does not cap the whole heap: ordinary objects, closures, small allocations and other unmetered storage can still grow, and it does not apply in the browser. Zero leaves it unlimited; DefaultLimits holds 64 MiB.
 	Memory int
 }
 

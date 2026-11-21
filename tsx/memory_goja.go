@@ -18,13 +18,7 @@ import (
 	"github.com/nsgo-dev/nsgo/tsx/internal/js"
 )
 
-// A native sandbox budgets persistent storage from the built-ins wrapped here
-// and goja's metered array and string allocations. They check each new backing
-// store before allocating and charge its storage until Go finds it unreachable.
-// Ropes reserve their maximum flattened UTF-16 size while they remain live.
-// This does not count the whole heap: ordinary objects and closures, stack
-// storage, small allocations, and unmetered intrinsics and host API objects
-// can still grow outside the budget. The browser keeps its own heap.
+// A native sandbox budgets persistent storage from the built-ins wrapped here and goja's metered array and string allocations. They check each new backing store before allocating and charge its storage until Go finds it unreachable. Ropes reserve their maximum flattened UTF-16 size while they remain live. This does not count the whole heap: ordinary objects and closures, stack storage, small allocations, and unmetered intrinsics and host API objects can still grow outside the budget. The browser keeps its own heap.
 
 // memory is what the built-ins hold for a sandbox.
 type memory struct {
@@ -774,8 +768,7 @@ func (r *runtime) holdArray(v js.Value) js.Value {
 	return v
 }
 
-// encodeUTF8 counts bytes from the immutable string before allocating the
-// ArrayBuffer. Reading its runes twice avoids a temporary Go string copy.
+// encodeUTF8 counts bytes from the immutable string before allocating the ArrayBuffer. Reading its runes twice avoids a temporary Go string copy.
 func (r *runtime) encodeUTF8(v js.Value) js.Value {
 	if r.sandbox == nil || r.sandbox.memory == nil {
 		return r.vm.ToValue(r.vm.NewArrayBuffer([]byte(v.String())))
