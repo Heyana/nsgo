@@ -49,7 +49,7 @@ func (s *surface) createVideo(v *view) {
 		}
 	})
 	on("loadedmetadata", func() {
-		s.send(v, driver.Event{Kind: driver.EventLoad, Duration: vd.seconds("duration"), Size: driver.Size{
+		s.send(v, driver.Event{Kind: driver.EventLoad, Duration: vd.seconds("duration"), RateChangeable: true, Size: driver.Size{
 			Width:  driver.Points(vd.el.Get("videoWidth").Float()),
 			Height: driver.Points(vd.el.Get("videoHeight").Float()),
 		}})

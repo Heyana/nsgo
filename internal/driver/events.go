@@ -359,9 +359,10 @@ type Event struct {
 	Origin    string
 	URL       string
 	MainFrame bool
-	// Time, Duration and Buffering are a video's.
+	// Time, Duration, Buffering and RateChangeable are a video's.
 	Time, Duration time.Duration
 	Buffering      bool
+	RateChangeable bool
 	// URIs are the file: URLs of dropped files.
 	URIs []string
 	// Data is what a native component emitted.

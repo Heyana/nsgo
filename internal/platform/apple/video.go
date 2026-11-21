@@ -750,7 +750,7 @@ func (v *Video) report() {
 	case state == ready && !st.loaded:
 		st.loaded = true
 		size := objc.Send[CGSize](item, sel("presentationSize"))
-		v.Dispatch(driver.Event{Kind: driver.EventLoad, Duration: v.itemDuration(),
+		v.Dispatch(driver.Event{Kind: driver.EventLoad, Duration: v.itemDuration(), RateChangeable: true,
 			Size: driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)}})
 	case state == failed && !st.failed:
 		st.failed = true

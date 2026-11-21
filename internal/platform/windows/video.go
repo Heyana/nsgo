@@ -340,7 +340,7 @@ func (vd *video) notified(serial uint64, event uint32, param1 uintptr, param2 ui
 			e.call(mePlay)
 		}
 		vd.setBuffering(false)
-		vd.report(driver.Event{Kind: driver.EventLoad, Duration: seconds(duration),
+		vd.report(driver.Event{Kind: driver.EventLoad, Duration: seconds(duration), RateChangeable: true,
 			Size: driver.Size{Width: driver.Points(vd.natural[0]), Height: driver.Points(vd.natural[1])}})
 		vd.wantFrame = time.Now().Add(videoFrameWait)
 		vd.pump()

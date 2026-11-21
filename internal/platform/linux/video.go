@@ -14,10 +14,13 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/videoalpha"
 )
 
-// video is a video view's player, as NSH's Linux backend has it: a GtkMediaFile, which GTK backs with GStreamer, shown by a GtkPicture, or by a GtkVideo with GTK's playback controls when Controls is set, hosted as web views are. GTK streams have no playback rate, so Rate is ignored (warned once); a looping stream starts over without ending, so EventEnd comes only for videos that do not repeat. A stream GStreamer cannot play reports EventError, with a hint when a plug-in is missing, and never EventLoad. A file that declares alpha keeps it, as GTK composites the picture over what is behind it, where GStreamer decodes it (VP8 and VP9 with alpha, with the codecalpha plug-in), and reports EventError where it cannot rather than show the picture opaque.
+// video hosts a GtkMediaStream in a GtkPicture or, with Controls, a
+// GtkVideo. It uses the backend's GstPlay stream when available and
+// falls back to GTK's GtkMediaFile.
 type video struct {
 	hosted
-	stream uintptr // GtkMediaFile, 0 without a source
+	stream uintptr // GtkMediaStream, 0 without a source
+	player *gstVideo
 	config driver.VideoConfig
 	made   bool
 	// What the stream reported so far.
@@ -51,20 +54,24 @@ func (w *window) configureVideo(v *view, c *driver.VideoConfig) {
 	if reopened || c.Controls != old.Controls {
 		w.showVideo(v)
 	}
-	if c.Rate != 1 {
+	if vd.player == nil && c.Rate != 1 && vd.stream != 0 {
 		rateWarned.Do(func() { log.Print("nsgo: Video Rate is not supported on Linux: it plays at 1×") })
 	}
 	if s := vd.stream; s != 0 {
 		gtkMediaStreamSetMuted(s, boolInt(c.Muted))
 		gtkMediaStreamSetVolume(s, float64(min(max(c.Volume, 0), 1)))
 		gtkMediaStreamSetLoop(s, boolInt(c.Repeat))
-		vd.playing = !c.Paused && (!vd.completed || reopened || c.Paused != old.Paused)
-		if vd.playing && vd.completed {
-			gtkMediaStreamSeek(s, 0)
-			vd.completed = false
+		if reopened || c.Paused != old.Paused {
+			vd.playing = !c.Paused
+			if vd.playing && vd.completed {
+				vd.completed = false
+				vd.applyRate()
+				gtkMediaStreamSeek(s, 0)
+			}
+			gtkMediaStreamSetPlaying(s, boolInt(vd.playing && !vd.failed))
+			w.videoBuffer(v, vd.playing && !vd.loaded && !vd.failed)
 		}
-		gtkMediaStreamSetPlaying(s, boolInt(vd.playing && !vd.failed))
-		w.videoBuffer(v, vd.playing && !vd.loaded && !vd.failed)
+		vd.applyRate()
 	}
 	if vd.child != 0 {
 		if vd.controls {
@@ -76,6 +83,15 @@ func (w *window) configureVideo(v *view, c *driver.VideoConfig) {
 	if reopened || c.ProgressInterval != old.ProgressInterval {
 		w.observeVideo(v)
 	}
+}
+
+func (vd *video) applyRate() {
+	p := vd.player
+	if p == nil || vd.completed || p.rate == vd.config.Rate || gtkMediaStreamIsSeekable(vd.stream) == 0 {
+		return
+	}
+	p.rate = vd.config.Rate
+	videoGST.rate(p.play, float64(p.rate))
 }
 
 // contentFit is GTK's fit for a resize mode.
@@ -122,7 +138,12 @@ func (w *window) openVideo(v *view) {
 		return
 	}
 	file := videoFile(source)
-	vd.stream = gtkMediaFileNewForFile(file)
+	vd.player = openGSTVideo(w, v, file)
+	if vd.player != nil {
+		vd.stream = vd.player.stream
+	} else {
+		vd.stream = gtkMediaFileNewForFile(file)
+	}
 	gObjectUnref(file)
 	w.report(v, driver.Event{Kind: driver.EventLoadStart, ID: v.id})
 	w.connect(v, vd.stream, "notify::prepared", cbVideoPrepared)
@@ -151,7 +172,12 @@ func (w *window) closeStream(v *view) {
 	h.signals = kept
 	delete(w.natives, vd.stream)
 	gtkMediaStreamSetPlaying(vd.stream, 0)
-	gtkMediaFileClear(vd.stream)
+	if vd.player != nil {
+		vd.player.close()
+		vd.player = nil
+	} else {
+		gtkMediaFileClear(vd.stream)
+	}
 	if vd.child != 0 {
 		w.setStreamOf(vd.child, vd.controls, 0)
 	}
@@ -214,9 +240,12 @@ func (vd *video) seek(t time.Duration) {
 	if vd.stream != 0 && gtkMediaStreamIsSeekable(vd.stream) != 0 {
 		t = max(t, 0)
 		replay := vd.completed && t < micros(gtkMediaStreamGetDuration(vd.stream))
-		gtkMediaStreamSeek(vd.stream, t.Microseconds())
 		if replay {
 			vd.completed, vd.playing = false, !vd.config.Paused
+			vd.applyRate()
+		}
+		gtkMediaStreamSeek(vd.stream, t.Microseconds())
+		if replay {
 			gtkMediaStreamSetPlaying(vd.stream, boolInt(vd.playing))
 		}
 	}
@@ -259,13 +288,15 @@ func (w *window) videoLoaded(v *view) {
 		return
 	}
 	vd.loaded = true
+	vd.applyRate()
 	// Playing asked for before the pipeline was ready.
 	if vd.playing && gtkMediaStreamGetPlaying(s) == 0 {
 		gtkMediaStreamSetPlaying(s, 1)
 	}
 	w.videoBuffer(v, false)
 	w.report(v, driver.Event{Kind: driver.EventLoad, ID: v.id, Duration: micros(gtkMediaStreamGetDuration(s)),
-		Size: driver.Size{Width: driver.Points(width), Height: driver.Points(height)}})
+		Size:           driver.Size{Width: driver.Points(width), Height: driver.Points(height)},
+		RateChangeable: vd.player != nil && gtkMediaStreamIsSeekable(s) != 0})
 }
 
 // micros turns GTK's microseconds into a duration.
@@ -352,8 +383,14 @@ func videoProgressCallback(data uintptr) int32 {
 		return 0
 	}
 	if s := v.video.stream; s != 0 && gtkMediaStreamGetPlaying(s) != 0 && gtkMediaStreamIsPrepared(s) != 0 {
+		position := micros(gtkMediaStreamGetTimestamp(s))
+		if p := v.video.player; p != nil {
+			if nanos := videoGST.position(p.play); nanos != ^uint64(0) {
+				position = time.Duration(nanos)
+			}
+		}
 		w.report(v, driver.Event{Kind: driver.EventProgress, ID: v.id,
-			Time: micros(gtkMediaStreamGetTimestamp(s)), Duration: micros(gtkMediaStreamGetDuration(s))})
+			Time: position, Duration: micros(gtkMediaStreamGetDuration(s))})
 	}
 	return 1 // G_SOURCE_CONTINUE
 }

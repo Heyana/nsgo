@@ -59,7 +59,7 @@ On Linux, initialization checks whether the system bubblewrap can start WebKitGT
 ## Videos
 
 - A source is a URL, a file path or an `asset:` path resolved against the app's resources.
-- `EventLoad` carries the duration and the picture's size in points; `EventProgress` comes every `ProgressInterval` while playing.
+- `EventLoad` carries the duration, the picture's size in points and whether the backend can change the rate. `EventProgress` comes every `ProgressInterval` while playing.
 - `EventEnd` follows the platform: AVFoundation and Android report every end, then a repeating video starts over; a looping Media Foundation engine, `<video>` or GTK stream never ends.
 - A non-repeating video stays at its end through unrelated configuration changes. Changing `Paused` to true and then false replays it from the beginning unless the native scrubber moved it before the end, in which case it resumes there; seeking before the end resumes there when `Paused` is false, and leaves it paused otherwise. Opening another source starts from that source's beginning.
 - iOS videos opt into [Picture in Picture](picture-in-picture.md) with `PictureInPicture`; `Ref` starts and stops it, and `OnPictureInPicture` reports readiness and state. The PiP window plays and pauses the player, which `OnPlay` and `OnPause` report as they do the controls'.
@@ -73,7 +73,7 @@ On Linux, initialization checks whether the system bubblewrap can start WebKitGT
 | --- | --- |
 | Apple | `AVPlayer` in an `AVPlayerLayer`, or `AVPlayerView` and `AVPlayerViewController` with controls; AVFoundation and AVKit load on the first video |
 | Windows | Media Foundation's media engine in frame-server mode, drawing each frame as a Direct2D bitmap |
-| Linux | `GtkMediaFile` (GStreamer) in a `GtkPicture` hosted in the view's widget, or a `GtkVideo` with controls; GTK streams have no playback rate |
+| Linux | A `GtkMediaStream` backed by GstPlay in a `GtkPicture` or a `GtkVideo` with controls. Rate changes seek from the current position and `scaletempo` preserves pitch. The stream paints through `gtk4paintablesink` when installed and through RGBA textures from `appsink` otherwise. If the libraries or pitch filter are absent, `GtkMediaFile` plays at 1× and reports `RateChangeable: false`. |
 | Android | `MediaPlayer` on a `TextureView`, with a `MediaController` for controls |
 | Web | A `<video>` element |
 

@@ -30,6 +30,8 @@ core.View{
 
 带透明通道的视频会透出它后面的内容：macOS 上用 `.mov` 里带 alpha 的 HEVC（iOS 尚未验证），Linux 上用 WebM 里带 alpha 的 VP9，并需要 GStreamer 的 codecalpha 插件（`gstreamer1.0-plugins-bad`，Linux 安装包可以在 `nsgo.yaml` 里把它列为推荐依赖）。在 macOS、iOS、Windows 和 Linux 上，本地视频的透明通道无法保留时（Apple 平台上的 WebM、Linux 上的 HEVC，以及在 Windows 机器上验证 Media Foundation 的透明通道输出之前，Windows 上的任何格式），`OnError` 会说明原因，而不是把视频显示在不透明的方框里：这个错误是 `*core.MediaError`，其 `Reason` 为 `core.MediaErrorAlphaUnsupported`，应用可以据此改用自己的解码器播放这段视频。Android 和 Web 平台，以及各平台上的远程 URL，会按解码器的输出播放这类视频，可能是不透明的。
 
+`Rate` 设置播放速度，`RateFunc` 可在播放中调整速度。根据 `OnLoad` 返回的 `VideoInfo.RateChangeable` 决定是否显示倍速控件。在 Linux 上，安装 GstPlay 和 GStreamer 的 `scaletempo` 滤镜后，可调整支持跳转的视频的播放速度。备用播放器以 1 倍速播放。
+
 ## 组件
 
 组件是一个接收 scope、返回元素的函数。它只运行一次，之后的变化由 signal 驱动。

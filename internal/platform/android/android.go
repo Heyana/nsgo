@@ -312,6 +312,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			ev.Time = time.Duration(r.u64()) * time.Millisecond
 			ev.Duration = time.Duration(r.u64()) * time.Millisecond
 			ev.Buffering = r.byte() != 0
+			ev.RateChangeable = ev.Kind == driver.EventLoad
 			// A native view's callback's arguments, as JSON, and whether
 			// an animation finished.
 			data := r.str()

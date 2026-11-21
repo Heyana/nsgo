@@ -224,6 +224,7 @@ func videoFace(p *props) core.Node {
 			e := r.vm.NewObject()
 			_ = e.Set("duration", info.Duration.Seconds())
 			_ = e.Set("size", r.size(info.Size))
+			_ = e.Set("rateChangeable", info.RateChangeable)
 			h(e)
 		}
 	}

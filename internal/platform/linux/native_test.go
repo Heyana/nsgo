@@ -3,6 +3,7 @@
 package linux
 
 import (
+	_ "embed"
 	"encoding/binary"
 	"fmt"
 	"net/http"
@@ -24,6 +25,12 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/engine"
 	alphaclips "github.com/nsgo-dev/nsgo/internal/platform/videoalpha/clips"
 )
+
+// videoRateClip contains a picture and a 440 Hz tone. Regenerate with
+// ffmpeg -f lavfi -i testsrc2=size=32x24:rate=12:duration=8 -f lavfi -i sine=frequency=440:sample_rate=24000:duration=8 -c:v libvpx -crf 40 -b:v 0 -c:a libopus -b:a 12k -vbr off testdata/video-rate.webm
+//
+//go:embed testdata/video-rate.webm
+var videoRateClip []byte
 
 // nativeApp is the app a native test drives: a button and a field whose
 // state the window's title shows, so the test can wait for the engine.
@@ -1401,6 +1408,129 @@ func TestVideoReportsLoadProgressAndEnd(t *testing.T) {
 		}
 	})
 	waitTitle(t, w, func(s string) bool { return strings.HasSuffix(s, "|4") })
+}
+
+func TestVideoChangesPlaybackRateWithoutReloading(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	path := filepath.Join(t.TempDir(), "video.webm")
+	if err := os.WriteFile(path, videoRateClip, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	type sample struct {
+		wall time.Time
+		clip time.Duration
+	}
+	loads := make(chan core.VideoInfo, 8)
+	positions := make(chan sample, 256)
+	errs := make(chan error, 1)
+	ends := make(chan struct{}, 1)
+	var cx *core.Scope
+	var rate *core.Signal[float32]
+	var paused *core.Signal[bool]
+	var ref core.Ref
+	w := startTestWindow(t, func(scope *core.Scope) core.Node {
+		cx = scope
+		rate, paused = core.NewSignal(cx, float32(2)), core.NewSignal(cx, false)
+		return core.Video{
+			Source: path, Controls: true, Repeat: true, Muted: true, Ref: &ref,
+			RateFunc: rate.Get, PausedFunc: paused.Get, ProgressInterval: 30 * time.Millisecond,
+			Style:   core.Style{Width: driver.Pt(200), Height: driver.Pt(100)},
+			OnLoad:  func(info core.VideoInfo) { loads <- info },
+			OnError: func(err error) { errs <- err },
+			OnEnd:   func() { ends <- struct{}{} },
+			OnProgress: func(pos, _ time.Duration) {
+				select {
+				case positions <- sample{time.Now(), pos}:
+				default:
+				}
+			},
+		}
+	}, Options{Title: "nsgo-native-video-rate", Width: 360, Height: 240})
+	var duration time.Duration
+	select {
+	case info := <-loads:
+		if !info.RateChangeable {
+			if bindVideoGST() {
+				t.Fatal("GstPlay loaded a seekable clip without rate support")
+			}
+			t.Skip("GstPlay or scaletempo is unavailable")
+		}
+		duration = info.Duration
+	case err := <-errs:
+		t.Fatal(err)
+	case <-time.After(8 * time.Second):
+		t.Fatal("video never loaded")
+	}
+	next := func(after time.Time) sample {
+		t.Helper()
+		deadline := time.After(3 * time.Second)
+		for {
+			select {
+			case s := <-positions:
+				if !s.wall.Before(after) && s.clip > 0 {
+					return s
+				}
+			case err := <-errs:
+				t.Fatal(err)
+			case <-deadline:
+				t.Fatal("no video progress")
+			}
+		}
+	}
+	measure := func(want float64) sample {
+		t.Helper()
+		begin := next(time.Now().Add(180 * time.Millisecond))
+		end := next(begin.wall.Add(700 * time.Millisecond))
+		got := float64(end.clip-begin.clip) / float64(end.wall.Sub(begin.wall))
+		if got < want*0.72 || got > want*1.28 {
+			t.Fatalf("position advanced %.2f× wall time, want %.1f× (%v to %v)", got, want, begin.clip, end.clip)
+		}
+		return end
+	}
+	initial := measure(2)
+	cx.Post(func() { rate.Set(0.5) })
+	if slow := measure(0.5); slow.clip < initial.clip {
+		t.Fatalf("changing rate lost position: %v to %v", initial.clip, slow.clip)
+	}
+	cx.Post(func() { paused.Set(true) })
+	w.engine.Sync()
+	w.onLoop(t, func() {
+		for _, v := range w.views {
+			if v != nil && v.video != nil && gtkMediaStreamGetPlaying(v.video.stream) != 0 {
+				t.Error("the video did not pause")
+			}
+		}
+	})
+	cx.Post(func() { ref.Seek(4 * time.Second); paused.Set(false) })
+	if resumed := measure(0.5); resumed.clip < 4*time.Second {
+		t.Fatalf("resuming after seek started at %v, want at least 4s", resumed.clip)
+	}
+	if duration < 7*time.Second {
+		t.Fatalf("video duration = %v, want about 8s", duration)
+	}
+	cx.Post(func() { ref.Seek(duration - 350*time.Millisecond) })
+	deadline := time.Now().Add(5 * time.Second)
+	atEnd := false
+	for {
+		s := next(time.Time{})
+		if atEnd && s.clip < time.Second {
+			break
+		}
+		atEnd = atEnd || s.clip > duration-time.Second
+		if time.Now().After(deadline) {
+			t.Fatal("the movie did not repeat")
+		}
+	}
+	measure(0.5)
+	select {
+	case info := <-loads:
+		t.Fatalf("changing speed or playback reopened the source: %+v", info)
+	case <-ends:
+		t.Fatal("a repeating video reported an end")
+	default:
+	}
 }
 
 // TestVideoReportsWhatGStreamerCannotPlay opens bytes that are no media.

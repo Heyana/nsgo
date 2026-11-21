@@ -30,6 +30,8 @@ Set `Mobile` (TSX `mobile`) to show a page as a phone sees it on Windows, macOS 
 
 A transparent clip shows what is behind it as HEVC with alpha in a `.mov` on macOS (iOS is not yet checked), and as VP9 with alpha in WebM on Linux with GStreamer's codecalpha plug-in (`gstreamer1.0-plugins-bad`, which a Linux package can recommend in `nsgo.yaml`). On macOS, iOS, Windows and Linux, a local clip whose alpha cannot be kept (WebM on Apple platforms, HEVC on Linux, and any on Windows until Media Foundation's alpha output has been checked on a Windows machine) makes `OnError` say so instead of the video showing in an opaque box: the error is a `*core.MediaError` whose `Reason` is `core.MediaErrorAlphaUnsupported`, so the app can decode that clip itself instead. Android and the web, and remote URLs on every platform, play such clips as their decoder outputs them, which may be opaque.
 
+`Rate` sets playback speed and `RateFunc` can change it during playback. Use `VideoInfo.RateChangeable` from `OnLoad` to show a speed control. Linux can change the rate of seekable videos when GstPlay and GStreamer's `scaletempo` filter are installed. The fallback player uses 1×.
+
 ## Components
 
 A component is a function that takes a scope and returns an element. It runs once; what changes later is driven by signals.

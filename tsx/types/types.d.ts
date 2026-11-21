@@ -564,7 +564,7 @@ export interface VideoHostProps {
   audioSession?: AudioSession;
   onLoadStart?: () => void;
   onProgress?: (e: { currentTime: number; duration: number }) => void;
-  onLoad?: (e: { duration: number; size: Size }) => void;
+  onLoad?: (e: { duration: number; size: Size; rateChangeable: boolean }) => void;
   onError?: (e: { message: string }) => void;
   onEnd?: () => void;
   onBuffer?: (e: { isBuffering: boolean }) => void;
