@@ -130,7 +130,7 @@ tests:
 				tctx, cancel = context.WithTimeout(ctx, opts.timeout)
 			}
 			started := time.Now()
-			args := append(targetTestArgs(name, opts.run, opts.timeout), execution...)
+			args := append(targetTestArgs(name, opts.run, opts.target, opts.timeout), execution...)
 			code, err := runner.run(tctx, args, env, w)
 			timedOut := errors.Is(tctx.Err(), context.DeadlineExceeded)
 			cancel()
@@ -349,13 +349,20 @@ func runDepth(run string) int {
 
 // targetTestArgs runs exactly one top-level test while retaining go test's
 // hierarchical subtest matching when -run contains a slash.
-func targetTestArgs(name, run string, timeout time.Duration) []string {
+func targetTestArgs(name, run, target string, timeout time.Duration) []string {
 	_, sub := splitTestRun(run)
 	pattern := "^" + regexp.QuoteMeta(name) + "$"
 	if sub != "" {
 		pattern += "/" + sub
 	}
-	args := []string{"-test.run", pattern, "-test.v"}
+	verbose := "-test.v"
+	switch target {
+	case "ios", "ios_simulator", "tvos", "tvos_simulator", "watchos", "watchos_simulator":
+		// Keep Go's result lines identifiable when the device console
+		// combines platform library output with the test's stdout.
+		verbose = "-test.v=test2json"
+	}
+	args := []string{"-test.run", pattern, verbose}
 	if timeout > 0 {
 		budget := timeout - time.Second
 		if budget <= 0 {
@@ -463,6 +470,11 @@ var testLine = regexp.MustCompile(`^--- (PASS|FAIL|SKIP): (\S+) \(([0-9.]+)s\)`)
 
 // parseTestOutput turns one test process's output into its result, that of the subtest depth levels down when -run selected one (runDepth); a process that printed no result for it crashed or timed out.
 func parseTestOutput(name string, depth int, out string, code int, runErr error) *testResult {
+	// Go's test2json mode prefixes its own lines with SYN. A platform
+	// library can write without ending its line before Go prints a result.
+	const mark = "\x16"
+	out = strings.ReplaceAll(out, "\n"+mark, "\n")
+	out = strings.ReplaceAll(strings.TrimPrefix(out, mark), mark, "\n")
 	t := &testResult{Name: name, Output: out, whole: true}
 	// Results by name across in-process repetitions: elapsed times add up, a failure outweighs a pass and a pass a skip.
 	results := map[string]*testResult{}

@@ -116,7 +116,7 @@ func TestRevision(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 		defer cancel()
 		var out bytes.Buffer
-		code, err := runner.run(ctx, targetTestArgs("TestRevision", "", 20*time.Second), []string{"NSGO_EXPECTED=" + want}, &out)
+		code, err := runner.run(ctx, targetTestArgs("TestRevision", "", "web", 20*time.Second), []string{"NSGO_EXPECTED=" + want}, &out)
 		if err != nil || code != 0 {
 			t.Fatalf("%s run: exit %d, error %v\n%s", want, code, err, out.String())
 		}

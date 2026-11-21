@@ -37,9 +37,12 @@ func TestSplitTestRun(t *testing.T) {
 }
 
 func TestTargetTestArgs(t *testing.T) {
-	if got := targetTestArgs("TestGallery", "TestGallery/dark-home", 15*time.Minute); !slices.Equal(got,
-		[]string{"-test.run", "^TestGallery$/dark-home", "-test.v", "-test.timeout", "14m59s"}) {
+	if got := targetTestArgs("TestGallery", "TestGallery/dark-home", "ios_simulator", 15*time.Minute); !slices.Equal(got,
+		[]string{"-test.run", "^TestGallery$/dark-home", "-test.v=test2json", "-test.timeout", "14m59s"}) {
 		t.Errorf("targetTestArgs = %q", got)
+	}
+	if got := targetTestArgs("TestGallery", "", "web", 0); !slices.Equal(got, []string{"-test.run", "^TestGallery$", "-test.v"}) {
+		t.Errorf("Web targetTestArgs = %q", got)
 	}
 }
 
@@ -47,6 +50,14 @@ func TestParseTargetSubtestOutput(t *testing.T) {
 	got := parseTestOutput("TestGallery", 1, "--- PASS: TestGallery/dark-home (0.2s)\n--- PASS: TestGallery (0.2s)\n", 0, nil)
 	if got.Name != "TestGallery/dark-home" || got.Status != "pass" {
 		t.Fatalf("result = %+v, want the selected subtest", got)
+	}
+}
+
+func TestParseTargetResultAfterNativeOutput(t *testing.T) {
+	out := "\x16=== RUN   TestVideo\nunrecognised property key\x16--- PASS: TestVideo (0.2s)\n\x16PASS\n"
+	got := parseTestOutput("TestVideo", 0, out, 0, nil)
+	if got.Status != "pass" || got.Elapsed != 200*time.Millisecond || strings.Contains(got.Output, "\x16") {
+		t.Fatalf("result = %+v, want the marked pass without control bytes", got)
 	}
 }
 

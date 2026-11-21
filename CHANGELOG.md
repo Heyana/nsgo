@@ -94,6 +94,7 @@
 - Keep Windows application menus closed when a focused view or key binding consumes an Alt shortcut (#1132 by @houko).
 - Add `nsgo build -macos-profile` and `-installer`, which replace `sign.macos_profile` and `sign.installer` for the Mac App Store package from the command line (#899 by @houko).
 - Install `nsgo test`'s builds on the iOS, tvOS and watchOS simulators under the app's ID followed by `.nsgotest` and uninstall them when the run ends, leaving an installed build of the app and its data as they were (#898 by @houko).
+- Recognize Apple mobile test results when a platform library writes a message without a trailing newline (#681 by @houko).
 - Hold the starting value of macOS and iOS style and border animations across the update that replaces it, which could crash an app showing a `ui.Select` (#995 by @houko).
 - Stop a disposed computation from subscribing to what it reads, which left links that later crashed `Scope.Dispose` with an index out of range (#997 by @houko).
 - Add `nsgo.StartHidden`, which opens the main window on macOS, Windows and Linux without showing it until the app shows it, for tray apps and launches at login (#670 by @houko).
