@@ -1009,10 +1009,7 @@ func (wv *webView) respondResource(args *comObject, response *driver.WebSchemeRe
 	}
 	s := *(**comObject)(unsafe.Pointer(&stream))
 	defer s.release()
-	text := ""
-	if status == 200 {
-		text = "OK"
-	}
+	text := webReasonPhrase(status)
 	headers := map[string]string{}
 	if response != nil {
 		maps.Copy(headers, response.Headers)
@@ -1035,6 +1032,73 @@ func (wv *webView) respondResource(args *comObject, response *driver.WebSchemeRe
 	}
 	args.call(resourceArgsPutResponse, resource.ptr())
 	resource.release()
+}
+
+// webReasonPhrase is status's HTTP reason phrase. CreateWebResourceResponse fails on an empty one, which leaves the page's request waiting for good, so a status without a phrase of its own takes its class's.
+func webReasonPhrase(status int64) string {
+	switch status {
+	case 200:
+		return "OK"
+	case 201:
+		return "Created"
+	case 202:
+		return "Accepted"
+	case 204:
+		return "No Content"
+	case 206:
+		return "Partial Content"
+	case 301:
+		return "Moved Permanently"
+	case 302:
+		return "Found"
+	case 303:
+		return "See Other"
+	case 304:
+		return "Not Modified"
+	case 307:
+		return "Temporary Redirect"
+	case 308:
+		return "Permanent Redirect"
+	case 400:
+		return "Bad Request"
+	case 401:
+		return "Unauthorized"
+	case 403:
+		return "Forbidden"
+	case 404:
+		return "Not Found"
+	case 405:
+		return "Method Not Allowed"
+	case 409:
+		return "Conflict"
+	case 410:
+		return "Gone"
+	case 413:
+		return "Content Too Large"
+	case 415:
+		return "Unsupported Media Type"
+	case 416:
+		return "Range Not Satisfiable"
+	case 429:
+		return "Too Many Requests"
+	case 500:
+		return "Internal Server Error"
+	case 501:
+		return "Not Implemented"
+	case 503:
+		return "Service Unavailable"
+	}
+	switch status / 100 {
+	case 1:
+		return "Informational"
+	case 2:
+		return "Success"
+	case 3:
+		return "Redirection"
+	case 4:
+		return "Client Error"
+	}
+	return "Server Error"
 }
 
 func webMIME(path string, body []byte) string {

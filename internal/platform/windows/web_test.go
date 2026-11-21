@@ -45,6 +45,18 @@ func TestWebEnvironmentOptionsRegisterSchemes(t *testing.T) {
 	}
 }
 
+// TestWebReasonPhraseIsNeverEmpty holds every status a scheme handler can answer to a reason phrase, as CreateWebResourceResponse needs one.
+func TestWebReasonPhraseIsNeverEmpty(t *testing.T) {
+	for status := int64(100); status < 600; status++ {
+		if webReasonPhrase(status) == "" {
+			t.Errorf("status %d has no reason phrase", status)
+		}
+	}
+	if got := webReasonPhrase(405); got != "Method Not Allowed" {
+		t.Errorf("405 = %q", got)
+	}
+}
+
 func TestWebRequestHeadersAreLines(t *testing.T) {
 	got := webRequestHeaders(map[string]string{"X-B": "2", "X-A": "1", "Bad\r\nName": "x", "X-C": "a\r\nInjected: y", "": "z"})
 	if want := "X-A: 1\r\nX-B: 2"; got != want {
