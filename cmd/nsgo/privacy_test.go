@@ -16,7 +16,7 @@ func TestPrivacyManifestIncludesNSGoAndAppDeclarations(t *testing.T) {
 	p.Apple.Privacy.Tracking = &tracking
 	p.Apple.Privacy.TrackingDomains = []string{"example.com"}
 	p.Apple.Privacy.CollectedData = []map[string]any{{"NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeEmailAddress", "NSPrivacyCollectedDataTypeLinked": true, "NSPrivacyCollectedDataTypePurposes": []any{"NSPrivacyCollectedDataTypePurposeAppFunctionality"}}}
-	got, err := decodePlist(p.privacyManifest(nil))
+	got, err := decodePlist(encodePlist(p.privacyManifest(nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestPrivacyManifestIncludesNSGoAndAppDeclarations(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("manifest\n%#v\nwant\n%#v", got, want)
 	}
-	if a, b := p.privacyManifest(nil), p.privacyManifest(nil); !bytes.Equal(a, b) {
+	if a, b := encodePlist(p.privacyManifest(nil)), encodePlist(p.privacyManifest(nil)); !bytes.Equal(a, b) {
 		t.Fatal("two manifests of one project differ")
 	}
 }
@@ -53,7 +53,7 @@ func TestPrivacyManifestMergesTheAppsOwn(t *testing.T) {
 	if err := os.WriteFile(path, own, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p := &project{}
+	p := &project{checkStorePrivacy: true}
 	p.Apple.Privacy.TrackingDomains = []string{"ads.example.com", "metrics.example.com"}
 	if err := p.writePrivacyManifest(dir); err != nil {
 		t.Fatal(err)
@@ -104,6 +104,7 @@ func TestPrivacyValidation(t *testing.T) {
 	}
 }
 
+
 func TestDiskSpaceLinkerDeclaration(t *testing.T) {
 	p := &project{}
 	macos := []string{"GOOS=darwin", "GOARCH=arm64"}
@@ -118,5 +119,83 @@ func TestDiskSpaceLinkerDeclaration(t *testing.T) {
 	}
 	if got := p.privacyLdflags([]string{"GOOS=linux", "GOARCH=amd64"}); len(got) != 0 {
 		t.Fatalf("Linux with a reason: %q", got)
+	}
+}
+func TestStorePrivacyManifestRejectsInvalidDeclarations(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		resource map[string]any
+		data     []map[string]any
+		want     string
+	}{
+		{
+			name:     "tracking type",
+			resource: map[string]any{"NSPrivacyTracking": "false"},
+			want:     "NSPrivacyTracking must be a boolean",
+		},
+		{
+			name: "reason discarded during merge",
+			resource: map[string]any{"NSPrivacyAccessedAPITypes": []any{
+				map[string]any{"NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+					"NSPrivacyAccessedAPITypeReasons": []any{true}},
+			}},
+			want: "NSPrivacyAccessedAPITypeReasons[0]",
+		},
+		{
+			name:     "tracking needs domains",
+			resource: map[string]any{"NSPrivacyTracking": true},
+			want:     "list the tracking domains",
+		},
+		{
+			name: "domain is a URL",
+			resource: map[string]any{
+				"NSPrivacyTracking": true, "NSPrivacyTrackingDomains": []any{"https://example.com/"},
+			},
+			want: "NSPrivacyTrackingDomains[0]",
+		},
+		{
+			name: "collected data needs tracking declaration",
+			data: []map[string]any{{
+				"NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeEmailAddress", "NSPrivacyCollectedDataTypeLinked": false,
+			}},
+			want: "apple.privacy.collected_data[0]: NSPrivacyCollectedDataTypeTracking",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if tc.resource != nil {
+				if err := os.WriteFile(filepath.Join(dir, privacyManifestName), encodePlist(tc.resource), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			p := project{checkStorePrivacy: true}
+			p.Apple.Privacy.CollectedData = tc.data
+			if err := p.writePrivacyManifest(dir); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("writePrivacyManifest = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestStorePrivacyManifestOmitsUnusedTrackingDomains(t *testing.T) {
+	p := project{checkStorePrivacy: true}
+	dir := t.TempDir()
+	if err := p.writePrivacyManifest(dir); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, privacyManifestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := decodePlist(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := v.(map[string]any)
+	if _, exists := manifest["NSPrivacyTrackingDomains"]; exists {
+		t.Errorf("store manifest contains the unused tracking domains key: %s", raw)
+	}
+	if manifest["NSPrivacyTracking"] != false || len(plistArray(manifest["NSPrivacyAccessedAPITypes"])) != len(nsgoPrivacyReasons) {
+		t.Errorf("store manifest lost NSGo's defaults: %s", raw)
 	}
 }

@@ -36,13 +36,15 @@ const androidAPI = 28
 // and updates from August 31, 2026.
 const androidPlayTargetSDK = 36
 
-func androidTargetWarning(p *project, targets []string) string {
-	if p.Android.TargetSDK == 0 || p.Android.TargetSDK >= androidPlayTargetSDK || !slices.ContainsFunc(targets, func(target string) bool {
-		return strings.HasPrefix(target, "android")
-	}) {
+func androidTarget(target string) bool {
+	return target == "android_arm64" || target == "android_x64" || target == "android_universal"
+}
+
+func androidTargetNotice(p *project, targets []string) string {
+	if p.Android.TargetSDK == 0 || p.Android.TargetSDK >= androidPlayTargetSDK || !slices.ContainsFunc(targets, androidTarget) {
 		return ""
 	}
-	return fmt.Sprintf("android.target_sdk %d is below Google Play's required targetSdkVersion %d", p.Android.TargetSDK, androidPlayTargetSDK)
+	return fmt.Sprintf("android.target_sdk %d is below Google Play's required targetSdkVersion %d; set android.target_sdk to %d or higher, or omit it to use NSGo's default", p.Android.TargetSDK, androidPlayTargetSDK, androidPlayTargetSDK)
 }
 
 // buildAndroidBinary builds the app's executable for goarch in tmp and

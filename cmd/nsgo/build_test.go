@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"debug/pe"
 	"os"
 	"os/exec"
@@ -30,7 +31,7 @@ func TestExpandAllTargets(t *testing.T) {
 	}
 }
 
-func TestAndroidTargetWarning(t *testing.T) {
+func TestAndroidTargetNotice(t *testing.T) {
 	for _, c := range []struct {
 		name    string
 		target  int
@@ -39,16 +40,40 @@ func TestAndroidTargetWarning(t *testing.T) {
 	}{
 		{"default", 0, []string{"android_arm64"}, ""},
 		{"current", androidPlayTargetSDK, []string{"android_arm64"}, ""},
-		{"old", 35, []string{"android_arm64"}, "android.target_sdk 35 is below Google Play's required targetSdkVersion 36"},
+		{"old", 35, []string{"android_arm64"}, "android.target_sdk 35 is below Google Play's required targetSdkVersion 36; set android.target_sdk to 36 or higher, or omit it to use NSGo's default"},
+		{"universal", 35, []string{"android_universal"}, "android.target_sdk 35 is below Google Play's required targetSdkVersion 36; set android.target_sdk to 36 or higher, or omit it to use NSGo's default"},
 		{"other target", 35, []string{"macos_arm64"}, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			p := project{}
 			p.Android.TargetSDK = c.target
-			if got := androidTargetWarning(&p, c.targets); got != c.want {
-				t.Fatalf("androidTargetWarning = %q, want %q", got, c.want)
+			if got := androidTargetNotice(&p, c.targets); got != c.want {
+				t.Fatalf("androidTargetNotice = %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+func TestBuildStoreRejectsOutdatedAndroidTarget(t *testing.T) {
+	p := project{}
+	p.Updates.Channel = channelStore
+	p.Build.Targets = []string{"android"}
+	p.Android.TargetSDK = 35
+	if err := buildAll(context.Background(), &p); err == nil ||
+		!strings.Contains(err.Error(), "Google Play's required targetSdkVersion 36") ||
+		!strings.Contains(err.Error(), "set android.target_sdk to 36 or higher") {
+		t.Fatalf("buildAll = %v, want the Play requirement and how to fix it", err)
+	}
+}
+
+func TestBuildStoreRejectsOutdatedUniversalAndroidTarget(t *testing.T) {
+	p := project{}
+	p.Updates.Channel = channelStore
+	p.Build.Targets = []string{"android_arm64", "android_x64"}
+	p.Android.TargetSDK = 35
+	if err := buildAll(context.Background(), &p); err == nil ||
+		!strings.Contains(err.Error(), "Google Play's required targetSdkVersion 36") {
+		t.Fatalf("buildAll(universal android) = %v, want the Play requirement", err)
 	}
 }
 

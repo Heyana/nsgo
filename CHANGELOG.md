@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Check target API, Apple privacy and encryption declarations, and release questionnaires during store builds (#1566 by @houko).
 - Fall back to estimated text sizes on Android when a runtime text request fails or times out (#173 by @houko).
 - Relaunch iOS simulator dev builds after replacing only the executable when the bundle's resources and configuration stay the same (#661 by @houko).
 - Advertise and browse local DNS-SD services through Bonjour on macOS and iOS (#430 by @houko).

@@ -168,7 +168,7 @@ sign:
   # installer: "3rd Party Mac Developer Installer: Example (ABCDE12345)"  # by default the keychain's of the profile's team
 ```
 
-The runtime targets API 36 when `android.target_sdk` is unset. A release build warns when it is set below 36 because Google Play requires API 36 from August 31, 2026.
+The runtime targets API 36 when `android.target_sdk` is unset. An Android App Bundle build fails below API 36, which [Google Play requires](https://support.google.com/googleplay/android-developer/answer/11926878) for new mobile apps and updates from August 31, 2026. A standalone APK build warns and continues.
 
 Without `sign.macos_profile` the Mac package is unsigned: it runs sandboxed on your Mac, which tests the sandbox, but uploads nowhere. A sandboxed app reaches only its own container, the network and the files the user picks; widgets cannot share timelines from the sandbox yet, so a store build refuses them. Upload the `.pkg` with Transporter, the `.msix` in Partner Center, the `.aab` in Play Console, and submit `flatpak/<id>.yml` to Flathub once the release holds the archives it names; `flatpak-builder` builds it locally too. Windows installs an MSIX outside the Store only when it is signed, which the Store does.
 
@@ -177,6 +177,7 @@ On macOS, a scroll view's edge effects (`Scroll.EdgeEffects`) and a backdrop `Bl
 Every Apple bundle `build` writes, the app, its widget extension, App Clip and Apple Watch app, and a `-dynamic` `-embed` framework, carries a privacy manifest, `PrivacyInfo.xcprivacy`, declaring the required-reason APIs NSGo and Go's runtime use: user defaults (`CA92.1`), file timestamps (`C617.1`) and system boot time (`35F9.1`). `apple.privacy` adds the app's own: `accessed_apis`, each category's reasons, `tracking`, `tracking_domains` and `collected_data`, entries of `NSPrivacyCollectedDataTypes` as Apple names them; a `PrivacyInfo.xcprivacy` in `resources/` is merged with them rather than replaced.
 
 The Info.plist of each iOS, tvOS and watchOS bundle `build` writes for devices, the app's, its widget extension's and App Clip's, carries the SDK and Xcode `DT` keys App Store Connect checks, read from the Xcode that builds it, and `UIRequiredDeviceCapabilities: [arm64]`; simulator bundles leave them out, and a key `apple.info` sets keeps its value. `apple.multiple_scenes: true` sets `UIApplicationSupportsMultipleScenes` in an iOS app's scene manifest, which is false by default: on an iPad the user can then open more than one window of the app, and each shows the app's main view anew, with state of its own and the app's shared signals and storage, until the user closes it.
+
 
 ## Store listings
 
@@ -210,6 +211,23 @@ Validation runs before reading credentials or making any HTTP request, checking 
 
 Upload credentials come from the environment alone: `NSGO_APP_STORE_KEY`, `NSGO_APP_STORE_KEY_ID` and `NSGO_APP_STORE_ISSUER` (falling back to the notarization key `NSGO_NOTARY_KEY`, `NSGO_NOTARY_KEY_ID` and `NSGO_NOTARY_ISSUER`) for App Store Connect, and `NSGO_PLAY_SERVICE_ACCOUNT` (service-account JSON file path or JSON text) for Google Play.
 
+### Store compliance
+
+Use `nsgo.yaml` to track the status of each release questionnaire.
+
+```yaml
+compliance:
+  app_store: { age_rating: false }
+  google_play: { data_safety: false }
+  steam: { content_survey: false }
+```
+
+Set an entry to `true` after completing its questionnaire. A matching `-channel store` or `-channel steam` build reminds you about entries set to `false`. Omit any entry you do not track in YAML.
+
+- Complete the [age rating questionnaire](https://developer.apple.com/help/app-store-connect/manage-app-information/set-an-app-age-rating) and [App Privacy details](https://developer.apple.com/help/app-store-connect/manage-app-information/manage-app-privacy) in App Store Connect.
+- For Apple's [encryption questionnaire](https://developer.apple.com/help/app-store-connect/manage-app-information/determine-and-upload-app-encryption-documentation), set `apple.info.ITSAppUsesNonExemptEncryption` to your app's answer as a YAML boolean. If Apple sends an approval code, put it in `apple.info.ITSEncryptionExportComplianceCode` as a string. You can leave the keys out and answer at upload. Apple store builds check the types of these keys and the structure of the bundle's privacy manifest.
+- Complete [Data safety](https://support.google.com/googleplay/android-developer/answer/10787469) in Play Console. Apps distributed exclusively on the internal testing track are exempt.
+- Complete the [Content Survey](https://partner.steamgames.com/doc/gettingstarted/contentsurvey) in Steamworks before submitting the game for review.
 ## Steam depots
 
 ```sh

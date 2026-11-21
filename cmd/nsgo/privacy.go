@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // privacyManifestName is the privacy manifest Apple reads at a bundle's resource root.
@@ -55,7 +56,7 @@ func (p *project) validatePrivacy() error {
 }
 
 // privacyManifest returns a bundle's PrivacyInfo.xcprivacy: existing, the manifest the app's resources put there or nil, with NSGo's declarations and apple.privacy's merged in. Categories and their reasons are sorted, so a build writes the same file each time.
-func (p *project) privacyManifest(existing map[string]any) []byte {
+func (p *project) privacyManifest(existing map[string]any) map[string]any {
 	out := map[string]any{}
 	for k, v := range existing {
 		out[k] = v
@@ -130,7 +131,7 @@ func (p *project) privacyManifest(existing map[string]any) []byte {
 		}
 	}
 	out["NSPrivacyCollectedDataTypes"] = data
-	return encodePlist(out)
+	return out
 }
 
 // plistArray is v as a property list's array, empty but not nil when it is none, so encodePlist writes an empty array.
@@ -176,8 +177,118 @@ func (p *project) writePrivacyManifest(dir string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	if p.checkStorePrivacy {
+		if err := validateResourcePrivacy(existing); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		for i, item := range p.Apple.Privacy.CollectedData {
+			if err := validateCollectedPrivacyData(item); err != nil {
+				return fmt.Errorf("apple.privacy.collected_data[%d]: %w", i, err)
+			}
+		}
+	}
+	manifest := p.privacyManifest(existing)
+	if p.checkStorePrivacy {
+		if err := validatePrivacyTracking(manifest); err != nil {
+			return fmt.Errorf("%s (including apple.privacy): %w", path, err)
+		}
+		if manifest["NSPrivacyTracking"] == false {
+			delete(manifest, "NSPrivacyTrackingDomains")
+		}
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, p.privacyManifest(existing), 0o644)
+	return os.WriteFile(path, encodePlist(manifest), 0o644)
+}
+
+// validateResourcePrivacy checks fields before merging can discard malformed values.
+func validateResourcePrivacy(manifest map[string]any) error {
+	if tracking, exists := manifest["NSPrivacyTracking"]; exists {
+		if _, ok := tracking.(bool); !ok {
+			return errors.New("NSPrivacyTracking must be a boolean")
+		}
+	}
+	if domains, exists := manifest["NSPrivacyTrackingDomains"]; exists {
+		if _, ok := domains.([]any); !ok {
+			return errors.New("NSPrivacyTrackingDomains must be an array of domain names")
+		}
+	}
+	if err := validatePrivacyEntries(manifest, "NSPrivacyAccessedAPITypes", validatePrivacyAPI); err != nil {
+		return err
+	}
+	return validatePrivacyEntries(manifest, "NSPrivacyCollectedDataTypes", validateCollectedPrivacyData)
+}
+
+func validatePrivacyEntries(manifest map[string]any, key string, validate func(map[string]any) error) error {
+	value, exists := manifest[key]
+	if !exists {
+		return nil
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return fmt.Errorf("%s must be an array of dictionaries", key)
+	}
+	for i, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s[%d] must be a dictionary", key, i)
+		}
+		if err := validate(entry); err != nil {
+			return fmt.Errorf("%s[%d]: %w", key, i, err)
+		}
+	}
+	return nil
+}
+
+func validatePrivacyAPI(entry map[string]any) error {
+	const prefix = "NSPrivacyAccessedAPICategory"
+	if category, _ := entry["NSPrivacyAccessedAPIType"].(string); !strings.HasPrefix(category, prefix) || category == prefix {
+		return errors.New("NSPrivacyAccessedAPIType must name a required-reason API category")
+	}
+	return validatePrivacyStrings(entry, "NSPrivacyAccessedAPITypeReasons")
+}
+
+func validateCollectedPrivacyData(entry map[string]any) error {
+	const prefix = "NSPrivacyCollectedDataType"
+	if category, _ := entry[prefix].(string); !strings.HasPrefix(category, prefix) || category == prefix {
+		return errors.New("NSPrivacyCollectedDataType must name a collected data type")
+	}
+	for _, key := range []string{"NSPrivacyCollectedDataTypeLinked", "NSPrivacyCollectedDataTypeTracking"} {
+		if _, ok := entry[key].(bool); !ok {
+			return fmt.Errorf("%s must be a boolean", key)
+		}
+	}
+	return validatePrivacyStrings(entry, "NSPrivacyCollectedDataTypePurposes")
+}
+
+func validatePrivacyStrings(entry map[string]any, key string) error {
+	values, _ := entry[key].([]any)
+	if len(values) == 0 {
+		return fmt.Errorf("%s must be a nonempty array of strings", key)
+	}
+	for i, v := range values {
+		if value, ok := v.(string); !ok || strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s[%d] must be a nonempty string", key, i)
+		}
+	}
+	return nil
+}
+
+func validatePrivacyTracking(manifest map[string]any) error {
+	tracking, _ := manifest["NSPrivacyTracking"].(bool)
+	domains := plistArray(manifest["NSPrivacyTrackingDomains"])
+	if tracking && len(domains) == 0 {
+		return errors.New("NSPrivacyTracking is true; list the tracking domains in NSPrivacyTrackingDomains or apple.privacy.tracking_domains")
+	}
+	if !tracking && len(domains) > 0 {
+		return errors.New("tracking domains require NSPrivacyTracking or apple.privacy.tracking to be true")
+	}
+	for i, value := range domains {
+		domain, _ := value.(string)
+		if !strings.Contains(domain, ".") || strings.ContainsAny(domain, ":/?#") || strings.ContainsFunc(domain, unicode.IsSpace) {
+			return fmt.Errorf("NSPrivacyTrackingDomains[%d] must be a domain name without a scheme, port, path or query", i)
+		}
+	}
+	return nil
 }

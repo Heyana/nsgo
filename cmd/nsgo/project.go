@@ -54,6 +54,8 @@ type project struct {
 	// released lists the files nsgo build put in the release directory
 	// for the target it builds.
 	released []string
+	// checkStorePrivacy validates the Apple manifests in a store package.
+	checkStorePrivacy bool
 	// buildParallel bounds Go's compile workers for one target while several
 	// targets build together. Zero keeps Go's default.
 	buildParallel int
@@ -186,6 +188,7 @@ type project struct {
 		// LoopbackCleartext allows HTTP to loopback in standalone packages.
 		LoopbackCleartext bool `yaml:"loopback_cleartext"`
 	} `yaml:"android"`
+	Compliance storeCompliance `yaml:"compliance"`
 	// Harmonyos is the harmonyos target's: Permissions are the ones its
 	// module.json asks for beyond the runtime's INTERNET, by their
 	// ohos.permission names, such as MICROPHONE and CAMERA, which a prompt

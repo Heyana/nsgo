@@ -168,7 +168,7 @@ sign:
   # installer: "3rd Party Mac Developer Installer: Example (ABCDE12345)"  # 默认取钥匙串中描述文件所属团队的安装器身份
 ```
 
-未设置 `android.target_sdk` 时，运行时以 API 36 为目标。由于 Google Play 自 2026 年 8 月 31 日起要求 API 36，发布构建将对低于 36 的设置发出警告。
+未设置 `android.target_sdk` 时，运行时以 API 36 为目标。[Google Play](https://support.google.com/googleplay/android-developer/answer/11926878) 自 2026 年 8 月 31 日起要求新移动应用和更新以 API 36 为最低目标。低于 API 36 时，Android App Bundle 构建失败，独立 APK 构建发出警告后继续。
 
 没有 `sign.macos_profile` 时，Mac 包不签名：它能在你的 Mac 上以沙盒方式运行，可用来测试沙盒，但无法上传。沙盒中的应用只能访问自己的容器、网络和用户选择的文件；小组件暂时无法在沙盒中共享时间线，所以 store 构建会拒绝带小组件的应用。用 Transporter 上传 `.pkg`，在 Partner Center 上传 `.msix`，在 Play Console 上传 `.aab`；Release 中有了清单引用的归档后，把 `flatpak/<id>.yml` 提交到 Flathub，也可以用 `flatpak-builder` 在本地构建。Windows 只安装已签名的 MSIX，商店之外安装需要签名，上架时由商店签名。
 
@@ -177,6 +177,7 @@ sign:
 `build` 写出的每个 Apple 包，即应用、它的小组件扩展、App Clip 和 Apple Watch 应用，以及 `-dynamic` 的 `-embed` 框架，都带有隐私清单 `PrivacyInfo.xcprivacy`，声明 NSGo 和 Go 运行时用到的需要理由的 API：用户默认设置（`CA92.1`）、文件时间戳（`C617.1`）和系统启动时间（`35F9.1`）。`apple.privacy` 添加应用自己的声明：`accessed_apis` 给出每个类别的理由，另有 `tracking`、`tracking_domains` 和 `collected_data`，后者的条目按 Apple 的命名写成 `NSPrivacyCollectedDataTypes` 的条目；`resources/` 中的 `PrivacyInfo.xcprivacy` 会与这些声明合并，而不是被替换。
 
 iOS、tvOS 和 watchOS 的设备构建会在应用及其扩展中写入 App Store Connect 检查的 SDK 与 Xcode 元数据，并加入 `UIRequiredDeviceCapabilities: [arm64]`。模拟器构建不会写入这些仅设备条目；`apple.info` 中显式设置的值优先。`apple.multiple_scenes: true` 会在 iOS 应用的场景清单中将 `UIApplicationSupportsMultipleScenes` 设为 true，默认值为 false：此后用户可以在 iPad 上打开 App 的多个窗口，每个窗口都重新显示 App 的主视图，拥有各自的状态，同时共享 App 的信号和存储，直到用户关闭该窗口。
+
 
 ## 商店列表
 
@@ -210,6 +211,23 @@ go tool nsgo publish -store play -track production        # 同时更新指定 G
 
 上传凭据仅从环境变量读取：App Store Connect 读取 `NSGO_APP_STORE_KEY`、`NSGO_APP_STORE_KEY_ID` 和 `NSGO_APP_STORE_ISSUER`（未设置时回退到公证密钥 `NSGO_NOTARY_KEY`、`NSGO_NOTARY_KEY_ID` 和 `NSGO_NOTARY_ISSUER`）；Google Play 读取 `NSGO_PLAY_SERVICE_ACCOUNT`（服务账号 JSON 文件路径或 JSON 文本）。
 
+### 商店合规
+
+可以在 `nsgo.yaml` 中记录各项发布问卷的进度。
+
+```yaml
+compliance:
+  app_store: { age_rating: false }
+  google_play: { data_safety: false }
+  steam: { content_survey: false }
+```
+
+完成问卷后将对应条目标记为 `true`。匹配的 `-channel store` 或 `-channel steam` 构建会提醒你处理仍为 `false` 的条目。无需在 YAML 中跟踪的条目可以省略。
+
+- 在 App Store Connect 填写[年龄分级问卷](https://developer.apple.com/help/app-store-connect/manage-app-information/set-an-app-age-rating)和[应用隐私信息](https://developer.apple.com/help/app-store-connect/manage-app-information/manage-app-privacy)。
+- 根据 Apple 的[加密出口合规问卷](https://developer.apple.com/help/app-store-connect/manage-app-information/determine-and-upload-app-encryption-documentation)，将应用的回答以 YAML 布尔值写入 `apple.info.ITSAppUsesNonExemptEncryption`。如果 Apple 提供批准代码，将其以字符串写入 `apple.info.ITSEncryptionExportComplianceCode`。也可以在上传时回答问卷并省略这些键。Apple 商店构建会检查这些键的类型和包内隐私清单的结构。
+- 在 Play Console 填写[数据安全表单](https://support.google.com/googleplay/android-developer/answer/10787469)。仅通过内部测试轨道分发的应用可免填。
+- 在提交游戏审核前，在 Steamworks 填写[内容调查](https://partner.steamgames.com/doc/gettingstarted/contentsurvey)。
 ## Steam depot
 
 ```sh

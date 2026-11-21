@@ -44,9 +44,8 @@ func buildAll(ctx context.Context, p *project) error {
 	} else if p.channel() == channelStore {
 		buildTargets = universalStoreTargets(buildTargets)
 	}
-	// A library for a host app takes the host's target API.
-	if warning := androidTargetWarning(p, buildTargets); warning != "" && !p.Build.embed {
-		warn("%s", warning)
+	if err := p.checkStoreCompliance(buildTargets); err != nil {
+		return err
 	}
 	jobs, err := p.buildJobs(len(buildTargets))
 	if err != nil {
@@ -392,6 +391,7 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 		}
 		return fmt.Errorf("-embed builds for %s; desktop hosts embed apps with nsgo.NewView", strings.Join(embedTargets, ", "))
 	}
+	p.checkStorePrivacy = p.channel() == channelStore && appleStoreTarget(target)
 	if err := p.checkUpdateFeed(target); err != nil {
 		return err
 	}
