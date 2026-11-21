@@ -19,7 +19,7 @@ func TestSignInWithAppleAnswersTheCredential(t *testing.T) {
 		return core.View{}
 	}, signsInWithApple)
 	want := core.AppleCredential{User: "001234.abcd", IdentityToken: "eyJ.token", AuthorizationCode: "c0de", Email: "a@privaterelay.appleid.com", GivenName: "Ada", FamilyName: "Lovelace"}
-	app.AppleSignIn = func(core.AppleSignInRequest) (core.AppleCredential, error) { return want, nil }
+	app.AppleSignIn = func(nsgotest.AppleSignInRequest) (core.AppleCredential, error) { return want, nil }
 	var got core.AppleCredential
 	var gotErr error
 	calls := 0
@@ -32,7 +32,7 @@ func TestSignInWithAppleAnswersTheCredential(t *testing.T) {
 		t.Fatalf("answered %d times: %+v, %v", calls, got, gotErr)
 	}
 	sum := sha256.Sum256([]byte("raw-nonce"))
-	if len(app.AppleSignIns) != 1 || app.AppleSignIns[0] != (core.AppleSignInRequest{FullName: true, Email: true, Nonce: hex.EncodeToString(sum[:])}) {
+	if len(app.AppleSignIns) != 1 || app.AppleSignIns[0] != (nsgotest.AppleSignInRequest{FullName: true, Email: true, Nonce: hex.EncodeToString(sum[:])}) {
 		t.Fatalf("requests %+v", app.AppleSignIns)
 	}
 }
@@ -52,12 +52,12 @@ func TestSignInWithAppleTellsACancelFromAFailure(t *testing.T) {
 	}
 	scope.SignInWithApple(core.AppleSignInOptions{}, record)
 	app.Settle()
-	app.AppleSignIn = func(core.AppleSignInRequest) (core.AppleCredential, error) {
+	app.AppleSignIn = func(nsgotest.AppleSignInRequest) (core.AppleCredential, error) {
 		return core.AppleCredential{}, core.AppleSignInFailed
 	}
 	scope.SignInWithApple(core.AppleSignInOptions{}, record)
 	app.Settle()
-	app.AppleSignIn = func(core.AppleSignInRequest) (core.AppleCredential, error) {
+	app.AppleSignIn = func(nsgotest.AppleSignInRequest) (core.AppleCredential, error) {
 		return core.AppleCredential{}, errors.New("no network")
 	}
 	scope.SignInWithApple(core.AppleSignInOptions{}, record)
@@ -111,7 +111,7 @@ func TestSignInWithAppleUnavailableWithoutThePlatform(t *testing.T) {
 		scope = cx
 		return core.View{}
 	})
-	app.AppleSignIn = func(core.AppleSignInRequest) (core.AppleCredential, error) {
+	app.AppleSignIn = func(nsgotest.AppleSignInRequest) (core.AppleCredential, error) {
 		return core.AppleCredential{User: "ada"}, nil
 	}
 	var signIn, state error
@@ -130,7 +130,7 @@ func TestSignInWithAppleHeldToAccess(t *testing.T) {
 		cx.ProvideAccess(denyAll{})
 		return core.View{}
 	}, signsInWithApple)
-	app.AppleSignIn = func(core.AppleSignInRequest) (core.AppleCredential, error) {
+	app.AppleSignIn = func(nsgotest.AppleSignInRequest) (core.AppleCredential, error) {
 		return core.AppleCredential{User: "ada"}, nil
 	}
 	var signIn, state error

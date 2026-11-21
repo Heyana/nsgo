@@ -943,7 +943,7 @@ func TestSystemSignInWithApple(t *testing.T) {
 	if got := app.Find("id:apple-sign-in-result").Text; got != "Cancelled" {
 		t.Fatalf("result %q, want %q", got, "Cancelled")
 	}
-	app.AppleSignIn = func(r core.AppleSignInRequest) (core.AppleCredential, error) {
+	app.AppleSignIn = func(r nsgotest.AppleSignInRequest) (core.AppleCredential, error) {
 		if !r.FullName || !r.Email || len(r.Nonce) != 64 {
 			t.Errorf("request %+v", r)
 		}
@@ -1024,7 +1024,9 @@ func TestSystemPurchases(t *testing.T) {
 	if got := app.Find("id:purchase-result").Text; got != "Bought dev.oneo.nsgo.gallery.coins" || len(app.Unfinished) != 0 || len(app.Finished) != 1 {
 		t.Fatalf("result %q, unfinished %v, finished %v", got, app.Unfinished, app.Finished)
 	}
-	app.PurchaseAnswer = func(core.PurchaseRequest) (core.Transaction, error) { return core.Transaction{}, core.PurchasePending }
+	app.PurchaseAnswer = func(nsgotest.PurchaseRequest) (core.Transaction, error) {
+		return core.Transaction{}, core.PurchasePending
+	}
 	app.Press("id:purchase-buy")
 	if got := app.Find("id:purchase-result").Text; got != "Waiting for approval" {
 		t.Fatalf("result %q", got)

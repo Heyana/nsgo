@@ -43,7 +43,7 @@ func TestProductsAnswersWhatTheStoreSells(t *testing.T) {
 	if len(got) != 2 || got[0].ID != "pro.monthly" || got[0].DisplayPrice != "$4.99" || got[0].Subscription.Period.Unit != core.PeriodMonth || got[1].ID != "coins.100" {
 		t.Fatalf("products %+v", got)
 	}
-	if r := app.PurchaseRequests; len(r) != 1 || !slices.Equal(r[0].IDs, []string{"pro.monthly", "gone", "coins.100"}) {
+	if r := app.PurchaseRequests; len(r) != 1 || r[0].Action != nsgotest.PurchaseProducts || !slices.Equal(r[0].IDs, []string{"pro.monthly", "gone", "coins.100"}) {
 		t.Fatalf("requests %+v", r)
 	}
 	called := false
@@ -67,7 +67,7 @@ func TestPurchaseAnswersTheTransactionToFinish(t *testing.T) {
 	if got.ID == "" || got.ProductID != "pro.monthly" || got.ProductType != core.ProductAutoRenewable || got.Signed == "" || got.ExpirationDate.Sub(got.PurchaseDate) < 28*24*60*60*1e9 {
 		t.Fatalf("transaction %+v", got)
 	}
-	if r := app.PurchaseRequests[0]; r.Command != core.PurchaseBuy || r.AccountToken != "6f9619ff-8b86-d011-b42d-00c04fc964ff" || r.Quantity != 1 {
+	if r := app.PurchaseRequests[0]; r.Action != nsgotest.PurchaseBuy || r.AccountToken != "6f9619ff-8b86-d011-b42d-00c04fc964ff" || r.Quantity != 1 {
 		t.Fatalf("request %+v", r)
 	}
 	if len(app.Unfinished) != 1 || len(app.Entitlements) != 1 {
@@ -79,6 +79,12 @@ func TestPurchaseAnswersTheTransactionToFinish(t *testing.T) {
 	scope.FinishTransaction(got.ID, func(err error) { finished = err })
 	scope.FinishTransaction(got.ID, func(err error) { again = err })
 	app.Settle()
+	if requests := app.PurchaseRequests; len(requests) != 4 ||
+		requests[1].Action != nsgotest.PurchaseEntitlements ||
+		requests[2].Action != nsgotest.PurchaseFinish || requests[2].Transaction != got.ID ||
+		requests[3].Action != nsgotest.PurchaseFinish || requests[3].Transaction != got.ID {
+		t.Fatalf("requests %+v", requests)
+	}
 	if len(entitled) != 1 || entitled[0].ID != got.ID {
 		t.Fatalf("entitlements %+v", entitled)
 	}
@@ -99,7 +105,7 @@ func TestPurchaseTellsItsOutcomesApart(t *testing.T) {
 		errs = append(errs, err)
 	}
 	for _, answer := range []error{core.PurchaseCancelled, core.PurchasePending, errors.New("no network")} {
-		app.PurchaseAnswer = func(core.PurchaseRequest) (core.Transaction, error) { return core.Transaction{}, answer }
+		app.PurchaseAnswer = func(nsgotest.PurchaseRequest) (core.Transaction, error) { return core.Transaction{}, answer }
 		scope.Purchase("coins.100", core.PurchaseOptions{Quantity: 3}, record)
 		app.Settle()
 	}
@@ -143,7 +149,8 @@ func TestPurchaseSendsAPromotionalOffer(t *testing.T) {
 	if len(app.PurchaseRequests) != 1 {
 		t.Fatalf("requests %+v", app.PurchaseRequests)
 	}
-	if o := app.PurchaseRequests[0].Offer; o == nil || o.ID != "winback" || o.Nonce != "6f9619ff-8b86-d011-b42d-00c04fc964ff" || len(o.Signature) != 2 {
+	offer.Signature[0] = 9
+	if o := app.PurchaseRequests[0].Offer; o == nil || o.ID != "winback" || o.Nonce != "6f9619ff-8b86-d011-b42d-00c04fc964ff" || !slices.Equal(o.Signature, []byte{1, 2}) {
 		t.Fatalf("offer %+v", o)
 	}
 	if offer.Nonce != token {
@@ -189,6 +196,10 @@ func TestSyncPurchases(t *testing.T) {
 	app.Settle()
 	if len(errs) != 2 || errs[0] != nil || !errors.Is(errs[1], core.PurchaseCancelled) {
 		t.Fatalf("answers %v", errs)
+	}
+	if requests := app.PurchaseRequests; len(requests) != 2 ||
+		requests[0].Action != nsgotest.PurchaseSync || requests[1].Action != nsgotest.PurchaseSync {
+		t.Fatalf("requests %+v", requests)
 	}
 }
 

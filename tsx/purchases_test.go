@@ -45,7 +45,7 @@ mount(App);`, nsgotest.Environment(core.Environment{OS: core.OSIOS, Purchases: t
 		err  error
 		said string
 	}{{core.PurchaseCancelled, "cancelled"}, {core.PurchasePending, "pending"}, {core.PurchaseFailed, "failed nsgo: purchase: failed"}} {
-		app.PurchaseAnswer = func(core.PurchaseRequest) (core.Transaction, error) { return core.Transaction{}, c.err }
+		app.PurchaseAnswer = func(nsgotest.PurchaseRequest) (core.Transaction, error) { return core.Transaction{}, c.err }
 		app.Press("id:buy")
 		if !slices.Contains(app.Texts(), c.said) {
 			t.Fatalf("%v: %q", c.err, app.Texts())
@@ -60,7 +60,7 @@ mount(App);`, nsgotest.Environment(core.Environment{OS: core.OSIOS, Purchases: t
 	if !slices.Contains(app.Texts(), "synced false") {
 		t.Fatalf("a declined sync: %q", app.Texts())
 	}
-	if r := app.PurchaseRequests[1]; r.Command != core.PurchaseBuy || r.AccountToken != "6f9619ff-8b86-d011-b42d-00c04fc964ff" {
+	if r := app.PurchaseRequests[1]; r.Action != nsgotest.PurchaseBuy || r.AccountToken != "6f9619ff-8b86-d011-b42d-00c04fc964ff" {
 		t.Fatalf("request %+v", r)
 	}
 }

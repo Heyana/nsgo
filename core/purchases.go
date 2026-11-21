@@ -46,10 +46,6 @@ type (
 	PromotionalOffer = driver.PromotionalOffer
 	// Transaction is a purchase the store recorded. Send Signed, the store's JWS, to the app's server to verify, deliver what was bought, then finish it with FinishTransaction; until then the store hands it to the app again at each launch.
 	Transaction = driver.Transaction
-	// PurchaseRequest is an in-app purchase service's request as the platform carries it out, as a test's model sees it.
-	PurchaseRequest = driver.PurchaseRequest
-	// PurchaseCommand is what a PurchaseRequest asks of the store.
-	PurchaseCommand = driver.PurchaseCommand
 )
 
 // The kinds of product.
@@ -73,15 +69,6 @@ const (
 	OfferFreeTrial  = driver.OfferFreeTrial
 	OfferPayAsYouGo = driver.OfferPayAsYouGo
 	OfferPayUpFront = driver.OfferPayUpFront
-)
-
-// What a PurchaseRequest asks of the store.
-const (
-	PurchaseProducts     = driver.PurchaseProducts
-	PurchaseBuy          = driver.PurchaseBuy
-	PurchaseFinish       = driver.PurchaseFinish
-	PurchaseEntitlements = driver.PurchaseEntitlements
-	PurchaseSync         = driver.PurchaseSync
 )
 
 // PurchaseOptions are what Purchase buys with.

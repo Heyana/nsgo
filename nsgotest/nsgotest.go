@@ -175,8 +175,9 @@ func (seed) Write(driver.StorageChange)         {}
 
 // AwakeHold is a keep-awake hold the app took: the ID its release names in AwakeReleases, and what it asked for.
 type AwakeHold struct {
-	ID uint32
-	core.KeepAwake
+	ID      uint32
+	Reason  string
+	Display bool
 }
 
 // AuthSession is an auth session the app opened (core.Scope.AuthSession): the redirect the model catches, the authorization URL the app built for it, whether it asked for an ephemeral session, and whether the app cancelled it or its timeout passed.
@@ -247,7 +248,7 @@ type App struct {
 	// Speech is the speech session running, nil without one, which
 	// HearSpeech and EndSpeech report to; sessions end unavailable unless
 	// the environment says Speech.
-	Speech     *driver.SpeechRequest
+	Speech     *SpeechSession
 	speechID   uint32
 	speechText string
 	// Spoken are the utterances the app spoke, oldest first, where the environment says Speak; the last speaks until FinishSpeaking ends it or the app stops it (Speaking). Voices are the voices the platform has, which Scope.Voices answers with.
@@ -341,13 +342,13 @@ type App struct {
 	BiometricAnswer       core.BiometricResult
 	AuthenticationReasons []string
 	// AppleSignIns are the Sign in with Apple requests the app made where the environment says SignInWithApple, oldest first, their nonces hashed as the system receives them. AppleSignIn answers each with the credential the user signs in with, or an error, core.AppleSignInCancelled for a user who closes the sheet; without it the user cancels. AppleCredentialStates is what the platform answers a credential's state with, by user ID, AppleCredentialNotFound for one it does not hold.
-	AppleSignIns          []core.AppleSignInRequest
-	AppleSignIn           func(r core.AppleSignInRequest) (core.AppleCredential, error)
+	AppleSignIns          []AppleSignInRequest
+	AppleSignIn           func(r AppleSignInRequest) (core.AppleCredential, error)
 	AppleCredentialStates map[string]core.AppleCredentialState
 	// Products are what the store sells where the environment says Purchases. PurchaseRequests are the in-app purchase requests the app made, oldest first. PurchaseAnswer answers each purchase with the transaction the user buys, or an error, core.PurchaseCancelled for a user who closes the sheet and core.PurchasePending for one waiting for approval; without it a product among Products is bought and any other fails. A transaction bought joins Unfinished, and Entitlements unless consumable; FinishTransaction takes it out of Unfinished into Finished, by ID, and CurrentEntitlements answers Entitlements. SyncAnswer is what SyncPurchases answers, nil by default. UpdatePurchase delivers a transaction as the store does one made outside the app, and UnfinishedTransactions those the store hands the app as it starts.
 	Products         []core.Product
-	PurchaseRequests []core.PurchaseRequest
-	PurchaseAnswer   func(r core.PurchaseRequest) (core.Transaction, error)
+	PurchaseRequests []PurchaseRequest
+	PurchaseAnswer   func(r PurchaseRequest) (core.Transaction, error)
 	Unfinished       []core.Transaction
 	Entitlements     []core.Transaction
 	Finished         []string

@@ -202,7 +202,7 @@ core.Suspense{
 
 ## 语音与生命周期
 
-`cx.StartSpeech` 在 `cx.Env().CanRecognizeSpeech()` 为真时用系统识别器识别语音，并随着转写结果变化返回文本。
+`cx.StartSpeech` 在 `cx.Env().CanRecognizeSpeech()` 为真时用系统识别器识别语音，并随着转写结果变化返回文本。在无头测试中，识别期间 `app.Speech` 保存一个 `nsgotest.SpeechSession`。使用 `app.HearSpeech` 和 `app.EndSpeech` 交付结果。
 
 ```go
 session, err := cx.StartSpeech(core.SpeechOptions{
@@ -341,6 +341,8 @@ cx.WebCookies(core.WebCookieFilter{Domain: "example.com"}, func(cookies []core.W
 
 `cx.SignInWithApple` 在 macOS、iOS 和 tvOS 上从应用自己的按钮弹出系统的「通过 Apple 登录」面板，这些平台上 `cx.Env().CanSignInWithApple()` 为 true。它只回答一次：给出凭据，或给出错误。用户关闭面板时是 `core.AppleSignInCancelled`，这不算失败；其余是 `AppleSignInFailed`，其他平台上是 `AppleSignInUnavailable`。Apple 只在用户第一次登录这个应用时给出邮箱和姓名，要在那时保存。`Nonce` 以其 SHA-256 的小写十六进制放进请求，身份令牌的 `nonce` 声明里就是这个值：服务器对它交给应用的 nonce 做哈希后比较。`cx.AppleCredentialState` 告诉你用户之后是否撤销了授权。
 
+在无头测试中，`app.AppleSignIn` 接收 `nsgotest.AppleSignInRequest`，并提供凭据或错误。
+
 ```go
 nonce := rand.Text() // 也交给服务器，服务器用它的 SHA-256 核对令牌的声明
 cx.SignInWithApple(core.AppleSignInOptions{FullName: true, Email: true, Nonce: nonce}, func(c core.AppleCredential, err error) {
@@ -401,7 +403,7 @@ cx.Purchase("com.example.pro.monthly", core.PurchaseOptions{AccountToken: userUU
 })
 ```
 
-在应用启动时注册 `OnPurchaseUpdate`：在任何处理函数之前到达的更新会留给第一个注册的。`cx.CurrentEntitlements` 回答用户当前拥有的内容，供启动时解锁；「恢复购买」按钮调用 `cx.SyncPurchases`，它可能要求用户登录。`AccountToken` 是应用自己的 UUID，交易和 App Store 发给服务器的通知都会带上它。macOS 只有 Mac App Store 构建能销售，App Clip 不销售任何东西；Android、watchOS、Windows、Linux、Web 和小程序目前回答 `PurchasesUnavailable`。用 `nsgotest` 测试购买，它的 `Products`、`PurchaseAnswer`、`UpdatePurchase` 和 `UnfinishedTransactions` 代替商店。在 TSX 中，`Purchases` 模块需要 `purchases` 能力：`purchase` 解析为 `{ status: "purchased", transaction }`、`"pending"` 或 `"cancelled"`，`on("update", listener)` 接收更新。
+在应用启动时注册 `OnPurchaseUpdate`：在任何处理函数之前到达的更新会留给第一个注册的。`cx.CurrentEntitlements` 回答用户当前拥有的内容，供启动时解锁；「恢复购买」按钮调用 `cx.SyncPurchases`，它可能要求用户登录。`AccountToken` 是应用自己的 UUID，交易和 App Store 发给服务器的通知都会带上它。macOS 只有 Mac App Store 构建能销售，App Clip 不销售任何东西；Android、watchOS、Windows、Linux、Web 和小程序目前回答 `PurchasesUnavailable`。用 `nsgotest` 测试购买，它的 `Products`、`PurchaseAnswer`、`UpdatePurchase` 和 `UnfinishedTransactions` 代替商店。`app.PurchaseRequests` 以 `nsgotest.PurchaseRequest` 记录商店操作。在 TSX 中，`Purchases` 模块需要 `purchases` 能力：`purchase` 解析为 `{ status: "purchased", transaction }`、`"pending"` 或 `"cancelled"`，`on("update", listener)` 接收更新。
 
 ## 朗读文本
 

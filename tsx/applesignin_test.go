@@ -27,7 +27,7 @@ mount(App);`, nsgotest.Environment(core.Environment{OS: core.OSIOS, SignInWithAp
 	if !slices.Contains(app.Texts(), "true cancelled") {
 		t.Fatalf("a cancel: %q", app.Texts())
 	}
-	app.AppleSignIn = func(r core.AppleSignInRequest) (core.AppleCredential, error) {
+	app.AppleSignIn = func(r nsgotest.AppleSignInRequest) (core.AppleCredential, error) {
 		return core.AppleCredential{User: "ada", IdentityToken: "jwt", GivenName: "Ada"}, nil
 	}
 	app.Press("id:sign-in")
@@ -37,7 +37,7 @@ mount(App);`, nsgotest.Environment(core.Environment{OS: core.OSIOS, SignInWithAp
 	if r := app.AppleSignIns[1]; !r.FullName || r.Email || r.Nonce == "n" || len(r.Nonce) != 64 {
 		t.Fatalf("request %+v", r)
 	}
-	app.AppleSignIn = func(core.AppleSignInRequest) (core.AppleCredential, error) {
+	app.AppleSignIn = func(nsgotest.AppleSignInRequest) (core.AppleCredential, error) {
 		return core.AppleCredential{}, core.AppleSignInFailed
 	}
 	app.Press("id:sign-in")

@@ -262,13 +262,6 @@ type (
 	WebInput = driver.WebInput
 	// WebInputKind is what a WebInput gives.
 	WebInputKind = driver.WebInputKind
-	// SpeechRequest is what a speech session asks of the platform, as a
-	// test's model sees it.
-	SpeechRequest = driver.SpeechRequest
-	// SpeechCommand is what a SpeechRequest asks of its session.
-	SpeechCommand = driver.SpeechCommand
-	// AppleSignInRequest is a sign-in with Apple as the platform carries it out, as a test's model sees it: AppleSignInOptions with the nonce hashed.
-	AppleSignInRequest = driver.AppleSignInRequest
 	// PasteEvent is what the user pasted into an input, read from the clipboard as they pasted: its plain text (empty without any), files with their bytes, such as an image copied in another app, and the file: URLs of local files copied in a file manager, which FileFromURL opens.
 	PasteEvent = driver.PasteEvent
 	// PastedFile is a file the clipboard held: its name when it has one, its
@@ -395,8 +388,6 @@ type (
 	// Appearance is the light or dark appearance an app asks for, or the
 	// system's.
 	Appearance = driver.Appearance
-	// KeepAwake is a power assertion request.
-	KeepAwake = driver.KeepAwake
 	// ClipboardImage is an image read from the clipboard: a PNG and its
 	// size in pixels.
 	ClipboardImage = driver.ClipboardImage
@@ -470,12 +461,6 @@ const (
 	WebInputClick = driver.WebInputClick
 	WebInputText  = driver.WebInputText
 	WebInputKey   = driver.WebInputKey
-)
-
-const (
-	SpeechStart = driver.SpeechStart
-	SpeechStop  = driver.SpeechStop
-	SpeechAbort = driver.SpeechAbort
 )
 
 const (

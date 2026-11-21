@@ -198,7 +198,7 @@ NSGo's own, as NSH has none ([#354](https://github.com/nsgo-dev/nsgo/issues/354)
 | macOS, iOS, tvOS | `ASAuthorizationAppleIDProvider`'s request in an `ASAuthorizationController`, its delegate and presentation anchor, the asking surface's window, NSGo's; `getCredentialStateForUserID:completion:` (`apple/applesignin.go`) | `nsgo.yaml`'s `apple.sign_in_with_apple`, which has `nsgo build` claim `com.apple.developer.applesignin` (`Default`): for Xcode's device signing, which registers it, and with `sign.profile` or `sign.macos_profile`, which must grant it. macOS grants it only with a profile, so only a Mac App Store build claims it; the simulator refuses developer entitlements in ad hoc signatures, so its builds claim none. Without the entitlement the system answers `ASAuthorizationErrorUnknown`, which reports `failed` and logs why |
 | watchOS, Android, Windows, Linux, the web, mini programs | Unavailable: `Env.CanSignInWithApple` is false and `core` answers `AppleSignInUnavailable` without asking the platform ([roadmap](../roadmap.md#from-nsgos-issues)) | None |
 
-`nsgotest` answers a sign-in where the environment says `SignInWithApple`, recording `AppleSignIns` with their hashed nonces and answering each with `AppleSignIn`, a cancel without it, and a state from `AppleCredentialStates`.
+`nsgotest` answers a sign-in where the environment says `SignInWithApple`, recording `AppleSignInRequest` values in `AppleSignIns` with their hashed nonces and answering each with `AppleSignIn`, a cancel without it, and a state from `AppleCredentialStates`.
 
 ## In-app purchases
 
@@ -213,7 +213,7 @@ All six share one item, `ItemPurchase` (`driver.PurchaseRequest`), answered by `
 | Android | Unavailable: Google Play Billing is a library with manifest entries of its own, which a standalone app's fixed manifest and `classes.dex` cannot take ([roadmap](../roadmap.md#from-nsgos-issues)) | |
 | Windows, Linux, the web, mini programs | Unavailable ([roadmap](../roadmap.md#from-nsgos-issues)) | |
 
-`nsgotest` keeps a store where the environment says `Purchases`: `Products` are what it sells, `PurchaseRequests` every request, `PurchaseAnswer` answers each purchase, which without it buys a product among `Products`, `Unfinished`, `Entitlements` and `Finished` follow the transactions, `SyncAnswer` answers a sync, `UpdatePurchase` delivers an update and the `UnfinishedTransactions` option those the store hands the app as it starts.
+`nsgotest` keeps a store where the environment says `Purchases`: `Products` are what it sells, `PurchaseRequests` records store operations as `nsgotest.PurchaseRequest` values, and `PurchaseAnswer` answers each purchase, which without it buys a product among `Products`, `Unfinished`, `Entitlements` and `Finished` follow the transactions, `SyncAnswer` answers a sync, `UpdatePurchase` delivers an update and the `UnfinishedTransactions` option those the store hands the app as it starts.
 
 ## Secrets
 

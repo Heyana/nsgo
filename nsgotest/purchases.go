@@ -36,7 +36,8 @@ func (a *App) UpdatePurchase(tr core.Transaction) {
 
 // purchase answers an ItemPurchase from the model's store.
 func (a *App) purchase(id uint32, r driver.PurchaseRequest) {
-	a.PurchaseRequests = append(a.PurchaseRequests, r)
+	request := purchaseRequest(r)
+	a.PurchaseRequests = append(a.PurchaseRequests, request)
 	answer := &driver.PurchaseAnswer{}
 	switch r.Command {
 	case driver.PurchaseProducts:
@@ -46,7 +47,7 @@ func (a *App) purchase(id uint32, r driver.PurchaseRequest) {
 			}
 		}
 	case driver.PurchaseBuy:
-		tr, err := a.buy(r)
+		tr, err := a.buy(request)
 		if err != nil {
 			answer.Error, answer.Message = purchaseErrorCode(err)
 			break
@@ -72,7 +73,7 @@ func (a *App) purchase(id uint32, r driver.PurchaseRequest) {
 }
 
 // buy is the transaction a purchase makes: PurchaseAnswer's, else the product's among Products.
-func (a *App) buy(r driver.PurchaseRequest) (core.Transaction, error) {
+func (a *App) buy(r PurchaseRequest) (core.Transaction, error) {
 	if a.PurchaseAnswer != nil {
 		tr, err := a.PurchaseAnswer(r)
 		if err == nil && tr.ProductID == "" {

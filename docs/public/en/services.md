@@ -202,7 +202,7 @@ The content stays mounted but hidden while it waits, so it shows at once when th
 
 ## Speech and the lifecycle
 
-`cx.StartSpeech` recognizes speech with the system's recognizer where `cx.Env().CanRecognizeSpeech()` says it exists, and answers with the transcript as it changes.
+`cx.StartSpeech` recognizes speech with the system's recognizer where `cx.Env().CanRecognizeSpeech()` says it exists, and answers with the transcript as it changes. In a headless test, `app.Speech` holds a `nsgotest.SpeechSession` while recognition is active. Use `app.HearSpeech` and `app.EndSpeech` to deliver results.
 
 ```go
 session, err := cx.StartSpeech(core.SpeechOptions{
@@ -369,7 +369,7 @@ cx.WebCookies(core.WebCookieFilter{Domain: "example.com"}, func(cookies []core.W
 
 ## Sign in with Apple
 
-`cx.SignInWithApple` shows the system's Sign in with Apple sheet from the app's own button on macOS, iOS and tvOS, where `cx.Env().CanSignInWithApple()` is true. It answers once with the credential, or with an error: `core.AppleSignInCancelled` when the user closes the sheet, which is not a failure, else `AppleSignInFailed` or, on other platforms, `AppleSignInUnavailable`. Apple gives the email and the name only on the user's first sign-in to the app, so keep them then. `Nonce` goes into the request as its SHA-256 in lowercase hex, which the identity token's `nonce` claim holds: the server hashes the nonce it gave the app and compares. `cx.AppleCredentialState` tells whether the user has since revoked it.
+`cx.SignInWithApple` shows the system's Sign in with Apple sheet from the app's own button on macOS, iOS and tvOS, where `cx.Env().CanSignInWithApple()` is true. It answers once with the credential, or with an error: `core.AppleSignInCancelled` when the user closes the sheet, which is not a failure, else `AppleSignInFailed` or, on other platforms, `AppleSignInUnavailable`. Apple gives the email and the name only on the user's first sign-in to the app, so keep them then. `Nonce` goes into the request as its SHA-256 in lowercase hex, which the identity token's `nonce` claim holds: the server hashes the nonce it gave the app and compares. `cx.AppleCredentialState` tells whether the user has since revoked it. In headless tests, `app.AppleSignIn` receives a `nsgotest.AppleSignInRequest` and supplies the credential or error.
 
 ```go
 nonce := rand.Text() // also sent to the server, which checks the token's claim against its SHA-256
@@ -431,7 +431,7 @@ cx.Purchase("com.example.pro.monthly", core.PurchaseOptions{AccountToken: userUU
 })
 ```
 
-Register `OnPurchaseUpdate` as the app starts: updates that come before any handler wait for the first. `cx.CurrentEntitlements` answers what the user owns now, to unlock it at launch, and a Restore Purchases button calls `cx.SyncPurchases`, which may ask the user to sign in. `AccountToken` is a UUID of the app's own that the transaction and the App Store's server notifications carry. macOS sells only in a Mac App Store build, and an App Clip sells nothing; Android, watchOS, Windows, Linux, the web and mini programs answer `PurchasesUnavailable` for now. Test purchases with `nsgotest`, whose `Products`, `PurchaseAnswer`, `UpdatePurchase` and `UnfinishedTransactions` stand in for the store. In TSX, the `Purchases` module needs the `purchases` capability: `purchase` resolves with `{ status: "purchased", transaction }`, `"pending"` or `"cancelled"`, and `on("update", listener)` hears updates.
+Register `OnPurchaseUpdate` as the app starts: updates that come before any handler wait for the first. `cx.CurrentEntitlements` answers what the user owns now, to unlock it at launch, and a Restore Purchases button calls `cx.SyncPurchases`, which may ask the user to sign in. `AccountToken` is a UUID of the app's own that the transaction and the App Store's server notifications carry. macOS sells only in a Mac App Store build, and an App Clip sells nothing; Android, watchOS, Windows, Linux, the web and mini programs answer `PurchasesUnavailable` for now. Test purchases with `nsgotest`, whose `Products`, `PurchaseAnswer`, `UpdatePurchase` and `UnfinishedTransactions` stand in for the store. `app.PurchaseRequests` records store operations as `nsgotest.PurchaseRequest` values. In TSX, the `Purchases` module needs the `purchases` capability: `purchase` resolves with `{ status: "purchased", transaction }`, `"pending"` or `"cancelled"`, and `on("update", listener)` hears updates.
 
 ## Interface orientation
 
