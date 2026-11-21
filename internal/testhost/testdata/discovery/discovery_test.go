@@ -17,7 +17,7 @@ func TestMain(m *testing.M) { nsgotest.Main(m) }
 
 func TestLocalServiceAdvertiseBrowseAndRemove(t *testing.T) {
 	switch nsgotest.Target() {
-	case "macos", "ios", "ios_simulator", "linux":
+	case "macos", "ios", "ios_simulator", "linux", "android":
 	default:
 		t.Skip("checks native DNS-SD")
 	}
@@ -27,9 +27,16 @@ func TestLocalServiceAdvertiseBrowseAndRemove(t *testing.T) {
 	}
 	defer listener.Close()
 	name := fmt.Sprintf("NSGo test %d", os.Getpid())
+	data, browsers := "\x00\xff", 1
+	if nsgotest.Target() == "android" {
+		// Older Android can advertise UTF-8 values, including NUL.
+		data = "\x00é"
+		// Exercise the resolve queue on Android versions with one native resolve at a time.
+		browsers = 2
+	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	var mu sync.Mutex
-	var replies []core.ServiceEvent
+	replies := make([][]core.ServiceEvent, browsers)
 	var failure error
 	var scope *core.Scope
 	var stop func()
@@ -42,42 +49,51 @@ func TestLocalServiceAdvertiseBrowseAndRemove(t *testing.T) {
 	}
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		scope = cx
-		_, err := cx.BrowseServices("_nsgo-test._tcp", func(e core.ServiceEvent) {
-			report(e.Err)
-			if e.Service.Name == name {
-				mu.Lock()
-				replies = append(replies, e)
-				mu.Unlock()
-			}
-		})
-		report(err)
+		for i := range replies {
+			_, err := cx.BrowseServices("_nsgo-test._tcp", func(e core.ServiceEvent) {
+				report(e.Err)
+				if e.Service.Name == name {
+					mu.Lock()
+					replies[i] = append(replies[i], e)
+					mu.Unlock()
+				}
+			})
+			report(err)
+		}
+		var err error
 		stop, err = cx.AdvertiseService(core.LocalService{
-			Name: name, Type: "_nsgo-test._tcp", Port: port, TXT: map[string]string{"version": "1", "data": "\x00\xff"},
+			Name: name, Type: "_nsgo-test._tcp", Port: port, TXT: map[string]string{"version": "1", "data": data},
 		}, report)
 		report(err)
 		return core.View{}
 	})
-	wait := func(count int) core.ServiceEvent {
+	wait := func(browser, count int) core.ServiceEvent {
 		t.Helper()
 		app.WaitUntil(20*time.Second, func() bool {
 			mu.Lock()
 			defer mu.Unlock()
-			return failure != nil || len(replies) >= count
+			return failure != nil || len(replies[browser]) >= count
 		})
 		mu.Lock()
 		defer mu.Unlock()
 		if failure != nil {
 			t.Fatal(failure)
 		}
-		return replies[count-1]
+		return replies[browser][count-1]
 	}
-	add := wait(1)
-	if add.Removed || add.Service.Port != port || add.Service.Host == "" || add.Service.TXT["version"] != "1" ||
-		add.Service.TXT["data"] != "\x00\xff" {
-		t.Fatalf("resolved advertisement: %+v", add)
+	adds := make([]core.ServiceEvent, browsers)
+	for i := range adds {
+		add := wait(i, 1)
+		if add.Removed || add.Service.Port != port || add.Service.Host == "" || add.Service.TXT["version"] != "1" ||
+			add.Service.TXT["data"] != data {
+			t.Fatalf("browser %d resolved advertisement: %+v", i, add)
+		}
+		adds[i] = add
 	}
 	scope.Post(stop)
-	if remove := wait(2); !remove.Removed || remove.Service.Host != add.Service.Host || remove.Service.Port != port {
-		t.Fatalf("removal: %+v", remove)
+	for i, add := range adds {
+		if remove := wait(i, 2); !remove.Removed || remove.Service.Host != add.Service.Host || remove.Service.Port != port {
+			t.Fatalf("browser %d removal: %+v", i, remove)
+		}
 	}
 }

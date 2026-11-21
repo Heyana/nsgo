@@ -133,10 +133,15 @@ const (
 	msgPerfFrame      = 28 // a monitored Choreographer frame and UI work since the previous frame
 	// msgPhysicalKey reports a hardware key and its scan code (keycodes.go).
 	msgPhysicalKey = 30
+	// msgDiscoveryReply is a resolved service, its removal or an NSD error, answering extDiscovery (discovery.go).
+	msgDiscoveryReply = 40
 )
 
 // Extended Go-to-Java message kinds, the sub-kind byte of a msgExtended message, kept in sync with Protocol.java's EXT_* constants (TestJavaExtendedKindsMatchGo). Each is extName = n, with n from 1 up: 0 is never a kind, so a msgExtended message whose sub-kind was left out is refused rather than read as one.
-const ()
+const (
+	// extDiscovery starts or stops an NSD operation on a surface (discovery.go, Discovery.java).
+	extDiscovery = 10
+)
 
 // The parts of an image view's request msgImage carries.
 const (
@@ -413,6 +418,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.surfaceReport(&r)
 		case msgFolderReply:
 			s.folderReply(&r)
+		case msgDiscoveryReply:
+			s.discoveryReply(&r)
 		case msgDiskSpaceReply:
 			s.diskSpaceReply(&r)
 		case msgSecretReply:
@@ -1002,9 +1009,10 @@ func (s *surface) Mount(b *driver.MountBatch) {
 // mount sends the batch of v's tree to Java, which names its surface, and loads the image sources it changed.
 func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 	b = withoutOffscreenReleases(s.withoutScans(v.id, s.withoutWebCookies(v.id, s.withoutAuthSessions(v.id, s.withoutPermissions(v.id, s.withoutUpdateChecks(v.id, withoutDesktopItems(withoutEffects(b))))))))
-	// Disk space uses a separate message and runs on a worker. Android has no file manager an app can reveal in or trash through. A test's observer may hold the batch, so filter these items from a copy.
+	// Disk space and discovery use messages of their own, disk space on a worker. Android has no file manager an app can reveal in or trash through. A test's observer may hold the batch, so filter these items from a copy.
 	outsideBatch := func(it driver.MountItem) bool {
-		return it.Kind == driver.ItemRevealFile || it.Kind == driver.ItemTrashFile || it.Kind == driver.ItemDiskSpace
+		return it.Kind == driver.ItemRevealFile || it.Kind == driver.ItemTrashFile ||
+			it.Kind == driver.ItemDiskSpace || it.Kind == driver.ItemDiscovery
 	}
 	if slices.ContainsFunc(b.Items, outsideBatch) {
 		for _, it := range b.Items {
@@ -1013,6 +1021,8 @@ func (s *surface) mount(v *treeView, b *driver.MountBatch) {
 				s.dispatchTo(v.id, driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoFileRevealer})
 			case driver.ItemDiskSpace:
 				s.diskSpace(v.id, it.Count, it.Value)
+			case driver.ItemDiscovery:
+				s.discovery(v.id, it.Count, it.Discovery)
 			}
 		}
 		out := *b

@@ -280,6 +280,23 @@ func TestEnvironmentSaysTheRuntimeReadsExtendedMessages(t *testing.T) {
 			t.Errorf("third byte %v: read %d with %d bytes left, want %d", c.third, third, len(r.buf), c.want)
 		}
 	}
+	// Discovery's requests are extended messages, so a runtime offers it only with both bits.
+	for _, c := range []struct {
+		third byte
+		want  bool
+	}{{0, false}, {capDiscoverServices, false}, {capExtendedMessages, false}, {capExtendedMessages | capDiscoverServices, true}} {
+		var w writer
+		writeBaseEnvironment(&w, "en-US")
+		w.byte(1)
+		w.str("h23")
+		w.str("metric")
+		w.str("celsius")
+		w.str("US")
+		w.byte(c.third)
+		if env, _ := readEnvironmentCapabilities(&reader{w.buf}); env.DiscoverServices != c.want {
+			t.Errorf("third byte %d: DiscoverServices = %v, want %v", c.third, env.DiscoverServices, c.want)
+		}
+	}
 
 	read := func(path ...string) string {
 		data, err := os.ReadFile(filepath.Join(path...))
@@ -294,5 +311,11 @@ func TestEnvironmentSaysTheRuntimeReadsExtendedMessages(t *testing.T) {
 	}
 	if m := regexp.MustCompile(`int third = ([^;]*);`).FindStringSubmatch(view); m == nil || !strings.Contains(m[1], "Protocol.CAP_EXTENDED_MESSAGES") {
 		t.Errorf("NsgoView.environment's third capability byte is %v, without Protocol.CAP_EXTENDED_MESSAGES", m)
+	}
+	if m := regexp.MustCompile(`static final int CAP_DISCOVER_SERVICES = (\d+);`).FindStringSubmatch(java); m == nil || m[1] != strconv.Itoa(capDiscoverServices) {
+		t.Errorf("Protocol.java's CAP_DISCOVER_SERVICES is %v, protocol.go's capDiscoverServices %d", m, capDiscoverServices)
+	}
+	if m := regexp.MustCompile(`int third = ([^;]*);`).FindStringSubmatch(view); m == nil || !strings.Contains(m[1], "Protocol.CAP_DISCOVER_SERVICES") {
+		t.Errorf("NsgoView.environment's third capability byte is %v, without Protocol.CAP_DISCOVER_SERVICES", m)
 	}
 }

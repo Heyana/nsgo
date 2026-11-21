@@ -56,6 +56,8 @@ final class Protocol {
     /** Whether Go writes extended messages of this kind: each EXT_* constant has its case. */
     static boolean isExtended(int kind) {
         switch (kind) {
+            case EXT_DISCOVERY:
+                return true;
             default:
                 return false;
         }
@@ -111,6 +113,13 @@ final class Protocol {
     static final int CAP_EXTENDED_MESSAGES = 1;
 
     // Extended kinds, the first byte of an EXTENDED message, kept in sync with android.go's ext* constants: each is EXT_NAME = n with n from 1 up, and has its case in isExtended.
+    /** Starts or stops DNS-SD on a surface (Discovery): surface, request count, then a DISCOVERY_* operation and its service. */
+    static final int EXT_DISCOVERY = 10;
+    static final int DISCOVERY_ADVERTISE = 1;
+    static final int DISCOVERY_BROWSE = 2;
+    static final int DISCOVERY_STOP = 3;
+    /** The environment's third capability byte's bit for a runtime that runs Discovery (capDiscoverServices in protocol.go). */
+    static final int CAP_DISCOVER_SERVICES = 32;
 
 
     // Java to Go.
@@ -161,6 +170,8 @@ final class Protocol {
     static final int PERF_FRAME = 28;
     /** A hardware key: surface, view, scan code, Android key code, flags and name. */
     static final int PHYSICAL_KEY = 30;
+    /** Reports a resolved service, its removal or an error (discovery.go). */
+    static final int DISCOVERY_REPLY = 40;
 
     // TEXT_REQUEST carries a request ID and one of these operations.
     static final int TEXT_PREPARE = 1;

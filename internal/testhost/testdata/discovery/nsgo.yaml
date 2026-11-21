@@ -1,5 +1,5 @@
 name: NSGo Discovery Test
-id: dev.nsgo.discovery-test
+id: dev.nsgo.discoverytest
 apple:
   info:
     NSLocalNetworkUsageDescription: Discovers a temporary local service during the NSGo test.

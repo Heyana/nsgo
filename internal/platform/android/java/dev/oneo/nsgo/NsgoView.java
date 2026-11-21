@@ -186,6 +186,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private boolean startHeld;
     private final Runnable startUnheld = this::releaseStart;
     private static final long FOLDS_WAIT_MS = 300, FOLDS_WAIT_LONGEST_MS = 3000;
+    private final Discovery discovery;
     private Sensors sensors;
     private Gamepads gamepads;
     private boolean ownsEngine;
@@ -361,6 +362,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             host = new Host(this);
             downloads = new Downloads(this::write);
             overlays = new Overlays(this);
+            discovery = new Discovery(context.getApplicationContext(), ui, this::write);
         } else {
             prepared = first.prepared;
             layouts = first.layouts;
@@ -370,6 +372,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             host = first.host;
             downloads = first.downloads;
             overlays = null;
+            discovery = first.discovery;
             engine = first.engine;
         }
         density = context.getResources().getDisplayMetrics().density;
@@ -818,6 +821,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         unregisterBack();
         // Overlays are the system's windows, not the activity's: nothing else removes them as the process ends, and they would stay above every app, frozen, with the service's notification.
         if (overlays != null) overlays.closeAll();
+        discovery.closeSurface(surface);
         destroyComponents();
     }
 
@@ -831,6 +835,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
      * Lets go of an overlay's view as its window closes, on the UI thread: its decoders and every node's web view, video and native component, as a closed tree deletes none of its views.
      */
     void releaseOverlay() {
+        discovery.closeSurface(surface);
         gestureRects = Collections.emptyList();
         updateGestureRects();
         clearDisplayHolds();
@@ -1025,6 +1030,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     /** Takes a message of an extended kind (Protocol.EXT_*), on the pipe's reader like onMessage: message is past its kind byte, and payload still holds it. Protocol.readMessage refuses a kind isExtended lacks. */
     private void extended(int kind, DataInputStream message, byte[] payload) throws IOException {
         switch (kind) {
+            case Protocol.EXT_DISCOVERY: {
+                int to = message.readInt();
+                ui.post(() -> {
+                    if (to == 0 || overlays.view(to) != null) discovery.request(to, message);
+                });
+                break;
+            }
             default:
                 Log.w(TAG, "unknown extended message " + kind);
         }
@@ -1173,8 +1185,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             LocalePrefs.read(formatLocale, hostLocale != null ? null : locale,
                     android.text.format.DateFormat.is24HourFormat(getContext()),
                     measurementSystem(formatLocale)).write(d);
-            // The second capability byte's bits are taken too: a third ends the payload, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads: Protocol.CAP_EXTENDED_MESSAGES.
-            int third = Protocol.CAP_EXTENDED_MESSAGES;
+            // The second capability byte's bits are taken too: a third ends the payload, where readEnvironment reads it only if a runtime wrote it. Its bits say what this runtime reads: Protocol.CAP_EXTENDED_MESSAGES and Protocol.CAP_DISCOVER_SERVICES.
+            int third = Protocol.CAP_EXTENDED_MESSAGES | Protocol.CAP_DISCOVER_SERVICES;
             d.writeByte(third);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);

@@ -182,7 +182,7 @@ func TestOverlayItemsEncode(t *testing.T) {
 	}
 }
 
-// TestJavaMessagesMatchTheBackend holds Protocol.java's message types for package microphone's recordings and the web views' cookies to android.go's, which carry them both ways.
+// TestJavaMessagesMatchTheBackend holds Protocol.java's message types to android.go's.
 func TestJavaMessagesMatchTheBackend(t *testing.T) {
 	testhost.RequireSource(t)
 	read := func(path ...string) string {
@@ -193,11 +193,20 @@ func TestJavaMessagesMatchTheBackend(t *testing.T) {
 		return string(data)
 	}
 	goSource, java := read("android.go"), read("java", "dev", "oneo", "nsgo", "Protocol.java")
-	for goName, javaName := range map[string]string{"msgRecording": "RECORDING", "msgRecordingReport": "RECORDING_REPORT", "msgCookies": "COOKIES", "msgCookiesSet": "COOKIES_SET", "msgCanvasImage": "CANVAS_IMAGE", "msgCanvasRequest": "CANVAS_REQUEST", "msgPixelFrame": "PIXEL_FRAME", "msgDiskSpace": "DISK_SPACE", "msgDiskSpaceReply": "DISK_SPACE_REPLY", "msgPerfPanel": "PERF_PANEL", "msgPerfFrame": "PERF_FRAME", "msgShaderRelease": "SHADER_RELEASE"} {
+	for goName, javaName := range map[string]string{"msgRecording": "RECORDING", "msgRecordingReport": "RECORDING_REPORT", "msgCookies": "COOKIES", "msgCookiesSet": "COOKIES_SET", "msgCanvasImage": "CANVAS_IMAGE", "msgCanvasRequest": "CANVAS_REQUEST", "msgPixelFrame": "PIXEL_FRAME", "msgDiskSpace": "DISK_SPACE", "msgDiskSpaceReply": "DISK_SPACE_REPLY", "msgPerfPanel": "PERF_PANEL", "msgPerfFrame": "PERF_FRAME", "msgDiscoveryReply": "DISCOVERY_REPLY", "msgShaderRelease": "SHADER_RELEASE"} {
 		g := regexp.MustCompile(`\b` + goName + ` += (\d+)`).FindStringSubmatch(goSource)
 		j := regexp.MustCompile(`static final int ` + javaName + ` = (\d+);`).FindStringSubmatch(java)
 		if g == nil || j == nil || g[1] != j[1] {
 			t.Errorf("android.go's %s is %v, Protocol.java's %s %v", goName, g, javaName, j)
+		}
+	}
+	for name, op := range map[string]driver.DiscoveryOp{
+		"DISCOVERY_ADVERTISE": driver.DiscoveryAdvertise, "DISCOVERY_BROWSE": driver.DiscoveryBrowse,
+		"DISCOVERY_STOP": driver.DiscoveryStop,
+	} {
+		match := regexp.MustCompile(`static final int ` + name + ` = (\d+);`).FindStringSubmatch(java)
+		if match == nil || match[1] != strconv.Itoa(int(op)) {
+			t.Errorf("Protocol.java's %s is %v, the driver's %d", name, match, op)
 		}
 	}
 }
@@ -406,8 +415,11 @@ func TestReadEnvironmentSetsCanRequestReview(t *testing.T) {
 		w.u32(35)   // API level
 
 		env := readEnvironment(&reader{w.buf})
-		if want := more != 0; env.CanRequestReview != want {
+		if want := more&4 != 0; env.CanRequestReview != want {
 			t.Errorf("readEnvironment with capability byte %d: CanRequestReview = %v, want %v", more, env.CanRequestReview, want)
+		}
+		if want := more&8 != 0; env.DiscoverServices != want {
+			t.Errorf("readEnvironment with capability byte %d: DiscoverServices = %v, want %v", more, env.DiscoverServices, want)
 		}
 	}
 }

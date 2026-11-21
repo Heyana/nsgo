@@ -162,6 +162,10 @@ NSH has no local service discovery API. On macOS and iOS, the system's DNS-SD li
 
 On Linux, GTK's GDBus calls Avahi asynchronously on the system bus. The backend prepares each browser and subscribes to its signals before starting it, so cached services reach the app. Results from interfaces and address families are grouped by endpoint. Discovery reports an asynchronous error when Avahi is unavailable.
 
+On Android, `NsdManager` registers and browses services, and resolves each instance to an IP address. The primary view and its overlays share a controller on the UI thread, and commands and results carry the surface and operation IDs. Resolutions queue because older Android allows one at a time. If an instance is lost while resolving, the runtime discards its result and cancels the request where Android allows it. Cached endpoints are removed when their last matching instance leaves. The runtime holds a Wi-Fi multicast lock during active discovery and advertising on Android releases that require one. The environment advertises support after the Java runtime gains the discovery command.
+
+A Pixel 3 XL on Android 12 found a Mac's Bonjour advertisement, read its binary TXT, connected to the advertised TCP endpoint, and reported removal when the Mac stopped advertising (2026-11-22).
+
 ## Speech
 
 `StartSpeech` recognizes what the user says, NSH's `Speech.start`: one session per engine, which a new one and its scope's end abort. It reports the whole transcript so far, before it is final with `Interim`, and ends once with the last one and a `SpeechError` named as the Web Speech API's (`not-allowed`, `no-speech`, `audio-capture`, `network`, `language-not-supported`, `unavailable`, `failed`). `Stop` has the recognizer finish what it heard; `Abort` ends it at once. A `Lang` of "" is the app's locale.

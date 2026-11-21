@@ -11,7 +11,7 @@ import (
 type LocalService struct {
 	// Name is the instance label and Type is a service type such as _example._tcp.
 	Name, Type string
-	// Host is the resolved DNS hostname. It is set when browsing.
+	// Host is the resolved DNS hostname or IP address. It is set when browsing.
 	Host string
 	// Port is the listening port in host byte order.
 	Port int

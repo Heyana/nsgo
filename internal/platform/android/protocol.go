@@ -459,6 +459,9 @@ func readEnvironment(r *reader) driver.Environment {
 // capExtendedMessages is the third capability byte's bit for a runtime that reads msgExtended messages (Protocol.CAP_EXTENDED_MESSAGES).
 const capExtendedMessages = 1
 
+// capDiscoverServices is the third capability byte's bit for a runtime that runs DNS-SD through NsdManager on extDiscovery messages (Protocol.CAP_DISCOVER_SERVICES).
+const capDiscoverServices = 32
+
 // readEnvironmentCapabilities reads the environment as readEnvironment does, with the third capability byte, which says what the runtime itself can do (cap* bits) rather than the device, so it stays out of driver.Environment.
 func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 	env := driver.Environment{
@@ -533,6 +536,8 @@ func readEnvironmentCapabilities(r *reader) (driver.Environment, byte) {
 			third = r.byte()
 		}
 	}
+	// Discovery travels in extended messages, so it needs both bits.
+	env.DiscoverServices = third&capDiscoverServices != 0 && third&capExtendedMessages != 0
 	return env, third
 }
 

@@ -229,7 +229,7 @@ core.Suspense{
 
 ### 发现局域网服务
 
-在 macOS、iOS 和 Linux 上，`cx.AdvertiseService` 发布监听端口和 TXT 属性。`cx.BrowseServices` 报告解析后的服务，包括主机名、端口和 TXT 属性。服务离开时，回调收到设置了 `Removed` 的事件。通过 `cx.Env().CanDiscoverServices()` 检查平台支持。两个调用都会返回停止函数，作用域释放时自动停止。平台错误会通过引擎 goroutine 异步报告。Linux 使用 Avahi，守护进程不可用时会报告错误。
+在 macOS、iOS、Android 和 Linux 上，`cx.AdvertiseService` 发布监听端口和 TXT 属性。`cx.BrowseServices` 报告解析后的服务，包括主机名或 IP 地址、端口和 TXT 属性。服务离开时，回调收到设置了 `Removed` 的事件。通过 `cx.Env().CanDiscoverServices()` 检查平台支持。两个调用都会返回停止函数，作用域释放时自动停止。平台错误会通过引擎 goroutine 异步报告。Linux 使用 Avahi，守护进程不可用时会报告错误。
 
 Apple 平台使用 Bonjour。请在 `nsgo.yaml` 中声明服务类型和访问局域网的用途。权限提示由系统显示，用户的选择也由系统保存。
 
@@ -240,6 +240,8 @@ apple:
     NSBonjourServices:
       - _example._tcp
 ```
+
+Android 使用 `NsdManager`。在 Android 12 及更早版本以及低于 T Extensions 7 的 Android 13 上，通过 Wi-Fi 发现服务需要 `CHANGE_WIFI_MULTICAST_STATE` 权限。独立应用已声明该权限。如果把 NSGo 嵌入 Android 宿主，请在宿主的清单中为这些设备声明该权限。在缺少原始 TXT 接口（API 37 或 T Extensions 22）的设备上，发布的 TXT 值必须是有效的 UTF-8。浏览仍会保留 TXT 值的原始字节。目标 API 为 37 或更高的 Android 宿主需要在 Android 17 或更高版本上声明并请求 `ACCESS_LOCAL_NETWORK` 权限。
 
 可用 `nsgotest.LocalServices` 为无头测试提供浏览结果。
 

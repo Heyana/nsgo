@@ -229,7 +229,7 @@ The content stays mounted but hidden while it waits, so it shows at once when th
 
 ### Discovering local services
 
-On macOS, iOS and Linux, `cx.AdvertiseService` publishes a listening port and TXT attributes. `cx.BrowseServices` reports resolved services with their host, port and TXT attributes, then reports them again with `Removed` when they leave. Check `cx.Env().CanDiscoverServices()` for platform support. Both calls return a stop function and end when their scope is disposed. A platform error is reported asynchronously on the engine goroutine. Linux uses Avahi and reports an error if the daemon is unavailable.
+On macOS, iOS, Android and Linux, `cx.AdvertiseService` publishes a listening port and TXT attributes. `cx.BrowseServices` reports resolved services with their host, port and TXT attributes. `Host` may be a DNS hostname or an IP address. When a service leaves, the callback receives it again with `Removed` set. Check `cx.Env().CanDiscoverServices()` for platform support. Both calls return a stop function and end when their scope is disposed. A platform error is reported asynchronously on the engine goroutine. Linux uses Avahi and reports an error if the daemon is unavailable.
 
 For Bonjour on Apple platforms, declare the service types and explain local network access in `nsgo.yaml`. The system manages the permission prompt and remembers the user's choice.
 
@@ -240,6 +240,8 @@ apple:
     NSBonjourServices:
       - _example._tcp
 ```
+
+Android uses `NsdManager`. Android 12 and earlier and Android 13 before T Extensions 7 require `CHANGE_WIFI_MULTICAST_STATE` for Wi-Fi discovery. Standalone builds declare that permission. If you embed NSGo in an Android host, add it to the host manifest for those devices. Advertised TXT values must be valid UTF-8 on devices without Android's raw TXT API (API 37 or T Extensions 22). Browsing preserves raw TXT values. If an Android host targets API 37 or higher, it must declare and request `ACCESS_LOCAL_NETWORK` on Android 17 or later.
 
 Use `nsgotest.LocalServices` to supply browse results in a headless test.
 

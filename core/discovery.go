@@ -11,7 +11,7 @@ import (
 )
 
 // LocalService is a DNS-SD instance. Name, Type, Port and TXT describe an
-// advertisement. A discovered instance also has the service's DNS hostname in Host.
+// advertisement. A discovered instance also has its DNS hostname or IP address in Host.
 type LocalService driver.LocalService
 
 // ServiceEvent reports a discovered service, its removal, or a browse failure.
