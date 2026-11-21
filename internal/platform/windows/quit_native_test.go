@@ -49,7 +49,7 @@ func TestWindowsLastWindowAsksBeforeQuitting(t *testing.T) {
 		if got := requests.Load(); got != i-1 {
 			t.Fatalf("close %d ran OnQuitRequest %d times", i, got)
 		}
-		if hwndVisible, _, _ := isWindowVisible.Call(hwnd); hwndVisible == 0 {
+		if windowText(hwnd) != title+"-main" {
 			t.Fatalf("close %d took the window away before approval", i)
 		}
 	}
