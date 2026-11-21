@@ -215,6 +215,9 @@ type surface struct {
 	// shading are the shader views to draw once the batch or the frame
 	// is applied.
 	shading []*view
+	// gpuInitDue are newly configured KindGPU views awaiting backend initialization
+	// once the mount batch's frames are applied.
+	gpuInitDue []*view
 	// mouse is where the mouse last moved over the host, in client
 	// coordinates, while mouseIn.
 	mouse   driver.Point
@@ -271,6 +274,7 @@ type view struct {
 	image       *image
 	drawing     *driver.Drawing // a canvas's
 	gl          *glShader       // a shader view's
+	gpu         *gpuView        // a GPU view's
 	fx          *effect         // its effect, transition or navigation shader (effect.go)
 	glassActive bool            // Liquid Glass drawn via the HTML-in-Canvas shader (glass.go)
 	web         *webFrame       // a web view's
@@ -1715,6 +1719,10 @@ func (s *surface) mount(b *driver.MountBatch) {
 			if v.gl != nil {
 				v.gl.release()
 			}
+			if v.gpu != nil {
+				v.gpu.release()
+				v.gpu = nil
+			}
 			if v.web != nil {
 				v.web.closePort()
 			}
@@ -1756,6 +1764,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 				}
 				if v.kind == driver.KindShader {
 					s.shadeLater(v)
+				}
+				if v.kind == driver.KindGPU && v.gpu != nil {
+					s.resizeGPU(v)
 				}
 				if v.kind == driver.KindScroll {
 					v.placeContent() // centering and snap points follow the size
@@ -1817,6 +1828,10 @@ func (s *surface) mount(b *driver.MountBatch) {
 			if v.fx != nil {
 				v.fx.stale = true
 				s.startTicking()
+			}
+		case driver.ItemGPU:
+			if v.gpu != nil && it.GPU != nil {
+				s.configureGPU(v, *it.GPU)
 			}
 		case driver.ItemScrollTo:
 			if v.kind == driver.KindScroll {
@@ -1919,6 +1934,7 @@ func (s *surface) mount(b *driver.MountBatch) {
 			s.requestGlassPaint()
 		}
 	}
+	s.initPendingGPUs()
 	if s.animator.Running() || len(s.shading) > 0 || len(s.transitions) > 0 {
 		s.startTicking()
 	}
@@ -1932,7 +1948,15 @@ func (s *surface) RequestFrame() {
 	s.startTicking()
 }
 
-func (s *surface) SubmitGPU(driver.GPUFrame) {}
+// SubmitGPU executes an off-commit GPUFrame directly on the target KindGPU view
+// without triggering a UI view-tree commit.
+func (s *surface) SubmitGPU(frame driver.GPUFrame) {
+	v := s.view(frame.ViewID)
+	if v == nil || v.gpu == nil {
+		return
+	}
+	v.gpu.submit(frame)
+}
 
 // baseCSS places the elements the surface makes (nsgo-el) where their
 // frames say, starts views (nsgo-view) without a border or the browser's
@@ -1984,6 +2008,8 @@ func (s *surface) create(id driver.NodeID, kind driver.ViewKind) *view {
 		v.el.Call("appendChild", v.inner)
 	case driver.KindShader:
 		s.createShader(v)
+	case driver.KindGPU:
+		s.createGPU(v)
 	case driver.KindScroll:
 		v.css().set1("overflow", "auto")
 		v.content = s.element("div")
@@ -2018,6 +2044,8 @@ func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
 			s.paint(v)
 		case driver.KindShader:
 			s.shadeLater(v)
+		case driver.KindGPU:
+			s.resizeGPU(v)
 		}
 		if v.kind != driver.KindScroll {
 			kids := v.el.Get("children")

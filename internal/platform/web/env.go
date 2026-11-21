@@ -191,6 +191,9 @@ func (s *surface) updateEnv() {
 			if repaint && v != nil && v.gl != nil {
 				s.shadeLater(v)
 			}
+			if repaint && v != nil && v.gpu != nil {
+				s.resizeGPU(v)
+			}
 		}
 		if repaint || darkChanged {
 			s.refreshGlassAppearance()
@@ -221,6 +224,7 @@ func (s *surface) environment() driver.Environment {
 		CanLockPointer:        webCanLockPointer(s.doc),
 		AudioPlaybackControls: webAudioAvailable(),
 		HapticPatterns:        hapticPatternsAvailable(g.Get("navigator")),
+		GPU:                   webGPUAvailable(),
 		// Browsers on touch screens open the camera for an input's capture.
 		Camera:   w.pointerCoarse.Get("matches").Bool(),
 		ScanCode: scanCodeAvailable(),
