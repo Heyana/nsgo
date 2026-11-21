@@ -176,6 +176,7 @@ type window struct {
 	keys        []driver.KeyBinding
 	hotKeys     *globalHotKeys
 	colorPick   *portalColorPick
+	discovery   avahiDiscovery
 	held        map[uint32]heldKey                  // the keys down, by keycode (keyPressedCallback)
 	heldKeys    bool                                // the app follows every key going down and up (driver.MountItem.HeldKeys)
 	heldMouse   bool                                // the app follows every mouse button going down and up (driver.MountItem.HeldMouseButtons)
@@ -867,6 +868,7 @@ func (w *window) shutdown(forced bool) {
 	}
 	w.unwatchSession()
 	w.closeAudio()
+	w.discovery.close()
 	w.closeCanvasImages()
 	w.closeHotKeys()
 
@@ -1015,6 +1017,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemAudio:
 			w.audioCommand(it.Count, it.Audio)
+			continue
+		case driver.ItemDiscovery:
+			w.discovery.handle(it, w.engine.Dispatch)
 			continue
 		case driver.ItemWebCookies:
 			w.webCookies(it.Count, *it.Cookies)

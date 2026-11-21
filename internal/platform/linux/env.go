@@ -110,6 +110,7 @@ func (w *window) environment() driver.Environment {
 		Speak:            speakAvailable(),
 		Gamepads:         true,
 		Audio:            loadSound(),
+		DiscoverServices: true,
 
 		// GTK keeps only a window's size (setFrame), so no window is placed, and a Wayland compositor stacks its windows itself.
 		CanSetWindowLevel:      w.canSetLevel(),

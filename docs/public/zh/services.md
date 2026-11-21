@@ -218,9 +218,9 @@ core.Suspense{
 
 ### 发现局域网服务
 
-在 macOS 和 iOS 上，`cx.AdvertiseService` 通过 Bonjour 发布监听端口和 TXT 属性。`cx.BrowseServices` 报告解析后的服务，包括主机名、端口和 TXT 属性。服务离开时，回调收到设置了 `Removed` 的事件。通过 `cx.Env().CanDiscoverServices()` 检查平台支持。两个调用都会返回停止函数，作用域释放时自动停止。平台错误会通过引擎 goroutine 异步报告。
+在 macOS、iOS 和 Linux 上，`cx.AdvertiseService` 发布监听端口和 TXT 属性。`cx.BrowseServices` 报告解析后的服务，包括主机名、端口和 TXT 属性。服务离开时，回调收到设置了 `Removed` 的事件。通过 `cx.Env().CanDiscoverServices()` 检查平台支持。两个调用都会返回停止函数，作用域释放时自动停止。平台错误会通过引擎 goroutine 异步报告。Linux 使用 Avahi，守护进程不可用时会报告错误。
 
-在 `nsgo.yaml` 中声明服务类型和访问局域网的用途。权限提示由系统显示，用户的选择也由系统保存。
+Apple 平台使用 Bonjour。请在 `nsgo.yaml` 中声明服务类型和访问局域网的用途。权限提示由系统显示，用户的选择也由系统保存。
 
 ```yaml
 apple:

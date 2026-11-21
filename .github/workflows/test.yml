@@ -82,7 +82,7 @@ jobs:
       - name: Install native test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin
+          sudo apt-get install -y apparmor at-spi2-core libgtk-4-dev libgtk-4-media-gstreamer libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb pulseaudio gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pulseaudio gstreamer1.0-libav desktop-file-utils shared-mime-info libglib2.0-bin avahi-daemon dbus
       - name: Allow WebKit's sandbox on the runner
         run: |
           # Ubuntu restricts unprivileged user namespaces. Grant bubblewrap that permission so WebKit can keep its sandbox enabled.
@@ -115,6 +115,17 @@ jobs:
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
         run: xvfb-run -a go tool nsgo test -target linux ./internal/testhost/testdata/press
+      - name: Test native local service discovery
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+        run: |
+          if [[ ! -S /run/dbus/system_bus_socket ]]; then
+            sudo install -d /run/dbus
+            sudo dbus-daemon --system --fork
+          fi
+          sudo avahi-daemon --check || sudo avahi-daemon --daemonize --no-rlimits
+          xvfb-run -a go tool nsgo test -target linux ./internal/testhost/testdata/discovery
       - name: Test headless editing keys and bindings
         run: go tool nsgo test ./internal/testhost/testdata/keys
       - name: Test native editing keys and bindings

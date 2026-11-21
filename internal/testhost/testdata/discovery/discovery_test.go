@@ -15,11 +15,11 @@ import (
 
 func TestMain(m *testing.M) { nsgotest.Main(m) }
 
-func TestBonjourAdvertiseBrowseAndRemove(t *testing.T) {
+func TestLocalServiceAdvertiseBrowseAndRemove(t *testing.T) {
 	switch nsgotest.Target() {
-	case "macos", "ios", "ios_simulator":
+	case "macos", "ios", "ios_simulator", "linux":
 	default:
-		t.Skip("checks native Bonjour")
+		t.Skip("checks native DNS-SD")
 	}
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -51,7 +51,9 @@ func TestBonjourAdvertiseBrowseAndRemove(t *testing.T) {
 			}
 		})
 		report(err)
-		stop, err = cx.AdvertiseService(core.LocalService{Name: name, Type: "_nsgo-test._tcp", Port: port, TXT: map[string]string{"version": "1"}}, report)
+		stop, err = cx.AdvertiseService(core.LocalService{
+			Name: name, Type: "_nsgo-test._tcp", Port: port, TXT: map[string]string{"version": "1", "data": "\x00\xff"},
+		}, report)
 		report(err)
 		return core.View{}
 	})
@@ -70,7 +72,8 @@ func TestBonjourAdvertiseBrowseAndRemove(t *testing.T) {
 		return replies[count-1]
 	}
 	add := wait(1)
-	if add.Removed || add.Service.Port != port || add.Service.Host == "" || add.Service.TXT["version"] != "1" {
+	if add.Removed || add.Service.Port != port || add.Service.Host == "" || add.Service.TXT["version"] != "1" ||
+		add.Service.TXT["data"] != "\x00\xff" {
 		t.Fatalf("resolved advertisement: %+v", add)
 	}
 	scope.Post(stop)

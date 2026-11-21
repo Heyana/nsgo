@@ -149,6 +149,8 @@ The installer refuses an app whose manifest does not ask for `REQUEST_INSTALL_PA
 
 NSH has no local service discovery API. On macOS and iOS, the system's DNS-SD library registers services in `local.`, browses on every interface and resolves the endpoint and TXT records of each matching instance. Resolvers are cancelled if their instance disappears. A matching endpoint seen on multiple interfaces is reported once and removed when its last record goes away. Each surface owns its operations, and callbacks and reference release run on Apple's main dispatch queue. Apps declare `NSLocalNetworkUsageDescription` and `NSBonjourServices` in `nsgo.yaml` through `apple.info`.
 
+On Linux, GTK's GDBus calls Avahi asynchronously on the system bus. The backend prepares each browser and subscribes to its signals before starting it, so cached services reach the app. Results from interfaces and address families are grouped by endpoint. Discovery reports an asynchronous error when Avahi is unavailable.
+
 ## Speech
 
 `StartSpeech` recognizes what the user says, NSH's `Speech.start`: one session per engine, which a new one and its scope's end abort. It reports the whole transcript so far, before it is final with `Interim`, and ends once with the last one and a `SpeechError` named as the Web Speech API's (`not-allowed`, `no-speech`, `audio-capture`, `network`, `language-not-supported`, `unavailable`, `failed`). `Stop` has the recognizer finish what it heard; `Abort` ends it at once. A `Lang` of "" is the app's locale.
