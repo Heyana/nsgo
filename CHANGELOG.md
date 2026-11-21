@@ -9,6 +9,7 @@
 - Add `nsgo build -channel steam` for desktop depots with development-only `steam_appid.txt` support (#1227 by @houko).
 - Keep a read-only input's text selectable and copyable on macOS and iOS, the latter with no keyboard, stop edits at once in a macOS field made read-only while it is edited, and make `Readonly` and `Disabled` stop edits on HarmonyOS, which ignored them.
 - Keep macOS presses inside a Liquid Glass view, such as `chat.EffortPicker`'s panel, reaching the app after the first, as AppKit swallowed the release of a press it passed up through the glass.
+- Keep a `base/plot` line's or area's canvas within the plot's height past its edges, where values far outside the y domain, as a history emptied while its axis moves, made it millions of points tall and crashed Linux apps, which now skip a canvas Cairo cannot hold.
 - Stand `ui.Slider` and `ui.Progress`, and their `base` forms, up with `Axis: base.Vertical`, and fill them from the other end with `Inverted`, top to bottom when vertical.
 - Add `ui.ProgressRing.StartAngle` and `CounterClockwise` to start the arc anywhere and run it, or an indeterminate ring's turn, counterclockwise.
 - Add `View.OnMouseDown`, `View.OnMouseUp`, `core.MouseButtonEvent`, `core.MouseButtonsDown`, `core.MouseButtonHeld`, and `MouseDown`/`MouseUp`/`BlurWindow` steps in nsgotest for all five mouse buttons with focus-loss clearing on macOS, Windows, Linux and the web (#1207).

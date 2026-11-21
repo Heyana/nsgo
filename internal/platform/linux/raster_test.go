@@ -79,3 +79,24 @@ func TestPartialRastersMatchFullOnes(t *testing.T) {
 		})
 	}
 }
+
+// TestCanvasesCairoCannotHoldDrawNothing lays a canvas out wider than a
+// Cairo surface can be, and shows a raster whose textures were never
+// made, as one whose surface failed: neither panics, and neither draws.
+func TestCanvasesCairoCannotHoldDrawNothing(t *testing.T) {
+	if err := openLibs(); err != nil {
+		t.Skip(err)
+	}
+	s := canvastest.Split(nil)[0]
+	w := &window{animator: driver.NewAnimator(nil), env: driver.Environment{PixelRatio: 1}}
+	v := &view{id: 1}
+	w.views = []*view{nil, v}
+	w.setCanvas(v, s.Drawing)
+	w.rasterize(v, maxRaster+1, 10, 1)
+	if v.canvas.raster != nil {
+		t.Fatalf("a %d-pixel-wide canvas has a raster", maxRaster+1)
+	}
+	v.canvas.whole = false
+	v.canvas.raster = &canvasRaster{pw: 300, ph: 10, scale: 1}
+	w.snapshotCanvas(v, 0, 300, 10)
+}

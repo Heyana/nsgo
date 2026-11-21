@@ -14,6 +14,15 @@ import (
 // whole.
 const strokeRoom = 8
 
+// bleedPast is the bleed of a mark that draws over points past the plot's
+// top and bottom edges, height apart: no more than the plot's height past
+// either. Points far past it, such as those of values outside the y
+// domain or of the rows a new domain replaces, placed on it while the
+// axis moves there, would otherwise size the canvas to millions of points.
+func bleedPast(over, height float32) float32 {
+	return strokeRoom + float32(math.Ceil(float64(min(over, max(height, 0)))))
+}
+
 // plotMark is a mark the plot knows: the extent of its values and the axis
 // they go along, its points, where its hover dot is and how the app styles
 // it; bars have no dot and no points.

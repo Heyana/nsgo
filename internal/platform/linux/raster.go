@@ -28,6 +28,7 @@ import (
 
 var (
 	cairoSurfaceSetDeviceScale func(surface uintptr, x, y float64)
+	cairoSurfaceStatus         func(surface uintptr) int32
 	gdkMemoryTextureNew        func(w, h, format int32, bytes, stride uintptr) uintptr
 	gtkSnapshotAppendTexture   func(snap, texture uintptr, bounds *grapheneRect)
 )
@@ -35,12 +36,17 @@ var (
 func bindRaster(cairoLib uintptr) {
 	reg := purego.RegisterLibFunc
 	reg(&cairoSurfaceSetDeviceScale, cairoLib, "cairo_surface_set_device_scale")
+	reg(&cairoSurfaceStatus, cairoLib, "cairo_surface_status")
 	reg(&gdkMemoryTextureNew, gtkLib, "gdk_memory_texture_new")
 	reg(&gtkSnapshotAppendTexture, gtkLib, "gtk_snapshot_append_texture")
 }
 
 // tile is the side of a canvas's textures, in pixels.
 const tile = 256
+
+// maxRaster is the most pixels a side of a Cairo image surface has: a
+// canvas wider or taller is not drawn.
+const maxRaster = 32767
 
 // canvasRaster is a canvas's pixels.
 type canvasRaster struct {
@@ -155,7 +161,7 @@ func (w *window) snapshotCanvas(v *view, snap uintptr, width, height float64) {
 		}
 	}
 	r = c.raster
-	if r == nil {
+	if r == nil || len(r.tiles) != tiles(pw, ph) {
 		return
 	}
 	i := 0
@@ -178,9 +184,16 @@ func (w *window) rasterize(v *view, pw, ph int, scale float64) {
 	r := c.raster
 	if r == nil || r.scale != scale || r.pw != pw || r.ph != ph {
 		r.release()
+		c.raster = nil
+		if pw <= 0 || ph <= 0 || pw > maxRaster || ph > maxRaster {
+			return
+		}
 		surf := cairoImageSurfaceCreate(0, int32(pw), int32(ph))
 		if surf == 0 {
-			c.raster = nil
+			return
+		}
+		if cairoSurfaceStatus(surf) != 0 {
+			cairoSurfaceDestroy(surf)
 			return
 		}
 		cairoSurfaceSetDeviceScale(surf, scale, scale)
@@ -243,12 +256,22 @@ func (w *window) rasterize(v *view, pw, ph int, scale float64) {
 	r.texture(x0, y0, x1, y1)
 }
 
+// tiles is how many textures show pw × ph pixels.
+func tiles(pw, ph int) int {
+	return (pw + tile - 1) / tile * ((ph + tile - 1) / tile)
+}
+
 // keepStatic copies the surface's pixels into static.
 func (r *canvasRaster) keepStatic() {
 	cairoSurfaceFlush(r.surface)
 	if r.static == 0 {
 		r.static = cairoImageSurfaceCreate(0, int32(r.pw), int32(r.ph))
 		if r.static == 0 {
+			return
+		}
+		if cairoSurfaceStatus(r.static) != 0 {
+			cairoSurfaceDestroy(r.static)
+			r.static = 0
 			return
 		}
 		cairoSurfaceSetDeviceScale(r.static, r.scale, r.scale)

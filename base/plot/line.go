@@ -1,8 +1,6 @@
 package plot
 
 import (
-	"math"
-
 	"github.com/nsgo-dev/nsgo/base/internal/parts"
 	"github.com/nsgo-dev/nsgo/core"
 )
@@ -237,7 +235,7 @@ func (l Line) Render(cx *core.Scope) core.Node {
 			return strokeRoom
 		}
 		e, height := series.drawn.Get(), float32(plot.size.Get().Height)
-		return strokeRoom + float32(math.Ceil(float64(max(reach(e.top, l.Curve, height), reach(e.wasTop, l.Curve, height)))))
+		return bleedPast(max(reach(e.top, l.Curve, height), reach(e.wasTop, l.Curve, height)), height)
 	}
 	children := []core.Node{markCanvas(plot, bleed, part{}, func(d *core.Drawing, plot *plotState, b float32) {
 		d.StrokeFromView(paintOf(seriesColor(plot, l.Color), core.PaintCurrentColor)).LineWidthFromView().LineDashFromView()

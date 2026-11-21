@@ -648,6 +648,29 @@ func TestOutsideAPlotAMarkDrawsNothing(t *testing.T) {
 	}
 }
 
+// Values far outside the y domain, as a history is on a domain made
+// while it was empty, keep a line's and an area's canvases within the
+// plot's height past its edges.
+func TestMarksFarPastTheDomainKeepTheirCanvasesNearThePlot(t *testing.T) {
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return frame(plot.Plot{
+			Y:      col(-1e9, 1<<20, 1e9),
+			YScale: func() plot.Scale { return plot.LinearScale(0, 1) },
+			Children: []core.Node{
+				plot.Area{TestID: "area"},
+				plot.Line{TestID: "line"},
+			},
+		}, "plot")
+	})
+	for _, id := range []string{"area", "line"} {
+		for _, c := range canvases(app, "id:"+id) {
+			if h := c.Frame.Size.Height; h > 100+2*(100+8) {
+				t.Errorf("%s's canvas is %v high", id, h)
+			}
+		}
+	}
+}
+
 func TestMovingCornersKeepTheirRadius(t *testing.T) {
 	var first *core.Signal[float64]
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {

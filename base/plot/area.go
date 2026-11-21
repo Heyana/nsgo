@@ -1,8 +1,6 @@
 package plot
 
 import (
-	"math"
-
 	"github.com/nsgo-dev/nsgo/base/internal/parts"
 	"github.com/nsgo-dev/nsgo/core"
 )
@@ -100,7 +98,7 @@ func (a Area) Render(cx *core.Scope) core.Node {
 			floor := base(plot)
 			past = max(-floor, floor-height)
 		}
-		return strokeRoom + float32(math.Ceil(float64(max(swing, past))))
+		return bleedPast(max(swing, past), height)
 	}
 	// Its shape: the top edge, to the baseline or the bottom edge, and
 	// back. Both edges of a band and a baseline at a value move with the y
