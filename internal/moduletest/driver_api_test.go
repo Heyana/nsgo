@@ -53,7 +53,7 @@ func allowedPublicDriverType(name string) bool {
 		"SensorVector", "ShaderNode", "ShaderRole", "SharedFile",
 		"Size", "SnapAlignment", "SpringConfig", "StatusBarStyle",
 		"StepPosition", "SubmitBehavior", "Subscription", "SubscriptionOffer", "SystemGestureEdge", "SystemGestureOptions",
-		"SubscriptionPeriod", "TextAlign", "TextAttachment", "TextBackground",
+		"SubscriptionPeriod", "TabBadge", "TextAlign", "TextAttachment", "TextBackground",
 		"TextBaseline", "TextDecoration", "TextDecorationStyle", "TextEngine",
 		"TextLayout", "TextLine", "TextMetrics", "TextRange",
 		"TextShadow", "TextSpan", "TextStyle", "ThermalState", "TimingConfig",
