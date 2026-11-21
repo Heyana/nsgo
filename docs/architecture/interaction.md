@@ -101,6 +101,10 @@ On Linux, `Ref.Focus` and `AutoFocus` place a newly focused single-line field's 
 
 `Style.CursorImage` (`core.CustomCursor`) sets an image-based pointer cursor on desktops and the web (`Env.SupportsCustomCursor()` is true there and false on touch platforms): `Image` is the 1x source, optional `Image2x` is chosen on HiDPI displays (`PixelRatio >= 1.5`), `Hotspot` is clamped in logical points from the top-left corner, and `Fallback` supplies the named cursor when the image is empty or cannot load (and the CSS fallback keyword on the web). macOS combines 1x and 2x `NSBitmapImageRep`s into one `NSImage` for `NSCursor initWithImage:hotSpot:` and caches cursors in a bounded LRU; Windows picks `Image2x` at `scale >= 1.5`, builds a 32-bit BGRA DIB and 1bpp mask with `CreateDIBSection` and `CreateIconIndirect`, and destroys evicted or closed `HCURSOR` handles; Linux picks `Image2x` at `scale >= 1.5`, builds a `GdkMemoryTexture` and `gdk_cursor_new_from_texture` cached per window; and the web emits CSS `cursor: url(...) x y, <fallback>` plus `image-set(url(...) 1x, url(...) 2x)` for HiDPI. Touch platforms ignore `CursorImage`.
 
+## System edge gestures
+
+`mobile.DeferSystemGestures` holds a surface's physical screen edges on iOS and named rectangles in surface points on Android. The core combines live requests from the surface's scopes into `ItemSystemGestures` and sends the revised preference as each hold starts or ends. UIKit reads the mask from the root or sheet controller after invalidation. An iOS embedding host can forward its `NSGoView`'s preference. Android 10 and later clip the rectangles to the view and convert them to pixels again as the view's size or density changes. Android keeps authority over mandatory gestures and limits the extent of exclusions. `nsgotest.App.SystemGestures` records the main surface's combined request. `nsgotest.Surface.SystemGestures` reads the request on a selected surface.
+
 ## Gestures
 
 `View.OnPan`, `OnPinch` and `OnRotation` follow gestures the platform recognizes; they report to the engine, which merges each gesture's moves per turn and never its first or last report.

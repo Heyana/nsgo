@@ -461,6 +461,7 @@ func (t *target) mainClosed() {
 	a := t.a
 	t.surface = t.source
 	a.views, a.rootID, a.Keymap, a.keyBindings = map[driver.NodeID]*View{}, 0, nil, nil
+	a.SystemGestures = core.SystemGestureOptions{}
 	delete(a.menus, nil)
 	a.showMenu()
 }

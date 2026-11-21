@@ -359,7 +359,7 @@ func (a *App) applyAside(b *driver.MountBatch) {
 // window's own model rather than acting on the app's shared services.
 func surfaceItem(it driver.MountItem) bool {
 	switch it.Kind {
-	case driver.ItemAnimation, driver.ItemDismissKeyboard, driver.ItemBlockNative, driver.ItemAccessibilityFocus, driver.ItemTitle, driver.ItemWindow, driver.ItemKeymap, driver.ItemMenu:
+	case driver.ItemAnimation, driver.ItemDismissKeyboard, driver.ItemBlockNative, driver.ItemAccessibilityFocus, driver.ItemTitle, driver.ItemWindow, driver.ItemKeymap, driver.ItemMenu, driver.ItemSystemGestures:
 		return true
 	}
 	return it.ID != 0
@@ -409,6 +409,7 @@ func (a *App) closed(surface *core.Tree) {
 		a.clearPopupMenu()
 	}
 	if surface == a.tree {
+		a.SystemGestures = core.SystemGestureOptions{}
 		a.views, a.rootID, a.tree, a.main, a.Keymap, a.keyBindings, a.heldKeys, a.heldMouse = map[driver.NodeID]*View{}, 0, a.appTree, nil, nil, nil, false, false
 	}
 	// A key or mouse button held stays held, but its up has no window to go to.
@@ -729,6 +730,9 @@ func (a *App) apply(b *driver.MountBatch) {
 			a.Orientation = core.Orientation(it.Count)
 		case driver.ItemBadge:
 			a.Badge = int(it.Count)
+		case driver.ItemSystemGestures:
+			a.SystemGestures = *it.SystemGestures
+			a.SystemGestures.AndroidRects = slices.Clone(it.SystemGestures.AndroidRects)
 		case driver.ItemKeepAwake:
 			if it.Awake != nil {
 				hold := AwakeHold{ID: it.Count, Reason: it.Awake.Reason, Display: it.Awake.Display}

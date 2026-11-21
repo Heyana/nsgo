@@ -1504,6 +1504,11 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 		case driver.ItemOpenURL:
 			w.u32(it.Count)
 			w.str(it.Value)
+		case driver.ItemSystemGestures:
+			w.u32(uint32(len(it.SystemGestures.AndroidRects)))
+			for _, rect := range it.SystemGestures.AndroidRects {
+				w.bounds(rect)
+			}
 		case driver.ItemHaptic, driver.ItemBadge:
 			w.u32(it.Count)
 		case driver.ItemOrientation:

@@ -75,6 +75,14 @@ func (a *App) Surface(selector string) *Surface {
 // Config returns the surface's opening configuration.
 func (s *Surface) Config() SurfaceConfig { return s.config }
 
+// SystemGestures returns this surface's combined system gesture request.
+func (s *Surface) SystemGestures() core.SystemGestureOptions {
+	s.app.t.Helper()
+	options := s.open().SystemGestures
+	options.AndroidRects = slices.Clone(options.AndroidRects)
+	return options
+}
+
 // Press presses the matched view in this surface.
 func (s *Surface) Press(selector string) {
 	s.app.t.Helper()

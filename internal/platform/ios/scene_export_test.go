@@ -32,6 +32,15 @@ func SceneReconnectForTest() (kept, shown bool) {
 	return kept, shown
 }
 
+// SystemGestureEdgesForTest asks UIKit's root controller for its preference.
+func SystemGestureEdgesForTest() uint {
+	var edges uint
+	onMainSync(func() {
+		edges = objc.Send[uint](runner.controller, sel("preferredScreenEdgesDeferringSystemGestures"))
+	})
+	return edges
+}
+
 // SceneForTest is one of the scenes UIKit connected the app's, as UIKit and the engine have it.
 type SceneForTest struct {
 	// Scene is the UIWindowScene, Window its key window and View the view its root view controller shows, 0 for none.

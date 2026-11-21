@@ -117,6 +117,12 @@ func registerNav() {
 				}
 				return apple.SendSuper[uint](self, cmd)
 			}},
+			{Cmd: sel("preferredScreenEdgesDeferringSystemGestures"), Fn: func(self objc.ID, _ objc.SEL) uint {
+				if v := sheets[self]; v != nil {
+					return uint(v.surface.gestureEdges)
+				}
+				return 0
+			}},
 			{Cmd: sel("preferredStatusBarStyle"), Fn: func(self objc.ID, _ objc.SEL) int {
 				if v := sheets[self]; v != nil {
 					return v.surface.statusBar

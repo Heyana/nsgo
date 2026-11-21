@@ -395,8 +395,11 @@ const (
 	ItemSaveFilePreflight
 	// ItemDiskSpace asks for the capacity of the volume containing Value, answered by EventDiskSpace carrying Count.
 	ItemDiskSpace
+
 	// ItemDiscovery starts or stops a DNS-SD operation numbered by Count.
 	ItemDiscovery
+	// ItemSystemGestures replaces the surface's gesture deferrals with SystemGestures.
+	ItemSystemGestures
 )
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.
@@ -619,7 +622,9 @@ type MountItem struct {
 	Open        *SharedFile
 	// QuickLook is ItemQuickLook's request.
 	QuickLook *QuickLookRequest
-	Share     *ShareRequest
+	// SystemGestures is ItemSystemGestures' complete surface preference.
+	SystemGestures *SystemGestureOptions
+	Share          *ShareRequest
 	// Surface is ItemOpenSurface's window, Tray ItemTray's icon, and On
 	// ItemDock's and ItemSetLaunchAtLogin's choice and whether
 	// ItemCheckForUpdates checks in the background.

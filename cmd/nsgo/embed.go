@@ -111,6 +111,9 @@ __attribute__((objc_runtime_visible))
 /// return from its own.
 @property (nonatomic, readonly) UIStatusBarStyle preferredStatusBarStyle;
 @property (nonatomic, readonly) BOOL prefersStatusBarHidden;
+/// The gesture deferrals the app asks for, for the host's view controller
+/// to return from its own preferredScreenEdgesDeferringSystemGestures.
+@property (nonatomic, readonly) UIRectEdge preferredScreenEdgesDeferringSystemGestures;
 
 /// Sends the app an event (core.Scope.OnHostEvent), kept until it has a
 /// listener.

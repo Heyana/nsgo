@@ -290,6 +290,7 @@ final class Protocol {
     static final int ITEM_REQUEST_REVIEW = 115;
     static final int ITEM_SAVE_PREFLIGHT_ANSWER = 117;
     static final int ITEM_SAVE_FILE_PREFLIGHT = 118;
+    static final int ITEM_SYSTEM_GESTURES = 120;
 
     // What EVENT_OVERLAY_PERMISSION answers ITEM_OVERLAY_PERMISSION with, and why an overlay ends, as the driver's.
     static final int OVERLAY_DENIED = 0;

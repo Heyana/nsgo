@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Add `mobile.DeferSystemGestures` for scoped iOS edge deferral and Android touch exclusion rectangles (#1218 by @houko).
 - Upload built web and desktop packages to itch.io with `nsgo publish itch` (#1561 by @houko).
 - Check target API, Apple privacy and encryption declarations, and release questionnaires during store builds (#1566 by @houko).
 - Fall back to estimated text sizes on Android when a runtime text request fails or times out (#173 by @houko).

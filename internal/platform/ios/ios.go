@@ -159,11 +159,12 @@ type surface struct {
 	// window and its view controllers. host is what it gives the app, and
 	// embed the settings its view holds; stops end the surface's
 	// observations as it closes.
-	embedded bool
-	host     engine.HostOptions
-	embed    *embedState
-	stops    []func()
-	closed   bool
+	embedded     bool
+	host         engine.HostOptions
+	embed        *embedState
+	stops        []func()
+	closed       bool
+	gestureEdges driver.SystemGestureEdge
 	// A standalone app's scene (sceneWillConnect): window is the UIWindow it shows in, 0 while its scene is disconnected, and controller its root view controller. session is the persistent identifier of the scene session it shows, "" once the system discarded it. scene numbers a scene beyond the first for the tree the engine opens it (EventOpenScene), and tree is that tree's ID once attached; ending says the engine destroyed the tree.
 	window, controller objc.ID
 	session            string
@@ -394,6 +395,12 @@ func loadUIKit() {
 		{Cmd: sel("nsgoKeyboardWindow:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) { keyboardWindow = self }},
 	})
 	classController = register("NsgoViewController", apple.Class("UIViewController"), nil, append(keyCommandMethods(), []objc.MethodDef{
+		{Cmd: sel("preferredScreenEdgesDeferringSystemGestures"), Fn: func(self objc.ID, _ objc.SEL) uint {
+			if s := controllerSurface(self); s != nil && s.controller == self {
+				return uint(s.gestureEdges)
+			}
+			return 0
+		}},
 		{Cmd: sel("preferredStatusBarStyle"), Fn: func(self objc.ID, _ objc.SEL) int { return controllerSurface(self).statusBar }},
 		{Cmd: sel("prefersStatusBarHidden"), Fn: func(self objc.ID, _ objc.SEL) bool { return controllerSurface(self).hideBar }},
 		{Cmd: sel("preferredStatusBarUpdateAnimation"), Fn: func(self objc.ID, _ objc.SEL) int { return controllerSurface(self).barAnimation() }},
@@ -1208,6 +1215,11 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemHaptic:
 			haptic(it.Count)
+			continue
+		case driver.ItemSystemGestures:
+			if !s.closed {
+				s.setSystemGestureEdges(it.SystemGestures.IOSEdges)
+			}
 			continue
 		case driver.ItemKeepAwake:
 			if it.Awake != nil && !s.closed {

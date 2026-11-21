@@ -125,6 +125,7 @@ var itemKindNames = map[ItemKind]string{
 	ItemSavePreflightAnswer: "ItemSavePreflightAnswer",
 	ItemSaveFilePreflight:   "ItemSaveFilePreflight",
 	ItemDiskSpace:           "ItemDiskSpace",
+	ItemSystemGestures:      "ItemSystemGestures",
 	ItemDiscovery:           "ItemDiscovery",
 }
 

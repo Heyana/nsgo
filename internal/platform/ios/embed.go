@@ -184,6 +184,12 @@ func embedMethods() []objc.MethodDef {
 		{Cmd: sel("setOnError:"), Fn: setter(func(e *embedState) *objc.ID { return &e.onError }, nil)},
 		{Cmd: sel("onOpenURL"), Fn: getter(func(e *embedState) objc.ID { return e.onOpenURL })},
 		{Cmd: sel("setOnOpenURL:"), Fn: setter(func(e *embedState) *objc.ID { return &e.onOpenURL }, (*surface).routeURLs)},
+		{Cmd: sel("preferredScreenEdgesDeferringSystemGestures"), Fn: func(self objc.ID, _ objc.SEL) uint {
+			if s := embedded(self); s != nil {
+				return uint(s.gestureEdges)
+			}
+			return 0
+		}},
 		{Cmd: sel("preferredStatusBarStyle"), Fn: func(self objc.ID, _ objc.SEL) int {
 			if s := embedded(self); s != nil {
 				return s.statusBar
@@ -310,6 +316,7 @@ func (s *surface) close() {
 	}
 	s.releaseAllAwake()
 	apple.ReleaseCanvasImages(s)
+	s.setSystemGestureEdges(0)
 	if s.audio != nil {
 		s.audio.Close()
 		s.audio = nil

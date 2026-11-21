@@ -48,6 +48,7 @@ func Root(cx *core.Scope) core.Node {
 func main() { nsgo.Run(Root) }
 ```
 
+- For touch controls at a phone's screen edge, [hold system gesture deferrals](https://nsgo.dev/docs/services/#system-edge-gestures) for the controls' lifetime.
 - A component runs once. What changes later is driven by signals read inside the functions an element calls (`ContentFunc`, `StyleFunc`, `ClassFunc`, `Disabled`, `When`, `Count`): only those parts update. Reading `count.Get()` while building, outside such a function, takes the value once and never updates.
 - A component with props is a type with `Render(*core.Scope) core.Node`. Give it fields whose zero value is the usual case.
 - Keep state in signals: `core.NewSignal`, `core.NewMemo`, `core.NewCollection` for keyed items (one row runs when one item changes), `core.NewSelector` for selection, `core.NewHistory` for undo, `core.NewPersisted` for typed values in storage. `cx.Batch` groups writes into one commit.
