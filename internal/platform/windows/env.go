@@ -159,6 +159,29 @@ func (w *window) displays() []driver.DisplayInfo {
 	return out
 }
 
+// cursorPoint returns where the pointer is, in the coordinates displays
+// report: from the primary monitor's top left, y down, through the monitor
+// the pointer is on. GetCursorPos reports it from the virtual screen's top
+// left, y down, in that monitor's own pixels.
+func cursorPoint() driver.Point {
+	var at point
+	if r, _, _ := getCursorPos.Call(uintptr(unsafe.Pointer(&at))); r == 0 {
+		return driver.Point{}
+	}
+	placements := monitorLayout()
+	if len(placements) == 0 {
+		return driver.Point{}
+	}
+	pointer := rect{at.X, at.Y, at.X + 1, at.Y + 1}
+	monitor, _, _ := monitorFromRect.Call(uintptr(unsafe.Pointer(&pointer)), monitorDefaultNear)
+	for _, placement := range placements {
+		if placement.monitor == monitor {
+			return placement.point(at.X, at.Y)
+		}
+	}
+	return placements[0].point(at.X, at.Y)
+}
+
 // monitorLayout reads the monitors, in physical pixels, with their DPI, and lays them out in points (layoutMonitors).
 func monitorLayout() []displayPlacement {
 	monitorsFound.mu.Lock()

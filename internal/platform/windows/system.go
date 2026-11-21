@@ -79,6 +79,70 @@ func formatAvailable(f uintptr) bool {
 	return f != 0 && r != 0
 }
 
+// cfRegistered is the first format number an app may register; the formats
+// below it are Windows's own, CF_ ones that carry no marker of their own.
+const cfRegistered = 0xC000
+
+// canIncludeInClipboardHistory is the format an app sets to say whether its
+// content may be kept: 0 for no, anything else for yes.
+const canIncludeInClipboardHistory = "CanIncludeInClipboardHistory"
+
+// clipboardTypes names the formats the clipboard offers. Windows has no
+// nspasteboard.org markers: what a password manager or a clipboard history
+// reads instead is a format of its own, such as "Clipboard Viewer Ignore".
+// Only the formats an app registered have names, and one that allows its
+// content back into history is left out — its presence would otherwise read
+// as a marker.
+func clipboardTypes() []string {
+	if r, _, _ := openClipboard.Call(0); r == 0 {
+		return nil
+	}
+	defer closeClipboard.Call()
+	var out []string
+	for f, _, _ := enumClipboardFormats.Call(0); f != 0; f, _, _ = enumClipboardFormats.Call(f) {
+		name := clipboardFormatName(f)
+		switch {
+		case name == "":
+		case name == canIncludeInClipboardHistory && clipboardDword(f) != 0:
+			// The app allows its content to be kept.
+		default:
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// clipboardFormatName returns the name an app registered a format under,
+// "" for Windows's own formats and for a format register wrote no name to.
+func clipboardFormatName(f uintptr) string {
+	if f < cfRegistered {
+		return ""
+	}
+	buf := make([]uint16, 128)
+	n, _, _ := getClipboardFormatNameW.Call(f, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 {
+		return ""
+	}
+	return syscall.UTF16ToString(buf[:n])
+}
+
+// clipboardDword reads the number a marker format carries, 0 when it carries
+// none; the clipboard must already be open.
+func clipboardDword(f uintptr) uint32 {
+	h, _, _ := getClipboardData.Call(f)
+	if h == 0 {
+		return 0
+	}
+	p, _, _ := globalLock.Call(h)
+	if p == 0 {
+		return 0
+	}
+	defer globalUnlock.Call(h)
+	var v uint32
+	rtlMoveMemory.Call(uintptr(unsafe.Pointer(&v)), p, 4)
+	return v
+}
+
 // readClipboard answers an ItemReadClipboard.
 func (w *window) readClipboard(it *driver.MountItem) {
 	ev := driver.Event{Kind: driver.EventClipboard, Count: it.Count}
@@ -89,6 +153,13 @@ func (w *window) readClipboard(it *driver.MountItem) {
 		ev.Finished = formatAvailable(cfUnicodeText)
 	case driver.ClipboardReadHasImage:
 		ev.Finished = !formatAvailable(cfHDrop) && (formatAvailable(pngFormat()) || formatAvailable(cfDIB))
+	case driver.ClipboardReadChangeCount:
+		// The sequence number a session counts up on every copy, as macOS's changeCount does.
+		if r, _, _ := getClipboardSequenceNumber.Call(); r != 0 {
+			ev.ChangeCount = int(uint32(r))
+		}
+	case driver.ClipboardReadTypes:
+		ev.Types = clipboardTypes()
 	case driver.ClipboardReadFiles, driver.ClipboardReadImage:
 		if r, _, _ := openClipboard.Call(w.hwnd); r == 0 {
 			break
