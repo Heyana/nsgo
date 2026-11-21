@@ -38,7 +38,7 @@ type WebView struct {
 	// pages from running scripts.
 	NoScroll     bool
 	NoJavaScript bool
-	// Muted silences the entire web view on Windows and Linux, including frames and Web Audio. macOS 12 and iOS 15 or later suspend media playback until cleared. The setting persists across navigations. MutedFunc updates it in place.
+	// Muted silences the entire web view on Windows and Linux, including frames and Web Audio. macOS 12 and iOS 15 or later suspend media playback until cleared. Other hosts keep their usual playback. The setting persists across navigations. MutedFunc updates it in place.
 	Muted     bool
 	MutedFunc func() bool
 	// PinchZoom lets the user magnify the page with a pinch: a trackpad's on macOS, a touchpad's or a touch screen's on Windows, where it also allows Ctrl with the wheel or with + and -, as a touchpad's pinch reaches the page as Ctrl with the wheel, and a touch screen's on Android. Without it the page keeps its size on those platforms. iOS zooms as the page's viewport says, and WebKitGTK on Linux and the browser on the web keep their own handling, having no switch for it.

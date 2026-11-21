@@ -22,7 +22,7 @@ core.View{
 
 在 macOS、iOS、Windows 和 Linux 上，`OnNavigationStateChange` 还会报告同一文档内的 URL、历史记录和标题变化。
 
-在 Windows 和 Linux 上，`WebView.Muted` 和 `MutedFunc`（TSX 中为 `muted`）会将整个网页静音，包括 Web Audio 和内嵌框架。macOS 12 和 iOS 15 或更新版本会在静音期间暂停媒体播放。设置立即应用到当前页面，并在导航后继续生效。
+在 Windows 和 Linux 上，`WebView.Muted` 和 `MutedFunc`（TSX 中为 `muted`）会将整个网页静音，包括 Web Audio 和内嵌框架。macOS 12 和 iOS 15 或更新版本会在静音期间暂停媒体播放。其他宿主保持原有播放行为。设置立即应用到当前页面，并在导航后继续生效。
 
 在 TSX 中，`injectedJavaScriptBeforeContentLoaded` 变化时，同一个 web view 会像 `InjectedJavaScriptBeforeContentFunc` 那样带着新脚本重新加载来源；`injectedJavaScript` 变化时，则会像 `userAgent`、`userAgentSuffix` 或 `mobile` 变化时一样，换成一个新的 web view，重新加载来源。
 
