@@ -204,8 +204,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private boolean keptOffScreen, quit;
     // The engine's flags the app starts with (--nsgo-fps).
     private final ArrayList<String> flags = new ArrayList<>();
-    // The test nsgo test -target android runs, and its agent.
+    // The test nsgo test -target android runs, whether nsgo dev -automation drives the app, and the agent.
     private String test;
+    private boolean automation;
     private TestAgent agent;
     // The alerts shown, by their ID, for the test agent to answer.
     final SparseArray<TestAgent.Alert> alerts = new SparseArray<>();
@@ -649,15 +650,28 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         clearingNativeTree = false;
     }
 
+    private boolean isDebuggable() {
+        return (getContext().getApplicationInfo().flags
+                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+    }
+
     /**
      * Runs the test the launch intent names, as nsgo test -target android
      * starts it: its arguments and environment go to the app's process.
      * Only a debuggable build takes one, so no other app can set them.
      */
     void setTest(String encoded) {
-        boolean debuggable = (getContext().getApplicationInfo().flags
-                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
-        if (encoded != null && debuggable) test = encoded;
+        if (encoded != null && isDebuggable()) test = encoded;
+    }
+
+    /**
+     * Starts the test agent for nsgo dev -target android -automation so the
+     * running app's agent can drive the UI over the pipe. Only a debuggable
+     * build takes it, so release and non-debuggable builds never instantiate
+     * TestAgent.
+     */
+    void setAutomation(boolean enabled) {
+        if (enabled && isDebuggable()) automation = true;
     }
 
     /**
@@ -778,9 +792,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (!host.params.isEmpty()) builder.environment().put("NSGO_HOST_PARAMS", host.params);
         String installer = installer();
         if (installer != null) builder.environment().put("NSGO_INSTALLER", installer);
-        if (test != null) {
+        if (test != null || automation) {
             agent = new TestAgent(this);
-            TestAgent.apply(test, builder);
+            if (test != null) TestAgent.apply(test, builder);
         }
         try {
             engine.start(builder);
@@ -5027,7 +5041,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             dialog.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
         }
         dialog.show();
-        alerts.put(id, new TestAgent.Alert(dialog, buttons, listIndices(count, sheet, roles)));
+        if (agent != null) alerts.put(id, new TestAgent.Alert(dialog, buttons, listIndices(count, sheet, roles)));
         for (int i = 0; buttons != null && i < count; i++) {
             if (roles[i] == Protocol.ALERT_DESTRUCTIVE) dialog.getButton(buttons[i]).setTextColor(DESTRUCTIVE);
         }

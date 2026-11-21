@@ -64,7 +64,7 @@ func checkHost(ctx context.Context, p *project, jobs int) error {
 		return err
 	}
 	s.done("vetted", "")
-	// The dev client builds only into nsgo dev's builds, which take the nsgodev tag, and on macOS -automation's agent with nsgoautomation too, so NSGo's own repository vets them as they build them.
+	// The dev client builds only into nsgo dev's builds, which take the nsgodev tag, and on macOS and Android -automation's agent with nsgoautomation too, so NSGo's own repository vets them as they build them.
 	if path, err := importPathOf(p.Dir); err == nil && path == nsgoModule {
 		s = begin("vetting the dev client")
 		if err := goToolWithTags(ctx, p, nil, []string{"nsgodev"}, vetArgs(jobs, ".", "./internal/dev")...); err != nil {
@@ -72,6 +72,10 @@ func checkHost(ctx context.Context, p *project, jobs int) error {
 			return err
 		}
 		if err := goToolWithTags(ctx, p, []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0"}, []string{"nsgodev", "nsgoautomation"}, vetArgs(jobs, ".", "./internal/dev", "./nsgotest", "./internal/platform/macos")...); err != nil {
+			s.fail()
+			return err
+		}
+		if err := goToolWithTags(ctx, p, []string{"GOOS=android", "GOARCH=arm64", "CGO_ENABLED=0"}, []string{"nsgodev", "nsgoautomation"}, vetArgs(jobs, ".", "./internal/dev", "./nsgotest", "./internal/platform/android")...); err != nil {
 			s.fail()
 			return err
 		}
@@ -271,6 +275,9 @@ func moduleRootOf(dir string) string {
 
 // targetSupportsAutomation reports whether checkTargets vets target's live automation build too.
 func targetSupportsAutomation(name string) bool {
+	if strings.HasPrefix(name, "android_") {
+		return true
+	}
 	switch name {
 	case "macos_arm64", "macos_x64", "macos_universal", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator":
 		return true

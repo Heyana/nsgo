@@ -34,16 +34,18 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * The test agent of nsgo test -target android: the test in the app's
- * process asks it for input over the pipe (Protocol.TEST), and it acts on
- * the UI thread as a user would: MotionEvents dispatched to the window as
- * a finger's, drags that rest before they lift, KeyEvents as a keyboard's,
- * and what no key types committed through the focused field's input
+ * The test agent of nsgo test -target android and nsgo dev -target android -automation:
+ * the test or automation agent in the app's process asks it for input over the pipe
+ * (Protocol.TEST), and it acts on the UI thread as a user would: MotionEvents dispatched
+ * to the window as a finger's, drags that rest before they lift, KeyEvents as a
+ * keyboard's, and what no key types committed through the focused field's input
  * connection. It answers each step with Protocol.TEST_REPLY once done.
  */
 final class TestAgent {
     /** The launch intent's extra that names the test: base64 JSON. */
     static final String EXTRA = "nsgo.test";
+    /** The launch intent's boolean extra that starts the test agent for nsgo dev -automation. */
+    static final String AUTOMATION_EXTRA = "nsgo.automation";
 
     /** An alert on screen: its dialog, buttons and list items' actions. */
     static final class Alert {
@@ -99,6 +101,7 @@ final class TestAgent {
     private Activity activity() {
         Context c = view.getContext();
         while (c instanceof ContextWrapper && !(c instanceof Activity)) c = ((ContextWrapper) c).getBaseContext();
+        if (!(c instanceof Activity)) throw new IllegalStateException("no activity shows the app");
         return (Activity) c;
     }
 

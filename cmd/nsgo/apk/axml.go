@@ -34,8 +34,8 @@ type Manifest struct {
 	// Theme replaces the application's theme, a framework style; empty
 	// keeps the runtime's.
 	Theme string
-	// Debuggable marks a test build, whose launch intent may name the test
-	// the runtime runs.
+	// Debuggable marks a test or automation dev build, whose launch intent
+	// may name the test or enable the automation test agent.
 	Debuggable bool
 	// CrashReportBuild enables Java crash reports with this release build number.
 	CrashReportBuild string

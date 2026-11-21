@@ -1,6 +1,9 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
+	"context"
 	"go/parser"
 	"go/token"
 	"os"
@@ -10,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nsgo-dev/nsgo/cmd/nsgo/apk"
 	androidruntime "github.com/nsgo-dev/nsgo/internal/platform/android/runtime"
 )
 
@@ -196,5 +200,195 @@ func TestFileSelectsGeometry(t *testing.T) {
 		if got := fileSelectsGeometry(f, names); got != c.want {
 			t.Errorf("%s: %v, want %v", c.src, got, c.want)
 		}
+	}
+}
+
+// TestAndroidDebuggableBuilds ensures only test binaries and non-release
+// automation dev builds mark the APK debuggable, so release and ordinary builds
+// never instantiate TestAgent.
+func TestAndroidDebuggableBuilds(t *testing.T) {
+	cases := []struct {
+		name string
+		p    project
+		want bool
+	}{
+		{"release build", project{Release: true}, false},
+		{"plain dev build", func() project {
+			var p project
+			p.prepareDev(devOptions{})
+			return p
+		}(), false},
+		{"automation dev build", func() project {
+			var p project
+			p.prepareDev(devOptions{automation: true})
+			return p
+		}(), true},
+		{"release with automation flag", func() project {
+			var p project
+			p.prepareDev(devOptions{automation: true, release: true})
+			return p
+		}(), false},
+		{"test binary", project{testBinary: true}, true},
+	}
+	for _, tc := range cases {
+		if got := androidDebuggable(&tc.p); got != tc.want {
+			t.Errorf("%s: androidDebuggable = %v, want %v", tc.name, got, tc.want)
+		}
+		encoded, err := apk.EncodeManifest(androidruntime.Manifest, apk.Manifest{
+			Package: "dev.oneo.nsgo.test", Label: "Test", VersionName: "1.0.0", VersionCode: 1,
+			Debuggable: androidDebuggable(&tc.p),
+		})
+		if err != nil {
+			t.Fatalf("%s: EncodeManifest: %v", tc.name, err)
+		}
+		// Binary XML string pool encodes attribute names in UTF-16LE.
+		hasDebuggable := bytes.Contains(encoded, []byte{'d', 0, 'e', 0, 'b', 0, 'u', 0, 'g', 0, 'g', 0, 'a', 0, 'b', 0, 'l', 0, 'e', 0})
+		if hasDebuggable != tc.want {
+			t.Errorf("%s: encoded manifest debuggable = %v, want %v", tc.name, hasDebuggable, tc.want)
+		}
+	}
+}
+
+// TestAndroidAutomationStartArgs checks the am start intent extras for
+// automation and engine flags, and verifies the extra name matches TestAgent.java.
+func TestAndroidAutomationStartArgs(t *testing.T) {
+	plain := androidStartArgs("dev.example.app", devOptions{fps: true, lang: "de"})
+	wantPlain := []string{
+		"shell", "am", "start", "-S", "-n", "dev.example.app/dev.oneo.nsgo.NsgoActivity",
+		"--ez", "nsgo-fps", "true", "--es", "nsgo-lang", "de",
+	}
+	if !slices.Equal(plain, wantPlain) {
+		t.Errorf("plain start args = %q, want %q", plain, wantPlain)
+	}
+
+	auto := androidStartArgs("dev.example.app", devOptions{automation: true, fps: true, lang: "de"})
+	wantAuto := append(slices.Clone(wantPlain), "--ez", "nsgo.automation", "true")
+	if !slices.Equal(auto, wantAuto) {
+		t.Errorf("automation start args = %q, want %q", auto, wantAuto)
+	}
+
+	if spec := androidReverseSpec(8085); spec != "tcp:8085" {
+		t.Errorf("androidReverseSpec(8085) = %q, want tcp:8085", spec)
+	}
+
+	javaSrc, err := os.ReadFile(filepath.Join("..", "..", "internal", "platform", "android", "java", "dev", "oneo", "nsgo", "TestAgent.java"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(javaSrc), `AUTOMATION_EXTRA = "`+androidAutomationExtra+`"`) {
+		t.Errorf("cmd/nsgo's androidAutomationExtra %q does not match TestAgent.java", androidAutomationExtra)
+	}
+}
+
+// TestAndroidRuntimeIncludesAutomationExtra verifies classes.dex and
+// classes.jar were rebuilt after adding automation support.
+func TestAndroidRuntimeIncludesAutomationExtra(t *testing.T) {
+	for _, needle := range []string{androidAutomationExtra, "setAutomation"} {
+		if !bytes.Contains(androidruntime.ClassesDex, []byte(needle)) {
+			t.Errorf("classes.dex does not contain %q; rebuild with internal/platform/android/runtime/build.sh", needle)
+		}
+	}
+	zr, err := zip.NewReader(bytes.NewReader(androidruntime.ClassesJar), int64(len(androidruntime.ClassesJar)))
+	if err != nil {
+		t.Fatalf("classes.jar: %v", err)
+	}
+	names := map[string]bool{}
+	for _, f := range zr.File {
+		names[f.Name] = true
+	}
+	for _, want := range []string{"dev/oneo/nsgo/TestAgent.class", "dev/oneo/nsgo/NsgoActivity.class", "dev/oneo/nsgo/NsgoView.class"} {
+		if !names[want] {
+			t.Errorf("classes.jar is missing %s", want)
+		}
+	}
+}
+
+// TestAndroidSessionAutomationOverADB drives androidSession.start and stop with
+// a fake adb executable to verify adb reverse setup/teardown and the
+// nsgo.automation launch intent extra.
+func TestAndroidSessionAutomationOverADB(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX shell stub for adb")
+	}
+	for _, tc := range []struct {
+		name       string
+		automation bool
+		failOn     string
+	}{
+		{"automation enabled", true, ""},
+		{"automation disabled", false, ""},
+		{"install failure cleans up reverse", true, "install"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			binDir := t.TempDir()
+			logFile := filepath.Join(t.TempDir(), "adb.log")
+			adbScript := filepath.Join(binDir, "adb")
+			script := "#!/bin/sh\n" +
+				"if [ \"$1\" = \"devices\" ]; then\n" +
+				"  printf 'List of devices attached\\nEMU123\\tdevice\\n'\n" +
+				"  exit 0\n" +
+				"fi\n" +
+				"printf '%s\\n' \"$*\" >> '" + logFile + "'\n" +
+				"if [ \"$3\" = \"logcat\" ]; then\n" +
+				"  exec sleep 30\n" +
+				"fi\n"
+			if tc.failOn != "" {
+				script += "if [ \"$3\" = \"" + tc.failOn + "\" ]; then\n  echo 'simulated failure' >&2\n  exit 1\nfi\n"
+			}
+			script += "exit 0\n"
+			if err := os.WriteFile(adbScript, []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("ANDROID_SERIAL", "")
+
+			dir := t.TempDir()
+			p := &project{Dir: dir, Name: "Demo", ID: "dev.example.demo"}
+			opts := devOptions{
+				automation: tc.automation,
+				fps:        true,
+				server:     &devServer{port: 9123, token: "tok"},
+			}
+			s := androidSession(opts)
+			running, err := s.start(context.Background(), p)
+			if tc.failOn != "" {
+				if err == nil {
+					running.stop()
+					t.Fatal("expected start to fail")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("start failed: %v", err)
+				}
+				running.stop()
+			}
+			raw, err := os.ReadFile(logFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+			wantReverse := "-s EMU123 reverse tcp:9123 tcp:9123"
+			wantRemove := "-s EMU123 reverse --remove tcp:9123"
+			if !slices.Contains(lines, wantReverse) {
+				t.Errorf("missing %q in adb calls:\n%s", wantReverse, raw)
+			}
+			if !slices.Contains(lines, wantRemove) {
+				t.Errorf("missing %q in adb calls:\n%s", wantRemove, raw)
+			}
+			if tc.failOn != "" {
+				return
+			}
+			wantStart := "-s EMU123 shell am start -S -n dev.example.demo/dev.oneo.nsgo.NsgoActivity --ez nsgo-fps true"
+			if tc.automation {
+				wantStart += " --ez nsgo.automation true"
+			}
+			if !slices.Contains(lines, wantStart) {
+				t.Errorf("missing %q in adb calls:\n%s", wantStart, raw)
+			}
+			wantStop := "-s EMU123 shell am force-stop dev.example.demo"
+			if !slices.Contains(lines, wantStop) {
+				t.Errorf("missing %q in adb calls:\n%s", wantStop, raw)
+			}
+		})
 	}
 }

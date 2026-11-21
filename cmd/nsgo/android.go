@@ -28,6 +28,10 @@ import (
 // androidComponent is the activity the runtime starts for an app.
 const androidComponent = "/dev.oneo.nsgo.NsgoActivity"
 
+// androidAutomationExtra is the boolean launch intent extra that tells
+// NsgoActivity to create TestAgent in a debuggable build (TestAgent.java).
+const androidAutomationExtra = "nsgo.automation"
+
 // androidAPI is the manifest's minSdkVersion, so the NDK's clang targets
 // the same API as the runtime.
 const androidAPI = 28
@@ -180,7 +184,7 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, ext string,
 		Icon:              icon,
 		Adaptive:          adaptive,
 		Theme:             androidThemes[p.Appearance],
-		Debuggable:        p.testBinary,
+		Debuggable:        androidDebuggable(p),
 		CrashReportBuild:  crashReportBuild(p),
 		Permissions:       p.androidPermissions(),
 		TargetSDK:         p.Android.TargetSDK,
@@ -393,6 +397,15 @@ func parseKey(data []byte) (*apk.Key, error) {
 	return key, nil
 }
 
+// androidDebuggable reports whether the Android package for p sets
+// android:debuggable="true": test builds (nsgo test -target android) and
+// automation dev builds (nsgo dev -target android -automation) need it so the
+// runtime accepts their launch extras and starts TestAgent; release builds
+// never do.
+func androidDebuggable(p *project) bool {
+	return p.testBinary || (p.Dev.Automation && !p.Release)
+}
+
 // androidExtras passes the engine's flags as an intent's extras, which
 // the activity gives the app as flags again: --nsgo-fps as --ez nsgo-fps
 // true, --nsgo-lang=de as --es nsgo-lang de.
@@ -407,6 +420,21 @@ func androidExtras(flags []string) []string {
 		}
 	}
 	return extras
+}
+
+// androidStartArgs returns the adb arguments that launch id's activity with
+// opts' engine flags and, under -automation, the automation extra.
+func androidStartArgs(id string, opts devOptions) []string {
+	args := append([]string{"shell", "am", "start", "-S", "-n", id + androidComponent}, androidExtras(opts.appFlags())...)
+	if opts.automation {
+		args = append(args, "--ez", androidAutomationExtra, "true")
+	}
+	return args
+}
+
+// androidReverseSpec is the adb reverse socket spec for a local TCP port.
+func androidReverseSpec(port int) string {
+	return fmt.Sprintf("tcp:%d", port)
 }
 
 // androidSession installs the app on the connected device each build and
@@ -439,7 +467,7 @@ func androidSession(opts devOptions) session {
 				return app{}, err
 			}
 			addr := opts.server.addr
-			port := fmt.Sprintf("tcp:%d", addr.Port)
+			port := androidReverseSpec(addr.Port)
 			destination := port
 			if !addr.IP.IsUnspecified() {
 				// A port alone makes the ADB server dial localhost.
@@ -448,28 +476,33 @@ func androidSession(opts devOptions) session {
 			if err := d.run(ctx, "reverse", port, destination); err != nil {
 				return app{}, err
 			}
+			removeReverse := func() {
+				// Only this run's rule: another app's dev server may use
+				// another port.
+				d.run(context.Background(), "reverse", "--remove", port)
+			}
 			path := filepath.Join(p.cache("dev", "android"), p.Name+".apk")
 			event("install on %s", d.serial)
 			if err := d.run(ctx, "install", "-r", path); err != nil {
+				removeReverse()
 				return app{}, err
 			}
 			// Start the log before the app, so its first lines arrive.
 			stopLog, _, err := startProcess(d.adb, "-s", d.serial, "logcat", "-s", "nsgo:I", "AndroidRuntime:E")
 			if err != nil {
+				removeReverse()
 				return app{}, err
 			}
-			start := append([]string{"shell", "am", "start", "-S", "-n", p.ID + androidComponent}, androidExtras(opts.appFlags())...)
-			if err := d.run(ctx, start...); err != nil {
+			if err := d.run(ctx, androidStartArgs(p.ID, opts)...); err != nil {
 				stopLog()
+				removeReverse()
 				return app{}, err
 			}
 			return app{
 				stop: func() {
 					stopLog()
 					d.run(context.Background(), "shell", "am", "force-stop", p.ID)
-					// Only this run's rule: another app's dev server may use
-					// another port.
-					d.run(context.Background(), "reverse", "--remove", port)
+					removeReverse()
 				},
 				wait: func(ctx context.Context) error {
 					defer stopLog()

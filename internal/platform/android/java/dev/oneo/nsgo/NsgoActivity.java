@@ -69,6 +69,7 @@ public class NsgoActivity extends Activity {
             if (!share) {
                 view.setFlags(intent.getExtras());
                 view.setTest(intent.getStringExtra(TestAgent.EXTRA));
+                view.setAutomation(intent.getBooleanExtra(TestAgent.AUTOMATION_EXTRA, false));
             }
         }
         setContentView(view);

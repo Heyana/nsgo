@@ -354,8 +354,12 @@ func TestDevAutomationRefusesWhatItCannotDrive(t *testing.T) {
 	if err := dev(context.Background(), p, devOptions{automation: true, release: true}); err == nil || !strings.Contains(err.Error(), "-release") {
 		t.Errorf("-automation -release: %v", err)
 	}
+	p.Dev.Target = "android"
+	if err := dev(context.Background(), p, devOptions{automation: true, release: true}); err == nil || !strings.Contains(err.Error(), "-release") {
+		t.Errorf("-target android -automation -release: %v", err)
+	}
 	p.Dev.Target = "web"
-	if err := dev(context.Background(), p, devOptions{automation: true}); err == nil || !strings.Contains(err.Error(), "Apple devices and simulators so far") {
+	if err := dev(context.Background(), p, devOptions{automation: true}); err == nil || !strings.Contains(err.Error(), "macOS, Android and Apple devices and simulators so far") {
 		t.Errorf("-automation -target web: %v", err)
 	}
 	for _, target := range []string{"native", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator"} {
@@ -371,7 +375,15 @@ func TestDevAutomationRefusesWhatItCannotDrive(t *testing.T) {
 			}
 		}
 	}
-	for _, target := range []string{"web", "android", "miniprogram_wechat"} {
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		if err := automationTargetError("android", goos, false); err != nil {
+			t.Errorf("%s android: %v", goos, err)
+		}
+		if err := automationTargetError("android", goos, true); err == nil || !strings.Contains(err.Error(), "-release") {
+			t.Errorf("%s android -release: %v", goos, err)
+		}
+	}
+	for _, target := range []string{"web", "miniprogram_wechat"} {
 		if err := automationTargetError(target, "darwin", false); err == nil {
 			t.Errorf("darwin %s unexpectedly allowed", target)
 		}
@@ -650,5 +662,27 @@ exit 0
 				}
 			}
 		})
+	}
+}
+
+func TestAutomationSupportedTargets(t *testing.T) {
+	cases := []struct {
+		target, hostOS string
+		want           bool
+	}{
+		{"native", "darwin", true},
+		{"native", "linux", false},
+		{"native", "windows", false},
+		{"android", "darwin", true},
+		{"android", "linux", true},
+		{"android", "windows", true},
+		{"web", "darwin", false},
+		{"ios_simulator", "darwin", true},
+		{"miniprogram_wechat", "darwin", false},
+	}
+	for _, tc := range cases {
+		if got := automationSupported(tc.target, tc.hostOS); got != tc.want {
+			t.Errorf("automationSupported(%q, %q) = %v, want %v", tc.target, tc.hostOS, got, tc.want)
+		}
 	}
 }

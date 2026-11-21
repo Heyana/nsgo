@@ -239,6 +239,8 @@ type Options struct {
 func Run(app engine.App, opts Options) {
 	updateConfig = opts.Updates
 	s := connect(opts)
+	setLiveSurface(s)
+	defer clearLiveSurface(s)
 	s.serve(app, opts, nil)
 }
 

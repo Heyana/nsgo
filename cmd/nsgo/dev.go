@@ -71,6 +71,11 @@ type devOptions struct {
 	preview    *previewSession
 }
 
+// automationSupported reports whether nsgo dev -automation drives target on hostOS.
+func automationSupported(target, hostOS string) bool {
+	return automationTargetError(target, hostOS, false) == nil
+}
+
 // dev builds and runs the app, with a dev server its builds connect to: a failed build shows over the app, and Command or Control+R in the app, outside the browser, builds and starts it again unless the app binds the key itself, with OnKey or an enabled item of its application menu (internal/dev's Wrap). It exits once the app does. With nsgo.yaml's hot reload it rebuilds and restarts the app whenever a Go file it compiles from, go.mod, nsgo.yaml or a catalog changes, and keeps the running app when a build fails. After each Go build of an app with a tsconfig.json it writes the TSX's types to .nsgo/types, for editors.
 func dev(ctx context.Context, p *project, opts devOptions) error {
 	if opts.debug {
@@ -309,13 +314,16 @@ func automationTargetError(target, goos string, release bool) error {
 	if release {
 		return errors.New("-automation drives dev builds; -release builds what users run")
 	}
+	if target == "android" {
+		return nil
+	}
 	if goos == "darwin" {
 		switch target {
 		case "native", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator":
 			return nil
 		}
 	}
-	return errors.New("-automation drives macOS and Apple devices and simulators so far: run it on a Mac with -target native, ios, tvos, watchos, ios_simulator, tvos_simulator or watchos_simulator (docs/roadmap.md, Automation)")
+	return errors.New("-automation drives macOS, Android and Apple devices and simulators so far: use -target android, or run it on a Mac with -target native, ios, tvos, watchos, ios_simulator, tvos_simulator or watchos_simulator (docs/roadmap.md, Automation)")
 }
 
 // prepareDev sets what dev's builds carry: the dev client, -trace's commits, -highlight's outlines, -layout's audit, -automation's agent and the dev icons; -release strips them as nsgo build does.
