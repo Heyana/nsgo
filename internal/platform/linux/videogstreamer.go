@@ -9,9 +9,7 @@ import (
 	"github.com/ebitengine/purego"
 )
 
-// GstPlay supplies the pipeline for Linux videos that can change rate.
-// The GtkMediaStream keeps the same paintable and GTK control APIs as
-// the fallback GtkMediaFile.
+// videoGST binds GstPlay, which supplies the pipeline for Linux videos that can change rate. Its NsgoMediaStream keeps the same paintable and GTK control APIs as the fallback GtkMediaFile.
 var videoGST struct {
 	streamType                                                    uintptr
 	classInit, paintableInit                                      uintptr
@@ -139,8 +137,7 @@ var bindVideoGST = sync.OnceValue(func() bool {
 	base := streamType()
 	var layout gTypeQuery
 	gTypeQueryFn(base, &layout)
-	// GtkMediaStreamClass has six callbacks and eight reserved slots
-	// following GObjectClass.
+	// GtkMediaStreamClass has six callbacks and eight reserved slots following GObjectClass.
 	if layout.classSize != objectClassSize+14*8 {
 		return false
 	}
@@ -166,8 +163,7 @@ func videoPaintableInit(iface, _ uintptr) {
 	setSlot(iface, 6*8, videoGST.height)
 }
 
-// Players and their paintables are owned by GTK's main thread. The
-// streaming threads can only queue a request to pull the latest frame.
+// Players and their paintables are owned by GTK's main thread. The streaming threads can only queue a request to pull the latest frame.
 var (
 	gstVideos       = map[uintptr]*gstVideo{}
 	gstVideoSamples sync.Map
@@ -221,8 +217,7 @@ func openGSTVideo(w *window, v *view, file uintptr) *gstVideo {
 	videoGST.setObject(pipeline, cstr("video-sink"), p.sink, uintptr(0))
 	p.stream = gObjectNew(videoGST.streamType, nil)
 	gstVideos[p.stream] = p
-	// GtkMediaStream and the play signal adapter both use the GTK
-	// main context. Register before setting the URI or prerolling.
+	// GtkMediaStream and the play signal adapter both use the GTK main context. Register before setting the URI or prerolling.
 	p.adapter = videoGST.newAdapter(p.play)
 	gSignalConnect(p.adapter, "media-info-updated", videoGST.mediaInfo, p.stream)
 	gSignalConnect(p.adapter, "state-changed", videoGST.state, p.stream)
@@ -327,8 +322,7 @@ func videoDrawSample(key uintptr) int32 {
 	return 0
 }
 
-// GstVideoMeta's prefix through the first plane's stride (Linux has
-// 64-bit targets). Buffers without this metadata use RGBA's packed rows.
+// GstVideoMeta's prefix through the first plane's stride (Linux has 64-bit targets). Buffers without this metadata use RGBA's packed rows.
 type gstVideoPlane struct {
 	metaFlags                                uint32
 	metaInfo, buffer                         uintptr
@@ -442,8 +436,7 @@ func videoPrepare(stream, info uintptr, allowLive bool) {
 	seekable := videoGST.seekable(info)
 	if nanos == 0 || nanos == ^uint64(0) {
 		if !allowLive || seekable != 0 {
-			// GstPlay first describes some finite streams before it has
-			// queried their duration. Wait for the actual metadata.
+			// GstPlay first describes some finite streams before it has queried their duration. Wait for the actual metadata.
 			return
 		}
 		nanos = 0

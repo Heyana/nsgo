@@ -22,8 +22,7 @@ type Video struct {
 	// silences the video.
 	Volume     float32
 	VolumeFunc func() float32
-	// Rate is the playback speed; 0 plays at 1. VideoInfo.RateChangeable
-	// tells whether the loaded source supports changing speed.
+	// Rate is the playback speed; 0 plays at 1. VideoInfo.RateChangeable tells whether the loaded source supports changing speed.
 	Rate     float32
 	RateFunc func() float32
 	// Repeat starts the video over when it ends.
@@ -115,8 +114,7 @@ type VideoInfo struct {
 	Duration time.Duration
 	// Size is the picture's natural size in points.
 	Size Size
-	// RateChangeable reports whether the backend can change this source's
-	// playback speed. Linux requires a seekable stream and GstPlay.
+	// RateChangeable reports whether the backend can change this source's playback speed. Linux requires a seekable stream, GstPlay and GStreamer's scaletempo filter.
 	RateChangeable bool
 }
 

@@ -26,8 +26,9 @@ import (
 	alphaclips "github.com/nsgo-dev/nsgo/internal/platform/videoalpha/clips"
 )
 
-// videoRateClip contains a picture and a 440 Hz tone. Regenerate with
-// ffmpeg -f lavfi -i testsrc2=size=32x24:rate=12:duration=8 -f lavfi -i sine=frequency=440:sample_rate=24000:duration=8 -c:v libvpx -crf 40 -b:v 0 -c:a libopus -b:a 12k -vbr off testdata/video-rate.webm
+// videoRateClip contains a picture and a 440 Hz tone. Regenerate with:
+//
+//	ffmpeg -f lavfi -i testsrc2=size=32x24:rate=12:duration=8 -f lavfi -i sine=frequency=440:sample_rate=24000:duration=8 -c:v libvpx -crf 40 -b:v 0 -c:a libopus -b:a 12k -vbr off testdata/video-rate.webm
 //
 //go:embed testdata/video-rate.webm
 var videoRateClip []byte

@@ -14,9 +14,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/videoalpha"
 )
 
-// video hosts a GtkMediaStream in a GtkPicture or, with Controls, a
-// GtkVideo. It uses the backend's GstPlay stream when available and
-// falls back to GTK's GtkMediaFile.
+// video is a video view's player: a GtkMediaStream shown by a GtkPicture, or by a GtkVideo with GTK's playback controls when Controls is set, hosted as web views are. The stream is the backend's own NsgoMediaStream over GstPlay when GstPlay and scaletempo load, which applies Rate at the current position for seekable sources; otherwise it is GTK's GtkMediaFile, which plays at 1× (warned once) and reports RateChangeable false. A looping stream starts over without ending, so EventEnd comes only for videos that do not repeat. A stream GStreamer cannot play reports EventError, with a hint when a plug-in is missing, and never EventLoad. A file that declares alpha keeps it, as GTK composites the picture over what is behind it, where GStreamer decodes it (VP8 and VP9 with alpha, with the codecalpha plug-in), and reports EventError where it cannot rather than show the picture opaque.
 type video struct {
 	hosted
 	stream uintptr // GtkMediaStream, 0 without a source
