@@ -336,3 +336,42 @@ func TestReadEnvironmentSetsCanRequestReview(t *testing.T) {
 		}
 	}
 }
+
+// TestReadEnvironmentMapsPowerState: NsgoView writes PowerManager's thermal status plus one, 0 before API 29, and the power-save mode as 0 unknown, 1 off or 2 on.
+func TestReadEnvironmentMapsPowerState(t *testing.T) {
+	for _, c := range []struct {
+		thermal, saver byte
+		state          driver.ThermalState
+		mode           driver.LowPowerMode
+	}{
+		{0, 0, driver.ThermalUnknown, driver.LowPowerUnknown},
+		{1, 1, driver.ThermalNominal, driver.LowPowerOff},
+		{2, 2, driver.ThermalFair, driver.LowPowerOn},
+		{3, 1, driver.ThermalFair, driver.LowPowerOff},
+		{4, 1, driver.ThermalSerious, driver.LowPowerOff},
+		{5, 1, driver.ThermalCritical, driver.LowPowerOff},
+		{7, 1, driver.ThermalCritical, driver.LowPowerOff},
+		{8, 3, driver.ThermalUnknown, driver.LowPowerUnknown},
+	} {
+		var w writer
+		for range 7 {
+			w.float(1)
+		}
+		w.byte(0) // flags
+		w.byte(0) // capabilities
+		w.byte(byte(driver.IdiomPhone))
+		w.str("en-US")
+		w.str("Pixel")
+		w.str("Google Pixel 9")
+		w.float(56) // HeaderHeight
+		w.float(96) // LargeHeaderHeight
+		w.u32(35)   // API level
+		w.byte(c.thermal)
+		w.byte(c.saver)
+
+		env := readEnvironment(&reader{w.buf})
+		if env.ThermalState != c.state || env.LowPowerMode != c.mode {
+			t.Errorf("readEnvironment with power bytes %d, %d = %v, %v; want %v, %v", c.thermal, c.saver, env.ThermalState, env.LowPowerMode, c.state, c.mode)
+		}
+	}
+}

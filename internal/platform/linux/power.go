@@ -20,9 +20,7 @@ var (
 	}
 )
 
-// GDBusProxy follows both names used by power-profiles-daemon on the
-// system bus. It caches ActiveProfile and drops it if the service goes
-// away. Creation and notification callbacks run on GTK's thread.
+// GDBusProxy follows both names used by power-profiles-daemon on the system bus. It caches ActiveProfile and drops it if the service goes away. Creation and notification callbacks run on GTK's thread.
 var followPowerProfiles = sync.OnceFunc(func() {
 	bindInputSources()
 	purego.RegisterLibFunc(&gDBusProxyNewForBus, gioLib, "g_dbus_proxy_new_for_bus")

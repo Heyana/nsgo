@@ -896,14 +896,13 @@ func (t *Tree) SetEnvironment(env Environment) {
 	if e.safe.GetUntracked() != safe || e.headers != headers {
 		t.markLayout(t.view)
 	}
-	// Images pick their scales, screens their headers from the rest of it, which resolving and emitting read.
+	// Images pick their scales, screens their headers from the rest of it, which resolving and emitting read; the window's frame, maximized state, lifecycle, title bar, thermal state and low-power mode reach only what reads their signals.
 	if environmentNeedsFullRound(previous, env) {
 		t.markAll()
 	}
 }
 
-// environmentNeedsFullRound reports whether env changes in a field the
-// tree reads directly. The remaining fields reach readers through Env signals.
+// environmentNeedsFullRound reports whether env changes from previous in a field that resolving or emitting the tree reads directly: any but WindowFrame, Maximized, Lifecycle, TitleBar, ThermalState and LowPowerMode, which only their Env signals carry (#178).
 func environmentNeedsFullRound(previous, env Environment) bool {
 	previous.WindowFrame = env.WindowFrame
 	previous.Maximized = env.Maximized

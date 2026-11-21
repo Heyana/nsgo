@@ -28,8 +28,7 @@ func ProcessPower() (driver.ThermalState, driver.LowPowerMode) {
 	return thermal, low
 }
 
-// ObserveProcessPower calls changed on the main thread whenever Foundation
-// reports a power constraint changed, until the returned function stops it.
+// ObserveProcessPower calls changed on the main thread whenever Foundation reports a power constraint changed, until the returned function stops it.
 func ObserveProcessPower(changed func()) func() {
 	// Foundation starts reporting thermal changes after reading thermalState.
 	ProcessPower()

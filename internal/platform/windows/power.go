@@ -40,8 +40,7 @@ func lowPowerMode() driver.LowPowerMode {
 	return driver.LowPowerUnknown
 }
 
-// The engine's owning window receives battery-saver changes for its
-// surfaces, including embedded surfaces with their own engine.
+// The engine's owning window receives battery-saver changes for its surfaces, including embedded surfaces with their own engine.
 func (w *window) watchPower() {
 	const deviceNotifyWindowHandle = 0
 	w.powerNotification, _, _ = registerPowerSettingNotification.Call(w.hwnd,
