@@ -105,7 +105,7 @@ android:
   classes: [java/BadgeView.jar, java/Helpers.dex]
 ```
 
-Paths are relative to `nsgo.yaml` unless absolute. Each path names a `.dex` file or a JAR containing D8's root `classes.dex`, `classes2.dex` and later shards. Prepare those files with D8 using `--min-api 28`. On arm64, NSGo builds the APK or App Bundle from these precompiled files with Go alone. For an embedded AAR, the host's Android build supplies its Java dependencies. [D8 documentation](https://developer.android.com/tools/d8)
+Paths are relative to `nsgo.yaml` unless absolute. Each path names a `.dex` file or a JAR containing D8's root `classes.dex`, `classes2.dex` and later shards. Prepare those files with D8 using `--min-api 28`. On arm64, NSGo builds the APK or App Bundle from these precompiled files with Go alone. Android development sessions rebuild when a listed file changes. For an embedded AAR, the host's Android build supplies its Java dependencies. [D8 documentation](https://developer.android.com/tools/d8)
 
 The [Android native example](https://github.com/nsgo-dev/nsgo/tree/main/examples/android-native) registers a class with a public `Context` constructor and configures it with a Go prop.
 

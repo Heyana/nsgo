@@ -124,6 +124,11 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		}
 		stage(ctx, "finding sources")
 		dirs := sourceDirs(p.Dir, pkgs)
+		if p.Dev.Target == "android" {
+			for _, path := range p.Android.Classes {
+				dirs = append(dirs, p.resolve(path))
+			}
+		}
 		if p.Web.Host != "" {
 			dirs = append(dirs, p.resolve(p.Web.Host))
 		}

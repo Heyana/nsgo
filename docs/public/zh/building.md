@@ -105,7 +105,7 @@ android:
   classes: [java/BadgeView.jar, java/Helpers.dex]
 ```
 
-相对路径以 `nsgo.yaml` 所在目录为基准。每个路径指向一个 `.dex` 文件，或一个包含 D8 输出的 JAR，其中 `classes.dex`、`classes2.dex` 等文件位于归档根目录。准备这些文件时，给 D8 传入 `--min-api 28`。有了预编译文件，NSGo 在 arm64 目标上只用 Go 就能构建 APK 或 Android App Bundle。嵌入式 AAR 所用的 Java 依赖由宿主的 Android 构建提供。[D8 文档](https://developer.android.com/tools/d8)
+相对路径以 `nsgo.yaml` 所在目录为基准。每个路径指向一个 `.dex` 文件，或一个包含 D8 输出的 JAR，其中 `classes.dex`、`classes2.dex` 等文件位于归档根目录。准备这些文件时，给 D8 传入 `--min-api 28`。有了预编译文件，NSGo 在 arm64 目标上只用 Go 就能构建 APK 或 Android App Bundle。Android 开发会话会在所列文件发生变化时重新构建。嵌入式 AAR 所用的 Java 依赖由宿主的 Android 构建提供。[D8 文档](https://developer.android.com/tools/d8)
 
 [Android 原生示例](https://github.com/nsgo-dev/nsgo/tree/main/examples/android-native) 注册了一个带公开 `Context` 构造函数的类，并通过 Go 属性配置它。
 
