@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"os"
@@ -15,13 +16,12 @@ import (
 // with a TSX entry importing Go of its own (NSH's ts, rust and mixed).
 var templates = []string{"go", "tsx", "mixed"}
 
+type initData struct{ Name, ID, Module, Slug string }
+
 // initApp writes a new app of template kind into dir: nsgo.yaml, a main
 // package and tests; a TSX app's entry, its tests, tsconfig.json and
 // .gitignore.
-func initApp(dir, name, module, kind string) error {
-	if !slices.Contains(templates, kind) {
-		return fmt.Errorf("init: no template %q; use %s", kind, strings.Join(templates, ", "))
-	}
+func initApp(ctx context.Context, dir, name, module, kind string) error {
 	if name == "" {
 		var err error
 		if name, err = dirAppName(dir); err != nil {
@@ -31,15 +31,18 @@ func initApp(dir, name, module, kind string) error {
 	if !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9 _-]*$`).MatchString(name) {
 		return fmt.Errorf("init: %q is not an app name; use letters, digits, spaces, - and _", name)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	if _, err := os.Stat(filepath.Join(dir, "nsgo.yaml")); err == nil {
 		return fmt.Errorf("init: %s already has an nsgo.yaml", rel(dir))
 	}
 	id := "dev.nsgo." + strings.ToLower(regexp.MustCompile(`[^A-Za-z0-9]+`).ReplaceAllString(name, ""))
 	slug := strings.Trim(strings.ToLower(regexp.MustCompile(`[^A-Za-z0-9]+`).ReplaceAllString(name, "-")), "-")
-	data := struct{ Name, ID, Module, Slug string }{name, id, module, slug}
+	data := initData{name, id, module, slug}
+	if !slices.Contains(templates, kind) {
+		return initModuleTemplate(ctx, dir, kind, data)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
 	files := map[string]*template.Template{"nsgo.yaml": initYAML, "app.go": initApp_, "app_test.go": initTest}
 	if kind != "go" {
 		files = map[string]*template.Template{"nsgo.yaml": initYAML, "main.go": initTSXMain, "App.tsx": initTSX,

@@ -45,6 +45,8 @@ A web release's bundles are split ([TSX](tsx.md#split-bundles)): `buildWeb` writ
 
 `nsgo init` (`init.go`) writes an app of `-template` `go` (the default), `tsx` or `mixed`, NSH's `ts` and `mixed` templates: `nsgo.yaml` and tests each, and for TSX a main package embedding the sources, `App.tsx`, `app.test.tsx`, `tsconfig.json` and `.gitignore`; `mixed`'s `App.tsx` imports a Go component, function and class `native.go` registers under `<slug>/native`. It refuses a directory holding any of its files. `TestInitTemplates` writes each and runs its tests against the checkout.
 
+`-template <module>[@version]` adds a template from a Go module's `template/` directory. `init_module.go` runs `go mod download` outside the caller's workspace, preserving Go's cache, proxy and checksum settings and disabling direct repository downloads. It renders `main.go`, `nsgo.yaml` and `*.tmpl` with the built-in templates' fields, then copies the other files as-is. It checks output paths before writing and removes files it creates if a write fails. NSH has no module templates.
+
 ## Catalogs
 
 `i18n.go`, `i18n_message.go`, `i18n_gen.go` and `i18n_build.go` check packages' catalogs and write their Go code ([languages](languages.md#the-tool)): `dev`, `build` and `test` before they compile, `check` without writing, and `nsgo i18n` for one directory. `dev` watches the YAML files of the directories it watches, and the app's catalogs before it imports them.

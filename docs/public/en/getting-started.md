@@ -36,6 +36,18 @@ go tool nsgo init
 
 `go tool nsgo init -template tsx` writes a TSX app instead, and `-template mixed` a Go app whose TSX entry uses Go components of its own.
 
+### Templates from Go modules
+
+Pass the template's module path with an optional version. An omitted version resolves to the latest version Go's module proxy can find.
+
+```sh
+go tool nsgo init -template example.com/my-template@v1.2.0 -module example.com/hello hello
+```
+
+Publish the starter inside the module's `template/` directory. Include `nsgo.yaml` and `main.go`. The tool renders both, plus any file ending in `.tmpl`, with Go's `text/template`, and strips `.tmpl` from output names. It copies other files, including binary assets, unchanged.
+
+Templates receive `.Name` (the app's display name), `.ID` (the generated app ID), `.Slug` (the lower-case, hyphenated name) and `.Module` (the value of `-module`, or the slug). Ship a `go.mod.tmpl` to declare the generated app's module and dependencies, since Go excludes nested `go.mod` files from module downloads. Without one, `-module` writes the same minimal `go.mod` as it does for a built-in template.
+
 ## Run it
 
 ```sh

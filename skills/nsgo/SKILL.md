@@ -28,6 +28,8 @@ go tool nsgo dev           # hot reload; -target web, ios_simulator, android, tv
 go tool nsgo doctor        # which targets this machine builds and runs, and what it lacks
 ```
 
+Use `-template <module>[@version]` to scaffold from a module's published [template directory](https://nsgo.dev/docs/getting-started.md#templates-from-go-modules).
+
 Go 1.27.3 or later builds every target from a Mac, with Xcode for Apple's; nothing else (no NDK, Android SDK, JDK or GTK) is needed to build. Never hand-write C or add cgo to reach a platform: use NSGo's services first, then purego or `syscall`.
 
 ## Writing an app

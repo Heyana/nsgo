@@ -20,10 +20,10 @@ func TestInitTemplates(t *testing.T) {
 	for _, kind := range templates {
 		t.Run(kind, func(t *testing.T) {
 			dir := filepath.Join(t.TempDir(), "app")
-			if err := initApp(dir, "My App", "example.com/myapp", kind); err != nil {
+			if err := initApp(t.Context(), dir, "My App", "example.com/myapp", kind); err != nil {
 				t.Fatal(err)
 			}
-			if err := initApp(dir, "My App", "", kind); err == nil {
+			if err := initApp(t.Context(), dir, "My App", "", kind); err == nil {
 				t.Error("init wrote over the app")
 			}
 			run := func(args ...string) {

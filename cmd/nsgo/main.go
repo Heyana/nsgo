@@ -1,6 +1,6 @@
 // Command nsgo develops and builds NSGo apps.
 //
-//	nsgo init  [-template go|tsx|mixed] [-name N] [-module M] [dir]
+//	nsgo init  [-template go|tsx|mixed|module[@version]] [-name N] [-module M] [dir]
 //	                                                      write a new app
 //	nsgo dev   [-target T] [-hot-reload=false] [-trace] [-automation] [-limits[=L]] [flags] [dir]
 //	                                                      run the app and rebuild it on changes
@@ -78,7 +78,7 @@ func main() {
 		fs := flag.NewFlagSet("init", flag.ExitOnError)
 		name := fs.String("name", "", "the app's name (default: the directory's)")
 		module := fs.String("module", "", "write a go.mod for this module path")
-		kind := fs.String("template", "go", "the app to write: go, tsx (a TSX app) or mixed (a Go app with a TSX entry)")
+		kind := fs.String("template", "go", "the app to write: go, tsx, mixed, or a module path with an optional @version")
 		if err = parseCommand(fs, args, 1); err != nil {
 			break
 		}
@@ -86,7 +86,7 @@ func main() {
 		if dir == "" {
 			dir = "."
 		}
-		err = initApp(dir, *name, *module, *kind)
+		err = initApp(ctx, dir, *name, *module, *kind)
 	case "build":
 		fs := flag.NewFlagSet("build", flag.ExitOnError)
 		f := bindBuildFlags(fs)
@@ -238,7 +238,7 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
-  nsgo init  [-template go|tsx|mixed] [-name N] [-module M] [dir]
+  nsgo init  [-template go|tsx|mixed|module[@version]] [-name N] [-module M] [dir]
   nsgo dev   [-target native|web|ios|ios_simulator|tvos|tvos_simulator|android] [-hot-reload=false] [-release] [-trace] [-automation] [-fps] [-lang L] [-device D] [-port N] [-open=false] [dir]
   nsgo mcp   [dev flags] [dir]
   nsgo build [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [-output DIR] [-open] [-fps] [-run [-device D]] [dir]
