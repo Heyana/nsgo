@@ -64,7 +64,7 @@ func checkHost(ctx context.Context, p *project, jobs int) error {
 		return err
 	}
 	s.done("vetted", "")
-	// The dev client builds only into nsgo dev's builds, which take the nsgodev tag, and on macOS and Android -automation's agent with nsgoautomation too, so NSGo's own repository vets them as they build them.
+	// The dev client builds only into nsgo dev's builds, which take the nsgodev tag, and on macOS, Windows and Android -automation's agent with nsgoautomation too, so NSGo's own repository vets them as they build them.
 	if path, err := importPathOf(p.Dir); err == nil && path == nsgoModule {
 		s = begin("vetting the dev client")
 		if err := goToolWithTags(ctx, p, nil, []string{"nsgodev"}, vetArgs(jobs, ".", "./internal/dev")...); err != nil {
@@ -76,6 +76,10 @@ func checkHost(ctx context.Context, p *project, jobs int) error {
 			return err
 		}
 		if err := goToolWithTags(ctx, p, []string{"GOOS=android", "GOARCH=arm64", "CGO_ENABLED=0"}, []string{"nsgodev", "nsgoautomation"}, vetArgs(jobs, ".", "./internal/dev", "./nsgotest", "./internal/platform/android")...); err != nil {
+			s.fail()
+			return err
+		}
+		if err := goToolWithTags(ctx, p, []string{"GOOS=windows", "GOARCH=arm64", "CGO_ENABLED=0"}, []string{"nsgodev", "nsgoautomation"}, vetArgs(jobs, ".", "./internal/dev", "./nsgotest", "./internal/platform/windows")...); err != nil {
 			s.fail()
 			return err
 		}
@@ -150,6 +154,12 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 				err = goToolWithTags(ctx, p, env, slices.Concat(targetTags(name), []string{"nsgotest"}), vetArgs(jobs, "./internal/platform/...")...)
 				if err != nil {
 					err = fmt.Errorf("test hosts: %w", err)
+				}
+				if err == nil && (strings.HasPrefix(name, "macos_") || strings.HasPrefix(name, "windows_")) {
+					err = goToolWithTags(ctx, p, env, slices.Concat(targetTags(name), []string{"nsgoautomation"}), vetArgs(jobs, "./internal/platform/...")...)
+					if err != nil {
+						err = fmt.Errorf("automation hosts: %w", err)
+					}
 				}
 			}
 			if err == nil && repository && targetSupportsAutomation(name) {

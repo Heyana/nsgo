@@ -276,6 +276,7 @@ func (w *window) windowCommand(c *driver.WindowCommand) {
 		if w.testID != 0 {
 			delete(w.opts.test.windows, w.testID)
 		}
+		untrackLiveWindow(w.surfaceID, w)
 		w.destroying = true
 		w.visible = false
 		destroyWindow.Call(w.hwnd)

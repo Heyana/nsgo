@@ -19,7 +19,7 @@ import (
 // nsgo mcp: an MCP server on standard input and output, so an agent drives the app nsgo dev -automation runs for the directory: the one its session file names, else one it starts with mcp's flags and stops when the client goes. Each tool is a method of package internal/automation, its input that method's params.
 
 // mcpInstructions is what the server tells clients.
-const mcpInstructions = `Drives the NSGo app of this directory as it runs under nsgo dev -automation, on macOS, Android and Apple devices and simulators (iOS, tvOS and watchOS), as a user does: native pointer, touch, accessibility and key events, the real menus and alerts.
+const mcpInstructions = `Drives the NSGo app of this directory as it runs under nsgo dev -automation, on macOS, Windows, Android and Apple devices and simulators (iOS, tvOS and watchOS), as a user does: native pointer, touch, accessibility and key events, the real menus and alerts.
 
 Start with windows, then snapshot: it outlines what a window shows, an element a line, such as - button "Add" [view:12] id=add focused. Name what to act on with a selector: id:<test ID>, label:<label>, text:<text>, role:<role> <name>, or the [view:N] ref a snapshot printed; a >> b looks inside a, and >> nth=0 keeps the first match. Act with press, type, key, scroll, drag, hover, menu and alert, passing snapshot: true to see the window after the step, and wait for what work on other goroutines shows. A step answers not settled when the app kept changing for 5 seconds.
 
@@ -172,6 +172,7 @@ func (b *sessionBridge) start() error {
 	}
 	cmd := exec.Command(exe, append([]string{"dev", "-automation"}, b.args...)...)
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+	prepareChildProcess(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting nsgo dev -automation: %w", err)
 	}
@@ -195,13 +196,7 @@ func (b *sessionBridge) stop() {
 	if cmd == nil {
 		return
 	}
-	cmd.Process.Signal(os.Interrupt)
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		cmd.Process.Kill()
-		<-done
-	}
+	stopChildProcess(cmd, done)
 }
 
 // session returns the running session, waiting while the nsgo dev the bridge started comes up.

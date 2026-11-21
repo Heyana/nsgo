@@ -414,8 +414,9 @@ type window struct {
 	placing bool
 
 	// What other goroutines hand the main thread.
-	mu    sync.Mutex
-	tasks []func()
+	mu     sync.Mutex
+	tasks  []func()
+	closed chan struct{} // closed in wmDestroy so callers waiting on the window stop immediately
 
 	// The main thread's.
 	views []*view // index is NodeID
@@ -744,6 +745,7 @@ func Run(app engine.App, opts Options) {
 	size := w.point(client.Right, client.Bottom)
 	prepareWinSparkle(opts.Updates, hwnd)
 	w.startEngine(app, opts, driver.Size{Width: size.X, Height: size.Y})
+	defer untrackLiveWindow(0, w)
 	if single != nil {
 		single.setDelivery(func(args launch) { w.post(func() { w.launched(args) }) })
 	}
@@ -896,7 +898,7 @@ func (w *window) composeFor(m driver.WindowMaterial) {
 
 // newWindow returns the state of a window showing an app.
 func newWindow(opts Options) *window {
-	w := &window{title: opts.Title, scale: 1, webs: map[*webView]bool{}, touchWebs: map[uint32]*webView{}, trays: map[uint32]*trayIcon{},
+	w := &window{title: opts.Title, scale: 1, closed: make(chan struct{}), webs: map[*webView]bool{}, touchWebs: map[uint32]*webView{}, trays: map[uint32]*trayIcon{},
 		epoch: time.Now(), components: opts.Components, hosts: map[*component]bool{}, missing: map[string]bool{},
 		drops: map[*view]bool{}}
 	w.animator = driver.NewAnimator(func(ev driver.Event) { w.engine.Dispatch(ev) })
@@ -966,6 +968,9 @@ func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 		}
 	}
 	w.engine = engine.Start(w, app, eopts)
+	if opts.test == nil && !w.embedded {
+		trackLiveWindow(0, w)
+	}
 	w.reportFrameWindow()
 	w.watchPower()
 }
@@ -1084,6 +1089,8 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 		}
 		child.testID = cfg.ID
 		opts.test.windows[cfg.ID] = child
+	} else if !w.embedded && cfg.Kind != driver.SurfaceTrayIcon {
+		trackLiveWindow(cfg.ID, child)
 	}
 	child.engine.Resize(driver.Size{Width: size.X, Height: size.Y}, driver.Geometry{})
 	child.engine.SetEnvironment(child.env)
@@ -2943,6 +2950,14 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.unobserveEmbeddedRoot()
 		w.closeQuickLook()
 		w.cancelColorPicker()
+		untrackLiveWindow(w.surfaceID, w)
+		if w.closed != nil {
+			select {
+			case <-w.closed:
+			default:
+				close(w.closed)
+			}
+		}
 		w.closeCustomCursors()
 		w.stopPower()
 		w.releasePointer(false)

@@ -3,6 +3,7 @@ package main
 
 import (
 	"os"
+	"runtime"
 	"strconv"
 
 	"github.com/nsgo-dev/nsgo"
@@ -13,7 +14,7 @@ import (
 
 func main() { nsgo.Run(App) }
 
-// App sets the menu and the Dock menu, which on macOS the app's own surface holds, and the main window's view.
+// App sets the menu (on macOS on the app's own surface, elsewhere on the main window's menu bar), the Dock/Jump List menu, and the main window's view.
 func App(app *core.Scope) {
 	count := core.NewSignal(app, 0)
 	answer := core.NewSignal(app, "none")
@@ -21,12 +22,18 @@ func App(app *core.Scope) {
 		base.ShowAlertDialog(cx, base.AlertDialog{Title: "Keep going?", Actions: []core.AlertAction{{Label: "Yes"}, {Label: "No", Role: core.AlertCancel}}},
 			func(label string) { answer.Set(label) })
 	}
-	desktop.SetApplicationMenu(app, []desktop.MenuItem{{Label: "Actions", Items: []desktop.MenuItem{
+	menu := []desktop.MenuItem{{Label: "Actions", Items: []desktop.MenuItem{
 		{Label: "Reset", OnSelect: func() { count.Set(0) }},
 		{Label: "Ask", OnSelect: func() { ask(app) }},
-	}}})
+	}}}
+	if runtime.GOOS == "darwin" {
+		desktop.SetApplicationMenu(app, menu)
+	}
 	desktop.SetDockMenu(app, []desktop.MenuItem{{Label: "Add Ten", OnSelect: func() { count.Set(count.Get() + 10) }}})
 	nsgo.SetMainView(app, func(cx *core.Scope) core.Node {
+		if runtime.GOOS != "darwin" {
+			desktop.SetApplicationMenu(cx, menu)
+		}
 		name := core.NewSignal(cx, "")
 		button := func(id, label string, press func()) core.Node {
 			return core.View{Role: core.RoleButton, TestID: id, OnPress: func(core.PressEvent) { press() },

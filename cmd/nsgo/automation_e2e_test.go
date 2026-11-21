@@ -34,12 +34,12 @@ func (l *lockedBuffer) String() string {
 	return l.b.String()
 }
 
-// TestAutomationEndToEnd builds testdata/automation as nsgo dev -automation does, runs it against a hub and drives it with posted events, the real menu bar, Dock menu and alerts. It opens a window and makes it key, so it runs only when asked, on a Mac with a GUI session:
+// TestAutomationEndToEnd builds testdata/automation as nsgo dev -automation does, runs it against a hub and drives it with posted events, the real menu bar, Dock/Jump List menu and alerts. It opens a window, so it runs only when asked, on macOS or Windows with a GUI session:
 //
 //	NSGO_AUTOMATION_E2E=1 go tool nsgo test -run TestAutomationEndToEnd ./cmd/nsgo
 func TestAutomationEndToEnd(t *testing.T) {
-	if runtime.GOOS != "darwin" || os.Getenv("NSGO_AUTOMATION_E2E") == "" {
-		t.Skip("set NSGO_AUTOMATION_E2E=1 on a Mac with a GUI session: the test opens a window and makes it key")
+	if (runtime.GOOS != "darwin" && runtime.GOOS != "windows") || os.Getenv("NSGO_AUTOMATION_E2E") == "" {
+		t.Skip("set NSGO_AUTOMATION_E2E=1 on macOS or Windows with a GUI session: the test opens a window")
 	}
 	ctx := context.Background()
 	p, err := load(filepath.Join("..", "..", "testdata", "automation"))
@@ -47,13 +47,24 @@ func TestAutomationEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.prepareDev(devOptions{automation: true})
-	bundle, err := buildMacApp(ctx, p, t.TempDir(), runtime.GOARCH)
-	if err != nil {
-		t.Fatal(err)
+	var bin string
+	switch runtime.GOOS {
+	case "darwin":
+		bundle, err := buildMacApp(ctx, p, t.TempDir(), runtime.GOARCH)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bin = filepath.Join(bundle, "Contents", "MacOS", p.Name)
+	case "windows":
+		dir := t.TempDir()
+		if err := buildWindows(ctx, p, dir, runtime.GOARCH); err != nil {
+			t.Fatal(err)
+		}
+		bin = filepath.Join(dir, p.Name+".exe")
 	}
 	h := startHub(t)
 	var out lockedBuffer
-	cmd := exec.Command(filepath.Join(bundle, "Contents", "MacOS", p.Name))
+	cmd := exec.Command(bin)
 	cmd.Env = append(os.Environ(), "NSGO_DEV_SERVER="+h.srv.url(), "NSGO_DEV_TOKEN="+h.srv.token)
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Start(); err != nil {
@@ -123,25 +134,34 @@ func TestAutomationEndToEnd(t *testing.T) {
 	if len(alerts.Alerts) != 1 || alerts.Alerts[0].Window != 0 || alerts.Alerts[0].Title != "Keep going?" {
 		t.Fatalf("the app's alert: %+v", alerts)
 	}
+	dismissed := `text:"Answer: "`
+	if runtime.GOOS == "windows" {
+		// Pressing Escape on a Windows alert chooses its cancel action ("No").
+		dismissed = `text:"Answer: No"`
+	}
 	yes, no, dismiss := 0, 1, -1
 	must(automation.Alert, automation.AlertParams{Answer: &yes}, &alerts)
 	shows(`text:"Answer: Yes"`)
-	// The window's alert is a sheet, which a dismissal ends.
+	// The window's alert is a sheet on macOS and a drawn dialog on Windows, which a dismissal ends.
 	must(automation.Press, automation.PressParams{Selector: "id:ask"}, nil)
 	must(automation.Alert, automation.AlertParams{}, &alerts)
 	if len(alerts.Alerts) != 1 || alerts.Alerts[0].Window != ws.Windows[0].ID {
 		t.Fatalf("the window's alert: %+v", alerts)
 	}
 	must(automation.Alert, automation.AlertParams{Answer: &dismiss}, &alerts)
-	shows(`text:"Answer: "`)
+	shows(dismissed)
 	must(automation.Press, automation.PressParams{Selector: "id:ask"}, nil)
 	must(automation.Alert, automation.AlertParams{Window: &ws.Windows[0].ID, Answer: &no}, &alerts)
 	shows(`text:"Answer: No"`)
-	// The app's own alert runs modal, which a dismissal aborts.
+	// Reset to Yes before dismissing the app's own alert so dismissal is observed as a state change on Windows too.
+	must(automation.Press, automation.PressParams{Selector: "id:ask"}, nil)
+	must(automation.Alert, automation.AlertParams{Window: &ws.Windows[0].ID, Answer: &yes}, &alerts)
+	shows(`text:"Answer: Yes"`)
+	// The app's own alert runs modal on macOS and in the root window on Windows, which a dismissal ends.
 	must(automation.Menu, automation.MenuParams{Path: []string{"Actions", "Ask"}}, nil)
 	own := uint32(0)
 	must(automation.Alert, automation.AlertParams{Window: &own, Answer: &dismiss}, &alerts)
-	shows(`text:"Answer: "`)
+	shows(dismissed)
 	if len(alerts.Alerts) != 0 {
 		t.Fatalf("a dismissed alert still shows: %+v", alerts)
 	}

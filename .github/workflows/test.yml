@@ -575,7 +575,13 @@ jobs:
       - name: Test explicit full screen and restoration
         run: go tool nsgo test -run '^TestExplicitFullScreenRestoresWindowFrame$' ./internal/platform/windows
       - name: Test process and automation sessions
-        run: go tool nsgo test -run '^(TestProcessAlive.*|TestAutomationSessionFile|TestMCPSessionBridge)$' ./cmd/nsgo
+        run: go tool nsgo test -run '^(TestProcessAlive.*|TestAutomationSessionFile|TestMCPSessionBridge|TestCheckDevAutomation|TestDevAutomationRefusesWhatItCannotDrive)$' ./cmd/nsgo
+      - name: Test Windows automation live surfaces
+        run: go tool nsgo test ./internal/platform/windows -- -tags=nsgoautomation -run '^TestLiveSurfaceTracking$'
+      - name: Test Windows automation end to end
+        env:
+          NSGO_AUTOMATION_E2E: '1'
+        run: go tool nsgo test -run '^TestAutomationEndToEnd$' ./cmd/nsgo
       # The runner image has no NSIS. It comes from a pinned installer checked against its SHA-256 and cached by version, so an outage at a package host fails this step instead of the document registration test (#707). The hash is the one SourceForge serves and the one the Chocolatey nsis.install 3.13.0 package records.
       - name: Restore the NSIS installer
         id: nsis-cache

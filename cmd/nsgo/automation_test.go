@@ -359,7 +359,7 @@ func TestDevAutomationRefusesWhatItCannotDrive(t *testing.T) {
 		t.Errorf("-target android -automation -release: %v", err)
 	}
 	p.Dev.Target = "web"
-	if err := dev(context.Background(), p, devOptions{automation: true}); err == nil || !strings.Contains(err.Error(), "macOS, Android and Apple devices and simulators so far") {
+	if err := dev(context.Background(), p, devOptions{automation: true}); err == nil || !strings.Contains(err.Error(), "macOS, Windows, Android and Apple devices and simulators so far") {
 		t.Errorf("-automation -target web: %v", err)
 	}
 	for _, target := range []string{"native", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator"} {
@@ -370,6 +370,12 @@ func TestDevAutomationRefusesWhatItCannotDrive(t *testing.T) {
 			t.Errorf("darwin %s -release: %v", target, err)
 		}
 		for _, goos := range []string{"linux", "windows"} {
+			if goos == "windows" && target == "native" {
+				if err := automationTargetError(target, goos, false); err != nil {
+					t.Errorf("%s %s: %v", goos, target, err)
+				}
+				continue
+			}
 			if err := automationTargetError(target, goos, false); err == nil {
 				t.Errorf("%s %s unexpectedly allowed", goos, target)
 			}
@@ -672,7 +678,7 @@ func TestAutomationSupportedTargets(t *testing.T) {
 	}{
 		{"native", "darwin", true},
 		{"native", "linux", false},
-		{"native", "windows", false},
+		{"native", "windows", true},
 		{"android", "darwin", true},
 		{"android", "linux", true},
 		{"android", "windows", true},
@@ -684,5 +690,49 @@ func TestAutomationSupportedTargets(t *testing.T) {
 		if got := automationSupported(tc.target, tc.hostOS); got != tc.want {
 			t.Errorf("automationSupported(%q, %q) = %v, want %v", tc.target, tc.hostOS, got, tc.want)
 		}
+	}
+}
+
+func TestCheckDevAutomation(t *testing.T) {
+	for _, tc := range []struct {
+		target, goos string
+		release      bool
+		want         string
+	}{
+		{"native", "darwin", false, ""},
+		{"native", "windows", false, ""},
+		{"native", "linux", false, "macOS, Windows, Android and Apple devices and simulators so far"},
+		{"web", "darwin", false, "macOS, Windows, Android and Apple devices and simulators so far"},
+		{"web", "windows", false, "macOS, Windows, Android and Apple devices and simulators so far"},
+		{"native", "darwin", true, "-release"},
+		{"native", "windows", true, "-release"},
+	} {
+		err := checkDevAutomation(tc.target, tc.goos, tc.release)
+		if tc.want == "" {
+			if err != nil {
+				t.Errorf("checkDevAutomation(%q, %q, %v) = %v, want nil", tc.target, tc.goos, tc.release, err)
+			}
+		} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("checkDevAutomation(%q, %q, %v) = %v, want %q", tc.target, tc.goos, tc.release, err, tc.want)
+		}
+	}
+}
+
+func TestWindowsAutomationCrossBuilds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("cross-builds a Windows automation binary")
+	}
+	p, err := load(filepath.Join("..", "..", "testdata", "automation"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.prepareDev(devOptions{automation: true})
+	dir := t.TempDir()
+	if err := buildWindows(context.Background(), p, dir, "arm64"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(dir, p.Name+".exe"))
+	if err != nil || info.Size() == 0 {
+		t.Fatalf("Windows automation binary missing or empty: %v, %v", info, err)
 	}
 }

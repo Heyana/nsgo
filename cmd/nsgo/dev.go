@@ -317,13 +317,21 @@ func automationTargetError(target, goos string, release bool) error {
 	if target == "android" {
 		return nil
 	}
+	if goos == "windows" && target == "native" {
+		return nil
+	}
 	if goos == "darwin" {
 		switch target {
 		case "native", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator":
 			return nil
 		}
 	}
-	return errors.New("-automation drives macOS, Android and Apple devices and simulators so far: use -target android, or run it on a Mac with -target native, ios, tvos, watchos, ios_simulator, tvos_simulator or watchos_simulator (docs/roadmap.md, Automation)")
+	return errors.New("-automation drives macOS, Windows, Android and Apple devices and simulators so far: use -target android, run it on Windows with -target native, or on a Mac with -target native, ios, tvos, watchos, ios_simulator, tvos_simulator or watchos_simulator (docs/roadmap.md, Automation)")
+}
+
+// checkDevAutomation reports why nsgo dev -automation cannot drive target on goos, or nil when it can.
+func checkDevAutomation(target, goos string, release bool) error {
+	return automationTargetError(target, goos, release)
 }
 
 // prepareDev sets what dev's builds carry: the dev client, -trace's commits, -highlight's outlines, -layout's audit, -automation's agent and the dev icons; -release strips them as nsgo build does.

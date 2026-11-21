@@ -275,7 +275,7 @@ type ScreenshotResult struct {
 	Height int    `json:"height"`
 }
 
-// AlertInfo is an alert showing, which a window or an app's own surface (window 0 for the first graph on macOS) shows.
+// AlertInfo is an alert showing, which a window or an app's own surface (window 0 for the first graph) shows.
 type AlertInfo struct {
 	ID      uint32   `json:"id"`
 	Window  uint32   `json:"window"`

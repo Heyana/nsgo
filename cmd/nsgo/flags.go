@@ -202,7 +202,7 @@ func bindDevFlags(fs *flag.FlagSet) *devFlags {
 	fs.BoolVar(&f.highlight, "highlight", false, "outline for a moment each view a commit of the running app changed")
 	fs.BoolVar(&f.devtools, "devtools", false, "open DevTools in the browser: the running app's views, state, profiler and a test recorder")
 	fs.Var(&f.layout, "layout", "show DevTools' layout audit over the running app: alone every view's boxes, or what follows = joined by commas, bounds, grid (8 points) and grid=N, as -layout=bounds,grid=4")
-	fs.BoolVar(&f.auto, "automation", false, "let agents drive the running app over nsgo mcp, on macOS and Apple devices and simulators: windows, snapshots, presses, typing, menus, alerts and screenshots")
+	fs.BoolVar(&f.auto, "automation", false, "let agents drive the running app over nsgo mcp, on macOS, Windows and Apple devices and simulators: windows, snapshots, presses, typing, menus, alerts and screenshots")
 	fs.StringVar(&f.lang, "lang", "", "start the app with --nsgo-lang, in this `locale`, as de or zh-Hant, or a pseudo locale: en-XA accents and lengthens its messages, ar-XB mirrors them")
 	fs.StringVar(&f.team, "team", "", "the Apple developer `team` the iOS target signs with (default: the team Xcode last used)")
 	fs.StringVar(&f.clip, "clip", "", "with -target ios or ios_simulator, run nsgo.yaml's App Clip alone, opened from this `url`, in place of the app")
