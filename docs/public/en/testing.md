@@ -66,6 +66,8 @@ On a real target, `nsgotest.Environment` pins the appearance, locale, text size,
 
 Under `-target` on macOS, Windows, Linux and the web, `app.Select(selector, start, end)` moves the native field's selection with its editing keys, select-all and the arrows, so the next typing, copying or pasting acts on the range the test named; a binding or application-menu item that takes those keys takes them from it. Phone targets do not move the native selection yet: there it moves the test's model alone, and skips the test when the field has `OnSelectionChange`.
 
+Headless Linux and Android tests can check the package paths passed to the installer in `app.Installs`. Set `app.InstallPackage` to return an error from the simulated installer.
+
 `app.Orientation` holds the active `Scope.RequestOrientation` mask. It is zero when the app uses its usual orientation policy.
 
 ## Widgets and Live Activities

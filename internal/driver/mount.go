@@ -245,9 +245,9 @@ const (
 	// ItemShare shows the system's share sheet for Share; the platform
 	// answers with EventFiles carrying Count once it shows.
 	ItemShare
-	// ItemInstallPackage hands the APK Open to Android's package
-	// installer, which asks the user to confirm; the platform answers
-	// with EventFiles carrying Count once the installer starts.
+	// ItemInstallPackage hands Open to the platform's package installer.
+	// EventFiles carrying Count reports when Linux finishes or when
+	// Android opens the system installer for the user to confirm.
 	ItemInstallPackage
 	// ItemCanInstallPackages asks whether the user lets the app install
 	// packages; Android answers with EventFiles carrying Count.

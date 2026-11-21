@@ -228,14 +228,19 @@ type ShareRequest struct {
 	From Bounds
 }
 
-// What a platform that cannot open a file or share answers ItemOpenFile
-// or ItemShare with.
+// Reasons a platform gives when a file service is unavailable.
 const (
 	NoFileOpener   = "this platform opens no files in other apps"
 	NoShareSheet   = "this platform has no share sheet"
 	NoFileRevealer = "this platform has no file manager"
 	NoTrash        = "the volume has no trash"
+	NoInstaller    = "core: update installer is unavailable"
 )
+
+// NoPackageInstaller answers a package install on a platform without one.
+func NoPackageInstaller(id uint32) Event {
+	return Event{Kind: EventFiles, Count: id, Text: NoInstaller}
+}
 
 // ShareStageAge is how long a file Stage made stays before a later stage
 // in the same directory removes it: long enough for the app the user

@@ -438,6 +438,8 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 		// The SDK has no share sheet, so the app hears that rather than
 		// waiting for an answer that never comes.
 		m.s.dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoShareSheet})
+	case driver.ItemInstallPackage:
+		m.s.dispatch(driver.NoPackageInstaller(it.Count))
 	case driver.ItemCheckForUpdates:
 		// The SDK has no updater either: Android's is Play Core's.
 		m.s.dispatch(driver.Event{Kind: driver.EventUpdate, Count: it.Count,

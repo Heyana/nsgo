@@ -81,7 +81,9 @@ func (s *surface) service(it *driver.MountItem) {
 		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoFileRevealer})
 	case driver.ItemShare:
 		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoShareSheet})
-	case driver.ItemSaveFile, driver.ItemInstallPackage, driver.ItemCanInstallPackages, driver.ItemInstallSettings,
+	case driver.ItemInstallPackage:
+		s.engine.Dispatch(driver.NoPackageInstaller(it.Count))
+	case driver.ItemSaveFile, driver.ItemCanInstallPackages, driver.ItemInstallSettings,
 		driver.ItemPickScreenColor:
 		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count})
 	case driver.ItemPopupMenu, driver.ItemTrayMenu:

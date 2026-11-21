@@ -1,7 +1,6 @@
 package core
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,48 +9,49 @@ import (
 )
 
 func TestInstallUpdate(t *testing.T) {
-	var cx *Scope
-	h := newHost(t, Size{Width: 100, Height: 100}, func(c *Scope) Node { cx = c; return View{} })
-	h.commit()
-	pkg := filepath.Join(t.TempDir(), "hello-1.1.apk")
-	if err := os.WriteFile(pkg, []byte("PK"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	was := driver.UpdateInstall
-	t.Cleanup(func() { driver.UpdateInstall = was })
+	for _, tc := range []struct {
+		name    string
+		os      OS
+		file    string
+		reply   driver.Event
+		wantErr string
+	}{
+		{"linux installs", OSLinux, "hello-1.1.deb", driver.Event{Finished: true}, ""},
+		{"linux install fails", OSLinux, "hello-1.1.deb", driver.Event{Text: "exit status 1"}, "exit status 1"},
+		{"android opens installer", OSAndroid, "hello-1.1.apk", driver.Event{Finished: true}, ""},
+		{"android installer does not start", OSAndroid, "hello-1.1.apk", driver.Event{}, "core: update installer did not start"},
+		{"unavailable", OSMacOS, "hello-1.1.pkg", driver.NoPackageInstaller(0), driver.NoInstaller},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var cx *Scope
+			h := newHost(t, Size{Width: 100, Height: 100}, func(c *Scope) Node { cx = c; return View{} })
+			h.tree.SetEnvironment(Environment{OS: tc.os})
+			h.commit()
+			pkg := filepath.Join(t.TempDir(), tc.file)
+			if err := os.WriteFile(pkg, []byte("package"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 
-	// Off Android, the backend's installer, or none.
-	driver.UpdateInstall = nil
-	var err error
-	InstallUpdate(cx, pkg, func(e error) { err = e })
-	if err == nil {
-		t.Error("installed without an installer")
-	}
-	driver.UpdateInstall = func(path string, done func(error)) { done(errors.New("exit status 1")) }
-	InstallUpdate(cx, pkg, func(e error) { err = e })
-	h.drain()
-	if err == nil || err.Error() != "exit status 1" {
-		t.Errorf("the installer's failure answered %v", err)
-	}
-
-	// Android's package installer, which may not start.
-	h.tree.SetEnvironment(Environment{OS: OSAndroid})
-	h.commit()
-	driver.UpdateInstall = func(string, func(error)) { t.Error("Android ran the desktop installer") }
-	err = nil
-	InstallUpdate(cx, pkg, func(e error) { err = e })
-	it := command(h.commit(), driver.ItemInstallPackage)
-	if it == nil || it.Open.Path != pkg {
-		t.Fatalf("install = %+v", it)
-	}
-	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Finished: false})
-	if err == nil {
-		t.Error("an installer that did not start answered no error")
-	}
-	InstallUpdate(cx, pkg, func(e error) { err = e })
-	it = command(h.commit(), driver.ItemInstallPackage)
-	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Finished: true})
-	if err != nil {
-		t.Errorf("a started installer answered %v", err)
+			calls := 0
+			var err error
+			InstallUpdate(cx, pkg, func(e error) { calls++; err = e })
+			it := command(h.commit(), driver.ItemInstallPackage)
+			if it == nil || it.Open.Path != pkg || it.Open.Name != tc.file {
+				t.Fatalf("install request = %+v", it)
+			}
+			if calls != 0 {
+				t.Fatalf("callback ran before the backend answered")
+			}
+			reply := tc.reply
+			reply.Kind, reply.Count = driver.EventFiles, it.Count
+			h.tree.Dispatch(reply)
+			h.tree.Dispatch(reply)
+			if calls != 1 {
+				t.Fatalf("callback ran %d times, want 1", calls)
+			}
+			if tc.wantErr == "" && err != nil || tc.wantErr != "" && (err == nil || err.Error() != tc.wantErr) {
+				t.Errorf("install reply = %v, want %q", err, tc.wantErr)
+			}
+		})
 	}
 }

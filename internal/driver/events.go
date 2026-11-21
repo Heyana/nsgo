@@ -188,8 +188,9 @@ const (
 	// with whether the file was saved (Finished) and, on desktops, the
 	// path it was saved at (a string), ItemOpenFile Count with
 	// whether an app opened the file, ItemShare Count with whether the
-	// share sheet showed, ItemInstallPackage Count with whether the
-	// installer started, ItemCanInstallPackages Count with whether the
+	// share sheet showed, ItemInstallPackage Count with whether Linux
+	// installed the package or Android opened the installer,
+	// ItemCanInstallPackages Count with whether the
 	// app may install packages and ItemInstallSettings Count with whether
 	// the setting opened (all Finished); Text is what failed.
 	EventFiles

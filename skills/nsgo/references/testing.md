@@ -73,6 +73,8 @@ Set the app's picker, camera or save hook to answer a request in an app test. Th
 
 Use `nsgotest.Widgets(true)` and `nsgotest.LiveActivities(true)` to inspect publications with `App.Widgets` and `App.LiveActivities`. Run tests using these process-wide services sequentially. [Testing widgets and Live Activities](https://nsgo.dev/docs/testing.md#widgets-and-live-activities).
 
+In headless Linux and Android tests, read `app.Installs` and set `app.InstallPackage` to simulate an installer error.
+
 ## On a platform
 
 Cleanup closes native context menus left open by an app, including between subtests in one process.

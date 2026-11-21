@@ -152,7 +152,7 @@ A line means "imports". `internal/moduletest/layering_test.go` checks the graph 
 
 ## Why core and backends do not meet
 
-Backends reach `core` only through the engine and `core` imports no backend, so `core` builds and tests without a platform. Three packages join them:
+Backends exchange view and service messages with `core` through the engine, so `core` builds and tests without importing a backend. Three packages join them:
 
 - `internal/driver` is what they exchange: `core` writes a `MountBatch`, and a backend reports `driver.Event`s and implements `TextEngine`.
 - `internal/engine` runs `core` and defines `engine.Platform`, which each backend implements.
@@ -161,6 +161,12 @@ Backends reach `core` only through the engine and `core` imports no backend, so 
 `nsgotest` is a backend of its own: headless, without the engine, applying each batch to a model of the native views. On a platform, it drives a backend's test host through `internal/testhost`, whose `PostToTest` hook `tsx/tsxtest` uses to run its VM's work on the test goroutine.
 
 `microphone` stands apart from the layers, as recording has nothing to do with views: it loads the system's audio libraries through purego, holds iOS's audio session while it records through `internal/audiosession`, which imports nothing of the module and which the backends' videos and speech hold too, reaches Android's runtime, whose foreground service records, through `internal/driver`'s recording channel, which the backend connects outside any surface, as a recording belongs to the process, and elsewhere builds to report that it cannot. It asks for the microphone through `internal/platform/privacy`, which the Apple backends answer `core`'s permission requests, speech and iOS's camera with, so the permission has one implementation; `privacy` imports `internal/driver` and the block bridge `internal/platform/objcblock`. `widget` stands apart too, as widgets are drawn by an extension the tool compiles rather than by the engine: it imports `core`, for its colors, edges and fonts, writes timelines for the extension and loads the tool's library of Swift through purego ([tool](tool.md#widgets)). On Android its Live Activities reach the runtime through `internal/driver`'s Live Updates, a channel outside any surface, which the backend connects, as an activity outlives the app's views.
+
+### Driver hooks
+
+- `Applied` lets the dev trace time a backend applying a batch through `driver.Apply`.
+- `BlobFile` lets the web backend bind a blob URL to a readable file with its metadata.
+- `UpdateDownload` lets `core.DownloadUpdate` use the platform HTTP client without a surface. It verifies and stages the package before installation is requested through the engine.
 
 Portable packages build unchanged for every target, with no purego, `syscall` or `unsafe`: `core`, `base` but for `base/terminal`, `ui`, `i18n`, `mobile`, `audio`, `desktop`, `icons`, `tsx`, `nsgotest`, `internal/automation`, `internal/driver`, `internal/mimeinfo`, `internal/layout`, `internal/testhost`, the shader compilers and `internal/engine`. No package has cgo files or hand-written C.
 

@@ -22,10 +22,9 @@ type Update struct {
 // downloader.
 type UpdateDownloadProgress struct{ Loaded, Total int64 }
 
-// UpdateDownload and UpdateInstall are backend hooks. The core and updater
-// packages use them without importing a platform package.
+// UpdateDownload stages a verified update through the platform's HTTP
+// client. The download runs independently of the app's surfaces.
 var UpdateDownload func(context.Context, Update, string, func(UpdateDownloadProgress)) (string, error)
-var UpdateInstall func(string, func(error))
 
 // AlertConfig is a native alert: a title, a message and its buttons.
 type AlertConfig struct {

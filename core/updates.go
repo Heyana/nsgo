@@ -51,31 +51,16 @@ func DownloadUpdate(ctx context.Context, update UpdateCheck, dir string, progres
 	return path, err
 }
 
-// InstallUpdate hands a verified package to the platform's installer.
+// InstallUpdate is the core's part of updater.Install. It hands a verified
+// package to the platform's installer and reports completion or handoff.
 func InstallUpdate(cx *Scope, path string, done func(error)) {
-	if cx.Env().host() == OSAndroid {
-		cx.InstallPackage(path, func(started bool, err error) {
-			if err == nil && !started {
-				err = errors.New("core: Android installer did not start")
-			}
-			if done != nil {
-				done(err)
-			}
-		})
-		return
-	}
-	if driver.UpdateInstall == nil {
-		if done != nil {
-			done(errors.New("core: update installer is unavailable"))
+	cx.installPackage(SharedFile{Path: path}, func(installed bool, err error) {
+		if err == nil && !installed {
+			err = errors.New("core: update installer did not start")
 		}
-		return
-	}
-	driver.UpdateInstall(path, func(err error) {
-		cx.Post(func() {
-			if done != nil {
-				done(err)
-			}
-		})
+		if done != nil {
+			done(err)
+		}
 	})
 }
 

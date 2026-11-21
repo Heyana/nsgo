@@ -2130,6 +2130,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemTrashFile:
 			s.trashFile(*it.Open, it.Count)
 			continue
+		case driver.ItemInstallPackage:
+			s.engine.Dispatch(driver.NoPackageInstaller(it.Count))
+			continue
 		case driver.ItemShare:
 			s.share(*it.Share, it.Count)
 			continue

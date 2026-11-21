@@ -29,7 +29,7 @@ var (
 var unsupportedItems = map[string]string{
 	"overlays and navigation": `ItemBackPreview ItemHistory`,
 	"platform limits": `ItemPickScreenColor
-		ItemSpeech ItemCanInstallPackages ItemInstallPackage ItemInstallSettings
+		ItemSpeech ItemCanInstallPackages ItemInstallSettings
 		ItemInputSource ItemNative
 		ItemNativeCommand ItemBlockNative ItemShader ItemShaderInput
 		ItemShaderTransition ItemGPU`,

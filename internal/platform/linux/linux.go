@@ -1014,6 +1014,9 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemCheckForUpdates:
 			w.checkForUpdates(it.Count)
 			continue
+		case driver.ItemInstallPackage:
+			w.installPackage(it.Count, it.Open.Path)
+			continue
 		case driver.ItemPickImages:
 			w.pickImages(*it.Pick, it.Count)
 			continue

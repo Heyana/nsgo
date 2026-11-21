@@ -509,6 +509,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemReleaseOffscreen:
 			apple.ReleaseOffscreen(it.OffscreenID)
 			continue
+		case driver.ItemInstallPackage:
+			s.engine.Dispatch(driver.NoPackageInstaller(it.Count))
+			continue
 		case driver.ItemReadClipboard, driver.ItemPickImages, driver.ItemTakePhoto, driver.ItemPickFiles,
 			driver.ItemPickDirectories, driver.ItemOpenFile, driver.ItemRevealFile, driver.ItemTrashFile, driver.ItemShare, driver.ItemSaveFile:
 			s.unsupported(it)

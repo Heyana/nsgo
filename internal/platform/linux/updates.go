@@ -16,7 +16,16 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/updates"
 )
 
-func init() { driver.UpdateInstall = installUpdate }
+func (w *window) installPackage(id uint32, path string) {
+	dispatch := w.engine.Dispatch
+	installUpdate(path, func(err error) {
+		ev := driver.Event{Kind: driver.EventFiles, Count: id, Finished: err == nil}
+		if err != nil {
+			ev.Text = err.Error()
+		}
+		dispatch(ev)
+	})
+}
 
 func installUpdate(path string, done func(error)) {
 	go func() {

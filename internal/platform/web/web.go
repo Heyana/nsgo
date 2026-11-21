@@ -1493,6 +1493,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 		case driver.ItemRevealFile, driver.ItemTrashFile:
 			s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoFileRevealer})
 			continue
+		case driver.ItemInstallPackage:
+			s.engine.Dispatch(driver.NoPackageInstaller(it.Count))
+			continue
 		case driver.ItemShare:
 			s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoShareSheet})
 			continue

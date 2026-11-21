@@ -332,11 +332,13 @@ type App struct {
 	LookUps []LookUp
 	// ReviewRequests counts the in-app store rating prompts the app asked for (core.Scope.RequestReview), where the environment sets CanRequestReview.
 	ReviewRequests int
-	// Installs are the packages the app handed Android's installer,
-	// oldest first; each installer starts. InstallAllowed is what
-	// CanInstallPackages answers, and InstallSettings counts the times the
-	// app opened the setting, which opens.
+	// Installs are the packages handed to Linux's or Android's installer,
+	// oldest first. InstallPackage can return the installation error. With
+	// no function, Linux installs the package and Android opens the
+	// installer. InstallAllowed is what Android's CanInstallPackages
+	// answers. InstallSettings counts the requests to open its setting.
 	Installs        []driver.SharedFile
+	InstallPackage  func(path string) error
 	InstallAllowed  bool
 	InstallSettings int
 	// Notifications are the notifications showing, oldest first, one of an ID replacing the one before; Badge is the count on the app's icon. NotificationPermission is what the platform answers whether the app may show them with, the user not asked at first; a request while not asked makes it NotificationAnswer, the user granting it when that is zero. Only a granted app shows them. PendingNotifications are those scheduled for a later time, where the environment says ScheduledNotifications, each At the next time it shows: Advance and FastForward show them as the clock's wall time reaches it, and a repeated one stays for its next time.

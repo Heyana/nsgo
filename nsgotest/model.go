@@ -870,8 +870,18 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 			a.post(ev)
 		case driver.ItemInstallPackage:
+			if a.env == nil || a.env.Simulated || (a.env.OS != core.OSAndroid && a.env.OS != core.OSLinux) {
+				a.post(driver.NoPackageInstaller(it.Count))
+				break
+			}
 			a.Installs = append(a.Installs, *it.Open)
-			a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Finished: true})
+			ev := driver.Event{Kind: driver.EventFiles, Count: it.Count, Finished: true}
+			if a.InstallPackage != nil {
+				if err := a.InstallPackage(it.Open.Path); err != nil {
+					ev.Finished, ev.Text = false, err.Error()
+				}
+			}
+			a.post(ev)
 		case driver.ItemCanInstallPackages:
 			a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Finished: a.InstallAllowed})
 		case driver.ItemInstallSettings:
