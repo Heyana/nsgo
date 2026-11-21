@@ -72,7 +72,8 @@ public class NsgoActivity extends Activity {
         }
         setContentView(view);
         if (!share) openNotification(intent);
-        if (state == null) openIntent(intent);
+        // A share delivers content, so it reaches a restored activity too; a link only opens a fresh one.
+        if (state == null || share) openIntent(intent);
     }
 
     @Override
