@@ -33,7 +33,9 @@ start := ui.Button{
 
 `mobile.PictureInPicture` 的 `Children` 使用独立布局，默认为 320 × 180 点，在应用中不占空间。其 `Ref` 使用相同的启动和停止方法，`OnState`、`OnRestore`、`OnPlay`、`OnPause` 和 `OnSkip` 接收系统操作。用 `PausedFunc`、`PositionFunc` 绑定这些回调更新的播放状态；`Duration: 0` 表示直播内容。应用挂起时保留最后一帧。
 
-自定义树可显示文字、视图、图片和 Canvas；不会捕获原生视频、WebView、Metal 着色器或背景效果。动图和原生图层过渡显示其模型状态，需要动态内容时使用显式动画值。系统窗口只接收播放、暂停和跳转控制，不接收任意触摸或文字输入。App Store 审核可能拒绝与视频无关的用途。
+在自定义树中放置 `core.Video`，可将其解码画面与应用绘制的字幕或其他叠层合成。使用外层 `Ref` 启动画中画，让视频与会话共用暂停信号，由 `Video.OnProgress` 为 `PositionFunc` 更新进度，并将 `OnSkip` 转发给视频的 `Ref.Seek`。声音仍由视频播放器播放。
+
+自定义树也可显示文字、视图、图片和 Canvas。捕获画面不支持 WebView、Metal 着色器和背景效果。动图和原生图层过渡显示其模型状态。需要动态内容时使用显式动画值。App Store 审核可能拒绝与视频无关的用途。
 
 `Supported: false` 表示平台不可用，与尚未就绪或通过 `Error` 报告失败的受支持会话不同。目前实现目标是 iOS，tvOS、macOS、Android 和网页的画中画仍不可用。启用画中画期间，共享音频会话保持在播放类别，暂停时也一样；视频的 `AudioSession` 为 `AudioSessionMixWithOthers` 时与其他应用的音频混音。
 

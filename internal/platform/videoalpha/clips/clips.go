@@ -1,4 +1,4 @@
-// Package clips holds the tiny video files the backends' tests play, each half a second, written by ffmpeg from a transparent picture with an opaque blue square in its middle half (an overlay of lavfi colors). Only tests import it.
+// Package clips holds the tiny video files the backends' tests play. Only tests import it.
 package clips
 
 import _ "embed"
@@ -20,3 +20,8 @@ var (
 	//go:embed hevc.mov
 	HEVC []byte
 )
+
+// PiP changes from blue to green at one second, using H.264 Baseline.
+//
+//go:embed pip.mov
+var PiP []byte

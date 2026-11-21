@@ -1,4 +1,4 @@
-// Command pip demonstrates video and an independent script tree in iOS
+// Command pip demonstrates native video and a captioned video tree in iOS
 // Picture in Picture. Run with go tool nsgo dev -target ios examples/pip.
 package main
 
@@ -15,10 +15,13 @@ import (
 func main() { nsgo.Run(Root, nsgo.WindowSize(420, 640)) }
 
 func Root(cx *core.Scope) core.Node {
-	video, script := &core.Ref{}, &core.Ref{}
+	const clip = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+	const clipDuration = 5055 * time.Millisecond
+	video, script, captionVideo := &core.Ref{}, &core.Ref{}, &core.Ref{}
 	videoState := core.NewSignal(cx, core.PictureInPictureState{})
 	scriptState := core.NewSignal(cx, mobile.PictureInPictureState{})
 	scriptPaused := core.NewSignal(cx, false)
+	scriptPosition := core.NewSignal(cx, time.Duration(0))
 	text := core.NewSignal(cx, "Welcome to the live stream")
 	line := core.NewSignal(cx, 1)
 	status := func(s core.PictureInPictureState) string {
@@ -39,7 +42,7 @@ func Root(cx *core.Scope) core.Node {
 	return core.Scroll{Style: core.Style{FlexGrow: 1}, Children: []core.Node{
 		core.View{Style: core.Style{Padding: core.All(24), Gap: 12}, Children: []core.Node{
 			core.Text{Content: "Video", Style: ui.TypeHeading},
-			core.Video{Ref: video, Source: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+			core.Video{Ref: video, Source: clip,
 				Controls: true, Repeat: true, Muted: true, PictureInPicture: true, AutoPictureInPicture: true,
 				OnPictureInPicture: videoState.Set,
 				Style:              core.Style{Height: core.Pt(180)}, TestID: "video"},
@@ -53,20 +56,26 @@ func Root(cx *core.Scope) core.Node {
 			ui.Button{Text: "Start script PiP", OnPress: script.StartPictureInPicture, Disabled: func() bool { return !scriptState.Get().Possible }, TestID: "start-script"},
 			ui.Button{Text: "Stop script PiP", OnPress: script.StopPictureInPicture},
 		}},
-		mobile.PictureInPicture{Ref: script, Size: core.Size{Width: 320, Height: 180}, OnState: scriptState.Set,
-			PausedFunc: scriptPaused.Get, OnPlay: func() { scriptPaused.Set(false) }, OnPause: func() { scriptPaused.Set(true) },
+		mobile.PictureInPicture{Ref: script, Size: core.Size{Width: 320, Height: 180}, OnState: scriptState.Set, TestID: "caption-pip",
+			PausedFunc: scriptPaused.Get, PositionFunc: scriptPosition.Get, Duration: clipDuration,
+			OnPlay: func() { scriptPaused.Set(false) }, OnPause: func() { scriptPaused.Set(true) },
 			OnSkip: func(d time.Duration) {
-				line.Update(func(n int) int {
-					if d < 0 {
-						return max(n-1, 1)
-					}
-					return n + 1
-				})
+				position := min(max(scriptPosition.Get()+d, 0), clipDuration)
+				scriptPosition.Set(position)
+				captionVideo.Seek(position)
 			},
-			Children: []core.Node{core.View{Style: core.Style{Width: core.Pct(100), Height: core.Pct(100), Padding: core.All(20), Gap: 12, Background: core.RGB(0x172033), Color: core.RGB(0xffffff)}, Children: []core.Node{
-				core.Text{ContentFunc: func() string { return fmt.Sprintf("Line %d", line.Get()) }},
-				core.Text{ContentFunc: text.Get, Style: core.Style{FontSize: 24}},
-			}}},
+			Children: []core.Node{
+				core.Video{Ref: captionVideo, Source: clip, PausedFunc: scriptPaused.Get, Muted: true, Repeat: true, TestID: "caption-video",
+					ResizeMode: core.Cover, Style: core.Style{Width: core.Pct(100), Height: core.Pct(100)},
+					OnProgress: func(position, _ time.Duration) { scriptPosition.Set(position) }},
+				core.View{Style: core.Style{
+					Position: core.Absolute, Bottom: core.Pt(0), Left: core.Pt(0), Right: core.Pt(0),
+					Padding: core.All(12), Gap: 4, Background: core.RGBA(0x172033, .85), Color: core.RGB(0xffffff),
+				}, Children: []core.Node{
+					core.Text{ContentFunc: func() string { return fmt.Sprintf("Line %d", line.Get()) }},
+					core.Text{ContentFunc: text.Get, Style: core.Style{FontSize: 20}},
+				}},
+			},
 		},
 	}}
 }

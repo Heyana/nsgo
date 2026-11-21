@@ -37,6 +37,7 @@
 - Add text-based YAML and Markdown store listings with pre-upload validation and App Store Connect and Google Play upload support in `nsgo publish -store` (#1564).
 - Add `Drawing.DrawSVG` and `Drawing.DrawSVGIn` plus SVG `<text>`, `<tspan>` and root `preserveAspectRatio` support so canvases and `SVGView` draw vector SVGs at any size with text measured and rendered by each platform's own text engine (#1339).
 - Add `pointer-fine:` and `pointer-coarse:` Tailwind variants and `core.Env.Pointer` (`core.PointerFine`, `PointerCoarse`, `PointerNone`) matching CSS's `pointer` media feature from the browser's query on the web or `Idiom` elsewhere (#1342).
+- Composite iOS video and app-drawn subtitles in custom Picture in Picture (#970 by @houko).
 - Restore web builds with pixel-backed custom cursors (#1206 by @houko).
 - Free a closed macOS window's views, shaders' Metal layers among them, once its frame clock had run, as an animation or a scroll does, where each window opened and closed leaked them.
 - Advance the clock during headless Go test waits so animations started by asynchronous replies can finish (#1642 by @houko).

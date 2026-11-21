@@ -309,6 +309,7 @@ func (s *surface) close() {
 	s.closed = true
 	s.sensors.Close()
 	s.discovery.Close()
+	s.stopPictureInPictureTimer()
 	s.dropLink()
 	if s.hud != nil {
 		s.hud.stop()

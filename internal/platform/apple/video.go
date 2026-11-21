@@ -44,6 +44,7 @@ type Video struct {
 	pip               *PictureInPicture
 	pipLayer          objc.ID // iOS: the second AVPlayerLayer a video with controls starts PiP from
 	pipHost           objc.ID // iOS: the view holding pipLayer in the controller's content overlay
+	frame             pipVideo
 }
 
 // videoStatus is what a player reported so far.
@@ -175,24 +176,7 @@ func (v *Video) Configure(c *driver.VideoConfig) {
 		v.observe()
 	}
 	v.applyPlayback(old, reopened)
-	gravity := NSString("AVLayerVideoGravityResizeAspect")
-	switch c.ResizeMode {
-	case driver.Cover:
-		gravity = NSString("AVLayerVideoGravityResizeAspectFill")
-	case driver.Stretch:
-		gravity = NSString("AVLayerVideoGravityResize")
-	}
-	switch {
-	case v.layer != 0:
-		v.layer.Send(sel("setVideoGravity:"), gravity)
-	case v.controller != 0:
-		v.controller.Send(sel("setVideoGravity:"), gravity)
-	case v.shown != 0:
-		v.shown.Send(sel("setVideoGravity:"), gravity)
-	}
-	if v.pipLayer != 0 {
-		v.pipLayer.Send(sel("setVideoGravity:"), gravity)
-	}
+	v.applyGravity()
 }
 
 // applyPlayback applies the latest settings to a player with its item installed.
@@ -234,6 +218,28 @@ func (v *Video) applyPlayback(old driver.VideoConfig, reopened bool) {
 	}
 	v.followAudio()
 	v.configurePiP()
+}
+
+func (v *Video) applyGravity() {
+	gravity := NSString("AVLayerVideoGravityResizeAspect")
+	switch v.config.ResizeMode {
+	case driver.Cover:
+		gravity = NSString("AVLayerVideoGravityResizeAspectFill")
+	case driver.Stretch:
+		gravity = NSString("AVLayerVideoGravityResize")
+	}
+	switch {
+	case v.layer != 0:
+		v.layer.Send(sel("setVideoGravity:"), gravity)
+	case v.controller != 0:
+		v.controller.Send(sel("setVideoGravity:"), gravity)
+	case v.shown != 0:
+		v.shown.Send(sel("setVideoGravity:"), gravity)
+	}
+	if v.pipLayer != 0 {
+		v.pipLayer.Send(sel("setVideoGravity:"), gravity)
+	}
+	v.layoutPiPVideo()
 }
 
 // locate finds source: "asset:" paths under root, a URL when it has a
@@ -393,6 +399,7 @@ func (v *Video) installVideoItem(st *videoStatus, asset objc.ID) {
 	v.rateToken = center.Send(selAddObserver, NSString("AVPlayerRateDidChangeNotification"), v.player, queue, rated).Send(sel("retain"))
 	rated.Release()
 	v.watchSystemPauses(st)
+	v.openPiPVideo()
 	v.poll(st, 0)
 }
 
@@ -404,6 +411,7 @@ func (v *Video) close() {
 		st.cancelLoading()
 		st.cancelLoading = nil
 	}
+	v.closePiPVideo()
 	audioPlaying(v, v.config.AudioSession, false)
 	if v.player != 0 && v.timeToken != 0 {
 		v.player.Send(sel("removeTimeObserver:"), v.timeToken)
@@ -469,7 +477,12 @@ func (v *Video) close() {
 // show shows the player in a layer, or with the platform's controls.
 func (v *Video) show() {
 	if runtime.GOOS == "ios" {
-		v.attach()
+		if v.frame.owner != nil {
+			v.endPiP()
+			v.detach()
+		} else {
+			v.attach()
+		}
 		return
 	}
 	if v.shown != 0 {
@@ -577,6 +590,7 @@ func fill(holder, view objc.ID) {
 
 // Layout keeps an iOS player layer at the view's size.
 func (v *Video) Layout() {
+	v.layoutPiPVideo()
 	if v.pipLayer != 0 {
 		WithoutAnimation(func() { v.pipLayer.Send(sel("setFrame:"), objc.Send[CGRect](v.pipHost, sel("bounds"))) })
 	}
@@ -647,7 +661,7 @@ func (v *Video) watchSystemPauses(st *videoStatus) {
 	})
 	// iOS pauses a playing video as the app enters the background, reporting it as an audio-session interruption rather than AVPlayerRateDidChangeReasonAppBackgrounded, and plays it again as the app comes back. The backend pauses it first, for the background, so it stays paused as the design says, unless its Picture in Picture plays it on.
 	v.stopBackground = Observe(center, NSString("UIApplicationDidEnterBackgroundNotification"), func(objc.ID) {
-		if v.status == st && v.player != 0 && st.play.playing && (v.pip == nil || !v.pip.ContinuesInBackground()) {
+		if v.status == st && v.player != 0 && st.play.playing && !v.continuesInPictureInPicture() {
 			v.systemPause(videoPauseBackground)
 		}
 	})
@@ -658,6 +672,11 @@ func (v *Video) watchSystemPauses(st *videoStatus) {
 			v.systemPause(driver.VideoPauseRouteLost)
 		}
 	})
+}
+
+func (v *Video) continuesInPictureInPicture() bool {
+	return (v.pip != nil && v.pip.ContinuesInBackground()) ||
+		(v.frame.owner != nil && v.frame.owner.ContinuesInBackground())
 }
 
 func notificationInt(note objc.ID, key string) int {
@@ -724,6 +743,7 @@ func (v *Video) rateChanged(reason int) {
 	}
 	if ev, ok := st.play.changed(playing, v.config.Paused, reason); ok {
 		v.followAudio()
+		v.requestPiPVideoFrame()
 		v.Dispatch(ev)
 	}
 }
@@ -781,6 +801,7 @@ func (v *Video) report() {
 	switch state := objc.Send[int](item, sel("status")); {
 	case state == ready && !st.loaded:
 		st.loaded = true
+		v.requestPiPVideoFrame()
 		size := objc.Send[CGSize](item, sel("presentationSize"))
 		v.Dispatch(driver.Event{Kind: driver.EventLoad, Duration: v.itemDuration(), RateChangeable: true,
 			Size: driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)}})
@@ -814,7 +835,22 @@ func (v *Video) Seek(position time.Duration) {
 			play.completed = false
 		}
 		zero := cmTimeOf(0)
-		v.player.Send(sel("seekToTime:toleranceBefore:toleranceAfter:"), cmTimeOf(position), zero, zero)
+		if v.frame.output != 0 {
+			st := v.status
+			complete := objcblock.New(func(_ objc.Block, finished bool) {
+				if finished {
+					OnMain(func() {
+						if v.status == st {
+							v.requestPiPVideoFrame()
+						}
+					})
+				}
+			})
+			v.player.Send(sel("seekToTime:toleranceBefore:toleranceAfter:completionHandler:"), cmTimeOf(position), zero, zero, complete)
+			complete.Release()
+		} else {
+			v.player.Send(sel("seekToTime:toleranceBefore:toleranceAfter:"), cmTimeOf(position), zero, zero)
+		}
 		if replay && !v.config.Paused {
 			play.applied(true)
 			v.status.asked()
@@ -828,6 +864,7 @@ func (v *Video) Seek(position time.Duration) {
 // shows.
 func (v *Video) Close() {
 	v.close()
+	v.frame = pipVideo{}
 	v.status = nil
 	for _, id := range []objc.ID{v.shown, v.layer} {
 		if id != 0 {
@@ -840,6 +877,9 @@ func (v *Video) Close() {
 // configurePiP gives a video with PictureInPicture its PiP session: from its own player layer, or, with controls, from a second layer in the controller's content overlay that code can start and stop.
 func (v *Video) configurePiP() {
 	if runtime.GOOS != "ios" {
+		return
+	}
+	if v.frame.owner != nil {
 		return
 	}
 	enabled := v.config.PictureInPicture

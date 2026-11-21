@@ -191,17 +191,20 @@ type surface struct {
 	rtl, directed bool
 	// stickyBound are the scroll views with sticky cells whose insets
 	// follow animated values.
-	stickyBound scrollbar.StickyBindings[*view]
-	app         engine.App
-	id          string
-	native      objc.ID
-	engine      *engine.Engine
-	audio       *apple.Audio // the engine's sounds and players, made with its first ItemAudio and closed with the surface
-	batches     queue.Batches
-	views       []*view // index is NodeID
-	pips        []*view // the views of mobile.PictureInPicture trees, which draw into their sessions' frames
-	fingers     fingers // the touches reported
-	env         driver.Environment
+	stickyBound     scrollbar.StickyBindings[*view]
+	app             engine.App
+	id              string
+	native          objc.ID
+	engine          *engine.Engine
+	audio           *apple.Audio // the engine's sounds and players, made with its first ItemAudio and closed with the surface
+	batches         queue.Batches
+	views           []*view // index is NodeID
+	pips            []*view // the views of mobile.PictureInPicture trees, which draw into their sessions' frames
+	videos          []*view
+	pipTimer        *time.Timer
+	pipFramePending bool
+	fingers         fingers // the touches reported
+	env             driver.Environment
 
 	// resizedScrolls are checked after the current batch or animation step.
 	resizedScrolls []*view
@@ -928,6 +931,12 @@ func (s *surface) observe() {
 			if state == driver.LifecycleBackground && s.audio != nil {
 				s.audio.PausePlayers()
 			}
+			if state == driver.LifecycleBackground {
+				s.wakePictureInPictures()
+			} else if name == "UIApplicationWillEnterForegroundNotification" {
+				s.stopPictureInPictureTimer()
+				s.dirtyPictureInPictures()
+			}
 			s.refresh()
 		})
 	}
@@ -1633,6 +1642,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 		s.applyAnimated()
 	})
 	s.drawShaders()
+	s.updatePictureInPictureVideos()
 	s.dirtyPictureInPictures()
 	if s.animator.Running() {
 		s.startTicking()
@@ -1705,6 +1715,7 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 		v.video.Dispatch = v.report
 		v.video.Parent = s.viewController()
 		v.native.Send(sel("setClipsToBounds:"), true)
+		s.videos = append(s.videos, v)
 	case driver.KindShader:
 		v.newShader()
 	}
@@ -1784,6 +1795,7 @@ func (s *surface) delete(v *view, kept bool) {
 	}
 	if v.video != nil {
 		v.video.Close()
+		s.videos = slices.DeleteFunc(s.videos, func(video *view) bool { return video == v })
 	}
 	s.endEffect(v)
 	if v.container != 0 {
@@ -2418,25 +2430,4 @@ func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
 	}
 	v.surface.followLargeTitle(v, offset.Y)
 	v.scrollEvent(driver.EventScroll)
-}
-
-// dirtyPictureInPictures schedules snapshots after tree changes, animation steps and image loads, including ones that need no engine commit.
-func (s *surface) dirtyPictureInPictures() {
-	for _, v := range s.pips {
-		v.pip.Dirty()
-		if v.pip.Layer() != 0 {
-			s.startTicking()
-		}
-	}
-}
-
-// drawPictureInPictures retains one pending frame under back-pressure.
-func (s *surface) drawPictureInPictures() bool {
-	pending := false
-	for _, v := range s.pips {
-		if v.pip.DrawFrame(v.native.Send(selLayer), float64(s.env.PixelRatio)) {
-			pending = true
-		}
-	}
-	return pending
 }

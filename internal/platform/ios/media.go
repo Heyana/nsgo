@@ -91,7 +91,7 @@ func (s *surface) framesPerSecond() int {
 // animations' own when they are all it steps, else the screen's highest.
 // Batches apply as they land, so none waits for a slowed frame.
 func (s *surface) wantedPace() float64 {
-	if len(s.motions) > 0 || len(s.ghosts) > 0 || s.frameWanted.Load() || s.selecting != nil || s.perf != nil {
+	if len(s.motions) > 0 || len(s.ghosts) > 0 || s.frameWanted.Load() || s.selecting != nil || s.perf != nil || s.pipFramePending {
 		return 0
 	}
 	return s.animator.FrameRate()
@@ -155,14 +155,14 @@ func (s *surface) tick() {
 	if contentAnimated {
 		s.dirtyPictureInPictures()
 	}
-	pipPending := s.drawPictureInPictures()
+	s.pipFramePending = s.drawPictureInPictures()
 	s.startImages()
 	if s.frameWanted.Swap(false) && s.engine != nil {
 		s.engine.FrameAt(apple.LinkFrameTime(s.link))
 	}
 	apple.YieldFrame()
 	// A monitor closes a frame at every refresh.
-	if !pipPending && !s.animator.Running() && len(s.motions) == 0 && len(s.ghosts) == 0 && !s.frameWanted.Load() && s.perf == nil {
+	if !s.pipFramePending && !s.animator.Running() && len(s.motions) == 0 && len(s.ghosts) == 0 && !s.frameWanted.Load() && s.perf == nil {
 		s.stopTicking()
 		// The app asked for a frame as the clock stopped, seeing it still
 		// ticking.

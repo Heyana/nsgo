@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/nsgotest"
@@ -21,5 +22,17 @@ func TestScriptContentAndPiPControls(t *testing.T) {
 	app.Press("id:start-script")
 	if app.Find("id:script-status").Text != "Picture in Picture is active" {
 		t.Fatal("script did not enter PiP")
+	}
+	app.PictureInPictureControl("id:caption-pip", "pause", 0)
+	if !app.FindMounted("id:caption-video").Video.Paused {
+		t.Fatal("pausing PiP did not pause its video")
+	}
+	app.PictureInPictureControl("id:caption-pip", "play", 0)
+	if app.FindMounted("id:caption-video").Video.Paused {
+		t.Fatal("playing PiP did not resume its video")
+	}
+	app.PictureInPictureControl("id:caption-pip", "skip", 2*time.Second)
+	if seeks := app.FindMounted("id:caption-video").Seeks; len(seeks) != 1 || seeks[0] != 2*time.Second {
+		t.Fatalf("video seeks after PiP skip: %v", seeks)
 	}
 }

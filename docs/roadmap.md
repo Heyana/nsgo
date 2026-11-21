@@ -304,6 +304,7 @@ The iOS video and independent-tree paths of #54 are implemented with native dele
 | Item | Reference | Done when |
 | --- | --- | --- |
 | iOS native acceptance | `examples/pip`, [#54](https://github.com/nsgo-dev/nsgo/issues/54) | On an iPhone, video enters and leaves PiP, automatically enters only when requested, and returns to the app; fullscreen controls keep showing video; custom content updates and retains its last frame during background suspension, and silent-session audio policy is checked |
+| Video with app-drawn captions | `examples/pip`, [#970](https://github.com/nsgo-dev/nsgo/issues/970) | Verify continuous video and changing captions on an iPhone in background PiP, along with play, pause, seek and restoration |
 | PiP on tvOS | `AVPictureInPictureController`, [#1476](https://github.com/nsgo-dev/nsgo/issues/1476) | A video enters PiP on an Apple TV, where iOS's backend reports PiP unavailable until then |
 | PiP on macOS | `AVPlayerView.allowsPictureInPicturePlayback`, `AVPictureInPictureController`, [#1477](https://github.com/nsgo-dev/nsgo/issues/1477) | A `Video` on a Mac enters and leaves PiP with the same states as on iOS |
 | PiP on Android | `Activity.enterPictureInPictureMode`, [#1478](https://github.com/nsgo-dev/nsgo/issues/1478) | An Android app's activity enters PiP showing its video, with the same states as on iOS |

@@ -33,7 +33,9 @@ start := ui.Button{
 
 `mobile.PictureInPicture` takes `Children` with a layout of their own, defaulting to 320 × 180 points. It occupies no space in the app. Its `Ref` has the same start and stop methods, while `OnState`, `OnRestore`, `OnPlay`, `OnPause` and `OnSkip` deliver system actions. Bind `PausedFunc` and `PositionFunc` to the playback state those callbacks update; `Duration: 0` describes live content. A suspended app retains the last rendered frame.
 
-The custom tree can show text, views, images and Canvas. Native video, WebView, Metal shaders and backdrop effects are not captured. Animated images and native layer transitions show their model state; use explicit animated values for motion. The system window accepts play, pause and skip controls, with no arbitrary touch or text input. App Store review may reject uses unrelated to video.
+Put a `core.Video` in the custom tree to compose its decoded frames with app-drawn captions or other overlays. Start the session using the outer `Ref`. Share a paused signal with the video, feed the custom session's `PositionFunc` from `Video.OnProgress`, and forward `OnSkip` to the video's `Ref.Seek`. The video's audio plays through its own player.
+
+The custom tree also renders text, views, images and Canvas. WebView, Metal shaders and backdrop effects are unavailable in the captured frames. Animated images and native layer transitions show their model state. Use explicit animated values for motion. App Store review may reject uses unrelated to video.
 
 `Supported: false` distinguishes an unavailable platform from a supported session that is not ready or whose `Error` explains a failure. iOS is the implemented target; tvOS, macOS, Android and web PiP remain unavailable. The shared audio session stays in the playback category while PiP is enabled, including while paused, mixing with other apps' audio when the video's `AudioSession` is `AudioSessionMixWithOthers`.
 
