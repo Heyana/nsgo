@@ -133,29 +133,6 @@ func portalPropertyUint32(reply uintptr) (uint32, bool) {
 	return gVariantGetUint32(v), true
 }
 
-func (w *window) portalParentWindow() string {
-	if w.surface == 0 {
-		return ""
-	}
-	native := gtkWidgetGetNative(w.surface)
-	if native == 0 {
-		return ""
-	}
-	surface := gtkNativeGetSurface(native)
-	if surface == 0 {
-		return ""
-	}
-	bindX11Panels()
-	if !x11PanelsReady {
-		return ""
-	}
-	display := gdkDisplayGetDefault()
-	if display == 0 || gTypeIsA(display, gdkX11DisplayGetType()) == 0 {
-		return ""
-	}
-	return formatX11ParentWindow(uint64(gdkX11SurfaceGetXID(surface)))
-}
-
 // pickScreenColor invokes org.freedesktop.portal.Screenshot.PickColor and
 // answers id when Request::Response arrives.
 func (w *window) pickScreenColor(id uint32) {

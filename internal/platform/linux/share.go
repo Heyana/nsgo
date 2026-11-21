@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -179,29 +178,6 @@ func (w *window) dispatchShareEvent(ev driver.Event) {
 			w.engine.Dispatch(ev)
 		}
 	})
-}
-
-func (w *window) portalParentWindow() string {
-	toplevel := w.toplevel()
-	if toplevel == 0 {
-		return ""
-	}
-	if bindX11Panels(); !x11PanelsReady {
-		return ""
-	}
-	gdk := gdkDisplayGetDefault()
-	if gdk == 0 || gTypeIsA(gdk, gdkX11DisplayGetType()) == 0 {
-		return ""
-	}
-	surface := gtkNativeGetSurface(toplevel)
-	if surface == 0 {
-		return ""
-	}
-	xid := gdkX11SurfaceGetXID(surface)
-	if xid == 0 {
-		return ""
-	}
-	return "x11:" + strconv.FormatUint(uint64(xid), 16)
 }
 
 func (w *window) closeShares() {

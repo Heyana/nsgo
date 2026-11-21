@@ -643,6 +643,29 @@ func (w *window) toplevel() uintptr {
 	return gtkWidgetGetRoot(w.surface)
 }
 
+// portalParentWindow identifies the surface's X11 toplevel for an XDG portal request.
+func (w *window) portalParentWindow() string {
+	if w.win == 0 && w.surface == 0 {
+		return ""
+	}
+	toplevel := w.toplevel()
+	if toplevel == 0 {
+		return ""
+	}
+	if bindX11Panels(); !x11PanelsReady {
+		return ""
+	}
+	display := gdkDisplayGetDefault()
+	if display == 0 || gTypeIsA(display, gdkX11DisplayGetType()) == 0 {
+		return ""
+	}
+	surface := gtkNativeGetSurface(toplevel)
+	if surface == 0 {
+		return ""
+	}
+	return formatX11ParentWindow(uint64(gdkX11SurfaceGetXID(surface)))
+}
+
 // run presents the window and runs GTK's main loop until it closes.
 func (w *window) run() {
 	if !w.opts.Hidden {
