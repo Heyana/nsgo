@@ -1001,7 +1001,7 @@ func (c *canvasPlayer) image(op *driver.DrawOp) {
 		alpha := c.st.alpha
 		c.paint(func(dc *comObject, base matrix) {
 			c.setTransform(dc, c.st.ctm.then(base))
-			dc.callF(rtDrawBitmap, 0b100, e.bitmap.ptr(), uintptr(unsafe.Pointer(&dst)), f32(alpha), d2dInterpolationLinear,
+			dc.callF(rtDrawBitmap, 0b100, e.bitmap.ptr(), uintptr(unsafe.Pointer(&dst)), f32(alpha), imageInterpolation(op.Sampling),
 				uintptr(unsafe.Pointer(&src)))
 		})
 		return

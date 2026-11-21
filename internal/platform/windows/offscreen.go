@@ -153,6 +153,6 @@ func (p *painter) drawOffscreenImage(v *view, s *imageSlot, r rectF) {
 		return
 	}
 	src := rectF{0, 0, float32(e.points.Width), float32(e.points.Height)}
-	p.dc.callF(rtDrawBitmap, 0b100, e.bitmap.ptr(), uintptr(unsafe.Pointer(&d)), f32(1), d2dInterpolationLinear,
+	p.dc.callF(rtDrawBitmap, 0b100, e.bitmap.ptr(), uintptr(unsafe.Pointer(&d)), f32(1), imageInterpolation(v.image.Sampling),
 		uintptr(unsafe.Pointer(&src)))
 }
