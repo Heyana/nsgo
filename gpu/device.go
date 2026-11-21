@@ -26,29 +26,39 @@ type Device struct {
 	generation uint32
 	lost       bool
 
-	limits        Limits
-	features      Features
-	surfaceFormat TextureFormat
-	width, height int
+	limits            Limits
+	features          Features
+	compressedFormats []TextureFormat
+	surfaceFormat     TextureFormat
+	width, height     int
 
-	pendingOps []driver.GPUResourceOp
-	readbacks  map[uint64]func(rgba []byte, err error)
+	pendingOps       []driver.GPUResourceOp
+	readbacks        map[uint64]func(rgba []byte, err error)
+	lastPassTimings  []PassTiming
+	timestampQueries map[driver.GPUID]*TimestampQuery
 }
 
-func newDevice(surf *core.GPUSurface, scope *core.Scope, gen uint32, w, h int, fmt TextureFormat, lim Limits, feat Features) *Device {
+func newDevice(surf *core.GPUSurface, scope *core.Scope, gen uint32, w, h int, fmt TextureFormat, lim Limits, feat Features, compressed []TextureFormat) *Device {
 	if fmt == FormatUndefined {
 		fmt = FormatRGBA8Unorm
 	}
+	if len(compressed) == 0 {
+		compressed = compressedFormatsFromFeatures(feat)
+	} else {
+		compressed = slices.Clone(compressed)
+	}
 	return &Device{
-		surf:          surf,
-		scope:         scope,
-		generation:    gen,
-		limits:        lim,
-		features:      feat,
-		surfaceFormat: fmt,
-		width:         w,
-		height:        h,
-		readbacks:     map[uint64]func([]byte, error){},
+		surf:              surf,
+		scope:             scope,
+		generation:        gen,
+		limits:            lim,
+		features:          feat,
+		compressedFormats: compressed,
+		surfaceFormat:     fmt,
+		width:             w,
+		height:            h,
+		readbacks:         map[uint64]func([]byte, error){},
+		timestampQueries:  map[driver.GPUID]*TimestampQuery{},
 	}
 }
 
@@ -75,6 +85,11 @@ func (d *Device) invalidate(reason DeviceLostReason, msg string) {
 	}
 	d.lost = true
 	d.pendingOps = nil
+	d.lastPassTimings = nil
+	for id, q := range d.timestampQueries {
+		delete(d.timestampQueries, id)
+		q.closed = true
+	}
 	err := Error{Code: ErrDeviceLost, Message: msg}
 	for id, fn := range d.readbacks {
 		delete(d.readbacks, id)
@@ -82,6 +97,32 @@ func (d *Device) invalidate(reason DeviceLostReason, msg string) {
 			fn(nil, err)
 		}
 	}
+}
+
+func (d *Device) completePassTimings(raw []driver.GPUPassTiming) []PassTiming {
+	if d == nil {
+		return nil
+	}
+	if len(raw) == 0 {
+		d.lastPassTimings = nil
+		return nil
+	}
+	out := make([]PassTiming, len(raw))
+	for i, rt := range raw {
+		pt := PassTiming{
+			Label:     rt.Label,
+			PassIndex: rt.PassIndex,
+			Duration:  rt.Duration,
+		}
+		out[i] = pt
+		if rt.QueryID != 0 {
+			if q := d.timestampQueries[rt.QueryID]; q != nil && !q.closed {
+				q.timings = append(q.timings, pt)
+			}
+		}
+	}
+	d.lastPassTimings = out
+	return slices.Clone(out)
 }
 
 func (d *Device) completeReadback(id uint64, pixels []byte, errMsg string) {
@@ -150,6 +191,44 @@ func (d *Device) Limits() Limits { return d.limits }
 
 // Features returns optional features supported by the device.
 func (d *Device) Features() Features { return d.features }
+
+// Capabilities returns the device's limits, optional features, GPU timestamp
+// query support, and supported compressed texture formats.
+func (d *Device) Capabilities() DeviceCapabilities {
+	return DeviceCapabilities{
+		Limits:            d.limits,
+		Features:          d.features,
+		TimestampQueries:  d.features.TimestampQueries,
+		CompressedFormats: slices.Clone(d.compressedFormats),
+	}
+}
+
+// CompressedFormats returns the compressed texture formats supported by d.
+func (d *Device) CompressedFormats() []TextureFormat {
+	return slices.Clone(d.compressedFormats)
+}
+
+// SupportsCompressedFormat reports whether d supports uploading and sampling
+// compressed textures in format.
+func (d *Device) SupportsCompressedFormat(format TextureFormat) bool {
+	if d == nil || !format.IsCompressed() {
+		return false
+	}
+	return slices.Contains(d.compressedFormats, format)
+}
+
+// SupportsTimestampQueries reports whether d supports per-pass GPU timing queries.
+func (d *Device) SupportsTimestampQueries() bool {
+	return d != nil && d.features.TimestampQueries
+}
+
+// LastPassTimings returns the most recently completed GPU frame's pass timings.
+func (d *Device) LastPassTimings() []PassTiming {
+	if d == nil {
+		return nil
+	}
+	return slices.Clone(d.lastPassTimings)
+}
 
 // SurfaceFormat returns the swapchain's preferred color texture format.
 func (d *Device) SurfaceFormat() TextureFormat { return d.surfaceFormat }
@@ -337,6 +416,73 @@ func (p *Pipeline) Close() error {
 	return nil
 }
 
+// TimestampQuery collects per-pass GPU timing measurements for render passes
+// that reference it via RenderPassDesc.TimestampQuery.
+type TimestampQuery struct {
+	dev     *Device
+	id      driver.GPUID
+	label   string
+	timings []PassTiming
+	closed  bool
+}
+
+// ID returns the query's numeric handle.
+func (q *TimestampQuery) ID() uint64 { return uint64(q.id) }
+
+// Label returns the query's default timing label.
+func (q *TimestampQuery) Label() string { return q.label }
+
+// Timings returns a copy of all completed pass timings recorded into q.
+func (q *TimestampQuery) Timings() []PassTiming {
+	if q == nil {
+		return nil
+	}
+	return slices.Clone(q.timings)
+}
+
+// LastDuration returns the most recently recorded pass duration, or 0 if none.
+func (q *TimestampQuery) LastDuration() time.Duration {
+	if q == nil || len(q.timings) == 0 {
+		return 0
+	}
+	return q.timings[len(q.timings)-1].Duration
+}
+
+// Reset clears previously accumulated timing entries from q.
+func (q *TimestampQuery) Reset() {
+	if q != nil {
+		q.timings = q.timings[:0]
+	}
+}
+
+// Close releases the timestamp query. Safe to call more than once.
+func (q *TimestampQuery) Close() error {
+	if q == nil || q.closed {
+		return nil
+	}
+	q.closed = true
+	if q.dev != nil {
+		delete(q.dev.timestampQueries, q.id)
+	}
+	return nil
+}
+
+// CreateTimestampQuery allocates a GPU timestamp query scoped to cx.
+// Returns ErrUnsupported when Device.Capabilities().TimestampQueries is false.
+func (d *Device) CreateTimestampQuery(cx *core.Scope, label string) (*TimestampQuery, error) {
+	if !d.alive() {
+		return nil, Error{Code: ErrDeviceLost, Message: "device is lost or disposed"}
+	}
+	if !d.features.TimestampQueries {
+		return nil, Error{Code: ErrUnsupported, Message: "GPU timestamp queries are not supported on this device"}
+	}
+	id := d.nextID()
+	q := &TimestampQuery{dev: d, id: id, label: label}
+	d.timestampQueries[id] = q
+	d.bindCleanup(cx, func() { _ = q.Close() })
+	return q, nil
+}
+
 // --- Resource constructors with synchronous validation ---
 
 // CreateBuffer allocates a retained GPU buffer scoped to cx.
@@ -368,7 +514,7 @@ func (d *Device) CreateBuffer(cx *core.Scope, desc BufferDesc) (*Buffer, error) 
 	}
 	id := d.nextID()
 	dd := driver.GPUBufferDesc{
-		Label: desc.Label,
+		Label: debugLabel(desc.Label),
 		Size:  size,
 		Usage: driver.GPUBufferUsage(desc.Usage),
 		Data:  slices.Clone(desc.Data),
@@ -396,6 +542,21 @@ func (d *Device) CreateTexture(cx *core.Scope, desc TextureDesc) (*Texture, erro
 	if d.limits.MaxTextureDimension2D > 0 && (desc.Width > d.limits.MaxTextureDimension2D || desc.Height > d.limits.MaxTextureDimension2D) {
 		return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("texture %dx%d exceeds limit %d", desc.Width, desc.Height, d.limits.MaxTextureDimension2D)}
 	}
+	if desc.Format.IsCompressed() {
+		if !d.SupportsCompressedFormat(desc.Format) {
+			return nil, Error{Code: ErrUnsupported, Message: fmt.Sprintf("compressed texture format %s is not supported on this device", desc.Format)}
+		}
+		if desc.Usage&TextureRenderAttachment != 0 {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: "compressed textures cannot have TextureRenderAttachment usage"}
+		}
+		if desc.SampleCount > 1 {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: "compressed textures cannot be multisampled"}
+		}
+		bw, bh := desc.Format.BlockSize()
+		if bw == 0 || bh == 0 || desc.Width%bw != 0 || desc.Height%bh != 0 {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("compressed texture dimensions %dx%d must be multiples of block size %dx%d", desc.Width, desc.Height, bw, bh)}
+		}
+	}
 	if desc.Layers == 0 {
 		if desc.Dimension == DimCube {
 			desc.Layers = 6
@@ -409,9 +570,11 @@ func (d *Device) CreateTexture(cx *core.Scope, desc TextureDesc) (*Texture, erro
 	if desc.SampleCount <= 0 {
 		desc.SampleCount = 1
 	}
+	lbl := debugLabel(desc.Label)
+	desc.Label = lbl
 	id := d.nextID()
 	dd := driver.GPUTextureDesc{
-		Label:       desc.Label,
+		Label:       lbl,
 		Dimension:   driver.GPUTextureDimension(desc.Dimension),
 		Width:       desc.Width,
 		Height:      desc.Height,
@@ -432,6 +595,9 @@ func (d *Device) CreateTexture(cx *core.Scope, desc TextureDesc) (*Texture, erro
 func (d *Device) CreateTextureFromImage(cx *core.Scope, src core.ImageSource, desc TextureDesc) (*Texture, error) {
 	if src.Pixels == nil {
 		return nil, Error{Code: ErrInvalidDescriptor, Message: "CreateTextureFromImage requires ImageSource.Pixels"}
+	}
+	if desc.Format.IsCompressed() {
+		return nil, Error{Code: ErrInvalidDescriptor, Message: "CreateTextureFromImage requires an uncompressed format"}
 	}
 	b := src.Pixels.Bounds()
 	if desc.Width == 0 {
@@ -468,7 +634,7 @@ func (d *Device) CreateRenderTarget(cx *core.Scope, desc RenderTargetDesc) (*Ren
 		}
 		var err error
 		colorTex, err = d.CreateTexture(cx, TextureDesc{
-			Label:       desc.Label + ".color",
+			Label:       debugLabelJoin(desc.Label, ".color"),
 			Dimension:   Dim2D,
 			Width:       desc.Width,
 			Height:      desc.Height,
@@ -490,7 +656,7 @@ func (d *Device) CreateRenderTarget(cx *core.Scope, desc RenderTargetDesc) (*Ren
 		}
 		var err error
 		depthTex, err = d.CreateTexture(cx, TextureDesc{
-			Label:       desc.Label + ".depth",
+			Label:       debugLabelJoin(desc.Label, ".depth"),
 			Dimension:   Dim2D,
 			Width:       desc.Width,
 			Height:      desc.Height,
@@ -513,8 +679,11 @@ func (d *Device) CreateSampler(cx *core.Scope, desc SamplerDesc) (*Sampler, erro
 	if !d.alive() {
 		return nil, Error{Code: ErrDeviceLost, Message: "device is lost or disposed"}
 	}
+	lbl := debugLabel(desc.Label)
+	desc.Label = lbl
 	id := d.nextID()
 	dd := driver.GPUSamplerDesc{
+		Label:         lbl,
 		MinFilter:     driver.GPUFilterMode(desc.MinFilter),
 		MagFilter:     driver.GPUFilterMode(desc.MagFilter),
 		MipmapFilter:  driver.GPUFilterMode(desc.MipmapFilter),
@@ -532,9 +701,15 @@ func (d *Device) CreateSampler(cx *core.Scope, desc SamplerDesc) (*Sampler, erro
 
 // CreateBindGroupLayout defines the binding schema for one @group(G) slot.
 func (d *Device) CreateBindGroupLayout(cx *core.Scope, entries []BindGroupLayoutEntry) (*BindGroupLayout, error) {
+	return d.CreateBindGroupLayoutDesc(cx, BindGroupLayoutDesc{Entries: entries})
+}
+
+// CreateBindGroupLayoutDesc defines a labeled binding schema for one @group(G) slot.
+func (d *Device) CreateBindGroupLayoutDesc(cx *core.Scope, desc BindGroupLayoutDesc) (*BindGroupLayout, error) {
 	if !d.alive() {
 		return nil, Error{Code: ErrDeviceLost, Message: "device is lost or disposed"}
 	}
+	entries := desc.Entries
 	seen := map[uint32]bool{}
 	dEntries := make([]driver.GPUBindGroupLayoutEntry, len(entries))
 	for i, e := range entries {
@@ -554,7 +729,7 @@ func (d *Device) CreateBindGroupLayout(cx *core.Scope, entries []BindGroupLayout
 		}
 	}
 	id := d.nextID()
-	dd := driver.GPUBindGroupLayoutDesc{Entries: dEntries}
+	dd := driver.GPUBindGroupLayoutDesc{Label: debugLabel(desc.Label), Entries: dEntries}
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateBindGroupLayout, ID: id, BindGroupLayout: &dd})
 	l := &BindGroupLayout{dev: d, id: id, entries: slices.Clone(entries)}
 	d.bindCleanup(cx, func() { _ = l.Close() })
@@ -563,9 +738,17 @@ func (d *Device) CreateBindGroupLayout(cx *core.Scope, entries []BindGroupLayout
 
 // CreateBindGroup binds resources matching layout, scoped to cx.
 func (d *Device) CreateBindGroup(cx *core.Scope, layout *BindGroupLayout, entries []BindGroupEntry) (*BindGroup, error) {
+	return d.CreateBindGroupDesc(cx, BindGroupDesc{Layout: layout, Entries: entries})
+}
+
+// CreateBindGroupDesc binds resources matching desc.Layout, with an optional
+// debug label stripped in release builds, scoped to cx.
+func (d *Device) CreateBindGroupDesc(cx *core.Scope, desc BindGroupDesc) (*BindGroup, error) {
 	if !d.alive() {
 		return nil, Error{Code: ErrDeviceLost, Message: "device is lost or disposed"}
 	}
+	layout := desc.Layout
+	entries := desc.Entries
 	if layout != nil && (layout.closed || layout.dev != d) {
 		return nil, Error{Code: ErrInvalidDescriptor, Message: "BindGroupLayout belongs to another or closed device"}
 	}
@@ -636,7 +819,7 @@ func (d *Device) CreateBindGroup(cx *core.Scope, layout *BindGroupLayout, entrie
 	if layout != nil {
 		layoutID = layout.id
 	}
-	dd := driver.GPUBindGroupDesc{Layout: layoutID, Entries: dEntries}
+	dd := driver.GPUBindGroupDesc{Label: debugLabel(desc.Label), Layout: layoutID, Entries: dEntries}
 	d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateBindGroup, ID: id, BindGroup: &dd})
 	bg := &BindGroup{dev: d, id: id, layout: layout}
 	d.bindCleanup(cx, func() { _ = bg.Close() })
@@ -750,13 +933,17 @@ func (d *Device) CreatePipeline(cx *core.Scope, desc PipelineDesc) (*Pipeline, e
 	fragStage := driver.GPUShaderStage{}
 	if desc.Fragment.Module != nil {
 		fragStage = driver.GPUShaderStage{
+			Label:      debugLabel(desc.Fragment.Module.label),
 			IR:         desc.Fragment.Module.ir,
 			EntryPoint: desc.Fragment.EntryPoint,
 		}
 	}
+	lbl := debugLabel(desc.Label)
+	desc.Label = lbl
 	dd := driver.GPUPipelineDesc{
-		Label: desc.Label,
+		Label: lbl,
 		Vertex: driver.GPUShaderStage{
+			Label:      debugLabel(desc.Vertex.Module.label),
 			IR:         desc.Vertex.Module.ir,
 			EntryPoint: desc.Vertex.EntryPoint,
 		},
@@ -842,9 +1029,10 @@ func (d *Device) WriteTextureRGBA(tex *Texture, mipLevel, arrayLayer uint32, img
 
 // CommandBuffer is an immutable batch of recorded copy commands and render passes.
 type CommandBuffer struct {
-	dev    *Device
-	copies []driver.GPUCopyOp
-	passes []driver.GPUPass
+	dev      *Device
+	copies   []driver.GPUCopyOp
+	passes   []driver.GPUPass
+	debugOps []driver.GPUDebugOp
 }
 
 // Encoder records render passes and copy commands for one Device.Submit call.
@@ -852,6 +1040,7 @@ type Encoder struct {
 	dev      *Device
 	copies   []driver.GPUCopyOp
 	passes   []driver.GPUPass
+	debugOps []driver.GPUDebugOp
 	finished bool
 }
 
@@ -859,6 +1048,18 @@ type Encoder struct {
 func (d *Device) BeginEncoder() *Encoder {
 	return &Encoder{dev: d}
 }
+
+// PushDebugGroup begins a nested debug group in GPU captures (Metal/RenderDoc/WebGPU).
+// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+func (e *Encoder) PushDebugGroup(label string) { e.pushDebugGroup(label) }
+
+// PopDebugGroup ends the most recent Encoder.PushDebugGroup.
+// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+func (e *Encoder) PopDebugGroup() { e.popDebugGroup() }
+
+// InsertDebugMarker inserts an instantaneous debug marker into GPU captures.
+// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+func (e *Encoder) InsertDebugMarker(label string) { e.insertDebugMarker(label) }
 
 // BeginRenderPass starts a render pass on e. Call RenderPass.End when done.
 func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
@@ -905,9 +1106,23 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 			ClearStencil:   desc.DepthStencil.ClearStencil,
 		}
 	}
+	var timingLabel string
+	var queryID driver.GPUID
+	if e.dev != nil && e.dev.features.TimestampQueries {
+		timingLabel = desc.TimingLabel
+		if desc.TimestampQuery != nil && !desc.TimestampQuery.closed && desc.TimestampQuery.dev == e.dev {
+			queryID = desc.TimestampQuery.id
+			if timingLabel == "" {
+				timingLabel = desc.TimestampQuery.label
+			}
+		}
+	}
 	return &RenderPass{
 		enc: e,
 		pass: driver.GPUPass{
+			Label:            debugLabel(desc.Label),
+			TimingLabel:      timingLabel,
+			TimestampQueryID: queryID,
 			ColorAttachments: cas,
 			DepthStencil:     ds,
 		},
@@ -988,7 +1203,7 @@ func (e *Encoder) CopyTextureToTexture(src, dst TextureCopy, width, height, laye
 // Finish seals the encoder into an immutable CommandBuffer.
 func (e *Encoder) Finish() *CommandBuffer {
 	e.finished = true
-	return &CommandBuffer{dev: e.dev, copies: e.copies, passes: e.passes}
+	return &CommandBuffer{dev: e.dev, copies: e.copies, passes: e.passes, debugOps: e.debugOps}
 }
 
 // RenderPass records drawing state and draw calls for one render pass.
@@ -997,6 +1212,18 @@ type RenderPass struct {
 	pass  driver.GPUPass
 	ended bool
 }
+
+// PushDebugGroup begins a nested debug group inside this render pass.
+// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+func (p *RenderPass) PushDebugGroup(label string) { p.pushDebugGroup(label) }
+
+// PopDebugGroup closes the most recent RenderPass.PushDebugGroup.
+// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+func (p *RenderPass) PopDebugGroup() { p.popDebugGroup() }
+
+// InsertDebugMarker inserts an instantaneous debug marker inside this render pass.
+// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+func (p *RenderPass) InsertDebugMarker(label string) { p.insertDebugMarker(label) }
 
 // ClearColor configures color attachment 0 to clear to c at pass start.
 func (p *RenderPass) ClearColor(c core.Color) {
@@ -1186,10 +1413,12 @@ func (d *Device) Submit(cmds ...*CommandBuffer) {
 		if cb == nil {
 			continue
 		}
+		passOffset := len(frame.Passes)
+		appendFrameDebugOps(&frame, cb.debugOps, passOffset)
 		frame.Copies = append(frame.Copies, cb.copies...)
 		frame.Passes = append(frame.Passes, cb.passes...)
 	}
-	if len(frame.Ops) == 0 && len(frame.Copies) == 0 && len(frame.Passes) == 0 {
+	if len(frame.Ops) == 0 && len(frame.Copies) == 0 && len(frame.Passes) == 0 && len(frame.DebugOps) == 0 {
 		return
 	}
 	d.dispatchFrame(frame)
@@ -1272,6 +1501,39 @@ func (f *Frame) Delta() time.Duration { return f.delta }
 
 // Size returns the current swapchain dimensions in physical pixels.
 func (f *Frame) Size() (width, height int) { return f.dev.SurfaceSize() }
+
+// PassTimings returns the most recently completed GPU frame's per-pass timings
+// (or the current frame's timings after Submit on synchronous software devices).
+func (f *Frame) PassTimings() []PassTiming {
+	if f == nil || f.dev == nil {
+		return nil
+	}
+	return f.dev.LastPassTimings()
+}
+
+// PushDebugGroup begins a nested debug group on this frame's encoder.
+// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+func (f *Frame) PushDebugGroup(label string) {
+	if f != nil && f.enc != nil {
+		f.enc.PushDebugGroup(label)
+	}
+}
+
+// PopDebugGroup closes the most recent Frame.PushDebugGroup.
+// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+func (f *Frame) PopDebugGroup() {
+	if f != nil && f.enc != nil {
+		f.enc.PopDebugGroup()
+	}
+}
+
+// InsertDebugMarker inserts an instantaneous debug marker on this frame's encoder.
+// It is a zero-cost no-op in release builds (without nsgodev or nsgotest).
+func (f *Frame) InsertDebugMarker(label string) {
+	if f != nil && f.enc != nil {
+		f.enc.InsertDebugMarker(label)
+	}
+}
 
 // BeginRenderPass starts a RenderPass recorded into this frame.
 func (f *Frame) BeginRenderPass(desc RenderPassDesc) *RenderPass {

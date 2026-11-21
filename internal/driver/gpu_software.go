@@ -7,9 +7,18 @@ import (
 	"image"
 	"math"
 	"slices"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/shaderir"
 )
+
+// GPUDebugEvent records a debug label, group, or marker observed by
+// GPUSoftwareDevice during resource creation or command execution.
+type GPUDebugEvent struct {
+	Kind  string
+	Label string
+	Depth int
+}
 
 // GPUSoftReadback holds the completed CPU pixels of a GPUOpReadTexture op.
 type GPUSoftReadback struct {
@@ -62,7 +71,11 @@ type GPUSoftwareDevice struct {
 	bindGroups map[GPUID]*softBindGroup
 	pipelines  map[GPUID]*softPipeline
 
-	frames []GPUFrame
+	frames      []GPUFrame
+	lastTimings []GPUPassTiming
+	debugEvents []GPUDebugEvent
+	debugDepth  int
+	labels      map[GPUID]string
 }
 
 // NewGPUSoftwareDevice creates a software GPU device for a surface of width x height pixels.
@@ -81,6 +94,7 @@ func NewGPUSoftwareDevice(width, height int, cfg GPUViewConfig) *GPUSoftwareDevi
 		layouts:    map[GPUID]*softBindGroupLayout{},
 		bindGroups: map[GPUID]*softBindGroup{},
 		pipelines:  map[GPUID]*softPipeline{},
+		labels:     map[GPUID]string{},
 	}
 	d.Resize(width, height)
 	return d
@@ -111,6 +125,50 @@ func (d *GPUSoftwareDevice) Size() (int, int) { return d.width, d.height }
 // Frames returns all GPUFrames submitted to this device, oldest first.
 func (d *GPUSoftwareDevice) Frames() []GPUFrame { return d.frames }
 
+// LastPassTimings returns a copy of the pass timings measured during the most
+// recent Submit call.
+func (d *GPUSoftwareDevice) LastPassTimings() []GPUPassTiming {
+	return slices.Clone(d.lastTimings)
+}
+
+// DebugEvents returns a copy of all debug labels, groups, and markers observed
+// by this software device.
+func (d *GPUSoftwareDevice) DebugEvents() []GPUDebugEvent {
+	return slices.Clone(d.debugEvents)
+}
+
+// ResourceLabel returns the debug label recorded for resource id, if any.
+func (d *GPUSoftwareDevice) ResourceLabel(id GPUID) string {
+	return d.labels[id]
+}
+
+func (d *GPUSoftwareDevice) recordResourceLabel(kind string, id GPUID, label string) {
+	if label == "" {
+		return
+	}
+	d.labels[id] = label
+	d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: kind, Label: label, Depth: d.debugDepth})
+}
+
+func (d *GPUSoftwareDevice) applyEncoderDebugOps(ops []GPUDebugOp, cursor *int, passIndex int) {
+	for *cursor < len(ops) && ops[*cursor].PassIndex <= passIndex {
+		op := ops[*cursor]
+		*cursor++
+		switch op.Kind {
+		case GPUDebugPushGroup:
+			d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: "push_group", Label: op.Label, Depth: d.debugDepth})
+			d.debugDepth++
+		case GPUDebugPopGroup:
+			if d.debugDepth > 0 {
+				d.debugDepth--
+			}
+			d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: "pop_group", Depth: d.debugDepth})
+		case GPUDebugInsertMarker:
+			d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: "marker", Label: op.Label, Depth: d.debugDepth})
+		}
+	}
+}
+
 // ReadBuffer returns a copy of buffer id's contents, if present.
 func (d *GPUSoftwareDevice) ReadBuffer(id GPUID) ([]byte, bool) {
 	b, ok := d.buffers[id]
@@ -130,6 +188,7 @@ func (d *GPUSoftwareDevice) SurfaceImage() *image.RGBA {
 // Submit executes all resource ops, copies, and render passes in frame.
 func (d *GPUSoftwareDevice) Submit(frame GPUFrame) ([]GPUSoftReadback, error) {
 	d.frames = append(d.frames, frame)
+	d.lastTimings = nil
 	var readbacks []GPUSoftReadback
 	for _, op := range frame.Ops {
 		rb, err := d.execOp(op)
@@ -145,11 +204,34 @@ func (d *GPUSoftwareDevice) Submit(frame GPUFrame) ([]GPUSoftReadback, error) {
 			return readbacks, err
 		}
 	}
-	for _, pass := range frame.Passes {
+	debugCursor := 0
+	for passIdx, pass := range frame.Passes {
+		d.applyEncoderDebugOps(frame.DebugOps, &debugCursor, passIdx)
+		if pass.Label != "" {
+			d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: "pass", Label: pass.Label, Depth: d.debugDepth})
+		}
+		measure := pass.TimingLabel != "" || pass.TimestampQueryID != 0
+		var start time.Time
+		if measure {
+			start = time.Now()
+		}
 		if err := d.execPass(pass); err != nil {
 			return readbacks, err
 		}
+		if measure {
+			dur := time.Since(start)
+			if dur < 0 {
+				dur = 0
+			}
+			d.lastTimings = append(d.lastTimings, GPUPassTiming{
+				Label:     pass.TimingLabel,
+				PassIndex: passIdx,
+				QueryID:   pass.TimestampQueryID,
+				Duration:  dur,
+			})
+		}
 	}
+	d.applyEncoderDebugOps(frame.DebugOps, &debugCursor, len(frame.Passes)+1)
 	return readbacks, nil
 }
 
@@ -166,6 +248,7 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 		buf := make([]byte, size)
 		copy(buf, op.Buffer.Data)
 		d.buffers[op.ID] = &softBuffer{desc: *op.Buffer, data: buf}
+		d.recordResourceLabel("buffer", op.ID, op.Buffer.Label)
 	case GPUOpWriteBuffer:
 		b, ok := d.buffers[op.ID]
 		if !ok {
@@ -185,6 +268,12 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 		if w <= 0 || h <= 0 {
 			return nil, fmt.Errorf("gpu: invalid texture size %dx%d", w, h)
 		}
+		if op.Texture.Format.IsCompressed() {
+			bw, bh := op.Texture.Format.BlockSize()
+			if bw == 0 || bh == 0 || op.Texture.Width%bw != 0 || op.Texture.Height%bh != 0 {
+				return nil, fmt.Errorf("gpu: compressed texture %dx%d must be a multiple of block size %dx%d", op.Texture.Width, op.Texture.Height, bw, bh)
+			}
+		}
 		st := &softTexture{desc: *op.Texture}
 		if op.Texture.Format.IsDepth() {
 			st.depth = make([]float32, w*h)
@@ -195,12 +284,35 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 			st.rgba = make([]byte, w*h*4)
 		}
 		d.textures[op.ID] = st
+		d.recordResourceLabel("texture", op.ID, op.Texture.Label)
 	case GPUOpWriteTexture:
 		tex, ok := d.textures[op.TextureDst.Texture]
 		if !ok {
 			return nil, fmt.Errorf("gpu: write to unknown texture %d", op.TextureDst.Texture)
 		}
 		if tex.rgba == nil {
+			return nil, nil
+		}
+		if tex.desc.Format.IsCompressed() {
+			regionW := tex.desc.Width - op.TextureDst.OriginX
+			regionH := tex.desc.Height - op.TextureDst.OriginY
+			if op.DataLayout.RowsPerImage > 0 {
+				_, bh := tex.desc.Format.BlockSize()
+				if op.DataLayout.RowsPerImage*bh < regionH {
+					regionH = op.DataLayout.RowsPerImage * bh
+				}
+			}
+			if err := decodeCompressedToRGBA(
+				tex.desc.Format,
+				tex.rgba,
+				tex.desc.Width, tex.desc.Height,
+				op.TextureDst.OriginX, op.TextureDst.OriginY,
+				regionW, regionH,
+				op.DataLayout,
+				op.Data,
+			); err != nil {
+				return nil, err
+			}
 			return nil, nil
 		}
 		w, h := int(tex.desc.Width), int(tex.desc.Height)
@@ -259,6 +371,7 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 			return nil, fmt.Errorf("gpu: missing sampler descriptor")
 		}
 		d.samplers[op.ID] = &softSampler{desc: *op.Sampler}
+		d.recordResourceLabel("sampler", op.ID, op.Sampler.Label)
 	case GPUOpDestroySampler:
 		delete(d.samplers, op.ID)
 	case GPUOpCreateBindGroupLayout:
@@ -266,6 +379,7 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 			return nil, fmt.Errorf("gpu: missing bind group layout descriptor")
 		}
 		d.layouts[op.ID] = &softBindGroupLayout{desc: *op.BindGroupLayout}
+		d.recordResourceLabel("bind_group_layout", op.ID, op.BindGroupLayout.Label)
 	case GPUOpDestroyBindGroupLayout:
 		delete(d.layouts, op.ID)
 	case GPUOpCreateBindGroup:
@@ -277,6 +391,7 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 			m[e.Binding] = e
 		}
 		d.bindGroups[op.ID] = &softBindGroup{desc: *op.BindGroup, entries: m}
+		d.recordResourceLabel("bind_group", op.ID, op.BindGroup.Label)
 	case GPUOpDestroyBindGroup:
 		delete(d.bindGroups, op.ID)
 	case GPUOpCreatePipeline:
@@ -285,6 +400,13 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 		}
 		comb := mergeShaderPrograms(op.Pipeline.Vertex.IR, op.Pipeline.Fragment.IR)
 		d.pipelines[op.ID] = &softPipeline{desc: *op.Pipeline, combined: comb}
+		d.recordResourceLabel("pipeline", op.ID, op.Pipeline.Label)
+		if op.Pipeline.Vertex.Label != "" {
+			d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: "shader", Label: op.Pipeline.Vertex.Label, Depth: d.debugDepth})
+		}
+		if op.Pipeline.Fragment.Label != "" && op.Pipeline.Fragment.Label != op.Pipeline.Vertex.Label {
+			d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: "shader", Label: op.Pipeline.Fragment.Label, Depth: d.debugDepth})
+		}
 	case GPUOpDestroyPipeline:
 		delete(d.pipelines, op.ID)
 	case GPUOpReadTexture:
@@ -342,6 +464,61 @@ func (d *GPUSoftwareDevice) execCopy(cp GPUCopyOp) error {
 			return fmt.Errorf("gpu: CopyBufferToBuffer out of bounds")
 		}
 		copy(t.data[cp.DstOffset:cp.DstOffset+cp.Size], s.data[cp.SrcOffset:cp.SrcOffset+cp.Size])
+	case GPUCopyBufferToTexture:
+		s, ok1 := d.buffers[cp.SrcID]
+		t, ok2 := d.textures[cp.DstTex.Texture]
+		if !ok1 || !ok2 || t.rgba == nil {
+			return fmt.Errorf("gpu: CopyBufferToTexture references unknown resource")
+		}
+		if t.desc.Format.IsCompressed() {
+			return decodeCompressedToRGBA(
+				t.desc.Format,
+				t.rgba,
+				t.desc.Width, t.desc.Height,
+				cp.DstTex.OriginX, cp.DstTex.OriginY,
+				cp.Width, cp.Height,
+				cp.SrcLayout,
+				s.data,
+			)
+		}
+		bpp := int(t.desc.Format.BytesPerPixel())
+		if bpp == 0 {
+			bpp = 4
+		}
+		stride := int(cp.SrcLayout.BytesPerRow)
+		if stride == 0 {
+			stride = int(cp.Width) * bpp
+		}
+		src := s.data
+		if cp.SrcLayout.Offset > uint64(len(src)) {
+			return fmt.Errorf("gpu: CopyBufferToTexture offset out of bounds")
+		}
+		src = src[cp.SrcLayout.Offset:]
+		dw := int(t.desc.Width)
+		ox, oy := int(cp.DstTex.OriginX), int(cp.DstTex.OriginY)
+		for y := 0; y < int(cp.Height) && oy+y < int(t.desc.Height); y++ {
+			rowStart := y * stride
+			if rowStart >= len(src) {
+				break
+			}
+			for x := 0; x < int(cp.Width) && ox+x < dw; x++ {
+				si := rowStart + x*bpp
+				if si+bpp > len(src) {
+					break
+				}
+				di := ((oy+y)*dw + (ox + x)) * 4
+				switch t.desc.Format {
+				case GPUFormatBGRA8Unorm:
+					t.rgba[di+0], t.rgba[di+1], t.rgba[di+2], t.rgba[di+3] = src[si+2], src[si+1], src[si+0], src[si+3]
+				case GPUFormatR8Unorm:
+					t.rgba[di+0], t.rgba[di+1], t.rgba[di+2], t.rgba[di+3] = src[si], 0, 0, 255
+				case GPUFormatRG8Unorm:
+					t.rgba[di+0], t.rgba[di+1], t.rgba[di+2], t.rgba[di+3] = src[si], src[si+1], 0, 255
+				default:
+					t.rgba[di+0], t.rgba[di+1], t.rgba[di+2], t.rgba[di+3] = src[si+0], src[si+1], src[si+2], src[si+3]
+				}
+			}
+		}
 	case GPUCopyTextureToTexture:
 		s, ok1 := d.textures[cp.SrcTex.Texture]
 		t, ok2 := d.textures[cp.DstTex.Texture]
@@ -660,6 +837,16 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 			if err := draw(true, cmd.U0, cmd.U1, cmd.U2, cmd.U3, cmd.I0); err != nil {
 				return err
 			}
+		case GPUCmdPushDebugGroup:
+			d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: "pass_push_group", Label: cmd.Label, Depth: d.debugDepth})
+			d.debugDepth++
+		case GPUCmdPopDebugGroup:
+			if d.debugDepth > 0 {
+				d.debugDepth--
+			}
+			d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: "pass_pop_group", Depth: d.debugDepth})
+		case GPUCmdInsertDebugMarker:
+			d.debugEvents = append(d.debugEvents, GPUDebugEvent{Kind: "pass_marker", Label: cmd.Label, Depth: d.debugDepth})
 		}
 	}
 	return nil
@@ -1918,10 +2105,19 @@ func (vm *irVM) evalTextureSample(texIdx, sampIdx int, uv irVal, offX, offY int)
 		return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{0, 0, 0, 1}}
 	}
 
+	isSRGB := tex.desc.Format.IsSRGB()
 	readPx := func(x, y int) [4]float32 {
 		x = min(max(x+offX, 0), w-1)
 		y = min(max(y+offY, 0), h-1)
 		off := (y*w + x) * 4
+		if isSRGB {
+			return [4]float32{
+				srgbByteToLinear(tex.rgba[off+0]),
+				srgbByteToLinear(tex.rgba[off+1]),
+				srgbByteToLinear(tex.rgba[off+2]),
+				float32(tex.rgba[off+3]) / 255.0,
+			}
+		}
 		return [4]float32{
 			float32(tex.rgba[off+0]) / 255.0,
 			float32(tex.rgba[off+1]) / 255.0,
@@ -2024,6 +2220,14 @@ func (vm *irVM) evalTextureLoad(texIdx int, coord irVal) irVal {
 		return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{0, 0, 0, 1}}
 	}
 	off := (iy*w + ix) * 4
+	if tex.desc.Format.IsSRGB() {
+		return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{
+			srgbByteToLinear(tex.rgba[off+0]),
+			srgbByteToLinear(tex.rgba[off+1]),
+			srgbByteToLinear(tex.rgba[off+2]),
+			float32(tex.rgba[off+3]) / 255.0,
+		}}
+	}
 	return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{
 		float32(tex.rgba[off+0]) / 255.0,
 		float32(tex.rgba[off+1]) / 255.0,

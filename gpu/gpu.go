@@ -60,11 +60,54 @@ const (
 	FormatDepth24Plus         TextureFormat = TextureFormat(driver.GPUFormatDepth24Plus)
 	FormatDepth24PlusStencil8 TextureFormat = TextureFormat(driver.GPUFormatDepth24PlusStencil8)
 	FormatDepth32Float        TextureFormat = TextureFormat(driver.GPUFormatDepth32Float)
+	FormatBC1RGBAUnorm        TextureFormat = TextureFormat(driver.GPUFormatBC1RGBAUnorm)
+	FormatBC1RGBAUnormSRGB    TextureFormat = TextureFormat(driver.GPUFormatBC1RGBAUnormSRGB)
+	FormatBC3RGBAUnorm        TextureFormat = TextureFormat(driver.GPUFormatBC3RGBAUnorm)
+	FormatBC3RGBAUnormSRGB    TextureFormat = TextureFormat(driver.GPUFormatBC3RGBAUnormSRGB)
+	FormatBC7RGBAUnorm        TextureFormat = TextureFormat(driver.GPUFormatBC7RGBAUnorm)
+	FormatBC7RGBAUnormSRGB    TextureFormat = TextureFormat(driver.GPUFormatBC7RGBAUnormSRGB)
+	FormatETC2RGB8Unorm       TextureFormat = TextureFormat(driver.GPUFormatETC2RGB8Unorm)
+	FormatETC2RGBA8Unorm      TextureFormat = TextureFormat(driver.GPUFormatETC2RGBA8Unorm)
+	FormatASTC4x4Unorm        TextureFormat = TextureFormat(driver.GPUFormatASTC4x4Unorm)
+	FormatASTC4x4UnormSRGB    TextureFormat = TextureFormat(driver.GPUFormatASTC4x4UnormSRGB)
 )
 
 // IsDepth reports whether f is a depth or depth/stencil format.
 func (f TextureFormat) IsDepth() bool {
 	return driver.GPUTextureFormat(f).IsDepth()
+}
+
+// IsCompressed reports whether f is a block-compressed texture format (BCn, ETC2, ASTC).
+func (f TextureFormat) IsCompressed() bool {
+	return driver.GPUTextureFormat(f).IsCompressed()
+}
+
+// IsSRGB reports whether f decodes sRGB RGB channels to linear on texture sampling.
+func (f TextureFormat) IsSRGB() bool {
+	return driver.GPUTextureFormat(f).IsSRGB()
+}
+
+// BlockSize returns the compression block dimensions (width, height) in texels.
+// Uncompressed formats return (1, 1); FormatUndefined returns (0, 0).
+func (f TextureFormat) BlockSize() (width, height uint32) {
+	return driver.GPUTextureFormat(f).BlockSize()
+}
+
+// BytesPerBlock returns the byte size of one texel block (or one texel for
+// uncompressed color formats; 0 for depth or undefined formats).
+func (f TextureFormat) BytesPerBlock() uint32 {
+	return driver.GPUTextureFormat(f).BytesPerBlock()
+}
+
+// ByteSize returns the tightly-packed byte size of a 2D texture level of
+// width x height texels in format f.
+func (f TextureFormat) ByteSize(width, height uint32) uint64 {
+	return driver.GPUTextureFormat(f).ByteSize(width, height)
+}
+
+// String returns the format's canonical name.
+func (f TextureFormat) String() string {
+	return driver.GPUTextureFormat(f).String()
 }
 
 // TextureUsage is a bitmask of permitted uses for a Texture.
@@ -142,6 +185,7 @@ const (
 
 // SamplerDesc configures Device.CreateSampler.
 type SamplerDesc struct {
+	Label         string
 	MinFilter     FilterMode
 	MagFilter     FilterMode
 	MipmapFilter  FilterMode
@@ -150,6 +194,12 @@ type SamplerDesc struct {
 	AddressW      AddressMode
 	Compare       CompareFunc
 	MaxAnisotropy uint16
+}
+
+// ShaderDesc configures CompileShader.
+type ShaderDesc struct {
+	Label  string
+	Source string
 }
 
 // BindingType classifies an entry in a BindGroupLayout.
@@ -180,6 +230,12 @@ type BindGroupLayoutEntry struct {
 	HasDynamicOffset bool
 }
 
+// BindGroupLayoutDesc configures Device.CreateBindGroupLayoutDesc.
+type BindGroupLayoutDesc struct {
+	Label   string
+	Entries []BindGroupLayoutEntry
+}
+
 // BindGroupEntry binds a Buffer, Texture, or Sampler to a slot in a BindGroup.
 type BindGroupEntry struct {
 	Binding uint32
@@ -188,6 +244,13 @@ type BindGroupEntry struct {
 	Size    uint64 // 0 binds to the end of Buffer
 	Texture *Texture
 	Sampler *Sampler
+}
+
+// BindGroupDesc configures Device.CreateBindGroupDesc.
+type BindGroupDesc struct {
+	Label   string
+	Layout  *BindGroupLayout
+	Entries []BindGroupEntry
 }
 
 // VertexFormat specifies the format of one vertex attribute.
@@ -412,8 +475,31 @@ type DepthStencilAttachment struct {
 
 // RenderPassDesc configures Encoder.BeginRenderPass and Frame.BeginRenderPass.
 type RenderPassDesc struct {
+	// Label names the render pass in GPU capture tools (stripped in release builds).
+	Label string
+	// TimingLabel opts this pass into per-pass GPU timing queries when
+	// Device.Capabilities().TimestampQueries is true.
+	TimingLabel string
+	// TimestampQuery optionally binds a TimestampQuery resource to receive this
+	// pass's measured GPU execution duration.
+	TimestampQuery   *TimestampQuery
 	ColorAttachments []ColorAttachment
 	DepthStencil     *DepthStencilAttachment
+}
+
+// PassTiming reports the measured GPU execution duration of one render pass.
+type PassTiming struct {
+	Label     string
+	PassIndex int
+	Duration  time.Duration
+}
+
+// DebugEvent records a GPU debug label, group, or marker captured by
+// SoftwareRenderer in nsgodev or nsgotest builds.
+type DebugEvent struct {
+	Kind  string
+	Label string
+	Depth int
 }
 
 // BufferCopy identifies a buffer region for copy commands.
@@ -475,21 +561,58 @@ func limitsFromDriver(l driver.GPULimits) Limits {
 
 // Features reports optional capabilities supported by the active GPU device.
 type Features struct {
-	StorageBuffers bool
-	Compute        bool
-	MSAA4x         bool
-	Depth32Float   bool
-	Anisotropy     bool
+	StorageBuffers         bool
+	Compute                bool
+	MSAA4x                 bool
+	Depth32Float           bool
+	Anisotropy             bool
+	TimestampQueries       bool
+	TextureCompressionBC   bool
+	TextureCompressionETC2 bool
+	TextureCompressionASTC bool
+}
+
+// DeviceCapabilities summarizes the active GPU device's limits, optional
+// features, timing query support, and supported compressed texture formats.
+type DeviceCapabilities struct {
+	Limits            Limits
+	Features          Features
+	TimestampQueries  bool
+	CompressedFormats []TextureFormat
 }
 
 func featuresFromDriver(f driver.GPUFeatures) Features {
 	return Features{
-		StorageBuffers: f.StorageBuffers,
-		Compute:        f.Compute,
-		MSAA4x:         f.MSAA4x,
-		Depth32Float:   f.Depth32Float,
-		Anisotropy:     f.Anisotropy,
+		StorageBuffers:         f.StorageBuffers,
+		Compute:                f.Compute,
+		MSAA4x:                 f.MSAA4x,
+		Depth32Float:           f.Depth32Float,
+		Anisotropy:             f.Anisotropy,
+		TimestampQueries:       f.TimestampQueries,
+		TextureCompressionBC:   f.TextureCompressionBC,
+		TextureCompressionETC2: f.TextureCompressionETC2,
+		TextureCompressionASTC: f.TextureCompressionASTC,
 	}
+}
+
+func compressedFormatsFromDriver(f driver.GPUFeatures) []TextureFormat {
+	raw := f.SupportedCompressedFormats()
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]TextureFormat, len(raw))
+	for i, fm := range raw {
+		out[i] = TextureFormat(fm)
+	}
+	return out
+}
+
+func compressedFormatsFromFeatures(f Features) []TextureFormat {
+	return compressedFormatsFromDriver(driver.GPUFeatures{
+		TextureCompressionBC:   f.TextureCompressionBC,
+		TextureCompressionETC2: f.TextureCompressionETC2,
+		TextureCompressionASTC: f.TextureCompressionASTC,
+	})
 }
 
 // DeviceLostReason explains why a GPU device or context was lost.

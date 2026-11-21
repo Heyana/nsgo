@@ -103,7 +103,7 @@ func (a *App) syncGPUViews(configured []*View, resized []*View) {
 					Height:        h,
 					SurfaceFormat: driver.GPUFormatRGBA8Unorm,
 					Limits:        driver.DefaultGPULimits(),
-					Features:      driver.GPUFeatures{Depth32Float: true},
+					Features:      driver.DefaultSoftwareGPUFeatures(),
 				},
 			})
 		}
@@ -213,6 +213,17 @@ func (a *App) submitGPU(frame driver.GPUFrame) {
 				ReadbackID: rb.ID,
 				Pixels:     rb.Pixels,
 				Message:    rb.Err,
+			},
+		})
+	}
+	if timings := st.soft.LastPassTimings(); len(timings) > 0 {
+		owner.post(driver.Event{
+			Kind: driver.EventGPU,
+			ID:   frame.ViewID,
+			Data: &driver.GPUEvent{
+				Kind:        driver.GPUEventPassTimings,
+				Generation:  st.generation,
+				PassTimings: timings,
 			},
 		})
 	}

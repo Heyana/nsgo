@@ -32,6 +32,9 @@ type ViewProps struct {
 	OnDeviceLost func(DeviceLostEvent)
 	// OnError reports asynchronous GPU validation, unsupported, or OOM errors.
 	OnError func(Error)
+	// OnPassTimings runs on the engine goroutine when per-pass GPU timing
+	// measurements complete for a submitted frame.
+	OnPassTimings func([]PassTiming)
 
 	Class     string
 	Style     core.Style
@@ -163,6 +166,7 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 					TextureFormat(ev.SurfaceFormat),
 					limitsFromDriver(ev.Limits),
 					featuresFromDriver(ev.Features),
+					compressedFormatsFromDriver(ev.Features),
 				)
 				activeDev = dev
 				if props.OnReady != nil {
@@ -205,6 +209,14 @@ func View(cx *core.Scope, props ViewProps) core.Node {
 			case driver.GPUEventReadback:
 				if activeDev != nil {
 					activeDev.completeReadback(ev.ReadbackID, ev.Pixels, ev.Message)
+				}
+
+			case driver.GPUEventPassTimings:
+				if activeDev != nil && (ev.Generation == 0 || activeDev.generation == ev.Generation) {
+					timings := activeDev.completePassTimings(ev.PassTimings)
+					if props.OnPassTimings != nil && len(timings) > 0 {
+						props.OnPassTimings(timings)
+					}
 				}
 			}
 		},

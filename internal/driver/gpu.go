@@ -1,6 +1,10 @@
 package driver
 
-import "github.com/nsgo-dev/nsgo/internal/shaderir"
+import (
+	"time"
+
+	"github.com/nsgo-dev/nsgo/internal/shaderir"
+)
 
 // GPUID uniquely identifies a retained GPU resource (buffer, texture, sampler,
 // bind group layout, bind group, or pipeline) within a GPU surface.
@@ -20,6 +24,16 @@ const (
 	GPUFormatDepth24Plus
 	GPUFormatDepth24PlusStencil8
 	GPUFormatDepth32Float
+	GPUFormatBC1RGBAUnorm
+	GPUFormatBC1RGBAUnormSRGB
+	GPUFormatBC3RGBAUnorm
+	GPUFormatBC3RGBAUnormSRGB
+	GPUFormatBC7RGBAUnorm
+	GPUFormatBC7RGBAUnormSRGB
+	GPUFormatETC2RGB8Unorm
+	GPUFormatETC2RGBA8Unorm
+	GPUFormatASTC4x4Unorm
+	GPUFormatASTC4x4UnormSRGB
 )
 
 // IsDepth reports whether f is a depth or depth-stencil texture format.
@@ -27,7 +41,84 @@ func (f GPUTextureFormat) IsDepth() bool {
 	return f == GPUFormatDepth24Plus || f == GPUFormatDepth24PlusStencil8 || f == GPUFormatDepth32Float
 }
 
-// BytesPerPixel returns the texel stride in bytes for color formats (0 for depth/undefined).
+// IsCompressed reports whether f is a block-compressed GPU texture format.
+func (f GPUTextureFormat) IsCompressed() bool {
+	switch f {
+	case GPUFormatBC1RGBAUnorm, GPUFormatBC1RGBAUnormSRGB,
+		GPUFormatBC3RGBAUnorm, GPUFormatBC3RGBAUnormSRGB,
+		GPUFormatBC7RGBAUnorm, GPUFormatBC7RGBAUnormSRGB,
+		GPUFormatETC2RGB8Unorm, GPUFormatETC2RGBA8Unorm,
+		GPUFormatASTC4x4Unorm, GPUFormatASTC4x4UnormSRGB:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsSRGB reports whether f stores sRGB-encoded RGB channels decoded to linear on sample.
+func (f GPUTextureFormat) IsSRGB() bool {
+	switch f {
+	case GPUFormatRGBA8UnormSRGB,
+		GPUFormatBC1RGBAUnormSRGB,
+		GPUFormatBC3RGBAUnormSRGB,
+		GPUFormatBC7RGBAUnormSRGB,
+		GPUFormatASTC4x4UnormSRGB:
+		return true
+	default:
+		return false
+	}
+}
+
+// BlockSize returns the compression block dimensions (width, height) in texels.
+// Uncompressed non-undefined formats return (1, 1); undefined/unknown returns (0, 0).
+func (f GPUTextureFormat) BlockSize() (width, height uint32) {
+	switch f {
+	case GPUFormatBC1RGBAUnorm, GPUFormatBC1RGBAUnormSRGB,
+		GPUFormatBC3RGBAUnorm, GPUFormatBC3RGBAUnormSRGB,
+		GPUFormatBC7RGBAUnorm, GPUFormatBC7RGBAUnormSRGB,
+		GPUFormatETC2RGB8Unorm, GPUFormatETC2RGBA8Unorm,
+		GPUFormatASTC4x4Unorm, GPUFormatASTC4x4UnormSRGB:
+		return 4, 4
+	case GPUFormatRGBA8Unorm, GPUFormatRGBA8UnormSRGB, GPUFormatBGRA8Unorm,
+		GPUFormatRG8Unorm, GPUFormatR8Unorm, GPUFormatRGBA16Float,
+		GPUFormatDepth24Plus, GPUFormatDepth24PlusStencil8, GPUFormatDepth32Float:
+		return 1, 1
+	default:
+		return 0, 0
+	}
+}
+
+// BytesPerBlock returns the encoded byte size of one texel block.
+// For uncompressed color formats it equals BytesPerPixel; for depth/undefined it is 0.
+func (f GPUTextureFormat) BytesPerBlock() uint32 {
+	switch f {
+	case GPUFormatBC1RGBAUnorm, GPUFormatBC1RGBAUnormSRGB, GPUFormatETC2RGB8Unorm:
+		return 8
+	case GPUFormatBC3RGBAUnorm, GPUFormatBC3RGBAUnormSRGB,
+		GPUFormatBC7RGBAUnorm, GPUFormatBC7RGBAUnormSRGB,
+		GPUFormatETC2RGBA8Unorm,
+		GPUFormatASTC4x4Unorm, GPUFormatASTC4x4UnormSRGB:
+		return 16
+	default:
+		return f.BytesPerPixel()
+	}
+}
+
+// ByteSize returns the tightly-packed byte size required for a 2D image of
+// width x height texels in format f (0 for depth or undefined formats).
+func (f GPUTextureFormat) ByteSize(width, height uint32) uint64 {
+	bw, bh := f.BlockSize()
+	bpb := f.BytesPerBlock()
+	if bw == 0 || bh == 0 || bpb == 0 || width == 0 || height == 0 {
+		return 0
+	}
+	blocksX := (uint64(width) + uint64(bw) - 1) / uint64(bw)
+	blocksY := (uint64(height) + uint64(bh) - 1) / uint64(bh)
+	return blocksX * blocksY * uint64(bpb)
+}
+
+// BytesPerPixel returns the texel stride in bytes for uncompressed color formats
+// (0 for compressed, depth, or undefined formats).
 func (f GPUTextureFormat) BytesPerPixel() uint32 {
 	switch f {
 	case GPUFormatR8Unorm:
@@ -40,6 +131,54 @@ func (f GPUTextureFormat) BytesPerPixel() uint32 {
 		return 8
 	default:
 		return 0
+	}
+}
+
+// String returns a human-readable identifier for f.
+func (f GPUTextureFormat) String() string {
+	switch f {
+	case GPUFormatUndefined:
+		return "Undefined"
+	case GPUFormatRGBA8Unorm:
+		return "RGBA8Unorm"
+	case GPUFormatRGBA8UnormSRGB:
+		return "RGBA8UnormSRGB"
+	case GPUFormatBGRA8Unorm:
+		return "BGRA8Unorm"
+	case GPUFormatRG8Unorm:
+		return "RG8Unorm"
+	case GPUFormatR8Unorm:
+		return "R8Unorm"
+	case GPUFormatRGBA16Float:
+		return "RGBA16Float"
+	case GPUFormatDepth24Plus:
+		return "Depth24Plus"
+	case GPUFormatDepth24PlusStencil8:
+		return "Depth24PlusStencil8"
+	case GPUFormatDepth32Float:
+		return "Depth32Float"
+	case GPUFormatBC1RGBAUnorm:
+		return "BC1RGBAUnorm"
+	case GPUFormatBC1RGBAUnormSRGB:
+		return "BC1RGBAUnormSRGB"
+	case GPUFormatBC3RGBAUnorm:
+		return "BC3RGBAUnorm"
+	case GPUFormatBC3RGBAUnormSRGB:
+		return "BC3RGBAUnormSRGB"
+	case GPUFormatBC7RGBAUnorm:
+		return "BC7RGBAUnorm"
+	case GPUFormatBC7RGBAUnormSRGB:
+		return "BC7RGBAUnormSRGB"
+	case GPUFormatETC2RGB8Unorm:
+		return "ETC2RGB8Unorm"
+	case GPUFormatETC2RGBA8Unorm:
+		return "ETC2RGBA8Unorm"
+	case GPUFormatASTC4x4Unorm:
+		return "ASTC4x4Unorm"
+	case GPUFormatASTC4x4UnormSRGB:
+		return "ASTC4x4UnormSRGB"
+	default:
+		return "Unknown"
 	}
 }
 
@@ -320,11 +459,96 @@ func DefaultGPULimits() GPULimits {
 
 // GPUFeatures reports optional GPU capabilities supported by the active device.
 type GPUFeatures struct {
-	StorageBuffers bool
-	Compute        bool
-	MSAA4x         bool
-	Depth32Float   bool
-	Anisotropy     bool
+	StorageBuffers         bool
+	Compute                bool
+	MSAA4x                 bool
+	Depth32Float           bool
+	Anisotropy             bool
+	TimestampQueries       bool
+	TextureCompressionBC   bool
+	TextureCompressionETC2 bool
+	TextureCompressionASTC bool
+	// CompressedFormats optionally enumerates the exact compressed formats
+	// supported by the device. When empty, supported formats are derived from
+	// TextureCompressionBC, TextureCompressionETC2, and TextureCompressionASTC.
+	CompressedFormats []GPUTextureFormat
+}
+
+// DefaultSoftwareGPUFeatures returns the capabilities supported by the pure-Go
+// headless software GPU device.
+func DefaultSoftwareGPUFeatures() GPUFeatures {
+	return GPUFeatures{
+		Depth32Float:           true,
+		TimestampQueries:       true,
+		TextureCompressionBC:   true,
+		TextureCompressionETC2: true,
+		TextureCompressionASTC: true,
+	}
+}
+
+// SupportedCompressedFormats returns the deduplicated list of compressed texture
+// formats supported by f.
+func (f GPUFeatures) SupportedCompressedFormats() []GPUTextureFormat {
+	if len(f.CompressedFormats) > 0 {
+		out := make([]GPUTextureFormat, 0, len(f.CompressedFormats))
+		for _, fm := range f.CompressedFormats {
+			if fm.IsCompressed() {
+				out = append(out, fm)
+			}
+		}
+		return out
+	}
+	var out []GPUTextureFormat
+	if f.TextureCompressionBC {
+		out = append(out,
+			GPUFormatBC1RGBAUnorm,
+			GPUFormatBC1RGBAUnormSRGB,
+			GPUFormatBC3RGBAUnorm,
+			GPUFormatBC3RGBAUnormSRGB,
+			GPUFormatBC7RGBAUnorm,
+			GPUFormatBC7RGBAUnormSRGB,
+		)
+	}
+	if f.TextureCompressionETC2 {
+		out = append(out,
+			GPUFormatETC2RGB8Unorm,
+			GPUFormatETC2RGBA8Unorm,
+		)
+	}
+	if f.TextureCompressionASTC {
+		out = append(out,
+			GPUFormatASTC4x4Unorm,
+			GPUFormatASTC4x4UnormSRGB,
+		)
+	}
+	return out
+}
+
+// SupportsCompressedFormat reports whether f supports the compressed format fm.
+func (f GPUFeatures) SupportsCompressedFormat(fm GPUTextureFormat) bool {
+	if !fm.IsCompressed() {
+		return false
+	}
+	if len(f.CompressedFormats) > 0 {
+		for _, candidate := range f.CompressedFormats {
+			if candidate == fm {
+				return true
+			}
+		}
+		return false
+	}
+	switch fm {
+	case GPUFormatBC1RGBAUnorm, GPUFormatBC1RGBAUnormSRGB,
+		GPUFormatBC3RGBAUnorm, GPUFormatBC3RGBAUnormSRGB,
+		GPUFormatBC7RGBAUnorm, GPUFormatBC7RGBAUnormSRGB:
+		return f.TextureCompressionBC
+	case GPUFormatETC2RGB8Unorm, GPUFormatETC2RGBA8Unorm:
+		return f.TextureCompressionETC2
+	case GPUFormatASTC4x4Unorm, GPUFormatASTC4x4UnormSRGB:
+		return f.TextureCompressionASTC
+	default:
+		return false
+	}
 }
 
 // GPUBufferDesc describes a GPU buffer allocation.
@@ -350,6 +574,7 @@ type GPUTextureDesc struct {
 
 // GPUSamplerDesc describes a GPU texture sampler.
 type GPUSamplerDesc struct {
+	Label         string
 	MinFilter     GPUFilterMode
 	MagFilter     GPUFilterMode
 	MipmapFilter  GPUFilterMode
@@ -407,6 +632,7 @@ type GPUVertexBufferLayout struct {
 
 // GPUShaderStage pairs a compiled shaderir.Program with an entry point name.
 type GPUShaderStage struct {
+	Label      string
 	IR         *shaderir.Program
 	EntryPoint string
 }
@@ -541,6 +767,9 @@ const (
 	GPUCmdDrawIndexed
 	GPUCmdDrawInstanced
 	GPUCmdDrawIndexedInstanced
+	GPUCmdPushDebugGroup
+	GPUCmdPopDebugGroup
+	GPUCmdInsertDebugMarker
 )
 
 // GPUCommand is one encoded command inside a GPUPass.
@@ -551,6 +780,7 @@ type GPUCommand struct {
 	Offset         uint64
 	IndexFormat    GPUIndexFormat
 	DynamicOffsets []uint32
+	Label          string
 	// Viewport / BlendConstant floats
 	F0, F1, F2, F3, F4, F5 float32
 	// Scissor / BaseVertex signed ints
@@ -585,9 +815,38 @@ type GPUDepthStencilAttachment struct {
 
 // GPUPass is one render pass recorded in a GPUFrame.
 type GPUPass struct {
+	Label            string
+	TimingLabel      string
+	TimestampQueryID GPUID
 	ColorAttachments []GPUColorAttachment
 	DepthStencil     *GPUDepthStencilAttachment
 	Commands         []GPUCommand
+}
+
+// GPUDebugOpKind identifies an encoder-level debug group or marker command.
+type GPUDebugOpKind uint8
+
+const (
+	GPUDebugPushGroup GPUDebugOpKind = iota + 1
+	GPUDebugPopGroup
+	GPUDebugInsertMarker
+)
+
+// GPUDebugOp records an encoder-level debug group boundary or marker positioned
+// relative to the frame's Passes slice (PassIndex is the pass index at which
+// the op was recorded).
+type GPUDebugOp struct {
+	Kind      GPUDebugOpKind
+	Label     string
+	PassIndex int
+}
+
+// GPUPassTiming reports the measured GPU execution duration of one render pass.
+type GPUPassTiming struct {
+	Label     string
+	PassIndex int
+	QueryID   GPUID
+	Duration  time.Duration
 }
 
 // GPUCopyOpKind identifies a GPU copy command outside a render pass.
@@ -625,6 +884,7 @@ type GPUFrame struct {
 	Ops        []GPUResourceOp
 	Copies     []GPUCopyOp
 	Passes     []GPUPass
+	DebugOps   []GPUDebugOp
 	Present    bool
 }
 
@@ -637,6 +897,7 @@ const (
 	GPUEventResize
 	GPUEventError
 	GPUEventReadback
+	GPUEventPassTimings
 )
 
 // GPUEvent is the payload carried in Event.Data for EventGPU.
@@ -653,4 +914,5 @@ type GPUEvent struct {
 	Message       string
 	ReadbackID    uint64
 	Pixels        []byte
+	PassTimings   []GPUPassTiming
 }
