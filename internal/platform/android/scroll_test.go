@@ -6,3 +6,5 @@ import "testing"
 func TestVerticalListTouchStopsMomentum(t *testing.T) { listTouchStopsMomentum(t, false) }
 
 func TestHorizontalListTouchStopsMomentum(t *testing.T) { listTouchStopsMomentum(t, true) }
+
+func TestZoomScrollTouchStopsMomentum(t *testing.T) { zoomScrollTouchStopsMomentum(t) }

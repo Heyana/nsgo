@@ -16,20 +16,24 @@ import (
 // start as with the mouse, until the finger moves past the slop along a
 // scroll view under it; the view then takes the touch, whose pointer
 // messages are no longer turned into mouse messages, and the press and
-// pan are cancelled. Let go, the view glides, snaps or springs back on
-// the frame clock, and a pull past the top refreshes, keeping room above
-// the content for the spinner, or the app's own indicator, while it does.
+// pan are cancelled. A finger that stops a scroll view's glide or snap
+// takes the touch at once so lifting presses nothing while moving still
+// drags the view. Let go, the view glides, snaps or springs back on the
+// frame clock, and a pull past the top refreshes, keeping room above the
+// content for the spinner, or the app's own indicator, while it does.
 // Values bound to the pull follow it.
 
 // touchScroll is the touch that may drag a scroll view: its pointer, the
-// views under it that scroll, innermost first, and the drag of the one
-// that took it.
+// views under it that scroll, innermost first, the drag of the one that
+// took it, and whether it braked a glide or snap so the touch is the
+// scroll view's from the down.
 type touchScroll struct {
 	pointer uint32
 	views   []*view
 	drags   []*scrollbar.TouchDrag
 	taken   *view
 	drag    *scrollbar.TouchDrag
+	braked  bool
 }
 
 // touchPointer follows a touch's pointer messages for the scroll views;
@@ -46,8 +50,10 @@ func (w *window) touchPointer(message uint32, wParam, lParam uintptr) bool {
 	p := w.point(at.X, at.Y)
 	switch message {
 	case wmPointerDown:
-		if w.touching == nil {
-			w.touchDown(id, p)
+		if w.touching == nil && w.touchDown(id, p) {
+			w.hideMenuBar()
+			w.pressOutside(at.X, at.Y)
+			return true
 		}
 		return false
 	case wmPointerUpdate:
@@ -62,12 +68,13 @@ func (w *window) touchPointer(message uint32, wParam, lParam uintptr) bool {
 }
 
 // touchDown starts following a finger down at at for the scroll views
-// under it; it stops their glides, as a finger on a moving list does.
-func (w *window) touchDown(pointer uint32, at driver.Point) {
+// under it; it stops their glides and snaps, and reports whether it
+// braked one so the touch is the scroll view's and presses nothing.
+func (w *window) touchDown(pointer uint32, at driver.Point) bool {
 	w.touching = nil
 	root := w.view(w.root)
 	if root == nil {
-		return
+		return false
 	}
 	under := scrollsAt(root, at, nil)
 	t := &touchScroll{pointer: pointer}
@@ -77,9 +84,9 @@ func (w *window) touchDown(pointer uint32, at driver.Point) {
 		if v.scroll.Behavior.NoScroll {
 			continue
 		}
-		if v.glide != nil {
-			v.glide = nil
-			w.scrollEvent(v, driver.EventMomentumEnd)
+		if v.glide != nil || v.scrolling != nil {
+			w.interruptScroll(v)
+			t.braked = true
 		}
 		t.views = append(t.views, v)
 		t.drags = append(t.drags, scrollbar.NewTouchDrag(at, scrollbar.Along(&v.scroll, v.offset), now))
@@ -87,14 +94,18 @@ func (w *window) touchDown(pointer uint32, at driver.Point) {
 	if len(t.views) > 0 {
 		w.touching = t
 	}
+	return t.braked
 }
 
 // touchMove follows the finger to at; it reports whether a scroll view
 // has it.
 func (w *window) touchMove(at driver.Point) bool {
 	t := w.touching
+	if t == nil {
+		return false
+	}
 	if t.taken == nil {
-		if w.pan != nil && w.pan.active || w.blockNative {
+		if !t.braked && (w.pan != nil && w.pan.active || w.blockNative) {
 			// A pan, or a touch responder that blocks them, keeps the scroll views from the touch.
 			w.touching = nil
 			return false
@@ -106,13 +117,15 @@ func (w *window) touchMove(at driver.Point) bool {
 			}
 		}
 		if t.taken == nil {
-			return false
+			return t.braked
 		}
 		// The touch is the view's: no press, long press, pan or fingers.
-		w.pressCancel()
-		w.panLost()
-		w.cancelTouches()
-		releaseCapture.Call()
+		if !t.braked {
+			w.pressCancel()
+			w.panLost()
+			w.cancelTouches()
+			releaseCapture.Call()
+		}
 		w.scrollEvent(t.taken, driver.EventScrollDragStart)
 	}
 	v := t.taken
@@ -137,8 +150,11 @@ func (w *window) touchMove(at driver.Point) bool {
 func (w *window) touchUp() bool {
 	t := w.touching
 	w.touching = nil
-	if t == nil || t.taken == nil || t.taken.deleted {
+	if t == nil {
 		return false
+	}
+	if t.taken == nil || t.taken.deleted {
+		return t.braked
 	}
 	v, c := t.taken, &t.taken.scroll
 	if t.drag.Refreshes(c, v.refreshing) {

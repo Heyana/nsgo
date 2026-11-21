@@ -94,7 +94,7 @@ func clickPressedCallback(gesture uintptr, n int32, x, y float64, data uintptr) 
 	// Presses on a field, a page or a video's controls are theirs, even
 	// where they bubble up here.
 	if w.nativeAt(gtkWidgetPick(w.surface, x, y, gtkPickDefault)) {
-		w.pressConsumed = true
+		w.pressConsumed, w.pressedDown = true, false
 		return
 	}
 	if w.embedded && w.focusedView() == nil {
@@ -117,7 +117,7 @@ func (w *window) onEntry(v *view, at driver.Point) bool {
 func (w *window) pointerDown(at driver.Point, button uint32, device uintptr, state uint32, clicks int) {
 	// Test input enters here without GTK's legacy controller. A press after a key must still report pointer input and hide focus rings.
 	w.engine.InputModality(driver.ModalityPointer)
-	w.lastPointer, w.pressConsumed, w.windowMove = at, false, nil
+	w.lastPointer, w.pressConsumed, w.pressedDown, w.windowMove = at, false, false, nil
 	if button == 1 && !isTouch(device) {
 		root := w.view(w.root)
 		var target *view
@@ -139,8 +139,9 @@ func (w *window) pointerDown(at driver.Point, button uint32, device uintptr, sta
 	w.down = driver.Event{Modifiers: modifiers(state), Count: uint32(max(clicks, 1)), Page: at}
 	// On X11 the released GTK 4 gives a touch's events the core pointer as their device, whose source is the mouse, so a touch is also known by its event's type.
 	touch := button == 1 && (isTouch(device) || w.currentEvent != 0 && gdkEventGetEventType(w.currentEvent) == gdkTouchBegin)
+	braked := false
 	if touch {
-		w.touchDown(at)
+		braked = w.touchDown(at)
 	} else {
 		w.touching = nil
 	}
@@ -153,6 +154,12 @@ func (w *window) pointerDown(at driver.Point, button uint32, device uintptr, sta
 		w.focusEntry(nil)
 	}
 	w.pressOutside(at)
+	if braked {
+		w.cancelTouches()
+		w.pressConsumed = true
+		w.panning = nil
+		return
+	}
 	if button == 1 && w.pressBar(at) {
 		w.pressConsumed = true
 		w.panning = nil
@@ -164,6 +171,7 @@ func (w *window) pointerDown(at driver.Point, button uint32, device uintptr, sta
 		return
 	}
 	if button == 1 {
+		w.pressedDown = true
 		w.pressEdge(driver.EventPressDown, at)
 	}
 	if button == 1 && !touch && w.selectPress(at, w.down.Modifiers, clicks) {
@@ -216,7 +224,10 @@ func (w *window) pointerUp(at driver.Point) {
 	w.selectUp()
 	w.touch(w.fingers.Up(at))
 	w.cancelLongPress()
-	w.pressEdge(driver.EventPressUp, at)
+	if w.pressedDown {
+		w.pressedDown = false
+		w.pressEdge(driver.EventPressUp, at)
+	}
 	if w.pressConsumed || w.panning != nil && w.panning.active {
 		return
 	}

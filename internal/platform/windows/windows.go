@@ -2366,6 +2366,13 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if w.hostedPointer(message, wParam, lParam) {
 			return 0
 		}
+		if message == wmPointerDown {
+			if w.touchPointer(message, wParam, lParam) {
+				return 0
+			}
+			w.touchFinger(message, wParam, lParam)
+			break
+		}
 		w.touchFinger(message, wParam, lParam)
 		if w.touchPointer(message, wParam, lParam) {
 			return 0

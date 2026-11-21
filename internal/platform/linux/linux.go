@@ -259,6 +259,7 @@ type window struct {
 	capHeights    map[fontKey]driver.Points     // and capital heights
 	lineMetrics   map[fontKey]lineMetrics       // and decoration lines
 	pressConsumed bool
+	pressedDown   bool
 	// windowMove is a press on a window drag region that has not moved the window yet (input.go).
 	windowMove *windowMove
 	// selecting is the selection of an area, and selected the texts

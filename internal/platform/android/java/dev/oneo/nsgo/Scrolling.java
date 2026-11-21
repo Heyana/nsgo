@@ -851,15 +851,29 @@ final class Scrolling {
         }
 
         @Override
+        public boolean canScrollHorizontally(int direction) {
+            if (config.noScroll) return false;
+            return direction > 0 ? getScrollX() < maxX() : getScrollX() > 0;
+        }
+
+        @Override
+        public boolean canScrollVertically(int direction) {
+            if (config.noScroll) return false;
+            return direction > 0 ? getScrollY() < maxY() : getScrollY() > 0;
+        }
+
+        @Override
         public boolean onInterceptTouchEvent(MotionEvent e) {
             if (config.noScroll) return false;
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     downX = lastX = e.getX();
                     downY = lastY = e.getY();
-                    if (!flinger.isFinished()) {
+                    // A touch that brakes a fling is the view's, as in VScroll and HScroll: the child under the finger never sees it, so lifting presses nothing and moving pans the view.
+                    if (!flinger.isFinished() || momentum) {
                         flinger.forceFinished(true);
                         endMomentum();
+                        return true;
                     }
                     scale.onTouchEvent(e);
                     nest();
@@ -900,7 +914,7 @@ final class Scrolling {
                         dragging = true;
                         event(Protocol.EVENT_SCROLL_DRAG_START);
                         if (config.dismiss != 0) host.dismissKeyboard();
-                        getParent().requestDisallowInterceptTouchEvent(true);
+                        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
                     }
                     if (dragging) {
                         int fromX = getScrollX(), fromY = getScrollY();

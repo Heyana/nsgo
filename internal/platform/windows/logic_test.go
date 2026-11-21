@@ -11,7 +11,9 @@ import (
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/engine"
 	"github.com/nsgo-dev/nsgo/internal/platform/imagedecode"
+	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
 )
 
 func closeTo(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
@@ -1631,5 +1633,169 @@ func TestTextInkBoundsAndDamageExtent(t *testing.T) {
 	m.visit(parent, identity, 0, 0, rectF{0, 0, 200, 200}, true, false)
 	if v.area.right <= 20+64 || v.area.bottom <= 20+22 {
 		t.Fatalf("unclipped area = %+v, want past view box (84, 42)", v.area)
+	}
+}
+
+type noopPreparedText struct{}
+
+func (noopPreparedText) Measure(driver.Points) driver.Size    { return driver.Size{} }
+func (noopPreparedText) Layout(driver.Size) driver.TextLayout { return noopPreparedText{} }
+func (noopPreparedText) Release()                             {}
+
+type noopPlatform struct{}
+
+func (noopPlatform) Prepare(*driver.AttributedText) driver.PreparedText { return noopPreparedText{} }
+func (noopPlatform) Mount(*driver.MountBatch)                           {}
+func (noopPlatform) RequestFrame()                                      {}
+func (noopPlatform) SubmitGPU(driver.GPUFrame)                          {}
+
+func TestTouchBrakingClaimsGlideAndSnap(t *testing.T) {
+	var events []driver.Event
+	eng := engine.Start(noopPlatform{}, func(*core.Scope) core.Node { return core.View{} }, engine.Options{
+		Event: func(_ uint32, ev driver.Event) { events = append(events, ev) },
+	})
+	t.Cleanup(eng.Close)
+
+	root := &view{id: 1, kind: driver.KindView, frame: driver.Bounds{Size: driver.Size{Width: 300, Height: 400}}}
+	scroll := &view{
+		id:     2,
+		kind:   driver.KindScroll,
+		parent: root,
+		frame:  driver.Bounds{Size: driver.Size{Width: 300, Height: 400}},
+		size:   driver.Size{Width: 300, Height: 2000},
+		events: 1<<driver.EventScrollDragStart | 1<<driver.EventScrollDragEnd |
+			1<<driver.EventMomentumStart | 1<<driver.EventMomentumEnd | 1<<driver.EventScrollEnd,
+	}
+	root.children = []*view{scroll}
+	w := &window{
+		engine:   eng,
+		root:     root.id,
+		views:    []*view{nil, root, scroll},
+		animator: driver.NewAnimator(func(driver.Event) {}),
+		ticking:  true,
+	}
+	count := func(kind driver.EventKind) int {
+		n := 0
+		for _, ev := range events {
+			if ev.Kind == kind {
+				n++
+			}
+		}
+		return n
+	}
+	at := driver.Point{X: 100, Y: 200}
+
+	// 1. Touch down stopping a glide claims the touch until lift without starting a drag or emitting scroll end.
+	m := scrollbar.Release(&scroll.scroll, scroll.frame.Size, scroll.size, driver.Point{Y: 100}, 1.2, 0, 1600, time.Now())
+	scroll.offset = driver.Point{Y: 100}
+	scroll.glide = &m
+	events = nil
+	if !w.touchDown(1, at) {
+		t.Fatal("touchDown on a gliding scroll view returned false; want true")
+	}
+	if scroll.glide != nil {
+		t.Fatal("touchDown did not clear glide")
+	}
+	if !w.touchMove(driver.Point{X: 100, Y: 196}) {
+		t.Fatal("sub-slop touchMove after braking returned false; want true")
+	}
+	if !w.touchUp() {
+		t.Fatal("touchUp after braking without drag returned false; want true")
+	}
+	if got := count(driver.EventMomentumEnd); got != 1 {
+		t.Errorf("momentum end count = %d, want 1", got)
+	}
+	if count(driver.EventScrollDragStart) != 0 || count(driver.EventScrollDragEnd) != 0 || count(driver.EventScrollEnd) != 0 {
+		t.Errorf("braking tap emitted unexpected events: %+v", events)
+	}
+
+	// 2. Touch down stopping a snap claims the touch too.
+	scroll.scrolling = &scrolling{from: driver.Point{Y: 100}, to: driver.Point{Y: 400}, start: time.Now(), momentum: true}
+	events = nil
+	if !w.touchDown(2, at) {
+		t.Fatal("touchDown on a snapping scroll view returned false; want true")
+	}
+	if scroll.scrolling != nil {
+		t.Fatal("touchDown did not clear snap")
+	}
+	if !w.touchUp() {
+		t.Fatal("touchUp after braking a snap returned false; want true")
+	}
+	if got := count(driver.EventMomentumEnd); got != 1 {
+		t.Errorf("snap brake momentum end count = %d, want 1", got)
+	}
+	if count(driver.EventScrollDragStart) != 0 || count(driver.EventScrollDragEnd) != 0 || count(driver.EventScrollEnd) != 0 {
+		t.Errorf("snap braking tap emitted unexpected events: %+v", events)
+	}
+
+	// 3. Touch down stopping an animated ScrollTo claims the touch without reporting momentum end.
+	scroll.scrolling = &scrolling{from: driver.Point{Y: 100}, to: driver.Point{Y: 400}, start: time.Now()}
+	events = nil
+	if !w.touchDown(3, at) {
+		t.Fatal("touchDown on an animated scroll returned false; want true")
+	}
+	if scroll.scrolling != nil {
+		t.Fatal("touchDown did not clear animated scroll")
+	}
+	if !w.touchUp() {
+		t.Fatal("touchUp after braking animated scroll returned false; want true")
+	}
+	if count(driver.EventMomentumEnd) != 0 {
+		t.Errorf("animated scroll brake reported momentum end: %+v", events)
+	}
+
+	// 4. Braking touch that drags past TouchSlop scrolls smoothly.
+	scroll.glide = &m
+	scroll.offset = driver.Point{Y: 100}
+	events = nil
+	if !w.touchDown(4, at) {
+		t.Fatal("touchDown before braking drag returned false")
+	}
+	if !w.touchMove(driver.Point{X: 100, Y: 195}) {
+		t.Fatal("sub-slop move during braking drag returned false")
+	}
+	if count(driver.EventScrollDragStart) != 0 {
+		t.Fatal("sub-slop move started drag")
+	}
+	if !w.touchMove(driver.Point{X: 100, Y: 150}) {
+		t.Fatal("move past slop during braking drag returned false")
+	}
+	if !w.touchMove(driver.Point{X: 100, Y: 110}) {
+		t.Fatal("continued move during braking drag returned false")
+	}
+	if count(driver.EventScrollDragStart) != 1 {
+		t.Errorf("drag start count = %d, want 1", count(driver.EventScrollDragStart))
+	}
+	if scroll.offset.Y <= 100 {
+		t.Errorf("offset.Y = %v, want > 100 after braking drag", scroll.offset.Y)
+	}
+	if !w.touchUp() {
+		t.Fatal("touchUp after braking drag returned false")
+	}
+	if count(driver.EventScrollDragEnd) != 1 {
+		t.Errorf("drag end count = %d, want 1", count(driver.EventScrollDragEnd))
+	}
+	scroll.glide = nil
+
+	// 5. Touch at rest is not claimed, so mouse promotion delivers the press.
+	events = nil
+	if w.touchDown(5, at) {
+		t.Fatal("touchDown at rest returned true; want false")
+	}
+	if w.touchMove(driver.Point{X: 100, Y: 196}) {
+		t.Fatal("sub-slop touchMove at rest returned true; want false")
+	}
+	if w.touchUp() {
+		t.Fatal("touchUp at rest without drag returned true; want false")
+	}
+
+	// 6. NoScroll leaves touches alone even if a motion were present.
+	scroll.scroll.Behavior.NoScroll = true
+	scroll.glide = &m
+	if w.touchDown(6, at) {
+		t.Fatal("touchDown on NoScroll view returned true; want false")
+	}
+	if scroll.glide == nil {
+		t.Fatal("NoScroll view had its glide cleared")
 	}
 }

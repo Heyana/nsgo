@@ -29,6 +29,9 @@ func (w *window) interruptScroll(v *view) {
 	}
 	v.scrolling = nil
 	if v.glide != nil {
+		if v.glide == w.wheelMotion {
+			w.wheelMotion = nil
+		}
 		v.glide = nil
 		w.scrollEvent(v, driver.EventMomentumEnd)
 	}
