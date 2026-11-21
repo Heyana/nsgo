@@ -46,6 +46,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
 	"github.com/nsgo-dev/nsgo/internal/platform/textselect"
 	"github.com/nsgo-dev/nsgo/internal/platform/updates"
+	"github.com/nsgo-dev/nsgo/internal/platform/viewtree"
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
@@ -2029,46 +2030,8 @@ func (w *window) dragBar(at driver.Point) {
 	w.scrollTo(d.v, d.drag.Offset(driver.Point{X: at.X - d.origin.X, Y: at.Y - d.origin.Y}))
 }
 
-// barAt returns the innermost scroll view whose bar is under p, and p in
-// that view; p is in the coordinates of v's parent's content.
 func barAt(v *view, p driver.Point) (*view, driver.Point) {
-	hit, at, _ := barIn(v, p)
-	return hit, at
-}
-
-// barIn is barAt, which also reports whether anything under p takes the
-// pointer, which a view that takes none passes to the views below it.
-func barIn(v *view, p driver.Point) (*view, driver.Point, bool) {
-	if v.style.Hidden || v.style.Opacity <= 0 {
-		return nil, p, false
-	}
-	self, children := v.reach(p)
-	if !self && !children {
-		return nil, p, false
-	}
-	local := v.local(p)
-	took := self
-	if children {
-		inner := driver.Point{X: local.X + v.offset.X, Y: local.Y + v.offset.Y}
-		for i := len(v.children) - 1; i >= 0; i-- {
-			c := v.children[i]
-			if !c.under(inner) {
-				continue
-			}
-			hit, at, childTook := barIn(c, inner)
-			if hit != nil {
-				return hit, at, true
-			}
-			if childTook {
-				took = true
-				break
-			}
-		}
-	}
-	if self && v.kind == driver.KindScroll && !v.scroll.HideIndicator && !v.scroll.Behavior.NoScroll && v.bar().Contains(local) {
-		return v, local, true
-	}
-	return nil, p, took
+	return viewtree.BarAt(v, p)
 }
 
 // scrollsAt appends the scroll views under p, outermost first; p is in
@@ -2078,38 +2041,8 @@ func scrollsAt(v *view, p driver.Point, out []*view) []*view {
 	return out
 }
 
-// viewsAt appends the views under p that match, outermost first: v and
-// the child drawn on top at p, down to the innermost. It also reports
-// whether anything under p takes the pointer: a view that takes none, or
-// whose children take none, passes it to the views below it, so an
-// overlay that lets presses through does not keep the wheel, a hover or
-// touch from what it covers.
 func viewsAt(v *view, p driver.Point, match func(*view) bool, out []*view) ([]*view, bool) {
-	self, children := v.reach(p)
-	if v.style.Hidden || v.style.Opacity <= 0 || !self && !children {
-		return out, false
-	}
-	if self && match(v) {
-		out = append(out, v)
-	}
-	took := self
-	if children {
-		local := v.local(p)
-		local.X += v.offset.X
-		local.Y += v.offset.Y
-		for i := len(v.children) - 1; i >= 0; i-- {
-			c := v.children[i]
-			if !c.under(local) {
-				continue
-			}
-			var childTook bool
-			out, childTook = viewsAt(c, local, match, out)
-			if childTook {
-				return out, true
-			}
-		}
-	}
-	return out, took
+	return viewtree.ViewsAt(v, p, match, out)
 }
 
 // hoverViews reports the pointer entering and leaving the views that

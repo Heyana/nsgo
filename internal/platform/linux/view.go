@@ -12,6 +12,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/finger"
 	"github.com/nsgo-dev/nsgo/internal/platform/hover"
 	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
+	"github.com/nsgo-dev/nsgo/internal/platform/viewtree"
 )
 
 // view is the main thread's copy of one mounted view, drawn by its
@@ -192,43 +193,29 @@ func (w *window) menuKeys(entries []driver.MenuEntry) {
 	}
 }
 
-// hit returns the topmost view under p, in the coordinates of v's
-// parent's content, that matches.
 func hit(v *view, p driver.Point, match func(*view) bool) *view {
-	if v.style.Hidden {
-		return nil
-	}
-	self, children := v.reach(p)
-	if children {
-		local := v.local(p)
-		local.X += v.offset.X
-		local.Y += v.offset.Y
-		for i := len(v.children) - 1; i >= 0; i-- {
-			if h := hit(v.children[i], local, match); h != nil {
-				return h
-			}
-		}
-	}
-	if self && match(v) {
-		return v
-	}
-	return nil
+	return viewtree.Hit(v, p, match)
 }
 
-// reach says what p, in the coordinates of v's parent's content, reaches
-// of v: v itself and its children, as core.Reach decides.
-func (v *view) reach(p driver.Point) (self, children bool) {
-	local := v.local(p)
+func (v *view) PointerVisibility() (hidden, transparent bool) {
+	return v.style.Hidden, v.style.Opacity <= 0
+}
+
+func (v *view) PointerChildren(local driver.Point) (driver.Point, []*view) {
+	return driver.Point{X: local.X + v.offset.X, Y: local.Y + v.offset.Y}, v.children
+}
+
+func (v *view) ScrollbarContains(local driver.Point) bool {
+	return v.kind == driver.KindScroll && !v.scroll.HideIndicator && !v.scroll.Behavior.NoScroll && v.bar().Contains(local)
+}
+
+func (v *view) PointerReach(p driver.Point) (local driver.Point, self, children bool) {
+	local = v.local(p)
 	if math.IsInf(float64(local.X), 0) || math.IsInf(float64(local.Y), 0) {
-		return false, false
+		return local, false, false
 	}
-	return driver.ReachView(v.shownFrame().Size, &v.props, v.overflow, v.transformedKids, local)
-}
-
-// under reports whether p reaches v or its children.
-func (v *view) under(p driver.Point) bool {
-	self, children := v.reach(p)
-	return !v.style.Hidden && (self || children)
+	self, children = driver.ReachView(v.shownFrame().Size, &v.props, v.overflow, v.transformedKids, local)
+	return local, self, children
 }
 
 // scrollsAt appends the scroll views under p, outermost first; p is in
@@ -238,38 +225,8 @@ func scrollsAt(v *view, p driver.Point, out []*view) []*view {
 	return out
 }
 
-// viewsAt appends the views under p that match, outermost first: v and
-// the child drawn on top at p, down to the innermost. It also reports
-// whether anything under p takes the pointer: a view that takes none, or
-// whose children take none, passes it to the views below it, so an
-// overlay that lets presses through does not keep the wheel, a hover or
-// touch from what it covers.
 func viewsAt(v *view, p driver.Point, match func(*view) bool, out []*view) ([]*view, bool) {
-	self, children := v.reach(p)
-	if v.style.Hidden || v.style.Opacity <= 0 || !self && !children {
-		return out, false
-	}
-	if self && match(v) {
-		out = append(out, v)
-	}
-	took := self
-	if children {
-		local := v.local(p)
-		local.X += v.offset.X
-		local.Y += v.offset.Y
-		for i := len(v.children) - 1; i >= 0; i-- {
-			c := v.children[i]
-			if !c.under(local) {
-				continue
-			}
-			var childTook bool
-			out, childTook = viewsAt(c, local, match, out)
-			if childTook {
-				return out, true
-			}
-		}
-	}
-	return out, took
+	return viewtree.ViewsAt(v, p, match, out)
 }
 
 // movePointer follows the pointer to surface point at, with modifiers
@@ -470,46 +427,8 @@ func (w *window) dragBar(at driver.Point) {
 	gtkWidgetQueueDraw(w.surface)
 }
 
-// barAt returns the innermost scroll view whose bar is under p, and p in
-// that view; p is in the coordinates of v's parent's content.
 func barAt(v *view, p driver.Point) (*view, driver.Point) {
-	hit, at, _ := barIn(v, p)
-	return hit, at
-}
-
-// barIn is barAt, which also reports whether anything under p takes the
-// pointer, which a view that takes none passes to the views below it.
-func barIn(v *view, p driver.Point) (*view, driver.Point, bool) {
-	if v.style.Hidden || v.style.Opacity <= 0 {
-		return nil, p, false
-	}
-	self, children := v.reach(p)
-	if !self && !children {
-		return nil, p, false
-	}
-	local := v.local(p)
-	took := self
-	if children {
-		inner := driver.Point{X: local.X + v.offset.X, Y: local.Y + v.offset.Y}
-		for i := len(v.children) - 1; i >= 0; i-- {
-			c := v.children[i]
-			if !c.under(inner) {
-				continue
-			}
-			hit, at, childTook := barIn(c, inner)
-			if hit != nil {
-				return hit, at, true
-			}
-			if childTook {
-				took = true
-				break
-			}
-		}
-	}
-	if self && v.kind == driver.KindScroll && !v.scroll.HideIndicator && !v.scroll.Behavior.NoScroll && v.bar().Contains(local) {
-		return v, local, true
-	}
-	return nil, p, took
+	return viewtree.BarAt(v, p)
 }
 
 // press reports a click at p in the surface, with the modifiers and

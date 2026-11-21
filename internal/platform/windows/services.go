@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/platform/viewtree"
 )
 
 var (
@@ -461,42 +462,38 @@ func keyName(vk uintptr) string {
 	return ""
 }
 
-// hit returns the view under p, in the coordinates of v's parent's
-// content, that matches, as the engine's hit test finds the view a press
-// goes to: the topmost, passing through views that do not match.
 func hit(v *view, p driver.Point, match func(*view) bool) *view {
-	if v.style.Hidden {
-		return nil
-	}
-	self, children := v.reach(p)
-	if children {
-		local := v.local(p)
-		local.X += v.offset.X
-		local.Y += v.offset.Y
-		for i := len(v.children) - 1; i >= 0; i-- {
-			if h := hit(v.children[i], local, match); h != nil {
-				return h
-			}
-		}
-	}
-	if self && match(v) {
-		return v
-	}
-	return nil
+	return viewtree.Hit(v, p, match)
 }
 
-// reach says what p, in the coordinates of v's parent's content, reaches
-// of v: v itself and its children, as core.Reach decides.
-func (v *view) reach(p driver.Point) (self, children bool) {
-	local := v.local(p)
+func (v *view) PointerVisibility() (hidden, transparent bool) {
+	return v.style.Hidden, v.style.Opacity <= 0
+}
+
+func (v *view) PointerChildren(local driver.Point) (driver.Point, []*view) {
+	return driver.Point{X: local.X + v.offset.X, Y: local.Y + v.offset.Y}, v.children
+}
+
+func (v *view) ScrollbarContains(local driver.Point) bool {
+	return v.kind == driver.KindScroll && !v.scroll.HideIndicator && !v.scroll.Behavior.NoScroll && v.bar().Contains(local)
+}
+
+func (v *view) PointerReach(p driver.Point) (local driver.Point, self, children bool) {
+	local = v.local(p)
 	if math.IsInf(float64(local.X), 0) || math.IsInf(float64(local.Y), 0) {
-		return false, false
+		return local, false, false
 	}
 	size := frameOf(v).Size
 	self, children = driver.ReachView(size, &v.props, v.overflow, v.transformedKids, local)
 	if self && v.image.HitTestAlpha > 0 && v.window.pointerMode == driver.WindowPointerPainted {
 		self = v.window.imageHit(v, size, local)
 	}
+	return local, self, children
+}
+
+// reach reports which parts of v the point reaches, in its parent's content coordinates.
+func (v *view) reach(p driver.Point) (self, children bool) {
+	_, self, children = v.PointerReach(p)
 	return self, children
 }
 
