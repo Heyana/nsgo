@@ -36,6 +36,7 @@ func TestIOSVideoSeekWithSeparateAudio(t *testing.T) {
 	copy(wav[36:], "data")
 	binary.LittleEndian.PutUint32(wav[40:], dataSize)
 
+	const referer = "https://media.example/player"
 	seekPosted := make(chan struct{})
 	var releaseAudio sync.Once
 	unblockAudio := func() { releaseAudio.Do(func() { close(seekPosted) }) }
@@ -43,9 +44,17 @@ func TestIOSVideoSeekWithSeparateAudio(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/picture.mov":
+			if r.Header.Get("Referer") != referer || r.Header.Get("Range") == "" {
+				t.Error("the video request was missing its Referer or byte range")
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
 			w.Header().Set("Content-Type", "video/quicktime")
 			http.ServeContent(w, r, "picture.mov", time.Time{}, bytes.NewReader(alphaclips.HEVC))
 		case "/sound.wav":
+			if r.Header.Get("Referer") == referer {
+				t.Error("the separate audio URL received the video's Referer")
+			}
 			select {
 			case audioRequested <- struct{}{}:
 			default:
@@ -76,6 +85,7 @@ func TestIOSVideoSeekWithSeparateAudio(t *testing.T) {
 		paused = core.NewSignal(cx, true)
 		return core.Video{
 			Source: server.URL + "/picture.mov", AudioSource: server.URL + "/sound.wav", Ref: &ref,
+			Headers:    map[string]string{"Referer": referer},
 			PausedFunc: paused.Get, Muted: true, ProgressInterval: 30 * time.Millisecond,
 			Style:  core.Style{Width: core.Pt(160), Height: core.Pt(120)},
 			OnLoad: func(info core.VideoInfo) { loaded.Store(&info) },

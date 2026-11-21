@@ -410,3 +410,79 @@ func TestVideoPlaysSeparateAudioAndSeeksItsComposition(t *testing.T) {
 		t.Errorf("first progress after the pending seek = %v, want near 250ms", at)
 	}
 }
+
+func TestVideoHTTPHeadersAndReactiveSource(t *testing.T) {
+	if os.Getenv("NSGO_TEST_VIDEO_PROCESS") != t.Name() {
+		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
+		cmd.Env = append(os.Environ(), "NSGO_TEST_VIDEO_PROCESS="+t.Name(), "HOME="+t.TempDir())
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		return
+	}
+
+	const referer = "https://media.example/player"
+	var redirects, firstRanges, secondRanges atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Referer") != referer || r.Header.Get("Cookie") != "test_session=1" || r.Header.Get("User-Agent") != "NSGoTest/1" {
+			t.Errorf("%s was missing the configured headers", r.URL.Path)
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		if r.Header.Get("Range") == "" {
+			t.Errorf("%s was missing a player byte range", r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		switch r.URL.Path {
+		case "/redirect.mov":
+			redirects.Add(1)
+			http.Redirect(w, r, "/first.mov", http.StatusTemporaryRedirect)
+			return
+		case "/first.mov":
+			firstRanges.Add(1)
+		case "/second.mov":
+			secondRanges.Add(1)
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "video/quicktime")
+		http.ServeContent(w, r, "source.mov", time.Time{}, bytes.NewReader(alphaclips.HEVC))
+	}))
+	defer server.Close()
+
+	var loaded, ended atomic.Int32
+	app := func(cx *core.Scope) core.Node {
+		source := core.NewSignal(cx, server.URL+"/redirect.mov")
+		return core.Video{
+			SourceFunc: source.Get,
+			Headers:    map[string]string{"referer": referer, "Cookie": "test_session=1", "User-Agent": "NSGoTest/1"},
+			Muted:      true,
+			Style:      core.Style{Width: core.Pt(160), Height: core.Pt(120)},
+			OnLoad:     func(core.VideoInfo) { loaded.Add(1) },
+			OnEnd: func() {
+				if ended.Add(1) == 1 {
+					source.Set(server.URL + "/second.mov")
+				} else {
+					cx.Post(cx.Quit)
+				}
+			},
+			OnError: func(err error) {
+				t.Error(err)
+				cx.Post(cx.Quit)
+			},
+		}
+	}
+	watchdog := time.AfterFunc(20*time.Second, func() { panic("the authenticated videos did not finish") })
+	defer watchdog.Stop()
+	onMain(func() { Run(app, Options{Title: "Video request headers", Width: 200, Height: 140}) })
+
+	if loaded.Load() != 2 || ended.Load() != 2 {
+		t.Errorf("loaded %d and completed %d videos, want both", loaded.Load(), ended.Load())
+	}
+	if redirects.Load() == 0 || firstRanges.Load() < 2 || secondRanges.Load() < 2 {
+		t.Errorf("redirects = %d, first and second ranges = %d and %d, want two streamed sources",
+			redirects.Load(), firstRanges.Load(), secondRanges.Load())
+	}
+}

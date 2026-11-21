@@ -13,8 +13,9 @@ type Video struct {
 	// Source is a URL, a file path or an "asset:" path in the app's resources.
 	Source     string
 	SourceFunc func() string
-	// Headers supplies HTTP request headers for the source on Android.
-	// Its fields are copied when the video mounts.
+	// Headers supplies HTTP request headers for the source on Android and
+	// for finite HTTP files on macOS, iOS and tvOS. Its fields are copied
+	// when the video mounts.
 	Headers map[string]string
 	// Paused applies when the source opens and when its value changes. A non-repeating video stays at its end through other prop changes: set Paused true then false to replay it from the start, or from where its built-in controls scrubbed it back to, or Seek before the end, which plays on from there when Paused is false.
 	Paused     bool

@@ -55,6 +55,7 @@ type videoStatus struct {
 	pending  bool
 	reason   int
 
+	resource         *videoResource
 	cancelLoading    func()
 	seekWhileLoading *time.Duration
 }
@@ -143,7 +144,7 @@ func (v *Video) Configure(c *driver.VideoConfig) {
 	}
 	old, first := v.config, !v.made
 	v.config, v.made = *c, true
-	reopened := first || c.Source != old.Source || c.AudioSource != old.AudioSource
+	reopened := first || c.Source != old.Source || c.AudioSource != old.AudioSource || c.Headers != old.Headers
 	if reopened {
 		v.open()
 	}
@@ -287,7 +288,13 @@ func (v *Video) open() {
 		v.Dispatch(driver.Event{Kind: driver.EventError, Text: source + ": " + webmRefused(c), Index: driver.VideoErrorAlphaUnsupported})
 		return
 	}
-	asset := videoAsset(source)
+	var asset objc.ID
+	if remote := videoResourceURL(source); remote != nil && v.config.Headers.Len() > 0 {
+		st.resource = newVideoResource(remote, v.config.Headers)
+		asset = st.resource.asset()
+	} else {
+		asset = videoAsset(source)
+	}
 	if asset == 0 {
 		st.failed = true
 		v.Dispatch(driver.Event{Kind: driver.EventError, Text: source + ": cannot resolve the video's location"})
@@ -376,7 +383,8 @@ func (v *Video) installVideoItem(st *videoStatus, asset objc.ID) {
 // close stops the player and stops observing it. A macOS view keeps the
 // last frame; an iOS one lets the player's layer or controller go.
 func (v *Video) close() {
-	if st := v.status; st != nil && st.cancelLoading != nil {
+	st := v.status
+	if st != nil && st.cancelLoading != nil {
 		st.cancelLoading()
 		st.cancelLoading = nil
 	}
@@ -417,6 +425,10 @@ func (v *Video) close() {
 		v.layer, v.controller = 0, 0
 	}
 	release := func() {
+		if st != nil && st.resource != nil {
+			st.resource.close()
+			st.resource = nil
+		}
 		if player != 0 {
 			player.Send(sel("pause"))
 			player.Send(sel("release"))
