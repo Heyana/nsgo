@@ -183,37 +183,69 @@ func hasGlass() bool { return apple.Class("UIGlassEffect") != 0 }
 // fitBackdrop lays v's backdrop out for style vs at size w by h.
 func (v *view) fitBackdrop(vs *driver.ViewStyle, w, h float64) {
 	apple.FitBackdrop(v.backdrop, vs, w, h)
-	if v.backdropLayer != 0 || v.tint != 0 {
+	if v.backdropLayer != 0 || v.tintView != 0 {
 		bounds := objc.Send[apple.CGRect](v.backdrop, selBounds)
 		if v.backdropLayer != 0 {
 			// A layer of its own would ease to its frame on its own.
 			apple.WithoutAnimation(func() { v.backdropLayer.Send(selSetFrame, bounds) })
 		}
-		if v.tint != 0 {
-			v.tint.Send(selSetFrame, bounds)
+		if v.tintView != 0 {
+			v.tintView.Send(selSetFrame, bounds)
 		}
 	}
 }
 
 var selSetInteractive = sel("setInteractive:")
 
+// tintLayer is the CALayer that draws v's background above its backdrop
+// (UIVisualEffectView's contentView layer for backdropMaterial, or tintView's
+// layer over CABackdropLayer for backdropFiltered), or 0 when v has no tinted
+// backdrop.
+func (v *view) tintLayer() objc.ID {
+	if v.backdrop == 0 {
+		return 0
+	}
+	switch v.backdropKind {
+	case backdropMaterial:
+		return v.backdrop.Send(sel("contentView")).Send(selLayer)
+	case backdropFiltered:
+		return v.tintView.Send(selLayer)
+	default:
+		return 0
+	}
+}
+
+// styleTint draws the background above the backdrop on tintLayer(), with the
+// same transition and presentation-value retargeting as the view's own layer.
+// Only color changes touch it, so frames moving other properties leave a tint's
+// transition alone. A background binding takes over immediately.
+func (v *view) styleTint(vs *driver.ViewStyle) {
+	v.backdropTint.Style(v.tintLayer(), vs, v.animated.Has(driver.PropBackground))
+}
+
 // setBackdrop gives v the backdrop its style asks for, or takes it away.
 func (v *view) setBackdrop(vs *driver.ViewStyle) {
-	mode := chooseBackdrop(vs, hasGlass())
-	if mode == backdropNone || mode != v.backdropKind {
+	prev := v.backdropKind
+	next := chooseBackdrop(vs, hasGlass())
+	plan := planBackdropTransition(prev, next, vs, v.animated.Has(driver.PropBackground))
+	if plan.handoffToOuter {
+		apple.HandoffBackground(v.tintLayer(), v.native.Send(selLayer))
+	}
+	if plan.recreate {
 		if v.backdrop != 0 {
 			apple.MoveBorders(v.native.Send(selLayer), 0)
 			v.backdrop.Send(sel("removeFromSuperview"))
-			v.backdrop, v.backdropLayer, v.tint = 0, 0, 0
+			v.backdrop, v.backdropLayer, v.tintView = 0, 0, 0
 		}
 		v.backdropKind = backdropNone
 		v.glassInteractive = false
-		if mode == backdropNone {
-			return
-		}
+		v.backdropTint.Reset()
+	}
+	if next == backdropNone {
+		return
 	}
 	const flexible = 2 | 16 // width and height
-	if mode == backdropFiltered {
+	if next == backdropFiltered {
 		if v.backdrop == 0 {
 			v.backdrop = objc.ID(apple.Class("UIView")).Send(selAlloc).Send(sel("initWithFrame:"), objc.Send[apple.CGRect](v.native, selBounds))
 			v.backdrop.Send(sel("setAutoresizingMask:"), flexible)
@@ -222,28 +254,30 @@ func (v *view) setBackdrop(vs *driver.ViewStyle) {
 			v.backdropLayer = objc.ID(apple.Class("CABackdropLayer")).Send(selNew)
 			v.backdrop.Send(selLayer).Send(sel("addSublayer:"), v.backdropLayer)
 			v.backdropLayer.Send(selRelease)
-			v.tint = objc.ID(apple.Class("UIView")).Send(selAlloc).Send(sel("initWithFrame:"), objc.Send[apple.CGRect](v.backdrop, selBounds))
-			v.tint.Send(sel("setAutoresizingMask:"), flexible)
-			v.tint.Send(sel("setUserInteractionEnabled:"), false)
-			v.tint.Send(selSetOpaque, false)
-			v.backdrop.Send(selAddSubview, v.tint)
-			v.tint.Send(selRelease)
+			v.tintView = objc.ID(apple.Class("UIView")).Send(selAlloc).Send(sel("initWithFrame:"), objc.Send[apple.CGRect](v.backdrop, selBounds))
+			v.tintView.Send(sel("setAutoresizingMask:"), flexible)
+			v.tintView.Send(sel("setUserInteractionEnabled:"), false)
+			v.tintView.Send(selSetOpaque, false)
+			v.backdrop.Send(selAddSubview, v.tintView)
+			v.tintView.Send(selRelease)
 			v.native.Send(sel("insertSubview:atIndex:"), v.backdrop, 0)
 			v.backdrop.Send(selRelease)
-			v.backdropKind = mode
+			v.backdropKind = next
+		}
+		if plan.clearOuterAnim {
+			apple.ClearBackgroundAnimation(v.native.Send(selLayer))
 		}
 		apple.WithoutAnimation(func() {
 			v.backdropLayer.Send(sel("setFilters:"), apple.BackdropFilters(vs.Effects.BackdropFilters))
 		})
 		b := objc.Send[apple.CGRect](v.native, selBounds)
 		v.fitBackdrop(vs, b.Size.Width, b.Size.Height)
-		v.tint.Send(sel("setBackgroundColor:"), uiColor(vs.Background))
 		apple.MoveBorders(v.native.Send(selLayer), v.borderHost())
 		return
 	}
 	var effect objc.ID
 	interactive := false
-	if mode == backdropGlass {
+	if next == backdropGlass {
 		effect = objc.ID(apple.Class("UIGlassEffect")).Send(sel("effectWithStyle:"), int(vs.Glass)-1)
 		if objc.Send[bool](effect, sel("respondsToSelector:"), selSetInteractive) {
 			interactive = vs.GlassInteractive
@@ -258,17 +292,17 @@ func (v *view) setBackdrop(vs *driver.ViewStyle) {
 		v.backdrop.Send(sel("setAutoresizingMask:"), flexible)
 		v.native.Send(sel("insertSubview:atIndex:"), v.backdrop, 0)
 		v.backdrop.Send(selRelease)
-		v.backdropKind = mode
+		v.backdropKind = next
 	} else {
 		v.backdrop.Send(sel("setEffect:"), effect)
 	}
 	v.glassInteractive = interactive
 	v.backdrop.Send(sel("setUserInteractionEnabled:"), interactive)
+	if plan.clearOuterAnim {
+		apple.ClearBackgroundAnimation(v.native.Send(selLayer))
+	}
 	b := objc.Send[apple.CGRect](v.native, selBounds)
 	v.fitBackdrop(vs, b.Size.Width, b.Size.Height)
-	if mode != backdropGlass {
-		v.backdrop.Send(sel("contentView")).Send(sel("setBackgroundColor:"), uiColor(vs.Background))
-	}
 	apple.MoveBorders(v.native.Send(selLayer), v.borderHost())
 }
 
@@ -278,7 +312,7 @@ func (v *view) borderHost() objc.ID {
 	case backdropGlass:
 		return v.backdrop.Send(selLayer)
 	case backdropFiltered:
-		return v.tint.Send(selLayer)
+		return v.tintView.Send(selLayer)
 	case backdropMaterial:
 		return v.backdrop.Send(sel("contentView")).Send(selLayer)
 	}

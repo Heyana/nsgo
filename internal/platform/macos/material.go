@@ -182,7 +182,7 @@ func (v *view) setBackdrop(vs *driver.ViewStyle) {
 		if v.backdrop != 0 {
 			v.backdrop.Send(sel("removeFromSuperview"))
 			v.backdrop, v.backdropLayer, v.tint, v.glassContent = 0, 0, 0, 0
-			v.tintColor, v.tintStyled = 0, false
+			v.tintState.Reset()
 		}
 		if !want {
 			v.glass, v.gaussian, v.glassInteractive = false, false, false
@@ -261,23 +261,5 @@ func (v *view) styleTint(vs *driver.ViewStyle) {
 	if v.tint == 0 {
 		return
 	}
-	layer := v.tint.Send(selLayer)
-	if v.animated.Has(driver.PropBackground) {
-		layer.Send(sel("removeAnimationForKey:"), apple.NSString("nsgo.backgroundColor"))
-	}
-	if v.tintStyled && v.tintColor == vs.Background {
-		return
-	}
-	next := driver.ViewStyle{Background: vs.Background, Opacity: 1}
-	tr := vs.Transition
-	if v.tintStyled && !v.animated.Has(driver.PropBackground) &&
-		(tr.Properties == 0 || tr.Properties&driver.TransitionBackground != 0) {
-		next.Transition = tr
-		next.Transition.Properties = driver.TransitionBackground
-	}
-	if next.Transition.Duration <= 0 {
-		layer.Send(sel("removeAnimationForKey:"), apple.NSString("nsgo.backgroundColor"))
-	}
-	apple.WithoutAnimation(func() { apple.StyleLayer(layer, nil, &next, 0) })
-	v.tintColor, v.tintStyled = vs.Background, true
+	v.tintState.Style(v.tint.Send(selLayer), vs, v.animated.Has(driver.PropBackground))
 }

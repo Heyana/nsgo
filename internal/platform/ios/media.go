@@ -207,29 +207,23 @@ func (v *view) restyle() {
 // styleLayer draws vs with v's layer, only what changed since it was
 // last drawn when that is all an animation moves.
 func (v *view) styleLayer(vs *driver.ViewStyle) {
-	if v.holdClip(vs) {
+	v.styleTint(vs)
+	drawn := outerLayerStyle(vs, v.tintLayer() != 0)
+	if v.holdClip(&drawn) {
 		// The holder clips the children: the view's own layer, its shadow and outline, stays unclipped.
 		v.native.Send(sel("setClipsToBounds:"), false)
-		drawn := *vs
 		drawn.Clip = false
-		vs = &drawn
 	}
-	if hidesOwnBackground(vs, hasGlass()) {
-		// The tint draws the background over the CABackdropLayer, which would filter the layer's own and show it twice.
-		drawn := *vs
-		drawn.Background = 0
-		vs = &drawn
-	}
-	v.followScale(vs)
+	v.followScale(&drawn)
 	// A view created by an earlier batch shows the default style.
 	var shown *driver.ViewStyle
 	if v.styled || v.born != v.surface.batch {
 		shown = &v.drawn
 	}
-	apple.RestyleLayer(v.native.Send(selLayer), shown, vs, 0)
+	apple.RestyleLayer(v.native.Send(selLayer), shown, &drawn, 0)
 	// RestyleLayer may create per-side rings after setBackdrop ran; move them above the backdrop now that they exist.
 	apple.MoveBorders(v.native.Send(selLayer), v.borderHost())
-	v.drawn, v.styled = *vs, true
+	v.drawn, v.styled = drawn, true
 }
 
 func (v *view) animatesStyle() bool {

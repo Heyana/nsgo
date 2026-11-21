@@ -58,10 +58,11 @@ type view struct {
 	axNodes []objc.ID
 	// backdrop is the view's backdrop: a UIVisualEffectView for backdropMaterial
 	// or backdropGlass, or a holder UIView of backdropLayer (a CABackdropLayer)
-	// and tint for backdropFiltered.
-	backdrop, backdropLayer, tint objc.ID
-	backdropKind                  backdropMode
-	glassInteractive              bool
+	// and tintView for backdropFiltered.
+	backdrop, backdropLayer, tintView objc.ID
+	backdropKind                      backdropMode
+	glassInteractive                  bool
+	backdropTint                      apple.BackdropTint
 
 	pressing  atomic.Bool
 	longFired atomic.Bool

@@ -2,6 +2,7 @@ package ios
 
 import (
 	"testing"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
@@ -119,5 +120,183 @@ func TestBlurStyle(t *testing.T) {
 		if got := blurStyle(tc.m); got != tc.want {
 			t.Errorf("blurStyle(%d) = %d, want %d", tc.m, got, tc.want)
 		}
+	}
+}
+
+func TestPlanBackdropTransition(t *testing.T) {
+	bgTransition := &driver.ViewStyle{
+		Background: driver.RGBA(0x112233, 0.5),
+		Transition: driver.Transition{Duration: time.Second, Properties: driver.TransitionBackground},
+	}
+	defaultTransition := &driver.ViewStyle{
+		Background: driver.RGBA(0x112233, 0.5),
+		Transition: driver.Transition{Duration: time.Second},
+	}
+	opacityOnly := &driver.ViewStyle{
+		Background: driver.RGBA(0x112233, 0.5),
+		Transition: driver.Transition{Duration: time.Second, Properties: driver.TransitionOpacity},
+	}
+	noTransition := &driver.ViewStyle{Background: driver.RGBA(0x112233, 0.5)}
+
+	cases := []struct {
+		name       string
+		prev, next backdropMode
+		vs         *driver.ViewStyle
+		animatedBg bool
+		want       backdropUpdate
+	}{
+		{
+			name: "plain to blur clears outer animation without recreating",
+			prev: backdropNone, next: backdropMaterial, vs: bgTransition,
+			want: backdropUpdate{next: backdropMaterial, clearOuterAnim: true},
+		},
+		{
+			name: "blur to blur (material change) keeps backdrop and tint",
+			prev: backdropMaterial, next: backdropMaterial, vs: bgTransition,
+			want: backdropUpdate{next: backdropMaterial},
+		},
+		{
+			name: "blur to none with explicit background transition hands off tint to outer",
+			prev: backdropMaterial, next: backdropNone, vs: bgTransition,
+			want: backdropUpdate{next: backdropNone, recreate: true, handoffToOuter: true},
+		},
+		{
+			name: "blur to none with default transition hands off tint to outer",
+			prev: backdropMaterial, next: backdropNone, vs: defaultTransition,
+			want: backdropUpdate{next: backdropNone, recreate: true, handoffToOuter: true},
+		},
+		{
+			name: "blur to none with opacity-only transition skips handoff",
+			prev: backdropMaterial, next: backdropNone, vs: opacityOnly,
+			want: backdropUpdate{next: backdropNone, recreate: true},
+		},
+		{
+			name: "blur to none without transition skips handoff",
+			prev: backdropMaterial, next: backdropNone, vs: noTransition,
+			want: backdropUpdate{next: backdropNone, recreate: true},
+		},
+		{
+			name: "blur to none during animated background skips handoff",
+			prev: backdropMaterial, next: backdropNone, vs: bgTransition, animatedBg: true,
+			want: backdropUpdate{next: backdropNone, recreate: true},
+		},
+		{
+			name: "blur to glass recreates and hands off when transitioning background",
+			prev: backdropMaterial, next: backdropGlass, vs: bgTransition,
+			want: backdropUpdate{next: backdropGlass, recreate: true, handoffToOuter: true},
+		},
+		{
+			name: "glass to blur recreates and clears outer background animation",
+			prev: backdropGlass, next: backdropMaterial, vs: bgTransition,
+			want: backdropUpdate{next: backdropMaterial, recreate: true, clearOuterAnim: true},
+		},
+		{
+			name: "glass to none recreates without tint handoff",
+			prev: backdropGlass, next: backdropNone, vs: bgTransition,
+			want: backdropUpdate{next: backdropNone, recreate: true},
+		},
+		{
+			name: "none to glass creates glass without clearing outer background",
+			prev: backdropNone, next: backdropGlass, vs: bgTransition,
+			want: backdropUpdate{next: backdropGlass},
+		},
+	}
+
+	for _, c := range cases {
+		if got := planBackdropTransition(c.prev, c.next, c.vs, c.animatedBg); got != c.want {
+			t.Errorf("%s: planBackdropTransition = %+v, want %+v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestOuterLayerStyleForBackdropTint(t *testing.T) {
+	base := driver.ViewStyle{
+		Opacity:      0.8,
+		Background:   driver.RGBA(0x224466, 0.75),
+		CornerRadius: 12,
+		BorderWidth:  1,
+		BorderColor:  driver.RGB(0xffffff),
+		Clip:         true,
+		Transform:    driver.Transform{TranslateX: 8},
+	}
+
+	// Without a blur backdrop tint, the outer layer keeps background and transitions untouched.
+	withBgTransition := base
+	withBgTransition.Transition = driver.Transition{
+		Duration:   time.Second,
+		Delay:      100 * time.Millisecond,
+		Properties: driver.TransitionBackground,
+		Easing:     driver.EaseInOut,
+	}
+	if got := outerLayerStyle(&withBgTransition, false); got != withBgTransition {
+		t.Errorf("usesTint=false changed outer style: got %+v, want %+v", got, withBgTransition)
+	}
+
+	// With a blur backdrop tint and a background-only transition, outer stays transparent with no transition.
+	got := outerLayerStyle(&withBgTransition, true)
+	if got.Background != 0 {
+		t.Errorf("usesTint=true kept outer background %#x", got.Background)
+	}
+	if got.Transition != (driver.Transition{}) {
+		t.Errorf("usesTint=true kept background-only outer transition %+v", got.Transition)
+	}
+	if got.Opacity != base.Opacity || got.CornerRadius != base.CornerRadius || got.BorderWidth != base.BorderWidth ||
+		got.BorderColor != base.BorderColor || !got.Clip || got.Transform != base.Transform {
+		t.Errorf("usesTint=true altered non-background style properties: %+v", got)
+	}
+
+	// Default transition (Properties == 0) keeps other transitionable properties on outer while excluding background.
+	withDefault := base
+	withDefault.Transition = driver.Transition{
+		Duration: 500 * time.Millisecond,
+		Delay:    50 * time.Millisecond,
+		Easing:   driver.EaseOut,
+	}
+	gotDefault := outerLayerStyle(&withDefault, true)
+	if gotDefault.Background != 0 {
+		t.Errorf("default transition kept outer background %#x", gotDefault.Background)
+	}
+	if gotDefault.Transition.Duration != withDefault.Transition.Duration ||
+		gotDefault.Transition.Delay != withDefault.Transition.Delay ||
+		gotDefault.Transition.Easing != withDefault.Transition.Easing {
+		t.Errorf("default transition altered timing: got %+v", gotDefault.Transition)
+	}
+	if gotDefault.Transition.Properties == 0 || gotDefault.Transition.Properties&driver.TransitionBackground != 0 {
+		t.Errorf("default transition still animates outer background: properties=%#x", gotDefault.Transition.Properties)
+	}
+	for _, prop := range []driver.TransitionProperty{
+		driver.TransitionOpacity,
+		driver.TransitionTransform,
+		driver.TransitionBorder,
+		driver.TransitionShadow,
+	} {
+		if gotDefault.Transition.Properties&prop == 0 {
+			t.Errorf("default transition dropped outer property %#x", prop)
+		}
+	}
+
+	// Mixed transition preserves non-background properties and drops background.
+	withMixed := base
+	withMixed.Transition = driver.Transition{
+		Duration:   time.Second,
+		Properties: driver.TransitionOpacity | driver.TransitionBackground | driver.TransitionTransform,
+	}
+	gotMixed := outerLayerStyle(&withMixed, true)
+	if wantProps := driver.TransitionOpacity | driver.TransitionTransform; gotMixed.Transition.Properties != wantProps {
+		t.Errorf("mixed transition properties = %#x, want %#x", gotMixed.Transition.Properties, wantProps)
+	}
+
+	// Opacity-only transition is preserved intact while background is cleared.
+	withOpacity := base
+	withOpacity.Transition = driver.Transition{
+		Duration:   time.Second,
+		Properties: driver.TransitionOpacity,
+	}
+	gotOpacity := outerLayerStyle(&withOpacity, true)
+	if gotOpacity.Background != 0 {
+		t.Errorf("opacity-only transition kept outer background %#x", gotOpacity.Background)
+	}
+	if gotOpacity.Transition != withOpacity.Transition {
+		t.Errorf("opacity-only transition changed: got %+v, want %+v", gotOpacity.Transition, withOpacity.Transition)
 	}
 }

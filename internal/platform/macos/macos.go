@@ -90,8 +90,7 @@ type view struct {
 	tint objc.ID
 	// glassContent is Liquid Glass's content view, which holds the per-side borders above the glass and receives hit-tested presses when glassInteractive is set.
 	glassContent                      objc.ID
-	tintColor                         driver.Color
-	tintStyled                        bool
+	tintState                         apple.BackdropTint
 	glass, gaussian, glassInteractive bool
 
 	pressing  atomic.Bool
