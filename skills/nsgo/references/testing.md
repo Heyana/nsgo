@@ -66,6 +66,8 @@ Use `nsgotest.Widgets(true)` and `nsgotest.LiveActivities(true)` to inspect publ
 
 Cleanup closes native context menus left open by an app, including between subtests in one process.
 
+Read `app.Surface(selector).Config()` for opening options and `app.StatusBar` for the resolved status bar settings the app sent.
+
 Test discovery follows the target's build tags, including target-only tests in packages that also have portable files.
 
 ```sh

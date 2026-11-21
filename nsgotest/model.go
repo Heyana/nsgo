@@ -919,7 +919,7 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemTitle:
 			a.Title = it.Value
 		case driver.ItemStatusBar:
-			a.StatusBar = *it.StatusBar
+			a.StatusBar = StatusBarConfig{Style: it.StatusBar.Style, Hidden: it.StatusBar.Hidden, Animated: it.StatusBar.Animated}
 		case driver.ItemScreen:
 			v.Screen = *it.Screen
 		case driver.ItemModal:
@@ -934,7 +934,7 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemWindow:
 			a.Window = append(a.Window, *it.Window)
 		case driver.ItemOpenSurface:
-			a.Opened = append(a.Opened, *it.Surface)
+			a.Opened = append(a.Opened, surfaceRecord(it.Surface))
 			if it.Surface.Kind == driver.SurfaceOverlay {
 				a.openOverlay(it.Surface)
 			}

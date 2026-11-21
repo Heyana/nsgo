@@ -39,7 +39,7 @@ func TestMain(m *testing.M) {
 
 `app.Surfaces()` 列出已打开的窗口、面板和托盘视图，主窗口排在第一位，其余按打开顺序排列。`app.Surface("title:Settings")`、`app.Surface("id:settings-root")` 和 `app.Surface("index:1")` 分别按当前标题、根视图的测试 ID 和列表位置选取一个界面。选择器必须恰好匹配一个打开的界面。
 
-界面的 `Press`、`Type`、`Key`、`Find` 和 `Query` 在对应窗口执行，步骤会等待整个应用完成更新。`Config` 返回打开时的配置。`Screenshot` 在原生目标上截取该界面。`Close` 通过 `OnClosing` 请求关闭窗口，并返回窗口是否关闭。已关闭的句柄会使后续步骤失败，并从列表中移除。这些步骤适用于无头测试和 macOS、Windows、Linux 测试宿主。单界面的目标只列出主界面。
+界面的 `Press`、`Type`、`Key`、`Find` 和 `Query` 在对应窗口执行，步骤会等待整个应用完成更新。`Config` 返回打开时的 `nsgotest.SurfaceConfig`，`app.Opened` 也记录了这份配置。`Screenshot` 在原生目标上截取该界面。`Close` 通过 `OnClosing` 请求关闭窗口，并返回窗口是否关闭。已关闭的句柄会使后续步骤失败，并从列表中移除。这些步骤适用于无头测试和 macOS、Windows、Linux 测试宿主。单界面的目标只列出主界面。
 
 `Drag` 在指针从按下位置移动超过 8 点后会取消指针下的按压。Web 也遵循此规则，因此拖动回到原来的视图不会触发 `OnPress`。
 

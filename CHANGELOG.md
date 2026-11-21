@@ -64,6 +64,7 @@
 - Stop a `tsx.View` that renders an `Export` from also running what the package's entry module mounts, with its effects, handlers, timers and animation frames (#923 by @houko).
 - Search a `ui/chat` transcript from Mod+F in a find bar that unfolds folded turns and reasoning, marks the matches in `ui.TextView` and reasoning, reveals each match clear of the bar and the composer and gives the focus back as it closes, with `core.FocusedRef` to read the focused view (#47 by @houko).
 - Let `nsgotest` find and drive an app's other windows through `App.Surface` (#1085 by @houko).
+- Record surface opening options and status bar settings with `nsgotest` types (#181 by @houko).
 - Add `desktop.QuickLook` and `desktop.CanQuickLook` to preview files in macOS's Quick Look panel (#370 by @houko).
 - Move the native field's selection with `nsgotest`'s `App.Select` under `-target` on macOS, Windows, Linux and the web, so the next edit acts on the selected range (#772 by @houko).
 - Let `nsgotest` press a text field directly and report the focus a press moves when the step returns on macOS, Windows and Linux (#1083 by @houko).

@@ -454,7 +454,7 @@ type App struct {
 	quitRequests uint32
 
 	// StatusBar is the status bar the app last set.
-	StatusBar driver.StatusBarConfig
+	StatusBar StatusBarConfig
 	// LayoutAnimation is the layout animation the last batch to carry
 	// one asked the platform for.
 	LayoutAnimation *driver.LayoutAnimation
@@ -1025,7 +1025,7 @@ func (a *App) setTransparent(t *core.Tree, b *driver.MountBatch) {
 		return
 	}
 	// A window's own, which a panel keeps as it opened, as the platforms do.
-	if i := slices.IndexFunc(a.Opened, func(s SurfaceConfig) bool { return s.ID == t.ID() }); i < 0 || a.Opened[i].Kind != driver.SurfaceWindow {
+	if i := slices.IndexFunc(a.Opened, func(s SurfaceConfig) bool { return s.ID == t.ID() }); i < 0 || a.Opened[i].Kind != SurfaceWindow {
 		return
 	}
 	for _, it := range b.Items {
@@ -1094,7 +1094,7 @@ func (a *App) window(title string) *core.Tree {
 	}
 	var found []*core.Tree
 	for _, s := range a.Opened {
-		if s.Kind != driver.SurfaceWindow || s.Title != title {
+		if s.Kind != SurfaceWindow || s.Title != title {
 			continue
 		}
 		for _, surface := range a.appTree.Surfaces() {

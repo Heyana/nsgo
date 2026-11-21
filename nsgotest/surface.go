@@ -182,7 +182,7 @@ func (a *App) surfaceConfig(id uint32) SurfaceConfig {
 	if index := slices.IndexFunc(a.Opened, func(c SurfaceConfig) bool { return c.ID == id }); index >= 0 {
 		return a.Opened[index]
 	}
-	return SurfaceConfig{ID: id, Kind: driver.SurfaceWindow, Main: true}
+	return SurfaceConfig{ID: id, Kind: SurfaceWindow, Main: true}
 }
 
 func (a *App) closeSurface(id uint32) {

@@ -39,7 +39,7 @@ An app run with its function, `nsgo.Run(func(app *core.Scope) {...})`, is tested
 
 Use `app.Surfaces()` to list the open windows, panels and tray views in opening order with the main window first. `app.Surface("title:Settings")`, `app.Surface("id:settings-root")` and `app.Surface("index:1")` pick one by its current title, its root view's test ID or its position in that list. A selector must match exactly one open surface.
 
-A surface's `Press`, `Type`, `Key`, `Find` and `Query` act in its own window while steps settle the whole app. `Config` returns its opening options. `Screenshot` captures that surface on a native target, and `Close` asks its window to close through `OnClosing` and reports whether it closed. A closed handle fails a step and drops out of the list. The same steps work headless and on the macOS, Windows and Linux test hosts. Single-surface targets list their main surface alone.
+A surface's `Press`, `Type`, `Key`, `Find` and `Query` act in its own window while steps settle the whole app. `Config` returns its opening options as a `nsgotest.SurfaceConfig`, also recorded in `app.Opened`. `Screenshot` captures that surface on a native target, and `Close` asks its window to close through `OnClosing` and reports whether it closed. A closed handle fails a step and drops out of the list. The same steps work headless and on the macOS, Windows and Linux test hosts. Single-surface targets list their main surface alone.
 
 `Drag` cancels the press under the pointer once it moves more than 8 points from where it went down. The same rule applies to the web, so a drag that returns to its starting view does not fire `OnPress`.
 
