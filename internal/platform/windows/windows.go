@@ -395,7 +395,8 @@ type window struct {
 	// language is what the menus say (driver.ItemDirection).
 	language string
 	// loopback are the auth sessions the default browser shows.
-	loopback loopback.Sessions
+	loopback  loopback.Sessions
+	discovery dnsDiscovery
 	// rtl is the app's direction (driver.ItemDirection), which the menus
 	// lay out in.
 	rtl bool
@@ -1423,6 +1424,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemWebCookies:
 			w.webCookies(it.Count, *it.Cookies)
+			continue
+		case driver.ItemDiscovery:
+			w.handleDiscovery(it)
 			continue
 		case driver.ItemOpenSurface:
 			if it.Surface != nil {
@@ -3068,6 +3072,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		w.startup.close()
 		w.unobserveEmbeddedRoot()
 		w.closeQuickLook()
+		w.discovery.close()
 		w.cancelColorPicker()
 		untrackLiveWindow(w.surfaceID, w)
 		if w.closed != nil {

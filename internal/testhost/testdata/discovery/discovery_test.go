@@ -1,6 +1,7 @@
 package discovery_test
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -16,8 +17,9 @@ import (
 func TestMain(m *testing.M) { nsgotest.Main(m) }
 
 func TestLocalServiceAdvertiseBrowseAndRemove(t *testing.T) {
-	switch nsgotest.Target() {
-	case "macos", "ios", "ios_simulator", "linux", "android":
+	target := nsgotest.Target()
+	switch target {
+	case "macos", "ios", "ios_simulator", "linux", "android", "windows":
 	default:
 		t.Skip("checks native DNS-SD")
 	}
@@ -28,11 +30,15 @@ func TestLocalServiceAdvertiseBrowseAndRemove(t *testing.T) {
 	defer listener.Close()
 	name := fmt.Sprintf("NSGo test %d", os.Getpid())
 	data, browsers := "\x00\xff", 1
-	if nsgotest.Target() == "android" {
+	if target == "android" {
 		// Older Android can advertise UTF-8 values, including NUL.
 		data = "\x00é"
 		// Exercise the resolve queue on Android versions with one native resolve at a time.
 		browsers = 2
+	}
+	if target == "windows" {
+		// DNSAPI's TXT interface uses NUL-terminated UTF-16.
+		data = "café"
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	var mu sync.Mutex
@@ -76,6 +82,9 @@ func TestLocalServiceAdvertiseBrowseAndRemove(t *testing.T) {
 		})
 		mu.Lock()
 		defer mu.Unlock()
+		if target == "windows" && errors.Is(failure, core.ErrDiscoveryUnavailable) {
+			t.Skip("Windows DNS-SD exports are unavailable")
+		}
 		if failure != nil {
 			t.Fatal(failure)
 		}

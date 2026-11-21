@@ -613,6 +613,8 @@ jobs:
           cache: true
       - name: Test native press routing, modifiers and visible labels
         run: go tool nsgo test -target windows ./internal/testhost/testdata/press
+      - name: Test native local service discovery
+        run: go tool nsgo test -target windows -timeout 1m ./internal/testhost/testdata/discovery
       - name: Test native editing keys and bindings
         run: go tool nsgo test -target windows ./internal/testhost/testdata/keys
       - name: Test WinSparkle quit approval and callback cleanup
