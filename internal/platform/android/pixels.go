@@ -3,7 +3,6 @@
 package android
 
 import (
-	"encoding/binary"
 	"image"
 	"log"
 
@@ -65,45 +64,33 @@ func (v *treeView) trackCanvasPixels(b *driver.MountBatch, frames *[]pixelFrame)
 }
 
 // sendBatch sends frames ahead of the batch that applies them on the UI
-// thread. Each frame has its own size limit. The batch and its frames share
-// the pipe lock, and a large RGBA slice goes straight to the pipe.
+// thread. Each frame has its own size limit. Other batches must wait
+// till these frames are consumed, while unrelated pipe messages can pass.
 func (s *surface) sendBatch(frames []pixelFrame, body func(*writer)) error {
+	s.mountMu.Lock()
+	defer s.mountMu.Unlock()
 	if len(frames) == 0 {
 		return s.send(msgBatch, body)
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	batch := writer{append(s.buf[:0], msgBatch, 0, 0, 0, 0)}
+	var batch writer
 	body(&batch)
-	if err := checkMessage(msgBatch, len(batch.buf)-5); err != nil {
-		log.Printf("nsgo: mount: %v", err)
+	if err := checkMessage(msgBatch, len(batch.buf)); err != nil {
 		return err
 	}
 	for _, frame := range frames {
 		px := frame.pixels
-		header := writer{buf: make([]byte, 5, 64)}
-		header.buf[0] = msgPixelFrame
+		var header writer
 		header.u32(uint32(frame.item))
 		header.str(frame.key)
 		header.u32(uint32(px.Rect.Dx()))
 		header.u32(uint32(px.Rect.Dy()))
-		size := len(header.buf) - 5 + len(px.Pix)
-		if err := checkMessage(msgPixelFrame, size); err != nil {
+		if err := checkMessage(msgPixelFrame, len(header.buf)+len(px.Pix)); err != nil {
 			log.Printf("nsgo: pixel frame: %v", err)
 			continue
 		}
-		binary.BigEndian.PutUint32(header.buf[1:], uint32(size))
-		if _, err := s.out.Write(header.buf); err != nil {
-			return err
-		}
-		if _, err := s.out.Write(px.Pix); err != nil {
+		if err := s.sendParts(msgPixelFrame, header.buf, px.Pix); err != nil {
 			return err
 		}
 	}
-	binary.BigEndian.PutUint32(batch.buf[1:], uint32(len(batch.buf)-5))
-	s.out.Write(batch.buf)
-	if cap(batch.buf) <= 1<<20 {
-		s.buf = batch.buf
-	}
-	return nil
+	return s.sendParts(msgBatch, nil, batch.buf)
 }

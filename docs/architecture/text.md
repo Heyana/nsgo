@@ -76,6 +76,8 @@ A `Canvas` records its drawing on the engine into an immutable `Drawing` the pla
 
 Android sends `Prepare`, `Measure`, `Layout`, `Lines` and `Carets` over the runtime pipe with a request ID separate from the prepared text or layout ID. Java always replies with data or an error for a request whose header it can read. Go checks the operation and ID, ignores duplicate or late replies, and waits at most one second for each text request, including its queued write. A failed measurement uses the approximate engine's size, and failed line and caret queries return no geometry. A failed native layout leaves its text and attachments without a native layout for that commit.
 
+The Go and Java processes negotiate fragmented bulk transfers as they connect. Go splits encoded images, canvas images, bitmap frames and large font or bitmap mount data into pieces of at most 32 KiB. Java splits HTTP bodies and folder replies the same way. The writer lets waiting text traffic take the pipe between fragments. The reader delivers text frames as they arrive and hands over a reassembled bulk message only when complete. A mount batch and its associated bitmap frames keep their order across surfaces.
+
 ## Hit testing
 
 A final layout answers where its carets are, as NSH's `TextEngine` hit testing does (`internal/driver/hittest.go`): `HitTest` gives the `Caret` nearest a point, `CaretRect` a line-high box of no width, and `RangeRects` the boxes a range covers, a box per run of one direction. Points are in the content box and offsets UTF-16. A point past the end of a wrapped line gives its end with `Upstream` affinity, so the caret stays on that line.

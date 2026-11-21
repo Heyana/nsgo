@@ -25,6 +25,10 @@ func TestAndroidPipeRejectsCorruptFrames(t *testing.T) {
 	runJavaEngineCheck(t, "PipeCheck")
 }
 
+func TestAndroidBulkPipeLetsTextPass(t *testing.T) {
+	runJavaEngineCheck(t, "BulkPipeCheck")
+}
+
 func TestAndroidProcessReportsExit(t *testing.T) {
 	runJavaEngineCheck(t, "ProcessExitCheck")
 }
