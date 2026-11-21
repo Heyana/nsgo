@@ -102,7 +102,9 @@ trust.Accept(p) // 运行之后，更旧的构建会被拒绝
 
 在原生平台上，`Limits.Call` 限制每一段 JavaScript 的连续执行时间，包括定时器回调和 `await` 后恢复的执行。若其中一段被中断，仍在等待结果的 `Plugin.Call` 只回调一次并返回 `tsx.ErrBudget`，同时停止该调用剩余的定时器、忽略迟到的宿主应答。其他独立调用继续运行，包括在被中断的执行段中排队的 Promise 后续回调。结算其他调用的 Promise 时，当前调用仍会报告自己的结果或错误。回溯正则表达式使用加载与调用预算中较短的值作为匹配超时；未处理的超时也会变成 `tsx.ErrBudget`。
 
-`Limits.CallTotal` 为每次插件调用设置从调用开始算起的截止时间，等待时间也计入。即使调用已完成，它启动的定时器、interval、动画帧、Promise 后续回调和宿主应答仍受这个截止时间限制。到期后，待执行的工作被丢弃，仍在等待结果的调用以 `tsx.ErrBudget` 失败。入口模块启动的工作受 `Limits.Load` 限制，宿主主动送达的事件从送达时起受 `CallTotal` 限制。`Plugin.Interrupt` 可从任意 goroutine 停止插件，丢弃待处理的定时器，让进行中和之后的调用失败。`Plugin.Close` 会运行插件的清理函数，并让仍在等待的调用以“插件已关闭”的错误结束。
+`Limits.CallTotal` 为每次插件调用设置从调用开始算起的截止时间，等待时间也计入。即使调用已完成，它启动的定时器、interval、动画帧、Promise 后续回调和宿主应答仍受这个截止时间限制。到期后，待执行的工作被丢弃，仍在等待结果的调用以 `tsx.ErrBudget` 失败。入口模块启动的工作受 `Limits.Load` 限制，宿主主动送达的事件从送达时起受 `CallTotal` 限制。
+
+`Plugin.Interrupt` 可从任意 goroutine 停止插件的运行时，丢弃待处理的定时器，让进行中和之后的调用失败。`Plugin.Stopped()` 和 `Plugin.Err()` 也可以从任意 goroutine 读取。运行期间 `Err()` 返回 nil，停止后返回第一个停止原因。正常关闭插件或释放其所属作用域时，会先运行插件的清理函数，再以 `tsx.ErrPluginClosed` 停止。调用 `tsx.Load` 时设置 `Sandbox.OnStop`，可在仍在等待的调用失败后，在引擎 goroutine 上收到一次停止原因。
 
 Web 上暂时无法把包与页面隔离：包的代码能绕过它的权限，直接访问页面自己的网络、剪贴板和存储，信任库所在的存储也包括在内。因此在 Web 上 `tsx.View` 和 `tsx.Load` 会以 `tsx.ErrUnisolated` 拒绝运行包，除非设置 `Sandbox.WebUnisolated`，让它以页面的权限运行；这只适合你愿意像对待应用自身代码一样信任的包。
 

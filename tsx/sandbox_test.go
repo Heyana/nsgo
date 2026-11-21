@@ -706,6 +706,9 @@ export const notAFunction = 1;`, pkg.Capabilities{Network: &pkg.Network{Hosts: [
 	if err, _ := got["missing"].(error); !errors.Is(err, tsx.ErrNoExport) {
 		t.Errorf("missing gave %v", got["missing"])
 	}
+	if plugin.Stopped() || plugin.Err() != nil {
+		t.Errorf("call errors stopped the plugin: %v", plugin.Err())
+	}
 	if runtime.GOOS == "js" {
 		return
 	}
@@ -990,10 +993,10 @@ export function counts() { return [n]; }`, time.Second, 300*time.Millisecond)
 
 // TestPluginLoadDeadlineStopsAModuleTimer holds an interval the entry module sets as it loads to the load's deadline.
 func TestPluginLoadDeadlineStopsAModuleTimer(t *testing.T) {
-	start := time.Now()
 	app, plugin := deadlinePlugin(t, `let n = 0;
 setInterval(() => { n++; }, 1);
 export function counts() { return [n]; }`, 300*time.Millisecond, time.Second)
+	start := time.Now()
 	runUntil(app, start, 150*time.Millisecond)
 	if c := counts(t, app, plugin); c[0] == 0 {
 		t.Fatal("the module's interval did not run within the load's deadline")
@@ -1106,8 +1109,11 @@ func TestPluginInterruptFailsAWaitingCall(t *testing.T) {
 }`, pkg.Capabilities{})
 	var plugin *tsx.Plugin
 	var loadErr error
+	var notifications []error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true})
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true, OnStop: func(err error) {
+			notifications = append(notifications, err)
+		}})
 		return core.View{}
 	})
 	if loadErr != nil {
@@ -1120,10 +1126,18 @@ func TestPluginInterruptFailsAWaitingCall(t *testing.T) {
 	})
 	app.Settle()
 	stop := errors.New("watchdog")
-	plugin.Interrupt(stop)
-	app.WaitUntil(time.Second, func() bool { return called })
-	if callErr != stop {
-		t.Fatalf("call error = %v, want the interrupt's", callErr)
+	interrupted := make(chan struct{})
+	go func() {
+		plugin.Interrupt(stop)
+		close(interrupted)
+	}()
+	<-interrupted
+	if !plugin.Stopped() || plugin.Err() != stop {
+		t.Fatalf("stop state = %v, %v, want stopped with the interrupt's error", plugin.Stopped(), plugin.Err())
+	}
+	app.WaitUntil(time.Second, func() bool { return called && len(notifications) != 0 })
+	if callErr != stop || len(notifications) != 1 || notifications[0] != stop {
+		t.Fatalf("call error = %v, stop notifications = %v, want the interrupt's error", callErr, notifications)
 	}
 	app.Post(func() {
 		plugin.Call("wait", nil, func(_ any, err error) { callErr = err })
@@ -1133,6 +1147,10 @@ func TestPluginInterruptFailsAWaitingCall(t *testing.T) {
 		t.Fatalf("a call after the interrupt failed with %v, want the interrupt's", callErr)
 	}
 	app.Post(plugin.Close)
+	app.Settle()
+	if len(notifications) != 1 || plugin.Err() != stop {
+		t.Fatalf("closing after interrupt changed the stop state: %v, %v", notifications, plugin.Err())
+	}
 }
 
 func TestPluginCloseFailsAWaitingCall(t *testing.T) {
@@ -1156,7 +1174,7 @@ func TestPluginCloseFailsAWaitingCall(t *testing.T) {
 	app.Settle()
 	app.Post(plugin.Close)
 	app.WaitUntil(time.Second, func() bool { return called == 1 })
-	if callErr == nil || callErr.Error() != "tsx: the plugin was closed" {
+	if callErr != tsx.ErrPluginClosed {
 		t.Fatalf("call error = %v, want plugin closed", callErr)
 	}
 	if called != 1 {
@@ -1175,15 +1193,21 @@ export async function wait() {
 	byes := 0
 	h.Handle("bye", func(c *core.HostCall) { byes++; c.Resolve(nil) })
 	var plugin *tsx.Plugin
-	var loadErr error
+	var loadErr, callErr error
+	var notifications []error
+	var cleanupsAtStop int
+	var callErrorAtStop error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true, Host: h})
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true, Host: h, OnStop: func(err error) {
+			notifications = append(notifications, err)
+			cleanupsAtStop, callErrorAtStop = byes, callErr
+			plugin.Close()
+		}})
 		return core.View{}
 	})
 	if loadErr != nil {
 		t.Fatal(loadErr)
 	}
-	var callErr error
 	app.Post(func() {
 		plugin.Call("wait", nil, func(_ any, err error) { callErr = err })
 	})
@@ -1193,8 +1217,74 @@ export async function wait() {
 	if byes != 1 {
 		t.Fatalf("the cleanup ran %d times, want once", byes)
 	}
-	if callErr == nil {
-		t.Fatal("the waiting call did not fail")
+	if cleanupsAtStop != 1 || callErrorAtStop != tsx.ErrPluginClosed {
+		t.Fatalf("stop observed %d cleanups and call error %v", cleanupsAtStop, callErrorAtStop)
+	}
+	if len(notifications) != 1 || notifications[0] != tsx.ErrPluginClosed || plugin.Err() != tsx.ErrPluginClosed {
+		t.Fatalf("close state = %v, %v, want one normal close", notifications, plugin.Err())
+	}
+}
+
+func TestPluginOwnerDisposalNotifiesOnce(t *testing.T) {
+	p := verified(t, `export function wait() { return new Promise(() => {}); }`, pkg.Capabilities{})
+	var owner *core.Scope
+	var plugin *tsx.Plugin
+	var loadErr, callErr error
+	var notifications []error
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		owner = cx.Child()
+		owner.Run(func() {
+			plugin, loadErr = tsx.Load(owner, p, tsx.Sandbox{WebUnisolated: true, OnStop: func(err error) {
+				notifications = append(notifications, err)
+			}})
+		})
+		return core.View{}
+	})
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	app.Post(func() {
+		plugin.Call("wait", nil, func(_ any, err error) { callErr = err })
+		owner.Dispose()
+		plugin.Close()
+	})
+	app.Settle()
+	if !plugin.Stopped() || plugin.Err() != tsx.ErrPluginClosed || callErr != tsx.ErrPluginClosed {
+		t.Fatalf("scope disposal left plugin state %v, %v and call error %v", plugin.Stopped(), plugin.Err(), callErr)
+	}
+	if len(notifications) != 1 || notifications[0] != tsx.ErrPluginClosed {
+		t.Fatalf("stop notifications = %v, want one normal close", notifications)
+	}
+}
+
+func TestPluginReportsQuotaStop(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skip("the page's engine owns its memory")
+	}
+	p := verified(t, `export function schedule() {
+  setTimeout(() => new ArrayBuffer(65536), 20);
+}`, pkg.Capabilities{})
+	var plugin *tsx.Plugin
+	var loadErr, runtimeErr error
+	var notifications []error
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{Limits: &tsx.Limits{Memory: 1024}, OnStop: func(err error) {
+			notifications = append(notifications, err)
+		}})
+		return core.View{}
+	}, nsgotest.Errors(func(err error) { runtimeErr = err }))
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if _, err := callPlugin(t, app, plugin, "schedule"); err != nil || plugin.Stopped() {
+		t.Fatalf("scheduling the timer failed: %v, stop reason %v", err, plugin.Err())
+	}
+	app.Advance(20 * time.Millisecond)
+	if !plugin.Stopped() || core.ErrorCode(plugin.Err()) != core.CodeQuotaExceeded {
+		t.Fatalf("quota stop state = %v, %v", plugin.Stopped(), plugin.Err())
+	}
+	if !errors.Is(runtimeErr, plugin.Err()) || len(notifications) != 1 || notifications[0] != plugin.Err() {
+		t.Fatalf("quota stop, runtime error and notifications differ: %v, %v, %v", plugin.Err(), runtimeErr, notifications)
 	}
 }
 
@@ -1205,8 +1295,11 @@ func TestPluginCloseAfterInterrupt(t *testing.T) {
 }`, pkg.Capabilities{})
 	var plugin *tsx.Plugin
 	var loadErr error
+	var notifications []error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true})
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true, OnStop: func(err error) {
+			notifications = append(notifications, err)
+		}})
 		return core.View{}
 	})
 	if loadErr != nil {
@@ -1226,6 +1319,9 @@ func TestPluginCloseAfterInterrupt(t *testing.T) {
 	app.Settle()
 	if called != 1 || callErr != stop {
 		t.Fatalf("done called %d times with %v, want once with the interrupt's error", called, callErr)
+	}
+	if len(notifications) != 1 || notifications[0] != stop {
+		t.Fatalf("stop notifications = %v, want the interrupt's error once", notifications)
 	}
 }
 

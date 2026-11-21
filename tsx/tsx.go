@@ -111,6 +111,8 @@ type runtime struct {
 	// stopMu guards sandbox.stopped; calls are the pending Plugin.Call callbacks on the engine's goroutine.
 	stopMu sync.Mutex
 	calls  map[*deadline]struct{}
+	// onPluginStop belongs to the engine's goroutine.
+	onPluginStop func(error)
 	// interrupted says the host stopped the runtime (interrupt), and hears so through the calls that fail: the JS it cut ends without a panic into the app's Catch.
 	interrupted atomic.Bool
 	// deadlines enables CallTotal. current owns the JS work running now, and sliceDeadline is the earliest total deadline in the current slice.

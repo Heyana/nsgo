@@ -60,6 +60,7 @@ type Plugin struct {
 	r       *runtime
 	cx      *core.Scope
 	exports *js.Object
+	closing bool // guards reentrant Close on the engine's goroutine
 }
 
 // ErrNoExport is the failure of a call of a name the plugin does not
@@ -100,6 +101,13 @@ func Load(cx *core.Scope, p *pkg.Package, s Sandbox) (plugin *Plugin, err error)
 				}
 			}
 		}()
+		// Scope cleanups run in reverse order. Let the plugin run its
+		// own cleanups before recording a normal close.
+		inner.Cleanup(func() {
+			if plugin != nil {
+				plugin.dispose()
+			}
+		})
 		r = s.start(inner, p.App.ID, p.Source())
 	})
 	if err != nil {
@@ -107,6 +115,7 @@ func Load(cx *core.Scope, p *pkg.Package, s Sandbox) (plugin *Plugin, err error)
 	}
 	plugin = &Plugin{r: r, cx: inner}
 	plugin.exports, _ = r.vm.Get(exportsGlobal).(*js.Object)
+	r.onPluginStop = s.OnStop
 	return plugin, nil
 }
 
@@ -132,7 +141,7 @@ func (p *Plugin) Exports() []string {
 func (p *Plugin) Call(name string, args []any, done func(result any, err error)) {
 	r := p.r
 	if err := r.stoppedErr(); err != nil || p.cx.Disposed() {
-		done(nil, cmp.Or(err, errClosed))
+		done(nil, cmp.Or(err, ErrPluginClosed))
 		return
 	}
 	var v js.Value
@@ -220,18 +229,48 @@ func (p *Plugin) Interrupt(err error) {
 	p.r.interrupt(err)
 }
 
-// Close stops the plugin and frees what it holds, running its cleanups; the calls still waiting then fail with an error saying it was closed, or with why it stopped when it was interrupted first. Call it on the engine's goroutine.
-func (p *Plugin) Close() {
+// Stopped reports whether the plugin has stopped. It is safe to call from
+// any goroutine.
+func (p *Plugin) Stopped() bool { return p.Err() != nil }
+
+// Err returns the plugin's first stop reason, or nil while it runs.
+// Closing the plugin or disposing its owner normally gives ErrPluginClosed.
+// Err is safe to call from any goroutine.
+func (p *Plugin) Err() error {
 	if p == nil || p.r == nil {
-		return
+		return nil
 	}
-	p.cx.Dispose()
-	// What stop and interrupt post to fail the calls dies with the scope, so they are failed here.
-	p.r.failCalls(cmp.Or(p.r.stoppedErr(), errClosed))
+	return p.r.stoppedErr()
 }
 
-// errClosed is how a call fails once its plugin is closed.
-var errClosed = errors.New("tsx: the plugin was closed")
+// Close runs the plugin's cleanups and fails waiting calls with its stop
+// reason. Call it on the engine's goroutine.
+func (p *Plugin) Close() {
+	if p == nil || p.r == nil || p.closing {
+		return
+	}
+	p.closing = true
+	defer func() { p.closing = false }()
+	p.cx.Dispose()
+	// Posted stop work dies with the plugin's scope.
+	p.r.finishPluginStop(p.Err())
+}
+
+func (p *Plugin) dispose() {
+	p.r.markStopped(ErrPluginClosed)
+	p.r.stopTimers()
+	if p.closing || p.r.onPluginStop == nil {
+		return
+	}
+	// The owner disposed the plugin. An explicit Close completes this
+	// work after Dispose returns.
+	p.closing = true
+	defer func() { p.closing = false }()
+	p.r.finishPluginStop(p.Err())
+}
+
+// ErrPluginClosed is the stop reason when a plugin closes normally.
+var ErrPluginClosed = errors.New("tsx: the plugin was closed")
 
 // rejection is what JS threw as a Go error: its message, with its code.
 func (r *runtime) rejection(v js.Value) error {

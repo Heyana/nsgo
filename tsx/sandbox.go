@@ -148,6 +148,9 @@ type Sandbox struct {
 	// Host is the channel its host module reaches, for the Go app to
 	// answer its calls and send it events; nil gives it none.
 	Host *core.Host
+	// OnStop runs once on the engine's goroutine when a plugin loaded
+	// by Load stops. It receives Plugin.Err after waiting calls fail.
+	OnStop func(error)
 	// Storage names its partition of the app's storage and of its secrets (core.Scope.ProvideSecrets), which no one else's code sees; "" leaves it the app's.
 	Storage string
 	// WebUnisolated runs it on the web with the page's authority. The page's engine runs it in a realm of the page's origin, which reaches the page's own APIs (XMLHttpRequest, WebSocket, navigator, localStorage, the page's window) past Go, so there Capabilities and Grant hold only the requests the runtime and core make, and Storage's partition and a pkg.Trust kept in the page's storage are open to its code. Without it, a sandbox with Capabilities or Grant refuses to start on the web with ErrUnisolated. Other targets isolate it and ignore this.
@@ -428,8 +431,8 @@ func (r *runtime) stop(err error) {
 		return
 	}
 	r.stopTimers()
-	if len(r.calls) > 0 {
-		r.cx.Post(func() { r.failCalls(err) })
+	if len(r.calls) > 0 || r.onPluginStop != nil {
+		r.cx.Post(func() { r.finishPluginStop(err) })
 	}
 	r.vm.Interrupt(err)
 	if js.Browser {
@@ -447,8 +450,18 @@ func (r *runtime) interrupt(err error) {
 	r.vm.Interrupt(err)
 	r.cx.Post(func() {
 		r.stopTimers()
-		r.failCalls(r.stoppedErr())
+		r.finishPluginStop(r.stoppedErr())
 	})
+}
+
+// finishPluginStop completes pending calls and consumes the stop callback
+// before invoking app code, which may close the plugin again.
+func (r *runtime) finishPluginStop(err error) {
+	if notify := r.onPluginStop; notify != nil {
+		r.onPluginStop = nil
+		defer notify(err)
+	}
+	r.failCalls(err)
 }
 
 // stoppedErr is why the runtime stopped, nil while it runs.
