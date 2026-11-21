@@ -228,6 +228,8 @@ jobs:
         run: go tool nsgo test -target web ./internal/testhost/testdata/keys
       - name: Test browser backend
         run: go tool nsgo test -target web ./internal/platform/web
+      - name: Test browser raised sound limits
+        run: go tool nsgo test -target web ./internal/testhost/testdata/soundlimits
       - name: Test the shared JavaScript API in Chromium
         run: go tool nsgo test -target web ./tsx/internal/js
       - name: Test the TSX runtime in Chromium

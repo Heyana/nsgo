@@ -3,7 +3,9 @@
 package web
 
 import (
+	"cmp"
 	"context"
+	"fmt"
 	"io/fs"
 	"math"
 	"net/url"
@@ -39,6 +41,8 @@ type webSoundVoice struct {
 	sound, playback      uint32
 	source, gain, panner js.Value
 	ended                js.Func
+	// restricted marks a playback of a scope held to core.Access, which counts against driver.MaxSoundVoices among the restricted voices whatever the engine's limit.
+	restricted bool
 }
 
 func webAudioAvailable() bool {
@@ -83,7 +87,7 @@ func (a *webAudio) fail(id uint32, code, message string) {
 func (a *webAudio) handle(id uint32, r *driver.AudioRequest) {
 	switch r.Command {
 	case driver.AudioLoad:
-		a.load(id, r.Source, r.MaxBytes, r.MaxDuration)
+		a.load(id, r.Source, r.MaxBytes, r.MaxDecodedBytes, r.MaxDuration)
 	case driver.AudioPlay:
 		a.play(id, r)
 	case driver.AudioPlaybackSet, driver.AudioPlaybackStop:
@@ -133,7 +137,7 @@ func (a *webAudio) resumeOutput() {
 	}
 }
 
-func (a *webAudio) load(id uint32, source driver.ImageSource, bytes int64, duration time.Duration) {
+func (a *webAudio) load(id uint32, source driver.ImageSource, bytes, decodedBytes int64, duration time.Duration) {
 	a.unload(id)
 	ctx, cancel := context.WithCancel(context.Background())
 	sound := &webSound{cancel: cancel}
@@ -163,17 +167,23 @@ func (a *webAudio) load(id uint32, source driver.ImageSource, bytes int64, durat
 			return
 		}
 		length := mediaTime(buffer.Get("duration"))
+		// The browser keeps 32-bit float samples per channel.
+		size := int64(buffer.Get("length").Int()) * int64(buffer.Get("numberOfChannels").Int()) * 4
+		if size > cmp.Or(decodedBytes, driver.MaxDecodedBytes) {
+			delete(a.sounds, id)
+			a.fail(id, driver.AudioQuotaExceeded, "the sound exceeds its decoded size limit")
+			return
+		}
 		cut := length > duration
 		if !cut {
 			sound.buffer = buffer
 		}
-		a.report(id, driver.AudioEvent{Phase: driver.AudioLoaded, Duration: length, Cut: cut,
-			Bytes: int64(buffer.Get("length").Int()) * int64(buffer.Get("numberOfChannels").Int()) * 4})
+		a.report(id, driver.AudioEvent{Phase: driver.AudioLoaded, Duration: length, Cut: cut, Bytes: size})
 	}()
 }
 
 func (a *webAudio) soundBytes(ctx context.Context, source driver.ImageSource, limit int64) ([]byte, string, string) {
-	const tooLarge = "a sound has at most 8 MiB"
+	tooLarge := fmt.Sprintf("the sound exceeds its limit of %d encoded bytes", limit)
 	if len(source.Data) > 0 {
 		if int64(len(source.Data)) > limit {
 			return nil, driver.AudioQuotaExceeded, tooLarge
@@ -254,6 +264,7 @@ func audioBytes(data []byte) js.Value {
 	return bytes
 }
 
+// play starts a playback of sound id. At the request's playback limit the oldest voice stops; a restricted playback past driver.MaxSoundVoices restricted voices stops the oldest of those.
 func (a *webAudio) play(id uint32, r *driver.AudioRequest) {
 	sound := a.sounds[id]
 	if sound == nil || !sound.buffer.Truthy() || !a.activated {
@@ -265,7 +276,22 @@ func (a *webAudio) play(id uint32, r *driver.AudioRequest) {
 		a.playbackEnded(id, r.Playback)
 		return
 	}
-	if len(a.voices) >= driver.MaxSoundVoices {
+	if r.Restricted {
+		oldest, n := -1, 0
+		for i, v := range a.voices {
+			if v.restricted {
+				if n == 0 {
+					oldest = i
+				}
+				n++
+			}
+		}
+		if n >= driver.MaxSoundVoices {
+			a.endVoice(a.voices[oldest], true)
+		}
+	}
+	// A limit lowered while voices play stops the oldest until the new playback fits.
+	for len(a.voices) >= max(1, cmp.Or(r.MaxPlaybacks, driver.MaxSoundVoices)) {
 		a.endVoice(a.voices[0], true)
 	}
 	source, gain := a.output.Call("createBufferSource"), a.output.Call("createGain")
@@ -275,7 +301,7 @@ func (a *webAudio) play(id uint32, r *driver.AudioRequest) {
 	source.Get("playbackRate").Set("value", r.Rate)
 	gain.Get("gain").Set("value", r.Volume)
 	source.Call("connect", gain)
-	voice := &webSoundVoice{sound: id, playback: r.Playback, source: source, gain: gain}
+	voice := &webSoundVoice{sound: id, playback: r.Playback, source: source, gain: gain, restricted: r.Restricted}
 	// A centered voice skips the panner; browsers without StereoPannerNode play every voice centered.
 	if r.Pan != 0 && a.output.Get("createStereoPanner").Type() == js.TypeFunction {
 		voice.panner = a.output.Call("createStereoPanner")

@@ -114,6 +114,18 @@ func TestWebAudioSounds(t *testing.T) {
 	if e := load(7, driver.ImageSource{Data: audioWAV(6 * time.Second)}, driver.MaxSoundBytes); !e.Cut || a.sounds[7].buffer.Truthy() {
 		t.Fatalf("sound beyond the duration limit: %+v", e)
 	}
+	a.handle(8, &driver.AudioRequest{Command: driver.AudioLoad, Source: driver.ImageSource{Data: wav}, MaxBytes: driver.MaxSoundBytes,
+		MaxDecodedBytes: 1024, MaxDuration: driver.MaxSoundDuration})
+	audioWait(t, "sound load", func() bool { _, ok := reports[8]; return ok })
+	if e := reports[8]; e.Error != driver.AudioQuotaExceeded || a.sounds[8] != nil {
+		t.Fatalf("sound beyond the decoded size limit: %+v", e)
+	}
+	a.handle(9, &driver.AudioRequest{Command: driver.AudioLoad, Source: driver.ImageSource{Data: audioWAV(6 * time.Second)}, MaxBytes: driver.MaxSoundBytes,
+		MaxDuration: 10 * time.Second})
+	audioWait(t, "sound load", func() bool { _, ok := reports[9]; return ok })
+	if e := reports[9]; e.Phase != driver.AudioLoaded || e.Cut || !a.sounds[9].buffer.Truthy() {
+		t.Fatalf("sound within a raised duration limit: %+v", e)
+	}
 
 	a.play(1, &driver.AudioRequest{Volume: 1, Rate: 1, Playback: 900})
 	if a.output.Truthy() || len(a.voices) != 0 {
@@ -178,6 +190,30 @@ func TestWebAudioSounds(t *testing.T) {
 	}
 	if e := reports[2]; e.Phase != driver.AudioPlaybackEnded || e.Playback != 901 {
 		t.Fatalf("the evicted playback stayed active: %+v", e)
+	}
+	// A raised engine limit keeps more voices, while restricted playbacks stay within the default cap among themselves.
+	const raised = driver.MaxSoundVoices + 8
+	for range raised {
+		a.play(1, &driver.AudioRequest{Volume: 0.1, Rate: 1, MaxPlaybacks: raised})
+	}
+	if len(a.voices) != raised {
+		t.Fatalf("voices at a raised limit = %d, want %d", len(a.voices), raised)
+	}
+	for range driver.MaxSoundVoices + 1 {
+		a.play(1, &driver.AudioRequest{Volume: 0.1, Rate: 1, MaxPlaybacks: raised * 2, Restricted: true})
+	}
+	restricted := 0
+	for _, v := range a.voices {
+		if v.restricted {
+			restricted++
+		}
+	}
+	if restricted != driver.MaxSoundVoices || len(a.voices) != raised+driver.MaxSoundVoices {
+		t.Fatalf("restricted voices = %d of %d, want %d of %d", restricted, len(a.voices), driver.MaxSoundVoices, raised+driver.MaxSoundVoices)
+	}
+	a.play(1, &driver.AudioRequest{Volume: 0.1, Rate: 1, MaxPlaybacks: 4})
+	if len(a.voices) != 4 {
+		t.Fatalf("voices after lowering the limit = %d, want 4", len(a.voices))
 	}
 	a.play(2, &driver.AudioRequest{Volume: 1, Rate: 1, Playback: 901})
 	a.stop(1)

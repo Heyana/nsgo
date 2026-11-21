@@ -16,9 +16,9 @@ func TestMain(m *testing.M) { nsgotest.Main(m) }
 
 func TestLoadsTwoHundredSoundsWithRaisedLimits(t *testing.T) {
 	switch nsgotest.Target() {
-	case "macos", "ios_simulator", "ios":
+	case "macos", "ios_simulator", "ios", "web":
 	default:
-		t.Skip("requires an Apple audio backend")
+		t.Skip("requires a backend that plays sounds")
 	}
 	const count = 200
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
@@ -38,7 +38,8 @@ func TestLoadsTwoHundredSoundsWithRaisedLimits(t *testing.T) {
 				case err != nil:
 					failed = true
 					status.Set(fmt.Sprintf("sound %d: %v", i, err))
-				case sound.Duration() != length:
+				// The browser decodes at its own sample rate, so its duration can round off by a sample.
+				case (sound.Duration() - length).Abs() > time.Millisecond:
 					failed = true
 					status.Set(fmt.Sprintf("sound %d: decoded %s, want %s", i, sound.Duration(), length))
 				default:
