@@ -12,7 +12,7 @@
 - `FillPath`, `StrokePath` and `ClipPath` use a `Path` without touching the current path; `FillEvenOdd` and `ClipEvenOdd` take the even-odd rule.
 - Paints: colors, and `CanvasLinear`, `CanvasRadial` and `CanvasConic` gradients.
 - Text: `FillText` and `StrokeText` in a `Font`.
-- Images: `DrawImage` at the natural size, `DrawImageIn` into a rectangle and `DrawImageFrom` from a part of the image.
+- Images and SVGs: `DrawImage` at the natural size, `DrawImageIn` into a rectangle and `DrawImageFrom` from a part of the image; `DrawSVG` at the document's intrinsic size and `DrawSVGIn` fitted into a rectangle by its `preserveAspectRatio` (clipping for `slice`), leaving the drawing's state and current path intact, resolving `currentColor` from the drawing's fill color (or black when unset), and laying out `<text>`/`<tspan>` elements with the drawing's `TextEngine` into native `DrawFillText`/`DrawStrokeText` ops so every platform renders SVG text with its own text engine.
 
 A canvas has no size of its own unless `Em` gives it one in ems of the font size it inherits, scaled by the user's text size as text is, as `base/formula`'s formulas size themselves: in a text's attachment its baseline, `Em.Descent` ems above its bottom, sits on the line's ([text](text.md)). `EmFunc` and `LabelFunc` follow what they read, laying it out again and naming it anew.
 

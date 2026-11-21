@@ -363,6 +363,15 @@ func parseSVGTransform(v string) (svgMatrix, bool) {
 // for a gradient that paints one, and ok false for one that paints
 // nothing: no stops, or bounding box units on a shape without area.
 func (p *svgParser) gradient(el *svgNode, ctm svgMatrix) (g *CanvasGradient, solid Color, ok bool) {
+	g, solid, _, ok = p.gradientWith(el, ctm, false)
+	return g, solid, ok
+}
+
+// gradientWith resolves a linearGradient or radialGradient element. When
+// deferredBBox is true, an objectBoundingBox gradient is returned in unit
+// coordinates with isBBox true so text runs can map it onto their measured
+// bounding box when drawn.
+func (p *svgParser) gradientWith(el *svgNode, ctm svgMatrix, deferredBBox bool) (g *CanvasGradient, solid Color, isBBox, ok bool) {
 	chain := []*svgNode{el}
 	for cur := el; len(chain) < maxSVGUses; {
 		next := p.ids[svgHref(cur.attrs)]
@@ -411,18 +420,18 @@ func (p *svgParser) gradient(el *svgNode, ctm svgMatrix) (g *CanvasGradient, sol
 	}
 	switch len(stops) {
 	case 0:
-		return nil, 0, false
+		return nil, 0, false, false
 	case 1:
-		return nil, stops[0].Color, true
+		return nil, stops[0].Color, false, true
 	}
 	lastColor := stops[len(stops)-1].Color
 	units, _ := attr("gradientUnits")
 	bbox := units != "userSpaceOnUse"
 	m := ctm
-	if bbox {
+	if bbox && !deferredBBox {
 		b, ok := svgBounds(p.local)
 		if !ok || b.w <= 0 || b.h <= 0 {
-			return nil, 0, false
+			return nil, 0, false, false
 		}
 		m = m.mul(svgMatrix{a: float64(b.w), d: float64(b.h), e: float64(b.x), f: float64(b.y)})
 	}
@@ -465,7 +474,7 @@ func (p *svgParser) gradient(el *svgNode, ctm svgMatrix) (g *CanvasGradient, sol
 		}
 		fr := max(coord("fr", "0%", diag), 0)
 		if r <= 0 {
-			return nil, lastColor, true
+			return nil, lastColor, false, true
 		}
 		// A focal point outside the circle moves onto it, as SVG 1.1 has it.
 		if dx, dy := fx-cx, fy-cy; dx*dx+dy*dy > r*r*0.998 {
@@ -479,11 +488,11 @@ func (p *svgParser) gradient(el *svgNode, ctm svgMatrix) (g *CanvasGradient, sol
 		g.X1, g.Y1 = coord("x1", "0%", p.vw), coord("y1", "0%", p.vh)
 		g.X2, g.Y2 = coord("x2", "100%", p.vw), coord("y2", "0%", p.vh)
 		if g.X1 == g.X2 && g.Y1 == g.Y2 {
-			return nil, lastColor, true
+			return nil, lastColor, false, true
 		}
 	}
 	g.Transform = [6]float32{float32(m.a), float32(m.b), float32(m.c), float32(m.d), float32(m.e), float32(m.f)}
-	return g, 0, true
+	return g, 0, bbox && deferredBBox, true
 }
 
 // average returns the gradient's mean color over offsets 0 to 1, the

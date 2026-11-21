@@ -122,14 +122,14 @@ func (t *Tree) mountIcon(cx *Scope, parent *node, v Icon) {
 			}
 		})
 	}
-	cx.renderEffect(func() {
+	cn.effect = cx.renderEffect(func() {
 		size := cn.size.Get()
 		color := in.color.Get()
 		svg := in.svg.Get()
 		if size == (Size{}) {
 			return
 		}
-		d := &Drawing{}
+		d := driver.NewDrawing(t.text)
 		svg.Draw(d, size, color)
 		cn.drawing, cn.fresh = d, true
 		t.touch(n)

@@ -143,3 +143,74 @@ func TestSVGViewTakesTheDocumentsSize(t *testing.T) {
 		t.Errorf("the view is %v, want the document's size", got)
 	}
 }
+
+func TestCanvasDrawSVGUsesPlatformTextEngineAndRedrawsOnFontChange(t *testing.T) {
+	diagram := MustParseSVG([]byte(`<svg viewBox="0 0 100 50">
+		<rect x="0" y="0" width="100" height="50" fill="#eef"/>
+		<text x="50" y="30" text-anchor="middle" font-size="16" fill="#112233">Hello</text>
+	</svg>`))
+	plain := MustParseSVG([]byte(`<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="currentColor"/></svg>`))
+
+	registered := false
+	var scope *Scope
+	h := newHost(t, Size{Width: 300, Height: 200}, nil)
+	h.tree = NewTree(h.root, fontEngine{&registered})
+	h.tree.Resize(Size{Width: 300, Height: 200}, Geometry{})
+	h.tree.Mount(func(cx *Scope) Node {
+		scope = cx
+		return View{Style: Style{AlignItems: AlignStart}, Children: []Node{
+			Canvas{
+				TestID: "canvas",
+				Style:  Style{Width: Pt(200), Height: Pt(100)},
+				Draw: func(d *Drawing, size Size) {
+					d.DrawSVGIn(diagram, 0, 0, float32(size.Width), float32(size.Height))
+				},
+			},
+			SVGView{TestID: "svgview", SVG: diagram},
+			Icon{TestID: "plain", SVG: plain},
+		}}
+	})
+	h.commit()
+
+	textOffset := func(id string) (DrawOp, bool) {
+		for _, op := range h.find(id).canvas.drawing.Ops {
+			if op.Kind == DrawFillText {
+				return op, true
+			}
+		}
+		return DrawOp{}, false
+	}
+
+	canvasBefore, ok := textOffset("canvas")
+	if !ok || canvasBefore.Text != "Hello" || canvasBefore.X1 >= 0 {
+		t.Fatalf("canvas DrawFillText = %+v (ok=%v)", canvasBefore, ok)
+	}
+	viewBefore, ok := textOffset("svgview")
+	if !ok || viewBefore.Text != "Hello" || viewBefore.X1 != canvasBefore.X1 {
+		t.Fatalf("svgview DrawFillText = %+v, want X1=%v", viewBefore, canvasBefore.X1)
+	}
+
+	if err := scope.RegisterFont([]byte("font")); err != nil {
+		t.Fatal(err)
+	}
+	batch := h.commit()
+
+	if h.drawings(batch, "canvas") != 1 {
+		t.Fatalf("canvas updates after RegisterFont = %d, want 1", h.drawings(batch, "canvas"))
+	}
+	if h.drawings(batch, "svgview") != 1 {
+		t.Fatalf("svgview with text updates after RegisterFont = %d, want 1", h.drawings(batch, "svgview"))
+	}
+	if h.drawings(batch, "plain") != 0 {
+		t.Fatalf("plain icon without text redrew %d times after RegisterFont, want 0", h.drawings(batch, "plain"))
+	}
+
+	canvasAfter, _ := textOffset("canvas")
+	viewAfter, _ := textOffset("svgview")
+	if canvasAfter.X1 != canvasBefore.X1*2 {
+		t.Errorf("canvas text offset after font change = %v, want %v", canvasAfter.X1, canvasBefore.X1*2)
+	}
+	if viewAfter.X1 != viewBefore.X1*2 {
+		t.Errorf("svgview text offset after font change = %v, want %v", viewAfter.X1, viewBefore.X1*2)
+	}
+}

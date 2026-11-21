@@ -20,6 +20,7 @@ type drawTrack struct {
 
 type trackState struct {
 	m        canvasMatrix
+	fill     Color
 	width    float64
 	miter    float64
 	cap      LineCap
@@ -47,7 +48,7 @@ type trackSeg struct {
 }
 
 func newTrack() *drawTrack {
-	return &drawTrack{st: trackState{m: canvasIdentity, width: 1, miter: 10, align: TextAlignStart}}
+	return &drawTrack{st: trackState{m: canvasIdentity, fill: RGB(0x000000), width: 1, miter: 10, align: TextAlignStart}}
 }
 
 // tracked replays the ops recorded since the last call.
@@ -87,6 +88,8 @@ func (t *drawTrack) replay(op *DrawOp, at int) {
 		t.st.m = t.st.m.then(local(op))
 	case DrawSetTransform:
 		t.st.m = opMatrix(op)
+	case DrawFillColor:
+		t.st.fill = op.Color
 	case DrawLineWidth:
 		t.st.width = float64(op.W)
 	case DrawLineCap:

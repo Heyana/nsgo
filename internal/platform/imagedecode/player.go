@@ -117,6 +117,8 @@ func (p *player) play(op *driver.DrawOp) {
 	case driver.DrawRotate:
 		sin, cos := math.Sincos(float64(op.A))
 		p.st.ctm = p.st.ctm.mul(affine{a: cos, b: sin, c: -sin, d: cos})
+	case driver.DrawTransform:
+		p.st.ctm = p.st.ctm.mul(affine{a: float64(op.X1), b: float64(op.Y1), c: float64(op.X2), d: float64(op.Y2), e: x, f: y})
 	case driver.DrawBeginPath:
 		p.path, p.has = p.path[:0], false
 	case driver.DrawMoveTo:

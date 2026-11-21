@@ -270,6 +270,9 @@ func (t *Tree) FontsChanged() {
 			n.input.lineH = 0
 			t.markLayout(n)
 		case n.canvas != nil && n.canvas.effect != nil:
+			if n.icon != nil && !n.icon.svg.GetUntracked().HasText() {
+				continue
+			}
 			// Draw can measure text without recording any text operations, so run it again rather than replay its recording: both its geometry and its glyphs take the new fonts.
 			n.canvas.effect.mark(dirty)
 		}

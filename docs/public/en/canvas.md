@@ -33,7 +33,16 @@ d.SetFillGradient(core.CanvasLinear(0, 0, float32(size.Width), 0,
 
 ## Text, images and parts
 
-`MeasureText`, `TextMetrics` and `SetTextAlign` lay text out on the platform's text engine, so labels use the same fonts as the rest of the app. `DrawImage`, `DrawImageIn` and `DrawImageFrom` draw pictures, and `OnPress` can test the last drawing with `IsPointInPath` and `IsPointInStroke`. Native backends cache the 64 most recently drawn unkept canvas image sources; call `release := cx.KeepImage(src)` to pin sprite atlases or long-lived textures out of that eviction bound until `release()` runs or `cx` disposes.
+`MeasureText`, `TextMetrics` and `SetTextAlign` lay text out on the platform's text engine, so labels use the same fonts as the rest of the app. `DrawImage`, `DrawImageIn` and `DrawImageFrom` draw pictures, `DrawSVG` and `DrawSVGIn` draw parsed `*core.SVG` documents (`core.ParseSVG`) at their intrinsic size or fitted into a rectangle — with `<text>` and `<tspan>` elements measured and rendered by the platform's own text engine and `currentColor` taken from the drawing's fill color — and `OnPress` can test the last drawing with `IsPointInPath` and `IsPointInStroke`. Native backends cache the 64 most recently drawn unkept canvas image sources; call `release := cx.KeepImage(src)` to pin sprite atlases or long-lived textures out of that eviction bound until `release()` runs or `cx` disposes.
+
+```go
+badge := core.MustParseSVG([]byte(`<svg viewBox="0 0 120 40">
+	<rect width="120" height="40" rx="8" fill="#007aff"/>
+	<text x="60" y="25" text-anchor="middle" font-size="14" fill="#fff">Live</text>
+</svg>`))
+
+d.DrawSVGIn(badge, 12, 12, 180, 60)
+```
 
 `Drawing.Node` names a part of a drawing, such as a chart's bar or a map's region, with bounds, a role, a label and a selected state. Assistive technology reads those parts as the canvas's children, and tests find them by label, text or test ID; a press on one is a press at its center.
 

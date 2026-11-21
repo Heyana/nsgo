@@ -31,7 +31,16 @@ d.SetFillGradient(core.CanvasLinear(0, 0, float32(size.Width), 0,
 
 ## 文本、图片与部件
 
-`MeasureText`、`TextMetrics` 和 `SetTextAlign` 用平台的文本引擎排版，因此标签与应用其余部分使用相同的字体。`DrawImage`、`DrawImageIn` 和 `DrawImageFrom` 绘制图片，`OnPress` 可以用 `IsPointInPath` 和 `IsPointInStroke` 测试最后一次绘制。
+`MeasureText`、`TextMetrics` 和 `SetTextAlign` 用平台的文本引擎排版，因此标签与应用其余部分使用相同的字体。`DrawImage`、`DrawImageIn` 和 `DrawImageFrom` 绘制图片，`DrawSVG` 和 `DrawSVGIn` 将解析后的 `*core.SVG` 文档（`core.ParseSVG`）按固有尺寸或适配到目标矩形绘制到画布上——其中的 `<text>` 和 `<tspan>` 元素由平台自身的文本引擎测量和绘制，`currentColor` 取画布当前的填充色——`OnPress` 可以用 `IsPointInPath` 和 `IsPointInStroke` 测试最后一次绘制。
+
+```go
+badge := core.MustParseSVG([]byte(`<svg viewBox="0 0 120 40">
+	<rect width="120" height="40" rx="8" fill="#007aff"/>
+	<text x="60" y="25" text-anchor="middle" font-size="14" fill="#fff">Live</text>
+</svg>`))
+
+d.DrawSVGIn(badge, 12, 12, 180, 60)
+```
 
 `Drawing.Node` 给绘图的一部分命名，例如图表的柱或地图的区域，带边界、角色、标签和选中状态。辅助技术把这些部分当作画布的子元素，测试可以按标签、文本或 test ID 找到它们；按下其中一个就是按下它的中心。
 

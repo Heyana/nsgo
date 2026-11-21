@@ -962,6 +962,44 @@ func (d *Drawing) DrawImageFrom(img ImageSource, sx, sy, sw, sh, x, y, w, h floa
 	return d.op(DrawOp{Kind: DrawImage, Image: &img, X1: sx, Y1: sy, X2: sw, Y2: sh, X: x, Y: y, W: w, H: h})
 }
 
+// DrawSVG draws svg at (x, y) at its intrinsic size, respecting its
+// preserveAspectRatio and leaving the drawing's state and current path
+// unchanged. Every currentColor takes the drawing's current fill color (or
+// black when none is set), and <text> elements are measured and drawn by the
+// platform's text engine.
+func (d *Drawing) DrawSVG(svg *SVG, x, y float32) *Drawing {
+	if svg == nil {
+		return d
+	}
+	w, h := svg.Size()
+	return d.DrawSVGIn(svg, x, y, float32(w), float32(h))
+}
+
+// DrawSVGIn draws svg fitted into the rectangle (x, y, w, h), respecting its
+// preserveAspectRatio and leaving the drawing's state and current path
+// unchanged. Every currentColor takes the drawing's current fill color (or
+// black when none is set), and <text> elements are measured and drawn by the
+// platform's text engine.
+func (d *Drawing) DrawSVGIn(svg *SVG, x, y, w, h float32) *Drawing {
+	if svg == nil || w <= 0 || h <= 0 {
+		return d
+	}
+	t := d.tracked()
+	hasPath := len(t.pathOps) > 0
+	color := t.st.fill
+	svg.drawAt(d, x, y, w, h, color)
+	if len(svg.ops) > 0 || svg.aspectSlice {
+		d.Ops = append(d.Ops, DrawOp{Kind: DrawBeginPath})
+	}
+	if hasPath {
+		d.pathAside = true
+	}
+	// The SVG drew inside Save/Restore and cleared its own path, so neither
+	// the tracked state nor any saved current path changed.
+	t.at = len(d.Ops)
+	return d
+}
+
 // Bind has the platform play the last operation's argument arg with the
 // value of node, every frame it changes, in place of the one recorded.
 // The queries and the text placement read the recorded value.

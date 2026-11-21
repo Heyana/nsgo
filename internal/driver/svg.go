@@ -13,23 +13,39 @@ import (
 	"unicode"
 )
 
-// SVG is a parsed SVG document: vector shapes that stay sharp at any size.
-// An Icon draws one in the color it inherits, and the image decoders draw
-// SVG files with it.
+// SVG is a parsed SVG document: vector shapes and text that stay sharp at any
+// size. An Icon or SVGView draws one as a view, Drawing.DrawSVG and
+// Drawing.DrawSVGIn draw one on a canvas, and the image decoders rasterize SVG
+// files with it.
 //
-// ParseSVG reads static drawings, icons, logos and illustrations: path, rect, circle, ellipse, line, polyline and polygon inside svg, g, a, switch and use elements, with fills, strokes, stroke widths, caps and joins, fill and clip rules, opacities, transforms, linear and radial gradients, clip paths and markers. A color may be none, currentColor, a hex color, rgb(), rgba(), hsl(), hsla() or a CSS color name. Groups pass these to their children, and presentation attributes, the style attribute and simple style sheets (type, class and id selectors) set them.
+// ParseSVG reads static drawings, icons, logos and illustrations: path, rect,
+// circle, ellipse, line, polyline, polygon, text and tspan inside svg, g, a,
+// switch and use elements, with fills, strokes, stroke widths, caps, joins and
+// dashes, fill and clip rules, opacities, transforms, linear and radial
+// gradients, clip paths, markers and preserveAspectRatio. A color may be none,
+// currentColor, a hex color, rgb(), rgba(), hsl(), hsla() or a CSS color name.
+// Groups pass these to their children, and presentation attributes, the style
+// attribute and simple style sheets (type, class and id selectors) set them.
+// Text elements emit native DrawFillText and DrawStrokeText operations, laid
+// out and drawn by the platform's own text engine.
 //
-// Text, images, patterns, masks, filters, dashes and animations
-// are not read: an SVG is a drawing, not a page. ParseSVG reads only the
-// document, never a file or URL it names.
+// Images, patterns, masks, filters and animations are not read: an SVG is a
+// drawing, not a page. ParseSVG reads only the document, never a file or URL
+// it names.
 type SVG struct {
 	// box is the viewBox, or the document's width and height when it has
 	// none. It is the user space the operations are in.
 	box svgBox
 	// width and height are the document's intrinsic size.
 	width, height Points
+	// preserveAspectRatio alignment and meet/slice flags.
+	aspectAX, aspectAY         float32
+	aspectUniform, aspectSlice bool
 	// ops draw the document in its viewBox; a Color of 0 is currentColor.
 	ops []DrawOp
+	// texts hold parsed <text> elements in painter's order, interleaved
+	// with ops at each entry's at index when drawn into a Drawing.
+	texts []svgTextOp
 }
 
 // svgBox is a viewBox in user space.
@@ -70,10 +86,20 @@ func (s *SVG) Size() (w, h Points) {
 	return s.width, s.height
 }
 
-// Draw records the document's shapes into d, fitted and centered in box and
-// painted in color: every currentColor becomes color, and a zero color is
-// black. A non-uniform box keeps the document's aspect ratio.
+// HasText reports whether the document contains any <text> elements.
+func (s *SVG) HasText() bool {
+	return s != nil && len(s.texts) > 0
+}
+
+// Draw records the document's shapes and text into d, fitted in box according
+// to its preserveAspectRatio (centered uniformly by default) and painted in
+// color: every currentColor becomes color, and a zero color is black.
 func (s *SVG) Draw(d *Drawing, box Size, color Color) {
+	s.drawAt(d, 0, 0, float32(box.Width), float32(box.Height), color)
+}
+
+// drawAt records the document into d inside the rectangle (x, y, w, h).
+func (s *SVG) drawAt(d *Drawing, x, y, w, h float32, color Color) {
 	if s == nil || d == nil {
 		return
 	}
@@ -81,17 +107,47 @@ func (s *SVG) Draw(d *Drawing, box Size, color Color) {
 		color = RGB(0x000000)
 	}
 	vw, vh := s.box.w, s.box.h
-	if vw <= 0 || vh <= 0 {
+	if vw <= 0 || vh <= 0 || w <= 0 || h <= 0 {
 		return
 	}
-	scale := min(float32(box.Width)/vw, float32(box.Height)/vh)
-	if scale <= 0 {
-		return
+	sx, sy := w/vw, h/vh
+	var ox, oy float32
+	if s.aspectUniform {
+		scale := min(sx, sy)
+		if s.aspectSlice {
+			scale = max(sx, sy)
+		}
+		if scale <= 0 {
+			return
+		}
+		sx, sy = scale, scale
+		ox = x + (w-vw*scale)*s.aspectAX
+		oy = y + (h-vh*scale)*s.aspectAY
+	} else {
+		if sx <= 0 || sy <= 0 {
+			return
+		}
+		ox, oy = x, y
 	}
-	ox := (float32(box.Width) - vw*scale) / 2
-	oy := (float32(box.Height) - vh*scale) / 2
-	d.Save().Translate(ox, oy).Scale(scale, scale).Translate(-s.box.x, -s.box.y)
-	for _, op := range s.ops {
+	d.Ops = append(d.Ops, DrawOp{Kind: DrawSave})
+	if s.aspectSlice {
+		d.Ops = append(d.Ops,
+			DrawOp{Kind: DrawBeginPath},
+			DrawOp{Kind: DrawRect, X: x, Y: y, W: w, H: h},
+			DrawOp{Kind: DrawClip},
+		)
+	}
+	d.Ops = append(d.Ops,
+		DrawOp{Kind: DrawTranslate, X: ox, Y: oy},
+		DrawOp{Kind: DrawScale, X: sx, Y: sy},
+		DrawOp{Kind: DrawTranslate, X: -s.box.x, Y: -s.box.y},
+	)
+	ti := 0
+	for i, op := range s.ops {
+		for ti < len(s.texts) && s.texts[ti].at == i {
+			s.drawTextOp(d, &s.texts[ti], color)
+			ti++
+		}
 		switch op.Kind {
 		case DrawFillColor, DrawStrokeColor:
 			if op.Color == 0 {
@@ -100,17 +156,21 @@ func (s *SVG) Draw(d *Drawing, box Size, color Color) {
 		}
 		d.Ops = append(d.Ops, op)
 	}
-	d.Restore()
+	for ; ti < len(s.texts); ti++ {
+		s.drawTextOp(d, &s.texts[ti], color)
+	}
+	d.Ops = append(d.Ops, DrawOp{Kind: DrawRestore})
 }
 
-// svgNode is an element of the document.
+// svgNode is an element or character-data node of the document.
 type svgNode struct {
 	// name is the element's local name, empty for elements outside the
 	// SVG namespace, which are never drawn.
 	name     string
+	isText   bool
 	attrs    map[string]string
 	children []*svgNode
-	text     string // a style element's sheet
+	text     string // a style element's sheet or a text node's characters
 }
 
 // parseSVGTree reads the document's elements, with each element's style
@@ -159,14 +219,25 @@ func parseSVGTree(data []byte) (*svgNode, error) {
 			}
 			stack = stack[:len(stack)-1]
 		case xml.CharData:
-			if len(stack) > 0 && stack[len(stack)-1].name == "style" {
-				stack[len(stack)-1].text += string(tok)
+			if len(stack) > 0 {
+				top := stack[len(stack)-1]
+				switch top.name {
+				case "style":
+					top.text += string(tok)
+				case "text", "tspan":
+					if len(tok) > 0 {
+						top.children = append(top.children, &svgNode{isText: true, text: string(tok)})
+					}
+				}
 			}
 		}
 	}
 	rules := parseCSSRules(sheets)
 	var style func(n *svgNode)
 	style = func(n *svgNode) {
+		if n.isText {
+			return
+		}
 		applyCSSRules(n, rules)
 		if v, ok := n.attrs["style"]; ok {
 			for _, d := range parseCSSDeclarations(v) {
@@ -182,7 +253,7 @@ func parseSVGTree(data []byte) (*svgNode, error) {
 }
 
 // svgAttrs reads an element's attributes, keeping their case. Of the
-// namespaced ones, only xlink:href is read, as href.
+// namespaced ones, xlink:href is read as href and xml:space as xml:space.
 func svgAttrs(el xml.StartElement) map[string]string {
 	a := make(map[string]string, len(el.Attr))
 	for _, attr := range el.Attr {
@@ -191,6 +262,8 @@ func svgAttrs(el xml.StartElement) map[string]string {
 				if _, ok := a["href"]; !ok {
 					a["href"] = attr.Value
 				}
+			} else if attr.Name.Local == "space" && (attr.Name.Space == "xml" || attr.Name.Space == "http://www.w3.org/XML/1998/namespace") {
+				a["xml:space"] = attr.Value
 			}
 			continue
 		}
@@ -247,6 +320,15 @@ type svgStyle struct {
 	contextFill, contextStroke svgPaint
 	// markerStart, markerMid and markerEnd are the ids of the markers shapes draw at their vertices.
 	markerStart, markerMid, markerEnd string
+	// text properties inherited by <text> and <tspan>.
+	fontFamily    string
+	fontSize      float32
+	fontWeight    FontWeight
+	fontItalic    bool
+	fontVariant   FontVariant
+	textAnchor    TextAlign
+	textBaseline  TextBaseline
+	preserveSpace bool
 }
 
 func defaultSVGStyle() svgStyle {
@@ -258,6 +340,10 @@ func defaultSVGStyle() svgStyle {
 		width:         1,
 		ctm:           svgIdentity,
 		opacity:       1,
+		fontSize:      16,
+		fontWeight:    FontWeightNormal,
+		textAnchor:    TextAlignStart,
+		textBaseline:  BaselineAlphabetic,
 	}
 }
 
@@ -266,6 +352,7 @@ type svgParser struct {
 	// vw and vh are the viewBox's size, which percentages are of.
 	vw, vh float32
 	ops    []DrawOp
+	texts  []svgTextOp
 	// local is the shape being read, in its own coordinates.
 	local []DrawOp
 	// joins are the indices in local of the curves that continue an arc, whose starts are not vertices for markers.
@@ -279,6 +366,9 @@ type svgParser struct {
 }
 
 func (p *svgParser) index(n *svgNode, ancestors []*svgNode) {
+	if n.isText {
+		return
+	}
 	if id := strings.TrimSpace(n.attrs["id"]); id != "" {
 		if _, ok := p.ids[id]; !ok {
 			p.ids[id] = n
@@ -345,12 +435,14 @@ func (p *svgParser) root(el *svgNode, s *SVG) error {
 	if !hasBox {
 		s.box = svgBox{w: w, h: h}
 	}
+	s.aspectAX, s.aspectAY, s.aspectUniform, s.aspectSlice = svgAspect(attrs["preserveAspectRatio"])
 	p.vw, p.vh = s.box.w, s.box.h
 	style := defaultSVGStyle()
 	if err := p.element(el, style, true); err != nil {
 		return err
 	}
 	s.ops = p.ops
+	s.texts = p.texts
 	return nil
 }
 
@@ -358,7 +450,8 @@ func (p *svgParser) root(el *svgNode, s *SVG) error {
 func drawable(name string) bool {
 	switch name {
 	case "svg", "g", "a", "switch", "use",
-		"path", "rect", "circle", "ellipse", "line", "polyline", "polygon":
+		"path", "rect", "circle", "ellipse", "line", "polyline", "polygon",
+		"text":
 		return true
 	}
 	return false
@@ -428,6 +521,8 @@ func (p *svgParser) element(el *svgNode, style svgStyle, root bool) error {
 		return nil
 	case "use":
 		return p.use(el, style)
+	case "text":
+		return p.text(el, style)
 	}
 	p.local, p.joins = p.local[:0], p.joins[:0]
 	if err := p.shape(el); err != nil {
@@ -820,6 +915,12 @@ func (p *svgParser) emitOps(ops []DrawOp, m svgMatrix) {
 
 // apply reads the presentation attributes on an element.
 func (s *svgStyle) apply(a map[string]string) error {
+	if v, ok := a["font"]; ok {
+		v = strings.TrimSpace(v)
+		if v != "" && v != "inherit" {
+			s.applyFontShorthand(v)
+		}
+	}
 	for name, value := range a {
 		value = strings.TrimSpace(value)
 		if value == "inherit" {
@@ -897,6 +998,70 @@ func (s *svgStyle) apply(a map[string]string) error {
 		case "marker-end":
 			if id, ok := svgMarkerRef(value); ok {
 				s.markerEnd = id
+			}
+		case "font-family":
+			if f := parseSVGFontFamily(value); f != "" {
+				s.fontFamily = f
+			}
+		case "font-size":
+			if sz, ok := parseSVGFontSize(value, s.fontSize); ok {
+				s.fontSize = sz
+			}
+		case "font-weight":
+			if w, ok := parseSVGFontWeight(value, s.fontWeight); ok {
+				s.fontWeight = w
+			}
+		case "font-style":
+			switch strings.ToLower(value) {
+			case "normal":
+				s.fontItalic = false
+			case "italic", "oblique":
+				s.fontItalic = true
+			}
+		case "font-variant", "font-variant-caps":
+			switch strings.ToLower(value) {
+			case "normal":
+				s.fontVariant = 0
+			case "small-caps":
+				s.fontVariant = FontSmallCaps
+			}
+		case "text-anchor":
+			switch strings.ToLower(value) {
+			case "start":
+				s.textAnchor = TextAlignStart
+			case "middle":
+				s.textAnchor = TextAlignCenter
+			case "end":
+				s.textAnchor = TextAlignEnd
+			}
+		case "dominant-baseline", "alignment-baseline":
+			switch strings.ToLower(value) {
+			case "auto", "alphabetic", "baseline":
+				s.textBaseline = BaselineAlphabetic
+			case "middle", "central":
+				s.textBaseline = BaselineMiddle
+			case "hanging":
+				s.textBaseline = BaselineHanging
+			case "text-before-edge", "text-top", "before-edge":
+				s.textBaseline = BaselineTop
+			case "text-after-edge", "text-bottom", "after-edge":
+				s.textBaseline = BaselineBottom
+			case "ideographic":
+				s.textBaseline = BaselineIdeographic
+			}
+		case "xml:space":
+			switch value {
+			case "preserve":
+				s.preserveSpace = true
+			case "default":
+				s.preserveSpace = false
+			}
+		case "white-space":
+			switch strings.ToLower(value) {
+			case "pre", "pre-wrap":
+				s.preserveSpace = true
+			case "normal", "nowrap":
+				s.preserveSpace = false
 			}
 		}
 	}

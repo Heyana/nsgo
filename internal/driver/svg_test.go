@@ -391,7 +391,8 @@ func TestSVGHiddenElements(t *testing.T) {
 		<rect width="1" height="1" display="none"/>
 		<g visibility="hidden"><rect width="1" height="1"/><rect width="2" height="2" visibility="visible"/></g>
 		<rect width="1" height="1" opacity="0"/>
-		<text>Text is not drawn</text>
+		<text display="none">Hidden text</text>
+		<foreignObject width="5" height="5">ignored</foreignObject>
 	</svg>`)
 	if rects := kindsOf(ops, DrawRect); len(rects) != 1 || rects[0].W != 2 {
 		t.Errorf("drawn = %+v", ops)
