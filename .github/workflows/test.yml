@@ -232,7 +232,7 @@ jobs:
         run: go tool nsgo test ./internal/platform/apple -- -skip '^TestASoundDecodesOnceAndPlaysOverlapping$'
       - name: Test widget and Live Activity recording
         run: go tool nsgo test -run '^(TestWidgetTimelines|TestLiveActivityRecords|TestUnavailableWidgetServices)$' ./nsgotest
-      # The Intel runner stalled in CoreAudio when LLDB launched the test (#801).
+      # Each run is a fresh process with Go symbols and a 30-second timeout, so a native fault or a CoreAudio stall leaves a traceback and a crash report (#801).
       - name: Stress overlapping sound playback in fresh processes
         env:
           GOTRACEBACK: crash
@@ -278,8 +278,7 @@ jobs:
           sleep 20
           for reports in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
             if [[ -d "$reports" ]]; then
-              find "$reports" -type f -newer "$RUNNER_TEMP/apple-start" \
-                \( -name '*.test[-_]*.ips' -o -name '*.test[-_]*.crash' \) -print -exec cat {} \;
+              find "$reports" -type f -newer "$RUNNER_TEMP/apple-start" \( -name '*.ips' -o -name '*.crash' \) -print -exec cat {} \;
             fi
           done
 
