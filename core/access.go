@@ -72,6 +72,8 @@ const (
 	AccessOverlay = "overlay"
 	// AccessAudio is the audio package's sounds and players, refused with AudioNotAllowed.
 	AccessAudio = "audio"
+	// AccessGamepad is reading connected game controllers and their per-frame input (package gamepad).
+	AccessGamepad = "gamepad"
 	// AccessAuthSession is signing in through the system's authentication session (AuthSession).
 	AccessAuthSession = "authSession"
 	// AccessHost is the host's handlers, by name (CallHost, PostHost).

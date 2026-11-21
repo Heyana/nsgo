@@ -174,7 +174,7 @@ func (s Sandbox) isolation(sharesPageAuthority bool) error {
 }
 
 // SandboxModules are the modules a sandboxed bundle imports without Sandbox.Modules naming them: NSGo's own, with what is registered into them SandboxSafe, none of the Go functions registered with RegisterFunctions, and none of their exports that act on the whole app (setColorScheme, BackHandler.exitApp).
-var SandboxModules = []string{"nsgo", "nsgo:rt", "nsgo/base", "nsgo/base/plot", "nsgo/ui", "nsgo/ui/chat", "nsgo/mobile"}
+var SandboxModules = []string{"nsgo", "nsgo:rt", "nsgo/base", "nsgo/base/plot", "nsgo/ui", "nsgo/ui/chat", "nsgo/mobile", "nsgo/gamepad"}
 
 // ViewOptions selects an exported component to render from a bundle. An empty Export keeps the bundle's entry-mounted root. Props are the component's props object, as JSON encodes and decodes them, so each view gets a copy of its own and the bundle reaches no Go value through them.
 type ViewOptions struct {

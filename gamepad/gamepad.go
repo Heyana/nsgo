@@ -124,6 +124,7 @@ type runtimeState struct {
 	root       *core.Scope
 	src        driver.GamepadSource
 	connected  *core.Signal[[]padIdentity]
+	captures   *core.Signal[int]
 	snapshot   []Pad
 	snapSeq    uint64
 	hasSnap    bool
@@ -140,8 +141,11 @@ var stateKey = core.NewKey[*runtimeState]("gamepad.state", nil)
 
 // Pads returns the currently connected game controllers, sorted by ID.
 // It is a tracked reactive read: scopes reading it rerender when controllers
-// connect or disconnect, but not when buttons or axes change.
+// connect or disconnect, but not when buttons or axes change. When cx's core.Access refuses core.AccessGamepad, Pads returns nil.
 func Pads(cx *core.Scope) []Pad {
+	if cx == nil || cx.CheckAccess(core.AccessRequest{Permission: core.AccessGamepad}) != nil {
+		return nil
+	}
 	root, seq, inFrame := core.FrameState(cx)
 	if root == nil {
 		return nil
@@ -157,11 +161,13 @@ func Pads(cx *core.Scope) []Pad {
 	return slices.Clone(st.snapshot)
 }
 
-// State returns controller id's buttons and axes as of the current display
-// frame, or (Pad{}, false) if no controller with that ID is connected.
+// State returns controller id's buttons and axes as of the current display frame, or (Pad{}, false) if no controller with that ID is connected or cx's core.Access refuses core.AccessGamepad.
 // During a core.Scope.RequestAnimationFrame pass all calls observe the same
 // frame snapshot; outside a display frame State polls the current values.
 func State(cx *core.Scope, id int) (Pad, bool) {
+	if cx == nil || cx.CheckAccess(core.AccessRequest{Permission: core.AccessGamepad}) != nil {
+		return Pad{}, false
+	}
 	root, seq, inFrame := core.FrameState(cx)
 	if root == nil {
 		return Pad{}, false
@@ -254,6 +260,7 @@ func ensureState(root *core.Scope) *runtimeState {
 			root:      root,
 			src:       src,
 			connected: core.NewSignalFunc(root, padIdentities(initial), slices.Equal[[]padIdentity]),
+			captures:  core.NewSignal(root, 0),
 			snapshot:  initial,
 			rumbles:   map[int]*activeRumble{},
 			scopes:    map[*core.Scope]*scopeRumbleWatch{},

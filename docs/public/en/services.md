@@ -688,6 +688,8 @@ loop = func(time.Time) {
 cx.RequestAnimationFrame(loop)
 ```
 
+Call `gamepad.EnableFocusNavigation(cx)` to opt into navigating native focus stops with a controller (D-pad and left stick move focus, `ButtonSouth` activates the focused control and `ButtonEast` triggers back). Active gameplay views call `gamepad.CaptureInput(cx)` to pause focus navigation while they are mounted. In TSX, `nsgo/gamepad` exposes `supported()`, `pads()`, `state(id)`, `Button` and `Axis`, gated by the `gamepad` package capability.
+
 ## Audio timing
 
 Use `audio.Now(cx)` as the clock for timed playback. Set `audio.Voice.StartAt` to a future time when `audio.CanSchedule(cx)` is true. Call `audio.OutputLatency(cx, func(latency time.Duration, known bool) { ... })` for the active output route. macOS, iOS, Linux and the web support timed starts. The callback's `known` value tells whether the route reported a latency.

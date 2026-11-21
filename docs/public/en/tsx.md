@@ -37,7 +37,7 @@ mount(App);
 
 ## Components and modules
 
-TSX imports the primitives from `nsgo`, `base`'s components from `nsgo/base` and `ui`'s from `nsgo/ui`, once the app imports `tsx/ui`; `examples/gallery-tsx` shows them.
+TSX imports the primitives from `nsgo`, `base`'s components from `nsgo/base`, game controllers from `nsgo/gamepad` (under the `gamepad` capability in signed packages) and `ui`'s from `nsgo/ui`, once the app imports `tsx/ui`; `examples/gallery-tsx` shows them.
 
 `UrlScheme.url()` reads the tracked application address; `UrlScheme.setUrl(url, { history: "push" })` adds an address entry, or replaces it when options are omitted. `UrlScheme.on("change", fn)` observes browser back, forward and hash changes and returns an unsubscribe function. See [Application addresses](addresses.md) for routing, same-origin validation and deep-link hosting.
 
@@ -68,7 +68,7 @@ capabilities:
     hosts: [api.example.com, "*.cdn.example.com"]
   open_url: true # or { schemes: [https] }
   host: [search, "player.*"] # the app's handlers it may call
-  # webview: { hosts: [...], input: true, media: [microphone, camera] }, clipboard, picker, speech, text_to_speech, status_bar, notifications, biometrics, sign_in_with_apple, purchases, secrets, audio, auth_session
+  # webview: { hosts: [...], input: true, media: [microphone, camera] }, clipboard, picker, speech, text_to_speech, status_bar, notifications, biometrics, sign_in_with_apple, purchases, secrets, audio, gamepad, auth_session
 ```
 
 Keep a root key offline and certify release keys with it, then sign the app in that directory. `go tool nsgo keygen` prints a key pair and writes no file; run it once for the root and once for each release key. Public keys go in flags and the app's code; secret keys stay out of the repository and reach the tool only through `NSGO_ROOT_KEY` and `NSGO_RELEASE_KEY`:

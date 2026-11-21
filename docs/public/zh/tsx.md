@@ -37,7 +37,7 @@ mount(App);
 
 ## 组件与模块
 
-TSX 从 `nsgo` 导入基本元素，从 `nsgo/base` 导入 `base` 的组件；应用导入 `tsx/ui` 后，还能从 `nsgo/ui` 导入 `ui` 的组件；`examples/gallery-tsx` 展示了这些组件。
+TSX 从 `nsgo` 导入基本元素，从 `nsgo/base` 导入 `base` 的组件，从 `nsgo/gamepad` 读取游戏手柄（签名包需声明 `gamepad` 权限）；应用导入 `tsx/ui` 后，还能从 `nsgo/ui` 导入 `ui` 的组件；`examples/gallery-tsx` 展示了这些组件。
 
 ## 在 TSX 中使用 Go
 
@@ -66,7 +66,7 @@ capabilities:
     hosts: [api.example.com, "*.cdn.example.com"]
   open_url: true # 或 { schemes: [https] }
   host: [search, "player.*"] # 它可以调用的应用处理函数
-  # webview: { hosts: [...], input: true, media: [microphone, camera] }、clipboard、picker、speech、text_to_speech、status_bar、notifications、biometrics、sign_in_with_apple、purchases、secrets、audio、auth_session
+  # webview: { hosts: [...], input: true, media: [microphone, camera] }、clipboard、picker、speech、text_to_speech、status_bar、notifications、biometrics、sign_in_with_apple、purchases、secrets、audio、gamepad、auth_session
 ```
 
 根密钥离线保存，用它为发布密钥签发证书，然后在该目录中签名应用。`go tool nsgo keygen` 打印一对密钥，不写任何文件；根密钥和每个发布密钥各运行一次。公钥写在参数和应用代码里；私钥不要放进仓库，只通过 `NSGO_ROOT_KEY` 和 `NSGO_RELEASE_KEY` 交给工具：
