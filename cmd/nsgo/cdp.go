@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"golang.org/x/net/websocket"
@@ -29,6 +31,7 @@ type cdp struct {
 	// browser is the browser's process.
 	browser *exec.Cmd
 	done    <-chan error
+	stop    context.CancelFunc
 	profile string
 }
 
@@ -46,6 +49,7 @@ type cdpMessage struct {
 // browserPaths are where Chrome, Chromium and Edge install, by system.
 var browserPaths = map[string][]string{
 	"darwin": {
+		"/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
 		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 		"/Applications/Chromium.app/Contents/MacOS/Chromium",
 		"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
@@ -56,6 +60,8 @@ var browserPaths = map[string][]string{
 
 // cdpOrigin is the origin the tool connects to the browser from.
 const cdpOrigin = "http://127.0.0.1"
+
+const browserShutdownDelay = 10 * time.Second
 
 // findBrowser finds a Chromium browser: NSGO_BROWSER, else an installed
 // Chrome, Chromium or Edge. NSGo never downloads one.
@@ -71,6 +77,23 @@ func findBrowser() (string, error) {
 	return "", errors.New("the web target needs Chrome, Chromium or Edge: install one, or set NSGO_BROWSER to its executable")
 }
 
+func browserArgs(goos, profile string) []string {
+	args := []string{"--headless=new", "--remote-debugging-port=0", "--user-data-dir=" + profile,
+		// Match the browser's device scale to the emulated test viewport: mismatched scales halve DOM wheel deltas while native scrolling still moves the full requested CSS distance.
+		fmt.Sprintf("--force-device-scale-factor=%d", webTestScale),
+		"--no-first-run", "--no-default-browser-check", "--disable-extensions", "--mute-audio",
+		// The DevTools socket takes this tool, which names its origin.
+		"--remote-allow-origins=" + cdpOrigin,
+		// A fine, hovering pointer, as Playwright gives it: headless finds
+		// no input device and would measure as a touch screen.
+		"--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4"}
+	if goos == "darwin" {
+		// Chrome's code-signature clone persists unless the browser exits cleanly.
+		args = append(args, "--disable-features=MacAppCodeSignClone")
+	}
+	return append(args, "about:blank")
+}
+
 // startBrowser starts a headless browser with a profile of its own and
 // connects to it.
 func startBrowser(ctx context.Context) (*cdp, error) {
@@ -82,24 +105,28 @@ func startBrowser(ctx context.Context) (*cdp, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, path, "--headless=new", "--remote-debugging-port=0", "--user-data-dir="+profile,
-		// Match the browser's device scale to the emulated test viewport: mismatched scales halve DOM wheel deltas while native scrolling still moves the full requested CSS distance.
-		fmt.Sprintf("--force-device-scale-factor=%d", webTestScale),
-		"--no-first-run", "--no-default-browser-check", "--disable-extensions", "--mute-audio",
-		// The DevTools socket takes this tool, which names its origin.
-		"--remote-allow-origins="+cdpOrigin,
-		// A fine, hovering pointer, as Playwright gives it: headless finds
-		// no input device and would measure as a touch screen.
-		"--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4",
-		"about:blank")
 	logPath := filepath.Join(profile, "browser.log")
 	log, err := os.Create(logPath)
 	if err != nil {
 		os.RemoveAll(profile)
 		return nil, err
 	}
+	browserCtx, stop := context.WithCancel(ctx)
+	cmd := exec.CommandContext(browserCtx, path, browserArgs(runtime.GOOS, profile)...)
+	var connected atomic.Pointer[cdp]
+	cmd.Cancel = func() error {
+		if browser := connected.Load(); browser != nil && browser.requestClose() == nil {
+			return nil
+		}
+		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+			return cmd.Process.Signal(syscall.SIGTERM)
+		}
+		return cmd.Process.Kill()
+	}
+	cmd.WaitDelay = browserShutdownDelay
 	cmd.Stderr = log
 	if err := cmd.Start(); err != nil {
+		stop()
 		log.Close()
 		os.RemoveAll(profile)
 		return nil, err
@@ -108,7 +135,7 @@ func startBrowser(ctx context.Context) (*cdp, error) {
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait(); close(done) }()
 	failed := func(err error) (*cdp, error) {
-		cmd.Process.Kill()
+		stop()
 		<-done
 		// Read only after Wait, when the child has stopped writing.
 		if log, readErr := os.Open(logPath); readErr == nil {
@@ -162,7 +189,8 @@ func startBrowser(ctx context.Context) (*cdp, error) {
 		return failed(err)
 	}
 	ws.MaxPayloadBytes = 256 << 20
-	c := &cdp{ws: ws, pending: map[int64]chan cdpMessage{}, browser: cmd, done: done, profile: profile}
+	c := &cdp{ws: ws, pending: map[int64]chan cdpMessage{}, browser: cmd, done: done, stop: stop, profile: profile}
+	connected.Store(c)
 	go c.read()
 	return c, nil
 }
@@ -231,14 +259,20 @@ func (c *cdp) call(session, method string, params any) (json.RawMessage, error) 
 	}
 }
 
+// requestClose sends Browser.close without waiting for a response. The
+// browser may close its socket before replying, so exec waits on the process.
+func (c *cdp) requestClose() error {
+	c.ws.SetWriteDeadline(time.Now().Add(time.Second))
+	c.mu.Lock()
+	c.next++
+	id := c.next
+	c.mu.Unlock()
+	return websocket.JSON.Send(c.ws, cdpMessage{ID: id, Method: "Browser.close"})
+}
+
 func (c *cdp) close() {
-	c.call("", "Browser.close", nil)
+	c.stop()
+	<-c.done
 	c.ws.Close()
-	select {
-	case <-c.done:
-	case <-time.After(3 * time.Second):
-		c.browser.Process.Kill()
-		<-c.done
-	}
 	os.RemoveAll(c.profile)
 }

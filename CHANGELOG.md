@@ -12,6 +12,7 @@
 - Restore the macOS main window’s last regular frame across native Go rebuilds within a `dev` session (#658 by @houko).
 - Expose a TSX plugin's stop reason and notify the Go host when it stops (#925 by @houko).
 - Select system tabs with `nsgotest.App.SelectTab` headless and on iOS and Android targets (#1275 by @houko).
+- Prevent macOS web tests from leaking Chrome code-signature clones (#1725 by @houko).
 - Add text-based YAML and Markdown store listings with pre-upload validation and App Store Connect and Google Play upload support in `nsgo publish -store` (#1564).
 - Add `Drawing.DrawSVG` and `Drawing.DrawSVGIn` plus SVG `<text>`, `<tspan>` and root `preserveAspectRatio` support so canvases and `SVGView` draw vector SVGs at any size with text measured and rendered by each platform's own text engine (#1339).
 - Restore web builds with pixel-backed custom cursors (#1206 by @houko).

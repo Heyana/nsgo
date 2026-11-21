@@ -124,7 +124,7 @@ Packages that do not link the platform backend run headless in the target's runt
 
 An Android test that panics or exits before reporting its result fails with the process's exit status and its captured output, including the panic stack. A `TestMain` that exits without starting the host fails this way too, even with status 0. When an Android target test reaches its timeout, the result also says whether the host printed its start mark and includes the tail of that test's `logcat` output before the runner clears it.
 
-On `web` the tests run in a headless Chrome, Chromium or Edge the tool finds, or in the browser executable `NSGO_BROWSER` names. The tool waits up to 30 seconds for it to start, stops waiting when the command is cancelled, and reports the browser's error output if it exits or never answers.
+On `web` the tests run in a headless Chrome, Chromium or Edge the tool finds, or in the browser executable `NSGO_BROWSER` names. On macOS the tool prefers Chrome for Testing when installed. The tool waits up to 30 seconds for the browser to start, stops waiting for startup when the command is cancelled, and reports the browser's error output if it exits or never answers.
 
 Each step, and `app.Settle()`, waits for the engine's pending commit before counting 100 ms without batches or finite animations. The whole wait stops after five seconds even if the app keeps changing; a slow first dialog needs no extra post or sleep in the test.
 

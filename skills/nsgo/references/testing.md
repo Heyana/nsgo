@@ -97,7 +97,7 @@ DevTools' Recorder (`go tool nsgo dev -devtools`) writes what you do in the runn
 
 With `-target web`, libraries that do not link the backend run headless inside the browser. Storage stays in memory; `DataDir`, `CacheDir` and `LogsDir` are empty, and the file-backed `nsgotest.MicrophoneInput` fake skips.
 
-`NSGO_BROWSER` names the browser `-target web` runs; startup waits up to 30 seconds and reports the browser's error output on failure.
+`NSGO_BROWSER` names the browser `-target web` runs. macOS discovery prefers an installed Chrome for Testing. Startup waits up to 30 seconds and reports the browser's error output on failure.
 
 ## TSX
 

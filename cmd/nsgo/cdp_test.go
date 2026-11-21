@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +17,16 @@ import (
 
 	"golang.org/x/net/websocket"
 )
+
+func TestBrowserLaunchArgs(t *testing.T) {
+	const clone = "--disable-features=MacAppCodeSignClone"
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		args := browserArgs(goos, "test profile")
+		if got := slices.Contains(args, clone); got != (goos == "darwin") {
+			t.Errorf("%s arguments include %s: %v", goos, clone, got)
+		}
+	}
+}
 
 func TestBrowserStartupReportsExitAndCleansItsProfile(t *testing.T) {
 	fakeBrowser(t, "echo 'browser startup rejected' >&2\nexit 23\n")
@@ -79,12 +90,12 @@ func TestBrowserStartupWaitsForTheCompletePortFile(t *testing.T) {
 			if err := websocket.JSON.Receive(ws, &m); err != nil {
 				return
 			}
-			if err := websocket.JSON.Send(ws, map[string]any{"id": m.ID, "result": map[string]any{"product": "fake"}}); err != nil {
-				return
-			}
 			if m.Method == "Browser.close" {
 				profile, _ := os.ReadFile(os.Getenv("NSGO_TEST_BROWSER_PROFILE"))
 				os.WriteFile(filepath.Join(string(profile), "closed"), nil, 0o600)
+				return
+			}
+			if err := websocket.JSON.Send(ws, map[string]any{"id": m.ID, "result": map[string]any{"product": "fake"}}); err != nil {
 				return
 			}
 		}
@@ -109,6 +120,7 @@ while [ ! -e "$profile/closed" ]; do sleep 0.05; done
 		t.Fatalf("Browser.getVersion = %s, %v", result, err)
 	}
 	start := time.Now()
+	cancel()
 	b.close()
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Errorf("closing took %s; the browser was killed rather than closed", elapsed)
@@ -128,9 +140,12 @@ func TestBrowserStartupCancelsTheHandshake(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	t.Setenv("NSGO_TEST_BROWSER_PORT", fakeBrowserPort(t, srv))
+	terminated := filepath.Join(t.TempDir(), "terminated")
+	t.Setenv("NSGO_TEST_BROWSER_TERMINATED", terminated)
 	fakeBrowser(t, `profile=$(cat "$NSGO_TEST_BROWSER_PROFILE")
+trap 'touch "$NSGO_TEST_BROWSER_TERMINATED"; exit 0' TERM
 printf '%s\n/devtools/browser/test\n' "$NSGO_TEST_BROWSER_PORT" > "$profile/DevToolsActivePort"
-exec sleep 60
+while :; do sleep 0.05; done
 `)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -151,6 +166,11 @@ exec sleep 60
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the browser handshake kept waiting after cancellation")
+	}
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		if _, err := os.Stat(terminated); err != nil {
+			t.Fatalf("the browser did not receive SIGTERM: %v", err)
+		}
 	}
 	checkBrowserProfileRemoved(t)
 }
