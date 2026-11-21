@@ -22,6 +22,38 @@ import (
 // javaNames are the driver's names of the kinds Java names otherwise.
 var javaNames = map[string]string{"EventHoverIn": "EventMouseEnter", "EventHoverOut": "EventMouseLeave", "EventHoverMove": "EventMouseMove"}
 
+func TestNetworkEnvironmentFlags(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bits   byte
+		want   *driver.Network
+		review bool
+	}{
+		{"unknown", 0, nil, false},
+		{"review only", 4, nil, true},
+		{"offline", 8, &driver.Network{}, false},
+		{"online", 8 | 16, &driver.Network{Online: true}, false},
+		{"metered and review", 4 | 8 | 16 | 32, &driver.Network{Online: true, Expensive: true}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var w writer
+			for range 7 {
+				w.points(0)
+			}
+			w.byte(0)
+			w.byte(tc.bits)
+			env := readEnvironment(&reader{buf: w.buf})
+			if env.CanRequestReview != tc.review {
+				t.Errorf("review support = %v, want %v", env.CanRequestReview, tc.review)
+			}
+			got := env.Network
+			if (got == nil) != (tc.want == nil) || got != nil && *got != *tc.want {
+				t.Fatalf("network flags %08b decoded as %v, want %v", tc.bits, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestJavaProtocolMatchesTheDriver holds Protocol.java's item and event kinds, roles and key uses to the driver's of the same names, which the Java runtime reads the batches and writes the events by: a kind the driver gains shifts the ones after it.
 func TestJavaProtocolMatchesTheDriver(t *testing.T) {
 	testhost.RequireSource(t)

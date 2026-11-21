@@ -86,6 +86,7 @@
 - Honor quit requests from Windows and Linux menus, tray icons, and window closes, and run bounded cleanup when the session ends (#1082 by @houko).
 - Schedule sound playback on the audio clock and read the output route's latency on macOS, iOS, Linux and the web (#1223 by @houko).
 - Acknowledge macOS logout, restart and shutdown after app cleanup and expose those requests through `desktop.QuitRequest.Forced()` (#1081 by @houko).
+- Report the system's network availability and cost through `Env.Network` and `OnNetworkChange` (#268 by @houko).
 - Add `Style` and `StyleFunc` to `ui.Sheet` for surface backgrounds, corners and padding (#1036 by @houko).
 - Align baseline attachments containing text to their first text line (#1038 by @houko).
 - Customize the size, typography, corners and caret of `ui.OtpInput` cells (#1075 by @houko).

@@ -89,7 +89,7 @@ var gated = map[string]service{
 var exempt = map[string][]string{
 	"the graph, its scopes and what they read": {"Child", "Dispose", "Abort", "Disposed", "HasTree", "Cleanup", "Context", "Post", "AfterFunc",
 		"Untrack", "PauseTracking", "Batch", "Effect", "RenderEffect", "Run", "Env", "Theme", "Dark", "Palette", "Now",
-		"WallTime", "KeyLabel", "Present", "OnExit", "CurrentWindow", "MainWindow", "Quitting", "Hiding", "LaunchAtLogin"},
+		"WallTime", "KeyLabel", "Present", "OnExit", "CurrentWindow", "MainWindow", "Quitting", "Hiding", "LaunchAtLogin", "OnNetworkChange"},
 	"Access itself, Confine, and what ProvideHost, ProvideStorage and ProvideSecrets scope to the owner": {"ProvideAccess", "CheckAccess",
 		"ProvideHost", "HasHost", "HostParams", "OnHostEvent", "ProvideStorage", "Storage", "ProvideSecrets", "Confine"},
 	"the view the code shows and the user's input to it, which no capability holds": {"StartAnimation", "AnimateLayout",

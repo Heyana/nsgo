@@ -160,6 +160,10 @@ err := s.Set("refresh-token", token)
 
 ## Networking
 
+`cx.Env().Network()` reports whether the system has a usable route (`Online`) and whether it considers that route metered or expensive (`Expensive`). Bindings follow it like any other environment value. `cx.OnNetworkChange(func(core.Network))` calls the handler on the engine's goroutine for each change while its scope lives. The system's route says nothing about whether a particular server answers. A target that cannot report connectivity defaults to online, and unknown cost defaults to false.
+
+Set `core.Environment{Network: &core.Network{Online: false}}` through `nsgotest.Environment` or `App.SetEnvironment` to test offline behavior.
+
 Go's own `net/http` makes requests on every target, with the system's TLS and proxy settings. Signals belong to the engine's goroutine, so a response from another goroutine reaches them through `cx.Post`.
 
 ```go

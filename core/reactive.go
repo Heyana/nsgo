@@ -97,6 +97,8 @@ type RootOptions struct {
 	Storage *Store
 	// Secrets is the platform's secure store, which Scope.Secrets keeps secrets in; nil where there is none, so Secrets fails with ErrSecretsUnavailable.
 	Secrets SecretStore
+	// WatchNetwork supplies network state when the app first reads it.
+	WatchNetwork func(changed func(Network)) (initial Network, stop func())
 	// DataDir, CacheDir and LogsDir are the app's directories, "" where the target has none.
 	DataDir, CacheDir, LogsDir string
 	// Host is the channel to the host app that embeds the app: its
@@ -121,7 +123,7 @@ func NewRoot(opts RootOptions) *Scope {
 	}
 	rt := &runtime{graphOwner: newGraphOwner(opts.CheckCommits), post: opts.Post, clock: opts.Clock, report: opts.Report, checkCommits: opts.CheckCommits,
 		store: opts.Storage, secrets: opts.Secrets, dataDir: opts.DataDir, cacheDir: opts.CacheDir, logsDir: opts.LogsDir,
-		requestFrame: opts.RequestFrame, windows: opts.Windows, takesHotKeys: opts.HotKeys, tray: opts.Tray}
+		requestFrame: opts.RequestFrame, windows: opts.Windows, takesHotKeys: opts.HotKeys, tray: opts.Tray, watchNetwork: opts.WatchNetwork}
 	rt.root = &Scope{rt: rt}
 	if devtools.Enabled {
 		rt.dev = newDevState()
@@ -163,6 +165,7 @@ type runtime struct {
 	frameSeq       uint64
 	inFrame        bool
 	requestFrame   func()
+	watchNetwork   driver.WatchNetwork
 	env            *Env
 	tree           *Tree
 	root           *Scope

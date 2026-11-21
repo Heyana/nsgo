@@ -32,6 +32,7 @@ import android.graphics.drawable.RippleDrawable;
 import android.hardware.biometrics.BiometricPrompt;
 import android.hardware.biometrics.BiometricManager;
 import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
 import android.net.LinkProperties;
 import android.net.Network;
 import android.os.Build;
@@ -231,6 +232,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
     };
     private ConnectivityManager.NetworkCallback network;
+    private int networkFlags;
     /**
      * The predictive back gesture, on the UI thread: whether one runs, its
      * progress, the screen following it and the one it uncovers, their
@@ -708,6 +710,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         } catch (IOException e) {
             throw new IllegalStateException("cannot start " + exe, e);
         }
+        // The first environment already carries the default network.
+        watchNetwork();
         // The host's handlers and tokens come before the app starts.
         attachRunningEngine();
         write(Protocol.LIVE_REPORT, LiveUpdates.state(getContext()));
@@ -715,7 +719,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         livePressEarly = null;
         recordingState();
         RecordingService.connected(engine);
-        watchNetwork();
     }
 
     /**
@@ -1092,7 +1095,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     | (inactive ? 16 : 0) | (background ? 32 : 0) | (Services.hasCamera(getContext()) ? 64 : 0));
             // The first byte's eight bits are taken: what else the device can do follows in a second.
             d.writeByte((Speaker.available(getContext()) ? 1 : 0) | (Scanner.available(getContext()) ? 2 : 0)
-                    | (Services.canRequestReview(activity()) ? 4 : 0));
+                    | (Services.canRequestReview(activity()) ? 4 : 0) | first.networkFlags);
             int idiom = config.smallestScreenWidthDp >= 600 ? Protocol.IDIOM_TABLET : Protocol.IDIOM_PHONE;
             if ((config.uiMode & Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION) {
                 idiom = Protocol.IDIOM_TV;
@@ -1492,13 +1495,32 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     /**
-     * Tells the app the default network's DNS servers as they change: Go
-     * outside the runtime has no resolver of the system's to ask. It needs
-     * the ACCESS_NETWORK_STATE permission.
+     * Follows the default route's connectivity and DNS servers. Go outside
+     * the runtime has no system resolver to ask. Both reports need
+     * ACCESS_NETWORK_STATE.
      */
     private void watchNetwork() {
         ConnectivityManager connectivity = getContext().getSystemService(ConnectivityManager.class);
+        if (connectivity == null) return;
         network = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onCapabilitiesChanged(Network n, NetworkCapabilities caps) {
+                changed(networkFlags(caps));
+            }
+
+            @Override
+            public void onLost(Network n) {
+                changed(networkFlags(null));
+            }
+
+            private void changed(int flags) {
+                ui.post(() -> {
+                    if (network != this || networkFlags == flags) return;
+                    networkFlags = flags;
+                    environment();
+                });
+            }
+
             @Override
             public void onLinkPropertiesChanged(Network n, LinkProperties properties) {
                 dns(properties.getDnsServers());
@@ -1507,9 +1529,20 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         try {
             connectivity.registerDefaultNetworkCallback(network);
         } catch (SecurityException e) {
-            Log.w(TAG, "the app resolves no host names without ACCESS_NETWORK_STATE", e);
+            Log.w(TAG, "the app cannot read its network state or DNS without ACCESS_NETWORK_STATE", e);
             network = null;
+            return;
         }
+        Network n = connectivity.getActiveNetwork();
+        networkFlags = networkFlags(n == null ? null : connectivity.getNetworkCapabilities(n));
+    }
+
+    /** The known, online and expensive bits of the second environment flag byte. */
+    private static int networkFlags(NetworkCapabilities caps) {
+        boolean online = caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+        return 8 | (online ? 16 : 0)
+                | (online && !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) ? 32 : 0);
     }
 
     private void dns(List<InetAddress> servers) {

@@ -448,10 +448,11 @@ func newWindow(opts Options, embedded bool) *window {
 // startEngine starts app's engine at size.
 func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 	eopts := engine.Options{
-		Size:        size,
-		Environment: w.env,
-		Appearance:  opts.Appearance,
-		Host:        opts.Host,
+		Size:         size,
+		Environment:  w.env,
+		WatchNetwork: watchNetwork,
+		Appearance:   opts.Appearance,
+		Host:         opts.Host,
 		// The app's own window takes its global shortcuts; a host's widget leaves them to the host.
 		HotKeys: !w.embedded,
 		Tray:    !w.embedded,

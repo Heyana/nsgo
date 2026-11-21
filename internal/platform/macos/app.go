@@ -40,7 +40,7 @@ func startOwn(app engine.App, opts Options) *surface {
 	if opts.Perf {
 		ownPerf = engine.NewPerfMonitor()
 	}
-	eopts := engine.Options{Environment: s.env, Perf: ownPerf, Thread: apple.RaiseThread,
+	eopts := engine.Options{Environment: s.env, WatchNetwork: apple.WatchNetwork, Perf: ownPerf, Thread: apple.RaiseThread,
 		Appearance: opts.Appearance, Host: opts.Host, Secrets: apple.Keychain{},
 		Windows: &engine.WindowOptions{Title: opts.Title, Width: opts.Width, Height: opts.Height, Frame: opts.Frame,
 			Material: opts.Material, Constraints: opts.Constraints, Transparent: opts.Transparent, NoShadow: opts.NoShadow,

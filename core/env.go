@@ -12,6 +12,7 @@ import (
 // Env is the environment as signals, one per part, so a binding runs
 // again only when a part it read changes.
 type Env struct {
+	network                 *networkState
 	deviceName, deviceModel *Signal[string]
 	window                  *Signal[Size]
 	safe, titleBar          *Signal[Edges]
@@ -159,6 +160,9 @@ func newEnv(cx *Scope, app *Env) *Env {
 	}
 	if app != nil {
 		e.forced, e.appearance, e.tokens = app.forced, app.appearance, app.tokens
+		e.network = app.network
+	} else {
+		e.network = newNetworkState(cx)
 	}
 	e.shown = NewMemoFunc(cx, func() Geometry {
 		g := e.geometry.Get().Clone()

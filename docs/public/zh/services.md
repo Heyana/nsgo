@@ -160,6 +160,10 @@ err := s.Set("refresh-token", token)
 
 ## 网络
 
+`cx.Env().Network()` 报告系统是否有可用的网络路由（`Online`），以及系统是否认为该路由按流量计费或费用较高（`Expensive`）。绑定会随网络状态变化。使用 `cx.OnNetworkChange(func(core.Network))` 可在作用域存活期间，让处理函数在引擎的 goroutine 上接收每次变化。系统的路由状态无法判断某个服务器是否会响应。无法报告连通性的目标默认视为在线，费用未知时 `Expensive` 为 false。
+
+通过 `nsgotest.Environment` 或 `App.SetEnvironment` 设置 `core.Environment{Network: &core.Network{Online: false}}`，即可测试离线行为。
+
 Go 自带的 `net/http` 在每个目标上都能发起请求，使用系统的 TLS 和代理设置。signal 属于引擎的 goroutine，因此其他 goroutine 得到的响应要通过 `cx.Post` 交给它。
 
 ```go

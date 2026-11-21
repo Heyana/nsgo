@@ -146,6 +146,8 @@ jobs:
         run: xvfb-run -a go tool nsgo test -target linux ./internal/testhost/testdata/websource
       - name: Test headless photo pick answers
         run: go tool nsgo test ./internal/testhost/testdata/pick
+      - name: Test headless network state
+        run: go tool nsgo test ./internal/testhost/testdata/network
       - name: Test native photo pick answers
         env:
           GDK_BACKEND: x11
@@ -262,6 +264,7 @@ jobs:
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/websource || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -fps -env NSGO_GALLERY_PERF=1 -env NSGO_GALLERY_PERF_SECONDS=3 -run '^TestPerfCanvasSprites' ./examples/gallery || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             NSGO_ANDROID_E2E=1 NSGO_ANDROID_DEVICE=emulator-5554 go tool nsgo test -run '^TestAndroidNativePackagedView$' ./cmd/nsgo || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+            go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/network || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
 
   apple:
     needs: changes
@@ -444,6 +447,8 @@ jobs:
         run: go tool nsgo test -target windows -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
       - name: Test instance isolation and file handoff
         run: go tool nsgo test -run '^TestInstance' ./internal/platform/windows
+      - name: Test native network reachability
+        run: go tool nsgo test -run '^TestNetworkMonitorReadsNetworkListManager$' ./internal/platform/windows
       - name: Test process and automation sessions
         run: go tool nsgo test -run '^(TestProcessAlive.*|TestAutomationSessionFile|TestMCPSessionBridge)$' ./cmd/nsgo
       # The runner image has no NSIS. It comes from a pinned installer checked against its SHA-256 and cached by version, so an outage at a package host fails this step instead of the document registration test (#707). The hash is the one SourceForge serves and the one the Chocolatey nsis.install 3.13.0 package records.

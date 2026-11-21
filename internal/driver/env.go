@@ -9,6 +9,8 @@ import (
 // Environment is what the platform reports about where the app runs. The
 // surface size is not part of it: Tree.Resize reports that.
 type Environment struct {
+	// Network is connectivity when a platform or test supplies it with its environment.
+	Network *Network
 	// DeviceName is the name the user gave the device, empty where the platform keeps it private (core.Env.DeviceName).
 	DeviceName string
 	// DeviceModel is the device's hardware model, empty where it names none (core.Env.DeviceModel).
@@ -158,6 +160,19 @@ const (
 	LowPowerOff
 	LowPowerOn
 )
+
+// Network is the device's connectivity as its system reports it.
+type Network struct {
+	// Online says the system considers a network route usable.
+	Online bool
+	// Expensive says the system considers that route metered or expensive.
+	Expensive bool
+}
+
+// WatchNetwork starts listening for connectivity changes. It returns a
+// snapshot and a function that stops the listener, or nil when unsupported.
+// Changes can arrive on any goroutine.
+type WatchNetwork func(changed func(Network)) (initial Network, stop func())
 
 // FrontmostAppInfo is the application in front on the desktop.
 type FrontmostAppInfo struct {
