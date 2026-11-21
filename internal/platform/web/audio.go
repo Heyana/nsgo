@@ -4,12 +4,10 @@ package web
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"io/fs"
-	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall/js"
 	"time"
@@ -178,27 +176,46 @@ func (a *webAudio) soundBytes(ctx context.Context, source driver.ImageSource, li
 	if url == "" {
 		return nil, driver.AudioNotSupported, "the browser cannot read this audio source"
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, driver.AudioNotSupported, err.Error()
-	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, driver.AudioNetwork, err.Error()
-	}
-	defer res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return nil, driver.AudioNetwork, fmt.Sprintf("HTTP %d", res.StatusCode)
-	}
-	if res.ContentLength > limit {
-		return nil, driver.AudioQuotaExceeded, tooLarge
-	}
-	data, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
-	if int64(len(data)) > limit {
-		return nil, driver.AudioQuotaExceeded, tooLarge
-	}
+	// Use the browser's Fetch stream directly. Pulling in net/http for
+	// this reader would add its client and TLS dependencies to every
+	// web app, including those that never load a sound.
+	g := js.Global()
+	controller := g.Get("AbortController").New()
+	stop := context.AfterFunc(ctx, func() { controller.Call("abort") })
+	defer stop()
+	res, err := await(g.Call("fetch", url, map[string]any{"signal": controller.Get("signal")}))
 	if err != nil {
 		return nil, driver.AudioNetwork, err.Error()
+	}
+	if !res.Get("ok").Bool() {
+		controller.Call("abort")
+		return nil, driver.AudioNetwork, "HTTP " + strconv.Itoa(res.Get("status").Int())
+	}
+	if n, err := strconv.ParseInt(res.Get("headers").Call("get", "content-length").String(), 10, 64); err == nil && n > limit {
+		controller.Call("abort")
+		return nil, driver.AudioQuotaExceeded, tooLarge
+	}
+	var data []byte
+	if body := res.Get("body"); body.Truthy() {
+		reader := body.Call("getReader")
+		defer reader.Call("releaseLock")
+		for {
+			part, err := await(reader.Call("read"))
+			if err != nil {
+				return nil, driver.AudioNetwork, err.Error()
+			}
+			if part.Get("done").Bool() {
+				break
+			}
+			chunk := part.Get("value")
+			if int64(chunk.Length()) > limit-int64(len(data)) {
+				reader.Call("cancel").Call("catch", ignore)
+				return nil, driver.AudioQuotaExceeded, tooLarge
+			}
+			at := len(data)
+			data = slices.Grow(data, chunk.Length())[:at+chunk.Length()]
+			js.CopyBytesToGo(data[at:], chunk)
+		}
 	}
 	return data, "", ""
 }
