@@ -81,6 +81,7 @@ final class Protocol {
     static final int FONTS = 9;
     static final int TEST = 10;
     static final int HOST_CALL = 11;
+    /** Requests a frame from the surface named by its ID, or the first surface without a payload. */
     static final int WANT_FRAME = 13;
     static final int FONT_DATA = 14;
     static final int FOLDER = 15;
@@ -108,6 +109,8 @@ final class Protocol {
 
     /** A correlated text request: request ID and operation. */
     static final int TEXT_REQUEST = 26;
+    /** Sets the surface's preferred frame rate: its ID and a float in Hz. */
+    static final int FRAME_RATE = 32;
 
     /** Starts or stops rumble on a game controller: device id, lowFreq, highFreq, durationMs (gamepad.go, Gamepads). */
     static final int GAMEPAD_RUMBLE = 27;
@@ -145,7 +148,7 @@ final class Protocol {
     static final int DNS = 6;
     static final int TEST_REPLY = 9;
     static final int HOST = 10;
-    /** A Choreographer frame began, answering WANT_FRAME: its frameTimeNanos as a long. */
+    /** A Choreographer frame began, answering WANT_FRAME: its frameTimeNanos as a long, then the optional surface ID. */
     static final int FRAME = 12;
     static final int FOLDER_REPLY = 13;
     static final int FETCHED = 14;

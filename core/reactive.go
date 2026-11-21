@@ -93,6 +93,10 @@ type RootOptions struct {
 	Report func(error)
 	// RequestFrame tells the host that the app waits for the next display frame: it calls Scope.RunFrame, or Scope.RunFrameAt with the display's time for the frame, when that frame begins, and is not asked again until then. It runs on the graph's goroutine, so it must not block. A host without display frames leaves it nil, and the callbacks wait.
 	RequestFrame func()
+	// RequestSurfaceFrame is RequestFrame for a host with independent displays. It calls Tree.RunFrameAt for the surface named by id.
+	RequestSurfaceFrame func(id uint32)
+	// SetFrameRate updates the host's preferred display rate for the surface, if the host can change it. It must not block.
+	SetFrameRate func(id uint32, rate FrameRateRange)
 	// Storage keeps the app's entries; a store in memory when nil.
 	Storage *Store
 	// Secrets is the platform's secure store, which Scope.Secrets keeps secrets in; nil where there is none, so Secrets fails with ErrSecretsUnavailable.
@@ -129,7 +133,7 @@ func NewRoot(opts RootOptions) *Scope {
 	}
 	rt := &runtime{graphOwner: newGraphOwner(opts.CheckCommits), post: opts.Post, clock: opts.Clock, report: opts.Report, checkCommits: opts.CheckCommits,
 		store: opts.Storage, secrets: opts.Secrets, readAsset: opts.ReadAsset, dataDir: opts.DataDir, cacheDir: opts.CacheDir, logsDir: opts.LogsDir,
-		requestFrame: opts.RequestFrame, windows: opts.Windows, takesHotKeys: opts.HotKeys, tray: opts.Tray, networkWatcher: opts.NetworkWatcher}
+		requestFrame: opts.RequestFrame, requestSurfaceFrame: opts.RequestSurfaceFrame, setFrameRate: opts.SetFrameRate, windows: opts.Windows, takesHotKeys: opts.HotKeys, tray: opts.Tray, networkWatcher: opts.NetworkWatcher}
 	rt.root = &Scope{rt: rt}
 	if devtools.Enabled {
 		rt.dev = newDevState()
@@ -165,26 +169,28 @@ type runtime struct {
 	clock            Clock
 	report           func(error)
 
-	// The callbacks waiting for the next display frame, whether the host has been asked for it, the last frame's time (which the next never precedes), and the frame sequence and active flag read by package gamepad.
-	frames         []*frameCallback
-	frameRequested bool
-	frameAt        time.Time
-	frameSeq       uint64
-	inFrame        bool
-	requestFrame   func()
-	networkWatcher driver.NetworkWatcher
-	updater        *Signal[UpdaterState]
-	env            *Env
-	tree           *Tree
-	root           *Scope
-	store          *Store
-	storage        *storageWatch
-	secrets        driver.SecretStore
-	readAsset      func(context.Context, string) ([]byte, error)
-	dataDir        string
-	cacheDir       string
-	logsDir        string
-	host           *hostApp
+	// firstFrames serves the first tree and scopes with no tree. Every
+	// other surface keeps its own queue and cadence.
+	firstFrames         frameQueue
+	frameRequested      bool   // a request to a host with one shared clock
+	frameSeq            uint64 // display frames run so far, for package gamepad (FrameState)
+	inFrame             bool   // set while a frame's callbacks run, for package gamepad
+	requestFrame        func()
+	requestSurfaceFrame func(uint32)
+	setFrameRate        func(uint32, FrameRateRange)
+	env                 *Env
+	tree                *Tree
+	root                *Scope
+	store               *Store
+	storage             *storageWatch
+	secrets             driver.SecretStore
+	readAsset           func(context.Context, string) ([]byte, error)
+	dataDir             string
+	cacheDir            string
+	logsDir             string
+	host                *hostApp
+	networkWatcher      driver.NetworkWatcher
+	updater             *Signal[UpdaterState]
 	// restricted says an owner was given an Access (ProvideAccess), so
 	// requests look for one.
 	restricted bool

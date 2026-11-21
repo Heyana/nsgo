@@ -50,6 +50,17 @@ type Platform interface {
 	SubmitGPU(frame driver.GPUFrame)
 }
 
+// frameRateSetter is a platform whose display clock takes a preferred rate.
+type frameRateSetter interface {
+	SetPreferredFrameRate(driver.FrameRateRange)
+}
+
+func setPreferredFrameRate(p Platform, rate driver.FrameRateRange) {
+	if setter, ok := p.(frameRateSetter); ok {
+		setter.SetPreferredFrameRate(rate)
+	}
+}
+
 // observed is a platform whose batches a test host sees first. With a
 // clipboard of the test's, the app's clipboard items go to it instead:
 // reads are answered there, and the platform never sees them.
@@ -79,6 +90,10 @@ var _ driver.FontRegistrar = observedFonts{}
 
 func (o observedFonts) RegisterFont(data []byte) error {
 	return o.Platform.(driver.FontRegistrar).RegisterFont(data)
+}
+
+func (o observed) SetPreferredFrameRate(rate driver.FrameRateRange) {
+	setPreferredFrameRate(o.Platform, rate)
 }
 
 func (o observed) Mount(b *driver.MountBatch) {
@@ -502,17 +517,31 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 			log.Printf("nsgo: the app's directory could not be made: %v", err)
 		}
 	}
+	// frames routes the app tree's frames to a window that can supply them. Every other surface asks its own platform, at its own cadence.
 	var frames frameRequests
+	requestFrame := func(id uint32) {
+		if id == 0 {
+			frames.wanted = true
+			return
+		}
+		if s := surfaces[id]; s != nil {
+			s.p.RequestFrame()
+		}
+	}
 	root = core.NewRoot(core.RootOptions{
 		CheckCommits: opts.CheckCommits,
 		Post:         func(fn func()) { e.push(message{fn: fn}) },
 		Clock:        opts.Clock,
 		Report:       report,
 		// The platform owns the display frame: the engine only asks.
-		RequestFrame:   func() { frames.wanted = true },
+		RequestSurfaceFrame: requestFrame,
+		SetFrameRate: func(id uint32, rate core.FrameRateRange) {
+			if s := surfaces[id]; s != nil {
+				setPreferredFrameRate(s.p, driver.FrameRateRange(rate))
+			}
+		},
 		Storage:        opts.Storage,
 		Secrets:        opts.Secrets,
-		NetworkWatcher: opts.NetworkWatcher,
 		ReadAsset:      opts.ReadAsset,
 		DataDir:        opts.DataDir,
 		CacheDir:       opts.CacheDir,
@@ -524,6 +553,7 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 		Updater: core.UpdaterState{Managed: core.UpdaterManaged(opts.Updater.Managed), Store: opts.Updater.Store,
 			NativePreferences: opts.Updater.NativePreferences, AutomaticChecks: opts.Updater.AutomaticChecks,
 			AutomaticDownloads: opts.Updater.AutomaticDownloads, Available: opts.Updater.Available, Notes: opts.Updater.Notes, LastCheck: opts.Updater.LastCheck},
+		NetworkWatcher: opts.NetworkWatcher,
 	})
 	tree := core.NewTree(root, p)
 	e.tree = tree
@@ -549,6 +579,9 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 			t.SetViewPacing(false)
 		}
 		surfaces[t.ID()] = s
+		if rate := t.PreferredFrameRate(); rate != (core.FrameRateRange{}) {
+			setPreferredFrameRate(p, driver.FrameRateRange(rate))
+		}
 		return s
 	}
 	attach(tree, p)
@@ -659,15 +692,17 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 			case m.synced != nil:
 				continue
 			case m.frame:
-				if !frames.receive(m.surface, surfaces) {
-					continue
-				}
 				// A display's time is on the system clock's base, which an app's own clock does not share.
 				at := m.frameAt
 				if opts.Clock != nil {
 					at = time.Time{}
 				}
-				root.RunFrameAt(at)
+				if s := surfaces[m.surface]; s != nil && m.surface != 0 {
+					s.tree.RunFrameAt(at)
+				}
+				if frames.receive(m.surface, surfaces) {
+					tree.RunFrameAt(at)
+				}
 				continue
 			case m.fn != nil:
 				m.fn()
@@ -699,8 +734,11 @@ func (e *Engine) run(p Platform, app App, opts Options, tokens Tokens) {
 					// A test host follows the windows the app opens too, and their clipboard commands use the test's clipboard.
 					opened = observed{Platform: opened, surface: m.surface, observe: opts.Observe, clipboard: opts.Clipboard, takePhoto: opts.TakePhoto, scanCode: opts.ScanCode, diskSpace: opts.DiskSpace, dispatch: (&Engine{runner: e.runner, surface: m.surface}).Dispatch}.platform()
 				}
-				attach(tree.Surfaces()[surfaceIndex], opened)
+				attached := attach(tree.Surfaces()[surfaceIndex], opened)
 				taken[i].attach = nil
+				if attached.tree.FramePending() {
+					attached.p.RequestFrame()
+				}
 				continue
 			}
 			s := surfaces[m.surface]

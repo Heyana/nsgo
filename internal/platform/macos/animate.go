@@ -54,28 +54,38 @@ type ghost struct {
 // clock returns the frame clock's time.
 func (s *surface) clock() time.Duration { return time.Since(s.epoch) }
 
-// frameRateRange is what the display link asks for: the pace, or the
-// screen's highest rate, at least 80 there, so a ProMotion display does not
-// settle at 60 Hz.
-type frameRateRange struct {
-	Minimum, Maximum, Preferred float32
-}
-
-func (s *surface) frameRateRange() frameRateRange {
+// frameRateRange preserves the rate native interactions need and applies
+// the app's preference when its callbacks are the only frame work.
+func (s *surface) frameRateRange() apple.CAFrameRateRange {
 	if s.pace > 0 {
-		return frameRateRange{float32(s.pace), float32(s.pace), float32(s.pace)}
+		rate := float32(s.pace)
+		return apple.CAFrameRateRange{Minimum: rate, Maximum: rate, Preferred: rate}
 	}
-	max := float32(60)
+	maximum := float32(60)
 	screen := s.window.Send(sel("screen"))
 	if screen == 0 {
 		screen = objc.ID(apple.Class("NSScreen")).Send(sel("mainScreen"))
 	}
 	if screen != 0 {
 		if n := objc.Send[int](screen, sel("maximumFramesPerSecond")); n >= 1 {
-			max = float32(n)
+			maximum = float32(n)
 		}
 	}
-	return frameRateRange{Minimum: min(max, 80), Maximum: max, Preferred: max}
+	if s.preferredRate.Preferred > 0 && !s.animating() && s.selecting == nil && s.perf == nil {
+		return s.preferredRate.Clamped(maximum)
+	}
+	return apple.CAFrameRateRange{Minimum: min(maximum, 80), Maximum: maximum, Preferred: maximum}
+}
+
+func (s *surface) applyFrameRate() {
+	if s.link == 0 {
+		return
+	}
+	rate := s.frameRateRange()
+	if rate != s.appliedRate {
+		s.link.Send(sel("setPreferredFrameRateRange:"), rate)
+		s.appliedRate = rate
+	}
 }
 
 // startTicking runs the frame clock until nothing animates: AppKit's
@@ -92,7 +102,7 @@ func (s *surface) startTicking() {
 	s.pace = s.wantedPace()
 	if s.link != 0 {
 		// The window may have moved to another screen meanwhile.
-		s.link.Send(sel("setPreferredFrameRateRange:"), s.frameRateRange())
+		s.applyFrameRate()
 		s.link.Send(sel("setPaused:"), false)
 		s.watch()
 		return
@@ -106,7 +116,8 @@ func (s *surface) startTicking() {
 			return
 		}
 		s.link = link.Send(sel("retain"))
-		s.link.Send(sel("setPreferredFrameRateRange:"), s.frameRateRange())
+		s.appliedRate = apple.CAFrameRateRange{}
+		s.applyFrameRate()
 		s.link.Send(sel("addToRunLoop:forMode:"), mainLoop(), apple.CommonModes())
 		s.watch()
 		return
@@ -127,11 +138,9 @@ func (s *surface) wantedPace() float64 {
 // theirs: the animator holds a slowed run to its rate on any clock.
 func (s *surface) setPace() {
 	pace := s.wantedPace()
-	if pace != s.pace {
+	if pace != s.pace || s.preferredRate.Preferred > 0 {
 		s.pace = pace
-		if s.link != 0 {
-			s.link.Send(sel("setPreferredFrameRateRange:"), s.frameRateRange())
-		}
+		s.applyFrameRate()
 	}
 	s.publishPace()
 	// The app asked for a frame as the clock slowed, seeing it still at

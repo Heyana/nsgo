@@ -67,31 +67,61 @@ func (s *surface) startTicking() {
 			return
 		}
 		s.link = link.Send(sel("retain"))
-		s.link.Send(sel("setPreferredFramesPerSecond:"), s.framesPerSecond())
+		s.appliedRate, s.appliedFPS = apple.CAFrameRateRange{}, -1
+		s.applyFrameRate()
 		s.link.Send(sel("addToRunLoop:forMode:"), objc.ID(apple.Class("NSRunLoop")).Send(sel("mainRunLoop")),
 			apple.CommonModes())
 		return
 	}
-	s.link.Send(sel("setPreferredFramesPerSecond:"), s.framesPerSecond())
+	s.applyFrameRate()
 	s.link.Send(sel("setPaused:"), false)
 }
 
-// framesPerSecond is what the link asks for: the pace, or the screen's
-// highest rate, as a link left at its default runs at 60 Hz on a
-// ProMotion iPhone.
-func (s *surface) framesPerSecond() int {
-	if s.pace > 0 {
-		return max(int(math.Ceil(s.pace)), 1)
+func (s *surface) screenRate() int {
+	screen := s.window.Send(sel("screen"))
+	if screen == 0 {
+		screen = objc.ID(apple.Class("UIScreen")).Send(sel("mainScreen"))
 	}
-	screen := objc.ID(apple.Class("UIScreen")).Send(sel("mainScreen"))
 	return max(objc.Send[int](screen, sel("maximumFramesPerSecond")), 0)
+}
+
+// applyFrameRate preserves the link's usual pace for native motion. A
+// link with only app callbacks can take its explicit preferred range.
+func (s *surface) applyFrameRate() {
+	if s.link == 0 {
+		return
+	}
+	rate := apple.CAFrameRateRange{}
+	fps := -1
+	if s.preferredRate.Preferred > 0 && !s.animator.Running() && len(s.motions) == 0 &&
+		len(s.ghosts) == 0 && len(s.borrowedFrames) == 0 && s.selecting == nil && s.perf == nil {
+		maximum := s.screenRate()
+		if maximum == 0 {
+			maximum = 60
+		}
+		rate = s.preferredRate.Clamped(float32(maximum))
+	} else if s.pace > 0 {
+		fps = max(int(math.Ceil(s.pace)), 1)
+	} else {
+		fps = s.screenRate()
+	}
+	if rate == s.appliedRate && fps == s.appliedFPS {
+		return
+	}
+	s.appliedRate, s.appliedFPS = rate, fps
+	if fps < 0 {
+		s.link.Send(sel("setPreferredFrameRateRange:"), rate)
+	} else {
+		// A ProMotion iPhone otherwise defaults to 60 Hz.
+		s.link.Send(sel("setPreferredFramesPerSecond:"), fps)
+	}
 }
 
 // wantedPace is the rate the frame clock need run at, as macOS's: the
 // animations' own when they are all it steps, else the screen's highest.
 // Batches apply as they land, so none waits for a slowed frame.
 func (s *surface) wantedPace() float64 {
-	if len(s.motions) > 0 || len(s.ghosts) > 0 || s.frameWanted.Load() || s.selecting != nil || s.perf != nil || s.pipFramePending {
+	if len(s.motions) > 0 || len(s.ghosts) > 0 || s.frameWanted.Load() || len(s.borrowedFrames) > 0 || s.selecting != nil || s.perf != nil || s.pipFramePending {
 		return 0
 	}
 	return s.animator.FrameRate()
@@ -100,11 +130,9 @@ func (s *surface) wantedPace() float64 {
 // setPace moves the running link to the rate wanted now.
 func (s *surface) setPace() {
 	pace := s.wantedPace()
-	if pace != s.pace {
+	if pace != s.pace || s.preferredRate.Preferred > 0 {
 		s.pace = pace
-		if s.link != 0 {
-			s.link.Send(sel("setPreferredFramesPerSecond:"), s.framesPerSecond())
-		}
+		s.applyFrameRate()
 	}
 	s.publishPace()
 	// The app asked for a frame as the clock slowed, seeing it still at
@@ -157,8 +185,18 @@ func (s *surface) tick() {
 	}
 	s.pipFramePending = s.drawPictureInPictures()
 	s.startImages()
-	if s.frameWanted.Swap(false) && s.engine != nil {
-		s.engine.FrameAt(apple.LinkFrameTime(s.link))
+	if wanted := s.frameWanted.Swap(false); wanted || len(s.borrowedFrames) != 0 {
+		at := apple.LinkFrameTime(s.link)
+		if wanted && s.engine != nil {
+			s.engine.FrameAt(at)
+		}
+		for _, scene := range s.borrowedFrames {
+			if scene.frameWanted.Swap(false) && scene.engine != nil {
+				scene.engine.FrameAt(at)
+			}
+		}
+		clear(s.borrowedFrames)
+		s.borrowedFrames = s.borrowedFrames[:0]
 	}
 	apple.YieldFrame()
 	// A monitor closes a frame at every refresh.

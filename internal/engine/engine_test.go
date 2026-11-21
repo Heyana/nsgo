@@ -812,3 +812,73 @@ func TestATestsSecretsAreItsOwn(t *testing.T) {
 		t.Errorf("a test keeps its secrets in %T", opts.Secrets)
 	}
 }
+
+type rateRecorder struct {
+	*recorder
+	rates []driver.FrameRateRange
+}
+
+func (p *rateRecorder) SetPreferredFrameRate(rate driver.FrameRateRange) {
+	p.rates = append(p.rates, rate)
+}
+
+func TestFrameRequestsStayOnTheirSurface(t *testing.T) {
+	app := &recorder{mounted: make(chan struct{}, 1)}
+	seen := make(chan int, 3)
+	e := Start(app, func(cx *core.Scope) core.Node {
+		cx.RequestAnimationFrame(func(time.Time) { seen <- 0 })
+		for _, hz := range []int{30, 60} {
+			cx.OpenWindow(core.WindowOptions{}, func(w *core.Scope) core.Node {
+				w.SetPreferredFrameRate(core.FrameRateRange{Preferred: float32(hz)})
+				w.RequestAnimationFrame(func(time.Time) { seen <- hz })
+				return core.View{}
+			})
+		}
+		return nil
+	}, Options{Windows: &core.WindowOptions{}})
+	defer e.Close()
+	e.Sync()
+	var ids []uint32
+	for _, b := range app.batches {
+		for _, item := range b.Items {
+			if item.Kind == driver.ItemOpenSurface {
+				ids = append(ids, item.Surface.ID)
+			}
+		}
+	}
+	if len(ids) != 2 {
+		t.Fatalf("the app opened %d surfaces, want 2", len(ids))
+	}
+	first := &rateRecorder{recorder: &recorder{frames: make(chan struct{}, 4)}}
+	second := &rateRecorder{recorder: &recorder{frames: make(chan struct{}, 4)}}
+	firstEngine := e.Attach(ids[0], first)
+	secondEngine := e.Attach(ids[1], second)
+	// Desktop backends report their windows' state, so a tick from a window that does not drive the app's tree cannot satisfy it.
+	firstEngine.SetFrameWindow(true, false)
+	secondEngine.SetFrameWindow(true, false)
+	e.SetFrameWindow(false, false)
+	e.Sync()
+	for _, tc := range []struct {
+		p  *rateRecorder
+		hz float32
+	}{{first, 30}, {second, 60}} {
+		want := driver.FrameRateRange{Minimum: tc.hz, Maximum: tc.hz, Preferred: tc.hz}
+		if len(tc.p.rates) != 1 || tc.p.rates[0] != want {
+			t.Errorf("surface %g Hz received settings %v, want %v", tc.hz, tc.p.rates, want)
+		}
+		// The first window also drives the app's tree, which may ask it again.
+		if len(tc.p.frames) == 0 {
+			t.Errorf("surface %g Hz received no frame request", tc.hz)
+		}
+	}
+	secondEngine.FrameAt(time.Now())
+	e.Sync()
+	if len(seen) != 1 || <-seen != 60 {
+		t.Fatal("the second surface's frame did not reach it alone")
+	}
+	firstEngine.FrameAt(time.Now())
+	e.Sync()
+	if len(seen) != 2 || <-seen != 30 || <-seen != 0 {
+		t.Fatal("the first surface's frame did not reach it and the app")
+	}
+}

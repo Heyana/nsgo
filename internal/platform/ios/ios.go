@@ -269,7 +269,11 @@ type surface struct {
 	link     objc.ID // the CADisplayLink
 	ticking  bool
 	// pace is the rate the link is slowed to, 0 for the screen's highest.
-	pace float64
+	pace                       float64
+	preferredRate, appliedRate apple.CAFrameRateRange
+	appliedFPS                 int
+	// borrowedFrames names scenes borrowing this one's foreground clock.
+	borrowedFrames []*surface
 	// frameWanted is set while the app waits for a display frame, by the
 	// engine goroutine; fullRate while the clock ticks at the display's
 	// full rate, which serves it without a hop to the main thread.
@@ -1105,6 +1109,14 @@ func (s *surface) Mount(b *driver.MountBatch) {
 	}
 }
 
+// SetPreferredFrameRate updates the surface's display link on the main thread.
+func (s *surface) SetPreferredFrameRate(rate driver.FrameRateRange) {
+	apple.OnMain(func() {
+		s.preferredRate = apple.CAFrameRateRange(rate)
+		s.applyFrameRate()
+	})
+}
+
 // RequestFrame implements engine.Platform: the app waits for the next
 // display frame. Called from the engine goroutine, it hops to the main
 // thread, where the display link lives, only to start the clock or bring
@@ -1117,14 +1129,16 @@ func (s *surface) RequestFrame() {
 	}
 }
 
-// frameClock starts the clock that serves a frame the engine asked s for: s's own, or, for a standalone app's scene that shows in no foreground window, that of one that does, since the engine asks one of its surfaces for the frames of all their trees.
+// frameClock starts the surface's display link. A background scene
+// can borrow a foreground scene's tick while its own link is stopped.
 func (s *surface) frameClock() {
 	if !s.embedded && !s.foreground() {
-		for _, o := range scenes {
-			if o.foreground() && o.engine != nil {
-				s.frameWanted.Store(false)
-				o.frameWanted.Store(true)
-				o.startTicking()
+		for _, other := range scenes {
+			if other.foreground() && other.engine != nil {
+				if !slices.Contains(other.borrowedFrames, s) {
+					other.borrowedFrames = append(other.borrowedFrames, s)
+				}
+				other.startTicking()
 				return
 			}
 		}

@@ -4,6 +4,8 @@ package android
 
 import (
 	"log"
+	"sync/atomic"
+	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/engine"
@@ -18,7 +20,8 @@ type overlay struct {
 	engine *engine.Engine
 	ended  bool
 	// view is the tree's, on the engine goroutine.
-	view treeView
+	view        treeView
+	frameWanted atomic.Bool
 }
 
 // openOverlays keeps the overlays the first surface's batch b opens, before Java hears of them.
@@ -38,9 +41,41 @@ func (s *surface) openOverlays(b *driver.MountBatch) {
 // Prepare implements engine.Platform with the process's text, which the first view keeps.
 func (o *overlay) Prepare(t *driver.AttributedText) driver.PreparedText { return o.s.Prepare(t) }
 
-// RequestFrame implements engine.Platform: the engine asks an opened surface for the app's frames, and the first view's Choreographer answers for every surface.
-func (o *overlay) RequestFrame()                   { o.s.RequestFrame() }
+// RequestFrame asks the runtime to answer from the overlay's clock.
+func (o *overlay) RequestFrame() {
+	o.frameWanted.Store(true)
+	o.s.send(msgWantFrame, func(w *writer) { w.u32(o.view.id) })
+}
+
 func (o *overlay) SubmitGPU(frame driver.GPUFrame) { o.s.SubmitGPU(frame) }
+
+func (o *overlay) SetPreferredFrameRate(rate driver.FrameRateRange) {
+	o.s.setFrameRate(o.view.id, rate)
+}
+
+func (s *surface) awaitingFrame(id uint32) bool {
+	if id == 0 {
+		return s.frameWanted.Load()
+	}
+	s.omu.Lock()
+	defer s.omu.Unlock()
+	o := s.overlays[id]
+	return o != nil && o.frameWanted.Load()
+}
+
+func (s *surface) overlayFrame(id uint32, at time.Time) {
+	s.omu.Lock()
+	o := s.overlays[id]
+	var target *engine.Engine
+	if o != nil && !o.ended {
+		o.frameWanted.Store(false)
+		target = o.engine
+	}
+	s.omu.Unlock()
+	if target != nil {
+		target.FrameAt(at)
+	}
+}
 
 // Mount implements engine.Platform: an overlay that ended takes nothing more, and the batch that destroys its window lets go of what Go kept of its tree, as a closed tree deletes none of its views.
 func (o *overlay) Mount(b *driver.MountBatch) {

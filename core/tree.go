@@ -37,9 +37,10 @@ type Tree struct {
 	reported Environment
 	// id numbers an opened surface's tree, 0 the first's; window is its
 	// handle, closed set once it is gone.
-	id     uint32
-	window *Window
-	closed bool
+	id              uint32
+	window          *Window
+	closed          bool
+	animationFrames frameQueue
 	// menuOrder is the sequence in which this tree last sent an application menu, including a nil menu that restores the default.
 	menuOrder    uint64
 	rt           *runtime

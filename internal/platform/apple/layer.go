@@ -476,6 +476,18 @@ func RotateLayer(layer objc.ID, radians float64) {
 // started, on which display links and NSEvent timestamps count too.
 func MediaTime() time.Duration { return time.Duration(caCurrentMediaTime() * float64(time.Second)) }
 
+// CAFrameRateRange is the display link's range, in Hz.
+type CAFrameRateRange struct {
+	Minimum, Maximum, Preferred float32
+}
+
+// Clamped limits the request to rates the screen can show.
+func (r CAFrameRateRange) Clamped(screen float32) CAFrameRateRange {
+	screen = max(screen, 1)
+	return CAFrameRateRange{Minimum: min(max(1, r.Minimum), screen), Maximum: min(max(1, r.Maximum), screen),
+		Preferred: min(max(1, r.Preferred), screen)}
+}
+
 // LinkFrameTime returns when the frame of a display link (a CADisplayLink, or the one an NSView makes) will show, its targetTimestamp, on time.Now's base: a frame's time for engine.Engine.FrameAt, from within the link's callback.
 func LinkFrameTime(link objc.ID) time.Time {
 	target := time.Duration(msgSendFloat64(link, selTargetTimestamp) * float64(time.Second))

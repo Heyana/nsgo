@@ -143,3 +143,60 @@ func TestRunFrameAtGivesTheDisplaysTime(t *testing.T) {
 		}
 	}
 }
+
+func TestPreferredFrameRateCadence(t *testing.T) {
+	for _, display := range []int{60, 120} {
+		clock := NewManualClock(time.Unix(100, 0))
+		root := testRoot(RootOptions{Clock: clock, RequestFrame: func() {}})
+		root.SetPreferredFrameRate(FrameRateRange{Preferred: 30})
+		var times []time.Time
+		var next func(time.Time)
+		next = func(at time.Time) {
+			times = append(times, at)
+			root.RequestAnimationFrame(next)
+		}
+		root.RequestAnimationFrame(next)
+		frame := time.Second / time.Duration(display)
+		for i := range display {
+			// Small timestamp differences should not turn every second
+			// interval into a skipped frame on a 60 Hz display.
+			jitter := time.Duration(i%3-1) * 130 * time.Microsecond
+			root.RunFrameAt(clock.Now().Add(time.Duration(i)*frame + jitter))
+		}
+		if len(times) != 30 {
+			t.Fatalf("%d Hz display: delivered %d frames, want 30", display, len(times))
+		}
+		for i := 1; i < len(times); i++ {
+			if d := times[i].Sub(times[i-1]) - time.Second/30; d < -500*time.Microsecond || d > 500*time.Microsecond {
+				t.Errorf("%d Hz display: gap %s after frame %d", display, times[i].Sub(times[i-1]), i-1)
+			}
+		}
+		root.SetPreferredFrameRate(FrameRateRange{})
+		for i := display; i < display+3; i++ {
+			root.RunFrameAt(clock.Now().Add(time.Duration(i) * frame))
+		}
+		if len(times) != 33 {
+			t.Errorf("%d Hz display: the cleared preference delivered %d more frames, want 3", display, len(times)-30)
+		}
+	}
+}
+
+func TestChangingFrameRateWaitsForADistinctFrame(t *testing.T) {
+	start := time.Unix(100, 0)
+	root := testRoot(RootOptions{Clock: NewManualClock(start), RequestFrame: func() {}})
+	root.SetPreferredFrameRate(FrameRateRange{Preferred: 30})
+	var frames []time.Time
+	var next func(time.Time)
+	next = func(at time.Time) {
+		frames = append(frames, at)
+		root.SetPreferredFrameRate(FrameRateRange{})
+		root.RequestAnimationFrame(next)
+	}
+	root.RequestAnimationFrame(next)
+	root.RunFrameAt(start)
+	root.RunFrameAt(start.Add(125 * time.Nanosecond))
+	root.RunFrameAt(start.Add(driver.FrameInterval))
+	if len(frames) != 2 || !frames[1].Equal(start.Add(driver.FrameInterval)) {
+		t.Errorf("retuning delivered frames at %v, want distinct display times", frames)
+	}
+}

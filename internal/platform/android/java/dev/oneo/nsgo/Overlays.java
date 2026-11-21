@@ -84,6 +84,18 @@ final class Overlays {
         return o == null ? null : o.view;
     }
 
+    /** Updates the overlay window's own preferred display rate. */
+    void preferFrameRate(int id, float rate) {
+        Overlay o = open.get(id);
+        if (o == null || o.params.preferredRefreshRate == rate) return;
+        o.params.preferredRefreshRate = rate;
+        try {
+            o.windows.updateViewLayout(o.view, o.params);
+        } catch (IllegalArgumentException | SecurityException ignored) {
+            // The window closed or the system revoked its overlay permission.
+        }
+    }
+
     /** Whether an overlay shows. */
     boolean any() {
         return open.size() > 0;

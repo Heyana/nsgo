@@ -102,7 +102,7 @@ const (
 	msgDNS         = 6  // the default network's DNS servers
 	msgTestReply   = 9  // the test agent's answer to a msgTest
 	msgHost        = 10 // the embedding host's part of the channel (host.go)
-	msgFrame       = 12 // a Choreographer frame began, answering msgWantFrame: its frameTimeNanos, a u64
+	msgFrame       = 12 // a Choreographer frame began: its frameTimeNanos, a u64, then the optional surface ID
 	msgFolderReply = 13 // a folder's entries or a file's bytes, answering msgFolder
 	msgFetched     = 14 // a download's progress or response, answering msgFetch
 	// msgLiveReport is what the runtime reports of Live Activities, JSON
@@ -331,8 +331,13 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			}
 			s.startEngine(app, size, g, opts, nil)
 		case msgFrame:
-			s.frameWanted.Store(false)
-			s.engine.FrameAt(frameTime(&r))
+			at := frameTime(&r)
+			if id := r.u32(); id != 0 {
+				s.overlayFrame(id, at)
+			} else {
+				s.frameWanted.Store(false)
+				s.engine.FrameAt(at)
+			}
 		case msgPerfFrame:
 			s.perfFrame(&r)
 		case msgResize:
@@ -409,7 +414,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 				// A pan's start and end carry its bound values as the size.
 				ev.Values, ev.Size = driver.Point{X: ev.Size.Width, Y: ev.Size.Height}, driver.Size{}
 			}
-			if ev.Kind == driver.EventScroll && s.frameWanted.Load() {
+			if ev.Kind == driver.EventScroll && s.awaitingFrame(from) {
 				// The runtime reports the offsets the app's commits set as
 				// it applies them: while the app waits for a frame, the
 				// report rides with it, where it cost a pass of its own
@@ -1019,6 +1024,19 @@ func (s *surface) RequestFrame() {
 }
 
 func (s *surface) SubmitGPU(driver.GPUFrame) {}
+
+// SetPreferredFrameRate sets the window's refresh hint and callback
+// cadence in the Android runtime.
+func (s *surface) SetPreferredFrameRate(rate driver.FrameRateRange) {
+	s.setFrameRate(0, rate)
+}
+
+func (s *surface) setFrameRate(id uint32, rate driver.FrameRateRange) {
+	s.send(msgFrameRate, func(w *writer) {
+		w.u32(id)
+		w.float(rate.Preferred)
+	})
+}
 
 // Mount implements engine.Platform: the commit and any follow-up shader
 // pixel batches, then the loads of the image sources it changed.

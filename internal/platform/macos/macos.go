@@ -336,7 +336,8 @@ type surface struct {
 	caught bool
 	// resized is the commit at a new size the main thread stopped waiting
 	// for, until it lands.
-	resized <-chan struct{}
+	resized                    <-chan struct{}
+	preferredRate, appliedRate apple.CAFrameRateRange
 	// frameWanted is set while the app waits for a display frame, by the
 	// engine goroutine; fullRate while the clock ticks at the display's
 	// full rate, which serves it without a hop to the main thread.
@@ -2090,6 +2091,14 @@ func (s *surface) Mount(b *driver.MountBatch) {
 	if s.batches.Push(b) {
 		s.native.Send(selPerformOnMain, selApply, objc.ID(0), false)
 	}
+}
+
+// SetPreferredFrameRate updates the surface's display link on the main thread.
+func (s *surface) SetPreferredFrameRate(rate driver.FrameRateRange) {
+	apple.OnMain(func() {
+		s.preferredRate = apple.CAFrameRateRange(rate)
+		s.applyFrameRate()
+	})
 }
 
 // RequestFrame implements engine.Platform: the app waits for the next

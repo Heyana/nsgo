@@ -112,7 +112,7 @@ Each step then moves the clock a frame at a time, for at most 2 seconds, until t
 
 ## Time
 
-Headless and on a target, the app runs on `app.Clock`, a `core.ManualClock` that starts at 2026-01-01 00:00 UTC and moves only as the test moves it. `app.Advance(d)` moves it by `d`, running each timer when it comes due and, while the app waits for one, a display frame every frame interval, as a display does. `app.FastForward(d)` jumps ahead, as a laptop closed for a while and opened: each timer that came due on the way runs once, at the end, and so does one display frame.
+Headless and on a target, the app runs on `app.Clock`, a `core.ManualClock` that starts at 2026-01-01 00:00 UTC and moves only as the test moves it. `app.Advance(d)` moves it by `d`, running each timer when it comes due and, while the app waits for one, a display frame every frame interval, as a display does. `app.FastForward(d)` jumps ahead, as a laptop closed for a while and opened: each timer that came due on the way runs once, at the end, and so does one display frame. At the simulated display rate in a headless test, callbacks also honor the surface's `SetPreferredFrameRate` setting.
 
 The app reads this clock with `cx.Now()`, and the date it shows with `cx.WallTime()`, so time what it measures itself, such as a gesture's speed or a double tap's window, with them. `time.Now()` and `time.Sleep` follow the system's clock, which `Advance` does not move: an app timing with `time.Now()` misses the time a test moves, and a `time.Sleep` in a test only makes it slower. Wait for work that arrives from another goroutine, such as a `cx.Post` after a reply, with `app.WaitFor`, `app.WaitForGone` or `app.WaitUntil`, whose timeouts count real time.
 

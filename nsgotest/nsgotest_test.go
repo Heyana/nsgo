@@ -1698,3 +1698,26 @@ func TestVerticalBarEdgeOptionAndSetter(t *testing.T) {
 		t.Fatalf("reset text = %q, want unspecified:ios", got)
 	}
 }
+
+func TestAdvanceRespectsPreferredFrameRate(t *testing.T) {
+	var frames []time.Time
+	app := Start(t, func(cx *core.Scope) core.Node {
+		cx.SetPreferredFrameRate(core.FrameRateRange{Preferred: 30})
+		var next func(time.Time)
+		next = func(at time.Time) {
+			frames = append(frames, at)
+			cx.RequestAnimationFrame(next)
+		}
+		cx.RequestAnimationFrame(next)
+		return core.View{}
+	})
+	app.Advance(6 * driver.FrameInterval)
+	if len(frames) != 3 {
+		t.Fatalf("the app received %d frames, want 3", len(frames))
+	}
+	for i := 1; i < len(frames); i++ {
+		if gap := frames[i].Sub(frames[i-1]); gap != 2*driver.FrameInterval {
+			t.Errorf("frame %d followed the previous frame by %s", i, gap)
+		}
+	}
+}

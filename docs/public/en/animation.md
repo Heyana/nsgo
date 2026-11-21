@@ -38,6 +38,9 @@ angle := core.Interpolate(scroll, core.Interpolation{
 
 `Scope.RequestAnimationFrame` runs a function once at the next display frame, and `Scope.Animate` steps a duration on that clock. Both run on the graph's goroutine, so they can set signals. The function gets the frame's time, the display's own on macOS, iOS, Android, the web, Linux, Windows, HarmonyOS and watchOS (on HarmonyOS when the build machine has the OpenHarmony SDK; an app packaged without it gets the engine's clock), so a loop that moves things by the time between two frames follows the display's pace; an `nsgotest` test gives the test clock's.
 
+Set a window's callback rate with `cx.SetPreferredFrameRate(core.FrameRateRange{Preferred: 30})`. Pass `Minimum` and `Maximum` to give the display link a range, such as `{Minimum: 80, Maximum: 120, Preferred: 120}` on a ProMotion screen. Call it from the window's own scope. The preference applies to `RequestAnimationFrame` and `Animate` until it changes. A zero range restores the display's normal pace. The callback time remains the actual display time. The display and the OS choose the available refresh rate, and NSGo can skip display frames to pace callbacks.
+
+
 `Scope.Tween` steps a number on that clock for what an animated value cannot reach, such as a figure counting up in a text: it calls a function with each number from one to another, as `Timing` would move a value, and once more with the last. An `nsgotest` step that starts it waits for the last, as for an animation, and under reduced motion it gives the last at once. TSX's `Animated.tween` is the same.
 
 ```go
