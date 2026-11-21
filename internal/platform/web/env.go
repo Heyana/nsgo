@@ -99,6 +99,7 @@ func (s *surface) watchChanges() {
 		if args[0].Get("persisted").Bool() {
 			s.engine.Hide()
 		} else {
+			s.clearDisplayHolds()
 			s.engine.Close()
 		}
 		return nil

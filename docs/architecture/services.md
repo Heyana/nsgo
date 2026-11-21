@@ -341,8 +341,9 @@ Unreported states are unknown, including thermal pressure on Windows and Linux a
 | Windows | A `PowerCreateRequest` power request with the hold's reason, which `powercfg /requests` lists, set to `PowerRequestDisplayRequired` and `PowerRequestSystemRequired` | `PowerRequestSystemRequired`; `PowerRequestExecutionRequired` keeps a packaged app's process from suspending rather than the computer awake |
 | Linux | `org.freedesktop.ScreenSaver.Inhibit` on the session bus | For an app outside Flatpak and Snap on GNOME, `org.gnome.SessionManager.Inhibit` with its Suspend flag, since GNOME's portal backend passes on the empty ID the portal knows such an app by, which the session manager refuses while the portal answers that the hold was taken; otherwise the desktop portal's `Inhibit` with its Suspend flag, and without the portal the ScreenSaver inhibitor, which keeps the display on too |
 | iOS | `UIApplication.idleTimerDisabled`, set as the first display hold comes and cleared as the last goes | No-op; iOS controls background execution |
-| Android | No-op | No-op |
-| Web and mini programs | No-op | No-op |
+| Android | Each surface counts its display holds with `View.setKeepScreenOn`. Android combines its visible views' requests into the window's `FLAG_KEEP_SCREEN_ON` | No-op |
+| Web | One `navigator.wakeLock.request("screen")` sentinel per document while the page is visible and a display hold exists. The page releases it on hide and requests it again when visible. Trusted input retries a request where the browser requires activation for the first grant | No-op |
+| Mini programs | No-op | No-op |
 
 GNOME's inhibitors refuse an empty app ID and an empty reason, so on Linux a hold names an app built without `nsgo.yaml`'s id, as `go build` and `go run` make it, by its name, else its executable's, and gives that ID as the reason when the app gives none. A hold the session refuses is logged and keeps nothing awake.
 

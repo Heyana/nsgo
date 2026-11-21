@@ -328,6 +328,10 @@ loop = func(time.Time) {
 cx.RequestAnimationFrame(loop)
 ```
 
+## Keeping the display awake
+
+`cx.KeepAwake("Playing video", core.KeepAwakeOptions{Display: true})` holds the display on until the returned release function runs or the current scope is disposed. On Android the hold applies while the app is visible. On the web it works in a secure context with Screen Wake Lock support, and the page requests the lock again when it becomes visible. Safari can require a press or key before granting the first request. Computer-only holds have no effect on these two platforms.
+
 ## Speaking text
 
 `cx.Speak` reads text aloud in the system's voice for a language where `cx.Env().CanSpeak()` says the platform speaks: macOS, iOS, tvOS, Android, Windows, the web and Linux with speech-dispatcher. One utterance speaks at a time: another `Speak` cuts the one speaking, and so do `cx.StopSpeaking` and the end of the scope that spoke it. `done` hears once how it ended: finished, stopped, or failed with a `core.SpeakError`, such as `core.SpeakLanguageUnavailable` when no voice installed speaks the language.

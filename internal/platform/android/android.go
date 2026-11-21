@@ -1502,10 +1502,13 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			for _, rect := range it.SystemGestures.AndroidRects {
 				w.bounds(rect)
 			}
-		case driver.ItemHaptic, driver.ItemBadge:
+		case driver.ItemHaptic, driver.ItemBadge, driver.ItemReleaseAwake:
 			w.u32(it.Count)
 		case driver.ItemOrientation:
 			w.byte(byte(it.Count))
+		case driver.ItemKeepAwake:
+			w.u32(it.Count)
+			w.flags(it.Awake != nil && it.Awake.Display)
 		case driver.ItemSpeak:
 			r := it.Speak
 			w.u32(it.Count)

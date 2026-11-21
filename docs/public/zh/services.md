@@ -328,6 +328,10 @@ loop = func(time.Time) {
 cx.RequestAnimationFrame(loop)
 ```
 
+## 保持屏幕常亮
+
+`cx.KeepAwake("Playing video", core.KeepAwakeOptions{Display: true})` 会让屏幕保持常亮，直到调用返回的释放函数或当前作用域被销毁。在 Android 上，应用可见时保持常亮。在 Web 上，它需要支持 Screen Wake Lock 的安全上下文，页面恢复可见时会重新请求锁。Safari 首次授予锁前可能需要点击或按键。这两个平台上的仅系统保活请求均无效。
+
 ## 登录
 
 `cx.AuthSession` 在系统的认证会话里用 OAuth 服务登录，而不是在网页视图里：macOS 和 iOS 用 `ASWebAuthenticationSession`，Windows、Linux 以及没有设置 scheme 的 Mac 用默认浏览器加回环地址重定向，Web 用弹出窗口。协议由应用负责：它生成 PKCE 校验码和 state，为传给它的重定向地址拼出授权 URL，并在用 code 换令牌前检查回调。取消不算失败：`errors.Is(err, core.AuthCancelled)` 表示用户关闭了会话，或返回的 `cancel` 结束了它。

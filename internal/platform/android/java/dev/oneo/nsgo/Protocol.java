@@ -280,6 +280,8 @@ final class Protocol {
     static final int ITEM_BIOMETRIC_AUTHENTICATE = 87;
     static final int ITEM_OPEN_SURFACE = 68;
     static final int ITEM_OVERLAY_PERMISSION = 89;
+    static final int ITEM_KEEP_AWAKE = 93;
+    static final int ITEM_RELEASE_AWAKE = 94;
     static final int ITEM_SPEAK = 102;
     static final int ITEM_SENSOR = 103;
     static final int ITEM_ORIENTATION = 111;
