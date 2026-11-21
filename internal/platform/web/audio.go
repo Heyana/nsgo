@@ -15,9 +15,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// webAudio owns one engine's decoded sounds, voices and streamed players.
-// The browser decodes sounds on its audio threads. An offline context can
-// decode before a gesture and never opens the output.
+// webAudio owns one engine's decoded sounds, voices and streamed players. The browser decodes sounds on its audio threads. An offline context can decode before a gesture and never opens the output.
 type webAudio struct {
 	doc             js.Value
 	dispatch        func(driver.Event)
@@ -34,9 +32,9 @@ type webSound struct {
 }
 
 type webSoundVoice struct {
-	sound        uint32
-	source, gain js.Value
-	ended        js.Func
+	sound                uint32
+	source, gain, panner js.Value
+	ended                js.Func
 }
 
 func webAudioAvailable() bool {
@@ -83,7 +81,7 @@ func (a *webAudio) handle(id uint32, r *driver.AudioRequest) {
 	case driver.AudioLoad:
 		a.load(id, r.Source, r.MaxBytes, r.MaxDuration)
 	case driver.AudioPlay:
-		a.play(id, r.Volume, r.Rate)
+		a.play(id, r.Volume, r.Rate, r.Pan)
 	case driver.AudioStop:
 		a.stop(id)
 	case driver.AudioUnload:
@@ -101,8 +99,7 @@ func (a *webAudio) handle(id uint32, r *driver.AudioRequest) {
 	}
 }
 
-// activate runs in a trusted browser event. It records input before the
-// first sound too, so an app can load its first sound after the gesture.
+// activate runs in a trusted browser event. It records input before the first sound too, so an app can load its first sound after the gesture.
 func (a *webAudio) activate() {
 	a.activated = true
 	if len(a.sounds) > 0 {
@@ -111,8 +108,7 @@ func (a *webAudio) activate() {
 }
 
 func (a *webAudio) resumeOutput() {
-	// The browser can refuse an output device. A sound has no play
-	// callback, so it remains silent in that case.
+	// The browser can refuse an output device. A sound has no play callback, so it remains silent in that case.
 	defer func() { _ = recover() }()
 	if !a.activated {
 		return
@@ -176,9 +172,7 @@ func (a *webAudio) soundBytes(ctx context.Context, source driver.ImageSource, li
 	if url == "" {
 		return nil, driver.AudioNotSupported, "the browser cannot read this audio source"
 	}
-	// Use the browser's Fetch stream directly. Pulling in net/http for
-	// this reader would add its client and TLS dependencies to every
-	// web app, including those that never load a sound.
+	// Use the browser's Fetch stream directly. Pulling in net/http for this reader would add its client and TLS dependencies to every web app, including those that never load a sound.
 	g := js.Global()
 	controller := g.Get("AbortController").New()
 	stop := context.AfterFunc(ctx, func() { controller.Call("abort") })
@@ -248,7 +242,7 @@ func audioBytes(data []byte) js.Value {
 	return bytes
 }
 
-func (a *webAudio) play(id uint32, volume, rate float32) {
+func (a *webAudio) play(id uint32, volume, rate, pan float32) {
 	sound := a.sounds[id]
 	if sound == nil || !sound.buffer.Truthy() || !a.activated {
 		return
@@ -265,8 +259,16 @@ func (a *webAudio) play(id uint32, volume, rate float32) {
 	source.Get("playbackRate").Set("value", rate)
 	gain.Get("gain").Set("value", volume)
 	source.Call("connect", gain)
-	gain.Call("connect", a.output.Get("destination"))
 	voice := &webSoundVoice{sound: id, source: source, gain: gain}
+	// A centered voice skips the panner; browsers without StereoPannerNode play every voice centered.
+	if pan != 0 && a.output.Get("createStereoPanner").Type() == js.TypeFunction {
+		voice.panner = a.output.Call("createStereoPanner")
+		voice.panner.Get("pan").Set("value", pan)
+		gain.Call("connect", voice.panner)
+		voice.panner.Call("connect", a.output.Get("destination"))
+	} else {
+		gain.Call("connect", a.output.Get("destination"))
+	}
 	voice.ended = js.FuncOf(func(js.Value, []js.Value) any {
 		a.endVoice(voice, false)
 		return nil
@@ -286,6 +288,9 @@ func (a *webAudio) endVoice(voice *webSoundVoice, stop bool) {
 	}
 	voice.source.Call("disconnect")
 	voice.gain.Call("disconnect")
+	if voice.panner.Truthy() {
+		voice.panner.Call("disconnect")
+	}
 }
 
 func (a *webAudio) stop(id uint32) {

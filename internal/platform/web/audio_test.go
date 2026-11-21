@@ -114,7 +114,7 @@ func TestWebAudioSounds(t *testing.T) {
 		t.Fatalf("sound beyond the duration limit: %+v", e)
 	}
 
-	a.play(1, 1, 1)
+	a.play(1, 1, 1, 0)
 	if a.output.Truthy() || len(a.voices) != 0 {
 		t.Fatal("sound opened the playback output before a gesture")
 	}
@@ -122,7 +122,7 @@ func TestWebAudioSounds(t *testing.T) {
 	var analyser js.Value
 	pressAudio(t, doc, a, func() {
 		started = time.Now()
-		a.play(1, 0.8, 1)
+		a.play(1, 0.8, 1, 0)
 		if len(a.voices) == 1 {
 			analyser = a.output.Call("createAnalyser")
 			analyser.Set("fftSize", 256)
@@ -146,15 +146,18 @@ func TestWebAudioSounds(t *testing.T) {
 	analyser.Call("disconnect")
 	a.stop(1)
 
-	a.play(2, 1, 1)
+	a.play(2, 1, 1, 0)
 	oldest := a.voices[0]
 	for range driver.MaxSoundVoices {
-		a.play(1, 0.5, 1.2)
+		a.play(1, 0.5, 1.2, -0.5)
+	}
+	if panner := a.voices[len(a.voices)-1].panner; !panner.Truthy() || math.Abs(panner.Get("pan").Get("value").Float()+0.5) > 1e-6 {
+		t.Fatal("a panned voice played without its stereo panner")
 	}
 	if len(a.voices) != driver.MaxSoundVoices || a.voices[0] == oldest {
 		t.Fatal("the oldest voice survived the overlap limit")
 	}
-	a.play(2, 1, 1)
+	a.play(2, 1, 1, 0)
 	a.stop(1)
 	if len(a.voices) != 1 || a.voices[0].sound != 2 {
 		t.Fatal("stopping one sound interrupted a different sound")

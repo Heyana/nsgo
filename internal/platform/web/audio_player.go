@@ -10,8 +10,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// webAudioPlayer streams in a browser audio element. Its generation
-// guards late play-promise replies after a pause or a fresh element.
+// webAudioPlayer streams in a browser audio element. Its generation guards late play-promise replies after a pause or a fresh element.
 type webAudioPlayer struct {
 	audio                                                   *webAudio
 	id                                                      uint32
