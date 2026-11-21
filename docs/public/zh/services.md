@@ -488,6 +488,10 @@ cx.Purchase("com.example.pro.monthly", core.PurchaseOptions{AccountToken: userUU
 
 用 `audio.Voice{Muted: true}` 静音启动音效，也可用 `playback.SetVolume(0)` 将正在播放的音效静音。长音频用 `audio.NewPlayer` 流式播放，`player.SetMuted(true)` 可在保持播放进度的同时静音。取消静音会恢复播放器设定的音量。`Voice.Volume` 和 `Player.SetVolume` 以零表示默认满音量。
 
+## 音效限制
+
+加载音效前，可以调用 `audio.SetSoundLimits(cx, audio.SoundLimits{MaxSounds: 200, MaxDuration: 20 * time.Second})` 调整引擎的限制。也可以设置 `MaxEncodedBytes`、`MaxDecodedBytes` 和 `MaxPlaybacks`。零值使用默认限制：单个音效编码后最多 8 MiB、时长最多 5 秒，引擎最多 64 个音源、解码后总计最多 16 MiB，每个输出最多同时播放 32 路。已加载的音效会继续计入新的限制。受限作用域在引擎预算内继续使用默认限制。
+
 ## 朗读文本
 
 `cx.Speak` 在 `cx.Env().CanSpeak()` 为真时用系统中某种语言的语音朗读文本：macOS、iOS、tvOS、Android、Windows、Web，以及装有 speech-dispatcher 的 Linux。同一时间只朗读一段：新的 `Speak` 会打断正在朗读的那段，`cx.StopSpeaking` 和发起朗读的作用域结束也会停止它。`done` 只会收到一次结束方式：读完、被停止，或因 `core.SpeakError` 失败，例如没有安装该语言的语音时返回 `core.SpeakLanguageUnavailable`。

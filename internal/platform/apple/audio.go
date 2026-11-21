@@ -3,8 +3,10 @@
 package apple
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"math"
 	"net/url"
@@ -28,7 +30,7 @@ import (
 
 // Audio is one engine's sounds and players, the audio package's on macOS and iOS (docs/architecture/audio.md), as NSH's speaker: a surface makes it with its first ItemAudio and closes it as it closes, so an app that makes no sound never opens the output. Its methods run on the main thread; sounds are read and decoded on goroutines of their own, whose results hop back there.
 //
-// Sounds decode once, at their load, into an AVAudioPCMBuffer, through an AVAudioFile over a temporary file of their bytes as AVAudioFile reads only files, and play from memory on the engine's one AVAudioEngine: each playback is a voice, an AVAudioPlayerNode through an AVAudioUnitVarispeed, which gives the rate, and a mixer of its own, which gives the volume and stereo pan, as an effect between a player and the main mixer keeps the player's own mixing properties from it. Voices are reused once their buffer played, by sounds of their format; past driver.MaxSoundVoices the oldest stops. The engine starts at a playback, again after the system stopped it, as for a device change, and pauses a moment after the last playback ends, so the output is not held open; one that cannot start is silence, never an error.
+// Sounds decode once, at their load, into an AVAudioPCMBuffer, through an AVAudioFile over a temporary file of their bytes as AVAudioFile reads only files, and play from memory on the engine's one AVAudioEngine: each playback is a voice, an AVAudioPlayerNode through an AVAudioUnitVarispeed, which gives the rate, and a mixer of its own, which gives the volume and stereo pan, as an effect between a player and the main mixer keeps the player's own mixing properties from it. Voices are reused once their buffer played, by sounds of their format; at the playback limit the oldest eligible voice stops. The engine starts at a playback, again after the system stopped it, as for a device change, and pauses a moment after the last playback ends, so the output is not held open; one that cannot start is silence, never an error.
 //
 // Players are AVPlayers without a layer, as Video's, made at their first preload or play: their load is polled until the item is ready or fails, as a paused player reports no time, their position comes from a periodic time observer, their end from AVPlayerItemDidPlayToEndTimeNotification and a stop no command asked for from AVPlayerRateDidChangeNotification, besides the time observer. On iOS each holds the shared audio session (internal/audiosession) at the level its AudioSession asks for while it plays, and playing sounds hold it ambient; an interruption of the session pauses the players as it begins, and they stay paused as it ends.
 type Audio struct {
@@ -61,10 +63,11 @@ type soundVoice struct {
 	mainBus                  uint
 	// format is the one it is connected with, retained.
 	format objc.ID
-	// sound is the one it plays, 0 for none, and playback the core's handle of it, 0 for an untracked one. generation distinguishes a queued native completion from the next play on this node.
+	// sound is the one it plays, 0 for none, and playback the core's handle of it, 0 for an untracked one. generation distinguishes a queued native completion from the next play on this node. restricted is set for a restricted scope's playback.
 	sound, playback uint32
 	generation      uint64
 	started         time.Time
+	restricted      bool
 }
 
 // idleGrace is how long the engine keeps the output open after the last playback ends, so that the next sound starts at once.
@@ -117,7 +120,7 @@ func (a *Audio) Handle(id uint32, r *driver.AudioRequest) {
 	a.watchInterruptions()
 	switch r.Command {
 	case driver.AudioLoad:
-		a.load(id, r.Source, r.MaxBytes, r.MaxDuration)
+		a.load(id, *r)
 	case driver.AudioPlay:
 		a.play(id, r)
 	case driver.AudioPlaybackSet, driver.AudioPlaybackStop:
@@ -238,10 +241,10 @@ func (a *Audio) unload(id uint32) {
 }
 
 // load reads and decodes sound id on a goroutine of its own, then keeps it and reports its load on the main thread, unless it was unloaded, or the engine closed, in the meantime.
-func (a *Audio) load(id uint32, src driver.ImageSource, maxBytes int64, maxDuration time.Duration) {
+func (a *Audio) load(id uint32, r driver.AudioRequest) {
 	a.loading[id] = true
 	go func() {
-		sound, e, code, message := readSound(src, maxBytes, maxDuration)
+		sound, e, code, message := readSound(r)
 		OnMain(func() {
 			if a.closed || !a.loading[id] {
 				if sound != nil {
@@ -263,30 +266,28 @@ func (a *Audio) load(id uint32, src driver.ImageSource, maxBytes int64, maxDurat
 	}()
 }
 
-// readSound reads src, at most maxBytes of it, and decodes at most maxDuration of it: the sound, nil when it is cut as the core frees a cut sound, and its AudioLoaded; or an error's code and message.
-func readSound(src driver.ImageSource, maxBytes int64, maxDuration time.Duration) (*decodedSound, driver.AudioEvent, string, string) {
-	data, code, message := readAudio(src, maxBytes)
+// readSound reads and decodes the source within the request's size and duration limits: the sound, nil when it is cut as the core frees a cut sound, and its AudioLoaded; or an error's code and message.
+func readSound(r driver.AudioRequest) (*decodedSound, driver.AudioEvent, string, string) {
+	data, code, message := readAudio(r.Source, r.MaxBytes)
 	if code != "" {
 		return nil, driver.AudioEvent{}, code, message
 	}
-	path, err := audioTempFile(data, src.URI)
+	path, err := audioTempFile(data, r.Source.URI)
 	if err != nil {
 		return nil, driver.AudioEvent{}, driver.AudioFailed, "cannot write the sound for decoding: " + err.Error()
 	}
 	defer os.Remove(path)
 	var sound *decodedSound
 	var e driver.AudioEvent
-	withPool(func() { sound, e, message = decodeSound(path, maxDuration) })
-	if message != "" {
-		return nil, driver.AudioEvent{}, driver.AudioDecode, message
-	}
-	return sound, e, "", ""
+	maxDecodedBytes := cmp.Or(r.MaxDecodedBytes, int64(driver.MaxDecodedBytes))
+	withPool(func() { sound, e, code, message = decodeSound(path, r.MaxDuration, maxDecodedBytes) })
+	return sound, e, code, message
 }
 
 // readAudio reads src's bytes as an image's are read, failing past maxBytes when it is above 0: the bytes, or an error's code and message.
 func readAudio(src driver.ImageSource, maxBytes int64) ([]byte, string, string) {
 	if maxBytes > 0 && int64(len(src.Data)) > maxBytes {
-		return nil, driver.AudioQuotaExceeded, "the sound has more than 8 MiB"
+		return nil, driver.AudioQuotaExceeded, fmt.Sprintf("the sound exceeds its limit of %d encoded bytes", maxBytes)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -299,7 +300,7 @@ func readAudio(src driver.ImageSource, maxBytes int64) ([]byte, string, string) 
 	}
 	data, err := imageload.Load(ctx, src, progress)
 	if over.Load() || maxBytes > 0 && int64(len(data)) > maxBytes {
-		return nil, driver.AudioQuotaExceeded, "the sound has more than 8 MiB"
+		return nil, driver.AudioQuotaExceeded, fmt.Sprintf("the sound exceeds its limit of %d encoded bytes", maxBytes)
 	}
 	if err != nil {
 		// A source that cannot be fetched is a network error; one that cannot be read here is none the platform plays, as NSH has them.
@@ -374,19 +375,19 @@ func audioTempFile(data []byte, uri string) (string, error) {
 }
 
 // decodeSound decodes the file at path into memory, at most max of it, inside an autorelease pool: the sound and its AudioLoaded, or why not. A sound longer than max is reported cut and not decoded, as the core frees it.
-func decodeSound(path string, max time.Duration) (*decodedSound, driver.AudioEvent, string) {
+func decodeSound(path string, max time.Duration, maxDecodedBytes int64) (*decodedSound, driver.AudioEvent, string, string) {
 	fileClass, bufferClass := Class("AVAudioFile"), Class("AVAudioPCMBuffer")
 	if fileClass == 0 || bufferClass == 0 {
-		return nil, driver.AudioEvent{}, "AVAudioFile is not available"
+		return nil, driver.AudioEvent{}, driver.AudioDecode, "AVAudioFile is not available"
 	}
 	fileURL := audioFileURL(path)
 	if fileURL == 0 {
-		return nil, driver.AudioEvent{}, "cannot name the sound's file"
+		return nil, driver.AudioEvent{}, driver.AudioDecode, "cannot name the sound's file"
 	}
 	var nsErr objc.ID
 	file := objc.ID(fileClass).Send(sel("alloc")).Send(sel("initForReading:error:"), fileURL, unsafe.Pointer(&nsErr))
 	if file == 0 {
-		return nil, driver.AudioEvent{}, describeError(nsErr, "the sound cannot be decoded")
+		return nil, driver.AudioEvent{}, driver.AudioDecode, describeError(nsErr, "the sound cannot be decoded")
 	}
 	defer file.Send(sel("release"))
 	format := file.Send(sel("processingFormat"))
@@ -394,31 +395,32 @@ func decodeSound(path string, max time.Duration) (*decodedSound, driver.AudioEve
 	channels := objc.Send[uint32](format, sel("channelCount"))
 	length := objc.Send[int64](file, sel("length"))
 	if rate <= 0 || length <= 0 || channels == 0 {
-		return nil, driver.AudioEvent{}, "the sound is empty"
+		return nil, driver.AudioEvent{}, driver.AudioDecode, "the sound is empty"
 	}
-	allowed := int64(math.Ceil(max.Seconds() * rate))
-	if length > allowed {
-		return nil, driver.AudioEvent{Phase: driver.AudioLoaded, Duration: max, Cut: true}, ""
+	if float64(length) > math.Ceil(max.Seconds()*rate) {
+		return nil, driver.AudioEvent{Phase: driver.AudioLoaded, Duration: max, Cut: true}, "", ""
+	}
+	bytesPerFrame := int64(channels) * 4 // the processing format is 32-bit float
+	if length > math.MaxUint32 || length > maxDecodedBytes/bytesPerFrame {
+		return nil, driver.AudioEvent{}, driver.AudioQuotaExceeded, "the sound exceeds its decoded size limit"
 	}
 	frames := uint32(length)
 	buffer := objc.ID(bufferClass).Send(sel("alloc")).Send(sel("initWithPCMFormat:frameCapacity:"), format, frames)
 	if buffer == 0 {
-		return nil, driver.AudioEvent{}, "no memory for the sound"
+		return nil, driver.AudioEvent{}, driver.AudioDecode, "no memory for the sound"
 	}
 	if !objc.Send[bool](file, sel("readIntoBuffer:frameCount:error:"), buffer, frames, unsafe.Pointer(&nsErr)) {
 		buffer.Send(sel("release"))
-		return nil, driver.AudioEvent{}, describeError(nsErr, "the sound cannot be decoded")
+		return nil, driver.AudioEvent{}, driver.AudioDecode, describeError(nsErr, "the sound cannot be decoded")
 	}
 	decoded := objc.Send[uint32](buffer, sel("frameLength"))
 	if decoded == 0 {
 		buffer.Send(sel("release"))
-		return nil, driver.AudioEvent{}, "the sound is empty"
+		return nil, driver.AudioEvent{}, driver.AudioDecode, "the sound is empty"
 	}
 	duration := time.Duration(float64(decoded) / rate * float64(time.Second))
-	// The processing format is deinterleaved 32-bit floats.
-	bytes := int64(decoded) * int64(channels) * 4
 	return &decodedSound{buffer: buffer, format: format.Send(sel("retain")), duration: duration},
-		driver.AudioEvent{Phase: driver.AudioLoaded, Duration: duration, Bytes: bytes}, ""
+		driver.AudioEvent{Phase: driver.AudioLoaded, Duration: duration, Bytes: int64(decoded) * bytesPerFrame}, "", ""
 }
 
 // audioFileURL is the file NSURL of path, 0 for a path no NSURL can name: one that is not UTF-8, as Apple's file systems name files, or holds a NUL, for which NSString gives nothing and NSURL would raise.
@@ -556,35 +558,51 @@ func (v *soundVoice) drop(engine objc.ID) {
 	v.mixer.Send(sel("release"))
 }
 
-// voiceFor takes a free voice of the sound's format or creates one up to the
-// limit. It can reuse a free voice of another format or take the oldest one.
-func (a *Audio) voiceFor(engine objc.ID, s *decodedSound) *soundVoice {
+// voiceFor takes a free voice of the sound's format or creates one up to limit. Past limit playing voices, or past MaxSoundVoices restricted ones for a restricted playback, it takes the oldest of those, ending its playback; otherwise it reuses a free voice of another format, connecting the sound's format to it.
+func (a *Audio) voiceFor(engine objc.ID, s *decodedSound, limit int, restricted bool) *soundVoice {
 	same := func(v *soundVoice) bool { return objc.Send[bool](v.format, sel("isEqual:"), s.format) }
-	var free *soundVoice
+	var free, matching, oldest, oldestRestricted *soundVoice
+	active, restrictedActive := 0, 0
 	for _, v := range a.voices {
 		if v.sound == 0 {
-			if same(v) {
-				return v
+			if matching == nil && same(v) {
+				matching = v
 			}
 			free = v
+			continue
+		}
+		active++
+		if oldest == nil || v.started.Before(oldest.started) {
+			oldest = v
+		}
+		if v.restricted {
+			restrictedActive++
+			if oldestRestricted == nil || v.started.Before(oldestRestricted.started) {
+				oldestRestricted = v
+			}
 		}
 	}
-	if len(a.voices) < driver.MaxSoundVoices {
-		v := newVoice(engine, s.format)
+	var v *soundVoice
+	switch {
+	case restricted && restrictedActive >= driver.MaxSoundVoices:
+		v = oldestRestricted
+		a.finishVoice(v)
+	case active >= limit:
+		v = oldest
+		a.finishVoice(v)
+	case matching != nil:
+		return matching
+	case len(a.voices) < limit:
+		v = newVoice(engine, s.format)
 		if v != nil {
 			a.voices = append(a.voices, v)
 		}
 		return v
+	default:
+		v = free
 	}
-	v := free
 	if v == nil {
-		v = a.voices[0]
-		for _, other := range a.voices {
-			if other.started.Before(v.started) {
-				v = other
-			}
-		}
-		a.finishVoice(v)
+		return nil
 	}
 	if same(v) {
 		v.player.Send(sel("stop"))
@@ -610,7 +628,8 @@ func (a *Audio) play(id uint32, r *driver.AudioRequest) {
 		a.idleLater()
 		return
 	}
-	v := a.voiceFor(engine, s)
+	limit := max(1, cmp.Or(r.MaxPlaybacks, driver.MaxSoundVoices))
+	v := a.voiceFor(engine, s, limit, r.Restricted)
 	if v == nil {
 		a.playbackEnded(id, r.Playback)
 		a.idleLater()
@@ -621,7 +640,7 @@ func (a *Audio) play(id uint32, r *driver.AudioRequest) {
 	}
 	v.generation++
 	gen := v.generation
-	v.sound, v.playback, v.started = id, r.Playback, time.Now()
+	v.sound, v.playback, v.started, v.restricted = id, r.Playback, time.Now(), r.Restricted
 	v.varispeed.Send(sel("setRate:"), r.Rate)
 	v.mixer.Send(sel("setOutputVolume:"), r.Volume)
 	v.mixer.Send(sel("setPan:"), r.Pan)

@@ -76,6 +76,7 @@ func main() { nsgo.Run(Root) }
 - Use [`core.Video.Headers`](https://nsgo.dev/docs/components/) for authenticated video URLs on Android and direct HTTP files on Linux, macOS, iOS and tvOS.
 - Bind changing names and hints with `LabelFunc` and `HintFunc` so controls keep their focus and state. Every core element with `Label` takes its twin, and `core.View` and `core.Text` take `HintFunc`.
 - Tooltips provide their controls' accessibility descriptions before focus, omitting text that repeats the label and preserving an explicit description; their bubbles are hidden from screen readers ([accessibility](https://nsgo.dev/docs/accessibility.md)).
+- Raise an engine's sound count or duration before loading with `audio.SetSoundLimits` ([sound limits](https://nsgo.dev/docs/services.md#sound-limits)).
 - A desktop app that opens its own windows, panels, tray icons and shortcuts runs `nsgo.Run(App)` with `func App(app *core.Scope)` and opens them with `desktop`. A popup card is a panel with `PanelOptions` `Transparent` and `FitContent` whose content draws its own corners and shadow, and a background where `desktop.Transparent` is false. `nsgo.StartHidden()` opens the main window hidden, for a tray app or a launch at login, until `cx.MainWindow().Show()`.
 - Read `desktop.Tray.ClickBounds()` in `TrayOptions.OnClick` or `Menu` to anchor a custom panel with `Window.ShowAt`. Check its availability: macOS reports the status item's rectangle, Windows the shell's when available, and Linux supplies none. `TrayOptions.Title` appears beside an image or drawn view on macOS.
 

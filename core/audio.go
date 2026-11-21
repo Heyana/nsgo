@@ -1,9 +1,10 @@
 package core
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
-	"strconv"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -41,7 +42,7 @@ const (
 	AudioDecode AudioError = driver.AudioDecode
 	// AudioNotSupported: the source is none the platform plays, such as one with neither a URI nor bytes.
 	AudioNotSupported AudioError = driver.AudioNotSupported
-	// AudioQuotaExceeded: past a limit of the engine's, which a sound's load meets: more than 8 MiB encoded or 5 seconds decoded, a 65th sound, or more than 16 MiB decoded among them.
+	// AudioQuotaExceeded: a sound would exceed an encoded size, duration, sound count, or decoded size limit.
 	AudioQuotaExceeded AudioError = driver.AudioQuotaExceeded
 	// AudioUnavailable: the platform plays no audio (Env.CanPlayAudio).
 	AudioUnavailable AudioError = driver.AudioUnavailable
@@ -133,26 +134,63 @@ type AudioPlayerOptions struct {
 // audioIDs numbers sounds and players for the whole process, so a late event of one that closed finds no other.
 var audioIDs atomic.Uint32
 
+// SoundLimits sets an engine's limits for audio.Sound. A zero field takes the default. The load budgets cover every surface of the engine.
+type SoundLimits struct {
+	MaxEncodedBytes int64         // 8 MiB for one encoded sound
+	MaxDuration     time.Duration // 5 seconds for one decoded sound
+	MaxSounds       int           // 64 loaded or loading sources
+	MaxDecodedBytes int64         // 16 MiB of decoded sound across sources
+	MaxPlaybacks    int           // 32 simultaneous playbacks per native output
+}
+
+var defaultSoundLimits = SoundLimits{
+	MaxEncodedBytes: driver.MaxSoundBytes,
+	MaxDuration:     driver.MaxSoundDuration,
+	MaxSounds:       driver.MaxSounds,
+	MaxDecodedBytes: driver.MaxDecodedBytes,
+	MaxPlaybacks:    driver.MaxSoundVoices,
+}
+
+// SetSoundLimits implements audio.SetSoundLimits. Restricted scopes cannot change the engine's limits.
+func (cx *Scope) SetSoundLimits(limits SoundLimits) error {
+	if accessOf(cx.current()) != nil || accessOf(cx) != nil {
+		return audioFail(AudioNotAllowed, "sound limits are set by the Go app")
+	}
+	if limits.MaxEncodedBytes < 0 || limits.MaxDuration < 0 || limits.MaxSounds < 0 || limits.MaxDecodedBytes < 0 || limits.MaxPlaybacks < 0 {
+		return audioFail(AudioNotSupported, "sound limits must be positive or zero for the default")
+	}
+	limits.MaxEncodedBytes = cmp.Or(limits.MaxEncodedBytes, defaultSoundLimits.MaxEncodedBytes)
+	limits.MaxDuration = cmp.Or(limits.MaxDuration, defaultSoundLimits.MaxDuration)
+	limits.MaxSounds = cmp.Or(limits.MaxSounds, defaultSoundLimits.MaxSounds)
+	limits.MaxDecodedBytes = cmp.Or(limits.MaxDecodedBytes, defaultSoundLimits.MaxDecodedBytes)
+	limits.MaxPlaybacks = cmp.Or(limits.MaxPlaybacks, defaultSoundLimits.MaxPlaybacks)
+	cx.rt.audioState().limits = limits
+	return nil
+}
+
 // audioState is an engine's sounds and players.
 type audioState struct {
 	// buffers are the decoded sounds and those decoding, by surface and source: the Sounds of one source share one.
 	buffers map[soundKey]*soundBuffer
-	// decoded is the decoded bytes the loaded buffers hold.
-	decoded int64
+	limits  SoundLimits
+	// Restricted scopes retain their own default count and decoded-byte limits within the engine's total budget.
+	decoded, restrictedDecoded int64
+	restrictedSounds           int
 	// sounds and players are what the platform may report of, by ID.
 	sounds  map[uint32]*soundBuffer
 	players map[uint32]*AudioPlayer
 }
 
 type soundKey struct {
-	tree   *Tree
-	source string
+	tree       *Tree
+	source     string
+	restricted bool
 }
 
 func (rt *runtime) audioState() *audioState {
 	if rt.audio == nil {
 		rt.audio = &audioState{buffers: map[soundKey]*soundBuffer{}, sounds: map[uint32]*soundBuffer{},
-			players: map[uint32]*AudioPlayer{}}
+			players: map[uint32]*AudioPlayer{}, limits: defaultSoundLimits}
 	}
 	return rt.audio
 }
@@ -230,12 +268,13 @@ func audioUnplayable(cx *Scope, src AudioSource) error {
 
 // soundBuffer is one sound the platform decoded, or decodes, which the Sounds over it share.
 type soundBuffer struct {
-	rt       *runtime
-	id       uint32
-	key      soundKey
-	loaded   bool
-	duration time.Duration
-	bytes    int64
+	rt          *runtime
+	id          uint32
+	key         soundKey
+	loaded      bool
+	maxDuration time.Duration
+	duration    time.Duration
+	bytes       int64
 	// open counts the Sounds over it that are not closed.
 	open int
 	// waits are the loads waiting for it to decode.
@@ -271,12 +310,20 @@ func (cx *Scope) LoadSound(src AudioSource, done func(*Sound, error)) {
 		fail(err)
 		return
 	}
-	if len(src.Data) > driver.MaxSoundBytes {
-		fail(audioFail(AudioQuotaExceeded, "the sound's bytes are "+strconv.Itoa(len(src.Data))+": a sound has at most 8 MiB"))
+	t, st := cx.tree(), cx.rt.audioState()
+	// A restricted handler loading with the app's scope, or the app loading with a restricted scope, keeps the default limits.
+	restricted := accessOf(cx.current()) != nil || accessOf(owner) != nil
+	limits := st.limits
+	if restricted {
+		limits.MaxEncodedBytes = min(limits.MaxEncodedBytes, driver.MaxSoundBytes)
+		limits.MaxDuration = min(limits.MaxDuration, driver.MaxSoundDuration)
+		limits.MaxDecodedBytes = min(limits.MaxDecodedBytes, driver.MaxDecodedBytes)
+	}
+	if int64(len(src.Data)) > limits.MaxEncodedBytes {
+		fail(audioFail(AudioQuotaExceeded, fmt.Sprintf("the sound has %d encoded bytes, above its limit of %d", len(src.Data), limits.MaxEncodedBytes)))
 		return
 	}
-	t, st := cx.tree(), cx.rt.audioState()
-	key := soundKey{tree: t, source: "uri:" + src.URI}
+	key := soundKey{tree: t, source: "uri:" + src.URI, restricted: restricted}
 	if len(src.Data) > 0 {
 		sum := sha256.Sum256(src.Data)
 		key.source = "sha256:" + hex.EncodeToString(sum[:])
@@ -290,14 +337,17 @@ func (cx *Scope) LoadSound(src AudioSource, done func(*Sound, error)) {
 		return
 	}
 	if b == nil {
-		if len(st.buffers) >= driver.MaxSounds {
-			fail(audioFail(AudioQuotaExceeded, "an engine holds at most 64 sounds"))
+		if len(st.buffers) >= limits.MaxSounds || restricted && st.restrictedSounds >= driver.MaxSounds {
+			fail(audioFail(AudioQuotaExceeded, "the sound count limit was reached"))
 			return
 		}
-		b = &soundBuffer{rt: cx.rt, id: audioIDs.Add(1), key: key}
+		b = &soundBuffer{rt: cx.rt, id: audioIDs.Add(1), key: key, maxDuration: limits.MaxDuration}
 		st.buffers[key], st.sounds[b.id] = b, b
+		if restricted {
+			st.restrictedSounds++
+		}
 		t.sendAudio(b.id, driver.AudioRequest{Command: driver.AudioLoad, Source: driver.ImageSource{URI: src.URI, Data: src.Data},
-			MaxBytes: driver.MaxSoundBytes, MaxDuration: driver.MaxSoundDuration})
+			MaxBytes: limits.MaxEncodedBytes, MaxDuration: limits.MaxDuration, MaxDecodedBytes: limits.MaxDecodedBytes})
 	}
 	w := &soundWait{owner: owner, done: done}
 	b.waits = append(b.waits, w)
@@ -330,6 +380,10 @@ func (b *soundBuffer) drop() {
 		return
 	}
 	delete(st.sounds, b.id)
+	if b.key.restricted {
+		st.restrictedSounds--
+		st.restrictedDecoded -= b.bytes
+	}
 	if b.loaded {
 		st.decoded -= b.bytes
 	}
@@ -362,10 +416,11 @@ func (b *soundBuffer) event(e *driver.AudioEvent) {
 	switch e.Phase {
 	case driver.AudioLoaded:
 		switch {
-		case e.Cut || e.Duration > driver.MaxSoundDuration:
-			err = audioFail(AudioQuotaExceeded, "the sound is longer than 5 seconds: play it with a player")
-		case st.decoded+e.Bytes > driver.MaxDecodedBytes:
-			err = audioFail(AudioQuotaExceeded, "the sounds would take more than 16 MiB decoded")
+		case e.Cut || e.Duration > b.maxDuration:
+			err = audioFail(AudioQuotaExceeded, fmt.Sprintf("the sound exceeds its duration limit of %s", b.maxDuration))
+		case e.Bytes < 0 || e.Bytes > st.limits.MaxDecodedBytes-st.decoded ||
+			b.key.restricted && e.Bytes > driver.MaxDecodedBytes-st.restrictedDecoded:
+			err = audioFail(AudioQuotaExceeded, "the decoded sound size limit would be exceeded")
 		}
 	case driver.AudioFailure:
 		err = audioFail(AudioError(e.Error), e.Message)
@@ -387,6 +442,9 @@ func (b *soundBuffer) event(e *driver.AudioEvent) {
 	}
 	b.loaded, b.duration, b.bytes, b.waits = true, e.Duration, e.Bytes, nil
 	st.decoded += e.Bytes
+	if b.key.restricted {
+		st.restrictedDecoded += e.Bytes
+	}
 	for _, w := range waits {
 		if w.gone {
 			continue
@@ -401,7 +459,7 @@ func (b *soundBuffer) event(e *driver.AudioEvent) {
 	}
 }
 
-// Play starts a playback of the sound, over those playing, within a frame: it is a command in the batch of the turn that calls it. It returns the playback, to change, stop or watch alone; one of a closed sound, or on a backend that cannot address playbacks, is already ended. A playback that cannot be heard, the device muted, is no error.
+// Play starts a playback of the sound, over those playing, within a frame: it is a command in the batch of the turn that calls it. It returns the playback, to change, stop or watch alone; one of a closed sound, or on a backend that cannot address playbacks, is already ended. A playback that cannot be heard, the device muted or one the backend drops at its limit, is no error.
 func (s *Sound) Play(v SoundVoice) *Playback {
 	p := &Playback{}
 	if s == nil || s.closed {
@@ -419,7 +477,8 @@ func (s *Sound) Play(v SoundVoice) *Playback {
 		}
 		b.playbacks[p.id] = p
 	}
-	b.key.tree.sendAudio(b.id, driver.AudioRequest{Command: driver.AudioPlay, Playback: p.id, Volume: volume, Rate: rate, Pan: audioPan(v.Pan), StartAt: v.StartAt, Loop: v.Loop})
+	b.key.tree.sendAudio(b.id, driver.AudioRequest{Command: driver.AudioPlay, Playback: p.id, Volume: volume, Rate: rate, Pan: audioPan(v.Pan), StartAt: v.StartAt, Loop: v.Loop,
+		MaxPlaybacks: b.rt.audioState().limits.MaxPlaybacks, Restricted: b.key.restricted})
 	return p
 }
 

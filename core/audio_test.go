@@ -285,6 +285,71 @@ func TestAudioHeldToAccess(t *testing.T) {
 	}
 }
 
+func TestRestrictedSoundLimitsKeepTheirOwnQuota(t *testing.T) {
+	var cx *Scope
+	h := newAudioHost(t, func(c *Scope) Node { cx = c; return View{} })
+	limits := SoundLimits{MaxEncodedBytes: 12 << 20, MaxDuration: 25 * time.Second,
+		MaxSounds: 210, MaxDecodedBytes: 24 << 20, MaxPlaybacks: 48}
+	if err := cx.SetSoundLimits(limits); err != nil {
+		t.Fatal(err)
+	}
+	restricted := cx.Child()
+	restricted.ProvideAccess(audioAccess{audio: true})
+	if err := restricted.SetSoundLimits(limits); !errors.Is(err, AudioNotAllowed) {
+		t.Fatalf("setting limits in a restricted scope: %v", err)
+	}
+
+	// Loading the same source in both scopes must apply the restricted scope's duration cap even when the Go app already holds the buffer.
+	src := AudioSource{URI: "asset:long.wav"}
+	var long *Sound
+	cx.LoadSound(src, func(s *Sound, err error) {
+		if err != nil {
+			t.Errorf("loading the Go app's sound: %v", err)
+		}
+		long = s
+	})
+	first := audioItems(h.commit())[0]
+	if got := first.Audio; got.MaxBytes != limits.MaxEncodedBytes || got.MaxDuration != limits.MaxDuration || got.MaxDecodedBytes != limits.MaxDecodedBytes {
+		t.Fatalf("Go sound load = %+v", got)
+	}
+	reportAudio(h, first.Count, driver.AudioEvent{Phase: driver.AudioLoaded, Duration: 20 * time.Second, Bytes: 20 << 20})
+	if long == nil {
+		t.Fatal("the Go app's longer sound did not load")
+	}
+	long.Play(SoundVoice{})
+	if got := audioItems(h.commit())[0].Audio; got.MaxPlaybacks != limits.MaxPlaybacks || got.Restricted {
+		t.Fatalf("Go sound play = %+v", got)
+	}
+
+	var err error
+	restricted.LoadSound(src, func(_ *Sound, e error) { err = e })
+	second := audioItems(h.commit())[0]
+	if got := second.Audio; second.Count == first.Count || got.MaxBytes != driver.MaxSoundBytes ||
+		got.MaxDuration != driver.MaxSoundDuration || got.MaxDecodedBytes != driver.MaxDecodedBytes {
+		t.Fatalf("restricted sound load = %+v", second)
+	}
+	reportAudio(h, second.Count, driver.AudioEvent{Phase: driver.AudioLoaded, Duration: 20 * time.Second})
+	if !errors.Is(err, AudioQuotaExceeded) {
+		t.Fatalf("loading a long sound in a restricted scope: %v", err)
+	}
+	h.commit()
+
+	// Failed loads return their slot. Loading 64 fresh sources still leaves room for Go sounds, even while the restricted quota is full.
+	for i := range driver.MaxSounds {
+		restricted.LoadSound(AudioSource{URI: fmt.Sprintf("asset:%d.wav", i)}, nil)
+	}
+	err = nil
+	restricted.LoadSound(AudioSource{URI: "asset:overflow.wav"}, func(_ *Sound, e error) { err = e })
+	h.drain()
+	if count := len(audioItems(h.commit())); count != driver.MaxSounds || !errors.Is(err, AudioQuotaExceeded) {
+		t.Fatalf("restricted loads = %d, error %v", count, err)
+	}
+	cx.LoadSound(AudioSource{URI: "asset:go-only.wav"}, nil)
+	if count := len(audioItems(h.commit())); count != 1 {
+		t.Fatalf("Go sound loads = %d, want 1", count)
+	}
+}
+
 func TestSoundLoadGoesWithItsOwner(t *testing.T) {
 	var cx *Scope
 	h := newAudioHost(t, func(c *Scope) Node { cx = c; return View{} })

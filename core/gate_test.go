@@ -107,6 +107,7 @@ var exempt = map[string][]string{
 		"OpenInstallSettings", "Store", "DataDir", "CacheDir", "LogsDir", "CrashReports", "OpenFile", "Share", "RevealFile", "TrashFile", "KeepAwake",
 		"SetTaskProgress", "SetDockMenu", "AddRecentFile", "ClearRecentFiles", "LookUp", "QuickLook", "RequestReview"},
 	"app-volume capacity, exposed to Go and gated by the project's declaration on Apple": {"DiskSpace"},
+	"engine configuration reserved for unrestricted Go scopes":                           {"SetSoundLimits"},
 	"stopping what the code's own requests started, which asked the gate":                {"StopSpeaking"},
 	"bundled resources provided by the app to trusted Go code":                           {"ReadAsset"},
 }

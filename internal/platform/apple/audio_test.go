@@ -253,7 +253,7 @@ func TestASoundReusesMixerAcrossFormats(t *testing.T) {
 
 		now := time.Now()
 		for i := range driver.MaxSoundVoices {
-			v := ta.audio.voiceFor(engine, ta.audio.sounds[1])
+			v := ta.audio.voiceFor(engine, ta.audio.sounds[1], driver.MaxSoundVoices, false)
 			if v == nil {
 				t.Error("a mono voice could not be connected")
 				return
@@ -263,7 +263,7 @@ func TestASoundReusesMixerAcrossFormats(t *testing.T) {
 		first := ta.audio.voices[0]
 		mixer := first.mixer
 		mainBus := first.mainBus
-		reused := ta.audio.voiceFor(engine, ta.audio.sounds[2])
+		reused := ta.audio.voiceFor(engine, ta.audio.sounds[2], driver.MaxSoundVoices, false)
 		if reused != first || reused.mixer != mixer {
 			t.Error("taking the oldest voice for a stereo sound replaced its mixer")
 			return
@@ -477,6 +477,48 @@ func TestALoopingSoundRendersAMinuteContinuously(t *testing.T) {
 	})
 }
 
+func TestRaisedSoundPlaybackLimitKeepsTheRestrictedCap(t *testing.T) {
+	ta := newTestAudio(t)
+	const limit = 48
+	ta.send(1, driver.AudioRequest{Command: driver.AudioLoad, Source: driver.ImageSource{Data: wav(5 * time.Second)},
+		MaxBytes: driver.MaxSoundBytes, MaxDuration: driver.MaxSoundDuration})
+	ta.wait(1, driver.AudioLoaded, 5*time.Second, nil)
+	var available bool
+	onMain(func() {
+		available = ta.audio.startEngine() != 0
+		if !available {
+			return
+		}
+		play := driver.AudioRequest{Command: driver.AudioPlay, Volume: 0.01, Rate: 1, MaxPlaybacks: limit}
+		for range 12 {
+			ta.audio.Handle(1, &play)
+		}
+		play.Restricted = true
+		for range driver.MaxSoundVoices + 8 {
+			ta.audio.Handle(1, &play)
+		}
+		restricted := 0
+		for _, voice := range ta.audio.voices {
+			if voice.restricted {
+				restricted++
+			}
+		}
+		if n := len(ta.audio.voices); n != 12+driver.MaxSoundVoices || restricted != driver.MaxSoundVoices {
+			t.Errorf("voices = %d with %d restricted, want %d with %d restricted", n, restricted, 12+driver.MaxSoundVoices, driver.MaxSoundVoices)
+		}
+		play.Restricted = false
+		for range 12 {
+			ta.audio.Handle(1, &play)
+		}
+		if n := len(ta.audio.voices); n != limit {
+			t.Errorf("voices = %d, want %d", n, limit)
+		}
+	})
+	if !available {
+		t.Skip("AVAudioEngine cannot open the test host's audio output")
+	}
+}
+
 func TestASoundFailsAsTheDesignSays(t *testing.T) {
 	ta := newTestAudio(t)
 	path := filepath.Join(t.TempDir(), "click.wav")
@@ -507,6 +549,12 @@ func TestASoundFailsAsTheDesignSays(t *testing.T) {
 		if e := ta.wait(id, driver.AudioFailure, 5*time.Second, nil); e.Error != c.code {
 			t.Errorf("sound %d failed with %q (%s), want %q", id, e.Error, e.Message, c.code)
 		}
+	}
+	decodedLimit := limits(driver.ImageSource{Data: wav(50 * time.Millisecond)})
+	decodedLimit.MaxDecodedBytes = 100
+	ta.send(8, decodedLimit)
+	if e := ta.wait(8, driver.AudioFailure, 5*time.Second, nil); e.Error != driver.AudioQuotaExceeded {
+		t.Errorf("decoded sound size failed with %q (%s)", e.Error, e.Message)
 	}
 	// A sound unloaded while it decodes is never reported.
 	ta.send(7, limits(driver.ImageSource{Data: wav(time.Second)}))
