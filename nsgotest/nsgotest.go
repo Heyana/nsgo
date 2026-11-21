@@ -319,6 +319,8 @@ type App struct {
 	Shares []driver.ShareRequest
 	// LookUps are the dictionary panels the app showed (desktop.LookUp), oldest first, where the environment sets CanLookUp.
 	LookUps []LookUp
+	// ReviewRequests counts the in-app store rating prompts the app asked for (core.Scope.RequestReview), where the environment sets CanRequestReview.
+	ReviewRequests int
 	// Installs are the packages the app handed Android's installer,
 	// oldest first; each installer starts. InstallAllowed is what
 	// CanInstallPackages answers, and InstallSettings counts the times the

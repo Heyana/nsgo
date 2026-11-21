@@ -1389,6 +1389,9 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemDock:
 			// Windows has no Dock policy.
 			continue
+		case driver.ItemRequestReview:
+			// Windows has no in-app store review prompt.
+			continue
 		case driver.ItemAppearance:
 			w.setAppearance(it.Appearance)
 			continue

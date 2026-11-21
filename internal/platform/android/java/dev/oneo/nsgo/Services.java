@@ -5,9 +5,11 @@ import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipDescription;
 import android.content.ClipboardManager;
+import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -29,6 +31,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
@@ -718,6 +722,85 @@ final class Services {
             return o >= ExifInterface.ORIENTATION_TRANSPOSE && o <= ExifInterface.ORIENTATION_ROTATE_270;
         } catch (IOException | RuntimeException e) {
             return false;
+        }
+    }
+
+    /** The Play Review library is supplied by the embedding Android app. */
+    private static final class PlayReview {
+        static final PlayReview SDK = load();
+
+        final Method create, request, addListener, successful, result, launch;
+        final Class<?> listener;
+
+        private PlayReview() throws ReflectiveOperationException {
+            Class<?> factory = Class.forName("com.google.android.play.core.review.ReviewManagerFactory");
+            Class<?> manager = Class.forName("com.google.android.play.core.review.ReviewManager");
+            Class<?> info = Class.forName("com.google.android.play.core.review.ReviewInfo");
+            Class<?> task = Class.forName("com.google.android.gms.tasks.Task");
+            listener = Class.forName("com.google.android.gms.tasks.OnCompleteListener");
+            create = factory.getMethod("create", Context.class);
+            request = manager.getMethod("requestReviewFlow");
+            addListener = task.getMethod("addOnCompleteListener", listener);
+            successful = task.getMethod("isSuccessful");
+            result = task.getMethod("getResult");
+            launch = manager.getMethod("launchReviewFlow", Activity.class, info);
+        }
+
+        private static PlayReview load() {
+            try {
+                return new PlayReview();
+            } catch (ReflectiveOperationException | LinkageError e) {
+                return null;
+            }
+        }
+    }
+
+    /** Whether the host bundled the SDK and can reach an enabled Play Store. */
+    static boolean canRequestReview(Activity activity) {
+        if (activity == null || activity.isFinishing() || activity.isDestroyed() || PlayReview.SDK == null) {
+            return false;
+        }
+        PackageManager packages = activity.getPackageManager();
+        ComponentName wrapper = new ComponentName(activity, "com.google.android.play.core.common.PlayCoreDialogWrapperActivity");
+        try {
+            return packages.getApplicationInfo("com.android.vending", 0).enabled
+                    && packages.getActivityInfo(wrapper, 0).enabled;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
+    /** Requests the Play Review card. The SDK delivers completion on the main thread. */
+    static void requestReview(Activity activity) {
+        if (!canRequestReview(activity)) return;
+        PlayReview sdk = PlayReview.SDK;
+        try {
+            Object manager = sdk.create.invoke(null, activity);
+            Object task = sdk.request.invoke(manager);
+            Object listener = Proxy.newProxyInstance(sdk.listener.getClassLoader(), new Class<?>[] {sdk.listener},
+                    (proxy, method, args) -> {
+                        switch (method.getName()) {
+                            case "hashCode": return System.identityHashCode(proxy);
+                            case "equals": return proxy == args[0];
+                            case "toString": return "NsgoReviewListener";
+                            case "onComplete":
+                                launchReview(activity, sdk, manager, args[0]);
+                                return null;
+                            default: return null;
+                        }
+                    });
+            sdk.addListener.invoke(task, listener);
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+        }
+    }
+
+    private static void launchReview(Activity activity, PlayReview sdk, Object manager, Object task) {
+        if (activity.isFinishing() || activity.isDestroyed() || !activity.hasWindowFocus()) return;
+        try {
+            if (Boolean.TRUE.equals(sdk.successful.invoke(task))) {
+                sdk.launch.invoke(manager, activity, sdk.result.invoke(task));
+            }
+        } catch (ReflectiveOperationException | LinkageError ignored) {
         }
     }
 }

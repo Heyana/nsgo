@@ -380,6 +380,8 @@ const (
 	ItemReleaseImage
 	// ItemReleaseOffscreen releases the cached offscreen surface for OffscreenID.
 	ItemReleaseOffscreen
+	// ItemRequestReview asks the platform's store to show an in-app rating prompt. Sent only where the environment says CanRequestReview.
+	ItemRequestReview
 )
 
 // AppleSignInRequest is an ItemSignInWithApple's request, as core.AppleSignInOptions: the scopes it asks for and Nonce, which the core hashes as the request carries it, "" for none.

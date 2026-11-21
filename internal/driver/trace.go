@@ -123,6 +123,7 @@ var itemNames = map[ItemKind]string{
 	ItemPurchase: "purchase", ItemWebCookies: "web-cookies", ItemLookUp: "look-up", ItemQuickLook: "quick-look",
 	ItemKeepImage: "keep-image", ItemReleaseImage: "release-image",
 	ItemReleaseOffscreen: "release-offscreen",
+	ItemRequestReview:    "request-review",
 }
 
 // TraceLine is the item as traces print it: its kind, its view and what

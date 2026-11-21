@@ -1160,6 +1160,7 @@ func (s *surface) environment() driver.Environment {
 		HasWebView:       true,
 		SignInWithApple:  apple.AppleSignInAvailable(),
 		Purchases:        apple.PurchasesAvailable(),
+		CanRequestReview: apple.ReviewAvailable(),
 		RTL:              rtl,
 		PixelRatio:       s.backingScale(),
 		Locale:           locale,
@@ -2058,6 +2059,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemPurchase:
 			apple.HandlePurchase(it, s.engine.Dispatch)
+			continue
+		case driver.ItemRequestReview:
+			apple.RequestReview(0)
 			continue
 		case driver.ItemKeepAwake:
 			if it.Awake != nil && !s.closed {

@@ -874,6 +874,8 @@ func (a *App) apply(b *driver.MountBatch) {
 			a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Finished: true})
 		case driver.ItemLookUp:
 			a.LookUps = append(a.LookUps, LookUp{Text: it.Value, At: it.Frame})
+		case driver.ItemRequestReview:
+			a.ReviewRequests++
 		case driver.ItemShare:
 			a.Shares = append(a.Shares, *it.Share)
 			a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Finished: true})

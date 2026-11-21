@@ -313,3 +313,26 @@ func TestDirectionSaysTheWordsInTheAppsLanguage(t *testing.T) {
 		}
 	}
 }
+
+func TestReadEnvironmentSetsCanRequestReview(t *testing.T) {
+	for _, more := range []byte{0, 4} {
+		var w writer
+		for range 7 {
+			w.float(1)
+		}
+		w.byte(0) // flags
+		w.byte(more)
+		w.byte(byte(driver.IdiomPhone))
+		w.str("en-US")
+		w.str("Pixel")
+		w.str("Google Pixel 9")
+		w.float(56) // HeaderHeight
+		w.float(96) // LargeHeaderHeight
+		w.u32(35)   // API level
+
+		env := readEnvironment(&reader{w.buf})
+		if want := more != 0; env.CanRequestReview != want {
+			t.Errorf("readEnvironment with capability byte %d: CanRequestReview = %v, want %v", more, env.CanRequestReview, want)
+		}
+	}
+}

@@ -1021,6 +1021,9 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemShare:
 			w.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoShareSheet})
 			continue
+		case driver.ItemRequestReview:
+			// Linux has no in-app store review prompt.
+			continue
 		case driver.ItemSaveFile:
 			w.saveFile(*it.Save, it.Count)
 			continue

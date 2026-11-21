@@ -1509,9 +1509,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 				s.doc.Set("title", it.Value)
 			}
 			continue
-		case driver.ItemStatusBar, driver.ItemBackUnhandled, driver.ItemBackPreview, driver.ItemMenu:
-			// A page has no status bar nor menu bar, and the browser's
-			// back is its own.
+		case driver.ItemStatusBar, driver.ItemBackUnhandled, driver.ItemBackPreview, driver.ItemMenu, driver.ItemRequestReview:
+			// A page has no status bar, menu bar or store review prompt, and
+			// the browser's back is its own.
 			continue
 		case driver.ItemHistory:
 			s.setHistory(int(it.Count))

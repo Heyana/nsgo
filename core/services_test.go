@@ -247,6 +247,71 @@ func TestQuickLook(t *testing.T) {
 	}
 }
 
+func TestRequestReview(t *testing.T) {
+	var cx *Scope
+	var can []bool
+	h := newHost(t, Size{Width: 100, Height: 100}, func(c *Scope) Node {
+		cx = c
+		cx.Effect(func() { can = append(can, cx.Env().CanRequestReview()) })
+		return View{}
+	})
+	h.commit()
+	if cx.Env().CanRequestReview() {
+		t.Fatal("default environment reports CanRequestReview true")
+	}
+	cx.RequestReview()
+	if it := command(h.commit(), driver.ItemRequestReview); it != nil {
+		t.Fatalf("unsupported environment sent %+v", it)
+	}
+
+	for _, os := range []OS{OSMacOS, OSIOS, OSAndroid} {
+		h.tree.SetEnvironment(Environment{OS: os, CanRequestReview: true})
+		h.commit()
+		if !cx.Env().CanRequestReview() {
+			t.Fatalf("%s: CanRequestReview = false, want true", os)
+		}
+		cx.RequestReview()
+		it := command(h.commit(), driver.ItemRequestReview)
+		if it == nil {
+			t.Fatalf("%s: RequestReview did not send ItemRequestReview", os)
+		}
+		if got := it.Kind.String(); got != "ItemRequestReview" {
+			t.Fatalf("ItemRequestReview.String() = %q", got)
+		}
+		if !strings.Contains(it.TraceLine(), "request-review") {
+			t.Fatalf("TraceLine = %q, want request-review", it.TraceLine())
+		}
+	}
+
+	for _, os := range []OS{OSWindows, OSLinux, OSWeb} {
+		h.tree.SetEnvironment(Environment{OS: os})
+		h.commit()
+		if cx.Env().CanRequestReview() {
+			t.Fatalf("%s: CanRequestReview = true, want false", os)
+		}
+		cx.RequestReview()
+		if it := command(h.commit(), driver.ItemRequestReview); it != nil {
+			t.Fatalf("%s: unsupported target sent %+v", os, it)
+		}
+	}
+
+	if !slices.Equal(can, []bool{false, true, false}) {
+		t.Fatalf("CanRequestReview signal transitions = %v, want [false true false]", can)
+	}
+
+	// Confined scope cannot request a review without user activation.
+	h.tree.SetEnvironment(Environment{OS: OSIOS, CanRequestReview: true})
+	h.commit()
+	confined := cx.Child()
+	confined.Run(func() {
+		confined.Confine()
+		confined.RequestReview()
+	})
+	if it := command(h.commit(), driver.ItemRequestReview); it != nil {
+		t.Fatalf("confined scope sent %+v without user activation", it)
+	}
+}
+
 func TestPickImages(t *testing.T) {
 	var cx *Scope
 	h := newHost(t, Size{Width: 100, Height: 100}, func(c *Scope) Node { cx = c; return View{} })

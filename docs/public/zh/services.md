@@ -443,6 +443,22 @@ cx.BiometricAvailability(func(kind core.BiometricKind) {
 
 `nsgotest.App.Orientation` 记录最新请求的方向集合，零表示使用应用原有的方向策略。
 
+## 应用内评分
+
+在 macOS 和 iOS 上，`cx.RequestReview()` 向 App Store 请求显示应用内评分弹窗。在嵌入式 Android 应用中，它向 Google Play 发起请求。`cx.Env().CanRequestReview()` 表示此服务是否可用。商店自行决定是否显示以及何时显示，且不返回结果。请用开发构建验证 Apple 的评分弹窗，TestFlight 构建会隐藏它。
+
+在 Android 上，将 `com.google.android.play:review:2.0.2` 加入嵌入 NSGo 的 Gradle 宿主，并在宿主清单的 `<queries>` 下添加 `<package android:name="com.android.vending" />`，使应用能够查询 Play 商店。如果宿主会压缩代码，请加入以下规则保留 NSGo 按名称加载的 Play Review 和 Tasks API。通过[内部应用分享](https://developer.android.com/guide/playcore/in-app-review/test)验证。NSGo 构建的独立 Android 安装包会报告此服务不可用。
+
+```proguard
+-keep class com.google.android.play.core.review.ReviewManagerFactory { *; }
+-keep interface com.google.android.play.core.review.ReviewManager { *; }
+-keep class com.google.android.play.core.review.ReviewInfo { *; }
+-keep class com.google.android.gms.tasks.Task { *; }
+-keep interface com.google.android.gms.tasks.OnCompleteListener { *; }
+```
+
+测试时，在 `nsgotest.Environment` 中设置 `CanRequestReview`，并检查 `nsgotest.App.ReviewRequests`。
+
 ## Android 上的悬浮窗
 
 `mobile.OpenOverlay` 在 Android 上把应用的一个视图显示在其他应用之上：它是一棵独立的树，与应用共享信号，显示期间由前台服务让应用保持运行。应用要在 `android.permissions` 中列出 `SYSTEM_ALERT_WINDOW`，并由用户在系统设置中授权，`mobile.RequestOverlayPermission` 会打开这个设置；没有授权时悬浮窗立即结束，`OnEnd` 会得知原因。它接收触摸，但按键和窗口以外的触摸仍交给前台应用，除非设为 `Focusable` 或 `Passive`；在内容里用 `desktop.SetWindowFrame` 移动它。其他平台不会打开悬浮窗。

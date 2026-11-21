@@ -363,6 +363,21 @@ func (cx *Scope) QuickLook(paths []string, index int) bool {
 	return true
 }
 
+// RequestReview asks the platform's store for an in-app rating where
+// Env.CanRequestReview is true. The store decides when to show the prompt
+// and reports no result. Under a confined owner, Scope.Confine applies.
+func (cx *Scope) RequestReview() {
+	t := cx.tree()
+	if t == nil || !Untracked(cx, cx.Env().CanRequestReview) {
+		return
+	}
+	if !t.confinedMay(cx.current(), refusedPresent, askedToPresent) {
+		return
+	}
+	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemRequestReview})
+	t.changed = true
+}
+
 // PickOptions say how PickImages picks and prepares images.
 type PickOptions struct {
 	// Multiple lets the user pick several images, at most Limit (0: up

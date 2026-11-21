@@ -811,6 +811,7 @@ func (s *surface) environment() driver.Environment {
 		HasWebView:       idiom != driver.IdiomTV,
 		SignInWithApple:  apple.AppleSignInAvailable(),
 		Purchases:        apple.PurchasesAvailable(),
+		CanRequestReview: !onTV() && apple.ReviewAvailable(),
 		VerticalBarEdge:  verticalBarEdge(traits),
 		Lifecycle:        appLifecycle(),
 		AppClip:          appClip(),
@@ -904,6 +905,17 @@ func (s *surface) observe() {
 
 // uiWindow is the window the surface shows in, 0 while it is in none.
 func (s *surface) uiWindow() objc.ID { return s.native.Send(sel("window")) }
+
+// activeWindowScene is the scene in which this surface can show a review prompt.
+func (s *surface) activeWindowScene() objc.ID {
+	const foregroundActive = 0 // UISceneActivationStateForegroundActive
+	if window := s.uiWindow(); window != 0 && objc.Send[bool](window, sel("respondsToSelector:"), sel("windowScene")) {
+		if scene := window.Send(sel("windowScene")); scene != 0 && objc.Send[int](scene, sel("activationState")) == foregroundActive {
+			return scene
+		}
+	}
+	return 0
+}
 
 // viewController is the view controller the surface's view belongs to:
 // a standalone app's own, or the host's nearest above an embedded view.
@@ -1198,6 +1210,11 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemPurchase:
 			apple.HandlePurchase(it, s.engine.Dispatch)
+			continue
+		case driver.ItemRequestReview:
+			if !onTV() {
+				apple.RequestReview(s.activeWindowScene())
+			}
 			continue
 		case driver.ItemCheckForUpdates:
 			s.checkForUpdates(it.Count)
