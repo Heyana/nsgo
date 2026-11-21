@@ -92,7 +92,7 @@ func TypeFromBinaryOp(op Op, lhst, rhst Type, lhsConst, rhsConst constant.Value)
 		if lhst.Main == Array || rhst.Main == Array {
 			return Type{}, false
 		}
-		if lhst.Main == Texture || rhst.Main == Texture {
+		if lhst.IsTexture() || rhst.IsTexture() || lhst.IsSampler() || rhst.IsSampler() {
 			return Type{}, false
 		}
 		if (lhsConst != nil && lhsConst.Kind() == constant.Bool) || (rhsConst != nil && rhsConst.Kind() == constant.Bool) {
@@ -191,7 +191,7 @@ func TypeFromBinaryOp(op Op, lhst, rhst Type, lhsConst, rhsConst constant.Value)
 		if lhst.Main == Array || rhst.Main == Array {
 			return Type{}, false
 		}
-		if lhst.Main == Texture || rhst.Main == Texture {
+		if lhst.IsTexture() || rhst.IsTexture() || lhst.IsSampler() || rhst.IsSampler() {
 			return Type{}, false
 		}
 		if lhst.Equal(&rhst) {

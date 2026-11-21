@@ -231,6 +231,43 @@ const (
 	GPUDim2DArray
 )
 
+// Canonical cubemap face layer indices (ArrayLayer 0..5), matching WebGPU, Metal, Direct3D, and OpenGL.
+const (
+	GPUCubeFacePosX uint32 = 0
+	GPUCubeFaceNegX uint32 = 1
+	GPUCubeFacePosY uint32 = 2
+	GPUCubeFaceNegY uint32 = 3
+	GPUCubeFacePosZ uint32 = 4
+	GPUCubeFaceNegZ uint32 = 5
+)
+
+// GPUMipLevels returns the number of mipmap levels in a full chain from width x height down to 1x1.
+func GPUMipLevels(width, height uint32) uint32 {
+	m := max(width, height)
+	if m == 0 {
+		return 0
+	}
+	var levels uint32 = 1
+	for m > 1 {
+		m >>= 1
+		levels++
+	}
+	return levels
+}
+
+// GPUMipSize returns the dimensions of mipLevel for a base texture of width x height (clamped to a minimum of 1x1).
+func GPUMipSize(width, height, mipLevel uint32) (uint32, uint32) {
+	w := width >> mipLevel
+	h := height >> mipLevel
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	return w, h
+}
+
 // GPUTextureUsage is a bitmask of permitted uses for a GPU texture.
 type GPUTextureUsage uint32
 
@@ -564,7 +601,8 @@ type GPULimits struct {
 	MaxComputeInvocationsPerGroup uint32
 	MaxComputeWorkgroupsPerDim    uint32
 	// MaxColorAttachments is the number of color targets a pipeline and render pass may use (multiple render targets). 0 means 1.
-	MaxColorAttachments uint32
+	MaxColorAttachments   uint32
+	MaxTextureArrayLayers uint32
 }
 
 // DefaultGPULimits returns conservative portable GPU limits.
@@ -584,6 +622,7 @@ func DefaultGPULimits() GPULimits {
 		MaxComputeInvocationsPerGroup: 256,
 		MaxComputeWorkgroupsPerDim:    65535,
 		MaxColorAttachments:           1,
+		MaxTextureArrayLayers:         256,
 	}
 }
 
@@ -605,6 +644,8 @@ type GPUFeatures struct {
 	ExtendedFormats bool
 	// StencilTest reports support for pipeline stencil testing (GPUDepthStencilState stencil faces and masks).
 	StencilTest bool
+	// MipmapGeneration reports support for GPUOpGenerateMipmaps (box-filtered mip chains generated on the device).
+	MipmapGeneration bool
 }
 
 // DefaultSoftwareGPUFeatures returns the capabilities supported by the pure-Go headless software GPU device.
@@ -621,6 +662,7 @@ func DefaultSoftwareGPUFeatures() GPUFeatures {
 		TextureCompressionASTC: true,
 		ExtendedFormats:        true,
 		StencilTest:            true,
+		MipmapGeneration:       true,
 	}
 }
 
@@ -726,6 +768,8 @@ type GPUSamplerDesc struct {
 	AddressU      GPUAddressMode
 	AddressV      GPUAddressMode
 	AddressW      GPUAddressMode
+	MinLOD        float32
+	MaxLOD        float32
 	Compare       GPUCompareFunc
 	MaxAnisotropy uint16
 }
@@ -942,6 +986,7 @@ const (
 	GPUOpCreateComputePipeline
 	GPUOpDestroyComputePipeline
 	GPUOpReadBuffer
+	GPUOpGenerateMipmaps
 )
 
 // GPUResourceOp is one resource creation, update, destruction, or readback op.

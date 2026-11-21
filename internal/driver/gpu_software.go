@@ -40,6 +40,45 @@ type softTexture struct {
 	color   []float32 // w * h * samples * 4 linear RGBA float32
 	depth   []float32 // w * h * samples when Format.IsDepth()
 	stencil []uint8   // w * h * samples when Format.HasStencil()
+	// sub holds one view per (array layer, mip level), indexed layer*mips + mip. Each view is a single-layer, single-mip softTexture whose desc carries the mip size; sub[0] shares its buffers with the fields above, so code that only knows level 0 keeps working.
+	layers, mips uint32
+	sub          []*softTexture
+}
+
+// level returns the view of array layer (or cube face) layer at mip level mip, or nil when out of range.
+func (t *softTexture) level(layer, mip uint32) *softTexture {
+	if t == nil {
+		return nil
+	}
+	if len(t.sub) == 0 {
+		if layer == 0 && mip == 0 {
+			return t
+		}
+		return nil
+	}
+	if layer >= t.layers || mip >= t.mips {
+		return nil
+	}
+	return t.sub[layer*t.mips+mip]
+}
+
+func newSoftTextureLevel(desc GPUTextureDesc, w, h, samples int) *softTexture {
+	desc.Width, desc.Height, desc.Layers, desc.MipLevels = uint32(w), uint32(h), 1, 1
+	st := &softTexture{desc: desc, samples: samples}
+	nSamp := w * h * samples
+	if desc.Format.IsDepth() {
+		st.depth = make([]float32, nSamp)
+		for i := range st.depth {
+			st.depth[i] = 1.0
+		}
+	}
+	if desc.Format.HasStencil() {
+		st.stencil = make([]uint8, nSamp)
+	}
+	if !desc.Format.IsDepthStencil() {
+		st.color = make([]float32, nSamp*4)
+	}
+	return st
 }
 
 type softSampler struct {
@@ -490,26 +529,39 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 		if samples != 1 && samples != 4 {
 			return nil, fmt.Errorf("gpu: unsupported sample count %d", samples)
 		}
-		st := &softTexture{desc: *op.Texture, samples: samples}
-		nSamp := w * h * samples
-		if op.Texture.Format.IsDepth() {
-			st.depth = make([]float32, nSamp)
-			for i := range st.depth {
-				st.depth[i] = 1.0
+		desc := *op.Texture
+		if desc.Layers == 0 {
+			desc.Layers = 1
+			if desc.Dimension == GPUDimCube {
+				desc.Layers = 6
 			}
 		}
-		if op.Texture.Format.HasStencil() {
-			st.stencil = make([]uint8, nSamp)
+		desc.MipLevels = max(desc.MipLevels, 1)
+		if desc.Dimension == GPUDimCube && (w != h || desc.Layers != 6) {
+			return nil, fmt.Errorf("gpu: cubemap texture must be square with 6 layers, got %dx%d with %d layers", w, h, desc.Layers)
 		}
-		if !op.Texture.Format.IsDepthStencil() {
-			st.color = make([]float32, nSamp*4)
+		if maxMips := GPUMipLevels(uint32(w), uint32(h)); desc.MipLevels > maxMips {
+			return nil, fmt.Errorf("gpu: texture mip levels %d exceed maximum %d for %dx%d", desc.MipLevels, maxMips, w, h)
 		}
+		st := &softTexture{desc: desc, samples: samples, layers: desc.Layers, mips: desc.MipLevels}
+		st.sub = make([]*softTexture, desc.Layers*desc.MipLevels)
+		for layer := uint32(0); layer < desc.Layers; layer++ {
+			for mip := uint32(0); mip < desc.MipLevels; mip++ {
+				mw, mh := GPUMipSize(uint32(w), uint32(h), mip)
+				st.sub[layer*desc.MipLevels+mip] = newSoftTextureLevel(desc, int(mw), int(mh), samples)
+			}
+		}
+		st.color, st.depth, st.stencil = st.sub[0].color, st.sub[0].depth, st.sub[0].stencil
 		d.textures[op.ID] = st
 		d.recordResourceLabel("texture", op.ID, op.Texture.Label)
 	case GPUOpWriteTexture:
-		tex, ok := d.textures[op.TextureDst.Texture]
+		base, ok := d.textures[op.TextureDst.Texture]
 		if !ok {
 			return nil, fmt.Errorf("gpu: write to unknown texture %d", op.TextureDst.Texture)
+		}
+		tex := base.level(op.TextureDst.ArrayLayer, op.TextureDst.MipLevel)
+		if tex == nil {
+			return nil, fmt.Errorf("gpu: texture %d write subresource out of bounds (layer %d, mip %d)", op.TextureDst.Texture, op.TextureDst.ArrayLayer, op.TextureDst.MipLevel)
 		}
 		if tex.color == nil {
 			return nil, nil
@@ -537,17 +589,23 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 		if bpp == 0 {
 			bpp = 4
 		}
+		ox, oy := int(op.TextureDst.OriginX), int(op.TextureDst.OriginY)
 		srcStride := int(op.DataLayout.BytesPerRow)
 		if srcStride == 0 {
-			srcStride = w * bpp
+			srcStride = (w - ox) * bpp
 		}
-		ox, oy := int(op.TextureDst.OriginX), int(op.TextureDst.OriginY)
-		for y := 0; y+oy < h; y++ {
+		// As on the native backends, the written width is BytesPerRow / bytes-per-texel (clamped to the edge) and RowsPerImage bounds the rows.
+		copyW := min(srcStride/bpp, w-ox)
+		copyH := h - oy
+		if op.DataLayout.RowsPerImage > 0 {
+			copyH = min(copyH, int(op.DataLayout.RowsPerImage))
+		}
+		for y := 0; y < copyH; y++ {
 			rowStart := y * srcStride
 			if rowStart >= len(src) {
 				break
 			}
-			for x := 0; x+ox < w; x++ {
+			for x := 0; x < copyW; x++ {
 				si := rowStart + x*bpp
 				if si+bpp > len(src) {
 					break
@@ -565,6 +623,19 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 		}
 	case GPUOpDestroyTexture:
 		delete(d.textures, op.ID)
+	case GPUOpGenerateMipmaps:
+		tex, ok := d.textures[op.ID]
+		if !ok {
+			return nil, fmt.Errorf("gpu: generate mipmaps on unknown texture %d", op.ID)
+		}
+		if tex.color == nil || max(tex.samples, 1) > 1 {
+			return nil, nil
+		}
+		for layer := uint32(0); layer < tex.layers; layer++ {
+			for mip := uint32(1); mip < tex.mips; mip++ {
+				downsampleSoftLevel(tex.level(layer, mip-1), tex.level(layer, mip))
+			}
+		}
 	case GPUOpCreateSampler:
 		if op.Sampler == nil {
 			return nil, fmt.Errorf("gpu: missing sampler descriptor")
@@ -695,9 +766,13 @@ func (d *GPUSoftwareDevice) execOp(op GPUResourceOp) (*GPUSoftReadback, error) {
 			}
 			return &GPUSoftReadback{ID: op.ReadbackID, Pixels: out}, nil
 		}
-		tex, ok := d.textures[op.ID]
+		base, ok := d.textures[op.ID]
 		if !ok {
 			return &GPUSoftReadback{ID: op.ReadbackID, Err: fmt.Sprintf("unknown texture %d", op.ID)}, nil
+		}
+		tex := base.level(op.ReadbackRegion.ArrayLayer, op.ReadbackRegion.MipLevel)
+		if tex == nil {
+			return &GPUSoftReadback{ID: op.ReadbackID, Err: "readback subresource out of bounds"}, nil
 		}
 		if tex.color == nil && tex.depth == nil {
 			return &GPUSoftReadback{ID: op.ReadbackID, Err: "cannot read back a stencil-only texture"}, nil
@@ -795,8 +870,9 @@ func (d *GPUSoftwareDevice) execCopy(cp GPUCopyOp) error {
 		copy(t.data[cp.DstOffset:cp.DstOffset+cp.Size], s.data[cp.SrcOffset:cp.SrcOffset+cp.Size])
 	case GPUCopyBufferToTexture:
 		s, ok1 := d.buffers[cp.SrcID]
-		t, ok2 := d.textures[cp.DstTex.Texture]
-		if !ok1 || !ok2 || t.color == nil {
+		tb, ok2 := d.textures[cp.DstTex.Texture]
+		t := tb.level(cp.DstTex.ArrayLayer, cp.DstTex.MipLevel)
+		if !ok1 || !ok2 || t == nil || t.color == nil {
 			return fmt.Errorf("gpu: CopyBufferToTexture references unknown resource")
 		}
 		if t.desc.Format.IsCompressed() {
@@ -831,35 +907,75 @@ func (d *GPUSoftwareDevice) execCopy(cp GPUCopyOp) error {
 			}
 		}
 	case GPUCopyTextureToTexture:
-		s, ok1 := d.textures[cp.SrcTex.Texture]
-		t, ok2 := d.textures[cp.DstTex.Texture]
+		sb, ok1 := d.textures[cp.SrcTex.Texture]
+		tb, ok2 := d.textures[cp.DstTex.Texture]
 		if !ok1 || !ok2 {
 			return fmt.Errorf("gpu: CopyTextureToTexture references unknown texture")
 		}
-		sw, dw := int(s.desc.Width), int(t.desc.Width)
-		if s.depth != nil && t.depth != nil {
-			sn, tn := max(s.samples, 1), max(t.samples, 1)
-			for y := 0; y < int(cp.Height); y++ {
-				for x := 0; x < int(cp.Width); x++ {
-					v := s.depth[((int(cp.SrcTex.OriginY)+y)*sw+int(cp.SrcTex.OriginX)+x)*sn]
-					dp := (int(cp.DstTex.OriginY)+y)*dw + int(cp.DstTex.OriginX) + x
-					for k := 0; k < tn; k++ {
-						t.depth[dp*tn+k] = v
-					}
+		for l := uint32(0); l < max(cp.Layers, 1); l++ {
+			s, t := sb.level(cp.SrcTex.ArrayLayer+l, cp.SrcTex.MipLevel), tb.level(cp.DstTex.ArrayLayer+l, cp.DstTex.MipLevel)
+			if s == nil || t == nil {
+				return fmt.Errorf("gpu: CopyTextureToTexture subresource out of bounds")
+			}
+			if err := copySoftTextureRegion(s, t, cp); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// downsampleSoftLevel fills dst with a 2x2 box filter of src. Colors are stored linear, so sRGB formats are averaged in linear space before quantizing for dst's format.
+func downsampleSoftLevel(src, dst *softTexture) {
+	if src == nil || dst == nil || src.color == nil || dst.color == nil {
+		return
+	}
+	sw, sh := int(src.desc.Width), int(src.desc.Height)
+	dw, dh := int(dst.desc.Width), int(dst.desc.Height)
+	for y := range dh {
+		y0 := min(y*2, sh-1)
+		y1 := min(y0+1, sh-1)
+		for x := range dw {
+			x0 := min(x*2, sw-1)
+			x1 := min(x0+1, sw-1)
+			var c [4]float32
+			for _, p := range [4]int{y0*sw + x0, y0*sw + x1, y1*sw + x0, y1*sw + x1} {
+				for ch := range 4 {
+					c[ch] += src.color[p*4+ch] * 0.25
 				}
 			}
-			return nil
+			dst.storeTexel(y*dw+x, quantizeColorForFormat(dst.desc.Format, c))
 		}
-		if s.color == nil || t.color == nil {
-			return fmt.Errorf("gpu: CopyTextureToTexture format mismatch between color and depth textures")
-		}
+	}
+}
+
+// copySoftTextureRegion copies a cp.Width x cp.Height region between two single-subresource texture views, clipped to both.
+func copySoftTextureRegion(s, t *softTexture, cp GPUCopyOp) error {
+	cp.Width = min(cp.Width, s.desc.Width-min(cp.SrcTex.OriginX, s.desc.Width), t.desc.Width-min(cp.DstTex.OriginX, t.desc.Width))
+	cp.Height = min(cp.Height, s.desc.Height-min(cp.SrcTex.OriginY, s.desc.Height), t.desc.Height-min(cp.DstTex.OriginY, t.desc.Height))
+	sw, dw := int(s.desc.Width), int(t.desc.Width)
+	if s.depth != nil && t.depth != nil {
+		sn, tn := max(s.samples, 1), max(t.samples, 1)
 		for y := 0; y < int(cp.Height); y++ {
 			for x := 0; x < int(cp.Width); x++ {
-				sp := (int(cp.SrcTex.OriginY)+y)*sw + int(cp.SrcTex.OriginX) + x
+				v := s.depth[((int(cp.SrcTex.OriginY)+y)*sw+int(cp.SrcTex.OriginX)+x)*sn]
 				dp := (int(cp.DstTex.OriginY)+y)*dw + int(cp.DstTex.OriginX) + x
-				si := sp * max(s.samples, 1) * 4
-				t.storeTexel(dp, quantizeColorForFormat(t.desc.Format, [4]float32{s.color[si], s.color[si+1], s.color[si+2], s.color[si+3]}))
+				for k := 0; k < tn; k++ {
+					t.depth[dp*tn+k] = v
+				}
 			}
+		}
+		return nil
+	}
+	if s.color == nil || t.color == nil {
+		return fmt.Errorf("gpu: CopyTextureToTexture format mismatch between color and depth textures")
+	}
+	for y := 0; y < int(cp.Height); y++ {
+		for x := 0; x < int(cp.Width); x++ {
+			sp := (int(cp.SrcTex.OriginY)+y)*sw + int(cp.SrcTex.OriginX) + x
+			dp := (int(cp.DstTex.OriginY)+y)*dw + int(cp.DstTex.OriginX) + x
+			si := sp * max(s.samples, 1) * 4
+			t.storeTexel(dp, quantizeColorForFormat(t.desc.Format, [4]float32{s.color[si], s.color[si+1], s.color[si+2], s.color[si+3]}))
 		}
 	}
 	return nil
@@ -948,9 +1064,13 @@ func (d *GPUSoftwareDevice) execPass(pass GPUPass) error {
 			attachSwap(ca)
 			continue
 		}
-		tex, ok := d.textures[ca.Texture]
+		base, ok := d.textures[ca.Texture]
 		if !ok {
 			return fmt.Errorf("gpu: render pass color attachment %d not found", ca.Texture)
+		}
+		tex := base.level(ca.ArrayLayer, ca.MipLevel)
+		if tex == nil {
+			return fmt.Errorf("gpu: render pass color attachment %d has no layer %d mip %d", ca.Texture, ca.ArrayLayer, ca.MipLevel)
 		}
 		if tex.color == nil {
 			return fmt.Errorf("gpu: render pass color attachment %d is a depth texture", ca.Texture)
@@ -3384,27 +3504,8 @@ func (vm *irVM) evalCall(e shaderir.Expr) irVal {
 
 	// Resource/compute builtins needing raw binding/storage expressions before evaluating args.
 	switch callee.BuiltinFunc {
-	case shaderir.TextureSample:
-		var offX, offY int
-		if len(e.Exprs) >= 5 {
-			off := vm.evalExpr(e.Exprs[4])
-			offX, offY = int(off.i[0]), int(off.i[1])
-		}
-		return vm.evalTextureSample(e.Exprs[1].Index, e.Exprs[2].Index, vm.evalExpr(e.Exprs[3]), offX, offY)
-	case shaderir.TextureSampleLevel, shaderir.TextureSampleBias:
-		var offX, offY int
-		if len(e.Exprs) >= 6 {
-			off := vm.evalExpr(e.Exprs[5])
-			offX, offY = int(off.i[0]), int(off.i[1])
-		}
-		return vm.evalTextureSample(e.Exprs[1].Index, e.Exprs[2].Index, vm.evalExpr(e.Exprs[3]), offX, offY)
-	case shaderir.TextureSampleGrad:
-		var offX, offY int
-		if len(e.Exprs) >= 7 {
-			off := vm.evalExpr(e.Exprs[6])
-			offX, offY = int(off.i[0]), int(off.i[1])
-		}
-		return vm.evalTextureSample(e.Exprs[1].Index, e.Exprs[2].Index, vm.evalExpr(e.Exprs[3]), offX, offY)
+	case shaderir.TextureSample, shaderir.TextureSampleLevel, shaderir.TextureSampleBias, shaderir.TextureSampleGrad:
+		return vm.evalTextureSampleCall(e, callee.BuiltinFunc)
 	case shaderir.TextureSampleCompare, shaderir.TextureSampleCompareLevel:
 		var offX, offY int
 		if len(e.Exprs) >= 6 {
@@ -3413,13 +3514,24 @@ func (vm *irVM) evalCall(e shaderir.Expr) irVal {
 		}
 		return vm.evalTextureSampleCompare(e.Exprs[1].Index, e.Exprs[2].Index, vm.evalExpr(e.Exprs[3]), vm.evalExpr(e.Exprs[4]).f[0], offX, offY)
 	case shaderir.TextureLoad:
-		var extra irVal
-		if len(e.Exprs) > 3 {
+		var layer, extra irVal
+		if base := vm.lookupTexture(e.Exprs[1].Index); base != nil && base.desc.Dimension == GPUDim2DArray {
+			if len(e.Exprs) > 3 {
+				layer = vm.evalExpr(e.Exprs[3])
+			}
+			if len(e.Exprs) > 4 {
+				extra = vm.evalExpr(e.Exprs[4])
+			}
+		} else if len(e.Exprs) > 3 {
 			extra = vm.evalExpr(e.Exprs[3])
 		}
-		return vm.evalTextureLoad(e.Exprs[1].Index, vm.evalExpr(e.Exprs[2]), extra)
+		return vm.evalTextureLoad(e.Exprs[1].Index, vm.evalExpr(e.Exprs[2]), layer, extra)
 	case shaderir.TextureDimensions:
-		return vm.evalTextureDimensions(e.Exprs[1].Index)
+		var lvl irVal
+		if len(e.Exprs) > 2 {
+			lvl = vm.evalExpr(e.Exprs[2])
+		}
+		return vm.evalTextureDimensions(e.Exprs[1].Index, lvl)
 	case shaderir.TextureStore:
 		vm.evalTextureStore(e.Exprs[1].Index, vm.evalExpr(e.Exprs[2]), vm.evalExpr(e.Exprs[3]))
 		return irVal{}
@@ -3658,18 +3770,158 @@ func wrapCoord(u float32, mode GPUAddressMode) float32 {
 	}
 }
 
-func (vm *irVM) evalTextureSample(texIdx, sampIdx int, uv irVal, offX, offY int) irVal {
-	tex := vm.lookupTexture(texIdx)
+// irValFloat returns component 0 of v as a float32, converting integer scalars.
+func irValFloat(v irVal) float32 {
+	switch v.typ.Scalar() {
+	case shaderir.Int:
+		return float32(v.i[0])
+	case shaderir.Uint:
+		return float32(v.u[0])
+	default:
+		return v.f[0]
+	}
+}
+
+// cubeDirToFaceUV maps a cubemap direction to a face index (ArrayLayer 0..5) and face-local [0, 1] coordinates using the WebGPU / Metal / Direct3D / OpenGL face conventions.
+func cubeDirToFaceUV(x, y, z float32) (face uint32, u, v float32) {
+	ax := float32(math.Abs(float64(x)))
+	ay := float32(math.Abs(float64(y)))
+	az := float32(math.Abs(float64(z)))
+	var sc, tc, ma float32
+	switch {
+	case ax >= ay && ax >= az:
+		ma = ax
+		if x >= 0 {
+			face = GPUCubeFacePosX
+			sc, tc = -z, -y
+		} else {
+			face = GPUCubeFaceNegX
+			sc, tc = z, -y
+		}
+	case ay >= ax && ay >= az:
+		ma = ay
+		if y >= 0 {
+			face = GPUCubeFacePosY
+			sc, tc = x, z
+		} else {
+			face = GPUCubeFaceNegY
+			sc, tc = x, -z
+		}
+	default:
+		ma = az
+		if z >= 0 {
+			face = GPUCubeFacePosZ
+			sc, tc = x, -y
+		} else {
+			face = GPUCubeFaceNegZ
+			sc, tc = -x, -y
+		}
+	}
+	if ma < 1e-12 {
+		return GPUCubeFacePosX, 0.5, 0.5
+	}
+	return face, 0.5 * (sc/ma + 1.0), 0.5 * (tc/ma + 1.0)
+}
+
+// evalTextureSampleCall evaluates textureSample, textureSampleLevel, textureSampleBias and textureSampleGrad. Arguments follow the IR order (texture, sampler, coords[, layer for 2D arrays], level/bias/gradients[, offset]). Without screen-space derivatives the software device takes the implicit LOD as 0, so textureSample reads the base level clamped by the sampler's MinLOD/MaxLOD.
+func (vm *irVM) evalTextureSampleCall(e shaderir.Expr, fn shaderir.BuiltinFunc) irVal {
+	opaque := irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{0, 0, 0, 1}}
+	if len(e.Exprs) < 4 {
+		return opaque
+	}
+	base := vm.lookupTexture(e.Exprs[1].Index)
+	if base == nil {
+		return opaque
+	}
+	var desc GPUSamplerDesc
+	if s := vm.lookupSampler(e.Exprs[2].Index); s != nil {
+		desc = s.desc
+	}
+	coord := vm.evalExpr(e.Exprs[3])
+	next := 4
+	arg := func() (irVal, bool) {
+		if next >= len(e.Exprs) {
+			return irVal{}, false
+		}
+		v := vm.evalExpr(e.Exprs[next])
+		next++
+		return v, true
+	}
+	var layer uint32
+	u, v := coord.f[0], coord.f[1]
+	cube := base.desc.Dimension == GPUDimCube
+	switch {
+	case cube:
+		layer, u, v = cubeDirToFaceUV(coord.f[0], coord.f[1], coord.f[2])
+	case base.desc.Dimension == GPUDim2DArray:
+		if l, ok := arg(); ok {
+			layer = uint32(min(max(int(irValFloat(l)), 0), int(max(base.layers, 1))-1))
+		}
+	}
+	var lod float32
+	switch fn {
+	case shaderir.TextureSampleLevel, shaderir.TextureSampleBias:
+		if l, ok := arg(); ok {
+			lod = irValFloat(l)
+		}
+	case shaderir.TextureSampleGrad:
+		ddx, ok1 := arg()
+		ddy, ok2 := arg()
+		if ok1 && ok2 {
+			tw, th := float64(base.desc.Width), float64(base.desc.Height)
+			rho := max(math.Hypot(float64(ddx.f[0])*tw, float64(ddx.f[1])*th), math.Hypot(float64(ddy.f[0])*tw, float64(ddy.f[1])*th))
+			if rho > 1e-8 {
+				lod = float32(math.Log2(rho))
+			}
+		}
+	}
+	var offX, offY int
+	if off, ok := arg(); ok && !cube {
+		offX, offY = int(off.i[0]), int(off.i[1])
+	}
+	maxLOD := desc.MaxLOD
+	if maxLOD <= 0 {
+		maxLOD = 32
+	}
+	lod = min(max(lod, max(desc.MinLOD, 0)), maxLOD)
+	mips := max(base.mips, 1)
+	lod = min(max(lod, 0), float32(mips-1))
+	if cube {
+		// Cube faces never repeat: sampling clamps at the face edge.
+		desc.AddressU, desc.AddressV = GPUAddressClampToEdge, GPUAddressClampToEdge
+	}
+	sampleAt := func(mip uint32) irVal {
+		return sampleSoftLevel(base.level(layer, mip), desc, u, v, offX, offY, lod > 0)
+	}
+	if mips <= 1 || desc.MipmapFilter != GPUFilterLinear {
+		return sampleAt(uint32(math.Round(float64(lod))))
+	}
+	lo := uint32(math.Floor(float64(lod)))
+	hi := min(lo+1, mips-1)
+	frac := lod - float32(lo)
+	c0 := sampleAt(lo)
+	if hi == lo || frac <= 1e-6 {
+		return c0
+	}
+	c1 := sampleAt(hi)
+	for ch := range 4 {
+		c0.f[ch] = c0.f[ch]*(1-frac) + c1.f[ch]*frac
+	}
+	return c0
+}
+
+// sampleSoftLevel filters one texture subresource at normalized (u, v). minified selects MinFilter instead of MagFilter.
+func sampleSoftLevel(tex *softTexture, desc GPUSamplerDesc, uu, vv float32, offX, offY int, minified bool) irVal {
 	if tex == nil {
 		return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{0, 0, 0, 1}}
 	}
-	var desc GPUSamplerDesc
-	if s := vm.lookupSampler(sampIdx); s != nil {
-		desc = s.desc
+	linear := desc.MagFilter == GPUFilterLinear
+	if minified {
+		linear = desc.MinFilter == GPUFilterLinear
 	}
 	w, h := int(tex.desc.Width), int(tex.desc.Height)
-	u := wrapCoord(uv.f[0], desc.AddressU)
-	v := wrapCoord(uv.f[1], desc.AddressV)
+	u := wrapCoord(uu, desc.AddressU)
+	v := wrapCoord(vv, desc.AddressV)
 	samples := max(tex.samples, 1)
 
 	if tex.depth != nil {
@@ -3678,7 +3930,7 @@ func (vm *irVM) evalTextureSample(texIdx, sampIdx int, uv irVal, offX, offY int)
 			y = min(max(y+offY, 0), h-1)
 			return tex.depth[(y*w+x)*samples]
 		}
-		if desc.MagFilter == GPUFilterLinear || desc.MinFilter == GPUFilterLinear {
+		if linear {
 			fx := u*float32(w) - 0.5
 			fy := v*float32(h) - 0.5
 			x0 := int(math.Floor(float64(fx)))
@@ -3714,7 +3966,7 @@ func (vm *irVM) evalTextureSample(texIdx, sampIdx int, uv irVal, offX, offY int)
 		}
 	}
 
-	if desc.MagFilter == GPUFilterLinear || desc.MinFilter == GPUFilterLinear {
+	if linear {
 		fx := u*float32(w) - 0.5
 		fy := v*float32(h) - 0.5
 		x0 := int(math.Floor(float64(fx)))
@@ -3789,9 +4041,19 @@ func (vm *irVM) evalTextureSampleCompare(texIdx, sampIdx int, uv irVal, depthRef
 	return irVal{typ: shaderir.Type{Main: shaderir.Float}, f: [16]float32{cmpTexel(ix, iy)}}
 }
 
-// evalTextureLoad reads one texel; extra is the sample index for multisampled textures (ignored otherwise).
-func (vm *irVM) evalTextureLoad(texIdx int, coord, extra irVal) irVal {
-	tex := vm.lookupTexture(texIdx)
+// evalTextureLoad reads one texel; layer selects the 2D array layer, and extra is the sample index for multisampled textures or the mip level otherwise.
+func (vm *irVM) evalTextureLoad(texIdx int, coord, layer, extra irVal) irVal {
+	base := vm.lookupTexture(texIdx)
+	if base == nil {
+		return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{0, 0, 0, 1}}
+	}
+	tex := base
+	if max(base.samples, 1) == 1 {
+		// For single-sampled textures the extra argument is the mip level.
+		l := uint32(max(int(irValFloat(layer)), 0))
+		m := uint32(max(int(irValFloat(extra)), 0))
+		tex = base.level(min(l, max(base.layers, 1)-1), min(m, max(base.mips, 1)-1))
+	}
 	if tex == nil {
 		return irVal{typ: shaderir.Type{Main: shaderir.Vec4}, f: [16]float32{0, 0, 0, 1}}
 	}
@@ -3826,10 +4088,14 @@ func (vm *irVM) evalTextureLoad(texIdx int, coord, extra irVal) irVal {
 	}}
 }
 
-func (vm *irVM) evalTextureDimensions(texIdx int) irVal {
-	tex := vm.lookupTexture(texIdx)
-	if tex == nil {
+func (vm *irVM) evalTextureDimensions(texIdx int, level irVal) irVal {
+	base := vm.lookupTexture(texIdx)
+	if base == nil {
 		return irVal{typ: shaderir.Type{Main: shaderir.UVec2}}
+	}
+	tex := base.level(0, min(uint32(max(int(irValFloat(level)), 0)), max(base.mips, 1)-1))
+	if tex == nil {
+		tex = base
 	}
 	return irVal{typ: shaderir.Type{Main: shaderir.UVec2}, u: [4]uint32{tex.desc.Width, tex.desc.Height}, f: [16]float32{float32(tex.desc.Width), float32(tex.desc.Height)}}
 }

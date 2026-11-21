@@ -3106,3 +3106,750 @@ func TestNativeLikeDeviceRejectsUngatedFeatures(t *testing.T) {
 		t.Errorf("CreatePipeline(depth only) = %v, want nil", err)
 	}
 }
+
+func solidRGBA(w, h int, c color.RGBA) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.SetRGBA(x, y, c)
+		}
+	}
+	return img
+}
+
+const cubemapSampleWGSL = `
+struct Params {
+	lod: f32,
+	useLevel: f32,
+	pad0: f32,
+	pad1: f32,
+}
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var envCube: texture_cube<f32>;
+@group(0) @binding(2) var envSamp: sampler;
+
+struct VertexIn {
+	@location(0) pos: vec3<f32>,
+	@location(1) dir: vec3<f32>,
+}
+
+struct VertexOut {
+	@builtin(position) pos: vec4<f32>,
+	@location(0) dir: vec3<f32>,
+}
+
+@vertex
+fn vs_main(in: VertexIn) -> VertexOut {
+	var out: VertexOut;
+	out.pos = vec4<f32>(in.pos, 1.0);
+	out.dir = in.dir;
+	return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+	if (params.useLevel > 0.5) {
+		return textureSampleLevel(envCube, envSamp, in.dir, params.lod);
+	}
+	return textureSample(envCube, envSamp, in.dir);
+}
+`
+
+func TestCubemapSixFacesAndMipSampling(t *testing.T) {
+	mod := gpu.MustCompileWGSL(cubemapSampleWGSL)
+	sr := gpu.NewSoftwareRenderer(60, 10, gpu.FormatUndefined)
+	dev := sr.Device()
+
+	// Create a 4x4 6-face cubemap with 3 mip levels.
+	cube, err := dev.CreateTexture(nil, gpu.TextureDesc{
+		Label:     "skybox",
+		Dimension: gpu.DimCube,
+		Width:     4,
+		Height:    4,
+		MipLevels: 3,
+		Format:    gpu.FormatRGBA8Unorm,
+		Usage:     gpu.TextureSampled | gpu.TextureCopyDst | gpu.TextureCopySrc,
+	})
+	if err != nil {
+		t.Fatalf("CreateTexture DimCube: %v", err)
+	}
+	if cube.Desc().Layers != 6 {
+		t.Fatalf("cubemap Layers = %d, want 6", cube.Desc().Layers)
+	}
+
+	faceColors := [6]color.RGBA{
+		gpu.CubeFacePosX: {R: 255, G: 0, B: 0, A: 255},   // +X Red
+		gpu.CubeFaceNegX: {R: 0, G: 255, B: 0, A: 255},   // -X Green
+		gpu.CubeFacePosY: {R: 0, G: 0, B: 255, A: 255},   // +Y Blue
+		gpu.CubeFaceNegY: {R: 255, G: 255, B: 0, A: 255}, // -Y Yellow
+		gpu.CubeFacePosZ: {R: 0, G: 255, B: 255, A: 255}, // +Z Cyan
+		gpu.CubeFaceNegZ: {R: 255, G: 0, B: 255, A: 255}, // -Z Magenta
+	}
+	for face, c := range faceColors {
+		dev.WriteCubeFaceRGBA(cube, uint32(face), 0, solidRGBA(4, 4, c))
+	}
+	// Upload a distinct white color on +X face mip level 1 to verify explicit cubemap LOD sampling.
+	dev.WriteCubeFaceRGBA(cube, gpu.CubeFacePosX, 1, solidRGBA(2, 2, color.RGBA{255, 255, 255, 255}))
+
+	samp, err := dev.CreateSampler(nil, gpu.SamplerDesc{
+		MinFilter:    gpu.FilterNearest,
+		MagFilter:    gpu.FilterNearest,
+		MipmapFilter: gpu.FilterNearest,
+	})
+	if err != nil {
+		t.Fatalf("CreateSampler: %v", err)
+	}
+	uBuf, err := dev.CreateBuffer(nil, gpu.BufferDesc{
+		Usage: gpu.UsageUniform | gpu.UsageCopyDst,
+		Data:  packFloat32s(0, 0, 0, 0),
+	})
+	if err != nil {
+		t.Fatalf("CreateBuffer uniform: %v", err)
+	}
+	bgl, err := dev.CreateBindGroupLayout(nil, []gpu.BindGroupLayoutEntry{
+		{Binding: 0, Visibility: gpu.StageFragment, Type: gpu.BindingUniform},
+		{Binding: 1, Visibility: gpu.StageFragment, Type: gpu.BindingTexture},
+		{Binding: 2, Visibility: gpu.StageFragment, Type: gpu.BindingSampler},
+	})
+	if err != nil {
+		t.Fatalf("CreateBindGroupLayout: %v", err)
+	}
+	bg, err := dev.CreateBindGroup(nil, bgl, []gpu.BindGroupEntry{
+		{Binding: 0, Buffer: uBuf},
+		{Binding: 1, Texture: cube},
+		{Binding: 2, Sampler: samp},
+	})
+	if err != nil {
+		t.Fatalf("CreateBindGroup: %v", err)
+	}
+	pipe, err := dev.CreatePipeline(nil, gpu.PipelineDesc{
+		Vertex:   gpu.ShaderStage{Module: mod, EntryPoint: "vs_main"},
+		Fragment: gpu.ShaderStage{Module: mod, EntryPoint: "fs_main"},
+		Layouts:  []*gpu.BindGroupLayout{bgl},
+		VertexBuffers: []gpu.VertexBufferLayout{{
+			Stride: 6 * 4,
+			Attributes: []gpu.VertexAttribute{
+				{Location: 0, Offset: 0, Format: gpu.VertexFloat32x3},
+				{Location: 1, Offset: 3 * 4, Format: gpu.VertexFloat32x3},
+			},
+		}},
+		Targets: []gpu.ColorTargetState{{Format: gpu.FormatRGBA8Unorm}},
+	})
+	if err != nil {
+		t.Fatalf("CreatePipeline: %v", err)
+	}
+
+	// Build 6 adjacent vertical strips in NDC [-1, +1] covering 10px each in the 60x10 viewport, each sampling one of the 6 cardinal directions (+X, -X, +Y, -Y, +Z, -Z).
+	dirs := [6][3]float32{
+		{1, 0, 0},
+		{-1, 0, 0},
+		{0, 1, 0},
+		{0, -1, 0},
+		{0, 0, 1},
+		{0, 0, -1},
+	}
+	var quadData []float32
+	for i, d := range dirs {
+		x0 := -1.0 + float32(i)*(2.0/6.0)
+		x1 := -1.0 + float32(i+1)*(2.0/6.0)
+		quadData = append(quadData,
+			x0, -1, 0.5, d[0], d[1], d[2],
+			x1, -1, 0.5, d[0], d[1], d[2],
+			x1, 1, 0.5, d[0], d[1], d[2],
+			x0, -1, 0.5, d[0], d[1], d[2],
+			x1, 1, 0.5, d[0], d[1], d[2],
+			x0, 1, 0.5, d[0], d[1], d[2],
+		)
+	}
+	vb, err := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageVertex, Data: packFloat32s(quadData...)})
+	if err != nil {
+		t.Fatalf("CreateBuffer verts: %v", err)
+	}
+
+	enc := dev.BeginEncoder()
+	pass := enc.BeginRenderPass(gpu.RenderPassDesc{})
+	pass.ClearColor(core.RGB(0x000000))
+	pass.SetPipeline(pipe)
+	pass.SetBindGroup(0, bg)
+	pass.SetVertexBuffer(0, vb, 0)
+	pass.Draw(uint32(len(dirs)*6), 0)
+	pass.End()
+	dev.Submit(enc.Finish())
+	if sr.LastError() != nil {
+		t.Fatalf("SoftwareRenderer error: %v", sr.LastError())
+	}
+
+	img := sr.Image()
+	for i, want := range faceColors {
+		px := img.RGBAAt(i*10+5, 5)
+		if px != want {
+			t.Errorf("cubemap face %d pixel = %+v, want %+v", i, px, want)
+		}
+	}
+
+	// Verify textureSampleLevel on cubemap (+X face mip 1 is white).
+	dev.WriteBuffer(uBuf, 0, packFloat32s(1.0, 1.0, 0, 0))
+	enc2 := dev.BeginEncoder()
+	pass2 := enc2.BeginRenderPass(gpu.RenderPassDesc{})
+	pass2.ClearColor(core.RGB(0x000000))
+	pass2.SetPipeline(pipe)
+	pass2.SetBindGroup(0, bg)
+	pass2.SetVertexBuffer(0, vb, 0)
+	pass2.Draw(6, 0) // only +X strip
+	pass2.End()
+	dev.Submit(enc2.Finish())
+	if sr.LastError() != nil {
+		t.Fatalf("SoftwareRenderer mip error: %v", sr.LastError())
+	}
+	gotMip := sr.Image().RGBAAt(5, 5)
+	if gotMip != (color.RGBA{255, 255, 255, 255}) {
+		t.Errorf("cubemap +X mip 1 pixel = %+v, want white", gotMip)
+	}
+
+	// Verify UV projection orientation on +Z face (top-left=Red, top-right=Green, bottom-left=Blue, bottom-right=Yellow).
+	posZImg := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	posZImg.SetRGBA(0, 0, color.RGBA{255, 0, 0, 255})   // top-left: -X, +Y
+	posZImg.SetRGBA(1, 0, color.RGBA{0, 255, 0, 255})   // top-right: +X, +Y
+	posZImg.SetRGBA(0, 1, color.RGBA{0, 0, 255, 255})   // bottom-left: -X, -Y
+	posZImg.SetRGBA(1, 1, color.RGBA{255, 255, 0, 255}) // bottom-right: +X, -Y
+	dev.WriteCubeFaceRGBA(cube, gpu.CubeFacePosZ, 1, posZImg)
+	dev.WriteBuffer(uBuf, 0, packFloat32s(1.0, 1.0, 0, 0))
+
+	quadUVDirs := [4][3]float32{
+		{-0.5, 0.5, 1.0},  // top-left -> Red
+		{0.5, 0.5, 1.0},   // top-right -> Green
+		{-0.5, -0.5, 1.0}, // bottom-left -> Blue
+		{0.5, -0.5, 1.0},  // bottom-right -> Yellow
+	}
+	wantUVColors := [4]color.RGBA{
+		{255, 0, 0, 255},
+		{0, 255, 0, 255},
+		{0, 0, 255, 255},
+		{255, 255, 0, 255},
+	}
+	var uvQuadData []float32
+	for i, d := range quadUVDirs {
+		x0 := -1.0 + float32(i)*0.5
+		x1 := -1.0 + float32(i+1)*0.5
+		uvQuadData = append(uvQuadData,
+			x0, -1, 0.5, d[0], d[1], d[2],
+			x1, -1, 0.5, d[0], d[1], d[2],
+			x1, 1, 0.5, d[0], d[1], d[2],
+			x0, -1, 0.5, d[0], d[1], d[2],
+			x1, 1, 0.5, d[0], d[1], d[2],
+			x0, 1, 0.5, d[0], d[1], d[2],
+		)
+	}
+	vb2, _ := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageVertex, Data: packFloat32s(uvQuadData...)})
+	enc3 := dev.BeginEncoder()
+	pass3 := enc3.BeginRenderPass(gpu.RenderPassDesc{})
+	pass3.ClearColor(core.RGB(0x000000))
+	pass3.SetPipeline(pipe)
+	pass3.SetBindGroup(0, bg)
+	pass3.SetVertexBuffer(0, vb2, 0)
+	pass3.Draw(24, 0)
+	pass3.End()
+	dev.Submit(enc3.Finish())
+	img3 := sr.Image()
+	for i, want := range wantUVColors {
+		px := img3.RGBAAt(i*15+7, 5)
+		if px != want {
+			t.Errorf("cubemap +Z quadrant %d pixel = %+v, want %+v", i, px, want)
+		}
+	}
+}
+
+const texArraySampleWGSL = `
+struct Params {
+	lod: f32,
+	useLevel: f32,
+	pad0: f32,
+	pad1: f32,
+}
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var arrTex: texture_2d_array<f32>;
+@group(0) @binding(2) var arrSamp: sampler;
+
+struct VertexIn {
+	@location(0) pos: vec3<f32>,
+	@location(1) uv: vec2<f32>,
+	@location(2) layer: i32,
+}
+
+struct VertexOut {
+	@builtin(position) pos: vec4<f32>,
+	@location(0) uv: vec2<f32>,
+	@location(1) @interpolate(flat) layer: i32,
+}
+
+@vertex
+fn vs_main(in: VertexIn) -> VertexOut {
+	var out: VertexOut;
+	out.pos = vec4<f32>(in.pos, 1.0);
+	out.uv = in.uv;
+	out.layer = in.layer;
+	return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+	if (params.useLevel > 0.5) {
+		return textureSampleLevel(arrTex, arrSamp, in.uv, in.layer, params.lod);
+	}
+	return textureSample(arrTex, arrSamp, in.uv, in.layer);
+}
+`
+
+func TestTexture2DArraySampling(t *testing.T) {
+	mod := gpu.MustCompileWGSL(texArraySampleWGSL)
+	sr := gpu.NewSoftwareRenderer(40, 10, gpu.FormatUndefined)
+	dev := sr.Device()
+
+	arrTex, err := dev.CreateTexture(nil, gpu.TextureDesc{
+		Label:     "tiles",
+		Dimension: gpu.Dim2DArray,
+		Width:     4,
+		Height:    4,
+		Layers:    4,
+		MipLevels: 2,
+		Format:    gpu.FormatRGBA8Unorm,
+		Usage:     gpu.TextureSampled | gpu.TextureCopyDst | gpu.TextureCopySrc,
+	})
+	if err != nil {
+		t.Fatalf("CreateTexture Dim2DArray: %v", err)
+	}
+
+	layerMip0 := [4]color.RGBA{
+		{255, 0, 0, 255},
+		{0, 255, 0, 255},
+		{0, 0, 255, 255},
+		{255, 255, 0, 255},
+	}
+	layerMip1 := [4]color.RGBA{
+		{128, 0, 0, 255},
+		{0, 128, 0, 255},
+		{0, 0, 128, 255},
+		{128, 128, 0, 255},
+	}
+	for l := uint32(0); l < 4; l++ {
+		dev.WriteTextureRGBA(arrTex, 0, l, solidRGBA(4, 4, layerMip0[l]))
+		dev.WriteTextureMip(arrTex, 1, l, solidRGBA(2, 2, layerMip1[l]).Pix, 0)
+	}
+
+	samp, err := dev.CreateSampler(nil, gpu.SamplerDesc{
+		MinFilter:    gpu.FilterNearest,
+		MagFilter:    gpu.FilterNearest,
+		MipmapFilter: gpu.FilterNearest,
+	})
+	if err != nil {
+		t.Fatalf("CreateSampler: %v", err)
+	}
+	uBuf, _ := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageUniform | gpu.UsageCopyDst, Data: packFloat32s(0, 0, 0, 0)})
+	bgl, _ := dev.CreateBindGroupLayout(nil, []gpu.BindGroupLayoutEntry{
+		{Binding: 0, Visibility: gpu.StageFragment, Type: gpu.BindingUniform},
+		{Binding: 1, Visibility: gpu.StageFragment, Type: gpu.BindingTexture},
+		{Binding: 2, Visibility: gpu.StageFragment, Type: gpu.BindingSampler},
+	})
+	bg, _ := dev.CreateBindGroup(nil, bgl, []gpu.BindGroupEntry{
+		{Binding: 0, Buffer: uBuf},
+		{Binding: 1, Texture: arrTex},
+		{Binding: 2, Sampler: samp},
+	})
+	pipe, err := dev.CreatePipeline(nil, gpu.PipelineDesc{
+		Vertex:   gpu.ShaderStage{Module: mod, EntryPoint: "vs_main"},
+		Fragment: gpu.ShaderStage{Module: mod, EntryPoint: "fs_main"},
+		Layouts:  []*gpu.BindGroupLayout{bgl},
+		VertexBuffers: []gpu.VertexBufferLayout{{
+			Stride: 6 * 4,
+			Attributes: []gpu.VertexAttribute{
+				{Location: 0, Offset: 0, Format: gpu.VertexFloat32x3},
+				{Location: 1, Offset: 3 * 4, Format: gpu.VertexFloat32x2},
+				{Location: 2, Offset: 5 * 4, Format: gpu.VertexSint32},
+			},
+		}},
+		Targets: []gpu.ColorTargetState{{Format: gpu.FormatRGBA8Unorm}},
+	})
+	if err != nil {
+		t.Fatalf("CreatePipeline: %v", err)
+	}
+
+	// Build 4 strips sampling layers 0..3.
+	packVert := func(x, y, z, u, v float32, layer int32) []byte {
+		b := make([]byte, 24)
+		binary.LittleEndian.PutUint32(b[0:], math.Float32bits(x))
+		binary.LittleEndian.PutUint32(b[4:], math.Float32bits(y))
+		binary.LittleEndian.PutUint32(b[8:], math.Float32bits(z))
+		binary.LittleEndian.PutUint32(b[12:], math.Float32bits(u))
+		binary.LittleEndian.PutUint32(b[16:], math.Float32bits(v))
+		binary.LittleEndian.PutUint32(b[20:], uint32(layer))
+		return b
+	}
+	var vbytes []byte
+	for l := int32(0); l < 4; l++ {
+		x0 := -1.0 + float32(l)*0.5
+		x1 := -1.0 + float32(l+1)*0.5
+		vbytes = append(vbytes, packVert(x0, -1, 0.5, 0.5, 0.5, l)...)
+		vbytes = append(vbytes, packVert(x1, -1, 0.5, 0.5, 0.5, l)...)
+		vbytes = append(vbytes, packVert(x1, 1, 0.5, 0.5, 0.5, l)...)
+		vbytes = append(vbytes, packVert(x0, -1, 0.5, 0.5, 0.5, l)...)
+		vbytes = append(vbytes, packVert(x1, 1, 0.5, 0.5, 0.5, l)...)
+		vbytes = append(vbytes, packVert(x0, 1, 0.5, 0.5, 0.5, l)...)
+	}
+	vb, _ := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageVertex, Data: vbytes})
+
+	// Pass 1: textureSample (mip 0).
+	enc := dev.BeginEncoder()
+	p := enc.BeginRenderPass(gpu.RenderPassDesc{})
+	p.ClearColor(core.RGB(0x000000))
+	p.SetPipeline(pipe)
+	p.SetBindGroup(0, bg)
+	p.SetVertexBuffer(0, vb, 0)
+	p.Draw(24, 0)
+	p.End()
+	dev.Submit(enc.Finish())
+	if sr.LastError() != nil {
+		t.Fatalf("SoftwareRenderer error: %v", sr.LastError())
+	}
+	img := sr.Image()
+	for l, want := range layerMip0 {
+		px := img.RGBAAt(l*10+5, 5)
+		if px != want {
+			t.Errorf("layer %d mip 0 pixel = %+v, want %+v", l, px, want)
+		}
+	}
+
+	// Pass 2: textureSampleLevel at LOD 1.0 (mip 1).
+	dev.WriteBuffer(uBuf, 0, packFloat32s(1.0, 1.0, 0, 0))
+	enc2 := dev.BeginEncoder()
+	p2 := enc2.BeginRenderPass(gpu.RenderPassDesc{})
+	p2.ClearColor(core.RGB(0x000000))
+	p2.SetPipeline(pipe)
+	p2.SetBindGroup(0, bg)
+	p2.SetVertexBuffer(0, vb, 0)
+	p2.Draw(24, 0)
+	p2.End()
+	dev.Submit(enc2.Finish())
+	img2 := sr.Image()
+	for l, want := range layerMip1 {
+		px := img2.RGBAAt(l*10+5, 5)
+		if px != want {
+			t.Errorf("layer %d mip 1 pixel = %+v, want %+v", l, px, want)
+		}
+	}
+
+	// Verify per-layer per-mip ReadTexture.
+	var got []byte
+	dev.ReadTexture(arrTex, gpu.TextureRegion{MipLevel: 1, ArrayLayer: 2, Width: 2, Height: 2}, func(rgba []byte, err error) {
+		if err != nil {
+			t.Fatalf("ReadTexture array layer 2 mip 1: %v", err)
+		}
+		got = rgba
+	})
+	if len(got) != 2*2*4 || got[0] != 0 || got[1] != 0 || got[2] != 128 || got[3] != 255 {
+		t.Errorf("ReadTexture layer 2 mip 1 pixel 0 = %v, want [0 0 128 255]", got[:min(4, len(got))])
+	}
+}
+
+const mipSampleWGSL = `
+struct Params {
+	lod: f32,
+	pad0: f32,
+	pad1: f32,
+	pad2: f32,
+}
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var tex: texture_2d<f32>;
+@group(0) @binding(2) var samp: sampler;
+
+struct VertexIn {
+	@location(0) pos: vec3<f32>,
+	@location(1) uv: vec2<f32>,
+}
+
+struct VertexOut {
+	@builtin(position) pos: vec4<f32>,
+	@location(0) uv: vec2<f32>,
+}
+
+@vertex
+fn vs_main(in: VertexIn) -> VertexOut {
+	var out: VertexOut;
+	out.pos = vec4<f32>(in.pos, 1.0);
+	out.uv = in.uv;
+	return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+	return textureSampleLevel(tex, samp, in.uv, params.lod);
+}
+`
+
+func TestMipmapsExplicitAndGeneratedAndLODClamping(t *testing.T) {
+	mod := gpu.MustCompileWGSL(mipSampleWGSL)
+	sr := gpu.NewSoftwareRenderer(8, 8, gpu.FormatUndefined)
+	dev := sr.Device()
+
+	// Descriptor validation checks for cubemaps, arrays, mip levels, and sampler LODs.
+	if _, err := dev.CreateTexture(nil, gpu.TextureDesc{Dimension: gpu.DimCube, Width: 8, Height: 4, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled}); !errors.Is(err, gpu.ErrInvalidDescriptor) {
+		t.Errorf("non-square cubemap err = %v, want ErrInvalidDescriptor", err)
+	}
+	if _, err := dev.CreateTexture(nil, gpu.TextureDesc{Dimension: gpu.DimCube, Width: 4, Height: 4, Layers: 4, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled}); !errors.Is(err, gpu.ErrInvalidDescriptor) {
+		t.Errorf("cubemap layers=4 err = %v, want ErrInvalidDescriptor", err)
+	}
+	if _, err := dev.CreateTexture(nil, gpu.TextureDesc{Dimension: gpu.Dim2D, Width: 4, Height: 4, Layers: 2, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled}); !errors.Is(err, gpu.ErrInvalidDescriptor) {
+		t.Errorf("2D texture layers=2 err = %v, want ErrInvalidDescriptor", err)
+	}
+	if _, err := dev.CreateTexture(nil, gpu.TextureDesc{Dimension: gpu.Dim2D, Width: 4, Height: 4, MipLevels: 5, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled}); !errors.Is(err, gpu.ErrInvalidDescriptor) {
+		t.Errorf("excessive MipLevels err = %v, want ErrInvalidDescriptor", err)
+	}
+	if _, err := dev.CreateSampler(nil, gpu.SamplerDesc{MinLOD: -1}); !errors.Is(err, gpu.ErrInvalidDescriptor) {
+		t.Errorf("negative MinLOD err = %v, want ErrInvalidDescriptor", err)
+	}
+	if _, err := dev.CreateSampler(nil, gpu.SamplerDesc{MinLOD: 3, MaxLOD: 1}); !errors.Is(err, gpu.ErrInvalidDescriptor) {
+		t.Errorf("MaxLOD < MinLOD err = %v, want ErrInvalidDescriptor", err)
+	}
+
+	if got := gpu.MaxMipLevels(8, 8); got != 4 {
+		t.Fatalf("MaxMipLevels(8,8) = %d, want 4", got)
+	}
+
+	// 1. Explicit mip level uploads via WriteTextureMip + textureSampleLevel + trilinear + MinLOD/MaxLOD.
+	mipTex, err := dev.CreateTexture(nil, gpu.TextureDesc{
+		Label:     "explicit-mips",
+		Dimension: gpu.Dim2D,
+		Width:     8,
+		Height:    8,
+		MipLevels: 4,
+		Format:    gpu.FormatRGBA8Unorm,
+		Usage:     gpu.TextureSampled | gpu.TextureCopyDst | gpu.TextureCopySrc,
+	})
+	if err != nil {
+		t.Fatalf("CreateTexture mipTex: %v", err)
+	}
+	mipColors := [4]color.RGBA{
+		{255, 0, 0, 255},     // mip 0 (8x8): Red
+		{0, 255, 0, 255},     // mip 1 (4x4): Green
+		{0, 0, 255, 255},     // mip 2 (2x2): Blue
+		{255, 255, 255, 255}, // mip 3 (1x1): White
+	}
+	for lvl := uint32(0); lvl < 4; lvl++ {
+		mw, mh := gpu.MipSize(8, 8, lvl)
+		dev.WriteTextureMip(mipTex, lvl, 0, solidRGBA(int(mw), int(mh), mipColors[lvl]).Pix, 0)
+	}
+
+	uBuf, _ := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageUniform | gpu.UsageCopyDst, Data: packFloat32s(0, 0, 0, 0)})
+	bgl, _ := dev.CreateBindGroupLayout(nil, []gpu.BindGroupLayoutEntry{
+		{Binding: 0, Visibility: gpu.StageFragment, Type: gpu.BindingUniform},
+		{Binding: 1, Visibility: gpu.StageFragment, Type: gpu.BindingTexture},
+		{Binding: 2, Visibility: gpu.StageFragment, Type: gpu.BindingSampler},
+	})
+	pipe, err := dev.CreatePipeline(nil, gpu.PipelineDesc{
+		Vertex:   gpu.ShaderStage{Module: mod, EntryPoint: "vs_main"},
+		Fragment: gpu.ShaderStage{Module: mod, EntryPoint: "fs_main"},
+		Layouts:  []*gpu.BindGroupLayout{bgl},
+		VertexBuffers: []gpu.VertexBufferLayout{{
+			Stride: 5 * 4,
+			Attributes: []gpu.VertexAttribute{
+				{Location: 0, Offset: 0, Format: gpu.VertexFloat32x3},
+				{Location: 1, Offset: 3 * 4, Format: gpu.VertexFloat32x2},
+			},
+		}},
+		Targets: []gpu.ColorTargetState{{Format: gpu.FormatRGBA8Unorm}},
+	})
+	if err != nil {
+		t.Fatalf("CreatePipeline: %v", err)
+	}
+	quadVerts := packFloat32s(
+		-1, -1, 0.5, 0.5, 0.5,
+		1, -1, 0.5, 0.5, 0.5,
+		1, 1, 0.5, 0.5, 0.5,
+		-1, -1, 0.5, 0.5, 0.5,
+		1, 1, 0.5, 0.5, 0.5,
+		-1, 1, 0.5, 0.5, 0.5,
+	)
+	vb, _ := dev.CreateBuffer(nil, gpu.BufferDesc{Usage: gpu.UsageVertex, Data: quadVerts})
+
+	sampleAt := func(tex *gpu.Texture, sdesc gpu.SamplerDesc, lod float32) color.RGBA {
+		s, err := dev.CreateSampler(nil, sdesc)
+		if err != nil {
+			t.Fatalf("CreateSampler: %v", err)
+		}
+		defer s.Close()
+		bg, err := dev.CreateBindGroup(nil, bgl, []gpu.BindGroupEntry{
+			{Binding: 0, Buffer: uBuf},
+			{Binding: 1, Texture: tex},
+			{Binding: 2, Sampler: s},
+		})
+		if err != nil {
+			t.Fatalf("CreateBindGroup: %v", err)
+		}
+		defer bg.Close()
+		dev.WriteBuffer(uBuf, 0, packFloat32s(lod, 0, 0, 0))
+		enc := dev.BeginEncoder()
+		p := enc.BeginRenderPass(gpu.RenderPassDesc{})
+		p.ClearColor(core.RGB(0x000000))
+		p.SetPipeline(pipe)
+		p.SetBindGroup(0, bg)
+		p.SetVertexBuffer(0, vb, 0)
+		p.Draw(6, 0)
+		p.End()
+		dev.Submit(enc.Finish())
+		if sr.LastError() != nil {
+			t.Fatalf("SoftwareRenderer error: %v", sr.LastError())
+		}
+		return sr.Image().RGBAAt(4, 4)
+	}
+
+	nearestDesc := gpu.SamplerDesc{MinFilter: gpu.FilterNearest, MagFilter: gpu.FilterNearest, MipmapFilter: gpu.FilterNearest}
+	for lvl, want := range mipColors {
+		if got := sampleAt(mipTex, nearestDesc, float32(lvl)); got != want {
+			t.Errorf("LOD %d pixel = %+v, want %+v", lvl, got, want)
+		}
+	}
+
+	// Trilinear interpolation at LOD 0.5 blends mip 0 (Red) and mip 1 (Green) -> (~128, ~128, 0, 255).
+	trilinearDesc := gpu.SamplerDesc{MinFilter: gpu.FilterLinear, MagFilter: gpu.FilterLinear, MipmapFilter: gpu.FilterLinear}
+	gotBlend := sampleAt(mipTex, trilinearDesc, 0.5)
+	if gotBlend.R < 124 || gotBlend.R > 132 || gotBlend.G < 124 || gotBlend.G > 132 || gotBlend.B > 2 {
+		t.Errorf("trilinear LOD 0.5 pixel = %+v, want ~{128 128 0 255}", gotBlend)
+	}
+
+	// MinLOD=1, MaxLOD=2 clamps LOD 0 -> mip 1 (Green) and LOD 3 -> mip 2 (Blue).
+	clampedDesc := gpu.SamplerDesc{MinFilter: gpu.FilterNearest, MagFilter: gpu.FilterNearest, MipmapFilter: gpu.FilterNearest, MinLOD: 1.0, MaxLOD: 2.0}
+	if got := sampleAt(mipTex, clampedDesc, 0.0); got != mipColors[1] {
+		t.Errorf("clamped LOD 0.0 pixel = %+v, want mip 1 Green %+v", got, mipColors[1])
+	}
+	if got := sampleAt(mipTex, clampedDesc, 3.0); got != mipColors[2] {
+		t.Errorf("clamped LOD 3.0 pixel = %+v, want mip 2 Blue %+v", got, mipColors[2])
+	}
+
+	// 2. GenerateMipmaps (box filter) on a 4x4 4-quadrant texture + CPU GenerateMipChainRGBA parity.
+	baseImg := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 4; x++ {
+			var c color.RGBA
+			switch {
+			case x < 2 && y < 2:
+				c = color.RGBA{255, 0, 0, 255}
+			case x >= 2 && y < 2:
+				c = color.RGBA{0, 255, 0, 255}
+			case x < 2 && y >= 2:
+				c = color.RGBA{0, 0, 255, 255}
+			default:
+				c = color.RGBA{255, 255, 255, 255}
+			}
+			baseImg.SetRGBA(x, y, c)
+		}
+	}
+
+	genTex, err := dev.CreateTexture(nil, gpu.TextureDesc{
+		Label:     "generated-mips",
+		Dimension: gpu.Dim2D,
+		Width:     4,
+		Height:    4,
+		MipLevels: 3,
+		Format:    gpu.FormatRGBA8Unorm,
+		Usage:     gpu.TextureSampled | gpu.TextureCopyDst | gpu.TextureCopySrc,
+	})
+	if err != nil {
+		t.Fatalf("CreateTexture genTex: %v", err)
+	}
+	dev.WriteTextureRGBA(genTex, 0, 0, baseImg)
+	if err := dev.GenerateMipmaps(genTex); err != nil {
+		t.Fatalf("GenerateMipmaps: %v", err)
+	}
+
+	// Mip 2 (1x1) must average Red, Green, Blue, White -> (128, 128, 128, 255).
+	gotGen := sampleAt(genTex, nearestDesc, 2.0)
+	if gotGen != (color.RGBA{128, 128, 128, 255}) {
+		t.Errorf("GenerateMipmaps LOD 2 pixel = %+v, want {128 128 128 255}", gotGen)
+	}
+
+	var mip1Bytes, mip2Bytes []byte
+	dev.ReadTexture(genTex, gpu.TextureRegion{MipLevel: 1, Width: 2, Height: 2}, func(rgba []byte, err error) {
+		if err != nil {
+			t.Fatalf("ReadTexture mip 1: %v", err)
+		}
+		mip1Bytes = rgba
+	})
+	dev.ReadTexture(genTex, gpu.TextureRegion{MipLevel: 2, Width: 1, Height: 1}, func(rgba []byte, err error) {
+		if err != nil {
+			t.Fatalf("ReadTexture mip 2: %v", err)
+		}
+		mip2Bytes = rgba
+	})
+	// Check CPU GenerateMipChainRGBA matches GPU GenerateMipmaps byte-for-byte.
+	chain := gpu.GenerateMipChainRGBA(baseImg, 0)
+	if len(chain) != 3 {
+		t.Fatalf("GenerateMipChainRGBA len = %d, want 3", len(chain))
+	}
+	if string(mip1Bytes) != string(chain[1].Pix) {
+		t.Errorf("GPU mip 1 %v != CPU mip 1 %v", mip1Bytes, chain[1].Pix)
+	}
+	if string(mip2Bytes) != string(chain[2].Pix) {
+		t.Errorf("GPU mip 2 %v != CPU mip 2 %v", mip2Bytes, chain[2].Pix)
+	}
+}
+
+func TestWriteTextureRegionRepacksPaddedRows(t *testing.T) {
+	sr := gpu.NewSoftwareRenderer(8, 8, gpu.FormatUndefined)
+	dev := sr.Device()
+	tex, err := dev.CreateTexture(nil, gpu.TextureDesc{Width: 4, Height: 4, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled | gpu.TextureCopyDst | gpu.TextureCopySrc})
+	if err != nil {
+		t.Fatalf("CreateTexture: %v", err)
+	}
+	// A 2x2 red region whose source rows are 16 bytes apart (8 bytes of padding per row filled with green), written at (1, 1).
+	src := make([]byte, 16*2)
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 4; x++ {
+			p := src[y*16+x*4:]
+			if x < 2 {
+				p[0], p[3] = 255, 255
+			} else {
+				p[1], p[3] = 255, 255
+			}
+		}
+	}
+	dev.WriteTextureRegion(gpu.TextureWrite{Texture: tex, OriginX: 1, OriginY: 1, Width: 2, Height: 2}, src, gpu.DataLayout{BytesPerRow: 16})
+	var got []byte
+	dev.ReadTexture(tex, gpu.TextureRegion{Width: 4, Height: 4}, func(rgba []byte, err error) {
+		if err != nil {
+			t.Errorf("ReadTexture: %v", err)
+		}
+		got = rgba
+	})
+	if len(got) != 4*4*4 {
+		t.Fatalf("readback len = %d", len(got))
+	}
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 4; x++ {
+			p := got[(y*4+x)*4:]
+			inside := x >= 1 && x <= 2 && y >= 1 && y <= 2
+			if inside && (p[0] != 255 || p[1] != 0) {
+				t.Errorf("texel (%d,%d) = %v, want red", x, y, p[:4])
+			}
+			if !inside && (p[0] != 0 || p[1] != 0) {
+				t.Errorf("texel (%d,%d) = %v outside the region was written", x, y, p[:4])
+			}
+		}
+	}
+}
+
+func TestGenerateMipmapsUnsupportedWithoutFeature(t *testing.T) {
+	sr := gpu.NewSoftwareRendererWithFeatures(8, 8, gpu.FormatUndefined, gpu.Features{Depth32Float: true})
+	dev := sr.Device()
+	tex, err := dev.CreateTexture(nil, gpu.TextureDesc{Width: 4, Height: 4, MipLevels: 3, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureSampled | gpu.TextureCopyDst})
+	if err != nil {
+		t.Fatalf("CreateTexture: %v", err)
+	}
+	if err := dev.GenerateMipmaps(tex); !errors.Is(err, gpu.ErrUnsupported) {
+		t.Fatalf("GenerateMipmaps without MipmapGeneration = %v, want ErrUnsupported", err)
+	}
+	if !gpu.NewSoftwareRenderer(8, 8, gpu.FormatUndefined).Device().Features().MipmapGeneration {
+		t.Fatalf("default software device should report MipmapGeneration")
+	}
+}

@@ -1005,8 +1005,30 @@ func (d *Device) CreateTexture(cx *core.Scope, desc TextureDesc) (*Texture, erro
 			desc.Layers = 1
 		}
 	}
+	switch desc.Dimension {
+	case Dim2D:
+		if desc.Layers != 1 {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("2D texture must have 1 layer, got %d (use Dim2DArray)", desc.Layers)}
+		}
+	case DimCube:
+		if desc.Width != desc.Height {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("cubemap texture must be square, got %dx%d", desc.Width, desc.Height)}
+		}
+		if desc.Layers != 6 {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("cubemap texture must have 6 layers, got %d", desc.Layers)}
+		}
+	case Dim2DArray:
+		if d.limits.MaxTextureArrayLayers > 0 && desc.Layers > d.limits.MaxTextureArrayLayers {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("texture array layers %d exceed limit %d", desc.Layers, d.limits.MaxTextureArrayLayers)}
+		}
+	default:
+		return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("unsupported texture dimension %d", desc.Dimension)}
+	}
 	if desc.MipLevels == 0 {
 		desc.MipLevels = 1
+	}
+	if maxMips := MaxMipLevels(desc.Width, desc.Height); desc.MipLevels > maxMips {
+		return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("texture mip levels %d exceed maximum %d for %dx%d", desc.MipLevels, maxMips, desc.Width, desc.Height)}
 	}
 	if desc.SampleCount <= 0 {
 		desc.SampleCount = 1
@@ -1167,6 +1189,18 @@ func (d *Device) CreateSampler(cx *core.Scope, desc SamplerDesc) (*Sampler, erro
 	if !d.alive() {
 		return nil, Error{Code: ErrDeviceLost, Message: "device is lost or disposed"}
 	}
+	if desc.MinLOD < 0 {
+		return nil, Error{Code: ErrInvalidDescriptor, Message: "sampler MinLOD must be non-negative"}
+	}
+	if desc.MaxLOD < 0 {
+		return nil, Error{Code: ErrInvalidDescriptor, Message: "sampler MaxLOD must be non-negative"}
+	}
+	if desc.MaxLOD == 0 {
+		desc.MaxLOD = 32.0
+	}
+	if desc.MaxLOD < desc.MinLOD {
+		return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("sampler MaxLOD (%g) must be >= MinLOD (%g)", desc.MaxLOD, desc.MinLOD)}
+	}
 	lbl := debugLabel(desc.Label)
 	desc.Label = lbl
 	id := d.nextID()
@@ -1178,6 +1212,8 @@ func (d *Device) CreateSampler(cx *core.Scope, desc SamplerDesc) (*Sampler, erro
 		AddressU:      driver.GPUAddressMode(desc.AddressU),
 		AddressV:      driver.GPUAddressMode(desc.AddressV),
 		AddressW:      driver.GPUAddressMode(desc.AddressW),
+		MinLOD:        desc.MinLOD,
+		MaxLOD:        desc.MaxLOD,
 		Compare:       driver.GPUCompareFunc(desc.Compare),
 		MaxAnisotropy: desc.MaxAnisotropy,
 	}
@@ -1812,6 +1848,8 @@ func (d *Device) restoreRetainedFrom(prev *Device) {
 			AddressW:      driver.GPUAddressMode(s.desc.AddressW),
 			Compare:       driver.GPUCompareFunc(s.desc.Compare),
 			MaxAnisotropy: s.desc.MaxAnisotropy,
+			MinLOD:        s.desc.MinLOD,
+			MaxLOD:        s.desc.MaxLOD,
 		}
 		d.enqueueOp(driver.GPUResourceOp{Kind: driver.GPUOpCreateSampler, ID: id, Sampler: &dd})
 		s.dev = d
@@ -2032,7 +2070,7 @@ func (d *Device) WriteBuffer(buf *Buffer, offset uint64, data []byte) {
 	})
 }
 
-// WriteTexture copies raw texel bytes into dst according to layout.
+// WriteTexture copies raw texel bytes into dst according to layout. The written width is BytesPerRow / bytes-per-texel (clamped to the mip edge), and the row count follows the data length and RowsPerImage, on every backend.
 func (d *Device) WriteTexture(tex *Texture, dst TextureCopy, data []byte, layout DataLayout) {
 	if !d.alive() || tex == nil || !tex.Valid() || tex.dev != d || len(data) == 0 {
 		return
@@ -2079,20 +2117,128 @@ func (d *Device) WriteTexture(tex *Texture, dst TextureCopy, data []byte, layout
 	})
 }
 
+// WriteTextureRegion copies raw texel bytes into a specific mip level, array layer (or cubemap face), and optional sub-rectangle of dst.Texture. Width and Height default to the rest of the mip level from the origin. The source rows (layout.BytesPerRow apart, starting at layout.Offset) are repacked into tight rows of the sub-rectangle width, so only the sub-rectangle is written on every backend. Compressed formats are forwarded to WriteTexture unchanged.
+func (d *Device) WriteTextureRegion(dst TextureWrite, data []byte, layout DataLayout) {
+	tex := dst.Texture
+	if !d.alive() || tex == nil || !tex.Valid() || tex.dev != d || len(data) == 0 {
+		return
+	}
+	if dst.MipLevel >= tex.desc.MipLevels || dst.ArrayLayer >= tex.desc.Layers {
+		return
+	}
+	copyDst := TextureCopy{Texture: tex, MipLevel: dst.MipLevel, ArrayLayer: dst.ArrayLayer, OriginX: dst.OriginX, OriginY: dst.OriginY}
+	bpp := driver.GPUTextureFormat(tex.desc.Format).BytesPerPixel()
+	if bpp == 0 {
+		d.WriteTexture(tex, copyDst, data, layout)
+		return
+	}
+	mw, mh := MipSize(tex.desc.Width, tex.desc.Height, dst.MipLevel)
+	if dst.OriginX >= mw || dst.OriginY >= mh {
+		return
+	}
+	w := dst.Width
+	if w == 0 || dst.OriginX+w > mw {
+		w = mw - dst.OriginX
+	}
+	h := dst.Height
+	if h == 0 || dst.OriginY+h > mh {
+		h = mh - dst.OriginY
+	}
+	row := uint64(w) * uint64(bpp)
+	stride := uint64(layout.BytesPerRow)
+	if stride == 0 {
+		stride = row
+	}
+	if stride < row || layout.Offset >= uint64(len(data)) {
+		return
+	}
+	src := data[layout.Offset:]
+	rows := uint64(h)
+	if avail := (uint64(len(src)) - row) / stride; uint64(len(src)) < row {
+		return
+	} else if avail+1 < rows {
+		rows = avail + 1
+	}
+	packed := make([]byte, 0, rows*row)
+	for y := uint64(0); y < rows; y++ {
+		packed = append(packed, src[y*stride:y*stride+row]...)
+	}
+	d.WriteTexture(tex, copyDst, packed, DataLayout{BytesPerRow: uint32(row), RowsPerImage: uint32(rows)})
+}
+
+// WriteTextureMip uploads packed texel bytes for an entire mip level and array layer (or cubemap face 0..5). If bytesPerRow is 0, rows are assumed tightly packed.
+func (d *Device) WriteTextureMip(tex *Texture, mipLevel, arrayLayer uint32, data []byte, bytesPerRow uint32) {
+	if tex == nil {
+		return
+	}
+	mw, mh := MipSize(tex.desc.Width, tex.desc.Height, mipLevel)
+	if bytesPerRow == 0 {
+		bpp := driver.GPUTextureFormat(tex.desc.Format).BytesPerPixel()
+		if bpp == 0 {
+			bpp = 4
+		}
+		bytesPerRow = mw * bpp
+	}
+	d.WriteTextureRegion(TextureWrite{
+		Texture:    tex,
+		MipLevel:   mipLevel,
+		ArrayLayer: arrayLayer,
+		Width:      mw,
+		Height:     mh,
+	}, data, DataLayout{
+		BytesPerRow:  bytesPerRow,
+		RowsPerImage: mh,
+	})
+}
+
 // WriteTextureRGBA uploads img's RGBA pixels into tex at mipLevel and arrayLayer.
 func (d *Device) WriteTextureRGBA(tex *Texture, mipLevel, arrayLayer uint32, img *image.RGBA) {
 	if img == nil || tex == nil {
 		return
 	}
 	b := img.Bounds()
-	d.WriteTexture(tex, TextureCopy{
+	d.WriteTextureRegion(TextureWrite{
 		Texture:    tex,
 		MipLevel:   mipLevel,
 		ArrayLayer: arrayLayer,
+		Width:      uint32(b.Dx()),
+		Height:     uint32(b.Dy()),
 	}, img.Pix, DataLayout{
 		BytesPerRow:  uint32(img.Stride),
 		RowsPerImage: uint32(b.Dy()),
 	})
+}
+
+// WriteCubeFaceRGBA uploads img's RGBA pixels into one face (CubeFacePosX..CubeFaceNegZ) of a cubemap texture at mipLevel.
+func (d *Device) WriteCubeFaceRGBA(tex *Texture, face CubeFace, mipLevel uint32, img *image.RGBA) {
+	if tex == nil || tex.desc.Dimension != DimCube || face >= 6 {
+		return
+	}
+	d.WriteTextureRGBA(tex, mipLevel, face, img)
+}
+
+// GenerateMipmaps populates mip levels 1..MipLevels-1 from level 0 for every array layer (or cubemap face) of tex using a 2x2 box filter. It returns ErrUnsupported where Features.MipmapGeneration is false (the native backends today); there, build the chain on the CPU with GenerateMipChainRGBA and upload each level with WriteTextureMip.
+func (d *Device) GenerateMipmaps(tex *Texture) error {
+	if !d.alive() {
+		return Error{Code: ErrDeviceLost, Message: "device is lost or disposed"}
+	}
+	if !d.features.MipmapGeneration {
+		return Error{Code: ErrUnsupported, Message: "mipmap generation is not supported on this device"}
+	}
+	if !tex.Valid() || tex.dev != d {
+		return Error{Code: ErrInvalidDescriptor, Message: "GenerateMipmaps requires a live Texture"}
+	}
+	if tex.desc.Format.IsDepthStencil() || tex.desc.Format.IsCompressed() || tex.desc.SampleCount > 1 {
+		return Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("GenerateMipmaps does not support %s textures with %d samples", tex.desc.Format, tex.desc.SampleCount)}
+	}
+	if tex.desc.MipLevels <= 1 {
+		return nil
+	}
+	d.enqueueOp(driver.GPUResourceOp{
+		Kind: driver.GPUOpGenerateMipmaps,
+		ID:   tex.id,
+	})
+	return nil
 }
 
 // --- Command encoding, Frame, and RenderPass ---

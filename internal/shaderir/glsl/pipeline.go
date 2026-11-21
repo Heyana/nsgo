@@ -356,6 +356,13 @@ func (w *pipeWriter) declVar(t shaderir.Type, name string) string {
 	return fmt.Sprintf("%s %s", w.typeStr(t), name)
 }
 
+func (w *pipeWriter) texType(texIdx int) shaderir.BasicType {
+	if texIdx >= 0 && texIdx < len(w.p.Bindings) {
+		return w.p.Bindings[texIdx].Type.Main
+	}
+	return shaderir.Texture2D
+}
+
 func (w *pipeWriter) registerSamplerPair(texIdx, sampIdx int, comparison bool) string {
 	key := [2]int{texIdx, sampIdx}
 	if name, ok := w.pairByKey[key]; ok {
@@ -598,6 +605,9 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 			texIdx := e.Exprs[1].Index
 			sampIdx := e.Exprs[2].Index
 			comb := w.registerSamplerPair(texIdx, sampIdx, false)
+			if w.texType(texIdx) == shaderir.Texture2DArray && len(e.Exprs) >= 5 {
+				return fmt.Sprintf("texture(%s, vec3(%s, float(%s)))", comb, w.emitExpr(e.Exprs[3], stage), w.emitExpr(e.Exprs[4], stage))
+			}
 			suffix := ""
 			if texIdx >= 0 && texIdx < len(w.p.Bindings) && w.p.Bindings[texIdx].Type.Main == shaderir.TextureDepth2D {
 				suffix = ".r"
@@ -609,6 +619,9 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 		case shaderir.TextureSampleLevel:
 			texIdx := e.Exprs[1].Index
 			comb := w.registerSamplerPair(texIdx, e.Exprs[2].Index, false)
+			if w.texType(texIdx) == shaderir.Texture2DArray && len(e.Exprs) >= 6 {
+				return fmt.Sprintf("textureLod(%s, vec3(%s, float(%s)), %s)", comb, w.emitExpr(e.Exprs[3], stage), w.emitExpr(e.Exprs[4], stage), w.emitExpr(e.Exprs[5], stage))
+			}
 			lod := w.emitExpr(e.Exprs[4], stage)
 			suffix := ""
 			if texIdx >= 0 && texIdx < len(w.p.Bindings) && w.p.Bindings[texIdx].Type.Main == shaderir.TextureDepth2D {
@@ -620,10 +633,24 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 			}
 			return fmt.Sprintf("textureLod(%s, %s, %s)%s", comb, w.emitExpr(e.Exprs[3], stage), lod, suffix)
 		case shaderir.TextureSampleBias:
-			comb := w.registerSamplerPair(e.Exprs[1].Index, e.Exprs[2].Index, false)
+			texIdx := e.Exprs[1].Index
+			comb := w.registerSamplerPair(texIdx, e.Exprs[2].Index, false)
+			if w.texType(texIdx) == shaderir.Texture2DArray && len(e.Exprs) >= 6 {
+				return fmt.Sprintf("texture(%s, vec3(%s, float(%s)), %s)", comb, w.emitExpr(e.Exprs[3], stage), w.emitExpr(e.Exprs[4], stage), w.emitExpr(e.Exprs[5], stage))
+			}
+			if len(e.Exprs) >= 6 {
+				return fmt.Sprintf("textureOffset(%s, %s, %s, %s)", comb, w.emitExpr(e.Exprs[3], stage), w.emitExpr(e.Exprs[5], stage), w.emitExpr(e.Exprs[4], stage))
+			}
 			return fmt.Sprintf("texture(%s, %s, %s)", comb, w.emitExpr(e.Exprs[3], stage), w.emitExpr(e.Exprs[4], stage))
 		case shaderir.TextureSampleGrad:
-			comb := w.registerSamplerPair(e.Exprs[1].Index, e.Exprs[2].Index, false)
+			texIdx := e.Exprs[1].Index
+			comb := w.registerSamplerPair(texIdx, e.Exprs[2].Index, false)
+			if w.texType(texIdx) == shaderir.Texture2DArray && len(e.Exprs) >= 7 {
+				return fmt.Sprintf("textureGrad(%s, vec3(%s, float(%s)), %s, %s)", comb, w.emitExpr(e.Exprs[3], stage), w.emitExpr(e.Exprs[4], stage), w.emitExpr(e.Exprs[5], stage), w.emitExpr(e.Exprs[6], stage))
+			}
+			if len(e.Exprs) >= 7 {
+				return fmt.Sprintf("textureGradOffset(%s, %s, %s, %s, %s)", comb, w.emitExpr(e.Exprs[3], stage), w.emitExpr(e.Exprs[4], stage), w.emitExpr(e.Exprs[5], stage), w.emitExpr(e.Exprs[6], stage))
+			}
 			return fmt.Sprintf("textureGrad(%s, %s, %s, %s)", comb, w.emitExpr(e.Exprs[3], stage), w.emitExpr(e.Exprs[4], stage), w.emitExpr(e.Exprs[5], stage))
 		case shaderir.TextureSampleCompare:
 			comb := w.registerSamplerPair(e.Exprs[1].Index, e.Exprs[2].Index, true)
@@ -640,13 +667,24 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 		case shaderir.TextureLoad:
 			texIdx := e.Exprs[1].Index
 			comb := w.registerSamplerPair(texIdx, -1, false)
+			if w.texType(texIdx) == shaderir.Texture2DArray && len(e.Exprs) >= 5 {
+				return fmt.Sprintf("texelFetch(%s, ivec3(%s, int(%s)), int(%s))", comb, w.emitExpr(e.Exprs[2], stage), w.emitExpr(e.Exprs[3], stage), w.emitExpr(e.Exprs[4], stage))
+			}
 			if texIdx >= 0 && texIdx < len(w.p.Bindings) && w.p.Bindings[texIdx].Type.Main == shaderir.TextureDepth2D {
 				return fmt.Sprintf("texelFetch(%s, ivec2(%s), int(%s)).r", comb, w.emitExpr(e.Exprs[2], stage), w.emitExpr(e.Exprs[3], stage))
 			}
 			return fmt.Sprintf("texelFetch(%s, ivec2(%s), int(%s))", comb, w.emitExpr(e.Exprs[2], stage), w.emitExpr(e.Exprs[3], stage))
 		case shaderir.TextureDimensions:
-			comb := w.registerSamplerPair(e.Exprs[1].Index, -1, false)
-			return fmt.Sprintf("uvec2(textureSize(%s, 0))", comb)
+			texIdx := e.Exprs[1].Index
+			comb := w.registerSamplerPair(texIdx, -1, false)
+			lod := "0"
+			if len(e.Exprs) >= 3 {
+				lod = fmt.Sprintf("int(%s)", w.emitExpr(e.Exprs[2], stage))
+			}
+			if w.texType(texIdx) == shaderir.Texture2DArray {
+				return fmt.Sprintf("uvec2(textureSize(%s, %s).xy)", comb, lod)
+			}
+			return fmt.Sprintf("uvec2(textureSize(%s, %s))", comb, lod)
 		case shaderir.TextureStore:
 			return fmt.Sprintf("imageStore(%s, ivec2(%s), %s)", w.emitExpr(e.Exprs[1], stage), w.emitExpr(e.Exprs[2], stage), w.emitExpr(e.Exprs[3], stage))
 		case shaderir.ArrayLength:

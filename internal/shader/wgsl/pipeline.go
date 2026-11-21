@@ -716,64 +716,160 @@ func (c *checker) structConstruct(t ty, x *callExpr, out *[]shaderir.Stmt) value
 }
 
 func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shaderir.Stmt) (value, bool) {
+	checkLayer := func(arg expr) shaderir.Expr {
+		v := c.concrete(c.expr(arg, out), arg.at())
+		if v.t.k != kI32 && v.t.k != kU32 {
+			fail(arg.at(), "%s array layer and level must be i32 or u32, not %s", name, v.t)
+		}
+		return c.ir(v)
+	}
+	checkCoord := func(texT ty, arg expr) shaderir.Expr {
+		var want ty
+		switch texT.k {
+		case kTexture2D, kTexture2DArray, kTextureDepth2D:
+			want = vec(kF32, 2)
+		case kTextureCube:
+			want = vec(kF32, 3)
+		default:
+			fail(arg.at(), "%s does not support texture type %s", name, texT)
+		}
+		return c.ir(c.convert(c.expr(arg, out), want, arg.at()))
+	}
+	checkTexAndSampler := func(comp bool) (ty, shaderir.Expr, shaderir.Expr) {
+		tex := c.expr(x.args[0], out)
+		switch tex.t.k {
+		case kTexture2D, kTextureCube, kTexture2DArray, kTextureDepth2D:
+		default:
+			fail(x.args[0].at(), "%s first argument must be a sampled texture, not %s", name, tex.t)
+		}
+		samp := c.expr(x.args[1], out)
+		if comp {
+			if samp.t.k != kSamplerComparison {
+				fail(x.args[1].at(), "%s second argument must be sampler_comparison, not %s", name, samp.t)
+			}
+		} else if samp.t.k != kSampler {
+			fail(x.args[1].at(), "%s second argument must be sampler, not %s", name, samp.t)
+		}
+		return tex.t, c.ir(tex), c.ir(samp)
+	}
+
+	offsetArg := func(arg expr) shaderir.Expr {
+		return c.ir(c.convert(c.expr(arg, out), vec(kI32, 2), arg.at()))
+	}
+	f32Arg := func(arg expr) shaderir.Expr {
+		return c.ir(c.convert(c.expr(arg, out), tF32, arg.at()))
+	}
+	sampledRet := func(texT ty) ty {
+		if texT.k == kTextureDepth2D {
+			return tF32
+		}
+		return vec(kF32, 4)
+	}
+
+	// IR argument order: (texture, sampler, coords[, layer for texture_2d_array], extra...). Emitters and the software VM tell the array layer apart from a 2D offset by the texture type.
 	switch name {
 	case "textureSample":
 		if len(x.args) < 3 || len(x.args) > 4 {
 			fail(x.at(), "textureSample takes 3 or 4 arguments")
 		}
-		tex := c.expr(x.args[0], out)
-		samp := c.expr(x.args[1], out)
-		if samp.t.k == kSamplerComparison {
-			fail(x.args[1].at(), "textureSample expects sampler, not sampler_comparison")
+		texT, texIR, sampIR := checkTexAndSampler(false)
+		args := []shaderir.Expr{texIR, sampIR, checkCoord(texT, x.args[2])}
+		switch {
+		case texT.k == kTexture2DArray:
+			if len(x.args) != 4 {
+				fail(x.at(), "textureSample on texture_2d_array<f32> takes 4 arguments (texture, sampler, uv, layer)")
+			}
+			args = append(args, checkLayer(x.args[3]))
+		case len(x.args) == 4:
+			if texT.k == kTextureCube {
+				fail(x.args[3].at(), "textureSample on texture_cube<f32> takes no offset")
+			}
+			args = append(args, offsetArg(x.args[3]))
 		}
-		coord := c.concrete(c.expr(x.args[2], out), x.args[2].at())
-		args := []shaderir.Expr{c.ir(tex), c.ir(samp), c.ir(coord)}
-		if len(x.args) == 4 {
-			off := c.convert(c.expr(x.args[3], out), vec(kI32, 2), x.args[3].at())
-			args = append(args, c.ir(off))
-		}
-		retT := vec(kF32, 4)
-		if tex.t.k == kTextureDepth2D {
-			retT = tF32
-		}
+		retT := sampledRet(texT)
 		return value{t: retT, e: builtinCall(shaderir.TextureSample, retT, args...)}, true
 	case "textureSampleLevel":
 		if len(x.args) < 4 || len(x.args) > 5 {
 			fail(x.at(), "textureSampleLevel takes 4 or 5 arguments")
 		}
-		tex := c.expr(x.args[0], out)
-		samp := c.expr(x.args[1], out)
-		if samp.t.k == kSamplerComparison {
-			fail(x.args[1].at(), "textureSampleLevel expects sampler, not sampler_comparison")
+		texT, texIR, sampIR := checkTexAndSampler(false)
+		args := []shaderir.Expr{texIR, sampIR, checkCoord(texT, x.args[2])}
+		switch texT.k {
+		case kTexture2DArray:
+			if len(x.args) != 5 {
+				fail(x.at(), "textureSampleLevel on texture_2d_array<f32> takes 5 arguments (texture, sampler, uv, layer, level)")
+			}
+			args = append(args, checkLayer(x.args[3]), f32Arg(x.args[4]))
+		case kTextureDepth2D:
+			// texture_depth_2d takes an integer level, as on main.
+			args = append(args, c.ir(c.concrete(c.expr(x.args[3], out), x.args[3].at())))
+			if len(x.args) == 5 {
+				args = append(args, offsetArg(x.args[4]))
+			}
+		default:
+			args = append(args, f32Arg(x.args[3]))
+			if len(x.args) == 5 {
+				if texT.k == kTextureCube {
+					fail(x.args[4].at(), "textureSampleLevel on texture_cube<f32> takes no offset")
+				}
+				args = append(args, offsetArg(x.args[4]))
+			}
 		}
-		args := make([]shaderir.Expr, len(x.args))
-		args[0] = c.ir(tex)
-		args[1] = c.ir(samp)
-		for i := 2; i < len(x.args); i++ {
-			a := x.args[i]
-			args[i] = c.ir(c.concrete(c.expr(a, out), a.at()))
-		}
-		retT := vec(kF32, 4)
-		if tex.t.k == kTextureDepth2D {
-			retT = tF32
-		}
+		retT := sampledRet(texT)
 		return value{t: retT, e: builtinCall(shaderir.TextureSampleLevel, retT, args...)}, true
 	case "textureSampleBias":
 		if len(x.args) < 4 || len(x.args) > 5 {
 			fail(x.at(), "textureSampleBias takes 4 or 5 arguments")
 		}
-		args := make([]shaderir.Expr, len(x.args))
-		for i, a := range x.args {
-			args[i] = c.ir(c.concrete(c.expr(a, out), a.at()))
+		texT, texIR, sampIR := checkTexAndSampler(false)
+		if texT.k == kTextureDepth2D {
+			fail(x.args[0].at(), "textureSampleBias does not take texture_depth_2d")
+		}
+		args := []shaderir.Expr{texIR, sampIR, checkCoord(texT, x.args[2])}
+		switch texT.k {
+		case kTexture2DArray:
+			if len(x.args) != 5 {
+				fail(x.at(), "textureSampleBias on texture_2d_array<f32> takes 5 arguments (texture, sampler, uv, layer, bias)")
+			}
+			args = append(args, checkLayer(x.args[3]), f32Arg(x.args[4]))
+		default:
+			args = append(args, f32Arg(x.args[3]))
+			if len(x.args) == 5 {
+				if texT.k == kTextureCube {
+					fail(x.args[4].at(), "textureSampleBias on texture_cube<f32> takes no offset")
+				}
+				args = append(args, offsetArg(x.args[4]))
+			}
 		}
 		return value{t: vec(kF32, 4), e: builtinCall(shaderir.TextureSampleBias, vec(kF32, 4), args...)}, true
 	case "textureSampleGrad":
 		if len(x.args) < 5 || len(x.args) > 6 {
 			fail(x.at(), "textureSampleGrad takes 5 or 6 arguments")
 		}
-		args := make([]shaderir.Expr, len(x.args))
-		for i, a := range x.args {
-			args[i] = c.ir(c.concrete(c.expr(a, out), a.at()))
+		texT, texIR, sampIR := checkTexAndSampler(false)
+		if texT.k == kTextureDepth2D {
+			fail(x.args[0].at(), "textureSampleGrad does not take texture_depth_2d")
+		}
+		args := []shaderir.Expr{texIR, sampIR, checkCoord(texT, x.args[2])}
+		gradT := vec(kF32, 2)
+		if texT.k == kTextureCube {
+			gradT = vec(kF32, 3)
+		}
+		grad := func(arg expr) shaderir.Expr { return c.ir(c.convert(c.expr(arg, out), gradT, arg.at())) }
+		switch texT.k {
+		case kTexture2DArray:
+			if len(x.args) != 6 {
+				fail(x.at(), "textureSampleGrad on texture_2d_array<f32> takes 6 arguments (texture, sampler, uv, layer, ddx, ddy)")
+			}
+			args = append(args, checkLayer(x.args[3]), grad(x.args[4]), grad(x.args[5]))
+		default:
+			args = append(args, grad(x.args[3]), grad(x.args[4]))
+			if len(x.args) == 6 {
+				if texT.k == kTextureCube {
+					fail(x.args[5].at(), "textureSampleGrad on texture_cube<f32> takes no offset")
+				}
+				args = append(args, offsetArg(x.args[5]))
+			}
 		}
 		return value{t: vec(kF32, 4), e: builtinCall(shaderir.TextureSampleGrad, vec(kF32, 4), args...)}, true
 	case "textureSampleCompare", "textureSampleCompareLevel":
@@ -792,8 +888,7 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 		ref := c.convert(c.expr(x.args[3], out), tF32, x.args[3].at())
 		args := []shaderir.Expr{c.ir(tex), c.ir(samp), c.ir(coord), c.ir(ref)}
 		if len(x.args) == 5 {
-			off := c.convert(c.expr(x.args[4], out), vec(kI32, 2), x.args[4].at())
-			args = append(args, c.ir(off))
+			args = append(args, offsetArg(x.args[4]))
 		}
 		fn := shaderir.TextureSampleCompare
 		if name == "textureSampleCompareLevel" {
@@ -805,24 +900,35 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 			fail(x.at(), "textureLoad takes 3 or 4 arguments")
 		}
 		tex := c.expr(x.args[0], out)
-		args := make([]shaderir.Expr, len(x.args))
-		args[0] = c.ir(tex)
+		if tex.t.k == kTextureCube {
+			fail(x.args[0].at(), "textureLoad does not take texture_cube<f32>")
+		}
+		args := []shaderir.Expr{c.ir(tex)}
+		if tex.t.k == kTexture2DArray {
+			if len(x.args) != 4 {
+				fail(x.at(), "textureLoad on texture_2d_array<f32> takes 4 arguments (texture, coords, layer, level)")
+			}
+			coord := c.concrete(c.expr(x.args[1], out), x.args[1].at())
+			if coord.t.k != kVec || coord.t.n != 2 || !isInt(coord.t.elem) {
+				fail(x.args[1].at(), "textureLoad coordinates must be vec2<i32> or vec2<u32>, not %s", coord.t)
+			}
+			args = append(args, c.ir(coord), checkLayer(x.args[2]), checkLayer(x.args[3]))
+			return value{t: vec(kF32, 4), e: builtinCall(shaderir.TextureLoad, vec(kF32, 4), args...)}, true
+		}
 		for i := 1; i < len(x.args); i++ {
 			a := x.args[i]
-			args[i] = c.ir(c.concrete(c.expr(a, out), a.at()))
+			args = append(args, c.ir(c.concrete(c.expr(a, out), a.at())))
 		}
-		retT := vec(kF32, 4)
-		if tex.t.k == kTextureDepth2D {
-			retT = tF32
-		}
+		retT := sampledRet(tex.t)
 		return value{t: retT, e: builtinCall(shaderir.TextureLoad, retT, args...)}, true
 	case "textureDimensions":
 		if len(x.args) < 1 || len(x.args) > 2 {
 			fail(x.at(), "textureDimensions takes 1 or 2 arguments")
 		}
-		args := make([]shaderir.Expr, len(x.args))
-		for i, a := range x.args {
-			args[i] = c.ir(c.concrete(c.expr(a, out), a.at()))
+		tex := c.expr(x.args[0], out)
+		args := []shaderir.Expr{c.ir(tex)}
+		if len(x.args) == 2 {
+			args = append(args, checkLayer(x.args[1]))
 		}
 		return value{t: vec(kU32, 2), e: builtinCall(shaderir.TextureDimensions, vec(kU32, 2), args...)}, true
 	case "textureStore":
