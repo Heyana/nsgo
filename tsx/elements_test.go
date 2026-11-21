@@ -482,10 +482,9 @@ mount(App);`)
 	}
 	app.Key("mod+k")
 	app.FastForward(100 * time.Millisecond)
-	for _, want := range []string{"keys mod+k", "data loaded"} {
-		if !app.Exists("text:" + want) {
-			t.Errorf("no %q among %q", want, app.Texts())
-		}
+	app.WaitFor("text:data loaded", time.Second)
+	if !app.Exists("text:keys mod+k") {
+		t.Errorf("the binding did not report mod+k: %q", app.Texts())
 	}
 }
 

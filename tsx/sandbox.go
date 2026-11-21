@@ -274,7 +274,7 @@ func (s Sandbox) start(cx *core.Scope, name, src string) *runtime {
 	if limits.Harden {
 		r.harden()
 	}
-	if s.plugin && !js.Browser && (limits.Call > 0 || limits.CallTotal > 0) {
+	if s.plugin && js.Properties().CanInterrupt && (limits.Call > 0 || limits.CallTotal > 0) {
 		r.keepPromiseJobs()
 	}
 	if s.plugin && limits.CallTotal > 0 {

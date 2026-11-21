@@ -999,8 +999,9 @@ func TestPluginLoadDeadlineStopsAModuleTimer(t *testing.T) {
 	app, plugin := deadlinePlugin(t, `let n = 0;
 setInterval(() => { n++; }, 1);
 export function counts() { return [n]; }`, 300*time.Millisecond, time.Second)
+
 	start := time.Now()
-	runUntil(app, start, 150*time.Millisecond)
+	app.Advance(time.Millisecond)
 	if c := counts(t, app, plugin); c[0] == 0 {
 		t.Fatal("the module's interval did not run within the load's deadline")
 	}
