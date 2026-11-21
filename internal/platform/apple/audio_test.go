@@ -969,10 +969,12 @@ func TestASoundPansStereo(t *testing.T) {
 					buf := objc.ID(Class("AVAudioPCMBuffer")).Send(sel("alloc")).Send(sel("initWithPCMFormat:frameCapacity:"), outFmt, uint32(4096))
 					defer buf.Send(sel("release"))
 					var nsErr objc.ID
-					// Render 2048 frames (about 46 ms); measure the second half once the mixer's click-free parameter ramp has settled.
-					status := objc.Send[int](ta.audio.engine, sel("renderOffline:toBuffer:error:"), uint32(2048), buf, unsafe.Pointer(&nsErr))
-					if status != 0 { // AVAudioEngineManualRenderingStatusSuccess
-						t.Fatalf("renderOffline status %d: %s", status, describeError(nsErr, "failed"))
+					// Render 2048 frames (about 46 ms) twice and measure the second. Offline, a player started on a reused node may begin only at the next render call, so the first can be silent, and by the second the mixer's click-free pan ramp has settled; the 100 ms tone still covers it.
+					for range 2 {
+						status := objc.Send[int](ta.audio.engine, sel("renderOffline:toBuffer:error:"), uint32(2048), buf, unsafe.Pointer(&nsErr))
+						if status != 0 { // AVAudioEngineManualRenderingStatusSuccess
+							t.Fatalf("renderOffline status %d: %s", status, describeError(nsErr, "failed"))
+						}
 					}
 					n := int(objc.Send[uint32](buf, sel("frameLength")))
 					chPtrs := objc.Send[*[2]*float32](buf, sel("floatChannelData"))
