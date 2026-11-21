@@ -1055,7 +1055,7 @@ func TestSystem(t *testing.T) {
 	open(app, "System")
 	app.Press("role:button Minimize")
 	app.Press("role:button Full screen")
-	if !slices.ContainsFunc(app.Window, func(c core.WindowCommand) bool { return c.Action == core.WindowToggleFullScreen }) {
+	if !slices.ContainsFunc(app.Window, func(c nsgotest.WindowRequest) bool { return c.Action == nsgotest.WindowToggleFullScreen }) {
 		t.Fatalf("window commands = %+v", app.Window)
 	}
 	app.Press("role:button Copy text")

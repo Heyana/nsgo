@@ -135,7 +135,7 @@ A line means "imports". `internal/moduletest/layering_test.go` checks the graph 
     └───────────────────► internal/driver
 ```
 
-- Apps may import any public package directly, `core` included. `core`, or the public package itself, aliases each internal type a public package's API reaches; `TestPublicAPINamesNoInternalType` lists the public packages with `go list`, every package outside `internal/`, `cmd/`, `tools/` and `examples/`, so a new one is checked without a list to edit.
+- Apps may import any public package directly, `core` included. `core`, or the public package itself, aliases each internal type a public package's API reaches; `TestPublicAPINamesNoInternalType` lists the public packages with `go list`, every package outside `internal/`, `cmd/`, `tools/` and `examples/`, so a new one is checked without a list to edit. The test also forbids protocol types that have been removed from the public API, including the window and share messages.
 - `internal/driver` imports `internal/shaderir` for shader programs and `internal/mimeinfo` for file types. The latter holds only fixed tables and standard-library helpers, so the build tool shares those names without linking the runtime.
 - `core` imports only `internal/driver`, `internal/devtools`, `internal/layout` and the shader compilers (`internal/shader`, `internal/shader/wgsl`, `internal/shaderir`). `internal/devtools` imports only `internal/driver`, for the batches and events it hands `nsgo dev -automation`'s agent, so DevTools' overlay, the layout audit's included, lives in `core` (`UpdateHighlights`).
 - Backends import `internal/driver`, `internal/engine`, `desktop/locales`, their shared packages and the shader writers, never the compilers, which only `core` links.

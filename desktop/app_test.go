@@ -46,7 +46,7 @@ func TestWindowLevelAndPlacementFollowTheEnvironment(t *testing.T) {
 	app.Find("text:Unplaced")
 	cx.Post(func() { desktop.SetWindowLevel(cx, desktop.WindowLevelFloating) })
 	app.Settle()
-	if n := len(app.Window); n == 0 || app.Window[n-1] != (core.WindowCommand{Action: core.WindowSetLevel, Level: desktop.WindowLevelFloating}) {
+	if n := len(app.Window); n == 0 || app.Window[n-1] != (nsgotest.WindowRequest{Action: nsgotest.WindowSetLevel, Level: desktop.WindowLevelFloating}) {
 		t.Fatalf("window commands = %+v", app.Window)
 	}
 	// As on X11, then macOS and Windows.
@@ -71,7 +71,7 @@ func TestWindowWorkspacesFollowTheEnvironment(t *testing.T) {
 	app.Find("text:Here")
 	cx.Post(func() { desktop.SetWindowWorkspaces(cx, desktop.WindowWorkspacesAll) })
 	app.Settle()
-	if n := len(app.Window); n == 0 || app.Window[n-1] != (core.WindowCommand{Action: core.WindowSetWorkspaces, Workspaces: desktop.WindowWorkspacesAll}) {
+	if n := len(app.Window); n == 0 || app.Window[n-1] != (nsgotest.WindowRequest{Action: nsgotest.WindowSetWorkspaces, Workspaces: desktop.WindowWorkspacesAll}) {
 		t.Fatalf("window commands = %+v", app.Window)
 	}
 	app.SetEnvironment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop, CanSetWindowWorkspaces: true})

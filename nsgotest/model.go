@@ -876,7 +876,7 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemRequestReview:
 			a.ReviewRequests++
 		case driver.ItemShare:
-			a.Shares = append(a.Shares, *it.Share)
+			a.Shares = append(a.Shares, Share{Files: slices.Clone(it.Share.Files), Text: it.Share.Text, From: it.Share.From})
 			a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Finished: true})
 		case driver.ItemAppearance:
 			a.Appearance = it.Appearance
@@ -937,7 +937,7 @@ func (a *App) apply(b *driver.MountBatch) {
 			// The app has one, whichever surface set it last.
 			a.dockMenu, a.DockMenu, a.dockTree = it.Menu, menuItems(it.Menu), a.responseTree
 		case driver.ItemWindow:
-			a.Window = append(a.Window, *it.Window)
+			a.Window = append(a.Window, windowRequest(it.Window))
 		case driver.ItemOpenSurface:
 			a.Opened = append(a.Opened, surfaceRecord(it.Surface))
 			if it.Surface.Kind == driver.SurfaceOverlay {

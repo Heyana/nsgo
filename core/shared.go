@@ -366,8 +366,6 @@ type (
 	WebNavigation = driver.WebNavigation
 	// WebSource is what a web view shows: the page at Src, or HTML, whose relative links resolve against BaseURL, instead when it is set. With neither Src nor HTML it loads about:blank and reports the usual load and navigation events, clearing any previous page.
 	WebSource = driver.WebSource
-	// WindowAction is what an ItemWindow asks of the window.
-	WindowAction = driver.WindowAction
 	// WindowFrame is where a window moves and how large it becomes, in
 	// points from the main screen's top left.
 	WindowFrame = driver.WindowFrame
@@ -426,11 +424,6 @@ type (
 	// OpenFile or Share: its path, and the name the other app sees and
 	// its type, which Path's name and extension say when empty.
 	SharedFile = driver.SharedFile
-	// ShareRequest is a share as the platform carries it out,
-	// ShareOptions resolved.
-	ShareRequest = driver.ShareRequest
-	// WindowCommand is an ItemWindow's request.
-	WindowCommand = driver.WindowCommand
 	// WindowPlacement is the side of a screen rectangle where a panel goes.
 	WindowPlacement = driver.WindowPlacement
 	// WindowDrag marks a view as a handle that moves the desktop window, or
@@ -905,21 +898,6 @@ const (
 	WindowMaterialMica         = driver.WindowMaterialMica
 	WindowMaterialAcrylic      = driver.WindowMaterialAcrylic
 	WindowMaterialTabbed       = driver.WindowMaterialTabbed
-)
-
-const (
-	WindowSetTitleBar      = driver.WindowSetTitleBar
-	WindowMinimize         = driver.WindowMinimize
-	WindowToggleMaximize   = driver.WindowToggleMaximize
-	WindowToggleFullScreen = driver.WindowToggleFullScreen
-	WindowClose            = driver.WindowClose
-	WindowSetFrame         = driver.WindowSetFrame
-	WindowSetLevel         = driver.WindowSetLevel
-	WindowOrderFront       = driver.WindowOrderFront
-	WindowSetMenuBar       = driver.WindowSetMenuBar
-	WindowSetControls      = driver.WindowSetControls
-	WindowSetMaterial      = driver.WindowSetMaterial
-	WindowSetWorkspaces    = driver.WindowSetWorkspaces
 )
 
 const (

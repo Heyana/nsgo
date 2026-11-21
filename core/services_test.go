@@ -850,15 +850,15 @@ func TestWindowFrameAndLevel(t *testing.T) {
 	cx.SetWindowLevel(WindowLevelFloating)
 	cx.OrderFront()
 	cx.SetMenuBar(MenuBarAutoHide)
-	var got []WindowCommand
+	var got []driver.WindowCommand
 	for _, it := range h.commit().Items {
 		if it.Kind == driver.ItemWindow {
 			got = append(got, *it.Window)
 		}
 	}
-	want := []WindowCommand{{Action: WindowSetFrame, Frame: WindowFrame{Height: 300, Animated: true}},
-		{Action: WindowSetLevel, Level: WindowLevelFloating}, {Action: WindowOrderFront},
-		{Action: WindowSetMenuBar, MenuBar: MenuBarAutoHide}}
+	want := []driver.WindowCommand{{Action: driver.WindowSetFrame, Frame: WindowFrame{Height: 300, Animated: true}},
+		{Action: driver.WindowSetLevel, Level: WindowLevelFloating}, {Action: driver.WindowOrderFront},
+		{Action: driver.WindowSetMenuBar, MenuBar: MenuBarAutoHide}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("commands = %+v", got)
 	}

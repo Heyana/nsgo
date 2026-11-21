@@ -962,8 +962,8 @@ function App() {
 	return <Text>Pet</Text>;
 }
 mount(App);`)
-	want := []core.WindowCommand{{Action: core.WindowSetWorkspaces, Workspaces: core.WindowWorkspacesAll},
-		{Action: core.WindowSetLevel, Level: core.WindowLevelFloating}}
+	want := []nsgotest.WindowRequest{{Action: nsgotest.WindowSetWorkspaces, Workspaces: core.WindowWorkspacesAll},
+		{Action: nsgotest.WindowSetLevel, Level: core.WindowLevelFloating}}
 	if !slices.Equal(app.Window, want) {
 		t.Errorf("the window was sent %+v; want %+v", app.Window, want)
 	}

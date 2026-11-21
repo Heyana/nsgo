@@ -70,16 +70,16 @@ func TestWindowCommands(t *testing.T) {
 		return View{TestID: "bar", Desktop: DesktopViewProps{WindowDrag: WindowDragOn}}
 	})
 	b := h.commit()
-	var cmds []WindowCommand
+	var cmds []driver.WindowCommand
 	for _, it := range b.Items {
 		if it.Kind == driver.ItemWindow {
 			cmds = append(cmds, *it.Window)
 		}
 	}
-	if want := []WindowCommand{
-		{Action: WindowSetTitleBar, TitleBar: TitleBarHidden, Height: 40},
-		{Action: WindowSetControls, Controls: lights},
-		{Action: WindowSetMaterial, Material: WindowMaterialSidebar},
+	if want := []driver.WindowCommand{
+		{Action: driver.WindowSetTitleBar, TitleBar: TitleBarHidden, Height: 40},
+		{Action: driver.WindowSetControls, Controls: lights},
+		{Action: driver.WindowSetMaterial, Material: WindowMaterialSidebar},
 	}; !slices.Equal(cmds, want) {
 		t.Fatalf("window commands = %+v, want %+v", cmds, want)
 	}
@@ -99,7 +99,7 @@ func TestReopenOrdersTheOneSurfaceFront(t *testing.T) {
 	orders := func() int {
 		n := 0
 		for _, it := range h.commit().Items {
-			if it.Kind == driver.ItemWindow && it.Window.Action == WindowOrderFront {
+			if it.Kind == driver.ItemWindow && it.Window.Action == driver.WindowOrderFront {
 				n++
 			}
 		}

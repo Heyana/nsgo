@@ -11,7 +11,7 @@ import (
 // core's part of package desktop, which apps use. Platforms without
 // desktop windows ignore all of it.
 
-func (cx *Scope) window(c WindowCommand) {
+func (cx *Scope) window(c driver.WindowCommand) {
 	if t := cx.tree(); t != nil {
 		t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemWindow, Window: &c})
 		t.changed = true
@@ -20,40 +20,44 @@ func (cx *Scope) window(c WindowCommand) {
 
 // SetTitleBar is the core's part of desktop.SetTitleBar, which apps use.
 func (cx *Scope) SetTitleBar(style TitleBarStyle, height Points) {
-	cx.window(WindowCommand{Action: WindowSetTitleBar, TitleBar: style, Height: min(max(height, 0), 200)})
+	cx.window(driver.WindowCommand{Action: driver.WindowSetTitleBar, TitleBar: style, Height: min(max(height, 0), 200)})
 }
 
 // MinimizeWindow is the core's part of desktop.MinimizeWindow, which apps use.
-func (cx *Scope) MinimizeWindow() { cx.window(WindowCommand{Action: WindowMinimize}) }
+func (cx *Scope) MinimizeWindow() { cx.window(driver.WindowCommand{Action: driver.WindowMinimize}) }
 
 // ToggleMaximize is the core's part of desktop.ToggleMaximize, which apps use.
-func (cx *Scope) ToggleMaximize() { cx.window(WindowCommand{Action: WindowToggleMaximize}) }
+func (cx *Scope) ToggleMaximize() {
+	cx.window(driver.WindowCommand{Action: driver.WindowToggleMaximize})
+}
 
 // ToggleFullScreen is the core's part of desktop.ToggleFullScreen, which apps use.
-func (cx *Scope) ToggleFullScreen() { cx.window(WindowCommand{Action: WindowToggleFullScreen}) }
+func (cx *Scope) ToggleFullScreen() {
+	cx.window(driver.WindowCommand{Action: driver.WindowToggleFullScreen})
+}
 
 // CloseWindow is the core's part of desktop.CloseWindow, which apps use.
-func (cx *Scope) CloseWindow() { cx.window(WindowCommand{Action: WindowClose}) }
+func (cx *Scope) CloseWindow() { cx.window(driver.WindowCommand{Action: driver.WindowClose}) }
 
 // SetWindowFrame is the core's part of desktop.SetWindowFrame, which apps use.
 func (cx *Scope) SetWindowFrame(f WindowFrame) {
 	f.Width, f.Height = max(f.Width, 0), max(f.Height, 0)
-	cx.window(WindowCommand{Action: WindowSetFrame, Frame: f})
+	cx.window(driver.WindowCommand{Action: driver.WindowSetFrame, Frame: f})
 }
 
 // SetWindowLevel is the core's part of desktop.SetWindowLevel, which apps use.
 func (cx *Scope) SetWindowLevel(level WindowLevel) {
-	cx.window(WindowCommand{Action: WindowSetLevel, Level: level})
+	cx.window(driver.WindowCommand{Action: driver.WindowSetLevel, Level: level})
 }
 
 // SetWindowWorkspaces is the core's part of desktop.SetWindowWorkspaces, which apps use.
 func (cx *Scope) SetWindowWorkspaces(w WindowWorkspaces) {
-	cx.window(WindowCommand{Action: WindowSetWorkspaces, Workspaces: w})
+	cx.window(driver.WindowCommand{Action: driver.WindowSetWorkspaces, Workspaces: w})
 }
 
 // SetWindowPointerEvents is the core's part of desktop.SetWindowPointerEvents, which apps use.
 func (cx *Scope) SetWindowPointerEvents(p WindowPointerEvents) {
-	cx.window(WindowCommand{Action: driver.WindowSetPointerEvents, PointerEvents: cx.windowPointer(p)})
+	cx.window(driver.WindowCommand{Action: driver.WindowSetPointerEvents, PointerEvents: cx.windowPointer(p)})
 }
 
 // windowPointer is p as code using cx may set it: a window that lets the pointer through to other apps, as an overlay does, takes AccessOverlay, as NSH's windows capability's overlay grants it; without it the window takes the pointer.
@@ -66,11 +70,11 @@ func (cx *Scope) windowPointer(p WindowPointerEvents) WindowPointerEvents {
 
 // SetWindowConstraints is the core's part of desktop.SetWindowConstraints, which apps use.
 func (cx *Scope) SetWindowConstraints(c WindowConstraints) {
-	cx.window(WindowCommand{Action: driver.WindowSetConstraints, Constraints: c.Normalized()})
+	cx.window(driver.WindowCommand{Action: driver.WindowSetConstraints, Constraints: c.Normalized()})
 }
 
 // OrderFront is the core's part of desktop.OrderFront, which apps use.
-func (cx *Scope) OrderFront() { cx.window(WindowCommand{Action: WindowOrderFront}) }
+func (cx *Scope) OrderFront() { cx.window(driver.WindowCommand{Action: driver.WindowOrderFront}) }
 
 // FrontmostApp is the core's part of desktop.FrontmostApp, which apps use: the application in front, read tracked, zero where the platform does not follow it (CanReadFrontmostApp) or the current owner's Access refuses AccessFrontmostApp.
 func (cx *Scope) FrontmostApp() FrontmostAppInfo {
@@ -93,32 +97,32 @@ func (cx *Scope) CanReadFrontmostApp() bool {
 
 // SetMenuBar is the core's part of desktop.SetMenuBar, which apps use.
 func (cx *Scope) SetMenuBar(mode MenuBarMode) {
-	cx.window(WindowCommand{Action: WindowSetMenuBar, MenuBar: mode})
+	cx.window(driver.WindowCommand{Action: driver.WindowSetMenuBar, MenuBar: mode})
 }
 
 // SetWindowControls is the core's part of desktop.SetWindowControls, which apps use.
 func (cx *Scope) SetWindowControls(c WindowControls) {
-	cx.window(WindowCommand{Action: WindowSetControls, Controls: c})
+	cx.window(driver.WindowCommand{Action: driver.WindowSetControls, Controls: c})
 }
 
 // SetWindowMaterial is the core's part of desktop.SetWindowMaterial, which apps use.
 func (cx *Scope) SetWindowMaterial(m WindowMaterial) {
-	cx.window(WindowCommand{Action: WindowSetMaterial, Material: m})
+	cx.window(driver.WindowCommand{Action: driver.WindowSetMaterial, Material: m})
 }
 
 // SetWindowTransparent is the core's part of desktop.SetWindowTransparent, which apps use.
 func (cx *Scope) SetWindowTransparent(on bool) {
-	cx.window(WindowCommand{Action: driver.WindowSetTransparent, On: on})
+	cx.window(driver.WindowCommand{Action: driver.WindowSetTransparent, On: on})
 }
 
 // SetWindowShadow is the core's part of desktop.SetWindowShadow, which apps use.
 func (cx *Scope) SetWindowShadow(on bool) {
-	cx.window(WindowCommand{Action: driver.WindowSetShadow, On: on})
+	cx.window(driver.WindowCommand{Action: driver.WindowSetShadow, On: on})
 }
 
 // SetSkipTaskbar is the core's part of desktop.SetSkipTaskbar, which apps use.
 func (cx *Scope) SetSkipTaskbar(on bool) {
-	cx.window(WindowCommand{Action: driver.WindowSetSkipTaskbar, On: on})
+	cx.window(driver.WindowCommand{Action: driver.WindowSetSkipTaskbar, On: on})
 }
 
 // MenuItem is one item of a menu: an action, a submenu when it has

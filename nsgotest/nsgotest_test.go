@@ -1317,8 +1317,8 @@ func TestTransparentWindowsAreRecorded(t *testing.T) {
 	desktop.SetWindowShadow(main, false)
 	desktop.SetSkipTaskbar(main, true)
 	app.Settle()
-	want := []driver.WindowCommand{{Action: driver.WindowSetTransparent, On: true}, {Action: driver.WindowSetShadow},
-		{Action: driver.WindowSetSkipTaskbar, On: true}}
+	want := []WindowRequest{{Action: WindowSetTransparent, On: true}, {Action: WindowSetShadow},
+		{Action: WindowSetSkipTaskbar, On: true}}
 	if !slices.Equal(app.Window, want) {
 		t.Fatalf("the main window was sent %+v; want %+v", app.Window, want)
 	}
@@ -1515,6 +1515,23 @@ func TestAnswerAtReachesTheAlertsSurface(t *testing.T) {
 	}
 }
 
+func TestWindowConstraintsAreRecorded(t *testing.T) {
+	if Target() != "" {
+		t.Skip("checks the headless model")
+	}
+	app := Start(t, func(cx *core.Scope) core.Node {
+		desktop.SetWindowConstraints(cx, desktop.WindowConstraints{MinWidth: 240, MaxWidth: 200, NoResize: true})
+		return core.View{}
+	}, Environment(core.Environment{OS: core.OSMacOS}))
+	want := WindowRequest{
+		Action:      WindowSetConstraints,
+		Constraints: desktop.WindowConstraints{MinWidth: 240, MaxWidth: 240, NoResize: true, NoMaximize: true},
+	}
+	if !slices.Contains(app.Window, want) {
+		t.Fatalf("window requests = %+v, want %+v", app.Window, want)
+	}
+}
+
 // The window commands a test reads hold where the app lets the pointer through its window.
 func TestWindowPointerEventsReachTheWindow(t *testing.T) {
 	if Target() != "" {
@@ -1524,7 +1541,7 @@ func TestWindowPointerEventsReachTheWindow(t *testing.T) {
 		return core.View{TestID: "pass", Style: core.Style{Width: core.Pt(100), Height: core.Pt(100)}, OnPress: func(core.PressEvent) { desktop.SetWindowPointerEvents(cx, desktop.WindowPointerPainted) }}
 	}, Environment(core.Environment{OS: core.OSMacOS}))
 	app.Press("id:pass")
-	if n := len(app.Window); n == 0 || app.Window[n-1].Action != driver.WindowSetPointerEvents ||
+	if n := len(app.Window); n == 0 || app.Window[n-1].Action != WindowSetPointerEvents ||
 		app.Window[n-1].PointerEvents != desktop.WindowPointerPainted {
 		t.Fatalf("the window was sent %+v", app.Window)
 	}

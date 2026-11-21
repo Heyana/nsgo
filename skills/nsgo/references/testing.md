@@ -60,6 +60,8 @@ Use `app.SelectTab("id:tabs", 1)` to choose the second item of a mounted `mobile
 
 `Key("mod+a")` selects a focused field unless a binding or an application-menu item with that shortcut takes it. Headless, on desktop targets and on the web, `KeyAlways` takes Return, Backspace and select-all before the field acts; `KeyAuto` and `KeyNotEditing` leave them to the field. The Android and iOS test hosts do not give the keymap these keys first yet. A focused view's `OnKeyDown` hears `Key` before any binding, a modifier alone (`Key("shift")`) included, and a key it consumes fires none; `Key` is a full press, so `OnKeyUp` hears its release. `KeyDown(key)` and `KeyUp(key)` hold and release one key, never a chord; a held modifier joins later keys (`KeyDown("shift")` then `Key("a")` is Shift+A), and `KeyUp` of a key not held fails. Android, HarmonyOS and watchOS targets skip them. `MouseDown` / `MouseUp` (and `At` / `With` / `AtWith` variants) press and release all five `core.MouseButton` values; `BlurWindow()` simulates window focus loss, releasing held keys and mouse buttons.
 
+Use `app.Window` and `nsgotest.WindowAction` constants such as `nsgotest.WindowSetConstraints` to assert what the app asked of its main window. In headless tests, `app.Shares` records the files, text and anchor of each share request.
+
 ## Tests without the network
 
 Use `app.AppleSignIn` or `app.PurchaseAnswer` when a test needs to answer Sign in with Apple or a purchase. The hooks receive `nsgotest.AppleSignInRequest` and `nsgotest.PurchaseRequest` records. [Services](https://nsgo.dev/docs/services.md)

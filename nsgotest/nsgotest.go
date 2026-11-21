@@ -326,7 +326,7 @@ type App struct {
 	WebsiteDataClears int
 	// Shares are the shares the app asked for, oldest first; each sheet
 	// shows.
-	Shares []driver.ShareRequest
+	Shares []Share
 	// LookUps are the dictionary panels the app showed (desktop.LookUp), oldest first, where the environment sets CanLookUp.
 	LookUps []LookUp
 	// ReviewRequests counts the in-app store rating prompts the app asked for (core.Scope.RequestReview), where the environment sets CanRequestReview.
@@ -417,10 +417,12 @@ type App struct {
 	// which Apple platforms keep for the system's words in later launches.
 	Language       string
 	LanguageForced bool
+
 	// Menu is the application menu the app set: on macOS the one the main window or the app's own surface sent last, none once that surface closed, and on other desktops the main window's or else the app's own surface's; DockMenu the app icon's menu, the one any surface set last; Window the window commands it sent, oldest first.
 	Menu     []MenuItem
 	DockMenu []MenuItem
-	Window   []driver.WindowCommand
+	Window   []WindowRequest
+
 	// Opened are the surfaces the app opened, oldest first, as it opened them: with a desktop environment its windows, panels and tray views, a window's transparency, shadow and taskbar button among what it asked for, and on Android its overlays.
 	Opened []SurfaceConfig
 	// ImageSizes are the pixel sizes of the images the model's platform

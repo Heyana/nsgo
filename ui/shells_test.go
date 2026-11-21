@@ -240,7 +240,7 @@ func TestSidebarShellInset(t *testing.T) {
 	})
 	offset := func() core.Point {
 		for i := len(app.Window) - 1; i >= 0; i-- {
-			if app.Window[i].Action == core.WindowSetControls {
+			if app.Window[i].Action == nsgotest.WindowSetControls {
 				return app.Window[i].Controls.Offset
 			}
 		}
@@ -309,7 +309,7 @@ func TestSidebarShellTitleSlides(t *testing.T) {
 		})
 		offset := func() core.Point {
 			for i := len(app.Window) - 1; i >= 0; i-- {
-				if app.Window[i].Action == core.WindowSetControls {
+				if app.Window[i].Action == nsgotest.WindowSetControls {
 					return app.Window[i].Controls.Offset
 				}
 			}
@@ -445,9 +445,9 @@ func TestPlainShell(t *testing.T) {
 func TestShellTitleBar(t *testing.T) {
 	for name, content := range map[string]core.Node{"sidebar": SidebarShell{}, "plain": PlainShell{}} {
 		app, _ := shell(t, windowEnv, func(cx *core.Scope) core.Node { return content })
-		var bar *core.WindowCommand
+		var bar *nsgotest.WindowRequest
 		for i := range app.Window {
-			if app.Window[i].Action == core.WindowSetTitleBar {
+			if app.Window[i].Action == nsgotest.WindowSetTitleBar {
 				bar = &app.Window[i]
 			}
 		}
