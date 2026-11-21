@@ -170,7 +170,9 @@ func TestWebNavigationStateTracksPageEdits(t *testing.T) {
 		{"/replaced", "Renamed", true, false, `location.hash = "section"`},
 		{"/replaced#section", "Renamed", true, false, `history.back()`},
 		{"/replaced", "Renamed", true, true, `history.forward()`},
-		{"/replaced#section", "Renamed", true, false, ""},
+		{"/replaced#section", "Renamed", true, false, `history.back()`},
+		{"/replaced", "Renamed", true, true, `history.pushState({}, "", location.href)`},
+		{"/replaced", "Renamed", true, false, ""},
 		{"/next", "Next", true, false, ""},
 	}
 	var states []core.WebNavigation

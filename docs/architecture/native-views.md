@@ -50,6 +50,8 @@ On Linux, initialization checks whether the system bubblewrap can start WebKitGT
 | Android | `android.webkit.WebView` with a JavaScript interface under the bridge; URL loads use `Headers`, `PinchZoom` turns on the built-in zoom, `Incognito` disables cache, form saving and DOM storage, and the bridge and scripts meant for the document's start run when the page starts, as android.webkit has no earlier hook |
 | Web | An `<iframe>`. HTML loads as `srcdoc` in a sandbox with an origin of its own and hands the app the bridge's `MessageChannel` port, its messages reporting the source's origin; a URL gets only `PostMessage` and load events, as the browser hides the page |
 
+On Windows, WebView2's `SourceChanged`, `HistoryChanged` and `DocumentTitleChanged` queue a fresh `WebNavigation` snapshot on the window thread. `OnNavigationStateChange` reports same-document URL, history and title updates when the snapshot changes. The navigation handlers report each full load at its start and finish.
+
 | Target | `SetWebCookies` | `WebCookies` | `ClearWebsiteData` |
 | --- | --- | --- | --- |
 | Apple | `setCookie:completionHandler:` on `WKWebsiteDataStore.defaultDataStore`'s `httpCookieStore`, each an `NSHTTPCookie` whose HttpOnly goes under CFNetwork's `HttpOnly` key, which Foundation exports no constant for | `getAllCookies:`, every field; Foundation has no SameSite None, which reads as the default | `removeDataOfTypes:modifiedSince:completionHandler:` with `allWebsiteDataTypes` since `distantPast` |
@@ -57,8 +59,6 @@ On Linux, initialization checks whether the system bubblewrap can start WebKitGT
 | Linux | `webkit_cookie_manager_add_cookie` of a `SoupCookie`, its expiry set to the second asked for, on the app's network session | `webkit_cookie_manager_get_all_cookies` (WebKitGTK 2.42 and later), every field | `webkit_website_data_manager_clear` of `WEBKIT_WEBSITE_DATA_ALL` over all time on the session's website data manager |
 | Android | `CookieManager.setCookie` of each cookie's `Set-Cookie` value on a URL it goes to, then `flush` | `CookieManager.getCookie` of the filter's URL: names and values, `Domain` the URL's host; a domain or the zero filter answers unavailable (`driver.NoWebCookieDomains`) | `CookieManager.removeAllCookies`, `flush` and `WebStorage.deleteAllData`, which leave the web views' HTTP cache |
 | Web, tvOS, watchOS, mini programs | Unavailable (`driver.NoWebCookieStore`) | Unavailable | Unavailable |
-
-On Windows, WebView2's `SourceChanged`, `HistoryChanged` and `DocumentTitleChanged` queue a fresh `WebNavigation` snapshot once per window task. `OnNavigationStateChange` reports same-document URL, history and title updates when that snapshot changes. The navigation handlers report each full load at its start and finish.
 
 ## Videos
 
