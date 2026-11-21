@@ -4,6 +4,7 @@ package macos
 
 import (
 	"math"
+	"slices"
 	"time"
 
 	"github.com/ebitengine/purego/objc"
@@ -36,9 +37,11 @@ type selection struct {
 	from           apple.CGPoint
 	// at is where the drag is, in the window.
 	at apple.CGPoint
-	// told and toldText are the extent and the text the area last reported.
-	told     driver.Bounds
-	toldText string
+	// told, toldText and toldRanges are the extent, the text and the
+	// per-text ranges the area last reported.
+	told       driver.Bounds
+	toldText   string
+	toldRanges []driver.SelectedRange
 }
 
 const (
@@ -145,16 +148,28 @@ func (s *selection) show(old []*view) {
 	s.tell(s.model.Extent(s))
 }
 
-// tell reports the selection's text and extent to the area when either changed: the extent stays while the selection moves within one text. No Size is no selection, which has no text.
+// tell reports the selection's text, per-text ranges and extent to the area when any of them changed: the extent stays while the selection moves within one text, and so can the text and extent while the same words are chosen on another text. No Size is no selection, which has no text.
 func (s *selection) tell(b driver.Bounds) {
 	text := ""
+	var ranges []driver.SelectedRange
 	if b.Size.Height > 0 {
 		text = s.model.Text(s)
+		ranges = s.ranges()
 	}
-	if b != s.told || text != s.toldText {
-		s.told, s.toldText = b, text
-		s.area.report(driver.Event{Kind: driver.EventSelectionChange, Point: b.Origin, Size: b.Size, Text: text})
+	if b != s.told || text != s.toldText || !slices.Equal(ranges, s.toldRanges) {
+		s.told, s.toldText, s.toldRanges = b, text, ranges
+		s.area.report(driver.Event{Kind: driver.EventSelectionChange, Point: b.Origin, Size: b.Size, Text: text, Ranges: ranges})
 	}
+}
+
+// ranges returns what each text has selected, by its node, in document order: what EventSelectionChange's Ranges carries.
+func (s *selection) ranges() []driver.SelectedRange {
+	model := s.model.Ranges(s)
+	out := make([]driver.SelectedRange, len(model))
+	for i, r := range model {
+		out[i] = driver.SelectedRange{ID: driver.NodeID(s.texts[r.Text].id), Start: r.Start, End: r.End}
+	}
+	return out
 }
 
 // setSelected sets the UTF-16 range a text highlights.

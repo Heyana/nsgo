@@ -102,6 +102,14 @@ type SelectionRange struct {
 	Text, Start, End int
 }
 
+// SelectedRange is what one text of an area has selected, as an
+// EventSelectionChange reports it: the text's NodeID and the UTF-16
+// offsets from Start to End.
+type SelectedRange struct {
+	ID         NodeID
+	Start, End int
+}
+
 // SelectionModel is the selection of one area: an anchor where it started
 // and a focus where it goes, extended by words or paragraphs after a
 // double or triple click. Its zero value selects nothing. Methods that
@@ -234,6 +242,25 @@ func (m *SelectionModel) SelectAll(texts SelectionTexts) bool {
 	m.anchor = TextPosition{}
 	m.focus = TextPosition{last, utf16Len(texts.Content(last))}
 	m.granularity, m.hasUnit = ByCharacter, false
+	m.remember(texts)
+	return m.bounds() != before
+}
+
+// Set selects from anchor to focus, in document order, clamping each
+// end to its text. Tests inject a precise selection with it; the
+// platforms' gestures build one instead. It reports whether the
+// selection changed.
+func (m *SelectionModel) Set(texts SelectionTexts, anchor, focus TextPosition) bool {
+	if texts.Len() == 0 {
+		return m.Clear()
+	}
+	before := m.bounds()
+	m.set = true
+	m.anchor = TextPosition{min(max(anchor.Text, 0), texts.Len()-1), anchor.Offset}
+	m.focus = TextPosition{min(max(focus.Text, 0), texts.Len()-1), focus.Offset}
+	m.granularity, m.hasUnit = ByCharacter, false
+	m.anchor = clampPosition(texts, m.anchor)
+	m.focus = clampPosition(texts, m.focus)
 	m.remember(texts)
 	return m.bounds() != before
 }

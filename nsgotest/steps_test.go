@@ -455,6 +455,36 @@ func TestSelectableTextReportsItsSelectedString(t *testing.T) {
 	}
 }
 
+// SelectText and SelectTextRange report each text's selected range with its Ref, so texts of the same content tell apart; SelectTextRange selects a part of them.
+func TestSelectableTextReportsItsSelectedRanges(t *testing.T) {
+	var first, second, third core.Ref
+	var got []core.TextSelection
+	app := Start(t, func(cx *core.Scope) core.Node {
+		return core.View{TestID: "area", Selectable: true, OnTextSelection: func(s core.TextSelection) { got = append(got, s) }, Children: []core.Node{
+			core.Text{Content: "same", Ref: &first, Style: core.Style{Height: core.Pt(20)}},
+			core.Text{Content: "same", Ref: &second, Style: core.Style{Height: core.Pt(20)}},
+			core.Text{Content: "same", Ref: &third, Style: core.Style{Height: core.Pt(20)}},
+		}}
+	})
+	app.SelectTextRange("id:area", "text:same >> nth=1", 1, "text:same >> nth=2", 3)
+	last := got[len(got)-1]
+	want := []core.SelectedText{{Ref: &second, Start: 1, End: 4}, {Ref: &third, Start: 0, End: 3}}
+	same := func(a, b core.SelectedText) bool { return a == b }
+	if last.Text != "ame\nsam" || !slices.EqualFunc(last.Ranges, want, same) || last.Bounds.Size == (core.Size{}) {
+		t.Errorf("SelectTextRange reported %+v, want text %q and ranges %+v", last, "ame\nsam", want)
+	}
+	app.SelectText("id:area", core.Bounds{Origin: core.Point{X: 4, Y: 4}, Size: core.Size{Width: 20, Height: 10}})
+	last = got[len(got)-1]
+	want = []core.SelectedText{{Ref: &first, Start: 0, End: 4}}
+	if last.Text != "same" || !slices.EqualFunc(last.Ranges, want, same) {
+		t.Errorf("SelectText reported %+v, want text %q and ranges %+v", last, "same", want)
+	}
+	app.SelectText("id:area", core.Bounds{})
+	if last := got[len(got)-1]; last.Text != "" || last.Ranges != nil || last.Bounds.Size != (core.Size{}) {
+		t.Errorf("cleared reported %+v", last)
+	}
+}
+
 // An app looks up what the user selected in the system's dictionary, at the selection's box in the surface; a platform without the panel shows none.
 func TestLookUpTheSelection(t *testing.T) {
 	for _, can := range []bool{true, false} {

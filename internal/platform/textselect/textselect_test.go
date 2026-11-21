@@ -44,3 +44,23 @@ func TestTellFollowsTheTextWithinOneText(t *testing.T) {
 		t.Fatalf("cleared = %+v, %v", ev, ok)
 	}
 }
+
+// TestTellReportsRepeatedTextElsewhere holds Tell to reporting again when the selection moves to the same words elsewhere: text and extent stay, the ranges differ.
+func TestTellReportsRepeatedTextElsewhere(t *testing.T) {
+	const content = "same same"
+	s := &Selection{Area: 1, Texts: []Text{{ID: 2, Content: content, Box: driver.Bounds{Origin: driver.Point{X: 100, Y: 50}, Size: driver.Size{Width: 90, Height: 20}}, Layout: monospace(len(content))}}}
+	area := driver.Point{X: 100, Y: 40}
+	s.Model.Set(s, driver.TextPosition{Offset: 0}, driver.TextPosition{Offset: 4})
+	ev, ok := s.Tell(area, false)
+	if !ok || ev.Text != "same" || len(ev.Ranges) != 1 || ev.Ranges[0] != (driver.SelectedRange{ID: 2, End: 4}) {
+		t.Fatalf("first report = %+v, %v", ev, ok)
+	}
+	s.Model.Set(s, driver.TextPosition{Offset: 5}, driver.TextPosition{Offset: 9})
+	ev, ok = s.Tell(area, false)
+	if !ok || ev.Text != "same" || len(ev.Ranges) != 1 || ev.Ranges[0] != (driver.SelectedRange{ID: 2, Start: 5, End: 9}) {
+		t.Fatalf("repeated text elsewhere = %+v, %v", ev, ok)
+	}
+	if _, ok = s.Tell(area, false); ok {
+		t.Fatal("reported again with nothing changed")
+	}
+}

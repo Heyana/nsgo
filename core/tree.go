@@ -2539,7 +2539,19 @@ func (t *Tree) Dispatch(ev driver.Event) {
 			}
 		}
 		if h.textSelection != nil {
-			t.within(n.owner, func() { h.textSelection(TextSelection{Text: ev.Text, Bounds: Bounds{Origin: ev.Point, Size: ev.Size}}) })
+			var ranges []SelectedText
+			if ev.Ranges != nil {
+				ranges = make([]SelectedText, len(ev.Ranges))
+				for i, r := range ev.Ranges {
+					ranges[i] = SelectedText{Start: r.Start, End: r.End}
+					if n := t.node(r.ID); n != nil {
+						ranges[i].Ref = n.ref
+					}
+				}
+			}
+			t.within(n.owner, func() {
+				h.textSelection(TextSelection{Text: ev.Text, Bounds: Bounds{Origin: ev.Point, Size: ev.Size}, Ranges: ranges})
+			})
 		}
 	case driver.EventKeyPress:
 		if in := n.input; in != nil && in.keyPress != nil {

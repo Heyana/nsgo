@@ -3,7 +3,11 @@
 // texts as the model reads them, hit-tested through their layouts.
 package textselect
 
-import "github.com/nsgo-dev/nsgo/internal/driver"
+import (
+	"slices"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
+)
 
 // Text is one text of an area: its node, its content as ItemText gave it,
 // its content box in the coordinates the selection is driven in, and its
@@ -24,28 +28,33 @@ type Selection struct {
 	Texts    []Text
 	Model    driver.SelectionModel
 	Dragging bool
-	// Told and ToldText are the extent and the text the area last reported.
 	Told     driver.Bounds
 	ToldText string
+	// ToldRanges are the per-text ranges the area last reported: a
+	// selection whose text and extent stay, such as the same words on
+	// another text, still reports anew.
+	ToldRanges []driver.SelectedRange
 }
 
-// Tell returns the event reporting the selection's text and extent to its area, the extent at origin in the coordinates of its texts' boxes; false when neither changed, as the extent stays while the selection moves within one text. A cleared selection reports none.
+// Tell returns the event reporting the selection's text, per-text ranges and extent to its area, the extent at origin in the coordinates of its texts' boxes; false when none changed, as the extent stays while the selection moves within one text. A cleared selection reports none.
 func (s *Selection) Tell(origin driver.Point, cleared bool) (driver.Event, bool) {
 	var b driver.Bounds
 	text := ""
+	var ranges []driver.SelectedRange
 	if !cleared {
 		b = s.Model.Extent(s)
 		text = s.Model.Text(s)
+		ranges = s.Selected()
 	}
 	if b.Size.Height > 0 {
 		b.Origin.X -= origin.X
 		b.Origin.Y -= origin.Y
 	}
-	if b == s.Told && text == s.ToldText {
+	if b == s.Told && text == s.ToldText && slices.Equal(ranges, s.ToldRanges) {
 		return driver.Event{}, false
 	}
-	s.Told, s.ToldText = b, text
-	return driver.Event{Kind: driver.EventSelectionChange, ID: s.Area, Point: b.Origin, Size: b.Size, Text: text}, true
+	s.Told, s.ToldText, s.ToldRanges = b, text, ranges
+	return driver.Event{Kind: driver.EventSelectionChange, ID: s.Area, Point: b.Origin, Size: b.Size, Text: text, Ranges: ranges}, true
 }
 
 // Len implements driver.SelectionTexts.
@@ -74,6 +83,16 @@ func (s *Selection) Ranges() map[driver.NodeID]driver.SelectionRange {
 	out := map[driver.NodeID]driver.SelectionRange{}
 	for _, r := range s.Model.Ranges(s) {
 		out[s.Texts[r.Text].ID] = r
+	}
+	return out
+}
+
+// Selected returns what each text has selected, by its node, in document order: what EventSelectionChange's Ranges carries.
+func (s *Selection) Selected() []driver.SelectedRange {
+	model := s.Model.Ranges(s)
+	out := make([]driver.SelectedRange, len(model))
+	for i, r := range model {
+		out[i] = driver.SelectedRange{ID: s.Texts[r.Text].ID, Start: r.Start, End: r.End}
 	}
 	return out
 }

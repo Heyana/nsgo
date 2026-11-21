@@ -747,21 +747,70 @@ func (a *App) reveal(v *View) driver.Point {
 	return at
 }
 
-// SelectText has the selection of the Selectable view selector names touch box of its texts, in the view, no Size clearing it, as the platforms report it. The text OnTextSelection receives is that of the texts box overlaps, whole, as a copy gives it: texts on one row joined by a tab and the others by a line break, hidden spans left out.
+// SelectText has the selection of the Selectable view selector names touch box of its texts, in the view, no Size clearing it, as the platforms report it. The text OnTextSelection receives is that of the texts box overlaps, whole, as a copy gives it: texts on one row joined by a tab and the others by a line break, hidden spans left out. Ranges is each such text's whole content, with the text's Ref.
 func (a *App) SelectText(selector string, box driver.Bounds) {
 	a.t.Helper()
 	a.step("selectText(%s, %v)", selector, box)
 	v := a.pick(selector, "view", func(m *View) (*View, bool) { return m, true })
 	text := ""
+	var ranges []driver.SelectedRange
 	if box.Size.Width > 0 && box.Size.Height > 0 {
-		text = selectedText(v, box)
+		var chosen areaTexts
+		for _, t := range areaTextsOf(v) {
+			if overlaps(t.frame, box) {
+				chosen = append(chosen, t)
+			}
+		}
+		var m driver.SelectionModel
+		m.SelectAll(chosen)
+		text = m.Text(chosen)
+		for _, r := range m.Ranges(chosen) {
+			ranges = append(ranges, driver.SelectedRange{ID: chosen[r.Text].v.ID, Start: r.Start, End: r.End})
+		}
 	}
-	a.send(v, driver.Event{Kind: driver.EventSelectionChange, Point: box.Origin, Size: box.Size, Text: text})
+	a.send(v, driver.Event{Kind: driver.EventSelectionChange, Point: box.Origin, Size: box.Size, Text: text, Ranges: ranges})
 	a.done()
 }
 
-// selectedText is the text of area's selectable texts that box, in area, overlaps, whole, through the model the platforms copy a selection with.
-func selectedText(area *View, box driver.Bounds) string {
+// SelectTextRange has the selection of the Selectable view selector names run from UTF-16 offset start of the text from names to offset end of the text to names, both inside it, as a drag on the platforms does, the ends swapped when to comes before from. OnTextSelection receives the text, the extent of the texts the selection touches and the per-text ranges, each with its text's Ref: where SelectText selects the whole texts a box overlaps, this selects a part, so an app can tell texts of the same content apart.
+func (a *App) SelectTextRange(selector, from string, start int, to string, end int) {
+	a.t.Helper()
+	a.step("selectTextRange(%s, %s, %d, %s, %d)", selector, from, start, to, end)
+	v := a.pick(selector, "view", func(m *View) (*View, bool) { return m, true })
+	texts := areaTextsOf(v)
+	index := func(sel string) *View {
+		return a.pick(selector+" >> "+sel, "text", func(m *View) (*View, bool) {
+			if m.Kind != driver.KindText {
+				return nil, false
+			}
+			return m, true
+		})
+	}
+	at, endAt := texts.index(index(from)), texts.index(index(to))
+	if at < 0 || endAt < 0 {
+		missing := from
+		if at >= 0 {
+			missing = to
+		}
+		a.t.Fatalf("nsgotest: %q is not a selectable text of %s\n%s", missing, selector, a.Dump())
+	}
+	var m driver.SelectionModel
+	text := ""
+	var ranges []driver.SelectedRange
+	if m.Set(texts, driver.TextPosition{Text: at, Offset: start},
+		driver.TextPosition{Text: endAt, Offset: end}) {
+		text = m.Text(texts)
+		for _, r := range m.Ranges(texts) {
+			ranges = append(ranges, driver.SelectedRange{ID: texts[r.Text].v.ID, Start: r.Start, End: r.End})
+		}
+	}
+	b := m.Extent(texts)
+	a.send(v, driver.Event{Kind: driver.EventSelectionChange, Point: b.Origin, Size: b.Size, Text: text, Ranges: ranges})
+	a.done()
+}
+
+// areaTextsOf are a selection area's texts as driver.SelectionModel reads them, in document order with their frames in the area.
+func areaTextsOf(area *View) areaTexts {
 	origin := area.surfaceFrame().Origin
 	var texts areaTexts
 	var walk func(*View)
@@ -770,7 +819,7 @@ func selectedText(area *View, box driver.Bounds) string {
 			f := n.surfaceFrame()
 			f.Origin.X -= origin.X
 			f.Origin.Y -= origin.Y
-			if n.Props.Selectable != driver.SelectableOff && overlaps(f, box) {
+			if n.Props.Selectable != driver.SelectableOff {
 				texts = append(texts, areaText{n, f})
 			}
 			return
@@ -780,9 +829,17 @@ func selectedText(area *View, box driver.Bounds) string {
 		}
 	}
 	walk(area)
-	var m driver.SelectionModel
-	m.SelectAll(texts)
-	return m.Text(texts)
+	return texts
+}
+
+// index returns where v is among the area's texts, and -1 without it.
+func (t areaTexts) index(v *View) int {
+	for i := range t {
+		if t[i].v == v {
+			return i
+		}
+	}
+	return -1
 }
 
 // overlaps reports whether a and b share some area.

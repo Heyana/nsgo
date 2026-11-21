@@ -262,6 +262,29 @@ func TestSelectionSelectAllAndClear(t *testing.T) {
 	}
 }
 
+func TestSelectionSetClampsAndOrders(t *testing.T) {
+	texts := column()
+	var m SelectionModel
+	if !m.Set(texts, pos(2, 3), pos(0, 2)) {
+		t.Fatal("set changes")
+	}
+	wantBounds(t, &m, pos(0, 2), pos(2, 3))
+	if got := m.Ranges(texts); !reflect.DeepEqual(got, []SelectionRange{{0, 2, 11}, {1, 0, 21}, {2, 0, 3}}) {
+		t.Fatalf("ranges = %v", got)
+	}
+	if m.Set(texts, pos(0, 2), pos(2, 3)) {
+		t.Fatal("the same selection is no change")
+	}
+	if !m.Set(texts, pos(9, 99), pos(0, -1)) {
+		t.Fatal("set out of range changes")
+	}
+	wantBounds(t, &m, pos(0, 0), pos(2, 4))
+	none := newFake()
+	if !m.Set(none, pos(0, 0), pos(0, 1)) || !m.IsEmpty() || m.Set(none, pos(0, 0), pos(0, 1)) {
+		t.Fatal("no texts clear once")
+	}
+}
+
 func TestSelectionCopiesRowsWithTabs(t *testing.T) {
 	texts := newFake(
 		"ab￼c", frame{0, 0, 80, 20},
