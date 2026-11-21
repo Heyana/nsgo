@@ -535,6 +535,17 @@ func (w *window) focusEntry(v *view) {
 			gtkWidgetGrabFocus(v.textView)
 		} else {
 			gtkWidgetGrabFocus(v.entry)
+			// GTK selects an entry's whole value when it receives focus if
+			// gtk-entry-select-on-focus is enabled. NSGo places a programmatic
+			// focus at the end, matching the other desktop backends.
+			text := w.editorText(v)
+			if selection := v.fs.Selection(); selection.Start != 0 || selection.End != 0 {
+				w.selectRange(v, selection)
+				return
+			}
+			end := int32(utf8.RuneCountInString(text))
+			gtkEditableSelectRegion(v.entry, end, end)
+			v.fs.SetSelection(driver.TextRange{Start: driver.UTF16Len(text), End: driver.UTF16Len(text)})
 		}
 		return
 	}

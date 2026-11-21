@@ -26,7 +26,7 @@ func programmaticFocusApp(title string) func(*core.Scope) core.Node {
 		cx.OnKeyWith("mod+m", core.KeyOptions{When: core.KeyAlways}, func() { focused.Set(focused.Get() + "-checked") })
 		cx.OnKeyWith("mod+q", core.KeyOptions{When: core.KeyAlways}, cx.Quit)
 		return core.View{Style: core.Style{Width: core.Pt(200), Height: core.Pt(200)}, Children: []core.Node{
-			core.Input{TestID: "field", Ref: &field, Style: core.Style{Height: core.Pt(30)},
+			core.Input{TestID: "field", Ref: &field, Value: func() string { return "hello" }, Style: core.Style{Height: core.Pt(30)},
 				OnFocus: func() { focused.Set("field") }},
 			core.View{TestID: "button", Ref: &button, Style: core.Style{Width: core.Pt(100), Height: core.Pt(40),
 				Background: core.RGB(0xcc0000), FocusVisible: &core.Style{Background: core.RGB(0x123456)}},
@@ -60,6 +60,19 @@ func TestRefFocusUsesNativeKeyboardStops(t *testing.T) {
 	}
 	key("mod+f")
 	waitForTitle(t, w, title+"|field|0")
+	w.onLoop(t, func() {
+		v := w.focusedEntry()
+		if v == nil {
+			t.Error("programmatic focus did not focus the field")
+			return
+		}
+		s, e := w.selection(v)
+		if s != 5 || e != 5 {
+			t.Errorf("programmatic focus selection = %+v, want 5-5", func() any {
+				return struct{ start, end int }{s, e}
+			}())
+		}
+	})
 	key("mod+b")
 	waitForTitle(t, w, title+"|button|0")
 	var button *view
