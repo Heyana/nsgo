@@ -17,13 +17,52 @@ type offscreenEntry struct {
 	surface       uintptr
 	width, height int
 	points        driver.Size
+	// canvasTint is surface with its channels multiplied by canvasTintColor, for a tinted canvas draw.
+	canvasTint      uintptr
+	canvasTintColor driver.Color
 }
 
 func (e *offscreenEntry) destroy() {
-	if e != nil && e.surface != 0 {
+	if e == nil {
+		return
+	}
+	if e.surface != 0 {
 		cairoSurfaceDestroy(e.surface)
 		e.surface = 0
 	}
+	if e.canvasTint != 0 {
+		cairoSurfaceDestroy(e.canvasTint)
+		e.canvasTint = 0
+	}
+}
+
+// tinted returns the surface op draws: the entry's own, or one copy of it multiplied by op's tint.
+func (e *offscreenEntry) tinted(op *driver.DrawOp) uintptr {
+	if !op.Tinted || op.Color == 0xffffffff {
+		return e.surface
+	}
+	if e.canvasTint != 0 && e.canvasTintColor == op.Color {
+		return e.canvasTint
+	}
+	if e.canvasTint != 0 {
+		cairoSurfaceDestroy(e.canvasTint)
+		e.canvasTint = 0
+	}
+	cairoSurfaceFlush(e.surface)
+	data := cairoImageSurfaceGetData(e.surface)
+	stride := int(cairoImageSurfaceGetStride(e.surface))
+	if data == 0 || stride < e.width*4 {
+		return 0
+	}
+	rows := unsafe.Slice((*byte)(cPointer(data)), stride*e.height)
+	pix := make([]byte, e.width*e.height*4)
+	rowLen := e.width * 4
+	for y := range e.height {
+		copy(pix[y*rowLen:(y+1)*rowLen], rows[y*stride:y*stride+rowLen])
+	}
+	pic := &picture{width: e.width, height: e.height, pix: pix}
+	e.canvasTint, e.canvasTintColor = pic.makeSurface(op.Color, true), op.Color
+	return e.canvasTint
 }
 
 func (w *window) releaseOffscreen(id uint64) {

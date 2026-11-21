@@ -755,6 +755,7 @@ func (p *player) image(op *driver.DrawOp) {
 	var cgImg uintptr
 	var imgWidth float64
 	var points driver.Size
+	var loaded *loadedImage
 	if op.Image.Offscreen != nil {
 		var waited bool
 		cgImg, imgWidth, _, points, waited = offscreenImage(*op.Image, p.host)
@@ -769,7 +770,7 @@ func (p *player) image(op *driver.DrawOp) {
 			p.waited = p.waited || img == nil || !img.failed
 			return
 		}
-		cgImg, imgWidth, points = img.image, img.width, img.points
+		cgImg, imgWidth, points, loaded = img.image, img.width, img.points, img
 	}
 	f := func(v float32) float64 { return float64(v) }
 	w, h := f(op.W), f(op.H)
@@ -777,10 +778,20 @@ func (p *player) image(op *driver.DrawOp) {
 		w, h = float64(points.Width), float64(points.Height)
 	}
 	src := cgImg
+	if op.Tinted && op.Color != 0xffffffff {
+		if loaded != nil {
+			src = loaded.tinted(op.Color)
+		} else if src = tintedImage(cgImg, op.Color); src != 0 {
+			defer Release(src)
+		}
+		if src == 0 {
+			return
+		}
+	}
 	if op.X2 != 0 || op.Y2 != 0 {
 		// The part named in points of the image, in its pixels.
 		k := imgWidth / max(float64(points.Width), 1e-9)
-		src = cgImageCreateWithImageInRect(cgImg, Rect(f(op.X1)*k, f(op.Y1)*k, f(op.X2)*k, f(op.Y2)*k))
+		src = cgImageCreateWithImageInRect(src, Rect(f(op.X1)*k, f(op.Y1)*k, f(op.X2)*k, f(op.Y2)*k))
 		if src == 0 {
 			return
 		}
@@ -815,14 +826,48 @@ var (
 
 // loadedImage is an image canvases draw, or one loading.
 type loadedImage struct {
-	image         uintptr
-	width, height float64 // pixels
-	points        driver.Size
-	meshPixels    []byte // BGRA, fetched only when a mesh uses the image
-	failed        bool
-	waiting       map[any]func()
-	used          uint64
-	cancel        context.CancelFunc
+	canvasTint      uintptr
+	canvasTintColor driver.Color
+	image           uintptr
+	width, height   float64 // pixels
+	points          driver.Size
+	meshPixels      []byte // BGRA, fetched only when a mesh uses the image
+	failed          bool
+	waiting         map[any]func()
+	used            uint64
+	cancel          context.CancelFunc
+}
+
+// tinted keeps one premultiplied sRGB copy of the image.
+func (img *loadedImage) tinted(tint driver.Color) uintptr {
+	if img.canvasTint != 0 && img.canvasTintColor == tint {
+		return img.canvasTint
+	}
+	Release(img.canvasTint)
+	img.canvasTint, img.canvasTintColor = tintedImage(img.image, tint), tint
+	return img.canvasTint
+}
+
+// tintedImage returns a new premultiplied sRGB copy of image with its channels multiplied by tint, or 0; the caller releases it.
+func tintedImage(image uintptr, tint driver.Color) uintptr {
+	w, h := cgImageGetWidth(image), cgImageGetHeight(image)
+	bitmapsLoaded.Do(loadBitmaps)
+	const premultipliedLast = 1
+	ctx := cgBitmapContextCreate(0, uintptr(w), uintptr(h), 8, uintptr(w*4), srgb, premultipliedLast)
+	if ctx == 0 {
+		return 0
+	}
+	defer Release(ctx)
+	cgContextDrawImage(ctx, Rect(0, 0, float64(w), float64(h)), image)
+	data := cgBitmapContextGetData(ctx)
+	pix := unsafe.Slice((*byte)(*(*unsafe.Pointer)(unsafe.Pointer(&data))), w*h*4)
+	driver.TintImagePixels(pix, pix, tint, false, true)
+	return rgbaImage(pix, w, h)
+}
+
+func (img *loadedImage) release() {
+	Release(img.image)
+	Release(img.canvasTint)
 }
 
 // canvasImageUse counts the images drawn; canvasPass is its value when the last pass of drawing ended, so images used since are the current pass's, which eviction keeps; canvasPassPosted says an endCanvasPass is posted.
@@ -935,7 +980,7 @@ func evictCanvasImages(reserve int) {
 			// Every unkept image loaded was drawn by the pass under way, or none has loaded: evicting one would load it again at the next pass, forever.
 			break
 		}
-		Release(canvasImages[oldest].image)
+		canvasImages[oldest].release()
 		canvasImages[oldest].image = 0
 		delete(canvasImages, oldest)
 		unkept--
@@ -1040,7 +1085,7 @@ func canvasFrame(src driver.ImageSource) *loadedImage {
 	}
 	for len(canvasFrames) > 0 && (len(canvasFrames) >= maxCanvasFrames || canvasFramePixels+pixelCount(src.Pixels) > maxCanvasFramePixels) {
 		canvasFramePixels -= pixelCount(canvasFrames[0].pixels)
-		Release(canvasFrames[0].image.image)
+		canvasFrames[0].image.release()
 		canvasFrames = slices.Delete(canvasFrames, 0, 1)
 	}
 	canvasFramePixels += pixelCount(src.Pixels)

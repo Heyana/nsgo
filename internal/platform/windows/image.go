@@ -77,6 +77,9 @@ type imageSlot struct {
 	// bitmap is frame as a Direct2D bitmap, tinted with tint, made in
 	// generation.
 	bitmap                    *comObject
+	canvasTint                *comObject
+	canvasTintColor           driver.Color
+	canvasTintGeneration      uint64
 	bitmapFrame               int
 	bitmapWidth, bitmapHeight int
 	tint                      driver.Color
@@ -101,7 +104,7 @@ func (s *imageSlot) reset(src driver.ImageSource) {
 		s.load.cancel()
 		s.load = nil
 	}
-	releaseAll(&s.bitmap, &s.blur)
+	releaseAll(&s.bitmap, &s.blur, &s.canvasTint)
 	s.pic = nil
 	s.src = src
 	s.frame, s.playing, s.ended = 0, false, false
@@ -135,6 +138,7 @@ func (s *imageSlot) showPixels(src driver.ImageSource) {
 	s.src = src
 	s.frame, s.playing, s.ended = 0, false, false
 	s.bitmapFrame = -1
+	releaseAll(&s.canvasTint)
 	s.fade = 0
 }
 
@@ -334,15 +338,24 @@ func (s *imageSlot) bitmapOf(dc *comObject, tint driver.Color) *comObject {
 		pix = make([]byte, len(pix))
 		tintInto(pix, s.pic.frames[frame].Pix, tint)
 	}
-	props := bitmapProperties1{format: dxgiFormatBGRA, alphaMode: d2dAlphaPremultiplied, dpiX: 96, dpiY: 96}
-	if failed(dc.callSize(dcCreateBitmap, uint32(s.pic.width), uint32(s.pic.height), uintptr(unsafe.Pointer(&pix[0])),
-		uintptr(s.pic.width*4), uintptr(unsafe.Pointer(&props)), uintptr(unsafe.Pointer(&s.bitmap)))) {
-		s.bitmap = nil
+	s.bitmap = pictureBitmap(dc, s.pic, pix)
+	if s.bitmap == nil {
 		return nil
 	}
 	s.tint, s.generation, s.bitmapFrame = tint, gfxGeneration, frame
 	s.bitmapWidth, s.bitmapHeight = s.pic.width, s.pic.height
 	return s.bitmap
+}
+
+// pictureBitmap copies the picture's pixels to a Direct2D bitmap.
+func pictureBitmap(dc *comObject, p *picture, pix []byte) *comObject {
+	props := bitmapProperties1{format: dxgiFormatBGRA, alphaMode: d2dAlphaPremultiplied, dpiX: 96, dpiY: 96}
+	var bmp *comObject
+	if failed(dc.callSize(dcCreateBitmap, uint32(p.width), uint32(p.height), uintptr(unsafe.Pointer(&pix[0])),
+		uintptr(p.width*4), uintptr(unsafe.Pointer(&props)), uintptr(unsafe.Pointer(&bmp)))) {
+		return nil
+	}
+	return bmp
 }
 
 // tintInto copies premultiplied pixels from src to dst with their colors

@@ -165,6 +165,7 @@ export interface CanvasContextMethods {
   createRadialGradient(x0: number, y0: number, r0: number, x1: number, y1: number, r1: number): CanvasGradient;
   createConicGradient(startAngle: number, x: number, y: number): CanvasGradient;
   drawImage(image: string | ImageAsset, ...args: CanvasNumber[]): void;
+  drawTintedImage(image: string | ImageAsset, tint: string | AnimatedNode, ...args: CanvasNumber[]): void;
 }
 export declare class CanvasRenderingContext2D {
   readonly canvas: { readonly width: number; readonly height: number };

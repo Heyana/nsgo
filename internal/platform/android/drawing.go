@@ -156,7 +156,10 @@ func writeDrawing(w *writer, d *driver.Drawing) {
 			arg(driver.ArgY1, op.Y1)
 			arg(driver.ArgX2, op.X2)
 			arg(driver.ArgY2, op.Y2)
-			w.flags(op.Sampling == driver.ImageSamplingNearest)
+			w.flags(op.Sampling == driver.ImageSamplingNearest, op.Tinted)
+			if op.Tinted {
+				color(op.Color)
+			}
 		case driver.DrawVertices:
 			var key string
 			if op.Image != nil {

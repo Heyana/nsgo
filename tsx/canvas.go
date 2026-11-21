@@ -341,22 +341,8 @@ func (c *context2D) newContextObject() *js.Object {
 		f := floats(call, 3)
 		return r.newGradient(core.CanvasConic(f[0], f[1], f[2]))
 	})
-	method("drawImage", func(call js.FunctionCall) js.Value {
-		src := r.imageSource(arg(call, 0))
-		f := make([]float32, len(call.Arguments)-1)
-		for i := range f {
-			f[i], _ = c.num(arg(call, i+1))
-		}
-		switch len(f) {
-		case 2:
-			c.d.DrawImage(src, f[0], f[1])
-		case 4:
-			c.d.DrawImageIn(src, f[0], f[1], f[2], f[3])
-		case 8:
-			c.d.DrawImageFrom(src, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7])
-		}
-		return js.Undefined()
-	})
+	method("drawImage", func(call js.FunctionCall) js.Value { return c.drawImage(call, false) })
+	method("drawTintedImage", func(call js.FunctionCall) js.Value { return c.drawImage(call, true) })
 
 	prop := func(name string, get func() js.Value, set func(v js.Value)) {
 		_ = o.DefineAccessorProperty(name, r.function(func(js.FunctionCall) js.Value { return get() }),
@@ -525,6 +511,48 @@ func (c *context2D) paint(v js.Value, fill bool) {
 	if n != nil {
 		c.d.Bind(core.ArgColor, n)
 	}
+}
+
+func (c *context2D) drawImage(call js.FunctionCall, tinted bool) js.Value {
+	first := 1
+	var tint core.Color
+	var tintNode core.AnimatedNode
+	if tinted {
+		first++
+		v := arg(call, 1)
+		tintNode = c.r.animatedNodeOf(v)
+		if tintNode == nil {
+			tint, _ = core.ParseColor(stringOf(v))
+		}
+	}
+	n := len(call.Arguments) - first
+	if n != 2 && n != 4 && n != 8 {
+		return js.Undefined()
+	}
+	src := c.r.imageSource(arg(call, 0))
+	var f [8]float32
+	for i := range n {
+		f[i], _ = c.num(arg(call, i+first))
+	}
+	before := len(c.d.Ops)
+	switch {
+	case n == 2 && tinted:
+		c.d.DrawTintedImage(src, tint, f[0], f[1])
+	case n == 4 && tinted:
+		c.d.DrawTintedImageIn(src, tint, f[0], f[1], f[2], f[3])
+	case n == 8 && tinted:
+		c.d.DrawTintedImageFrom(src, tint, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7])
+	case n == 2:
+		c.d.DrawImage(src, f[0], f[1])
+	case n == 4:
+		c.d.DrawImageIn(src, f[0], f[1], f[2], f[3])
+	case n == 8:
+		c.d.DrawImageFrom(src, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7])
+	}
+	if tintNode != nil && len(c.d.Ops) > before {
+		c.d.Bind(core.ArgColor, tintNode)
+	}
+	return js.Undefined()
 }
 
 func (c *context2D) applyFill()   { c.paint(c.st.fill, true) }

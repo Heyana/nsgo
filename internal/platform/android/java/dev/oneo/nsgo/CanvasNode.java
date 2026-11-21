@@ -6,6 +6,8 @@ import android.graphics.BitmapShader;
 import android.graphics.BlendMode;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.DashPathEffect;
 import android.graphics.LinearGradient;
 import android.graphics.Matrix;
@@ -833,18 +835,21 @@ final class CanvasNode extends View {
             b.getFloat(); // the density its name gives, which the picture carries
             float x = b.getFloat(), y = b.getFloat(), w = b.getFloat(), h = b.getFloat();
             float sx = b.getFloat(), sy = b.getFloat(), sw = b.getFloat(), sh = b.getFloat();
-            boolean nearest = b.get() != 0;
+            byte flags = b.get();
+            boolean nearest = (flags & 1) != 0, tinted = (flags & 2) != 0;
+            int tint = tinted ? Text.argb(b.getInt()) : 0;
             if (pixels.containsKey(key)) {
                 Picture picture = pixels.get(key);
-                if (picture != null) image(picture, x, y, w, h, sx, sy, sw, sh, nearest);
+                if (picture != null) image(picture, x, y, w, h, sx, sy, sw, sh, nearest, tinted, tint);
             } else if (pictures != null && !key.isEmpty()) {
                 try (CanvasImages<Picture>.Lease lease = pictures.acquire(key)) {
-                    if (lease != null) image(lease.value, x, y, w, h, sx, sy, sw, sh, nearest);
+                    if (lease != null) image(lease.value, x, y, w, h, sx, sy, sw, sh, nearest, tinted, tint);
                 }
             }
         }
 
-        private void image(Picture p, float x, float y, float w, float h, float sx, float sy, float sw, float sh, boolean nearest) {
+        private void image(Picture p, float x, float y, float w, float h, float sx, float sy, float sw, float sh,
+                boolean nearest, boolean tinted, int tint) {
             if (w == 0 && h == 0) {
                 w = p.bitmap.getWidth() / p.scale;
                 h = p.bitmap.getHeight() / p.scale;
@@ -855,6 +860,12 @@ final class CanvasNode extends View {
             paint.setAntiAlias(true);
             paint.setFilterBitmap(!nearest);
             paint.setAlpha(Math.round(255 * state.alpha));
+            if (tinted) {
+                ColorMatrix matrix = new ColorMatrix();
+                matrix.setScale(Color.red(tint) / 255f, Color.green(tint) / 255f, Color.blue(tint) / 255f,
+                        Color.alpha(tint) / 255f);
+                paint.setColorFilter(new ColorMatrixColorFilter(matrix));
+            }
             RectF dst = new RectF(x, y, x + w, y + h);
             canvas.save();
             canvas.concat(state.ctm);

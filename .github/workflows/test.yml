@@ -238,6 +238,13 @@ jobs:
         run: go tool nsgo test -target web ./tsx/internal/js
       - name: Test the TSX runtime in Chromium
         run: go tool nsgo test -target web ./tsx
+      - name: Test canvas image tint on Linux and the web
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+        run: |
+          xvfb-run -a go tool nsgo test -target linux -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
+          go tool nsgo test -target web -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
       - name: Test browser radio and tab focus
         run: go tool nsgo test -target web -run '^(TestRadioGroupIsOneStopItsArrowsMoveThrough|TestTabsTakeHomeEndAndSwapLeftAndRightRightToLeft)$' ./base
       - name: Test Chromium display frame timestamps
@@ -316,6 +323,7 @@ jobs:
             go tool nsgo test -target android -device emulator-5554 -timeout 2m -fps -env NSGO_GALLERY_PERF=1 -env NSGO_GALLERY_PERF_SECONDS=3 -run '^TestPerfCanvasSprites' ./examples/gallery || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             NSGO_ANDROID_E2E=1 NSGO_ANDROID_DEVICE=emulator-5554 go tool nsgo test -run '^TestAndroidNativePackagedView$' ./cmd/nsgo || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
             go tool nsgo test -target android -device emulator-5554 -timeout 2m ./internal/testhost/testdata/network || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
+            go tool nsgo test -target android -device emulator-5554 -timeout 2m -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture || { adb logcat -d -v brief -s nsgo:V AndroidRuntime:E libc:F DEBUG:F; exit 1; }
 
   apple:
     needs: changes
@@ -446,6 +454,7 @@ jobs:
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/frameclock
           go tool nsgo test -target ios_simulator -timeout 1m -run '^TestPressAtFindsZoomedScrollContent$' ./internal/testhost/testdata/press
           go tool nsgo test -target ios_simulator -timeout 1m ./internal/testhost/testdata/audio
+          go tool nsgo test -target ios_simulator -timeout 1m -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
           if ! wait "$watch_pid"; then
             echo "::error::the watchOS simulator tests failed; their output is in the group below"
             exit 1
@@ -479,6 +488,8 @@ jobs:
         run: |
           go tool nsgo test -target windows ./internal/testhost/testdata/websource
           go tool nsgo test -target windows ./internal/testhost/testdata/webhistory
+      - name: Test native canvas image tint
+        run: go tool nsgo test -run '^TestCanvasImageTint$' ./internal/platform/windows
       - name: Test native photo pick answers
         run: go tool nsgo test -target windows ./internal/testhost/testdata/pick
       - name: Test widget and Live Activity recording

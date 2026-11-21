@@ -48,6 +48,8 @@ Scaled bitmaps use smooth sampling by default. For pixel art, call `d.SetImageSm
 
 `d.DrawVertices(image, vertices)` draws a textured mesh. Each consecutive three `core.CanvasVertex` values make one triangle. Set `Position` in canvas points and `TexCoord` in image points, as in `DrawImageFrom`. Each vertex's `Color` multiplies the texture and interpolates over the triangle. Its zero value leaves the texture unchanged. Update the points and record the drawing again to deform the mesh. The image can be any `ImageSource`, including a pixel buffer or an `OffscreenImage`'s `Source()`; Android's canvases draw no offscreen images yet. `SetImageSmoothing(false)` applies to meshes too. The web needs inline or same-origin images for arbitrary meshes.
 
+`DrawTintedImage`, `DrawTintedImageIn` and `DrawTintedImageFrom` multiply an image's sRGB and alpha channels by a color before compositing. With the default source-over mode, transparent pixels leave the backdrop visible. Use `drawTintedImage(image, tint, ...args)` in TSX with the same coordinate forms as `drawImage`. A cross-origin source on the web must permit anonymous CORS requests for its pixels to be tinted. HarmonyOS does not support tinting yet and draws these images untinted.
+
 `Drawing.Node` names a part of a drawing, such as a chart's bar or a map's region, with bounds, a role, a label and a selected state. Assistive technology reads those parts as the canvas's children, and tests find them by label, text or test ID; a press on one is a press at its center.
 
 ```go

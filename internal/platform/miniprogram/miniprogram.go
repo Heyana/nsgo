@@ -276,7 +276,10 @@ func (s *surface) paint(id driver.NodeID, ops []driver.DrawOp, size driver.Size)
 	waiting := false
 	p := canvas2d.NewPlayer(ctx, ratio, math.Hypot(w, h))
 	p.Font = canvasFont
-	p.Image = func(src driver.ImageSource) (js.Value, float64, bool) {
+	p.NewCanvas = func(width, height int) js.Value {
+		return s.api.Call("createOffscreenCanvas", map[string]any{"type": "2d", "width": width, "height": height})
+	}
+	p.Image = func(src driver.ImageSource, _ bool) (js.Value, float64, bool) {
 		if src.Pixels != nil {
 			canvas := s.canvasPixelFrame(src.Pixels)
 			return canvas, 1, canvas.Truthy()

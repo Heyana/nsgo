@@ -154,6 +154,8 @@ type DrawOp struct {
 	Image     *ImageSource
 	Sampling  ImageSampling
 	Mesh      *CanvasMesh
+	// Tinted multiplies a DrawImage's source channels by Color before it composites.
+	Tinted bool
 	// TextAlign and TextBaseline are what a text op was placed with.
 	TextAlign    TextAlign
 	TextBaseline TextBaseline
@@ -1026,6 +1028,29 @@ func (d *Drawing) DrawSVGIn(svg *SVG, x, y, w, h float32) *Drawing {
 	// the tracked state nor any saved current path changed.
 	t.at = len(d.Ops)
 	return d
+}
+
+// DrawTintedImage draws img at its natural size, multiplying each image
+// channel by tint's corresponding sRGB or opacity channel before compositing.
+func (d *Drawing) DrawTintedImage(img ImageSource, tint Color, x, y float32) *Drawing {
+	return d.op(DrawOp{Kind: DrawImage, Image: &img, Tinted: true, Color: tint, X: x, Y: y})
+}
+
+// DrawTintedImageIn draws img into a rectangle with the same tint as DrawTintedImage.
+func (d *Drawing) DrawTintedImageIn(img ImageSource, tint Color, x, y, w, h float32) *Drawing {
+	if w == 0 && h == 0 {
+		return d
+	}
+	return d.op(DrawOp{Kind: DrawImage, Image: &img, Tinted: true, Color: tint, X: x, Y: y, W: w, H: h})
+}
+
+// DrawTintedImageFrom draws a part of img with the same tint as DrawTintedImage.
+func (d *Drawing) DrawTintedImageFrom(img ImageSource, tint Color, sx, sy, sw, sh, x, y, w, h float32) *Drawing {
+	if w == 0 && h == 0 || sw == 0 && sh == 0 {
+		return d
+	}
+	return d.op(DrawOp{Kind: DrawImage, Image: &img, Tinted: true, Color: tint,
+		X1: sx, Y1: sy, X2: sw, Y2: sh, X: x, Y: y, W: w, H: h})
 }
 
 // Bind has the platform play the last operation's argument arg with the

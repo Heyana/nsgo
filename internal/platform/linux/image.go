@@ -37,12 +37,14 @@ type picture struct {
 // imageSlot is an image view's source or placeholder and what the window
 // keeps for it.
 type imageSlot struct {
-	used    uint64 // the last canvas draw that used this slot
-	src     driver.ImageSource
-	load    *imageLoad
-	pic     *picture
-	surface uintptr // pic as a Cairo surface, tinted with tint
-	tint    driver.Color
+	used            uint64 // the last canvas draw that used this slot
+	src             driver.ImageSource
+	load            *imageLoad
+	pic             *picture
+	surface         uintptr // pic as a Cairo surface, tinted with tint
+	tint            driver.Color
+	canvasTint      uintptr
+	canvasTintColor driver.Color
 	// An animation's frame showing, since when, and how many times it
 	// played through.
 	frame   int
@@ -76,6 +78,10 @@ func (s *imageSlot) showPixels(src driver.ImageSource) {
 		cairoSurfaceDestroy(s.surface)
 		s.surface = 0
 	}
+	if s.canvasTint != 0 {
+		cairoSurfaceDestroy(s.canvasTint)
+		s.canvasTint = 0
+	}
 	img := imagedecode.FromPixels(src.Pixels, imagedecode.BGRA)
 	s.pic = &picture{width: img.Width, height: img.Height, pix: img.Frames[0].Pix, size: img.Size}
 	s.src = src
@@ -92,6 +98,10 @@ func (s *imageSlot) reset(src driver.ImageSource) {
 	if s.surface != 0 {
 		cairoSurfaceDestroy(s.surface)
 		s.surface = 0
+	}
+	if s.canvasTint != 0 {
+		cairoSurfaceDestroy(s.canvasTint)
+		s.canvasTint = 0
 	}
 	s.pic = nil
 	s.src = src
@@ -361,25 +371,37 @@ func (s *imageSlot) surfaceOf(tint driver.Color) uintptr {
 		cairoSurfaceDestroy(s.surface)
 		s.surface = 0
 	}
-	surf := cairoImageSurfaceCreate(0, int32(s.pic.width), int32(s.pic.height))
+	s.surface = s.pic.makeSurface(tint, false)
+	s.tint = tint
+	return s.surface
+}
+
+func (p *picture) makeSurface(tint driver.Color, multiply bool) uintptr {
+	surf := cairoImageSurfaceCreate(0, int32(p.width), int32(p.height))
 	if surf == 0 {
 		return 0
 	}
 	data := cairoImageSurfaceGetData(surf)
+	if data == 0 {
+		cairoSurfaceDestroy(surf)
+		return 0
+	}
 	stride := int(cairoImageSurfaceGetStride(surf))
-	rows := unsafe.Slice((*byte)(cPointer(data)), stride*s.pic.height)
-	row := make([]byte, s.pic.width*4)
-	for y := 0; y < s.pic.height; y++ {
-		src := s.pic.pix[y*s.pic.width*4 : (y+1)*s.pic.width*4]
-		if tint&0xff == 0 {
-			copy(rows[y*stride:y*stride+len(src)], src)
-			continue
+	rows := unsafe.Slice((*byte)(cPointer(data)), stride*p.height)
+	width := p.width * 4
+	for y := range p.height {
+		src := p.pix[y*width : (y+1)*width]
+		dst := rows[y*stride : y*stride+width]
+		switch {
+		case multiply:
+			driver.TintImagePixels(dst, src, tint, true, true)
+		case tint&0xff != 0:
+			tintInto(dst, src, tint)
+		default:
+			copy(dst, src)
 		}
-		tintInto(row, src, tint)
-		copy(rows[y*stride:y*stride+len(row)], row)
 	}
 	cairoSurfaceMarkDirty(surf)
-	s.surface, s.tint = surf, tint
 	return surf
 }
 

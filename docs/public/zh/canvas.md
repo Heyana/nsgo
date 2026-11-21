@@ -46,6 +46,8 @@ d.DrawSVGIn(badge, 12, 12, 180, 60)
 
 `d.DrawVertices(image, vertices)` 绘制带纹理的网格。每三个连续的 `core.CanvasVertex` 构成一个三角形。`Position` 以画布点为单位，`TexCoord` 与 `DrawImageFrom` 一样以图像点为单位。每个顶点的 `Color` 会在三角形内插值后乘到纹理颜色上，零值保留纹理原色。修改顶点并重新记录绘图即可使网格变形。图像可以是任意 `ImageSource`，包括像素缓冲区和 `OffscreenImage` 的 `Source()`；Android 画布暂不绘制离屏图像。`SetImageSmoothing(false)` 同样作用于网格。Web 绘制任意网格时使用内联或同源图像。
 
+`DrawTintedImage`、`DrawTintedImageIn` 和 `DrawTintedImageFrom` 在合成前将图像的 sRGB 和透明度通道分别乘以着色颜色的对应通道。默认的 source-over 模式会透过透明像素显示背景。TSX 使用 `drawTintedImage(image, tint, ...args)`，坐标形式与 `drawImage` 相同。网页上的跨域图像须允许匿名 CORS 请求才能着色。HarmonyOS 暂不支持图像着色，会按原样绘制这些图像。
+
 `Drawing.Node` 给绘图的一部分命名，例如图表的柱或地图的区域，带边界、角色、标签和选中状态。辅助技术把这些部分当作画布的子元素，测试可以按标签、文本或 test ID 找到它们；按下其中一个就是按下它的中心。
 
 ```go

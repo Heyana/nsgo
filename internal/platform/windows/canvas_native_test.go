@@ -138,6 +138,48 @@ func TestCanvasMesh(t *testing.T) {
 	}
 }
 
+// TestCanvasImageTint draws the shared tint sample from an encoded image, a pixel buffer and an offscreen image.
+func TestCanvasImageTint(t *testing.T) {
+	g, err := devices()
+	if err != nil {
+		t.Skip(err)
+	}
+	encoded, err := canvastest.TintSource()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pic, err := decode(context.Background(), encoded.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"encoded", "pixels", "offscreen"} {
+		t.Run(name, func(t *testing.T) {
+			w := &window{scale: canvastest.Scale, animator: driver.NewAnimator(nil)}
+			defer w.closeCanvasImages()
+			defer w.closeOffscreen()
+			var src driver.ImageSource
+			switch name {
+			case "encoded":
+				src = encoded
+				w.canvasImages = map[string]*imageSlot{src.Key(): {src: src, pic: pic}}
+			case "pixels":
+				src = canvastest.TintPixelsSource()
+			case "offscreen":
+				src = canvastest.TintOffscreenSource(driver.NewDrawing(w), 1)
+			}
+			const width, height = canvastest.TintWidth, canvastest.TintHeight
+			d := driver.NewDrawing(w)
+			canvastest.DrawTintSample(d, src, width, height)
+			img := drawImage(t, g, width, height, func(p *painter) {
+				p.canvas(&view{drawing: d}, width, height)
+			}, w)
+			for _, f := range canvastest.CheckTintSample(img, driver.Point{}, canvastest.Scale) {
+				t.Error(f)
+			}
+		})
+	}
+}
+
 // drawImage draws with draw into a Direct2D bitmap width by height points
 // at canvastest.Scale, cleared white, and reads its pixels back.
 func drawImage(t *testing.T, g *gfx, width, height int, draw func(p *painter), w *window) *image.RGBA {

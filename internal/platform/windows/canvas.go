@@ -999,11 +999,15 @@ func (c *canvasPlayer) image(op *driver.DrawOp) {
 			ky := float32(e.points.Height) / max(float32(nat.Height), 1e-3)
 			src = rectF{op.X1 * kx, op.Y1 * ky, (op.X1 + op.X2) * kx, (op.Y1 + op.Y2) * ky}
 		}
+		bmp := e.tinted(c.p, op)
+		if bmp == nil {
+			return
+		}
 		dst := rectF{op.X, op.Y, op.X + w, op.Y + h}
 		alpha := c.st.alpha
 		c.paint(func(dc *comObject, base matrix) {
 			c.setTransform(dc, c.st.ctm.then(base))
-			dc.callF(rtDrawBitmap, 0b100, e.bitmap.ptr(), uintptr(unsafe.Pointer(&dst)), f32(alpha), imageInterpolation(op.Sampling),
+			dc.callF(rtDrawBitmap, 0b100, bmp.ptr(), uintptr(unsafe.Pointer(&dst)), f32(alpha), imageInterpolation(op.Sampling),
 				uintptr(unsafe.Pointer(&src)))
 		})
 		return
@@ -1017,7 +1021,7 @@ func (c *canvasPlayer) image(op *driver.DrawOp) {
 }
 
 func (c *canvasPlayer) drawImage(op *driver.DrawOp, s *imageSlot) {
-	bmp := s.bitmapOf(c.p.dc, 0)
+	bmp := s.canvasBitmap(c.p.dc, op)
 	if bmp == nil {
 		return
 	}
@@ -1038,6 +1042,24 @@ func (c *canvasPlayer) drawImage(op *driver.DrawOp, s *imageSlot) {
 		dc.callF(rtDrawBitmap, 0b100, bmp.ptr(), uintptr(unsafe.Pointer(&dst)), f32(alpha), imageInterpolation(op.Sampling),
 			uintptr(unsafe.Pointer(&src)))
 	})
+}
+
+// canvasBitmap keeps one tinted copy beside the original. A retained command
+// list may still reference an older copy, so its pixels stay immutable.
+func (s *imageSlot) canvasBitmap(dc *comObject, op *driver.DrawOp) *comObject {
+	if !op.Tinted || op.Color == 0xffffffff {
+		return s.bitmapOf(dc, 0)
+	}
+	if s.canvasTint != nil && s.canvasTintColor == op.Color && s.canvasTintGeneration == gfxGeneration {
+		return s.canvasTint
+	}
+	releaseAll(&s.canvasTint)
+	src := s.pic.frames[0].Pix
+	pix := make([]byte, len(src))
+	driver.TintImagePixels(pix, src, op.Color, true, true)
+	s.canvasTint = pictureBitmap(dc, s.pic, pix)
+	s.canvasTintColor, s.canvasTintGeneration = op.Color, gfxGeneration
+	return s.canvasTint
 }
 
 // canvasImage returns src's slot, loading it the first time and painting
@@ -1208,7 +1230,7 @@ func (w *window) canvasFrame(src driver.ImageSource) *imageSlot {
 	s.showPixels(src)
 	for len(w.canvasFrames) > 0 && (len(w.canvasFrames) >= maxCanvasFrames || w.canvasFramePixels+pixelCount(src.Pixels) > maxCanvasFramePixels) {
 		w.canvasFramePixels -= pixelCount(w.canvasFrames[0].src.Pixels)
-		releaseAll(&w.canvasFrames[0].bitmap)
+		w.canvasFrames[0].reset(driver.ImageSource{})
 		w.canvasFrames = slices.Delete(w.canvasFrames, 0, 1)
 	}
 	w.canvasFramePixels += pixelCount(src.Pixels)

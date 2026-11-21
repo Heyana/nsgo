@@ -31,7 +31,9 @@ type Player struct {
 	Font func(driver.Font) string
 	// Image returns the loaded image an op draws and its pixels per
 	// point; false while it loads, when the op draws nothing.
-	Image func(driver.ImageSource) (img js.Value, density float64, ok bool)
+	Image func(driver.ImageSource, bool) (img js.Value, density float64, ok bool)
+	// NewCanvas creates a scratch canvas for tinting.
+	NewCanvas func(width, height int) js.Value
 	// Texture supplies a mesh's loaded pixels. MeshCanvas supplies a
 	// scratch canvas for native 2D composition.
 	Texture    func(driver.ImageSource) canvasmesh.Texture
@@ -39,10 +41,12 @@ type Player struct {
 	// fill and stroke are the gradients painting, whose own transforms
 	// apply as they paint, and width the line width; saved and widths
 	// keep them for Restore.
-	fill, stroke *driver.CanvasGradient
-	saved        []*driver.CanvasGradient
-	width        float64
-	widths       []float64
+	fill, stroke           *driver.CanvasGradient
+	saved                  []*driver.CanvasGradient
+	width                  float64
+	widths                 []float64
+	tintSource, tintCanvas js.Value
+	tintColor              driver.Color
 }
 
 // NewPlayer returns a player into ctx, whose canvas has ratio pixels per
@@ -288,7 +292,8 @@ func (p *Player) image(op *driver.DrawOp) {
 	if op.Image == nil {
 		return
 	}
-	img, density, ok := p.Image(*op.Image)
+	tinted := op.Tinted && op.Color != 0xffffffff
+	img, density, ok := p.Image(*op.Image, tinted)
 	if !ok {
 		return
 	}
@@ -302,6 +307,12 @@ func (p *Player) image(op *driver.DrawOp) {
 	if nw <= 0 || nh <= 0 {
 		return
 	}
+	if tinted {
+		img = p.tintedImage(img, int(nw), int(nh), op.Color)
+		if !img.Truthy() {
+			return
+		}
+	}
 	w, h := f(op.W), f(op.H)
 	if w == 0 && h == 0 {
 		w, h = nw/density, nh/density
@@ -313,6 +324,38 @@ func (p *Player) image(op *driver.DrawOp) {
 	}
 	k := density
 	p.Ctx.Call("drawImage", img, f(op.X1)*k, f(op.Y1)*k, f(op.X2)*k, f(op.Y2)*k, f(op.X), f(op.Y), w, h)
+}
+
+// tintedImage multiplies source pixels in their own canvas, then draws
+// through the player's current transform, clip and composition state.
+func (p *Player) tintedImage(img js.Value, w, h int, tint driver.Color) (canvas js.Value) {
+	if p.tintCanvas.Truthy() && p.tintSource.Equal(img) && p.tintColor == tint {
+		return p.tintCanvas
+	}
+	// A browser raises a JS exception if a source denies pixel access.
+	defer func() {
+		if problem := recover(); problem != nil {
+			if _, ok := problem.(js.Error); !ok {
+				panic(problem)
+			}
+			canvas = js.Undefined()
+		}
+	}()
+	scratch := p.NewCanvas(w, h)
+	ctx := scratch.Call("getContext", "2d", map[string]any{"willReadFrequently": true})
+	if !ctx.Truthy() || ctx.Get("getImageData").Type() != js.TypeFunction || ctx.Get("putImageData").Type() != js.TypeFunction {
+		return js.Undefined()
+	}
+	ctx.Call("drawImage", img, 0, 0, w, h)
+	data := ctx.Call("getImageData", 0, 0, w, h)
+	buf := data.Get("data")
+	pixels := make([]byte, buf.Length())
+	js.CopyBytesToGo(pixels, buf)
+	driver.TintImagePixels(pixels, pixels, tint, false, false)
+	js.CopyBytesToJS(buf, pixels)
+	ctx.Call("putImageData", data, 0, 0)
+	p.tintSource, p.tintCanvas, p.tintColor = img, scratch, tint
+	return scratch
 }
 
 // drawText draws op's text at x, y with ctx's method. A canvas has no
