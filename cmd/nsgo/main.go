@@ -19,8 +19,9 @@
 //	nsgo publish itch -target web,macos_arm64 [dir]
 //	                                                      upload built packages to itch.io
 //	nsgo publish -cert C [-entry E] [-min-runtime V] [-out F] [dir | package]
-//	nsgo publish ios|macos <file>
 //	                                                      compile a TSX app into a signed package, or sign one again
+//	nsgo publish ios|macos <file>
+//	                                                      upload a signed IPA or PKG to App Store Connect
 //	nsgo publish -store appstore|play|all [-listings DIR] [-dry-run] [-platform P] [-version V] [-track T] [dir]
 //	                                                      validate and upload store listings from YAML and Markdown files
 //	nsgo verify  [-root P,... [-revocations F,...]] package
