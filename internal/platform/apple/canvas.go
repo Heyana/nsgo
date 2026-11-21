@@ -58,6 +58,8 @@ var (
 	cgGradientCreate             func(space uintptr, components, locations *float64, count uintptr) uintptr
 	cgImageCreateWithImageInRect func(image uintptr, r CGRect) uintptr
 	cgPathCreateWithRoundedRect  func(r CGRect, rw, rh float64, transform uintptr) uintptr
+
+	cgContextSetInterpolationQuality func(ctx uintptr, quality int32)
 )
 
 // Runs of points and rectangles go by pointer, in one call. The
@@ -131,6 +133,7 @@ func loadCanvas(cg uintptr) {
 		purego.SyscallN(addRects, ctx, uintptr(unsafe.Pointer(unsafe.SliceData(rects))), uintptr(len(rects)))
 	}
 	reg(&cgContextDrawImage, cg, "CGContextDrawImage")
+	reg(&cgContextSetInterpolationQuality, cg, "CGContextSetInterpolationQuality")
 	reg(&cgContextClipToMask, cg, "CGContextClipToMask")
 	reg(&cgContextDrawLinearGradient, cg, "CGContextDrawLinearGradient")
 	reg(&cgContextDrawRadialGradient, cg, "CGContextDrawRadialGradient")
@@ -786,6 +789,7 @@ func (p *player) image(op *driver.DrawOp) {
 		// Images draw bottom up: flip them into the top-down space.
 		cgContextTranslateCTM(p.ctx, f(op.X), f(op.Y)+h)
 		cgContextScaleCTM(p.ctx, 1, -1)
+		setImageSampling(p.ctx, op.Sampling)
 		cgContextDrawImage(p.ctx, Rect(0, 0, w, h), src)
 		cgContextRestoreGState(p.ctx)
 	})

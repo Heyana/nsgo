@@ -37,13 +37,8 @@ func TestCanvasSamples(t *testing.T) {
 	}
 	src := driver.ImageSource{Data: logo}
 	w.canvasImages = map[string]*imageSlot{src.Key(): {src: src, pic: pic}}
-	for _, s := range canvastest.Samples(w, logo) {
+	for _, s := range append(canvastest.Samples(w, logo), canvastest.Sampling(w)) {
 		t.Run(s.Name, func(t *testing.T) {
-			for i := range s.Drawing.Ops {
-				if op := &s.Drawing.Ops[i]; op.Kind == driver.DrawImage {
-					op.Image = &src
-				}
-			}
 			img := drawImage(t, g, s.Width, s.Height, func(p *painter) {
 				p.canvas(&view{drawing: s.Drawing}, float32(s.Width), float32(s.Height))
 			}, w)
@@ -57,6 +52,34 @@ func TestCanvasSamples(t *testing.T) {
 				t.Error(f)
 			}
 		})
+	}
+}
+
+// TestImageNearestSampling draws the same 320×180 frame with two
+// sampling settings to verify that changing the view's look updates it.
+func TestImageNearestSampling(t *testing.T) {
+	g, err := devices()
+	if err != nil {
+		t.Skip(err)
+	}
+	const width, height = 320, 180
+	w := &window{scale: canvastest.Scale}
+	frame := canvastest.Checkerboard(width, height)
+	v := &view{image: driver.ImageConfig{ResizeMode: driver.Stretch}}
+	v.source.showPixels(driver.ImageSource{Pixels: frame})
+	t.Cleanup(func() { v.source.reset(driver.ImageSource{}) })
+	draw := func() *image.RGBA {
+		return drawImage(t, g, width, height, func(p *painter) {
+			p.drawImage(v, 0, rectF{right: width, bottom: height})
+		}, w)
+	}
+	if _, differs := canvastest.SamplingDifference(draw(), image.Point{}, frame, canvastest.Scale, 0); !differs {
+		t.Error("smooth draw matches the nearest-neighbor reference")
+	}
+	v.image.Sampling = driver.ImageSamplingNearest
+	img := draw()
+	if p, differs := canvastest.SamplingDifference(img, image.Point{}, frame, canvastest.Scale, 0); differs {
+		t.Errorf("nearest Image differs at %v: %v", p, img.At(p.X, p.Y))
 	}
 }
 

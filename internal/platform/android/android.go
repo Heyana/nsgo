@@ -1075,6 +1075,7 @@ func answerKey(surface, count uint32) uint64 { return uint64(surface)<<32 | uint
 // current request and how to stop loading them.
 type imageView struct {
 	source, placeholder driver.ImageSource
+	sampling            driver.ImageSampling
 	events              driver.EventMask
 	request             uint32
 	cancel              context.CancelFunc
@@ -1143,7 +1144,9 @@ func (s *surface) trackImages(tv *treeView, b *driver.MountBatch, frames *[]pixe
 					*frames = append(*frames, pixelFrame{item: i, pixels: px})
 				}
 			}
-			if v.request == 0 || (v.pixels == nil) != (px == nil) || !sameSource(v.source, source) || !sameSource(v.placeholder, placeholder) {
+			// A decoded source turning nearest reloads at its full size; pixels are never downsampled.
+			if v.request == 0 || (v.pixels == nil) != (px == nil) || !sameSource(v.source, source) || !sameSource(v.placeholder, placeholder) ||
+				(px == nil && v.sampling != c.Sampling && c.Sampling == driver.ImageSamplingNearest) {
 				v.stop()
 				s.requests++
 				v.source, v.placeholder, v.request = source, placeholder, s.requests
@@ -1155,6 +1158,7 @@ func (s *surface) trackImages(tv *treeView, b *driver.MountBatch, frames *[]pixe
 				}
 			}
 			v.pixels = px
+			v.sampling = c.Sampling
 			requests = append(requests, v.request)
 		}
 	}
@@ -1429,6 +1433,7 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 			w.byte(byte(c.ResizeMode - driver.Cover)) // Java's are 0-based
 			w.points(c.BlurRadius)
 			w.u32(uint32(max(c.FadeDuration.Milliseconds(), 0))) // 0: the platform's
+			w.flags(c.Sampling == driver.ImageSamplingNearest)
 			// Each axis of the position as a fraction of the free space
 			// plus points, which is what any position resolves to.
 			for _, a := range [...]driver.PositionAxis{c.Position.X, c.Position.Y} {

@@ -162,8 +162,8 @@ func TestInputPropsSetTheirFields(t *testing.T) {
 func TestImagePropsSetTheirFields(t *testing.T) {
 	r := decoding()
 	p := setProps(t, r, (*runtime).imageProp, `{src: "https://a.example/b.png", placeholder: "https://a.example/c.png",
-		blurRadius: 3, fadeDuration: 100, testID: "a", alt: "b"}`)
-	if p.TestID != "a" || p.Label != "b" || p.BlurRadius != 3 || p.FadeDuration != 100*time.Millisecond {
+		blurRadius: 3, fadeDuration: 100, testID: "a", alt: "b", sampling: "nearest"}`)
+	if p.TestID != "a" || p.Label != "b" || p.BlurRadius != 3 || p.FadeDuration != 100*time.Millisecond || p.Sampling != core.ImageSamplingNearest {
 		t.Errorf("decoded %+v", p)
 	}
 }

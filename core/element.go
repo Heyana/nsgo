@@ -794,6 +794,7 @@ type Image struct {
 	SourceFunc   func() ImageSource
 	Placeholder  ImageSource
 	ResizeMode   ResizeMode
+	Sampling     ImageSampling
 	BlurRadius   Points
 	FadeDuration time.Duration // 0 is the platform's
 	// HitTestAlpha is the minimum picture opacity, from 0 to 1, at which

@@ -151,6 +151,7 @@ func writeDrawing(w *writer, d *driver.Drawing) {
 			arg(driver.ArgY1, op.Y1)
 			arg(driver.ArgX2, op.X2)
 			arg(driver.ArgY2, op.Y2)
+			w.flags(op.Sampling == driver.ImageSamplingNearest)
 		}
 	}
 	binary.BigEndian.PutUint32(w.buf[at:], uint32(len(w.buf)-start))

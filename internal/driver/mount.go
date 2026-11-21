@@ -804,11 +804,20 @@ func (vs *ViewStyle) Matrix(size Size) Matrix3D {
 	return m
 }
 
+// ImageSampling selects how a raster image is sampled when scaled.
+type ImageSampling uint8
+
+const (
+	ImageSamplingSmooth ImageSampling = iota
+	ImageSamplingNearest
+)
+
 // ImageConfig is an image view's source and look.
 type ImageConfig struct {
 	Source       ImageSource
 	Placeholder  ImageSource
 	ResizeMode   ResizeMode
+	Sampling     ImageSampling
 	BlurRadius   Points
 	FadeDuration time.Duration
 	HitTestAlpha float32
@@ -1394,7 +1403,7 @@ func (a ModalAnimation) Duration() time.Duration {
 
 // Same reports whether a and b show the same image the same way.
 func (a ImageConfig) Same(b ImageConfig) bool {
-	return a.Source.Same(b.Source) && a.Placeholder.Same(b.Placeholder) && a.ResizeMode == b.ResizeMode &&
+	return a.Source.Same(b.Source) && a.Placeholder.Same(b.Placeholder) && a.ResizeMode == b.ResizeMode && a.Sampling == b.Sampling &&
 		a.BlurRadius == b.BlurRadius && a.FadeDuration == b.FadeDuration && a.HitTestAlpha == b.HitTestAlpha && a.Position == b.Position
 }
 

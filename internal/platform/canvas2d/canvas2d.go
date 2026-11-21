@@ -299,6 +299,7 @@ func (p *Player) image(op *driver.DrawOp) {
 	if w == 0 && h == 0 {
 		w, h = nw/density, nh/density
 	}
+	p.Ctx.Set("imageSmoothingEnabled", op.Sampling != driver.ImageSamplingNearest)
 	if op.X2 == 0 && op.Y2 == 0 {
 		p.Ctx.Call("drawImage", img, f(op.X), f(op.Y), w, h)
 		return

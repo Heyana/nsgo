@@ -82,6 +82,7 @@ type ctxState struct {
 	fontVariant    string
 	textAlign      string
 	textBaseline   string
+	nearest        bool
 	parsedFont     core.Font
 	parsedFontFrom string
 }
@@ -382,6 +383,11 @@ func (c *context2D) newContextObject() *js.Object {
 			}
 		}
 	}
+	prop("imageSmoothingEnabled", func() js.Value { return r.vm.ToValue(!c.st.nearest) }, func(v js.Value) {
+		enabled := v.ToBoolean()
+		c.st.nearest = !enabled
+		c.d.SetImageSmoothing(enabled)
+	})
 	prop("fillStyle", func() js.Value { return c.st.fill }, func(v js.Value) { c.st.fill = v })
 	prop("strokeStyle", func() js.Value { return c.st.stroke }, func(v js.Value) { c.st.stroke = v })
 	g, s := num(&c.st.lineWidth, core.ArgW, func(x float32) { c.d.SetLineWidth(x) })

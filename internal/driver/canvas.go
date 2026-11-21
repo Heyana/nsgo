@@ -37,6 +37,9 @@ type Drawing struct {
 	// pathAside is set while the current path is only the track's,
 	// after a FillPath, StrokePath or ClipPath (restorePath).
 	pathAside bool
+
+	sampling      ImageSampling
+	samplingStack []ImageSampling
 }
 
 // NewDrawing returns an empty drawing that measures text with text, as
@@ -147,6 +150,7 @@ type DrawOp struct {
 	Composite CompositeOp
 	Dash      *LineDash
 	Image     *ImageSource
+	Sampling  ImageSampling
 	// TextAlign and TextBaseline are what a text op was placed with.
 	TextAlign    TextAlign
 	TextBaseline TextBaseline
@@ -459,13 +463,34 @@ func (d *Drawing) op(o DrawOp) *Drawing {
 	case o.Kind.UsesPath():
 		d.restorePath()
 	}
+	if o.Image != nil {
+		o.Sampling = d.sampling
+	}
 	d.Ops = append(d.Ops, o)
 	return d
 }
 
-func (d *Drawing) Save() *Drawing { return d.op(DrawOp{Kind: DrawSave}) }
+func (d *Drawing) Save() *Drawing {
+	d.samplingStack = append(d.samplingStack, d.sampling)
+	return d.op(DrawOp{Kind: DrawSave})
+}
 
-func (d *Drawing) Restore() *Drawing { return d.op(DrawOp{Kind: DrawRestore}) }
+func (d *Drawing) Restore() *Drawing {
+	if n := len(d.samplingStack); n != 0 {
+		d.sampling, d.samplingStack = d.samplingStack[n-1], d.samplingStack[:n-1]
+	}
+	return d.op(DrawOp{Kind: DrawRestore})
+}
+
+// SetImageSmoothing selects how subsequent image draws scale raster images.
+// Smoothing is on by default. Save and Restore keep this setting.
+func (d *Drawing) SetImageSmoothing(enabled bool) *Drawing {
+	d.sampling = ImageSamplingSmooth
+	if !enabled {
+		d.sampling = ImageSamplingNearest
+	}
+	return d
+}
 
 func (d *Drawing) Translate(x, y float32) *Drawing {
 	return d.op(DrawOp{Kind: DrawTranslate, X: x, Y: y})

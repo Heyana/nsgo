@@ -448,6 +448,13 @@ func (p *painter) drawImage(v *view, tint driver.Color, r rectF) {
 	}
 }
 
+func imageInterpolation(sampling driver.ImageSampling) uintptr {
+	if sampling == driver.ImageSamplingNearest {
+		return d2dInterpolationNearest
+	}
+	return d2dInterpolationLinear
+}
+
 // drawPicture draws s's picture fitted in r. A blurred one draws through
 // a Direct2D Gaussian blur with hard borders, so its edges stay opaque,
 // under a clip to its own rectangle.
@@ -463,9 +470,10 @@ func (p *painter) drawPicture(v *view, s *imageSlot, tint driver.Color, r rectF)
 	if d.empty() {
 		return
 	}
+	interpolation := imageInterpolation(v.image.Sampling)
 	blur := max(float32(v.image.BlurRadius), 0)
 	if blur <= 0 {
-		p.dc.callF(rtDrawBitmap, 0b100, bmp.ptr(), uintptr(unsafe.Pointer(&d)), f32(1), d2dInterpolationLinear, 0)
+		p.dc.callF(rtDrawBitmap, 0b100, bmp.ptr(), uintptr(unsafe.Pointer(&d)), f32(1), interpolation, 0)
 		return
 	}
 	effect := s.blurOf(p.dc)
@@ -493,7 +501,7 @@ func (p *painter) drawPicture(v *view, s *imageSlot, tint driver.Color, r rectF)
 	p.pushClipRect(d)
 	saved := p.m
 	p.setTransform(scaling(sx, sy).then(translation(float64(d.left), float64(d.top))).then(saved))
-	p.dc.call(dcDrawImage, out.ptr(), 0, 0, d2dInterpolationLinear, 0)
+	p.dc.call(dcDrawImage, out.ptr(), 0, 0, interpolation, 0)
 	p.setTransform(saved)
 	p.pop()
 	// The effect keeps no bitmap alive between draws.

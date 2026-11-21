@@ -100,11 +100,12 @@ func loadImage(cf, cg uintptr) {
 
 // request is how an image view shows what it loads.
 type request struct {
-	mode  driver.ResizeMode
-	view  CGSize  // the view's size in points; zero before layout
-	ratio float64 // the screen's pixels per point
-	scale float64 // the image's pixels per point at its natural size
-	blur  float64 // points
+	mode     driver.ResizeMode
+	view     CGSize  // the view's size in points; zero before layout
+	ratio    float64 // the screen's pixels per point
+	scale    float64 // the image's pixels per point at its natural size
+	blur     float64 // points
+	sampling driver.ImageSampling
 }
 
 // pointsPerPixel returns how many points one pixel of a w×h image covers
@@ -129,7 +130,7 @@ func (r request) pointsPerPixel(w, h float64) float64 {
 // sharp in the view, or 0 to decode all of it.
 func (r request) maxPixels(w, h float64) float64 {
 	ppp := r.pointsPerPixel(w, h)
-	if ppp == 0 {
+	if r.sampling == driver.ImageSamplingNearest || ppp == 0 {
 		return 0
 	}
 	if m := math.Ceil(max(w, h) * ppp * r.ratio); m < max(w, h) {
@@ -504,6 +505,8 @@ func (iv *ImageView) Configure(c *driver.ImageConfig) {
 	if iv.load == 0 || !sameSource(old.Source, c.Source) || !sameSource(old.Placeholder, c.Placeholder) ||
 		old.BlurRadius != c.BlurRadius {
 		iv.pending, iv.quiet = true, false
+	} else if old.Sampling != c.Sampling && c.Sampling == driver.ImageSamplingNearest && (!iv.source || iv.reduced) {
+		iv.pending, iv.quiet = true, iv.source
 	} else if old.ResizeMode != c.ResizeMode && iv.source && iv.reduced {
 		iv.pending, iv.quiet = true, true // the mode may show more pixels
 	}
@@ -557,7 +560,7 @@ func (iv *ImageView) Layout(size CGSize) {
 
 func (iv *ImageView) request(ratio float64) request {
 	return request{mode: iv.config.ResizeMode, view: iv.bounds, ratio: ratio,
-		scale: uriScale(iv.config.Source.URI), blur: float64(iv.config.BlurRadius)}
+		scale: uriScale(iv.config.Source.URI), blur: float64(iv.config.BlurRadius), sampling: iv.config.Sampling}
 }
 
 // Start loads what Configure or Layout changed, for a screen of ratio
@@ -734,6 +737,12 @@ func (iv *ImageView) render(fade time.Duration) {
 			t.Send(sel("setDuration:"), fade.Seconds())
 			target.Send(selAddAnimation, t, NSString("contents"))
 		}
+		filter := "linear"
+		if iv.config.Sampling == driver.ImageSamplingNearest {
+			filter = "nearest"
+		}
+		target.Send(sel("setMinificationFilter:"), NSString(filter))
+		target.Send(sel("setMagnificationFilter:"), NSString(filter))
 		target.Send(selSetContents, iv.image)
 		target.Send(selRemoveAnimationForKey, NSString("nsgoFrames"))
 		if len(iv.shown.frames) > 1 && iv.tint == 0 {
@@ -772,6 +781,7 @@ func (iv *ImageView) Draw(ctx uintptr) {
 	cgContextTranslateCTM(ctx, fit.Origin.X, fit.Origin.Y+fit.Size.Height)
 	cgContextScaleCTM(ctx, 1, -1)
 	box := Rect(0, 0, fit.Size.Width, fit.Size.Height)
+	setImageSampling(ctx, iv.config.Sampling)
 	if iv.tint == 0 {
 		cgContextDrawImage(ctx, box, iv.image)
 		return
@@ -781,6 +791,14 @@ func (iv *ImageView) Draw(ctx uintptr) {
 	cgContextSetFillColor(ctx, color)
 	Release(color)
 	cgContextFillRect(ctx, box)
+}
+
+// setImageSampling changes interpolation in a saved graphics state.
+func setImageSampling(ctx uintptr, sampling driver.ImageSampling) {
+	if sampling == driver.ImageSamplingNearest {
+		const cgInterpolationNone = 1
+		cgContextSetInterpolationQuality(ctx, cgInterpolationNone)
+	}
 }
 
 // Close stops loading and lets the image go; the view is being deleted.

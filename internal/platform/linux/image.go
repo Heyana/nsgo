@@ -446,7 +446,7 @@ func (w *window) snapshotPicture(v *view, s *imageSlot, tint driver.Color, snap 
 	}
 	bounds := grapheneRect{float32(dst.x), float32(dst.y), float32(dst.w), float32(dst.h)}
 	cr := gtkSnapshotAppendCairo(snap, &bounds)
-	paintPicture(cr, s, surf, dst)
+	paintPicture(cr, s, surf, dst, v.image.Sampling)
 	cairoDestroy(cr)
 	if blur > 0 {
 		gtkSnapshotPop(snap)
@@ -468,21 +468,30 @@ func (p *painter) drawImage(v *view, tint driver.Color, r rect) {
 	cairoSave(p.cr)
 	cairoRectangle(p.cr, r.x, r.y, r.w, r.h)
 	cairoClip(p.cr)
-	paintPicture(p.cr, s, surf, p.w.fit(v, s, r))
+	paintPicture(p.cr, s, surf, p.w.fit(v, s, r), v.image.Sampling)
 	cairoRestore(p.cr)
 }
 
 // paintPicture paints surf, s's picture, scaled into dst.
-func paintPicture(cr uintptr, s *imageSlot, surf uintptr, dst rect) {
+func paintPicture(cr uintptr, s *imageSlot, surf uintptr, dst rect, sampling driver.ImageSampling) {
 	if dst.w <= 0 || dst.h <= 0 {
 		return
 	}
 	cairoSave(cr)
 	cairoTranslate(cr, dst.x, dst.y)
 	cairoScale(cr, dst.w/float64(s.pic.width), dst.h/float64(s.pic.height))
-	cairoSetSourceSurface(cr, surf, 0, 0)
+	setPictureSource(cr, surf, sampling)
 	cairoPaint(cr)
 	cairoRestore(cr)
+}
+
+// setPictureSource makes surf the source with its sampling filter.
+func setPictureSource(cr, surf uintptr, sampling driver.ImageSampling) {
+	cairoSetSourceSurface(cr, surf, 0, 0)
+	if sampling == driver.ImageSamplingNearest {
+		const cairoFilterNearest = 3
+		cairoPatternSetFilter(cairoGetSource(cr), cairoFilterNearest)
+	}
 }
 
 // fit returns where s's picture goes in r: core's fit of its natural

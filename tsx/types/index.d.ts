@@ -116,6 +116,7 @@ export declare class CanvasGradient {
 }
 /** What the context draws with: its state, which save and restore keep. */
 export interface CanvasProperties {
+  imageSmoothingEnabled: boolean;
   fillStyle: CanvasPaint;
   strokeStyle: CanvasPaint;
   lineWidth: CanvasNumber;

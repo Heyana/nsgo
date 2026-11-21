@@ -37,13 +37,8 @@ func TestCanvasSamples(t *testing.T) {
 			fn()
 		}
 	}
-	for _, s := range canvastest.Samples(w, logo) {
+	for _, s := range append(canvastest.Samples(w, logo), canvastest.Sampling(w)) {
 		t.Run(s.Name, func(t *testing.T) {
-			for i := range s.Drawing.Ops {
-				if op := &s.Drawing.Ops[i]; op.Kind == driver.DrawImage {
-					op.Image = &driver.ImageSource{Data: logo}
-				}
-			}
 			width, height := s.Width*canvastest.Scale, s.Height*canvastest.Scale
 			surface := cairoImageSurfaceCreate(0, int32(width), int32(height))
 			defer cairoSurfaceDestroy(surface)

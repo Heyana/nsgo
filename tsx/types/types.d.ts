@@ -390,6 +390,7 @@ export interface ImageAsset {
 }
 /** An image's own props. */
 export interface ImageHostProps {
+  sampling?: "smooth" | "nearest";
   src?: string | ImageAsset;
   placeholder?: string | ImageAsset;
   blurRadius?: number;

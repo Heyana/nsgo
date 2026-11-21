@@ -448,6 +448,36 @@ mount(App);`)
 	}
 }
 
+func TestCanvasImageSmoothing(t *testing.T) {
+	app := run(t, `import { mount, Canvas } from "nsgo";
+mount(() => <Canvas testID="c" style={{ width: 100, height: 50 }} draw={(ctx) => {
+	const src = "asset:checker.png";
+	if (!ctx.imageSmoothingEnabled) throw new Error("smoothing starts enabled");
+	ctx.drawImage(src, 0, 0);
+	ctx.save();
+	ctx.imageSmoothingEnabled = false;
+	ctx.drawImage(src, 0, 0, 40, 40);
+	ctx.save();
+	ctx.imageSmoothingEnabled = true;
+	ctx.restore();
+	if (ctx.imageSmoothingEnabled) throw new Error("inner restore should disable smoothing");
+	ctx.drawImage(src, 0, 0, 16, 16, 0, 0, 40, 40);
+	ctx.restore();
+	if (!ctx.imageSmoothingEnabled) throw new Error("outer restore should enable smoothing");
+	ctx.drawImage(src, 0, 0);
+}} />);`)
+	var got []core.ImageSampling
+	for _, op := range app.Find("id:c").Ops {
+		if op.Kind == driver.DrawImage {
+			got = append(got, op.Sampling)
+		}
+	}
+	want := []core.ImageSampling{core.ImageSamplingSmooth, core.ImageSamplingNearest, core.ImageSamplingNearest, core.ImageSamplingSmooth}
+	if !slices.Equal(got, want) {
+		t.Errorf("image sampling = %v, want %v", got, want)
+	}
+}
+
 func TestDialogOpensAndReportsItsClose(t *testing.T) {
 	app := run(t, `import { mount, signal, Text, View } from "nsgo";
 import { Dialog } from "nsgo/base";

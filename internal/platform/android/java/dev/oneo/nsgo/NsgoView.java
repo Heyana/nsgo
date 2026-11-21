@@ -1751,8 +1751,10 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             if (n == null || n.image == null || n.image.request != request || decoder.isShutdown()) return;
             ViewGroup.LayoutParams lp = n.view.getLayoutParams();
             DisplayMetrics screen = getResources().getDisplayMetrics();
-            int width = lp != null && lp.width > 0 ? lp.width : screen.widthPixels;
-            int height = lp != null && lp.height > 0 ? lp.height : screen.heightPixels;
+            // Nearest-neighbor scaling needs the original raster pixels.
+            boolean nearest = n.image.nearest;
+            int width = nearest ? Integer.MAX_VALUE : (lp != null && lp.width > 0 ? lp.width : screen.widthPixels);
+            int height = nearest ? Integer.MAX_VALUE : (lp != null && lp.height > 0 ? lp.height : screen.heightPixels);
             decoder.execute(() -> {
                 ImageNode.Decoded image = ImageNode.decodeDrawable(getContext(), data, scale, width, height);
                 ui.post(() -> {
@@ -2844,10 +2846,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 int mode = in.readUnsignedByte();
                 float blur = in.readFloat() * density;
                 int fade = in.readInt();
+                boolean nearest = in.readBoolean();
                 // Each axis of the position: a fraction of the free space plus points.
                 float xFraction = in.readFloat(), x = in.readFloat() * density;
                 float yFraction = in.readFloat(), y = in.readFloat() * density;
-                n.image.configure(request, mode, blur, fade);
+                n.image.configure(request, mode, blur, fade, nearest);
                 n.image.position(xFraction, x, yFraction, y);
                 PixelFrame frame = frames.get("");
                 if (frame != null) n.image.showPixels(frame);

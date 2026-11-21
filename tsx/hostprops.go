@@ -668,6 +668,11 @@ func (r *runtime) imageProp(p *core.Image, name string, v js.Value) bool {
 		p.Source = r.imageSource(v)
 	case "placeholder":
 		p.Placeholder = r.imageSource(v)
+	case "sampling":
+		p.Sampling = core.ImageSamplingSmooth
+		if stringOf(v) == "nearest" {
+			p.Sampling = core.ImageSamplingNearest
+		}
 	case "blurRadius":
 		p.BlurRadius = core.Points(v.ToFloat())
 	case "fadeDuration":

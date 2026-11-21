@@ -186,6 +186,8 @@ type (
 	ImageSource = driver.ImageSource
 	// OffscreenCanvas is a recorded 2D drawing snapshot attached to an ImageSource by OffscreenImage.Source.
 	OffscreenCanvas = driver.OffscreenCanvas
+	// ImageSampling selects the filter used when scaling raster images.
+	ImageSampling = driver.ImageSampling
 	// Interpolation maps a node through piecewise-linear ranges.
 	Interpolation = driver.Interpolation
 	// KeyboardAppearance is the look of iOS's keyboard; the default follows the

@@ -111,14 +111,8 @@ func TestCanvasSamples(t *testing.T) {
 	if len(loaded) == 0 {
 		t.Fatal("the image did not load")
 	}
-	for _, s := range canvastest.Samples(TextEngine{}, logo) {
+	for _, s := range append(canvastest.Samples(TextEngine{}, logo), canvastest.Sampling(TextEngine{})) {
 		t.Run(s.Name, func(t *testing.T) {
-			// The sample's image source must be the bytes loaded above.
-			for i := range s.Drawing.Ops {
-				if op := &s.Drawing.Ops[i]; op.Kind == driver.DrawImage {
-					op.Image = &driver.ImageSource{Data: logo}
-				}
-			}
 			for _, flipped := range []bool{false, true} {
 				for _, f := range s.Check(play(t, s.Name, s.Drawing, s.Width, s.Height, flipped)) {
 					t.Errorf("flipped %v: %s", flipped, f)

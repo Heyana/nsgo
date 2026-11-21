@@ -259,6 +259,7 @@ func (p *picture) draw(im *image, box driver.Size) {
 	style := map[string]string{
 		"background-image": "none", "background-color": "transparent",
 		"mask-image": "none", "-webkit-mask-image": "none", "filter": "none",
+		"image-rendering": "auto",
 	}
 	if p.loaded {
 		b := im.config.ResizeMode.Fit(p.natural(), box, im.config.Position)
@@ -284,6 +285,13 @@ func (p *picture) draw(im *image, box driver.Size) {
 		}
 		if b := im.config.BlurRadius; b > 0 {
 			style["filter"] = "blur(" + webstyle.Px(b) + ")"
+		}
+		// image-rendering is inherited, so it also reaches a pixel buffer's canvas.
+		if im.config.Sampling == driver.ImageSamplingNearest {
+			style["image-rendering"] = "pixelated"
+			if js.Global().Get("CSS").Call("supports", "image-rendering", "crisp-edges").Bool() {
+				style["image-rendering"] = "crisp-edges"
+			}
 		}
 	}
 	p.css.set(style)

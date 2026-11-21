@@ -11,6 +11,13 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
+const (
+	// ImageSamplingSmooth keeps the platform's smooth scaling filter.
+	ImageSamplingSmooth = driver.ImageSamplingSmooth
+	// ImageSamplingNearest scales raster images without blending neighboring pixels.
+	ImageSamplingNearest = driver.ImageSamplingNearest
+)
+
 type imageNode struct {
 	config driver.ImageConfig
 	sent   driver.ImageConfig // as resolved for the pixel ratio
@@ -49,7 +56,7 @@ func (t *Tree) mountImage(cx *Scope, parent *node, v Image) {
 	n.props = driver.ViewProps{Role: RoleImage, Label: v.Label, TestID: v.TestID, ElementsHidden: v.ElementsHidden}
 	t.bindAccessibilityText(cx, n, &n.props.Label, v.LabelFunc)
 	n.image = &imageNode{config: driver.ImageConfig{Source: v.Source, Placeholder: v.Placeholder,
-		ResizeMode: v.ResizeMode, BlurRadius: v.BlurRadius, FadeDuration: v.FadeDuration, HitTestAlpha: v.hitTestAlpha()}}
+		ResizeMode: v.ResizeMode, Sampling: v.Sampling, BlurRadius: v.BlurRadius, FadeDuration: v.FadeDuration, HitTestAlpha: v.hitTestAlpha()}}
 	if v.SourceFunc != nil {
 		cx.renderEffect(func() {
 			src := v.SourceFunc()

@@ -194,6 +194,7 @@ const (
 	d2dBitmapCannotDraw        = 2
 	d2dAntialiasPerPrimitive   = 0
 	d2dAntialiasAliased        = 1
+	d2dInterpolationNearest    = 0
 	d2dInterpolationLinear     = 1
 	d2dFigureFilled            = 0
 	d2dFigureHollow            = 1

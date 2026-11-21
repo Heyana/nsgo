@@ -684,7 +684,7 @@ func (p *canvasPlayer) image(op *driver.DrawOp) {
 		// The picture's pixels in the image's points.
 		k := float64(nat.Width) / float64(picWidth)
 		cairoScale(cr, k, k)
-		cairoSetSourceSurface(cr, surf, 0, 0)
+		setPictureSource(cr, surf, op.Sampling)
 		cairoPaintWithAlpha(cr, p.st.alpha)
 		cairoRestore(cr)
 	})

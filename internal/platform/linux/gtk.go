@@ -365,6 +365,8 @@ var (
 	cairoPopGroupToSource      func(uintptr)
 	cairoSetOperator           func(uintptr, int32)
 	cairoSetSourceSurface      func(uintptr, uintptr, float64, float64)
+	cairoGetSource             func(uintptr) uintptr
+	cairoPatternSetFilter      func(uintptr, int32)
 	cairoSurfaceWriteToPNG     func(uintptr, *byte) int32
 )
 
@@ -749,6 +751,8 @@ func bind() {
 	purego.RegisterLibFunc(&cairoPopGroupToSource, cairoLib, "cairo_pop_group_to_source")
 	purego.RegisterLibFunc(&cairoSetOperator, cairoLib, "cairo_set_operator")
 	purego.RegisterLibFunc(&cairoSetSourceSurface, cairoLib, "cairo_set_source_surface")
+	purego.RegisterLibFunc(&cairoGetSource, cairoLib, "cairo_get_source")
+	purego.RegisterLibFunc(&cairoPatternSetFilter, cairoLib, "cairo_pattern_set_filter")
 	purego.RegisterLibFunc(&cairoSurfaceWriteToPNG, cairoLib, "cairo_surface_write_to_png")
 	bindCanvas(cairoLib, pangocairoLib)
 	bindNative()

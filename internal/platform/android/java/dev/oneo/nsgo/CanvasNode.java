@@ -829,17 +829,18 @@ final class CanvasNode extends View {
             b.getFloat(); // the density its name gives, which the picture carries
             float x = b.getFloat(), y = b.getFloat(), w = b.getFloat(), h = b.getFloat();
             float sx = b.getFloat(), sy = b.getFloat(), sw = b.getFloat(), sh = b.getFloat();
+            boolean nearest = b.get() != 0;
             if (pixels.containsKey(key)) {
                 Picture picture = pixels.get(key);
-                if (picture != null) image(picture, x, y, w, h, sx, sy, sw, sh);
+                if (picture != null) image(picture, x, y, w, h, sx, sy, sw, sh, nearest);
             } else if (pictures != null && !key.isEmpty()) {
                 try (CanvasImages<Picture>.Lease lease = pictures.acquire(key)) {
-                    if (lease != null) image(lease.value, x, y, w, h, sx, sy, sw, sh);
+                    if (lease != null) image(lease.value, x, y, w, h, sx, sy, sw, sh, nearest);
                 }
             }
         }
 
-        private void image(Picture p, float x, float y, float w, float h, float sx, float sy, float sw, float sh) {
+        private void image(Picture p, float x, float y, float w, float h, float sx, float sy, float sw, float sh, boolean nearest) {
             if (w == 0 && h == 0) {
                 w = p.bitmap.getWidth() / p.scale;
                 h = p.bitmap.getHeight() / p.scale;
@@ -848,7 +849,7 @@ final class CanvasNode extends View {
                     Math.round((sx + sw) * p.scale), Math.round((sy + sh) * p.scale));
             paint.reset();
             paint.setAntiAlias(true);
-            paint.setFilterBitmap(true);
+            paint.setFilterBitmap(!nearest);
             paint.setAlpha(Math.round(255 * state.alpha));
             RectF dst = new RectF(x, y, x + w, y + h);
             canvas.save();
