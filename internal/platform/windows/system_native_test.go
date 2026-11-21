@@ -578,9 +578,19 @@ func TestSaveDialogStartsInFolder(t *testing.T) {
 		t.Fatalf("a refusal completed the save before the dialog closed: %s", got)
 	default:
 	}
-	okButton, _, _ := getDlgItem.Call(warning, idOK)
-	if okButton == 0 {
-		t.Fatal("the rejection warning has no OK control")
+	// FindWindow can see the message box as its controls are created.
+	// Wait for its real OK button and for the box to be shown.
+	isWindowVisible := user32.NewProc("IsWindowVisible")
+	var okButton uintptr
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		okButton, _, _ = getDlgItem.Call(warning, idOK)
+		if visible, _, _ := isWindowVisible.Call(warning); okButton != 0 && visible != 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the rejection warning did not show its OK control: title %q, button %v", windowText(warning), okButton)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	const bmClick = 0x00F5
 	postMessageW.Call(okButton, bmClick, 0, 0)
