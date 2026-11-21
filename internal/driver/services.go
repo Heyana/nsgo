@@ -546,6 +546,10 @@ const (
 	// ClipboardReadFiles reads the file: URLs of the local files it holds,
 	// such as files copied in a file manager.
 	ClipboardReadFiles
+	// ClipboardReadItems reads the clipboard's native byte representations.
+	ClipboardReadItems
+	// ClipboardReadChangeCount reads the platform's clipboard sequence number.
+	ClipboardReadChangeCount
 )
 
 // MaxClipboardImage is the most bytes of a PNG a clipboard read returns:
@@ -854,9 +858,11 @@ type StorageBackend interface {
 // items an app sends and answers its reads, so the machine's clipboard
 // is never touched.
 type MemoryClipboard struct {
-	Text  string
-	Image []byte // PNG
-	Files []string
+	Text        string
+	Image       []byte // PNG
+	Files       []string
+	Items       []ClipboardItem
+	ChangeCount int64
 }
 
 // Take applies it when it is a clipboard item and reports whether it is:
@@ -866,9 +872,19 @@ func (c *MemoryClipboard) Take(it *MountItem) (ev Event, answer, taken bool) {
 	switch it.Kind {
 	case ItemSetClipboard:
 		c.Text, c.Image, c.Files = it.Value, nil, nil
+		c.Items = []ClipboardItem{{Representations: []ClipboardRepresentation{{Type: "public.utf8-plain-text", Data: []byte(it.Value)}}}}
+		c.ChangeCount++
 	case ItemSetClipboardImage:
 		data, _ := it.Data.([]byte)
 		c.Text, c.Image, c.Files = "", data, nil
+		c.Items = nil
+		c.ChangeCount++
+	case ItemSetClipboardItems:
+		items, _ := it.Data.([]ClipboardItem)
+		c.setItems(items)
+		if it.Count != 0 {
+			return Event{Kind: EventClipboard, Count: it.Count, Data: ClipboardResult{}}, true, true
+		}
 	case ItemReadClipboard:
 		ev = Event{Kind: EventClipboard, Count: it.Count}
 		switch it.Clipboard {
@@ -884,6 +900,17 @@ func (c *MemoryClipboard) Take(it *MountItem) (ev Event, answer, taken bool) {
 			ev.Finished = len(c.Image) > 0
 		case ClipboardReadFiles:
 			ev.URIs = append([]string(nil), c.Files...)
+		case ClipboardReadItems:
+			items := c.snapshot()
+			err := ValidateClipboardItems(items)
+			if err == nil {
+				items = CloneClipboardItems(items)
+			} else {
+				items = nil
+			}
+			ev.Data = ClipboardResult{Items: items, Err: err}
+		case ClipboardReadChangeCount:
+			ev.Data = ClipboardResult{ChangeCount: c.ChangeCount}
 		}
 		return ev, true, true
 	default:

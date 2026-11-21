@@ -134,6 +134,20 @@ var itemKindNames = map[ItemKind]string{
 	ItemImageCacheLimit:         "ItemImageCacheLimit",
 	ItemMiniProgramSignIn:       "ItemMiniProgramSignIn",
 	ItemAppClipOverlay:          "ItemAppClipOverlay",
+
+	ItemKeepImage:           "ItemKeepImage",
+	ItemReleaseImage:        "ItemReleaseImage",
+	ItemReleaseOffscreen:    "ItemReleaseOffscreen",
+	ItemRequestReview:       "ItemRequestReview",
+	ItemGPU:                 "ItemGPU",
+	ItemSavePreflightAnswer: "ItemSavePreflightAnswer",
+	ItemSaveFilePreflight:   "ItemSaveFilePreflight",
+	ItemDiskSpace:           "ItemDiskSpace",
+	ItemSystemGestures:      "ItemSystemGestures",
+	ItemDiscovery:           "ItemDiscovery",
+	ItemCursorPoint:         "ItemCursorPoint",
+	ItemPointerLock:         "ItemPointerLock",
+	ItemSetClipboardItems:   "ItemSetClipboardItems",
 }
 
 // String returns the kind's name, as a log or an event prints it.

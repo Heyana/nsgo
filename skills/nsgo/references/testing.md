@@ -83,6 +83,8 @@ For headless GPU checks in another window, use `Surface.GPUReadPixels`, `Surface
 
 Read mounted image, input, modal, screen, scroll, video and Picture in Picture settings through `nsgotest` records. `View.Sticky` contains `nsgotest.StickyCell` values. Image variant maps and scroll lists are snapshots.
 
+The test's private clipboard models `ReadClipboardItems`, `WriteClipboardItems` and `ClipboardChangeCount` alongside its text, image and file calls. Inspect `app.ClipboardItems` and `app.ClipboardChangeCount` after settling the app.
+
 ## Tests without the network
 
 Use `app.AppleSignIn` or `app.PurchaseAnswer` when a test needs to answer Sign in with Apple or a purchase. The hooks receive `nsgotest.AppleSignInRequest` and `nsgotest.PurchaseRequest` records. [Services](https://nsgo.dev/docs/services.md)

@@ -31,6 +31,10 @@ cx.ReadClipboard(func(text string) { pasted.Set(text) })
 cx.SetClipboard("Hello")
 ```
 
+在 macOS 和 Windows 上，`ReadClipboardItems` 获取剪贴板中可读取的字节表示快照，总计最多 48 MiB。每一项包含有序的 `ClipboardRepresentation`，其中 `Type` 是原生格式名，`Data` 是原始字节。用 `WriteClipboardItems` 恢复快照，可同时传入回调以接收写入错误。传入空切片会清空剪贴板。比较 `ClipboardChangeCount` 的返回值是否相等，可以检测新的复制操作，即使复制的文本相同。
+
+macOS 保留项目边界和粘贴板类型名。Windows 使用单个项目，并保留基于字节的 Win32 格式（例如 `CF_HDROP`）与注册格式（例如 `Rich Text Format`），写入时合并格式各不相同的项目，并为零长度数据写入一个零字节。GDI 句柄、所有者显示格式和私有数字格式被省略。其他平台的读写回调收到 `CodeUnavailable`，计数回调收到 `-1`。
+
 ## 打开链接与文件
 
 `cx.OpenURL` 用系统的浏览器或应用打开链接，`core.CheckURL` 说明它会拒绝什么：没有 scheme、超过 16 KiB、包含空格、Web 地址没有 host，以及 `javascript:`、`data:`、`blob:`、`file:`、`about:` 和 `asset:`。

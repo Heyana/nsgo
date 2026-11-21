@@ -21,6 +21,8 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 | Web content and media | `core.WebView`, `core.Video`, `core.Canvas` for 2D drawing and shaders |
 | Platform services | `cx` methods and `core.Env` (clipboard, storage, secrets, links, pickers, speaking, notifications, haptics, permissions, biometrics, Sign in with Apple, in-app purchases through `cx.Purchase`, OAuth sign-in through `cx.AuthSession` rather than a web view, `cx.SetWebCookies` to carry a sign-in into web views, `cx.WebCookies` to read one out and `cx.ClearWebsiteData` to sign out of every site), `desktop` for windows, trays and menus, `mobile` for phones, `widget` for widgets and Live Activities, `updater` for updates |
 
+Use `ReadClipboardItems` and `WriteClipboardItems` to save and restore native clipboard data on macOS and Windows. `ClipboardChangeCount` detects a new copy ([services](https://nsgo.dev/docs/services.md#alerts-and-the-clipboard)).
+
 ## Using them well
 
 - Give a text attachment's span `Content` for selections to copy in its place; empty content omits it ([text](https://nsgo.dev/docs/text.md#runs-and-links)).

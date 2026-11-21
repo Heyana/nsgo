@@ -30,6 +30,7 @@ type Env struct {
 	gpu                     *Signal[bool]
 	audioSchedule           *Signal[bool]
 	hapticPatterns          *Signal[bool]
+	clipboardItems          *Signal[bool]
 	camera                  *Signal[bool]
 	scanCode                *Signal[bool]
 	discoverServices        *Signal[bool]
@@ -118,6 +119,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		reader:           NewSignal(cx, false),
 		screenColor:      NewSignal(cx, false),
 		speech:           NewSignal(cx, false),
+		clipboardItems:   NewSignal(cx, false),
 		audio:            NewSignal(cx, false),
 		audioSchedule:    NewSignal(cx, false),
 		hapticPatterns:   NewSignal(cx, false),
@@ -259,6 +261,7 @@ func (e *Env) set(v Environment) {
 	e.audio.Set(v.Audio)
 	e.audioSchedule.Set(v.Audio && v.AudioSchedule)
 	e.hapticPatterns.Set(v.HapticPatterns)
+	e.clipboardItems.Set(v.ClipboardItems)
 	e.speak.Set(v.Speak)
 	e.gamepads.Set(v.Gamepads)
 	e.gpu.Set(v.GPU)

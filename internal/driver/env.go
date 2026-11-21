@@ -69,6 +69,8 @@ type Environment struct {
 	AudioPlaybackControls bool
 	// HapticPatterns reports support for playing timed haptic events.
 	HapticPatterns bool
+	// ClipboardItems says the clipboard supports native representations and a change count.
+	ClipboardItems bool
 	// Camera says ItemTakePhoto shows a camera here.
 	Camera bool
 	// ScanCode says ItemScanCode shows a camera that reads codes here.

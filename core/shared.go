@@ -405,6 +405,10 @@ type (
 	// ClipboardImage is an image read from the clipboard: a PNG and its
 	// size in pixels.
 	ClipboardImage = driver.ClipboardImage
+	// ClipboardItem holds the native representations of one clipboard item.
+	ClipboardItem = driver.ClipboardItem
+	// ClipboardRepresentation holds a native format name and its bytes.
+	ClipboardRepresentation = driver.ClipboardRepresentation
 	// OSVersion is an operating system's version.
 	OSVersion = driver.OSVersion
 	// PickFormat says which formats picked images come in.

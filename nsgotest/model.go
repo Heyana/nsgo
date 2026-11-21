@@ -846,13 +846,8 @@ func (a *App) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemStickyCells:
 			v.Sticky = stickyCells(it.Sticky)
-		case driver.ItemSetClipboard:
-			a.Clipboard, a.ClipboardImage, a.ClipboardFiles = it.Value, nil, nil
-		case driver.ItemSetClipboardImage:
-			data, _ := it.Data.([]byte)
-			a.Clipboard, a.ClipboardImage, a.ClipboardFiles = "", data, nil
-		case driver.ItemReadClipboard:
-			a.readClipboard(&it)
+		case driver.ItemSetClipboard, driver.ItemSetClipboardImage, driver.ItemSetClipboardItems, driver.ItemReadClipboard:
+			a.applyClipboard(&it)
 		case driver.ItemOpenURL:
 			a.OpenedURLs = append(a.OpenedURLs, it.Value)
 			opened := a.OpenURL == nil || a.OpenURL(it.Value)
@@ -1717,24 +1712,18 @@ func (a *App) postTo(tree *core.Tree, ev driver.Event) {
 	a.mu.Unlock()
 }
 
-// readClipboard answers a clipboard read from the model's clipboard.
-func (a *App) readClipboard(it *driver.MountItem) {
-	ev := driver.Event{Kind: driver.EventClipboard, Count: it.Count}
-	switch it.Clipboard {
-	case driver.ClipboardReadText:
-		ev.Text = a.Clipboard
-	case driver.ClipboardReadHasText:
-		ev.Finished = a.Clipboard != ""
-	case driver.ClipboardReadImage:
-		if len(a.ClipboardImage) > 0 {
-			ev.Data = driver.ClipboardPNG(a.ClipboardImage)
-		}
-	case driver.ClipboardReadHasImage:
-		ev.Finished = len(a.ClipboardImage) > 0
-	case driver.ClipboardReadFiles:
-		ev.URIs = slices.Clone(a.ClipboardFiles)
+// applyClipboard applies a request to the test's own clipboard.
+func (a *App) applyClipboard(it *driver.MountItem) {
+	c := driver.MemoryClipboard{
+		Text: a.Clipboard, Image: a.ClipboardImage, Files: a.ClipboardFiles,
+		Items: a.ClipboardItems, ChangeCount: a.ClipboardChangeCount,
 	}
-	a.post(ev)
+	ev, answer, _ := c.Take(it)
+	a.Clipboard, a.ClipboardImage, a.ClipboardFiles = c.Text, c.Image, c.Files
+	a.ClipboardItems, a.ClipboardChangeCount = c.Items, c.ChangeCount
+	if answer {
+		a.post(ev)
+	}
 }
 
 // setFocus moves focus to or from v and, as a platform does, reports the

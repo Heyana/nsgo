@@ -414,6 +414,8 @@ const (
 	ItemMiniProgramSignIn
 	// ItemAppClipOverlay presents (On) or dismisses the calling scope's full-app recommendation. Count identifies its owner request and Value is bottom or bottom-raised. iOS App Clips alone send it.
 	ItemAppClipOverlay
+	// ItemSetClipboardItems replaces the clipboard with Data ([]ClipboardItem). When Count is nonzero, EventClipboard reports the outcome.
+	ItemSetClipboardItems
 )
 
 // EditAction is an editing action of an input's touch edit menu (ItemEditMenu, EventEditAction).

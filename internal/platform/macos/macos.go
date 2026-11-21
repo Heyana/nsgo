@@ -1278,6 +1278,7 @@ func (s *surface) environment() driver.Environment {
 		LowPowerMode:       lowPower,
 		LaunchedAtLogin:    s.opts.LaunchedAtLogin,
 		FrontmostApp:       frontmostApp(),
+		ClipboardItems:     true,
 
 		// Any window of the surface's own turns transparent and leaves the Window menu (look.go); a panel's look is its own.
 		CanMakeWindowsTransparent: s.ownWindow(),
@@ -2212,9 +2213,14 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.audio.Handle(it.Count, it.Audio)
 			continue
 		case driver.ItemSetClipboard:
-			pb := objc.ID(apple.Class("NSPasteboard")).Send(sel("generalPasteboard"))
-			pb.Send(sel("clearContents"))
-			pb.Send(sel("setString:forType:"), apple.NSString(it.Value), apple.NSString(pasteboardText))
+			setClipboardText(generalPasteboard(), it.Value)
+			continue
+		case driver.ItemSetClipboardItems:
+			items, _ := it.Data.([]driver.ClipboardItem)
+			err := writeClipboardItems(generalPasteboard(), items)
+			if it.Count != 0 {
+				s.engine.Dispatch(driver.Event{Kind: driver.EventClipboard, Count: it.Count, Data: driver.ClipboardResult{Err: err}})
+			}
 			continue
 		case driver.ItemReadClipboard:
 			s.readClipboard(it)

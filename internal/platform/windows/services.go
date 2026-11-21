@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode"
 	"unicode/utf16"
 	"unsafe"
@@ -26,7 +27,6 @@ var (
 	globalFree       = kernel32.NewProc("GlobalFree")
 	globalLock       = kernel32.NewProc("GlobalLock")
 	globalUnlock     = kernel32.NewProc("GlobalUnlock")
-	lstrlenW         = kernel32.NewProc("lstrlenW")
 	rtlMoveMemory    = kernel32.NewProc("RtlMoveMemory")
 )
 
@@ -80,21 +80,11 @@ func (w *window) clipboard() string {
 	}
 	defer closeClipboard.Call()
 	h, _, _ := getClipboardData.Call(cfUnicodeText)
-	if h == 0 {
+	data := globalBytes(h)
+	if len(data) < 2 {
 		return ""
 	}
-	p, _, _ := globalLock.Call(h)
-	if p == 0 {
-		return ""
-	}
-	defer globalUnlock.Call(h)
-	n, _, _ := lstrlenW.Call(p)
-	if n == 0 {
-		return ""
-	}
-	units := make([]uint16, n)
-	rtlMoveMemory.Call(uintptr(unsafe.Pointer(&units[0])), p, n*2)
-	return string(utf16.Decode(units))
+	return syscall.UTF16ToString(unsafe.Slice((*uint16)(unsafe.Pointer(&data[0])), len(data)/2))
 }
 
 // editing reports whether a text field or a page has the keyboard focus.

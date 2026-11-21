@@ -1388,6 +1388,13 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemSetClipboard:
 			w.setClipboard(it.Value)
 			continue
+		case driver.ItemSetClipboardItems:
+			items, _ := it.Data.([]driver.ClipboardItem)
+			err := w.writeClipboardItems(items)
+			if it.Count != 0 {
+				w.engine.Dispatch(driver.Event{Kind: driver.EventClipboard, Count: it.Count, Data: driver.ClipboardResult{Err: err}})
+			}
+			continue
 		case driver.ItemReadClipboard:
 			w.readClipboard(it)
 			continue

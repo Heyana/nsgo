@@ -50,7 +50,11 @@ func (o *Options) UseTest(t testhost.Options, pin *TestPin) {
 	}
 	o.TransitionEnds = t.TransitionEnds
 	pin.Set(t.Environment)
-	o.Pin = pin.apply
+	o.Pin = func(env driver.Environment) driver.Environment {
+		env = pin.apply(env)
+		env.ClipboardItems = true
+		return env
+	}
 	o.Storage = t.Storage
 	// Nor is its keychain.
 	o.Secrets = t.Secrets

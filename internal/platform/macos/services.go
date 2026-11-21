@@ -86,6 +86,11 @@ func (s *surface) readClipboard(it *driver.MountItem) {
 		ev.Finished = len(fileURLs(pb)) == 0 && availableType(pb, imageTypes) != ""
 	case driver.ClipboardReadFiles:
 		ev.URIs = fileURLs(pb)
+	case driver.ClipboardReadItems:
+		items, err := readClipboardItems(pb)
+		ev.Data = driver.ClipboardResult{Items: items, Err: err}
+	case driver.ClipboardReadChangeCount:
+		ev.Data = driver.ClipboardResult{ChangeCount: pasteboardChangeCount(pb)}
 	}
 	s.engine.Dispatch(ev)
 }

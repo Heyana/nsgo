@@ -1269,7 +1269,7 @@ func (a *App) editField(v *View, role driver.MenuRole) {
 		if left == right || v.Input.Masked {
 			return
 		}
-		a.Clipboard = v.Text[left:right]
+		a.applyClipboard(&driver.MountItem{Kind: driver.ItemSetClipboard, Value: v.Text[left:right]})
 		if role == driver.MenuCut {
 			a.edit(v, v.Text[:left]+v.Text[right:])
 		}
