@@ -58,3 +58,22 @@ func TestTextViewMathBlock(t *testing.T) {
 		t.Errorf("the formula's text is at %v in its scroll, want PartMathBlockScroll's padding", got)
 	}
 }
+
+func TestTextViewSelectionFormats(t *testing.T) {
+	var sel core.TextSelection
+	app, _ := start(t, core.Environment{}, func(cx *core.Scope) core.Node {
+		return TextView{
+			TestID:          "doc",
+			Markdown:        "## Hello\n\nRead [the **guide**](https://nsgo.dev).",
+			Selectable:      true,
+			OnTextSelection: func(s core.TextSelection) { sel = s },
+		}
+	})
+	app.SelectTextRange("id:doc", "text:Hello", 0, "text:/Read the guide/", 14)
+	if sel.Markdown != "## Hello\n\nRead [the **guide**](https://nsgo.dev)" {
+		t.Errorf("Markdown = %q", sel.Markdown)
+	}
+	if sel.HTML != "<h2>Hello</h2>\n<p>Read <a href=\"https://nsgo.dev\">the <strong>guide</strong></a></p>" {
+		t.Errorf("HTML = %q", sel.HTML)
+	}
+}

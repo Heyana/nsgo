@@ -62,9 +62,9 @@ func NewSearch(cx *core.Scope) *Search {
 		views := slices.Clone(s.views.Get())
 		slices.SortStableFunc(views, func(a, b *searchView) int {
 			switch {
-			case a.root.Before(&b.root):
+			case a.root.Before(b.root):
 				return -1
-			case b.root.Before(&a.root):
+			case b.root.Before(a.root):
 				return 1
 			}
 			return 0
@@ -216,7 +216,7 @@ func (s *Search) locate(m searchMatches) int {
 // searchView is a TextView in a search: its root, which orders it among the others, and the texts it shows, in their places' order.
 type searchView struct {
 	s       *Search
-	root    core.Ref
+	root    *core.Ref
 	texts   []*searchText
 	version *core.Signal[int]
 	matches *core.Memo[viewMatches]
@@ -229,8 +229,11 @@ type viewMatches struct {
 }
 
 // join has the view rendering under cx join s while cx lasts.
-func (s *Search) join(cx *core.Scope) *searchView {
-	v := &searchView{s: s, version: core.NewSignal(cx, 0)}
+func (s *Search) join(cx *core.Scope, ref *core.Ref) *searchView {
+	if ref == nil {
+		ref = new(core.Ref)
+	}
+	v := &searchView{s: s, root: ref, version: core.NewSignal(cx, 0)}
 	v.matches = core.NewMemoFunc(cx, func() viewMatches {
 		v.version.Get()
 		var m viewMatches

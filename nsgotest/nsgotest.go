@@ -258,6 +258,9 @@ type App struct {
 	ClipboardImage []byte
 	ClipboardFiles []string
 	Announced      []string
+	// selectedArea and selectedText remember the active selection area and its plain text set by SelectText or SelectTextRange, for mod+c, mod+a and Escape in headless tests.
+	selectedArea driver.NodeID
+	selectedText string
 	// InputSource is the keyboard input source the app selected, as a
 	// test sees it; inputSourceWas the one that selection replaced.
 	InputSource    string

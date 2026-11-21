@@ -354,6 +354,8 @@ type node struct {
 	elem *Element
 	// cls are its Tailwind classes.
 	cls *nodeClasses
+	// selection holds rich Markdown/HTML selection semantics when set (e.g. by base/textview).
+	selection *selectionNode
 
 	frame       Bounds
 	layoutDirty bool
@@ -1904,6 +1906,7 @@ func (t *Tree) setViewParts(n *node, v View) {
 	n.props.PanActivation, n.props.PanScrollHandoff = v.PanActivation, v.PanScrollHandoff
 	t.showTrigger(n, &n.props)
 	n.pinching, n.rotating = v.OnPinch != nil || v.PinchValue != nil, v.OnRotation != nil || v.RotationValue != nil
+	setSelectionBlock(n, v.SelectionBlock, v.SelectionBlockFunc)
 	t.setRef(n, v.Ref)
 }
 
@@ -1928,6 +1931,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 			}
 		})
 	}
+	setSelectionBlock(n, v.SelectionBlock, v.SelectionBlockFunc)
 	t.setRef(n, v.Ref)
 	n.text = &textNode{content: v.Content, maxLines: v.MaxLines, ellipsize: v.EllipsizeMode,
 		noScale: v.NoFontScaling, maxScale: v.MaxFontSizeMultiplier,
@@ -2678,8 +2682,15 @@ func (t *Tree) Dispatch(ev driver.Event) {
 					}
 				}
 			}
+			md, htmlOut := t.formatTextSelection(n, ev.Text, ev.Ranges)
 			t.within(n.owner, func() {
-				h.textSelection(TextSelection{Text: ev.Text, Bounds: Bounds{Origin: ev.Point, Size: ev.Size}, Ranges: ranges})
+				h.textSelection(TextSelection{
+					Text:     ev.Text,
+					Markdown: md,
+					HTML:     htmlOut,
+					Bounds:   Bounds{Origin: ev.Point, Size: ev.Size},
+					Ranges:   ranges,
+				})
 			})
 		}
 	case driver.EventKeyPress:

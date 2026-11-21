@@ -74,7 +74,7 @@ cx.RegisterFont(data) // 一个 TrueType 或 OpenType 字体
 
 ## 选择与测量
 
-`SelectableOn` 让用户选择和复制文本，带 `Selectable` 的 `View` 让其中的文本按文档顺序一起选择，像网页一样。`SelectionColor` 设置高亮颜色。`OnTextSelection` 在用户移动选区时收到 `core.TextSelection`：选中的文本，以及选区涉及的文本在该视图中的边界框，可用于生词表或翻译选中的词；`desktop.LookUp` 在系统词典中查它们（[服务](services.md#打开链接与文件)）。`cx.MeasureText` 测量一个字符串在某个字体下的尺寸，适合按文本宽度排列的列；`OnTextLayout` 在每次布局后报告行。
+`SelectableOn` 让用户选择和复制文本，带 `Selectable` 的 `View` 让其中的文本按文档顺序一起选择，像网页一样。`SelectionColor` 设置高亮颜色。`OnTextSelection` 在用户移动选区时收到 `core.TextSelection`：选中的纯文本 `Text`、`Markdown` 和 `HTML`（保留区域内 `TextView` 解析出的块与行内结构以及带样式文本的格式，包括部分跨度与链接）、各文本的 `Ranges`，以及选区涉及的文本在该视图中的边界框 `Bounds`，可用于按 Markdown/HTML 复制、生词表或翻译选中的词；`desktop.LookUp` 在系统词典中查它们（[服务](services.md#打开链接与文件)）。`cx.MeasureText` 测量一个字符串在某个字体下的尺寸，适合按文本宽度排列的列；`OnTextLayout` 在每次布局后报告行。
 
 ## 文档
 

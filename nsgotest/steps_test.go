@@ -534,6 +534,36 @@ func TestSelectableTextReportsItsSelectedRanges(t *testing.T) {
 	}
 }
 
+// A selectable area reports Markdown and HTML alongside Text, and answers mod+c, mod+a and Escape.
+func TestSelectableAreaClipboardAndFormats(t *testing.T) {
+	var sel core.TextSelection
+	app := Start(t, func(cx *core.Scope) core.Node {
+		return core.View{TestID: "area", Selectable: true, OnTextSelection: func(s core.TextSelection) { sel = s }, Children: []core.Node{
+			core.Text{Spans: []core.Span{
+				{Content: "Hello "},
+				{Content: "bold", Style: core.Style{FontWeight: core.FontWeightBold}},
+			}},
+			core.Text{Content: "Second"},
+		}}
+	})
+	app.SelectTextRange("id:area", "text:Hello bold", 6, "text:Hello bold", 10)
+	if sel.Text != "bold" || sel.Markdown != "**bold**" || sel.HTML != "<strong>bold</strong>" {
+		t.Fatalf("partial selection = %+v", sel)
+	}
+	app.Key("mod+c")
+	if app.Clipboard != "bold" {
+		t.Errorf("mod+c copied %q, want %q", app.Clipboard, "bold")
+	}
+	app.Key("mod+a")
+	if sel.Text != "Hello bold\nSecond" || sel.Markdown != "Hello **bold**\n\nSecond" || sel.HTML != "<p>Hello <strong>bold</strong></p>\n<p>Second</p>" {
+		t.Errorf("mod+a selection = %+v", sel)
+	}
+	app.Key("Escape")
+	if sel.Text != "" || sel.Markdown != "" || sel.HTML != "" {
+		t.Errorf("after Escape selection = %+v, want empty", sel)
+	}
+}
+
 // An app looks up what the user selected in the system's dictionary, at the selection's box in the surface; a platform without the panel shows none.
 func TestLookUpTheSelection(t *testing.T) {
 	for _, can := range []bool{true, false} {

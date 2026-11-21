@@ -189,12 +189,13 @@ type surface struct {
 	stickyBound map[*view]bool
 	// selectionCSS is whether the ::selection rule is in the page.
 	selectionCSS bool
-	// selectedArea is the area the selection is in, and selectedBox and selectedText the extent and the text it last reported.
-	selectedArea *view
-	selectedBox  driver.Bounds
-	selectedText string
-	scrollCSS    bool
-	stickyCSS    bool
+	// selectedArea is the area the selection is in, and selectedBox, selectedText and selectedRanges the extent, the text and per-text ranges it last reported.
+	selectedArea   *view
+	selectedBox    driver.Bounds
+	selectedText   string
+	selectedRanges []driver.SelectedRange
+	scrollCSS      bool
+	stickyCSS      bool
 	// fieldCSS is whether fieldCSS is in the page.
 	fieldCSS bool
 	// pointerCSS is whether pointerCSS was added to the page.

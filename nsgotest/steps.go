@@ -1068,6 +1068,21 @@ func (a *App) press(key, code string) {
 		a.chooseMenuEntry(entry)
 		return
 	}
+	if a.selectedArea != 0 {
+		switch {
+		case slices.Contains(names, "mod+c") && a.editSelectionArea(driver.MenuCopy):
+			return
+		case slices.Contains(names, "mod+a") && a.editSelectionArea(driver.MenuSelectAll):
+			return
+		case k == "escape" && a.selectedText != "":
+			if v := a.views[a.selectedArea]; v != nil {
+				a.selectedArea, a.selectedText = 0, ""
+				a.send(v, driver.Event{Kind: driver.EventSelectionChange})
+				return
+			}
+			a.selectedArea, a.selectedText = 0, ""
+		}
+	}
 	if k == "escape" {
 		a.dispatch(driver.Event{Kind: driver.EventBack, ID: a.rootID})
 	}
@@ -1144,6 +1159,40 @@ func (a *App) menuEdit(role driver.MenuRole) bool {
 			a.editField(v, role)
 			return true
 		}
+	}
+	return a.editSelectionArea(role)
+}
+
+// editSelectionArea carries out Copy or SelectAll on the active selection area set by SelectText or SelectTextRange, reporting whether it acted.
+func (a *App) editSelectionArea(role driver.MenuRole) bool {
+	if a.selectedArea == 0 {
+		return false
+	}
+	v := a.views[a.selectedArea]
+	if v == nil {
+		a.selectedArea, a.selectedText = 0, ""
+		return false
+	}
+	switch role {
+	case driver.MenuCopy:
+		if a.selectedText == "" {
+			return false
+		}
+		a.Clipboard, a.ClipboardImage, a.ClipboardFiles = a.selectedText, nil, nil
+		return true
+	case driver.MenuSelectAll:
+		texts := areaTextsOf(v)
+		var m driver.SelectionModel
+		m.SelectAll(texts)
+		text := m.Text(texts)
+		var ranges []driver.SelectedRange
+		for _, r := range m.Ranges(texts) {
+			ranges = append(ranges, driver.SelectedRange{ID: texts[r.Text].v.ID, Start: r.Start, End: r.End})
+		}
+		b := m.Extent(texts)
+		a.selectedText = text
+		a.send(v, driver.Event{Kind: driver.EventSelectionChange, Point: b.Origin, Size: b.Size, Text: text, Ranges: ranges})
+		return true
 	}
 	return false
 }

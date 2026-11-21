@@ -3,8 +3,10 @@
 package web
 
 import (
+	"slices"
 	"strings"
 	"syscall/js"
+	"unicode/utf16"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/webstyle"
@@ -90,11 +92,12 @@ func (s *surface) selectKey(e js.Value) bool {
 	return true
 }
 
-// selectionChanged reports the selection's text and extent to the area it is in when either changed, and to the area it left that it has none.
+// selectionChanged reports the selection's text, per-text ranges and extent to the area it is in when any changed, and to the area it left that it has none.
 func (s *surface) selectionChanged() {
 	var area *view
 	var box driver.Bounds
 	var text string
+	var ranges []driver.SelectedRange
 	if sel := js.Global().Call("getSelection"); sel.Truthy() && sel.Get("rangeCount").Int() > 0 && !sel.Get("isCollapsed").Bool() {
 		r := sel.Call("getRangeAt", 0)
 		el := r.Get("commonAncestorContainer")
@@ -113,17 +116,58 @@ func (s *surface) selectionChanged() {
 				Size:   driver.Size{Width: driver.Points(to.Get("width").Float()), Height: driver.Points(to.Get("height").Float())},
 			}
 			text = sel.Call("toString").String()
+			ranges = s.selectionRanges(area, r)
 		}
 	}
 	if s.selectedArea != nil && s.selectedArea != area {
 		s.send(s.selectedArea, driver.Event{Kind: driver.EventSelectionChange})
-		s.selectedBox, s.selectedText = driver.Bounds{}, ""
+		s.selectedBox, s.selectedText, s.selectedRanges = driver.Bounds{}, "", nil
 	}
 	s.selectedArea = area
-	if area != nil && (box != s.selectedBox || text != s.selectedText) {
-		s.selectedBox, s.selectedText = box, text
-		s.send(area, driver.Event{Kind: driver.EventSelectionChange, Point: box.Origin, Size: box.Size, Text: text})
+	if area != nil && (box != s.selectedBox || text != s.selectedText || !slices.Equal(ranges, s.selectedRanges)) {
+		s.selectedBox, s.selectedText, s.selectedRanges = box, text, ranges
+		s.send(area, driver.Event{Kind: driver.EventSelectionChange, Point: box.Origin, Size: box.Size, Text: text, Ranges: ranges})
 	}
+}
+
+// selectionRanges returns what each text of area has selected in DOM range r, as UTF-16 offsets of its content, in document order.
+func (s *surface) selectionRanges(area *view, r js.Value) []driver.SelectedRange {
+	var out []driver.SelectedRange
+	texts := area.el.Call("querySelectorAll", ".nsgo-text")
+	for i := range texts.Length() {
+		el := texts.Index(i)
+		if !r.Call("intersectsNode", el).Bool() || !s.userSelects(el) || el.Call("closest", ".nsgo-attachment").Truthy() {
+			continue
+		}
+		v := s.viewOf(el.Get("parentElement"))
+		if v == nil || v.kind != driver.KindText {
+			continue
+		}
+		part := s.doc.Call("createRange")
+		part.Call("selectNodeContents", el)
+		if r.Call("compareBoundaryPoints", 0, part).Int() > 0 { // START_TO_START
+			part.Call("setStart", r.Get("startContainer"), r.Get("startOffset"))
+		}
+		if r.Call("compareBoundaryPoints", 2, part).Int() < 0 { // END_TO_END
+			part.Call("setEnd", r.Get("endContainer"), r.Get("endOffset"))
+		}
+		pre := s.doc.Call("createRange")
+		pre.Call("setStart", el, 0)
+		pre.Call("setEnd", part.Get("startContainer"), part.Get("startOffset"))
+		start := jsTextLen(pre.Call("cloneContents").Get("textContent"))
+		selLen := jsTextLen(part.Call("cloneContents").Get("textContent"))
+		if selLen > 0 {
+			out = append(out, driver.SelectedRange{ID: v.id, Start: start, End: start + selLen})
+		}
+	}
+	return out
+}
+
+func jsTextLen(v js.Value) int {
+	if v.Type() != js.TypeString {
+		return 0
+	}
+	return len(utf16.Encode([]rune(v.String())))
 }
 
 // selectionScope returns the element Select All selects for a selection

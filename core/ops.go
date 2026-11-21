@@ -238,6 +238,7 @@ func (t *Tree) setText(cx *Scope, n *node, v Text) {
 	if n.props.Role == RoleNone {
 		n.props.Role = RoleText
 	}
+	setSelectionBlock(n, v.SelectionBlock, v.SelectionBlockFunc)
 	t.setRef(n, v.Ref)
 	tn := n.text
 	if tn == nil {

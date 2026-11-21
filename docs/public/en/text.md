@@ -74,7 +74,7 @@ A text laid out before a font arrives is prepared again, and canvases run `Draw`
 
 ## Selection and measurement
 
-`SelectableOn` lets the user select and copy a text, and a `View` with `Selectable` makes its texts select together, in document order, as a web page's do. `SelectionColor` colors the highlight. `OnTextSelection` receives a `core.TextSelection` as the user moves the selection: its text and the box of the texts it touches, in the view, for a word list or a translation of the words selected; `desktop.LookUp` shows them in the system's dictionary ([services](services.md#opening-links-and-files)). `cx.MeasureText` measures a string in a font, for a column fitted to its text, and `OnTextLayout` reports the lines after each layout.
+`SelectableOn` lets the user select and copy a text, and a `View` with `Selectable` makes its texts select together, in document order, as a web page's do. `SelectionColor` colors the highlight. `OnTextSelection` receives a `core.TextSelection` as the user moves the selection: its plain `Text`, `Markdown` and `HTML` (preserving the parsed inline and block structure of any `TextView`s and styled texts in the area, including partial spans and links), its per-text `Ranges` and the `Bounds` of the texts it touches, in the view, for copying as Markdown or HTML, a word list or a translation of the words selected; `desktop.LookUp` shows them in the system's dictionary ([services](services.md#opening-links-and-files)). `cx.MeasureText` measures a string in a font, for a column fitted to its text, and `OnTextLayout` reports the lines after each layout.
 
 ## Documents
 

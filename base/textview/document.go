@@ -34,6 +34,18 @@ func (d Document) PlainText() string {
 	return b.String()
 }
 
+// Markdown returns the document serialized as Markdown, matching what a TextSelection of the whole document produces.
+func (d Document) Markdown() string {
+	md, _ := core.FormatSelection(documentSelectionBlocks(d))
+	return md
+}
+
+// HTML returns the document serialized as HTML, matching what a TextSelection of the whole document produces.
+func (d Document) HTML() string {
+	_, htmlOut := core.FormatSelection(documentSelectionBlocks(d))
+	return htmlOut
+}
+
 // Block is a block of a document: Paragraph, Heading, Blockquote, List,
 // CodeBlock, Table, Rule, Details, Math or Custom.
 type Block interface {

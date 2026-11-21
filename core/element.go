@@ -181,8 +181,11 @@ type View struct {
 	// another is part of the outer one. The highlight is each text's
 	// SelectionColor.
 	Selectable bool
-	// OnTextSelection, with Selectable, receives the selection as the user moves it: its text and the box of the texts it touches, in the view; no Text and no Size when it clears. Its Ranges, where the platform reports them, hold what each text has selected: a text's Ref and the UTF-16 offsets of its content, for telling texts of the same content apart.
+	// OnTextSelection, with Selectable, receives the selection as the user moves it: its plain text, Markdown, HTML and the box of the texts it touches, in the view; empty strings and no Size when it clears. Its Ranges, where the platform reports them, hold what each text has selected: a text's Ref and the UTF-16 offsets of its content, for telling texts of the same content apart.
 	OnTextSelection func(TextSelection)
+	// SelectionBlock and SelectionBlockFunc describe this view's semantic block role for serializing a TextSelection to Markdown and HTML; base/textview sets them on container blocks.
+	SelectionBlock     *SelectionBlock
+	SelectionBlockFunc func() *SelectionBlock
 
 	Ref *Ref
 	// Disabled stops presses and is reported to assistive technology.
@@ -340,6 +343,9 @@ type Text struct {
 	// Selectable lets the user select and copy the text; the highlight is
 	// the style's SelectionColor.
 	Selectable Selectable
+	// SelectionBlock and SelectionBlockFunc describe this text's semantic block and inline structure for serializing a TextSelection to Markdown and HTML; base/textview sets them on its texts.
+	SelectionBlock     *SelectionBlock
+	SelectionBlockFunc func() *SelectionBlock
 	// PointerEvents says whether the text takes the pointer, as View's.
 	PointerEvents PointerEvents
 

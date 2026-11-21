@@ -814,6 +814,11 @@ func (a *App) SelectText(selector string, box driver.Bounds) {
 			ranges = append(ranges, driver.SelectedRange{ID: chosen[r.Text].v.ID, Start: r.Start, End: r.End})
 		}
 	}
+	if text != "" {
+		a.selectedArea, a.selectedText = v.ID, text
+	} else if a.selectedArea == v.ID {
+		a.selectedArea, a.selectedText = 0, ""
+	}
 	a.send(v, driver.Event{Kind: driver.EventSelectionChange, Point: box.Origin, Size: box.Size, Text: text, Ranges: ranges})
 	a.done()
 }
@@ -851,6 +856,11 @@ func (a *App) SelectTextRange(selector, from string, start int, to string, end i
 		}
 	}
 	b := m.Extent(texts)
+	if text != "" {
+		a.selectedArea, a.selectedText = v.ID, text
+	} else if a.selectedArea == v.ID {
+		a.selectedArea, a.selectedText = 0, ""
+	}
 	a.send(v, driver.Event{Kind: driver.EventSelectionChange, Point: b.Origin, Size: b.Size, Text: text, Ranges: ranges})
 	a.done()
 }
