@@ -1,0 +1,333 @@
+//go:build linux && !android
+
+package linux
+
+import (
+	_ "embed"
+	"encoding/base64"
+	"encoding/binary"
+	"errors"
+	"math"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+	"unsafe"
+
+	"github.com/nsgo-dev/nsgo/core"
+	"github.com/nsgo-dev/nsgo/internal/driver"
+)
+
+// The encoded fixtures contain 1.2 seconds of mono silence at 44.1 kHz.
+//
+//go:embed testdata/audio/silence.m4a
+var silentAAC []byte
+
+//go:embed testdata/audio/silence.mp3
+var silentMP3 []byte
+
+func audioTestWAV(duration time.Duration) []byte {
+	const rate = 8000
+	samples := int(duration.Seconds() * rate)
+	data := make([]byte, 44+2*samples)
+	copy(data, "RIFF")
+	binary.LittleEndian.PutUint32(data[4:], uint32(len(data)-8))
+	copy(data[8:], "WAVEfmt ")
+	binary.LittleEndian.PutUint32(data[16:], 16)
+	binary.LittleEndian.PutUint16(data[20:], 1)
+	binary.LittleEndian.PutUint16(data[22:], 1)
+	binary.LittleEndian.PutUint32(data[24:], rate)
+	binary.LittleEndian.PutUint32(data[28:], 2*rate)
+	binary.LittleEndian.PutUint16(data[32:], 2)
+	binary.LittleEndian.PutUint16(data[34:], 16)
+	copy(data[36:], "data")
+	binary.LittleEndian.PutUint32(data[40:], uint32(2*samples))
+	return data
+}
+
+func audioTestSources(t *testing.T) map[string]core.AudioSource {
+	t.Helper()
+	mp3 := filepath.Join(t.TempDir(), "silence.mp3")
+	if err := os.WriteFile(mp3, silentMP3, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return map[string]core.AudioSource{
+		"WAV bytes":    {Data: audioTestWAV(1200 * time.Millisecond)},
+		"AAC data URL": {URI: "data:audio/mp4;base64," + base64.StdEncoding.EncodeToString(silentAAC)},
+		"MP3 file":     {URI: mp3},
+	}
+}
+
+func audioTestWindow(t *testing.T) (*window, *core.Scope) {
+	t.Helper()
+	scope := make(chan *core.Scope, 1)
+	w := startTestWindow(t, func(cx *core.Scope) core.Node {
+		scope <- cx
+		return core.View{}
+	}, Options{Title: t.Name(), Width: 200, Height: 100})
+	cx := awaitAudio(t, scope)
+	var available bool
+	w.onLoop(t, func() {
+		available = w.env.Audio
+		if w.audio != nil {
+			t.Error("the idle window opened audio")
+		}
+	})
+	if !available {
+		t.Skip("GStreamer audio is unavailable")
+	}
+	return w, cx
+}
+
+func awaitAudio[T any](t *testing.T, ch <-chan T) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(7 * time.Second):
+		t.Fatal("audio did not report a result")
+		var zero T
+		return zero
+	}
+}
+
+func TestLinuxAudioSounds(t *testing.T) {
+	w, cx := audioTestWindow(t)
+	type result struct {
+		sound *core.Sound
+		err   error
+	}
+	loaded := make(chan result, 1)
+	load := func(source core.AudioSource) result {
+		cx.Post(func() { cx.LoadSound(source, func(s *core.Sound, err error) { loaded <- result{s, err} }) })
+		return awaitAudio(t, loaded)
+	}
+	for name, source := range audioTestSources(t) {
+		got := load(source)
+		if got.err != nil || got.sound.Duration() < time.Second {
+			t.Fatalf("%s: sound=%v error=%v", name, got.sound, got.err)
+		}
+		w.onLoop(t, func() {
+			if w.audio.mixer != nil {
+				t.Error("loading a sound opened the output")
+			}
+		})
+		cx.Post(func() {
+			got.sound.Play(core.SoundVoice{Volume: 0.3})
+			got.sound.Play(core.SoundVoice{Volume: 0.2, Rate: 1.5, Pan: -0.5})
+		})
+		w.engine.Sync()
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			count := 0
+			w.onLoop(t, func() {
+				if m := w.audio.mixer; m != nil {
+					count = len(m.voices)
+				}
+			})
+			if count == 2 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("two concurrent playbacks did not reach the mixer")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		cx.Post(func() { got.sound.Stop(); got.sound.Close() })
+		w.engine.Sync()
+		w.onLoop(t, func() {
+			if len(w.audio.sounds) != 0 || w.audio.mixer == nil || len(w.audio.mixer.voices) != 0 {
+				t.Error("stopping and closing the sound left audio behind")
+			}
+		})
+		// Exercise a fresh output for each format.
+		w.onLoop(t, func() {
+			if m := w.audio.mixer; m != nil {
+				m.close()
+				w.audio.mixer = nil
+			}
+		})
+	}
+	for _, tt := range []struct {
+		data []byte
+		want core.AudioError
+	}{
+		{[]byte("not audio"), core.AudioDecode},
+		{audioTestWAV(6 * time.Second), core.AudioQuotaExceeded},
+	} {
+		if got := load(core.AudioSource{Data: tt.data}); !errors.Is(got.err, tt.want) {
+			t.Fatalf("audio error %v, want %v", got.err, tt.want)
+		}
+	}
+	large := filepath.Join(t.TempDir(), "oversized.wav")
+	f, err := os.Create(large)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = f.Truncate(driver.MaxSoundBytes + 1)
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := load(core.AudioSource{URI: large}); !errors.Is(got.err, core.AudioQuotaExceeded) {
+		t.Fatalf("oversized sound error %v, want %v", got.err, core.AudioQuotaExceeded)
+	}
+}
+
+func TestLinuxAudioMixerOutput(t *testing.T) {
+	w, _ := audioTestWindow(t)
+	var mixer *soundMixer
+	var sink uintptr
+	w.onLoop(t, func() {
+		mixer = soundMixerTo("appsink name=output max-buffers=4 drop=true")
+		if mixer != nil {
+			sink = gstBinGetByName(mixer.pipeline, cstr("output"))
+		}
+	})
+	if mixer == nil || sink == 0 {
+		t.Fatal("the native mixer did not open its test output")
+	}
+	defer w.onLoop(t, func() { gstObjectUnref(sink); mixer.close() })
+
+	pcm := make([]byte, soundRate*soundFrameBytes/10)
+	for at := 0; at < len(pcm); at += 4 {
+		binary.LittleEndian.PutUint32(pcm[at:], math.Float32bits(0.25))
+	}
+	hear := func(left, right float32) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			w.onLoop(t, func() {
+				if message := mixer.checkOutput(); message != "" {
+					t.Error(message)
+				}
+				mixer.startPending()
+			})
+			sample := gstAppSinkTryPullSample(sink, uint64(20*time.Millisecond))
+			if sample == 0 {
+				continue
+			}
+			b := gstSampleGetBuffer(sample)
+			var data [8]byte
+			copied := gstBufferExtract(b, 0, unsafe.Pointer(&data[0]), 8)
+			gstMiniObjectUnref(sample)
+			l := math.Float32frombits(binary.LittleEndian.Uint32(data[:4]))
+			r := math.Float32frombits(binary.LittleEndian.Uint32(data[4:]))
+			if copied == 8 && math.Abs(float64(l-left)) < 0.02 && math.Abs(float64(r-right)) < 0.02 {
+				return
+			}
+		}
+		t.Fatalf("mixer did not output the expected samples (%f, %f)", left, right)
+	}
+	for range 3 {
+		w.onLoop(t, func() {
+			mixer.play(1, pcm, 1, 1, 0)
+			mixer.play(2, pcm, 1, 1, 0)
+		})
+		hear(0.5, 0.5)
+		hear(0, 0)
+	}
+	// Full pans silence the far channel and leave the near one at its level.
+	w.onLoop(t, func() { mixer.play(1, pcm, 1, 1, 1) })
+	hear(0, 0.25)
+	hear(0, 0)
+	w.onLoop(t, func() { mixer.play(1, pcm, 1, 1, -1) })
+	hear(0.25, 0)
+	hear(0, 0)
+}
+
+func TestLinuxAudioPlayer(t *testing.T) {
+	_, cx := audioTestWindow(t)
+	for name, source := range audioTestSources(t) {
+		played, ended := make(chan error, 1), make(chan struct{}, 1)
+		cx.Post(func() {
+			var player *core.AudioPlayer
+			player = cx.NewAudioPlayer(source, core.AudioPlayerOptions{OnEnd: func() {
+				player.Close()
+				ended <- struct{}{}
+			}})
+			player.Play(func(err error) { played <- err })
+		})
+		if err := awaitAudio(t, played); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		awaitAudio(t, ended)
+	}
+	load, progress := make(chan time.Duration, 1), make(chan time.Duration, 256)
+	played, ended := make(chan error, 2), make(chan struct{}, 1)
+	var p *core.AudioPlayer
+	cx.Post(func() {
+		p = cx.NewAudioPlayer(core.AudioSource{Data: audioTestWAV(1200 * time.Millisecond)}, core.AudioPlayerOptions{
+			OnLoad: func(d time.Duration) { load <- d }, ProgressInterval: 50 * time.Millisecond,
+			OnProgress: func(pos, _ time.Duration) { progress <- pos }, OnEnd: func() { ended <- struct{}{} },
+		})
+		p.Seek(300 * time.Millisecond)
+		p.Preload()
+	})
+	if d := awaitAudio(t, load); d != 1200*time.Millisecond {
+		t.Fatalf("duration %v, want 1.2s", d)
+	}
+	if pos := awaitAudio(t, progress); pos < 280*time.Millisecond || pos > 320*time.Millisecond {
+		t.Fatalf("preloaded position %v, want 300 ms", pos)
+	}
+	cx.Post(func() {
+		p.SetLoop(true)
+		p.SetVolume(0.4)
+		p.Play(func(err error) { played <- err })
+	})
+	if err := awaitAudio(t, played); err != nil {
+		t.Fatal(err)
+	}
+	last := awaitAudio(t, progress)
+	deadline := time.After(4 * time.Second)
+looped:
+	for {
+		select {
+		case pos := <-progress:
+			if pos < last {
+				break looped
+			}
+			last = pos
+		case <-ended:
+			t.Fatal("a looping player reported completion")
+		case <-deadline:
+			t.Fatal("the player did not report its next loop")
+		}
+	}
+	cx.Post(p.Pause)
+	paused := make(chan bool, 1)
+	deadline = time.After(3 * time.Second)
+	for {
+		cx.Post(func() { paused <- p.State() == core.AudioPlayerPaused })
+		if awaitAudio(t, paused) {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("the player did not pause")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	for len(progress) != 0 {
+		<-progress
+	}
+	cx.Post(func() { p.Seek(100 * time.Millisecond); p.Seek(600 * time.Millisecond) })
+	if pos := awaitAudio(t, progress); pos < 580*time.Millisecond || pos > 620*time.Millisecond {
+		t.Fatalf("paused position %v, want the latest seek to 600 ms", pos)
+	}
+	cx.Post(func() { p.SetLoop(false); p.Play(func(err error) { played <- err }) })
+	if err := awaitAudio(t, played); err != nil {
+		t.Fatal(err)
+	}
+	awaitAudio(t, ended)
+	cx.Post(p.Close)
+
+	bad := make(chan error, 1)
+	cx.Post(func() {
+		player := cx.NewAudioPlayer(core.AudioSource{Data: []byte("not audio")}, core.AudioPlayerOptions{})
+		player.Play(func(err error) { bad <- err })
+	})
+	if err := awaitAudio(t, bad); !errors.Is(err, core.AudioDecode) {
+		t.Fatalf("unsupported player format: %v", err)
+	}
+}

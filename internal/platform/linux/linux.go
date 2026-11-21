@@ -144,6 +144,7 @@ type window struct {
 	language string
 	// loopback are the auth sessions the default browser shows.
 	loopback loopback.Sessions
+	audio    *linuxAudio // the first surface owns its engine's mixer and players
 	// dir is the app's direction (driver.ItemDirection) as GTK's, or 0
 	// before the app has one.
 	dir     int32
@@ -839,6 +840,7 @@ func (w *window) shutdown(forced bool) {
 		engine.SyncStorage()
 	}
 	w.unwatchSession()
+	w.closeAudio()
 	w.closeCanvasImages()
 	w.closeHotKeys()
 	if w.loop != 0 {
@@ -981,6 +983,9 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemSpeak:
 			speechd.Handle(it.Count, *it.Speak, w.engine.Dispatch)
+			continue
+		case driver.ItemAudio:
+			w.audioCommand(it.Count, it.Audio)
 			continue
 		case driver.ItemWebCookies:
 			w.webCookies(it.Count, *it.Cookies)

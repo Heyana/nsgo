@@ -106,14 +106,14 @@ func contentFit(m driver.ResizeMode) int32 {
 	return gtkContentFitContain
 }
 
-// videoFile returns the GFile source names: "asset:" paths in the app's
+// videoFile resolves a media source to a GFile: "asset:" paths in the app's
 // resources, URIs and file paths.
 func videoFile(source string) uintptr {
 	if path, ok := strings.CutPrefix(source, "asset:"); ok {
 		path = filepath.Join(imageload.ResourceRoot, filepath.FromSlash(strings.TrimLeft(path, "/")))
 		return gFileNewForPath(cstr(path))
 	}
-	if strings.Contains(source, "://") {
+	if strings.HasPrefix(source, "file:") || strings.Contains(source, "://") {
 		return gFileNewForURI(cstr(source))
 	}
 	return gFileNewForPath(cstr(source))

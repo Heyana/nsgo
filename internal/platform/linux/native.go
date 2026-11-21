@@ -173,6 +173,7 @@ var (
 	gtkMediaStreamGetDuration      func(uintptr) int64
 	gtkMediaStreamGetTimestamp     func(uintptr) int64
 	gtkMediaStreamIsSeekable       func(uintptr) int32
+	gtkMediaStreamIsSeeking        func(uintptr) int32
 	gtkMediaStreamSeek             func(uintptr, int64)
 	gtkMediaStreamGetError         func(uintptr) uintptr
 	gdkPaintableGetIntrinsicWidth  func(uintptr) int32
@@ -216,6 +217,7 @@ func bindNative() {
 	gtk(&gtkMediaStreamGetDuration, "gtk_media_stream_get_duration")
 	gtk(&gtkMediaStreamGetTimestamp, "gtk_media_stream_get_timestamp")
 	gtk(&gtkMediaStreamIsSeekable, "gtk_media_stream_is_seekable")
+	gtk(&gtkMediaStreamIsSeeking, "gtk_media_stream_is_seeking")
 	gtk(&gtkMediaStreamSeek, "gtk_media_stream_seek")
 	gtk(&gtkMediaStreamGetError, "gtk_media_stream_get_error")
 	gtk(&gdkPaintableGetIntrinsicWidth, "gdk_paintable_get_intrinsic_width")

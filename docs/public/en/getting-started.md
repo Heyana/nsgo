@@ -12,7 +12,7 @@ order: 10
 - To run on an iPhone, an Apple ID in Xcode's Accounts and the iPhone trusted, with Developer Mode on.
 - To run on Android, `adb` from the Android SDK's platform-tools.
 - To run on Windows, Go alone, which also builds the Windows and web packages.
-- To run on Linux, GTK 4.14 or newer, Pango and Cairo; libsoup 3 for images from the network, WebKitGTK 6.0 for web views and GStreamer plug-ins for videos. On systems with AppArmor user namespace restrictions, [WebKitGTK needs a bubblewrap profile](debugging.md#linux-web-views).
+- On Linux, GTK 4.14 or newer, Pango and Cairo. Network images use libsoup 3, web views use WebKitGTK 6.0, and audio and video use GStreamer plug-ins. On systems with AppArmor user namespace restrictions, [WebKitGTK needs a bubblewrap profile](debugging.md#linux-web-views).
 
 ## Create an app
 
