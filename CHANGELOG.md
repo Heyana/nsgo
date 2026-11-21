@@ -5,6 +5,7 @@
 - Upload built web and desktop packages to itch.io with `nsgo publish itch` (#1561 by @houko).
 - Check target API, Apple privacy and encryption declarations, and release questionnaires during store builds (#1566 by @houko).
 - Fall back to estimated text sizes on Android when a runtime text request fails or times out (#173 by @houko).
+- Measure text on Linux in fractional Pango units (`pango_layout_get_size`) instead of whole points so the core rounds up to device pixels at HiDPI scales (#1603).
 - Relaunch iOS simulator dev builds after replacing only the executable when the bundle's resources and configuration stay the same (#661 by @houko).
 - Advertise and browse local DNS-SD services through Bonjour on macOS and iOS (#430 by @houko).
 - Keep `base/datatable.DataTable` header sort controls above the trailing resize handle's touch slop on phones, place right-pinned column headers at their region's origin, and run the TSX gallery's `TestDataTableSorts` on phones as well (#1551).

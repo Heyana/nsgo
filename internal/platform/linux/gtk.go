@@ -271,7 +271,7 @@ var (
 	pangoLayoutSetFontDescription  func(uintptr, uintptr)
 	pangoLayoutSetAttributes       func(uintptr, uintptr)
 	pangoLayoutContextChanged      func(uintptr)
-	pangoLayoutGetPixelSize        func(uintptr, *int32, *int32)
+	pangoLayoutGetSize             func(uintptr, *int32, *int32)
 	pangoLayoutGetLineCount        func(uintptr) int32
 	pangoLayoutGetBaseline         func(uintptr) int32
 	pangoLayoutXyToIndex           func(uintptr, int32, int32, *int32, *int32) int32
@@ -653,7 +653,7 @@ func bind() {
 	purego.RegisterLibFunc(&pangoLayoutSetFontDescription, pangoLib, "pango_layout_set_font_description")
 	purego.RegisterLibFunc(&pangoLayoutSetAttributes, pangoLib, "pango_layout_set_attributes")
 	purego.RegisterLibFunc(&pangoLayoutContextChanged, pangoLib, "pango_layout_context_changed")
-	purego.RegisterLibFunc(&pangoLayoutGetPixelSize, pangoLib, "pango_layout_get_pixel_size")
+	purego.RegisterLibFunc(&pangoLayoutGetSize, pangoLib, "pango_layout_get_size")
 	purego.RegisterLibFunc(&pangoLayoutGetLineCount, pangoLib, "pango_layout_get_line_count")
 	purego.RegisterLibFunc(&pangoLayoutGetBaseline, pangoLib, "pango_layout_get_baseline")
 	purego.RegisterLibFunc(&pangoLayoutXyToIndex, pangoLib, "pango_layout_xy_to_index")

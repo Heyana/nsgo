@@ -5,8 +5,10 @@ package linux
 import (
 	"image"
 	"image/color"
+	"math"
 	"testing"
 
+	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
@@ -191,9 +193,118 @@ func TestFontSizesAreLogicalPixels(t *testing.T) {
 	l := canvasLayout(cr, "MMMM", font)
 	defer gObjectUnref(l)
 	var width, height int32
-	pangoLayoutGetPixelSize(l, &width, &height)
-	if width <= 40 || width > 80 || height > 30 {
-		t.Errorf("a canvas's 20-point text measured %dx%d; want it in logical pixels", width, height)
+	pangoLayoutGetSize(l, &width, &height)
+	if w, h := fromPango(width), fromPango(height); w <= 40 || w > 80 || h > 30 {
+		t.Errorf("a canvas's 20-point text measured %vx%v; want it in logical pixels", w, h)
+	}
+}
+
+// TestMeasuredSizesKeepTheirFractions checks that Linux measures text in Pango
+// units (pango_layout_get_size) rather than whole points, keeping fractions for
+// the core to round up to a device pixel, and that a box of the measured width
+// rounded up at any scale lays the text out on the line it measured (#1603).
+func TestMeasuredSizesKeepTheirFractions(t *testing.T) {
+	if err := openLibs(); err != nil {
+		t.Skip(err)
+	}
+	w := &window{}
+	defer w.releaseTextContexts()
+
+	plain := driver.TextStyle{Font: driver.Font{Family: "Sans", Size: 13, Weight: 400}, Color: driver.RGB(0)}
+	for _, text := range []string{"Hello world", "1810.HK", "-9.27%", "Reaches the system through"} {
+		p := w.Prepare(&driver.AttributedText{Text: text, Style: plain}).(*preparedText)
+		natural := p.Measure(driver.Auto)
+		var pw, ph int32
+		pangoLayoutGetSize(p.layout, &pw, &ph)
+		want := driver.Size{Width: fromPango(pw), Height: fromPango(ph)}
+		if natural != want {
+			t.Errorf("%q: Measure(Auto) = %v, want Pango size %v (%dx%d units)", text, natural, want, pw, ph)
+		}
+		for _, ratio := range []float64{0, 1, 1.25, 1.5, 2, 3} {
+			width := natural.Width
+			if ratio > 0 {
+				width = driver.Points(math.Ceil(float64(natural.Width)*ratio-1e-3) / ratio)
+				if width < natural.Width {
+					width += driver.Points(1 / ratio)
+				}
+			}
+			l := p.Layout(driver.Size{Width: width, Height: natural.Height}).(*textLayout)
+			if len(l.lines) != 1 {
+				t.Errorf("%q, %v wide, laid out %d lines at %v (%vx scale)", text, natural.Width, len(l.lines), width, ratio)
+			}
+			l.Release()
+		}
+		p.Release()
+	}
+
+	// Fractional line height and letter spacing keep their Pango-unit fractions
+	// rather than rounding up to whole points, so at 2x scale the core rounds
+	// up to a half-point device pixel.
+	frac := driver.TextStyle{
+		Font:          driver.Font{Family: "Sans", Size: 13, Weight: 400},
+		LineHeight:    20.3,
+		LetterSpacing: 1.3,
+		Color:         driver.RGB(0),
+	}
+	p := w.Prepare(&driver.AttributedText{Text: "Fractional metrics", Style: frac}).(*preparedText)
+	natural := p.Measure(driver.Auto)
+	if math.Abs(float64(natural.Height)-20.3) > 0.01 {
+		t.Errorf("fractional line height measured %v, want ~20.3", natural.Height)
+	}
+	if float64(natural.Height) == math.Ceil(float64(natural.Height)) {
+		t.Errorf("fractional line height %v rounded to whole point", natural.Height)
+	}
+	if float64(natural.Width) == math.Ceil(float64(natural.Width)) {
+		t.Errorf("fractional letter-spaced width %v rounded to whole point", natural.Width)
+	}
+	if l := p.Layout(natural).(*textLayout); len(l.lines) != 1 {
+		t.Errorf("fractional text laid out %d lines at its own measured width %v, want 1", len(l.lines), natural.Width)
+	} else {
+		l.Release()
+	}
+	p.Release()
+
+	// Verify end-to-end with core.Tree at 2x scale: 20.3pt height rounds up to
+	// 20.5pt (41 device pixels), not 21pt (42 device pixels).
+	root := core.NewRoot(core.RootOptions{})
+	t.Cleanup(root.Dispose)
+	tree := core.NewTree(root, w)
+	tree.Resize(core.Size{Width: 400, Height: 400}, core.Geometry{})
+	tree.SetEnvironment(core.Environment{PixelRatio: 2})
+	tree.Mount(func(cx *core.Scope) core.Node {
+		return core.View{
+			Style: core.Style{AlignItems: core.AlignStart},
+			Children: []core.Node{
+				core.Text{
+					Content: "Fractional metrics",
+					Style: core.Style{
+						FontFamily:    "Sans",
+						FontSize:      13,
+						LineHeight:    20.3,
+						LetterSpacing: 1.3,
+					},
+				},
+			},
+		}
+	})
+	batch := tree.Commit()
+	var textID driver.NodeID
+	frames := map[driver.NodeID]core.Bounds{}
+	for _, it := range batch.Items {
+		switch it.Kind {
+		case driver.ItemText:
+			textID = it.ID
+			t.Cleanup(it.Text.Layout.Release)
+		case driver.ItemFrame:
+			frames[it.ID] = it.Frame
+		}
+	}
+	got, ok := frames[textID]
+	if !ok {
+		t.Fatal("no frame committed for fractional text node")
+	}
+	if math.Abs(float64(got.Size.Height)-20.5) > 1e-3 {
+		t.Errorf("at 2x scale, 20.3pt line-height text laid out %v tall; want 20.5pt (41 device pixels)", got.Size.Height)
 	}
 }
 

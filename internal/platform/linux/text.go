@@ -3,16 +3,12 @@
 package linux
 
 import (
-	"math"
 	"slices"
 	"unicode/utf8"
 	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
-
-// Pango units per logical pixel. Pango's widths and spacing and its absolute font sizes use these, so a text's size means what a view's does; its point sizes would scale by the context's resolution.
-const pangoScale = 1024
 
 const (
 	pangoAlignLeft   = 0
@@ -209,9 +205,6 @@ func (w *window) fontExtent(f driver.Font, ui string) driver.FontExtent {
 // pangoRectangle is PangoRectangle, in Pango units.
 type pangoRectangle struct{ X, Y, Width, Height int32 }
 
-func toPango(p driver.Points) int32   { return int32(math.Round(float64(p * pangoScale))) }
-func fromPango(v int32) driver.Points { return driver.Points(v) / pangoScale }
-
 // newLayout makes a PangoLayout on the current thread with the text and
 // attributes of s, to measure.
 func newLayout(context uintptr, s *textSource, width driver.Points) uintptr {
@@ -271,10 +264,7 @@ func applyLayout(l uintptr, s *textSource, width driver.Points, drawn bool) {
 // pangoWidth is the width Pango wraps and ellipsizes s at: none for a
 // clipped line drawn whole, which its box cuts.
 func (s *textSource) pangoWidth(width driver.Points, drawn bool) int32 {
-	if width.IsAuto() || (drawn && s.maxLines == 1 && s.ellipsize == driver.EllipsizeClip) {
-		return -1
-	}
-	return int32(width*pangoScale + 0.5)
+	return pangoWrapWidth(width, drawn && s.maxLines == 1 && s.ellipsize == driver.EllipsizeClip)
 }
 
 // placeholderLen is the length in bytes of an attachment's placeholder.
@@ -339,7 +329,7 @@ func addStyle(list uintptr, textLen, start, end int, s driver.TextStyle, ui stri
 	}
 	add(pangoAttrFamilyNew(cstr(pangoFamilies(f.Family, ui))))
 	if f.Size > 0 {
-		add(pangoAttrSizeNewAbsolute(int32(f.Size*pangoScale + 0.5)))
+		add(pangoAttrSizeNewAbsolute(toPango(f.Size)))
 	}
 	if f.Weight > 0 {
 		add(pangoAttrWeightNew(int32(f.Weight)))
@@ -359,7 +349,7 @@ func addStyle(list uintptr, textLen, start, end int, s driver.TextStyle, ui stri
 		for _, h := range append(holes, [2]int{end, end}) {
 			to := min(max(h[0], from), end)
 			if to > from {
-				attr := pangoAttrLineHeightAbsoluteNew(int32(s.LineHeight * pangoScale))
+				attr := pangoAttrLineHeightAbsoluteNew(toPango(s.LineHeight))
 				setAttributeRange(attr, uint32(from), uint32(to))
 				pangoAttrListInsert(list, attr)
 			}
@@ -413,23 +403,25 @@ func setAttributeRange(attr uintptr, start, end uint32) {
 }
 
 // measure shapes and measures the text at width, in Pango units of the
-// engine thread's font map.
+// engine thread's font map, keeping fractional points for the core to
+// round up to a device pixel.
 func (p *preparedText) measure(width driver.Points) driver.Size {
+	limit := p.pangoWidth(width, false)
 	if p.layout == 0 {
 		p.layout = newLayout(p.w.measureContext(p.style.RTL), &p.textSource, width)
 	} else {
-		pangoLayoutSetWidth(p.layout, p.pangoWidth(width, false))
+		pangoLayoutSetWidth(p.layout, limit)
 	}
 	var w, h int32
-	pangoLayoutGetPixelSize(p.layout, &w, &h)
-	if spaced := p.spacedWidth(width); spaced > w {
+	pangoLayoutGetSize(p.layout, &w, &h)
+	if spaced := p.spacedWidth(limit); spaced > w {
 		w = spaced
 	}
-	return driver.Size{Width: driver.Points(w), Height: driver.Points(h)}
+	return pangoMeasuredSize(w, h, width, limit)
 }
 
-// spacedWidth returns, in pixels, the width at which the measuring layout breaks its lines as it has at width: Pango leaves the letter spacing before a line's first cluster and after its last out of the line's width, but counts it when it breaks lines, so a text laid out again at its measured width would break once more (#489). It is no wider than width, at which the lines already fit.
-func (p *preparedText) spacedWidth(width driver.Points) int32 {
+// spacedWidth returns, in Pango units, the width at which the measuring layout breaks its lines as it has at limit: Pango leaves the letter spacing before a line's first cluster and after its last out of the line's width, but counts it when it breaks lines, so a text laid out again at its measured width would break once more (#489). It is no wider than limit, at which the lines already fit.
+func (p *preparedText) spacedWidth(limit int32) int32 {
 	if !p.letterSpaced() {
 		return 0
 	}
@@ -452,10 +444,7 @@ func (p *preparedText) spacedWidth(width driver.Points) int32 {
 			break
 		}
 	}
-	if limit := p.pangoWidth(width, false); limit >= 0 {
-		need = min(need, limit)
-	}
-	return (need + pangoScale - 1) / pangoScale
+	return pangoSpacedWidth(need, limit)
 }
 
 // letterSpaced reports whether any of the text has positive letter spacing.
@@ -472,19 +461,6 @@ func (p *preparedText) letterSpaced() bool {
 		}
 	}
 	return false
-}
-
-// letterSpace splits a letter spacing into the Pango units Pango puts before and after a cluster, as its distribute_letter_spacing does; negative spacing counts as none.
-func letterSpace(s driver.Points) (before, after int32) {
-	spacing := int32(s * pangoScale)
-	if spacing <= 0 {
-		return 0, 0
-	}
-	before = spacing / 2
-	if spacing&(pangoScale-1) == 0 {
-		before = (before + pangoScale/2) &^ (pangoScale - 1)
-	}
-	return before, spacing - before
 }
 
 // Measure implements core.PreparedText.

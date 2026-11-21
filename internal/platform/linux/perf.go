@@ -149,11 +149,11 @@ func (w *window) snapshotPerf(snap uintptr, width float32) {
 	cr := gtkSnapshotAppendCairo(snap, &area)
 	layout := perfLayout(cr, h.text)
 	var tw, th int32
-	pangoLayoutGetPixelSize(layout, &tw, &th)
-	panelW := min(max(pw, float64(tw)+2*pad), float64(area.w))
+	pangoLayoutGetSize(layout, &tw, &th)
+	panelW := min(max(pw, float64(fromPango(tw))+2*pad), float64(area.w))
 	x, y := float64(width)-m-panelW, float64(m)
 	setColor(cr, engine.PerfPanelColor)
-	roundRect(cr, rect{x: x, y: y, w: panelW, h: 3*pad + graph + float64(th), r: engine.PerfRadius})
+	roundRect(cr, rect{x: x, y: y, w: panelW, h: 3*pad + graph + float64(fromPango(th)), r: engine.PerfRadius})
 	cairoFill(cr)
 	for _, b := range engine.PerfTrace(h.snapshot, panelW-2*pad, graph) {
 		setColor(cr, b.Color)
@@ -171,7 +171,6 @@ func (w *window) snapshotPerf(snap uintptr, width float32) {
 func perfLayout(cr uintptr, text string) uintptr {
 	layout := pangoCairoCreateLayout(cr)
 	font := pangoFontDescriptionFromString(cstr("Monospace"))
-	const pangoScale = 1024
 	pangoFontDescriptionSetAbsoluteSize(font, float64(engine.PerfFontSize*pangoScale))
 	pangoLayoutSetFontDescription(layout, font)
 	pangoFontDescriptionFree(font)
