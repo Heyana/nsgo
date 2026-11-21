@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -62,5 +63,21 @@ func TestRunLocalUsesTargetCommandEnvironment(t *testing.T) {
 	code, err := runLocal(ctx, bin, []string{"-test.run=^TestOne$"}, []string{"NSGO_TEST_RUN=abc"}, &out)
 	if code != 0 || err != nil || out.String() != "result" {
 		t.Fatalf("local run returned %d, %v with output %q", code, err, out.String())
+	}
+}
+
+func TestExecuteCaptureOwnsItsStreams(t *testing.T) {
+	// Capture modes call Output/CombinedOutput, which refuse pre-assigned
+	// streams; configured stdout/stderr must not turn into "Stdout already set".
+	out, err := execute(context.Background(), processCommand{
+		name: "go", args: []string{"env", "GOFLAGS"}, stdout: io.Discard, stderr: io.Discard, output: captureCombined,
+	})
+	if err != nil {
+		t.Fatalf("captureCombined with configured streams: %v", err)
+	}
+	if len(out) == 0 && os.Getenv("GOFLAGS") == "" {
+		// go env prints an empty line for an unset value; a missing result is
+		// only suspicious when the environment sets it.
+		t.Log("go env GOFLAGS is empty")
 	}
 }

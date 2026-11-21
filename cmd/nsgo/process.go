@@ -39,15 +39,16 @@ func execute(ctx context.Context, c processCommand) ([]byte, error) {
 	}
 	cmd := exec.CommandContext(ctx, c.name, c.args...)
 	cmd.Dir, cmd.Env, cmd.Stdin = c.dir, c.env, c.stdin
-	cmd.Stdout, cmd.Stderr = c.stdout, c.stderr
-	switch c.output {
-	case captureCombined:
-		return cmd.CombinedOutput()
-	case streamOutput:
+	if c.output == streamOutput {
+		cmd.Stdout, cmd.Stderr = c.stdout, c.stderr
 		return nil, cmd.Run()
-	default:
-		return cmd.Output()
 	}
+	// Output and CombinedOutput insist on owning the output streams: assigning
+	// them first would make exec return "Stdout already set" instead of running.
+	if c.output == captureCombined {
+		return cmd.CombinedOutput()
+	}
+	return cmd.Output()
 }
 
 func run(ctx context.Context, name string, args ...string) error {
