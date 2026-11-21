@@ -15,6 +15,7 @@
 - Slide the title of `ui.SidebarShell`'s content with the content until it meets the sidebar's toggle, where it jumped as the sidebar hid or showed, and add `examples/shell` of the inset shell.
 - Keep desktop frame callbacks running by choosing a visible driving window deterministically (#1159 by @houko).
 - Add `Scope.RequestOrientation`, which shows an iOS or Android phone's interface in the given orientations while the scope lives, the newest live request winning and the app's own policy coming back once none is left, and `nsgotest.App.Orientation`, which reports the mask in effect (#1136 by @houko).
+- Update web image views with each pixel buffer version in place (#1099 by @houko).
 - Add `apple.multiple_scenes`, which writes `UIApplicationSupportsMultipleScenes`, and show each further scene an iPad connects for it, as the user opens another window of the app, in a window of its own: a tree of the app's one engine showing the main view, with its own size, safe area, status bar and orientations, kept while UIKit disconnects the scene and ended as the system discards it (#49 by @houko).
 - Acknowledge macOS logout, restart and shutdown after app cleanup and expose those requests through `desktop.QuitRequest.Forced()` (#1081 by @houko).
 - Add `Style` and `StyleFunc` to `ui.Sheet` for surface backgrounds, corners and padding (#1036 by @houko).

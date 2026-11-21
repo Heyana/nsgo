@@ -10,36 +10,58 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// pixelsCanvas returns a <canvas> holding p's pixels, as the core copied them: canvases draw from it, and an image view shows the PNG it encodes, so the page links no encoder of Go's.
-func pixelsCanvas(p *goimage.RGBA) js.Value {
-	w, h := p.Rect.Dx(), p.Rect.Dy()
-	// ImageData's alpha is straight; image.RGBA's is premultiplied.
-	straight := make([]byte, w*h*4)
-	for i := 0; i+3 < len(straight) && i+3 < len(p.Pix); i += 4 {
-		a := uint32(p.Pix[i+3])
-		straight[i+3] = byte(a)
-		if a == 0 {
-			continue
-		}
-		for c := range 3 {
-			straight[i+c] = byte(min(uint32(p.Pix[i+c])*255/a, 255))
-		}
-	}
-	g := js.Global()
-	data := g.Get("Uint8ClampedArray").New(len(straight))
-	js.CopyBytesToJS(data, straight)
-	canvas := g.Get("document").Call("createElement", "canvas")
-	canvas.Set("width", w)
-	canvas.Set("height", h)
-	if w > 0 && h > 0 {
-		canvas.Call("getContext", "2d").Call("putImageData", g.Get("ImageData").New(data, w, h), 0, 0)
-	}
-	return canvas
+// pixelCanvas keeps the backing canvas and upload buffers across versions of
+// an image. A canvas drawing uses the same upload path for its cached frames.
+type pixelCanvas struct {
+	el, ctx, data js.Value
+	straight      []byte
+	frame         *goimage.RGBA
+	tint          driver.Color
 }
 
-// pixelsURL returns a data URL of a PNG of p's pixels, which the browser encodes.
-func pixelsURL(p *goimage.RGBA) string {
-	return pixelsCanvas(p).Call("toDataURL", "image/png").String()
+func newPixelCanvas(el js.Value) *pixelCanvas {
+	return &pixelCanvas{el: el, ctx: el.Call("getContext", "2d")}
+}
+
+// put writes the core's dense, premultiplied copy as straight ImageData.
+func (c *pixelCanvas) put(p *goimage.RGBA, tint driver.Color) {
+	if c.frame == p && c.tint == tint {
+		return
+	}
+	w, h := p.Rect.Dx(), p.Rect.Dy()
+	if c.frame == nil || c.frame.Rect.Size() != p.Rect.Size() {
+		c.el.Set("width", w)
+		c.el.Set("height", h)
+		if w > 0 && h > 0 {
+			c.data = c.ctx.Call("createImageData", w, h)
+			c.straight = make([]byte, w*h*4)
+		}
+	}
+	c.frame, c.tint = p, tint
+	if w <= 0 || h <= 0 {
+		return
+	}
+	straight := c.straight
+	if tint == 0 {
+		copy(straight, p.Pix)
+		for i := 0; i < len(straight); i += 4 {
+			a := uint32(straight[i+3])
+			if a == 0 || a == 255 {
+				continue
+			}
+			for channel := range 3 {
+				straight[i+channel] = byte(min(uint32(straight[i+channel])*255/a, 255))
+			}
+		}
+	} else {
+		r, g, b, a := byte(tint>>24), byte(tint>>16), byte(tint>>8), uint16(byte(tint))
+		for i := 0; i < len(straight); i += 4 {
+			straight[i], straight[i+1], straight[i+2] = r, g, b
+			straight[i+3] = byte((uint16(p.Pix[i+3])*a + 127) / 255)
+		}
+	}
+	js.CopyBytesToJS(c.data.Get("data"), straight)
+	c.ctx.Call("putImageData", c.data, 0, 0)
 }
 
 // maxCanvasFrames and maxCanvasFramePixels bound the canvases a surface keeps of the pixels its canvases draw, by count and by their pixels together (8 Mi, four 1920x1080 frames): a stream's older versions are never drawn again.
@@ -63,7 +85,9 @@ func (s *surface) canvasFrame(src driver.ImageSource) *canvasImage {
 			return f.image
 		}
 	}
-	im := &canvasImage{img: pixelsCanvas(src.Pixels), density: 1, loaded: true}
+	el := s.doc.Call("createElement", "canvas")
+	newPixelCanvas(el).put(src.Pixels, 0)
+	im := &canvasImage{img: el, density: 1, loaded: true}
 	for len(s.canvasFrames) > 0 && (len(s.canvasFrames) >= maxCanvasFrames || s.canvasFramePixels+pixelCount(src.Pixels) > maxCanvasFramePixels) {
 		s.canvasFramePixels -= pixelCount(s.canvasFrames[0].pixels)
 		s.canvasFrames = slices.Delete(s.canvasFrames, 0, 1)
