@@ -169,11 +169,12 @@ type project struct {
 	// AppClip is the app's App Clip, which nsgo build nests in its iOS
 	// package (appclip.go).
 	AppClip *appClip `yaml:"app_clip"`
-	// Android is the Android target's: Permissions are the permissions its manifest asks for beyond the runtime's, such as REQUEST_INSTALL_PACKAGES, which a name without a dot is under android.permission. TargetSDK replaces the runtime's targetSdkVersion when nonzero, while zero keeps the runtime's API 36 default. Recording declares the runtime's recording service and its permissions, which microphone.RecordWAV needs.
+	// Android is the Android target's: Permissions are the permissions its manifest asks for beyond the runtime's, such as REQUEST_INSTALL_PACKAGES, which a name without a dot is under android.permission. TargetSDK replaces the runtime's targetSdkVersion when nonzero, while zero keeps the runtime's API 36 default. Recording declares the runtime's recording service and its permissions, which microphone.RecordWAV needs. Classes lists precompiled DEX files and DEX JARs for standalone Android packages.
 	Android struct {
 		Permissions []string `yaml:"permissions"`
 		TargetSDK   int      `yaml:"target_sdk"`
 		Recording   bool     `yaml:"recording"`
+		Classes     []string `yaml:"classes"`
 		// LoopbackCleartext allows HTTP to loopback in standalone packages.
 		LoopbackCleartext bool `yaml:"loopback_cleartext"`
 	} `yaml:"android"`

@@ -99,6 +99,12 @@ An app registers its own platform views by name, as NSH's embedding apps do (`ns
 
 On Android the runtime also installs a listener on each `setOn…Listener` method the view's own class declares and reports its callbacks as events named after them, their arguments as a JSON array. A component may implement `android.PropMapper` to turn a prop into ordered setter calls, and `android.EventMapper` to receive those callbacks itself, as the gallery's `SeekBar` does.
 
+### Custom Android classes
+
+A library can ship an Android `View` subclass in a precompiled `.dex` or a DEX JAR. Its Go factory returns the fully qualified class name from `NativeComponent.View`, and the app lists the library file under `android.classes` in `nsgo.yaml`. Paths are relative to that file unless absolute. The class needs a public constructor that takes `android.content.Context`. The [Android native example](../../examples/android-native) registers such a class and passes a Go prop to its Java setter.
+
+The Android toolchain is needed to prepare the library's DEX, for example with D8's `--min-api 28` and a `.jar` output. NSGo's Go packager puts the runtime in `classes.dex` and adds the supplied shards as `classes2.dex`, `classes3.dex` and so on in APKs and App Bundles. Android loads them through the activity's class loader. An embedding app supplies its Java libraries through its own Android build.
+
 ## Known gaps
 
 - Linux keeps presses, hovers and wheels from a page or a video's controls where the app does not show them, as NSH does; drags that begin there are not followed.

@@ -87,6 +87,8 @@ Ask for a permission where the app uses it, through `cx`'s permission calls, and
 
 Apple bundles carry a `PrivacyInfo.xcprivacy` declaring the required-reason APIs NSGo uses; declare the app's own under `apple.privacy` (`accessed_apis`, `tracking`, `tracking_domains`, `collected_data`) or in `resources/PrivacyInfo.xcprivacy`, which is merged. A host app linking the static `-embed` library declares NSGo's in its own manifest ([Building](https://nsgo.dev/docs/building.md#store-packages)).
 
+For standalone Android apps that host a custom Android View with `core.Native`, list its precompiled `.dex` or DEX JAR under `android.classes`. NSGo includes those files when packaging an APK or App Bundle. [Building](https://nsgo.dev/docs/building.md#android-native-classes)
+
 ## Embedding
 
 `go tool nsgo build -embed -target ios|android_arm64` packages an app as an XCFramework or an AAR for a host app of your own, `nsgo.NewView` shows one in a Go desktop program, and the web build's loader puts apps in a page. `examples/embed-*` show each host ([Embedding](https://nsgo.dev/docs/embedding.md)).

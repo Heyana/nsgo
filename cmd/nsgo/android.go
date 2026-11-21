@@ -89,6 +89,10 @@ func buildAndroidAAB(ctx context.Context, p *project, dir, goarch string) (strin
 // write, apk.Write or apk.WriteBundle.
 func buildAndroidPackage(ctx context.Context, p *project, dir, goarch, ext string,
 	write func(io.Writer, []byte, apk.Manifest, []apk.File, *apk.Key) error) (string, error) {
+	classes, err := androidClassFiles(p)
+	if err != nil {
+		return "", err
+	}
 	tmp, err := os.MkdirTemp("", "nsgo-android-")
 	if err != nil {
 		return "", err
@@ -111,6 +115,7 @@ func buildAndroidPackage(ctx context.Context, p *project, dir, goarch, ext strin
 		{Name: "classes.dex", Data: androidruntime.ClassesDex},
 		{Name: "lib/" + abi + "/libnsgo.so", Data: app},
 	}
+	files = append(files, classes...)
 	// Resources go in the APK's assets, where the app reads them.
 	err = walkMobileResources(p, func(rel string, data []byte) error {
 		files = append(files, apk.File{Name: "assets/" + rel, Data: data})

@@ -96,6 +96,19 @@ Apple TV 的图标不是方形，而是一张分层卡片：`tvos` 取 Xcode 的
 
 每个构建在启动时还接受 NSGo 自己的参数，例如 `--nsgo-fps`（[运行与调试](debugging.md#所有构建都接受的参数)）。在 `nsgo dev` 中，Command/Control+R 可从所有打开的窗口重新加载；当应用函数仍有其他窗口运行时，主视图关闭后也仍然可用。
 
+## Android 原生类
+
+在应用的 `nsgo.yaml` 中列出预编译的 Android 类，即可通过 `core.Native` 使用自定义 View。
+
+```yaml
+android:
+  classes: [java/BadgeView.jar, java/Helpers.dex]
+```
+
+相对路径以 `nsgo.yaml` 所在目录为基准。每个路径指向一个 `.dex` 文件，或一个包含 D8 输出的 JAR，其中 `classes.dex`、`classes2.dex` 等文件位于归档根目录。准备这些文件时，给 D8 传入 `--min-api 28`。有了预编译文件，NSGo 在 arm64 目标上只用 Go 就能构建 APK 或 Android App Bundle。嵌入式 AAR 所用的 Java 依赖由宿主的 Android 构建提供。[D8 文档](https://developer.android.com/tools/d8)
+
+[Android 原生示例](https://github.com/nsgo-dev/nsgo/tree/main/examples/android-native) 注册了一个带公开 `Context` 构造函数的类，并通过 Go 属性配置它。
+
 ## 安装程序
 
 对桌面目标，`build` 会把供用户安装的文件写到 `dist/releases`，每个文件旁附带 `.sha256` 校验和：

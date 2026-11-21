@@ -96,6 +96,19 @@ On Android, `icon.android` makes the launcher icon adaptive, so launchers mask i
 
 Every build also takes NSGo's own flags as it starts, such as `--nsgo-fps` ([Running and debugging](debugging.md#flags-of-every-build)). In `nsgo dev`, Command/Control+R reloads from every open window and remains available after the main view closes when another window keeps an app function running.
 
+## Android native classes
+
+List precompiled Android classes in the app's `nsgo.yaml` to use a custom View from `core.Native`.
+
+```yaml
+android:
+  classes: [java/BadgeView.jar, java/Helpers.dex]
+```
+
+Paths are relative to `nsgo.yaml` unless absolute. Each path names a `.dex` file or a JAR containing D8's root `classes.dex`, `classes2.dex` and later shards. Prepare those files with D8 using `--min-api 28`. On arm64, NSGo builds the APK or App Bundle from these precompiled files with Go alone. For an embedded AAR, the host's Android build supplies its Java dependencies. [D8 documentation](https://developer.android.com/tools/d8)
+
+The [Android native example](https://github.com/nsgo-dev/nsgo/tree/main/examples/android-native) registers a class with a public `Context` constructor and configures it with a Go prop.
+
 ## Installers
 
 For the desktop targets, `build` writes what users install the app from into `dist/releases`, each with a `.sha256` checksum:

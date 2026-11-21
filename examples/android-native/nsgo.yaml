@@ -1,0 +1,12 @@
+name: Android Native
+id: dev.nsgo.androidnative
+version: 0.1.0
+
+dev:
+  target: android
+
+build:
+  targets: [android_arm64]
+
+android:
+  classes: [java/BadgeView.jar]
