@@ -287,7 +287,7 @@ func (s *surface) pickFiles(r driver.FilesRequest, id uint32) {
 	panel.Send(sel("setCanChooseDirectories:"), false)
 	panel.Send(sel("setAllowsMultipleSelection:"), r.Limit > 1)
 	panel.Send(sel("setAllowedContentTypes:"), apple.ContentTypes(r))
-	configureOpenPanel(panel, r.Title, r.Button, r.Start)
+	configureFilePanel(panel, r.Title, r.Button, r.Start)
 	panel.Send(sel("retain"))
 	done := objcblock.New(func(_ objc.Block, response int) {
 		defer panel.Send(selRelease)
@@ -311,7 +311,7 @@ func (s *surface) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 	panel.Send(sel("setCanChooseDirectories:"), true)
 	panel.Send(sel("setCanCreateDirectories:"), true)
 	panel.Send(sel("setAllowsMultipleSelection:"), r.Limit > 1)
-	configureOpenPanel(panel, r.Title, r.Button, r.Start)
+	configureFilePanel(panel, r.Title, r.Button, r.Start)
 	panel.Send(sel("retain"))
 	done := objcblock.New(func(_ objc.Block, response int) {
 		defer panel.Send(selRelease)
@@ -327,8 +327,8 @@ func (s *surface) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 	done.Release()
 }
 
-// configureOpenPanel gives a file or folder panel the request's message, prompt and starting folder, leaving AppKit's own where a hint is empty or the folder does not exist.
-func configureOpenPanel(panel objc.ID, title, button, start string) {
+// configureFilePanel gives an open or save panel its message, prompt and starting folder, with AppKit's defaults for absent or unusable hints.
+func configureFilePanel(panel objc.ID, title, button, start string) {
 	if title != "" {
 		panel.Send(sel("setMessage:"), apple.NSString(title))
 	}
@@ -345,18 +345,25 @@ func configureOpenPanel(panel objc.ID, title, button, start string) {
 	}
 }
 
-// saveFile shows a save panel as a sheet on the window for the file r
-// suggests, then saves it where the user chose off the main thread.
-func (s *surface) saveFile(r driver.SaveRequest, id uint32) {
+// savePanel makes the panel for the file the save request suggests.
+func savePanel(r driver.SaveRequest) objc.ID {
 	panel := objc.ID(apple.Class("NSSavePanel")).Send(sel("savePanel"))
 	panel.Send(sel("setNameFieldStringValue:"), apple.NSString(r.Name))
 	panel.Send(sel("setCanCreateDirectories:"), true)
+	configureFilePanel(panel, "", "", r.Start)
 	if t := apple.SaveType(r.Name); t != 0 {
 		types := objc.ID(apple.Class("NSMutableArray")).Send(sel("array"))
 		types.Send(sel("addObject:"), t)
 		panel.Send(sel("setAllowedContentTypes:"), types)
 		panel.Send(sel("setAllowsOtherFileTypes:"), true)
 	}
+	return panel
+}
+
+// saveFile shows a save panel as a sheet on the window for the file r
+// suggests, then saves it where the user chose off the main thread.
+func (s *surface) saveFile(r driver.SaveRequest, id uint32) {
+	panel := savePanel(r)
 	panel.Send(sel("retain"))
 	done := objcblock.New(func(_ objc.Block, response int) {
 		defer panel.Send(selRelease)

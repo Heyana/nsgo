@@ -463,18 +463,19 @@ func TestSaveFile(t *testing.T) {
 	saved, answered, savedAt := false, 0, ""
 	var saveErr error
 	save := func(ok bool, path string, err error) { saved, savedAt, saveErr = ok, path, err; answered++ }
-	cx.SaveFile(SaveOptions{Path: src}, save)
+	start := t.TempDir()
+	cx.SaveFile(SaveOptions{Path: src, Start: start}, save)
 	it := command(h.commit(), driver.ItemSaveFile)
-	if it == nil || it.Save.Name != "download.bin" || it.Save.MIME != "application/octet-stream" || it.Save.Path != src {
+	if it == nil || it.Save.Name != "download.bin" || it.Save.MIME != "application/octet-stream" || it.Save.Path != src || it.Save.Start != start {
 		t.Fatalf("save = %+v", it)
 	}
 	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Finished: true, Data: "/chosen/download.bin"})
 	if answered != 1 || !saved || savedAt != "/chosen/download.bin" || saveErr != nil {
 		t.Fatalf("saved = %v at %q, %v", saved, savedAt, saveErr)
 	}
-	cx.SaveFile(SaveOptions{Name: "../notes/a.txt", Data: []byte("hi")}, save)
+	cx.SaveFile(SaveOptions{Name: "../notes/a.txt", Data: []byte("hi"), Start: "relative"}, save)
 	it = command(h.commit(), driver.ItemSaveFile)
-	if it.Save.Name != "a.txt" || it.Save.MIME != "text/plain" {
+	if it.Save.Name != "a.txt" || it.Save.MIME != "text/plain" || it.Save.Start != "" {
 		t.Fatalf("save = %+v", it.Save)
 	}
 	h.tree.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count})

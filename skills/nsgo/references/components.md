@@ -26,6 +26,7 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 - Set `tabBarBackground`, `tabBarIdle`, `tabBarSelected` and `tabBarIndicator` as Android `mobile.TabBar` palette roles. A custom palette uses `Accent` for selected content by default.
 
 - For a marker band behind wrapped text, give a `core.Span` a `Background` and `BackgroundInsetTop`, such as `core.Pct(62)` ([text](https://nsgo.dev/docs/text.md#runs-and-links)).
+- Set `core.SaveOptions.Start` to an existing absolute folder to start the system save dialog there on macOS, Windows, Linux and iOS. [Files](https://nsgo.dev/docs/services.md#files).
 - `core.Canvas.Draw` runs again when a signal it reads, its size or the available fonts change; `cx.RegisterFont` updates its glyphs and `Drawing.TextMetrics` once the font loads, including asynchronously on the web ([canvas](https://nsgo.dev/docs/canvas.md)).
 - `cx.NewOffscreenImage` creates a retained `core.OffscreenImage` cached across frames until `Invalidate` or `Resize` is called, whose `Source()` draws via `Drawing.DrawImage`, `Drawing.DrawImageIn`, `Drawing.DrawImageFrom` or `core.Image`, and releases automatically on scope disposal.
 - Show frames the app decodes or renders (video, emulators, previews) in a `core.Image` with `ImageSource{Pixels: frame, Version: n}`, bumping `Version` after writing each frame into the same `*image.RGBA`, and filter such a frame on the GPU by passing the same source in a `core.Shader`'s `Images`; never encode a PNG per frame ([images](https://nsgo.dev/docs/images.md)).

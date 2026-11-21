@@ -606,8 +606,12 @@ type SaveOptions struct {
 	Name string
 	// MIME is its media type; Name's extension says when empty.
 	MIME string
-	Path string
-	Data []byte
+	// Start is the absolute path of an existing folder to open in the save
+	// dialog on macOS, Windows, Linux and iOS. An empty or unusable path
+	// leaves the choice to the system.
+	Start string
+	Path  string
+	Data  []byte
 }
 
 // SaveFile shows the system's save dialog and copies the file o names to
@@ -629,6 +633,9 @@ func (cx *Scope) SaveFile(o SaveOptions, done func(saved bool, path string, err 
 		return
 	}
 	r := driver.SaveRequest{Name: o.Name, MIME: o.MIME, Path: o.Path, Data: o.Data}
+	if filepath.IsAbs(o.Start) {
+		r.Start = o.Start
+	}
 	if r.Path != "" {
 		if _, err := os.Stat(r.Path); err != nil {
 			answer(false, "", err)

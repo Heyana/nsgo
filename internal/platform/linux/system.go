@@ -464,6 +464,7 @@ func (w *window) saveFile(r driver.SaveRequest, id uint32) {
 		return
 	}
 	gtkFileDialogSetModal(dialog, 1)
+	configureFileDialog(dialog, "", "", r.Start)
 	gtkFileDialogSetInitialName(dialog, cstr(r.Name))
 	gtkFileDialogSave(dialog, w.toplevel(), 0, cbAsync, async(func(source, result uintptr) {
 		var gerr uintptr

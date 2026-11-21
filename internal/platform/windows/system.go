@@ -32,7 +32,6 @@ var (
 	comdlg32             = syscall.NewLazyDLL("comdlg32.dll")
 	uxtheme              = syscall.NewLazyDLL("uxtheme.dll")
 	getOpenFileNameW     = comdlg32.NewProc("GetOpenFileNameW")
-	getSaveFileNameW     = comdlg32.NewProc("GetSaveFileNameW")
 	commDlgExtendedError = comdlg32.NewProc("CommDlgExtendedError")
 	shellExecuteExW      = shell32.NewProc("ShellExecuteExW")
 	isIconic             = user32.NewProc("IsIconic")
@@ -54,7 +53,6 @@ const (
 	ofnFileMustExist    = 0x00001000
 	ofnExplorer         = 0x00080000
 	ofnNoChangeDir      = 0x00000008
-	ofnOverwritePrompt  = 0x00000002
 
 	wmDialog       = 0x8000 + 5 // an open or save dialog waits
 	wmPopup        = 0x8000 + 6 // a context menu waits
@@ -552,7 +550,7 @@ func (w *window) pickDirectories(r driver.DirectoriesRequest, id uint32) {
 // file is written where the user chose on a goroutine.
 func (w *window) saveFile(r driver.SaveRequest, id uint32) {
 	w.queueDialog(func() {
-		path, err := w.saveDialog(r.Name)
+		path, err := w.saveDialog(r.Name, r.Start)
 		ev := driver.Event{Kind: driver.EventFiles, Count: id}
 		if err != nil || path == "" {
 			if err != nil {
@@ -657,28 +655,32 @@ func (w *window) openDialog(name []uint16, exts []string, limit int) ([]string, 
 var (
 	clsidFileOpenDialog = parseGUID("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")
 	iidFileOpenDialog   = parseGUID("D57C7288-D4AD-4768-BE02-9D969532D960")
+	clsidFileSaveDialog = parseGUID("C0B4E2F3-BA21-4773-8DBA-335EC946EB8B")
+	iidFileSaveDialog   = parseGUID("84BCCD23-5FDE-4CDB-AEA4-AF64B83D78AB")
 )
 
 // IFileOpenDialog's methods, from IModalWindow's and IFileDialog's, and
 // those of the shell items it answers with.
 const (
-	fileDialogShow             = 3
-	fileDialogSetFileTypes     = 4
-	fileDialogAdvise           = 7
-	fileDialogUnadvise         = 8
-	fileDialogSetOptions       = 9
-	fileDialogGetOptions       = 10
-	fileDialogSetFolder        = 12
-	fileDialogGetFolder        = 13
-	fileDialogSetFileName      = 15
-	fileDialogSetTitle         = 17
-	fileDialogSetOkButtonLabel = 18
-	fileDialogGetResult        = 20
-	fileDialogGetResults       = 27
-	itemArrayGetCount          = 7
-	itemArrayGetItemAt         = 8
-	shellItemGetName           = 5
+	fileDialogShow                = 3
+	fileDialogSetFileTypes        = 4
+	fileDialogAdvise              = 7
+	fileDialogUnadvise            = 8
+	fileDialogSetOptions          = 9
+	fileDialogGetOptions          = 10
+	fileDialogSetFolder           = 12
+	fileDialogGetFolder           = 13
+	fileDialogSetFileName         = 15
+	fileDialogSetTitle            = 17
+	fileDialogSetOkButtonLabel    = 18
+	fileDialogGetResult           = 20
+	fileDialogSetDefaultExtension = 22
+	fileDialogGetResults          = 27
+	itemArrayGetCount             = 7
+	itemArrayGetItemAt            = 8
+	shellItemGetName              = 5
 
+	fosOverwritePrompt          = 0x2
 	fosNoChangeDir              = 0x8
 	fosPickFolders              = 0x20
 	fosForceFileSystem          = 0x40
@@ -980,24 +982,48 @@ func (w *window) folderDialog(r driver.DirectoriesRequest) ([]string, error) {
 	return paths, nil
 }
 
-// saveDialog returns the path chosen in Windows' save dialog, which
-// suggests name and asks before replacing a file; "" when it was
-// cancelled.
-func (w *window) saveDialog(name string) (string, error) {
-	buf := make([]uint16, 32<<10)
-	copy(buf[:len(buf)-1], syscall.StringToUTF16(name))
-	filter := append(append(syscall.StringToUTF16("All files"), syscall.StringToUTF16("*.*")...), 0)
-	var defExt *uint16
+// saveDialog suggests name, opens at start when it exists, and asks
+// before replacing a file. It returns an empty path when cancelled.
+func (w *window) saveDialog(name, start string) (string, error) {
+	if err := initCOM(); err != nil {
+		return "", err
+	}
+	var dialog *comObject
+	if hr, _, _ := coCreateInstance.Call(uintptr(unsafe.Pointer(&clsidFileSaveDialog)), 0, clsctxInprocServer,
+		uintptr(unsafe.Pointer(&iidFileSaveDialog)), uintptr(unsafe.Pointer(&dialog))); failed(hr) || dialog == nil {
+		return "", hresultError("no save dialog", hr)
+	}
+	defer dialog.release()
+	var options uint32
+	dialog.call(fileDialogGetOptions, uintptr(unsafe.Pointer(&options)))
+	options |= fosForceFileSystem | fosPathMustExist | fosNoChangeDir | fosOverwritePrompt
+	if hr := dialog.call(fileDialogSetOptions, uintptr(options)); failed(hr) {
+		return "", hresultError("save dialog options", hr)
+	}
+	filter := comFilterSpec{name: wide("All files"), pattern: wide("*.*")}
+	if hr := dialog.call(fileDialogSetFileTypes, 1, uintptr(unsafe.Pointer(&filter))); failed(hr) {
+		return "", hresultError("save dialog types", hr)
+	}
+	if hr := dialog.call(fileDialogSetFileName, uintptr(unsafe.Pointer(wide(name)))); failed(hr) {
+		return "", hresultError("save dialog name", hr)
+	}
 	if ext := strings.TrimPrefix(filepath.Ext(name), "."); ext != "" {
-		defExt = &syscall.StringToUTF16(ext)[0]
+		dialog.call(fileDialogSetDefaultExtension, uintptr(unsafe.Pointer(wide(ext))))
 	}
-	ofn := openFileName{Owner: w.owner(), Filter: &filter[0], File: &buf[0], MaxFile: uint32(len(buf)), DefExt: defExt,
-		Flags: ofnExplorer | ofnPathMustExist | ofnNoChangeDir | ofnOverwritePrompt}
-	ofn.StructSize = uint32(unsafe.Sizeof(ofn))
-	if ok, _, _ := getSaveFileNameW.Call(uintptr(unsafe.Pointer(&ofn))); ok == 0 {
-		return "", dialogError()
+	setDialogFolder(dialog, start)
+	hr := dialog.call(fileDialogShow, w.owner())
+	if uint32(hr) == hresultCancelled {
+		return "", nil
 	}
-	return syscall.UTF16ToString(buf), nil
+	if failed(hr) {
+		return "", hresultError("save dialog", hr)
+	}
+	var item *comObject
+	if hr := dialog.call(fileDialogGetResult, uintptr(unsafe.Pointer(&item))); failed(hr) || item == nil {
+		return "", hresultError("no save path chosen", hr)
+	}
+	defer item.release()
+	return shellItemPath(item)
 }
 
 type popupRequest struct {

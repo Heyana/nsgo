@@ -315,9 +315,11 @@ func TestFileDialogsReachGTK(t *testing.T) {
 			w.onLoop(t, func() { gtkDialogResponse(dlg, cancel) })
 		} else {
 			w.onLoop(t, func() {
-				file := gFileNewForPath(cstr(path))
-				gtkFileChooserSetFile(dlg, file, 0)
-				gObjectUnref(file)
+				if filepath.IsAbs(path) {
+					file := gFileNewForPath(cstr(path))
+					gtkFileChooserSetFile(dlg, file, 0)
+					gObjectUnref(file)
+				}
 				const save = 1 // GTK_FILE_CHOOSER_ACTION_SAVE
 				if gtkFileChooserGetAction(dlg) == save {
 					// The name the dialog suggested stays otherwise.
@@ -357,11 +359,14 @@ func TestFileDialogsReachGTK(t *testing.T) {
 	if s := next("the folder pick"); s != "photos true <nil>" {
 		t.Errorf("picked %q", s)
 	}
-	copied := filepath.Join(dir, "copy.txt")
+	exportDir := t.TempDir()
+	copied := filepath.Join(exportDir, "copy.txt")
 	cx.Post(func() {
-		cx.SaveFile(core.SaveOptions{Path: notes}, func(saved bool, path string, err error) { status <- fmt.Sprintf("%v %q %v", saved, path, err) })
+		cx.SaveFile(core.SaveOptions{Name: "copy.txt", Path: notes, Start: exportDir}, func(saved bool, path string, err error) {
+			status <- fmt.Sprintf("%v %q %v", saved, path, err)
+		})
 	})
-	answer(copied)
+	answer("copy.txt")
 	if s := next("the save"); s != fmt.Sprintf("true %q <nil>", copied) {
 		t.Errorf("saved %q", s)
 	}

@@ -481,6 +481,66 @@ func TestCaptionButtonsAndMaterialFollowTheApp(t *testing.T) {
 	}
 }
 
+func TestSaveDialogStartsInFolder(t *testing.T) {
+	if testing.Short() {
+		t.Skip("opens a window")
+	}
+	const title = "nsgo-save-start-folder"
+	scopes := make(chan *core.Scope, 1)
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		defer close(done)
+		Run(func(cx *core.Scope) core.Node {
+			scopes <- cx
+			return core.View{}
+		}, Options{Title: title, Width: 360, Height: 240})
+	}()
+	hwnd := waitForWindow(t, title, done)
+	if hwnd == 0 {
+		return
+	}
+	var cx *core.Scope
+	select {
+	case cx = <-scopes:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the app did not start")
+	}
+	t.Cleanup(func() {
+		cx.Post(cx.Quit)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("Quit did not return from Run")
+		}
+	})
+	status := make(chan string, 1)
+	previousAnswers := dialogAnswers
+	dialogAnswers = status
+	t.Cleanup(func() { dialogAnswers = previousAnswers })
+	dir := t.TempDir()
+	cx.Post(func() {
+		cx.SaveFile(core.SaveOptions{Name: "report.txt", Data: []byte("notes"), Start: dir}, func(saved bool, path string, err error) {
+			status <- fmt.Sprintf("%v %q %v", saved, path, err)
+		})
+	})
+	dlg, _ := fileDialog(t, hwnd)
+	const idOK = 1
+	postMessageW.Call(dlg, wmCommand, idOK, 0)
+	path := filepath.Join(dir, "report.txt")
+	select {
+	case got := <-status:
+		if want := fmt.Sprintf("true %q <nil>", path); !strings.EqualFold(got, want) {
+			t.Fatalf("save = %s, want %s", got, want)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the save did not answer")
+	}
+	if text, err := os.ReadFile(path); err != nil || string(text) != "notes" {
+		t.Fatalf("saved content = %q, %v", text, err)
+	}
+}
+
 // putClipboard puts b on the open clipboard of hwnd as format.
 func putClipboard(hwnd, format uintptr, b []byte) {
 	openClipboard.Call(hwnd)

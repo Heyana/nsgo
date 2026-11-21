@@ -130,8 +130,10 @@ type SaveRequest struct {
 	// Name is a file name without directories, never empty.
 	Name string
 	MIME string
-	Path string
-	Data []byte
+	// Start is the absolute starting directory, or empty for the system's.
+	Start string
+	Path  string
+	Data  []byte
 }
 
 // Open opens what r saves.

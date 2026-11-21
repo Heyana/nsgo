@@ -404,6 +404,7 @@ func (s *surface) saveFile(r driver.SaveRequest, id uint32) {
 	urls.Send(sel("addObject:"), objc.ID(apple.Class("NSURL")).Send(sel("fileURLWithPath:"), apple.NSString(path)))
 	picker := objc.ID(apple.Class("UIDocumentPickerViewController")).Send(selAlloc).
 		Send(sel("initForExportingURLs:asCopy:"), urls, true)
+	setDocumentStart(picker, r.Start)
 	s.presentDocuments(picker, documentRequest{id: id, staged: filepath.Dir(path)})
 }
 
