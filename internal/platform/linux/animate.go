@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
 )
 
 const (
@@ -26,13 +27,6 @@ type transition struct {
 	curve    driver.Curve
 	props    driver.TransitionProperty
 	shown    driver.ViewStyle
-}
-
-// scrolling is a scroll view's offset animating to a point.
-type scrolling struct {
-	from, to driver.Point
-	start    time.Time
-	momentum bool // a snap, which reports EventMomentumEnd
 }
 
 // styleOf returns the style v shows now: mid transition, or its own,
@@ -90,7 +84,7 @@ func (w *window) scrollAnimated(v *view, offset driver.Point) {
 		w.scrollTo(v, offset)
 		return
 	}
-	v.scrolling = &scrolling{from: v.offset, to: offset, start: time.Now()}
+	v.scrolling = &scrollbar.OffsetAnimation{From: v.offset, To: offset, Start: time.Now()}
 	w.animate(v)
 }
 
@@ -248,19 +242,19 @@ func (w *window) step(v *view, now time.Time) bool {
 		}
 	}
 	if s := v.scrolling; s != nil {
-		elapsed := now.Sub(s.start)
+		elapsed := now.Sub(s.Start)
 		if elapsed >= scrollDuration {
 			v.scrolling = nil
-			w.scrollTo(v, s.to)
-			if s.momentum {
+			w.scrollTo(v, s.To)
+			if s.Momentum {
 				w.scrollEvent(v, driver.EventMomentumEnd)
 			}
 			w.restScroll(v)
 		} else {
 			p := float64(elapsed) / float64(scrollDuration)
 			at := driver.Point{
-				X: driver.Points(float64(s.from.X) + float64(s.to.X-s.from.X)*p),
-				Y: driver.Points(float64(s.from.Y) + float64(s.to.Y-s.from.Y)*p),
+				X: driver.Points(float64(s.From.X) + float64(s.To.X-s.From.X)*p),
+				Y: driver.Points(float64(s.From.Y) + float64(s.To.Y-s.From.Y)*p),
 			}
 			w.scrollTo(v, at)
 			keep = true

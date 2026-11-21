@@ -113,7 +113,7 @@ type view struct {
 	transition *transition
 	// keyframeStart is when the keyframe animation of style began.
 	keyframeStart time.Time
-	scrolling     *scrolling
+	scrolling     *scrollbar.OffsetAnimation
 	// animated holds the values the animator binds over the style, nil
 	// while none are bound.
 	animated *driver.AnimatedValues

@@ -24,7 +24,7 @@ func (w *window) scrollEvent(v *view, kind driver.EventKind) {
 
 // interruptScroll stops v's snap or the glide a finger let go of, which ends its momentum: the app's ScrollTo, the wheel or the bar takes over, as a finger on the view does (touchDown).
 func (w *window) interruptScroll(v *view) {
-	if sc := v.scrolling; sc != nil && sc.momentum {
+	if sc := v.scrolling; sc != nil && sc.Momentum {
 		w.scrollEvent(v, driver.EventMomentumEnd)
 	}
 	v.scrolling = nil
@@ -108,7 +108,7 @@ func (w *window) settle(v *view, velocity float32) {
 		w.restScroll(v)
 		return
 	}
-	v.scrolling = &scrolling{from: v.offset, to: to, start: time.Now(), momentum: true}
+	v.scrolling = &scrollbar.OffsetAnimation{From: v.offset, To: to, Start: time.Now(), Momentum: true}
 	w.animate(v)
 }
 
@@ -127,18 +127,11 @@ func (w *window) releaseBar() {
 // drag in flight along: the core keeps the visible content in place as
 // rows above it change size.
 func (w *window) scrollBy(v *view, d driver.Point) {
-	if sc := v.scrolling; sc != nil {
-		sc.from.X, sc.from.Y = sc.from.X+d.X, sc.from.Y+d.Y
-		sc.to.X, sc.to.Y = sc.to.X+d.X, sc.to.Y+d.Y
-	}
+	var drag *scrollbar.Drag
 	if b := w.barDrag; b != nil && b.v == v {
-		if v.scroll.Horizontal {
-			b.drag.Shift(d.X)
-		} else {
-			b.drag.Shift(d.Y)
-		}
+		drag = &b.drag
 	}
-	w.moveOffset(v, driver.Point{X: v.offset.X + d.X, Y: v.offset.Y + d.Y})
+	w.moveOffset(v, scrollbar.RebaseOffset(&v.scroll, v.offset, d, v.scrolling, drag))
 }
 
 // setSticky replaces scroll view v's sticky cells; cells no longer

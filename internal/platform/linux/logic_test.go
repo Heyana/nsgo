@@ -720,7 +720,7 @@ func TestTouchBrakingClaimsGlideAndSnap(t *testing.T) {
 	}
 
 	// 2. Touch down stopping a snap presses nothing when it lifts.
-	scroll.scrolling = &scrolling{from: driver.Point{Y: 100}, to: driver.Point{Y: 400}, start: time.Now(), momentum: true}
+	scroll.scrolling = &scrollbar.OffsetAnimation{From: driver.Point{Y: 100}, To: driver.Point{Y: 400}, Start: time.Now(), Momentum: true}
 	events = nil
 	w.pointerDown(at, 1, touchDevice, 0, 1)
 	if scroll.scrolling != nil {
@@ -741,7 +741,7 @@ func TestTouchBrakingClaimsGlideAndSnap(t *testing.T) {
 	}
 
 	// 3. Touch down stopping an animated ScrollTo presses nothing and does not emit momentum end.
-	scroll.scrolling = &scrolling{from: driver.Point{Y: 100}, to: driver.Point{Y: 400}, start: time.Now()}
+	scroll.scrolling = &scrollbar.OffsetAnimation{From: driver.Point{Y: 100}, To: driver.Point{Y: 400}, Start: time.Now()}
 	events = nil
 	w.pointerDown(at, 1, touchDevice, 0, 1)
 	if scroll.scrolling != nil {

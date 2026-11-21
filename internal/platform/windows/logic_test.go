@@ -1525,8 +1525,8 @@ func TestSelectionItemsKeepTheirPatternWhenUnselected(t *testing.T) {
 func TestScrollMoveIndicatorOnlyContinuesUserMomentum(t *testing.T) {
 	for name, v := range map[string]*view{
 		"app move":      {},
-		"animated move": {scrolling: &scrolling{}},
-		"user momentum": {scrolling: &scrolling{momentum: true}},
+		"animated move": {scrolling: &scrollbar.OffsetAnimation{}},
+		"user momentum": {scrolling: &scrollbar.OffsetAnimation{Momentum: true}},
 	} {
 		if got := scrollMoveShowsIndicator(v); got != (name == "user momentum") {
 			t.Errorf("%s: scrollMoveShowsIndicator = %v", name, got)
@@ -1768,7 +1768,7 @@ func TestTouchBrakingClaimsGlideAndSnap(t *testing.T) {
 	}
 
 	// 2. Touch down stopping a snap claims the touch too.
-	scroll.scrolling = &scrolling{from: driver.Point{Y: 100}, to: driver.Point{Y: 400}, start: time.Now(), momentum: true}
+	scroll.scrolling = &scrollbar.OffsetAnimation{From: driver.Point{Y: 100}, To: driver.Point{Y: 400}, Start: time.Now(), Momentum: true}
 	events = nil
 	if !w.touchDown(2, at) {
 		t.Fatal("touchDown on a snapping scroll view returned false; want true")
@@ -1787,7 +1787,7 @@ func TestTouchBrakingClaimsGlideAndSnap(t *testing.T) {
 	}
 
 	// 3. Touch down stopping an animated ScrollTo claims the touch without reporting momentum end.
-	scroll.scrolling = &scrolling{from: driver.Point{Y: 100}, to: driver.Point{Y: 400}, start: time.Now()}
+	scroll.scrolling = &scrollbar.OffsetAnimation{From: driver.Point{Y: 100}, To: driver.Point{Y: 400}, Start: time.Now()}
 	events = nil
 	if !w.touchDown(3, at) {
 		t.Fatal("touchDown on an animated scroll returned false; want true")

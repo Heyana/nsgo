@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
 )
 
 var (
@@ -36,13 +37,6 @@ type transition struct {
 	curve    driver.Curve
 	props    driver.TransitionProperty
 	shown    driver.ViewStyle // at the last frame
-}
-
-// scrolling is a scroll view's offset animating to a point.
-type scrolling struct {
-	from, to driver.Point
-	start    time.Time
-	momentum bool // a snap, which reports EventMomentumEnd
 }
 
 // moving is a view's frame animating to the one it was given, as a
@@ -298,7 +292,7 @@ func (w *window) scrollAnimated(v *view, offset driver.Point) {
 		w.scrollTo(v, offset)
 		return
 	}
-	v.scrolling = &scrolling{from: v.offset, to: offset, start: time.Now()}
+	v.scrolling = &scrollbar.OffsetAnimation{From: v.offset, To: offset, Start: time.Now()}
 	w.animate(v)
 }
 
@@ -493,13 +487,13 @@ func (w *window) tick() {
 			}
 		}
 		if sc := v.scrolling; sc != nil && !v.deleted {
-			x := min(float64(now.Sub(sc.start))/float64(scrollDuration), 1)
+			x := min(float64(now.Sub(sc.Start))/float64(scrollDuration), 1)
 			e := driver.Points(driver.EaseInOut.At(x))
-			at := driver.Point{X: sc.from.X + (sc.to.X-sc.from.X)*e, Y: sc.from.Y + (sc.to.Y-sc.from.Y)*e}
+			at := driver.Point{X: sc.From.X + (sc.To.X-sc.From.X)*e, Y: sc.From.Y + (sc.To.Y-sc.From.Y)*e}
 			w.scrollTo(v, at)
 			if x >= 1 {
 				v.scrolling = nil
-				if sc.momentum {
+				if sc.Momentum {
 					w.scrollEvent(v, driver.EventMomentumEnd)
 				}
 				w.restScroll(v)

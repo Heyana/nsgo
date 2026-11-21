@@ -321,7 +321,7 @@ type view struct {
 	styled     bool
 	born       uint64 // the batch that created it
 	transition *transition
-	scrolling  *scrolling
+	scrolling  *scrollbar.OffsetAnimation
 	// animated are the values bound to the view, Set 0 when none; drawn is
 	// its style with them, as styleOf last made it.
 	animated driver.AnimatedValues
