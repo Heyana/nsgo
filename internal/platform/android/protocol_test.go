@@ -375,3 +375,63 @@ func TestReadEnvironmentMapsPowerState(t *testing.T) {
 		}
 	}
 }
+
+// TestReadEventLongPressIndex verifies that msgEvent decodes EventLongPress (and EventPress) character byte offsets, including -1 for misses and touchless long presses, and that NsgoView reports pressedIndex for every EVENT_LONG_PRESS emission.
+func TestReadEventLongPressIndex(t *testing.T) {
+	encodeEvent := func(surface uint32, kind driver.EventKind, id driver.NodeID, count uint32, pt, page driver.Point, index int32, mods byte) []byte {
+		var w writer
+		w.u32(surface)
+		w.byte(byte(kind))
+		w.u32(uint32(id))
+		w.u32(count)
+		w.points(pt.X)
+		w.points(pt.Y)
+		w.str("") // text
+		w.points(0)
+		w.points(0)
+		w.u32(uint32(index))
+		w.byte(0) // phase
+		w.points(0)
+		w.points(0)
+		w.float(0) // value
+		w.byte(0)  // no navigation
+		w.u64(0)   // time
+		w.u64(0)   // duration
+		w.byte(0)  // buffering
+		w.str("")  // data
+		w.byte(0)  // finished
+		w.points(page.X)
+		w.points(page.Y)
+		w.points(0)
+		w.points(0)
+		w.byte(mods)
+		return w.buf
+	}
+	for _, want := range []int{-1, 0, 5, 14} {
+		raw := encodeEvent(0, driver.EventLongPress, 42, 1, driver.Point{X: 18, Y: 9}, driver.Point{X: 30, Y: 40}, int32(want), 4)
+		r := reader{raw}
+		from, ev, data := readEvent(&r)
+		if len(r.buf) != 0 || from != 0 || data != "" {
+			t.Fatalf("index %d: from=%d data=%q remaining=%d", want, from, data, len(r.buf))
+		}
+		if ev.Kind != driver.EventLongPress || ev.ID != 42 || ev.Count != 1 || ev.Index != want ||
+			ev.Point != (driver.Point{X: 18, Y: 9}) || ev.Page != (driver.Point{X: 30, Y: 40}) || !ev.Modifiers.Shift {
+			t.Errorf("index %d: decoded %+v", want, ev)
+		}
+	}
+
+	testhost.RequireSource(t)
+	java, err := os.ReadFile(filepath.Join("java", "dev", "oneo", "nsgo", "NsgoView.java"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := regexp.MustCompile(`pressed\(n,\s*Protocol\.EVENT_LONG_PRESS,\s*([^;]+)\);`).FindAllStringSubmatch(string(java), -1)
+	if len(calls) < 2 {
+		t.Fatalf("expected at least 2 EVENT_LONG_PRESS emissions in NsgoView.java (system and custom delay), found %d", len(calls))
+	}
+	for _, m := range calls {
+		if strings.TrimSpace(m[1]) != "pressedIndex(v)" {
+			t.Errorf("NsgoView.java emits EVENT_LONG_PRESS with %q, want pressedIndex(v)", m[1])
+		}
+	}
+}

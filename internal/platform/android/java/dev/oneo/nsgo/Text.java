@@ -477,7 +477,7 @@ final class Text {
                 d.writeFloat(l.getLineWidth(line) / density);
                 d.writeFloat((bottom - top) / density);
                 d.writeByte(l.getParagraphDirection(line) == Layout.DIR_RIGHT_TO_LEFT ? 1 : 0);
-                int stop = breakStart(l, line);
+                int stop = TextNode.breakStart(l, line);
                 int ellipsis = l.getEllipsisCount(line) > 0 ? start + l.getEllipsisStart(line) : -1;
                 int resume = ellipsis >= 0 ? ellipsis + l.getEllipsisCount(line) : -1;
                 java.util.List<float[]> clusters = new java.util.ArrayList<>();
@@ -506,19 +506,6 @@ final class Text {
             throw new AssertionError(impossible);
         }
         return bytes.toByteArray();
-    }
-
-    /**
-     * Where a line's break begins: its end, or before the character that
-     * ends it ("\r\n" as one). Carets stay before it.
-     */
-    private static int breakStart(Layout l, int line) {
-        int start = l.getLineStart(line), end = l.getLineEnd(line);
-        if (end <= start) return end;
-        CharSequence text = l.getText();
-        char c = text.charAt(end - 1);
-        if (c != '\n' && c != '\r' && c != '\u0085' && c != '\u2028' && c != '\u2029') return end;
-        return c == '\n' && end - 1 > start && text.charAt(end - 2) == '\r' ? end - 2 : end - 1;
     }
 
     /**
@@ -585,7 +572,7 @@ final class Text {
             paint.getTextBounds("x", 0, 1, bounds);
             float x = bounds.height();
             float top = layout.getLineTop(i);
-            out[i] = new float[] {utf8Length(text, start), utf8Length(text, end), layout.getLineLeft(i), top,
+            out[i] = new float[] {TextNode.utf8Length(text, start), TextNode.utf8Length(text, end), layout.getLineLeft(i), top,
                     layout.getLineWidth(i), layout.getLineBottom(i) - top, -layout.getLineAscent(i),
                     layout.getLineDescent(i), cap, x};
         }
@@ -716,25 +703,6 @@ final class Text {
             }
             return index;
         }
-    }
-
-    /** The UTF-8 length of the first end chars of s. */
-    static int utf8Length(CharSequence s, int end) {
-        int n = 0;
-        for (int i = 0; i < end; i++) {
-            char c = s.charAt(i);
-            if (c < 0x80) {
-                n += 1;
-            } else if (c < 0x800) {
-                n += 2;
-            } else if (Character.isHighSurrogate(c) && i + 1 < end && Character.isLowSurrogate(s.charAt(i + 1))) {
-                n += 4;
-                i++;
-            } else {
-                n += 3;
-            }
-        }
-        return n;
     }
 
     /** Gives every line the same height, the glyphs centered in it as in CSS. */

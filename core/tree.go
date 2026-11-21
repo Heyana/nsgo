@@ -1922,7 +1922,8 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 				}
 				same = spans[i].Content == old.content && (old.cls == nil) == (spans[i].Class == "") &&
 					(old.cls == nil || old.cls.list.class == spans[i].Class) && reflect.DeepEqual(spans[i].Style, own) &&
-					(spans[i].OnPress == nil) == (old.press == nil)
+					(spans[i].OnPress == nil) == (old.press == nil) &&
+					(spans[i].OnLongPress == nil) == (old.long == nil)
 			}
 			if same {
 				// The presses cannot be compared: the latest take them.

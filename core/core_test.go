@@ -1505,6 +1505,61 @@ func TestTextPressOutsideItsLinks(t *testing.T) {
 	}
 }
 
+func TestTextSpanLongPress(t *testing.T) {
+	var link, text int
+	h := newHost(t, Size{Width: 300, Height: 100}, func(cx *Scope) Node {
+		return Text{TestID: "text", OnLongPress: func(PressEvent) { text++ }, Spans: []Span{
+			{Content: "Read "},
+			{Content: "docs", OnLongPress: func(PressEvent) { link++ }},
+		}}
+	})
+	h.commit()
+	n := h.find("text")
+	if !n.events().Has(driver.EventLongPress) {
+		t.Fatal("text with span OnLongPress did not request EventLongPress")
+	}
+	h.tree.Dispatch(driver.Event{Kind: driver.EventLongPress, ID: n.id, Index: 6})  // inside "docs"
+	h.tree.Dispatch(driver.Event{Kind: driver.EventLongPress, ID: n.id, Index: 1})  // inside "Read "
+	h.tree.Dispatch(driver.Event{Kind: driver.EventLongPress, ID: n.id, Index: -1}) // miss / touchless
+	if link != 1 || text != 2 {
+		t.Errorf("span long pressed %d times and text %d, want 1 and 2", link, text)
+	}
+
+	// SpansFunc adding OnLongPress later updates ItemEvents.
+	var enable *Signal[bool]
+	var dynamic int
+	h2 := newHost(t, Size{Width: 300, Height: 100}, func(cx *Scope) Node {
+		enable = NewSignal(cx, false)
+		return Text{TestID: "dyn", SpansFunc: func() []Span {
+			sp := Span{Content: "hold"}
+			if enable.Get() {
+				sp.OnLongPress = func(PressEvent) { dynamic++ }
+			}
+			return []Span{{Content: "say "}, sp}
+		}}
+	})
+	h2.commit()
+	n2 := h2.find("dyn")
+	if n2.events().Has(driver.EventLongPress) {
+		t.Fatal("text requested EventLongPress before any span handled it")
+	}
+	enable.Set(true)
+	b := h2.commit()
+	var sent bool
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemEvents && it.ID == n2.id && it.Events.Has(driver.EventLongPress) {
+			sent = true
+		}
+	}
+	if !sent {
+		t.Fatal("SpansFunc enabling OnLongPress did not emit ItemEvents with EventLongPress")
+	}
+	h2.tree.Dispatch(driver.Event{Kind: driver.EventLongPress, ID: n2.id, Index: 5})
+	if dynamic != 1 {
+		t.Errorf("dynamic span long pressed %d times, want 1", dynamic)
+	}
+}
+
 func TestCanvasDrawsAtItsSizeAndOnChange(t *testing.T) {
 	var level *Signal[float32]
 	draws := 0

@@ -2012,6 +2012,11 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 false, n.pressPageX, n.pressPageY, n.pressMods);
     }
 
+    /** The UTF-8 byte offset of the character a text view's press went down on, or 0 for other views. */
+    private static int pressedIndex(View v) {
+        return v instanceof TextNode ? ((TextNode) v).pressedIndex() : 0;
+    }
+
     /** Records where a touch went down on n, for its presses. */
     private void pressedAt(Node n, MotionEvent e) {
         float[] page = page(n.view, e);
@@ -4895,12 +4900,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         boolean downUp = n.has(Protocol.EVENT_PRESS_DOWN) || n.has(Protocol.EVENT_PRESS_UP);
         boolean hover = n.has(Protocol.EVENT_HOVER_IN) || n.has(Protocol.EVENT_HOVER_OUT)
                 || n.has(Protocol.EVENT_HOVER_MOVE);
-        // A text view's press carries the byte offset of the character
-        // under it, for its link spans; every press where its touch went
-        // down.
+        // A text view's press and long press carry the byte offset of the
+        // character under them, for its spans; every press where its touch
+        // went down.
         view.setOnClickListener(press ? v -> {
             // A press held as a long press of the node's own delay ends there.
-            if (!n.longFired) pressed(n, Protocol.EVENT_PRESS, v instanceof TextNode ? ((TextNode) v).pressedIndex() : 0);
+            if (!n.longFired) pressed(n, Protocol.EVENT_PRESS, pressedIndex(v));
             pressDone(n);
         } : null);
         // With a delay of its own the node times its long presses; the
@@ -4910,7 +4915,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 n.swallowed = true;
                 return true;
             }
-            pressed(n, Protocol.EVENT_LONG_PRESS, 0);
+            pressed(n, Protocol.EVENT_LONG_PRESS, pressedIndex(v));
             pressDone(n);
             return true;
         } : null);
@@ -4927,7 +4932,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     n.longTimer = () -> {
                         n.longTimer = null;
                         n.longFired = true;
-                        pressed(n, Protocol.EVENT_LONG_PRESS, 0);
+                        pressed(n, Protocol.EVENT_LONG_PRESS, pressedIndex(v));
                     };
                     v.postDelayed(n.longTimer, n.delayLongPress);
                 }
@@ -4943,7 +4948,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 // The system's long press took the click, but the node's own
                 // had not come yet: the release is a press.
                 if (action == MotionEvent.ACTION_UP && n.swallowed && timing && !n.longFired) {
-                    pressed(n, Protocol.EVENT_PRESS, v instanceof TextNode ? ((TextNode) v).pressedIndex() : 0);
+                    pressed(n, Protocol.EVENT_PRESS, pressedIndex(v));
+                    pressDone(n);
+                } else if (action == MotionEvent.ACTION_CANCEL || n.longFired) {
                     pressDone(n);
                 }
             }

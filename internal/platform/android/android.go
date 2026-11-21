@@ -283,40 +283,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.ratio.Store(math.Float32bits(env.PixelRatio))
 			s.engine.ResizeWithEnvironment(size, g, *env)
 		case msgEvent:
-			// The surface the event is for: 0 for the activity's view, else an overlay's.
-			from := r.u32()
-			ev := driver.Event{
-				Kind:  driver.EventKind(r.byte()),
-				ID:    driver.NodeID(r.u32()),
-				Count: r.u32(),
-				Point: driver.Point{X: r.points(), Y: r.points()},
-				Text:  r.str(),
-				Size:  driver.Size{Width: r.points(), Height: r.points()},
-				Index: int(int32(r.u32())),
-				// A gesture's; zero for other events.
-				Phase:    driver.GesturePhase(r.byte()),
-				Velocity: driver.Point{X: r.points(), Y: r.points()},
-				Value:    r.float(),
-			}
-			ev.Navigation = readNavigation(&r)
-			// A video's; zero for other events.
-			ev.Time = time.Duration(r.u64()) * time.Millisecond
-			ev.Duration = time.Duration(r.u64()) * time.Millisecond
-			ev.Buffering = r.byte() != 0
-			ev.RateChangeable = ev.Kind == driver.EventLoad
-			// A native view's callback's arguments, as JSON, and whether
-			// an animation finished.
-			data := r.str()
-			ev.Finished = r.byte() != 0
-			// A pointer's position in its root view and modifier keys.
-			ev.Page = driver.Point{X: r.points(), Y: r.points()}
-			ev.Position = driver.Point{X: r.points(), Y: r.points()}
-			if ev.Kind == driver.EventPan {
-				// A pan's page point comes in the pointer's page slot.
-				ev.PagePosition = ev.Page
-			}
-			mods := r.byte()
-			ev.Modifiers = driver.Modifiers{Control: mods&1 != 0, Alt: mods&2 != 0, Shift: mods&4 != 0, Platform: mods&8 != 0}
+			from, ev, data := readEvent(&r)
 			if ev.Kind == driver.EventNative {
 				s.nativeEvent(from, ev.ID, ev.Text, data)
 				break
@@ -488,22 +455,6 @@ type testOpen struct {
 	size    chan driver.Size
 	// geometry is the fold geometry measured at the runtime's size, set before it is sent.
 	geometry driver.Geometry
-}
-
-// readNavigation reads the web view's navigation NsgoView.event writes
-// last, nil for events without one.
-func readNavigation(r *reader) *driver.WebNavigation {
-	flags := r.byte()
-	if flags&1 == 0 {
-		return nil
-	}
-	return &driver.WebNavigation{
-		Loading:      flags&2 != 0,
-		CanGoBack:    flags&4 != 0,
-		CanGoForward: flags&8 != 0,
-		URL:          r.str(),
-		Title:        r.str(),
-	}
 }
 
 // readClipboard fills in what an EventClipboard carries in its data:

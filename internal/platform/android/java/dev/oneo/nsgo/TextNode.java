@@ -83,9 +83,12 @@ final class TextNode extends FrameLayout {
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
-        if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+        int action = e.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
             downX = e.getX();
             downY = e.getY();
+        } else if (action == MotionEvent.ACTION_CANCEL) {
+            downX = Float.NaN;
         }
         return super.onTouchEvent(e);
     }
@@ -97,20 +100,72 @@ final class TextNode extends FrameLayout {
     int pressedIndex() {
         float px = downX - x, py = downY - y;
         downX = Float.NaN;
-        if (layout == null || Float.isNaN(px) || py < 0 || py >= layout.getHeight()) return -1;
+        return indexAt(layout, clipLines, px, py);
+    }
+
+    /**
+     * The UTF-8 byte offset of the character at (px, py) in layout, or -1
+     * when the point misses the visible lines or no touch was recorded.
+     */
+    static int indexAt(Layout layout, int clipLines, float px, float py) {
+        if (layout == null || Float.isNaN(px) || Float.isNaN(py) || py < 0 || py >= layout.getHeight()) return -1;
+        int lines = layout.getLineCount();
+        if (lines <= 0) return -1;
         int line = layout.getLineForVertical((int) py);
+        if (line < 0 || line >= lines) return -1;
+        if (clipLines > 0 && line >= clipLines) return -1;
         if (px < layout.getLineLeft(line) || px >= layout.getLineRight(line)) return -1;
+        int lineStart = layout.getLineStart(line);
+        int lineEnd = breakStart(layout, line);
+        if (lineEnd <= lineStart) return -1;
+        CharSequence text = layout.getText();
         // The offset is the nearest caret position; step back to the
         // character under the point.
         int offset = layout.getOffsetForHorizontal(line, px);
-        if (layout.getParagraphDirection(line) == Layout.DIR_LEFT_TO_RIGHT
-                && offset > layout.getLineStart(line) && layout.getPrimaryHorizontal(offset) > px) {
-            offset--;
+        if (offset >= lineEnd) {
+            offset = lineEnd - 1;
+        } else if (offset > lineStart) {
+            int prev = offset - 1;
+            if (prev > lineStart && Character.isLowSurrogate(text.charAt(prev))) prev--;
+            boolean rtl = layout.isRtlCharAt(prev);
+            float caret = layout.getPrimaryHorizontal(offset);
+            if (rtl ? caret < px : caret > px) offset = prev;
         }
-        CharSequence text = layout.getText();
-        if (offset < 0 || offset >= text.length()) return -1;
-        if (offset > 0 && Character.isLowSurrogate(text.charAt(offset))) offset--;
-        return Text.utf8Length(text, offset);
+        if (offset < lineStart || offset >= lineEnd) return -1;
+        if (offset > lineStart && Character.isLowSurrogate(text.charAt(offset))) offset--;
+        return utf8Length(text, offset);
+    }
+
+    /**
+     * Where a line's break begins: its end, or before the character that
+     * ends it ("\r\n" as one). Carets and character hit tests stay before it.
+     */
+    static int breakStart(Layout l, int line) {
+        int start = l.getLineStart(line), end = l.getLineEnd(line);
+        if (end <= start) return end;
+        CharSequence text = l.getText();
+        char c = text.charAt(end - 1);
+        if (c != '\n' && c != '\r' && c != '\u0085' && c != '\u2028' && c != '\u2029') return end;
+        return c == '\n' && end - 1 > start && text.charAt(end - 2) == '\r' ? end - 2 : end - 1;
+    }
+
+    /** The UTF-8 length of the first end chars of s. */
+    static int utf8Length(CharSequence s, int end) {
+        int n = 0;
+        for (int i = 0; i < end; i++) {
+            char c = s.charAt(i);
+            if (c < 0x80) {
+                n += 1;
+            } else if (c < 0x800) {
+                n += 2;
+            } else if (Character.isHighSurrogate(c) && i + 1 < end && Character.isLowSurrogate(s.charAt(i + 1))) {
+                n += 4;
+                i++;
+            } else {
+                n += 3;
+            }
+        }
+        return n;
     }
 
     @Override
