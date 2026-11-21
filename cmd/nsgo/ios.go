@@ -366,16 +366,40 @@ func iosSession(sys *appleOS, opts devOptions) session {
 	}
 }
 
+// configureAppleDeviceDev sets p's dev server address (injected via -ldflags -X)
+// and run token (injected via the main-package overlay file devTokenFile so it
+// stays off every command line) for a connected iPhone, Apple TV or Apple Watch.
+func configureAppleDeviceDev(p *project, sys *appleOS, opts devOptions) error {
+	if opts.server == nil {
+		return nil
+	}
+	// The device reaches the dev server over the LAN.
+	if lan := opts.server.lanURLs(); len(lan) > 0 {
+		p.devURL, p.devToken = lan[0], opts.server.token
+		return nil
+	}
+	if opts.automation {
+		return fmt.Errorf("no LAN address found for %s to reach nsgo dev -automation's server", sys.name)
+	}
+	return nil
+}
+
+// appleDeviceLaunchArgs returns the xcrun arguments that launch bundleID on a
+// connected Apple device through devicectl.
+func appleDeviceLaunchArgs(udid, bundleID string, appFlags []string) []string {
+	return append([]string{"devicectl", "device", "process", "launch",
+		"--console", "--terminate-existing", "--device", udid, bundleID}, appFlags...)
+}
+
 // iosDeviceSession builds, signs and installs the app on a connected
-// iPhone or Apple TV, and streams its output here until it exits.
+// iPhone, Apple TV or Apple Watch, and streams its output here until it exits.
 func iosDeviceSession(sys *appleOS, opts devOptions) session {
 	return session{
 		build: func(ctx context.Context, p *project) error {
 			dir := p.cache("dev", sys.target)
 			os.RemoveAll(dir)
-			// The device reaches the dev server over the LAN.
-			if lan := opts.server.lanURLs(); len(lan) > 0 {
-				p.devURL, p.devToken = lan[0], opts.server.token
+			if err := configureAppleDeviceDev(p, sys, opts); err != nil {
+				return err
 			}
 			_, err := buildIOSApp(ctx, p, sys, filepath.Join(dir, "app"), false)
 			return err
@@ -397,8 +421,7 @@ func iosDeviceSession(sys *appleOS, opts devOptions) session {
 				return app{}, err
 			}
 			event("launch %s on %s", p.ID, device.Name)
-			stop, wait, err := startProcess("xcrun", append([]string{"devicectl", "device", "process", "launch",
-				"--console", "--terminate-existing", "--device", device.UDID, p.ID}, opts.appFlags()...)...)
+			stop, wait, err := startProcess("xcrun", appleDeviceLaunchArgs(device.UDID, p.ID, opts.appFlags())...)
 			if err != nil {
 				return app{}, err
 			}
@@ -795,6 +818,8 @@ func pickIOSDevice(sys *appleOS, devices []iosDevice, wanted string) (iosDevice,
 	switch {
 	case len(paired) == 0 && sys == tvOS:
 		return iosDevice{}, errors.New("no Apple TV is paired with this Mac: pair one in Xcode's Devices window from the Apple TV's Settings > Remotes and Devices > Remote App and Devices")
+	case len(paired) == 0 && sys == watchOS:
+		return iosDevice{}, errors.New("no Apple Watch is paired with this Mac: pair one with an iPhone, trust it, and turn on Developer Mode in Settings > Privacy & Security")
 	case len(paired) == 0:
 		return iosDevice{}, errors.New("no iPhone is paired with this Mac: connect one, trust it, and turn on Developer Mode in Settings > Privacy & Security")
 	case len(connected) == 1:

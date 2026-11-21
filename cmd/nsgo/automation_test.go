@@ -355,10 +355,10 @@ func TestDevAutomationRefusesWhatItCannotDrive(t *testing.T) {
 		t.Errorf("-automation -release: %v", err)
 	}
 	p.Dev.Target = "web"
-	if err := dev(context.Background(), p, devOptions{automation: true}); err == nil || !strings.Contains(err.Error(), "simulators so far") {
+	if err := dev(context.Background(), p, devOptions{automation: true}); err == nil || !strings.Contains(err.Error(), "Apple devices and simulators so far") {
 		t.Errorf("-automation -target web: %v", err)
 	}
-	for _, target := range []string{"native", "ios_simulator", "tvos_simulator", "watchos_simulator"} {
+	for _, target := range []string{"native", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator"} {
 		if err := automationTargetError(target, "darwin", false); err != nil {
 			t.Errorf("darwin %s: %v", target, err)
 		}
@@ -371,7 +371,7 @@ func TestDevAutomationRefusesWhatItCannotDrive(t *testing.T) {
 			}
 		}
 	}
-	for _, target := range []string{"ios", "tvos", "watchos", "web", "android", "miniprogram_wechat"} {
+	for _, target := range []string{"web", "android", "miniprogram_wechat"} {
 		if err := automationTargetError(target, "darwin", false); err == nil {
 			t.Errorf("darwin %s unexpectedly allowed", target)
 		}
@@ -482,6 +482,172 @@ func TestSimulatorAutomationBuildTags(t *testing.T) {
 			}
 			if got := slices.Contains(parts, "nsgowatch"); got != tc.wantWatch {
 				t.Errorf("tags %q nsgowatch=%v, want %v", tags, got, tc.wantWatch)
+			}
+		})
+	}
+}
+
+func TestAppleDeviceAutomationBuildAndLaunch(t *testing.T) {
+	h := startHub(t)
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"go.mod":  "module devauto\n\ngo 1.26\n",
+		"main.go": "package main\nfunc main() {}\n",
+	})
+
+	// Check ldflags (-X devServer), build tags and overlay token delivery (kept off command lines)
+	// for iOS, tvOS and watchOS physical device automation builds.
+	for _, tc := range []struct {
+		sys       *appleOS
+		extraTags []string
+		wantWatch bool
+	}{
+		{iOS, nil, false},
+		{tvOS, nil, false},
+		{watchOS, []string{"nsgowatch"}, true},
+	} {
+		t.Run(tc.sys.target+"_build", func(t *testing.T) {
+			p := &project{Dir: dir, Name: "Sample", ID: "dev.example.sample", Version: "1.0.0"}
+			opts := devOptions{server: h.srv, automation: true, team: "TEAM123"}
+			p.prepareDev(opts)
+			// Use a synthetic LAN URL so the build assertion is independent of host network interfaces.
+			p.devURL, p.devToken = "http://192.168.1.42:8080", h.srv.token
+			cmd, done, err := goBuildCommand(t.Context(), p, filepath.Join(t.TempDir(), "out"), nil, buildExtra{tags: tc.extraTags})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer done()
+
+			var tags, ldflags string
+			for i, a := range cmd.Args {
+				if strings.Contains(a, h.srv.token) {
+					t.Errorf("go build argument %q leaked run token", a)
+				}
+				if a == "-tags" && i+1 < len(cmd.Args) {
+					tags = cmd.Args[i+1]
+				}
+				if a == "-ldflags" && i+1 < len(cmd.Args) {
+					ldflags = cmd.Args[i+1]
+				}
+			}
+			parts := strings.Split(tags, ",")
+			if !slices.Contains(parts, "nsgodev") || !slices.Contains(parts, "nsgoautomation") {
+				t.Errorf("tags = %q, want nsgodev and nsgoautomation", tags)
+			}
+			if got := slices.Contains(parts, "nsgowatch"); got != tc.wantWatch {
+				t.Errorf("tags = %q, nsgowatch=%v, want %v", tags, got, tc.wantWatch)
+			}
+			wantDevServer := "-X 'github.com/nsgo-dev/nsgo/internal/dev.devServer=http://192.168.1.42:8080'"
+			if !strings.Contains(ldflags, wantDevServer) {
+				t.Errorf("ldflags = %q, missing %q", ldflags, wantDevServer)
+			}
+			tokenFiles, _ := filepath.Glob(filepath.Join(p.cache(), "devtoken-*.go"))
+			if len(tokenFiles) != 1 {
+				t.Fatalf("devtoken overlay files = %v, want 1", tokenFiles)
+			}
+			data, err := os.ReadFile(tokenFiles[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), h.srv.token) || !strings.Contains(string(data), "NSGO_DEV_TOKEN") {
+				t.Errorf("devtoken overlay = %q, want NSGO_DEV_TOKEN with run token", data)
+			}
+		})
+	}
+
+	if got := appleDeviceLaunchArgs("UDID-1", "dev.example.sample", []string{"--nsgo-fps"}); !slices.Equal(got, []string{
+		"devicectl", "device", "process", "launch", "--console", "--terminate-existing", "--device", "UDID-1", "dev.example.sample", "--nsgo-fps",
+	}) {
+		t.Fatalf("appleDeviceLaunchArgs = %v", got)
+	}
+
+	if runtime.GOOS == "windows" {
+		t.Skip("the devicectl launcher fixture uses shell scripts")
+	}
+
+	// Verify iosDeviceSession.start runs Xcode signing, devicectl install and devicectl launch
+	// for iPhone, Apple TV and Apple Watch.
+	for _, tc := range []struct {
+		sys      *appleOS
+		platform string
+		udid     string
+		name     string
+	}{
+		{iOS, "iOS", "IPHONE-UDID", "Test iPhone"},
+		{tvOS, "tvOS", "APPLETV-UDID", "Living Room"},
+		{watchOS, "watchOS", "WATCH-UDID", "Test Watch"},
+	} {
+		t.Run(tc.sys.target+"_launch", func(t *testing.T) {
+			projDir := t.TempDir()
+			appDir := filepath.Join(projDir, ".nsgo", "dev", tc.sys.target, "app", "Sample.app")
+			if err := os.MkdirAll(appDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(appDir, "Info.plist"), []byte("<plist/>"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			commands := filepath.Join(t.TempDir(), "devicectl.log")
+			t.Setenv("NSGO_DEVICECTL_LOG", commands)
+			t.Setenv("NSGO_DEVICE_JSON", `{"result":{"devices":[{"deviceProperties":{"name":"`+tc.name+`","developerModeStatus":"enabled"},"hardwareProperties":{"reality":"physical","platform":"`+tc.platform+`","udid":"`+tc.udid+`"},"connectionProperties":{"pairingState":"paired","tunnelState":"connected"}}]}}`)
+			bin := t.TempDir()
+			writeFiles(t, bin, map[string]string{
+				"xcrun": `#!/bin/sh
+case "$1:$2:$3" in
+devicectl:list:devices)
+	printf '%s\n' "$NSGO_DEVICE_JSON"
+	exit 0
+	;;
+devicectl:device:install|devicectl:device:process)
+	printf '%s\n' "$*" >> "$NSGO_DEVICECTL_LOG"
+	exit 0
+	;;
+*)
+	exit 1
+	;;
+esac
+`,
+				"xcodebuild": `#!/bin/sh
+for arg in "$@"; do
+	case "$arg" in
+	CONFIGURATION_BUILD_DIR=*)
+		mkdir -p "${arg#CONFIGURATION_BUILD_DIR=}/Sample.app"
+		;;
+	esac
+done
+exit 0
+`,
+			})
+			for _, tool := range []string{"xcrun", "xcodebuild"} {
+				if err := os.Chmod(filepath.Join(bin, tool), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+			opts := devOptions{server: h.srv, automation: true, team: "TEAM123", fps: true}
+			p := &project{Dir: projDir, Name: "Sample", ID: "dev.example.sample"}
+			p.prepareDev(opts)
+			running, err := iosDeviceSession(tc.sys, opts).start(t.Context(), p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := running.wait(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			running.stop()
+
+			logBytes, err := os.ReadFile(commands)
+			if err != nil {
+				t.Fatal(err)
+			}
+			logText := string(logBytes)
+			for _, want := range []string{
+				"devicectl device install app --device " + tc.udid,
+				"devicectl device process launch --console --terminate-existing --device " + tc.udid + " dev.example.sample --nsgo-fps",
+			} {
+				if !strings.Contains(logText, want) {
+					t.Errorf("devicectl log missing %q:\n%s", want, logText)
+				}
 			}
 		})
 	}

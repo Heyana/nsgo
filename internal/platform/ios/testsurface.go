@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +21,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
-// A surface acting as the user does on an iOS or tvOS simulator, for the test host (testhost.go) and for nsgo dev's automation (automation.go), whose live surfaces wrap the running app's scenes with no test options (test is nil). Touches are IOHID digitizer events handed to UIKit (-[UIApplication _enqueueHIDEvent:]), so UIKit makes the UITouches and runs hit testing, gesture recognizers and scroll views as for a finger; typing goes through the software keyboard's input manager, as UI test tools type. IOKit's event functions, BackBoardServices' digitizer info and the private keyboard classes are looked up at run time and link only under nsgotest or nsgoautomation.
+// A surface acting as the user does on an iPhone, an Apple TV or their simulators, for the test host (testhost.go) and for nsgo dev's automation (automation.go), whose live surfaces wrap the running app's scenes with no test options (test is nil). On simulators, touches are IOHID digitizer events handed to UIKit (-[UIApplication _enqueueHIDEvent:]), so UIKit makes the UITouches and runs hit testing, gesture recognizers and scroll views as for a finger, and typing goes through the software keyboard's input manager; IOKit's event functions, BackBoardServices' digitizer info and the private keyboard classes are looked up at run time and link only under nsgotest or nsgoautomation. On physical devices (or when simulator HID is unavailable), presses, scrolls, drags, alerts, typing and keys use public UIKit APIs, accessibility actions, UIControl actions and NSGo's hit testing and event dispatch instead of simulator HID.
 
 func onMainSync(fn func()) {
 	done := make(chan struct{})
@@ -34,6 +35,34 @@ func onMainSync(fn func()) {
 type testSurface struct {
 	s    *surface
 	test *testOpen
+}
+
+var (
+	// deviceKeys holds synthetic KeyDown/KeyUp state per surface on physical devices,
+	// accessed only on the main thread.
+	deviceKeys = map[*surface]*deviceKeyState{}
+	// deviceTouchID numbers synthetic EventTouch contacts on physical devices.
+	deviceTouchID int
+)
+
+func (s *surface) deviceKeyState() *deviceKeyState {
+	st := deviceKeys[s]
+	if st == nil {
+		st = &deviceKeyState{}
+		deviceKeys[s] = st
+	}
+	return st
+}
+
+// runningOnSimulator reports whether the process runs inside Xcode's iOS or tvOS simulator.
+func runningOnSimulator() bool {
+	return isSimulatorEnv(os.Getenv)
+}
+
+// useSimulatorHID reports whether this surface should post private IOHID events
+// (simulators only, with clean fallback to the physical device path if HID fails to load).
+func (t *testSurface) useSimulatorHID() bool {
+	return shouldUseSimulatorHID(runningOnSimulator(), loadHID)
 }
 
 // window returns the surface's current UIWindow, or an error once its scene has no window.
@@ -181,14 +210,86 @@ func focusAt(w objc.ID, p driver.Point) {
 	})
 }
 
+// focusedEditor returns the active first responder, or the focused NSGo input's editor.
+func (t *testSurface) focusedEditor(w objc.ID) objc.ID {
+	if f := w.Send(sel("firstResponder")); f != 0 {
+		return f
+	}
+	for _, v := range t.s.views {
+		if v != nil && v.input != nil && v.input.focused && v.input.field != 0 {
+			return v.input.field
+		}
+	}
+	return 0
+}
+
+// surfacePoint converts a point in window w's coordinates to the surface's root view.
+func (t *testSurface) surfacePoint(w objc.ID, at driver.Point) driver.Point {
+	p := objc.Send[apple.CGPoint](t.s.native, sel("convertPoint:fromView:"), apple.CGPoint{X: float64(at.X), Y: float64(at.Y)}, w)
+	return driver.Point{X: driver.Points(p.X), Y: driver.Points(p.Y)}
+}
+
+// viewPointAndPage returns at (in window w's coordinates) in v's local coordinates and in v's modal or surface root.
+func (t *testSurface) viewPointAndPage(w objc.ID, v *view, at driver.Point) (local, page apple.CGPoint) {
+	root := t.s.native
+	for n := v.native; n != 0 && n != root; n = n.Send(selSuperview) {
+		if m := views[n]; m != nil && m.native == n && m.kind == driver.KindModal {
+			root = n
+			break
+		}
+	}
+	wp := apple.CGPoint{X: float64(at.X), Y: float64(at.Y)}
+	local = objc.Send[apple.CGPoint](v.native, sel("convertPoint:fromView:"), wp, w)
+	page = objc.Send[apple.CGPoint](root, sel("convertPoint:fromView:"), wp, w)
+	return local, page
+}
+
+// pressOutsideAt notifies views listening for EventPressOutside that a press landed outside them.
+func (t *testSurface) pressOutsideAt(hit, w objc.ID, at driver.Point) {
+	wp := apple.CGPoint{X: float64(at.X), Y: float64(at.Y)}
+	surfaceAt := t.surfacePoint(w, at)
+	for _, v := range t.s.views {
+		if v == nil || !v.events.Has(driver.EventPressOutside) || v.native.Send(sel("window")) == 0 {
+			continue
+		}
+		p := objc.Send[apple.CGPoint](v.native, sel("convertPoint:fromView:"), wp, w)
+		b := objc.Send[apple.CGRect](v.native, selBounds)
+		inside := p.X >= 0 && p.Y >= 0 && p.X < b.Size.Width && p.Y < b.Size.Height
+		if inside || (hit != 0 && objc.Send[bool](hit, sel("isDescendantOfView:"), v.native)) {
+			continue
+		}
+		t.s.engine.Dispatch(driver.Event{Kind: driver.EventPressOutside, ID: v.id, Point: surfaceAt})
+	}
+}
+
+// dispatchSyntheticTouch sends one synthetic EventTouch through surface.captureTouches on the main thread.
+func (t *testSurface) dispatchSyntheticTouch(touchID int, phase driver.GesturePhase, surfaceAt driver.Point) {
+	ev := driver.Event{
+		Kind:  driver.EventTouch,
+		Phase: phase,
+		Touches: []driver.Touch{{
+			ID:           touchID,
+			PagePosition: surfaceAt,
+			Changed:      true,
+		}},
+		Time: time.Since(t.s.epoch),
+	}
+	t.s.captureTouches(&ev)
+	t.s.engine.Dispatch(ev)
+}
+
 func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Modifiers) error {
 	w, err := t.window()
 	if err != nil {
 		return err
 	}
-	if err := loadHID(); err != nil {
-		return err
+	if t.useSimulatorHID() {
+		return t.pressSimulatorHID(w, at, hold, mods)
 	}
+	return t.pressDevice(w, at, hold, mods)
+}
+
+func (t *testSurface) pressSimulatorHID(w objc.ID, at driver.Point, hold time.Duration, mods driver.Modifiers) error {
 	var held []uint32
 	for _, key := range []struct {
 		usage uint32
@@ -207,6 +308,159 @@ func (t *testSurface) Press(at driver.Point, hold time.Duration, mods driver.Mod
 	touch(w, at, down)
 	time.Sleep(max(hold+50*time.Millisecond, 60*time.Millisecond))
 	touch(w, at, up)
+	focusAt(w, at)
+	return nil
+}
+
+// pressDevice delivers a press on a physical iPhone or Apple TV through UIKit's
+// hit testing, accessibility actions, UIControl actions and NSGo's event dispatch.
+func (t *testSurface) pressDevice(w objc.ID, at driver.Point, hold time.Duration, mods driver.Modifiers) error {
+	var (
+		pressedView    *view
+		listensTouches bool
+		touchID        int
+	)
+	onMainSync(func() {
+		if w == 0 || t.s == nil || t.s.engine == nil {
+			return
+		}
+		t.s.engine.InputModality(driver.ModalityPointer)
+		wp := apple.CGPoint{X: float64(at.X), Y: float64(at.Y)}
+		hit := w.Send(sel("hitTest:withEvent:"), wp, objc.ID(0))
+		t.pressOutsideAt(hit, w, at)
+		listensTouches = t.s.listensTouches()
+		if listensTouches {
+			deviceTouchID++
+			touchID = deviceTouchID
+			t.dispatchSyntheticTouch(touchID, driver.GestureBegan, t.surfacePoint(w, at))
+		}
+		fieldClass := objc.ID(apple.Class("UITextField"))
+		textViewClass := objc.ID(apple.Class("UITextView"))
+		switchClass := objc.ID(apple.Class("UISwitch"))
+		tabBarClass := objc.ID(apple.Class("UITabBar"))
+		controlClass := objc.ID(apple.Class("UIControl"))
+		var chain []deviceHitNode
+		var ids []objc.ID
+		for n := hit; n != 0; n = n.Send(selSuperview) {
+			isText := objc.Send[bool](n, selIsKindOf, fieldClass) || objc.Send[bool](n, selIsKindOf, textViewClass)
+			isSw := objc.Send[bool](n, selIsKindOf, switchClass)
+			isTab := objc.Send[bool](n, selIsKindOf, tabBarClass)
+			isCtrl := !isText && !isSw && objc.Send[bool](n, selIsKindOf, controlClass)
+			node := deviceHitNode{
+				index:        len(ids),
+				isTextEditor: isText,
+				isSwitch:     isSw,
+				isTabBar:     isTab,
+				isControl:    isCtrl,
+				isAxElement:  objc.Send[bool](n, sel("isAccessibilityElement")),
+			}
+			if v := views[n]; v != nil && v.surface == t.s && v.id != 0 {
+				if _, ok := v.component.(*uiSwitch); ok {
+					node.isSwitch = true
+				}
+				if _, ok := v.component.(*tabBar); ok {
+					node.isTabBar = true
+				}
+				node.isNSGoView = true
+				node.pressable = v.pressable()
+				node.hasActivate = v.props.HasAction(driver.ActionActivate) && v.events.Has(driver.EventAccessibilityAction)
+				node.hasPressDownUp = v.events.Has(driver.EventPressDown) || v.events.Has(driver.EventPressUp) || v.events.Has(driver.EventLongPress)
+				local, _ := t.viewPointAndPage(w, v, at)
+				node.hasLinkAtPoint = v.indexAt(local) >= 0
+			}
+			chain = append(chain, node)
+			ids = append(ids, n)
+		}
+		target := resolveDevicePress(chain, hold > 0, mods)
+		switch target.kind {
+		case devicePressFocusText:
+			ed := ids[target.index]
+			if !objc.Send[bool](ed, sel("isFirstResponder")) && objc.Send[bool](ed, sel("canBecomeFirstResponder")) {
+				ed.Send(sel("becomeFirstResponder"))
+			}
+		case devicePressSwitch:
+			targetID := ids[target.index]
+			if v := views[targetID]; v != nil {
+				if sw, ok := v.component.(*uiSwitch); ok {
+					sw.Command("activate", nil)
+					return
+				}
+			}
+			if objc.Send[bool](targetID, sel("isEnabled")) {
+				on := !objc.Send[bool](targetID, sel("isOn"))
+				targetID.Send(sel("setOn:animated:"), on, true)
+				const valueChanged = 1 << 12
+				targetID.Send(sel("sendActionsForControlEvents:"), uint(valueChanged))
+			}
+		case devicePressTabBar:
+			targetID := ids[target.index]
+			tb := tabBars[targetID]
+			if tb == nil {
+				if v := views[targetID]; v != nil {
+					tb, _ = v.component.(*tabBar)
+				}
+			}
+			if tb != nil && len(tb.items) > 0 {
+				local := objc.Send[apple.CGPoint](tb.bar, sel("convertPoint:fromView:"), wp, w)
+				b := objc.Send[apple.CGRect](tb.bar, selBounds)
+				if b.Size.Width > 0 {
+					idx := min(max(int(local.X/b.Size.Width*float64(len(tb.items))), 0), len(tb.items)-1)
+					tb.selected = idx
+					tb.showSelected()
+					tb.cx.Emit("change", float64(idx))
+				}
+			}
+		case devicePressControl:
+			targetID := ids[target.index]
+			if objc.Send[bool](targetID, sel("isEnabled")) {
+				const touchUpInside = 1 << 6
+				targetID.Send(sel("sendActionsForControlEvents:"), uint(touchUpInside))
+			}
+		case devicePressAccessibility:
+			targetID := ids[target.index]
+			objc.Send[bool](targetID, sel("accessibilityActivate"))
+		case devicePressView:
+			v := views[ids[target.index]]
+			if v == nil {
+				return
+			}
+			if onTV() && v.focusable() {
+				t.s.focusView(v)
+			}
+			local, page := t.viewPointAndPage(w, v, at)
+			v.pressing.Store(true)
+			v.longFired.Store(false)
+			v.pressAt = driver.Event{
+				Point:     driver.Point{X: driver.Points(local.X), Y: driver.Points(local.Y)},
+				Page:      driver.Point{X: driver.Points(page.X), Y: driver.Points(page.Y)},
+				Modifiers: mods,
+				Count:     1,
+				Index:     v.indexAt(local),
+			}
+			v.beginPress()
+			pressedView = v
+		}
+	})
+	if pressedView != nil || listensTouches {
+		time.Sleep(max(hold+50*time.Millisecond, 60*time.Millisecond))
+		onMainSync(func() {
+			if w == 0 || t.s == nil || t.s.engine == nil {
+				return
+			}
+			if listensTouches {
+				t.dispatchSyntheticTouch(touchID, driver.GestureEnded, t.surfacePoint(w, at))
+			}
+			if pressedView != nil && int(pressedView.id) < len(t.s.views) && t.s.views[pressedView.id] == pressedView {
+				pressed := pressedView.pressing.Swap(false)
+				pressedView.pressed(driver.EventPressUp)
+				if pressed && !pressedView.longFired.Load() {
+					e := pressedView.pressAt
+					e.Kind = driver.EventPress
+					pressedView.report(e)
+				}
+			}
+		})
+	}
 	focusAt(w, at)
 	return nil
 }
@@ -246,10 +500,123 @@ func (t *testSurface) Drag(path []driver.Point) error {
 	if err != nil {
 		return err
 	}
-	if err := loadHID(); err != nil {
-		return err
+	if t.useSimulatorHID() {
+		fingerAlong(w, path)
+		return nil
 	}
-	fingerAlong(w, path)
+	return t.dragDevice(w, path)
+}
+
+// dragDevice delivers a drag on a physical iPhone or Apple TV through EventTouch,
+// EventPan (respecting PanActivation) or UIScrollView contentOffset updates.
+func (t *testSurface) dragDevice(w objc.ID, path []driver.Point) error {
+	steps := interpolateDragPath(path)
+	var (
+		panView        *view
+		panning        bool
+		listensTouches bool
+		touchID        int
+		startSurface   driver.Point
+		lastSurface    driver.Point
+		lastTime       time.Time
+		vel            driver.Point
+	)
+	onMainSync(func() {
+		if w == 0 || t.s == nil || t.s.engine == nil {
+			return
+		}
+		t.s.engine.InputModality(driver.ModalityPointer)
+		wp := apple.CGPoint{X: float64(steps[0].X), Y: float64(steps[0].Y)}
+		hit := w.Send(sel("hitTest:withEvent:"), wp, objc.ID(0))
+		for n := hit; n != 0; n = n.Send(selSuperview) {
+			if v := views[n]; v != nil && v.surface == t.s && v.id != 0 && v.events.Has(driver.EventPan) {
+				panView = v
+				break
+			}
+		}
+		startSurface = t.surfacePoint(w, steps[0])
+		lastSurface = startSurface
+		lastTime = time.Now()
+		listensTouches = t.s.listensTouches()
+		if listensTouches {
+			deviceTouchID++
+			touchID = deviceTouchID
+			t.dispatchSyntheticTouch(touchID, driver.GestureBegan, startSurface)
+		}
+	})
+	for _, pt := range steps[1:] {
+		time.Sleep(16 * time.Millisecond)
+		onMainSync(func() {
+			if w == 0 || t.s == nil || t.s.engine == nil {
+				return
+			}
+			curSurface := t.surfacePoint(w, pt)
+			now := time.Now()
+			if listensTouches {
+				t.dispatchSyntheticTouch(touchID, driver.GestureChanged, curSurface)
+			}
+			if panView != nil && int(panView.id) < len(t.s.views) && t.s.views[panView.id] == panView {
+				d := driver.Point{X: curSurface.X - startSurface.X, Y: curSurface.Y - startSurface.Y}
+				if !panning {
+					switch panView.props.PanActivation.Decide(d) {
+					case 1:
+						panning = true
+						local, page := t.viewPointAndPage(w, panView, pt)
+						panView.report(driver.Event{
+							Kind:         driver.EventPan,
+							Phase:        driver.GestureBegan,
+							Point:        d,
+							Position:     driver.Point{X: driver.Points(local.X), Y: driver.Points(local.Y)},
+							PagePosition: driver.Point{X: driver.Points(page.X), Y: driver.Points(page.Y)},
+						})
+					case -1:
+						panView = nil
+					}
+				}
+				if panning {
+					if dt := now.Sub(lastTime).Seconds(); dt > 0 {
+						inst := driver.Point{X: (curSurface.X - lastSurface.X) / driver.Points(dt), Y: (curSurface.Y - lastSurface.Y) / driver.Points(dt)}
+						vel = driver.Point{X: inst.X*0.7 + vel.X*0.3, Y: inst.Y*0.7 + vel.Y*0.3}
+					}
+					local, page := t.viewPointAndPage(w, panView, pt)
+					panView.report(driver.Event{
+						Kind:         driver.EventPan,
+						Phase:        driver.GestureChanged,
+						Point:        d,
+						Position:     driver.Point{X: driver.Points(local.X), Y: driver.Points(local.Y)},
+						PagePosition: driver.Point{X: driver.Points(page.X), Y: driver.Points(page.Y)},
+						Velocity:     vel,
+					})
+				}
+			}
+			lastSurface, lastTime = curSurface, now
+		})
+	}
+	last := steps[len(steps)-1]
+	onMainSync(func() {
+		if w == 0 || t.s == nil || t.s.engine == nil {
+			return
+		}
+		curSurface := t.surfacePoint(w, last)
+		if listensTouches {
+			t.dispatchSyntheticTouch(touchID, driver.GestureEnded, curSurface)
+		}
+		if panning && panView != nil && int(panView.id) < len(t.s.views) && t.s.views[panView.id] == panView {
+			d := driver.Point{X: curSurface.X - startSurface.X, Y: curSurface.Y - startSurface.Y}
+			local, page := t.viewPointAndPage(w, panView, last)
+			panView.report(driver.Event{
+				Kind:         driver.EventPan,
+				Phase:        driver.GestureEnded,
+				Point:        d,
+				Position:     driver.Point{X: driver.Points(local.X), Y: driver.Points(local.Y)},
+				PagePosition: driver.Point{X: driver.Points(page.X), Y: driver.Points(page.Y)},
+			})
+		}
+	})
+	if !panning && !listensTouches && len(steps) > 1 {
+		delta := driver.Point{X: steps[0].X - last.X, Y: steps[0].Y - last.Y}
+		return t.scrollDevice(w, steps[0], delta)
+	}
 	return nil
 }
 
@@ -260,10 +627,65 @@ func (t *testSurface) Scroll(at driver.Point, delta driver.Point) error {
 	if err != nil {
 		return err
 	}
-	if err := loadHID(); err != nil {
-		return err
+	if t.useSimulatorHID() {
+		fingerAlong(w, []driver.Point{at, {X: at.X - delta.X, Y: at.Y - delta.Y}})
+		return nil
 	}
-	fingerAlong(w, []driver.Point{at, {X: at.X - delta.X, Y: at.Y - delta.Y}})
+	return t.scrollDevice(w, at, delta)
+}
+
+// scrollDevice moves the innermost UIScrollView under at that can scroll toward
+// delta (or dispatches EventWheel to a view listening for wheel input).
+func (t *testSurface) scrollDevice(w objc.ID, at, delta driver.Point) error {
+	onMainSync(func() {
+		if w == 0 || t.s == nil || t.s.engine == nil {
+			return
+		}
+		wp := apple.CGPoint{X: float64(at.X), Y: float64(at.Y)}
+		hit := w.Send(sel("hitTest:withEvent:"), wp, objc.ID(0))
+		scrollClass := objc.ID(apple.Class("UIScrollView"))
+		var firstScroll objc.ID
+		var firstTo driver.Point
+		for n := hit; n != 0; n = n.Send(selSuperview) {
+			if !objc.Send[bool](n, selIsKindOf, scrollClass) || !objc.Send[bool](n, sel("isScrollEnabled")) {
+				continue
+			}
+			cur := objc.Send[apple.CGPoint](n, selContentOffset)
+			size := objc.Send[apple.CGSize](n, sel("contentSize"))
+			in := objc.Send[edgeInsets](n, sel("adjustedContentInset"))
+			seen := objc.Send[apple.CGRect](n, selBounds).Size
+			to, canMove := clampScrollOffset(
+				driver.Point{X: driver.Points(cur.X), Y: driver.Points(cur.Y)},
+				delta,
+				driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)},
+				driver.Size{Width: driver.Points(seen.Width), Height: driver.Points(seen.Height)},
+				driver.Points(in.Top), driver.Points(in.Left), driver.Points(in.Bottom), driver.Points(in.Right),
+			)
+			if firstScroll == 0 {
+				firstScroll, firstTo = n, to
+			}
+			if canMove {
+				n.Send(sel("setContentOffset:animated:"), apple.CGPoint{X: float64(to.X), Y: float64(to.Y)}, false)
+				return
+			}
+		}
+		if firstScroll != 0 {
+			firstScroll.Send(sel("setContentOffset:animated:"), apple.CGPoint{X: float64(firstTo.X), Y: float64(firstTo.Y)}, false)
+			return
+		}
+		for n := hit; n != 0; n = n.Send(selSuperview) {
+			if v := views[n]; v != nil && v.surface == t.s && v.id != 0 && v.events.Has(driver.EventWheel) {
+				local, page := t.viewPointAndPage(w, v, at)
+				v.report(driver.Event{
+					Kind:         driver.EventWheel,
+					Point:        delta,
+					Position:     driver.Point{X: driver.Points(local.X), Y: driver.Points(local.Y)},
+					PagePosition: driver.Point{X: driver.Points(page.X), Y: driver.Points(page.Y)},
+				})
+				return
+			}
+		}
+	})
 	return nil
 }
 
@@ -301,6 +723,9 @@ func (t *testSurface) Type(text string) error {
 	if err != nil {
 		return err
 	}
+	if !t.useSimulatorHID() {
+		return t.typeDevice(w, text)
+	}
 	onMainSync(typeLatin)
 	for _, r := range text {
 		onMainSync(func() {
@@ -308,11 +733,42 @@ func (t *testSurface) Type(text string) error {
 				kb.Send(sel("addInputString:"), apple.NSString(string(r)))
 				return
 			}
-			if f := w.Send(sel("firstResponder")); f != 0 {
+			if f := t.focusedEditor(w); f != 0 {
 				f.Send(sel("insertText:"), apple.NSString(string(r)))
 			}
 		})
 		time.Sleep(30 * time.Millisecond)
+	}
+	return nil
+}
+
+// typeDevice enters text into the focused field on a physical device through
+// public UIKeyInput/UITextInput methods and the field's own validation.
+func (t *testSurface) typeDevice(w objc.ID, text string) error {
+	for _, r := range text {
+		s := string(r)
+		onMainSync(func() {
+			f := t.focusedEditor(w)
+			if f == 0 {
+				return
+			}
+			if in := inputOf(f); in != nil {
+				selRange, ok := in.selection()
+				if !ok {
+					n := driver.UTF16Len(in.text())
+					selRange = driver.TextRange{Start: n, End: n}
+				}
+				nsRange := apple.NSRange{Location: uint(selRange.Start), Length: uint(selRange.End - selRange.Start)}
+				if in.shouldChange(nsRange, s) {
+					f.Send(sel("insertText:"), apple.NSString(s))
+				}
+				return
+			}
+			if objc.Send[bool](f, sel("respondsToSelector:"), sel("insertText:")) {
+				f.Send(sel("insertText:"), apple.NSString(s))
+			}
+		})
+		time.Sleep(15 * time.Millisecond)
 	}
 	return nil
 }
@@ -325,7 +781,7 @@ func (t *testSurface) Compose(text string) error {
 		return err
 	}
 	onMainSync(func() {
-		f := w.Send(sel("firstResponder"))
+		f := t.focusedEditor(w)
 		if f == 0 || !objc.Send[bool](f, sel("respondsToSelector:"), sel("setMarkedText:selectedRange:")) {
 			err = errors.New("no text input has the keyboard")
 			return
@@ -348,7 +804,7 @@ func (t *testSurface) Commit(text string) error {
 		return err
 	}
 	onMainSync(func() {
-		f := w.Send(sel("firstResponder"))
+		f := t.focusedEditor(w)
 		if f == 0 || !objc.Send[bool](f, sel("respondsToSelector:"), sel("unmarkText")) {
 			err = errors.New("no text input has the keyboard")
 			return
@@ -403,17 +859,21 @@ func hidKey(w objc.ID, usage uint32, isDown bool) {
 
 // Key presses a hardware keyboard's keys, as UIKit takes a real one's:
 // the modifiers first. The edit keys a field takes from the software
-// keyboard go through its input manager.
+// keyboard go through its input manager on simulators, and public UITextInput
+// and engine dispatch on physical devices.
 func (t *testSurface) Key(key string) error {
 	w, err := t.window()
 	if err != nil {
 		return err
 	}
+	if !t.useSimulatorHID() {
+		return t.keyDevice(w, key)
+	}
 	name := strings.ToLower(key)
 	switch name {
 	case "mod+a":
 		onMainSync(func() {
-			if f := w.Send(sel("firstResponder")); f != 0 {
+			if f := t.focusedEditor(w); f != 0 {
 				f.Send(sel("selectAll:"), objc.ID(0))
 			}
 		})
@@ -455,15 +915,128 @@ func (t *testSurface) Key(key string) error {
 		}
 		codes = append(codes, u)
 	}
-	if err := loadHID(); err != nil {
-		return err
-	}
 	for _, u := range codes {
 		hidKey(w, u, true)
 	}
 	for i := len(codes) - 1; i >= 0; i-- {
 		hidKey(w, codes[i], false)
 	}
+	return nil
+}
+
+// keyDevice delivers a key press or chord on a physical iPhone or Apple TV
+// through public UITextInput methods, tvOS focus activation and engine dispatch.
+func (t *testSurface) keyDevice(w objc.ID, key string) error {
+	name := strings.ToLower(key)
+	switch name {
+	case "mod+a":
+		onMainSync(func() {
+			if f := t.focusedEditor(w); f != 0 && objc.Send[bool](f, sel("respondsToSelector:"), sel("selectAll:")) {
+				f.Send(sel("selectAll:"), objc.ID(0))
+			}
+		})
+		return nil
+	case "backspace":
+		var done bool
+		onMainSync(func() {
+			f := t.focusedEditor(w)
+			if f == 0 || !t.s.editing() {
+				return
+			}
+			if in := inputOf(f); in != nil && in.fs.Config.Readonly {
+				done = true
+				return
+			}
+			if objc.Send[bool](f, sel("respondsToSelector:"), sel("deleteBackward")) {
+				f.Send(sel("deleteBackward"))
+				done = true
+			}
+		})
+		if done {
+			return nil
+		}
+	case "enter", "return":
+		var done bool
+		onMainSync(func() {
+			if t.s.editing() {
+				f := t.focusedEditor(w)
+				if in := inputOf(f); in != nil {
+					if !in.multiline {
+						if _, blur := in.fs.Return(in.text(), false); blur {
+							in.field.Send(selResign)
+						}
+						done = true
+						return
+					}
+					selRange, ok := in.selection()
+					if !ok {
+						n := driver.UTF16Len(in.text())
+						selRange = driver.TextRange{Start: n, End: n}
+					}
+					nsRange := apple.NSRange{Location: uint(selRange.Start), Length: uint(selRange.End - selRange.Start)}
+					if in.shouldChange(nsRange, "\n") {
+						f.Send(sel("insertText:"), apple.NSString("\n"))
+					}
+					done = true
+					return
+				}
+			}
+		})
+		if done {
+			return nil
+		}
+	}
+	parsed, mods, flags, ok := parseDeviceKey(key)
+	if !ok {
+		return fmt.Errorf("unknown key %q", key)
+	}
+	onMainSync(func() {
+		if t.s == nil || t.s.engine == nil {
+			return
+		}
+		t.s.engine.InputModality(driver.ModalityKeyboard)
+		consumed := false
+		var keyDownTarget driver.NodeID
+		keyDownSent := false
+		if !t.s.editing() {
+			v := t.s.focused
+			if v != nil && (int(v.id) >= len(t.s.views) || t.s.views[v.id] != v || !v.events.Has(driver.EventKeyDown)) {
+				v = nil
+			}
+			if v != nil {
+				keyDownTarget, keyDownSent = v.id, true
+				consumed = t.s.engine.DispatchKeyDown(driver.Event{Kind: driver.EventKeyDown, ID: v.id, Text: parsed, Modifiers: mods})
+			} else if t.s.heldKeys {
+				keyDownTarget, keyDownSent = 0, true
+				t.s.engine.Dispatch(driver.Event{Kind: driver.EventKeyDown, Text: parsed, Modifiers: mods})
+			}
+		}
+		if !consumed && len(t.s.keys) > 0 {
+			if id, ok := driver.FindKey(t.s.keys, apple.KeyNames(parsed, flags), t.s.focusKeyUse(), false); ok {
+				t.s.engine.Dispatch(driver.Event{Kind: driver.EventKey, Count: id})
+				consumed = true
+			}
+		}
+		if !consumed && onTV() && !t.s.editing() {
+			switch parsed {
+			case "enter":
+				if v := t.s.focused; v != nil && int(v.id) < len(t.s.views) && t.s.views[v.id] == v && v.pressable() && v.focusable() {
+					v.pressAt = driver.Event{Index: -1, Count: 1}
+					v.pressed(driver.EventPressDown)
+					v.pressed(driver.EventPressUp)
+					v.pressed(driver.EventPress)
+				}
+			case "escape":
+				if t.s.history > 0 || t.s.topModal() != nil {
+					t.s.engine.Dispatch(driver.Event{Kind: driver.EventBack})
+				}
+			}
+		}
+		if keyDownSent {
+			upMods, _ := applyDeviceModifier(mods, flags, parsed, false)
+			t.s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: keyDownTarget, Text: parsed, Modifiers: upMods})
+		}
+	})
 	return nil
 }
 
@@ -474,23 +1047,73 @@ func (t *testSurface) KeyDown(key string) error { return t.holdKey(key, true) }
 func (t *testSurface) KeyUp(key string) error { return t.holdKey(key, false) }
 
 // holdKey sends one key of a hardware keyboard, not a chord, going down or coming up.
-func (t *testSurface) holdKey(key string, down bool) error {
+func (t *testSurface) holdKey(key string, isDown bool) error {
 	name := strings.ToLower(key)
 	if strings.Contains(name, "+") {
 		return fmt.Errorf("%q is a chord: a key goes down or comes up alone", key)
-	}
-	u, ok := keyUsage(name)
-	if !ok {
-		return fmt.Errorf("unknown key %q", key)
 	}
 	w, err := t.window()
 	if err != nil {
 		return err
 	}
-	if err := loadHID(); err != nil {
-		return err
+	if !t.useSimulatorHID() {
+		return t.holdKeyDevice(key, isDown)
 	}
-	hidKey(w, u, down)
+	u, ok := keyUsage(name)
+	if !ok {
+		return fmt.Errorf("unknown key %q", key)
+	}
+	hidKey(w, u, isDown)
+	return nil
+}
+
+func (t *testSurface) holdKeyDevice(key string, isDown bool) error {
+	parsed, _, _, ok := parseDeviceKey(key)
+	if !ok {
+		return fmt.Errorf("unknown key %q", key)
+	}
+	onMainSync(func() {
+		if t.s == nil || t.s.engine == nil {
+			return
+		}
+		st := t.s.deviceKeyState()
+		if isDown {
+			t.s.engine.InputModality(driver.ModalityKeyboard)
+			var targetID driver.NodeID
+			reportKey := false
+			if !t.s.editing() {
+				v := t.s.focused
+				if v != nil && int(v.id) < len(t.s.views) && t.s.views[v.id] == v && v.events.Has(driver.EventKeyDown) {
+					targetID, reportKey = v.id, true
+				} else if t.s.heldKeys {
+					reportKey = true
+				}
+			}
+			mods, flags, prevID, wasHeld := st.down(parsed, targetID)
+			consumed := false
+			if reportKey {
+				if wasHeld {
+					upMods, _ := applyDeviceModifier(mods, flags, parsed, false)
+					t.s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: prevID, Text: parsed, Modifiers: upMods})
+				}
+				if targetID != 0 {
+					consumed = t.s.engine.DispatchKeyDown(driver.Event{Kind: driver.EventKeyDown, ID: targetID, Text: parsed, Modifiers: mods})
+				} else {
+					t.s.engine.Dispatch(driver.Event{Kind: driver.EventKeyDown, Text: parsed, Modifiers: mods})
+				}
+			}
+			if !consumed && len(t.s.keys) > 0 {
+				if id, ok := driver.FindKey(t.s.keys, apple.KeyNames(parsed, flags), t.s.focusKeyUse(), false); ok {
+					t.s.engine.Dispatch(driver.Event{Kind: driver.EventKey, Count: id})
+				}
+			}
+			return
+		}
+		prevID, wasHeld, mods, _ := st.up(parsed)
+		if wasHeld && !t.s.editing() && (prevID != 0 || t.s.heldKeys) {
+			t.s.engine.Dispatch(driver.Event{Kind: driver.EventKeyUp, ID: prevID, Text: parsed, Modifiers: mods})
+		}
+	})
 	return nil
 }
 
@@ -501,8 +1124,30 @@ func (t *testSurface) Back() error {
 	return nil
 }
 
-// Answer taps the alert's button with the action's title.
+// Answer taps the alert's button with the action's title on simulators, or
+// dismisses the alert controller and dispatches the action on physical devices.
 func (t *testSurface) Answer(id uint32, index int) error {
+	if !t.useSimulatorHID() {
+		var err error
+		onMainSync(func() {
+			shown, ok := t.s.alerts[id]
+			if !ok {
+				err = fmt.Errorf("no alert %d shows", id)
+				return
+			}
+			_, dispatchIdx, resolveErr := resolveAlertAction(shown.actions, index)
+			if resolveErr != nil {
+				err = resolveErr
+				return
+			}
+			delete(t.s.alerts, id)
+			if shown.ctrl != 0 {
+				shown.ctrl.Send(sel("dismissViewControllerAnimated:completion:"), false, objc.ID(0))
+			}
+			t.s.engine.Dispatch(driver.Event{Kind: driver.EventAlert, Count: id, Index: dispatchIdx})
+		})
+		return err
+	}
 	var label string
 	var err error
 	var at driver.Point
@@ -512,21 +1157,11 @@ func (t *testSurface) Answer(id uint32, index int) error {
 			err = fmt.Errorf("no alert %d shows", id)
 			return
 		}
-		switch {
-		case index >= 0 && index < len(shown.actions):
-			label = shown.actions[index].Label
-		case len(shown.actions) == 0:
-			label = "OK"
-		default:
-			for _, a := range shown.actions {
-				if a.Role == driver.AlertCancel {
-					label = a.Label
-				}
-			}
-			if label == "" {
-				err = errors.New("the alert cannot be dismissed")
-				return
-			}
+		var resolveErr error
+		label, _, resolveErr = resolveAlertAction(shown.actions, index)
+		if resolveErr != nil {
+			err = resolveErr
+			return
 		}
 		v := findLabel(shown.ctrl.Send(sel("view")), label)
 		if v == 0 {

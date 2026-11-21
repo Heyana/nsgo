@@ -307,6 +307,9 @@ func TestPickDeviceOfItsOS(t *testing.T) {
 		 "connectionProperties": {"pairingState": "paired", "tunnelState": "connected"}},
 		{"deviceProperties": {"name": "Living Room", "developerModeStatus": "enabled"},
 		 "hardwareProperties": {"reality": "physical", "platform": "tvOS", "udid": "TV"},
+		 "connectionProperties": {"pairingState": "paired", "tunnelState": "connected"}},
+		{"deviceProperties": {"name": "Series 10", "developerModeStatus": "enabled"},
+		 "hardwareProperties": {"reality": "physical", "platform": "watchOS", "udid": "WATCH"},
 		 "connectionProperties": {"pairingState": "paired", "tunnelState": "connected"}}]}}`))
 	if err != nil {
 		t.Fatal(err)
@@ -317,11 +320,17 @@ func TestPickDeviceOfItsOS(t *testing.T) {
 	if d, err := pickIOSDevice(tvOS, devices, ""); err != nil || d.UDID != "TV" {
 		t.Errorf("pick an Apple TV = %+v, %v", d, err)
 	}
+	if d, err := pickIOSDevice(watchOS, devices, ""); err != nil || d.UDID != "WATCH" {
+		t.Errorf("pick an Apple Watch = %+v, %v", d, err)
+	}
 	if _, err := pickIOSDevice(tvOS, devices, "ONEO"); err == nil {
 		t.Error("an iPhone was picked as an Apple TV")
 	}
 	if _, err := pickIOSDevice(tvOS, devices[:1], ""); err == nil || !strings.Contains(err.Error(), "no Apple TV") {
 		t.Errorf("pick with no Apple TV: %v, want an error about no Apple TV", err)
+	}
+	if _, err := pickIOSDevice(watchOS, devices[:1], ""); err == nil || !strings.Contains(err.Error(), "no Apple Watch") {
+		t.Errorf("pick with no Apple Watch: %v, want an error about no Apple Watch", err)
 	}
 }
 

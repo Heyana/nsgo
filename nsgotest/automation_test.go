@@ -659,3 +659,151 @@ func TestAgentFollowsAppAndScenes(t *testing.T) {
 		t.Fatalf("second scene press:\n%s", r.Snapshot)
 	}
 }
+
+// deviceLive models a physical Apple device live surface without simulator HID:
+// presses dispatch via accessibility activate on views that declare ActionActivate,
+// or via the tree's hit testing for EventPress and EventLongPress, and alerts
+// dispatch EventAlert directly. All tree work runs on the graph's owner goroutine.
+type deviceLive struct {
+	*fakeLive
+	model         *App
+	work          chan func()
+	axActivations int
+	longPresses   int
+}
+
+func (d *deviceLive) onTree(fn func()) {
+	done := make(chan struct{})
+	d.work <- func() {
+		defer close(done)
+		fn()
+	}
+	<-done
+}
+
+func (d *deviceLive) Press(at driver.Point, hold time.Duration, mods driver.Modifiers) error {
+	var err error
+	d.onTree(func() {
+		if hit := d.tree.HitTest(at); hit != 0 && d.model != nil {
+			for v := d.model.views[hit]; v != nil; v = v.Parent {
+				if hold == 0 && mods == (driver.Modifiers{}) && v.Props.HasAction(driver.ActionActivate) && v.Events.Has(driver.EventAccessibilityAction) {
+					d.axActivations++
+					d.tree.Dispatch(driver.Event{Kind: driver.EventAccessibilityAction, ID: v.ID, Text: driver.ActionActivate})
+					d.commit()
+					return
+				}
+				if hold > 0 && v.Events.Has(driver.EventLongPress) {
+					d.longPresses++
+					d.tree.Dispatch(driver.Event{Kind: driver.EventLongPress, ID: v.ID, Page: at, Modifiers: mods})
+					d.commit()
+					return
+				}
+			}
+		}
+		err = d.fakeLive.Press(at, hold, mods)
+	})
+	return err
+}
+
+func (d *deviceLive) Answer(id uint32, index int) error {
+	d.onTree(func() {
+		ev := driver.Event{Kind: driver.EventAlert, Count: id, Index: index}
+		d.tree.Dispatch(ev)
+		d.surface.follow.Event(ev)
+		d.commit()
+	})
+	return nil
+}
+
+func TestAgentDrivesDevicePressAndAccessibilityActions(t *testing.T) {
+	g := newAgent()
+	t.Cleanup(g.close)
+	work := make(chan func())
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		for fn := range work {
+			fn()
+		}
+	}()
+	t.Cleanup(func() {
+		close(work)
+		<-stopped
+	})
+	live := &deviceLive{fakeLive: &fakeLive{surface: register(g, 0)}, work: work}
+	g.mu.Lock()
+	live.model = g.surfaces[0].app
+	g.mu.Unlock()
+	var dispose func()
+	live.onTree(func() {
+		root := core.NewRoot(core.RootOptions{CheckCommits: !automationBuild})
+		dispose = root.Dispose
+		tree := core.NewTree(root, core.ApproxTextEngine{})
+		tree.Resize(driver.Size{Width: 390, Height: 844}, driver.Geometry{})
+		tree.Mount(func(cx *core.Scope) core.Node {
+			taps := core.NewSignal(cx, 0)
+			ax := core.NewSignal(cx, 0)
+			held := core.NewSignal(cx, 0)
+			ans := core.NewSignal(cx, -2)
+			return core.View{Style: core.Style{FlexGrow: 1, Gap: 8}, Children: []core.Node{
+				core.View{Role: core.RoleButton, TestID: "tap", OnPress: func(core.PressEvent) { taps.Set(taps.Get() + 1) },
+					OnLongPress: func(core.PressEvent) { held.Set(held.Get() + 1) },
+					Children:    []core.Node{core.Text{Content: "Tap"}}},
+				core.View{Role: core.RoleButton, TestID: "ax",
+					OnPress:              func(core.PressEvent) {},
+					AccessibilityActions: []core.AccessibilityAction{{Name: core.ActionActivate}},
+					OnAccessibilityAction: func(name string) {
+						if name == core.ActionActivate {
+							ax.Set(ax.Get() + 1)
+						}
+					},
+					Children: []core.Node{core.Text{Content: "Activate"}}},
+				core.View{Role: core.RoleButton, TestID: "ask", OnPress: func(core.PressEvent) {
+					cx.ShowAlert(core.AlertConfig{Title: "Proceed?", Actions: []core.AlertAction{{Label: "OK"}, {Label: "Cancel", Role: core.AlertCancel}}},
+						func(i int) { ans.Set(i) })
+				}, Children: []core.Node{core.Text{Content: "Ask"}}},
+				core.Text{ContentFunc: func() string { return "Taps: " + strconv.Itoa(taps.Get()) }},
+				core.Text{ContentFunc: func() string { return "AX: " + strconv.Itoa(ax.Get()) }},
+				core.Text{ContentFunc: func() string { return "Held: " + strconv.Itoa(held.Get()) }},
+				core.Text{ContentFunc: func() string { return "Ans: " + strconv.Itoa(ans.Get()) }},
+			}}
+		})
+		live.tree = tree
+		live.commit()
+	})
+	t.Cleanup(func() { live.onTree(dispose) })
+	testhost.RegisterLive(func(id uint32) testhost.Surface {
+		if id == 0 {
+			return live
+		}
+		return nil
+	})
+	t.Cleanup(func() { testhost.RegisterLive(nil) })
+
+	var r automation.StepResult
+	result(t, g, automation.Press, automation.PressParams{Selector: "id:tap", Snapshot: true}, &r)
+	if !strings.Contains(r.Snapshot, `"Taps: 1"`) {
+		t.Fatalf("device hit-tested tap:\n%s", r.Snapshot)
+	}
+	result(t, g, automation.Press, automation.PressParams{Selector: "id:ax", Snapshot: true}, &r)
+	if live.axActivations != 1 || !strings.Contains(r.Snapshot, `"AX: 1"`) {
+		t.Fatalf("device accessibility activate (count=%d):\n%s", live.axActivations, r.Snapshot)
+	}
+	result(t, g, automation.Press, automation.PressParams{Selector: "id:tap", Mode: "long", Snapshot: true}, &r)
+	if live.longPresses != 1 || !strings.Contains(r.Snapshot, `"Held: 1"`) {
+		t.Fatalf("device long press (count=%d):\n%s", live.longPresses, r.Snapshot)
+	}
+	result(t, g, automation.Press, automation.PressParams{Selector: "id:ask"}, nil)
+	var alerts automation.AlertResult
+	result(t, g, automation.Alert, automation.AlertParams{}, &alerts)
+	if len(alerts.Alerts) != 1 {
+		t.Fatalf("alerts = %+v", alerts)
+	}
+	okIdx := 0
+	result(t, g, automation.Alert, automation.AlertParams{ID: alerts.Alerts[0].ID, Answer: &okIdx}, &alerts)
+	var snap automation.SnapshotResult
+	result(t, g, automation.Snapshot, automation.SnapshotParams{}, &snap)
+	if len(alerts.Alerts) != 0 || !strings.Contains(snap.Text, `"Ans: 0"`) {
+		t.Fatalf("device alert answer (alerts=%+v):\n%s", alerts, snap.Text)
+	}
+}

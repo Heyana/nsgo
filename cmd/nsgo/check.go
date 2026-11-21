@@ -272,7 +272,7 @@ func moduleRootOf(dir string) string {
 // targetSupportsAutomation reports whether checkTargets vets target's live automation build too.
 func targetSupportsAutomation(name string) bool {
 	switch name {
-	case "macos_arm64", "macos_x64", "macos_universal", "ios_simulator", "tvos_simulator", "watchos_simulator":
+	case "macos_arm64", "macos_x64", "macos_universal", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator":
 		return true
 	}
 	return false

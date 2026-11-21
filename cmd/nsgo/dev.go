@@ -212,11 +212,11 @@ func automationTargetError(target, goos string, release bool) error {
 	}
 	if goos == "darwin" {
 		switch target {
-		case "native", "ios_simulator", "tvos_simulator", "watchos_simulator":
+		case "native", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator":
 			return nil
 		}
 	}
-	return errors.New("-automation drives macOS and the iOS, tvOS and watchOS simulators so far: run it on a Mac with -target native, ios_simulator, tvos_simulator or watchos_simulator (docs/roadmap.md, Automation)")
+	return errors.New("-automation drives macOS and Apple devices and simulators so far: run it on a Mac with -target native, ios, tvos, watchos, ios_simulator, tvos_simulator or watchos_simulator (docs/roadmap.md, Automation)")
 }
 
 // prepareDev sets what dev's builds carry: the dev client, -trace's commits, -highlight's outlines, -layout's audit, -automation's agent and the dev icons; -release strips them as nsgo build does.

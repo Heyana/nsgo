@@ -186,7 +186,7 @@ func TestIOSPrivateAutomationLookupsAreGated(t *testing.T) {
 	}
 	for _, tags := range []string{"", "nsgodev"} {
 		dir, files := listFiles("./internal/platform/ios", tags)
-		for _, forbidden := range []string{"testhost.go", "testsurface.go", "automation.go"} {
+		for _, forbidden := range []string{"testhost.go", "testsurface.go", "deviceinput.go", "automation.go"} {
 			if slices.Contains(files, forbidden) {
 				t.Errorf("ios tags=%q compiled %s", tags, forbidden)
 			}
@@ -208,11 +208,11 @@ func TestIOSPrivateAutomationLookupsAreGated(t *testing.T) {
 		}
 	}
 	_, iosAuto := listFiles("./internal/platform/ios", "nsgodev,nsgoautomation")
-	if !slices.Contains(iosAuto, "automation.go") || !slices.Contains(iosAuto, "testsurface.go") || slices.Contains(iosAuto, "testhost.go") || slices.Contains(iosAuto, "automation_off.go") {
+	if !slices.Contains(iosAuto, "automation.go") || !slices.Contains(iosAuto, "testsurface.go") || !slices.Contains(iosAuto, "deviceinput.go") || slices.Contains(iosAuto, "testhost.go") || slices.Contains(iosAuto, "automation_off.go") {
 		t.Errorf("ios automation files = %v", iosAuto)
 	}
 	_, iosTest := listFiles("./internal/platform/ios", "nsgotest")
-	if !slices.Contains(iosTest, "testhost.go") || !slices.Contains(iosTest, "testsurface.go") || !slices.Contains(iosTest, "automation_off.go") || slices.Contains(iosTest, "automation.go") {
+	if !slices.Contains(iosTest, "testhost.go") || !slices.Contains(iosTest, "testsurface.go") || !slices.Contains(iosTest, "deviceinput.go") || !slices.Contains(iosTest, "automation_off.go") || slices.Contains(iosTest, "automation.go") {
 		t.Errorf("ios test files = %v", iosTest)
 	}
 

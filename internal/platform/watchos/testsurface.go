@@ -17,7 +17,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
-// A surface acting as the user does on a watchOS simulator, for the test host (testhost.go) and for nsgo dev's automation (automation.go), whose live surface wraps the running app's surface with no test options (test is nil). watchOS gives an app no way to post touches, so input enters where the host's touches do, at the bridge (hostTouch): Go's hit testing, presses and pans run as for a finger, but SwiftUI's gestures do not, so a scroll moves the scroll view as the app's own ScrollTo does. Typing edits the field a press focused, as the system's text input would.
+// A surface acting as the user does on an Apple Watch or its simulator, for the test host (testhost.go) and for nsgo dev's automation (automation.go), whose live surface wraps the running app's surface with no test options (test is nil). watchOS gives an app no way to post touches, so input enters where the host's touches do, at the bridge (hostTouch): Go's hit testing, presses and pans run as for a finger, but SwiftUI's gestures do not, so a scroll moves the scroll view as the app's own ScrollTo does. Typing edits the field a press focused, as the system's text input would.
 
 func onMainSync(fn func()) {
 	done := make(chan struct{})
