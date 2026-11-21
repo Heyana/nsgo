@@ -2,8 +2,8 @@
 
 // Package js is the JavaScript engine package tsx runs apps on: goja on
 // every target but the web, where the page's own engine runs them
-// (browser.go). Its API is goja's, so on goja it is goja's types under
-// other names, and the browser's implements the part tsx uses.
+// (browser.go). The native adapter shares Goja's value types and exposes
+// the runtime operations in runtime.go.
 package js
 
 import (
@@ -16,7 +16,6 @@ import (
 type (
 	Value              = goja.Value
 	Object             = goja.Object
-	Runtime            = goja.Runtime
 	FunctionCall       = goja.FunctionCall
 	ConstructorCall    = goja.ConstructorCall
 	Exception          = goja.Exception
@@ -46,16 +45,14 @@ var engineProperties = EngineProperties{
 }
 
 var (
-	New                  = goja.New
-	Undefined            = goja.Undefined
-	Null                 = goja.Null
-	IsUndefined          = goja.IsUndefined
-	IsNull               = goja.IsNull
-	AssertFunction       = goja.AssertFunction
-	AssertConstructor    = goja.AssertConstructor
-	NewSymbol            = goja.NewSymbol
-	MustCompile          = goja.MustCompile
-	UncapFieldNameMapper = goja.UncapFieldNameMapper
+	Undefined         = goja.Undefined
+	Null              = goja.Null
+	IsUndefined       = goja.IsUndefined
+	IsNull            = goja.IsNull
+	AssertFunction    = goja.AssertFunction
+	AssertConstructor = goja.AssertConstructor
+	NewSymbol         = goja.NewSymbol
+	MustCompile       = goja.MustCompile
 )
 
 // TrackCallers does nothing because goja provides the current call stack.
@@ -63,7 +60,7 @@ func TrackCallers(*Runtime) {}
 
 // Caller is the line of JS code r runs now, through the source maps the code carries, as file and line; ok is false while r runs none.
 func Caller(r *Runtime) (file string, line int, ok bool) {
-	for _, f := range r.CaptureCallStack(16, nil) {
+	for _, f := range r.vm.CaptureCallStack(16, nil) {
 		if p := f.Position(); p.Filename != "" && p.Line > 0 {
 			return p.Filename, p.Line, true
 		}

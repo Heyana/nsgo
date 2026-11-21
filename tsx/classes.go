@@ -212,7 +212,7 @@ func (r *runtime) class(def *classDef) *classObj {
 	})
 	_ = proto.Set("dispose", dispose)
 	// esbuild's lowering of using reads Symbol.dispose, else this.
-	sym := r.vm.GlobalObject().Get("Symbol").ToObject(r.vm)
+	sym := r.vm.ToObject(r.vm.GlobalObject().Get("Symbol"))
 	disposeKey := sym.Get("dispose")
 	if disposeKey == nil || js.IsUndefined(disposeKey) {
 		disposeKey = r.call(sym.Get("for"), r.vm.ToValue("Symbol.dispose"))
@@ -490,7 +490,7 @@ func (r *runtime) callback(fn js.Value, t reflect.Type) reflect.Value {
 					if err != nil {
 						v = js.Undefined()
 					} else if _, ok := v.Export().(*js.Promise); ok {
-						then, _ := js.AssertFunction(v.ToObject(r.vm).Get("then"))
+						then, _ := js.AssertFunction(r.vm.ToObject(v).Get("then"))
 						_, _ = then(v, r.function(func(c js.FunctionCall) js.Value {
 							settle(c.Argument(0), nil)
 							return js.Undefined()

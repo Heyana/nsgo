@@ -956,10 +956,10 @@ func (r *runtime) decode(v js.Value, t reflect.Type) reflect.Value {
 		out.Set(reflect.ValueOf(r.edges(v)))
 		return out
 	case pointType:
-		out.Set(reflect.ValueOf(r.pointOf(v.ToObject(r.vm))))
+		out.Set(reflect.ValueOf(r.pointOf(r.vm.ToObject(v))))
 		return out
 	case sizeType:
-		out.Set(reflect.ValueOf(r.sizeOf(v.ToObject(r.vm))))
+		out.Set(reflect.ValueOf(r.sizeOf(r.vm.ToObject(v))))
 		return out
 	case boundsType:
 		out.Set(reflect.ValueOf(r.anchorBounds(v)))

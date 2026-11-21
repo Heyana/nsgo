@@ -60,6 +60,8 @@ What goja lacks, and the answer:
 - **`Intl` and locale methods**: goja has none (its `toLocaleString` reads a radix), so `intl.go` gives `Intl.NumberFormat`, `PluralRules` and `Collator` CLDR's data through `golang.org/x/text`, dates in English, and patches `Number`, `Date` and `String`'s locale methods.
 - **Speed**: slower than QuickJS on pure JS, so NSH's first performance rule matters more: only the app's code is JS.
 
+Both adapters implement the explicit `js.Runtime` method set in `tsx/internal/js/runtime.go`. The Goja runtime is private to its adapter. `Runtime.ToObject` boxes a value with the prototypes of that runtime's realm.
+
 ### The page's engine
 
 Each `js.Runtime` on the web is a realm of its own, a hidden iframe of the page's origin, removed with the app: a bundle runs in it as a script, and what the runtime installs (`require`, `nsgo:rt`, the web APIs, timers on the app's clock, `Date` reading it) is its globals, as on goja. The iframe is no sandbox: the app has the page's authority.

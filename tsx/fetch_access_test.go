@@ -67,7 +67,7 @@ func TestFetchRedirectUsesItsSandboxWhileAnotherOwnerRuns(t *testing.T) {
 					}),
 					r.function(func(call js.FunctionCall) js.Value {
 						completed = true
-						err := call.Argument(0).ToObject(r.vm)
+						err := r.vm.ToObject(call.Argument(0))
 						code, permission, resource = err.Get("code").String(), err.Get("permission").String(), err.Get("resource").String()
 						return js.Undefined()
 					}),

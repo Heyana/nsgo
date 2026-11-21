@@ -219,7 +219,7 @@ func (r *runtime) renderExport(name string, props map[string]any) {
 		if err := json.Unmarshal(b, &copied); err != nil {
 			panic(fmt.Errorf("tsx: a view's props: %w", err))
 		}
-		input = r.vm.ToValue(copied).ToObject(r.vm)
+		input = r.vm.ToObject(r.vm.ToValue(copied))
 	}
 	for _, child := range slices.Clone(r.root.children) {
 		r.removeChild(r.root, child)

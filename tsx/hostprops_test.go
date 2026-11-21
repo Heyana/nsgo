@@ -14,7 +14,7 @@ import (
 func setProps[T any](t *testing.T, r *runtime, set func(*runtime, *T, string, js.Value) bool, src string) *T {
 	t.Helper()
 	p := new(T)
-	o := jsValue(t, r, src).ToObject(r.vm)
+	o := r.vm.ToObject(jsValue(t, r, src))
 	for _, name := range o.Keys() {
 		if !set(r, p, name, o.Get(name)) {
 			t.Fatalf("%s: no prop %q", src, name)

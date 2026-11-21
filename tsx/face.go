@@ -117,7 +117,7 @@ func (p *props) getterProp(name string) bool {
 		return true
 	}
 	return core.Untracked(p.r.cx, func() bool {
-		object := p.r.vm.Get("Object").ToObject(p.r.vm)
+		object := p.r.vm.ToObject(p.r.vm.Get("Object"))
 		hasGetter := func(o *js.Object) bool {
 			if o == nil {
 				return false

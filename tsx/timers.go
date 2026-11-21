@@ -137,7 +137,7 @@ func (r *runtime) installTimers() {
 		fn := arg(call, 0)
 		p, resolve, _ := r.vm.NewPromise()
 		_ = resolve(js.Undefined())
-		then, _ := js.AssertFunction(r.vm.ToValue(p).ToObject(r.vm).Get("then"))
+		then, _ := js.AssertFunction(r.vm.ToObject(r.vm.ToValue(p)).Get("then"))
 		_, _ = then(r.vm.ToValue(p), fn)
 		return js.Undefined()
 	}))

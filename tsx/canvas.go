@@ -45,7 +45,7 @@ func canvasFace(p *props) core.Node {
 
 // canvas is `Canvas(props)`.
 func (r *runtime) canvas(call js.FunctionCall) js.Value {
-	obj := arg(call, 0).ToObject(r.vm)
+	obj := r.vm.ToObject(arg(call, 0))
 	n := r.newFaceNode("Canvas", canvasFace, obj)
 	r.applyRef(obj.Get("ref"), n, "")
 	r.mountFace(n)

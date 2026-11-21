@@ -93,7 +93,7 @@ func (r *runtime) hostComponent(tag string) js.Value {
 // or the fallback once something under them threw (core's Catch);
 // fallback(error, reset) is called with what was thrown.
 func (r *runtime) errorBoundary(call js.FunctionCall) js.Value {
-	props := arg(call, 0).ToObject(r.vm)
+	props := r.vm.ToObject(arg(call, 0))
 	n := &node{r: r, kind: kindRegion, elem: r.newCoreElement(r.cx, nil)}
 	region := func(value js.Value) core.Node {
 		inner := &node{r: r, kind: kindRegion, elem: r.newCoreElement(r.cx, nil)}
@@ -151,7 +151,7 @@ func (r *runtime) context(call js.FunctionCall) js.Value {
 	})
 	_ = ctx.DefineDataPropertySymbol(contextDefault, arg(call, 0), js.FLAG_TRUE, js.FLAG_FALSE, js.FLAG_FALSE)
 	_ = ctx.Set("Provider", r.function(func(call js.FunctionCall) js.Value {
-		props := arg(call, 0).ToObject(r.vm)
+		props := r.vm.ToObject(arg(call, 0))
 		owner := r.cx.Child()
 		var out js.Value
 		owner.Run(func() {
@@ -170,7 +170,7 @@ func (r *runtime) context(call js.FunctionCall) js.Value {
 // made again, and stays the context, so providers and readers stay
 // connected.
 func (r *runtime) keepContext(call js.FunctionCall) js.Value {
-	kept, made := arg(call, 0).ToObject(r.vm), arg(call, 1).ToObject(r.vm)
+	kept, made := r.vm.ToObject(arg(call, 0)), r.vm.ToObject(arg(call, 1))
 	_ = kept.DefineDataPropertySymbol(contextDefault, made.GetSymbol(contextDefault), js.FLAG_TRUE, js.FLAG_FALSE, js.FLAG_FALSE)
 	return kept
 }

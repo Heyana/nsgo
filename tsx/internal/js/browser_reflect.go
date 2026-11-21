@@ -20,6 +20,9 @@ var (
 	stringMapType = reflect.TypeFor[map[string]any]()
 )
 
+// ToObject boxes v using the realm's prototypes and returns objects unchanged.
+func (r *Runtime) ToObject(v Value) *Object { return v.ToObject(r) }
+
 // ToValue makes a JS value of a Go one, as goja does: primitives as
 // themselves, functions as JS functions converting their arguments and
 // results, slices and maps as arrays and objects of their items, and

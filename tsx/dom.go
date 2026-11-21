@@ -750,7 +750,7 @@ var mergeProgram = js.MustCompile(websrc.Merge.Name, websrc.Merge.Source, true)
 func (r *runtime) installGlobals() {
 	vm := r.vm
 	_ = vm.Set("If", r.function(func(call js.FunctionCall) js.Value {
-		props := call.Argument(0).ToObject(vm)
+		props := vm.ToObject(call.Argument(0))
 		return r.cond(js.FunctionCall{Arguments: []js.Value{
 			r.accessor(func() js.Value { return props.Get("when") }),
 			r.accessor(func() js.Value { return props.Get("children") }),
@@ -758,7 +758,7 @@ func (r *runtime) installGlobals() {
 		}})
 	}))
 	_ = vm.Set("Each", r.function(func(call js.FunctionCall) js.Value {
-		props := call.Argument(0).ToObject(vm)
+		props := vm.ToObject(call.Argument(0))
 		return r.each(js.FunctionCall{Arguments: []js.Value{
 			r.accessor(func() js.Value { return props.Get("of") }),
 			props.Get("children"),

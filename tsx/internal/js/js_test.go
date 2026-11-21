@@ -15,9 +15,7 @@ func newRuntime(t *testing.T) *Runtime {
 	t.Helper()
 	r := New()
 	r.SetFieldNameMapper(UncapFieldNameMapper())
-	if c, ok := any(r).(interface{ Close() }); ok {
-		t.Cleanup(c.Close)
-	}
+	t.Cleanup(r.Close)
 	return r
 }
 

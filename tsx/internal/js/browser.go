@@ -62,12 +62,6 @@ func (f Flag) js(def bool) bool {
 	return f == FLAG_TRUE
 }
 
-// FieldNameMapper names Go fields and methods in JS.
-type FieldNameMapper interface {
-	FieldName(t reflect.Type, f reflect.StructField) string
-	MethodName(t reflect.Type, m reflect.Method) string
-}
-
 type uncapMapper struct{}
 
 func (uncapMapper) FieldName(_ reflect.Type, f reflect.StructField) string { return uncap(f.Name) }
@@ -315,15 +309,15 @@ func (r *Runtime) Close() {
 // is not calling JS, as a promise's reactions and the browser's events
 // do: run is the call, which panics with what the Go function panicked
 // with, and entry must recover it.
-func (r *Runtime) SetEntry(entry func(run func())) { r.entry = entry }
+func SetEntry(r *Runtime, entry func(run func())) { r.entry = entry }
 
-func (r *Runtime) SetFieldNameMapper(m FieldNameMapper) { r.mapper = m }
-func (r *Runtime) SetMaxCallStackSize(int)              {}
-func (r *Runtime) SetAsyncContextTracker(any)           {}
-func (r *Runtime) SetPromiseJobFilter(func(any) bool)   {}
-func (r *Runtime) DrainPromiseJobs() error              { return nil }
-func (r *Runtime) Interrupt(any)                        {}
-func (r *Runtime) ClearInterrupt()                      {}
+func (r *Runtime) SetFieldNameMapper(m FieldNameMapper)       { r.mapper = m }
+func (r *Runtime) SetMaxCallStackSize(int)                    {}
+func (r *Runtime) SetAsyncContextTracker(AsyncContextTracker) {}
+func (r *Runtime) SetPromiseJobFilter(func(any) bool)         {}
+func (r *Runtime) DrainPromiseJobs() error                    { return nil }
+func (r *Runtime) Interrupt(any)                              {}
+func (r *Runtime) ClearInterrupt()                            {}
 
 // SetTimeSource has the realm's Date read now.
 func (r *Runtime) SetTimeSource(now func() time.Time) {

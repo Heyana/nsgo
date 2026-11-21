@@ -25,7 +25,7 @@ func (r *runtime) limitNesting() {
 		if r.sandbox.memory == nil {
 			return r.callOrig(orig, call.This, call.Arguments)
 		}
-		o, sep := call.This.ToObject(r.vm), call.Argument(0)
+		o, sep := r.vm.ToObject(call.This), call.Argument(0)
 		if js.IsUndefined(sep) {
 			sep = r.vm.ToValue(",")
 		} else {
@@ -39,7 +39,7 @@ func (r *runtime) limitNesting() {
 		if r.sandbox.memory == nil {
 			return r.callOrig(orig, call.This, call.Arguments)
 		}
-		return r.join(call.This.ToObject(r.vm), r.vm.ToValue(","), r.localeString, join)
+		return r.join(r.vm.ToObject(call.This), r.vm.ToValue(","), r.localeString, join)
 	})
 	// toString calls the array's join, which counts a level of its own, so that an array of arrays goes half as deep through String as through join; it counts one itself, as its join may be another toString, which would call itself without end. %TypedArray%.prototype.toString is the same function, so it takes the same wrapper.
 	typed := object(g, "Uint8Array", "prototype").Prototype()
@@ -128,7 +128,7 @@ func (r *runtime) flat(call js.FunctionCall, orig, isArray js.Callable) js.Value
 	r.sandbox.nesting = maxNesting
 	v := r.callOrig(orig, call.This, args)
 	r.sandbox.nesting = outer
-	o := v.ToObject(r.vm)
+	o := r.vm.ToObject(v)
 	for i, n := int64(0), r.lengthOf(o); i < n; i++ {
 		if e := o.Get(strconv.FormatInt(i, 10)); e != nil && r.callOrig(isArray, js.Undefined(), []js.Value{e}).ToBoolean() {
 			panic(r.tooDeep())

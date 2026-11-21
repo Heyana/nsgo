@@ -256,7 +256,7 @@ func videoFace(p *props) core.Node {
 // list is `list(props)`, what <List> compiles to: a lazy list of each's
 // items, a row rendered by children(item, index) per cell.
 func (r *runtime) list(call js.FunctionCall) js.Value {
-	obj := arg(call, 0).ToObject(r.vm)
+	obj := r.vm.ToObject(arg(call, 0))
 	n := r.newFaceNode("List", listFace, obj)
 	n.horizontal = opts{obj}.bool("horizontal", false)
 	r.applyRef(obj.Get("ref"), n, "")
@@ -318,7 +318,7 @@ func listFace(p *props) core.Node {
 		TestID: p.str("testID"),
 	}
 	if c := p.get("contentOffset"); defined(c) {
-		l.ContentOffset = r.pointOf(c.ToObject(r.vm))
+		l.ContentOffset = r.pointOf(r.vm.ToObject(c))
 	}
 	if v := r.animatedValueOf(p.get("pullValue")); v != nil {
 		l.PullValue = v

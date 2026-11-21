@@ -148,7 +148,7 @@ func (r *runtime) limitMemory(limit int64) {
 	array := object(g, "Array", "prototype")
 	// fill, sort and the copies read the length of what is not an array once more, so they are given it pinned to what was checked.
 	r.wrap(array, "fill", func(call js.FunctionCall, orig js.Callable) js.Value {
-		o := call.This.ToObject(r.vm)
+		o := r.vm.ToObject(call.This)
 		this, n := r.pinned(o, false)
 		start, end := call.Argument(1).ToNumber(), call.Argument(2)
 		if !js.IsUndefined(end) {
@@ -164,7 +164,7 @@ func (r *runtime) limitMemory(limit int64) {
 	})
 	// sort copies the elements of what is not an array into a list first.
 	r.wrap(array, "sort", func(call js.FunctionCall, orig js.Callable) js.Value {
-		o := call.This.ToObject(r.vm)
+		o := r.vm.ToObject(call.This)
 		this, n := r.pinned(o, false)
 		r.checkMemory(mul(n, valueSize))
 		r.callOrig(orig, this, call.Arguments)
@@ -173,7 +173,7 @@ func (r *runtime) limitMemory(limit int64) {
 	// What makes an array as long as this one, or one longer by its arguments.
 	for _, name := range []string{"toSorted", "toReversed", "toSpliced", "with"} {
 		r.wrap(array, name, func(call js.FunctionCall, orig js.Callable) js.Value {
-			this, n := r.pinned(call.This.ToObject(r.vm), false)
+			this, n := r.pinned(r.vm.ToObject(call.This), false)
 			r.checkMemory(mul(n+int64(len(call.Arguments)), valueSize))
 			return r.holdArray(r.callOrig(orig, this, call.Arguments))
 		})
@@ -343,7 +343,7 @@ func (r *runtime) join(o *js.Object, sep js.Value, part func(e js.Value) js.Valu
 
 // localeString is e.toLocaleString() as a string, as Array.prototype.toLocaleString makes each element.
 func (r *runtime) localeString(e js.Value) js.Value {
-	f, ok := js.AssertFunction(e.ToObject(r.vm).Get("toLocaleString"))
+	f, ok := js.AssertFunction(r.vm.ToObject(e).Get("toLocaleString"))
 	if !ok {
 		panic(r.vm.NewTypeError("Property 'toLocaleString' of object %s is not a function", e))
 	}
@@ -352,11 +352,11 @@ func (r *runtime) localeString(e js.Value) js.Value {
 
 // raw is String.raw, which reads the template's parts and the substitutions between them once, as the original would, checking the strings they make as they add up, and hands the original those strings to join.
 func (r *runtime) raw(call js.FunctionCall, orig js.Callable) js.Value {
-	raw := call.Argument(0).ToObject(r.vm).Get("raw")
+	raw := r.vm.ToObject(call.Argument(0)).Get("raw")
 	if raw == nil {
 		raw = js.Undefined()
 	}
-	o := raw.ToObject(r.vm)
+	o := r.vm.ToObject(raw)
 	n := r.lengthOf(o)
 	r.checkMemory(mul(n, valueSize))
 	var subs []js.Value

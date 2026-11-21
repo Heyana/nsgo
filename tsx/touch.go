@@ -202,7 +202,7 @@ func (r *runtime) gestureState(e core.ResponderEvent, stateID int) *js.Object {
 func (r *runtime) panResponder() js.Value {
 	m := r.vm.NewObject()
 	_ = m.Set("create", r.function(func(call js.FunctionCall) js.Value {
-		config := arg(call, 0).ToObject(r.vm)
+		config := r.vm.ToObject(arg(call, 0))
 		stateID := 0
 		gesture := func(e js.Value) (js.Value, js.Value) {
 			if o, ok := e.(*js.Object); ok {

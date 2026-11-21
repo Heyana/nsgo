@@ -321,7 +321,7 @@ func (r *runtime) scrollProp(p *core.Scroll, name string, v js.Value) bool {
 	case "scrollbar":
 		p.HideIndicator, p.Bar = !v.ToBoolean(), r.scrollbarTheme(v)
 	case "contentOffset":
-		p.ContentOffset = r.pointOf(v.ToObject(r.vm))
+		p.ContentOffset = r.pointOf(r.vm.ToObject(v))
 	case "minimumZoomScale":
 		p.MinZoomScale = float32(v.ToFloat())
 	case "maximumZoomScale":

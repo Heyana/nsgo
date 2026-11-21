@@ -94,7 +94,7 @@ func (r *runtime) platform() js.Value {
 	// select({ ios, android, native, desktop, default }): the value for
 	// this platform.
 	_ = o.Set("select", r.function(func(call js.FunctionCall) js.Value {
-		spec := arg(call, 0).ToObject(r.vm)
+		spec := r.vm.ToObject(arg(call, 0))
 		keys := []string{string(os)}
 		if os == core.OSIOS || os == core.OSAndroid {
 			keys = append(keys, "native")

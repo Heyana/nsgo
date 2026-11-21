@@ -64,7 +64,8 @@ func (r *runtime) installWeb() {
 	if err != nil {
 		panic(err)
 	}
-	r.web = out.ToObject(r.vm)
+
+	r.web = r.vm.ToObject(out)
 	if js.Properties().HasNativeIntl {
 		return
 	}

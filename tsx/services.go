@@ -425,7 +425,7 @@ func (r *runtime) resource(call js.FunctionCall) js.Value {
 		run++
 		mine := run
 		if abort != nil {
-			r.call2(abort.ToObject(r.vm).Get("abort"), abort)
+			r.call2(r.vm.ToObject(abort).Get("abort"), abort)
 		}
 		ctl, _ := r.vm.New(r.vm.Get("AbortController"))
 		abort = ctl
@@ -480,7 +480,7 @@ func (r *runtime) resource(call js.FunctionCall) js.Value {
 			return
 		}
 		if p, ok := res.Export().(*js.Promise); ok {
-			then := r.vm.ToValue(p).ToObject(r.vm).Get("then")
+			then := r.vm.ToObject(r.vm.ToValue(p)).Get("then")
 			r.call2(then, r.vm.ToValue(p),
 				r.function(func(c js.FunctionCall) js.Value { settle(arg(c, 0), false); return js.Undefined() }),
 				r.function(func(c js.FunctionCall) js.Value { settle(arg(c, 0), true); return js.Undefined() }))
@@ -527,7 +527,7 @@ func (r *runtime) resource(call js.FunctionCall) js.Value {
 		if abort != nil {
 			ctl := abort
 			abort = nil
-			r.call2(ctl.ToObject(r.vm).Get("abort"), ctl)
+			r.call2(r.vm.ToObject(ctl).Get("abort"), ctl)
 		}
 	})
 	_ = read.Set("mutate", r.function(func(c js.FunctionCall) js.Value {
