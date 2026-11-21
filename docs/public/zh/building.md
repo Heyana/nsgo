@@ -244,7 +244,7 @@ go tool nsgo build -channel steam -target macos_universal,windows_x64,linux_x64
 
 可设定 `updates.channel: steam` 作为默认渠道。请选择 macOS、Windows 和 Linux 目标。将各个 `dist/<name>-<version>-<target>` 目录分别上传到对应的 Steam depot，并将 macOS 的应用包、Windows 和 Linux arm64 的可执行文件或 Linux x64 的 `steam-launch.sh` 设为启动选项。Steam 负责更新。产物不包含安装器、自更新程序或 `steam_appid.txt`。
 
-Linux x64 depot 内含 Steam Linux Runtime 3.0 和 4.0 所需的 GTK 4 及其依赖。请把 `nsgo-gtk/` 与启动脚本放在同一目录。Linux arm64 需要运行环境提供 GTK 4。
+Linux x64 depot 内含 Steam Linux Runtime 3.0 和 4.0 所需的 GTK 4 及其依赖，启动脚本仅在系统没有 GTK 4.14 或更新版本时使用它们。请把 `nsgo-gtk/` 与启动脚本放在同一目录：其中的 `licenses/` 收录这些库的许可证、构建所用的源码和构建脚本，这是 LGPL 对 GLib、Pango 和 GTK 的要求。Linux arm64 需要运行环境提供 GTK 4。
 
 要在 Steam 客户端之外本地测试，在 `nsgo.yaml` 中设定 `steam: {app_id: 480}`，将 480 换成你的 Steamworks App ID。`go tool nsgo dev` 会将 ID 写入原生构建目录内的 `steam_appid.txt`，并从该目录启动应用。[Steamworks API](https://partner.steamgames.com/doc/api/steam_api)、[SteamPipe](https://partner.steamgames.com/doc/sdk/uploading)。
 

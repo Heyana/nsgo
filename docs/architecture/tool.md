@@ -143,7 +143,7 @@ A `store` build (`-channel store`) writes store packages for desktop and Android
 
 `steam.go` limits the Steam channel to desktop targets, including `macos_universal`. The tool writes the ordinary signed bundle or executable directory and skips installers, store archives and the releases directory. Native `dev` with `steam.app_id` writes `steam_appid.txt` into its build directory and launches the app there, which is where Steamworks reads the file. Steam release and development packages filter copies of that file out of app resources.
 
-`steam_linux_runtime.go` unpacks the embedded x64 GTK bundle into `nsgo-gtk/` and writes `steam-launch.sh`. The launcher prepends the depot's library and data paths before executing the app, and `build -run` uses the same entry point. `steam-linux-runtime/build.sh` rebuilds the archive with Valve's pinned sniper SDK and includes the licenses and source versions.
+`steam_linux_runtime.go` unpacks the embedded x64 GTK bundle into `nsgo-gtk/` and writes `steam-launch.sh`. Where `ldconfig` lists no GTK 4.14 or newer, as in the Steam runtimes, the launcher prepends the depot's library and data paths before executing the app; a system GTK is left in place, because the bundle needs the runtime's other libraries and its GLib would replace a newer one in the app and in what it starts. `build -run` uses the same entry point. `steam-linux-runtime/build.sh` rebuilds the archive with Valve's pinned sniper SDK and includes the licenses and source versions; the tool adds `NOTICE` and `build.sh` beside them, so each depot names the LGPL libraries' corresponding source.
 
 ### Updates
 

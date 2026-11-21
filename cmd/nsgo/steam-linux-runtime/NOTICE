@@ -1,0 +1,21 @@
+NSGo GTK runtime for Linux x64 Steam depots
+
+steam-launch.sh loads the shared libraries in ../lib when the system has no GTK 4.14 or newer, as in Steam Linux Runtime 3.0 and 4.0. Each is a separate file the app loads at run time: replacing one with a modified, interface-compatible build of the same library makes the app use that build.
+
+Built from source in Valve's Steam Linux Runtime 3.0 SDK by build.sh, which pins the SDK image. sources.lock lists each source archive's URL and SHA-256.
+
+- GLib 2.80.5 (libglib-2.0, libgobject-2.0, libgio-2.0, libgmodule-2.0, libgthread-2.0, libgirepository-2.0): LGPL-2.1-or-later, glib-2.80.5-COPYING.
+- Pango 1.52.2 (libpango-1.0, libpangocairo-1.0, libpangoft2-1.0, libpangoxft-1.0): LGPL-2.1-or-later, pango-1.52.2-COPYING.
+- GTK 4.14.5 (libgtk-4): LGPL-2.1-or-later, gtk-4.14.5-COPYING. Modified by cairo-script.patch, which changes only its build files, to make the Cairo script interpreter optional.
+- Graphene 1.10.8 (libgraphene-1.0): MIT, graphene-1.10.8-LICENSE.txt.
+- Wayland 1.22.0 (libwayland-client, libwayland-cursor, libwayland-egl, libwayland-server): MIT, wayland-1.22.0-COPYING.
+- wayland-protocols 1.34, used only to build GTK: MIT, wayland-protocols-1.34-COPYING.
+
+Copied from the SDK's Debian packages, which sdk-packages.txt lists with their source packages and versions; each package's copyright file is in this directory.
+
+- libepoxy 1.5.5 (libepoxy.so.0): MIT, libepoxy0-copyright.
+- libffi 3.3 (libffi.so.7): MIT, libffi7-copyright.
+- LibTIFF 4.2.0 (libtiff.so.5): LibTIFF license, libtiff5-copyright.
+- libwebp 0.6.1 (libwebp.so.6): BSD-3-Clause, libwebp6-copyright.
+
+The corresponding source of the LGPL libraries is the archives sources.lock lists, with cairo-script.patch applied to GTK and built by build.sh.
