@@ -2372,6 +2372,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			p := it.ViewProps
 			v.windowDrag, v.activation, v.area, v.selectable = p.WindowDrag, p.PanActivation, p.SelectionArea, p.Selectable
 			v.disabled = p.Disabled
+			if v.disabled && s.dragTarget == v {
+				s.enter(nil)
+			}
 			s.repick = true
 			if v.selColor != p.SelectionColor {
 				v.selColor = p.SelectionColor
@@ -2379,6 +2382,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 		case driver.ItemEvents:
 			v.setEvents(it.Events)
+			if !v.events.Has(driver.EventFileDrop) && s.dragTarget == v {
+				s.enter(nil)
+			}
 			v.updateAccessibility()
 			s.repick = true
 		case driver.ItemAccessibilityLabel:

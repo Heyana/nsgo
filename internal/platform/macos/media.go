@@ -5,6 +5,7 @@ package macos
 import (
 	"log"
 	"net/url"
+	"strings"
 
 	"github.com/ebitengine/purego/objc"
 
@@ -98,6 +99,10 @@ func (s *surface) dropTarget(info objc.ID) *view {
 	rawHit = true
 	hit := s.native.Send(sel("hitTest:"), p)
 	rawHit = false
+	var modal objc.ID
+	if n := len(s.modals); n > 0 {
+		modal = s.modals[n-1].native
+	}
 	for n := hit; n != 0 && n != up; n = n.Send(selSuperview) {
 		v := views[n]
 		if v == nil || v.native != n || s.views == nil || int(v.id) >= len(s.views) || s.views[v.id] != v {
@@ -105,6 +110,9 @@ func (s *surface) dropTarget(info objc.ID) *view {
 		}
 		if v.events.Has(driver.EventFileDrop) {
 			if v.disabled {
+				return nil
+			}
+			if modal != 0 && !objc.Send[bool](v.native, sel("isDescendantOf:"), modal) {
 				return nil
 			}
 			return v
@@ -133,18 +141,31 @@ func (s *surface) enter(v *view) {
 
 const dragCopy = 1
 
+func dragAllowsCopy(info objc.ID) bool {
+	return info != 0 && objc.Send[uint](info, sel("draggingSourceOperationMask"))&dragCopy != 0
+}
+
 // draggingEntered reads whether the drag carries files once, so moves
 // only hit test.
 func draggingEntered(self objc.ID, cmd objc.SEL, info objc.ID) uint {
-	s := views[self].surface
+	sv := views[self]
+	if sv == nil || sv.surface == nil {
+		return 0
+	}
+	s := sv.surface
 	s.dragFiles = len(droppedFiles(info)) > 0
 	return draggingUpdated(self, cmd, info)
 }
 
 func draggingUpdated(self objc.ID, _ objc.SEL, info objc.ID) uint {
-	s := views[self].surface
+	sv := views[self]
+	if sv == nil || sv.surface == nil {
+		return 0
+	}
+	s := sv.surface
 	defer s.measuring(false)()
-	if !s.dragFiles {
+	if !s.dragFiles || !dragAllowsCopy(info) {
+		s.enter(nil)
 		return 0
 	}
 	v := s.dropTarget(info)
@@ -156,36 +177,63 @@ func draggingUpdated(self objc.ID, _ objc.SEL, info objc.ID) uint {
 }
 
 func draggingExited(self objc.ID, _ objc.SEL, _ objc.ID) {
-	s := views[self].surface
+	sv := views[self]
+	if sv == nil || sv.surface == nil {
+		return
+	}
+	s := sv.surface
 	defer s.measuring(false)()
+	s.dragFiles = false
 	s.enter(nil)
 }
 
 func prepareForDrag(self objc.ID, _ objc.SEL, info objc.ID) bool {
-	s := views[self].surface
+	sv := views[self]
+	if sv == nil || sv.surface == nil {
+		return false
+	}
+	s := sv.surface
 	defer s.measuring(false)()
-	return s.dropTarget(info) != nil
+	return s.dragFiles && dragAllowsCopy(info) && s.dropTarget(info) != nil
 }
 
 func performDrag(self objc.ID, _ objc.SEL, info objc.ID) bool {
-	s := views[self].surface
+	sv := views[self]
+	if sv == nil || sv.surface == nil {
+		return false
+	}
+	s := sv.surface
 	defer s.measuring(false)()
+	s.dragFiles = false
+	if !dragAllowsCopy(info) {
+		s.enter(nil)
+		return false
+	}
 	v := s.dropTarget(info)
 	uris := droppedFiles(info)
 	if v == nil || len(uris) == 0 {
 		s.enter(nil)
 		return false
 	}
-	s.dragTarget = nil
+	s.enter(v)
 	v.report(driver.Event{Kind: driver.EventFileDrop, URIs: uris})
+	s.enter(nil)
 	return true
 }
 
 // droppedFiles returns the file: URLs of the local files a drag carries.
-func droppedFiles(info objc.ID) []string { return fileURLs(info.Send(sel("draggingPasteboard"))) }
+func droppedFiles(info objc.ID) []string {
+	if info == 0 {
+		return nil
+	}
+	return fileURLs(info.Send(sel("draggingPasteboard")))
+}
 
 // fileURLs returns the file: URLs of the local files pasteboard pb holds.
 func fileURLs(pb objc.ID) []string {
+	if pb == 0 {
+		return nil
+	}
 	classes := objc.ID(apple.Class("NSArray")).Send(sel("arrayWithObject:"), objc.ID(apple.Class("NSURL")))
 	key := apple.NSString("NSPasteboardURLReadingFileURLsOnlyKey")
 	yes := objc.ID(apple.Class("NSNumber")).Send(sel("numberWithBool:"), true)
@@ -196,7 +244,7 @@ func fileURLs(pb objc.ID) []string {
 	for i := range n {
 		u := list.Send(sel("objectAtIndex:"), i)
 		path := apple.GoString(u.Send(sel("path")))
-		if path == "" {
+		if !strings.HasPrefix(path, "/") {
 			continue
 		}
 		uris = append(uris, (&url.URL{Scheme: "file", Path: path}).String())

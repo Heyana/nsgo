@@ -57,9 +57,14 @@ func (w *window) forgetDestination(v *view) {
 // updateDropTarget installs the drop target while a view takes files and
 // removes it when none does.
 func (w *window) updateDropTarget() {
+	if w.surface == 0 {
+		return
+	}
 	switch d := &w.drop; {
 	case d.views > 0 && d.target == 0:
-		t := gtkDropTargetNew(gdkFileListGetType(), gdkActionCopy)
+		t := gtkDropTargetNew(0, gdkActionCopy)
+		types := [2]uintptr{gdkFileListGetType(), gFileGetType()}
+		gtkDropTargetSetGTypes(t, &types[0], uintptr(len(types)))
 		gtkEventControllerSetPropagationPhase(t, propagationPhaseCapture)
 		gSignalConnect(t, "enter", cbDropMotion, w.handle)
 		gSignalConnect(t, "motion", cbDropMotion, w.handle)
@@ -87,7 +92,10 @@ func (w *window) dropDestination(at driver.Point) *view {
 		at = driver.Point{X: at.X - origin.X, Y: at.Y - origin.Y}
 	}
 	for v := hit(scope, at, func(*view) bool { return true }); v != nil; v = v.parent {
-		if v.events.Has(driver.EventFileDrop) && !v.props.Disabled {
+		if v.events.Has(driver.EventFileDrop) {
+			if v.props.Disabled {
+				return nil
+			}
 			return v
 		}
 		if v == scope {
@@ -151,6 +159,7 @@ func (w *window) dropFiles(at driver.Point, uris []string) bool {
 		w.setDropOver(nil)
 		return false
 	}
+	w.setDropOver(v)
 	w.engine.Dispatch(driver.Event{Kind: driver.EventFileDrop, ID: v.id, URIs: uris})
 	// The drag is over.
 	w.setDropOver(nil)
@@ -158,27 +167,49 @@ func (w *window) dropFiles(at driver.Point, uris []string) bool {
 }
 
 // fileURIs returns the file: URLs of the local files in a GValue holding
-// a GdkFileList. Files without a local path (remote ones) are left out.
+// a GdkFileList or a GFile. Files without a local path (remote ones) are
+// left out.
 func fileURIs(value uintptr) []string {
-	list := gValueGetBoxed(value)
-	if list == 0 {
+	if value == 0 {
 		return nil
 	}
-	files := gdkFileListGetFiles(list)
-	defer gSlistFree(files)
-	var uris []string
-	for node := files; node != 0; node = (*gSList)(cPointer(node)).next {
-		p := gFileGetPath((*gSList)(cPointer(node)).data)
-		if p == 0 {
-			continue
+	if gTypeCheckValueHolds(value, gdkFileListGetType()) != 0 {
+		list := gValueGetBoxed(value)
+		if list == 0 {
+			return nil
 		}
-		path := goString(p)
-		gFree(p)
-		if filepath.IsAbs(path) {
-			uris = append(uris, fileURL(path))
+		files := gdkFileListGetFiles(list)
+		defer gSlistFree(files)
+		var uris []string
+		for node := files; node != 0; node = (*gSList)(cPointer(node)).next {
+			if uri := gFileURI((*gSList)(cPointer(node)).data); uri != "" {
+				uris = append(uris, uri)
+			}
+		}
+		return uris
+	}
+	if gTypeCheckValueHolds(value, gFileGetType()) != 0 {
+		if uri := gFileURI(gValueGetObject(value)); uri != "" {
+			return []string{uri}
 		}
 	}
-	return uris
+	return nil
+}
+
+func gFileURI(file uintptr) string {
+	if file == 0 {
+		return ""
+	}
+	p := gFileGetPath(file)
+	if p == 0 {
+		return ""
+	}
+	path := goString(p)
+	gFree(p)
+	if !filepath.IsAbs(path) {
+		return ""
+	}
+	return fileURL(path)
 }
 
 // fileURL is path as a file: URL, its spaces and other bytes escaped.
@@ -216,15 +247,20 @@ func dropCallback(target, value uintptr, x, y float64, data uintptr) int32 {
 // The bindings of file drops.
 var (
 	gtkDropTargetNew          func(uintptr, uint32) uintptr
+	gtkDropTargetSetGTypes    func(uintptr, *uintptr, uintptr)
 	gtkWidgetRemoveController func(uintptr, uintptr)
 	gdkFileListGetType        func() uintptr
 	gdkFileListGetFiles       func(uintptr) uintptr
 	gdkFileListNewFromArray   func(*uintptr, uintptr) uintptr
+	gTypeCheckValueHolds      func(uintptr, uintptr) int32
 	gValueGetBoxed            func(uintptr) uintptr
+	gValueGetObject           func(uintptr) uintptr
 	gValueInit                func(uintptr, uintptr) uintptr
 	gValueTakeBoxed           func(uintptr, uintptr)
+	gValueTakeObject          func(uintptr, uintptr)
 	gValueUnset               func(uintptr)
 	gSlistFree                func(uintptr)
+	gFileGetType              func() uintptr
 	gFileGetPath              func(uintptr) uintptr
 )
 
@@ -232,14 +268,19 @@ var (
 func bindFileDrop() {
 	gtk := func(fn any, name string) { purego.RegisterLibFunc(fn, gtkLib, name) }
 	gtk(&gtkDropTargetNew, "gtk_drop_target_new")
+	gtk(&gtkDropTargetSetGTypes, "gtk_drop_target_set_gtypes")
 	gtk(&gtkWidgetRemoveController, "gtk_widget_remove_controller")
 	gtk(&gdkFileListGetType, "gdk_file_list_get_type")
 	gtk(&gdkFileListGetFiles, "gdk_file_list_get_files")
 	gtk(&gdkFileListNewFromArray, "gdk_file_list_new_from_array")
+	purego.RegisterLibFunc(&gTypeCheckValueHolds, gobjectLib, "g_type_check_value_holds")
 	purego.RegisterLibFunc(&gValueGetBoxed, gobjectLib, "g_value_get_boxed")
+	purego.RegisterLibFunc(&gValueGetObject, gobjectLib, "g_value_get_object")
 	purego.RegisterLibFunc(&gValueInit, gobjectLib, "g_value_init")
 	purego.RegisterLibFunc(&gValueTakeBoxed, gobjectLib, "g_value_take_boxed")
+	purego.RegisterLibFunc(&gValueTakeObject, gobjectLib, "g_value_take_object")
 	purego.RegisterLibFunc(&gValueUnset, gobjectLib, "g_value_unset")
 	purego.RegisterLibFunc(&gSlistFree, glibLib, "g_slist_free")
+	purego.RegisterLibFunc(&gFileGetType, gioLib, "g_file_get_type")
 	purego.RegisterLibFunc(&gFileGetPath, gioLib, "g_file_get_path")
 }

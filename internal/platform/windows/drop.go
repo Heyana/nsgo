@@ -209,7 +209,10 @@ func (w *window) dropTargetAt(p driver.Point) *view {
 	}
 	scope := w.focusScope()
 	for v := pick(root, p); v != nil; v = v.parent {
-		if v.events.Has(driver.EventFileDrop) && !v.props.Disabled {
+		if v.events.Has(driver.EventFileDrop) {
+			if v.props.Disabled {
+				return nil
+			}
 			if isAncestor(scope, v) {
 				return v
 			}
