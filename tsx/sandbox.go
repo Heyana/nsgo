@@ -160,9 +160,9 @@ type Sandbox struct {
 // ErrUnisolated is what a sandbox with Capabilities or Grant fails with on the web unless Sandbox.WebUnisolated is set: the page's engine cannot isolate a package's realm from the page, so what it declares would not hold.
 var ErrUnisolated = errors.New("tsx: the web cannot isolate a sandboxed package from the page, so its capabilities would not hold; set Sandbox.WebUnisolated to run it with the page's authority")
 
-// isolation is why s cannot start, browser saying whether the page's engine runs it. A sandbox without Capabilities or Grant reaches what the app's code does on every target, which the page's realm gives it anyway.
-func (s Sandbox) isolation(browser bool) error {
-	if browser && (s.Capabilities != nil || s.Grant != nil) && !s.WebUnisolated {
+// isolation checks whether the realm's access to the page would bypass the sandbox's capabilities.
+func (s Sandbox) isolation(sharesPageAuthority bool) error {
+	if sharesPageAuthority && (s.Capabilities != nil || s.Grant != nil) && !s.WebUnisolated {
 		return ErrUnisolated
 	}
 	return nil
@@ -233,7 +233,7 @@ var sandboxFrame = core.Style{FlexGrow: 1, FlexShrink: 1, Overflow: core.Hidden}
 
 // start runs src in a new runtime under cx, panicking with what it throws as it loads, or with ErrUnisolated where it cannot be isolated.
 func (s Sandbox) start(cx *core.Scope, name, src string) *runtime {
-	if err := s.isolation(js.Browser); err != nil {
+	if err := s.isolation(js.Properties().SharesPageAuthority); err != nil {
 		panic(err)
 	}
 	limits := DefaultLimits
@@ -424,8 +424,9 @@ func (r *runtime) failCalls(err error) {
 
 // stop stops the runtime for err: the JS running is cut and none runs after, while the views stay as they are, its timers are dropped and the plugin calls waiting fail with err. What runs it panics with err into the nearest core.Catch. Call it on the engine's goroutine.
 func (r *runtime) stop(err error) {
+	canInterrupt := js.Properties().CanInterrupt
 	if !r.markStopped(err) {
-		if js.Browser {
+		if !canInterrupt {
 			panic(r.goError(r.stoppedErr()))
 		}
 		return
@@ -434,11 +435,11 @@ func (r *runtime) stop(err error) {
 	if len(r.calls) > 0 || r.onPluginStop != nil {
 		r.cx.Post(func() { r.finishPluginStop(err) })
 	}
-	r.vm.Interrupt(err)
-	if js.Browser {
-		// The page's engine cannot be interrupted: a throw unwinds it.
+	if !canInterrupt {
+		// A throw unwinds the page's engine.
 		panic(r.goError(err))
 	}
+	r.vm.Interrupt(err)
 }
 
 // interrupt stops the runtime for err as stop does, from any goroutine: goja's interrupt is safe to call concurrently, while the timers and the waiting calls belong to the engine's goroutine, which a post stops and fails.
@@ -506,7 +507,7 @@ func (r *runtime) within(budget time.Duration, fn func() error) (err error, cut 
 	}
 	r.depth++
 	resumed := len(r.continuations.resume)
-	if r.regexTimeout > 0 && !js.Browser {
+	if r.regexTimeout > 0 && js.Properties().CanLimitRegexps {
 		defer limitRegexps(r.regexTimeout)()
 	}
 	r.sliceDeadline = r.current

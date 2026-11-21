@@ -40,8 +40,10 @@ const (
 	FLAG_FALSE = goja.FLAG_FALSE
 )
 
-// Browser reports whether apps run on the page's engine.
-const Browser = false
+var engineProperties = EngineProperties{
+	CanInterrupt:    true,
+	CanLimitRegexps: true,
+}
 
 var (
 	New                  = goja.New

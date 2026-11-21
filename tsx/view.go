@@ -84,7 +84,7 @@ func Load(cx *core.Scope, p *pkg.Package, s Sandbox) (plugin *Plugin, err error)
 	s = s.of(p)
 	s.plugin = true
 	// Refused before the scope runs it, which would send the panic to a Catch rather than to the caller.
-	if err := s.isolation(js.Browser); err != nil {
+	if err := s.isolation(js.Properties().SharesPageAuthority); err != nil {
 		return nil, err
 	}
 	inner := cx.Child()
@@ -161,7 +161,7 @@ func (p *Plugin) Call(name string, args []any, done func(result any, err error))
 	r.calls[dl] = struct{}{}
 	r.watch(dl)
 	owner := dl
-	if !r.deadlines && (js.Browser || r.limits.Call <= 0) {
+	if !r.deadlines && (!js.Properties().CanInterrupt || r.limits.Call <= 0) {
 		owner = nil
 	}
 	p.cx.Run(func() { r.under(owner, func() { p.call(fn, args, dl) }) })

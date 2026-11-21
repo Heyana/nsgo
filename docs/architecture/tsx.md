@@ -49,6 +49,8 @@ The alternatives to goja fail a [principle](../../AGENTS.md#principles) or a tar
 | QuickJS in WebAssembly on wazero | iOS forbids generated code, so wazero interprets an interpreter there |
 | The system's (JavaScriptCore) | A bridge per platform; Android's runs only out of process |
 
+The runtime reads engine differences from `tsx/internal/js.Properties`: interrupting a running slice and limiting regular expression match time on goja, and promise reactions on a later page turn, built-in `Intl` and access to the containing page's APIs on the browser engine.
+
 What goja lacks, and the answer:
 
 - **ES modules, async generators, `for await`, `import()`**: esbuild lowers them; imports of NSGo's modules become `require` of the modules the runtime makes.

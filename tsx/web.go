@@ -65,8 +65,7 @@ func (r *runtime) installWeb() {
 		panic(err)
 	}
 	r.web = out.ToObject(r.vm)
-	if js.Browser {
-		// The page's Intl is the browser's own.
+	if js.Properties().HasNativeIntl {
 		return
 	}
 	v, err = r.vm.RunProgram(intlProgram)

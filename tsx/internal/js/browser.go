@@ -34,8 +34,11 @@ import (
 	"github.com/nsgo-dev/nsgo/tsx/websrc"
 )
 
-// Browser reports whether apps run on the page's engine.
-const Browser = true
+var engineProperties = EngineProperties{
+	ReactionsAfterCommit: true,
+	HasNativeIntl:        true,
+	SharesPageAuthority:  true,
+}
 
 // Callable is a JS function as Go calls it.
 type Callable func(this Value, args ...Value) (Value, error)

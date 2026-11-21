@@ -2,8 +2,10 @@ package js
 
 import (
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The engines' shared behavior: what tsx relies on, on goja and on the
@@ -32,7 +34,7 @@ func TestRealm(t *testing.T) {
 	r := newRuntime(t)
 	got := run(t, r, "typeof document + ' ' + (globalThis.frameElement ? frameElement.tagName : 'none')").String()
 	want := "undefined none"
-	if Browser {
+	if runtime.GOOS == "js" {
 		want = "object IFRAME"
 	}
 	if got != want {
@@ -42,6 +44,30 @@ func TestRealm(t *testing.T) {
 	run(t, r, "globalThis.mark = 1")
 	if v := run(t, newRuntime(t), "typeof mark").String(); v != "undefined" {
 		t.Errorf("another runtime sees the mark: %s", v)
+	}
+}
+
+func TestPromiseReactionTiming(t *testing.T) {
+	r := newRuntime(t)
+	done := make(chan struct{}, 1)
+	if err := r.Set("reaction", func() { done <- struct{}{} }); err != nil {
+		t.Fatal(err)
+	}
+	run(t, r, "Promise.resolve().then(reaction)")
+	select {
+	case <-done:
+		if Properties().ReactionsAfterCommit {
+			t.Fatal("promise reaction ran before returning from the JavaScript call")
+		}
+	default:
+		if !Properties().ReactionsAfterCommit {
+			t.Fatal("promise reaction remained queued after the JavaScript call returned")
+		}
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("promise reaction did not run on a later page turn")
+		}
 	}
 }
 

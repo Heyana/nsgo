@@ -190,11 +190,12 @@ func newRuntime(cx *core.Scope) *runtime {
 	r.vm.SetMaxCallStackSize(maxCallStack)
 	// Date reads the app's clock, a test's manual one included.
 	r.vm.SetTimeSource(cx.WallTime)
-	// Promise continuations run as the outermost JS call returns, which
-	// may be an effect's: what they read is not the effect's, as in NSH,
-	// whose VM runs them after the effect.
-	r.continuations.r = r
-	r.vm.SetAsyncContextTracker(&r.continuations)
+	if !js.Properties().ReactionsAfterCommit {
+		// Goja runs reactions as the outermost JS call returns. Pause
+		// tracking so their reads do not subscribe the outer effect.
+		r.continuations.r = r
+		r.vm.SetAsyncContextTracker(&r.continuations)
+	}
 	r.attachEngine()
 	r.vm.Set("require", r.require)
 	r.installGlobals()
