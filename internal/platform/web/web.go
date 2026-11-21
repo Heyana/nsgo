@@ -127,6 +127,7 @@ type surface struct {
 	widths       textWidths // texts measured on a canvas
 	paragraphs   map[paragraphKey]*paragraphStyle
 	classes      classSheet
+	cursorURLs   map[string]string
 	css          cssText       // the buffer CSS for a class is built in
 	dom          dom           // frames and texts applied in bulk (dom.go)
 	parked       js.Value      // a hidden, inert element removed views wait in
@@ -1959,19 +1960,33 @@ func viewCSS(c *cssText, vs *driver.ViewStyle, size driver.Size, kind driver.Vie
 // setFeel gives v the class of what its events and props make of the
 // pointer.
 func (s *surface) setFeel(v *view) {
-	c := v.feelCSS(s.css[:0])
+	c := v.feelCSSWith(s.css[:0], s)
 	s.setClass(v.el, &v.feel, c)
 	s.css = c
 }
 
 // feelCSS appends to c what v's events and props make of the pointer:
-// its cursor only from Style.Cursor, so pressable views keep the arrow
-// as on the desktops; the browser's touch scrolling and zooming kept out
-// of its gestures; pressable views and views with gestures keep the
-// page's own text selection, callout and tap highlight out, and a
-// selection area selects text.
+// its cursor only from Style.Cursor or Style.CursorImage, so pressable views
+// keep the arrow as on the desktops; the browser's touch scrolling and zooming
+// kept out of its gestures; pressable views and views with gestures keep the
+// page's own text selection, callout and tap highlight out, and a selection
+// area selects text.
 func (v *view) feelCSS(c cssText) cssText {
-	if v.style.Cursor != driver.CursorAuto {
+	return v.feelCSSWith(c, nil)
+}
+
+func (v *view) feelCSSWith(c cssText, s *surface) cssText {
+	if v.style.CursorImage != nil {
+		var dpr float32 = 1
+		if s != nil && s.env.PixelRatio > 0 {
+			dpr = s.env.PixelRatio
+		}
+		url1x := s.cursorURL(v.style.CursorImage.Image)
+		url2x := s.cursorURL(v.style.CursorImage.Image2x)
+		for _, decl := range webstyle.CustomCursorDeclarations(v.style.Cursor, v.style.CursorImage, url1x, url2x, dpr) {
+			c.add("cursor", decl)
+		}
+	} else if v.style.Cursor != driver.CursorAuto {
 		c.add("cursor", v.style.Cursor.Name())
 	}
 	if v.kind != driver.KindInput {

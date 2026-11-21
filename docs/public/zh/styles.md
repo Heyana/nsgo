@@ -102,6 +102,10 @@ core.Text{Content: "你好", StyleFunc: func() core.Style {
 
 `StyleFunc` 读取的值变化时会再次运行，因此其中的 `cx.Dark()` 和 `cx.Palette()` 会跟随主题。`ClassFunc`、span 的 `StyleFunc` 和组件的 `StyleFunc` 字段同理。
 
+## 指针样式
+
+`Style.Cursor` 设置命名指针（如 `core.CursorText`、`core.CursorColResize`）；普通可点击控件保持 `core.CursorAuto` 以沿用系统箭头。在桌面和 Web 端需要画笔、准星等自定义图像指针时，可将 `Style.CursorImage` 设为 `*core.CustomCursor`，提供 1x 的 `Image`、可选的高分屏 `Image2x`（在 `PixelRatio >= 1.5` 时自动选用）、按逻辑点指定并裁剪到图像范围内的 `Hotspot`，以及加载失败或作为 Web CSS 回退使用的 `Fallback` 命名指针。可通过 `cx.Env().SupportsCustomCursor()` 判断当前平台是否支持自定义图像指针；触屏平台会忽略它。
+
 ## 下一步
 
 - [布局](layout.md)：盒子放在哪里。

@@ -78,6 +78,8 @@ type (
 	ViewProps = driver.ViewProps
 	// ViewStyle is everything a platform draws for a view itself.
 	ViewStyle = driver.ViewStyle
+	// CustomCursor describes an image-based pointer cursor on desktops and the web.
+	CustomCursor = driver.CustomCursor
 	// WebCommandKind is what ItemWebCommand asks a web view to do.
 	WebCommandKind = driver.WebCommand
 	// WebConfig is everything a web view loads and allows (ItemWeb).

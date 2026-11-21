@@ -32,13 +32,13 @@ func TestCursorAtTakesASpansCursorAheadOfItsText(t *testing.T) {
 	w.root, w.views = 1, []*view{nil, root, text}
 
 	y := 20 + 3 + size.Height/2
-	if c, ok := w.cursorAt(driver.Point{X: 10 + 2 + 2, Y: y}); c != driver.CursorHelp || !ok {
+	if c, _, ok := w.cursorAt(driver.Point{X: 10 + 2 + 2, Y: y}); c != driver.CursorHelp || !ok {
 		t.Errorf("over the plain span: %v, %v; want the text's help cursor", c, ok)
 	}
-	if c, ok := w.cursorAt(driver.Point{X: 10 + 2 + size.Width - 2, Y: y}); c != driver.CursorPointer || !ok {
+	if c, _, ok := w.cursorAt(driver.Point{X: 10 + 2 + size.Width - 2, Y: y}); c != driver.CursorPointer || !ok {
 		t.Errorf("over the link: %v, %v; want the span's pointer", c, ok)
 	}
-	if c, ok := w.cursorAt(driver.Point{X: 300, Y: 150}); ok {
+	if c, _, ok := w.cursorAt(driver.Point{X: 300, Y: 150}); ok {
 		t.Errorf("off the text: %v; want none", c)
 	}
 }

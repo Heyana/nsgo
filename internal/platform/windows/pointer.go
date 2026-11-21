@@ -301,18 +301,38 @@ func (w *window) viewCursor() bool {
 		return false
 	}
 	screenToClient.Call(w.hwnd, uintptr(unsafe.Pointer(&at)))
-	c, ok := w.cursorAt(w.point(at.X, at.Y))
-	if ok {
-		setCursor.Call(systemCursor(c))
+	c, custom, ok := w.cursorAt(w.point(at.X, at.Y))
+	if !ok {
+		if w.customCursors != nil {
+			w.customCursors.active = 0
+		}
+		return false
 	}
-	return ok
+	if custom != nil {
+		if h := w.customHCURSOR(custom); h != 0 {
+			if w.customCursors != nil {
+				w.customCursors.active = h
+			}
+			setCursor.Call(h)
+			return true
+		}
+		c = custom.EffectiveFallback(c)
+	}
+	if w.customCursors != nil {
+		w.customCursors.active = 0
+	}
+	if c == driver.CursorAuto {
+		return false
+	}
+	setCursor.Call(systemCursor(c))
+	return true
 }
 
 // cursorAt returns the cursor the views name at p, a point of the client area: the nearest view's from the one under p up, a text's span under p ahead of the text's own; false where none names one.
-func (w *window) cursorAt(p driver.Point) (driver.Cursor, bool) {
+func (w *window) cursorAt(p driver.Point) (driver.Cursor, *driver.CustomCursor, bool) {
 	root := w.view(w.root)
 	if root == nil {
-		return driver.CursorAuto, false
+		return driver.CursorAuto, nil, false
 	}
 	for v := pick(root, p); v != nil; v = v.parent {
 		if l, ok := textOf(v); ok {
@@ -320,15 +340,18 @@ func (w *window) cursorAt(p driver.Point) (driver.Cursor, bool) {
 				local := v.surfacePoint(p)
 				i := l.indexAt(float32(local.X-v.content.Origin.X), float32(local.Y-v.content.Origin.Y))
 				if c, ok := driver.SpanCursor(v.spans, i); ok {
-					return c, true
+					return c, nil, true
 				}
 			}
 		}
+		if v.style.CursorImage != nil {
+			return v.style.Cursor, v.style.CursorImage, true
+		}
 		if c := v.style.Cursor; c != driver.CursorAuto {
-			return c, true
+			return c, nil, true
 		}
 	}
-	return driver.CursorAuto, false
+	return driver.CursorAuto, nil, false
 }
 
 // refreshCursor shows the cursor under a still pointer again, as WM_SETCURSOR would, once a batch changed what is under it; not while a button is held, as a drag keeps its cursor.

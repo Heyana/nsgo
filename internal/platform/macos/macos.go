@@ -1178,6 +1178,7 @@ func (s *surface) environment() driver.Environment {
 
 		// NSWorkspace says which app is in front to every app.
 		CanReadFrontmostApp: true,
+		CustomCursor:        true,
 
 		// The center serves only an app in a bundle.
 		ScheduledNotifications: apple.NotificationsAvailable(),
@@ -2039,7 +2040,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemOverflow:
 			v.overflow, v.transformedKids = it.Frame, it.Transformed
 		case driver.ItemViewStyle:
-			if v.style.Cursor != it.ViewStyle.Cursor || v.style.Hidden != it.ViewStyle.Hidden {
+			if v.style.Cursor != it.ViewStyle.Cursor || !v.style.CursorImage.Equal(it.ViewStyle.CursorImage) || v.style.Hidden != it.ViewStyle.Hidden {
 				s.repick = true
 			}
 			v.style = *it.ViewStyle
@@ -2929,20 +2930,30 @@ func (s *surface) updateCursor(hit, up objc.ID, loc apple.CGPoint, always bool) 
 		!always && objc.Send[uint](objc.ID(apple.Class("NSEvent")), sel("pressedMouseButtons")) != 0 {
 		return
 	}
-	cursor, own := cursorAt(hit, up, loc)
+	cursor, custom, own := cursorAt(hit, up, loc)
 	if !own {
 		return
 	}
-	c := nsCursor(cursor)
+	var c objc.ID
+	if custom != nil {
+		c = s.customNSCursor(custom)
+	}
+	if c == 0 {
+		if custom != nil {
+			c = nsCursor(custom.EffectiveFallback(cursor))
+		} else {
+			c = nsCursor(cursor)
+		}
+	}
 	if always || objc.ID(apple.Class("NSCursor")).Send(sel("currentCursor")) != c {
 		c.Send(sel("set"))
 	}
 }
 
 // cursorAt returns the cursor over hit, a view in up, with the mouse at loc, a point of the window: the nearest view's from hit up that names one, a text's span under loc first, or the I-beam over a text a press selects or an input's text. own is false off the surface and over the views that show their own: web views, players and native components.
-func cursorAt(hit, up objc.ID, loc apple.CGPoint) (cursor driver.Cursor, own bool) {
+func cursorAt(hit, up objc.ID, loc apple.CGPoint) (cursor driver.Cursor, custom *driver.CustomCursor, own bool) {
 	if hit == 0 {
-		return driver.CursorAuto, false
+		return driver.CursorAuto, nil, false
 	}
 	for n := hit; n != 0 && n != up; n = n.Send(selSuperview) {
 		v := views[n]
@@ -2950,26 +2961,28 @@ func cursorAt(hit, up objc.ID, loc apple.CGPoint) (cursor driver.Cursor, own boo
 			// A span's cursor goes ahead of its text's own and the I-beam.
 			p := v.windowPoint(loc)
 			if c, ok := driver.SpanCursor(v.spans, v.indexAt(p)); ok {
-				return c, true
+				return c, nil, true
 			}
 		}
 		switch {
 		case v == nil:
 		case v.kind == driver.KindInput && hit != v.native && v.input.showsIBeam(hit):
-			return driver.CursorText, true
+			return driver.CursorText, nil, true
 		case v.native != n:
 			if v.kind == driver.KindWeb || v.kind == driver.KindVideo {
-				return driver.CursorAuto, false
+				return driver.CursorAuto, nil, false
 			}
 		case v.kind == driver.KindNative && n != hit:
-			return driver.CursorAuto, false
+			return driver.CursorAuto, nil, false
+		case v.style.CursorImage != nil:
+			return v.style.Cursor, v.style.CursorImage, true
 		case v.style.Cursor != driver.CursorAuto:
-			return v.style.Cursor, true
+			return v.style.Cursor, nil, true
 		case v.selects():
-			return driver.CursorText, true
+			return driver.CursorText, nil, true
 		}
 	}
-	return driver.CursorAuto, true
+	return driver.CursorAuto, nil, true
 }
 
 // selects reports whether a press on text v selects, as areaAt finds:

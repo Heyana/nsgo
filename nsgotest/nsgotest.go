@@ -465,8 +465,9 @@ type App struct {
 	blocked bool
 	// hovered are the views the mouse is over, innermost first.
 	hovered []*View
-	// mouse is where it is in the surface.
-	mouse driver.Point
+	// mouse is where it is in the surface; mouseIn says the pointer is inside.
+	mouse   driver.Point
+	mouseIn bool
 	// stepName names the step running, for traces; trace receives them.
 	stepName string
 	trace    io.Writer

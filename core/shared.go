@@ -59,6 +59,8 @@ type (
 	Color = driver.Color
 	// Cursor is the pointer's look over a view (cursor).
 	Cursor = driver.Cursor
+	// CustomCursor describes an image-based pointer cursor on desktops and the web (Style.CursorImage).
+	CustomCursor = driver.CustomCursor
 	// Curve is an easing curve: CSS's cubic Bézier from (0,0) to (1,1) through
 	// two control points.
 	Curve = driver.Curve

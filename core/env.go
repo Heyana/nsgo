@@ -58,6 +58,7 @@ type Env struct {
 	// frontmost is the application in front, and canReadFrontmost says the platform follows it, which only Scope.FrontmostApp and Scope.CanReadFrontmostApp read, as Access holds them.
 	frontmost        *Signal[FrontmostAppInfo]
 	canReadFrontmost *Signal[bool]
+	customCursor     *Signal[bool]
 	// systemDark is the system's appearance, which a forced one hides.
 	systemDark bool
 	material   *Signal[WindowMaterial]
@@ -132,6 +133,7 @@ func newEnv(cx *Scope, app *Env) *Env {
 		launchedAtLogin:  NewSignal(cx, false),
 		frontmost:        NewSignal(cx, FrontmostAppInfo{}),
 		canReadFrontmost: NewSignal(cx, false),
+		customCursor:     NewSignal(cx, false),
 		appearance:       NewSignal(cx, AppearanceSystem),
 		appleKeys:        NewSignal(cx, false),
 		material:         NewSignal(cx, WindowMaterialNone),
@@ -252,6 +254,7 @@ func (e *Env) set(v Environment) {
 	e.launchedAtLogin.Set(v.LaunchedAtLogin)
 	e.frontmost.Set(v.FrontmostApp)
 	e.canReadFrontmost.Set(v.CanReadFrontmostApp)
+	e.customCursor.Set(supportsCustomCursor(v))
 	e.material.Set(v.WindowMaterial)
 	e.clear.Set(v.WindowTransparent)
 	e.verticalBar.Set(v.VerticalBarEdge)
@@ -404,6 +407,25 @@ func (e *Env) CanMakeWindowsTransparent() bool { return e.transparent.Get() }
 
 // CanSkipTaskbar reports whether WindowOptions.SkipTaskbar and SetSkipTaskbar keep the scope's desktop window off the taskbar: the core's part of desktop.CanSkipTaskbar, which apps use.
 func (e *Env) CanSkipTaskbar() bool { return e.taskbar.Get() }
+
+// SupportsCustomCursor reports whether the platform shows image-based custom
+// cursors (Style.CursorImage): true on macOS, Windows, Linux and the web;
+// false on touch platforms such as iOS and Android.
+func (e *Env) SupportsCustomCursor() bool { return e.customCursor.Get() }
+
+func supportsCustomCursor(v Environment) bool {
+	if v.CustomCursor {
+		return true
+	}
+	if v.Simulated {
+		return false
+	}
+	switch v.OS {
+	case OSMacOS, OSWindows, OSLinux, OSWeb:
+		return true
+	}
+	return false
+}
 
 // RTL reports whether the app lays out right to left: as the language it
 // shows is written (Language), else the locale it forces, else as the

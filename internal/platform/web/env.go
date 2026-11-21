@@ -166,6 +166,7 @@ func (s *surface) environment() driver.Environment {
 		PixelRatio:       float32(g.Get("devicePixelRatio").Float()),
 		OS:               driver.OSWeb,
 		HasWebView:       true,
+		CustomCursor:     true,
 		AppleKeyboard:    apple,
 		Idiom:            driver.IdiomPhone,
 	}
@@ -202,6 +203,7 @@ func simulate(env *driver.Environment, os driver.OS) {
 	env.OS, env.Simulated, env.Idiom = os, true, driver.IdiomDesktop
 	if os == driver.OSIOS || os == driver.OSAndroid {
 		env.Idiom = driver.IdiomPhone
+		env.CustomCursor = false
 	}
 }
 

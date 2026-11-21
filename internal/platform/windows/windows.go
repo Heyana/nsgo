@@ -412,10 +412,11 @@ type window struct {
 	root  driver.NodeID
 	// effects are the views with an effect, a transition or a navigation
 	// shader (effect.go).
-	effects  map[*view]bool
-	env      driver.Environment // the last reported
-	alerts   []driver.AlertConfig
-	alerting bool
+	effects       map[*view]bool
+	customCursors *customCursorCache
+	env           driver.Environment // the last reported
+	alerts        []driver.AlertConfig
+	alerting      bool
 	// alertShown is the alert showing, for a test host to answer; alert
 	// is how it is drawn, and alertRestore the field it took the focus
 	// from (alert.go).
@@ -1478,6 +1479,9 @@ func (w *window) apply(b *driver.MountBatch) {
 				rescroll = append(rescroll, v)
 			}
 		case driver.ItemViewStyle:
+			if v.style.Cursor != it.ViewStyle.Cursor || !v.style.CursorImage.Equal(it.ViewStyle.CursorImage) || v.style.Hidden != it.ViewStyle.Hidden {
+				recursor = true
+			}
 			w.setStyle(v, it.ViewStyle)
 			if v.web != nil {
 				v.web.restyle()
@@ -2662,6 +2666,7 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			return r
 		}
 	case wmDestroy:
+		w.closeCustomCursors()
 		w.closeCanvasImages()
 		w.removeTrays()
 		w.unregisterHotKeys()

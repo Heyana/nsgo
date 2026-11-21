@@ -298,6 +298,10 @@ func decodeSVG(data []byte, r request) (decoded, error) {
 		scale: scale, points: img.Size}, nil
 }
 
+// RGBAImage returns a CGImage of a copy of pix, premultiplied RGBA rows of w
+// pixels, or 0. The caller releases it with Release.
+func RGBAImage(pix []byte, w, h int) uintptr { return rgbaImage(pix, w, h) }
+
 // rgbaImage returns a CGImage of a copy of pix, premultiplied RGBA rows of w pixels, or 0.
 func rgbaImage(pix []byte, w, h int) uintptr {
 	if w <= 0 || h <= 0 || len(pix) < w*h*4 {

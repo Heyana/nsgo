@@ -276,13 +276,14 @@ type node struct {
 	env        *envValues // what its padding's and margin's terms come to
 	// envBound is set once an element's terms are read in an effect of
 	// their own (followEnvTerms).
-	envBound bool
-	text     *textNode
-	input    *inputNode
-	scroll   *scrollNode
-	image    *imageNode
-	hoist    *hoistNode // an overlay's or a modal's
-	hosted   []*node    // the overlays and modals this root view, modal or frame hosts
+	envBound     bool
+	text         *textNode
+	input        *inputNode
+	scroll       *scrollNode
+	image        *imageNode
+	cursorPixels *[2]pixelFrame
+	hoist        *hoistNode // an overlay's or a modal's
+	hosted       []*node    // the overlays and modals this root view, modal or frame hosts
 	// confines is set on a view that holds views of an owner Confine confined that does not own it: their frame, which clips them and hosts their overlays.
 	confines bool
 	// transformed is set once the view has been sent a transform, keyframes or a bound transform, and stays set: a transition back to none still draws it elsewhere for a while, so its parent's hit tests look for it outside the layout (ItemOverflow).

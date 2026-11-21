@@ -109,6 +109,7 @@ func (w *window) environment() driver.Environment {
 
 		// The foreground window says which app is in front to every app.
 		CanReadFrontmostApp: true,
+		CustomCursor:        true,
 
 		// The toast notifier's schedule, which has no repeats.
 		ScheduledNotifications: true,

@@ -215,7 +215,9 @@ type window struct {
 
 	// surfaceCursor is the cursor last set on the surface, once surfaceCursorSet: the style's over the view the hit test finds.
 	surfaceCursor    driver.Cursor
+	surfaceCursorKey string
 	surfaceCursorSet bool
+	customCursors    *customCursorCache
 
 	lastPointer  driver.Point
 	cursorText   *view         // the text whose widget shows a span's cursor
@@ -418,7 +420,7 @@ func newWindow(opts Options, embedded bool) *window {
 		appID:   opts.ID,
 
 		actionRefs: map[uintptr]menuRef{},
-		env:        driver.Environment{OS: driver.OSLinux, Idiom: driver.IdiomDesktop},
+		env:        driver.Environment{OS: driver.OSLinux, Idiom: driver.IdiomDesktop, CustomCursor: true},
 		components: opts.Components,
 		epoch:      time.Now(),
 		embedded:   embedded,
@@ -650,6 +652,7 @@ func (w *window) stop() {
 		return true
 	})
 	engine.SyncStorage()
+	w.closeCustomCursors()
 	w.releaseTextContexts()
 	if w.loop != 0 {
 		gMainLoopUnref(w.loop)
@@ -883,6 +886,7 @@ func (w *window) releaseSurface() {
 		gSignalHandlerDisconnect(gdkDisplayGetDefault(), w.compositedHandler)
 		w.compositedHandler = 0
 	}
+	w.closeCustomCursors()
 	w.releaseTextContexts()
 	if w.win != 0 {
 		gtkWindowDestroy(w.win)

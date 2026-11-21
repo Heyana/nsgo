@@ -26,7 +26,7 @@ These are the rules NSGo's own `base` and `ui` follow, for components other apps
 - Do nothing implicitly by device: no size, form or behavior that changes on its own on a phone, a desktop or a TV. Make it a field the app sets.
 - A component shows the same on every platform. Imitate what one platform has natively, such as iOS's Liquid Glass, rather than dropping it elsewhere.
 - Lists, trees, tables and sidebars have a default and a selected look, no hover or press; only rows of a popup that drops down, such as a menu or a select, follow the pointer.
-- Leave the pointer's arrow alone; `Style.Cursor` is only for what the arrow cannot say, such as text fields and resize drags.
+- Leave the pointer's arrow alone; `core.Style.Cursor` is only for what the arrow cannot say, such as text fields and resize drags, and `core.Style.CursorImage` (`core.CustomCursor`) is for image-based cursors on desktops and the web (`core.Env.SupportsCustomCursor`).
 - Keep a scroll bar against its container's edge: the scroll view fills the container and the padding goes on its content. Scroll through `core.Scroll` or `core.List`, never by stepping offsets. Put a footer inside its scroll view with `Position: core.Sticky, Bottom: core.Pt(0)` to pin it at the end while keeping short content in flow (`Right` horizontally); leave `Top` (`Left`) auto to use that end.
 
 ## Files and packages

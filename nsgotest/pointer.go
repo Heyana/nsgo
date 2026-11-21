@@ -472,6 +472,7 @@ func (a *App) hoverAt(selector string, local *driver.Point) {
 			next = append(next, p)
 		}
 	}
+	a.mouseIn = true
 	a.setHovered(next, at)
 	for _, h := range next {
 		ev := a.pressEvent(h, at)
@@ -587,8 +588,79 @@ func (a *App) HoverOut() {
 		a.done()
 		return
 	}
+	a.mouseIn = false
 	a.setHovered(nil, driver.Point{})
 	a.done()
+}
+
+// ActiveCursor describes the resolved pointer cursor over a view or at the
+// current mouse position (ActiveCursor, CursorAt).
+type ActiveCursor struct {
+	// Cursor is the active named cursor (or the effective fallback when Custom
+	// has empty images).
+	Cursor driver.Cursor
+	// Custom is the active CustomCursor specification, or nil when a named
+	// cursor is shown.
+	Custom *driver.CustomCursor
+	// Source is the ImageSource selected for the surface's pixel ratio
+	// (Image2x when PixelRatio >= 1.5 and Image2x is set, else Image).
+	Source driver.ImageSource
+	// Is2x reports whether Source is Custom.Image2x.
+	Is2x bool
+	// Hotspot is Custom.Hotspot clamped to the image's logical bounds (or
+	// clamped to >= 0 when the image dimensions are unknown).
+	Hotspot driver.Point
+	// Fallback is the effective fallback named cursor.
+	Fallback driver.Cursor
+}
+
+// ActiveCursor returns the resolved cursor at the current mouse position (after
+// Hover or HoverAt), walking up from the view under the pointer to the nearest
+// ancestor that names a cursor or custom cursor image. Returns CursorAuto when
+// the pointer is outside the surface or no view under it names a cursor.
+func (a *App) ActiveCursor() ActiveCursor {
+	if !a.mouseIn {
+		return ActiveCursor{}
+	}
+	v := a.viewAt(a.mouse, func(*View) bool { return true })
+	return a.resolveCursor(v)
+}
+
+// CursorAt returns the resolved cursor over the view selector matches, walking
+// up to its nearest ancestor that names a cursor or custom cursor image.
+func (a *App) CursorAt(selector string) ActiveCursor {
+	a.t.Helper()
+	v := a.pick(selector, "view", func(m *View) (*View, bool) { return m, true })
+	return a.resolveCursor(v)
+}
+
+func (a *App) resolveCursor(v *View) ActiveCursor {
+	scale := float32(1)
+	if a.env != nil && a.env.PixelRatio > 0 {
+		scale = a.env.PixelRatio
+	}
+	for p := v; p != nil; p = p.Parent {
+		if cc := p.Style.CursorImage; cc != nil {
+			src, is2x := cc.SelectSource(scale)
+			hot := driver.ClampHotspot(cc.Hotspot, cc.LogicalSize())
+			fb := cc.EffectiveFallback(p.Style.Cursor)
+			if src.Empty() {
+				return ActiveCursor{Cursor: fb, Custom: cc, Hotspot: hot, Fallback: fb}
+			}
+			return ActiveCursor{
+				Cursor:   p.Style.Cursor,
+				Custom:   cc,
+				Source:   src,
+				Is2x:     is2x,
+				Hotspot:  hot,
+				Fallback: fb,
+			}
+		}
+		if p.Style.Cursor != driver.CursorAuto {
+			return ActiveCursor{Cursor: p.Style.Cursor, Fallback: p.Style.Cursor}
+		}
+	}
+	return ActiveCursor{}
 }
 
 // setHovered makes next, innermost first, the views hovered: those that

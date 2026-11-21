@@ -156,6 +156,12 @@ type Style struct {
 	// Cursor is the pointer's look over the view; Auto inherits the
 	// nearest ancestor's, and a pressable view's is a pointer on the web.
 	Cursor Cursor
+	// CursorImage sets an image-based custom cursor over the view on
+	// desktops and the web (Env.SupportsCustomCursor). When set, it takes
+	// precedence over Cursor on the same view; if its images are empty or
+	// cannot be loaded, Fallback (or Cursor, else the platform default) is
+	// shown. Ignored on touch platforms.
+	CursorImage *CustomCursor
 	// ObjectPosition places an image in its view once ResizeMode has
 	// sized it; centered when unset.
 	ObjectPosition ObjectPosition
@@ -739,6 +745,11 @@ func (s Style) Merge(o Style) Style {
 	set(&s.BlendMode, o.BlendMode)
 	set(&s.TintColor, o.TintColor)
 	set(&s.Cursor, o.Cursor)
+	if o.CursorImage != nil {
+		s.CursorImage = o.CursorImage
+	} else if o.Cursor != CursorAuto {
+		s.CursorImage = nil
+	}
 	set(&s.ObjectPosition, o.ObjectPosition)
 	set(&s.VerticalAlign, o.VerticalAlign)
 	s.Transform, s.Transforms = mergeTransforms(s.Transform, s.Transforms, o.Transform, o.Transforms)
@@ -1134,6 +1145,13 @@ func (s *Style) viewStyle(size Size, color Color, rtl bool) driver.ViewStyle {
 		Transition:        s.Transition,
 		Animation:         s.Animation,
 		Hidden:            s.Visibility == VisibilityHidden,
+	}
+	if s.CursorImage != nil {
+		ci := *s.CursorImage
+		if ci.Fallback == CursorAuto && s.Cursor != CursorAuto {
+			ci.Fallback = s.Cursor
+		}
+		v.CursorImage = &ci
 	}
 	if c := s.CornerRadii; c != (Corners{}) {
 		if rtl {

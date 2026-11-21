@@ -1142,6 +1142,26 @@ func (n *node) viewStyle() driver.ViewStyle {
 	if vs.Effects != nil && vs.Effects.Equal(n.sent.viewStyle.Effects) {
 		vs.Effects = n.sent.viewStyle.Effects
 	}
+	// Custom cursors copy any Pixels once per version (so the app may reuse
+	// its buffer after commit) and keep the sent pointer while unchanged.
+	if vs.CursorImage != nil {
+		if vs.CursorImage.Image.Pixels != nil || vs.CursorImage.Image2x.Pixels != nil {
+			if n.cursorPixels == nil {
+				n.cursorPixels = new([2]pixelFrame)
+			}
+			ci := *vs.CursorImage
+			ci.Image.Pixels = n.cursorPixels[0].of(ci.Image)
+			ci.Image2x.Pixels = n.cursorPixels[1].of(ci.Image2x)
+			vs.CursorImage = &ci
+		} else if n.cursorPixels != nil {
+			n.cursorPixels = nil
+		}
+		if vs.CursorImage.Equal(n.sent.viewStyle.CursorImage) {
+			vs.CursorImage = n.sent.viewStyle.CursorImage
+		}
+	} else if n.cursorPixels != nil {
+		n.cursorPixels = nil
+	}
 	return vs
 }
 

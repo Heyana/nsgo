@@ -120,6 +120,8 @@ type Environment struct {
 	// FrontmostApp is the application in front on the desktop, the app itself included, and CanReadFrontmostApp says the platform follows it: on macOS, Windows and Linux on X11. FrontmostApp is zero where CanReadFrontmostApp is false.
 	FrontmostApp        FrontmostAppInfo
 	CanReadFrontmostApp bool
+	// CustomCursor says the platform shows image-based custom cursors (Style.CursorImage): true on macOS, Windows, Linux and the web; false on touch platforms.
+	CustomCursor bool
 }
 
 // FrontmostAppInfo is the application in front on the desktop.

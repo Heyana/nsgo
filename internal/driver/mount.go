@@ -681,6 +681,10 @@ type ViewStyle struct {
 	// Cursor is the pointer's look over the view; Auto inherits the
 	// nearest ancestor's, and a pressable view's is a pointer on the web.
 	Cursor Cursor
+	// CursorImage is an optional custom cursor image over the view; it
+	// travels behind a pointer so ViewStyle stays comparable, and the core
+	// keeps the same pointer while Equal.
+	CursorImage *CustomCursor
 	// Transform moves, scales and rotates the view around its transform
 	// origin without moving its children's frames; hit testing follows
 	// it. The core has resolved its percentages.

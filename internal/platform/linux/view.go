@@ -25,6 +25,7 @@ type view struct {
 	frame     driver.Bounds
 	style     driver.ViewStyle
 	cursor    driver.Cursor // the cursor set on widget
+	cursorKey string
 	cursorSet bool
 	events    driver.EventMask
 	props     driver.ViewProps
@@ -290,21 +291,41 @@ func (w *window) updatePointerCursor() {
 	}
 	if root := w.view(w.root); root != nil && w.pointerIn {
 		cursor := driver.CursorAuto
+		var custom *driver.CustomCursor
 		for v := hit(root, w.lastPointer, func(*view) bool { return true }); v != nil; v = v.parent {
-			if c := v.shownStyle().Cursor; c != driver.CursorAuto {
+			st := v.shownStyle()
+			if st.CursorImage != nil {
+				cursor, custom = st.Cursor, st.CursorImage
+				break
+			}
+			if c := st.Cursor; c != driver.CursorAuto {
 				cursor = c
 				break
 			}
 		}
+		var customCur uintptr
+		var customKey string
+		if custom != nil {
+			customCur, customKey = w.customGdkCursor(custom, cursor)
+			if customCur == 0 {
+				cursor = custom.EffectiveFallback(cursor)
+			}
+		}
 		switch {
-		case w.surfaceCursorSet && cursor == w.surfaceCursor:
+		case w.surfaceCursorSet && customKey != "" && customKey == w.surfaceCursorKey:
+			// Already showing this custom cursor.
+		case customCur != 0:
+			gtkWidgetSetCursor(w.surface, customCur)
+			w.surfaceCursor, w.surfaceCursorKey, w.surfaceCursorSet = cursor, customKey, true
+		case w.surfaceCursorSet && w.surfaceCursorKey == "" && cursor == w.surfaceCursor:
 			// GTK makes a new cursor for every name it is given.
 		case cursor == driver.CursorAuto:
 			gtkWidgetSetCursorFromName(w.surface, nil)
+			w.surfaceCursor, w.surfaceCursorKey, w.surfaceCursorSet = cursor, "", true
 		default:
 			gtkWidgetSetCursorFromName(w.surface, cstr(cursor.Name()))
+			w.surfaceCursor, w.surfaceCursorKey, w.surfaceCursorSet = cursor, "", true
 		}
-		w.surfaceCursor, w.surfaceCursorSet = cursor, true
 	}
 	c, ok := driver.CursorAuto, false
 	// A text whose spans name no cursor keeps its layout untouched: glyphAt would make one it has not drawn.
@@ -321,8 +342,8 @@ func (w *window) updatePointerCursor() {
 		w.cursorText = nil
 		w.setCursor(old)
 	}
-	if ok && (text.cursor != c || !text.cursorSet) {
-		text.cursor, text.cursorSet = c, true
+	if ok && (text.cursor != c || text.cursorKey != "" || !text.cursorSet) {
+		text.cursor, text.cursorKey, text.cursorSet = c, "", true
 		gtkWidgetSetCursorFromName(text.widget, cstr(c.Name()))
 	}
 	if ok {
@@ -545,12 +566,28 @@ func (w *window) contextMenu(at driver.Point) {
 
 // setCursor shows the cursor v's style names, or lets its parent's show.
 func (w *window) setCursor(v *view) {
-	if v.widget == 0 || v.cursorSet && v.cursor == v.style.Cursor {
+	if v.widget == 0 {
 		return
 	}
-	v.cursor, v.cursorSet = v.style.Cursor, true
-	if v.cursor != driver.CursorAuto {
-		gtkWidgetSetCursorFromName(v.widget, cstr(v.cursor.Name()))
+	cursor := v.style.Cursor
+	var customCur uintptr
+	var customKey string
+	if v.style.CursorImage != nil {
+		customCur, customKey = w.customGdkCursor(v.style.CursorImage, cursor)
+		if customCur == 0 {
+			cursor = v.style.CursorImage.EffectiveFallback(cursor)
+		}
+	}
+	if v.cursorSet && v.cursorKey == customKey && (customKey != "" || v.cursor == cursor) {
+		return
+	}
+	v.cursor, v.cursorKey, v.cursorSet = cursor, customKey, true
+	if customCur != 0 {
+		gtkWidgetSetCursor(v.widget, customCur)
+		return
+	}
+	if cursor != driver.CursorAuto {
+		gtkWidgetSetCursorFromName(v.widget, cstr(cursor.Name()))
 		return
 	}
 	gtkWidgetSetCursorFromName(v.widget, nil)

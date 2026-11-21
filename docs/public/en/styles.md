@@ -102,6 +102,10 @@ core.Text{Content: "Hello", StyleFunc: func() core.Style {
 
 `StyleFunc` runs again when what it read changes, so `cx.Dark()` and `cx.Palette()` inside it follow the theme. The same applies to `ClassFunc`, a span's `StyleFunc` and a component's `StyleFunc` fields.
 
+## Cursors
+
+`Style.Cursor` sets a named pointer cursor (`core.CursorText`, `core.CursorColResize`, and so on); leave pressables on `core.CursorAuto` so they keep the platform's arrow. For drawing tools, games or custom canvas pointers on desktops and the web, `Style.CursorImage` takes a `*core.CustomCursor` with a 1x `Image`, an optional HiDPI `Image2x` (picked automatically at `PixelRatio >= 1.5`), a logical-point `Hotspot` clamped to image bounds, and a `Fallback` named cursor. Check `cx.Env().SupportsCustomCursor()` to see whether the current target displays custom cursor images; touch platforms ignore them.
+
 ## Next
 
 - [Layout](layout.md): where boxes go.
