@@ -35,6 +35,12 @@ Android 使用 Material 3 顶部应用栏。普通应用栏高 64 dp，标题为
 
 `NoPopOnBack` 在按下返回时保留页面，`OnBackPress` 听到返回，`NoPopOnSwipe` 关闭 iOS 的边缘滑动返回。`cx.OnBackPress(func() bool)` 在栈之前给应用一个处理器，用于未保存的更改。`OnDismiss` 报告用户已经弹出页面，栈会把页面移除。
 
+## 沉浸式全屏
+
+调用 `mobile.Immersive(cx, true)` 为窗口请求全屏，调用 `mobile.Immersive(cx, false)` 恢复窗口原有的系统栏设置。页面或对话框可设置 `StatusBar: core.StatusBarSetting{Immersive: core.ToggleOn}`，在显示期间请求全屏。TSX 页面或对话框使用 `statusBar={{ immersive: true }}`，窗口的默认值可在 `nsgo.yaml` 中设置为 `status_bar: { immersive: true }`。
+
+在 Android 上，从屏幕边缘滑动可短暂显示状态栏和导航栏。在 iOS 上，状态栏隐藏，底部主屏幕指示条的隐藏和显示由 UIKit 决定。`cx.Env().SafeArea()` 继续报告系统提供的边距，包括屏幕开孔占用的区域。
+
 ## 模态
 
 `ui.Dialog` 在变暗的应用上显示一个表面，在触摸屏上从底部出现；`ui.Sheet` 从底部显示面板。除非另有设置，Escape 和点击背景都会关闭它们。

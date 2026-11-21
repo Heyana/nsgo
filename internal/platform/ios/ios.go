@@ -226,6 +226,7 @@ type surface struct {
 	menuHeld    bool
 	statusBar   int // the UIStatusBarStyle the controller asks for
 	hideBar     bool
+	hideHome    bool
 	barAnimated bool
 	// headers are the navigation bar's heights; oriented the modals
 	// that limit the orientations, in the order they were presented.
@@ -409,6 +410,7 @@ func loadUIKit() {
 		}},
 		{Cmd: sel("preferredStatusBarStyle"), Fn: func(self objc.ID, _ objc.SEL) int { return controllerSurface(self).statusBar }},
 		{Cmd: sel("prefersStatusBarHidden"), Fn: func(self objc.ID, _ objc.SEL) bool { return controllerSurface(self).hideBar }},
+		{Cmd: sel("prefersHomeIndicatorAutoHidden"), Fn: func(self objc.ID, _ objc.SEL) bool { return controllerSurface(self).hideHome }},
 		{Cmd: sel("preferredStatusBarUpdateAnimation"), Fn: func(self objc.ID, _ objc.SEL) int { return controllerSurface(self).barAnimation() }},
 		{Cmd: sel("supportedInterfaceOrientations"), Fn: func(self objc.ID, cmd objc.SEL) uint {
 			if m := controllerSurface(self).orientations(); m != 0 {

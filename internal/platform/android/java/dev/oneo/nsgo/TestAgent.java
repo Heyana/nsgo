@@ -6,6 +6,8 @@ import android.content.Context;
 import android.content.ContextWrapper;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Insets;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -16,6 +18,8 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import java.io.ByteArrayOutputStream;
@@ -273,6 +277,9 @@ final class TestAgent {
                         .put("visible", activity().getWindow().getDecorView().getWindowVisibility() == View.VISIBLE).toString());
                 return;
             }
+            case "system-bars":
+                view.testReply(id, "", systemBars());
+                return;
             case "screenshot":
                 view.testReply(id, "", screenshot());
                 return;
@@ -398,6 +405,23 @@ final class TestAgent {
             ic.setComposingText(text, 1);
         }
         ic.endBatchEdit();
+    }
+
+    /** Reports the window's actual bar visibility, insets, and swipe behavior. */
+    private String systemBars() throws JSONException {
+        if (Build.VERSION.SDK_INT < 30) return "";
+        WindowInsets insets = view.getRootWindowInsets();
+        WindowInsetsController controller = view.getWindowInsetsController();
+        if (insets == null || controller == null) return "{}";
+        Insets safe = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+        float density = view.density();
+        return new JSONObject()
+                .put("ready", true)
+                .put("status", insets.isVisible(WindowInsets.Type.statusBars()))
+                .put("navigation", insets.isVisible(WindowInsets.Type.navigationBars()))
+                .put("transient", controller.getSystemBarsBehavior() == WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE)
+                .put("safe", new JSONObject().put("Top", safe.top / density).put("Right", safe.right / density)
+                        .put("Bottom", safe.bottom / density).put("Left", safe.left / density)).toString();
     }
 
     private static int keyCode(String name) {

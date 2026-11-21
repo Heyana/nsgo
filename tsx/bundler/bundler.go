@@ -136,6 +136,7 @@ func setupScript(fsys fs.FS, entry string) (string, error) {
 		var sb struct {
 			Foreground string `yaml:"foreground" json:"foreground,omitempty"`
 			Hidden     *bool  `yaml:"hidden" json:"hidden,omitempty"`
+			Immersive  *bool  `yaml:"immersive" json:"immersive,omitempty"`
 		}
 		if err := config.StatusBar.Decode(&sb); err != nil {
 			return "", fmt.Errorf("nsgo.yaml: status_bar: %w", err)

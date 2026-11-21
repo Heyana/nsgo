@@ -47,7 +47,7 @@ view.onError = { message in log(message) }
 view.register(component: "host.badge") { context in Badge(context) }
 ```
 
-`NSGoView` starts the app once it is in a window and stops it when it is deallocated or sent `stop()`. Set the launch values before it is in a window; the rest may change at any time. Handlers, components and callbacks run on the main thread, and a reply may come later from any thread. A view controller that forwards the status bar returns the view's `preferredStatusBarStyle` and `prefersStatusBarHidden`.
+`NSGoView` starts the app once it is in a window and stops it when it is deallocated or sent `stop()`. Set the launch values before it is in a window; the rest may change at any time. Handlers, components and callbacks run on the main thread, and a reply may come later from any thread. A view controller can forward the view's `preferredStatusBarStyle`, `prefersStatusBarHidden` and `prefersHomeIndicatorAutoHidden` to follow its system-bar settings.
 The host can also return the view's `preferredScreenEdgesDeferringSystemGestures` from its controller to forward `mobile.DeferSystemGestures`.
 
 ## Android

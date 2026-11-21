@@ -35,6 +35,12 @@ Give a page its own `Header` to replace `ui.NavHeader`. On iOS and Android it be
 
 `NoPopOnBack` keeps a page when back is pressed, `OnBackPress` hears the press and `NoPopOnSwipe` turns off iOS's swipe back. `cx.OnBackPress(func() bool)` gives the app a handler before the stack, for unsaved changes. `OnDismiss` reports that the user popped the page, and the stack removes it.
 
+## Immersive full screen
+
+Call `mobile.Immersive(cx, true)` to request full screen for the window and `mobile.Immersive(cx, false)` to return to its regular system-bar settings. For a page or dialog, use `StatusBar: core.StatusBarSetting{Immersive: core.ToggleOn}` to request it while that layer is shown. In TSX, use `statusBar={{ immersive: true }}` on a page or dialog, or `status_bar: { immersive: true }` in `nsgo.yaml` for the window default.
+
+On Android an edge swipe briefly shows the status and navigation bars. On iOS the status bar hides and UIKit decides when to hide or reveal the home indicator. `cx.Env().SafeArea()` continues to report the insets the system provides, including display cutouts.
+
 ## Modals
 
 `ui.Dialog` shows a surface over a dimmed app, a sheet from the bottom on touch screens, and `ui.Sheet` a panel from the bottom. Each closes on Escape and a press on its backdrop unless told not to.

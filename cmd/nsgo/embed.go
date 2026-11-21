@@ -114,6 +114,8 @@ __attribute__((objc_runtime_visible))
 /// The gesture deferrals the app asks for, for the host's view controller
 /// to return from its own preferredScreenEdgesDeferringSystemGestures.
 @property (nonatomic, readonly) UIRectEdge preferredScreenEdgesDeferringSystemGestures;
+/// Whether the app lets UIKit hide the home indicator.
+@property (nonatomic, readonly) BOOL prefersHomeIndicatorAutoHidden;
 
 /// Sends the app an event (core.Scope.OnHostEvent), kept until it has a
 /// listener.

@@ -254,7 +254,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private int[] keyIds = new int[0];
     private final Set<Integer> consumedKeys = new HashSet<>();
     private int statusBarStyle;
-    private boolean statusBarHidden;
+    private boolean statusBarHidden, immersive, wasImmersive;
     /** The pan, pinch and rotation of the touch in progress, on the UI thread. */
     private final Gestures gestures;
     /** The view the root node shows in, among the accessory bar. */
@@ -3308,12 +3308,14 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 reportHeldKeys = in.readUnsignedByte() != 0;
                 break;
             }
-            case Protocol.ITEM_STATUS_BAR:
+            case Protocol.ITEM_STATUS_BAR: {
                 statusBarStyle = in.readUnsignedByte();
-                // Hidden, then animated, which the system does as it likes.
-                statusBarHidden = Protocol.flag(in.readUnsignedByte(), 0);
+                int flags = in.readUnsignedByte();
+                statusBarHidden = Protocol.flag(flags, 0);
+                immersive = Protocol.flag(flags, 2);
                 systemBars();
                 break;
+            }
             case Protocol.ITEM_TITLE: {
                 // Phones show no title; the window's names it to TalkBack.
                 String title = Protocol.readString(in);
@@ -3956,7 +3958,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     /**
      * Lays the view out behind the system bars and draws their icons to
      * contrast with the status bar style or, for Auto, the appearance; and
-     * hides the status bar when asked.
+     * hides the status bar or enters immersive mode when asked.
      */
     private void systemBars() {
         // The system bars are the activity's window's: an overlay's sets none.
@@ -3973,15 +3975,24 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     | (dark ? 0 : WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
             bars.setSystemBarsAppearance(appearance, light);
             bars.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            if (statusBarHidden) bars.hide(WindowInsets.Type.statusBars());
-            else bars.show(WindowInsets.Type.statusBars());
+            int status = WindowInsets.Type.statusBars();
+            int system = WindowInsets.Type.systemBars();
+            if (immersive) {
+                bars.hide(system);
+            } else {
+                if (wasImmersive) bars.show(system & ~status);
+                if (statusBarHidden) bars.hide(status);
+                else bars.show(status);
+            }
+            wasImmersive = immersive;
             return;
         }
         int flags = SYSTEM_UI_FLAG_LAYOUT_STABLE | SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                 | SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
         if (darkIcons) flags |= SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
         if (!dark) flags |= SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-        if (statusBarHidden) flags |= SYSTEM_UI_FLAG_FULLSCREEN;
+        if (immersive) flags |= SYSTEM_UI_FLAG_FULLSCREEN | SYSTEM_UI_FLAG_HIDE_NAVIGATION | SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+        else if (statusBarHidden) flags |= SYSTEM_UI_FLAG_FULLSCREEN;
         getRootView().setSystemUiVisibility(flags);
     }
 

@@ -47,7 +47,7 @@ view.onError = { message in log(message) }
 view.register(component: "host.badge") { context in Badge(context) }
 ```
 
-`NSGoView` 在进入窗口后启动应用，在释放或收到 `stop()` 时停止。启动值要在进入窗口前设置，其余值可以随时改变。处理器、组件和回调在主线程运行，回复可以从任意线程稍后到达。转发状态栏的视图控制器返回视图的 `preferredStatusBarStyle` 和 `prefersStatusBarHidden`。
+`NSGoView` 在进入窗口后启动应用，在释放或收到 `stop()` 时停止。启动值要在进入窗口前设置，其余值可以随时改变。处理器、组件和回调在主线程运行，回复可以从任意线程稍后到达。视图控制器可以转发视图的 `preferredStatusBarStyle`、`prefersStatusBarHidden` 和 `prefersHomeIndicatorAutoHidden`，以跟随它的系统栏设置。
 
 ## Android
 

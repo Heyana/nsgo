@@ -208,7 +208,7 @@ func TestStatusBarLayers(t *testing.T) {
 				Each(routes.Get, func(r string) string { return r }, func(cx *Scope, r func() string, _ func() int) Node {
 					s := Screen{TestID: r(), OnDismiss: func() { routes.Set([]string{"home"}) }}
 					if r() == "photo" {
-						s.StatusBar = StatusBarSetting{Hidden: ToggleOn}
+						s.StatusBar = StatusBarSetting{Hidden: ToggleOn, Immersive: ToggleOn}
 					}
 					return s
 				}),
@@ -216,7 +216,7 @@ func TestStatusBarLayers(t *testing.T) {
 			Show{When: open.Get, Then: func(*Scope) Node {
 				return Modal{StatusBarFunc: func() StatusBarSetting {
 					if light.Get() {
-						return StatusBarSetting{Foreground: StatusBarLight, Animated: ToggleOn}
+						return StatusBarSetting{Foreground: StatusBarLight, Immersive: ToggleOff, Animated: ToggleOn}
 					}
 					return StatusBarSetting{Foreground: StatusBarDark}
 				}}
@@ -231,9 +231,9 @@ func TestStatusBarLayers(t *testing.T) {
 		want []driver.StatusBarConfig
 	}{
 		{func() { root.SetStatusBar(StatusBarSetting{Foreground: StatusBarDark}) }, []driver.StatusBarConfig{{Style: StatusBarDark}}},
-		{func() { routes.Set([]string{"home", "photo"}) }, []driver.StatusBarConfig{{Style: StatusBarDark, Hidden: true}}},
+		{func() { routes.Set([]string{"home", "photo"}) }, []driver.StatusBarConfig{{Style: StatusBarDark, Hidden: true, Immersive: true}}},
 		{func() { open.Set(true) }, []driver.StatusBarConfig{{Style: StatusBarLight, Hidden: true, Animated: true}}},
-		{func() { light.Set(false) }, []driver.StatusBarConfig{{Style: StatusBarDark, Hidden: true}}},
+		{func() { light.Set(false) }, []driver.StatusBarConfig{{Style: StatusBarDark, Hidden: true, Immersive: true}}},
 		{func() { light.Set(true); light.Set(false) }, nil},
 		{func() { open.Set(false) }, nil},
 		{func() { h.tree.Dispatch(driver.Event{Kind: driver.EventBack}) }, []driver.StatusBarConfig{{Style: StatusBarDark}}},

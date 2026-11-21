@@ -1518,9 +1518,10 @@ const (
 // StatusBarConfig is the status bar the platform shows (ItemStatusBar).
 type StatusBarConfig struct {
 	// Style is never StatusBarInherit.
-	Style    StatusBarStyle
-	Hidden   bool
-	Animated bool
+	Style     StatusBarStyle
+	Hidden    bool
+	Animated  bool
+	Immersive bool
 }
 
 // VideoConfig is everything a video plays with (ItemVideo), with the

@@ -23,7 +23,7 @@ export interface InputProps extends Omit<CommonProps, "ios">, InputHostProps {
 export declare function Input(props: InputProps): YNode;
 
 export type StatusBarForeground = "auto" | "light" | "dark";
-export interface StatusBar { foreground?: StatusBarForeground; hidden?: boolean; animated?: boolean }
+export interface StatusBar { foreground?: StatusBarForeground; hidden?: boolean; immersive?: boolean; animated?: boolean }
 
 export type DialogChangeReason = "cancel" | "backdropPress" | "swipe";
 export interface DialogProps extends DialogHostProps {

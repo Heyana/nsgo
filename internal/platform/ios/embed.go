@@ -200,6 +200,10 @@ func embedMethods() []objc.MethodDef {
 			s := embedded(self)
 			return s != nil && s.hideBar
 		}},
+		{Cmd: sel("prefersHomeIndicatorAutoHidden"), Fn: func(self objc.ID, _ objc.SEL) bool {
+			s := embedded(self)
+			return s != nil && s.hideHome
+		}},
 
 		{Cmd: sel("send:data:"), Fn: func(self objc.ID, _ objc.SEL, name, data objc.ID) {
 			if s := embedded(self); s != nil {

@@ -67,7 +67,7 @@ func dialogFace(p *props) core.Node {
 	return d
 }
 
-// statusBar reads { foreground, hidden, animated }.
+// statusBar reads { foreground, hidden, immersive, animated }.
 func (r *runtime) statusBar(v js.Value) core.StatusBarSetting {
 	o := r.options(v)
 	var s core.StatusBarSetting
@@ -85,7 +85,7 @@ func (r *runtime) statusBar(v js.Value) core.StatusBarSetting {
 		}
 		return core.ToggleOff
 	}
-	s.Hidden, s.Animated = toggle("hidden"), toggle("animated")
+	s.Hidden, s.Immersive, s.Animated = toggle("hidden"), toggle("immersive"), toggle("animated")
 	return s
 }
 

@@ -1657,7 +1657,7 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 		case driver.ItemStatusBar:
 			c := it.StatusBar
 			w.byte(byte(c.Style))
-			w.flags(c.Hidden, c.Animated)
+			w.flags(c.Hidden, c.Animated, c.Immersive)
 		case driver.ItemOverflow:
 			w.bounds(it.Frame)
 		case driver.ItemScreen:

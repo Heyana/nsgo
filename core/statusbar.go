@@ -27,11 +27,15 @@ func (t Toggle) over(below Toggle) Toggle {
 	return t
 }
 
-// StatusBarSetting is one layer of the status bar's settings. Fields left
-// at their zero values keep the layers' below.
+// StatusBarSetting is one layer of the system bars' settings. Fields
+// left at their zero values keep the settings below.
 type StatusBarSetting struct {
 	Foreground StatusBarStyle
 	Hidden     Toggle
+	// Immersive hides the status and navigation bars on Android. On iOS
+	// it hides the status bar and lets UIKit hide the home indicator.
+	// Other targets ignore it.
+	Immersive Toggle
 	// Animated animates the change to this layer's settings.
 	Animated Toggle
 }
@@ -41,12 +45,13 @@ func (s StatusBarSetting) over(below StatusBarSetting) StatusBarSetting {
 		s.Foreground = below.Foreground
 	}
 	s.Hidden = s.Hidden.over(below.Hidden)
+	s.Immersive = s.Immersive.over(below.Immersive)
 	s.Animated = s.Animated.over(below.Animated)
 	return s
 }
 
 func (s StatusBarSetting) config() driver.StatusBarConfig {
-	c := driver.StatusBarConfig{Style: s.Foreground, Hidden: s.Hidden == ToggleOn, Animated: s.Animated == ToggleOn}
+	c := driver.StatusBarConfig{Style: s.Foreground, Hidden: s.Hidden == ToggleOn, Immersive: s.Immersive == ToggleOn, Animated: s.Animated == ToggleOn}
 	if c.Style == StatusBarInherit {
 		c.Style = StatusBarAuto
 	}
@@ -66,9 +71,9 @@ type statusLayer struct {
 	setting StatusBarSetting
 }
 
-// SetStatusBar patches the app's default status bar, under the screens'
-// and modals' settings, with the fields patch sets. Desktops and the web
-// have no status bar.
+// SetStatusBar patches the app's default system bars, under the screens'
+// and modals' settings, with the fields patch sets. It is the core's
+// part of mobile.Immersive.
 func (cx *Scope) SetStatusBar(patch StatusBarSetting) {
 	if t := cx.tree(); t != nil && !cx.denied(serviceStatusBar, "") {
 		t.status.base = patch.over(t.status.base)
@@ -127,7 +132,7 @@ func (t *Tree) emitStatusBar() {
 	clear(st.layers[len(live):])
 	st.layers = live
 	c := merged.config()
-	if c == st.shown || (!st.started && c.Style == StatusBarAuto && !c.Hidden) {
+	if c == st.shown || (!st.started && c.Style == StatusBarAuto && !c.Hidden && !c.Immersive) {
 		return
 	}
 	st.shown, st.started = c, true

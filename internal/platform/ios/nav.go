@@ -133,6 +133,10 @@ func registerNav() {
 				v := sheets[self]
 				return v != nil && v.surface.hideBar
 			}},
+			{Cmd: sel("prefersHomeIndicatorAutoHidden"), Fn: func(self objc.ID, _ objc.SEL) bool {
+				v := sheets[self]
+				return v != nil && v.surface.hideHome
+			}},
 			{Cmd: sel("preferredStatusBarUpdateAnimation"), Fn: func(self objc.ID, _ objc.SEL) int {
 				if v := sheets[self]; v != nil {
 					return v.surface.barAnimation()
@@ -1110,14 +1114,22 @@ func (s *surface) setStatusBar(c *driver.StatusBarConfig) {
 	case driver.StatusBarLight:
 		s.statusBar = lightContent
 	}
-	s.hideBar, s.barAnimated = c.Hidden, c.Animated
+	homeChanged := s.hideHome != c.Immersive
+	s.hideBar, s.hideHome, s.barAnimated = c.Hidden || c.Immersive, c.Immersive, c.Animated
 	update := func() {
 		// An embedding host's controller asks the view (NSGoView's
 		// preferredStatusBarStyle) if it forwards it.
-		s.viewController().Send(sel("setNeedsStatusBarAppearanceUpdate"))
+		invalidate := func(controller objc.ID) {
+			controller.Send(sel("setNeedsStatusBarAppearanceUpdate"))
+			home := sel("setNeedsUpdateOfHomeIndicatorAutoHidden")
+			if homeChanged && objc.Send[bool](controller, sel("respondsToSelector:"), home) {
+				controller.Send(home)
+			}
+		}
+		invalidate(s.viewController())
 		for c, v := range sheets {
 			if v.surface == s {
-				c.Send(sel("setNeedsStatusBarAppearanceUpdate"))
+				invalidate(c)
 			}
 		}
 	}
