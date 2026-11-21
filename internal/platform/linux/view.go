@@ -105,12 +105,13 @@ type view struct {
 	drawing *driver.Drawing
 	canvas  canvasDraw
 
-	// A web view's page, a video's player, a native component and a
-	// shader's GL area.
+	// A web view's page, a video's player, a native component, a shader's GL
+	// area and a 3D GPU view's GL area.
 	web    *web
 	video  *video
 	native *component
 	shader *glShaderView
+	gpu    *glGPUView
 	// fx is its effect, transition or navigation shader, fxArea the area
 	// of the effect drawn over its children, its own or a screen
 	// shader's (effect.go).

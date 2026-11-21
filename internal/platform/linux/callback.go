@@ -107,6 +107,12 @@ var (
 	cbShaderRender    uintptr
 	cbShaderUnrealize uintptr
 
+	cbGPURealize   uintptr
+	cbGPUResize    uintptr
+	cbGPURender    uintptr
+	cbGPUUnrealize uintptr
+	cbGPUFlush     uintptr
+
 	cbDropMotion uintptr
 	cbDropLeave  uintptr
 	cbDrop       uintptr
@@ -209,6 +215,12 @@ func init() {
 
 	cbShaderRender = newCallback(shaderRenderCallback)
 	cbShaderUnrealize = newCallback(shaderUnrealizeCallback)
+
+	cbGPURealize = newCallback(gpuRealizeCallback)
+	cbGPUResize = newCallback(gpuResizeCallback)
+	cbGPURender = newCallback(gpuRenderCallback)
+	cbGPUUnrealize = newCallback(gpuUnrealizeCallback)
+	cbGPUFlush = newCallback(gpuFlushCallback)
 
 	cbDropMotion = newCallback(dropMotionCallback)
 	cbDropLeave = newCallback(dropLeaveCallback)

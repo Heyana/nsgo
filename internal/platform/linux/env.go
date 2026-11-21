@@ -122,6 +122,7 @@ func (w *window) environment() driver.Environment {
 		Audio:            loadSound(),
 		DiscoverServices: true,
 		AudioSchedule:    loadSound(),
+		GPU:              loadGPU(),
 
 		AudioPlaybackControls: loadSound(),
 		CanQuickLook:          w.canQuickLook(),

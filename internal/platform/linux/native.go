@@ -35,6 +35,8 @@ func (v *view) hosted() *hosted {
 		return &v.native.hosted
 	case v.shader != nil:
 		return &v.shader.hosted
+	case v.gpu != nil:
+		return &v.gpu.hosted
 	}
 	return nil
 }
@@ -45,6 +47,23 @@ func (w *window) host(v *view, h *hosted, child uintptr, target bool) {
 	w.setHostedChild(v, h, child)
 	if child != 0 {
 		gtkWidgetSetCanTarget(child, boolInt(target))
+	}
+}
+
+// hostUnder makes child v's hosted widget beneath v's app children so HUD
+// overlays render above it.
+func (w *window) hostUnder(v *view, h *hosted, child uintptr, target bool) {
+	if h.child != 0 {
+		w.unparentWidget(h.child)
+		gObjectUnref(h.child)
+	}
+	h.child = child
+	if child != 0 {
+		gObjectRefSink(child)
+		first := gtkWidgetGetFirstChild(v.widget)
+		gtkWidgetInsertBefore(child, v.widget, first)
+		gtkWidgetSetCanTarget(child, boolInt(target))
+		gtkWidgetQueueAllocate(v.widget)
 	}
 }
 

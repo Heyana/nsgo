@@ -192,6 +192,9 @@ type window struct {
 	allocating int
 	// destroyPending is a WindowDestroy applied during an allocation, which the main loop carries out once GTK has returned from it (requestDestroy).
 	destroyPending bool
+	gpuMu          sync.Mutex
+	gpuPending     map[driver.NodeID][]driver.GPUFrame
+	gpuPosted      bool
 
 	// The main thread's. views is indexed by NodeID.
 	views []*view
@@ -859,8 +862,6 @@ func (w *window) RequestFrame() {
 	}
 }
 
-func (w *window) SubmitGPU(driver.GPUFrame) {}
-
 // post runs fn on the main thread; any goroutine may call it.
 func (w *window) post(fn func()) {
 	w.mu.Lock()
@@ -1501,6 +1502,10 @@ func (w *window) apply(b *driver.MountBatch) {
 			if v.fx != nil {
 				w.redrawEffect(v)
 			}
+		case driver.ItemGPU:
+			if it.GPU != nil {
+				w.setGPU(v, *it.GPU)
+			}
 		case driver.ItemWeb:
 			w.configureWeb(v, it.Web)
 		case driver.ItemWebCommand:
@@ -1656,6 +1661,9 @@ func (w *window) delete(v *view) {
 	if v.shader != nil {
 		w.unhost(v, &v.shader.hosted)
 		v.shader = nil
+	}
+	if v.gpu != nil {
+		w.closeGPU(v)
 	}
 	v.source.reset(driver.ImageSource{})
 	v.placeholder.reset(driver.ImageSource{})

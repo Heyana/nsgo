@@ -269,7 +269,7 @@ func (w *window) insertWidget(p, v, before *view) {
 	if before != nil && before.widget != 0 && gtkWidgetGetParent(before.widget) == p.widget {
 		next = before.widget
 	} else if p.kind != driver.KindInput {
-		next = firstNative(p.widget)
+		next = firstNative(p)
 	}
 	gtkWidgetInsertBefore(v.widget, p.widget, next)
 	gtkWidgetQueueAllocate(p.widget)
@@ -286,10 +286,14 @@ func firstChildView(parent uintptr) uintptr {
 	return 0
 }
 
-// firstNative returns the first child of parent that is no NsgoView: the
-// first native widget it hosts, or 0.
-func firstNative(parent uintptr) uintptr {
-	for c := gtkWidgetGetFirstChild(parent); c != 0; c = gtkWidgetGetNextSibling(c) {
+// firstNative returns the first child of p that is no NsgoView: the
+// first native widget it hosts above its children, or 0. A GPU view's
+// GtkGLArea sits beneath p's children so HUD overlays paint over it.
+func firstNative(p *view) uintptr {
+	for c := gtkWidgetGetFirstChild(p.widget); c != 0; c = gtkWidgetGetNextSibling(c) {
+		if p.gpu != nil && c == p.gpu.area {
+			continue
+		}
 		if _, ok := lookupWidget(c); !ok {
 			return c
 		}
