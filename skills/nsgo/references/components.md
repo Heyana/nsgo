@@ -23,6 +23,7 @@ Use `ui`'s component whenever one exists: it is `base`'s control with NSGo's loo
 
 ## Using them well
 
+- Use `ui.ShellTab.TextFunc` and `ui.TabShell.LabelFunc` for a changing tab title and bar name.
 - Set `tabBarBackground`, `tabBarIdle`, `tabBarSelected` and `tabBarIndicator` as Android `mobile.TabBar` palette roles. A custom palette uses `Accent` for selected content by default.
 
 - For a marker band behind wrapped text, give a `core.Span` a `Background` and `BackgroundInsetTop`, such as `core.Pct(62)` ([text](https://nsgo.dev/docs/text.md#runs-and-links)).

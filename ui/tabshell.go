@@ -8,7 +8,8 @@ import (
 
 // ShellTab is a top-level section of a TabShell.
 type ShellTab struct {
-	Text string
+	Text     string
+	TextFunc func() string
 	// Icon draws the tab's SVG, in Android's native bar too wherever SystemIcon names no drawable there.
 	Icon func() *core.SVG
 	// SystemIcon is the platform's name for the tab's icon on iOS and Android, as mobile.TabBarItem's Icon.
@@ -27,8 +28,9 @@ type TabShell struct {
 	// BarHidden hides the system or drawn bar while it reports true, and restores the section's bottom safe area and TabBarInset.
 	BarHidden func() bool
 	// Label names the bar for assistive technology.
-	Label  string
-	TestID string
+	Label     string
+	LabelFunc func() string
+	TestID    string
 }
 
 // tabBarInsetKey provides a floating tab bar's inset to its sections.
@@ -122,10 +124,14 @@ func (s TabShell) Render(cx *core.Scope) core.Node {
 // bar is the tab bar: the tabs' icons over their text, the selected
 // one in the accent.
 func (s TabShell) bar(cx *core.Scope, selected func() int, change func(int)) core.Node {
+	label := s.Label
+	if s.LabelFunc != nil {
+		label = ""
+	}
 	if s.hasSystemBar(cx) {
 		android := cx.Env().OS() == core.OSAndroid
 		return mobile.TabBar{ItemsFunc: func() []mobile.TabBarItem { return s.systemItems(android) },
-			Selected: selected, OnChange: change, TestID: "tab-bar"}
+			Selected: selected, OnChange: change, Label: label, LabelFunc: s.LabelFunc, TestID: "tab-bar"}
 	}
 	colors := ColorsOf(cx)
 	var tabs []core.Node
@@ -134,8 +140,13 @@ func (s TabShell) bar(cx *core.Scope, selected func() int, change func(int)) cor
 		if tab.Icon != nil {
 			content = append(content, Icon(tab.Icon, 22, Inherited))
 		}
-		content = append(content, line(tab.Text, TypeCaption.Merge(core.Style{FontWeight: Medium}), 1))
-		tabs = append(tabs, base.Tab{Label: tab.Text, Selected: func() bool { return selected() == i },
+		text := tab.Text
+		if tab.TextFunc != nil {
+			text = ""
+		}
+		content = append(content, core.Text{Content: text, ContentFunc: tab.TextFunc,
+			Style: TypeCaption.Merge(core.Style{FontWeight: Medium}), MaxLines: 1})
+		tabs = append(tabs, base.Tab{Label: text, LabelFunc: tab.TextFunc, Selected: func() bool { return selected() == i },
 			OnPress: func(core.PressEvent) { change(i) },
 			Style: core.Style{FlexGrow: 1, FlexBasis: core.Pt(0), MinWidth: core.Pt(0), AlignItems: core.AlignCenter,
 				JustifyContent: core.JustifyCenter, Gap: 2, MinHeight: core.Pt(RowHeight + 4), CornerRadius: RadiusControl,
@@ -151,7 +162,7 @@ func (s TabShell) bar(cx *core.Scope, selected func() int, change func(int)) cor
 		StyleFunc: func() core.Style {
 			return core.Style{Background: colors.Surface(), BorderColors: core.EdgeColors{Top: colors.Line()}}
 		}, Children: []core.Node{
-			base.Tabs{Label: s.Label, TestID: "tab-bar", Style: core.Style{Direction: core.Row, FlexGrow: 1, Gap: 4}, Children: tabs},
+			base.Tabs{Label: label, LabelFunc: s.LabelFunc, TestID: "tab-bar", Style: core.Style{Direction: core.Row, FlexGrow: 1, Gap: 4}, Children: tabs},
 		}}
 }
 
@@ -172,7 +183,11 @@ func (s TabShell) hasSystemBar(cx *core.Scope) bool {
 func (s TabShell) systemItems(android bool) []mobile.TabBarItem {
 	items := make([]mobile.TabBarItem, len(s.Tabs))
 	for i, tab := range s.Tabs {
-		items[i] = mobile.TabBarItem{Title: tab.Text, Icon: tab.SystemIcon}
+		title := tab.Text
+		if tab.TextFunc != nil {
+			title = tab.TextFunc()
+		}
+		items[i] = mobile.TabBarItem{Title: title, Icon: tab.SystemIcon}
 		if android && tab.Icon != nil {
 			items[i].SVG = tab.Icon()
 		}

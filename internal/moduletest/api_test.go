@@ -261,9 +261,9 @@ ui.NumberInput.Label ui.OtpInput.Label ui.Pagination.Label ui.PlainShell.Title u
 ui.Radio.Label ui.Radio.Hint ui.Radio.Text ui.RadioGroup.Label ui.Rating.Label ui.ResizeHandle.Label
 ui.Scrollbar.Label ui.Select.Placeholder ui.Settings.Title ui.SettingsCategory.Title
 ui.SettingsCategory.Description ui.SettingsDialog.Label ui.SettingsGroup.Title ui.SettingsItem.Title
-ui.SettingsItem.Description ui.ShellTab.Text ui.SidebarButton.Text ui.SidebarItem.Text
+ui.SettingsItem.Description ui.SidebarButton.Text ui.SidebarItem.Text
 ui.SidebarSection.Title ui.Skeleton.Label ui.Spinner.Label ui.Stepper.Label ui.StepperStep.Label
-ui.StepperStep.Description ui.Submenu.Text ui.SuggestList.Label ui.TabShell.Label ui.TagInput.Label
+ui.StepperStep.Description ui.Submenu.Text ui.SuggestList.Label ui.TagInput.Label
 ui.TagInput.Placeholder ui.TimeField.Label ui.ToastContent.Title ui.ToastContent.Description
 ui.ToggleButton.Label ui.ToggleButton.Text ui.ToggleGroup.Label ui.Toolbar.Label ui.ToolbarGroup.Label
 ui.Tree.Label

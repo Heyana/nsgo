@@ -3,6 +3,8 @@
 package ios
 
 import (
+	"slices"
+
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -16,6 +18,7 @@ type tabBar struct {
 	cx    *driver.NativeContext
 	bar   objc.ID
 	items []objc.ID
+	icons []string
 	// selected is the selected tab's index, kept for props in any order.
 	selected int
 }
@@ -86,25 +89,10 @@ func (t *tabBar) SetProp(name string, value any) {
 	switch name {
 	case "items":
 		list, _ := value.([]any)
-		array := objc.ID(apple.Class("NSMutableArray")).Send(selNew)
-		t.items = t.items[:0]
-		for i, it := range list {
-			tab, _ := it.(map[string]any)
-			title, _ := tab["title"].(string)
-			icon, _ := tab["icon"].(string)
-			var image objc.ID
-			if icon != "" {
-				image = objc.ID(apple.Class("UIImage")).Send(sel("systemImageNamed:"), apple.NSString(icon))
-			}
-			item := objc.ID(apple.Class("UITabBarItem")).Send(selAlloc).
-				Send(sel("initWithTitle:image:tag:"), apple.NSString(title), image, i)
-			t.items = append(t.items, item)
-			array.Send(sel("addObject:"), item)
-			item.Send(selRelease)
-		}
-		t.bar.Send(sel("setItems:animated:"), array, false)
-		array.Send(selRelease)
-		t.showSelected()
+		t.setItems(list)
+	case "label":
+		label, _ := value.(string)
+		t.bar.Send(sel("setAccessibilityLabel:"), nsOrNil(label))
 	case "selectedIndex":
 		i, _ := value.(float64)
 		t.selected = int(i)
@@ -118,6 +106,42 @@ func (t *tabBar) SetProp(name string, value any) {
 		}
 		t.bar.Send(sel("setTintColor:"), tint)
 	}
+}
+
+// setItems updates title changes on the current UIKit items, preserving
+// selection and VoiceOver's item identity.
+func (t *tabBar) setItems(list []any) {
+	titles, icons := make([]string, len(list)), make([]string, len(list))
+	for i, it := range list {
+		tab, _ := it.(map[string]any)
+		titles[i], _ = tab["title"].(string)
+		icons[i], _ = tab["icon"].(string)
+	}
+	if slices.Equal(t.icons, icons) {
+		for i, item := range t.items {
+			if apple.GoString(item.Send(sel("title"))) != titles[i] {
+				item.Send(sel("setTitle:"), apple.NSString(titles[i]))
+			}
+		}
+		return
+	}
+	t.icons = icons
+	array := objc.ID(apple.Class("NSMutableArray")).Send(selNew)
+	t.items = t.items[:0]
+	for i, icon := range icons {
+		var image objc.ID
+		if icon != "" {
+			image = objc.ID(apple.Class("UIImage")).Send(sel("systemImageNamed:"), apple.NSString(icon))
+		}
+		item := objc.ID(apple.Class("UITabBarItem")).Send(selAlloc).
+			Send(sel("initWithTitle:image:tag:"), apple.NSString(titles[i]), image, i)
+		t.items = append(t.items, item)
+		array.Send(sel("addObject:"), item)
+		item.Send(selRelease)
+	}
+	t.bar.Send(sel("setItems:animated:"), array, false)
+	array.Send(selRelease)
+	t.showSelected()
 }
 
 func (t *tabBar) Command(string, any) {}

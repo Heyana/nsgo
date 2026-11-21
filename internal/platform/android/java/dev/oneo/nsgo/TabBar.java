@@ -17,6 +17,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.WindowInsets;
+import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -47,6 +49,8 @@ public final class TabBar extends LinearLayout {
     private OnChangeListener listener;
     private OnSizeListener sizeListener;
     private int selected;
+    private JSONArray renderedItems = new JSONArray();
+    private String label = "";
     /** The theme's accent as ARGB (0: none): the selected tab's icon, label and indicator. */
     private int tint;
     private int background;
@@ -100,13 +104,18 @@ public final class TabBar extends LinearLayout {
 
     /** Makes the tabs from titles, resource icons and optional base64 canvas drawings. */
     public void setItems(String json) {
-        removeAllViews();
         JSONArray items;
         try {
             items = new JSONArray(json);
         } catch (JSONException e) {
             return;
         }
+        if (updateTitles(items)) {
+            renderedItems = items;
+            return;
+        }
+        removeAllViews();
+        renderedItems = items;
         for (int i = 0; i < items.length(); i++) {
             JSONObject tab = items.optJSONObject(i);
             if (tab == null) continue;
@@ -114,6 +123,39 @@ public final class TabBar extends LinearLayout {
                     new LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
         }
         restyle();
+    }
+
+    /** Updates titles without replacing the tabs that have the same icons. */
+    private boolean updateTitles(JSONArray items) {
+        if (items.length() != getChildCount() || items.length() != renderedItems.length()) return false;
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject before = renderedItems.optJSONObject(i), after = items.optJSONObject(i);
+            if (before == null || after == null || !before.optString("icon").equals(after.optString("icon"))
+                    || !before.optString("drawing").equals(after.optString("drawing"))) {
+                return false;
+            }
+        }
+        for (int i = 0; i < items.length(); i++) {
+            String title = items.optJSONObject(i).optString("title");
+            LinearLayout item = (LinearLayout) getChildAt(i);
+            TextView label = (TextView) item.getChildAt(1);
+            if (!title.contentEquals(label.getText())) {
+                label.setText(title);
+                item.setContentDescription(title);
+            }
+        }
+        return true;
+    }
+
+    public void setLabel(String title) {
+        label = title == null ? "" : title;
+        sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);
+    }
+
+    @Override
+    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        if (!label.isEmpty()) info.setPaneTitle(label);
     }
 
     public void setSelectedIndex(int index) {

@@ -274,6 +274,7 @@ func (i Icon) Render(cx *core.Scope) core.Node {
 // ShellTab is a tab of a TabShell.
 type ShellTab struct {
 	Text       string
+	TextFunc   func() string
 	Icon       func() *core.SVG
 	SystemIcon string
 	Content    core.Node
@@ -282,19 +283,20 @@ type ShellTab struct {
 
 // TabShell is ui.TabShell with each tab's Content a node.
 type TabShell struct {
-	Tabs     []ShellTab
-	Selected func() int
-	OnChange func(index int)
-	Label    string
-	TestID   string
+	Tabs      []ShellTab
+	Selected  func() int
+	OnChange  func(index int)
+	Label     string
+	LabelFunc func() string
+	TestID    string
 }
 
 // Render implements core.Node.
 func (t TabShell) Render(*core.Scope) core.Node {
 	tabs := make([]ui.ShellTab, len(t.Tabs))
 	for i, tab := range t.Tabs {
-		tabs[i] = ui.ShellTab{Text: tab.Text, Icon: tab.Icon, SystemIcon: tab.SystemIcon, TestID: tab.TestID,
+		tabs[i] = ui.ShellTab{Text: tab.Text, TextFunc: tab.TextFunc, Icon: tab.Icon, SystemIcon: tab.SystemIcon, TestID: tab.TestID,
 			Content: func(*core.Scope) core.Node { return tab.Content }}
 	}
-	return ui.TabShell{Tabs: tabs, Selected: t.Selected, OnChange: t.OnChange, Label: t.Label, TestID: t.TestID}
+	return ui.TabShell{Tabs: tabs, Selected: t.Selected, OnChange: t.OnChange, Label: t.Label, LabelFunc: t.LabelFunc, TestID: t.TestID}
 }

@@ -13,8 +13,11 @@ type TabBar struct {
 	// none. The bar shows the user's choice at once, as the system's does.
 	Selected func() int
 	OnChange func(index int)
-	Style    Style
-	TestID   string
+	// Label names the bar as a group for assistive technology.
+	Label     string
+	LabelFunc func() string
+	Style     Style
+	TestID    string
 }
 
 // TabBarItem is one tab of a TabBar. Apps name it mobile.TabBarItem.
@@ -66,6 +69,9 @@ func (b TabBar) native(cx *Scope) Node {
 			p := cx.Palette()
 			props := map[string]any{"items": list, "selectedIndex": float64(selected), "tint": float64(p.Accent),
 				"background": float64(0), "inactive": float64(0), "indicator": float64(0), "activeContent": float64(0)}
+			if b.Label != "" || b.LabelFunc != nil {
+				props["label"] = readText(b.Label, b.LabelFunc)
+			}
 			theme := DefaultTheme()
 			base := theme.Light
 			if cx.Dark() {

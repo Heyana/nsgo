@@ -36,6 +36,8 @@ func (*tabBar) ViewProps(name string, value any) []driver.AndroidViewProp {
 			return nil
 		}
 		return []driver.AndroidViewProp{{Name: "items", Value: string(data)}}
+	case "label":
+		return []driver.AndroidViewProp{{Name: name, Value: value}}
 	case "selectedIndex":
 		i, _ := value.(float64)
 		return []driver.AndroidViewProp{{Name: "selectedIndex", Value: int(i)}}

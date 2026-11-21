@@ -506,6 +506,61 @@ func TestTabShellSystemBar(t *testing.T) {
 }
 
 // TestTabShellSafeArea leaves no bottom safe area to the sections above a drawn bar, a nav page's included, following the safe area and giving it back while the keyboard hides the bar; under iOS's floating bar the sections keep it.
+func TestTabShellRetitlesTheSelectedTabInPlace(t *testing.T) {
+	headless(t)
+	for _, tc := range []struct {
+		name   string
+		env    core.Environment
+		native bool
+	}{
+		{"drawn", desktopEnv, false},
+		{"iOS", core.Environment{OS: core.OSIOS, Idiom: core.IdiomPhone}, true},
+		{"Android", core.Environment{OS: core.OSAndroid, Idiom: core.IdiomPhone}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var scope *core.Scope
+			builds := 0
+			app, _ := shell(t, tc.env, func(cx *core.Scope) core.Node {
+				scope = cx
+				translated := func(english, french string) func() string {
+					return func() string {
+						if cx.Env().Locale() == "fr" {
+							return french
+						}
+						return english
+					}
+				}
+				return TabShell{LabelFunc: translated("Sections", "Rubriques"), Selected: func() int { return 1 }, Tabs: []ShellTab{
+					{Text: "Home", SystemIcon: "house"},
+					{TextFunc: translated("Search", "Rechercher"), SystemIcon: "magnifyingglass",
+						Content: func(*core.Scope) core.Node {
+							builds++
+							return core.Text{TestID: "search-page", Content: "Search page"}
+						}},
+				}}
+			})
+			bar, page := app.FindMounted("id:tab-bar").ID, app.Find("id:search-page").ID
+			if !tc.native {
+				app.Focus("role:tab Search")
+			}
+			app.Post(func() { scope.SetLocale("fr") })
+			app.Settle()
+			updated := app.FindMounted("id:tab-bar")
+			if updated.ID != bar || app.Find("id:search-page").ID != page || builds != 1 {
+				t.Fatal("switching the locale replaced the bar or its selected page")
+			}
+			if tc.native {
+				items := updated.NativeProps["items"].([]any)
+				if updated.NativeProps["label"] != "Rubriques" || items[1].(map[string]any)["title"] != "Rechercher" || updated.NativeProps["selectedIndex"] != float64(1) {
+					t.Fatalf("updated native bar = %+v", updated.NativeProps)
+				}
+			} else if tab := app.Find("role:tab Rechercher"); updated.Props.Label != "Rubriques" || !tab.Focused || !tab.Props.Selected || tab.Children[0].Text != "Rechercher" {
+				t.Fatalf("updated drawn bar label = %q, tab = %+v (focused %t)", updated.Props.Label, tab.Props, tab.Focused)
+			}
+		})
+	}
+}
+
 func TestTabShellSafeArea(t *testing.T) {
 	var in core.Edges
 	run := func(e core.Environment, icon string) *nsgotest.App {
