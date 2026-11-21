@@ -42,6 +42,11 @@ var ResourceRoot = func() string {
 // path, as "asset:" sources do.
 func ReadResource(path string) ([]byte, error) { return readResource(path) }
 
+// ReadAsset reads the app's bundled file from its native resource directory.
+func ReadAsset(ctx context.Context, path string) ([]byte, error) {
+	return driver.ReadAssetFile(ctx, ResourceRoot, path)
+}
+
 // readResource reads one of the app's resources by its slash-separated
 // path.
 func readResource(path string) ([]byte, error) {

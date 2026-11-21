@@ -102,6 +102,8 @@ Tests check reactive graph ownership: access signals and scopes on the app's gor
 
 `app.Post(func() { state.Set(value) })` queues work on the app's graph goroutine as the next step or wait settles: the test goroutine headless, the engine goroutine on a target. Call it from a test or a stubbed worker, then use `app.Settle()` or a wait to read the resulting views. The function may post more, which the same step runs; it takes no steps and does not call `t.Fatal`, as on a target it runs off the test goroutine.
 
+Headless `cx.ReadAsset` reads the project's `resources/` directory. Under `-target`, it reads the resources packaged for the test.
+
 Headless, each step then moves the clock a frame at a time, for at most 2 seconds, until the animations that end have ended and each style transition has run its `OnTransitionEnd`: a dialog or popover closing through its `EndingStyle` is gone when `app.Press` returns. To look at them on the way, start with `nsgotest.ManualFrames()`; they then move only as `app.Advance` moves the clock.
 
 ## Time

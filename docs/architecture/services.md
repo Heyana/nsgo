@@ -102,6 +102,12 @@ The desktops show no camera ([roadmap](../roadmap.md#finish-the-existing-platfor
 
 Windows, Linux and the web scanning remain on the [roadmap](../roadmap.md#finish-the-existing-platforms).
 
+## Bundled assets
+
+NSH serves bundled assets through `fetch`. NSGo's `Scope.ReadAsset` resolves an `asset:` URL inside the app's `resources/` directory and gives Go apps the bytes through a scope callback. The platform reads on a worker goroutine and the callback runs on the engine while its owner is active. Missing files report `ErrAssetNotFound`. A host without a reader reports `ErrAssetsUnavailable`.
+
+Apple reads from bundle resources and Windows and Linux read beside the executable. Android's runtime opens the asset with `AssetManager` and sends 64 KiB chunks from a worker. The web fetches the packaged resource name from the app's asset manifest. HarmonyOS fetches from the page's packaged `resources/` directory. Headless tests use the project's resource directory.
+
 ## Files
 
 `PickFiles` and `SaveFile` move files of any type in and out of the app. As in NSH, the system dialog lets the user choose a path. NSGo's save request also carries the file source, which the backend writes after the user chooses. `PickFilesOptions.Types` offers media types (`application/pdf`), families (`image/*`) and extensions (`.zip`). A picker that filters only by one kind gets the other through `driver`'s table of common types and offers every file when a type has no counterpart.

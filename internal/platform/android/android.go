@@ -135,10 +135,14 @@ const (
 	msgPhysicalKey = 30
 	// msgDiscoveryReply is a resolved service, its removal or an NSD error, answering extDiscovery (discovery.go).
 	msgDiscoveryReply = 40
+	// msgAssetReply is one chunk or the final result of an extAssetRead.
+	msgAssetReply = 29
 )
 
 // Extended Go-to-Java message kinds, the sub-kind byte of a msgExtended message, kept in sync with Protocol.java's EXT_* constants (TestJavaExtendedKindsMatchGo). Each is extName = n, with n from 1 up: 0 is never a kind, so a msgExtended message whose sub-kind was left out is refused rather than read as one.
 const (
+	// extAssetRead reads a bundled file through the APK's AssetManager for assets.go: its request ID and the path under assets/.
+	extAssetRead = 9
 	// extDiscovery starts or stops an NSD operation on a surface (discovery.go, Discovery.java).
 	extDiscovery = 10
 )
@@ -195,6 +199,8 @@ type surface struct {
 	staged map[uint64]string
 	// folders are the folder picks and reads Java has yet to answer.
 	folders folders
+	// assets are the bundled files Java is reading.
+	assets assetReads
 	// downloads are the image downloads Java has yet to finish.
 	downloads downloads
 	// secrets are the secret requests Java has yet to answer.
@@ -293,6 +299,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 		if err != nil {
 			// The runtime is gone, and the app with it.
 			s.textRPC.close()
+			s.assets.close()
 			s.out.Close()
 			if s.engine != nil {
 				s.engine.Close()
@@ -422,6 +429,8 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.discoveryReply(&r)
 		case msgDiskSpaceReply:
 			s.diskSpaceReply(&r)
+		case msgAssetReply:
+			s.assets.reply(&r)
 		case msgSecretReply:
 			s.secretReply(&r)
 		case msgFetched:
@@ -476,7 +485,7 @@ func init() {
 // startEngine starts app's engine at size with the fold geometry g measured at it; test, when set, is what a test host opens it with.
 func (s *surface) startEngine(app engine.App, size driver.Size, g driver.Geometry, opts Options, test *testOpen) {
 	eopts := engine.Options{Size: size, Geometry: g, Environment: s.env, Appearance: opts.Appearance, Host: s.hostOptions(),
-		Secrets: keystore{s}}
+		Secrets: keystore{s}, ReadAsset: s.readAsset}
 	eopts.SetDirs(engine.AppDirs(""))
 	if test != nil {
 		eopts.UseTest(test.options, &test.pin)

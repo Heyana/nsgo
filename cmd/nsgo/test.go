@@ -204,6 +204,7 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 		cmd := exec.CommandContext(ctx, "go", a...)
 		cmd.Dir = p.Dir
 		cmd.Env = append(os.Environ(), opts.env...)
+		cmd.Env = append(cmd.Env, "NSGO_TEST_RESOURCES="+filepath.Join(p.Dir, resourcesDir))
 		if opts.trace {
 			cmd.Env = append(cmd.Env, "NSGO_TEST_TRACE=1")
 		}

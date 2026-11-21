@@ -729,6 +729,7 @@ var sceneReady chan struct{}
 func (s *surface) startEngine(test *testOpen) {
 	bounds := objc.Send[apple.CGRect](s.native, selBounds)
 	opts := engine.Options{
+		ReadAsset:      imageload.ReadAsset,
 		Size:           driver.Size{Width: driver.Points(bounds.Size.Width), Height: driver.Points(bounds.Size.Height)},
 		Environment:    s.env,
 		NetworkWatcher: apple.NetworkWatcher{},

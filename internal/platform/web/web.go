@@ -406,7 +406,8 @@ func open(app engine.App, opts Options, test *testOpen) *surface {
 	s.env = s.environment()
 	s.setAppearance(opts.Appearance)
 	eopts := engine.Options{
-		Size: s.size(), Environment: s.env, NetworkWatcher: networkWatcher{}, Appearance: opts.Appearance,
+		ReadAsset: readAsset,
+		Size:      s.size(), Environment: s.env, NetworkWatcher: networkWatcher{}, Appearance: opts.Appearance,
 		Storage: engine.NewStorage(newLocalStorage(opts.ID)),
 	}
 	if test == nil {

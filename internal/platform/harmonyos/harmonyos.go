@@ -59,7 +59,8 @@ type surface struct {
 func Run(app engine.App, opts Options) {
 	s := newSurface(opts)
 	engineOpts := engine.Options{
-		Size: s.size0, Environment: s.env, Appearance: opts.Appearance, Perf: s.perf,
+		ReadAsset: readAsset,
+		Size:      s.size0, Environment: s.env, Appearance: opts.Appearance, Perf: s.perf,
 	}
 	if paths := js.Global().Get("nsgoSandboxPaths"); paths.Type() == js.TypeObject {
 		engineOpts.DataDir = paths.Get("data").String()

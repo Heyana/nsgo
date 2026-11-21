@@ -92,12 +92,15 @@ cx.PickImages(core.PickOptions{Limit: 1, MaxDimension: 2048}, func(files []core.
 
 `cx.PickFiles` picks files of any type, `cx.PickDirectories` picks folders as an `fs.FS`, and `cx.SaveFile` saves a file or bytes through the system's save dialog. Both pickers take a `Title`, a `Button` label and a `Start` folder, and `PickFilesOptions.TypesName` names the type menu, so an app can show them in its own language; these are hints, which macOS, Windows and Linux follow, iOS only for `Start`, and Android and the web not at all. `cx.PickScreenColor` picks a color anywhere on the screen where `cx.Env().CanPickScreenColor()` is true: macOS, Windows, Linux with the desktop Screenshot portal, and browsers with `EyeDropper`.
 
-
 Set `core.SaveOptions.Start` to an existing absolute folder to open the save dialog there on macOS, Windows, Linux and iOS. With an empty or unusable hint, or on other targets, the system chooses the folder.
 
 Set `core.SaveOptions.Accept` to validate the chosen destination before writing. It runs on the engine's goroutine. Returning an error leaves the destination untouched. On macOS, Windows and in the in-process GTK chooser on Linux, the dialog shows the reason and lets the user choose another path. Cancelling after a refusal reports `saved == false`, the refused path and the error. On Android and in the Linux desktop portal, a refusal completes the save with that result. Android lets the user choose a folder and supplies a tree URI with the requested file name as its `name` query parameter. It creates the document after approval and reports the new document's URI on success. The platform abandons the write if the check does not answer within five seconds. iOS and HarmonyOS report an error for saves requiring a check. The web has no destination path and uses its ordinary save flow.
 
 In headless tests, `App.PickFiles`, `App.PickDirectories` and `App.SaveFile` receive `nsgotest.FilePick`, `nsgotest.DirectoryPick` and `nsgotest.FileSave` records. The same records are in `app.FilePicks`, `app.DirectoryPicks` and `app.Saves`.
+
+### Bundled assets
+
+Put files under the app's `resources/` directory and use `cx.ReadAsset("asset:maps/level.bin", done)` to read them from Go. The callback receives `([]byte, error)` on the engine's goroutine after the read and is dropped if its owner goes away or runs again. Use `errors.Is(err, core.ErrAssetNotFound)` to identify missing files. The read loads the entire file into memory.
 ## Storage
 
 `cx.Storage()` is the app's key-value storage, kept on the device and shared by every graph of the app. Reads are synchronous and read inside a computation subscribe it to changes; `SetItem` returns a `core.StorageFullError` past the quota (`core.StorageQuota`, 5 MiB by default). It is a plain file any program of the user's can read, so keep tokens and passwords in [secrets](#secrets) instead.

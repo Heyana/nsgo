@@ -13,6 +13,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.res.AssetManager;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.database.ContentObserver;
@@ -90,7 +91,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -1037,6 +1040,12 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 });
                 break;
             }
+            case Protocol.EXT_ASSET_READ: {
+                long id = message.readLong();
+                String path = Protocol.readString(message);
+                files.execute(() -> readAsset(id, path));
+                break;
+            }
             default:
                 Log.w(TAG, "unknown extended message " + kind);
         }
@@ -1905,6 +1914,38 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         }
     }
 
+    /** Reads compressed and uncompressed APK assets off the pipe and UI threads. */
+    private void readAsset(long id, String path) {
+        // Keep a chunk small so input and text replies can use the same pipe between writes.
+        byte[] chunk = new byte[64 * 1024];
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(chunk.length + 9);
+        DataOutputStream out = new DataOutputStream(bytes);
+        int status = Protocol.ASSET_DONE;
+        String error = "";
+        try (InputStream in = getContext().getAssets().open(path, AssetManager.ACCESS_STREAMING)) {
+            for (int size; (size = in.read(chunk)) != -1;) {
+                bytes.reset();
+                out.writeLong(id);
+                out.writeByte(Protocol.ASSET_CHUNK);
+                out.write(chunk, 0, size);
+                write(Protocol.ASSET_REPLY, bytes.toByteArray());
+            }
+        } catch (FileNotFoundException e) {
+            status = Protocol.ASSET_MISSING;
+        } catch (IOException | SecurityException e) {
+            status = Protocol.ASSET_FAILED;
+            error = e.toString();
+        }
+        try {
+            bytes.reset();
+            out.writeLong(id);
+            out.writeByte(status);
+            if (status == Protocol.ASSET_FAILED) Protocol.writeString(out, error);
+        } catch (IOException impossible) {
+            throw new AssertionError(impossible);
+        }
+        write(Protocol.ASSET_REPLY, bytes.toByteArray());
+    }
     /**
      * Answers a FOLDER message off the reader thread: lists a folder of a
      * tree the user picked or reads part of its file, as folders.go asks,

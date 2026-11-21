@@ -35,6 +35,7 @@ These are the rules NSGo's own `base` and `ui` follow, for components other apps
 
 ## Files and packages
 
+- Ship data files under `resources/` and read them with `cx.ReadAsset` from Go. The callback runs on the engine when the bytes are ready. See [Bundled assets](https://nsgo.dev/docs/services.md#bundled-assets).
 - One component to a file, named after it (`iconbutton.go`), with the types only it uses; what several share gets a file of its own.
 - A complex component gets a package of its own whose API drops its name (`dock.Area`, not `dock.DockArea`).
 - Keep unstyled and styled forms in separate packages when both exist, so apps with their own look import no styles.

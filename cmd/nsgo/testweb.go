@@ -36,6 +36,7 @@ const query = new URLSearchParams(location.search);
 const go = new Go();
 go.argv = ["test"].concat(JSON.parse(query.get("args") || "[]"));
 go.env = JSON.parse(query.get("env") || "{}");
+go.env.NSGO_BASE = new URL(".", document.baseURI).href;
 go.exit = (code) => nsgoTest(JSON.stringify({ op: "exit", code }));
 WebAssembly.instantiateStreaming(fetch("app.wasm"), go.importObject)
   .then((r) => go.run(r.instance))

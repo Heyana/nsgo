@@ -458,6 +458,7 @@ func newWindow(opts Options, embedded bool) *window {
 // startEngine starts app's engine at size.
 func (w *window) startEngine(app engine.App, opts Options, size driver.Size) {
 	eopts := engine.Options{
+		ReadAsset:      imageload.ReadAsset,
 		Size:           size,
 		Environment:    w.env,
 		NetworkWatcher: networkWatcher{},

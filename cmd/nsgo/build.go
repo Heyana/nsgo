@@ -1411,8 +1411,9 @@ type webApp struct {
 	Runtime string   `json:"runtime,omitempty"`
 	Scripts []string `json:"scripts,omitempty"`
 	// Realm is the empty page an offline release's realm frame shows, so its service worker serves the realm's scripts and lazy chunks.
-	Realm     string            `json:"realm,omitempty"`
-	Resources map[string]string `json:"resources,omitempty"`
+	Realm string `json:"realm,omitempty"`
+	// A published site lists its assets even when empty. A dev build serves names directly.
+	Resources map[string]string `json:"resources,omitzero"`
 }
 
 // loaderJS is nsgo.js, which runs an app in a page.

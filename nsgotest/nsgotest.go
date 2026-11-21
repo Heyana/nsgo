@@ -697,8 +697,9 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 			a.frameWanted = true
 			a.mu.Unlock()
 		},
-		Storage: a.store,
-		DataDir: data, CacheDir: cache, LogsDir: logs,
+		Storage:   a.store,
+		ReadAsset: assetReader(),
+		DataDir:   data, CacheDir: cache, LogsDir: logs,
 		Secrets: a.Secrets,
 		Host:    a.host,
 		HotKeys: true,

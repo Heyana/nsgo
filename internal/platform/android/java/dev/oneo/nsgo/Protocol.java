@@ -58,6 +58,8 @@ final class Protocol {
         switch (kind) {
             case EXT_DISCOVERY:
                 return true;
+            case EXT_ASSET_READ:
+                return true;
             default:
                 return false;
         }
@@ -121,6 +123,8 @@ final class Protocol {
     /** The environment's third capability byte's bit for a runtime that runs Discovery (capDiscoverServices in protocol.go). */
     static final int CAP_DISCOVER_SERVICES = 32;
 
+    /** Reads a bundled file: its request ID and the path under assets/. */
+    static final int EXT_ASSET_READ = 9;
 
     // Java to Go.
     static final int START = 1;
@@ -172,6 +176,12 @@ final class Protocol {
     static final int PHYSICAL_KEY = 30;
     /** Reports a resolved service, its removal or an error (discovery.go). */
     static final int DISCOVERY_REPLY = 40;
+    /** Streams a bundled file: its request ID, an ASSET_* status byte and the chunk or error text. */
+    static final int ASSET_REPLY = 29;
+    static final int ASSET_CHUNK = 0;
+    static final int ASSET_DONE = 1;
+    static final int ASSET_MISSING = 2;
+    static final int ASSET_FAILED = 3;
 
     // TEXT_REQUEST carries a request ID and one of these operations.
     static final int TEXT_PREPARE = 1;

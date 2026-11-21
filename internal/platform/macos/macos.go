@@ -990,7 +990,7 @@ func (s *surface) start(app engine.App, opts Options) {
 		s.perf = monitor
 	}
 	size := objc.Send[apple.CGRect](s.native, selBounds).Size
-	eopts := engine.Options{Size: driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)},
+	eopts := engine.Options{ReadAsset: imageload.ReadAsset, Size: driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)},
 		Environment: s.env, NetworkWatcher: apple.NetworkWatcher{}, Perf: monitor, Thread: apple.RaiseThread, Appearance: opts.Appearance, Host: opts.Host,
 		Secrets: apple.Keychain{}}
 	eopts.SetDirs(engine.AppDirs(opts.ID))
