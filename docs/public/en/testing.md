@@ -61,6 +61,12 @@ Under `-target` on macOS, Windows, Linux and the web, `app.Select(selector, star
 
 `app.Orientation` holds the active `Scope.RequestOrientation` mask. It is zero when the app uses its usual orientation policy.
 
+## Widgets and Live Activities
+
+`nsgotest.Widgets(true)` records what the app publishes with `widget.Update`. Read the latest timeline for each kind with `app.Widgets()`. An entry with no date gets the app's wall time. Use `nsgotest.Widgets(false)` to make `widget.Available()` false and have updates return `widget.ErrNoWidgets`.
+
+`nsgotest.LiveActivities(true)` records starts, updates, alerts and ends. `app.LiveActivities()` returns the activities in start order, with their content changes and any final content. Use `nsgotest.LiveActivities(false)` to make starts return `widget.ErrActivitiesDisabled`. These options take over the corresponding process-wide service for the test, including on a native target. Run tests that call these services sequentially.
+
 ## Run the tests
 
 ```sh

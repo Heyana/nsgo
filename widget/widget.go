@@ -31,6 +31,8 @@ import (
 	"fmt"
 	"regexp"
 	"time"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
 // Family is a size and place a widget shows in.
@@ -89,11 +91,23 @@ func Update(kind string, entries ...Entry) error {
 	if !kindPattern.MatchString(kind) {
 		return fmt.Errorf("widget: %q is not a kind of widget: letters, digits, '.', '_' and '-', up to 64", kind)
 	}
+	if host := testHost(); host != nil && host.Update != nil {
+		return host.Update(kind, entries)
+	}
 	return publish(kind, entries, time.Now())
 }
 
 // Available reports whether the app has widgets that Update can update:
 // whether it runs on a platform whose widgets the app built, with them.
 func Available() bool {
+	if host := testHost(); host != nil && host.Available != nil {
+		return host.Available()
+	}
 	return available()
+}
+
+type widgetTest = driver.WidgetTest[Entry, *Activity, ActivityContent, ActivityOptions, Dismissal]
+
+func testHost() *widgetTest {
+	return driver.CurrentWidgetTest[Entry, *Activity, ActivityContent, ActivityOptions, Dismissal]()
 }

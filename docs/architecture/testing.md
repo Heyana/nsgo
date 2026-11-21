@@ -21,6 +21,8 @@ Headless runs use the phone idiom by default, as the root environment starts, wh
 | Press takes only a selector | `PressWith` and `PressAtWith` take `core.Modifiers` for that press alone | Tests need Shift-click and other modified gestures through native input |
 | Spans of a text are views of the model | `SpanStyle` and presses read a text's spans by their characters | Go tests name a text and its characters; no view per span is needed |
 
+Widget timelines and Live Activities belong to the process, including calls made outside the view tree. The `Widgets` and `LiveActivities` options install a test backend for the selected services through `driver.WidgetTest` before the app starts and release it after the app closes. It rejects a second test app that asks to take the same process-wide backend. The recorder snapshots Go entries and activity content and uses the app's wall clock.
+
 ## Steps
 
 `App.Post` queues app work until the next step or wait settles. Headless the test owns the app's graph; on a target the callback is posted to the scope the native host rendered the app under, and the step's engine barrier waits for it. A step on a target is quiet only once no posts are queued after its last engine barrier, so a post that posts another settles in the same step. The test's separate graph still runs its own storage and model callbacks on the test goroutine, as `testhost.PostToTest` runs tsxtest's VM work.

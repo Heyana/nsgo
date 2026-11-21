@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
 // Live Activities show what the app follows as it happens, a delivery or
@@ -175,31 +177,67 @@ func StartActivity(kind string, c ActivityContent, opts ...ActivityOptions) (*Ac
 	var b [8]byte
 	rand.Read(b[:])
 	a := &Activity{id: hex.EncodeToString(b[:]), kind: kind}
+	if host := testHost(); host != nil && host.StartActivity != nil {
+		if err := checkActivity(c); err != nil {
+			return a, err
+		}
+		return a, host.StartActivity(a, c, o)
+	}
 	return a, startActivity(a, c, o)
 }
 
 // Update shows c in place of what the activity shows.
-func (a *Activity) Update(c ActivityContent) error { return updateActivity(a, c, nil) }
+func (a *Activity) Update(c ActivityContent) error { return a.update(c, nil) }
 
 // Alert shows c and alerts the user with title and body: a banner on iOS,
 // where the system lights the screen and the Dynamic Island expands, and
 // the notification's sound and vibration on Android.
 func (a *Activity) Alert(c ActivityContent, title, body string) error {
-	return updateActivity(a, c, &activityAlert{Title: title, Body: body})
+	return a.update(c, &activityAlert{Title: title, Body: body})
+}
+
+func (a *Activity) update(c ActivityContent, alert *activityAlert) error {
+	if host := testHost(); host != nil && host.UpdateActivity != nil {
+		if err := checkActivity(c); err != nil {
+			return err
+		}
+		return host.UpdateActivity(a, c, alert)
+	}
+	return updateActivity(a, c, alert)
 }
 
 // End ends the activity, showing final when not nil, and leaves it as d
 // says.
-func (a *Activity) End(final *ActivityContent, d Dismissal) error { return endActivity(a, final, d) }
+func (a *Activity) End(final *ActivityContent, d Dismissal) error {
+	if host := testHost(); host != nil && host.EndActivity != nil {
+		if final != nil {
+			if err := checkActivity(*final); err != nil {
+				return err
+			}
+		}
+		return host.EndActivity(a, final, d)
+	}
+	return endActivity(a, final, d)
+}
 
 // Activities returns the app's activities that run, those of earlier runs
 // of the app included.
-func Activities() []*Activity { return runningActivities() }
+func Activities() []*Activity {
+	if host := testHost(); host != nil && host.Activities != nil {
+		return host.Activities()
+	}
+	return runningActivities()
+}
 
 // ActivitiesEnabled reports whether the app may start Live Activities:
 // built with them, on iOS 16.1 or Android, and allowed by the user, who
 // turns them off in the app's settings.
-func ActivitiesEnabled() bool { return activitiesEnabled() }
+func ActivitiesEnabled() bool {
+	if host := testHost(); host != nil && host.ActivitiesEnabled != nil {
+		return host.ActivitiesEnabled()
+	}
+	return activitiesEnabled()
+}
 
 var handlers struct {
 	sync.Mutex
@@ -283,10 +321,7 @@ func ActivityState(c ActivityContent) (json.RawMessage, error) {
 }
 
 // activityAlert is what Alert alerts with.
-type activityAlert struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-}
+type activityAlert = driver.ActivityAlert
 
 // activityStateVersion changes with what the extension cannot read of
 // earlier states.

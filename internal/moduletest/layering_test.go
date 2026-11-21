@@ -71,7 +71,7 @@ var layers = []struct {
 	{"internal/platform/videoalpha/clips", nil},
 	{"internal/platform/webstyle", []string{"internal/driver"}},
 	{"internal/platform/", append([]string{"internal/driver", "internal/engine", "internal/testhost", "desktop/locales"}, platformShared...)},
-	{"nsgotest", []string{"core", "internal/automation", "internal/devtools", "internal/driver", "internal/testhost"}},
+	{"nsgotest", []string{"core", "internal/automation", "internal/devtools", "internal/driver", "internal/testhost", "widget"}},
 	{"", []string{"core", "internal/backend", "internal/dev", "internal/engine"}},
 	// The backend runs the app on the platform build tags pick, with the launch flags, the dev client, restarts and, where the platform's updater keeps no schedule, update checks.
 	{"internal/backend", []string{"core", "internal/dev", "internal/engine", "internal/platform/", "internal/restart", "updater"}},

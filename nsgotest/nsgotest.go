@@ -239,6 +239,7 @@ type App struct {
 	Voices []core.VoiceInfo
 	// microphone is MicrophoneInput's fake recorder.
 	microphone *Microphone
+	widgets    *widgetServices
 	// OpenedURLs are the URLs the app opened, oldest first. OpenURL
 	// answers whether each opens; every one does when it is nil.
 	OpenedURLs []string
@@ -534,6 +535,9 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 	}
 	if a.microphone != nil && !onTarget() {
 		a.microphone.connect(t)
+	}
+	if a.widgets != nil {
+		a.widgets.connect(a)
 	}
 	if os.Getenv("NSGO_TEST_TRACE") != "" {
 		a.trace = os.Stdout

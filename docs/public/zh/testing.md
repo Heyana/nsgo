@@ -61,6 +61,12 @@ func TestMain(m *testing.M) {
 
 `app.Orientation` 保存当前生效的 `Scope.RequestOrientation` 方向集合。使用应用原有的方向策略时，该值为零。
 
+## 小组件和实时活动
+
+`nsgotest.Widgets(true)` 记录应用通过 `widget.Update` 发布的内容。用 `app.Widgets()` 读取每类小组件的最新时间线。条目没有指定日期时，使用应用的墙钟时间。`nsgotest.Widgets(false)` 让 `widget.Available()` 返回 false，并让更新返回 `widget.ErrNoWidgets`。
+
+`nsgotest.LiveActivities(true)` 记录实时活动的开始、更新、提醒和结束。`app.LiveActivities()` 按开始顺序返回活动，包含内容变化和最终内容。`nsgotest.LiveActivities(false)` 让开始活动的调用返回 `widget.ErrActivitiesDisabled`。这些选项在测试期间接管相应的进程级服务，在原生目标上也一样。调用这些服务的测试应按顺序运行。
+
 ## 运行测试
 
 ```sh

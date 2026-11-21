@@ -221,6 +221,8 @@ jobs:
         run: go tool nsgo check ./internal/platform/apple
       - name: Test
         run: go tool nsgo test ./internal/platform/apple
+      - name: Test widget and Live Activity recording
+        run: go tool nsgo test -run '^(TestWidgetTimelines|TestLiveActivityRecords|TestUnavailableWidgetServices)$' ./nsgotest
       # A native fault ends the test process without a Go stack; the crash report printed below names the faulting thread (#801).
       - name: Stress overlapping sound playback in fresh processes
         run: |
@@ -319,6 +321,8 @@ jobs:
         run: go tool nsgo test -target windows ./internal/testhost/testdata/websource
       - name: Test native photo pick answers
         run: go tool nsgo test -target windows ./internal/testhost/testdata/pick
+      - name: Test widget and Live Activity recording
+        run: go tool nsgo test -run '^(TestWidgetTimelines|TestLiveActivityRecords|TestUnavailableWidgetServices)$' ./nsgotest
       - name: Test native focus, styles, activation and label relationships
         run: go tool nsgo test -run '^(TestRefFocusUsesNativeKeyboardStops|TestNativeLabeledByProvider)$' ./internal/platform/windows
       - name: Run the many-sprite canvas scenario

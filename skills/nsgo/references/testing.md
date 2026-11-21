@@ -59,6 +59,8 @@ A press can name a text field directly. Read `app.Find("id:field").Focused` afte
 
 Keep a test off the network and disk the user owns: inject the fetcher or the `http.Client` into the component, or serve answers from `net/http/httptest`, and give storage and secrets through `nsgotest.Storage` and `nsgotest.Secrets`, so no test reaches the machine's keychain. A resource's loading and error states are then tested by answering slowly or with an error.
 
+Use `nsgotest.Widgets(true)` and `nsgotest.LiveActivities(true)` to inspect publications with `App.Widgets` and `App.LiveActivities`. Run tests using these process-wide services sequentially. [Testing widgets and Live Activities](https://nsgo.dev/docs/testing.md#widgets-and-live-activities).
+
 ## On a platform
 
 Cleanup closes native context menus left open by an app, including between subtests in one process.
