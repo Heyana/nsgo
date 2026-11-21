@@ -87,7 +87,15 @@ func buildAndroidAPK(ctx context.Context, p *project, dir, goarch string) (strin
 
 // buildAndroidAAB writes one signed Android App Bundle for the selected ABIs.
 func buildAndroidAAB(ctx context.Context, p *project, dir string, goarches ...string) (string, error) {
-	return buildAndroidPackage(ctx, p, dir, ".aab", apk.WriteBundle, goarches...)
+	packs, err := p.storeAssetPacks()
+	if err != nil {
+		return "", err
+	}
+	write := func(w io.Writer, template []byte, m apk.Manifest, files []apk.File, key *apk.Key) error {
+		m.AssetPacks = packs
+		return apk.WriteBundle(w, template, m, files, key)
+	}
+	return buildAndroidPackage(ctx, p, dir, ".aab", write, goarches...)
 }
 
 func releaseAndroidBundle(ctx context.Context, p *project, dir, target string, goarches ...string) error {

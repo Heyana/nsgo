@@ -216,6 +216,8 @@ For store ratings, call `cx.RequestReview()` where `cx.Env().CanRequestReview()`
 
 Use `go tool nsgo publish ios` with a signed IPA or `go tool nsgo publish macos` with a signed PKG to upload to TestFlight. [App Store Connect setup](https://nsgo.dev/docs/building.md#app-store-connect)
 
+Declare independently delivered files in `mobile.asset_packs`. Use `mobile.AssetPackReady` and `mobile.OpenAssetPackFile` for files in available packs. [Store asset packs](https://nsgo.dev/docs/building.md#store-asset-packs)
+
 For Android embedding, an explicit `NsgoEngine` keeps the app alive across `NsgoView.detachFromEngine()` and same-view `attachToEngine()`: native widgets are recreated from the live graph. The engine still retains its first view and Activity and refuses replacements or additional views. Call `destroy()` for shutdown. [Embedding](https://nsgo.dev/docs/embedding.md#android)
 
 ## Reusable components

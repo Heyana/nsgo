@@ -68,16 +68,11 @@ func WriteBundle(w io.Writer, template []byte, m Manifest, files []File, key *Ke
 	all = append(all,
 		File{Name: "base/resources.pb", Data: resourcesProto(m)},
 		File{Name: "BundleConfig.pb", Data: bundleConfig()})
-	signed, err := signJar(all, key)
+	assets, err := bundleAssetEntries(m.Package, m.AssetPacks)
 	if err != nil {
 		return err
 	}
-	zip, err := archive(signed)
-	if err != nil {
-		return err
-	}
-	_, err = w.Write(zip)
-	return err
+	return writeBundleArchive(w, all, assets, key)
 }
 
 // bundlePath is where a file of an APK goes in the base module: the dex
@@ -146,6 +141,14 @@ func protoElement(n *node, root, icon bool) ([]byte, error) {
 		ns := pbString(nil, 1, "android")
 		ns = pbString(ns, 2, androidNS)
 		el = pbBytes(el, 1, ns)
+		for _, a := range n.attrs {
+			if a.Name.Space == "xmlns" && a.Value == distNS {
+				el = pbBytes(el, 1, pbString(pbString(nil, 1, a.Name.Local), 2, distNS))
+			}
+		}
+	}
+	if n.name.Space != "" {
+		el = pbString(el, 2, n.name.Space)
 	}
 	el = pbString(el, 3, n.name.Local)
 	for _, a := range n.attrs {
@@ -178,6 +181,17 @@ func protoElement(n *node, root, icon bool) ([]byte, error) {
 				return nil, err
 			}
 			if item != nil {
+				attr = pbBytes(attr, 6, item)
+			}
+		case distNS:
+			attr = pbString(attr, 1, distNS)
+			attr = pbString(attr, 2, a.Name.Local)
+			attr = pbString(attr, 3, a.Value)
+			if a.Name.Local == "include" {
+				item, err := protoItem(a.Name.Local, a.Value, attrSpec{kind: typeBool, parse: parseBool}, icon)
+				if err != nil {
+					return nil, err
+				}
 				attr = pbBytes(attr, 6, item)
 			}
 		default:

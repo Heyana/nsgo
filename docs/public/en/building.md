@@ -313,6 +313,22 @@ go tool nsgo publish macos path/to/Hello.pkg
 
 The tool checks the bundle's build number before uploading, then reports Apple's processing result for TestFlight. Increase `build_number` for the next upload. macOS build numbers increase across all app versions, while iOS can restart the sequence for a new version. Submit a processed build for App Review separately in App Store Connect. [Apple's distribution guide](https://developer.apple.com/documentation/xcode/preparing-your-app-for-distribution)
 
+## Store asset packs
+
+Declare large asset directories in `mobile.asset_packs`. Files within those directories are delivered separately from the base Android App Bundle and iOS app. Pack names start with a lowercase letter and can contain lowercase letters, digits and underscores.
+
+```yaml
+mobile:
+  asset_packs:
+    - {name: levels, dir: resources/levels, delivery: install-time}
+    - {name: voices, dir: large-assets/voices, delivery: fast-follow}
+
+Build Android packs with `go tool nsgo build -channel store -target android_arm64`. Use `bundletool build-apks --local-testing` and `bundletool install-apks` to test the bundle on a device. NSGo opens installed `install-time` packs. The `fast-follow` modules are included for Play delivery, and reading those packs from the Play Asset Delivery SDK is still pending.
+
+On iOS, `go tool nsgo build -target ios` maps `install-time` to Apple's essential policy and `fast-follow` to prefetch, both on first install and updates. Xcode 26 or later builds the Background Assets downloader. Use a shared `apple.app_group` or the default `group.<id>`. The app's `sign.profile` and the `<id>.assetdownloader` extension's `sign.asset_packs_profile` both need that group. Upload the `.aar` files from `dist/releases` alongside the IPA using App Store Connect's asset-pack upload workflow. [Creating managed asset packs](https://developer.apple.com/documentation/backgroundassets/creating-managed-asset-packs)
+
+From a goroutine, call `mobile.AssetPackReady(ctx, "levels")` to check readiness and `mobile.OpenAssetPackFile("levels", "intro.map")` to open a file relative to the declared directory. Close the returned reader after use. [Testing Apple asset packs locally](https://developer.apple.com/documentation/backgroundassets/testing-asset-packs-locally)
+
 ## Steam depots
 
 ```sh

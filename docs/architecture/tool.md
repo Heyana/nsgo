@@ -227,6 +227,12 @@ Before it starts Go, the Java runtime sets `NSGO_WIDGETS_DIR` and `NSGO_WIDGET_K
 
 `storekit.go` puts a library of `storekit/StoreKit.swift` among the frameworks of the macOS, iOS and tvOS packages of an app whose `nsgo.yaml` sets `apple.purchases`: StoreKit 2's products and transactions are Swift's alone, so the library exports `nsgo_storekit_start` and `nsgo_storekit_call` with `@_cdecl`, which `internal/platform/apple` loads through purego and calls with JSON ([services](services.md#in-app-purchases)). It is `NSGoStoreKit.framework` on iOS and tvOS and `libNSGoStoreKit.dylib` on macOS, compiled with `xcrun swiftc` for the target, macOS 12 at least, and kept in the user cache by its source, the target and the toolchain, as the widgets' are; it is signed as the bundle's other frameworks and libraries are. It claims no entitlement, as In-App Purchase needs none. Apps without the setting link none of it, App Clips never do, and watchOS leaves it out with a note.
 
+## Store asset packs
+
+`mobile.asset_packs` lists named source directories and their delivery policies. The mobile resource walker excludes those directories before reading files into the base package. Android's AAB writer adds a protobuf manifest and namespaced files per asset module, signing and compressing the pack files from disk. Installed split APKs and fused APKs expose the same namespaced paths to `mobile.AssetPackReady` and `mobile.OpenAssetPackFile`. Google Play's fast-follow downloads require its Asset Delivery SDK to expose the downloaded directory, which remains pending.
+
+iOS device builds map the two policies to essential and prefetch in `ba-package` manifests and emit separate `.aar` archives. Swift supplies the ExtensionKit entry point required by the Apple-hosted `StoreDownloaderExtension` template. The app uses Background Assets' Objective-C manager through purego. The app and downloader profiles share `apple.app_group`; the extension is signed with `sign.asset_packs_profile`. The NSH release has no equivalent store asset-pack build path.
+
 ## Signing
 
 `sign.identity` signs macOS packages, libraries first: macOS keeps the permissions it grants an identity's app across builds, where each ad hoc signature counts as a new program. A non-ad-hoc `sign.identity` (such as a Developer ID) also claims `keychain-access-groups` from `macos.entitlements` (`macSignEntitlements`), as a store build does, so the app can use the data protection keychain. `nsgo dev` and `nsgo test` stay ad hoc, as macOS credits what a terminal starts to the terminal.

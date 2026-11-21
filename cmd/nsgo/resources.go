@@ -53,17 +53,17 @@ func copyWalked(p *project, root string, walk func(*project, func(string, []byte
 // walkMobileResources is walkResources without what nsgo.yaml's
 // mobile.exclude_resources leaves out of phones' packages.
 func walkMobileResources(p *project, f func(rel string, data []byte) error) error {
-	return walkResources(p, func(rel string, data []byte) error {
-		if rel == noticesName && p.thirdPartyNotices != "" {
-			return f(rel, data)
+	return walkResourcesFiltered(p, func(rel string) bool {
+		if p.inAssetPack(filepath.Join(p.resourceRoot(), filepath.FromSlash(rel))) {
+			return true
 		}
 		for _, out := range p.Mobile.ExcludeResources {
 			if out = strings.Trim(out, "/"); rel == out || strings.HasPrefix(rel, out+"/") {
-				return nil
+				return true
 			}
 		}
-		return f(rel, data)
-	})
+		return false
+	}, f)
 }
 
 func (p *project) resourceRoot() string {
@@ -76,11 +76,18 @@ func (p *project) resourceRoot() string {
 // walkResources calls f with each file under the app's resources
 // directory, by its slash-separated path inside it.
 func walkResources(p *project, f func(rel string, data []byte) error) error {
+	return walkResourcesFiltered(p, nil, f)
+}
+
+func walkResourcesFiltered(p *project, excluded func(string) bool, f func(string, []byte) error) error {
 	src := p.resourceRoot()
 	if _, err := os.Stat(src); !os.IsNotExist(err) {
 		if err := walkResourceDir(src, func(rel string, data []byte) error {
 			if rel == noticesName && p.thirdPartyNotices != "" {
 				return fmt.Errorf("resources/%s is reserved for generated license notices", noticesName)
+			}
+			if excluded != nil && excluded(rel) {
+				return nil
 			}
 			return f(rel, data)
 		}); err != nil {
@@ -102,10 +109,11 @@ func walkResourceDir(src string, f func(rel string, data []byte) error) error {
 		if err != nil {
 			return err
 		}
+		rel = filepath.ToSlash(rel)
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		return f(filepath.ToSlash(rel), data)
+		return f(rel, data)
 	})
 }

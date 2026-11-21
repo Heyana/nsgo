@@ -33,6 +33,7 @@ What NSH added between 0.4.0 and 0.5.0 that NSGo has not, in the order to build 
 | Terminal content and services | [Terminal backend](architecture/terminal.md#backend), [#1345](https://github.com/nsgo-dev/nsgo/issues/1345) | Extend cell views/text/editing with canvas and image rendering, hosted content alternatives, system menus and alerts, animations, scroll snapping/inertia, modal focus trapping, zoom, bidirectional shaping, head/middle ellipsis and a system clipboard bridge; verify native Windows console input and restoration |
 | Store uploads | `tooling.md` (Releases), #1052, #1054, [#1202](https://github.com/nsgo-dev/nsgo/issues/1202) | `nsgo publish` uploads the AAB `build -channel store` makes to Play's tracks (#1230); uploads to TestFlight (#1229) and itch.io (#1561) and text-based store listings for App Store Connect and Google Play (#1564) are implemented |
 | Google Play upload verification | [#1230](https://github.com/nsgo-dev/nsgo/issues/1230), [Google Play publishing](architecture/tool.md#google-play-publishing) | A signed App Bundle uploads to a real app's internal track and the committed release appears in Play Console |
+| Store asset packs | [#1232](https://github.com/nsgo-dev/nsgo/issues/1232) | Read Play fast-follow packs through the Play Asset Delivery SDK and verify an iOS app downloads and opens an Apple-hosted pack on a signed device |
 
 ## Remote push
 

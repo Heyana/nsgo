@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -88,12 +90,18 @@ func (p *project) cleanReleaseDir() error {
 // releaseCopy copies a package's file into the releases directory as
 // name, with its checksum, leaving the package whole for -run.
 func (p *project) releaseCopy(path, name string) error {
-	data, err := os.ReadFile(path)
+	src, err := os.Open(path)
 	if err != nil {
 		return err
 	}
+	defer src.Close()
 	dst := filepath.Join(p.releaseDir(), name)
-	if err := os.WriteFile(dst, data, 0o644); err != nil {
+	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(f, src)
+	if err := errors.Join(err, f.Close()); err != nil {
 		return err
 	}
 	return p.releaseAssets(dst)
@@ -155,12 +163,16 @@ func (p *project) releaseAssets(paths ...string) error {
 				return err
 			}
 		}
-		data, err := os.ReadFile(dst)
+		f, err := os.Open(dst)
 		if err != nil {
 			return err
 		}
-		sum := sha256.Sum256(data)
-		line := hex.EncodeToString(sum[:]) + "  " + filepath.Base(dst) + "\n"
+		sum := sha256.New()
+		_, err = io.Copy(sum, f)
+		if err := errors.Join(err, f.Close()); err != nil {
+			return err
+		}
+		line := hex.EncodeToString(sum.Sum(nil)) + "  " + filepath.Base(dst) + "\n"
 		if err := os.WriteFile(dst+".sha256", []byte(line), 0o644); err != nil {
 			return err
 		}

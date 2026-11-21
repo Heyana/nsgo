@@ -205,6 +205,7 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 	}
 	// An Apple TV has no widgets.
 	widgets := sys == iOS && p.iosExtension()
+	assetPacks := sys == iOS && p.iosAssetPacks()
 	if sys != iOS && p.iosExtension() {
 		detailIn(ctx, "no widgets or Live Activities on %s: they are left out", sys.name)
 	}
@@ -222,6 +223,9 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 	}
 	if sys == iOS {
 		extra += "\n" + p.clipStoragePlist()
+	}
+	if assetPacks {
+		extra += "\n" + p.assetPacksPlist()
 	}
 	if clip := p.clipPlist(); clip != "" {
 		extra += "\n" + clip
@@ -249,6 +253,11 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 			return "", err
 		}
 	}
+	if assetPacks {
+		if err := addIOSAssetDownloader(ctx, p, app, simulator); err != nil {
+			return "", err
+		}
+	}
 	if sys == iOS {
 		if err := addIOSAppClip(ctx, p, app, simulator); err != nil {
 			return "", err
@@ -263,6 +272,9 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 	var ents map[string]any
 	if sys == iOS {
 		ents = p.simulatorEntitlements()
+	}
+	if assetPacks {
+		ents = p.groupEntitlements()
 	}
 	if len(ents) == 0 {
 		return app, run(ctx, "codesign", "--force", "--sign", "-", app)

@@ -498,6 +498,11 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 		if err := writeIPA(app, ipa); err != nil {
 			return err
 		}
+		if sys == iOS {
+			if err := packageIOSAssetPacks(ctx, p, dir); err != nil {
+				return err
+			}
+		}
 		return p.releaseCopy(ipa, p.releaseName(target, ".ipa"))
 	case "ios_simulator", "tvos_simulator", "watchos_simulator":
 		sys, _, _ := appleOSOf(target)

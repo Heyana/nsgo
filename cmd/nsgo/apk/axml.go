@@ -66,6 +66,8 @@ type Manifest struct {
 	Game bool
 	// Gamepad declares an optional gamepad and touchscreen.
 	Gamepad bool
+	// AssetPacks are separately delivered modules of an Android App Bundle.
+	AssetPacks []AssetPack
 }
 
 // recordingPermissions are what the runtime's recording service needs: the microphone, a foreground service, from Android 14 one of the microphone type, and from Android 13 the notifications the service's notification shows with, which RecordWAV asks for with the microphone.

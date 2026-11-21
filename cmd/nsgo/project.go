@@ -283,7 +283,8 @@ type project struct {
 	// Mobile is the iOS and Android targets': ExcludeResources are paths in
 	// resources/ their packages leave out, such as what only desktops run.
 	Mobile struct {
-		ExcludeResources []string `yaml:"exclude_resources"`
+		ExcludeResources []string          `yaml:"exclude_resources"`
+		AssetPacks       []assetPackConfig `yaml:"asset_packs"`
 	} `yaml:"mobile"`
 	Sign  signing `yaml:"sign"`
 	Build struct {
@@ -423,6 +424,9 @@ func load(dir string) (*project, error) {
 	if err := p.validateIPadMultitasking(); err != nil {
 		return nil, err
 	}
+	if err := p.validateAssetPacks(); err != nil {
+		return nil, err
+	}
 	if strings.Contains(p.Name, "'") && strings.Contains(p.Name, `"`) {
 		return nil, fmt.Errorf("nsgo.yaml: name %q has both a single and a double quote, which go build cannot pass to the app; use one kind", p.Name)
 	}
@@ -520,7 +524,7 @@ func load(dir string) (*project, error) {
 	if err := p.validateLinuxCategories(); err != nil {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
-	for _, path := range []*string{&p.Sign.Profile, &p.Sign.WidgetsProfile, &p.Sign.ClipProfile, &p.Sign.MacOSProfile, &p.Sign.Keystore, &p.Sign.Certificate} {
+	for _, path := range []*string{&p.Sign.Profile, &p.Sign.WidgetsProfile, &p.Sign.AssetPacksProfile, &p.Sign.ClipProfile, &p.Sign.MacOSProfile, &p.Sign.Keystore, &p.Sign.Certificate} {
 		if *path != "" {
 			*path = p.resolve(*path)
 		}

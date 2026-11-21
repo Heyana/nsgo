@@ -24,22 +24,25 @@ var (
 	oidRSA        = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
 )
 
-// signJar returns files signed: the signature's three files first, as
-// jarsigner writes them, then files.
-func signJar(files []File, key *Key) ([]File, error) {
+type jarDigest struct {
+	name string
+	sum  [sha256.Size]byte
+}
+
+// signJar creates the JAR's three signature entries from its file digests.
+func signJar(files []jarDigest, key *Key) ([]File, error) {
 	var manifest bytes.Buffer
 	manifest.WriteString("Manifest-Version: 1.0\r\nCreated-By: nsgo\r\n\r\n")
 	var sf bytes.Buffer
 	var sections bytes.Buffer
 	for _, f := range files {
-		sum := sha256.Sum256(f.Data)
 		var section bytes.Buffer
-		section.WriteString(manifestLine("Name: " + f.Name))
-		section.WriteString(manifestLine("SHA-256-Digest: " + base64.StdEncoding.EncodeToString(sum[:])))
+		section.WriteString(manifestLine("Name: " + f.name))
+		section.WriteString(manifestLine("SHA-256-Digest: " + base64.StdEncoding.EncodeToString(f.sum[:])))
 		section.WriteString("\r\n")
 		manifest.Write(section.Bytes())
 		sectionSum := sha256.Sum256(section.Bytes())
-		sections.WriteString(manifestLine("Name: " + f.Name))
+		sections.WriteString(manifestLine("Name: " + f.name))
 		sections.WriteString(manifestLine("SHA-256-Digest: " + base64.StdEncoding.EncodeToString(sectionSum[:])))
 		sections.WriteString("\r\n")
 	}
@@ -52,11 +55,11 @@ func signJar(files []File, key *Key) ([]File, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append([]File{
+	return []File{
 		{Name: "META-INF/MANIFEST.MF", Data: manifest.Bytes()},
 		{Name: "META-INF/NSGO.SF", Data: sf.Bytes()},
 		{Name: "META-INF/NSGO.RSA", Data: signature},
-	}, files...), nil
+	}, nil
 }
 
 // manifestLine is a line of a JAR manifest: at most 72 bytes, the rest on
