@@ -260,6 +260,13 @@ final class Text {
         final int color;
         final float dx, dy, radius;
 
+        Shadow(int color, float dx, float dy, float radius) {
+            this.color = color;
+            this.dx = dx;
+            this.dy = dy;
+            this.radius = radius;
+        }
+
         Shadow(DataInputStream in, float density) throws IOException {
             color = argb(in.readInt());
             dx = in.readFloat() * density;
@@ -311,6 +318,7 @@ final class Text {
         private final int maxLines, ellipsize;
         private final boolean attached, justify;
         private final TextDirectionHeuristic direction;
+        private final Shadow shadow;
 
         Prepared(String text, Style style, int maxLines, int ellipsize, Shadow shadow, List<Span> spans,
                 List<Attachment> attachments) {
@@ -359,9 +367,12 @@ final class Text {
                 this.text = text;
             }
             this.paint = style.paint();
-            if ((shadow.color >>> 24) != 0) {
+            if (shadow != null && (shadow.color >>> 24) != 0) {
                 // A zero radius would remove the shadow layer.
                 paint.setShadowLayer(Math.max(0.01f, shadow.radius), shadow.dx, shadow.dy, shadow.color);
+                this.shadow = shadow;
+            } else {
+                this.shadow = null;
             }
             this.align = style.alignment();
             this.justify = style.align == Protocol.ALIGN_JUSTIFY;
@@ -369,6 +380,11 @@ final class Text {
             this.maxLines = maxLines;
             this.ellipsize = ellipsize;
             this.attached = !attachments.isEmpty();
+        }
+
+        /** The shadow behind the glyphs and drawn decorations, or null for none. */
+        Shadow shadow() {
+            return shadow;
         }
 
         /** The lines a clipped text shows, or 0 when an ellipsis ends them. */

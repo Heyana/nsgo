@@ -3,6 +3,7 @@
 package linux
 
 import (
+	"math"
 	"slices"
 	"unicode/utf8"
 	"unsafe"
@@ -822,6 +823,62 @@ func (p *preparedText) placeDecorations(l *textLayout) {
 	}
 }
 
+// bounds returns the area d paints in the content box, with room for
+// double lines, waves and antialiasing.
+func (d decorationLine) bounds() (x0, y0, x1, y1 float64) {
+	pad := 0.0
+	hpad := 1.0
+	switch d.style {
+	case driver.DecorationDouble:
+		pad = d.t
+	case driver.DecorationWavy:
+		pad = max(1.5*d.t, 2)
+		hpad = max(d.t/2, 1) + 1
+	}
+	return d.x - hpad, d.y - pad - 1, d.x + d.w + hpad, d.y + d.t + pad + 1
+}
+
+// decorationBounds returns the whole-point box covering l's drawn
+// decoration lines when placed at x, y, or false when there are none.
+func (l *textLayout) decorationBounds(x, y driver.Points) (grapheneRect, bool) {
+	if len(l.over) == 0 {
+		return grapheneRect{}, false
+	}
+	ox, oy := float64(x), float64(y)
+	x0, y0 := math.Inf(1), math.Inf(1)
+	x1, y1 := math.Inf(-1), math.Inf(-1)
+	for _, d := range l.over {
+		a, b, c, e := d.bounds()
+		x0, y0 = min(x0, ox+a), min(y0, oy+b)
+		x1, y1 = max(x1, ox+c), max(y1, oy+e)
+	}
+	x0, y0 = math.Floor(x0), math.Floor(y0)
+	x1, y1 = math.Ceil(x1), math.Ceil(y1)
+	return grapheneRect{float32(x0), float32(y0), float32(x1 - x0), float32(y1 - y0)}, true
+}
+
+// contentBounds returns the Cairo node bounds holding l's glyphs, span
+// backgrounds and decoration lines when placed at x, y inside a view of
+// size width by height.
+func (l *textLayout) contentBounds(x, y, width, height float32) grapheneRect {
+	x0 := float64(min(0, x) - textOverhang)
+	y0 := float64(min(0, y) - textOverhang)
+	x1 := float64(max(width, x+float32(l.width)) + textOverhang)
+	y1 := float64(max(height, y+float32(l.height)) + textOverhang)
+	ox, oy := float64(x), float64(y)
+	for _, r := range l.under {
+		x0, y0 = min(x0, ox+r.x-1), min(y0, oy+r.y-1)
+		x1, y1 = max(x1, ox+r.x+r.w+1), max(y1, oy+r.y+r.h+1)
+	}
+	if dec, ok := l.decorationBounds(driver.Points(x), driver.Points(y)); ok {
+		x0, y0 = min(x0, float64(dec.x)), min(y0, float64(dec.y))
+		x1, y1 = max(x1, float64(dec.x+dec.w)), max(y1, float64(dec.y+dec.h))
+	}
+	x0, y0 = math.Floor(x0), math.Floor(y0)
+	x1, y1 = math.Ceil(x1), math.Ceil(y1)
+	return grapheneRect{float32(x0), float32(y0), float32(x1 - x0), float32(y1 - y0)}
+}
+
 // draw draws the line with the content box's top left at x, y: a box,
 // two boxes a thickness apart, or a dotted, dashed or wavy stroke along
 // its middle.
@@ -953,9 +1010,7 @@ func (l *textLayout) snapshot(snap uintptr, x, y driver.Points) {
 	black := gdkRGBA{a: 1}
 	gtkSnapshotAppendLayout(snap, l.layout, &black)
 	gtkSnapshotRestore(snap)
-	if len(l.over) > 0 {
-		bounds := grapheneRect{float32(x) - textOverhang, float32(y) - textOverhang,
-			float32(l.width) + 2*textOverhang, float32(l.height) + 2*textOverhang}
+	if bounds, ok := l.decorationBounds(x, y); ok {
 		cr := gtkSnapshotAppendCairo(snap, &bounds)
 		for _, d := range l.over {
 			d.draw(cr, float64(x), float64(y))

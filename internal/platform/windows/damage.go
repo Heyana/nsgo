@@ -157,7 +157,7 @@ func (m *measuring) visit(v *view, parent matrix, x, y driver.Points, clip rectF
 	if effects {
 		v.area = everywhere
 	} else {
-		v.area = mapBounds(pl.world, extent(s, bounds)).intersect(clip)
+		v.area = mapBounds(pl.world, viewExtent(v, s, bounds)).intersect(clip)
 		if v.area.empty() {
 			v.area = noArea
 		}
@@ -196,6 +196,19 @@ func (m *measuring) forget(v *view) {
 		l.v.area, l.v.tree = noArea, noArea
 		m.forget(l.v)
 	}
+}
+
+// viewExtent returns what v paints in its own points: its style's shadows
+// and outline, plus any text ink reaching past its box when the view does
+// not clip.
+func viewExtent(v *view, s *driver.ViewStyle, bounds rectF) rectF {
+	r := extent(s, bounds)
+	if !s.Clip && v.text != nil {
+		if ink := v.text.inkBounds(v.content); !ink.empty() {
+			r = union(r, rectF{ink.left - 1, ink.top - 1, ink.right + 1, ink.bottom + 1})
+		}
+	}
+	return r
 }
 
 // extent is what a view with style s paints of bounds, its own points,

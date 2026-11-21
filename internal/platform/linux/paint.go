@@ -260,15 +260,8 @@ func (w *window) snapshotContent(v *view, s *driver.ViewStyle, snap uintptr) {
 		w.snapshotCanvas(v, snap, width, height)
 	}
 	if l, ok := v.text.(*textLayout); ok && l != nil && l.text != "" {
-		// Glyphs may paint a little outside their view, as before.
+		// Glyphs and decoration lines may paint past their view's box.
 		x, y := float32(v.content.Origin.X), float32(v.content.Origin.Y)
-		grown := grapheneRect{min(0, x) - textOverhang, min(0, y) - textOverhang,
-			max(float32(width), x+float32(l.width)) - min(0, x) + 2*textOverhang,
-			max(float32(height), y+float32(l.height)) - min(0, y) + 2*textOverhang}
-		if sh := l.shadow; sh.Color != 0 {
-			s := gskShadow{rgba(sh.Color), float32(sh.Offset.X), float32(sh.Offset.Y), float32(sh.Radius) * shadowBlurPerUnit}
-			gtkSnapshotPushShadow(snap, &s, 1)
-		}
 		a := v.animated
 		tinted := a != nil && a.Has(driver.PropTextColor)
 		selected := v.selEnd > v.selStart
@@ -280,8 +273,13 @@ func (w *window) snapshotContent(v *view, s *driver.ViewStyle, snap uintptr) {
 			l.snapshotBackgrounds(snap, v.content.Origin.X, v.content.Origin.Y, tint)
 			snapshotSelection(v, l, snap, v.content.Origin.X, v.content.Origin.Y)
 		}
+		if sh := l.shadow; sh.Color != 0 {
+			s := gskShadow{rgba(sh.Color), float32(sh.Offset.X), float32(sh.Offset.Y), float32(sh.Radius) * shadowBlurPerUnit}
+			gtkSnapshotPushShadow(snap, &s, 1)
+		}
 		if tinted {
 			// A bound color paints the whole text as a mask.
+			grown := l.contentBounds(x, y, float32(width), float32(height))
 			cr := gtkSnapshotAppendCairo(snap, &grown)
 			cairoPushGroup(cr)
 			if !selected {

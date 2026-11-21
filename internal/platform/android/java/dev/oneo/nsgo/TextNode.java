@@ -5,11 +5,14 @@ import android.graphics.Canvas;
 import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
 import android.text.Layout;
 import android.text.Spanned;
 import android.text.StaticLayout;
 import android.view.MotionEvent;
+import android.view.View;
 import android.widget.FrameLayout;
 
 /**
@@ -19,16 +22,24 @@ import android.widget.FrameLayout;
  * their own touches.
  */
 final class TextNode extends FrameLayout {
+    private static final PorterDuffXfermode TINT_MODE = new PorterDuffXfermode(PorterDuff.Mode.SRC_IN);
+
     private StaticLayout layout;
     private int x, y;
     /** The lines a clipped text shows, 0 for all. */
     private int clipLines;
+    /** The text shadow behind glyphs and drawn decorations, or null for none. */
+    private Text.Shadow shadow;
+    /** Whether the current layout's ink reaches past this view's bounds. */
+    private boolean overflows;
     /** Where the last touch went down, NaN once a press has used it. */
     private float downX = Float.NaN, downY;
     private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF backgroundRect = new RectF();
     private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path wave = new Path();
+    private final RectF ink = new RectF();
+    private final Paint tintPaint = new Paint();
     /** Whether the text selects, as driver.Selectable, and its highlight's color, 0 for the theme's. */
     int selectable;
     private int selectionColor;
@@ -41,6 +52,7 @@ final class TextNode extends FrameLayout {
         super(context);
         setWillNotDraw(false);
         setClipChildren(false);
+        setClipToPadding(false);
     }
 
     /**
@@ -48,11 +60,31 @@ final class TextNode extends FrameLayout {
      * when that is more than 0, and drops the layout it replaces.
      */
     void setLayout(StaticLayout layout, int x, int y, int clipLines) {
+        setLayout(layout, x, y, clipLines, null);
+    }
+
+    /**
+     * Draws layout at (x, y) with shadow (or null for none), only its first
+     * clipLines lines when that is more than 0, and drops the layout it replaces.
+     */
+    void setLayout(StaticLayout layout, int x, int y, int clipLines, Text.Shadow shadow) {
+        boolean hadOverflow = overflows;
         this.layout = layout;
         this.x = x;
         this.y = y;
         this.clipLines = clipLines;
+        this.shadow = shadow != null && (shadow.color >>> 24) != 0 ? shadow : null;
+        overflows = overflowsBox();
         invalidate();
+        if ((hadOverflow || overflows) && getParent() instanceof View) {
+            ((View) getParent()).invalidate();
+        }
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        overflows = overflowsBox();
     }
 
     StaticLayout layout() {
@@ -171,8 +203,13 @@ final class TextNode extends FrameLayout {
     @Override
     protected void onDraw(Canvas canvas) {
         if (layout == null) return;
-        // A bound color paints over the whole text, in a layer of its own.
-        int tinted = tint != 0 ? canvas.saveLayer(null, null) : -1;
+        // A bound color paints over the whole text, in a layer grown to hold
+        // decorations and shadows that reach past the view's box.
+        int tinted = -1;
+        if (tint != 0) {
+            inkBounds(ink);
+            tinted = canvas.saveLayer(ink.left, ink.top, ink.right, ink.bottom, null);
+        }
         canvas.save();
         canvas.translate(x, y);
         if (clipLines > 0 && layout.getLineCount() > clipLines) {
@@ -194,7 +231,9 @@ final class TextNode extends FrameLayout {
         drawDecorations(canvas);
         canvas.restore();
         if (tinted >= 0) {
-            canvas.drawColor(tint, android.graphics.PorterDuff.Mode.SRC_IN);
+            tintPaint.setColor(tint);
+            tintPaint.setXfermode(TINT_MODE);
+            canvas.drawRect(ink, tintPaint);
             canvas.restoreToCount(tinted);
         }
     }
@@ -206,6 +245,127 @@ final class TextNode extends FrameLayout {
         if (argb == tint) return;
         tint = argb;
         invalidate();
+        if (overflows && getParent() instanceof View) {
+            ((View) getParent()).invalidate();
+        }
+    }
+
+    /** Reports whether the laid-out ink extends past this view's bounds. */
+    private boolean overflowsBox() {
+        if (layout == null) return false;
+        inkBounds(ink);
+        return ink.left < 0 || ink.top < 0 || ink.right > getWidth() || ink.bottom > getHeight();
+    }
+
+    /**
+     * Writes into out the view-local pixel bounds covering this view and any
+     * text backgrounds, decoration lines and shadow reaching past its box.
+     */
+    void inkBounds(RectF out) {
+        float left = 0, top = 0, right = getWidth(), bottom = getHeight();
+        if (layout == null) {
+            out.set(left, top, right, bottom);
+            return;
+        }
+        boolean clipped = clipLines > 0 && layout.getLineCount() > clipLines;
+        float textW = layout.getWidth();
+        float textH = clipped ? layout.getLineTop(clipLines) : layout.getHeight();
+        float drawnLeft = x, drawnTop = y, drawnRight = x + textW, drawnBottom = y + textH;
+        float shadowLeft = drawnLeft, shadowTop = drawnTop, shadowRight = drawnRight, shadowBottom = drawnBottom;
+        CharSequence text = layout.getText();
+        if (text instanceof Spanned) {
+            Spanned spanned = (Spanned) text;
+            int lines = layout.getLineCount();
+            for (Text.Background bg : spanned.getSpans(0, text.length(), Text.Background.class)) {
+                int start = spanned.getSpanStart(bg), end = spanned.getSpanEnd(bg);
+                for (int line = layout.getLineForOffset(start); line < lines; line++) {
+                    int lineStart = layout.getLineStart(line), lineEnd = layout.getLineVisibleEnd(line);
+                    if (lineStart >= end) break;
+                    int a = Math.max(start, lineStart), b = Math.min(end, lineEnd);
+                    if (a >= b) continue;
+                    float x1 = layout.getPrimaryHorizontal(a);
+                    float x2 = b < layout.getLineEnd(line) ? layout.getPrimaryHorizontal(b) : layout.getLineRight(line);
+                    if (layout.getParagraphDirection(line) < 0 && b >= lineEnd) x2 = layout.getLineLeft(line);
+                    float baseline = layout.getLineBaseline(line);
+                    drawnLeft = Math.min(drawnLeft, x + Math.min(x1, x2));
+                    drawnTop = Math.min(drawnTop, y + baseline + bg.top);
+                    drawnRight = Math.max(drawnRight, x + Math.max(x1, x2));
+                    drawnBottom = Math.max(drawnBottom, y + baseline + bg.bottom);
+                }
+            }
+            for (Text.Decoration d : spanned.getSpans(0, text.length(), Text.Decoration.class)) {
+                int start = spanned.getSpanStart(d), end = spanned.getSpanEnd(d);
+                float vpad = decorationVerticalPad(d);
+                float hpad = d.style == Protocol.DECORATION_WAVY ? d.thickness / 2 + 1 : 1;
+                for (int line = layout.getLineForOffset(start); line < lines; line++) {
+                    int lineStart = layout.getLineStart(line), lineEnd = layout.getLineEnd(line);
+                    if (lineStart >= end) break;
+                    int a = Math.max(start, lineStart), b = Math.min(end, lineEnd);
+                    if (layout.getEllipsisCount(line) > 0) b = Math.min(b, lineStart + layout.getEllipsisStart(line));
+                    if (a >= b) continue;
+                    float x1 = layout.getPrimaryHorizontal(a);
+                    float x2 = b < lineEnd ? layout.getPrimaryHorizontal(b) : layout.getLineRight(line);
+                    if (layout.getParagraphDirection(line) < 0 && b >= lineEnd) x2 = layout.getLineLeft(line);
+                    float dx0 = x + Math.min(x1, x2) - hpad, dx1 = x + Math.max(x1, x2) + hpad;
+                    float baseline = layout.getLineBaseline(line);
+                    if (d.underline) {
+                        float dy = y + baseline + d.under;
+                        drawnLeft = Math.min(drawnLeft, dx0);
+                        drawnTop = Math.min(drawnTop, dy - vpad);
+                        drawnRight = Math.max(drawnRight, dx1);
+                        drawnBottom = Math.max(drawnBottom, dy + vpad);
+                        shadowLeft = Math.min(shadowLeft, dx0);
+                        shadowTop = Math.min(shadowTop, dy - vpad);
+                        shadowRight = Math.max(shadowRight, dx1);
+                        shadowBottom = Math.max(shadowBottom, dy + vpad);
+                    }
+                    if (d.strike) {
+                        float dy = y + baseline + d.through;
+                        drawnLeft = Math.min(drawnLeft, dx0);
+                        drawnTop = Math.min(drawnTop, dy - vpad);
+                        drawnRight = Math.max(drawnRight, dx1);
+                        drawnBottom = Math.max(drawnBottom, dy + vpad);
+                        shadowLeft = Math.min(shadowLeft, dx0);
+                        shadowTop = Math.min(shadowTop, dy - vpad);
+                        shadowRight = Math.max(shadowRight, dx1);
+                        shadowBottom = Math.max(shadowBottom, dy + vpad);
+                    }
+                }
+            }
+        }
+        if (shadow != null) {
+            float blur = 2 * Math.max(shadow.radius, 0) + 1;
+            drawnLeft = Math.min(drawnLeft, shadowLeft + shadow.dx - blur);
+            drawnTop = Math.min(drawnTop, shadowTop + shadow.dy - blur);
+            drawnRight = Math.max(drawnRight, shadowRight + shadow.dx + blur);
+            drawnBottom = Math.max(drawnBottom, shadowBottom + shadow.dy + blur);
+        }
+        if (clipped) {
+            drawnLeft = Math.max(drawnLeft, x);
+            drawnTop = Math.max(drawnTop, y);
+            drawnRight = Math.min(drawnRight, x + textW);
+            drawnBottom = Math.min(drawnBottom, y + textH);
+        }
+        if (drawnRight > drawnLeft && drawnBottom > drawnTop) {
+            left = Math.min(left, drawnLeft);
+            top = Math.min(top, drawnTop);
+            right = Math.max(right, drawnRight);
+            bottom = Math.max(bottom, drawnBottom);
+        }
+        out.set((float) Math.floor(left), (float) Math.floor(top), (float) Math.ceil(right), (float) Math.ceil(bottom));
+    }
+
+    /** Half the vertical extent of decoration d around its center, with AA margin. */
+    private static float decorationVerticalPad(Text.Decoration d) {
+        float t = d.thickness;
+        switch (d.style) {
+            case Protocol.DECORATION_DOUBLE:
+                return 1.5f * t + 1;
+            case Protocol.DECORATION_WAVY:
+                return Math.max(t, 1) + t / 2 + 1;
+            default:
+                return t / 2 + 1;
+        }
     }
 
     /**
@@ -217,6 +377,11 @@ final class TextNode extends FrameLayout {
         if (!(text instanceof Spanned)) return;
         Spanned spanned = (Spanned) text;
         int lines = layout.getLineCount();
+        if (shadow != null) {
+            linePaint.setShadowLayer(Math.max(0.01f, shadow.radius), shadow.dx, shadow.dy, shadow.color);
+        } else {
+            linePaint.clearShadowLayer();
+        }
         for (Text.Decoration d : spanned.getSpans(0, text.length(), Text.Decoration.class)) {
             int start = spanned.getSpanStart(d), end = spanned.getSpanEnd(d);
             linePaint.setColor(d.color);

@@ -8,6 +8,7 @@
 - Add `mobile.DeferSystemGestures` for scoped iOS edge deferral and Android touch exclusion rectangles (#1218 by @houko).
 - Upload built web and desktop packages to itch.io with `nsgo publish itch` (#1561 by @houko).
 - Check target API, Apple privacy and encryption declarations, and release questionnaires during store builds (#1566 by @houko).
+- Draw text decoration lines and text shadows that extend past a text's layout box on Android, Windows and Linux unless clipped by `OverflowHidden` (#1604).
 - Show Android frame, commit and native text round-trip timings with `nsgo dev -fps` (#173 by @houko).
 - Verify native macOS Finder and Linux X11 XDND file drags end to end, enforce modal and nested-disabled drop boundaries across desktop backends, report `OnFileDragLeave` after a completed macOS drop, and accept single `GFile` drops on Linux (#1601).
 - Support `Scope.PickScreenColor` and `base.ColorEyeDropper` on Windows via a virtual-screen crosshair capture overlay and on Linux via the XDG Desktop Portal `Screenshot.PickColor` interface (#1600).

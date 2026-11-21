@@ -49,6 +49,7 @@ const (
 // drawnText is a TextLayout of this backend, drawn by it.
 type drawnText interface {
 	driver.TextLayout
+	inkBounds(box driver.Bounds) rectF
 	drawBackgrounds(p *painter, x, y float32, tint *driver.Color)
 	draw(p *painter, x, y float32)
 }
@@ -1111,6 +1112,53 @@ func (l *textLayout) effects(p *painter) {
 		l.layout.callRange(layoutSetDrawingEffect, 0, c.start, c.length, brush.ptr())
 	}
 	l.generation = gfxGeneration
+}
+
+// inkBounds returns the area l paints in its view when placed at box:
+// its lines, span backgrounds, decoration lines (with room for double
+// and wavy lines) and text shadow.
+func (l *textLayout) inkBounds(box driver.Bounds) rectF {
+	x, y := float32(box.Origin.X), float32(box.Origin.Y)
+	r := noArea
+	for _, bg := range l.backgrounds {
+		r = union(r, rectF{x + bg.r.left, y + bg.r.top, x + bg.r.right, y + bg.r.bottom})
+	}
+	drawn := noArea
+	textBottom := y + float32(box.Size.Height)
+	if len(l.lines) > 0 {
+		last := l.lines[len(l.lines)-1]
+		textBottom = max(textBottom, y+last.top+last.height)
+	}
+	textBox := rectF{x, y, x + float32(box.Size.Width), textBottom}
+	if !textBox.empty() {
+		drawn = union(drawn, textBox)
+	}
+	for _, d := range l.decorations {
+		dr := rectF{x + d.r.left, y + d.r.top, x + d.r.right, y + d.r.bottom}
+		t := dr.bottom - dr.top
+		pad := float32(0)
+		switch d.style {
+		case driver.DecorationDouble:
+			pad = t
+		case driver.DecorationWavy:
+			pad = max(t, 1)
+		}
+		drawn = union(drawn, rectF{dr.left, dr.top - pad, dr.right, dr.bottom + pad})
+	}
+	if visible(l.shadow.Color) && !textBox.empty() {
+		// drawShadow blurs by standardDeviation = Radius/2; 2*Radius is 4 sigma.
+		blur := 2 * max(float32(l.shadow.Radius), 0)
+		dx, dy := float32(l.shadow.Offset.X), float32(l.shadow.Offset.Y)
+		drawn = union(drawn, rectF{textBox.left + dx - blur, textBox.top + dy - blur,
+			textBox.right + dx + blur, textBox.bottom + dy + blur})
+	}
+	if !l.clip.empty() && !drawn.empty() {
+		drawn = drawn.intersect(rectF{x + l.clip.left, y + l.clip.top, x + l.clip.right, y + l.clip.bottom})
+	}
+	if !drawn.empty() {
+		r = union(r, drawn)
+	}
+	return r
 }
 
 // drawBackgrounds paints the span boxes before the selection.

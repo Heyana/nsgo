@@ -600,3 +600,130 @@ func TestTextLayoutsHitTestTheirCharacters(t *testing.T) {
 		t.Fatalf("a range from b into the Hebrew covers %v, want two boxes", r)
 	}
 }
+
+// TestTextInkDrawsPastItsBox renders text views through GTK's snapshot
+// pipeline into a Cairo image surface and checks that decoration lines
+// (including thick/offset/wavy ones), text shadows and tinted text draw
+// outside the text's layout box unless clipped.
+func TestTextInkDrawsPastItsBox(t *testing.T) {
+	if err := openLibs(); err != nil {
+		t.Skip(err)
+	}
+	w := &window{}
+	render := func(v *view, width, height int, originX, originY float64) (uintptr, int) {
+		t.Helper()
+		snap := gtkSnapshotNew()
+		s := w.styleOf(v)
+		sh := newShape(s, float32(v.frame.Size.Width), float32(v.frame.Size.Height))
+		if s.Clip {
+			sh.pushClip(snap)
+		}
+		w.snapshotContent(v, s, snap)
+		if s.Clip {
+			gtkSnapshotPop(snap)
+		}
+		node := gtkSnapshotFreeToNode(snap)
+		if node == 0 {
+			t.Fatal("snapshot produced no render node")
+		}
+		surface := cairoImageSurfaceCreate(0, int32(width), int32(height))
+		cr := cairoCreate(surface)
+		cairoTranslate(cr, originX, originY)
+		gskRenderNodeDraw(node, cr)
+		cairoSurfaceFlush(surface)
+		t.Cleanup(func() {
+			gskRenderNodeUnref(node)
+			cairoDestroy(cr)
+			cairoSurfaceDestroy(surface)
+		})
+		return cairoImageSurfaceGetData(surface), int(cairoImageSurfaceGetStride(surface))
+	}
+	hasPixel := func(data uintptr, stride, x0, y0, x1, y1 int, match func(b, g, r, a byte) bool) bool {
+		for y := y0; y < y1; y++ {
+			for x := x0; x < x1; x++ {
+				p := pixelAt(data, stride, x, y)
+				if match(p[0], p[1], p[2], p[3]) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	// 1. Offset red underline reaching far past textOverhang (2pt) below the box.
+	underStyle := textStyle
+	underStyle.Decoration = driver.TextDecorationUnderline
+	underStyle.DecorationColor = driver.RGB(0xff0000)
+	underStyle.DecorationThickness = 4
+	underStyle.UnderlineOffset = driver.Pt(16)
+	lUnder := layoutText(t, w, &driver.AttributedText{Text: "MMMM", Style: underStyle}, driver.Auto)
+	t.Cleanup(lUnder.Release)
+	vUnder := &view{kind: driver.KindText, frame: driver.Bounds{Size: driver.Size{Width: lUnder.width, Height: lUnder.height}},
+		content: driver.Bounds{Size: driver.Size{Width: lUnder.width, Height: lUnder.height}},
+		style:   driver.ViewStyle{Opacity: 1}, text: lUnder}
+	data, stride := render(vUnder, 120, 80, 10, 10)
+	boxBottom := 10 + int(lUnder.height)
+	if !hasPixel(data, stride, 10, boxBottom+4, 10+int(lUnder.width), 78, func(b, g, r, a byte) bool {
+		return a > 0x80 && r > 0xb0 && g < 0x40 && b < 0x40
+	}) {
+		t.Errorf("offset underline drew no red pixels below the text box (height=%v)", lUnder.height)
+	}
+
+	// 2. Wavy underline with custom thickness reaching past the box.
+	wavyStyle := textStyle
+	wavyStyle.Decoration = driver.TextDecorationUnderline
+	wavyStyle.DecorationStyle = driver.DecorationWavy
+	wavyStyle.DecorationColor = driver.RGB(0x0000ff)
+	wavyStyle.DecorationThickness = 3
+	wavyStyle.UnderlineOffset = driver.Pt(10)
+	lWavy := layoutText(t, w, &driver.AttributedText{Text: "MMMM", Style: wavyStyle}, driver.Auto)
+	t.Cleanup(lWavy.Release)
+	vWavy := &view{kind: driver.KindText, frame: driver.Bounds{Size: driver.Size{Width: lWavy.width, Height: lWavy.height}},
+		content: driver.Bounds{Size: driver.Size{Width: lWavy.width, Height: lWavy.height}},
+		style:   driver.ViewStyle{Opacity: 1}, text: lWavy}
+	dataWavy, strideWavy := render(vWavy, 120, 80, 10, 10)
+	if !hasPixel(dataWavy, strideWavy, 10, 10+int(lWavy.height)+4, 10+int(lWavy.width), 78, func(b, g, r, a byte) bool {
+		return a > 0x80 && b > 0xb0 && r < 0x40 && g < 0x40
+	}) {
+		t.Errorf("wavy underline drew no blue pixels below the text box (height=%v)", lWavy.height)
+	}
+
+	// 3. Green text shadow offset past the text's box.
+	lShadow := layoutText(t, w, &driver.AttributedText{
+		Text:  "MMMM",
+		Style: textStyle,
+		Shadow: driver.TextShadow{
+			Color:  driver.RGB(0x00cc00),
+			Offset: driver.Point{X: 14, Y: 16},
+			Radius: 2,
+		},
+	}, driver.Auto)
+	t.Cleanup(lShadow.Release)
+	vShadow := &view{kind: driver.KindText, frame: driver.Bounds{Size: driver.Size{Width: lShadow.width, Height: lShadow.height}},
+		content: driver.Bounds{Size: driver.Size{Width: lShadow.width, Height: lShadow.height}},
+		style:   driver.ViewStyle{Opacity: 1}, text: lShadow}
+	dataShadow, strideShadow := render(vShadow, 140, 80, 10, 10)
+	if !hasPixel(dataShadow, strideShadow, 10, 10+int(lShadow.height)+4, 138, 78, func(b, g, r, a byte) bool {
+		return a > 0x40 && g > 0x60 && r < 0x40 && b < 0x40
+	}) {
+		t.Errorf("text shadow drew no green pixels below the text box (height=%v)", lShadow.height)
+	}
+
+	// 4. Tinted text with overflowing underline still draws past its box.
+	vTinted := *vUnder
+	vTinted.animated = &driver.AnimatedValues{Set: 1 << driver.PropTextColor, TextColor: driver.RGB(0x0088ff)}
+	dataTinted, strideTinted := render(&vTinted, 120, 80, 10, 10)
+	if !hasPixel(dataTinted, strideTinted, 10, boxBottom+4, 10+int(lUnder.width), 78, func(b, g, r, a byte) bool {
+		return a > 0x80 && b > 0xb0
+	}) {
+		t.Errorf("tinted text clipped its overflowing underline below the box (height=%v)", lUnder.height)
+	}
+
+	// 5. OverflowHidden clips the overflowing underline and shadow.
+	vClipped := *vUnder
+	vClipped.style.Clip = true
+	dataClipped, strideClipped := render(&vClipped, 120, 80, 10, 10)
+	if hasPixel(dataClipped, strideClipped, 0, boxBottom+2, 120, 80, func(b, g, r, a byte) bool { return a > 0 }) {
+		t.Error("OverflowHidden text drew pixels past its box")
+	}
+}

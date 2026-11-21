@@ -669,6 +669,11 @@ func (p *painter) draw(v *view, parent matrix, x, y driver.Points) {
 	if area.empty() {
 		area = rectF{0, 0, float32(size.Width), float32(size.Height)}
 	}
+	if !s.Clip && v.text != nil {
+		if ink := v.text.inkBounds(v.content); !ink.empty() {
+			area = union(area, rectF{ink.left - 1, ink.top - 1, ink.right + 1, ink.bottom + 1})
+		}
+	}
 	if s.BlendMode == driver.BlendNormal || !p.drawBlended(s.BlendMode, world, area, func() { p.drawContent(v, s, world) }) {
 		p.drawContent(v, s, world)
 	}
@@ -732,8 +737,9 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 	// it on Apple and as Linux and the web clip it.
 	clip := s.Clip || v.kind == driver.KindScroll || v.kind == driver.KindImage
 	// The view's own content stays inside it; a box with none, as most of
-	// a table's are, pushes no clip for it.
-	contained := !clip && (v.text != nil || v.kind != driver.KindView && v.kind != driver.KindModal)
+	// a table's are, pushes no clip for it. A text's decoration lines and
+	// shadow reach past its box unless the view clips, as on Apple and the web.
+	contained := !clip && v.kind != driver.KindView && v.kind != driver.KindModal && v.kind != driver.KindText
 	if clip {
 		p.pushClipBox(&b)
 	} else if contained {

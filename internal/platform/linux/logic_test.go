@@ -594,3 +594,33 @@ func TestTitleBarDoubleClickFollowsGTK(t *testing.T) {
 		}
 	}
 }
+
+func TestTextDecorationAndContentBounds(t *testing.T) {
+	l := &textLayout{
+		width:  60,
+		height: 18,
+		under:  []rect{{x: 0, y: -3, w: 60, h: 24}},
+		over: []decorationLine{
+			{x: 0, y: 28, w: 60, t: 4, style: driver.DecorationSolid},
+			{x: 0, y: 24, w: 60, t: 3, style: driver.DecorationDouble},
+			{x: 0, y: -5, w: 60, t: 3, style: driver.DecorationWavy},
+		},
+	}
+	dec, ok := l.decorationBounds(4, 6)
+	if !ok {
+		t.Fatal("decorationBounds reported no decorations")
+	}
+	// Wavy at y=6-5=1 with amp=max(1.5*3,2)=4.5 and AA=1 reaches top <= -5;
+	// solid at y=6+28=34 with t=4 and AA=1 reaches bottom >= 39.
+	if dec.y > -5 || dec.y+dec.h < 39 || dec.x > 2 || dec.x+dec.w < 66 {
+		t.Fatalf("decorationBounds = %+v, want top <= -5, bottom >= 39, left <= 2, right >= 66", dec)
+	}
+	cb := l.contentBounds(4, 6, 60, 18)
+	if cb.y > dec.y || cb.y+cb.h < dec.y+dec.h || cb.x > dec.x || cb.x+cb.w < dec.x+dec.w {
+		t.Fatalf("contentBounds = %+v, want to cover decorationBounds %+v", cb, dec)
+	}
+	// Empty over reports false.
+	if _, ok := (&textLayout{width: 40, height: 16}).decorationBounds(0, 0); ok {
+		t.Fatal("decorationBounds reported true for empty over")
+	}
+}

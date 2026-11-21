@@ -145,6 +145,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     private final ConcurrentHashMap<Integer, StaticLayout> shown;
     /** The lines a clipped layout shows, by layout id, until its ITEM_TEXT. */
     private final ConcurrentHashMap<Integer, Integer> clips;
+    /** The text shadow of a layout, by layout id, until its ITEM_TEXT. */
+    private final ConcurrentHashMap<Integer, Text.Shadow> shadows;
     /**
      * The first view, which the engine serves, for an overlay's view: null for the first view itself. The first view receives every message and hands an overlay's batches and images on to its view, whose events name its surface.
      */
@@ -342,6 +344,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         setDescendantFocusability(FOCUS_BEFORE_DESCENDANTS);
         setDefaultFocusHighlightEnabled(false);
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        setClipChildren(false);
+        setClipToPadding(false);
         if (first == null) {
             // Alarms a force stop cleared, which the boot receiver cannot set again.
             Notifications.rearm(context);
@@ -349,6 +353,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             layouts = new ConcurrentHashMap<>();
             shown = new ConcurrentHashMap<>();
             clips = new ConcurrentHashMap<>();
+            shadows = new ConcurrentHashMap<>();
             host = new Host(this);
             downloads = new Downloads(this::write);
             overlays = new Overlays(this);
@@ -357,6 +362,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             layouts = first.layouts;
             shown = first.shown;
             clips = first.clips;
+            shadows = first.shadows;
             host = first.host;
             downloads = first.downloads;
             overlays = null;
@@ -960,6 +966,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                     prepared.remove(id);
                     layouts.remove(id);
                     clips.remove(id);
+                    shadows.remove(id);
                     break;
                 }
                 default:
@@ -1576,6 +1583,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 }
                 layouts.put(layout, l);
                 if (p.clipLines() > 0) clips.put(layout, p.clipLines());
+                if (p.shadow() != null) shadows.put(layout, p.shadow());
                 break;
             }
             case Protocol.TEXT_LAYOUT_LINES: {
@@ -2771,8 +2779,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 n.laid = laid;
                 if (layout != null) shown.put(laid, layout);
                 Integer clip = clips.remove(laid);
+                Text.Shadow shadow = shadows.remove(laid);
                 int x = px(in.readFloat()), y = px(in.readFloat());
-                ((TextNode) n.view).setLayout(layout, x, y, clip != null ? clip : 0);
+                ((TextNode) n.view).setLayout(layout, x, y, clip != null ? clip : 0, shadow);
                 describe(n);
                 break;
             }
@@ -5373,6 +5382,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         Group(Context context) {
             super(context);
             setClipChildren(false);
+            setClipToPadding(false);
         }
 
         /** Whether the group itself may take the touch it is handed, as core.Reach says. */
@@ -5938,6 +5948,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         Content(Context context) {
             super(context);
             setClipChildren(false);
+            setClipToPadding(false);
         }
 
         @Override
@@ -5953,6 +5964,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         Layer(Context context) {
             super(context);
             setClipChildren(false);
+            setClipToPadding(false);
         }
 
         @Override

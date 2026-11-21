@@ -1562,3 +1562,74 @@ func TestMultilineInputScrollsUnderPadding(t *testing.T) {
 		t.Errorf("single-line clipRect = %+v, want horizontal bounds [13, 279]", got)
 	}
 }
+
+func TestTextInkBoundsAndDamageExtent(t *testing.T) {
+	box := driver.Bounds{Origin: driver.Point{X: 2, Y: 4}, Size: driver.Size{Width: 60, Height: 18}}
+	// An underline offset below the box, a double line and a wavy line reach past the box.
+	l := &textLayout{
+		lines: []lineBox{{top: 0, height: 18}},
+		decorations: []decoration{
+			{r: rectF{0, 26, 60, 29}, color: driver.RGB(0xff0000), style: driver.DecorationSolid},
+			{r: rectF{0, 22, 60, 25}, color: driver.RGB(0x00ff00), style: driver.DecorationDouble},
+			{r: rectF{0, -6, 60, -2}, color: driver.RGB(0x0000ff), style: driver.DecorationWavy},
+		},
+	}
+	got := l.inkBounds(box)
+	// Solid reaches y=4+29=33, double reaches y=4+25+3=32, wavy reaches top y=4-6-4=-6.
+	if got.top > -6 || got.bottom < 33 || got.left > 2 || got.right < 62 {
+		t.Fatalf("decoration inkBounds = %+v, want top <= -6, bottom >= 33, left <= 2, right >= 62", got)
+	}
+
+	// A text shadow reaches past the box by its offset and blur.
+	shadowed := &textLayout{
+		lines:  []lineBox{{top: 0, height: 18}},
+		shadow: driver.TextShadow{Color: driver.RGB(0x00ff00), Offset: driver.Point{X: 12, Y: 10}, Radius: 4},
+	}
+	sg := shadowed.inkBounds(box)
+	if sg.right < 2+60+12+8 || sg.bottom < 4+18+10+8 {
+		t.Fatalf("shadow inkBounds = %+v, want right >= 82 and bottom >= 40", sg)
+	}
+
+	// EllipsizeClip bounds the drawn ink to l.clip.
+	clipped := &textLayout{
+		lines:       []lineBox{{top: 0, height: 18}},
+		decorations: []decoration{{r: rectF{0, 26, 60, 29}, color: driver.RGB(0xff0000), style: driver.DecorationSolid}},
+		clip:        rectF{0, 0, 60, 18},
+	}
+	if cg := clipped.inkBounds(box); cg.bottom > 4+18 {
+		t.Fatalf("clipped inkBounds = %+v, want bottom <= 22", cg)
+	}
+
+	// viewExtent includes text ink only when the view does not clip, and
+	// measuring.visit still clips it against a clipping ancestor.
+	bounds := rectF{0, 0, 64, 22}
+	v := &view{kind: driver.KindText, frame: driver.Bounds{Origin: driver.Point{X: 20, Y: 20}, Size: driver.Size{Width: 64, Height: 22}},
+		content: box, text: shadowed, style: driver.ViewStyle{Opacity: 1}}
+	ext := viewExtent(v, &v.style, bounds)
+	if ext.right < sg.right+1 || ext.bottom < sg.bottom+1 {
+		t.Fatalf("unclipped viewExtent = %+v, want at least %+v", ext, sg)
+	}
+	v.style.Clip = true
+	clipExt := viewExtent(v, &v.style, bounds)
+	if clipExt != extent(&v.style, bounds) {
+		t.Fatalf("clipped viewExtent = %+v, want %+v", clipExt, extent(&v.style, bounds))
+	}
+
+	// An ancestor with Clip intersects the text's measured damage area.
+	v.style.Clip = false
+	v.queued = true
+	parent := &view{kind: driver.KindView, frame: driver.Bounds{Size: driver.Size{Width: 90, Height: 45}},
+		style: driver.ViewStyle{Opacity: 1, Clip: true}, children: []*view{v}}
+	v.parent = parent
+	w := &window{animator: driver.NewAnimator(nil)}
+	m := measuring{w: w}
+	m.visit(parent, identity, 0, 0, rectF{0, 0, 200, 200}, true, false)
+	if v.area.right > 90 || v.area.bottom > 45 {
+		t.Fatalf("ancestor-clipped area = %+v, want within 90x45", v.area)
+	}
+	parent.style.Clip = false
+	m.visit(parent, identity, 0, 0, rectF{0, 0, 200, 200}, true, false)
+	if v.area.right <= 20+64 || v.area.bottom <= 20+22 {
+		t.Fatalf("unclipped area = %+v, want past view box (84, 42)", v.area)
+	}
+}
