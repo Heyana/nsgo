@@ -24,10 +24,7 @@ func harmonyTestRunner(ctx context.Context, p *project, dir string, opts testOpt
 		return targetRunner{}, fmt.Errorf("the harmonyos target needs hdc to install the HAP")
 	}
 	test := testProject(p)
-	bundle, err := harmony.BundleName(test.ID)
-	if err != nil {
-		return targetRunner{}, err
-	}
+	bundles := map[string]bool{}
 	site := filepath.Join(dir, "web")
 	if err := buildHarmony(ctx, test, site); err != nil {
 		return targetRunner{}, err
@@ -52,13 +49,21 @@ func harmonyTestRunner(ctx context.Context, p *project, dir string, opts testOpt
 			if code == 0 {
 				code = 1
 			}
-			hap, err := harmony.Package(dir, site, test.Name, test.ID, test.Version, code, test.Harmonyos.Permissions)
+			hap, err := buildHarmonyHAP(ctx, test, dir, site, code)
 			if err != nil {
 				return -1, err
 			}
 			bundle, err := harmony.BundleOf(hap)
 			if err != nil {
 				return -1, err
+			}
+			if !bundles[bundle] {
+				source := "committed host"
+				if bundle == test.ID {
+					source = "host compiled from templates"
+				}
+				plain("  harmonyos: using %s for %s", source, bundle)
+				bundles[bundle] = true
 			}
 			// The tests replace the HAP under the running app: stop it first, or
 			// the old process keeps a page that no longer loads and aa start
@@ -77,7 +82,11 @@ func harmonyTestRunner(ctx context.Context, p *project, dir string, opts testOpt
 			hdcAt(ctx, hdc, device, "shell", "aa", "force-stop", bundle)
 			return exitCode, testErr
 		},
-		close: func() { hdcAt(context.Background(), hdc, device, "uninstall", bundle) },
+		close: func() {
+			for bundle := range bundles {
+				hdcAt(context.Background(), hdc, device, "uninstall", bundle)
+			}
+		},
 	}, nil
 }
 

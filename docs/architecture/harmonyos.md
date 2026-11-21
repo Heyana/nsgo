@@ -6,7 +6,7 @@ NSH's HarmonyOS backend is a community platform outside NSH ([nsh-platform-harmo
 
 ## What runs now
 
-The tool writes a HAP, never a project: DevEco is needed only to rebuild the host (`cmd/nsgo/harmony/host/build.sh`), whose bytecode, resource table and `module.json` are committed.
+The tool writes a HAP. It can compile an ArkTS host for the app with the OpenHarmony API 26 SDK or package the committed host. After changing the host templates, run `cmd/nsgo/harmony/host/build.sh` with that SDK and commit its outputs. The script records the templates’ SHA-256 digest in `cmd/nsgo/harmony/host-templates.sha256`, which `TestCommittedHostMatchesTemplates` checks.
 
 - `nsgo build -target harmonyos` compiles the app with the `nsgoharmony` backend, puts the module and its page under `rawfile/web`, and releases `<name>-<version>-harmonyos.hap`.
 - The host's `Index.ets` lays a 1×1 `Web` under the ArkUI tree and serves the page from the rawfile directory in `onInterceptRequest`. Its `nsgoHarmony` proxy answers the module: `ready`, `submit` (a batch's operations), `tick` and `idle` (the frame clock), `device` (the window and the system), `measure` (text), `perf` (readings) and `launch` (what the Want that opened the app said).

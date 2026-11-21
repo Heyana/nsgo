@@ -2,12 +2,41 @@ package harmony
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCommittedHostMatchesTemplates(t *testing.T) {
+	stamp, err := os.ReadFile("host-templates.sha256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := walk(templates, "templates")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.New()
+	for _, name := range files {
+		file := path.Join("templates", name)
+		data, err := templates.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.WriteString(hash, file+"\x00")
+		hash.Write(data)
+		io.WriteString(hash, "\x00")
+	}
+	if got, want := strings.TrimSpace(string(stamp)), hex.EncodeToString(hash.Sum(nil)); got != want {
+		t.Fatalf("HarmonyOS templates changed since the committed host was built. Run cmd/nsgo/harmony/host/build.sh with the API 26 SDK.")
+	}
+}
 
 // sdkAvailable says the machine lacks the SDK when hvigorw is missing or no
 // SDK path is set.

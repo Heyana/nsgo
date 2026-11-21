@@ -21,15 +21,34 @@ fi
 dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-cp -R "$dir/../templates/." "$work/"
-find "$work" -type f \( -name '*.json5' -o -name '*.json' -o -name '*.ts' -o -name '*.ets' \) \
+project="$work/templates"
+cp -R "$dir/../templates" "$project"
+# Hash the snapshot before replacing any of its placeholders. Match the
+# files go:embed includes and the order TestCommittedHostMatchesTemplates uses.
+(
+	cd "$work"
+	find templates -type f ! -path '*/.*' ! -path '*/_*' > files
+	LC_ALL=C sort files > sorted
+	while IFS= read -r source; do
+		printf '%s\000' "$source"
+		cat "$source"
+		printf '\000'
+	done < sorted > template-inputs
+	shasum -a 256 template-inputs > digest
+	cut -d ' ' -f 1 digest > host-templates.sha256
+)
+find "$project" -type f \( -name '*.json5' -o -name '*.json' -o -name '*.ts' -o -name '*.ets' \) \
 	-exec perl -pi -e "s/\{\{name\}\}/NSGo/g; s/\{\{bundle\}\}/$bundle/g; s/\{\{version\}\}/0.0.0/g; s/\{\{code\}\}/1/g" {} +
-mkdir -p "$work/entry/src/main/resources/rawfile/web"
-printf '%s\n' '<!doctype html>' > "$work/entry/src/main/resources/rawfile/web/index.html"
-( cd "$work" && hvigorw --mode module -p product=default -p module=entry@default -p buildMode=debug assembleHap --no-daemon >/dev/null )
-hap="$work/entry/build/default/outputs/default/entry-default-unsigned.hap"
+mkdir -p "$project/entry/src/main/resources/rawfile/web"
+printf '%s\n' '<!doctype html>' > "$project/entry/src/main/resources/rawfile/web/index.html"
+( cd "$project" && hvigorw --mode module -p product=default -p module=entry@default -p buildMode=debug assembleHap --no-daemon >/dev/null )
+hap="$project/entry/build/default/outputs/default/entry-default-unsigned.hap"
+unzip -q "$hap" -d "$work/host"
+test -s "$work/host/ets/modules.abc"
+rm -f "$work/host/ets/sourceMaps.map"
+rm -rf "$work/host/resources/rawfile"
+rm -f "$dir/../host-templates.sha256"
 rm -rf "$dir/ets" "$dir/resources" "$dir/resources.index" "$dir/pkgSdkInfo.json" "$dir/rpcid.sc" "$dir/module.json" "$dir/pack.info"
-( cd "$dir" && unzip -q "$hap" -d . )
-rm -f "$dir/ets/sourceMaps.map"
-rm -rf "$dir/resources/rawfile"
+cp -R "$work/host/." "$dir/"
+cp "$work/host-templates.sha256" "$dir/../host-templates.sha256"
 echo "wrote $dir for $bundle"

@@ -80,6 +80,8 @@ go tool nsgo test -target macos -run TestAdd
 go tool nsgo test -target macos -activate  # allow the test app to take the keyboard
 ```
 
+On HarmonyOS, `go tool nsgo test -target harmonyos` uses `build.harmonyos_bundles` and reports whether the HAP used the committed host or a host compiled from templates. See [Building](https://nsgo.dev/docs/building.md#harmonyos).
+
 On macOS, test windows accept only the test host's input, so the developer's mouse, keyboard and trackpad cannot change their scenes while the suite runs.
 
 Test windows take keys without activating the app. AppKit may refuse a field's click while another app is active, which `Focus` and `Type` diagnose. `-activate` lets the test app take the keyboard on an unlocked desktop before a field click or key step. It needs tests that import `github.com/nsgo-dev/nsgo` (a blank import is enough) and call `nsgotest.Main` in `TestMain`.
