@@ -27,6 +27,7 @@ type Switch struct {
 	ThumbStyleFunc func() core.Style
 	Children       []core.Node
 	Label          string
+	LabelFunc      func() string
 	Hint           string
 	TestID         string
 	// HitSlop is how far outside the switch presses count.
@@ -44,7 +45,7 @@ func (s Switch) Render(*core.Scope) core.Node {
 	thumb := core.View{Class: s.ThumbClass, Style: s.ThumbStyle, StyleFunc: s.ThumbStyleFunc, PartStates: shows}
 	track := core.View{Class: s.TrackClass, Style: s.TrackStyle, StyleFunc: s.TrackStyleFunc, PartStates: shows,
 		Children: []core.Node{thumb}}
-	return core.View{Class: s.Class, Style: s.Style, StyleFunc: s.StyleFunc, Ref: s.Ref, LabelledBy: s.LabelledBy, Role: core.RoleSwitch, Label: s.Label, Hint: s.Hint, TestID: s.TestID, OnLayout: s.OnLayout, Tooltip: s.Tooltip, HitSlop: s.HitSlop,
+	return core.View{Class: s.Class, Style: s.Style, StyleFunc: s.StyleFunc, Ref: s.Ref, LabelledBy: s.LabelledBy, Role: core.RoleSwitch, Label: s.Label, LabelFunc: s.LabelFunc, Hint: s.Hint, TestID: s.TestID, OnLayout: s.OnLayout, Tooltip: s.Tooltip, HitSlop: s.HitSlop,
 		Disabled: s.Disabled, Invalid: s.Invalid, Checked: s.Checked,
 		OnPress: func(core.PressEvent) {
 			if s.OnChange != nil {

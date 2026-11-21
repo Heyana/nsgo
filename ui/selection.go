@@ -14,15 +14,18 @@ var selectionRow = core.Style{Direction: core.Row, AlignItems: core.AlignCenter,
 
 // selectionLabel is a selection control's label: the app's children, or
 // its text, faint while the control is disabled.
-func selectionLabel(cx *core.Scope, content string, children []core.Node) []core.Node {
+func selectionLabel(cx *core.Scope, content string, contentFunc func() string, children []core.Node) []core.Node {
 	if children != nil {
 		return children
 	}
-	if content == "" {
+	if content == "" && contentFunc == nil {
 		return nil
 	}
+	if contentFunc != nil {
+		content = ""
+	}
 	colors := ColorsOf(cx)
-	return []core.Node{core.Text{Content: content, Style: TypeBody.Merge(core.Style{FlexShrink: 1}), StyleFunc: func() core.Style {
+	return []core.Node{core.Text{Content: content, ContentFunc: contentFunc, Style: TypeBody.Merge(core.Style{FlexShrink: 1}), StyleFunc: func() core.Style {
 		return core.Style{Color: colors.Text(), GroupStyle: &core.GroupStyle{Name: selectionGroup, Disabled: &core.Style{Color: colors.Faint()}}}
 	}}}
 }

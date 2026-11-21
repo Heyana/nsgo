@@ -189,9 +189,10 @@ type Menu struct {
 	BackdropStyleFunc func() core.Style
 	Trigger           core.Node
 	// Children are the items, made on each opening.
-	Children []core.Node
-	Label    string
-	TestID   string
+	Children  []core.Node
+	Label     string
+	LabelFunc func() string
+	TestID    string
 	// OnLayout and Tooltip are its view's, as a core.View's.
 	OnLayout func(core.Bounds)
 	Tooltip  core.Node
@@ -209,7 +210,7 @@ func (m Menu) Render(cx *core.Scope) core.Node {
 	}
 	around := popupBar(cx)
 	return core.Group{
-		barTrigger(cx, around, core.View{Ref: anchor, Class: m.Class, Style: m.Style, StyleFunc: m.StyleFunc, Label: m.Label, TestID: m.TestID, OnLayout: m.OnLayout, Tooltip: m.Tooltip, Role: core.RoleButton,
+		barTrigger(cx, around, core.View{Ref: anchor, Class: m.Class, Style: m.Style, StyleFunc: m.StyleFunc, Label: m.Label, LabelFunc: m.LabelFunc, TestID: m.TestID, OnLayout: m.OnLayout, Tooltip: m.Tooltip, Role: core.RoleButton,
 			Expanded: st.open, ShowsExpanded: true,
 			OnPress: func(e core.PressEvent) {
 				// The keyboard's opening focuses the first item.
@@ -252,6 +253,7 @@ type MenuItem struct {
 	StyleFunc      func() core.Style
 	Children       []core.Node
 	Label          string
+	LabelFunc      func() string
 	TestID         string
 	// OnLayout and Tooltip are its view's, as a core.View's.
 	OnLayout func(core.Bounds)
@@ -286,7 +288,7 @@ func (i MenuItem) Render(cx *core.Scope) core.Node {
 		item = menu.keys.add(cx, ref, i.Disabled, nil)
 	}
 	return core.View{Ref: ref, Class: i.Class, Style: i.Style, StyleFunc: merged(i.StyleFunc, menu.hiddenUnlessShown()),
-		Role: role, Label: i.Label, TestID: i.TestID, OnLayout: i.OnLayout, Tooltip: i.Tooltip, Disabled: i.Disabled, Checked: i.Checked, Children: children,
+		Role: role, Label: i.Label, LabelFunc: i.LabelFunc, TestID: i.TestID, OnLayout: i.OnLayout, Tooltip: i.Tooltip, Disabled: i.Disabled, Checked: i.Checked, Children: children,
 		// Over another item, a submenu of its level closes, and the keys
 		// go on from this one.
 		OnMouseEnter: func(core.MouseEvent) {

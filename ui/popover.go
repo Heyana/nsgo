@@ -23,8 +23,9 @@ type Popover struct {
 	Align     core.Align
 	Children  []core.Node
 	// Label names the trigger, Trigger's label when empty.
-	Label  string
-	TestID string
+	Label     string
+	LabelFunc func() string
+	TestID    string
 	// Style merges over the surface's.
 	Style core.Style
 }
@@ -32,19 +33,18 @@ type Popover struct {
 // Render implements core.Node.
 func (p Popover) Render(cx *core.Scope) core.Node {
 	style, focus, face := p.Trigger.parts(cx)
+	label, labelFunc := triggerLabel(p.Label, p.LabelFunc, p.Trigger)
 	return base.Popover{Open: p.Open, OnOpenChange: p.OnOpenChange, Placement: p.Placement, Align: p.Align, Offset: 4, Margin: 8,
 		Style: style, StyleFunc: focus, Trigger: face,
 		PopupStyle: core.Style{Padding: core.All(12), Gap: 8, MinWidth: core.Pt(200), MaxWidth: core.Pt(360)},
 		PopupStyleFunc: func() core.Style {
 			return FinOf(cx).Menu().Over(core.Style{CornerRadius: RadiusCard, BorderWidth: 1, Color: ColorsOf(cx).Text()}).Merge(p.Style)
 		},
-		Children: p.Children, Label: triggerLabel(p.Label, p.Trigger), TestID: p.TestID}
+		Children: p.Children, Label: label, LabelFunc: labelFunc, TestID: p.TestID}
 }
 
 // triggerLabel is a popup trigger's name: label, else its button's.
-func triggerLabel(label string, b Button) string {
-	if label != "" {
-		return label
-	}
-	return b.label()
+func triggerLabel(label string, labelFunc func() string, b Button) (string, func() string) {
+	fallback, fallbackFunc := b.labelBinding()
+	return textBinding(label, labelFunc, fallback, fallbackFunc)
 }

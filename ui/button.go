@@ -35,6 +35,7 @@ type Button struct {
 	Ref        *core.Ref
 	LabelledBy []*core.Ref
 	Text       string
+	TextFunc   func() string
 	// TextStyle overrides the typography of the button's label.
 	TextStyle core.Style
 	Variant   ButtonVariant
@@ -43,8 +44,9 @@ type Button struct {
 	Icon  func() *core.SVG
 	// Label is what assistive technology reads, Text when empty: give it
 	// to a button of an icon alone.
-	Label    string
-	Disabled func() bool
+	Label     string
+	LabelFunc func() string
+	Disabled  func() bool
 	// Busy says the button's action is still loading, for assistive technology too: while it returns true a spinner in the button's text color shows over its content, which keeps its room, and presses do nothing, so the action does not start twice.
 	Busy func() bool
 	// BusyLabel shows beside the spinner and names the busy button for
@@ -81,28 +83,26 @@ func (b Button) Render(cx *core.Scope) core.Node {
 			}
 		}
 	}
-	label := b.label()
-	var labelFunc func() string
+	label, labelFunc := b.labelBinding()
 	if b.Busy != nil && (b.BusyLabel != "" || b.BusyLabelFunc != nil) {
-		resting := label
+		resting, restingFunc := label, labelFunc
 		label = ""
 		labelFunc = func() string {
 			if b.Busy() {
-				return cmp.Or(b.busyLabel(), resting)
+				if busy := b.busyLabel(); busy != "" {
+					return busy
+				}
 			}
-			return resting
+			return textValue(resting, restingFunc)
 		}
 	}
 	return base.Button{Ref: b.Ref, LabelledBy: b.LabelledBy, OnPress: press, Disabled: b.Disabled, Busy: b.Busy, AutoFocus: b.AutoFocus,
 		Label: label, LabelFunc: labelFunc, TestID: b.TestID, Style: style, StyleFunc: focus, Children: []core.Node{face}}
 }
 
-// label is what assistive technology reads.
-func (b Button) label() string {
-	if b.Label != "" {
-		return b.Label
-	}
-	return b.Text
+// labelBinding is the button's accessible name while it rests.
+func (b Button) labelBinding() (string, func() string) {
+	return textBinding(b.Label, b.LabelFunc, b.Text, b.TextFunc)
 }
 
 // parts are the button's pressable style, its focus ring and its face,
@@ -154,8 +154,13 @@ func (b Button) parts(cx *core.Scope) (core.Style, func() core.Style, core.Node)
 	}
 	textStyle := core.Style{FontSize: b.Size.text().FontSize, FontWeight: Regular}.Merge(b.TextStyle)
 	labelStyle := func() core.Style { return core.Style{Color: cmp.Or(b.TextStyle.Color, fg())} }
-	if b.Text != "" || b.Icon == nil {
-		children = append(children, core.Text{Content: b.Text, Style: textStyle, StyleFunc: labelStyle})
+	hasText := b.Text != "" || b.TextFunc != nil
+	if hasText || b.Icon == nil {
+		content := core.Text{Content: b.Text, ContentFunc: b.TextFunc, Style: textStyle, StyleFunc: labelStyle}
+		if content.ContentFunc != nil {
+			content.Content = ""
+		}
+		children = append(children, content)
 	}
 	withBusyLabel := b.Busy != nil && (b.BusyLabel != "" || b.BusyLabelFunc != nil)
 	if b.Busy != nil {
@@ -163,7 +168,7 @@ func (b Button) parts(cx *core.Scope) (core.Style, func() core.Style, core.Node)
 	}
 	shape := core.Style{Height: core.Pt(height), Padding: core.Symmetric(0, b.Size.inset())}
 	var minWidth core.Length
-	if b.Text == "" && b.Icon != nil {
+	if !hasText && b.Icon != nil {
 		side := cmp.Or(b.Side, height)
 		shape = core.Style{Width: core.Pt(side), Height: core.Pt(side)}
 		if withBusyLabel {

@@ -46,7 +46,7 @@ func (r Radio) Render(cx *core.Scope) core.Node {
 	}
 	return base.Radio{Ref: r.Ref, LabelledBy: r.LabelledBy, Invalid: r.Invalid, Checked: r.Checked, Disabled: r.Disabled, OnChange: r.OnChange, Style: selectionRow.Merge(r.Style),
 		StyleFunc: func() core.Style { return core.Style{FocusVisible: FocusRing(cx, 2)} },
-		Children:  append([]core.Node{ring}, selectionLabel(cx, r.Text, r.Children)...), Label: label, Hint: r.Hint, TestID: r.TestID}
+		Children:  append([]core.Node{ring}, selectionLabel(cx, r.Text, nil, r.Children)...), Label: label, Hint: r.Hint, TestID: r.TestID}
 }
 
 // RadioGroup holds the Radios of one choice, stacked or in a row.

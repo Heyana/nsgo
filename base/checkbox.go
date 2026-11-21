@@ -37,7 +37,9 @@ type Checkbox struct {
 	Indicator core.Node
 	Children  []core.Node
 	Label     string
+	LabelFunc func() string
 	Hint      string
+	HintFunc  func() string
 	TestID    string
 	// HitSlop is how far outside the checkbox presses count.
 	HitSlop core.Edges
@@ -62,7 +64,7 @@ func (c Checkbox) Render(*core.Scope) core.Node {
 	if c.Indicator != nil {
 		mark = []core.Node{c.Indicator}
 	}
-	return core.View{Class: c.Class, Style: c.Style, StyleFunc: c.StyleFunc, Ref: c.Ref, LabelledBy: c.LabelledBy, Role: role, Label: c.Label, Hint: c.Hint,
+	return core.View{Class: c.Class, Style: c.Style, StyleFunc: c.StyleFunc, Ref: c.Ref, LabelledBy: c.LabelledBy, Role: role, Label: c.Label, LabelFunc: c.LabelFunc, Hint: c.Hint, HintFunc: c.HintFunc,
 		TestID: c.TestID, OnLayout: c.OnLayout, Tooltip: c.Tooltip, HitSlop: c.HitSlop, Disabled: c.Disabled, Invalid: c.Invalid, Indeterminate: c.Indeterminate,
 		Checked: func() bool { return is(c.Checked) && !is(c.Indeterminate) },
 		OnPress: func(e core.PressEvent) {

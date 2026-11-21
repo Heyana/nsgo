@@ -25,6 +25,7 @@ type Tab struct {
 	// LabelFunc keeps the accessible label bound while the tab stays mounted.
 	LabelFunc func() string
 	Hint      string
+	HintFunc  func() string
 	TestID    string
 	// OnLayout and Tooltip are its view's, as a core.View's.
 	OnLayout func(core.Bounds)
@@ -37,7 +38,7 @@ func (t Tab) Render(cx *core.Scope) core.Node {
 	if press == nil {
 		press = func(core.PressEvent) {}
 	}
-	return rovingView(cx, core.View{Class: t.Class, Style: t.Style, StyleFunc: t.StyleFunc, Role: core.RoleTab, Label: t.Label, LabelFunc: t.LabelFunc, Hint: t.Hint, TestID: t.TestID, OnLayout: t.OnLayout, Tooltip: t.Tooltip,
+	return rovingView(cx, core.View{Class: t.Class, Style: t.Style, StyleFunc: t.StyleFunc, Role: core.RoleTab, Label: t.Label, LabelFunc: t.LabelFunc, Hint: t.Hint, HintFunc: t.HintFunc, TestID: t.TestID, OnLayout: t.OnLayout, Tooltip: t.Tooltip,
 		Disabled: t.Disabled, Invalid: t.Invalid, Selected: t.Selected, OnPress: press, Children: t.Children}, t.Selected, func() { press(core.PressEvent{}) })
 }
 
@@ -67,6 +68,7 @@ type Tabs struct {
 	IndicatorStyle core.Style
 	Children       []core.Node
 	Label          string
+	LabelFunc      func() string
 	TestID         string
 	// OnLayout and Tooltip are its view's, as a core.View's.
 	OnLayout func(core.Bounds)
@@ -80,7 +82,7 @@ func (t Tabs) Render(cx *core.Scope) core.Node {
 	if t.IndicatorClass != "" || !reflect.ValueOf(t.IndicatorStyle).IsZero() {
 		children = append([]core.Node{t.indicator(group)}, children...)
 	}
-	return core.View{Class: t.Class, Style: t.Style, StyleFunc: t.StyleFunc, Role: core.RoleTabList, Invalid: t.Invalid, Label: t.Label, TestID: t.TestID, OnLayout: t.OnLayout, Tooltip: t.Tooltip,
+	return core.View{Class: t.Class, Style: t.Style, StyleFunc: t.StyleFunc, Role: core.RoleTabList, Invalid: t.Invalid, Label: t.Label, LabelFunc: t.LabelFunc, TestID: t.TestID, OnLayout: t.OnLayout, Tooltip: t.Tooltip,
 		Children: children}
 }
 

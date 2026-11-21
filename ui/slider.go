@@ -45,8 +45,10 @@ type Slider struct {
 	Disabled                   func() bool
 	// Label names it for assistive technology; a range's knobs add
 	// LowLabel and HighLabel after it, such as "minimum" and "maximum".
-	Label               string
-	LowLabel, HighLabel string
+	Label                       string
+	LabelFunc                   func() string
+	LowLabel, HighLabel         string
+	LowLabelFunc, HighLabelFunc func() string
 	// ValueText is what assistive technology reads as a value, the
 	// number when nil.
 	ValueText func(value float64) string
@@ -145,10 +147,16 @@ func (s Slider) Render(cx *core.Scope) core.Node {
 		}
 		return core.Group(marks)
 	})
-	label, startLabel := s.Label, ""
+	label, labelFunc := s.Label, s.LabelFunc
+	if labelFunc != nil {
+		label = ""
+	}
+	var startLabel string
+	var startLabelFunc func() string
 	thumb, startThumb := "", ""
 	if ranged {
-		label, startLabel = s.Label+" "+s.HighLabel, s.Label+" "+s.LowLabel
+		label, labelFunc = sliderThumbLabel(s.Label, s.LabelFunc, s.HighLabel, s.HighLabelFunc)
+		startLabel, startLabelFunc = sliderThumbLabel(s.Label, s.LabelFunc, s.LowLabel, s.LowLabelFunc)
 	}
 	if s.TestID != "" {
 		thumb = s.TestID + "-thumb"
@@ -174,7 +182,7 @@ func (s Slider) Render(cx *core.Scope) core.Node {
 	rail.CornerRadius = sliderTrack / 2
 	return base.Slider{Value: value, OnChange: change, Axis: s.Axis, Inverted: s.Inverted,
 		Min: func() float64 { lo, _ := s.bounds(); return lo }, Max: func() float64 { _, hi := s.bounds(); return hi }, Step: s.step, Disabled: s.Disabled,
-		ThumbRef: s.ThumbRef, StartThumbRef: s.StartThumbRef, LabelledBy: s.LabelledBy, Invalid: s.Invalid, Label: label, StartLabel: startLabel, ValueText: valueText, TestID: s.TestID, ThumbTestID: thumb, StartThumbTestID: startThumb, Marks: []core.Node{marks},
+		ThumbRef: s.ThumbRef, StartThumbRef: s.StartThumbRef, LabelledBy: s.LabelledBy, Invalid: s.Invalid, Label: label, LabelFunc: labelFunc, StartLabel: startLabel, StartLabelFunc: startLabelFunc, ValueText: valueText, TestID: s.TestID, ThumbTestID: thumb, StartThumbTestID: startThumb, Marks: []core.Node{marks},
 		Style:              box.Merge(core.Style{Disabled: Dimmed()}).Merge(s.Style),
 		StyleFunc:          sizeStyle,
 		TrackStyle:         track,
@@ -188,4 +196,14 @@ func (s Slider) Render(cx *core.Scope) core.Node {
 			return FinOf(cx).Knob().Over(core.Style{Background: colors.Knob(), BorderWidth: 1, BorderColor: colors.Border(), FocusVisible: FocusRing(cx, 2),
 				Active: &core.Style{Transform: core.Transform{Scale: 1.3, TranslateXPercent: -50, TranslateYPercent: -50}, Shadows: []core.BoxShadow{Shadow(0, 6, 14, -3, Black(0.18))}}})
 		}}
+}
+
+// sliderThumbLabel combines a range's name and each thumb's suffix.
+func sliderThumbLabel(label string, readLabel func() string, suffix string, readSuffix func() string) (string, func() string) {
+	if readLabel == nil && readSuffix == nil {
+		return label + " " + suffix, nil
+	}
+	return "", func() string {
+		return textValue(label, readLabel) + " " + textValue(suffix, readSuffix)
+	}
 }

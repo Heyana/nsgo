@@ -53,8 +53,9 @@ type Tabs[T comparable] struct {
 	// IndicatorFit chooses whether an underline indicator follows the tab or its content.
 	IndicatorFit TabsIndicatorFit
 	// Label names the list for assistive technology.
-	Label  string
-	TestID string
+	Label     string
+	LabelFunc func() string
+	TestID    string
 	// TabStyle merges over each tab's style; its Selected merges over the selected tab's.
 	TabStyle core.Style
 	// IndicatorStyle merges over the indicator's style, after its position and size.
@@ -175,6 +176,7 @@ func (t Tabs[T]) Render(cx *core.Scope) core.Node {
 	}
 	tabs := []core.Node{indicator, core.Each(options, func(o Option[T]) T { return o.Value }, func(rowCx *core.Scope, item func() Option[T], index func() int) core.Node {
 		o := item()
+		label := func() string { return item().label() }
 		f := frame(o.Value)
 		content := contentFrame(o.Value)
 		children := []core.Node{o.Content}
@@ -183,8 +185,14 @@ func (t Tabs[T]) Render(cx *core.Scope) core.Node {
 			if o.Icon != nil {
 				children = append(children, Icon(o.Icon, t.Size.mark(), Inherited))
 			}
-			if o.Label != "" {
-				children = append(children, core.Text{ContentFunc: func() string { return item().Label }, MaxLines: 1})
+			if t.OptionsFunc != nil || o.LabelFunc != nil || o.Label != "" {
+				children = append(children, core.Text{ContentFunc: label, MaxLines: 1,
+					StyleFunc: func() core.Style {
+						if label() == "" {
+							return core.Style{Display: core.DisplayNone}
+						}
+						return core.Style{}
+					}})
 			}
 		}
 		if underline && t.IndicatorFit == TabsIndicatorContent {
@@ -206,7 +214,7 @@ func (t Tabs[T]) Render(cx *core.Scope) core.Node {
 					s.Selected = &chosen
 				}
 				return s
-			}, Children: children, LabelFunc: func() string { return item().Label }, TestID: o.TestID}
+			}, Children: children, LabelFunc: label, TestID: o.TestID}
 	})}
 	return base.Tabs{Style: list, StyleFunc: func() core.Style {
 		style := core.Style{}
@@ -217,5 +225,5 @@ func (t Tabs[T]) Render(cx *core.Scope) core.Node {
 			return style.Merge(t.Style)
 		}
 		return core.Style{Background: Alpha(colors.Text(), 0.06)}.Merge(style).Merge(t.Style)
-	}, OnLayout: func(b core.Bounds) { width.Set(b.Size.Width) }, Children: tabs, Label: t.Label, TestID: t.TestID}
+	}, OnLayout: func(b core.Bounds) { width.Set(b.Size.Width) }, Children: tabs, Label: t.Label, LabelFunc: t.LabelFunc, TestID: t.TestID}
 }

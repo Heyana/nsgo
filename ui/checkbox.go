@@ -23,13 +23,16 @@ type Checkbox struct {
 	// OnChangeEvent receives the requested value and the originating press, including its modifier keys. When set, it replaces OnChange.
 	OnChangeEvent func(checked bool, press core.PressEvent)
 	Text          string
+	TextFunc      func() string
 	// Children replace Text.
 	Children []core.Node
 	// Label is what assistive technology reads, Text when empty.
-	Label  string
-	Hint   string
-	TestID string
-	Style  core.Style
+	Label     string
+	LabelFunc func() string
+	Hint      string
+	HintFunc  func() string
+	TestID    string
+	Style     core.Style
 }
 
 // Render implements core.Node.
@@ -46,10 +49,7 @@ func (c Checkbox) Render(cx *core.Scope) core.Node {
 		Merge(shown(func(gs *core.GroupStyle, s *core.Style) { gs.Indeterminate = s })), StyleFunc: Filled(colors.OnAccent)}
 	box := core.Style{Width: core.Pt(iconSize), Height: core.Pt(iconSize), CornerRadius: RadiusSmall, BorderWidth: 1,
 		AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Transition: quick, Disabled: &core.Style{Opacity: core.Alpha(0.45)}}
-	label := c.Label
-	if label == "" {
-		label = c.Text
-	}
+	label, labelFunc := textBinding(c.Label, c.LabelFunc, c.Text, c.TextFunc)
 	return base.Checkbox{Ref: c.Ref, LabelledBy: c.LabelledBy, Invalid: c.Invalid, Checked: c.Checked, Indeterminate: c.Indeterminate, Disabled: c.Disabled, OnChange: c.OnChange, OnChangeEvent: c.OnChangeEvent,
 		Style: selectionRow.Merge(c.Style), StyleFunc: func() core.Style { return core.Style{FocusVisible: FocusRing(cx, 2)} },
 		IndicatorStyle: box, IndicatorStyleFunc: func() core.Style {
@@ -59,5 +59,5 @@ func (c Checkbox) Render(cx *core.Scope) core.Node {
 				Checked:    on, Indeterminate: on}
 		},
 		Indicator: core.View{Children: []core.Node{check, dash}},
-		Children:  selectionLabel(cx, c.Text, c.Children), Label: label, Hint: c.Hint, TestID: c.TestID}
+		Children:  selectionLabel(cx, c.Text, c.TextFunc, c.Children), Label: label, LabelFunc: labelFunc, Hint: c.Hint, HintFunc: c.HintFunc, TestID: c.TestID}
 }

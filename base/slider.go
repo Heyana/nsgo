@@ -87,8 +87,10 @@ type Slider struct {
 	LabelledBy []*core.Ref
 	// Label is what assistive technology says for the thumb, on a range the
 	// end's; StartLabel for a range's start, Label by default.
-	Label      string
-	StartLabel string
+	Label          string
+	LabelFunc      func() string
+	StartLabel     string
+	StartLabelFunc func() string
 	// OnChange receives the value asked for, as many times as it changes
 	// during a drag; OnChangeEnd the value it ended at, once.
 	OnChange       func(value SliderValue)
@@ -335,11 +337,22 @@ func (c *sliderCtl) a11yValue(start bool) core.AccessibilityValue {
 // thumb is a thumb, centered on its value on the indicator.
 func (c *sliderCtl) thumb(start bool, focused *core.Signal[int]) core.Node {
 	s := c.s
-	label, id, ref := s.Label, s.ThumbTestID, s.ThumbRef
+	label, labelFunc, id, ref := s.Label, s.LabelFunc, s.ThumbTestID, s.ThumbRef
 	if start {
 		id, ref = s.StartThumbTestID, s.StartThumbRef
-		if s.StartLabel != "" {
-			label = s.StartLabel
+		switch {
+		case s.StartLabelFunc != nil:
+			label, labelFunc = "", func() string {
+				if name := s.StartLabelFunc(); name != "" {
+					return name
+				}
+				if s.LabelFunc != nil {
+					return s.LabelFunc()
+				}
+				return s.Label
+			}
+		case s.StartLabel != "":
+			label, labelFunc = s.StartLabel, nil
 		}
 	}
 	base := core.Style{Position: core.Absolute, Transform: core.Transform{TranslateXPercent: -50, TranslateYPercent: -50}}
@@ -360,7 +373,7 @@ func (c *sliderCtl) thumb(start bool, focused *core.Signal[int]) core.Node {
 			c.nudge(start, func(r numberRange, v float64) float64 { return r.stepBy(v, by) })
 		}
 	}
-	return core.View{Class: s.ThumbClass, Style: base.Merge(s.ThumbStyle), Disabled: s.Disabled, Invalid: s.Invalid, Role: core.RoleAdjustable, Label: label, LabelledBy: s.LabelledBy, TestID: id, Ref: ref, Accessible: true,
+	return core.View{Class: s.ThumbClass, Style: base.Merge(s.ThumbStyle), Disabled: s.Disabled, Invalid: s.Invalid, Role: core.RoleAdjustable, Label: label, LabelFunc: labelFunc, LabelledBy: s.LabelledBy, TestID: id, Ref: ref, Accessible: true,
 		StyleFunc: func() core.Style {
 			var look core.Style
 			if s.ThumbStyleFunc != nil {

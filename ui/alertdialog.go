@@ -8,9 +8,10 @@ import (
 // AlertAction is an action of an AlertDialog, a Button of its Variant,
 // or filled with Color.
 type AlertAction struct {
-	Text    string
-	Variant ButtonVariant
-	Color   func() core.Color
+	Text     string
+	TextFunc func() string
+	Variant  ButtonVariant
+	Color    func() core.Color
 	// Role is core.AlertCancel for the action Escape and back run before the alert closes with ReasonCancel, the first such action; core.AlertDestructive marks one that destroys, for TSX's role names. Variant and Color still choose its look.
 	Role core.AlertRole
 	// Default is the action Return chooses, the first such action: it takes the keyboard focus as the alert opens, and Return runs it while the focus is on no other action or field, then closes the alert with ReasonSelect.
@@ -79,7 +80,7 @@ func (a AlertDialog) Render(cx *core.Scope) core.Node {
 				run(action.OnPress)
 			}
 		}
-		footer = append(footer, Button{Variant: action.Variant, Color: action.Color, Text: action.Text, TestID: action.TestID, AutoFocus: focus, OnPress: func() {
+		footer = append(footer, Button{Variant: action.Variant, Color: action.Color, Text: action.Text, TextFunc: action.TextFunc, TestID: action.TestID, AutoFocus: focus, OnPress: func() {
 			if !answer() {
 				return
 			}

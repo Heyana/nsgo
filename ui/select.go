@@ -60,7 +60,7 @@ func optionItemsFunc[T comparable](options func() []Option[T]) func() []base.Sel
 		options := options()
 		items := make([]base.SelectItem, len(options))
 		for i, o := range options {
-			items[i] = base.SelectItem{Value: strconv.Itoa(i), Title: o.Label, Group: o.Group, Disabled: o.Disabled != nil && o.Disabled()}
+			items[i] = base.SelectItem{Value: strconv.Itoa(i), Title: o.label(), Group: o.Group, Disabled: o.Disabled != nil && o.Disabled()}
 		}
 		return items
 	}
@@ -73,7 +73,7 @@ func optionRow[T comparable](cx *core.Scope, o Option[T], id string) core.Node {
 	if o.Leading != nil {
 		children = append(children, o.Leading)
 	}
-	children = append(children, core.Text{Content: o.Label, MaxLines: 1, Style: TypeBody.Merge(core.Style{FlexGrow: 1, FlexShrink: 1}), StyleFunc: Colored(colors.Text)})
+	children = append(children, core.Text{ContentFunc: o.label, MaxLines: 1, Style: TypeBody.Merge(core.Style{FlexGrow: 1, FlexShrink: 1}), StyleFunc: Colored(colors.Text)})
 	if o.Trailing != nil {
 		children = append(children, o.Trailing)
 	}
@@ -111,7 +111,7 @@ func (s Select[T]) Render(cx *core.Scope) core.Node {
 	title := func() string {
 		options := options()
 		if i := chosen.Get(); i >= 0 && i < len(options) {
-			return options[i].Label
+			return options[i].label()
 		}
 		return ""
 	}

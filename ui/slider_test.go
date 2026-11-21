@@ -60,9 +60,11 @@ func TestSlider(t *testing.T) {
 func TestSliderReactiveBoundsPreserveFocusAndDrag(t *testing.T) {
 	each(t, func(t *testing.T, e core.Environment) {
 		var value, maximum *core.Signal[float64]
+		var label *core.Signal[string]
 		app, _ := start(t, e, func(cx *core.Scope) core.Node {
 			value, maximum = core.NewSignal(cx, 60.0), core.NewSignal(cx, 0.0)
-			return Slider{TestID: "position", Label: "Position", Value: value.Get, OnChange: value.Set,
+			label = core.NewSignal(cx, "Position")
+			return Slider{TestID: "position", LabelFunc: label.Get, Value: value.Get, OnChange: value.Set,
 				Max: 1000, MaxFunc: maximum.Get, Style: core.Style{Width: core.Pt(220)}}
 		})
 		control, thumb := app.Find("position").ID, app.Find("position-thumb").ID
@@ -86,9 +88,9 @@ func TestSliderReactiveBoundsPreserveFocusAndDrag(t *testing.T) {
 		if before <= 60 {
 			t.Fatalf("scrub did not start: %v", before)
 		}
-		app.Post(func() { maximum.Set(600) })
+		app.Post(func() { maximum.Set(600); label.Set("Playback position") })
 		app.Settle()
-		if v := app.Find("position-thumb"); v.ID != thumb || v.Props.Value.Max != 600 || value.Get() != before {
+		if v := app.Find("position-thumb"); v.ID != thumb || v.Props.Label != "Playback position" || v.Props.Value.Max != 600 || value.Get() != before {
 			t.Fatalf("bounds changed during scrub: %+v, app value %v (was %v)", v.Props.Value, value.Get(), before)
 		}
 		finger.Move(core.Point{X: 50, Y: 8})

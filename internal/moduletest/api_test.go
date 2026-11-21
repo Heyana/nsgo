@@ -234,25 +234,69 @@ func TestPublicAPINamesNoInternalType(t *testing.T) {
 	}
 }
 
-// twinned are the fields that must have an XFunc twin: part styles that live as long as their component, such as a list of rows' padding, which follows the window's layout and would otherwise remount the list as it changes (#294). The other part styles are read once per presentation, such as a popup's or a backdrop's, and may stay fixed.
-var twinned = []string{"base.List.ListStyle", "base.Tree.ListStyle"}
+// twinned lists part styles that follow layout (#294) and range labels
+// (#145). Text with a general-purpose prop name is checked separately.
+var twinned = []string{"base.List.ListStyle", "base.Slider.StartLabel", "base.Tree.ListStyle", "ui.Slider.HighLabel", "ui.Slider.LowLabel"}
 
-// TestFuncFieldsBindTheirValue checks the type of each XFunc twin and requires twins for core nodes' accessibility text and the fields in twinned.
+// textFuncExceptions records one-shot options, data snapshots and existing
+// component props still awaiting bindings. Remove a field when adding its
+// twin.
+var textFuncExceptions = strings.Fields(`
+core.Composition.Text core.HeaderSymbol.Label core.MenuItem.Label core.Notification.Title
+core.PickDirectoriesOptions.Title core.PickFilesOptions.Title core.ShareOptions.Text core.TabBarItem.Title
+core.TextSelection.Text core.TrayOptions.Title core.WindowOptions.Title
+
+base.Accordion.Label base.AccordionPanel.Label base.AccordionTrigger.Label base.AccordionTrigger.Hint
+base.AlertDialog.Title base.AlertDialog.Description base.Avatar.Label base.AvatarGroup.Label
+base.Carousel.Label base.CarouselItem.Label base.CarouselNext.Label base.CarouselPagination.Label
+base.CarouselPaginationItem.Label base.CarouselPrevious.Label base.ColorArea.Label base.ColorChoice.Text
+base.ColorEyeDropper.Label base.ColorField.Label base.ColorField.Placeholder base.ColorMenuParts.Label
+base.ColorSlider.Label base.ColorSwatch.Label base.Combobox.Label base.Combobox.Placeholder
+base.Command.Label base.Command.Placeholder base.CommandEntry.Label base.CommandEntry.Description
+base.CommandItem.Label base.CommandItem.Description base.DatePicker.Label base.DatePreset.Label
+base.Link.Label base.Link.Hint base.List.Label base.NumberInput.Label base.OtpInput.Label
+base.Pagination.Label base.Radio.Label base.Radio.Hint base.RadioGroup.Label base.ResizeHandle.Label
+base.Scrollbar.Label base.ScrollbarLook.Label base.SelectEntry.Title base.SelectGroup.Title
+base.SelectItem.Title base.Submenu.Label base.SuggestItem.Label base.SuggestList.Label base.Switch.Hint
+base.Table.Label base.TimeField.Label base.TimeFieldSegmentEntry.Label base.Toggle.Label base.Toggle.Hint
+base.ToggleGroup.Label base.Toolbar.Label base.ToolbarGroup.Label base.Tree.Label base.TreeEntry.Label
+base.TreeItem.Label
+
+ui.AccordionItem.Text ui.Avatar.Label ui.AvatarGroup.Label ui.AvatarGroupMember.Label ui.Carousel.Label
+ui.Collapsible.Text ui.ColorWell.Label ui.Combobox.Label ui.Combobox.Placeholder ui.Command.Label
+ui.Command.Placeholder ui.DatePicker.Label ui.DatePicker.Placeholder ui.DockTabLabel.Text ui.FormField.Title
+ui.FormRow.Label ui.FormRow.Title ui.FormSection.Title ui.HoldToConfirm.Hint ui.HoldToConfirm.Text
+ui.Image.Label ui.ImageCompare.Label ui.Link.Label ui.Link.Text ui.List.Label ui.MenuLabel.Text
+ui.NumberInput.Label ui.OtpInput.Label ui.Pagination.Label ui.PlainShell.Title ui.ProgressRing.Label
+ui.Radio.Label ui.Radio.Hint ui.Radio.Text ui.RadioGroup.Label ui.Rating.Label ui.ResizeHandle.Label
+ui.Scrollbar.Label ui.Select.Placeholder ui.Settings.Title ui.SettingsCategory.Title
+ui.SettingsCategory.Description ui.SettingsDialog.Label ui.SettingsGroup.Title ui.SettingsItem.Title
+ui.SettingsItem.Description ui.ShellTab.Text ui.SidebarButton.Text ui.SidebarItem.Text
+ui.SidebarSection.Title ui.Skeleton.Label ui.Spinner.Label ui.Stepper.Label ui.StepperStep.Label
+ui.StepperStep.Description ui.Submenu.Text ui.SuggestList.Label ui.TabShell.Label ui.TagInput.Label
+ui.TagInput.Placeholder ui.TimeField.Label ui.ToastContent.Title ui.ToastContent.Description
+ui.ToggleButton.Label ui.ToggleButton.Text ui.ToggleGroup.Label ui.Toolbar.Label ui.ToolbarGroup.Label
+ui.Tree.Label
+`)
+
+// TestFuncFieldsBindTheirValue checks the type of each XFunc twin and
+// requires twins for public text props and the fields in twinned.
 func TestFuncFieldsBindTheirValue(t *testing.T) {
 	if testing.Short() {
 		t.Skip("type-checks the component packages from source")
 	}
 	imp := importer.ForCompiler(token.NewFileSet(), "source", nil)
 	bound := map[string]bool{}
+	exceptions := map[string]bool{}
+	for _, field := range textFuncExceptions {
+		exceptions[field] = true
+	}
 	for _, rel := range []string{"core", "base", "base/textview", "base/editor", "base/diff", "mobile", "desktop", "ui"} {
 		pkg, err := imp.Import(modulePath + "/" + rel)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var coreNode *types.Interface
-		if rel == "core" {
-			coreNode = pkg.Scope().Lookup("Node").Type().Underlying().(*types.Interface)
-		}
+		checkText := rel == "core" || rel == "base" || rel == "ui"
 		for _, name := range pkg.Scope().Names() {
 			tn, ok := pkg.Scope().Lookup(name).(*types.TypeName)
 			if !ok || !tn.Exported() || tn.IsAlias() {
@@ -266,10 +310,14 @@ func TestFuncFieldsBindTheirValue(t *testing.T) {
 			for i := range st.NumFields() {
 				fields[st.Field(i).Name()] = st.Field(i).Type()
 			}
-			if coreNode != nil && types.Implements(types.NewPointer(tn.Type()), coreNode) {
-				for _, text := range []string{"Label", "Hint", "AccessibilityDescription"} {
+			if checkText {
+				for _, text := range []string{"Label", "Title", "Description", "AccessibilityDescription", "Hint", "Placeholder", "Text"} {
+					field := pkg.Name() + "." + name + "." + text
 					if fields[text] == types.Typ[types.String] && fields[text+"Func"] == nil {
-						t.Errorf("%s.%s.%s needs a %sFunc twin for changing accessibility text", pkg.Name(), name, text, text)
+						if !exceptions[field] {
+							t.Errorf("text prop %s needs a Func twin or an exception", field)
+						}
+						delete(exceptions, field)
 					}
 				}
 			}
@@ -288,6 +336,11 @@ func TestFuncFieldsBindTheirValue(t *testing.T) {
 				}
 				bound[pkg.Name()+"."+name+"."+base] = true
 			}
+		}
+	}
+	for _, field := range textFuncExceptions {
+		if exceptions[field] {
+			t.Errorf("text prop exception %s is no longer needed", field)
 		}
 	}
 	for _, field := range twinned {

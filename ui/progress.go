@@ -17,9 +17,10 @@ type Progress struct {
 	Axis          base.Axis
 	Inverted      bool
 	// Label names the task for assistive technology.
-	Label  string
-	TestID string
-	Style  core.Style
+	Label     string
+	LabelFunc func() string
+	TestID    string
+	Style     core.Style
 }
 
 // Render implements core.Node.
@@ -68,7 +69,7 @@ func (p Progress) Render(cx *core.Scope) core.Node {
 		}
 		cx.AfterFunc(0, tick)
 	}
-	return base.Progress{Value: p.Value, Indeterminate: p.Indeterminate, Axis: p.Axis, Inverted: p.Inverted, Label: p.Label, TestID: p.TestID, Style: p.Style,
+	return base.Progress{Value: p.Value, Indeterminate: p.Indeterminate, Axis: p.Axis, Inverted: p.Inverted, Label: p.Label, LabelFunc: p.LabelFunc, TestID: p.TestID, Style: p.Style,
 		TrackStyle:     thick.Merge(core.Style{CornerRadius: RadiusFull, BorderWidth: 0, Overflow: core.Hidden}),
 		TrackStyleFunc: Filled(colors.Inset),
 		IndicatorStyleFunc: func() core.Style {

@@ -43,6 +43,7 @@ type Popover struct {
 	Trigger       core.Node
 	Children      []core.Node
 	Label         string
+	LabelFunc     func() string
 	TestID        string
 	// OnLayout and Tooltip are its view's, as a core.View's.
 	OnLayout func(core.Bounds)
@@ -61,7 +62,7 @@ func (p Popover) Render(cx *core.Scope) core.Node {
 	outside := func() { st.cancel(ReasonPressOutside, p.NoCloseOnPressOutside) }
 	around := popupBar(cx)
 	return core.Group{
-		barTrigger(cx, around, core.View{Ref: anchor, Class: p.Class, Style: p.Style, StyleFunc: p.StyleFunc, Label: p.Label, TestID: p.TestID, OnLayout: p.OnLayout, Tooltip: p.Tooltip, Role: core.RoleButton,
+		barTrigger(cx, around, core.View{Ref: anchor, Class: p.Class, Style: p.Style, StyleFunc: p.StyleFunc, Label: p.Label, LabelFunc: p.LabelFunc, TestID: p.TestID, OnLayout: p.OnLayout, Tooltip: p.Tooltip, Role: core.RoleButton,
 			Expanded: st.open, ShowsExpanded: true,
 			OnPress:  func(core.PressEvent) { st.set(!st.open(), ReasonTriggerPress) },
 			Children: []core.Node{p.Trigger}}),

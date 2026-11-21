@@ -36,6 +36,7 @@ type Progress struct {
 	ValueText func(value float32) string
 	Children  []core.Node
 	Label     string
+	LabelFunc func() string
 	TestID    string
 	// OnLayout and Tooltip are its view's, as a core.View's.
 	OnLayout func(core.Bounds)
@@ -83,7 +84,7 @@ func (p Progress) Render(*core.Scope) core.Node {
 		}
 		return s
 	}}
-	return core.View{Class: p.Class, Style: p.Style, StyleFunc: p.StyleFunc, Role: core.RoleProgressBar, Label: p.Label, TestID: p.TestID, OnLayout: p.OnLayout, Tooltip: p.Tooltip,
+	return core.View{Class: p.Class, Style: p.Style, StyleFunc: p.StyleFunc, Role: core.RoleProgressBar, Label: p.Label, LabelFunc: p.LabelFunc, TestID: p.TestID, OnLayout: p.OnLayout, Tooltip: p.Tooltip,
 		Accessible: true,
 		AccessibilityValue: func() core.AccessibilityValue {
 			if is(p.Indeterminate) {

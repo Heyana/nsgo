@@ -32,12 +32,14 @@ type Menu struct {
 	// scroll past the room beside the trigger.
 	MaxHeight core.Points
 	Label     string
+	LabelFunc func() string
 	TestID    string
 }
 
 // Render implements core.Node.
 func (m Menu) Render(cx *core.Scope) core.Node {
 	style, focus, face := m.Trigger.parts(cx)
+	label, labelFunc := triggerLabel(m.Label, m.LabelFunc, m.Trigger)
 	if m.Face != nil {
 		face = m.Face
 		// A custom face brings its own measures rather than the button's height; a size the app gave the trigger's Style still applies.
@@ -57,7 +59,7 @@ func (m Menu) Render(cx *core.Scope) core.Node {
 	return base.Menu{Open: m.Open, OnOpenChange: m.OnOpenChange, Presentation: m.Presentation, Placement: m.Placement, Align: m.Align,
 		Offset: 4, Margin: 8,
 		Style: style, StyleFunc: focus, Trigger: face, PopupStyleFunc: popup, BackdropStyle: backdrop,
-		Children: children, Label: triggerLabel(m.Label, m.Trigger), TestID: m.TestID}
+		Children: children, Label: label, LabelFunc: labelFunc, TestID: m.TestID}
 }
 
 // menuPadding is a popup's padding around its items.
@@ -97,8 +99,9 @@ const (
 // MenuItem is a choice of a menu. Checked, when set, keeps a check before
 // its text while it returns true, for an option of the menu.
 type MenuItem struct {
-	Text string
-	Icon func() *core.SVG
+	Text     string
+	TextFunc func() string
+	Icon     func() *core.SVG
 	// Shortcut is the keys that choose it, such as "mod+c", shown at its
 	// end in a popup as the platform writes them.
 	Shortcut string
@@ -126,7 +129,11 @@ func (i MenuItem) Render(cx *core.Scope) core.Node {
 	if i.Leading != nil {
 		children = append(children, i.Leading)
 	}
-	children = append(children, core.Text{Content: i.Text, MaxLines: 1, Style: TypeBody.Merge(core.Style{FlexGrow: 1, FlexShrink: 1}),
+	text := i.Text
+	if i.TextFunc != nil {
+		text = ""
+	}
+	children = append(children, core.Text{Content: text, ContentFunc: i.TextFunc, MaxLines: 1, Style: TypeBody.Merge(core.Style{FlexGrow: 1, FlexShrink: 1}),
 		StyleFunc: Colored(fg)})
 	if i.Shortcut != "" && !base.OnSheet(cx) {
 		children = append(children, core.Text{Content: cx.KeyLabel(i.Shortcut), MaxLines: 1,
@@ -136,7 +143,7 @@ func (i MenuItem) Render(cx *core.Scope) core.Node {
 		children = append(children, i.Trailing)
 	}
 	return base.MenuItem{OnSelect: i.OnSelect, Disabled: i.Disabled, NoCloseOnSelect: i.NoCloseOnSelect, Style: style, StyleFunc: look,
-		Children: children, Label: i.Text, TestID: i.TestID}
+		Children: children, Label: text, LabelFunc: i.TextFunc, TestID: i.TestID}
 }
 
 // MenuSeparator divides groups of items.

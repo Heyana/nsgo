@@ -41,7 +41,8 @@ type Button struct {
 	Label     string
 	LabelFunc func() string
 	// Hint says what pressing the button does, for assistive technology.
-	Hint string
+	Hint     string
+	HintFunc func() string
 	// Tooltip shows above the button once the pointer rests over it on
 	// desktops, as core.View's.
 	Tooltip core.Node
@@ -100,6 +101,7 @@ func (b Button) Render(cx *core.Scope) core.Node {
 		Desktop:                     b.Desktop,
 		Tooltip:                     b.Tooltip,
 		Hint:                        b.Hint,
+		HintFunc:                    b.HintFunc,
 		HitSlop:                     b.HitSlop,
 		NoFocus:                     b.NoFocus,
 		AccessibilityElementsHidden: b.AccessibilityElementsHidden,

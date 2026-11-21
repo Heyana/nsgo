@@ -17,6 +17,7 @@ type Switch struct {
 	Checked    func() bool
 	OnChange   func(bool)
 	Label      string
+	LabelFunc  func() string
 	Size       Size
 	Variant    SwitchVariant
 	TestID     string
@@ -37,7 +38,7 @@ func (s Switch) Render(cx *core.Scope) core.Node {
 	if s.Variant == SwitchSystem {
 		return core.Show{When: func() bool { return core.SystemSwitchAvailable(cx) }, Else: s.own,
 			Then: func(*core.Scope) core.Node {
-				return core.SystemSwitch{Checked: s.Checked, OnChange: s.OnChange, Label: s.Label, TestID: s.TestID,
+				return core.SystemSwitch{Checked: s.Checked, OnChange: s.OnChange, Label: s.Label, LabelFunc: s.LabelFunc, TestID: s.TestID,
 					Ref: s.Ref, LabelledBy: s.LabelledBy, Disabled: s.Disabled, Invalid: s.Invalid,
 					Size: sized(s.Size, "", "small", "large")}
 			}}
@@ -49,7 +50,7 @@ func (s Switch) Render(cx *core.Scope) core.Node {
 func (s Switch) own(cx *core.Scope) core.Node {
 	look := NewSwitchLook(cx, s.Checked, s.Size)
 	// More to press on every side, without taking more room.
-	return base.Switch{Ref: s.Ref, LabelledBy: s.LabelledBy, Invalid: s.Invalid, Disabled: s.Disabled, Checked: s.Checked, OnChange: s.OnChange, Label: s.Label, TestID: s.TestID,
+	return base.Switch{Ref: s.Ref, LabelledBy: s.LabelledBy, Invalid: s.Invalid, Disabled: s.Disabled, Checked: s.Checked, OnChange: s.OnChange, Label: s.Label, LabelFunc: s.LabelFunc, TestID: s.TestID,
 		Style:          core.Style{Margin: core.All(-8), Padding: core.All(8)},
 		TrackStyleFunc: look.Track, ThumbStyleFunc: look.Thumb}
 }
