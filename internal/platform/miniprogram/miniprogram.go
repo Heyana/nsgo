@@ -132,44 +132,22 @@ func (s *surface) size() driver.Size {
 func (s *surface) environment() driver.Environment {
 	d := s.device()
 	num := func(name string) driver.Points { return driver.Points(d.Get(name).Float()) }
-	env := s.env
-	env.SafeArea = driver.Edges{Top: num("safeTop"), Right: num("safeRight"), Bottom: num("safeBottom"), Left: num("safeLeft")}
-	env.Dark = d.Get("dark").Truthy()
-	env.PixelRatio = float32(d.Get("pixelRatio").Float())
-	env.FontScale = float32(d.Get("fontScale").Float())
-	env.Locale = strings.ReplaceAll(d.Get("language").String(), "_", "-")
-	deviceOS(&env, d.Get("os").String())
-	env.OSVersion = osVersion(d.Get("osVersion").String())
-	env.DeviceModel = ""
-	if model := d.Get("deviceModel"); model.Type() == js.TypeString {
-		env.DeviceModel = model.String()
+	var model string
+	if m := d.Get("deviceModel"); m.Type() == js.TypeString {
+		model = m.String()
 	}
-	env.Idiom = driver.IdiomPhone
-	if d.Get("tablet").Truthy() {
-		env.Idiom = driver.IdiomTablet
-	}
-	return env
-}
-
-// osVersion reads "17.4.1" as 17.4.
-func osVersion(v string) driver.OSVersion {
-	var out driver.OSVersion
-	parts := strings.SplitN(v, ".", 3)
-	for i, p := range parts[:min(len(parts), 2)] {
-		n := 0
-		for _, c := range p {
-			if c < '0' || c > '9' {
-				break
-			}
-			n = n*10 + int(c-'0')
-		}
-		if i == 0 {
-			out.Major = n
-		} else {
-			out.Minor = n
-		}
-	}
-	return out
+	return buildEnvironment(s.env, deviceInfo{
+		SafeArea:     driver.Edges{Top: num("safeTop"), Right: num("safeRight"), Bottom: num("safeBottom"), Left: num("safeLeft")},
+		Dark:         d.Get("dark").Truthy(),
+		PixelRatio:   float32(d.Get("pixelRatio").Float()),
+		FontScale:    float32(d.Get("fontScale").Float()),
+		Language:     d.Get("language").String(),
+		OS:           d.Get("os").String(),
+		OSVersion:    d.Get("osVersion").String(),
+		Tablet:       d.Get("tablet").Truthy(),
+		HasCameraAPI: s.api.Get("chooseMedia").Type() == js.TypeFunction,
+		DeviceModel:  model,
+	})
 }
 
 // changed sends the environment and size again: the window resized, the

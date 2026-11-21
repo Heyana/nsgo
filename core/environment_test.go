@@ -63,3 +63,80 @@ func TestEnvironmentReportsThatAffectResolutionStayFull(t *testing.T) {
 		t.Fatal("window frame requested a full resolve")
 	}
 }
+
+// TestSecondaryTargetEnvCapabilities verifies how core.Env exposes the capability contracts reported by HarmonyOS, mini programs, watchOS and tvOS so higher-level game layers can adapt consistently (#1117).
+func TestSecondaryTargetEnvCapabilities(t *testing.T) {
+	h := newHost(t, Size{Width: 400, Height: 300}, func(*Scope) Node { return View{} })
+	h.commit()
+	env := h.root.Env()
+
+	for _, tc := range []struct {
+		name           string
+		in             Environment
+		wantAudio      bool
+		wantSpeak      bool
+		wantSpeech     bool
+		wantWebView    bool
+		wantCamera     bool
+		wantCursor     bool
+		wantAppleKeys  bool
+		wantMobileBars bool
+	}{
+		{
+			name:           "HarmonyOS phone",
+			in:             Environment{OS: OSAndroid, Idiom: IdiomPhone, HasWebView: true, Camera: true},
+			wantWebView:    true,
+			wantCamera:     true,
+			wantMobileBars: true,
+		},
+		{
+			name:          "mini program on iOS",
+			in:            Environment{OS: OSIOS, Idiom: IdiomPhone, Simulated: true, AppleKeyboard: true, Camera: true},
+			wantCamera:    true,
+			wantAppleKeys: true,
+		},
+		{
+			name:          "mini program on macOS",
+			in:            Environment{OS: OSMacOS, Idiom: IdiomPhone, Simulated: true, AppleKeyboard: true},
+			wantAppleKeys: true,
+		},
+		{
+			name:          "watchOS",
+			in:            Environment{OS: OSIOS, Idiom: IdiomWatch},
+			wantAppleKeys: true,
+		},
+		{
+			name:           "tvOS",
+			in:             Environment{OS: OSIOS, Idiom: IdiomTV, Speak: true, SignInWithApple: true, Purchases: true},
+			wantSpeak:      true,
+			wantAppleKeys:  true,
+			wantMobileBars: true,
+		},
+	} {
+		h.tree.SetEnvironment(tc.in)
+		if env.CanPlayAudio() != tc.wantAudio {
+			t.Errorf("%s: CanPlayAudio() = %v, want %v", tc.name, env.CanPlayAudio(), tc.wantAudio)
+		}
+		if env.CanSpeak() != tc.wantSpeak {
+			t.Errorf("%s: CanSpeak() = %v, want %v", tc.name, env.CanSpeak(), tc.wantSpeak)
+		}
+		if env.CanRecognizeSpeech() != tc.wantSpeech {
+			t.Errorf("%s: CanRecognizeSpeech() = %v, want %v", tc.name, env.CanRecognizeSpeech(), tc.wantSpeech)
+		}
+		if env.HasWebView() != tc.wantWebView {
+			t.Errorf("%s: HasWebView() = %v, want %v", tc.name, env.HasWebView(), tc.wantWebView)
+		}
+		if env.CanTakePhoto() != tc.wantCamera {
+			t.Errorf("%s: CanTakePhoto() = %v, want %v", tc.name, env.CanTakePhoto(), tc.wantCamera)
+		}
+		if env.SupportsCustomCursor() != tc.wantCursor {
+			t.Errorf("%s: SupportsCustomCursor() = %v, want %v", tc.name, env.SupportsCustomCursor(), tc.wantCursor)
+		}
+		if env.AppleKeys() != tc.wantAppleKeys {
+			t.Errorf("%s: AppleKeys() = %v, want %v", tc.name, env.AppleKeys(), tc.wantAppleKeys)
+		}
+		if env.mobileBars() != tc.wantMobileBars {
+			t.Errorf("%s: mobileBars() = %v, want %v", tc.name, env.mobileBars(), tc.wantMobileBars)
+		}
+	}
+}

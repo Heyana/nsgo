@@ -830,19 +830,7 @@ func (s *surface) environment() driver.Environment {
 		OS:               driver.OSIOS,
 		OSVersion:        osVersion(),
 		Idiom:            idiom,
-		DiscoverServices: idiom != driver.IdiomTV,
-		Speech:           apple.SpeechAvailable(),
-		Speak:            apple.SpeakAvailable(),
-		Audio:            idiom != driver.IdiomTV && apple.AudioAvailable(), // none on tvOS in the first stages (docs/architecture/audio.md)
 		Gamepads:         true,
-		GPU:              idiom != driver.IdiomTV && apple.GPUSupported(), // tvOS waits for its own verification (docs/architecture/gpu.md)
-		AudioSchedule:    idiom != driver.IdiomTV && apple.AudioAvailable(),
-		Camera:           cameraAvailable(),
-		ScanCode:         cameraAvailable() && idiom != driver.IdiomTV,
-		CanSendInput:     idiom != driver.IdiomTV,
-		HasWebView:       idiom != driver.IdiomTV,
-		SignInWithApple:  apple.AppleSignInAvailable(),
-		Purchases:        apple.PurchasesAvailable(),
 		CanRequestReview: !onTV() && apple.ReviewAvailable(),
 		VerticalBarEdge:  verticalBarEdge(traits),
 		Lifecycle:        appLifecycle(),
@@ -850,12 +838,17 @@ func (s *surface) environment() driver.Environment {
 		LowPowerMode:     lowPower,
 		AppClip:          appClip(),
 		OpenedURL:        openedURL,
-
-		AudioPlaybackControls: idiom != driver.IdiomTV && apple.AudioAvailable(),
-
-		// tvOS's center shows badges only.
-		ScheduledNotifications: idiom != driver.IdiomTV && apple.NotificationsAvailable(),
 	}
+	applyCapabilities(&env, idiom, capabilities{
+		speech:        apple.SpeechAvailable(),
+		speak:         apple.SpeakAvailable(),
+		audio:         apple.AudioAvailable(),
+		camera:        cameraAvailable(),
+		signInApple:   apple.AppleSignInAvailable(),
+		purchases:     apple.PurchasesAvailable(),
+		notifications: apple.NotificationsAvailable(),
+		gpu:           apple.GPUSupported(),
+	})
 	env.HeaderHeight, env.LargeHeaderHeight = s.headers[0], s.headers[1]
 	return env
 }

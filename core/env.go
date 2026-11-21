@@ -407,7 +407,7 @@ func (e *Env) ScreenReader() bool { return e.reader.Get() }
 func (e *Env) CanPickScreenColor() bool { return e.screenColor.Get() }
 
 // CanRecognizeSpeech reports whether Scope.StartSpeech recognizes speech
-// here: macOS and iOS.
+// here: macOS and iOS (not tvOS or watchOS).
 func (e *Env) CanRecognizeSpeech() bool { return e.speech.Get() }
 
 // CanPlayAudio reports whether the platform plays the audio package's sounds and players; elsewhere they fail with AudioUnavailable without asking it.
@@ -423,7 +423,8 @@ func (e *Env) CanSpeak() bool { return e.speak.Get() }
 func (e *Env) SupportsGamepads() bool { return e.gamepads.Get() }
 
 // CanTakePhoto reports whether Scope.TakePhoto shows a camera here: iOS
-// and Android devices with one, and browsers on touch screens.
+// and Android devices with one, HarmonyOS, mobile mini programs, and browsers
+// on touch screens.
 func (e *Env) CanTakePhoto() bool { return e.camera.Get() }
 
 // CanScanCode reports whether Scope.ScanCode shows a camera that reads codes here: iOS devices with a camera, not the simulator, and Android devices with one whose app's manifest asks for CAMERA (nsgo.yaml's android.permissions).

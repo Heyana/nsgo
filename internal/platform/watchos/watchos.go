@@ -10,7 +10,6 @@
 package watchos
 
 import (
-	"math"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -284,33 +283,11 @@ func (s *surface) start(test *testOpen) {
 func (s *surface) environment(scale float64, safe driver.Edges, flags uint32) driver.Environment {
 	locale, rtl := apple.Locale()
 	thermal, lowPower := apple.ProcessPower()
-	steps := int(flags>>8) - 128
-	env := driver.Environment{
-		DeviceModel:      apple.ModelIdentifier(),
-		SafeArea:         safe,
-		Dark:             flags&1 != 0,
-		ReduceMotion:     flags&2 != 0,
-		IncreaseContrast: flags&8 != 0,
-		ScreenReader:     flags&4 != 0,
-		FontScale:        fontScale(steps),
-		RTL:              rtl,
-		PixelRatio:       float32(scale),
-		Locale:           locale,
-		LocaleSettings:   apple.LocaleSettings(),
-		OS:               driver.OSIOS,
-		OSVersion:        osVersion(),
-		Idiom:            driver.IdiomWatch,
-		Lifecycle:        s.env.Lifecycle,
-		ThermalState:     thermal,
-		LowPowerMode:     lowPower,
-	}
+	env := buildEnvironment(scale, safe, flags, locale, rtl, apple.LocaleSettings(), osVersion(), s.env.Lifecycle)
+	env.DeviceModel = apple.ModelIdentifier()
+	env.ThermalState = thermal
+	env.LowPowerMode = lowPower
 	return env
-}
-
-// fontScale is the text size multiplier steps from the default
-// dynamic type size, as watchOS's body sizes grow.
-func fontScale(steps int) float32 {
-	return float32(math.Pow(1.1, float64(steps)))
 }
 
 // osVersion is the system's.

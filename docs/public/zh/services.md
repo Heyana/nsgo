@@ -570,7 +570,7 @@ mobile.RequestOverlayPermission(cx, func(p core.OverlayPermission) {
 
 ## 音频播放
 
-短音效用 `audio.LoadSound` 加载，可多次重叠播放。需要暂停、跳转、调速或循环的流式音频用 `audio.NewPlayer`。`cx.Env().CanPlayAudio()` 报告平台是否支持。macOS、iOS 和 Web 支持播放 WAV、AAC 和 MP3。
+短音效用 `audio.LoadSound` 加载，可多次重叠播放。需要暂停、跳转、调速或循环的流式音频用 `audio.NewPlayer`。`cx.Env().CanPlayAudio()` 报告平台是否支持。macOS、iOS、Windows、Linux 和 Web 已能播放音频：Apple、Windows 和浏览器后端支持 WAV、AAC 和 MP3，Linux 使用 GStreamer 解码；Android、tvOS、watchOS、HarmonyOS 和小程序仍将 `CanPlayAudio` 报告为 false。
 
 浏览器需要用户操作才能播放有声内容。可提前加载短音效，在点击、轻触或按键后调用 `Sound.Play`。用户操作之前播放的音效无声。如果浏览器拒绝播放，播放器的 `Play` 回调会收到 `audio.NotAllowed`。可在下一次用户操作中重试。
 

@@ -10,7 +10,7 @@ import (
 )
 
 func (s *surface) setOrientation(mask driver.Orientation) {
-	if s.embedded || s.env.OS != driver.OSIOS || s.requestedOrientation == mask {
+	if s.embedded || s.env.OS != driver.OSIOS || s.env.Idiom == driver.IdiomTV || s.requestedOrientation == mask {
 		return
 	}
 	if s.requestedOrientation == 0 && mask != 0 && s.previousOrientation == 0 && s.modalOrientations() == 0 {
