@@ -817,6 +817,8 @@ func d3dBlendDescriptor(targets []driver.GPUColorTargetState) d3d11BlendDesc {
 		if mask == 0 {
 			mask = driver.GPUColorWriteAll
 		}
+		// GPUColorWriteNone is a bit outside the channel mask; keep only the channel bits so it disables all writes.
+		mask &= driver.GPUColorWriteAll
 		rt := d3d11RenderTargetBlendDesc{
 			srcBlend:              d3d11BlendOne,
 			destBlend:             d3d11BlendZero,

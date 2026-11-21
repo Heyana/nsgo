@@ -407,6 +407,18 @@ func computePipelineCacheKey(desc PipelineDesc, dd driver.GPUPipelineDesc) strin
 		writeU8(uint8(dd.DepthStencil.DepthCompare))
 		writeU32(uint32(dd.DepthStencil.DepthBias))
 		writeU32(math.Float32bits(dd.DepthStencil.DepthBiasSlopeScale))
+		// Stencil state and the bias clamp are hashed only when set, so keys of pipelines without them stay unchanged.
+		if desc.DepthStencil != nil && (desc.DepthStencil.usesStencilTest() || dd.DepthStencil.DepthBiasClamp != 0) {
+			for _, f := range [2]driver.GPUStencilFaceState{dd.DepthStencil.StencilFront, dd.DepthStencil.StencilBack} {
+				writeU8(uint8(f.Compare))
+				writeU8(uint8(f.FailOp))
+				writeU8(uint8(f.DepthFailOp))
+				writeU8(uint8(f.PassOp))
+			}
+			writeU32(dd.DepthStencil.StencilReadMask)
+			writeU32(dd.DepthStencil.StencilWriteMask)
+			writeU32(math.Float32bits(dd.DepthStencil.DepthBiasClamp))
+		}
 	}
 
 	// Color targets.

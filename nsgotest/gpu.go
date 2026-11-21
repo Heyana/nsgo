@@ -114,6 +114,10 @@ func (a *App) syncGPUViews(configured []*View, resized []*View) {
 			st.generation++
 			gen := st.generation
 			readyNow[v.ID] = true
+			surfFmt := st.cfg.ColorFormat
+			if surfFmt == driver.GPUFormatUndefined {
+				surfFmt = driver.GPUFormatRGBA8Unorm
+			}
 			a.post(driver.Event{
 				Kind: driver.EventGPU,
 				ID:   v.ID,
@@ -122,9 +126,9 @@ func (a *App) syncGPUViews(configured []*View, resized []*View) {
 					Generation:     gen,
 					Width:          w,
 					Height:         h,
-					SurfaceFormat:  driver.GPUFormatRGBA8Unorm,
+					SurfaceFormat:  surfFmt,
 					FramesInFlight: driver.NormalizeFramesInFlight(st.cfg.FramesInFlight),
-					Limits:         driver.DefaultGPULimits(),
+					Limits:         driver.DefaultSoftwareGPULimits(),
 					Features:       a.gpuFeatures(),
 				},
 			})
@@ -339,6 +343,10 @@ func (a *App) RestoreGPUDevice(selector string) {
 	st.ready = true
 	st.generation++
 	st.soft = driver.NewGPUSoftwareDevice(w, h, st.cfg)
+	surfFmt := st.cfg.ColorFormat
+	if surfFmt == driver.GPUFormatUndefined {
+		surfFmt = driver.GPUFormatRGBA8Unorm
+	}
 	a.post(driver.Event{
 		Kind: driver.EventGPU,
 		ID:   v.ID,
@@ -347,9 +355,9 @@ func (a *App) RestoreGPUDevice(selector string) {
 			Generation:     st.generation,
 			Width:          w,
 			Height:         h,
-			SurfaceFormat:  driver.GPUFormatRGBA8Unorm,
+			SurfaceFormat:  surfFmt,
 			FramesInFlight: driver.NormalizeFramesInFlight(st.cfg.FramesInFlight),
-			Limits:         driver.DefaultGPULimits(),
+			Limits:         driver.DefaultSoftwareGPULimits(),
 			Features:       a.gpuFeatures(),
 		},
 	})

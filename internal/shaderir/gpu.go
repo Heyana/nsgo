@@ -170,7 +170,7 @@ type Binding struct {
 // IsPipeline reports whether p uses explicit GPU pipeline stages or bindings
 // rather than the legacy fragment-only UI shader convention.
 func (p *Program) IsPipeline() bool {
-	return len(p.Bindings) > 0 || len(p.AttributeMeta) > 0 || len(p.VaryingMeta) > 0 || p.VertexEntry != "" || p.FragmentEntry != "" || p.ComputeEntry != "" || p.ComputeFunc.Block != nil
+	return len(p.Bindings) > 0 || len(p.AttributeMeta) > 0 || len(p.VaryingMeta) > 0 || len(p.FragmentOutputs) > 0 || p.VertexEntry != "" || p.FragmentEntry != "" || p.ComputeEntry != "" || p.ComputeFunc.Block != nil
 }
 
 // AlignBytes returns the WGSL/std140 uniform alignment of t in bytes.

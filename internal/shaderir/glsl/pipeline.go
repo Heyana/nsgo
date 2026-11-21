@@ -237,7 +237,17 @@ func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, 
 				}
 				lines = append(lines, fmt.Sprintf("%sin %s;", qual, w.declVar(v, fmt.Sprintf("v%d", i))))
 			}
-			lines = append(lines, "layout(location = 0) out vec4 fragColor;")
+			if len(p.FragmentOutputs) > 0 {
+				for i, ot := range p.FragmentOutputs {
+					loc := uint32(i)
+					if i < len(p.FragmentOutputMeta) {
+						loc = p.FragmentOutputMeta[i].Location
+					}
+					lines = append(lines, fmt.Sprintf("layout(location = %d) out %s;", loc, w.declVar(ot, fmt.Sprintf("fragColor%d", i))))
+				}
+			} else {
+				lines = append(lines, "layout(location = 0) out vec4 fragColor;")
+			}
 		case "compute":
 			ws := p.ComputeFunc.WorkgroupSize
 			if ws[0] == 0 {
@@ -435,11 +445,14 @@ func (w *pipeWriter) localName(stage string, idx int) string {
 		}
 	case "fragment":
 		nv := len(w.p.Varyings)
+		no := len(w.p.FragmentOutputs)
 		switch {
 		case idx == 0:
 			return "gl_FragCoord"
 		case idx < nv+1:
 			return fmt.Sprintf("v%d", idx-1)
+		case idx < nv+1+no:
+			return fmt.Sprintf("fragColor%d", idx-nv-1)
 		}
 	}
 	return fmt.Sprintf("l%d", idx)

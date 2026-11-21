@@ -475,23 +475,79 @@ func (c *checker) compileFragmentEntry(f *fnDecl) {
 		fail(f.pos, "@fragment %s must return a color", f.name)
 	}
 	retT := c.resolveType(f.ret)
-	colorFieldIdx := -1
-	if retT.k == kStruct && retT.st != nil {
-		for i, fld := range retT.st.fields {
-			if loc, ok := attrUint(fld.attrs, "location"); ok && loc == 0 {
-				colorFieldIdx = i
-				break
-			}
+	nv := len(p.Varyings)
+	var outFields []stageFieldBinding
+	isFragColorType := func(t ty) bool {
+		if t.k == kF32 || t.k == kI32 || t.k == kU32 {
+			return true
 		}
-		if colorFieldIdx < 0 {
-			fail(f.ret.pos, "@fragment %s output struct must have a @location(0) color member", f.name)
-		}
-	} else if !retT.equal(vec(kF32, 4)) {
-		fail(f.ret.pos, "@fragment %s must return vec4<f32>, not %s", f.name, retT)
+		return t.k == kVec && (t.elem == kF32 || t.elem == kI32 || t.elem == kU32)
 	}
 
-	nv := len(p.Varyings)
-	pseudoCount := nv + 1
+	if retT.k == kStruct && retT.st != nil {
+		seenLoc := map[uint32]bool{}
+		for i, fld := range retT.st.fields {
+			fb := parseStageField(fld.name, fld.t, fld.attrs, fld.pos, i)
+			if fb.builtin != shaderir.BuiltinNone {
+				fail(fld.pos, "@fragment %s output builtin @builtin(%s) is not supported yet", f.name, fb.builtin)
+			}
+			if !isFragColorType(fld.t) {
+				fail(fld.pos, "@fragment %s output %s must be a scalar or vector color type, not %s", f.name, fld.name, fld.t)
+			}
+			if seenLoc[fb.loc] {
+				fail(fld.pos, "@fragment %s output declares duplicate @location(%d)", f.name, fb.loc)
+			}
+			seenLoc[fb.loc] = true
+			fb.irIdx = nv + 1 + len(p.FragmentOutputs)
+			p.FragmentOutputs = append(p.FragmentOutputs, fld.t.ir())
+			p.FragmentOutputMeta = append(p.FragmentOutputMeta, shaderir.StageIO{
+				Name:     fld.name,
+				Location: fb.loc,
+			})
+			outFields = append(outFields, fb)
+		}
+		if len(outFields) == 0 {
+			fail(f.ret.pos, "@fragment %s output struct must have at least one @location(N) color member", f.name)
+		}
+	} else {
+		if !isFragColorType(retT) {
+			fail(f.ret.pos, "@fragment %s must return a color scalar or vector, not %s", f.name, retT)
+		}
+		loc, hasLoc := attrUint(f.retAttrs, "location")
+		if hasLoc && (loc != 0 || !retT.equal(vec(kF32, 4))) {
+			fb := stageFieldBinding{
+				fieldIdx: -1,
+				loc:      loc,
+				hasLoc:   true,
+				name:     "color",
+				t:        retT,
+				irIdx:    nv + 1,
+			}
+			p.FragmentOutputs = append(p.FragmentOutputs, retT.ir())
+			p.FragmentOutputMeta = append(p.FragmentOutputMeta, shaderir.StageIO{
+				Name:     "color",
+				Location: loc,
+			})
+			outFields = append(outFields, fb)
+		} else if !retT.equal(vec(kF32, 4)) {
+			fb := stageFieldBinding{
+				fieldIdx: -1,
+				loc:      0,
+				hasLoc:   true,
+				name:     "color",
+				t:        retT,
+				irIdx:    nv + 1,
+			}
+			p.FragmentOutputs = append(p.FragmentOutputs, retT.ir())
+			p.FragmentOutputMeta = append(p.FragmentOutputMeta, shaderir.StageIO{
+				Name:     "color",
+				Location: 0,
+			})
+			outFields = append(outFields, fb)
+		}
+	}
+
+	pseudoCount := nv + 1 + len(p.FragmentOutputs)
 	top := &shaderir.Block{LocalVarIndexOffset: pseudoCount}
 	info := &fnInfo{decl: f, index: -1, ret: retT}
 	c.cur = &fnState{
@@ -500,15 +556,25 @@ func (c *checker) compileFragmentEntry(f *fnDecl) {
 		top:    top,
 		stage:  "fragment",
 		onReturn: func(v value, out *[]shaderir.Stmt) {
-			if colorFieldIdx >= 0 {
-				colorExpr := mk(shaderir.Expr{
-					Type:  shaderir.FieldSelector,
-					Exprs: []shaderir.Expr{c.ir(v), {Type: shaderir.StructMember, Index: colorFieldIdx}},
-				}, vec(kF32, 4))
-				*out = append(*out, shaderir.Stmt{Type: shaderir.Return, Exprs: []shaderir.Expr{colorExpr}})
+			if len(outFields) == 0 {
+				*out = append(*out, shaderir.Stmt{Type: shaderir.Return, Exprs: []shaderir.Expr{c.ir(v)}})
 				return
 			}
-			*out = append(*out, shaderir.Stmt{Type: shaderir.Return, Exprs: []shaderir.Expr{c.ir(v)}})
+			if len(outFields) == 1 && outFields[0].fieldIdx == -1 {
+				of := outFields[0]
+				*out = append(*out, assign(local(of.irIdx, of.t), c.ir(v)))
+				*out = append(*out, shaderir.Stmt{Type: shaderir.Return})
+				return
+			}
+			sv := c.reuse(v, out)
+			for _, of := range outFields {
+				fieldExpr := mk(shaderir.Expr{
+					Type:  shaderir.FieldSelector,
+					Exprs: []shaderir.Expr{c.ir(sv), {Type: shaderir.StructMember, Index: of.fieldIdx}},
+				}, of.t)
+				*out = append(*out, assign(local(of.irIdx, of.t), fieldExpr))
+			}
+			*out = append(*out, shaderir.Stmt{Type: shaderir.Return})
 		},
 	}
 

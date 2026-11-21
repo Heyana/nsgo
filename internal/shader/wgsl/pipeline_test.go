@@ -791,3 +791,143 @@ func TestComputeShaderValidationErrors(t *testing.T) {
 		})
 	}
 }
+
+const mrtWGSL = `
+struct VertexIn {
+	@location(0) pos: vec3<f32>,
+	@location(1) normal: vec3<f32>,
+}
+
+struct VertexOut {
+	@builtin(position) pos: vec4<f32>,
+	@location(0) normal: vec3<f32>,
+}
+
+struct GBufferOut {
+	@location(0) albedo: vec4<f32>,
+	@location(1) normal: vec4<f32>,
+	@location(2) material: vec4<f32>,
+	@location(3) scalar: f32,
+}
+
+@vertex
+fn vs_main(in: VertexIn) -> VertexOut {
+	var out: VertexOut;
+	out.pos = vec4<f32>(in.pos, 1.0);
+	out.normal = in.normal;
+	return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> GBufferOut {
+	var out: GBufferOut;
+	out.albedo = vec4<f32>(1.0, 0.25, 0.5, 1.0);
+	out.normal = vec4<f32>(in.normal, 1.0);
+	out.material = vec4<f32>(0.2, 0.8, 0.0, 1.0);
+	out.scalar = 3.5;
+	return out;
+}
+`
+
+func TestCompilePipelineMRTAndEmitters(t *testing.T) {
+	prog, err := wgsl.CompilePipeline(mrtWGSL)
+	if err != nil {
+		t.Fatalf("CompilePipeline MRT: %v", err)
+	}
+	ir := prog.IR
+	if len(ir.FragmentOutputs) != 4 || len(ir.FragmentOutputMeta) != 4 {
+		t.Fatalf("FragmentOutputs = %d, meta = %d, want 4", len(ir.FragmentOutputs), len(ir.FragmentOutputMeta))
+	}
+	for i := range 4 {
+		if ir.FragmentOutputMeta[i].Location != uint32(i) {
+			t.Errorf("FragmentOutputMeta[%d].Location = %d, want %d", i, ir.FragmentOutputMeta[i].Location, i)
+		}
+	}
+	if ir.FragmentOutputs[3].Main != shaderir.Float {
+		t.Errorf("FragmentOutputs[3] = %v, want Float", ir.FragmentOutputs[3])
+	}
+
+	mslOut, err := msl.CompilePipeline(ir)
+	if err != nil {
+		t.Fatalf("msl.CompilePipeline MRT: %v", err)
+	}
+	for _, want := range []string{"struct FragOut", "[[color(0)]]", "[[color(1)]]", "[[color(2)]]", "[[color(3)]]", "fragment FragOut fs_main", "return __fout;"} {
+		if !strings.Contains(mslOut.Source, want) {
+			t.Errorf("MSL MRT missing %q:\n%s", want, mslOut.Source)
+		}
+	}
+
+	hlslOut, err := hlsl.CompilePipeline(ir)
+	if err != nil {
+		t.Fatalf("hlsl.CompilePipeline MRT: %v", err)
+	}
+	for _, want := range []string{"struct FragOut", "SV_TARGET0", "SV_TARGET1", "SV_TARGET2", "SV_TARGET3", "FragOut fs_main", "return __fout;"} {
+		if !strings.Contains(hlslOut.PixelSource, want) {
+			t.Errorf("HLSL MRT missing %q:\n%s", want, hlslOut.PixelSource)
+		}
+	}
+
+	glslOut, err := glsl.CompilePipeline(ir, glsl.GLSLVersionES300)
+	if err != nil {
+		t.Fatalf("glsl.CompilePipeline MRT: %v", err)
+	}
+	for _, want := range []string{
+		"layout(location = 0) out vec4 fragColor0;",
+		"layout(location = 1) out vec4 fragColor1;",
+		"layout(location = 2) out vec4 fragColor2;",
+		"layout(location = 3) out float fragColor3;",
+	} {
+		if !strings.Contains(glslOut.FragmentSource, want) {
+			t.Errorf("GLSL MRT missing %q:\n%s", want, glslOut.FragmentSource)
+		}
+	}
+
+	wgslOut, err := irwgsl.CompilePipeline(ir)
+	if err != nil {
+		t.Fatalf("irwgsl.CompilePipeline MRT: %v", err)
+	}
+	for _, want := range []string{"struct FragOut", "@location(0) c0: vec4<f32>", "@location(1) c1: vec4<f32>", "@location(2) c2: vec4<f32>", "@location(3) c3: f32", "-> FragOut", "return nsgo_fout;"} {
+		if !strings.Contains(wgslOut, want) {
+			t.Errorf("WGSL MRT missing %q:\n%s", want, wgslOut)
+		}
+	}
+
+	// Duplicate @location in fragment output struct must fail cleanly.
+	dupSrc := strings.Replace(mrtWGSL, "@location(2) material", "@location(1) material", 1)
+	if _, err := wgsl.CompilePipeline(dupSrc); err == nil {
+		t.Errorf("expected error for duplicate @location(1) in fragment output struct")
+	}
+}
+
+func TestCompilePipelineScalarFragmentOutput(t *testing.T) {
+	const src = `
+@vertex
+fn vs_main(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
+	return vec4<f32>(pos, 1.0);
+}
+
+@fragment
+fn fs_main() -> @location(0) f32 {
+	return 2.25;
+}
+`
+	prog, err := wgsl.CompilePipeline(src)
+	if err != nil {
+		t.Fatalf("CompilePipeline scalar f32: %v", err)
+	}
+	if len(prog.IR.FragmentOutputs) != 1 || prog.IR.FragmentOutputs[0].Main != shaderir.Float {
+		t.Fatalf("FragmentOutputs = %+v, want [Float]", prog.IR.FragmentOutputs)
+	}
+	if _, err := msl.CompilePipeline(prog.IR); err != nil {
+		t.Errorf("msl scalar: %v", err)
+	}
+	if _, err := hlsl.CompilePipeline(prog.IR); err != nil {
+		t.Errorf("hlsl scalar: %v", err)
+	}
+	if _, err := glsl.CompilePipeline(prog.IR, glsl.GLSLVersionDefault); err != nil {
+		t.Errorf("glsl scalar: %v", err)
+	}
+	if _, err := irwgsl.CompilePipeline(prog.IR); err != nil {
+		t.Errorf("wgsl scalar: %v", err)
+	}
+}

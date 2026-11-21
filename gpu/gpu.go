@@ -110,9 +110,22 @@ const (
 	FormatETC2RGBA8Unorm      TextureFormat = TextureFormat(driver.GPUFormatETC2RGBA8Unorm)
 	FormatASTC4x4Unorm        TextureFormat = TextureFormat(driver.GPUFormatASTC4x4Unorm)
 	FormatASTC4x4UnormSRGB    TextureFormat = TextureFormat(driver.GPUFormatASTC4x4UnormSRGB)
+
+	// Extended formats: accepted only where Features.ExtendedFormats is set (Device.SupportsFormat).
+	FormatBGRA8UnormSRGB TextureFormat = TextureFormat(driver.GPUFormatBGRA8UnormSRGB)
+	FormatRG11B10Float   TextureFormat = TextureFormat(driver.GPUFormatRG11B10Float)
+	FormatR32Float       TextureFormat = TextureFormat(driver.GPUFormatR32Float)
+	FormatRGBA32Float    TextureFormat = TextureFormat(driver.GPUFormatRGBA32Float)
+	FormatStencil8       TextureFormat = TextureFormat(driver.GPUFormatStencil8)
+
+	// Short HDR float format aliases matching WGSL/shader shorthand.
+	FormatRGBA16F  TextureFormat = FormatRGBA16Float
+	FormatRG11B10F TextureFormat = FormatRG11B10Float
+	FormatR32F     TextureFormat = FormatR32Float
+	FormatRGBA32F  TextureFormat = FormatRGBA32Float
 )
 
-// IsDepth reports whether f is a depth or depth/stencil format.
+// IsDepth reports whether f carries a depth aspect.
 func (f TextureFormat) IsDepth() bool {
 	return driver.GPUTextureFormat(f).IsDepth()
 }
@@ -145,6 +158,21 @@ func (f TextureFormat) ByteSize(width, height uint32) uint64 {
 // String returns the format's canonical name.
 func (f TextureFormat) String() string {
 	return driver.GPUTextureFormat(f).String()
+}
+
+// HasStencil reports whether f carries a stencil aspect.
+func (f TextureFormat) HasStencil() bool {
+	return driver.GPUTextureFormat(f).HasStencil()
+}
+
+// IsDepthStencil reports whether f is a depth, stencil, or depth-stencil format.
+func (f TextureFormat) IsDepthStencil() bool {
+	return driver.GPUTextureFormat(f).IsDepthStencil()
+}
+
+// IsFloat reports whether f is a floating-point color format (HDR/unclamped).
+func (f TextureFormat) IsFloat() bool {
+	return driver.GPUTextureFormat(f).IsFloat()
 }
 
 // TextureUsage is a bitmask of permitted uses for a Texture.
@@ -187,7 +215,7 @@ type RenderTargetDesc struct {
 	Height      uint32
 	ColorFormat TextureFormat
 	DepthFormat TextureFormat
-	SampleCount int  // 0 or 1
+	SampleCount int  // 0 or 1; 4 for a multisampled target with a Resolve texture
 	Retained    bool // opt in to automatic recreation after device loss
 }
 
@@ -369,8 +397,10 @@ const (
 type FrontFace uint8
 
 const (
-	FrontCCW FrontFace = FrontFace(driver.GPUFrontCCW)
-	FrontCW  FrontFace = FrontFace(driver.GPUFrontCW)
+	FrontCCW     FrontFace = FrontFace(driver.GPUFrontCCW)
+	FrontCW      FrontFace = FrontFace(driver.GPUFrontCW)
+	FrontFaceCCW FrontFace = FrontCCW
+	FrontFaceCW  FrontFace = FrontCW
 )
 
 // CullMode selects which faces are culled.
@@ -403,6 +433,9 @@ const (
 // BlendOperation selects how blended terms combine.
 type BlendOperation uint8
 
+// BlendOp is an alias for BlendOperation.
+type BlendOp = BlendOperation
+
 const (
 	BlendAdd             BlendOperation = BlendOperation(driver.GPUBlendAdd)
 	BlendSubtract        BlendOperation = BlendOperation(driver.GPUBlendSubtract)
@@ -411,7 +444,7 @@ const (
 	BlendMax             BlendOperation = BlendOperation(driver.GPUBlendMax)
 )
 
-// ColorWriteMask selects which channels a pipeline writes.
+// ColorWriteMask selects which channels a pipeline writes. Zero defaults to ColorWriteAll; use ColorWriteNone to disable all color writes.
 type ColorWriteMask uint8
 
 const (
@@ -419,6 +452,7 @@ const (
 	ColorWriteGreen ColorWriteMask = ColorWriteMask(driver.GPUColorWriteGreen)
 	ColorWriteBlue  ColorWriteMask = ColorWriteMask(driver.GPUColorWriteBlue)
 	ColorWriteAlpha ColorWriteMask = ColorWriteMask(driver.GPUColorWriteAlpha)
+	ColorWriteNone  ColorWriteMask = ColorWriteMask(driver.GPUColorWriteNone)
 	ColorWriteAll   ColorWriteMask = ColorWriteMask(driver.GPUColorWriteAll)
 )
 
@@ -435,12 +469,66 @@ type BlendState struct {
 	Alpha BlendComponent
 }
 
+// BlendOpaque returns opaque replacement blending (src * 1 + dst * 0).
+func BlendOpaque() *BlendState {
+	return &BlendState{
+		Color: BlendComponent{SrcFactor: BlendOne, DstFactor: BlendZero, Operation: BlendAdd},
+		Alpha: BlendComponent{SrcFactor: BlendOne, DstFactor: BlendZero, Operation: BlendAdd},
+	}
+}
+
 // BlendAlpha returns standard non-premultiplied alpha blending (srcAlpha / 1-srcAlpha).
 func BlendAlpha() *BlendState {
 	return &BlendState{
 		Color: BlendComponent{SrcFactor: BlendSrcAlpha, DstFactor: BlendOneMinusSrcAlpha, Operation: BlendAdd},
 		Alpha: BlendComponent{SrcFactor: BlendOne, DstFactor: BlendOneMinusSrcAlpha, Operation: BlendAdd},
 	}
+}
+
+// BlendPremultipliedAlpha returns premultiplied alpha blending (1 / 1-srcAlpha).
+func BlendPremultipliedAlpha() *BlendState {
+	return &BlendState{
+		Color: BlendComponent{SrcFactor: BlendOne, DstFactor: BlendOneMinusSrcAlpha, Operation: BlendAdd},
+		Alpha: BlendComponent{SrcFactor: BlendOne, DstFactor: BlendOneMinusSrcAlpha, Operation: BlendAdd},
+	}
+}
+
+// BlendAdditive returns additive blending (src * srcAlpha + dst).
+func BlendAdditive() *BlendState {
+	return &BlendState{
+		Color: BlendComponent{SrcFactor: BlendSrcAlpha, DstFactor: BlendOne, Operation: BlendAdd},
+		Alpha: BlendComponent{SrcFactor: BlendOne, DstFactor: BlendOne, Operation: BlendAdd},
+	}
+}
+
+// BlendMultiply returns multiplicative blending (src * dst).
+func BlendMultiply() *BlendState {
+	return &BlendState{
+		Color: BlendComponent{SrcFactor: BlendDst, DstFactor: BlendZero, Operation: BlendAdd},
+		Alpha: BlendComponent{SrcFactor: BlendDstAlpha, DstFactor: BlendZero, Operation: BlendAdd},
+	}
+}
+
+// StencilOperation specifies how a stencil buffer value updates after stencil/depth testing.
+type StencilOperation uint8
+
+const (
+	StencilKeep           StencilOperation = StencilOperation(driver.GPUStencilKeep)
+	StencilZero           StencilOperation = StencilOperation(driver.GPUStencilZero)
+	StencilReplace        StencilOperation = StencilOperation(driver.GPUStencilReplace)
+	StencilInvert         StencilOperation = StencilOperation(driver.GPUStencilInvert)
+	StencilIncrementClamp StencilOperation = StencilOperation(driver.GPUStencilIncrementClamp)
+	StencilDecrementClamp StencilOperation = StencilOperation(driver.GPUStencilDecrementClamp)
+	StencilIncrementWrap  StencilOperation = StencilOperation(driver.GPUStencilIncrementWrap)
+	StencilDecrementWrap  StencilOperation = StencilOperation(driver.GPUStencilDecrementWrap)
+)
+
+// StencilFaceState configures stencil comparison and update operations for one winding face.
+type StencilFaceState struct {
+	Compare     CompareFunc      // CompareUndefined defaults to CompareAlways
+	FailOp      StencilOperation // applied when the stencil test fails
+	DepthFailOp StencilOperation // applied when stencil passes and depth fails
+	PassOp      StencilOperation // applied when both stencil and depth pass
 }
 
 // PrimitiveState configures primitive assembly and culling.
@@ -450,13 +538,28 @@ type PrimitiveState struct {
 	CullMode  CullMode
 }
 
-// DepthStencilState configures depth testing and writing.
+// DepthStencilState configures depth testing, stencil testing, writing, and depth bias.
 type DepthStencilState struct {
 	Format              TextureFormat
 	DepthWrite          bool
 	DepthCompare        CompareFunc
+	StencilFront        StencilFaceState
+	StencilBack         StencilFaceState
+	StencilReadMask     uint32 // 0 defaults to 0xFF
+	StencilWriteMask    uint32 // 0 defaults to 0xFF; use StencilKeep ops to disable writes
 	DepthBias           int32
 	DepthBiasSlopeScale float32
+	DepthBiasClamp      float32
+}
+
+// usesStencilTest reports whether s configures stencil testing or stencil writes beyond the pass-through default (always pass, keep, default masks).
+func (s *DepthStencilState) usesStencilTest() bool {
+	for _, f := range [2]StencilFaceState{s.StencilFront, s.StencilBack} {
+		if (f.Compare != CompareUndefined && f.Compare != CompareAlways) || f.FailOp != StencilKeep || f.DepthFailOp != StencilKeep || f.PassOp != StencilKeep {
+			return true
+		}
+	}
+	return (s.StencilReadMask != 0 && s.StencilReadMask != 0xFF) || (s.StencilWriteMask != 0 && s.StencilWriteMask != 0xFF)
 }
 
 // ColorTargetState configures one color output of a Pipeline.
@@ -605,6 +708,7 @@ type Limits struct {
 	MaxComputeWorkgroupSizeZ      uint32
 	MaxComputeInvocationsPerGroup uint32
 	MaxComputeWorkgroupsPerDim    uint32
+	MaxColorAttachments           uint32
 }
 
 func limitsFromDriver(l driver.GPULimits) Limits {
@@ -630,6 +734,10 @@ func limitsFromDriver(l driver.GPULimits) Limits {
 	if l.MaxComputeWorkgroupsPerDim == 0 {
 		l.MaxComputeWorkgroupsPerDim = def.MaxComputeWorkgroupsPerDim
 	}
+	if l.MaxColorAttachments == 0 {
+		// Backends that do not report MRT support render to a single color target.
+		l.MaxColorAttachments = 1
+	}
 	return Limits{
 		MaxTextureDimension2D:         l.MaxTextureDimension2D,
 		MaxBufferSize:                 l.MaxBufferSize,
@@ -644,6 +752,7 @@ func limitsFromDriver(l driver.GPULimits) Limits {
 		MaxComputeWorkgroupSizeZ:      l.MaxComputeWorkgroupSizeZ,
 		MaxComputeInvocationsPerGroup: l.MaxComputeInvocationsPerGroup,
 		MaxComputeWorkgroupsPerDim:    l.MaxComputeWorkgroupsPerDim,
+		MaxColorAttachments:           l.MaxColorAttachments,
 	}
 }
 
@@ -659,6 +768,10 @@ type Features struct {
 	TextureCompressionBC   bool
 	TextureCompressionETC2 bool
 	TextureCompressionASTC bool
+	// ExtendedFormats reports support for FormatBGRA8UnormSRGB, FormatRG11B10Float, FormatR32Float, FormatRGBA32Float and FormatStencil8 textures and render targets.
+	ExtendedFormats bool
+	// StencilTest reports support for pipeline stencil testing (DepthStencilState.StencilFront/StencilBack and the stencil read/write masks).
+	StencilTest bool
 }
 
 // DeviceCapabilities summarizes the active GPU device's limits, optional features, timing query support, and supported compressed texture formats. Targets without native compute support (WebGL 2, OpenGL ES 3.0) report Features.Compute false; check Device.SupportsCompute and use a CPU or render-pass fallback there.
@@ -681,6 +794,8 @@ func featuresFromDriver(f driver.GPUFeatures) Features {
 		TextureCompressionBC:   f.TextureCompressionBC,
 		TextureCompressionETC2: f.TextureCompressionETC2,
 		TextureCompressionASTC: f.TextureCompressionASTC,
+		ExtendedFormats:        f.ExtendedFormats,
+		StencilTest:            f.StencilTest,
 	}
 }
 

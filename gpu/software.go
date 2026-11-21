@@ -18,25 +18,36 @@ type SoftwareRenderer struct {
 
 // NewSoftwareRenderer creates a pure-Go software 3D GPU renderer with a swapchain of width x height pixels, an optional depthFormat (e.g. FormatDepth24Plus), and DefaultFramesInFlight (2) ring-buffer slots. Compute shaders, storage buffers, and storage textures are enabled by default.
 func NewSoftwareRenderer(width, height int, depthFormat TextureFormat) *SoftwareRenderer {
-	return newSoftwareRenderer(width, height, depthFormat, featuresFromDriver(driver.DefaultSoftwareGPUFeatures()), DefaultFramesInFlight)
+	return newSoftwareRenderer(width, height, FormatRGBA8Unorm, depthFormat, 1, featuresFromDriver(driver.DefaultSoftwareGPUFeatures()), DefaultFramesInFlight)
 }
 
 // NewSoftwareRendererWithFeatures creates a pure-Go software 3D GPU renderer with explicit device capability flags (useful for testing unsupported feature paths).
 func NewSoftwareRendererWithFeatures(width, height int, depthFormat TextureFormat, features Features) *SoftwareRenderer {
-	return newSoftwareRenderer(width, height, depthFormat, features, DefaultFramesInFlight)
+	return newSoftwareRenderer(width, height, FormatRGBA8Unorm, depthFormat, 1, features, DefaultFramesInFlight)
 }
 
 // NewSoftwareRendererWithFrames creates a pure-Go software 3D GPU renderer with framesInFlight ring-buffer slots, clamped to [MinFramesInFlight, MaxFramesInFlight].
 func NewSoftwareRendererWithFrames(width, height int, depthFormat TextureFormat, framesInFlight int) *SoftwareRenderer {
-	return newSoftwareRenderer(width, height, depthFormat, featuresFromDriver(driver.DefaultSoftwareGPUFeatures()), framesInFlight)
+	return newSoftwareRenderer(width, height, FormatRGBA8Unorm, depthFormat, 1, featuresFromDriver(driver.DefaultSoftwareGPUFeatures()), framesInFlight)
 }
 
-func newSoftwareRenderer(width, height int, depthFormat TextureFormat, features Features, framesInFlight int) *SoftwareRenderer {
+// NewSoftwareRendererWithConfig creates a pure-Go software 3D GPU renderer with an explicit swapchain color format (FormatUndefined means FormatRGBA8Unorm), depth/stencil format, and MSAA sample count (1 or 4).
+func NewSoftwareRendererWithConfig(width, height int, colorFormat, depthFormat TextureFormat, sampleCount int) *SoftwareRenderer {
+	return newSoftwareRenderer(width, height, colorFormat, depthFormat, sampleCount, featuresFromDriver(driver.DefaultSoftwareGPUFeatures()), DefaultFramesInFlight)
+}
+
+func newSoftwareRenderer(width, height int, colorFormat, depthFormat TextureFormat, sampleCount int, features Features, framesInFlight int) *SoftwareRenderer {
+	if colorFormat == FormatUndefined {
+		colorFormat = FormatRGBA8Unorm
+	}
+	if sampleCount <= 0 {
+		sampleCount = 1
+	}
 	fif := driver.NormalizeFramesInFlight(framesInFlight)
 	cfg := driver.GPUViewConfig{
-		ColorFormat:    driver.GPUFormatRGBA8Unorm,
+		ColorFormat:    driver.GPUTextureFormat(colorFormat),
 		DepthFormat:    driver.GPUTextureFormat(depthFormat),
-		SampleCount:    1,
+		SampleCount:    sampleCount,
 		FramesInFlight: fif,
 	}
 	soft := driver.NewGPUSoftwareDevice(width, height, cfg)
@@ -47,9 +58,9 @@ func newSoftwareRenderer(width, height int, depthFormat TextureFormat, features 
 		1,
 		width,
 		height,
-		FormatRGBA8Unorm,
+		colorFormat,
 		fif,
-		limitsFromDriver(driver.DefaultGPULimits()),
+		limitsFromDriver(driver.DefaultSoftwareGPULimits()),
 		features,
 		compressedFormatsFromFeatures(features),
 	)

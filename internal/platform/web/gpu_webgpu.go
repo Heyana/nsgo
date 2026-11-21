@@ -757,6 +757,8 @@ func (b *webgpuBackend) createPipeline(id driver.GPUID, desc driver.GPUPipelineD
 				if mask == 0 {
 					mask = driver.GPUColorWriteAll
 				}
+				// GPUColorWriteNone is a bit outside the channel mask; keep only the channel bits so it disables all writes.
+				mask &= driver.GPUColorWriteAll
 				tObj := map[string]any{
 					"format":    fmtStr,
 					"writeMask": int(mask),

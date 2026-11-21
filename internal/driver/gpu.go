@@ -34,11 +34,42 @@ const (
 	GPUFormatETC2RGBA8Unorm
 	GPUFormatASTC4x4Unorm
 	GPUFormatASTC4x4UnormSRGB
+	// The extended formats below are appended so the numeric values above, which the Android backend sends over the wire, keep their meaning. Devices accept them only when GPUFeatures.ExtendedFormats is set.
+	GPUFormatBGRA8UnormSRGB
+	GPUFormatRG11B10Float
+	GPUFormatR32Float
+	GPUFormatRGBA32Float
+	GPUFormatStencil8
 )
 
-// IsDepth reports whether f is a depth or depth-stencil texture format.
+// IsDepth reports whether f carries a depth aspect.
 func (f GPUTextureFormat) IsDepth() bool {
 	return f == GPUFormatDepth24Plus || f == GPUFormatDepth24PlusStencil8 || f == GPUFormatDepth32Float
+}
+
+// HasStencil reports whether f carries a stencil aspect.
+func (f GPUTextureFormat) HasStencil() bool {
+	return f == GPUFormatDepth24PlusStencil8 || f == GPUFormatStencil8
+}
+
+// IsDepthStencil reports whether f is a depth, stencil, or combined depth-stencil format.
+func (f GPUTextureFormat) IsDepthStencil() bool {
+	return f.IsDepth() || f.HasStencil()
+}
+
+// IsFloat reports whether f is a floating-point color format (HDR/unclamped).
+func (f GPUTextureFormat) IsFloat() bool {
+	return f == GPUFormatRGBA16Float || f == GPUFormatRG11B10Float || f == GPUFormatR32Float || f == GPUFormatRGBA32Float
+}
+
+// IsExtended reports whether f is one of the extended formats gated by GPUFeatures.ExtendedFormats.
+func (f GPUTextureFormat) IsExtended() bool {
+	switch f {
+	case GPUFormatBGRA8UnormSRGB, GPUFormatRG11B10Float, GPUFormatR32Float, GPUFormatRGBA32Float, GPUFormatStencil8:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsCompressed reports whether f is a block-compressed GPU texture format.
@@ -58,7 +89,7 @@ func (f GPUTextureFormat) IsCompressed() bool {
 // IsSRGB reports whether f stores sRGB-encoded RGB channels decoded to linear on sample.
 func (f GPUTextureFormat) IsSRGB() bool {
 	switch f {
-	case GPUFormatRGBA8UnormSRGB,
+	case GPUFormatRGBA8UnormSRGB, GPUFormatBGRA8UnormSRGB,
 		GPUFormatBC1RGBAUnormSRGB,
 		GPUFormatBC3RGBAUnormSRGB,
 		GPUFormatBC7RGBAUnormSRGB,
@@ -80,7 +111,8 @@ func (f GPUTextureFormat) BlockSize() (width, height uint32) {
 		return 4, 4
 	case GPUFormatRGBA8Unorm, GPUFormatRGBA8UnormSRGB, GPUFormatBGRA8Unorm,
 		GPUFormatRG8Unorm, GPUFormatR8Unorm, GPUFormatRGBA16Float,
-		GPUFormatDepth24Plus, GPUFormatDepth24PlusStencil8, GPUFormatDepth32Float:
+		GPUFormatDepth24Plus, GPUFormatDepth24PlusStencil8, GPUFormatDepth32Float,
+		GPUFormatBGRA8UnormSRGB, GPUFormatRG11B10Float, GPUFormatR32Float, GPUFormatRGBA32Float, GPUFormatStencil8:
 		return 1, 1
 	default:
 		return 0, 0
@@ -114,17 +146,19 @@ func (f GPUTextureFormat) ByteSize(width, height uint32) uint64 {
 	return blocksX * blocksY * uint64(bpb)
 }
 
-// BytesPerPixel returns the texel stride in bytes for uncompressed color formats (0 for compressed, depth, or undefined formats).
+// BytesPerPixel returns the texel stride in bytes for uncompressed color formats (0 for compressed, depth, stencil, or undefined formats).
 func (f GPUTextureFormat) BytesPerPixel() uint32 {
 	switch f {
 	case GPUFormatR8Unorm:
 		return 1
 	case GPUFormatRG8Unorm:
 		return 2
-	case GPUFormatRGBA8Unorm, GPUFormatRGBA8UnormSRGB, GPUFormatBGRA8Unorm:
+	case GPUFormatRGBA8Unorm, GPUFormatRGBA8UnormSRGB, GPUFormatBGRA8Unorm, GPUFormatBGRA8UnormSRGB, GPUFormatRG11B10Float, GPUFormatR32Float:
 		return 4
 	case GPUFormatRGBA16Float:
 		return 8
+	case GPUFormatRGBA32Float:
+		return 16
 	default:
 		return 0
 	}
@@ -173,6 +207,16 @@ func (f GPUTextureFormat) String() string {
 		return "ASTC4x4Unorm"
 	case GPUFormatASTC4x4UnormSRGB:
 		return "ASTC4x4UnormSRGB"
+	case GPUFormatBGRA8UnormSRGB:
+		return "BGRA8UnormSRGB"
+	case GPUFormatRG11B10Float:
+		return "RG11B10Float"
+	case GPUFormatR32Float:
+		return "R32Float"
+	case GPUFormatRGBA32Float:
+		return "RGBA32Float"
+	case GPUFormatStencil8:
+		return "Stencil8"
 	default:
 		return "Unknown"
 	}
@@ -359,8 +403,32 @@ const (
 	GPUColorWriteGreen
 	GPUColorWriteBlue
 	GPUColorWriteAlpha
+	// GPUColorWriteNone disables all color writes. It is a separate bit because a zero mask means GPUColorWriteAll; backends only test the four channel bits.
+	GPUColorWriteNone
 	GPUColorWriteAll = GPUColorWriteRed | GPUColorWriteGreen | GPUColorWriteBlue | GPUColorWriteAlpha
 )
+
+// GPUStencilOperation specifies how a stencil buffer value updates after stencil/depth testing.
+type GPUStencilOperation uint8
+
+const (
+	GPUStencilKeep GPUStencilOperation = iota
+	GPUStencilZero
+	GPUStencilReplace
+	GPUStencilInvert
+	GPUStencilIncrementClamp
+	GPUStencilDecrementClamp
+	GPUStencilIncrementWrap
+	GPUStencilDecrementWrap
+)
+
+// GPUStencilFaceState configures stencil comparison and update operations for one winding face.
+type GPUStencilFaceState struct {
+	Compare     GPUCompareFunc
+	FailOp      GPUStencilOperation
+	DepthFailOp GPUStencilOperation
+	PassOp      GPUStencilOperation
+}
 
 // GPULoadOp specifies what happens to an attachment at the start of a render pass.
 type GPULoadOp uint8
@@ -495,6 +563,8 @@ type GPULimits struct {
 	MaxComputeWorkgroupSizeZ      uint32
 	MaxComputeInvocationsPerGroup uint32
 	MaxComputeWorkgroupsPerDim    uint32
+	// MaxColorAttachments is the number of color targets a pipeline and render pass may use (multiple render targets). 0 means 1.
+	MaxColorAttachments uint32
 }
 
 // DefaultGPULimits returns conservative portable GPU limits.
@@ -513,6 +583,7 @@ func DefaultGPULimits() GPULimits {
 		MaxComputeWorkgroupSizeZ:      64,
 		MaxComputeInvocationsPerGroup: 256,
 		MaxComputeWorkgroupsPerDim:    65535,
+		MaxColorAttachments:           1,
 	}
 }
 
@@ -530,6 +601,10 @@ type GPUFeatures struct {
 	TextureCompressionASTC bool
 	// CompressedFormats optionally enumerates the exact compressed formats supported by the device. When empty, supported formats are derived from TextureCompressionBC, TextureCompressionETC2, and TextureCompressionASTC.
 	CompressedFormats []GPUTextureFormat
+	// ExtendedFormats reports support for GPUFormatBGRA8UnormSRGB, GPUFormatRG11B10Float, GPUFormatR32Float, GPUFormatRGBA32Float and GPUFormatStencil8.
+	ExtendedFormats bool
+	// StencilTest reports support for pipeline stencil testing (GPUDepthStencilState stencil faces and masks).
+	StencilTest bool
 }
 
 // DefaultSoftwareGPUFeatures returns the capabilities supported by the pure-Go headless software GPU device.
@@ -538,12 +613,22 @@ func DefaultSoftwareGPUFeatures() GPUFeatures {
 		StorageBuffers:         true,
 		StorageTextures:        true,
 		Compute:                true,
+		MSAA4x:                 true,
 		Depth32Float:           true,
 		TimestampQueries:       true,
 		TextureCompressionBC:   true,
 		TextureCompressionETC2: true,
 		TextureCompressionASTC: true,
+		ExtendedFormats:        true,
+		StencilTest:            true,
 	}
+}
+
+// DefaultSoftwareGPULimits returns the limits of the pure-Go headless software GPU device, which renders up to four color targets.
+func DefaultSoftwareGPULimits() GPULimits {
+	l := DefaultGPULimits()
+	l.MaxColorAttachments = 4
+	return l
 }
 
 // SupportedCompressedFormats returns the deduplicated list of compressed texture formats supported by f.
@@ -705,13 +790,18 @@ type GPUPrimitiveState struct {
 	CullMode  GPUCullMode
 }
 
-// GPUDepthStencilState configures depth testing and writing.
+// GPUDepthStencilState configures depth and stencil testing, writing, and depth bias.
 type GPUDepthStencilState struct {
 	Format              GPUTextureFormat
 	DepthWrite          bool
 	DepthCompare        GPUCompareFunc
+	StencilFront        GPUStencilFaceState
+	StencilBack         GPUStencilFaceState
+	StencilReadMask     uint32
+	StencilWriteMask    uint32
 	DepthBias           int32
 	DepthBiasSlopeScale float32
+	DepthBiasClamp      float32
 }
 
 // GPUBlendComponent describes one channel (color or alpha) blend equation.

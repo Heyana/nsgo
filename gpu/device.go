@@ -331,6 +331,20 @@ func (d *Device) SupportsCompressedFormat(format TextureFormat) bool {
 	return slices.Contains(d.compressedFormats, format)
 }
 
+// SupportsFormat reports whether d can create textures in format. Compressed formats follow SupportsCompressedFormat, and the extended formats (FormatBGRA8UnormSRGB, FormatRG11B10Float, FormatR32Float, FormatRGBA32Float, FormatStencil8) require Features.ExtendedFormats.
+func (d *Device) SupportsFormat(format TextureFormat) bool {
+	switch {
+	case d == nil || format == FormatUndefined:
+		return false
+	case format.IsCompressed():
+		return d.SupportsCompressedFormat(format)
+	case driver.GPUTextureFormat(format).IsExtended():
+		return d.features.ExtendedFormats
+	default:
+		return format.String() != "Unknown"
+	}
+}
+
 // SupportsTimestampQueries reports whether d supports per-pass GPU timing queries.
 func (d *Device) SupportsTimestampQueries() bool {
 	return d != nil && d.features.TimestampQueries
@@ -550,13 +564,14 @@ func (t *Texture) Close() error {
 	return nil
 }
 
-// RenderTarget pairs an offscreen color Texture with an optional depth Texture.
+// RenderTarget pairs an offscreen color Texture with optional MSAA Resolve and depth/stencil Textures.
 type RenderTarget struct {
-	Color  *Texture
-	Depth  *Texture
-	Width  uint32
-	Height uint32
-	closed bool
+	Color   *Texture
+	Resolve *Texture // non-nil when created with SampleCount > 1
+	Depth   *Texture
+	Width   uint32
+	Height  uint32
+	closed  bool
 }
 
 // Epoch returns the device epoch of the render target's color attachment.
@@ -572,13 +587,16 @@ func (rt *RenderTarget) Valid() bool {
 	if rt == nil || rt.closed || rt.Color == nil || !rt.Color.Valid() {
 		return false
 	}
+	if rt.Resolve != nil && !rt.Resolve.Valid() {
+		return false
+	}
 	if rt.Depth != nil && !rt.Depth.Valid() {
 		return false
 	}
 	return true
 }
 
-// Close releases the render target's color and depth textures.
+// Close releases the render target's color, resolve, and depth/stencil textures.
 func (rt *RenderTarget) Close() error {
 	if rt == nil || rt.closed {
 		return nil
@@ -586,6 +604,9 @@ func (rt *RenderTarget) Close() error {
 	rt.closed = true
 	if rt.Color != nil {
 		_ = rt.Color.Close()
+	}
+	if rt.Resolve != nil {
+		_ = rt.Resolve.Close()
 	}
 	if rt.Depth != nil {
 		_ = rt.Depth.Close()
@@ -990,6 +1011,23 @@ func (d *Device) CreateTexture(cx *core.Scope, desc TextureDesc) (*Texture, erro
 	if desc.SampleCount <= 0 {
 		desc.SampleCount = 1
 	}
+	if desc.SampleCount != 1 && desc.SampleCount != 4 {
+		return nil, Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("unsupported texture SampleCount %d (must be 1 or 4)", desc.SampleCount)}
+	}
+	if desc.SampleCount == 4 {
+		if !d.features.MSAA4x {
+			return nil, Error{Code: ErrUnsupported, Message: "4x MSAA textures are not supported on this device"}
+		}
+		if desc.Dimension != Dim2D || desc.MipLevels != 1 || desc.Layers != 1 {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: "MSAA textures must be single-layer Dim2D with MipLevels == 1"}
+		}
+		if desc.Usage&TextureRenderAttachment == 0 {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: "MSAA textures require TextureRenderAttachment usage"}
+		}
+	}
+	if !d.SupportsFormat(desc.Format) {
+		return nil, Error{Code: ErrUnsupported, Message: fmt.Sprintf("texture format %s is not supported on this device", desc.Format)}
+	}
 	lbl := debugLabel(desc.Label)
 	desc.Label = lbl
 	id := d.nextID()
@@ -1043,17 +1081,27 @@ func (d *Device) CreateTextureFromImage(cx *core.Scope, src core.ImageSource, de
 	return tex, nil
 }
 
-// CreateRenderTarget allocates an offscreen render target (color-only,
-// color+depth, or depth-only shadow map) whose attachments can be rendered to
-// and sampled by subsequent passes, scoped to cx.
+// CreateRenderTarget allocates an offscreen render target (color-only, color+depth, depth-only shadow map, or depth/stencil) whose attachments can be rendered to and sampled by subsequent passes, scoped to cx. With SampleCount 4 the color texture is multisampled and a single-sampled Resolve texture is created for sampling; pass Resolve as the color attachment's ResolveTarget (or call Encoder.ResolveTexture) to fill it.
 func (d *Device) CreateRenderTarget(cx *core.Scope, desc RenderTargetDesc) (*RenderTarget, error) {
 	if desc.ColorFormat == FormatUndefined && desc.DepthFormat == FormatUndefined {
 		desc.ColorFormat = FormatRGBA8Unorm
 	}
-	var colorTex *Texture
+	samples := max(desc.SampleCount, 1)
+	var colorTex, resolveTex *Texture
+	closeAll := func() {
+		for _, t := range []*Texture{colorTex, resolveTex} {
+			if t != nil {
+				_ = t.Close()
+			}
+		}
+	}
 	if desc.ColorFormat != FormatUndefined {
-		if desc.ColorFormat.IsDepth() {
-			return nil, Error{Code: ErrInvalidDescriptor, Message: "RenderTargetDesc.ColorFormat must not be a depth format"}
+		if desc.ColorFormat.IsDepthStencil() {
+			return nil, Error{Code: ErrInvalidDescriptor, Message: "RenderTargetDesc.ColorFormat must not be a depth or stencil format"}
+		}
+		colorUsage := TextureRenderAttachment | TextureSampled | TextureCopySrc
+		if samples > 1 {
+			colorUsage = TextureRenderAttachment
 		}
 		var err error
 		colorTex, err = d.CreateTexture(cx, TextureDesc{
@@ -1061,22 +1109,39 @@ func (d *Device) CreateRenderTarget(cx *core.Scope, desc RenderTargetDesc) (*Ren
 			Dimension:   Dim2D,
 			Width:       desc.Width,
 			Height:      desc.Height,
-			SampleCount: desc.SampleCount,
+			SampleCount: samples,
 			Format:      desc.ColorFormat,
-			Usage:       TextureRenderAttachment | TextureSampled | TextureCopySrc,
+			Usage:       colorUsage,
 			Retained:    desc.Retained,
 		})
 		if err != nil {
 			return nil, err
 		}
+		if samples > 1 {
+			resolveTex, err = d.CreateTexture(cx, TextureDesc{
+				Label:     debugLabelJoin(desc.Label, ".resolve"),
+				Dimension: Dim2D,
+				Width:     desc.Width,
+				Height:    desc.Height,
+				Format:    desc.ColorFormat,
+				Usage:     TextureRenderAttachment | TextureSampled | TextureCopySrc,
+				Retained:  desc.Retained,
+			})
+			if err != nil {
+				closeAll()
+				return nil, err
+			}
+		}
 	}
 	var depthTex *Texture
 	if desc.DepthFormat != FormatUndefined {
-		if !desc.DepthFormat.IsDepth() {
-			if colorTex != nil {
-				_ = colorTex.Close()
-			}
-			return nil, Error{Code: ErrInvalidDescriptor, Message: "RenderTargetDesc.DepthFormat must be a depth format"}
+		if !desc.DepthFormat.IsDepthStencil() {
+			closeAll()
+			return nil, Error{Code: ErrInvalidDescriptor, Message: "RenderTargetDesc.DepthFormat must be a depth or stencil format"}
+		}
+		depthUsage := TextureRenderAttachment | TextureSampled | TextureCopySrc
+		if samples > 1 {
+			depthUsage = TextureRenderAttachment
 		}
 		var err error
 		depthTex, err = d.CreateTexture(cx, TextureDesc{
@@ -1084,19 +1149,17 @@ func (d *Device) CreateRenderTarget(cx *core.Scope, desc RenderTargetDesc) (*Ren
 			Dimension:   Dim2D,
 			Width:       desc.Width,
 			Height:      desc.Height,
-			SampleCount: desc.SampleCount,
+			SampleCount: samples,
 			Format:      desc.DepthFormat,
-			Usage:       TextureRenderAttachment | TextureSampled | TextureCopySrc,
+			Usage:       depthUsage,
 			Retained:    desc.Retained,
 		})
 		if err != nil {
-			if colorTex != nil {
-				_ = colorTex.Close()
-			}
+			closeAll()
 			return nil, err
 		}
 	}
-	return &RenderTarget{Color: colorTex, Depth: depthTex, Width: desc.Width, Height: desc.Height}, nil
+	return &RenderTarget{Color: colorTex, Resolve: resolveTex, Depth: depthTex, Width: desc.Width, Height: desc.Height}, nil
 }
 
 // CreateSampler allocates a retained GPU sampler scoped to cx.
@@ -1392,11 +1455,25 @@ func (d *Device) preparePipelineDesc(desc PipelineDesc) (driver.GPUPipelineDesc,
 		layoutIDs[i] = l.id
 	}
 
+	samples := max(desc.SampleCount, 1)
+	if samples != 1 && samples != 4 {
+		return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("unsupported pipeline SampleCount %d (must be 1 or 4)", samples)}
+	}
+	if samples == 4 && !d.features.MSAA4x {
+		return driver.GPUPipelineDesc{}, "", Error{Code: ErrUnsupported, Message: "4x MSAA pipelines are not supported on this device"}
+	}
+	if uint32(len(desc.Targets)) > max(d.limits.MaxColorAttachments, 1) {
+		return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: fmt.Sprintf("pipeline has %d color targets, exceeding limit %d", len(desc.Targets), max(d.limits.MaxColorAttachments, 1))}
+	}
+
 	dTargets := make([]driver.GPUColorTargetState, len(desc.Targets))
 	for i, t := range desc.Targets {
 		fmtVal := t.Format
 		if fmtVal == FormatUndefined {
 			fmtVal = d.surfaceFormat
+		}
+		if !d.SupportsFormat(fmtVal) {
+			return driver.GPUPipelineDesc{}, "", Error{Code: ErrUnsupported, Message: fmt.Sprintf("color target format %s is not supported on this device", fmtVal)}
 		}
 		var blend *driver.GPUBlendState
 		if t.Blend != nil {
@@ -1426,19 +1503,40 @@ func (d *Device) preparePipelineDesc(desc PipelineDesc) (driver.GPUPipelineDesc,
 
 	var dDS *driver.GPUDepthStencilState
 	if desc.DepthStencil != nil {
-		if desc.DepthStencil.Format != FormatUndefined && !desc.DepthStencil.Format.IsDepth() {
-			return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "DepthStencil.Format must be a depth format"}
+		if desc.DepthStencil.Format != FormatUndefined && !desc.DepthStencil.Format.IsDepthStencil() {
+			return driver.GPUPipelineDesc{}, "", Error{Code: ErrInvalidDescriptor, Message: "DepthStencil.Format must be a depth or stencil format"}
+		}
+		if f := desc.DepthStencil.Format; f != FormatUndefined && !d.SupportsFormat(f) {
+			return driver.GPUPipelineDesc{}, "", Error{Code: ErrUnsupported, Message: fmt.Sprintf("depth/stencil format %s is not supported on this device", f)}
+		}
+		if desc.DepthStencil.usesStencilTest() && !d.features.StencilTest {
+			return driver.GPUPipelineDesc{}, "", Error{Code: ErrUnsupported, Message: "pipeline stencil testing is not supported on this device"}
 		}
 		cmp := desc.DepthStencil.DepthCompare
 		if cmp == CompareUndefined {
 			cmp = CompareLess
 		}
 		dDS = &driver.GPUDepthStencilState{
-			Format:              driver.GPUTextureFormat(desc.DepthStencil.Format),
-			DepthWrite:          desc.DepthStencil.DepthWrite,
-			DepthCompare:        driver.GPUCompareFunc(cmp),
+			Format:       driver.GPUTextureFormat(desc.DepthStencil.Format),
+			DepthWrite:   desc.DepthStencil.DepthWrite,
+			DepthCompare: driver.GPUCompareFunc(cmp),
+			StencilFront: driver.GPUStencilFaceState{
+				Compare:     driver.GPUCompareFunc(desc.DepthStencil.StencilFront.Compare),
+				FailOp:      driver.GPUStencilOperation(desc.DepthStencil.StencilFront.FailOp),
+				DepthFailOp: driver.GPUStencilOperation(desc.DepthStencil.StencilFront.DepthFailOp),
+				PassOp:      driver.GPUStencilOperation(desc.DepthStencil.StencilFront.PassOp),
+			},
+			StencilBack: driver.GPUStencilFaceState{
+				Compare:     driver.GPUCompareFunc(desc.DepthStencil.StencilBack.Compare),
+				FailOp:      driver.GPUStencilOperation(desc.DepthStencil.StencilBack.FailOp),
+				DepthFailOp: driver.GPUStencilOperation(desc.DepthStencil.StencilBack.DepthFailOp),
+				PassOp:      driver.GPUStencilOperation(desc.DepthStencil.StencilBack.PassOp),
+			},
+			StencilReadMask:     desc.DepthStencil.StencilReadMask,
+			StencilWriteMask:    desc.DepthStencil.StencilWriteMask,
 			DepthBias:           desc.DepthStencil.DepthBias,
 			DepthBiasSlopeScale: desc.DepthStencil.DepthBiasSlopeScale,
+			DepthBiasClamp:      desc.DepthStencil.DepthBiasClamp,
 		}
 	}
 
@@ -2046,6 +2144,10 @@ func (e *Encoder) BeginRenderPass(desc RenderPassDesc) *RenderPass {
 			StoreOp: driver.GPUStoreStore,
 		}}
 	} else if len(desc.ColorAttachments) > 0 {
+		if e != nil && e.dev != nil && uint32(len(desc.ColorAttachments)) > max(e.dev.limits.MaxColorAttachments, 1) {
+			// More color attachments than the device can render to: drop the pass instead of handing the backend an attachment list it cannot bind.
+			invalid = true
+		}
 		cas = make([]driver.GPUColorAttachment, len(desc.ColorAttachments))
 		for i, ca := range desc.ColorAttachments {
 			var tid, rid driver.GPUID
@@ -2312,6 +2414,29 @@ func (e *Encoder) CopyTextureToTexture(src, dst TextureCopy, width, height, laye
 	})
 }
 
+// ResolveTexture records a resolve of the multisampled src texture into the single-sampled dst texture (mip level 0, layer 0). It is recorded as a render pass that loads src and resolves it into dst at the end, so it runs in order with the encoder's other passes on every backend that supports MSAA resolve targets. Mismatched sizes or formats, or a src that is not multisampled, record nothing.
+func (e *Encoder) ResolveTexture(src, dst TextureCopy) {
+	if e == nil || e.finished || e.dev == nil || !e.dev.alive() {
+		return
+	}
+	s, t := src.Texture, dst.Texture
+	if !s.Valid() || !t.Valid() || s.dev != e.dev || t.dev != e.dev || s.epoch != e.epoch || t.epoch != e.epoch {
+		return
+	}
+	if s.desc.SampleCount <= 1 || t.desc.SampleCount > 1 || s.desc.Format != t.desc.Format || s.desc.Width != t.desc.Width || s.desc.Height != t.desc.Height || dst.MipLevel != 0 || dst.ArrayLayer != 0 {
+		return
+	}
+	e.passes = append(e.passes, driver.GPUPass{
+		Label: debugLabel("ResolveTexture"),
+		ColorAttachments: []driver.GPUColorAttachment{{
+			Texture:       s.id,
+			ResolveTarget: t.id,
+			LoadOp:        driver.GPULoadLoad,
+			StoreOp:       driver.GPUStoreStore,
+		}},
+	})
+}
+
 // Finish seals the encoder into an immutable CommandBuffer.
 func (e *Encoder) Finish() *CommandBuffer {
 	e.finished = true
@@ -2352,11 +2477,27 @@ func (p *RenderPass) ClearDepth(depth float32) {
 	}
 	if p.pass.DepthStencil == nil {
 		p.pass.DepthStencil = &driver.GPUDepthStencilAttachment{
-			DepthStoreOp: driver.GPUStoreStore,
+			DepthStoreOp:   driver.GPUStoreStore,
+			StencilStoreOp: driver.GPUStoreStore,
 		}
 	}
 	p.pass.DepthStencil.DepthLoadOp = driver.GPULoadClear
 	p.pass.DepthStencil.ClearDepth = depth
+}
+
+// ClearStencil configures the stencil attachment to clear to stencil at pass start.
+func (p *RenderPass) ClearStencil(stencil uint32) {
+	if p.ended {
+		return
+	}
+	if p.pass.DepthStencil == nil {
+		p.pass.DepthStencil = &driver.GPUDepthStencilAttachment{
+			DepthStoreOp:   driver.GPUStoreStore,
+			StencilStoreOp: driver.GPUStoreStore,
+		}
+	}
+	p.pass.DepthStencil.StencilLoadOp = driver.GPULoadClear
+	p.pass.DepthStencil.ClearStencil = stencil
 }
 
 // SetViewport sets the rasterizer viewport rectangle and depth range.
@@ -2842,6 +2983,11 @@ func (f *Frame) CopyBufferToTexture(src BufferCopy, dst TextureCopy, width, heig
 // CopyTextureToTexture records a texture-to-texture copy into this frame.
 func (f *Frame) CopyTextureToTexture(src, dst TextureCopy, width, height, layers uint32) {
 	f.enc.CopyTextureToTexture(src, dst, width, height, layers)
+}
+
+// ResolveTexture explicitly resolves a multisampled texture into a single-sampled texture.
+func (f *Frame) ResolveTexture(src, dst TextureCopy) {
+	f.enc.ResolveTexture(src, dst)
 }
 
 // Submit submits this frame's recorded commands off-commit and ends the frame.

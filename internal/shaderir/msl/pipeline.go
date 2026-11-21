@@ -329,6 +329,22 @@ func (w *pipeWriter) emitFragment(entry string) []string {
 	for i, b := range w.p.Bindings {
 		params = append(params, w.bindingParam(i, b))
 	}
+	if len(w.p.FragmentOutputs) > 0 {
+		lines = append(lines, "struct FragOut {")
+		for i, ot := range w.p.FragmentOutputs {
+			loc := uint32(i)
+			if i < len(w.p.FragmentOutputMeta) {
+				loc = w.p.FragmentOutputMeta[i].Location
+			}
+			lines = append(lines, fmt.Sprintf("\t%s [[color(%d)]];", w.declVar(ot, fmt.Sprintf("c%d", i)), loc))
+		}
+		lines = append(lines, "};", "")
+		lines = append(lines, fmt.Sprintf("fragment FragOut %s(%s) {", entry, strings.Join(params, ", ")))
+		lines = append(lines, "\tFragOut __fout = {};")
+		lines = append(lines, w.emitBlock(w.p.FragmentFunc.Block, w.p.FragmentFunc.Block, 1, "fragment")...)
+		lines = append(lines, "\treturn __fout;", "}", "")
+		return lines
+	}
 	lines = append(lines, fmt.Sprintf("fragment float4 %s(%s) {", entry, strings.Join(params, ", ")))
 	lines = append(lines, w.emitBlock(w.p.FragmentFunc.Block, w.p.FragmentFunc.Block, 1, "fragment")...)
 	lines = append(lines, "}", "")
@@ -368,11 +384,14 @@ func (w *pipeWriter) localName(stage string, idx int) string {
 		}
 	case "fragment":
 		nv := len(w.p.Varyings)
+		no := len(w.p.FragmentOutputs)
 		switch {
 		case idx == 0:
 			return "__in.position"
 		case idx < nv+1:
 			return fmt.Sprintf("__in.v%d", idx-1)
+		case idx < nv+1+no:
+			return fmt.Sprintf("__fout.c%d", idx-nv-1)
 		}
 	}
 	return fmt.Sprintf("l%d", idx)
@@ -431,6 +450,8 @@ func (w *pipeWriter) emitBlock(top, b *shaderir.Block, level int, stage string) 
 		case shaderir.Return:
 			if stage == "vertex" {
 				lines = append(lines, indent+"return __out;")
+			} else if stage == "fragment" && len(w.p.FragmentOutputs) > 0 {
+				lines = append(lines, indent+"return __fout;")
 			} else if len(s.Exprs) == 0 {
 				lines = append(lines, indent+"return;")
 			} else {
