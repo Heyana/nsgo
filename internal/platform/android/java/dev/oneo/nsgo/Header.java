@@ -7,69 +7,109 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.Drawable;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 import android.widget.Toolbar;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.util.function.IntFunction;
 
 /**
- * A screen's system header, as NSH's StackBox.ScreenBox: a Toolbar over
- * the top of the screen's view, as tall as the area the core keeps above
- * the content, its bar at the bottom of it. The core keeps the stack; the
- * toolbar's arrow reports back for the screen.
+ * A screen's system header, as NSH's StackBox.ScreenBox: a Material 3 top app
+ * bar over the top of the screen's view. A regular bar pins a 64 dp Toolbar
+ * below the status bar; a large-title bar adds an 88 dp band below the pinned
+ * Toolbar holding a 28 sp headline that collapses into the 22 sp toolbar title
+ * as the screen's top scroll view scrolls under it. The core keeps the stack;
+ * the toolbar's arrow reports back for the screen.
  */
 final class Header {
     /** Material 3's top app bar height, in points. */
-    static final float BAR = 64;
+    static final float BAR = HeaderLayout.BAR;
     /** Material 3's large top app bar height before it collapses, in points. */
-    static final float LARGE_BAR = 152;
-    /** Material 3's title sizes in the bar and in a large bar, in sp. */
-    private static final float TITLE = 22, LARGE_TITLE = 28;
+    static final float LARGE_BAR = HeaderLayout.LARGE_BAR;
 
-    final Toolbar toolbar;
+    /** Root header container added to the screen, carrying the bar's background and visibility. */
+    final FrameLayout view;
+    private final Toolbar toolbar;
+    private final FrameLayout largeBand;
+    private final TextView largeTitle;
     private final BackArrow arrow;
     private final float density;
     /** The bar's height last reported to the engine, in points. */
     float reported;
-    /** Whether the screen asked for a large title, and how far it collapsed, in points. */
-    private boolean large;
+    /** Whether the screen asked for a large title, whether a custom title view replaces the title, and how far it collapsed, in points. */
+    private boolean large, hasTitleView;
     private float collapsed;
+    /** The toolbar's measured bar height (at least BAR), in points. */
+    private float measuredBar = BAR;
     /** The header area's height the core set, status bar included, in pixels. */
     private int full;
-
-    Header(Context context, float density, Runnable back) {
-        this.density = density;
-        toolbar = new Toolbar(context);
-        // Over the screen's content, which the core inserts after it, and
-        // without the shadow its elevation would cast.
-        toolbar.setOutlineProvider(null);
-        toolbar.setTranslationZ(1);
-        arrow = new BackArrow(density);
-        toolbar.setNavigationOnClickListener(v -> back.run());
-    }
 
     /** The colors the core set, 0 for the theme's, and whether the bar is transparent. */
     private int background, titleColor, tint;
     private boolean transparent;
     /** Whether the theme's colors are the dark theme's. */
     private boolean dark;
+    /** Resolved ARGB title color before collapse alpha, and the last color applied to the toolbar title. */
+    private int resolvedTitleColor, lastToolbarTitleColor;
+    private boolean titleColorApplied;
+    /** Last accessibility mode applied: -1 unset, 0 regular, 1 large title shown, 2 collapsed toolbar title shown. */
+    private int a11yState = -1;
+
+    Header(Context context, float density, Runnable back) {
+        this.density = density;
+        view = new FrameLayout(context);
+        // Over the screen's content, which the core inserts after it, and
+        // without the shadow its elevation would cast.
+        view.setOutlineProvider(null);
+        view.setTranslationZ(1);
+        view.setClipChildren(true);
+
+        toolbar = new Toolbar(context);
+        toolbar.setBackgroundColor(0);
+        arrow = new BackArrow(density);
+        toolbar.setNavigationOnClickListener(v -> back.run());
+        view.addView(toolbar, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.round(BAR * density), Gravity.TOP));
+
+        largeBand = new FrameLayout(context);
+        largeBand.setClipChildren(true);
+        largeBand.setVisibility(View.GONE);
+
+        largeTitle = new TextView(context);
+        largeTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, HeaderLayout.LARGE_TITLE);
+        largeTitle.setSingleLine(true);
+        largeTitle.setEllipsize(TextUtils.TruncateAt.END);
+        largeTitle.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_START);
+        int padH = Math.round(HeaderLayout.LARGE_PADDING_HORIZONTAL * density);
+        int padB = Math.round(HeaderLayout.LARGE_PADDING_BOTTOM * density);
+        largeTitle.setPaddingRelative(padH, 0, padH, padB);
+        largeBand.addView(largeTitle, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.START));
+        view.addView(largeBand, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, Gravity.TOP));
+    }
 
     /** Colors the bar: the core's colors, else the light or dark theme's, as the app shows. */
     void colors(boolean dark) {
         this.dark = dark;
-        Context context = new ContextThemeWrapper(toolbar.getContext(), dark
+        Context context = new ContextThemeWrapper(view.getContext(), dark
                 ? android.R.style.Theme_DeviceDefault_NoActionBar : android.R.style.Theme_DeviceDefault_Light_NoActionBar);
         int text = themeColor(context, android.R.attr.textColorPrimary, dark ? 0xffffffff : 0xff1f2328);
-        toolbar.setTitleTextColor(titleColor != 0 ? Text.argb(titleColor) : text);
+        resolvedTitleColor = titleColor != 0 ? Text.argb(titleColor) : text;
+        largeTitle.setTextColor(resolvedTitleColor);
         int fill = background != 0 ? Text.argb(background) : themeColor(context, android.R.attr.colorBackground, dark ? 0xff000000 : 0xffffffff);
-        toolbar.setBackgroundColor(transparent ? 0 : fill);
+        view.setBackgroundColor(transparent ? 0 : fill);
         arrow.setColor(tint != 0 ? Text.argb(tint) : text);
+        titleColorApplied = false;
+        applyTitleState();
     }
 
     /**
@@ -91,13 +131,16 @@ final class Header {
         this.titleColor = titleColor;
         this.tint = tint;
         this.transparent = transparent;
-        colors(dark);
-        toolbar.setVisibility(hidden ? View.GONE : View.VISIBLE);
-        toolbar.setTitle(titleView != 0 ? null : title);
+        this.hasTitleView = titleView != 0;
         if (!large) collapsed = 0;
         full = Math.round(height * density);
-        toolbar.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, full, Gravity.TOP));
-        collapse();
+
+        view.setVisibility(hidden ? View.GONE : View.VISIBLE);
+        String shownTitle = hasTitleView ? null : title;
+        toolbar.setTitle(shownTitle);
+        largeTitle.setText(shownTitle == null ? "" : shownTitle);
+        styleToolbarTitle();
+
         boolean back = canGoBack && !backHidden;
         toolbar.setNavigationIcon(back ? arrow : null);
         toolbar.setNavigationContentDescription(back ? upDescription(backTitle) : null);
@@ -108,41 +151,113 @@ final class Header {
         add(wrap, left, Gravity.START);
         add(wrap, titleView, Gravity.START);
         add(wrap, right, Gravity.END);
+
+        a11yState = -1;
+        colors(dark);
+        collapse();
     }
 
     /** Collapses a large title as the scroll view at the top of the screen moves its content scrolled points under the header, as Material's large top app bar does: the bar shrinks with the content, so the core keeps the expanded height and the content's inset. */
     void follow(float scrolled) {
         if (!large) return;
-        float c = Math.max(0, Math.min(scrolled, LARGE_BAR - BAR));
+        float c = HeaderLayout.collapse(true, scrolled);
         if (c == collapsed) return;
         collapsed = c;
         collapse();
     }
 
-    /** Sizes the toolbar to the header area less what the large title collapsed, its bar at the bottom. */
+    /** Sizes the header container, pins the toolbar below the status bar, and shrinks the large-title band below it. */
     private void collapse() {
-        int h = Math.max(full - Math.round(collapsed * density), 0);
-        ViewGroup.LayoutParams p = toolbar.getLayoutParams();
-        if (p != null && p.height != h) {
+        int h = HeaderLayout.containerHeightPx(full, collapsed, density);
+        ViewGroup.LayoutParams p = view.getLayoutParams();
+        if (p == null) {
+            view.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, h, Gravity.TOP));
+        } else if (p.height != h) {
             p.height = h;
-            toolbar.setLayoutParams(p);
+            view.setLayoutParams(p);
         }
-        toolbar.setPadding(0, Math.max(0, h - Math.round(BAR * density)), 0, 0);
-        float size = large ? LARGE_TITLE - (LARGE_TITLE - TITLE) * collapsed / (LARGE_BAR - BAR) : TITLE;
-        for (int i = 0; i < toolbar.getChildCount(); i++) {
-            View child = toolbar.getChildAt(i);
-            if (child instanceof android.widget.TextView) {
-                ((android.widget.TextView) child).setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
+
+        int barPx = Math.round(measuredBar * density);
+        float expanded = HeaderLayout.expandedBar(large, measuredBar);
+        int barTop = HeaderLayout.barTopPx(full, expanded, density);
+        FrameLayout.LayoutParams tp = (FrameLayout.LayoutParams) toolbar.getLayoutParams();
+        if (tp.height != barPx || tp.topMargin != barTop) {
+            tp.height = barPx;
+            tp.topMargin = barTop;
+            toolbar.setLayoutParams(tp);
+        }
+
+        boolean showLarge = large && !hasTitleView;
+        int bandHeight = showLarge ? HeaderLayout.largeBandHeightPx(h, barTop, barPx) : 0;
+        if (bandHeight > 0) {
+            int bandTop = barTop + barPx;
+            FrameLayout.LayoutParams bp = (FrameLayout.LayoutParams) largeBand.getLayoutParams();
+            if (bp.height != bandHeight || bp.topMargin != bandTop) {
+                bp.height = bandHeight;
+                bp.topMargin = bandTop;
+                largeBand.setLayoutParams(bp);
+            }
+            if (largeBand.getVisibility() != View.VISIBLE) largeBand.setVisibility(View.VISIBLE);
+        } else if (largeBand.getVisibility() != View.GONE) {
+            largeBand.setVisibility(View.GONE);
+        }
+
+        applyTitleState();
+    }
+
+    /** Updates the large and collapsed title opacities and accessibility visibility for the current collapse fraction. */
+    private void applyTitleState() {
+        boolean showLarge = large && !hasTitleView;
+        float fraction = HeaderLayout.fraction(showLarge, collapsed);
+        largeTitle.setAlpha(showLarge ? HeaderLayout.largeTitleAlpha(fraction) : 0f);
+        int argb = HeaderLayout.withAlpha(resolvedTitleColor, HeaderLayout.toolbarTitleAlpha(showLarge, fraction));
+        if (!titleColorApplied || argb != lastToolbarTitleColor) {
+            titleColorApplied = true;
+            lastToolbarTitleColor = argb;
+            toolbar.setTitleTextColor(argb);
+        }
+        int nextA11y = !showLarge ? 0 : (fraction < HeaderLayout.CROSSFADE ? 1 : 2);
+        if (nextA11y != a11yState) {
+            a11yState = nextA11y;
+            TextView titleView = toolbarTitleView();
+            if (nextA11y == 0) {
+                largeTitle.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                if (titleView != null) titleView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+            } else if (nextA11y == 1) {
+                largeTitle.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+                if (titleView != null) titleView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            } else {
+                largeTitle.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                if (titleView != null) titleView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
             }
         }
     }
 
+    /** Sizes the toolbar's own title TextView to Material 3's 22 sp Title Large once on configure. */
+    private void styleToolbarTitle() {
+        TextView titleView = toolbarTitleView();
+        if (titleView != null) titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, HeaderLayout.TITLE);
+    }
+
+    /** Returns the Toolbar's own title TextView if created (Holders are FrameLayouts, never TextViews). */
+    private TextView toolbarTitleView() {
+        for (int i = 0; i < toolbar.getChildCount(); i++) {
+            View child = toolbar.getChildAt(i);
+            if (child instanceof TextView) return (TextView) child;
+        }
+        return null;
+    }
+
     /** The bar's height as the toolbar lays its title and header views out across width pixels, in points: at least BAR, and LARGE_BAR with a large title, which the core keeps as the bar collapses. */
     float measure(int width) {
-        int top = toolbar.getPaddingTop();
         toolbar.measure(View.MeasureSpec.makeMeasureSpec(Math.max(width, 1), View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-        return Math.max(large ? LARGE_BAR : BAR, Math.round((toolbar.getMeasuredHeight() - top) / density));
+        float bar = Math.max(BAR, Math.round(toolbar.getMeasuredHeight() / density));
+        if (bar != measuredBar) {
+            measuredBar = bar;
+            collapse();
+        }
+        return HeaderLayout.expandedBar(large, bar);
     }
 
     private void add(IntFunction<View> wrap, int id, int gravity) {

@@ -91,7 +91,7 @@
 - Customize the size, typography, corners and caret of `ui.OtpInput` cells (#1075 by @houko).
 - Let underline tabs set their indicator color and fit it to the selected tab's content (#1037 by @houko).
 - Let underline tabs set their indicator color and fit it to the selected tab's content, with `indicatorColor` and `indicatorFit` in TSX (#1037 by @houko).
-- Use Material navigation app bars on Android `ui.NavPage` screens, including a collapsing large-title bar (#485 by @houko).
+- Use Material 3 navigation app bars on Android `ui.NavPage` screens, with a collapsing 152 dp large-title bar whose navigation row stays pinned below the status bar while the 28 sp headline collapses into the 22 sp toolbar title (#485 by @houko, #1609).
 - Add a Windows system caption button style for hidden title bars, preserving Snap Layout hit testing (#679 by @houko).
 - Receive Android shares of text and files with `android.share_types`, `mobile.OnShared` and `nsgotest.App.ReceiveShare` (#655 by @houko).
 - Add `android.loopback_cleartext` to allow plain HTTP to loopback in Android APKs and App Bundles (#1061 by @houko).

@@ -1002,7 +1002,7 @@ type Screen struct {
 	// HeaderTransparent lays the content out under a header without a
 	// background.
 	HeaderTransparent bool
-	// HeaderLargeTitle shows iOS's large title.
+	// HeaderLargeTitle shows a collapsing large title on iOS and Android.
 	HeaderLargeTitle bool
 	// HeaderBackHidden hides the back button.
 	HeaderBackHidden bool

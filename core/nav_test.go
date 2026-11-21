@@ -458,3 +458,50 @@ func TestScreenHeaderSymbols(t *testing.T) {
 		t.Errorf("without symbols: %q, right %v", c.RightSymbols, c.Right)
 	}
 }
+
+func TestAndroidLargeTitleHeader(t *testing.T) {
+	env := Environment{OS: OSAndroid, SafeArea: Edges{Top: 24, Bottom: 16}, HeaderHeight: 64, LargeHeaderHeight: 152}
+	h := newPhone(t, env, func(cx *Scope) Node {
+		return Stack{Style: Style{FlexGrow: 1}, Children: []Node{
+			Screen{Title: "Settings", TestID: "android-large", HeaderLargeTitle: true, Children: []Node{
+				Scroll{TestID: "top-scroll", Style: Style{FlexGrow: 1}, Children: []Node{
+					Scroll{TestID: "h-scroll", Horizontal: true, Style: Style{Height: Pt(40)}, Children: []Node{View{Style: Style{Width: Pt(500)}}}},
+					View{Style: Style{Height: Pt(900)}},
+				}},
+				Scroll{TestID: "lower-scroll", Style: Style{Height: Pt(100)}, Children: []Node{View{Style: Style{Height: Pt(300)}}}},
+			}},
+		}}
+	})
+	b := h.commit()
+	screen := h.find("android-large")
+	got := screenItems(b)[screen.id]
+	if !got.LargeTitle || got.HeaderHeight != 176 {
+		t.Fatalf("android large header = %+v, want LargeTitle with HeaderHeight 176 (152 + 24)", got)
+	}
+	if y := h.find("top-scroll").frame.Origin.Y; y != 0 {
+		t.Errorf("top-scroll Origin.Y = %v, want 0 under large header", y)
+	}
+	scrollConfigs := map[NodeID]*driver.ScrollConfig{}
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemScrollConfig {
+			scrollConfigs[it.ID] = it.Scroll
+		}
+	}
+	topCfg := scrollConfigs[h.find("top-scroll").id]
+	if topCfg == nil || topCfg.HeaderInset != 176 || topCfg.Behavior.ContentInset.Top != 176 {
+		t.Errorf("top-scroll config = %+v, want HeaderInset and ContentInset.Top 176", topCfg)
+	}
+	if hCfg := scrollConfigs[h.find("h-scroll").id]; hCfg == nil || hCfg.HeaderInset != 0 {
+		t.Errorf("horizontal scroll config = %+v, want HeaderInset 0", hCfg)
+	}
+	if lowCfg := scrollConfigs[h.find("lower-scroll").id]; lowCfg == nil || lowCfg.HeaderInset != 0 {
+		t.Errorf("lower scroll config = %+v, want HeaderInset 0", lowCfg)
+	}
+	// Platform measuring the expanded 152 dp bar keeps the header and inset unchanged;
+	// a taller measured bar (164 dp) updates both.
+	h.tree.Dispatch(driver.Event{Kind: driver.EventScreenHeader, ID: screen.id, Value: 164})
+	b2 := h.commit()
+	if got := screenItems(b2)[screen.id]; got.HeaderHeight != 188 {
+		t.Errorf("measured android large header = %v, want 188 (164 + 24)", got.HeaderHeight)
+	}
+}

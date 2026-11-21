@@ -3574,7 +3574,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (n.header == null) {
             n.header = new Header(getContext(), density, () -> event(Protocol.EVENT_BACK, n.id, 0, 0, 0, ""));
             n.header.colors(dark());
-            n.children.addView(n.header.toolbar);
+            n.children.addView(n.header.view);
         }
         n.header.configure(in, id -> {
             Node item = nodes.get(id);
@@ -3590,7 +3590,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         });
         // The bar as the toolbar lays out what it holds, for the core to
         // keep the content below.
-        if (n.header.toolbar.getVisibility() == View.VISIBLE) {
+        if (n.header.view.getVisibility() == View.VISIBLE) {
             float bar = n.header.measure(n.frame != null ? px(n.frame[2]) : getWidth());
             if (bar != n.header.reported) {
                 n.header.reported = bar;
