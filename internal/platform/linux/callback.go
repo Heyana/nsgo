@@ -43,6 +43,8 @@ var (
 
 	cbWebLoadChanged         uintptr
 	cbWebLoadFailed          uintptr
+	cbWebNavigationChanged   uintptr
+	cbWebHistoryChanged      uintptr
 	cbWebResourceStarted     uintptr
 	cbWebPolicy              uintptr
 	cbWebPermission          uintptr
@@ -133,6 +135,8 @@ func init() {
 
 	cbWebLoadChanged = newCallback(webLoadChangedCallback)
 	cbWebLoadFailed = newCallback(webLoadFailedCallback)
+	cbWebNavigationChanged = newCallback(webNavigationChangedCallback)
+	cbWebHistoryChanged = newCallback(webHistoryChangedCallback)
 	cbWebResourceStarted = newCallback(webResourceStartedCallback)
 	cbWebPolicy = newCallback(webPolicyCallback)
 	cbWebPermission = newCallback(webPermissionCallback)

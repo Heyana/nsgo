@@ -68,6 +68,7 @@ var (
 	webkitWebViewGetURI                  func(uintptr) uintptr
 	webkitWebViewGetMainResource         func(uintptr) uintptr
 	webkitWebViewGetTitle                func(uintptr) uintptr
+	webkitWebViewIsLoading               func(uintptr) int32
 	webkitWebViewCanGoBack               func(uintptr) int32
 	webkitWebViewCanGoForward            func(uintptr) int32
 	webkitWebViewGetBackForwardList      func(uintptr) uintptr
@@ -184,6 +185,7 @@ func bindWebKit(webkit, jsc, soup uintptr) {
 	reg(&webkitWebViewGetURI, "webkit_web_view_get_uri")
 	reg(&webkitWebViewGetMainResource, "webkit_web_view_get_main_resource")
 	reg(&webkitWebViewGetTitle, "webkit_web_view_get_title")
+	reg(&webkitWebViewIsLoading, "webkit_web_view_is_loading")
 	reg(&webkitWebViewCanGoBack, "webkit_web_view_can_go_back")
 	reg(&webkitWebViewCanGoForward, "webkit_web_view_can_go_forward")
 	reg(&webkitWebViewGetBackForwardList, "webkit_web_view_get_back_forward_list")
@@ -293,6 +295,9 @@ type web struct {
 	source        driver.WebSource             // what the pending or last load shows: the config's, or Ref.Load's
 	background    [4]float32                   // WebKit's own, for views without an opaque one
 	pointer       driver.Point                 // where the pointer is in the page
+
+	lastNavigation   driver.WebNavigation
+	navigationQueued bool
 }
 
 // webPage is the window and view a WebKitWebView belongs to.
@@ -478,6 +483,9 @@ func (w *window) makeWeb(v *view) {
 	w.host(v, &wv.hosted, wv.widget, true)
 	w.connect(v, wv.widget, "load-changed", cbWebLoadChanged)
 	w.connect(v, wv.widget, "load-failed", cbWebLoadFailed)
+	w.connect(v, wv.widget, "notify::uri", cbWebNavigationChanged)
+	w.connect(v, wv.widget, "notify::title", cbWebNavigationChanged)
+	w.connect(v, webkitWebViewGetBackForwardList(wv.widget), "changed", cbWebHistoryChanged)
 	w.connect(v, wv.widget, "resource-load-started", cbWebResourceStarted)
 	w.connect(v, wv.widget, "decide-policy", cbWebPolicy)
 	w.connect(v, wv.widget, "permission-request", cbWebPermission)
@@ -927,8 +935,8 @@ func (w *window) navigated(v *view, loading bool, kind driver.EventKind) {
 	w.navigatedTo(v, goString(webkitWebViewGetURI(v.web.widget)), loading, kind)
 }
 
-// navigatedTo also reports provisional loads that failed before their URI committed.
-func (w *window) navigatedTo(v *view, uri string, loading bool, kind driver.EventKind) {
+// webNavigation reads the displayed page's state, or a provisional URL the load reports.
+func webNavigation(v *view, uri string, loading bool) driver.WebNavigation {
 	page := v.web.widget
 	nav := driver.WebNavigation{
 		URL:          uri,
@@ -944,10 +952,44 @@ func (w *window) navigatedTo(v *view, uri string, loading bool, kind driver.Even
 			nav.CanGoBack = true
 		}
 	}
-	for _, k := range []driver.EventKind{kind, driver.EventNavigationStateChange} {
-		n := nav
-		w.report(v, driver.Event{Kind: k, ID: v.id, Navigation: &n})
+	return nav
+}
+
+// navigatedTo also reports provisional loads that failed before their URI committed.
+func (w *window) navigatedTo(v *view, uri string, loading bool, kind driver.EventKind) {
+	nav := webNavigation(v, uri, loading)
+	if !loading {
+		v.web.lastNavigation = nav
 	}
+	w.report(v, driver.Event{Kind: kind, ID: v.id, Navigation: &nav})
+	state := nav
+	w.report(v, driver.Event{Kind: driver.EventNavigationStateChange, ID: v.id, Navigation: &state})
+}
+
+func webHistoryChangedCallback(list, _, _, data uintptr) {
+	webNavigationChangedCallback(list, 0, data)
+}
+
+// Read URI, title and history together after WebKit applies its property
+// notifications. Full loads report their state through load-changed.
+func webNavigationChangedCallback(instance, _, data uintptr) {
+	w, v := webOf(data, instance)
+	if v == nil || v.web.navigationQueued || !v.events.Has(driver.EventNavigationStateChange) {
+		return
+	}
+	wv := v.web
+	wv.navigationQueued = true
+	w.post(func() {
+		wv.navigationQueued = false
+		if w.closing || v.deleted || v.web != wv || wv.page == "" || wv.refused || wv.restoring || webkitWebViewIsLoading(wv.widget) != 0 {
+			return
+		}
+		nav := webNavigation(v, goString(webkitWebViewGetURI(wv.widget)), false)
+		if nav != wv.lastNavigation {
+			wv.lastNavigation = nav
+			w.report(v, driver.Event{Kind: driver.EventNavigationStateChange, ID: v.id, Navigation: &nav})
+		}
+	})
 }
 
 func webLoadChangedCallback(page uintptr, event uint32, data uintptr) {
@@ -1007,10 +1049,13 @@ func webLoadChangedCallback(page uintptr, event uint32, data uintptr) {
 		if v.web.ownPage && !v.web.failed {
 			v.web.rememberHistory()
 		}
-		// A failed or refused navigation finishes too; it was reported as an error.
-		if !v.web.failed {
-			w.navigated(v, false, driver.EventLoad)
+		// A failed or refused navigation finishes too; its error was already reported.
+		if v.web.failed {
+			// WebKit can notify URI and history while rolling back a provisional load.
+			v.web.lastNavigation = webNavigation(v, goString(webkitWebViewGetURI(page)), false)
+			return
 		}
+		w.navigated(v, false, driver.EventLoad)
 	}
 }
 

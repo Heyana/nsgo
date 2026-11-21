@@ -947,6 +947,7 @@ func TestWebPageNavigationReportsDestinationAtStart(t *testing.T) {
 			title := fmt.Sprintf("nsgo-native-navigation-%t", restricted)
 			var root *core.Scope
 			var ref core.Ref
+			var steppingWithinPage bool
 			app := func(cx *core.Scope) core.Node {
 				root = cx
 				if restricted {
@@ -969,6 +970,9 @@ func TestWebPageNavigationReportsDestinationAtStart(t *testing.T) {
 					Style:       core.Style{Width: core.Pt(200), Height: core.Pt(120)},
 					OnLoadStart: func(n core.WebNavigation) { add("start " + n.URL) },
 					OnNavigationStateChange: func(n core.WebNavigation) {
+						if steppingWithinPage && !n.Loading && (n.URL == source || n.URL == source+"#step") {
+							return
+						}
 						add(fmt.Sprintf("state %s %t", n.URL, n.Loading))
 					},
 					OnLoad: func(n core.WebNavigation) { add("load " + n.URL) },
@@ -1011,6 +1015,8 @@ func TestWebPageNavigationReportsDestinationAtStart(t *testing.T) {
 			}
 			// The app's history step within its own document starts no load. Its grant must not make the page's next load report its start at WEBKIT_LOAD_STARTED, with the URI of the page still shown, even in an unrestricted view.
 			root.Post(func() {
+				// A same-document update can be combined with the following load's state. This test checks the full-load events and failing URL.
+				steppingWithinPage = true
 				ref.Evaluate(fmt.Sprintf(`addEventListener('popstate', () => { location.href = %q }); history.pushState(null, '', '#step'); 1`, failed), func(_ string, err error) {
 					if err != nil {
 						t.Errorf("pushState: %v", err)
