@@ -188,6 +188,9 @@ func TestMenuYieldFollowsNativeWebFocus(t *testing.T) {
 		}
 		return
 	}
+	if err := openWebKit(); err != nil {
+		t.Skip(err)
+	}
 	const title = "nsgo-menu-web-yield"
 	app := func(cx *core.Scope) core.Node {
 		menu, binding, loaded := core.NewSignal(cx, 0), core.NewSignal(cx, 0), core.NewSignal(cx, false)
@@ -200,12 +203,6 @@ func TestMenuYieldFollowsNativeWebFocus(t *testing.T) {
 			OnLoad: func(core.WebNavigation) { loaded.Set(true) }, Style: core.Style{Width: driver.Pt(240), Height: driver.Pt(120)}}
 	}
 	w := startTestWindow(t, app, Options{ID: "nsgo-test-web-menu-yield", Title: title, Width: 280, Height: 160})
-	// Initialize WebKit on the GTK thread that will use it, as an app does.
-	var setupErr error
-	w.onLoop(t, func() { setupErr = openWebKit() })
-	if setupErr != nil {
-		t.Skip(setupErr)
-	}
 	waitForTitle(t, w, title+"|0|0|true")
 	setFocus := func(focused bool) {
 		t.Helper()
