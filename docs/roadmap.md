@@ -192,6 +192,16 @@ The [games plan (#1047)](https://github.com/nsgo-dev/nsgo/issues/1047) targets m
 | GPU view for 3D | [#1059](https://github.com/nsgo-dev/nsgo/issues/1059), [GPU view](architecture/gpu.md) ([#1104](https://github.com/nsgo-dev/nsgo/issues/1104)), [#1105](https://github.com/nsgo-dev/nsgo/issues/1105)–[#1110](https://github.com/nsgo-dev/nsgo/issues/1110) | A depth-tested mesh draws with textures and lighting in `gpu.View` on macOS, iOS, Windows, Linux, Web (WebGPU with WebGL 2 fallback), Android (GLES 3.0; Vulkan in Stage 2) and headless `nsgotest`/CI with zero UI view-tree commits per frame; so far the portable `gpu` package, `core`/`driver`/`engine` off-commit surface hook, vertex+fragment WGSL/`shaderir` compilation and MSL/HLSL/GLSL/WGSL emitters, and headless `nsgotest` software 3D rasterizer with pixel readback exist, and native backends ([#1105](https://github.com/nsgo-dev/nsgo/issues/1105)–[#1109](https://github.com/nsgo-dev/nsgo/issues/1109)) are pending |
 | Additional targets | [#1117](https://github.com/nsgo-dev/nsgo/issues/1117) | HarmonyOS, mini programs, watchOS and tvOS each have a documented scope for game input, drawing, audio and frame timing |
 
+### Steam verification
+
+| Launch | Result |
+| --- | --- |
+| Linux with Steam Runtime 3 and 4 | Cave Run built against NSGo `54623f63b` opened on the Ubuntu host and failed inside both containers because GTK 4 was unavailable. The Linux x64 depot from #1310 opened and drew its 960×540 window in both runtimes using its bundled GTK 4. Steam Overlay and Steam Input remain to be verified. [GTK 4 issue (#1290)](https://github.com/nsgo-dev/nsgo/issues/1290), [runtime fix (#1310)](https://github.com/nsgo-dev/nsgo/pull/1310) |
+| macOS and Windows | The Steam client overlay and Steam Input remain to be verified on both systems. |
+| Steam Deck | Launching the game natively and through Proton under gamescope, at 1280×800 with Steam Input, touch and the Deck keyboard, remains to be verified on the device. |
+
+[Steam verification (#1228)](https://github.com/nsgo-dev/nsgo/issues/1228), [Runtime 3 depot](https://repo.steampowered.com/steamrt3/images/3.0.20261110.268881/), [Runtime 4 depot](https://repo.steampowered.com/steamrt4/images/4.0.20261021.265997/)
+
 ## Diagrams
 
 What `base/diagram` still lacks ([diagrams](architecture/components.md#diagrams)), limu's `limumygo` the reference.
