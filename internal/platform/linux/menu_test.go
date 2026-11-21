@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -163,17 +164,29 @@ func TestMenuYieldFollowsNativeWebFocus(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens a window")
 	}
-	// WebKit retains its initialization thread; isolate it from tests whose GTK windows use other threads.
+	// Give WebKit its own process and profile, as the other native WebKit
+	// tests do, so the desktop session's web data cannot affect startup.
 	if os.Getenv("NSGO_TEST_MENU_WEB") != t.Name() {
 		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
-		cmd.Env = append(os.Environ(), "NSGO_TEST_MENU_WEB="+t.Name())
-		if out, err := cmd.CombinedOutput(); err != nil {
+		dir := t.TempDir()
+		cmd.Env = append(os.Environ(), "NSGO_TEST_MENU_WEB="+t.Name(),
+			"XDG_DATA_HOME="+filepath.Join(dir, "data"), "XDG_CACHE_HOME="+filepath.Join(dir, "cache"))
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			// WebKit traps its process when bubblewrap cannot launch its
+			// D-Bus proxy. An Xvfb container can deny user namespaces even
+			// when the host is not using the AppArmor restriction.
+			log := string(out)
+			if strings.Contains(log, "bwrap: Creating new namespace failed: Operation not permitted") &&
+				strings.Contains(log, "Failed to fully launch dbus-proxy") {
+				t.Skip("WebKitGTK could not start its sandbox because bubblewrap was denied a user namespace")
+			}
 			t.Fatalf("%v\n%s", err, out)
 		}
+		if strings.Contains(string(out), "--- SKIP: "+t.Name()+" ") {
+			t.Skipf("%s", out)
+		}
 		return
-	}
-	if err := openWebKit(); err != nil {
-		t.Skip(err)
 	}
 	const title = "nsgo-menu-web-yield"
 	app := func(cx *core.Scope) core.Node {
@@ -186,7 +199,13 @@ func TestMenuYieldFollowsNativeWebFocus(t *testing.T) {
 		return core.WebView{Source: core.WebHTML("<!doctype html><input>", ""),
 			OnLoad: func(core.WebNavigation) { loaded.Set(true) }, Style: core.Style{Width: driver.Pt(240), Height: driver.Pt(120)}}
 	}
-	w := startTestWindow(t, app, Options{Title: title, Width: 280, Height: 160})
+	w := startTestWindow(t, app, Options{ID: "nsgo-test-web-menu-yield", Title: title, Width: 280, Height: 160})
+	// Initialize WebKit on the GTK thread that will use it, as an app does.
+	var setupErr error
+	w.onLoop(t, func() { setupErr = openWebKit() })
+	if setupErr != nil {
+		t.Skip(setupErr)
+	}
 	waitForTitle(t, w, title+"|0|0|true")
 	setFocus := func(focused bool) {
 		t.Helper()
