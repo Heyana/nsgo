@@ -8,6 +8,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
 // defaultLongPress is how long a press is held to be a long one when the
@@ -748,6 +749,39 @@ func (a *App) Select(selector string, start, end int) {
 		return
 	}
 	a.moveSelection(v, driver.TextRange{Start: start, End: end})
+	a.done()
+}
+
+// SelectTab chooses the zero-based index in the mounted mobile.TabBar
+// selector names. It uses the native tab bar on iOS and Android targets
+// and delivers the same change event headless.
+func (a *App) SelectTab(selector string, index int) {
+	a.t.Helper()
+	a.step("selectTab(%s, %d)", selector, index)
+	var native testhost.TabBarSurface
+	if a.target != nil {
+		var ok bool
+		native, ok = a.target.surface.(testhost.TabBarSurface)
+		if !ok {
+			a.t.Skip("nsgotest: the platform has no native tab bar")
+		}
+	}
+	v := a.FindMounted(selector)
+	if v.Component != driver.TabBarComponent || v.Kind != driver.KindNative {
+		a.t.Fatalf("nsgotest: %s: %q is not a mobile.TabBar", a.stepName, selector)
+	}
+	if v.disabled(nil) || v.upTo(func(p *View) bool { return p.Style.Hidden }) != nil {
+		a.t.Fatalf("nsgotest: %s: %q is hidden or disabled", a.stepName, selector)
+	}
+	items, _ := v.NativeProps["items"].([]any)
+	if index < 0 || index >= len(items) {
+		a.t.Fatalf("nsgotest: %s: index %d is outside the bar's %d tabs", a.stepName, index, len(items))
+	}
+	if native != nil {
+		a.target.check(native.SelectTab(v.ID, index))
+	} else {
+		a.dispatch(driver.Event{Kind: driver.EventNative, ID: v.ID, Text: "change", Data: float64(index)})
+	}
 	a.done()
 }
 

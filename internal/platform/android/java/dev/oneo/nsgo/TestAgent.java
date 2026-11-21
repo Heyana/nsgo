@@ -228,6 +228,9 @@ final class TestAgent {
                 ui.post(check[0]);
                 return;
             }
+            case "select-tab":
+                view.selectTestTab(op.getInt("id"), op.getInt("index"));
+                break;
             case "screenshot":
                 view.testReply(id, "", screenshot());
                 return;

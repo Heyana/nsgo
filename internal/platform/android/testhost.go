@@ -148,6 +148,10 @@ func (t *testSurface) Commit(text string) error {
 
 func (t *testSurface) Back() error { return t.do(map[string]any{"op": "back"}) }
 
+func (t *testSurface) SelectTab(id driver.NodeID, index int) error {
+	return t.do(map[string]any{"op": "select-tab", "id": id, "index": index})
+}
+
 func (t *testSurface) Answer(id uint32, index int) error {
 	return t.do(map[string]any{"op": "answer", "id": id, "index": index})
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/base"
 	"github.com/nsgo-dev/nsgo/core"
+	"github.com/nsgo-dev/nsgo/mobile"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 	"github.com/nsgo-dev/nsgo/ui"
 )
@@ -39,4 +40,31 @@ func TestPressAfterNavigationPushAndPop(t *testing.T) {
 		app.Back()
 		app.WaitFor("id:open", time.Second)
 	}
+}
+
+func TestSelectTabChangesNativeTabPage(t *testing.T) {
+	switch nsgotest.Target() {
+	case "", "ios", "ios_simulator", "android":
+	default:
+		t.Skip("the target has no native tab bar")
+	}
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		selected := core.NewSignal(cx, 0)
+		return core.View{Children: []core.Node{
+			core.Show{When: func() bool { return selected.Get() == 1 },
+				Then: func(*core.Scope) core.Node { return core.Text{Content: "Second page"} },
+				Else: func(*core.Scope) core.Node { return core.Text{Content: "First page"} }},
+			mobile.TabBar{TestID: "tabs", Items: []mobile.TabBarItem{{Title: "First"}, {Title: "Second"}},
+				Selected: selected.Get, OnChange: selected.Set, Style: core.Style{Height: core.Pt(0)}},
+		}}
+	}, nsgotest.Environment(core.Environment{OS: core.OSIOS, Idiom: core.IdiomPhone}))
+	app.Find("text:First page")
+	app.SelectTab("id:tabs", 1)
+	app.WaitFor("text:Second page", time.Second)
+	if nsgotest.Target() == "" {
+		app.Emit("id:tabs", "change", 0)
+	} else {
+		app.SelectTab("id:tabs", 0)
+	}
+	app.WaitFor("text:First page", time.Second)
 }

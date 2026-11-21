@@ -1713,6 +1713,18 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         write(Protocol.FOLDER_REPLY, bytes.toByteArray());
     }
 
+    /** Selects a tab through the same click listener as a tap. */
+    void selectTestTab(int id, int index) {
+        Node n = nodes.get(id);
+        if (n == null || n.embedded == null || !(n.embedded.view instanceof TabBar bar)) {
+            throw new IllegalArgumentException("view " + id + " has no native tab bar");
+        }
+        View item = bar.getChildAt(index);
+        if (item == null || !item.performClick()) {
+            throw new IllegalArgumentException("view " + id + " has no selectable tab at index " + index);
+        }
+    }
+
     /** Answers the test step id: an error, else the step's data. */
     void testReply(int id, String error, String data) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();

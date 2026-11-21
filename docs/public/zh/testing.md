@@ -51,6 +51,8 @@ func TestMain(m *testing.M) {
 
 点击可以直接指定文本框。在无头测试以及 macOS、Windows 和 Linux 上，可以在点击返回后立即读取 `app.Find("id:field").Focused`，包括点击处理函数聚焦文本框的情况。
 
+`app.SelectTab("id:tabs", 1)` 选择已挂载的 `mobile.TabBar` 的第二项。无界面测试使用 iOS 或 Android 的 `Environment`，iOS 和 Android 目标使用原生标签栏。索引从零开始，必须对应现有选项。
+
 `app.Focus(selector)` 像点击一样聚焦文本框；在桌面或 Web 的 `Environment` 中，或在这些目标上，它用 Tab 走到可按压或 `Focusable` 的视图，之后的 `app.Key("Return")` 会按下它。应用调用的 `Ref.Focus()` 遵循相同的停靠点：文本框在所有平台上都能聚焦，其他视图只在桌面、Web 和 Apple TV 上能聚焦，因此无头测试按钮的焦点需要使用这些环境之一。带有 `OnPress`、`OnPressDown`、`OnPressUp` 或 `OnLongPress` 任意一个的视图都算可按压，与各平台一致；在它上面按 Return 或 Space 会发送它处理的按下、抬起和按压事件，所以只有 `OnLongPress` 的视图能获得焦点，但没有按键能按下它。
 
 无头运行默认使用手机 idiom，与项目的目标平台无关，因此 `cx.Env().Desktop()` 为 false，悬停提示不会出现。传入 `nsgotest.Idiom(core.IdiomDesktop)` 可以测试桌面上的呈现，环境的其余部分保持不变，包括 `Environment` 选项设置的值。键盘焦点取决于环境的操作系统，而不是 idiom。
