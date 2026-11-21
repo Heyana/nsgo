@@ -28,11 +28,13 @@ type cdp struct {
 	pending map[int64]chan cdpMessage
 	// on receives each event, on the reading goroutine.
 	on func(cdpMessage)
-	// browser is the browser's process.
-	browser *exec.Cmd
-	done    <-chan error
-	stop    context.CancelFunc
-	profile string
+	// browser is the browser's process; done closes once Wait finishes and exitErr holds its error.
+	browser   *exec.Cmd
+	done      chan struct{}
+	exitErr   error
+	stop      context.CancelFunc
+	profile   string
+	closeOnce sync.Once
 }
 
 type cdpMessage struct {
@@ -132,11 +134,14 @@ func startBrowser(ctx context.Context) (*cdp, error) {
 		return nil, err
 	}
 	log.Close()
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait(); close(done) }()
+	c := &cdp{pending: map[int64]chan cdpMessage{}, browser: cmd, done: make(chan struct{}), stop: stop, profile: profile}
+	go func() {
+		c.exitErr = cmd.Wait()
+		close(c.done)
+	}()
 	failed := func(err error) (*cdp, error) {
 		stop()
-		<-done
+		<-c.done
 		// Read only after Wait, when the child has stopped writing.
 		if log, readErr := os.Open(logPath); readErr == nil {
 			if info, statErr := log.Stat(); statErr == nil {
@@ -163,11 +168,11 @@ func startBrowser(ctx context.Context) (*cdp, error) {
 		select {
 		case <-startup.Done():
 			return failed(fmt.Errorf("waiting for the browser's DevTools port: %w", startup.Err()))
-		case err := <-done:
+		case <-c.done:
 			if ctx.Err() != nil {
 				return failed(fmt.Errorf("waiting for the browser's DevTools port: %w", ctx.Err()))
 			}
-			return failed(fmt.Errorf("the browser exited before opening its DevTools port: %v", err))
+			return failed(fmt.Errorf("the browser exited before opening its DevTools port: %v", c.exitErr))
 		case <-poll.C:
 		}
 		data, err := os.ReadFile(filepath.Join(profile, "DevToolsActivePort"))
@@ -189,7 +194,7 @@ func startBrowser(ctx context.Context) (*cdp, error) {
 		return failed(err)
 	}
 	ws.MaxPayloadBytes = 256 << 20
-	c := &cdp{ws: ws, pending: map[int64]chan cdpMessage{}, browser: cmd, done: done, stop: stop, profile: profile}
+	c.ws = ws
 	connected.Store(c)
 	go c.read()
 	return c, nil
@@ -243,6 +248,9 @@ func (c *cdp) call(session, method string, params any) (json.RawMessage, error) 
 	c.pending[id] = ch
 	c.mu.Unlock()
 	if err := websocket.JSON.Send(c.ws, cdpMessage{ID: id, SessionID: session, Method: method, Params: raw}); err != nil {
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
 		return nil, err
 	}
 	select {
@@ -255,6 +263,9 @@ func (c *cdp) call(session, method string, params any) (json.RawMessage, error) 
 		}
 		return m.Result, nil
 	case <-time.After(60 * time.Second):
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
 		return nil, fmt.Errorf("%s: no answer", method)
 	}
 }
@@ -271,8 +282,27 @@ func (c *cdp) requestClose() error {
 }
 
 func (c *cdp) close() {
-	c.stop()
-	<-c.done
-	c.ws.Close()
-	os.RemoveAll(c.profile)
+	c.closeOnce.Do(func() {
+		if c.stop != nil {
+			c.stop()
+		} else if c.ws != nil {
+			c.call("", "Browser.close", nil)
+		}
+		if c.done != nil {
+			select {
+			case <-c.done:
+			case <-time.After(3 * time.Second):
+				if c.browser != nil && c.browser.Process != nil {
+					c.browser.Process.Kill()
+				}
+				<-c.done
+			}
+		}
+		if c.ws != nil {
+			c.ws.Close()
+		}
+		if c.profile != "" {
+			os.RemoveAll(c.profile)
+		}
+	})
 }

@@ -104,35 +104,62 @@ type webOp struct {
 	Code   int     `json:"code,omitempty"`
 }
 
-// runWebTest runs one test's process: a page in a fresh context.
-func runWebTest(ctx context.Context, b *cdp, base string, args, env []string, out io.Writer) (int, error) {
+// webAutomationWidth and webAutomationHeight are the CSS viewport size of nsgo dev -target web -automation's browser.
+const (
+	webAutomationWidth  = 1280
+	webAutomationHeight = 800
+)
+
+// webPageOptions configure a page opened over CDP with the nsgoTest binding.
+type webPageOptions struct {
+	url           string
+	width, height int
+	out           io.Writer
+	// onExit, when set, handles an "exit" op instead of answering it through the page.
+	onExit func(int)
+}
+
+// openWebPage opens a page in a fresh browser context of b, installs the nsgoTest binding at opts.width×opts.height CSS pixels, routes console output and binding calls, and navigates to opts.url.
+func openWebPage(b *cdp, opts webPageOptions) (*webPage, func(), error) {
 	raw, err := b.call("", "Target.createBrowserContext", map[string]any{"disposeOnDetach": true})
 	if err != nil {
-		return -1, err
+		return nil, nil, err
 	}
 	var bctx struct{ BrowserContextID string }
 	json.Unmarshal(raw, &bctx)
-	defer b.call("", "Target.disposeBrowserContext", map[string]any{"browserContextId": bctx.BrowserContextID})
+	var cleanOnce sync.Once
+	cleanup := func() {
+		cleanOnce.Do(func() {
+			b.mu.Lock()
+			b.on = nil
+			b.mu.Unlock()
+			b.call("", "Target.disposeBrowserContext", map[string]any{"browserContextId": bctx.BrowserContextID})
+		})
+	}
 	raw, err = b.call("", "Target.createTarget", map[string]any{"url": "about:blank", "browserContextId": bctx.BrowserContextID})
 	if err != nil {
-		return -1, err
+		cleanup()
+		return nil, nil, err
 	}
 	var target struct{ TargetID string }
 	json.Unmarshal(raw, &target)
 	raw, err = b.call("", "Target.attachToTarget", map[string]any{"targetId": target.TargetID, "flatten": true})
 	if err != nil {
-		return -1, err
+		cleanup()
+		return nil, nil, err
 	}
 	var attached struct{ SessionID string }
 	json.Unmarshal(raw, &attached)
 	session := attached.SessionID
 	page := &webPage{b: b, session: session}
 
-	exited := make(chan int, 1)
 	var outMu sync.Mutex
 	write := func(s string) {
+		if opts.out == nil {
+			return
+		}
 		outMu.Lock()
-		io.WriteString(out, s)
+		io.WriteString(opts.out, s)
 		outMu.Unlock()
 	}
 	b.mu.Lock()
@@ -142,33 +169,18 @@ func runWebTest(ctx context.Context, b *cdp, base string, args, env []string, ou
 		}
 		switch m.Method {
 		case "Runtime.consoleAPICalled":
-			var ev struct {
-				Args []struct {
-					Value       any
-					Description string
-				}
-			}
-			json.Unmarshal(m.Params, &ev)
-			var parts []string
-			for _, a := range ev.Args {
-				if s, ok := a.Value.(string); ok {
-					parts = append(parts, s)
-				} else if a.Description != "" {
-					parts = append(parts, a.Description)
-				} else {
-					parts = append(parts, fmt.Sprint(a.Value))
-				}
-			}
-			write(strings.Join(parts, " ") + "\n")
+			write(formatConsoleEvent(m.Params))
 		case "Runtime.exceptionThrown":
+			write(formatExceptionEvent(m.Params))
+		case "Page.frameNavigated":
 			var ev struct {
-				ExceptionDetails struct {
-					Text      string
-					Exception struct{ Description string }
-				}
+				Frame struct {
+					ParentID string `json:"parentId"`
+				} `json:"frame"`
 			}
-			json.Unmarshal(m.Params, &ev)
-			write("uncaught: " + ev.ExceptionDetails.Text + " " + ev.ExceptionDetails.Exception.Description + "\n")
+			if json.Unmarshal(m.Params, &ev) == nil && ev.Frame.ParentID == "" {
+				page.resetHeld()
+			}
 		case "Runtime.bindingCalled":
 			var ev struct{ Name, Payload string }
 			json.Unmarshal(m.Params, &ev)
@@ -176,8 +188,8 @@ func runWebTest(ctx context.Context, b *cdp, base string, args, env []string, ou
 			if ev.Name != "nsgoTest" || json.Unmarshal([]byte(ev.Payload), &op) != nil {
 				return
 			}
-			if op.Op == "exit" {
-				exited <- op.Code
+			if op.Op == "exit" && opts.onExit != nil {
+				opts.onExit(op.Code)
 				return
 			}
 			// Off the reading goroutine: an op calls the browser itself.
@@ -185,11 +197,6 @@ func runWebTest(ctx context.Context, b *cdp, base string, args, env []string, ou
 		}
 	}
 	b.mu.Unlock()
-	defer func() {
-		b.mu.Lock()
-		b.on = nil
-		b.mu.Unlock()
-	}()
 	for _, call := range []struct {
 		method string
 		params any
@@ -197,12 +204,64 @@ func runWebTest(ctx context.Context, b *cdp, base string, args, env []string, ou
 		{"Runtime.enable", nil},
 		{"Page.enable", nil},
 		{"Runtime.addBinding", map[string]any{"name": "nsgoTest"}},
-		{"Emulation.setDeviceMetricsOverride", map[string]any{"width": 390, "height": 844, "deviceScaleFactor": webTestScale, "mobile": false}},
+		{"Emulation.setDeviceMetricsOverride", map[string]any{"width": opts.width, "height": opts.height, "deviceScaleFactor": webTestScale, "mobile": false}},
 	} {
 		if _, err := b.call(session, call.method, call.params); err != nil {
-			return -1, err
+			cleanup()
+			return nil, nil, err
 		}
 	}
+	if _, err := b.call(session, "Page.navigate", map[string]any{"url": opts.url}); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	return page, cleanup, nil
+}
+
+// openWebAutomation opens targetURL in b with the nsgoTest binding installed for nsgo dev -target web -automation, writing console output and uncaught exceptions to out.
+func openWebAutomation(b *cdp, targetURL string, out io.Writer) (*webPage, func(), error) {
+	return openWebPage(b, webPageOptions{
+		url:    targetURL,
+		width:  webAutomationWidth,
+		height: webAutomationHeight,
+		out:    out,
+	})
+}
+
+func formatConsoleEvent(params json.RawMessage) string {
+	var ev struct {
+		Args []struct {
+			Value       any
+			Description string
+		}
+	}
+	json.Unmarshal(params, &ev)
+	var parts []string
+	for _, a := range ev.Args {
+		if s, ok := a.Value.(string); ok {
+			parts = append(parts, s)
+		} else if a.Description != "" {
+			parts = append(parts, a.Description)
+		} else {
+			parts = append(parts, fmt.Sprint(a.Value))
+		}
+	}
+	return strings.Join(parts, " ") + "\n"
+}
+
+func formatExceptionEvent(params json.RawMessage) string {
+	var ev struct {
+		ExceptionDetails struct {
+			Text      string
+			Exception struct{ Description string }
+		}
+	}
+	json.Unmarshal(params, &ev)
+	return "uncaught: " + ev.ExceptionDetails.Text + " " + ev.ExceptionDetails.Exception.Description + "\n"
+}
+
+// runWebTest runs one test's process: a page in a fresh context.
+func runWebTest(ctx context.Context, b *cdp, base string, args, env []string, out io.Writer) (int, error) {
 	argData, _ := json.Marshal(args)
 	envMap := map[string]string{}
 	for _, kv := range env {
@@ -211,9 +270,23 @@ func runWebTest(ctx context.Context, b *cdp, base string, args, env []string, ou
 	}
 	envData, _ := json.Marshal(envMap)
 	u := base + "?args=" + url.QueryEscape(string(argData)) + "&env=" + url.QueryEscape(string(envData))
-	if _, err := b.call(session, "Page.navigate", map[string]any{"url": u}); err != nil {
+	exited := make(chan int, 1)
+	_, cleanup, err := openWebPage(b, webPageOptions{
+		url:    u,
+		width:  390,
+		height: 844,
+		out:    out,
+		onExit: func(code int) {
+			select {
+			case exited <- code:
+			default:
+			}
+		},
+	})
+	if err != nil {
 		return -1, err
 	}
+	defer cleanup()
 	select {
 	case code := <-exited:
 		return code, nil
@@ -231,6 +304,13 @@ type webPage struct {
 	held    int
 	down    map[string]bool
 	buttons int
+}
+
+func (p *webPage) resetHeld() {
+	p.heldMu.Lock()
+	p.held = 0
+	p.down = nil
+	p.heldMu.Unlock()
 }
 
 func (p *webPage) call(method string, params any) (json.RawMessage, error) {

@@ -359,8 +359,16 @@ func TestDevAutomationRefusesWhatItCannotDrive(t *testing.T) {
 		t.Errorf("-target android -automation -release: %v", err)
 	}
 	p.Dev.Target = "web"
-	if err := dev(context.Background(), p, devOptions{automation: true}); err == nil || !strings.Contains(err.Error(), "macOS, Windows, Linux, Android and Apple devices and simulators so far") {
-		t.Errorf("-automation -target web: %v", err)
+	if err := dev(context.Background(), p, devOptions{automation: true, release: true}); err == nil || !strings.Contains(err.Error(), "-release") {
+		t.Errorf("-automation -target web -release: %v", err)
+	}
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		if err := automationTargetError("web", goos, false); err != nil {
+			t.Errorf("%s web: %v", goos, err)
+		}
+		if err := automationTargetError("web", goos, true); err == nil || !strings.Contains(err.Error(), "-release") {
+			t.Errorf("%s web -release: %v", goos, err)
+		}
 	}
 	for _, target := range []string{"native", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator"} {
 		if err := automationTargetError(target, "darwin", false); err != nil {
@@ -398,7 +406,7 @@ func TestDevAutomationRefusesWhatItCannotDrive(t *testing.T) {
 			t.Errorf("%s android -release: %v", goos, err)
 		}
 	}
-	for _, target := range []string{"web", "miniprogram_wechat"} {
+	for _, target := range []string{"miniprogram_wechat"} {
 		if err := automationTargetError(target, "darwin", false); err == nil {
 			t.Errorf("darwin %s unexpectedly allowed", target)
 		}

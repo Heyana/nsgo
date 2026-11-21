@@ -25,11 +25,13 @@ import (
 )
 
 // session is how dev builds and shows one target. start runs after each
-// successful build and returns the running app.
+// successful build and returns the running app; close, when set, cleans up
+// session-wide resources such as an automation browser when dev ends.
 type session struct {
 	build func(ctx context.Context, p *project) error
 	start func(ctx context.Context, p *project) (app, error)
 	watch func(*project) string // additional inputs the target packages
+	close func()
 }
 
 // app is one started dev app. stop ends it, and wait returns once it has
@@ -93,6 +95,11 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		if err := automationTargetError(p.Dev.Target, runtime.GOOS, opts.release); err != nil {
 			return err
 		}
+		if p.Dev.Target == "web" {
+			if _, err := findBrowser(); err != nil {
+				return err
+			}
+		}
 	}
 	appProject := p
 	if opts.preview != nil {
@@ -151,6 +158,9 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 	if err != nil {
 		return err
 	}
+	if s.close != nil {
+		defer s.close()
+	}
 
 	stop := func() {}
 	defer func() { stop() }()
@@ -163,7 +173,7 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 		}
 	}
 	var exited chan error
-	first, hinted := true, false
+	first, started, hinted := true, false, false
 	for {
 		progress := begin("building %s", p.Dev.Target)
 		if opts.hub != nil {
@@ -248,12 +258,13 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 			progress.done(fmt.Sprintf("built %s", p.Dev.Target), "")
 			stop()
 			stop, exited = func() {}, nil
-			// The web target only serves; the others start an app, which
-			// may boot, install and launch on a device first.
+			// The web target only serves unless -automation starts its own browser;
+			// the others start an app, which may boot, install and launch on a device first.
 			var starting *Step
-			if p.Dev.Target != "web" {
+			if p.Dev.Target != "web" || (opts.automation && !started) {
 				starting = begin("starting the app")
 			}
+			reloadNow := started
 			if next, err := s.start(ctx, p); err != nil {
 				if starting != nil {
 					starting.fail()
@@ -271,13 +282,16 @@ func dev(ctx context.Context, p *project, opts devOptions) error {
 					exited = make(chan error, 1)
 					go func(wait func(context.Context) error, done chan error) { done <- wait(ctx) }(next.wait, exited)
 				}
+				started = true
 				if !hinted && p.hotReload() {
 					detail("watching for changes · Control+C stops")
 					hinted = true
 				}
 			}
 			srv.send("ok", "")
-			srv.send("reload", "")
+			if reloadNow {
+				srv.send("reload", "")
+			}
 			// Editors read the TSX's types from .nsgo/types; a Go build
 			// may have registered new ones.
 			if p.hasTSConfig() {
@@ -314,6 +328,9 @@ func automationTargetError(target, goos string, release bool) error {
 	if release {
 		return errors.New("-automation drives dev builds; -release builds what users run")
 	}
+	if target == "web" {
+		return nil
+	}
 	if target == "android" {
 		return nil
 	}
@@ -331,7 +348,7 @@ func automationTargetError(target, goos string, release bool) error {
 			return nil
 		}
 	}
-	return errors.New("-automation drives macOS, Windows, Linux, Android and Apple devices and simulators so far: use -target android, run it on Windows or Linux with -target native, or on a Mac with -target native, ios, tvos, watchos, ios_simulator, tvos_simulator or watchos_simulator (docs/roadmap.md, Automation)")
+	return errors.New("-automation drives macOS, Windows, Linux, Android, the web and Apple devices and simulators so far: use -target android or web, run it on Windows or Linux with -target native, or on a Mac with -target native, ios, tvos, watchos, ios_simulator, tvos_simulator or watchos_simulator (docs/roadmap.md, Automation)")
 }
 
 // checkDevAutomation reports why nsgo dev -automation cannot drive target on goos, or nil when it can.
@@ -992,8 +1009,12 @@ func linuxSession(opts devOptions) session {
 }
 
 // webSession serves the build from the dev server, whose page shows a
-// failed build and loads each new one.
+// failed build and loads each new one. Under -automation it opens its own
+// headless browser over the DevTools protocol instead of the user's.
 func webSession(opts devOptions) session {
+	if opts.automation {
+		return webAutomationSession(opts)
+	}
 	var once sync.Once
 	return session{
 		build: func(ctx context.Context, p *project) error {
@@ -1021,6 +1042,81 @@ func webSession(opts devOptions) session {
 			})
 			return app{stop: func() {}}, nil
 		},
+	}
+}
+
+// webAutomationSession builds the web target and opens it in a headless browser
+// over the DevTools protocol with the nsgoTest binding installed, forwarding
+// console output to appConsole and keeping the browser across rebuilds.
+func webAutomationSession(opts devOptions) session {
+	var (
+		mu          sync.Mutex
+		browser     *cdp
+		cleanupPage func()
+	)
+	closeBrowser := func() {
+		mu.Lock()
+		b, cleanup := browser, cleanupPage
+		browser, cleanupPage = nil, nil
+		mu.Unlock()
+		if cleanup != nil {
+			cleanup()
+		}
+		if b != nil {
+			b.close()
+		}
+	}
+	return session{
+		build: func(ctx context.Context, p *project) error {
+			return buildWeb(ctx, p, p.cache("dev", "web"), true)
+		},
+		start: func(ctx context.Context, p *project) (app, error) {
+			opts.server.serve(p.cache("dev", "web"))
+			mu.Lock()
+			b := browser
+			mu.Unlock()
+			if b == nil {
+				query := webQuery(opts.appFlags())
+				url := opts.server.pageURL(fmt.Sprintf("http://localhost:%d", opts.server.port), "/"+query)
+				note("%s", link(url))
+				var err error
+				b, err = startBrowser(ctx)
+				if err != nil {
+					return app{}, err
+				}
+				_, cleanup, err := openWebAutomation(b, url, &appConsole)
+				if err != nil {
+					b.close()
+					return app{}, err
+				}
+				mu.Lock()
+				browser = b
+				cleanupPage = cleanup
+				mu.Unlock()
+			}
+			cancelWait := make(chan struct{})
+			var stopOnce sync.Once
+			return app{
+				stop: func() { stopOnce.Do(func() { close(cancelWait) }) },
+				wait: func(ctx context.Context) error {
+					select {
+					case <-cancelWait:
+						return nil
+					case <-ctx.Done():
+						return nil
+					case <-b.done:
+						if ctx.Err() != nil {
+							return nil
+						}
+						if b.exitErr != nil {
+							return fmt.Errorf("the automation browser exited: %w", b.exitErr)
+						}
+						return errors.New("the automation browser exited")
+					}
+				},
+			}, nil
+		},
+		close: closeBrowser,
 	}
 }
 

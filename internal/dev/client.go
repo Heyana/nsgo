@@ -45,7 +45,7 @@ func devServerURL() (server string, page bool) {
 func Start() { start() }
 
 var start = sync.OnceFunc(func() {
-	server, page := devServerURL()
+	server, _ := devServerURL()
 	if server == "" {
 		return
 	}
@@ -58,9 +58,7 @@ var start = sync.OnceFunc(func() {
 	if devDevtools == "1" {
 		startDevTools(server)
 	}
-	if !page {
-		startAutomation(server)
-	}
+	startAutomation(server)
 })
 
 // Wrap runs app under nsgo dev: build failures the server reports and the app's own render failures show in an overlay over it, in the language the app shows, and with -trace the server prints each commit. On the web the page is served from the server and shows build failures itself, in the words the app gives it in that language (showPageMessages).

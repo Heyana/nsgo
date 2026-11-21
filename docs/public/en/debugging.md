@@ -211,9 +211,10 @@ go tool nsgo dev -lang ar-XB   # right to left
 ```sh
 go tool nsgo dev -automation
 go tool nsgo dev -target android -automation
+go tool nsgo dev -target web -automation
 ```
 
-`-automation` lets an AI agent or an end-to-end runner use the running app as a person does, on macOS, Windows, Linux (`-target native`), Android (`-target android`) and Apple devices and simulators (`-target ios`, `tvos`, `watchos`, `ios_simulator`, `tvos_simulator` or `watchos_simulator`) so far: list its windows, outline what one shows, press, type, send keys, scroll, drag, hover, choose menu items, answer alerts, wait for what appears and take screenshots. Agents reach it over MCP through `go tool nsgo mcp`, which uses the `dev -automation` running for the directory, or starts one with the same flags (such as `-target android`) and stops it as the client leaves:
+`-automation` lets an AI agent or an end-to-end runner use the running app as a person does, on macOS, Windows, Linux (`-target native`), Android (`-target android`), the web (`-target web`) and Apple devices and simulators (`-target ios`, `tvos`, `watchos`, `ios_simulator`, `tvos_simulator` or `watchos_simulator`) so far: list its windows, outline what one shows, press, type, send keys, scroll, drag, hover, choose menu items, answer alerts, wait for what appears and take screenshots. Agents reach it over MCP through `go tool nsgo mcp`, which uses the `dev -automation` running for the directory, or starts one with the same flags (such as `-target android`) and stops it as the client leaves:
 
 ```sh
 claude mcp add nsgo -- go tool nsgo mcp

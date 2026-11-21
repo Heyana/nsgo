@@ -380,6 +380,9 @@ type press struct {
 	at      driver.Event // where it went down, and how
 }
 
+// live is the surface Run opened, for nsgo dev -automation's live surface (automation.go).
+var live *surface
+
 // Run fills the page with app. Call it from main; it does not return.
 func Run(app engine.App, opts Options) {
 	open(app, opts, nil)
@@ -448,6 +451,9 @@ func open(app engine.App, opts Options, test *testOpen) *surface {
 		}
 	}
 	s.engine = engine.Start(s, app, eopts)
+	if test == nil {
+		live = s
+	}
 	// The host can change size without the window doing so.
 	observer := js.Global().Get("ResizeObserver").New(js.FuncOf(func(js.Value, []js.Value) any {
 		s.engine.Resize(s.size(), driver.Geometry{})

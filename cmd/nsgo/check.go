@@ -89,6 +89,10 @@ func checkHost(ctx context.Context, p *project, jobs int) error {
 				return err
 			}
 		}
+		if err := goToolWithTags(ctx, p, []string{"GOOS=js", "GOARCH=wasm"}, []string{"nsgodev", "nsgoautomation"}, vetArgs(jobs, ".", "./internal/dev", "./nsgotest", "./internal/platform/web")...); err != nil {
+			s.fail()
+			return err
+		}
 		s.done("vetted the dev client", "")
 	}
 	return nil

@@ -436,7 +436,6 @@ What `nsgo dev -automation` and `nsgo mcp` still lack ([tool](architecture/tool.
 
 | Item | Reference | Done when |
 | --- | --- | --- |
-| The web | `web/testhost.go`, `cdp.go`, [#1424](https://github.com/nsgo-dev/nsgo/issues/1424) | `nsgo dev -target web -automation` opens its own browser over the DevTools protocol, installs the `nsgoTest` binding and passes the token in the page's query |
 | Mini programs | `internal/backend/run_miniprogram.go`, [#1431](https://github.com/nsgo-dev/nsgo/issues/1431) | `nsgo dev -automation` on a mini-program target drives the app in its developer tool's simulator, with the token in the build as `devServer` is, where it now refuses those targets |
 
 ## Finish the existing platforms
