@@ -67,6 +67,7 @@ var (
 	ctRunGetAdvances            func(run uintptr, r cfRange, buffer *CGSize)
 	ctRunGetStatus              func(run uintptr) uint32
 	ctRunGetAttributes          func(run uintptr) uintptr
+	ctRunGetTypographicBounds   func(run uintptr, loc, length int, ascent, descent, leading *float64) float64
 	ctFontGetCapHeight          func(uintptr) float64
 	cgContextSetShadowWithColor func(ctx uintptr, offset CGSize, blur float64, color uintptr)
 	cgContextClipToRect         func(ctx uintptr, r CGRect)
@@ -138,6 +139,7 @@ func loadText(cf, cg uintptr) {
 	reg(&ctRunGetAdvances, ct, "CTRunGetAdvances")
 	reg(&ctRunGetStatus, ct, "CTRunGetStatus")
 	reg(&ctRunGetAttributes, ct, "CTRunGetAttributes")
+	reg(&ctRunGetTypographicBounds, ct, "CTRunGetTypographicBounds")
 	reg(&ctFontGetCapHeight, ct, "CTFontGetCapHeight")
 	reg(&cgContextSetShadowWithColor, cg, "CGContextSetShadowWithColor")
 	reg(&cgContextClipToRect, cg, "CGContextClipToRect")
@@ -643,8 +645,21 @@ func (TextEngine) Prepare(t *driver.AttributedText) driver.PreparedText {
 		fonts[i] = fontExtent(placeholderStyle(t, at.Offset))
 	}
 	str := attributed(t, toUTF16, fonts)
+	f := Font(t.Style.Font)
+	strut := strutSpec{
+		ascent:  ctFontGetAscent(f),
+		descent: ctFontGetDescent(f),
+		leading: ctFontGetLeading(f),
+	}
+	Release(f)
+	if t.Style.LineHeight > 0 {
+		strut.minLineHeight = float64(t.Style.LineHeight)
+		if len(t.Attachments) == 0 {
+			strut.maxLineHeight = float64(t.Style.LineHeight)
+		}
+	}
 	p := &prepared{str: str, maxLines: t.MaxLines, ellipsize: t.Ellipsize,
-		shadow: t.Shadow, text: t.Text, toUTF8: toUTF8,
+		shadow: t.Shadow, strut: strut, text: t.Text, toUTF8: toUTF8,
 		toUTF16: toUTF16, decos: decorations(t, toUTF16), atts: t.Attachments, fonts: fonts}
 	p.oneLine = oneLineFast && isASCIILine(t.Text) && len(t.Attachments) == 0 && len(p.decos) == 0 && t.Style.LineHeight == 0 &&
 		!strings.ContainsAny(t.Text, "\n\r\t\v\f\u0085\u2028\u2029")
@@ -652,12 +667,10 @@ func (TextEngine) Prepare(t *driver.AttributedText) driver.PreparedText {
 		p.flush = flushOf(t.Style)
 	}
 	if cfAttributedStringLength(str) == 0 {
-		f := Font(t.Style.Font)
-		p.emptyHeight = ctFontGetAscent(f) + ctFontGetDescent(f) + ctFontGetLeading(f)
+		p.emptyHeight = strut.ascent + strut.descent + strut.leading
 		if t.Style.LineHeight > 0 {
 			p.emptyHeight = float64(t.Style.LineHeight)
 		}
-		Release(f)
 	}
 	return p
 }
@@ -679,6 +692,7 @@ type prepared struct {
 	maxLines    int
 	ellipsize   driver.EllipsizeMode
 	shadow      driver.TextShadow
+	strut       strutSpec
 	emptyHeight float64
 	text        string
 	toUTF8      []int // byte offsets of UTF-16 offsets
@@ -695,8 +709,8 @@ type prepared struct {
 	oneLine bool
 	flush   float64
 	line    uintptr
-	// lineWidth, lineHeight and ascent are line's, once it is made.
-	lineWidth, lineHeight, ascent float64
+	// lineWidth, lineHeight, ascent and descent are line's, once it is made.
+	lineWidth, lineHeight, ascent, descent float64
 }
 
 // oneLineFast lets texts on one line skip the framesetter; tests turn it
@@ -734,19 +748,21 @@ func (p *prepared) fitsOneLine(width float64) bool {
 		return false
 	}
 	if p.line == 0 {
-		var descent, leading float64
+		var leading float64
 		p.line = ctLineCreateWithAttrString(p.str)
 		// As a frame measures it, without its trailing spaces.
-		p.lineWidth = ctLineGetTypographicBounds(p.line, &p.ascent, &descent, &leading) - ctLineTrailingWhitespace(p.line)
+		p.lineWidth = ctLineGetTypographicBounds(p.line, &p.ascent, &p.descent, &leading) - ctLineTrailingWhitespace(p.line)
 		// A frame leaves a font's typographic leading out of its last line, or some of it, where the line's bounds add all of it: Hiragino Sans GB at 12 points is 19 points tall as a line and 13 in a frame. A text in such a font stays on the framesetter, for measuring and drawing alike.
-		if leading != 0 {
+		if leading != 0 || p.strut.leading != 0 {
 			p.oneLine = false
 			Release(p.line)
 			p.line = 0
 			return false
 		}
+		p.ascent = max(p.ascent, p.strut.ascent)
+		p.descent = max(p.descent, p.strut.descent)
 		// A frame puts a line's baseline on a whole point.
-		p.lineHeight = framedHeight(math.Round(p.ascent) + descent)
+		p.lineHeight = framedHeight(math.Round(p.ascent) + p.descent)
 	}
 	return p.lineWidth <= width
 }
@@ -797,15 +813,24 @@ func (p *prepared) measure(maxWidth driver.Points) driver.Size {
 	if p.fitsOneLine(w) {
 		return driver.Size{Width: driver.Points(p.lineWidth), Height: driver.Points(p.lineHeight)}
 	}
-	if p.maxLines > 0 {
-		frame := p.frame(CGSize{Width: w, Height: tall})
-		defer Release(frame)
-		if lines := ctFrameGetLines(frame); cfArrayGetCount(lines) > p.maxLines {
-			return p.limitedSize(frame, lines, maxWidth)
-		}
+	frameW := w
+	if frameW <= 0 && p.maxLines <= 0 {
+		// CTFramesetterSuggestFrameSizeWithConstraints treats width 0 as unbounded.
+		frameW = float64(unbounded)
 	}
-	size := ctFramesetterSuggestSize(p.framesetter(), 0, 0, 0, w, unbounded, 0)
-	return driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)}
+	frame := p.frame(CGSize{Width: frameW, Height: tall})
+	defer Release(frame)
+	lines := ctFrameGetLines(frame)
+	n := cfArrayGetCount(lines)
+	if n == 0 {
+		size := ctFramesetterSuggestSize(p.framesetter(), 0, 0, 0, w, unbounded, 0)
+		return driver.Size{Width: driver.Points(size.Width), Height: driver.Points(size.Height)}
+	}
+	if p.maxLines > 0 && n > p.maxLines {
+		return p.limitedSize(frame, lines, maxWidth)
+	}
+	_, _, _, height, width := stackFrameLines(frame, lines, n, tall, p.strut)
+	return driver.Size{Width: driver.Points(width), Height: driver.Points(height)}
 }
 
 // framedHeight rounds a height measured outside a framesetter up to a whole point, as a framesetter sizes a frame: CoreText puts lines on whole points, so its heights are whole points while its widths keep their fractions, which the core rounds up to a device pixel. A text cut to its line limit is then as tall as its lines uncut.
@@ -814,11 +839,8 @@ func framedHeight(h float64) float64 { return math.Ceil(h - 1e-3) }
 // limitedSize keeps the height of the first maxLines wrapped lines.
 func (p *prepared) limitedSize(frame, lines uintptr, maxWidth driver.Points) driver.Size {
 	last := cfArrayGetValueAtIndex(lines, p.maxLines-1)
-	var origin CGPoint
-	ctFrameGetLineOrigins(frame, p.maxLines-1, 1, &origin)
-	var descent float64
-	w := ctLineGetTypographicBounds(last, nil, &descent, nil)
-	h := driver.Points(framedHeight(tall - (origin.Y - descent)))
+	_, _, _, height, _ := stackFrameLines(frame, lines, p.maxLines, tall, p.strut)
+	h := driver.Points(height)
 	if !maxWidth.IsAuto() && p.ellipsize != driver.EllipsizeClip {
 		r := ctLineGetStringRange(last)
 		c, _ := utf8.DecodeLastRuneInString(p.text[:p.toUTF8[r.Location+r.Length]])
@@ -830,7 +852,8 @@ func (p *prepared) limitedSize(frame, lines uintptr, maxWidth driver.Points) dri
 			return driver.Size{Width: maxWidth, Height: h}
 		}
 	}
-	for i := range p.maxLines - 1 {
+	var w float64
+	for i := range p.maxLines {
 		w = max(w, ctLineGetTypographicBounds(cfArrayGetValueAtIndex(lines, i), nil, nil, nil))
 	}
 	return driver.Size{Width: driver.Points(w), Height: h}
@@ -871,7 +894,7 @@ func (p *prepared) Layout(size driver.Size) driver.TextLayout {
 }
 
 func (p *prepared) layout(size driver.Size) *Layout {
-	l := &Layout{height: float64(size.Height), text: p.text, toUTF8: p.toUTF8, shadow: p.shadow}
+	l := &Layout{height: float64(size.Height), text: p.text, toUTF8: p.toUTF8, shadow: p.shadow, strut: p.strut}
 	if p.emptyHeight > 0 {
 		return l
 	}
@@ -880,8 +903,8 @@ func (p *prepared) layout(size driver.Size) *Layout {
 		// Drawn as the last line of a limited text is, where a frame of
 		// that width puts it.
 		l.truncated, l.shown = cfRetain(p.line), 1
-		h := float64(size.Height) + 1
-		l.origins = []CGPoint{{X: ctLinePenOffsetForFlush(p.line, p.flush, width), Y: h - math.Round(h-p.ascent)}}
+		l.origins = []CGPoint{{X: ctLinePenOffsetForFlush(p.line, p.flush, width), Y: math.Round(p.ascent)}}
+		l.metrics = []lineMetrics{{ascent: p.ascent, descent: p.descent}}
 		return l
 	}
 	box := CGSize{Width: float64(size.Width) + 0.5, Height: float64(size.Height) + 1}
@@ -893,6 +916,7 @@ func (p *prepared) layout(size driver.Size) *Layout {
 	}
 	if p.maxLines <= 0 {
 		l.frame = p.frame(box)
+		l.prepareFrame()
 		return l
 	}
 	all := p.frame(CGSize{Width: box.Width, Height: tall})
@@ -900,6 +924,7 @@ func (p *prepared) layout(size driver.Size) *Layout {
 	lines := ctFrameGetLines(all)
 	if cfArrayGetCount(lines) <= p.maxLines {
 		l.frame = p.frame(box)
+		l.prepareFrame()
 		return l
 	}
 	// The last line shown takes the rest of the text, truncated.
@@ -924,18 +949,16 @@ func (p *prepared) layout(size driver.Size) *Layout {
 	}
 	Release(rest)
 	l.shown, l.restStart = p.maxLines, r.Location
-	l.origins = make([]CGPoint, p.maxLines)
-	ctFrameGetLineOrigins(all, 0, p.maxLines, &l.origins[0])
-	// Origins count from the frame's bottom; keep them from its top.
-	for i := range l.origins {
-		l.origins[i].Y = tall - l.origins[i].Y
-	}
+	l.origins, l.metrics, _, _, _ = stackFrameLines(all, lines, p.maxLines, tall, p.strut)
 	if l.truncated != 0 && p.ellipsize != driver.EllipsizeClip {
 		l.origins[p.maxLines-1].X = ctLinePenOffsetForFlush(l.truncated, p.flush, float64(size.Width))
 	}
 	l.lines = make([]uintptr, p.maxLines-1)
 	for i := range l.lines {
 		l.lines[i] = cfRetain(cfArrayGetValueAtIndex(lines, i))
+	}
+	if l.truncated == 0 {
+		l.shown = len(l.lines)
 	}
 	return l
 }
@@ -974,11 +997,18 @@ type Layout struct {
 	box    CGSize
 	made   sync.Once
 	height float64
+	strut  strutSpec
+	// frameOrigins, frameMetrics and strutted are populated for frame by
+	// prepareFrame (either eagerly in layout or lazily inside made.Do).
+	frameOrigins []CGPoint
+	frameMetrics []lineMetrics
+	strutted     bool
 	// With a line limit: the lines shown before the last, the last one
-	// truncated, and their baselines from the top.
+	// truncated, and their baselines and effective metrics from the top.
 	lines     []uintptr
 	truncated uintptr
 	origins   []CGPoint
+	metrics   []lineMetrics
 	shown     int
 	restStart int // the truncated line's first UTF-16 offset
 	// clip is the width a clipped last line is cut at, 0 for none.
@@ -1007,9 +1037,26 @@ func (l *Layout) laid() uintptr {
 			path := rectPath(l.box)
 			defer cgPathRelease(path)
 			l.frame = ctFramesetterCreateFrame(fs, 0, 0, path, 0)
+			l.prepareFrame()
 		})
 	}
 	return l.frame
+}
+
+// prepareFrame computes the strut-adjusted baselines and effective metrics
+// for l.frame. When any line is adjusted by the strut, l.strutted is set so
+// drawGlyphs draws each line at its adjusted baseline instead of calling
+// CTFrameDraw.
+func (l *Layout) prepareFrame() {
+	if l.frame == 0 {
+		return
+	}
+	arr := ctFrameGetLines(l.frame)
+	n := cfArrayGetCount(arr)
+	if n == 0 {
+		return
+	}
+	l.frameOrigins, l.frameMetrics, l.strutted, _, _ = stackFrameLines(l.frame, arr, n, l.height+1, l.strut)
 }
 
 // empty reports whether l has nothing to show: an empty text.
@@ -1034,21 +1081,21 @@ func (l *Layout) caretLines() driver.CaretLayout {
 		// An empty text: one empty line, as high as the box.
 		return driver.CaretLayout{{Box: driver.Bounds{Size: driver.Size{Height: driver.Points(l.height)}}}}
 	}
-	lines, baselines, bases := l.placed()
+	lines, baselines, bases, metrics := l.placedMetrics()
 	units := len(l.toUTF8) - 1
 	out := make(driver.CaretLayout, 0, len(lines))
 	for i, line := range lines {
-		var ascent, descent, leading float64
-		width := ctLineGetTypographicBounds(line, &ascent, &descent, &leading)
+		width := ctLineGetTypographicBounds(line, nil, nil, nil)
 		if line == l.truncated && l.clip > 0 {
 			width = min(width, l.clip)
 		}
+		m := metrics[i]
 		r := ctLineGetStringRange(line)
 		from, to := r.Location+bases[i], r.Location+r.Length+bases[i]
 		origin := baselines[i]
 		cl := driver.CaretLine{Start: from, End: min(to, units),
-			Box: driver.Bounds{Origin: driver.Point{X: driver.Points(origin.X), Y: driver.Points(origin.Y - ascent)},
-				Size: driver.Size{Width: driver.Points(width), Height: driver.Points(ascent + descent + leading)}}}
+			Box: driver.Bounds{Origin: driver.Point{X: driver.Points(origin.X), Y: driver.Points(origin.Y - m.ascent)},
+				Size: driver.Size{Width: driver.Points(width), Height: driver.Points(m.ascent + m.descent + m.leading)}}}
 		runs := ctLineGetGlyphRuns(line)
 		for k := range cfArrayGetCount(runs) {
 			cl.Clusters = runClusters(cfArrayGetValueAtIndex(runs, k), r, bases[i], origin.X, cl.Clusters)
@@ -1120,7 +1167,8 @@ func (l *Layout) Release() {
 	l.made.Do(func() {})
 	releaseLater(l.str, l.frame, l.truncated)
 	releaseLater(l.lines...)
-	l.str, l.frame, l.lines, l.truncated, l.origins = 0, 0, nil, 0, nil
+	l.str, l.frame, l.lines, l.truncated, l.origins, l.metrics = 0, 0, nil, 0, nil, nil
+	l.frameOrigins, l.frameMetrics, l.strutted = nil, nil, false
 	l.under, l.over, l.attachments = nil, nil, nil
 }
 
@@ -1171,29 +1219,41 @@ func releaseQueued() {
 	}
 }
 
-// placed returns l's lines, their baselines from the box's top and the
-// UTF-16 offset each line's string range starts from: 0, or the rest's
-// start for the truncated last line.
-func (l *Layout) placed() (lines []uintptr, baselines []CGPoint, bases []int) {
+// placedMetrics returns l's lines, their strut-adjusted baselines from the
+// box's top, the UTF-16 offset each line's string range starts from (0, or
+// the rest's start for the truncated last line), and each line's effective
+// vertical metrics.
+func (l *Layout) placedMetrics() (lines []uintptr, baselines []CGPoint, bases []int, metrics []lineMetrics) {
 	if frame := l.laid(); frame != 0 {
 		arr := ctFrameGetLines(frame)
 		n := cfArrayGetCount(arr)
 		if n == 0 {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
-		origins := make([]CGPoint, n)
-		ctFrameGetLineOrigins(frame, 0, n, &origins[0])
-		// Draw puts the frame's bottom at the box's top plus height+1.
+		lines = make([]uintptr, n)
 		for i := range n {
-			lines = append(lines, cfArrayGetValueAtIndex(arr, i))
-			baselines = append(baselines, CGPoint{X: origins[i].X, Y: l.height + 1 - origins[i].Y})
+			lines[i] = cfArrayGetValueAtIndex(arr, i)
 		}
-		return lines, baselines, make([]int, n)
+		return lines, l.frameOrigins, make([]int, n), l.frameMetrics
 	}
-	lines = append(append(lines, l.lines...), l.truncated)
+	lines = make([]uintptr, 0, l.shown)
+	lines = append(lines, l.lines...)
+	if l.truncated != 0 {
+		lines = append(lines, l.truncated)
+	}
 	bases = make([]int, len(lines))
-	bases[len(lines)-1] = l.restStart
-	return lines, l.origins[:l.shown], bases
+	if l.truncated != 0 {
+		bases[len(lines)-1] = l.restStart
+	}
+	return lines, l.origins[:len(lines)], bases, l.metrics[:len(lines)]
+}
+
+// placed returns l's lines, their baselines from the box's top and the
+// UTF-16 offset each line's string range starts from: 0, or the rest's
+// start for the truncated last line.
+func (l *Layout) placed() (lines []uintptr, baselines []CGPoint, bases []int) {
+	lines, baselines, bases, _ = l.placedMetrics()
+	return lines, baselines, bases
 }
 
 // TextLines implements core.LineLayout: each line's range, box and its
@@ -1202,22 +1262,22 @@ func (l *Layout) TextLines() []driver.TextLine {
 	if l == nil || l.empty() {
 		return nil
 	}
-	lines, baselines, bases := l.placed()
+	lines, baselines, bases, metrics := l.placedMetrics()
 	out := make([]driver.TextLine, 0, len(lines))
 	for i, line := range lines {
-		var ascent, descent, leading float64
-		width := ctLineGetTypographicBounds(line, &ascent, &descent, &leading)
+		width := ctLineGetTypographicBounds(line, nil, nil, nil)
 		if line == l.truncated && l.clip > 0 {
 			width = min(width, l.clip)
 		}
+		m := metrics[i]
 		r := ctLineGetStringRange(line)
 		start, end := r.Location+bases[i], r.Location+r.Length+bases[i]
 		if line == l.truncated {
 			end = len(l.toUTF8) - 1 // the rest, which the line stands for
 		}
-		tl := driver.TextLine{Ascender: driver.Points(ascent), Descender: driver.Points(descent),
-			Bounds: driver.Bounds{Origin: driver.Point{X: driver.Points(baselines[i].X), Y: driver.Points(baselines[i].Y - ascent - leading/2)},
-				Size: driver.Size{Width: driver.Points(width), Height: driver.Points(ascent + descent + leading)}}}
+		tl := driver.TextLine{Ascender: driver.Points(m.ascent), Descender: driver.Points(m.descent),
+			Bounds: driver.Bounds{Origin: driver.Point{X: driver.Points(baselines[i].X), Y: driver.Points(baselines[i].Y - m.ascent - m.leading/2)},
+				Size: driver.Size{Width: driver.Points(width), Height: driver.Points(m.ascent + m.descent + m.leading)}}}
 		if n := len(l.toUTF8) - 1; n >= 0 {
 			tl.Start, tl.End = l.toUTF8[min(max(start, 0), n)], l.toUTF8[min(max(end, 0), n)]
 		}
@@ -1238,12 +1298,12 @@ func (l *Layout) IndexAt(p CGPoint, box CGRect) int {
 		return -1
 	}
 	x, y := p.X-box.Origin.X, p.Y-box.Origin.Y // from the box's top left
-	lines, baselines, bases := l.placed()
+	lines, baselines, bases, metrics := l.placedMetrics()
 	for i, line := range lines {
-		var ascent, descent, leading float64
-		width := ctLineGetTypographicBounds(line, &ascent, &descent, &leading)
+		width := ctLineGetTypographicBounds(line, nil, nil, nil)
+		m := metrics[i]
 		o := baselines[i]
-		if y < o.Y-ascent-leading/2 || y > o.Y+descent+leading/2 {
+		if y < o.Y-m.ascent-m.leading/2 || y > o.Y+m.descent+m.leading/2 {
 			continue
 		}
 		lx := x - o.X
@@ -1387,8 +1447,17 @@ func (l *Layout) drawGlyphs(ctx uintptr, viewHeight float64, box CGRect) {
 	cgContextTranslateCTM(ctx, 0, viewHeight)
 	cgContextScaleCTM(ctx, 1, -1)
 	if frame := l.laid(); frame != 0 {
-		cgContextTranslateCTM(ctx, box.Origin.X, viewHeight-box.Origin.Y-l.height-1)
-		ctFrameDraw(frame, ctx)
+		if !l.strutted {
+			cgContextTranslateCTM(ctx, box.Origin.X, viewHeight-box.Origin.Y-l.height-1)
+			ctFrameDraw(frame, ctx)
+			return
+		}
+		top := viewHeight - box.Origin.Y
+		arr := ctFrameGetLines(frame)
+		for i, o := range l.frameOrigins {
+			cgContextSetTextPosition(ctx, box.Origin.X+o.X, top-o.Y)
+			ctLineDraw(cfArrayGetValueAtIndex(arr, i), ctx)
+		}
 		return
 	}
 	top := viewHeight - box.Origin.Y
