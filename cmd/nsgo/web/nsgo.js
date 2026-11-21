@@ -25,6 +25,10 @@
 // module, a compiled WebAssembly.Module or a promise of one, spares
 // fetching and compiling the wasm, so a page showing the app many times,
 // or the wasm compressed, compiles it once.
+// onProgress({ loaded, total }) replaces the download bar. total is
+// null when the size of the decoded module is unknown. onProgress(null)
+// clears the indication when startup ends. The app's host module can
+// export onProgress to replace the bar in the app's own page.
 //
 // A release's nsgo.json names the scripts of the app's realm: mount loads
 // them into an iframe of the page's own before the app starts, so a
@@ -42,9 +46,17 @@ export async function mount(element, url, options = {}) {
   const base = new URL(url ?? ".", document.baseURI);
   const config = options.config ?? (await (await fetch(base)).json());
   const at = (name) => new URL(name, base).href;
-  const wasm = options.module ? null : fetch(at(config.wasm));
   if (typeof globalThis.Go !== "function") await loadScript(at(config.exec));
+  const hostModule = options.host === undefined && config.host ? await import(at(config.host)) : null;
+  const progress = options.module ? null : loadProgress(element, options.onProgress ?? hostModule?.onProgress);
+  try {
+    return await runApp(element, at, config, options, hostModule, progress?.report);
+  } finally {
+    progress?.close();
+  }
+}
 
+async function runApp(element, at, config, options, hostModule, report) {
   const key = `nsgoHost${++apps}`;
   const environment = {
     appearance: options.appearance ?? "system",
@@ -80,9 +92,8 @@ export async function mount(element, url, options = {}) {
     setFontScale: setting("fontScale"),
   };
   let host = options.host;
-  if (host === undefined && config.host) {
-    const module = await import(at(config.host));
-    host = await module.createHost?.(player);
+  if (hostModule && (hostModule.createHost || typeof hostModule.onProgress !== "function")) {
+    host = await hostModule.createHost?.(player);
     if (typeof host?.call !== "function") throw new Error("the app's host could not be loaded");
   }
   // An app in an element or with a host has the bridge; one filling the
@@ -124,8 +135,6 @@ export async function mount(element, url, options = {}) {
     }
   }
 
-  let realm;
-  if (config.runtime) realm = await openRealm([config.runtime, ...(config.scripts ?? [])].map(at));
   const go = new Go();
   // The page's nsgo- parameters are the engine's flags: ?nsgo-fps&nsgo-lang=de.
   for (const [k, v] of new URLSearchParams(location.search)) {
@@ -138,9 +147,12 @@ export async function mount(element, url, options = {}) {
     element.dataset.nsgoMount = key;
     go.env.NSGO_MOUNT = `[data-nsgo-mount="${key}"]`;
   }
-  const instance = options.module
-    ? await WebAssembly.instantiate(await options.module, go.importObject)
-    : (await WebAssembly.instantiateStreaming(wasm, go.importObject)).instance;
+  const [instance, realm] = await Promise.all([
+    options.module
+      ? Promise.resolve(options.module).then((module) => WebAssembly.instantiate(module, go.importObject))
+      : instantiateWasm(at(config.wasm), config.wasmSize, go.importObject, report),
+    config.runtime && openRealm([config.runtime, ...(config.scripts ?? [])].map(at)),
+  ]);
   // The realm's scripts load before instantiation, but the global is set
   // after, as the app reads it from its first instruction.
   if (realm) {
@@ -150,6 +162,51 @@ export async function mount(element, url, options = {}) {
   }
   go.run(instance);
   return player;
+}
+
+function loadProgress(element, report) {
+  if (report) return { report, close: () => report(null) };
+  const bar = document.createElement("progress");
+  bar.className = "nsgo-load-progress";
+  bar.setAttribute("aria-label", "Loading application");
+  (element ?? document.body).append(bar);
+  return {
+    close: () => bar.remove(),
+    report({ loaded, total }) {
+      if (total !== null) {
+        bar.max = total;
+        bar.value = loaded;
+      }
+    },
+  };
+}
+
+async function instantiateWasm(url, size, imports, report) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url} could not be loaded (HTTP ${response.status})`);
+  // The stream is decoded by fetch. A compressed response's Content-Length
+  // counts the encoded bytes, so use the module's size from its build.
+  const encoding = response.headers.get("Content-Encoding");
+  const length = Number(response.headers.get("Content-Length"));
+  const validSize = (n) => Number.isSafeInteger(n) && n > 0;
+  const total = validSize(size) ? size : (!encoding || encoding === "identity") && validSize(length) ? length : null;
+  let loaded = 0;
+  report({ loaded, total });
+  const body = response.body?.pipeThrough(new TransformStream({
+    transform(chunk, controller) {
+      loaded += chunk.byteLength;
+      report({ loaded, total });
+      controller.enqueue(chunk);
+    },
+  }));
+  const type = response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
+  if (body && type === "application/wasm" && typeof WebAssembly.instantiateStreaming === "function") {
+    return (await WebAssembly.instantiateStreaming(
+      new Response(body, { headers: { "Content-Type": type } }), imports,
+    )).instance;
+  }
+  const bytes = await (body ? new Response(body) : response).arrayBuffer();
+  return (await WebAssembly.instantiate(bytes, imports)).instance;
 }
 
 // openRealm makes the hidden iframe an app runs in, and loads into it the

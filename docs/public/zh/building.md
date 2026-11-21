@@ -27,6 +27,8 @@ go tool nsgo build
 
 每个文件都命名为 `<name>-<version>-<系统>-<架构>`，例如 `hello-1.2.0-windows-x64-setup.exe`，方便用户在 Release 页面找到自己系统的文件；每个文件旁都有 `.sha256`。构建其他版本时会先清空该目录；同一版本的构建（包括在其他机器上的）会往里追加。模拟器和 watchOS 的包留在各自的 `dist/<name>-<version>-<target>` 目录中。
 
+比原始模块更小时，网站会包含 `.wasm.br` 和 `.wasm.gz`。在支持预压缩的服务器上启用它，从原有的 `.wasm` URL 提供压缩模块，并设置 `Content-Type: application/wasm`、相应的 `Content-Encoding` 和 `Vary: Accept-Encoding`。原始模块可以部署到任何静态服务器。
+
 ## nsgo.yaml
 
 ```yaml

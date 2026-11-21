@@ -101,3 +101,5 @@ For standalone Android apps that host a custom Android View with `core.Native`, 
 ## Embedding
 
 `go tool nsgo build -embed -target ios|android_arm64` packages an app as an XCFramework or an AAR for a host app of your own, `nsgo.NewView` shows one in a Go desktop program, and the web build's loader puts apps in a page. `examples/embed-*` show each host ([Embedding](https://nsgo.dev/docs/embedding.md)).
+
+The web loader shows download progress. Style `progress.nsgo-load-progress` or replace it with `onProgress` in the mount options or the `web.host` module. A release includes smaller Brotli and gzip copies of its wasm for servers configured to negotiate precompressed files.

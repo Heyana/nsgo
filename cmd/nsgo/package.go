@@ -180,7 +180,7 @@ func serveSite(ctx context.Context, dir string) error {
 	if err != nil {
 		return err
 	}
-	files := http.FileServer(http.Dir(dir))
+	files := webFiles(dir)
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if hashed.MatchString(r.URL.Path) {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")

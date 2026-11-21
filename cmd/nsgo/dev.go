@@ -518,7 +518,7 @@ func startDevServer(port int) (*devServer, error) {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-cache")
-		http.FileServer(http.Dir(files)).ServeHTTP(w, r)
+		webFiles(files).ServeHTTP(w, r)
 	})
 	s.srv = &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !ownHost(r.Host) {

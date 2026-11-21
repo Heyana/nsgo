@@ -66,12 +66,29 @@ func TestWebHostChannel(t *testing.T) {
 	if err := json.Unmarshal(data, &app); err != nil || !hashed.MatchString("/"+app.Loader) || !hashed.MatchString("/"+app.Host) {
 		t.Fatalf("nsgo.json = %s", data)
 	}
+	module := filepath.Join(dir, app.Wasm)
+	info, err := os.Stat(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.WasmSize != info.Size() {
+		t.Fatalf("wasmSize = %d, want %d", app.WasmSize, info.Size())
+	}
+	for _, encoding := range wasmEncodings {
+		sidecar, err := os.Stat(module + encoding.extension)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sidecar.Size() >= app.WasmSize {
+			t.Errorf("%s is larger than the original module", encoding.extension)
+		}
+	}
 	os.WriteFile(filepath.Join(dir, "host.html"), []byte(hostPage), 0o644)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &http.Server{Handler: http.FileServer(http.Dir(dir))}
+	srv := &http.Server{Handler: webFiles(dir)}
 	go srv.Serve(ln)
 	defer srv.Close()
 	b, err := startBrowser(ctx)

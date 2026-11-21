@@ -1203,7 +1203,11 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 	page := map[string]any{"Name": p.Name, "Reload": dev,
 		"Color": appearanceColor(p.Appearance), "Appearance": p.Appearance}
 	// app is nsgo.json: what the loader needs to show the app.
-	app := webApp{Wasm: "app.wasm"}
+	info, err := os.Stat(wasm)
+	if err != nil {
+		return err
+	}
+	app := webApp{Wasm: "app.wasm", WasmSize: info.Size()}
 	// write puts data in dir, by its content's name in a release, and
 	// returns the name.
 	write := func(name string, data []byte) (string, error) {
@@ -1256,7 +1260,12 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 			return err
 		}
 		app.Wasm = hashedName("app.wasm", data)
-		if err := os.Rename(wasm, filepath.Join(dir, app.Wasm)); err != nil {
+		path := filepath.Join(dir, app.Wasm)
+		if err := os.Rename(wasm, path); err != nil {
+			return err
+		}
+		stage(ctx, "compressing the web module")
+		if err := writeWebWasmCopies(path, data); err != nil {
 			return err
 		}
 		if app.Resources, err = copyHashedResources(p, dir); err != nil {
@@ -1318,10 +1327,11 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 // webApp is a site's nsgo.json, which names the files of the app for the
 // loader, relative to itself.
 type webApp struct {
-	Wasm   string `json:"wasm"`
-	Exec   string `json:"exec"`
-	Loader string `json:"loader"`
-	Host   string `json:"host,omitempty"`
+	Wasm     string `json:"wasm"`
+	WasmSize int64  `json:"wasmSize"`
+	Exec     string `json:"exec"`
+	Loader   string `json:"loader"`
+	Host     string `json:"host,omitempty"`
 	// Runtime is the script that gives the page's realm the runtime's
 	// programs, and Scripts the app's bundles: the loader runs them in the
 	// realm before the app starts, so a Content-Security-Policy needs no
@@ -1361,7 +1371,9 @@ func pageCSS(p *project) []byte {
 	if color := appearanceColor(p.Appearance); color != "" {
 		css += " background: " + color + ";"
 	}
-	return []byte(css + " }\n")
+	return []byte(css + ` }
+body > .nsgo-load-progress { position: absolute; inset: 0; margin: auto; width: min(16rem, 70%); }
+`)
 }
 
 // mountJS is the module that runs the app, and says so when the app cannot

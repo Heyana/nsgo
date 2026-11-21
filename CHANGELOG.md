@@ -57,6 +57,7 @@
 - Cut `ui.BadgeVariant` to neutral, accent, success, warn and danger: `BadgeUp` becomes `BadgeSuccess`, and `BadgeInfo`, `BadgeDown` and `BadgeOutline`, which repeated other looks, are gone, with `"info"`, `"up"`, `"down"` and `"outline"` in TSX.
 - Add `android.classes` to package precompiled DEX shards for custom `core.Native` views (#1055 by @houko).
 - Follow system thermal pressure and low-power mode through `Env` (#1216 by @houko).
+- Show WebAssembly download progress before web apps start and package Brotli and gzip copies of the module (#1233 by @houko).
 - Let `richeditor.View.NodeViews` draw inline leaves in the text, where a press selects the node and an edit can replace it whole (#1172 by @shuuul).
 - Keep an image with its surrounding text when the rich editor's schema defines `inlineImage`, and keep the image's title and link when writing Markdown (#1174 by @shuuul).
 - Slide the title of `ui.SidebarShell`'s content with the content until it meets the sidebar's toggle, where it jumped as the sidebar hid or showed, and add `examples/shell` of the inset shell.
