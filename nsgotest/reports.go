@@ -241,6 +241,23 @@ func (a *App) OpenLinks(links ...string) {
 	a.dispatch(driver.Event{Kind: driver.EventOpenLinks, Data: links})
 }
 
+// ReceiveShare delivers mobile.SharedItem values as another app sharing text or
+// files would. It runs headless and on Android targets.
+func (a *App) ReceiveShare(items ...core.SharedItem) {
+	a.t.Helper()
+	items = slices.Clone(items)
+	if a.target != nil {
+		surface, ok := a.target.surface.(testhost.SharedItemsSurface)
+		if !ok {
+			a.t.Skip("nsgotest: ReceiveShare runs headless and on Android targets")
+		}
+		surface.ReceiveShare(items)
+		a.Settle()
+		return
+	}
+	a.dispatch(driver.Event{Kind: driver.EventShared, Data: items})
+}
+
 // ChoosePopup chooses the item at path in the context menu the app shows
 // with PopupMenu, its labels from the menu down, which closes the menu.
 func (a *App) ChoosePopup(path ...string) {

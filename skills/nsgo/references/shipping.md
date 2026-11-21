@@ -75,6 +75,8 @@ Declare `file_types` in `nsgo.yaml` and handle paths with `desktop.OnOpenFiles`.
 
 Declare `url_schemes: [myapp]` for the app's own links and handle them with `desktop.OnOpenLinks`, or `mobile.OnOpenLinks` on iOS and Android. The macOS, iOS and Android apps, the NSIS installer and MSIX package, and the Linux desktop entry register them; on Windows and Linux a second launch hands its link to the running app. On Windows and Linux the handler hears any URL the app is started with, so check the scheme, and confirm with the user before a link changes anything.
 
+Set `android.share_types: [text/plain, 'image/*']` to receive those MIME types from the Android share sheet. Register `mobile.OnShared` for the text and cache-backed files, including what launched the app. [Building](https://nsgo.dev/docs/building.md#incoming-shares-on-android)
+
 ## Secrets
 
 Never commit secret keys or passwords. The tool reads them from the environment: `NSGO_UPDATES_KEY` for update feeds, `NSGO_KEYSTORE_PASSWORD` and `NSGO_KEY_PASSWORD` for Android keystores, `NSGO_CERTIFICATE_PASSWORD` for a Windows code signing certificate, `NSGO_NOTARY_KEY`, `NSGO_NOTARY_KEY_ID` and `NSGO_NOTARY_ISSUER` for notarizing in CI, `NSGO_APP_STORE_KEY`, `NSGO_APP_STORE_KEY_ID` and `NSGO_APP_STORE_ISSUER` (falling back to the notary key) for App Store Connect listings, `NSGO_PLAY_SERVICE_ACCOUNT` for Google Play listings, and `NSGO_ROOT_KEY` and `NSGO_RELEASE_KEY` for signed TSX packages. Public keys belong in `nsgo.yaml` and the app's code.

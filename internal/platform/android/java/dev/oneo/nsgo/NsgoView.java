@@ -2507,6 +2507,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             pressedEarly = null;
             for (String link : linksEarly) openLink(link);
             linksEarly.clear();
+            for (String share : sharesEarly) receiveShare(share);
+            sharesEarly.clear();
         }
         DataInputStream in = new DataInputStream(new ByteArrayInputStream(batch));
         try {
@@ -4091,6 +4093,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
     }
 
     private final ArrayList<String> linksEarly = new ArrayList<>();
+    private final ArrayList<String> sharesEarly = new ArrayList<>();
 
     /** Reports a URL opened by Android, after the engine's first batch if it is still starting. */
     void openLink(String link) {
@@ -4099,6 +4102,15 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             return;
         }
         event(Protocol.EVENT_OPEN_LINKS, 0, 0, 0, 0, link);
+    }
+
+    /** Gives one incoming share to the engine after it has started. */
+    void receiveShare(String items) {
+        if (!mounted) {
+            sharesEarly.add(items);
+            return;
+        }
+        event(Protocol.EVENT_SHARED, 0, 0, 0, 0, items);
     }
 
     /** The input modality last reported (modality). */

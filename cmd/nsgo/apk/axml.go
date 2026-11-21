@@ -25,6 +25,8 @@ type Manifest struct {
 	VersionCode int
 	// URLSchemes are the app's own links, registered on the launcher activity.
 	URLSchemes []string
+	// ShareTypes are the MIME types registered for incoming text and files.
+	ShareTypes []string
 	// Icon is the launcher icon, an IconSize PNG; nil keeps the system's.
 	Icon []byte
 	// Adaptive is the adaptive launcher icon's layers, which @mipmap/ic_launcher names from API 26 on, Icon below it; nil leaves Icon alone.
@@ -99,6 +101,7 @@ var androidAttrs = map[string]attrSpec{
 	"targetSdkVersion":    {0x01010270, typeInt, parseInt},
 	"name":                {0x01010003, typeString, nil},
 	"launchMode":          {0x0101001d, typeInt, parseLaunchMode},
+	"mimeType":            {0x01010026, typeString, nil},
 	"scheme":              {0x01010027, typeString, nil},
 	"label":               {0x01010001, typeString, nil},
 	"exported":            {0x01010010, typeBool, parseBool},
@@ -282,16 +285,19 @@ func appManifest(template []byte, m Manifest) (*node, error) {
 	if m.LoopbackCleartext {
 		setAttr(app, androidNS, "networkSecurityConfig", fmt.Sprintf("@0x%08x", networkSecurityID(m)))
 	}
-	if len(m.URLSchemes) > 0 {
+	if len(m.URLSchemes) > 0 || len(m.ShareTypes) > 0 {
 		launcher := xml.Attr{Name: xml.Name{Space: androidNS, Local: "name"}, Value: "dev.oneo.nsgo.NsgoActivity"}
 		activity := child(app, "activity")
 		if activity == nil || !slices.Contains(activity.attrs, launcher) {
-			return nil, errors.New("manifest: no NsgoActivity for URL schemes")
+			return nil, errors.New("manifest: no NsgoActivity for URL schemes or incoming shares")
 		}
-		// Reuse the running app's task even when the link comes from another app.
+		// Reuse the running app's task when a link or share comes from another app.
 		setAttr(activity, androidNS, "launchMode", "singleTask")
 		for _, scheme := range m.URLSchemes {
 			activity.kids = append(activity.kids, openLinkFilter(scheme))
+		}
+		if len(m.ShareTypes) > 0 {
+			activity.kids = append(activity.kids, shareFilter(m.ShareTypes))
 		}
 	}
 	perms := m.Permissions
@@ -354,6 +360,22 @@ func openLinkFilter(scheme string) *node {
 		kid := &node{name: xml.Name{Local: element.tag}}
 		setAttr(kid, androidNS, element.attr, element.value)
 		filter.kids = append(filter.kids, kid)
+	}
+	return filter
+}
+
+func shareFilter(types []string) *node {
+	filter := &node{name: xml.Name{Local: "intent-filter"}}
+	add := func(tag, attr, value string) {
+		kid := &node{name: xml.Name{Local: tag}}
+		setAttr(kid, androidNS, attr, value)
+		filter.kids = append(filter.kids, kid)
+	}
+	add("action", "name", "android.intent.action.SEND")
+	add("action", "name", "android.intent.action.SEND_MULTIPLE")
+	add("category", "name", "android.intent.category.DEFAULT")
+	for _, media := range types {
+		add("data", "mimeType", media)
 	}
 	return filter
 }

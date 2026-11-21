@@ -177,7 +177,10 @@ type project struct {
 		Permissions []string `yaml:"permissions"`
 		TargetSDK   int      `yaml:"target_sdk"`
 		Recording   bool     `yaml:"recording"`
-		Classes     []string `yaml:"classes"`
+
+		Classes []string `yaml:"classes"`
+		// ShareTypes are the MIME types the launcher accepts from the sharesheet.
+		ShareTypes []string `yaml:"share_types"`
 		// LoopbackCleartext allows HTTP to loopback in standalone packages.
 		LoopbackCleartext bool `yaml:"loopback_cleartext"`
 	} `yaml:"android"`
@@ -438,6 +441,9 @@ func load(dir string) (*project, error) {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	if err := p.validateURLSchemes(); err != nil {
+		return nil, fmt.Errorf("nsgo.yaml: %w", err)
+	}
+	if err := p.validateAndroidShareTypes(); err != nil {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	if err := p.validateWidgets(); err != nil {

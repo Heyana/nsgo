@@ -390,7 +390,9 @@ final class Protocol {
     static final int EVENT_OVERLAY_PERMISSION = 80;
     static final int EVENT_OPEN_LINKS = 87;
     static final int EVENT_SPEAK = 90;
+
     static final int EVENT_SAVE_PREFLIGHT = 99;
+    static final int EVENT_SHARED = 97;
 
     // Reasons carried in EVENT_VIDEO_PAUSE's index, as core.VideoPauseReason.
     static final int VIDEO_PAUSE_INTERRUPTION = 0;

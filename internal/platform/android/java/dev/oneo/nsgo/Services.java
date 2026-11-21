@@ -581,11 +581,31 @@ final class Services {
      * the copies and fails the pick.
      */
     static String copyPicked(Context context, List<Uri> uris) throws IOException {
+        StringBuilder out = new StringBuilder();
+        for (CachedFile file : copyToCache(context, uris, "pick")) {
+            out.append(file.name.replace('\t', ' ').replace('\n', ' ')).append('\t')
+                    .append(file.mime).append('\t').append(file.path).append('\n');
+        }
+        return out.toString();
+    }
+
+    static final class CachedFile {
+        final String name, mime, path;
+
+        CachedFile(String name, String mime, String path) {
+            this.name = name;
+            this.mime = mime;
+            this.path = path;
+        }
+    }
+
+    /** Streams documents into a private cache directory with their display names. */
+    static List<CachedFile> copyToCache(Context context, List<Uri> uris, String prefix) throws IOException {
         ContentResolver resolver = context.getContentResolver();
         File base = new File(context.getCacheDir(), FILES_DIR);
         if (!base.isDirectory() && !base.mkdirs()) throw new IOException("cannot make " + base);
-        File dir = java.nio.file.Files.createTempDirectory(base.toPath(), "pick").toFile();
-        StringBuilder out = new StringBuilder();
+        File dir = java.nio.file.Files.createTempDirectory(base.toPath(), prefix).toFile();
+        List<CachedFile> files = new ArrayList<>();
         try {
             for (Uri uri : uris) {
                 String name = displayName(resolver, uri);
@@ -596,14 +616,14 @@ final class Services {
                     copy(in, o);
                 }
                 String mime = resolver.getType(uri);
-                out.append(name.replace('\t', ' ').replace('\n', ' ')).append('\t')
-                        .append(mime == null ? "" : mime.toLowerCase()).append('\t').append(to.getAbsolutePath()).append('\n');
+                files.add(new CachedFile(name, mime == null ? "" : mime.toLowerCase(java.util.Locale.ROOT),
+                        to.getAbsolutePath()));
             }
         } catch (IOException | RuntimeException e) {
             remove(dir);
             throw e instanceof IOException ? (IOException) e : new IOException(e.getMessage(), e);
         }
-        return out.toString();
+        return files;
     }
 
     /** A document's name as the user saw it, safe as a file name. */

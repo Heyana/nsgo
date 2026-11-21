@@ -319,6 +319,17 @@ desktop.OnOpenLinks(cx, func(links []string) { show(links[0]) })
 
 On iOS and Android, `mobile.OnOpenLinks` hears links at launch and while the app runs. Open one with `xcrun simctl openurl booted myapp://settings` on the iOS simulator or `adb shell am start -a android.intent.action.VIEW -d myapp://settings` on Android. `app.OpenLinks("myapp://settings")` delivers one in a test.
 
+## Incoming shares on Android
+
+Choose the MIME types the app handles from the Android share sheet:
+
+```yaml
+android:
+  share_types: [text/plain, 'image/*', application/pdf]
+```
+
+APK and App Bundle builds register those types for both single and multiple items. Register [`mobile.OnShared`](services.md#opening-links-and-files) to receive each share.
+
 ## Mini programs
 
 ```sh

@@ -56,6 +56,7 @@
 - Let underline tabs set their indicator color and fit it to the selected tab's content, with `indicatorColor` and `indicatorFit` in TSX (#1037 by @houko).
 - Use Material navigation app bars on Android `ui.NavPage` screens, including a collapsing large-title bar (#485 by @houko).
 - Add a Windows system caption button style for hidden title bars, preserving Snap Layout hit testing (#679 by @houko).
+- Receive Android shares of text and files with `android.share_types`, `mobile.OnShared` and `nsgotest.App.ReceiveShare` (#655 by @houko).
 - Add `android.loopback_cleartext` to allow plain HTTP to loopback in Android APKs and App Bundles (#1061 by @houko).
 - Send deferred shader pixels on Android without waiting for another app update (#1112 by @houko).
 - Give Android tab bars their own palette roles and use the accent for selected tabs by default (#1071 by @houko).

@@ -161,6 +161,11 @@ type TabBarSurface interface {
 	SelectTab(id driver.NodeID, index int) error
 }
 
+// SharedItemsSurface delivers an incoming share to the app under test.
+type SharedItemsSurface interface {
+	ReceiveShare(items []driver.SharedItem)
+}
+
 // KeyboardSurface is a surface whose window takes the keyboard only while its app is active, as macOS's does.
 type KeyboardSurface interface {
 	// PrepareKeyboard activates the app and waits for its window to take the keyboard when the run opted in to that (nsgo test -target macos -activate), and does nothing otherwise.

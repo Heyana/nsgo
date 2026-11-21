@@ -55,6 +55,8 @@ public class NsgoActivity extends Activity {
         window.setNavigationBarColor(Color.TRANSPARENT);
         if (Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false);
         // The view lays itself out behind the system bars and styles them.
+        Intent intent = getIntent();
+        boolean share = isShare(intent.getAction());
         NsgoView again = kept;
         kept = null;
         if (again != null && again.keptOffScreen()) {
@@ -63,37 +65,56 @@ public class NsgoActivity extends Activity {
             view.showAgain();
         } else {
             view = new NsgoView(new MutableContextWrapper(this));
-            view.setFlags(getIntent().getExtras());
-            view.setTest(getIntent().getStringExtra(TestAgent.EXTRA));
+            if (!share) {
+                view.setFlags(intent.getExtras());
+                view.setTest(intent.getStringExtra(TestAgent.EXTRA));
+            }
         }
         setContentView(view);
-        view.notificationPressed(getIntent().getStringExtra(Notifications.EXTRA));
-        view.liveActionPressed(getIntent());
-        if (state == null) openLink(getIntent());
+        if (!share) openNotification(intent);
+        if (state == null) openIntent(intent);
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        // A notification's press, the activity running.
-        view.notificationPressed(intent.getStringExtra(Notifications.EXTRA));
-        view.liveActionPressed(intent);
-        openLink(intent);
+        if (!isShare(intent.getAction())) openNotification(intent);
+        openIntent(intent);
     }
 
-    /** Delivers a URL that the launcher activity declares in its intent filters. */
-    private void openLink(Intent intent) {
-        if (!Intent.ACTION_VIEW.equals(intent.getAction())) return;
-        Uri uri = intent.getData();
-        if (uri == null || uri.getScheme() == null) return;
-        // Explicit intents can bypass the filters. Match an implicit browser intent against our own package.
-        Intent link = new Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE).setPackage(getPackageName());
-        for (ResolveInfo match : getPackageManager().queryIntentActivities(link, PackageManager.MATCH_DEFAULT_ONLY)) {
-            if (getComponentName().getClassName().equals(match.activityInfo.name)) {
+    private void openNotification(Intent intent) {
+        view.notificationPressed(intent.getStringExtra(Notifications.EXTRA));
+        view.liveActionPressed(intent);
+    }
+
+    private static boolean isShare(String action) {
+        return Intent.ACTION_SEND.equals(action) || Intent.ACTION_SEND_MULTIPLE.equals(action);
+    }
+
+    /** Delivers an incoming link or share that the launcher declares. */
+    private void openIntent(Intent intent) {
+        String action = intent.getAction();
+        if (Intent.ACTION_VIEW.equals(action)) {
+            Uri uri = intent.getData();
+            if (uri != null && uri.getScheme() != null &&
+                    accepts(new Intent(action, uri).addCategory(Intent.CATEGORY_BROWSABLE))) {
                 view.openLink(uri.toString());
-                return;
+            }
+        } else if (isShare(action)) {
+            String mime = Intent.normalizeMimeType(intent.getType());
+            if (mime != null && accepts(new Intent(action).setType(mime))) {
+                IncomingShare.receive(getApplicationContext(), view, intent, mime);
             }
         }
+    }
+
+    /** Resolves an implicit intent in this package because an explicit intent can bypass its filters. */
+    private boolean accepts(Intent intent) {
+        intent.setPackage(getPackageName());
+        for (ResolveInfo match : getPackageManager().queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)) {
+            if (getComponentName().getClassName().equals(match.activityInfo.name)) return true;
+        }
+        return false;
     }
 
     /**

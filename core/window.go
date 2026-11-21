@@ -841,25 +841,23 @@ func (cx *Scope) LaunchAtLogin(done func(on bool)) {
 	})
 }
 
-// surfaceEvent handles an event about the tree's surface or the app
-// rather than a view, and reports whether ev was one.
-// openHandler hears what the system asks the app to open: files (OnOpenFiles) or the app's own links (OnOpenLinks).
-type openHandler struct {
+// openHandler hears the files, links or shares that the system opens with the app.
+type openHandler[T any] struct {
 	owner *Scope
-	fn    func(items []string)
+	fn    func(items []T)
 }
 
 // openQueue holds the handlers of one kind of opening, and what came before any of them, as what the app launched to open.
-type openQueue struct {
-	handlers []*openHandler
-	pending  []string
+type openQueue[T any] struct {
+	handlers []*openHandler[T]
+	pending  []T
 }
 
 // add registers fn while the current owner lives, handing it what came before any handler.
-func (q *openQueue) add(cx *Scope, fn func(items []string)) {
-	h := &openHandler{owner: cx.current(), fn: fn}
+func (q *openQueue[T]) add(cx *Scope, fn func(items []T)) {
+	h := &openHandler[T]{owner: cx.current(), fn: fn}
 	q.handlers = append(q.handlers, h)
-	h.owner.addCleanup(func() { q.handlers = slices.DeleteFunc(q.handlers, func(o *openHandler) bool { return o == h }) })
+	h.owner.addCleanup(func() { q.handlers = slices.DeleteFunc(q.handlers, func(o *openHandler[T]) bool { return o == h }) })
 	if items := q.pending; len(items) > 0 {
 		q.pending = nil
 		// Not while the caller builds its view: the handler may well change what it shows.
@@ -868,7 +866,7 @@ func (q *openQueue) add(cx *Scope, fn func(items []string)) {
 }
 
 // open hands items to every handler, or keeps them for the first one registered.
-func (q *openQueue) open(rt *runtime, items []string) {
+func (q *openQueue[T]) open(rt *runtime, items []T) {
 	if len(items) == 0 {
 		return
 	}
@@ -887,6 +885,20 @@ func (cx *Scope) OnOpenFiles(fn func(paths []string)) { cx.rt.opens.add(cx, fn) 
 // OnOpenLinks is the core's part of desktop.OnOpenLinks and mobile.OnOpenLinks, which apps use: fn runs, while the current owner lives, with the links of the app's own URL schemes the system asks it to open. Links that came before any handler, as one the app launched to open, go to the first one registered.
 func (cx *Scope) OnOpenLinks(fn func(links []string)) { cx.rt.links.add(cx, fn) }
 
+// SharedItem is the core's part of mobile.SharedItem.
+type SharedItem = driver.SharedItem
+
+// OnShared is the core's part of mobile.OnShared.
+func (cx *Scope) OnShared(fn func([]SharedItem)) {
+	cx.rt.shares.add(cx, func(shares [][]driver.SharedItem) {
+		for _, items := range shares {
+			fn(slices.Clone(items))
+		}
+	})
+}
+
+// surfaceEvent handles an event about the tree's surface or the app
+// rather than a view, and reports whether ev was one.
 func (t *Tree) surfaceEvent(ev driver.Event) bool {
 	rt := t.rt
 	switch ev.Kind {
@@ -921,6 +933,10 @@ func (t *Tree) surfaceEvent(ev driver.Event) bool {
 	case driver.EventOpenLinks:
 		links, _ := ev.Data.([]string)
 		t.within(t.root, func() { rt.links.open(rt, links) })
+	case driver.EventShared:
+		if items, _ := ev.Data.([]driver.SharedItem); len(items) != 0 {
+			t.within(t.root, func() { rt.shares.open(rt, [][]driver.SharedItem{items}) })
+		}
 	case driver.EventTray:
 		if tr := rt.trays[ev.Count]; tr != nil {
 			t.within(tr.owner, func() { tr.clicked(ev.Index) })

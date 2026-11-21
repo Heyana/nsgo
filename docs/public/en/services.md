@@ -54,6 +54,8 @@ cx.Share(core.ShareOptions{
 }, func(shown bool, err error) {})
 ```
 
+On Android, `mobile.OnShared(cx, func(items []mobile.SharedItem) { ... })` receives text and files for the MIME types in [`android.share_types`](building.md#incoming-shares-on-android). A share that starts the app waits for the first handler. Text arrives in `Text`, and files arrive as readable cache copies with `Path`, `Name` and `MIME`. Move or copy a file to persistent storage if it needs to outlive the cache.
+
 `desktop.LookUp` shows the system's dictionary panel for a text, as a three-finger tap does on macOS, drawn over a box in a view: a selection's text and box with its `Selectable` view's `Ref`. `desktop.CanLookUp` says whether it can, in a window on macOS; Windows, Linux and the web have no such panel. In tests, `nsgotest.App.LookUps` lists the panels shown where `nsgotest.Environment` sets `CanLookUp`.
 
 ```go

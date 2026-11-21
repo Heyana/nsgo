@@ -336,6 +336,14 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			switch ev.Kind {
 			case driver.EventOpenLinks:
 				ev.Data, ev.Text = []string{ev.Text}, ""
+			case driver.EventShared:
+				var items []driver.SharedItem
+				if err := json.Unmarshal([]byte(ev.Text), &items); err == nil {
+					ev.Data = items
+				} else {
+					log.Printf("android share: %v", err)
+				}
+				ev.Text = ""
 			case driver.EventPaste:
 				ev.Data, ev.Text = readPaste(ev.Text, data), ""
 			case driver.EventClipboard:

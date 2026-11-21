@@ -239,6 +239,7 @@ var eventKindNames = map[EventKind]string{
 	EventSavePreflight: "EventSavePreflight",
 	EventDiskSpace:     "EventDiskSpace",
 	EventDiscovery:     "EventDiscovery",
+	EventShared:        "EventShared",
 }
 
 // String returns the kind's name, as a log or an event prints it.

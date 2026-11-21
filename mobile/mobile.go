@@ -71,6 +71,16 @@ func OpenedURL(cx *core.Scope) string { return cx.Env().OpenedURL() }
 // OnOpenLinks runs fn with links of the app's own URL schemes, which nsgo.yaml's url_schemes declares and the iOS and Android packages register, that the system asks the app to open. They reach the running app, and the link the app launched to open waits for the first handler. A link carries whatever the page that made it chose, so treat its contents as untrusted input and confirm with the user before acting on it. It is desktop.OnOpenLinks for phones, and either hears the same links.
 func OnOpenLinks(cx *core.Scope, fn func(links []string)) { cx.OnOpenLinks(fn) }
 
+// SharedItem is text (Text) or a file (Path and Name) received from another
+// app. MIME is the item's media type. Copy the file out of the app's cache
+// if it needs to outlive the cache.
+type SharedItem = core.SharedItem
+
+// OnShared calls fn for each share the system delivers while cx lives.
+// Shares that launch the app wait for its first handler. On Android,
+// nsgo.yaml's android.share_types declares which media types the app receives.
+func OnShared(cx *core.Scope, fn func(items []SharedItem)) { cx.OnShared(fn) }
+
 // ExitApp leaves the app on Android as its back button does when nothing
 // in the app takes it: the task's root activity goes to the background,
 // any other finishes. iOS apps never leave themselves, so it does nothing

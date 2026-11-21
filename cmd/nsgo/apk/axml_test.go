@@ -126,6 +126,61 @@ func TestEncodeManifestURLSchemes(t *testing.T) {
 	}
 }
 
+func TestEncodeManifestShareTypes(t *testing.T) {
+	manifest := Manifest{
+		Package:    "dev.oneo.nsgo.test",
+		URLSchemes: []string{"myapp"},
+		ShareTypes: []string{"text/plain", "image/*"},
+	}
+	data, err := EncodeManifest(androidruntime.Manifest, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activity := decodeXML(t, data).root.child(t, "application").child(t, "activity")
+	if attr := activity.attr(t, "launchMode"); attr.kind != typeInt || attr.data != 2 {
+		t.Fatalf("launchMode = %+v, want singleTask as an integer", attr)
+	}
+	if len(activity.kids) != 3 {
+		t.Fatalf("activity has %d filters, want launcher, link and share", len(activity.kids))
+	}
+	filter := activity.kids[2]
+	if filter.name != "intent-filter" || len(filter.kids) != 5 {
+		t.Fatalf("bad share intent filter: %+v", filter)
+	}
+	for i, want := range []struct{ tag, attr, value string }{
+		{"action", "name", "android.intent.action.SEND"},
+		{"action", "name", "android.intent.action.SEND_MULTIPLE"},
+		{"category", "name", "android.intent.category.DEFAULT"},
+		{"data", "mimeType", "text/plain"},
+		{"data", "mimeType", "image/*"},
+	} {
+		kid := filter.kids[i]
+		if kid.name != want.tag || kid.string(t, want.attr) != want.value {
+			t.Errorf("share filter child %d = %+v, want %+v", i, kid, want)
+		}
+		if want.attr == "mimeType" && kid.attr(t, want.attr).id != 0x01010026 {
+			t.Error("mimeType has the wrong framework resource ID")
+		}
+	}
+
+	root, err := appManifest(androidruntime.Manifest, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proto, err := protoElement(root, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(proto, pbVarint(nil, 5, 0x01010026)) {
+		t.Error("the App Bundle manifest lacks the mimeType resource ID")
+	}
+	for _, value := range []string{"android.intent.action.SEND", "android.intent.action.SEND_MULTIPLE", "text/plain", "image/*"} {
+		if !bytes.Contains(proto, []byte(value)) {
+			t.Errorf("the App Bundle manifest lacks %q", value)
+		}
+	}
+}
+
 // TestEncodeManifestPermissions checks that the app's permissions join
 // the runtime's once each, and that a name that is none fails.
 func TestEncodeManifestPermissions(t *testing.T) {
@@ -422,6 +477,7 @@ func TestFrameworkAttributeIDs(t *testing.T) {
 		"name":                        0x01010003,
 		"label":                       0x01010001,
 		"launchMode":                  0x0101001d,
+		"mimeType":                    0x01010026,
 		"scheme":                      0x01010027,
 		"exported":                    0x01010010,
 		"authorities":                 0x01010018,

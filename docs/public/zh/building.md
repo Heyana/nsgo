@@ -319,6 +319,17 @@ desktop.OnOpenLinks(cx, func(links []string) { show(links[0]) })
 
 在 iOS 和 Android 上，应用用 `mobile.OnOpenLinks` 接收启动时和运行中打开的链接。在 iOS 模拟器上可以用 `xcrun simctl openurl booted myapp://settings` 打开，在 Android 上可以用 `adb shell am start -a android.intent.action.VIEW -d myapp://settings` 打开。测试里用 `app.OpenLinks("myapp://settings")` 送入链接。
 
+## 接收 Android 分享
+
+在 `nsgo.yaml` 中声明应用可以从 Android 分享面板接收的 MIME 类型：
+
+```yaml
+android:
+  share_types: [text/plain, 'image/*', application/pdf]
+```
+
+APK 和 App Bundle 都会为单项和多项分享注册这些类型。用 [`mobile.OnShared`](services.md#打开链接与文件) 接收每次分享。
+
 ## 小程序
 
 ```sh
