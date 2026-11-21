@@ -15,8 +15,7 @@ import (
 	"github.com/nsgo-dev/nsgo/cmd/nsgo/apk"
 )
 
-// androidClassFiles adds one secondary DEX per input shard. ART loads
-// classes2.dex and later shards alongside the runtime's classes.dex.
+// androidClassFiles adds one secondary DEX per input shard. ART loads classes2.dex and later shards alongside the runtime's classes.dex.
 func androidClassFiles(p *project) ([]apk.File, error) {
 	var files []apk.File
 	for _, name := range p.Android.Classes {
@@ -111,8 +110,7 @@ func androidDexIndex(name string) int {
 	return index
 }
 
-// checkAndroidDex checks the classic header and the versions supported by
-// the APK's minimum API. ART verifies the instructions when it loads them.
+// checkAndroidDex checks the classic header and the versions supported by the APK's minimum API. ART verifies the instructions when it loads them.
 func checkAndroidDex(data []byte) error {
 	const headerSize = 0x70
 	if len(data) < headerSize || string(data[:4]) != "dex\n" || data[7] != 0 {
