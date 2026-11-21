@@ -117,7 +117,8 @@ func previousMouseRegistration() (rawInputDevice, bool) {
 	missing := rawInputDevice{UsagePage: rawMousePage, Usage: rawMouseUsage, Flags: remove}
 	var count uint32
 	const size = unsafe.Sizeof(rawInputDevice{})
-	if result, _, _ := registeredRawInput.Call(0, uintptr(unsafe.Pointer(&count)), size); uint32(result) == 0xffffffff {
+	// Windows reports ERROR_INSUFFICIENT_BUFFER for this size probe.
+	if result, _, err := registeredRawInput.Call(0, uintptr(unsafe.Pointer(&count)), size); uint32(result) == 0xffffffff && err != errInsufficientBuffer {
 		return missing, false
 	}
 	if count == 0 {
