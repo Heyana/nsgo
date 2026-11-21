@@ -7,7 +7,7 @@ order: 50
 
 ## Elements
 
-The screen is a tree of elements, which are Go struct values. `core` has the primitives: `View`, `Text`, `Image`, `Scroll`, `Input` and more. `ui` has the controls an app uses, such as `Button`, `Select` and `DatePicker`, in a look that follows the theme. (`base` holds the same controls without a look, for [component authors](authoring/index.md).)
+The screen is a tree of elements, which are Go struct values. `core` has the primitives: `View`, `Text`, `Image`, `Scroll`, `Input` and more. `ui` has the controls an app uses, such as `Button`, `Select`, `DatePicker` and `EmojiPicker`, in a look that follows the theme. (`base` holds the same controls without a look, for [component authors](authoring/index.md).)
 
 ```go
 core.View{

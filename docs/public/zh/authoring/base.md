@@ -152,3 +152,19 @@ base.Menu{Trigger: core.Text{Content: "操作"}, Children: []core.Node{
 ```
 
 桌面上由 `Placement`、`Align`、`Offset` 和 `Margin` 定位弹出层，`PopupStyle` 和 `BackdropStyle` 设置它的样式。
+
+## EmojiPicker
+
+`base.EmojiPicker` 按应用语言（或显式传入的 `Languages` / `LanguagesFunc`）的本地化 CLDR 名称、关键词和短代码搜索所有 Unicode 表情，提供分类标签、可选的 `Recent` 最近使用、肤色选择、键盘导航和虚拟化网格。所有默认文案和分类名都来自 `base/locales`，表情数据仅在使用 `EmojiPicker` 或其查询函数（`base.SearchEmojis`、`base.EmojisInCategory`、`base.EmojiByString`）时才会被链接。
+
+```go
+base.EmojiPicker{
+	Recent:   recent.Get,
+	OnSelect: func(e base.Emoji) { insert(e.Emoji) },
+	Style:    core.Style{Width: core.Pt(320), Height: core.Pt(360)},
+}
+```
+
+`Category` 和 `DefaultCategory` 选择浏览分类。分类标签与肤色选项各自只有一个 Tab 停靠点，可通过方向键切换。`EmojiPickerRef` 提供 `Focus`、`Query`、`SetQuery`、`SetCategory` 和 `MatchedCount`，带样式版本使用同一份查询状态。`LabelFunc`、`SearchLabelFunc` 和 `PlaceholderFunc` 可原位更新文案。`Emoji.WithSkinTone` 会将所选肤色同时应用到双人表情中的两个人，默认肤色恢复为中性形式；直接按表情搜索时保留其完整序列。
+
+如需带主题外观的版本（包含 Lucide 分类图标、可清除搜索框、高亮表情预览与肤色色块），请使用 `ui.EmojiPicker`。

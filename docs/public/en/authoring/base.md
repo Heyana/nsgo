@@ -154,3 +154,19 @@ base.Menu{Trigger: core.Text{Content: "Actions"}, Children: []core.Node{
 ```
 
 `Placement`, `Align`, `Offset` and `Margin` place the popup on desktops, and `PopupStyle` and `BackdropStyle` style it.
+
+## EmojiPicker
+
+`base.EmojiPicker` searches every Unicode emoji by its localized CLDR names, keywords and shortcodes in the app's languages (or explicit `Languages` / `LanguagesFunc`), with category tabs, optional `Recent` entries, skin tone selection, keyboard navigation and a virtualized grid. All default labels and category names come from `base/locales`, and the emoji dataset links only into apps that use `EmojiPicker` or its helpers (`base.SearchEmojis`, `base.EmojisInCategory`, `base.EmojiByString`).
+
+```go
+base.EmojiPicker{
+	Recent:   recent.Get,
+	OnSelect: func(e base.Emoji) { insert(e.Emoji) },
+	Style:    core.Style{Width: core.Pt(320), Height: core.Pt(360)},
+}
+```
+
+`Category` and `DefaultCategory` choose the browse group. Category tabs and skin tone choices are each one Tab stop with arrow navigation. `EmojiPickerRef` provides `Focus`, `Query`, `SetQuery`, `SetCategory` and `MatchedCount`; the styled picker uses the same query state. `LabelFunc`, `SearchLabelFunc` and `PlaceholderFunc` update words in place. `Emoji.WithSkinTone` applies the chosen tone to both people in a pair, and the default tone restores its neutral form; searching by an emoji preserves its exact sequence.
+
+Use `ui.EmojiPicker` for the themed picker with Lucide category icons, a clearable search field, highlighted emoji preview and skin tone swatches.

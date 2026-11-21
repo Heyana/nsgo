@@ -2754,6 +2754,8 @@ const (
 	textSystemSensorsStop
 	textSystemSensorsAccelerometer
 	textSystemSensorsFused
+	textDemoEmojiPicker
+	textDemoEmojiPickerDetail
 	numTexts
 )
 
@@ -5072,6 +5074,8 @@ var keyOfText = [numTexts]string{
 	"systemSensorsStop",
 	"systemSensorsAccelerometer",
 	"systemSensorsFused",
+	"demoEmojiPicker",
+	"demoEmojiPickerDetail",
 }
 
 // textsEn are the messages without arguments in en.
@@ -7387,7 +7391,9 @@ var textsEn = i18n.NewTexts(""+
 	"Track in background"+
 	"Stop sensors"+
 	"Accelerometer"+
-	"Fused motion",
+	"Fused motion"+
+	"Emoji picker"+
+	"Search emoji by localized names and choose a skin tone",
 	[]uint16{
 		7,
 		7,
@@ -9701,6 +9707,8 @@ var textsEn = i18n.NewTexts(""+
 		12,
 		13,
 		12,
+		12,
+		54,
 	})
 
 // textsZhHans are the messages without arguments in zh-Hans.
@@ -12016,7 +12024,9 @@ var textsZhHans = i18n.NewTexts(""+
 	"后台持续定位"+
 	"停止传感器"+
 	"加速度计"+
-	"融合运动",
+	"融合运动"+
+	"表情选择器"+
+	"按本地化名称搜索表情并选择肤色",
 	[]uint16{
 		6,
 		6,
@@ -14330,6 +14340,8 @@ var textsZhHans = i18n.NewTexts(""+
 		15,
 		12,
 		12,
+		15,
+		45,
 	})
 
 // texts returns the messages without arguments in lang, nil for a
@@ -36897,3 +36909,17 @@ func SystemSensorsFused(cx *core.Scope) string { return For(cx).SystemSensorsFus
 
 // SystemSensorsFused is the package's SystemSensorsFused in the language of msgs.
 func (msgs Messages) SystemSensorsFused() string { return msgs.text(textSystemSensorsFused) }
+
+// DemoEmojiPicker says "Emoji picker"
+// in the language the app shows under cx.
+func DemoEmojiPicker(cx *core.Scope) string { return For(cx).DemoEmojiPicker() }
+
+// DemoEmojiPicker is the package's DemoEmojiPicker in the language of msgs.
+func (msgs Messages) DemoEmojiPicker() string { return msgs.text(textDemoEmojiPicker) }
+
+// DemoEmojiPickerDetail says "Search emoji by localized names and choose a skin tone"
+// in the language the app shows under cx.
+func DemoEmojiPickerDetail(cx *core.Scope) string { return For(cx).DemoEmojiPickerDetail() }
+
+// DemoEmojiPickerDetail is the package's DemoEmojiPickerDetail in the language of msgs.
+func (msgs Messages) DemoEmojiPickerDetail() string { return msgs.text(textDemoEmojiPickerDetail) }

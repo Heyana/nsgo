@@ -97,6 +97,28 @@ const (
 	textCommandLoading
 	textCommandList
 	textBreadcrumbsMore
+	textEmojiPicker
+	textEmojiSearch
+	textEmojiSearchPlaceholder
+	textEmojiNoMatches
+	textEmojiCategories
+	textEmojiSkinTone
+	textEmojiSkinToneDefault
+	textEmojiSkinToneLight
+	textEmojiSkinToneMediumLight
+	textEmojiSkinToneMedium
+	textEmojiSkinToneMediumDark
+	textEmojiSkinToneDark
+	textEmojiCategoryRecent
+	textEmojiCategorySmileys
+	textEmojiCategoryPeople
+	textEmojiCategoryAnimals
+	textEmojiCategoryFood
+	textEmojiCategoryTravel
+	textEmojiCategoryActivities
+	textEmojiCategoryObjects
+	textEmojiCategorySymbols
+	textEmojiCategoryFlags
 	numTexts
 )
 
@@ -134,6 +156,28 @@ var keyOfText = [numTexts]string{
 	"commandLoading",
 	"commandList",
 	"breadcrumbsMore",
+	"emojiPicker",
+	"emojiSearch",
+	"emojiSearchPlaceholder",
+	"emojiNoMatches",
+	"emojiCategories",
+	"emojiSkinTone",
+	"emojiSkinToneDefault",
+	"emojiSkinToneLight",
+	"emojiSkinToneMediumLight",
+	"emojiSkinToneMedium",
+	"emojiSkinToneMediumDark",
+	"emojiSkinToneDark",
+	"emojiCategoryRecent",
+	"emojiCategorySmileys",
+	"emojiCategoryPeople",
+	"emojiCategoryAnimals",
+	"emojiCategoryFood",
+	"emojiCategoryTravel",
+	"emojiCategoryActivities",
+	"emojiCategoryObjects",
+	"emojiCategorySymbols",
+	"emojiCategoryFlags",
 }
 
 // textsEn are the messages without arguments in en.
@@ -168,7 +212,29 @@ var textsEn = i18n.NewTexts(""+
 	"No matching commands"+
 	"Loading…"+
 	"Commands"+
-	"More",
+	"More"+
+	"Emoji picker"+
+	"Search emoji"+
+	"Search emoji…"+
+	"No matching emoji"+
+	"Emoji categories"+
+	"Skin tone"+
+	"Default skin tone"+
+	"Light skin tone"+
+	"Medium-light skin tone"+
+	"Medium skin tone"+
+	"Medium-dark skin tone"+
+	"Dark skin tone"+
+	"Recently used"+
+	"Smileys & Emotion"+
+	"People & Body"+
+	"Animals & Nature"+
+	"Food & Drink"+
+	"Travel & Places"+
+	"Activities"+
+	"Objects"+
+	"Symbols"+
+	"Flags",
 	[]uint16{
 		10,
 		5,
@@ -201,6 +267,28 @@ var textsEn = i18n.NewTexts(""+
 		10,
 		8,
 		4,
+		12,
+		12,
+		15,
+		17,
+		16,
+		9,
+		17,
+		15,
+		22,
+		16,
+		21,
+		14,
+		13,
+		17,
+		13,
+		16,
+		12,
+		15,
+		10,
+		7,
+		7,
+		5,
 	})
 
 // textsZhHans are the messages without arguments in zh-Hans.
@@ -235,7 +323,29 @@ var textsZhHans = i18n.NewTexts(""+
 	"没有匹配的命令"+
 	"正在加载…"+
 	"命令"+
-	"更多",
+	"更多"+
+	"表情选择器"+
+	"搜索表情"+
+	"搜索表情…"+
+	"没有匹配的表情"+
+	"表情分类"+
+	"肤色"+
+	"默认肤色"+
+	"浅肤色"+
+	"较浅肤色"+
+	"中等肤色"+
+	"较深肤色"+
+	"深肤色"+
+	"最近使用"+
+	"笑脸与情感"+
+	"人物与身体"+
+	"动物与自然"+
+	"食物与饮料"+
+	"旅行与地点"+
+	"活动"+
+	"物品"+
+	"符号"+
+	"旗帜",
 	[]uint16{
 		12,
 		6,
@@ -266,6 +376,28 @@ var textsZhHans = i18n.NewTexts(""+
 		15,
 		21,
 		15,
+		6,
+		6,
+		15,
+		12,
+		15,
+		21,
+		12,
+		6,
+		12,
+		9,
+		12,
+		12,
+		12,
+		9,
+		12,
+		15,
+		15,
+		15,
+		15,
+		15,
+		6,
+		6,
 		6,
 		6,
 	})
@@ -808,6 +940,206 @@ func (msgs Messages) FlowLabel(nodes int, edges int) string {
 		}
 	}
 }
+
+// EmojiPicker says "Emoji picker"
+// in the language the app shows under cx.
+//
+// What screen readers say of an emoji picker the app gives no label.
+func EmojiPicker(cx *core.Scope) string { return For(cx).EmojiPicker() }
+
+// EmojiPicker is the package's EmojiPicker in the language of msgs.
+func (msgs Messages) EmojiPicker() string { return msgs.text(textEmojiPicker) }
+
+// EmojiSearch says "Search emoji"
+// in the language the app shows under cx.
+//
+// What screen readers say of an emoji picker's search field.
+func EmojiSearch(cx *core.Scope) string { return For(cx).EmojiSearch() }
+
+// EmojiSearch is the package's EmojiSearch in the language of msgs.
+func (msgs Messages) EmojiSearch() string { return msgs.text(textEmojiSearch) }
+
+// EmojiSearchPlaceholder says "Search emoji…"
+// in the language the app shows under cx.
+//
+// The hint in an emoji picker's empty search field.
+func EmojiSearchPlaceholder(cx *core.Scope) string { return For(cx).EmojiSearchPlaceholder() }
+
+// EmojiSearchPlaceholder is the package's EmojiSearchPlaceholder in the language of msgs.
+func (msgs Messages) EmojiSearchPlaceholder() string { return msgs.text(textEmojiSearchPlaceholder) }
+
+// EmojiNoMatches says "No matching emoji"
+// in the language the app shows under cx.
+//
+// What an emoji picker says while no emoji matches its query.
+func EmojiNoMatches(cx *core.Scope) string { return For(cx).EmojiNoMatches() }
+
+// EmojiNoMatches is the package's EmojiNoMatches in the language of msgs.
+func (msgs Messages) EmojiNoMatches() string { return msgs.text(textEmojiNoMatches) }
+
+// EmojiCategories says "Emoji categories"
+// in the language the app shows under cx.
+//
+// What screen readers say of an emoji picker's category bar.
+func EmojiCategories(cx *core.Scope) string { return For(cx).EmojiCategories() }
+
+// EmojiCategories is the package's EmojiCategories in the language of msgs.
+func (msgs Messages) EmojiCategories() string { return msgs.text(textEmojiCategories) }
+
+// EmojiSkinTone says "Skin tone"
+// in the language the app shows under cx.
+//
+// What screen readers say of an emoji picker's skin tone selector.
+func EmojiSkinTone(cx *core.Scope) string { return For(cx).EmojiSkinTone() }
+
+// EmojiSkinTone is the package's EmojiSkinTone in the language of msgs.
+func (msgs Messages) EmojiSkinTone() string { return msgs.text(textEmojiSkinTone) }
+
+// EmojiSkinToneDefault says "Default skin tone"
+// in the language the app shows under cx.
+//
+// What screen readers say of the default yellow skin tone option.
+func EmojiSkinToneDefault(cx *core.Scope) string { return For(cx).EmojiSkinToneDefault() }
+
+// EmojiSkinToneDefault is the package's EmojiSkinToneDefault in the language of msgs.
+func (msgs Messages) EmojiSkinToneDefault() string { return msgs.text(textEmojiSkinToneDefault) }
+
+// EmojiSkinToneLight says "Light skin tone"
+// in the language the app shows under cx.
+//
+// What screen readers say of the light skin tone option.
+func EmojiSkinToneLight(cx *core.Scope) string { return For(cx).EmojiSkinToneLight() }
+
+// EmojiSkinToneLight is the package's EmojiSkinToneLight in the language of msgs.
+func (msgs Messages) EmojiSkinToneLight() string { return msgs.text(textEmojiSkinToneLight) }
+
+// EmojiSkinToneMediumLight says "Medium-light skin tone"
+// in the language the app shows under cx.
+//
+// What screen readers say of the medium-light skin tone option.
+func EmojiSkinToneMediumLight(cx *core.Scope) string { return For(cx).EmojiSkinToneMediumLight() }
+
+// EmojiSkinToneMediumLight is the package's EmojiSkinToneMediumLight in the language of msgs.
+func (msgs Messages) EmojiSkinToneMediumLight() string {
+	return msgs.text(textEmojiSkinToneMediumLight)
+}
+
+// EmojiSkinToneMedium says "Medium skin tone"
+// in the language the app shows under cx.
+//
+// What screen readers say of the medium skin tone option.
+func EmojiSkinToneMedium(cx *core.Scope) string { return For(cx).EmojiSkinToneMedium() }
+
+// EmojiSkinToneMedium is the package's EmojiSkinToneMedium in the language of msgs.
+func (msgs Messages) EmojiSkinToneMedium() string { return msgs.text(textEmojiSkinToneMedium) }
+
+// EmojiSkinToneMediumDark says "Medium-dark skin tone"
+// in the language the app shows under cx.
+//
+// What screen readers say of the medium-dark skin tone option.
+func EmojiSkinToneMediumDark(cx *core.Scope) string { return For(cx).EmojiSkinToneMediumDark() }
+
+// EmojiSkinToneMediumDark is the package's EmojiSkinToneMediumDark in the language of msgs.
+func (msgs Messages) EmojiSkinToneMediumDark() string { return msgs.text(textEmojiSkinToneMediumDark) }
+
+// EmojiSkinToneDark says "Dark skin tone"
+// in the language the app shows under cx.
+//
+// What screen readers say of the dark skin tone option.
+func EmojiSkinToneDark(cx *core.Scope) string { return For(cx).EmojiSkinToneDark() }
+
+// EmojiSkinToneDark is the package's EmojiSkinToneDark in the language of msgs.
+func (msgs Messages) EmojiSkinToneDark() string { return msgs.text(textEmojiSkinToneDark) }
+
+// EmojiCategoryRecent says "Recently used"
+// in the language the app shows under cx.
+//
+// The section and category label for recently used emoji.
+func EmojiCategoryRecent(cx *core.Scope) string { return For(cx).EmojiCategoryRecent() }
+
+// EmojiCategoryRecent is the package's EmojiCategoryRecent in the language of msgs.
+func (msgs Messages) EmojiCategoryRecent() string { return msgs.text(textEmojiCategoryRecent) }
+
+// EmojiCategorySmileys says "Smileys & Emotion"
+// in the language the app shows under cx.
+//
+// The section and category label for smileys and emotion emoji.
+func EmojiCategorySmileys(cx *core.Scope) string { return For(cx).EmojiCategorySmileys() }
+
+// EmojiCategorySmileys is the package's EmojiCategorySmileys in the language of msgs.
+func (msgs Messages) EmojiCategorySmileys() string { return msgs.text(textEmojiCategorySmileys) }
+
+// EmojiCategoryPeople says "People & Body"
+// in the language the app shows under cx.
+//
+// The section and category label for people and body emoji.
+func EmojiCategoryPeople(cx *core.Scope) string { return For(cx).EmojiCategoryPeople() }
+
+// EmojiCategoryPeople is the package's EmojiCategoryPeople in the language of msgs.
+func (msgs Messages) EmojiCategoryPeople() string { return msgs.text(textEmojiCategoryPeople) }
+
+// EmojiCategoryAnimals says "Animals & Nature"
+// in the language the app shows under cx.
+//
+// The section and category label for animals and nature emoji.
+func EmojiCategoryAnimals(cx *core.Scope) string { return For(cx).EmojiCategoryAnimals() }
+
+// EmojiCategoryAnimals is the package's EmojiCategoryAnimals in the language of msgs.
+func (msgs Messages) EmojiCategoryAnimals() string { return msgs.text(textEmojiCategoryAnimals) }
+
+// EmojiCategoryFood says "Food & Drink"
+// in the language the app shows under cx.
+//
+// The section and category label for food and drink emoji.
+func EmojiCategoryFood(cx *core.Scope) string { return For(cx).EmojiCategoryFood() }
+
+// EmojiCategoryFood is the package's EmojiCategoryFood in the language of msgs.
+func (msgs Messages) EmojiCategoryFood() string { return msgs.text(textEmojiCategoryFood) }
+
+// EmojiCategoryTravel says "Travel & Places"
+// in the language the app shows under cx.
+//
+// The section and category label for travel and places emoji.
+func EmojiCategoryTravel(cx *core.Scope) string { return For(cx).EmojiCategoryTravel() }
+
+// EmojiCategoryTravel is the package's EmojiCategoryTravel in the language of msgs.
+func (msgs Messages) EmojiCategoryTravel() string { return msgs.text(textEmojiCategoryTravel) }
+
+// EmojiCategoryActivities says "Activities"
+// in the language the app shows under cx.
+//
+// The section and category label for activities emoji.
+func EmojiCategoryActivities(cx *core.Scope) string { return For(cx).EmojiCategoryActivities() }
+
+// EmojiCategoryActivities is the package's EmojiCategoryActivities in the language of msgs.
+func (msgs Messages) EmojiCategoryActivities() string { return msgs.text(textEmojiCategoryActivities) }
+
+// EmojiCategoryObjects says "Objects"
+// in the language the app shows under cx.
+//
+// The section and category label for objects emoji.
+func EmojiCategoryObjects(cx *core.Scope) string { return For(cx).EmojiCategoryObjects() }
+
+// EmojiCategoryObjects is the package's EmojiCategoryObjects in the language of msgs.
+func (msgs Messages) EmojiCategoryObjects() string { return msgs.text(textEmojiCategoryObjects) }
+
+// EmojiCategorySymbols says "Symbols"
+// in the language the app shows under cx.
+//
+// The section and category label for symbols emoji.
+func EmojiCategorySymbols(cx *core.Scope) string { return For(cx).EmojiCategorySymbols() }
+
+// EmojiCategorySymbols is the package's EmojiCategorySymbols in the language of msgs.
+func (msgs Messages) EmojiCategorySymbols() string { return msgs.text(textEmojiCategorySymbols) }
+
+// EmojiCategoryFlags says "Flags"
+// in the language the app shows under cx.
+//
+// The section and category label for flags emoji.
+func EmojiCategoryFlags(cx *core.Scope) string { return For(cx).EmojiCategoryFlags() }
+
+// EmojiCategoryFlags is the package's EmojiCategoryFlags in the language of msgs.
+func (msgs Messages) EmojiCategoryFlags() string { return msgs.text(textEmojiCategoryFlags) }
 
 // dated is lang with the hour cycle the user set, which times take.
 func (msgs Messages) dated(lang string) string {

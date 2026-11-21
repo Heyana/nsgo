@@ -7,7 +7,7 @@ order: 50
 
 ## 元素
 
-屏幕是一棵元素树，元素是 Go 结构体值。`core` 提供基本元素：`View`、`Text`、`Image`、`Scroll`、`Input` 等。`ui` 提供应用使用的控件，例如 `Button`、`Select` 和 `DatePicker`，外观跟随主题。（`base` 提供同一批控件的无外观形式，供[组件作者](authoring/index.md)使用。）
+屏幕是一棵元素树，元素是 Go 结构体值。`core` 提供基本元素：`View`、`Text`、`Image`、`Scroll`、`Input` 等。`ui` 提供应用使用的控件，例如 `Button`、`Select`、`DatePicker` 和 `EmojiPicker`，外观跟随主题。（`base` 提供同一批控件的无外观形式，供[组件作者](authoring/index.md)使用。）
 
 ```go
 core.View{

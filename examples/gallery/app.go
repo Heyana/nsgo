@@ -93,6 +93,7 @@ func init() {
 		{"Select", m.DemoSelect, m.DemoSelectDetail, lucide.ChevronsUpDown, cardsDemo(selectPlayground, comboboxPlayground)},
 		{"DatePicker", m.DemoDatePicker, m.DemoDatePickerDetail, lucide.Calendar, cardsDemo(datePickerPlayground, calendarPlayground, timeFieldPlayground)},
 		{"ColorPicker", m.DemoColorPicker, m.DemoColorPickerDetail, lucide.Palette, cardsDemo(colorPickerPlayground, colorWellPlayground)},
+		{"EmojiPicker", m.DemoEmojiPicker, m.DemoEmojiPickerDetail, lucide.FaceSlightlySmiling, cardsDemo(emojiPickerPlayground)},
 		{"Slider", m.DemoSlider, m.DemoSliderDetail, lucide.SlidersHorizontal, cardsDemo(sliderPlayground, ratingCard)},
 	}
 	display := []demo{

@@ -38,7 +38,7 @@ The [gallery](https://nsgo.dev/gallery/) runs a demo of every component in the b
 
 ## More
 
-The gallery covers the rest: tables, charts, the code editor, rich text, the terminal, the dock, the command palette, color and date pickers, toasts and more. Each has a demo there.
+The gallery covers the rest: tables, charts, the code editor, rich text, the terminal, the dock, the command palette, color, date and emoji pickers (`ui.EmojiPicker`), toasts and more. Each has a demo there.
 
 ## Next
 

@@ -61,6 +61,45 @@ func commandPlayground(cx *core.Scope) core.Node {
 	}, Knobs: []core.Node{boolKnob("ExpandOnSearch", expand), boolKnob("Loading", loading), boolKnob("Error", failing)}}
 }
 
+func emojiPickerPlayground(cx *core.Scope) core.Node {
+	last := core.NewSignal(cx, "")
+	disabled, noPreview := core.NewSignal(cx, false), core.NewSignal(cx, false)
+	recent := core.NewSignalFunc(cx, []string{"🔥", "🚀"}, slices.Equal[[]string])
+	choose := func(e base.Emoji) {
+		last.Set(e.Emoji + " " + e.Name)
+		recent.Update(func(items []string) []string {
+			return append([]string{e.Emoji}, slices.DeleteFunc(slices.Clone(items), func(s string) bool { return s == e.Emoji })...)
+		})
+	}
+	return Playground{Title: "EmojiPicker", Event: last.Get, Start: true,
+		Base: Form{Name: "base.EmojiPicker", Stage: func() core.Node {
+			return base.EmojiPicker{
+				Disabled: disabled.Get, Recent: recent.Get, OnSelect: choose,
+				Style:         core.Style{Width: core.Pct(100), Height: core.Pt(360)},
+				SearchStyle:   core.Style{Height: core.Pt(28), BorderWidth: 1, Padding: core.Symmetric(0, 6)},
+				CategoryStyle: core.Style{FlexGrow: 1, Height: core.Pt(28), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
+				SectionStyle:  core.Style{Padding: core.All(4)},
+				ItemStyle:     core.Style{Height: core.Pt(32), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
+				SkinToneStyle: core.Style{Width: core.Pt(28), Height: core.Pt(28), AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter},
+				ItemClass:     "selected:bg-black/10 dark:selected:bg-white/10",
+				CategoryClass: "selected:bg-black/10 dark:selected:bg-white/10",
+				SkinToneClass: "selected:bg-black/10 dark:selected:bg-white/10",
+				SearchStyleFunc: func() core.Style {
+					return core.Style{Color: ui.ColorsOf(cx).Text(), BorderColor: ui.ColorsOf(cx).Border()}
+				},
+			}
+		}},
+		Stage: func() core.Node {
+			return core.Dynamic(func(*core.Scope) core.Node {
+				return ui.EmojiPicker{Disabled: disabled.Get, Recent: recent.Get, OnSelect: choose,
+					NoPreview: noPreview.Get(), Style: core.Style{Width: core.Pct(100)}}
+			})
+		},
+		BaseKnobs: []core.Node{boolKnob("Disabled", disabled)},
+		Knobs:     []core.Node{boolKnob("NoPreview", noPreview)},
+	}
+}
+
 // commandItems are what a card's palette runs.
 func commandItems(tr locales.Messages) []base.CommandItem {
 	return []base.CommandItem{

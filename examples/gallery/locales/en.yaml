@@ -2603,3 +2603,6 @@ systemSensorsBackground: Track in background
 systemSensorsStop: Stop sensors
 systemSensorsAccelerometer: Accelerometer
 systemSensorsFused: Fused motion
+
+demoEmojiPicker: Emoji picker
+demoEmojiPickerDetail: Search emoji by localized names and choose a skin tone

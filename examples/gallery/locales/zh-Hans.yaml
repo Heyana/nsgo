@@ -2503,3 +2503,6 @@ systemSensorsBackground: 后台持续定位
 systemSensorsStop: 停止传感器
 systemSensorsAccelerometer: 加速度计
 systemSensorsFused: 融合运动
+
+demoEmojiPicker: 表情选择器
+demoEmojiPickerDetail: 按本地化名称搜索表情并选择肤色

@@ -89,6 +89,15 @@ Popups are placed against what their trigger holds (`Overlay.AnchorContent`), th
 
 `ui`'s forms draw these parts and hold no behavior of their own: `SearchField` and `Field` hand a form the input to draw, as `ui.Input`, and `ItemStyleFunc`, `ItemStyleOf` and the like follow a theme. `ui.Dialog` and its `ui.AlertDialog` wrapper merge the app's `Style`, then `StyleFunc`, inside the base panel's existing style binding, for both centered dialogs and sheets; signal changes restyle the panel without rebuilding its content. `ui.Select` and `ui.Combobox` value a list's items by their index among `Options`, so a value may be any comparable type. Their words come from `base/locales`.
 
+### Emoji pickers
+
+`base.EmojiPicker` searches every Unicode emoji by its CLDR names, keywords and shortcodes in the app's languages, using a virtualized `core.List` of category headers and `Columns`-wide rows (8 by default), a category tab bar (`RoleTabList`), an optional `Recent` section, keyboard navigation (arrows with RTL mirroring, Page Up/Down, Home/End, Return/Space, Escape clearing the query then calling `OnCancel`, suspended during IME composition), and controlled or uncontrolled `SkinTone` selection. All default labels, placeholders, empty messages, category names and skin tone names route through `base/locales`.
+
+- The catalog and 28 locale tables live in `base/internal/emoji/emoji.bin` (generated from pinned `emojibase-data` via `go generate ./base/internal/emoji`), each locale deflated separately and inflated on demand. `base/internal/emoji` has no package `init` or eager decoding, so Go's linker strips it completely from apps that never reach `EmojiPicker` or its lookup helpers (`SearchEmojis`, `EmojisInCategory`, `EmojiByString`), verified by `TestTextViewAppLinks`.
+- By default, search follows `i18n.Language(cx)` and `cx.Env().Locale()` with English fallback (primary language matches rank ahead of fallback), or explicit `Languages`/`LanguagesFunc`.
+- Category tabs use `Tabs` and skin tone radios share its roving-focus infrastructure; category props scroll the virtual grid, and changing results refreshes the preview even when its index stays the same. Public lookup metadata owns its slices, and applying a tone selects an available equal-tone variant, including pairs with mixed-tone variants in the catalog. `EmojiPickerRef` owns query access for the styled clear button so behavior stays in `base`.
+- `ui.EmojiPicker` styles `base.EmojiPicker` in NSGo's theme tokens (320 × 360 pt surface, search field with clear button, Lucide category icons, highlighted emoji preview and skin tone swatches) with no second state implementation.
+
 | NSH | NSGo | Why |
 | --- | --- | --- |
 | A trigger's role and presses bound on the app's element | A view around it, `Class` and `Style` the view's | Go's `core.Node` cannot be changed from outside, so frames count from the view |

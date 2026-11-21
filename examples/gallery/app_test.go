@@ -1843,7 +1843,7 @@ func TestTerminalPhoneSelect(t *testing.T) {
 // Each picker's page shows its base form.
 func TestPickerPages(t *testing.T) {
 	for name, title := range map[string]string{"Select": "base.Combobox", "DatePicker": "base.DatePicker",
-		"ColorPicker": "base.ColorPicker", "Popover": "base.HoverCard", "Command": "base.Command"} {
+		"ColorPicker": "base.ColorPicker", "Popover": "base.HoverCard", "Command": "base.Command", "EmojiPicker": "base.EmojiPicker"} {
 		t.Run(name, func(t *testing.T) {
 			app := startDesktop(t)
 			open(app, name)
@@ -1851,6 +1851,18 @@ func TestPickerPages(t *testing.T) {
 			app.Find("id:stage-" + title)
 		})
 	}
+}
+
+func TestEmojiPickerPlayground(t *testing.T) {
+	app := startDesktop(t)
+	open(app, "EmojiPicker")
+	app.Type("id:stage-EmojiPicker >> role:textbox", "rocket")
+	app.Key("enter")
+	app.Find("text:🚀 rocket")
+	showBase(app, "EmojiPicker")
+	app.Type("id:stage-base.EmojiPicker >> role:textbox", "fire")
+	app.Key("enter")
+	app.Find("text:🔥 fire")
 }
 
 // A base form picks in the running gallery: a fruit, a color the ui form
