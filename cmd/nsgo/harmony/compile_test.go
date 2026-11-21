@@ -24,6 +24,18 @@ func TestCommittedHostMatchesTemplates(t *testing.T) {
 	}
 	hash := sha256.New()
 	for _, name := range files {
+		// build.sh hashes the snapshot with find's exclusions: no file under a
+		// hidden or underscore directory, which go:embed also leaves out.
+		excluded := false
+		for _, part := range strings.Split(name, "/") {
+			if strings.HasPrefix(part, ".") || strings.HasPrefix(part, "_") {
+				excluded = true
+				break
+			}
+		}
+		if excluded {
+			continue
+		}
 		file := path.Join("templates", name)
 		data, err := templates.ReadFile(file)
 		if err != nil {
