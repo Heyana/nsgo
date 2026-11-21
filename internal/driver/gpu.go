@@ -195,6 +195,7 @@ const (
 	GPUTextureRenderAttachment
 	GPUTextureCopySrc
 	GPUTextureCopyDst
+	GPUTextureStorage
 )
 
 // GPUBufferUsage is a bitmask of permitted uses for a GPU buffer.
@@ -207,6 +208,7 @@ const (
 	GPUBufferStorage
 	GPUBufferCopySrc
 	GPUBufferCopyDst
+	GPUBufferIndirect
 )
 
 // GPUFilterMode selects texture minification, magnification, or mipmap filtering.
@@ -388,6 +390,8 @@ const (
 	GPUBindingTexture
 	GPUBindingSampler
 	GPUBindingComparisonSampler
+	GPUBindingStorage
+	GPUBindingStorageTexture
 )
 
 // GPUShaderStageFlags specifies which shader stages can see a binding.
@@ -396,7 +400,8 @@ type GPUShaderStageFlags uint8
 const (
 	GPUStageVertex GPUShaderStageFlags = 1 << iota
 	GPUStageFragment
-	GPUStageAll = GPUStageVertex | GPUStageFragment
+	GPUStageCompute
+	GPUStageAll = GPUStageVertex | GPUStageFragment | GPUStageCompute
 )
 
 // GPUDeviceLostReason describes why a GPU device was lost.
@@ -477,31 +482,44 @@ type GPUViewConfig struct {
 
 // GPULimits reports device capability limits.
 type GPULimits struct {
-	MaxTextureDimension2D     uint32
-	MaxBufferSize             uint64
-	MaxUniformBufferSize      uint64
-	MaxBindGroups             uint32
-	MaxVertexBuffers          uint32
-	MaxVertexAttributes       uint32
-	MinUniformBufferAlignment uint32
+	MaxTextureDimension2D         uint32
+	MaxBufferSize                 uint64
+	MaxUniformBufferSize          uint64
+	MaxStorageBufferBindingSize   uint64
+	MaxBindGroups                 uint32
+	MaxVertexBuffers              uint32
+	MaxVertexAttributes           uint32
+	MinUniformBufferAlignment     uint32
+	MaxComputeWorkgroupSizeX      uint32
+	MaxComputeWorkgroupSizeY      uint32
+	MaxComputeWorkgroupSizeZ      uint32
+	MaxComputeInvocationsPerGroup uint32
+	MaxComputeWorkgroupsPerDim    uint32
 }
 
-// DefaultGPULimits returns conservative portable Stage 1 GPU limits.
+// DefaultGPULimits returns conservative portable GPU limits.
 func DefaultGPULimits() GPULimits {
 	return GPULimits{
-		MaxTextureDimension2D:     4096,
-		MaxBufferSize:             256 << 20,
-		MaxUniformBufferSize:      64 << 10,
-		MaxBindGroups:             4,
-		MaxVertexBuffers:          8,
-		MaxVertexAttributes:       16,
-		MinUniformBufferAlignment: 256,
+		MaxTextureDimension2D:         4096,
+		MaxBufferSize:                 256 << 20,
+		MaxUniformBufferSize:          64 << 10,
+		MaxStorageBufferBindingSize:   128 << 20,
+		MaxBindGroups:                 4,
+		MaxVertexBuffers:              8,
+		MaxVertexAttributes:           16,
+		MinUniformBufferAlignment:     256,
+		MaxComputeWorkgroupSizeX:      256,
+		MaxComputeWorkgroupSizeY:      256,
+		MaxComputeWorkgroupSizeZ:      64,
+		MaxComputeInvocationsPerGroup: 256,
+		MaxComputeWorkgroupsPerDim:    65535,
 	}
 }
 
 // GPUFeatures reports optional GPU capabilities supported by the active device.
 type GPUFeatures struct {
 	StorageBuffers         bool
+	StorageTextures        bool
 	Compute                bool
 	MSAA4x                 bool
 	Depth32Float           bool
@@ -517,6 +535,9 @@ type GPUFeatures struct {
 // DefaultSoftwareGPUFeatures returns the capabilities supported by the pure-Go headless software GPU device.
 func DefaultSoftwareGPUFeatures() GPUFeatures {
 	return GPUFeatures{
+		StorageBuffers:         true,
+		StorageTextures:        true,
+		Compute:                true,
 		Depth32Float:           true,
 		TimestampQueries:       true,
 		TextureCompressionBC:   true,
@@ -776,6 +797,13 @@ type GPUPipelineDesc struct {
 	CachedArtifacts *GPUPipelineArtifacts
 }
 
+// GPUComputePipelineDesc describes an immutable compute pipeline.
+type GPUComputePipelineDesc struct {
+	Label   string
+	Compute GPUShaderStage
+	Layouts []GPUID
+}
+
 // GPUTextureCopy identifies a subresource and origin within a GPU texture.
 type GPUTextureCopy struct {
 	Texture    GPUID
@@ -820,6 +848,10 @@ const (
 	GPUOpCreatePipeline
 	GPUOpDestroyPipeline
 	GPUOpReadTexture
+	// Compute ops are appended after GPUOpReadTexture so the numeric op kinds already on the Android wire (internal/platform/android/gpu.go) keep their values.
+	GPUOpCreateComputePipeline
+	GPUOpDestroyComputePipeline
+	GPUOpReadBuffer
 )
 
 // GPUResourceOp is one resource creation, update, destruction, or readback op.
@@ -834,14 +866,16 @@ type GPUResourceOp struct {
 	BindGroupLayout *GPUBindGroupLayoutDesc
 	BindGroup       *GPUBindGroupDesc
 	Pipeline        *GPUPipelineDesc
+	ComputePipeline *GPUComputePipelineDesc
 	TextureDst      GPUTextureCopy
 	DataLayout      GPUDataLayout
 	ReadbackID      uint64
+	ReadbackSize    uint64
 	ReadbackRegion  GPUTextureRegion
 	ReadbackSurface bool
 }
 
-// GPUCommandKind identifies a render-pass command.
+// GPUCommandKind identifies a render-pass or compute-pass command.
 type GPUCommandKind uint8
 
 const (
@@ -860,6 +894,9 @@ const (
 	GPUCmdPushDebugGroup
 	GPUCmdPopDebugGroup
 	GPUCmdInsertDebugMarker
+	GPUCmdSetComputePipeline
+	GPUCmdDispatch
+	GPUCmdDispatchIndirect
 )
 
 // GPUCommand is one encoded command inside a GPUPass.
@@ -903,11 +940,12 @@ type GPUDepthStencilAttachment struct {
 	ClearStencil   uint32
 }
 
-// GPUPass is one render pass recorded in a GPUFrame.
+// GPUPass is one render pass or compute pass recorded in a GPUFrame.
 type GPUPass struct {
 	Label            string
 	TimingLabel      string
 	TimestampQueryID GPUID
+	IsCompute        bool
 	ColorAttachments []GPUColorAttachment
 	DepthStencil     *GPUDepthStencilAttachment
 	Commands         []GPUCommand

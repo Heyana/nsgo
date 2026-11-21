@@ -31,41 +31,89 @@ type SamplerPair struct {
 	Comparison     bool
 }
 
-// PipelineSource holds GLSL 3.30 or GLSL ES 3.00 vertex and fragment shader
-// sources plus uniform block and combined-sampler binding tables.
+// StorageBufferSlot records the GLSL SSBO block name and binding slot for a @group(G) @binding(B) storage buffer.
+type StorageBufferSlot struct {
+	Group     uint32
+	Binding   uint32
+	BlockName string
+	Slot      uint32
+	ReadOnly  bool
+}
+
+// StorageImageSlot records the GLSL image uniform name and binding slot for a @group(G) @binding(B) storage texture.
+type StorageImageSlot struct {
+	Group   uint32
+	Binding uint32
+	Name    string
+	Slot    uint32
+}
+
+// PipelineSource holds GLSL 3.30 / 4.30 or GLSL ES 3.00 / 3.10 vertex, fragment, and/or compute shader sources plus resource binding tables.
 type PipelineSource struct {
 	VertexSource   string
 	FragmentSource string
+	ComputeSource  string
+	WorkgroupSize  [3]uint32
 	UniformBlocks  []UniformBlockSlot
+	StorageBuffers []StorageBufferSlot
+	StorageImages  []StorageImageSlot
 	SamplerPairs   []SamplerPair
 }
 
-// CompilePipeline emits GLSL 3.30 Core or GLSL ES 3.00 vertex and fragment
-// shaders for a 3D GPU pipeline program. Vertex shaders automatically remap
-// canonical WebGPU [0, 1] clip-space depth to OpenGL [-1, 1] before exit.
+// CompilePipeline emits GLSL 3.30/4.30 Core or GLSL ES 3.00/3.10 vertex, fragment, and/or compute shaders for a 3D GPU pipeline program. Vertex shaders automatically remap canonical WebGPU [0, 1] clip-space depth to OpenGL [-1, 1] before exit. Compute shaders and read/write storage buffers require GLSLVersion430 or GLSLVersionES310.
 func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, error) {
 	if p == nil {
 		return PipelineSource{}, fmt.Errorf("glsl: nil program")
+	}
+	supportsCompute := version == GLSLVersion430 || version == GLSLVersionES310
+	if p.ComputeFunc.Block != nil && !supportsCompute {
+		return PipelineSource{}, fmt.Errorf("glsl: compute shaders require GLSL 4.30 or GLSL ES 3.10 (unsupported on GLSL 3.30 / ES 3.00 / WebGL 2)")
 	}
 	w := &pipeWriter{
 		p:           p,
 		version:     version,
 		structNames: map[string]string{},
 		pairByKey:   map[[2]int]string{},
+		bindingSlot: make([]uint32, len(p.Bindings)),
 	}
-	var slot uint32
+	var uboSlot, ssboSlot, imgSlot uint32
 	for i, b := range p.Bindings {
-		if b.Kind == shaderir.BindingUniformBuffer {
+		w.registerStructs(b.Type)
+		switch b.Kind {
+		case shaderir.BindingUniformBuffer:
+			w.bindingSlot[i] = uboSlot
 			w.uniformBlocks = append(w.uniformBlocks, UniformBlockSlot{
 				Group:     b.Group,
 				Binding:   b.Binding,
 				BlockName: fmt.Sprintf("UB%d", i),
-				Slot:      slot,
+				Slot:      uboSlot,
 			})
-			slot++
-		}
-		if b.Type.Main == shaderir.Struct {
-			w.structName(b.Type)
+			uboSlot++
+		case shaderir.BindingStorageBufferRead, shaderir.BindingStorageBufferReadWrite:
+			if !supportsCompute {
+				return PipelineSource{}, fmt.Errorf("glsl: storage buffers require GLSL 4.30 or GLSL ES 3.10 (unsupported on GLSL 3.30 / ES 3.00 / WebGL 2)")
+			}
+			w.bindingSlot[i] = ssboSlot
+			w.storageBuffers = append(w.storageBuffers, StorageBufferSlot{
+				Group:     b.Group,
+				Binding:   b.Binding,
+				BlockName: fmt.Sprintf("SB%d", i),
+				Slot:      ssboSlot,
+				ReadOnly:  b.Kind == shaderir.BindingStorageBufferRead,
+			})
+			ssboSlot++
+		case shaderir.BindingStorageTexture:
+			if !supportsCompute {
+				return PipelineSource{}, fmt.Errorf("glsl: storage textures require GLSL 4.30 or GLSL ES 3.10 (unsupported on GLSL 3.30 / ES 3.00 / WebGL 2)")
+			}
+			w.bindingSlot[i] = imgSlot
+			w.storageImages = append(w.storageImages, StorageImageSlot{
+				Group:   b.Group,
+				Binding: b.Binding,
+				Name:    fmt.Sprintf("B%d", i),
+				Slot:    imgSlot,
+			})
+			imgSlot++
 		}
 	}
 
@@ -74,15 +122,18 @@ func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, 
 		helperLines = append(helperLines, w.emitHelper(f)...)
 	}
 
-	var vsBody, fsBody []string
+	var vsBody, fsBody, csBody []string
 	if p.VertexFunc.Block != nil {
 		vsBody = w.emitVertex()
 	}
 	if p.FragmentFunc.Block != nil {
 		fsBody = w.emitFragment()
 	}
+	if p.ComputeFunc.Block != nil {
+		csBody = w.emitCompute()
+	}
 
-	buildStage := func(isVert bool, body []string) string {
+	buildStage := func(stage string, body []string) string {
 		if len(body) == 0 {
 			return ""
 		}
@@ -97,8 +148,14 @@ func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, 
 				hasArray = true
 			}
 		}
-		if version == GLSLVersionES300 {
-			lines = append(lines, "#version 300 es", "precision highp float;", "precision highp int;")
+		switch version {
+		case GLSLVersionES300, GLSLVersionES310:
+			if version == GLSLVersionES310 {
+				lines = append(lines, "#version 310 es")
+			} else {
+				lines = append(lines, "#version 300 es")
+			}
+			lines = append(lines, "precision highp float;", "precision highp int;")
 			if hasShadow {
 				lines = append(lines, "precision highp sampler2DShadow;")
 			}
@@ -106,7 +163,9 @@ func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, 
 				lines = append(lines, "precision highp sampler2DArray;")
 			}
 			lines = append(lines, "")
-		} else {
+		case GLSLVersion430:
+			lines = append(lines, "#version 430 core", "")
+		default:
 			lines = append(lines, "#version 330 core", "")
 		}
 		for i, st := range w.structTypes {
@@ -117,10 +176,28 @@ func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, 
 			lines = append(lines, "};", "")
 		}
 		for i, b := range p.Bindings {
-			if b.Kind == shaderir.BindingUniformBuffer {
-				lines = append(lines, fmt.Sprintf("layout(std140) uniform UB%d {", i))
+			slot := w.bindingSlot[i]
+			switch b.Kind {
+			case shaderir.BindingUniformBuffer:
+				if supportsCompute {
+					lines = append(lines, fmt.Sprintf("layout(std140, binding = %d) uniform UB%d {", slot, i))
+				} else {
+					lines = append(lines, fmt.Sprintf("layout(std140) uniform UB%d {", i))
+				}
 				lines = append(lines, fmt.Sprintf("\t%s;", w.declVar(b.Type, fmt.Sprintf("B%d", i))))
 				lines = append(lines, "};")
+			case shaderir.BindingStorageBufferRead:
+				lines = append(lines, fmt.Sprintf("layout(std430, binding = %d) readonly buffer SB%d {", slot, i))
+				lines = append(lines, fmt.Sprintf("\t%s;", w.declVar(b.Type, fmt.Sprintf("B%d", i))))
+				lines = append(lines, "};")
+			case shaderir.BindingStorageBufferReadWrite:
+				lines = append(lines, fmt.Sprintf("layout(std430, binding = %d) buffer SB%d {", slot, i))
+				lines = append(lines, fmt.Sprintf("\t%s;", w.declVar(b.Type, fmt.Sprintf("B%d", i))))
+				lines = append(lines, "};")
+			case shaderir.BindingStorageTexture:
+				qual := glslImageAccess(b.StorageAccess)
+				imgTyp := glslImageType(b.StorageFormat)
+				lines = append(lines, fmt.Sprintf("layout(%s, binding = %d) %suniform %s B%d;", b.StorageFormat.GLSLName(), slot, qual, imgTyp, i))
 			}
 		}
 		for _, sp := range w.samplerPairs {
@@ -136,7 +213,8 @@ func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, 
 			lines = append(lines, fmt.Sprintf("uniform %s %s;", glslType, sp.Name))
 		}
 		lines = append(lines, "")
-		if isVert {
+		switch stage {
+		case "vertex":
 			for i, a := range p.Attributes {
 				loc := uint32(i)
 				if i < len(p.AttributeMeta) {
@@ -151,7 +229,7 @@ func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, 
 				}
 				lines = append(lines, fmt.Sprintf("%sout %s;", qual, w.declVar(v, fmt.Sprintf("v%d", i))))
 			}
-		} else {
+		case "fragment":
 			for i, v := range p.Varyings {
 				qual := ""
 				if i < len(p.VaryingMeta) && p.VaryingMeta[i].Interpolation == shaderir.InterpFlat {
@@ -160,6 +238,18 @@ func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, 
 				lines = append(lines, fmt.Sprintf("%sin %s;", qual, w.declVar(v, fmt.Sprintf("v%d", i))))
 			}
 			lines = append(lines, "layout(location = 0) out vec4 fragColor;")
+		case "compute":
+			ws := p.ComputeFunc.WorkgroupSize
+			if ws[0] == 0 {
+				ws[0] = 1
+			}
+			if ws[1] == 0 {
+				ws[1] = 1
+			}
+			if ws[2] == 0 {
+				ws[2] = 1
+			}
+			lines = append(lines, fmt.Sprintf("layout(local_size_x = %d, local_size_y = %d, local_size_z = %d) in;", ws[0], ws[1], ws[2]))
 		}
 		lines = append(lines, "")
 		lines = append(lines, helperLines...)
@@ -168,21 +258,61 @@ func CompilePipeline(p *shaderir.Program, version GLSLVersion) (PipelineSource, 
 	}
 
 	return PipelineSource{
-		VertexSource:   buildStage(true, vsBody),
-		FragmentSource: buildStage(false, fsBody),
+		VertexSource:   buildStage("vertex", vsBody),
+		FragmentSource: buildStage("fragment", fsBody),
+		ComputeSource:  buildStage("compute", csBody),
+		WorkgroupSize:  p.ComputeFunc.WorkgroupSize,
 		UniformBlocks:  w.uniformBlocks,
+		StorageBuffers: w.storageBuffers,
+		StorageImages:  w.storageImages,
 		SamplerPairs:   w.samplerPairs,
 	}, nil
 }
 
+func glslImageAccess(a shaderir.StorageAccess) string {
+	switch a {
+	case shaderir.StorageAccessRead:
+		return "readonly "
+	case shaderir.StorageAccessWrite:
+		return "writeonly "
+	default:
+		return ""
+	}
+}
+
+func glslImageType(f shaderir.StorageTextureFormat) string {
+	switch f {
+	case shaderir.StorageFormatR32Uint:
+		return "uimage2D"
+	case shaderir.StorageFormatR32Sint:
+		return "iimage2D"
+	default:
+		return "image2D"
+	}
+}
+
 type pipeWriter struct {
-	p             *shaderir.Program
-	version       GLSLVersion
-	structNames   map[string]string
-	structTypes   []shaderir.Type
-	uniformBlocks []UniformBlockSlot
-	samplerPairs  []SamplerPair
-	pairByKey     map[[2]int]string
+	p              *shaderir.Program
+	version        GLSLVersion
+	structNames    map[string]string
+	structTypes    []shaderir.Type
+	bindingSlot    []uint32
+	uniformBlocks  []UniformBlockSlot
+	storageBuffers []StorageBufferSlot
+	storageImages  []StorageImageSlot
+	samplerPairs   []SamplerPair
+	pairByKey      map[[2]int]string
+}
+
+func (w *pipeWriter) registerStructs(t shaderir.Type) {
+	switch t.Main {
+	case shaderir.Struct:
+		w.structName(t)
+	case shaderir.Array:
+		if len(t.Sub) > 0 {
+			w.registerStructs(t.Sub[0])
+		}
+	}
 }
 
 func (w *pipeWriter) structName(t shaderir.Type) string {
@@ -191,9 +321,7 @@ func (w *pipeWriter) structName(t shaderir.Type) string {
 		return n
 	}
 	for _, f := range t.Sub {
-		if f.Main == shaderir.Struct {
-			w.structName(f)
-		}
+		w.registerStructs(f)
 	}
 	n := fmt.Sprintf("S%d", len(w.structTypes))
 	w.structNames[key] = n
@@ -210,6 +338,9 @@ func (w *pipeWriter) typeStr(t shaderir.Type) string {
 
 func (w *pipeWriter) declVar(t shaderir.Type, name string) string {
 	if t.Main == shaderir.Array {
+		if t.Length == 0 {
+			return fmt.Sprintf("%s %s[]", w.typeStr(t.Sub[0]), name)
+		}
 		return fmt.Sprintf("%s %s[%d]", w.typeStr(t.Sub[0]), name, t.Length)
 	}
 	return fmt.Sprintf("%s %s", w.typeStr(t), name)
@@ -278,6 +409,13 @@ func (w *pipeWriter) emitVertex() []string {
 func (w *pipeWriter) emitFragment() []string {
 	lines := []string{"void main() {"}
 	lines = append(lines, w.emitBlock(w.p.FragmentFunc.Block, w.p.FragmentFunc.Block, 1, "fragment")...)
+	lines = append(lines, "}", "")
+	return lines
+}
+
+func (w *pipeWriter) emitCompute() []string {
+	lines := []string{"void main() {"}
+	lines = append(lines, w.emitBlock(w.p.ComputeFunc.Block, w.p.ComputeFunc.Block, 1, "compute")...)
 	lines = append(lines, "}", "")
 	return lines
 }
@@ -399,6 +537,16 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 			return "gl_FrontFacing"
 		case shaderir.BuiltinPosition:
 			return "gl_FragCoord"
+		case shaderir.BuiltinGlobalInvocationID:
+			return "gl_GlobalInvocationID"
+		case shaderir.BuiltinLocalInvocationID:
+			return "gl_LocalInvocationID"
+		case shaderir.BuiltinWorkgroupID:
+			return "gl_WorkGroupID"
+		case shaderir.BuiltinNumWorkgroups:
+			return "gl_NumWorkGroups"
+		case shaderir.BuiltinLocalInvocationIndex:
+			return "gl_LocalInvocationIndex"
 		}
 	case shaderir.StructConstruct:
 		name := w.typeStr(*e.StructType)
@@ -486,6 +634,14 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 		case shaderir.TextureDimensions:
 			comb := w.registerSamplerPair(e.Exprs[1].Index, -1, false)
 			return fmt.Sprintf("uvec2(textureSize(%s, 0))", comb)
+		case shaderir.TextureStore:
+			return fmt.Sprintf("imageStore(%s, ivec2(%s), %s)", w.emitExpr(e.Exprs[1], stage), w.emitExpr(e.Exprs[2], stage), w.emitExpr(e.Exprs[3], stage))
+		case shaderir.ArrayLength:
+			return fmt.Sprintf("uint((%s).length())", w.emitExpr(e.Exprs[1], stage))
+		case shaderir.WorkgroupBarrier:
+			return "barrier()"
+		case shaderir.StorageBarrier:
+			return "memoryBarrierBuffer(); barrier()"
 		default:
 			args := make([]string, len(e.Exprs)-1)
 			for i, a := range e.Exprs[1:] {

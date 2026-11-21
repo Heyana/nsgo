@@ -27,6 +27,7 @@ const (
 	kTexture2DArray
 	kTextureDepth2D
 	kTextureMultisampled2D
+	kTextureStorage2D
 	kSampler
 	kSamplerComparison
 )
@@ -49,12 +50,14 @@ type structType struct {
 // ty is a WGSL type. The IR has no boolean vectors, so a vec<bool> is a
 // float vector of 0 and 1 there (see boolVector).
 type ty struct {
-	k    kind
-	elem kind        // a vector's or a matrix's scalar
-	n    int         // a vector's components, a matrix's columns, an array's length
-	rows int         // a matrix's rows
-	arr  *ty         // an array's element
-	st   *structType // a struct's definition
+	k             kind
+	elem          kind        // a vector's or a matrix's scalar
+	n             int         // a vector's components, a matrix's columns, an array's length (0 for runtime-sized)
+	rows          int         // a matrix's rows
+	arr           *ty         // an array's element
+	st            *structType // a struct's definition
+	storageFmt    shaderir.StorageTextureFormat
+	storageAccess shaderir.StorageAccess
 }
 
 var (
@@ -151,6 +154,9 @@ func (t ty) String() string {
 	case kMat:
 		return fmt.Sprintf("mat%dx%d<%s>", t.n, t.rows, scalarName(t.elem))
 	case kArray:
+		if t.n == 0 {
+			return fmt.Sprintf("array<%s>", t.arr)
+		}
 		return fmt.Sprintf("array<%s, %d>", t.arr, t.n)
 	case kStruct:
 		if t.st != nil {
@@ -167,6 +173,8 @@ func (t ty) String() string {
 		return "texture_depth_2d"
 	case kTextureMultisampled2D:
 		return "texture_multisampled_2d<f32>"
+	case kTextureStorage2D:
+		return fmt.Sprintf("texture_storage_2d<%s, %s>", t.storageFmt.WGSLName(), t.storageAccess.WGSLName())
 	case kSampler:
 		return "sampler"
 	case kSamplerComparison:
@@ -218,6 +226,8 @@ func (t ty) ir() shaderir.Type {
 		return shaderir.Type{Main: shaderir.TextureDepth2D}
 	case kTextureMultisampled2D:
 		return shaderir.Type{Main: shaderir.TextureMultisampled2D}
+	case kTextureStorage2D:
+		return shaderir.Type{Main: shaderir.TextureStorage2D}
 	case kSampler:
 		return shaderir.Type{Main: shaderir.Sampler}
 	case kSamplerComparison:

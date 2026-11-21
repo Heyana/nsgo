@@ -460,7 +460,7 @@ var templateNames = map[string]bool{
 	"vec2": true, "vec3": true, "vec4": true, "array": true, "bitcast": true, "ptr": true, "atomic": true,
 	"mat2x2": true, "mat2x3": true, "mat2x4": true, "mat3x2": true, "mat3x3": true, "mat3x4": true,
 	"mat4x2": true, "mat4x3": true, "mat4x4": true, "texture_2d": true, "texture_cube": true,
-	"texture_2d_array": true, "texture_multisampled_2d": true, "sampler": false,
+	"texture_2d_array": true, "texture_multisampled_2d": true, "texture_storage_2d": true, "sampler": false,
 }
 
 func (p *parser) typ() *typeExpr {
@@ -784,7 +784,13 @@ func (p *parser) unary() expr {
 		case "-", "!", "~":
 			p.next()
 			return &unaryExpr{op: t.text, x: p.unary(), pos: t.pos}
-		case "&", "*":
+		case "&":
+			if p.pipeline {
+				p.next()
+				return &unaryExpr{op: "&", x: p.unary(), pos: t.pos}
+			}
+			fail(t.pos, "a shader takes no pointers")
+		case "*":
 			fail(t.pos, "a shader takes no pointers")
 		}
 	}

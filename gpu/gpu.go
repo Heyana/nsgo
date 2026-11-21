@@ -21,12 +21,18 @@ import (
 type BufferUsage uint32
 
 const (
-	UsageVertex  BufferUsage = BufferUsage(driver.GPUBufferVertex)
-	UsageIndex   BufferUsage = BufferUsage(driver.GPUBufferIndex)
-	UsageUniform BufferUsage = BufferUsage(driver.GPUBufferUniform)
-	UsageStorage BufferUsage = BufferUsage(driver.GPUBufferStorage)
-	UsageCopySrc BufferUsage = BufferUsage(driver.GPUBufferCopySrc)
-	UsageCopyDst BufferUsage = BufferUsage(driver.GPUBufferCopyDst)
+	UsageVertex   BufferUsage = BufferUsage(driver.GPUBufferVertex)
+	UsageIndex    BufferUsage = BufferUsage(driver.GPUBufferIndex)
+	UsageUniform  BufferUsage = BufferUsage(driver.GPUBufferUniform)
+	UsageStorage  BufferUsage = BufferUsage(driver.GPUBufferStorage)
+	UsageCopySrc  BufferUsage = BufferUsage(driver.GPUBufferCopySrc)
+	UsageCopyDst  BufferUsage = BufferUsage(driver.GPUBufferCopyDst)
+	UsageIndirect BufferUsage = BufferUsage(driver.GPUBufferIndirect)
+
+	// BufferUsageStorage is an alias for UsageStorage for storage buffers (var<storage, read> and var<storage, read_write>).
+	BufferUsageStorage = UsageStorage
+	// BufferUsageIndirect is an alias for UsageIndirect for indirect dispatch buffers.
+	BufferUsageIndirect = UsageIndirect
 )
 
 // Frames-in-flight bounds for per-frame ring-buffer pipelining.
@@ -149,6 +155,7 @@ const (
 	TextureRenderAttachment TextureUsage = TextureUsage(driver.GPUTextureRenderAttachment)
 	TextureCopySrc          TextureUsage = TextureUsage(driver.GPUTextureCopySrc)
 	TextureCopyDst          TextureUsage = TextureUsage(driver.GPUTextureCopyDst)
+	TextureStorageBinding   TextureUsage = TextureUsage(driver.GPUTextureStorage)
 )
 
 // TextureDesc configures Device.CreateTexture.
@@ -242,9 +249,16 @@ type BindingType uint8
 const (
 	BindingUniform           BindingType = BindingType(driver.GPUBindingUniform)
 	BindingStorageRead       BindingType = BindingType(driver.GPUBindingStorageRead)
+	BindingStorage           BindingType = BindingType(driver.GPUBindingStorage)
 	BindingTexture           BindingType = BindingType(driver.GPUBindingTexture)
+	BindingStorageTexture    BindingType = BindingType(driver.GPUBindingStorageTexture)
 	BindingSampler           BindingType = BindingType(driver.GPUBindingSampler)
 	BindingComparisonSampler BindingType = BindingType(driver.GPUBindingComparisonSampler)
+
+	// Descriptive aliases for compute and storage bind group layout entries.
+	BindingTypeStorageBuffer         = BindingStorage
+	BindingTypeReadOnlyStorageBuffer = BindingStorageRead
+	BindingTypeStorageTexture        = BindingStorageTexture
 )
 
 // ShaderStageFlags specifies which shader stages see a binding.
@@ -253,6 +267,7 @@ type ShaderStageFlags uint8
 const (
 	StageVertex   ShaderStageFlags = ShaderStageFlags(driver.GPUStageVertex)
 	StageFragment ShaderStageFlags = ShaderStageFlags(driver.GPUStageFragment)
+	StageCompute  ShaderStageFlags = ShaderStageFlags(driver.GPUStageCompute)
 	StageAll      ShaderStageFlags = ShaderStageFlags(driver.GPUStageAll)
 )
 
@@ -471,6 +486,13 @@ type PipelineDesc struct {
 	Retained      bool // opt in to automatic recreation after device loss
 }
 
+// ComputePipelineDesc configures Device.CreateComputePipeline.
+type ComputePipelineDesc struct {
+	Label   string
+	Compute ShaderStage
+	Layouts []*BindGroupLayout
+}
+
 // LoadOp selects how an attachment is initialized at the start of a RenderPass.
 type LoadOp uint8
 
@@ -570,33 +592,65 @@ type TextureRegion struct {
 
 // Limits reports the active GPU device's capability limits.
 type Limits struct {
-	MaxTextureDimension2D     uint32
-	MaxBufferSize             uint64
-	MaxUniformBufferSize      uint64
-	MaxBindGroups             uint32
-	MaxVertexBuffers          uint32
-	MaxVertexAttributes       uint32
-	MinUniformBufferAlignment uint32
+	MaxTextureDimension2D         uint32
+	MaxBufferSize                 uint64
+	MaxUniformBufferSize          uint64
+	MaxStorageBufferBindingSize   uint64
+	MaxBindGroups                 uint32
+	MaxVertexBuffers              uint32
+	MaxVertexAttributes           uint32
+	MinUniformBufferAlignment     uint32
+	MaxComputeWorkgroupSizeX      uint32
+	MaxComputeWorkgroupSizeY      uint32
+	MaxComputeWorkgroupSizeZ      uint32
+	MaxComputeInvocationsPerGroup uint32
+	MaxComputeWorkgroupsPerDim    uint32
 }
 
 func limitsFromDriver(l driver.GPULimits) Limits {
 	if l.MaxTextureDimension2D == 0 {
 		l = driver.DefaultGPULimits()
 	}
+	def := driver.DefaultGPULimits()
+	if l.MaxStorageBufferBindingSize == 0 {
+		l.MaxStorageBufferBindingSize = def.MaxStorageBufferBindingSize
+	}
+	if l.MaxComputeWorkgroupSizeX == 0 {
+		l.MaxComputeWorkgroupSizeX = def.MaxComputeWorkgroupSizeX
+	}
+	if l.MaxComputeWorkgroupSizeY == 0 {
+		l.MaxComputeWorkgroupSizeY = def.MaxComputeWorkgroupSizeY
+	}
+	if l.MaxComputeWorkgroupSizeZ == 0 {
+		l.MaxComputeWorkgroupSizeZ = def.MaxComputeWorkgroupSizeZ
+	}
+	if l.MaxComputeInvocationsPerGroup == 0 {
+		l.MaxComputeInvocationsPerGroup = def.MaxComputeInvocationsPerGroup
+	}
+	if l.MaxComputeWorkgroupsPerDim == 0 {
+		l.MaxComputeWorkgroupsPerDim = def.MaxComputeWorkgroupsPerDim
+	}
 	return Limits{
-		MaxTextureDimension2D:     l.MaxTextureDimension2D,
-		MaxBufferSize:             l.MaxBufferSize,
-		MaxUniformBufferSize:      l.MaxUniformBufferSize,
-		MaxBindGroups:             l.MaxBindGroups,
-		MaxVertexBuffers:          l.MaxVertexBuffers,
-		MaxVertexAttributes:       l.MaxVertexAttributes,
-		MinUniformBufferAlignment: l.MinUniformBufferAlignment,
+		MaxTextureDimension2D:         l.MaxTextureDimension2D,
+		MaxBufferSize:                 l.MaxBufferSize,
+		MaxUniformBufferSize:          l.MaxUniformBufferSize,
+		MaxStorageBufferBindingSize:   l.MaxStorageBufferBindingSize,
+		MaxBindGroups:                 l.MaxBindGroups,
+		MaxVertexBuffers:              l.MaxVertexBuffers,
+		MaxVertexAttributes:           l.MaxVertexAttributes,
+		MinUniformBufferAlignment:     l.MinUniformBufferAlignment,
+		MaxComputeWorkgroupSizeX:      l.MaxComputeWorkgroupSizeX,
+		MaxComputeWorkgroupSizeY:      l.MaxComputeWorkgroupSizeY,
+		MaxComputeWorkgroupSizeZ:      l.MaxComputeWorkgroupSizeZ,
+		MaxComputeInvocationsPerGroup: l.MaxComputeInvocationsPerGroup,
+		MaxComputeWorkgroupsPerDim:    l.MaxComputeWorkgroupsPerDim,
 	}
 }
 
 // Features reports optional capabilities supported by the active GPU device.
 type Features struct {
 	StorageBuffers         bool
+	StorageTextures        bool
 	Compute                bool
 	MSAA4x                 bool
 	Depth32Float           bool
@@ -607,7 +661,7 @@ type Features struct {
 	TextureCompressionASTC bool
 }
 
-// DeviceCapabilities summarizes the active GPU device's limits, optional features, timing query support, and supported compressed texture formats.
+// DeviceCapabilities summarizes the active GPU device's limits, optional features, timing query support, and supported compressed texture formats. Targets without native compute support (WebGL 2, OpenGL ES 3.0) report Features.Compute false; check Device.SupportsCompute and use a CPU or render-pass fallback there.
 type DeviceCapabilities struct {
 	Limits            Limits
 	Features          Features
@@ -618,6 +672,7 @@ type DeviceCapabilities struct {
 func featuresFromDriver(f driver.GPUFeatures) Features {
 	return Features{
 		StorageBuffers:         f.StorageBuffers,
+		StorageTextures:        f.StorageTextures,
 		Compute:                f.Compute,
 		MSAA4x:                 f.MSAA4x,
 		Depth32Float:           f.Depth32Float,

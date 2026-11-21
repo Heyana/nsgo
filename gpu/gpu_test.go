@@ -1576,3 +1576,490 @@ func TestDepthTextureDirectSampleLoadAndCopy(t *testing.T) {
 		t.Errorf("corner (4,4) = %+v, want {255 64 0 255}", got)
 	}
 }
+
+const computeParticlesWGSL = `
+struct StepParams {
+	dt: f32,
+	gain: f32,
+}
+
+struct Vertex {
+	pos: vec4<f32>,
+	color: vec4<f32>,
+}
+
+@group(0) @binding(0) var<uniform> params: StepParams;
+@group(0) @binding(1) var<storage, read> vel: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> verts: array<Vertex>;
+
+@compute @workgroup_size(4, 1, 1)
+fn step_main(
+	@builtin(global_invocation_id) gid: vec3<u32>,
+	@builtin(local_invocation_id) lid: vec3<u32>,
+	@builtin(workgroup_id) wid: vec3<u32>,
+	@builtin(num_workgroups) nwg: vec3<u32>,
+) {
+	let idx = gid.x;
+	let count = arrayLength(&verts);
+	if (idx < count) {
+		let v = verts[idx];
+		var next: Vertex;
+		next.pos = v.pos + vel[idx] * params.dt;
+		// Encode a deterministic green channel scaled by params.gain and workgroup/num_workgroups sanity check.
+		let wgCheck = f32(wid.x + nwg.x - nwg.x) * 0.0 + f32(lid.x) * 0.0;
+		next.color = vec4<f32>(v.color.x, params.gain + wgCheck, v.color.z, 1.0);
+		verts[idx] = next;
+	}
+}
+`
+
+const storageTexComputeWGSL = `
+@group(0) @binding(0) var outTex: texture_storage_2d<rgba8unorm, write>;
+
+@compute @workgroup_size(2, 2, 1)
+fn fill_tex(@builtin(global_invocation_id) gid: vec3<u32>) {
+	let r = f32(gid.x) / 3.0;
+	let g = f32(gid.y) / 3.0;
+	textureStore(outTex, vec2<i32>(i32(gid.x), i32(gid.y)), vec4<f32>(r, g, 1.0, 1.0));
+}
+`
+
+const directVertexColorWGSL = `
+struct VertexIn {
+	@location(0) pos: vec4<f32>,
+	@location(1) color: vec4<f32>,
+}
+
+struct VertexOut {
+	@builtin(position) pos: vec4<f32>,
+	@location(0) color: vec4<f32>,
+}
+
+@vertex
+fn vs_main(in: VertexIn) -> VertexOut {
+	var out: VertexOut;
+	out.pos = in.pos;
+	out.color = in.color;
+	return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+	return in.color;
+}
+`
+
+func unpackFloat32s(b []byte) []float32 {
+	out := make([]float32, len(b)/4)
+	for i := range out {
+		out[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[i*4 : i*4+4]))
+	}
+	return out
+}
+
+func packUint32s(vals ...uint32) []byte {
+	out := make([]byte, len(vals)*4)
+	for i, v := range vals {
+		binary.LittleEndian.PutUint32(out[i*4:], v)
+	}
+	return out
+}
+
+func TestHeadlessComputeStorageBufferAndRenderPass(t *testing.T) {
+	computeMod := gpu.MustCompileWGSL(computeParticlesWGSL)
+	renderMod := gpu.MustCompileWGSL(directVertexColorWGSL)
+	texComputeMod := gpu.MustCompileWGSL(storageTexComputeWGSL)
+
+	sr := gpu.NewSoftwareRenderer(32, 32, gpu.FormatUndefined)
+	dev := sr.Device()
+
+	if !dev.Capabilities().Features.Compute || !dev.SupportsCompute() {
+		t.Fatalf("expected SoftwareRenderer to report Compute capability true")
+	}
+	if !dev.Capabilities().Features.StorageBuffers || !dev.Capabilities().Features.StorageTextures {
+		t.Fatalf("expected SoftwareRenderer to support storage buffers and storage textures")
+	}
+
+	// Start with 6 vertices (2 triangles) off-screen at x = [-2, 0] and red=0, green=0, blue=0. The compute shader adds velocity (+1.0, 0, 0, 0) * dt (1.0) so the quad moves onto [-1, +1] x [-1, +1] (covering the whole screen) and sets green = 1.0!
+	initVerts := packFloat32s(
+		// pos (vec4)                 color (vec4)
+		-2.0, -1.0, 0.5, 1.0, 0.0, 0.0, 0.0, 1.0,
+		0.0, -1.0, 0.5, 1.0, 0.0, 0.0, 0.0, 1.0,
+		0.0, 1.0, 0.5, 1.0, 0.0, 0.0, 0.0, 1.0,
+		-2.0, -1.0, 0.5, 1.0, 0.0, 0.0, 0.0, 1.0,
+		0.0, 1.0, 0.5, 1.0, 0.0, 0.0, 0.0, 1.0,
+		-2.0, 1.0, 0.5, 1.0, 0.0, 0.0, 0.0, 1.0,
+	)
+	velocities := packFloat32s(
+		1.0, 0.0, 0.0, 0.0,
+		1.0, 0.0, 0.0, 0.0,
+		1.0, 0.0, 0.0, 0.0,
+		1.0, 0.0, 0.0, 0.0,
+		1.0, 0.0, 0.0, 0.0,
+		1.0, 0.0, 0.0, 0.0,
+	)
+
+	paramsBuf, err := dev.CreateBuffer(nil, gpu.BufferDesc{
+		Label: "params",
+		Usage: gpu.UsageUniform,
+		Data:  packFloat32s(1.0, 1.0), // dt=1.0, gain=1.0
+	})
+	if err != nil {
+		t.Fatalf("CreateBuffer params: %v", err)
+	}
+	velBuf, err := dev.CreateBuffer(nil, gpu.BufferDesc{
+		Label: "velocities",
+		Usage: gpu.BufferUsageStorage,
+		Data:  velocities,
+	})
+	if err != nil {
+		t.Fatalf("CreateBuffer vel: %v", err)
+	}
+	// Shared storage + vertex + copy-src buffer: written by @compute, read back via ReadBuffer, AND bound as a vertex buffer in the subsequent render pass!
+	vertBuf, err := dev.CreateBuffer(nil, gpu.BufferDesc{
+		Label: "particles",
+		Usage: gpu.BufferUsageStorage | gpu.UsageVertex | gpu.UsageCopySrc | gpu.UsageCopyDst,
+		Data:  initVerts,
+	})
+	if err != nil {
+		t.Fatalf("CreateBuffer verts: %v", err)
+	}
+	indirectBuf, err := dev.CreateBuffer(nil, gpu.BufferDesc{
+		Label: "dispatch_indirect",
+		Usage: gpu.BufferUsageIndirect,
+		Data:  packUint32s(2, 1, 1), // 2 workgroups * 4 threads = 8 invocations (bounds-checked to 6 verts by arrayLength)
+	})
+	if err != nil {
+		t.Fatalf("CreateBuffer indirect: %v", err)
+	}
+
+	cBGL, err := dev.CreateBindGroupLayout(nil, []gpu.BindGroupLayoutEntry{
+		{Binding: 0, Visibility: gpu.StageCompute, Type: gpu.BindingUniform},
+		{Binding: 1, Visibility: gpu.StageCompute, Type: gpu.BindingTypeReadOnlyStorageBuffer},
+		{Binding: 2, Visibility: gpu.StageCompute, Type: gpu.BindingTypeStorageBuffer},
+	})
+	if err != nil {
+		t.Fatalf("CreateBindGroupLayout compute: %v", err)
+	}
+	cBG, err := dev.CreateBindGroup(nil, cBGL, []gpu.BindGroupEntry{
+		{Binding: 0, Buffer: paramsBuf},
+		{Binding: 1, Buffer: velBuf},
+		{Binding: 2, Buffer: vertBuf},
+	})
+	if err != nil {
+		t.Fatalf("CreateBindGroup compute: %v", err)
+	}
+	cPipe, err := dev.CreateComputePipeline(nil, gpu.ComputePipelineDesc{
+		Label:   "step_particles",
+		Compute: gpu.ShaderStage{Module: computeMod, EntryPoint: "step_main"},
+		Layouts: []*gpu.BindGroupLayout{cBGL},
+	})
+	if err != nil {
+		t.Fatalf("CreateComputePipeline: %v", err)
+	}
+
+	rPipe, err := dev.CreatePipeline(nil, gpu.PipelineDesc{
+		Label:    "draw_particles",
+		Vertex:   gpu.ShaderStage{Module: renderMod, EntryPoint: "vs_main"},
+		Fragment: gpu.ShaderStage{Module: renderMod, EntryPoint: "fs_main"},
+		VertexBuffers: []gpu.VertexBufferLayout{{
+			Stride: 8 * 4,
+			Attributes: []gpu.VertexAttribute{
+				{Location: 0, Offset: 0, Format: gpu.VertexFloat32x4},
+				{Location: 1, Offset: 4 * 4, Format: gpu.VertexFloat32x4},
+			},
+		}},
+		Targets: []gpu.ColorTargetState{{Format: gpu.FormatRGBA8Unorm}},
+	})
+	if err != nil {
+		t.Fatalf("CreatePipeline render: %v", err)
+	}
+
+	// Storage texture compute pass setup.
+	storageTex, err := dev.CreateTexture(nil, gpu.TextureDesc{
+		Label:  "compute_tex",
+		Width:  4,
+		Height: 4,
+		Format: gpu.FormatRGBA8Unorm,
+		Usage:  gpu.TextureStorageBinding | gpu.TextureCopySrc,
+	})
+	if err != nil {
+		t.Fatalf("CreateTexture storage: %v", err)
+	}
+	tBGL, err := dev.CreateBindGroupLayout(nil, []gpu.BindGroupLayoutEntry{
+		{Binding: 0, Visibility: gpu.StageCompute, Type: gpu.BindingTypeStorageTexture},
+	})
+	if err != nil {
+		t.Fatalf("CreateBindGroupLayout storage tex: %v", err)
+	}
+	tBG, err := dev.CreateBindGroup(nil, tBGL, []gpu.BindGroupEntry{
+		{Binding: 0, Texture: storageTex},
+	})
+	if err != nil {
+		t.Fatalf("CreateBindGroup storage tex: %v", err)
+	}
+	tPipe, err := dev.CreateComputePipeline(nil, gpu.ComputePipelineDesc{
+		Label:   "fill_tex",
+		Compute: gpu.ShaderStage{Module: texComputeMod, EntryPoint: "fill_tex"},
+		Layouts: []*gpu.BindGroupLayout{tBGL},
+	})
+	if err != nil {
+		t.Fatalf("CreateComputePipeline tex: %v", err)
+	}
+
+	// Single command encoder: compute pass (indirect dispatch) -> storage texture compute pass -> render pass!
+	enc := dev.BeginEncoder()
+
+	cp := enc.BeginComputePass()
+	cp.SetPipeline(cPipe)
+	cp.SetBindGroup(0, cBG)
+	if err := cp.DispatchIndirect(indirectBuf, 0); err != nil {
+		t.Fatalf("DispatchIndirect: %v", err)
+	}
+	cp.SetPipeline(tPipe)
+	cp.SetBindGroup(0, tBG)
+	if err := cp.Dispatch(2, 2, 1); err != nil {
+		t.Fatalf("Dispatch storage tex: %v", err)
+	}
+	cp.End()
+
+	rp := enc.BeginRenderPass(gpu.RenderPassDesc{})
+	rp.ClearColor(core.RGB(0x000000))
+	rp.SetPipeline(rPipe)
+	rp.SetVertexBuffer(0, vertBuf, 0)
+	rp.Draw(6, 0)
+	rp.End()
+
+	dev.Submit(enc.Finish())
+	if sr.LastError() != nil {
+		t.Fatalf("SoftwareRenderer error: %v", sr.LastError())
+	}
+
+	// 1. Read back the compute-written storage buffer and verify exact float32 results.
+	var gotBytes []byte
+	var gotErr error
+	dev.ReadBuffer(vertBuf, 0, 0, func(data []byte, err error) {
+		gotBytes, gotErr = data, err
+	})
+	if gotErr != nil {
+		t.Fatalf("ReadBuffer: %v", gotErr)
+	}
+	gotFloats := unpackFloat32s(gotBytes)
+	wantFloats := []float32{
+		-1.0, -1.0, 0.5, 1.0, 0.0, 1.0, 0.0, 1.0,
+		1.0, -1.0, 0.5, 1.0, 0.0, 1.0, 0.0, 1.0,
+		1.0, 1.0, 0.5, 1.0, 0.0, 1.0, 0.0, 1.0,
+		-1.0, -1.0, 0.5, 1.0, 0.0, 1.0, 0.0, 1.0,
+		1.0, 1.0, 0.5, 1.0, 0.0, 1.0, 0.0, 1.0,
+		-1.0, 1.0, 0.5, 1.0, 0.0, 1.0, 0.0, 1.0,
+	}
+	if len(gotFloats) != len(wantFloats) {
+		t.Fatalf("ReadBuffer float count = %d, want %d", len(gotFloats), len(wantFloats))
+	}
+	for i := range wantFloats {
+		if math.Abs(float64(gotFloats[i]-wantFloats[i])) > 1e-6 {
+			t.Errorf("ReadBuffer float[%d] = %v, want %v", i, gotFloats[i], wantFloats[i])
+		}
+	}
+
+	// 2. Verify the render pass drew the compute-transformed fullscreen green quad!
+	img := sr.Image()
+	center := img.RGBAAt(16, 16)
+	if center != (color.RGBA{R: 0, G: 255, B: 0, A: 255}) {
+		t.Errorf("render pass center pixel = %+v, want green {0 255 0 255} from compute-written vertex buffer", center)
+	}
+	rightEdge := img.RGBAAt(28, 16)
+	if rightEdge != (color.RGBA{R: 0, G: 255, B: 0, A: 255}) {
+		t.Errorf("render pass right pixel = %+v, want green (proves x shifted from [-2,0] to [-1,1])", rightEdge)
+	}
+
+	// 3. Verify the storage texture written by textureStore!
+	var texBytes []byte
+	dev.ReadTexture(storageTex, gpu.TextureRegion{Width: 4, Height: 4}, func(rgba []byte, err error) {
+		if err != nil {
+			t.Fatalf("ReadTexture storageTex: %v", err)
+		}
+		texBytes = rgba
+	})
+	if len(texBytes) != 4*4*4 {
+		t.Fatalf("storageTex bytes = %d, want 64", len(texBytes))
+	}
+	// Pixel (3, 3) has r = 3/3 = 255, g = 3/3 = 255, b = 255, a = 255.
+	p33 := (3*4 + 3) * 4
+	if texBytes[p33] != 255 || texBytes[p33+1] != 255 || texBytes[p33+2] != 255 || texBytes[p33+3] != 255 {
+		t.Errorf("storageTex(3,3) = %v, want [255 255 255 255]", texBytes[p33:p33+4])
+	}
+	// Pixel (0, 0) has r = 0, g = 0, b = 255, a = 255.
+	if texBytes[0] != 0 || texBytes[1] != 0 || texBytes[2] != 255 || texBytes[3] != 255 {
+		t.Errorf("storageTex(0,0) = %v, want [0 0 255 255]", texBytes[0:4])
+	}
+}
+
+func TestComputeCapabilityQueryAndUnsupportedRejection(t *testing.T) {
+	computeMod := gpu.MustCompileWGSL(computeParticlesWGSL)
+
+	// 1. Standalone SoftwareRenderer simulating WebGL 2 / GLES 3.0 (Compute: false).
+	sr := gpu.NewSoftwareRendererWithFeatures(16, 16, gpu.FormatUndefined, gpu.Features{Depth32Float: true})
+	dev := sr.Device()
+
+	if dev.Capabilities().Features.Compute {
+		t.Fatalf("expected Capabilities().Features.Compute == false on WebGL2/GLES3-like device")
+	}
+	if dev.SupportsCompute() {
+		t.Fatalf("expected SupportsCompute() == false on WebGL2/GLES3-like device")
+	}
+	if _, err := dev.CreateBuffer(nil, gpu.BufferDesc{Size: 16, Usage: gpu.BufferUsageStorage}); !errors.Is(err, gpu.ErrUnsupported) {
+		t.Errorf("CreateBuffer(UsageStorage) = %v, want ErrUnsupported", err)
+	}
+	if _, err := dev.CreateTexture(nil, gpu.TextureDesc{Width: 4, Height: 4, Format: gpu.FormatRGBA8Unorm, Usage: gpu.TextureStorageBinding}); !errors.Is(err, gpu.ErrUnsupported) {
+		t.Errorf("CreateTexture(TextureStorageBinding) = %v, want ErrUnsupported", err)
+	}
+	if _, err := dev.CreateBindGroupLayout(nil, []gpu.BindGroupLayoutEntry{
+		{Binding: 0, Visibility: gpu.StageCompute, Type: gpu.BindingTypeStorageBuffer},
+	}); !errors.Is(err, gpu.ErrUnsupported) {
+		t.Errorf("CreateBindGroupLayout(StorageBuffer) = %v, want ErrUnsupported", err)
+	}
+	if _, err := dev.CreateComputePipeline(nil, gpu.ComputePipelineDesc{
+		Compute: gpu.ShaderStage{Module: computeMod, EntryPoint: "step_main"},
+	}); !errors.Is(err, gpu.ErrUnsupported) {
+		t.Errorf("CreateComputePipeline = %v, want ErrUnsupported", err)
+	}
+
+	enc := dev.BeginEncoder()
+	cp := enc.BeginComputePass()
+	if err := cp.Dispatch(1, 1, 1); !errors.Is(err, gpu.ErrUnsupported) {
+		t.Errorf("ComputePass.Dispatch on unsupported device = %v, want ErrUnsupported", err)
+	}
+	indBuf, err := dev.CreateBuffer(nil, gpu.BufferDesc{Size: 12, Usage: gpu.BufferUsageIndirect, Data: packUint32s(1, 1, 1)})
+	if err != nil {
+		t.Fatalf("CreateBuffer indirect: %v", err)
+	}
+	if err := cp.DispatchIndirect(indBuf, 0); !errors.Is(err, gpu.ErrUnsupported) {
+		t.Errorf("ComputePass.DispatchIndirect on unsupported device = %v, want ErrUnsupported", err)
+	}
+	cp.End()
+
+	// 2. Mounted gpu.View under nsgotest.NoGPUCompute() reports Compute: false cleanly.
+	var viewCaps gpu.DeviceCapabilities
+	var viewDispatchErr, viewReadErr error
+	readCalled := false
+	noCompute := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return gpu.View(cx, gpu.ViewProps{
+			TestID: "nocompute",
+			Style:  core.Style{Width: core.Pt(32), Height: core.Pt(32)},
+			OnReady: func(d *gpu.Device) {
+				viewCaps = d.Capabilities()
+				e := d.BeginEncoder()
+				p := e.BeginComputePass()
+				viewDispatchErr = p.Dispatch(1, 1, 1)
+				p.End()
+				// A backend without compute must never receive a compute pass, so the frame carries no passes at all.
+				d.Submit(e.Finish())
+				buf, err := d.CreateBuffer(cx, gpu.BufferDesc{Size: 16, Usage: gpu.UsageUniform | gpu.UsageCopySrc})
+				if err != nil {
+					t.Fatalf("CreateBuffer: %v", err)
+				}
+				d.ReadBuffer(buf, 0, 0, func(_ []byte, err error) {
+					readCalled = true
+					viewReadErr = err
+				})
+			},
+		})
+	}, nsgotest.Size(32, 32), nsgotest.NoGPUCompute())
+
+	if viewCaps.Features.Compute {
+		t.Errorf("NoGPUCompute view Capabilities().Features.Compute = true, want false")
+	}
+	if !errors.Is(viewDispatchErr, gpu.ErrUnsupported) {
+		t.Errorf("NoGPUCompute Dispatch error = %v, want ErrUnsupported", viewDispatchErr)
+	}
+	if !readCalled || !errors.Is(viewReadErr, gpu.ErrUnsupported) {
+		t.Errorf("NoGPUCompute ReadBuffer called=%v err=%v, want ErrUnsupported", readCalled, viewReadErr)
+	}
+	for _, fr := range noCompute.GPUFrames() {
+		if fr.PassesCount != 0 || fr.DispatchesCount != 0 {
+			t.Errorf("NoGPUCompute frame recorded %d passes and %d dispatches, want none", fr.PassesCount, fr.DispatchesCount)
+		}
+	}
+
+	// 3. Default nsgotest gpu.View supports compute and records DispatchesCount in GPUFrames.
+	var gotDispatched []float32
+	simpleCompute := gpu.MustCompileWGSL(`
+@group(0) @binding(0) var<storage, read_write> data: array<f32>;
+@compute @workgroup_size(4)
+fn double_it(@builtin(global_invocation_id) gid: vec3<u32>) {
+	let i = gid.x;
+	if (i < arrayLength(&data)) {
+		data[i] = data[i] * 2.0 + 1.0;
+	}
+}
+`)
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return gpu.View(cx, gpu.ViewProps{
+			TestID: "computeview",
+			Style:  core.Style{Width: core.Pt(32), Height: core.Pt(32)},
+			OnReady: func(d *gpu.Device) {
+				if !d.SupportsCompute() {
+					t.Fatalf("expected default nsgotest GPU device to support compute")
+				}
+				buf, err := d.CreateBuffer(cx, gpu.BufferDesc{
+					Usage: gpu.BufferUsageStorage | gpu.UsageCopySrc,
+					Data:  packFloat32s(1, 2, 3, 4),
+				})
+				if err != nil {
+					t.Fatalf("CreateBuffer: %v", err)
+				}
+				bgl, err := d.CreateBindGroupLayout(cx, []gpu.BindGroupLayoutEntry{
+					{Binding: 0, Visibility: gpu.StageCompute, Type: gpu.BindingTypeStorageBuffer},
+				})
+				if err != nil {
+					t.Fatalf("CreateBindGroupLayout: %v", err)
+				}
+				bg, err := d.CreateBindGroup(cx, bgl, []gpu.BindGroupEntry{{Binding: 0, Buffer: buf}})
+				if err != nil {
+					t.Fatalf("CreateBindGroup: %v", err)
+				}
+				pipe, err := d.CreateComputePipeline(cx, gpu.ComputePipelineDesc{
+					Compute: gpu.ShaderStage{Module: simpleCompute, EntryPoint: "double_it"},
+					Layouts: []*gpu.BindGroupLayout{bgl},
+				})
+				if err != nil {
+					t.Fatalf("CreateComputePipeline: %v", err)
+				}
+				e := d.BeginEncoder()
+				p := e.BeginComputePass()
+				p.SetPipeline(pipe)
+				p.SetBindGroup(0, bg)
+				if err := p.Dispatch(1, 1, 1); err != nil {
+					t.Fatalf("Dispatch: %v", err)
+				}
+				p.End()
+				d.Submit(e.Finish())
+				d.ReadBuffer(buf, 0, 0, func(b []byte, err error) {
+					if err != nil {
+						t.Errorf("ReadBuffer: %v", err)
+						return
+					}
+					gotDispatched = unpackFloat32s(b)
+				})
+			},
+		})
+	}, nsgotest.Size(32, 32))
+
+	want := []float32{3, 5, 7, 9}
+	if len(gotDispatched) != len(want) {
+		t.Fatalf("nsgotest ReadBuffer = %v, want %v", gotDispatched, want)
+	}
+	for i := range want {
+		if gotDispatched[i] != want[i] {
+			t.Errorf("gotDispatched[%d] = %v, want %v", i, gotDispatched[i], want[i])
+		}
+	}
+	var totalDispatches int
+	for _, fr := range app.GPUFrames() {
+		totalDispatches += fr.DispatchesCount
+	}
+	if totalDispatches < 1 {
+		t.Errorf("expected recorded DispatchesCount >= 1, got %+v", app.GPUFrames())
+	}
+}

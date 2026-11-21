@@ -20,9 +20,7 @@ func CompilePipeline(p *shaderir.Program) (string, error) {
 		structNames: map[string]string{},
 	}
 	for _, b := range p.Bindings {
-		if b.Type.Main == shaderir.Struct {
-			w.structName(b.Type)
-		}
+		w.registerStructs(b.Type)
 	}
 
 	var body []string
@@ -34,6 +32,9 @@ func CompilePipeline(p *shaderir.Program) (string, error) {
 	}
 	if p.FragmentFunc.Block != nil {
 		body = append(body, w.emitFragment()...)
+	}
+	if p.ComputeFunc.Block != nil {
+		body = append(body, w.emitCompute()...)
 	}
 
 	var out []string
@@ -50,6 +51,10 @@ func CompilePipeline(p *shaderir.Program) (string, error) {
 			out = append(out, fmt.Sprintf("@group(%d) @binding(%d) var<uniform> B%d: %s;", b.Group, b.Binding, i, w.typeStr(b.Type)))
 		case shaderir.BindingStorageBufferRead:
 			out = append(out, fmt.Sprintf("@group(%d) @binding(%d) var<storage, read> B%d: %s;", b.Group, b.Binding, i, w.typeStr(b.Type)))
+		case shaderir.BindingStorageBufferReadWrite:
+			out = append(out, fmt.Sprintf("@group(%d) @binding(%d) var<storage, read_write> B%d: %s;", b.Group, b.Binding, i, w.typeStr(b.Type)))
+		case shaderir.BindingStorageTexture:
+			out = append(out, fmt.Sprintf("@group(%d) @binding(%d) var B%d: texture_storage_2d<%s, %s>;", b.Group, b.Binding, i, b.StorageFormat.WGSLName(), b.StorageAccess.WGSLName()))
 		case shaderir.BindingTexture, shaderir.BindingSampler:
 			out = append(out, fmt.Sprintf("@group(%d) @binding(%d) var B%d: %s;", b.Group, b.Binding, i, w.typeStr(b.Type)))
 		}
@@ -65,15 +70,24 @@ type writer struct {
 	structTypes []shaderir.Type
 }
 
+func (w *writer) registerStructs(t shaderir.Type) {
+	switch t.Main {
+	case shaderir.Struct:
+		w.structName(t)
+	case shaderir.Array:
+		if len(t.Sub) > 0 {
+			w.registerStructs(t.Sub[0])
+		}
+	}
+}
+
 func (w *writer) structName(t shaderir.Type) string {
 	key := t.String()
 	if n, ok := w.structNames[key]; ok {
 		return n
 	}
 	for _, f := range t.Sub {
-		if f.Main == shaderir.Struct {
-			w.structName(f)
-		}
+		w.registerStructs(f)
 	}
 	n := fmt.Sprintf("S%d", len(w.structTypes))
 	w.structNames[key] = n
@@ -128,6 +142,9 @@ func (w *writer) typeStr(t shaderir.Type) string {
 	case shaderir.Mat4:
 		return "mat4x4<f32>"
 	case shaderir.Array:
+		if t.Length == 0 {
+			return fmt.Sprintf("array<%s>", w.typeStr(t.Sub[0]))
+		}
 		return fmt.Sprintf("array<%s, %d>", w.typeStr(t.Sub[0]), t.Length)
 	case shaderir.Struct:
 		return w.structName(t)
@@ -223,6 +240,36 @@ func (w *writer) emitFragment() []string {
 	}
 	lines = append(lines, fmt.Sprintf("@fragment fn %s(nsgo_in: StageOut, @builtin(front_facing) nsgo_front_facing: bool) -> @location(0) vec4<f32> {", entry))
 	lines = append(lines, w.emitBlock(w.p.FragmentFunc.Block, 1, "fragment")...)
+	lines = append(lines, "}", "")
+	return lines
+}
+
+func (w *writer) emitCompute() []string {
+	entry := w.p.ComputeEntry
+	if entry == "" {
+		entry = "cs_main"
+	}
+	ws := w.p.ComputeFunc.WorkgroupSize
+	if ws[0] == 0 {
+		ws[0] = 1
+	}
+	if ws[1] == 0 {
+		ws[1] = 1
+	}
+	if ws[2] == 0 {
+		ws[2] = 1
+	}
+	params := []string{
+		"@builtin(global_invocation_id) nsgo_global_invocation_id: vec3<u32>",
+		"@builtin(local_invocation_id) nsgo_local_invocation_id: vec3<u32>",
+		"@builtin(workgroup_id) nsgo_workgroup_id: vec3<u32>",
+		"@builtin(num_workgroups) nsgo_num_workgroups: vec3<u32>",
+		"@builtin(local_invocation_index) nsgo_local_invocation_index: u32",
+	}
+	var lines []string
+	lines = append(lines, fmt.Sprintf("@compute @workgroup_size(%d, %d, %d)", ws[0], ws[1], ws[2]))
+	lines = append(lines, fmt.Sprintf("fn %s(%s) {", entry, strings.Join(params, ", ")))
+	lines = append(lines, w.emitBlock(w.p.ComputeFunc.Block, 1, "compute")...)
 	lines = append(lines, "}", "")
 	return lines
 }
@@ -335,6 +382,16 @@ func (w *writer) emitExpr(e shaderir.Expr, stage string) string {
 			return "nsgo_front_facing"
 		case shaderir.BuiltinPosition:
 			return "nsgo_in.position"
+		case shaderir.BuiltinGlobalInvocationID:
+			return "nsgo_global_invocation_id"
+		case shaderir.BuiltinLocalInvocationID:
+			return "nsgo_local_invocation_id"
+		case shaderir.BuiltinWorkgroupID:
+			return "nsgo_workgroup_id"
+		case shaderir.BuiltinNumWorkgroups:
+			return "nsgo_num_workgroups"
+		case shaderir.BuiltinLocalInvocationIndex:
+			return "nsgo_local_invocation_index"
 		}
 	case shaderir.StructConstruct:
 		name := w.typeStr(*e.StructType)
@@ -367,6 +424,9 @@ func (w *writer) emitExpr(e shaderir.Expr, stage string) string {
 		}
 		if callee.Type == shaderir.FunctionExpr {
 			return fmt.Sprintf("F%d(%s)", callee.Index, strings.Join(args, ", "))
+		}
+		if callee.BuiltinFunc == shaderir.ArrayLength && len(args) == 1 {
+			return fmt.Sprintf("arrayLength(&%s)", args[0])
 		}
 		return fmt.Sprintf("%s(%s)", builtinName(callee.BuiltinFunc), strings.Join(args, ", "))
 	}

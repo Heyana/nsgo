@@ -16,9 +16,7 @@ type SoftwareRenderer struct {
 	err  error
 }
 
-// NewSoftwareRenderer creates a pure-Go software 3D GPU renderer with a swapchain
-// of width x height pixels, an optional depthFormat (e.g. FormatDepth24Plus),
-// and DefaultFramesInFlight (2) ring-buffer slots.
+// NewSoftwareRenderer creates a pure-Go software 3D GPU renderer with a swapchain of width x height pixels, an optional depthFormat (e.g. FormatDepth24Plus), and DefaultFramesInFlight (2) ring-buffer slots. Compute shaders, storage buffers, and storage textures are enabled by default.
 func NewSoftwareRenderer(width, height int, depthFormat TextureFormat) *SoftwareRenderer {
 	return newSoftwareRenderer(width, height, depthFormat, featuresFromDriver(driver.DefaultSoftwareGPUFeatures()), DefaultFramesInFlight)
 }

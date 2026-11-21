@@ -276,7 +276,7 @@ func (c *checker) ident(x *identExpr, out *[]shaderir.Stmt) value {
 	case symLocal:
 		return value{t: sym.t, e: local(sym.local, sym.t), ref: true, mutable: sym.mutable}
 	case symBinding:
-		return value{t: sym.t, e: mk(shaderir.Expr{Type: shaderir.BindingVariable, Index: sym.binding}, sym.t)}
+		return value{t: sym.t, e: mk(shaderir.Expr{Type: shaderir.BindingVariable, Index: sym.binding}, sym.t), ref: true, mutable: sym.mutable}
 	case symExpr:
 		return value{t: sym.t, e: sym.expr}
 	case symPrivate:
@@ -808,13 +808,16 @@ func (c *checker) index(x *indexExpr, out *[]shaderir.Stmt) value {
 	}
 	if i.c != nil {
 		k, ok := constant.Int64Val(constant.ToInt(i.c))
-		if !ok || k < 0 || k >= int64(n) {
+		if !ok || k < 0 || (n > 0 && k >= int64(n)) {
 			fail(x.i.at(), "the index %s is out of the %s's range", i.c, v.t)
 		}
 		if v.comps != nil {
 			return value{t: t, c: v.comps[k]}
 		}
 		i = value{t: tI32, c: constant.MakeInt64(k)}
+	} else if v.t.k == kArray && n == 0 {
+		// Runtime-sized storage array: preserve index expression without static clamp.
+		i = c.concrete(i, x.i.at())
 	} else {
 		// Indices out of range read in range, as WGSL's runtimes have
 		// them.

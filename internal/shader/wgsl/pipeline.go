@@ -8,12 +8,13 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/shaderir"
 )
 
-// PipelineProgram is a compiled 3D GPU WGSL module containing @vertex and/or
-// @fragment entry points and explicit @group/@binding resource declarations.
+// PipelineProgram is a compiled 3D GPU WGSL module containing @vertex, @fragment, and/or @compute entry points and explicit @group/@binding resource declarations.
 type PipelineProgram struct {
 	IR              *shaderir.Program
 	VertexEntries   []string
 	FragmentEntries []string
+	ComputeEntries  []string
+	WorkgroupSize   [3]uint32
 	Source          string
 }
 
@@ -64,14 +65,18 @@ func compilePipelineModule(m *module, src string) *PipelineProgram {
 		case *structDecl:
 			st := &structType{name: d.name}
 			seen := map[string]bool{}
-			for _, mb := range d.members {
+			for i, mb := range d.members {
 				if seen[mb.name] {
 					fail(mb.pos, "struct %s declares member %s twice", d.name, mb.name)
 				}
 				seen[mb.name] = true
+				ft := c.resolveType(mb.typ)
+				if ft.k == kArray && ft.n == 0 && i != len(d.members)-1 {
+					fail(mb.pos, "runtime-sized array must be the last member of struct %s", d.name)
+				}
 				st.fields = append(st.fields, structField{
 					name:  mb.name,
-					t:     c.resolveType(mb.typ),
+					t:     ft,
 					attrs: mb.attrs,
 					pos:   mb.pos,
 				})
@@ -105,18 +110,35 @@ func compilePipelineModule(m *module, src string) *PipelineProgram {
 		}
 		t := c.resolveType(g.typ)
 		var kind shaderir.BindingKind
+		var mutable bool
+		var storageFmt shaderir.StorageTextureFormat
+		var storageAcc shaderir.StorageAccess
 		switch g.space {
 		case "uniform":
+			if t.k == kArray && t.n == 0 {
+				fail(g.pos, "uniform buffer %s cannot have a runtime-sized array type", g.name)
+			}
 			kind = shaderir.BindingUniformBuffer
 		case "storage":
-			if g.access != "" && g.access != "read" {
-				fail(g.pos, "Stage 1 storage buffers are read-only (var<storage, read>)")
+			switch g.access {
+			case "", "read":
+				kind = shaderir.BindingStorageBufferRead
+				storageAcc = shaderir.StorageAccessRead
+			case "read_write":
+				kind = shaderir.BindingStorageBufferReadWrite
+				storageAcc = shaderir.StorageAccessReadWrite
+				mutable = true
+			default:
+				fail(g.pos, "unsupported storage buffer access mode %q (expected read or read_write)", g.access)
 			}
-			kind = shaderir.BindingStorageBufferRead
 		case "":
 			switch t.k {
 			case kTexture2D, kTextureCube, kTexture2DArray, kTextureDepth2D, kTextureMultisampled2D:
 				kind = shaderir.BindingTexture
+			case kTextureStorage2D:
+				kind = shaderir.BindingStorageTexture
+				storageFmt = t.storageFmt
+				storageAcc = t.storageAccess
 			case kSampler, kSamplerComparison:
 				kind = shaderir.BindingSampler
 			default:
@@ -132,22 +154,24 @@ func compilePipelineModule(m *module, src string) *PipelineProgram {
 		}
 		idx := len(p.Bindings)
 		p.Bindings = append(p.Bindings, shaderir.Binding{
-			Group:   grp,
-			Binding: bnd,
-			Name:    g.name,
-			Kind:    kind,
-			Type:    t.ir(),
+			Group:         grp,
+			Binding:       bnd,
+			Name:          g.name,
+			Kind:          kind,
+			Type:          t.ir(),
+			StorageFormat: storageFmt,
+			StorageAccess: storageAcc,
 		})
-		c.declare(g.name, g.pos, &symbol{kind: symBinding, t: t, binding: idx})
+		c.declare(g.name, g.pos, &symbol{kind: symBinding, t: t, binding: idx, mutable: mutable})
 	}
 
-	// 3. Separate helper functions from @vertex / @fragment entry points.
-	var vertFns, fragFns []*fnDecl
+	// 3. Separate helper functions from @vertex / @fragment / @compute entry points.
+	var vertFns, fragFns, compFns []*fnDecl
 	for _, f := range m.fns {
 		stage := entryStage(f.attrs)
 		switch stage {
 		case "compute":
-			fail(f.pos, "@compute is reserved for Stage 2")
+			compFns = append(compFns, f)
 		case "vertex":
 			vertFns = append(vertFns, f)
 		case "fragment":
@@ -172,8 +196,8 @@ func compilePipelineModule(m *module, src string) *PipelineProgram {
 		}
 	}
 
-	if len(vertFns) == 0 && len(fragFns) == 0 {
-		fail(0, "pipeline module defines no @vertex or @fragment entry point")
+	if len(vertFns) == 0 && len(fragFns) == 0 && len(compFns) == 0 {
+		fail(0, "pipeline module defines no @vertex, @fragment, or @compute entry point")
 	}
 
 	for _, a := range m.asserts {
@@ -189,7 +213,7 @@ func compilePipelineModule(m *module, src string) *PipelineProgram {
 	}
 	c.recursion()
 
-	// 5. Compile @vertex and @fragment entry points.
+	// 5. Compile @vertex, @fragment, and @compute entry points.
 	res := &PipelineProgram{IR: p, Source: src}
 	for _, vf := range vertFns {
 		res.VertexEntries = append(res.VertexEntries, vf.name)
@@ -197,11 +221,18 @@ func compilePipelineModule(m *module, src string) *PipelineProgram {
 	for _, ff := range fragFns {
 		res.FragmentEntries = append(res.FragmentEntries, ff.name)
 	}
+	for _, cf := range compFns {
+		res.ComputeEntries = append(res.ComputeEntries, cf.name)
+	}
 	if len(vertFns) > 0 {
 		c.compileVertexEntry(vertFns[0])
 	}
 	if len(fragFns) > 0 {
 		c.compileFragmentEntry(fragFns[0])
+	}
+	if len(compFns) > 0 {
+		c.compileComputeEntry(compFns[0])
+		res.WorkgroupSize = p.ComputeFunc.WorkgroupSize
 	}
 	return res
 }
@@ -526,6 +557,80 @@ func (c *checker) compileFragmentEntry(f *fnDecl) {
 	p.FragmentFunc.Block = top
 }
 
+func (c *checker) compileComputeEntry(f *fnDecl) {
+	p := c.prog
+	p.ComputeEntry = f.name
+
+	if f.ret != nil {
+		fail(f.ret.pos, "@compute %s must not return a value", f.name)
+	}
+	ws := parseWorkgroupSize(f.attrs, f.pos, f.name)
+	p.ComputeFunc.WorkgroupSize = ws
+
+	type paramPlan struct {
+		name   string
+		pos    int
+		t      ty
+		fields []stageFieldBinding
+	}
+	var plans []paramPlan
+	for _, prm := range f.params {
+		t := c.resolveType(prm.typ)
+		plan := paramPlan{name: prm.name, pos: prm.pos, t: t}
+		if t.k == kStruct && t.st != nil {
+			for i, fld := range t.st.fields {
+				fb := parseComputeField(fld.name, fld.t, fld.attrs, fld.pos, i)
+				plan.fields = append(plan.fields, fb)
+			}
+		} else {
+			fb := parseComputeField(prm.name, t, prm.attrs, prm.pos, -1)
+			plan.fields = append(plan.fields, fb)
+		}
+		plans = append(plans, plan)
+	}
+
+	top := &shaderir.Block{LocalVarIndexOffset: 0}
+	info := &fnInfo{decl: f, index: -1, ret: tNone}
+	c.cur = &fnState{
+		info:   info,
+		params: 0,
+		top:    top,
+		stage:  "compute",
+	}
+
+	c.push()
+	for _, plan := range plans {
+		if len(plan.fields) == 1 && plan.fields[0].fieldIdx == -1 {
+			fb := plan.fields[0]
+			c.declare(plan.name, plan.pos, &symbol{
+				kind: symExpr,
+				t:    fb.t,
+				expr: mk(shaderir.Expr{Type: shaderir.BuiltinInput, Index: int(fb.builtin)}, fb.t),
+			})
+			continue
+		}
+		idx := c.newLocal(plan.t)
+		top.Stmts = append(top.Stmts, shaderir.Stmt{Type: shaderir.Init, InitIndex: idx})
+		for _, fb := range plan.fields {
+			srcExpr := mk(shaderir.Expr{Type: shaderir.BuiltinInput, Index: int(fb.builtin)}, fb.t)
+			dstExpr := mk(shaderir.Expr{
+				Type:  shaderir.FieldSelector,
+				Exprs: []shaderir.Expr{local(idx, plan.t), {Type: shaderir.StructMember, Index: fb.fieldIdx}},
+			}, fb.t)
+			top.Stmts = append(top.Stmts, assign(dstExpr, srcExpr))
+		}
+		c.declare(plan.name, plan.pos, &symbol{kind: symLocal, t: plan.t, local: idx})
+	}
+
+	c.stmts(f.body.stmts, &top.Stmts)
+	c.pop()
+	for _, b := range c.cur.blocks {
+		b.LocalVarIndexOffset = len(top.LocalVars)
+	}
+	c.cur = nil
+	p.ComputeFunc.Block = top
+}
+
 func (c *checker) structConstruct(t ty, x *callExpr, out *[]shaderir.Stmt) value {
 	st := t.st
 	if len(x.args) == 0 {
@@ -654,8 +759,146 @@ func (c *checker) pipelineTextureBuiltin(name string, x *callExpr, out *[]shader
 			args[i] = c.ir(c.concrete(c.expr(a, out), a.at()))
 		}
 		return value{t: vec(kU32, 2), e: builtinCall(shaderir.TextureDimensions, vec(kU32, 2), args...)}, true
+	case "textureStore":
+		if len(x.args) != 3 {
+			fail(x.at(), "textureStore takes 3 arguments (texture, coords, value)")
+		}
+		tex := c.expr(x.args[0], out)
+		if tex.t.k != kTextureStorage2D {
+			fail(x.args[0].at(), "textureStore requires a storage texture, not %s", tex.t)
+		}
+		if tex.t.storageAccess == shaderir.StorageAccessRead {
+			fail(x.args[0].at(), "textureStore requires a write or read_write storage texture")
+		}
+		coord := c.concrete(c.expr(x.args[1], out), x.args[1].at())
+		if coord.t.k != kVec || coord.t.n != 2 || !isInt(coord.t.elem) {
+			fail(x.args[1].at(), "textureStore coords must be vec2<i32> or vec2<u32>, not %s", coord.t)
+		}
+		val := c.convert(c.expr(x.args[2], out), vec(kF32, 4), x.args[2].at())
+		return value{t: tNone, e: builtinCall(shaderir.TextureStore, tNone, c.ir(tex), c.ir(coord), c.ir(val))}, true
+	case "arrayLength":
+		if len(x.args) != 1 {
+			fail(x.at(), "arrayLength takes 1 argument")
+		}
+		argExpr := x.args[0]
+		if u, ok := argExpr.(*unaryExpr); ok && u.op == "&" {
+			argExpr = u.x
+		}
+		v := c.expr(argExpr, out)
+		if v.t.k != kArray || v.t.n != 0 {
+			fail(x.args[0].at(), "arrayLength requires a runtime-sized storage array, not %s", v.t)
+		}
+		return value{t: tU32, e: builtinCall(shaderir.ArrayLength, tU32, c.ir(v))}, true
+	case "workgroupBarrier":
+		if len(x.args) != 0 {
+			fail(x.at(), "workgroupBarrier takes no arguments")
+		}
+		if c.cur == nil || c.cur.stage != "compute" {
+			fail(x.at(), "workgroupBarrier is only allowed in @compute shaders")
+		}
+		return value{t: tNone, e: builtinCall(shaderir.WorkgroupBarrier, tNone)}, true
+	case "storageBarrier":
+		if len(x.args) != 0 {
+			fail(x.at(), "storageBarrier takes no arguments")
+		}
+		if c.cur == nil || c.cur.stage != "compute" {
+			fail(x.at(), "storageBarrier is only allowed in @compute shaders")
+		}
+		return value{t: tNone, e: builtinCall(shaderir.StorageBarrier, tNone)}, true
 	}
 	return value{}, false
+}
+
+func parseStorageTextureFormat(name string) (shaderir.StorageTextureFormat, bool) {
+	switch name {
+	case "rgba8unorm":
+		return shaderir.StorageFormatRGBA8Unorm, true
+	case "rgba16float":
+		return shaderir.StorageFormatRGBA16Float, true
+	case "rgba32float":
+		return shaderir.StorageFormatRGBA32Float, true
+	case "r32float":
+		return shaderir.StorageFormatR32Float, true
+	case "r32uint":
+		return shaderir.StorageFormatR32Uint, true
+	case "r32sint":
+		return shaderir.StorageFormatR32Sint, true
+	default:
+		return shaderir.StorageFormatUndefined, false
+	}
+}
+
+func parseStorageAccess(name string) (shaderir.StorageAccess, bool) {
+	switch name {
+	case "read":
+		return shaderir.StorageAccessRead, true
+	case "write":
+		return shaderir.StorageAccessWrite, true
+	case "read_write":
+		return shaderir.StorageAccessReadWrite, true
+	default:
+		return 0, false
+	}
+}
+
+func parseWorkgroupSize(attrs []attr, pos int, fnName string) [3]uint32 {
+	for _, a := range attrs {
+		if a.name != "workgroup_size" {
+			continue
+		}
+		if len(a.args) < 1 || len(a.args) > 3 {
+			fail(a.pos, "@workgroup_size takes 1 to 3 positive integer arguments")
+		}
+		ws := [3]uint32{1, 1, 1}
+		for i, raw := range a.args {
+			v, err := strconv.ParseUint(raw, 10, 32)
+			if err != nil || v == 0 {
+				fail(a.pos, "@workgroup_size argument %q must be a positive integer", raw)
+			}
+			ws[i] = uint32(v)
+		}
+		return ws
+	}
+	fail(pos, "@compute %s requires @workgroup_size(X[, Y[, Z]])", fnName)
+	return [3]uint32{1, 1, 1}
+}
+
+func parseComputeField(name string, t ty, attrs []attr, pos int, fieldIdx int) stageFieldBinding {
+	fb := stageFieldBinding{fieldIdx: fieldIdx, name: name, t: t}
+	b, ok := attrString(attrs, "builtin")
+	if !ok {
+		fail(pos, "@compute parameter %s requires a compute @builtin(...)", name)
+	}
+	switch b {
+	case "global_invocation_id":
+		if !t.equal(vec(kU32, 3)) {
+			fail(pos, "@builtin(global_invocation_id) must have type vec3<u32>, not %s", t)
+		}
+		fb.builtin = shaderir.BuiltinGlobalInvocationID
+	case "local_invocation_id":
+		if !t.equal(vec(kU32, 3)) {
+			fail(pos, "@builtin(local_invocation_id) must have type vec3<u32>, not %s", t)
+		}
+		fb.builtin = shaderir.BuiltinLocalInvocationID
+	case "workgroup_id":
+		if !t.equal(vec(kU32, 3)) {
+			fail(pos, "@builtin(workgroup_id) must have type vec3<u32>, not %s", t)
+		}
+		fb.builtin = shaderir.BuiltinWorkgroupID
+	case "num_workgroups":
+		if !t.equal(vec(kU32, 3)) {
+			fail(pos, "@builtin(num_workgroups) must have type vec3<u32>, not %s", t)
+		}
+		fb.builtin = shaderir.BuiltinNumWorkgroups
+	case "local_invocation_index":
+		if !t.equal(tU32) {
+			fail(pos, "@builtin(local_invocation_index) must have type u32, not %s", t)
+		}
+		fb.builtin = shaderir.BuiltinLocalInvocationIndex
+	default:
+		fail(pos, "unsupported compute @builtin(%s)", b)
+	}
+	return fb
 }
 
 func entryStage(attrs []attr) string {

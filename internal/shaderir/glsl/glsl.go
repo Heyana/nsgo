@@ -33,6 +33,8 @@ type GLSLVersion int
 const (
 	GLSLVersionDefault GLSLVersion = iota
 	GLSLVersionES300
+	GLSLVersion430
+	GLSLVersionES310
 )
 
 // utilFunctions contains GLSL utility functions for old GLSL versions.

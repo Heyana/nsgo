@@ -11,12 +11,16 @@ type ShaderModule struct {
 	ir              *shaderir.Program
 	vertexEntries   []string
 	fragmentEntries []string
+	computeEntries  []string
+	workgroupSize   [3]uint32
 	source          string
 }
 
 func (m *ShaderModule) Label() string                { return "" }
 func (m *ShaderModule) HasVertexEntry(string) bool   { return false }
 func (m *ShaderModule) HasFragmentEntry(string) bool { return false }
+func (m *ShaderModule) HasComputeEntry(string) bool  { return false }
+func (m *ShaderModule) WorkgroupSize() [3]uint32     { return [3]uint32{} }
 
 func CompileShader(ShaderDesc) (*ShaderModule, error) {
 	return nil, Error{Code: ErrUnsupported, Message: "shader compilation is disabled in this build"}

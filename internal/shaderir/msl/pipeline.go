@@ -23,11 +23,12 @@ type PipelineSource struct {
 	Source        string
 	VertexEntry   string
 	FragmentEntry string
+	ComputeEntry  string
+	WorkgroupSize [3]uint32
 	Slots         []BindingSlot
 }
 
-// CompilePipeline emits Metal Shading Language for a 3D GPU pipeline program
-// with @vertex and/or @fragment entry points and explicit @group/@binding resources.
+// CompilePipeline emits Metal Shading Language for a 3D GPU pipeline program with @vertex, @fragment, and/or @compute entry points and explicit @group/@binding resources.
 func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 	if p == nil {
 		return PipelineSource{}, fmt.Errorf("msl: nil program")
@@ -38,15 +39,18 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 		bindingSlot: make([]uint32, len(p.Bindings)),
 	}
 	var bufSlot, texSlot, sampSlot uint32
-	// Reserve low buffer slots for vertex buffers (0..7); uniforms start at 8.
-	bufSlot = 8
+	// Reserve low buffer slots for vertex buffers (0..7) in render pipelines; compute-only pipelines start buffer slots at 0.
+	if p.VertexFunc.Block != nil || p.FragmentFunc.Block != nil {
+		bufSlot = 8
+	}
 	for i, b := range p.Bindings {
+		w.registerStructs(b.Type)
 		switch b.Kind {
-		case shaderir.BindingUniformBuffer, shaderir.BindingStorageBufferRead:
+		case shaderir.BindingUniformBuffer, shaderir.BindingStorageBufferRead, shaderir.BindingStorageBufferReadWrite:
 			w.bindingSlot[i] = bufSlot
 			w.slots = append(w.slots, BindingSlot{Group: b.Group, Binding: b.Binding, Kind: b.Kind, Slot: bufSlot})
 			bufSlot++
-		case shaderir.BindingTexture:
+		case shaderir.BindingTexture, shaderir.BindingStorageTexture:
 			w.bindingSlot[i] = texSlot
 			w.slots = append(w.slots, BindingSlot{Group: b.Group, Binding: b.Binding, Kind: b.Kind, Slot: texSlot})
 			texSlot++
@@ -64,12 +68,16 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 	}
 
 	vEntry := p.VertexEntry
-	if vEntry == "" {
+	if vEntry == "" && p.VertexFunc.Block != nil {
 		vEntry = "vs_main"
 	}
 	fEntry := p.FragmentEntry
-	if fEntry == "" {
+	if fEntry == "" && p.FragmentFunc.Block != nil {
 		fEntry = "fs_main"
+	}
+	cEntry := p.ComputeEntry
+	if cEntry == "" && p.ComputeFunc.Block != nil {
+		cEntry = "cs_main"
 	}
 
 	if p.VertexFunc.Block != nil {
@@ -77,6 +85,9 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 	}
 	if p.FragmentFunc.Block != nil {
 		body = append(body, w.emitFragment(fEntry)...)
+	}
+	if p.ComputeFunc.Block != nil {
+		body = append(body, w.emitCompute(cEntry)...)
 	}
 
 	var out []string
@@ -94,6 +105,8 @@ func CompilePipeline(p *shaderir.Program) (PipelineSource, error) {
 		Source:        strings.TrimSpace(strings.Join(out, "\n")) + "\n",
 		VertexEntry:   vEntry,
 		FragmentEntry: fEntry,
+		ComputeEntry:  cEntry,
+		WorkgroupSize: p.ComputeFunc.WorkgroupSize,
 		Slots:         w.slots,
 	}, nil
 }
@@ -106,6 +119,17 @@ type pipeWriter struct {
 	slots       []BindingSlot
 }
 
+func (w *pipeWriter) registerStructs(t shaderir.Type) {
+	switch t.Main {
+	case shaderir.Struct:
+		w.structName(t)
+	case shaderir.Array:
+		if len(t.Sub) > 0 {
+			w.registerStructs(t.Sub[0])
+		}
+	}
+}
+
 func (w *pipeWriter) structName(t shaderir.Type) string {
 	key := t.String()
 	if n, ok := w.structNames[key]; ok {
@@ -113,9 +137,7 @@ func (w *pipeWriter) structName(t shaderir.Type) string {
 	}
 	// Ensure nested structs are registered first.
 	for _, f := range t.Sub {
-		if f.Main == shaderir.Struct {
-			w.structName(f)
-		}
+		w.registerStructs(f)
 	}
 	n := fmt.Sprintf("S%d", len(w.structTypes))
 	w.structNames[key] = n
@@ -128,6 +150,9 @@ func (w *pipeWriter) typeStr(t shaderir.Type) string {
 	case shaderir.Struct:
 		return w.structName(t)
 	case shaderir.Array:
+		if t.Length == 0 {
+			return fmt.Sprintf("%s*", w.typeStr(t.Sub[0]))
+		}
 		return fmt.Sprintf("array<%s, %d>", w.typeStr(t.Sub[0]), t.Length)
 	case shaderir.Texture2D, shaderir.Texture:
 		return "texture2d<float>"
@@ -139,6 +164,8 @@ func (w *pipeWriter) typeStr(t shaderir.Type) string {
 		return "depth2d<float>"
 	case shaderir.TextureMultisampled2D:
 		return "texture2d_ms<float>"
+	case shaderir.TextureStorage2D:
+		return "texture2d<float, access::write>"
 	case shaderir.Sampler, shaderir.SamplerComparison:
 		return "sampler"
 	default:
@@ -147,7 +174,21 @@ func (w *pipeWriter) typeStr(t shaderir.Type) string {
 }
 
 func (w *pipeWriter) declVar(t shaderir.Type, name string) string {
+	if t.Main == shaderir.Array && t.Length == 0 {
+		return fmt.Sprintf("%s %s[1]", w.typeStr(t.Sub[0]), name)
+	}
 	return fmt.Sprintf("%s %s", w.typeStr(t), name)
+}
+
+func mslStorageAccess(a shaderir.StorageAccess) string {
+	switch a {
+	case shaderir.StorageAccessRead:
+		return "access::read"
+	case shaderir.StorageAccessReadWrite:
+		return "access::read_write"
+	default:
+		return "access::write"
+	}
 }
 
 func (w *pipeWriter) bindingParam(i int, b shaderir.Binding) string {
@@ -156,9 +197,19 @@ func (w *pipeWriter) bindingParam(i int, b shaderir.Binding) string {
 	case shaderir.BindingUniformBuffer:
 		return fmt.Sprintf("constant %s& B%d [[buffer(%d)]]", w.typeStr(b.Type), i, slot)
 	case shaderir.BindingStorageBufferRead:
+		if b.Type.Main == shaderir.Array && b.Type.Length == 0 {
+			return fmt.Sprintf("device const %s* B%d [[buffer(%d)]]", w.typeStr(b.Type.Sub[0]), i, slot)
+		}
 		return fmt.Sprintf("device const %s& B%d [[buffer(%d)]]", w.typeStr(b.Type), i, slot)
+	case shaderir.BindingStorageBufferReadWrite:
+		if b.Type.Main == shaderir.Array && b.Type.Length == 0 {
+			return fmt.Sprintf("device %s* B%d [[buffer(%d)]]", w.typeStr(b.Type.Sub[0]), i, slot)
+		}
+		return fmt.Sprintf("device %s& B%d [[buffer(%d)]]", w.typeStr(b.Type), i, slot)
 	case shaderir.BindingTexture:
 		return fmt.Sprintf("%s B%d [[texture(%d)]]", w.typeStr(b.Type), i, slot)
+	case shaderir.BindingStorageTexture:
+		return fmt.Sprintf("texture2d<float, %s> B%d [[texture(%d)]]", mslStorageAccess(b.StorageAccess), i, slot)
 	case shaderir.BindingSampler:
 		return fmt.Sprintf("sampler B%d [[sampler(%d)]]", i, slot)
 	default:
@@ -173,9 +224,21 @@ func (w *pipeWriter) helperBindingParams() ([]string, []string) {
 		case shaderir.BindingUniformBuffer:
 			params = append(params, fmt.Sprintf("constant %s& B%d", w.typeStr(b.Type), i))
 		case shaderir.BindingStorageBufferRead:
-			params = append(params, fmt.Sprintf("device const %s& B%d", w.typeStr(b.Type), i))
+			if b.Type.Main == shaderir.Array && b.Type.Length == 0 {
+				params = append(params, fmt.Sprintf("device const %s* B%d", w.typeStr(b.Type.Sub[0]), i))
+			} else {
+				params = append(params, fmt.Sprintf("device const %s& B%d", w.typeStr(b.Type), i))
+			}
+		case shaderir.BindingStorageBufferReadWrite:
+			if b.Type.Main == shaderir.Array && b.Type.Length == 0 {
+				params = append(params, fmt.Sprintf("device %s* B%d", w.typeStr(b.Type.Sub[0]), i))
+			} else {
+				params = append(params, fmt.Sprintf("device %s& B%d", w.typeStr(b.Type), i))
+			}
 		case shaderir.BindingTexture:
 			params = append(params, fmt.Sprintf("%s B%d", w.typeStr(b.Type), i))
+		case shaderir.BindingStorageTexture:
+			params = append(params, fmt.Sprintf("texture2d<float, %s> B%d", mslStorageAccess(b.StorageAccess), i))
 		case shaderir.BindingSampler:
 			params = append(params, fmt.Sprintf("sampler B%d", i))
 		}
@@ -268,6 +331,24 @@ func (w *pipeWriter) emitFragment(entry string) []string {
 	}
 	lines = append(lines, fmt.Sprintf("fragment float4 %s(%s) {", entry, strings.Join(params, ", ")))
 	lines = append(lines, w.emitBlock(w.p.FragmentFunc.Block, w.p.FragmentFunc.Block, 1, "fragment")...)
+	lines = append(lines, "}", "")
+	return lines
+}
+
+func (w *pipeWriter) emitCompute(entry string) []string {
+	params := []string{
+		"uint3 __global_invocation_id [[thread_position_in_grid]]",
+		"uint3 __local_invocation_id [[thread_position_in_threadgroup]]",
+		"uint3 __workgroup_id [[threadgroup_position_in_grid]]",
+		"uint3 __num_workgroups [[threadgroups_per_grid]]",
+		"uint __local_invocation_index [[thread_index_in_threadgroup]]",
+	}
+	for i, b := range w.p.Bindings {
+		params = append(params, w.bindingParam(i, b))
+	}
+	var lines []string
+	lines = append(lines, fmt.Sprintf("kernel void %s(%s) {", entry, strings.Join(params, ", ")))
+	lines = append(lines, w.emitBlock(w.p.ComputeFunc.Block, w.p.ComputeFunc.Block, 1, "compute")...)
 	lines = append(lines, "}", "")
 	return lines
 }
@@ -380,6 +461,16 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 			return "__front_facing"
 		case shaderir.BuiltinPosition:
 			return "__in.position"
+		case shaderir.BuiltinGlobalInvocationID:
+			return "__global_invocation_id"
+		case shaderir.BuiltinLocalInvocationID:
+			return "__local_invocation_id"
+		case shaderir.BuiltinWorkgroupID:
+			return "__workgroup_id"
+		case shaderir.BuiltinNumWorkgroups:
+			return "__num_workgroups"
+		case shaderir.BuiltinLocalInvocationIndex:
+			return "__local_invocation_index"
 		}
 	case shaderir.StructConstruct:
 		name := w.typeStr(*e.StructType)
@@ -441,6 +532,14 @@ func (w *pipeWriter) emitExpr(e shaderir.Expr, stage string) string {
 			return fmt.Sprintf("%s.read(uint2(%s), %s)", args[0], args[1], args[2])
 		case shaderir.TextureDimensions:
 			return fmt.Sprintf("uint2(%s.get_width(), %s.get_height())", args[0], args[0])
+		case shaderir.TextureStore:
+			return fmt.Sprintf("%s.write(%s, uint2(%s))", args[0], args[2], args[1])
+		case shaderir.ArrayLength:
+			return fmt.Sprintf("uint(sizeof(%s))", args[0])
+		case shaderir.WorkgroupBarrier:
+			return "threadgroup_barrier(mem_flags::mem_threadgroup)"
+		case shaderir.StorageBarrier:
+			return "threadgroup_barrier(mem_flags::mem_device)"
 		case shaderir.Atan2:
 			return fmt.Sprintf("atan2(%s)", strings.Join(args, ", "))
 		default:

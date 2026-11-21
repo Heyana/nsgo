@@ -47,12 +47,14 @@ func TypeOf(e *Expr, env TypeEnv) Type {
 		switch StageBuiltin(e.Index) {
 		case BuiltinPosition:
 			return Type{Main: Vec4}
-		case BuiltinVertexIndex, BuiltinInstanceIndex:
+		case BuiltinVertexIndex, BuiltinInstanceIndex, BuiltinLocalInvocationIndex:
 			return Type{Main: Uint}
 		case BuiltinFrontFacing:
 			return Type{Main: Bool}
 		case BuiltinFragDepth:
 			return Type{Main: Float}
+		case BuiltinGlobalInvocationID, BuiltinLocalInvocationID, BuiltinWorkgroupID, BuiltinNumWorkgroups:
+			return Type{Main: UVec3}
 		}
 		return Type{}
 	case StructConstruct:
@@ -182,6 +184,10 @@ func callType(e *Expr, env TypeEnv) Type {
 		return Type{Main: Float}
 	case TextureDimensions:
 		return Type{Main: UVec2}
+	case ArrayLength:
+		return Type{Main: Uint}
+	case TextureStore, WorkgroupBarrier, StorageBarrier:
+		return Type{}
 	case IVec2F:
 		return Type{Main: IVec2}
 	case IVec3F:

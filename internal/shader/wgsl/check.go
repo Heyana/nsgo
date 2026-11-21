@@ -580,6 +580,10 @@ func (c *checker) resolveType(t *typeExpr) ty {
 		}
 		return vec(e.k, int(t.name[3]-'0'))
 	case "array":
+		if len(t.args) == 1 && c.pipeline {
+			e := c.templateType(t.args[0], t.pos)
+			return ty{k: kArray, n: 0, arr: &e}
+		}
 		if len(t.args) != 2 {
 			fail(t.pos, "array takes its elements' type and its length")
 		}
@@ -629,6 +633,27 @@ func (c *checker) resolveType(t *typeExpr) ty {
 			fail(t.pos, "a shader takes no %s", t.name)
 		}
 		return ty{k: kTextureMultisampled2D}
+	case "texture_storage_2d":
+		if !c.pipeline {
+			fail(t.pos, "a shader takes no %s", t.name)
+		}
+		if len(t.args) != 2 {
+			fail(t.pos, "texture_storage_2d takes format and access mode template arguments")
+		}
+		fmtArg, ok1 := t.args[0].(*typeExpr)
+		accArg, ok2 := t.args[1].(*typeExpr)
+		if !ok1 || !ok2 {
+			fail(t.pos, "texture_storage_2d takes texel format and access mode names")
+		}
+		sf, ok := parseStorageTextureFormat(fmtArg.name)
+		if !ok {
+			fail(fmtArg.pos, "unsupported storage texture format %s", fmtArg.name)
+		}
+		sa, ok := parseStorageAccess(accArg.name)
+		if !ok {
+			fail(accArg.pos, "unsupported storage texture access mode %s", accArg.name)
+		}
+		return ty{k: kTextureStorage2D, storageFmt: sf, storageAccess: sa}
 	}
 	if shape, ok := matShapes[t.name]; ok {
 		if !strings.HasSuffix(t.name, "f") {
@@ -862,8 +887,8 @@ func (c *checker) stmt(st stmt, out *[]shaderir.Stmt) {
 			c.emitContinue(s.pos, len(c.cur.flows)-1, out)
 		case "discard":
 			if c.pipeline {
-				if c.cur.stage == "vertex" {
-					fail(s.pos, "discard is not allowed in a vertex shader")
+				if c.cur.stage == "vertex" || c.cur.stage == "compute" {
+					fail(s.pos, "discard is not allowed in a %s shader", c.cur.stage)
 				}
 			} else if c.cur.info.decl.name != "shade" {
 				fail(s.pos, "discard is supported in shade only")
@@ -955,6 +980,9 @@ func (c *checker) decl(s *declStmt, out *[]shaderir.Stmt) {
 		}
 		if t.k == kNone {
 			fail(s.pos, "var %s has no value", s.name)
+		}
+		if t.k == kArray && t.n == 0 {
+			fail(s.pos, "var %s cannot have a runtime-sized array type", s.name)
 		}
 		idx := c.newLocal(t)
 		if s.init != nil {

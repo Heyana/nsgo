@@ -106,11 +106,16 @@ func (t Type) String() string {
 		return "texturedepth2d"
 	case TextureMultisampled2D:
 		return "texturemultisampled2d"
+	case TextureStorage2D:
+		return "texturestorage2d"
 	case Sampler:
 		return "sampler"
 	case SamplerComparison:
 		return "samplercomparison"
 	case Array:
+		if t.Length == 0 {
+			return fmt.Sprintf("[]%s", t.Sub[0].String())
+		}
 		return fmt.Sprintf("[%d]%s", t.Length, t.Sub[0].String())
 	case Struct:
 		str := "struct{"
@@ -362,7 +367,7 @@ func (t Type) MatrixSize() int {
 
 func (t Type) IsTexture() bool {
 	switch t.Main {
-	case Texture, Texture2D, TextureCube, Texture2DArray, TextureDepth2D, TextureMultisampled2D:
+	case Texture, Texture2D, TextureCube, Texture2DArray, TextureDepth2D, TextureMultisampled2D, TextureStorage2D:
 		return true
 	}
 	return false
@@ -409,6 +414,7 @@ const (
 	Texture2DArray
 	TextureDepth2D
 	TextureMultisampled2D
+	TextureStorage2D
 	Sampler
 	SamplerComparison
 )

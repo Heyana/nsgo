@@ -588,9 +588,11 @@ type App struct {
 	lastPressAt time.Time
 	clicks      uint32
 	// noGPU disables Env.SupportsGPU() in headless mode (NoGPU).
-	noGPU     bool
-	gpuViews  map[driver.NodeID]*gpuViewState
-	gpuFrames []GPUFrameRecord
+	noGPU bool
+	// noGPUCompute disables compute shaders and storage buffers (NoGPUCompute).
+	noGPUCompute bool
+	gpuViews     map[driver.NodeID]*gpuViewState
+	gpuFrames    []GPUFrameRecord
 	// presenting holds modals currently playing their entrance animation before EventModalShown is dispatched.
 	presenting map[driver.NodeID]*modalWait
 }
