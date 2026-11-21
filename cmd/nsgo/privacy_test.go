@@ -104,7 +104,6 @@ func TestPrivacyValidation(t *testing.T) {
 	}
 }
 
-
 func TestDiskSpaceLinkerDeclaration(t *testing.T) {
 	p := &project{}
 	macos := []string{"GOOS=darwin", "GOARCH=arm64"}
@@ -121,6 +120,7 @@ func TestDiskSpaceLinkerDeclaration(t *testing.T) {
 		t.Fatalf("Linux with a reason: %q", got)
 	}
 }
+
 func TestStorePrivacyManifestRejectsInvalidDeclarations(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
