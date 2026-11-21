@@ -74,7 +74,7 @@ func TestWebWasmLoadProgress(t *testing.T) {
 	if _, err := findBrowser(); err != nil {
 		t.Skip(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	b, err := startBrowser(ctx)
 	if err != nil {
@@ -162,7 +162,7 @@ mount(null, null, {config:%s}).catch(e => { window.failure = e.message; });`, tc
 			}))
 			defer srv.Close()
 			defer finish()
-			raw, err := b.call("", "Target.createTarget", map[string]any{"url": srv.URL})
+			raw, err := b.call("", "Target.createTarget", map[string]any{"url": "about:blank"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -180,6 +180,10 @@ mount(null, null, {config:%s}).catch(e => { window.failure = e.message; });`, tc
 				t.Fatal(err)
 			}
 			page := &webPage{b: b, session: attached.SessionID}
+			// Navigate once attached: Page.navigate returns when the page commits, so a cold browser's slow first load does not eat into the polling deadlines below.
+			if _, err := page.call("Page.navigate", map[string]any{"url": srv.URL}); err != nil {
+				t.Fatal(err)
+			}
 			wait := func(expression string) {
 				t.Helper()
 				for deadline := time.Now().Add(8 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
