@@ -181,6 +181,7 @@ func TestSelectingReportsTheText(t *testing.T) {
 	}
 	var mu sync.Mutex
 	var heard []core.TextSelection
+	var line core.Ref
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		return core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(16)}, Children: []core.Node{
 			core.View{TestID: "area", Selectable: true, OnTextSelection: func(s core.TextSelection) {
@@ -188,7 +189,7 @@ func TestSelectingReportsTheText(t *testing.T) {
 				heard = append(heard, s)
 				mu.Unlock()
 			}, Children: []core.Node{
-				core.Text{TestID: "line", Content: "serendipity happens every day", Style: core.Style{FontSize: 20}},
+				core.Text{TestID: "line", Ref: &line, Content: "serendipity happens every day", Style: core.Style{FontSize: 20}},
 			}},
 		}}
 	}, nsgotest.Size(400, 200))
@@ -208,12 +209,19 @@ func TestSelectingReportsTheText(t *testing.T) {
 	if len(texts) < 2 || texts[len(texts)-1] != "serendipity happens every day" {
 		t.Fatalf("heard %q as the drag grew within one text, want it to end with the whole text", texts)
 	}
+	// The platforms that report each text's range give the whole line's, by its Ref.
+	switch last := got[len(got)-1]; nsgotest.Target() {
+	case "macos", "linux", "windows":
+		if want := []core.SelectedText{{Ref: &line, Start: 0, End: len("serendipity happens every day")}}; !slices.Equal(last.Ranges, want) {
+			t.Errorf("heard ranges %+v, want %+v", last.Ranges, want)
+		}
+	}
 	app.Key("Escape")
 	app.Settle()
 	mu.Lock()
 	last := heard[len(heard)-1]
 	mu.Unlock()
-	if last.Text != "" || last.Bounds.Size != (core.Size{}) {
+	if last.Text != "" || last.Bounds.Size != (core.Size{}) || last.Ranges != nil {
 		t.Errorf("after Escape heard %+v, want no selection", last)
 	}
 }
