@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -464,19 +463,6 @@ func runTypes(ctx context.Context, p *project, buildArgs ...string) error {
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("writing types failed: %w\n%s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-// goTool runs go with args in dir, its output shown only on a failure.
-func goTool(ctx context.Context, dir string, env []string, args ...string) error {
-	cmd := exec.CommandContext(ctx, "go", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("go %s failed\n%s", args[0], strings.TrimSpace(out.String()))
 	}
 	return nil
 }

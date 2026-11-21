@@ -106,7 +106,7 @@ func (p *project) validateUpdates() error {
 	}
 	u.public = key
 	if u.Feed == "" {
-		u.repo = p.githubRepository()
+		u.repo = p.githubRepository(context.Background())
 		return nil
 	}
 	f, err := url.Parse(u.Feed)

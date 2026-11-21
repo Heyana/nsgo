@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 )
 
@@ -32,10 +31,9 @@ func tagsArgs(tags []string) []string {
 
 // goFlags returns the GOFLAGS the go command takes in dir under env, which counts what go env -w set.
 func goFlags(ctx context.Context, dir string, env []string) (string, error) {
-	cmd := exec.CommandContext(ctx, "go", "env", "GOFLAGS")
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
-	out, err := cmd.Output()
+	out, err := execute(ctx, processCommand{
+		name: "go", args: []string{"env", "GOFLAGS"}, dir: dir, env: append(os.Environ(), env...),
+	})
 	if err != nil {
 		return "", fmt.Errorf("go env GOFLAGS: %w", err)
 	}

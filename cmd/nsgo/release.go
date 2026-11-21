@@ -1,13 +1,13 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -32,15 +32,15 @@ func (p *project) releaseDir() string {
 // githubRepository is the repository ("owner/name") whose releases the
 // install scripts install from: release.github, else the one the app's
 // Git remote origin names on GitHub, else "".
-func (p *project) githubRepository() string {
+func (p *project) githubRepository(ctx context.Context) string {
 	if p.Releases.GitHub != "" {
 		return p.Releases.GitHub
 	}
-	out, err := exec.Command("git", "-C", p.Dir, "remote", "get-url", "origin").Output()
+	out, err := output(ctx, "git", "-C", p.Dir, "remote", "get-url", "origin")
 	if err != nil {
 		return ""
 	}
-	return githubFromRemote(strings.TrimSpace(string(out)))
+	return githubFromRemote(out)
 }
 
 // githubFromRemote reads owner/name from a GitHub remote's URL, in its
@@ -181,11 +181,11 @@ var installPs1 string
 // packages, so a build of none of targets' macOS, Windows or Linux writes
 // none, nor does a store build, whose packages stores install. Without a
 // GitHub repository it writes none and says how to name one.
-func (p *project) writeInstallScripts(targets []string) error {
+func (p *project) writeInstallScripts(ctx context.Context, targets []string) error {
 	if !p.installers() || p.channel() == channelStore || !slices.ContainsFunc(targets, desktopTarget) {
 		return nil
 	}
-	repo := p.githubRepository()
+	repo := p.githubRepository(ctx)
 	if repo == "" {
 		warn("no install scripts: set release.github in nsgo.yaml to the repository whose releases they install from")
 		return nil

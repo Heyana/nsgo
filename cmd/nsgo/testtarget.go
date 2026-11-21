@@ -253,12 +253,11 @@ func goListFor(ctx context.Context, p *project, target string, args ...string) (
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, "go", append(append(append([]string{"list"}, tagsArgs(tags)...), args...), ".")...)
-	cmd.Dir = p.Dir
-	cmd.Env = append(os.Environ(), env...)
+	argv := append(append([]string{"list"}, tagsArgs(tags)...), args...)
 	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	out, err := execute(ctx, processCommand{
+		name: "go", args: append(argv, "."), dir: p.Dir, env: append(os.Environ(), env...), stderr: &stderr,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("go list: %w\n%s", err, stderr.Bytes())
 	}
@@ -291,11 +290,10 @@ func listTests(ctx context.Context, p *project, target, run string, extra ...str
 		}
 		args = append(args, "-overlay", ov)
 	}
-	cmd := exec.CommandContext(ctx, "go", append(args, ".")...)
-	cmd.Dir = p.Dir
 	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	out, err := execute(ctx, processCommand{
+		name: "go", args: append(args, "."), dir: p.Dir, stderr: &stderr,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("go test -list: %w\n%s%s", err, out, stderr.Bytes())
 	}
@@ -890,11 +888,10 @@ func buildTargetRunner(ctx context.Context, p *project, dir string, opts testOpt
 
 // runLocal runs bin on this machine.
 func runLocal(ctx context.Context, bin string, args, env []string, out io.Writer) (int, error) {
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = filepath.Dir(bin)
-	cmd.Env = append(os.Environ(), env...)
-	cmd.Stdout, cmd.Stderr = out, out
-	err := cmd.Run()
+	_, err := execute(ctx, processCommand{
+		name: bin, args: args, dir: filepath.Dir(bin), env: append(os.Environ(), env...),
+		stdout: out, stderr: out, output: streamOutput,
+	})
 	if ctx.Err() != nil {
 		return -1, ctx.Err()
 	}

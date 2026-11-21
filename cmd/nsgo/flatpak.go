@@ -85,7 +85,7 @@ func (p *project) metainfo() ([]byte, error) {
 		developer = developer[:i]
 	}
 	homepage := ""
-	if repo := p.githubRepository(); repo != "" {
+	if repo := p.githubRepository(context.Background()); repo != "" {
 		homepage = "https://github.com/" + repo
 	}
 	var out bytes.Buffer
@@ -186,7 +186,7 @@ func (p *project) releaseFilesURL() string {
 	if p.Updates.Feed != "" {
 		return p.Updates.Feed
 	}
-	if repo := p.githubRepository(); repo != "" {
+	if repo := p.githubRepository(context.Background()); repo != "" {
 		return "https://github.com/" + repo + "/releases/download/" + url.PathEscape(p.tagPrefix()+p.Version) + "/"
 	}
 	return ""

@@ -192,7 +192,7 @@ func TestSimulatorTestDeadlines(t *testing.T) {
 func TestSimulatorStopIsBounded(t *testing.T) {
 	checkXcrun(t, "exec sleep 30\n")
 	start := time.Now()
-	(simulatorTest{udid: "simulator", id: "dev.nsgo.test"}).stop()
+	(simulatorTest{udid: "simulator", id: "dev.nsgo.test"}).stop(t.Context())
 	if elapsed := time.Since(start); elapsed > 7*time.Second {
 		t.Fatalf("simulator cleanup took %v after its deadline", elapsed)
 	}
@@ -203,8 +203,8 @@ func TestSimulatorCloseUninstallsTheTestBuild(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "calls")
 	checkXcrun(t, "echo \"$*\" >> '"+log+"'\n")
 	s := simulatorTest{udid: "simulator", id: "dev.example.app.nsgotest"}
-	s.stop()
-	s.close()
+	s.stop(t.Context())
+	s.close(t.Context())
 	data, err := os.ReadFile(log)
 	if err != nil {
 		t.Fatal(err)

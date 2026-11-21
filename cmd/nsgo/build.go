@@ -83,7 +83,7 @@ func buildAll(ctx context.Context, p *project) error {
 	if err != nil {
 		return err
 	}
-	if err := p.writeInstallScripts(buildTargets); err != nil {
+	if err := p.writeInstallScripts(ctx, buildTargets); err != nil {
 		return err
 	}
 	if err := p.writeFlatpakManifest(buildTargets); err != nil {
@@ -847,22 +847,6 @@ func experiments(cur, extra string) string {
 		return cur + "," + extra
 	}
 	return extra
-}
-
-func run(ctx context.Context, name string, args ...string) error {
-	// Tools' chatter only matters when they fail.
-	if out, err := exec.CommandContext(ctx, name, args...).CombinedOutput(); err != nil {
-		return fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, out)
-	}
-	return nil
-}
-
-func output(ctx context.Context, name string, args ...string) (string, error) {
-	out, err := exec.CommandContext(ctx, name, args...).Output()
-	if err != nil {
-		return "", fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
-	}
-	return strings.TrimSpace(string(out)), nil
 }
 
 // buildMacApp writes <dir>/<name>.app for one architecture.

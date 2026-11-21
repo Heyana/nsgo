@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -298,9 +297,9 @@ func (p *project) claimSignInWithApple(ents, granted map[string]any) error {
 // security verifies and opens. A plain plist reads as it is.
 func readProfile(ctx context.Context, data []byte) (map[string]any, error) {
 	if !bytes.HasPrefix(bytes.TrimSpace(data), []byte("<?xml")) {
-		cmd := exec.CommandContext(ctx, "security", "cms", "-D")
-		cmd.Stdin = bytes.NewReader(data)
-		out, err := cmd.Output()
+		out, err := execute(ctx, processCommand{
+			name: "security", args: []string{"cms", "-D"}, stdin: bytes.NewReader(data),
+		})
 		if err != nil {
 			return nil, fmt.Errorf("security cms cannot read the provisioning profile: %w", err)
 		}

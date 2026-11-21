@@ -50,7 +50,7 @@ func iosTestRunner(ctx context.Context, p *project, sys *appleOS, dir string, op
 		simulator.binary = filepath.Join(app, p.Name)
 	}
 	// The test host's start mark starts a hosted test's deadline, so the app's launch, which a busy machine can stretch to minutes, does not count against it. A plain process has no mark and keeps the run's deadline.
-	return targetRunner{run: simulator.run, close: simulator.close, timesFromStart: hosted}, nil
+	return targetRunner{run: simulator.run, close: func() { simulator.close(ctx) }, timesFromStart: hosted}, nil
 }
 
 // simulatorLaunchTimeout bounds how long a simulator app may take to start the test host, which -timeout does not cover.
@@ -77,19 +77,19 @@ type simulatorTest struct {
 	launchTimeout time.Duration // the deadline for the host's start mark; 0 for simulatorLaunchTimeout
 }
 
-func (s simulatorTest) stop() {
+func (s simulatorTest) stop(ctx context.Context) {
 	// A stalled CoreSimulator must not turn a test timeout into an unbounded wait during cleanup. The test's context may be cancelled.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	exec.CommandContext(ctx, "xcrun", "simctl", "terminate", s.udid, s.id).Run()
+	_ = run(ctx, "xcrun", "simctl", "terminate", s.udid, s.id)
 }
 
 // close ends the run: it stops the app and uninstalls the test build, whose ID is the test's own (testProject), so the app's installed build and its data stay as they were. A test that timed out stops the app alone, as later tests launch it again.
-func (s simulatorTest) close() {
-	s.stop()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func (s simulatorTest) close(ctx context.Context) {
+	s.stop(ctx)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	exec.CommandContext(ctx, "xcrun", "simctl", "uninstall", s.udid, s.id).Run()
+	_ = run(ctx, "xcrun", "simctl", "uninstall", s.udid, s.id)
 }
 
 func (s simulatorTest) run(ctx context.Context, args, env []string, out io.Writer) (int, error) {
@@ -165,7 +165,7 @@ func (s simulatorTest) run(ctx context.Context, args, env []string, out io.Write
 		out.Write(captured.Bytes())
 	}
 	if ended && runCtx.Err() != nil {
-		s.stop()
+		s.stop(ctx)
 		switch cause := context.Cause(runCtx); {
 		case errors.Is(cause, errSimulatorTestTimeout):
 			return -1, timeoutError(s.timeout)
