@@ -540,8 +540,9 @@ func (r *runtime) within(budget time.Duration, fn func() error) (err error, cut 
 				r.expire(owner)
 				cut = true
 				if inJob && r.retainPromiseJobs && owner != prev {
-					// A reaction belonging to another call ran after this entry returned. This entry still has its own result.
-					err = nil
+					// The other owner's reaction interrupted the queue
+					// after this entry returned a value or threw.
+					err = stop.CallError()
 				}
 			}
 			if r.retainPromiseJobs {

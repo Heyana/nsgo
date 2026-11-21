@@ -14,11 +14,14 @@ import (
 
 func TestPluginKeepsIndependentPromiseJobsAfterBudgetCut(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		order [2]string
+		name          string
+		order         [2]string
+		dispatchFails bool
 	}{
-		{"cutting job first", [2]string{"cancelWork", "waitForValue"}},
-		{"continuation first", [2]string{"waitForValue", "cancelWork"}},
+		{"cutting job first", [2]string{"cancelWork", "waitForValue"}, false},
+		{"continuation first", [2]string{"waitForValue", "cancelWork"}, false},
+		{"cutting job first after a throw", [2]string{"cancelWork", "waitForValue"}, true},
+		{"continuation first after a throw", [2]string{"waitForValue", "cancelWork"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			type result struct {
@@ -35,6 +38,7 @@ func TestPluginKeepsIndependentPromiseJobsAfterBudgetCut(t *testing.T) {
 				// Interrupt at a fixed point instead of depending on CPU timing.
 				r.vm.Set("cancelTestJob", func() { r.vm.Interrupt(ErrBudget) })
 				r.vm.Set("recordDiscarded", func() { discarded++ })
+				r.vm.Set("dispatchFails", tc.dispatchFails)
 				v, err := r.vm.RunString(`
 					let release
 					const wait = new Promise(resolve => { release = resolve })
@@ -45,7 +49,15 @@ func TestPluginKeepsIndependentPromiseJobsAfterBudgetCut(t *testing.T) {
 							wait.then(recordDiscarded)
 							return result
 						},
-						dispatch() { release(); return "sent" },
+						dispatch() {
+							release();
+							if (dispatchFails) {
+								const error = new Error("dispatch refused");
+								error.code = "dispatchRefused";
+								throw error;
+							}
+							return "sent";
+						},
 					})
 				`)
 				if err != nil {
@@ -67,8 +79,16 @@ func TestPluginKeepsIndependentPromiseJobsAfterBudgetCut(t *testing.T) {
 			if got := results["waitForValue"]; len(got) != 1 || got[0].err != nil || got[0].value != "ready" {
 				t.Fatalf("independent call = %+v", got)
 			}
-			if got := results["dispatch"]; len(got) != 1 || got[0].err != nil || got[0].value != "sent" {
-				t.Fatalf("dispatching call = %+v", got)
+			got := results["dispatch"]
+			if len(got) != 1 {
+				t.Fatalf("dispatching call = %+v, want one result", got)
+			}
+			if tc.dispatchFails {
+				if got[0].err == nil || got[0].err.Error() != "dispatch refused" || core.ErrorCode(got[0].err) != "dispatchRefused" {
+					t.Fatalf("dispatching call = %+v, want the original error", got)
+				}
+			} else if got[0].err != nil || got[0].value != "sent" {
+				t.Fatalf("dispatching call = %+v, want sent", got)
 			}
 			if discarded != 0 {
 				t.Fatal("a queued job ran after its call was cancelled")

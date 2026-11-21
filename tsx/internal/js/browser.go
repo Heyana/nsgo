@@ -153,6 +153,8 @@ func (e *Exception) Unwrap() error {
 type InterruptedError struct{ Exception }
 type StackOverflowError struct{ Exception }
 
+func (*InterruptedError) CallError() error { return nil }
+
 // PromiseState is a promise's state.
 type PromiseState int
 

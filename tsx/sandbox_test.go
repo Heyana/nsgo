@@ -730,6 +730,52 @@ func advanceUntil(t *testing.T, app *nsgotest.App, timeout time.Duration, cond f
 	}
 }
 
+func TestPluginWatchdogKeepsIndependentPromiseContinuation(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skip("the page's engine cannot interrupt a running slice")
+	}
+	p := verified(t, `let release;
+const shared = new Promise(resolve => { release = resolve; });
+export async function victim() { await shared; return "ready"; }
+export function trigger() {
+	Promise.resolve().then(() => { for (;;) {} });
+	release();
+	return "sent";
+}`, pkg.Capabilities{})
+	limits := tsx.Limits{Load: time.Second, Call: 100 * time.Millisecond}
+	var plugin *tsx.Plugin
+	var loadErr error
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{Limits: &limits})
+		return core.View{}
+	})
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	var victimCalls, triggerCalls int
+	var victimResult any
+	var victimErr, triggerErr error
+	app.Post(func() {
+		plugin.Call("victim", nil, func(result any, err error) {
+			victimCalls++
+			victimResult, victimErr = result, err
+		})
+		plugin.Call("trigger", nil, func(_ any, err error) {
+			triggerCalls++
+			triggerErr = err
+		})
+	})
+	app.WaitUntil(5*time.Second, func() bool { return victimCalls > 0 && triggerCalls > 0 })
+	app.Post(plugin.Close)
+	app.Settle()
+	if triggerCalls != 1 || !errors.Is(triggerErr, tsx.ErrBudget) {
+		t.Fatalf("trigger called back %d times with %v, want ErrBudget once", triggerCalls, triggerErr)
+	}
+	if victimCalls != 1 || victimErr != nil || victimResult != "ready" {
+		t.Fatalf("victim called back %d times with %v, %v, want ready once", victimCalls, victimResult, victimErr)
+	}
+}
+
 func TestPluginCallSliceTimeout(t *testing.T) {
 	if runtime.GOOS == "js" {
 		t.Skip("the page's engine cannot interrupt a running slice")
